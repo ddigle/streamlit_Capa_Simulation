@@ -55,6 +55,7 @@ from capa_simulation.services.floor_layout_profile import (
 )
 from capa_simulation.services.floor_state import FloorStates
 from capa_simulation.services.layout_overlay import LayoutOverlay, Place
+from capa_simulation.services.manual_downtime import ManualDowntime, ManualDowntimeSave
 from capa_simulation.services.shortening_baseline import (
     ShorteningBaseline,
     ShorteningBaselineSummary,
@@ -218,6 +219,7 @@ _write_generations = {
     "shortening_filter": 0,
     "shortening_baseline": 0,
     "floor_state": 0,
+    "manual_downtime": 0,
 }
 
 
@@ -937,6 +939,62 @@ def clear_floor_state_cache() -> None:
     _load_floor_states_payload.clear()
 
 
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_manual_downtime_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> dict[str, Any]:
+    del stamp, generation
+    return _payload(get_equipment_repository(database_path).load_manual_downtime(), ManualDowntime)
+
+
+def load_manual_downtime(database_path: str) -> ManualDowntime:
+    """입력 비가동 대수(`0032`, 리비전 없는 공용 현행값).
+
+    실행 관리 쪽 설비 일정 기준 가용을 내는 모든 화면(공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·
+    Space 필요 단축 보기)과 가용설비 현황 Preference 탭이 회차마다 읽는다. 층 사용 상태와 같은
+    방식이다 — 이 앱의 저장(Preference 탭 「저장」)이 성공한 직후 `clear_manual_downtime_cache` 로
+    비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다. 계산 캐시는 이
+    값이 아니라 계산할 달로 좁힌 칸(`manual_downtime_key`)을 키에 싣는다.
+    """
+    return ManualDowntime(
+        **_load_manual_downtime_payload(
+            database_path, database_stamp(database_path), _write_generation("manual_downtime")
+        )
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_manual_downtime_saves_payload(
+    database_path: str, limit: int, stamp: DatabaseStamp, generation: WriteGeneration
+) -> tuple[dict[str, Any], ...]:
+    del stamp, generation
+    return tuple(
+        _payload(save, ManualDowntimeSave)
+        for save in get_equipment_repository(database_path).load_manual_downtime_saves(limit=limit)
+    )
+
+
+def load_manual_downtime_saves(
+    database_path: str, *, limit: int = 20
+) -> tuple[ManualDowntimeSave, ...]:
+    """입력 비가동 대수 저장 이력(최근 것부터). 프로필과 같은 세대·stat·TTL 로 지킨다."""
+    return tuple(
+        ManualDowntimeSave(**payload)
+        for payload in _load_manual_downtime_saves_payload(
+            database_path,
+            int(limit),
+            database_stamp(database_path),
+            _write_generation("manual_downtime"),
+        )
+    )
+
+
+def clear_manual_downtime_cache() -> None:
+    _bump_write_generation("manual_downtime")
+    _load_manual_downtime_payload.clear()
+    _load_manual_downtime_saves_payload.clear()
+
+
 def clear_floor_layout_cache() -> None:
     """층·FAB 도면·캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비
     리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른
@@ -973,4 +1031,5 @@ def clear_equipment_repository() -> None:
     clear_shortening_filter_cache()
     clear_shortening_baseline_cache()
     clear_floor_state_cache()
+    clear_manual_downtime_cache()
     get_equipment_repository.clear()

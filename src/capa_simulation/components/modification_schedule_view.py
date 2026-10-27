@@ -122,6 +122,7 @@ from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
     MODIFICATION_DAYS_RANGE,
 )
+from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
 from capa_simulation.services.modification_schedule import (
     CONCURRENT_RANGE,
     MARGIN_RANGE,
@@ -228,6 +229,9 @@ class ScheduleModeContext(NamedTuple):
     cutoff: pd.DataFrame
     equipment_error: str
     today: date
+    manual_downtime: ManualDowntime
+    """입력 비가동 대수(가용설비 현황 › Preference) — 계획 키에 실린다(제약 모드와 같은 가용)."""
+
     card_label: str
     card_name: str
     card_icon: str
@@ -598,6 +602,7 @@ def _plan(
         cutoff=context.cutoff,
         months=tuple(months),
         today=context.today,
+        manual_downtime=context.manual_downtime,
     )
     plan = simulation_cache.load_required_shortening_for_target(
         simulation_cache.required_shortening_target_cache_key(shortening_key, target_level),
@@ -734,7 +739,9 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
 
     labels = ScheduleLabels(process_label=process_label, general_percent=choice.general_percent)
     context.render_header(process, _header_line(bold, result, labels))
-    _render_source_band(context, process_label)
+    _render_source_band(
+        context, process_label, manual_note=manual_effect_band(plan.manual_downtime, (process,))
+    )
     render_schedule_kpis(result, labels)
     _render_body(result, labels)
 
@@ -756,8 +763,12 @@ def _header_line(bold: str, result: ScheduleResult, labels: ScheduleLabels) -> s
     return " · ".join(parts)
 
 
-def _render_source_band(context: ScheduleModeContext, process_label: str) -> None:
-    """「저장하지 않음」(머리 자리) · 출처 띠 · 「아직 일정에 넣지 않은 개조만」."""
+def _render_source_band(
+    context: ScheduleModeContext, process_label: str, *, manual_note: str = ""
+) -> None:
+    """「저장하지 않음」(머리 자리) · 출처 띠 · 「아직 일정에 넣지 않은 개조만」.
+
+    `manual_note` 는 계획이 건 입력 비가동(`manual_effect_band` — 없으면 빈 글자)이다."""
     with context.header_slot:
         st.caption(context.session_note)
     scenario_label = active_scenario_label()
@@ -774,6 +785,8 @@ def _render_source_band(context: ScheduleModeContext, process_label: str) -> Non
         + (f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)")
         + " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
     )
+    if manual_note:
+        band += f" · {manual_note}"
     upeh_percent = st.session_state.get(
         UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT
     )

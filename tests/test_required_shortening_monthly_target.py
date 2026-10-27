@@ -42,6 +42,7 @@ from test_required_shortening import (
 )
 
 from capa_simulation.services import simulation_cache
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.required_shortening import (
     LEVEL_COLUMN,
     STATUS_MET,
@@ -239,6 +240,7 @@ def _target_plan(
         cutoff=cutoff,
         months=MONTHS,
         today=ANCHOR,
+        manual_downtime=ManualDowntime(),
     )
     key = simulation_cache.required_shortening_target_cache_key(shortening_key, target)
     plan = simulation_cache.get_required_shortening_for_target(
@@ -277,6 +279,7 @@ def test_the_target_plan_cache_extends_the_tab_key_and_matches_a_fresh_plan(
         cutoff=cutoff,
         months=MONTHS,
         today=ANCHOR,
+        manual_downtime=ManualDowntime(),
     )
     assert key[0] == tab_key
     assert again_key == key

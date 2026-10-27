@@ -222,7 +222,7 @@ def test_migration_0025_reads_old_zones_as_dashed_left_and_starts_with_no_labels
         )
 
     repository = DuckDBEquipmentRepository(database)
-    assert repository.initialize() == (25, 27, 29, 31)
+    assert repository.initialize() == (25, 27, 29, 31, 32)
 
     (floor,) = repository.load_floor_layout_marks(*KEY)
     (fab,) = repository.load_fab_layout_marks()

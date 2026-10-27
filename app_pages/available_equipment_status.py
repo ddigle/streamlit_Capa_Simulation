@@ -1,6 +1,6 @@
-# Purpose: 가용설비 현황 두 탭(설비 마스터·Summary)과 설정·엑셀·CSV 팝업을 잇고 데모 경계를 둔다.
+# Purpose: 가용설비 현황 세 탭(설비 마스터·Summary·Preference)과 설정·CSV 팝업을 잇는다.
 
-"""가용설비 현황 — 탭 둘(2026-10-24 사용자 결정 — 두 탭 개편).
+"""가용설비 현황 — 탭 셋(2026-10-24 사용자 결정 — 두 탭 개편, 2026-10-27 셋째 탭 「Preference」).
 
 - ① **설비 마스터**(처음 여는 탭) — 설비 마스터 표(불러오기·칸 고치기·붙여넣기·한꺼번에 고치기)·
   작은 편집표 둘(기존 보유대수·비가동 일정)·오른쪽 칸(호기 상세·저장 전 변경·저장 이력) —
@@ -11,6 +11,13 @@
 - ② **Summary** — 안쪽 탭 「Main」(설비 조회)·「Static 대비 일정」(월별 비교). 안쪽 탭은 바깥
   Summary 블록 안에서 늘 부르고(위젯 값이 남아 사이드바가 읽는다), 본문 갈래는 바깥·안쪽이 함께
   열렸을 때만 돈다(`NestedTab`) — ① 을 보는 회차에 Main 탐색·Static 대비 일정 계산이 돌지 않는다.
+- ③ **Preference** — 공정 × 생산월 **입력 비가동 대수**(`components/manual_downtime_tab.py`, 설비
+  0032 공용 프로필). 행은 저장본의 공정, 열은 사이드바 조회기간의 달이다(조회기간 줄만 선다 —
+  `navigation` 의 `period_labels`). 넣은 대수는 실행 관리 쪽 설비 일정 기준 가용에서 빠진다
+  (공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·Space 필요 단축). 이 화면의 Summary 는 호기 일정
+  그대로다. 폼은 숨은 회차에도 그린다(적은 칸을 지킨다) — 코드 차례는 Summary 뒤·설비 마스터
+  앞이다(설비 마스터의 작은 편집표 `st.rerun()` 이 이 폼을 건너뛰지 않게). 가정 설비 시나리오에서는
+  잠근다(Cut-off 와 같은 E3).
 - 머리 끝 「설정」 단추 → 공정별 Cut-off 팝업(`equipment_settings_dialog`), 탭 ① 「엑셀·CSV로
   한꺼번에」 → 붙여넣기·CSV 팝업(`equipment_import_dialog` — 「편집본에 넣기」 까지). 두 팝업은 한
   열림 칸·한 호스트다. Static 대비 일정은 Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접
@@ -60,6 +67,7 @@ from capa_simulation.components.equipment_import_dialog import (
     withdraw_preview_on_new_visit,
 )
 from capa_simulation.components.equipment_scenario_status import (
+    MANUAL_DOWNTIME_LOCK_MESSAGE,
     PREFERENCE_LOCK_MESSAGE,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
@@ -72,6 +80,7 @@ from capa_simulation.components.equipment_settings_dialog import (
 )
 from capa_simulation.components.flash import render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.manual_downtime_tab import render_manual_downtime_tab
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
@@ -95,6 +104,7 @@ from capa_simulation.page_bootstrap import (
     load_page_context,
     no_demand_message,
     render_schema_ahead_warning,
+    selected_month_range,
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
@@ -109,6 +119,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.manual_downtime import period_months
 from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
@@ -235,7 +246,7 @@ sample_notice = st.empty()
 # 탭 둘(2026-10-24 사용자 결정): ① 설비 마스터(처음 여는 탭) ② Summary(안쪽 Main·Static 대비 일정).
 # 필요 단축 일정은 실행 관리 아래 별도 페이지(2026-10-18), Qual 마감 계산기는 그 화면 머리의 팝업,
 # 설비 시나리오는 시나리오 관리 › 설비 시나리오다.
-master_tab, summary_tab = stateful_tabs(EQUIPMENT_TABS, key=EQUIPMENT_TAB_KEY)
+master_tab, summary_tab, preference_tab = stateful_tabs(EQUIPMENT_TABS, key=EQUIPMENT_TAB_KEY)
 with summary_tab:
     # 안쪽 탭은 바깥이 숨어도 늘 부른다 — 위젯 값이 남아 사이드바(`app.active_condition_tab`)가
     # 읽는다.
@@ -497,6 +508,24 @@ with gap_tab:
                 downtime=dashboard_downtime,
                 counterfactual_spans=gap_counterfactual_spans,
             )
+
+
+with preference_tab:
+    # 숨은 회차에도 폼을 그린다(적은 칸이 버려지지 않게 — AGENTS 9장). 행은 지금 설비 시나리오
+    # 저장본의 공정(샘플 fleet 은 쓰지 않는다), 열은 사이드바 조회기간의 달이다.
+    preference_processes: list[str] = []
+    if latest_snapshot is not None:
+        snapshot_baseline, snapshot_equipment, _ = latest_snapshot.calculation_frames()
+        # 설비 마스터 `공정소분류` · 기존보유 `공정`(계산에 드는 공정과 같은 이름 공간).
+        preference_processes = processes_in(snapshot_equipment, snapshot_baseline)
+    render_manual_downtime_tab(
+        database_path=equipment_database_path,
+        snapshot_processes=preference_processes,
+        months=period_months(*selected_month_range()),
+        process_labels=process_labels,
+        owner_tab=preference_tab,
+        locked_reason=MANUAL_DOWNTIME_LOCK_MESSAGE if equipment_session.is_assumption else None,
+    )
 
 
 with master_tab:

@@ -30,6 +30,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
     build_monthly_equipment_contributions,
@@ -70,6 +71,7 @@ def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
         "c",
         plan.months,
         plan.today.isoformat(),
+        (),
         (),
     )
     keyed = simulation_cache.KeyedShorteningPlan(key, plan)
@@ -421,6 +423,7 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
             cutoff=cutoff,
             months=MONTHS,
             today=day,
+            manual_downtime=ManualDowntime(),
         )
         plan = simulation_cache.get_required_shortening(
             key,
@@ -481,6 +484,7 @@ def test_shortening_reads_the_demand_only_on_a_miss_and_follows_the_scenario_key
             cutoff=cutoff,
             months=MONTHS,
             today=today,
+            manual_downtime=ManualDowntime(),
         )
         return simulation_cache.get_required_shortening(
             key,

@@ -414,8 +414,12 @@ with pinned_connections(DUCKDB_PATH):
     # 세션의 활성 리비전, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 라 그 조건을 읽는 화면으로
     # 돌아오면 그대로 선다.
     reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
+    # 조회기간만 읽는 탭(가용설비 현황 「Preference」)은 시나리오 줄 없이 조회기간 줄만 세운다.
+    period_only_here = current_spec is not None and current_spec.reads_period_only_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
-    shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
+    shows_period = (reads_common_here or period_only_here) and (
+        current_spec is None or current_spec.reads_period
+    )
     # 설비 시나리오 줄은 공통 조건과 따로 선언한다(`PageSpec.equipment_scenario`·
     # `equipment_scenario_tabs`).
     # **여기서는 칸만 세운다** — 줄은 페이지가 `resolve_equipment_session` 뒤에 그린다. `app.py` 는

@@ -52,6 +52,12 @@ from capa_simulation.services.load_calculator import (
     split_editable_yield_rows,
     yield_to_edit_table,
 )
+from capa_simulation.services.manual_downtime import (
+    ManualDowntime,
+    ManualDowntimeKey,
+    manual_downtime_key,
+    manual_rows_for_process,
+)
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
@@ -254,9 +260,10 @@ def frame_digest(frame: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
-# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰).
+# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰, 입력 비가동
+# 칸).
 RequiredShorteningCacheKey = tuple[
-    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken
+    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken, ManualDowntimeKey
 ]
 
 
@@ -269,6 +276,7 @@ def required_shortening_cache_key(
     cutoff: pd.DataFrame,
     months: tuple[int, ...],
     today: date,
+    manual_downtime: ManualDowntime,
     upeh: UpehToken = NO_ASSUMPTION,
 ) -> RequiredShorteningCacheKey:
     """필요 단축 일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
@@ -278,9 +286,15 @@ def required_shortening_cache_key(
     있어 리비전 번호가 아니라 내용 지문이다. 오늘이 바뀌면 바닥(`max(구간 앞, 오늘)`)이 달라지므로
     날짜도 키에 든다.
 
-    끝 칸은 **UPEH 가정 토큰**(`upeh_assumption.UpehToken`)이다 — 공식 계획은 `()`. 가정의 배수는 늘
-    이 칸에서만 나온다(`required_shortening_plan_demand`). 이 키를 쓰는 CSV·진척 캐시는 키만으로
-    칸이 갈린다.
+    여덟째 칸은 **UPEH 가정 토큰**(`upeh_assumption.UpehToken`)이다 — 공식 계획은 `()`.
+    가정의 배수는 늘 이 칸에서만 나온다(`required_shortening_plan_demand`). 이 키를 쓰는
+    CSV·진척 캐시는 키만으로 칸이 갈린다.
+
+    끝 칸은 **입력 비가동 칸**(가용설비 현황 › Preference, `manual_downtime_key` — 계산할 달로 좁힌
+    0 아닌 칸 그 자체)이다. 계산은 이 칸에서 입력 비가동을 다시 세운다(`_shortening_plan`) —
+    키와 다른 칸이 계산에 들어올 길이 없고, 저장으로 그 달 칸이 바뀌면 새 키다. 프로필 version 은
+    싣지 않는다(조회기간 밖 칸만 바꾼 저장이 계산을 가르지 않게). **필수 인자**다 — 실행 쪽 가용을
+    내는 모든 키가 이 칸을 싣는다(빠뜨리면 mypy 가 잡는다).
     """
     return (
         scenario_key,
@@ -291,20 +305,27 @@ def required_shortening_cache_key(
         tuple(int(month) for month in months),
         today.isoformat(),
         upeh,
+        manual_downtime_key(manual_downtime.rows, months),
     )
 
 
 def with_upeh_token(
     key: RequiredShorteningCacheKey, token: UpehToken
 ) -> RequiredShorteningCacheKey:
-    """같은 입력에 UPEH 가정 토큰만 바꾼 키 — 설비 쪽 네 지문을 다시 내지 않는다."""
-    scenario_key, equipment, downtime, baseline, cutoff, months, today, _ = key
-    return (scenario_key, equipment, downtime, baseline, cutoff, months, today, token)
+    """같은 입력에 UPEH 가정 토큰만 바꾼 키 — 설비 쪽 네 지문·입력 비가동 칸을 다시 내지 않는다."""
+    scenario_key, equipment, downtime, baseline, cutoff, months, today, _, manual = key
+    return (scenario_key, equipment, downtime, baseline, cutoff, months, today, token, manual)
 
 
 def shortening_key_token(key: RequiredShorteningCacheKey) -> UpehToken:
     """계획 키의 UPEH 가정 토큰(공식이면 `()`)."""
     return key[7]
+
+
+def shortening_key_manual(key: RequiredShorteningCacheKey) -> ManualDowntimeKey:
+    """계획 키의 입력 비가동 칸(계산할 달로 좁힌 0 아닌 칸 — 없으면 `()`). 출처 띠가 「입력 비가동
+    반영」 을 적을지 이것으로 본다 — 계산이 쓴 바로 그 칸이다."""
+    return key[8]
 
 
 def assumed_required_equipment(
@@ -1842,7 +1863,7 @@ def _shortening_plan(
 ) -> ShorteningPlan:
     """공식·가정 계획 칸이 함께 쓰는 몸통. 소요대수는 **키의 토큰으로** 가정을 건 로더에서
     꺼낸다."""
-    _, equipment_digest, downtime_digest, _, _, months, today, token = cache_key
+    _, equipment_digest, downtime_digest, _, _, months, today, token, manual = cache_key
     demand = assumed_required_equipment(required_equipment, token)()
     span = span_date_range(months, cutoff) if months else None
     spans = (
@@ -1864,6 +1885,7 @@ def _shortening_plan(
         today=date.fromisoformat(today),
         levels=levels,
         spans=spans,
+        manual_downtime=manual,
     )
 
 
@@ -2615,8 +2637,10 @@ def load_required_shortening_for_target(
     )
 
 
-# (설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 공정)
-ProcessEquipmentTimelineCacheKey = tuple[str, str, str, str, tuple[int, ...], str]
+# (설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 공정, 그 공정의 입력 비가동 (달, 대수))
+ProcessEquipmentTimelineCacheKey = tuple[
+    str, str, str, str, tuple[int, ...], str, tuple[tuple[int, float], ...]
+]
 
 
 def process_equipment_timeline_cache_key(
@@ -2627,19 +2651,23 @@ def process_equipment_timeline_cache_key(
     cutoff: pd.DataFrame,
     months: Sequence[int],
     process: str,
+    manual_downtime: ManualDowntime,
 ) -> ProcessEquipmentTimelineCacheKey:
     """`get_process_equipment_timeline` 의 키. 네 표는 거르기 전 그대로의 내용 지문이다.
 
     **오늘은 넣지 않는다** — 구간·호기별 기여는 오늘을 보지 않는다. 필요 단축 일정 키를 이미
     만들었으면 `process_timeline_key_from_shortening` 이 지문을 다시 계산하지 않고 같은 키를 낸다.
+    끝 칸은 그 공정의 입력 비가동(달로 좁힌 칸) — ② 전월 대비가 그 칸을 뺀다.
     """
+    ordered = tuple(sorted({int(month) for month in months}))
     return (
         frame_digest(equipment),
         frame_digest(downtime),
         frame_digest(baseline),
         frame_digest(cutoff),
-        tuple(sorted({int(month) for month in months})),
+        ordered,
         str(process).strip(),
+        manual_rows_for_process(manual_downtime_key(manual_downtime.rows, ordered), process),
     )
 
 
@@ -2647,8 +2675,9 @@ def process_timeline_key_from_shortening(
     shortening_key: RequiredShorteningCacheKey, process: str
 ) -> ProcessEquipmentTimelineCacheKey:
     """필요 단축 일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
-    # 오늘·UPEH 가정 토큰은 넣지 않는다 — 설비 일정은 수요와 오늘을 보지 않는다.
-    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _, _ = (
+    # 오늘·UPEH 가정 토큰은 넣지 않는다 — 설비 일정은 수요와 오늘을 보지 않는다. 입력 비가동은 그
+    # 공정 칸만 싣는다.
+    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _, _, manual = (
         shortening_key
     )
     return (
@@ -2658,6 +2687,7 @@ def process_timeline_key_from_shortening(
         cutoff_digest,
         tuple(sorted({int(month) for month in months})),
         str(process).strip(),
+        manual_rows_for_process(manual, process),
     )
 
 
@@ -2678,7 +2708,13 @@ def get_process_equipment_timeline(
     공정 하나·그 공정 축만큼이라 작다. 단축 계획(오늘이 드는 것)은 따로 받아 `unit_events` 로
     겹친다. 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
     """
-    *_, months, process = cache_key
+    *_, months, process, manual = cache_key
     return build_process_equipment_timeline(
-        _equipment, _downtime, _baseline, _cutoff, process=process, months=months
+        _equipment,
+        _downtime,
+        _baseline,
+        _cutoff,
+        process=process,
+        months=months,
+        manual_downtime=manual,
     )

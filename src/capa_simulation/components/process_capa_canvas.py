@@ -18,7 +18,11 @@
    정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면
    「n대 더」 한 줄이다.
 4. **④ 호기별 비가동** — 비가동 한 행이 화살표 하나. 가용을 깎은 것만 진한 실선과 촉, 나머지는 흐린
-   점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」.
+   점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」. 축 안에 입력 비가동(가용설비 현황 ›
+   Preference — 공정 × 생산월 대수)이 있으면 구획 첫 줄이 「월별 비가동 대수(입력)」 이다 —
+   달마다 넣은 대수이고, 그 달 가용보다 커 0 에서 멈춘 칸은 「⚠」 와 경고색이다. ② 가용·전월
+   대비 「비가동」 은 이 몫을 이미 뺐다(호기별 비가동과 별도 손실). 호기 줄이 없는
+   공정(기존보유만)은 ② 아래에 선다.
 
 호기·Model 라벨에는 모듈 수를 적지 않는다(2026-10-22 사용자 요청) — 모듈 묶음은 풍선이
 밝힌다. ③ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ④ 풍선 첫 줄에 「· 모듈 N」과 화살표
@@ -153,6 +157,7 @@ from capa_simulation.services.equipment_contract import (
     STATUS_EXITED,
     STATUS_STOPPED,
 )
+from capa_simulation.services.manual_downtime import MANUAL_DOWNTIME_BAND, manual_units_text
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import (
     LENT_COLUMN,
@@ -185,6 +190,7 @@ from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.threshold_label import threshold_percent_label
 
 __all__ = [
+    "MANUAL_DOWNTIME_ROW_LABEL",
     "CUSTOMDATA_HOVER",
     "CUSTOMDATA_MONTH",
     "CUSTOMDATA_ROW",
@@ -199,6 +205,7 @@ __all__ = [
     "ROW_HEADER",
     "ROW_HOME_RATE",
     "ROW_LIMIT",
+    "ROW_MANUAL_DOWNTIME",
     "ROW_NOTE_PREFIX",
     "ROW_OWNED",
     "ROW_PRODUCT_PREFIX",
@@ -288,6 +295,9 @@ ROW_DYNAMIC_COMPARE: Final = "dynamic_compare"
 ROW_DYNAMIC_AVAILABLE: Final = "dynamic_available"
 ROW_DYNAMIC_DELTA: Final = "dynamic_delta"
 ROW_DYNAMIC_BALANCE: Final = "dynamic_balance"
+# ④ 첫 줄 「월별 비가동 대수(입력)」 — 축 안에 입력 비가동이 있을 때만 선다.
+ROW_MANUAL_DOWNTIME: Final = "manual_downtime"
+MANUAL_DOWNTIME_ROW_LABEL: Final = "월별 비가동 대수(입력)"
 ROW_UNIT_PREFIX: Final = "unit:"
 ROW_EXIT_PREFIX: Final = "exit:"
 ROW_ARROW_PREFIX: Final = "arrow:"
@@ -889,6 +899,10 @@ def _dynamic_rows(
     bridge = _by_month(dynamic.bridge, axis)
     target_text = _target_text(dynamic.target, axis)
     detail = f"참고 · 설비 DB · 환산대수 · 생산월(Cut-off {dynamic.cutoff_days}일)"
+    if any(
+        round(_number(bridge.get(month, {}).get("입력 비가동")) or 0.0, 9) > 0 for month in axis
+    ):
+        detail += f" · {MANUAL_DOWNTIME_BAND}"
     if not today_position.before and not today_position.after:
         detail += f" · 점선은 오늘({dynamic.today:%m.%d})"
     rows: list[_Row] = [_section_title_row(SECTION_DYNAMIC, detail, folded)]
@@ -936,6 +950,7 @@ def _dynamic_rows(
         else:
             before = _number(record.get("가용대수"))
             after = _number(record.get("단축후가용대수"))
+            removed = _number(bridge.get(month, {}).get("입력 비가동 반영")) or 0.0
             gap = _number(record.get("과부족"))
             gap_after = _number(record.get("단축후과부족"))
             target_units = _number(record.get("목표대수"))
@@ -955,6 +970,7 @@ def _dynamic_rows(
                 muted=past,
                 hover=(
                     f"{head} · 설비 일정 기준 가용 {_one(before)} (환산대수)"
+                    + (f"<br>입력 비가동 {_signed_one(-removed)} 반영" if removed > 0 else "")
                     + (f"<br>단축 후 {_one(after)}" if _changed(before, after) else "")
                 ),
             )
@@ -970,13 +986,20 @@ def _dynamic_rows(
             )
         bridge_record = bridge.get(month, {})
         change = _number(bridge_record.get("전월대비"))
+        manual_change = _number(bridge_record.get("입력 비가동 증감")) or 0.0
         delta.cells[index] = _Cell(
             text=_signed_one(change) if change is not None else _EMPTY,
             muted=past,
             hover=(
                 f"{head} · 전월 대비 {_signed_one(change)} = 신규 "
                 f"{_signed_one(_number(bridge_record.get('신규')) or 0.0)} · 비가동 "
-                f"{_signed_one(_number(bridge_record.get('비가동')) or 0.0)} · 정지·반출/이설 "
+                f"{_signed_one(_number(bridge_record.get('비가동')) or 0.0)}"
+                + (
+                    f"(입력 비가동 {_signed_one(manual_change)} 포함)"
+                    if round(manual_change, 9) != 0
+                    else ""
+                )
+                + " · 정지·반출/이설 "
                 f"{_signed_one(_number(bridge_record.get('반출이설')) or 0.0)}"
                 if change is not None
                 else f"{head} · 축 첫 달이라 전월 대비가 없습니다"
@@ -984,7 +1007,12 @@ def _dynamic_rows(
         )
     if SECTION_DYNAMIC not in folded:
         rows += [compare, available, delta, balance]
+    manual_row = _manual_downtime_row(axis, bridge, today_month)
     if not dynamic.has_units:
+        # 호기 줄이 없는 공정은 ④ 가 서지 않는다 — 입력 비가동 줄은 ② 아래에 둔다(② 를 접으면 함께
+        # 접는다).
+        if manual_row is not None and SECTION_DYNAMIC not in folded:
+            rows.append(manual_row)
         # ③·④ 가 서지 않는 공정의 까닭 — ② 를 접어도 남긴다(③·④ 자리의 글이다).
         rows.append(_note_row("no_units", "호기 일정 없음 — 기존보유만 있는 공정입니다"))
         return rows, 0, 0
@@ -1003,9 +1031,58 @@ def _dynamic_rows(
         )
     )
     if SECTION_DOWNTIME not in folded:
+        if manual_row is not None:
+            rows.append(manual_row)
         arrow_rows, hidden_arrow_units = _arrow_rows(axis, dynamic)
         rows += arrow_rows
     return rows, hidden_units, hidden_arrow_units
+
+
+def _manual_downtime_row(
+    axis: Sequence[int], bridge: Mapping[int, Mapping[str, object]], today_month: int
+) -> _Row | None:
+    """④ 첫 줄 「월별 비가동 대수(입력)」 — 축 안 어느 달에도 입력이 없으면 None(줄이 없다).
+
+    칸 글은 그 달에 넣은 대수(소수 둘째 자리까지)이고 빈 달은 비운다. 입력이 그 달 가용(기존보유 +
+    호기 가용)보다 커 가용이 0 에서 멈춘 칸은 「⚠」 와 경고색이다 — 풍선이 실제로 뺀 몫을 적는다.
+    """
+    entered = {month: _number(bridge.get(month, {}).get("입력 비가동")) or 0.0 for month in axis}
+    if not any(round(value, 9) > 0 for value in entered.values()):
+        return None
+    row = _Row(
+        ROW_MANUAL_DOWNTIME,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=MANUAL_DOWNTIME_ROW_LABEL,
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        label_hover=(
+            "가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동 대수(환산)<br>"
+            "호기별 비가동과 별도 손실 — ② 가용에서 이미 뺐습니다"
+        ),
+    )
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        value = entered[month]
+        if round(value, 9) <= 0:
+            row.cells[index] = _Cell(hover=f"{head} · 입력 비가동 없음")
+            continue
+        removed = _number(bridge.get(month, {}).get("입력 비가동 반영")) or 0.0
+        overdrawn = round(value - removed, 9) > 0
+        text = manual_units_text(value)
+        row.cells[index] = _Cell(
+            text=f"{text}⚠" if overdrawn else text,
+            muted=month < today_month and not overdrawn,
+            text_color=tokens.STATUS_WARNING if overdrawn else None,
+            hover=(
+                f"{head} · 입력 비가동 {text}대 — 가용에서 {_one(removed)} 뺌"
+                + (
+                    "<br>⚠ 그 달 가용보다 커 가용이 0 에서 멈췄습니다(넘친 만큼은 빼지 않음)"
+                    if overdrawn
+                    else ""
+                )
+            ),
+        )
+    return row
 
 
 def _compare_cell(

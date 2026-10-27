@@ -80,6 +80,9 @@ class ConditionTabs:
     labels: frozenset[str]
     # 조건 카드를 세우는 탭 라벨. 비워 두면(`None`) 카드가 있는 화면의 모든 탭이다.
     card_labels: frozenset[str] | None = None
+    # 공통 조건 가운데 **조회기간만** 읽는 탭 라벨(시나리오 줄은 세우지 않는다) — 가용설비 현황
+    # 「Preference」 의 입력 비가동 표는 조회기간의 달을 열로 쓰지만 시나리오를 읽지 않는다.
+    period_labels: frozenset[str] = frozenset()
     # 바깥 탭 라벨 목록(페이지가 이 차례로 그린다). 세션·기억 값이 이 밖이면 `first` 로
     # 본다(`SubTabs`). 비워 두면 거르지 않는다.
     tabs: tuple[str, ...] = ()
@@ -136,6 +139,12 @@ class PageSpec:
         if self.condition_tabs is None:
             return True
         return active_tab in self.condition_tabs.labels
+
+    def reads_period_only_on(self, active_tab: str | None) -> bool:
+        """지금 열린 탭이 공통 조건 가운데 조회기간만 읽는 탭인가(`ConditionTabs.period_labels`)."""
+        if self.condition_tabs is None:
+            return False
+        return active_tab in self.condition_tabs.period_labels
 
     def reads_equipment_scenario_on(self, active_tab: str | None) -> bool:
         """지금 열린 탭에서 이 화면이 설비 시나리오 줄을 세우는가."""
@@ -285,15 +294,17 @@ CONSTRAINT_SIMULATION = PageSpec(
     # 늘 사이드바에서 고른 설비 시나리오다(HOME 칸 방문의 공식 잠금을 잇지 않는다 — D6).
     equipment_scenario="session",
 )
-# 가용설비 현황의 탭(2026-10-24 사용자 결정 — 두 탭 개편). 바깥은 ① 「설비 마스터」(설비
-# 입력·편집·저장 이력 — 처음 여는 탭) ② 「Summary」(안쪽 탭 「Main」·「Static 대비 일정」 — 라벨
-# 글자는 개편 전 그대로). 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
-# 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다. 바깥 key 는 개편 전 그대로라 옛 기억
-# 값(「RawData」 등)은 라벨에 없어 `stateful_tabs` 가 무시하고 첫 탭을 연다.
+# 가용설비 현황의 탭(2026-10-24 사용자 결정 — 두 탭 개편, 2026-10-27 셋째 탭 「Preference」). 바깥은
+# ① 「설비 마스터」(설비 입력·편집·저장 이력 — 처음 여는 탭) ② 「Summary」(안쪽 탭 「Main」·「Static
+# 대비 일정」 — 라벨 글자는 개편 전 그대로) ③ 「Preference」(공정 × 생산월 입력 비가동 대수 — 공용
+# 설정). 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고, 그래서 라벨을
+# 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다. 바깥 key 는 개편 전 그대로라 옛 기억 값(「RawData」
+# 등)은 라벨에 없어 `stateful_tabs` 가 무시하고 첫 탭을 연다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
 EQUIPMENT_MASTER_TAB = ":material/table_rows: 설비 마스터"
 EQUIPMENT_SUMMARY_TAB = ":material/insights: Summary"
-EQUIPMENT_TABS = (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB)
+EQUIPMENT_PREFERENCE_TAB = ":material/tune: Preference"
+EQUIPMENT_TABS = (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB, EQUIPMENT_PREFERENCE_TAB)
 EQUIPMENT_SUMMARY_TAB_KEY = "equipment_summary_tab"
 EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 # 기준정보(Static) 가용대수와 설비 마스터 일정으로 낸 **설비 일정 기준** 가용대수를 맞대는 탭이다.
@@ -311,6 +322,8 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
         labels=frozenset({EQUIPMENT_GAP_TAB}),
         # `설비 조회 조건` 카드는 Summary › Main·Static 대비 일정에만 선다.
         card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB}),
+        # Preference 의 입력 비가동 표는 조회기간의 달이 열이다(시나리오는 읽지 않는다).
+        period_labels=frozenset({EQUIPMENT_PREFERENCE_TAB}),
         tabs=EQUIPMENT_TABS,
         sub=SubTabs(
             EQUIPMENT_SUMMARY_TAB,

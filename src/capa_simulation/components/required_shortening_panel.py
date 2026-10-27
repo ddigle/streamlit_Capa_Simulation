@@ -58,6 +58,7 @@ from streamlit.delta_generator import DeltaGenerator
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_board import (
     ShorteningHighlight,
@@ -93,6 +94,7 @@ from capa_simulation.components.shortening_source import (
     ShorteningDemand,
     ShorteningStop,
     load_official_shortening,
+    manual_downtime_for,
     shortening_filter_profile_or_default,
     shortening_month_options,
 )
@@ -124,6 +126,7 @@ from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.korean_particle import subject_particle, with_topic_particle
+from capa_simulation.services.manual_downtime import manual_effect_band, overdrawn_rows
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
@@ -185,6 +188,8 @@ _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
 # 공용 조회 조건 프로필에 남기는 출처 글.
 _MONTHS_SOURCE = "필요 단축 일정 조회 기간"
 _PROCESSES_SOURCE = "필요 단축 일정 공정 선택"
+# 입력 비가동 출처 줄에 이름을 적는 넘친 칸 수.
+_MANUAL_OVER_LIMIT = 5
 
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
 _LABEL_COLUMN_PX = 170
@@ -379,8 +384,19 @@ def _prepare(
         months = _render_month_range(month_options, profile=profile, database_path=database_path)
 
     try:
+        manual = manual_downtime_for(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        return ShorteningStop(
+            "error", f"입력 비가동 대수를 읽지 못했습니다 — {bootstrap_error_message(exc)}"
+        )
+    try:
         official = load_official_shortening(
-            demand, (baseline, equipment, downtime), cutoff, tuple(months), today
+            demand,
+            (baseline, equipment, downtime),
+            cutoff,
+            tuple(months),
+            today,
+            manual_downtime=manual,
         )
     except ValueError as exc:
         return ShorteningStop(
@@ -499,6 +515,7 @@ def _render_body(
     _render_unmatched(plan)
     _render_undated_notice(equipment, selected=scope if selected else None)
     _render_usage_notice(equipment, selected=scope if selected else None)
+    _render_manual_notice(plan, scope=scope, labels=labels)
     if not plan.processes:
         st.info(
             "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
@@ -862,6 +879,36 @@ def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | N
     notice = usage_exclusion_notice(excluded, processes=selected)
     if notice is not None:
         st.caption(f":material/filter_alt_off: {notice} 단축 후보에도 들지 않습니다.")
+
+
+def _render_manual_notice(
+    plan: ShorteningPlan, *, scope: Sequence[str], labels: ProcessLabels
+) -> None:
+    """입력 비가동(가용설비 현황 › Preference)을 뺀 계획이면 출처 한 줄.
+
+    「입력 비가동 반영(n칸 · 합 x대)」 이다. 보이는 범위(`scope`) 공정에 칸이 없으면 그리지 않는다.
+    그 달 가용보다 커 0 에서 멈춘 칸이 있으면 앞 몇 자리를 공정 표시명·달로 적는다."""
+    note = manual_effect_band(plan.manual_downtime, scope)
+    if not note:
+        return
+    over = overdrawn_rows(plan.manual_downtime)
+    over = over.loc[over["공정"].astype("string").isin(list(scope)).fillna(False).to_numpy()]
+    tail = ""
+    if not over.empty:
+        places = ", ".join(
+            f"{literal_markdown(labels.label(str(process)))} {month_label(int(month))}"
+            for process, month in zip(
+                over["공정"].head(_MANUAL_OVER_LIMIT),
+                over["생산계획년월"].head(_MANUAL_OVER_LIMIT),
+                strict=True,
+            )
+        )
+        more = f" 외 {len(over) - _MANUAL_OVER_LIMIT}칸" if len(over) > _MANUAL_OVER_LIMIT else ""
+        tail = f" ⚠ 그 달 가용보다 커 0 에서 멈춤: {places}{more}"
+    st.caption(
+        f":material/event_busy: {note} — 가용설비 현황 › Preference 의 공정 × 달 비가동 "
+        f"대수를 설비 일정 기준 가용에서 뺐습니다(호기별 비가동과 별도).{tail}"
+    )
 
 
 def _render_unmatched(plan: ShorteningPlan) -> None:

@@ -148,6 +148,11 @@ PREFERENCE_LOCK_MESSAGE = (
     "Cut-off 는 모든 설비 시나리오 공용입니다 — 공식 설비 시나리오에서 고칩니다. 지금은 가정 설비 "
     "시나리오를 보는 중이라 표를 잠갔습니다."
 )
+# 가용설비 현황 「Preference」 입력 비가동 대수도 모든 설비 시나리오 공용이다(Cut-off 와 같은 E3).
+MANUAL_DOWNTIME_LOCK_MESSAGE = (
+    "입력 비가동 대수는 모든 설비 시나리오 공용입니다 — 공식 설비 시나리오에서 고칩니다. "
+    "지금은 가정 설비 시나리오를 보는 중이라 표를 잠갔습니다."
+)
 
 
 def unscheduled_notice(count: int, *, official: bool = False) -> str | None:

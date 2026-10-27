@@ -268,6 +268,7 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "delete_shortening_baseline",
     ): STATE_CHANGE,
     (f"{_PARTS}/space_floor_list.py", "_write", "save_floor_states"): VERSION_CHECK,
+    (f"{_PARTS}/manual_downtime_tab.py", "_render_editor", "save_manual_downtime"): VERSION_CHECK,
 }
 
 

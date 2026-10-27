@@ -31,6 +31,7 @@ from test_required_shortening import (
 )
 
 from capa_simulation.services import simulation_cache
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_cutoff import prepare_process_cutoff
 from capa_simulation.services.process_equipment_timeline import (
     ARROW_COLUMNS,
@@ -797,6 +798,7 @@ def test_the_timeline_cache_keys_by_inputs_not_today_and_matches_a_fresh_build(
             cutoff=cutoff,
             months=MONTHS,
             process=process,
+            manual_downtime=ManualDowntime(),
         )
         return key, simulation_cache.get_process_equipment_timeline(
             key, equipment, stops, baseline, cutoff
@@ -816,6 +818,7 @@ def test_the_timeline_cache_keys_by_inputs_not_today_and_matches_a_fresh_build(
             cutoff=cutoff,
             months=MONTHS,
             today=day,
+            manual_downtime=ManualDowntime(),
         )
         assert simulation_cache.process_timeline_key_from_shortening(shortening_key, process) == key
 
@@ -838,7 +841,8 @@ def test_the_timeline_cache_keys_by_inputs_not_today_and_matches_a_fresh_build(
 
 
 def test_the_timeline_cache_key_moves_with_every_input() -> None:
-    """마스터 한 칸·비가동 한 줄·기존보유·Cut-off·달·공정 — 하나씩 바꾸면 키가 모두 서로 다르다.
+    """마스터 한 칸·비가동 한 줄·기존보유·Cut-off·달·공정·그 공정 입력 비가동 — 하나씩 바꾸면 키가
+    모두 서로 다르다. 다른 공정·조회기간 밖 달의 입력 비가동은 키를 가르지 않는다.
 
     키 튜플에서 원소 하나가 빠지면 그 입력이 바뀌어도 낡은 설비 일정이 적중한다.
     """
@@ -859,6 +863,7 @@ def test_the_timeline_cache_key_moves_with_every_input() -> None:
         "Cut-off": {"cutoff": later_cutoff},
         "달": {"months": MONTHS[:-1]},
         "공정": {"process": other_process},
+        "입력 비가동": {"manual_downtime": ManualDowntime(rows=((process, MONTHS[0], 0.5),))},
     }
     keys = {}
     for name, changes in variants.items():
@@ -869,10 +874,26 @@ def test_the_timeline_cache_key_moves_with_every_input() -> None:
             "cutoff": cutoff,
             "months": MONTHS,
             "process": process,
+            "manual_downtime": ManualDowntime(),
         }
         arguments.update(changes)
         keys[name] = simulation_cache.process_equipment_timeline_cache_key(**arguments)
     assert len(set(keys.values())) == len(variants), keys
+    unrelated = ManualDowntime(
+        rows=((other_process, MONTHS[0], 2.0), (process, MONTHS[-1] + 100, 1.0)), version=7
+    )
+    assert (
+        simulation_cache.process_equipment_timeline_cache_key(
+            equipment=equipment,
+            downtime=downtime,
+            baseline=baseline,
+            cutoff=cutoff,
+            months=MONTHS,
+            process=process,
+            manual_downtime=unrelated,
+        )
+        == keys["기준"]
+    )
 
 
 def test_a_cutoff_change_moves_the_cells_and_the_key() -> None:
@@ -890,6 +911,7 @@ def test_a_cutoff_change_moves_the_cells_and_the_key() -> None:
             cutoff=table,
             months=MONTHS,
             process=process,
+            manual_downtime=ManualDowntime(),
         )
         for table in (cutoff, later)
     }

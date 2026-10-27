@@ -50,6 +50,11 @@ from capa_simulation.persistence.floor_state_store import (
     read_floor_states,
     write_floor_states,
 )
+from capa_simulation.persistence.manual_downtime_store import (
+    read_manual_downtime,
+    read_manual_downtime_saves,
+    write_manual_downtime,
+)
 from capa_simulation.persistence.shortening_baseline_store import (
     baseline_name_exists,
     delete_baseline,
@@ -173,6 +178,11 @@ from capa_simulation.services.layout_overlay import (
     normalize_layout_overlay,
     overlay_unit_count,
     split_layout,
+)
+from capa_simulation.services.manual_downtime import (
+    ManualDowntime,
+    ManualDowntimeSave,
+    merge_visible_cells,
 )
 from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
@@ -2350,6 +2360,59 @@ class DuckDBEquipmentRepository:
             write_floor_states(connection, current, rows, source=source)
             outcome.wrote = True
         return current.version + 1
+
+    def load_manual_downtime(self) -> ManualDowntime:
+        """입력 비가동 대수(0032). 저장한 적이 없으면 `version` 0 의 빈 값(모든 칸 0)."""
+        with self._connect() as connection:
+            return read_manual_downtime(connection)
+
+    def load_manual_downtime_saves(self, *, limit: int = 20) -> tuple[ManualDowntimeSave, ...]:
+        """입력 비가동 대수 저장 이력 — 최근 것부터 `limit` 행."""
+        with self._connect() as connection:
+            return read_manual_downtime_saves(connection, limit=limit)
+
+    def save_manual_downtime(
+        self,
+        edited: Mapping[tuple[str, int], object],
+        *,
+        processes: Sequence[str],
+        months: Sequence[int],
+        expected_version: int | None,
+        saved_by: str = "",
+        note: str = "",
+    ) -> int | None:
+        """화면이 보인 범위(`processes` × `months`)의 칸을 갈아 쓴다. 그 밖의 저장 칸은 그대로다
+        (`merge_visible_cells`). 썼으면 새 version, 같은 내용이라 쓰지 않았으면 None — 화면은 그
+        version 을 제 저장 짝으로 적는다.
+
+        설비 리비전을 만들지 않는다 — 모든 설비 시나리오가 함께 쓰는 공용 현행값이다(결정 2).
+        `expected_version` 은 화면이 편집을 시작할 때 본 version 이다 — 쓰기 잠금 안에서 지금
+        version 과 다르면 아무것도 쓰지 않고 `ProfileVersionConflict` 를 올린다(None 은 대조하지
+        않는다 — 시험·스크립트). 대조가 먼저, 같은지 보기가 다음이다. 칸 값이 받을 수 없으면
+        쓰기 전에 `ValueError` 다. 저장자·메모는 머리와 이력 한 행에 남는다(앞뒤 공백을 뗀다).
+        """
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            require_profile_version(
+                connection,
+                "manual_downtime_profile",
+                expected_version,
+                label="입력 비가동 대수",
+                schema="equipment_ops",
+            )
+            current = read_manual_downtime(connection)
+            rows = merge_visible_cells(current.rows, edited, processes=processes, months=months)
+            if rows == current.rows:
+                return None
+            version = write_manual_downtime(
+                connection,
+                current,
+                rows,
+                saved_by=str(saved_by or "").strip(),
+                note=str(note or "").strip(),
+            )
+            outcome.wrote = True
+        return version
 
     def save_shortening_filter_months(
         self, start_month: object, end_month: object, *, source: str

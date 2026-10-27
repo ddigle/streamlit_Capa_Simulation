@@ -33,6 +33,8 @@ NEW_TABLES = (
     "equipment_schedule_layout_mark",
     "equipment_schedule_layout_label",
 )
+# 뒤 번호(설비 0032 — 입력 비가동 대수)가 함께 만드는 빈 표.
+LATER_TABLES = ("manual_downtime_profile", "manual_downtime", "manual_downtime_save")
 _EXPECTED_KEYS = {
     "equipment_schedule_layout_unit": ("schedule_revision_id", "unit_key"),
     "equipment_schedule_layout_mark": (
@@ -163,11 +165,17 @@ def test_a_database_at_0029_moves_nothing_and_reads_the_same(tmp_path: Path) -> 
     before = _table_counts(path)
     assert not set(NEW_TABLES) & set(before)
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION,)
+    # 뒤 번호 0032(입력 비가동 빈 표 셋)도 함께 걸린다 — 이 번호의 표가 아니라 셈에서 뺀다.
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 32)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == dict.fromkeys(NEW_TABLES, 0)
-    assert {table: count for table, count in after.items() if table not in NEW_TABLES} == before
+    assert {table: after[table] for table in LATER_TABLES} == dict.fromkeys(LATER_TABLES, 0)
+    assert {
+        table: count
+        for table, count in after.items()
+        if table not in NEW_TABLES and table not in LATER_TABLES
+    } == before
     with duckdb.connect(str(path), read_only=True) as connection:
         hashes = connection.execute(
             "SELECT DISTINCT layout_hash FROM equipment_ops.equipment_schedule_revision"

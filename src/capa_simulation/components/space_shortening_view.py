@@ -380,8 +380,14 @@ def load_space_layer(
         saved, sample=sample, show_sample=show_sample, has_snapshot=has_snapshot, today=today
     )
     try:
+        manual = shortening_source.manual_downtime_for(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        return ShorteningStop(
+            "error", bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
+    try:
         keyed = shortening_source.load_official_shortening(
-            demand, frames, cutoff, tuple(months), today
+            demand, frames, cutoff, tuple(months), today, manual_downtime=manual
         )
     except ValueError as exc:
         return ShorteningStop(
