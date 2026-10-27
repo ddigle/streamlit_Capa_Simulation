@@ -17,7 +17,7 @@ from capa_simulation.persistence import (
     ScenarioPreset,
 )
 from capa_simulation.services.month_filter import available_month_range
-from capa_simulation.services.reference_transformer import build_reference_tables
+from capa_simulation.services.reference_transformer import build_reference_tables_with_conflicts
 from capa_simulation.settings import CORE_DATA_CSV_PATH, DUCKDB_PATH, PROJECT_ROOT
 
 DEFAULT_SOURCE_CODE = "LOCAL-CORE-DATA-INITIAL"
@@ -138,7 +138,11 @@ def main() -> None:
         ]
     else:
         display_order = load_reference_tables(args.workbook.resolve())["RQ_DISPLAY_ORDER"]
-    reference_tables = build_reference_tables(core_data, display_order)
+    built = build_reference_tables_with_conflicts(core_data, display_order)
+    reference_tables = built.tables
+    if built.blank_cs.dropped:
+        # 화면 등록과 같은 규칙 — 막지 않고 빼되, 몇 행을 뺐는지는 알리고 리비전 메모에 남긴다.
+        print(built.blank_cs.notice())
     start_month, end_month = available_month_range(
         reference_tables["RQ_PKG_PLAN"],
         "RQ_PKG_PLAN",
@@ -167,10 +171,17 @@ def main() -> None:
         ScenarioPreset(start_month, end_month, processes),
         source_data=core_data,
         revision_name=args.revision_name,
-        note=(
-            "Core_Data.csv를 현재 RQ 경로 키 계약으로 재생성"
-            if existing
-            else "Core_Data.csv와 XLSB 표시순서의 일회성 DuckDB 초기 이관"
+        note=" · ".join(
+            part
+            for part in (
+                (
+                    "Core_Data.csv를 현재 RQ 경로 키 계약으로 재생성"
+                    if existing
+                    else "Core_Data.csv와 XLSB 표시순서의 일회성 DuckDB 초기 이관"
+                ),
+                built.blank_cs.memo(),
+            )
+            if part
         ),
     )
     release = repository.publish_official_revision(

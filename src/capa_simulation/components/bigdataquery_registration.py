@@ -72,6 +72,8 @@ from capa_simulation.services.korean_particle import with_object_particle
 
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
 REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
+# 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고. 성공 알림 바로 밑, 같은 칸에 선다.
+REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
@@ -164,7 +166,7 @@ def render_bigdataquery_registration(
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     st.subheader("BigDataQuery 시나리오 등록")
     # 등록 알림은 늘 서 있는 한 칸에 그린다 — 생기고 사라질 때 아래 폼·표의 자리가 밀리지 않게.
-    render_flash(REGISTRATION_FLASH_KEY)
+    render_flash(REGISTRATION_FLASH_KEY, REGISTRATION_DROP_FLASH_KEY)
 
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
@@ -644,6 +646,14 @@ def _save_scenario(
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
         "올렸습니다.",
     )
+    if prepared.blank_cs.dropped:
+        # 저장은 됐다 — 막지 않고 알린다. 같은 수가 리비전 메모에도 남는다.
+        queue_flash(
+            REGISTRATION_DROP_FLASH_KEY,
+            prepared.blank_cs.notice(),
+            kind="warning",
+            icon=":material/warning:",
+        )
     st.rerun()
 
 

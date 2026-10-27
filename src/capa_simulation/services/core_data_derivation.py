@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
@@ -81,7 +82,9 @@ ACTIVE_CORE_COLUMNS = (
 # 목표 등에서 뺀다). **여기 없는 코드는 등록을 막는다**(`reject_unmapped_cs_codes`) — 새 코드를 어느
 # 쪽으로 셀지는 업무 결정이라 조용히 한쪽으로 넣지 않는다. 사내 1월 시나리오에 새 코드 `CB` 가 와서
 # 「RQ_PKG_PLAN 업무 키에 null 또는 빈값이 있습니다: 양산구분」으로만 막혔다(2026-09-30).
-# 코드는 앞뒤 공백을 지우고 대문자로 맞춘 뒤 대조한다.
+# 코드는 앞뒤 공백을 지우고 대문자로 맞춘 뒤 대조한다. **CS 가 빈 행은 막지 않고 파생에서 뺀다**
+# (`derive_q_core_data` — 2026-10-27 사용자 결정). 코드가 없어 양산·ER 어느 쪽인지 정할 근거가 없고,
+# 그 행 때문에 시나리오 전체를 저장하지 못했다.
 #
 # 코드를 더할 때 볼 것 둘. 원천에서 그 코드가 계획 행(`계획기초정보여부=Y`)에만 붙고 경로 행은 다른
 # CS 면 부하가 `RQ_REQB`(키에 CS 가 있다)에 붙지 못해 「경로 없는 계획」으로 빠진다. `RQ_RUN_RATE`·
@@ -101,18 +104,60 @@ CS_PRODUCTION_CLASSES: Final[Mapping[str, str]] = MappingProxyType(
 UNMAPPED_CS_EXAMPLE_LIMIT: Final = 10
 
 
+@dataclass(frozen=True)
+class BlankCsDrop:
+    """CS 가 비어 양산구분(양산·ER)을 정할 수 없어 파생에서 뺀 원천 행 수.
+
+    `plan_rows` 는 그 가운데 계획 행(`계획기초정보여부 = Y` — PKG PLAN 에 실리는 행)이다. 등록
+    결과 알림(`notice`)과 리비전 메모(`memo`)가 같은 수를 쓴다. 원천 스냅샷(typed raw)에는 받은
+    행이 그대로 남는다 — 빼는 것은 RQ 표를 만드는 작업 프레임뿐이다.
+    """
+
+    rows: int = 0
+    plan_rows: int = 0
+
+    @property
+    def dropped(self) -> bool:
+        return self.rows > 0
+
+    def notice(self) -> str:
+        """등록 결과 알림 한 문장. 뺀 행이 없으면 빈 글."""
+        if not self.dropped:
+            return ""
+        return (
+            f"CS 가 빈 행 {self.rows:,}개(계획 {self.plan_rows:,}행)는 양산구분(양산·ER)을 정할 수 "
+            "없어 빼고 저장했습니다. 계산 표에서만 뺐고, 받은 원천 행(Admin Area 「원천 품질」)은 "
+            "그대로 남습니다."
+        )
+
+    def memo(self) -> str:
+        """리비전 메모에 붙이는 짧은 조각. 뺀 행이 없으면 빈 글."""
+        if not self.dropped:
+            return ""
+        return f"CS 빈 행 {self.rows:,}개(계획 {self.plan_rows:,}행) 뺌"
+
+
+@dataclass(frozen=True)
+class DerivedCoreData:
+    """RQ 파생용 작업 프레임과 그 프레임에서 뺀 CS 빈 행 수."""
+
+    frame: pd.DataFrame
+    blank_cs: BlankCsDrop
+
+
 def reject_unmapped_cs_codes(core: pd.DataFrame) -> None:
     """`CS_PRODUCTION_CLASSES` 에 없는 CS 코드가 있으면 코드별 행 수와 함께 막는다.
 
     막지 않으면 그 행의 양산구분이 비고, 첫 RQ 표의 업무 키 검사에서 「업무 키에 null 또는
     빈값이 있습니다: 양산구분」으로만 멈춰 어떤 코드 때문인지 알 길이 없었다(2026-09-30).
-    `build_q_core_data` 를 거친 프레임을 받는다. 계획 행(`계획기초정보여부 = Y`) 수를 따로 적는다
-    — PKG PLAN 에 실리는 행이다.
+    `build_q_core_data` 를 거친 프레임을 받는다 — CS 가 빈 행은 거기서 이미 빠져, 여기 남는 것은
+    값이 있는데 규칙에 없는 코드뿐이다. 계획 행(`계획기초정보여부 = Y`) 수를 따로 적는다 — PKG
+    PLAN 에 실리는 행이다.
     """
     unmapped = core["양산구분"].isna()
     if not bool(unmapped.any()):
         return
-    codes = core.loc[unmapped, "CS"].astype("string").fillna("").replace("", "(빈값)")
+    codes = core.loc[unmapped, "CS"].astype("string")
     plan = core.loc[unmapped, "계획기초정보여부"].astype("string").str.strip().eq("Y").fillna(False)
     counts = codes.value_counts()
     plan_counts = codes.loc[plan].value_counts()
@@ -130,17 +175,57 @@ def reject_unmapped_cs_codes(core: pd.DataFrame) -> None:
     )
 
 
-def build_q_core_data(
+def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
+    """CS 가 빈(NULL·빈 글자·공백뿐) 행을 빼고 그 수를 센다. 행 번호(index)는 그대로 둔다.
+
+    index 를 다시 매기지 않는 까닭: 충돌 보고서의 `원천행번호` 가 이 프레임의 index 로 원천 행을
+    가리킨다(`reference_conflicts`). CS 는 이미 앞뒤 공백을 지운 값을 받는다.
+
+    모든 행이 비었거나, 계획 행이 있었는데 그 계획 행이 모두 비면 막는다 — 빼고 나면 저장할 행이나
+    생산계획이 남지 않아 빈 시나리오가 된다.
+    """
+    blank = core["CS"].fillna("").eq("")
+    if not bool(blank.any()):
+        return core, BlankCsDrop()
+    plan = core["계획기초정보여부"].eq("Y").fillna(False)
+    dropped = BlankCsDrop(rows=int(blank.sum()), plan_rows=int((blank & plan).sum()))
+    if bool(blank.all()):
+        raise ValueError(
+            f"원천 {len(core):,}행의 CS 가 모두 비어 있어 양산구분(양산·ER)을 정할 수 없습니다 — "
+            "빼고 나면 저장할 행이 없어 저장하지 않았습니다. 원천의 CS 칸을 확인하세요."
+        )
+    if bool(plan.any()) and not bool((plan & ~blank).any()):
+        raise ValueError(
+            f"계획 행(계획기초정보여부 = Y) {dropped.plan_rows:,}행의 CS 가 모두 비어 있어 "
+            "양산구분(양산·ER)을 정할 수 없습니다 — 빼고 나면 생산계획이 남지 않아 저장하지 "
+            "않았습니다. 원천의 CS 칸을 확인하세요."
+        )
+    return core.loc[~blank].copy(), dropped
+
+
+def derive_q_core_data(
     source: pd.DataFrame,
     contract: CoreDataContract | None = None,
-) -> pd.DataFrame:
-    """Apply Q_Core_Data types, active columns, and derived columns."""
+) -> DerivedCoreData:
+    """`build_q_core_data` 와 같은 작업 프레임에 CS 가 비어 뺀 행 수를 함께 돌려준다.
+
+    등록 경로(`reference_transformer`)가 그 수를 결과 알림·리비전 메모로 올린다.
+    """
     normalized = normalize_core_data(source, contract)
     core = normalized.loc[:, list(ACTIVE_CORE_COLUMNS)].copy()
     # `normalize_core_data` 가 붙인 attrs(원천 dtype 78항목)는 컬럼 프로파일이 원본에서 읽는다.
     # 파생 프레임까지 들고 가면 pandas 가 연산마다 `__finalize__` 에서 deepcopy 한다 —
     # RQ 16표를 만드는 동안 5만 6천 회. 여기서 비운다. 원본(normalized)은 건드리지 않는다.
     core.attrs = {}
+    # CS 는 업무 키(RQ_PKG_PLAN·RQ_REQB)이기도 하다. 모든 표가 이 프레임에서 나오므로 여기서 한 번
+    # 맞추면 표 사이 조인이 같은 값을 본다. 원천 스냅샷(typed raw)은 그대로 둔다.
+    core["CS"] = core["CS"].astype("string").str.strip().str.upper()
+    # 계획 행 표시. `RQ_PKG_PLAN` 이 `Y` 를 글자 그대로 고르므로 ` y ` 로 온 계획 행이 말없이 빠지지
+    # 않게 여기서 맞춘다.
+    core["계획기초정보여부"] = core["계획기초정보여부"].astype("string").str.strip().str.upper()
+    # CS 가 빈 행은 아래 정규화(가장 많이 쓰인 `WF 구분` 표기 고르기 등)보다 먼저 뺀다 — 남는
+    # 행만으로 표기를 고르고 표를 만든다.
+    core, blank_cs = _drop_blank_cs_rows(core)
     # BigDataQuery can represent blanks in product names with underscores. Keep
     # the typed raw snapshot unchanged, but normalize the RQ business key before
     # any table is derived so every downstream join receives the same value.
@@ -156,19 +241,25 @@ def build_q_core_data(
     core["Area_Name"] = area_names
     core.loc[normalized_areas.eq("main").fillna(False), "Area_Name"] = "Main"
     core.loc[normalized_areas.eq("mi").fillna(False), "Area_Name"] = "MI"
-    # CS 는 업무 키(RQ_PKG_PLAN·RQ_REQB)이기도 하다. 모든 표가 이 프레임에서 나오므로 여기서 한 번
-    # 맞추면 표 사이 조인이 같은 값을 본다. 원천 스냅샷(typed raw)은 그대로 둔다.
-    core["CS"] = core["CS"].astype("string").str.strip().str.upper()
     core["양산구분"] = core["CS"].map(dict(CS_PRODUCTION_CLASSES)).astype("string")
-    # 계획 행 표시. `RQ_PKG_PLAN` 이 `Y` 를 글자 그대로 고르므로 ` y ` 로 온 계획 행이 말없이 빠지지
-    # 않게 여기서 맞춘다.
-    core["계획기초정보여부"] = core["계획기초정보여부"].astype("string").str.strip().str.upper()
     core["가용대수"] = core["설비보유"] - core["설비대여평가"]
     core["WF 구분"] = unify_case_variants(core["WF 구분"])
     # EDP-TSV 의 `Top` 을 `Top_e` 로 가른다. 원천에는 `Top_e` 가 없으므로 입력은 그대로
     # 받고 여기서 한 번만 바꾼다 — 아래로 내려가는 16개 RQ 표와 화면이 전부 같은 값을 본다.
     core = apply_edp_wf_division(core)
-    return core
+    return DerivedCoreData(frame=core, blank_cs=blank_cs)
+
+
+def build_q_core_data(
+    source: pd.DataFrame,
+    contract: CoreDataContract | None = None,
+) -> pd.DataFrame:
+    """Q_Core_Data 의 형·활성 컬럼·파생 컬럼을 입힌 작업 프레임. CS 가 빈 행은 빠져 있다.
+
+    뺀 행 수가 필요하면 `derive_q_core_data` 를 쓴다. 대조 스크립트도 이 함수를 지나므로 RQ 표와
+    같은 행 집합을 본다.
+    """
+    return derive_q_core_data(source, contract).frame
 
 
 def unify_case_variants(values: pd.Series) -> pd.Series:

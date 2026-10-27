@@ -246,7 +246,7 @@ def test_the_auto_registration_saves_like_the_manual_one(
         "PSM W41",
     )
     assert scenario.source_type == "BIGDATAQUERY"
-    assert BIGDATAQUERY_PIPELINE_VERSION == "bigdataquery-core-data-v5"
+    assert BIGDATAQUERY_PIPELINE_VERSION == "bigdataquery-core-data-v6"
     assert repository.load_source_row_count(scenario.scenario_id) == len(SEED_SOURCE)
 
 
@@ -455,6 +455,62 @@ def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
     release = repository.latest_official_release()
     assert release is not None
     assert release.note == "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
+
+
+def test_blank_cs_rows_are_dropped_and_named_in_the_run_log_apart_from_the_warning(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """자동 갱신도 화면 등록과 같이 CS 가 빈 행은 빼고 저장한다(2026-10-27 사용자 결정).
+
+    뺀 수는 리비전 1 메모 끝과 실행 기록 사유의 발행 줄 끝에 남고, 소요대수 밖 수요 경고와는
+    섞이지 않는다 — 「지금 실행」 결과가 사유를 다시 갈라 경고만 따로 띄운다.
+    """
+    _official_w40(repository)
+    frame = _source(blank_first_plan=True)
+    plans = frame.index[frame["계획기초정보여부"].eq("Y")]
+    routes = frame.index[frame["계획기초정보여부"].eq("N")]
+    frame.loc[plans[-1], "CS"] = pd.NA
+    frame.loc[routes[-1], "CS"] = "  "
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": frame},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage) == (STATUS_PUBLISHED, "done")
+    assert run.reason is not None
+    head, warning = runner.split_published_reason(run.reason)
+    assert head.startswith("공식 v2 발행 · W41 SIM-W41 · 자동 갱신 · ")
+    assert head.endswith(" · CS 빈 행 2개(계획 1행) 뺌")
+    assert warning.startswith("소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — ")
+    assert "CS 빈 행" not in warning
+    base = repository.load_revision(str(run.base_revision_id))
+    assert base.revision.note is not None
+    assert base.revision.note.endswith(
+        "상세 조회기간 2026-10-05 ~ 2026-10-15 · CS 빈 행 2개(계획 1행) 뺌"
+    )
+    assert base.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
+    assert repository.load_source_row_count(base.scenario.scenario_id) == len(SEED_SOURCE)
+
+
+def test_a_source_with_every_cs_blank_stops_at_registration_with_the_reason(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    _official_w40(repository)
+    frame = _source()
+    frame["CS"] = pd.NA
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": frame},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage) == (STATUS_ERROR, "register")
+    assert run.reason is not None and "CS 가 모두 비어" in run.reason
+    assert run.created_scenario_id is None
+    assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 
 def test_a_scheduled_day_runs_once_and_manual_runs_always_run(

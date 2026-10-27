@@ -128,7 +128,7 @@ from capa_simulation.services.bigdataquery_catalog_view import (  # noqa: E402
     format_registered_at,
     normalize_catalog,
 )
-from capa_simulation.services.core_data_derivation import build_q_core_data  # noqa: E402
+from capa_simulation.services.core_data_derivation import derive_q_core_data  # noqa: E402
 from capa_simulation.services.dashboard import (  # noqa: E402
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
@@ -2056,11 +2056,20 @@ def _wafer_route_section(
 def _with_raw_columns(
     core: pd.DataFrame, raw: pd.DataFrame, columns: Sequence[str]
 ) -> pd.DataFrame:
-    """파생 프레임이 떨어뜨린 원천 칸(`메이커`·`모델명` 등)을 행 순서 그대로 되붙인다."""
+    """파생 프레임이 떨어뜨린 원천 칸(`메이커`·`모델명` 등)을 행 번호(index)로 맞춰 되붙인다.
+
+    파생 프레임은 CS 가 빈 행을 빼되 원천 행 번호를 그대로 둔다 — 남은 행이 모두 원천에 있으면
+    붙인다.
+    """
     missing = [column for column in columns if column not in core and column in raw]
-    if not missing or not core.index.equals(raw.index):
+    if not missing or not _rows_in_raw(core, raw):
         return core
-    return core.assign(**{column: raw[column] for column in missing})
+    return core.assign(**{column: raw.loc[core.index, column] for column in missing})
+
+
+def _rows_in_raw(core: pd.DataFrame, raw: pd.DataFrame) -> bool:
+    """파생 프레임의 행 번호가 모두 원천에 있는가. CS 가 빈 행을 뺀 프레임도 참이다."""
+    return raw.index.is_unique and bool(core.index.isin(raw.index).all())
 
 
 def _pcb_section(raw: pd.DataFrame, core: pd.DataFrame, grain: Sequence[str]) -> list[str]:
@@ -2071,10 +2080,10 @@ def _pcb_section(raw: pd.DataFrame, core: pd.DataFrame, grain: Sequence[str]) ->
     ]
     if not _filled(raw, column):
         return [*lines, "- 원천 `PCB수(K매)` 가 비어 있다", ""]
-    if not core.index.equals(raw.index):
+    if not _rows_in_raw(core, raw):
         return [*lines, "- 원천과 파생 프레임의 행이 맞지 않아 건너뜀", ""]
     frame = core.loc[:, list(grain)].copy()
-    frame[column] = pd.to_numeric(raw[column], errors="coerce")
+    frame[column] = pd.to_numeric(raw.loc[core.index, column], errors="coerce")
     frame["생산수량"] = pd.to_numeric(core["생산수량"], errors="coerce")
     filled = frame.dropna(subset=[column])
     keys = list(grain)
@@ -2135,10 +2144,20 @@ def check_legacy(session: Session) -> list[str]:
         return [*lines, "- 원천 행이 없다", ""]
     contract = load_core_data_contract()
     try:
-        core = build_q_core_data(raw, contract)
+        derived = derive_q_core_data(raw, contract)
     except Exception as exc:  # 원천이 계약을 어기면 여기서 멈춘다
         notes.append(_note("8-2", f"파생 프레임 {_failure(exc)}"))
         return [*lines, f"- 파생 프레임을 만들지 못함 — {_failure(exc)}", ""]
+    core = derived.frame
+    # 등록과 같은 규칙으로 CS 가 빈 행은 파생 프레임에서 빠진다 — 대조는 RQ 표와 같은 행 집합을
+    # 본다.
+    lines.extend(
+        [
+            f"- CS 가 빈 원천 행 {derived.blank_cs.rows:,} (계획 {derived.blank_cs.plan_rows:,}) — "
+            "파생에서 뺐다(등록과 같은 규칙). 대조는 남은 행만 본다.",
+            "",
+        ]
+    )
     grain = legacy_grain(contract)
 
     lines.extend(

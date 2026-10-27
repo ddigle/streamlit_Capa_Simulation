@@ -15,6 +15,7 @@ from capa_simulation.io.core_data_source import (
     normalize_core_data,
     read_core_data_csv,
 )
+from capa_simulation.services.core_data_derivation import BlankCsDrop
 from capa_simulation.services.core_data_pipeline import (
     fetch_core_data_dataset,
     prepare_core_data_dataset,
@@ -275,12 +276,12 @@ def test_cs_codes_map_to_the_two_production_classes_after_trimming_and_casing() 
         # 규칙에 없는 새 코드는 코드 이름과 행 수(계획 행 수)를 알린다 — 사내 1월 시나리오의 `CB`
         # 가 이 문구 없이 막혔다(2026-09-30). CB 자체는 이제 규칙에 있다(양산).
         (["MP", "ZX", "ZX"], "`ZX` 2행(계획 2행)"),
-        # 빈 CS 도 같은 문구로 알린다.
-        (["MP", "", "ER"], "`(빈값)` 1행(계획 1행)"),
+        # 빈 CS 는 막지 않고 빼므로(2026-10-27) 함께 와도 규칙 밖 코드만 센다.
+        (["MP", "", "ZX", None, "  "], "`ZX` 1행(계획 1행)"),
     ],
 )
 def test_an_unmapped_cs_code_is_named_before_any_table_is_built(
-    codes: list[str], expected: str
+    codes: list[str | None], expected: str
 ) -> None:
     """예전에는 첫 표 검사에서 「업무 키에 null 또는 빈값이 있습니다: 양산구분」으로만 멈췄다."""
     source = pd.concat([_core_data_row()] * len(codes), ignore_index=True)
@@ -293,6 +294,114 @@ def test_an_unmapped_cs_code_is_named_before_any_table_is_built(
     message = str(caught.value)
     assert expected in message
     assert "MP, CS, CB, ER" in message
+    assert "업무 키에 null" not in message
+    assert "(빈값)" not in message
+
+
+def _blank_cs_source(codes: list[str | None], plan_flags: list[str]) -> pd.DataFrame:
+    """행마다 다른 달·CS·계획 표시를 단 원천. 키가 겹치지 않아 충돌 없이 표가 선다."""
+    source = pd.concat([_core_data_row()] * len(codes), ignore_index=True)
+    source["생산계획년월"] = [202608 + index for index in range(len(codes))]
+    source["CS"] = pd.array(codes, dtype="string")
+    source["계획기초정보여부"] = pd.array(plan_flags, dtype="string")
+    return source
+
+
+def test_rows_with_a_blank_cs_are_dropped_and_counted_instead_of_blocking() -> None:
+    """CS 가 빈 행(빈 글자·공백뿐·NULL)은 양산구분을 정할 수 없어 표에서 빼고 등록을 잇는다.
+
+    사내 원천에 CS 가 빈 행이 와서 양산구분이 비고 저장이 막혔다(2026-10-27 사용자 결정 — 그 행은
+    빼고 저장). 뺀 수와 그 가운데 계획 행 수는 결과 알림·리비전 메모로 올라가고, 원천 스냅샷에는
+    받은 행이 그대로 남는다.
+    """
+    source = _blank_cs_source(["MP", "", "  ", None, "ER"], ["Y", "Y", "N", "Y", "N"])
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    assert prepared.blank_cs == BlankCsDrop(rows=3, plan_rows=2)
+    tables = prepared.reference_tables
+    assert tables["RQ_PKG_PLAN"]["생산계획년월"].tolist() == [202608]
+    assert sorted(tables["RQ_REQB"]["생산계획년월"].tolist()) == [202608, 202612]
+    for name in ("RQ_PKG_PLAN", "RQ_UPEH", "RQ_RUN_RATE", "RQ_VITAL", "RQ_REQB"):
+        assert tables[name]["양산구분"].notna().all(), name
+        assert set(tables[name]["양산구분"]) <= {"양산", "ER"}, name
+    # 원천 스냅샷은 받은 그대로다 — 빼는 것은 표를 만드는 작업 프레임뿐이다.
+    assert len(prepared.source_data) == 5
+    assert prepared.source_data["CS"].isna().sum() == 1
+    assert prepared.blank_cs.notice().startswith(
+        "CS 가 빈 행 3개(계획 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+    )
+    assert prepared.blank_cs.memo() == "CS 빈 행 3개(계획 2행) 뺌"
+
+
+def test_without_a_blank_cs_nothing_is_dropped_or_said() -> None:
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=_core_data_row(),
+        ),
+        _display_order(),
+    )
+
+    assert prepared.blank_cs == BlankCsDrop()
+    assert not prepared.blank_cs.dropped
+    assert (prepared.blank_cs.notice(), prepared.blank_cs.memo()) == ("", "")
+
+
+def test_conflict_row_numbers_still_name_the_source_rows_after_a_blank_cs_drop() -> None:
+    """빼도 행 번호를 다시 매기지 않는다 — 충돌 보고서의 원천행번호가 받은 원천의 행을 가리킨다."""
+    source = pd.concat([_core_data_row()] * 3, ignore_index=True)
+    source["CS"] = pd.array([None, "MP", "MP"], dtype="string")
+    source.loc[2, "생산수량"] = 200.0
+
+    prepared = prepare_core_data_dataset(
+        CoreDataBatch(
+            simulation_code="SIM-001",
+            simulation_name="사내 조회 결과",
+            source_type="BIGDATAQUERY",
+            frame=source,
+        ),
+        _display_order(),
+    )
+
+    plan_conflicts = prepared.reference_conflicts.loc[
+        prepared.reference_conflicts["RQ테이블"].eq("RQ_PKG_PLAN")
+    ]
+    assert plan_conflicts["후보원천행번호"].tolist() == ["2 | 3"]
+    assert plan_conflicts["선택원천행번호"].tolist() == [2]
+    assert prepared.blank_cs == BlankCsDrop(rows=1, plan_rows=1)
+
+
+@pytest.mark.parametrize(
+    ("codes", "plan_flags", "expected"),
+    [
+        # 모든 행의 CS 가 비면 빼고 남는 행이 없다 — 빈 시나리오 대신 까닭을 알리고 막는다.
+        ([None, "", "  "], ["Y", "N", "N"], "원천 3행의 CS 가 모두 비어"),
+        # 경로 행은 남아도 계획 행이 모두 비면 생산계획이 남지 않는다.
+        ([None, " ", "MP"], ["Y", "Y", "N"], "계획 행(계획기초정보여부 = Y) 2행의 CS 가 모두 비어"),
+    ],
+)
+def test_a_blank_cs_drop_that_leaves_nothing_to_save_is_refused(
+    codes: list[str | None], plan_flags: list[str], expected: str
+) -> None:
+    source = _blank_cs_source(codes, plan_flags)
+
+    with pytest.raises(ValueError, match="CS 가 모두 비어") as caught:
+        build_reference_tables(source, _display_order())
+
+    message = str(caught.value)
+    assert expected in message
+    assert "저장하지 않았습니다" in message
     assert "업무 키에 null" not in message
 
 

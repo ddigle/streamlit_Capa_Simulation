@@ -874,7 +874,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 시드 생성 뒤 발행 전에 멈췄으면 다음 시작에서 발행만 복구한다. 공식버전 없는 사용자 시나리오는 발행하지 않는다.
 - `src/capa_simulation/scenario_registration.py` — BigDataQuery 원천을 리비전 1 시나리오로 저장하는 **세션 없는** 등록 길이다.
   - 화면 등록(`components/bigdataquery_registration.py`)과 자동 갱신이 같은 `save_bigdataquery_scenario` 를 불러 원천
-    메타·메모가 같은 꼴로 남는다. 세션 활성화와 프리셋은 부르는 쪽 몫이다.
+    메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은 부르는 쪽 몫이다.
 - `src/capa_simulation/auto_official_update_runner.py` — 공식버전 자동 갱신 한 회차를 세션 없이 돌리고 실행 기록에 남긴다.
   - 조회·시계·발행 뒤 정리는 주입받는다. 위험하면 발행하지 않고(`PUBLISH_SKIPPED` — 계산 실패·판정 가능 공정 0·발행 검사
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.
@@ -1115,8 +1115,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 후보(`select_candidate`)는 키워드가 맞고 주차(`W##`)가 더 크거나 같은 주차에서 더 늦게 생긴 코드다(생긴 시각 = 가장
     이른 원천 등록시각). 판정은 공정별 최저 원 확보율이 기준 **미만**이면 off 다(`falls_below_threshold`).
 - `src/capa_simulation/services/core_data_derivation.py` — 원천 78컬럼에서 RQ 파생용 정규화 작업 프레임을 만든다.
-  - CS → 양산구분은 `CS_PRODUCTION_CLASSES` 한 곳이고 규칙 밖 코드는 등록을 막는다(7장). `WF 구분` 의 표기 차이는 등록에서
-    한 표기로 맞추고(`unify_case_variants`) 계산 쪽 조인은 대소문자 무시로 바꾸지 않는다.
+  - CS → 양산구분은 `CS_PRODUCTION_CLASSES` 한 곳이고 규칙 밖 코드는 등록을 막는다(7장). CS 가 빈 행은 막지 않고
+    `derive_q_core_data` 가 빼며 그 수(`BlankCsDrop`)를 돌려준다 — `build_q_core_data` 는 그 프레임만 준다. `WF 구분` 의
+    표기 차이는 등록에서 한 표기로 맞추고(`unify_case_variants`) 계산 쪽 조인은 대소문자 무시로 바꾸지 않는다.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 첫 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 행 순서를 바꾸지 않는다.
 - `src/capa_simulation/components/monthly_table_base.py` — Plotly 월별 표가 공유하는 색·치수·글자 계산이다. 분류 칸 글자는
@@ -3210,6 +3211,10 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 비교는 기존 리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지
 않는다. 정확한 현재 구현은 두 모듈과 `docs/TODO.md`를 기준으로 한다.
 
+원천에서 CS 가 빈 행은 양산구분(양산·ER)을 정할 수 없어 등록 때 RQ 파생에서 빠진다(7장 — 2026-10-27 사용자 결정).
+그 계획 행의 생산수량은 `RQ_PKG_PLAN` 에 없으므로 부하량·소요대수·확보율 어디에도 들지 않고, 경로 행이면 그 경로가
+`RQ_REQB` 에 없다. 몇 행(계획 몇 행)을 뺐는지는 등록 결과 알림과 리비전 1 메모가 적는다.
+
 ### 대당 Capa
 
 ```text
@@ -3806,8 +3811,17 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   맞대는 함수는 한쪽에만 있는 공정을 목록(`static_only`·`dynamic_only`·`required_only`·`missing_cutoff`)으로 돌려주고
   화면이 드러낸다 — 조용히 떨어지면 GAP·부족이 이유 없이 커 보인다.
 - CS → 양산구분 규칙은 `core_data_derivation.CS_PRODUCTION_CLASSES` 한 곳이다(MP·CS·CB → 양산, ER → ER, 앞뒤 공백 제거·
-  대문자로 맞춘 뒤 매핑). 규칙 밖 코드는 등록을 막는다 — 새 코드를 어느 쪽으로 셀지는 업무 결정이다. 양산구분은
+  대문자로 맞춘 뒤 매핑). 값이 있는데 규칙 밖인 코드는 등록을 막는다 — 새 코드를 어느 쪽으로 셀지는 업무 결정이다. 양산구분은
   `양산`·`ER` 두 값만 둔다(HOME 은 `양산` 만 넣고 표준 목표·프리셋은 `ER` 만 빼서 세 번째 값은 화면끼리 어긋난다).
+- **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
+  저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 다른 정규화(`WF 구분` 표기 고르기 등)보다 먼저
+  뺀다. 행 번호(index)는 다시 매기지 않는다 — 충돌 보고서의 `원천행번호` 가 받은 원천 행을 가리킨다. 원천 스냅샷
+  (`raw_data.core_data`·컬럼 프로필·`source_row_count`·원천 코드 불변 해시)은 받은 행 그대로다. 뺀 행 수와 그 가운데 계획
+  행(`계획기초정보여부 = Y`) 수(`BlankCsDrop`)는 등록 경로마다 드러낸다 — BigDataQuery 등록 화면은 저장 알림 밑 경고,
+  리비전 1 메모 끝은 `CS 빈 행 n개(계획 m행) 뺌`(`scenario_registration.save_bigdataquery_scenario` 한 곳), 자동 갱신은
+  실행 기록 사유의 발행 줄 끝(소요대수 밖 수요 경고와 섞지 않는다), CSV 초기 이관 스크립트는 출력 한 줄과 메모다. 모든
+  행이 비거나 계획 행이 모두 비면 빈 시나리오 대신 까닭을 알리고 막는다. 대조 스크립트(`inspect_real_data_checks.py` 8-2·
+  `compare_legacy_results.py`)도 같은 프레임을 지나 뺀 수를 찍고, 원천 칸은 행 번호로 되붙인다.
 - 원천 `제품정보` 는 typed raw 에 그대로 두고, RQ 변환(`core_data_derivation`)에서 BigDataQuery 가 공백 대신 돌려주는
   언더바(`_`)를 공백으로 바꾼 뒤 연속 공백을 하나로 줄인다.
 - **RQ 업무 키의 값 충돌은 멈추지 않고 「값이 있는 첫 값」을 임시로 쓴다**(`reference_transformer`·

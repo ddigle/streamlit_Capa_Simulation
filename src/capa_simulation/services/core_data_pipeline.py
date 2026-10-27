@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -13,6 +13,7 @@ from capa_simulation.io.core_data_source import (
     CoreDataProvider,
     normalize_core_data,
 )
+from capa_simulation.services.core_data_derivation import BlankCsDrop
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.reference_conflicts import TEMPORARY_CONFLICT_RESOLUTION
 from capa_simulation.services.reference_transformer import (
@@ -30,12 +31,17 @@ CONFLICT_SUMMARY_COLUMNS = [
 
 @dataclass(frozen=True)
 class PreparedCoreDataset:
-    """One normalized source snapshot and its 16 derived reference tables."""
+    """정규화한 원천 스냅샷 하나와 그 16개 파생 기준정보 표.
+
+    `source_data` 는 받은 행 그대로이고, `blank_cs` 는 CS 가 비어 표에서만 뺀 행 수다 — 등록
+    경로가 결과 알림과 리비전 메모에 싣는다.
+    """
 
     batch: CoreDataBatch
     source_data: pd.DataFrame
     reference_tables: dict[str, pd.DataFrame]
     reference_conflicts: pd.DataFrame
+    blank_cs: BlankCsDrop = field(default_factory=BlankCsDrop)
 
 
 def prepare_core_data_dataset(
@@ -50,6 +56,7 @@ def prepare_core_data_dataset(
         source_data=normalized,
         reference_tables=build_result.tables,
         reference_conflicts=build_result.conflicts,
+        blank_cs=build_result.blank_cs,
     )
 
 
