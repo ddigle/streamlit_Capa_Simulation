@@ -63,16 +63,19 @@ def profile_version_caption(
     """공용 프로필 한 줄 캡션.
 
     `version == 0` 은 **한 번도 저장하지 않은 상태**라 버전 대신 `empty` 문구를 적는다.
-    저장된 뒤에는 `v{version} · [detail ·] source [· 저장시각] [· suffix]` 순으로 잇는다.
+    저장된 뒤에는 `v{version} · [detail ·] [source ·] [저장시각] [· suffix]` 순으로 잇는다.
     `detail` 은 출처 앞(「3개 공정」), `suffix` 는 맨 뒤(「공지 중」)에 붙는다. 출처는 사람이 적은
     메모일 수 있어 `literal_markdown` 으로 막는다(마크다운 자리에서 적은 글자 그대로 보인다).
+    출처가 비면(저장자·변경 메모를 모두 비운 저장) 그 자리를 건너뛴다 — 빈 토막을 이으면 구분자가
+    `v14 · · 2026-…` 처럼 겹친다.
     """
     if profile.version == 0:
         return f"{VERSION_CAPTION_PREFIX}없음{CAPTION_SEPARATOR}{empty}"
     parts = [f"v{profile.version}"]
     if detail is not None:
         parts.append(detail)
-    parts.append(literal_markdown(profile.source))
+    if profile.source.strip():
+        parts.append(literal_markdown(profile.source))
     if profile.updated_at is not None:
         parts.append(format(profile.updated_at, "%Y-%m-%d %H:%M"))
     if suffix is not None:

@@ -1964,6 +1964,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
   만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
   「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
+  빈 출처(저장자·메모를 모두 비운 저장 — 가용설비 현황 Preference 등)는 그 자리를 건너뛴다(구분자가 `· ·` 로 겹치지 않게).
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
     달만 미적용으로 알린다.
@@ -4948,7 +4949,10 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   확인용 앱의 stdout · stderr 를 파이프 하나로 받아 `CONSOLE_NEEDLES` 의 글이 든 줄 수만 본다(`ConsoleCounter` — 줄은 세고
   버리며 파일에도 쓰지 않는다. 경고 · 예외 문구에 이름이 실릴 수 있고, 사내 백그라운드가 스크립트를 죽여도 남는 것이 없어야
   한다). 7장 B 대행이 헤드리스로 못 센 칸은 항목으로 옮기고 사람만 볼 수 있는 칸만 사용자 몫으로 둔다. 길 여럿을 재는 항목은
-  길마다 따로 돌려(앞 길이 깨져도 다음 길의 시작 화면을 다시 연다) 한 길이 예외로 멈추면 그 칸만 `멈춤(종류)` 로 적는다. 확인용 앱은
+  길마다 따로 돌려(앞 길이 깨져도 다음 길의 시작 화면을 다시 연다) 한 길이 예외로 멈추면 그 칸만 `멈춤(종류)` 로 적는다. 편집표
+  (glide) 칸을 누를 때는 포인터를 칸 위로 옮긴 뒤 누른다 — `page.mouse.click` 은 포인터를 순간 이동해 같은 틈에 누르므로, 탭을 옮기거나
+  저장해 다시 그린 편집표의 첫 누름이 칸을 고르지 않고 이어 친 글자가 어디에도 들지 않는다(사람 손 경로 · 터치는 첫 누름에 고른다 —
+  2026-10-27 E2E, 가용설비 현황 Preference · HOME 판정 기준 표가 같다). 확인용 앱은
   `127.0.0.1` 에서만 듣고, 자식의
   `PYTHONPATH` 맨 앞에 이 저장소의 `src` 를 두며, 스크립트가 강제로 끝나도 남지 않게 Windows Job Object
   (Linux `PR_SET_PDEATHSIG`)로 묶는다. `tests/test_check_deploy_screens.py` 는 Playwright 없이 뼈대(경로
