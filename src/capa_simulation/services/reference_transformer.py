@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -13,7 +13,8 @@ from capa_simulation.io.core_data_source import (
     load_core_data_contract,
 )
 from capa_simulation.services.core_data_derivation import (
-    build_q_core_data,
+    BlankCsDrop,
+    derive_q_core_data,
     reject_unmapped_cs_codes,
 )
 from capa_simulation.services.display_order_editor import transform_display_order
@@ -26,10 +27,11 @@ from capa_simulation.services.reference_conflicts import (
 
 @dataclass(frozen=True)
 class ReferenceTableBuildResult:
-    """Derived RQ tables and non-blocking business-key conflict diagnostics."""
+    """파생 RQ 표, 멈추지 않는 업무 키 충돌 보고서, CS 가 비어 뺀 원천 행 수."""
 
     tables: dict[str, pd.DataFrame]
     conflicts: pd.DataFrame
+    blank_cs: BlankCsDrop = field(default_factory=BlankCsDrop)
 
 
 def build_reference_tables(
@@ -48,9 +50,11 @@ def build_reference_tables_with_conflicts(
 ) -> ReferenceTableBuildResult:
     """Build all RQ tables and collect conflicting business keys without stopping."""
     selected_contract = contract or load_core_data_contract()
-    core = build_q_core_data(source, selected_contract)
-    # 규칙 밖 CS 코드는 표를 만들기 전에 코드 이름과 함께 막는다 — 표 검사까지 가면 「양산구분이
-    # 비었다」로만 멈춘다.
+    # CS 가 빈 행은 여기서 이미 빠졌다 — 그 수는 등록 결과 알림·리비전 메모로 올라간다.
+    derived = derive_q_core_data(source, selected_contract)
+    core = derived.frame
+    # 값이 있는데 규칙 밖인 CS 코드는 표를 만들기 전에 코드 이름과 함께 막는다 — 표 검사까지 가면
+    # 「양산구분이 비었다」로만 멈춘다.
     reject_unmapped_cs_codes(core)
     conflict_records: list[dict[str, object]] = []
     tables = {
@@ -130,7 +134,7 @@ def build_reference_tables_with_conflicts(
         )
     )
     conflicts = conflict_report(conflict_records, business_key_columns)
-    return ReferenceTableBuildResult(tables=tables, conflicts=conflicts)
+    return ReferenceTableBuildResult(tables=tables, conflicts=conflicts, blank_cs=derived.blank_cs)
 
 
 def _rq_pkg_plan(

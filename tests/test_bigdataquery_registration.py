@@ -126,6 +126,27 @@ def test_both_steps_render_in_one_run() -> None:
     }
 
 
+def test_the_dropped_row_warning_stands_under_the_saved_notice() -> None:
+    """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 같은 알림 칸에 차례로 서고, 한 번만 그린다."""
+    from capa_simulation.components.flash import FlashNote
+
+    notice = (
+        "CS 가 빈 행 3개(계획 1행 · 경로 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+    )
+    app = _run(
+        **{
+            registration.REGISTRATION_FLASH_KEY: "「PSM W42」를 저장하고 r1을 올렸습니다.",
+            registration.REGISTRATION_DROP_FLASH_KEY: FlashNote(
+                "warning", notice, ":material/warning:"
+            ),
+        }
+    )
+
+    assert [item.value for item in app.success] == ["「PSM W42」를 저장하고 r1을 올렸습니다."]
+    assert notice in [item.value for item in app.warning]
+    assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
+
+
 CATALOG_FAILURE_SCRIPT = """
 import sys
 from datetime import date
@@ -632,11 +653,15 @@ class FakeProvider:
         self._registered_at = source_registered_at
 
     def fetch(self, simulation_code):
+        frame = build_builtin_seed_dataset().source_data.copy()
+        # 시험이 고른 행의 CS 를 비운다(행 번호 → 넣을 값). 사내 원천에 CS 가 빈 행이 온 꼴.
+        for index, value in st.session_state.get("__blank_cs__", {}).items():
+            frame.loc[int(index), "CS"] = value
         return CoreDataBatch(
             simulation_code=simulation_code,
             simulation_name=self._name,
             source_type="BIGDATAQUERY",
-            frame=build_builtin_seed_dataset().source_data.copy(),
+            frame=frame,
             source_registered_at=self._registered_at,
         )
 
@@ -707,6 +732,94 @@ def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Pat
         "DEMO_Final_Test",
         "DEMO_Wafer_Inspect",
     )
+    # CS 가 빈 행이 없으면 경고도 메모 조각도 없다.
+    assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
+
+
+def _registration_app(database: Path, blank_cs: dict[int, str | None]) -> AppTest:
+    """폼 값을 채우고 원천의 고른 행 CS 를 비운 채 화면 저장 경로를 한 번 돌린다."""
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__blank_cs__"] = blank_cs
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W42"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W42"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W42 (SIM-W42)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-10-26 09:00:00"
+    app.session_state[registration.FORM_NOTE_KEY] = "원천 PLAN 메모"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 10, 19)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 10, 27)
+    return app.run()
+
+
+def _registration_database(tmp_path: Path) -> Path:
+    """표시순서까지 채운 빈 저장소. 등록은 공용 표시순서를 읽는다."""
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import load_builtin_display_order
+
+    database = tmp_path / "registration.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    repository.initialize_global_display_order(load_builtin_display_order())
+    return database
+
+
+def test_rows_with_a_blank_cs_are_dropped_and_the_registration_still_saves(
+    tmp_path: Path,
+) -> None:
+    """사내 원천에 CS 가 빈 행이 와서 양산구분이 비고 저장이 막혔다(2026-10-27 사용자 결정).
+
+    그 행은 표에서 빼고 저장한다. 저장 알림 밑에 뺀 행 수(계획 행 수)를 경고로 띄우고, 같은 수를
+    리비전 메모 끝에 남긴다. 원천 스냅샷에는 받은 96행이 그대로 남는다(합성 시드 — 샘플 관측).
+    """
+    from capa_simulation.components.flash import FlashNote
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    database = _registration_database(tmp_path)
+    source = build_builtin_seed_dataset().source_data
+    plans = source.index[source["계획기초정보여부"].eq("Y")]
+    routes = source.index[source["계획기초정보여부"].eq("N")]
+    blank = {int(plans[-1]): None, int(routes[-1]): "   ", int(routes[-2]): ""}
+
+    app = _registration_app(database, blank)
+
+    assert not app.exception
+    assert not app.error
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    note = FlashNote(*app.session_state[registration.REGISTRATION_DROP_FLASH_KEY])
+    assert note.kind == "warning"
+    assert note.message.startswith(
+        "CS 가 빈 행 3개(계획 1행 · 경로 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+    )
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    assert snapshot.revision.note == (
+        "원천 PLAN 메모 · 상세 조회기간 2026-10-19 ~ 2026-10-27 · "
+        "CS 빈 행 3개(계획 1행 · 경로 2행) 뺌"
+    )
+    assert len(snapshot.tables["RQ_PKG_PLAN"]) == len(plans) - 1
+    assert snapshot.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
+    assert snapshot.tables["RQ_REQB"]["양산구분"].notna().all()
+    assert repository.load_source_row_count(scenario.scenario_id) == len(source)
+
+
+def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(
+    tmp_path: Path,
+) -> None:
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    database = _registration_database(tmp_path)
+    source = build_builtin_seed_dataset().source_data
+
+    app = _registration_app(database, dict.fromkeys(range(len(source))))
+
+    assert not app.exception
+    assert app.error and "CS 가 모두 비어" in app.error[0].value
+    assert registration.REGISTRATION_FLASH_KEY not in app.session_state
+    assert DuckDBScenarioRepository(database).list_scenarios() == []
 
 
 CD_PACKAGE_MISSING_SCRIPT = """

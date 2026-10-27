@@ -308,6 +308,9 @@ class _RunLog:
         self.stage = "claim"
         # 리비전 1 을 저장했으면 그 시나리오명. 발행까지 가지 못하고 끝나면 사유 끝에 적는다.
         self.registered_name: str | None = None
+        # 등록이 CS 가 빈 행을 빼고 저장했으면 그 수(`BlankCsDrop.memo`). 어느 결과로 끝나든 사유의
+        # 발행 줄 쪽 끝에 붙인다 — 소요대수 밖 수요 경고(`split_published_reason`)와 섞지 않는다.
+        self.blank_cs_memo = ""
 
     def advance(self, stage: str, **values: object) -> None:
         self.stage = stage
@@ -317,6 +320,10 @@ class _RunLog:
         self._repository.update_auto_official_update_run(self.run_id, values)
 
     def finish(self, status: RunStatus, reason: str, **values: object) -> None:
+        if self.blank_cs_memo:
+            head, warning = split_published_reason(reason)
+            head = f"{head.rstrip().rstrip('.')} · {self.blank_cs_memo}"
+            reason = f"{head}{_WARNING_SEPARATOR}{warning}" if warning else head
         if status != STATUS_PUBLISHED and self.registered_name is not None:
             note = REGISTERED_NOT_PUBLISHED_NOTE.format(
                 name=with_topic_particle(f"「{self.registered_name}」")
@@ -442,6 +449,7 @@ def _execute(
         base_revision_id=base.revision.revision_id,
     )
     log.registered_name = base.scenario.scenario_name
+    log.blank_cs_memo = prepared.blank_cs.memo()
 
     log.advance("judge")
     outcome = full_capacity_outcome(base.tables, base.tables)
@@ -480,6 +488,9 @@ def _execute(
         inherited_off_count=len(inherited),
     )
     log.note(auto_off_count=len(auto_off), inherited_off_count=len(inherited))
+    # 공식버전이 되는 리비전 2 와 발행 메모에도 CS 빈 행 조각을 잇는다 — 공식버전 목록·리비전 2 만
+    # 보는 사람도 원천 일부를 뺀 판인 줄 알게. 실행 기록 사유에는 `finish` 가 따로 붙인다.
+    saved_note = " · ".join(part for part in (memo, log.blank_cs_memo) if part)
     # 확보율이 있어 판정할 수 있는 포함 공정. `RQ_REQB` 에만 있고 확보율 행이 없는 공정은 B/N 에
     # 나오지 않으므로, 그것만 남으면 B/N 이 빈 공식버전이 된다.
     judged_included = [process for process in included if process in minimums]
@@ -504,7 +515,7 @@ def _execute(
         replace(base.preset, included_processes=included),
         revision_name=FILTERED_REVISION_NAME,
         parent_revision_id=base.revision.revision_id,
-        note=memo,
+        note=saved_note,
     )
     filtered_revision_id = filtered.revision.revision_id
     repository.record_auto_official_update_exclusions(
@@ -518,7 +529,7 @@ def _execute(
             repository,
             filtered,
             release_name=official_release_name(filtered.scenario.scenario_name),
-            note=memo,
+            note=saved_note,
             expected_latest_release_no=baseline.release_no,
         )
     except OfficialReleaseMoved as exc:

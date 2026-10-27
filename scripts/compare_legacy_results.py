@@ -14,9 +14,9 @@ DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로
 기준이다. 데이터셋 쪽(`ref_data`)에는 리비전 표의 사본을 더 적지 않는다(2026-10-06 사용자 결정 B3) —
 그 전에 만든 데이터셋에만 사본이 남아 있어 그쪽을 읽으면 새 데이터셋에서 빈 표가 된다.
 
-읽어 온 원시 행은 `build_q_core_data` 로 파생 프레임을 만든 뒤에 대조에 넘긴다.
+읽어 온 원시 행은 `derive_q_core_data` 로 파생 프레임을 만든 뒤에 대조에 넘긴다.
 기존 결과를 접는 단위가 `RQ_PKG_PLAN` 업무 키인데 그 키의 `양산구분` 이 파생 단계에서
-만들어지기 때문이다.
+만들어지기 때문이다. CS 가 빈 행은 등록과 같이 파생에서 빠지고, 그 수를 머리 줄에 찍는다.
 
 매 실행마다 **대조 후보 컬럼의 채움 상태**를 먼저 찍는다. 대조는 `COMPARISONS` 의 세 부하량
 (Wafer·Density·Chip)이다. 로컬 샘플은 `소요대수` 가 비어 있지만 그것은 업무 사실이 아니라 합성
@@ -39,7 +39,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from capa_simulation.io.core_data_source import load_core_data_contract  # noqa: E402
-from capa_simulation.services.core_data_derivation import build_q_core_data  # noqa: E402
+from capa_simulation.services.core_data_derivation import derive_q_core_data  # noqa: E402
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     COMPARISONS,
     compare_metric,
@@ -166,7 +166,8 @@ def main() -> int:
         raise SystemExit(f"데이터셋 {dataset_id} 의 원천 행이 없습니다.")
 
     contract = load_core_data_contract()
-    core = build_q_core_data(raw, contract)
+    derived = derive_q_core_data(raw, contract)
+    core = derived.frame
 
     calculated = {
         "WF수(매)": calculate_wafer_load(
@@ -178,7 +179,13 @@ def main() -> int:
         ),
     }
 
-    print(f"데이터셋 {dataset_id} · 리비전 1 {revision_id} · 원천 {len(core):,}행")
+    print(
+        f"데이터셋 {dataset_id} · 리비전 1 {revision_id} · 원천 {len(raw):,}행"
+        f" · CS 가 빈 행 {derived.blank_cs.rows:,}(계획 {derived.blank_cs.plan_rows:,}"
+        f" · 경로 {derived.blank_cs.route_rows:,}) 뺌"
+        f" · 경로 일부 빠진 계획 {derived.blank_cs.plans_missing_routes:,}줄"
+        f" · 대조 {len(core):,}행"
+    )
     _report_candidate_columns(raw)
 
     frames: list[pd.DataFrame] = []

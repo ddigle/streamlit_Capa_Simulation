@@ -1095,6 +1095,44 @@ def test_route_wafer_values_are_split_by_the_column_that_carries_them(
     )
 
 
+def test_the_legacy_block_counts_blank_cs_rows_dropped_like_the_registration(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """원천에 CS 가 빈 행이 있으면 대조도 등록과 같이 그 행을 빼고 본다 — 뺀 수만 찍는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        for flag, value in (("Y", None), ("N", "  ")):
+            connection.execute(
+                'UPDATE raw_data.core_data SET "CS" = ? WHERE source_row_no = ('
+                "SELECT min(source_row_no) FROM raw_data.core_data "
+                'WHERE "계획기초정보여부" = ?)',
+                [value, flag],
+            )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        "- CS 가 빈 원천 행 2 (계획 1 · 경로 1 · 경로 일부 빠진 남은 계획 줄 0) — 파생에서 뺐다"
+        "(등록과 같은 규칙)." in output
+    )
+    assert "파생 프레임을 만들지 못함" not in output
+
+
+def test_raw_columns_rejoin_the_derived_frame_by_row_number_after_a_drop() -> None:
+    """파생 프레임은 CS 가 빈 행을 빼되 원천 행 번호를 그대로 둔다 — 원천 칸은 행 번호로 붙는다."""
+    raw = pd.DataFrame({"메이커": ["A", "B", "C", "D"]})
+    core = pd.DataFrame({"공정": ["P0", "P2", "P3"]}, index=[0, 2, 3])
+
+    joined = checks._with_raw_columns(core, raw, ["메이커"])
+
+    assert joined["메이커"].tolist() == ["A", "C", "D"]
+    assert checks._rows_in_raw(core, raw)
+    assert not checks._rows_in_raw(pd.DataFrame({"공정": ["P9"]}, index=[9]), raw)
+
+
 def test_every_formal_comparison_has_a_new_calculation() -> None:
     assert {metric.legacy_column for metric in COMPARISONS} == set(checks.LOAD_BUILDERS)
 
