@@ -90,6 +90,7 @@ from capa_simulation.services.availability_sheet import (
     SheetView,
 )
 from capa_simulation.services.constraint_simulation import DowntimeShare
+from capa_simulation.services.manual_downtime import manual_removed_text, manual_units_text
 from capa_simulation.services.process_capa_detail import (
     LENT_COLUMN,
     CommonFactors,
@@ -424,6 +425,17 @@ def test_a_nonzero_impact_is_never_written_as_zero(value: float) -> None:
     assert written_value(text) != 0
 
 
+@pytest.mark.parametrize("value", (*VALUES, 0.04, 0.0004, 0.00004, 4e-6, 6e-10, *LARGE))
+def test_a_nonzero_input_downtime_share_is_never_written_as_zero(value: float) -> None:
+    """④ 첫 줄 「가용에서 x 뺌」·② 가용 「입력 비가동 −x 반영」·② 가용 카드 「− 입력 비가동 x」 의
+    뺀 몫 글 — 0 이 아닌 몫(빈칸 문턱 `round(값, 9)` 위)은 0 이 아니게 적고, 소수 둘째 자리로 적히는
+    몫은 넣은 대수 글과 같다."""
+    text = manual_removed_text(value)
+    assert written_value(text) != 0
+    if round(value, 2) != 0:
+        assert text == manual_units_text(value)
+
+
 @pytest.mark.parametrize(("load", "required"), PAIRS)
 def test_the_effective_capacity_note_recomputes(load: float, required: float) -> None:
     """① 소요 카드 「원수요 부하량 L ÷ 실효 대당 Capa C」 는 카드의 「= 소요 대」 를 낸다
@@ -475,6 +487,26 @@ def test_the_availability_card_recomputes(owned: float, lent: float) -> None:
     card = availability_card(record, bridge)
     _assert_checked(card.formula, 1)
     _assert_checked("\n".join(card.notes), 1)
+
+
+@pytest.mark.parametrize("removed", (0.01, 0.04, 0.05, 0.46, 1.25, 2.0, 0.003, 0.0004))
+@pytest.mark.parametrize(("baseline", "units"), ((93.0, 1.3), (44.0, 3.54), (2.0, 0.0)))
+def test_the_availability_card_writes_the_input_share_and_recomputes(
+    baseline: float, units: float, removed: float
+) -> None:
+    """② 가용 카드 설비 일정 줄 「기존보유 b + 호기 u − 입력 비가동 x = 가용」 — 뺀 몫 x 는 ④ 첫
+    줄·② 가용 칸 풍선과 같은 글이고(0.01 을 「0.0」 으로 적지 않는다), 적힌 수로 다시 셈한다."""
+    record = {OWNED_COLUMN: 10.0, LENT_COLUMN: 0.0, "가용대수": 10.0}
+    bridge = {
+        "기존보유": baseline,
+        "호기 가용": units,
+        "입력 비가동 반영": removed,
+        "가용대수": baseline + units - removed,
+    }
+    note = availability_card(record, bridge).notes[-1]
+    assert f" − 입력 비가동 {manual_removed_text(removed)} " in note
+    assert written_value(manual_removed_text(removed)) != 0
+    _assert_checked(note, 1)
 
 
 @pytest.mark.parametrize(("available", "required"), PAIRS)

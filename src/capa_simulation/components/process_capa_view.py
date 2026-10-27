@@ -129,6 +129,7 @@ from capa_simulation.process_detail_state import (
     step_to_process,
 )
 from capa_simulation.services.display_order import PreparedDisplayOrder
+from capa_simulation.services.manual_downtime import manual_removed_text
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import (
     CAUSE_AVAILABILITY_MISMATCH,
@@ -1030,15 +1031,18 @@ def availability_card(
         units = _number(bridge.get("호기 가용"))
         total = _number(bridge.get("가용대수"))
         removed = _number(bridge.get("입력 비가동 반영")) or 0.0
+        # 뺀 몫은 ④ 첫 줄·② 가용 칸 풍선과 같은 글이다 — 다시 셈도 그 적힌 수로 한다.
+        removed_text = manual_removed_text(removed) if round(removed, 9) > 0 else ""
+        written_removed = written_value(removed_text) if removed_text else 0.0
         total_mark = equals_mark(
             _one(total),
             _one(
                 None
-                if baseline is None or units is None
-                else round(baseline, 1) + round(units, 1) - round(removed, 1)
+                if baseline is None or units is None or written_removed is None
+                else round(baseline, 1) + round(units, 1) - written_removed
             ),
         )
-        manual_text = f" − 입력 비가동 {_one(removed)}" if removed > 0 else ""
+        manual_text = f" − 입력 비가동 {removed_text}" if removed_text else ""
         notes.append(
             f"설비 일정 기준(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)}{manual_text} "
             f"{total_mark} {_one(total)} (환산)"

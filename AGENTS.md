@@ -2006,7 +2006,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (0 아닌 칸만의 (공정, 생산월, 환산 대수) 튜플 — 캐시에 실린다)·저장 이력 `ManualDowntimeSave` 와 규칙. 저장 입구
   `prepare_manual_downtime`(빈칸 = 0, 0 이상 소수, 상한 9999, `YYYYMM`), 보이는 범위만 갈아 쓰기 `merge_visible_cells`, 계산 키
   `manual_downtime_key`(계산할 달로 좁힌 칸 자체), 가용 빼기 `apply_manual_downtime`(그 달 가용에서 0 에서 멈춤 — `clamp_manual_units`
-  를 공정 Capa 상세 ② 전월 대비도 쓴다)과 출처 띠 글(`manual_effect_band`). Streamlit·DB 를 모른다.
+  를 공정 Capa 상세 ② 전월 대비도 쓴다)과 출처 띠 글(`manual_effect_band`), 대수 글 `manual_units_text`·뺀 몫 글
+  `manual_removed_text`(공정 Capa 상세 세 곳이 같은 글을 쓴다 — 6장 「입력 비가동 대수」). Streamlit·DB 를 모른다.
 - `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
   `FloorStates`(비활성 층만의 (동, 층, 사유) 행 — 사유는 직접 적은 글이고 옛 코드 `UNUSED` 사용 안 함·`NOT_LINE` 생산라인
   아님도 그대로 둔다, 2026-10-26 결정)와 규칙. 저장 입구 `prepare_floor_states`(30개 층, 빈 값 = 사용, 사유는
@@ -3686,7 +3687,10 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   현황 Summary › Main(호기 현황)·Static 대비 일정의 `호기 목록`·호기 필터 시트(호기 단위 값). 대수 축(`Dynamic가용대수`)은
   그대로이고 환산 축에서만 뺀다.
 - 공정 Capa 상세 ② 전월 대비 「비가동」 은 그 달 뺀 몫의 증감을 품고(풍선 「입력 비가동 ±x 포함」), ④ 첫 줄 「월별 비가동
-  대수(입력)」 이 달마다 넣은 대수를 보인다(축 안에 입력이 있을 때만 — 넘친 칸은 「⚠」). ② 「비가동 영향」 은 그 달 뺀 몫
+  대수(입력)」 이 달마다 넣은 대수를 보인다(축 안에 입력이 있을 때만 — 넘친 칸은 「⚠」). 그 칸 풍선 「가용에서 x 뺌」·② 가용
+  칸 풍선 「입력 비가동 −x 반영」·산출 근거 ② 가용 카드 「− 입력 비가동 x」 는 뺀 몫을 같은 글로 적는다(`manual_removed_text` —
+  넣은 대수 글과 같은 소수 둘째 자리, 0 이 아닌 몫은 0 이 아니게 적힐 때까지 한 자리씩 더 — 카드 식은 그 적힌 수로 다시
+  셈한다). ② 「비가동 영향」 은 그 달 뺀 몫
   (`입력 비가동 반영` — 넣은 대수가 아니다)을 호기 비가동 손실과 더해 대수·%p 로 보인다(`downtime_impact`). 필요 단축
   일정·제약 시뮬레이션 출처 띠는 계획이 건 칸이 있을 때 「입력 비가동 반영(n칸 · 합 x대[ · 가용 넘침 k칸])」 을 붙인다.
 
