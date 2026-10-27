@@ -2619,11 +2619,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     당긴 호기는 ③ 흐린 줄이다.
   - ② 「비가동 영향」(`ROW_DYNAMIC_IMPACT`, 전월 대비 바로 아래, 두 줄 36px)은 `downtime_impact` 를 칸으로만 옮긴다 — 첫 줄
     손실 「−1.8대」·둘째 줄 「−4.2%p」(한 줄이면 달 칸 100px 를 넘는다), 손실 0 은 빈칸, 소요 0 은 대수만, 0 이 아닌 작은 값이
-    「0.0」 으로 적히면 한 자리 더(`_nonzero_signed`). 풍선은 「비가동 없으면 확보율 X% → 지금 Y% · 호기 비가동 −a대 + 입력 비가동
-    −b대」(0 인 쪽 뺌, 적힌 갈림의 합이 첫 줄과 다르면 갈림 앞 「≈」)이고 줄 이름 칸 풍선(`IMPACT_LABEL_HOVER`)이 있다.
+    0 으로 적히면 0 이 아니게 적힐 때까지 한 자리씩 더(`_nonzero_signed` — 빈칸 문턱 `round(값, 9)` 까지). 풍선은 「비가동
+    없으면 확보율 X% → 지금 Y% · 호기 비가동 −a대 + 입력 비가동 −b대」(0 인 쪽 뺌)이고 줄 이름 칸 풍선(`IMPACT_LABEL_HOVER`)이
+    있다. 두 식은 결과(첫 줄 %p·대수)가 앞 줄에 있는 등호 없는 식이라 적힌 Y − X 가 %p 와, 적힌 갈림의 합이 대수와 다를 때만
+    그 식 앞에 「≈」 다(X·Y 를 따로 반올림하면 %p 와 0.1 어긋난다 — 2026-10-27 리뷰, 무작위 칸의 약 4분의 1).
   - 풍선의 식(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」·가정 소요 「공식 ÷ f」, ② 목표
-    과부족 「가용 − 목표대수」)은 칸 자릿수 인수로 다시 셈해 어긋나면 「≈」 다(`formula_text.equals_mark`). 두 과부족 식 줄은
-    결과가 앞 줄이고 등호가 없어 어긋날 때만 줄 앞에 둔다.
+    과부족 「가용 − 목표대수」·비가동 영향 「X% → Y%」·「호기 −a + 입력 −b」)은 칸 자릿수 인수로 다시 셈해 어긋나면 「≈」
+    다(`formula_text.equals_mark`). 두 과부족 식 줄과 비가동 영향 두 식은 결과가 앞 줄이고 등호가 없어 어긋날 때만 식 앞에
+    둔다(검산 그물 `tests/test_formula_text.py`).
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다

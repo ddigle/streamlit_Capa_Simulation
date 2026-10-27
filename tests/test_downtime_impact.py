@@ -337,14 +337,38 @@ def test_a_split_that_does_not_add_up_as_written_gets_the_approx_mark() -> None:
     assert f"비가동 영향 {MINUS}1.7대" in hover
     assert f"≈ 호기 비가동 {MINUS}0.8대 + 입력 비가동 {MINUS}0.8대" in hover
     exact = _hovers(_canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6})), ROW_DYNAMIC_IMPACT)
-    assert "≈" not in exact[MONTHS[0]]
+    assert f"· 호기 비가동 {MINUS}1.2대 + 입력 비가동 {MINUS}0.6대" in exact[MONTHS[0]]
+    assert "≈ 호기" not in exact[MONTHS[0]]
 
 
 def test_a_tiny_loss_is_not_written_as_zero() -> None:
-    """하루치 손실 × 작은 환산비(0.003대)도 「0.0」 이 아니라 자리를 늘려 적는다."""
+    """하루치 손실 × 작은 환산비(0.003대)도 「0.0」 이 아니라 자리를 늘려 적는다.
+    0.0004대(소요 10)는 셋째 자리에서도 0 이라 0 이 아닐 때까지 늘린다 — 「0.00대」 가
+    아니다."""
     canvas = _canvas(dynamic=_impact_dynamic({1: 0.003}, {}))
     texts = [text for text, _ in _cell_lines(canvas, ROW_DYNAMIC_IMPACT)[1]]
     assert texts[0] == f"{MINUS}0.003대"
+
+    tiny = _canvas(dynamic=_impact_dynamic({2: 0.0004}, {}, plan={2: (10.0, 9.0)}))
+    assert [text for text, _ in _cell_lines(tiny, ROW_DYNAMIC_IMPACT)[2]] == [
+        f"{MINUS}0.0004대",
+        f"{MINUS}0.004%p",
+    ]
+    hover = _hovers(tiny, ROW_DYNAMIC_IMPACT)[MONTHS[2]]
+    assert hover.endswith(f" · 호기 비가동 {MINUS}0.0004대")
+
+
+def test_a_rate_pair_that_does_not_recompute_as_written_gets_the_approx_mark() -> None:
+    """소요 100 · 가용 98.46 · 손실 6.48 — 적힌 확보율 짝 98.5 − 104.9 는 −6.4 인데 첫 줄은 −6.5%p
+    다(따로 반올림). 짝 앞에 「≈」. 셈이 맞는 짝(104.0% → 100.0% · −4.0%p)은 앞붙임이 없다."""
+    canvas = _canvas(dynamic=_impact_dynamic({0: 6.48}, {}, plan={0: (100.0, 98.46)}))
+    first, second = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[0]].split("<br>")
+    assert first.endswith(f"비가동 영향 {MINUS}6.5대 · {MINUS}6.5%p")
+    assert second.startswith("≈ 비가동 없으면 확보율 104.9% → 지금 98.5% · ")
+    exact = _canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6}, plan={0: (45.0, 45.0)}))
+    assert (
+        _hovers(exact, ROW_DYNAMIC_IMPACT)[MONTHS[0]].split("<br>")[1].startswith("비가동 없으면")
+    )
 
 
 def test_past_months_are_muted_in_the_impact_row() -> None:

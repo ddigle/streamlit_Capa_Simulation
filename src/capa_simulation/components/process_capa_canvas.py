@@ -72,7 +72,9 @@ UPEH 와 무관하다.
 **풍선의 식**(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」, UPEH 가정
 소요 「공식 ÷ f」, ② 목표 과부족 「가용 − 목표대수」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한
 값이 결과와 다르면 「=」 대신 「≈」 다(`formula_text.equals_mark` — 근거 패널 ③·④ 와 같은 길). 두
-과부족 식 줄은 결과가 앞 줄에 있고 등호가 없어 어긋날 때만 식 앞에 「≈」 를 둔다.
+과부족 식 줄과 ② 비가동 영향 풍선의 두 식(「비가동 없으면 확보율 X% → 지금 Y%」 — 첫 줄
+%p 를 낸다, 「호기 비가동 −a대 + 입력 비가동 −b대」 — 첫 줄 대수를 낸다)은 결과가 앞 줄에
+있고 등호가 없어 어긋날 때만 식 앞에 「≈」 를 둔다.
 
 순수 함수다. 세션·캐시·DB 를 보지 않는다. 그림 캐시·칸 선택 콜백·범례는 페이지가 맡는다.
 """
@@ -1118,8 +1120,10 @@ def _impact_cell(
 
     깎은 것이 없으면(손실 0) 빈칸이다. 첫 줄은 손실 대수 「−1.8대」, 둘째 줄은 확보율 영향
     「−4.2%p」 이고 소요가 0 이면(영향 NaN) 대수만 적는다. 풍선 둘째 줄은 「비가동 없으면 확보율
-    X% → 지금 Y%」 와 손실의 갈림(0 인 쪽은 뺀다)이다. 갈림 둘을 적힌 대로 더한 값이 첫 줄 대수와
-    다르면 갈림 앞에 「≈」 를 둔다(등호 없는 식 줄 — 과부족 풍선과 같은 길).
+    X% → 지금 Y%」 와 손실의 갈림(0 인 쪽은 뺀다)이다. 둘 다 결과가 첫 줄에 있는 등호 없는 식이라
+    적힌 수로 다시 셈한 글이 첫 줄과 다를 때만 그 식 앞에 「≈」 를 둔다(과부족 풍선과 같은 길) —
+    갈림 둘을 적힌 대로 더한 값이 첫 줄 대수와, 적힌 Y − X 가 첫 줄 %p 와 견줄 짝이다(X·Y 를 소수
+    첫째 자리로 따로 반올림하면 %p 와 0.1 어긋날 수 있다).
     """
     units_loss = _number(record.get("호기 비가동 손실")) or 0.0
     manual_loss = _number(record.get("입력 비가동 손실")) or 0.0
@@ -1127,8 +1131,9 @@ def _impact_cell(
     if round(loss, 9) <= 0:
         return _Cell(muted=past, hover=f"{head} · 비가동 영향 없음 — 가용을 깎은 비가동이 없습니다")
     points = _number(record.get("확보율 영향(%p)"))
+    points_number = _nonzero_signed(-points) if points is not None else ""
     units_text = f"{_nonzero_signed(-loss)}대"
-    points_text = f"{_nonzero_signed(-points)}%p" if points is not None else ""
+    points_text = f"{points_number}%p" if points_number else ""
     parts = [
         f"{name} {_nonzero_signed(-value)}대"
         for name, value in (("호기 비가동", units_loss), ("입력 비가동", manual_loss))
@@ -1149,7 +1154,17 @@ def _impact_cell(
     if points is None or rate is None or free_rate is None:
         detail = f"소요 0 — 확보율 영향 없음 · {split}"
     else:
-        detail = f"비가동 없으면 확보율 {free_rate:.1%} → 지금 {rate:.1%} · {split}"
+        free_text, rate_text = f"{free_rate:.1%}", f"{rate:.1%}"
+        pair = f"비가동 없으면 확보율 {free_text} → 지금 {rate_text}"
+        written_free, written_rate = written_value(free_text), written_value(rate_text)
+        recomputed_points = (
+            _nonzero_signed((written_rate - written_free) * 100)
+            if written_free is not None and written_rate is not None
+            else ""
+        )
+        if equals_mark(points_number, recomputed_points) == APPROX:
+            pair = f"{APPROX} {pair}"
+        detail = f"{pair} · {split}"
     hover = (
         f"{head} · 비가동 영향 {units_text}"
         + (f" · {points_text}" if points_text else "")
@@ -1159,16 +1174,25 @@ def _impact_cell(
     return _Cell(text=units_text, sub=points_text, muted=past, hover=hover)
 
 
-def _nonzero_signed(value: float) -> str:
-    """부호 있는 값(`signed_one`) — 0 이 아닌 값이 「0.0」 으로 적히면(0.005 아래) 한 자리 더
-    본다.
+_NONZERO_LAST_DIGITS: Final = 8
+"""`_nonzero_signed` 가 `signed_one` 에 넘기는 가장 큰 자릿수 — 그 자리로 0 이면 한 자리 더(아홉째)
+적어 `round(값, 9)` 가 0 이 아닌 값은 0 이 아니게 적힌다."""
 
-    하루치 손실이 환산비 작은 호기에 서면 0.003대일 수 있다 — 깎았는데 「0.0」 이면 빈칸 규칙(깎은
-    것이 없으면 빈칸)과 어긋나 읽힌다.
+
+def _nonzero_signed(value: float) -> str:
+    """부호 있는 값(`signed_one`) — 0 이 아닌 값이 0 으로 적히면 0 이 아니게 적힐 때까지 한
+    자리씩 더 본다.
+
+    하루치 손실이 환산비 작은 호기에 서면 0.003대일 수 있다 — 깎았는데 「0.0」·「0.00」 이면 빈칸
+    규칙(깎은 것이 없으면 빈칸)과 어긋나 읽힌다. 빈칸 판정과 같은 문턱(`round(값, 9)`)까지 보므로
+    빈칸이 아닌 칸은 늘 0 이 아닌 글이다(`signed_one` 은 `digits` + 1 자리까지 적어 아홉째 자리면
+    멈춘다).
     """
-    text = _signed_one(value)
-    if round(value, 9) != 0 and written_value(text) == 0:
-        return _signed_one(value, 2)
+    digits = 1
+    text = _signed_one(value, digits)
+    while round(value, 9) != 0 and written_value(text) == 0 and digits < _NONZERO_LAST_DIGITS:
+        digits += 1
+        text = _signed_one(value, digits)
     return text
 
 

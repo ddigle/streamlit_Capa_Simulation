@@ -6,12 +6,12 @@
   「42.19 ÷ 42 = 100.5%」·「2 ÷ 1.9389 = 103.2%」 그대로)·`written_value`·`parse_formula`.
 - **검산 그물** — 식을 내는 함수마다 값 격자(반올림 경계 x.xx5·x.xx49, 큰 수 54,698.63, 0 근처,
   음수 과부족)로 글을 만들고 `parse_formula` 로 읽어, 적힌 수로 다시 셈한 값이 적힌 결과의
-  자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 다섯(① 가용·
-  가정 소요·확보율·과부족, ② 목표 과부족)·근거 카드(① 원수요 부하량 ÷ 실효 대당 Capa·가정 소요,
-  ② 가용, ③ 판정·가정 소요·원인), 제약 시뮬레이션 계산표 풍선 셋·고른 달 계산 다섯 단계, 가용설비
-  현황 비교 시트 풍선 넷(Static 가용·보유·가용·GAP), 표준 목표 로직 분석 식 세 줄(화면 대본 —
-  페이지 파일은 import 하지 않는다). 결과가 앞 줄이나 다른 줄에 있고 식 줄에 등호가 없는 풍선은
-  결과를 붙여 읽는다.
+  자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 일곱(① 가용·
+  가정 소요·확보율·과부족, ② 목표 과부족·비가동 영향의 갈림 합과 확보율 짝)·근거 카드
+  (① 원수요 부하량 ÷ 실효 대당 Capa·가정 소요, ② 가용, ③ 판정·가정 소요·원인), 제약
+  시뮬레이션 계산표 풍선 셋·고른 달 계산 다섯 단계, 가용설비 현황 비교 시트 풍선 넷(Static
+  가용·보유·가용·GAP), 표준 목표 로직 분석 식 세 줄(화면 대본 — 페이지 파일은 import 하지
+  않는다). 결과가 앞 줄이나 다른 줄에 있고 식 줄에 등호가 없는 풍선은 결과를 붙여 읽는다.
 - **AST 가드** — UI 모듈(`app_pages/`·`components/`)의 식 꼴 f-string 마다 `formula_text` 를
   거치는지 본다. 식 꼴은 두 끼운 값 사이에 연산(` ÷ `·` × `·` − `·` + `)이 있고 등호(또는 등호
   자리의 끼운 값)가 값에 붙었거나, 결과가 앞 줄이고 식 줄에 등호가 없는 꼴(「과부족 {}<br>가용 {} −
@@ -67,6 +67,8 @@ from capa_simulation.components.process_capa_canvas import (
     _assumed_change,
     _available_hover,
     _balance_hover,
+    _impact_cell,
+    _nonzero_signed,
     _rate_hover,
     _target_balance_cell,
 )
@@ -332,6 +334,94 @@ def test_the_target_balance_balloon_marks_the_review_cases(
     assert f"<br>{APPROX} 가용 " in cell.hover
     exact = _target_balance_cell("<b>26.11</b>", 0.4, None, 47.6, 48.0, "", target=1.1, past=False)
     assert f"<br>가용 48.0 {MINUS} 목표대수 47.6 (환산대수)" in exact.hover
+
+
+def _impact_record(
+    units: float, manual: float, available: float, demand: float
+) -> dict[str, float]:
+    """`downtime_impact` 한 행과 같은 칸 — 손실 = 호기 + 입력, 확보율 = 가용 ÷ 소요."""
+    loss = units + manual
+    return {
+        "호기 비가동 손실": units,
+        "입력 비가동 손실": manual,
+        "비가동 손실": loss,
+        "소요대수": demand,
+        "가용대수": available,
+        "확보율": available / demand,
+        "비가동 없는 확보율": (available + loss) / demand,
+        "확보율 영향(%p)": loss / demand * 100,
+    }
+
+
+def _impact_lines(units: float, manual: float, available: float, demand: float) -> list[str]:
+    hover = _impact_cell(
+        "<b>26.11</b>", _impact_record(units, manual, available, demand), past=False
+    ).hover
+    return hover.split("<br>")
+
+
+@pytest.mark.parametrize(("units", "manual"), PAIRS)
+def test_the_impact_split_recomputes(units: float, manual: float) -> None:
+    """② 비가동 영향 풍선의 갈림 「호기 비가동 −a대 + 입력 비가동 −b대」 — 첫 줄 대수를
+    낸다. f-string 밖에서 「 + 」 로 이어 이름으로 넘기는 식이라 AST 가드가 보지 못한다. 적힌
+    수로 다시 셈해 어긋나면 갈림 앞이 「≈」 다."""
+    head, detail = _impact_lines(units, manual, 40.0, 45.0)
+    result = head.split(" · 비가동 영향 ", 1)[1].split("대", 1)[0]
+    split = detail.split(" · ", 1)[1]
+    if split.startswith(f"{APPROX} "):
+        return
+    formula = parse_formula(f"{split} = {result}")
+    assert len(formula.operands) == 2
+    assert formula.holds(), (detail, formula.value())
+
+
+@pytest.mark.parametrize(
+    ("loss", "available", "demand"),
+    [
+        (loss, available, demand)
+        for loss in (0.0049, 0.03, 0.46, 2.675, 6.48, 12.345)
+        for available, demand in PAIRS
+    ],
+)
+def test_the_impact_rate_pair_recomputes(loss: float, available: float, demand: float) -> None:
+    """② 비가동 영향 풍선의 「비가동 없으면 확보율 X% → 지금 Y%」 — 적힌 Y − X 가 첫 줄
+    %p 다. 결과가 다른 줄에 있는 등호 없는 식이라 AST 가드가 보지 못한다. 어긋날 때만(그때는
+    늘) 짝 앞이 「≈」 다."""
+    head, detail = _impact_lines(loss, 0.0, available, demand)
+    points = head.rsplit(" · ", 1)[1].removesuffix("%p")
+    pair = detail.split(" · ", 1)[0]
+    marked = pair.startswith(f"{APPROX} ")
+    free, rate = re.findall(r"[\d,.]+%", pair)
+    formula = parse_formula(f"{rate} {MINUS} {free} = {points}%")
+    assert formula.holds() != marked, (head, detail, formula.value())
+
+
+@pytest.mark.parametrize(
+    ("loss", "available", "demand", "free", "rate", "points"),
+    [
+        (6.48, 98.46, 100.0, "104.9%", "98.5%", "6.5"),  # 적힌 수로 6.4
+        (0.03, 44.0, 45.0, "97.8%", "97.8%", "0.1"),  # 적힌 수로 0.0
+    ],
+)
+def test_the_impact_rate_pair_marks_the_review_cases(
+    loss: float, available: float, demand: float, free: str, rate: str, points: str
+) -> None:
+    """리뷰가 짚은 꼴 — 짝 앞이 「≈」 다. 셈이 맞으면(1.8 ÷ 45 → 104.0% → 100.0% · −4.0%p) 앞붙임이
+    없다."""
+    head, detail = _impact_lines(loss, 0.0, available, demand)
+    assert head.endswith(f" · {MINUS}{points}%p")
+    assert detail.startswith(f"{APPROX} 비가동 없으면 확보율 {free} → 지금 {rate} · ")
+    exact = _impact_lines(1.2, 0.6, 45.0, 45.0)[1]
+    assert exact.startswith("비가동 없으면 확보율 104.0% → 지금 100.0% · 호기 비가동 ")
+
+
+@pytest.mark.parametrize("value", (*VALUES, 0.0004, 0.00004, 4e-6, 6e-10, *LARGE))
+def test_a_nonzero_impact_is_never_written_as_zero(value: float) -> None:
+    """② 비가동 영향의 대수·%p 글 — 0 이 아닌 값(빈칸 문턱 `round(값, 9)` 위)은 0 이 아니게
+    적는다."""
+    text = _nonzero_signed(-value)
+    assert text.startswith(MINUS)
+    assert written_value(text) != 0
 
 
 @pytest.mark.parametrize(("load", "required"), PAIRS)
