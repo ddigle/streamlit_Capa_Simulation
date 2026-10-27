@@ -162,7 +162,11 @@ from capa_simulation.services.equipment_contract import (
     STATUS_EXITED,
     STATUS_STOPPED,
 )
-from capa_simulation.services.manual_downtime import MANUAL_DOWNTIME_BAND, manual_units_text
+from capa_simulation.services.manual_downtime import (
+    MANUAL_DOWNTIME_BAND,
+    manual_removed_text,
+    manual_units_text,
+)
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import (
     LENT_COLUMN,
@@ -995,7 +999,11 @@ def _dynamic_rows(
                 muted=past,
                 hover=(
                     f"{head} · 설비 일정 기준 가용 {_one(before)} (환산대수)"
-                    + (f"<br>입력 비가동 {_signed_one(-removed)} 반영" if removed > 0 else "")
+                    + (
+                        f"<br>입력 비가동 {_MINUS}{manual_removed_text(removed)} 반영"
+                        if round(removed, 9) > 0
+                        else ""
+                    )
                     + (f"<br>단축 후 {_one(after)}" if _changed(before, after) else "")
                 ),
             )
@@ -1072,7 +1080,8 @@ def _manual_downtime_row(
     """④ 첫 줄 「월별 비가동 대수(입력)」 — 축 안 어느 달에도 입력이 없으면 None(줄이 없다).
 
     칸 글은 그 달에 넣은 대수(소수 둘째 자리까지)이고 빈 달은 비운다. 입력이 그 달 가용(기존보유 +
-    호기 가용)보다 커 가용이 0 에서 멈춘 칸은 「⚠」 와 경고색이다 — 풍선이 실제로 뺀 몫을 적는다.
+    호기 가용)보다 커 가용이 0 에서 멈춘 칸은 「⚠」 와 경고색이다 — 풍선이 실제로 뺀 몫을 적는다
+    (`manual_removed_text` — ② 가용 칸 풍선과 같은 글).
     """
     entered = {month: _number(bridge.get(month, {}).get("입력 비가동")) or 0.0 for month in axis}
     if not any(round(value, 9) > 0 for value in entered.values()):
@@ -1102,7 +1111,7 @@ def _manual_downtime_row(
             muted=month < today_month and not overdrawn,
             text_color=tokens.STATUS_WARNING if overdrawn else None,
             hover=(
-                f"{head} · 입력 비가동 {text}대 — 가용에서 {_one(removed)} 뺌"
+                f"{head} · 입력 비가동 {text}대 — 가용에서 {manual_removed_text(removed)} 뺌"
                 + (
                     "<br>⚠ 그 달 가용보다 커 가용이 0 에서 멈췄습니다(넘친 만큼은 빼지 않음)"
                     if overdrawn

@@ -37,6 +37,7 @@ from capa_simulation.components.process_capa_canvas import (
     CUSTOMDATA_MONTH,
     CUSTOMDATA_ROW,
     MANUAL_DOWNTIME_ROW_LABEL,
+    ROW_DYNAMIC_AVAILABLE,
     ROW_MANUAL_DOWNTIME,
 )
 from capa_simulation.services import simulation_cache
@@ -261,6 +262,32 @@ def test_the_fourth_section_gets_the_input_row_only_when_there_is_input() -> Non
     assert "0 에서 멈췄습니다" in hovers[second]
     assert "Preference" in _label_hovers(canvas)[ROW_MANUAL_DOWNTIME]
     assert MANUAL_DOWNTIME_ROW_LABEL == "월별 비가동 대수(입력)"
+
+
+def test_the_input_row_hover_writes_the_removed_share_like_the_available_hover() -> None:
+    """④ 첫 줄 칸 풍선의 뺀 몫은 작은 몫도 0 이 아니게, ② 가용 칸 풍선과 같은 수로 적는다.
+
+    2026-10-27 E2E — 0.04 를 넣으면 ④ 가 「입력 비가동 0.04대 — 가용에서 0.0 뺌」, 같은 달 ② 가용이
+    「입력 비가동 −0.04 반영」 이었다. 넘치지 않은 달은 뺀 몫 = 넣은 대수라 ④ 의 두 수가 같은
+    글이고(1.25 를 「1.2 뺌」 으로 적으면 덜 뺀 것처럼 읽힌다), 넘친 달의 작은 몫(가용 0.003 만
+    남음)도 0 이 아니게 적는다.
+    """
+    entered = {CANVAS_MONTHS[0]: 0.01, CANVAS_MONTHS[1]: 0.04, CANVAS_MONTHS[2]: 1.25}
+    overdrawn = CANVAS_MONTHS[3]
+    bridge = _manual_bridge({**entered, overdrawn: 2.0})
+    bridge.loc[bridge["생산계획년월"].eq(overdrawn), "입력 비가동 반영"] = 0.003
+    canvas = _canvas(dynamic=_dynamic(bridge=bridge))
+    hovers = {
+        (str(data[CUSTOMDATA_ROW]), int(data[CUSTOMDATA_MONTH])): str(data[CUSTOMDATA_HOVER])
+        for data, _, _ in _targets(canvas)
+    }
+    removed = {CANVAS_MONTHS[0]: "0.01", CANVAS_MONTHS[1]: "0.04", CANVAS_MONTHS[2]: "1.25"}
+    for month, text in removed.items():
+        assert f"입력 비가동 {text}대 — 가용에서 {text} 뺌" in hovers[(ROW_MANUAL_DOWNTIME, month)]
+        assert f"입력 비가동 −{text} 반영" in hovers[(ROW_DYNAMIC_AVAILABLE, month)]
+    assert "입력 비가동 2대 — 가용에서 0.003 뺌" in hovers[(ROW_MANUAL_DOWNTIME, overdrawn)]
+    assert "0 에서 멈췄습니다" in hovers[(ROW_MANUAL_DOWNTIME, overdrawn)]
+    assert "입력 비가동 −0.003 반영" in hovers[(ROW_DYNAMIC_AVAILABLE, overdrawn)]
 
 
 def test_the_bridge_hover_names_the_input_share_of_downtime() -> None:

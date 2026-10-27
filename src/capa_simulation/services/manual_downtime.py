@@ -51,6 +51,7 @@ __all__ = [
     "manual_downtime_digest",
     "manual_downtime_key",
     "manual_effect_band",
+    "manual_removed_text",
     "manual_rows_for_process",
     "manual_units_text",
     "merge_visible_cells",
@@ -378,10 +379,28 @@ def manual_effect_band(effect: pd.DataFrame, processes: Collection[str] | None =
     return f"{MANUAL_DOWNTIME_BAND}({len(rows)}칸 · 합 {manual_units_text(total)}대{tail})"
 
 
-def manual_units_text(value: float) -> str:
-    """대수 글 — 소수 둘째 자리까지, 끝 0 은 뗀다(1.50 → 1.5, 2.00 → 2)."""
-    text = f"{round(float(value), 2):.2f}".rstrip("0").rstrip(".")
+def manual_units_text(value: float, digits: int = 2) -> str:
+    """대수 글 — 소수 `digits`(기본 둘째) 자리까지, 끝 0 은 뗀다(1.50 → 1.5, 2.00 → 2)."""
+    text = f"{round(float(value), digits):.{digits}f}".rstrip("0").rstrip(".")
     return "0" if text in ("", "-0") else text
+
+
+def manual_removed_text(value: float) -> str:
+    """가용에서 실제로 뺀 몫(`입력 비가동 반영`, 0 이상)의 글 — 공정 Capa 상세 ④ 첫 줄 칸 풍선
+    「가용에서 x 뺌」·② 가용 칸 풍선 「입력 비가동 −x 반영」·산출 근거 ② 가용 카드 「− 입력 비가동
+    x」 가 함께 쓴다(같은 몫을 세 곳이 다르게 적지 않는다).
+
+    넣은 대수 글(`manual_units_text`)과 같은 꼴이라 넘치지 않은 달은 「입력 비가동 0.04대 — 가용에서
+    0.04 뺌」 처럼 두 수가 같은 글이다. 넘친 달의 몫(그 달 가용)은 어떤 자리든 될 수 있어 0 이 아닌
+    몫이 「0」 으로 적히면 0 이 아니게 적힐 때까지 한 자리씩 더 본다 — 끝자리를 터는 `_DECIMALS`
+    자리까지(그 자리로 0 이면 빈칸 문턱 아래라 「0」).
+    """
+    digits = 2
+    text = manual_units_text(value, digits)
+    while round(value, _DECIMALS) != 0 and float(text) == 0 and digits < _DECIMALS:
+        digits += 1
+        text = manual_units_text(value, digits)
+    return text
 
 
 def manual_downtime_digest(rows: Iterable[ManualRow]) -> str:
