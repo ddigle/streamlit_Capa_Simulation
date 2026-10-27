@@ -131,6 +131,32 @@ def test_caption_reads_updated_at_even_without_a_source_change() -> None:
 
 
 @pytest.mark.parametrize(
+    ("source", "kwargs", "expected"),
+    [
+        ("", {}, "공용 버전 v14 · 2026-01-02 03:04"),
+        ("   ", {}, "공용 버전 v14 · 2026-01-02 03:04"),
+        (
+            "",
+            {"detail": "3개 공정", "suffix": "공지 중"},
+            "공용 버전 v14 · 3개 공정 · 2026-01-02 03:04 · 공지 중",
+        ),
+    ],
+)
+def test_an_empty_source_is_skipped_instead_of_leaving_a_blank_between_separators(
+    source: str, kwargs: dict[str, str], expected: str
+) -> None:
+    """출처가 비면(저장자·변경 메모를 모두 비운 저장) 그 자리를 건너뛴다.
+
+    가용설비 현황 Preference 는 저장자·메모가 선택이라 둘 다 비운 저장의 출처가 빈 글자다 —
+    날로 이으면 `공용 버전 v14 · · 2026-10-27 12:20` 처럼 구분자가 겹쳤다(2026-10-27 E2E).
+    변경 메모가 출처인 다른 공용 프로필(확보율 보정 등)도 같은 길이다.
+    """
+    caption = profile_version_caption(_Profile(14, source, STAMP), empty="비었습니다", **kwargs)
+
+    assert caption == expected
+
+
+@pytest.mark.parametrize(
     "memo",
     [
         "26.07~12 확정 / 27.01~06 잠정 *검토* $1$",

@@ -135,6 +135,24 @@ def test_edit_save_and_the_table_redraws_the_saved_values(tmp_path: Path) -> Non
     assert [(save.version, save.changed_cells, save.filled_cells) for save in saves] == [(1, 2, 2)]
 
 
+def test_a_save_without_saver_and_memo_shows_a_caption_without_doubled_separators(
+    tmp_path: Path,
+) -> None:
+    """저장자·변경 메모는 선택이다 — 둘 다 비운 저장의 버전 캡션은 출처 자리를 건너뛴
+    `공용 버전 v1 · <저장 시각>` 이다(2026-10-27 E2E — `v1 · · 2026-…` 처럼 구분자가 겹쳤다)."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.0})
+    app = _save(app)
+
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.version, stored.saved_by, stored.note) == (1, "", "")
+    captions = [item.value for item in app.caption if item.value.startswith("공용 버전 ")]
+    assert stored.updated_at is not None
+    assert captions == [f"공용 버전 v1 · {stored.updated_at:%Y-%m-%d %H:%M}"]
+
+
 def test_a_second_session_that_started_from_the_old_version_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "equipment.duckdb"
     first, second = _app(path), _app(path)
