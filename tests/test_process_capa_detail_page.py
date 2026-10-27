@@ -989,6 +989,8 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보기준 과부족"):
         assert row in labels
     assert "판정 대조 · UPEH 가정" in labels
+    # ② 비가동 영향은 %p 가 가정 소요로 바뀌어 표지를 단다.
+    assert "비가동 영향 · UPEH 가정" in labels
     # ② 가용·전월 대비와 ④ 는 UPEH 와 무관해 표지를 달지 않는다.
     assert "가용 (환산) · UPEH 가정" not in labels and "전월 대비 · UPEH" not in labels
     assert "공식" in str(_metric(app, "확보기준 미달").proto.help) or "공식" in "".join(

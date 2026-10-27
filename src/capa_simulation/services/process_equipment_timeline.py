@@ -1,4 +1,4 @@
-# Purpose: 공정 하나의 설비 일정(신규 호기·비가동 손실·전월 대비·판정)을 생산월 좌표로 정리한다.
+# Purpose: 공정 하나의 설비 일정(신규 호기·비가동 손실·그 영향·전월 대비·판정)을 생산월로 정리한다.
 
 """공정 Capa 상세의 설비 일정(Dynamic, 참고).
 
@@ -47,6 +47,14 @@
 비가동과 별도 손실이라 그 달 가용(`기존보유 + 호기 가용`)에서 더 뺀다 — 뺄 몫은
 `manual_downtime.clamp_manual_units`(그 달 가용에서 멈춘다)로 필요 단축 일정 계획과 같은 값이다.
 그 증감도 `비가동` 에 든다(`입력 비가동 반영` 칸이 그 가운데 입력 몫이다).
+
+## 비가동 영향
+
+② 「비가동 영향」 줄(2026-10-27 사용자 결정)은 달마다 비가동이 깎은 가용과 그만큼의 확보율
+차이다(`downtime_impact`). 손실 = 호기 비가동 손실(위 반사실의 그 달 합 — `호기 비가동 손실`) +
+입력 비가동 반영(그 달 가용에서 멈춘 뒤 실제로 뺀 몫)이고, 곧 「비가동이 하나도 없었을 때의 가용 −
+지금 가용」 이다. 확보율 영향은 그 손실 ÷ 소요 × 100(%p)이고 가용·소요는 계획
+(`LevelPlan.process_months`)의 단축 전 값이라 계획의 `확보율` 과 같은 길이다.
 
 ## Dynamic 판정
 
@@ -104,6 +112,7 @@ __all__ = [
     "ARROW_COLUMNS",
     "BRIDGE_COLUMNS",
     "EXIT_UNIT_COLUMNS",
+    "IMPACT_COLUMNS",
     "MISSING_CUTOFF",
     "NEW_UNIT_COLUMNS",
     "NO_COUNTED_UNITS",
@@ -123,6 +132,7 @@ __all__ = [
     "availability_bridge",
     "build_process_equipment_timeline",
     "downtime_arrows",
+    "downtime_impact",
     "downtime_loss",
     "dynamic_readiness",
     "exiting_unit_rows",
@@ -287,6 +297,7 @@ BRIDGE_COLUMNS = (
     "신규",
     "비가동",
     "반출이설",
+    "호기 비가동 손실",
     "입력 비가동",
     "입력 비가동 반영",
     "입력 비가동 증감",
@@ -296,8 +307,31 @@ BRIDGE_COLUMNS = (
 `가용대수 = 기존보유 + 호기 가용 − 입력 비가동 반영` 은 필요 단축 일정 계획의 `가용대수`(같은
 공정·달)와 같고, `전월대비 = 신규 + 비가동 + 반출이설` 이다. `비가동` 은 손실이 줄면 + 다 — 호기별
 비가동 손실의 증감과 입력 비가동 반영의 증감(`입력 비가동 증감`, 그 가운데 입력 몫)을 더한 값이다.
-`입력 비가동` 은 그 달에 넣은 대수(0 = 없음), `입력 비가동 반영` 은 가용에서 실제로 뺀 몫(그
-달 가용에서 멈춘다 — 입력보다 작으면 넘친 것이다)이다.
+`호기 비가동 손실` 은 그 달 호기별 비가동이 깎은 가용(비가동을 비운 반사실 − 실제의 호기 합 —
+`downtime_loss` 의 그 달 `손실 환산대수` 합)이다. `입력 비가동` 은 그 달에 넣은 대수(0 = 없음),
+`입력 비가동 반영` 은 가용에서 실제로 뺀 몫(그 달 가용에서 멈춘다 — 입력보다 작으면 넘친
+것이다)이다.
+"""
+
+IMPACT_COLUMNS = (
+    "생산계획년월",
+    "호기 비가동 손실",
+    "입력 비가동 손실",
+    "비가동 손실",
+    "소요대수",
+    "가용대수",
+    "비가동 없는 가용대수",
+    "확보율",
+    "비가동 없는 확보율",
+    "확보율 영향(%p)",
+)
+"""② 비가동 영향(`downtime_impact`) — 전월 대비의 달마다 한 행. 대수는 환산대수다.
+
+`비가동 손실 = 호기 비가동 손실 + 입력 비가동 손실 = 비가동 없는 가용대수 − 가용대수` 이고 입력
+몫은 가용에서 실제로 뺀 몫(`입력 비가동 반영` — 0 에서 멈춘 뒤)이다. `소요대수`·`가용대수` 는 계획의
+단축 전 값이라 `확보율` 이 계획의 `확보율` 과 같다. `확보율 영향(%p) = 비가동 손실 ÷ 소요대수 × 100`
+이다.
+소요가 0 이면 두 확보율과 영향이 NaN 이고, 계획에 없는 달은 소요부터 NaN 이다.
 """
 
 ARROW_COLUMNS = (
@@ -1167,7 +1201,7 @@ def availability_bridge(
     `actual`·`counterfactual` 은 `downtime_loss` 와 같은 두 기여 표다. 반사실의 호기별 증감이 + 면
     신규, - 면 반출이설이고, 손실 합의 증감에 - 를 붙인 것이 비가동이다. `manual_downtime` 은 그
     공정의 입력 비가동 `(YYYYMM, 대수)` 다 — 그 달 가용에서 더 빼고(`clamp_manual_units`) 그 증감도
-    비가동에 넣는다.
+    비가동에 넣는다. `호기 비가동 손실` 은 그 달 손실 합(반사실 − 실제) 그 자체다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
     baseline = _baseline_by_month(actual)
@@ -1193,6 +1227,9 @@ def availability_bridge(
             "신규": math.nan,
             "비가동": math.nan,
             "반출이설": math.nan,
+            "호기 비가동 손실": _tidy(
+                sum(free.get((unit, month), 0.0) - real.get((unit, month), 0.0) for unit in units)
+            ),
             "입력 비가동": float(entered.get(month, 0.0)),
             "입력 비가동 반영": removed,
             "입력 비가동 증감": math.nan,
@@ -1257,6 +1294,72 @@ def _units_by_month(contributions: pd.DataFrame) -> dict[tuple[str, int], float]
         key = (str(unit), int(month))
         totals[key] = totals.get(key, 0.0) + float(value)
     return totals
+
+
+def downtime_impact(bridge: pd.DataFrame, process_months: pd.DataFrame) -> pd.DataFrame:
+    """달마다 비가동이 깎은 가용과 그 확보율 영향(`IMPACT_COLUMNS`) — ② 「비가동 영향」 줄의 재료.
+
+    `bridge` 는 그 공정의 `availability_bridge`(`ProcessEquipmentTimeline.bridge`),
+    `process_months` 는 같은 공정의 계획 달 행(`LevelPlan.process_months` 를 그 공정으로 거른 것 —
+    달마다 한 행)이다. 전월 대비의 달마다 한 행이고, 손실은 `호기 비가동 손실` + `입력 비가동 반영`
+    이다(입력 몫은 0 에서 멈춘 뒤 실제로 뺀 몫 — 넣은 대수가 아니다). 확보율은 계획의 단축 전 가용 ÷
+    소요라 계획의 `확보율` 과 같다(UPEH 가정 계획이면 가정 소요다).
+    """
+    columns = list(IMPACT_COLUMNS)
+    if bridge.empty:
+        return pd.DataFrame(
+            {
+                column: pd.Series(dtype="int64" if column == "생산계획년월" else "float64")
+                for column in columns
+            }
+        )
+    plan: dict[int, tuple[float, float]] = {}
+    if not process_months.empty:
+        for month, need, available in zip(
+            process_months["생산계획년월"],
+            process_months["소요대수"],
+            process_months["가용대수"],
+            strict=True,
+        ):
+            if int(month) in plan:
+                raise ValueError(
+                    f"계획에 같은 달({int(month)})이 두 번 있습니다 — 공정 하나로 거른 표를 "
+                    "넘깁니다."
+                )
+            plan[int(month)] = (float(need), float(available))
+    rows: list[dict[str, object]] = []
+    for month, unit_loss, manual_loss in zip(
+        bridge["생산계획년월"],
+        bridge["호기 비가동 손실"],
+        bridge["입력 비가동 반영"],
+        strict=True,
+    ):
+        units = _tidy(float(unit_loss))
+        manual = _tidy(float(manual_loss))
+        loss = _tidy(units + manual)
+        need, available = plan.get(int(month), (math.nan, math.nan))
+        counted = need > 0
+        rows.append(
+            {
+                "생산계획년월": int(month),
+                "호기 비가동 손실": units,
+                "입력 비가동 손실": manual,
+                "비가동 손실": loss,
+                "소요대수": need,
+                "가용대수": available,
+                "비가동 없는 가용대수": _tidy(available + loss)
+                if not math.isnan(available)
+                else math.nan,
+                "확보율": available / need if counted else math.nan,
+                "비가동 없는 확보율": (available + loss) / need if counted else math.nan,
+                "확보율 영향(%p)": _tidy(loss / need * 100) if counted else math.nan,
+            }
+        )
+    frame = pd.DataFrame(rows, columns=columns)
+    frame["생산계획년월"] = frame["생산계획년월"].astype("int64")
+    for column in columns[1:]:
+        frame[column] = frame[column].astype("float64")
+    return frame
 
 
 def downtime_arrows(
