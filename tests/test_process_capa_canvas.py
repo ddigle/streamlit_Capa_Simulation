@@ -393,10 +393,11 @@ def test_rows_stack_the_four_sections_in_the_mock_order() -> None:
     titles = [row for row in ids if row.startswith("title:")]
     assert titles == ["title:summary", "title:dynamic", "title:units", "title:downtime"]
     dynamic_start = ids.index("title:dynamic")
-    assert list(ids[dynamic_start + 1 : dynamic_start + 5]) == [
+    assert list(ids[dynamic_start + 1 : dynamic_start + 6]) == [
         ROW_DYNAMIC_COMPARE,
         "dynamic_available",
         "dynamic_delta",
+        "dynamic_impact",
         ROW_DYNAMIC_BALANCE,
     ]
     units = ids[ids.index("title:units") + 1 : ids.index("title:downtime")]
@@ -1110,7 +1111,8 @@ def test_unit_hovers_stay_within_three_lines_and_an_assumption_adds_the_fourth()
     assumed = _label_hovers(_assumed_canvas(110, set(MONTHS), dynamic=marked))
     units = [row for row in official if row.startswith(("unit:", "exit:"))]
 
-    assert len(units) >= 5 and set(units) == set(official)
+    # 호기 줄 밖의 줄 이름 칸 풍선은 ② 「비가동 영향」 하나다(입력 비가동이 없는 설비 일정).
+    assert len(units) >= 5 and set(official) - set(units) == {"dynamic_impact"}
     assert all(1 <= len(official[row].split("<br>")) <= 3 for row in units)
     assert all("UPEH" not in hover for hover in official.values())
     for row in (row for row in assumed if row.startswith("unit:")):
@@ -1607,6 +1609,8 @@ def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_chang
     canvas = _assumed_canvas(110, set(MONTHS), dynamic=marked)
     labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
     assert "판정 대조 · UPEH 가정" in labels and "과부족 · UPEH 가정" in labels
+    # 비가동 영향은 %p 가 가정 소요로 바뀌어 표지를 단다.
+    assert "비가동 영향 · UPEH 가정" in labels
     assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
     unit_hover = _label_hovers(canvas)["unit:EQ-21"]
     assert unit_hover.split("<br>")[-1] == f"UPEH 가정 계획 · 공식 {MINUS}45일 → 가정 0일"

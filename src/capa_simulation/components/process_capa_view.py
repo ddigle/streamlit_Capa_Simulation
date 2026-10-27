@@ -13,8 +13,8 @@
   를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서 들어온 회차에는 그 길이 가리키는 구획을
   다시 편다(`reopen_entry_section` — HOME → ①, 가용설비 현황 → ④, 필요 단축 일정 카드 → ③).
 - **결합 월 캔버스** — HOME 틀 그대로 라벨 Figure(260px) + 월 Figure(달마다 100px, hover)를 스크롤
-  상자 하나에 둔다. 라벨 Figure 는 ③ 호기 줄 이름 칸 풍선이 있을 때만 hover 를 켜고 아니면
-  `staticPlot` 이다. 월 Figure 의 칸을 누르면 `on_select` 콜백이 세션
+  상자 하나에 둔다. 라벨 Figure 는 줄 이름 칸 풍선(② 비가동 영향·③ 호기 줄·④ 입력 비가동)이
+  있을 때만 hover 를 켜고 아니면 `staticPlot` 이다. 월 Figure 의 칸을 누르면 `on_select` 콜백이 세션
   달을 적고 이 프래그먼트만 다시 돈다 — 프래그먼트 안 위젯이라 기본이 이 프래그먼트 회차이고,
   콜백 끝의 `rerun_app_unless_alone` 이 `rerun_fragment_if_alone` 과 같은 판정으로 프래그먼트만
   돌면 안 될 때(끊긴 전체 실행·다른 위젯도 바뀜)만 앱 전체로 올린다. 빈 선택(같은 칸 다시
@@ -227,7 +227,7 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 6
+CANVAS_SCHEMA_VERSION: Final = 7
 
 # 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
 SECTION_LABELS: Final[Mapping[str, str]] = {
@@ -638,7 +638,8 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
     )
     with label_column:
         with st.container(key=LABEL_CANVAS_KEY, gap=None):
-            # 라벨 Figure 의 trace 는 ③ 호기 줄 이름 칸 풍선의 표적뿐이다 — 있을 때만 hover 를 켠다.
+            # 라벨 Figure 의 trace 는 줄 이름 칸 풍선(② 비가동 영향·③ 호기 줄·④ 입력 비가동)의
+            # 표적뿐이다 — 있을 때만 hover 를 켠다.
             st.plotly_chart(
                 canvas.labels,
                 width="stretch",

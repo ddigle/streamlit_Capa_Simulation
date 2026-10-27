@@ -11,8 +11,10 @@
    부족이면 확보율과 **같은** 판정색, 풍선은 정수 옆에 올림·내림 전 값을 소수 둘째 자리로), 기준
    확보율(달마다 확보기준 % — 회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
 2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(기준✕·일정✕ 만
-   칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 목표 과부족(음수만 칠한다, 단축 후·기한
-   지남은 둘째 줄). 목표는 달마다 다른 확보기준이다(`MonthlyTarget`).
+   칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 비가동 영향(그 달 비가동이 깎은 가용
+   「−1.8대」 와 둘째 줄 확보율 영향 「−4.2%p」 — 깎은 것이 없으면 빈칸, 소요 0 이면 대수만), 목표
+   과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄). 목표는 달마다 다른 확보기준이다
+   (`MonthlyTarget`).
 3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에
    ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축 안에서
    정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면
@@ -44,8 +46,9 @@
 빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
 가정이 켜지면 부족 띠·② 판정 대조는 가정 요약의 판정으로 칠한다(②~④ 가 가정 계획이라 한 그림에서
 공식 판정과 섞이지 않게) — ② 판정 대조 풍선도 「공식은 …」 이 아니라 「UPEH 가정 기준은 …」
-이다. 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정 대조·목표 과부족의 행
-라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라 UPEH 와 무관하다.
+이다. 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정 대조·비가동 영향(%p 가
+가정 소요로 바뀐다)·목표 과부족의 행 라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라
+UPEH 와 무관하다.
 공식 계획에서는 당겼지만 가정 계획에서는 덜 당기는 호기는 ③ 에 흐린 줄로 남고 풍선에 「공식 −45일 →
 가정 0일」 이다(`DynamicCanvasInput.official_pulls`).
 
@@ -86,7 +89,7 @@ from typing import Any, Final, NamedTuple, cast
 import pandas as pd
 import plotly.graph_objects as go
 
-from capa_simulation.components.formula_text import APPROX, EQUALS, equals_mark
+from capa_simulation.components.formula_text import APPROX, EQUALS, equals_mark, written_value
 from capa_simulation.components.home_figure_common import (
     _text_width_units,
     keep_unselected_opaque,
@@ -170,6 +173,7 @@ from capa_simulation.services.process_equipment_timeline import (
     EXIT_KIND_RELOCATION,
     ROW_SHORTENED,
     ROW_VIRTUAL,
+    downtime_impact,
     month_share,
     production_position,
 )
@@ -190,6 +194,7 @@ from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.threshold_label import threshold_percent_label
 
 __all__ = [
+    "IMPACT_LABEL_HOVER",
     "MANUAL_DOWNTIME_ROW_LABEL",
     "CUSTOMDATA_HOVER",
     "CUSTOMDATA_MONTH",
@@ -201,6 +206,7 @@ __all__ = [
     "ROW_DYNAMIC_BALANCE",
     "ROW_DYNAMIC_COMPARE",
     "ROW_DYNAMIC_DELTA",
+    "ROW_DYNAMIC_IMPACT",
     "ROW_EXIT_PREFIX",
     "ROW_HEADER",
     "ROW_HOME_RATE",
@@ -295,6 +301,13 @@ ROW_DYNAMIC_COMPARE: Final = "dynamic_compare"
 ROW_DYNAMIC_AVAILABLE: Final = "dynamic_available"
 ROW_DYNAMIC_DELTA: Final = "dynamic_delta"
 ROW_DYNAMIC_BALANCE: Final = "dynamic_balance"
+# ② 「비가동 영향」 — 전월 대비 바로 아래. 그 달 비가동(호기 + 입력)이 깎은 가용과 확보율 영향(%p).
+ROW_DYNAMIC_IMPACT: Final = "dynamic_impact"
+IMPACT_LABEL_HOVER: Final = (
+    "그 달 비가동이 없었다면 더 있었을 가용(환산)과 그만큼의 확보율 차이(%p)<br>"
+    "호기 비가동(④ 진한 화살표) + 입력 비가동(Preference — 가용에서 실제로 뺀 몫)<br>"
+    "확보율 = 단축 전 가용 ÷ 소요 · 깎은 것이 없으면 빈칸 · 소요 0 이면 대수만"
+)
 # ④ 첫 줄 「월별 비가동 대수(입력)」 — 축 안에 입력 비가동이 있을 때만 선다.
 ROW_MANUAL_DOWNTIME: Final = "manual_downtime"
 MANUAL_DOWNTIME_ROW_LABEL: Final = "월별 비가동 대수(입력)"
@@ -897,6 +910,7 @@ def _dynamic_rows(
     today_month = today_position.month
     plan = _by_month(dynamic.process_months, axis, unique=True)
     bridge = _by_month(dynamic.bridge, axis)
+    impacts = _by_month(downtime_impact(dynamic.bridge, dynamic.process_months), axis)
     target_text = _target_text(dynamic.target, axis)
     detail = f"참고 · 설비 DB · 환산대수 · 생산월(Cut-off {dynamic.cutoff_days}일)"
     if any(
@@ -906,8 +920,8 @@ def _dynamic_rows(
     if not today_position.before and not today_position.after:
         detail += f" · 점선은 오늘({dynamic.today:%m.%d})"
     rows: list[_Row] = [_section_title_row(SECTION_DYNAMIC, detail, folded)]
-    # UPEH 가정 계획이면 바뀌는 행(판정 대조·목표 과부족)의 라벨에만 표지를 단다 — 제목 줄 높이는
-    # 그대로다.
+    # UPEH 가정 계획이면 바뀌는 행(판정 대조·비가동 영향 %p·목표 과부족)의 라벨에만 표지를 단다 —
+    # 제목 줄 높이는 그대로다.
     assumed_mark = " · UPEH 가정" if dynamic.official_pulls is not None else ""
     compare = _Row(
         ROW_DYNAMIC_COMPARE,
@@ -930,6 +944,15 @@ def _dynamic_rows(
         label="전월 대비",
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
+    # 대수와 %p 를 한 줄에 적으면 달 칸(100px)을 넘는다 — 가용 (환산)·목표 과부족처럼 둘째 줄에 %p.
+    impact = _Row(
+        ROW_DYNAMIC_IMPACT,
+        _VALUE,
+        TWO_LINE_ROW_HEIGHT_PX,
+        label=f"비가동 영향{assumed_mark}",
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        label_hover=IMPACT_LABEL_HOVER,
+    )
     balance = _Row(
         ROW_DYNAMIC_BALANCE,
         _VALUE,
@@ -943,7 +966,7 @@ def _dynamic_rows(
         record = plan.get(month)
         static_short = statuses.get(month) in _SHORT_STATUSES
         if record is None:
-            for row in (compare, available, balance):
+            for row in (compare, available, impact, balance):
                 row.cells[index] = _Cell(
                     text=_EMPTY, muted=True, hover=f"{head} · 설비 일정 계획에 없는 달"
                 )
@@ -984,6 +1007,9 @@ def _dynamic_rows(
                 target=_target_for(dynamic.target, month),
                 past=past,
             )
+            impact.cells[index] = _impact_cell(
+                head, impacts.get(month, {}), past=past, assumed=dynamic.official_pulls is not None
+            )
         bridge_record = bridge.get(month, {})
         change = _number(bridge_record.get("전월대비"))
         manual_change = _number(bridge_record.get("입력 비가동 증감")) or 0.0
@@ -1006,7 +1032,7 @@ def _dynamic_rows(
             ),
         )
     if SECTION_DYNAMIC not in folded:
-        rows += [compare, available, delta, balance]
+        rows += [compare, available, delta, impact, balance]
     manual_row = _manual_downtime_row(axis, bridge, today_month)
     if not dynamic.has_units:
         # 호기 줄이 없는 공정은 ④ 가 서지 않는다 — 입력 비가동 줄은 ② 아래에 둔다(② 를 접으면 함께
@@ -1083,6 +1109,67 @@ def _manual_downtime_row(
             ),
         )
     return row
+
+
+def _impact_cell(
+    head: str, record: Mapping[str, object], *, past: bool, assumed: bool = False
+) -> _Cell:
+    """② 비가동 영향 칸 하나 — `downtime_impact` 한 행(없으면 빈 dict).
+
+    깎은 것이 없으면(손실 0) 빈칸이다. 첫 줄은 손실 대수 「−1.8대」, 둘째 줄은 확보율 영향
+    「−4.2%p」 이고 소요가 0 이면(영향 NaN) 대수만 적는다. 풍선 둘째 줄은 「비가동 없으면 확보율
+    X% → 지금 Y%」 와 손실의 갈림(0 인 쪽은 뺀다)이다. 갈림 둘을 적힌 대로 더한 값이 첫 줄 대수와
+    다르면 갈림 앞에 「≈」 를 둔다(등호 없는 식 줄 — 과부족 풍선과 같은 길).
+    """
+    units_loss = _number(record.get("호기 비가동 손실")) or 0.0
+    manual_loss = _number(record.get("입력 비가동 손실")) or 0.0
+    loss = _number(record.get("비가동 손실")) or 0.0
+    if round(loss, 9) <= 0:
+        return _Cell(muted=past, hover=f"{head} · 비가동 영향 없음 — 가용을 깎은 비가동이 없습니다")
+    points = _number(record.get("확보율 영향(%p)"))
+    units_text = f"{_nonzero_signed(-loss)}대"
+    points_text = f"{_nonzero_signed(-points)}%p" if points is not None else ""
+    parts = [
+        f"{name} {_nonzero_signed(-value)}대"
+        for name, value in (("호기 비가동", units_loss), ("입력 비가동", manual_loss))
+        if round(value, 9) > 0
+    ]
+    split = " + ".join(parts)
+    if len(parts) == 2:
+        written = [written_value(_nonzero_signed(-value)) for value in (units_loss, manual_loss)]
+        recomputed = (
+            _nonzero_signed(sum(value for value in written if value is not None))
+            if all(value is not None for value in written)
+            else ""
+        )
+        if equals_mark(_nonzero_signed(-loss), recomputed) == APPROX:
+            split = f"{APPROX} {split}"
+    rate = _number(record.get("확보율"))
+    free_rate = _number(record.get("비가동 없는 확보율"))
+    if points is None or rate is None or free_rate is None:
+        detail = f"소요 0 — 확보율 영향 없음 · {split}"
+    else:
+        detail = f"비가동 없으면 확보율 {free_rate:.1%} → 지금 {rate:.1%} · {split}"
+    hover = (
+        f"{head} · 비가동 영향 {units_text}"
+        + (f" · {points_text}" if points_text else "")
+        + f"<br>{detail}"
+        + ("<br>확보율은 UPEH 가정 소요 기준" if assumed and points_text else "")
+    )
+    return _Cell(text=units_text, sub=points_text, muted=past, hover=hover)
+
+
+def _nonzero_signed(value: float) -> str:
+    """부호 있는 값(`signed_one`) — 0 이 아닌 값이 「0.0」 으로 적히면(0.005 아래) 한 자리 더
+    본다.
+
+    하루치 손실이 환산비 작은 호기에 서면 0.003대일 수 있다 — 깎았는데 「0.0」 이면 빈칸 규칙(깎은
+    것이 없으면 빈칸)과 어긋나 읽힌다.
+    """
+    text = _signed_one(value)
+    if round(value, 9) != 0 and written_value(text) == 0:
+        return _signed_one(value, 2)
+    return text
 
 
 def _compare_cell(
