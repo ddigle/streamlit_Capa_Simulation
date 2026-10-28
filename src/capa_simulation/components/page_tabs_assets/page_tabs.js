@@ -10,10 +10,10 @@
 // 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
 // 브라우저 기록은 문서 하나에서 지킨다 — 서버가 주소 인자를 바꿀 때 Streamlit 프런트가 쌓는 칸은 늘 칸 바꾸기다
 // (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
-// 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 올
-// 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이
-// 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만 창을 만지고, 입장 화면 JS 가
-// `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
+// 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 오고
+// 그 회차가 끝나거나 잠깐 지날 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을
+// 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만
+// 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
@@ -24,6 +24,9 @@ const NOTICE_MS = 8000
 const BUSY_MS = 10000
 // 보낸 이동이 끝났는지 다시 보는 간격 — 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다.
 const SETTLE_POLL_MS = 100
+// 옮긴 화면의 탭 줄이 온 뒤 이만큼 지나면 그 회차가 아직 돌아도 기다리던 누름을 보낸다(`<tabs-queue>`). 가벼운 화면은
+// 이 안에 회차가 끝나 전처럼 회차 끝에 보낸다(사외 사본 약 0.7초).
+const MOVED_GRACE_MS = 1000
 const APP_ROOT = '[data-testid="stApp"]'
 // 편집표(glide 격자)와 그 칸 편집기. 편집기는 격자 밖 포털에 뜰 수 있어 그 틀(`gdg-clip-region`)도 본다.
 const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"], .gdg-clip-region'
@@ -109,14 +112,16 @@ function holdVerdict(hold, now, running, data, minMs, maxMs) {
 
 // <tabs-queue>
 // 옮기는 동안 누른 탭은 보내지 않고 기다린다 — 마지막 누름 하나만. 보낸 고르기는 옮긴 화면의 탭 줄(지금 탭이 바뀐
-// data)이 오고 **그 화면 회차가 다 돈 뒤**(`busy` 거짓)에, 아니면 `ms` 가 지나야 끝난다. 그 전에 보낸 누름은 둘 다
-// 먹히지 않았다(Streamlit 경합 — 0.1~0.2초 간격 두 누름). 옮기기 전이면 프런트가 아직 떠나는 화면에 있다고 믿고 그
-// 화면 주소로 회차를 청했고, 옮긴 화면이 도는 동안이면 그 화면 부품들이 곧이어 보낸 회차 요청과 서버에서 합쳐지며 탭
-// 줄 트리거 값이 떨어졌다(1.63 은 합칠 때 단추 트리거만 남기고 컴포넌트 트리거는 새 요청 값으로 덮는다). `press` 는
-// 'send'(지금 보낸다)·'wait'(기다린다)·'none'(지금 탭이라 할 일 없음)을 돌려주고, 'send' 면 부르는 쪽이 보내기 전에
-// `sent` 를 부른다(떠나기 확인을 취소하면 부르지 않는다). `settle` 은 끝났으면 기다리던 누름의 id(열린 탭이고 지금
-// 탭이 아닐 때만)를, 아니면 null 을 돌려준다. 지금 탭 닫기(옮겨 갈 이웃은 서버가 정한다)도 `sent(queue, null, …)` 로
-// 같은 기다림을 건다.
+// data)이 오고 **그 화면 회차가 다 돌았거나**(`busy` 거짓) **탭 줄이 온 뒤 `graceMs` 가 지나면** 끝난다(아니면 `ms`).
+// 탭 줄이 오기 전에 보낸 누름은 프런트가 아직 떠나는 화면에 있다고 믿고 그 화면 주소로 회차를 청한다. 탭 줄이 온 즉시
+// 보낸 누름은 0.1~0.2초 간격 두 누름에서 사라졌는데, 그 까닭은 부품 그리기 **안**에서 트리거를 보낸 것이었다(부르는
+// 쪽이 그리기 밖으로 미룬다 — 함수 끝). `graceMs` 는 그 위의 여유다. 회차 끝까지만 기다리면 옮긴 화면이 오래 돌 때(HOME
+// 첫 계산) 누른 탭이 그 계산과 브라우저 그리기가 끝날 때까지 묶였다(사내 리뷰 202610271800 발견 3 — HOME 로딩 끝 + 약
+// 2초). 서버는 회차가 도는 중에 온 누름도 곧바로 새 회차로 받는다(`runner.fastReruns` — 돌던 회차는 다음 메시지·세션 칸
+// 자리에서 멈춘다). `press` 는 'send'(지금 보낸다)·'wait'(기다린다)·'none'(지금 탭이라 할 일 없음)을 돌려주고, 'send'
+// 면 부르는 쪽이 보내기 전에 `sent` 를 부른다(떠나기 확인을 취소하면 부르지 않는다). `settle` 은 끝났으면 기다리던 누름의
+// id(열린 탭이고 지금 탭이 아닐 때만)를, 아니면 null 을 돌려준다. 지금 탭 닫기(옮겨 갈 이웃은 서버가 정한다)도
+// `sent(queue, null, …)` 로 같은 기다림을 건다.
 function createSelectQueue() {
   return { flight: null, waiting: null }
 }
@@ -130,13 +135,15 @@ function pressSelect(queue, id, active, now, ms) {
   return id === active ? 'none' : 'send'
 }
 function sentSelect(queue, id, active, now) {
-  queue.flight = { id, from: active, at: now }
+  queue.flight = { id, from: active, at: now, arrived: null }
   queue.waiting = null
 }
-function settleSelect(queue, active, now, ms, ids, busy) {
+function settleSelect(queue, active, now, ms, ids, busy, graceMs) {
   const flight = queue.flight
   if (flight === null) return null
-  const moved = active !== flight.from && !busy
+  // 옮긴 화면의 탭 줄을 처음 본 때. 그 뒤로 지금 탭이 다시 바뀌어도 그대로 둔다.
+  if (active !== flight.from && flight.arrived === null) flight.arrived = now
+  const moved = flight.arrived !== null && (!busy || now - flight.arrived >= graceMs)
   if (!moved && now - flight.at < ms) return null
   queue.flight = null
   const next = queue.waiting
@@ -362,7 +369,7 @@ export default function (component) {
     moving(item.dataset.id)
     S.send('select', { id: item.dataset.id, epoch: S.data.epoch })
   }
-  // 보낸 이동이 끝났으면(옮긴 화면의 data 가 왔고 그 회차가 다 돌았다, 아니면 기다림이 다 됐다) 기다리던 누름을
+  // 보낸 이동이 끝났으면(옮긴 화면의 data 가 왔고 그 회차가 다 돌았거나 잠깐 지났다, 아니면 기다림이 다 됐다) 기다리던 누름을
   // 보낸다. 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가 끝났다는 알림은 컴포넌트에 오지 않는다.
   function settle() {
     clearTimeout(S.settleTimer)
@@ -371,7 +378,7 @@ export default function (component) {
     const root = document.querySelector(APP_ROOT)
     const run = root ? root.getAttribute('data-test-script-state') : null
     const running = run === 'running' || run === 'rerunRequested'
-    const next = settleSelect(S.queue, S.data.active, Date.now(), BUSY_MS, open, running)
+    const next = settleSelect(S.queue, S.data.active, Date.now(), BUSY_MS, open, running, MOVED_GRACE_MS)
     if (S.queue.flight !== null) {
       S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
       return
@@ -553,10 +560,18 @@ export default function (component) {
     document.addEventListener('click', S.onLink, true)
   }
 
-  // 새 data 가 왔다 — 보낸 이동이 끝났는지 본다(지금 탭이 바뀐 data 와 그 회차의 끝이 표지다).
-  if (S.queue.flight !== null) settle()
-  // 붙든 누름이 있으면 새 data 로 다시 본다.
-  if (S.hold) release()
+  // 새 data 가 왔다 — 보낸 이동이 끝났는지 본다(지금 탭이 바뀐 data 와 그 회차의 끝이 표지다). 붙든 누름이 있으면 새
+  // data 로 다시 본다. 둘 다 이 함수(부품 그리기) 밖에서 본다 — 그리기 안에서 트리거를 보내면 Streamlit 프런트가 그 값을
+  // 회차 요청에 싣지 않아 누름이 사라졌다(사외 사본: 탭 줄이 온 즉시 그리기 안에서 보낸 둘째 누름 30번 중 4번이 탭 줄 칸
+  // 없는 요청으로 갔다. 그리기 밖으로 미루니 30번 모두 닿았다).
+  if (S.queue.flight !== null) {
+    clearTimeout(S.settleTimer)
+    S.settleTimer = setTimeout(() => settle(), 0)
+  }
+  if (S.hold) {
+    clearTimeout(S.holdTimer)
+    S.holdTimer = setTimeout(() => release(), 0)
+  }
 
   return () => {
     clearTimeout(S.noticeTimer)
