@@ -20,6 +20,7 @@ import re
 import runpy
 import shutil
 import sys
+import time
 import types
 from collections import Counter
 from collections.abc import Sequence
@@ -35,7 +36,11 @@ import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
-from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV, QueryWindow
+from capa_simulation.io.company_bigdataquery_adapter import (
+    BDQ_USER_NAME_ENV,
+    BigDataQueryCallError,
+    QueryWindow,
+)
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.persistence.equipment_repository import (
     EQUIPMENT_MASTER_DB_COLUMNS,
@@ -523,7 +528,10 @@ def test_an_error_message_carrying_names_is_reported_by_kind_only(
 
     assert code == 0
     _assert_no_leak(output)
-    assert "- 신규 소요대수 계산 실패(ValueError) — 대조하지 않았다" in output
+    # 원천 데이터셋이 하나뿐이라 건너뛸 곳이 없다 — 그것으로 돌아와 멈춘 단계와 종류만 적는다.
+    assert "- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError). 대조하지 않았다" in output
+    assert "(리비전 1 계산이 서는 것이 없어 가장 최근 것으로 돌아왔다)" in output
+    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
     assert "- 일정 미정 — 실패(ValueError)" in output
 
 
@@ -1159,6 +1167,189 @@ def test_a_newer_clone_dataset_is_not_taken_for_the_source(
     assert "⚠" not in output
 
 
+def _add_source_dataset(path: Path, dataset_id: str, *, days_later: int, stop: bool) -> None:
+    """내장 시드 데이터셋을 통째로 베껴 `days_later` 일 뒤에 적재한 원천 데이터셋 하나를
+    더한다(새 시나리오 · 리비전 1). `stop` 이면 그 리비전 1 의 `RQ_RUN_RATE` 를 비워 대당 Capa 가
+    멈추게 한다 — 사내 리뷰 `202610271800` 의 꼴(`RQ_RUN_RATE` ValueError). ID 는 표지값이라
+    찍히면 누출이다."""
+    scenario_id, revision_id = f"{dataset_id}-SC", f"{dataset_id}-R1"
+    with duckdb.connect(str(path)) as connection:
+        row = connection.execute(
+            "SELECT d.dataset_id, d.scenario_id, r.revision_id FROM app_meta.dataset AS d "
+            "JOIN app_meta.scenario_revision AS r ON r.scenario_id = d.scenario_id "
+            "AND r.revision_no = 1 ORDER BY d.imported_at LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        base_dataset, base_scenario, base_revision = (str(value) for value in row)
+        connection.execute(
+            "INSERT INTO app_meta.scenario SELECT * REPLACE (? AS scenario_id) "
+            "FROM app_meta.scenario WHERE scenario_id = ?",
+            [scenario_id, base_scenario],
+        )
+        connection.execute(
+            "INSERT INTO app_meta.dataset SELECT * REPLACE (? AS dataset_id, ? AS scenario_id, "
+            "imported_at + to_days(CAST(? AS INTEGER)) AS imported_at) "
+            "FROM app_meta.dataset WHERE dataset_id = ?",
+            [dataset_id, scenario_id, days_later, base_dataset],
+        )
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision SELECT * REPLACE (? AS revision_id, "
+            "? AS scenario_id) FROM app_meta.scenario_revision WHERE revision_id = ?",
+            [revision_id, scenario_id, base_revision],
+        )
+        owned = connection.execute(
+            "SELECT table_schema, table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema IN ('raw_data', 'ref_data', 'rev_data') "
+            "AND column_name IN ('dataset_id', 'revision_id')"
+        ).fetchall()
+        for schema, table, column in owned:
+            owner = base_dataset if column == "dataset_id" else base_revision
+            copy = dataset_id if column == "dataset_id" else revision_id
+            connection.execute(
+                f"INSERT INTO {schema}.{table} SELECT * REPLACE (? AS {column}) "
+                f"FROM {schema}.{table} WHERE {column} = ?",
+                [copy, owner],
+            )
+        if stop:
+            connection.execute(
+                f"DELETE FROM rev_data.{REVISION_TABLES['RQ_RUN_RATE']} WHERE revision_id = ?",
+                [revision_id],
+            )
+
+
+def _imported(path: Path, dataset_id: str) -> str:
+    with duckdb.connect(str(path), read_only=True) as connection:
+        row = connection.execute(
+            "SELECT imported_at FROM app_meta.dataset WHERE dataset_id = ?", [dataset_id]
+        ).fetchone()
+    assert row is not None
+    return str(row[0])[:10]
+
+
+SKIP_HEAD = (
+    "- 리비전 1 계산(대당 Capa → 소요대수)이 서지 않아 건너뛴 더 최근 원천 데이터셋 1(런북 8-2):"
+)
+
+
+def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사내 리뷰 `202610271800` 사외 요청 2 — 가장 최근 원천의 리비전 1 계산이 멈춰 8-2
+    맞대기가 비었다. 리비전 1 계산이 서는 가장 최근 원천을 고르고, 건너뛴 것은 차례 · 원천 종류 ·
+    적재일 · 까닭(단계와 예외 종류)만 찍는다. 8-3 · 8-9 도 같은 데이터셋을 본다. 요약에는 8-2D 한
+    줄이 더해지고 확인 코드 꼴은 그대로다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=True)
+
+    code, output = _run(capsys, "--only", "legacy,reqb,home", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    picked = (
+        "- 원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근(최근부터 2번째) 데이터셋"
+        "(전체 2개 · 원천에서 온 것 2개) · 원천 종류 `BUILTIN_SYNTHETIC_SEED`"
+    )
+    skipped = (
+        f"  - 최근부터 1번째 · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · 적재 {_imported(path, stopped)}"
+        " — 대당 Capa 실패(ValueError)"
+    )
+    # 8-2 · 8-3 · 8-9 세 블록 머리가 같은 데이터셋과 건너뛴 줄을 찍는다.
+    assert output.count(picked) == 3
+    assert output.count(SKIP_HEAD) == 3
+    assert output.count(skipped) == 3
+    # 고른 데이터셋의 계산은 선다 — 소요대수 대조까지 간다.
+    assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
+    summary = _summary(output)
+    assert re.fullmatch(
+        r"- 8-2D 고름 2/2 · 건너뜀 1 · 1번째 대당 Capa 실패\(ValueError\) #\d\d", summary[0]
+    ), summary[0]
+    assert next(line for line in summary if line.startswith("- 8-2R ")).startswith(
+        "- 8-2R 100.00% · "
+    )
+    assert checks.check_transcript(summary) == []
+    assert checks.check_transcript([summary[0].replace("1번째", "2번째")]) != []
+
+
+def test_a_named_dataset_is_never_skipped(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--dataset-id` 로 고른 데이터셋은 계산이 멈춰도 건너뛰지 않는다 — 멈춘 단계와 종류를 찍는다
+    (사내가 보충 줄을 그 길로 얻었다)."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=True)
+
+    code, output = _run(
+        capsys, "--only", "legacy", "--database", str(path), "--dataset-id", stopped
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "- `--dataset-id` 로 고른 데이터셋(전체 2개 · 원천에서 온 것 2개)" in output
+    assert SKIP_HEAD not in output
+    assert "- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError). 대조하지 않았다" in output
+    summary = _summary(output)
+    assert not any(line.startswith("- 8-2D ") for line in summary)
+    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
+
+
+def test_when_no_recent_source_stands_the_newest_is_taken_back(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """최근 후보가 모두 서지 않으면 가장 최근 것으로 돌아간다 — 그 실패가 8-2 에 그대로 찍히고,
+    8-2D 는 「선 것 없음」 과 고른 것 말고 본 것을 적는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(f"DELETE FROM rev_data.{REVISION_TABLES['RQ_RUN_RATE']}")
+    _add_source_dataset(path, f"{SENTINEL}DS-NEW", days_later=1, stop=True)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        "- 원천에서 온 것 가운데 최근부터 1번째(리비전 1 계산이 서는 것이 없어 가장 최근 것으로 "
+        "돌아왔다) 데이터셋"
+    ) in output
+    assert (
+        "- 원천에서 온 최근 데이터셋 2개 모두 리비전 1 계산(대당 Capa → 소요대수)이 서지 않아 가장 "
+        "최근 것으로 돌아왔다(런북 8-2). 그 밖에 본 것:"
+    ) in output
+    summary = _summary(output)
+    assert re.fullmatch(
+        r"- 8-2D 고름 1/2 · 선 것 없음 2 · 2번째 대당 Capa 실패\(ValueError\) #\d\d",
+        summary[0],
+    ), summary[0]
+    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
+    assert checks.check_transcript(summary) == []
+
+
+def test_source_candidates_stop_at_the_limit(
+    simulation_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """후보마다 리비전 표를 읽고 계산하므로 최근 `SOURCE_CANDIDATES` 개까지만 본다 — 그 안에 서는
+    것이 없으면 그보다 오래된 서는 데이터셋이 있어도 가장 최근 것으로 돌아간다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    for index in range(2):
+        _add_source_dataset(path, f"{SENTINEL}DS-{index}", days_later=index + 1, stop=True)
+    monkeypatch.setattr(checks, "SOURCE_CANDIDATES", 2)
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation = duckdb.connect(str(path), read_only=True)
+    try:
+        source = checks.load_source(session)
+    finally:
+        session.close()
+    assert source is not None
+    assert (source.order, source.sources, source.fell_back) == (1, 3, True)
+    assert [item.order for item in source.skipped] == [2]
+    assert source.required is not None and source.required.step == "대당 Capa"
+
+
 def test_derived_source_types_are_the_ones_the_app_writes() -> None:
     """이름이 바뀌면 복제가 원천으로 잘못 골린다. 앱 코드에 같은 글자가 있어야 한다."""
     sources = "\n".join(
@@ -1533,6 +1724,7 @@ def _fake_bigdataquery(
     loads: Loads | None = None,
     calls: Counter[str] | None = None,
     interrupt_day_detail: bool = False,
+    flaky_day_details: int = 0,
 ) -> types.ModuleType:
     module = types.ModuleType("bigdataquery")
     module.__spec__ = importlib.machinery.ModuleSpec("bigdataquery", None)
@@ -1596,6 +1788,8 @@ def _fake_bigdataquery(
             counted["day_detail"] += 1
             if interrupt_day_detail:
                 raise KeyboardInterrupt
+            if counted["day_detail"] <= flaky_day_details:
+                raise RuntimeError(f"Error executing SQL near {SENTINEL}")
         else:
             counted["detail"] += 1
         return pd.DataFrame(
@@ -1732,9 +1926,10 @@ def test_bigdataquery_failures_are_named_by_kind_only(
     assert "상한 366일" not in output
     assert (
         "| 조회(목록 창 31일 전체를 GROUP BY 한 번, 사외에서 돌려 보지 못한 SQL) | "
-        "조회 실패(RuntimeError · SQL) |"
+        "조회 실패(RuntimeError · SQL:analysis) |"
     ) in output
-    assert "0 / 1 성공 · 조회 실패(RuntimeError · SQL)" in output
+    # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다 — 문구(표지값)는 나가지 않는다.
+    assert "0 / 1 성공 · 조회 실패(RuntimeError · SQL:analysis)" in output
     assert "| 상세 조회(앱과 같은 SQL) | 1 / 1 성공 |" in output
     assert "- 적재일 조회가 실패해 건너뛴다." in output
 
@@ -2247,6 +2442,184 @@ def test_copy_lines_render_one_head_and_a_day_table_per_code() -> None:
     assert checks.copy_lines(1, checks.CopyCheck(extra=False, failure="조회 실패(X)"))[0] == (
         "- 코드 1 · 표본 — 조회 실패(X)"
     )
+
+
+class _ShakyDayProbe(_DayProbe):
+    """`_DayProbe` 에 실패를 심는다 — `fails[날]` 번만큼 그날 하루치 상세가 먼저 실패한다(`None` 은
+    적재일 조회). 어댑터가 패키지 예외를 싸 올리는 꼴(`BigDataQueryCallError`)로 던지고 그 문구에는
+    표지값을 싣는다."""
+
+    def __init__(
+        self,
+        frames: dict[date, pd.DataFrame],
+        fails: dict[date | None, int],
+        error: BaseException | None = None,
+    ) -> None:
+        super().__init__(frames)
+        self.fails = dict(fails)
+        self.error = error or Exception(f"Error executing SQL near {SENTINEL}")
+        self.calls: Counter[date | None] = Counter()
+
+    def _maybe_fail(self, day: date | None) -> None:
+        self.calls[day] += 1
+        if self.calls[day] <= self.fails.get(day, 0):
+            raise BigDataQueryCallError(self.error)
+
+    def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        self._maybe_fail(None)
+        return super().load_days(code, window)
+
+    def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        self._maybe_fail(window.start_date)
+        return super().detail_frame(code, window)
+
+
+@pytest.fixture
+def _no_retry_pause(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """다시 묻기 전 쉼을 재지 않고 적어 둔다."""
+    paused: list[float] = []
+    monkeypatch.setattr(time, "sleep", paused.append)
+    return paused
+
+
+def _shaky_copy(
+    fails: dict[date | None, int], error: BaseException | None = None
+) -> tuple[checks.CopyCheck, _ShakyDayProbe]:
+    probe = _ShakyDayProbe({day: _day() for day in DAYS[:4]}, fails, error)
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    return checks.check_copies(probe, VALID_A, window, extra=False), probe
+
+
+def test_a_day_detail_that_fails_once_is_asked_again(_no_retry_pause: list[float]) -> None:
+    """사내 리뷰 `202610271800` 사외 요청 3 — 하루치 상세가 판마다 다른 코드에서 간헐로 「SQL」
+    실패했다. 한 번 쉬고 다시 묻고, 다시 물어 받은 수만 요약 끝 「다시 n」 으로 남긴다."""
+    result, probe = _shaky_copy({DAYS[1]: 1, None: 1})
+
+    assert result.failure is None and not result.failed_days
+    assert result.retried == 2
+    assert _no_retry_pause == [checks.RETRY_PAUSE_SECONDS] * 2
+    assert probe.calls[DAYS[1]] == 2
+    assert checks.copy_note(1, result) == "- 8-5C1 표본 4일 · 3 · 0 · 0 · 0 · 0 · 0 · 다시 2"
+    lines = checks.copy_lines(1, result)
+    assert "- 코드 1 첫 번이 실패해 2초 뒤 다시 물어 받은 조회 2" in lines
+
+
+def test_a_day_that_fails_twice_is_left_out_and_named_by_kind(
+    _no_retry_pause: list[float],
+) -> None:
+    """기준 날이 아닌 날이 두 번 다 실패하면 그날만 빼고 견준다 — 자리와 실패 꼴(종류 · 갈래 ·
+    갈래를 정한 낱말)만 적고 문구는 내보내지 않는다."""
+    result, _ = _shaky_copy({DAYS[0]: 2})
+
+    assert result.failure is None
+    assert result.failed_days == [("첫 적재일 (1/4)", "상세 조회 실패(Exception · SQL:sql) 두 번")]
+    assert [facts.label for facts in result.days] == [
+        "가운데 (2/4)",
+        "끝 앞날 (3/4)",
+        "기준 날 (4/4)",
+    ]
+    note = checks.copy_note(1, result)
+    assert note == (
+        "- 8-5C1 표본 4일 · 2 · 0 · 0 · 0 · 0 · 0 · "
+        "못 받음 1 상세 조회 실패(Exception · SQL:sql) 두 번"
+    )
+    lines = "\n".join(checks.copy_lines(1, result))
+    assert (
+        "- 코드 1 견주지 못한 날 — 첫 적재일 (1/4): 상세 조회 실패(Exception · SQL:sql) 두 번"
+        in lines
+    )
+    assert SENTINEL not in lines and SENTINEL not in note
+    # 요약 줄은 확인 코드를 달아도 그대로 다시 셈이 선다.
+    assert checks.check_transcript(checks.summary_lines([note])) == []
+
+
+def test_a_reference_day_that_fails_twice_stops_the_code_before_other_days(
+    _no_retry_pause: list[float],
+) -> None:
+    """기준 날을 먼저 받는다 — 두 번 다 실패하면 견줄 수 없어 다른 날은 묻지 않는다."""
+    result, probe = _shaky_copy({DAYS[3]: 2})
+
+    assert result.failure == "기준 날 상세 조회 실패(Exception · SQL:sql) 두 번"
+    assert probe.asked == []
+    assert probe.calls[DAYS[3]] == 2 and sum(probe.calls.values()) == 3  # 적재일 1 + 기준 날 2
+    assert checks.copy_note(1, result) == (
+        "- 8-5C1 표본 기준 날 상세 조회 실패(Exception · SQL:sql) 두 번"
+    )
+
+
+def test_a_load_day_query_that_fails_in_two_ways_names_both(
+    _no_retry_pause: list[float],
+) -> None:
+    """두 번의 실패 꼴이 다르면 둘 다 적는다 — 「첫 꼴 뒤 둘째 꼴」."""
+
+    class Twice(_DayProbe):
+        def __init__(self) -> None:
+            super().__init__({})
+            self.errors = [Exception("Error executing SQL"), Exception("Connection reset")]
+
+        def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+            raise BigDataQueryCallError(self.errors.pop(0))
+
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    result = checks.check_copies(Twice(), VALID_A, window, extra=False)
+
+    assert result.failure == (
+        "적재일 조회 실패(Exception · SQL:sql) 뒤 조회 실패(Exception · 연결:connect)"
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [TimeoutError(), Exception("Read timed out")],
+    ids=["type", "word"],
+)
+def test_a_timeout_is_not_asked_again(_no_retry_pause: list[float], error: BaseException) -> None:
+    """시간 초과는 다시 묻지 않는다 — 한 번 더 기다리면 8-5 가 호출 제한을 넘겨 요약까지 잃을 수
+    있다."""
+    result, probe = _shaky_copy({DAYS[3]: 1}, error)
+
+    assert result.failure is not None and result.failure.startswith("기준 날 상세 조회 실패(")
+    assert "· 시간 초과" in result.failure and "두 번" not in result.failure
+    assert probe.calls[DAYS[3]] == 1
+    assert _no_retry_pause == []
+
+
+def test_our_adapter_guidance_is_not_asked_again(_no_retry_pause: list[float]) -> None:
+    """요청자 계정 · 패키지 없음 같은 어댑터 안내(`RuntimeError`)는 다시 물어도 같다."""
+
+    class Guidance(_DayProbe):
+        calls = 0
+
+        def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+            Guidance.calls += 1
+            raise RuntimeError(f"... {BDQ_USER_NAME_ENV} 환경변수에 ...")
+
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    result = checks.check_copies(Guidance({}), VALID_A, window, extra=False)
+
+    assert Guidance.calls == 1 and _no_retry_pause == []
+    assert result.failure is not None and "요청자 계정 필요" in result.failure
+
+
+def test_a_flaky_day_detail_is_retried_through_the_company_adapter(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    _no_retry_pause: list[float],
+) -> None:
+    """앱과 같은 어댑터 길(`call_get_data`)로 — 첫 하루치 상세가 한 번 실패해도 사본 확인이 끝까지
+    가고, 요약의 8-5C 줄은 「다시 1」 을 달고 다시 셈이 선다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery(flaky_day_details=1))
+
+    code, output = _run(capsys, "--only", "bdq")
+
+    assert code == 0
+    _assert_no_leak(output)
+    copies = [line for line in _summary(output) if line.startswith("- 8-5C")]
+    assert len(copies) == 2
+    assert re.fullmatch(r"- 8-5C1 표본 \d+일( · \d+){6} · 다시 1 #\d\d", copies[0]), copies
+    assert " · 다시" not in copies[1]
+    assert checks.check_transcript(_summary(output)) == []
+    assert _no_retry_pause == [checks.RETRY_PAUSE_SECONDS]
 
 
 def test_rq_source_columns_are_the_columns_the_rq_tables_read() -> None:
@@ -2793,6 +3166,147 @@ def test_check_summary_reads_a_transcript_without_opening_a_database(
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "확인 코드가 있는 줄 2 · 맞지 않는 것 1"
     assert out[1].startswith("- 줄 2 — 확인 코드가 맞지 않는다")
+
+
+@pytest.mark.parametrize(
+    ("line", "problems", "forms"),
+    [
+        # 띄어쓰기가 빠진 `3+ x`(사내 리뷰 202610271800 줄 4 · 202610231430 줄 28)는 그대로 읽는다.
+        (
+            "관문수 fmt 793; 실패 16 = 경로구분자 6 + 명령줄길이 6 + 권한비트 3+ "
+            "bigdataquery설치 1",
+            [],
+            [],
+        ),
+        ("리비전 65 = 됨 64 + 멈춤 1+ 확보율멈춤 0 + 막힘 0", [], []),
+        ("리비전 65 = 됨 64 + 멈춤 1+ 확보율멈춤 1 + 막힘 0", ["식"], []),
+        # 마지막 항 뒤 괄호 덧말은 떼고 읽는다(T09).
+        ("A 28 = 기록 28 + 미기록 0 + 안함 0 (다른 칸 2)", [], []),
+        ("A 28 = 기록 27 + 미기록 0 + 안함 0 (다른 칸 1)", ["식"], []),
+        # `=+`(1430 줄 11 · T05)는 ` + ` 로 읽어 셈하고 꼴로 알린다 — 틀리면 맞지 않는다.
+        ("B 11 = 기록 11 =+ 미기록 0; u4 a11", [], ["`=+`"]),
+        ("B 11 = 기록 10 =+ 미기록 0; u4 a11", ["식"], []),
+        ("B 11 =+ 기록 11 + 미기록 0", [], ["읽지 못했다"]),
+        # 손으로 쓴 줄의 항 하나짜리 — ` + ` 가 빠진 꼴로 수가 맞을 때만 꼴로 알린다(1800 줄 26).
+        (
+            "A 바뀐 꼴 space_drawer 서랍 427 = 이 층 421 + 층 미정 6, "
+            "이 층 421 = 표 295 묶음 넘침 126",
+            [],
+            ["빠진"],
+        ),
+        ("이 층 421 = 표 295 묶음 넘침 127", [], []),
+        ("8장 = 202610200720 8-3 8-9", [], []),
+        # 글자 없는 키로 시작하는 손 메모(T08)는 확인 코드를 요구하지 않고 꼴로 알린다.
+        ("8-2 CS 빈 원천 행 0 (계획 0; 경로 0; 남은 계획 0)", [], ["메모"]),
+        ("8-1 에서 리비전 49→50", [], ["메모"]),
+        # 스크립트가 찍는 꼴은 코드가 빠지면 그대로 잡는다.
+        ("8-1 S 36/36; E 32/32; R 67; O 20", ["코드"], []),
+        ("8-2 원천 못 읽음 실패(IOException)", ["코드"], []),
+        ("8-3 29,238 = PKG 1,154 + CHIP 28,084 + ? 0; P 68; M 0", ["코드"], []),
+        ("8-4 r83; M 2,025 = 계획 418 + 확정 52 + 빈 1,555", ["코드"], []),
+        ("8-5 건너뜀 — 패키지 없음", ["코드"], []),
+        ("8-2W 768/1,243; 실패(ValueError)", ["코드"], []),
+    ],
+)
+def test_hand_copy_forms_are_told_apart_from_mismatches(
+    line: str, problems: list[str], forms: list[str]
+) -> None:
+    """사내 리뷰 `202610271800` 처리에서 본 검산기 위험 셋 — 수가 맞는 손 전사 꼴(`3+ x` · `=+` ·
+    항 사이 ` + ` 빠짐 · 괄호 덧말 · `8-2 …` 메모)은 맞지 않는 것으로 세지 않는다. `=+` 는 이제
+    건너뛰지 않고 셈한다. 꼴은 `forms` 에 따로 남는다."""
+    checked = checks.review_transcript([line])
+
+    assert len(checked.problems) == len(problems), checked.problems
+    for found, expected in zip(checked.problems, problems, strict=True):
+        assert expected in found
+    assert len(checked.forms) == len(forms), checked.forms
+    for found, expected in zip(checked.forms, forms, strict=True):
+        assert expected in found
+
+
+def test_a_dropped_plus_in_a_coded_line_is_a_form_only_when_the_code_holds() -> None:
+    """확인 코드가 있는 줄의 항 사이 ` + ` 가 빠진 식(사내 리뷰 202610271800 줄 61 —
+    `확정 52 완료 0`)은 코드가 맞으면 꼴이다. 숫자를 잘못 옮긴 것은 코드와 식이 함께 잡는다."""
+    printed = checks.summary_lines(
+        [
+            "- 8-4 r83 · M 2,025 = 계획 418 + 확정 52 + 완료 0 + 지연 0 + 빈 1,555 + ? 0"
+            " · T 0 · Q 0 · D 0"
+        ]
+    )[2][2:]
+    copied = printed.replace(" · ", "; ").replace("확정 52 + 완료 0", "확정 52 완료 0")
+
+    checked = checks.review_transcript([copied])
+    assert checked.problems == []
+    assert checked.forms == ["줄 1 — 줄 안 식: 항 사이 ` + ` 가 빠진 것으로 읽으면 수가 맞다"]
+
+    slipped = checks.review_transcript([copied.replace("확정 52", "확정 53")])
+    assert slipped.problems == [
+        "줄 1 — 확인 코드가 맞지 않는다(그 줄의 수를 다시 본다)",
+        "줄 1 — 줄 안 검산 식이 서지 않는다",
+    ]
+
+
+def test_every_bare_key_the_script_prints_is_read_as_a_summary_line() -> None:
+    """글자 없는 키(`8-2` · `8-4` …)로 찍는 요약 줄은 확인 코드가 빠지면 잡혀야 한다 — 메모로
+    읽히면 안 된다. 스크립트의 `_note("8-<수>", …)` 첫 칸과 멈춤 · 요약 실패 · 8-10 머리 꼴을 모두
+    지나 본다."""
+    source = (PROJECT_ROOT / "scripts" / "inspect_real_data_checks.py").read_text(encoding="utf-8")
+    leads: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_note"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            continue
+        key = str(node.args[0].value)
+        if not re.fullmatch(r"8-\d+", key):
+            continue
+        first = node.args[1]
+        if isinstance(first, ast.Constant):
+            leads.append(f"{key} {first.value!s}")
+        elif isinstance(first, ast.JoinedStr):
+            # 채우는 자리(`{len(reqb):,}` · `{mi_count:,}` 같은 것)는 수로 놓는다.
+            text = "".join(
+                str(part.value) if isinstance(part, ast.Constant) else "0" for part in first.values
+            )
+            leads.append(f"{key} {text}")
+    assert len(leads) >= 15, leads
+    leads += [
+        *(f"{title} 멈춤 실패(ValueError)" for title in checks._BLOCK_TITLES.values()),
+        "8-3 요약 실패(KeyError)",
+        "8-1 S - · E - · R - · O -",  # 두 DB 를 다 못 읽은 8-1(`_migration_note`)
+        "8-10 활성 5 · 0 아님 2/12 · 합 7",
+        "8-10 전부 5 · 모두 0 (12/12)",
+        "8-10 C1 3",
+    ]
+    for lead in leads:
+        assert (
+            checks.check_transcript([lead])
+            and "확인 코드(`#NN`)가 없다" in (checks.check_transcript([lead])[0])
+        ), lead
+
+
+def test_check_summary_prints_forms_after_mismatches_and_keeps_exit_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """수는 맞는 손 전사 꼴만 있으면 종료 코드 0 — 첫 줄 끝에 `꼴 n` 이 붙고 `(꼴)` 줄로 찍힌다."""
+    coded = checks.summary_lines(["- 8-9 12 · 포함 1 = 1 + 0 · 뺌 0"])[2][2:]
+    transcript = tmp_path / "transcript.md"
+    transcript.write_text(
+        "\n".join([coded, "B 11 = 기록 11 =+ 미기록 0", "8-2 CS 빈 원천 행 0 (계획 0)"]),
+        encoding="utf-8",
+    )
+
+    assert checks.main(["--check-summary", str(transcript)]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "확인 코드가 있는 줄 1 · 맞지 않는 것 0 · 꼴 2",
+        "- (꼴) 줄 2 — 줄 안 식: `=+` 를 ` + ` 로 읽으면 수가 맞다",
+        "- (꼴) 줄 3 — `8-` 키로 시작하지만 요약 줄 꼴이 아니라 메모로 읽었다"
+        "(확인 코드를 보지 않는다 — 메모는 `8장 메모` 로 시작한다)",
+    ]
 
 
 def _sample_compressed_review() -> list[str]:

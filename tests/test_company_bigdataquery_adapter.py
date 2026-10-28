@@ -127,6 +127,34 @@ def test_a_failure_is_sorted_by_its_chain_names_and_words(error: BaseException, 
     assert adapter.classify_query_failure(error) == kind
 
 
+@pytest.mark.parametrize(
+    ("error", "kind", "clue"),
+    [
+        (TimeoutError(), adapter.QUERY_FAILURE_TIMEOUT, ""),
+        (Error("Read timed out"), adapter.QUERY_FAILURE_TIMEOUT, "timed out"),
+        (Error("Error executing SQL statement"), adapter.QUERY_FAILURE_SQL, "sql"),
+        (Error("File does not exist: part-0001"), adapter.QUERY_FAILURE_SQL, "does not exist"),
+        (
+            Error("AnalysisException: Could not resolve table"),
+            adapter.QUERY_FAILURE_SQL,
+            "analysis",
+        ),
+        (Error(""), adapter.QUERY_FAILURE_OTHER, ""),
+    ],
+)
+def test_a_failure_clue_is_the_vocabulary_word_that_sorted_it(
+    error: BaseException, kind: str, clue: str
+) -> None:
+    """사내 리뷰 202610271800 — 판마다 다른 코드에서 간헐로 난 「SQL」 실패는 문법 오류가 아닐 수
+    있다. 갈래를 정한 낱말(목록의 것 — 문구 원문이 아니다)을 함께 내 점검 스크립트가 적는다."""
+    assert (adapter.classify_query_failure(error), adapter.query_failure_clue(error)) == (
+        kind,
+        clue,
+    )
+    wrapped = adapter.BigDataQueryCallError(error)
+    assert (wrapped.kind, wrapped.clue) == (kind, clue)
+
+
 def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

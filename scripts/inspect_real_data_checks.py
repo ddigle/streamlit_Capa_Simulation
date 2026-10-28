@@ -80,6 +80,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     BDQ_USER_NAME_ENV,
     DETAIL_WINDOW_DAYS_AFTER,
     DETAIL_WINDOW_DAYS_BEFORE,
+    QUERY_FAILURE_TIMEOUT,
     QUERY_TEMPLATE,
     SOURCE_COLUMN_MAPPING,
     BigDataQueryCallError,
@@ -93,6 +94,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     is_bigdataquery_package_available,
     is_valid_simulation_code,
     load_bigdataquery_module,
+    query_failure_clue,
     registration_detail_window,
     resolve_user_name,
 )
@@ -377,6 +379,10 @@ GROUP BY catb_sim_info_id
 # 적재된 코드가 적재일 수만큼 부푼 프레임(사내 표본 하나가 32일)으로 메모리에 오르기 때문이다.
 DEFAULT_COPY_CODES: Final = 2
 DEFAULT_COPY_DAYS: Final = 4
+# 사본 확인의 조회(적재일 · 하루치 상세)가 실패하면 이만큼 쉬고 한 번 더 묻는다 — 사내 리뷰
+# `202610271800` 에서 두 판마다 다른 코드의 하루치 상세가 간헐로 「SQL」 실패했다. 시간 초과는 다시
+# 묻지 않는다 — 한 번 더 기다리면 8-5 가 에이전트 호출 제한(30분)을 넘겨 요약까지 잃을 수 있다.
+RETRY_PAUSE_SECONDS: Final = 2.0
 
 # 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
 MONTH_MERGE_SOURCE: Final = "SCENARIO_MONTH_MERGE"
@@ -476,8 +482,18 @@ _SUMMARY_PREFIX: Final = re.compile(r"^\s*(?:[-*]\s+)?")
 _CELL_SPLIT: Final = re.compile(r"\s*;\s*|\s+·\s*|\s*·\s+|,\s+")
 _CELL_SEP: Final = r"\s*(?:·|;|,)\s*"
 # 요약 줄의 키(`8-1` · `8-2W` · `8-4s` · `8-5C1` · `8-10`) — 이 꼴로 시작하는 줄은 확인 코드가
-# 있어야 한다.
+# 있어야 한다. 다만 글자가 없는 키(`8-2` · `8-4` …)는 손 메모(`8-2 CS 빈 원천 행 0 (…)`)도 그렇게
+# 시작하므로, 스크립트가 그 키로 찍는 첫 낱말(`_BARE_KEY_SHAPE`)일 때만 요약 줄로 본다.
 _SUMMARY_KEY: Final = re.compile(r"^8-\d+[A-Za-z]?\d*(?:\s|$)")
+_BARE_KEY: Final = re.compile(r"^8-\d+(?:\s|$)")
+# 글자 없는 키 뒤에 스크립트가 찍는 첫 낱말 — 수(`8-3 29,238 = …` · `8-9 0`),
+# `S 36/36` · `S -`(8-1) · `r83`(8-4) · `C9 2`(8-10 수 줄), 멈춤 · 실패 · 건너뜀 꼴(8-2 원천
+# 못 읽음 · 파생 프레임, 8-4 설비 DB · 리비전 0, 8-5 건너뜀 · 패키지, 8-10 활성 · 전부 · 시뮬레이션
+# DB · 리비전 목록, 모든 블록의 멈춤 · 요약 실패). 키로 찍는 꼴을 더하면 여기도 더한다(시험이
+# 스크립트의 `_note` 첫 칸을 모두 지나 본다).
+_BARE_KEY_SHAPE: Final = re.compile(
+    r"^8-\d+\s+(?:\d|[SrC]\s*[\d-]|원천|파생|설비|리비전|건너뜀|패키지|멈춤|요약|활성|전부|시뮬레이션)"
+)
 
 
 def summary_code(text: str) -> str:
@@ -879,14 +895,62 @@ def _latest_equipment_revision(
 # ---------------------------------------------------------------------------------- 원천 읽기
 
 
+# 원천 데이터셋을 고를 때 리비전 1 계산(대당 Capa → 소요대수)이 서는지 볼 최근 후보 수. 사내
+# 리뷰 `202610271800` 에서 가장 최근 원천의 리비전 1 계산이 멈춰 8-2 맞대기가 비었다 — 그때 다음
+# 데이터셋으로 넘어간다. 후보마다 리비전 표를 읽고 계산하므로 수를 묶는다. 서는 것이 없으면 가장
+# 최근 것으로 돌아간다.
+SOURCE_CANDIDATES: Final = 5
+
+
+@dataclass(frozen=True)
+class SkippedSource:
+    """리비전 1 계산이 서지 않아 건너뛴 원천 데이터셋 — 원천에서 온 것 가운데 최근부터 차례 ·
+    적재일 · 원천 종류(앱이 붙인 이름) · 까닭(단계와 예외 종류만). 이름·ID·값은 싣지 않는다."""
+
+    order: int
+    imported: str
+    source_type: str
+    reason: str
+
+
 @dataclass
 class SourceData:
-    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표."""
+    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표.
+
+    `required` 는 고를 때 이미 돌린 리비전 1 계산(8-2 가 다시 쓴다). `order` 는 원천에서 온
+    데이터셋 가운데 최근부터 차례(`--dataset-id` 면 0), `sources` 는 그 수다. `skipped` 는 계산이
+    서지 않아 지나친 더 최근 데이터셋이고, `fell_back` 이면 본 후보가 모두 서지 않아 가장 최근
+    것으로 돌아왔다(그때 `skipped` 는 고른 것 말고 본 것이다).
+    """
 
     dataset_label: str
     raw: pd.DataFrame
     tables: dict[str, pd.DataFrame] = field(default_factory=dict)
     revision_id: str = ""
+    required: Required | None = None
+    order: int = 0
+    sources: int = 0
+    skipped: tuple[SkippedSource, ...] = ()
+    fell_back: bool = False
+
+    def label_lines(self) -> list[str]:
+        """블록 머리의 데이터셋 줄 — 고른 데이터셋 한 줄과 건너뛴 데이터셋마다 한 줄."""
+        lines = [f"- {self.dataset_label}"]
+        if self.skipped:
+            lines.append(
+                f"- 원천에서 온 최근 데이터셋 {len(self.skipped) + 1:,}개 모두 리비전 1 계산"
+                "(대당 Capa → 소요대수)이 서지 않아 가장 최근 것으로 돌아왔다(런북 8-2). 그 밖에 "
+                "본 것:"
+                if self.fell_back
+                else "- 리비전 1 계산(대당 Capa → 소요대수)이 서지 않아 건너뛴 더 최근 원천 "
+                f"데이터셋 {len(self.skipped):,}(런북 8-2):"
+            )
+            lines.extend(
+                f"  - 최근부터 {item.order:,}번째 · 원천 종류 `{item.source_type}` · 적재 "
+                f"{item.imported} — {item.reason}"
+                for item in self.skipped
+            )
+        return lines
 
 
 _SOURCE_DATASET_FILTER: Final = (
@@ -895,107 +959,207 @@ _SOURCE_DATASET_FILTER: Final = (
 )
 
 
-def _dataset_row(
+def _dataset_rows(
     connection: duckdb.DuckDBPyConnection, dataset_id: str | None
-) -> tuple[str, str, str, object] | None:
-    """`--dataset-id` 가 없으면 원천에서 온 데이터셋 가운데 가장 최근 것.
+) -> list[tuple[str, str, str, object]]:
+    """`--dataset-id` 가 있으면 그 데이터셋 하나, 없으면 원천에서 온 데이터셋을 최근 것부터
+    `SOURCE_CANDIDATES` 개.
 
     복제·월 병합·연도 이동은 다른 시나리오에서 만든 데이터셋이라 리비전 1 이 원천 그대로가 아니다
     (복제는 원천 행도 없다). 가장 최근이 그런 것이면 대조가 조용히 원천이 아닌 것을 보게 된다.
     """
     if dataset_id:
-        row = connection.execute(
+        rows = connection.execute(
             "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset "
             "WHERE dataset_id = ?",
             [dataset_id],
-        ).fetchone()
+        ).fetchall()
     else:
-        row = connection.execute(
+        rows = connection.execute(
             "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset AS d "
-            f"WHERE {_SOURCE_DATASET_FILTER} ORDER BY imported_at DESC LIMIT 1",
-            list(DERIVED_SOURCE_TYPES),
-        ).fetchone()
-    if row is None:
+            f"WHERE {_SOURCE_DATASET_FILTER} ORDER BY imported_at DESC, dataset_id LIMIT ?",
+            [*DERIVED_SOURCE_TYPES, SOURCE_CANDIDATES],
+        ).fetchall()
+    return [(str(row[0]), str(row[1]), str(row[2]), row[3]) for row in rows]
+
+
+def _revision_one(
+    connection: duckdb.DuckDBPyConnection, scenario_id: str, dataset_id: str
+) -> tuple[str, dict[str, pd.DataFrame]] | None:
+    """그 데이터셋 시나리오의 리비전 1 과 그 표(리비전 표 + 데이터셋 표). 없으면 None."""
+    revision = connection.execute(
+        "SELECT revision_id FROM app_meta.scenario_revision "
+        "WHERE scenario_id = ? AND revision_no = 1",
+        [scenario_id],
+    ).fetchone()
+    if revision is None:
         return None
-    return str(row[0]), str(row[1]), str(row[2]), row[3]
+    revision_id = str(revision[0])
+    tables: dict[str, pd.DataFrame] = {}
+    for logical, physical in REVISION_TABLES.items():
+        tables[logical] = load_frame(
+            connection,
+            schema="rev_data",
+            table_name=physical,
+            owner_column="revision_id",
+            owner_id=revision_id,
+        )
+    for logical, physical in DATASET_TABLES.items():
+        tables[logical] = load_frame(
+            connection,
+            schema="ref_data",
+            table_name=physical,
+            owner_column="dataset_id",
+            owner_id=dataset_id,
+        )
+    return revision_id, tables
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    order: int
+    dataset_id: str
+    source_type: str
+    imported_at: object
+    revision_id: str
+    tables: dict[str, pd.DataFrame]
+    required: Required
+
+
+def _imported_day(imported_at: object) -> str:
+    return str(imported_at)[:10] if imported_at is not None else "?"
 
 
 def load_source(session: Session) -> SourceData | None:
-    """가장 최근(또는 `--dataset-id`) 데이터셋의 원천과 리비전 1 표. 한 번만 읽는다."""
+    """원천 데이터셋 하나의 원천과 리비전 1 표. 한 번만 읽고 8-2 · 8-3 · 8-9 가 나눠 본다.
+
+    `--dataset-id` 가 없으면 원천에서 온 데이터셋을 최근 것부터 보아 리비전 1 계산(대당 Capa →
+    소요대수)이 서는 첫 것을 고른다 — 서지 않은 것은 건너뛰고 그 차례 · 적재일 · 원천 종류 · 까닭
+    (단계와 예외 종류)을 남긴다. 최근 `SOURCE_CANDIDATES` 개가 모두 서지 않으면 가장 최근 것으로
+    돌아간다(그 계산 실패가 8-2 에 그대로 찍힌다). `--dataset-id` 로 고른 것은 건너뛰지 않는다.
+    """
     if session._source is not None or session._source_failure is not None:
         return session._source
     connection = session.simulation
     if connection is None:
         session._source_failure = str(session.simulation_failure)
         return None
+    skipped: list[SkippedSource] = []
     try:
-        picked = _dataset_row(connection, session.dataset_id)
-        if picked is None:
+        rows = _dataset_rows(connection, session.dataset_id)
+        if not rows:
             session._source_failure = (
                 "그 데이터셋이 없다"
                 if session.dataset_id
                 else "원천에서 온 데이터셋이 없다(복제·월 병합·연도 이동뿐이거나 등록한 적이 없다)"
             )
             return None
-        dataset_id, scenario_id, source_type, imported_at = picked
         total = _scalar(connection, "SELECT count(*) FROM app_meta.dataset")
         sources = _scalar(
             connection,
             f"SELECT count(*) FROM app_meta.dataset AS d WHERE {_SOURCE_DATASET_FILTER}",
             DERIVED_SOURCE_TYPES,
         )
-        revision = connection.execute(
-            "SELECT revision_id FROM app_meta.scenario_revision "
-            "WHERE scenario_id = ? AND revision_no = 1",
-            [scenario_id],
-        ).fetchone()
-        if revision is None:
-            session._source_failure = "그 데이터셋 시나리오의 리비전 1 이 없다"
+        picked: _Candidate | None = None
+        newest: _Candidate | None = None
+        for order, (dataset_id, scenario_id, source_type, imported_at) in enumerate(rows, 1):
+            loaded = _revision_one(connection, scenario_id, dataset_id)
+            if loaded is None:
+                if session.dataset_id:
+                    break
+                skipped.append(
+                    SkippedSource(order, _imported_day(imported_at), source_type, "리비전 1 없음")
+                )
+                continue
+            candidate = _Candidate(
+                order=0 if session.dataset_id else order,
+                dataset_id=dataset_id,
+                source_type=source_type,
+                imported_at=imported_at,
+                revision_id=loaded[0],
+                tables=loaded[1],
+                required=_calculate_required(loaded[1]),
+            )
+            if session.dataset_id or candidate.required.frame is not None:
+                picked = candidate
+                break
+            newest = newest or candidate
+            skipped.append(
+                SkippedSource(
+                    order,
+                    _imported_day(imported_at),
+                    source_type,
+                    f"{candidate.required.step} {candidate.required.failure}",
+                )
+            )
+        fell_back = picked is None and newest is not None
+        if picked is None:
+            picked = newest
+        if picked is None:
+            session._source_failure = (
+                "그 데이터셋 시나리오의 리비전 1 이 없다"
+                if session.dataset_id
+                else f"원천에서 온 최근 데이터셋 {len(rows):,}개 모두 리비전 1 이 없다"
+            )
             return None
-        revision_id = str(revision[0])
         raw = connection.execute(
             "SELECT * EXCLUDE (dataset_id, source_row_no, row_hash) "
             "FROM raw_data.core_data WHERE dataset_id = ? ORDER BY source_row_no",
-            [dataset_id],
+            [picked.dataset_id],
         ).fetch_df()
-        tables: dict[str, pd.DataFrame] = {}
-        for logical, physical in REVISION_TABLES.items():
-            tables[logical] = load_frame(
-                connection,
-                schema="rev_data",
-                table_name=physical,
-                owner_column="revision_id",
-                owner_id=revision_id,
-            )
-        for logical, physical in DATASET_TABLES.items():
-            tables[logical] = load_frame(
-                connection,
-                schema="ref_data",
-                table_name=physical,
-                owner_column="dataset_id",
-                owner_id=dataset_id,
-            )
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
         return None
-    which = (
-        "`--dataset-id` 로 고른"
-        if session.dataset_id
-        else "원천에서 온 것 가운데 가장 최근에 적재한"
-    )
-    stamp = str(imported_at)[:10] if imported_at is not None else "?"
+    if session.dataset_id:
+        which = "`--dataset-id` 로 고른"
+    elif fell_back:
+        which = (
+            f"원천에서 온 것 가운데 최근부터 {picked.order:,}번째(리비전 1 계산이 서는 것이 없어 "
+            "가장 최근 것으로 돌아왔다)"
+        )
+    elif picked.order == 1:
+        which = "원천에서 온 것 가운데 가장 최근에 적재한"
+    else:
+        which = (
+            f"원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근(최근부터 {picked.order:,}번째)"
+        )
     label = (
         f"{which} 데이터셋(전체 {total:,}개 · 원천에서 온 것 {sources:,}개) · 원천 종류 "
-        f"`{source_type}` · 적재 {stamp} · 원천 {len(raw):,}행 · 계산은 그 시나리오의 리비전 1"
+        f"`{picked.source_type}` · 적재 {_imported_day(picked.imported_at)} · "
+        f"원천 {len(raw):,}행 · 계산은 그 시나리오의 리비전 1"
     )
-    if source_type in DERIVED_SOURCE_TYPES or raw.empty:
+    if picked.source_type in DERIVED_SOURCE_TYPES or raw.empty:
         label += " · **⚠ 원천에서 온 데이터셋이 아니다 — 리비전 1 이 원천 그대로가 아닐 수 있다**"
     else:
         label += "(원천 그대로)"
+    # 돌아온 것은 건너뛴 목록에서 뺀다 — 고른 것이 그 줄에 두 번 서지 않게.
     session._source = SourceData(
-        dataset_label=label, raw=raw, tables=tables, revision_id=revision_id
+        dataset_label=label,
+        raw=raw,
+        tables=picked.tables,
+        revision_id=picked.revision_id,
+        required=picked.required,
+        order=picked.order,
+        sources=sources,
+        skipped=tuple(item for item in skipped if item.order != picked.order),
+        fell_back=fell_back,
     )
     return session._source
+
+
+def _source_note(source: SourceData) -> str | None:
+    """요약의 8-2D — 더 최근 원천 데이터셋을 건너뛴 때만. 「8-2D 고름 k/N · 건너뜀 n · <차례>번째
+    <까닭> …」, 후보가 모두 서지 않았으면 「건너뜀」 대신 「선 것 없음」."""
+    if not source.skipped:
+        return None
+    return _note(
+        "8-2D",
+        f"고름 {source.order:,}/{source.sources:,}",
+        f"선 것 없음 {len(source.skipped) + 1:,}"
+        if source.fell_back
+        else f"건너뜀 {len(source.skipped):,}",
+        *(f"{item.order:,}번째 {item.reason}" for item in source.skipped),
+    )
 
 
 # ---------------------------------------------------------------------------------- 8-2 legacy
@@ -1142,8 +1306,8 @@ def _key_set(frame: pd.DataFrame, keys: Sequence[str]) -> set[tuple[object, ...]
     }
 
 
-def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    unit_capacity = calculate_unit_capacity(
+def _unit_capacity(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    return calculate_unit_capacity(
         upeh=tables["RQ_UPEH"],
         run_rate=tables["RQ_RUN_RATE"],
         vital=tables["RQ_VITAL"],
@@ -1152,6 +1316,13 @@ def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         lot_ratio=tables["RQ_LOT_RATIO"],
         wf_ratio=tables["RQ_WF_RATIO"],
     )
+
+
+def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    return _required_from(tables, _unit_capacity(tables))
+
+
+def _required_from(tables: dict[str, pd.DataFrame], unit_capacity: pd.DataFrame) -> pd.DataFrame:
     return calculate_required_equipment(
         reqb=tables["RQ_REQB"],
         plan=tables["RQ_PKG_PLAN"],
@@ -1178,8 +1349,10 @@ def _requirement_section(
     contract = load_core_data_contract()
     required = calculated.frame
     if required is None:
-        notes.append(_note("8-2R", _short(calculated.failure)))
-        return [*lines, f"- 신규 소요대수 계산 {calculated.failure} — 대조하지 않았다", ""]
+        # 멈춘 단계(대당 Capa · 소요대수)를 함께 적는다 — 「8-2R 대당 Capa 실패(ValueError)」.
+        stopped = f"{calculated.step} {calculated.failure}".strip()
+        notes.append(_note("8-2R", _short(stopped)))
+        return [*lines, f"- 신규 소요대수 계산이 멈췄다 — {stopped}. 대조하지 않았다", ""]
     route = _route_frame(core)
     exclusions = required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
     excluded_keys = (
@@ -1825,17 +1998,24 @@ def _route_category_lines(link: RouteLink, route: pd.DataFrame) -> list[str]:
 
 @dataclass(frozen=True)
 class Required:
-    """리비전 1 로 다시 계산한 `RQ_REQB` 행별 결과. 실패하면 예외 종류만 남는다."""
+    """리비전 1 로 다시 계산한 `RQ_REQB` 행별 결과. 실패하면 멈춘 단계(`대당 Capa` · `소요대수`)와
+    예외 종류만 남는다."""
 
     frame: pd.DataFrame | None
     failure: str | None = None
+    step: str = ""
 
 
 def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
+    """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류만 적는다."""
     try:
-        return Required(frame=_required_equipment(tables))
-    except Exception as exc:  # 기준정보 오류면 계산이 멈춘다. 종류만 적는다
-        return Required(frame=None, failure=_failure(exc))
+        unit_capacity = _unit_capacity(tables)
+    except Exception as exc:  # 문구에는 키 값이 실린다
+        return Required(frame=None, failure=_failure(exc), step="대당 Capa")
+    try:
+        return Required(frame=_required_from(tables, unit_capacity))
+    except Exception as exc:  # 문구에는 키 값이 실린다
+        return Required(frame=None, failure=_failure(exc), step="소요대수")
 
 
 def _wafer_route_tables(cells: RouteCells) -> list[str]:
@@ -2139,7 +2319,10 @@ def check_legacy(session: Session) -> list[str]:
         notes.append(_note("8-2", f"원천 못 읽음 {session._source_failure}"))
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     raw, tables = source.raw, source.tables
-    lines.extend([f"- {source.dataset_label}", ""])
+    lines.extend([*source.label_lines(), ""])
+    skipped_note = _source_note(source)
+    if skipped_note is not None:
+        notes.append(skipped_note)
     lines.extend(
         [
             *_table(["원천 컬럼", "값 있음", "0", "음수", "고유값 수"], _fill_rows(raw)),
@@ -2196,7 +2379,7 @@ def check_legacy(session: Session) -> list[str]:
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
     _noted(notes, "8-2L", lambda: [_load_note(load_names, load_results)])
 
-    required = _calculate_required(tables)
+    required = source.required or _calculate_required(tables)
     try:
         lines.extend(_wafer_route_section(core, tables, required, grain, contract, notes))
     except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다
@@ -2233,7 +2416,7 @@ def check_reqb(session: Session) -> list[str]:
         session.notes.append(_note("8-3", f"원천 못 읽음 {session._source_failure}"))
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     reqb = source.tables.get("RQ_REQB", pd.DataFrame()).copy()
-    lines.extend([f"- {source.dataset_label}", ""])
+    lines.extend([*source.label_lines(), ""])
     if reqb.empty:
         session.notes.append(_note("8-3", "0"))
         return [*lines, "- 리비전 1 의 `RQ_REQB` 가 비어 있다", ""]
@@ -2378,7 +2561,7 @@ def check_home_months(session: Session) -> list[str]:
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     tables = source.tables
     plan = tables.get("RQ_PKG_PLAN", pd.DataFrame())
-    lines.extend([f"- {source.dataset_label}", ""])
+    lines.extend([*source.label_lines(), ""])
     if plan.empty:
         session.notes.append(_note("8-9", "0"))
         return [*lines, "- 리비전 1 의 `RQ_PKG_PLAN` 이 비어 있다", ""]
@@ -3624,11 +3807,53 @@ def _bdq_failure(exc: BaseException) -> str:
     # 패키지 예외는 어댑터가 감싸 올린다 — 감싸기 전 사슬의 종류 이름과 갈래(시간 초과·연결·
     # SQL, 문구 낱말로 가른 추정)를 적는다. 「Error」 하나로는 시간 초과인지 가를 수 없었다
     # (사내 리뷰 202610200720).
+    # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다(문구 원문이 아니다) — 같은 「SQL」 이
+    # 문법 낱말로 섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800).
     if isinstance(exc, BigDataQueryCallError):
-        names, kind = exc.type_names, exc.kind
+        names, kind, clue = exc.type_names, exc.kind, exc.clue
     else:
         names, kind = failure_type_names(exc), classify_query_failure(exc)
-    return f"조회 실패({' ← '.join(names)} · {kind})"
+        clue = query_failure_clue(exc)
+    return f"조회 실패({' ← '.join(names)} · {kind}{f':{clue}' if clue else ''})"
+
+
+def _retryable(exc: BaseException) -> bool:
+    """한 번 더 물을 실패인가 — 우리 어댑터의 안내(계정 · 패키지 · SQL 미설정)는 다시 물어도 같고,
+    시간 초과는 시간 예산(`RETRY_PAUSE_SECONDS` 주석) 때문에 다시 묻지 않는다."""
+    if isinstance(exc, RuntimeError) and not isinstance(exc, BigDataQueryCallError):
+        return False
+    kind = exc.kind if isinstance(exc, BigDataQueryCallError) else classify_query_failure(exc)
+    return kind != QUERY_FAILURE_TIMEOUT
+
+
+@dataclass(frozen=True)
+class Asked:
+    """조회 한 번(실패하면 한 번 더)의 결과 — 값 또는 실패 꼴, 그리고 다시 물었는지."""
+
+    frame: pd.DataFrame | None
+    failure: str | None = None
+    retried: bool = False
+
+
+def ask_twice(call: Callable[[], pd.DataFrame]) -> Asked:
+    """조회 한 번 — 실패하면 `RETRY_PAUSE_SECONDS` 쉬고 한 번 더(`_retryable` 인 것만).
+
+    두 번 다 실패하면 꼴이 같으면 「… 두 번」, 다르면 「첫 꼴 뒤 둘째 꼴」 이다. `KeyboardInterrupt`
+    는 잡지 않는다.
+    """
+    try:
+        return Asked(frame=call())
+    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
+        first = _bdq_failure(exc)
+        if not _retryable(exc):
+            return Asked(frame=None, failure=first)
+    time.sleep(RETRY_PAUSE_SECONDS)
+    try:
+        return Asked(frame=call(), retried=True)
+    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
+        second = _bdq_failure(exc)
+    failure = f"{first} 두 번" if second == first else f"{first} 뒤 {second}"
+    return Asked(frame=None, failure=failure, retried=True)
 
 
 @dataclass
@@ -4387,7 +4612,12 @@ def _position_label(day: date, days: Sequence[date], chosen: CopyDays) -> str:
 
 @dataclass
 class CopyCheck:
-    """여러 날 적재된 코드 하나 — 고른 날마다의 사실. 판정은 내리지 않는다(사외가 한다)."""
+    """여러 날 적재된 코드 하나 — 고른 날마다의 사실. 판정은 내리지 않는다(사외가 한다).
+
+    `failure` 는 코드 전체가 멈춘 까닭(`적재일 조회 실패(…)` · `기준 날 상세 조회 실패(…)`)이다.
+    기준 날이 아닌 날이 다시 물어도 실패하면 그날만 `failed_days`(자리, 꼴)에 두고 나머지 날은
+    견준다. `retried` 는 첫 번이 실패해 다시 물어 받은 조회 수다.
+    """
 
     extra: bool
     load_days: int = 0
@@ -4395,6 +4625,8 @@ class CopyCheck:
     note: str = ""
     days: list[DayFacts] = field(default_factory=list)
     failure: str | None = None
+    failed_days: list[tuple[str, str]] = field(default_factory=list)
+    retried: int = 0
 
 
 def check_copies(
@@ -4412,13 +4644,18 @@ def check_copies(
     하루치는 앱과 같은 상세 SQL 을 그날 하루 창으로 부른 것이다 — 상세 SQL 이 적재 시각으로만
     거르므로 그 창이 곧 그날 적재분이다. `bounded` 가 아니면(전 코드 조회가 없어 등록일 창으로
     셌으면) 기준 날이 창 끝날일 때 그렇게 적는다.
+
+    조회는 모두 `ask_twice` 로 묻는다(실패하면 한 번 더). 기준 날을 먼저 받는다 — 기준 날이 두 번
+    다 실패하면 견줄 수 없어 다른 날은 묻지 않고 코드 전체를 실패로 둔다. 다른 날이 두 번 다
+    실패하면 그날만 빼고 견준다.
     """
     result = CopyCheck(extra=extra)
-    try:
-        by_day = _day_rows(probe.load_days(code, window))
-    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
-        result.failure = _bdq_failure(exc)
+    asked = ask_twice(partial(probe.load_days, code, window))
+    if asked.frame is None:
+        result.failure = f"적재일 {asked.failure}"
         return result
+    result.retried += int(asked.retried)
+    by_day = _day_rows(asked.frame)
     days = sorted(by_day)
     result.load_days = len(days)
     result.day_rows = tuple(by_day[day] for day in days)
@@ -4432,13 +4669,19 @@ def check_copies(
         notes.append("기준 날이 창 끝날에 닿음(창 밖에도 적재가 있을 수 있다)")
     result.note = " · ".join(notes)
     loads: dict[date, DayLoad] = {}
-    try:
-        for day in chosen.picks:
-            frame = probe.detail_frame(code, QueryWindow(start_date=day, end_date=day))
-            loads[day] = day_load(day, frame)
-    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
-        result.failure = _bdq_failure(exc)
-        return result
+    order = [chosen.reference, *(day for day in chosen.picks if day != chosen.reference)]
+    for day in order:
+        asked = ask_twice(
+            partial(probe.detail_frame, code, QueryWindow(start_date=day, end_date=day))
+        )
+        if asked.frame is None:
+            if day == chosen.reference:
+                result.failure = f"기준 날 상세 {asked.failure}"
+                return result
+            result.failed_days.append((_position_label(day, days, chosen), f"상세 {asked.failure}"))
+            continue
+        result.retried += int(asked.retried)
+        loads[day] = day_load(day, asked.frame)
     reference = loads[chosen.reference]
     result.days = [
         day_facts(
@@ -4447,6 +4690,7 @@ def check_copies(
             None if day == chosen.reference else reference,
         )
         for day in chosen.picks
+        if day in loads
     ]
     return result
 
@@ -4561,11 +4805,21 @@ def copy_lines(index: int, check: CopyCheck) -> list[str]:
     )
     if not check.days:
         return [f"{summary} · 여러 날이 아님", ""]
+    tail = [
+        f"- 코드 {index} 견주지 못한 날 — {label}: {failure}"
+        for label, failure in check.failed_days
+    ]
+    if check.retried:
+        tail.append(
+            f"- 코드 {index} 첫 번이 실패해 {RETRY_PAUSE_SECONDS:g}초 뒤 다시 물어 받은 조회 "
+            f"{check.retried:,}"
+        )
     return [
         f"{summary} · {check.note}",
         "",
         *_table(DAY_FACT_HEADERS, [day_fact_row(facts) for facts in check.days]),
         "",
+        *([*tail, ""] if tail else []),
     ]
 
 
@@ -4583,14 +4837,25 @@ def copy_note(index: int, check: CopyCheck) -> str:
 
     그날에만 ~ 그 밖 칸만 네 칸은 견준 날마다 더한 합이고, 하루 안 충돌은 받은 날 전부(기준 날
     포함)를 더한 합이다 — 날마다 같은 꼴로 충돌하면 하루 값의 날 수 배다. 판정은 없다.
+
+    조회가 흔들린 때만 끝에 칸이 붙는다 — 다시 물어도 못 받은 날이 있으면 「못 받음 n <첫 실패
+    꼴>」(견준 날 · 합은 받은 날만), 첫 번이 실패해 다시 물어 받은 조회가 있으면 「다시 n」.
     """
     key = f"8-5C{index}"
     kind = "더함" if check.extra else "표본"
     if check.failure is not None:
         return _note(key, f"{kind} {check.failure}")
     compared = [facts for facts in check.days if facts.compared]
-    if not compared:
-        return _note(key, f"{kind} {check.load_days:,}일", "여러 날 아님")
+    shaky = [
+        *(
+            [f"못 받음 {len(check.failed_days):,} {check.failed_days[0][1]}"]
+            if check.failed_days
+            else []
+        ),
+        *([f"다시 {check.retried:,}"] if check.retried else []),
+    ]
+    if not compared and not check.failed_days:
+        return _note(key, f"{kind} {check.load_days:,}일", "여러 날 아님", *shaky)
     return _note(
         key,
         f"{kind} {check.load_days:,}일",
@@ -4600,6 +4865,7 @@ def copy_note(index: int, check: CopyCheck) -> str:
         _summed(facts.changed for facts in compared),
         _summed(facts.other_only for facts in compared),
         _summed(facts.conflicts for facts in check.days),
+        *shaky,
     )
 
 
@@ -4880,7 +5146,11 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--equipment-database", type=Path, default=EQUIPMENT_DUCKDB_PATH, help="설비 DuckDB"
     )
-    parser.add_argument("--dataset-id", default=None, help="비우면 가장 최근에 적재한 데이터셋")
+    parser.add_argument(
+        "--dataset-id",
+        default=None,
+        help="비우면 원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근 데이터셋(런북 8-2)",
+    )
     parser.add_argument(
         "--census-all-revisions",
         action="store_true",
@@ -5040,34 +5310,98 @@ _CENSUS_ALL_ZERO: Final = re.compile(rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}모두\s*
 _CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*$")
 
 
-def _last_number(text: str) -> float | None:
-    numbers = _SUMMARY_NUMBER.findall(text.replace(",", ""))
-    return float(numbers[-1]) if numbers else None
+def _numbers(text: str) -> list[float]:
+    return [float(number) for number in _SUMMARY_NUMBER.findall(text.replace(",", ""))]
 
 
-def _equations(body: str, *, coded: bool = True) -> Iterator[bool]:
-    """줄 안의 `합 = 항 + 항` 식마다 맞는지.
+# 항 끝에 붙인 괄호 덧말(`안함 0 (다른 칸 2)`) — 손으로 쓴 줄이 마지막 항 뒤에 `;` 없이 붙인다.
+_TRAILING_ASIDE: Final = re.compile(r"(?:\s*\([^()]*\))+\s*$")
+# `=+` · `+=` — 손으로 ` + ` 를 치다 `=` 를 함께 친 꼴(사내 리뷰 202610231430 ·
+# `B 11 = 기록 11 =+ …`).
+_STRAY_PLUS: Final = re.compile(r"=\s*\+|\+\s*=")
+# 항 가름 — 띄어쓰기가 빠진 `3+ x` · `3 +x` 도 가름이다(`+` 는 식 칸 안에서 더하기로만 쓴다).
+_PLUS: Final = re.compile(r"\s*\+\s*")
 
-    칸(` · ` — 손으로 옮긴 줄은 `;` · `, ` 도)마다 보고, 수가 아닌 칸(실패 등)은 건너뛴다. 손으로 쓴
-    줄(`coded=False`)은 항이 둘 이상인 식만 본다 — `8장 = <stamp> …` 처럼 띄어 쓴 접은 줄을 식으로
-    읽지 않게.
+
+def _without_aside(text: str) -> str:
+    """끝의 괄호 덧말을 뗀 글 — 떼면 수가 남지 않으면(`(12)` 처럼 수가 괄호에만 있으면) 그대로."""
+    bare = _TRAILING_ASIDE.sub("", text)
+    return bare if bare != text and _numbers(bare) else text
+
+
+def _term_value(text: str) -> float | None:
+    """항의 값 — 끝의 괄호 덧말을 뗀 뒤 마지막 수. 수가 없으면 None."""
+    numbers = _numbers(_without_aside(text))
+    return numbers[-1] if numbers else None
+
+
+@dataclass(frozen=True)
+class EquationCheck:
+    """줄 안 `합 = 항 + 항` 식 하나 — 서는지와, 서지만 손 전사 꼴이 다르면 그 까닭(`form`)."""
+
+    holds: bool
+    form: str | None = None
+
+
+_FORM_MISSING_PLUS: Final = "항 사이 ` + ` 가 빠진 것으로 읽으면 수가 맞다"
+_FORM_STRAY_PLUS: Final = "`=+` 를 ` + ` 로 읽으면 수가 맞다"
+_FORM_UNREAD: Final = "`=+` 가 있어 식으로 읽지 못했다 — 눈으로 셈한다"
+
+
+def _split_reading_holds(total: float, parts: Sequence[str]) -> bool:
+    """항마다 든 수를 모두 따로 더하면 합이 서는가(항 사이 ` + ` 가 빠진 꼴 — `확정 52 완료 0`)."""
+    split = [number for part in parts for number in _numbers(_without_aside(part))]
+    return len(split) > len(parts) and math.isclose(total, sum(split))
+
+
+def _equation(cell: str, *, coded: bool) -> EquationCheck | None:
+    """칸 하나의 식. 식이 아니거나 수가 아닌 칸(실패 등)이면 None.
+
+    손으로 쓴 줄(`coded=False`)은 항이 둘 이상인 식만 셈한다 — `8장 = <stamp> …` 처럼 띄어 쓴
+    접은 줄을 식으로 읽지 않게. 항 하나짜리는 항 사이 ` + ` 가 빠진 꼴(`이 층 421 = 표 295
+    묶음 넘침 126`)로 읽어 수가 맞을 때만 꼴로 알린다(틀려도 맞지 않는다고 하지 않는다 — 식이 아닐
+    수 있다).
     """
+    if " = " not in cell:
+        return EquationCheck(holds=True, form=_FORM_UNREAD) if _STRAY_PLUS.search(cell) else None
+    left, right = cell.split(" = ", 1)
+    stray = _STRAY_PLUS.search(right) is not None
+    right = _without_aside(_STRAY_PLUS.sub("+", right))
+    parts = [part for part in _PLUS.split(right) if part.strip()]
+    total = _term_value(left)
+    terms = [_term_value(part) for part in parts]
+    if total is None or not parts or any(term is None for term in terms):
+        return EquationCheck(holds=True, form=_FORM_UNREAD) if stray else None
+    if not coded and len(parts) < 2 and not stray:
+        if _split_reading_holds(total, parts):
+            return EquationCheck(holds=True, form=_FORM_MISSING_PLUS)
+        return None
+    if math.isclose(total, sum(cast(float, term) for term in terms)):
+        return EquationCheck(holds=True, form=_FORM_STRAY_PLUS if stray else None)
+    if _split_reading_holds(total, parts):
+        return EquationCheck(holds=True, form=_FORM_MISSING_PLUS)
+    return EquationCheck(holds=False)
+
+
+def _equations(body: str, *, coded: bool = True) -> Iterator[EquationCheck]:
+    """줄 안의 `합 = 항 + 항` 식마다 — 칸(` · ` — 손으로 옮긴 줄은 `;` · `, ` 도)마다 본다."""
     for cell in _CELL_SPLIT.split(body):
-        if " = " not in cell:
-            continue
-        left, right = cell.split(" = ", 1)
-        parts = right.split(" + ")
-        if not coded and len(parts) < 2:
-            continue
-        total = _last_number(left)
-        terms = [_last_number(term) for term in parts]
-        if total is None or any(term is None for term in terms):
-            continue
-        yield math.isclose(total, sum(cast(float, term) for term in terms))
+        checked = _equation(cell, coded=coded)
+        if checked is not None:
+            yield checked
 
 
-def check_transcript(lines: Iterable[str]) -> list[str]:
-    """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다 — 맞지 않는 것마다 한 줄. 비면 다 맞다.
+@dataclass(frozen=True)
+class TranscriptCheck:
+    """압축본 다시 셈 — `problems` 는 맞지 않는 것(다시 옮겨 달라고 할 줄), `forms` 는 수는 맞는데
+    손 전사 꼴이 다른 줄(다시 청하지 않는다 — 바로잡은 사본에서 가름만 고친다)."""
+
+    problems: list[str]
+    forms: list[str]
+
+
+def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
+    """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다.
 
     넷을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
     시작하는 줄에 확인 코드가 있는지, 줄 안 `합 = 항 + 항` 식이 서는지(손으로 쓴 줄 — 판정 · B ·
@@ -5075,8 +5409,14 @@ def check_transcript(lines: Iterable[str]) -> list[str]:
     아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지. 8-10 은 머리마다 따로 센다 — 요약이
     둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 줄 앞의 목록 표지는
     떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
+
+    손 전사 꼴은 맞지 않는 것으로 세지 않고 `forms` 에 둔다 — 띄어쓰기 빠진 `3+ x` 는 그대로 읽고,
+    마지막 항 뒤 괄호 덧말(`안함 0 (다른 칸 2)`)은 떼고 읽는다. 항 사이 ` + ` 가 빠진 식(`확정 52
+    완료 0`) · `=+` 로 친 식은 그렇게 읽어 수가 맞으면 꼴이다. 글자 없는 키로 시작하지만 스크립트가
+    찍는 꼴이 아닌 줄(`8-2 CS …` 메모)은 확인 코드를 요구하지 않고 꼴로 알린다.
     """
     problems: list[str] = []
+    forms: list[str] = []
     groups: list[tuple[int, int, int, list[int]]] = []
     for number, raw in enumerate(lines, start=1):
         text = _summary_body(raw)
@@ -5084,11 +5424,22 @@ def check_transcript(lines: Iterable[str]) -> list[str]:
         body = text if coded is None else coded.group("body")
         if coded is None:
             if _SUMMARY_KEY.match(text):
-                problems.append(f"줄 {number} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다")
+                if _BARE_KEY.match(text) and not _BARE_KEY_SHAPE.match(text):
+                    forms.append(
+                        f"줄 {number} — `8-` 키로 시작하지만 요약 줄 꼴이 아니라 메모로 읽었다"
+                        "(확인 코드를 보지 않는다 — 메모는 `8장 메모` 로 시작한다)"
+                    )
+                else:
+                    problems.append(f"줄 {number} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다")
         elif summary_code(body) != coded.group("code"):
             problems.append(f"줄 {number} — 확인 코드가 맞지 않는다(그 줄의 수를 다시 본다)")
-        if not all(_equations(body, coded=coded is not None)):
+        checks = list(_equations(body, coded=coded is not None))
+        if not all(checked.holds for checked in checks):
             problems.append(f"줄 {number} — 줄 안 검산 식이 서지 않는다")
+        forms.extend(
+            f"줄 {number} — 줄 안 식: {form}"
+            for form in dict.fromkeys(checked.form for checked in checks if checked.form)
+        )
         head = _CENSUS_HEAD.match(body)
         if head is not None:
             groups.append(
@@ -5108,13 +5459,20 @@ def check_transcript(lines: Iterable[str]) -> list[str]:
                 f"줄 {number} — 8-10 머리(0 아님 {listed} · 합 {total:,})와 아래 수 줄"
                 f"({len(items)}줄 · 합 {sum(items):,})이 다르다 — 줄이 빠졌거나 겹쳤다"
             )
-    return problems
+    return TranscriptCheck(problems=problems, forms=forms)
+
+
+def check_transcript(lines: Iterable[str]) -> list[str]:
+    """`review_transcript` 의 맞지 않는 것만 — 비면 다 맞다(손 전사 꼴은 세지 않는다)."""
+    return review_transcript(lines).problems
 
 
 def _check_summary(path: Path) -> int:
     """`--check-summary` — 받은 리뷰 압축본 파일을 다시 셈해 맞지 않는 줄 번호만 찍는다.
 
-    값은 찍지 않는다. 맞지 않는 줄이 있거나 확인 코드가 있는 줄이 하나도 없으면 1 이다.
+    값은 찍지 않는다. 맞지 않는 줄이 있거나 확인 코드가 있는 줄이 하나도 없으면 1 이다. 수는
+    맞는데 손 전사 꼴만 다른 줄은 첫 줄 끝에 `꼴 n` 을 달고 맞지 않는 것 뒤에 `(꼴)` 로 찍는다 —
+    종료 코드에 들지 않는다.
     """
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
@@ -5122,11 +5480,14 @@ def _check_summary(path: Path) -> int:
         print(f"파일을 읽지 못함 — {_failure(exc)}")
         return 2
     coded = sum(1 for line in lines if _SUMMARY_CODE.match(_summary_body(line)))
-    problems = check_transcript(lines)
-    print(f"확인 코드가 있는 줄 {coded:,} · 맞지 않는 것 {len(problems):,}")
-    for problem in problems:
+    checked = review_transcript(lines)
+    forms = f" · 꼴 {len(checked.forms):,}" if checked.forms else ""
+    print(f"확인 코드가 있는 줄 {coded:,} · 맞지 않는 것 {len(checked.problems):,}{forms}")
+    for problem in checked.problems:
         print(f"- {problem}")
-    return 1 if problems or not coded else 0
+    for form in checked.forms:
+        print(f"- (꼴) {form}")
+    return 1 if checked.problems or not coded else 0
 
 
 _HEADER: Final = (
