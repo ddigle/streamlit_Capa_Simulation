@@ -126,24 +126,39 @@ def test_both_steps_render_in_one_run() -> None:
     }
 
 
-def test_the_dropped_row_warning_stands_under_the_saved_notice() -> None:
-    """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 같은 알림 칸에 차례로 서고, 한 번만 그린다."""
+@pytest.mark.parametrize("package_ready", [False, True], ids=["패키지 없음", "패키지 있음"])
+def test_the_dropped_row_warning_stands_under_the_saved_notice(
+    monkeypatch: pytest.MonkeyPatch, package_ready: bool
+) -> None:
+    """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 같은 알림 칸에 차례로 서고, 한 번만 그린다.
+
+    알림 칸 밑의 설정 띠는 사내 패키지가 깔렸으면 성공, 없으면 경고다 — 이 PC 에 깔렸는지에 기대지
+    않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
     from capa_simulation.components.flash import FlashNote
 
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: package_ready)
+    saved = "「PSM W42」를 저장하고 r1을 올렸습니다."
     notice = (
         "CS 가 빈 행 3개(계획 1행 · 경로 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
     )
     app = _run(
         **{
-            registration.REGISTRATION_FLASH_KEY: "「PSM W42」를 저장하고 r1을 올렸습니다.",
+            registration.REGISTRATION_FLASH_KEY: saved,
             registration.REGISTRATION_DROP_FLASH_KEY: FlashNote(
                 "warning", notice, ":material/warning:"
             ),
         }
     )
 
-    assert [item.value for item in app.success] == ["「PSM W42」를 저장하고 r1을 올렸습니다."]
-    assert notice in [item.value for item in app.warning]
+    successes = [item.value for item in app.success]
+    warned = [item.value for item in app.warning]
+    banner = "사내 BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다."
+    assert successes == ([saved, banner] if package_ready else [saved])
+    assert warned[0] == notice and warned.count(notice) == 1
+    if not package_ready:
+        assert warned[1:] and "bigdataquery 패키지가 없어" in warned[1]
     assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
 
 
