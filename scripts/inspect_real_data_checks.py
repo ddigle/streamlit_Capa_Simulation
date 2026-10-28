@@ -475,8 +475,18 @@ _SUMMARY_PREFIX: Final = re.compile(r"^\s*(?:[-*]\s+)?")
 _CELL_SPLIT: Final = re.compile(r"\s*;\s*|\s+·\s*|\s*·\s+|,\s+")
 _CELL_SEP: Final = r"\s*(?:·|;|,)\s*"
 # 요약 줄의 키(`8-1` · `8-2W` · `8-4s` · `8-5C1` · `8-10`) — 이 꼴로 시작하는 줄은 확인 코드가
-# 있어야 한다.
+# 있어야 한다. 다만 글자가 없는 키(`8-2` · `8-4` …)는 손 메모(`8-2 CS 빈 원천 행 0 (…)`)도 그렇게
+# 시작하므로, 스크립트가 그 키로 찍는 첫 낱말(`_BARE_KEY_SHAPE`)일 때만 요약 줄로 본다.
 _SUMMARY_KEY: Final = re.compile(r"^8-\d+[A-Za-z]?\d*(?:\s|$)")
+_BARE_KEY: Final = re.compile(r"^8-\d+(?:\s|$)")
+# 글자 없는 키 뒤에 스크립트가 찍는 첫 낱말 — 수(`8-3 29,238 = …` · `8-9 0`),
+# `S 36/36` · `S -`(8-1) · `r83`(8-4) · `C9 2`(8-10 수 줄), 멈춤 · 실패 · 건너뜀 꼴(8-2 원천
+# 못 읽음 · 파생 프레임, 8-4 설비 DB · 리비전 0, 8-5 건너뜀 · 패키지, 8-10 활성 · 전부 · 시뮬레이션
+# DB · 리비전 목록, 모든 블록의 멈춤 · 요약 실패). 키로 찍는 꼴을 더하면 여기도 더한다(시험이
+# 스크립트의 `_note` 첫 칸을 모두 지나 본다).
+_BARE_KEY_SHAPE: Final = re.compile(
+    r"^8-\d+\s+(?:\d|[SrC]\s*[\d-]|원천|파생|설비|리비전|건너뜀|패키지|멈춤|요약|활성|전부|시뮬레이션)"
+)
 
 
 def summary_code(text: str) -> str:
@@ -5293,34 +5303,98 @@ _CENSUS_ALL_ZERO: Final = re.compile(rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}모두\s*
 _CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*$")
 
 
-def _last_number(text: str) -> float | None:
-    numbers = _SUMMARY_NUMBER.findall(text.replace(",", ""))
-    return float(numbers[-1]) if numbers else None
+def _numbers(text: str) -> list[float]:
+    return [float(number) for number in _SUMMARY_NUMBER.findall(text.replace(",", ""))]
 
 
-def _equations(body: str, *, coded: bool = True) -> Iterator[bool]:
-    """줄 안의 `합 = 항 + 항` 식마다 맞는지.
+# 항 끝에 붙인 괄호 덧말(`안함 0 (다른 칸 2)`) — 손으로 쓴 줄이 마지막 항 뒤에 `;` 없이 붙인다.
+_TRAILING_ASIDE: Final = re.compile(r"(?:\s*\([^()]*\))+\s*$")
+# `=+` · `+=` — 손으로 ` + ` 를 치다 `=` 를 함께 친 꼴(사내 리뷰 202610231430 ·
+# `B 11 = 기록 11 =+ …`).
+_STRAY_PLUS: Final = re.compile(r"=\s*\+|\+\s*=")
+# 항 가름 — 띄어쓰기가 빠진 `3+ x` · `3 +x` 도 가름이다(`+` 는 식 칸 안에서 더하기로만 쓴다).
+_PLUS: Final = re.compile(r"\s*\+\s*")
 
-    칸(` · ` — 손으로 옮긴 줄은 `;` · `, ` 도)마다 보고, 수가 아닌 칸(실패 등)은 건너뛴다. 손으로 쓴
-    줄(`coded=False`)은 항이 둘 이상인 식만 본다 — `8장 = <stamp> …` 처럼 띄어 쓴 접은 줄을 식으로
-    읽지 않게.
+
+def _without_aside(text: str) -> str:
+    """끝의 괄호 덧말을 뗀 글 — 떼면 수가 남지 않으면(`(12)` 처럼 수가 괄호에만 있으면) 그대로."""
+    bare = _TRAILING_ASIDE.sub("", text)
+    return bare if bare != text and _numbers(bare) else text
+
+
+def _term_value(text: str) -> float | None:
+    """항의 값 — 끝의 괄호 덧말을 뗀 뒤 마지막 수. 수가 없으면 None."""
+    numbers = _numbers(_without_aside(text))
+    return numbers[-1] if numbers else None
+
+
+@dataclass(frozen=True)
+class EquationCheck:
+    """줄 안 `합 = 항 + 항` 식 하나 — 서는지와, 서지만 손 전사 꼴이 다르면 그 까닭(`form`)."""
+
+    holds: bool
+    form: str | None = None
+
+
+_FORM_MISSING_PLUS: Final = "항 사이 ` + ` 가 빠진 것으로 읽으면 수가 맞다"
+_FORM_STRAY_PLUS: Final = "`=+` 를 ` + ` 로 읽으면 수가 맞다"
+_FORM_UNREAD: Final = "`=+` 가 있어 식으로 읽지 못했다 — 눈으로 셈한다"
+
+
+def _split_reading_holds(total: float, parts: Sequence[str]) -> bool:
+    """항마다 든 수를 모두 따로 더하면 합이 서는가(항 사이 ` + ` 가 빠진 꼴 — `확정 52 완료 0`)."""
+    split = [number for part in parts for number in _numbers(_without_aside(part))]
+    return len(split) > len(parts) and math.isclose(total, sum(split))
+
+
+def _equation(cell: str, *, coded: bool) -> EquationCheck | None:
+    """칸 하나의 식. 식이 아니거나 수가 아닌 칸(실패 등)이면 None.
+
+    손으로 쓴 줄(`coded=False`)은 항이 둘 이상인 식만 셈한다 — `8장 = <stamp> …` 처럼 띄어 쓴
+    접은 줄을 식으로 읽지 않게. 항 하나짜리는 항 사이 ` + ` 가 빠진 꼴(`이 층 421 = 표 295
+    묶음 넘침 126`)로 읽어 수가 맞을 때만 꼴로 알린다(틀려도 맞지 않는다고 하지 않는다 — 식이 아닐
+    수 있다).
     """
+    if " = " not in cell:
+        return EquationCheck(holds=True, form=_FORM_UNREAD) if _STRAY_PLUS.search(cell) else None
+    left, right = cell.split(" = ", 1)
+    stray = _STRAY_PLUS.search(right) is not None
+    right = _without_aside(_STRAY_PLUS.sub("+", right))
+    parts = [part for part in _PLUS.split(right) if part.strip()]
+    total = _term_value(left)
+    terms = [_term_value(part) for part in parts]
+    if total is None or not parts or any(term is None for term in terms):
+        return EquationCheck(holds=True, form=_FORM_UNREAD) if stray else None
+    if not coded and len(parts) < 2 and not stray:
+        if _split_reading_holds(total, parts):
+            return EquationCheck(holds=True, form=_FORM_MISSING_PLUS)
+        return None
+    if math.isclose(total, sum(cast(float, term) for term in terms)):
+        return EquationCheck(holds=True, form=_FORM_STRAY_PLUS if stray else None)
+    if _split_reading_holds(total, parts):
+        return EquationCheck(holds=True, form=_FORM_MISSING_PLUS)
+    return EquationCheck(holds=False)
+
+
+def _equations(body: str, *, coded: bool = True) -> Iterator[EquationCheck]:
+    """줄 안의 `합 = 항 + 항` 식마다 — 칸(` · ` — 손으로 옮긴 줄은 `;` · `, ` 도)마다 본다."""
     for cell in _CELL_SPLIT.split(body):
-        if " = " not in cell:
-            continue
-        left, right = cell.split(" = ", 1)
-        parts = right.split(" + ")
-        if not coded and len(parts) < 2:
-            continue
-        total = _last_number(left)
-        terms = [_last_number(term) for term in parts]
-        if total is None or any(term is None for term in terms):
-            continue
-        yield math.isclose(total, sum(cast(float, term) for term in terms))
+        checked = _equation(cell, coded=coded)
+        if checked is not None:
+            yield checked
 
 
-def check_transcript(lines: Iterable[str]) -> list[str]:
-    """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다 — 맞지 않는 것마다 한 줄. 비면 다 맞다.
+@dataclass(frozen=True)
+class TranscriptCheck:
+    """압축본 다시 셈 — `problems` 는 맞지 않는 것(다시 옮겨 달라고 할 줄), `forms` 는 수는 맞는데
+    손 전사 꼴이 다른 줄(다시 청하지 않는다 — 바로잡은 사본에서 가름만 고친다)."""
+
+    problems: list[str]
+    forms: list[str]
+
+
+def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
+    """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다.
 
     넷을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
     시작하는 줄에 확인 코드가 있는지, 줄 안 `합 = 항 + 항` 식이 서는지(손으로 쓴 줄 — 판정 · B ·
@@ -5328,8 +5402,14 @@ def check_transcript(lines: Iterable[str]) -> list[str]:
     아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지. 8-10 은 머리마다 따로 센다 — 요약이
     둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 줄 앞의 목록 표지는
     떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
+
+    손 전사 꼴은 맞지 않는 것으로 세지 않고 `forms` 에 둔다 — 띄어쓰기 빠진 `3+ x` 는 그대로 읽고,
+    마지막 항 뒤 괄호 덧말(`안함 0 (다른 칸 2)`)은 떼고 읽는다. 항 사이 ` + ` 가 빠진 식(`확정 52
+    완료 0`) · `=+` 로 친 식은 그렇게 읽어 수가 맞으면 꼴이다. 글자 없는 키로 시작하지만 스크립트가
+    찍는 꼴이 아닌 줄(`8-2 CS …` 메모)은 확인 코드를 요구하지 않고 꼴로 알린다.
     """
     problems: list[str] = []
+    forms: list[str] = []
     groups: list[tuple[int, int, int, list[int]]] = []
     for number, raw in enumerate(lines, start=1):
         text = _summary_body(raw)
@@ -5337,11 +5417,22 @@ def check_transcript(lines: Iterable[str]) -> list[str]:
         body = text if coded is None else coded.group("body")
         if coded is None:
             if _SUMMARY_KEY.match(text):
-                problems.append(f"줄 {number} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다")
+                if _BARE_KEY.match(text) and not _BARE_KEY_SHAPE.match(text):
+                    forms.append(
+                        f"줄 {number} — `8-` 키로 시작하지만 요약 줄 꼴이 아니라 메모로 읽었다"
+                        "(확인 코드를 보지 않는다 — 메모는 `8장 메모` 로 시작한다)"
+                    )
+                else:
+                    problems.append(f"줄 {number} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다")
         elif summary_code(body) != coded.group("code"):
             problems.append(f"줄 {number} — 확인 코드가 맞지 않는다(그 줄의 수를 다시 본다)")
-        if not all(_equations(body, coded=coded is not None)):
+        checks = list(_equations(body, coded=coded is not None))
+        if not all(checked.holds for checked in checks):
             problems.append(f"줄 {number} — 줄 안 검산 식이 서지 않는다")
+        forms.extend(
+            f"줄 {number} — 줄 안 식: {form}"
+            for form in dict.fromkeys(checked.form for checked in checks if checked.form)
+        )
         head = _CENSUS_HEAD.match(body)
         if head is not None:
             groups.append(
@@ -5361,13 +5452,20 @@ def check_transcript(lines: Iterable[str]) -> list[str]:
                 f"줄 {number} — 8-10 머리(0 아님 {listed} · 합 {total:,})와 아래 수 줄"
                 f"({len(items)}줄 · 합 {sum(items):,})이 다르다 — 줄이 빠졌거나 겹쳤다"
             )
-    return problems
+    return TranscriptCheck(problems=problems, forms=forms)
+
+
+def check_transcript(lines: Iterable[str]) -> list[str]:
+    """`review_transcript` 의 맞지 않는 것만 — 비면 다 맞다(손 전사 꼴은 세지 않는다)."""
+    return review_transcript(lines).problems
 
 
 def _check_summary(path: Path) -> int:
     """`--check-summary` — 받은 리뷰 압축본 파일을 다시 셈해 맞지 않는 줄 번호만 찍는다.
 
-    값은 찍지 않는다. 맞지 않는 줄이 있거나 확인 코드가 있는 줄이 하나도 없으면 1 이다.
+    값은 찍지 않는다. 맞지 않는 줄이 있거나 확인 코드가 있는 줄이 하나도 없으면 1 이다. 수는
+    맞는데 손 전사 꼴만 다른 줄은 첫 줄 끝에 `꼴 n` 을 달고 맞지 않는 것 뒤에 `(꼴)` 로 찍는다 —
+    종료 코드에 들지 않는다.
     """
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
@@ -5375,11 +5473,14 @@ def _check_summary(path: Path) -> int:
         print(f"파일을 읽지 못함 — {_failure(exc)}")
         return 2
     coded = sum(1 for line in lines if _SUMMARY_CODE.match(_summary_body(line)))
-    problems = check_transcript(lines)
-    print(f"확인 코드가 있는 줄 {coded:,} · 맞지 않는 것 {len(problems):,}")
-    for problem in problems:
+    checked = review_transcript(lines)
+    forms = f" · 꼴 {len(checked.forms):,}" if checked.forms else ""
+    print(f"확인 코드가 있는 줄 {coded:,} · 맞지 않는 것 {len(checked.problems):,}{forms}")
+    for problem in checked.problems:
         print(f"- {problem}")
-    return 1 if problems or not coded else 0
+    for form in checked.forms:
+        print(f"- (꼴) {form}")
+    return 1 if checked.problems or not coded else 0
 
 
 _HEADER: Final = (

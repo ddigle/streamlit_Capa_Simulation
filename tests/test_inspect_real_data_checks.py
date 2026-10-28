@@ -3168,6 +3168,147 @@ def test_check_summary_reads_a_transcript_without_opening_a_database(
     assert out[1].startswith("- 줄 2 — 확인 코드가 맞지 않는다")
 
 
+@pytest.mark.parametrize(
+    ("line", "problems", "forms"),
+    [
+        # 띄어쓰기가 빠진 `3+ x`(사내 리뷰 202610271800 줄 4 · 202610231430 줄 28)는 그대로 읽는다.
+        (
+            "관문수 fmt 793; 실패 16 = 경로구분자 6 + 명령줄길이 6 + 권한비트 3+ "
+            "bigdataquery설치 1",
+            [],
+            [],
+        ),
+        ("리비전 65 = 됨 64 + 멈춤 1+ 확보율멈춤 0 + 막힘 0", [], []),
+        ("리비전 65 = 됨 64 + 멈춤 1+ 확보율멈춤 1 + 막힘 0", ["식"], []),
+        # 마지막 항 뒤 괄호 덧말은 떼고 읽는다(T09).
+        ("A 28 = 기록 28 + 미기록 0 + 안함 0 (다른 칸 2)", [], []),
+        ("A 28 = 기록 27 + 미기록 0 + 안함 0 (다른 칸 1)", ["식"], []),
+        # `=+`(1430 줄 11 · T05)는 ` + ` 로 읽어 셈하고 꼴로 알린다 — 틀리면 맞지 않는다.
+        ("B 11 = 기록 11 =+ 미기록 0; u4 a11", [], ["`=+`"]),
+        ("B 11 = 기록 10 =+ 미기록 0; u4 a11", ["식"], []),
+        ("B 11 =+ 기록 11 + 미기록 0", [], ["읽지 못했다"]),
+        # 손으로 쓴 줄의 항 하나짜리 — ` + ` 가 빠진 꼴로 수가 맞을 때만 꼴로 알린다(1800 줄 26).
+        (
+            "A 바뀐 꼴 space_drawer 서랍 427 = 이 층 421 + 층 미정 6, "
+            "이 층 421 = 표 295 묶음 넘침 126",
+            [],
+            ["빠진"],
+        ),
+        ("이 층 421 = 표 295 묶음 넘침 127", [], []),
+        ("8장 = 202610200720 8-3 8-9", [], []),
+        # 글자 없는 키로 시작하는 손 메모(T08)는 확인 코드를 요구하지 않고 꼴로 알린다.
+        ("8-2 CS 빈 원천 행 0 (계획 0; 경로 0; 남은 계획 0)", [], ["메모"]),
+        ("8-1 에서 리비전 49→50", [], ["메모"]),
+        # 스크립트가 찍는 꼴은 코드가 빠지면 그대로 잡는다.
+        ("8-1 S 36/36; E 32/32; R 67; O 20", ["코드"], []),
+        ("8-2 원천 못 읽음 실패(IOException)", ["코드"], []),
+        ("8-3 29,238 = PKG 1,154 + CHIP 28,084 + ? 0; P 68; M 0", ["코드"], []),
+        ("8-4 r83; M 2,025 = 계획 418 + 확정 52 + 빈 1,555", ["코드"], []),
+        ("8-5 건너뜀 — 패키지 없음", ["코드"], []),
+        ("8-2W 768/1,243; 실패(ValueError)", ["코드"], []),
+    ],
+)
+def test_hand_copy_forms_are_told_apart_from_mismatches(
+    line: str, problems: list[str], forms: list[str]
+) -> None:
+    """사내 리뷰 `202610271800` 처리에서 본 검산기 위험 셋 — 수가 맞는 손 전사 꼴(`3+ x` · `=+` ·
+    항 사이 ` + ` 빠짐 · 괄호 덧말 · `8-2 …` 메모)은 맞지 않는 것으로 세지 않는다. `=+` 는 이제
+    건너뛰지 않고 셈한다. 꼴은 `forms` 에 따로 남는다."""
+    checked = checks.review_transcript([line])
+
+    assert len(checked.problems) == len(problems), checked.problems
+    for found, expected in zip(checked.problems, problems, strict=True):
+        assert expected in found
+    assert len(checked.forms) == len(forms), checked.forms
+    for found, expected in zip(checked.forms, forms, strict=True):
+        assert expected in found
+
+
+def test_a_dropped_plus_in_a_coded_line_is_a_form_only_when_the_code_holds() -> None:
+    """확인 코드가 있는 줄의 항 사이 ` + ` 가 빠진 식(사내 리뷰 202610271800 줄 61 —
+    `확정 52 완료 0`)은 코드가 맞으면 꼴이다. 숫자를 잘못 옮긴 것은 코드와 식이 함께 잡는다."""
+    printed = checks.summary_lines(
+        [
+            "- 8-4 r83 · M 2,025 = 계획 418 + 확정 52 + 완료 0 + 지연 0 + 빈 1,555 + ? 0"
+            " · T 0 · Q 0 · D 0"
+        ]
+    )[2][2:]
+    copied = printed.replace(" · ", "; ").replace("확정 52 + 완료 0", "확정 52 완료 0")
+
+    checked = checks.review_transcript([copied])
+    assert checked.problems == []
+    assert checked.forms == ["줄 1 — 줄 안 식: 항 사이 ` + ` 가 빠진 것으로 읽으면 수가 맞다"]
+
+    slipped = checks.review_transcript([copied.replace("확정 52", "확정 53")])
+    assert slipped.problems == [
+        "줄 1 — 확인 코드가 맞지 않는다(그 줄의 수를 다시 본다)",
+        "줄 1 — 줄 안 검산 식이 서지 않는다",
+    ]
+
+
+def test_every_bare_key_the_script_prints_is_read_as_a_summary_line() -> None:
+    """글자 없는 키(`8-2` · `8-4` …)로 찍는 요약 줄은 확인 코드가 빠지면 잡혀야 한다 — 메모로
+    읽히면 안 된다. 스크립트의 `_note("8-<수>", …)` 첫 칸과 멈춤 · 요약 실패 · 8-10 머리 꼴을 모두
+    지나 본다."""
+    source = (PROJECT_ROOT / "scripts" / "inspect_real_data_checks.py").read_text(encoding="utf-8")
+    leads: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_note"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            continue
+        key = str(node.args[0].value)
+        if not re.fullmatch(r"8-\d+", key):
+            continue
+        first = node.args[1]
+        if isinstance(first, ast.Constant):
+            leads.append(f"{key} {first.value!s}")
+        elif isinstance(first, ast.JoinedStr):
+            # 채우는 자리(`{len(reqb):,}` · `{mi_count:,}` 같은 것)는 수로 놓는다.
+            text = "".join(
+                str(part.value) if isinstance(part, ast.Constant) else "0" for part in first.values
+            )
+            leads.append(f"{key} {text}")
+    assert len(leads) >= 15, leads
+    leads += [
+        *(f"{title} 멈춤 실패(ValueError)" for title in checks._BLOCK_TITLES.values()),
+        "8-3 요약 실패(KeyError)",
+        "8-1 S - · E - · R - · O -",  # 두 DB 를 다 못 읽은 8-1(`_migration_note`)
+        "8-10 활성 5 · 0 아님 2/12 · 합 7",
+        "8-10 전부 5 · 모두 0 (12/12)",
+        "8-10 C1 3",
+    ]
+    for lead in leads:
+        assert (
+            checks.check_transcript([lead])
+            and "확인 코드(`#NN`)가 없다" in (checks.check_transcript([lead])[0])
+        ), lead
+
+
+def test_check_summary_prints_forms_after_mismatches_and_keeps_exit_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """수는 맞는 손 전사 꼴만 있으면 종료 코드 0 — 첫 줄 끝에 `꼴 n` 이 붙고 `(꼴)` 줄로 찍힌다."""
+    coded = checks.summary_lines(["- 8-9 12 · 포함 1 = 1 + 0 · 뺌 0"])[2][2:]
+    transcript = tmp_path / "transcript.md"
+    transcript.write_text(
+        "\n".join([coded, "B 11 = 기록 11 =+ 미기록 0", "8-2 CS 빈 원천 행 0 (계획 0)"]),
+        encoding="utf-8",
+    )
+
+    assert checks.main(["--check-summary", str(transcript)]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "확인 코드가 있는 줄 1 · 맞지 않는 것 0 · 꼴 2",
+        "- (꼴) 줄 2 — 줄 안 식: `=+` 를 ` + ` 로 읽으면 수가 맞다",
+        "- (꼴) 줄 3 — `8-` 키로 시작하지만 요약 줄 꼴이 아니라 메모로 읽었다"
+        "(확인 코드를 보지 않는다 — 메모는 `8장 메모` 로 시작한다)",
+    ]
+
+
 def _sample_compressed_review() -> list[str]:
     """런북 5장 차례 · `docs/dual_env_workflow.md` 4장 양식대로 쓴 압축본 표본. 8장 줄은 스크립트가
     찍은 그대로(확인 코드째)이고, 늘 옮기는 줄은 판정 · B · A 바로 아래, 나머지는 끝이다."""
