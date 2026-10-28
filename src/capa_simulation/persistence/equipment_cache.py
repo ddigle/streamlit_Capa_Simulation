@@ -472,8 +472,15 @@ def load_layout_publish_preview(
     )
 
 
-# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표).
+# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표·설비
+# 마스터 탭 저장 이력). 한도 밖 리비전은 목록에 없고, 전체 수는 출처별 셈
+# (`load_equipment_schedule_revision_counts`)이 따로 적는다.
 SCHEDULE_REVISION_LIST_LIMIT = 50
+
+
+class _ScheduleRevisionsPayload(TypedDict):
+    rows: list[dict[str, Any]]
+    origins: dict[str, int]
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
@@ -482,14 +489,32 @@ def _load_schedule_revisions_payload(
     equipment_scenario_id: str,
     stamp: DatabaseStamp,
     generation: WriteGeneration,
-) -> list[dict[str, Any]]:
+) -> _ScheduleRevisionsPayload:
+    """최근 `SCHEDULE_REVISION_LIST_LIMIT` 줄과 출처별 전체 수를 한 칸에 — 둘이 같은 키(세대·
+    stat·TTL)로 함께 채워지고 함께 갈려, 표의 줄과 그 아래 「전체 N줄」 이 서로 다른 때의 값을
+    오래 들지 않는다."""
     del stamp, generation
-    return [
-        _payload(summary, EquipmentScheduleRevisionSummary)
-        for summary in get_equipment_repository(database_path).list_schedule_revisions(
-            equipment_scenario_id, limit=SCHEDULE_REVISION_LIST_LIMIT
-        )
-    ]
+    repository = get_equipment_repository(database_path)
+    return {
+        "rows": [
+            _payload(summary, EquipmentScheduleRevisionSummary)
+            for summary in repository.list_schedule_revisions(
+                equipment_scenario_id, limit=SCHEDULE_REVISION_LIST_LIMIT
+            )
+        ],
+        "origins": repository.count_schedule_revisions_by_origin(equipment_scenario_id),
+    }
+
+
+def _schedule_revisions_payload(
+    database_path: str, equipment_scenario_id: str
+) -> _ScheduleRevisionsPayload:
+    return _load_schedule_revisions_payload(
+        database_path,
+        equipment_scenario_id,
+        database_stamp(database_path),
+        _write_generation("equipment_scenario"),
+    )
 
 
 def load_equipment_schedule_revisions(
@@ -501,13 +526,19 @@ def load_equipment_schedule_revisions(
     """
     return tuple(
         EquipmentScheduleRevisionSummary(**item)
-        for item in _load_schedule_revisions_payload(
-            database_path,
-            equipment_scenario_id,
-            database_stamp(database_path),
-            _write_generation("equipment_scenario"),
-        )
+        for item in _schedule_revisions_payload(database_path, equipment_scenario_id)["rows"]
     )
+
+
+def load_equipment_schedule_revision_counts(
+    database_path: str, equipment_scenario_id: str
+) -> dict[str, int]:
+    """그 설비 시나리오의 일정 리비전 수를 출처(`origin`)별로 — 목록 한도 밖까지 센 전체 수.
+
+    `load_equipment_schedule_revisions` 와 같은 캐시 칸(같은 세대·stat·TTL)에서 읽는다. 합이 전체
+    리비전 수다. 받은 쪽이 고쳐도 캐시 값이 바뀌지 않게 새 dict 로 준다.
+    """
+    return dict(_schedule_revisions_payload(database_path, equipment_scenario_id)["origins"])
 
 
 @st.cache_data(show_spinner=False, max_entries=8)

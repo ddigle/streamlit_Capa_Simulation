@@ -2169,6 +2169,13 @@ class DuckDBEquipmentRepository:
             )
         return [_schedule_revision_summary(row) for row in rows]
 
+    def count_schedule_revisions_by_origin(self, equipment_scenario_id: str) -> dict[str, int]:
+        """한 설비 시나리오의 일정 리비전 수를 출처(`legacy`·`save`·…)별로 —
+        `list_schedule_revisions` 의 `limit` 밖까지 센 전체 수(화면이 「최근 n · 전체 N」 과
+        출처별 수를 적는다)."""
+        with self._connect() as connection:
+            return scenario_store.schedule_revision_origin_counts(connection, equipment_scenario_id)
+
     def load_scenario_catalog(self) -> EquipmentScenarioCatalog:
         """설비 시나리오 목록·최신 공식 발행·옛 배포 흔적 수를 **연결 하나**로 읽는다(목록
         캐시용)."""

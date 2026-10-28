@@ -64,6 +64,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_equipment_csv_payloads,
     load_equipment_revision_summaries,
     load_equipment_scenario_catalog,
+    load_equipment_schedule_revision_counts,
     load_equipment_schedule_revisions,
     load_merged_equipment_snapshot,
     load_units_scheduled_elsewhere,
@@ -3452,6 +3453,44 @@ ORIGIN_WORDS = {
 }
 
 
+def origin_count_words(origins: Mapping[str, int]) -> str:
+    """출처별 리비전 수 — 「이관 70 · 저장 10 · 되돌리기 2」. 차례는 `ORIGIN_WORDS`, 모르는
+    출처는 그 값 그대로 뒤에(이름 차례), 0 인 출처는 뺀다. 셀 것이 없으면 빈 글."""
+    known = [(word, origins.get(origin, 0)) for origin, word in ORIGIN_WORDS.items()]
+    other = sorted(
+        (origin, count) for origin, count in origins.items() if origin not in ORIGIN_WORDS
+    )
+    return " · ".join(f"{word} {count:,}" for word, count in (*known, *other) if count)
+
+
+def revision_count_line(
+    shown: int, origins: Mapping[str, int], *, unit: str, place: str, by_origin: bool = True
+) -> str:
+    """리비전 목록의 머릿수 한 줄 — 목록 한도(최근 `SCHEDULE_REVISION_LIST_LIMIT` 개)와
+    상관없는 전체 수.
+
+    다 보이면 「전체 12줄(이관 10 · 저장 2)」, 한도에 걸리면 「최근 50줄 · 전체 82줄(이관 70 ·
+    저장 12) — 더 옛 32줄은 이 표와 리비전 상자에 없습니다.」. `shown` 은 목록에 든 수,
+    `origins` 는 출처별 전체 수(`load_equipment_schedule_revision_counts` — 목록과 같은 캐시
+    칸)이고 `by_origin=False` 면 괄호를 뺀다. 사내 런북의 「리비전 N줄 = 이관 N」 확인은 표를
+    세지 않고 이 줄의 이관 수를 8-4s `L` 과 견준다 — 이관 뒤 저장이 쌓이면 이관 리비전이 한도
+    밖으로 밀린다.
+    """
+    total = max(sum(origins.values()), shown)
+    head = (
+        f"전체 {total:,}{unit}"
+        if shown >= total
+        else f"최근 {shown:,}{unit} · 전체 {total:,}{unit}"
+    )
+    words = origin_count_words(origins) if by_origin else ""
+    if words:
+        head += f"({words})"
+    if shown >= total:
+        return head
+    hidden = with_topic_particle(f"{total - shown:,}{unit}")
+    return f"{head} — 더 옛 {hidden} {place}에 없습니다."
+
+
 def schedule_revision_title(revision: EquipmentScheduleRevisionSummary) -> str:
     """일정 리비전의 짧은 이름 — 「r3」, 리비전명이 있으면 「r3 · 셋업 반영본」(E7).
 
@@ -3490,11 +3529,28 @@ def _render_history(
         item.revision_id: item.revision_no
         for item in load_equipment_revision_summaries(database_path, latest_common)
     }
+    # 목록 한도에 걸렸을 때만 전체 수를 덧붙인다(머리 한 줄 안 — 줄이 생기거나 빠져 아래 칸이 밀리지
+    # 않게).
+    origins = load_equipment_schedule_revision_counts(database_path, scenario_id)
+    limited = (
+        " "
+        + revision_count_line(
+            len(revisions),
+            origins,
+            unit="줄",
+            place="이 표와 「조회 리비전」 상자",
+            by_origin=False,
+        )
+        if len(revisions) < sum(origins.values())
+        else ""
+    )
     if scenario_name:
         st.caption(
             f"「{literal_markdown(scenario_name)}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 "
-            "리비전입니다."
+            f"리비전입니다.{limited}"
         )
+    elif limited:
+        st.caption(limited.strip())
     st.dataframe(
         pd.DataFrame(
             [

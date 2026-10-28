@@ -2746,7 +2746,8 @@ _PANEL_JS = """(keys) => {
       && cards[0].getBoundingClientRect().top >= bottom - 0.5,
   };
 }"""
-# 시나리오 팝업 — 구획 조절(`st.segmented_control`)의 선택지 글과 고른 것, 리비전 라디오 선택지 수.
+# 시나리오 팝업 — 구획 조절(`st.segmented_control`)의 선택지 글과 고른 것, 리비전 라디오 선택지 수,
+# 팝업 안 캡션 글(설비 시나리오 팝업의 목록 한도 줄을 찾는 데만 쓴다 — 글은 옮기지 않는다).
 _SCENARIO_DIALOG_JS = """(box, radio) => {
   const group = box.querySelector('[data-testid="stButtonGroup"] [role="radiogroup"]');
   const chosen = group && group.querySelector('[role="radio"][aria-checked="true"]');
@@ -2757,8 +2758,30 @@ _SCENARIO_DIALOG_JS = """(box, radio) => {
     modes: modes.map((button) => button.innerText.trim()),
     selected: chosen ? chosen.innerText.trim() : null,
     revisions: list ? list.querySelectorAll('input[type="radio"]').length : null,
+    captions: [...box.querySelectorAll('[data-testid="stCaptionContainer"]')]
+      .map((caption) => caption.innerText.trim()),
   };
 }"""
+# 설비 시나리오 팝업의 리비전 라디오는 최근 n개까지다. 한도에 걸리면 라디오 아래 캡션이
+# 「최근 50개 · 전체 82개 — 더 옛 32개는 이 목록에 없습니다.」 를 적는다
+# (`equipment_data_workspace.revision_count_line`). 결과 줄은 라디오 수 뒤에 그 전체 수를
+# 붙인다 — 「리비전 50개(전체 82개)」.
+REVISION_TOTAL_PATTERN: Final = re.compile(r"최근 ([\d,]+)개 · 전체 ([\d,]+)개")
+
+
+def revision_list_words(revisions: Any, captions: object) -> str:
+    """리비전 라디오 수 한 마디 — 「리비전 4개」, 목록 한도 줄이 있으면 「리비전 50개(전체 82개)」,
+    라디오가 없으면 「리비전 목록 없음」. 캡션 글은 수만 꺼내고 옮기지 않는다."""
+    if revisions is None:
+        return "리비전 목록 없음"
+    words = f"리비전 {int(revisions)}개"
+    for caption in captions if isinstance(captions, list) else ():
+        found = REVISION_TOTAL_PATTERN.search(str(caption))
+        if found is not None:
+            return f"{words}(전체 {found.group(2)}개)"
+    return words
+
+
 # 조회기간 팝업 — 월 입력 칸 수와 「적용」 단추(월 선택 컴포넌트 안인가). 컴포넌트는 그림자 DOM 으로
 # 가두지 않아(`isolate_styles=False`) `querySelector` 로 닿는다.
 _PERIOD_DIALOG_JS = """(box, ids) => {
@@ -3867,7 +3890,7 @@ def summarize_equipment_scenario_line(
     modes = tuple(facts["modes"]) if facts else ()
     control = "있음" if modes == EQUIPMENT_SCENARIO_DIALOG_MODES else "없음"
     revisions = facts["revisions"] if facts else None
-    listed = "리비전 목록 없음" if revisions is None else f"리비전 {int(revisions)}개"
+    listed = revision_list_words(revisions, facts.get("captions") if facts else None)
     names = "·".join(f"「{mode}」" for mode in EQUIPMENT_SCENARIO_DIALOG_MODES)
     return (
         f"{head} · {_title_text(title, EQUIPMENT_SCENARIO_DIALOG_TITLE)} · 구획 {names} "
@@ -3923,6 +3946,8 @@ _SPACE_SCENARIO_DIALOG_JS = """(box, args) => {
     modes: group ? [...group.querySelectorAll('[role="radio"]')].map((b) => b.innerText.trim()) :
     [], load: buttons.some((text) => text.endsWith(args.load)), revisions: list ?
     list.querySelectorAll('input[type="radio"]').length : null,
+    captions: [...box.querySelectorAll('[data-testid="stCaptionContainer"]')]
+      .map((caption) => caption.innerText.trim()),
   };
 }"""
 
@@ -3960,7 +3985,7 @@ def summarize_space_scenario_row(
         "「불러오기」 만" if load and not modes else "구획 다름" if modes else "「불러오기」 없음"
     )
     revisions = facts["revisions"] if facts else None
-    listed = "리비전 목록 없음" if revisions is None else f"리비전 {int(revisions)}개"
+    listed = revision_list_words(revisions, facts.get("captions") if facts else None)
     return (
         f"{head} · {_title_text(title, EQUIPMENT_SCENARIO_DIALOG_TITLE)} · {only} · {listed} · "
         f"{_closed_text(closed)}"
