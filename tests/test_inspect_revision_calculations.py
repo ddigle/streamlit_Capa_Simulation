@@ -20,6 +20,7 @@ import os
 import runpy
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
@@ -190,8 +191,8 @@ def test_every_revision_is_counted_by_source_and_status_without_names(
     assert " | 복제 | 보관 | - | 됨 | 됨 | 0 / 24 | " in by_revision[("| S2", "r1")]
     # Capa 계산이 서지 않으면 Density 는 재지 않는다(`-`) — 저장·발행 검사와 같은 차례다.
     assert (
-        " | 월 병합 | - | - | 멈춤 — 대당 Capa(ValueError · RQ_MODULE) | - | - | - | - | "
-        in (by_revision[("| S3", "r1")])
+        " | 월 병합 | - | - | 멈춤 — 대당 Capa(ValueError · RQ_MODULE · 연결값 없음 키 1 · "
+        "경로 24) | - | - | - | - | " in (by_revision[("| S3", "r1")])
     )
     # 확보율에서 멈춰도 Density 는 잰다 — 둘은 서로 기대지 않는다.
     assert (
@@ -212,9 +213,9 @@ def test_every_revision_is_counted_by_source_and_status_without_names(
         "- 공식버전 — 최신 공식 v2(S6 r1) 됨 · Density 멈춤(ValueError · RQ_CHIP_EQ) · "
         "이력이 가리키는 리비전 2개: 됨 2 · 지난 공식버전 포함 Density 멈춤 1"
     ) in output
-    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in output
-    assert "| 멈춤 | 대당 Capa | ValueError | RQ_MODULE | 1 |" in output
-    assert "| 확보율 멈춤 | 확보율 | ValueError | - | 1 |" in output
+    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | - | 1 |" in output
+    assert "| 멈춤 | 대당 Capa | ValueError | RQ_MODULE | 연결값 없음 | 1 |" in output
+    assert "| 확보율 멈춤 | 확보율 | ValueError | - | - | 1 |" in output
     assert "**최신 공식의 `Density` 칸이 `됨` 이어야 한다**" in output
 
 
@@ -258,8 +259,91 @@ def test_density_and_securement_are_judged_apart(simulation_db: Path) -> None:
     assert (outcome.status, outcome.density) == (script.SECUREMENT_STOPPED, script.STOPPED)
     assert script.describe_density(outcome) == "멈춤(ValueError · RQ_CHIP_EQ)"
     lines = script.summary_lines([shift], [outcome], active_only=False)
-    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in lines
-    assert "| 확보율 멈춤 | 확보율 | ValueError | - | 1 |" in lines
+    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | - | 1 |" in lines
+    assert "| 확보율 멈춤 | 확보율 | ValueError | - | - | 1 |" in lines
+
+
+def _seed_tables(simulation_db: Path) -> tuple[script.RevisionRow, dict[str, pd.DataFrame]]:
+    """내장 시드 r1 — 공정·제품 이름에 표지값이 심겨 있다."""
+    with duckdb.connect(str(simulation_db), read_only=True) as connection:
+        seed = next(
+            revision
+            for revision in script.list_revisions(connection, active_only=False)
+            if revision.source_group == "내장 시드" and revision.revision_no == 1
+        )
+        return seed, script.load_tables(connection, seed)
+
+
+def _blank_run_rate(
+    tables: dict[str, pd.DataFrame], *, drop_routes: bool
+) -> dict[str, pd.DataFrame]:
+    """Main 경로가 쓰는 효율 칸 하나를 비운다. `drop_routes` 면 그 키의 경로 UPEH 를 모두 0 으로."""
+    upeh = tables["RQ_UPEH"].copy()
+    keys = ["생산계획년월", "공정", "양산구분"]
+    main = upeh.loc[upeh["Area_Name"].eq("Main") & upeh["소요기준"].isin(["CHIP", "WF", "PKG"])]
+    key = main.iloc[0][keys]
+    on_key = upeh[keys].eq(key).all(axis=1)
+    assert upeh.loc[on_key, "Area_Name"].eq("Main").all()
+    if drop_routes:
+        upeh.loc[on_key, "UPEH"] = 0.0
+    run_rate = tables["RQ_RUN_RATE"].copy()
+    run_rate.loc[run_rate[keys].eq(key).all(axis=1), "CAPA_RUN_RATE"] = float("nan")
+    return {**tables, "RQ_UPEH": upeh, "RQ_RUN_RATE": run_rate}
+
+
+def _spaced_run_rate(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """효율 한 행을 공정 이름 뒤 공백만 다르게 한 번 더 — 원래 글자로 접힌 등록의 꼴."""
+    run_rate = tables["RQ_RUN_RATE"]
+    spaced = run_rate.iloc[[0]].assign(공정=run_rate["공정"].iloc[0] + " ")
+    return {**tables, "RQ_RUN_RATE": pd.concat([run_rate, spaced], ignore_index=True)}
+
+
+@pytest.mark.parametrize(
+    ("damage", "cell", "shape"),
+    [
+        (
+            lambda tables: _blank_run_rate(tables, drop_routes=True),
+            "빈 값 키 1 · 경로 1 · 모두 뒤에서 빠질 경로인 키 1",
+            "빈 값(붙은 경로가 모두 뒤에서 빠짐)",
+        ),
+        (
+            lambda tables: _blank_run_rate(tables, drop_routes=False),
+            "빈 값 키 1 · 경로 1",
+            "빈 값",
+        ),
+        (
+            _spaced_run_rate,
+            "연결 키 중복 키 1 · 행 2 · 앞뒤 공백만 다른 키 1",
+            "연결 키 중복(앞뒤 공백만 다름)",
+        ),
+    ],
+)
+def test_a_run_rate_stop_is_split_by_its_shape_without_names(
+    simulation_db: Path,
+    damage: Callable[[dict[str, pd.DataFrame]], dict[str, pd.DataFrame]],
+    cell: str,
+    shape: str,
+) -> None:
+    """같은 「ValueError · RQ_RUN_RATE」 라도 꼴(빈 값 · 뒤에서 빠질 경로뿐인 빈 값 · 공백만 다른
+    겹침)이 고칠 길을 가른다. 리비전 칸은 꼴과 개수를, 갈래 표는 꼴 이름을 적고 공정 이름은 적지
+    않는다.
+    """
+    seed, tables = _seed_tables(simulation_db)
+
+    outcome = script.calculate(damage(tables))
+
+    assert (outcome.status, outcome.stage, outcome.kind) == (
+        script.STOPPED,
+        "대당 Capa",
+        "ValueError",
+    )
+    assert outcome.tables == ("RQ_RUN_RATE",)
+    described = script.describe(outcome)
+    assert described == f"멈춤 — 대당 Capa(ValueError · RQ_RUN_RATE · {cell})"
+    lines = script.summary_lines([seed], [outcome], active_only=False)
+    assert f"| 멈춤 | 대당 Capa | ValueError | RQ_RUN_RATE | {shape} | 1 |" in lines
+    printed = "\n".join([described, *lines])
+    assert SENTINEL not in printed
 
 
 def _official_revision(scenario_no: int, *official: int) -> script.RevisionRow:
@@ -314,7 +398,7 @@ def test_only_the_latest_official_decides_and_an_older_stop_is_counted_apart() -
         "이력이 가리키는 리비전 2개: 됨 2 · 지난 공식버전 포함 Density 멈춤 1"
     ) in lines
     # 갈래 표에는 그대로 든다 — 지난 공식의 멈춤도 「발견」에 수로 옮길 거리다.
-    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in lines
+    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | - | 1 |" in lines
     guide = "\n".join(script.READING_GUIDE)
     assert (
         "**최신 공식의 `Density` 칸이 `됨` 이어야 한다** — 지난 공식버전의 Density 멈춤은 그 "

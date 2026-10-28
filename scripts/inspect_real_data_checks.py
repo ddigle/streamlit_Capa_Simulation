@@ -237,7 +237,10 @@ from capa_simulation.services.undated_equipment import (  # noqa: E402
     undated_counts,
     undated_equipment,
 )
-from capa_simulation.services.unit_capacity import calculate_unit_capacity  # noqa: E402
+from capa_simulation.services.unit_capacity import (  # noqa: E402
+    calculate_unit_capacity,
+    failure_kind,
+)
 from capa_simulation.services.usage_basis import (  # noqa: E402
     usage_excluded_count,
     usage_excluded_equipment,
@@ -420,8 +423,12 @@ def _seconds(value: float | None) -> str:
 
 
 def _failure(exc: BaseException) -> str:
-    """예외 종류만. 문구는 식별값을 실을 수 있어 찍지 않는다."""
-    return f"실패({type(exc).__name__})"
+    """예외 종류만. 문구는 식별값을 실을 수 있어 찍지 않는다.
+
+    대당 Capa 기준정보 연결 오류(`ReferenceJoinError`)도 `ValueError` 로 적는다(`failure_kind`) —
+    꼴과 개수는 6-3 a(`inspect_revision_calculations.py`)가 리비전마다 적는다.
+    """
+    return f"실패({failure_kind(exc)})"
 
 
 def _table(headers: Sequence[str], rows: Iterable[Sequence[str]]) -> list[str]:

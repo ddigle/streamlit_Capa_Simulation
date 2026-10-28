@@ -1,5 +1,6 @@
 # Purpose: UPEH/ST와 효율·여유율·모듈·일수·측정률로 경로별 대당 Capa를 계산한다.
 
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import pandas as pd
@@ -12,6 +13,7 @@ from capa_simulation.services.frame_contracts import (
     normalize_month_column,
     require_columns,
 )
+from capa_simulation.services.month_filter import valid_month_mask
 
 PERFORMANCE_KEYS = [
     "생산계획년월",
@@ -119,6 +121,104 @@ RUN_RATE_EXCLUSION_REASON = "CAPA_RUN_RATE 0 이하"
 _RAW_VALUE = "_원래값"
 _BLANK_VALUE = "_빈값"
 _JOINED = "_연결"
+
+# 기준정보 한 표를 경로에 붙이다 멈춘 꼴(`ReferenceJoinProblem.shape`). 여러 꼴이 모두 같은 표
+# 이름의 `ValueError` 로 올라오므로, 문구를 찍지 못하는 집계(사내 런북 6-3 a)는 이 이름과 개수로
+# 가른다.
+JOIN_MISSING_COLUMN = "컬럼 없음"
+JOIN_BAD_MONTH = "월 형식"
+JOIN_BAD_AREA = "Area_Name 값"
+JOIN_BLANK_KEY = "연결 키 빈 값"
+JOIN_DUPLICATE_KEY = "연결 키 중복"
+JOIN_NOT_NUMERIC = "숫자 아님"
+JOIN_BLANK_VALUE = "빈 값"
+JOIN_NO_MATCH = "연결값 없음"
+# 붙일 때 이미 알 수 있는, 뒤에서 계산 대상에서 빠질 경로의 사유. 표를 붙이는 차례(효율 → 편중률 →
+# 모듈수 → 일수 → Lot 측정률 → WF측정률) 때문에 효율 표에서 멈추면 측정률 음수는 아직 모른다.
+DROPPED_LATER_RULE = "Main UPEH 0 이하 · CAPA_RUN_RATE 0 이하 · 측정률 음수"
+
+
+@dataclass(frozen=True)
+class ReferenceJoinProblem:
+    """기준정보 한 표를 대당 Capa 경로에 붙이다 멈춘 꼴 — 값 없이 개수와 컬럼 이름만 든다.
+
+    화면 문구(`ReferenceJoinError` 의 글)는 걸린 키의 예시(공정·제품 이름)를 싣는다. 그 글은 사내
+    밖으로 나갈 수 없어서, 전 리비전 집계(`scripts/inspect_revision_calculations.py`)는 이것만
+    찍는다.
+
+    - `keys` — 걸린 업무 키 수. `rows` — 걸린 행 수다. 붙인 뒤에 보는 꼴(빈 값·숫자 아님·
+      연결값 없음)은 그 키에 붙은 대당 Capa **경로** 행, 붙이기 전에 보는 꼴(월 형식·연결 키)은
+      그 기준정보 표의 행이다.
+    - `dropped_keys` — 빈 값·숫자 아님 가운데 붙은 경로가 모두 뒤에서 빠질 경로
+      (`DROPPED_LATER_RULE`)인 키. 그 키만 걸렸다면 계산이 어차피 쓰지 않을 칸 때문에 멈춘
+      것이다(`docs/TODO.md` 결정 7).
+    - `spacing_keys` — 연결 키 중복 가운데 원래 글자로는 다르고 앞뒤 공백을 떼면 같아지는 키.
+      등록은 원래 글자로 접고 계산은 공백을 떼고 붙여서 생기는 겹침이다.
+    """
+
+    table: str
+    shape: str
+    columns: tuple[str, ...] = ()
+    keys: int = 0
+    rows: int = 0
+    dropped_keys: int = 0
+    spacing_keys: int = 0
+
+    @property
+    def label(self) -> str:
+        """갈래 이름 — 개수 없이. 집계가 이 이름으로 리비전을 묶는다."""
+        if self.shape in (JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC):
+            if self.keys and self.dropped_keys == self.keys:
+                return f"{self.shape}(붙은 경로가 모두 뒤에서 빠짐)"
+            return self.shape
+        if self.shape == JOIN_DUPLICATE_KEY and self.keys and self.spacing_keys == self.keys:
+            return f"{self.shape}(앞뒤 공백만 다름)"
+        if self.shape in (JOIN_MISSING_COLUMN, JOIN_BLANK_KEY) and self.columns:
+            return f"{self.shape}({', '.join(self.columns)})"
+        return self.shape
+
+    def summary(self) -> str:
+        """개수까지 — 리비전 한 줄에 싣는다. 값·이름은 없다."""
+        if self.shape in (JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MATCH):
+            text = f"{self.shape} 키 {self.keys:,} · 경로 {self.rows:,}"
+            if self.dropped_keys:
+                text += f" · 모두 뒤에서 빠질 경로인 키 {self.dropped_keys:,}"
+            return text
+        if self.shape == JOIN_DUPLICATE_KEY:
+            text = f"{self.shape} 키 {self.keys:,} · 행 {self.rows:,}"
+            if self.spacing_keys:
+                text += f" · 앞뒤 공백만 다른 키 {self.spacing_keys:,}"
+            return text
+        if self.shape == JOIN_MISSING_COLUMN:
+            return self.label
+        return f"{self.label} 행 {self.rows:,}"
+
+
+class ReferenceJoinError(ValueError):
+    """대당 Capa 기준정보 연결 오류. 글은 화면용(키 예시), `problem` 은 집계용(꼴·개수)이다.
+
+    `ValueError` 를 그대로 잇는다 — 계산 페이지·저장 검사·캐시가 받는 예외
+    갈래(`BOOTSTRAP_ERRORS`)와 글은 바뀌지 않는다. 집계에 적는 종류 이름은 `failure_kind` 가
+    `ValueError` 로 맞춘다.
+    """
+
+    def __init__(self, message: str, problem: ReferenceJoinProblem) -> None:
+        super().__init__(message)
+        self.problem = problem
+
+    def __reduce__(self) -> tuple[type["ReferenceJoinError"], tuple[str, ReferenceJoinProblem]]:
+        # 기본 피클은 `args`(글 하나)로만 다시 만들어 `problem` 인자가 모자란다.
+        return (type(self), (str(self), self.problem))
+
+
+def failure_kind(exc: BaseException) -> str:
+    """집계·리뷰에 적는 예외 종류 이름. 기준정보 연결 오류도 `ValueError` 로 적고 꼴은 따로 적는다.
+
+    런북·지난 리뷰가 「대당 Capa(ValueError · RQ_…)」 꼴로 견주므로 종류 이름은 그대로 둔다.
+    """
+    if isinstance(exc, ReferenceJoinError):
+        return ValueError.__name__
+    return type(exc).__name__
 
 
 def calculate_unit_capacity(
@@ -345,15 +445,7 @@ def _join_reference(
     **전**이라, 뒤에서 제외될 경로(UPEH·`CAPA_RUN_RATE` 0 이하, 측정률 음수)에만 붙은 행도 행 없음과
     같이 멈춘다 — 0 이하 검사(`_assert_positive`)는 제외 뒤에 돈다.
     """
-    require_columns(reference, [*keys, value_column], table_name)
-    prepared = reference[[*keys, value_column]].copy()
-    if "생산계획년월" in keys:
-        normalize_month_column(prepared, table_name)
-    strip_text_columns(prepared, [key for key in keys if key != "생산계획년월"])
-    assert_complete(prepared, keys, table_name)
-    if "Area_Name" in keys:
-        prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], table_name)
-    assert_unique_keys(prepared, keys, f"{table_name}의 연결 키가")
+    prepared = _prepared_reference(reference, keys, value_column, table_name)
     raw_values = prepared[value_column]
     blank = raw_values.isna()
     if not pd.api.types.is_numeric_dtype(raw_values):
@@ -376,22 +468,39 @@ def _join_reference(
     blank_attached = attached & result[_BLANK_VALUE].eq(True)
     invalid_attached = attached & ~blank_attached & result[value_column].isna()
     if invalid_attached.any():
-        raise ValueError(
-            f"{table_name}의 {value_column} 컬럼에 숫자가 아닌 값이 있습니다: "
-            + _attached_examples(result, invalid_attached, keys, value_column)
+        raise _attached_error(
+            f"{table_name}의 {value_column} 컬럼에 숫자가 아닌 값이 있습니다: ",
+            result,
+            invalid_attached,
+            keys,
+            ReferenceJoinProblem(table_name, JOIN_NOT_NUMERIC, columns=(value_column,)),
+            value_column=value_column,
         )
     if blank_attached.any():
-        raise ValueError(
-            f"{table_name}의 {value_column} 값이 빈 대당 Capa 기준이 있습니다: "
-            + _attached_examples(result, blank_attached, keys)
+        raise _attached_error(
+            f"{table_name}의 {value_column} 값이 빈 대당 Capa 기준이 있습니다: ",
+            result,
+            blank_attached,
+            keys,
+            ReferenceJoinProblem(table_name, JOIN_BLANK_VALUE, columns=(value_column,)),
         )
     result = result.drop(columns=[_RAW_VALUE, _BLANK_VALUE, _JOINED])
     missing = result[value_column].isna()
     if not missing.any():
         return result
     if missing_value_default is None:
-        examples = result.loc[missing, keys].drop_duplicates().head(5).to_dict("records")
-        raise ValueError(f"{table_name} 연결값이 없는 대당 Capa 기준이 있습니다: {examples}")
+        missing_keys = result.loc[missing, keys].drop_duplicates()
+        raise ReferenceJoinError(
+            f"{table_name} 연결값이 없는 대당 Capa 기준이 있습니다: {len(missing_keys):,}건, "
+            f"예시 {missing_keys.head(5).to_dict('records')}",
+            ReferenceJoinProblem(
+                table_name,
+                JOIN_NO_MATCH,
+                columns=tuple(keys),
+                keys=len(missing_keys),
+                rows=int(missing.sum()),
+            ),
+        )
     result[value_column] = result[value_column].fillna(missing_value_default)
     if assumed is not None:
         assumed[table_name] = assumed.get(table_name, 0) + int(missing.sum())
@@ -401,19 +510,171 @@ def _join_reference(
     return result
 
 
-def _attached_examples(
+def _prepared_reference(
+    reference: pd.DataFrame, keys: list[str], value_column: str, table_name: str
+) -> pd.DataFrame:
+    """붙일 기준정보 표를 계산의 키 꼴로 맞춘다 — 월은 정수, 글자 키는 앞뒤 공백을 뗀다.
+
+    맞추다 걸리면 꼴과 개수를 든 `ReferenceJoinError` 로 멈춘다. 글의 머리는 공용
+    검사(`frame_contracts`) 와 같은 문장이고, 그 뒤에 어느 컬럼·몇 행·키 예시를 붙인다.
+    """
+    try:
+        require_columns(reference, [*keys, value_column], table_name)
+    except ValueError as exc:
+        absent = tuple(column for column in (*keys, value_column) if column not in reference)
+        raise ReferenceJoinError(
+            str(exc), ReferenceJoinProblem(table_name, JOIN_MISSING_COLUMN, columns=absent)
+        ) from exc
+    prepared = reference[[*keys, value_column]].copy()
+    if "생산계획년월" in keys:
+        months = pd.to_numeric(prepared["생산계획년월"], errors="coerce")
+        bad_month = ~valid_month_mask(months)
+        if bool(bad_month.any()):
+            examples = prepared.loc[bad_month, keys].drop_duplicates().head(5).to_dict("records")
+            raise ReferenceJoinError(
+                f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다: "
+                f"{int(bad_month.sum()):,}행, 예시 {examples}",
+                ReferenceJoinProblem(
+                    table_name,
+                    JOIN_BAD_MONTH,
+                    columns=("생산계획년월",),
+                    rows=int(bad_month.sum()),
+                ),
+            )
+        # `normalize_month_column` 과 같은 결과다 — 위에서 이미 읽은 수를 다시 읽지 않는다.
+        prepared["생산계획년월"] = months.astype("int64")
+    text_keys = [key for key in keys if key != "생산계획년월"]
+    strip_text_columns(prepared, text_keys)
+    _raise_on_blank_keys(prepared, keys, table_name)
+    if "Area_Name" in keys:
+        try:
+            prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], table_name)
+        except ValueError as exc:
+            raise ReferenceJoinError(
+                str(exc),
+                ReferenceJoinProblem(table_name, JOIN_BAD_AREA, columns=("Area_Name",)),
+            ) from exc
+    _raise_on_duplicate_keys(prepared, reference, keys, text_keys, table_name)
+    return prepared
+
+
+def _raise_on_blank_keys(prepared: pd.DataFrame, keys: list[str], table_name: str) -> None:
+    """연결 키가 빈 행 — `frame_contracts.assert_complete` 와 같은 판정에 컬럼과 행 수를 붙인다."""
+    blank_by_column = {
+        column: prepared[column].isna() | prepared[column].eq("").fillna(False) for column in keys
+    }
+    counts = {column: int(mask.sum()) for column, mask in blank_by_column.items() if mask.any()}
+    if not counts:
+        return
+    blank_rows = pd.concat(list(blank_by_column.values()), axis=1).any(axis=1)
+    detail = " · ".join(f"{column} {count:,}행" for column, count in counts.items())
+    raise ReferenceJoinError(
+        f"{table_name}의 필수 연결 키에 누락값이 있습니다: {detail}",
+        ReferenceJoinProblem(
+            table_name, JOIN_BLANK_KEY, columns=tuple(counts), rows=int(blank_rows.sum())
+        ),
+    )
+
+
+def _raise_on_duplicate_keys(
+    prepared: pd.DataFrame,
+    reference: pd.DataFrame,
+    keys: list[str],
+    text_keys: list[str],
+    table_name: str,
+) -> None:
+    """맞춘 키가 겹치는 행 — 건수·예시와, 원래 글자의 앞뒤 공백만 달라 겹친 키의 수를 싣는다.
+
+    등록(`reference_conflicts.validated_distinct`)은 원래 글자로 접으므로 `P1`·`P1 ` 은 두 행으로
+    저장되고, 여기서 공백을 떼면 한 키가 된다. 그 꼴은 원천을 고쳐 다시 등록해야 풀리므로 따로 센다.
+    """
+    duplicated = prepared.duplicated(keys, keep=False)
+    if not bool(duplicated.any()):
+        return
+    overlapping = prepared.loc[duplicated, keys]
+    distinct = overlapping.drop_duplicates()
+    spacing = 0
+    if text_keys:
+        # 자리로 고른다 — 받은 표의 index 가 겹쳐도 같은 행을 본다(`prepared` 는 그 표를 그대로
+        # 떴다).
+        raw = reference[text_keys].loc[duplicated.to_numpy()].astype("string")
+        raw.index = overlapping.index
+        raw.columns = [f"_원래글자{position}" for position in range(len(text_keys))]
+        spellings = pd.concat([overlapping, raw], axis=1)
+        variants = spellings.groupby(keys, dropna=False)[list(raw.columns)].nunique(dropna=False)
+        spacing = int(variants.gt(1).any(axis=1).sum())
+    message = (
+        f"{table_name}의 연결 키가 중복되었습니다: {len(distinct):,}건, "
+        f"예시 {distinct.head(5).to_dict('records')}"
+    )
+    if spacing:
+        message += f" — 그 가운데 {spacing:,}건은 원래 글자에서 앞뒤 공백만 다른 행이 겹친 것입니다"
+    raise ReferenceJoinError(
+        message,
+        ReferenceJoinProblem(
+            table_name,
+            JOIN_DUPLICATE_KEY,
+            columns=tuple(keys),
+            keys=len(distinct),
+            rows=len(overlapping),
+            spacing_keys=spacing,
+        ),
+    )
+
+
+def _dropped_later(joined: pd.DataFrame) -> pd.Series:
+    """붙일 때까지 붙은 칸으로 아는, 뒤에서 계산 대상에서 빠질 경로(`DROPPED_LATER_RULE`).
+
+    `calculate_unit_capacity` 의 제외 차례(환산 UPEH 0 이하 → 효율 0 이하 → 측정률 음수)와 같은
+    판정이다. 아직 붙지 않은 칸은 보지 않는다.
+    """
+    dropped = joined["환산_UPEH"].le(0).fillna(False)
+    if "CAPA_RUN_RATE" in joined:
+        dropped |= joined["CAPA_RUN_RATE"].le(0).fillna(False)
+    for column, _reason in NEGATIVE_EXCLUDED_COLUMNS:
+        if column in joined:
+            dropped |= joined[column].lt(0).fillna(False)
+    return dropped
+
+
+def _attached_error(
+    head: str,
     joined: pd.DataFrame,
     mask: pd.Series,
     keys: list[str],
+    problem: ReferenceJoinProblem,
+    *,
     value_column: str | None = None,
-) -> str:
-    """붙은 행 가운데 걸린 것의 건수와 예시 키 5건. `value_column` 을 주면 원래 적힌 값도 싣는다."""
+) -> ReferenceJoinError:
+    """붙은 행 가운데 걸린 것의 건수와 예시 키 5건. `value_column` 을 주면 원래 적힌 값도 싣는다.
+
+    걸린 키 가운데 붙은 경로가 모두 뒤에서 빠질 경로인 키를 세어 글 끝과 `problem` 에 싣는다 —
+    계산이 어차피 쓰지 않을 칸 때문에 멈춘 것인지(결정 7) 살아 있는 경로의 빈 칸인지가 고칠 길을
+    가른다.
+    """
     examples = joined.loc[mask, keys].copy()
     if value_column is not None:
         examples[value_column] = joined.loc[mask, _RAW_VALUE]
-    records = examples.drop_duplicates(subset=keys).head(5).to_dict("records")
-    count = int(examples.drop_duplicates(subset=keys).shape[0])
-    return f"{count:,}건, 예시 {records}"
+    distinct = examples.drop_duplicates(subset=keys)
+    records = distinct.head(5).to_dict("records")
+    count = len(distinct)
+    live = joined.loc[mask, keys].assign(_살아있음=~_dropped_later(joined.loc[mask]))
+    dropped_keys = int((~live.groupby(keys, dropna=False)["_살아있음"].any()).sum())
+    message = f"{head}{count:,}건, 예시 {records}"
+    if dropped_keys:
+        message += (
+            f" — 그 가운데 {dropped_keys:,}건은 붙은 경로가 모두 뒤에서 계산 대상에서 빠질 경로"
+            f"({DROPPED_LATER_RULE})입니다"
+        )
+    detail = ReferenceJoinProblem(
+        problem.table,
+        problem.shape,
+        columns=problem.columns,
+        keys=count,
+        rows=int(mask.sum()),
+        dropped_keys=dropped_keys,
+    )
+    return ReferenceJoinError(message, detail)
 
 
 def _assert_positive(
