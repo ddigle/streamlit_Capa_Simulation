@@ -370,7 +370,8 @@ def _write_calls() -> dict[tuple[str, str, str], ast.AST]:
 
     for path in _ui_paths():
         tree = _parse(path)
-        visit(tree, str(path.relative_to(ROOT)), tree, "<module>")
+        # 장부 열쇠는 `/` 꼴이다 — Windows 의 `str()`(`\`)로 지으면 모든 줄이 빠진·남은 줄이 된다.
+        visit(tree, path.relative_to(ROOT).as_posix(), tree, "<module>")
     return found
 
 

@@ -355,8 +355,10 @@ def _hand_made_sites() -> set[tuple[str, str, int]]:
     found: set[tuple[str, str, int]] = set()
     for path in _sources():
         tree = _parse(path)
+        # `_REMAINING_HAND_MADE` 의 경로는 `/` 꼴이다 — Windows 의 `str()` 은 `\` 로 잇는다.
+        relative = path.relative_to(ROOT).as_posix()
         for line in _hand_made_generation_keys(tree):
-            found.add((str(path.relative_to(ROOT)), _enclosing_function(tree, line), line))
+            found.add((relative, _enclosing_function(tree, line), line))
     return found
 
 

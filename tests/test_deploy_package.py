@@ -15,6 +15,7 @@ from build_deploy_package import (  # noqa: E402
     EXCLUDED_FILES,
     RUNBOOK,
     RUNBOOK_STAMP_PATTERN,
+    SCREENS_SCRIPT,
     build_archive,
     deploy_set,
     forbidden_entries,
@@ -522,7 +523,8 @@ def _write_screens(root: Path, count: int) -> None:
             3,
             "압축본 `A 2 = 기록 2 + 미기록 0 + 안함 0` · 7-0 `A 2 = 기록 2 + 미기록 0 + 안함 0`",
             True,
-            "의 n 2 · scripts/check_deploy_screens.py 3개",
+            # 빌더는 스크립트 경로를 OS 꼴로 찍는다(Windows 는 `scripts\check_deploy_screens.py`).
+            f"의 n 2 · {SCREENS_SCRIPT} 3개",
         ),
         (
             2,

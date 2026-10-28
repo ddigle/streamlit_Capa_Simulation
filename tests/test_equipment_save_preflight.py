@@ -277,7 +277,8 @@ def test_only_the_workspace_calls_the_repository_equipment_save() -> None:
                 and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "save_equipment"
             ):
-                callers.append(f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}")
+                # 기대 경로는 `/` 꼴이다 — Windows 의 `str()` 은 `\` 로 잇는다.
+                callers.append(f"{path.relative_to(PROJECT_ROOT).as_posix()}:{node.lineno}")
     assert [caller.split(":")[0] for caller in callers] == [
         "src/capa_simulation/components/equipment_data_workspace.py"
     ], callers
