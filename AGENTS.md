@@ -1126,6 +1126,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `derive_q_core_data` 가 빼며 그 수(`BlankCsDrop` — 계획 행·경로 행·경로 일부 빠진 남은 계획 줄)를 돌려준다 —
     `build_q_core_data` 는 그 프레임만 준다. `WF 구분` 의
     표기 차이는 등록에서 한 표기로 맞추고(`unify_case_variants`) 계산 쪽 조인은 대소문자 무시로 바꾸지 않는다.
+  - `공정` 은 표를 만들기 전에 앞뒤 공백을 뗀다(대소문자는 둔다). 표는 원래 글자로 접고 계산은 공백을 떼고 붙여서,
+    `P1`·`P1 ` 이 두 행으로 저장되면 그 리비전의 대당 Capa 가 「연결 키가 중복되었습니다」로 늘 멈췄다.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 첫 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 행 순서를 바꾸지 않는다.
 - `src/capa_simulation/components/monthly_table_base.py` — Plotly 월별 표가 공유하는 색·치수·글자 계산이다. 분류 칸 글자는

@@ -323,6 +323,13 @@ def derive_q_core_data(
         .str.replace(r"\s+", " ", regex=True)
         .str.strip()
     )
+    # 공정은 효율·편중률·모듈수·일수·설비대수 표의 유일한 글자 키다.
+    # 계산(`unit_capacity._join_reference`)은 앞뒤 공백을 떼고 붙이는데 표는 원래 글자로
+    # 접으므로(`validated_distinct`), `P1`·`P1 ` 이 두 행으로 저장되면 계산이 같은 키 두 행으로 보고
+    # 리비전 전체가 멈춘다. 등록이 받은 원천은 그 리비전을 고칠 길도 없다(원천 코드 불변). 그래서
+    # 표를 만들기 전에 여기서 한 번 뗀다 — 대소문자는 계산도 가르므로 두고, 공백만 다르던 두 행의
+    # 값이 다르면 충돌 보고서에 남는다. 행마다 따로 바꾸는 정규화다.
+    core["공정"] = core["공정"].astype("string").str.strip()
     area_names = core["Area_Name"].astype("string").str.strip()
     normalized_areas = area_names.str.casefold()
     core["Area_Name"] = area_names
