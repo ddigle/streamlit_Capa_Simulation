@@ -872,14 +872,62 @@ def _latest_equipment_revision(
 # ---------------------------------------------------------------------------------- 원천 읽기
 
 
+# 원천 데이터셋을 고를 때 리비전 1 계산(대당 Capa → 소요대수)이 서는지 볼 최근 후보 수. 사내
+# 리뷰 `202610271800` 에서 가장 최근 원천의 리비전 1 계산이 멈춰 8-2 맞대기가 비었다 — 그때 다음
+# 데이터셋으로 넘어간다. 후보마다 리비전 표를 읽고 계산하므로 수를 묶는다. 서는 것이 없으면 가장
+# 최근 것으로 돌아간다.
+SOURCE_CANDIDATES: Final = 5
+
+
+@dataclass(frozen=True)
+class SkippedSource:
+    """리비전 1 계산이 서지 않아 건너뛴 원천 데이터셋 — 원천에서 온 것 가운데 최근부터 차례 ·
+    적재일 · 원천 종류(앱이 붙인 이름) · 까닭(단계와 예외 종류만). 이름·ID·값은 싣지 않는다."""
+
+    order: int
+    imported: str
+    source_type: str
+    reason: str
+
+
 @dataclass
 class SourceData:
-    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표."""
+    """대조 기준 — 데이터셋의 원천 행과 그 시나리오의 리비전 1 표.
+
+    `required` 는 고를 때 이미 돌린 리비전 1 계산(8-2 가 다시 쓴다). `order` 는 원천에서 온
+    데이터셋 가운데 최근부터 차례(`--dataset-id` 면 0), `sources` 는 그 수다. `skipped` 는 계산이
+    서지 않아 지나친 더 최근 데이터셋이고, `fell_back` 이면 본 후보가 모두 서지 않아 가장 최근
+    것으로 돌아왔다(그때 `skipped` 는 고른 것 말고 본 것이다).
+    """
 
     dataset_label: str
     raw: pd.DataFrame
     tables: dict[str, pd.DataFrame] = field(default_factory=dict)
     revision_id: str = ""
+    required: Required | None = None
+    order: int = 0
+    sources: int = 0
+    skipped: tuple[SkippedSource, ...] = ()
+    fell_back: bool = False
+
+    def label_lines(self) -> list[str]:
+        """블록 머리의 데이터셋 줄 — 고른 데이터셋 한 줄과 건너뛴 데이터셋마다 한 줄."""
+        lines = [f"- {self.dataset_label}"]
+        if self.skipped:
+            lines.append(
+                f"- 원천에서 온 최근 데이터셋 {len(self.skipped) + 1:,}개 모두 리비전 1 계산"
+                "(대당 Capa → 소요대수)이 서지 않아 가장 최근 것으로 돌아왔다(런북 8-2). 그 밖에 "
+                "본 것:"
+                if self.fell_back
+                else "- 리비전 1 계산(대당 Capa → 소요대수)이 서지 않아 건너뛴 더 최근 원천 "
+                f"데이터셋 {len(self.skipped):,}(런북 8-2):"
+            )
+            lines.extend(
+                f"  - 최근부터 {item.order:,}번째 · 원천 종류 `{item.source_type}` · 적재 "
+                f"{item.imported} — {item.reason}"
+                for item in self.skipped
+            )
+        return lines
 
 
 _SOURCE_DATASET_FILTER: Final = (
@@ -888,107 +936,207 @@ _SOURCE_DATASET_FILTER: Final = (
 )
 
 
-def _dataset_row(
+def _dataset_rows(
     connection: duckdb.DuckDBPyConnection, dataset_id: str | None
-) -> tuple[str, str, str, object] | None:
-    """`--dataset-id` 가 없으면 원천에서 온 데이터셋 가운데 가장 최근 것.
+) -> list[tuple[str, str, str, object]]:
+    """`--dataset-id` 가 있으면 그 데이터셋 하나, 없으면 원천에서 온 데이터셋을 최근 것부터
+    `SOURCE_CANDIDATES` 개.
 
     복제·월 병합·연도 이동은 다른 시나리오에서 만든 데이터셋이라 리비전 1 이 원천 그대로가 아니다
     (복제는 원천 행도 없다). 가장 최근이 그런 것이면 대조가 조용히 원천이 아닌 것을 보게 된다.
     """
     if dataset_id:
-        row = connection.execute(
+        rows = connection.execute(
             "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset "
             "WHERE dataset_id = ?",
             [dataset_id],
-        ).fetchone()
+        ).fetchall()
     else:
-        row = connection.execute(
+        rows = connection.execute(
             "SELECT dataset_id, scenario_id, source_type, imported_at FROM app_meta.dataset AS d "
-            f"WHERE {_SOURCE_DATASET_FILTER} ORDER BY imported_at DESC LIMIT 1",
-            list(DERIVED_SOURCE_TYPES),
-        ).fetchone()
-    if row is None:
+            f"WHERE {_SOURCE_DATASET_FILTER} ORDER BY imported_at DESC, dataset_id LIMIT ?",
+            [*DERIVED_SOURCE_TYPES, SOURCE_CANDIDATES],
+        ).fetchall()
+    return [(str(row[0]), str(row[1]), str(row[2]), row[3]) for row in rows]
+
+
+def _revision_one(
+    connection: duckdb.DuckDBPyConnection, scenario_id: str, dataset_id: str
+) -> tuple[str, dict[str, pd.DataFrame]] | None:
+    """그 데이터셋 시나리오의 리비전 1 과 그 표(리비전 표 + 데이터셋 표). 없으면 None."""
+    revision = connection.execute(
+        "SELECT revision_id FROM app_meta.scenario_revision "
+        "WHERE scenario_id = ? AND revision_no = 1",
+        [scenario_id],
+    ).fetchone()
+    if revision is None:
         return None
-    return str(row[0]), str(row[1]), str(row[2]), row[3]
+    revision_id = str(revision[0])
+    tables: dict[str, pd.DataFrame] = {}
+    for logical, physical in REVISION_TABLES.items():
+        tables[logical] = load_frame(
+            connection,
+            schema="rev_data",
+            table_name=physical,
+            owner_column="revision_id",
+            owner_id=revision_id,
+        )
+    for logical, physical in DATASET_TABLES.items():
+        tables[logical] = load_frame(
+            connection,
+            schema="ref_data",
+            table_name=physical,
+            owner_column="dataset_id",
+            owner_id=dataset_id,
+        )
+    return revision_id, tables
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    order: int
+    dataset_id: str
+    source_type: str
+    imported_at: object
+    revision_id: str
+    tables: dict[str, pd.DataFrame]
+    required: Required
+
+
+def _imported_day(imported_at: object) -> str:
+    return str(imported_at)[:10] if imported_at is not None else "?"
 
 
 def load_source(session: Session) -> SourceData | None:
-    """가장 최근(또는 `--dataset-id`) 데이터셋의 원천과 리비전 1 표. 한 번만 읽는다."""
+    """원천 데이터셋 하나의 원천과 리비전 1 표. 한 번만 읽고 8-2 · 8-3 · 8-9 가 나눠 본다.
+
+    `--dataset-id` 가 없으면 원천에서 온 데이터셋을 최근 것부터 보아 리비전 1 계산(대당 Capa →
+    소요대수)이 서는 첫 것을 고른다 — 서지 않은 것은 건너뛰고 그 차례 · 적재일 · 원천 종류 · 까닭
+    (단계와 예외 종류)을 남긴다. 최근 `SOURCE_CANDIDATES` 개가 모두 서지 않으면 가장 최근 것으로
+    돌아간다(그 계산 실패가 8-2 에 그대로 찍힌다). `--dataset-id` 로 고른 것은 건너뛰지 않는다.
+    """
     if session._source is not None or session._source_failure is not None:
         return session._source
     connection = session.simulation
     if connection is None:
         session._source_failure = str(session.simulation_failure)
         return None
+    skipped: list[SkippedSource] = []
     try:
-        picked = _dataset_row(connection, session.dataset_id)
-        if picked is None:
+        rows = _dataset_rows(connection, session.dataset_id)
+        if not rows:
             session._source_failure = (
                 "그 데이터셋이 없다"
                 if session.dataset_id
                 else "원천에서 온 데이터셋이 없다(복제·월 병합·연도 이동뿐이거나 등록한 적이 없다)"
             )
             return None
-        dataset_id, scenario_id, source_type, imported_at = picked
         total = _scalar(connection, "SELECT count(*) FROM app_meta.dataset")
         sources = _scalar(
             connection,
             f"SELECT count(*) FROM app_meta.dataset AS d WHERE {_SOURCE_DATASET_FILTER}",
             DERIVED_SOURCE_TYPES,
         )
-        revision = connection.execute(
-            "SELECT revision_id FROM app_meta.scenario_revision "
-            "WHERE scenario_id = ? AND revision_no = 1",
-            [scenario_id],
-        ).fetchone()
-        if revision is None:
-            session._source_failure = "그 데이터셋 시나리오의 리비전 1 이 없다"
+        picked: _Candidate | None = None
+        newest: _Candidate | None = None
+        for order, (dataset_id, scenario_id, source_type, imported_at) in enumerate(rows, 1):
+            loaded = _revision_one(connection, scenario_id, dataset_id)
+            if loaded is None:
+                if session.dataset_id:
+                    break
+                skipped.append(
+                    SkippedSource(order, _imported_day(imported_at), source_type, "리비전 1 없음")
+                )
+                continue
+            candidate = _Candidate(
+                order=0 if session.dataset_id else order,
+                dataset_id=dataset_id,
+                source_type=source_type,
+                imported_at=imported_at,
+                revision_id=loaded[0],
+                tables=loaded[1],
+                required=_calculate_required(loaded[1]),
+            )
+            if session.dataset_id or candidate.required.frame is not None:
+                picked = candidate
+                break
+            newest = newest or candidate
+            skipped.append(
+                SkippedSource(
+                    order,
+                    _imported_day(imported_at),
+                    source_type,
+                    f"{candidate.required.step} {candidate.required.failure}",
+                )
+            )
+        fell_back = picked is None and newest is not None
+        if picked is None:
+            picked = newest
+        if picked is None:
+            session._source_failure = (
+                "그 데이터셋 시나리오의 리비전 1 이 없다"
+                if session.dataset_id
+                else f"원천에서 온 최근 데이터셋 {len(rows):,}개 모두 리비전 1 이 없다"
+            )
             return None
-        revision_id = str(revision[0])
         raw = connection.execute(
             "SELECT * EXCLUDE (dataset_id, source_row_no, row_hash) "
             "FROM raw_data.core_data WHERE dataset_id = ? ORDER BY source_row_no",
-            [dataset_id],
+            [picked.dataset_id],
         ).fetch_df()
-        tables: dict[str, pd.DataFrame] = {}
-        for logical, physical in REVISION_TABLES.items():
-            tables[logical] = load_frame(
-                connection,
-                schema="rev_data",
-                table_name=physical,
-                owner_column="revision_id",
-                owner_id=revision_id,
-            )
-        for logical, physical in DATASET_TABLES.items():
-            tables[logical] = load_frame(
-                connection,
-                schema="ref_data",
-                table_name=physical,
-                owner_column="dataset_id",
-                owner_id=dataset_id,
-            )
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
         return None
-    which = (
-        "`--dataset-id` 로 고른"
-        if session.dataset_id
-        else "원천에서 온 것 가운데 가장 최근에 적재한"
-    )
-    stamp = str(imported_at)[:10] if imported_at is not None else "?"
+    if session.dataset_id:
+        which = "`--dataset-id` 로 고른"
+    elif fell_back:
+        which = (
+            f"원천에서 온 것 가운데 최근부터 {picked.order:,}번째(리비전 1 계산이 서는 것이 없어 "
+            "가장 최근 것으로 돌아왔다)"
+        )
+    elif picked.order == 1:
+        which = "원천에서 온 것 가운데 가장 최근에 적재한"
+    else:
+        which = (
+            f"원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근(최근부터 {picked.order:,}번째)"
+        )
     label = (
         f"{which} 데이터셋(전체 {total:,}개 · 원천에서 온 것 {sources:,}개) · 원천 종류 "
-        f"`{source_type}` · 적재 {stamp} · 원천 {len(raw):,}행 · 계산은 그 시나리오의 리비전 1"
+        f"`{picked.source_type}` · 적재 {_imported_day(picked.imported_at)} · "
+        f"원천 {len(raw):,}행 · 계산은 그 시나리오의 리비전 1"
     )
-    if source_type in DERIVED_SOURCE_TYPES or raw.empty:
+    if picked.source_type in DERIVED_SOURCE_TYPES or raw.empty:
         label += " · **⚠ 원천에서 온 데이터셋이 아니다 — 리비전 1 이 원천 그대로가 아닐 수 있다**"
     else:
         label += "(원천 그대로)"
+    # 돌아온 것은 건너뛴 목록에서 뺀다 — 고른 것이 그 줄에 두 번 서지 않게.
     session._source = SourceData(
-        dataset_label=label, raw=raw, tables=tables, revision_id=revision_id
+        dataset_label=label,
+        raw=raw,
+        tables=picked.tables,
+        revision_id=picked.revision_id,
+        required=picked.required,
+        order=picked.order,
+        sources=sources,
+        skipped=tuple(item for item in skipped if item.order != picked.order),
+        fell_back=fell_back,
     )
     return session._source
+
+
+def _source_note(source: SourceData) -> str | None:
+    """요약의 8-2D — 더 최근 원천 데이터셋을 건너뛴 때만. 「8-2D 고름 k/N · 건너뜀 n · <차례>번째
+    <까닭> …」, 후보가 모두 서지 않았으면 「건너뜀」 대신 「선 것 없음」."""
+    if not source.skipped:
+        return None
+    return _note(
+        "8-2D",
+        f"고름 {source.order:,}/{source.sources:,}",
+        f"선 것 없음 {len(source.skipped) + 1:,}"
+        if source.fell_back
+        else f"건너뜀 {len(source.skipped):,}",
+        *(f"{item.order:,}번째 {item.reason}" for item in source.skipped),
+    )
 
 
 # ---------------------------------------------------------------------------------- 8-2 legacy
@@ -1135,8 +1283,8 @@ def _key_set(frame: pd.DataFrame, keys: Sequence[str]) -> set[tuple[object, ...]
     }
 
 
-def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    unit_capacity = calculate_unit_capacity(
+def _unit_capacity(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    return calculate_unit_capacity(
         upeh=tables["RQ_UPEH"],
         run_rate=tables["RQ_RUN_RATE"],
         vital=tables["RQ_VITAL"],
@@ -1145,6 +1293,13 @@ def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         lot_ratio=tables["RQ_LOT_RATIO"],
         wf_ratio=tables["RQ_WF_RATIO"],
     )
+
+
+def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    return _required_from(tables, _unit_capacity(tables))
+
+
+def _required_from(tables: dict[str, pd.DataFrame], unit_capacity: pd.DataFrame) -> pd.DataFrame:
     return calculate_required_equipment(
         reqb=tables["RQ_REQB"],
         plan=tables["RQ_PKG_PLAN"],
@@ -1171,8 +1326,10 @@ def _requirement_section(
     contract = load_core_data_contract()
     required = calculated.frame
     if required is None:
-        notes.append(_note("8-2R", _short(calculated.failure)))
-        return [*lines, f"- 신규 소요대수 계산 {calculated.failure} — 대조하지 않았다", ""]
+        # 멈춘 단계(대당 Capa · 소요대수)를 함께 적는다 — 「8-2R 대당 Capa 실패(ValueError)」.
+        stopped = f"{calculated.step} {calculated.failure}".strip()
+        notes.append(_note("8-2R", _short(stopped)))
+        return [*lines, f"- 신규 소요대수 계산이 멈췄다 — {stopped}. 대조하지 않았다", ""]
     route = _route_frame(core)
     exclusions = required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
     excluded_keys = (
@@ -1818,17 +1975,24 @@ def _route_category_lines(link: RouteLink, route: pd.DataFrame) -> list[str]:
 
 @dataclass(frozen=True)
 class Required:
-    """리비전 1 로 다시 계산한 `RQ_REQB` 행별 결과. 실패하면 예외 종류만 남는다."""
+    """리비전 1 로 다시 계산한 `RQ_REQB` 행별 결과. 실패하면 멈춘 단계(`대당 Capa` · `소요대수`)와
+    예외 종류만 남는다."""
 
     frame: pd.DataFrame | None
     failure: str | None = None
+    step: str = ""
 
 
 def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
+    """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류만 적는다."""
     try:
-        return Required(frame=_required_equipment(tables))
-    except Exception as exc:  # 기준정보 오류면 계산이 멈춘다. 종류만 적는다
-        return Required(frame=None, failure=_failure(exc))
+        unit_capacity = _unit_capacity(tables)
+    except Exception as exc:  # 문구에는 키 값이 실린다
+        return Required(frame=None, failure=_failure(exc), step="대당 Capa")
+    try:
+        return Required(frame=_required_from(tables, unit_capacity))
+    except Exception as exc:  # 문구에는 키 값이 실린다
+        return Required(frame=None, failure=_failure(exc), step="소요대수")
 
 
 def _wafer_route_tables(cells: RouteCells) -> list[str]:
@@ -2132,7 +2296,10 @@ def check_legacy(session: Session) -> list[str]:
         notes.append(_note("8-2", f"원천 못 읽음 {session._source_failure}"))
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     raw, tables = source.raw, source.tables
-    lines.extend([f"- {source.dataset_label}", ""])
+    lines.extend([*source.label_lines(), ""])
+    skipped_note = _source_note(source)
+    if skipped_note is not None:
+        notes.append(skipped_note)
     lines.extend(
         [
             *_table(["원천 컬럼", "값 있음", "0", "음수", "고유값 수"], _fill_rows(raw)),
@@ -2189,7 +2356,7 @@ def check_legacy(session: Session) -> list[str]:
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
     _noted(notes, "8-2L", lambda: [_load_note(load_names, load_results)])
 
-    required = _calculate_required(tables)
+    required = source.required or _calculate_required(tables)
     try:
         lines.extend(_wafer_route_section(core, tables, required, grain, contract, notes))
     except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다
@@ -2226,7 +2393,7 @@ def check_reqb(session: Session) -> list[str]:
         session.notes.append(_note("8-3", f"원천 못 읽음 {session._source_failure}"))
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     reqb = source.tables.get("RQ_REQB", pd.DataFrame()).copy()
-    lines.extend([f"- {source.dataset_label}", ""])
+    lines.extend([*source.label_lines(), ""])
     if reqb.empty:
         session.notes.append(_note("8-3", "0"))
         return [*lines, "- 리비전 1 의 `RQ_REQB` 가 비어 있다", ""]
@@ -2371,7 +2538,7 @@ def check_home_months(session: Session) -> list[str]:
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     tables = source.tables
     plan = tables.get("RQ_PKG_PLAN", pd.DataFrame())
-    lines.extend([f"- {source.dataset_label}", ""])
+    lines.extend([*source.label_lines(), ""])
     if plan.empty:
         session.notes.append(_note("8-9", "0"))
         return [*lines, "- 리비전 1 의 `RQ_PKG_PLAN` 이 비어 있다", ""]
@@ -4873,7 +5040,11 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--equipment-database", type=Path, default=EQUIPMENT_DUCKDB_PATH, help="설비 DuckDB"
     )
-    parser.add_argument("--dataset-id", default=None, help="비우면 가장 최근에 적재한 데이터셋")
+    parser.add_argument(
+        "--dataset-id",
+        default=None,
+        help="비우면 원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근 데이터셋(런북 8-2)",
+    )
     parser.add_argument(
         "--census-all-revisions",
         action="store_true",

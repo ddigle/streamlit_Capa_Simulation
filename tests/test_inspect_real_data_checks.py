@@ -523,7 +523,10 @@ def test_an_error_message_carrying_names_is_reported_by_kind_only(
 
     assert code == 0
     _assert_no_leak(output)
-    assert "- 신규 소요대수 계산 실패(ValueError) — 대조하지 않았다" in output
+    # 원천 데이터셋이 하나뿐이라 건너뛸 곳이 없다 — 그것으로 돌아와 멈춘 단계와 종류만 적는다.
+    assert "- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError). 대조하지 않았다" in output
+    assert "(리비전 1 계산이 서는 것이 없어 가장 최근 것으로 돌아왔다)" in output
+    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
     assert "- 일정 미정 — 실패(ValueError)" in output
 
 
@@ -1157,6 +1160,189 @@ def test_a_newer_clone_dataset_is_not_taken_for_the_source(
     _assert_no_leak(output)
     assert "데이터셋(전체 2개 · 원천에서 온 것 1개) · 원천 종류 `BUILTIN_SYNTHETIC_SEED`" in output
     assert "⚠" not in output
+
+
+def _add_source_dataset(path: Path, dataset_id: str, *, days_later: int, stop: bool) -> None:
+    """내장 시드 데이터셋을 통째로 베껴 `days_later` 일 뒤에 적재한 원천 데이터셋 하나를
+    더한다(새 시나리오 · 리비전 1). `stop` 이면 그 리비전 1 의 `RQ_RUN_RATE` 를 비워 대당 Capa 가
+    멈추게 한다 — 사내 리뷰 `202610271800` 의 꼴(`RQ_RUN_RATE` ValueError). ID 는 표지값이라
+    찍히면 누출이다."""
+    scenario_id, revision_id = f"{dataset_id}-SC", f"{dataset_id}-R1"
+    with duckdb.connect(str(path)) as connection:
+        row = connection.execute(
+            "SELECT d.dataset_id, d.scenario_id, r.revision_id FROM app_meta.dataset AS d "
+            "JOIN app_meta.scenario_revision AS r ON r.scenario_id = d.scenario_id "
+            "AND r.revision_no = 1 ORDER BY d.imported_at LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        base_dataset, base_scenario, base_revision = (str(value) for value in row)
+        connection.execute(
+            "INSERT INTO app_meta.scenario SELECT * REPLACE (? AS scenario_id) "
+            "FROM app_meta.scenario WHERE scenario_id = ?",
+            [scenario_id, base_scenario],
+        )
+        connection.execute(
+            "INSERT INTO app_meta.dataset SELECT * REPLACE (? AS dataset_id, ? AS scenario_id, "
+            "imported_at + to_days(CAST(? AS INTEGER)) AS imported_at) "
+            "FROM app_meta.dataset WHERE dataset_id = ?",
+            [dataset_id, scenario_id, days_later, base_dataset],
+        )
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision SELECT * REPLACE (? AS revision_id, "
+            "? AS scenario_id) FROM app_meta.scenario_revision WHERE revision_id = ?",
+            [revision_id, scenario_id, base_revision],
+        )
+        owned = connection.execute(
+            "SELECT table_schema, table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema IN ('raw_data', 'ref_data', 'rev_data') "
+            "AND column_name IN ('dataset_id', 'revision_id')"
+        ).fetchall()
+        for schema, table, column in owned:
+            owner = base_dataset if column == "dataset_id" else base_revision
+            copy = dataset_id if column == "dataset_id" else revision_id
+            connection.execute(
+                f"INSERT INTO {schema}.{table} SELECT * REPLACE (? AS {column}) "
+                f"FROM {schema}.{table} WHERE {column} = ?",
+                [copy, owner],
+            )
+        if stop:
+            connection.execute(
+                f"DELETE FROM rev_data.{REVISION_TABLES['RQ_RUN_RATE']} WHERE revision_id = ?",
+                [revision_id],
+            )
+
+
+def _imported(path: Path, dataset_id: str) -> str:
+    with duckdb.connect(str(path), read_only=True) as connection:
+        row = connection.execute(
+            "SELECT imported_at FROM app_meta.dataset WHERE dataset_id = ?", [dataset_id]
+        ).fetchone()
+    assert row is not None
+    return str(row[0])[:10]
+
+
+SKIP_HEAD = (
+    "- 리비전 1 계산(대당 Capa → 소요대수)이 서지 않아 건너뛴 더 최근 원천 데이터셋 1(런북 8-2):"
+)
+
+
+def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사내 리뷰 `202610271800` 사외 요청 2 — 가장 최근 원천의 리비전 1 계산이 멈춰 8-2
+    맞대기가 비었다. 리비전 1 계산이 서는 가장 최근 원천을 고르고, 건너뛴 것은 차례 · 원천 종류 ·
+    적재일 · 까닭(단계와 예외 종류)만 찍는다. 8-3 · 8-9 도 같은 데이터셋을 본다. 요약에는 8-2D 한
+    줄이 더해지고 확인 코드 꼴은 그대로다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=True)
+
+    code, output = _run(capsys, "--only", "legacy,reqb,home", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    picked = (
+        "- 원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근(최근부터 2번째) 데이터셋"
+        "(전체 2개 · 원천에서 온 것 2개) · 원천 종류 `BUILTIN_SYNTHETIC_SEED`"
+    )
+    skipped = (
+        f"  - 최근부터 1번째 · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · 적재 {_imported(path, stopped)}"
+        " — 대당 Capa 실패(ValueError)"
+    )
+    # 8-2 · 8-3 · 8-9 세 블록 머리가 같은 데이터셋과 건너뛴 줄을 찍는다.
+    assert output.count(picked) == 3
+    assert output.count(SKIP_HEAD) == 3
+    assert output.count(skipped) == 3
+    # 고른 데이터셋의 계산은 선다 — 소요대수 대조까지 간다.
+    assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
+    summary = _summary(output)
+    assert re.fullmatch(
+        r"- 8-2D 고름 2/2 · 건너뜀 1 · 1번째 대당 Capa 실패\(ValueError\) #\d\d", summary[0]
+    ), summary[0]
+    assert next(line for line in summary if line.startswith("- 8-2R ")).startswith(
+        "- 8-2R 100.00% · "
+    )
+    assert checks.check_transcript(summary) == []
+    assert checks.check_transcript([summary[0].replace("1번째", "2번째")]) != []
+
+
+def test_a_named_dataset_is_never_skipped(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--dataset-id` 로 고른 데이터셋은 계산이 멈춰도 건너뛰지 않는다 — 멈춘 단계와 종류를 찍는다
+    (사내가 보충 줄을 그 길로 얻었다)."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=True)
+
+    code, output = _run(
+        capsys, "--only", "legacy", "--database", str(path), "--dataset-id", stopped
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "- `--dataset-id` 로 고른 데이터셋(전체 2개 · 원천에서 온 것 2개)" in output
+    assert SKIP_HEAD not in output
+    assert "- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError). 대조하지 않았다" in output
+    summary = _summary(output)
+    assert not any(line.startswith("- 8-2D ") for line in summary)
+    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
+
+
+def test_when_no_recent_source_stands_the_newest_is_taken_back(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """최근 후보가 모두 서지 않으면 가장 최근 것으로 돌아간다 — 그 실패가 8-2 에 그대로 찍히고,
+    8-2D 는 「선 것 없음」 과 고른 것 말고 본 것을 적는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(f"DELETE FROM rev_data.{REVISION_TABLES['RQ_RUN_RATE']}")
+    _add_source_dataset(path, f"{SENTINEL}DS-NEW", days_later=1, stop=True)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        "- 원천에서 온 것 가운데 최근부터 1번째(리비전 1 계산이 서는 것이 없어 가장 최근 것으로 "
+        "돌아왔다) 데이터셋"
+    ) in output
+    assert (
+        "- 원천에서 온 최근 데이터셋 2개 모두 리비전 1 계산(대당 Capa → 소요대수)이 서지 않아 가장 "
+        "최근 것으로 돌아왔다(런북 8-2). 그 밖에 본 것:"
+    ) in output
+    summary = _summary(output)
+    assert re.fullmatch(
+        r"- 8-2D 고름 1/2 · 선 것 없음 2 · 2번째 대당 Capa 실패\(ValueError\) #\d\d",
+        summary[0],
+    ), summary[0]
+    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
+    assert checks.check_transcript(summary) == []
+
+
+def test_source_candidates_stop_at_the_limit(
+    simulation_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """후보마다 리비전 표를 읽고 계산하므로 최근 `SOURCE_CANDIDATES` 개까지만 본다 — 그 안에 서는
+    것이 없으면 그보다 오래된 서는 데이터셋이 있어도 가장 최근 것으로 돌아간다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    for index in range(2):
+        _add_source_dataset(path, f"{SENTINEL}DS-{index}", days_later=index + 1, stop=True)
+    monkeypatch.setattr(checks, "SOURCE_CANDIDATES", 2)
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation = duckdb.connect(str(path), read_only=True)
+    try:
+        source = checks.load_source(session)
+    finally:
+        session.close()
+    assert source is not None
+    assert (source.order, source.sources, source.fell_back) == (1, 3, True)
+    assert [item.order for item in source.skipped] == [2]
+    assert source.required is not None and source.required.step == "대당 Capa"
 
 
 def test_derived_source_types_are_the_ones_the_app_writes() -> None:
