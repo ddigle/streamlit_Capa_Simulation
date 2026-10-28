@@ -153,6 +153,37 @@ def test_a_queued_tab_switches_the_page(_app: AppTest, sent: list[dict[str, Any]
     assert _ids(sent) == [H, A]
 
 
+def test_a_tab_pressed_while_home_computes_moves_before_home_computes_again(
+    _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HOME 계산 중에 누른 탭은 서버가 곧바로 세운 새 회차(`runner.fastReruns`)의 맨 앞
+    (`st.navigation()` 바로 뒤)에서 옮긴다 — 그 회차는 HOME 본문(`get_home_simulation`)을 부르지
+    않는다(사내 리뷰 202610271800 발견 3). 콜백이 적은 대기 칸을 그 회차에 적어 재현한다."""
+    import capa_simulation.services.simulation_cache as simulation_cache
+
+    app = _ok(_app.run())
+    _ok(app.switch_page(A).run())
+    _ok(app.switch_page(H).run())
+    assert _data(sent)["active"] == H
+
+    calls: list[str] = []
+    original = simulation_cache.get_home_simulation
+
+    def counted(**kwargs: Any) -> Any:
+        calls.append("home")
+        return original(**kwargs)
+
+    monkeypatch.setattr(simulation_cache, "get_home_simulation", counted)
+    app.session_state[PAGE_TABS_QUEUED_KEY] = A
+    _ok(app.run())
+
+    assert _data(sent)["active"] == A
+    assert calls == []
+    # 대조 — HOME 을 그리는 회차는 그 계산을 부른다(위 빈 목록이 헛것이 아니다).
+    _ok(app.switch_page(H).run())
+    assert calls == ["home"]
+
+
 def test_closing_the_active_tab_moves_to_its_right_neighbour(
     _app: AppTest, sent: list[dict[str, Any]]
 ) -> None:

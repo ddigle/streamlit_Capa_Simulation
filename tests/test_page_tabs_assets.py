@@ -251,6 +251,7 @@ def test_a_screen_move_stacks_one_history_entry_and_back_leaves_a_link_target() 
 
 _QUEUE_RUNNER = """
 const MS = 1000
+const GRACE = 400
 const ids = ['home', 'plan', 'ref', 'calc']
 const out = {}
 // 산출 결과(calc)에서 생산 계획 → 곧바로 기준 정보. 둘째 누름은 기다리고 마지막 누름만 남긴다.
@@ -260,39 +261,39 @@ sentSelect(q, 'plan', 'calc', 0)
 out.second = pressSelect(q, 'home', 'calc', 100, MS)
 out.third = pressSelect(q, 'ref', 'calc', 150, MS)
 // 아직 옮긴 화면의 data 가 오지 않았다(지금 탭 그대로) — 보내지 않는다.
-out.early = settleSelect(q, 'calc', 200, MS, ids, false)
-// 옮긴 화면의 탭 줄이 왔지만 그 회차가 아직 돈다 — 부품 요청과 합쳐져 트리거가 떨어지니 기다린다.
-out.running = settleSelect(q, 'plan', 300, MS, ids, true)
-// 그 회차가 다 돌았다 — 기다리던 마지막 누름.
-out.settled = settleSelect(q, 'plan', 400, MS, ids, false)
+out.early = settleSelect(q, 'calc', 200, MS, ids, false, GRACE)
+// 옮긴 화면의 탭 줄이 막 왔고 그 회차가 아직 돈다 — 잠깐(GRACE) 기다린다.
+out.running = settleSelect(q, 'plan', 300, MS, ids, true, GRACE)
+// 그 회차가 다 돌았다 — 기다리던 마지막 누름(가벼운 화면은 GRACE 안에 끝나 전과 같다).
+out.settled = settleSelect(q, 'plan', 400, MS, ids, false, GRACE)
 out.idle = [q.flight, q.waiting, pressSelect(q, 'plan', 'plan', 500, MS)]
 // 기다리던 누름이 옮긴 화면 자신이면 할 일이 없다.
 q = createSelectQueue()
 sentSelect(q, 'plan', 'calc', 0)
 pressSelect(q, 'plan', 'calc', 50, MS)
-out.same = settleSelect(q, 'plan', 300, MS, ids, false)
+out.same = settleSelect(q, 'plan', 300, MS, ids, false, GRACE)
 // 옮긴 화면이 끝내 오지 않거나 회차가 계속 돌면 기다림이 다 된 뒤 보낸다.
 q = createSelectQueue()
 sentSelect(q, 'plan', 'calc', 0)
 pressSelect(q, 'ref', 'calc', 50, MS)
 out.timeout = [
-  settleSelect(q, 'calc', 999, MS, ids, true),
-  settleSelect(q, 'calc', 1000, MS, ids, true),
+  settleSelect(q, 'calc', 999, MS, ids, true, GRACE),
+  settleSelect(q, 'calc', 1000, MS, ids, true, GRACE),
 ]
 out.late = pressSelect(q, 'ref', 'calc', 1200, MS)
 // 그 사이 닫힌 탭은 보내지 않는다. 지금 탭 닫기(옮길 이웃은 서버가 정한다)도 같은 기다림이다.
 q = createSelectQueue()
 sentSelect(q, null, 'calc', 0)
 pressSelect(q, 'ref', 'calc', 50, MS)
-out.closed = settleSelect(q, 'plan', 300, MS, ['home', 'plan'], false)
+out.closed = settleSelect(q, 'plan', 300, MS, ['home', 'plan'], false, GRACE)
 process.stdout.write(JSON.stringify(out))
 """
 
 
 def test_taps_while_a_tab_move_is_in_flight_wait_and_only_the_last_is_sent() -> None:
-    """옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 오고 그 회차가 다 돈 뒤에 마지막 누름만 보낸다 —
-    0.1~0.2초 간격으로 두 탭을 누르면 둘째 누름이 떠나는 화면 주소로 회차를 청하거나, 옮긴 화면
-    부품의 회차 요청과 서버에서 합쳐지며 트리거 값을 잃어 둘 다 먹히지 않았다(E2E 결함, `_on_select`
+    """옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 오고 그 회차가 다 돈 뒤(가벼운 화면)에 마지막
+    누름만 보낸다 — 0.1~0.2초 간격으로 두 탭을 누르면 둘째 누름이 떠나는 화면 주소로 회차를 청하거나
+    탭 줄이 온 그리기 안에서 보내져 트리거 값을 잃어 둘 다 먹히지 않았다(E2E 결함, `_on_select`
     「빠른 두 번 누름도 마지막 누름이 맞다」)."""
     out = _node(_QUEUE_RUNNER)
 
@@ -305,6 +306,73 @@ def test_taps_while_a_tab_move_is_in_flight_wait_and_only_the_last_is_sent() -> 
     assert out["timeout"] == [None, "ref"]
     assert out["late"] == "send"
     assert out["closed"] is None
+
+
+_SLOW_SCREEN_RUNNER = """
+const MS = 10000
+const GRACE = 1000
+const ids = ['home', 'plan', 'ref']
+const out = {}
+// 생산 계획(plan)에서 HOME 탭 — HOME 첫 계산이 몇 초 돈다(회차 표지가 늘 「돈다」).
+let q = createSelectQueue()
+sentSelect(q, 'home', 'plan', 0)
+out.arrive = settleSelect(q, 'home', 300, MS, ids, true, GRACE)
+out.inGrace = settleSelect(q, 'home', 1250, MS, ids, true, GRACE)
+out.afterGrace = settleSelect(q, 'home', 1300, MS, ids, true, GRACE)
+out.cleared = q.flight === null
+// 계산 중(2초)에 누른 생산 계획 탭은 기다리지 않고 곧바로 간다 —
+// 서버가 곧바로 새 회차로 받는다(runner.fastReruns).
+out.press = pressSelect(q, 'plan', 'home', 2000, MS)
+// HOME 탭 뒤 0.15초에 누른 기준 정보 탭은 HOME 탭 줄이 온 뒤 GRACE 에 간다 —
+// HOME 이 끝나기를 기다리지 않는다.
+q = createSelectQueue()
+sentSelect(q, 'home', 'plan', 0)
+out.rapidPress = pressSelect(q, 'ref', 'plan', 150, MS)
+out.rapid = [
+  settleSelect(q, 'home', 300, MS, ids, true, GRACE),
+  settleSelect(q, 'home', 1299, MS, ids, true, GRACE),
+  settleSelect(q, 'home', 1300, MS, ids, true, GRACE),
+]
+// 탭 줄을 처음 본 때부터 센다 — 늦게 본 탭 줄은 그때부터다(회차가 끝나면 그 전에도 간다).
+q = createSelectQueue()
+sentSelect(q, 'home', 'plan', 0)
+pressSelect(q, 'ref', 'plan', 100, MS)
+out.lateArrival = [
+  settleSelect(q, 'plan', 2000, MS, ids, true, GRACE),
+  settleSelect(q, 'home', 2500, MS, ids, true, GRACE),
+  settleSelect(q, 'home', 3499, MS, ids, true, GRACE),
+  settleSelect(q, 'home', 3500, MS, ids, true, GRACE),
+]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_tap_while_the_moved_screen_still_computes_is_sent_after_a_short_grace() -> None:
+    """옮긴 화면이 오래 돌 때(HOME 첫 계산) 누른 탭은 그 회차가 끝나기를 기다리지 않는다 — 탭
+    줄이 온 뒤 `MOVED_GRACE_MS` 가 지나면 보내고 서버가 곧바로 새 회차로 받는다(`fastReruns`).
+    회차 끝까지만 기다리면 누른 탭이 HOME 계산과 브라우저 그리기가 끝날 때까지 묶였다(사내 리뷰
+    202610271800 발견 3 — HOME 로딩 끝 + 약 2초)."""
+    out = _node(_SLOW_SCREEN_RUNNER)
+
+    assert [out["arrive"], out["inGrace"], out["afterGrace"]] == [None, None, None]
+    assert out["cleared"] is True
+    assert out["press"] == "send"
+    assert out["rapidPress"] == "wait"
+    assert out["rapid"] == [None, None, "ref"]
+    assert out["lateArrival"] == [None, None, None, "ref"]
+    assert "const MOVED_GRACE_MS = 1000" in JS
+    assert "BUSY_MS, open, running, MOVED_GRACE_MS)" in JS
+
+
+def test_new_data_never_sends_a_trigger_from_inside_the_component_render() -> None:
+    """새 data 로 부품이 다시 불릴 때 보낸 이동·붙든 누름은 그 함수 **밖**(다음 차례)에서 본다.
+    탭 줄이 온 그리기 안에서 트리거를 보내면 Streamlit 프런트가 그 값을 회차 요청에 싣지 않아
+    누름이 사라졌다(사외 사본 30번 중 4번 — 서버에 닿은 요청에 탭 줄 칸이 없었다)."""
+    tail = JS[JS.rindex("// 새 data 가 왔다") : JS.rindex("return () => {")]
+    assert "S.settleTimer = setTimeout(() => settle(), 0)" in tail
+    assert "S.holdTimer = setTimeout(() => release(), 0)" in tail
+    assert "if (S.queue.flight !== null) settle()" not in JS
+    assert "if (S.hold) release()" not in JS
 
 
 _HOLD_RUNNER = """
