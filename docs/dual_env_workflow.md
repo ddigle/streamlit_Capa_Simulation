@@ -311,6 +311,7 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 관문수 fmt <N>; mypy <N>; pytest <통과> 건너뜀 <n> <까닭>
 권한 템플릿 ok|복사함|다름; 모드 기본|<그 밖>
 적용먼저 확인 <MMDD>                 ← 런북 0-1 그 꼴일 때만
+적용전사본 <MMDD HHMM>; 바탕 <7자> 부모같음|부모다름; 지움 0; 송장 <n>/<N>; 의존성 같음; 사본으로 <한 것>; 증명 ok|ng <무엇>   ← 런북 6-3 6) 을 했을 때만
 <7장 키> <값>                         ← 7장이 압축본에 따로 적으라는 줄일 때만(머리 줄 · inspect_wf_division 의 수 같은 것)
 B <N> = 기록 <n> + 미기록 <N-n>; u<u> a<a>; na칸 <m>; 빈칸 <k>
 B 1)ok@u 2)ok,a3,b0@ua 3)na <까닭> 4)ng <무엇>@u 5)<잰 값>@a 6)na <까닭>@a
