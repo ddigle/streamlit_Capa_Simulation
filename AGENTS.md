@@ -2296,7 +2296,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「공통 — 공식 일정 기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」(`equipment_grid.scenario_column_help`)이고 표 범례가
     같은 뜻이다.
   - 저장 이력은 고른 설비 시나리오의 일정 리비전(번호·저장자·출처·공통 rN)이고 조회는 `load_saved_pair`(저장 때의 짝)다.
-    「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
+    목록은 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지이고, 한도에 걸리면 머리 한 줄 끝에 「최근 50줄 · 전체 N줄 — 더 옛 …」 을
+    붙인다(`revision_count_line` — 새 줄을 세우지 않아 아래 칸이 밀리지 않는다). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
     필요」·표 풍선)은 공식 일정 + 편집본 공통 칸이다(`official_confirmation_master` — 세션 칸 한 벌).
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
@@ -2309,7 +2310,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꺼진 단추라 풍선이 없다). Space 현황은 고를 수 있는 줄이다(S3).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
-    선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23).
+    선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23). 리비전 라디오는 최근 50개까지이고, 한도에 걸리면 라디오
+    아래(팝업 맨 끝) 「최근 50개 · 전체 N개 — 더 옛 n개는 이 목록에 없습니다.」 한 줄이 선다. 화면 확인 스크립트
+    (`equipment_scenario_line`·`space_scenario_row`)가 그 줄의 전체 수를 「리비전 50개(전체 N개)」 로 옮긴다
+    (`REVISION_TOTAL_PATTERN` — 글 꼴을 바꾸면 함께 고친다).
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
@@ -2330,7 +2334,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰기」)도 둔다. 시나리오
   표(공식/활성·최신 rN·리비전 수·저장된 배치 차이)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가
   있으면 「배치 차이 모두 지우기」 도), 리비전 표(리비전명·출처 `이관/저장/복제/함께 넣기/되돌리기/배치 차이 정리`·공통 rN·행
-  수·배치)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
+  수·배치 — 표와 리비전 상자는 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지, 표 아래 한 줄이 늘 전체 수와 출처별 수
+  「전체 12줄(이관 10 · 저장 2)」/「최근 50줄 · 전체 82줄(이관 70 · 저장 12) — 더 옛 32줄은 …」 을 적는다 — 사내 런북의
+  「리비전 N줄 = 이관 N」 은 표를 세지 않고 이 줄의 이관 수를 8-4s `L` 과 견준다)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
   시나리오」·「리비전명」·「공식으로 발행…」(지금 공식 → 새 공식, 최신이 아니면 그 사실, 발행 번호 대조) — 과 옛 배포 흔적이
   있을 때만 「이대로 이어 쓰기」. 구획 본문은 DB 경로와 그 회차 세션만 받아 따로 선다.
   - 쓰기는 저장소가 하고 그 뒤 이 화면이 `clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 import 하지
@@ -2769,7 +2775,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 쪽은 **리비전 내용(불변)과 바뀔 수 있는 것**을 나눈다. 합친 본문 `_load_merged_payload`(공개
     `load_merged_equipment_snapshot`)는 (DB, 공통 id, 일정 id) **쌍 키**에 세대가 없다(`MERGED_SNAPSHOT_CACHE_ENTRIES` 16칸).
     설비 시나리오 목록(`load_equipment_scenario_catalog` — 시나리오·각 최신·리비전 수·최신 발행·흔적 수)과 시나리오 리비전
-    목록(`load_equipment_schedule_revisions`)은 (DB, stat, 세대 `"equipment_scenario"`) 키에 TTL 15초, 8칸이다. 공식 스냅샷
+    목록(`load_equipment_schedule_revisions` — 최근 `SCHEDULE_REVISION_LIST_LIMIT` 줄, 같은 칸에 한도 밖까지 센 출처별 수
+    `load_equipment_schedule_revision_counts` 를 함께 실어 표와 그 아래 「전체 N줄」 이 함께 갈린다)은 (DB, stat, 세대
+    `"equipment_scenario"`) 키에 TTL 15초, 8칸이다. 공식 스냅샷
     (`load_official_equipment_snapshot`)은 공통 최신 id + 목록의 최신 발행 → 합친 본문이라 발행만 바뀌어도 다른 쌍 키로 간다.
     CSV 바이트도 쌍 키다. 이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터
     저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다. 「다른 ACTIVE 시나리오 최신에 일정이

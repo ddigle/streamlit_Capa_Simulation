@@ -15,7 +15,9 @@
   배포)이 저장해 가정 배치가 빠진 리비전이 있으면 그 시나리오 이름과 수를 한 줄로(설계 14장).
 - **리비전 표**: 고른 시나리오의 일정 리비전(r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동
   행·배치·공식·메모). 「배치」 는 저장된 배치 차이 행 수, 옛 판 흔적은 「옛 판 저장 — rN 배치 빠짐」
-  이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을 적는다.
+  이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을 적는다. 표와 리비전 상자는 최근
+  `SCHEDULE_REVISION_LIST_LIMIT` 줄까지이고, 표 아래 한 줄이 늘 전체 수와 출처별 수를 적는다(「전체
+  12줄(이관 10 · 저장 2)」, 한도에 걸리면 「최근 50줄 · 전체 82줄(…) — 더 옛 32줄은 …」).
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
   불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 바뀌는 호기
   수와 「일정 없음」 이 되는 호기를 보이고 확인 체크 뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을
@@ -53,6 +55,7 @@ from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
     equipment_write_token,
     has_unsaved_equipment_edits,
+    revision_count_line,
     schedule_revision_title,
 )
 from capa_simulation.components.equipment_save_fields import (
@@ -109,6 +112,7 @@ from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     latest_equipment_revision_id,
     load_equipment_revision_summaries,
+    load_equipment_schedule_revision_counts,
     load_equipment_schedule_revisions,
     load_layout_publish_preview,
     load_legacy_trace_review,
@@ -740,6 +744,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     scenario = scenarios[selected_id]
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_id)
+        origins = load_equipment_schedule_revision_counts(database_path, selected_id)
         latest_common = latest_equipment_revision_id(database_path)
         common_numbers = {
             item.revision_id: item.revision_no
@@ -773,6 +778,11 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         width="stretch",
         placeholder="",
         column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
+    )
+    # 표가 목록 한도(최근 n줄)에 걸려도 전체 수와 출처별 수를 늘 한 줄로 — 늘 서 있어 아래 칸 자리가
+    # 그대로다.
+    st.caption(
+        revision_count_line(len(revisions), origins, unit="줄", place="이 표와 「리비전」 상자")
     )
     by_id = {item.schedule_revision_id: item for item in revisions}
     default_revision = (

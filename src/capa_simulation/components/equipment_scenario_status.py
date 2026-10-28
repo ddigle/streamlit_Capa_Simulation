@@ -43,6 +43,7 @@ from capa_simulation.components.equipment_data_workspace import (
     new_unit_choice_line,
     pending_fab_layout,
     pending_unit_renames,
+    revision_count_line,
     save_equipment_buffer,
     schedule_revision_title,
     stale_save_refusal,
@@ -79,6 +80,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
+    load_equipment_schedule_revision_counts,
     load_equipment_schedule_revisions,
 )
 from capa_simulation.persistence.equipment_repository import (
@@ -417,8 +419,9 @@ def _render_dialog_body(database_path: str, session: EquipmentSession, *, can_sa
 
 
 def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool) -> None:
-    """불러오기 구획 — 시나리오 → 리비전 라디오(최신 기본, 공식 발행에 「공식 vN」) → 버리기
-    확인."""
+    """불러오기 구획 — 시나리오 → 리비전 라디오(최신 기본, 공식 발행에 「공식 vN」, 최근
+    `SCHEDULE_REVISION_LIST_LIMIT` 개까지 — 한도에 걸리면 라디오 아래 「최근 50개 · 전체 82개 — …」)
+    → 버리기 확인."""
     scenario_by_id = {item.equipment_scenario_id: item for item in session.catalog.scenarios}
     selected_scenario = prune_choice(
         DIALOG_SCENARIO_KEY,
@@ -427,6 +430,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
     )
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_scenario)
+        origins = load_equipment_schedule_revision_counts(database_path, selected_scenario)
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
@@ -484,6 +488,14 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
             ],
             key=DIALOG_REVISION_KEY,
         )
+        # 라디오는 최근 `SCHEDULE_REVISION_LIST_LIMIT` 개까지다 — 한도에 걸렸을 때만 전체
+        # 수를 적는다(팝업 맨 끝이라 생겨도 다른 칸이 밀리지 않는다).
+        if len(options) < sum(origins.values()):
+            st.caption(
+                revision_count_line(
+                    len(options), origins, unit="개", place="이 목록", by_origin=False
+                )
+            )
     if load_clicked:
         failure = select_equipment_scenario(
             database_path,

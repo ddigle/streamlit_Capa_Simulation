@@ -188,6 +188,24 @@ def schedule_revision_rows(
     )
 
 
+def schedule_revision_origin_counts(
+    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str
+) -> dict[str, int]:
+    """한 시나리오의 일정 리비전 수를 출처(`origin`)별로 — 목록 한도(`schedule_revision_rows` 의
+    `limit`)와 상관없는 전체 셈. 리비전이 없으면 빈 dict."""
+    rows = connection.execute(
+        """
+        SELECT s.origin, COUNT(*)
+        FROM equipment_ops.equipment_schedule_revision s
+        WHERE s.equipment_scenario_id = ?
+        GROUP BY s.origin
+        ORDER BY s.origin
+        """,
+        [equipment_scenario_id],
+    ).fetchall()
+    return {str(origin): int(count) for origin, count in rows}
+
+
 def scenario_rows(connection: duckdb.DuckDBPyConnection) -> list[dict[str, object]]:
     """설비 시나리오 목록 — 각 최신(`MAX(revision_no)`)·리비전 수와 함께, `list_order`·이름 차례.
 

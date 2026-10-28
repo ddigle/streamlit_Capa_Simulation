@@ -2073,6 +2073,55 @@ def test_the_space_scenario_row_summary_names_the_pickable_load_only_row() -> No
     )
 
 
+def test_the_revision_count_carries_the_whole_count_past_the_list_limit() -> None:
+    """설비 시나리오 팝업 라디오는 최근 n개까지다 — 한도에 걸리면 팝업 캡션의 전체 수를 라디오 수
+    뒤에 붙인다(사내가 「리비전 50개」 만 보고 이관 수를 견주지 못했다). 캡션의 다른 글(이름)은
+    옮기지 않는다."""
+    limited = ["올라와 있음 · 운영 일정 · r82", "최근 50개 · 전체 1,082개 — 더 옛 1,032개는 …"]
+
+    assert screens.revision_list_words(50, limited) == "리비전 50개(전체 1,082개)"
+    assert screens.revision_list_words(4, ["올라와 있음 · 운영 일정 · r4"]) == "리비전 4개"
+    assert screens.revision_list_words(4, None) == "리비전 4개"
+    assert screens.revision_list_words(None, limited) == "리비전 목록 없음"
+
+    row = {"name": "설비 시나리오", "badge": "공식 v3", "value": "운영 일정 · r82"}
+    facts = {"modes": ["불러오기", "저장"], "selected": "불러오기", "revisions": 50}
+    line = screens.summarize_equipment_scenario_line(
+        row, "설비 시나리오", {**facts, "captions": limited}, True
+    )
+    assert line.endswith("리비전 50개(전체 1,082개) · Esc 닫힘")
+    assert "운영 일정" not in line
+    space = screens.summarize_space_scenario_row(
+        {**row, "disabled": False},
+        "설비 시나리오",
+        {"modes": [], "load": True, "revisions": 50, "captions": limited},
+        True,
+    )
+    assert space.endswith("리비전 50개(전체 1,082개) · Esc 닫힘")
+    # 두 팝업 JS 가 캡션 글을 함께 읽는다.
+    assert "stCaptionContainer" in screens._SCENARIO_DIALOG_JS
+    assert "stCaptionContainer" in screens._SPACE_SCENARIO_DIALOG_JS
+
+
+def test_the_revision_total_pattern_reads_the_app_line() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 꼴만 옮긴다 — 앱이 팝업에 적는 한도 줄을 그 꼴이 읽는다."""
+    from capa_simulation.components.equipment_data_workspace import revision_count_line
+
+    text = revision_count_line(
+        50, {"legacy": 70, "save": 12}, unit="개", place="이 목록", by_origin=False
+    )
+    found = screens.REVISION_TOTAL_PATTERN.search(text)
+    assert found is not None and found.groups() == ("50", "82")
+    assert (
+        screens.REVISION_TOTAL_PATTERN.search(
+            revision_count_line(4, {"save": 4}, unit="개", place="이 목록", by_origin=False)
+        )
+        is None
+    )
+    status = _text(COMPONENTS / "equipment_scenario_status.py")
+    assert 'unit="개", place="이 목록", by_origin=False' in " ".join(status.split())
+
+
 def test_the_space_scenario_row_contract_matches_the_app() -> None:
     """Space 의 팝업에는 「저장」 구획이 없다(저장은 편집본을 세우는 화면 둘만) — 스크립트가 찾는
     「불러오기」 단추 글과 「(고정)」 꼬리가 앱 값과 같다."""
