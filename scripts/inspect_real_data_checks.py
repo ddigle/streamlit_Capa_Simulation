@@ -80,6 +80,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     BDQ_USER_NAME_ENV,
     DETAIL_WINDOW_DAYS_AFTER,
     DETAIL_WINDOW_DAYS_BEFORE,
+    QUERY_FAILURE_TIMEOUT,
     QUERY_TEMPLATE,
     SOURCE_COLUMN_MAPPING,
     BigDataQueryCallError,
@@ -93,6 +94,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     is_bigdataquery_package_available,
     is_valid_simulation_code,
     load_bigdataquery_module,
+    query_failure_clue,
     registration_detail_window,
     resolve_user_name,
 )
@@ -374,6 +376,10 @@ GROUP BY catb_sim_info_id
 # 적재된 코드가 적재일 수만큼 부푼 프레임(사내 표본 하나가 32일)으로 메모리에 오르기 때문이다.
 DEFAULT_COPY_CODES: Final = 2
 DEFAULT_COPY_DAYS: Final = 4
+# 사본 확인의 조회(적재일 · 하루치 상세)가 실패하면 이만큼 쉬고 한 번 더 묻는다 — 사내 리뷰
+# `202610271800` 에서 두 판마다 다른 코드의 하루치 상세가 간헐로 「SQL」 실패했다. 시간 초과는 다시
+# 묻지 않는다 — 한 번 더 기다리면 8-5 가 에이전트 호출 제한(30분)을 넘겨 요약까지 잃을 수 있다.
+RETRY_PAUSE_SECONDS: Final = 2.0
 
 # 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
 MONTH_MERGE_SOURCE: Final = "SCENARIO_MONTH_MERGE"
@@ -3784,11 +3790,53 @@ def _bdq_failure(exc: BaseException) -> str:
     # 패키지 예외는 어댑터가 감싸 올린다 — 감싸기 전 사슬의 종류 이름과 갈래(시간 초과·연결·
     # SQL, 문구 낱말로 가른 추정)를 적는다. 「Error」 하나로는 시간 초과인지 가를 수 없었다
     # (사내 리뷰 202610200720).
+    # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다(문구 원문이 아니다) — 같은 「SQL」 이
+    # 문법 낱말로 섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800).
     if isinstance(exc, BigDataQueryCallError):
-        names, kind = exc.type_names, exc.kind
+        names, kind, clue = exc.type_names, exc.kind, exc.clue
     else:
         names, kind = failure_type_names(exc), classify_query_failure(exc)
-    return f"조회 실패({' ← '.join(names)} · {kind})"
+        clue = query_failure_clue(exc)
+    return f"조회 실패({' ← '.join(names)} · {kind}{f':{clue}' if clue else ''})"
+
+
+def _retryable(exc: BaseException) -> bool:
+    """한 번 더 물을 실패인가 — 우리 어댑터의 안내(계정 · 패키지 · SQL 미설정)는 다시 물어도 같고,
+    시간 초과는 시간 예산(`RETRY_PAUSE_SECONDS` 주석) 때문에 다시 묻지 않는다."""
+    if isinstance(exc, RuntimeError) and not isinstance(exc, BigDataQueryCallError):
+        return False
+    kind = exc.kind if isinstance(exc, BigDataQueryCallError) else classify_query_failure(exc)
+    return kind != QUERY_FAILURE_TIMEOUT
+
+
+@dataclass(frozen=True)
+class Asked:
+    """조회 한 번(실패하면 한 번 더)의 결과 — 값 또는 실패 꼴, 그리고 다시 물었는지."""
+
+    frame: pd.DataFrame | None
+    failure: str | None = None
+    retried: bool = False
+
+
+def ask_twice(call: Callable[[], pd.DataFrame]) -> Asked:
+    """조회 한 번 — 실패하면 `RETRY_PAUSE_SECONDS` 쉬고 한 번 더(`_retryable` 인 것만).
+
+    두 번 다 실패하면 꼴이 같으면 「… 두 번」, 다르면 「첫 꼴 뒤 둘째 꼴」 이다. `KeyboardInterrupt`
+    는 잡지 않는다.
+    """
+    try:
+        return Asked(frame=call())
+    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
+        first = _bdq_failure(exc)
+        if not _retryable(exc):
+            return Asked(frame=None, failure=first)
+    time.sleep(RETRY_PAUSE_SECONDS)
+    try:
+        return Asked(frame=call(), retried=True)
+    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
+        second = _bdq_failure(exc)
+    failure = f"{first} 두 번" if second == first else f"{first} 뒤 {second}"
+    return Asked(frame=None, failure=failure, retried=True)
 
 
 @dataclass
@@ -4547,7 +4595,12 @@ def _position_label(day: date, days: Sequence[date], chosen: CopyDays) -> str:
 
 @dataclass
 class CopyCheck:
-    """여러 날 적재된 코드 하나 — 고른 날마다의 사실. 판정은 내리지 않는다(사외가 한다)."""
+    """여러 날 적재된 코드 하나 — 고른 날마다의 사실. 판정은 내리지 않는다(사외가 한다).
+
+    `failure` 는 코드 전체가 멈춘 까닭(`적재일 조회 실패(…)` · `기준 날 상세 조회 실패(…)`)이다.
+    기준 날이 아닌 날이 다시 물어도 실패하면 그날만 `failed_days`(자리, 꼴)에 두고 나머지 날은
+    견준다. `retried` 는 첫 번이 실패해 다시 물어 받은 조회 수다.
+    """
 
     extra: bool
     load_days: int = 0
@@ -4555,6 +4608,8 @@ class CopyCheck:
     note: str = ""
     days: list[DayFacts] = field(default_factory=list)
     failure: str | None = None
+    failed_days: list[tuple[str, str]] = field(default_factory=list)
+    retried: int = 0
 
 
 def check_copies(
@@ -4572,13 +4627,18 @@ def check_copies(
     하루치는 앱과 같은 상세 SQL 을 그날 하루 창으로 부른 것이다 — 상세 SQL 이 적재 시각으로만
     거르므로 그 창이 곧 그날 적재분이다. `bounded` 가 아니면(전 코드 조회가 없어 등록일 창으로
     셌으면) 기준 날이 창 끝날일 때 그렇게 적는다.
+
+    조회는 모두 `ask_twice` 로 묻는다(실패하면 한 번 더). 기준 날을 먼저 받는다 — 기준 날이 두 번
+    다 실패하면 견줄 수 없어 다른 날은 묻지 않고 코드 전체를 실패로 둔다. 다른 날이 두 번 다
+    실패하면 그날만 빼고 견준다.
     """
     result = CopyCheck(extra=extra)
-    try:
-        by_day = _day_rows(probe.load_days(code, window))
-    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
-        result.failure = _bdq_failure(exc)
+    asked = ask_twice(partial(probe.load_days, code, window))
+    if asked.frame is None:
+        result.failure = f"적재일 {asked.failure}"
         return result
+    result.retried += int(asked.retried)
+    by_day = _day_rows(asked.frame)
     days = sorted(by_day)
     result.load_days = len(days)
     result.day_rows = tuple(by_day[day] for day in days)
@@ -4592,13 +4652,19 @@ def check_copies(
         notes.append("기준 날이 창 끝날에 닿음(창 밖에도 적재가 있을 수 있다)")
     result.note = " · ".join(notes)
     loads: dict[date, DayLoad] = {}
-    try:
-        for day in chosen.picks:
-            frame = probe.detail_frame(code, QueryWindow(start_date=day, end_date=day))
-            loads[day] = day_load(day, frame)
-    except Exception as exc:  # 사내 패키지 예외 종류를 모른다
-        result.failure = _bdq_failure(exc)
-        return result
+    order = [chosen.reference, *(day for day in chosen.picks if day != chosen.reference)]
+    for day in order:
+        asked = ask_twice(
+            partial(probe.detail_frame, code, QueryWindow(start_date=day, end_date=day))
+        )
+        if asked.frame is None:
+            if day == chosen.reference:
+                result.failure = f"기준 날 상세 {asked.failure}"
+                return result
+            result.failed_days.append((_position_label(day, days, chosen), f"상세 {asked.failure}"))
+            continue
+        result.retried += int(asked.retried)
+        loads[day] = day_load(day, asked.frame)
     reference = loads[chosen.reference]
     result.days = [
         day_facts(
@@ -4607,6 +4673,7 @@ def check_copies(
             None if day == chosen.reference else reference,
         )
         for day in chosen.picks
+        if day in loads
     ]
     return result
 
@@ -4721,11 +4788,21 @@ def copy_lines(index: int, check: CopyCheck) -> list[str]:
     )
     if not check.days:
         return [f"{summary} · 여러 날이 아님", ""]
+    tail = [
+        f"- 코드 {index} 견주지 못한 날 — {label}: {failure}"
+        for label, failure in check.failed_days
+    ]
+    if check.retried:
+        tail.append(
+            f"- 코드 {index} 첫 번이 실패해 {RETRY_PAUSE_SECONDS:g}초 뒤 다시 물어 받은 조회 "
+            f"{check.retried:,}"
+        )
     return [
         f"{summary} · {check.note}",
         "",
         *_table(DAY_FACT_HEADERS, [day_fact_row(facts) for facts in check.days]),
         "",
+        *([*tail, ""] if tail else []),
     ]
 
 
@@ -4743,14 +4820,25 @@ def copy_note(index: int, check: CopyCheck) -> str:
 
     그날에만 ~ 그 밖 칸만 네 칸은 견준 날마다 더한 합이고, 하루 안 충돌은 받은 날 전부(기준 날
     포함)를 더한 합이다 — 날마다 같은 꼴로 충돌하면 하루 값의 날 수 배다. 판정은 없다.
+
+    조회가 흔들린 때만 끝에 칸이 붙는다 — 다시 물어도 못 받은 날이 있으면 「못 받음 n <첫 실패
+    꼴>」(견준 날 · 합은 받은 날만), 첫 번이 실패해 다시 물어 받은 조회가 있으면 「다시 n」.
     """
     key = f"8-5C{index}"
     kind = "더함" if check.extra else "표본"
     if check.failure is not None:
         return _note(key, f"{kind} {check.failure}")
     compared = [facts for facts in check.days if facts.compared]
-    if not compared:
-        return _note(key, f"{kind} {check.load_days:,}일", "여러 날 아님")
+    shaky = [
+        *(
+            [f"못 받음 {len(check.failed_days):,} {check.failed_days[0][1]}"]
+            if check.failed_days
+            else []
+        ),
+        *([f"다시 {check.retried:,}"] if check.retried else []),
+    ]
+    if not compared and not check.failed_days:
+        return _note(key, f"{kind} {check.load_days:,}일", "여러 날 아님", *shaky)
     return _note(
         key,
         f"{kind} {check.load_days:,}일",
@@ -4760,6 +4848,7 @@ def copy_note(index: int, check: CopyCheck) -> str:
         _summed(facts.changed for facts in compared),
         _summed(facts.other_only for facts in compared),
         _summed(facts.conflicts for facts in check.days),
+        *shaky,
     )
 
 

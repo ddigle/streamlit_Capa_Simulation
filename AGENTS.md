@@ -910,7 +910,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
     원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 사외로 가는 스크립트(`inspect_real_data_checks.py` 8-5)는 갈래와
-    종류 이름(`type_names`)만 찍는다.
+    종류 이름(`type_names`), 그리고 갈래를 정한 목록 낱말(`query_failure_clue` · `BigDataQueryCallError.clue` — 문구 원문이
+    아니다)만 찍는다 — 같은 「SQL」 이 문법 낱말로 섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다.
   - import 실패도 `load_bigdataquery_module` 이 모두 `RuntimeError` 로 올린다. 「패키지가 없습니다」는 패키지 자체가 없을
     때만이고(점검 스크립트가 이 문구로 가른다), 깔렸는데 불러오다 깨지면(DLL·numpy 판·패키지가 쓰는 모듈 없음) 「불러오지
     못했습니다」와 빠진 모듈 이름 또는 원문을 단다.

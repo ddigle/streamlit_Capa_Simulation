@@ -557,18 +557,33 @@ def failure_type_names(error: BaseException) -> tuple[str, ...]:
     return tuple(type(link).__name__ for link in _failure_chain(error))
 
 
-def classify_query_failure(error: BaseException) -> str:
-    """조회 실패의 갈래(`QUERY_FAILURE_*`). 문구는 가르는 데만 쓴다."""
+def _sorted_failure(error: BaseException) -> tuple[str, str]:
+    """(갈래, 근거 낱말). 종류(`TimeoutError`·`ConnectionError`)로 가렸거나 맞은 낱말이 없으면
+    낱말은 빈 글이다. 낱말은 `_FAILURE_WORDS` 의 것뿐이라 문구를 싣지 않는다."""
     chain = _failure_chain(error)
     if any(isinstance(link, TimeoutError) for link in chain):
-        return QUERY_FAILURE_TIMEOUT
+        return QUERY_FAILURE_TIMEOUT, ""
     if any(isinstance(link, ConnectionError) for link in chain):
-        return QUERY_FAILURE_CONNECTION
+        return QUERY_FAILURE_CONNECTION, ""
     haystack = " ".join(f"{type(link).__name__} {link}" for link in chain).casefold()
     for kind, words in _FAILURE_WORDS:
-        if any(word in haystack for word in words):
-            return kind
-    return QUERY_FAILURE_OTHER
+        for word in words:
+            if word in haystack:
+                return kind, word
+    return QUERY_FAILURE_OTHER, ""
+
+
+def classify_query_failure(error: BaseException) -> str:
+    """조회 실패의 갈래(`QUERY_FAILURE_*`). 문구는 가르는 데만 쓴다."""
+    return _sorted_failure(error)[0]
+
+
+def query_failure_clue(error: BaseException) -> str:
+    """갈래를 정한 낱말(`_FAILURE_WORDS` 의 것 — 문구 원문이 아니다). 종류로 가렸거나 맞은 낱말이
+    없으면 빈 글이다. 점검 스크립트가 갈래 옆에 적어 같은 「SQL」 이 문법 낱말(`syntax` 등)로
+    섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800 — 판마다
+    다른 코드에서 간헐로 난 「SQL」 실패)."""
+    return _sorted_failure(error)[1]
 
 
 # 화면이 잡아 보여 주는 실패도 앱 로그에 한 줄 남긴다 — 셸·화면을 볼 수 없는 자리(C-DEP CD)에서
@@ -591,7 +606,7 @@ class BigDataQueryCallError(RuntimeError):
     `__cause__` 에 있다."""
 
     def __init__(self, error: BaseException, *, hint: str = "") -> None:
-        self.kind = classify_query_failure(error)
+        self.kind, self.clue = _sorted_failure(error)
         self.type_names = failure_type_names(error)
         super().__init__(
             f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"

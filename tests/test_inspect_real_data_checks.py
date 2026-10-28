@@ -20,6 +20,7 @@ import re
 import runpy
 import shutil
 import sys
+import time
 import types
 from collections import Counter
 from collections.abc import Sequence
@@ -35,7 +36,11 @@ import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
-from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV, QueryWindow
+from capa_simulation.io.company_bigdataquery_adapter import (
+    BDQ_USER_NAME_ENV,
+    BigDataQueryCallError,
+    QueryWindow,
+)
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.persistence.equipment_repository import (
     EQUIPMENT_MASTER_DB_COLUMNS,
@@ -1719,6 +1724,7 @@ def _fake_bigdataquery(
     loads: Loads | None = None,
     calls: Counter[str] | None = None,
     interrupt_day_detail: bool = False,
+    flaky_day_details: int = 0,
 ) -> types.ModuleType:
     module = types.ModuleType("bigdataquery")
     module.__spec__ = importlib.machinery.ModuleSpec("bigdataquery", None)
@@ -1782,6 +1788,8 @@ def _fake_bigdataquery(
             counted["day_detail"] += 1
             if interrupt_day_detail:
                 raise KeyboardInterrupt
+            if counted["day_detail"] <= flaky_day_details:
+                raise RuntimeError(f"Error executing SQL near {SENTINEL}")
         else:
             counted["detail"] += 1
         return pd.DataFrame(
@@ -1918,9 +1926,10 @@ def test_bigdataquery_failures_are_named_by_kind_only(
     assert "상한 366일" not in output
     assert (
         "| 조회(목록 창 31일 전체를 GROUP BY 한 번, 사외에서 돌려 보지 못한 SQL) | "
-        "조회 실패(RuntimeError · SQL) |"
+        "조회 실패(RuntimeError · SQL:analysis) |"
     ) in output
-    assert "0 / 1 성공 · 조회 실패(RuntimeError · SQL)" in output
+    # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다 — 문구(표지값)는 나가지 않는다.
+    assert "0 / 1 성공 · 조회 실패(RuntimeError · SQL:analysis)" in output
     assert "| 상세 조회(앱과 같은 SQL) | 1 / 1 성공 |" in output
     assert "- 적재일 조회가 실패해 건너뛴다." in output
 
@@ -2433,6 +2442,184 @@ def test_copy_lines_render_one_head_and_a_day_table_per_code() -> None:
     assert checks.copy_lines(1, checks.CopyCheck(extra=False, failure="조회 실패(X)"))[0] == (
         "- 코드 1 · 표본 — 조회 실패(X)"
     )
+
+
+class _ShakyDayProbe(_DayProbe):
+    """`_DayProbe` 에 실패를 심는다 — `fails[날]` 번만큼 그날 하루치 상세가 먼저 실패한다(`None` 은
+    적재일 조회). 어댑터가 패키지 예외를 싸 올리는 꼴(`BigDataQueryCallError`)로 던지고 그 문구에는
+    표지값을 싣는다."""
+
+    def __init__(
+        self,
+        frames: dict[date, pd.DataFrame],
+        fails: dict[date | None, int],
+        error: BaseException | None = None,
+    ) -> None:
+        super().__init__(frames)
+        self.fails = dict(fails)
+        self.error = error or Exception(f"Error executing SQL near {SENTINEL}")
+        self.calls: Counter[date | None] = Counter()
+
+    def _maybe_fail(self, day: date | None) -> None:
+        self.calls[day] += 1
+        if self.calls[day] <= self.fails.get(day, 0):
+            raise BigDataQueryCallError(self.error)
+
+    def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        self._maybe_fail(None)
+        return super().load_days(code, window)
+
+    def detail_frame(self, code: str, window: QueryWindow) -> pd.DataFrame:
+        self._maybe_fail(window.start_date)
+        return super().detail_frame(code, window)
+
+
+@pytest.fixture
+def _no_retry_pause(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """다시 묻기 전 쉼을 재지 않고 적어 둔다."""
+    paused: list[float] = []
+    monkeypatch.setattr(time, "sleep", paused.append)
+    return paused
+
+
+def _shaky_copy(
+    fails: dict[date | None, int], error: BaseException | None = None
+) -> tuple[checks.CopyCheck, _ShakyDayProbe]:
+    probe = _ShakyDayProbe({day: _day() for day in DAYS[:4]}, fails, error)
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    return checks.check_copies(probe, VALID_A, window, extra=False), probe
+
+
+def test_a_day_detail_that_fails_once_is_asked_again(_no_retry_pause: list[float]) -> None:
+    """사내 리뷰 `202610271800` 사외 요청 3 — 하루치 상세가 판마다 다른 코드에서 간헐로 「SQL」
+    실패했다. 한 번 쉬고 다시 묻고, 다시 물어 받은 수만 요약 끝 「다시 n」 으로 남긴다."""
+    result, probe = _shaky_copy({DAYS[1]: 1, None: 1})
+
+    assert result.failure is None and not result.failed_days
+    assert result.retried == 2
+    assert _no_retry_pause == [checks.RETRY_PAUSE_SECONDS] * 2
+    assert probe.calls[DAYS[1]] == 2
+    assert checks.copy_note(1, result) == "- 8-5C1 표본 4일 · 3 · 0 · 0 · 0 · 0 · 0 · 다시 2"
+    lines = checks.copy_lines(1, result)
+    assert "- 코드 1 첫 번이 실패해 2초 뒤 다시 물어 받은 조회 2" in lines
+
+
+def test_a_day_that_fails_twice_is_left_out_and_named_by_kind(
+    _no_retry_pause: list[float],
+) -> None:
+    """기준 날이 아닌 날이 두 번 다 실패하면 그날만 빼고 견준다 — 자리와 실패 꼴(종류 · 갈래 ·
+    갈래를 정한 낱말)만 적고 문구는 내보내지 않는다."""
+    result, _ = _shaky_copy({DAYS[0]: 2})
+
+    assert result.failure is None
+    assert result.failed_days == [("첫 적재일 (1/4)", "상세 조회 실패(Exception · SQL:sql) 두 번")]
+    assert [facts.label for facts in result.days] == [
+        "가운데 (2/4)",
+        "끝 앞날 (3/4)",
+        "기준 날 (4/4)",
+    ]
+    note = checks.copy_note(1, result)
+    assert note == (
+        "- 8-5C1 표본 4일 · 2 · 0 · 0 · 0 · 0 · 0 · "
+        "못 받음 1 상세 조회 실패(Exception · SQL:sql) 두 번"
+    )
+    lines = "\n".join(checks.copy_lines(1, result))
+    assert (
+        "- 코드 1 견주지 못한 날 — 첫 적재일 (1/4): 상세 조회 실패(Exception · SQL:sql) 두 번"
+        in lines
+    )
+    assert SENTINEL not in lines and SENTINEL not in note
+    # 요약 줄은 확인 코드를 달아도 그대로 다시 셈이 선다.
+    assert checks.check_transcript(checks.summary_lines([note])) == []
+
+
+def test_a_reference_day_that_fails_twice_stops_the_code_before_other_days(
+    _no_retry_pause: list[float],
+) -> None:
+    """기준 날을 먼저 받는다 — 두 번 다 실패하면 견줄 수 없어 다른 날은 묻지 않는다."""
+    result, probe = _shaky_copy({DAYS[3]: 2})
+
+    assert result.failure == "기준 날 상세 조회 실패(Exception · SQL:sql) 두 번"
+    assert probe.asked == []
+    assert probe.calls[DAYS[3]] == 2 and sum(probe.calls.values()) == 3  # 적재일 1 + 기준 날 2
+    assert checks.copy_note(1, result) == (
+        "- 8-5C1 표본 기준 날 상세 조회 실패(Exception · SQL:sql) 두 번"
+    )
+
+
+def test_a_load_day_query_that_fails_in_two_ways_names_both(
+    _no_retry_pause: list[float],
+) -> None:
+    """두 번의 실패 꼴이 다르면 둘 다 적는다 — 「첫 꼴 뒤 둘째 꼴」."""
+
+    class Twice(_DayProbe):
+        def __init__(self) -> None:
+            super().__init__({})
+            self.errors = [Exception("Error executing SQL"), Exception("Connection reset")]
+
+        def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+            raise BigDataQueryCallError(self.errors.pop(0))
+
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    result = checks.check_copies(Twice(), VALID_A, window, extra=False)
+
+    assert result.failure == (
+        "적재일 조회 실패(Exception · SQL:sql) 뒤 조회 실패(Exception · 연결:connect)"
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [TimeoutError(), Exception("Read timed out")],
+    ids=["type", "word"],
+)
+def test_a_timeout_is_not_asked_again(_no_retry_pause: list[float], error: BaseException) -> None:
+    """시간 초과는 다시 묻지 않는다 — 한 번 더 기다리면 8-5 가 호출 제한을 넘겨 요약까지 잃을 수
+    있다."""
+    result, probe = _shaky_copy({DAYS[3]: 1}, error)
+
+    assert result.failure is not None and result.failure.startswith("기준 날 상세 조회 실패(")
+    assert "· 시간 초과" in result.failure and "두 번" not in result.failure
+    assert probe.calls[DAYS[3]] == 1
+    assert _no_retry_pause == []
+
+
+def test_our_adapter_guidance_is_not_asked_again(_no_retry_pause: list[float]) -> None:
+    """요청자 계정 · 패키지 없음 같은 어댑터 안내(`RuntimeError`)는 다시 물어도 같다."""
+
+    class Guidance(_DayProbe):
+        calls = 0
+
+        def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+            Guidance.calls += 1
+            raise RuntimeError(f"... {BDQ_USER_NAME_ENV} 환경변수에 ...")
+
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    result = checks.check_copies(Guidance({}), VALID_A, window, extra=False)
+
+    assert Guidance.calls == 1 and _no_retry_pause == []
+    assert result.failure is not None and "요청자 계정 필요" in result.failure
+
+
+def test_a_flaky_day_detail_is_retried_through_the_company_adapter(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    _no_retry_pause: list[float],
+) -> None:
+    """앱과 같은 어댑터 길(`call_get_data`)로 — 첫 하루치 상세가 한 번 실패해도 사본 확인이 끝까지
+    가고, 요약의 8-5C 줄은 「다시 1」 을 달고 다시 셈이 선다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery(flaky_day_details=1))
+
+    code, output = _run(capsys, "--only", "bdq")
+
+    assert code == 0
+    _assert_no_leak(output)
+    copies = [line for line in _summary(output) if line.startswith("- 8-5C")]
+    assert len(copies) == 2
+    assert re.fullmatch(r"- 8-5C1 표본 \d+일( · \d+){6} · 다시 1 #\d\d", copies[0]), copies
+    assert " · 다시" not in copies[1]
+    assert checks.check_transcript(_summary(output)) == []
+    assert _no_retry_pause == [checks.RETRY_PAUSE_SECONDS]
 
 
 def test_rq_source_columns_are_the_columns_the_rq_tables_read() -> None:
