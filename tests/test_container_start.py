@@ -173,6 +173,26 @@ def _ok(stdout: str = "") -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
 
 
+@pytest.fixture(scope="session")
+def keeps_permission_bits(tmp_path_factory: pytest.TempPathFactory) -> bool:
+    """이 파일 체계가 0600·0700 을 담는지. Windows 의 chmod 는 읽기 전용 표시 하나만 바꿔 이 비트를
+    담지 못한다 — 거기서는 토큰 파일·폴더의 권한 비트를 보지 않는다. 운영 CD 컨테이너는 Linux 라
+    비트가 살고, Linux CI 에서 담지 못하면 건너뛰지 않고 실패한다."""
+    folder = tmp_path_factory.mktemp("permission-probe")
+    probe = folder / "probe"
+    probe.write_bytes(b"")
+    probe.chmod(0o600)
+    folder.chmod(0o700)
+    kept = (
+        stat.S_IMODE(probe.stat().st_mode) == 0o600 and stat.S_IMODE(folder.stat().st_mode) == 0o700
+    )
+    if not kept and os.environ.get("GITHUB_ACTIONS") == "true":
+        pytest.fail(
+            "CI 러너의 파일 체계가 권한 비트를 담지 못한다 — 토큰 권한 시험을 건너뛸 수 없다"
+        )
+    return kept
+
+
 def _assert_no_secret(text: str) -> None:
     for secret in (
         FAKE_ART_TOKEN,
@@ -485,14 +505,17 @@ def test_only_one_artifactory_variable_names_the_missing_one(place: Path) -> Non
     assert report_contract.ARTIFACTORY_USER_ENV not in install["reason"]
 
 
-def test_the_login_token_is_written_where_the_package_reads_it(place: Path) -> None:
+def test_the_login_token_is_written_where_the_package_reads_it(
+    place: Path, keeps_permission_bits: bool
+) -> None:
     runner = FakeRunner([_probe("ok", "9.9.9")])
 
     report, _ = _main(place, ALL_ENVIRONMENT, runner)
 
     target = place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}"
     assert target.read_bytes() == FAKE_BDQ_TOKEN.encode("utf-8")
-    assert target.stat().st_mode & 0o777 == 0o600
+    if keeps_permission_bits:
+        assert target.stat().st_mode & 0o777 == 0o600
     token = _steps(report)[report_contract.STEP_TOKEN]
     assert token["status"] == report_contract.STATUS_OK
     token_file = report["token_file"]
@@ -848,9 +871,11 @@ def test_a_credential_folder_that_cannot_be_entered_still_leaves_the_report(plac
     assert fake_exec.calls
 
 
-def test_the_same_token_with_loose_permissions_is_tightened(place: Path) -> None:
+def test_the_same_token_with_loose_permissions_is_tightened(
+    place: Path, keeps_permission_bits: bool
+) -> None:
     """이미 있던 같은 내용의 토큰 파일이 0644·폴더가 0755 면 다시 쓰지는 않되 0600·0700 으로
-    좁힌다."""
+    좁힌다. 비트를 담지 못하는 파일 체계(Windows)에서는 다시 쓰지 않는 것만 본다."""
     credentials = place / "config" / ".credential"
     credentials.mkdir(parents=True)
     credentials.chmod(0o755)
@@ -863,12 +888,17 @@ def test_the_same_token_with_loose_permissions_is_tightened(place: Path) -> None
 
     token = _steps(report)[report_contract.STEP_TOKEN]
     assert token["status"] == report_contract.STATUS_OK and "같은 내용" in token["reason"]
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
-    assert stat.S_IMODE(credentials.stat().st_mode) == 0o700
+    if keeps_permission_bits:
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        assert stat.S_IMODE(credentials.stat().st_mode) == 0o700
     assert target.stat().st_mtime == 1_000_000_000, "내용은 다시 쓰지 않는다"
 
 
-def test_a_newly_written_token_tightens_an_existing_open_folder(place: Path) -> None:
+def test_a_newly_written_token_tightens_an_existing_open_folder(
+    place: Path, keeps_permission_bits: bool
+) -> None:
+    if not keeps_permission_bits:
+        pytest.skip("이 파일 체계는 권한 비트를 담지 못한다(Windows)")
     credentials = place / "config" / ".credential"
     credentials.mkdir(parents=True)
     credentials.chmod(0o755)
