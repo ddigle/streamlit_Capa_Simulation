@@ -163,7 +163,8 @@ Copy-Item data\input\* $backup -Recurse -ErrorAction SilentlyContinue
 uv run --no-sync python -c "import shutil, time, pathlib as p; b = p.Path.home() / 'deploy_backup' / time.strftime('%Y%m%d%H%M'); b.mkdir(parents=True, exist_ok=True); d = sorted(p.Path('data').glob('*.duckdb')); [shutil.copy2(f, b) for f in d]; i = p.Path('data/input'); i.is_dir() and shutil.copytree(i, b, dirs_exist_ok=True); print(b.name); [print(f.name, f.stat().st_size, (b / f.name).stat().st_size) for f in d]"
 ```
 
-에이전트는 사용자가 친 출력을 읽는다. 첫 줄(`yyyyMMddHHmm`)이 백업 폴더 이름이고 — 그 배포 7장이 시키면 리뷰 `데이터변화` 줄 끝의
+에이전트가 결과를 볼 수 있는 `!` 한 줄을 먼저 권한다(PowerShell 창에서 쳤으면 사용자에게 `$backup` 의 폴더 이름과 두 DB 가
+복사됐는지를 받는다). 에이전트는 사용자가 친 출력을 읽는다. 첫 줄(`yyyyMMddHHmm`)이 백업 폴더 이름이고 — 그 배포 7장이 시키면 리뷰 `데이터변화` 줄 끝의
 `백업 <폴더>`(5장 차례 13) — 아래 DB 줄마다 두 수(원본 · 백업 크기)가 같아야 한다. DB 줄이 없거나 두 수가 다르거나 오류가 찍히면
 2장으로 가지 않고 사용자에게 알린다. 출력은 일부러 영문 · 숫자뿐이다 — 사내 Windows 의 콘솔 코드페이지(cp949)를 거치면 한글이
 깨질 수 있다(6-3 b).
