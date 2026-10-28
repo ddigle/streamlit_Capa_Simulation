@@ -15,13 +15,21 @@ from capa_simulation.services.unit_capacity import (
     CAPACITY_ASSUMED_MONTHS_ATTR,
     CAPACITY_ASSUMPTIONS_ATTR,
     CAPACITY_EXCLUSIONS_ATTR,
+    JOIN_BAD_MONTH,
+    JOIN_BLANK_KEY,
+    JOIN_BLANK_VALUE,
+    JOIN_DUPLICATE_KEY,
+    JOIN_NO_MATCH,
     MODULE_KEYS,
     RUN_DAY_KEYS,
     UNIT_CAPACITY_DIMENSIONS,
     VITAL_KEYS,
+    ReferenceJoinError,
+    ReferenceJoinProblem,
     calculate_unit_capacity,
     capacity_assumptions,
     converted_upeh,
+    failure_kind,
     unit_capacity_to_month_table,
 )
 
@@ -734,3 +742,150 @@ def test_a_non_numeric_value_stops_only_on_a_used_row_and_names_the_value(
     assert EXAMPLE_KEY_PATTERN.findall(message.split("예시 ", 1)[1]) == [*keys, column]
     assert "'공정': 'Process-B'" in message
     assert f"'{column}': 'N/A'" in message
+
+
+# ------------------------- 기준정보 연결이 멈춘 꼴 — 화면 글은 키 예시, 집계는 꼴·개수만
+# 효율 표 하나가 멈추는 길은 여럿이다(빈 값 · 숫자 아님 · 연결값 없음 · 연결 키 중복 · 연결 키 빈 값
+# · 월 형식). 모두 「ValueError · RQ_RUN_RATE」 로만 보이면 사내 리뷰가 값을 옮기지 않고는 어느
+# 꼴인지 말할 수 없다. 예외가 꼴과 개수를 들고(`ReferenceJoinProblem`) 글은 건수·키 예시를 싣는다.
+
+
+def _join_error(inputs: dict[str, pd.DataFrame]) -> ReferenceJoinError:
+    with pytest.raises(ReferenceJoinError) as error:
+        calculate_unit_capacity(**inputs)
+    return error.value
+
+
+def _assert_no_values(problem: ReferenceJoinProblem) -> None:
+    """집계로 나가는 글에는 공정·제품 이름이 없다 — 꼴 이름·개수·컬럼 이름뿐이다."""
+    for text in (problem.label, problem.summary()):
+        assert "Process" not in text
+        assert "Product" not in text
+
+
+def test_a_blank_run_rate_on_routes_that_are_dropped_anyway_says_so() -> None:
+    """빈 효율 칸의 경로가 모두 Main UPEH 0 이하라 어차피 빠질 경로면 글과 꼴이 그렇게 말한다.
+
+    계산은 여전히 멈춘다 — 그 꼴을 고칠지는 사용자 결정(`docs/TODO.md` 결정 7)이다. 살아 있는 경로의
+    빈 칸과는 고칠 길이 달라서 갈라 센다.
+    """
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0])
+    inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, float("nan")])
+
+    error = _join_error(inputs)
+
+    message = str(error)
+    assert message.startswith(
+        "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, "
+    )
+    assert "그 가운데 1건은 붙은 경로가 모두 뒤에서 계산 대상에서 빠질 경로" in message
+    assert error.problem == ReferenceJoinProblem(
+        "RQ_RUN_RATE", JOIN_BLANK_VALUE, columns=("CAPA_RUN_RATE",), keys=1, rows=1, dropped_keys=1
+    )
+    assert error.problem.label == "빈 값(붙은 경로가 모두 뒤에서 빠짐)"
+    assert error.problem.summary() == "빈 값 키 1 · 경로 1 · 모두 뒤에서 빠질 경로인 키 1"
+    _assert_no_values(error.problem)
+
+
+def test_a_blank_vital_on_a_route_with_zero_run_rate_is_counted_as_dropped_later() -> None:
+    """편중률은 효율 다음에 붙으므로 효율 0 이하로 빠질 경로도 「뒤에서 빠질 경로」 로 센다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"], vital=[1.0, float("nan")])
+    inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, 0.0])
+
+    problem = _join_error(inputs).problem
+
+    assert (problem.table, problem.shape, problem.dropped_keys) == ("RQ_VITAL", JOIN_BLANK_VALUE, 1)
+
+
+def test_a_blank_run_rate_on_a_live_route_is_a_plain_blank() -> None:
+    """한 경로라도 살아 있으면 그 칸은 계산이 쓰는 칸이다 — 「빈 값」 그대로, 덧붙인 말이 없다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, float("nan")])
+
+    error = _join_error(inputs)
+
+    assert "뒤에서 계산 대상에서 빠질" not in str(error)
+    assert (error.problem.label, error.problem.dropped_keys) == (JOIN_BLANK_VALUE, 0)
+    assert error.problem.summary() == "빈 값 키 1 · 경로 1"
+
+
+def test_keys_that_differ_only_by_spaces_are_named_as_such_when_they_collide() -> None:
+    """원래 글자로 접힌 두 행(`Process-A`·`Process-A `)이 공백 떼기로 한 키가 되면 따로 센다."""
+    inputs = _capacity_inputs(["Process-A"])
+    run_rate = inputs["run_rate"]
+    inputs["run_rate"] = pd.concat(
+        [run_rate, run_rate.assign(공정="Process-A ", CAPA_RUN_RATE=0.7)], ignore_index=True
+    )
+
+    error = _join_error(inputs)
+
+    message = str(error)
+    assert message.startswith("RQ_RUN_RATE의 연결 키가 중복되었습니다: 1건, 예시 ")
+    assert "그 가운데 1건은 원래 글자에서 앞뒤 공백만 다른 행이 겹친 것입니다" in message
+    assert error.problem.label == "연결 키 중복(앞뒤 공백만 다름)"
+    assert error.problem.summary() == "연결 키 중복 키 1 · 행 2 · 앞뒤 공백만 다른 키 1"
+    _assert_no_values(error.problem)
+
+
+def test_a_plain_duplicate_key_is_not_called_a_spacing_variant() -> None:
+    inputs = _capacity_inputs(["Process-A"])
+    inputs["run_rate"] = pd.concat([inputs["run_rate"]] * 2, ignore_index=True)
+
+    error = _join_error(inputs)
+
+    assert "앞뒤 공백만" not in str(error)
+    assert (error.problem.shape, error.problem.label) == (JOIN_DUPLICATE_KEY, JOIN_DUPLICATE_KEY)
+    assert (error.problem.keys, error.problem.rows, error.problem.spacing_keys) == (1, 2, 0)
+
+
+def test_a_missing_link_counts_its_keys_and_routes() -> None:
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].iloc[:1]
+
+    error = _join_error(inputs)
+
+    assert str(error).startswith("RQ_RUN_RATE 연결값이 없는 대당 Capa 기준이 있습니다: 1건, 예시 ")
+    assert "'공정': 'Process-B'" in str(error)
+    assert (error.problem.shape, error.problem.keys, error.problem.rows) == (JOIN_NO_MATCH, 1, 1)
+    assert error.problem.summary() == "연결값 없음 키 1 · 경로 1"
+
+
+def test_a_blank_key_names_its_column_and_row_count() -> None:
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].assign(공정=["Process-A", "  "])
+
+    error = _join_error(inputs)
+
+    assert str(error) == "RQ_RUN_RATE의 필수 연결 키에 누락값이 있습니다: 공정 1행"
+    assert error.problem.label == f"{JOIN_BLANK_KEY}(공정)"
+    assert error.problem.summary() == f"{JOIN_BLANK_KEY}(공정) 행 1"
+
+
+def test_a_bad_month_counts_its_rows() -> None:
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].assign(생산계획년월=[202608, 2026081])
+
+    error = _join_error(inputs)
+
+    assert str(error).startswith(
+        "RQ_RUN_RATE의 생산계획년월은 YYYYMM 형식이어야 합니다: 1행, 예시 "
+    )
+    assert (error.problem.shape, error.problem.rows) == (JOIN_BAD_MONTH, 1)
+
+
+def test_the_join_error_is_still_a_value_error_and_survives_a_pickle_round_trip() -> None:
+    """페이지·저장 검사는 `ValueError` 로 받는다. 피클 왕복에서도 꼴을 잃지 않는다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["run_rate"] = inputs["run_rate"].iloc[:1]
+
+    with pytest.raises(ValueError) as error:
+        calculate_unit_capacity(**inputs)
+
+    assert isinstance(error.value, ReferenceJoinError)
+    restored = pickle.loads(pickle.dumps(error.value))
+    assert isinstance(restored, ReferenceJoinError)
+    assert (str(restored), restored.problem) == (str(error.value), error.value.problem)
+    # 집계에 적는 종류 이름은 지난 리뷰와 같은 `ValueError` 다.
+    assert failure_kind(error.value) == "ValueError"
+    assert failure_kind(KeyError("x")) == "KeyError"

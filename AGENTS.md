@@ -1126,6 +1126,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `derive_q_core_data` 가 빼며 그 수(`BlankCsDrop` — 계획 행·경로 행·경로 일부 빠진 남은 계획 줄)를 돌려준다 —
     `build_q_core_data` 는 그 프레임만 준다. `WF 구분` 의
     표기 차이는 등록에서 한 표기로 맞추고(`unify_case_variants`) 계산 쪽 조인은 대소문자 무시로 바꾸지 않는다.
+  - `공정` 은 표를 만들기 전에 앞뒤 공백을 뗀다(대소문자는 둔다). 표는 원래 글자로 접고 계산은 공백을 떼고 붙여서,
+    `P1`·`P1 ` 이 두 행으로 저장되면 그 리비전의 대당 Capa 가 「연결 키가 중복되었습니다」로 늘 멈췄다.
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 첫 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 행 순서를 바꾸지 않는다.
 - `src/capa_simulation/components/monthly_table_base.py` — Plotly 월별 표가 공유하는 색·치수·글자 계산이다. 분류 칸 글자는
@@ -3343,7 +3345,16 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
   **범위:** 이 검사는 붙일 때 돌아 계산 대상 행을 확정(UPEH·`CAPA_RUN_RATE` 0 이하, 측정률 음수를
   제외)하기 **전**이다. 그래서 뒤에서 제외될 경로에만 붙은 행의 빈 값·숫자 아님은 행 없음(「연결값이
   없는」)과 같이 계산을 멈춘다 — 같은 칸이 0 이면 제외 뒤의 `_assert_positive` 라 통과하는 것과
-  다르다. 제외 마스크 뒤로 옮길지는 정하지 않았다(`docs/TODO.md`).
+  다르다. 제외 마스크 뒤로 옮길지는 정하지 않았다(`docs/TODO.md` 결정 7). 대신 그 꼴을 갈라 말한다 —
+  걸린 키 가운데 붙은 경로가 모두 뒤에서 빠질 경로(`DROPPED_LATER_RULE` — 붙일 때 이미 붙은 칸으로 본다.
+  효율 표에서 멈추면 측정률 음수는 아직 모른다)인 키 수를 글 끝에 붙인다.
+- **기준정보 연결이 멈추면 `ReferenceJoinError`(`ValueError` 의 하위)로 올린다.** 글은 화면용 — 머리 문장은
+  예전 그대로이고 건수(키·행)와 키 예시 5건을 붙인다. 예외는 꼴과 개수만 든 `ReferenceJoinProblem` 을 함께
+  들고 간다(꼴 — 컬럼 없음 · 월 형식 · Area_Name 값 · 연결 키 빈 값 · 연결 키 중복 · 숫자 아님 · 빈 값 ·
+  연결값 없음, 개수 — 키 · 경로나 행 · 모두 뒤에서 빠질 경로인 키 · 앞뒤 공백만 다른 키). 같은 표의
+  `ValueError` 로만 보이던 꼴들이 고칠 길이 달라서다 — 문구를 찍지 못하는 사내 집계(런북 6-3 a ·
+  `scripts/inspect_revision_calculations.py`)는 이것만 적고, 종류 이름은 `failure_kind` 로 `ValueError`
+  그대로 적는다. 피클 왕복에서도 꼴을 잃지 않는다(`__reduce__`).
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 산출 결과의 대당 Capa·
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
 - BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조)
@@ -5005,6 +5016,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   사본 트리, `127.0.0.1` 별도 포트). 전 리비전 계산은 `scripts/inspect_revision_calculations.py` 가 맡는다 — 모든 리비전을
   앱과 같은 길(`repository._load_reference_frame`)로 읽어 대당 Capa → 소요대수 → 확보율을 돌리고, 상태(됨·멈춤·확보율
   멈춤·불러오기 막힘·읽지 못함)와 개수(소요대수에 닿지 않은 계획 줄·겹친 경로 키(`WF 구분` 대소문자 무시)·제외 행)만 찍는다.
+  대당 Capa 가 기준정보 연결에서 멈추면 `계산` 칸에 꼴과 개수(`ReferenceJoinProblem.summary` — 값·이름 없음)를,
+  멈춘 리비전의 갈래 표에 `꼴` 칸(`label`)을 더해 같은 `ValueError · RQ_…` 를 꼴로 가른다.
   소요대수까지 서면 저장·발행 검사의 Density 환산(`capacity_gate.density_error` 그대로 — 시나리오 전체 기간·EDP 계획)도 돌려 `계산` 칸과 따로
   `Density` 칸·「Density 멈춤」 수로 적는다(확보율과 서로 가리지 않는다). 공식버전 줄은 판정값인 최신 공식의 상태·`Density`
   칸을 앞에 두고, 이력이 가리키는 모든 리비전의 수는 `지난 공식버전 포함 Density 멈춤` 으로 따로(0 이어도) 적는다. 최신 공식의

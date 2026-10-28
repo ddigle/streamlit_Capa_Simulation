@@ -54,7 +54,10 @@ Markdown 블록**을 찍는다.
   템플릿에 이 스크립트를 허용하는 전제다.
 - **값을 찍지 않는다.** 개수·상태·초만 찍는다. 시나리오·리비전은 이름 대신 차례
   번호(`S3`·`r2`)로 적는다. 예외는 종류(클래스 이름)와 그 문구에 든 **계약 표
-  이름(`RQ_*` 16개)** 만 적는다 — 이 앱의 오류 문구에는 공정·제품 이름이 실린다.
+  이름(`RQ_*` 16개)** 만 적는다 — 이 앱의 오류 문구에는 공정·제품 이름이 실린다. 대당 Capa 가
+  기준정보 표를 붙이다 멈춘 것(`unit_capacity.ReferenceJoinError`)은 문구 대신 그 예외가 든 꼴
+  (`ReferenceJoinProblem` — 빈 값·연결값 없음·연결 키 중복 같은 이름과 키·경로 수, 붙은 경로가 모두
+  뒤에서 빠질 키 수)을 적는다. 종류는 `ValueError` 로 적는다(`failure_kind`) — 지난 리뷰와 견준다.
 
 사외에서 돌린 수는 합성 표본의 `샘플 관측` 일 뿐 업무 사실이 아니다(AGENTS.md 10-1).
 """
@@ -94,7 +97,10 @@ from capa_simulation.services.revision_compatibility import (  # noqa: E402
 from capa_simulation.services.securement_rate import calculate_securement_rate  # noqa: E402
 from capa_simulation.services.unit_capacity import (  # noqa: E402
     CAPACITY_EXCLUSIONS_ATTR,
+    ReferenceJoinError,
+    ReferenceJoinProblem,
     calculate_unit_capacity,
+    failure_kind,
 )
 from capa_simulation.settings import (  # noqa: E402
     DUCKDB_PATH,
@@ -166,12 +172,14 @@ class RevisionRow:
 
 @dataclass
 class Outcome:
-    """한 리비전을 돌린 결과. 실패는 단계·예외 종류·문구 속 계약 표 이름만 든다."""
+    """한 리비전을 돌린 결과. 실패는 단계·예외 종류·문구 속 계약 표 이름과 꼴(개수만)을 든다."""
 
     status: str
     stage: str | None = None
     kind: str | None = None
     tables: tuple[str, ...] = ()
+    # 대당 Capa 기준정보 연결에서 멈췄으면 그 꼴 — 꼴 이름·개수·컬럼 이름만 든다(값은 없다).
+    problem: ReferenceJoinProblem | None = None
     plan_lines: int | None = None
     unreached_lines: int | None = None
     duplicate_route_keys: int | None = None
@@ -253,8 +261,16 @@ def _exclusion_rows(frame: pd.DataFrame, attr: str) -> int:
     return len(excluded) if isinstance(excluded, pd.DataFrame) else 0
 
 
-def _failed(stage: str, exc: BaseException) -> tuple[str, str, tuple[str, ...]]:
-    return stage, type(exc).__name__, contract_tables_in(str(exc))
+def _failed(stage: str, exc: BaseException) -> Outcome:
+    """멈춘 리비전 — 단계·예외 종류·문구 속 계약 표 이름, 기준정보 연결 오류면 그 꼴."""
+    problem = exc.problem if isinstance(exc, ReferenceJoinError) else None
+    return Outcome(
+        STOPPED,
+        stage=stage,
+        kind=failure_kind(exc),
+        tables=contract_tables_in(str(exc)),
+        problem=problem,
+    )
 
 
 def density_check(tables: Mapping[str, pd.DataFrame]) -> tuple[str, str | None, tuple[str, ...]]:
@@ -289,8 +305,7 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
             wf_ratio=tables["RQ_WF_RATIO"],
         )
     except Exception as exc:  # 한 리비전이 멈춰도 다음 리비전은 잰다. 문구는 찍지 않는다
-        stage, kind, named = _failed("대당 Capa", exc)
-        return Outcome(STOPPED, stage=stage, kind=kind, tables=named)
+        return _failed("대당 Capa", exc)
     try:
         required = calculate_required_equipment(
             reqb=tables["RQ_REQB"],
@@ -300,8 +315,7 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
             unit_capacity=unit_capacity,
         )
     except Exception as exc:  # 위와 같다
-        stage, kind, named = _failed("소요대수", exc)
-        return Outcome(STOPPED, stage=stage, kind=kind, tables=named)
+        return _failed("소요대수", exc)
     plan_lines, unreached = unreached_plan_lines(tables["RQ_PKG_PLAN"], required)
     outcome = Outcome(
         CALCULATED,
@@ -317,8 +331,9 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
     try:
         calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     except Exception as exc:  # 위와 같다
+        failed = _failed("확보율", exc)
         outcome.status = SECUREMENT_STOPPED
-        outcome.stage, outcome.kind, outcome.tables = _failed("확보율", exc)
+        outcome.stage, outcome.kind, outcome.tables = failed.stage, failed.kind, failed.tables
     return outcome
 
 
@@ -408,7 +423,8 @@ def describe(outcome: Outcome) -> str:
     if outcome.status == CALCULATED:
         return CALCULATED
     named = ", ".join(outcome.tables) or None
-    detail = " · ".join(part for part in (outcome.kind, named) if part is not None)
+    shape = None if outcome.problem is None else outcome.problem.summary()
+    detail = " · ".join(part for part in (outcome.kind, named, shape) if part is not None)
     stage = outcome.stage or ""
     return f"{outcome.status} — {stage}" + (f"({detail})" if detail else "")
 
@@ -525,6 +541,7 @@ def summary_lines(
             outcome.stage or "",
             outcome.kind or "-",
             ", ".join(outcome.tables) or "-",
+            "-" if outcome.problem is None else outcome.problem.label,
         )
         for outcome in outcomes
         if outcome.status != CALCULATED
@@ -535,6 +552,7 @@ def summary_lines(
             DENSITY_STAGE,
             outcome.density_kind or "-",
             ", ".join(outcome.density_tables) or "-",
+            "-",
         )
         for outcome in outcomes
         if outcome.density == STOPPED
@@ -542,15 +560,15 @@ def summary_lines(
     if stops:
         lines.extend(
             [
-                "- 멈춘 리비전의 갈래 — 단계 · 예외 종류 · 문구에 든 계약 표 이름(문구는 찍지 "
-                "않는다). `Density 멈춤` 은 `계산` 칸과 따로 세어, 확보율에서도 멈춘 리비전은 "
+                "- 멈춘 리비전의 갈래 — 단계 · 예외 종류 · 문구에 든 계약 표 이름 · 꼴(문구는 "
+                "찍지 않는다). `Density 멈춤` 은 `계산` 칸과 따로 세어, 확보율에서도 멈춘 리비전은 "
                 "두 줄에 든다",
                 "",
                 *_table(
-                    ("상태", "단계", "예외 종류", "문구가 가리키는 표", "리비전"),
+                    ("상태", "단계", "예외 종류", "문구가 가리키는 표", "꼴", "리비전"),
                     (
-                        [status, stage, kind, named, _count(count)]
-                        for (status, stage, kind, named), count in sorted(stops.items())
+                        [status, stage, kind, named, shape, _count(count)]
+                        for (status, stage, kind, named, shape), count in sorted(stops.items())
                     ),
                 ),
             ]
@@ -606,6 +624,15 @@ READING_GUIDE: Final[tuple[str, ...]] = (
     "(대당 Capa 나 소요대수에서 기준정보 계약을 어겼다). `확보율 멈춤` 은 소요대수까지 "
     "섰는데 가용대수(`RQ_EQP_AVBL`)가 없는 공정·달이 있는 리비전이다. `불러오기 막힘` 은 "
     "경로 키 계약보다 앞서 저장돼 앱이 불러오지 않는 리비전이다.",
+    "- `꼴` 은 대당 Capa 가 기준정보 한 표를 경로에 붙이다 멈춘 모양이다 — 같은 "
+    "`ValueError · RQ_…` 라도 고칠 길이 다르다. `빈 값`(경로가 쓰는 칸이 비었다 — 기준 정보 "
+    "편집에서 채운다) · `빈 값(붙은 경로가 모두 뒤에서 빠짐)`(그 칸이 붙은 경로가 모두 Main "
+    "UPEH 0 이하 · 효율 0 이하 · 측정률 음수로 어차피 빠질 경로뿐이다 — `docs/TODO.md` 결정 7 "
+    "의 꼴, 8-10 `C9` 와 나란히 본다) · `숫자 아님` · `연결값 없음`(경로가 쓰는 키의 행이 그 "
+    "표에 없다) · `연결 키 중복`(`(앞뒤 공백만 다름)` 이면 원천에서 공백만 다른 이름이 두 행으로 "
+    "저장된 것) · `연결 키 빈 값(컬럼)` · `월 형식` · `Area_Name 값` · `컬럼 없음(컬럼)`. "
+    "리비전 표의 `계산` 칸은 그 꼴의 키 · 경로(또는 행) 수를 함께 적는다 — 값과 이름은 적지 "
+    "않는다.",
     "- `Density` 칸은 저장·발행 검사가 Capa 계산 다음에 보는 HOME 의 Density 환산"
     "(`RQ_PKG_PLAN` × `RQ_CHIP_EQ`)이다 — 조회기간이 아니라 시나리오 전체 기간이고 EDP 계획도 "
     "넣는다. `계산` 이 `됨` 이어도 여기서 멈추면(대개 계획이 있는 제품의 `구분_EQ`·`구분_Chip` "

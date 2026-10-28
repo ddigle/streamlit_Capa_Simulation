@@ -195,6 +195,43 @@ def test_area_name_is_normalized_before_rq_derivation() -> None:
         assert prepared.reference_tables[table_name].loc[0, "Area_Name"] == "Main"
 
 
+def test_a_process_name_that_differs_only_by_spaces_is_one_process_before_derivation() -> None:
+    """원천의 `P1`·`P1 ` 은 계산에서 같은 공정이다 — 등록도 표를 만들기 전에 한 공정으로 맞춘다.
+
+    표는 원래 글자로 접고 계산(`unit_capacity._join_reference`)은 공백을 떼고 붙인다. 같은 달·공정·
+    양산구분을 두 제품이 공백만 다르게 적으면 `RQ_RUN_RATE` 가 같은 키 두 행으로 저장돼, 등록은
+    되는데 그 리비전의 대당 Capa 가 「연결 키가 중복되었습니다」 로 늘 멈췄다(샘플 관측 — 합성
+    시드를 복제).
+    """
+    from capa_simulation.services.builtin_seed import (
+        builtin_seed_processes,
+        load_builtin_display_order,
+    )
+    from capa_simulation.services.unit_capacity import calculate_unit_capacity
+
+    source = _seed_source()
+    copy = source.loc[source["제품정보"].eq("DEMO_PRODUCT_A")].copy()
+    copy["제품정보"] = "DEMO_PRODUCT_C"
+    copy["공정"] = copy["공정"] + " "
+    tables = build_reference_tables(
+        pd.concat([source, copy], ignore_index=True), load_builtin_display_order()
+    )
+
+    for table_name in ("RQ_RUN_RATE", "RQ_VITAL", "RQ_MODULE", "RQ_RUN_DAY", "RQ_UPEH"):
+        assert set(tables[table_name]["공정"]) == set(builtin_seed_processes()), table_name
+    result = calculate_unit_capacity(
+        upeh=tables["RQ_UPEH"],
+        run_rate=tables["RQ_RUN_RATE"],
+        vital=tables["RQ_VITAL"],
+        module=tables["RQ_MODULE"],
+        run_day=tables["RQ_RUN_DAY"],
+        lot_ratio=tables["RQ_LOT_RATIO"],
+        wf_ratio=tables["RQ_WF_RATIO"],
+    )
+    # 제품정보의 `_` 는 파생 경계에서 빈칸이 된다.
+    assert {"DEMO PRODUCT A", "DEMO PRODUCT C"} <= set(result["제품정보"])
+
+
 def test_wf_division_spellings_that_differ_only_in_case_become_one_value_before_derivation() -> (
     None
 ):
