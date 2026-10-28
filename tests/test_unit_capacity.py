@@ -828,6 +828,22 @@ def test_keys_that_differ_only_by_spaces_are_named_as_such_when_they_collide() -
     _assert_no_values(error.problem)
 
 
+def test_an_area_name_case_duplicate_is_not_called_a_spacing_variant() -> None:
+    """`Main`·`main` 은 Area_Name 정규화로 한 키가 된다 — 공백이 아니라 대소문자 꼴이라
+    「앞뒤 공백만 다름」 으로 세지 않는다(그 이름이 고칠 길을 가른다)."""
+    inputs = _capacity_inputs(["Process-A"])
+    lot = inputs["lot_ratio"]
+    inputs["lot_ratio"] = pd.concat(
+        [lot, lot.assign(Area_Name=lot["Area_Name"].str.lower())], ignore_index=True
+    )
+
+    error = _join_error(inputs)
+
+    assert "앞뒤 공백만" not in str(error)
+    assert (error.problem.table, error.problem.label) == ("RQ_LOT_RATIO", JOIN_DUPLICATE_KEY)
+    assert error.problem.spacing_keys == 0
+
+
 def test_a_plain_duplicate_key_is_not_called_a_spacing_variant() -> None:
     inputs = _capacity_inputs(["Process-A"])
     inputs["run_rate"] = pd.concat([inputs["run_rate"]] * 2, ignore_index=True)

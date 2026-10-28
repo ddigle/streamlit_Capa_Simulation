@@ -5329,6 +5329,11 @@ def _without_aside(text: str) -> str:
     return bare if bare != text and _numbers(bare) else text
 
 
+def _plus_parts(text: str) -> list[str]:
+    """식 오른쪽을 `+` 로 가른 항(빈 항은 뺀다)."""
+    return [part for part in _PLUS.split(text) if part.strip()]
+
+
 def _term_value(text: str) -> float | None:
     """항의 값 — 끝의 괄호 덧말을 뗀 뒤 마지막 수. 수가 없으면 None."""
     numbers = _numbers(_without_aside(text))
@@ -5366,8 +5371,11 @@ def _equation(cell: str, *, coded: bool) -> EquationCheck | None:
         return EquationCheck(holds=True, form=_FORM_UNREAD) if _STRAY_PLUS.search(cell) else None
     left, right = cell.split(" = ", 1)
     stray = _STRAY_PLUS.search(right) is not None
-    right = _without_aside(_STRAY_PLUS.sub("+", right))
-    parts = [part for part in _PLUS.split(right) if part.strip()]
+    right = _STRAY_PLUS.sub("+", right)
+    # 끝 괄호 덧말은 칸 전체에서 먼저 뗀다 — 덧말 안의 `+` 가 항을 가르지 않게. 떼면 수 없는 항이
+    # 생기면(`미기록 (3)` 처럼 그 항의 수가 괄호에만 있으면) 떼지 않는다 — 그 수가 항의 값이다.
+    bare = _plus_parts(_TRAILING_ASIDE.sub("", right))
+    parts = bare if bare and all(_numbers(part) for part in bare) else _plus_parts(right)
     total = _term_value(left)
     terms = [_term_value(part) for part in parts]
     if total is None or not parts or any(term is None for term in terms):

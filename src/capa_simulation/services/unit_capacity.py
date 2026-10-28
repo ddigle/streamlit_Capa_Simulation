@@ -596,13 +596,18 @@ def _raise_on_duplicate_keys(
     spacing = 0
     if text_keys:
         # 자리로 고른다 — 받은 표의 index 가 겹쳐도 같은 행을 본다(`prepared` 는 그 표를 그대로
-        # 떴다).
+        # 떴다). 앞뒤 공백을 떼면 같아지는 원래 글자가 둘 이상인 키만 센다 — Area_Name 의
+        # 대소문자(`Main`·`main`)처럼 다른 정규화로 겹친 키는 공백 꼴이 아니다.
         raw = reference[text_keys].loc[duplicated.to_numpy()].astype("string")
         raw.index = overlapping.index
-        raw.columns = [f"_원래글자{position}" for position in range(len(text_keys))]
-        spellings = pd.concat([overlapping, raw], axis=1)
-        variants = spellings.groupby(keys, dropna=False)[list(raw.columns)].nunique(dropna=False)
-        spacing = int(variants.gt(1).any(axis=1).sum())
+        spelled = raw.fillna("\0").agg("\x1f".join, axis=1)
+        stripped = (
+            raw.apply(lambda column: column.str.strip()).fillna("\0").agg("\x1f".join, axis=1)
+        )
+        spellings = overlapping.assign(_원래글자=spelled, _뗀글자=stripped)
+        grouped = spellings.groupby(keys, dropna=False)
+        variants = grouped["_원래글자"].nunique() > grouped["_뗀글자"].nunique()
+        spacing = int(variants.sum())
     message = (
         f"{table_name}의 연결 키가 중복되었습니다: {len(distinct):,}건, "
         f"예시 {distinct.head(5).to_dict('records')}"
