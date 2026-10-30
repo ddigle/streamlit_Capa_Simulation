@@ -691,6 +691,14 @@ def test_the_row_label_and_badge_follow_the_three_judgements() -> None:
     assert equipment_status_badge(stale, unsaved=False) == ":green-badge[공식 v3]"
     older = EquipmentSession(newer, newer.scenarios[0], "s11")
     assert equipment_status_badge(older, unsaved=False) == ":orange-badge[최신 r14 있음]"
+    # 미저장 편집이 있어도 낡음이 가려지지 않는다 — 저장하려 할 때에야 거절로 알게 되지 않게
+    # (공식 발행 쌍이어도 낡으면 저장은 같은 까닭으로 거절된다).
+    assert equipment_status_badge(older, unsaved=True) == (
+        ":orange-badge[미저장 변경 · 최신 r14 있음]"
+    )
+    assert equipment_status_badge(stale, unsaved=True) == (
+        ":orange-badge[미저장 변경 · 최신 r14 있음]"
+    )
     unpublished = _catalog(release_rev="s12", latest="s14", latest_no=14)
     latest = EquipmentSession(unpublished, unpublished.scenarios[0], "s14")
     assert equipment_status_badge(latest, unsaved=False) == ":gray-badge[저장된 리비전]"

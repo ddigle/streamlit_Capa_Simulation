@@ -834,6 +834,67 @@ def test_the_plan_notices_stand_in_one_slot_above_the_editor(
     assert _plan_editor_path(app) == before
 
 
+def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PKG PLAN 적용 알림이 서는 회차에 그 알림 칸 아래에 소요대수에 들지 않은 수요(시나리오 전체
+    기간)를 적는다 — 경로 없는 칸에 넣은 계획은 「다시 계산됩니다」 뒤에도 소요대수에 들지
+    않는다(E2E r2 static, 개선 I38). 셈은 저장·발행 검사와 같은 `required_exclusion_counts`
+    다(페이지는 exec 때 이름을 집으므로 모듈 속성을 바꾸면 그 셈이 들어간다). 경고는 알림 칸
+    안이라 편집표 자리가 밀리지 않고, 적용 알림이 빠지는 회차에 함께 빠진다(쓰기 알림 표지의 창은
+    0 으로 둔다). 셈은 편집표를 그린 **뒤**다 — 시나리오 전체 기간 계산이 끝날 때까지 편집표가
+    서지 않으면 적용 직후 다음 편집을 기다리게 한다(그 회차의 그리기 차례를 적어 본다). 계획 쪽
+    건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지 않아도 늘 있을 수 있어
+    적용할 때마다 서는 경고가 된다."""
+    import streamlit
+
+    import capa_simulation.services.required_equipment as required_equipment
+
+    seen: list[int] = []
+    order: list[str] = []
+    draw_editor = streamlit.data_editor
+
+    def counted(frame: pd.DataFrame) -> required_equipment.RequiredExclusionCounts:
+        seen.append(len(frame))
+        order.append("셈")
+        return required_equipment.RequiredExclusionCounts(unrouted_loads=3, excluded_routes=5)
+
+    def recorded_editor(*args: Any, **kwargs: Any) -> Any:
+        if str(kwargs.get("key") or "").startswith("pkg_plan_editor"):
+            order.append("편집표")
+        return draw_editor(*args, **kwargs)
+
+    monkeypatch.setattr(required_equipment, "required_exclusion_counts", counted)
+    monkeypatch.setattr(streamlit, "data_editor", recorded_editor)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    before = _plan_editor_path(app)
+    assert not any("소요대수에 들지 않은 수요" in str(item.value) for item in app.warning)
+
+    _paste(app, _clipboard_text(app, scale=0.5))
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in app.success)
+    warnings = [str(item.value) for item in app.warning]
+    assert any(
+        "소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간)" in text
+        and "RQ_REQB 경로에 닿지 않은 계획 부하 3건" in text
+        for text in warnings
+    ), warnings
+    assert not any("대당 Capa 가 없어 뺀 부하 경로" in text for text in warnings), warnings
+    assert seen, "적용 뒤 소요대수 결과를 세지 않았다"
+    # 알림이 서는 회차의 셈은 그 회차 편집표 뒤다(앞이면 「셈, 편집표」 로 끝난다).
+    assert order[-2:] == ["편집표", "셈"], order
+    assert _plan_editor_path(app) == before
+
+    # 적용 알림과 함께 빠진다.
+    app.run()
+    assert not any("반영했습니다" in item.value for item in app.success)
+    assert not any("소요대수에 들지 않은 수요" in str(item.value) for item in app.warning)
+    assert _plan_editor_path(app) == before
+
+
 def test_the_plan_editor_shows_the_applied_plan_right_after_apply(seeded_database: Path) -> None:
     """편집표 원본은 (시나리오 내용·편집 기간·표시순서) 키 캐시다. 적용이 새 토큰을 내므로 바로 다음
     회차 편집표가 새 계획을 보인다 — 옛 원본이 남으면 다음 적용에서 값이 되돌아간다."""

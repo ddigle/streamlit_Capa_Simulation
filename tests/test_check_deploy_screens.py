@@ -2198,6 +2198,8 @@ def test_every_equipment_badge_kind_is_known_to_the_screen_check() -> None:
 
     shown = [
         badge(unsaved=True),
+        # 미저장이면서 낡으면 「미저장 변경 · 최신 r7 있음」 — 머리가 「미저장 변경」 으로 읽힌다.
+        badge(unsaved=True, stale=True, latest_revision_no=7),
         badge(unmerged=True),
         badge(is_official_pair=True, release_no=3),
         badge(stale=True, latest_revision_no=7),

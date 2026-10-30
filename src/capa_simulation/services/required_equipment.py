@@ -188,9 +188,19 @@ def required_exclusion_counts(required_equipment: pd.DataFrame) -> RequiredExclu
     Buffer 외 행은 규칙대로 세지 않은 것이라 고칠 것이 없다 — 둘을 세면 늘 뜨는 경고가 된다.
     경로 없는 계획도 같은 까닭으로 규칙상 쓰지 않는 조합은 세지 않는다(`counted_unrouted_loads`).
     """
-    load_rows = required_equipment.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR)
-    unrouted = required_equipment.attrs.get(UNROUTED_LOADS_ATTR)
-    routes = required_equipment.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
+    return count_required_exclusions(
+        required_equipment.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR),
+        required_equipment.attrs.get(UNROUTED_LOADS_ATTR),
+        required_equipment.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR),
+    )
+
+
+def count_required_exclusions(
+    load_rows: object, unrouted: object, routes: object
+) -> RequiredExclusionCounts:
+    """`required_exclusion_counts` 의 셈 — attrs 를 이미 꺼낸 제외 목록 셋(부하량에서 빠진 계획·경로
+    없는 계획 부하·소요대수에서 뺀 경로)으로 센다. 산출 결과 요약 캐시(`ScenarioResultSummary`)처럼
+    프레임 대신 목록만 든 쪽이 같은 셈을 쓴다. 프레임이 아닌 값은 없는 것으로 본다."""
     excluded_routes = 0
     if isinstance(routes, pd.DataFrame) and {"제외사유", "부하량"} <= set(routes.columns):
         lost = routes["제외사유"].ne(PKG_UNCOUNTED_REASON) & pd.to_numeric(

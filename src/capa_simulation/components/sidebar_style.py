@@ -58,6 +58,11 @@ STALE_DIM_DELAY = "0.3s"
 # 그 여백(실측 17.5px)보다 넉넉하면 된다.
 APP_CREDITS_ORDER = 100
 _APP_CREDITS_BLEED = "3rem"
+# 사이드바 스크롤 칸이 칸을 「보이게」 옮길 때(키보드 초점 이동·`scrollIntoView`) 바닥에 비워 둘
+# 높이 — 바닥에 붙은 앱 정보 카드 밑으로 고른 칸이 들어가 그 자리를 누르면 카드 링크가 눌렸다(긴
+# 「표준 목표 조건」 카드의 Weeknum·WF 속성, E2E r3 static). 카드는 위아래 여백 1.05rem + 0.75rem
+# 글 두 줄(줄 높이 1.45)이고 좁은 사이드바에서는 네 줄까지 접혀 약 5.4rem 이다 — 그보다 조금 넉넉히.
+APP_CREDITS_SCROLL_ROOM = "5.5rem"
 
 
 def lone_conditions_heading_selector() -> str:
@@ -616,12 +621,16 @@ def build_sidebar_stylesheet(
         # 줄어들 수 있으면 목록이 길 때 스크롤 대신 눌린다 — 머리칸이 넘친 만큼 눌려(실측 52.5 →
         # 34px) 앱 이름 라벨이 HOME 위에 겹쳤다.
         # 사용자 칸의 아래 여백(Streamlit 84px)은 걷는다. 남겨 두면 끝까지 내렸을 때 카드가 바닥에서
-        # 그만큼 떠 있다.
-        """
-        [data-testid="stSidebarContent"] {
+        # 그만큼 떠 있다. 스크롤 칸의 `scroll-padding-bottom` 은 칸을 보이게 옮기는 스크롤(초점
+        # 이동)이 바닥 카드 밑에 칸을 두지 않게 한다(`APP_CREDITS_SCROLL_ROOM`) — 끝까지 내렸을 때의
+        # 자리는 그대로다(여백이 아니라 옮길 때의 기준선이다).
+        f"""
+        [data-testid="stSidebarContent"] {{
             display: flex;
             flex-direction: column;
-        }
+            scroll-padding-bottom: {APP_CREDITS_SCROLL_ROOM};
+        }}"""
+        """
         [data-testid="stSidebarHeader"] {
             flex-shrink: 0;
         }

@@ -1122,6 +1122,8 @@ def restore_preview_lines(
 
     바뀌는 호기 수·비가동 행 수·일정 없음이 되는 호기, 그 리비전 뒤에 공통 대장에 든 호기의 「일정
     없음」(늘 적는다), 그대로인 것(사이 리비전·공통 대장·다른 시나리오), 공식 시나리오면 발행 규칙.
+    발행 규칙 줄은 「아래 발행 체크」 를 가리키므로 되돌릴 것이 없어(`restore_writes_nothing`) 체크·
+    단추가 서지 않는 회차에는 싣지 않는다.
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1141,7 +1143,7 @@ def restore_preview_lines(
     layout = restore_layout_sentence(revision, preview, official_scenario=official_scenario)
     if layout:
         lines.append(layout)
-    if official_scenario:
+    if official_scenario and not restore_writes_nothing(preview, official_scenario=True):
         lines.append(
             "공식 설비 시나리오입니다 — 아래 발행 체크가 켜져 있고 그 사이 발행하지 않은 더 새 "
             "리비전이 없으면 새 리비전을 공식으로 발행합니다."
@@ -1467,8 +1469,9 @@ def _render_branch(
     """「여기서 새 시나리오」(E7) — 고른 리비전의 일정을 r1 로 든 새 설비 시나리오(복제로만 만든다).
 
     출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
-    대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 확인 글이
-    그것도 적는다(`branch_layout_sentence`).
+    대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 누르기 전
+    확인 글(`branch_layout_sentence`)이 옮길 차이를, 완료 알림이 새 시나리오에 든 차이 행 수를
+    적는다.
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1518,10 +1521,12 @@ def _render_branch(
             return
         created = written.value
         made = new_name if created is None else created.scenario_name
+        carried = stored_layout_words(*created.latest_layout_rows) if created is not None else ""
+        layout_note = f" {title}의 가정 배치(차이 {carried})도 함께 옮겼습니다." if carried else ""
         _written(
             f"{name} {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
             "r1 을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
-            "불러오기」로 올립니다.",
+            f"불러오기」로 올립니다.{layout_note}",
             release=written.release,
         )
 

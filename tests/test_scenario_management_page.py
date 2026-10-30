@@ -30,6 +30,7 @@ from capa_simulation.components.scenario_management import (
     ARCHIVED_EXPANDER_KEY,
     ARCHIVED_SELECT_KEY,
     CLONE_MODE,
+    CLONE_SOURCE_NOTE,
     DELETE_BUTTON_KEY,
     DELETE_BUTTON_LABEL,
     DELETE_CONFIRM_KEY,
@@ -299,11 +300,18 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
 
 
 def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> None:
-    """빈 필수 칸은 **한 번에** 모두 알린다. 한 칸씩 알리면 세 번 눌러야 했다(2026-10-05 E2E)."""
+    """빈 필수 칸은 **한 번에** 모두 알린다. 한 칸씩 알리면 세 번 눌러야 했다(2026-10-05 E2E).
+
+    원천 코드·원천명 칸은 원본 값을 물려받지 않고 빈 채로 선다(2026-10-22 결정) — 폼 위 한 줄이 그
+    두 칸을 새로 적어야 한다고 미리 말한다(E2E r3 static — 채워질 줄 알고 눌러 한 번 막혔다)."""
     database_path = tmp_path / "scenario.duckdb"
     script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
     app = AppTest.from_string(script, default_timeout=120).run()
     app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
+    assert CLONE_SOURCE_NOTE in [str(item.value) for item in app.caption]
+    assert "새로 적는 필수 칸" in CLONE_SOURCE_NOTE
+    assert _clone_inputs(app)["원천 시뮬레이션 코드"] == ""
+    assert _clone_inputs(app)["원천 시뮬레이션명"] == ""
     for widget in app.text_input:
         if str(widget.key or "").startswith("scenario_create_") and widget.label == "시나리오명":
             widget.set_value("이름만 적은 복제")

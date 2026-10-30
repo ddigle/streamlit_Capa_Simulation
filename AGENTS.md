@@ -860,7 +860,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/required_exclusion_notice.py` — 소요대수에 들지 않은 수요의 건수 문장
   (`required_exclusion_message`)과 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists`)을 낸다.
   - 문장은 `알림 모음`·`capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
-    않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다.
+    않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
+    않게 두 자리에도 같은 문장이다 — 생산 계획 PKG PLAN 적용 알림이 서는 회차(쓰기 알림 표지 창의 다시 그리기 포함)에
+    그 알림 칸(`render_flash` 가 돌려준 칸) 맨 아래(`FULL_SCOPE`, `get_full_capacity_outcome` — HOME·산출 결과가 같은 결과를
+    쓴다. 셈은 PKG PLAN 편집표를 그린 **뒤**에 한다 — 앞에서 하면 그 계산이 끝날 때까지 편집표가 서지 않는다)와 Static Capa
+    현황 요약 맨 위의 늘 서 있는 칸(`PERIOD_SCOPE` — 산출 결과 요약 캐시 `get_scenario_result_summary`
+    의 조회기간 목록을 `count_required_exclusions` 로 센다). 둘 다 칸 안이라 아래 편집표·상자의 자리가 밀리지 않는다.
+    두 자리는 **계획 쪽 건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지
+    않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 늘 서는 경고가 된다(HOME 에서 이 줄을 뺀 2026-10-19 결정과 같은 까닭).
 - `src/capa_simulation/components/alert_board.py` — Admin Area `알림 모음` 탭. 활성 시나리오의 계산 알림 셋(계산 멈춤 ·
   소요대수에 들지 않은 수요 · 측정률 가정)을 시나리오 전체 기간으로 늘 같은 차례에 둔다(없는 것은 「없음」).
   - 저장·발행 검사와 같은 `get_full_capacity_outcome` 캐시와 `capacity_gate.density_error` 를 읽어 문장도 같다. 고르는
@@ -1870,6 +1877,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/app_credits.py` — 앱 이름·버전·빌드일과 개발 팀·문의처 두 줄을 모든 화면
   사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다.
   - 그리는 것은 캡션뿐이고 자리·바닥 고정·면은 `sidebar_style.py` 가 건다. key 는 조건 카드 접두어를 품지 않는다.
+    바닥에 붙은 카드 밑으로 칸이 들어가지 않게 사이드바 스크롤 칸에 `scroll-padding-bottom`(`APP_CREDITS_SCROLL_ROOM`)을
+    둔다 — 초점 이동·`scrollIntoView` 가 긴 조건 카드의 마지막 칸을 카드 위에 세운다(덮인 자리를 누르면 카드 링크가 눌렸다).
 - `src/capa_simulation/components/sidebar_style.py` — 탐색 그룹·활성 경로·`Support` 상자 key 와 현재 테마로
   사이드바 스타일 문자열을 만든다. 위젯 생성·HTML 주입은 하지 않는다.
   - 접두어·구역 제목 선택자는 선언 모듈(`sidebar_status`·`navigation.SIDEBAR_SECTIONS`)에서 읽는다 — 빌더에 필수
@@ -2406,11 +2415,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
   - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
     「운영 일정 · r12」(긴 이름은 `app_header.short_scenario_name` 으로 줄여 「 · rN」 이 늘 보인다 — 값 칸은 한 줄
-    말줄임. 머리 띠 꼬리도 같은 이름), 배지는 `미저장 변경` → `일정 없이 엶`(옛 배포 흔적이 공식과도 합쳐지지 않은 회차) →
+    말줄임. 머리 띠 꼬리도 같은 이름), 배지는 `미저장 변경`(낡은 세션이면 `미저장 변경 · 최신 rM 있음` — 미저장이 낡음을
+    가리지 않는다, 머리 띠 꼬리도 같다) → `일정 없이 엶`(옛 배포 흔적이 공식과도 합쳐지지 않은 회차) →
     `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) → `최신 rM 있음` → `가정 배치`(그리는 리비전의 배치가 공식과 다름 —
     `EquipmentSession.layout_differs`, 라벨 dict 의 기본형이라 그리는 동안 저장소 호출 0) → `저장된 리비전` 차례. 잠근
     꼴(팝업 없음)은 값 칸 끝 「(고정)」 — 공정 Capa 상세 HOME 방문뿐이다(그 까닭 `HOME_VISIT_LOCK_REASON` 은 줄 아래 한 줄 —
-    꺼진 단추라 풍선이 없다). Space 현황은 고를 수 있는 줄이다(S3).
+    꺼진 단추라 풍선이 없다. 푸는 법 「이 화면 탭을 닫고 다시 여세요」 까지 적는다). Space 현황은 고를 수 있는 줄이다(S3).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
     선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23). 리비전 라디오는 최근 50개까지이고, 한도에 걸리면 라디오
@@ -3005,7 +3015,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     최신의 저장된 요소·이름표 차이 행 수(`latest_layout_mark_count`·`latest_layout_label_count`)도 싣는다.
   - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 **어느 일정 리비전이든**(E7 「여기서 새 시나리오」), SQL 사본이
     아니라 지금 공통과 합친 읽기 길로 읽은 일곱 칸·비가동을 새 두 표에, `origin='clone'`. 지금 공통과 합쳐지지 않는 옛 리비전은
-    `EquipmentScenarioIncompatible`. 출처 리비전의 배치 차이도 지금 공식으로 정규화해 옮긴다)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name` 대조 →
+    `EquipmentScenarioIncompatible`. 출처 리비전의 배치 차이도 지금 공식으로 정규화해 옮긴다)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지(호기 이름처럼 대소문자·앞뒤 공백만 다른 이름도 같은
+    이름 — `scenario_name_taken`, 복제도 같다. 제 이름의 대소문자만 바꾸기는 된다), `expected_name` 대조 →
     `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` — 흔적 수
     대조 뒤 경계 행 하나)가 1단계 관리 쓰기다.
   - **E7 리비전 도구**: 리비전명(`rename_schedule_revision` — 이름표 한 칸만 UPDATE, 비우면 NULL, 비교 후 쓰기 →
@@ -3625,9 +3636,11 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 - 부하가 붙었는데 대당 Capa 가 없거나 0 이하라 뺀 경로 — 기존 경로 쪽 제외 목록 가운데 부하 0 초과.
   부하 0 인 경로와 PKG 의 Buffer 외 행은 소요대수를 줄이지 않으므로 세지 않는다.
 
-건수는 `required_equipment.required_exclusion_counts` 하나가 세고, HOME(조회기간 기준 한 줄)·산출
+건수는 `required_equipment.required_exclusion_counts` 하나가 세고(목록만 든 요약은 그 셈
+`count_required_exclusions`), HOME(조회기간 기준 한 줄)·산출
 결과 소요대수 탭(목록·CSV)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
-자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)이 같은 셈을 쓴다(`components/required_exclusion_notice.py`).
+자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)·PKG PLAN 적용 알림(시나리오 전체 기간)·Static Capa 현황
+요약(조회기간 — 이 둘은 계획 쪽 건수만, `plan_side_counts`)이 같은 셈을 쓴다(`components/required_exclusion_notice.py`).
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은

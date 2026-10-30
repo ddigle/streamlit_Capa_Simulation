@@ -741,7 +741,8 @@ def equipment_header_suffix(
 
     `label` 은 `EquipmentSession.label()` 꼴(시나리오명·rN·최신 rM·공식 vN·판정)이다. 상태 차례는
     사이드바 줄 배지와 같다(미저장 → 일정 없이 엶 → 공식 vN → 최신 rM 있음 → 가정 배치 → 저장된
-    리비전). 시나리오가 없으면 None.
+    리비전). 미저장이면서 낡았으면 배지처럼 「미저장 변경 · 최신 rM 있음」 이다. 시나리오가 없으면
+    None.
     """
     if not label or not label.get("scenario_name"):
         return None
@@ -756,6 +757,8 @@ def equipment_header_suffix(
         parts.append(UNMERGED_STATUS)
     elif unsaved:
         parts.append(STATUS_UNSAVED)
+        if label.get("stale") and isinstance(latest_no, int):
+            parts.append(f"최신 r{latest_no} 있음")
     elif label.get("official_pair") and isinstance(release_no, int):
         parts.append(STATUS_OFFICIAL.format(release_no=release_no))
     elif label.get("stale") and isinstance(latest_no, int):

@@ -67,6 +67,7 @@ from capa_simulation.components.equipment_scenario_management import (
     publish_preview,
     restore_confirm_label,
     restore_layout_sentence,
+    restore_preview_lines,
     restore_result_message,
     session_heading,
 )
@@ -267,7 +268,11 @@ def test_the_header_suffix_follows_the_badge_order() -> None:
         "layout_differs": True,
     }
     assert equipment_header_suffix(label) == "설비 시나리오 · 운영 일정 · r12 · 공식 v3"
+    # 미저장이면서 낡았으면 배지처럼 둘을 함께 적는다 — 미저장이 낡음을 가리지 않는다.
     assert equipment_header_suffix(label, unsaved=True) == (
+        "설비 시나리오 · 운영 일정 · r12 · 미저장 변경 · 최신 r14 있음"
+    )
+    assert equipment_header_suffix({**label, "stale": False}, unsaved=True) == (
         "설비 시나리오 · 운영 일정 · r12 · 미저장 변경"
     )
     stale = {**label, "official_pair": False}
@@ -951,6 +956,11 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     # 풍선이 없다 — ◀▶ 뒤에는 출처 띠가 걷혀 이 줄이 기준을 알리는 자리다).
     assert field.label == "운영 일정 · r1 (고정)"
     assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
+    # 까닭 글은 푸는 법도 말한다 — 아래에서 보듯 탭을 닫고 다시 열면 세션 설비 시나리오를 따른다.
+    assert any(
+        "위 탭 줄에서 이 화면 탭을 닫고 다시 여세요." in str(item.value)
+        for item in app.sidebar.caption
+    )
 
     _ok(app.run())
     field = _field(app)
@@ -1378,6 +1388,10 @@ def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothin
     assert any("모두 같아 되돌릴 것이 없습니다" in text for text in texts)
     assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
     assert not [button for button in app.button if button.key == RESTORE_BUTTON_KEY]
+    # 발행 체크도 서지 않으므로 「아래 발행 체크가 켜져 있고 …」 줄도 없다(없는 체크를 가리키지
+    # 않게).
+    assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_PUBLISH_KEY)]
+    assert not any("아래 발행 체크" in text for text in texts)
 
 
 def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
@@ -1586,6 +1600,26 @@ def test_the_restore_sentences_say_none_when_no_unit_came_after_the_revision() -
     )
 
 
+def test_the_publish_rule_line_stands_only_where_the_restore_offers_a_publish_check() -> None:
+    """공식 설비 시나리오의 되돌리기 확인 글 끝 발행 규칙 줄은 「아래 발행 체크」 를 가리킨다 —
+    되돌릴 것이 없어 체크·단추가 서지 않는 리비전에서는 싣지 않는다(E2E r3 static). 가정
+    시나리오에는 늘 없다."""
+    scenario = EquipmentScenarioSummary(
+        "s", "운영 일정", "ACTIVE", latest_schedule_revision_id="s3", latest_revision_no=3
+    )
+    chosen = _summary(2)
+    changes = ScheduleRestorePreview(changed_units=2)
+    nothing = ScheduleRestorePreview()
+
+    def publish_lines(preview: ScheduleRestorePreview, *, official: bool) -> list[str]:
+        lines = restore_preview_lines(scenario, chosen, preview, official_scenario=official)
+        return [line for line in lines if "아래 발행 체크" in line]
+
+    assert len(publish_lines(changes, official=True)) == 1
+    assert publish_lines(nothing, official=True) == []
+    assert publish_lines(changes, official=False) == []
+
+
 def test_the_tab_starts_a_new_scenario_from_an_old_revision(
     _shell: AppTest, tmp_path: Path
 ) -> None:
@@ -1611,6 +1645,8 @@ def test_the_tab_starts_a_new_scenario_from_an_old_revision(
         "「운영 일정」 r1에서 설비 시나리오 「r1 가지」 r1 을 만들었습니다" in text
         for text in _texts(app)
     )
+    # 배치 차이가 없는 리비전에서 만든 시나리오의 완료 알림에는 가정 배치 줄이 없다.
+    assert not any("함께 옮겼습니다" in text and "r1 가지" in text for text in _texts(app))
     branch = next(
         item for item in repository.list_equipment_scenarios() if item.scenario_name == "r1 가지"
     )

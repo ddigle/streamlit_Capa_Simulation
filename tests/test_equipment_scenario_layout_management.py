@@ -782,6 +782,10 @@ def test_the_branch_popover_says_it_copies_the_layout_and_the_new_r1_has_it(
 
     app.text_input(key=CLONE_NAME_KEY).input("배치안 복제")
     _ok(app.button(key=CLONE_BUTTON_KEY).click().run())
+    # 완료 알림도 새 시나리오에 든 차이를 적는다(개선 I35 — 누르기 전 확인 글만으로는 다 만든 뒤
+    # 배치가 함께 갔는지 다시 보러 가야 했다).
+    message = next(text for text in _texts(app) if "배치안 복제" in text and "만들었습니다" in text)
+    assert message.endswith("r2의 가정 배치(차이 호기 1행)도 함께 옮겼습니다."), message
 
     branch = next(
         item

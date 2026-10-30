@@ -3334,7 +3334,8 @@ def legacy_trace_count(connection: duckdb.DuckDBPyConnection) -> int:
 _SaveMode = Literal["changed", "if_any", "always"]
 
 DUPLICATE_EQUIPMENT_SCENARIO_NAME_MESSAGE = (
-    "같은 이름의 설비 시나리오가 이미 있습니다(보관본 포함). 이름을 바꿔 저장하세요."
+    "같은 이름의 설비 시나리오가 이미 있습니다(보관본 포함 — 대소문자·앞뒤 공백만 달라도 같은 "
+    "이름입니다). 이름을 바꿔 저장하세요."
 )
 # 일정 리비전 리비전명 글자 수 한도(선택지·표에서 리비전 번호가 밀려나지 않게) — 화면 칸도 이 수다.
 SCHEDULE_REVISION_NAME_MAX_CHARS = 40
