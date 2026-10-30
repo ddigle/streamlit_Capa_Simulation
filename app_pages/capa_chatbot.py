@@ -17,6 +17,7 @@ LLM 을 붙이기 전에 정할 것은 모델이 아니라 **답변의 모양**�
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 import streamlit as st
 
@@ -95,6 +96,16 @@ def _reset_transcript(first_key: str) -> None:
     st.session_state[TRANSCRIPT_KEY] = [first_key]
 
 
+def _evidence_columns(answer: SampleAnswer) -> dict[str, Any]:
+    """근거 표 숫자 칸의 꼴 — 대본이 정한 꼴(`SampleAnswer.evidence_formats`)을 칸 설정으로 옮긴다.
+    서식이 없으면 Gap 이 분수(-0.1093)로 나와 결론의 「-10.9%p」 와 어긋났다(2026-10-30 E2E)."""
+    return {
+        column: st.column_config.NumberColumn(spec.label, format=spec.format)
+        for column, spec in answer.evidence_formats.items()
+        if column in answer.evidence.columns
+    }
+
+
 def _render_answer(answer: SampleAnswer) -> None:
     """답 하나를 네 칸으로 그린다. 칸 이름을 화면에 적어 두면 그대로 연결 요구사항이 된다."""
     with st.chat_message("user", avatar=":material/person:"):
@@ -103,7 +114,12 @@ def _render_answer(answer: SampleAnswer) -> None:
         st.markdown(answer.conclusion)
         with st.expander(":material/table_view: 근거", expanded=True):
             st.caption(answer.evidence_caption)
-            st.dataframe(answer.evidence, hide_index=True, width="stretch")
+            st.dataframe(
+                answer.evidence,
+                hide_index=True,
+                width="stretch",
+                column_config=_evidence_columns(answer),
+            )
         with st.expander(":material/rule: 사용한 조건과 산식", expanded=False):
             st.markdown("\n".join(f"- {item}" for item in answer.conditions))
         if answer.limits:

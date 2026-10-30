@@ -15,11 +15,17 @@ LLM 응답으로 채우면 된다 — 화면을 다시 뜯지 않는다.
 셈하고 글자에만 쓴다. 근거 표의 `공정` 칸은 원본 그대로이고 화면이 복사본에 표시명을 입힌다.
 공정 이름 바로 뒤에는 조사를 붙이지 않는다(「TC Bonding — 왜 부족해?」) — 라틴 이름은
 끝소리를 몰라 「은(는)」 처럼 겸용 조사가 된다.
+
+근거 표의 숫자 꼴(`SampleAnswer.evidence_formats`)은 옆 실적 화면과 같다 — 효율·수율 같은
+비율과 Gap 은 퍼센트 서식이고 Gap 칸 이름에 단위(`Gap (%p)`)를 단다. 서식 없이 내면 Gap 이
+분수(-0.1093)로 나와 결론의 「-10.9%p」 와 어긋났다(2026-10-30 E2E). 지표마다 단위가 다른 줄이
+섞인 표(「왜 부족해?」 — 효율·UPEH·수율)는 칸 서식 하나로 못 적으므로 지표 화면과 같은 글자로
+미리 적는다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -27,6 +33,7 @@ import pandas as pd
 from capa_simulation.services.performance_actuals import (
     ALL_METRICS,
     EFFICIENCY_METRIC,
+    MetricSpec,
     build_gap_table,
     build_monthly_actual_demo,
     build_priority_table,
@@ -37,11 +44,20 @@ ProcessName = Callable[[str], str]
 
 
 @dataclass(frozen=True)
+class EvidenceFormat:
+    """근거 표 숫자 칸 하나의 꼴 — 화면이 `st.column_config.NumberColumn(label, format=…)` 으로
+    옮긴다(서비스는 Streamlit 을 모른다). `label` 이 None 이면 칸 이름 그대로다."""
+
+    format: str
+    label: str | None = None
+
+
+@dataclass(frozen=True)
 class SampleAnswer:
     """답변 한 개. 네 칸이 모두 차야 답으로 친다.
 
     `key` 는 답의 고정 이름이다. 질문 글자는 공정 표시명을 따라 바뀌므로 대화 기록은 이 이름을
-    적는다.
+    적는다. `evidence_formats` 는 근거 표 숫자 칸의 꼴(칸 이름 → `EvidenceFormat`)이다.
     """
 
     key: str
@@ -51,6 +67,30 @@ class SampleAnswer:
     evidence_caption: str
     conditions: tuple[str, ...]
     limits: tuple[str, ...] = field(default_factory=tuple)
+    evidence_formats: Mapping[str, EvidenceFormat] = field(default_factory=dict)
+
+
+# 실적 화면 표(`performance_actual_screen`)와 같은 꼴.
+_PERCENT = EvidenceFormat("percent")
+_COUNT = EvidenceFormat("%d")
+_STREAK = EvidenceFormat("%d", "연속 미달(개월)")
+_SCORE = EvidenceFormat("%.1f")
+
+
+def _gap_format(metric: MetricSpec) -> EvidenceFormat:
+    return EvidenceFormat("percent", f"Gap ({metric.gap_unit})")
+
+
+def _value_text(value: float, metric: MetricSpec) -> str:
+    """기준·실적 값 글자 — 지표 화면의 값 칸과 같은 꼴(효율 82.0% · UPEH 2,400)."""
+    if metric.value_format == "percent":
+        return f"{value:.{metric.value_decimals}%}"
+    return f"{value:,.{metric.value_decimals}f}"
+
+
+def _gap_text(value: float, metric: MetricSpec) -> str:
+    """Gap 글자 — 단위까지(효율 -10.9%p · UPEH -9.4%)."""
+    return f"{value:.{metric.gap_decimals}%}{metric.gap_suffix}"
 
 
 def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
@@ -94,6 +134,12 @@ def _shortfall_answer(
         conclusion=conclusion,
         evidence=evidence,
         evidence_caption="효율 실적 화면의 우선순위 표와 같은 값입니다.",
+        evidence_formats={
+            EFFICIENCY_METRIC.standard_column: _PERCENT,
+            EFFICIENCY_METRIC.actual_column: _PERCENT,
+            "Gap": _gap_format(EFFICIENCY_METRIC),
+            "연속 미달": _STREAK,
+        },
         conditions=(
             f"조회기간 {window} · 양산 구분 「양산」",
             "Gap = 실적 효율 − 기준 효율 (%p)",
@@ -104,6 +150,8 @@ def _shortfall_answer(
 
 
 def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName) -> SampleAnswer:
+    # 지표마다 단위가 달라(효율·수율은 %·%p, UPEH 는 대수·%) 칸 서식 하나로 적지 못한다 — 지표
+    # 화면과 같은 글자로 적고 Gap 에 단위를 붙인다.
     rows: list[dict[str, object]] = []
     for metric in ALL_METRICS:
         priority = build_priority_table(monthly, metric, ["공정"])
@@ -111,10 +159,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
         rows.append(
             {
                 "지표": metric.name,
-                "기준": float(worst[metric.standard_column]),
-                "실적": float(worst[metric.actual_column]),
-                "Gap": float(worst["Gap"]),
-                "단위": metric.gap_unit,
+                "기준": _value_text(float(worst[metric.standard_column]), metric),
+                "실적": _value_text(float(worst[metric.actual_column]), metric),
+                "Gap": _gap_text(float(worst["Gap"]), metric),
                 "공정": str(worst["공정"]),
             }
         )
@@ -128,7 +175,7 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
             "세 지표가 함께 내려가면 설비 한 대의 성능이 아니라 공정 조건이나 "
             "기준값 자체를 의심할 차례입니다."
         ),
-        evidence=evidence[["지표", "기준", "실적", "Gap", "단위"]],
+        evidence=evidence[["지표", "기준", "실적", "Gap"]],
         evidence_caption="각 지표 화면의 우선순위 1위 행에서 그대로 가져왔습니다.",
         conditions=(
             f"조회기간 {window} · 공정 {target}",
@@ -155,6 +202,13 @@ def _priority_answer(monthly: pd.DataFrame, window: str, process_name: ProcessNa
         ),
         evidence=evidence.reset_index(drop=True),
         evidence_caption="점수 = 미달폭 × 영향 비중 × 연속 미달 가중.",
+        evidence_formats={
+            "우선순위": _COUNT,
+            "Gap": _gap_format(EFFICIENCY_METRIC),
+            "영향 비중": _PERCENT,
+            "연속 미달": _STREAK,
+            "점수": _SCORE,
+        },
         conditions=(
             f"조회기간 {window}",
             "영향 비중은 **PKG 환산 물량** 기준입니다 — WF 매와 CHIP Kea 를 그대로 더하면 "
@@ -178,6 +232,12 @@ def _reference_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
         ),
         evidence=evidence.rename(columns={"제품정보": "제품"}).reset_index(drop=True),
         evidence_caption="공정 × 제품 조합을 미달폭 순으로 다섯 줄만 잘랐습니다.",
+        evidence_formats={
+            EFFICIENCY_METRIC.standard_column: _PERCENT,
+            EFFICIENCY_METRIC.actual_column: _PERCENT,
+            "Gap": _gap_format(EFFICIENCY_METRIC),
+            "영향 비중": _PERCENT,
+        },
         conditions=(
             f"조회기간 {window} · 공정 × 제품",
             "Stack·WF 속성까지 더 내려갈 수 있습니다",
