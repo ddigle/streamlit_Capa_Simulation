@@ -914,3 +914,30 @@ def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
     for text in (error.value, banner):
         assert ("서버 시작 점검" in text) is with_report
         assert ("`CAPA_ARTIFACTORY_TOKEN`" in text) is with_report
+
+
+@pytest.mark.parametrize(
+    ("catalog_ready", "detail_ready", "places"),
+    [
+        (False, False, ("CATALOG_QUERY_TEMPLATE", "QUERY_TEMPLATE)")),
+        (False, True, ("CATALOG_QUERY_TEMPLATE",)),
+        (True, False, ("company_bigdataquery_adapter.py의 QUERY_TEMPLATE",)),
+    ],
+)
+def test_the_missing_query_notice_puts_the_particle_on_the_fixed_word(
+    catalog_ready: bool, detail_ready: bool, places: tuple[str, ...]
+) -> None:
+    """빠진 SQL 자리 이름(영문 상수 끝) 뒤에 조사를 두면 「… 이(가) 아직 설정되지 않았습니다」 갈래
+    꼴이었다(개선 거리 I8). 조사는 고정 낱말 「SQL」 에 붙이고 자리는 줄표 뒤에 늘어놓는다."""
+    notice = registration.missing_query_notice(
+        catalog_ready=catalog_ready, detail_ready=detail_ready
+    )
+
+    assert notice is not None
+    assert notice.startswith("사내 조회 SQL이 아직 설정되지 않았습니다 — ")
+    assert all(place in notice for place in places)
+    assert "이(가)" not in notice
+
+
+def test_no_missing_query_notice_once_both_queries_are_set() -> None:
+    assert registration.missing_query_notice(catalog_ready=True, detail_ready=True) is None
