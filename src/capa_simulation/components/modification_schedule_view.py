@@ -13,9 +13,9 @@
 - **조건 카드**(제약 모드와 같은 카드 이름·자리) — 대상(공정 — 제약 모드와 같은 칸) / 이 세션만 /
   개조(대수 · 기간 버튼 + 직접 · 동시 상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준
   확보율 — 제약 모드와 **한 정본** · 안전 여유 %p · 목적) / Cut-off 읽기만.
-- **계획** — 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은 키**로 받는다(`_plan` — 페이지의 계획
-  블록과 같은 인자 차례). 계산 함수는 부를 때 `simulation_cache` 모듈에서 찾는다(페이지 시험이 그
-  속성을 바꾼다).
+- **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
+  render_equipment_plan` — 멈추는 갈래 · 까닭 카드 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
+  키**로).
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가
   아니다, CLAUDE.md 캐시 경계). 그림도 같다(`remembered_figure` — 테마가 키에 든다).
@@ -29,15 +29,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
-from typing import Final, NamedTuple, Protocol
+from typing import Final, NamedTuple
 
-import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-# 이름이 아니라 모듈을 잡는다 — 페이지 시험이 계획 함수를 바꿔 끼운다.
-import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.constraint_equipment_plan import (
+    EquipmentPlanSource,
+    ReasonCard,
+    equipment_readiness,
+    render_equipment_plan,
+)
 from capa_simulation.components.constraint_simulation_figures import (
     chart_min_width_px,
     rate_text,
@@ -111,18 +114,13 @@ from capa_simulation.modification_schedule_state import (
     settle_objective,
     settle_units,
 )
-from capa_simulation.page_bootstrap import (
-    BOOTSTRAP_ERRORS,
-    ProcessPageInputs,
-    bootstrap_error_message,
-)
-from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
+from capa_simulation.page_bootstrap import ProcessPageInputs, bootstrap_error_message
 from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
     MODIFICATION_DAYS_RANGE,
 )
-from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
+from capa_simulation.services.manual_downtime import manual_effect_band
 from capa_simulation.services.modification_schedule import (
     CONCURRENT_RANGE,
     MARGIN_RANGE,
@@ -136,20 +134,10 @@ from capa_simulation.services.modification_schedule import (
     schedule_month_inputs,
 )
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.process_equipment_timeline import (
-    DynamicReadiness,
-    dynamic_readiness,
-)
-from capa_simulation.services.required_shortening import (
-    MonthlyTarget,
-    ShorteningPlan,
-    target_from_thresholds,
-)
 from capa_simulation.services.securement_threshold import (
     securement_threshold_caption,
 )
 from capa_simulation.services.wd_window import wd_window
-from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_DEFAULT_PERCENT,
@@ -158,13 +146,13 @@ from capa_simulation.upeh_assumption_state import (
 
 __all__ = [
     "CHART_CARD_KEY",
+    "DEADLINE_HELP",
     "DOUBLE_COUNT_NOTE",
     "KPI_ROW_KEY",
     "LIST_CARD_KEY",
     "FELL_BACK_LABEL",
     "SHORTFALL_CARD_KEY",
     "UNITS_HELP",
-    "ReasonCard",
     "ScheduleChoice",
     "ScheduleModeContext",
     "deadline_day",
@@ -211,27 +199,27 @@ UNITS_HELP: Final = (
     "넣으세요. 어느 호기인지는 고르지 않습니다."
 )
 FELL_BACK_LABEL: Final = "가장 고르게 → 가장 빨리로 배치"
-
-
-class ReasonCard(Protocol):
-    """페이지의 까닭 카드 그리기(제목 · 풀이 · 가용설비 현황 링크)."""
-
-    def __call__(self, title: str, detail: str, *, equipment_link: bool) -> None: ...
+# 요약 넷째 칸 「기한」 풍선 — 칸이 실제로 적는 것만 말한다. 「못 맞춤」 은 기한을 골랐을 때만
+# 서고(안 골랐으면 「없음」), 낮출 폭은 기준을 낮춰 다 들어갈 때만 캡션에 붙는다(0% 까지 낮춰도 못
+# 넣으면 그 까닭은 대안 셋 카드가 말한다).
+DEADLINE_HELP: Final = (
+    "기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다 — 기한을 고르지 않았으면 「없음」 "
+    "입니다. 못 맞추면 남은 대수를 적고, 기준을 낮춰 기한 안에 다 넣을 수 있으면 그 폭도 "
+    "적습니다(「기준 n%p 낮추기」 — 0.01%p 올림이라 적힌 만큼 낮추면 들어갑니다). 0% 까지 낮춰도 "
+    "못 넣으면 폭 대신 그 까닭을 아래 「다 넣지 못했습니다 — 대안」 이 적습니다."
+)
 
 
 class ScheduleModeContext(NamedTuple):
-    """페이지가 넘기는 것 — 공통 진입·설비 세션·카드 이름과 머리·까닭 카드 그리기."""
+    """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·카드 이름과
+    머리·까닭 카드 그리기."""
 
-    page_inputs: ProcessPageInputs
+    source: EquipmentPlanSource
+    """공통 진입 · 설비 스냅샷 · Cut-off · 설비 DB 오류 · 오늘 · 입력 비가동 — 제약 모드와 한
+    묶음."""
+
     process_labels: ProcessLabels
     equipment_session: EquipmentSession | None
-    snapshot: EquipmentSnapshot | None
-    cutoff: pd.DataFrame
-    equipment_error: str
-    today: date
-    manual_downtime: ManualDowntime
-    """입력 비가동 대수(가용설비 현황 › Preference) — 계획 키에 실린다(제약 모드와 같은 가용)."""
-
     card_label: str
     card_name: str
     card_icon: str
@@ -569,62 +557,14 @@ def remembered_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figu
     return figure
 
 
-# ================================================================== 설비 일정·계획
-
-
-def _readiness(context: ScheduleModeContext, process: str | None) -> DynamicReadiness | None:
-    """설비 일정을 세울 수 있는가 — 설비 DB 를 못 읽었으면 None(페이지와 같은 판정)."""
-    if context.equipment_error or process is None:
-        return None
-    snapshot = context.snapshot
-    return dynamic_readiness(
-        snapshot.calculation_frames()[1] if snapshot is not None else None,
-        snapshot.baseline if snapshot is not None else None,
-        context.cutoff,
-        process=str(process),
-    )
-
-
-def _plan(
-    context: ScheduleModeContext, snapshot: EquipmentSnapshot
-) -> tuple[ShorteningPlan, MonthlyTarget]:
-    """공정 Capa 상세 ②·제약 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보기준)."""
-    page_inputs = context.page_inputs
-    months = list(page_inputs.months)
-    active_scenario = page_inputs.context.active_scenario
-    baseline, equipment, downtime = snapshot.calculation_frames()
-    target_level = target_from_thresholds(page_inputs.thresholds, months)
-    shortening_key = simulation_cache.required_shortening_cache_key(
-        page_inputs.capacity_cache_key,
-        equipment=equipment,
-        downtime=downtime,
-        baseline=baseline,
-        cutoff=context.cutoff,
-        months=tuple(months),
-        today=context.today,
-        manual_downtime=context.manual_downtime,
-    )
-    plan = simulation_cache.load_required_shortening_for_target(
-        simulation_cache.required_shortening_target_cache_key(shortening_key, target_level),
-        equipment,
-        downtime,
-        baseline,
-        context.cutoff,
-        required_equipment=simulation_cache.scenario_required_equipment(
-            page_inputs.capacity_cache_key,
-            scenario_tables=active_scenario["tables"],
-            reference_tables=page_inputs.context.reference_tables,
-        ),
-    )
-    return plan, target_level
-
-
 # ================================================================== 모드 한 회차
 
 
 def render_schedule_mode(context: ScheduleModeContext) -> None:
-    """조건 카드 → 설비 일정 확인 → 계획 → 계산 → 본문. 멈출 갈래는 까닭을 그리고 돌아온다."""
-    page_inputs = context.page_inputs
+    """조건 카드 → 설비 일정 확인 · 계획(제약 모드와 같은 함수) → 계산 → 본문. 멈출 갈래는 까닭을
+    그리고 돌아온다."""
+    source = context.source
+    page_inputs = source.page_inputs
     months = list(page_inputs.months)
     options = page_inputs.process_options
     process_labels = context.process_labels
@@ -638,9 +578,9 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
             disabled=not options,
             format_func=process_labels.unique_format_func(options),
         )
-        readiness = _readiness(context, None if selected is None else str(selected))
+        readiness = equipment_readiness(source, None if selected is None else str(selected))
         cutoff_days = readiness.cutoff_days if readiness is not None and readiness.ready else None
-        choice = _render_conditions(page_inputs, today=context.today, cutoff_days=cutoff_days)
+        choice = _render_conditions(page_inputs, today=source.today, cutoff_days=cutoff_days)
         st.caption(
             f"Cut-off {readiness.cutoff_days}일 — 가용설비 현황 「설정」 팝업의 공정별 "
             "값(모든 설비 시나리오 공용)"
@@ -654,49 +594,18 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
     process = str(selected)
     process_label = process_labels.label(process)
     bold = f"**{literal_markdown(process_label)}**"
-    if readiness is None:
-        context.render_header(process, f"{bold} :blue-badge[설비 일정 없음: 설비 DB 오류]")
-        context.render_reason_card(
-            "설비 일정 없음: 설비 DB 를 읽지 못했습니다",
-            context.equipment_error or "설비 DB 를 열지 못했습니다.",
-            equipment_link=False,
-        )
+    equipment_plan = render_equipment_plan(
+        source,
+        readiness,
+        process=process,
+        process_label=process_label,
+        subject="개조 일정",
+        render_header=context.render_header,
+        render_reason_card=context.render_reason_card,
+    )
+    if equipment_plan is None:
         return
-    snapshot = context.snapshot
-    if not readiness.ready or readiness.cutoff_days is None or snapshot is None:
-        context.render_header(process, f"{bold} :blue-badge[{readiness.badge}]")
-        context.render_reason_card(
-            readiness.badge,
-            f"{readiness.detail} 개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로 "
-            "계산하므로 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 적힌 공정에만 섭니다.",
-            equipment_link=True,
-        )
-        return
-    try:
-        plan, target_level = _plan(context, snapshot)
-    except BOOTSTRAP_ERRORS as exc:
-        context.render_header(process, f"{bold} :blue-badge[설비 일정 없음: 계산 오류]")
-        st.error(
-            "설비 일정을 계산하지 못했습니다 — "
-            + bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH))
-        )
-        return
-    if process not in plan.processes:
-        missing_cutoff = process in plan.missing_cutoff
-        context.render_header(process, f"{bold} :blue-badge[설비 일정 없음]")
-        context.render_reason_card(
-            "설비 일정 없음: Cut-off 미기재"
-            if missing_cutoff
-            else "설비 일정 없음: 계획에 공정 없음",
-            (
-                "가용설비 현황의 공정별 Cut-off 에 이 공정이 없습니다."
-                if missing_cutoff
-                else "설비 일정 기준 가용에 이 공정이 없습니다 — 설비 마스터 공정소분류·기존보유 "
-                "공정 이름이 시나리오 공정과 완전히 같아야 맞댑니다."
-            ),
-            equipment_link=True,
-        )
-        return
+    plan = equipment_plan.plan
 
     thresholds = page_inputs.thresholds
 
@@ -705,10 +614,10 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
             return float(thresholds.secure_for(month))
         return choice.general_percent / 100
 
-    cutoff = int(readiness.cutoff_days)
+    cutoff = equipment_plan.cutoff_days
     try:
         inputs = schedule_month_inputs(
-            plan.at(target_level).process_months,
+            plan.at(equipment_plan.target_level).process_months,
             process=process,
             months=months,
             general_target=general_target,
@@ -717,7 +626,7 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
             units=choice.units,
             days=choice.days,
             cutoff_days=cutoff,
-            earliest=earliest_day(choice.start_month, cutoff_days=cutoff, today=context.today),
+            earliest=earliest_day(choice.start_month, cutoff_days=cutoff, today=source.today),
             deadline=deadline_day(choice.deadline_month, cutoff_days=cutoff),
             concurrent=choice.concurrent,
             margin=choice.margin_points / 100,
@@ -890,11 +799,7 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
             key="constraint_sim_sched_kpi_deadline",
             tone=tone4,
             caption=caption4,
-            help=(
-                "기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다. 못 맞추면 남은 대수와, "
-                "기한(없으면 조회기간 끝) 안에 다 넣으려면 기준을 얼마나 낮춰야 하는지(「기준 n%p "
-                "낮추기」 — 0.01%p 올림이라 적힌 만큼 낮추면 들어갑니다)를 적습니다."
-            ),
+            help=DEADLINE_HELP,
         )
 
 

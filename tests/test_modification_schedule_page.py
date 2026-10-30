@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from dataclasses import replace
@@ -39,6 +40,7 @@ from capa_simulation.components.modification_schedule_figures import (
     shortfall_lines,
 )
 from capa_simulation.components.modification_schedule_view import (
+    DEADLINE_HELP,
     DOUBLE_COUNT_NOTE,
     FELL_BACK_LABEL,
     UNITS_HELP,
@@ -71,6 +73,7 @@ from capa_simulation.navigation import CONSTRAINT_SIMULATION
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.modification_schedule import (
+    ScheduleBatch,
     ScheduleConditions,
     ScheduleMonthInput,
     ScheduleResult,
@@ -80,6 +83,9 @@ from capa_simulation.services.required_shortening import plan_required_shortenin
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / CONSTRAINT_SIMULATION.path
+VIEW = PROJECT_ROOT / "src" / "capa_simulation" / "components" / "modification_schedule_view.py"
+SHARED = PROJECT_ROOT / "src" / "capa_simulation" / "components" / "constraint_equipment_plan.py"
+GUIDE = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "constraint_simulation.md"
 TODAY = date(2026, 1, 15)
 TODAY_LINE = "today = date.today()"
 SCHEDULE_KPIS = ["개조 완료", "최대 동시 개조", "개조 달 최저 여유", "기한"]
@@ -447,6 +453,8 @@ def test_a_process_without_equipment_stops_with_its_reason(databases: tuple[Path
     app = _schedule(databases, OTHER_PROCESS)
 
     assert "설비 일정 없음: 설비 없음" in " ".join(_markdown(app))
+    # 까닭 카드 풀이의 주어는 이 모드 이름이다(제약 모드와 같은 함수 — `render_equipment_plan`).
+    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in _captions(app)
     assert not app.metric
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4
 
@@ -499,6 +507,36 @@ def test_both_modes_share_one_plan_and_the_schedule_mode_writes_nothing(
     _ok(app.run())
     assert app.metric
     assert len(calls) == constraint_calls
+
+
+def _called_names(path: Path) -> set[str]:
+    """그 파일에서 부르는 이름(`f(...)` · `모듈.f(...)` 의 f)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                names.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                names.add(node.func.attr)
+    return names
+
+
+def test_both_modes_check_equipment_and_load_the_plan_through_one_function() -> None:
+    """설비 일정 판정 · 까닭 카드 · 계획 칸 받기는 두 모드가 함수 하나(`render_equipment_plan`)로
+    한다 — 페이지(제약 영향)와 개조 일정 컴포넌트가 같은 꼴의 블록을 따로 들면 한쪽만 고쳐져 두
+    모드의 멈춤 갈래 · 계획 키가 어긋난다."""
+    block = {
+        "dynamic_readiness",
+        "required_shortening_cache_key",
+        "load_required_shortening_for_target",
+        "get_process_equipment_timeline",
+    }
+    for path in (PAGE, VIEW):
+        called = _called_names(path)
+        assert not called & block, (path.name, sorted(called & block))
+        assert "render_equipment_plan" in called, path.name
+    assert block <= _called_names(SHARED)
 
 
 # ------------------------------------------------------------------ 그림·글 조각(순수)
@@ -615,6 +653,43 @@ def test_the_deadline_card_says_how_far_to_lower_the_target_as_a_positive_number
     assert "완화" not in shown
 
 
+def test_the_deadline_help_speaks_only_of_what_the_cell_writes() -> None:
+    """기한 칸 풍선은 칸이 실제로 적는 것만 말한다 — 「못 맞춤」 은 기한을 골랐을 때만 서므로
+    「기한(없으면 조회기간 끝)」 이라고 하지 않고, 낮출 폭은 기준을 낮춰 다 들어갈 때만 붙으며 0%
+    까지 낮춰도 못 넣으면 대안 셋이 까닭을 적는다(2026-10-26 리뷰)."""
+    app = AppTest.from_function(_kpi_app, default_timeout=30)
+    _ok(app.run())
+
+    deadline = next(metric for metric in app.metric if metric.label == "기한")
+    help_text = str(deadline.proto.help)
+    assert help_text == DEADLINE_HELP
+    assert "없으면 조회기간 끝" not in help_text
+    assert "기한을 고르지 않았으면 「없음」" in help_text
+    assert "다 넣을 수 있으면 그 폭도" in help_text
+    assert "폭 대신 그 까닭을 아래 「다 넣지 못했습니다 — 대안」" in help_text
+    # 풍선이 가리키는 카드 제목은 본문 그대로다.
+    view = VIEW.read_text(encoding="utf-8")
+    assert '":material/warning: **다 넣지 못했습니다 — 대안**"' in view
+
+
+def test_the_guide_says_the_found_range_line_the_screen_way() -> None:
+    """Guide 「다 넣지 못하면」 의 「이 계산으로 찾은 범위」 문장은 화면과 같이 둘로 갈린다 — 낮출
+    폭이 적혔으면 「더 넣거나 덜 낮춰도」 + 괄호, 까닭만 적혔으면 「더 넣거나 기준을 낮춰 다 넣을
+    수도」."""
+    guide = " ".join(GUIDE.read_text(encoding="utf-8").split())
+    with_relief = " ".join(shortfall_lines(_unfinished(_missed_by_relief()))[-1].split())
+    cause_only = " ".join(shortfall_lines(_unfinished(_capped_by_concurrency()))[-1].split())
+    assert "덜 낮춰도 될 수 있습니다(적힌" in with_relief
+    assert "더 넣거나 기준을 낮춰 다 넣을 수도 있습니다" in cause_only
+
+    assert "낮출 폭이 적혔으면 실제로는 더 넣거나 덜 낮춰도 될 수 있고" in guide
+    assert "까닭만 적혔으면 실제로는 더 넣거나 기준을 낮춰 다 넣을 수도 있습니다" in guide
+    # 옛 문장 — 조건 없이 「덜 낮춰도」 라고 했다.
+    assert (
+        "「이 계산으로 찾은 범위」 라는 줄이 붙습니다 — 실제로는 더 넣거나 덜 낮춰도" not in guide
+    )
+
+
 def test_the_written_relief_bracket_follows_only_a_relief_number() -> None:
     """탐색 한도에 걸린 대안 셋 — 「적힌 만큼 낮추면 들어간다」 괄호는 낮출 폭이 적혔을 때만 붙는다.
     동시 상한 같은 까닭만 적혔으면 적힌 폭이 없어 괄호도 「덜 낮춰도」 도 없다."""
@@ -656,3 +731,63 @@ def test_batch_bar_labels_hide_rather_than_shrink_below_the_minimum_size() -> No
         assert text == f"{batch.units}대" and index == number
         assert f"{batch.units}대 개조" in hover
         assert f"**{batch.units}대**" in batch_line(number, batch)
+
+
+def _stacked_result(starts: tuple[int, ...]) -> ScheduleResult:
+    """30일 차수가 `starts`(1월의 날)마다 1대씩 겹쳐 선 결과 — 차수 줄 수만 바꾼다(그림 시험용, 숫자
+    는 손계산 시험이 본다)."""
+    months = [ScheduleMonthInput(month, 10.0, 20.0, 1.0) for month in (202701, 202702, 202703)]
+    result = plan_modification_schedule(
+        months,
+        ScheduleConditions(units=1, days=30, cutoff_days=0, earliest=date(2027, 1, 1)),
+    )
+    batches = tuple(
+        ScheduleBatch(start=date(2027, 1, day), units=1, days=30, shares=((202701, 30),))
+        for day in starts
+    )
+    return replace(result, batches=batches)
+
+
+def _band_px(figure: Any) -> tuple[float, float, float]:
+    """(본 그림 칸 px, 차수 한 줄 막대 두께 px, 그림 높이 px) — 범례가 위 여백 안에 든다고 본다."""
+    layout = figure.layout
+    plot_px = layout.height - layout.margin.t - layout.margin.b
+    main = (layout.yaxis.domain[1] - layout.yaxis.domain[0]) * plot_px
+    band = (layout.yaxis2.domain[1] - layout.yaxis2.domain[0]) * plot_px
+    lane_low, lane_high = sorted(layout.yaxis2.range)
+    lanes = lane_high - lane_low
+    (bars,) = [trace for trace in figure.data if trace.orientation == "h"]
+    return main, band / lanes * bars.width[0], float(layout.height)
+
+
+def test_the_batch_band_grows_with_its_rows_so_bar_labels_fit() -> None:
+    """겹친 차수가 세 줄이면 띠를 그림 높이의 고정 비율로 둔 옛 꼴은 막대가 10px 라 11px 「N대」
+    가 늘 숨었다(사본 앱 Wafer Saw 4대 × 30일, 샘플 관측). 띠는 줄 수만큼 길어지고 본 그림 칸은
+    그대로다 — 막대는 글(11px) + Plotly 막대 안 글 여백 위아래 3px 이 드는 두께다."""
+    labels = ScheduleLabels(process_label="P", general_percent=100.0)
+    one = schedule_figure(_stacked_result((5,)), labels)
+    three = schedule_figure(_stacked_result((5, 10, 15)), labels)
+    (bars,) = [trace for trace in three.data if trace.orientation == "h"]
+    assert sorted(bars.y) == [0, 1, 2]
+
+    one_main, one_bar, one_height = _band_px(one)
+    three_main, three_bar, three_height = _band_px(three)
+    needed = bars.textfont.size + 2 * 3 + 1
+    assert one_bar >= needed and three_bar >= needed
+    assert three_main == pytest.approx(one_main, abs=0.5)
+    assert three_height > one_height
+    # 한 줄 띠는 다른 그림과 같은 높이(340px)다.
+    assert one_height == 340
+
+    # 차수가 없으면 띠도 없고 높이는 그대로다.
+    bare = schedule_figure(replace(_stacked_result((5,)), batches=()), labels)
+    assert bare.layout.height == 340
+    assert bare.layout.yaxis.domain == (0.0, 1.0)
+
+
+def test_a_very_tall_batch_band_stops_growing() -> None:
+    """줄이 아주 많으면 띠는 정한 높이에서 멈추고 줄이 얇아진다(글은 숨고 대수는 풍선 · 목록에)."""
+    labels = ScheduleLabels(process_label="P", general_percent=100.0)
+    tall = schedule_figure(_stacked_result(tuple(range(1, 21))), labels)
+    taller = schedule_figure(_stacked_result(tuple(range(1, 29))), labels)
+    assert tall.layout.height == taller.layout.height

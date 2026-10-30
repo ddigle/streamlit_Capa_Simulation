@@ -20,8 +20,12 @@ rate_figure`)와 같은 틀이다.
   않는다). 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%p) 미달」 이라고 적는다 — 그 달 확보율이
   기준 자체는 넘을 수 있다.
 - 아래 띠(y2): 차수마다 가로 막대 하나(`base` = 시작 위치, `x` = 길이, 글 = 대수). 겹치는 차수는
-  아래 줄로 내린다. 막대가 짧아 글이 하한(`_BAR_TEXT_MIN_PX`)보다 작아질 자리면 글을 숨긴다
-  (`uniformtext` hide — 읽을 수 없게 줄이지 않는다). 대수는 그 막대 풍선과 차수 목록에 늘 있다.
+  아래 줄로 내린다. **띠 높이는 줄 수를 따른다**(`_band_layout` — 줄마다 `_LANE_PX`, 한 줄이면
+  `_BAND_MIN_PX`) — 본 그림 칸 높이는 그대로 두고 그림이 그만큼 길어진다. 띠를 그림 높이의 고정
+  비율로 두면 세 줄에서 막대가 10px 로 줄어 11px 글이 늘 숨었다(사본 앱 Wafer Saw 4대 × 30일, 샘플
+  관측). 줄이 `_BAND_MAX_LANES` 를 넘으면 띠는 그 높이에서 멈추고 줄이 얇아진다. 막대가 짧아 글이
+  하한(`_BAR_TEXT_MIN_PX`)보다 작아질 자리면 글을 숨긴다(`uniformtext` hide — 읽을 수 없게 줄이지
+  않는다). 대수는 그 막대 풍선과 차수 목록에 늘 있다.
 - 달마다 보이지 않는 표적 막대(`HIT_TARGET`)가 풍선을 받는다. 누름은 받지 않는다(이 모드는 달을
   고르지 않는다).
 
@@ -73,11 +77,23 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 3
+SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 4
 _MARGIN_LEFT_PX: Final = 52
 _MARGIN_RIGHT_PX: Final = 76
-_BAND_TOP: Final = 0.14
-_MAIN_BOTTOM: Final = 0.22
+_MARGIN_TOP_PX: Final = 36
+_MARGIN_BOTTOM_PX: Final = 28
+# 아래 띠가 설 때의 세로 자리(px) — 본 그림 칸 · 띠와 본 그림 사이 · 띠. 한 줄 띠면 그림 높이가
+# `CHART_HEIGHT_PX`(340)이고 본 그림 칸은 띠가 없을 때와 같은 꼴이다. 줄이 늘면 띠만 길어진다.
+_MAIN_PLOT_PX: Final = 216
+_BAND_GAP_PX: Final = 22
+_BAND_MIN_PX: Final = 38
+# 띠 한 줄 높이(px). 막대는 줄 칸의 0.8(`_BAR_WIDTH`)이라 21px 이다 — 11px 글(글 상자 12px)과
+# Plotly 막대 안 글 여백 위아래 3px 씩이 들어간다. 그림 칸은 세운 달 눈금 · 범례 줄바꿈의 자동
+# 여백만큼 줄어 막대가 그보다 얇다 — 24px 줄은 1280 · 390px 창에서 막대 17px 로 글이 하한에 겨우
+# 걸렸다(사본 앱 Wafer Saw, 샘플 관측). `_BAND_MAX_LANES` 보다 많은 줄은 띠를 더 키우지 않는다.
+_LANE_PX: Final = 26
+_BAND_MAX_LANES: Final = 10
+_BAR_WIDTH: Final = 0.8
 _BLOCKED_OPACITY: Final = 0.10
 _CLOSED_OPACITY: Final = 0.06
 # 배치 기준선을 기준선과 따로 그리는 차이(%p) — 이보다 작으면 같은 선이다.
@@ -255,6 +271,14 @@ def _lanes(spans: Sequence[tuple[float, float]]) -> list[int]:
     return chosen
 
 
+def _band_layout(lane_count: int) -> tuple[int, list[float], list[float]]:
+    """띠가 설 때의 그림 높이(px)와 본 그림 · 띠의 y 도메인 — 띠 높이가 줄 수를 따른다."""
+    band_px = max(_BAND_MIN_PX, min(lane_count, _BAND_MAX_LANES) * _LANE_PX)
+    plot_px = _MAIN_PLOT_PX + _BAND_GAP_PX + band_px
+    height = plot_px + _MARGIN_TOP_PX + _MARGIN_BOTTOM_PX
+    return height, [(band_px + _BAND_GAP_PX) / plot_px, 1.0], [0.0, band_px / plot_px]
+
+
 def _hover(row: ScheduleMonth, margin: float) -> str:
     parts = [
         f"<b>{html.escape(month_label(row.month))}</b>"
@@ -311,13 +335,16 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
 
     batches = result.batches
     has_band = bool(batches)
-    main_domain = [_MAIN_BOTTOM, 1.0] if has_band else [0.0, 1.0]
     spans = [
         (day_position(batch.start, months, cutoff), day_position(batch.end, months, cutoff))
         for batch in batches
     ]
     lanes = _lanes(spans)
     lane_count = max(lanes, default=0) + 1
+    if has_band:
+        height, main_domain, band_domain = _band_layout(lane_count)
+    else:
+        height, main_domain, band_domain = CHART_HEIGHT_PX, [0.0, 1.0], [0.0, 0.0]
 
     data: list[dict[str, Any]] = [
         {
@@ -377,7 +404,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
                 "x": [end - start for start, end in spans],
                 "base": [start for start, _ in spans],
                 "y": lanes,
-                "width": [0.8] * len(spans),
+                "width": [_BAR_WIDTH] * len(spans),
                 "yaxis": "y2",
                 "marker": {
                     "color": tokens.STATUS_WARNING,
@@ -397,8 +424,13 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
         )
 
     layout: dict[str, Any] = {
-        "height": CHART_HEIGHT_PX,
-        "margin": {"l": _MARGIN_LEFT_PX, "r": _MARGIN_RIGHT_PX, "t": 36, "b": 28},
+        "height": height,
+        "margin": {
+            "l": _MARGIN_LEFT_PX,
+            "r": _MARGIN_RIGHT_PX,
+            "t": _MARGIN_TOP_PX,
+            "b": _MARGIN_BOTTOM_PX,
+        },
         "paper_bgcolor": tokens.CHART_CANVAS,
         "plot_bgcolor": tokens.SURFACE,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
@@ -447,7 +479,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
     }
     if has_band:
         layout["yaxis2"] = {
-            "domain": [0.0, _BAND_TOP],
+            "domain": band_domain,
             "range": [lane_count - 0.5, -0.5],
             "visible": False,
             "fixedrange": True,
