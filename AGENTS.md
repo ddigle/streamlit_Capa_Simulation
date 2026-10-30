@@ -2332,7 +2332,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   저장 칸 체크를 따르는 새 호기 · 새 비가동 — 팝업 후보 수와 같은 셈이라 넓을 수는 있어도 좁지 않다)만 「함께 넣은 공식 리비전
   발행」(기본 켬)이 서고(G1 — 공식 발행까지 가는 저장은 끌 수 있어야 한다), 없으면 뜻 없는 체크를 그리지 않는다(E2E #135,
   그리지 않은 체크는 거짓 — 발행할 것이 없다. 콜백으로 칸을 다시 읽는 탭 「리비전 저장」 은 `save_fields_from_state(...,
-  reach_rule=True)`, Space 는 `assumption=True` 로 같게 읽는다). 가정 세션 「함께 넣기」 기본값이 자리마다 다른 것(탭·팝업 켬 F6 ·
+  reach_rule=True)`, Space 는 `assumption=True` 로 같게 읽는다. 공식 발행이 하나도 없으면 넣을 것과 상관없이 「공식 v1 이
+  됩니다」 한 줄이다 — 저장소가 그때 이 저장의 일정 리비전을 v1 로 낸다). 가정 세션 「함께 넣기」 기본값이 자리마다 다른 것(탭·팝업 켬 F6 ·
   Space 끔 Q1)은 사용자 결정 대기다(TODO 「가정 세션 「함께 넣기」 기본값」). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다

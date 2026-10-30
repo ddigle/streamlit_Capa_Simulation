@@ -18,7 +18,8 @@
   체크를 따르는 새 호기·새 비가동이 체크로 켜 있음)만 「함께 넣은 공식 리비전 발행」(기본 켬)이
   선다. 만들 수 없으면 발행할 것이 없어 그리지 않는다 — 가정 세션 팝업에 뜻 없이 서던 체크(E2E
   #135)와, Space 에서 「새 호기」 칸 고름·새 비가동이 공식에 들어가는데 발행 체크가 숨어 말없이
-  발행하지 않던 것(옛 「함께 넣기를 켤 때만」)을 함께 맞춘다.
+  발행하지 않던 것(옛 「함께 넣기를 켤 때만」)을 함께 맞춘다. 공식 발행이 하나도 없으면 넣을 것과
+  상관없이 「공식 v1 이 됩니다」 한 줄이다(저장소가 그때 이 저장의 일정 리비전을 v1 로 낸다).
 """
 
 from __future__ import annotations
@@ -118,7 +119,8 @@ def render_equipment_save_fields(
     `prefix` 로 칸 key 를 가른다 — 세 저장 자리(설비 마스터 탭·사이드바 팝업·Space 저장 칸)가 서로의
     값을 덮지 않게. 저장자는 세션에 남아 다음 저장에 그대로 선다(같은 사람이 이어 저장한다).
     발행 체크는 가정 설비 시나리오 세션에도 선다 — 그 저장이 공식 시나리오에 새 리비전을 만드는
-    길은 함께 넣기뿐이지만, 그때도 공식 발행을 끌 수 있어야 한다(G1 「저장 칸에서 끌 수 있음」).
+    길은 함께 넣기뿐이지만, 그때도 공식 발행을 끌 수 있어야 한다(G1 「저장 칸에서 끌 수 있음」 —
+    넣을 것이 있을 때만, 아래 `reach`).
     `release_exists` 가 거짓이면(공식 발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을
     둔다 — 저장소가 첫 일정 리비전을 늘 공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
 
@@ -207,13 +209,16 @@ def _reach_publish(
 ) -> bool:
     """가정 세션 발행 체크(모듈 설명) — 공식에 넣을 것이 있을 때만 「함께 넣은 공식 리비전 발행」.
     없으면 그리지 않고 거짓을 돌려준다(발행할 리비전이 생기지 않는다 — 세션에서 다시 읽는
-    `save_fields_from_state` 도 그리지 않은 칸은 거짓). 발행이 하나도 없으면 체크 대신 「공식 v1 이
-    됩니다」 한 줄이다."""
-    if not reach.reaches(units=units, downtime=downtime):
-        return False
+    `save_fields_from_state` 도 그리지 않은 칸은 거짓).
+
+    발행이 하나도 없으면 `reach` 와 상관없이 체크 대신 「공식 v1 이 됩니다」 한 줄이다 — 저장소는
+    그때 이 저장의 일정 리비전을 함께 넣기 없이도 공식 v1 로 낸다(`_plan_publish`). 넣을 것이 없다고
+    이 한 줄까지 숨기면 말없는 발행이 된다."""
     if not release_exists:
         st.caption(f":material/verified: {FIRST_RELEASE_NOTE}")
         return True
+    if not reach.reaches(units=units, downtime=downtime):
+        return False
     return bool(st.checkbox(ASSUMPTION_PUBLISH_LABEL, value=DEFAULT_PUBLISH_OFFICIAL, key=key))
 
 

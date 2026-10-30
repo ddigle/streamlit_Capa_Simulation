@@ -52,6 +52,7 @@ from capa_simulation.components.equipment_data_workspace import (
     save_result_message,
 )
 from capa_simulation.components.equipment_save_fields import (
+    FIRST_RELEASE_NOTE,
     EquipmentSaveFields,
 )
 from capa_simulation.components.space_floor_list import (
@@ -864,6 +865,25 @@ def test_an_assumption_publish_box_stands_only_when_the_save_reaches_the_officia
         [("함께 넣은 공식 리비전 발행", True)] if expected else []
     )
     assert script.session_state["seen"].publish_official is expected
+
+
+@pytest.mark.parametrize("assumption", [True, False], ids=["space", "tab-popup"])
+def test_an_assumption_save_without_any_release_keeps_the_first_release_note(
+    assumption: bool,
+) -> None:
+    """공식 발행이 하나도 없으면 저장소가 이 저장의 일정 리비전을 함께 넣기 없이도 공식 v1 로
+    낸다 — 가정 세션 저장 칸도 넣을 것이 없다고 「공식 v1 이 됩니다」 한 줄까지 숨기지
+    않는다(I53 후속, 말없는 발행을 막는 같은 뜻). 체크는 서지 않는다."""
+    script = AppTest.from_string(
+        _REACH_SCRIPT.format(assumption=assumption, reach="").replace(
+            "reach=OfficialReach()", "reach=OfficialReach(), release_exists=False"
+        ),
+        default_timeout=30,
+    ).run()
+    assert not script.exception
+    assert not [box for box in script.checkbox if "_publish" in str(box.key)]
+    assert any(FIRST_RELEASE_NOTE in str(item.value) for item in script.caption)
+    assert script.session_state["seen"].publish_official is True
 
 
 def test_the_assumption_fields_default_when_nothing_was_drawn() -> None:
