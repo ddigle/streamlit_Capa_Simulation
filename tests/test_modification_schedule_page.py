@@ -786,8 +786,15 @@ def test_the_batch_band_grows_with_its_rows_so_bar_labels_fit() -> None:
 
 
 def test_a_very_tall_batch_band_stops_growing() -> None:
-    """줄이 아주 많으면 띠는 정한 높이에서 멈추고 줄이 얇아진다(글은 숨고 대수는 풍선 · 목록에)."""
+    """줄이 아주 많으면 띠는 정한 높이에서 멈추고 줄이 얇아진다(글은 숨고 대수는 풍선 · 목록에).
+    띠가 자라지 않는 그림(고정 비율 띠)도 「멈춘다」 를 지나므로 그 앞에서 자랐는지도 본다."""
     labels = ScheduleLabels(process_label="P", general_percent=100.0)
+    three = schedule_figure(_stacked_result((5, 10, 15)), labels)
     tall = schedule_figure(_stacked_result(tuple(range(1, 21))), labels)
     taller = schedule_figure(_stacked_result(tuple(range(1, 29))), labels)
-    assert tall.layout.height == taller.layout.height
+    assert sorted(set(next(t for t in taller.data if t.orientation == "h").y)) == list(range(28))
+    # 세 줄에서 스물 줄까지는 자라고, 그 뒤(스물여덟 줄)는 같은 높이에 줄만 더 든다.
+    assert three.layout.height < tall.layout.height == taller.layout.height
+    _, tall_bar, _ = _band_px(tall)
+    _, taller_bar, _ = _band_px(taller)
+    assert taller_bar < tall_bar
