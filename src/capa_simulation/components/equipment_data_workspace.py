@@ -3831,6 +3831,8 @@ def _render_common_history(
     with st.expander(
         f"공통 대장 저장 이력 {len(commons):,}건", expanded=False, key=COMMON_HISTORY_EXPANDER_KEY
     ):
+        # 펼침 첫 표 — 도구 막대가 펼침 머리 오른쪽 끝 누름을 먹지 않게 띄운다(AGENTS 9장).
+        toolbar_clearance()
         st.dataframe(
             pd.DataFrame(
                 [
