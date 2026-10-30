@@ -356,6 +356,20 @@ def test_an_inactive_floor_block_keeps_a_dark_dashed_frame_and_a_mark_when_narro
     assert "blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)" in JS
 
 
+def test_a_selected_inactive_block_keeps_the_accent_frame_in_the_fab_editor() -> None:
+    """FAB 편집기에서는 비활성 블록도 고르고 묶는다. 점선 테 규칙은 고름 테(`.is-selected`·
+    `.is-grouped`)와 같은 무게라 뒤에 오면 고른 블록의 강조색 테를 덮는다 — 비활성 블록의 고름 테
+    규칙이 점선 테보다 무겁고 뒤에 있어야 한다."""
+    selector = (
+        ".mark-block.is-inactive.is-selected .sle-block-border, "
+        ".mark-block.is-inactive.is-grouped .sle-block-border"
+    )
+    picked = _rule(selector)
+    assert "stroke: var(--sle-accent)" in picked and "stroke-width: 3" in picked
+    assert CSS.index(".mark-block.is-inactive .sle-block-border {") < CSS.index(selector)
+    assert CSS.index(".mark-block.is-selected .sle-block-border") < CSS.index(selector)
+
+
 def test_a_narrow_floor_viewer_moves_its_summary_to_a_second_line() -> None:
     """390px 층 상세에서 확대 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 도구 줄 밖으로 밀려 보이지
     않았다(E2E r1). 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 ⑥(둘째 줄)이고, 둘째 줄의
