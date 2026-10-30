@@ -115,3 +115,32 @@ def test_the_summary_says_how_much_demand_the_required_count_left_out() -> None:
     assert not any(
         "소요대수에 들지 않은 수요" in str(element.value) for element in clean.main.warning
     )
+
+
+def test_the_summary_leaves_the_route_side_count_to_the_alert_board(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """현황 요약 맨 위 줄은 계획 쪽 건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을
+    고치지 않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 열 때마다 서는 경고가 된다. 경로
+    쪽만 있으면 줄이 없고, 함께 있으면 계획 쪽만 적는다(페이지는 exec 때 이름을 집으므로 모듈 속성을
+    바꾸면 그 셈이 들어간다)."""
+    import capa_simulation.services.required_equipment as required_equipment
+
+    counts = [required_equipment.RequiredExclusionCounts(excluded_routes=7)]
+
+    def counted(*_lists: object) -> required_equipment.RequiredExclusionCounts:
+        return counts[0]
+
+    monkeypatch.setattr(required_equipment, "count_required_exclusions", counted)
+    routes_only = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(routes_only.exception), [item.message for item in routes_only.exception]
+    assert not any(
+        "소요대수에 들지 않은 수요" in str(element.value) for element in routes_only.main.warning
+    )
+
+    counts[0] = required_equipment.RequiredExclusionCounts(unrouted_loads=2, excluded_routes=7)
+    both = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(both.exception), [item.message for item in both.exception]
+    warnings = [str(element.value) for element in both.main.warning]
+    assert any("RQ_REQB 경로에 닿지 않은 계획 부하 2건" in text for text in warnings), warnings
+    assert not any("대당 Capa 가 없어 뺀 부하 경로" in text for text in warnings), warnings

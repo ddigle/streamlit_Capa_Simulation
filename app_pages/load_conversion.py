@@ -41,6 +41,7 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
+    plan_side_counts,
     required_exclusion_message,
 )
 from capa_simulation.components.scenario_edit_bar import (
@@ -322,7 +323,14 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     현황 요약 수가 그대로라 「고쳤는데 안 바뀐다」 고 헷갈렸다(E2E r2 static #57, 개선 I38). 셈은
     저장·발행 검사·Admin 「알림 모음」 과 같은 시나리오 전체 기간 결과(`get_full_capacity_outcome`
     — 적용으로 내용 토큰이 바뀌어 여기서 처음 계산하면 HOME·산출 결과가 그 결과를 그대로 쓴다)다.
-    계산이 멈추면 그 오류는 계산 화면들이 말하므로 여기서는 말하지 않는다.
+    계산이 멈추면 그 오류는 계산 화면들이 말하므로 여기서는 말하지 않는다. 계획 쪽 건수만 싣는다
+    (`plan_side_counts` — 경로 쪽 「대당 Capa 가 없어 뺀 부하 경로」 는 계획을 고치지 않아도 늘 있을
+    수 있어 적용할 때마다 서는 경고가 된다).
+
+    **PKG PLAN 편집표를 그린 뒤에 부른다.** 칸은 편집표 위에 이미 서 있고 글만 나중에 채운다 —
+    그 전에 부르면 적용 직후 시나리오 전체 기간 계산(합성 표본 DB 사본의 리비전 하나에 0.5~1.4초 —
+    `inspect_revision_calculations.py`, 샘플 관측)이 끝날 때까지 편집표가 서지 않아 다음 편집을
+    기다리게 했다.
     """
     scenario = context.active_scenario
     try:
@@ -337,7 +345,7 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     if outcome.error is not None or outcome.required_equipment is None:
         return
     message = required_exclusion_message(
-        required_exclusion_counts(outcome.required_equipment), scope=FULL_SCOPE
+        plan_side_counts(required_exclusion_counts(outcome.required_equipment)), scope=FULL_SCOPE
     )
     if message:
         slot.warning(message, icon=":material/link_off:")
@@ -629,7 +637,9 @@ with pkg_plan_tab:
     # 적용이 막힌 까닭도 작업 줄 바로 아래다 — 적용 처리는 표 뒤에서 돌지만 알림은 여기 선다.
     plan_notice = st.empty()
     # 적용 알림이 서는 회차(담아 둔 알림, 또는 쓰기 직후 창 안에서 다시 그리는 알림)에는 같은 칸
-    # 맨 아래에 소요대수에 들지 않은 수요도 적는다 — 칸 안이라 편집표 자리가 밀리지 않는다.
+    # 맨 아래에 소요대수에 들지 않은 수요도 적는다 — 칸 안이라 편집표 자리가 밀리지 않는다. 그
+    # 셈(시나리오 전체 기간 계산)은 편집표를 그린 **뒤**에 한다(아래) — 앞에서 하면 적용 직후 그
+    # 계산이 끝날 때까지 편집표가 서지 않는다.
     applied_notice_shown = (
         pending_flash(PLAN_APPLIED_FLASH_KEY) is not None
         or held_flash(PLAN_APPLIED_FLASH_KEY) is not None
@@ -637,8 +647,6 @@ with pkg_plan_tab:
     plan_flash_slot = render_flash(
         PLAN_APPLIED_FLASH_KEY, PLAN_PASTE_FLASH_KEY, PRODUCT_REGISTERED_FLASH_KEY
     )
-    if applied_notice_shown:
-        _render_uncounted_demand_after_apply(context, plan_flash_slot)
     if _dialog_is_open(PLAN_PASTE_DIALOG):
         _plan_paste_dialog(
             plan_editor_source,
@@ -688,6 +696,9 @@ with pkg_plan_tab:
             },
         },
     )
+    # 적용 알림 칸(위) 맨 아래의 소요대수에 들지 않은 수요 — 편집표를 다 그린 뒤에 센다.
+    if applied_notice_shown:
+        _render_uncounted_demand_after_apply(context, plan_flash_slot)
 
 simulation_plan = filtered_plan
 

@@ -19,6 +19,7 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
     PERIOD_SCOPE,
+    plan_side_counts,
     required_exclusion_message,
 )
 from capa_simulation.components.status_metric import (
@@ -214,18 +215,21 @@ try:
         securement_rate, thresholds=thresholds
     )
     # 소요대수에 들지 않은 수요(조회기간) — 경로 없는 칸에 넣은 계획 부하처럼 고쳐도 아래 수가
-    # 바뀌지 않는 까닭을 이 화면에서도 말한다. 요약은 산출 결과와 같은 키의 작은 캐시다(적중이면
-    # 소요대수 프레임을 풀지 않는다).
+    # 바뀌지 않는 까닭을 이 화면에서도 말한다. 계획 쪽 건수만이다(`plan_side_counts` — 경로 쪽은
+    # 늘 서는 경고가 된다). 요약은 산출 결과와 같은 키의 작은 캐시다(적중이면 소요대수 프레임을
+    # 풀지 않는다).
     result_summary = get_scenario_result_summary(
         capacity_cache_key,
         _scenario_tables=active_scenario["tables"],
         _reference_tables=reference_tables,
     )
     uncounted_demand = required_exclusion_message(
-        count_required_exclusions(
-            result_summary.load_exclusions,
-            result_summary.unrouted_loads,
-            result_summary.required_exclusions,
+        plan_side_counts(
+            count_required_exclusions(
+                result_summary.load_exclusions,
+                result_summary.unrouted_loads,
+                result_summary.required_exclusions,
+            )
         ),
         scope=PERIOD_SCOPE,
     )
