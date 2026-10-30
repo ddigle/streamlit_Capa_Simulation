@@ -22,8 +22,9 @@
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 탭 줄 밖의 떠나기인 테마
 // 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`).
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
-// 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(공식 발행 쌍이
-// 아닌 설비 시나리오 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은 문서에서 한 번 알린다(`<tabs-return>`).
+// 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
+// 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
+// 문서에서 한 번 알린다(`<tabs-return>`).
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
@@ -46,10 +47,12 @@ const DOUBLE_PRESS_MS = 500
 const DOUBLE_PRESS_PX = 8
 // 넘친 목록 가장자리 흐림 폭(`page_tabs.css` 의 2rem). 지금 탭을 보이게 굴릴 때도 이만큼 띄워 흐림 밖에 둔다.
 const EDGE_PX = 32
-// 새로 읽으면 공식으로 돌아갈 설비 시나리오(띠 CSS 변수 — 파이썬 `app_header.EQUIPMENT_RETURN_VARIABLE`)와, 문서를 떠날 때
-// 그 값을 적는 이 탭의 `sessionStorage` 칸. 테마 단추는 새로 읽기 직전에 `THEME_SWITCH_KEY`(파이썬
-// `theme_toggle.THEME_SWITCH_STORAGE_KEY`)를 남겨 알림 글을 가른다.
+// 새로 읽으면 공식으로 돌아갈 설비 시나리오(띠 CSS 변수 둘 — 파이썬 `app_header.EQUIPMENT_RETURN_VARIABLE` 은 테마 단추
+// 몫으로 공식 발행 쌍이 아니면 모두, `EQUIPMENT_RELOAD_RETURN_VARIABLE` 은 새로고침 몫으로 가정 설비 시나리오만)와, 문서를
+// 떠날 때 그 값을 적는 이 탭의 `sessionStorage` 칸. 테마 단추는 새로 읽기 직전에 `THEME_SWITCH_KEY`(파이썬
+// `theme_toggle.THEME_SWITCH_STORAGE_KEY`)를 남겨 읽을 변수와 알림 글을 가른다.
 const RETURN_VARIABLE = '--capa-equipment-return'
+const RELOAD_RETURN_VARIABLE = '--capa-equipment-return-reload'
 const RETURN_KEY = 'capa-equipment-return'
 const THEME_SWITCH_KEY = 'capa-theme-switch'
 const RETURN_NOTICE_MS = 15000
@@ -242,9 +245,11 @@ function refocusAfterMove(pressAt, inputAt, lost, running, now, ms) {
 
 // <tabs-return>
 // 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」. `returnMark` 는 띠 CSS 변수 값(따옴표 친 퍼센트 인코딩 글,
-// 공식 발행 쌍이면 `none`)을 이름 글로 푼다 — 못 읽으면 빈 글. `returnRecord` 는 문서를 떠날 때 적을 값이다 — 이름이 있으면
-// `{label, cause}`(테마 단추면 'theme', 아니면 'reload'), 없으면 null(적어 둔 것을 그대로 둔다 — 알리기 전에 떠난 문서의
-// 몫을 지우지 않는다). `returnNotice` 는 적어 둔 값으로 알릴 글을 짓는다(`text.themed`·`text.returned` 의 `{label}`).
+// 알릴 것이 없으면 `none`)을 이름 글로 푼다 — 못 읽으면 빈 글. `returnRecord` 는 문서를 떠날 때 적을 값이다 — 떠나는 까닭에
+// 맞는 변수(테마 단추면 `theme` — 공식 발행 쌍이 아니던 모든 세션, 새로고침이면 `reload` — 가정 설비 시나리오였던 세션만)에
+// 이름이 있으면 `{label, cause}`(테마 단추면 'theme', 아니면 'reload'), 없으면 null(적어 둔 것을 그대로 둔다 — 알리기 전에
+// 떠난 문서의 몫을 지우지 않는다). `returnNotice` 는 적어 둔 값으로 알릴 글을 짓는다(`text.themed`·`text.returned` 의
+// `{label}`).
 function returnMark(raw) {
   const match = /^\s*(["'])(.*)\1\s*$/.exec(String(raw || ''))
   if (!match) return ''
@@ -254,7 +259,8 @@ function returnMark(raw) {
     return ''
   }
 }
-function returnRecord(label, themed) {
+function returnRecord(theme, reload, themed) {
+  const label = returnMark(themed ? theme : reload)
   return label ? JSON.stringify({ label, cause: themed ? 'theme' : 'reload' }) : null
 }
 function returnNotice(stored, text) {
@@ -679,8 +685,9 @@ export default function (component) {
     flash(message.text)
   }
 
-  // 새로 읽은 문서 — 앞 문서의 세션이 공식 발행 쌍이 아닌 설비 시나리오였으면 한 번 알린다(`<tabs-return>`). 문서에 한
-  // 번이다(탭 줄이 다시 마운트돼도). 알린 칸은 잠시 뒤 지운다 — 그 전에 문서가 떠나면 다음 문서가 다시 알린다.
+  // 새로 읽은 문서 — 앞 문서가 적어 둔 설비 시나리오(테마 단추면 공식 발행 쌍이 아니던 것, 새로고침이면 가정이던 것)를
+  // 한 번 알린다(`<tabs-return>`). 문서에 한 번이다(탭 줄이 다시 마운트돼도). 알린 칸은 잠시 뒤 지운다 — 그 전에 문서가
+  // 떠나면 다음 문서가 다시 알린다.
   if (!window.__capaReturnChecked) {
     window.__capaReturnChecked = true
     let stored = null
@@ -710,8 +717,12 @@ export default function (component) {
         const storage = window.sessionStorage
         const themed = storage.getItem(THEME_SWITCH_KEY) !== null
         storage.removeItem(THEME_SWITCH_KEY)
-        const raw = window.getComputedStyle(document.documentElement).getPropertyValue(RETURN_VARIABLE)
-        const record = returnRecord(returnMark(raw), themed)
+        const style = window.getComputedStyle(document.documentElement)
+        const record = returnRecord(
+          style.getPropertyValue(RETURN_VARIABLE),
+          style.getPropertyValue(RELOAD_RETURN_VARIABLE),
+          themed,
+        )
         if (record !== null) storage.setItem(RETURN_KEY, record)
       } catch (error) { /* 저장소를 못 쓰면 알리지 않는다 */ }
     })

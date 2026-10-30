@@ -3201,7 +3201,7 @@ def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
     latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
     return (
         f"「{basis.scenario_name}」 {latest}{subject_particle(latest)} 더 새롭습니다 — 지금 보는 "
-        f"r{basis.revision_no} 에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가, "
+        f"r{basis.revision_no}에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가, "
         "호기·비가동 지우기를 잠갔습니다. 일정을 고치거나 호기를 지우려면 사이드바 "
         f"「설비 시나리오」 에서 최신 {with_object_particle(latest)} 불러오세요. 공통 칸(기존 "
         "보유대수 지우기 포함)은 그대로 고쳐 저장됩니다 — 낡기 전에 고친 일정·시나리오 메모 칸은 "

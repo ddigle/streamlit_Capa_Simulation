@@ -838,11 +838,16 @@ out.marks = [
   returnMark(''),
   returnMark('"%%E3%%80"'),
 ]
-// 떠날 때 적을 값 — 이름이 없으면 적지 않는다(앞 문서 몫을 지우지 않는다).
+// 떠날 때 적을 값 — 떠나는 까닭에 맞는 변수(테마 단추 몫, 새로고침 몫)를 읽고, 이름이 없으면 적지
+// 않는다(앞 문서 몫을 지우지 않는다).
+const named = '"%%E3%%80%%8C%%EC%%85%%8B%%EC%%97%%85%%20B%%E3%%80%%8D%%20r8"'
 out.records = [
-  returnRecord('「셋업 B」 r8', true),
-  returnRecord('「셋업 B」 r8', false),
-  returnRecord('', true),
+  returnRecord(named, named, true),
+  returnRecord(named, named, false),
+  returnRecord('none', 'none', true),
+  // 공식 시나리오의 옛 리비전 — 테마 단추 몫에만 이름이 있다(새로고침은 가정일 때만).
+  returnRecord(named, 'none', false),
+  returnRecord(named, 'none', true),
 ]
 // 새로 읽은 문서의 알림 — 테마 단추와 새로고침이 다른 글이다. 적어 둔 값이 없거나 꼴이
 // 어긋나면 알리지 않는다.
@@ -859,9 +864,10 @@ process.stdout.write(JSON.stringify(out))
 
 def test_a_reloaded_document_tells_once_that_the_equipment_scenario_went_back_to_official() -> None:
     """테마 단추·새로고침은 새 세션이라 가정 설비 시나리오가 아무 확인 없이 공식으로 돌아갔다(E2E
-    1~3회차 — 「셋업 실무 r8 → 운영 일정 r6 공식 v3」, 개선 거리 I1). 앞 세션이 공식 발행 쌍이 아닐
-    때만 띠 CSS 변수에 그 이름이 실리고, 문서를 떠날 때 적어 새로 읽은 문서가 한 번 알린다 — 새
-    세션마다 알리지 않는다."""
+    1~3회차 — 「셋업 실무 r8 → 운영 일정 r6 공식 v3」, 개선 거리 I1). 띠 CSS 변수에 그 이름이
+    실리고(테마 단추 몫은 공식 발행 쌍이 아니면 모두, 새로고침 몫은 가정일 때만), 문서를 떠날 때
+    까닭에 맞는 몫을 적어 새로 읽은 문서가 한 번 알린다 — 새 세션마다 알리지 않는다. 공식
+    시나리오 옛 리비전을 보던 F5 는 적지 않는다(E2E 10-31)."""
     out = _node(_RETURN_RUNNER % json.dumps(page_tabs.TEXT, ensure_ascii=False))
 
     assert out["marks"] == ["「셋업 B」 r8", "가", "", "", ""]
@@ -869,6 +875,8 @@ def test_a_reloaded_document_tells_once_that_the_equipment_scenario_went_back_to
         {"label": "「셋업 B」 r8", "cause": "theme"},
         {"label": "「셋업 B」 r8", "cause": "reload"},
         None,
+        None,
+        {"label": "「셋업 B」 r8", "cause": "theme"},
     ]
     themed, reloaded, *rest = out["notices"]
     assert themed == page_tabs.THEME_RETURN_NOTICE.format(label="「셋업 B」 r8")
@@ -880,10 +888,19 @@ def test_a_reloaded_document_tells_once_that_the_equipment_scenario_went_back_to
 def test_the_return_notice_reads_the_header_variable_and_the_theme_switch_mark() -> None:
     """변수 이름은 띠(`app_header`)와, 테마 표지는 테마 단추(`theme_toggle`)와 같은 글이다. 떠날 때
     적는 처리기와 알리기는 문서에 하나다(탭 줄이 다시 마운트돼도 두 번 알리지 않는다)."""
-    from capa_simulation.components.app_header import EQUIPMENT_RETURN_VARIABLE
+    from capa_simulation.components.app_header import (
+        EQUIPMENT_RELOAD_RETURN_VARIABLE,
+        EQUIPMENT_RETURN_VARIABLE,
+    )
     from capa_simulation.components.theme_toggle import THEME_SWITCH_STORAGE_KEY
 
     assert f"const RETURN_VARIABLE = '{EQUIPMENT_RETURN_VARIABLE}'" in JS
+    assert f"const RELOAD_RETURN_VARIABLE = '{EQUIPMENT_RELOAD_RETURN_VARIABLE}'" in JS
+    # 떠날 때 두 몫을 다 읽어 까닭(테마 표지)으로 고른다.
+    leave = JS[JS.index("window.addEventListener('pagehide',") :]
+    leave = leave[: leave.index("})")]
+    assert "style.getPropertyValue(RETURN_VARIABLE)" in leave
+    assert "style.getPropertyValue(RELOAD_RETURN_VARIABLE)" in leave
     assert f"const THEME_SWITCH_KEY = '{THEME_SWITCH_STORAGE_KEY}'" in JS
     assert "if (!window.__capaReturnWatch) {" in JS
     assert "window.addEventListener('pagehide'," in JS

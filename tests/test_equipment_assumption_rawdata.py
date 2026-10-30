@@ -291,12 +291,12 @@ def test_the_locked_paste_refusal_blocks_the_scenario_name_in_its_lock_reason(
     review = ImportReview(
         "설비 마스터", "붙여넣기", frames, (frames[0], master, frames[2]), pd.DataFrame()
     )
-    reason = "「가정*R6~B~」 r3 에 다른 배치가 저장됐습니다"
+    reason = "「가정*R6~B~」 r3에 다른 배치가 저장됐습니다"
 
     refusal = layout_paste_refusal(review, saved=current.equipment, renames={}, reason=reason)
 
     assert refusal is not None
-    assert "— 「가정\\*R6\\~B\\~」 r3 에 다른 배치가 저장됐습니다" in refusal
+    assert "— 「가정\\*R6\\~B\\~」 r3에 다른 배치가 저장됐습니다" in refusal
     assert markdown_safe_tildes(refusal) == refusal
 
 
@@ -697,6 +697,6 @@ def test_the_page_passes_the_space_judgment_to_the_master_tab(tmp_path: Path) ->
     _ok(app.run())
 
     assert any(
-        "배치 편집이 잠겨 있어" in text and "r2 에 다른 배치가 저장됐습니다" in text
+        "배치 편집이 잠겨 있어" in text and "r2에 다른 배치가 저장됐습니다" in text
         for text in _texts(app, "caption")
     )

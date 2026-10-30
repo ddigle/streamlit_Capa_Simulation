@@ -375,7 +375,7 @@ def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
 
-    assert any("r3 에 다른 배치가 저장됐습니다" in text for text in _texts(app))
+    assert any("r3에 다른 배치가 저장됐습니다" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
     app.button(key="space_load_latest").click().run()
     _ok(app)
@@ -411,7 +411,7 @@ def _lock_with_my_eq02_move(
     )
     clear_equipment_repository()
     _ok(app.run())
-    assert any("r3 에 다른 배치가 저장됐습니다" in text for text in _texts(app))
+    assert any("r3에 다른 배치가 저장됐습니다" in text for text in _texts(app))
     return app, repository, setup
 
 
@@ -696,7 +696,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_lock_line_and_its_popover
     app = _ok(_space(tmp_path, setup, pinned).run())
 
     assert any(
-        f"「{TILDE_ESCAPED}」 r3 에 다른 배치가 저장됐습니다" in str(item.value)
+        f"「{TILDE_ESCAPED}」 r3에 다른 배치가 저장됐습니다" in str(item.value)
         for item in app.caption
     )
     locked = app.toggle(key="space_layout_edit_mode_locked")
@@ -806,7 +806,7 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_lock_line_and_its_popove
     app = _ok(_space(tmp_path, setup, pinned).run())
 
     assert any(
-        f"「{STAR_ESCAPED}」 r3 에 다른 배치가 저장됐습니다" in str(item.value)
+        f"「{STAR_ESCAPED}」 r3에 다른 배치가 저장됐습니다" in str(item.value)
         for item in app.caption
     )
     locked = app.toggle(key="space_layout_edit_mode_locked")

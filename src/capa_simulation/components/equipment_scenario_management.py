@@ -1328,7 +1328,7 @@ def _render_restore(
     # 버리므로 일정·비가동만 본다(확인 글과 실제 쓰기가 갈리지 않게, 설계 6-6).
     if restore_writes_nothing(preview, official_scenario=official_scenario):
         same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
-        st.info(f"최신 r{scenario.latest_revision_no} 의 {same} 모두 같아 되돌릴 것이 없습니다.")
+        st.info(f"최신 r{scenario.latest_revision_no}의 {same} 모두 같아 되돌릴 것이 없습니다.")
         return
     chosen = revision.schedule_revision_id
     revision_name = st.text_input(
@@ -1477,7 +1477,7 @@ def _render_branch(
     title = f"r{revision.revision_no}"
     st.caption(
         f"{name} {title}의 일정·시나리오 메모·비가동을 지금 공통 대장과 합쳐 새 설비 시나리오 "
-        "r1 로 옮깁니다. 이 시나리오는 그대로입니다."
+        "r1로 옮깁니다. 이 시나리오는 그대로입니다."
     )
     try:
         preview = _preview_for(database_path, _latest_common_id(database_path), scenario, revision)
@@ -1525,7 +1525,7 @@ def _render_branch(
         layout_note = f" {title}의 가정 배치(차이 {carried})도 함께 옮겼습니다." if carried else ""
         _written(
             f"{name} {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
-            "r1 을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
+            "r1을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
             f"불러오기」로 올립니다.{layout_note}",
             release=written.release,
         )
@@ -1553,7 +1553,7 @@ def _render_revision_name(
         suffix=f"__{revision.schedule_revision_id}",
     )
     st.caption(
-        f"r{revision.revision_no} 의 이름표입니다 — 일정·번호·메모는 그대로이고 나중에 다시 "
+        f"r{revision.revision_no}의 이름표입니다 — 일정·번호·메모는 그대로이고 나중에 다시 "
         "고칠 수 있습니다. 비우고 저장하면 이름이 지워집니다."
     )
     label = st.text_input("리비전명", key=field.key, max_chars=REVISION_NAME_MAX_CHARS)

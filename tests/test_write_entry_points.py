@@ -705,7 +705,7 @@ render_equipment_scenario_management({path!r}, resolve_equipment_session({path!r
     names = [item.scenario_name for item in repository.list_equipment_scenarios()]
     assert names.count("겹친 가지") == 1
     assert not app.error, [item.value for item in app.error]
-    assert _successes(app, "「겹친 가지」 r1 을 만들었습니다") == 1
+    assert _successes(app, "「겹친 가지」 r1을 만들었습니다") == 1
     assert app.session_state[GENERATION_KEY] == 1
 
 

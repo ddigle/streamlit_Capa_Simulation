@@ -1135,7 +1135,7 @@ def _restore_dead_end(block: PublishBlock, title: str, latest: str, *, clear_fir
     것이 없고, 아니면 최신 발행 — `clear_first` 면(가정 시나리오 최신에 같은 공식과 다른 배치가
     남음) 최신을 비운 뒤."""
     same = with_subject_particle("일정·비가동" if block.official else "일정·비가동·가정 배치")
-    nothing = f"최신 {latest} 의 {same} {title} 그대로라 되돌릴 것이 없"
+    nothing = f"최신 {latest}의 {same} {title} 그대로라 되돌릴 것이 없"
     if block.newest_released:
         return (
             f"{nothing}고, 최신 {with_topic_particle(latest)} 이미 공식 발행입니다 — 따로 발행할 "

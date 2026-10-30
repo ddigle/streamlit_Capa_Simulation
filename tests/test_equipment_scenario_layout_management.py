@@ -259,7 +259,7 @@ def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing
     assert "r2에 저장된 배치 차이 1행은 지금 공식과 같아졌지만" in released[0]
     assert "「이 리비전으로 되돌리기」" not in released[0]
     assert (
-        "최신 r5 의 일정·비가동이 r2 그대로라 되돌릴 것이 없고, 최신 r5는 이미 공식 발행입니다 "
+        "최신 r5의 일정·비가동이 r2 그대로라 되돌릴 것이 없고, 최신 r5는 이미 공식 발행입니다 "
         "— 따로 발행할 것이 없습니다." in released[0]
     ), released
     # 최신 r5 가 아직 공식이 아니면 최신을 발행한다.
@@ -298,7 +298,7 @@ def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing
     )
     assert "「이 리비전으로 되돌리기」" not in real[0]
     assert (
-        "최신 r5 의 일정·비가동·가정 배치가 r2 그대로라 되돌릴 것이 없습니다 — 최신의 배치 차이를 "
+        "최신 r5의 일정·비가동·가정 배치가 r2 그대로라 되돌릴 것이 없습니다 — 최신의 배치 차이를 "
         "「배치 차이 모두 지우기」 로 지우고 발행하세요." in real[0]
     ), real
     # 일정이 다르면(되돌리기가 새 최신을 쓴다) 지금처럼 되돌리기를 안내한다.
@@ -518,13 +518,13 @@ def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
     _ok(app.run())
 
     texts = _texts(app)
-    assert any("최신 r3 의 일정·비가동과 모두 같아 되돌릴 것이 없습니다." in t for t in texts)
+    assert any("최신 r3의 일정·비가동과 모두 같아 되돌릴 것이 없습니다." in t for t in texts)
     assert not any(button.key == RESTORE_BUTTON_KEY for button in app.button)
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
     (blocked,) = [str(item.value) for item in app.error if "발행하지 않습니다" in str(item.value)]
     assert "「이 리비전으로 되돌리기」" not in blocked, blocked
-    assert "최신 r3 의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in blocked, blocked
+    assert "최신 r3의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in blocked, blocked
     assert "따로 발행할 것이 없습니다" in blocked, blocked
 
 

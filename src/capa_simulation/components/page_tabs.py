@@ -47,10 +47,11 @@
   둘째 누름이 밀려 온 다른 탭에 닿으면 JS 가 버린다(`<tabs-press>`). 버리지 않으면 × 더블클릭이
   누른 탭 대신 이웃 탭을 닫거나 지금 탭을 고정했다.
 - **새로 읽은 문서의 공식 복귀 알림.** 테마 단추·새로고침은 새 세션이라 세션 설비 시나리오가
-  공식으로 돌아간다. JS 가 문서를 떠날 때 띠 CSS 변수(`app_header.EQUIPMENT_RETURN_VARIABLE` —
-  공식 발행 쌍이 아닌 세션 설비 시나리오의 이름)를 탭의 `sessionStorage` 에 적고, 새 문서에서
-  상한 알림 칸에 한 번 알린다(`<tabs-return>`, 글은 `RETURN_NOTICE`·`THEME_RETURN_NOTICE`).
-  서버에는 아무것도 남기지 않는다.
+  공식으로 돌아간다. JS 가 문서를 떠날 때 떠나는 까닭에 맞는 띠 CSS 변수(테마 단추면
+  `app_header.EQUIPMENT_RETURN_VARIABLE` — 공식 발행 쌍이 아닌 세션 설비 시나리오, 새로고침이면
+  `EQUIPMENT_RELOAD_RETURN_VARIABLE` — 가정 설비 시나리오만의 이름)를 탭의 `sessionStorage` 에 적고,
+  새 문서에서 상한 알림 칸에 한 번 알린다(`<tabs-return>`, 글은 `RETURN_NOTICE`·
+  `THEME_RETURN_NOTICE`). 서버에는 아무것도 남기지 않는다.
 - **그림자 DOM**(`isolate_styles` 기본값). 팝업 안이 아니라 포커스 순서 의무가 걸리지 않고, 따라하기
   가이드의 `document.querySelectorAll` 에도 걸리지 않는다. 색은 등록 CSS 의 `--st-*` 변수와 data 의
   팔레트로만 쓴다.
@@ -111,8 +112,9 @@ _PAGE_TABS = st.components.v2.component(
     js=(_ASSETS / "page_tabs.js").read_text(encoding="utf-8"),
 )
 
-# 새로고침·테마 단추 뒤 새 세션이 공식 설비 시나리오로 열렸음을 알리는 글(개선 거리 I1). 앞 세션이
-# 공식 발행 쌍이 아닌 설비 시나리오였을 때만 선다 — 새 세션마다 알리지 않는다.
+# 새로고침·테마 단추 뒤 새 세션이 공식 설비 시나리오로 열렸음을 알리는 글(개선 거리 I1). 새로고침은
+# 앞 세션이 가정 설비 시나리오였을 때만, 테마 단추는 공식 발행 쌍이 아닌 설비 시나리오였을 때만 선다
+# — 새 세션마다 알리지 않는다.
 RETURN_NOTICE = (
     "새로고침해 새 세션이 되어 설비 시나리오가 공식으로 돌아왔습니다 — 보던 설비 시나리오: "
     "{label}. 사이드바 설비 시나리오에서 다시 고를 수 있습니다."
@@ -133,7 +135,7 @@ TEXT = {
     "leave": "적용하지 않은 편집이 사라집니다 — {list}\n이 화면을 떠날까요?",
     "limit": LIMIT_NOTICE,
     # 새로 읽은 문서의 한 번 알림(`page_tabs.js` 의 `<tabs-return>`). `{label}` 은 앞 세션의 설비
-    # 시나리오(「셋업 B」 r8 — `app_header.equipment_return_mark`)이고 JS 가 채운다.
+    # 시나리오(「셋업 B」 r8 — `app_header.equipment_return_mark` 의 `label`)이고 JS 가 채운다.
     "returned": RETURN_NOTICE,
     "themed": THEME_RETURN_NOTICE,
 }
