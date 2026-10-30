@@ -4,10 +4,18 @@
 
 「`E2E 동시 시나리오`을 저장했습니다」·「r2을 저장했습니다」처럼 이름 뒤에 조사를 못박아 둔
 문구는 끝소리가 다른 이름에서 틀린다(2026-10-05 E2E). 한글 음절과 숫자·`%`(퍼센트)는 끝소리를
-정확히 안다. 영문 등 읽는 법을 알 수 없는 끝은 `을(를)`·`은(는)`·`이(가)`·`(으)로` 로 둔다 — 틀린
-조사보다 낫다. 다만 이 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름 「C1 1F」의 `F`·「설비 DB」의
-`DB`·「Xsize」의 `size`·「투자Capa」의 `Capa`·수량 단위 `Kea`)은 읽기를 표(`_LATIN_TAIL_FINAL`)로
-둔다 — 그 어휘가 들어가는 자리가 갈래 꼴로 떨어지지 않게.
+정확히 안다. 영문 끝은 두 가지를 읽는다.
+
+- **글자로 읽는 끝** — 끝의 영문이 한 글자(「셋업 B」·「2H」·「DEL-A」·「EQ-X」)이거나 대문자 두세
+  글자(「HBM」·「EDP」)이면 알파벳 이름(비·에이치·에이·엑스·엠·피)으로 읽는다. 받침이 있는 이름은
+  엘·엠·엔·알 넷뿐이다. 한 글자는 낱말일 수 없고, 두세 대문자는 이 앱에서 거의 늘 약어라
+  낱말로 읽어도 끝소리가 같은 일이 많다(「RAM」 램·엠). 넷 이상(「USER」 유저·알)은 낱말과
+  갈리지 않아 읽지 않는다.
+- **고정 어휘의 끝** — 이 앱이 늘 끼우는 어휘의 영문 끝(층 이름 「C1 1F」의 `F`·「DuckDB」의 `DB`·
+  「Xsize」의 `size`·「투자Capa」의 `Capa`·수량 단위 `Kea`)은 읽기를 표(`_LATIN_TAIL_FINAL`)로 둔다.
+
+그 밖의 끝(「Bonding」·「Customer」 같은 영문 낱말)은 읽는 법을 알 수 없어 `을(를)`·`은(는)`·
+`이(가)`·`(으)로` 로 둔다 — 틀린 조사보다 낫다.
 
 `으로/로` 는 받침 유무만으로 갈리지 않는다. 받침이 없거나 ㄹ 이면 `로`(서울로·r1로), 그 밖의
 받침이면 `으로`(부산으로·r3으로)다.
@@ -37,8 +45,7 @@ _KNOWN_FINAL = {
     "%": 0,
 }
 # 고정 어휘의 영문 끝 → 종성 번호(대소문자 그대로 견준다). 에프·디비·사이즈·카파·케이이에이 모두
-# 받침이 없다.
-# 사람이 붙인 이름(「셋업 B」·「EQ-X」)은 약어인지 낱말인지 갈리지 않아 넣지 않는다.
+# 받침이 없다. 글자로 읽는 끝(아래)보다 먼저 본다 — 「DuckDB」 는 소문자가 섞여 글자로 읽지 않는다.
 _LATIN_TAIL_FINAL = {
     "F": 0,
     "DB": 0,
@@ -46,6 +53,12 @@ _LATIN_TAIL_FINAL = {
     "Capa": 0,
     "Kea": 0,
 }
+# 알파벳 이름의 종성 번호. 받침이 있는 이름은 엘(ㄹ)·엠(ㅁ)·엔(ㄴ)·알(ㄹ) 넷이고 나머지(에이·비·씨·
+# 디·이·에프·지·에이치·아이·제이·케이·오·피·큐·에스·티·유·브이·더블유·엑스·와이·제트)는 받침이 없다.
+_LETTER_NAME_FINAL = {"L": 8, "M": 16, "N": 4, "R": 8}
+_ASCII_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+# 대문자 끝을 글자로 읽는 가장 긴 길이 — 넷부터는 낱말(「USER」·「PLAN」)과 갈리지 않는다.
+_SPELLED_CAPITALS = 3
 _HANGUL_FIRST = 0xAC00
 _HANGUL_LAST = 0xD7A3
 _FINALS = 28
@@ -70,7 +83,24 @@ def _final_consonant(word: str) -> int | None:
     if char in _KNOWN_FINAL:
         return _KNOWN_FINAL[char]
     head = text[:end]
-    return next((final for tail, final in _LATIN_TAIL_FINAL.items() if head.endswith(tail)), None)
+    known = next((final for tail, final in _LATIN_TAIL_FINAL.items() if head.endswith(tail)), None)
+    if known is not None:
+        return known
+    return _spelled_final(head)
+
+
+def _spelled_final(head: str) -> int | None:
+    """끝의 영문을 글자로 읽을 때의 종성 번호 — 한 글자이거나 대문자 두세 글자일 때만.
+
+    「셋업 B」 → 비(받침 없음)·「HBM」 → 엠(ㅁ)·「가정 R」 → 알(ㄹ). 그 밖(「Bonding」·「USER」)은
+    `None` 이다.
+    """
+    letters = head[len(head.rstrip(_ASCII_LETTERS)) :]
+    if not letters:
+        return None
+    if len(letters) == 1 or (len(letters) <= _SPELLED_CAPITALS and letters.isupper()):
+        return _LETTER_NAME_FINAL.get(letters[-1].upper(), 0)
+    return None
 
 
 def object_particle(word: str) -> str:

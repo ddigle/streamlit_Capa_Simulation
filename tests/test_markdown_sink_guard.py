@@ -153,6 +153,10 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "자동 갱신 회차 사유 — 회차 기록(기록 표 칸 — 평문)에 남는다. 「지금 실행」 결과 알림은 "
         "알림 칸에 담는 자리(auto_official_update_tab._hold_run_result)에서 markdown_safe_tildes"
     ),
+    ("src/capa_simulation/components/app_header.py", "equipment_return_mark"): (
+        "새로 읽은 화면의 「공식으로 돌아왔습니다」 이름 — 띠 CSS 변수(퍼센트 인코딩)로만 "
+        "나가고 탭 줄 JS 가 알림 칸에 textContent 로 그린다(마크다운 자리가 아니다)"
+    ),
     ("src/capa_simulation/components/auto_official_update_tab.py", "run_history_frame"): (
         "자동 갱신 기록 표의 칸 글(st.dataframe — 마크다운이 아니다)"
     ),

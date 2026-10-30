@@ -475,6 +475,15 @@ def official_session(
     )
 
 
+def remembered_equipment_label() -> dict[str, Any] | None:
+    """세션이 든 설비 시나리오의 라벨(`LABEL_KEY` — 설비 화면이 마지막으로 세운 값). 없으면 None.
+
+    `app.py` 가 띠의 「새로 읽으면 공식으로 돌아감」 표지를 정할 때 읽는다(설비 DB 를 열지
+    않는다)."""
+    value = st.session_state.get(LABEL_KEY)
+    return value if isinstance(value, dict) else None
+
+
 def current_selection() -> tuple[str, str | None] | None:
     """세션 칸의 (시나리오 id, 일정 리비전 id). 없거나 꼴이 어긋나면 None."""
     value = st.session_state.get(SELECTION_KEY)

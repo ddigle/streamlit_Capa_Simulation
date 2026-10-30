@@ -217,19 +217,31 @@ def first_selected_row(event: object) -> int | None:
     return int(first)
 
 
+def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | None:
+    """설정하지 않은 사내 조회 SQL 알림. 둘 다 설정했으면 None.
+
+    조사는 고정 낱말 「SQL」 에 붙이고 빠진 자리는 줄표 뒤에 늘어놓는다 — 자리 이름 끝(템플릿
+    상수 이름) 뒤에 조사를 두면 갈래 꼴 「… 이(가)」 이었다(E2E, 개선 거리 I8).
+    """
+    missing: list[str] = []
+    if not catalog_ready:
+        missing.append("목록 조회 SQL(bigdataquery_catalog.py의 CATALOG_QUERY_TEMPLATE)")
+    if not detail_ready:
+        missing.append("상세 조회 SQL(company_bigdataquery_adapter.py의 QUERY_TEMPLATE)")
+    if not missing:
+        return None
+    return "사내 조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
+
+
 def _render_configuration_banner(
     *,
     catalog_ready: bool,
     detail_ready: bool,
     package_ready: bool,
 ) -> None:
-    missing: list[str] = []
-    if not catalog_ready:
-        missing.append("목록 조회 SQL(bigdataquery_catalog.py의 CATALOG_QUERY_TEMPLATE)")
-    if not detail_ready:
-        missing.append("상세 조회 SQL(company_bigdataquery_adapter.py의 QUERY_TEMPLATE)")
-    if missing:
-        st.warning("사내 " + " 과 ".join(missing) + " 이(가) 아직 설정되지 않았습니다.")
+    notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
+    if notice is not None:
+        st.warning(notice)
         return
     if not package_ready:
         # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.

@@ -1200,7 +1200,8 @@ def test_the_subject_particle_reads_the_final_sound() -> None:
     assert subject_particle("운영 일정") == "이"
     assert subject_particle("r3") == "이"
     assert subject_particle("r2") == "가"
-    assert subject_particle("ABC") == "이(가)"
+    assert subject_particle("ABC") == "가"
+    assert subject_particle("ABCD") == "이(가)"
 
 
 def _moved_floor(tmp_path: Path, name: str = "셋업 실무") -> tuple[DuckDBEquipmentRepository, str]:

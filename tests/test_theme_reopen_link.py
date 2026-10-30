@@ -49,7 +49,7 @@ const out = input.cases.map((c) => {
   const doc = {
     querySelector() { return slot },
     getElementById() { return null },
-    createElement() { return { style: {}, setAttribute() {} } },
+    createElement() { return { style: {}, setAttribute() {}, removeAttribute() {} } },
     documentElement: {},
     body: {},
   }

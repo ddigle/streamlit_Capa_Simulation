@@ -117,16 +117,53 @@ def test_escaped_markdown_reads_the_same_final_as_the_plain_name() -> None:
         ("DuckDB", "는", "로"),
         ("Kea", "는", "로"),
         ("Staff", "은(는)", "(으)로"),
-        ("EQ-X", "은(는)", "(으)로"),
-        ("셋업 B", "은(는)", "(으)로"),
     ],
 )
 def test_fixed_vocabulary_latin_tails_are_read(word: str, topic: str, direction: str) -> None:
-    """층 이름의 `F`·`DB`·`size`·`Capa`·`Kea` 는 읽는다(「C2 2F는」·「Xsize를」). 그 밖의 영문
-    끝(사람이 붙인 이름)은 약어인지 낱말인지 갈리지 않아 갈래 꼴 그대로다 — 대소문자도 그대로
-    견준다(「Staff」)."""
+    """층 이름의 `F`·`DB`·`size`·`Capa`·`Kea` 는 읽는다(「C2 2F는」·「Xsize를」). 대소문자도 그대로
+    견준다(「Staff」 의 `ff` 는 `F` 가 아니다)."""
     assert topic_particle(word) == topic
     assert direction_particle(word) == direction
+
+
+@pytest.mark.parametrize(
+    ("word", "particles"),
+    [
+        # 한 글자 끝 — 알파벳 이름으로 읽는다(비·에이치·에이·엑스·지).
+        ("셋업 B", ("를", "는", "가", "로")),
+        ("「셋업 B」", ("를", "는", "가", "로")),
+        ("HBM가상 · 2H", ("를", "는", "가", "로")),
+        ("DEL-A", ("를", "는", "가", "로")),
+        ("E2E~가정~B", ("를", "는", "가", "로")),
+        ("EQ-X", ("를", "는", "가", "로")),
+        ("셋업 b", ("를", "는", "가", "로")),
+        # 받침이 있는 이름은 엘·엠·엔·알 넷 — 엘·알은 ㄹ 이라 「로」, 엠·엔은 「으로」.
+        ("가정 L", ("을", "은", "이", "로")),
+        ("가정 R", ("을", "은", "이", "로")),
+        ("가정 M", ("을", "은", "이", "으로")),
+        ("가정 N", ("을", "은", "이", "으로")),
+        # 대문자 두세 글자 — 약어로 보고 끝 글자를 읽는다.
+        ("HBM", ("을", "은", "이", "으로")),
+        ("EDP", ("를", "는", "가", "로")),
+        ("HBM·EDP", ("를", "는", "가", "로")),
+        # 낱말일 수 있는 끝은 그대로 갈래 꼴이다(유저·본딩을 글자로 읽지 않는다).
+        ("USER", ("을(를)", "은(는)", "이(가)", "(으)로")),
+        ("TC Bonding", ("을(를)", "은(는)", "이(가)", "(으)로")),
+        ("Tc", ("을(를)", "은(는)", "이(가)", "(으)로")),
+    ],
+)
+def test_a_lone_latin_letter_or_a_short_capital_tail_is_read_by_its_letter_name(
+    word: str, particles: tuple[str, str, str, str]
+) -> None:
+    """「「셋업 B」(으)로 했습니다」·「프리셋 「DEL-A」을(를) 저장했습니다」 — 라틴 글자로 끝나는
+    이름은 갈래 꼴이었다(E2E 1~3회차). 끝이 한 글자이거나 대문자 두세 글자면 알파벳 이름으로
+    읽는다."""
+    assert (
+        object_particle(word),
+        topic_particle(word),
+        subject_particle(word),
+        direction_particle(word),
+    ) == particles
 
 
 def test_percent_has_no_final_consonant() -> None:

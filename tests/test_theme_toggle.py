@@ -2,12 +2,20 @@
 
 import json
 import re
+from pathlib import Path
+from typing import Any
 
 import pytest
 import streamlit as st
 from streamlit.elements.html import _html_only_style_tags
 
-from capa_simulation.components import intro_summary, page_guide, print_button, theme_toggle
+from capa_simulation.components import (
+    intro_summary,
+    page_guide,
+    page_tabs,
+    print_button,
+    theme_toggle,
+)
 from capa_simulation.components.intro_summary import summary_label_script
 from capa_simulation.components.page_guide import guide_toolbar_script
 from capa_simulation.components.print_button import print_toolbar_script
@@ -378,3 +386,196 @@ def test_the_print_button_asks_first_in_the_dark_theme_and_prints_at_once_in_lig
     for unsafe in ('"', "\\", "\n", "\r"):
         assert unsafe not in print_button.DARK_PRINT_CONFIRM
     assert "Light" in print_button.DARK_PRINT_CONFIRM
+
+
+def test_the_theme_button_marks_the_switch_before_it_reloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """새로 읽은 문서가 「테마를 바꾸며 … 설비 시나리오가 공식으로 돌아왔습니다」 로 알리게(개선
+    거리 I1), 테마 단추는 새로고침 직전에 이 탭의 `sessionStorage` 에 표지를 남긴다 — 탭 줄
+    JS 가 문서를 떠날 때 읽는다."""
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    click = frames[0][frames[0].index("button.onclick") :]
+    mark = f'sessionStorage.setItem("{theme_toggle.THEME_SWITCH_STORAGE_KEY}", "1")'
+    assert mark in click
+    assert click.index("capaTheme.choose(") < click.index(mark) < click.index("location.reload()")
+
+
+def test_the_theme_button_waits_on_the_tab_strip_hold_before_it_asks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """칸 편집기에 쓰는 중(Enter 전)에 Dark 를 누르면 그 편집을 실은 회차가 돌아오기 전이라 저장 안
+    함 표지가 없어 묻지 않고 새로 읽었다(E2E #94·#101, 개선 거리 I4). 테마 단추도 탭 줄의 떠나기
+    붙들기를 지난다 — 누를 때(pointerdown) 편집표 포커스를 적고, 붙들기가 끝난 뒤 표지를 읽어
+    묻는다. 탭 줄이 없으면 곧바로 묻는다."""
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    script = frames[0]
+    assert "parentWindow.__capaLeaveGate" in script
+    pointer = script[script.index("button.onpointerdown") : script.index("button.onclick")]
+    assert "gate.press()" in pointer
+    click = script[script.index("button.onclick") :]
+    proceed = click[click.index("function proceed()") : click.index("var gate = leaveGate();")]
+    # 표지 읽기·묻기·새로고침은 붙들기가 부르는 `proceed` 안이다.
+    assert theme_toggle.UNSAVED_EDITS_CSS_VARIABLE in proceed
+    assert "confirm(" in proceed and "location.reload()" in proceed
+    after = click[click.index("var gate = leaveGate();") :]
+    assert after.index("gate.go(proceed)") < after.index("proceed();")
+
+
+def test_a_theme_press_dropped_by_a_later_tab_press_does_not_stay_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """붙든 사이 탭을 누르면 탭 누름이 붙든 자리를 차지해 테마 누름은 버려진다 — 그때 단추가
+    `aria-busy`·기다림 커서로 남지 않게 스스로 걷는다. 걷는 때는 탭 줄 붙들기의 가장 긴 기다림
+    (`page_tabs.js` 의 `BUSY_MS`)보다 길다 — 그보다 짧으면 아직 붙든 누름의 표지를 먼저 걷는다."""
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    click = frames[0][frames[0].index("button.onclick") :]
+    after = click[click.index("var gate = leaveGate();") :]
+    reset = f"setTimeout(idle, {theme_toggle.LEAVE_HOLD_RESET_MS})"
+    assert after.index("aria-busy") < after.index(reset) < after.index("gate.go(proceed)")
+    proceed = click[click.index("function proceed()") :]
+    assert proceed.index("idle();") < proceed.index("confirm(")
+    tabs_js = (Path(page_tabs.__file__).parent / "page_tabs_assets" / "page_tabs.js").read_text(
+        encoding="utf-8"
+    )
+    busy = re.search(r"^const BUSY_MS = (\d+)$", tabs_js, re.M)
+    assert busy is not None
+    assert theme_toggle.LEAVE_HOLD_RESET_MS > int(busy.group(1))
+
+
+_GATE_CLICK_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+function store(init) {
+  const m = new Map(Object.entries(init || {}))
+  return {
+    get length() { return m.size },
+    key(i) { const keys = [...m.keys()]; return i < keys.length ? keys[i] : null },
+    getItem(k) { return m.has(k) ? m.get(k) : null },
+    setItem(k, v) { m.set(k, String(v)) },
+    removeItem(k) { m.delete(k) },
+  }
+}
+// 단추 스크립트의 타이머(기다림 표지 걷기)는 손으로 부른다.
+let timers = []
+globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length }
+globalThis.clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+const run = new Function('window', input.script)
+const out = input.cases.map((c) => {
+  timers = []
+  const log = { reloads: 0, confirms: 0, pressed: 0, held: [], button: null, mark: null }
+  const current = new URL(input.href)
+  const doc = {
+    querySelector() { return slot },
+    getElementById() { return null },
+    createElement() {
+      const attrs = {}
+      return {
+        style: {}, attrs,
+        setAttribute(k, v) { attrs[k] = String(v) },
+        removeAttribute(k) { delete attrs[k] },
+      }
+    },
+    documentElement: {},
+    body: {},
+  }
+  const slot = {
+    ownerDocument: doc,
+    appendChild(node) { log.button = node },
+    insertBefore(node) { log.button = node },
+  }
+  const session = store({})
+  const parent = {
+    URL,
+    document: doc,
+    location: {
+      get href() { return current.href },
+      get pathname() { return current.pathname },
+      reload() { log.reloads += 1; log.mark = session.getItem(input.switchKey) },
+    },
+    history: { replaceState(_s, _t, url) { current.href = new URL(url, current.href).href } },
+    performance: { getEntriesByType() { return [] } },
+    localStorage: store(input.local),
+    sessionStorage: session,
+    MutationObserver: class { observe() {} disconnect() {} },
+    setTimeout() {},
+    getComputedStyle() {
+      return { getPropertyValue(name) { return name === input.unsavedVar ? c.unsaved : '' } }
+    },
+    confirm() { log.confirms += 1; return c.confirm },
+  }
+  if (c.gate === 'hold') {
+    parent.__capaLeaveGate = { press() { log.pressed += 1 }, go(fn) { log.held.push(fn) } }
+  } else if (c.gate === 'broken') {
+    parent.__capaLeaveGate = { press() { log.pressed += 1 }, go() { throw new Error('gone') } }
+  }
+  run({ parent })
+  const button = log.button
+  button.onpointerdown()
+  button.onclick()
+  const state = () => ({
+    reloads: log.reloads, confirms: log.confirms, busy: button.attrs['aria-busy'] || null,
+    mark: log.mark,
+  })
+  const during = state()
+  if (c.then === 'release') log.held.forEach((fn) => fn())
+  if (c.then === 'drop') {
+    const resets = timers.filter((t) => t.live && t.ms === input.resetMs)
+    resets.forEach((t) => { t.live = false; t.fn() })
+  }
+  return { during, after: state(), pressed: log.pressed, held: log.held.length }
+})
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_theme_button_asks_and_reloads_only_when_the_leave_gate_lets_it_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """툴바 iframe 의 스크립트를 글자 그대로 node 의 가짜 부모 창에서 돌려 단추를 누른다(개선 거리
+    I4). 탭 줄 붙들기가 있으면 누를 때 편집표 포커스를 적게 하고(`press`), 붙들기가 놓기
+    전에는 묻지도 새로 읽지도 않으며 기다림 표지를 단다. 놓으면 그때의 저장 안 함 표지로 묻고
+    테마 표지를 남겨 새로 읽는다. 버려진 누름은 `LEAVE_HOLD_RESET_MS` 뒤 표지를 걷고, 붙들기가
+    없거나 깨졌으면 예전처럼 곧바로 묻는다."""
+    from test_space_module_group import _node
+    from test_theme_reopen_link import ORIGIN, _frame_script, _synced
+
+    payload = {
+        "script": _frame_script(monkeypatch),
+        "href": f"{ORIGIN}/space_status?theme=light",
+        "local": _synced("Light"),
+        "unsavedVar": theme_toggle.UNSAVED_EDITS_CSS_VARIABLE,
+        "switchKey": theme_toggle.THEME_SWITCH_STORAGE_KEY,
+        "resetMs": theme_toggle.LEAVE_HOLD_RESET_MS,
+        "cases": [
+            {"gate": None, "unsaved": "", "confirm": True, "then": None},
+            {"gate": "hold", "unsaved": "", "confirm": True, "then": "release"},
+            {"gate": "hold", "unsaved": "1", "confirm": False, "then": "release"},
+            {"gate": "hold", "unsaved": "1", "confirm": True, "then": "release"},
+            {"gate": "hold", "unsaved": "", "confirm": True, "then": "drop"},
+            {"gate": "broken", "unsaved": "", "confirm": True, "then": None},
+        ],
+    }
+    result: Any = _node(_GATE_CLICK_RUNNER, payload)
+    no_gate, held, cancelled, confirmed, dropped, broken = result
+
+    # 붙들기가 없으면(부트스트랩 오류 화면) 곧바로 — 저장 안 함 표지가 없으면 묻지 않고 새로 읽는다.
+    assert no_gate["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}
+    # 붙드는 동안은 묻지도 새로 읽지도 않고 기다림 표지만 단다. 누를 때 편집표 포커스를 적게 했다.
+    for case in (held, cancelled, confirmed, dropped):
+        assert case["pressed"] == 1 and case["held"] == 1
+        assert case["during"] == {"reloads": 0, "confirms": 0, "busy": "true", "mark": None}
+    assert held["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}
+    # 놓은 뒤 그때의 표지로 묻는다 — 취소하면 새로 읽지 않고 테마 표지도 남기지 않는다.
+    assert cancelled["after"] == {"reloads": 0, "confirms": 1, "busy": None, "mark": None}
+    assert confirmed["after"] == {"reloads": 1, "confirms": 1, "busy": None, "mark": "1"}
+    # 붙든 사이 탭 누름에 밀려 버려진 누름은 스스로 표지를 걷는다.
+    assert dropped["after"] == {"reloads": 0, "confirms": 0, "busy": None, "mark": None}
+    # 붙들기가 깨졌으면 예전처럼 곧바로 묻고 새로 읽는다(표지를 남기지 않는다).
+    assert broken["pressed"] == 1
+    assert broken["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}

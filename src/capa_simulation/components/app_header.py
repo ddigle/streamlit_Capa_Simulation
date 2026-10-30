@@ -74,11 +74,19 @@ localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Commu
 뒤에도 한 회차 늦지 않는다. `app.py` 는 그 글로 먼저 그려 둔다(페이지가 그리기 전 회차 사이에 꼬리가
 사라졌다 서지 않게).
 
+**새로 읽은 화면의 「공식으로 돌아왔습니다」**(개선 거리 I1). 테마 단추·새로고침은 새 세션이라
+세션이 든 설비 시나리오가 공식으로 돌아간다. 같은 띠 CSS 에 이 세션의 설비 시나리오가 공식 발행
+쌍이 아닐 때만 그 이름·rN 을 CSS 변수(`EQUIPMENT_RETURN_VARIABLE`, 퍼센트 인코딩 글)로 싣는다 —
+페이지가 그 회차에 띠를 다시 보내므로 고른 회차에도 늦지 않는다. 탭 줄 JS 가 문서를 떠날 때
+(`pagehide`) 그 값을 `sessionStorage` 에 적고 새로 읽은 문서에서 한 번 알린다(`page_tabs.js` 의
+`<tabs-return>`). 서버에는 아무것도 남기지 않는다.
+
 `data-testid` 는 emotion 클래스와 달리 판올림 사이에 비교적 안정적이지만 어디까지나
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
 """
 
 import unicodedata
+import urllib.parse
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -123,6 +131,11 @@ EQUIPMENT_HEADER_HEAD = "설비 시나리오"
 # ({"page": 페이지 스크립트 해시, "suffix": 글}). 둘 다 세션 칸이라 DB 를 읽지 않는다.
 EQUIPMENT_HEADER_DRAWN_KEY = "app_header_equipment_drawn_v1"
 EQUIPMENT_HEADER_LABEL_KEY = "app_header_equipment_label_v1"
+# 이 세션의 설비 시나리오가 공식 발행 쌍이 아닐 때 그 이름·rN(퍼센트 인코딩한 CSS 글) — 아니면
+# `none`. 새로 읽은 화면이 「공식으로 돌아왔습니다」 를 알리는 재료다(탭 줄 JS 가 읽는다).
+EQUIPMENT_RETURN_VARIABLE = "--capa-equipment-return"
+# 알림에 싣는 이름의 최대 글자 수(넘으면 말줄임).
+_RETURN_LABEL_LIMIT = 60
 
 # 진행 막대 자리(`page_header.STATUS_SLOT_KEY`)를 본문 흐름에서 빼는 요소. Streamlit 은 키를 단
 # 컨테이너(`st-key-<키>`)를 `stLayoutWrapper` 로 한 번 감싸고, 본문 세로 블록의 flex 항목은 그
@@ -754,6 +767,33 @@ def equipment_header_suffix(
     return " · ".join(parts)
 
 
+def equipment_return_mark(label: Mapping[str, object] | None) -> str | None:
+    """새로 읽으면 공식으로 돌아갈 설비 시나리오 — 「「셋업 B」 r8」. 공식 발행 쌍이면 None.
+
+    `label` 은 세션 라벨(`EquipmentSession.label()` — 화면이 잠가 공식을 보이는 회차에도 세션
+    값)이다. 새 세션은 최신 공식 발행 쌍으로 열리므로(E5) 그 쌍이 아니면 — 가정 시나리오든,
+    공식 시나리오의 다른 리비전이든 — 새로 읽은 뒤 바뀐다. 일정 없이 연 세션(`unmerged`)은 새
+    세션도 같아 알리지 않는다.
+    """
+    if not label or label.get("official_pair") or label.get("unmerged"):
+        return None
+    name = label.get("scenario_name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    text = name.strip()
+    if len(text) > _RETURN_LABEL_LIMIT:
+        text = text[: _RETURN_LABEL_LIMIT - 1] + "…"
+    revision_no = label.get("revision_no")
+    return f"「{text}」 r{revision_no}" if isinstance(revision_no, int) else f"「{text}」"
+
+
+def equipment_return_css(mark: str | None) -> str:
+    """`EQUIPMENT_RETURN_VARIABLE` 를 정하는 규칙 — 늘 낸다(뒤에 그린 띠가 앞의 값을 `none` 으로도
+    덮어야 한다). 이름은 퍼센트 인코딩해 따옴표·역슬래시·꺾쇠가 CSS 를 깨지 않는다."""
+    value = f'"{urllib.parse.quote(mark, safe="")}"' if mark else "none"
+    return f":root{{{EQUIPMENT_RETURN_VARIABLE}:{value}}}"
+
+
 def _page_hash() -> str | None:
     ctx = get_script_run_ctx(suppress_warning=True)
     return ctx.page_script_hash if ctx is not None else None
@@ -768,12 +808,16 @@ def remembered_equipment_suffix() -> str | None:
     return suffix if isinstance(suffix, str) else None
 
 
-def render_app_header(*, equipment_suffix: str | None = None) -> None:
+def render_app_header(
+    *, equipment_suffix: str | None = None, equipment_return: str | None = None
+) -> None:
     """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다(설비 시나리오 꼬리가
     그 회차에 바뀐 페이지만 `refresh_equipment_header` 로 한 번 더 보낸다).
 
     `render_intro_summary` **뒤**여야 한다 — 최신 공식버전은 그 회차에 요약이 확인한 값이다.
     `equipment_suffix` 는 아래 줄 끝 설비 시나리오 꼬리다(설비 시나리오를 읽는 화면만).
+    `equipment_return` 은 새로 읽으면 공식으로 돌아갈 설비 시나리오(`equipment_return_mark`)다 —
+    화면과 상관없이 세션 값이다.
     """
     top, bottom = header_lines(
         active_scenario_label(),
@@ -786,10 +830,13 @@ def render_app_header(*, equipment_suffix: str | None = None) -> None:
         narrow = f"{equipment_suffix} · {bottom}" if bottom else equipment_suffix
         bottom = f"{bottom} · {equipment_suffix}" if bottom else equipment_suffix
     st.session_state[EQUIPMENT_HEADER_DRAWN_KEY] = equipment_suffix
-    st.html(f"<style>{_header_css(top, bottom, narrow_bottom=narrow)}</style>")
+    st.html(
+        f"<style>{_header_css(top, bottom, narrow_bottom=narrow)}"
+        f"{equipment_return_css(equipment_return)}</style>"
+    )
 
 
-def refresh_equipment_header(suffix: str | None) -> None:
+def refresh_equipment_header(suffix: str | None, *, equipment_return: str | None = None) -> None:
     """페이지가 그 회차 목록으로 정한 설비 시나리오 꼬리를 남기고 띠를 한 번 더 그린다(뒤의
     스타일이 앞의 것을 덮는다 — 한 회차 늦지 않게).
 
@@ -798,7 +845,7 @@ def refresh_equipment_header(suffix: str | None) -> None:
     등)가 흔들린다. 같은 글은 메시지 캐시로 해시만 간다(`minCachedMessageSize`).
     """
     st.session_state[EQUIPMENT_HEADER_LABEL_KEY] = {"page": _page_hash(), "suffix": suffix}
-    render_app_header(equipment_suffix=suffix)
+    render_app_header(equipment_suffix=suffix, equipment_return=equipment_return)
 
 
 def render_shell_style() -> None:

@@ -72,6 +72,19 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
     return lines
 
 
+def report_origin_caption(report: ContainerStartReport) -> str:
+    """펼침 맨 위 캡션 — 언제 남긴 결과인지와 안내 문서 자리.
+
+    「에」 는 받침과 상관없이 붙으므로 시각 뒤에 띄우지 않는다(「알 수 없는 때 에」 로 떨어졌다).
+    """
+    started = f"{literal_markdown(report.written_at)}에" if report.written_at else "알 수 없는 때에"
+    return (
+        f"C-DEP CD 컨테이너가 {started} 시작하며 `scripts/container_start.py` 로 남긴 결과입니다. "
+        f"넣을 환경변수와 토큰 값 얻는 법은 `{GUIDE_DOCUMENT}` 의 「C-DEP CD(배포 서버)」 절에 "
+        "있습니다."
+    )
+
+
 def render_container_start_check() -> None:
     report = read_container_start_report()
     if report is None:
@@ -82,11 +95,7 @@ def render_container_start_check() -> None:
         icon=":material/rocket_launch:",
         key=EXPANDER_KEY,
     ):
-        st.caption(
-            f"C-DEP CD 컨테이너가 {literal_markdown(report.written_at or '알 수 없는 때')} 에 "
-            "시작하며 `scripts/container_start.py` 로 남긴 결과입니다. 넣을 환경변수와 토큰 값 "
-            f"얻는 법은 `{GUIDE_DOCUMENT}` 의 「C-DEP CD(배포 서버)」 절에 있습니다."
-        )
+        st.caption(report_origin_caption(report))
         st.dataframe(build_step_table(report), hide_index=True, width="stretch")
         st.caption("  \n".join(fact_lines(report)))
         if report.missing_environment:

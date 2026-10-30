@@ -1064,3 +1064,51 @@ def test_a_cd_server_without_a_report_says_so(
     assert report_contract.BDQ_USER_NAME_ENV not in notice, "점검 스크립트의 갈래를 바꾸지 않는다"
     assert "패키지가 없습니다" not in notice
     _assert_no_secret(notice)
+
+
+def _report(written_at: str) -> report_contract.ContainerStartReport:
+    step = report_contract.StartStep(status="ok", reason="있음")
+    return report_contract.ContainerStartReport(
+        written_at=written_at,
+        steps={name: step for name in report_contract.STEPS},
+        bigdataquery_version=None,
+        token_file_exists=None,
+        token_file_modified_at=None,
+        user_name_masked=None,
+        missing_environment=(),
+        pip_tail=(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("written_at", "started"),
+    [
+        ("2026-10-24T09:00:00+09:00", "2026\\-10\\-24T09\\:00\\:00\\+09\\:00에 시작하며"),
+        ("", "알 수 없는 때에 시작하며"),
+    ],
+)
+def test_the_start_check_caption_attaches_the_time_particle(written_at: str, started: str) -> None:
+    """「에」 는 받침과 상관없이 붙는다 — 시각이 없으면 「알 수 없는 때 에」 로 띄어 나왔다(E2E)."""
+    from capa_simulation.components.container_start_check import report_origin_caption
+
+    caption = report_origin_caption(_report(written_at))
+
+    assert caption.startswith(f"C-DEP CD 컨테이너가 {started} ")
+    assert " 에 " not in caption
+
+
+def test_the_withheld_environment_notice_names_the_keys_without_a_dual_particle() -> None:
+    """앱에 남은 비밀값 key 는 고정 낱말 「CD 환경변수가」 뒤 괄호에 싣는다 — 키 이름 뒤에 조사를
+    붙이면 영문 끝이라 「`CAPA_BDQ_TOKEN`이(가)」 갈래 꼴이었다(E2E)."""
+    notice = report_contract.missing_report_notice(
+        {
+            report_contract.ARTIFACTORY_TOKEN_ENV: FAKE_ART_TOKEN,
+            report_contract.BDQ_TOKEN_ENV: FAKE_BDQ_TOKEN,
+        }
+    )
+
+    assert notice is not None
+    assert (
+        "CD 환경변수가 앱에 그대로 있습니다(`CAPA_ARTIFACTORY_TOKEN`·`CAPA_BDQ_TOKEN`)." in notice
+    )
+    assert "이(가)" not in notice and "` 가 " not in notice

@@ -169,6 +169,7 @@ _SECTIONS = (
     "tabs-links",
     "tabs-edges",
     "tabs-focus",
+    "tabs-return",
 )
 
 
@@ -822,3 +823,224 @@ def test_keyboard_focus_stays_on_the_strip_when_a_tab_closes_or_the_screen_moves
     assert "clearTimeout(S.focusTimer)" in JS[JS.index("  return () => {") :]
     assert "document.addEventListener(type, S.onInput, true)" in JS
     assert "document.removeEventListener(type, S.onInput, true)" in JS
+
+
+# ---------------------------------------- 새로 읽은 문서의 공식 복귀 알림(개선 거리 I1)
+
+_RETURN_RUNNER = """
+const text = %s
+const out = {}
+// 띠 CSS 변수 — 따옴표 친 퍼센트 인코딩 글이면 이름, `none`·빈 값·깨진 글이면 빈 글.
+out.marks = [
+  returnMark(' "%%E3%%80%%8C%%EC%%85%%8B%%EC%%97%%85%%20B%%E3%%80%%8D%%20r8"'),
+  returnMark("'%%EA%%B0%%80'"),
+  returnMark('none'),
+  returnMark(''),
+  returnMark('"%%E3%%80"'),
+]
+// 떠날 때 적을 값 — 이름이 없으면 적지 않는다(앞 문서 몫을 지우지 않는다).
+out.records = [
+  returnRecord('「셋업 B」 r8', true),
+  returnRecord('「셋업 B」 r8', false),
+  returnRecord('', true),
+]
+// 새로 읽은 문서의 알림 — 테마 단추와 새로고침이 다른 글이다. 적어 둔 값이 없거나 꼴이
+// 어긋나면 알리지 않는다.
+out.notices = [
+  returnNotice(out.records[0], text),
+  returnNotice(out.records[1], text),
+  returnNotice(null, text),
+  returnNotice('{', text),
+  returnNotice('{"label": ""}', text),
+]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_reloaded_document_tells_once_that_the_equipment_scenario_went_back_to_official() -> None:
+    """테마 단추·새로고침은 새 세션이라 가정 설비 시나리오가 아무 확인 없이 공식으로 돌아갔다(E2E
+    1~3회차 — 「셋업 실무 r8 → 운영 일정 r6 공식 v3」, 개선 거리 I1). 앞 세션이 공식 발행 쌍이 아닐
+    때만 띠 CSS 변수에 그 이름이 실리고, 문서를 떠날 때 적어 새로 읽은 문서가 한 번 알린다 — 새
+    세션마다 알리지 않는다."""
+    out = _node(_RETURN_RUNNER % json.dumps(page_tabs.TEXT, ensure_ascii=False))
+
+    assert out["marks"] == ["「셋업 B」 r8", "가", "", "", ""]
+    assert [json.loads(record) if record else None for record in out["records"]] == [
+        {"label": "「셋업 B」 r8", "cause": "theme"},
+        {"label": "「셋업 B」 r8", "cause": "reload"},
+        None,
+    ]
+    themed, reloaded, *rest = out["notices"]
+    assert themed == page_tabs.THEME_RETURN_NOTICE.format(label="「셋업 B」 r8")
+    assert reloaded == page_tabs.RETURN_NOTICE.format(label="「셋업 B」 r8")
+    assert themed.startswith("테마를 바꾸며") and reloaded.startswith("새로고침해")
+    assert rest == ["", "", ""]
+
+
+def test_the_return_notice_reads_the_header_variable_and_the_theme_switch_mark() -> None:
+    """변수 이름은 띠(`app_header`)와, 테마 표지는 테마 단추(`theme_toggle`)와 같은 글이다. 떠날 때
+    적는 처리기와 알리기는 문서에 하나다(탭 줄이 다시 마운트돼도 두 번 알리지 않는다)."""
+    from capa_simulation.components.app_header import EQUIPMENT_RETURN_VARIABLE
+    from capa_simulation.components.theme_toggle import THEME_SWITCH_STORAGE_KEY
+
+    assert f"const RETURN_VARIABLE = '{EQUIPMENT_RETURN_VARIABLE}'" in JS
+    assert f"const THEME_SWITCH_KEY = '{THEME_SWITCH_STORAGE_KEY}'" in JS
+    assert "if (!window.__capaReturnWatch) {" in JS
+    assert "window.addEventListener('pagehide'," in JS
+    assert "if (!window.__capaReturnChecked) {" in JS
+    assert "flash(message, RETURN_NOTICE_MS)" in JS
+    # 알리기 전에 떠난 문서의 몫은 지우지 않는다 — 떠날 때 이름이 없으면 적지 않는다.
+    assert "if (record !== null) storage.setItem(RETURN_KEY, record)" in JS
+    # 탭 줄이 없던 문서(부트스트랩 오류)에서 누른 테마 단추의 표지는 떠날 때 읽히지 않고 남는다 —
+    # 새 문서가 처음 볼 때 지우지 않으면 그 문서의 다음 새로고침을 테마 전환 글로 알린다.
+    first = JS.index("if (!window.__capaReturnChecked) {")
+    checked = JS[first : JS.index("if (!window.__capaReturnWatch) {")]
+    assert "window.sessionStorage.removeItem(THEME_SWITCH_KEY)" in checked
+
+
+def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:
+    """탭 줄 밖의 떠나기(테마 단추)도 편집표에서 막 손을 뗀 누름이면 그 편집 회차가 돌아올 때까지
+    붙든다(개선 거리 I4). 탭 줄이 그릴 때마다 붙들기 처리를 문서에 걸고 내려갈 때 걷는다 — 누를 때
+    편집표 포커스를 적고(`press`), 막 손을 뗀 누름이 아니면 곧바로, 아니면 탭 누름과 같은 붙듦
+    (`S.hold` — `release` 가 `holdVerdict` 로 놓는다)에 싣는다."""
+    gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
+    assert "press: () => { S.pressFromGrid = S.gridFocused }" in gate
+    assert gate.index("if (fresh())") < gate.index("S.hold = { id: null")
+    assert "release()" in gate
+    assert "if (window.__capaLeaveGate === gate) delete window.__capaLeaveGate" in JS
+    # 붙든 테마 누름은 탭이 아니다 — 놓을 때 탭 표지를 건드리지 않고 부른 쪽을 잇는다.
+    release = JS[JS.index("function release() {") :]
+    release = release[: release.index("\n  }\n")]
+    assert "const held = S.items.get(hold.id)" in release and "hold.go()" in release
+
+
+_GATE_RUNNER = """
+(() => {
+  // 시계·타이머 대역 — `advance(t)` 가 t 까지 걸린 타이머를 차례로 부른다.
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const document = { querySelector: () => ({ getAttribute: () => scriptState }) }
+  const window = {}
+  %(constants)s
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item) => log.push('tab:' + item.dataset.id)
+    %(slice)s
+    return { gate, select }
+  }
+  const strip = (log) => {
+    const parts = { tab: {}, close: { hidden: false } }
+    const tab = { dataset: { id: 'b' }, hidden: false, __parts: parts }
+    const S = {
+      items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
+      editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+    }
+    return { S, tab, ...mount(S, log) }
+  }
+  const theme = (log) => () => log.push('theme')
+  const out = {}
+
+  // 편집표와 상관없는 누름 — 곧바로 잇는다.
+  let log = []
+  let T = strip(log)
+  T.gate.press()
+  T.gate.go(theme(log))
+  out.fresh = [log.slice(), T.S.hold]
+
+  // 칸 편집기에 쓰는 중 — 편집 회차가 도는 동안 붙들고, 끝나고 새 data 가 오면 잇는다.
+  timers.length = 0; now = 1000; log = []; T = strip(log)
+  T.S.gridFocused = true
+  T.S.editAt = now
+  T.gate.press()
+  T.gate.go(theme(log))
+  out.typingHeld = [log.slice(), T.S.hold ? ['held', T.S.hold.id] : null]
+  scriptState = 'running'
+  advance(2000)
+  out.typingWhileRunning = log.slice()
+  scriptState = 'notRunning'
+  T.S.data = { active: 'a' }
+  advance(2100)
+  out.typingAfterRun = [log.slice(), T.S.hold, T.tab.__parts.tab['aria-busy'] || null]
+
+  // 막 Enter 한 직후(포커스는 이미 단추) — 회차가 아직 돌지 않아도 0.4초는 기다린다.
+  timers.length = 0; now = 10000; log = []; T = strip(log)
+  T.S.editAt = now - 1000
+  T.gate.press()
+  T.gate.go(theme(log))
+  advance(10300)
+  out.enterEarly = log.slice()
+  advance(10500)
+  out.enterLate = log.slice()
+
+  // 붙든 사이 탭을 누르면 마지막 누름(탭)만 남는다 — 테마 누름은 버려진다.
+  timers.length = 0; now = 20000; log = []; T = strip(log)
+  T.S.gridFocused = true
+  T.S.editAt = now
+  T.gate.press()
+  T.gate.go(theme(log))
+  T.S.pressFromGrid = T.S.gridFocused
+  T.select(T.tab)
+  T.S.data = { active: 'a' }
+  advance(21000)
+  out.dropped = log.slice()
+
+  // 회차가 끝나지 않아도 붙들기는 `BUSY_MS` 에서 놓는다.
+  timers.length = 0; now = 30000; log = []; T = strip(log)
+  T.S.gridFocused = true
+  T.S.editAt = now
+  T.gate.press()
+  T.gate.go(theme(log))
+  scriptState = 'running'
+  advance(30000 + BUSY_MS - 200)
+  out.capEarly = log.slice()
+  advance(30000 + BUSY_MS + 200)
+  out.capLate = log.slice()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None:
+    """테마 단추가 지나는 붙들기(`window.__capaLeaveGate`)를 탭 줄 JS 그대로 node 에서 돌린다(개선
+    거리 I4). 편집표와 상관없는 누름은 곧바로 잇고, 칸에 쓰는 중이거나 막 Enter 한 직후의 누름은
+    편집 회차가 돌아올 때까지(최소 0.4초, 최대 `BUSY_MS`) 붙든다. 붙든 사이 탭을 누르면 테마
+    누름은 버려지고 탭 누름만 잇는다."""
+    lines = [
+        re.search(rf"^const {name} = .+$", JS, re.M)
+        for name in ("BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+    ]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  const appRunning = () => {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    runner = _GATE_RUNNER % {"constants": constants, "slice": JS[start:end]}
+
+    out = _node(runner)
+
+    assert out["fresh"] == [["theme"], None]
+    assert out["typingHeld"] == [[], ["held", None]]
+    assert out["typingWhileRunning"] == []
+    assert out["typingAfterRun"] == [["theme"], None, None]
+    assert out["enterEarly"] == []
+    assert out["enterLate"] == ["theme"]
+    assert out["dropped"] == ["tab:b"]
+    assert out["capEarly"] == []
+    assert out["capLate"] == ["theme"]

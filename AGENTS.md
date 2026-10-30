@@ -1637,11 +1637,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       회차가 돌아올 때까지 붙든다(`page_tabs.js` 의 순수 구획 `<tabs-hold>` — 누를 때 포커스가 편집표였거나 마지막 편집표
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
       없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`)로
-      알아본다 — 탭 줄 밖의 떠나기(테마 단추)는 이 붙들기를 지나지 않는다.
+      알아본다. 탭 줄 밖의 떠나기인 머리 툴바의 테마 단추도 같은 붙들기를 지난다 — 탭 줄이 그릴 때마다
+      `window.__capaLeaveGate`(`press` — 단추 pointerdown 에서 편집표 포커스를 적는다, `go(fn)` — 붙든 뒤 `fn` 을
+      부른다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
+      곧바로 묻는다. 붙든 동안 탭을 누르면 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다
+      (`theme_toggle.LEAVE_HOLD_RESET_MS`). 칸 편집기에 쓰는 중(Enter 전)에 누른 Dark 가 표지가 서기 전에 묻지 않고
+      새로 읽던 틈을 막는다(E2E #94·#101, 개선 거리 I4).
     - 탭 줄은 페이지보다 먼저 그리므로 「이번 회차에 그 편집표를 그리는가」 를 위젯 값으로 미리 본다 — 작은 편집표는 바깥 탭이
       ① 이고 표 고르기(`equipment_data_workspace.MASTER_TABLE_KEY`)가 그 표일 때만 센다. 고르기를 바꾼 회차에는 편집표 위젯
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
       편집표를 숨기는 고르기를 새로 두면 판정에 그 고르기를 같이 넣는다.
+  - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
+    처리기 하나) 띠 CSS 변수 `--capa-equipment-return`(`app_header.EQUIPMENT_RETURN_VARIABLE`)에 이름이 있으면 탭의
+    `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,
+    글은 `TEXT["returned"]`·`TEXT["themed"]`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
+    문서가 다시 알린다. 떠날 때 이름이 없으면 적지 않는다(알리기 전에 떠난 문서의 몫을 지우지 않는다). 테마 단추의 표지
+    (`theme_toggle.THEME_SWITCH_STORAGE_KEY`)는 떠날 때 읽고 지우며, 탭 줄이 없던 문서(부트스트랩 오류)에서 눌러 남은 표지는 새
+    문서의 첫 그리기가 지운다 — 남기면 그 문서의 다음 새로고침을 테마 전환 글로 알린다.
   - 기록 한 칸(`page_tabs.js` 의 순수 구획 `<tabs-history>`, `tests/test_page_tabs_assets.py` 가 node 로 돌린다) — 문서의
     `history.pushState` 를 한 번 감싸(`window.__capaHistoryGuard`) 지금 경로와 같은 경로의 쌓기를 **늘** 칸
     바꾸기(`replaceState`)로 돌린다. 거는 것(`<tabs-history-install>` 의 `installHistoryGuard`)은 회차 맨 앞의 입장 화면
@@ -1826,6 +1838,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
+  - 같은 띠 CSS 가 **늘** `EQUIPMENT_RETURN_VARIABLE`(`--capa-equipment-return`)을 정한다 — 세션 설비 시나리오가 최신 공식
+    발행 쌍이 아니면 「「셋업 B」 r8」(퍼센트 인코딩 글, `equipment_return_mark`), 아니면 `none`. 그리는 쪽(잠근 꼴은 공식)이
+    아니라 세션 라벨(`equipment_scenario_activation.remembered_equipment_label`)로 정하고, `app.py` 와 사이드바 설비 시나리오 줄
+    (같은 회차에 띠를 다시 보낸다)이 함께 넘긴다. 테마 단추·새로고침은 새 세션이라 공식으로 돌아가는데(E5), 탭 줄 JS 가 문서를
+    떠날 때(`pagehide`) 이 값을 탭의 `sessionStorage` 에 적고 새로 읽은 문서가 탭 줄 알림 칸에 한 번 알린다(`page_tabs.js`
+    `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 글). 서버에 아무것도 남기지 않고, 앞
+    세션이 공식 발행 쌍이었으면 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
     탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래), 큰 제목 칸 sr-only
@@ -4257,9 +4276,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   공식버전명·리비전 번호·공정·호기·칸 이름·숫자·날짜를 넣는 알림·오류·로그·스크립트 출력) 바로 뒤에 조사를 못박지 않고
   `with_object_particle`·`with_topic_particle`·`with_subject_particle`·`with_direction_particle`(조사만 따로 쓸 때
   `*_particle`)로 붙여 쓴다 — 값과 조사 사이를 띄우지 않는다(「r1을」). 손으로 박은 갈래 꼴(「{x}은(는)」)도 쓰지 않는다 —
-  도우미가 읽지 못하는 끝(영문)에서 같은 꼴을 낸다. 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름의 `F`·`DB`·`size`·`Capa`·단위
-  `Kea`)는 도우미의 읽기 표 `_LATIN_TAIL_FINAL` 이 읽는다 — 새 고정 어휘가 갈래 꼴로 떨어지면 거기에 더하고(JS `withJosa` 표도),
-  사람이 붙인 이름의 영문 끝은 더하지 않는다. `tests/test_particle_sites.py` 가 `app.py`·`app_pages`·`src` 를 AST 로
+  도우미가 읽지 못하는 끝(영문 낱말)에서 같은 꼴을 낸다. 영문 끝이 한 글자(「셋업 B」·「DEL-A」·「2H」)이거나 대문자 두세
+  글자(「HBM」·「EDP」)면 알파벳 이름으로 읽는다(엘·엠·엔·알만 받침 — `_spelled_final`). 넷 이상의 대문자(「USER」)와 소문자가
+  섞인 낱말(「Bonding」)은 낱말인지 약어인지 갈리지 않아 읽지 않는다. 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름의 `F`·
+  「DuckDB」의 `DB`·`size`·`Capa`·단위 `Kea`)는 도우미의 읽기 표 `_LATIN_TAIL_FINAL` 이 먼저 읽는다 — 새 고정 어휘가 갈래 꼴로
+  떨어지면 거기에 더하고(JS `withJosa` 표도), 사람이 붙인 이름의 영문 끝은 더하지 않는다(이름 뒤에 고정 명사를 둔다 — 「「…」
+  공정은」). `tests/test_particle_sites.py` 가 `app.py`·`app_pages`·`src` 를 AST 로
   훑어 붙은 꼴·띄운 꼴·갈래 꼴과 `{…}`·`%s` 틀 뒤 고정 조사(값을 감싼 따옴표·낫표 뒤, 괄호를 사이에 둔 꼴 포함)를
   막는다 — `scripts/` 는 훑지 않으므로 스크립트 출력은 리뷰 몫이다(패키지를 import 하지 않는 `apply_deploy_package.py` 는
   고정 명사를 사이에 둔다). 배치 편집기 JS 의 `${…}` 뒤는 `editor.js` 의
