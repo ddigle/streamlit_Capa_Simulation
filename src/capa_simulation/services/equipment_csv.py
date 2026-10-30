@@ -337,12 +337,16 @@ class EquipmentPaste:
     - `case_variants` — 새 호기로 더하는 설비명 가운데 대소문자만 다른 기존 호기가 있는 것
       (붙여넣은 이름, 기존 이름). 막지 않고 미리보기가 경고한다 — Space 이름 바꾸기는 대소문자·
       앞뒤 공백을 무시하고 겹침을 막으므로 같은 설비를 둘로 적었을 가능성이 크다.
+    - `held_rows` — `keep_current` 열을 붙여넣었을 때 있던 호기의 **붙여넣은 그대로**(검증 전)
+      39컬럼 행. `rows` 의 그 열은 지금 값이라, 무엇을 넣지 않았는지는 이 표로 견준다. 그 열을
+      붙여넣지 않았거나 있던 호기가 없으면 None.
     """
 
     rows: pd.DataFrame
     columns: tuple[str, ...]
     cleared_cells: int = 0
     case_variants: tuple[tuple[str, str], ...] = ()
+    held_rows: pd.DataFrame | None = None
 
     @property
     def kept_columns(self) -> tuple[str, ...]:
@@ -375,6 +379,7 @@ def read_equipment_update(
     *,
     floor_canvases: FloorCanvasMap | None = None,
     notices: list[str] | None = None,
+    keep_current: Sequence[str] = (),
 ) -> EquipmentPaste:
     """설비 마스터 붙여넣기(글) 또는 CSV(바이트)를 **붙여넣은 열만 바꾸는** 행으로 읽는다.
 
@@ -388,6 +393,12 @@ def read_equipment_update(
     - 채운 표를 `prepare_equipment_master` 로 검증한다. 호출부가 이 표를 편집본에 합친 뒤 병합된
       전체 표를 한 번 더 검증한다(`merge_equipment_rows`) — 날짜·환산비·Main 설비·중복 규칙이
       전체 열 붙여넣기와 똑같이 돈다.
+
+    - `keep_current` 열은 붙여넣었어도 있던 호기에는 넣지 않는다 — 그 호기의 지금 값을 둔 채
+      검증한다(새 호기는 붙여넣은 값을 받는다). 가정 설비 시나리오의 「배치 칸도 붙여넣기」 끔이
+      배치 일곱 칸을 넘긴다 — 넣지 않을 값의 검증 오류(좌표만 있고 크기 없음 등)가 미리보기를
+      막았다(2026-10-30 E2E). 붙여넣은 그대로의 그 호기 행은 `EquipmentPaste.held_rows` 로
+      돌려준다.
 
     옛 머리 이름 변환·모르는 머리글·`notices`(떼어 낸 옛 컬럼, 읽지 않은 열)는
     `_select_update_columns` 가 다룬다. 편집본이 비었으면 모든 행이 새 호기라 양식 전체 열을 읽는
@@ -435,8 +446,16 @@ def read_equipment_update(
     for column in kept:
         # 새 호기는 비어 있다(위 검사로 선택 컬럼만 남았다).
         filled[column] = pasted[EQUIPMENT_ID_COLUMN].map(base[column])
+    held = [column for column in keep_current if column in columns]
+    held_rows: pd.DataFrame | None = None
+    if held and bool(matched.any()):
+        held_rows = filled.loc[matched.to_numpy()].reset_index(drop=True)
+        names = pasted.loc[matched, EQUIPMENT_ID_COLUMN]
+        filled = filled.astype({column: "object" for column in held})
+        for column in held:
+            filled.loc[matched, column] = names.map(base[column])
     rows = prepare_equipment_master(filled, floor_canvases=floor_canvases)
-    return EquipmentPaste(rows, columns, _cleared_cells(base, rows, columns), variants)
+    return EquipmentPaste(rows, columns, _cleared_cells(base, rows, columns), variants, held_rows)
 
 
 def describe_case_variants(
