@@ -21,6 +21,8 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 - **고른 달**(위젯 아님)과 사용자가 눌러 고른 적이 있는가 표지, 두 그림의 칸 누름 세대(한 칸 — 어느
   그림을 눌러도 둘 다 새 요소가 된다).
 - **주소 인자 막이**(위젯 아님) — 마지막으로 적용한 `?process=` 값(`CONSTRAINT_QUERY_SEEN_KEY`).
+- **잠긴 상세에서 온 방문**(위젯 아님) — 그 인자로 HOME 칸 공정 Capa 상세(설비 공식 고정)에서
+  넘어온 (공정, 페이지 방문 차례)(`CONSTRAINT_LOCKED_ARRIVAL_KEY`).
 
 제약 시작·끝 상자는 정수 달 선택지라 `page_bootstrap.prune_choice`(글자 선택지 전용)를 쓰지 않고
 `settle_period` 가 위젯 앞에서 매 회차 잡는다 — 사용자가 상자를 고치기 전에는 기본값(그 제품의 첫
