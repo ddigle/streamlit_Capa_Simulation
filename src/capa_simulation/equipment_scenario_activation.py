@@ -425,14 +425,14 @@ def space_edit_mode(session: EquipmentSession, *, stamped_role: str | None) -> S
             fast_forward_from=latest_no,
             notice=(
                 f"{name} r{latest_no}{subject_particle(f'r{latest_no}')} 더 새롭지만 배치는 "
-                f"같습니다 — 배치는 r{latest_no} 의 일정 위 새 리비전으로 저장됩니다(일정 칸은 "
+                f"같습니다 — 배치는 r{latest_no}의 일정 위 새 리비전으로 저장됩니다(일정 칸은 "
                 "그대로 잠금)."
             ),
         )
     return SpaceEditMode(
         layout="locked",
         lock_reason=(
-            f"{name} r{latest_no} 에 다른 배치가 저장됐습니다 — 배치를 고치려면 최신 "
+            f"{name} r{latest_no}에 다른 배치가 저장됐습니다 — 배치를 고치려면 최신 "
             f"r{latest_no}{object_particle(f'r{latest_no}')} 불러오세요."
         ),
         lock_action="latest",

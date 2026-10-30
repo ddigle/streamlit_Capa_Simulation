@@ -518,7 +518,7 @@ def test_the_scenario_section_clones_publishes_and_the_session_stays_pinned(
     repository = _repository(tmp_path)
     names = [item.scenario_name for item in repository.list_equipment_scenarios()]
     assert names == ["운영 일정", "셋업 실무"]
-    assert any("「셋업 실무」 r1 을 만들었습니다" in text for text in _texts(app))
+    assert any("「셋업 실무」 r1을 만들었습니다" in text for text in _texts(app))
 
     # 셋업 실무 r1 을 공식으로 발행 — 세션은 고른 그대로(운영 일정 r1)이고 배지만 바뀐다.
     setup = next(
@@ -1642,7 +1642,7 @@ def test_the_tab_starts_a_new_scenario_from_an_old_revision(
     _ok(app.run())
 
     assert any(
-        "「운영 일정」 r1에서 설비 시나리오 「r1 가지」 r1 을 만들었습니다" in text
+        "「운영 일정」 r1에서 설비 시나리오 「r1 가지」 r1을 만들었습니다" in text
         for text in _texts(app)
     )
     # 배치 차이가 없는 리비전에서 만든 시나리오의 완료 알림에는 가정 배치 줄이 없다.

@@ -590,7 +590,7 @@ def test_the_stale_and_load_words_pick_the_particles_after_the_revision_numbers(
         "setup", "셋업", release_no=1, stale=True, revision_no=seen, latest_revision_no=latest
     )
     lock = _stale_lock_message(basis)
-    assert lock.startswith(f"「셋업」 {subject} 더 새롭습니다 — 지금 보는 r{seen} 에서는")
+    assert lock.startswith(f"「셋업」 {subject} 더 새롭습니다 — 지금 보는 r{seen}에서는")
     assert f"최신 {object_} 불러오세요." in lock
     delete = stale_delete_lock(basis)
     assert delete.startswith(f"지금 보는 {topic} 「셋업」 최신이 아니라 지울 수 없습니다")

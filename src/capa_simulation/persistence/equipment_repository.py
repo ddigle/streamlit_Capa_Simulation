@@ -634,7 +634,7 @@ class EquipmentLayoutPublishBlocked(ValueError):
         새 리비전의 실효 수로 아래 글을 쓴다."""
         counts = layout_counts_words(units, marks, labels) or "저장된 차이"
         default = (
-            f"「{scenario_name}」 r{revision_no} 에는 공식과 다른 배치({counts})가 있어 공식으로 "
+            f"「{scenario_name}」 r{revision_no}에는 공식과 다른 배치({counts})가 있어 공식으로 "
             "발행하지 않았습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
             "시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 로 이 시나리오를 "
             "공식 배치로 돌린 뒤 발행하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "

@@ -900,7 +900,7 @@ def test_an_old_revision_whose_restore_writes_nothing_is_not_sent_to_restore(
         preview.block(newest.scenario_name, 2, 3, official=True, newest_released=True)
     )
     assert "「이 리비전으로 되돌리기」" not in words
-    assert "최신 r3 의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in words
+    assert "최신 r3의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in words
     assert "따로 발행할 것이 없습니다" in words
 
     with pytest.raises(EquipmentLayoutPublishBlocked) as refused:
