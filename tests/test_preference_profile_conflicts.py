@@ -143,7 +143,10 @@ def test_a_top5_band_save_from_a_stale_screen_is_rejected(database: Path) -> Non
     ids=["하한만", "상한만", "둘 다"],
 )
 def test_after_a_refused_top5_save_both_boxes_show_the_latest_save(
-    database: Path, other: tuple[float, float], expected: list[float]
+    database: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    other: tuple[float, float],
+    expected: list[float],
 ) -> None:
     """남의 저장에 거부된 뒤 두 칸이 **둘 다** 최신 저장본이다 — 남이 바꾼 칸만 새로 서고 안 바꾼
     칸은 이 화면이 친 값이 남아 아무도 정하지 않은 구간(하한 80 · 상한 180)이 섞여 보였고, 다시
@@ -162,9 +165,13 @@ def test_after_a_refused_top5_save_both_boxes_show_the_latest_save(
     assert [box.value for box in app.number_input] == expected
     assert app.session_state[TOP5_BASE_VERSION_KEY] == 1
 
-    # 다시 누르면 최신 저장본에서 출발한다 — 섞인 구간이 새 버전으로 저장되지 않는다.
+    # 거부 창(`TRAILING_PRESS_SECONDS`)이 지난 뒤 다시 누르면 실제로 저장한다 — 섞인 구간이 아니라
+    # 최신 저장본이 v2 로 선다(창 안의 누름은 쓰지 않아 이 대조가 되지 않는다).
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _press(app, "확보율 구간 저장")
+    assert any("Top5 확보율 구간을 저장했습니다" in message for message in _successes(app))
     profile = DuckDBScenarioRepository(database).load_global_top5_band()
+    assert profile.version == 2
     assert [profile.min_rate * 100, profile.max_rate * 100] == pytest.approx(expected)
 
 
