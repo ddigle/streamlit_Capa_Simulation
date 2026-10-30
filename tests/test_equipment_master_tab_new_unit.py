@@ -636,6 +636,12 @@ def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:
         and "공식 가용대수에 셉니다" in text
         for text in captions
     ), captions
+    # 저장 칸 함께 넣기는 꺼져 있어도(Q1) 그 칸에서 켠 호기가 공식에 들어가므로 발행 체크가
+    # 선다 — 옛 「함께 넣기를 켤 때만」 은 이 체크를 숨겨 말없이 발행하지 않았다(I53, 세 저장 자리
+    # 한 규칙).
+    assert app.checkbox(key="space_layout_save_fields_propagate_units_assumption").value is False
+    publish = app.checkbox(key="space_layout_save_fields_publish_assumption")
+    assert (publish.label, publish.value) == (ASSUMPTION_PUBLISH_LABEL, True)
 
 
 def _popup_with_panel_unit(database: str) -> None:

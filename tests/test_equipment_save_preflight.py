@@ -229,6 +229,16 @@ def test_the_space_layout_save_refuses_with_the_same_judgement(tmp_path: Path) -
     assert any(line in text for text in _errors(app)), _errors(app)
     assert not any("다른 사용자가 먼저" in text for text in _errors(app))
     assert len(repository.list_revisions()) == before
+    # 거절 곁의 「최신 rN 불러오기(변경 버림)」(E2E #79 — 설비 마스터 탭·사이드바 팝업과 같음).
+    latest = _scenario(repository, setup)
+    load_latest = app.button(key="space_save_load_latest")
+    assert load_latest.label == f"최신 r{latest.latest_revision_no} 불러오기(변경 버림)"
+    load_latest.click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[SELECTION_KEY] == {
+        "scenario_id": setup,
+        "schedule_revision_id": latest.latest_schedule_revision_id,
+    }
 
 
 def test_a_stale_space_layout_save_still_writes_the_pending_fab_layout(tmp_path: Path) -> None:
