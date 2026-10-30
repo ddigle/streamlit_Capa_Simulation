@@ -344,8 +344,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY` 에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
     덮지 않게 하고, 인자가 걷힌 회차에 비운다(공정 Capa 상세 `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이). 공정
     선택지는 공정 Capa 상세와 같은 전 공정이고(D12) 공정 칸이 비었거나 선택지에 없는 회차(사이드바로 처음 열기 등)의 기본은
-    설비 일정이 서는 첫 공정(`first_ready_process` — 까닭 카드와 같은 `dynamic_readiness`, 없으면 첫 공정)이다. 설비 일정이
-    서지 않으면 까닭 카드 한 장(`readiness.badge`·`detail`, 판정을
+    설비 일정이 서는 첫 공정(`constraint_equipment_plan.first_ready_process` — 까닭 카드와 같은 `dynamic_readiness`, 없으면
+    첫 공정)이다. 설비 일정이 서지 않으면 까닭 카드 한 장(`readiness.badge`·`detail`, 판정을
     지나도 계획에 없는 공정은 「계획에 공정 없음」·「Cut-off 미기재」)으로 멈춘다.
   - 오류는 넷으로 가른다 — 공통 진입(카드 캡션), 제품별 소요 받기(카드 캡션 + 본문 「제품별 소요를 읽지 못했습니다 — {글}」 —
     「소요가 있는 제품이 없다」 안내와 가른다), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
@@ -367,7 +367,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     render_mode_switch`, `segmented_control` · `persist_state` — 하위 보기 전환은 본문, 카드에 무엇이 설지 정하므로 앱 전체
     회차). 「개조 일정」 이면 공통 진입·설비 세션·공정 칸 정리 뒤 `render_schedule_mode` 하나가 카드·설비 일정 확인·계획·계산·
     본문을 그리고 페이지는 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다 — 1판은 두 모드를 함께 쓰지 않는다). 머리 한 줄·까닭
-    카드 그리기(`render_header`·`render_reason_card`)는 분기 앞에 두고 컴포넌트에 넘긴다. 두 모드는 공정 칸(`CONSTRAINT_PROCESS_KEY`)
+    카드 그리기(`render_header`·`render_reason_card`)는 분기 앞에 두고 컴포넌트에 넘긴다. 설비 일정 확인(판정 · 까닭 카드)과
+    계획 칸 받기는 두 모드가 같은 함수(`components/constraint_equipment_plan.render_equipment_plan` — 입력 묶음
+    `EquipmentPlanSource` 는 페이지가 설비 세션 뒤 한 번 만든다)이고, 제약 영향 모드는 그 사이 제품 갈래를 `before_plan` 으로,
+    신규 기준일을 `new_unit_since` 로 넘긴다(멈추는 갈래 차례 그대로). 두 모드는 공정 칸(`CONSTRAINT_PROCESS_KEY`)
     ·기준 확보율 정본(`CONSTRAINT_GENERAL_KEY`)을 나누고 계획은 같은 키로 받는다(`tests/test_modification_schedule_page.py`).
     2판 옵션(보유 제약 설비·「신규 설비는 개조 없이」·신규 기준일)은 제약 영향 모드 카드에만 선다 — 개조 일정 모드는 그 칸을
     읽지 않는다.
@@ -2739,23 +2742,37 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   카드가 그보다 좁으면(390px 창) 상자가 가로로 스크롤한다(그림 칸이 199px 로 줄어 세운 달 눈금 30개가 포개졌다, 2026-10-25
   E2E). 눈금은 솎지 않는다 — 서버는 칸 폭을 모른다. 규칙은 위 줄 배치와 같은 스타일 칸(`top_row_style(달 수)`)이라 이벤트 칸은
   스타일만 든 `st.html` 넷(위 줄 배치 + 공정 Capa 상세와 같은 계산표 틀 셋) 그대로다.
+- `src/capa_simulation/components/constraint_equipment_plan.py` — 제약 시뮬레이션 두 모드(제약 영향 · 개조 일정)가 함께 쓰는
+  「설비 일정 확인 → 계획」 블록. `equipment_readiness`(설비 DB 오류면 None, 아니면 `dynamic_readiness` — 두 모드 모두 카드
+  안에서 먼저 쓴다)와 `render_equipment_plan`(멈추는 갈래 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어는 `subject`) · 그
+  모드의 앞 갈래 `before_plan` · 계획 계산 오류 「설비 일정을 계산하지 못했습니다」(두 DB 경로) · 계획에 공정 없음 — 마다 머리
+  한 줄과 까닭을 그리고 None, `st.stop` 은 부르는 쪽). 계획은 공정 Capa 상세 ② 와 같은 칸을 같은 키로 받고(목표는 키 맞춤용
+  HOME 확보기준), `new_unit_since` 를 주면 같은 키의 설비 일정 칸을 그 날로 거른 신규 호기도 같은 `try` 에서 받는다. 계산
+  함수는 부를 때 `simulation_cache` 모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 두 모드가 이 함수만 거치는지
+  `tests/test_modification_schedule_page.py` 가, 멈추는 갈래 차례와 까닭 글(키 만들기 예외도 계산 오류 갈래)은
+  `tests/test_constraint_equipment_plan.py` 가 본다. 제약 영향 모드의 공정 칸이 빈 회차의 기본 공정(`first_ready_process` —
+  설비 일정이 서는 첫 공정, 설비 프레임은 한 번만 거른다)도 여기서 판정해 페이지가 `dynamic_readiness` 를 직접 부르지 않는다.
 - `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
   만드는 순수 함수. 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰
   없음 — 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%p) 미달」). 낮출 폭은 양수 「기준 n%p 낮추기」(`relief_text` — 기한 칸
   캡션과 대안 셋 셋째 줄이 같은 글, 0.01%p **올림** — 적힌 만큼 낮추면 들어간다), 0 까지 낮춰도 못 넣으면 까닭(짧은 창 · 시작보다
   앞선 상한 · 동시 상한 · 가용)을 적고, 탐색이 한도에 걸렸으면 「이 계산으로 찾은 범위」 한 줄(「적힌 만큼 낮추면 들어간다」 괄호는
-  낮출 폭이 적혔을 때만 — 까닭만 적혔으면 낮출 폭이 없다). 차수 막대 글(「N대」)은 `uniformtext` 하한(`_BAR_TEXT_MIN_PX`) 아래로
-  줄이지 않고 숨긴다(대수는 막대 풍선 · 차수 목록에 늘 있다). 그림 모양을 바꾸면 `SCHEDULE_FIGURE_SCHEMA_VERSION` 을 올린다.
+  낮출 폭이 적혔을 때만 — 까닭만 적혔으면 낮출 폭이 없다). 차수 띠 높이는 겹친 차수 줄 수를 따른다(`_band_layout` — 줄마다
+  `_LANE_PX` 26px, 한 줄이면 `_BAND_MIN_PX` 로 그림 340px 그대로, `_BAND_MAX_LANES` 줄에서 멈춤 — 본 그림 칸은 그대로이고 그림이
+  길어진다. 고정 비율 띠는 세 줄에서 막대가 10px 라 글이 늘 숨었다). 차수 막대 글(「N대」)은 `uniformtext` 하한
+  (`_BAR_TEXT_MIN_PX`) 아래로 줄이지 않고 숨긴다(대수는 막대 풍선 · 차수 목록에 늘 있다). 그림 모양을 바꾸면
+  `SCHEDULE_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/modification_schedule_view.py` — 「개조 일정」 모드 한 회차 — 본문 맨 위 모드 전환
   (`render_mode_switch`), 조건 카드(대상 / 이 세션만 / 개조 · 일정 · 기준 묶음, 버튼 + 직접 입력은 `preset_number_field`), 설비
-  일정 확인과 까닭 카드, 계획(`_plan` — 공정 Capa 상세 ②·제약 모드와 같은 인자 차례로 같은 키, 계산 함수는 부를 때
-  `simulation_cache` 모듈에서 찾는다), 계산, 본문(머리 한 줄 · 출처 띠 · 「아직 일정에 넣지 않은 개조만」 · 요약 넷 · 대안 셋 ·
+  일정 확인 · 까닭 카드 · 계획(제약 모드와 같은 함수 `constraint_equipment_plan.render_equipment_plan` — 입력은 페이지가 넘긴
+  `ScheduleModeContext.source`), 계산, 본문(머리 한 줄 · 출처 띠 · 「아직 일정에 넣지 않은 개조만」 · 요약 넷 · 대안 셋 ·
   그래프 · 차수 목록). 기한 상자는 고른 시작 이후인 달만 내고(바뀌어 빠지면 「없음」), 동시 상한 「없음」 이면 숫자 칸이
   빈다. 요약 셋째 칸은 「개조 달 최저 여유」(값 = 기준 대비 %p, 캡션 = 그 달 · 확보율 — 6장). 결과·그림은 세션 칸 LRU(4칸 — 조건
   값·테마 키)다(Streamlit 캐시가 아니다 — 결과 모양을 바꾸면 `_RESULT_SCHEMA_VERSION` 을 올린다). 프래그먼트가 없다 — 본문에
-  카드 밖 조작 위젯이 없다. 설비 일정 확인·계획 블록은 페이지의 제약 모드 블록과 같은 꼴로 따로 있다(병행 가지와 겹치지 않게 —
-  합치는 것은 `docs/TODO.md`).
+  카드 밖 조작 위젯이 없다. 요약 넷째 칸 「기한」 풍선(`DEADLINE_HELP`)은 칸이 실제로 적는 것만
+  말한다 — 「못 맞춤」 은 기한을 골랐을 때만, 낮출 폭은 기준을 낮춰 다 들어갈 때만 캡션에 붙고 0% 까지 낮춰도 못 넣으면 까닭은 대안
+  셋 카드가 적는다.
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
   - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
@@ -5240,7 +5257,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   꺼질 수 있는 단추(페이더가 오늘일 때의 「오늘」 처럼 `disabled`)는 켜졌을 때만 누른다 — 꺼진 단추를 누르면 Playwright 가
   켜지기를 30초 기다리다 `TimeoutError` 로 끝나 앞의 결과를 가린다. Space 두 항목은 `Screen.open_space_overview` 로
   FAB 전체에서 시작한다 — 연 층은 위젯이 아니라 세션 값이라 앞 항목(`space_drawer`)이 연 층이 페이지를 다시 열어도
-  남고, 그 층 상세에는 층 목록 표가 없다(사내 리뷰 202610200720 발견 1). 앱 콘솔 경고를 세는 항목(`entry_sections`)은
+  남고, 그 층 상세에는 층 목록 표가 없다(사내 리뷰 202610200720 발견 1). 세션에 남는 본문 전환(제약 시뮬레이션 「제약
+  영향 | 개조 일정」 — `persist_state`)도 같은 까닭이라 그 화면을 보는 항목이 읽기 전에 제 모드를 고르고 바꿨으면 `finally` 에서
+  되돌린다(`_choose_segment` — `constraint_sim` 은 「제약 영향」, 개조 일정 항목을 더하면 그 항목도). 앱 콘솔 경고를 세는 항목(`entry_sections`)은
   확인용 앱의 stdout · stderr 를 파이프 하나로 받아 `CONSOLE_NEEDLES` 의 글이 든 줄 수만 본다(`ConsoleCounter` — 줄은 세고
   버리며 파일에도 쓰지 않는다. 경고 · 예외 문구에 이름이 실릴 수 있고, 사내 백그라운드가 스크립트를 죽여도 남는 것이 없어야
   한다). 7장 B 대행이 헤드리스로 못 센 칸은 항목으로 옮기고 사람만 볼 수 있는 칸만 사용자 몫으로 둔다. 길 여럿을 재는 항목은

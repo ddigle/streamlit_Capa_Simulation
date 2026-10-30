@@ -31,7 +31,9 @@
 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
 `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로 없음).
 `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로
-둔갑한다.
+둔갑한다. 설비 일정 확인(판정 · 까닭 카드)과 계획 받기는 「개조 일정」 모드와 같은 함수
+(`components/constraint_equipment_plan.render_equipment_plan`)이고, 제품 갈래는 그 사이
+(`before_plan`)에 선다.
 
 본문은 머리 한 줄 → 출처 띠 → 요약 넷(프래그먼트 밖) → 본문
 프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
@@ -48,6 +50,12 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.constraint_equipment_plan import (
+    EquipmentPlanSource,
+    equipment_readiness,
+    first_ready_process,
+    render_equipment_plan,
+)
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
     general_label,
@@ -161,23 +169,9 @@ from capa_simulation.services.manual_downtime import ManualDowntime, manual_effe
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
 from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
-from capa_simulation.services.process_equipment_timeline import (
-    DynamicReadiness,
-    NewUnitAvailability,
-    dynamic_readiness,
-    new_unit_availability,
-)
-from capa_simulation.services.required_shortening import target_from_thresholds
+from capa_simulation.services.process_equipment_timeline import NewUnitAvailability
 from capa_simulation.services.securement_threshold import securement_threshold_caption
-from capa_simulation.services.simulation_cache import (
-    get_process_equipment_timeline,
-    get_process_product_demand,
-    load_required_shortening_for_target,
-    process_timeline_key_from_shortening,
-    required_shortening_cache_key,
-    required_shortening_target_cache_key,
-    scenario_required_equipment,
-)
+from capa_simulation.services.simulation_cache import get_process_product_demand
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 from capa_simulation.upeh_assumption_state import (
@@ -270,22 +264,15 @@ except BOOTSTRAP_ERRORS as exc:
     equipment_error = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
 else:
     render_equipment_scenario_row(equipment_session)
-
-
-def first_ready_process() -> str | None:
-    """공정 칸이 비었을 때(사이드바로 처음 열기)의 기본 공정 — 설비 일정이 서는 첫 공정(선택지
-    차례). 처음 화면이 까닭 카드가 아니라 계산이게(2026-10-25 E2E). 서는 공정이 없거나 설비 DB 를
-    못 읽으면 첫 공정이다. 판정은 까닭 카드와 같은 `dynamic_readiness` 이고 공정마다 캐시된 스냅샷을
-    거를 뿐이라 DB 를 열지 않는다(칸이 빈 회차에만 부른다)."""
-    if not process_options:
-        return None
-    if snapshot is not None and not equipment_error:
-        equipment_frame = snapshot.calculation_frames()[1]
-        for option in process_options:
-            if dynamic_readiness(equipment_frame, snapshot.baseline, cutoff, process=option).ready:
-                return str(option)
-    return str(process_options[0])
-
+# 설비 일정 확인 · 계획 입력 — 두 모드가 같은 묶음을 같은 함수(`render_equipment_plan`)에 넘긴다.
+plan_source = EquipmentPlanSource(
+    page_inputs=page_inputs,
+    snapshot=snapshot,
+    cutoff=cutoff,
+    equipment_error=equipment_error,
+    today=today,
+    manual_downtime=manual_downtime,
+)
 
 # 공정 — 넘겨받은 공정이 선택지에 있으면 위젯 칸에 적는다(공정 선택 상자보다 먼저). HOME 칸으로 연
 # 공정 Capa 상세(설비 공식 고정)에서 넘어왔으면 그 방문을 적어 둔다 — 설비 기준이 바뀐 것을 알린다.
@@ -309,7 +296,7 @@ opened_process = prune_choice(
     default=(
         str(saved_process)
         if saved_process is not None and str(saved_process) in process_options
-        else first_ready_process()
+        else first_ready_process(plan_source, process_options)
     ),
 )
 if missing_label is not None:
@@ -387,14 +374,9 @@ def render_header(process: str, line: str) -> None:
 if schedule_mode:
     render_schedule_mode(
         ScheduleModeContext(
-            page_inputs=page_inputs,
+            source=plan_source,
             process_labels=process_labels,
             equipment_session=equipment_session,
-            snapshot=snapshot,
-            cutoff=cutoff,
-            equipment_error=equipment_error,
-            today=today,
-            manual_downtime=manual_downtime,
             card_label=CARD_LABEL,
             card_name=CARD_NAME,
             card_icon=CARD_ICON,
@@ -634,15 +616,7 @@ if selected_process is None or not months or period is None:
 process = str(selected_process)
 process_label = process_labels.label(process)
 
-
-readiness: DynamicReadiness | None = None
-if not equipment_error:
-    readiness = dynamic_readiness(
-        snapshot.calculation_frames()[1] if snapshot is not None else None,
-        snapshot.baseline if snapshot is not None else None,
-        cutoff,
-        process=process,
-    )
+readiness = equipment_readiness(plan_source, process)
 if readiness is not None and readiness.cutoff_days is not None:
     # 팝업에는 적은 값(35.8)이 그대로 보이고 계산은 내림한 일수(35)를 쓴다 — 둘을 함께 적는다.
     setting = cutoff_setting(cutoff, process)
@@ -653,103 +627,44 @@ if readiness is not None and readiness.cutoff_days is not None:
 with cutoff_slot:
     st.caption(cutoff_line)
 
-if readiness is None:
-    render_header(
-        process, f"**{literal_markdown(process_label)}** :blue-badge[설비 일정 없음: 설비 DB 오류]"
-    )
-    render_reason_card(
-        "설비 일정 없음: 설비 DB 를 읽지 못했습니다",
-        equipment_error or "설비 DB 를 열지 못했습니다.",
-        equipment_link=False,
-    )
-    st.stop()
-if not readiness.ready or readiness.cutoff_days is None or snapshot is None:
-    render_header(process, f"**{literal_markdown(process_label)}** :blue-badge[{readiness.badge}]")
-    render_reason_card(
-        readiness.badge,
-        f"{readiness.detail} 제약 시뮬레이션은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 "
-        "값)으로 계산하므로 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 적힌 공정에만 "
-        "섭니다.",
-        equipment_link=True,
-    )
-    st.stop()
-if product_error:
-    render_header(process, f"**{literal_markdown(process_label)}**")
-    st.error(f"제품별 소요를 읽지 못했습니다 — {product_error}")
-    st.stop()
-if selected_product is None:
-    render_header(process, f"**{literal_markdown(process_label)}**")
-    st.info(
-        "이 공정은 조회기간에 소요가 있는 제품이 없어 제약 제품을 고를 수 없습니다.",
-        icon=":material/info:",
-    )
+
+def product_ready() -> bool:
+    """설비 일정 판정 뒤 · 계획 앞의 제품 갈래 — 제품별 소요를 못 읽었거나 소요가 있는 제품이 없으면
+    머리 한 줄과 까닭을 그리고 거짓."""
+    if product_error:
+        render_header(process, f"**{literal_markdown(process_label)}**")
+        st.error(f"제품별 소요를 읽지 못했습니다 — {product_error}")
+        return False
+    if selected_product is None:
+        render_header(process, f"**{literal_markdown(process_label)}**")
+        st.info(
+            "이 공정은 조회기간에 소요가 있는 제품이 없어 제약 제품을 고를 수 없습니다.",
+            icon=":material/info:",
+        )
+        return False
+    return True
+
+
+# 설비 일정 확인 → 제품 갈래 → 계획(공정 Capa 상세 ② 와 같은 칸·같은 키 — 목표는 키 맞춤용, 단축
+# 열은 읽지 않는다) → 계획에 공정이 있는가. 개조 일정 모드와 같은 함수다. 신규를 켠 회차에는 공정
+# Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른 신규 호기도 같은 갈래로 받는다.
+equipment_plan = render_equipment_plan(
+    plan_source,
+    readiness,
+    process=process,
+    process_label=process_label,
+    subject="제약 시뮬레이션",
+    render_header=render_header,
+    render_reason_card=render_reason_card,
+    before_plan=product_ready,
+    new_unit_since=new_unit_since,
+)
+if equipment_plan is None or selected_product is None:
     st.stop()
 product = str(selected_product)
-
-# 계획 — 공정 Capa 상세 ② 와 같은 칸·같은 키(목표는 키 맞춤용 — 단축 열은 읽지 않는다).
-baseline, equipment, downtime = snapshot.calculation_frames()
-target_level = target_from_thresholds(thresholds, months)
-shortening_key = required_shortening_cache_key(
-    page_inputs.capacity_cache_key,
-    equipment=equipment,
-    downtime=downtime,
-    baseline=baseline,
-    cutoff=cutoff,
-    months=tuple(months),
-    today=today,
-    manual_downtime=manual_downtime,
-)
-try:
-    plan = load_required_shortening_for_target(
-        required_shortening_target_cache_key(shortening_key, target_level),
-        equipment,
-        downtime,
-        baseline,
-        cutoff,
-        required_equipment=scenario_required_equipment(
-            page_inputs.capacity_cache_key,
-            scenario_tables=active_scenario["tables"],
-            reference_tables=context.reference_tables,
-        ),
-    )
-    # 신규 호기 — 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른다. 켠 회차에만.
-    new_shares: NewUnitAvailability | None = None
-    if new_unit_since is not None:
-        new_shares = new_unit_availability(
-            get_process_equipment_timeline(
-                process_timeline_key_from_shortening(shortening_key, process),
-                equipment,
-                downtime,
-                baseline,
-                cutoff,
-            ),
-            since=new_unit_since,
-        )
-except BOOTSTRAP_ERRORS as exc:
-    render_header(
-        process, f"**{literal_markdown(process_label)}** :blue-badge[설비 일정 없음: 계산 오류]"
-    )
-    st.error(
-        "설비 일정을 계산하지 못했습니다 — "
-        + bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH))
-    )
-    st.stop()
-
-if process not in plan.processes:
-    # 판정을 지나도 계획은 「가용 공정 ∩ 소요 공정」 만 맞댄다 — KeyError 로 떨어뜨리지 않는다.
-    missing_cutoff = process in plan.missing_cutoff
-    render_header(process, f"**{literal_markdown(process_label)}** :blue-badge[설비 일정 없음]")
-    render_reason_card(
-        "설비 일정 없음: Cut-off 미기재" if missing_cutoff else "설비 일정 없음: 계획에 공정 없음",
-        (
-            "가용설비 현황의 공정별 Cut-off 에 이 공정이 없습니다."
-            if missing_cutoff
-            else "설비 일정 기준 가용에 이 공정이 없습니다 — 설비 마스터 공정소분류·기존보유 공정 "
-            "이름이 시나리오 공정과 완전히 같아야 맞댑니다."
-        ),
-        equipment_link=True,
-    )
-    st.stop()
+plan = equipment_plan.plan
+target_level = equipment_plan.target_level
+new_shares = equipment_plan.new_units
 
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
@@ -782,7 +697,7 @@ conditions = ConstraintConditions(
         if modify
         else None
     ),
-    cutoff_days=int(readiness.cutoff_days),
+    cutoff_days=equipment_plan.cutoff_days,
     owned_units=owned_value,
     new_unit_since=new_unit_since,
 )

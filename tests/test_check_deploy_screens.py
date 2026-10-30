@@ -3388,6 +3388,90 @@ def test_the_constraint_simulation_contract_matches_the_app() -> None:
     )
 
 
+def test_the_constraint_mode_contract_matches_the_app() -> None:
+    """모드 전환 key 와 「제약 영향」 글자도 값만 옮긴다 — 앱과 같은지 여기서 본다."""
+    from capa_simulation.modification_schedule_state import (
+        CONSTRAINT_MODE,
+        CONSTRAINT_MODE_KEY,
+        MODE_LABELS,
+    )
+
+    assert screens.CONSTRAINT_MODE_KEY == CONSTRAINT_MODE_KEY
+    assert screens.CONSTRAINT_IMPACT_MODE == MODE_LABELS[CONSTRAINT_MODE]
+
+
+class _ConstraintScreen(Screen):
+    """링크가 없고 설비 일정 까닭 카드로 멈춘 제약 화면 — 모드 고르기 차례만 본다. `broken` 이면
+    화면을 읽다 깨진다."""
+
+    def __init__(self, *, broken: bool = False) -> None:
+        super().__init__(page=None, base_url="http://127.0.0.1:8559/")
+        self.broken = broken
+        self.opened: list[str] = []
+
+    def open_page(self, href_suffix: str) -> None:
+        self.opened.append(href_suffix)
+
+    def js(self, script: str, arg: object = None) -> Any:
+        if script == screens._CONSTRAINT_LINK_JS:
+            return {"ready": True, "found": False}
+        if self.broken:
+            raise RuntimeError("화면을 읽다 깨졌다")
+        return {"absent": True, "chart": False, "month": None, "point": None}
+
+
+def _recording_mode_choice(
+    monkeypatch: pytest.MonkeyPatch, found: str | None
+) -> list[tuple[str, str]]:
+    """`_choose_segment` 를 바꿔 고른 차례를 적는다 — 처음 고를 때 `found` 가 그때의 모드다."""
+    calls: list[tuple[str, str]] = []
+
+    def choose(screen: Screen, key: str, option: str) -> str | None:
+        calls.append((key, option))
+        return found if len(calls) == 1 else option
+
+    monkeypatch.setattr(screens, "_choose_segment", choose)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("found", "expected"),
+    [
+        ("개조 일정", ["제약 영향", "개조 일정"]),
+        ("제약 영향", ["제약 영향"]),
+        (None, ["제약 영향"]),
+    ],
+)
+def test_the_constraint_check_reads_the_impact_mode_and_puts_the_mode_back(
+    monkeypatch: pytest.MonkeyPatch, found: str | None, expected: list[str]
+) -> None:
+    """모드는 세션에 남는다 — 앞 항목이 「개조 일정」 을 고른 채 끝나면 링크로 와도 개조 일정이 열려
+    제약 그림을 120초 기다리다 미기록으로 끝났다(2026-10-26 리뷰). 제약 항목은 읽기 전에 「제약
+    영향」 을 고르고, 바꿨으면 끝에 되돌린다."""
+    calls = _recording_mode_choice(monkeypatch, found)
+    screen = _ConstraintScreen()
+
+    line = screens.check_constraint_simulation(screen)
+
+    assert line == "링크 없음 · 설비 일정 없음(까닭 카드)"
+    assert calls == [(screens.CONSTRAINT_MODE_KEY, option) for option in expected]
+    assert screen.opened == [screens.PROCESS_DETAIL_PAGE, screens.CONSTRAINT_PAGE]
+
+
+def test_the_constraint_check_puts_the_mode_back_even_when_reading_breaks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _recording_mode_choice(monkeypatch, "개조 일정")
+
+    with pytest.raises(RuntimeError):
+        screens.check_constraint_simulation(_ConstraintScreen(broken=True))
+
+    assert calls == [
+        (screens.CONSTRAINT_MODE_KEY, "제약 영향"),
+        (screens.CONSTRAINT_MODE_KEY, "개조 일정"),
+    ]
+
+
 @pytest.mark.parametrize(
     ("link", "before", "after", "same", "expected"),
     [
