@@ -65,6 +65,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     dedicated_split_text,
     free_parts,
     general_label,
+    minimum_rate,
     minimum_unit,
     month_name,
     rate_axis,
@@ -441,7 +442,7 @@ def month_steps(
             if split
             else f"이미 개조한 {row.dedicated}대는 전용으로 남습니다(줄여도 되돌리지 않음)."
         )
-    elif minimum_unit(row):
+    elif minimum_rate(row):
         note2 = (
             "소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다 — 제약 제품 확보율이 아주 크게 "
             "나오는 까닭입니다."
@@ -516,7 +517,7 @@ def month_steps(
         )
         if row.constrained_rate is not None:
             met = "충족" if row.met else "미달"
-            minimum = f" · 소요 1대 미만에 {MINIMUM_UNIT_WORDS}" if minimum_unit(row) else ""
+            minimum = f" · 소요 1대 미만에 {MINIMUM_UNIT_WORDS}" if minimum_rate(row) else ""
             verdict += (
                 f" · 제약 제품 {rate_text(row.constrained_rate)} (제약 {target}% {met}{minimum})"
             )

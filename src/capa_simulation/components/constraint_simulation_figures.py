@@ -128,6 +128,7 @@ __all__ = [
     "end_label_anchors",
     "free_parts",
     "general_label",
+    "minimum_rate",
     "minimum_unit",
     "month_name",
     "new_unit_fate",
@@ -278,6 +279,15 @@ def minimum_unit(row: ConstraintMonth) -> bool:
     return row.in_period and 0 < row.constrained_demand < 1 and row.need == 1
 
 
+def minimum_rate(row: ConstraintMonth) -> bool:
+    """제약 제품 확보율이 그 「최소 1대」 에서 나온 달 — `minimum_unit` 이고 배정이 1대다.
+    확보율 쪽 글(결과 상자·확보율 칸 풍선·그래프 풍선)은 이 달만 「최소 1대」 를 곁들인다.
+    소요가 줄어도 개조한 전용 6대를 남긴 달(0.3대 → 2000%)은 큰 확보율의 까닭이 남긴
+    전용이고, 가용이 모자라 배정하지 못한 달은 확보율이 0 이라 「최소 1대를 떼어 크게
+    나온다」 가 틀린 말이 된다."""
+    return minimum_unit(row) and row.allocated == 1
+
+
 def month_name(month: int) -> str:
     """「27년 6월」 — 개조 몫을 적는 꼴."""
     return f"{month // 100 % 100:02d}년 {month % 100}월"
@@ -417,7 +427,7 @@ def _hit_hover(
     if row.in_period and row.constrained_rate is not None:
         parts.append(
             f"제약 {rate_text(row.constrained_rate)}"
-            + (f"({MINIMUM_UNIT_WORDS})" if minimum_unit(row) else "")
+            + (f"({MINIMUM_UNIT_WORDS})" if minimum_rate(row) else "")
             + (f" {ABOVE_MARK} 그래프 위 끝 넘음" if above else "")
         )
     text = " · ".join(parts)
@@ -1127,14 +1137,15 @@ def _constrained_demand_cell(row: ConstraintMonth) -> Cell:
 
 
 def _constrained_rate_cell(row: ConstraintMonth) -> Cell:
-    """제약 제품 확보율 칸. 소요가 1대 미만인데 1대를 뗀 달은 풍선이 그 까닭을 말한다."""
+    """제약 제품 확보율 칸. 소요가 1대 미만인데 1대를 떼어 배정한 달(`minimum_rate`)은 풍선이 그
+    까닭을 말한다."""
     cell = Cell(
         rate_text(row.constrained_rate) if row.in_period else "",
         muted=not row.in_period,
         fill=_shortage_fill(row.met),
         bold=row.met is False,
     )
-    if minimum_unit(row):
+    if minimum_rate(row):
         cell.hover = (
             f"{_head(row)} · 확보율 — 소요 {units_text(row.constrained_demand)}대가 1대 미만이라도 "
             "최소 1대를 떼어 크게 나옵니다"
