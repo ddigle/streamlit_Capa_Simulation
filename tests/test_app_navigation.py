@@ -902,6 +902,71 @@ def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) 
     assert app.session_state[HOME_TAB_KEY] == HOME_PREFERENCE_TAB
 
 
+def test_a_revision_saved_elsewhere_marks_the_header_and_the_scenario_badge(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실제 `app.py` 배선(E2E #102) — 올라와 있는 「증설안」 r1 에 남이 r2 를 저장했다.
+
+    `app.py` 가 머리 띠·사이드바보다 먼저 최신을 확인해(`check_active_scenario_latest`) 머리 띠 위
+    줄 끝과 사이드바 시나리오 배지가 「최신 r2 있음」 이다. 확인 주기(`LATEST_RECHECK_SECONDS`)
+    안이면 저장소를 다시 보지 않아 「저장된 리비전」 그대로다 — 시험은 주기를 길게 했다가 0 으로
+    당겨 두 갈래를 본다."""
+    import capa_simulation.scenario_activation as scenario_activation
+    import capa_simulation.settings as settings
+    from capa_simulation.components.home_main_case_chips import CASE1_CHIP_KEY
+    from capa_simulation.persistence.cache import clear_global_main_cases_cache
+    from capa_simulation.persistence.models import ScenarioCreate
+    from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    repository = DuckDBScenarioRepository(settings.DUCKDB_PATH)
+    release = repository.latest_official_release()
+    assert release is not None
+    base = repository.load_revision(release.revision_id)
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="증설안",
+            source_simulation_code="CASE",
+            source_simulation_name="증설안",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        {name: frame.copy() for name, frame in base.tables.items()},
+        base.preset,
+    )
+    repository.replace_global_main_case(
+        1, created.scenario.scenario_id, created.revision.revision_id, source="시험"
+    )
+    clear_global_main_cases_cache()
+    app = app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app = app.button(key=CASE1_CHIP_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.button(key=SCENARIO_FIELD_KEY).label == "증설안 · r1"
+    assert ' · 저장된 리비전";' in _header_style(app)
+
+    repository.save_revision(
+        created.scenario.scenario_id,
+        {name: created.tables[name] for name in REVISION_TABLES},
+        created.preset,
+        revision_name="남의 저장",
+        parent_revision_id=created.revision.revision_id,
+    )
+    monkeypatch.setattr(scenario_activation, "LATEST_RECHECK_SECONDS", 1e9)
+    app = app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert ' · 저장된 리비전";' in _header_style(app)
+
+    monkeypatch.setattr(scenario_activation, "LATEST_RECHECK_SECONDS", 0.0)
+    app = app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    style = _header_style(app)
+    assert "증설안 · r1 " in style and ' · 최신 r2 있음";' in style, style
+    assert ":orange-badge[최신 r2 있음]" in [str(item.value) for item in app.caption]
+    assert app.button(key=SCENARIO_FIELD_KEY).label == "증설안 · r1"
+
+
 def test_the_bootstrap_error_screen_still_shows_the_app_name_in_the_header(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
