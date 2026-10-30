@@ -643,10 +643,18 @@ class DuckDBScenarioRepository:
                 raise VocPostGoneError()
             update_voc_post_resolved(connection, post_id=post_id, resolved=resolved)
 
-    def remove_voc_post(self, post_id: str) -> None:
-        """글과 그 답글을 함께 지운다. 주인 없는 답글은 영영 보이지 않는다."""
+    def remove_voc_post(self, post_id: str) -> bool:
+        """글과 그 답글을 함께 지운다. 주인 없는 답글은 영영 보이지 않는다.
+
+        지웠으면 참, 그 사이 지운 글(다른 세션의 「글 삭제」)이라 지울 것이 없었으면 거짓이다 —
+        화면이 「글을 지웠습니다.」 대신 「그 사이 지운 글입니다」 를 알린다(답변·답변 완료 표시와
+        같은 꼴).
+        """
         with self._write_transaction() as connection:
+            if not voc_post_exists(connection, post_id=post_id):
+                return False
             delete_voc_post(connection, post_id=post_id)
+        return True
 
     def load_global_summary_note(self) -> GlobalSummaryNote:
         """Load the scenario-independent HOME summary notice.

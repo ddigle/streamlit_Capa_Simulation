@@ -144,7 +144,7 @@ def test_the_chatbot_script_shows_the_display_name_literally(
     carrying = _assert_literal(_markdown_texts(app), labels)
 
     # 결론 셋(미달·원인·우선순위)·원인 질문(말풍선과 단추)·원인 조건 줄이 표시명을 싣는다.
-    assert sum("기준으로 효율이 기준에 못 미치는 공정은" in text for text in carrying) == 1
+    assert sum("기준으로 효율이 마지막 달까지 연속 미달인 공정" in text for text in carrying) == 1
     assert sum("효율·UPEH·수율 세 지표가 모두" in text for text in carrying) == 1
     assert sum("부터입니다. 미달폭만 보면" in text for text in carrying) == 1
     assert sum(text.endswith(" 왜 부족해?") for text in carrying) == 2

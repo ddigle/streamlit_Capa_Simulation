@@ -121,19 +121,26 @@ def _shortfall_answer(
     )
     worst = trouble.iloc[0] if not trouble.empty else None
     worst_name = process_name(str(worst["공정"])) if worst is not None else ""
+    # 「기준에 못 미치는」 이 무엇을 세는지 밝힌다 — 상태(마지막 달까지 연속 미달)로 센다. 기간 평균
+    # Gap 이 음수여도 마지막 달에 기준을 넘은 공정은 정상이라 세지 않는다(E2E r1). 조사는 값 뒤가
+    # 아니라 고정 글 「공정(…)」 뒤에 붙는다.
+    basis = f"{window} 기준으로 효율이 마지막 달까지 연속 미달인 "
     conclusion = (
-        f"{window} 기준으로 효율이 기준에 못 미치는 공정은 {len(trouble):,}개입니다. "
+        basis + f"공정(상태 「개선 필요」·「관찰」)은 {len(trouble):,}개입니다. "
         f"가장 나쁜 곳은 **{worst_name}** — 기간 평균 {float(worst['Gap']):.1%}p, "
         f"{int(worst['연속 미달'])}개월 연속 미달입니다."
         if worst is not None
-        else f"{window} 기준으로 효율이 기준에 못 미치는 공정이 없습니다."
+        else basis + "공정(상태 「개선 필요」·「관찰」)이 없습니다."
     )
     return SampleAnswer(
         key="shortfall",
         question="이번 기간에 기준 미달인 공정 알려줘",
         conclusion=conclusion,
         evidence=evidence,
-        evidence_caption="효율 실적 화면의 우선순위 표와 같은 값입니다.",
+        evidence_caption=(
+            "효율 실적 화면의 우선순위 표와 같은 값입니다 — 상태가 정상이 아닌 줄만 옮겼습니다. "
+            "기간 평균 Gap 이 음수여도 마지막 달에 기준을 넘었으면 정상입니다."
+        ),
         evidence_formats={
             EFFICIENCY_METRIC.standard_column: _PERCENT,
             EFFICIENCY_METRIC.actual_column: _PERCENT,

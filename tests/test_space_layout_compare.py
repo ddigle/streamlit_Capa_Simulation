@@ -352,6 +352,42 @@ def test_the_fab_floor_list_adds_the_official_difference_column_when_comparing(
     assert fab["linkStats"]["C1 2F"]["layout"] == "가정 배치 1대 다름"
 
 
+def test_the_fab_block_tooltip_counts_overlaps_the_assumption_layout_made(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정 배치에서 EQ-01 을 EQ-02 위에 겹치게 저장했다 — 저장 때 「겹친 호기 1건」 만 떴고 견주기
+    풍선에는 없었다(개선 I74 · E2E r1 #40). 견주기를 켠 FAB 블록 풍선이 「겹침 1쌍」 을 붙인다.
+    끄면 견주기 줄이 없다."""
+    repository, setup = _overlay(tmp_path)
+    mine = _session(repository, setup)
+    repository.save_equipment(
+        _request(mine, setup, equipment=_set(mine.equipment, "EQ-01", "X좌표", 32.0))
+    )
+    clear_equipment_repository()
+    app = _ok(_space(tmp_path, setup, floor=False).run())
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
+    _ok(app.run())
+    fab = next(call for call in reversed(editor_calls) if call.get("scope") == "fab")
+    assert "layout" not in fab["linkStats"]["C1 1F"]
+
+    app.toggle(key=COMPARE_KEY).set_value(True).run()
+
+    fab = next(call for call in reversed(editor_calls) if call.get("scope") == "fab")
+    assert fab["linkStats"]["C1 1F"]["layout"] == "가정 배치 1대 다름 · 겹침 1쌍"
+
+
+def test_the_block_tooltip_adds_overlaps_after_the_difference() -> None:
+    placement = FloorPlacement(("C1", "1F"), placed=2.0, unplaced=0.0, occupancy=0.1)
+    stats = floor_block_stats(
+        [placement],
+        layout_differences={("C1", "1F"): 2},
+        layout_overlaps={("C1", "1F"): 1},
+    )
+    assert stats["C1 1F"]["layout"] == "가정 배치 2대 다름 · 겹침 1쌍"
+    only_overlap = floor_block_stats([placement], layout_overlaps={("C1", "1F"): 3})
+    assert only_overlap["C1 1F"]["layout"] == "겹침 3쌍"
+
+
 def test_the_fab_difference_column_follows_the_process_filter(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

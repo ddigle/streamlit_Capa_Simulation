@@ -604,3 +604,78 @@ def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
     assert "결과 없음" in expander
     assert any("돌지 않은 것으로" in warning.value for warning in app.warning)
     assert not any("FAKE-bdq-login-token-0000" in warning.value for warning in app.warning)
+
+
+@pytest.mark.parametrize(
+    "body", ["", "{깨진 JSON", json.dumps({"version": 1, "steps": {"install": "x"}})]
+)
+def test_a_broken_start_report_is_told_apart_from_a_missing_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    """결과 파일이 있는데 깨졌으면(빈 파일·JSON 아님·모르는 꼴) 스크립트는 돌았다 — 「결과 없음 —
+    돌지 않은 것으로 보입니다」 가 아니라 「결과 파일을 읽지 못함(꼴이 다름)」 이다(E2E r2). CD
+    환경변수가 있어도 그렇다."""
+    monkeypatch.setenv("CAPA_ARTIFACTORY_USER", "FAKE-art-user")
+    report = tmp_path / "container_start.json"
+    report.write_text(body, encoding="utf-8")
+    app = AppTest.from_string(_start_check_script(tmp_path / "scenario.duckdb", report))
+    app.run(timeout=120)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    [expander] = _start_check_expanders(app)
+    assert expander.endswith("결과 파일을 읽지 못함")
+    assert any("읽지 못했습니다(꼴이 다름)" in warning.value for warning in app.warning)
+    assert not any("결과 파일이 없습니다" in warning.value for warning in app.warning)
+
+
+def test_an_opened_server_start_check_stays_open_after_a_trip_to_another_screen(
+    tmp_path: Path,
+) -> None:
+    """진단을 읽다 다른 화면(VOC 등)에 다녀오면 그리지 않은 회차에 펼침 상태가 버려져
+    접혔다(E2E r1). 기억 칸(`remembered_expander`)이 편 상태를 지킨다 — 다른 화면 회차는 이
+    펼침을 그리지 않는 회차로 흉내 낸다."""
+    report = tmp_path / "container_start.json"
+    report.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "written_at": "2026-10-24T09:00:00+09:00",
+                "steps": {
+                    step: {"status": "ok", "reason": "정상"}
+                    for step in ("install", "token", "user_name")
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    script = f"""
+from pathlib import Path
+
+import streamlit as st
+
+import capa_simulation.settings as settings
+from capa_simulation.components.container_start_check import render_container_start_check
+
+settings.CONTAINER_START_REPORT_PATH = Path({str(report)!r})
+if st.session_state.get("on_admin", True):
+    render_container_start_check()
+"""
+    app = AppTest.from_string(script).run(timeout=60)
+    key = "admin_area_container_start_check"
+
+    def opened() -> list[bool]:
+        boxes = [*app.expander, *app.status]
+        return [bool(box.proto.expanded) for box in boxes if str(box.proto.id).endswith(key)]
+
+    assert opened() == [False]
+    app.session_state[key] = True  # 사용자가 펼친다
+    app.run(timeout=60)
+    assert opened() == [True]
+
+    app.session_state["on_admin"] = False  # 다른 화면으로
+    app.run(timeout=60)
+    assert opened() == []
+    app.session_state["on_admin"] = True  # 돌아온다
+    app.run(timeout=60)
+
+    assert opened() == [True]

@@ -704,6 +704,58 @@ export default function (component) {
   }
   // </short-badge>
 
+  // ---------------------------------------------------------------- FAB 층 블록 글자 줄(순수 함수)
+  // `tests/test_space_block_text_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다(글자 폭은 인자).
+  // <block-text>
+  // 층 블록 가운데 글자 줄 — [{text, size, role}] 를 위에서 아래 차례로 돌려준다(role 'head'·'sub'·'short'). main 은 이름 줄과
+  // 그 아래 줄(배치·미배치 대수, 비활성 층은 사유), short 는 색 기준 「필요 단축」 의 단축 줄(없으면 빈 글), lw·lh 는 블록 크기
+  // (데이터 단위), upp 는 화면 px 당 데이터 단위, em 은 글자 폭(em) 함수다. 크기는 블록에 맞추되 화면 13px 를 넘지 않는다.
+  // - 단축 줄은 다른 줄의 크기를 끌어내리지 않는다 — 긴 단축 줄(「단축 5대 · 최대 −197일 · 추가 28」)에 맞추느라 이름까지 반으로
+  //   줄어 강조하려는 층 이름이 6~7px 이 됐다(E2E r1). 위 줄은 제 폭으로 맞추고(높이는 단축 줄 몫도 나눈다), 단축 줄만 제 폭에
+  //   맞춰 더 작아진다. 한 줄로 많이 줄면(위 줄의 0.75 배 아래) 「 · 」 경계에서 두 줄로 나눠 본다 — 나눈 줄이 1.15 배 넘게
+  //   커지고 위 줄이 0.9 배 밑으로 줄지 않을 때만 나눈다(낮은 블록에서는 줄을 늘리면 이름이 작아진다).
+  // - 위 줄이 둘 이상인데 화면 7px 아래면 이름 줄만 남긴다(단축 줄도 뺀다 — 풍선에 남는다). 비활성 층(`off`)이면 이름
+  //   앞에 「⊘」 를 달아 사유 줄이 빠진 좁은 화면에서도 사용 층과 가른다(390px — E2E r1).
+  // - 단축 줄이 화면 6px 아래면 그 줄만 숨긴다. 이름 줄이 6px 아래면 부르는 쪽이 숨긴다.
+  function blockTextLayout(main, short, off, lw, lh, upp, em) {
+    const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), 13 * upp)
+    const widthFit = (rows) => (lw * 0.9) / Math.max(...rows.map(em), 1)
+    const splitTwo = (text) => {
+      const parts = text.split(' · ')
+      if (parts.length < 2) return null
+      let best = null
+      for (let k = 1; k < parts.length; k += 1) {
+        const rows = [parts.slice(0, k).join(' · '), parts.slice(k).join(' · ')]
+        const widest = Math.max(...rows.map(em))
+        if (!best || widest < best.widest) best = { rows, widest }
+      }
+      return best.rows
+    }
+    const lay = (head, shortRows) => {
+      const size = fit(head, head.length + shortRows.length)
+      const shortSize = shortRows.length ? Math.min(size, widthFit(shortRows)) : 0
+      return { head, shortRows, size, shortSize }
+    }
+    let pick = lay(main, [])
+    if (short) {
+      const one = lay(main, [short])
+      const two = splitTwo(short)
+      const split = two ? lay(main, two) : null
+      const better = split && split.shortSize > one.shortSize * 1.15 && split.size >= one.size * 0.9 && split.size / upp >= 7
+      pick = better && one.shortSize < one.size * 0.75 ? split : one
+    }
+    if (main.length > 1 && pick.size / upp < 7) {
+      const head = off ? `⊘ ${main[0]}` : main[0]
+      return [{ text: head, size: fit([head], 1), role: 'head' }]
+    }
+    if (pick.shortRows.length && pick.shortSize / upp < 6) pick = lay(pick.head, [])
+    return [
+      ...pick.head.map((text, k) => ({ text, size: pick.size, role: k === 0 ? 'head' : 'sub' })),
+      ...pick.shortRows.map((text) => ({ text, size: pick.shortSize, role: 'short' })),
+    ]
+  }
+  // </block-text>
+
   const isUnit = (m) => m.kind === 'unit'
   const isMark = (m) => m.kind !== 'unit'
   const blocks = (m) => (m.kind === 'zone' && m.keepOut) || m.kind === 'shutter' || m.kind === 'door' || m.kind === 'column'
@@ -922,12 +974,13 @@ export default function (component) {
     const chars = Array.from(String(text))
     return chars.length > BLOCK_OFF_CHARS ? `${chars.slice(0, BLOCK_OFF_CHARS - 1).join('').trimEnd()}…` : String(text)
   }
+  // 블록 글자의 위 줄(이름·대수 — 비활성 블록은 이름·사유)과 단축 줄. 비활성 블록은 대수 줄 대신 사유다(대수는 풍선에
+  // 남는다). 「필요 단축」 을 켠 동안은 대수 줄 뒤에 단축 줄(`short` — 「단축 3대 · 최대 −18일」, 비활성 층에는 오지 않는다)이
+  // 붙는다 — 크기는 따로 맞춘다(`blockTextLayout`).
   const blockLines = (item) => {
     const stats = LINK_STATS[item.link] || {}
-    // 비활성 블록은 대수 줄 대신 사유다(대수는 풍선에 남는다). 「필요 단축」 을 켠 동안은 대수 줄 뒤에 단축 줄(`short` —
-    // 「단축 3대 · 최대 −18일」, 비활성 층에는 오지 않는다)이 붙는다.
-    if (blockOff(item)) return [String(blockHead(item)), clipOff(blockOff(item))]
-    return [blockHead(item), stats.placed, stats.unplaced, stats.short].filter(Boolean).map(String)
+    if (blockOff(item)) return { main: [String(blockHead(item)), clipOff(blockOff(item))], short: '' }
+    return { main: [blockHead(item), stats.placed, stats.unplaced].filter(Boolean).map(String), short: stats.short ? String(stats.short) : '' }
   }
   const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link && !blockOff(item))
   const blockTip = (item) => {
@@ -1765,24 +1818,22 @@ export default function (component) {
         group.removeAttribute('role')
         group.removeAttribute('aria-label')
       }
-      const fitLines = (lines) => {
-        const longest = Math.max(...lines.map(emWidth), 1)
-        return Math.min((lh * 0.8) / (lines.length * 1.3), (lw * 0.9) / longest, 13 * upp)
-      }
-      // 글자 크기를 골랐으면 모든 줄을 그 크기로 쓴다(맞추거나 숨기지 않는다).
-      let lines = blockLines(item)
-      let size = item.fontSize ? fs : fitLines(lines)
-      if (!item.fontSize && lines.length > 1 && size / upp < 7) {
-        lines = lines.slice(0, 1)
-        size = fitLines(lines)
-      }
-      const step = size * 1.3
-      lines.forEach((value, k) => {
-        const node = text(value, lw / 2, lh / 2 + (k - (lines.length - 1) / 2) * step, size)
-        node.classList.add(k === 0 ? 'is-head' : 'is-sub')
-        node.style.display = !item.fontSize && size / upp < 6 ? 'none' : ''
+      // 글자 크기를 골랐으면 모든 줄을 그 크기로 쓴다(맞추거나 숨기지 않는다). 아니면 줄마다 블록에 맞춘다
+      // (`blockTextLayout` — 단축 줄은 따로 작아지거나 두 줄로 나뉜다).
+      const { main, short } = blockLines(item)
+      const rows = item.fontSize
+        ? [...main, ...(short ? [short] : [])].map((value, k) => ({ text: value, size: fs, role: k === 0 ? 'head' : (k < main.length ? 'sub' : 'short') }))
+        : blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)
+      const total = rows.reduce((sum, row) => sum + row.size * 1.3, 0)
+      let y = lh / 2 - total / 2
+      for (const row of rows) {
+        const node = text(row.text, lw / 2, y + (row.size * 1.3) / 2, row.size)
+        y += row.size * 1.3
+        node.classList.add(row.role === 'head' ? 'is-head' : 'is-sub')
+        if (row.role === 'short') node.classList.add('is-short')
+        node.style.display = !item.fontSize && row.size / upp < 6 ? 'none' : ''
         inner.append(node)
-      })
+      }
     }
     shape.append(inner)
     if (item.kind === 'column' && item.label) shape.append(text(item.label, cx, cy, fs))
@@ -4765,13 +4816,14 @@ export default function (component) {
   }
   // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit6`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
   // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 회차의 글자를 쓴 뒤와 크기가 바뀔 때
-  // (`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
+  // (`S.onResize`) 다시 잰다. 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 둘째 줄(⑥)이다 — 390px 에서 확대
+  // 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집 도구 줄은 건드리지 않는다.
   const toolbar = q('.sle-toolbar')
   const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
   function fitFabBar() {
     toolbar.classList.remove(...FIT_STEPS)
-    if (!(VIEW && FAB) || !toolbar.clientWidth) return
-    for (const step of FIT_STEPS) {
+    if (!VIEW || !toolbar.clientWidth) return
+    for (const step of FAB ? FIT_STEPS : FIT_STEPS.slice(-1)) {
       if (toolbar.scrollWidth <= toolbar.clientWidth) return
       toolbar.classList.add(step)
     }

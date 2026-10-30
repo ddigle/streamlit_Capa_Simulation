@@ -779,3 +779,24 @@ def test_an_edited_post_after_an_interrupted_one_posts(
     assert writes == ["제목 A", "제목 B"]
     assert sorted(_posts(database_path)) == [("제목 A", False), ("제목 B", False)]
     assert "글을 올렸습니다." in [message.value for message in app.success]
+
+
+def test_deleting_a_post_deleted_by_another_session_says_it_was_already_gone(
+    tmp_path: Path,
+) -> None:
+    """다른 세션이 이미 지운 글을 옛 화면에서 「글 삭제」 하면 「글을 지웠습니다.」 가 떴다(E2E r3).
+    답변·답변 완료 표시와 같은 「그 사이 지운 글입니다」 를 머리 알림 칸에 그린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    upper, lower = _two_posts(database_path)
+    app = _app(database_path)
+    app.checkbox(key=f"voc_delete_confirm_{upper}").check().run()
+    DuckDBScenarioRepository(database_path).remove_voc_post(upper)
+
+    app.button(key=f"voc_delete_{upper}").click().run()
+
+    assert not app.exception
+    assert not app.success, [message.value for message in app.success]
+    assert [message.value for message in app.warning] == [
+        "그 사이 지운 글입니다. 다른 사용자가 먼저 지웠습니다."
+    ]
+    assert _posts(database_path) == [("아래 글", False)]

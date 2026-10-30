@@ -449,7 +449,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로 서되 추가N 을 붙이지 않는다(층 사용 명세 8-2). 층 보기 칸이 세는 행은 그 층에 **오늘 그려지는** 행이다(뷰어 roster 의 페이더 범위 합집합이 아니다 — FAB 층
     대수와 같은 축). 계획을 못 읽은 켠 회차의 범례는 채우기 칸 없이 테·덧표시만이다(뷰어가 지연·보관 면을 끈다 — D12). 상세 단추 「필요 단축 일정에서 이 공정 보기」 는 대기 칸만 적고 다음 회차
     본문 맨 앞(`switch_to_queued_shortening`)이 옮긴다. epoch 는 바뀌지 않는다(레이어·목표·칩·흐림은 epoch 밖). 사이드바
-    시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다).
+    시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다). 공정 칩은
+    `release_process_chip` 이 칩 위젯·도면 payload 전에 푼다(None 을 적는다) — 목표를 바꿔(층마다 칩을 마지막으로 본 목표
+    `space_shortening_chip_levels` 와 다르다) 칩 공정이 「단축 없음」 이 됐거나, 그 회차에 도면에서 칩 밖 공정 호기를 눌렀을 때다
+    (뷰어 누르기 콜백 `_pick_unit` 이 `note_unit_pick` 표지를 남기고 층 상세가 `take_unit_pick` 으로 거둔다). 링크가 정한 칩은
+    목표를 바꾼 것으로 보지 않는다.
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
     분기 눈금 글자는 트랙 폭에 맞춰 솎는다(editor.js 순수 구획 `<fader-ticks>` — 「오늘」 은 늘 서고, 트랙 밖이거나 이웃과
@@ -476,13 +480,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`layout_official_places` — 머리 알림과 같은 재료, 공식 스냅샷을 따로 읽지 않는다). 켜면 층 상세 뷰어 payload `compare`
     (`components/space_floor_layout.compare_payload` ← `services/layout_overlay.layout_compare` — **epoch 밖**이라 켜고 꺼도 다시
     마운트하지 않는다)가 공식 자리가 이 층인 차이 호기의 점선 상자(같은 층으로 옮겼으면 지금 상자와 가는 선, 다른 층이면
-    「→ C2 3F」, 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면 「미배치(가정)」)와 다른 층(또는 공식 미배치)에서 온 호기
+    「→ C2 3F」 — 비활성 층이면 「→ C2 3F(비활성 층)」(`inactive`), 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면
+    「미배치(가정)」)와 다른 층(또는 공식 미배치)에서 온 호기
     꼬리표(「← C1 2F」·「← 공식 미배치」)를 싣고 편집기 JS 새 층 `sle-compare`(보기 전용·눌림 없음·겹쳐 숨기기와 무관, 순수
     `compareShapes` — `// <view-compare>` 구획, node 시험)가 그린다. 이웃한 꼬리표가 겹치면 뒤 꼬리표를 한 줄씩 위로 올린다
     (글자 폭 어림 — 한글·화살표 1em). 공정 필터·일정 없음으로 그리지 않는 호기는 견주지 않는다.
     편집기에는 보내지 않는다. FAB 전체는 층 목록 표 끝 「공식과 다름」 칸(`space_floor_list.FloorListColumn` — 그 층에서 나갔거나
     들어왔거나 그 층 안에서 옮긴 설비 수, 묶음은 1대 — `unit_differences_by_floor`)과 층 블록 풍선 한 줄 「가정 배치 n대 다름」
-    (`floor_block_stats(layout_differences=)` → `linkStats.layout`)이다. FAB 셈도 층 상세와 같이 그리는 호기(공정소분류 필터를
+    (`floor_block_stats(layout_differences=)` → `linkStats.layout`)이다. 그 줄 끝에 공식과 자리가 다른 호기가 든 겹친 쌍 수
+    「· 겹침 n쌍」 이 붙는다(`space_floor_layout.floor_moved_overlaps` — `layout_overlay.moved_unit_names` 의 호기만 그 층의 다른
+    호기와 견주는 `space_layout_edit.overlap_counts_touching`, 「겹친 호기」 경고와 같은 판정 — 개선 I74). FAB 셈도 층 상세와 같이 그리는 호기(공정소분류 필터를
     지난 것 — `floor_unit_differences(session, shown=)`)만 센다 — 같은 표의 배치대수와 어긋나지 않게. 도면 요소·Main 설비명 위치 차이는 머리 알림의 수만이다.
     데이터 꼴은 기준 쪽/보는 쪽 이름이라 반대 방향(공식 세션에서 고른 가정 시나리오를 점선으로)도 받을 수 있다(구현은 범위 밖).
   - **편집 권한은 `equipment_scenario_activation.space_edit_mode(session, stamped_role=)` 한 판정**(설계 8-4 표 — 설비
@@ -506,7 +513,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     — 배치 일곱 칸·층 대기분·편집기 모듈 모양·찍힌 역할만 버리고 공통·일정 편집·이름 바꿈·FAB 대기분은 남김)를 세운다.
     버린 뒤 편집본이 저장본 사본과 내용까지 같고 이름 바꿈·표 칸 초안이 없으면 세운 세대를 지금 세대로 옮겨 「미저장 변경」
     배지·탭 점·불러오기의 「변경을 버리고」 체크가 꺼지고, 알림도 「저장 안 한 설비 편집은 이제 없습니다」 다(버리기도 세대를
-    올려 세대 판정이 편집이 남았다고 봤다 — 2026-10-27 E2E).
+    올려 세대 판정이 편집이 남았다고 봤다 — 2026-10-27 E2E). 잠금이 「최신 rM 불러오기」(`lock_action == "latest"`)이고
+    상자에 이름 바꿈·설비 마스터의 다른 편집·곁표 편집이 없으면 곁에 「배치 변경 버리고 최신 rM 불러오기」
+    (`_discard_layout_and_load_latest` — 버리고 남은 편집이 없을 때만 `_switch_scenario` 로 잇고, 남았으면 불러오지 않고
+    알린다 — 개선 I72)가 선다.
     가정 세션 상자는 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 않습니다」 이고(이름 바꿈이
     있으면 「이름 바꿈은 공통 대장에 저장합니다」 를 붙이고, 이름만 바꿨으면 그 한 줄만 — 이름 바꿈은 어느 시나리오에서나 같은
     호기의 이름이라 가정 배치 리비전을 만들지 않는다. 적용 알림의 「가정 배치로 들어가고」 도 배치를 바꾼 적용에만, E2E r6) 저장 칸은
@@ -534,7 +544,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
     목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
     FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다(사유는 사람이 직접 적은 글 — 블록 안 줄은 8글자를
-    넘으면 「…」 로 줄이고 풍선·선택 줄에는 다 싣는다, `editor.js` `clipOff`·`textContent` 만) — 뷰어 epoch 에 상태
+    넘으면 「…」 로 줄이고 풍선·선택 줄에는 다 싣는다, `editor.js` `clipOff`·`textContent` 만. 테는 흐린 글자색 굵은 점선이고
+    사유 줄이 빠질 만큼 작은 블록은 이름 앞에 「⊘」 를 남긴다 — `blockTextLayout` 의 `off`, 390px 에서 사용 층과 갈리지
+    않았다, 개선 I76) — 뷰어 epoch 에 상태
     지문(`floor_states_fingerprint`, 배율은 그대로)을 넣고 편집기 epoch 에는 넣지 않으며(적용 전 FAB 편집을 지킨다), 뷰어·편집기 `on_open` 은 그린 회차의
     비활성 층을 서버에서도 거른다(`_open_unless_inactive`). `층 바로 가기`·배치 편집기 `다른 층으로 보내기` 선택지는
     `selectable_floor_keys(keep=연 층)` 이다(글자는 「C1 3F」 그대로 — 상태는 배너). 주소 `?floor=` 가 비활성 층이어도 열고
@@ -549,12 +561,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
-    CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다.
+    CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 편 상태는 기억 칸(`remembered_expander`)이라
+    다른 화면에 다녀와도 접히지 않는다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
   - 계산에 닿지 않는다 — 시나리오·조회기간을 읽지 않고 `load_page_context()` 를 부르지 않는다.
   - 본문·답글은 `st.text` 로 그리고 게시판 읽기는 캐시하지 않는다. 폼은 `clear_on_submit` 없이 콜백이 성공한
     때만 비우고 작성자 이름은 폼 밖이다. 필터는 조건 카드 `VOC 필터`, 설명은 `guides/voc.md`.
+  - 새 글 폼의 제목·내용은 올리기 전에는 서버가 몰라 화면 이동·테마 전환(새로고침)에 사라졌다 — 폼 알림 칸 안의
+    `components/voc_draft_keeper.py`(Components v2, 그림자 DOM 없음)가 두 칸(`st-key-voc_post_title`·`_body`)의 글을
+    브라우저 탭(`sessionStorage` — 서버·다른 사람에게 가지 않음)에 적고, 두 칸이 모두 빈 회차에 되살려(원래 setter +
+    `input` 사건 — 폼 안이라 올릴 때 간다) 한 줄 알린다. 같은 세션 표지(세션마다 새로 뽑음)에서 폼 세대가 오르면(글을
+    올렸다) 버린다. 판정은 순수 구획 `// <voc-draft>`(node 시험 `tests/test_voc_draft_keeper.py`), AppTest 는 conftest
+    대역(개선 I84).
   - 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 콜백이고 본문 `st.rerun()` 이 없다 — 끊긴 회차가 아래 글의
     「삭제 확인」 값을 버려 단추가 사라졌다. 새 글·답변 폼과 답변 완료 단추는 key 세대, 글 삭제는 지운 글 id 로
     빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`). 세대 비교와 쓰기는 `components/write_guard.write_once` 라
@@ -564,7 +583,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     누름이 옛 화면의 단추에 닿은 회차(지나간 세대·이미 지운 글)도 쓰기 직후면 성공을 다시 알린다(9장).
   - 그 사이 다른 세션이 지운 글의 답변·답변 완료 표시는 저장소가 같은 쓰기 잠금 안에서 글을 확인해
     `VocPostGoneError` 로 거절한다(`voc_reply.post_id` 에 외래 키가 없어 막지 않으면 주인 없는 답글이 남는다).
-    화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`).
+    화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`). 옛 화면의 「글
+    삭제」 도 같다 — 저장소 `remove_voc_post` 가 지울 것이 없었으면 거짓을 돌려주고 화면은 「글을 지웠습니다.」 대신
+    같은 칸에 「그 사이 지운 글입니다」(`VOC_POST_GONE_ON_DELETE`)를 그린다. 쓰기 직후 창 안이면(`held_notice` —
+    겹쳐 온 제 누름이 먼저 지웠다) 그 알림 그대로다.
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
 - `app_pages/scenario_management.py` — `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭(늘 그린다 — form 입력
@@ -664,6 +686,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
     블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
+    블록 글자 줄 크기는 편집기 JS `// <block-text>` 구획의 순수 `blockTextLayout`(node 시험 `test_space_block_text_js.py`)
+    이 정한다 — 단축 줄은 이름·대수 줄 크기를 끌어내리지 않고 제 폭으로 따로 작아지며, 많이 줄면 「 · 」 경계에서 두
+    줄로 나뉘고 6px 아래면 그 줄만 숨는다(E2E r1 — 이름이 6~7px 이 되던 것).
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
     판정한다. 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
 - `src/capa_simulation/components/space_floor_list.py` — Space FAB 전체 아래 **층 목록**(2026-10-24 결정 S1~S6). 보기는
@@ -689,6 +714,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않고 편집은 남는다 — 제어 문자 거절 글은 「그 칸을 지우고 다시 적으세요」 를 붙인다). 동 머리는 옛 코드 둘만 고른다 — 직접 적은 사유로 끈 동은 고른 것 없음 + 「C2 · 사용 0/6」(`building_state`).
     성공 알림은 사유마다 층 수이고 사유를 `literal_markdown` 으로 막는다(다섯 가지 넘으면 「외 n가지」).
   - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
+    확인을 띄우기 전에 저장소의 지금 version 을 캐시 없이 읽어(`_stored_version`) 편집 시작 version 과 다르면 확인 없이
+    곧장 쓰기에 보낸다 — 대조가 거부(또는 겹쳐 온 제 저장)를 알려 헛된 확인을 한 번 덜 받는다(못 읽으면 전처럼 확인).
     저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
     칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 충돌은 거부 표지(`note_profile_conflict`)를 초안을
     다시 세우기 **전에** 적는다 — 창 안의 저장은 쓰지 않고 초안을 최신으로 다시 세운 채 거부를 다시 알리고, 동 머리 콜백은
@@ -876,7 +903,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정)·깔린 판·
   토큰 파일 수정 시각·자리·실행 사용자·HOME·비어 있던 환경변수·pip 출력 끝을 싣는다. 결과 파일이 없는데 CD 전용
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
-  알린다(`missing_report_notice`). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
+  알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
+  환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 두 제외 표를 그리는 단일 렌더러다. 화면은
   표시명 복사본, CSV 는 원본이고, 캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다.
 - `src/capa_simulation/components/exclusion_waterfall.py` — 후보 경로 → 사유별 차감 → 남은 경로 워터폴(단위는 경로
@@ -1326,7 +1354,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   원본 공정명으로 셈하고 결론·질문·조건의 공정 이름만 부르는 쪽이 넘긴 글자 함수(`process_name`)로 적는다 — 표시명
   모듈은 import 하지 않는다(8장). 근거 표 숫자 칸의 꼴(`SampleAnswer.evidence_formats` — 실적 화면 표와 같은 퍼센트·
   `Gap (%p)`)은 대본이 정하고 화면이 `st.column_config` 로 옮긴다 — 서식이 없어 Gap 이 분수(-0.1093)로 나왔다(2026-10-30
-  E2E). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적는다.
+  E2E). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적는다. 「기준 미달」 결론은 센 기준(상태
+  「개선 필요」·「관찰」 — 마지막 달까지 연속 미달)을 밝힌다.
 - `src/capa_simulation/services/floor_layout_mark.py` — 층 도면 비설비 요소의 계약·검증(`prepare_floor_layout_marks`)이다.
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
@@ -3413,7 +3442,8 @@ RQ_MODULE
 33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
     `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만 남긴다. 탭을 누르는 것은
     사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
-    (편집표의 적용 전 편집·폼 초안·팝업·접힌 상자·스크롤은 처음으로 간다). 탭을 닫아도 그 화면의 보기 조건·세션 편집은
+    (편집표의 적용 전 편집·폼 초안·팝업·접힌 상자·스크롤은 처음으로 간다 — VOC 새 글의 제목·내용만 브라우저 탭에 임시 보관돼
+    빈 폼에 되살아난다, 9장 「입력 초안」). 탭을 닫아도 그 화면의 보기 조건·세션 편집은
     지우지 않는다. 탭 줄은 23번처럼 DB 를 읽지 않는다 — `tests/test_page_tabs.py` 가 그리는 동안 저장소·연결 호출 0 을
     지킨다. 탭 목록은 `scenario_activation._STALE_UI_KEYS` 에 넣지 않는다(무엇을 보고 있는지라 시나리오를 바꿔도 남는다).
 34. **입력 비가동 대수는 계획 키 안의 칸으로만 계산에 든다**(설비 `0032`, 2026-10-27 결정). 실행 쪽 설비 일정 기준 가용을 내는 모든
@@ -4425,7 +4455,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   칸(미리보기)도 함께 거둔다 — 설비 마스터 탭 입력은 페이지에 새로 들어온 회차(`page_bootstrap.page_visit`,
   `app.py` 가 페이지가 바뀐 회차에 올린다)에 미리보기를 버린다. 「입력 칸이 세션에 없으면 거둔다」로
   가르지 않는다 — 같은 페이지의 `st.rerun()` 도 서버에서는 칸이 비지만 브라우저가 입력을 다시 보낸다. 화면 탭 줄로
-  오가는 왕복에도 초안은 남기지 않는다(같은 규칙 — 제출 전 폼 글은 서버에 없다).
+  오가는 왕복에도 초안은 남기지 않는다(같은 규칙 — 제출 전 폼 글은 서버에 없다). 예외는 VOC 새 글의 제목·내용 하나다 —
+  서버 세션이 아니라 브라우저 탭(`sessionStorage`)에 두었다가 빈 폼에 되살린다(`components/voc_draft_keeper.py`, 2026-10-26
+  개선 가르기 결정). `persist_state` 를 주지 않는 규칙은 그대로이고, 다른 폼 초안에 넓히려면 따로 정한다.
 - 탭은 `components/tab_state.py` 의 `stateful_tabs` 가 열린 탭을 위젯 아닌 칸에 적어 두고
   위젯 값이 사라졌을 때만 되돌린다. **`st.tabs` 의 `default` 인자는 쓰지 않는다** — 그 값이
   위젯 id 계산에 들어가 탭을 옮길 때마다 위젯이 새로 만들어지고 선택이 또 사라진다.

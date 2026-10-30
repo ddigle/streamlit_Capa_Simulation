@@ -100,3 +100,16 @@ def test_migration_is_registered() -> None:
     catalog = (root / "docs/migration_catalog.md").read_text(encoding="utf-8")
 
     assert "0025_voc_board.sql" in catalog
+
+
+def test_removing_a_post_says_whether_there_was_one_to_remove(tmp_path: Path) -> None:
+    """지울 글이 있었으면 참, 그 사이 지운 글이면 거짓 — 화면이 「그 사이 지운 글입니다」 를
+    가른다."""
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    post_id = repository.create_voc_post(
+        category=VOC_CATEGORIES[0], title="제목", body="내용", author="담당자"
+    )
+
+    assert repository.remove_voc_post(post_id) is True
+    assert repository.remove_voc_post(post_id) is False

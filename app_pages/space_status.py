@@ -79,6 +79,7 @@ from capa_simulation.components.space_floor_layout import (
     compare_payload,
     effective_floor_layout,
     floor_layout_differences,
+    floor_moved_overlaps,
     floor_unit_differences,
     space_layout_notices,
 )
@@ -99,6 +100,7 @@ from capa_simulation.components.space_layout import (
     floor_table,
     invalid_equipment_rows,
     occupancy_ratio,
+    picked_unit_processes,
     picked_unit_rows,
     row_unit_shares,
     shortening_legend_markup,
@@ -119,6 +121,8 @@ from capa_simulation.components.space_shortening_view import (
     forget_arrival_note,
     layer_table_columns,
     load_space_layer,
+    note_unit_pick,
+    release_process_chip,
     render_arrival_filter_note,
     render_fab_layer_summary,
     render_floor_layer_panel,
@@ -126,6 +130,7 @@ from capa_simulation.components.space_shortening_view import (
     render_layer_controls,
     render_layer_stop,
     switch_to_queued_shortening,
+    take_unit_pick,
     unit_keys_by_name,
     valid_focus,
 )
@@ -327,6 +332,8 @@ LOAD_LATEST_KEY = "space_load_latest"
 SAVE_LOAD_LATEST_KEY = "space_save_load_latest"
 LOCKED_EDIT_TOGGLE_KEY = "space_layout_edit_mode_locked"
 DISCARD_LAYOUT_BUTTON_KEY = "space_layout_discard_layout"
+# 「최신 rM 불러오기」 잠금에서 배치 변경만 남았으면 「배치 변경만 버리기」 곁에 서는 한 단계 단추.
+DISCARD_AND_LOAD_LATEST_KEY = "space_layout_discard_and_load_latest"
 # 도면 「색 기준」(공정구분 | 투자Capa | 필요 단축)과 그 기준의 그룹 체크(2026-10-16 사용자 결정).
 # 체크 key 는 `space_color_<line|capa>_<그룹>` 이다 — 기준마다 따로라 기준을 바꿔도 다른 쪽 체크가
 # 남는다. 필요 단축은 그룹이 없다(2026-10-24 — 색은 단축 일수 구간). 칸 이름은 사이드바가 먼저 읽어
@@ -377,6 +384,7 @@ def _pick_unit(key: FloorKey, unit_id: str | None) -> None:
         st.session_state.pop(SPACE_PICKED_KEY, None)
     else:
         st.session_state[SPACE_PICKED_KEY] = (key[0], key[1], unit_id)
+        note_unit_pick()
 
 
 def _show_whole_floor() -> None:
@@ -1186,16 +1194,40 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                     else "최신을 불러온 뒤 다시 고치세요."
                 )
             )
-            st.button(
-                "배치 변경만 버리기",
-                icon=":material/layers_clear:",
-                key=DISCARD_LAYOUT_BUTTON_KEY,
-                on_click=_discard_layout_only,
-                help=(
-                    "호기 자리·크기·레이아웃표시와 층 도면 요소·Main 설비명 위치·편집 영역 변경만 "
-                    "버립니다. 설비 마스터의 다른 편집과 이름 바꿈, FAB 전체 배치는 남습니다."
-                ),
-            )
+            with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                st.button(
+                    "배치 변경만 버리기",
+                    icon=":material/layers_clear:",
+                    key=DISCARD_LAYOUT_BUTTON_KEY,
+                    on_click=_discard_layout_only,
+                    help=(
+                        "호기 자리·크기·레이아웃표시와 층 도면 요소·Main 설비명 위치·편집 영역 "
+                        "변경만 버립니다. 설비 마스터의 다른 편집과 이름 바꿈, FAB 전체 배치는 "
+                        "남습니다."
+                    ),
+                )
+                # 남이 그 시나리오에 다른 배치를 저장한 잠금이고 버릴 것이 배치 변경뿐이면 버리기와
+                # 잠금 줄의 「최신 rM 불러오기」 를 한 번에 한다(버린 뒤 팝오버를 다시 여는
+                # 두 단계였다). 다른 편집이 있으면 불러오기가 그것까지 버리므로 세우지 않는다.
+                if (
+                    edit_mode.lock_action == "latest"
+                    and names.empty
+                    and not others
+                    and not side_tables
+                ):
+                    latest = equipment_session.latest_revision_no
+                    st.button(
+                        f"배치 변경 버리고 최신 r{latest} 불러오기",
+                        icon=":material/swap_horiz:",
+                        key=DISCARD_AND_LOAD_LATEST_KEY,
+                        on_click=_discard_layout_and_load_latest,
+                        args=(equipment_database_path, _latest_target(equipment_session), latest),
+                        help=(
+                            "이 배치 변경을 버리고 곧바로 그 시나리오의 최신 리비전을 불러옵니다 — "
+                            "배치 편집을 다시 할 수 있습니다. 저장하지 않은 S.PKG FAB 전체 배치는 "
+                            "남습니다."
+                        ),
+                    )
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건", key=CHANGES_EXPANDER_KEY):
                 # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
@@ -1333,6 +1365,32 @@ def _discard_layout_only() -> None:
         "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집과 이름 바꿈은 남아 있습니다."
         if remaining
         else "배치 변경만 버렸습니다 — 저장 안 한 설비 편집은 이제 없습니다.",
+    )
+
+
+def _discard_layout_and_load_latest(
+    database_path: str, target: tuple[str, str | None], latest: int | None
+) -> None:
+    """「배치 변경 버리고 최신 rM 불러오기」 콜백 — 「배치 변경만 버리기」 뒤 잠금 줄의 「최신 rM
+    불러오기」 를 잇는다. 버린 뒤 설비 편집이 남았으면(단추를 그린 뒤 생겼다) 불러오지
+    않는다 — 불러오기는 남은 편집까지 버리므로 잠금 줄에서 「변경을 버리고」 를 체크해 부르게
+    둔다."""
+    st.session_state.pop(SAVE_ERROR_KEY, None)
+    revision = f"r{latest}"
+    if discard_layout_edits():
+        _queue_space_flash(
+            "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집이 남아 있어 최신 "
+            f"{with_object_particle(revision)} 불러오지 않았습니다. 잠금 줄의 「최신 {revision} "
+            "불러오기」 에서 변경을 버리고 불러오세요."
+        )
+        return
+    _switch_scenario(
+        database_path,
+        target[0],
+        target[1],
+        False,
+        f"배치 변경을 버리고 최신 {with_object_particle(revision)} 불러왔습니다 — 배치 편집을 할 "
+        "수 있습니다.",
     )
 
 
@@ -1929,6 +1987,8 @@ if selected is None:
         if compare_on
         else {}
     )
+    # 같은 회차의 겹침 — 공식과 자리가 다른 호기가 든 겹친 쌍(블록 풍선 「겹침 n쌍」).
+    unit_overlaps = floor_moved_overlaps(equipment_session, space_equipment) if compare_on else {}
     # 필요 단축 보기를 켠 동안 층 블록 셋째 줄과 층 목록 표 칸 넷(비활성 층에는 싣지 않는다). epoch
     # 밖이라 목표·필터를 바꿔도 배율이 그대로다.
     layer_counts = (
@@ -1955,6 +2015,7 @@ if selected is None:
         placements,
         inactive={key: inactive_label(reason) for key, reason in inactive_floors.items()},
         layout_differences=unit_differences,
+        layout_overlaps=unit_overlaps,
         short_lines=short_lines,
     )
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
@@ -2165,6 +2226,8 @@ else:
         # 도면에서 누른 호기(이 층의 것만). 그 사이 이름이 바뀌었거나 공정소분류 필터로 빠져
         # 이 층 행에 없으면 푼다.
         picked_unit = _picked_unit(selected)
+        # 이번 회차에 도면에서 누른 것인가 — 칩 밖 공정의 호기를 누르면 칩을 푼다(아래).
+        picked_now = take_unit_pick()
         picked_rows = (
             picked_unit_rows(floor_status, picked_unit) if picked_unit is not None else None
         )
@@ -2190,17 +2253,38 @@ else:
                 if "공정소분류" in layer_rows.columns
                 else set(),
             )
+            floor_loose = not_placed.loc[
+                not_placed["동"].eq(selected_building).fillna(False).astype(bool)
+                & not_placed["층"].eq(selected_floor).fillna(False).astype(bool)
+            ]
             shown_layer = floor_layer(
                 space_layer.layer,
                 layer_rows,
-                not_placed.loc[
-                    not_placed["동"].eq(selected_building).fillna(False).astype(bool)
-                    & not_placed["층"].eq(selected_floor).fillna(False).astype(bool)
-                ],
+                floor_loose,
                 focus=focus,
                 dim_others=layer_dim,
                 inactive=selected in inactive_floors,
             )
+            # 목표를 바꿔 칩 공정이 「단축 없음」 이 됐거나 칩 밖 공정의 호기를 눌렀으면 칩을 풀고
+            # 이 층 모든 공정으로 다시 낸다(칩 위젯·도면 payload 전).
+            if release_process_chip(
+                selected,
+                space_layer.layer.level,
+                shown_layer,
+                picked_processes=(
+                    picked_unit_processes(picked_rows)
+                    if picked_now and picked_rows is not None
+                    else None
+                ),
+            ):
+                shown_layer = floor_layer(
+                    space_layer.layer,
+                    layer_rows,
+                    floor_loose,
+                    focus=None,
+                    dim_others=layer_dim,
+                    inactive=selected in inactive_floors,
+                )
         # 뷰어 payload 는 머리 줄 앞에서 구한다 — 범례와 도면이 한 회차 안에서 붙어 나가야 페이더를
         # 놓은 뒤 브라우저가 둘을 한 번에 맞춘다(그 사이에 payload 를 만들면 범례만 먼저 바뀐다).
         viewer_inputs = (
@@ -2342,6 +2426,7 @@ else:
                         equipment_session,
                         selected,
                         shown=set(space_equipment[EQUIPMENT_ID_COLUMN].dropna().astype(str)),
+                        inactive=frozenset(inactive_floors),
                     )
                     if compare_on
                     else None

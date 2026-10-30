@@ -68,6 +68,28 @@ def build_source_quality_table(profile: pd.DataFrame, source_rows: int) -> pd.Da
     ).reset_index(drop=True)
 
 
+# 경고 문구에 적는 등급 차례 — 나쁜 것부터(표 정렬과 같다).
+PROBLEM_GRADES = ("비어 있음", "절반 이상 결측", "상수")
+
+
+def source_quality_warning(table: pd.DataFrame) -> str | None:
+    """정상이 아닌 컬럼이 있으면 경고 한 문장 — 수를 등급별로 적는다(없는 등급은 뺀다). 모두
+    정상이면 None.
+
+    「비어 있거나 상수」 한 덩어리로 적으면 「절반 이상 결측」 컬럼까지 그 수에 들어 수와 문구가
+    맞지 않았다(E2E r1)."""
+    grades = table[GRADE_COLUMN].value_counts()
+    counts = [(grade, int(grades.get(grade, 0))) for grade in PROBLEM_GRADES]
+    problem_count = sum(count for _, count in counts)
+    if not problem_count:
+        return None
+    parts = " · ".join(f"{grade} {count:,}개" for grade, count in counts if count)
+    return (
+        f"{len(table):,}개 컬럼 중 {problem_count:,}개가 정상이 아닙니다 — {parts}. "
+        "계산에 쓰는 컬럼이면 제외 목록으로 나타납니다."
+    )
+
+
 def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
     """78컬럼 품질 표. 막대는 셀 안에 넣어 표 하나로 끝낸다."""
     table = build_source_quality_table(profile, source_rows)
@@ -75,12 +97,9 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
         st.info("이 시나리오에는 원천 컬럼 프로필이 없습니다.")
         return
 
-    problem_count = int((table[GRADE_COLUMN] != "정상").sum())
-    if problem_count:
-        st.warning(
-            f"{len(table):,}개 컬럼 중 {problem_count:,}개가 비어 있거나 상수입니다. "
-            "계산에 쓰는 컬럼이면 제외 목록으로 나타납니다."
-        )
+    warning = source_quality_warning(table)
+    if warning is not None:
+        st.warning(warning)
     else:
         st.success(f"{len(table):,}개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다.")
 

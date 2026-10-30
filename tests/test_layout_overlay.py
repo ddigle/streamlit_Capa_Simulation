@@ -860,6 +860,30 @@ def test_the_compare_draws_dashed_official_boxes_and_arrival_tags() -> None:
     assert [(g.name, g.tag) for g in upstairs.ghosts] == [("E", "→ C1 1F")]
 
 
+def test_a_unit_sent_to_an_inactive_floor_says_so_on_its_tag() -> None:
+    """가정에서 보낸 층이 비활성 층이면 그 호기는 목록·도면·층 바로 가기 어디에도 없다 — 꼬리표가
+    「→ C2 3F」 로만 숨은 층을 가리키지 않게 「(비활성 층)」 을 단다(E2E r1). 사용 층은 그대로다."""
+    effective, official = _compare_master()
+    names = set(effective["설비명"])
+
+    compare = layout_compare(
+        effective,
+        _pairs(effective),
+        official,
+        ("C1", "1F"),
+        shown=names,
+        inactive={("C2", "3F")},
+    )
+
+    assert [(g.name, g.tag) for g in compare.ghosts if g.tag and g.tag.startswith("→")] == [
+        ("B", "→ C2 3F(비활성 층)")
+    ]
+    upstairs = layout_compare(
+        effective, _pairs(effective), official, ("C1", "2F"), shown=names, inactive={("C2", "3F")}
+    )
+    assert [(g.name, g.tag) for g in upstairs.ghosts] == [("E", "→ C1 1F")]
+
+
 def test_the_compare_skips_units_the_screen_does_not_draw() -> None:
     """공정 필터·일정 없음으로 그리지 않는 호기는 견주기에도 없다(`shown`)."""
     effective, official = _compare_master()

@@ -12,14 +12,17 @@
   어긋난다(검토 F15·M7). `app_pages/space_status.py` 에는 공식 층 요소 직접 읽기가 없다(시험이
   본다).
 - 「공식과 견주기」(S4 — 설계 8-3) 재료도 여기서 낸다 — 층 상세 뷰어 payload(`compare_payload`)와
-  FAB 층 목록 「공식과 다름」 칸·블록 풍선의 층별 셈(`floor_unit_differences`). 둘 다 그리는 세션
-  스냅샷의 합친 본문(`layout_official_places`)과 마스터만 읽는다 — 공식 스냅샷을 따로 읽지 않는다.
+  FAB 층 목록 「공식과 다름」 칸·블록 풍선의 층별 셈(`floor_unit_differences`)과 블록 풍선의 겹침 셈
+  (`floor_moved_overlaps` — 공식과 자리가 다른 호기가 낸 겹침). 모두 그리는 세션 스냅샷의 합친
+  본문(`layout_official_places`)과 마스터만 읽는다 — 공식 스냅샷을 따로 읽지 않는다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Collection
 from typing import Any
+
+import pandas as pd
 
 from capa_simulation.components.literal_markdown import quoted
 from capa_simulation.equipment_scenario_activation import EquipmentSession
@@ -40,8 +43,10 @@ from capa_simulation.services.layout_overlay import (
     layout_counts_words,
     layout_difference,
     mark_changes,
+    moved_unit_names,
     unit_differences_by_floor,
 )
+from capa_simulation.services.space_layout_edit import overlap_counts_touching
 
 
 def session_layout_overlay(database_path: str, session: EquipmentSession) -> LayoutOverlay:
@@ -197,12 +202,16 @@ def space_layout_notices(
 
 
 def compare_payload(
-    session: EquipmentSession, key: FloorKey, *, shown: Collection[str]
+    session: EquipmentSession,
+    key: FloorKey,
+    *,
+    shown: Collection[str],
+    inactive: Collection[FloorKey] = (),
 ) -> dict[str, Any] | None:
     """층 상세 뷰어의 「공식과 견주기」 재료(`space_layout_editor.render_space_layout_viewer` 의
     `compare`) — 공식 자리 점선 상자(`ghosts`)와 다른 층에서 온 호기 꼬리표(`arrivals`). `shown` 은
-    지금 화면이 그리는 설비명(공정 필터·일정 없음을 지난 것)이다. 차이가 없거나 일정 없이 열었으면
-    None."""
+    지금 화면이 그리는 설비명(공정 필터·일정 없음을 지난 것)이다. `inactive` 는 비활성 층이다 — 그
+    층으로 보낸 호기의 꼬리표에 「(비활성 층)」 을 단다. 차이가 없거나 일정 없이 열었으면 None."""
     snapshot = session.snapshot
     if snapshot is None or session.unmerged or not snapshot.layout_official_places:
         return None
@@ -212,6 +221,7 @@ def compare_payload(
         snapshot.layout_official_places,
         key,
         shown=shown,
+        inactive=inactive,
     )
     if not compare:
         return None
@@ -248,3 +258,19 @@ def floor_unit_differences(
         snapshot.unscheduled_units,
         shown=shown,
     )
+
+
+def floor_moved_overlaps(session: EquipmentSession, status: pd.DataFrame) -> dict[FloorKey, int]:
+    """층마다 공식과 자리가 다른 호기가 든 겹친 호기 쌍 수 — 「공식과 견주기」 를 켠 FAB 블록 풍선
+    재료(가정 배치를 겹치게 저장하면 저장 때 「겹친 호기 n건」 만 떴다). `status` 는 지금
+    화면이 그리는 기준일 상태(공정 필터를 지난 것)다 — 「공식과 다름」 셈과 같은 호기를 본다."""
+    snapshot = session.snapshot
+    if snapshot is None or session.unmerged or not snapshot.layout_official_places:
+        return {}
+    moved = moved_unit_names(
+        snapshot.equipment,
+        snapshot.unit_key_pairs,
+        snapshot.layout_official_places,
+        snapshot.unscheduled_units,
+    )
+    return overlap_counts_touching(status, moved)

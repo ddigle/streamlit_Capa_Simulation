@@ -126,6 +126,16 @@ def read_container_start_report(path: Path | None = None) -> ContainerStartRepor
     return parse_report(data)
 
 
+def report_file_exists(path: Path | None = None) -> bool:
+    """결과 파일이 있는가 — `read_container_start_report` 가 None 일 때 「없음」 과 「있는데 못
+    읽음」 을 가른다. 자리를 볼 수 없으면 없는 것으로 본다."""
+    target = report_path() if path is None else path
+    try:
+        return target.is_file()
+    except OSError:
+        return False
+
+
 def parse_report(data: object) -> ContainerStartReport | None:
     if not isinstance(data, dict) or not isinstance(data.get("steps"), dict):
         return None
@@ -209,12 +219,27 @@ def step_hint(report: ContainerStartReport, step: str) -> str:
 def start_check_hint(
     step: str, path: Path | None = None, environ: Mapping[str, str] | None = None
 ) -> str | None:
-    """결과 파일이 있으면 그 단계의 안내 한 단락이다. 없으면 CD 서버로 보일 때만 「결과 없음」
+    """결과 파일이 있으면 그 단계의 안내 한 단락이다. 있는데 읽지 못하면 「결과 파일을 읽지
+    못했습니다」 한 단락(`UNREADABLE_REPORT_NOTICE`)이다. 없으면 CD 서버로 보일 때만 「결과 없음」
     한 단락(`missing_report_notice`)이고, 개발·사내 PC 는 `None`(지금 문구 그대로)이다."""
     report = read_container_start_report(path)
     if report is None:
+        if report_file_exists(path):
+            return UNREADABLE_REPORT_NOTICE
         return missing_report_notice(environ)
     return step_hint(report, step)
+
+
+# 결과 파일은 있는데 읽지 못했을 때(빈 파일·JSON 아님·모르는 단계 결과 등)의 한 단락. 「결과 없음」
+# (`missing_report_notice` — 스크립트가 돌지 않았거나 쓰지 못함)과 가른다 — 파일이 있으니 스크립트는
+# 돌았다(E2E r2). CD 환경변수와 상관없이 낸다. 이 문구에 `CAPA_BDQ_USER_NAME` 을 섞지 않는다(점검
+# 스크립트의 갈래).
+UNREADABLE_REPORT_NOTICE: Final = (
+    "서버 시작 점검 결과 파일을 읽지 못했습니다(꼴이 다름) — 결과 파일"
+    "(`data/temp/container_start.json`)은 있는데 비었거나 JSON 이 아니거나 이 앱이 모르는 "
+    f"꼴입니다. 시작 스크립트(`{START_SCRIPT}`)가 쓰다 끊겼거나 앱과 판이 다를 수 있습니다 — "
+    "CI/CD 를 다시 돌리고, 그래도 같으면 이 문구를 그대로 알려 주세요."
+)
 
 
 def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | None:
