@@ -260,7 +260,7 @@ def test_an_inactive_floor_block_is_grey_hatched_and_never_opens() -> None:
     )
     assert "fill: var(--sle-muted)" in _rule(".mark-block.is-inactive .sle-mark-text")
     assert "cursor: default" in _rule(".sle.is-view.is-fab .mark-block.is-inactive")
-    assert "stroke: var(--sle-frame)" in _rule(
+    assert "stroke: var(--sle-muted)" in _rule(
         ".sle.is-view.is-fab .mark-block.is-inactive:hover .sle-block-border"
     )
 
@@ -344,6 +344,32 @@ def test_a_reason_reaches_the_page_only_as_text() -> None:
     assert "if (tip) tip.textContent = words" in draw
     hint = JS[JS.index("S.showBlockHint = (group) => {") : JS.index("const opensFromInspector")]
     assert "pickBox.textContent = `${item.link} · 비활성(${blockOff(item)})" in hint
+
+
+def test_an_inactive_floor_block_keeps_a_dark_dashed_frame_and_a_mark_when_narrow() -> None:
+    """390px FAB 에서 작은 비활성 블록은 사유 줄이 빠지고 빗금이 흐려 사용 층과 거의 갈리지 않았다
+    (E2E r1). 테는 흐린 글자색의 굵은 점선(화면 px)이고, 사유 줄이 빠질 만큼 작으면 이름 앞에 「⊘」
+    가 남는다(`blockTextLayout` 의 `off` — node 시험은 `test_space_block_text_js.py`)."""
+    border = _rule(".mark-block.is-inactive .sle-block-border")
+    assert "stroke: var(--sle-muted)" in border
+    assert "stroke-dasharray" in border and "stroke-width: 2" in border
+    assert "blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)" in JS
+
+
+def test_a_narrow_floor_viewer_moves_its_summary_to_a_second_line() -> None:
+    """390px 층 상세에서 확대 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 도구 줄 밖으로 밀려 보이지
+    않았다(E2E r1). 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 ⑥(둘째 줄)이고, 둘째 줄의
+    요약은 말줄임 대신 줄을 바꾼다(FAB 도 같다)."""
+    fit = _between(
+        "function fitFabBar() {",
+        "// ---------------------------------------------------------------- 높이 손잡이",
+    )
+    assert "for (const step of FAB ? FIT_STEPS : FIT_STEPS.slice(-1)) {" in fit
+    summary = _rule(".sle-toolbar.is-fit6 .sle-summary")
+    assert "white-space: normal" in summary and "overflow: visible" in summary
+    assert CSS.index(".sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }") < CSS.index(
+        ".sle-toolbar.is-fit6 .sle-summary"
+    )
 
 
 def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:
@@ -807,7 +833,7 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     assert (
         "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']" in JS
     )
-    assert fit.index("toolbar.classList.remove(...FIT_STEPS)") < fit.index("if (!(VIEW && FAB)")
+    assert fit.index("toolbar.classList.remove(...FIT_STEPS)") < fit.index("if (!VIEW ||")
     assert "if (toolbar.scrollWidth <= toolbar.clientWidth) return" in fit
     resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
     assert "fitFabBar()" in resize

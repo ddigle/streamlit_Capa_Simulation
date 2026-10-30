@@ -161,8 +161,11 @@
 .mark-block.is-inactive .sle-block-fill { fill: var(--sle-block-off) !important; }
 .mark-block.is-inactive .sle-block-hatch { pointer-events: none; }
 .mark-block.is-inactive .sle-mark-text { fill: var(--sle-muted); }
+/* 테는 흐린 글자색의 굵은 점선이다 — 좁은 화면(390px)에서는 빗금이 흐려 사용 층과 거의 갈리지 않았다(E2E r1). 화면 px
+   (`non-scaling-stroke`)라 확대해도 같은 굵기다. 사유 줄이 빠질 만큼 작으면 이름 앞의 「⊘」 가 남는다(JS `blockTextLayout`). */
+.mark-block.is-inactive .sle-block-border { stroke: var(--sle-muted); stroke-width: 2; stroke-dasharray: 5 3; }
 .sle.is-view.is-fab .mark-block.is-inactive { cursor: default; }
-.sle.is-view.is-fab .mark-block.is-inactive:hover .sle-block-border { stroke: var(--sle-frame); stroke-width: 1.5; }
+.sle.is-view.is-fab .mark-block.is-inactive:hover .sle-block-border { stroke: var(--sle-muted); stroke-width: 2; }
 
 /* ---- 손잡이·선택 ---- */
 .sle-handle {
@@ -491,7 +494,9 @@
 }
 .sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }
 .sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }
-/* ⑥ 둘째 줄 — 보기에서 숨는 빈 칸(`sle-spacer`, 선택 줄 바로 뒤)이 온 폭 줄바꿈이 된다. */
+/* ⑥ 둘째 줄 — 보기에서 숨는 빈 칸(`sle-spacer`, 선택 줄 바로 뒤)이 온 폭 줄바꿈이 된다. 층 보기 도구 줄은 넘치면 곧장
+   이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px 에서 「배치 …」 로 잘렸다(E2E r1). */
 .sle-toolbar.is-fit6 { flex-wrap: wrap; height: auto; row-gap: 2px; }
 .sle.is-view .sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
+.sle-toolbar.is-fit6 .sle-summary { flex: 1 1 10em; min-width: 0; overflow: visible; white-space: normal; }
 .sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }

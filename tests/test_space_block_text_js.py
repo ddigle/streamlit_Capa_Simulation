@@ -26,7 +26,8 @@ _RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 %s
 %s
-const out = input.cases.map((c) => blockTextLayout(c.main, c.short, c.lw, c.lh, c.upp, emWidth))
+const out = input.cases.map(
+  (c) => blockTextLayout(c.main, c.short, Boolean(c.off), c.lw, c.lh, c.upp, emWidth))
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -112,3 +113,20 @@ def test_no_short_line_is_the_old_two_line_block() -> None:
     assert [(row["text"], row["role"]) for row in rows] == [("C1 3F", "head"), ("배치 12대", "sub")]
     expected = min(10.0 * 0.8 / (2 * 1.3), 18.0 * 0.9 / _em("배치 12대"), 1.3)
     assert abs(rows[0]["size"] - expected) < 1e-9
+
+
+def test_a_tiny_inactive_block_keeps_a_mark_in_front_of_its_name() -> None:
+    """비활성 블록(이름·사유 두 줄)이 사유 줄을 뺄 만큼 작으면 이름 앞에 「⊘」 를 달아 사용 층과
+    가른다(390px — E2E r1). 사용 층 블록은 이름만이다. 넉넉하면 두 줄 그대로다."""
+    off = {"main": ["C4 6F", "사용 안 함"], "short": "", "off": True, "upp": 0.1}
+    tiny, roomy, used = _layout(
+        [
+            {**off, "lw": 6.0, "lh": 2.0},
+            {**off, "lw": 18.0, "lh": 10.0},
+            {"main": ["C4 6F", "배치 0대"], "short": "", "lw": 6.0, "lh": 2.0, "upp": 0.1},
+        ]
+    )
+
+    assert [row["text"] for row in tiny] == ["⊘ C4 6F"]
+    assert [row["text"] for row in roomy] == ["C4 6F", "사용 안 함"]
+    assert [row["text"] for row in used] == ["C4 6F"]

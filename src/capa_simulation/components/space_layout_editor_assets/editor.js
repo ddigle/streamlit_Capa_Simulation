@@ -704,9 +704,10 @@ export default function (component) {
   //   줄어 강조하려는 층 이름이 6~7px 이 됐다(E2E r1). 위 줄은 제 폭으로 맞추고(높이는 단축 줄 몫도 나눈다), 단축 줄만 제 폭에
   //   맞춰 더 작아진다. 한 줄로 많이 줄면(위 줄의 0.75 배 아래) 「 · 」 경계에서 두 줄로 나눠 본다 — 나눈 줄이 1.15 배 넘게
   //   커지고 위 줄이 0.9 배 밑으로 줄지 않을 때만 나눈다(낮은 블록에서는 줄을 늘리면 이름이 작아진다).
-  // - 위 줄이 둘 이상인데 화면 7px 아래면 이름 줄만 남긴다(단축 줄도 뺀다 — 풍선에 남는다).
+  // - 위 줄이 둘 이상인데 화면 7px 아래면 이름 줄만 남긴다(단축 줄도 뺀다 — 풍선에 남는다). 비활성 층(`off`)이면 이름
+  //   앞에 「⊘」 를 달아 사유 줄이 빠진 좁은 화면에서도 사용 층과 가른다(390px — E2E r1).
   // - 단축 줄이 화면 6px 아래면 그 줄만 숨긴다. 이름 줄이 6px 아래면 부르는 쪽이 숨긴다.
-  function blockTextLayout(main, short, lw, lh, upp, em) {
+  function blockTextLayout(main, short, off, lw, lh, upp, em) {
     const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), 13 * upp)
     const widthFit = (rows) => (lw * 0.9) / Math.max(...rows.map(em), 1)
     const splitTwo = (text) => {
@@ -733,7 +734,10 @@ export default function (component) {
       const better = split && split.shortSize > one.shortSize * 1.15 && split.size >= one.size * 0.9 && split.size / upp >= 7
       pick = better && one.shortSize < one.size * 0.75 ? split : one
     }
-    if (main.length > 1 && pick.size / upp < 7) return [{ text: main[0], size: fit([main[0]], 1), role: 'head' }]
+    if (main.length > 1 && pick.size / upp < 7) {
+      const head = off ? `⊘ ${main[0]}` : main[0]
+      return [{ text: head, size: fit([head], 1), role: 'head' }]
+    }
     if (pick.shortRows.length && pick.shortSize / upp < 6) pick = lay(pick.head, [])
     return [
       ...pick.head.map((text, k) => ({ text, size: pick.size, role: k === 0 ? 'head' : 'sub' })),
@@ -1809,7 +1813,7 @@ export default function (component) {
       const { main, short } = blockLines(item)
       const rows = item.fontSize
         ? [...main, ...(short ? [short] : [])].map((value, k) => ({ text: value, size: fs, role: k === 0 ? 'head' : (k < main.length ? 'sub' : 'short') }))
-        : blockTextLayout(main, short, lw, lh, upp, emWidth)
+        : blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)
       const total = rows.reduce((sum, row) => sum + row.size * 1.3, 0)
       let y = lh / 2 - total / 2
       for (const row of rows) {
@@ -4802,13 +4806,14 @@ export default function (component) {
   }
   // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit6`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
   // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 회차의 글자를 쓴 뒤와 크기가 바뀔 때
-  // (`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
+  // (`S.onResize`) 다시 잰다. 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 둘째 줄(⑥)이다 — 390px 에서 확대
+  // 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집 도구 줄은 건드리지 않는다.
   const toolbar = q('.sle-toolbar')
   const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
   function fitFabBar() {
     toolbar.classList.remove(...FIT_STEPS)
-    if (!(VIEW && FAB) || !toolbar.clientWidth) return
-    for (const step of FIT_STEPS) {
+    if (!VIEW || !toolbar.clientWidth) return
+    for (const step of FAB ? FIT_STEPS : FIT_STEPS.slice(-1)) {
       if (toolbar.scrollWidth <= toolbar.clientWidth) return
       toolbar.classList.add(step)
     }

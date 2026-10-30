@@ -536,7 +536,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
     목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
     FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다(사유는 사람이 직접 적은 글 — 블록 안 줄은 8글자를
-    넘으면 「…」 로 줄이고 풍선·선택 줄에는 다 싣는다, `editor.js` `clipOff`·`textContent` 만) — 뷰어 epoch 에 상태
+    넘으면 「…」 로 줄이고 풍선·선택 줄에는 다 싣는다, `editor.js` `clipOff`·`textContent` 만. 테는 흐린 글자색 굵은 점선이고
+    사유 줄이 빠질 만큼 작은 블록은 이름 앞에 「⊘」 를 남긴다 — `blockTextLayout` 의 `off`, 390px 에서 사용 층과 갈리지
+    않았다, 개선 I76) — 뷰어 epoch 에 상태
     지문(`floor_states_fingerprint`, 배율은 그대로)을 넣고 편집기 epoch 에는 넣지 않으며(적용 전 FAB 편집을 지킨다), 뷰어·편집기 `on_open` 은 그린 회차의
     비활성 층을 서버에서도 거른다(`_open_unless_inactive`). `층 바로 가기`·배치 편집기 `다른 층으로 보내기` 선택지는
     `selectable_floor_keys(keep=연 층)` 이다(글자는 「C1 3F」 그대로 — 상태는 배너). 주소 `?floor=` 가 비활성 층이어도 열고
