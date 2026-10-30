@@ -1203,8 +1203,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                     ),
                 )
                 # 남이 그 시나리오에 다른 배치를 저장한 잠금이고 버릴 것이 배치 변경뿐이면 버리기와
-                # 잠금 줄의 「최신 rM 불러오기」 를 한 번에 한다(개선 I72 — 버린 뒤 팝오버를 다시
-                # 여는 두 단계였다). 다른 편집이 있으면 불러오기가 그것까지 버리므로 세우지 않는다.
+                # 잠금 줄의 「최신 rM 불러오기」 를 한 번에 한다(버린 뒤 팝오버를 다시 여는
+                # 두 단계였다). 다른 편집이 있으면 불러오기가 그것까지 버리므로 세우지 않는다.
                 if (
                     edit_mode.lock_action == "latest"
                     and names.empty
@@ -1358,7 +1358,7 @@ def _discard_layout_and_load_latest(
     database_path: str, target: tuple[str, str | None], latest: int | None
 ) -> None:
     """「배치 변경 버리고 최신 rM 불러오기」 콜백 — 「배치 변경만 버리기」 뒤 잠금 줄의 「최신 rM
-    불러오기」 를 잇는다(개선 I72). 버린 뒤 설비 편집이 남았으면(단추를 그린 뒤 생겼다) 불러오지
+    불러오기」 를 잇는다. 버린 뒤 설비 편집이 남았으면(단추를 그린 뒤 생겼다) 불러오지
     않는다 — 불러오기는 남은 편집까지 버리므로 잠금 줄에서 「변경을 버리고」 를 체크해 부르게
     둔다."""
     st.session_state.pop(SAVE_ERROR_KEY, None)
@@ -1973,7 +1973,7 @@ if selected is None:
         if compare_on
         else {}
     )
-    # 같은 회차의 겹침 — 공식과 자리가 다른 호기가 든 겹친 쌍(블록 풍선 「겹침 n쌍」, 개선 I74).
+    # 같은 회차의 겹침 — 공식과 자리가 다른 호기가 든 겹친 쌍(블록 풍선 「겹침 n쌍」).
     unit_overlaps = floor_moved_overlaps(equipment_session, space_equipment) if compare_on else {}
     # 필요 단축 보기를 켠 동안 층 블록 셋째 줄과 층 목록 표 칸 넷(비활성 층에는 싣지 않는다). epoch
     # 밖이라 목표·필터를 바꿔도 배율이 그대로다.

@@ -2046,7 +2046,7 @@ def _overlaps(a: Mapping[Any, Any], b: Mapping[Any, Any]) -> bool:
 def overlap_counts_touching(status: pd.DataFrame, names: Collection[str]) -> dict[FloorKey, int]:
     """층마다 `names`(설비명) 가운데 하나라도 든 겹친 호기 쌍 수 — `layout_warnings` 의 「겹친
     호기」 와 같은 판정(같은 대상·끝 좌표 반올림)이다. 가정 배치에서 공식과 자리가 다른 호기가 낸
-    겹침을 견주기 풍선이 센다(개선 I74). 그 호기들만 층의 다른 호기와 견주므로 층 전체 쌍을 돌지
+    겹침을 견주기 풍선이 센다. 그 호기들만 층의 다른 호기와 견주므로 층 전체 쌍을 돌지
     않는다. 겹침이 없는 층은 싣지 않는다."""
     wanted = {str(name).strip() for name in names}
     if not wanted or status.empty:

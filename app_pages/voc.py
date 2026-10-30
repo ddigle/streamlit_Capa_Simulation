@@ -322,7 +322,7 @@ with st.container(border=True):
             args=(database_path, post_generation),
         )
     # 폼 알림 칸 안에 초안 보관을 둔다 — 폼 안 글은 올리기 전에는 서버가 몰라 화면 이동·테마 전환에
-    # 사라졌다(개선 I84). 브라우저 탭에 두었다가 빈 폼에 되살리고, 되살렸으면 이 칸에 한 줄 알린다.
+    # 사라졌다. 브라우저 탭에 두었다가 빈 폼에 되살리고, 되살렸으면 이 칸에 한 줄 알린다.
     with render_flash(POST_FORM_ERROR_KEY):
         render_voc_draft_keeper(
             title_key=POST_TITLE_KEY, body_key=POST_BODY_KEY, generation=post_generation

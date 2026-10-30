@@ -162,7 +162,7 @@ def floor_block_stats(
     (`layout_overlay.unit_differences_by_floor`). 0 보다 큰 층 칸에 `"layout"`(「가정 배치 n대
     다름」)을 싣는다 — 블록 풍선 한 줄이다(설계 8-3). `layout_overlaps` 는 같은 회차의 층 → 공식과
     자리가 다른 호기가 든 겹친 쌍 수(`space_floor_layout.floor_moved_overlaps`)다 — 그 줄 끝에
-    「겹침 n쌍」 을 붙인다(개선 I74).
+    「겹침 n쌍」 을 붙인다.
 
     `short_lines` 는 색 기준 「필요 단축」 을 켠 동안의 층 → 셋째 줄 글(「단축 3대 · 최대
     −18일」)이다. 그 층 칸에만 `"short"` 를 싣는다 — 끈 동안 칸이 없다(뷰어 payload 그대로). 비활성

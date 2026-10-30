@@ -1408,7 +1408,7 @@ def moved_unit_names(
     unscheduled: Collection[str],
 ) -> frozenset[str]:
     """기준 쪽(공식)과 자리가 다른 호기의 설비명(일정 없는 호기 제외) — `unit_differences_by_floor`
-    가 세는 호기와 같다. 그 호기가 낸 겹침을 견주기 풍선이 센다(개선 I74)."""
+    가 세는 호기와 같다. 그 호기가 낸 겹침을 견주기 풍선이 센다."""
     reference = dict(reference_places)
     if not reference:
         return frozenset()

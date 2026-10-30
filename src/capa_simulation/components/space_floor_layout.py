@@ -259,7 +259,7 @@ def floor_unit_differences(
 
 def floor_moved_overlaps(session: EquipmentSession, status: pd.DataFrame) -> dict[FloorKey, int]:
     """층마다 공식과 자리가 다른 호기가 든 겹친 호기 쌍 수 — 「공식과 견주기」 를 켠 FAB 블록 풍선
-    재료(개선 I74 — 가정 배치를 겹치게 저장하면 저장 때 「겹친 호기 n건」 만 떴다). `status` 는 지금
+    재료(가정 배치를 겹치게 저장하면 저장 때 「겹친 호기 n건」 만 떴다). `status` 는 지금
     화면이 그리는 기준일 상태(공정 필터를 지난 것)다 — 「공식과 다름」 셈과 같은 호기를 본다."""
     snapshot = session.snapshot
     if snapshot is None or session.unmerged or not snapshot.layout_official_places:
