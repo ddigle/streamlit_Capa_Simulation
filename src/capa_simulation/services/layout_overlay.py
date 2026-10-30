@@ -1401,6 +1401,29 @@ def unit_differences_by_floor(
     return {floor: len(units) for floor, units in sorted(touched.items())}
 
 
+def moved_unit_names(
+    effective: pd.DataFrame,
+    unit_key_pairs: Sequence[tuple[str, str]],
+    reference_places: Iterable[tuple[str, Place]],
+    unscheduled: Collection[str],
+) -> frozenset[str]:
+    """기준 쪽(공식)과 자리가 다른 호기의 설비명(일정 없는 호기 제외) — `unit_differences_by_floor`
+    가 세는 호기와 같다. 그 호기가 낸 겹침을 견주기 풍선이 센다(개선 I74)."""
+    reference = dict(reference_places)
+    if not reference:
+        return frozenset()
+    base = layout_base(effective, [key for _, key in unit_key_pairs])
+    skipped = {str(name) for name in unscheduled}
+    names: set[str] = set()
+    for key, before in reference.items():
+        after = base.places.get(key)
+        name = base.names.get(key)
+        if after is None or after == before or name is None or name in skipped:
+            continue
+        names.add(name)
+    return frozenset(names)
+
+
 @dataclass(frozen=True)
 class ReappliedLayout:
     """`reapply_layout_edits` 의 결과 — 새 저장본 위에 다시 얹은 편집본 설비 마스터, 다시 얹은

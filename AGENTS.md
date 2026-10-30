@@ -479,7 +479,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (글자 폭 어림 — 한글·화살표 1em). 공정 필터·일정 없음으로 그리지 않는 호기는 견주지 않는다.
     편집기에는 보내지 않는다. FAB 전체는 층 목록 표 끝 「공식과 다름」 칸(`space_floor_list.FloorListColumn` — 그 층에서 나갔거나
     들어왔거나 그 층 안에서 옮긴 설비 수, 묶음은 1대 — `unit_differences_by_floor`)과 층 블록 풍선 한 줄 「가정 배치 n대 다름」
-    (`floor_block_stats(layout_differences=)` → `linkStats.layout`)이다. FAB 셈도 층 상세와 같이 그리는 호기(공정소분류 필터를
+    (`floor_block_stats(layout_differences=)` → `linkStats.layout`)이다. 그 줄 끝에 공식과 자리가 다른 호기가 든 겹친 쌍 수
+    「· 겹침 n쌍」 이 붙는다(`space_floor_layout.floor_moved_overlaps` — `layout_overlay.moved_unit_names` 의 호기만 그 층의 다른
+    호기와 견주는 `space_layout_edit.overlap_counts_touching`, 「겹친 호기」 경고와 같은 판정 — 개선 I74). FAB 셈도 층 상세와 같이 그리는 호기(공정소분류 필터를
     지난 것 — `floor_unit_differences(session, shown=)`)만 센다 — 같은 표의 배치대수와 어긋나지 않게. 도면 요소·Main 설비명 위치 차이는 머리 알림의 수만이다.
     데이터 꼴은 기준 쪽/보는 쪽 이름이라 반대 방향(공식 세션에서 고른 가정 시나리오를 점선으로)도 받을 수 있다(구현은 범위 밖).
   - **편집 권한은 `equipment_scenario_activation.space_edit_mode(session, stamped_role=)` 한 판정**(설계 8-4 표 — 설비

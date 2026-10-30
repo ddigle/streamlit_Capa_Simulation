@@ -144,6 +144,7 @@ def floor_block_stats(
     *,
     inactive: Mapping[FloorKey, str] | None = None,
     layout_differences: Mapping[FloorKey, int] | None = None,
+    layout_overlaps: Mapping[FloorKey, int] | None = None,
     short_lines: Mapping[FloorKey, str] | None = None,
 ) -> dict[str, dict[str, str | None]]:
     """층 블록 글자(편집기 `data.linkStats`). 키는 블록의 연결(「C1 1F」)이다.
@@ -159,7 +160,9 @@ def floor_block_stats(
 
     `layout_differences` 는 「공식과 견주기」 를 켠 회차의 층 → 공식과 자리가 다른 설비 수다
     (`layout_overlay.unit_differences_by_floor`). 0 보다 큰 층 칸에 `"layout"`(「가정 배치 n대
-    다름」)을 싣는다 — 블록 풍선 한 줄이다(설계 8-3).
+    다름」)을 싣는다 — 블록 풍선 한 줄이다(설계 8-3). `layout_overlaps` 는 같은 회차의 층 → 공식과
+    자리가 다른 호기가 든 겹친 쌍 수(`space_floor_layout.floor_moved_overlaps`)다 — 그 줄 끝에
+    「겹침 n쌍」 을 붙인다(개선 I74).
 
     `short_lines` 는 색 기준 「필요 단축」 을 켠 동안의 층 → 셋째 줄 글(「단축 3대 · 최대
     −18일」)이다. 그 층 칸에만 `"short"` 를 싣는다 — 끈 동안 칸이 없다(뷰어 payload 그대로). 비활성
@@ -180,8 +183,12 @@ def floor_block_stats(
         elif short_lines and placement.key in short_lines:
             cell["short"] = short_lines[placement.key]
         differs = (layout_differences or {}).get(placement.key, 0)
-        if differs > 0:
-            cell["layout"] = f"가정 배치 {differs:,}대 다름"
+        overlaps = (layout_overlaps or {}).get(placement.key, 0)
+        layout_words = [f"가정 배치 {differs:,}대 다름"] if differs > 0 else []
+        if overlaps > 0:
+            layout_words.append(f"겹침 {overlaps:,}쌍")
+        if layout_words:
+            cell["layout"] = " · ".join(layout_words)
         stats[floor_label(placement.key)] = cell
     return stats
 

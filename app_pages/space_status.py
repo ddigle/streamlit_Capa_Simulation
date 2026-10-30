@@ -77,6 +77,7 @@ from capa_simulation.components.space_floor_layout import (
     compare_payload,
     effective_floor_layout,
     floor_layout_differences,
+    floor_moved_overlaps,
     floor_unit_differences,
     space_layout_notices,
 )
@@ -1972,6 +1973,8 @@ if selected is None:
         if compare_on
         else {}
     )
+    # 같은 회차의 겹침 — 공식과 자리가 다른 호기가 든 겹친 쌍(블록 풍선 「겹침 n쌍」, 개선 I74).
+    unit_overlaps = floor_moved_overlaps(equipment_session, space_equipment) if compare_on else {}
     # 필요 단축 보기를 켠 동안 층 블록 셋째 줄과 층 목록 표 칸 넷(비활성 층에는 싣지 않는다). epoch
     # 밖이라 목표·필터를 바꿔도 배율이 그대로다.
     layer_counts = (
@@ -1998,6 +2001,7 @@ if selected is None:
         placements,
         inactive={key: inactive_label(reason) for key, reason in inactive_floors.items()},
         layout_differences=unit_differences,
+        layout_overlaps=unit_overlaps,
         short_lines=short_lines,
     )
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).

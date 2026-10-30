@@ -2023,6 +2023,54 @@ def _boxes(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _drawn_boxes(status: pd.DataFrame) -> pd.DataFrame:
+    """겹침을 보는 호기 — 편집기와 같다(레이아웃반영여부이고 좌표가 다 있는 호기, 도면 이탈일이 지난
+    호기 제외)."""
+    return status.loc[
+        status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
+        & status.loc[:, [*POSITION_COLUMNS, *SIZE_COLUMNS]].notna().all(axis=1)
+        & status["동"].notna()
+        & status["층"].notna()
+    ]
+
+
+def _overlaps(a: Mapping[Any, Any], b: Mapping[Any, Any]) -> bool:
+    return bool(
+        a["X좌표"] < b["_right"]
+        and b["X좌표"] < a["_right"]
+        and a["Y좌표"] < b["_top"]
+        and b["Y좌표"] < a["_top"]
+    )
+
+
+def overlap_counts_touching(status: pd.DataFrame, names: Collection[str]) -> dict[FloorKey, int]:
+    """층마다 `names`(설비명) 가운데 하나라도 든 겹친 호기 쌍 수 — `layout_warnings` 의 「겹친
+    호기」 와 같은 판정(같은 대상·끝 좌표 반올림)이다. 가정 배치에서 공식과 자리가 다른 호기가 낸
+    겹침을 견주기 풍선이 센다(개선 I74). 그 호기들만 층의 다른 호기와 견주므로 층 전체 쌍을 돌지
+    않는다. 겹침이 없는 층은 싣지 않는다."""
+    wanted = {str(name).strip() for name in names}
+    if not wanted or status.empty:
+        return {}
+    boxes = _boxes(_drawn_boxes(status))
+    counts: dict[FloorKey, int] = {}
+    for (building, floor), rows in boxes.groupby(["동", "층"], sort=True):
+        records = rows.to_dict(orient="records")
+        touched = [
+            index
+            for index, record in enumerate(records)
+            if str(record[EQUIPMENT_ID_COLUMN]).strip() in wanted
+        ]
+        pairs = {
+            (min(index, other), max(index, other))
+            for index in touched
+            for other in range(len(records))
+            if other != index and _overlaps(records[index], records[other])
+        }
+        if pairs:
+            counts[(str(building), str(floor))] = len(pairs)
+    return counts
+
+
 def layout_warnings(
     status: pd.DataFrame,
     marks_by_floor: Mapping[FloorKey, Sequence[FloorLayoutMark]],
@@ -2033,12 +2081,7 @@ def layout_warnings(
 
     대상은 편집기와 같다 — 레이아웃반영여부이고 좌표가 다 있는 호기(도면 이탈일이 지난 호기 제외).
     """
-    placed = status.loc[
-        status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
-        & status.loc[:, [*POSITION_COLUMNS, *SIZE_COLUMNS]].notna().all(axis=1)
-        & status["동"].notna()
-        & status["층"].notna()
-    ]
+    placed = _drawn_boxes(status)
     pairs: list[str] = []
     blocked: list[str] = []
     for (building, floor), rows in _boxes(placed).groupby(["동", "층"], sort=True):
@@ -2046,12 +2089,7 @@ def layout_warnings(
         name = f"{building} {floor}"
         for index, a in enumerate(records):
             for b in records[index + 1 :]:
-                if (
-                    a["X좌표"] < b["_right"]
-                    and b["X좌표"] < a["_right"]
-                    and a["Y좌표"] < b["_top"]
-                    and b["Y좌표"] < a["_top"]
-                ):
+                if _overlaps(a, b):
                     pairs.append(f"{a[EQUIPMENT_ID_COLUMN]} ↔ {b[EQUIPMENT_ID_COLUMN]} ({name})")
         for mark in marks_by_floor.get((str(building), str(floor)), ()):
             if not mark.blocks:

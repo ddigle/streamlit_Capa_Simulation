@@ -21,6 +21,7 @@ from capa_simulation.services.space_layout_edit import (
     layout_warnings,
     new_unit_options,
     other_change_count,
+    overlap_counts_touching,
     parse_editor_apply,
     table_changed,
     viewer_items,
@@ -458,6 +459,22 @@ def test_hidden_siblings_leave_their_old_coordinates_behind_when_the_group_moves
     assert (sibling["동"], sibling["층"]) == ("C2", "2F")
     assert pd.isna(sibling["X좌표"]) and sibling["Xsize"] == 12
     prepare_equipment_master(result, floor_canvases={OTHER: (40.0, 30.0)})
+
+
+def test_overlaps_touching_given_units_count_each_pair_once_per_floor() -> None:
+    """견주기 풍선의 겹침 셈(개선 I74)은 「겹친 호기」 경고와 같은 판정이다 — 준 호기가 든 쌍만,
+    둘 다 준 호기여도 한 쌍, 도면 이탈일이 지난 호기는 세지 않는다."""
+    master = _master(
+        {"설비명": "EQ-OVER", "X좌표": 15.0, "Y좌표": 12.0},
+        {"설비명": "EQ-GONE", "정지일정": "2026-08-20", "X좌표": 12.0},
+    )
+    status = _status(master)
+
+    assert overlap_counts_touching(status, {"EQ-OVER"}) == {FLOOR: 1}
+    assert overlap_counts_touching(status, {"EQ-OVER", "EQ-01"}) == {FLOOR: 1}
+    assert overlap_counts_touching(status, {"EQ-02"}) == {}
+    assert overlap_counts_touching(status, {"EQ-GONE"}) == {}
+    assert overlap_counts_touching(status, set()) == {}
 
 
 def test_units_placed_edge_to_edge_are_not_an_overlap() -> None:
