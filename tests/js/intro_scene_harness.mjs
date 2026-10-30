@@ -191,4 +191,43 @@ for (const [w, h] of [[390, 844], [768, 1024], [1100, 800]]) {
   narrow.tick(narrow.now() + 2000);
   results[`narrow_${w}`] = narrow.frame().length;
 }
+
+// 6) 좁고 낮은 창의 B/N 확보율 판 — 기준선 이름표(110%·100%)가 막대 위 확보율 글자·공정 이름·상태·「최저」와 겹치지
+// 않고 공정 이름 띠(판 아래 50px)에 내려가지 않으며, 「최저」 는 판 위(범례 띠)로 올라가지 않는다. 확보율이 낮으면(합성
+// 데모 2% 안팎) 막대가 바닥에 붙어 확보율 글자와 두 기준선이 판 아래쪽 한 줄에 몰린다(360x640·320x568 E2E). 글자 상자는
+// 하네스의 가짜 글자 폭(글자 수 × 크기 × 0.56)으로 잰다 — 장면도 같은 폭으로 자리를 고른다.
+{
+  const { summaryGrid } = loadScene();
+  const lowRates = [2.2, 2.2, 1.7, 1.6, 1.5, 1.6];
+  const low = { ...plain, bn: plain.bn.map((b, i) => (b ? { ...b, rate: lowRates[i] } : b)) };
+  const textBox = (call) => {
+    const state = String(call[call.length - 1]).split("|");
+    const px = parseFloat((/(\d+(?:\.\d+)?)px/.exec(state[3]) || [0, "10"])[1]);
+    const text = String(call[1]);
+    const w = text.length * px * 0.56;
+    const x0 = state[4] === "left" ? call[2] : state[4] === "right" ? call[2] - w : call[2] - w / 2;
+    return { text, font: state[3], alpha: Number(state[0]), x: x0, y: call[3] - px * 0.85, w, h: px };
+  };
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (const [name, summary] of [["plain", plain], ["low", low]]) {
+    for (const [w, h] of [[390, 844], [360, 640], [320, 568]]) {
+      const crowded = await open(summary, { width: w, height: h });
+      crowded.tick(crowded.now() + 3000);
+      const frame = crowded.frame();
+      const bars = summaryGrid(w, h).rows[1];
+      const namesTop = bars.y + bars.h - 50;
+      const texts = frame
+        .filter((c) => c[0] === "fillText")
+        .map(textBox)
+        .filter((t) => t.alpha > 0.01 && t.y + t.h > bars.y - bars.head - 2 && t.y < bars.y + bars.h + 2);
+      const labels = texts.filter((t) => /(^|\s)10px\s/.test(t.font) && /^\d+%$/.test(t.text));
+      results[`crowded_${name}_${w}`] = {
+        labels: labels.map((t) => t.text),
+        overlaps: labels.flatMap((t) => texts.filter((o) => o !== t && hit(t, o)).map((o) => `${t.text}×${o.text}`)),
+        intoNames: labels.filter((t) => t.y + t.h > namesTop + 0.5).map((t) => t.text),
+        lowestAbove: texts.some((t) => t.text === "최저" && t.y < bars.y),
+      };
+    }
+  }
+}
 console.log(JSON.stringify(results));

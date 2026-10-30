@@ -380,22 +380,35 @@
   opacity: 0;
 }
 
+/* 머리 칩(공식버전 이름)은 자르지 않는다. 머리 줄이 빠듯하면 기간 글자가 먼저 준다 — 칩은 줄지 않고(`flex: none`) 기간
+   글자 바닥(84px)과 틈을 뺀 폭까지만 선다. 그 폭보다 길면 두 줄까지 접히고 그 끝에서만 줄인다 — 768px 안팎에서 칩이
+   93px 로 줄어 「70공정 합성 …」 으로 잘렸다(2026-10-30 E2E). 칩도 줄게(`flex-shrink`) 두면 한 px 만 모자라도 두 줄로
+   접힌다. 위아래 여백은 같은 색 테두리로 준다 — padding 이면 접힌 셋째 줄 윗부분이 그 여백에 비친다. 두 줄(31px)도 머리
+   줄(34px) 안이다. 기간 글자를 감추는 창(760px 이하)에서는 칩 혼자 남는 폭을 다 쓴다(아래 @media). */
 .asof .period {
+  flex: 0 1 auto;
+  min-width: 84px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .asof .chip {
-  flex: 0 1 auto;
+  flex: none;
   min-width: 0;
+  max-width: calc(100% - 92px);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 4px 7px;
+  padding: 0 7px;
+  border-block: 3px solid var(--accent);
   border-radius: 4px;
   background: var(--accent);
   color: var(--button-text);
-  font: 700 11px/1 var(--body);
+  font: 700 11px/1.15 var(--body);
   letter-spacing: 0.02em;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .main {
@@ -850,6 +863,11 @@
     display: none;
   }
 
+  .asof .chip {
+    flex: 0 1 auto;
+    max-width: none;
+  }
+
   /* Summary 행 이름은 왼쪽 칸이 아니라 각 줄 위 띠에 선다(intro.js summaryGrid 의 head) — 이름과
      설명·범례를 한 줄로 잇고, 넘치면 범례만 다음 줄로 내려 띠 바닥(차트 쪽)에 붙인다. */
   .sum-label {
@@ -882,8 +900,8 @@
 }
 
 /* 휴대폰 폭(390px 안팎)에는 머리 줄에 머리 칩(공식버전 이름)이 들 자리가 70px 남짓이라 「70공정 합…」 으로 잘렸다. 칩을
-   토글 줄 오른쪽으로 내려 남는 폭을 다 쓰고, 그래도 넘치면 두 줄까지 접어 끝에서 줄인다. 위아래 여백은 같은 색 테두리로
-   준다 — padding 이면 접힌 셋째 줄 윗부분이 그 여백에 비친다. 줄 칸의 빈 자리는 누름을 받지 않는다(그 밑 장면 풍선). */
+   토글 줄 오른쪽으로 내려 남는 폭을 다 쓴다(넘치면 두 줄까지 접는 것은 모든 폭이 같다 — 위 `.asof .chip`). 줄 칸의 빈
+   자리는 누름을 받지 않는다(그 밑 장면 풍선). */
 @media (max-width: 520px) {
   .tail {
     position: absolute;
@@ -903,16 +921,17 @@
   .tail .toggles {
     position: static;
   }
+}
 
-  .asof .chip {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    padding: 0 7px;
-    border-block: 3px solid var(--accent);
-    line-height: 1.15;
-    white-space: normal;
-    overflow-wrap: anywhere;
+/* 가장 좁은 휴대폰 폭(360px 아래)에서는 토글 이름을 820px 안팎과 같은 짧은 이름으로 줄여 머리 칩에 자리를 준다 — 온전한
+   이름 셋이 줄을 거의 다 먹어 320px 에서 칩이 42px 로 줄고, 두 줄로 접어도 「70공정 정…」 만 보였다(2026-10-30 E2E). */
+@media (max-width: 359px) {
+  .tg .full {
+    display: none;
+  }
+
+  .tg .short {
+    display: inline;
   }
 }
 

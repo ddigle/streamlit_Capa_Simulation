@@ -2708,9 +2708,16 @@ def build_import_review(
     if target == "설비 마스터":
         # 붙여넣은 열만 바꾼다(2026-10-08 사용자 요청). 붙여넣지 않은 열은 편집본 값으로 채운
         # 38컬럼 표가 오므로 아래 미리보기·병합·병합 뒤 전체 검증은 전체 열 붙여넣기와 같은 길이다.
+        # 가정 세션에서 「배치 칸도 붙여넣기」 를 끄면 있던 호기의 배치 칸은 읽을 때부터 지금
+        # 값이다 — 넣지 않을 배치 값의 검증 오류가 미리보기를 막았다(2026-10-30 E2E).
+        hold_layout = layout_role == "overlay" and not paste_layout
         try:
             paste = read_equipment_update(
-                payload, equipment, floor_canvases=floor_canvases, notices=notices
+                payload,
+                equipment,
+                floor_canvases=floor_canvases,
+                notices=notices,
+                keep_current=SCENARIO_LAYOUT_COLUMNS if hold_layout else (),
             )
         except UnitGroupCollisionError as exc:
             # 붙여넣은 행끼리 부딪혔다. 다만 붙여넣지 않은 열(Main 설비 등)은 편집본 값이라
@@ -2726,17 +2733,15 @@ def build_import_review(
         incoming = paste.rows
         layout_pasted = [column for column in SCENARIO_LAYOUT_COLUMNS if column in paste.columns]
         if layout_pasted and layout_role in ("official", "overlay"):
-            incoming, layout_note = _paste_layout_review(
+            layout_note = _paste_layout_review(
                 equipment,
-                incoming,
+                paste.held_rows if hold_layout else incoming,
                 role=layout_role,
-                paste_layout=paste_layout,
+                held=hold_layout,
                 official_places=official_places or {},
             )
             if layout_note is not None:
-                (notices if layout_role == "overlay" and not paste_layout else cautions).append(
-                    layout_note
-                )
+                (notices if hold_layout else cautions).append(layout_note)
         changes = build_equipment_import_preview(equipment, incoming, columns=paste.columns)
         try:
             # 저장 때만 도는 실적 검사도 미리 한다 — 저장을 눌러야 알던 것을 미리보기에서 말한다.
@@ -2758,7 +2763,7 @@ def build_import_review(
         baseline = prepare_equipment_baseline(baseline)
         # 가정 세션에서 「배치 칸도 붙여넣기」 를 끄면 붙여넣은 배치 열은 있던 호기에 들지 않는다 —
         # 「붙여넣은 열 n개(…)만 바꿉니다」 가 그 열을 바꾸는 열로 세면 앞 줄과 어긋났다(E2E).
-        held = layout_pasted if layout_role == "overlay" and not paste_layout else []
+        held = layout_pasted if hold_layout else []
         scope = _paste_scope_notice(
             paste, new_rows=int(changes["Import구분"].eq("신규").sum()), held=held
         )
@@ -2826,40 +2831,39 @@ def _name_places(frame: pd.DataFrame) -> dict[str, tuple[int, Place]]:
 
 def _paste_layout_review(
     equipment: pd.DataFrame,
-    incoming: pd.DataFrame,
+    pasted: pd.DataFrame | None,
     *,
     role: str,
-    paste_layout: bool,
+    held: bool,
     official_places: Mapping[str, Place],
-) -> tuple[pd.DataFrame, str | None]:
-    """붙여넣기의 배치 일곱 칸 몫 — (받을 행, 한 줄). 있던 호기(편집본에 있는 설비명) 가운데 배치가
-    바뀌는 것만 본다(새 호기의 배치 칸은 늘 받는다)."""
+) -> str | None:
+    """붙여넣기의 배치 일곱 칸 몫 한 줄. 있던 호기(편집본에 있는 설비명) 가운데 붙여넣은 배치가
+    지금과 다른 것만 본다(새 호기의 배치 칸은 늘 받는다).
+
+    `held`(가정 세션 「배치 칸도 붙여넣기」 끔)이면 있던 호기의 배치 칸은 읽을 때부터 지금 값이라
+    (`read_equipment_update` 의 `keep_current`) `pasted` 는 붙여넣은 그대로의 그 호기 행
+    (`EquipmentPaste.held_rows`)이고 「넣지 않았다」 고 적는다. 아니면 받을 행이다."""
+    if pasted is None:
+        return None
     current = _name_places(equipment)
     moved: list[tuple[int, str, Place]] = []
-    for name, (position, place) in _name_places(incoming).items():
+    for name, (position, place) in _name_places(pasted).items():
         if name in current and current[name][1] != place:
             moved.append((position, name, place))
     if not moved:
-        return incoming, None
+        return None
     sample = _sample_names([name for _, name, _ in moved])
     if role == "official":
         cells = sum(
             sum(1 for before, after in zip(current[name][1], place, strict=True) if before != after)
             for _, name, place in moved
         )
-        return incoming, (
+        return (
             f"공식 배치 {cells:,}칸(호기 {len(moved):,}대 — {sample})이 바뀝니다 — 공식 설비 "
             "시나리오의 배치는 모든 가정 설비 시나리오에서 손대지 않은 호기가 따라갑니다."
         )
-    if not paste_layout:
-        kept = incoming.copy()
-        columns = [column for column in SCENARIO_LAYOUT_COLUMNS if column in kept.columns]
-        positions = {column: list(kept.columns).index(column) for column in columns}
-        for position, name, _ in moved:
-            source = equipment.iloc[current[name][0]]
-            for column in columns:
-                kept.iat[position, positions[column]] = source[column]
-        return kept, (
+    if held:
+        return (
             f"있던 호기 {len(moved):,}대({sample})의 배치 칸은 붙여넣지 않고 지금 값을 "
             f"두었습니다 — 바꾸려면 「{PASTE_LAYOUT_LABEL}」 를 켜고 다시 미리보세요."
         )
@@ -2867,7 +2871,7 @@ def _paste_layout_review(
         1 for _, name, place in moved if name in official_places and place == official_places[name]
     )
     tail = f"(그 가운데 {back:,}대는 공식 자리로 돌아가 차이가 지워집니다)" if back else ""
-    return incoming, (
+    return (
         f"가정 배치 {len(moved):,}대({sample})가 바뀝니다{tail} — 이 설비 시나리오에만 저장되고 "
         "공식 배치는 바뀌지 않습니다."
     )

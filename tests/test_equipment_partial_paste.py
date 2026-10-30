@@ -177,6 +177,53 @@ def test_layout_columns_held_back_in_an_assumption_paste_are_not_counted_as_chan
     assert "붙여넣은 열 2개(동 · 담당자)만 바꿉니다" in official.notices[-1]
 
 
+def test_layout_cells_held_back_in_an_assumption_paste_do_not_block_the_preview() -> None:
+    """「배치 칸도 붙여넣기」 를 끈 가정 세션에서 있던 호기에 좌표만 넣고 크기(Xsize·Ysize)를 비워
+    붙이면, 어차피 넣지 않을 그 배치 칸의 검증 오류(「Space 좌표가 있으면 Xsize·Ysize 도 넣어야
+    합니다」)가 미리보기를 막았다(2026-10-30 E2E). 있던 호기의 배치 칸은 읽을 때부터 지금 값이라
+    막지 않고, 넣지 않았다고 적는다. 켜면 그 값을 넣으므로 그대로 막는다."""
+    equipment = _current()
+    source = (
+        empty_equipment_baseline(),
+        equipment,
+        prepare_downtime_schedule(_downtime(), equipment=equipment),
+    )
+    payload = _tab(
+        ("설비명", "X좌표", "Y좌표", "Xsize", "Ysize", "담당자"),
+        ("EQ-01", "5", "5", "", "", "담당B"),
+    )
+
+    review = build_import_review(
+        "설비 마스터",
+        payload,
+        source,
+        floor_canvases={},
+        layout_role="overlay",
+        paste_layout=False,
+    )
+
+    unit = _row(review.candidate[1], "EQ-01")
+    layout = [unit[column] for column in ("X좌표", "Y좌표", "Xsize", "Ysize")]
+    assert layout == [10.0, 10.0, 12.0, 7.0]
+    assert unit["담당자"] == "담당B"
+    assert review.changes["변경컬럼"].tolist() == ["담당자"]
+    assert (
+        "있던 호기 1대(EQ\\-01)의 배치 칸은 붙여넣지 않고 지금 값을 두었습니다 — 바꾸려면 "
+        "「배치 칸도 붙여넣기」 를 켜고 다시 미리보세요." in review.notices
+    )
+    assert review.cautions == ()
+
+    with pytest.raises(ValueError, match="Xsize·Ysize 도 넣어야 합니다"):
+        build_import_review(
+            "설비 마스터",
+            payload,
+            source,
+            floor_canvases={},
+            layout_role="overlay",
+            paste_layout=True,
+        )
+
+
 def test_csv_upload_takes_the_same_partial_path() -> None:
     current = _current()
 

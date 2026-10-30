@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +110,44 @@ def test_the_answers_show_the_same_evidence_as_a_fresh_build() -> None:
         pd.testing.assert_frame_equal(
             frame.reset_index(drop=True), answer.evidence.reset_index(drop=True)
         )
+
+
+def test_evidence_numbers_read_like_the_actual_screens() -> None:
+    """근거 표 숫자 칸은 옆 실적 화면과 같은 꼴이다 — 서식 없이 내면 Gap 이 분수(-0.1093)로
+    나와 결론의 「-10.9%p」·조건의 「Gap … (%p)」 와 어긋났고 기준·실적도 0.82 · 0.7107
+    이었다(2026-10-30 E2E). 실수 칸은 모두 서식이 있고 Gap 은 퍼센트 서식에 칸 이름이 단위를
+    단다(`Gap (%p)`). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적고 Gap
+    에 단위를 붙인다."""
+    app = _start()
+    for index in (1, 2, 3):
+        app.button(key=f"capa_chatbot_example_{index}").click().run()
+    answers = build_sample_answers()
+    frames = list(app.dataframe)
+    assert len(frames) == len(answers)
+
+    for frame, answer in zip(frames, answers, strict=True):
+        config = json.loads(frame.proto.columns or "{}")
+        shown = frame.value
+        for column in shown.columns:
+            if pd.api.types.is_float_dtype(shown[column]):
+                assert config.get(column, {}).get("type_config", {}).get("format"), (
+                    answer.key,
+                    column,
+                )
+        if "Gap" in shown.columns and pd.api.types.is_float_dtype(shown["Gap"]):
+            assert config["Gap"]["label"] == "Gap (%p)"
+            assert config["Gap"]["type_config"]["format"] == "percent"
+
+    cause = frames[[answer.key for answer in answers].index("cause")].value
+    assert "단위" not in cause.columns
+    gaps = dict(zip(cause["지표"], cause["Gap"], strict=True))
+    assert re.fullmatch(r"-?\d+\.\d%p", gaps["효율"]), gaps
+    assert re.fullmatch(r"-?\d+\.\d%", gaps["UPEH"]), gaps
+    assert re.fullmatch(r"-?\d+\.\d{2}%p", gaps["수율"]), gaps
+    efficiency = cause.loc[cause["지표"].eq("효율")].iloc[0]
+    assert str(efficiency["기준"]).endswith("%") and str(efficiency["실적"]).endswith("%")
+    upeh = cause.loc[cause["지표"].eq("UPEH")].iloc[0]
+    assert "%" not in str(upeh["기준"]) + str(upeh["실적"])
 
 
 def test_clearing_the_conversation_keeps_only_the_first_answer(runs: list[int]) -> None:

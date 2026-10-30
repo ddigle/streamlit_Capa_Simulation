@@ -197,6 +197,13 @@ function overflowEdges(scrollLeft, scrollWidth, clientWidth) {
   if (!(max > 1)) return { start: false, end: false }
   return { start: scrollLeft > 1, end: scrollLeft < max - 1 }
 }
+// 지금 탭(목록 안 `left`~`right`)이 가장자리 흐림(`edge`) 밖에 온전히 보이게 할 목록의 굴린 위치. 이미 보이면 지금
+// 위치 그대로다 — 탭을 옮길 때와 목록 폭이 바뀔 때(사이드바 접기·펴기, 창 폭) 같은 계산을 쓴다.
+function revealScroll(left, right, scrollLeft, clientWidth, edge) {
+  if (left < scrollLeft + edge) return Math.max(0, left - edge)
+  if (right > scrollLeft + clientWidth - edge) return right - clientWidth + edge
+  return scrollLeft
+}
 // </tabs-edges>
 
 // <tabs-focus>
@@ -278,7 +285,7 @@ export default function (component) {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
-    onScroll: null, resizer: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
+    onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
   // 이미 걸었다(`<tabs-history-install>`). 이것은 그 JS 가 서지 못한 문서의 안전망이다.
@@ -381,14 +388,19 @@ export default function (component) {
     setAttr(item.__parts.tab, 'aria-busy', waiting ? 'true' : null)
   }
 
-  // 지금 탭이 늘 보이게 목록의 가로 위치만 맞춘다 — `scrollIntoView` 는 본문 세로 스크롤까지 움직일 수 있다.
-  const current = S.items.get(data.active)
-  if (current && S.lastActive !== data.active) {
+  // 지금 탭이 늘 보이게 목록의 가로 위치만 맞춘다 — `scrollIntoView` 는 본문 세로 스크롤까지 움직일 수 있다. 탭을
+  // 옮길 때와 목록 폭이 바뀔 때(아래 `ResizeObserver`) 맞춘다 — 폭만 바뀌면 굴린 위치가 그대로라 사이드바를 접었다
+  // 펴거나 창을 좁히면 지금 탭이 목록 밖에 남았다(2026-10-30 E2E). data 가 다시 올 뿐이면 사람이 굴려 둔 위치를 둔다.
+  S.reveal = () => {
+    const item = S.items.get(S.data.active)
+    if (!item || item.hidden) return
+    const left = item.offsetLeft
+    const next = revealScroll(left, left + item.offsetWidth, list.scrollLeft, list.clientWidth, EDGE_PX)
+    if (next !== list.scrollLeft) list.scrollLeft = next
+  }
+  if (S.items.has(data.active) && S.lastActive !== data.active) {
     S.lastActive = data.active
-    const left = current.offsetLeft
-    const right = left + current.offsetWidth
-    if (left < list.scrollLeft + EDGE_PX) list.scrollLeft = Math.max(0, left - EDGE_PX)
-    else if (right > list.scrollLeft + list.clientWidth - EDGE_PX) list.scrollLeft = right - list.clientWidth + EDGE_PX
+    S.reveal()
   }
   // 넘친 목록의 가장자리 표지(`<tabs-edges>`) — 굴릴 때·목록 폭이 바뀔 때·data 가 바뀔 때 다시 본다.
   if (!S.onScroll) {
@@ -400,6 +412,7 @@ export default function (component) {
     list.addEventListener('scroll', S.onScroll, { passive: true })
     if (typeof ResizeObserver === 'function') {
       S.resizer = new ResizeObserver(() => {
+        if (S.reveal) S.reveal()
         if (S.onScroll) S.onScroll()
       })
       S.resizer.observe(list)
@@ -690,5 +703,6 @@ export default function (component) {
     S.onScroll = null
     if (S.resizer) S.resizer.disconnect()
     S.resizer = null
+    S.reveal = null
   }
 }

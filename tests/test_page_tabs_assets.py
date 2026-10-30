@@ -119,11 +119,18 @@ def test_the_current_tab_keeps_room_for_its_name_when_the_strip_is_crowded() -> 
     assert rule is not None and "display: none" in rule.group(1)
 
 
-def test_the_limit_notice_lets_presses_through_to_what_lies_under_it() -> None:
-    """상한 알림(8초)은 탭 줄 오른쪽 아래에 떠 HOME 주요 Case 칩(공식 vN·Case1·Case2)을 덮었고,
-    그동안 칩을 누를 수 없었다(E2E). 알림은 글뿐이라 누름을 받지 않는다 — 읽기 도구는
-    `role="status"` 로 읽는다."""
-    assert "pointer-events: none" in _rule(".capa-tabs-notice")
+def test_the_limit_notice_stands_off_the_page_head_and_lets_presses_through() -> None:
+    """상한 알림(8초)은 탭 줄 오른쪽 아래에 떠 HOME 주요 Case 칩(공식 vN·Case1·Case2)을 덮었다(E2E).
+    누름을 받지 않게만 하니 칩이 안 보인 채 눌렸다 — 불투명한 알림이 칩과 같은 자리였다(1024px
+    알림 x 613~1006 · 칩 x 755~1006, 390px 은 두 줄로 칩 줄 전체, 2026-10-30 E2E). 알림은 탭 줄
+    밑이 아니라 창 오른쪽 아래 구석에 뜬다(화면 머리의 칩·하위 탭을 덮지 않는다). 글뿐이라 누름은
+    받지 않는다 — 읽기 도구는 `role="status"` 로 읽는다."""
+    rule = _rule(".capa-tabs-notice")
+    assert "pointer-events: none" in rule
+    assert "position: fixed;" in rule and "bottom:" in rule and "right:" in rule
+    assert "top:" not in rule
+    # 휴대폰 폭에서도 창 안에 선다 — 여백까지 넣어 잰다(아니면 390px 에서 왼쪽 끝을 넘었다).
+    assert "100vw" in rule and "box-sizing: border-box;" in rule
     assert 'class="capa-tabs-notice" role="status"' in HTML
 
 
@@ -705,7 +712,43 @@ def test_an_overflowing_strip_marks_the_side_that_has_more_tabs() -> None:
     assert "pointer-events: none" in marks and "opacity: 0" in marks
     # 지금 탭을 보이게 굴릴 때도 흐림 폭만큼 띄운다 — 가장자리 탭이 흐림 밑에 깔리지 않게.
     assert "const EDGE_PX = 32" in JS and "black 2rem" in CSS
-    assert "left - EDGE_PX" in JS and "list.clientWidth + EDGE_PX" in JS
+    assert "list.scrollLeft, list.clientWidth, EDGE_PX)" in JS
+
+
+_REVEAL_RUNNER = """
+const out = {
+  // 1024px · 탭 10개 — 목록 689px(내용 988px)가 끝(299)까지 굴러 있고 지금 탭(가용설비
+  // 현황)은 맨 끝 838~988 이다. 사이드바를 접었다 펴니 굴린 위치가 0 으로 돌아갔다 — 지금
+  // 탭이 오른쪽 밖이다. 끝 너머 값은 브라우저가 끝으로 줄인다.
+  expanded: revealScroll(838, 988, 0, 689, 32),
+  // 1024 → 390 으로 좁히니 위치 299 그대로 목록이 355px 로 줄었다 — 지금 탭이 오른쪽 밖이다.
+  narrowed: revealScroll(838, 988, 299, 355, 32),
+  // 이미 흐림 밖에 온전히 보이면 그대로다.
+  shown: revealScroll(500, 650, 299, 689, 32),
+  // 왼쪽 밖(HOME)은 흐림 폭만큼 띄워 왼쪽 끝으로, 0 아래로는 가지 않는다.
+  left: revealScroll(0, 120, 299, 689, 32),
+  partly: revealScroll(300, 420, 299, 689, 32),
+}
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_current_tab_is_brought_back_into_view_when_the_strip_width_changes() -> None:
+    """탭을 옮길 때만 지금 탭까지 굴려 사이드바를 접었다 펴거나(굴린 위치가 0 으로 돌아간다) 창을
+    좁히면(위치 그대로 목록만 준다) 지금 탭이 목록 밖에 남았다(2026-10-30 E2E — 1024px 탭 10개,
+    가용설비 현황이 지금 탭). 목록 폭이 바뀔 때도 같은 계산(`revealScroll`)으로 맞춘다. 이미 보이면
+    그대로라 data 만 다시 올 때는 사람이 굴려 둔 위치를 두는 것과 같다."""
+    out = _node(_REVEAL_RUNNER)
+
+    assert out["expanded"] == 988 - 689 + 32
+    assert out["narrowed"] == 988 - 355 + 32
+    assert out["shown"] == 299
+    assert out["left"] == 0
+    assert out["partly"] == 300 - 32
+    observer = re.search(r"new ResizeObserver\(\(\) => \{(.*?)\}\)", JS, re.S)
+    assert observer is not None
+    assert "S.reveal()" in observer.group(1)
+    assert observer.group(1).index("S.reveal()") < observer.group(1).index("S.onScroll()")
 
 
 _FOCUS_RUNNER = """

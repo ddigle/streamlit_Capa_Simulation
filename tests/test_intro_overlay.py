@@ -850,18 +850,21 @@ def test_summary_sheet_text_is_fitted_once_in_the_layout() -> None:
 def test_summary_labels_pick_a_free_spot_once_in_the_layout() -> None:
     """눈금 글자·기준선 이름표는 점·값·막대·확보율 글자와 겹치지 않는 자리를 배치에서 한 번 고른다.
 
-    자리가 없으면 눈금 글자는 쓰지 않고(값은 점 위에 있다), 기준선 이름표는 바탕을 깔아 기본
-    자리에 단다.
+    자리가 없으면 눈금 글자는 쓰지 않고(값은 점 위에 있다), 기준선 이름표는 글자만 피하는 자리를
+    다시 찾아 바탕을 깔아 단다 — 그것도 없으면 쓰지 않는다(기본 자리에 깐 바탕이 낮은 휴대폰 창에서
+    확보율 글자를 덮었다, 2026-10-30 E2E — 그린 결과는 `test_intro_scene_behavior`).
     """
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     layout = _between(js, "function layoutSummary(", "function layoutSheets(")
     draw_line = _between(js, "function drawLine(", "function drawBars(")
     draw_bars = _between(js, "function drawBars(", "function drawSheets(")
 
-    assert layout.count("freeSpot(") == 2
+    assert layout.count("freeSpot(") == 3
     assert "lineObstacles" in layout and "barObstacles" in layout and "backed: true" in layout
+    assert "textObstacles" in layout and "spots[0]" not in layout
     assert "V.tickLabels" in draw_line and "fillText(`${v.toFixed(" not in draw_line
     assert "spot.backed" in draw_bars and "measureText" not in draw_bars
+    assert "if (!spot) continue;" in draw_bars and "lowestShown" in draw_bars
 
 
 def test_summary_rows_stand_above_the_charts_on_narrow_screens() -> None:
@@ -951,8 +954,12 @@ def test_the_phone_summary_does_not_overflow_and_shows_the_release_chip_whole() 
     """390px Summary 무대의 가로 scrollWidth 가 639 였다(E2E) — 읽기 도구용 표에 바로 1px 를 주면
     표는 내용 폭으로 늘어 무대를 넘친다. 표는 1px 칸 안에 두어 칸의 overflow 가 넘침을 가둔다.
     머리 칩(공식버전 이름)은 휴대폰 폭 머리 줄에 70px 남짓만 남아 「70공정 합…」 으로 잘렸다 —
-    520px 이하에서는 토글 줄 오른쪽으로 내려 남는 폭을 다 쓰고 두 줄까지 접는다. 넓은 창의 머리
-    줄은 그대로다."""
+    520px 이하에서는 토글 줄 오른쪽으로 내려 남는 폭을 다 쓴다. 넓은 창의 머리 줄은 그대로다.
+
+    칩은 모든 폭에서 자르지 않는다 — 768px 안팎(기간 글자가 서는 빠듯한 머리 줄)에서 칩이 93px 로
+    줄어 말줄임이 됐고, 320px 에서는 온전한 토글 이름 셋이 줄을 먹어 칩이 42px 였다(2026-10-30
+    E2E). 기간 글자가 먼저 주고(바닥 84px), 칩은 두 줄까지 접히며, 360px 아래에서는 토글이 짧은
+    이름이 된다."""
     html = (ASSETS / "intro.html").read_text(encoding="utf-8")
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
     assert '<div class="sr"><table data-slot="table"></table></div>' in html
@@ -970,11 +977,31 @@ def test_the_phone_summary_does_not_overflow_and_shows_the_release_chip_whole() 
     for rule in ("position: absolute;", "top: 40px;", "left: 0;", "right: 0;", "display: flex;"):
         assert rule in tail.group(1), rule
     assert re.search(r"\.tail \.toggles \{\s*position: static;", phone.group(1))
-    chip = re.search(r"\.asof \.chip \{([^}]*)\}", phone.group(1))
+    # 칩을 접는 규칙은 휴대폰 폭만이 아니라 모든 폭의 것이다.
+    assert ".asof .chip" not in phone.group(1)
+    chip = re.search(r"\n\.asof \.chip \{([^}]*)\}", css)
     assert chip is not None
     assert "-webkit-line-clamp: 2;" in chip.group(1) and "white-space: normal;" in chip.group(1)
+    assert "text-overflow" not in chip.group(1)
     # 위아래 여백은 테두리다 — padding 이면 접힌 셋째 줄이 그 여백에 비친다.
     assert "padding: 0 7px;" in chip.group(1) and "border-block:" in chip.group(1)
+    # 빠듯한 머리 줄에서는 기간 글자가 먼저 준다 — 칩은 줄지 않고 기간 글자 바닥(84px)과
+    # 틈(8px)을 뺀 폭까지만 선다. 칩도 줄게 두면 한 px 만 모자라도 두 줄로 접힌다. 기간 글자를
+    # 감추는 창에서는 칩 혼자 남는 폭을 다 쓴다.
+    period = re.search(r"\n\.asof \.period \{([^}]*)\}", css)
+    assert period is not None
+    assert "flex: 0 1 auto;" in period.group(1) and "min-width: 84px;" in period.group(1)
+    assert "flex: none;" in chip.group(1) and "max-width: calc(100% - 92px);" in chip.group(1)
+    hidden = css[
+        css.index("@media (max-width: 760px) {") : css.index("@media (max-width: 520px) {")
+    ]
+    assert re.search(r"\.asof \.period \{\s*display: none;", hidden)
+    assert re.search(r"\.asof \.chip \{\s*flex: 0 1 auto;\s*max-width: none;", hidden)
+    tiny = re.search(r"@media \(max-width: 359px\) \{(.*?)\n\}", css, re.S)
+    assert tiny is not None
+    assert re.search(r"\.tg \.full \{\s*display: none;", tiny.group(1))
+    assert re.search(r"\.tg \.short \{\s*display: inline;", tiny.group(1))
+    assert css.index("@media (max-width: 760px)") < css.index("@media (max-width: 359px)")
 
 
 # --------------------------------------------------------- Summary 토글 셋(선행 B/O·선행 입고·GAP)
@@ -997,9 +1024,10 @@ def test_summary_toggles_sit_right_after_the_docked_detail() -> None:
     # 휴대폰 폭에서는 머리 줄 밑 둘째 줄로 내린다 — 머리 줄과 Detail 은 움직이지 않는다.
     narrow = css[css.index("@media (max-width: 760px) {") : css.index("@keyframes slide")]
     assert re.search(r"\.toggles \{\s*position: absolute;", narrow)
-    # 머리 줄이 빠듯하면 라벨은 한 줄을 지키고 공식버전 칩이 말줄임으로 준다(768px 에서 접혔다).
+    # 머리 줄이 빠듯하면 라벨은 한 줄을 지키고 기간 글자·공식버전 칩이 준다(768px 에서 라벨이
+    # 접혔다).
     assert re.search(r"\.brand \{\s*flex: none;\s*white-space: nowrap;", css)
-    assert re.search(r"\.asof \.chip \{\s*flex: 0 1 auto;\s*min-width: 0;", css)
+    assert re.search(r"\n\.asof \.chip \{\s*flex: none;\s*min-width: 0;", css)
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     entry = _between(js, "async function summaryFromEntry(", "function snapToSummary(")
     assert entry.index("dockDetail(true);") < entry.index("revealToggles(true);")

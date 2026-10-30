@@ -221,3 +221,21 @@ def test_reduced_motion_has_no_frame_loop_and_draws_on_messages(
 def test_narrow_windows_draw_with_every_toggle_on(scene_results: dict[str, Any]) -> None:
     for width in (390, 768, 1100):
         assert scene_results[f"narrow_{width}"] > 100, width
+
+
+def test_threshold_labels_keep_off_the_bar_texts_on_short_phones(
+    scene_results: dict[str, Any],
+) -> None:
+    """360x640·320x568 의 B/N 확보율 판은 막대 축이 몇십 px 라 확보율이 낮으면(합성 데모 2%
+    안팎) 확보율 글자와 두 기준선이 판 아래쪽 한 줄에 몰린다 — 자리가 없을 때 기본 자리에 바탕을
+    깔아 단 이름표(「100%」)가 첫 칸 「2.2%」 를 덮었고, 320px 에서는 「110%」 가 공정 이름 띠로
+    내려가고 「최저」 가 판 위 범례 띠에 붙었다(2026-10-30 E2E). 이름표는 글자를 덮지 않는 자리가
+    없으면 쓰지 않고, 「최저」 는 판 안에 들지 않으면 쓰지 않는다. 390x844 는 두 이름표가 그대로
+    선다."""
+    for payload in ("plain", "low"):
+        for width in (390, 360, 320):
+            crowded = scene_results[f"crowded_{payload}_{width}"]
+            assert crowded["overlaps"] == [], (payload, width, crowded)
+            assert crowded["intoNames"] == [], (payload, width, crowded)
+            assert crowded["lowestAbove"] is False, (payload, width, crowded)
+        assert sorted(scene_results[f"crowded_{payload}_390"]["labels"]) == ["100%", "110%"]

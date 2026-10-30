@@ -1119,19 +1119,30 @@ function scene(port, gridOf) {
     });
     // 기준선 이름표 자리. 기본은 경고 기준이 구간 왼쪽 선 아래, 확보 기준이 구간 오른쪽 선 위다(선 둘이 몇 px
     // 떨어져 있어 양 끝에 나눠 단다). 칸이 좁아 막대·확보율 글자·「최저」·기준선·다른 이름표에 닿으면 같은 쪽의
-    // 구간 다른 끝 → 막대 사이 → 선의 다른 쪽 차례로 옮긴다. 어디에도 자리가 없으면 기본 자리에 바탕을 깔아 단다.
+    // 구간 다른 끝 → 막대 사이 → 선의 다른 쪽 차례로 옮긴다. 어디에도 자리가 없으면 같은 차례로 **글자만** 피하는
+    // 자리를 다시 찾아 바탕을 깔아 단다(선·막대는 바탕이 덮는다). 그것도 없으면 그 이름표는 쓰지 않는다 — 낮은
+    // 휴대폰 창(360x640·320x568)은 막대 축이 몇십 px 라 확보율이 낮으면 확보율 글자와 두 기준선이 한 줄에 몰려, 기본
+    // 자리에 깐 바탕이 확보율 글자를 덮었다(2026-10-30 E2E). 이름표는 판의 막대 칸(판 위 ~ 막대 바닥) 안에만 둔다 —
+    // 그 아래 50px 는 공정 이름·상태 띠다.
+    const plot = { x: bars.x, y: bars.y, w: bars.w, h: Math.max(0, barBot - bars.y) };
     const barObstacles = [];
+    const textObstacles = [];
     g.font = `700 ${ratePx}px ${numStack}`;
     bn.forEach((b, i) => {
       if (!b) return;
       const top = yBar(b.rate);
       barObstacles.push({ x: colX(i) - bw / 2, y: top, w: bw, h: barBot - top });
-      barObstacles.push(textBox(`${round(b.rate, 1)}%`, colX(i), top - 7, "center", ratePx));
+      textObstacles.push(textBox(`${round(b.rate, 1)}%`, colX(i), top - 7, "center", ratePx));
     });
+    // 「최저」 는 그 막대 위끝에서 30px 위다. 판 위로 나가면(막대 축이 낮은 창) 범례 띠에 붙으므로 쓰지 않는다.
+    let lowestShown = false;
     if (lowest >= 0) {
       g.font = `600 11px ${bodyStack}`;
-      barObstacles.push(textBox(sum.text.lowest, colX(lowest), yBar(bn[lowest].rate) - 30, "center", 11));
+      const box = textBox(sum.text.lowest, colX(lowest), yBar(bn[lowest].rate) - 30, "center", 11);
+      lowestShown = box.y >= bars.y;
+      if (lowestShown) textObstacles.push(box);
     }
+    barObstacles.push(...textObstacles);
     for (const t of thresholds) {
       t.runs.forEach((run, r) => {
         const y = Math.round(yBar(run.v)) + 0.5;
@@ -1154,13 +1165,16 @@ function scene(port, gridOf) {
         for (let i = run.start; i < run.end; i++) across.push({ x: (colX(i) + colX(i + 1)) / 2, align: "center" });
         const sides = t.alignLeft ? [y + 12, y - 4] : [y - 4, y + 12];
         const spots = sides.flatMap((sy) => across.map((p) => ({ ...p, y: sy })));
-        const spot = freeSpot(run.label, 10, spots, barObstacles, bars);
-        const fallback = { ...spots[0], box: textBox(run.label, spots[0].x, spots[0].y, spots[0].align, 10), backed: true };
-        run.spot = spot || fallback;
-        barObstacles.push(run.spot.box);
+        const spot = freeSpot(run.label, 10, spots, barObstacles, plot);
+        const backed = spot ? null : freeSpot(run.label, 10, spots, textObstacles, plot);
+        run.spot = spot || (backed && { ...backed, backed: true });
+        if (run.spot) {
+          barObstacles.push(run.spot.box);
+          textObstacles.push(run.spot.box);
+        }
       }
     }
-    return { max, yBar, lowest, ratePx, statusPx, thresholds };
+    return { max, yBar, lowest, lowestShown, ratePx, statusPx, thresholds };
   }
 
   // 말풍선 자리. 그리는 자리와 같은 값으로 메인 스레드에 돌려준다. 그리지 않는 도넛(`box` 0)은 자리도 없다.
@@ -1681,6 +1695,8 @@ function scene(port, gridOf) {
       for (const t of V.thresholds) {
         for (const run of t.runs) {
           const spot = run.spot;
+          // 글자를 덮지 않는 자리가 없던 이름표는 쓰지 않는다(`barLayout`).
+          if (!spot) continue;
           // 이름표는 그 변형의 선 자리에서 고른 것이다 — 축이 움직이면 지금 선 자리만큼 함께 옮긴다.
           const dy = V.max === max ? 0 : yBar(run.v) - V.yBar(run.v);
           if (spot.backed) {
@@ -1695,17 +1711,19 @@ function scene(port, gridOf) {
       }
     }
     g.globalAlpha = k;
-    // 「최저」는 확보율이 가장 낮은 달 막대 위다. 선행 B/O 로 그 달이 바뀌면 두 자리를 엇갈려 바꾼다.
-    const lows = B0.lowest === BA.lowest ? [[B0.lowest, 1]] : [[B0.lowest, 1 - kA], [BA.lowest, kA]];
+    // 「최저」는 확보율이 가장 낮은 달 막대 위다. 선행 B/O 로 그 달이 바뀌면 두 자리를 엇갈려 바꾼다. 판 안에 들지
+    // 않는 변형(`lowestShown` 거짓 — 막대 축이 낮은 창)은 쓰지 않는다.
+    const lows =
+      B0.lowest === BA.lowest && B0.lowestShown === BA.lowestShown ? [[B0, 1]] : [[B0, 1 - kA], [BA, kA]];
     const e = OUT(clamp01((c - 1500) / 500));
     if (e > 0) {
-      for (const [index, w] of lows) {
-        if (index < 0 || w <= 0.001) continue;
+      for (const [V, w] of lows) {
+        if (!V.lowestShown || V.lowest < 0 || w <= 0.001) continue;
         g.globalAlpha = k * e * w;
         g.font = `600 11px ${bodyStack}`;
         g.textAlign = "center";
         g.fillStyle = pal["die-short"];
-        g.fillText(sum.text.lowest, L.colX(index), yBar(rateNow(index)) - 30 + 3 * (1 - e));
+        g.fillText(sum.text.lowest, L.colX(V.lowest), yBar(rateNow(V.lowest)) - 30 + 3 * (1 - e));
       }
     }
     g.restore();

@@ -1317,7 +1317,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
   원본 공정명으로 셈하고 결론·질문·조건의 공정 이름만 부르는 쪽이 넘긴 글자 함수(`process_name`)로 적는다 — 표시명
-  모듈은 import 하지 않는다(8장).
+  모듈은 import 하지 않는다(8장). 근거 표 숫자 칸의 꼴(`SampleAnswer.evidence_formats` — 실적 화면 표와 같은 퍼센트·
+  `Gap (%p)`)은 대본이 정하고 화면이 `st.column_config` 로 옮긴다 — 서식이 없어 Gap 이 분수(-0.1093)로 나왔다(2026-10-30
+  E2E). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적는다.
 - `src/capa_simulation/services/floor_layout_mark.py` — 층 도면 비설비 요소의 계약·검증(`prepare_floor_layout_marks`)이다.
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
@@ -1672,8 +1674,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     것만 서버에 닿아 누른 탭은 남았다) 지금 탭을 고정했다(2026-10-26 E2E). 같은 탭의 둘째 누름(핀 두 번)과 키보드 누름
     (`detail` 0 — 좌표가 없다)은 그대로다.
   - 상한(10개) — JS 가 사이드바·본문 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 먼저 받아, 열린 탭이
-    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 알림(8초)은 누름을 받지
-    않는다(`pointer-events: none` — 그 밑 HOME 주요 Case 칩을 가렸다). 지나 보낸 링크가 여는 탭은
+    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 알림(8초)은 창 오른쪽
+    아래 구석에 뜨고(`position: fixed`) 누름을 받지 않는다(`pointer-events: none`) — 탭 줄 바로 밑에 띄우니 화면 머리 줄
+    (HOME 주요 Case 칩)을 불투명하게 덮어 칩이 안 보인 채 눌렸다(2026-10-30 E2E). 지나 보낸 링크가 여는 탭은
     그 탭이 data 에 올 때까지(같은 `epoch`, 길어야 `BUSY_MS`) 열린 탭으로 센다(순수 구획 `<tabs-links>`) — 세지 않으면 탭
     9개에서 링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차 data 의 탭 9개로 세어 거름을 지났고, 서버 되돌림이
     두 화면을 기록에 쌓아 뒤로가기가 갇혔다(2026-10-27 E2E). 그래도 들어온 이동(뒤로·
@@ -1688,7 +1691,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     때도 HOME 처럼 짧은 지금 탭이 넓어져 탭을 옮길 때마다 뒤 탭들이 옆으로 밀렸다.
   - 목록이 옆으로 넘치면 탭이 더 있는 쪽 가장자리를 흐리고(목록 `mask-image`, 2rem) 누름을 받지 않는 화살표 표지를 단다
     (`page_tabs.js` 의 순수 구획 `<tabs-edges>` 가 `has-more-start`·`has-more-end` 를 정한다 — 굴릴 때·목록 폭이 바뀔 때·data
-    가 바뀔 때). 지금 탭을 보이게 굴릴 때는 흐림 폭만큼(`EDGE_PX`) 띄운다.
+    가 바뀔 때). 지금 탭을 보이게 굴릴 때는 흐림 폭만큼(`EDGE_PX`) 띄운다(같은 구획의 `revealScroll`). 지금 탭까지
+    굴리는 것은 탭을 옮길 때와 **목록 폭이 바뀔 때**(`ResizeObserver` — 사이드바 접기·펴기, 창 폭)다 — 폭만 바뀌면 굴린
+    위치가 그대로라 지금 탭이 목록 밖에 남았다(2026-10-30 E2E). data 가 다시 올 뿐이면 사람이 굴려 둔 위치를 둔다.
   - 키보드 초점은 탭 줄 안에 남긴다(순수 구획 `<tabs-focus>`) — 키보드 초점(`:focus-visible`)이 있던 탭을 닫으면 숨기기
     전에 이웃 탭(서버가 지금 탭을 닫고 옮겨 가는 이웃과 같은 규칙 — 오른쪽, 없으면 왼쪽)으로 옮기고(마우스로 누른 × 는
     옮기지 않는다 — 이웃 탭의 숨은 핀이 `:focus-within` 으로 드러나 남았다), 키보드(`click` 의 `detail` 0)로 옮긴
@@ -1783,7 +1788,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     key·`aria-current` 표지를 `data.landing` 으로 받는다). 두지 않으면 body 에 남았다.
   - 무대(`.stage`)는 옆으로 넘치지 않는다 — 읽기 도구용 표는 1px 칸(`div.sr`) 안에 둔다(표에 바로 1px 를 주면 내용 폭으로
     늘어 390px 무대가 639px 로 넘쳤다). 520px 이하에서는 머리 칩(공식버전 이름)이 토글 셋과 함께 둘째 줄(`.tail`)로 내려
-    남는 폭을 쓰고 두 줄까지 접는다 — 넓은 창에서 `.tail` 은 `display: contents` 라 머리 줄은 그대로다.
+    남는 폭을 쓴다 — 넓은 창에서 `.tail` 은 `display: contents` 라 머리 줄은 그대로다. 머리 칩은 어느 폭에서도 자르지
+    않는다 — 두 줄까지 접히고 그 끝에서만 줄이며, 빠듯한 머리 줄에서는 기간 글자가 먼저 준다(바닥 84px). 360px 아래에서는
+    토글이 짧은 이름이다(2026-10-30 E2E — 761 ~ 990px·320px 에서 칩이 잘렸다).
+  - B/N 확보율 판의 기준선 이름표는 막대 칸(판 위 ~ 막대 바닥, 그 아래 50px 는 공정 이름·상태 띠) 안에서 막대·확보율
+    글자·「최저」·기준선·다른 이름표를 피하는 자리를 고르고, 없으면 글자만 피하는 자리에 바탕을 깔아 단다 — 그것도 없으면
+    쓰지 않는다. 「최저」 도 판 위로 나가면 쓰지 않는다(낮은 휴대폰 창에서 막대 축이 몇십 px 라 확보율 글자와 기준선이 한 줄에
+    몰렸다 — 2026-10-30 E2E, `test_intro_scene_behavior`).
 - `src/capa_simulation/components/history_guard.py` — 탭 줄 JS(`page_tabs.js`)의 기록 지킴이 두 구획(`<tabs-history>`·
   `<tabs-history-install>`)을 떼어 입장 화면 등록 JS 앞에 싣는 글로 낸다. 글은 탭 줄 자산 한 벌이다(옮기지 않는다 — 두 벌이면
   한쪽만 고쳐 다른 지킴이가 먼저 걸린다). 컴포넌트를 등록하지 않아 `page_tabs` 를 불러오지 않는 모듈이 쓸 수 있다.
@@ -2331,7 +2342,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **붙여넣기·CSV 의 배치 칸**(Q2): 가정 세션은 「배치 칸도 붙여넣기」(`PASTE_LAYOUT_KEY`, 기본 끔 — 「현재 데이터」 CSV 는
     합친 값이라 공식 CSV 를 올리면 배치안이 공식 자리로 돌아간다)를 두고, 끄면 있던 호기의 배치 칸은 지금 값을 둔다(새 호기의
     배치 칸은 받는다 — 범위 줄 「붙여넣은 열 n개(…)만 바꿉니다」 도 배치 열을 빼고 「붙여넣은 배치 칸(…)은 새 호기에만
-    넣습니다」 를 따로 적는다). 켜면 「가정 배치 n대가 바뀝니다(그 가운데 m대는 공식 자리로 돌아가 차이가 지워집니다)」, 공식 세션은
+    넣습니다」 를 따로 적는다). 지금 값은 **읽을 때** 둔다(`read_equipment_update` 의 `keep_current` — 붙여넣은 그대로의 그
+    호기 행은 `EquipmentPaste.held_rows` 로 받아 「넣지 않았다」 한 줄을 견준다) — 검증 뒤에 되돌리면 넣지 않을 배치 값의
+    오류(좌표만 있고 크기 없음 등)가 미리보기를 막았다(2026-10-30 E2E). 켜면 「가정 배치 n대가 바뀝니다(그 가운데 m대는 공식 자리로 돌아가 차이가 지워집니다)」, 공식 세션은
     「공식 배치 k칸(호기 n대)이 바뀝니다」 경고. 미리보기 요약은 「배치 칸 k(호기 n대)」 를 따로 센다(`paste_split_summary`).
     미리본 뒤 체크를 바꾸면 후보를 다시 만든다(`ImportReview.layout_pasted`). 「현재 데이터」 꼴 CSV 이름의 시나리오가 세션과
     다르면 경고 한 줄(`_csv_scenario_mismatch`).
