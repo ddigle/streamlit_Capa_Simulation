@@ -15,7 +15,7 @@
 // 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만
 // 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
 // 목록이 옆으로 넘치면(좁은 창·탭이 많을 때) 더 있는 쪽 가장자리를 흐리고 화살표 표지를 단다(`<tabs-edges>`).
-// 키보드 초점은 탭 줄 안에 남긴다(`<tabs-focus>`) — 초점이 있던 탭을 닫으면 이웃 탭으로 옮기고, 키보드로 화면을 옮긴
+// 키보드 초점은 탭 줄 안에 남긴다(`<tabs-focus>`) — 키보드 초점이 있던 탭을 닫으면 이웃 탭으로 옮기고, 키보드로 화면을 옮긴
 // 뒤 초점이 body 로 빠졌으면 지금 탭으로 돌려준다.
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
@@ -526,10 +526,12 @@ export default function (component) {
     if (item.__parts.close.hidden) return
     const leaving = id === S.data.active
     if (leaving && !leaveOk()) return
-    // 초점이 그 탭(× 등)에 있었으면 숨기기 전에 이웃 탭으로 옮긴다 — 숨긴 단추의 초점은 body 로 빠졌다(E2E). 이웃은
-    // 보이는 차례(목록 DOM)로 고른다 — `S.items` 는 만든 차례라 고정해 왼쪽으로 옮긴 탭과 어긋난다.
+    // 키보드 초점이 그 탭(× 등)에 있었으면 숨기기 전에 이웃 탭으로 옮긴다 — 숨긴 단추의 초점은 body 로 빠졌다(E2E). 이웃은
+    // 보이는 차례(목록 DOM)로 고른다 — `S.items` 는 만든 차례라 고정해 왼쪽으로 옮긴 탭과 어긋난다. 마우스로 누른 × 도
+    // 초점을 받지만(`:focus-visible` 아님) 옮기지 않는다 — 옮기면 이웃 탭의 숨은 핀이 `:focus-within` 으로 드러나 남았다.
     const shadow = nav.getRootNode()
-    if (shadow.activeElement && item.contains(shadow.activeElement)) {
+    const focused = shadow.activeElement
+    if (focused && item.contains(focused) && focused.matches(':focus-visible')) {
       const open = [...list.children].filter((other) => !other.hidden).map((other) => other.dataset.id)
       const next = S.items.get(focusAfterClose(open, id))
       if (next) next.__parts.tab.focus({ preventScroll: true })
