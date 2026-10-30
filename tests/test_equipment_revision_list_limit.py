@@ -238,5 +238,8 @@ def test_the_save_history_names_the_hidden_revisions_only_past_the_limit(
     assert head.endswith(
         "리비전입니다. 최근 2줄 · 전체 4줄 — 더 옛 2줄은 이 표와 「조회 리비전」 상자에 없습니다."
     )
-    (table,) = [frame for frame in limited.dataframe if "변경메모" in frame.value.columns]
+    # 일정 리비전 표 — 그 아래 「공통 대장 저장 이력」 표(「공통」 칸)도 변경메모를 싣는다.
+    (table,) = [
+        frame for frame in limited.dataframe if {"리비전", "변경메모"} <= set(frame.value.columns)
+    ]
     assert table.value["리비전"].tolist() == ["r4", "r3"]
