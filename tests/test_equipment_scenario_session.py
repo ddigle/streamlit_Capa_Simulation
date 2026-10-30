@@ -1211,10 +1211,18 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
     assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
 
 
-def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(tmp_path: Path) -> None:
+def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """낡은 세션 팝업 「저장」 의 거절 곁에 「최신 rN 불러오기(변경 버림)」 — 누르면 세션이 그 설비
     시나리오 최신으로 옮고 저장 안 한 편집은 버려지며 사이드바 줄이 불러왔다고 알린다(E2E #79 —
-    거절 글만 있어 사이드바 팝업 「불러오기」 로 다시 찾아가야 했다)."""
+    거절 글만 있어 사이드바 팝업 「불러오기」 로 다시 찾아가야 했다).
+
+    팝업은 조건 팝업 호스트 프래그먼트 안이라 콜백으로 옮기면 그 프래그먼트만 다시 돌아 페이지가
+    낡은 세션 그대로 남는다 — 팝업 「불러오기」 처럼 옮긴 뒤 앱 전체 재실행(`st.rerun()`, 범위
+    인자 없음)을 부르는지 본다(AppTest 는 프래그먼트만 다시 돌리지 못해 부름을 기록한다)."""
+    import streamlit
+
     from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
@@ -1247,9 +1255,18 @@ def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(tmp_pat
 
     button = app.button(key=LOAD_LATEST_BUTTON_KEY)
     assert button.label == "최신 r2 불러오기(변경 버림)"
+    reruns: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    original = streamlit.rerun
+
+    def record(*args: Any, **kwargs: Any) -> None:
+        reruns.append((args, kwargs))
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(streamlit, "rerun", record)
     button.click().run()
 
     assert not app.exception, [item.message for item in app.exception]
+    assert reruns == [((), {})]
     latest = next(
         item
         for item in repository.list_equipment_scenarios()

@@ -1503,7 +1503,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고칠 것」 줄이다. 낡은 세션의 두 줄은 버려질 호기·칸 이름을 앞 셋까지 적고(「버려질 칸: EQ-01 반입일정·Qual일정, … 외 n대」),
     세 저장 자리(탭 저장 구획·팝업 「저장」·Space 저장 오류 곁)에 「최신 rN 불러오기(변경 버림)」 단추가 선다
     (`equipment_scenario_status.render_load_latest_button` — 팝업 「불러오기」 와 같은 `select_equipment_scenario`, 공통 칸 편집도
-    버린다고 풍선이 말한다). 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
+    버린다고 풍선이 말한다. 팝업 안(`in_dialog`)은 콜백이 아니라 본문에서 옮기고 `st.rerun()` 으로 앱 전체를 다시 돌린다 —
+    팝업은 조건 팝업 호스트 프래그먼트 안이라 콜백이면 그 프래그먼트만 다시 돌아 페이지가 낡은 세션 그대로 남는다). 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
     고칠 것 줄로, 사이드바 팝업 「저장」 은 경고 글로(`stale_save_refusal`) 보이고, 저장은 `save_equipment_buffer` 의 설비 쪽
     저장 전 검사(`_save_equipment_frames` 첫머리 — FAB 전체 배치 대기분은 별도 쓰기라 그 앞에서 저장되고 거부 글이 함께
     말한다)가 같은 글로 막는다(Space 「배치 저장」 도 — 저장소의 「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시
