@@ -1252,9 +1252,24 @@ def test_the_chart_and_sheet_callbacks_write_the_month_and_bump_one_shared_gener
         app.session_state["selection"] = selection
         _ok(app.run())
         assert app.session_state[CONSTRAINT_MONTH_KEY] == month, (action, selection)
+        # 달을 적은 누름은 「눌러 고름」 표지를 세운다 — 다음 앱 전체 회차의
+        # `settle_selected_month` 가 그 달을 기본 달로 되돌리지 않는다(I41).
+        assert app.session_state[CONSTRAINT_MONTH_PICKED_KEY] is True
         assert app.session_state["constraint_sim_select_generation"] == generation
         # 어느 쪽을 눌러도 두 그림이 같은 세대로 다시 선다.
         assert app.session_state["drawn"] == (generation, generation)
+
+    # 빈 선택 · 축 밖 점은 「눌러 고름」 표지를 세우지 않는다 — 고른 달은 계속 조건의 기본
+    # 달을 따른다.
+    fresh = AppTest.from_function(_pick_script, default_timeout=60).run()
+    for action, selection in (
+        ("sheet", {"selection": {"points": []}}),
+        ("chart", _chart_pick(199001)),
+    ):
+        fresh.session_state["action"] = action
+        fresh.session_state["selection"] = selection
+        _ok(fresh.run())
+        assert CONSTRAINT_MONTH_PICKED_KEY not in fresh.session_state
 
 
 def _short_months_script() -> None:
