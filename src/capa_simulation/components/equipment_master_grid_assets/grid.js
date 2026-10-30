@@ -361,6 +361,10 @@ const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
 const COLSET_KEY = 'capa.equipmentGrid.colSet'
+// 머리 띠 밑에 붙는 화면 탭 줄(`app_header.PAGE_TABS_SELECTOR` — 시험이 같은지 본다).
+const PAGE_TABS_STRIP = '.st-key-page_tabs_strip'
+// 빈 날짜 칸 자리표시 — 꼴만 적는다. 실제 날짜(「2026-11-09」)를 적으면 어두운 테마에서 값처럼 읽혔다(E2E).
+const DATE_PLACEHOLDER = 'YYYY-MM-DD'
 // 저장 갈래 꼬리표(칸 머리·상세 묶음·값 넣기 칸·변경 줄). 공통·상태 칸은 꼬리표 없이 「공통」 이다.
 const SCOPE_LABELS = { scenario: '시나리오', layout: '배치' }
 const SCOPE_SHORT = { scenario: '시', layout: '배' }
@@ -429,7 +433,7 @@ function freshState() {
   return {
     mount: newMount(), box: createBox(), pending: new Map(), timer: 0, base: null, view: null,
     selected: new Set(), anchor: null, sort: null, colSet: null, edit: null, focus: null, toastClosed: null,
-    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, procQuery: '', conds: [{ col: 4, text: null }],
+    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
     dialogOpener: null, dialogClosed: null,
@@ -860,6 +864,8 @@ function popover(S, name, label, build, wide) {
   caret.innerHTML = ICONS.down
   toggle.appendChild(caret)
   toggle.setAttribute('aria-haspopup', 'dialog')
+  // 패널 안에서 불러오고 닫으면 초점이 여는 단추로 온다 — 불러오기 회차가 다시 지어도 그 단추로 돌아온다(data-fk).
+  toggle.dataset.fk = 'pop-' + name
   const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', label)
@@ -905,7 +911,7 @@ function popover(S, name, label, build, wide) {
     panel.textContent = ''
     panel.style.left = ''
     if (!open) return
-    build(panel, paint)
+    build(panel, paint, close)
     const rect = panel.getBoundingClientRect()
     const shift = popoverShift(rect.left, rect.width, document.documentElement.clientWidth, 8)
     if (shift) panel.style.left = shift + 'px'
@@ -914,11 +920,26 @@ function popover(S, name, label, build, wide) {
   wrap.appendChild(toggle)
   wrap.appendChild(panel)
   paint()
+  // 문서 mousedown 이 불러오기 줄의 다른 단추 누름에 이 팝오버만 닫는다(`closeOtherPress`) — 다시 짓지 않는다.
+  S.pops[name] = { wrap, hide: () => {
+    if (S.pop !== name) return
+    S.pop = null
+    paint()
+  } }
   return wrap
 }
 
+// 불러오기 줄 안에서 열린 팝오버 밖(일정 확인 필요·+ 새 호기·엑셀·CSV·목록 비우기·전체 불러오기·찾기·다른 팝오버)을 누르면 그
+// 팝오버를 닫는다 — 열린 채 남아 오른쪽 칸을 덮었다(E2E). 누른 단추가 지워지면 click 이 서지 않으므로 다시 짓지 않고 패널만 닫는다.
+function closeOtherPress(S, path, target) {
+  const open = S.pops[S.pop]
+  if (!open) return
+  const within = path ? path.includes(open.wrap) : open.wrap.contains(target)
+  if (!within) open.hide()
+}
+
 function processPopover(S, model) {
-  return popover(S, 'process', '공정으로 불러오기', (panel) => {
+  return popover(S, 'process', '공정으로 불러오기', (panel, repaint, done) => {
     const find = el('input', 'emg-input')
     find.placeholder = '공정 이름 찾기'
     find.setAttribute('aria-label', '공정 이름 찾기')
@@ -937,7 +958,7 @@ function processPopover(S, model) {
           const value = label === '(빈칸)' ? '' : label
           const code = k < 0 ? -1 : (model.conds.values[k] || []).indexOf(value)
           const rows = code < 0 ? [] : matchConditions(model.columns, [{ col: k, value: code }], model.names.length)
-          S.pop = null
+          done()
           load(S, 'process', rows.map((row) => model.ids[row]), [], '공정 ' + label, { process: label })
         })
         option.appendChild(el('span', null, label))
@@ -957,7 +978,7 @@ function processPopover(S, model) {
 function conditionPopover(S, model) {
   const columns = model.conds.columns || []
   const values = model.conds.values || []
-  return popover(S, 'conditions', '조건으로 불러오기', (panel, repaint) => {
+  return popover(S, 'conditions', '조건으로 불러오기', (panel, repaint, done) => {
     panel.appendChild(el('span', 'emg-muted', '칸과 값을 골라 모두 맞는 호기를 불러옵니다.'))
     S.conds = S.conds.filter((pick) => pick.col >= 0 && pick.col < columns.length)
     if (!S.conds.length) S.conds = [{ col: Math.max(columns.indexOf('동'), 0), text: null }]
@@ -1028,7 +1049,7 @@ function conditionPopover(S, model) {
     const rows = picked.length ? matchConditions(model.columns, picked, model.names.length) : []
     const go = button('emg-btn is-small is-primary', '맞는 ' + rows.length.toLocaleString() + '대 불러오기', () => {
       const label = picked.map((pick) => columns[pick.col] + ' ' + ((values[pick.col] || [])[pick.value] || '(빈칸)')).join(' · ')
-      S.pop = null
+      done()
       load(S, 'conditions', rows.map((row) => model.ids[row]), [], '조건 「' + label + '」')
     })
     go.dataset.fk = 'cond-go'
@@ -1317,7 +1338,7 @@ function buildSelection(S, bar) {
   } else {
     const input = el('input', 'emg-input')
     input.value = S.bulkValue
-    input.placeholder = column.kind === 'date' ? '2026-11-09 (비우면 지움)' : '값 (비우면 지움)'
+    input.placeholder = column.kind === 'date' ? DATE_PLACEHOLDER + ' (비우면 지움)' : '값 (비우면 지움)'
     input.setAttribute('aria-label', '넣을 값')
     input.dataset.fk = 'bulk-value'
     input.addEventListener('input', () => {
@@ -1330,13 +1351,15 @@ function buildSelection(S, bar) {
   repaintApply()
   bar.appendChild(apply)
   bar.appendChild(el('span', 'emg-vsep'))
-  bar.appendChild(el('span', null, '반입·Qual 일정'))
+  // 「반입·Qual 일정 [n] 일 밀기」 는 한 덩이로 줄을 바꾼다 — 줄이 좁으면 단위 「일」 만 다음 줄로 넘어가 칸과 떨어졌다(E2E).
+  const shiftGroup = el('span', 'emg-shift')
+  shiftGroup.appendChild(el('span', null, '반입·Qual 일정'))
   const days = el('input', 'emg-input emg-days')
   days.value = S.days
   days.setAttribute('aria-label', '밀 날 수')
   days.dataset.fk = 'bulk-days'
-  bar.appendChild(days)
-  bar.appendChild(el('span', null, '일'))
+  shiftGroup.appendChild(days)
+  shiftGroup.appendChild(el('span', null, '일'))
   const dateCols = columns.map((c, k) => (c.name === '반입일정' || c.name === 'Qual일정' ? k : -1)).filter((k) => k >= 0)
   const shift = button('emg-btn is-small', '', () => {
     const value = parseDays(S.days)
@@ -1357,7 +1380,8 @@ function buildSelection(S, bar) {
   })
   days.addEventListener('keydown', stopKeys)
   repaintShift()
-  bar.appendChild(shift)
+  shiftGroup.appendChild(shift)
+  bar.appendChild(shiftGroup)
   bar.appendChild(el('span', 'emg-vsep'))
   const lock = S.data.deleteLock
   const deletable = rows.filter((row) => !(lock && row.tag !== 'new'))
@@ -1594,7 +1618,7 @@ function cellElement(S, row, k) {
   if (editing && column.kind !== 'choice') {
     cell.classList.add('is-editing')
     const input = textEditor('emg-ed', S.edit.draft)
-    input.placeholder = column.kind === 'date' ? '2026-11-09' : ''
+    input.placeholder = column.kind === 'date' ? DATE_PLACEHOLDER : ''
     input.setAttribute('aria-label', label)
     cell.appendChild(input)
     return cell
@@ -1922,6 +1946,29 @@ function revealToast(toast) {
   })
 }
 
+// 화면 위를 가리는 높이 — 머리 띠 밑에 붙는 화면 탭 줄(sticky, `app_header.PAGE_TABS_SELECTOR`)이 있으면 그 아래 끝, 없으면
+// 머리 띠(`TOAST_REVEAL_MARGIN`). 그 아래 조금(8px) 띄운다.
+function coverHeight() {
+  const strip = typeof document !== 'undefined' && document.querySelector ? document.querySelector(PAGE_TABS_STRIP) : null
+  const bottom = strip && strip.getBoundingClientRect ? Number(strip.getBoundingClientRect().bottom) || 0 : 0
+  return Math.round(Math.max(TOAST_REVEAL_MARGIN, bottom)) + 8
+}
+
+// 「비가동 일정 표에서 고치기」 — 그 표는 왼쪽 칸 맨 위에 선다. 긴 호기 상세 맨 아래에서 누르면 화면이 내려간 채라 왼쪽이
+// 빈 칸처럼 보였다(E2E). 누를 때 두 칸 줄(그림자 DOM 밖 Streamlit 가로 줄 — 못 찾으면 이 칸)의 머리가 가린 높이 위로 나가
+// 있으면 그 머리를 머리 띠·화면 탭 줄 아래로 올린다. 다시 그린 회차에도 두 칸 줄의 자리는 같다(위 줄·알림은 그대로).
+function revealColumnsTop(host) {
+  if (!host) return
+  const root = host.getRootNode ? host.getRootNode() : null
+  const outer = root && root.host ? root.host : host
+  const row = (outer.closest && outer.closest('[data-testid="stHorizontalBlock"]')) || host
+  if (!row.getBoundingClientRect || !row.scrollIntoView) return
+  const cover = coverHeight()
+  if (!needsReveal(row.getBoundingClientRect().top, cover)) return
+  row.style.scrollMarginTop = cover + 'px'
+  row.scrollIntoView({ block: 'start' })
+}
+
 function drawDetail(S, root, data) {
   const unit = data.unit
   if (!unit) {
@@ -1988,7 +2035,10 @@ function drawDetail(S, root, data) {
     downtime.appendChild(table)
   }
   if (unit.tag !== 'deleted') {
-    downtime.appendChild(button('emg-link', '비가동 일정 표에서 고치기', () => S.setTrigger('goto', { table: '비가동 일정', unit: values[nameCol] || '' })))
+    downtime.appendChild(button('emg-link', '비가동 일정 표에서 고치기', () => {
+      revealColumnsTop(S.host)
+      S.setTrigger('goto', { table: '비가동 일정', unit: values[nameCol] || '' })
+    }))
   }
   root.appendChild(downtime)
   const actions = el('div', 'emg-side-actions')
@@ -2251,7 +2301,7 @@ function newField(S, column, k, mark) {
     input.id = id
     input.dataset.fk = 'n' + k
     input.disabled = Boolean(mark.lock)
-    if (column.kind === 'date') input.placeholder = '2026-11-09'
+    if (column.kind === 'date') input.placeholder = DATE_PLACEHOLDER
     if (column.kind === 'name') input.placeholder = '예: WBA-11'
     input.addEventListener('input', () => {
       S.nd.values[k] = input.value
@@ -2331,7 +2381,7 @@ function detailField(S, unit, column, k, sets, reasons) {
     input.id = id
     input.dataset.fk = 'f' + k
     input.disabled = Boolean(lock)
-    if (column.kind === 'date') input.placeholder = '2026-11-09'
+    if (column.kind === 'date') input.placeholder = DATE_PLACEHOLDER
     input.addEventListener('input', () => S.drafts.set(k, input.value))
     input.addEventListener('keydown', (event) => {
       stopKeys(event)
@@ -2446,11 +2496,15 @@ export default function (component) {
     listen(S, document, 'visibilitychange', () => send(S))
     listen(S, document, 'mousedown', (event) => {
       // 그림자 DOM 밖에서 보면 대상이 호스트로 바뀐다 — 지나온 길(composedPath)로 안쪽 누름을 가른다.
-      const inside = typeof event.composedPath === 'function' ? event.composedPath().includes(host) : host.contains(event.target)
-      if (S.pop && S.pop !== 'search' && !inside) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : null
+      const inside = path ? path.includes(host) : host.contains(event.target)
+      if (!S.pop || S.pop === 'search') return
+      if (!inside) {
         S.pop = null
         if (S.data && S.data.mode === 'loader') drawLoader(host, S, S.data)
+        return
       }
+      closeOtherPress(S, path, event.target)
     })
   }
   if (data.mode === 'loader') drawLoader(host, S, data)

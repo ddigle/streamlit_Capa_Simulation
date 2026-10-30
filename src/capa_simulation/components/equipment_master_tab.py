@@ -1046,6 +1046,21 @@ def _render_head(
     return str(table)
 
 
+LAYOUT_LOCK_CAPTION: Final = (
+    ":material/lock: 배치 편집이 잠겨 있어, 원래 있던 호기의 배치 칸은 고칠 수 없고 새 호기는 자리 "
+    "없이 들어갑니다."
+)
+
+
+def layout_lock_caption(reason: str | None) -> str:
+    """배치 잠금 한 줄 — 무엇이 잠기는지 한 문장, 까닭(`master_tab_lock_reason`)은 둘째 문장. 까닭
+    글에도 대시가 있어 「— 까닭」 으로 이으면 대시 둘이 이어 붙는다. 까닭은 평문 겸용 글이라 통째로
+    `literal_markdown` 으로 막는다."""
+    if not reason:
+        return LAYOUT_LOCK_CAPTION
+    return f"{LAYOUT_LOCK_CAPTION} {literal_markdown(reason)}"
+
+
 def _render_notices(
     session: EquipmentSession,
     basis: EquipmentSaveBasis | None,
@@ -1060,12 +1075,7 @@ def _render_notices(
         layout = layout_mode.layout
         scenario_name = basis.scenario_name if basis is not None else None
         if layout == "locked":
-            reason = layout_mode.master_tab_lock_reason
-            st.caption(
-                ":material/lock: 배치 편집이 잠겨 있어 있던 호기의 배치 칸은 고칠 수 없고 새 "
-                "호기는 "
-                "자리 없이 들어갑니다" + (f" — {literal_markdown(reason)}" if reason else ".")
-            )
+            st.caption(layout_lock_caption(layout_mode.master_tab_lock_reason))
         elif layout == "overlay":
             where = (
                 f"「{literal_markdown(scenario_name)}」" if scenario_name else "이 설비 시나리오"

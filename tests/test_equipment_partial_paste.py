@@ -139,6 +139,44 @@ def test_blank_conversion_ratio_falls_back_to_one_and_is_not_a_cleared_cell() ->
     assert review.cautions == ()
 
 
+def test_layout_columns_held_back_in_an_assumption_paste_are_not_counted_as_changed() -> None:
+    """가정 설비 시나리오에서 「배치 칸도 붙여넣기」 를 끄면(기본) 있던 호기의 배치 칸은 지금 값을
+    둔다 — 그런데 범위 줄이 「붙여넣은 열 2개(동 · 담당자)만 바꿉니다」 로 넣지 않은 배치 열을
+    바꾸는 열로 세어 앞 줄 「배치 칸은 붙여넣지 않고 …」 와 어긋났다(2026-10-25 E2E #30). 배치
+    열은 바꾸는 열에서 빼고 새 호기에만 넣는다고 따로 적는다."""
+    equipment = _current()
+    review = build_import_review(
+        "설비 마스터",
+        _tab(("설비명", "동", "담당자"), ("EQ-01", "C2", "담당B")),
+        (
+            empty_equipment_baseline(),
+            equipment,
+            prepare_downtime_schedule(_downtime(), equipment=equipment),
+        ),
+        floor_canvases={},
+        layout_role="overlay",
+        paste_layout=False,
+    )
+
+    assert _row(review.candidate[1], "EQ-01")["동"] == "C1"
+    assert _row(review.candidate[1], "EQ-01")["담당자"] == "담당B"
+    assert any("배치 칸은 붙여넣지 않고 지금 값을 두었습니다" in text for text in review.notices)
+    scope = next(text for text in review.notices if text.startswith("붙여넣은 열"))
+    assert scope == (
+        "붙여넣은 열 1개(담당자)만 바꿉니다 — 나머지 36개 열은 기존 호기의 값을 그대로 둡니다. "
+        "붙여넣은 배치 칸(동)은 새 호기에만 넣습니다."
+    )
+
+    official = build_import_review(
+        "설비 마스터",
+        _tab(("설비명", "동", "담당자"), ("EQ-01", "C1", "담당B")),
+        (empty_equipment_baseline(), equipment, empty_downtime_schedule()),
+        floor_canvases={},
+        layout_role="official",
+    )
+    assert "붙여넣은 열 2개(동 · 담당자)만 바꿉니다" in official.notices[-1]
+
+
 def test_csv_upload_takes_the_same_partial_path() -> None:
     current = _current()
 

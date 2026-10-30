@@ -629,7 +629,8 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
         removed_units=("EQ-OLD",),
     )
 
-    message = save_result_message(result, scenario_name="운영 일정")
+    # EQ-NEW 는 엑셀·CSV 넣기로 든 새 호기다 — 지운 호기와 함께라 이름 바꾸기 길을 가리킨다.
+    message = save_result_message(result, scenario_name="운영 일정", pasted_units=("EQ-NEW",))
 
     assert "공통 대장 r3 · 「운영 일정」 r5" in message
     assert "「셋업 실무」 r4(호기 2대 · 비가동 1건)" in message

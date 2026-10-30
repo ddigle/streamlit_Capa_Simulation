@@ -222,6 +222,11 @@ NEW_UNIT_PROPAGATE_KEY = "equipment_new_unit_propagate_v1"
 # 「새 호기」 칸의 초안 {"seq": 번호, "values": 39칸 글, "propagate": bool} — 저장해도 남고(다음
 # 호기를 이어 넣는다) 「호기 추가」 뒤에는 공정소분류·동·층만 남긴다. 편집본과 따로 산다.
 NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
+# 「엑셀·CSV로 한꺼번에」 넣기로 든 새 호기 이름(튜플) — 저장 결과의 「이름만 바꾸려면 …」
+# 꼬리는 지운 호기와 이 이름의 새 호기가 한 저장에 함께 있을 때만 붙인다(설비명이 키라
+# 붙여넣기의 이름 바꿈은 지움 + 새 호기다). 「새 호기」 칸·Space 로 든 새 호기와 상관없는
+# 지우기에는 붙이지 않는다. 편집본과 함께 산다.
+PASTED_NEW_UNITS_KEY = "equipment_pasted_new_units_v1"
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
     GRID_UNDO_KEY,
@@ -229,6 +234,7 @@ _GRID_SESSION_KEYS = (
     GRID_TOAST_SHOWN_KEY,
     GRID_MEMO_KEY,
     NEW_UNIT_PROPAGATE_KEY,
+    PASTED_NEW_UNITS_KEY,
 )
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
@@ -908,6 +914,35 @@ def remember_new_unit_propagation(name: str, propagate: bool) -> None:
     choices = new_unit_propagation()
     choices[name] = propagate
     st.session_state[NEW_UNIT_PROPAGATE_KEY] = choices
+    # 붙여넣기로 들었다 되돌린 같은 이름을 「새 호기」 칸으로 다시 넣었다 — 이제 붙여넣은
+    # 호기가 아니다.
+    pasted = pasted_new_units()
+    if name in pasted:
+        _store_pasted_new_units(pasted - {name})
+
+
+def pasted_new_units() -> frozenset[str]:
+    """「엑셀·CSV로 한꺼번에」 넣기로 든 새 호기 이름(`PASTED_NEW_UNITS_KEY`)."""
+    value = st.session_state.get(PASTED_NEW_UNITS_KEY)
+    if not isinstance(value, (list, tuple)):
+        return frozenset()
+    return frozenset(str(name) for name in value)
+
+
+def _store_pasted_new_units(names: Collection[str]) -> None:
+    if names:
+        st.session_state[PASTED_NEW_UNITS_KEY] = tuple(sorted(names))
+    else:
+        st.session_state.pop(PASTED_NEW_UNITS_KEY, None)
+
+
+def remember_pasted_new_units(before: pd.DataFrame, after: pd.DataFrame) -> None:
+    """엑셀·CSV 넣기 한 번이 새로 들인 새 호기(넣기 전 편집본 `before` 에 새 호기로 없던
+    이름)를 적는다. 편집본을 넣은 **뒤**에 부른다(저장본·이름 지도는 넣기와 무관하다)."""
+    earlier = set(_new_unit_names(before))
+    added = {name for name in _new_unit_names(after) if name not in earlier}
+    if added:
+        _store_pasted_new_units(pasted_new_units() | added)
 
 
 def chosen_new_units(frames: Frames, *, default: bool) -> frozenset[str] | None:
@@ -1701,6 +1736,10 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
         st.session_state[NEW_UNIT_PROPAGATE_KEY] = {
             renames.get(name, name): flag for name, flag in choices.items()
         }
+    # 붙여넣기로 든 새 호기 표지도 이름을 따라간다(저장 결과 꼬리 — `pasted_new_units`).
+    pasted = pasted_new_units()
+    if renames and pasted & set(renames):
+        _store_pasted_new_units({renames.get(name, name) for name in pasted})
     # 설비 마스터 표의 되돌리기 가운데 행 조각을 든 단계(지우기·되살리기·통째)와 그 앞 단계도 같은
     # 까닭으로 버린다(개편 명세 4-11 셋째 자리 — 역 patch 라 앞 단계는 자리가 맞지 않는다).
     steps = grid_undo_steps()
@@ -2262,7 +2301,11 @@ def _save_equipment_frames(
         )
     else:
         name = basis.scenario_name if basis is not None else None
-        message = save_result_message(result, scenario_name=name) + layouts + fab
+        message = (
+            save_result_message(result, scenario_name=name, pasted_units=pasted_new_units())
+            + layouts
+            + fab
+        )
         # 둘째 누름이 제 저장을 알아보면 이 알림을 다시 낸다(`write_guard.held_notice`).
         note_notice(messages, own_name, message)
     _after_equipment_save(
@@ -2324,15 +2367,23 @@ def _layout_role_of(
     return None
 
 
-# 지운 호기와 새 호기가 한 저장에 함께 있을 때 결과 알림 꼬리(설계 11-4).
+# 지운 호기와 붙여넣기로 든 새 호기가 한 저장에 함께 있을 때 결과 알림 꼬리(설계 11-4).
 RENAME_INSTEAD_HINT = (
     "이름만 바꾸려면 설비 마스터 호기 상세의 설비명 칸이나 Space 편집기 「이름 바꾸기」 를 쓰세요 "
     "— 지우고 새로 넣으면 다른 설비 시나리오의 그 호기 일정이 빠집니다."
 )
 
 
-def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | None) -> str:
-    """저장 결과 알림 — 공통 rN · 시나리오 rN · 함께 넣은 목록 · 발행 · 지운 호기(설계 6-3·6-4)."""
+def save_result_message(
+    result: EquipmentSaveResult,
+    *,
+    scenario_name: str | None,
+    pasted_units: Collection[str] = (),
+) -> str:
+    """저장 결과 알림 — 공통 rN · 시나리오 rN · 함께 넣은 목록 · 발행 · 지운 호기(설계 6-3·6-4).
+
+    `pasted_units` 는 엑셀·CSV 넣기로 든 새 호기 이름(`pasted_new_units`)이다 — 지운 호기와
+    그 가운데 하나라도 함께 저장했을 때만 「이름만 바꾸려면 …」 꼬리를 붙인다."""
     written: list[str] = []
     if result.common is not None:
         written.append(f"공통 대장 r{result.common.revision_no}")
@@ -2371,9 +2422,10 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
         )
     if result.removed_units:
         removed = f"지운 호기 {len(result.removed_units):,}대는 모든 설비 시나리오에서 빠졌습니다."
-        if result.new_units:
-            # 붙여넣기·CSV·설비 마스터 탭 설비명 칸 고침은 설비명이 키라 이름 바꾸기가 아니다
-            # (지운 + 새 호기).
+        if set(result.new_units) & set(pasted_units):
+            # 붙여넣기·CSV 는 설비명이 키라 이름을 바꿔 붙이면 이름 바꾸기가 아니라 지움 + 새
+            # 호기다. 「새 호기」 칸·Space 로 든 새 호기와 상관없는 지우기를 함께 저장하면 꼬리가
+            # 놀라게 했다(E2E) — 붙여넣기로 든 새 호기가 함께 있을 때만 붙인다.
             removed += f" {RENAME_INSTEAD_HINT}"
         sentences.append(removed)
     sentences.append(
@@ -2704,7 +2756,12 @@ def build_import_review(
         equipment = merged
         downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)
         baseline = prepare_equipment_baseline(baseline)
-        scope = _paste_scope_notice(paste, new_rows=int(changes["Import구분"].eq("신규").sum()))
+        # 가정 세션에서 「배치 칸도 붙여넣기」 를 끄면 붙여넣은 배치 열은 있던 호기에 들지 않는다 —
+        # 「붙여넣은 열 n개(…)만 바꿉니다」 가 그 열을 바꾸는 열로 세면 앞 줄과 어긋났다(E2E).
+        held = layout_pasted if layout_role == "overlay" and not paste_layout else []
+        scope = _paste_scope_notice(
+            paste, new_rows=int(changes["Import구분"].eq("신규").sum()), held=held
+        )
         if scope is not None:
             notices.append(scope)
         if paste.cleared_cells:
@@ -2816,14 +2873,24 @@ def _paste_layout_review(
     )
 
 
-def _paste_scope_notice(paste: EquipmentPaste, *, new_rows: int) -> str | None:
-    """붙여넣은 열과 그대로 두는 열을 한 줄로. 모든 열을 붙여넣었으면 말할 것이 없다."""
+def _paste_scope_notice(
+    paste: EquipmentPaste, *, new_rows: int, held: Sequence[str] = ()
+) -> str | None:
+    """붙여넣은 열과 그대로 두는 열을 한 줄로. 모든 열을 붙여넣었으면 말할 것이 없다.
+
+    `held` 는 붙여넣었지만 있던 호기에는 넣지 않는 열이다(가정 세션 「배치 칸도 붙여넣기」 끔 —
+    배치 일곱 칸은 새 호기에만 든다). 바꾸는 열에서 빼고 따로 한 문장으로 적는다."""
     kept = paste.kept_columns
     if not kept:
         return None
-    pasted = [column for column in paste.columns if column != EQUIPMENT_ID_COLUMN]
+    held = [column for column in paste.columns if column in held]
+    pasted = [
+        column for column in paste.columns if column != EQUIPMENT_ID_COLUMN and column not in held
+    ]
     # 짧은 쪽 이름을 적는다 — 서른 개를 늘어놓으면 읽히지 않는다.
-    if len(pasted) <= len(kept):
+    if not pasted:
+        text = "기존 호기는 바꾸는 열이 없습니다."
+    elif len(pasted) <= len(kept):
         text = (
             f"붙여넣은 열 {len(pasted)}개({' · '.join(pasted)})만 바꿉니다 — 나머지 "
             f"{len(kept)}개 열은 기존 호기의 값을 그대로 둡니다."
@@ -2833,8 +2900,11 @@ def _paste_scope_notice(paste: EquipmentPaste, *, new_rows: int) -> str | None:
             f"붙여넣은 열 {len(pasted)}개만 바꿉니다 — 붙여넣지 않은 {len(kept)}개 열"
             f"({' · '.join(kept)})은 기존 호기의 값을 그대로 둡니다."
         )
+    if held:
+        text += f" 붙여넣은 배치 칸({' · '.join(held)})은 새 호기에만 넣습니다."
     if new_rows:
-        text += f" 새 호기 {new_rows:,}건은 그 열이 빈칸입니다."
+        blank = "붙여넣지 않은 열이" if held else "그 열이"
+        text += f" 새 호기 {new_rows:,}건은 {blank} 빈칸입니다."
     return text
 
 

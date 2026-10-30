@@ -105,7 +105,9 @@ def test_a_blank_draft_fills_the_three_required_flags_and_asks_for_name_and_proc
     assert check.errors["설비명"] == eg.NEW_UNIT_NAME_REQUIRED
     # 공정소분류 누락은 저장과 같은 규칙 문구다.
     assert check.errors["공정소분류"] == "설비 마스터의 공정소분류에 누락값이 있습니다"
-    assert check.hint == "아직 추가할 수 없습니다 — 공정소분류 · 설비명 칸을 확인합니다"
+    # 막힌 칸은 체크 상자 차례(설비명 → 공정소분류)로 적는다 — 표 차례(공정소분류가 앞)로 적으면
+    # 체크 상자와 거꾸로 읽혔다(E2E).
+    assert check.hint == "아직 추가할 수 없습니다 — 설비명 · 공정소분류 칸을 확인합니다"
     assert check.row is None
 
 

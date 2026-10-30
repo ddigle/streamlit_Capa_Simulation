@@ -50,12 +50,14 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
 from capa_simulation.components.equipment_master_tab import (
+    LAYOUT_LOCK_CAPTION,
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
     SIDE_HISTORY,
     SIDE_KEY,
     STALE_SCENARIO_EDITS,
     TABLE_KEY,
+    layout_lock_caption,
     save_target,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
@@ -404,6 +406,31 @@ def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     app.button(key=PREVIEW_BUTTON_KEY).click()
     _ok(app.run())
     assert isinstance(app.session_state[PREVIEW_KEY], ImportReview)
+
+
+def test_the_layout_lock_line_gives_its_reason_as_a_second_sentence(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """남이 그 가정 시나리오에 다른 배치를 저장한 낡은 세션의 배치 잠금 한 줄 —
+    「잠겨 있어 있던」 이 어색했고, 까닭 글(「… 저장됐습니다 — 배치를 고치려면 …」)을 「— 까닭」
+    으로 이어 대시 둘이 이어 붙었다(E2E). 무엇이 잠기는지 한 문장, 까닭은 그 뒤 둘째 문장이다."""
+    repository, setup = _two_scenarios(tmp_path)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+
+    app = _page(repository, setup, pinned)
+
+    lines = [text for text in _texts(app, "caption") if text.startswith(":material/lock:")]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith(LAYOUT_LOCK_CAPTION + " ")
+    assert "잠겨 있어 있던" not in line
+    assert line.count(" — ") == 1, line
+    assert "다른 배치가 저장됐습니다 — 배치를 고치려면 최신" in line
+    assert layout_lock_caption(None) == LAYOUT_LOCK_CAPTION
 
 
 def test_an_assumption_import_grouping_across_official_floors_is_refused_before_preview(
