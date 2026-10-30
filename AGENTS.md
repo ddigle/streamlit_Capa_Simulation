@@ -1602,7 +1602,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       회차가 돌아올 때까지 붙든다(`page_tabs.js` 의 순수 구획 `<tabs-hold>` — 누를 때 포커스가 편집표였거나 마지막 편집표
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
       없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`)로
-      알아본다 — 탭 줄 밖의 떠나기(테마 단추)는 이 붙들기를 지나지 않는다.
+      알아본다. 탭 줄 밖의 떠나기인 머리 툴바의 테마 단추도 같은 붙들기를 지난다 — 탭 줄이 그릴 때마다
+      `window.__capaLeaveGate`(`press` — 단추 pointerdown 에서 편집표 포커스를 적는다, `go(fn)` — 붙든 뒤 `fn` 을
+      부른다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
+      곧바로 묻는다. 붙든 동안 탭을 누르면 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다
+      (`theme_toggle.LEAVE_HOLD_RESET_MS`). 칸 편집기에 쓰는 중(Enter 전)에 누른 Dark 가 표지가 서기 전에 묻지 않고
+      새로 읽던 틈을 막는다(E2E #94·#101, 개선 거리 I4).
   - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
     처리기 하나) 띠 CSS 변수 `--capa-equipment-return`(`app_header.EQUIPMENT_RETURN_VARIABLE`)에 이름이 있으면 탭의
     `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,

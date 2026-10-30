@@ -2,12 +2,19 @@
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 import streamlit as st
 from streamlit.elements.html import _html_only_style_tags
 
-from capa_simulation.components import intro_summary, page_guide, print_button, theme_toggle
+from capa_simulation.components import (
+    intro_summary,
+    page_guide,
+    page_tabs,
+    print_button,
+    theme_toggle,
+)
 from capa_simulation.components.intro_summary import summary_label_script
 from capa_simulation.components.page_guide import guide_toolbar_script
 from capa_simulation.components.print_button import print_toolbar_script
@@ -393,3 +400,49 @@ def test_the_theme_button_marks_the_switch_before_it_reloads(
     mark = f'sessionStorage.setItem("{theme_toggle.THEME_SWITCH_STORAGE_KEY}", "1")'
     assert mark in click
     assert click.index("capaTheme.choose(") < click.index(mark) < click.index("location.reload()")
+
+
+def test_the_theme_button_waits_on_the_tab_strip_hold_before_it_asks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """칸 편집기에 쓰는 중(Enter 전)에 Dark 를 누르면 그 편집을 실은 회차가 돌아오기 전이라 저장 안
+    함 표지가 없어 묻지 않고 새로 읽었다(E2E #94·#101, 개선 거리 I4). 테마 단추도 탭 줄의 떠나기
+    붙들기를 지난다 — 누를 때(pointerdown) 편집표 포커스를 적고, 붙들기가 끝난 뒤 표지를 읽어
+    묻는다. 탭 줄이 없으면 곧바로 묻는다."""
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    script = frames[0]
+    assert "parentWindow.__capaLeaveGate" in script
+    pointer = script[script.index("button.onpointerdown") : script.index("button.onclick")]
+    assert "gate.press()" in pointer
+    click = script[script.index("button.onclick") :]
+    proceed = click[click.index("function proceed()") : click.index("var gate = leaveGate();")]
+    # 표지 읽기·묻기·새로고침은 붙들기가 부르는 `proceed` 안이다.
+    assert theme_toggle.UNSAVED_EDITS_CSS_VARIABLE in proceed
+    assert "confirm(" in proceed and "location.reload()" in proceed
+    after = click[click.index("var gate = leaveGate();") :]
+    assert after.index("gate.go(proceed)") < after.index("proceed();")
+
+
+def test_a_theme_press_dropped_by_a_later_tab_press_does_not_stay_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """붙든 사이 탭을 누르면 탭 누름이 붙든 자리를 차지해 테마 누름은 버려진다 — 그때 단추가
+    `aria-busy`·기다림 커서로 남지 않게 스스로 걷는다. 걷는 때는 탭 줄 붙들기의 가장 긴 기다림
+    (`page_tabs.js` 의 `BUSY_MS`)보다 길다 — 그보다 짧으면 아직 붙든 누름의 표지를 먼저 걷는다."""
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    click = frames[0][frames[0].index("button.onclick") :]
+    after = click[click.index("var gate = leaveGate();") :]
+    reset = f"setTimeout(idle, {theme_toggle.LEAVE_HOLD_RESET_MS})"
+    assert after.index("aria-busy") < after.index(reset) < after.index("gate.go(proceed)")
+    proceed = click[click.index("function proceed()") :]
+    assert proceed.index("idle();") < proceed.index("confirm(")
+    tabs_js = (Path(page_tabs.__file__).parent / "page_tabs_assets" / "page_tabs.js").read_text(
+        encoding="utf-8"
+    )
+    busy = re.search(r"^const BUSY_MS = (\d+)$", tabs_js, re.M)
+    assert busy is not None
+    assert theme_toggle.LEAVE_HOLD_RESET_MS > int(busy.group(1))

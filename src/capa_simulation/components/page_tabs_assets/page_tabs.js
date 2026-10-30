@@ -16,7 +16,8 @@
 // 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
-// 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
+// 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 탭 줄 밖의 떠나기인 테마
+// 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`).
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(공식 발행 쌍이
 // 아닌 설비 시나리오 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은 문서에서 한 번 알린다(`<tabs-return>`).
@@ -498,6 +499,24 @@ export default function (component) {
     if (leaving) moving(null)
     S.send('close', { id, epoch: S.data.epoch })
   }
+  // 탭 줄 밖의 떠나기 — 머리 툴바의 테마 단추는 화면을 새로 읽어 세션을 바꾼다. 편집표에서 막 손을 뗀 누름이면 그 편집
+  // 회차가 돌아와 저장 안 함 표지가 설 때까지 붙든 뒤(`<tabs-hold>`) 부른 쪽의 확인·새로고침(`fn`)을 잇는다. 단추가 누를
+  // 때(`press` — 포커스가 단추로 옮기기 전의 pointerdown) 편집표 포커스를 적는다. 그릴 때마다 이 그리기의 처리로 건다.
+  // 붙든 동안 탭을 누르면 마지막 누름만 남는다 — 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다.
+  const gate = {
+    press: () => { S.pressFromGrid = S.gridFocused },
+    go: (fn) => {
+      if (fresh()) {
+        S.hold = null
+        fn()
+        return
+      }
+      S.hold = { id: null, at: Date.now(), data: S.data, go: fn }
+      clearTimeout(S.holdTimer)
+      S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
+    },
+  }
+  window.__capaLeaveGate = gate
   // 2단계(끌어서 떼어 내기·차례 바꾸기)가 포인터 처리를 붙일 자리.
   const startDrag = () => {}
   // 누르는 순간(포커스가 탭으로 옮기기 전) 편집표에 포커스가 있었는지 적는다 — 칸 편집기는 바깥 누름에 편집을 적용하고 닫는다.
@@ -663,5 +682,6 @@ export default function (component) {
     S.onFonts = null
     if (S.onLink) document.removeEventListener('click', S.onLink, true)
     S.onLink = null
+    if (window.__capaLeaveGate === gate) delete window.__capaLeaveGate
   }
 }

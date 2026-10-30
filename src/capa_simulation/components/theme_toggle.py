@@ -46,7 +46,9 @@ Streamlit 1.63 은 그 키를 **번들을 읽는 순간의 경로**로 한 번�
   메뉴로 키를 바꿀 길이 없어 이 규칙이 할 일이 없다. 메뉴는 Streamlit 의 정적 껍데기라 첫 delta 전
   아주 잠깐 보일 수 있는데, 그때 누른 것도 이 규칙대로 받아들일 뿐이다.
 - **버튼을 누르면(`choose`)**: 앱 키·지금 경로와 표지가 있는 경로의 Streamlit 키·표지를 모두 새
-  값으로 적고 `?theme` 을 맞춰 한 번 새로고침한다.
+  값으로 적고 `?theme` 을 맞춰 한 번 새로고침한다. 그 전에 화면 탭 줄의 떠나기 붙들기
+  (`window.__capaLeaveGate` — `page_tabs.js` 의 `<tabs-hold>`)를 지난다 — 편집표 칸에 쓰는 중이거나
+  막 적용한 직후의 누름은 그 편집 회차가 돌아와 저장 안 함 표지가 선 뒤에 묻는다.
 - 저장소에 쓰지 못하면 Streamlit 키 때문에는 새로고침하지 않는다(쓰기 실패가 새로고침 반복이 되지
   않게). 그때는 예전처럼 `?theme` 만 밝게로 맞춘다.
 
@@ -127,6 +129,10 @@ UNSAVED_EDITS_CSS_VARIABLE = "--capa-unsaved-edits"
 # 때 읽고 지워, 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」 를 테마 전환 글로 낸다
 # (`page_tabs.js` 의 `<tabs-return>`).
 THEME_SWITCH_STORAGE_KEY = "capa-theme-switch"
+# 탭 줄 붙들기(`page_tabs.js` 의 `window.__capaLeaveGate`)에 맡긴 누름의 기다림 표지를 스스로
+# 걷는 때(ms). 붙들기는 길어야 `BUSY_MS`(10초) 뒤에 놓지만, 그 사이 탭 누름이 붙든 자리를
+# 차지하면 테마 누름은 버려진다 — 그때 단추가 「기다리는 중」 으로 남지 않게 그보다 조금 길게 둔다.
+LEAVE_HOLD_RESET_MS = 12000
 UNSAVED_EDITS_CONFIRM = (
     "저장하지 않은 변경이 있습니다. 테마를 바꾸면 화면을 새로 읽어 이 변경이 사라집니다. "
     "계속할까요?"
@@ -420,21 +426,55 @@ _SCRIPT = """
     paint(button, dark);
     button.onmouseenter = function () { button.style.opacity = "1"; };
     button.onmouseleave = function () { button.style.opacity = ".92"; };
+    // 탭 줄의 떠나기 붙들기(`page_tabs.js` 의 `window.__capaLeaveGate`). 탭 줄이 없는
+    // 화면(부트스트랩 오류)이면 곧바로 묻는다.
+    function leaveGate() {
+      var gate = parentWindow.__capaLeaveGate;
+      return gate && typeof gate.press === "function" && typeof gate.go === "function"
+        ? gate : null;
+    }
+    // 누르는 순간(포커스가 이 단추로 옮기기 전) 편집표 포커스를 탭 줄에 적게 한다.
+    button.onpointerdown = function () {
+      var gate = leaveGate();
+      try { if (gate) gate.press(); } catch (error) {}
+    };
     button.onclick = function () {
       // 새로고침은 새 Streamlit 세션이라 적용만 하고 저장하지 않은 편집이 말없이 사라졌다
       // (2026-10-05 E2E). 그런 편집이 있으면 먼저 묻는다.
-      var unsaved = parentWindow.getComputedStyle(doc.documentElement)
-        .getPropertyValue("%(unsaved_var)s").trim() === "1";
-      if (unsaved && !parentWindow.confirm("%(unsaved_confirm)s")) return;
-      var next = dark ? "Light" : "Dark";
-      // 경로는 **누르는 순간** 읽는다(`capaTheme` 안) — 이 iframe 은 페이지를 옮겨도 남는다.
-      try { capaTheme.choose(parentWindow, next); } catch (error) { return; }
-      // `localStorage` 는 Streamlit 크롬이 읽고 조회 인자는 파이썬이 읽는다. 같은 선택을
-      // 두 곳에 적어야 화면과 그림이 같은 테마를 본다.
-      syncParam(next.toLowerCase());
-      // 새로 읽은 문서가 「테마를 바꾸며 … 공식으로 돌아왔습니다」 로 알리게 남긴다(탭 줄 JS).
-      try { parentWindow.sessionStorage.setItem("%(switch_key)s", "1"); } catch (error) {}
-      parentWindow.location.reload();
+      function idle() {
+        clearTimeout(button.__capaHoldReset);
+        button.removeAttribute("aria-busy");
+        button.style.cursor = "pointer";
+      }
+      function proceed() {
+        idle();
+        var unsaved = parentWindow.getComputedStyle(doc.documentElement)
+          .getPropertyValue("%(unsaved_var)s").trim() === "1";
+        if (unsaved && !parentWindow.confirm("%(unsaved_confirm)s")) return;
+        var next = dark ? "Light" : "Dark";
+        // 경로는 **누르는 순간** 읽는다(`capaTheme` 안) — 이 iframe 은 페이지를 옮겨도 남는다.
+        try { capaTheme.choose(parentWindow, next); } catch (error) { return; }
+        // `localStorage` 는 Streamlit 크롬이 읽고 조회 인자는 파이썬이 읽는다. 같은 선택을
+        // 두 곳에 적어야 화면과 그림이 같은 테마를 본다.
+        syncParam(next.toLowerCase());
+        // 새로 읽은 문서가 「테마를 바꾸며 … 공식으로 돌아왔습니다」 로 알리게 남긴다(탭 줄 JS).
+        try { parentWindow.sessionStorage.setItem("%(switch_key)s", "1"); } catch (error) {}
+        parentWindow.location.reload();
+      }
+      // 칸 편집기에 쓰는 중이거나 막 적용(Enter)한 직후의 누름은 그 편집 회차가 돌아와 표지가
+      // 설 때까지 붙든다 — 붙들지 않으면 표지가 서기 전에 묻지 않고 새로 읽어 편집이 말없이
+      // 사라졌다(탭 줄 `<tabs-hold>` 와 같은 길, 개선 거리 I4).
+      var gate = leaveGate();
+      if (gate) {
+        button.setAttribute("aria-busy", "true");
+        button.style.cursor = "progress";
+        // 붙든 사이 탭 누름이 그 자리를 차지하면 이 누름은 버려진다 — 표지가 남지 않게
+        // 스스로 걷는다.
+        clearTimeout(button.__capaHoldReset);
+        button.__capaHoldReset = setTimeout(idle, %(hold_reset_ms)s);
+        try { gate.go(proceed); return; } catch (error) { idle(); }
+      }
+      proceed();
     };
     // 툴바 맨 오른쪽이다(차례 규칙 `capaToolbar` — Guide · Print · 테마).
     capaToolbar.place(slot, button);
@@ -484,6 +524,7 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
             "unsaved_var": UNSAVED_EDITS_CSS_VARIABLE,
             "unsaved_confirm": UNSAVED_EDITS_CONFIRM,
             "switch_key": THEME_SWITCH_STORAGE_KEY,
+            "hold_reset_ms": LEAVE_HOLD_RESET_MS,
             # 버튼은 **반대 테마의 옷**을 입는다. 어두운 화면에서는 밝은 팔레트의 면과
             # 글자색을, 밝은 화면에서는 어두운 팔레트의 것을 쓴다.
             "dark_fill": tokens.palette_value("light", "SURFACE"),

@@ -696,3 +696,19 @@ def test_the_return_notice_reads_the_header_variable_and_the_theme_switch_mark()
     assert "flash(message, RETURN_NOTICE_MS)" in JS
     # 알리기 전에 떠난 문서의 몫은 지우지 않는다 — 떠날 때 이름이 없으면 적지 않는다.
     assert "if (record !== null) storage.setItem(RETURN_KEY, record)" in JS
+
+
+def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:
+    """탭 줄 밖의 떠나기(테마 단추)도 편집표에서 막 손을 뗀 누름이면 그 편집 회차가 돌아올 때까지
+    붙든다(개선 거리 I4). 탭 줄이 그릴 때마다 붙들기 처리를 문서에 걸고 내려갈 때 걷는다 — 누를 때
+    편집표 포커스를 적고(`press`), 막 손을 뗀 누름이 아니면 곧바로, 아니면 탭 누름과 같은 붙듦
+    (`S.hold` — `release` 가 `holdVerdict` 로 놓는다)에 싣는다."""
+    gate = JS[JS.index("const gate = {") : JS.index("window.__capaLeaveGate = gate")]
+    assert "press: () => { S.pressFromGrid = S.gridFocused }" in gate
+    assert gate.index("if (fresh())") < gate.index("S.hold = { id: null")
+    assert "release()" in gate
+    assert "if (window.__capaLeaveGate === gate) delete window.__capaLeaveGate" in JS
+    # 붙든 테마 누름은 탭이 아니다 — 놓을 때 탭 표지를 건드리지 않고 부른 쪽을 잇는다.
+    release = JS[JS.index("function release() {") :]
+    release = release[: release.index("\n  }\n")]
+    assert "const held = S.items.get(hold.id)" in release and "hold.go()" in release
