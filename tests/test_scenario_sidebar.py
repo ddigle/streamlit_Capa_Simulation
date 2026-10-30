@@ -76,9 +76,12 @@ LABEL = SimpleNamespace(
 
 
 class FakeRepository:
-    def list_scenarios(self) -> list[SimpleNamespace]:
+    def list_scenarios(self, *, include_archived: bool = False) -> list[SimpleNamespace]:
         _count_read()
         listed: list[SimpleNamespace] = st.session_state.get("test_scenarios", SCENARIOS)
+        if include_archived:
+            # 보관본까지 — 테스트가 세션에 넣어 둔 보관본을 덧붙인다.
+            return [*listed, *st.session_state.get("test_archived_scenarios", [])]
         return listed
 
     def list_revisions(self, scenario_id: str) -> list[SimpleNamespace]:
@@ -180,6 +183,9 @@ def sidebar_replacements() -> dict[str, Any]:
         "active_persisted_revision_id": lambda: "revision-1",
         "active_scenario_label": lambda: st.session_state.get("test_label", LABEL),
         "latest_official_revision": lambda: st.session_state.get("test_official"),
+        # `app.py` 가 30초에 한 번 확인해 둔 「더 새 리비전」(세션 값). 확인 자체는 따로 검증한다
+        # (`test_scenario_activation.py`).
+        "newer_active_revision_no": lambda: st.session_state.get("test_newer"),
         "has_unsaved_scenario_changes": lambda: bool(st.session_state.get("test_unsaved", False)),
         "discard_unsaved_scenario_changes": lambda _tables, version: st.session_state.__setitem__(
             "test_reset_to_version", version
@@ -306,6 +312,38 @@ def test_the_badge_says_official_saved_or_unsaved_in_that_order() -> None:
     assert scenario_status_badge(active_revision_id=None, official=None, unsaved=False) == ""
 
 
+def test_the_badge_says_a_newer_revision_after_official_and_before_saved() -> None:
+    """E2E #102 — 남이 그 시나리오에 새 리비전을 저장했으면 「최신 rN 있음」(설비 시나리오 줄과 같은
+    말). 미저장·공식 vN 이 먼저다 — 보는 리비전이 공식이면 공식 배지 그대로다."""
+    assert (
+        scenario_status_badge(
+            active_revision_id="r2", official=("r1", 4), unsaved=False, newer_revision_no=3
+        )
+        == ":orange-badge[최신 r3 있음]"
+    )
+    assert (
+        scenario_status_badge(
+            active_revision_id="r1", official=("r1", 4), unsaved=False, newer_revision_no=3
+        )
+        == ":green-badge[공식 v4]"
+    )
+    assert (
+        scenario_status_badge(
+            active_revision_id="r2", official=None, unsaved=True, newer_revision_no=3
+        )
+        == ":orange-badge[미저장 변경]"
+    )
+
+
+def test_the_field_shows_a_newer_revision_from_the_session_only(sidebar_app: AppTest) -> None:
+    """필드는 확인해 둔 세션 값만 읽어 「최신 r3 있음」 을 단다 — 저장소는 여전히 읽지 않는다."""
+    sidebar_app.session_state["test_newer"] = 3
+    app = sidebar_app.run()
+    assert not app.exception
+    assert ":orange-badge[최신 r3 있음]" in [item.value for item in app.caption]
+    assert "test_repository_reads" not in app.session_state
+
+
 def test_the_dialog_selects_and_loads_another_revision(
     sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -366,6 +404,40 @@ def test_an_unsaved_session_opens_on_the_save_section(sidebar_app: AppTest) -> N
     app.session_state["test_unsaved"] = False
     app = _open(_dismiss(app))
     assert app.session_state[SCENARIO_DIALOG_MODE_KEY] == LOAD_MODE
+
+
+def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
+    sidebar_app: AppTest,
+) -> None:
+    """E2E #55 — 올라와 있는 「기준안」 을 다른 세션이 보관했다. 「새 리비전 저장」 은 「정보를 찾지
+    못했습니다」 한 줄 대신 까닭(보관됨)과 길(보관함에서 되돌리기·지금 편집본 복제·다른 시나리오
+    불러오기)을 말하고 시나리오 관리로 가는 링크를 세운다. 저장 폼은 서지 않는다. 보관본에도 없으면
+    (영구 삭제) 그 말로 바뀐다."""
+    archived = scenario("scenario-1", "기준안", "SIM-001", "revision-1", 1)
+    archived.status = "ARCHIVED"
+    sidebar_app.session_state["test_scenarios"] = [SCENARIOS[1]]
+    sidebar_app.session_state["test_archived_scenarios"] = [archived]
+    app = _open_save(sidebar_app.run())
+    assert not app.exception
+
+    (warning,) = [str(item.value) for item in app.warning]
+    assert warning.startswith(
+        "「기준안」은 그 사이 다른 사용자가 보관해 새 리비전을 저장할 수 없습니다 — 저장하려면 "
+        "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
+        "저장하세요."
+    ), warning
+    assert "「지금 편집본 복제」 로 새 시나리오를 만들고" in warning
+    assert "올라와 있는 시나리오 정보를 찾지 못했습니다" not in warning
+    # 네비게이션이 없는 단독 실행이라 링크는 문구로 물러선다(`render_page_link`).
+    assert "사이드바에서 시나리오 관리로 가기" in [item.value for item in app.caption]
+    assert "신규 리비전 저장" not in [button.label for button in app.button]
+
+    app.session_state["test_archived_scenarios"] = []
+    app.run()
+    (warning,) = [str(item.value) for item in app.warning]
+    assert warning.startswith(
+        "「기준안」은 그 사이 다른 사용자가 영구 삭제해 새 리비전을 저장할 수 없습니다"
+    ), warning
 
 
 def test_the_dialog_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> None:

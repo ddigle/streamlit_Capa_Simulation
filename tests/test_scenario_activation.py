@@ -460,3 +460,68 @@ def test_renaming_the_active_scenario_renames_its_header_label(
     activation.rename_active_scenario_label("scenario-1", "바뀐 이름")
     label = activation.active_scenario_label()
     assert label is not None and label.scenario_name == "바뀐 이름"
+
+
+def test_a_newer_revision_saved_elsewhere_is_seen_on_a_thirty_second_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """E2E #102 — 올라와 있는 시나리오의 최신 번호를 `LATEST_RECHECK_SECONDS` 에 한 번 저장소에서
+    보고(보관본 포함), 줄·띠는 그 세션 값만 읽는다. 다른 시나리오를 불러온 회차에는 곧바로 다시
+    보고, 제 저장 뒤(이름표 번호 ≥ 최신)에는 서지 않으며, 읽지 못하면 들고 있던 값을 둔다."""
+    from types import SimpleNamespace
+
+    import duckdb
+
+    import capa_simulation.scenario_activation as activation
+
+    state: dict[str, object] = {}
+    monkeypatch.setattr(activation, "st", SimpleNamespace(session_state=state))
+    latest = {"scenario-1": 2, "scenario-2": 7}
+    reads: list[bool] = []
+    broken: list[bool] = []
+
+    class Repository:
+        def list_scenarios(self, *, include_archived: bool = False) -> list[SimpleNamespace]:
+            reads.append(include_archived)
+            if broken:
+                raise duckdb.IOException("잠김")
+            return [
+                SimpleNamespace(scenario_id=key, active_revision_no=value)
+                for key, value in latest.items()
+            ]
+
+    monkeypatch.setattr(activation, "get_scenario_repository", lambda _path: Repository())
+    state[activation.ACTIVE_PERSISTED_SCENARIO_ID_KEY] = "scenario-1"
+    state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] = "revision-2"
+    activation._remember_label(_label_snapshot(registered_at=None, plan_months=()))
+
+    activation.check_active_scenario_latest("db", now=100.0)
+    assert reads == [True]
+    assert activation.newer_active_revision_no() is None
+
+    latest["scenario-1"] = 3
+    activation.check_active_scenario_latest("db", now=110.0)
+    assert reads == [True]
+    assert activation.newer_active_revision_no() is None
+    activation.check_active_scenario_latest("db", now=131.0)
+    assert len(reads) == 2
+    assert activation.newer_active_revision_no() == 3
+
+    broken.append(True)
+    activation.check_active_scenario_latest("db", now=170.0)
+    assert len(reads) == 3
+    assert activation.newer_active_revision_no() == 3
+    broken.clear()
+    activation.check_active_scenario_latest("db", now=180.0)
+    assert len(reads) == 3
+
+    label = state[activation.ACTIVE_SCENARIO_LABEL_KEY]
+    assert isinstance(label, dict)
+    state[activation.ACTIVE_SCENARIO_LABEL_KEY] = {**label, "revision_no": 3}
+    assert activation.newer_active_revision_no() is None
+
+    state[activation.ACTIVE_PERSISTED_SCENARIO_ID_KEY] = "scenario-2"
+    activation.check_active_scenario_latest("db", now=181.0)
+    assert len(reads) == 4
+    # 이름표가 아직 앞 시나리오라 그 확인 값으로 「더 새 리비전」 을 말하지 않는다.
+    assert activation.newer_active_revision_no() is None

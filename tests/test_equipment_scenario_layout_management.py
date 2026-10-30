@@ -44,13 +44,16 @@ from capa_simulation.components.equipment_scenario_management import (
     branch_layout_sentence,
     clear_layout_lines,
     clear_layout_message,
+    clear_layout_unchecked_notice,
     clearable_layout,
+    layout_effect_words,
     layout_trace_sentence,
     layout_trace_sources,
     publish_layout_lines,
     publish_result_message,
     restore_layout_sentence,
     revision_rows,
+    stored_layout_cell,
     stored_layout_words,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -123,6 +126,32 @@ def test_the_tables_name_the_stored_layout_rows_and_the_old_code_traces() -> Non
     assert "r4로 되돌리기" in sentence
     assert "모두 2개" in sentence
     assert layout_trace_sentence(_scenario(), [_revision(1), _revision(2, "d2")]) is None
+
+
+def test_the_stored_rows_carry_their_effect_against_the_official() -> None:
+    """E2E #11·#82 — 저장된 행 수 옆 괄호에 지금 공식과 견준 실효를 적는다. 공식과 같아졌으면
+    「공식과 같음」, 실제로 다르면 발행 막힘 글과 같은 「실효 호기 n대」, 공통 대장에서 지운 호기의
+    행은 「지운 호기 n행」 으로 따로 센다. 판정이 없거나 저장된 행이 없으면 원시 그대로다."""
+    caught_up = LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1)
+    assert layout_effect_words(caught_up) == "(공식과 같음)"
+    assert stored_layout_cell("호기 1행", caught_up) == "호기 1행 (공식과 같음)"
+    deleted = LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1, orphan_units=1)
+    assert layout_effect_words(deleted) == "(공식과 같음 · 지운 호기 1행)"
+    differs = LayoutPublishPreview(
+        action="blocked",
+        stored_units=3,
+        stored_marks=1,
+        newest_rows=4,
+        units=2,
+        marks=1,
+        orphan_units=1,
+    )
+    assert stored_layout_cell("호기 3행·요소 1개", differs) == (
+        "호기 3행·요소 1개 (실효 호기 2대·요소 1개 · 지운 호기 1행)"
+    )
+    assert stored_layout_cell("호기 1행", None) == "호기 1행"
+    assert stored_layout_cell("", LayoutPublishPreview()) == ""
+    assert layout_effect_words(LayoutPublishPreview()) == ""
 
 
 def test_the_clear_button_belongs_to_assumption_scenarios_with_a_difference() -> None:
@@ -457,9 +486,9 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
 
     scenarios = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
     by_name = dict(zip(scenarios["설비 시나리오"], scenarios["저장된 배치 차이"], strict=True))
-    assert by_name == {"운영 일정": "", "셋업 실무": "호기 1행"}
+    assert by_name == {"운영 일정": "", "셋업 실무": "호기 1행 (실효 호기 1대)"}
     revisions = next(frame.value for frame in app.dataframe if "리비전명" in frame.value)
-    assert revisions["배치"].tolist()[0] == "호기 1행"
+    assert revisions["배치"].tolist()[0] == "호기 1행 (실효 호기 1대)"
     assert app.selectbox(key=REVISION_KEY).value == latest
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
@@ -563,6 +592,8 @@ def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_pat
     newest = repository.list_schedule_revisions(setup, limit=1)[0]
     assert (newest.revision_no, newest.origin, newest.layout_unit_count) == (3, "layout_clear", 0)
     assert any("배치 차이를 모두 지운 r3을 저장했습니다" in text for text in _texts(app))
+    # 제 지우기로 최신이 바뀐 것은 「체크를 풀었습니다」 가 아니다(E2E #9 알림이 서지 않는다).
+    assert not [text for text in _texts(app) if text.startswith("확인한 뒤")]
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
     # 지운 뒤에는 단추가 없고 발행이 열린다(I2 — 행이 없다).
     assert not [button for button in app.button if button.key == CLEAR_LAYOUT_BUTTON_KEY]
@@ -575,6 +606,103 @@ def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_pat
             [latest],
         ).fetchone()
     assert rows == (1,)
+
+
+def test_the_tables_mark_a_difference_that_caught_up_with_the_official(tmp_path: Path) -> None:
+    """E2E #11 — 「셋업 실무」 r2 의 EQ-01 X=50 을 공식도 같은 자리로 옮겨 실효가 0 이 됐다.
+    시나리오 표·리비전 표 최신 줄이 「호기 1행 (공식과 같음)」 이라 발행 팝업을 열지 않아도 보이고,
+    옛 줄은 원시 그대로다(실효는 최신만 센다)."""
+    repository, setup, _ = _moved_setup(tmp_path)
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    clear_equipment_repository()
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+
+    scenarios = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
+    by_name = dict(zip(scenarios["설비 시나리오"], scenarios["저장된 배치 차이"], strict=True))
+    assert by_name["셋업 실무"] == "호기 1행 (공식과 같음)", by_name
+    revisions = next(frame.value for frame in app.dataframe if "리비전명" in frame.value)
+    assert revisions["배치"].tolist() == ["호기 1행 (공식과 같음)", ""]
+
+
+def test_the_clear_notice_names_why_a_checked_box_came_undone() -> None:
+    """E2E #9·#56 — 켠 체크가 그 사이 최신이 바뀌어 풀렸으면 그 까닭을, 지울 것이 없어 단추째
+    사라졌으면 그 사실까지 한 줄로 적는다. 다른 시나리오의 체크·최신이 그대로인 체크는 말하지
+    않는다."""
+    before = {"scenario": "setup", "latest": "s5", "latest_no": 5}
+    moved = _scenario(latest_schedule_revision_id="s6", latest_revision_no=6)
+    assert clear_layout_unchecked_notice(before, moved, clearable=True) == (
+        "확인한 뒤 「셋업 실무」 의 최신이 바뀌어(r5 → 지금 r6) 「배치 차이 모두 지우기」 확인 "
+        "체크를 풀었습니다 — 바뀐 확인 글을 다시 보고 체크하세요."
+    )
+    gone = clear_layout_unchecked_notice(before, moved, clearable=False)
+    assert gone is not None and gone.endswith(
+        "— 최신 r6에는 지울 배치 차이가 없어 단추를 거뒀습니다."
+    )
+    assert clear_layout_unchecked_notice(before, _scenario(), clearable=True) is None
+    other = {**before, "scenario": "elsewhere"}
+    assert clear_layout_unchecked_notice(other, moved, clearable=True) is None
+    assert clear_layout_unchecked_notice(None, moved, clearable=True) is None
+
+
+def _check_clear(tmp_path: Path, setup: str) -> AppTest:
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+    (confirm,) = [box for box in app.checkbox if str(box.key).startswith(CLEAR_LAYOUT_CONFIRM_KEY)]
+    _ok(confirm.check().run())
+    assert not app.button(key=CLEAR_LAYOUT_BUTTON_KEY).disabled
+    return app
+
+
+def test_a_save_by_someone_else_unchecks_the_clear_box_out_loud(tmp_path: Path) -> None:
+    """E2E #56 — 체크를 켠 사이 남이 그 시나리오에 새 리비전(배치 차이는 그대로)을 저장했다. 옛
+    화면에서 단추를 누르면 지우지 않고, 체크가 풀린 까닭을 팝오버 안 체크 칸 위에 한 번 적는다."""
+    repository, setup, latest = _moved_setup(tmp_path)
+    app = _check_clear(tmp_path, setup)
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-08-24"))
+    )
+    clear_equipment_repository()
+
+    _ok(app.button(key=CLEAR_LAYOUT_BUTTON_KEY).click().run())
+
+    newest = repository.list_schedule_revisions(setup, limit=1)[0]
+    assert (newest.revision_no, newest.origin) == (3, "save")
+    warnings = [str(item.value) for item in app.warning]
+    assert (
+        "확인한 뒤 「셋업 실무」 의 최신이 바뀌어(r2 → 지금 r3) 「배치 차이 모두 지우기」 확인 "
+        "체크를 풀었습니다 — 바뀐 확인 글을 다시 보고 체크하세요." in warnings
+    ), warnings
+    assert app.button(key=CLEAR_LAYOUT_BUTTON_KEY).disabled
+    _ok(app.run())
+    assert not [text for text in _texts(app) if text.startswith("확인한 뒤 「셋업 실무」")]
+    assert latest != newest.schedule_revision_id
+
+
+def test_a_clear_by_someone_else_says_why_the_button_went_away(tmp_path: Path) -> None:
+    """E2E #9 — 체크를 켠 사이 남이 먼저 배치 차이를 지웠다. 다음 회차에 팝오버와 단추가 말없이
+    사라지지 않고, 최신이 바뀌어 체크를 풀었고 새 최신에는 지울 것이 없다는 한 줄이 선다."""
+    repository, setup, latest = _moved_setup(tmp_path)
+    app = _check_clear(tmp_path, setup)
+    repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=latest)
+    clear_equipment_repository()
+
+    _ok(app.run())
+
+    assert not [button for button in app.button if button.key == CLEAR_LAYOUT_BUTTON_KEY]
+    warnings = [str(item.value) for item in app.warning]
+    assert (
+        "확인한 뒤 「셋업 실무」 의 최신이 바뀌어(r2 → 지금 r3) 「배치 차이 모두 지우기」 확인 "
+        "체크를 풀었습니다 — 최신 r3에는 지울 배치 차이가 없어 단추를 거뒀습니다." in warnings
+    ), warnings
+    _ok(app.run())
+    assert not [text for text in _texts(app) if text.startswith("확인한 뒤")]
 
 
 def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revision(

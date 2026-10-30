@@ -197,7 +197,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app.py` — 유일한 실행 진입점. 공식 시나리오 부트스트랩·공통 사이드바·조회기간을 세우고 페이지를 돌린다.
   - 차례 「입장 화면(`intro_overlay.py`) → 껍데기 스타일 → 서체 → 툴바 → 부트스트랩(최신 공식 리비전 활성화) →
-    자동 갱신 예약 → 요약(`intro_summary.py`) → 사이드바 → 조건 팝업 칸 → 화면 탭 줄 → 페이지」는 `test_app_navigation.py`·
+    자동 갱신 예약 → 요약(`intro_summary.py`) → 올라온 시나리오 최신 확인(`check_active_scenario_latest`) → 사이드바 → 조건
+    팝업 칸 → 화면 탭 줄 → 페이지」는 `test_app_navigation.py`·
     `test_page_tabs.py` 가 지킨다. 페이지가 `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘
     `static/icons/capa_mark.svg` 는 `test_settings.py` 가 본다.
   - 화면 탭 줄(`components/page_tabs.py`, 상태 `page_tabs_state.py`)의 훅은 세 자리다 — (a) `st.navigation()` 바로 뒤
@@ -633,9 +634,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   구획 끝 한 줄이 그리로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 링크 대신 표 자리를 적는다).
   - 줄은 세션만 읽고 저장소는 팝업을 연 동안에만 읽는다(팝업 프래그먼트는 `app.py` 의 실행 핀 밖이라
     `pinned_connections` 를 스스로 잡는다). `tests/test_scenario_sidebar.py`·`test_app_navigation.py` 가 고정한다.
+  - 배지는 미저장 → 공식 vN → **최신 rN 있음** → 저장된 리비전 차례다(머리 띠 `header_lines` 도 같다, E2E #102). 낡음은
+    `app.py` 가 공식버전 요약 뒤·머리 띠 앞에서 `scenario_activation.check_active_scenario_latest` 로 **30초에 한 번**(다른
+    시나리오를 불러온 회차는 곧바로) 보관본까지 목록을 읽어 세션에 적은 최신 번호를 이름표 번호와 견준 것
+    (`newer_active_revision_no` — 세션만 읽음)이다. 팝업은 연 회차에 읽은 목록으로 그 값을 고쳐 적는다
+    (`remember_active_scenario_latest`). 제 저장 뒤에는 이름표 번호가 확인 값 이상이라 서지 않는다.
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
     저장 폼은 성공 회차에만 key 세대(`SAVE_FORM_GENERATION_KEY`)를 올려 비운다.
   - 저장은 부모 리비전의 가상 제품 이력에 세션 등록을 더해 넘긴다(`inherit_virtual_product_records`, 활성화 전에 읽음).
+  - 올라와 있는 시나리오가 목록(보관본 빼고)에 없으면 — 이 세션이 보관하면 활성화를 풀므로 다른 세션이 그 사이 보관·영구
+    삭제한 것이다 — 저장 구획은 보관본까지 읽어(`list_scenarios(include_archived=True)`) 까닭과 길(보관함에서 목록으로
+    되돌리기·「지금 편집본 복제」·다른 시나리오 불러오기)을 적고 시나리오 관리 링크를 세운다(`missing_scenario_notice`, E2E #55).
   - **리비전 불러오기는 `load_saved_revision` 한 길이다** — 팝업 「불러오기」와 HOME 주요 Case 칩이 함께 쓴다(옛 리비전
     호환 검사 → 활성화 → 필드 알림·적용 전 편집 목록 비우기·팝업 닫기, 다시 돌리기는 부르는 쪽 — 팝업은 `st.rerun()`,
     칩은 콜백). `open_scenario_dialog_on` 은 팝업을 불러오기 구획·주어진 짝으로 연다(칩이 편집이 있을 때 같은 확인을
@@ -995,6 +1004,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     공유 위젯의 주인 칸을 지운다(구간은 둔다, `tests/test_scenario_activation.py`).
   - 이름 변경은 활성화가 아니다 — `rename_active_scenario_label`·`rename_active_revision_label` 이 같은 id 일 때 이름표
     한 칸만 고친다(다른 세션은 다시 불러올 때 바뀐다).
+  - 올라온 시나리오의 최신 리비전 번호(`ACTIVE_SCENARIO_LATEST_KEY`)는 `app.py` 가 `check_active_scenario_latest` 로
+    `LATEST_RECHECK_SECONDS`(30초)에 한 번(다른 시나리오를 불러온 회차는 곧바로) 보관본까지 목록을 읽어 적고, 줄 배지·머리 띠는
+    `newer_active_revision_no` 로 세션만 읽는다(5장 23, `tests/test_scenario_activation.py`·`test_app_navigation.py`).
   - 프리셋을 걸 때 HOME 의 아는 공정 기억(`PROCESS_SEEN_KEY`)을 지운다(`tests/test_process_filter_activation.py`).
 - `src/capa_simulation/equipment_scenario_activation.py` — 세션의 설비 시나리오(시뮬레이션 `scenario_activation.py` 의 짝).
   세션은 (설비 시나리오, 일정 리비전) 하나를 고정해 들고(`equipment_scenario_selection_v1` — 기본형만), 보는 한 벌은
@@ -1778,7 +1790,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
   싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
-    `intro_summary.latest_official_revision` 만 읽는다(`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
+    `intro_summary.latest_official_revision`·`scenario_activation.newer_active_revision_no`(「최신 rN 있음」) 만 읽는다
+    (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
@@ -2356,7 +2369,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 구획으로 옮기는 길(`open_equipment_scenario_management` — 탭 상한을 먼저
   보고 전환 칸·탭 기억 칸을 적은 뒤 본문에서 `st.switch_page`, 설비 화면 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어
   쓰기」)도 둔다. 시나리오
-  표(공식/활성·최신 rN·리비전 수·저장된 배치 차이)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가
+  표(「공식 vN · rM」/활성 — rM 은 공식 발행 리비전, 발행 확인 글과 같은 `official_release_revision_no` 로 찾고 못 찾으면 「공식 vN」 만·최신 rN·
+  리비전 수·저장된 배치 차이)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가
   있으면 「배치 차이 모두 지우기」 도), 리비전 표(리비전명·출처 `이관/저장/복제/함께 넣기/되돌리기/배치 차이 정리`·공통 rN·행
   수·배치 — 표와 리비전 상자는 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지, 표 아래 한 줄이 늘 전체 수와 출처별 수
   「전체 12줄(이관 10 · 저장 2)」/「최근 50줄 · 전체 82줄(이관 70 · 저장 12) — 더 옛 32줄은 …」 을 적는다 — 사내 런북의
@@ -2397,9 +2411,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 시나리오 최신(id·번호)도 함께 남겨(`publish_seen_token` — 「rN은 … 의 최신(rM)이 아닙니다」·배치 줄을 정하는 값) 그 사이 남이
     같은 시나리오에 새 리비전을 저장했으면 같은 길로 거절한다 — 그 줄을 본 적 없는 사람이 최신이 아닌 리비전을 말없이 냈다
     (2026-10-26 E2E 3회차). 최신 대조는 화면 몫이다(저장소는 공식 번호만 대조 — 최신이 아닌 리비전 발행은 원래 된다).
-    확인 글 「지금 공식 vN · 「…」 rK」 의 rK 는 그 시나리오 최신·세션 스냅샷·공식 시나리오 리비전 목록(`publish_preview` 의
-    `official_revisions` — 리비전 표와 같은 캐시) 차례로 찾는다 — 앞 둘만 보면 공식이 그 시나리오 최신이 아니고 세션이 그것을
-    들고 있지 않을 때 번호가 빠져 지금 공식이 최신처럼 읽혔다(2026-10-26 E2E 3회차). 목록 한도 밖이면 번호를 뺀다.
+    확인 글 「지금 공식 vN · 「…」 rK」 의 rK 는 발행 줄이 들고 온 번호다(`official_release_revision_no` — 저장소
+    `latest_release_row` 가 발행한 일정 리비전의 `revision_no` 를 함께 읽어 `EquipmentRelease.revision_no` 로 싣는다, 목록 캐시와
+    같은 칸). 그 시나리오 최신·세션 스냅샷만 보면 공식이 그 시나리오 최신이 아니고 세션이 그것을 들고 있지 않을 때 번호가 빠져
+    지금 공식이 최신처럼 읽혔고(2026-10-26 E2E 3회차), 리비전 목록에서 찾으면 공식이 목록 한도(최근
+    `SCHEDULE_REVISION_LIST_LIMIT` 줄) 밖일 때 빠졌다(개선 I25). 발행 줄에 번호가 없는 옛 캐시 값이면 최신·세션 스냅샷에서만 찾고,
+    없으면 번호를 뺀다.
     고른 리비전이 이미 지금 공식이면 저장소가 쓰지 않고 그 발행을 돌려주므로 확인 글은 「→ 새 공식」 없이 지금 공식과 「이미 공식
     발행인 리비전입니다 — 발행해도 바뀌지 않습니다」 만 적고, 누르면 「「…」 rK은 이미 공식 vN입니다 — 새로 발행하지
     않았습니다」 다(`already_released_message` — 「공식 vN로 발행했습니다」 로 새 발행처럼 알렸다, 2026-10-27 E2E). 단추는 끄지
@@ -2415,12 +2432,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **이대로 이어 쓰기** 확인 체크 key 꼬리는 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전 번호·빠지는 호기 수 —
     `continue_confirm_key`)이다(되돌리기 체크와 같은 까닭). 발행 번호 0 은 「v0」 이 아니라 「발행 없음」(`release_words`)이다.
   - **배치 차이(설비 0031 — S4)**. 시나리오 표 「저장된 배치 차이」 는 최신의 **저장된** 행(원시 — 「호기 3행·요소 1개」 ·
-    `EquipmentScenarioSummary.latest_layout_rows`), 리비전 표 「배치」 는 그 리비전의 저장된 행이다(목록에는 실효를 셀 재료가 없다
-    — 설계 8-2). 옛 판(0031 을 모르는 배포)이 차이 있는 리비전 뒤에 저장한 리비전(옛 코드 흔적 — 목록 셈 `layout_trace_count` 와
+    `EquipmentScenarioSummary.latest_layout_rows`), 리비전 표 「배치」 는 그 리비전의 저장된 행이다. 저장된 행 뒤 괄호에 지금 공식과 견준
+    실효 표지 — 「(공식과 같음)」·「(실효 호기 2대 · 지운 호기 1행)」(`layout_effect_words`) — 를 붙이는데, 재료는 발행 확인 글과
+    **같은 판정·같은 캐시 칸**(`_latest_layout_previews` → `load_layout_publish_preview(공통 최신, 최신, 최신)`)이라 배치 차이가 있는
+    시나리오의 **최신**만 센다(시나리오 표 전부와 리비전 표 최신 줄 — 옛 리비전 줄은 원시, 판정을 읽지 못한 시나리오도 원시). 칸이
+    시나리오 수보다 적으면 회차마다 합친 본문을 다시 지어 판정 캐시 칸을 32 로 둔다(`LAYOUT_PUBLISH_PREVIEW_CACHE_ENTRIES`, E2E #11·#82). 옛 판(0031 을 모르는 배포)이 차이 있는 리비전 뒤에 저장한 리비전(옛 코드 흔적 — 목록 셈 `layout_trace_count` 와
     같은 규칙 `layout_trace_sources`)은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 「rT 은 옛 판이 저장해 rN 의 가정 배치가
     빠졌습니다 — rN 으로 되돌리기」 경고, 시나리오 표 아래에 흔적이 있는 시나리오 한 줄. 저장은 막지 않는다(설계 14장).
     「배치 차이 모두 지우기」(`clearable_layout` — 가정 시나리오 최신에 차이가 있을 때만)는 확인 체크 key 꼬리가 (시나리오, 최신
-    id)라 남의 저장 뒤 체크가 풀리고, `clear_layout_overlay(expected_latest_schedule_revision_id=)` 뒤 이 세션이 그 시나리오를
+    id)라 남의 저장 뒤 체크가 풀리고 — 켠 회차의 값(`CLEAR_LAYOUT_AGREED_KEY`)과 다음 회차 최신을 견줘 「확인한 뒤 … 의 최신이
+    바뀌어(r2 → 지금 r3) … 확인 체크를 풀었습니다」 를 한 번 알린다(팝오버 안 체크 칸 위, 지울 것이 없어 단추째 사라졌으면 시나리오 줄
+    아래 늘 서 있는 칸 — `clear_layout_unchecked_notice`, 되돌리기와 같은 꼴. 제 쓰기·거절은 `_written`·`_refused` 가 그 값을 비워
+    알리지 않는다, E2E #9·#56) — `clear_layout_overlay(expected_latest_schedule_revision_id=)` 뒤 이 세션이 그 시나리오를
     보고 저장 안 한 편집이 없으면 새 리비전으로 옮긴다(되돌리기와 같다). 「공식으로 발행」 은 발행 쓰기와 **같은 판정**
     (`equipment_repository._layout_publish_preview` → `load_layout_publish_preview` — 불변 id 셋 + 층 현행값 세대 키)을 미리 읽어
     막히면 단추를 끄고 막힘 글(`layout_publish_blocked_words` — 발행 쓰기 거부와 같은 한 곳)을 적으며, 공식과 같아진 차이만
@@ -3180,7 +3203,8 @@ RQ_MODULE
     입장 화면 Summary 가 읽는 공용 프로필·시나리오를 바꾸는 저장 길은
     `intro_summary.forget_intro_summary_check` 도 부른다(새 길은 `tests/test_summary_recheck_paths.py` 에 더한다).
 23. **모든 화면에서 회차마다 그리는 공통 요소는 DB 를 읽지 않는다.** 머리 띠·사이드바 조건 줄은 활성화·확인 때
-    세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`intro_summary.latest_official_revision`)만 읽고
+    세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`newer_active_revision_no`·
+    `intro_summary.latest_official_revision` — 확인은 그리기 밖에서 30초에 한 번)만 읽고
     저장소는 팝업을 연 동안에만 읽는다 — `tests/test_app_navigation.py` 가 그리는 동안 저장소·연결 호출 0 을 지킨다.
     HOME 제목 줄 주요 Case 칩도 같다 — 공식은 `intro_summary.latest_official_identity`, Case 는 주요 Case 쓰기 세대를
     키로 한 캐시(`load_main_case_targets` — `clear_global_main_cases_cache()` 가 함께 비운다)다. 같은 시험이 칩도 감싸

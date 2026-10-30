@@ -432,7 +432,13 @@ def load_layout_overlay_extent(
     )
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+# 발행 배치 판정 칸 수. 시나리오 관리 「설비 시나리오」 구획은 배치 차이가 있는 시나리오마다 그
+# 최신의 판정 한 칸(시나리오 표 실효 표지)과 발행 팝업의 (고른 리비전, 최신) 한 칸을 회차마다 읽는다
+# — 칸이 시나리오 수보다 적으면 회차마다 합친 본문을 다시 짓는다. 값은 정수 몇 개라 칸이 싸다.
+LAYOUT_PUBLISH_PREVIEW_CACHE_ENTRIES = 32
+
+
+@st.cache_data(show_spinner=False, max_entries=LAYOUT_PUBLISH_PREVIEW_CACHE_ENTRIES)
 def _load_layout_publish_preview_payload(
     database_path: str,
     common_revision_id: str,

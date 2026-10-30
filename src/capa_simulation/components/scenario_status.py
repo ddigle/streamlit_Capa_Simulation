@@ -85,10 +85,12 @@ from capa_simulation.scenario_activation import (
     active_scenario_label,
     discard_unsaved_scenario_changes,
     has_unsaved_scenario_changes,
+    newer_active_revision_no,
+    remember_active_scenario_latest,
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
-from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.korean_particle import object_particle, with_topic_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.sidebar_status import (
     CONDITION_DIALOG_FRAGMENT_KEY,
@@ -130,7 +132,8 @@ _NOTE_PREVIEW_LIMIT = 40
 def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
     """패널의 시나리오 줄. **세션만 읽는다** — 회차마다 저장소를 보지 않는다.
 
-    이름 줄 오른쪽에 상태 배지 하나(공식 vN / 저장된 리비전 / 미저장 변경), 값 칸에
+    이름 줄 오른쪽에 상태 배지 하나(미저장 변경 / 공식 vN / 최신 rN 있음 / 저장된 리비전 — 낡음은
+    `app.py` 가 30초에 한 번 확인해 둔 세션 값 `newer_active_revision_no`), 값 칸에
     「시나리오명 · rN」. 저장하지 않은 편집이 있으면 값 칸 왼쪽에 주황 띠가 서고 팝업이 저장
     구획으로 열린다. 불러오기·저장 알림은 다음 회차에 한 번, 값 칸 바로 아래에 선다.
 
@@ -157,6 +160,7 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
             active_revision_id=active_persisted_revision_id(),
             official=latest_official_revision(),
             unsaved=unsaved,
+            newer_revision_no=newer_active_revision_no(),
         ),
         pending=unsaved,
         on_click=open_scenario_dialog,
@@ -185,11 +189,16 @@ def scenario_status_badge(
     active_revision_id: str | None,
     official: tuple[str, int] | None,
     unsaved: bool,
+    newer_revision_no: int | None = None,
 ) -> str:
-    """시나리오 이름 줄의 배지 하나. 미저장이 먼저다 — 머리 띠(`header_lines`)와 같은 차례.
+    """시나리오 이름 줄의 배지 하나. 미저장 → 공식 vN → 최신 rN 있음 → 저장된 리비전 차례다 —
+    머리 띠(`header_lines`)와 같고, 설비 시나리오 줄(공식 발행이면 「공식 vN」 그대로)과 같은
+    꼴이다.
 
     `official` 은 이 세션이 마지막으로 확인한 최신 공식버전(리비전 id, 번호)이다. 머리 띠와 같은
     값이라 신선도도 같다(30초에 한 번, 이 세션에서 공식버전을 지정하면 곧바로).
+    `newer_revision_no` 는 그 시나리오에 올라와 있는 리비전보다 새 리비전이 있을 때 그 최신
+    번호다(E2E #102 — 남의 저장).
     """
     if unsaved:
         return ":orange-badge[미저장 변경]"
@@ -197,6 +206,8 @@ def scenario_status_badge(
         return ""
     if official is not None and official[0] == active_revision_id:
         return f":green-badge[공식 v{official[1]}]"
+    if newer_revision_no is not None:
+        return f":orange-badge[최신 r{newer_revision_no} 있음]"
     return ":gray-badge[저장된 리비전]"
 
 
@@ -355,10 +366,17 @@ def _render_dialog_body(
         st.error(f"시나리오 저장소를 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
 
+    active_listed = next(
+        (scenario for scenario in scenarios if scenario.scenario_id == active_scenario_id), None
+    )
+    if active_listed is not None:
+        # 방금 읽은 목록이 그 시나리오의 최신이다 — 줄 배지도 다음 회차에 이 값을 쓴다.
+        remember_active_scenario_latest(active_listed.scenario_id, active_listed.active_revision_no)
     _render_dialog_header(
         active_revision_id=active_revision_id,
         official=(official.revision_id, official.release_no) if official is not None else None,
         unsaved=unsaved,
+        newer_revision_no=newer_active_revision_no(),
     )
     if not scenarios:
         st.info("저장된 시나리오가 없습니다.")
@@ -381,6 +399,7 @@ def _render_dialog_body(
             active_scenario_id=active_scenario_id,
             active_revision_id=active_revision_id,
             pending_edits=pending_edits,
+            on_management_page=on_management_page,
         )
         return
     _render_load(
@@ -412,12 +431,19 @@ def _render_rename_route(*, on_management_page: bool) -> None:
 
 
 def _render_dialog_header(
-    *, active_revision_id: str | None, official: tuple[str, int] | None, unsaved: bool
+    *,
+    active_revision_id: str | None,
+    official: tuple[str, int] | None,
+    unsaved: bool,
+    newer_revision_no: int | None = None,
 ) -> None:
     """지금 올라와 있는 것 한 줄과 그 상태 배지. 이 팝업이 무엇을 바꾸는지의 기준점이다."""
     label = active_scenario_label()
     badge = scenario_status_badge(
-        active_revision_id=active_revision_id, official=official, unsaved=unsaved
+        active_revision_id=active_revision_id,
+        official=official,
+        unsaved=unsaved,
+        newer_revision_no=newer_revision_no,
     )
     if label is None:
         st.caption("올라와 있는 리비전이 없습니다. 아래에서 불러오세요.")
@@ -559,6 +585,39 @@ def _pending_save_refusal(pending_edits: Sequence[str]) -> str:
     )
 
 
+def missing_scenario_notice(name: str | None, status: str | None) -> str:
+    """올라와 있는 시나리오가 목록(보관본 빼고)에 없어 새 리비전을 저장하지 못하는 까닭과 다음
+    길(E2E #55). `status` 는 보관본까지 본 그 시나리오의 상태다 — 「ARCHIVED」(그 사이 보관됨 —
+    목록으로 되돌리면 저장할 수 있다), 「MISSING」(보관본에도 없음 — 영구 삭제됨), None(읽지 못함).
+    이 세션이 보관하면 활성화를 풀므로(`scenario_management._render_archive`) 여기 오는 것은 다른
+    세션의 일이다. 어느 경우든 지금 편집본은 「지금 편집본 복제」 로 새 시나리오에 남길 수 있다."""
+    label = with_topic_particle(f"「{literal_markdown(name)}」" if name else "올라와 있는 시나리오")
+    keep = (
+        "지금 편집본을 따로 남기려면 시나리오 관리 「지금 편집본 복제」 로 새 시나리오를 만들고, "
+        "다른 시나리오는 이 팝업 「불러오기」 에서 불러옵니다."
+    )
+    if status == "ARCHIVED":
+        return (
+            f"{label} 그 사이 다른 사용자가 보관해 새 리비전을 저장할 수 없습니다 — 저장하려면 "
+            "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
+            f"저장하세요. {keep}"
+        )
+    if status == "MISSING":
+        return f"{label} 그 사이 다른 사용자가 영구 삭제해 새 리비전을 저장할 수 없습니다 — {keep}"
+    return f"{label} 시나리오 목록에서 찾지 못해 새 리비전을 저장할 수 없습니다 — {keep}"
+
+
+def _missing_scenario_status(repository: DuckDBScenarioRepository, scenario_id: str) -> str | None:
+    """목록(보관본 빼고)에 없는 시나리오의 상태 — 보관본까지 보아 「ARCHIVED」 따위, 보관본에도
+    없으면 「MISSING」, 읽지 못하면 None."""
+    try:
+        listed = repository.list_scenarios(include_archived=True)
+    except BOOTSTRAP_ERRORS:
+        return None
+    found = next((item for item in listed if item.scenario_id == scenario_id), None)
+    return "MISSING" if found is None else found.status
+
+
 def _render_revision_save(
     repository: DuckDBScenarioRepository,
     scenario_by_id: Mapping[str, ScenarioSummary],
@@ -566,18 +625,34 @@ def _render_revision_save(
     active_scenario_id: str | None,
     active_revision_id: str | None,
     pending_edits: Sequence[str] = (),
+    on_management_page: bool = False,
 ) -> None:
     """새 리비전 저장 구획. 저장 대상은 **늘 올라와 있는 시나리오**다.
 
     막힌 저장의 까닭은 이 구획 안에 적는다. 팝업은 프래그먼트 재실행으로 닫히지 않으므로 팝업
-    밖에 한 번 더 적던 장치(접히는 상자 시절의 popover 우회)가 필요 없다.
+    밖에 한 번 더 적던 장치(접히는 상자 시절의 popover 우회)가 필요 없다. 올라와 있는 시나리오가
+    그 사이 보관·삭제돼 목록에 없으면 까닭과 다음 길을 적고 시나리오 관리로 가는 링크를 세운다
+    (`missing_scenario_notice` — 그 화면에서 연 팝업이면 링크 없이 글만).
     """
     if active_scenario_id is None or active_revision_id is None:
         st.info("먼저 저장된 리비전을 불러오세요.")
         return
     active_summary = scenario_by_id.get(active_scenario_id)
     if active_summary is None:
-        st.warning("올라와 있는 시나리오 정보를 찾지 못했습니다.")
+        label = active_scenario_label()
+        st.warning(
+            missing_scenario_notice(
+                label.scenario_name if label is not None else None,
+                _missing_scenario_status(repository, active_scenario_id),
+            ),
+            icon=":material/inventory_2:",
+        )
+        if not on_management_page:
+            render_page_link(
+                SCENARIO_MANAGEMENT.path,
+                label="시나리오 관리로 가기",
+                icon=":material/arrow_forward:",
+            )
         return
     # 공정 필터·조회기간은 리비전 프리셋이 담는다. 편집이 없어도 저장할 것이 있다는 사실을 남긴다.
     st.caption(

@@ -438,6 +438,19 @@ def test_a_saved_revision_shows_its_save_date_instead_of_the_registration() -> N
         assert bottom == "DEMO-CODE-70 · 적용 26.07–28.12 · 26.10.05 저장"
 
 
+def test_a_newer_revision_saved_elsewhere_takes_the_saved_status_slot() -> None:
+    """E2E #102 — 그 시나리오에 더 새 리비전이 있으면 상태가 「최신 r5 있음」 이다(사이드바 배지와
+    같은 차례 — 공식버전·미저장이 먼저)."""
+    top, _ = header_lines(LABEL, official=None, unsaved=False, newer_revision_no=5)
+    assert top == "DEMO 시나리오 · r4 월간 보정 · 최신 r5 있음"
+    official, _ = header_lines(
+        LABEL, official=("revision-4", 4), unsaved=False, newer_revision_no=5
+    )
+    assert official.endswith(" · 공식 v4")
+    unsaved, _ = header_lines(LABEL, official=None, unsaved=True, newer_revision_no=5)
+    assert unsaved.endswith(" · 미저장 변경")
+
+
 def test_unsaved_edits_win_the_status_slot() -> None:
     """적용했지만 저장하지 않은 편집이 있으면 상태는 `미저장 변경` 이다(공식버전 위에서도)."""
     top, bottom = header_lines(LABEL, official=("revision-4", 4), unsaved=True)

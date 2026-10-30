@@ -320,7 +320,12 @@ class EquipmentScenarioSummary:
 
 @dataclass(frozen=True)
 class EquipmentRelease:
-    """공식 발행 한 줄(append-only). 번호(「공식 vN」)는 전역 하나다."""
+    """공식 발행 한 줄(append-only). 번호(「공식 vN」)는 전역 하나다.
+
+    `revision_no` 는 발행한 일정 리비전의 그 시나리오 안 번호(「rN」)다 — 리비전 목록이 최근 n
+    줄까지라 공식이 그 밖에 있어도 「지금 공식 v3 · 「운영 일정」 r5」 를 적게 발행 줄이 함께
+    읽는다(리비전 번호는 불변). 모르면(옛 캐시 값) None.
+    """
 
     release_no: int
     equipment_scenario_id: str
@@ -328,6 +333,7 @@ class EquipmentRelease:
     released_at: datetime
     released_by: str | None = None
     note: str | None = None
+    revision_no: int | None = None
 
 
 @dataclass(frozen=True)
@@ -4413,6 +4419,11 @@ def _release(row: Mapping[str, object]) -> EquipmentRelease:
         released_at=as_datetime(row["released_at"]),
         released_by=_optional_str(row["released_by"]),
         note=_optional_str(row["note"]),
+        revision_no=(
+            as_int(row["revision_no"], "공식 발행 리비전 번호")
+            if row.get("revision_no") is not None
+            else None
+        ),
     )
 
 

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
@@ -18,6 +19,7 @@ from capa_simulation.io.reference_cache import (
     activate_persisted_reference_tables,
     clear_persisted_reference_tables,
 )
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_scenario_snapshot,
@@ -47,6 +49,13 @@ OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY = "official_scenario_bootstrap_attempted"
 # 깊은 복사한다)을 꺼내지 않게 한다(2026-10-03 사용자 원칙). 핫리로드 뒤에도 읽히게 클래스가
 # 아니라 평범한 dict 로 둔다.
 ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
+# 올라와 있는 시나리오의 최신 리비전 — {확인 시각, 시나리오 id, 최신 rN}. 남이 그 시나리오에 새
+# 리비전을 저장했는가를 사이드바 시나리오 줄 배지·머리 띠(「최신 rN 있음」 — 설비 시나리오 줄과
+# 같은 말)가 이 값만 읽어 안다. `app.py` 가 `check_active_scenario_latest` 로
+# `LATEST_RECHECK_SECONDS` 에 한 번 저장소를 본다(공식버전 확인 `intro_summary.RECHECK_SECONDS` 와
+# 같은 주기 — AGENTS 규칙 23).
+ACTIVE_SCENARIO_LATEST_KEY = "active_scenario_latest_check_v1"
+LATEST_RECHECK_SECONDS = 30.0
 
 # HOME 토글 키와 기본값은 UI 의존성이 없는 `home_state` 에서 함께 가져온다. 화면 모듈을
 # 거꾸로 import 하지 않아 순환이 없고, 키를 바꾸거나 토글을 추가해도 초기화가 함께 바뀐다.
@@ -190,6 +199,64 @@ def active_scenario_label() -> ActiveScenarioLabel | None:
         return ActiveScenarioLabel(**held)
     except TypeError:
         return None
+
+
+def remember_active_scenario_latest(
+    scenario_id: str, latest_revision_no: int | None, *, now: float | None = None
+) -> None:
+    """그 시나리오의 최신 리비전 번호를 지금 본 값으로 적는다(`ACTIVE_SCENARIO_LATEST_KEY`).
+    시나리오 팝업도 목록을 읽은 회차에 부른다 — 팝업과 줄이 서로 다른 말을 오래 하지 않게."""
+    st.session_state[ACTIVE_SCENARIO_LATEST_KEY] = {
+        "checked_at": time.monotonic() if now is None else now,
+        "scenario_id": scenario_id,
+        "latest_revision_no": latest_revision_no,
+    }
+
+
+def check_active_scenario_latest(database_path: str, *, now: float | None = None) -> None:
+    """올라와 있는 시나리오의 최신 리비전 번호를 확인해 세션에 적는다(E2E #102).
+
+    `app.py` 가 공식버전 요약 뒤·머리 띠 앞에서 **매 회차** 부르지만, 같은 시나리오를
+    `LATEST_RECHECK_SECONDS` 안에 본 적이 있으면 저장소를 보지 않는다 — 회차마다 그리는 줄·띠는 이
+    값만 읽는다(규칙 23). 다른 시나리오를 불러온 회차에는 곧바로 다시 본다. 보관본도 본다 — 보관해도
+    최신 번호는 그대로다(목록에 없으면 None). 읽지 못하면 들고 있던 값을 두고 다음 주기에 다시 본다.
+    """
+    scenario_id = active_persisted_scenario_id()
+    if scenario_id is None:
+        st.session_state.pop(ACTIVE_SCENARIO_LATEST_KEY, None)
+        return
+    moment = time.monotonic() if now is None else now
+    held = st.session_state.get(ACTIVE_SCENARIO_LATEST_KEY)
+    same = isinstance(held, dict) and held.get("scenario_id") == scenario_id
+    if same and isinstance(held, dict):
+        checked_at = held.get("checked_at")
+        if isinstance(checked_at, float) and moment - checked_at < LATEST_RECHECK_SECONDS:
+            return
+    try:
+        listed = get_scenario_repository(database_path).list_scenarios(include_archived=True)
+    except BOOTSTRAP_ERRORS:
+        if same and isinstance(held, dict):
+            held["checked_at"] = moment
+        return
+    found = next((item for item in listed if item.scenario_id == scenario_id), None)
+    remember_active_scenario_latest(
+        scenario_id, found.active_revision_no if found is not None else None, now=moment
+    )
+
+
+def newer_active_revision_no() -> int | None:
+    """올라와 있는 리비전보다 새 리비전이 그 시나리오에 있으면 그 최신 번호(「최신 rN 있음」),
+    없거나 모르면 None. **세션만 읽는다**(`check_active_scenario_latest` 가 적은 값과 이름표). 제
+    저장 뒤에는 이름표 번호가 확인 값 이상이라 서지 않는다 — 리비전은 append-only 라 확인 값은 늘
+    아래 한계다."""
+    label = active_scenario_label()
+    held = st.session_state.get(ACTIVE_SCENARIO_LATEST_KEY)
+    if label is None or not isinstance(held, dict) or held.get("scenario_id") != label.scenario_id:
+        return None
+    latest = held.get("latest_revision_no")
+    if not isinstance(latest, int) or latest <= label.revision_no:
+        return None
+    return latest
 
 
 def rename_active_scenario_label(scenario_id: str, scenario_name: str) -> None:

@@ -69,6 +69,7 @@ from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
 from capa_simulation.scenario_activation import (
     bootstrap_latest_official_scenario,
+    check_active_scenario_latest,
     has_unsaved_scenario_changes,
 )
 from capa_simulation.scenario_preset_state import apply_pending_scenario_preset
@@ -267,6 +268,10 @@ with pinned_connections(DUCKDB_PATH):
     # 보낸다 — 페이지가 `st.stop()` 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 회차마다
     # 같은 값이라 한 번만 실제로 오가고, 시나리오 전체 Capa 계산은 HOME 과 한 칸을 나눠 쓴다.
     render_intro_summary(str(DUCKDB_PATH.resolve()))
+    # 올라와 있는 시나리오에 남이 새 리비전을 저장했는가 — 사이드바 시나리오 줄 배지·머리 띠의
+    # 「최신 rN 있음」. 공식버전 확인과 같은 주기(30초)에 한 번만 저장소를 보고, 줄·띠는 세션 값만
+    # 읽는다(규칙 23). 머리 띠보다 먼저다.
+    check_active_scenario_latest(str(DUCKDB_PATH.resolve()))
 
     pages = build_navigation_pages()
     navigation = st.navigation(pages.ordered, position="hidden")

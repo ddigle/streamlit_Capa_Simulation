@@ -245,6 +245,16 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         " 그린다. 두 칸을 함께 옮긴다"
     ),
     (
+        "src/capa_simulation/components/equipment_scenario_management.py",
+        "render_equipment_scenario_management",
+        "CLEAR_LAYOUT_AGREED_KEY",
+    ): (
+        "알림 칸이 아니라 앞 회차에 켠 「배치 차이 모두 지우기」 확인 체크의 값(시나리오·최신"
+        " id·번호 — 되돌리기 `RESTORE_AGREED_KEY` 와 같은 꼴)이다. 회차마다 꺼내 지금 최신과"
+        " 견주고, 체크가 풀렸으면 그 까닭(「r2 → 지금 r3」)을 같은 회차에 체크 칸 위나 단추가"
+        " 사라진 자리에 그린다"
+    ),
+    (
         "src/capa_simulation/components/equipment_scenario_status.py",
         "render_equipment_scenario_row",
         "FLASH_KEY",

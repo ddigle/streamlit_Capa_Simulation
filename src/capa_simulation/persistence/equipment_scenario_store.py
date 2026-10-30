@@ -141,8 +141,18 @@ _SCHEDULE_REVISION_PROJECTION = """
      WHERE g.schedule_revision_id = s.schedule_revision_id) AS layout_label_count
 """
 
+# 공식 발행 한 줄 — 발행한 일정 리비전의 번호(`revision_no` — 화면의 「rN」)를 함께 싣는다. 리비전
+# 목록은 최근 n 줄까지라(`equipment_cache.SCHEDULE_REVISION_LIST_LIMIT`) 공식이 그 밖으로 밀리면
+# 목록에서 번호를 찾지 못한다 — 발행 줄이 늘 번호를 들고 온다.
 _RELEASE_PROJECTION = """
-    release_no, equipment_scenario_id, schedule_revision_id, released_at, released_by, note
+    o.release_no AS release_no,
+    o.equipment_scenario_id AS equipment_scenario_id,
+    o.schedule_revision_id AS schedule_revision_id,
+    o.released_at AS released_at,
+    o.released_by AS released_by,
+    o.note AS note,
+    (SELECT s.revision_no FROM equipment_ops.equipment_schedule_revision s
+     WHERE s.schedule_revision_id = o.schedule_revision_id) AS revision_no
 """
 
 
@@ -265,13 +275,14 @@ def scenario_name(connection: duckdb.DuckDBPyConnection, equipment_scenario_id: 
 
 
 def latest_release_row(connection: duckdb.DuckDBPyConnection) -> dict[str, object] | None:
-    """최신 공식 발행 한 줄(`release_no` 가 가장 큰 것). 발행이 없으면 None."""
+    """최신 공식 발행 한 줄(`release_no` 가 가장 큰 것 — 발행한 리비전 번호 `revision_no` 와 함께).
+    발행이 없으면 None."""
     found = _rows(
         connection,
         f"""
         SELECT {_RELEASE_PROJECTION}
-        FROM equipment_ops.equipment_official_release
-        ORDER BY release_no DESC LIMIT 1
+        FROM equipment_ops.equipment_official_release o
+        ORDER BY o.release_no DESC LIMIT 1
         """,
     )
     return found[0] if found else None
