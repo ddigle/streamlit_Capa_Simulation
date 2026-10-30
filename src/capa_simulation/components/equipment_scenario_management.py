@@ -441,7 +441,7 @@ def scenario_rows(
 ) -> pd.DataFrame:
     """시나리오 표 — 이름·상태·최신·리비전 수·저장된 배치 차이. 공식은 「공식 vN · rM」(rM 은 공식
     발행 리비전 — 그 시나리오 최신이 아닐 수 있다), 그 밖은 「활성」. 공식 리비전 번호를 모르면
-    (`official_revision_no` 가 None — 목록 한도 밖) 「공식 vN」 만 적는다.
+    (`official_revision_no` 가 None) 「공식 vN」 만 적는다.
 
     「저장된 배치 차이」 는 최신 리비전에 **저장된** 차이 행 수(원시 — 「호기 3행·요소 1개」)다.
     `layout_previews`(시나리오 id → 그 최신의 발행 배치 판정 — `_latest_layout_previews`)가 있으면
@@ -776,7 +776,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     st.dataframe(
         scenario_rows(
             session,
-            official_revision_no=_official_revision_no(database_path, session),
+            official_revision_no=official_release_revision_no(session),
             layout_previews=layout_previews,
         ),
         hide_index=True,
@@ -1896,26 +1896,21 @@ def publish_preview(
     session: EquipmentSession,
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
-    *,
-    official_revisions: Sequence[EquipmentScheduleRevisionSummary] = (),
 ) -> list[str]:
     """발행 전에 보일 줄 — 지금 공식 → 새 공식, 고른 리비전이 그 시나리오 최신이 아니면 그 사실.
 
-    지금 공식의 리비전 번호는 그 시나리오 최신·이 세션의 스냅샷·`official_revisions`(공식 시나리오의
-    리비전 목록) 차례로 찾는다 — 공식이 그 시나리오 최신이 아니고 이 세션이 그것을 들고 있지 않으면
-    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다. 고른 리비전이 이미 지금
-    공식이면 발행해도 쓰지 않으므로(저장소가 그 발행을 돌려준다) 「→ 새 공식」 을 적지 않고 지금
-    공식과 그 사실만 적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도 바뀌지 않습니다」 가
-    섰다).
+    지금 공식의 리비전 번호는 발행 줄이 들고 온 번호다(`official_release_revision_no` — 공식이 그
+    시나리오 최신이 아니고 리비전 목록 한도 밖에 있어도 나온다). 모르면 번호를 적지 않는다. 고른
+    리비전이 이미 지금 공식이면 발행해도 쓰지 않으므로(저장소가 그 발행을 돌려준다) 「→ 새 공식」
+    을 적지 않고 지금 공식과 그 사실만 적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도
+    바뀌지 않습니다」 가 섰다).
     """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
     if release is not None:
         official = session.catalog.scenario(release.equipment_scenario_id)
         official_name = official.scenario_name if official is not None else "?"
-        official_revision = _revision_no(
-            session, release.schedule_revision_id, official, official_revisions
-        )
+        official_revision = official_release_revision_no(session)
         current = f"지금 공식 v{release.release_no} · 「{literal_markdown(official_name)}」" + (
             f" r{official_revision}" if official_revision is not None else ""
         )
@@ -1938,28 +1933,25 @@ def publish_preview(
     return lines
 
 
-def _revision_no(
-    session: EquipmentSession,
-    schedule_revision_id: str,
-    scenario: EquipmentScenarioSummary | None,
-    revisions: Sequence[EquipmentScheduleRevisionSummary],
-) -> int | None:
-    if scenario is None:
+def official_release_revision_no(session: EquipmentSession) -> int | None:
+    """지금 공식 발행 리비전의 번호(「rN」 — 시나리오 표 「상태」 의 「공식 v3 · r5」, 발행 확인
+    글의 「지금 공식 v3 · 「운영 일정」 r5」). 발행 줄이 들고 온 번호(`EquipmentRelease.revision_no`
+    — 리비전 목록 한도 밖이어도 있다)가 먼저이고, 그것이 없는 옛 캐시 값이면 그 시나리오 최신·이
+    세션의 스냅샷에서 찾는다. 발행이 없거나 어디에도 없으면 None — 틀린 번호를 짓지 않는다."""
+    release = session.catalog.latest_release
+    if release is None:
         return None
-    if scenario.latest_schedule_revision_id == schedule_revision_id:
-        return scenario.latest_revision_no
-    if session.snapshot is not None and session.snapshot.schedule is not None:
-        if session.snapshot.schedule.schedule_revision_id == schedule_revision_id:
-            return session.snapshot.schedule.revision_no
-    return next(
-        (
-            item.revision_no
-            for item in revisions
-            if item.schedule_revision_id == schedule_revision_id
-            and item.equipment_scenario_id == scenario.equipment_scenario_id
-        ),
-        None,
-    )
+    if release.revision_no is not None:
+        return release.revision_no
+    official = session.catalog.scenario(release.equipment_scenario_id)
+    if official is None:
+        return None
+    if official.latest_schedule_revision_id == release.schedule_revision_id:
+        return official.latest_revision_no
+    held = session.snapshot.schedule if session.snapshot is not None else None
+    if held is not None and held.schedule_revision_id == release.schedule_revision_id:
+        return held.revision_no
+    return None
 
 
 def publish_seen_token(
@@ -2036,35 +2028,6 @@ def release_words(release_no: int) -> str:
     return f"v{release_no}" if release_no > 0 else "발행 없음"
 
 
-def _official_revisions(
-    database_path: str, session: EquipmentSession
-) -> tuple[EquipmentScheduleRevisionSummary, ...]:
-    """지금 공식 시나리오의 리비전 목록(캐시 — 고른 시나리오가 공식이면 리비전 표와 같은 칸). 발행이
-    없거나 읽지 못하면 빈 묶음이다(확인 글이 지금 공식 번호만 빼고 선다)."""
-    release = session.catalog.latest_release
-    if release is None:
-        return ()
-    try:
-        return load_equipment_schedule_revisions(database_path, release.equipment_scenario_id)
-    except BOOTSTRAP_ERRORS:
-        return ()
-
-
-def _official_revision_no(database_path: str, session: EquipmentSession) -> int | None:
-    """지금 공식 발행 리비전의 번호(시나리오 표 「상태」 — 「공식 v3 · r5」). 발행 확인 글과 같은
-    길로 찾는다(그 시나리오 최신·이 세션의 스냅샷·공식 시나리오 리비전 목록 — `_revision_no`).
-    발행이 없거나 어디에도 없으면 None."""
-    release = session.catalog.latest_release
-    if release is None:
-        return None
-    return _revision_no(
-        session,
-        release.schedule_revision_id,
-        session.catalog.scenario(release.equipment_scenario_id),
-        _official_revisions(database_path, session),
-    )
-
-
 def _render_publish(
     database_path: str,
     session: EquipmentSession,
@@ -2074,12 +2037,7 @@ def _render_publish(
     # 앞 회차(누르기 전)에 그린 확인 글의 값 — 단추를 누르지 않은 회차만 적는다(write_guard).
     seen_before = _publish_seen_before(seen(PUBLISH_SEEN_KEY))
     release_no = session.catalog.release_no or 0
-    for line in publish_preview(
-        session,
-        scenario,
-        revision,
-        official_revisions=_official_revisions(database_path, session),
-    ):
+    for line in publish_preview(session, scenario, revision):
         st.caption(line)
     # 배치 차이가 있으면 발행하지 않는다(LY5 「공식으로 올리기」 전까지 — Q4). 발행 쓰기와 같은
     # 판정을 미리 읽어 단추를 끄거나 정리 리비전으로 발행한다는 것을 적는다.

@@ -8,7 +8,8 @@
   바뀌었어도 거절한다 — 「rN은 최신이 아닙니다」 를 본 적 없는 사람이 최신이 아닌 리비전을 말없이
   내지 않게(2026-10-26 E2E).
 - 확인 글의 「지금 공식 v1 · 「운영 일정」 r1」 은 공식이 그 시나리오 최신이 아니고 이 세션이 그
-  리비전을 들고 있지 않아도 번호를 적는다(공식 시나리오의 리비전 목록에서 찾는다 — 2026-10-26 E2E).
+  리비전을 들고 있지 않아도 번호를 적는다(2026-10-26 E2E). 번호는 발행 줄이 들고 온다 — 리비전
+  목록 한도(최근 n 줄) 밖이어도 적는다(개선 I25).
 - 「이대로 이어 쓰기」 확인 체크 key 에 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전 번호·빠지는
   호기 수)을 붙인다 — 글이 바뀌면 체크가 풀린 새 칸으로 선다.
 """
@@ -36,6 +37,7 @@ from capa_simulation.components.equipment_scenario_management import (
     PUBLISH_BUTTON_KEY,
     SCENARIO_KEY,
     continue_confirm_key,
+    official_release_revision_no,
     publish_preview,
     publish_seen_refusal,
     publish_seen_token,
@@ -43,9 +45,11 @@ from capa_simulation.components.equipment_scenario_management import (
     scenario_rows,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
+from capa_simulation.persistence import equipment_cache
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_scenario_cache,
+    load_equipment_scenario_catalog,
 )
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
@@ -241,9 +245,10 @@ def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(
     assert published[release.schedule_revision_id] == 2
 
 
-def test_the_preview_finds_the_official_revision_number_in_the_official_list() -> None:
-    """공식 v3 = 「운영 일정」 r12, 그 시나리오 최신 r14, 이 세션은 「셋업 실무」 r4 — 번호는 공식
-    시나리오의 리비전 목록에서 찾는다. 목록에도 없으면(한도 밖) 번호를 빼고 적는다."""
+def test_the_preview_takes_the_official_revision_number_from_the_release() -> None:
+    """공식 v3 = 「운영 일정」 r12, 그 시나리오 최신 r14, 이 세션은 「셋업 실무」 r4 — 번호는 발행
+    줄이 들고 온 번호다(리비전 목록 한도 밖이어도 있다). 발행 줄에 번호가 없는 옛 캐시 값이고 최신·
+    세션에도 없으면 번호를 빼고 적는다 — 틀린 번호를 짓지 않는다."""
     operations = EquipmentScenarioSummary(
         OPERATIONS,
         "운영 일정",
@@ -253,21 +258,78 @@ def test_the_preview_finds_the_official_revision_number_in_the_official_list() -
         revision_count=14,
     )
     setup = _setup("b4", 4)
-    catalog = EquipmentScenarioCatalog(
-        scenarios=(operations, setup),
-        latest_release=EquipmentRelease(3, OPERATIONS, "s12", datetime(2026, 10, 24)),
-    )
-    session = EquipmentSession(catalog, setup, "b4")
     revision = EquipmentScheduleRevisionSummary("b4", "setup", 4, "save", datetime(2026, 10, 24))
-    listed = tuple(
-        EquipmentScheduleRevisionSummary(f"s{no}", OPERATIONS, no, "save", datetime(2026, 10, no))
-        for no in (14, 13, 12)
-    )
 
-    lines = publish_preview(session, setup, revision, official_revisions=listed)
+    def session_with(release: EquipmentRelease) -> EquipmentSession:
+        catalog = EquipmentScenarioCatalog(scenarios=(operations, setup), latest_release=release)
+        return EquipmentSession(catalog, setup, "b4")
+
+    numbered = session_with(
+        EquipmentRelease(3, OPERATIONS, "s12", datetime(2026, 10, 24), revision_no=12)
+    )
+    assert official_release_revision_no(numbered) == 12
+    lines = publish_preview(numbered, setup, revision)
     assert lines[0] == "지금 공식 v3 · 「운영 일정」 r12 → 새 공식 v4 · 「셋업 실무」 r4"
-    unlisted = publish_preview(session, setup, revision, official_revisions=listed[:2])
-    assert unlisted[0] == "지금 공식 v3 · 「운영 일정」 → 새 공식 v4 · 「셋업 실무」 r4"
+
+    unnumbered = session_with(EquipmentRelease(3, OPERATIONS, "s12", datetime(2026, 10, 24)))
+    assert official_release_revision_no(unnumbered) is None
+    assert publish_preview(unnumbered, setup, revision)[0] == (
+        "지금 공식 v3 · 「운영 일정」 → 새 공식 v4 · 「셋업 실무」 r4"
+    )
+    # 번호 없는 발행 줄이라도 공식이 그 시나리오 최신이면 그 번호다.
+    at_latest = session_with(EquipmentRelease(3, OPERATIONS, "s14", datetime(2026, 10, 24)))
+    assert official_release_revision_no(at_latest) == 14
+
+
+def test_the_release_row_carries_its_revision_number(tmp_path: Path) -> None:
+    """발행 줄은 발행한 일정 리비전의 번호를 함께 읽는다 — 저장소의 최신 발행과 목록 캐시 둘 다."""
+    repository = _seeded(tmp_path)
+    release = repository.latest_equipment_release()
+    assert release is not None and release.revision_no == 1
+    session = _session(repository)
+    repository.save_equipment(
+        _request(
+            session,
+            equipment=_set(session.equipment, "EQ-02", "Qual일정", "2026-08-24"),
+            publish_official=False,
+        )
+    )
+    catalog = load_equipment_scenario_catalog(str(repository.database_path))
+    assert catalog.latest_release is not None
+    assert (catalog.latest_release.release_no, catalog.latest_release.revision_no) == (1, 1)
+    latest = repository.list_schedule_revisions(OPERATIONS)[0]
+    published = repository.publish_equipment_release(
+        latest.schedule_revision_id, released_by=None, note=None, expected_latest_release_no=1
+    )
+    assert (published.release_no, published.revision_no) == (2, 2)
+
+
+def test_the_official_revision_beyond_the_list_limit_is_still_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """개선 I25 — 리비전 목록이 최근 n 줄까지라(`SCHEDULE_REVISION_LIST_LIMIT`, 사내 리뷰
+    202610271800 사외 요청 4) 공식 r1 이 한도 밖으로 밀려도 발행 확인 글과 시나리오 표가 「r1」 을
+    적는다 — 이 세션은 최신 r3 을 들고 있어 최신·세션으로는 찾지 못한다."""
+    repository = _seeded(tmp_path)
+    for day in ("2026-08-24", "2026-08-31"):
+        session = _session(repository)
+        repository.save_equipment(
+            _request(
+                session,
+                equipment=_set(session.equipment, "EQ-02", "Qual일정", day),
+                publish_official=False,
+            )
+        )
+    monkeypatch.setattr(equipment_cache, "SCHEDULE_REVISION_LIST_LIMIT", 1)
+    app = _ok(_tab(repository.database_path).run())
+
+    captions = [str(item.value) for item in app.caption]
+    assert "지금 공식 v1 · 「운영 일정」 r1 → 새 공식 v2 · 「운영 일정」 r3" in captions, captions
+    table = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
+    assert table["상태"].tolist() == ["공식 v1 · r1"]
+    # 리비전 표는 한도대로 한 줄(r3)뿐이다 — 번호는 목록이 아니라 발행 줄에서 왔다.
+    revisions = next(frame.value for frame in app.dataframe if "리비전명" in frame.value)
+    assert revisions["리비전"].tolist() == ["r3"]
 
 
 def test_the_preview_names_an_older_official_revision_the_session_does_not_hold(
