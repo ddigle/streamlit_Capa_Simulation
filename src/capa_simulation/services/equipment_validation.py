@@ -252,6 +252,8 @@ def coerce_master_cell(column: str, text: str) -> CellValue | CellParseError:
     if column in DATE_COLUMNS:
         dates, invalid = _read_master_dates(cell)
         if bool(invalid.iloc[0]):
+            if _zoned_date(text):
+                return refuse("date_unreadable", _zoned_date_message(column))
             return refuse("date_unreadable", _date_message(column))
         return _cell_value(dates.iloc[0])
     if column in COORDINATE_COLUMNS:
@@ -325,6 +327,12 @@ def _number_message(column: str) -> str:
 
 def _date_message(label: str) -> str:
     return f"{with_topic_particle(label)} 날짜 형식이어야 합니다"
+
+
+def _zoned_date_message(label: str) -> str:
+    """시간대가 붙은 날짜(`…T00:00+09:00`·`…Z`)의 거부 문구 — 사내 시스템 CSV 를 그대로 올린 사람이
+    「날짜 형식」 만 보고 헤매지 않게 까닭을 말한다(막는 까닭은 `_read_master_dates`)."""
+    return f"{label}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요"
 
 
 def _status_message(column: str, allowed: Sequence[str]) -> str:
@@ -765,11 +773,16 @@ def _check_ratio_not_positive(master: _MasterFrame) -> Iterator[_Finding]:
 
 def _check_dates(master: _MasterFrame) -> Iterator[_Finding]:
     for column in DATE_COLUMNS:
-        head = _date_message(column)
         invalid = _flags(master.unreadable[column])
-        # 예시는 입력 글자다 — 칸에서 무엇을 고칠지 보이게(시간대 붙은 값도 그 글자).
+        # 예시는 입력 글자다 — 칸에서 무엇을 고칠지 보이게(시간대 붙은 값도 그 글자). 시간대가 붙어
+        # 못 읽은 줄은 그 까닭을 말하는 문구로 따로 낸다.
         entered = master.raw_dates[column]
-        yield _hit(invalid, head, column, error=partial(_listed_values, head, entered, invalid))
+        zoned = invalid & _zoned_rows(entered, invalid)
+        for rows, head in (
+            (zoned, _zoned_date_message(column)),
+            (invalid & ~zoned, _date_message(column)),
+        ):
+            yield _hit(rows, head, column, error=partial(_listed_values, head, entered, rows))
 
 
 def _check_qual_status_required(master: _MasterFrame) -> Iterator[_Finding]:
@@ -1438,6 +1451,15 @@ def _zoned_date(value: object) -> bool:
     return scattered or isinstance(dates.dtype, pd.DatetimeTZDtype)
 
 
+def _zoned_rows(entered: pd.Series, rows: pd.Series) -> pd.Series:
+    """`rows` 줄 가운데 입력 값이 시간대 꼴 날짜인 줄(그 밖은 거짓) — 못 읽은 줄만 하나씩 본다."""
+    flags = [
+        bool(row) and _zoned_date(value)
+        for value, row in zip(entered.tolist(), rows.tolist(), strict=True)
+    ]
+    return pd.Series(flags, index=entered.index, dtype=bool)
+
+
 def _normalize_date(series: pd.Series, label: str) -> pd.Series:
     """날짜 칸을 읽고 못 읽은 값이 있으면 그 값 예시와 함께 막는다(비가동 일정).
 
@@ -1447,6 +1469,10 @@ def _normalize_date(series: pd.Series, label: str) -> pd.Series:
     """
     converted, invalid = _read_master_dates(series)
     if invalid.any():
+        # 시간대가 붙어 못 읽은 값이 있으면 그 까닭부터 말한다(그 값만 예시로).
+        zoned = invalid & _zoned_rows(series, invalid)
+        if zoned.any():
+            raise _listed(_zoned_date_message(label), series.loc[zoned].head(5).tolist())
         raise _listed(_date_message(label), series.loc[invalid].head(5).tolist())
     return converted
 

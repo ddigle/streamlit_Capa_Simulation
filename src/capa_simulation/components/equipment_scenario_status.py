@@ -19,10 +19,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
@@ -36,23 +34,22 @@ from capa_simulation.components.app_header import (
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
-    DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
-    Frames,
     has_unsaved_equipment_edits,
     new_unit_choice_line,
+    official_reach,
     pending_fab_layout,
-    pending_unit_renames,
     revision_count_line,
+    save_candidate_counts,
     save_equipment_buffer,
     schedule_revision_title,
     stale_save_refusal,
 )
 from capa_simulation.components.equipment_save_fields import (
-    SaveCandidateCounts,
     render_equipment_save_fields,
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -87,7 +84,6 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScheduleRevisionSummary,
     legacy_trace_message,
 )
-from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
 from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.shortening_baseline import ShorteningEquipmentBasis
 from capa_simulation.sidebar_status import (
@@ -117,6 +113,8 @@ FLOOR_DRAFT_DISCARD_NOTE = (
 )
 LOAD_BUTTON_KEY = "sidebar_equipment_load_revision"
 SAVE_BUTTON_KEY = "sidebar_equipment_save"
+# 팝업 「저장」 구획의 낡은 세션 「최신 rN 불러오기(변경 버림)」.
+LOAD_LATEST_BUTTON_KEY = "sidebar_equipment_load_latest"
 SAVE_NOTE_KEY = "sidebar_equipment_save_note"
 # 메모 칸 key 세대 — 저장에 성공한 회차에만 올라 다음에 빈 칸으로 선다(닫힌 팝업의 칸은 세션에 빈
 # 값을 적어도 브라우저가 옛 값을 되보낸다 — `scenario_status.save_field_key` 와 같은 까닭).
@@ -539,36 +537,6 @@ def _revision_caption(
     return " · ".join(parts)
 
 
-def save_candidate_counts(buffer: Frames, saved_master: object) -> SaveCandidateCounts:
-    """팝업이 미리 적는 함께 넣기 후보 수 — 저장본에 없던 호기(이름 바꿈은 이은 호기), 새 비가동.
-
-    비가동은 저장본 사본에 없던 (설비명, 유형, 시작일) 수다. 저장소의 「고침이 아닌 새 비가동」
-    판정(같은 묶음에 지운 행 없음)보다 넓게 셀 수 있다 — 실제로 퍼진 목록은 결과 알림이 적는다.
-    """
-    renames: Mapping[str, str] = pending_unit_renames().units
-    saved_names: set[str] = set()
-    if isinstance(saved_master, pd.DataFrame) and EQUIPMENT_ID_COLUMN in saved_master.columns:
-        saved_names = {str(name) for name in saved_master[EQUIPMENT_ID_COLUMN].dropna()}
-    saved_downtime = _downtime_keys(st.session_state.get(DOWNTIME_DRAFT_KEY))
-    names = buffer[1][EQUIPMENT_ID_COLUMN].dropna().astype(str)
-    new_units = sum(1 for name in names if renames.get(name, name) not in saved_names)
-    new_downtime = len(_downtime_keys(buffer[2]) - saved_downtime)
-    return SaveCandidateCounts(new_units=new_units, new_downtime=new_downtime)
-
-
-def _downtime_keys(frame: object) -> set[tuple[str, str, str]]:
-    """비가동 표의 (설비명, 유형, 시작일 `YYYY-MM-DD`) 모음. 표가 아니거나 비면 빈 모음."""
-    if not isinstance(frame, pd.DataFrame) or frame.empty:
-        return set()
-    starts = pd.to_datetime(frame["시작일"], errors="coerce").dt.strftime("%Y-%m-%d")
-    return {
-        (str(name), str(kind), str(start))
-        for name, kind, start in zip(
-            frame[EQUIPMENT_ID_COLUMN], frame["비가동유형"], starts, strict=True
-        )
-    }
-
-
 def stale_save_warning(revision_no: int | None, latest_revision_no: int | None) -> str:
     """팝업 「저장」 구획의 낡은 리비전 경고 — 번호 뒤 조사는 끝소리로 고른다."""
     return (
@@ -581,6 +549,82 @@ def loaded_revision_message(scenario_name: str, revision_no: int) -> str:
     """팝업 「불러오기」 뒤 알림 — 번호 뒤 조사는 끝소리로 고른다."""
     revision = with_object_particle(f"r{revision_no}")
     return f"설비 시나리오 「{literal_markdown(scenario_name)}」 {revision} 불러왔습니다."
+
+
+# 낡은 세션 저장 거절 곁의 「최신 rN 불러오기(변경 버림)」 실패 글 — 다음 회차 그 단추 아래에
+# 한 번(`flash` 한 칸).
+LOAD_LATEST_ERROR_KEY = "equipment_load_latest_error_v1"
+
+
+def load_latest_label(latest_no: int) -> str:
+    return f"최신 r{latest_no} 불러오기(변경 버림)"
+
+
+def render_load_latest_button(
+    database_path: str, session: EquipmentSession, *, key: str, in_dialog: bool = False
+) -> None:
+    """낡은 세션의 저장 거절 곁 「최신 rN 불러오기(변경 버림)」 — 세션을 그 설비 시나리오의 최신
+    일정 리비전으로 옮기고 저장 안 한 설비 편집은 모두 버린다(팝업 「불러오기」 와 같은
+    `select_equipment_scenario`, 저장 안 한 FAB 전체 배치는 남는다). 다시 불러오면 무엇을 잃는지는
+    곁의 거절 글(버려질 칸)이 말하고, 단추 풍선이 공통 칸 편집도 함께 버린다고 적는다. 낡은 세션이
+    아니면 그리지 않는다(남은 실패 글도 걷는다 — 낡지 않은 세션에는 뜻이 없다).
+
+    `in_dialog` 면 사이드바 설비 시나리오 팝업 안이다. 팝업은 조건 팝업 호스트 프래그먼트 안이라
+    콜백으로 옮기면 그 프래그먼트만 다시 돌아 페이지·사이드바 줄이 낡은 세션 그대로 남는다 —
+    팝업 「불러오기」 처럼 본문에서 옮기고 앱 전체를 다시 돌린다(`st.rerun()`)."""
+    scenario = session.scenario
+    latest_no = session.latest_revision_no
+    if (
+        not session.stale
+        or scenario is None
+        or latest_no is None
+        or scenario.latest_schedule_revision_id is None
+    ):
+        st.session_state.pop(LOAD_LATEST_ERROR_KEY, None)
+        return
+    target = (
+        database_path,
+        scenario.equipment_scenario_id,
+        scenario.latest_schedule_revision_id,
+        scenario.scenario_name,
+        latest_no,
+    )
+    clicked = st.button(
+        load_latest_label(latest_no),
+        key=key,
+        icon=":material/download:",
+        help=(
+            "저장하지 않은 설비 편집(공통 칸 편집 포함)을 모두 버리고 이 설비 시나리오의 최신 "
+            f"r{latest_no} 위에서 다시 엽니다 — 공통 칸 편집을 살리려면 버려질 칸을 되돌려 먼저 "
+            "저장합니다."
+        ),
+        on_click=None if in_dialog else _load_latest,
+        args=None if in_dialog else target,
+    )
+    if in_dialog and clicked and _move_to_latest(*target):
+        st.rerun()
+    render_flash(LOAD_LATEST_ERROR_KEY)
+
+
+def _load_latest(
+    database_path: str, scenario_id: str, revision_id: str, scenario_name: str, latest_no: int
+) -> None:
+    """「최신 rN 불러오기(변경 버림)」 콜백(팝업 밖 — 설비 마스터 탭·Space)."""
+    _move_to_latest(database_path, scenario_id, revision_id, scenario_name, latest_no)
+
+
+def _move_to_latest(
+    database_path: str, scenario_id: str, revision_id: str, scenario_name: str, latest_no: int
+) -> bool:
+    """세션을 최신으로 옮긴다 — 옮기면 사이드바 줄 알림, 못 옮기면 단추 아래 한 줄. 옮겼는가를
+    돌려준다(팝업 안에서는 옮긴 뒤 앱 전체를 다시 돌린다)."""
+    failure = select_equipment_scenario(database_path, scenario_id, revision_id, discard=True)
+    if failure is not None:
+        queue_flash(LOAD_LATEST_ERROR_KEY, markdown_safe_tildes(failure), kind="error")
+        return False
+    close_equipment_scenario_dialog()
+    st.session_state[FLASH_KEY] = loaded_revision_message(scenario_name, latest_no)
+    return True
 
 
 def _render_save(database_path: str, session: EquipmentSession) -> None:
@@ -607,6 +651,9 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         refusal = stale_save_refusal(buffer, basis)
         if refusal is not None:
             st.warning(markdown_safe_tildes(refusal), icon=":material/block:")
+        render_load_latest_button(
+            database_path, session, key=LOAD_LATEST_BUTTON_KEY, in_dialog=True
+        )
     if not has_changes:
         st.caption("저장할 변경이 없습니다.")
     note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")
@@ -614,6 +661,9 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         SAVE_FIELDS_PREFIX,
         counts=save_candidate_counts(buffer, st.session_state.get(EQUIPMENT_DRAFT_KEY)),
         release_exists=basis.release_no > 0,
+        # 가정 설비 시나리오면 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리
+        # 한 규칙).
+        reach=None if basis.official_scenario else official_reach(buffer),
     )
     with st.container():
         # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8).

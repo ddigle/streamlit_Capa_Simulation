@@ -53,7 +53,7 @@ from capa_simulation.components.equipment_data_workspace import (
     live_layout_role,
     pending_fab_layout,
     pop_drafts_replaced,
-    render_discarded_notice,
+    render_reopen_notices,
     settle_grid_toasts,
     small_editor_edits,
 )
@@ -218,7 +218,7 @@ ensure_equipment_drafts(latest_snapshot)
 layout_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
 drafts_replaced = pop_drafts_replaced()
 with notices:
-    render_discarded_notice()
+    render_reopen_notices()
 # Space 에서 넓혀 두고 아직 저장하지 않은 캔버스도 본다 — 칸 검증·미리보기 검증이 그 캔버스에
 # 놓은 호기를 「밖」으로 막지 않게. 새 리비전이 생겨 대기분이 버려진 뒤에 읽는다.
 floor_canvases = effective_floor_canvases(stored_floor_canvases)

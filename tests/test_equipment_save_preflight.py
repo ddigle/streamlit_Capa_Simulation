@@ -20,17 +20,21 @@ import warnings
 from collections.abc import Iterator
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from grid_fake import Calls, install_fake_grid, last
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _two_scenarios
+from test_equipment_data_workspace import _master
 from test_equipment_scenario_repository import _request, _scenario, _session, _set
 from test_equipment_scenario_session import _popup_with_edits
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
+    STALE_DELETED_UNITS_ELSEWHERE,
     STALE_SCENARIO_EDITS_ELSEWHERE,
     STALE_SCENARIO_EDITS_TAB,
+    stale_save_reasons,
 )
 from capa_simulation.components.equipment_master_tab import (
     SAVE_BUTTON_KEY,
@@ -60,6 +64,10 @@ SPACE_PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
 CORE = "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 1개(호기 1대)는 저장되지 않습니다"
 WAY_OUT = "그 칸을 되돌리면(↶) 공통 칸은 저장됩니다"
 EDITS = [("EQ-01", "시나리오 메모", "낡기 전 메모"), ("EQ-01", "X좌표", 41.0)]
+# 버려질 칸 — 배치 칸(X좌표)은 시나리오 일곱 칸이 아니라 들지 않는다. 탭 줄은 평문 자리라 이름을
+# 날로, 표 밖 거부 글은 마크다운 자리라 이름마다 구두점을 막는다.
+SPOTS = "EQ-01 시나리오 메모"
+SPOTS_MARKDOWN = "EQ\\-01 시나리오 메모"
 
 
 @pytest.fixture(autouse=True)
@@ -166,7 +174,7 @@ def test_the_master_tab_lists_the_stale_cells_and_saves_nothing(
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
 
-    line = STALE_SCENARIO_EDITS_TAB.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS_TAB.format(cells=1, units=1, spots=SPOTS)
     assert CORE in line and WAY_OUT in line
     changes = last(grid, emg.side_key("changes"))
     assert any(line in " ".join(map(str, item)) for item in changes["errors"])
@@ -193,7 +201,7 @@ def test_the_sidebar_popup_save_refuses_with_the_same_judgement(tmp_path: Path) 
     app.button(key=POPUP_SAVE_BUTTON_KEY).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1, spots=SPOTS_MARKDOWN)
     assert CORE in line and WAY_OUT in line
     assert _errors(app) == [f"저장하지 못했습니다: {line}"]
     assert len(repository.list_revisions()) == before
@@ -217,10 +225,20 @@ def test_the_space_layout_save_refuses_with_the_same_judgement(tmp_path: Path) -
     button.click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1, spots=SPOTS_MARKDOWN)
     assert any(line in text for text in _errors(app)), _errors(app)
     assert not any("다른 사용자가 먼저" in text for text in _errors(app))
     assert len(repository.list_revisions()) == before
+    # 거절 곁의 「최신 rN 불러오기(변경 버림)」(E2E #79 — 설비 마스터 탭·사이드바 팝업과 같음).
+    latest = _scenario(repository, setup)
+    load_latest = app.button(key="space_save_load_latest")
+    assert load_latest.label == f"최신 r{latest.latest_revision_no} 불러오기(변경 버림)"
+    load_latest.click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[SELECTION_KEY] == {
+        "scenario_id": setup,
+        "schedule_revision_id": latest.latest_schedule_revision_id,
+    }
 
 
 def test_a_stale_space_layout_save_still_writes_the_pending_fab_layout(tmp_path: Path) -> None:
@@ -244,7 +262,7 @@ def test_a_stale_space_layout_save_still_writes_the_pending_fab_layout(tmp_path:
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1, spots=SPOTS_MARKDOWN)
     errors = _errors(app)
     assert any(line in text and "FAB 전체 배치는 저장했지만" in text for text in errors), errors
     assert [mark.mark_id for mark in repository.load_fab_layout_marks()] == ["MINE"]
@@ -282,3 +300,38 @@ def test_only_the_workspace_calls_the_repository_equipment_save() -> None:
     assert [caller.split(":")[0] for caller in callers] == [
         "src/capa_simulation/components/equipment_data_workspace.py"
     ], callers
+
+
+def test_the_stale_refusal_names_the_cells_and_units_it_would_drop() -> None:
+    """낡은 세션 저장 거절 글은 버려질 칸(호기·칸 이름)과 지운 호기를 앞 셋까지 이름으로 적는다 —
+    다시 불러오면 무엇을 잃는지 알고 고른다(E2E #79). 나머지는 「외 n대」 다."""
+    saved = _master([f"EQ-0{number}" for number in range(1, 8)])
+    edited = saved.copy()
+    edited.loc[edited["설비명"].eq("EQ-01"), ["반입일정", "Qual일정"]] = [
+        pd.Timestamp("2026-11-02"),
+        pd.Timestamp("2026-11-09"),
+    ]
+    for name in ("EQ-02", "EQ-03", "EQ-04", "EQ-05"):
+        edited.loc[edited["설비명"].eq(name), "시나리오 메모"] = "낡기 전 메모"
+    edited = edited[edited["설비명"].ne("EQ-07")]
+
+    lines = stale_save_reasons(edited, saved, {}, in_tab=False)
+
+    # 표 밖 거부 글은 마크다운 자리 — 이름마다 구두점을 막는다(「EQ\-01」).
+    assert lines == [
+        STALE_DELETED_UNITS_ELSEWHERE.format(units=1, names="EQ\\-07"),
+        STALE_SCENARIO_EDITS_ELSEWHERE.format(
+            cells=6,
+            units=5,
+            spots=(
+                "EQ\\-01 반입일정·Qual일정, EQ\\-02 시나리오 메모, EQ\\-03 시나리오 메모 외 2대"
+            ),
+        ),
+    ]
+    # 탭 줄은 평문 자리(설비 마스터 표) — 이름을 날로 적는다.
+    tab = stale_save_reasons(edited, saved, {}, in_tab=True)
+    assert "(버려질 호기: EQ-07)" in tab[0]
+    assert (
+        "(버려질 칸: EQ-01 반입일정·Qual일정, EQ-02 시나리오 메모, EQ-03 시나리오 메모 외 2대)"
+        in tab[1]
+    )

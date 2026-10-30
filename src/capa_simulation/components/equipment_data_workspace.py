@@ -20,6 +20,8 @@ from capa_simulation.components.editor_state import (
 from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
+    OfficialReach,
+    SaveCandidateCounts,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
@@ -73,6 +75,7 @@ from capa_simulation.persistence.equipment_repository import (
     EMPTY_REVISION_TOKEN,
     DuckDBEquipmentRepository,
     EquipmentRevisionConflict,
+    EquipmentRevisionSummary,
     EquipmentSaveRequest,
     EquipmentSaveResult,
     EquipmentScheduleRevisionSummary,
@@ -129,7 +132,7 @@ from capa_simulation.services.equipment_grid import (
     move_ids,
     prune_overlay,
     renamed_saved_ids,
-    stale_scenario_edits,
+    stale_scenario_edit_spots,
     undo_from_state,
     undo_to_state,
 )
@@ -323,8 +326,16 @@ EDITOR_MODULE_LAYOUTS_KEY = "equipment_editor_module_layouts_v1"
 LAYOUT_ROLE_KEY = "equipment_layout_role_v1"
 # 편집본 배치 편집 판정 메모 — (열쇠, 있음). `buffer_has_layout_edits`.
 LAYOUT_EDITS_MEMO_KEY = "equipment_layout_edits_memo_v1"
-# 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
+# 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때의 알림 — 화면을 늦게 본
+# 사람도 까닭을 알게 「알림 닫기」 를 누를 때까지(또는 다음 버림 알림이 덮을 때까지) 남긴다.
 DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
+# 다른 사람의 저장으로 편집본을 다시 세웠지만 버린 편집이 없을 때 한 번 띄우는 알림(목록·이름이
+# 바뀐 까닭 — 이름 바뀐 호기 수). `flash` 한 칸이다.
+REOPENED_NOTICE_KEY = "equipment_workspace_reopened_v1"
+DISMISS_DISCARDED_LABEL = "알림 닫기"
+# 세 화면(가용설비 현황·Space 현황·필요 단축 일정)이 같은 key 로 그리는 「알림 닫기」 단추(한
+# 회차에 한 화면만 돈다).
+REOPEN_DISMISS_KEY = "equipment_reopen_dismiss_v1"
 # 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 작은 편집표 제출은 옛
 # 편집본 위의 것이라 반영하지 않는다 — 페이지가 `pop_drafts_replaced` 로 한 번 읽는다(표 출납은
 # `base` 대조로 같은 규칙).
@@ -577,12 +588,50 @@ def pop_drafts_replaced() -> bool:
     return st.session_state.pop(DRAFTS_REPLACED_KEY, False) is True
 
 
-def render_discarded_notice() -> None:
-    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림을 한 번 그린다(`flash` 한 칸).
+def discarded_notice_text() -> str | None:
+    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림 — 「알림 닫기」 전까지 남는다."""
+    value = st.session_state.get(DISCARDED_NOTICE_KEY)
+    return value if isinstance(value, str) else None
 
-    편집본을 세운(`ensure_equipment_drafts`) 뒤 페이지 머리 알림 칸 안에서 부른다.
+
+def dismiss_discarded_notice() -> None:
+    """「알림 닫기」 콜백 — 버림 알림을 걷는다."""
+    st.session_state.pop(DISCARDED_NOTICE_KEY, None)
+
+
+def reopened_notice(number: str, *, renamed: int) -> str:
+    """버린 편집 없이 다른 사람의 저장으로 편집본을 다시 세운 회차의 알림 — 그 저장(「공통 대장
+    r16」)과 이름 바뀐 저장본 호기 수(목록·상세가 새 이름으로 옮는다)."""
+    text = f"다른 사용자가 {number}{object_particle(number)} 저장해 최신 저장본으로 다시 열었습니다"
+    if renamed:
+        text += f" · 이름 바뀐 호기 {renamed:,}대"
+    return text
+
+
+def render_reopen_notices() -> None:
+    """다른 사람의 저장으로 편집본을 다시 세운 알림 둘을 페이지 머리 알림 칸 안에 그린다.
+
+    버린 편집이 없었으면 「… 다시 열었습니다 · 이름 바뀐 호기 n대」 를 한 번(`flash` 한 칸),
+    있었으면 버렸다는 경고와 「알림 닫기」를 **누를 때까지** 남긴다 — 한 회차만 서면 화면을 늦게
+    본 사람이 편집이 사라진 까닭을 모른다(E2E #66). 다음 버림 알림이 오면 그것으로 바뀐다. 두 칸
+    모두 알림 유무와 상관없이 늘 서 있어 뒤 형제의 자리를 밀지 않는다. 편집본을
+    세운(`ensure_equipment_drafts`) 뒤 부른다 — 가용설비 현황·Space 현황·필요 단축 일정이 같은
+    세션 칸을 본다.
     """
-    render_flash(DISCARDED_NOTICE_KEY)
+    render_flash(REOPENED_NOTICE_KEY)
+    slot = st.container()
+    notice = discarded_notice_text()
+    if notice is None:
+        return
+    with slot:
+        st.warning(notice, icon=":material/sync_problem:")
+        st.button(
+            DISMISS_DISCARDED_LABEL,
+            icon=":material/close:",
+            type="tertiary",
+            key=REOPEN_DISMISS_KEY,
+            on_click=dismiss_discarded_notice,
+        )
 
 
 def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames:
@@ -649,19 +698,28 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             if reapply is not None and latest_snapshot is not None
             else None
         )
-        if replaced and has_unsaved_equipment_edits():
+        moved = (
+            renamed_saved_ids(old_unit_keys, latest_snapshot.unit_key_pairs)
+            if replaced and latest_snapshot is not None
+            else {}
+        )
+        if replaced:
             number = _replaced_by_words(previous, latest_snapshot)
-            queue_flash(
-                DISCARDED_NOTICE_KEY,
-                discarded_notice(
+            if has_unsaved_equipment_edits():
+                # 닫을 때까지 남긴다(`render_reopen_notices`) — 다음 버림 알림이 덮는다.
+                st.session_state[DISCARDED_NOTICE_KEY] = discarded_notice(
                     number,
                     overlay_dropped=overlay_dropped,
                     reapplied=reapplied,
                     renames_dropped=renames_dropped,
-                ),
-                kind="warning",
-                icon=":material/sync_problem:",
-            )
+                )
+            else:
+                queue_flash(
+                    REOPENED_NOTICE_KEY,
+                    reopened_notice(number, renamed=len(moved)),
+                    kind="info",
+                    icon=":material/sync:",
+                )
         st.session_state[_REVISION_KEY] = token
         # 편집본이 나온 저장본 — 저장이 대조하는 본 값이다(write_guard). 편집본을 세울 때만 적는다.
         remember_seen(_BASE_KEY, _base_of(latest_snapshot))
@@ -691,10 +749,8 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
                 stale.append(LAYOUT_ROLE_KEY)
         for key in stale:
             st.session_state.pop(key, None)
-        if replaced and latest_snapshot is not None:
-            _follow_saved_unit_renames(
-                renamed_saved_ids(old_unit_keys, latest_snapshot.unit_key_pairs)
-            )
+        if moved:
+            _follow_saved_unit_renames(moved)
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
         if reapplied is not None and reapplied.reapplied:
@@ -902,6 +958,51 @@ def new_unit_choice_line(frames: Frames, *, assumption: bool = False) -> str | N
     if assumption and spread:
         text += f" · {NEW_UNIT_OFFICIAL_COUNT_NOTE.format(count=spread)}"
     return text
+
+
+def save_candidate_counts(buffer: Frames, saved_master: object) -> SaveCandidateCounts:
+    """팝업이 미리 적는 함께 넣기 후보 수 — 저장본에 없던 호기(이름 바꿈은 이은 호기), 새 비가동.
+
+    비가동은 저장본 사본에 없던 (설비명, 유형, 시작일) 수다. 저장소의 「고침이 아닌 새 비가동」
+    판정(같은 묶음에 지운 행 없음)보다 넓게 셀 수 있다 — 실제로 퍼진 목록은 결과 알림이 적는다.
+    """
+    renames: Mapping[str, str] = pending_unit_renames().units
+    saved_names: set[str] = set()
+    if isinstance(saved_master, pd.DataFrame) and EQUIPMENT_ID_COLUMN in saved_master.columns:
+        saved_names = {str(name) for name in saved_master[EQUIPMENT_ID_COLUMN].dropna()}
+    saved_downtime = downtime_keys(st.session_state.get(DOWNTIME_DRAFT_KEY))
+    names = buffer[1][EQUIPMENT_ID_COLUMN].dropna().astype(str)
+    new_units = sum(1 for name in names if renames.get(name, name) not in saved_names)
+    new_downtime = len(downtime_keys(buffer[2]) - saved_downtime)
+    return SaveCandidateCounts(new_units=new_units, new_downtime=new_downtime)
+
+
+def downtime_keys(frame: object) -> set[tuple[str, str, str]]:
+    """비가동 표의 (설비명, 유형, 시작일 `YYYY-MM-DD`) 모음. 표가 아니거나 비면 빈 모음."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return set()
+    starts = pd.to_datetime(frame["시작일"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return {
+        (str(name), str(kind), str(start))
+        for name, kind, start in zip(
+            frame[EQUIPMENT_ID_COLUMN], frame["비가동유형"], starts, strict=True
+        )
+    }
+
+
+def official_reach(frames: Frames) -> OfficialReach:
+    """가정 설비 시나리오 세션 저장 칸의 발행 체크 재료(`OfficialReach`) — 이 저장이 공식 설비
+    시나리오에 새 일정 리비전을 만들 수 있는가. 「새 호기」 칸에서 켠 새 호기(그 칸 체크가 이긴다,
+    D8), 저장 칸 체크를 따르는 나머지 새 호기, 새 비가동 수다. 셈은 팝업 후보 수
+    (`save_candidate_counts`)와 같아 저장소의 판정보다 넓을 수 있다 — 체크가 쓸데없이 설 수는 있어도
+    필요할 때 숨지 않는다."""
+    counts = save_candidate_counts(frames, st.session_state.get(EQUIPMENT_DRAFT_KEY))
+    spread, alone = chosen_new_unit_counts(frames)
+    return OfficialReach(
+        follow_units=max(counts.new_units - spread - alone, 0),
+        chosen_spread=spread,
+        new_downtime=counts.new_downtime,
+    )
 
 
 def prune_new_unit_propagation() -> None:
@@ -3050,22 +3151,39 @@ def stale_delete_lock(basis: EquipmentSaveBasis) -> str:
 # 전에 고칠 것」 줄(그 아래 목록이 「저장 전 변경」 이다)로, 표 밖 저장 자리(사이드바 설비 시나리오
 # 팝업 「저장」·Space 「배치 저장」)는 경고·거부 글로 같은 판정(`stale_save_reasons`)을 보인다.
 STALE_DELETED_UNITS_TAB = (
-    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 되살리거나 최신을 불러오세요"
+    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다(버려질 호기: {names}) — 되살리거나 "
+    "최신을 불러오세요"
 )
 STALE_SCENARIO_EDITS_TAB = (
     "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
-    "않습니다 — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 "
-    "불러와 다시 고칩니다"
+    "않습니다(버려질 칸: {spots}) — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 "
+    "살리려면 최신을 불러와 다시 고칩니다"
 )
 STALE_DELETED_UNITS_ELSEWHERE = (
-    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 가용설비 현황 › 설비 마스터에서 "
-    "되살리거나 최신을 불러오세요."
+    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다(버려질 호기: {names}) — 가용설비 "
+    "현황 › 설비 마스터에서 되살리거나 최신을 불러오세요."
 )
 STALE_SCENARIO_EDITS_ELSEWHERE = (
     "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
-    "않습니다 — 가용설비 현황 › 설비 마스터 「저장 전 변경」 에서 그 칸을 되돌리면(↶) 공통 칸은 "
-    "저장됩니다. 일정을 살리려면 최신을 불러와 다시 고칩니다."
+    "않습니다(버려질 칸: {spots}) — 가용설비 현황 › 설비 마스터 「저장 전 변경」 에서 그 칸을 "
+    "되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 불러와 다시 고칩니다."
 )
+# 버려질 칸·호기 목록에 이름을 적는 호기 수(나머지는 「외 n대」).
+STALE_LISTED_UNITS = 3
+
+
+def stale_spots_words(spots: Sequence[tuple[str, Sequence[str]]]) -> str:
+    """버려질 칸 목록 — 「EQ-01 반입일정·Qual일정, EQ-02 시나리오 메모 외 2대」(앞 셋)."""
+    shown = ", ".join(f"{name} {'·'.join(columns)}" for name, columns in spots[:STALE_LISTED_UNITS])
+    rest = len(spots) - STALE_LISTED_UNITS
+    return f"{shown} 외 {rest:,}대" if rest > 0 else shown
+
+
+def stale_names_words(names: Sequence[str]) -> str:
+    """버려질 호기 목록 — 「EQ-03, EQ-04 외 1대」(앞 셋)."""
+    shown = ", ".join(names[:STALE_LISTED_UNITS])
+    rest = len(names) - STALE_LISTED_UNITS
+    return f"{shown} 외 {rest:,}대" if rest > 0 else shown
 
 
 def stale_save_reasons(
@@ -3082,20 +3200,35 @@ def stale_save_reasons(
     불러오면 공통 편집까지 잃는다. 그래서 저장 전에 그 칸과 고칠 길(그 칸을 되돌리면 공통 칸은
     저장된다)을 알린다. 세 저장 길이 이 한 판정을 쓴다 — 설비 마스터 탭의 고칠 것 줄(`in_tab`),
     사이드바 팝업 「저장」 의 경고 글, 저장(`save_equipment_buffer`)의 거부 글. 견줌은 「바뀐 칸」
-    표지와 같은 글자 견줌(`stale_scenario_edits`)이다. 비가동 일정 표의 낡기 전 편집은 세지 않는다
-    (저장소가 거부한다)."""
+    표지와 같은 글자 견줌(`stale_scenario_edit_spots`)이고, 버려질 칸·호기는 앞 셋까지 이름을 적는다
+    (나머지는 「외 n대」). 탭 줄은 평문 자리(설비 마스터 표)라 이름을 날로, 표 밖 줄은 마크다운
+    자리(경고·거부 글)라 이름마다 `literal_markdown` 으로 막는다. 비가동 일정 표의 낡기 전 편집은
+    세지 않는다(저장소가 거부한다)."""
     deleted_line, edits_line = (
         (STALE_DELETED_UNITS_TAB, STALE_SCENARIO_EDITS_TAB)
         if in_tab
         else (STALE_DELETED_UNITS_ELSEWHERE, STALE_SCENARIO_EDITS_ELSEWHERE)
     )
+
+    def mark(name: str) -> str:
+        return name if in_tab else literal_markdown(name)
+
     lines: list[str] = []
-    deleted = len(grid_index(master, saved_master, renames).deleted)
-    if deleted:
-        lines.append(deleted_line.format(units=deleted))
-    cells, units = stale_scenario_edits(master, saved_master, renames)
-    if cells:
-        lines.append(edits_line.format(cells=cells, units=units))
+    index = grid_index(master, saved_master, renames)
+    deleted = [mark(name) for row_id in index.deleted if (name := index.saved_name(row_id))]
+    if index.deleted:
+        lines.append(
+            deleted_line.format(units=len(index.deleted), names=stale_names_words(deleted))
+        )
+    spots = [
+        (mark(name), columns)
+        for name, columns in stale_scenario_edit_spots(master, saved_master, renames)
+    ]
+    if spots:
+        cells = sum(len(columns) for _, columns in spots)
+        lines.append(
+            edits_line.format(cells=cells, units=len(spots), spots=stale_spots_words(spots))
+        )
     return lines
 
 
@@ -3252,6 +3385,22 @@ SMALL_EDITOR_NOTE = (
     "옮길 때는 묻습니다) — 「편집본에 적용」 을 누른 뒤 옮깁니다. 저장은 오른쪽 「저장 전 변경」 "
     "한 곳입니다."
 )
+# 작은 편집표의 필수 칸(`required=True`). Streamlit 은 필수 칸이 빈 새 줄을 서버에 보내지 않아
+# (브라우저가 그 줄을 편집 상태에서 빼고, 적용 뒤 편집표를 다시 세우면 사라진다) 버린 줄 수를 셀 수
+# 없다 — 넣기 전에 알린다.
+SMALL_EDITOR_REQUIRED = {
+    BASELINE_TARGET: ("공정", "분류", "기존 보유대수"),
+    DOWNTIME_TARGET: (EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
+}
+
+
+def small_editor_required_note(target: str) -> str:
+    """작은 편집표 아래 한 줄 — 필수 칸을 다 채우지 않은 새 줄은 「편집본에 적용」 때 버려진다."""
+    columns = "·".join(SMALL_EDITOR_REQUIRED[target])
+    return (
+        f"새 줄은 필수 칸({columns})을 모두 채워야 들어갑니다 — 하나라도 비운 새 줄은 「편집본에 "
+        "적용」 때 버려집니다."
+    )
 
 
 def small_editor_edits() -> list[str]:
@@ -3400,7 +3549,7 @@ def render_small_editor(
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
             )
-        st.caption(SMALL_EDITOR_NOTE)
+        st.caption(f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}")
     if not any(
         (
             apply_clicked,
@@ -3525,10 +3674,8 @@ def _render_history(
         st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
         return
     latest_common = latest_equipment_revision_id(database_path)
-    common_numbers = {
-        item.revision_id: item.revision_no
-        for item in load_equipment_revision_summaries(database_path, latest_common)
-    }
+    commons = load_equipment_revision_summaries(database_path, latest_common)
+    common_numbers = {item.revision_id: item.revision_no for item in commons}
     # 목록 한도에 걸렸을 때만 전체 수를 덧붙인다(머리 한 줄 안 — 줄이 생기거나 빠져 아래 칸이 밀리지
     # 않게).
     origins = load_equipment_schedule_revision_counts(database_path, scenario_id)
@@ -3573,6 +3720,7 @@ def _render_history(
         placeholder="",
         column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
     )
+    _render_common_history(commons, revisions)
     by_id = {item.schedule_revision_id: item for item in revisions}
     selected_id = prune_choice(
         "equipment_history_revision_id_v4", list(by_id), default=next(iter(by_id))
@@ -3655,6 +3803,67 @@ def _render_history(
     ):
         with st.expander(label, expanded=True, key=f"equipment_history_view_{index}"):
             st.dataframe(frame, hide_index=True, width="stretch")
+
+
+# 저장 이력 「공통 대장 저장 이력」 펼침의 key — 머리에 건수가 들어 바뀌어도 펼침이 남게.
+COMMON_HISTORY_EXPANDER_KEY = "equipment_common_history_v1"
+COMMON_ONLY_HISTORY_NOTE = (
+    "공통 칸만 바꾼 저장(설비명 바꿈·담당자 등)은 일정 리비전을 만들지 않아 위 목록에 없습니다 — "
+    "아래 「공통 대장 저장 이력」 에 있습니다."
+)
+
+
+def common_history_label(commons: Sequence[EquipmentRevisionSummary]) -> str:
+    """「공통 대장 저장 이력」 펼침 머리. 목록은 최신 50개까지라
+    (`load_equipment_revision_summaries`) 그보다 옛 리비전이 있으면 「n건」 이 전체처럼 읽히지
+    않게 「최근 n건(rA~rB)」 으로 범위를 적는다 — 공통 번호는 1 부터 붙고 지우지 않으므로 가장 옛
+    줄이 r1 이 아니면 더 옛 리비전이 있다(일정 리비전 표 머리 줄이 한도에 걸렸을 때만 전체 수를
+    덧붙이는 것과 같은 뜻)."""
+    numbers = [item.revision_no for item in commons]
+    if not numbers or min(numbers) <= 1:
+        return f"공통 대장 저장 이력 {len(commons):,}건"
+    return f"공통 대장 저장 이력 최근 {len(commons):,}건(r{min(numbers)}~r{max(numbers)})"
+
+
+def _render_common_history(
+    commons: Sequence[EquipmentRevisionSummary],
+    revisions: Sequence[EquipmentScheduleRevisionSummary],
+) -> None:
+    """저장 이력 일정 표 아래 — 공통 대장 리비전(최신 50개)의 저장자·메모. 공통 칸만 바꾼 저장은
+    일정 리비전을 만들지 않아 일정 표에 없으므로 방금 저장한 사람이 제 저장을 여기서 찾는다(E2E).
+    「이 시나리오 일정」 은 그 공통을 함께 본 이 설비 시나리오 일정 리비전이다(없으면 빈칸 — 공통만
+    바꾼 저장이거나 다른 설비 시나리오의 저장)."""
+    if not commons:
+        return
+    st.caption(COMMON_ONLY_HISTORY_NOTE)
+    paired: dict[str, list[str]] = {}
+    for item in sorted(revisions, key=lambda revision: revision.revision_no):
+        if item.common_revision_id is not None:
+            paired.setdefault(item.common_revision_id, []).append(f"r{item.revision_no}")
+    with st.expander(
+        common_history_label(commons), expanded=False, key=COMMON_HISTORY_EXPANDER_KEY
+    ):
+        # 펼침 첫 표 — 도구 막대가 펼침 머리 오른쪽 끝 누름을 먹지 않게 띄운다(AGENTS 9장).
+        toolbar_clearance()
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "공통": f"r{item.revision_no}",
+                        "저장시각": item.created_at,
+                        "저장자": item.saved_by,
+                        "변경메모": item.note,
+                        "호기행": item.equipment_row_count,
+                        "이 시나리오 일정": "·".join(paired.get(item.revision_id, [])),
+                    }
+                    for item in commons
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+            placeholder="",
+            column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
+        )
 
 
 def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, int]) -> str:

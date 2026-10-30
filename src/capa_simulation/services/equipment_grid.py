@@ -591,28 +591,34 @@ def grid_index(master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, 
 _SCENARIO_POSITIONS: Final = tuple(COLUMN_INDEX[name] for name in SCENARIO_SCHEDULE_COLUMNS)
 
 
-def stale_scenario_edits(
+def stale_scenario_edit_spots(
     master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]
-) -> tuple[int, int]:
-    """저장본 호기에서 고친 시나리오 일곱 칸 — (칸 수, 호기 수). 「바뀐 칸」 표지와 같은 견줌이다.
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """저장본 호기에서 고친 시나리오 일곱 칸 — 편집본 줄 차례의 (지금 설비명, 고친 칸 이름들).
+    「바뀐 칸」 표지와 같은 견줌이다.
 
     낡은 세션에서는 이 칸들이 잠기지만 낡기 전에 고친 값은 편집본에 남고, 일정이 바뀐 저장은
-    저장소가 늘 거부한다(`EquipmentRevisionConflict`) — 화면이 저장 전에 그 칸을 알리는 재료다.
-    새 호기·지운 호기는 세지 않는다(새 호기는 낡은 회차에 더할 수 없고 지운 호기는 따로 막는다)."""
+    저장소가 늘 거부한다(`EquipmentRevisionConflict`) — 화면이 저장 전에 그 칸(버려질 칸)을 알리는
+    재료다. 새 호기·지운 호기는 세지 않는다(새 호기는 낡은 회차에 더할 수 없고 지운 호기는 따로
+    막는다)."""
     index = grid_index(master, saved, renames)
+    names = _names(master)
     buffer_texts = text_matrix(master.reset_index(drop=True))
     saved_texts = text_matrix(saved.reset_index(drop=True))
-    cells = units = 0
+    spots: list[tuple[str, tuple[str, ...]]] = []
     for row_id, position in index.live.items():
         saved_position = index.saved.get(row_id)
         if saved_position is None:
             continue
         row, before = buffer_texts[position], saved_texts[saved_position]
-        changed = sum(1 for spot in _SCENARIO_POSITIONS if row[spot] != before[spot])
-        if changed:
-            cells += changed
-            units += 1
-    return cells, units
+        columns = tuple(
+            column
+            for column, spot in zip(SCENARIO_SCHEDULE_COLUMNS, _SCENARIO_POSITIONS, strict=True)
+            if row[spot] != before[spot]
+        )
+        if columns:
+            spots.append((names[position], columns))
+    return tuple(spots)
 
 
 def save_id_map(index: GridIndex, master: pd.DataFrame) -> dict[str, str | None]:

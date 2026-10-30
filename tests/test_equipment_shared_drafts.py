@@ -140,7 +140,7 @@ def _edit_then_someone_saves(database: str) -> None:
     from capa_simulation.components.equipment_data_workspace import (
         ensure_equipment_drafts,
         pending_floor_marks,
-        render_discarded_notice,
+        render_reopen_notices,
         save_equipment_buffer,
         stage_floor_marks,
     )
@@ -163,7 +163,7 @@ def _edit_then_someone_saves(database: str) -> None:
         other.loc[other["설비명"].eq("EQ-02"), "담당자"] = "담당B"
         repository.save_snapshot(frames[0], other, frames[2], note="다른 사람")
         return
-    render_discarded_notice()
+    render_reopen_notices()
     st.session_state["pending"] = pending_floor_marks()
     st.session_state["message"] = save_equipment_buffer(repository, frames, "")
 

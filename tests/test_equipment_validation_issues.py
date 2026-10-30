@@ -625,16 +625,21 @@ def _date_text(frame: pd.DataFrame, column: str) -> pd.DataFrame:
 def _assert_unreadable_dates(
     frame: pd.DataFrame, column: str, rows: list[int], *, today: date | None = None
 ) -> None:
-    """시간대 붙은 그 줄들만 「날짜 형식」 으로 막는다 — 저장·칸 결과가 같은 줄, 같은 문구다."""
+    """시간대 붙은 그 줄들만 시간대 문구로 막는다 — 저장·칸 결과가 같은 줄, 같은 문구다."""
     entered = [frame.at[row, column] for row in rows]
+    head = _zoned(column)
     with pytest.raises(ValueError) as caught:
         prepare_equipment_master(frame, today=today)
     assert type(caught.value) is ValueError
-    assert str(caught.value) == f"{column}은 날짜 형식이어야 합니다: {entered}"
+    assert str(caught.value) == f"{head}: {entered}"
     blocking = _blocking(equipment_master_issues(frame, today=today))
-    assert [(issue.rule, issue.position, issue.column) for issue in blocking] == [
-        ("date_unreadable", row, column) for row in rows
+    assert [(issue.rule, issue.position, issue.column, issue.message) for issue in blocking] == [
+        ("date_unreadable", row, column, head) for row in rows
     ]
+
+
+def _zoned(column: str) -> str:
+    return f"{column}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요"
 
 
 def test_time_zoned_dates_are_unreadable_for_saving_as_for_cells() -> None:
@@ -657,7 +662,27 @@ def test_time_zoned_dates_are_unreadable_for_saving_as_for_cells() -> None:
     frame.at[0, "Qual실적"] = "2026-06-30T00:00+09:00"
     _assert_unreadable_dates(frame, "Qual실적", [0])
     _assert_unreadable_dates(frame, "Qual실적", [0], today=ANCHOR)
-    assert isinstance(coerce_master_cell("Qual실적", "2026-06-30T00:00+09:00"), CellParseError)
+    refused = coerce_master_cell("Qual실적", "2026-06-30T00:00+09:00")
+    assert isinstance(refused, CellParseError)
+    assert refused.message == _zoned("Qual실적")
+
+
+def test_a_zoned_date_beside_other_unreadable_text_gets_its_own_reason() -> None:
+    """시간대 붙은 값과 날짜가 아닌 글자가 한 칸에 섞이면 칸 결과는 줄마다 제 까닭을, 저장 거부는
+    시간대 줄부터 그 값만 예시로 든다(「날짜 형식」 만으로는 사내 시스템 CSV 를 그대로 올린 사람이
+    무엇을 고칠지 모른다)."""
+    frame = _date_text(_master(), "물류일정")
+    frame.at[0, "물류일정"] = "다음 주"
+    frame.at[1, "물류일정"] = "2026-05-04T00:00Z"
+
+    with pytest.raises(ValueError) as caught:
+        prepare_equipment_master(frame)
+    assert str(caught.value) == f"{_zoned('물류일정')}: ['2026-05-04T00:00Z']"
+    blocking = _blocking(equipment_master_issues(frame))
+    assert sorted((issue.position, issue.message) for issue in blocking) == [
+        (0, "물류일정은 날짜 형식이어야 합니다"),
+        (1, _zoned("물류일정")),
+    ]
 
 
 def test_a_time_zoned_date_waits_for_the_earlier_rules() -> None:
@@ -681,7 +706,7 @@ def test_pasting_time_zoned_dates_names_the_cells_instead_of_crashing() -> None:
         read_equipment_update(payload, current)
     assert type(caught.value) is ValueError
     assert str(caught.value) == (
-        "물류일정은 날짜 형식이어야 합니다: ['2026-05-03T00:00+09:00', '2026-05-04T00:00+00:00']"
+        f"{_zoned('물류일정')}: ['2026-05-03T00:00+09:00', '2026-05-04T00:00+00:00']"
     )
 
 

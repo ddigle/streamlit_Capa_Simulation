@@ -44,6 +44,7 @@ from capa_simulation.components.equipment_data_workspace import (
     PASTE_LAYOUT_KEY,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
+    REOPEN_DISMISS_KEY,
     TARGET_KEY,
     ImportReview,
 )
@@ -64,6 +65,7 @@ from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.korean_particle import object_particle
 
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 OPERATIONS = "operations"
@@ -620,6 +622,64 @@ def test_a_unit_another_user_renames_stays_loaded_and_open_under_its_new_name(
     assert [row["id"] for row in last(grid, emg.GRID_KEY)["rows"]] == ["s:EQ-01"]
 
 
+def _rename_theirs(repository: DuckDBEquipmentRepository, old: str, new: str) -> None:
+    """다른 사용자가 공식 세션에서 저장본 호기 이름을 바꿔 공통을 저장한다."""
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, old, "설비명", new), renames={new: old})
+    )
+    clear_equipment_repository()
+
+
+def test_a_reopen_by_someone_elses_common_save_is_told_even_without_my_edits(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """남이 공통 대장을 저장해 편집본을 다시 세울 때 내 편집이 없으면 아무 알림도 없어 목록·이름이
+    바뀐 까닭을 알 수 없었다(E2E #38). 그 회차에 머리 알림 칸에 「다른 사용자가 공통 대장 rN을
+    저장해 최신 저장본으로 다시 열었습니다 · 이름 바뀐 호기 n대」 를 한 번 띄운다(버림 경고는 서지
+    않는다)."""
+    repository, _setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _rename_theirs(repository, "EQ-02", "EQ-02R")
+    _ok(app.run())
+
+    saved = f"공통 대장 r{repository.list_revisions()[0].revision_no}"
+    reopened = [item for item in app.info if "다시 열었습니다" in str(item.value)]
+    assert [str(item.value) for item in reopened] == [
+        f"다른 사용자가 {saved}{object_particle(saved)} 저장해 최신 저장본으로 다시 열었습니다"
+        " · 이름 바뀐 호기 1대"
+    ]
+    assert reopened[0].proto.icon == ":material/sync:"
+    assert not any("다시 열었습니다" in text for text in _texts(app, "warning"))
+    assert not [item for item in app.button if item.key == REOPEN_DISMISS_KEY]
+    _ok(app.run())
+    assert not any("다시 열었습니다" in str(item.value) for item in app.info)
+
+
+def test_the_discarded_edits_warning_stays_until_it_is_closed(tmp_path: Path, grid: Calls) -> None:
+    """남의 저장이 내 편집을 버렸다는 경고는 한 회차만 서서 바로 다음 조작에 사라졌다 — 화면을 늦게
+    본 사람은 편집이 사라진 까닭을 몰랐다(E2E #66). 「알림 닫기」 를 누를 때까지 남긴다."""
+    repository, _setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _load_all(app, grid)
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "내 고침"})
+    _rename_theirs(repository, "EQ-02", "EQ-02R")
+    _ok(app.run())
+
+    def discarded() -> list[str]:
+        return [text for text in _texts(app, "warning") if "버리고 최신 저장본으로" in text]
+
+    assert len(discarded()) == 1
+    assert not any("다시 열었습니다" in str(item.value) for item in app.info)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    _ok(app.run())
+    assert len(discarded()) == 1
+    app.button(key=REOPEN_DISMISS_KEY).click()
+    _ok(app.run())
+    assert discarded() == []
+
+
 def test_an_outbox_and_the_save_click_in_one_rerun_are_saved_together(
     tmp_path: Path, grid: Calls
 ) -> None:
@@ -785,7 +845,7 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
 
-    line = STALE_SCENARIO_EDITS.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS.format(cells=1, units=1, spots="EQ-01 시나리오 메모")
     changes = last(grid, emg.side_key("changes"))
     assert any(line in " ".join(map(str, item)) for item in changes["errors"])
     assert any("「저장 전 변경」 에서 되돌려야" in text for text in _texts(app, "warning"))
@@ -801,6 +861,47 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     _save(app)
     assert len(repository.list_revisions()) == before + 1
     assert _buffer_value(app, "EQ-01", "설비이력") == "공통 이력"
+
+
+def test_a_stale_save_refusal_in_the_tab_sits_beside_a_load_latest_button(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """낡은 세션의 낡기 전 편집이 「리비전 저장」 을 막으면 저장 구획에 「최신 rN 불러오기(변경
+    버림)」 가 선다 — 누르면 세션이 그 설비 시나리오 최신으로 옮고 편집은 버려진다(E2E #79). 버려질
+    칸은 「저장하기 전에 고칠 것」 줄이 이름으로 적는다. 막을 편집이 없으면 단추도 없다."""
+    from capa_simulation.components.equipment_master_tab import LOAD_LATEST_BUTTON_KEY
+
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    _load_all(app, grid)
+    send_ops(
+        app,
+        grid,
+        {"op": "cell", "id": "s:EQ-01", "col": "시나리오 메모", "text": "낡기 전 메모"},
+    )
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    changes = last(grid, emg.side_key("changes"))
+    assert any(
+        "버려질 칸: EQ-01 시나리오 메모" in " ".join(map(str, item)) for item in changes["errors"]
+    )
+
+    latest = _scenario(repository, setup)
+    button = app.button(key=LOAD_LATEST_BUTTON_KEY)
+    assert button.label == f"최신 r{latest.latest_revision_no} 불러오기(변경 버림)"
+    button.click()
+    _ok(app.run())
+
+    assert app.session_state[SELECTION_KEY] == {
+        "scenario_id": setup,
+        "schedule_revision_id": latest.latest_schedule_revision_id,
+    }
+    assert str(_buffer_value(app, "EQ-01", "시나리오 메모")) != "낡기 전 메모"
+    assert not any(item.key == LOAD_LATEST_BUTTON_KEY for item in app.button)
 
 
 def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_tab(

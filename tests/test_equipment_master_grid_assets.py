@@ -1200,3 +1200,31 @@ process.stdout.write(JSON.stringify(results))
         "notOpenedHere": None,
         "busy": True,
     }
+
+
+def test_the_changes_panel_does_not_say_nothing_was_fixed_when_cells_need_fixing() -> None:
+    """「저장 전 변경」 칸에 못 읽은 칸 초안 같은 고칠 것만 있으면 위의 「저장하기 전에 고칠 것」
+    과 어긋나지 않게 「고친 값은 없고 고칠 칸이 있습니다」 라고 한다(E2E — 「1 오류 · 저장하기 전에
+    고칠 것」 바로 아래 「아직 고친 것이 없습니다」). 고칠 것도 없으면 지금 글 그대로다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const empty = () => host.querySelector('.emg-side-empty').textContent
+const changes = (errors) => ({
+  mode: 'side', panel: 'changes', base: 'b1', counts: { errors: errors.length },
+  errors, units: [], others: 0,
+})
+mount(changes([['s:DEMO-01', 'DEMO-01', '반입일정', '반입일정은 날짜 형식이어야 합니다']]))
+results.withErrors = empty()
+mount(changes([]))
+results.clean = empty()
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    result = _node({}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "withErrors": "고친 값은 없고 고칠 칸이 있습니다.",
+        "clean": "아직 고친 것이 없습니다.",
+    }

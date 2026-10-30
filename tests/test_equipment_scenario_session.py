@@ -242,7 +242,7 @@ def _switching(database: str) -> None:
         ensure_equipment_drafts,
         pending_fab_layout,
         pop_drafts_replaced,
-        render_discarded_notice,
+        render_reopen_notices,
         replace_equipment_buffer,
         stage_fab_layout,
     )
@@ -293,7 +293,7 @@ def _switching(database: str) -> None:
         st.session_state["fab_kept"] = pending_fab_layout() is not None
     else:
         st.session_state["replaced"] = pop_drafts_replaced()
-        render_discarded_notice()
+        render_reopen_notices()
         st.session_state["now"] = (session.scenario_name, session.revision_no)
 
 
@@ -327,9 +327,11 @@ def _own_save(database: str, change: str) -> None:
     import streamlit as st
 
     from capa_simulation.components.equipment_data_workspace import (
+        REOPENED_NOTICE_KEY,
         ensure_equipment_drafts,
         save_equipment_buffer,
     )
+    from capa_simulation.components.flash import pending_flash
     from capa_simulation.equipment_scenario_activation import resolve_equipment_session
     from capa_simulation.persistence.equipment_cache import get_equipment_repository
 
@@ -338,6 +340,7 @@ def _own_save(database: str, change: str) -> None:
     session = resolve_equipment_session(database)
     frames = ensure_equipment_drafts(session.snapshot)
     st.session_state.setdefault("revisions", []).append(session.revision_no)
+    st.session_state.setdefault("reopened", []).append(pending_flash(REOPENED_NOTICE_KEY))
     if step == 1:
         edited = frames[1].copy()
         if change == "schedule":
@@ -366,6 +369,8 @@ def test_an_own_schedule_save_moves_the_selection_and_a_common_save_keeps_it(
 
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state["revisions"] == revisions
+    # 제 저장 뒤 다시 세우는 회차는 「다른 사용자가 … 다시 열었습니다」 가 아니다.
+    assert app.session_state["reopened"] == [None, None, None]
     message = app.session_state["message"]
     if change == "schedule":
         assert "「운영 일정」 r2" in message and "공식 v2" in message
@@ -998,7 +1003,7 @@ def test_a_stale_popup_save_names_the_schedule_cells_to_undo_before_and_after_th
     app.run()
     assert not app.exception, [item.message for item in app.exception]
 
-    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1, spots="EQ\\-01 시나리오 메모")
     warnings = [str(item.value) for item in app.warning]
     assert any("공통 칸만 저장됩니다" in text for text in warnings)
     assert line in warnings
@@ -1204,3 +1209,110 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
     )
     assert note.endswith(UNAPPLIED_SMALL_EDITS_NOTE)
     assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
+
+
+def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """낡은 세션 팝업 「저장」 의 거절 곁에 「최신 rN 불러오기(변경 버림)」 — 누르면 세션이 그 설비
+    시나리오 최신으로 옮고 저장 안 한 편집은 버려지며 사이드바 줄이 불러왔다고 알린다(E2E #79 —
+    거절 글만 있어 사이드바 팝업 「불러오기」 로 다시 찾아가야 했다).
+
+    팝업은 조건 팝업 호스트 프래그먼트 안이라 콜백으로 옮기면 그 프래그먼트만 다시 돌아 페이지가
+    낡은 세션 그대로 남는다 — 팝업 「불러오기」 처럼 옮긴 뒤 앱 전체 재실행(`st.rerun()`, 범위
+    인자 없음)을 부르는지 본다(AppTest 는 프래그먼트만 다시 돌리지 못해 부름을 기록한다)."""
+    import streamlit
+
+    from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        FLASH_KEY,
+        LOAD_LATEST_BUTTON_KEY,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "셋업 실무")
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["edits"] = [("EQ-01", "시나리오 메모", "낡기 전 메모")]
+    app.run()
+    theirs = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            theirs,
+            clone.equipment_scenario_id,
+            equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"),
+        )
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    button = app.button(key=LOAD_LATEST_BUTTON_KEY)
+    assert button.label == "최신 r2 불러오기(변경 버림)"
+    reruns: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    original = streamlit.rerun
+
+    def record(*args: Any, **kwargs: Any) -> None:
+        reruns.append((args, kwargs))
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(streamlit, "rerun", record)
+    button.click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert reruns == [((), {})]
+    latest = next(
+        item
+        for item in repository.list_equipment_scenarios()
+        if item.equipment_scenario_id == clone.equipment_scenario_id
+    )
+    assert app.session_state[SELECTION_KEY] == {
+        "scenario_id": clone.equipment_scenario_id,
+        "schedule_revision_id": latest.latest_schedule_revision_id,
+    }
+    assert "r2" in app.session_state[FLASH_KEY] and "불러왔습니다" in app.session_state[FLASH_KEY]
+    memos = app.session_state[BUFFER_KEY][1]["시나리오 메모"].astype("string")
+    assert not memos.eq("낡기 전 메모").fillna(False).any()
+
+
+@pytest.mark.parametrize("downtime", [False, True], ids=["common-only", "new-downtime"])
+def test_a_hypothetical_popup_save_shows_the_publish_box_only_when_it_reaches_the_official(
+    tmp_path: Path, downtime: bool
+) -> None:
+    """가정 설비 시나리오 세션의 팝업 「저장」 은 공식에 넣을 것이 없으면 발행 체크를 세우지 않는다
+    (E2E #135 — 뜻 없는 「… 공식으로 발행」 체크). 새 비가동처럼 함께 넣기로 공식 설비 시나리오에 새
+    리비전이 생기는 저장이면 「함께 넣은 공식 리비전 발행」(기본 켬)이 선다 — 설비 마스터 탭·Space
+    저장 칸과 같은 규칙."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_FIELDS_PREFIX,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "셋업 실무")
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["edits"] = [("EQ-01", "담당자", "공통 담당")]
+    if downtime:
+        app.session_state["downtime"] = ("EQ-01", "PM", "2026-11-03")
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    boxes = [
+        box for box in app.checkbox if str(box.key).startswith(f"{SAVE_FIELDS_PREFIX}_publish")
+    ]
+    assert [(box.label, box.value) for box in boxes] == (
+        [("함께 넣은 공식 리비전 발행", True)] if downtime else []
+    )

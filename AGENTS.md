@@ -1244,7 +1244,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `coerce_master_cell` 은 칸 하나를 저장 정규화와 같은 함수(`_read_master_dates`·`_read_number`·`_read_ratio`·Y/N·Area Code·
     글·동층/상태 허용값)로 다듬고 못 맞추면 그 규칙 문구의 `CellParseError` 를 준다. 시간대가 붙은 날짜는 세 쓰임 모두 못 읽은
     날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 비가동 일정 날짜(`_normalize_date`)도 같은 길로 읽어
-    시간대가 섞인 붙여넣기가 pandas 예외 대신 그 값을 든 날짜 문구로 막힌다. 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
+    시간대가 섞인 붙여넣기가 pandas 예외 대신 그 값을 든 문구로 막힌다. 시간대 탓으로 못 읽은 값은 까닭을 말하는 문구
+    (`_zoned_date_message` — 「{칸}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요」)로 따로 낸다 — 칸 결과는 줄마다,
+    저장·붙여넣기 거부는 시간대 줄부터 그 값만 예시로. 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
     문구를 글자 그대로(예시·다섯 개 제한까지) 고정한다(`tests/test_equipment_validation_issues.py`).
   - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사는 저장할 때만
     `today=` 로 돈다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
@@ -1518,8 +1520,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
-    낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edits`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
-    고칠 것」 줄이다. 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
+    낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edit_spots`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
+    고칠 것」 줄이다. 낡은 세션의 두 줄은 버려질 호기·칸 이름을 앞 셋까지 적고(「버려질 칸: EQ-01 반입일정·Qual일정, … 외 n대」),
+    세 저장 자리(탭 저장 구획·팝업 「저장」·Space 저장 오류 곁)에 「최신 rN 불러오기(변경 버림)」 단추가 선다
+    (`equipment_scenario_status.render_load_latest_button` — 팝업 「불러오기」 와 같은 `select_equipment_scenario`, 공통 칸 편집도
+    버린다고 풍선이 말한다. 팝업 안(`in_dialog`)은 콜백이 아니라 본문에서 옮기고 `st.rerun()` 으로 앱 전체를 다시 돌린다 —
+    팝업은 조건 팝업 호스트 프래그먼트 안이라 콜백이면 그 프래그먼트만 다시 돌아 페이지가 낡은 세션 그대로 남는다). 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
     고칠 것 줄로, 사이드바 팝업 「저장」 은 경고 글로(`stale_save_refusal`) 보이고, 저장은 `save_equipment_buffer` 의 설비 쪽
     저장 전 검사(`_save_equipment_frames` 첫머리 — FAB 전체 배치 대기분은 별도 쓰기라 그 앞에서 저장되고 거부 글이 함께
     말한다)가 같은 글로 막는다(Space 「배치 저장」 도 — 저장소의 「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시
@@ -2244,7 +2250,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     불러온 목록 `GRID_LOADED_KEY`·상세 id `GRID_DETAIL_KEY` 는 남긴다. 남의 저장으로 다시 세울 때 그 저장이 이름을 바꾼 저장본
     호기는 옛·새 저장본의 호기 키로 이어 두 칸의 id 를 `s:새` 로 옮긴다(`equipment_grid.renamed_saved_ids` — 행 id 가 저장본
     설비명이라 옮기지 않으면 살아 있는 호기가 말없이 빠졌다, E2E eq-flows). 자기 저장 뒤는 설비 마스터 탭 저장 길이 `save_id_map`
-    으로 옮긴다. `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
+    으로 옮긴다. 남의 저장으로 다시 세운 알림은 `render_reopen_notices` 한 곳이다(가용설비 현황·Space 현황·필요 단축 일정의
+    머리 알림 칸 안) — 버린 편집이 있으면 경고(`DISCARDED_NOTICE_KEY`)를 「알림 닫기」 까지 남기고(한 회차만 서면 늦게 본 사람이
+    까닭을 모른다 — `flash` 를 지나지 않는 수명이라 `tests/test_flash_messages.py` 허용 목록에 있다), 없으면 `flash` 안내 한
+    번(`REOPENED_NOTICE_KEY` — 그 저장과 이름 바뀐 저장본 호기 수. `st.toast` 가 아니다 — 필요 단축 일정의 이벤트 칸 토스트
+    자리를 밀지 않게). `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
     버리고(오른쪽 칸 출납이 작은 편집표의 적용 전 편집을 지우지 않게) 되돌리기 목록은 결과의 것을 쓴다. 표 밖 길
     (`_remember_edits` — Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본 내용을 바꾸면 표 되돌리기를 비우고 토스트로 알린다
     (역 patch 는 그 위에서 맞지 않는다). `follow_unit_renames` 는 행 조각 단계(와 그 앞 단계)를 버린다(`after_row_steps`).
@@ -2344,7 +2354,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 뜻이다.
   - 저장 이력은 고른 설비 시나리오의 일정 리비전(번호·저장자·출처·공통 rN)이고 조회는 `load_saved_pair`(저장 때의 짝)다.
     목록은 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지이고, 한도에 걸리면 머리 한 줄 끝에 「최근 50줄 · 전체 N줄 — 더 옛 …」 을
-    붙인다(`revision_count_line` — 새 줄을 세우지 않아 아래 칸이 밀리지 않는다). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
+    붙인다(`revision_count_line` — 새 줄을 세우지 않아 아래 칸이 밀리지 않는다). 공통 칸만 바꾼 저장은 일정 리비전을 만들지
+    않아 그 표에 없으므로 표 아래 안내 한 줄과 펼침 「공통 대장 저장 이력」(공통 rN·저장자·변경메모·호기행·그 공통을 함께 본 이
+    시나리오 일정 rN — `_render_common_history`, 최신 50개)이 선다. 그보다 옛 공통 리비전이 있으면 머리가 「최근 n건(rA~rB)」 이다
+    (`common_history_label`). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
     필요」·표 풍선)은 공식 일정 + 편집본 공통 칸이다(`official_confirmation_master` — 세션 칸 한 벌).
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
@@ -2364,16 +2377,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
-  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭과
-  사이드바 팝업은 가정 설비 시나리오에서도 발행 체크를 그린다 — 가정 세션 저장도 함께 넣기로 공식 시나리오에 새 리비전을 만들면
-  공식 발행까지 가므로 끌 수 있어야 한다(G1). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
+  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 가정 설비
+  시나리오 세션의 발행 체크는 세 자리 모두 한 규칙이다(`reach` — `equipment_data_workspace.official_reach` 가 센
+  `OfficialReach`): 이 저장이 함께 넣기로 공식 시나리오에 새 일정 리비전을 만들 수 있을 때(「새 호기」 칸에서 켠 새 호기 ·
+  저장 칸 체크를 따르는 새 호기 · 새 비가동 — 팝업 후보 수와 같은 셈이라 넓을 수는 있어도 좁지 않다)만 「함께 넣은 공식 리비전
+  발행」(기본 켬)이 서고(G1 — 공식 발행까지 가는 저장은 끌 수 있어야 한다), 없으면 뜻 없는 체크를 그리지 않는다(E2E #135,
+  그리지 않은 체크는 거짓 — 발행할 것이 없다. 콜백으로 칸을 다시 읽는 탭 「리비전 저장」 은 `save_fields_from_state(...,
+  reach_rule=True)`, Space 는 `assumption=True` 로 같게 읽는다. 공식 발행이 하나도 없으면 넣을 것과 상관없이 「공식 v1 이
+  됩니다」 한 줄이다 — 저장소가 그때 이 저장의 일정 리비전을 v1 로 낸다). 가정 세션 「함께 넣기」 기본값이 자리마다 다른 것(탭·팝업 켬 F6 ·
+  Space 끔 Q1)은 사용자 결정 대기다(TODO 「가정 세션 「함께 넣기」 기본값」). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (G1 — 2026-10-24 결정 판 「권장대로」·F6·F2 — 바꾸려면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
     마스터 탭 저장 구획·Space 「저장 칸」 은 체크만 세운다 — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
   - **가정 세션의 Space 「배치 저장」**(`assumption=True` — 설비 시나리오 2단계 Q1)은 「새 호기를 다른 설비 시나리오에도
-    넣기」 가 기본 끔(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`)이고, 켜면 공식 가용대수에 센다는 경고와 그때만 「함께 넣은 공식
-    리비전 발행」 체크가 선다(key 꼬리 `_assumption` 으로 공식 자리와 가른다). 설비 마스터 탭 저장 칸은 1단계 F6 그대로 켬이다.
+    넣기」 가 기본 끔(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`)이고, 켜면 공식 가용대수에 센다는 경고가 선다(key 꼬리
+    `_assumption` 으로 공식 자리와 가른다). 발행 체크는 위 한 규칙이다 — 옛 「함께 넣기를 켤 때만」 은 체크를 끈 채 「새 호기」 칸
+    고름·새 비가동이 공식에 들어가도 체크가 숨어 말없이 발행하지 않았다. 설비 마스터 탭 저장 칸은 1단계 F6 그대로 켬이다.
 - `src/capa_simulation/components/equipment_scenario_management.py` — 시나리오 관리 「설비 시나리오」 구획(1단계 몫 + E7 —
   2026-10-24 가용설비 현황의 탭에서 옮김). 구획 진입(`render_equipment_scenario_section` — 설비 DB 는 이 안에서만 연다, 머리
   「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 구획으로 옮기는 길(`open_equipment_scenario_management` — 탭 상한을 먼저
