@@ -1358,8 +1358,9 @@ def _render_branch(
     """「여기서 새 시나리오」(E7) — 고른 리비전의 일정을 r1 로 든 새 설비 시나리오(복제로만 만든다).
 
     출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
-    대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 확인 글이
-    그것도 적는다(`branch_layout_sentence`).
+    대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 누르기 전
+    확인 글(`branch_layout_sentence`)이 옮길 차이를, 완료 알림이 새 시나리오에 든 차이 행 수를
+    적는다.
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1409,10 +1410,12 @@ def _render_branch(
             return
         created = written.value
         made = new_name if created is None else created.scenario_name
+        carried = stored_layout_words(*created.latest_layout_rows) if created is not None else ""
+        layout_note = f" {title}의 가정 배치(차이 {carried})도 함께 옮겼습니다." if carried else ""
         _written(
             f"{name} {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
             "r1 을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
-            "불러오기」로 올립니다.",
+            f"불러오기」로 올립니다.{layout_note}",
             release=written.release,
         )
 

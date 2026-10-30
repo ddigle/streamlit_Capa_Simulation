@@ -1640,6 +1640,8 @@ def test_the_tab_starts_a_new_scenario_from_an_old_revision(
         "「운영 일정」 r1에서 설비 시나리오 「r1 가지」 r1 을 만들었습니다" in text
         for text in _texts(app)
     )
+    # 배치 차이가 없는 리비전에서 만든 시나리오의 완료 알림에는 가정 배치 줄이 없다.
+    assert not any("함께 옮겼습니다" in text and "r1 가지" in text for text in _texts(app))
     branch = next(
         item for item in repository.list_equipment_scenarios() if item.scenario_name == "r1 가지"
     )
