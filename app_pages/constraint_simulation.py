@@ -63,7 +63,11 @@ from capa_simulation.components.equipment_scenario_status import (
     render_equipment_scenario_row,
     render_legacy_trace_warning,
 )
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.modification_schedule_view import (
     ScheduleModeContext,
     render_mode_switch,
@@ -79,6 +83,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
+    CONSTRAINT_LOCKED_ARRIVAL_KEY,
     CONSTRAINT_MOD_DAYS_INPUT_KEY,
     CONSTRAINT_MOD_DAYS_KEY,
     CONSTRAINT_MOD_DAYS_PILLS_KEY,
@@ -119,6 +124,7 @@ from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, PROCESS_CAPA_
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    page_visit,
     process_page_inputs,
     prune_choice,
     render_schema_ahead_warning,
@@ -129,7 +135,15 @@ from capa_simulation.persistence.equipment_cache import (
     load_process_cutoff,
 )
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
-from capa_simulation.process_detail_state import PROCESS_PARAM as DETAIL_PROCESS_PARAM
+from capa_simulation.process_detail_state import (
+    EQUIPMENT_BASIS_OFFICIAL as DETAIL_EQUIPMENT_BASIS_OFFICIAL,
+)
+from capa_simulation.process_detail_state import (
+    PROCESS_DETAIL_EQUIPMENT_BASIS_KEY,
+)
+from capa_simulation.process_detail_state import (
+    PROCESS_PARAM as DETAIL_PROCESS_PARAM,
+)
 from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
@@ -142,7 +156,7 @@ from capa_simulation.services.constraint_simulation import (
     constraint_month_inputs,
     simulate_constraint,
 )
-from capa_simulation.services.korean_particle import topic_particle
+from capa_simulation.services.korean_particle import object_particle, topic_particle
 from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
@@ -257,23 +271,85 @@ except BOOTSTRAP_ERRORS as exc:
 else:
     render_equipment_scenario_row(equipment_session)
 
-# 공정 — 넘겨받은 공정이 선택지에 있으면 위젯 칸에 적는다(공정 선택 상자보다 먼저).
+
+def first_ready_process() -> str | None:
+    """공정 칸이 비었을 때(사이드바로 처음 열기)의 기본 공정 — 설비 일정이 서는 첫 공정(선택지
+    차례). 처음 화면이 까닭 카드가 아니라 계산이게(2026-10-25 E2E). 서는 공정이 없거나 설비 DB 를
+    못 읽으면 첫 공정이다. 판정은 까닭 카드와 같은 `dynamic_readiness` 이고 공정마다 캐시된 스냅샷을
+    거를 뿐이라 DB 를 열지 않는다(칸이 빈 회차에만 부른다)."""
+    if not process_options:
+        return None
+    if snapshot is not None and not equipment_error:
+        equipment_frame = snapshot.calculation_frames()[1]
+        for option in process_options:
+            if dynamic_readiness(equipment_frame, snapshot.baseline, cutoff, process=option).ready:
+                return str(option)
+    return str(process_options[0])
+
+
+# 공정 — 넘겨받은 공정이 선택지에 있으면 위젯 칸에 적는다(공정 선택 상자보다 먼저). HOME 칸으로 연
+# 공정 Capa 상세(설비 공식 고정)에서 넘어왔으면 그 방문을 적어 둔다 — 설비 기준이 바뀐 것을 알린다.
+missing_label: str | None = None
 if requested_process is not None:
     if requested_process in process_options:
         st.session_state[CONSTRAINT_PROCESS_KEY] = requested_process
+        if (
+            st.session_state.get(PROCESS_DETAIL_EQUIPMENT_BASIS_KEY)
+            == DETAIL_EQUIPMENT_BASIS_OFFICIAL
+        ):
+            st.session_state[CONSTRAINT_LOCKED_ARRIVAL_KEY] = (requested_process, page_visit())
+        else:
+            st.session_state.pop(CONSTRAINT_LOCKED_ARRIVAL_KEY, None)
     else:
-        # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
         missing_label = process_labels.label(requested_process)
-        missing = f"「{literal_markdown(missing_label)}」{topic_particle(missing_label)}"
-        notices.warning(
-            f"넘겨받은 공정 {missing} 시나리오·조회기간에 없어 첫 공정을 엽니다.",
-            icon=":material/help:",
-        )
-prune_choice(
+saved_process = st.session_state.get(CONSTRAINT_PROCESS_KEY)
+opened_process = prune_choice(
     CONSTRAINT_PROCESS_KEY,
     process_options,
-    default=process_options[0] if process_options else None,
+    default=(
+        str(saved_process)
+        if saved_process is not None and str(saved_process) in process_options
+        else first_ready_process()
+    ),
 )
+if missing_label is not None:
+    # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
+    missing = f"「{literal_markdown(missing_label)}」{topic_particle(missing_label)}"
+    if opened_process is None:
+        opened = "공정 없이"
+    else:
+        opened_label = process_labels.label(opened_process)
+        opened = f"「{literal_markdown(opened_label)}」{object_particle(opened_label)}"
+    notices.warning(
+        f"넘겨받은 공정 {missing} 시나리오·조회기간에 없어 {opened} 엽니다.",
+        icon=":material/help:",
+    )
+
+
+def render_locked_arrival_note(process: str | None) -> None:
+    """HOME 칸으로 연 공정 Capa 상세(설비 공식 고정)에서 넘어온 그 공정·그 방문이고 세션이 공식 발행
+    쌍이 아니면 맨 위에 한 줄 — 이 화면의 설비는 두 모드 모두 세션 설비 시나리오다(D6). 다른
+    공정·다른 방문이면 그 칸을 걷는다."""
+    arrival = st.session_state.get(CONSTRAINT_LOCKED_ARRIVAL_KEY)
+    if arrival is None:
+        return
+    if process is None or arrival != (process, page_visit()):
+        st.session_state.pop(CONSTRAINT_LOCKED_ARRIVAL_KEY, None)
+        return
+    if equipment_session is None or equipment_session.is_official_pair:
+        return
+    label = equipment_basis_label(equipment_session)
+    if label is None:
+        return
+    notices.info(
+        f"설비는 세션의 {quoted(label)} 기준입니다 — 공정 Capa 상세는 HOME 칸에서 열어 설비가 "
+        "공식 고정이었습니다.",
+        icon=":material/swap_horiz:",
+    )
+
+
+# 모드 분기 앞 — 「개조 일정」 모드도 같은 세션 설비로 계산한다.
+render_locked_arrival_note(opened_process)
 
 
 def render_reason_card(title: str, detail: str, *, equipment_link: bool) -> None:
@@ -557,6 +633,7 @@ if selected_process is None or not months or period is None:
 
 process = str(selected_process)
 process_label = process_labels.label(process)
+
 
 readiness: DynamicReadiness | None = None
 if not equipment_error:

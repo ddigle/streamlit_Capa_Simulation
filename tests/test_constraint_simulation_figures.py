@@ -51,6 +51,7 @@ from capa_simulation.components.constraint_simulation_figures import (
 from capa_simulation.components.constraint_simulation_view import (
     FREE_ONLY_TEXT,
     LATE_SUFFIX,
+    SHORT_INLINE_LIMIT,
     WAIT_LATE_SUFFIX,
     default_month,
     free_units_line,
@@ -60,6 +61,7 @@ from capa_simulation.components.constraint_simulation_view import (
     render_constraint_kpis,
     schedule_lines,
     short_lines,
+    short_month_lines,
     waiting_lines,
 )
 from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_MONTH, CUSTOMDATA_ROW, MINUS
@@ -94,7 +96,11 @@ def _spec(figure: Any) -> dict[str, Any]:
 
 
 def _traces(figure: Any, name: str) -> list[dict[str, Any]]:
-    return [trace for trace in _spec(figure)["data"] if trace.get("name") == name]
+    return _traces_in(_spec(figure), name)
+
+
+def _traces_in(spec: dict[str, Any], name: str) -> list[dict[str, Any]]:
+    return [trace for trace in spec["data"] if trace.get("name") == name]
 
 
 # ------------------------------------------------------------------ 서식
@@ -263,6 +269,48 @@ def test_the_rate_figure_moves_close_end_labels_apart() -> None:
     assert tie["제약"][0] == pytest.approx(tie["기준"][0])
     far = anchors(LABELS)
     assert far["제약"] == (120.0, "middle") and far["기준"][1] == "middle"
+
+
+def test_a_huge_constrained_rate_is_pinned_to_the_top_with_a_triangle() -> None:
+    """제약 소요가 0.025대인 달의 제약 확보율 4000% 가 y 축을 4000% 까지 늘려 기존 제품 선과
+    기준선이 바닥에 눌렸다(2026-10-25 E2E #13·#107). 축은 다른 선·기준으로 잡고 제약 제품 점은 그
+    범위 폭만큼 위까지만 넣는다 — 넘는 점은 위 끝에 ▲(잘리지 않게 `cliponaxis` 끔)·풍선에 값과
+    「▲ 그래프 위 끝 넘음」. 넘는 점이 없으면 축과 점은 예전 그대로다."""
+    product = (0, 0, 0, 0, 0, 0.025, 6, 7, 8, 8, 9, 9, 10, 10, 11)
+    result = _run(product=product)
+    axis = figures.rate_axis(result, LABELS, show_proportional=True)
+    assert axis.above_months == (202706,)
+    assert axis.high <= 300
+    spec = _spec(rate_figure(result, LABELS, selected_month=None, show_proportional=True))
+    assert spec["layout"]["yaxis"]["range"] == [axis.low, axis.high]
+    (line,) = _traces_in(spec, "제약 제품")
+    index = [row.month for row in result.months].index(202706)
+    assert line["y"][index] == axis.high
+    assert line["marker"]["symbol"][index] == "triangle-up"
+    assert line["marker"]["symbol"][index + 1] == "circle"
+    assert line["cliponaxis"] is False
+    hover = spec["data"][0]["customdata"][index][1]
+    assert "제약 4000.0%(최소 1대) ▲ 그래프 위 끝 넘음" in hover
+
+    plain = _run()
+    assert figures.rate_axis(plain, LABELS, show_proportional=True).above_months == ()
+    plain_spec = _spec(rate_figure(plain, LABELS, selected_month=None, show_proportional=True))
+    every = [
+        value * 100
+        for row in plain.months
+        for value in (
+            row.baseline_rate,
+            row.existing_rate,
+            row.constrained_rate if row.in_period else None,
+            row.proportional_existing_rate if row.in_period else None,
+            row.general_target,
+        )
+        if value is not None
+    ] + [float(LABELS.target_percent)]
+    assert plain_spec["layout"]["yaxis"]["range"] == list(figures._axis_bounds(every))
+    (plain_line,) = _traces_in(plain_spec, "제약 제품")
+    assert set(plain_line["marker"]["symbol"]) == {"circle"}
+    assert plain_line["cliponaxis"] is True
 
 
 def test_the_constrained_and_proportional_lines_stay_inside_the_period() -> None:
@@ -641,11 +689,83 @@ def test_the_existing_available_step_recomputes_from_the_written_numbers(
     )
     body = month_steps(row, result, LABELS, show_proportional=False).steps[3].body
     assert "≈" not in body
-    *operands, written_available = _written_numbers(body)
+    # 비가동이 가용보다 많은 달은 식이 「max(0, 가용 − 개조 중)」 이다 — 그 0 은 인수가 아니다.
+    assert ("max(0, " in body) is (available - downtime < 0)
+    *operands, written_available = _written_numbers(body.replace("max(0, ", "("))
     written_usable = max(0.0, operands[0] - (operands[1] if downtime > 0 else 0.0))
     written_allocated = operands[-1] if allocated > 0 else 0
     assert units_text(written_usable - written_allocated) == units_text(written_available)
     assert units_text(usable - allocated) == units_text(written_available)
+
+
+def test_an_overdrawn_month_shows_the_zero_floor_in_the_formula() -> None:
+    """과개조 달 4단계는 「기존 가용 = 9 − 16.45 = 0대」 가 아니라 「max(0, 9 − 16.45) = 0대」 다 —
+    0 이 되는 까닭이 식에 보인다(2026-10-25 E2E #110)."""
+    result = _run()
+    row = replace(
+        result.month(202705),
+        available=9.0,
+        downtime=16.45,
+        usable=0.0,
+        overdrawn=True,
+        allocated=0,
+        existing_available=0.0,
+    )
+    step = month_steps(row, result, LABELS, show_proportional=False).steps[3]
+    assert step.body == "기존 가용 = max(0, 9 − 16.45) = **0대**"
+    assert step.note.endswith("비가동이 가용보다 많아 쓸 수 있는 가용을 0 으로 둡니다")
+    # 신규 대기도 쓸 수 있는 가용에서 빠지므로 0 바닥 괄호 안에 들고, 제약 배정은 괄호 밖이다.
+    waiting = replace(row, downtime=5.0, waiting=6.25, allocated=0)
+    body = month_steps(waiting, result, LABELS, show_proportional=False).steps[3].body
+    assert body == "기존 가용 = max(0, 9 − 5 − 6.25) = **0대**"
+
+
+def _operand_after(text: str, name: str) -> str:
+    """식 글에서 `name` 바로 뒤 수 글자(「기존 1.9637」 → 「1.9637」)."""
+    match = re.search(rf"{re.escape(name)} (\d[\d,]*(?:\.\d+)?)", text)
+    assert match is not None, text
+    return match.group(1)
+
+
+def test_one_quantity_keeps_one_form_across_the_month_steps() -> None:
+    """같은 달 1단계 「소요 1.96대 = 기존 1.96」 과 5단계 「3 ÷ 1.9637」 처럼 같은 수가 두 꼴로
+    보이지 않는다(2026-10-25 E2E #109) — 카드에 서는 식이 함께 맞는 한 자릿수로 모든 인수를 적는다.
+    굵은 결과는 화면 자릿수 그대로다."""
+    result = _run()
+    row = replace(
+        result.month(202705),
+        required=1.9637,
+        existing_demand=1.9637,
+        constrained_demand=0.0,
+        downtime=0.0,
+        downtime_shares=(),
+        usable=3.0,
+        overdrawn=False,
+        allocated=0,
+        available=3.0,
+        existing_available=3.0,
+        existing_rate=3.0 / 1.9637,
+    )
+    steps = month_steps(row, result, LABELS, show_proportional=False).steps
+    assert steps[0].body == "소요 **1.96대** = 기존 1.9637 + HBM라E 0"
+    assert steps[4].body == "기존 확보율 = 3 ÷ 1.9637 = **152.8%**"
+
+    # 기간 안 — 1단계·2단계의 제약 소요, 1단계·5단계의 기존 소요, 4단계·5단계의 가용이 한 꼴이다.
+    june = result.month(202706)
+    for existing, constrained in ((38.123, 4.8771), (2.0041, 0.0249), (141.2649, 1.3649)):
+        inside = replace(
+            june,
+            required=existing + constrained,
+            existing_demand=existing,
+            constrained_demand=constrained,
+            existing_rate=june.existing_available / existing,
+        )
+        steps = month_steps(inside, result, LABELS, show_proportional=False).steps
+        assert all("≈" not in step.body for step in steps)
+        assert _operand_after(steps[0].body, "기존") == _operand_after(steps[4].body, "÷")
+        assert _operand_after(steps[0].body, "HBM라E") == _operand_after(
+            steps[1].body, "필요 대수 ="
+        )
 
 
 def test_a_step_that_no_digits_can_match_says_approximately() -> None:
@@ -660,6 +780,33 @@ def test_a_step_that_no_digits_can_match_says_approximately() -> None:
     )
     body = month_steps(row, result, LABELS, show_proportional=False).steps[0].body
     assert body == "소요 **100대** ≈ 기존 90.12 + HBM라E 4"
+
+
+def test_a_constraint_demand_below_one_unit_says_the_minimum_one_unit() -> None:
+    """제약 소요가 1대 미만(0.025대)이면 필요 대수를 올림해 1대를 떼 제약 제품 확보율이 4000% 다 —
+    고른 달 2단계·결과 상자·계산표 두 칸 풍선·그래프 풍선이 「최소 1대」 를 곁들여 그 까닭을
+    말한다(2026-10-25 E2E #64). 소요가 1대 이상인 달에는 붙지 않는다."""
+    product = (0, 0, 0, 0, 0, 0.025, 6, 7, 8, 8, 9, 9, 10, 10, 11)
+    result = _run(product=product)
+    june = result.month(202706)
+    assert (june.need, june.allocated) == (1, 1)
+    assert figures.minimum_unit(june)
+    steps = month_steps(june, result, LABELS, show_proportional=False)
+    assert steps.steps[1].body == "HBM라E 필요 대수 = 0.025 × 120% = 0.03 → **1대**(최소)"
+    assert steps.steps[1].note.startswith("소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다")
+    assert steps.verdict.endswith("제약 제품 4000.0% (제약 120% 충족 · 소요 1대 미만에 최소 1대)")
+    assert figures._need_cell(june, 120).hover.endswith("→ 1대(최소)")
+    rate_hover = figures._constrained_rate_cell(june).hover
+    assert "0.03대가 1대 미만이라도 최소 1대를 떼어" in rate_hover
+    assert "제약 4000.0%(최소 1대)" in figures._hit_hover(june, result.conditions)
+
+    july = result.month(202707)
+    assert not figures.minimum_unit(july)
+    july_steps = month_steps(july, result, LABELS, show_proportional=False)
+    assert "(최소)" not in july_steps.steps[1].body
+    assert "최소" not in july_steps.verdict
+    assert "최소" not in figures._hit_hover(july, result.conditions)
+    assert "최소" not in figures._need_cell(july, 120).hover
 
 
 def test_a_dedicated_pool_above_need_says_it_stays() -> None:
@@ -698,7 +845,8 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
         rows,
         replace(CONDITIONS, period_start=202706, period_end=202706, constraint_target=1.0),
     )
-    assert short_lines(result).startswith("27.06: 필요 6대 중 5대만 배정")
+    assert short_lines(result).startswith("27.06: 전용 6대 중 5대만 배정")
+    assert short_month_lines(result) == []
     assert overdrawn_lines(result) == [
         "27.05: 개조 비가동 5.81대가 가용 5대보다 많습니다 — 이 공정 설비로는 이 개조 일정이 "
         "서지 않습니다."
@@ -706,6 +854,32 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
     assert short_lines(_run()) == ""
     may = month_steps(result.month(202705), result, LABELS, show_proportional=False)
     assert "0 으로 둡니다" in may.steps[3].note
+
+
+def test_the_short_line_names_the_dedicated_units_and_folds_many_months() -> None:
+    """모자란 달의 값은 그 달 필요(need)가 아니라 전용(dedicated)이다 — 기간 안 소요가 0 으로 내려도
+    개조한 전용 6대를 유지하는 달(202707)에 「필요 6대」 라고 적었다(2026-10-25 E2E). 모자란 달이
+    `SHORT_INLINE_LIMIT` 보다 많으면 한 줄에는 달 수·첫·끝 달만 적고 달마다 값은 접힌 줄로 간다."""
+    rows = tuple(
+        ConstraintMonthInput(month, 8.0, demand, 5.0, 1.1)
+        for month, demand in zip(
+            (202705, 202706, 202707, 202708, 202709, 202710), (0, 6, 0, 6, 6, 6), strict=True
+        )
+    )
+    result = simulate_constraint(
+        rows,
+        replace(CONDITIONS, period_start=202706, period_end=202710, constraint_target=1.0),
+    )
+    july = result.month(202707)
+    assert (july.need, july.dedicated, july.short) == (0, 6, True)
+    assert len(result.short_months) == 5 > SHORT_INLINE_LIMIT
+    line = short_lines(result)
+    assert line.startswith("전용 대수를 다 배정하지 못한 달 5개월(27.06–27.10 사이) — ")
+    assert "필요" not in line
+    details = short_month_lines(result)
+    assert len(details) == 5
+    assert details[1].startswith("27.07: 전용 6대 중 ")
+    assert all(": 전용 6대 중 " in text for text in details)
 
 
 # ------------------------------------------------------------------ 요약 넷
@@ -775,8 +949,9 @@ def _new(*, owned: int = 0) -> ConstraintResult:
 
 def test_the_schema_version_moved_with_the_new_rows() -> None:
     """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
-    16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이다."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 7
+    16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이고, 8 은
+    그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판이다."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 9
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:

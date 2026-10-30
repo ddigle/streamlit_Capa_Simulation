@@ -263,15 +263,21 @@ def _column_widths(app: AppTest, index: int) -> dict[str, object]:
 
 
 def test_the_month_editor_fits_inside_the_input_box() -> None:
-    """편집표 세 칸 폭의 합이 입력 칸 안에 든다. 넘으면 표가 칸 안에서 가로로 넘어, 「신규 호기」
-    칸을 고칠 때 표가 오른쪽으로 밀려 「월」 칸이 가려진다(`large` 일 때 1600px 창에서 105px
-    넘쳤다)."""
-    widths = _column_widths(_component(), 0)
+    """편집표 세 칸 폭의 합이 가장 좁은 입력 칸(390px 창 — 270px) 안에 든다. 넘으면 표가 칸 안에서
+    가로로 넘어 「신규 호기」 머리가 오른쪽 끝에서 잘리고(2026-10-25 E2E #114 — 390px 에서 375px 칸
+    합), 그 칸을 고칠 때 표가 오른쪽으로 밀려 「월」 칸이 가려진다(`large` 일 때 1600px 창에서
+    105px 넘쳤다). 읽기만 하는 「월」 만 붙박는다 — 입력 칸을 붙박으면 값이 흐린 글자로 그려져
+    잠긴 칸처럼 보인다."""
+    app = _component()
+    widths = _column_widths(app, 0)
 
     assert list(widths) == [MONTH_COLUMN, TARGET_COLUMN, UNITS_COLUMN]
     assert all(isinstance(width, int) for width in widths.values())
     total = sum(int(str(width)) for width in widths.values())
-    assert total <= calculator._INPUTS_BOX_PX - calculator._BOX_CHROME_PX
+    assert total <= calculator._NARROW_EDITOR_PX
+    assert calculator._NARROW_EDITOR_PX < calculator._INPUTS_BOX_PX - calculator._BOX_CHROME_PX
+    config = json.loads(app.dataframe[0].proto.columns)
+    assert [name for name in widths if config[name].get("pinned")] == [MONTH_COLUMN]
 
 
 def test_the_unit_table_gives_the_memo_room_and_fits_the_side_by_side_results_box() -> None:
@@ -359,6 +365,19 @@ def test_the_paste_box_fills_months_from_january_like_the_original() -> None:
     # 알림은 한 번만 — 다음 회차에는 없다.
     app.run()
     assert not app.success
+
+
+def test_pasting_more_than_twelve_lines_says_how_many_were_left_out() -> None:
+    """열세 줄 이상 붙여 넣으면 원본은 말없이 앞 열두 줄만 넣고 「12개월을 넣었습니다」 라고만
+    했다(2026-10-25 E2E #113) — 넣지 않은 줄 수를 알림에 덧붙인다."""
+    app = _component()
+    _paste(app, "\n".join(f"{20 + index}\tV{index}" for index in range(14)))
+
+    assert [element.value for element in app.success] == [
+        "12개월을 넣었습니다. 열두 달을 넘은 2줄(빈 줄을 빼고 13번째 줄부터)은 넣지 않았습니다."
+    ]
+    stored = app.session_state[MONTHS_KEY]
+    assert stored.loc[11, [TARGET_COLUMN, UNITS_COLUMN]].tolist() == [31.0, "V11"]
 
 
 def test_pasting_replaces_editor_edits_of_those_months() -> None:

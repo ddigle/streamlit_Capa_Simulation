@@ -47,6 +47,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MOD_DAYS_PILLS_KEY,
     CONSTRAINT_MODIFY_KEY,
     CONSTRAINT_MONTH_KEY,
+    CONSTRAINT_MONTH_PICKED_KEY,
     CONSTRAINT_PERIOD_END_KEY,
     CONSTRAINT_PERIOD_START_KEY,
     CONSTRAINT_PROCESS_KEY,
@@ -58,10 +59,17 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_TARGET_PILLS_KEY,
     CONSTRAINT_VIEW_FRAGMENT_KEY,
 )
+from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+from capa_simulation.modification_schedule_state import CONSTRAINT_MODE_KEY
 from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
+from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.process_detail_state import (
+    EQUIPMENT_BASIS_OFFICIAL,
+    PROCESS_DETAIL_EQUIPMENT_BASIS_KEY,
+)
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.required_shortening import ShorteningPlan, plan_required_shortening
 
@@ -130,9 +138,9 @@ finally:
 """
 
 
-def _equipment_database(path: Path) -> Path:
-    """시드 공정 하나에 기존보유 4대 + Qual 끝난 신규 8대·Cut-off 7 — 모든 달 설비 일정 기준 가용
-    12."""
+def _equipment_database(path: Path, process: str = DYNAMIC_PROCESS) -> Path:
+    """시드 공정 하나(`process`)에 기존보유 4대 + Qual 끝난 신규 8대·Cut-off 7 — 모든 달 설비 일정
+    기준 가용 12."""
     repository = DuckDBEquipmentRepository(path)
     repository.initialize()
     master = _master(
@@ -140,17 +148,17 @@ def _equipment_database(path: Path) -> Path:
             _unit(
                 f"CA-{index:02d}",
                 date(2025, 1, 10),
-                process=DYNAMIC_PROCESS,
+                process=process,
                 arrival=date(2024, 12, 1),
             )
             for index in range(1, 9)
         ]
     )
     baseline = pd.DataFrame(
-        {"공정": [DYNAMIC_PROCESS], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
+        {"공정": [process], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
     )
     repository.save_snapshot(baseline, master, _downtime([]))
-    repository.save_process_cutoff(_cutoff(7, DYNAMIC_PROCESS))
+    repository.save_process_cutoff(_cutoff(7, process))
     return path
 
 
@@ -309,18 +317,111 @@ def test_the_process_param_is_taken_once_and_the_theme_stays(
     assert back[0]["query_params"] == {"process": DYNAMIC_PROCESS, "theme": "dark"}
 
 
-def test_an_unknown_process_param_warns_and_opens_the_first_process(
+def test_an_unknown_process_param_warns_and_opens_the_first_ready_process(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
+    """넘겨받은 공정이 선택지에 없으면 처음 열 때와 같은 기본 공정(설비 일정이 서는 첫 공정)을 열고
+    알림이 연 공정을 말한다."""
     app = _app(dynamic_databases)
     app.query_params["process"] = "없는_공정"
     _ok(app.run())
     warnings = " ".join(str(item.value) for item in app.warning)
     assert "넘겨받은 공정" in warnings and "없는\\_공정" in warnings
-    assert (
-        app.selectbox(key=CONSTRAINT_PROCESS_KEY).value
-        == app.selectbox(key=CONSTRAINT_PROCESS_KEY).options[0]
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert "엽니다" in warnings and DYNAMIC_PROCESS.replace("_", "\\_") in warnings
+
+
+def test_the_sidebar_first_open_picks_the_first_process_with_an_equipment_schedule(
+    tmp_path: Path,
+) -> None:
+    """사이드바로 처음 열면(공정 칸이 빔) 첫 공정이 아니라 설비 일정이 서는 첫 공정이다 — 첫 화면이
+    까닭 카드가 아니라 계산이게(2026-10-25 E2E #106). 설비는 첫 공정이 아닌 공정 하나에만 둔다.
+    고른 공정은 그 뒤로 그대로다."""
+    databases = (
+        tmp_path / "scenario.duckdb",
+        _equipment_database(tmp_path / "equipment.duckdb", OTHER_PROCESS),
     )
+    app = _ok(_app(databases).run())
+    options = app.selectbox(key=CONSTRAINT_PROCESS_KEY).options
+    assert options[0] != OTHER_PROCESS
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == OTHER_PROCESS
+    assert app.metric
+    assert _has_chart(app, CONSTRAINT_CHART_KEY)
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(options[0])
+    _ok(app.run())
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == options[0]
+
+
+def _assumed_scenario_databases(tmp_path: Path) -> tuple[tuple[Path, Path], dict[str, str]]:
+    """설비 DB 를 한 번 저장하고(공식) 가정 시나리오 「셋업 실무」 를 복제해 그 세션 선택 칸을
+    낸다."""
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    repository = DuckDBEquipmentRepository(databases[1])
+    (official,) = repository.list_equipment_scenarios()
+    assert official.latest_schedule_revision_id is not None
+    clone = repository.clone_equipment_scenario(
+        official.latest_schedule_revision_id, name="셋업 실무", created_by=None
+    )
+    assert clone.latest_schedule_revision_id is not None
+    selection = {
+        "scenario_id": clone.equipment_scenario_id,
+        "schedule_revision_id": clone.latest_schedule_revision_id,
+    }
+    return databases, selection
+
+
+def _infos(app: AppTest) -> str:
+    return " ".join(str(item.value) for item in app.info)
+
+
+def test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_one(
+    tmp_path: Path,
+) -> None:
+    """HOME 칸으로 연 공정 Capa 상세(설비 「공식 고정」)의 머리 링크로 넘어오면 이 화면은 세션의
+    가정 시나리오로 계산한다(D6) — 기준이 말없이 바뀌지 않게 그 공정·그 방문 동안 맨 위에 한 줄을
+    세운다(2026-10-25 E2E #39). 다른 공정을 고르거나 다른 화면에 다녀오면 걷히고, 사이드바로 온
+    방문·공식 세션에는 서지 않는다."""
+    databases, selection = _assumed_scenario_databases(tmp_path)
+    note = "설비는 세션의 「셋업 실무 r1」 기준입니다 — 공정 Capa 상세는 HOME 칸에서 열어 설비가"
+    app = _app(databases)
+    app.session_state[SELECTION_KEY] = selection
+    app.session_state[PROCESS_DETAIL_EQUIPMENT_BASIS_KEY] = EQUIPMENT_BASIS_OFFICIAL
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert note in _infos(app)
+    # 같은 방문의 다른 회차에도 남는다.
+    app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(False)
+    _ok(app.run())
+    assert note in _infos(app)
+    # 「개조 일정」 모드도 같은 세션 설비로 계산한다 — 모드를 바꿔도 남는다.
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
+    _ok(app.run())
+    assert note in _infos(app)
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("constraint")
+    _ok(app.run())
+    # 다른 공정을 고르면 걷힌다 — 돌아와도 다시 서지 않는다.
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(OTHER_PROCESS)
+    _ok(app.run())
+    assert note not in _infos(app)
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(DYNAMIC_PROCESS)
+    _ok(app.run())
+    assert note not in _infos(app)
+
+    # 다른 화면에 다녀오면(페이지 방문 차례가 오름) 걷힌다.
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert note in _infos(app)
+    # 하네스는 `app.py` 를 돌리지 않아 방문 차례가 없다(0) — 페이지가 바뀐 회차처럼 올린다.
+    app.session_state[PAGE_VISIT_KEY] = 1
+    _ok(app.run())
+    assert note not in _infos(app)
+
+    # 사이드바 설비 기준 그대로 연 상세(방문 기준 칸 없음)에서 넘어오면 서지 않는다.
+    plain = _app(databases)
+    plain.session_state[SELECTION_KEY] = selection
+    plain.query_params["process"] = DYNAMIC_PROCESS
+    _ok(plain.run())
+    assert "공정 Capa 상세는 HOME 칸에서" not in _infos(plain)
 
 
 def test_a_process_without_equipment_stops_with_its_reason(
@@ -673,6 +774,27 @@ def test_a_typed_general_target_folds_to_the_one_decimal_the_field_shows(
     assert f"{typed:g}%" not in _header_line(app) or typed == folded
 
 
+def test_the_general_target_keeps_a_typed_value_off_the_half_steps_as_the_guide_says(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """기준 확보율 칸은 0.5 단위가 아닌 값(107.3)도 그대로 받아 쓴다 — +/− 단추만 0.5% 씩이다.
+    Guide 가 「직접 50~200%(0.5% 단위)」 라고 적어 동작과 어긋났다(2026-10-25 E2E #18·#108) —
+    Guide 는 지금 동작을 적는다."""
+    app = _opened(dynamic_databases)
+    app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107.3)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == pytest.approx(107.3)
+    assert "기준 107.3%" in _header_line(app)
+
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/constraint_simulation.md").read_text(
+        encoding="utf-8"
+    )
+    (row,) = [line for line in guide.splitlines() if line.startswith("| 확보율 | **기준 확보율**")]
+    assert "(0.5% 단위)" not in row
+    assert "+/− 단추는 0.5% 씩" in row and "107.3" in row
+    assert "소수 첫째 자리" in row
+
+
 def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
@@ -756,6 +878,47 @@ def test_the_period_boxes_keep_their_months_when_other_widgets_rerun(
     assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
 
 
+def test_the_period_follows_the_product_until_the_boxes_are_edited(
+    dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상자를 고치기 전에는 제약 기간이 기본값(그 제품의 첫 소요 달 ~ 보이는 마지막 달)을 따라가
+    제품을 바꾸면 그 제품의 첫 소요 달로 다시 선다 — 앞 제품의 기간이 남아 「소요가 없어」 안내만
+    보였다(2026-10-25 E2E #15). 상자를 고친 뒤에는 제품을 바꿔도 그대로다.
+
+    제품 B 의 26.01~26.04 소요를 A 로 옮겨(공정 합은 그대로) B 의 첫 소요 달을 26.05 로 둔다."""
+    original = simulation_cache.get_process_product_demand
+
+    def later_b(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        table = original(*args, **kwargs).copy()
+        names = table["제품정보"].astype("string")
+        a_row = table.index[names.eq(FIRST_PRODUCT).fillna(False)][0]
+        b_rows = table.index[names.eq("DEMO PRODUCT B").fillna(False)]
+        for column in ("202601", "202602", "202603", "202604"):
+            moved = float(pd.to_numeric(table.loc[b_rows, column]).sum())
+            table.loc[a_row, column] = float(table.loc[a_row, column]) + moved
+            table.loc[b_rows, column] = 0.0
+        return table
+
+    monkeypatch.setattr(simulation_cache, "get_process_product_demand", later_b)
+    app = _opened(dynamic_databases)
+    assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == FIRST_PRODUCT
+    assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202601
+
+    app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value("DEMO PRODUCT B")
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202605
+    assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
+    assert not any("소요가 없어" in str(item.value) for item in app.info)
+
+    # 상자를 고친 뒤에는 제품을 바꿔도 그대로다.
+    app.selectbox(key=CONSTRAINT_PERIOD_START_KEY).set_value(202607)
+    _ok(app.run())
+    app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(FIRST_PRODUCT)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202607
+    assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
+
+
 def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
@@ -779,7 +942,9 @@ def test_conditions_and_the_picked_month_survive_a_round_trip_and_get_pruned(
     app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).set_value(110)
     app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value("DEMO PRODUCT B")
     _ok(app.run())
+    # 달 칸 누름 콜백이 적는 두 칸(고른 달 · 눌러 고른 표지).
     app.session_state[CONSTRAINT_MONTH_KEY] = 202604
+    app.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
     _ok(app.run())
 
     app.session_state["_test_page"] = "away"
@@ -802,6 +967,42 @@ def test_conditions_and_the_picked_month_survive_a_round_trip_and_get_pruned(
     app.run()
     assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == FIRST_PRODUCT
     assert app.session_state[CONSTRAINT_PRODUCT_KEY] == FIRST_PRODUCT
+
+
+def _picked_title_month(app: AppTest) -> int:
+    """고른 달 계산 카드 제목(「**26.08 · …**」)의 달."""
+    titles = [text for text in _markdown(app) if re.match(r"\*\*\d\d\.\d\d · ", text)]
+    assert len(titles) == 1, _markdown(app)
+    year, month = titles[0][2:7].split(".")
+    return 200000 + int(year) * 100 + int(month)
+
+
+def test_the_selected_month_follows_the_conditions_until_a_month_is_clicked(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """달 칸을 누르기 전에는 조건이 바뀔 때마다 고른 달이 그 조건의 기본 달(영향 시작)로 다시 선다 —
+    제약 기간을 옮겼는데 고른 달 계산이 기간 밖 달에 남았다(2026-10-25 E2E #14·#105). 누른 뒤에는
+    그 달이 보이는 동안 그대로다."""
+    app = _opened(dynamic_databases)
+    assert CONSTRAINT_MONTH_PICKED_KEY not in app.session_state
+    first = app.session_state[CONSTRAINT_MONTH_KEY]
+    assert _picked_title_month(app) == first
+
+    app.selectbox(key=CONSTRAINT_PERIOD_START_KEY).set_value(202608)
+    _ok(app.run())
+    # 개조 비가동은 기간 첫 달 W/D 첫날 앞이라 영향 시작은 기간 첫 달이거나 그 앞 달이다.
+    moved = app.session_state[CONSTRAINT_MONTH_KEY]
+    assert moved != first and moved in (202607, 202608)
+    assert _picked_title_month(app) == moved
+
+    # 눌러 고른 달은 조건이 바뀌어도 남는다.
+    app.session_state[CONSTRAINT_MONTH_KEY] = 202610
+    app.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
+    _ok(app.run())
+    app.selectbox(key=CONSTRAINT_PERIOD_START_KEY).set_value(202609)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_MONTH_KEY] == 202610
+    assert _picked_title_month(app) == 202610
 
 
 # ------------------------------------------------------------------ 오류 갈래
@@ -948,6 +1149,7 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
 
     browser.fragment_queue = [view]
     app.session_state[CONSTRAINT_MONTH_KEY] = 202609
+    app.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
     _ok(app.run())
     assert browser.started == [[view]]
     assert set(_event_slots(browser.messages)) == full_slots

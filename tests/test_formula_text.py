@@ -171,6 +171,23 @@ def test_consistent_digits_keeps_the_round_two_expectations() -> None:
     assert consistent_digits(lambda _d: "1", "2") == (2, "≈")
 
 
+def test_shared_digits_finds_one_digits_for_every_formula_or_falls_back() -> None:
+    """한 카드의 식들이 함께 맞는 가장 적은 한 자릿수 — 둘째 자리로 맞는 식도 다른 식이 넷째 자리를
+    바라면 넷째 자리다. 함께 맞는 자릿수가 없으면 `None` 이고 `digits_within` 은 식마다 고른다."""
+    split = (lambda d: units_text(round(1.9637, d) + 0.0), units_text(1.9637))
+    ratio = (lambda d: rate_text(3.0 / round(1.9637, d)), rate_text(3.0 / 1.9637))
+    assert consistent_digits(*split) == (2, "=")
+    assert consistent_digits(*ratio) == (4, "=")
+    assert formula_text.shared_digits([split, ratio]) == 4
+    assert formula_text.digits_within(4, *split) == (4, "=")
+
+    only_two = (lambda d: "x" if d == 2 else "y", "x")
+    only_three = (lambda d: "x" if d == 3 else "y", "x")
+    assert formula_text.shared_digits([only_two, only_three]) is None
+    assert formula_text.digits_within(None, *only_three) == (3, "=")
+    assert formula_text.digits_within(None, lambda _d: "1", "2") == (2, "≈")
+
+
 def test_consistent_places_widens_the_fewest_digits_right_first() -> None:
     """인수마다 따로 늘린다 — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저(표준 목표 로직
     분석 3회차 꼴 「54,698.63 ÷ 1.49386 = 36,615.63」), 끝내 못 맞추면 처음 자리와 「≈」."""

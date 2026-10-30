@@ -108,13 +108,17 @@ from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
 
 __all__ = [
+    "ABOVE_MARK",
     "CHART_HEIGHT_PX",
     "CONSTRAINT_FIGURE_SCHEMA_VERSION",
     "END_LABEL_GAP_PX",
     "END_LABEL_MIN_PLOT_PX",
+    "MINIMUM_UNIT_WORDS",
     "MONTH_SLOT_PX",
+    "RATE_AXIS_STRETCH",
     "ROW_IDS",
     "ConstraintLabels",
+    "RateAxis",
     "SheetCanvas",
     "build_sheet_canvas",
     "chart_min_width_px",
@@ -124,8 +128,10 @@ __all__ = [
     "end_label_anchors",
     "free_parts",
     "general_label",
-    "new_unit_fate",
+    "minimum_unit",
     "month_name",
+    "new_unit_fate",
+    "rate_axis",
     "rate_figure",
     "rate_text",
     "signed_points",
@@ -134,7 +140,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 7
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 9
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -156,6 +162,13 @@ _PERIOD_OPACITY: Final = 0.08
 _SELECTED_OPACITY: Final = 0.10
 # 값 줄 라벨을 구획 제목보다 들인다(Static 대비 일정 비교 시트와 같다).
 _VALUE_LABEL_INDENT_PX: Final = 12
+# y 축 — 제약 제품 점은 다른 선·기준으로 잡은 범위 폭의 이 배만큼 위까지만 축에 넣는다(`rate_axis`).
+# 1 이면 다른 선들이 그림 칸 높이의 절반 아래로 눌리지 않는다. 넘는 점은 위 끝 ▲.
+RATE_AXIS_STRETCH: Final = 1.0
+ABOVE_MARK: Final = "▲"
+_ABOVE_MARKER_SIZE: Final = 10
+# 소요가 1대 미만인 달에 올림으로 떼는 대수의 말(`minimum_unit`).
+MINIMUM_UNIT_WORDS: Final = "최소 1대"
 # 「제약 없을 때 대비」 칸이 빈칸인 차이(%p).
 _DELTA_HIDDEN_POINTS: Final = 0.05
 
@@ -256,6 +269,13 @@ def signed_points(value: float | None) -> str:
     if points < 0:
         return f"{MINUS}{abs(points):.1f}%p"
     return "0.0%p"
+
+
+def minimum_unit(row: ConstraintMonth) -> bool:
+    """제약 소요가 1대 미만인데 필요 대수를 올림해 1대를 뗀 달(기간 안). 제약 확보율이 아주 크게
+    나오는 까닭이다 — 소요 0.025대에 1대면 4000% 다(2026-10-25 E2E). 화면은 「필요 1대(최소)」 처럼
+    그 사실을 곁들인다."""
+    return row.in_period and 0 < row.constrained_demand < 1 and row.need == 1
 
 
 def month_name(month: int) -> str:
@@ -386,14 +406,20 @@ def _first_waiting_month(item: NewUnitAssignment, result: ConstraintResult) -> i
     return item.month
 
 
-def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
+def _hit_hover(
+    row: ConstraintMonth, conditions: ConstraintConditions, *, above: bool = False
+) -> str:
     parts = [
         f"<b>{html.escape(month_label(row.month))}</b>",
         f"기존 {rate_text(row.existing_rate)}",
         f"제약 없을 때 {rate_text(row.baseline_rate)}",
     ]
     if row.in_period and row.constrained_rate is not None:
-        parts.append(f"제약 {rate_text(row.constrained_rate)}")
+        parts.append(
+            f"제약 {rate_text(row.constrained_rate)}"
+            + (f"({MINIMUM_UNIT_WORDS})" if minimum_unit(row) else "")
+            + (f" {ABOVE_MARK} 그래프 위 끝 넘음" if above else "")
+        )
     text = " · ".join(parts)
     split = dedicated_split_text(row, conditions) if row.in_period else ""
     if split:
@@ -441,6 +467,46 @@ def _axis_bounds(values: Sequence[float]) -> tuple[float, float]:
     return float(low), float(high if high > low else low + 10)
 
 
+class RateAxis(NamedTuple):
+    """월별 확보율 그래프의 y 축 — 범위와 위 끝을 넘어 ▲ 로 찍는 제약 제품 점의 달."""
+
+    low: float
+    high: float
+    above_months: tuple[int, ...]
+
+
+def rate_axis(
+    result: ConstraintResult, labels: ConstraintLabels, *, show_proportional: bool
+) -> RateAxis:
+    """y 축 범위. 제약 제품 선을 뺀 선(제약 없을 때·기존·비중대로)·기준·제약 목표로 먼저 잡고
+    (`_axis_bounds`), 제약 제품 점은 그 범위 폭만큼 위(`RATE_AXIS_STRETCH`)까지만 축에 넣는다 —
+    소요가 아주 작은 달의 제약 확보율(4031%)이 축을 늘려 기존 제품 선과 기준선이 바닥에 눌리지
+    않게(2026-10-25 E2E #13·#107). 그보다 큰 점은 위 끝에 ▲ 로 찍고 값은 풍선이 말한다."""
+    rows = result.months
+    core: list[float] = [row.general_target * 100 for row in rows] + [float(labels.target_percent)]
+    for row in rows:
+        core += [
+            value
+            for value in (
+                _percent(row.baseline_rate),
+                _percent(row.existing_rate),
+                _percent(row.proportional_existing_rate)
+                if show_proportional and row.in_period
+                else None,
+            )
+            if value is not None
+        ]
+    core_low, core_high = _axis_bounds(core)
+    ceiling = core_high + RATE_AXIS_STRETCH * (core_high - core_low)
+    constrained = [
+        (row.month, value)
+        for row in rows
+        if row.in_period and (value := _percent(row.constrained_rate)) is not None
+    ]
+    low, high = _axis_bounds(core + [value for _, value in constrained if value <= ceiling])
+    return RateAxis(low, high, tuple(month for month, value in constrained if value > high))
+
+
 def rate_figure(
     result: ConstraintResult,
     labels: ConstraintLabels,
@@ -467,10 +533,10 @@ def rate_figure(
         _percent(row.proportional_existing_rate) if row.in_period else None for row in rows
     ]
     general = [row.general_target * 100 for row in rows]
-    shown = [*baseline, *existing, *constrained, *(proportional if show_proportional else [])]
-    low, high = _axis_bounds(
-        [value for value in shown if value is not None] + general + [target_percent]
-    )
+    low, high, above_months = rate_axis(result, labels, show_proportional=show_proportional)
+    above = [row.month in above_months for row in rows]
+    # 위 끝을 넘는 제약 제품 점은 위 끝에 ▲ 로 찍는다(값은 표적 풍선).
+    constrained = [high if over else value for value, over in zip(constrained, above, strict=True)]
 
     windows = result.windows
     waits = [item for item in result.assignments if item.days > 0]
@@ -497,7 +563,10 @@ def rate_figure(
             "base": [low] * count,
             "width": [1.0] * count,
             "marker": {"color": tokens.HIT_TARGET, "line": {"width": 0}},
-            "customdata": [[row.month, _hit_hover(row, result.conditions)] for row in rows],
+            "customdata": [
+                [row.month, _hit_hover(row, result.conditions, above=over)]
+                for row, over in zip(rows, above, strict=True)
+            ],
             "hovertemplate": "%{customdata[1]}<extra></extra>",
             "showlegend": False,
             "name": "",
@@ -567,9 +636,12 @@ def rate_figure(
             # 요소 대비(3:1)를 넘게 한다(새 색 토큰을 두지 않는다).
             "marker": {
                 "color": tokens.STATUS_WARNING,
-                "size": 7,
+                "size": [_ABOVE_MARKER_SIZE if over else 7 for over in above],
+                "symbol": ["triangle-up" if over else "circle" for over in above],
                 "line": {"color": tokens.LINE, "width": 1},
             },
+            # 위 끝에 찍은 ▲ 가 그림 칸 경계에서 반으로 잘리지 않게.
+            "cliponaxis": not any(above),
             "hoverinfo": "skip",
             "name": "제약 제품",
         }
@@ -876,17 +948,7 @@ def build_sheet_canvas(
             rows_in,
             lambda row: _allocated_cell(row, conditions),
         ),
-        _row(
-            "constrained_rate",
-            "확보율",
-            rows_in,
-            lambda row: Cell(
-                rate_text(row.constrained_rate) if row.in_period else "",
-                muted=not row.in_period,
-                fill=_shortage_fill(row.met),
-                bold=row.met is False,
-            ),
-        ),
+        _row("constrained_rate", "확보율", rows_in, _constrained_rate_cell),
     ]
     if conditions.modifies:
         rows.append(title_row("modification", "개조", "그 달 W/D 일할 · 환산 대수"))
@@ -1064,6 +1126,22 @@ def _constrained_demand_cell(row: ConstraintMonth) -> Cell:
     return Cell("", muted=True, hover=hover)
 
 
+def _constrained_rate_cell(row: ConstraintMonth) -> Cell:
+    """제약 제품 확보율 칸. 소요가 1대 미만인데 1대를 뗀 달은 풍선이 그 까닭을 말한다."""
+    cell = Cell(
+        rate_text(row.constrained_rate) if row.in_period else "",
+        muted=not row.in_period,
+        fill=_shortage_fill(row.met),
+        bold=row.met is False,
+    )
+    if minimum_unit(row):
+        cell.hover = (
+            f"{_head(row)} · 확보율 — 소요 {units_text(row.constrained_demand)}대가 1대 미만이라도 "
+            "최소 1대를 떼어 크게 나옵니다"
+        )
+    return cell
+
+
 def _need_cell(row: ConstraintMonth, target: int) -> Cell:
     """제약 필요 대수 칸 — 풍선 「소요 × 제약 % = 곱 → 정수」. 적힌 소요(둘째 자리)로 다시 셈한 곱이
     적힌 곱과 다르면 「≈」 다(고른 달 계산 2단계는 같은 식의 인수 자릿수를 늘린다)."""
@@ -1075,7 +1153,7 @@ def _need_cell(row: ConstraintMonth, target: int) -> Cell:
         str(row.need),
         hover=(
             f"{_head(row)} · {units_text(row.constrained_demand)} × {target}% {mark} "
-            f"{product} → {row.need}대"
+            f"{product} → {row.need}대" + ("(최소)" if minimum_unit(row) else "")
         ),
     )
 
@@ -1091,7 +1169,7 @@ def _allocated_cell(row: ConstraintMonth, conditions: ConstraintConditions) -> C
             bold=True,
             fill=tokens.STATUS_SHORTAGE,
             hover=(
-                f"{_head(row)} · 가용이 모자라 필요 {row.dedicated}대 중 {row.allocated}대만 배정"
+                f"{_head(row)} · 가용이 모자라 전용 {row.dedicated}대 중 {row.allocated}대만 배정"
                 + tail
             ),
         )

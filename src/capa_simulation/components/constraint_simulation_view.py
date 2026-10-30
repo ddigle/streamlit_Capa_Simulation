@@ -43,7 +43,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 from functools import partial
 from typing import Final, NamedTuple
@@ -54,7 +54,9 @@ import streamlit as st
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.constraint_simulation_figures import (
+    ABOVE_MARK,
     CONSTRAINT_FIGURE_SCHEMA_VERSION,
+    MINIMUM_UNIT_WORDS,
     ConstraintLabels,
     SheetCanvas,
     build_sheet_canvas,
@@ -63,14 +65,16 @@ from capa_simulation.components.constraint_simulation_figures import (
     dedicated_split_text,
     free_parts,
     general_label,
+    minimum_unit,
     month_name,
+    rate_axis,
     rate_figure,
     rate_text,
     signed_points,
     units_text,
     waiting_text,
 )
-from capa_simulation.components.formula_text import consistent_digits, operand_text
+from capa_simulation.components.formula_text import digits_within, operand_text, shared_digits
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
@@ -94,6 +98,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
     CONSTRAINT_FIGURE_MEMO_KEY,
     CONSTRAINT_MONTH_KEY,
+    CONSTRAINT_MONTH_PICKED_KEY,
     CONSTRAINT_PROPORTIONAL_KEY,
     CONSTRAINT_SELECT_GENERATION_KEY,
     CONSTRAINT_SHEET_KEY,
@@ -118,6 +123,8 @@ from capa_simulation.sidebar_status import rerun_app_unless_alone
 __all__ = [
     "KPI_ROW_KEY",
     "SCHEDULE_CARD_KEY",
+    "SHORT_INLINE_LIMIT",
+    "SHORT_MONTHS_EXPANDER_KEY",
     "STEPS_CARD_KEY",
     "ConstraintView",
     "MonthStep",
@@ -135,6 +142,7 @@ __all__ = [
     "schedule_lines",
     "settle_selected_month",
     "short_lines",
+    "short_month_lines",
     "top_row_style",
     "waiting_lines",
 ]
@@ -180,6 +188,12 @@ WAITING_DEFINITION: Final = (
 )
 LATE_SUFFIX: Final = " — 이미 지난 날짜(개조를 이미 시작했어야 합니다)"
 WAIT_LATE_SUFFIX: Final = " — 이미 지난 날짜(셋업 때 이미 제약용으로 붙였어야 합니다)"
+# 가용이 모자란 달을 한 줄에 달마다 적는 상한 — 넘으면 달 수만 적고 달마다 값은 접는다(30개월이 캡션
+# 한 줄로 늘어졌다, 2026-10-25 E2E).
+SHORT_INLINE_LIMIT: Final = 3
+SHORT_REASON_TEXT: Final = "제약 제품을 먼저 채우고 남는 것이 없어 기존 제품이 0 에 가깝습니다."
+# 「달마다 보기」 펼침 — 모자란 달이 많을 때만 선다.
+SHORT_MONTHS_EXPANDER_KEY: Final = "constraint_sim_short_months"
 
 
 class ConstraintView(NamedTuple):
@@ -229,13 +243,22 @@ def default_month(result: ConstraintResult) -> int:
 
 
 def settle_selected_month(result: ConstraintResult) -> int:
-    """앱 전체 회차마다 고른 달 칸을 잡는다 — 보이는 달 밖이거나 없으면 기본 달을 **적는다**."""
+    """앱 전체 회차마다 고른 달 칸을 잡는다.
+
+    사용자가 달 칸을 눌러 고른 적이 있고(`CONSTRAINT_MONTH_PICKED_KEY`) 그 달이 보이면 그대로다.
+    아니면 기본 달(`default_month`)을 **다를 때만** 적는다 — 누르기 전에는 조건이 바뀔 때마다 그
+    조건의 영향 시작 달로 다시 선다(기간 밖 달 계산이 남지 않게). 누른 달이 보이는 달 밖으로 나가면
+    표지를 내려 다시 기본 달을 따른다."""
     months = {row.month for row in result.months}
     held = st.session_state.get(CONSTRAINT_MONTH_KEY)
-    if isinstance(held, int) and not isinstance(held, bool) and held in months:
-        return held
+    visible = isinstance(held, int) and not isinstance(held, bool) and held in months
+    if st.session_state.get(CONSTRAINT_MONTH_PICKED_KEY) is True:
+        if visible and isinstance(held, int):
+            return held
+        st.session_state[CONSTRAINT_MONTH_PICKED_KEY] = False
     chosen = default_month(result)
-    st.session_state[CONSTRAINT_MONTH_KEY] = chosen
+    if held != chosen:
+        st.session_state[CONSTRAINT_MONTH_KEY] = chosen
     return chosen
 
 
@@ -250,6 +273,7 @@ def _viewed_month(result: ConstraintResult) -> int:
 def _apply_pick(month: int | None, months: Sequence[int], widget_key: str) -> None:
     if month is not None and month in set(int(value) for value in months):
         st.session_state[CONSTRAINT_MONTH_KEY] = int(month)
+        st.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
     generation = st.session_state.get(CONSTRAINT_SELECT_GENERATION_KEY, 0)
     st.session_state[CONSTRAINT_SELECT_GENERATION_KEY] = (
         int(generation) + 1 if isinstance(generation, int) else 1
@@ -335,9 +359,13 @@ def month_steps(
     """고른 달의 계산 다섯 단계 — 순수 함수(세션·그림을 보지 않는다).
 
     단계 식(1·2·4·5단계)은 적힌 수로 다시 셈해도 적힌 결과가 나와야 한다 — 대수는 둘째
-    자리(`units_text`)로 적고, 깎은 인수로 어긋날 때만 그 식의 인수를 한 자리씩 더 적는다
-    (`formula_text.consistent_digits`·`operand_text` — 「0.02 × 120% = 0.03」 이 아니라
-    「0.021 × 120% = 0.03」). 어느 자릿수로도 못 맞추면 둘째 자리와 「≈」 다."""
+    자리(`units_text`)로 적고, 깎은 인수로 어긋날 때만 인수를 한 자리씩 더 적는다
+    (`formula_text.operand_text` — 「0.02 × 120% = 0.03」 이 아니라 「0.021 × 120% = 0.03」).
+    늘리는 자릿수는 **카드에 한 벌**이다 — 네 식이 함께 맞는 가장 적은 자릿수(`shared_digits`)로
+    모든 식의 인수를 적어 같은 수(1·5단계의 기존 소요, 1·2단계의 제약 소요, 3·4단계의 비가동)가
+    「1.96」·「1.9637」 두 꼴로 보이지 않게 한다. 그런 자릿수가 없을 때만 식마다 고르고
+    (`digits_within` → `consistent_digits`), 그 식이 어느 자릿수로도 못 맞추면 둘째 자리와 「≈」 다.
+    굵은 결과(소요·기존 가용·확보율)는 늘 화면 자릿수다."""
     product = literal_markdown(labels.product)
     process = literal_markdown(labels.process_label)
     modifies = result.conditions.modifies
@@ -345,12 +373,49 @@ def month_steps(
 
     title = f"{month_label(row.month)} · {process}" + (" · 제약 기간" if row.in_period else "")
     required_shown = units_text(row.required)
-    split_digits, split_sign = consistent_digits(
-        lambda digits: units_text(
+
+    def split_sum(digits: int) -> str:
+        return units_text(
             round(row.existing_demand, digits) + round(row.constrained_demand, digits)
-        ),
-        required_shown,
-    )
+        )
+
+    def demand_product(digits: int) -> str:
+        return f"{round(row.constrained_demand, digits) * target / 100:.2f}"
+
+    def usable_rest(digits: int) -> str:
+        # 적힌 수로 「공정 가용 − 개조 중 − 신규 대기 − 제약 배정」 을 다시 셈한다 — 비가동이
+        # 가용보다 많으면 쓸 수 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은
+        # 차례다.
+        return units_text(
+            max(
+                0.0,
+                round(row.available, digits)
+                - round(row.downtime, digits)
+                - round(row.waiting, digits),
+            )
+            - row.allocated
+        )
+
+    def existing_ratio(digits: int) -> str:
+        demand = round(row.existing_demand, digits)
+        return rate_text(round(row.existing_available, digits) / demand) if demand else ""
+
+    has_need = row.in_period and row.constrained_demand > 0
+    product_text = f"{row.constrained_demand * target / 100:.2f}"
+    available_shown = units_text(row.existing_available)
+    has_subtraction = row.downtime > 0 or row.waiting > 0 or row.allocated > 0
+    rate_shown = rate_text(row.existing_rate)
+    # 이 카드에 서는 식들(1단계는 늘, 나머지는 그 식이 설 때만).
+    card_formulas: list[tuple[Callable[[int], str], str]] = [(split_sum, required_shown)]
+    if has_need:
+        card_formulas.append((demand_product, product_text))
+    if has_subtraction:
+        card_formulas.append((usable_rest, available_shown))
+    if row.existing_rate is not None:
+        card_formulas.append((existing_ratio, rate_shown))
+    card_digits = shared_digits(card_formulas)
+
+    split_digits, split_sign = digits_within(card_digits, split_sum, required_shown)
     step1 = MonthStep(
         f"소요 **{required_shown}대** {split_sign} 기존 "
         f"{operand_text(row.existing_demand, split_digits, units_text)} + "
@@ -360,16 +425,12 @@ def month_steps(
         else f"제약 기간 밖이라 {product} 도 기존 제품에 함께 셉니다.",
     )
 
-    if row.in_period and row.constrained_demand > 0:
-        product_text = f"{row.constrained_demand * target / 100:.2f}"
-        demand_digits, demand_sign = consistent_digits(
-            lambda digits: f"{round(row.constrained_demand, digits) * target / 100:.2f}",
-            product_text,
-        )
+    if has_need:
+        demand_digits, demand_sign = digits_within(card_digits, demand_product, product_text)
         demand_text = operand_text(row.constrained_demand, demand_digits, units_text)
         body2 = (
             f"{product} 필요 대수 = {demand_text} × {target}% {demand_sign} {product_text} → "
-            f"**{row.need}대**"
+            f"**{row.need}대**" + ("(최소)" if minimum_unit(row) else "")
         )
     elif row.in_period and row.dedicated > 0:
         body2 = f"{product} 소요 없음 — 전용 **{row.dedicated}대** 유지"
@@ -384,6 +445,11 @@ def month_steps(
             if split
             else f"이미 개조한 {row.dedicated}대는 전용으로 남습니다(줄여도 되돌리지 않음)."
         )
+    elif minimum_unit(row):
+        note2 = (
+            "소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다 — 제약 제품 확보율이 아주 크게 "
+            "나오는 까닭입니다."
+        )
     elif row.in_period and row.constrained_demand > 0:
         note2 = "제약 확보율을 먼저 맞추도록 정수로 올립니다."
     else:
@@ -397,29 +463,19 @@ def month_steps(
     else:
         step3 = _modification_step(row, result)
 
-    available_shown = units_text(row.existing_available)
-    # 적힌 수로 「공정 가용 − 개조 중 − 신규 대기 − 제약 배정」 을 다시 셈한다 — 비가동이 가용보다
-    # 많으면 쓸 수 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은 차례다.
-    available_digits, available_sign = consistent_digits(
-        lambda digits: units_text(
-            max(
-                0.0,
-                round(row.available, digits)
-                - round(row.downtime, digits)
-                - round(row.waiting, digits),
-            )
-            - row.allocated
-        ),
-        available_shown,
-    )
-    pieces = [operand_text(row.available, available_digits, units_text)]
+    available_digits, available_sign = digits_within(card_digits, usable_rest, available_shown)
+    usable = [operand_text(row.available, available_digits, units_text)]
     note_pieces = ["공정 가용"]
     if row.downtime > 0:
-        pieces.append(operand_text(row.downtime, available_digits, units_text))
+        usable.append(operand_text(row.downtime, available_digits, units_text))
         note_pieces.append("개조 중")
     if row.waiting > 0:
-        pieces.append(operand_text(row.waiting, available_digits, units_text))
+        usable.append(operand_text(row.waiting, available_digits, units_text))
         note_pieces.append("신규 대기")
+    # 비가동이 가용보다 많으면 쓸 수 있는 가용을 0 으로 둔다 — 「9 − 16.45 = 0」 이 아니라 식에
+    # 「max(0, 9 − 16.45)」 로 보인다(2026-10-25 E2E #110).
+    usable_text = " − ".join(usable)
+    pieces = [f"max(0, {usable_text})" if row.overdrawn else usable_text]
     if row.allocated > 0:
         pieces.append(str(row.allocated))
         note_pieces.append("제약 배정")
@@ -430,7 +486,7 @@ def month_steps(
         note4 += " · 비가동이 가용보다 많아 쓸 수 있는 가용을 0 으로 둡니다"
     body4 = (
         f"기존 가용 = {' − '.join(pieces)} {available_sign} **{available_shown}대**"
-        if len(pieces) > 1
+        if has_subtraction
         else f"기존 가용 = 공정 가용 **{available_shown}대**"
     )
     step4 = MonthStep(body4, note4)
@@ -441,13 +497,7 @@ def month_steps(
         note5 = f"제약 없을 때 {rate_text(row.baseline_rate)}"
         if row.baseline_rate is not None:
             note5 += f" · {signed_points(row.existing_rate - row.baseline_rate)}"
-        rate_shown = rate_text(row.existing_rate)
-
-        def recomputed(digits: int) -> str:
-            demand = round(row.existing_demand, digits)
-            return rate_text(round(row.existing_available, digits) / demand) if demand else ""
-
-        rate_digits, rate_sign = consistent_digits(recomputed, rate_shown)
+        rate_digits, rate_sign = digits_within(card_digits, existing_ratio, rate_shown)
         available_text = operand_text(row.existing_available, rate_digits, units_text)
         demand_text = operand_text(row.existing_demand, rate_digits, units_text)
         step5 = MonthStep(
@@ -470,7 +520,10 @@ def month_steps(
         )
         if row.constrained_rate is not None:
             met = "충족" if row.met else "미달"
-            verdict += f" · 제약 제품 {rate_text(row.constrained_rate)} (제약 {target}% {met})"
+            minimum = f" · 소요 1대 미만에 {MINIMUM_UNIT_WORDS}" if minimum_unit(row) else ""
+            verdict += (
+                f" · 제약 제품 {rate_text(row.constrained_rate)} (제약 {target}% {met}{minimum})"
+            )
 
     proportional = ""
     if show_proportional and row.in_period:
@@ -627,16 +680,38 @@ def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> lis
     return lines
 
 
+def _short_month_text(row: ConstraintMonth) -> str:
+    """모자란 달 하나 — 「27.06: 전용 6대 중 5대만 배정」. 값은 그 달 필요(need)가 아니라 떼어 줄
+    전용 대수(dedicated)다 — 소요가 0 인 달도 이미 개조한 전용을 유지한다."""
+    return f"{month_label(row.month)}: 전용 {row.dedicated}대 중 {row.allocated}대만 배정"
+
+
 def short_lines(result: ConstraintResult) -> str:
-    """가용이 모자란 달 한 줄. 없으면 빈 글자."""
+    """가용이 모자란 달 한 줄. 없으면 빈 글자.
+
+    달이 `SHORT_INLINE_LIMIT` 개 이하면 달마다 값을 한 줄에 적고, 그보다 많으면 달 수와 첫·끝 달만
+    적는다 — 달마다 값은 접힌 「달마다 보기」(`short_month_lines`)가 든다(30개월이 한 줄로 늘어지지
+    않게)."""
     rows = [row for row in result.months if row.short]
     if not rows:
         return ""
-    parts = " · ".join(
-        f"{month_label(row.month)}: 필요 {row.dedicated}대 중 {row.allocated}대만 배정"
-        for row in rows
-    )
-    return f"{parts} — 제약 제품을 먼저 채우고 남는 것이 없어 기존 제품이 0 에 가깝습니다."
+    if len(rows) <= SHORT_INLINE_LIMIT:
+        head = " · ".join(_short_month_text(row) for row in rows)
+    else:
+        head = (
+            f"전용 대수를 다 배정하지 못한 달 {len(rows)}개월"
+            f"({month_label(rows[0].month)}–{month_label(rows[-1].month)} 사이)"
+        )
+    return f"{head} — {SHORT_REASON_TEXT}"
+
+
+def short_month_lines(result: ConstraintResult) -> list[str]:
+    """접힌 「달마다 보기」 의 줄 — 모자란 달이 `SHORT_INLINE_LIMIT` 개보다 많을 때만. 아니면 빈
+    목록(한 줄 `short_lines` 가 이미 달마다 값을 적는다)."""
+    rows = [row for row in result.months if row.short]
+    if len(rows) <= SHORT_INLINE_LIMIT:
+        return []
+    return [_short_month_text(row) for row in rows]
 
 
 def overdrawn_lines(result: ConstraintResult) -> list[str]:
@@ -796,7 +871,17 @@ def render_constraint_view(view: ConstraintView) -> None:
     with st.container(horizontal=True, gap="medium", key=TOP_ROW_KEY):
         with st.container(border=True, key=CHART_CARD_KEY):
             st.markdown("**월별 확보율**")
-            st.caption("달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간")
+            above = rate_axis(
+                result, view.labels, show_proportional=bool(show_proportional)
+            ).above_months
+            st.caption(
+                "달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간"
+                + (
+                    f" · {ABOVE_MARK} = 그래프 위로 넘친 제약 제품 확보율(값은 풍선)"
+                    if above
+                    else ""
+                )
+            )
             # 좁은 카드에서는 이 상자 안에서 가로로 스크롤한다(`top_row_style`). 그림 위 터치
             # 스와이프는 `app.py` 의 터치 스크롤 막이가 브라우저 스크롤로 넘긴다.
             with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):
@@ -823,12 +908,16 @@ def render_constraint_view(view: ConstraintView) -> None:
         # 가용이 모자란 달 — 있을 때만 서는 알림이라 늘 서 있는 칸 안에 그린다.
         with st.container():
             shortage = short_lines(result)
+            shortage_months = short_month_lines(result)
             overdrawn = overdrawn_lines(result)
             if shortage or overdrawn:
                 with st.container(border=True):
                     st.markdown("**가용이 모자란 달**")
                     if shortage:
                         st.caption(shortage)
+                    if shortage_months:
+                        with st.expander("달마다 보기", key=SHORT_MONTHS_EXPANDER_KEY):
+                            st.caption("  \n".join(shortage_months))
                     for line in overdrawn:
                         st.caption(f":material/warning: {line}")
 

@@ -35,9 +35,10 @@
 가로 넘김 없이 담는 폭에서 나온다(`_STACK_BELOW_PX`) — 큰 팝업(`width="large"`, 창 폭을 따라 최대
 1280px)에서는 창이 아주 넓을 때만 나란히 서고 대개 위아래다. Streamlit 편집 격자는 칸 폭의 합이
 표보다 좁으면 남는 폭을 붙박지 않은 칸에 고루 나눠 늘리고, 넓으면 표 안에서 가로로 넘긴다 — 그래서
-편집표 칸 폭의 합은 입력 칸 안에 들게 두고(넘치면 「신규 호기」 칸을 고칠 때 표가 넘어가 「월」 칸이
-가려진다), 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면 머리 글 폭에
-고른 몫만 붙어 90px 안팎으로 잘렸다).
+편집표 칸 폭의 합은 가장 좁은 입력 칸(390px 창) 안에 들게 두고(넘치면 「신규 호기」 머리가
+잘리고 그 칸을 고칠 때 표가 넘어가 「월」 칸이 가려진다) 「월」 은 붙박아 남는 폭을 두 입력 칸이
+나눠 받게 하며, 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면 머리
+글 폭에 고른 몫만 붙어 90px 안팎으로 잘렸다).
 """
 
 from __future__ import annotations
@@ -177,9 +178,16 @@ _UNIT_COLUMN_PX = {
     "기여 시작": 96,
     "메모": 250,
 }
-# 편집표 칸 폭 — 셋의 합이 입력 칸 안(`_INPUTS_BOX_PX - _BOX_CHROME_PX`)에 들어야 표가 가로로 넘지
-# 않는다. 「월」 은 Streamlit `small`(75px)과 같은 폭이다.
-_EDITOR_COLUMN_PX = {MONTH_COLUMN: 75, TARGET_COLUMN: 120, UNITS_COLUMN: 180}
+# 편집표 칸 폭 — 셋의 합이 가장 좁은 입력 칸(`_NARROW_EDITOR_PX` — 390px 창) 안에 들어야 표가
+# 가로로 넘지 않는다(넘으면 「신규 호기」 머리가 오른쪽 끝에서 잘렸다, 2026-10-25 E2E).
+# 붙박지 않은 칸은 넓은 창에서 남는 폭을 고루 나눠 받는다 — 읽기만 하는 「월」 은 붙박아(`pinned` —
+# 색인처럼 흐린 글자) 그 폭 그대로 두고 두 입력 칸이 남는 폭을 나눈다(입력 칸을 붙박으면 값이 흐린
+# 글자라 잠긴 칸처럼 보인다). 「목표 가용대수」 는 편집 표지·머리 글(실측 약 114px)이 다 보이는
+# 폭이다.
+_EDITOR_COLUMN_PX = {MONTH_COLUMN: 46, TARGET_COLUMN: 114, UNITS_COLUMN: 106}
+_EDITOR_PINNED_COLUMNS = (MONTH_COLUMN,)
+# 390px 창의 큰 팝업에서 위아래로 쌓인 입력 칸 안 편집표의 안쪽 폭(2026-10-26 사본 앱 실측 270px).
+_NARROW_EDITOR_PX = 270
 # 월 편집표 앞 띄움. 표 도구 막대(열 보기·내려받기·찾기)는 표 오른쪽 위에 떠 표 위로 솟는다 — 붙어
 # 있으면 바로 위 「오늘」 날짜 칸의 지우기(✕)를 덮어 누름을 가로챈다(터치 창에서는 막대가 늘 떠 있어
 # ✕ 로 지울 길이 없다). 띄움은 표 도구 막대 공용 띄움(`table_toolbar.toolbar_clearance`)이
@@ -403,18 +411,22 @@ def _render_inputs(today: date) -> QualDeadlineInput:
         placeholder="",
         column_config={
             MONTH_COLUMN: st.column_config.TextColumn(
-                MONTH_COLUMN, width=_EDITOR_COLUMN_PX[MONTH_COLUMN]
+                MONTH_COLUMN,
+                width=_EDITOR_COLUMN_PX[MONTH_COLUMN],
+                pinned=MONTH_COLUMN in _EDITOR_PINNED_COLUMNS,
             ),
             # `step`·`format` 을 주지 않는다 — `step` 은 그 자릿수에서 값을 잘라 저장한다(모듈
             # 설명). 표시는 기본(소수 넷째 자리까지, 뒤 0 없음)이라 적은 값이 그대로 보인다.
             TARGET_COLUMN: st.column_config.NumberColumn(
                 TARGET_COLUMN,
                 width=_EDITOR_COLUMN_PX[TARGET_COLUMN],
+                pinned=TARGET_COLUMN in _EDITOR_PINNED_COLUMNS,
                 help="그 달 W/D 구간 전체 기준 대수(소수 가능). 비우면 그 달은 판정하지 않습니다.",
             ),
             UNITS_COLUMN: st.column_config.TextColumn(
                 UNITS_COLUMN,
                 width=_EDITOR_COLUMN_PX[UNITS_COLUMN],
+                pinned=UNITS_COLUMN in _EDITOR_PINNED_COLUMNS,
                 help="그 달 목표를 채울 차례대로 적습니다 — 쉼표·띄어쓰기·줄바꿈으로 나눕니다.",
             ),
         },
