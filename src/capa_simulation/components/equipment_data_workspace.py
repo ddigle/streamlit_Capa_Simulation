@@ -20,6 +20,8 @@ from capa_simulation.components.editor_state import (
 from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
+    OfficialReach,
+    SaveCandidateCounts,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
@@ -956,6 +958,51 @@ def new_unit_choice_line(frames: Frames, *, assumption: bool = False) -> str | N
     if assumption and spread:
         text += f" · {NEW_UNIT_OFFICIAL_COUNT_NOTE.format(count=spread)}"
     return text
+
+
+def save_candidate_counts(buffer: Frames, saved_master: object) -> SaveCandidateCounts:
+    """팝업이 미리 적는 함께 넣기 후보 수 — 저장본에 없던 호기(이름 바꿈은 이은 호기), 새 비가동.
+
+    비가동은 저장본 사본에 없던 (설비명, 유형, 시작일) 수다. 저장소의 「고침이 아닌 새 비가동」
+    판정(같은 묶음에 지운 행 없음)보다 넓게 셀 수 있다 — 실제로 퍼진 목록은 결과 알림이 적는다.
+    """
+    renames: Mapping[str, str] = pending_unit_renames().units
+    saved_names: set[str] = set()
+    if isinstance(saved_master, pd.DataFrame) and EQUIPMENT_ID_COLUMN in saved_master.columns:
+        saved_names = {str(name) for name in saved_master[EQUIPMENT_ID_COLUMN].dropna()}
+    saved_downtime = downtime_keys(st.session_state.get(DOWNTIME_DRAFT_KEY))
+    names = buffer[1][EQUIPMENT_ID_COLUMN].dropna().astype(str)
+    new_units = sum(1 for name in names if renames.get(name, name) not in saved_names)
+    new_downtime = len(downtime_keys(buffer[2]) - saved_downtime)
+    return SaveCandidateCounts(new_units=new_units, new_downtime=new_downtime)
+
+
+def downtime_keys(frame: object) -> set[tuple[str, str, str]]:
+    """비가동 표의 (설비명, 유형, 시작일 `YYYY-MM-DD`) 모음. 표가 아니거나 비면 빈 모음."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return set()
+    starts = pd.to_datetime(frame["시작일"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return {
+        (str(name), str(kind), str(start))
+        for name, kind, start in zip(
+            frame[EQUIPMENT_ID_COLUMN], frame["비가동유형"], starts, strict=True
+        )
+    }
+
+
+def official_reach(frames: Frames) -> OfficialReach:
+    """가정 설비 시나리오 세션 저장 칸의 발행 체크 재료(`OfficialReach`) — 이 저장이 공식 설비
+    시나리오에 새 일정 리비전을 만들 수 있는가. 「새 호기」 칸에서 켠 새 호기(그 칸 체크가 이긴다,
+    D8), 저장 칸 체크를 따르는 나머지 새 호기, 새 비가동 수다. 셈은 팝업 후보 수
+    (`save_candidate_counts`)와 같아 저장소의 판정보다 넓을 수 있다 — 체크가 쓸데없이 설 수는 있어도
+    필요할 때 숨지 않는다."""
+    counts = save_candidate_counts(frames, st.session_state.get(EQUIPMENT_DRAFT_KEY))
+    spread, alone = chosen_new_unit_counts(frames)
+    return OfficialReach(
+        follow_units=max(counts.new_units - spread - alone, 0),
+        chosen_spread=spread,
+        new_downtime=counts.new_downtime,
+    )
 
 
 def prune_new_unit_propagation() -> None:

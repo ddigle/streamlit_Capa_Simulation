@@ -1262,3 +1262,40 @@ def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(tmp_pat
     assert "r2" in app.session_state[FLASH_KEY] and "불러왔습니다" in app.session_state[FLASH_KEY]
     memos = app.session_state[BUFFER_KEY][1]["시나리오 메모"].astype("string")
     assert not memos.eq("낡기 전 메모").fillna(False).any()
+
+
+@pytest.mark.parametrize("downtime", [False, True], ids=["common-only", "new-downtime"])
+def test_a_hypothetical_popup_save_shows_the_publish_box_only_when_it_reaches_the_official(
+    tmp_path: Path, downtime: bool
+) -> None:
+    """가정 설비 시나리오 세션의 팝업 「저장」 은 공식에 넣을 것이 없으면 발행 체크를 세우지 않는다
+    (E2E #135 — 뜻 없는 「… 공식으로 발행」 체크). 새 비가동처럼 함께 넣기로 공식 설비 시나리오에 새
+    리비전이 생기는 저장이면 「함께 넣은 공식 리비전 발행」(기본 켬)이 선다 — 설비 마스터 탭·Space
+    저장 칸과 같은 규칙."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_FIELDS_PREFIX,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "셋업 실무")
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["edits"] = [("EQ-01", "담당자", "공통 담당")]
+    if downtime:
+        app.session_state["downtime"] = ("EQ-01", "PM", "2026-11-03")
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    boxes = [
+        box for box in app.checkbox if str(box.key).startswith(f"{SAVE_FIELDS_PREFIX}_publish")
+    ]
+    assert [(box.label, box.value) for box in boxes] == (
+        [("함께 넣은 공식 리비전 발행", True)] if downtime else []
+    )

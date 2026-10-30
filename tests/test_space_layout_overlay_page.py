@@ -239,7 +239,8 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     _ok(app.run())
     assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
     assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in _texts(app))
-    # 저장 칸 — 가정 세션은 함께 넣기 기본 끔이고 발행 체크는 켰을 때만(Q1).
+    # 저장 칸 — 가정 세션은 함께 넣기 기본 끔이고(Q1) 발행 체크는 공식에 넣을 것이 있을 때만
+    # (배치만 옮긴 저장은 없다).
     propagate = app.checkbox(key="space_layout_save_fields_propagate_units_assumption")
     assert propagate.value is False
     assert not [box for box in app.checkbox if str(box.key).endswith("_publish_assumption")]
@@ -801,9 +802,11 @@ def test_the_assumption_space_save_fields_read_back_with_propagation_off() -> No
         """
 import streamlit as st
 from capa_simulation.components.equipment_save_fields import (
-    render_equipment_save_fields, save_fields_from_state,
+    OfficialReach, render_equipment_save_fields, save_fields_from_state,
 )
-st.session_state["seen"] = render_equipment_save_fields("p", assumption=True)
+st.session_state["seen"] = render_equipment_save_fields(
+    "p", assumption=True, reach=OfficialReach(follow_units=1)
+)
 st.session_state["read"] = save_fields_from_state("p", assumption=True)
 """,
         default_timeout=30,
@@ -820,6 +823,49 @@ st.session_state["read"] = save_fields_from_state("p", assumption=True)
     assert (read.propagate_new_units, read.publish_official) == (True, True)
 
 
+_REACH_SCRIPT = """
+import streamlit as st
+from capa_simulation.components.equipment_save_fields import (
+    OfficialReach, render_equipment_save_fields,
+)
+st.session_state["seen"] = render_equipment_save_fields(
+    "p", assumption={assumption}, reach=OfficialReach({reach})
+)
+"""
+
+
+@pytest.mark.parametrize("assumption", [True, False], ids=["space", "tab-popup"])
+@pytest.mark.parametrize(
+    ("reach", "shown"),
+    [
+        ("", False),
+        ("follow_units=2", None),
+        ("chosen_spread=1", True),
+        ("new_downtime=1", True),
+    ],
+    ids=["nothing", "follow-units", "chosen-units", "new-downtime"],
+)
+def test_an_assumption_publish_box_stands_only_when_the_save_reaches_the_official(
+    assumption: bool, reach: str, shown: bool | None
+) -> None:
+    """가정 세션 발행 체크는 세 저장 자리 모두 한 규칙이다 — 이 저장이 공식 설비 시나리오에 넣을
+    것(「새 호기」 칸에서 켠 호기, 체크를 따르는 새 호기·새 비가동)이 있을 때만 「함께 넣은 공식
+    리비전 발행」(기본 켬)이 선다. 없으면 뜻 없는 체크가 서지 않는다(E2E #135 — 가정 세션 팝업),
+    Space 는 함께 넣기 체크를 끈 채 「새 호기」 칸 고름·새 비가동이 공식에 들어가도 발행 체크가 숨어
+    말없이 발행하지 않던 것(옛 「켤 때만」)을 고친다. `follow_units` 는 저장 칸 함께 넣기 체크를
+    따른다(Space 기본 끔 · 탭·팝업 기본 켬)."""
+    script = AppTest.from_string(
+        _REACH_SCRIPT.format(assumption=assumption, reach=reach), default_timeout=30
+    ).run()
+    assert not script.exception
+    expected = (not assumption) if shown is None else shown
+    boxes = [box for box in script.checkbox if "_publish" in str(box.key)]
+    assert [(box.label, box.value) for box in boxes] == (
+        [("함께 넣은 공식 리비전 발행", True)] if expected else []
+    )
+    assert script.session_state["seen"].publish_official is expected
+
+
 def test_the_assumption_fields_default_when_nothing_was_drawn() -> None:
     script = AppTest.from_string(
         """
@@ -831,6 +877,28 @@ st.session_state["read"] = save_fields_from_state("p", assumption=True)
     ).run()
     read = script.session_state["read"]
     assert (read.propagate_new_units, read.publish_official) == (False, False)
+
+
+def test_the_tab_publish_box_reads_false_when_the_reach_rule_drew_none() -> None:
+    """가정 세션 설비 마스터 탭 「리비전 저장」 은 콜백이라 세션에서 칸을 다시 읽는다. 공식에 넣을
+    것이 없어 발행 체크를 그리지 않은 회차면 발행은 거짓이다(그리지 않은 체크로 말없이 공식을
+    발행하지 않는다 — I53). 공식 세션 탭(`reach_rule` 없음)은 그대로 기본 켬이다."""
+    script = AppTest.from_string(
+        """
+import streamlit as st
+from capa_simulation.components.equipment_save_fields import (
+    OfficialReach, render_equipment_save_fields, save_fields_from_state,
+)
+render_equipment_save_fields("p", reach=OfficialReach())
+st.session_state["rule"] = save_fields_from_state("p", reach_rule=True)
+st.session_state["plain"] = save_fields_from_state("q")
+""",
+        default_timeout=30,
+    ).run()
+    assert not script.exception
+    assert not [box for box in script.checkbox if str(box.key).endswith("_publish")]
+    assert script.session_state["rule"].publish_official is False
+    assert script.session_state["plain"].publish_official is True
 
 
 def _apply_eq02(app: AppTest, editor_calls: list[dict[str, Any]], x: float = 60) -> None:

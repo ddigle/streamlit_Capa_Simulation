@@ -2326,16 +2326,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
-  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭과
-  사이드바 팝업은 가정 설비 시나리오에서도 발행 체크를 그린다 — 가정 세션 저장도 함께 넣기로 공식 시나리오에 새 리비전을 만들면
-  공식 발행까지 가므로 끌 수 있어야 한다(G1). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
+  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 가정 설비
+  시나리오 세션의 발행 체크는 세 자리 모두 한 규칙이다(`reach` — `equipment_data_workspace.official_reach` 가 센
+  `OfficialReach`): 이 저장이 함께 넣기로 공식 시나리오에 새 일정 리비전을 만들 수 있을 때(「새 호기」 칸에서 켠 새 호기 ·
+  저장 칸 체크를 따르는 새 호기 · 새 비가동 — 팝업 후보 수와 같은 셈이라 넓을 수는 있어도 좁지 않다)만 「함께 넣은 공식 리비전
+  발행」(기본 켬)이 서고(G1 — 공식 발행까지 가는 저장은 끌 수 있어야 한다), 없으면 뜻 없는 체크를 그리지 않는다(E2E #135,
+  그리지 않은 체크는 거짓 — 발행할 것이 없다. 콜백으로 칸을 다시 읽는 탭 「리비전 저장」 은 `save_fields_from_state(...,
+  reach_rule=True)`, Space 는 `assumption=True` 로 같게 읽는다). 가정 세션 「함께 넣기」 기본값이 자리마다 다른 것(탭·팝업 켬 F6 ·
+  Space 끔 Q1)은 사용자 결정 대기다(TODO 「가정 세션 「함께 넣기」 기본값」). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (G1 — 2026-10-24 결정 판 「권장대로」·F6·F2 — 바꾸려면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
     마스터 탭 저장 구획·Space 「저장 칸」 은 체크만 세운다 — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
   - **가정 세션의 Space 「배치 저장」**(`assumption=True` — 설비 시나리오 2단계 Q1)은 「새 호기를 다른 설비 시나리오에도
-    넣기」 가 기본 끔(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`)이고, 켜면 공식 가용대수에 센다는 경고와 그때만 「함께 넣은 공식
-    리비전 발행」 체크가 선다(key 꼬리 `_assumption` 으로 공식 자리와 가른다). 설비 마스터 탭 저장 칸은 1단계 F6 그대로 켬이다.
+    넣기」 가 기본 끔(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`)이고, 켜면 공식 가용대수에 센다는 경고가 선다(key 꼬리
+    `_assumption` 으로 공식 자리와 가른다). 발행 체크는 위 한 규칙이다 — 옛 「함께 넣기를 켤 때만」 은 체크를 끈 채 「새 호기」 칸
+    고름·새 비가동이 공식에 들어가도 체크가 숨어 말없이 발행하지 않았다. 설비 마스터 탭 저장 칸은 1단계 F6 그대로 켬이다.
 - `src/capa_simulation/components/equipment_scenario_management.py` — 시나리오 관리 「설비 시나리오」 구획(1단계 몫 + E7 —
   2026-10-24 가용설비 현황의 탭에서 옮김). 구획 진입(`render_equipment_scenario_section` — 설비 DB 는 이 안에서만 연다, 머리
   「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 구획으로 옮기는 길(`open_equipment_scenario_management` — 탭 상한을 먼저

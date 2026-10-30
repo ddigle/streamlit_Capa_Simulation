@@ -89,6 +89,7 @@ from capa_simulation.components.equipment_data_workspace import (
     layout_memo_mark,
     new_unit_choice_line,
     official_layout_cells,
+    official_reach,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -956,7 +957,11 @@ def _save_revision(
             frames,
             note if isinstance(note, str) else "",
             basis=basis,
-            fields=save_fields_from_state(SAVE_FIELDS_PREFIX),
+            # 가정 설비 시나리오면 발행 체크는 공식에 넣을 것이 있을 때만 서고 그리지 않은 체크는
+            # 거짓이다(세 저장 자리 한 규칙).
+            fields=save_fields_from_state(
+                SAVE_FIELDS_PREFIX, reach_rule=basis is not None and not basis.official_scenario
+            ),
             removal_confirmed=removal_confirmed,
             # 콜백이라 이 회차 편집본을 세우기 전이다 — 남의 공통 저장 거부면 본문이 다시 세운다.
             reopens=True,
@@ -1205,6 +1210,9 @@ def _render_save_section(
     render_equipment_save_fields(
         SAVE_FIELDS_PREFIX,
         release_exists=basis is None or basis.release_no > 0,
+        # 가정 설비 시나리오면 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리
+        # 한 규칙).
+        reach=official_reach(frames) if basis is not None and not basis.official_scenario else None,
         persist_saved_by=True,
     )
     with st.container():

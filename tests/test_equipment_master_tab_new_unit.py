@@ -39,7 +39,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
     SIDE_NEW,
 )
-from capa_simulation.components.equipment_save_fields import PUBLISH_OFFICIAL_LABEL
+from capa_simulation.components.equipment_save_fields import ASSUMPTION_PUBLISH_LABEL
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -557,10 +557,10 @@ def test_the_assumption_save_section_says_panel_spread_units_count_officially(
 def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
     tmp_path: Path, grid: Calls, publish: bool
 ) -> None:
-    """가정 설비 시나리오 세션의 탭 저장 칸에도 「… 공식으로 발행」 체크가 선다(G1 — 저장 칸에서
-    끌 수 있음, 같은 세션의 사이드바 팝업과 같다). 「새 호기」 칸에서 함께 넣기를 켠 호기는 공식
-    설비 시나리오에 새 리비전을 만들고, 체크를 끄면 공식 발행은 그대로다(예전에는 체크가 없어 숨은
-    기본값 켬으로 늘 공식 vN 을 냈다)."""
+    """가정 설비 시나리오 세션의 탭 저장 칸에도 발행 체크가 선다(G1 — 저장 칸에서 끌 수 있음,
+    같은 세션의 사이드바 팝업·Space 저장 칸과 같은 「함께 넣은 공식 리비전 발행」). 「새 호기」
+    칸에서 함께 넣기를 켠 호기는 공식 설비 시나리오에 새 리비전을 만들고, 체크를 끄면 공식 발행은
+    그대로다(예전에는 체크가 없어 숨은 기본값 켬으로 늘 공식 vN 을 냈다)."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, setup)
     app.session_state[SIDE_KEY] = SIDE_NEW
@@ -570,7 +570,7 @@ def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
     _ok(app.run())
 
     box = app.checkbox(key=f"{SAVE_FIELDS_PREFIX}_publish")
-    assert box.label == PUBLISH_OFFICIAL_LABEL and box.value is True
+    assert box.label == ASSUMPTION_PUBLISH_LABEL and box.value is True
     box.set_value(publish)
     _ok(app.run())
     before = repository.latest_equipment_release()
@@ -584,6 +584,33 @@ def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
     assert after is not None
     assert after.release_no == (before.release_no + 1 if publish else before.release_no)
     assert any(("발행했습니다" in str(item.value)) is publish for item in app.success)
+
+
+def test_an_assumption_tab_save_that_reaches_nothing_official_has_no_publish_box(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """가정 설비 시나리오 세션에서 「새 호기」 칸 함께 넣기를 끈 호기만 넣은 저장은 공식 설비
+    시나리오에 새 리비전을 만들지 않는다 — 발행 체크가 서지 않고(뜻 없는 체크, E2E #135 와 같은
+    규칙) 저장해도 공식 발행은 그대로다(I53)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[SIDE_KEY] = SIDE_NEW
+    _ok(app.run())
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=False)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+
+    assert not [box for box in app.checkbox if box.key == f"{SAVE_FIELDS_PREFIX}_publish"]
+    before = repository.latest_equipment_release()
+    assert before is not None
+    app.button(key=SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    # 공통에는 들지만 공식 설비 시나리오에는 일정 없음이다 — 공식에 새 일정 리비전이 없다.
+    assert _session(repository, OPERATIONS).unscheduled_units == frozenset({"EQ-09"})
+    after = repository.latest_equipment_release()
+    assert after is not None and after.release_no == before.release_no
 
 
 def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:

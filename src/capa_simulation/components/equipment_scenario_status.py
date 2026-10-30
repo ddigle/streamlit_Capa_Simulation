@@ -19,10 +19,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
@@ -36,20 +34,18 @@ from capa_simulation.components.app_header import (
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
-    DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
-    Frames,
     has_unsaved_equipment_edits,
     new_unit_choice_line,
+    official_reach,
     pending_fab_layout,
-    pending_unit_renames,
     revision_count_line,
+    save_candidate_counts,
     save_equipment_buffer,
     schedule_revision_title,
     stale_save_refusal,
 )
 from capa_simulation.components.equipment_save_fields import (
-    SaveCandidateCounts,
     render_equipment_save_fields,
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
@@ -88,7 +84,6 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScheduleRevisionSummary,
     legacy_trace_message,
 )
-from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
 from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.shortening_baseline import ShorteningEquipmentBasis
 from capa_simulation.sidebar_status import (
@@ -542,36 +537,6 @@ def _revision_caption(
     return " · ".join(parts)
 
 
-def save_candidate_counts(buffer: Frames, saved_master: object) -> SaveCandidateCounts:
-    """팝업이 미리 적는 함께 넣기 후보 수 — 저장본에 없던 호기(이름 바꿈은 이은 호기), 새 비가동.
-
-    비가동은 저장본 사본에 없던 (설비명, 유형, 시작일) 수다. 저장소의 「고침이 아닌 새 비가동」
-    판정(같은 묶음에 지운 행 없음)보다 넓게 셀 수 있다 — 실제로 퍼진 목록은 결과 알림이 적는다.
-    """
-    renames: Mapping[str, str] = pending_unit_renames().units
-    saved_names: set[str] = set()
-    if isinstance(saved_master, pd.DataFrame) and EQUIPMENT_ID_COLUMN in saved_master.columns:
-        saved_names = {str(name) for name in saved_master[EQUIPMENT_ID_COLUMN].dropna()}
-    saved_downtime = _downtime_keys(st.session_state.get(DOWNTIME_DRAFT_KEY))
-    names = buffer[1][EQUIPMENT_ID_COLUMN].dropna().astype(str)
-    new_units = sum(1 for name in names if renames.get(name, name) not in saved_names)
-    new_downtime = len(_downtime_keys(buffer[2]) - saved_downtime)
-    return SaveCandidateCounts(new_units=new_units, new_downtime=new_downtime)
-
-
-def _downtime_keys(frame: object) -> set[tuple[str, str, str]]:
-    """비가동 표의 (설비명, 유형, 시작일 `YYYY-MM-DD`) 모음. 표가 아니거나 비면 빈 모음."""
-    if not isinstance(frame, pd.DataFrame) or frame.empty:
-        return set()
-    starts = pd.to_datetime(frame["시작일"], errors="coerce").dt.strftime("%Y-%m-%d")
-    return {
-        (str(name), str(kind), str(start))
-        for name, kind, start in zip(
-            frame[EQUIPMENT_ID_COLUMN], frame["비가동유형"], starts, strict=True
-        )
-    }
-
-
 def stale_save_warning(revision_no: int | None, latest_revision_no: int | None) -> str:
     """팝업 「저장」 구획의 낡은 리비전 경고 — 번호 뒤 조사는 끝소리로 고른다."""
     return (
@@ -676,6 +641,9 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         SAVE_FIELDS_PREFIX,
         counts=save_candidate_counts(buffer, st.session_state.get(EQUIPMENT_DRAFT_KEY)),
         release_exists=basis.release_no > 0,
+        # 가정 설비 시나리오면 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리
+        # 한 규칙).
+        reach=None if basis.official_scenario else official_reach(buffer),
     )
     with st.container():
         # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8).

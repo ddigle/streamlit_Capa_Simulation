@@ -24,6 +24,7 @@ from capa_simulation.components.equipment_data_workspace import (
     live_layout_role,
     new_unit_choice_line,
     official_confirmation_master,
+    official_reach,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -1239,6 +1240,12 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                         SPACE_SAVE_FIELDS_PREFIX,
                         release_exists=equipment_session.release_no is not None,
                         assumption=equipment_session.is_assumption,
+                        # 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리 한 규칙).
+                        reach=(
+                            official_reach(frames)
+                            if equipment_session.is_assumption and frames is not None
+                            else None
+                        ),
                     )
                     # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8) — 끈
                     # 채 저장해도 그 칸에서 켠 호기는 다른 설비 시나리오에 든다.
