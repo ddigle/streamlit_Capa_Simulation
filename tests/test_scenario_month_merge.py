@@ -179,6 +179,37 @@ def test_default_preview_lists_overlaps_as_blocked_and_range_excludes_other_dono
         merge_scenario_months(base, donor, 202609, 202609)
 
 
+def _months(first: int, count: int) -> list[int]:
+    year, month = divmod(first, 100)
+    months = []
+    for _ in range(count):
+        months.append(year * 100 + month)
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return months
+
+
+@pytest.mark.parametrize(
+    ("overlap", "tail"),
+    [(12, "2027-06. "), (13, "2027-06 외 1개월. "), (18, "2027-06 외 6개월. ")],
+)
+def test_the_overlap_refusal_names_twelve_months_and_counts_the_rest(
+    overlap: int, tail: str
+) -> None:
+    """겹친 달이 많으면 앞 12개월만 적고 나머지는 「외 N개월」 로 센다 — 18개월이 겹쳐도 12개월만
+    적고 생략 표시가 없던 것(2026-10-27 표적 E2E)."""
+    base = _month_tables(_months(202607, overlap), "base")
+    donor = _month_tables(_months(202607, overlap + 6), "donor")
+    start, end = 202607, _months(202607, overlap + 6)[-1]
+
+    with pytest.raises(ValueError) as caught:
+        merge_scenario_months(base, donor, start, end)
+
+    message = str(caught.value)
+    assert message.startswith(f"베이스와 {overlap}개월이 겹쳐 저장할 수 없습니다: 2026-07, ")
+    assert tail in message
+    assert message.count(", 20") == 11
+
+
 @pytest.mark.parametrize("operation", [merge_scenario_months, preview_month_sources])
 def test_invalid_overlap_policy_is_rejected(operation: Callable[..., object]) -> None:
     with pytest.raises(ValueError, match="지원하지 않는 월 겹침 정책"):

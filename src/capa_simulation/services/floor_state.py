@@ -15,8 +15,11 @@
 - **저장 검사는 그대로다**(S5) — 설비 마스터의 동·층 범위(C1~C5·1F~6F)는 비활성 층도 통과한다.
   비활성은 Space 목록·도면과 층 고르기(층 바로 가기·「다른 층으로 보내기」·설비 마스터 탭 동·층
   칸)에서만 숨긴다.
-- 읽기는 관용이다 — 저장소가 읽은 행에 모르는 동·층이 있으면 버리고, 사유 글은 길이를 보지 않고
-  그대로 그린다(`inactive_label` — 빈 사유만 「비활성」, 제어 문자는 빈칸). 편집표 칸만은 저장할
+- 읽기는 관용이다 — 저장소가 읽은 행에 모르는 동·층이 있으면 버리고, 빈 사유(앞뒤 공백뿐
+  포함 — 앱으로는 못 만드는 손으로 넣은 행)는 「비우고 끄면 사용 안 함」 과 같이
+  `DEFAULT_FLOOR_REASON` 으로 읽는다(`stored_reason`). 빈 글 그대로 실으면 편집 초안이 그 층을
+  사용으로 떨어뜨려 도면·목록은 비활성인데 편집표는 사용이었다(2026-10-27 표적 E2E). 사유 글은
+  길이를 보지 않고 그대로 그린다(`inactive_label` — 제어 문자는 빈칸). 편집표 칸만은 저장할
   글을 제어 문자까지 그대로 싣는다(`reason_cell_text` — `저장` 이 거절한 글을 칸에서 보고 고치게).
   저장 입구(`prepare_floor_states`)만 엄격하다. 사유 글은 사람 글이라 마크다운 자리에서는 그리는
   쪽이 막는다(`literal_markdown`) — 이 모듈은 글을 고치지 않는다(짝 없는 서로게이트만 뗀다 —
@@ -69,6 +72,7 @@ __all__ = [
     "present_location_values",
     "reason_cell_text",
     "selectable_floor_keys",
+    "stored_reason",
     "with_building",
 ]
 
@@ -149,6 +153,15 @@ def _refused(char: str) -> bool:
 
 def _without_surrogates(text: str) -> str:
     return "".join(char for char in text if ord(char) not in _SURROGATES)
+
+
+def stored_reason(reason: object) -> str:
+    """저장소가 읽은 사유 → `FloorStates` 에 실을 사유. 빈 사유(앞뒤 공백뿐 포함 — 손으로 넣은
+    행)는 `DEFAULT_FLOOR_REASON`(「사용 안 함」)이고 그 밖에는 저장된 글 그대로다(앞뒤 공백도
+    떼지 않는다). DB 행은 고치지 않는다 — 그 층을 고쳐 저장할 때 바뀐 층만 쓴다
+    (`floor_state_store`)."""
+    text = str(reason)
+    return text if text.strip() else DEFAULT_FLOOR_REASON
 
 
 def inactive_label(reason: str) -> str:

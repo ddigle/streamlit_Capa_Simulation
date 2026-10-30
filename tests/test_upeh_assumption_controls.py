@@ -135,6 +135,58 @@ def test_the_inverse_button_writes_the_value_into_the_percent_box() -> None:
     assert INVERSE_KEY not in {str(button.key) for button in app.button}
 
 
+def test_clearing_the_percent_box_turns_the_assumption_off_at_100() -> None:
+    """칸을 비우고 Enter 하면 100%(꺼짐)다 — 최소값 80% 가 아니다(2026-10-27 표적 E2E).
+
+    1.63 숫자 칸은 빈 칸을 위젯 기본값으로 보내고(브라우저) 서버도 빈 값을 기본값으로 읽는다.
+    기본값이 최소값이면 가정을 끄려던 사람에게 가장 강한 악화 가정이 걸렸다.
+    """
+    app = _ok(_app().run())
+    app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).set_value(120)
+    _ok(app.run())
+    assert app.session_state["result"][0] == 120
+
+    app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).set_value(None)
+    _ok(app.run())
+    box = app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY)
+    assert app.session_state["result"] == (100, 202606, 202612, False)
+    # 칸에도 100 이 다시 선다(서버가 값을 적어 브라우저에 알린다).
+    assert box.value == 100
+    assert (box.proto.value, box.proto.set_value) == (100, True)
+    assert UPEH_RESET_BUTTON_KEY not in {str(button.key) for button in app.button}
+
+
+@pytest.mark.parametrize(("typed", "applied"), [(151, 150), (79, 80), (1000, 150), (0, 80)])
+def test_a_percent_outside_the_range_is_clamped_and_shown_in_the_box(
+    typed: int, applied: int
+) -> None:
+    """범위 밖 값은 가까운 끝으로 깎아 칸과 적용값이 같다 — 칸에 79 가 남은 채 적용값은 앞 값이던
+    어긋남(2026-10-27 표적 E2E)이 없다."""
+    app = _ok(_app().run())
+    app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).set_value(120)
+    _ok(app.run())
+
+    app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).set_value(typed)
+    _ok(app.run())
+    box = app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY)
+    assert box.value == applied
+    assert app.session_state["result"][0] == applied
+    assert (box.proto.value, box.proto.set_value) == (applied, True)
+
+
+def test_the_browser_box_neither_fills_a_cleared_value_nor_holds_an_out_of_range_one() -> None:
+    """브라우저 쪽 계약 — 칸에 위젯 기본값도 범위도 싣지 않는다.
+
+    1.63 프런트는 빈 칸을 확정할 때 위젯 기본값(`default`)을 보내고, 범위(`has_min`·`has_max`)
+    밖 글은 확정하지 않고 쥔 채 서버가 보낸 값도 받지 않는다. 둘 다 서버(콜백)가 정한다.
+    """
+    app = _ok(_app().run())
+    proto = app.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).proto
+    assert not proto.HasField("default")
+    assert not proto.has_min
+    assert not proto.has_max
+
+
 def test_a_month_outside_the_new_options_gets_a_new_value_written() -> None:
     """조회기간이 바뀌어 고른 달이 선택지 밖이면 지우지 않고 새 값을 적는다."""
     app = _ok(_app().run())

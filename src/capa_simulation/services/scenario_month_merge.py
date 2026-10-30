@@ -45,6 +45,8 @@ NON_MONTHLY_SUPPLEMENT_KEYS: Mapping[str, tuple[str, ...]] = {
 
 # 결손 문구에 싣는 키 예시 수.
 GAP_EXAMPLE_LIMIT = 5
+# 겹침 저장 차단 글에 적는 달의 수. 넘으면 「외 N개월」로 센다(화면 안내는 겹친 달을 다 적는다).
+BLOCKED_MONTH_LIMIT = 12
 
 
 def non_monthly_rule(name: str) -> str:
@@ -195,7 +197,10 @@ def merge_scenario_months(
     )
     blocked = preview.loc[preview["선택 출처"].eq("미선택 · 저장 차단"), MONTH_COLUMN]
     if not blocked.empty:
-        sample = ", ".join(format_month(int(month)) for month in blocked.iloc[:12])
+        sample = ", ".join(format_month(int(month)) for month in blocked.iloc[:BLOCKED_MONTH_LIMIT])
+        rest = len(blocked) - BLOCKED_MONTH_LIMIT
+        if rest > 0:
+            sample += f" 외 {rest}개월"
         raise ValueError(
             f"베이스와 {len(blocked)}개월이 겹쳐 저장할 수 없습니다: {sample}. "
             "겹친 월에 사용할 시나리오를 선택하거나 덧붙일 월 범위를 좁혀 주세요."

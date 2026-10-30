@@ -18,7 +18,7 @@ import pandas as pd
 
 from capa_simulation.persistence._sql_helpers import insert_by_name
 from capa_simulation.services.fab_layout import FLOOR_KEYS
-from capa_simulation.services.floor_state import FloorStates
+from capa_simulation.services.floor_state import FloorStates, stored_reason
 
 __all__ = ["read_floor_states", "write_floor_states"]
 
@@ -28,7 +28,8 @@ _FLOOR_ORDER = {key: index for index, key in enumerate(FLOOR_KEYS)}
 def read_floor_states(connection: duckdb.DuckDBPyConnection) -> FloorStates:
     """머리와 비활성 층 행. 머리가 없으면 version 0 이다 — 머리 없이 층 행만 있는 DB(손으로 넣은
     행)도 version 0 으로 읽고 행은 그대로 싣는다. FAB 의 30개 층 밖 행은 버린다(그릴 자리가 없다).
-    사유는 저장된 글 그대로다(옛 코드든 적은 글이든 — 화면 글은 `inactive_label`)."""
+    사유는 저장된 글 그대로다(옛 코드든 적은 글이든 — 화면 글은 `inactive_label`). 빈 사유만
+    「사용 안 함」 으로 읽는다(`stored_reason` — 손으로 넣은 행)."""
     header = connection.execute(
         """
         SELECT version, source, updated_at
@@ -41,7 +42,7 @@ def read_floor_states(connection: duckdb.DuckDBPyConnection) -> FloorStates:
     ).fetchall()
     known = sorted(
         (
-            (str(building), str(floor), str(reason))
+            (str(building), str(floor), stored_reason(reason))
             for building, floor, reason in rows
             if (str(building), str(floor)) in _FLOOR_ORDER
         ),
