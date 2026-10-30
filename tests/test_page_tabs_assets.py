@@ -696,6 +696,11 @@ def test_the_return_notice_reads_the_header_variable_and_the_theme_switch_mark()
     assert "flash(message, RETURN_NOTICE_MS)" in JS
     # 알리기 전에 떠난 문서의 몫은 지우지 않는다 — 떠날 때 이름이 없으면 적지 않는다.
     assert "if (record !== null) storage.setItem(RETURN_KEY, record)" in JS
+    # 탭 줄이 없던 문서(부트스트랩 오류)에서 누른 테마 단추의 표지는 떠날 때 읽히지 않고 남는다 —
+    # 새 문서가 처음 볼 때 지우지 않으면 그 문서의 다음 새로고침을 테마 전환 글로 알린다.
+    first = JS.index("if (!window.__capaReturnChecked) {")
+    checked = JS[first : JS.index("if (!window.__capaReturnWatch) {")]
+    assert "window.sessionStorage.removeItem(THEME_SWITCH_KEY)" in checked
 
 
 def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:

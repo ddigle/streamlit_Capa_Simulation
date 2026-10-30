@@ -1608,15 +1608,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       곧바로 묻는다. 붙든 동안 탭을 누르면 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다
       (`theme_toggle.LEAVE_HOLD_RESET_MS`). 칸 편집기에 쓰는 중(Enter 전)에 누른 Dark 가 표지가 서기 전에 묻지 않고
       새로 읽던 틈을 막는다(E2E #94·#101, 개선 거리 I4).
-  - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
-    처리기 하나) 띠 CSS 변수 `--capa-equipment-return`(`app_header.EQUIPMENT_RETURN_VARIABLE`)에 이름이 있으면 탭의
-    `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,
-    글은 `TEXT["returned"]`·`TEXT["themed"]`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
-    문서가 다시 알린다. 떠날 때 이름이 없으면 적지 않는다(알리기 전에 떠난 문서의 몫을 지우지 않는다).
     - 탭 줄은 페이지보다 먼저 그리므로 「이번 회차에 그 편집표를 그리는가」 를 위젯 값으로 미리 본다 — 작은 편집표는 바깥 탭이
       ① 이고 표 고르기(`equipment_data_workspace.MASTER_TABLE_KEY`)가 그 표일 때만 센다. 고르기를 바꾼 회차에는 편집표 위젯
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
       편집표를 숨기는 고르기를 새로 두면 판정에 그 고르기를 같이 넣는다.
+  - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
+    처리기 하나) 띠 CSS 변수 `--capa-equipment-return`(`app_header.EQUIPMENT_RETURN_VARIABLE`)에 이름이 있으면 탭의
+    `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,
+    글은 `TEXT["returned"]`·`TEXT["themed"]`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
+    문서가 다시 알린다. 떠날 때 이름이 없으면 적지 않는다(알리기 전에 떠난 문서의 몫을 지우지 않는다). 테마 단추의 표지
+    (`theme_toggle.THEME_SWITCH_STORAGE_KEY`)는 떠날 때 읽고 지우며, 탭 줄이 없던 문서(부트스트랩 오류)에서 눌러 남은 표지는 새
+    문서의 첫 그리기가 지운다 — 남기면 그 문서의 다음 새로고침을 테마 전환 글로 알린다.
   - 기록 한 칸(`page_tabs.js` 의 순수 구획 `<tabs-history>`, `tests/test_page_tabs_assets.py` 가 node 로 돌린다) — 문서의
     `history.pushState` 를 한 번 감싸(`window.__capaHistoryGuard`) 지금 경로와 같은 경로의 쌓기를 **늘** 칸
     바꾸기(`replaceState`)로 돌린다. 거는 것(`<tabs-history-install>` 의 `installHistoryGuard`)은 회차 맨 앞의 입장 화면

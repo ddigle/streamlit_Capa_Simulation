@@ -586,6 +586,9 @@ export default function (component) {
     let stored = null
     try {
       stored = window.sessionStorage.getItem(RETURN_KEY)
+      // 앞 문서가 떠날 때 읽지 못한 테마 표지(탭 줄이 서지 않은 화면 — 부트스트랩 오류 — 에서 누른 테마 단추)는 낡았다.
+      // 남겨 두면 이 문서의 다음 새로고침을 테마 전환으로 알린다.
+      window.sessionStorage.removeItem(THEME_SWITCH_KEY)
     } catch (error) {
       stored = null
     }

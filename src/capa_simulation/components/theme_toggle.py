@@ -123,11 +123,13 @@ THEME_SYNC_PREFIX = "capa-theme-synced-"
 THEME_RELOAD_GUARD_PREFIX = "capa-theme-reloaded-"
 # 이 세션에 저장하지 않은 편집이 있다는 표지. 버튼의 iframe 내용은 회차마다 같아야 하므로(모듈
 # 설명) 값을 iframe 에 싣지 않고, 매 회차 그리는 사이드바 스타일 끝에 CSS 변수로 단다
-# (`unsaved_edits_marker`). 버튼은 누르는 순간 그 변수를 읽는다.
+# (`unsaved_edits_marker`). 버튼은 탭 줄의 떠나기 붙들기(`window.__capaLeaveGate`)를 지난 뒤
+# 그 변수를 읽는다 — 막 적용한 편집의 회차가 돌아와 표지가 선 뒤다.
 UNSAVED_EDITS_CSS_VARIABLE = "--capa-unsaved-edits"
 # 테마 단추가 새로 읽기 직전에 이 탭의 `sessionStorage` 에 남기는 표지. 탭 줄 JS 가 문서를 떠날
 # 때 읽고 지워, 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」 를 테마 전환 글로 낸다
-# (`page_tabs.js` 의 `<tabs-return>`).
+# (`page_tabs.js` 의 `<tabs-return>`). 탭 줄이 없던 문서에서 눌러 남은 표지는 새 문서의 탭 줄이
+# 처음 그릴 때 지운다.
 THEME_SWITCH_STORAGE_KEY = "capa-theme-switch"
 # 탭 줄 붙들기(`page_tabs.js` 의 `window.__capaLeaveGate`)에 맡긴 누름의 기다림 표지를 스스로
 # 걷는 때(ms). 붙들기는 길어야 `BUSY_MS`(10초) 뒤에 놓지만, 그 사이 탭 누름이 붙든 자리를
