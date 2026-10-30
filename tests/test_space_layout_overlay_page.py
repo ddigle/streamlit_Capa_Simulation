@@ -398,7 +398,9 @@ def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
 
     # 이름 바로 뒤에 조사를 붙이지 않는다 — 고정 낱말 「시나리오」 뒤에 붙인다(E2E r2 #83).
     assert any(
-        "「셋업 실무」 시나리오가 가정이던 때의 배치안" in str(item.value) for item in app.info
+        "이 리비전은 공식과 다른 배치" in str(item.value)
+        and "「셋업 실무」 시나리오가 가정이던 때의 배치안" in str(item.value)
+        for item in app.info
     )
     assert any("「셋업 실무」 시나리오가 가정이던 때의 배치 차이" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled

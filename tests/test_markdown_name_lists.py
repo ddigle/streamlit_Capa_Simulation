@@ -48,11 +48,14 @@ def _cutoff_screen(database_path: str) -> None:
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 
     render_cutoff_management(
-        DuckDBEquipmentRepository(Path(database_path)), equipment_processes=["공정~가~A", "평범"]
+        DuckDBEquipmentRepository(Path(database_path)),
+        equipment_processes=["공정~가~A", "모델*별*B", "평범"],
     )
 
 
 def test_the_missing_cutoff_warning_blocks_the_process_names(tmp_path: Path) -> None:
+    """물결표만 막으면(옛 `markdown_safe_tildes`) 「모델*별*B」 의 별표 짝이 기울임이 된다 —
+    이름마다 막는다."""
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 
     path = tmp_path / "equipment.duckdb"
@@ -61,8 +64,10 @@ def test_the_missing_cutoff_warning_blocks_the_process_names(tmp_path: Path) -> 
     app = _ok(AppTest.from_function(_cutoff_screen, args=(str(path),), default_timeout=30).run())
 
     warnings = _texts(app, "warning")
-    assert any(literal_markdown(TILDE) in text for text in warnings), warnings
-    assert not [text for text in warnings if TILDE in text]
+    assert any(
+        literal_markdown(TILDE) in text and literal_markdown(STAR) in text for text in warnings
+    ), warnings
+    assert not [text for text in warnings if TILDE in text or STAR in text]
 
 
 def _rename_screen(database_path: str, available: list[str]) -> None:
