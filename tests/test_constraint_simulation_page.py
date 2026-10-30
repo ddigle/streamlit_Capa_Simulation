@@ -1252,9 +1252,90 @@ def test_the_chart_and_sheet_callbacks_write_the_month_and_bump_one_shared_gener
         app.session_state["selection"] = selection
         _ok(app.run())
         assert app.session_state[CONSTRAINT_MONTH_KEY] == month, (action, selection)
+        # 달을 적은 누름은 「눌러 고름」 표지를 세운다 — 다음 앱 전체 회차의
+        # `settle_selected_month` 가 그 달을 기본 달로 되돌리지 않는다(I41).
+        assert app.session_state[CONSTRAINT_MONTH_PICKED_KEY] is True
         assert app.session_state["constraint_sim_select_generation"] == generation
         # 어느 쪽을 눌러도 두 그림이 같은 세대로 다시 선다.
         assert app.session_state["drawn"] == (generation, generation)
+
+    # 빈 선택 · 축 밖 점은 「눌러 고름」 표지를 세우지 않는다 — 고른 달은 계속 조건의 기본
+    # 달을 따른다.
+    fresh = AppTest.from_function(_pick_script, default_timeout=60).run()
+    for action, selection in (
+        ("sheet", {"selection": {"points": []}}),
+        ("chart", _chart_pick(199001)),
+    ):
+        fresh.session_state["action"] = action
+        fresh.session_state["selection"] = selection
+        _ok(fresh.run())
+        assert CONSTRAINT_MONTH_PICKED_KEY not in fresh.session_state
+
+
+def _short_months_script() -> None:
+    """전용 6대를 다섯 달 다 배정하지 못하는 결과로 본문 프래그먼트를 그린다."""
+    from dataclasses import replace
+    from datetime import date
+
+    from test_constraint_simulation import CONDITIONS
+
+    from capa_simulation.components.constraint_simulation_figures import ConstraintLabels
+    from capa_simulation.components.constraint_simulation_view import (
+        ConstraintView,
+        render_constraint_view,
+    )
+    from capa_simulation.services.constraint_simulation import (
+        ConstraintMonthInput,
+        simulate_constraint,
+    )
+
+    months = (202705, 202706, 202707, 202708, 202709, 202710)
+    rows = tuple(
+        ConstraintMonthInput(month, 8.0, demand, 5.0, 1.1)
+        for month, demand in zip(months, (0, 6, 0, 6, 6, 6), strict=True)
+    )
+    result = simulate_constraint(
+        rows,
+        replace(CONDITIONS, period_start=202706, period_end=202710, constraint_target=1.0),
+    )
+    render_constraint_view(
+        ConstraintView(
+            result=result,
+            labels=ConstraintLabels("TC Bonding", "TC Bonding", "HBM라E", 100, None),
+            today=date(2027, 1, 1),
+        )
+    )
+
+
+def test_many_short_months_fold_their_values_into_a_keyed_expander(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「가용이 모자란 달」 이 넉 달 이상이면 카드 캡션은 달 수 · 첫 · 끝 달만 적고 달마다
+    「전용 n대 중 m대만 배정」 은 key 붙은 「달마다 보기」 펼침에 든다(2026-10-25 E2E —
+    30개월이 한 줄로 늘어졌다)."""
+    import streamlit as st
+
+    from capa_simulation.components.constraint_simulation_view import SHORT_MONTHS_EXPANDER_KEY
+
+    seen: dict[str, Any] = {}
+    original = st.expander
+
+    def recording(label: str, *args: Any, **kwargs: Any) -> Any:
+        seen[label] = kwargs.get("key")
+        return original(label, *args, **kwargs)
+
+    # 계산표 가로 스크롤 막대(Components v2)는 하네스에 등록되지 않는다.
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(st, "expander", recording)
+    app = AppTest.from_function(_short_months_script, default_timeout=60).run()
+    _ok(app)
+    captions = _captions(app)
+    assert "전용 대수를 다 배정하지 못한 달 5개월(27.06–27.10 사이)" in captions
+    assert "필요 6대" not in captions
+    assert seen["달마다 보기"] == SHORT_MONTHS_EXPANDER_KEY
+    (expander,) = [item for item in app.expander if item.label == "달마다 보기"]
+    folded = " ".join(str(item.value) for item in expander.caption)
+    assert folded.count(": 전용 6대 중 ") == 5
 
 
 def test_both_figures_wire_their_cell_clicks_to_the_month_callbacks(

@@ -809,6 +809,41 @@ def test_a_constraint_demand_below_one_unit_says_the_minimum_one_unit() -> None:
     assert "최소" not in figures._need_cell(july, 120).hover
 
 
+def test_the_minimum_unit_explains_the_rate_only_when_that_one_unit_is_allocated() -> None:
+    """「최소 1대」 는 필요 대수 쪽(2단계 · 필요 칸)에는 늘 붙지만, 확보율 쪽(결과 상자 ·
+    확보율 칸 · 그래프 풍선)에는 그 1대를 배정한 달에만 붙는다. 소요가 0.3대로 줄어도 개조한
+    전용 6대를 남긴 달의 2000% 는 남긴 전용 때문이고, 가용이 모자라 배정하지 못한 달은 0% 라
+    「최소 1대를 떼어 크게 나온다」 가 틀린 말이다."""
+    retained = _run(product=(0, 0, 0, 0, 0, 5, 0.3, 7, 8, 8, 9, 9, 10, 10, 11))
+    july = retained.month(202707)
+    assert (july.need, july.dedicated, july.allocated) == (1, 6, 6)
+    assert figures.minimum_unit(july) and not figures.minimum_rate(july)
+    steps = month_steps(july, retained, LABELS, show_proportional=False)
+    assert steps.steps[1].body.endswith("→ **1대**(최소)")
+    assert steps.steps[1].note.startswith("이미 개조한 6대는 전용으로 남습니다")
+    assert steps.verdict.endswith("제약 제품 2000.0% (제약 120% 충족)")
+    assert figures._need_cell(july, 120).hover.endswith("→ 1대(최소)")
+    assert "최소" not in figures._constrained_rate_cell(july).hover
+    assert "최소" not in figures._hit_hover(july, retained.conditions)
+
+    short = simulate_constraint(
+        (
+            ConstraintMonthInput(202705, 3.0, 0.0, 3.0, 1.1),
+            ConstraintMonthInput(202706, 3.0, 0.3, 0.6, 1.1),
+        ),
+        replace(CONDITIONS, period_start=202706, period_end=202706),
+    )
+    june = short.month(202706)
+    assert (june.need, june.dedicated, june.allocated, june.short) == (1, 1, 0, True)
+    assert figures.minimum_unit(june) and not figures.minimum_rate(june)
+    steps = month_steps(june, short, LABELS, show_proportional=False)
+    assert steps.steps[1].body.endswith("→ **1대**(최소)")
+    assert "크게" not in steps.steps[1].note
+    assert steps.verdict.endswith("제약 제품 0.0% (제약 120% 미달)")
+    assert "최소" not in figures._constrained_rate_cell(june).hover
+    assert "최소" not in figures._hit_hover(june, short.conditions)
+
+
 def test_a_dedicated_pool_above_need_says_it_stays() -> None:
     """누적 최대 — 202710 소요가 8 → 7 로 줄어도 전용 10대가 남는다(합성 한 줄)."""
     product = (0, 0, 0, 0, 0, 5, 6, 7, 8, 7, 9, 9, 10, 10, 11)

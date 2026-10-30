@@ -65,6 +65,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     dedicated_split_text,
     free_parts,
     general_label,
+    minimum_rate,
     minimum_unit,
     month_name,
     rate_axis,
@@ -362,10 +363,12 @@ def month_steps(
     자리(`units_text`)로 적고, 깎은 인수로 어긋날 때만 인수를 한 자리씩 더 적는다
     (`formula_text.operand_text` — 「0.02 × 120% = 0.03」 이 아니라 「0.021 × 120% = 0.03」).
     늘리는 자릿수는 **카드에 한 벌**이다 — 네 식이 함께 맞는 가장 적은 자릿수(`shared_digits`)로
-    모든 식의 인수를 적어 같은 수(1·5단계의 기존 소요, 1·2단계의 제약 소요, 3·4단계의 비가동)가
-    「1.96」·「1.9637」 두 꼴로 보이지 않게 한다. 그런 자릿수가 없을 때만 식마다 고르고
-    (`digits_within` → `consistent_digits`), 그 식이 어느 자릿수로도 못 맞추면 둘째 자리와 「≈」 다.
-    굵은 결과(소요·기존 가용·확보율)는 늘 화면 자릿수다."""
+    모든 식의 인수를 적어 여러 식의 인수로 서는 같은 수(1·5단계의 기존 소요, 1·2단계의 제약
+    소요)가 「1.96」·「1.9637」 두 꼴로 보이지 않게 한다. 그런 자릿수가 없을 때만
+    식마다 고르고(`digits_within` → `consistent_digits`), 그 식이 어느 자릿수로도 못 맞추면 둘째
+    자리와 「≈」 다. 굵은 결과(소요·3단계 비가동·신규 대기·기존 가용·확보율)는 늘 화면 자릿수라,
+    자리를 늘린 카드에서는 굵은 수와 같은 값의 인수가 자릿수만 다르게 설 수 있다(1단계 「소요
+    **1.96대** = 기존 1.9637 + 0」, 3단계 「−0.46대」 와 4단계 「3.4567 − 0.4567」)."""
     product = literal_markdown(labels.product)
     process = literal_markdown(labels.process_label)
     modifies = result.conditions.modifies
@@ -445,7 +448,7 @@ def month_steps(
             if split
             else f"이미 개조한 {row.dedicated}대는 전용으로 남습니다(줄여도 되돌리지 않음)."
         )
-    elif minimum_unit(row):
+    elif minimum_rate(row):
         note2 = (
             "소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다 — 제약 제품 확보율이 아주 크게 "
             "나오는 까닭입니다."
@@ -520,7 +523,7 @@ def month_steps(
         )
         if row.constrained_rate is not None:
             met = "충족" if row.met else "미달"
-            minimum = f" · 소요 1대 미만에 {MINIMUM_UNIT_WORDS}" if minimum_unit(row) else ""
+            minimum = f" · 소요 1대 미만에 {MINIMUM_UNIT_WORDS}" if minimum_rate(row) else ""
             verdict += (
                 f" · 제약 제품 {rate_text(row.constrained_rate)} (제약 {target}% {met}{minimum})"
             )
