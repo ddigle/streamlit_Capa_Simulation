@@ -2503,7 +2503,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「필요 단축 일정에서 이 공정 보기」(`space`)만 적는다(출처마다 배지 글이 있어야 `current_highlight` 가 받는다).
     공정 필터·공용 프로필(0019)·기준선(0021)에는 닿지 않는다(`tests/test_required_shortening_tab.py`).
 - `src/capa_simulation/components/upeh_assumption_controls.py` — 두 화면 조건 카드 끝 「이 세션만」 UPEH 가정 묶음(% 칸
-  80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. 구간 선택지는
+  80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. % 칸은 빈 칸 = 100%·범위
+  밖 = 가까운 끝을 콜백(`_settle_percent`)이 칸에 다시 적고, 위젯에는 기본값·범위를 주지 않는다 — 1.63 은 빈 칸을 위젯
+  기본값(안 주면 최소값)으로 확정하고 범위 밖 글은 확정하지 않은 채 쥐어 칸과 적용값이 갈렸다(2026-10-27 표적 E2E). 구간 선택지는
   `assumption_month_options`(조회기간 ∩ 이번 달 이후) 하나이고, 세 칸 모두 위젯 앞에서 `carry_shared_widget_value` 를
   부른다(`tests/test_upeh_assumption_controls.py` — 앱 전체로 페이지를 옮긴 첫 회차까지).
 - `src/capa_simulation/components/preset_number_field.py` — 미리 정한 값 버튼(`st.pills`, `required=False`)과 늘 지금 값을

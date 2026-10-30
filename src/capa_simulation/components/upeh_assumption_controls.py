@@ -3,7 +3,12 @@
 """「UPEH 가정」 입력 — 두 화면의 조건 카드 끝에 서는 「이 세션만」 묶음.
 
 - **% 칸**(`st.number_input`, 80~150, 1 단위 — 2026-10-22 사용자 결정 「바뀌면 곧바로 반영」). 100%
-  가 기본이고 곧 「꺼짐」이다. 100% 가 아니면 「100% 로」 단추가 선다.
+  가 기본이고 곧 「꺼짐」이다. 100% 가 아니면 「100% 로」 단추가 선다. **빈 칸은 100%, 범위
+  밖 값은 가까운 끝**이고 칸에도 그 값을 다시 적는다(콜백 `_settle_percent`). 그래서 위젯에는
+  기본값(`value`)도 범위(`min_value`·`max_value`)도 주지 않는다 — 1.63 은 빈 칸을 위젯
+  기본값으로 확정하고(브라우저·서버 모두, 기본값을 안 주면 최소값 80) 범위 밖 글(79·151)은
+  확정하지 않은 채 칸에 쥐어 칸과 적용값이 갈렸다(2026-10-27 표적 E2E). 기본값이 없어 칸 끝에
+  비우기 단추(×)가 서고, 누르면 100% 다.
 - **적용 구간** — 「UPEH 적용 시작」·「UPEH 적용 끝」(필요 단축 일정 카드의 공용 「시작 월/끝 월」과
   글자를 가른다). 선택지는 **한 함수**(`assumption_month_options` — 사이드바 조회기간 가운데 이번 달
   이후)로만 낸다 — 두 화면이 같은 선택지를 그려야 화면을 옮길 때 「선택지 밖 → 새 값」으로 구간이
@@ -65,7 +70,8 @@ PERCENT_HELP = (
     "본다면 — "
     "+10%(110%)는 소요대수 −9.1%(1 − 1/1.1)입니다. 「확보율 보정」(HOME, 확보율 %p 덧셈)과 다른 "
     "것이라 "
-    "둘을 함께 켜면 같은 개선이 두 번 들어갈 수 있습니다."
+    "둘을 함께 켜면 같은 개선이 두 번 들어갈 수 있습니다. "
+    f"{PERCENT_MIN}~{PERCENT_MAX}% 밖의 값은 가까운 끝으로, 빈 칸은 100% 로 읽습니다."
 )
 
 
@@ -113,13 +119,15 @@ def render_upeh_assumption_controls(
         st.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = PERCENT_DEFAULT
 
     st.caption(GROUP_CAPTION)
+    # 기본값·범위를 주지 않는다(모듈 머리) — 빈 칸·범위 밖 값은 `_settle_percent` 가 칸에
+    # 다시 적는다.
     percent = st.number_input(
         "UPEH 가정 (%)",
-        min_value=PERCENT_MIN,
-        max_value=PERCENT_MAX,
+        value=None,
         step=1,
         key=UPEH_ASSUMPTION_PERCENT_KEY,
         persist_state="session",
+        on_change=_settle_percent,
         help=PERCENT_HELP,
     )
     value = int(percent) if percent is not None else PERCENT_DEFAULT
@@ -165,6 +173,15 @@ def render_upeh_assumption_controls(
 def apply_upeh_percent(value: int) -> None:
     """% 칸에 값을 적는 콜백(범위 안으로 깎는다)."""
     st.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = clamp_percent(value)
+
+
+def _settle_percent() -> None:
+    """% 칸 콜백 — 빈 칸은 100%(꺼짐), 범위 밖 값은 가까운 끝으로 칸에 다시 적는다. 받을 수
+    있는 값이면 적지 않는다(적으면 그 값을 브라우저에 다시 보낸다)."""
+    held = st.session_state.get(UPEH_ASSUMPTION_PERCENT_KEY)
+    settled = PERCENT_DEFAULT if held is None else clamp_percent(int(held))
+    if held != settled:
+        st.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = settled
 
 
 def upeh_badge(source: UpehAssumption | UpehToken) -> str:
