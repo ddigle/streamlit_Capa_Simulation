@@ -24,6 +24,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.voc_draft_keeper import render_voc_draft_keeper
 from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import (
     current_generation,
@@ -320,7 +321,12 @@ with st.container(border=True):
             on_click=_submit_post,
             args=(database_path, post_generation),
         )
-    render_flash(POST_FORM_ERROR_KEY)
+    # 폼 알림 칸 안에 초안 보관을 둔다 — 폼 안 글은 올리기 전에는 서버가 몰라 화면 이동·테마 전환에
+    # 사라졌다(개선 I84). 브라우저 탭에 두었다가 빈 폼에 되살리고, 되살렸으면 이 칸에 한 줄 알린다.
+    with render_flash(POST_FORM_ERROR_KEY):
+        render_voc_draft_keeper(
+            title_key=POST_TITLE_KEY, body_key=POST_BODY_KEY, generation=post_generation
+        )
 
 st.divider()
 
