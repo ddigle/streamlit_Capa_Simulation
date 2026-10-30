@@ -382,6 +382,83 @@ def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
     assert not app.toggle(key="space_layout_edit_mode").disabled
 
 
+def _lock_with_my_eq02_move(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], *, other_edit: bool = False
+) -> tuple[AppTest, DuckDBEquipmentRepository, str]:
+    """가정 세션(그 시나리오 r2 에 고정)에서 EQ-02 를 옮겨 적용해 둔 사이 남이 그 시나리오 r3 에
+    다른 배치(EQ-01 X=70)를 저장했다 — 층 배치 편집이 「최신 r3 불러오기」 로 잠긴다. `other_edit`
+    면 설비 마스터의 다른 편집(EQ-02 설비이력)도 함께 남아 있다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        BUFFER_GENERATION_KEY,
+        BUFFER_KEY,
+    )
+
+    repository, setup = _overlay(tmp_path)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    app = _ok(_space(tmp_path, setup, pinned).run())
+    _apply_eq02(app, editor_calls)
+    if other_edit:
+        baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+        edited = equipment.copy()
+        edited.loc[edited["설비명"].eq("EQ-02"), "설비이력"] = "남길 편집"
+        app.session_state[BUFFER_KEY] = (baseline, edited, downtime)
+        app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-01", "X좌표", 70.0))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+    assert any("r3 에 다른 배치가 저장됐습니다" in text for text in _texts(app))
+    return app, repository, setup
+
+
+def _one_step_buttons(app: AppTest) -> list[Any]:
+    return [item for item in app.button if item.key == "space_layout_discard_and_load_latest"]
+
+
+def test_a_locked_layout_change_is_dropped_and_the_latest_loaded_in_one_step(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """남이 그 시나리오에 다른 배치를 저장해 잠긴 회차 — 버릴 것이 배치 변경뿐이면 「배치 변경만
+    버리기」 곁의 「배치 변경 버리고 최신 r3 불러오기」 한 번으로 최신을 불러와 배치 편집이
+    풀린다(개선 I72 · E2E r1 #34 — 버리기 · 팝오버 열기 · 불러오기 세 단계였다). 편집은 남지
+    않는다."""
+    from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+
+    app, repository, setup = _lock_with_my_eq02_move(tmp_path, editor_calls)
+    (button,) = _one_step_buttons(app)
+    assert button.label == "배치 변경 버리고 최신 r3 불러오기"
+
+    button.click().run()
+    _ok(app)
+
+    latest = _scenario(repository, setup).latest_schedule_revision_id
+    assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == latest
+    assert not app.toggle(key="space_layout_edit_mode").disabled
+    texts = _texts(app)
+    assert any("배치 변경을 버리고 최신 r3을 불러왔습니다" in text for text in texts), texts
+    assert not any("저장 안 한 배치 변경" in text for text in texts), texts
+    assert not _one_step_buttons(app)
+    state: Any = app.session_state
+    assert int(state[BUFFER_GENERATION_KEY]) <= int(
+        state["equipment_workspace_seeded_generation_v1"]
+    )
+    assert _buffer_x(app, "EQ-01") == 70.0
+    assert _scenario(repository, setup).latest_revision_no == 3
+
+
+def test_the_one_step_load_waits_while_other_equipment_edits_remain(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 마스터의 다른 편집이 함께 있으면 불러오기가 그것까지 버리므로 한 단계 단추를 세우지
+    않는다 — 「배치 변경만 버리기」 와 잠금 줄의 「최신 r3 불러오기」(체크 뒤)만이다(개선 I72)."""
+    app, _, _ = _lock_with_my_eq02_move(tmp_path, editor_calls, other_edit=True)
+
+    assert app.button(key="space_layout_discard_layout")
+    assert not _one_step_buttons(app)
+
+
 def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
