@@ -1453,10 +1453,11 @@ def _zoned_date(value: object) -> bool:
 
 def _zoned_rows(entered: pd.Series, rows: pd.Series) -> pd.Series:
     """`rows` 줄 가운데 입력 값이 시간대 꼴 날짜인 줄(그 밖은 거짓) — 못 읽은 줄만 하나씩 본다."""
-    zoned = pd.Series(False, index=entered.index, dtype=bool)
-    if rows.any():
-        zoned.loc[rows] = [_zoned_date(value) for value in entered.loc[rows].tolist()]
-    return zoned
+    flags = [
+        bool(row) and _zoned_date(value)
+        for value, row in zip(entered.tolist(), rows.tolist(), strict=True)
+    ]
+    return pd.Series(flags, index=entered.index, dtype=bool)
 
 
 def _normalize_date(series: pd.Series, label: str) -> pd.Series:
