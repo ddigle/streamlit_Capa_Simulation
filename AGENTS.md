@@ -2573,7 +2573,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   한 줄과 까닭을 그리고 None, `st.stop` 은 부르는 쪽). 계획은 공정 Capa 상세 ② 와 같은 칸을 같은 키로 받고(목표는 키 맞춤용
   HOME 확보기준), `new_unit_since` 를 주면 같은 키의 설비 일정 칸을 그 날로 거른 신규 호기도 같은 `try` 에서 받는다. 계산
   함수는 부를 때 `simulation_cache` 모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 두 모드가 이 함수만 거치는지
-  `tests/test_modification_schedule_page.py` 가 본다.
+  `tests/test_modification_schedule_page.py` 가, 멈추는 갈래 차례와 까닭 글(키 만들기 예외도 계산 오류 갈래)은
+  `tests/test_constraint_equipment_plan.py` 가 본다.
 - `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
   만드는 순수 함수. 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰
