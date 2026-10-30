@@ -1,4 +1,4 @@
-# Purpose: Static Capa 화면의 판정 기준 안내 카드와 Guide 가 사용자 결정대로 서는지 고정한다.
+# Purpose: Static Capa 의 판정 기준 카드·Guide·소요대수 미포함 수요 줄을 사용자 결정대로 고정한다.
 
 """Static Capa — 판정 기준은 HOME → Preference(2026-10-06), 설명은 Guide(2026-09-29 사용자 결정)."""
 
