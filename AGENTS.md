@@ -197,7 +197,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app.py` — 유일한 실행 진입점. 공식 시나리오 부트스트랩·공통 사이드바·조회기간을 세우고 페이지를 돌린다.
   - 차례 「입장 화면(`intro_overlay.py`) → 껍데기 스타일 → 서체 → 툴바 → 부트스트랩(최신 공식 리비전 활성화) →
-    자동 갱신 예약 → 요약(`intro_summary.py`) → 사이드바 → 조건 팝업 칸 → 화면 탭 줄 → 페이지」는 `test_app_navigation.py`·
+    자동 갱신 예약 → 요약(`intro_summary.py`) → 올라온 시나리오 최신 확인(`check_active_scenario_latest`) → 사이드바 → 조건
+    팝업 칸 → 화면 탭 줄 → 페이지」는 `test_app_navigation.py`·
     `test_page_tabs.py` 가 지킨다. 페이지가 `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘
     `static/icons/capa_mark.svg` 는 `test_settings.py` 가 본다.
   - 화면 탭 줄(`components/page_tabs.py`, 상태 `page_tabs_state.py`)의 훅은 세 자리다 — (a) `st.navigation()` 바로 뒤
@@ -1003,6 +1004,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     공유 위젯의 주인 칸을 지운다(구간은 둔다, `tests/test_scenario_activation.py`).
   - 이름 변경은 활성화가 아니다 — `rename_active_scenario_label`·`rename_active_revision_label` 이 같은 id 일 때 이름표
     한 칸만 고친다(다른 세션은 다시 불러올 때 바뀐다).
+  - 올라온 시나리오의 최신 리비전 번호(`ACTIVE_SCENARIO_LATEST_KEY`)는 `app.py` 가 `check_active_scenario_latest` 로
+    `LATEST_RECHECK_SECONDS`(30초)에 한 번(다른 시나리오를 불러온 회차는 곧바로) 보관본까지 목록을 읽어 적고, 줄 배지·머리 띠는
+    `newer_active_revision_no` 로 세션만 읽는다(5장 23, `tests/test_scenario_activation.py`·`test_app_navigation.py`).
   - 프리셋을 걸 때 HOME 의 아는 공정 기억(`PROCESS_SEEN_KEY`)을 지운다(`tests/test_process_filter_activation.py`).
 - `src/capa_simulation/equipment_scenario_activation.py` — 세션의 설비 시나리오(시뮬레이션 `scenario_activation.py` 의 짝).
   세션은 (설비 시나리오, 일정 리비전) 하나를 고정해 들고(`equipment_scenario_selection_v1` — 기본형만), 보는 한 벌은
@@ -1767,7 +1771,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
   싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
-    `intro_summary.latest_official_revision` 만 읽는다(`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
+    `intro_summary.latest_official_revision`·`scenario_activation.newer_active_revision_no`(「최신 rN 있음」) 만 읽는다
+    (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
