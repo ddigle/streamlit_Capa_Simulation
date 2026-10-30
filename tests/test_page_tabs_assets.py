@@ -717,3 +717,135 @@ def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:
     release = JS[JS.index("function release() {") :]
     release = release[: release.index("\n  }\n")]
     assert "const held = S.items.get(hold.id)" in release and "hold.go()" in release
+
+
+_GATE_RUNNER = """
+(() => {
+  // 시계·타이머 대역 — `advance(t)` 가 t 까지 걸린 타이머를 차례로 부른다.
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const document = { querySelector: () => ({ getAttribute: () => scriptState }) }
+  const window = {}
+  %(constants)s
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item) => log.push('tab:' + item.dataset.id)
+    %(slice)s
+    return { gate, select }
+  }
+  const strip = (log) => {
+    const parts = { tab: {}, close: { hidden: false } }
+    const tab = { dataset: { id: 'b' }, hidden: false, __parts: parts }
+    const S = {
+      items: new Map([['b', tab]]), queue: createSelectQueue(), data: { active: 'a' },
+      editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+    }
+    return { S, tab, ...mount(S, log) }
+  }
+  const theme = (log) => () => log.push('theme')
+  const out = {}
+
+  // 편집표와 상관없는 누름 — 곧바로 잇는다.
+  let log = []
+  let T = strip(log)
+  T.gate.press()
+  T.gate.go(theme(log))
+  out.fresh = [log.slice(), T.S.hold]
+
+  // 칸 편집기에 쓰는 중 — 편집 회차가 도는 동안 붙들고, 끝나고 새 data 가 오면 잇는다.
+  timers.length = 0; now = 1000; log = []; T = strip(log)
+  T.S.gridFocused = true
+  T.S.editAt = now
+  T.gate.press()
+  T.gate.go(theme(log))
+  out.typingHeld = [log.slice(), T.S.hold ? ['held', T.S.hold.id] : null]
+  scriptState = 'running'
+  advance(2000)
+  out.typingWhileRunning = log.slice()
+  scriptState = 'notRunning'
+  T.S.data = { active: 'a' }
+  advance(2100)
+  out.typingAfterRun = [log.slice(), T.S.hold, T.tab.__parts.tab['aria-busy'] || null]
+
+  // 막 Enter 한 직후(포커스는 이미 단추) — 회차가 아직 돌지 않아도 0.4초는 기다린다.
+  timers.length = 0; now = 10000; log = []; T = strip(log)
+  T.S.editAt = now - 1000
+  T.gate.press()
+  T.gate.go(theme(log))
+  advance(10300)
+  out.enterEarly = log.slice()
+  advance(10500)
+  out.enterLate = log.slice()
+
+  // 붙든 사이 탭을 누르면 마지막 누름(탭)만 남는다 — 테마 누름은 버려진다.
+  timers.length = 0; now = 20000; log = []; T = strip(log)
+  T.S.gridFocused = true
+  T.S.editAt = now
+  T.gate.press()
+  T.gate.go(theme(log))
+  T.S.pressFromGrid = T.S.gridFocused
+  T.select(T.tab)
+  T.S.data = { active: 'a' }
+  advance(21000)
+  out.dropped = log.slice()
+
+  // 회차가 끝나지 않아도 붙들기는 `BUSY_MS` 에서 놓는다.
+  timers.length = 0; now = 30000; log = []; T = strip(log)
+  T.S.gridFocused = true
+  T.S.editAt = now
+  T.gate.press()
+  T.gate.go(theme(log))
+  scriptState = 'running'
+  advance(30000 + BUSY_MS - 200)
+  out.capEarly = log.slice()
+  advance(30000 + BUSY_MS + 200)
+  out.capLate = log.slice()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None:
+    """테마 단추가 지나는 붙들기(`window.__capaLeaveGate`)를 탭 줄 JS 그대로 node 에서 돌린다(개선
+    거리 I4). 편집표와 상관없는 누름은 곧바로 잇고, 칸에 쓰는 중이거나 막 Enter 한 직후의 누름은
+    편집 회차가 돌아올 때까지(최소 0.4초, 최대 `BUSY_MS`) 붙든다. 붙든 사이 탭을 누르면 테마
+    누름은 버려지고 탭 누름만 잇는다."""
+    lines = [
+        re.search(rf"^const {name} = .+$", JS, re.M)
+        for name in ("BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+    ]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  const appRunning = () => {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    runner = _GATE_RUNNER % {"constants": constants, "slice": JS[start:end]}
+
+    out = _node(runner)
+
+    assert out["fresh"] == [["theme"], None]
+    assert out["typingHeld"] == [[], ["held", None]]
+    assert out["typingWhileRunning"] == []
+    assert out["typingAfterRun"] == [["theme"], None, None]
+    assert out["enterEarly"] == []
+    assert out["enterLate"] == ["theme"]
+    assert out["dropped"] == ["tab:b"]
+    assert out["capEarly"] == []
+    assert out["capLate"] == ["theme"]

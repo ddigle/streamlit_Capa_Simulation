@@ -3,6 +3,7 @@
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 import streamlit as st
@@ -446,3 +447,135 @@ def test_a_theme_press_dropped_by_a_later_tab_press_does_not_stay_busy(
     busy = re.search(r"^const BUSY_MS = (\d+)$", tabs_js, re.M)
     assert busy is not None
     assert theme_toggle.LEAVE_HOLD_RESET_MS > int(busy.group(1))
+
+
+_GATE_CLICK_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+function store(init) {
+  const m = new Map(Object.entries(init || {}))
+  return {
+    get length() { return m.size },
+    key(i) { const keys = [...m.keys()]; return i < keys.length ? keys[i] : null },
+    getItem(k) { return m.has(k) ? m.get(k) : null },
+    setItem(k, v) { m.set(k, String(v)) },
+    removeItem(k) { m.delete(k) },
+  }
+}
+// 단추 스크립트의 타이머(기다림 표지 걷기)는 손으로 부른다.
+let timers = []
+globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length }
+globalThis.clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+const run = new Function('window', input.script)
+const out = input.cases.map((c) => {
+  timers = []
+  const log = { reloads: 0, confirms: 0, pressed: 0, held: [], button: null, mark: null }
+  const current = new URL(input.href)
+  const doc = {
+    querySelector() { return slot },
+    getElementById() { return null },
+    createElement() {
+      const attrs = {}
+      return {
+        style: {}, attrs,
+        setAttribute(k, v) { attrs[k] = String(v) },
+        removeAttribute(k) { delete attrs[k] },
+      }
+    },
+    documentElement: {},
+    body: {},
+  }
+  const slot = {
+    ownerDocument: doc,
+    appendChild(node) { log.button = node },
+    insertBefore(node) { log.button = node },
+  }
+  const session = store({})
+  const parent = {
+    URL,
+    document: doc,
+    location: {
+      get href() { return current.href },
+      get pathname() { return current.pathname },
+      reload() { log.reloads += 1; log.mark = session.getItem(input.switchKey) },
+    },
+    history: { replaceState(_s, _t, url) { current.href = new URL(url, current.href).href } },
+    performance: { getEntriesByType() { return [] } },
+    localStorage: store(input.local),
+    sessionStorage: session,
+    MutationObserver: class { observe() {} disconnect() {} },
+    setTimeout() {},
+    getComputedStyle() {
+      return { getPropertyValue(name) { return name === input.unsavedVar ? c.unsaved : '' } }
+    },
+    confirm() { log.confirms += 1; return c.confirm },
+  }
+  if (c.gate === 'hold') {
+    parent.__capaLeaveGate = { press() { log.pressed += 1 }, go(fn) { log.held.push(fn) } }
+  } else if (c.gate === 'broken') {
+    parent.__capaLeaveGate = { press() { log.pressed += 1 }, go() { throw new Error('gone') } }
+  }
+  run({ parent })
+  const button = log.button
+  button.onpointerdown()
+  button.onclick()
+  const state = () => ({
+    reloads: log.reloads, confirms: log.confirms, busy: button.attrs['aria-busy'] || null,
+    mark: log.mark,
+  })
+  const during = state()
+  if (c.then === 'release') log.held.forEach((fn) => fn())
+  if (c.then === 'drop') {
+    const resets = timers.filter((t) => t.live && t.ms === input.resetMs)
+    resets.forEach((t) => { t.live = false; t.fn() })
+  }
+  return { during, after: state(), pressed: log.pressed, held: log.held.length }
+})
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_theme_button_asks_and_reloads_only_when_the_leave_gate_lets_it_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """툴바 iframe 의 스크립트를 글자 그대로 node 의 가짜 부모 창에서 돌려 단추를 누른다(개선 거리
+    I4). 탭 줄 붙들기가 있으면 누를 때 편집표 포커스를 적게 하고(`press`), 붙들기가 놓기
+    전에는 묻지도 새로 읽지도 않으며 기다림 표지를 단다. 놓으면 그때의 저장 안 함 표지로 묻고
+    테마 표지를 남겨 새로 읽는다. 버려진 누름은 `LEAVE_HOLD_RESET_MS` 뒤 표지를 걷고, 붙들기가
+    없거나 깨졌으면 예전처럼 곧바로 묻는다."""
+    from test_space_module_group import _node
+    from test_theme_reopen_link import ORIGIN, _frame_script, _synced
+
+    payload = {
+        "script": _frame_script(monkeypatch),
+        "href": f"{ORIGIN}/space_status?theme=light",
+        "local": _synced("Light"),
+        "unsavedVar": theme_toggle.UNSAVED_EDITS_CSS_VARIABLE,
+        "switchKey": theme_toggle.THEME_SWITCH_STORAGE_KEY,
+        "resetMs": theme_toggle.LEAVE_HOLD_RESET_MS,
+        "cases": [
+            {"gate": None, "unsaved": "", "confirm": True, "then": None},
+            {"gate": "hold", "unsaved": "", "confirm": True, "then": "release"},
+            {"gate": "hold", "unsaved": "1", "confirm": False, "then": "release"},
+            {"gate": "hold", "unsaved": "1", "confirm": True, "then": "release"},
+            {"gate": "hold", "unsaved": "", "confirm": True, "then": "drop"},
+            {"gate": "broken", "unsaved": "", "confirm": True, "then": None},
+        ],
+    }
+    result: Any = _node(_GATE_CLICK_RUNNER, payload)
+    no_gate, held, cancelled, confirmed, dropped, broken = result
+
+    # 붙들기가 없으면(부트스트랩 오류 화면) 곧바로 — 저장 안 함 표지가 없으면 묻지 않고 새로 읽는다.
+    assert no_gate["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}
+    # 붙드는 동안은 묻지도 새로 읽지도 않고 기다림 표지만 단다. 누를 때 편집표 포커스를 적게 했다.
+    for case in (held, cancelled, confirmed, dropped):
+        assert case["pressed"] == 1 and case["held"] == 1
+        assert case["during"] == {"reloads": 0, "confirms": 0, "busy": "true", "mark": None}
+    assert held["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}
+    # 놓은 뒤 그때의 표지로 묻는다 — 취소하면 새로 읽지 않고 테마 표지도 남기지 않는다.
+    assert cancelled["after"] == {"reloads": 0, "confirms": 1, "busy": None, "mark": None}
+    assert confirmed["after"] == {"reloads": 1, "confirms": 1, "busy": None, "mark": "1"}
+    # 붙든 사이 탭 누름에 밀려 버려진 누름은 스스로 표지를 걷는다.
+    assert dropped["after"] == {"reloads": 0, "confirms": 0, "busy": None, "mark": None}
+    # 붙들기가 깨졌으면 예전처럼 곧바로 묻고 새로 읽는다(표지를 남기지 않는다).
+    assert broken["pressed"] == 1
+    assert broken["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}
