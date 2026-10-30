@@ -299,6 +299,13 @@ CONSTRAINT_KEYS: Final[dict[str, str]] = {
     "process": "constraint_sim_process",
     "detailProcess": "process_detail_process",
 }
+# 화면 맨 위 모드 전환 「제약 영향 | 개조 일정」(`modification_schedule_state.CONSTRAINT_MODE_KEY`·
+# `MODE_LABELS`). 고른 모드는 세션에 남는다(`persist_state`) — 한 브라우저 세션에서 앞 항목이 「개조
+# 일정」 을 고른 채 끝나면 「이 공정 제약 시뮬레이션」 링크로 와도 개조 일정이 열린다. 그래서 제약
+# 항목은 먼저 「제약 영향」 을 고르고 끝에 되돌린다. 개조 일정 항목을 더하면 그 항목도 고른 모드를
+# `finally` 에서 되돌린다(런북 7장 A 표 수도 함께 고친다).
+CONSTRAINT_MODE_KEY: Final = "constraint_sim_mode"
+CONSTRAINT_IMPACT_MODE: Final = "제약 영향"
 # HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
 # 못 고른다.
 HOME_LINK_KEY: Final = "home_navigation"
@@ -3321,8 +3328,9 @@ def summarize_constraint_simulation(
 def check_constraint_simulation(screen: Screen) -> str:
     """`제약 시뮬레이션` — 공정 Capa 상세(기본 공정) 머리 「이 공정 제약 시뮬레이션」 을 눌러 같은
     공정으로 열리는지 보고(링크가 꺼졌으면 사이드바로 연다), KPI·그래프·계산표·고른 달 계산·개조
-    일정을 센 뒤 그래프의 다른 달 칸을 한 번 눌러 고른 달이 바뀌는지 본다. 저장하지 않는 화면이라 DB
-    에 쓰지 않는다."""
+    일정을 센 뒤 그래프의 다른 달 칸을 한 번 눌러 고른 달이 바뀌는지 본다. 모드는 세션에 남으므로
+    읽기 전에 「제약 영향」 을 고르고 끝에(읽다 깨져도) 되돌린다(`CONSTRAINT_MODE_KEY`). 저장하지
+    않는 화면이라 DB 에 쓰지 않는다."""
     screen.open_page(PROCESS_DETAIL_PAGE)
     arg = {**CONSTRAINT_KEYS, "label": CONSTRAINT_LINK_LABEL}
     link = screen.wait_for(
@@ -3340,26 +3348,31 @@ def check_constraint_simulation(screen: Screen) -> str:
         screen.wait_idle()
     else:
         screen.open_page(CONSTRAINT_PAGE)
-    before = screen.wait_for(
-        lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
-        timeout=120,
-        accept=lambda value: (
-            bool(value)
-            and (bool(value["absent"]) or (bool(value["chart"]) and value["month"] is not None))
-        ),
-    )
-    same_process = constraint_process_matches(link, before)
-    after: Mapping[str, Any] | None = None
-    point = before.get("point")
-    if point is not None and not before.get("absent"):
-        screen.page.mouse.click(float(point["x"]), float(point["y"]))
-        screen.wait_idle()
-        after = screen.poll(
+    mode = _choose_segment(screen, CONSTRAINT_MODE_KEY, CONSTRAINT_IMPACT_MODE)
+    try:
+        before = screen.wait_for(
             lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
-            timeout=30,
-            accept=lambda value: bool(value) and value["month"] != before["month"],
+            timeout=120,
+            accept=lambda value: (
+                bool(value)
+                and (bool(value["absent"]) or (bool(value["chart"]) and value["month"] is not None))
+            ),
         )
-    return summarize_constraint_simulation(link, before, after, same_process)
+        same_process = constraint_process_matches(link, before)
+        after: Mapping[str, Any] | None = None
+        point = before.get("point")
+        if point is not None and not before.get("absent"):
+            screen.page.mouse.click(float(point["x"]), float(point["y"]))
+            screen.wait_idle()
+            after = screen.poll(
+                lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
+                timeout=30,
+                accept=lambda value: bool(value) and value["month"] != before["month"],
+            )
+        return summarize_constraint_simulation(link, before, after, same_process)
+    finally:
+        if mode is not None and mode != CONSTRAINT_IMPACT_MODE:
+            _choose_segment(screen, CONSTRAINT_MODE_KEY, mode)
 
 
 def summarize_page_tabs(
