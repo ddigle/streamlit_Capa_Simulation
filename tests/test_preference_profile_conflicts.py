@@ -1,7 +1,8 @@
 # Purpose: HOME Preference 의 공지·Top5 구간·주요공정 프리셋 저장이 남의 저장을 덮지 않는지 본다.
 
-"""세 편집기는 칸에 key 가 없다(숨은 탭의 첫 값이 세션에 박히지 않게). 그래서 남이 먼저 저장하면
-옛 화면의 제출 회차에 칸이 새 저장본으로 서서 이 화면의 입력이 버려진다. 대조가 없으면 그 값을
+"""세 편집기는 칸에 고정 key 가 없다(숨은 탭의 첫 값이 세션에 박히지 않게 — Top5 두 칸은 key 끝에
+저장본 version 을 붙여 함께 다시 선다). 그래서 남이 먼저 저장하면 옛 화면의 제출 회차에 칸이 새
+저장본으로 서서 이 화면의 입력이 버려진다. 대조가 없으면 그 값을
 version 만 올려 다시 쓰고 「저장했습니다」 를 띄웠다(2026-10-26 E2E — 두 문맥에서 세 칸 모두 재현).
 판정 기준·확보율 보정과 같은 버전 대조로 거부하고, 이 세션의 빠른 두 번 누름은 거부가 아니라
 저장으로 알린다(`write_guard.is_own_profile_save`).
@@ -134,6 +135,37 @@ def test_a_top5_band_save_from_a_stale_screen_is_rejected(database: Path) -> Non
     assert any("다른 사용자가 먼저 Top5 확보율 구간을 저장" in message for message in _errors(app))
     profile = DuckDBScenarioRepository(database).load_global_top5_band()
     assert (profile.version, profile.min_rate, profile.max_rate) == (1, 0.5, 1.5)
+
+
+@pytest.mark.parametrize(
+    ("other", "expected"),
+    [((0.8, 2.0), [80.0, 200.0]), ((0.5, 1.6), [50.0, 160.0]), ((0.6, 1.4), [60.0, 140.0])],
+    ids=["하한만", "상한만", "둘 다"],
+)
+def test_after_a_refused_top5_save_both_boxes_show_the_latest_save(
+    database: Path, other: tuple[float, float], expected: list[float]
+) -> None:
+    """남의 저장에 거부된 뒤 두 칸이 **둘 다** 최신 저장본이다 — 남이 바꾼 칸만 새로 서고 안 바꾼
+    칸은 이 화면이 친 값이 남아 아무도 정하지 않은 구간(하한 80 · 상한 180)이 섞여 보였고, 다시
+    누르면 그대로 저장됐다(2026-10-27 표적 E2E)."""
+    app = _app(database)
+    assert [box.value for box in app.number_input] == [50.0, 200.0]
+    DuckDBScenarioRepository(database).replace_global_top5_band(
+        *other, source="다른 세션", expected_version=0
+    )
+    clear_global_top5_band_cache()
+    app.number_input[0].set_value(70.0)
+    app.number_input[1].set_value(180.0)
+    app = _press(app, "확보율 구간 저장")
+
+    assert any("다른 사용자가 먼저 Top5 확보율 구간을 저장" in message for message in _errors(app))
+    assert [box.value for box in app.number_input] == expected
+    assert app.session_state[TOP5_BASE_VERSION_KEY] == 1
+
+    # 다시 누르면 최신 저장본에서 출발한다 — 섞인 구간이 새 버전으로 저장되지 않는다.
+    app = _press(app, "확보율 구간 저장")
+    profile = DuckDBScenarioRepository(database).load_global_top5_band()
+    assert [profile.min_rate * 100, profile.max_rate * 100] == pytest.approx(expected)
 
 
 def test_a_preset_save_from_a_stale_screen_is_rejected(database: Path) -> None:

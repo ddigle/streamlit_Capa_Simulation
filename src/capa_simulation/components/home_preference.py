@@ -194,14 +194,18 @@ THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장
 # 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
 # Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
-# 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없어 남이 먼저
-# 저장하면 제출 회차의 칸이 새 저장본으로 서서 이 화면의 입력이 버려지는데, 대조가 없으면 그 값을
-# version 만 올려 다시 쓰고 「저장했습니다」 를 띄웠다(2026-10-26 E2E).
+# 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지·프리셋)
+# key 에 저장본 version 이 붙어(Top5) 남이 먼저 저장하면 제출 회차의 칸이 새 저장본으로 서서 이
+# 화면의 입력이 버려지는데, 대조가 없으면 그 값을 version 만 올려 다시 쓰고 「저장했습니다」 를
+# 띄웠다(2026-10-26 E2E).
 SUMMARY_BASE_VERSION_KEY = "home_preference_summary_base_version"
 SUMMARY_SAVE_NAME = "home_preference_summary"
 TOP5_BASE_VERSION_KEY = "home_preference_top5_base_version"
 TOP5_SAVE_NAME = "home_preference_top5"
 TOP5_SAVED_MESSAGE = "B/N Top5 확보율 구간을 저장했습니다."
+# Top5 구간 두 칸의 key 머리 — 끝에 저장본 version 을 붙인다(`_render_top5_band_editor`).
+TOP5_MIN_KEY_PREFIX = "home_top5_band_min_v"
+TOP5_MAX_KEY_PREFIX = "home_top5_band_max_v"
 # 주요공정 프리셋은 version 하나가 아니라 직전 회차가 그린 **고칠 프리셋**(version·이름·공정)을
 # 둔다 — 다른 프리셋을 남이 고친 것은 이 화면의 쓰기가 다시 읽은 묶음 위에 남기므로 막지 않는다.
 KEY_PROCESS_SEEN_KEY = "home_preference_key_process_seen"
@@ -1501,11 +1505,15 @@ def _render_top5_band_editor(
                 refused = take_refusal(TOP5_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
-            # **`key` 를 두지 않는다.** 바로 위 Summary 공지와 같은 이유다 — 키가 붙은 위젯은
-            # 한 번 그려진 뒤 `value` 를 무시하고 세션 값을 쓴다. Preference 는 숨은 탭에서도
-            # 그려지므로 HOME 첫 진입의 구간이 세션에 박히고, 그 뒤 다른 사람이 바꾼 구간을
-            # 이 화면은 못 본 채 저장 한 번으로 되돌린다. 위의 `공용 버전 v…` 캡션만 새 번호로
-            # 바뀌어 화면이 스스로 모순이 된다. 값은 폼 반환값으로 받으면 된다.
+            # **key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤 `value` 를
+            # 무시하고 세션 값을 쓴다 — Preference 는 숨은 탭에서도 그려지므로 HOME 첫 진입의
+            # 구간이 세션에 박히고, 다른 사람이 바꾼 구간을 못 본 채 저장 한 번으로 되돌린다
+            # (위의 `공용 버전 v…` 캡션만 새 번호로 바뀌어 화면이 스스로 모순이 된다). key 가
+            # 없으면 위젯 id 가 `value` 를 따라 **값이 바뀐 칸만** 새로 서서, 남의 저장에 거부된
+            # 뒤 남이 바꾼 칸은 저장본·안 바꾼 칸은 이 화면이 친 값으로 섞였다(2026-10-27 표적
+            # E2E — 다시 누르면 아무도 정하지 않은 구간이 저장됐다). version 이 바뀌면 두 칸이
+            # 함께 저장본으로 다시 서고, 같은 version 안에서는 친 값이 남는다. 이 칸은 세션에
+            # 적지 않으므로 `value=` 를 함께 줘도 경고가 없다.
             min_column, max_column = st.columns(2)
             with min_column:
                 minimum = st.number_input(
@@ -1513,6 +1521,7 @@ def _render_top5_band_editor(
                     value=top5_band_profile.min_rate * 100,
                     step=10.0,
                     format="%.0f",
+                    key=f"{TOP5_MIN_KEY_PREFIX}{top5_band_profile.version}",
                 )
             with max_column:
                 maximum = st.number_input(
@@ -1520,6 +1529,7 @@ def _render_top5_band_editor(
                     value=top5_band_profile.max_rate * 100,
                     step=10.0,
                     format="%.0f",
+                    key=f"{TOP5_MAX_KEY_PREFIX}{top5_band_profile.version}",
                 )
         if not submitted:
             remember_seen(TOP5_BASE_VERSION_KEY, top5_band_profile.version)
