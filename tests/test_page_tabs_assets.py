@@ -697,7 +697,8 @@ def test_an_overflowing_strip_marks_the_side_that_has_more_tabs() -> None:
     for side, edge in (("start", "before"), ("end", "after")):
         assert f"nav.classList.toggle('has-more-{side}', more.{side})" in JS
         mask = _rule(f".capa-tabs.has-more-{side} .capa-tabs-list")
-        # 접두 없는 `mask-image` 는 Chrome 120 부터라 접두 꼴도 둔다(입장 화면 `.stage.masked` 와 같다).
+        # 접두 없는 `mask-image` 는 Chrome 120 부터라 접두 꼴도 둔다(입장 화면 `.stage.masked`
+        # 와 같다).
         assert "\n  mask-image:" in mask and "-webkit-mask-image:" in mask
         assert f".capa-tabs.has-more-{side}::{edge}" in CSS
     marks = _rule(".capa-tabs::before,\n.capa-tabs::after")
@@ -736,11 +737,11 @@ process.stdout.write(JSON.stringify(out))
 
 
 def test_keyboard_focus_stays_on_the_strip_when_a_tab_closes_or_the_screen_moves() -> None:
-    """키보드로 탭 × 에서 Enter·Space 를 누르면 숨긴 단추의 초점이 body 로 빠졌다(E2E d16). 키보드
-    초점이 있던 탭을 닫으면 숨기기 **전에** 이웃 탭으로 옮긴다 — 서버가 지금 탭을 닫고 옮겨 가는 이웃과
-    같은 규칙(오른쪽, 없으면 왼쪽)이다. 키보드로 옮긴 화면이 다 선 뒤 초점이 body 로 빠졌으면(그
-    사이 다른 입력이 없을 때만) 지금 탭으로 돌려준다. 기다리던 누름은 옮긴 화면 회차가 끝나기
-    전에도 보내므로(`MOVED_GRACE_MS`) 초점은 그 회차가 다 설 때까지 따로 기다린다."""
+    """키보드로 탭 × 에서 Enter·Space 를 누르면 숨긴 단추의 초점이 body 로 빠졌다(E2E d16).
+    키보드 초점이 있던 탭을 닫으면 숨기기 **전에** 이웃 탭으로 옮긴다 — 서버가 지금 탭을 닫고 옮겨
+    가는 이웃과 같은 규칙(오른쪽, 없으면 왼쪽)이다. 키보드로 옮긴 화면이 다 선 뒤 초점이 body 로
+    빠졌으면(그 사이 다른 입력이 없을 때만) 지금 탭으로 돌려준다. 기다리던 누름은 옮긴 화면 회차가
+    끝나기 전에도 보내므로(`MOVED_GRACE_MS`) 초점은 그 회차가 다 설 때까지 따로 기다린다."""
     out = _node(_FOCUS_RUNNER)
 
     assert (out["middle"], out["last"], out["first"]) == ("ref", "ref", "plan")
@@ -755,8 +756,9 @@ def test_keyboard_focus_stays_on_the_strip_when_a_tab_closes_or_the_screen_moves
     )
     close_now = JS[JS.index("const closeNow = (item) => {") :]
     close_now = close_now[: close_now.index("\n  }\n")]
-    # 키보드 초점(`:focus-visible`)일 때만 옮긴다 — 마우스로 누른 × 도 초점을 받는데, 그때 옮기면 이웃 탭의
-    # 숨은 핀이 `:focus-within` 으로 드러나 남았다(헤드리스 Chrome — 마우스 뒤 이웃 핀 opacity 1).
+    # 키보드 초점(`:focus-visible`)일 때만 옮긴다 — 마우스로 누른 × 도 초점을 받는데, 그때
+    # 옮기면 이웃 탭의 숨은 핀이 `:focus-within` 으로 드러나 남았다(헤드리스 Chrome — 마우스 뒤
+    # 이웃 핀 opacity 1).
     assert "item.contains(focused) && focused.matches(':focus-visible')" in close_now
     # 이웃은 보이는 차례(목록 DOM)로 고른다 — 만든 차례(`S.items`)는 고정한 탭이 왼쪽으로 옮긴
     # 차례와 어긋난다.
