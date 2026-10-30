@@ -13,6 +13,8 @@ LLM 응답으로 채우면 된다 — 화면을 다시 뜯지 않는다.
 같은 글자(공용 표시명)여야 한다. 표시명 치환은 화면 계층에만 있으므로(AGENTS 8장) 부르는
 쪽이 공정 이름을 글자로 적는 함수(`process_name`)를 넘긴다 — 순위·Gap 은 원본 공정명으로
 셈하고 글자에만 쓴다. 근거 표의 `공정` 칸은 원본 그대로이고 화면이 복사본에 표시명을 입힌다.
+공정 이름 바로 뒤에는 조사를 붙이지 않는다(「TC Bonding — 왜 부족해?」) — 라틴 이름은
+끝소리를 몰라 「은(는)」 처럼 겸용 조사가 된다.
 """
 
 from __future__ import annotations
@@ -22,11 +24,6 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from capa_simulation.services.korean_particle import (
-    direction_particle,
-    topic_particle,
-    with_topic_particle,
-)
 from capa_simulation.services.performance_actuals import (
     ALL_METRICS,
     EFFICIENCY_METRIC,
@@ -60,9 +57,8 @@ def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
     """추천 질문 네 개와 그 답. 순서는 실제로 묻게 되는 차례다.
 
     무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 데이터는 믿을 만한가. `process_name` 은
-    결론·질문·조건에 공정 이름을 적는 함수다(화면은 공용 표시명 — 조사도 그 글자로 고른다). 세
-    칸은 마크다운으로 그려지므로 화면은 마크다운을 막은 표시명을 적는 함수를 넘긴다 — 조사 고르기는
-    막은 글자의 `\\` 를 건너뛰어 같은 조사다.
+    결론·질문·조건에 공정 이름을 적는 함수다(화면은 공용 표시명). 세 칸은 마크다운으로 그려지므로
+    화면은 마크다운을 막은 표시명을 적는 함수를 넘긴다.
     """
     monthly = build_monthly_actual_demo()
     months = sorted(int(value) for value in monthly["생산계획년월"].unique())
@@ -87,8 +83,7 @@ def _shortfall_answer(
     worst_name = process_name(str(worst["공정"])) if worst is not None else ""
     conclusion = (
         f"{window} 기준으로 효율이 기준에 못 미치는 공정은 {len(trouble):,}개입니다. "
-        f"가장 나쁜 곳은 **{worst_name}** {direction_particle(worst_name)} "
-        f"기간 평균 {float(worst['Gap']):.1%}p, "
+        f"가장 나쁜 곳은 **{worst_name}** — 기간 평균 {float(worst['Gap']):.1%}p, "
         f"{int(worst['연속 미달'])}개월 연속 미달입니다."
         if worst is not None
         else f"{window} 기준으로 효율이 기준에 못 미치는 공정이 없습니다."
@@ -127,9 +122,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
     target = process_name(str(evidence["공정"].iloc[0]))
     return SampleAnswer(
         key="cause",
-        question=f"{with_topic_particle(target)} 왜 부족해?",
+        question=f"{target} — 왜 부족해?",
         conclusion=(
-            f"**{target}** {topic_particle(target)} 효율·UPEH·수율 세 지표가 모두 기준을 밑돕니다. "
+            f"**{target}** — 효율·UPEH·수율 세 지표가 모두 기준을 밑돕니다. "
             "세 지표가 함께 내려가면 설비 한 대의 성능이 아니라 공정 조건이나 "
             "기준값 자체를 의심할 차례입니다."
         ),

@@ -151,3 +151,24 @@ def test_a_single_day_span_keeps_a_visible_width() -> None:
 
     assert figure is not None
     assert figure.data[0].base[0] != figure.data[0].x[0]
+
+
+def test_the_date_axis_writes_months_and_days_in_the_app_forms() -> None:
+    """x 축 눈금은 Plotly 기본(「Oct 4 2026」) 대신 앱의 꼴이다 — 날·주 눈금은 「2026-10-04」, 달
+    눈금부터는 「26.10」(E2E r3 #123 — 개선 거리 I13). Plotly 는 눈금 간격에 맞는 첫 칸을 쓴다."""
+    spans = pd.DataFrame(
+        {
+            "설비명": ["EQ-1"],
+            "공정소분류": ["SAW"],
+            "공정대분류": ["조립"],
+            "상태": ["가용"],
+            "시작일": [date(2026, 1, 1)],
+            "종료일": [date(2026, 9, 30)],
+        }
+    )
+
+    figure, _ = build_equipment_lifecycle_gantt(spans)
+
+    assert figure is not None
+    stops = [(list(stop.dtickrange), stop.value) for stop in figure.layout.xaxis.tickformatstops]
+    assert stops == [([None, 14 * 86_400_000], "%Y-%m-%d"), (["M1", None], "%y.%m")]

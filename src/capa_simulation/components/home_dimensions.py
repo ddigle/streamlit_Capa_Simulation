@@ -131,6 +131,14 @@ def lower_delta_row_height(value_font_size: int) -> int:
 # ("Density (억Gb)")이 함께 들어가는 값이다. 비율로 두면 창 폭과 조회 월 수에 따라
 # 149px~618px 사이를 오가며 제목이 잘리거나 빈 여백이 생겼다.
 DASHBOARD_LABEL_COLUMN_WIDTH_PX = 260
+# 좁은 창(폰 폭 — Streamlit 이 컬럼을 위아래로 쌓는 640px 이하)에서 월 시트 캔버스(공정 Capa
+# 상세·제약 시뮬레이션 계산표·Static 대비 일정)의 라벨 칸 폭. 390px 창에서 260px 라벨 칸은 달 칸에
+# 한 달도 안 되는 폭(약 67px)만 남겼다(E2E r1 #20 — 개선 거리 I12). 줄 이름은 왼쪽부터 그려지므로
+# 오른쪽 끝이 잘리고 달 칸이 두 달 가까이 보인다. 라벨이 여러 분류 칸인 HOME·월별 표는 줄이지 않는다
+# (칸 경계가 비율로 눌린다). 150 은 Streamlit 이 `width="stretch"` 그림을 그리는 가장 좁은 폭
+# (`scroll_shell.PLOTLY_MIN_CHART_WIDTH_PX`)이라 더 줄이면 라벨 그림이 칸보다 넓게 그려진다.
+NARROW_VIEWPORT_MAX_PX = 640
+NARROW_LABEL_COLUMN_WIDTH_PX = 150
 
 # 생산계획 LOB 의 B/N 막대 폭과 `bargap`.
 # Plotly 는 폭을 안 주면 `1 - bargap`(= 0.84) 으로 그린다. 그보다 좁게 두려면 값을 명시해야

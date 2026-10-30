@@ -168,7 +168,7 @@ def apply_upeh_percent(value: int) -> None:
 
 
 def upeh_badge(source: UpehAssumption | UpehToken) -> str:
-    """머리 배지 — 「:orange-badge[UPEH 가정 110% · 26-07–26-12]」. 꺼졌거나 빈 토큰이면 빈 글자."""
+    """머리 배지 — 「:orange-badge[UPEH 가정 110% · 26.07–26.12]」. 꺼졌거나 빈 토큰이면 빈 글자."""
     if isinstance(source, UpehAssumption):
         text = assumption_label(source) if source.active else ""
     else:

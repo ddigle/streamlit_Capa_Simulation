@@ -79,7 +79,13 @@ PLAIN_SINKS = frozenset({"code", "text", "json", "escape", "_escape"})
 
 # 막는 길. 이 호출 안의 글은 이미 막혔다고 본다.
 GUARDS = frozenset(
-    {"bootstrap_error_message", "markdown_safe_tildes", "literal_markdown", "quoted"}
+    {
+        "bootstrap_error_message",
+        "markdown_safe_tildes",
+        "literal_markdown",
+        "literal_names",
+        "quoted",
+    }
 )
 
 # 앱이 지은 라벨을 돌려주는 함수 — 사람 글이 들지 않아 「」 안에 그대로 끼워도 된다.

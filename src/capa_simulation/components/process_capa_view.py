@@ -70,7 +70,11 @@ from streamlit.errors import StreamlitPageNotFoundError
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.formula_text import APPROX, equals_mark, written_value
-from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    NARROW_LABEL_COLUMN_WIDTH_PX,
+    NARROW_VIEWPORT_MAX_PX,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
@@ -624,7 +628,8 @@ def pick_canvas_month(months: Sequence[int]) -> None:
 
 
 def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
-    """HOME 틀 — 라벨 칸 260px(px 로 못박음) + 월 칸(스크롤 상자 하나, 위에 가로 스크롤바)."""
+    """HOME 틀 — 라벨 칸 260px(px 로 못박음 — 좁은 창은 150px) + 월 칸(스크롤 상자 하나, 위에 가로
+    스크롤바)."""
     count = len(view.months)
     visible = min(max(count, 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)
     st.html(
@@ -632,6 +637,8 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
             label_key=LABEL_CANVAS_KEY,
             month_key=MONTH_REGION_KEY,
             label_width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            narrow_label_width_px=NARROW_LABEL_COLUMN_WIDTH_PX,
+            narrow_viewport_max_px=NARROW_VIEWPORT_MAX_PX,
         )
     )
     label_column, month_column = st.columns(
@@ -648,19 +655,8 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
                 config=hover_chart_config() if canvas.labels.data else static_chart_config(),
             )
     with month_column:
-        # 라벨 칸은 월 칸 위에 얹힌 스크롤바 높이만큼 내려야 행이 맞는다(HOME 과 같은 값). 줄
-        # 이름 칸 풍선은 260px 그림보다 넓을 수 있어(세 줄 ≈ 230~290px) 그림 둘레의 `overflow`
-        # 를 풀고 라벨 컬럼을 월 컬럼 위로 올린다 — 안 풀면 넘친 몫이 잘린다(2026-10-24
-        # 브라우저). 서식은 이 한 `st.html` 에 둔다(이벤트 칸 수는 갈래마다 같다).
-        st.html(
-            f"<style>.st-key-{LABEL_CANVAS_KEY} {{ padding-top: {tokens.SCROLLBAR_HEIGHT_PX}px; }}"
-            f'[data-testid="stColumn"]:has(.st-key-{LABEL_CANVAS_KEY}) '
-            "{ position: relative; z-index: 2; }"
-            f".st-key-{LABEL_CHART_KEY}, .st-key-{LABEL_CHART_KEY} .js-plotly-plot, "
-            f".st-key-{LABEL_CHART_KEY} .plot-container, .st-key-{LABEL_CHART_KEY} .svg-container, "
-            f".st-key-{LABEL_CHART_KEY} .main-svg {{ overflow: visible !important; }}"
-            "</style>"
-        )
+        # 서식은 이 한 `st.html` 에 둔다(이벤트 칸 수는 갈래마다 같다).
+        st.html(label_overflow_style())
         with st.container(key=MONTH_REGION_KEY, gap=None):
             horizontal_scrollbar.render_horizontal_scrollbar(
                 target_selector=f".st-key-{SCROLL_KEY}_scroll",
@@ -686,6 +682,31 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
                     on_select=partial(pick_canvas_month, view.months),
                     selection_mode="points",
                 )
+
+
+def label_overflow_style() -> str:
+    """라벨 칸의 높이 맞춤과 줄 이름 칸 풍선이 넘치게 하는 `<style>`.
+
+    라벨 칸은 월 칸 위에 얹힌 스크롤바 높이만큼 내려야 행이 맞는다(HOME 과 같은 값). 줄 이름 칸
+    풍선은 260px 그림보다 넓을 수 있어(세 줄 ≈ 230~290px) 그림 둘레의 `overflow` 를 풀고 라벨
+    컬럼을 월 컬럼 위로 올린다 — 안 풀면 넘친 몫이 잘린다(2026-10-24 브라우저).
+
+    좁은 창(`NARROW_VIEWPORT_MAX_PX` 이하)은 라벨 칸이 `NARROW_LABEL_COLUMN_WIDTH_PX` 로 줄어 260px
+    에 맞춘 줄 이름이 그림 밖으로 넘친다 — 풀어 둔 `overflow` 그대로면 그 글이 월 칸 위에 겹친다.
+    그래서 그 창에서는 풍선을 담은 마지막 SVG(Plotly 의 `_hoverpaper` — 그림·글 SVG 뒤에 붙는다)
+    말고 그림·글 SVG 만 다시 자른다(E2E r1 #20 — 개선 거리 I12).
+    """
+    chart = f".st-key-{LABEL_CHART_KEY}"
+    return (
+        f"<style>.st-key-{LABEL_CANVAS_KEY} {{ padding-top: {tokens.SCROLLBAR_HEIGHT_PX}px; }}"
+        f'[data-testid="stColumn"]:has(.st-key-{LABEL_CANVAS_KEY}) '
+        "{ position: relative; z-index: 2; }"
+        f"{chart}, {chart} .js-plotly-plot, {chart} .plot-container, {chart} .svg-container, "
+        f"{chart} .main-svg {{ overflow: visible !important; }}"
+        f"@media (max-width: {NARROW_VIEWPORT_MAX_PX}px) {{ "
+        f"{chart} svg.main-svg:not(:last-of-type) {{ overflow: hidden !important; }} }}"
+        "</style>"
+    )
 
 
 def initial_scroll_px(months: Sequence[int], month: int | None) -> float:

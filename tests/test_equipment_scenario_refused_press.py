@@ -6,7 +6,7 @@
 첫 누름은 대조에 걸려 거부되고(`_refused`) 그 회차가 입력 칸을 지금 값으로 새로 세운다(세대 올림).
 단추 key 는 세대가 붙지 않은 고정 key 라 둘째 누름이 그 새 회차에 닿는데, 그 회차의 칸은 남의 이름을
 본 값으로 들고 있어 대조를 지나 — 이름 바꾸기·리비전명은 같은 이름을 다시 쓰며(저장소는 쓰지 않는다)
-「…으로 했습니다」·「리비전명을 저장했습니다」 로 거부를 덮었고, 공식 발행은 바뀐 확인 글을 보지
+「이름을 바꿨습니다」·「리비전명을 저장했습니다」 로 거부를 덮었고, 공식 발행은 바뀐 확인 글을 보지
 않은 채 새 번호로 발행했다. 거부 표지(`write_guard.note_profile_conflict`)를 적고 그 창 안의
 둘째 누름은 쓰지 않고 거부를 다시 알린다(AGENTS 9장 「남의 저장에 거부된 누름의 둘째 누름」).
 
@@ -64,7 +64,8 @@ def test_a_second_press_after_someone_elses_rename_repeats_the_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A 가 이름을 쳐 둔 사이 B 가 「B 이름」 으로 바꿨다 — A 의 두 번 누름은 둘 다 거부이고, 둘째
-    누름이 「설비 시나리오 이름을 「B 이름」으로 했습니다」 로 거부를 덮지 않는다(E2E 3/3)."""
+    누름이 「설비 시나리오 이름을 바꿨습니다 — 새 이름 「B 이름」」 으로 거부를 덮지 않는다
+    (E2E 3/3)."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     repository = _seeded(tmp_path)
     app = _opened(tmp_path, OPERATIONS)

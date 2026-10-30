@@ -22,7 +22,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_names, markdown_safe_tildes
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -668,13 +668,13 @@ def render_equipment_explorer(
     # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
     # 공정은 고른 상자와 같은 글자(표시명)로 적는다.
     active_filters = [
-        f"{name}: {', '.join(_shown_values(name, values, process_format))}"
+        f"{name}: {literal_names(_shown_values(name, values, process_format))}"
         for name, values in filters
         if values
     ]
     if question == "단계 전환":
         active_filters += [
-            f"{name}: {', '.join(values)}"
+            f"{name}: {literal_names(values)}"
             for name, values in (
                 ("전환단계", transition_stages),
                 (QUAL_STATUS_COLUMN, transition_confirmations),
@@ -684,8 +684,9 @@ def render_equipment_explorer(
         if transition_schedule != "전체":
             active_filters.append(f"일정상태: {transition_schedule}")
     if active_filters:
-        # 고른 값은 사람이 적은 이름(공정 등)이다 — 「E2E~공정~X」 가 지움선이 되지 않게 막는다.
-        st.caption(":material/filter_alt: " + markdown_safe_tildes(" · ".join(active_filters)))
+        # 고른 값은 사람이 적은 이름(공정 등)이다 — 위에서 이름마다 막아 담았다(「E2E~공정~X」 의
+        # 지움선, 「DA*31*R」 의 기울임).
+        st.caption(":material/filter_alt: " + " · ".join(active_filters))
     filtered = equipment
     for column, values in filters:
         if values:

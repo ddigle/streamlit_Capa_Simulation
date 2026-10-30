@@ -28,7 +28,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_main_cases import render_main_case_picker
-from capa_simulation.components.literal_markdown import literal_markdown, quoted
+from capa_simulation.components.literal_markdown import literal_markdown, literal_names, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
@@ -2073,7 +2073,7 @@ def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLab
     """
     if not absent:
         return
-    names = ", ".join(literal_markdown(process_labels.label(process)) for process in absent)
+    names = literal_names(process_labels.label(process) for process in absent)
     st.caption(
         f":material/info: 이번 시나리오·조회기간에 없어 그리지 않는 공정: {names}. "
         "공용 설정이라 저장해도 프리셋에 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다. "

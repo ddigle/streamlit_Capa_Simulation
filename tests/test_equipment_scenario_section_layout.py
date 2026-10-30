@@ -189,18 +189,18 @@ def test_loading_a_revision_picks_the_particle_by_its_number(tmp_path: Path) -> 
     assert "설비 시나리오 「운영 일정」 r2를 불러왔습니다." in _successes(app)
 
 
-def test_renaming_a_scenario_picks_the_particle_by_its_last_sound(tmp_path: Path) -> None:
-    """받침 없는 이름은 「로」, 받침 있는 이름은 「으로」 — 「「셋업 시나리오」 으로」 가 아니다."""
+def test_the_rename_notice_puts_no_particle_right_after_the_new_name(tmp_path: Path) -> None:
+    """이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 글자로 끝나는 이름(「가정 P」)도 「(으)로」 같은
+    겸용 조사 없이 읽힌다(E2E r2 #83)."""
     path, _ = _two_revisions(tmp_path)
     app = _ok(_section(path).run())
-    for generation, (name, words) in enumerate(
-        (("셋업 시나리오", "「셋업 시나리오」로"), ("운영 일정", "「운영 일정」으로"))
-    ):
+    for generation, name in enumerate(("셋업 시나리오", "가정 P", "운영 일정")):
         key = RENAME_KEY if generation == 0 else f"{RENAME_KEY}__g{generation}"
         app.text_input(key=f"{key}__{OPERATIONS}").input(name)
         app.button(key=RENAME_BUTTON_KEY).click()
         _ok(app.run())
-        assert f"설비 시나리오 이름을 {words} 했습니다." in _successes(app)
+        assert f"설비 시나리오 이름을 바꿨습니다 — 새 이름 「{name}」." in _successes(app)
+        assert not [text for text in _successes(app) if "(으)로" in text]
     assert DuckDBEquipmentRepository(path).list_equipment_scenarios()[0].scenario_name == (
         "운영 일정"
     )

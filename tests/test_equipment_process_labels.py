@@ -20,6 +20,7 @@ from widget_browser import BrowserChoice
 from capa_simulation.components.availability_gap_panel import PROCESS_FILTER_KEY
 from capa_simulation.components.equipment_explorer import SMALL_PROCESS_KEY
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -108,7 +109,9 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     app = _open_settings(app)
     assert not app.exception
     warnings = " ".join(str(item.value) for item in app.warning)
-    assert first in warnings and "표시-첫공정" not in warnings
+    # 공정명 목록은 이름마다 막는다(`literal_names` — 「Burn-In」 은 「Burn\-In」 으로 실린다).
+    assert literal_markdown(first) in warnings
+    assert literal_markdown("표시-첫공정") not in warnings
     cutoff_filter = app.multiselect(key=CUTOFF_FILTER_KEY)
     assert "표시-둘째공정" in cutoff_filter.options and second not in cutoff_filter.options
     editors = [

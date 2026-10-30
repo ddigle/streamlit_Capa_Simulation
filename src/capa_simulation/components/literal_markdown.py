@@ -8,6 +8,8 @@
 된다. CommonMark 는 백슬래시 뒤의 ASCII 구두점을 글자 그대로 두므로 구두점마다 `\\` 를
 붙인다. 한글·숫자·공백·`·` 같은 비 ASCII 기호는 그대로다.
 
+이름을 낫표 없이 늘어놓는 목록(「… 공정 3개 — A, B, C」)은 `literal_names` 로 잇는다.
+
 `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아, 그 둘까지
 막으면 역슬래시가 글자로 보인다(「\\[가정\\] 10월 증설안」).
 
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import re
 import string
+from collections.abc import Iterable
 
 _PUNCTUATION = frozenset(string.punctuation)
 
@@ -60,6 +63,15 @@ def markdown_safe_tildes(text: object) -> str:
     이미 막힌 물결표(`\\~`, 예: `literal_markdown` 을 지난 이름)는 다시 막지 않는다.
     """
     return _BARE_TILDE.sub(r"\\~", str(text))
+
+
+def literal_names(names: Iterable[object], separator: str = ", ") -> str:
+    """사람이 적은 이름 목록을 `separator` 로 이은 글 — 이름마다 `literal_markdown` 으로 막는다.
+
+    「Cut-off 를 적지 않은 공정 3개는 … — A, B~C, D」 처럼 이름을 낫표 없이 늘어놓는 알림·캡션
+    (마크다운 자리)에 싣는다. 잇는 글(`, `·` · `)은 앱 글이라 막지 않는다.
+    """
+    return separator.join(literal_markdown(name) for name in names)
 
 
 def quoted(name: object, *, empty: str = "「」") -> str:

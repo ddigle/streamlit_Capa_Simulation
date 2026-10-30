@@ -631,7 +631,8 @@ def test_a_new_session_opens_with_the_shared_filter_profile(tmp_path: Path) -> N
     assert _cards(app) == [first]
     captions = " ".join(str(item.value) for item in app.sidebar.caption)
     assert "공용 설정" in captions
-    assert "ABSENT-PROC" in captions and "공용 설정에는 남습니다" in captions
+    # 공정 표시명은 사람 글이라 마크다운 글자 그대로 막혀 실린다(`literal_names`).
+    assert r"ABSENT\-PROC" in captions and "공용 설정에는 남습니다" in captions
     stored = _profile(database_path)
     assert stored.version == 2
     assert stored.processes == (first, "ABSENT-PROC")
@@ -910,13 +911,14 @@ def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_screen_off
 
 
 def test_the_upeh_assumption_notice_picks_the_particle_by_the_end_month(tmp_path: Path) -> None:
-    """알림의 주격 조사는 구간 끝 달의 끝소리로 고른다 — 「27-06 가」 가 아니라 「27-06이」.
+    """알림의 주격 조사는 구간 끝 달의 끝소리로 고른다 — 「27.06 가」 가 아니라 「27.06이」(달은
+    화면의 `YY.MM` — 개선 거리 I13).
 
     끝 두 자리를 읽은 끝 글자(영·일·삼·육·칠·팔)에 받침이 있으면 「이」, 없으면 「가」 다.
     """
     app = _assumed(tmp_path)
     end = _months()[-1]
-    span_end = f"{end // 100 % 100:02d}-{end % 100:02d}"
+    span_end = f"{end // 100 % 100:02d}.{end % 100:02d}"
     particle = "이" if span_end[-1] in "013678" else "가"
     hint = [str(item.value) for item in app.caption if _ASSUMPTION_HINT in str(item.value)]
     assert hint and f"–{span_end}{particle} 켜져 있습니다" in hint[0]

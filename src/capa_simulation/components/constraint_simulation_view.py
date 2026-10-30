@@ -71,7 +71,11 @@ from capa_simulation.components.constraint_simulation_figures import (
     waiting_text,
 )
 from capa_simulation.components.formula_text import consistent_digits, operand_text
-from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    NARROW_LABEL_COLUMN_WIDTH_PX,
+    NARROW_VIEWPORT_MAX_PX,
+)
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.month_sheet_canvas import canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
@@ -867,6 +871,8 @@ def _render_sheet(sheet: SheetCanvas, months: tuple[int, ...]) -> None:
             label_key=_SHEET_LABEL_CANVAS_KEY,
             month_key=_SHEET_MONTH_REGION_KEY,
             label_width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            narrow_label_width_px=NARROW_LABEL_COLUMN_WIDTH_PX,
+            narrow_viewport_max_px=NARROW_VIEWPORT_MAX_PX,
         )
     )
     label_column, month_column = st.columns(

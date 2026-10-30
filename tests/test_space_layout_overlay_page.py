@@ -396,8 +396,13 @@ def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
     )
     app = _ok(_space(tmp_path, setup, overlaid).run())
 
-    assert any("이 리비전은 공식과 다른 배치" in str(item.value) for item in app.info)
-    assert any("가정이던 때의 배치 차이" in text for text in _texts(app))
+    # 이름 바로 뒤에 조사를 붙이지 않는다 — 고정 낱말 「시나리오」 뒤에 붙인다(E2E r2 #83).
+    assert any(
+        "이 리비전은 공식과 다른 배치" in str(item.value)
+        and "「셋업 실무」 시나리오가 가정이던 때의 배치안" in str(item.value)
+        for item in app.info
+    )
+    assert any("「셋업 실무」 시나리오가 가정이던 때의 배치 차이" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
 
@@ -624,7 +629,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_lock_line_and_its_popover
 def test_a_tilde_scenario_name_keeps_its_tildes_in_an_old_official_revision_head(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 머리 알림(「…이(가) 가정이던 때의
+    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 머리 알림(「「…」 시나리오가 가정이던 때의
     배치안입니다」)과 잠금 줄이 이름의 물결표를 막는다."""
     repository, setup = _overlay(tmp_path, TILDE_NAME)
     overlaid = _scenario(repository, setup).latest_schedule_revision_id
@@ -753,7 +758,8 @@ def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_loc
 
 
 def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> None:
-    """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명의 물결표를 막는다."""
+    """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명을 막는다. 설비명은
+    이름마다 구두점을 막아 「DA*31*R」 의 별표 짝도 기울임이 되지 않는다(개선 거리 I11)."""
     from capa_simulation.components.floor_layout_upload import (
         _unit_names,
         overlay_mark_words,
@@ -764,7 +770,8 @@ def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> Non
     assert "가정 배치 「10\\~12월 증설」 의 요소도 밖입니다" in overlay_mark_words(
         ("10~12월 증설",)
     )
-    assert _unit_names(["NEW~01~", "EQ-02"]) == "NEW\\~01\\~, EQ-02(2대)"
+    assert _unit_names(["NEW~01~", "EQ-02"]) == "NEW\\~01\\~, EQ\\-02(2대)"
+    assert _unit_names(["DA*31*R"]) == "DA\\*31\\*R(1대)"
 
 
 def test_an_assumption_session_locks_fab_canvas_and_floor_use(

@@ -981,7 +981,7 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     가정 CSV(파일 이름·첫 열)가 선다."""
     app = _upeh_app(dynamic_databases, 110)
 
-    assert "UPEH 가정 110% · 26-01–26-12" in _header(app)
+    assert "UPEH 가정 110% · 26.01–26.12" in _header(app)
     effect = [str(item.value) for item in app.caption if "소요 −9.1%" in str(item.value)]
     assert len(effect) == 1, [str(item.value) for item in app.caption]
     assert "필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)" in effect[0]
@@ -1008,7 +1008,7 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     assert "_upeh110_202601_202612" in captured["file_name"]
     frame = pd.read_csv(io.BytesIO(captured["data"]), encoding="utf-8-sig")
     assert list(frame.columns) == ["UPEH 가정", *UNIT_EXPORT_COLUMNS]
-    assert set(frame["UPEH 가정"].astype(str)) <= {"UPEH 가정 110% · 26-01–26-12"}
+    assert set(frame["UPEH 가정"].astype(str)) <= {"UPEH 가정 110% · 26.01–26.12"}
 
 
 def test_at_100_percent_the_page_shows_only_the_official_basis(

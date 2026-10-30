@@ -1516,8 +1516,8 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
         # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         conflicts = profile_conflict_marks()
         # 남의 이름 바꿈에 거부된 누름의 둘째 누름 — 거부 회차가 칸을 지금 이름으로 새로 세워 이
-        # 누름은 그 이름을 본 값으로 들고 대조를 지난다(같은 이름을 다시 쓰며 「…으로 했습니다」 로
-        # 거부를 덮었다, 2026-10-27 E2E). 쓰지 않고 거부를 다시 알린다(write_guard).
+        # 누름은 그 이름을 본 값으로 들고 대조를 지난다(같은 이름을 다시 쓰며 「이름을
+        # 바꿨습니다」 로 거부를 덮었다, 2026-10-27 E2E). 쓰지 않고 거부를 다시 알린다(write_guard).
         _repeat_held_refusal(conflicts, own_name)
         seen_name = seen(field.seen_key)
         if not isinstance(seen_name, str):
@@ -1556,7 +1556,9 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
 
 
 def _scenario_renamed_message(name: str) -> str:
-    return f"설비 시나리오 이름을 {with_direction_particle(quoted(name))} 했습니다."
+    """이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 글자로 끝나는 이름(「가정 P」)은 「(으)로」 가
+    된다."""
+    return f"설비 시나리오 이름을 바꿨습니다 — 새 이름 {quoted(name)}."
 
 
 def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSummary) -> bool:

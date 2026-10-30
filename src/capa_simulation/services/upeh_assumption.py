@@ -157,17 +157,17 @@ def token_months(token: UpehToken) -> frozenset[int]:
 
 
 def assumption_label(assumption: UpehAssumption) -> str:
-    """머리 배지·CSV 표지 글 — 「UPEH 가정 110% · 26-07–26-12」."""
-    span = f"{_month_dash(assumption.start)}–{_month_dash(assumption.end)}"
+    """머리 배지·CSV 표지 글 — 「UPEH 가정 110% · 26.07–26.12」(달은 화면의 `YY.MM`)."""
+    span = f"{month_label(assumption.start)}–{month_label(assumption.end)}"
     return f"UPEH 가정 {assumption.percent}% · {span}"
 
 
 def token_label(token: UpehToken) -> str:
-    """토큰의 글 — 건 달의 처음·끝으로 「UPEH 가정 110% · 26-07–26-12」. 빈 토큰은 빈 글자."""
+    """토큰의 글 — 건 달의 처음·끝으로 「UPEH 가정 110% · 26.07–26.12」. 빈 토큰은 빈 글자."""
     if not token:
         return ""
     months = sorted(token_months(token))
-    return f"UPEH 가정 {token_percent(token)}% · {_month_dash(months[0])}–{_month_dash(months[-1])}"
+    return f"UPEH 가정 {token_percent(token)}% · {month_label(months[0])}–{month_label(months[-1])}"
 
 
 def clamp_percent(value: int) -> int:
@@ -486,11 +486,6 @@ def _process_rows(frame: pd.DataFrame, processes: Iterable[str] | None) -> pd.Da
     wanted = {str(process).strip() for process in processes}
     names = frame["공정"].astype("string").str.strip()
     return frame.loc[names.isin(list(wanted)).fillna(False).to_numpy()]
-
-
-def _month_dash(month: int) -> str:
-    """「26-07」 — 배지·CSV 표지의 달 글(화면 달 글 「26.07」 과 겹치지 않게 가른다)."""
-    return month_label(int(month)).replace(".", "-")
 
 
 def _signed_two(value: float) -> str:

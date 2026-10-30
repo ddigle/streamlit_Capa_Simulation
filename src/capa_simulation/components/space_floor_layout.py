@@ -30,7 +30,6 @@ from capa_simulation.persistence.equipment_cache import (
 )
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import FloorKey
-from capa_simulation.services.korean_particle import subject_particle
 from capa_simulation.services.layout_overlay import (
     EMPTY_LAYOUT_DIGEST,
     LayoutOverlay,
@@ -139,15 +138,19 @@ def space_layout_notices(
     if settled:
         tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)"
     lines: list[tuple[str, str]] = []
-    name = quoted(session.scenario_name, empty="이 설비 시나리오")
+    # 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 글자로 끝나는 이름(「가정 P」)은 「이(가)」 가
+    # 된다. 고정 낱말 「시나리오」 뒤에 붙인다.
+    owner = (
+        f"{quoted(session.scenario_name)} 시나리오가"
+        if session.scenario_name
+        else "이 설비 시나리오가"
+    )
     if not session.is_assumption:
         # 공식 설비 시나리오의 옛 리비전 — 그 시나리오가 가정이던 때 저장한 배치안이다. 리비전은
         # 불변이고 정리는 최신에서 하므로(정리 발행·「배치 차이 모두 지우기」) 「다음 저장·발행 때
         # 정리됩니다」 를 적지 않는다. 실효 차이가 없으면 「공식과 다른 배치」 라 하지 않고 저장된
         # 차이가 지금 공식과 같다는 것 하나만 말한다(E2E r5 — 두 말이 한 줄에 붙어 어긋났다).
-        origin = (
-            f"{name}{subject_particle(session.scenario_name or name)} 가정이던 때의 배치안입니다."
-        )
+        origin = f"{owner} 가정이던 때의 배치안입니다."
         if parts:
             rest = f"(저장된 차이 {stored} 가운데 나머지는 지금 공식과 같습니다)" if settled else ""
             lines.append(

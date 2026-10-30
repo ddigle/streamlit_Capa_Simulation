@@ -113,3 +113,19 @@ def test_opening_a_tab_draws_it_in_that_run() -> None:
     assert not app.exception
     assert _tab(app, "개선과제").get("dataframe")
     assert not _tab(app, "상세 분석").get("plotly_chart")
+
+
+def test_the_summary_warning_puts_no_particle_right_after_the_process_name() -> None:
+    """요약 결론은 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름이 「이(가)」 가 됐다
+    (「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93)."""
+    priority = _expected_priority()
+    worst = priority.loc[priority["상태"].eq("개선 필요")].iloc[0]
+
+    app = _open("요약")
+
+    warnings = [str(item.value) for item in _tab(app, "요약").get("warning")]
+    assert any(
+        text.startswith(f"**{worst['공정']}** — {int(worst['연속 미달'])}개월 연속 ")
+        for text in warnings
+    ), warnings
+    assert not [text for text in warnings if "이(가)" in text]

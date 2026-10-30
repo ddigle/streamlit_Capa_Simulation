@@ -175,8 +175,8 @@ def test_the_token_is_empty_at_100_percent_or_without_overlap() -> None:
 
 
 def test_labels_name_the_percent_and_the_span() -> None:
-    assert assumption_label(UpehAssumption(110, JULY, 202612)) == "UPEH 가정 110% · 26-07–26-12"
-    assert token_label((110, (JULY, AUGUST))) == "UPEH 가정 110% · 26-07–26-08"
+    assert assumption_label(UpehAssumption(110, JULY, 202612)) == "UPEH 가정 110% · 26.07–26.12"
+    assert token_label((110, (JULY, AUGUST))) == "UPEH 가정 110% · 26.07–26.08"
     assert token_label(()) == ""
     assert clamp_percent(171) == 150 and clamp_percent(42) == 80 and clamp_percent(118) == 118
 

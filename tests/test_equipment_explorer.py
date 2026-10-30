@@ -460,7 +460,8 @@ def test_process_display_names_label_the_main_tab_but_values_stay_original() -> 
     assert not app.exception
     assert app.multiselect(SMALL_PROCESS_KEY).value == ["Die Attach"]
     assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]
-    assert any("공정소분류: 표시-DA" in item.value for item in app.caption)
+    # 걸린 조건 줄은 고른 값을 마크다운 글자 그대로 막는다(`literal_names`).
+    assert any(r"공정소분류: 표시\-DA" in item.value for item in app.caption)
     assert not any("공정소분류: Die Attach" in item.value for item in app.caption)
 
     def shown_processes() -> set[str]:
@@ -513,7 +514,7 @@ def test_a_display_name_equal_to_another_process_name_still_picks_the_right_proc
 
     app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
     assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
-    assert any("공정소분류: Die Attach (Other)" in item.value for item in app.caption)
+    assert any(r"공정소분류: Die Attach \(Other\)" in item.value for item in app.caption)
     app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach"]).run()
     assert app.session_state[SMALL_PROCESS_KEY] == ["Die Attach"]
 
@@ -563,7 +564,7 @@ def test_a_held_process_keeps_its_value_when_its_text_changes_in_the_browser() -
         assert not app.exception
         assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
     assert browser.wire == ["Wire Bond (Other)"]
-    assert any("공정소분류: Wire Bond (Other)" in item.value for item in app.caption)
+    assert any(r"공정소분류: Wire Bond \(Other\)" in item.value for item in app.caption)
 
 
 def test_the_filter_caption_blocks_the_tildes_of_the_chosen_process() -> None:

@@ -1650,7 +1650,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     핀은 가리킬 때만 보이고 숨은 동안 누름을 받지 않는다(`pointer-events: none` — 터치로 탭 이름 오른쪽을 누르면 고정이
     됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
-  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름)를 같은 iframe 에
+  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름·꺼진 링크 표지)를 같은 iframe 에
   싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
@@ -1833,6 +1833,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
   실행(테스트)에서는 문구로 물러선다(`fallback` 으로 그 글을 줄 수 있다 — 「도면에서 보기」). `disabled`·`help` 는
   `st.page_link` 그대로다 — 꺼진 링크가 자리를 지키고 풍선이 까닭을 말한다(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」).
+  1.63 은 꺼진 링크를 `<a disabled>` 로 그려 읽기 도구가 꺼졌다고 읽지 않으므로, 툴바 iframe 의
+  `disabled_link_aria_script` 가 부모 문서의 화면 링크(`stPageLink-NavLink`)마다 `aria-disabled="true"` 를 달고 다시
+  켜지면 뗀다(`disabled` 속성 바뀜과 새로 붙은 칸만 보고 SVG 안은 건너뛴다 — `tests/test_disabled_link_aria.py`, node).
+  꺼진 Streamlit 단추·입력은 진짜 `disabled` 라 따로 달지 않는다.
 - `src/capa_simulation/services/product_type.py` — 제품타입(HBM·EDP-TSV)이 가르는 `WF 구분` 규칙의 단일 근거다.
   두 값 집합을 일부러 따로 선언하고 EDP-TSV 의 `Top` 을 `Top_e` 로 가르는 `apply_edp_wf_division` 을 갖는다.
   - 변환 지점은 `core_data_derivation.build_q_core_data` 한 곳이다 — 두 층에서 바꾸면 조인 한쪽만 바뀐다.
@@ -2629,6 +2633,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   순수 함수다.
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
+  - 라벨 칸은 260px(`DASHBOARD_LABEL_COLUMN_WIDTH_PX`)이고 좁은 창(`NARROW_VIEWPORT_MAX_PX` 640 이하)에서는 150px
+    (`NARROW_LABEL_COLUMN_WIDTH_PX` — Streamlit 이 그림을 그리는 가장 좁은 폭)로 준다 — 390px 창에서 달 칸이 한 달도 안
+    남았다(E2E r1 #20, 개선 거리 I12). 세 화면이 `split_scroll_columns_style(narrow_label_width_px=…)` 로 주고, 260px 에 맞춘
+    줄 이름의 넘친 오른쪽은 라벨 그림 SVG 가 자른다. 컬럼에는 `overflow` 를 걸지 않는다(줄 이름 칸 풍선이 잘린다). 풍선을
+    넘치게 그림 SVG 의 `overflow` 를 푼 공정 Capa 상세는 좁은 창에서 풍선 SVG(마지막)만 남기고 다시 자른다
+    (`process_capa_view.label_overflow_style`). 라벨이 여러 분류 칸인 HOME·월별 표는 줄이지 않는다
+    (`tests/test_split_column_width.py`).
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
   함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다. 풍선 식(Static 가용 = 보유 +
   대여 · 보유 = 기존보유 + 호기 · 가용 = 보유 + 대여 · GAP = 설비 일정 − Static)은 적힌 글자에서 다시 셈해 어긋나면 「≈」 다
@@ -4080,6 +4091,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간·시나리오 월 `YYYY-MM` 은
   `settings.format_month`, 표의 월 칸 `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
   차트·스크롤 폭은 `month_columns` 가 만든 라벨 목록 하나를 보고, 연간 Total 은 1~12월이 모두 조회범위 안인 해에만 둔다.
+  글 속 달 구간(UPEH 가정 배지·CSV 표지 「UPEH 가정 110% · 26.07–26.12」)도 `month_label` 이다 — 「26-07」 같은 사본 꼴을
+  두지 않는다. Plotly 날짜 x 축(설비 생애주기 Gantt)은 기본 눈금(「Oct 4 2026」)을 두지 않고 날·주 눈금은 `YYYY-MM-DD`,
+  달 눈금부터는 `YY.MM` 이다(`equipment_lifecycle_gantt.DATE_TICK_FORMAT_STOPS`).
 - 연간 Total 칸에는 물량(Density·Wafer 계획·계획 세부수량)만 합계를 적고 Capa·확보율·B/N 칸은 비운다 — 월별 Capa 의
   단순 합은 연간 Capa 가 아니라 그 해 투입 가능량으로 잘못 읽힌다.
 - 주요 표의 분류 컬럼은 고정하고 월 컬럼은 필요할 때 가로 스크롤한다.
@@ -4139,7 +4153,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   끝소리를 읽는다). 배치 편집기 JS 는 조사만 내는 `josaOf` 로 같은 꼴을 짓는다(「${who} (${w}×${h})${josaOf(who, '이')}」 —
   괄호 앞을 띄운 꼴도 시험이 본다, 2026-10-26 E2E 5회차 서랍 알림). 한 칸 띄운 「이」는 지시어(「{x} 이
   시나리오」)와 갈리지 않아 시험이 보지 않는다 — 리뷰 몫이다. 고르기 어려우면 고정 명사를 사이에 둔다(「「…」 공정은」·
-  「{label} 값은」). 한 라벨에만 쓰는 고정 문구(값을 끼우지 않는 글)는 그 라벨에 맞춘 조사를 그대로 둔다.
+  「{label} 값은」). 사람이 붙인 이름 가운데 라틴 글자로 끝나기 쉬운 것(공정 표시명 「TC Bonding」·설비 시나리오명 「가정 P」)이
+  눈에 띄는 문장(Chatbot 질문·결론, 실적 화면 결론, 설비 잠금 글·이름 바꾸기 알림)은 이름 바로 뒤에 조사를 두지 않는 꼴로
+  쓴다 — 줄표로 끊거나(「TC Bonding — 왜 부족해?」), 고정 명사 뒤에 붙이거나(「「가정 P」 시나리오가」), 이름을 끝에 둔다(「새
+  이름 「…」」·「(지금 공식 「…」)」). 도우미가 읽지 못하는 끝은 겸용 꼴이 되기 때문이다(E2E r2·r3). 한 라벨에만 쓰는 고정
+  문구(값을 끼우지 않는 글)는 그 라벨에 맞춘 조사를 그대로 둔다.
 - **화면 사용 설명은 본문이 아니라 Guide 에 둔다.** 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 이고 화면이
   `page_guide.render_page_guide` 를 진행 막대 자리(`render_page_header_with_status`)보다 먼저 부른다. 옮긴 핵심 문구는 화면
   테스트(`test_*_guide_carries_*`)가 대조한다. 누르기 전에 알아야 하는 경고(되돌릴 수 없는 저장)는 버튼 곁에 남긴다.
@@ -4821,6 +4839,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다. 필요 단축 일정 기준선 이름(저장·지우기 알림 토스트·
     「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
     (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
+  - **낫표 없이 늘어놓는 이름 목록은 `literal_names(이름들)`**(이름마다 `literal_markdown`, 잇는 글 `, `·` · ` 은 앱 글),
+    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명·도면 파일 이름)은 `literal_markdown(이름)` — Cut-off 를 적지 않은
+    공정, Proc Rename 무시·겹침 알림, 설비·기준정보 한쪽에만 있는 공정, 주요공정 프리셋 「이 화면에 없음」·필요 단축 일정 공정
+    필터 밖 공정, 호기·설비 조회 걸린 조건 줄, 근거 카드 「가용을 깎지 않은 비가동」 설비명, Space 도면 올리기의 캔버스 밖 호기,
+    실적 요약·실적 정합성 결론의 공정, Capa Chatbot 질문·결론·조건(페이지가 막는 표시명 함수를 넘긴다), 저장된 도면 파일
+    이름(E2E r2 #71 — `tests/test_markdown_name_lists.py`·`tests/test_capa_chatbot_page.py`). 이름마다 막은 목록을 담은 글을
+    `markdown_safe_tildes` 로 다시 감싸지 않는다.
   - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
     조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
     `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
@@ -4845,8 +4870,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     주의(`describe_case_variants(shown=)`). 서비스가 지어 돌려준 앱 꾸밈 없는 글(비활성 층 경고)은 그리는 자리에서 글
     통째로 `literal_markdown`, 설비명을 날로 담은 서비스 거절(엑셀·CSV 미리보기의 없는 설비명·같은 설비명 둘 —
     `equipment_csv.EquipmentNamesError`)은 화면이 `exc.text(literal_markdown)` 로 이름만 막아 다시 짓는다(예외 글은 날
-    이름 그대로). 공정명 목록(Cut-off 누락·공정명 불일치 경고)과 Summary·호기 필터 걸린 조건 줄은 아직 목록째
-    `markdown_safe_tildes` 다(2026-10-26 E2E r5 — `docs/TODO.md`).
+    이름 그대로). 공정명 목록과 걸린 조건 줄도 위 `literal_names` 길이다. 호기 묶음 부딪힘 글
+    (`unit_group_collision_message`)만 서비스 예외 글이라 아직 `bootstrap_error_message` 의 물결표 막기만 지난다(`docs/TODO.md`).
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
@@ -4869,7 +4894,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
       (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
       열린 화면의 기본 상태만 본다 — 탭 안·누른 뒤·거절 뒤의 글은 그 화면 시험이 따로 본다.
-    - `tests/test_literal_markdown.py`(단위).
+    - `tests/test_literal_markdown.py`(단위)·`tests/test_markdown_name_lists.py`(낫표 없는 이름 목록 — 알림 자리마다 연다).
 
 ### 스크립트와 컴포넌트
 
