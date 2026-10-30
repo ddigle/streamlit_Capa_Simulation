@@ -102,6 +102,8 @@ def split_scroll_columns_style(
     label_key: str,
     month_key: str,
     label_width_px: float,
+    narrow_label_width_px: float | None = None,
+    narrow_viewport_max_px: float | None = None,
 ) -> str:
     """고정 라벨 컬럼과 남는 폭을 채우는 월 컬럼의 폭을 CSS 로 못박는다.
 
@@ -113,23 +115,39 @@ def split_scroll_columns_style(
 
     라벨 컬럼을 px 로 고정하고 월 컬럼이 나머지를 가져가게 한다. 월 영역은 어차피 가로로
     스크롤하므로 좁아져도 내용이 잘리지 않는다.
+
+    `narrow_label_width_px` 를 주면 창이 `narrow_viewport_max_px` 이하일 때 라벨 컬럼을 그 폭으로
+    줄인다 — 라벨 Figure 는 칸 폭으로 다시 그려지고 글은 왼쪽부터라 줄 이름 앞머리가 남는다(넘친
+    글은 그림의 SVG 가 자른다 — 그 SVG 의 `overflow` 를 푼 화면은 좁은 창에서 다시 걸어야 한다,
+    `process_capa_view.label_overflow_style`). 컬럼에는 `overflow` 를 걸지 않는다 — 걸면 라벨 칸
+    풍선(그림보다 넓다)도 잘린다. 줄 이름 하나짜리 라벨(월 시트 캔버스)만 준다.
     """
-    return "\n".join(
-        [
-            "<style>",
-            f'[data-testid="stColumn"]:has(.st-key-{label_key}) {{',
-            f"    flex: 0 0 {label_width_px}px !important;",
-            f"    width: {label_width_px}px !important;",
-            f"    min-width: {label_width_px}px !important;",
+    rules = [
+        "<style>",
+        f'[data-testid="stColumn"]:has(.st-key-{label_key}) {{',
+        f"    flex: 0 0 {label_width_px}px !important;",
+        f"    width: {label_width_px}px !important;",
+        f"    min-width: {label_width_px}px !important;",
+        "}",
+        f'[data-testid="stColumn"]:has(.st-key-{month_key}) {{',
+        "    flex: 1 1 0 !important;",
+        "    width: auto !important;",
+        "    min-width: 0 !important;",
+        "}",
+    ]
+    if narrow_label_width_px is not None:
+        if narrow_viewport_max_px is None:
+            raise ValueError("narrow_label_width_px 에는 narrow_viewport_max_px 를 함께 줍니다.")
+        rules += [
+            f"@media (max-width: {narrow_viewport_max_px}px) {{",
+            f'    [data-testid="stColumn"]:has(.st-key-{label_key}) {{',
+            f"        flex: 0 0 {narrow_label_width_px}px !important;",
+            f"        width: {narrow_label_width_px}px !important;",
+            f"        min-width: {narrow_label_width_px}px !important;",
+            "    }",
             "}",
-            f'[data-testid="stColumn"]:has(.st-key-{month_key}) {{',
-            "    flex: 1 1 0 !important;",
-            "    width: auto !important;",
-            "    min-width: 0 !important;",
-            "}",
-            "</style>",
         ]
-    )
+    return "\n".join([*rules, "</style>"])
 
 
 @contextmanager

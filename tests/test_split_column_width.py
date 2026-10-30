@@ -11,8 +11,17 @@
 import re
 from pathlib import Path
 
-from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
-from capa_simulation.components.scroll_shell import split_scroll_columns_style
+import pytest
+
+from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    NARROW_LABEL_COLUMN_WIDTH_PX,
+    NARROW_VIEWPORT_MAX_PX,
+)
+from capa_simulation.components.scroll_shell import (
+    PLOTLY_MIN_CHART_WIDTH_PX,
+    split_scroll_columns_style,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,3 +87,86 @@ def test_split_layouts_pin_their_label_column() -> None:
     for relative in sorted(owners):
         source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
         assert "split_scroll_columns_style(" in source, f"{relative} 가 폭을 고정하지 않습니다."
+
+
+def test_a_narrow_screen_shrinks_the_label_column_only_when_asked() -> None:
+    """390px 창에서 260px 라벨 칸이 달 칸에 한 달도 안 되는 폭만 남겼다(E2E r1 #20 — 개선 거리
+    I12). 줄 이름 하나짜리 라벨(월 시트 캔버스)만 좁은 창에서 라벨 칸을 줄인다 — 넓은 창 규칙은
+    그대로다. 컬럼에 `overflow` 를 걸지 않는다(라벨 칸 풍선이 잘린다)."""
+    plain = split_scroll_columns_style(
+        label_key="demo_label_canvas", month_key="demo_month_region", label_width_px=260
+    )
+    narrow = split_scroll_columns_style(
+        label_key="demo_label_canvas",
+        month_key="demo_month_region",
+        label_width_px=260,
+        narrow_label_width_px=NARROW_LABEL_COLUMN_WIDTH_PX,
+        narrow_viewport_max_px=NARROW_VIEWPORT_MAX_PX,
+    )
+
+    assert "@media" not in plain
+    assert narrow.startswith(plain.removesuffix("</style>"))
+    assert _rules(narrow)[len(_rules(plain)) :] == _rules(
+        f"""
+        @media (max-width: {NARROW_VIEWPORT_MAX_PX}px) {{
+            [data-testid="stColumn"]:has(.st-key-demo_label_canvas) {{
+                flex: 0 0 {NARROW_LABEL_COLUMN_WIDTH_PX}px !important;
+                width: {NARROW_LABEL_COLUMN_WIDTH_PX}px !important;
+                min-width: {NARROW_LABEL_COLUMN_WIDTH_PX}px !important;
+            }}
+        }}
+        """
+    )
+    # 좁은 라벨 칸 뒤에도 달 칸이 한 달(100px) 넘게 남는다 — 390px 창의 본문 폭(약 327px) 기준.
+    assert 327 - NARROW_LABEL_COLUMN_WIDTH_PX > 100
+    # 라벨 그림은 `width="stretch"` 라 Streamlit 이 150px 아래로 그리지 않는다 — 칸이 그보다 좁으면
+    # 그림이 칸보다 넓게 그려져 오른쪽이 잘린다.
+    assert NARROW_LABEL_COLUMN_WIDTH_PX >= PLOTLY_MIN_CHART_WIDTH_PX
+
+
+def test_the_narrow_rule_needs_its_viewport_width() -> None:
+    with pytest.raises(ValueError, match="narrow_viewport_max_px"):
+        split_scroll_columns_style(
+            label_key="demo_label_canvas",
+            month_key="demo_month_region",
+            label_width_px=260,
+            narrow_label_width_px=NARROW_LABEL_COLUMN_WIDTH_PX,
+        )
+
+
+def test_process_detail_clips_its_label_text_but_not_its_tooltip_on_narrow_screens() -> None:
+    """공정 Capa 상세는 줄 이름 칸 풍선이 넘치게 라벨 그림의 `overflow` 를 푼다. 좁은 창에서 라벨
+    칸이 150px 로 줄면 260px 에 맞춘 줄 이름이 월 칸 위로 겹치므로, 그 창에서만 그림·글 SVG 를
+    다시 자르고 풍선 SVG(마지막)는 그대로 넘치게 둔다(개선 거리 I12)."""
+    from capa_simulation.components.process_capa_view import (
+        LABEL_CHART_KEY,
+        label_overflow_style,
+    )
+
+    css = label_overflow_style()
+    chart = f".st-key-{LABEL_CHART_KEY}"
+    wide, narrow = css.split("@media", 1)
+    assert f"{chart} .main-svg {{ overflow: visible !important; }}" in wide
+    assert narrow.startswith(f" (max-width: {NARROW_VIEWPORT_MAX_PX}px)")
+    assert f"{chart} svg.main-svg:not(:last-of-type) {{ overflow: hidden !important; }}" in narrow
+
+
+def test_month_sheet_canvases_shrink_their_label_on_narrow_screens() -> None:
+    """줄 이름 하나짜리 라벨(월 시트 캔버스)인 세 화면만 좁은 창 폭을 넘긴다. 라벨이 여러 분류 칸인
+    HOME·월별 표는 넘기지 않는다 — 칸 경계가 비율로 눌려 분류 이름이 겹친다."""
+    sheets = {
+        "src/capa_simulation/components/process_capa_view.py",
+        "src/capa_simulation/components/constraint_simulation_view.py",
+        "src/capa_simulation/components/availability_gap_panel.py",
+    }
+    others = {
+        "src/capa_simulation/components/monthly_table_base.py",
+        "src/capa_simulation/components/home_rendering.py",
+    }
+
+    for relative in sorted(sheets):
+        source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+        assert "narrow_label_width_px=NARROW_LABEL_COLUMN_WIDTH_PX" in source, relative
+    for relative in sorted(others):
+        source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+        assert "narrow_label_width_px" not in source, relative

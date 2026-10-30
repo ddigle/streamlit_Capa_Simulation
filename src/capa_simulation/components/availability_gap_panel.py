@@ -77,7 +77,11 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLL_KEY,
     GAP_SHEET_SCROLLBAR_KEY,
 )
-from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    NARROW_LABEL_COLUMN_WIDTH_PX,
+    NARROW_VIEWPORT_MAX_PX,
+)
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names, quoted
 from capa_simulation.components.month_sheet_canvas import EMPTY, canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
@@ -770,6 +774,8 @@ def _render_canvas(bundle: GapSheetBundle, canvas: AvailabilitySheetCanvas) -> N
             label_key=GAP_SHEET_LABEL_CANVAS_KEY,
             month_key=GAP_SHEET_MONTH_REGION_KEY,
             label_width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+            narrow_label_width_px=NARROW_LABEL_COLUMN_WIDTH_PX,
+            narrow_viewport_max_px=NARROW_VIEWPORT_MAX_PX,
         )
     )
     label_column, month_column = st.columns(
