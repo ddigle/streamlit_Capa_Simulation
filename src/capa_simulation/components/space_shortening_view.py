@@ -109,7 +109,9 @@ __all__ = [
     "consume_layer_link",
     "load_space_layer",
     "layer_table_columns",
+    "note_unit_pick",
     "process_chip_key",
+    "release_process_chip",
     "render_fab_layer_summary",
     "render_floor_layer_panel",
     "render_layer_basis",
@@ -118,6 +120,7 @@ __all__ = [
     "forget_arrival_note",
     "render_arrival_filter_note",
     "switch_to_queued_shortening",
+    "take_unit_pick",
     "unit_keys_by_name",
     "valid_focus",
 ]
@@ -128,6 +131,11 @@ SPACE_SHORT_PROCESS_PREFIX: Final = "space_shortening_process"
 SPACE_SHORT_SWITCH_KEY: Final = "space_shortening_switch_v1"
 SPACE_SHORT_TABLE_PREFIX: Final = "space_shortening_table"
 _TABLE_GENERATION_KEY: Final = "space_shortening_table_generation"
+# 층마다 공정 칩을 마지막으로 본 목표(`(동, 층) → 목표`) — 목표를 바꾼 회차를 알아본다
+# (`release_process_chip`).
+_CHIP_LEVELS_KEY: Final = "space_shortening_chip_levels"
+# 이번 회차에 도면에서 호기를 눌렀다는 표지(`note_unit_pick` — 뷰어 누르기 콜백이 적는다).
+_PICKED_NOW_KEY: Final = "space_shortening_picked_now"
 # 「도면에서 보기」 로 온 공정 — 공정소분류 필터에 걸러졌는지 알리는 한 줄. (공정, 도착 층, 도착 때
 # 필터)를 쥐고 **그 층·필터가 처음 바뀔 때**(또는 보기를 끌 때) 거둔다 — 알림은 도착한 링크에 대한
 # 것이라 나중에 사용자가 고른 상관없는 필터에 남지 않는다.
@@ -229,6 +237,8 @@ def consume_layer_link(
         )
         if floor is not None:
             st.session_state[process_chip_key(floor)] = process
+            # 링크가 목표와 칩을 함께 정했다 — 「목표를 바꿨다」 로 보고 칩을 풀지 않게.
+            _forget_chip_level(floor)
     else:
         st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
     kept = {
@@ -580,6 +590,64 @@ def valid_focus(floor: FloorKey, processes: Collection[str]) -> str | None:
         st.session_state[key] = None
         return None
     return value
+
+
+def note_unit_pick() -> None:
+    """층 상세 도면의 호기 누르기 콜백이 부른다 — 이번 회차 본문이 칩 밖 공정의 호기를 누른 것인지
+    가린다(`release_process_chip`)."""
+    st.session_state[_PICKED_NOW_KEY] = True
+
+
+def take_unit_pick() -> bool:
+    """이번 회차에 도면에서 호기를 눌렀는가 — 표지를 거둔다. 층 상세를 그리는 회차마다 부른다."""
+    return bool(st.session_state.pop(_PICKED_NOW_KEY, False))
+
+
+def _chip_levels() -> dict[FloorKey, float]:
+    stored = st.session_state.get(_CHIP_LEVELS_KEY)
+    return dict(stored) if isinstance(stored, dict) else {}
+
+
+def _forget_chip_level(floor: FloorKey) -> None:
+    levels = _chip_levels()
+    if levels.pop(floor, None) is not None:
+        st.session_state[_CHIP_LEVELS_KEY] = levels
+
+
+def release_process_chip(
+    floor: FloorKey,
+    level: float,
+    floor_layer: FloorLayer,
+    *,
+    picked_processes: Collection[str] | None = None,
+) -> bool:
+    """공정 칩을 풀 회차면 칩 칸에 None 을 **적고**(pop 하지 않는다 — AGENTS 9장) 참이다. 칩 위젯과
+    도면 payload 전에 부른다 — 참이면 부르는 쪽이 칩 없이(`focus=None`) 층 보기를 다시 낸다.
+
+    - 목표를 바꿨는데(칩을 마지막으로 본 목표와 다르다) 칩 공정이 새 목표에서 이 층에 단축할 것이
+      없다(목록·자리 없음·추가N 이 모두 비었다 — 칩 글 「단축 없음」). 칩이 남으면 층 호기가 다
+      흐려졌다(E2E r1). 그 목표에서 사용자가 일부러 고른 「단축 없음」 칩은 남긴다.
+    - 이번 회차에 도면에서 칩 공정이 아닌 호기를 눌렀다(`picked_processes` — 그 호기의 공정소분류,
+      누르지 않은 회차는 None). 머리 줄은 칩 공정을, 상세 카드는 다른 공정 호기를 말했다(E2E r3).
+
+    그 밖이면 칩을 본 목표를 지금 목표로 적는다. 칩이 없으면 적어 둔 목표를 지운다."""
+    focus = floor_layer.focus
+    if focus is None:
+        _forget_chip_level(floor)
+        return False
+    levels = _chip_levels()
+    seen = levels.get(floor)
+    quiet = not floor_layer.rows and not floor_layer.unplaced and not floor_layer.virtuals
+    changed = seen is not None and not math.isclose(seen, level)
+    outside = picked_processes is not None and focus not in set(picked_processes)
+    release = (changed and quiet) or outside
+    if release:
+        st.session_state[process_chip_key(floor)] = None
+        levels.pop(floor, None)
+    else:
+        levels[floor] = level
+    st.session_state[_CHIP_LEVELS_KEY] = levels
+    return release
 
 
 def _pick_table_row(floor: FloorKey, pick_ids: tuple[str, ...], key: str, picked_key: str) -> None:

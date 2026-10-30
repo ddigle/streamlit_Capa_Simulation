@@ -1154,3 +1154,122 @@ def test_the_fab_summary_splits_units_on_inactive_floors_out_of_the_drawn_count(
     assert expected in line
     assert not line.endswith("대 · 비활성 층 4대")
     assert line.count("비활성 층") == (1 if inactive else 0)
+
+
+def _chip_round() -> None:
+    """칩 풀기 판정 한 회차 — 이 층(C1 2F) 칩 값과 목표·「단축 없음」·누른 호기 공정을 세션 칸으로
+    받는다(`release_process_chip`). 단축이 있으면 추가N 하나를 실은 층 보기를 넘긴다."""
+    from datetime import date
+
+    import streamlit as st
+
+    from capa_simulation.components.space_shortening_view import (
+        process_chip_key,
+        release_process_chip,
+    )
+    from capa_simulation.services.space_shortening_layer import FloorLayer, VirtualUnit
+
+    floor = ("C1", "2F")
+    focus = st.session_state.get(process_chip_key(floor))
+    focus = focus if isinstance(focus, str) else None
+    virtuals = (
+        ()
+        if st.session_state["t_quiet"] or focus is None
+        else (VirtualUnit("추가1", focus, date(2026, 11, 2), None, 5),)
+    )
+    st.session_state["t_released"] = release_process_chip(
+        floor,
+        st.session_state["t_level"],
+        FloorLayer(focus=focus, virtuals=virtuals),
+        picked_processes=st.session_state.get("t_picked"),
+    )
+
+
+def test_a_process_chip_is_released_when_a_new_target_leaves_it_nothing_to_shorten() -> None:
+    """칩을 고른 채 목표를 바꿔 그 공정이 「단축 없음」 이 되면 칩을 푼다 — 남으면 층 호기 전체가
+    흐려졌다(개선 I70 · E2E r1 #77). 목표를 바꿔도 단축이 남으면 칩은 그대로이고, 그 목표에서
+    일부러 고른 「단축 없음」 칩도 남긴다(목표를 다시 바꿀 때 푼다)."""
+    chip = process_chip_key(("C1", "2F"))
+    app = AppTest.from_function(_chip_round, default_timeout=30)
+
+    def run(level: float, *, quiet: bool) -> bool:
+        app.session_state["t_level"] = level
+        app.session_state["t_quiet"] = quiet
+        app.run()
+        assert not app.exception, [item.message for item in app.exception]
+        return bool(app.session_state["t_released"])
+
+    app.session_state[chip] = "Die Attach"
+    assert not run(1.1, quiet=False)
+    # 목표를 바꿔도 단축이 남는다 — 칩은 그대로.
+    assert not run(1.2, quiet=False)
+    assert app.session_state[chip] == "Die Attach"
+    # 목표를 바꿔 「단축 없음」 — 푼다.
+    assert run(1.0, quiet=True)
+    assert app.session_state[chip] is None
+    # 그 목표에서 다시 고른 「단축 없음」 칩은 남는다.
+    app.session_state[chip] = "Die Attach"
+    assert not run(1.0, quiet=True)
+    assert not run(1.0, quiet=True)
+    assert app.session_state[chip] == "Die Attach"
+    # 목표를 또 바꿨는데 여전히 단축 없음 — 푼다.
+    assert run(0.9, quiet=True)
+    assert app.session_state[chip] is None
+
+
+def test_picking_a_unit_outside_the_chip_process_releases_the_chip() -> None:
+    """칩을 고른 채 흐린 다른 공정 배지(호기)를 누르면 머리 줄은 칩 공정, 상세 카드는 다른 공정
+    호기를 말했다(개선 I70 · E2E r3 #126). 그 회차에 칩을 비운다 — 칩 공정 호기를 누르면
+    그대로다."""
+    chip = process_chip_key(("C1", "2F"))
+    app = AppTest.from_function(_chip_round, default_timeout=30)
+    app.session_state[chip] = "DAF Attach"
+    app.session_state["t_level"] = 1.1
+    app.session_state["t_quiet"] = False
+
+    app.session_state["t_picked"] = frozenset({"DAF Attach"})
+    app.run()
+    assert not app.session_state["t_released"]
+    assert app.session_state[chip] == "DAF Attach"
+
+    app.session_state["t_picked"] = frozenset({"Die Attach"})
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["t_released"]
+    assert app.session_state[chip] is None
+
+
+def test_a_dim_badge_press_on_the_page_clears_the_chip_and_the_dimming(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """화면 — 칩을 고른 층에서 칩 밖 공정의 호기를 도면에서 누르면(뷰어 콜백이 남기는 표지) 그
+    회차에 칩이 풀려 흐린 배지가 없고, 칩 공정 호기를 누르면 칩이 남는다(개선 I70)."""
+    database = _empty_database(tmp_path)
+    app = _app(database)
+    _turn_on(_ok(app.run()))
+    building, floor = _busiest_floor(_views(editor_calls, "fab")[-1])
+    view = _probe_floor(app, editor_calls, building, floor)
+    master = sample_equipment_master(anchor_date=date.today())
+    processes = dict(zip(master["설비명"], master["공정소분류"], strict=True))
+    badge_processes = {
+        str(processes[badge["ids"][0]]): badge["ids"][0] for badge in view["shortBadges"]
+    }
+    if len(badge_processes) < 2:
+        pytest.skip("샘플 층에 단축 공정이 둘 이상 없다")
+    (chosen, inside), (_, outside) = list(badge_processes.items())[:2]
+    chip = process_chip_key((building, floor))
+    app.session_state[chip] = chosen
+    _ok(app.run())
+    assert any(badge["dim"] for badge in _views(editor_calls, "floor")[-1]["shortBadges"])
+
+    app.session_state[PICKED_KEY] = (building, floor, inside)
+    app.session_state["space_shortening_picked_now"] = True
+    _ok(app.run())
+    assert app.session_state[chip] == chosen
+
+    app.session_state[PICKED_KEY] = (building, floor, outside)
+    app.session_state["space_shortening_picked_now"] = True
+    _ok(app.run())
+    assert app.session_state[chip] is None
+    assert not [b for b in _views(editor_calls, "floor")[-1]["shortBadges"] if b["dim"]]
+    assert "space_shortening_picked_now" not in app.session_state

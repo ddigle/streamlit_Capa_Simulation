@@ -97,6 +97,7 @@ from capa_simulation.components.space_layout import (
     floor_table,
     invalid_equipment_rows,
     occupancy_ratio,
+    picked_unit_processes,
     picked_unit_rows,
     row_unit_shares,
     shortening_legend_markup,
@@ -117,6 +118,8 @@ from capa_simulation.components.space_shortening_view import (
     forget_arrival_note,
     layer_table_columns,
     load_space_layer,
+    note_unit_pick,
+    release_process_chip,
     render_arrival_filter_note,
     render_fab_layer_summary,
     render_floor_layer_panel,
@@ -124,6 +127,7 @@ from capa_simulation.components.space_shortening_view import (
     render_layer_controls,
     render_layer_stop,
     switch_to_queued_shortening,
+    take_unit_pick,
     unit_keys_by_name,
     valid_focus,
 )
@@ -373,6 +377,7 @@ def _pick_unit(key: FloorKey, unit_id: str | None) -> None:
         st.session_state.pop(SPACE_PICKED_KEY, None)
     else:
         st.session_state[SPACE_PICKED_KEY] = (key[0], key[1], unit_id)
+        note_unit_pick()
 
 
 def _show_whole_floor() -> None:
@@ -2151,6 +2156,8 @@ else:
         # 도면에서 누른 호기(이 층의 것만). 그 사이 이름이 바뀌었거나 공정소분류 필터로 빠져
         # 이 층 행에 없으면 푼다.
         picked_unit = _picked_unit(selected)
+        # 이번 회차에 도면에서 누른 것인가 — 칩 밖 공정의 호기를 누르면 칩을 푼다(아래).
+        picked_now = take_unit_pick()
         picked_rows = (
             picked_unit_rows(floor_status, picked_unit) if picked_unit is not None else None
         )
@@ -2176,17 +2183,38 @@ else:
                 if "공정소분류" in layer_rows.columns
                 else set(),
             )
+            floor_loose = not_placed.loc[
+                not_placed["동"].eq(selected_building).fillna(False).astype(bool)
+                & not_placed["층"].eq(selected_floor).fillna(False).astype(bool)
+            ]
             shown_layer = floor_layer(
                 space_layer.layer,
                 layer_rows,
-                not_placed.loc[
-                    not_placed["동"].eq(selected_building).fillna(False).astype(bool)
-                    & not_placed["층"].eq(selected_floor).fillna(False).astype(bool)
-                ],
+                floor_loose,
                 focus=focus,
                 dim_others=layer_dim,
                 inactive=selected in inactive_floors,
             )
+            # 목표를 바꿔 칩 공정이 「단축 없음」 이 됐거나 칩 밖 공정의 호기를 눌렀으면 칩을 풀고
+            # 이 층 모든 공정으로 다시 낸다(칩 위젯·도면 payload 전).
+            if release_process_chip(
+                selected,
+                space_layer.layer.level,
+                shown_layer,
+                picked_processes=(
+                    picked_unit_processes(picked_rows)
+                    if picked_now and picked_rows is not None
+                    else None
+                ),
+            ):
+                shown_layer = floor_layer(
+                    space_layer.layer,
+                    layer_rows,
+                    floor_loose,
+                    focus=None,
+                    dim_others=layer_dim,
+                    inactive=selected in inactive_floors,
+                )
         # 뷰어 payload 는 머리 줄 앞에서 구한다 — 범례와 도면이 한 회차 안에서 붙어 나가야 페이더를
         # 놓은 뒤 브라우저가 둘을 한 번에 맞춘다(그 사이에 payload 를 만들면 범례만 먼저 바뀐다).
         viewer_inputs = (

@@ -441,7 +441,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로 서되 추가N 을 붙이지 않는다(층 사용 명세 8-2). 층 보기 칸이 세는 행은 그 층에 **오늘 그려지는** 행이다(뷰어 roster 의 페이더 범위 합집합이 아니다 — FAB 층
     대수와 같은 축). 계획을 못 읽은 켠 회차의 범례는 채우기 칸 없이 테·덧표시만이다(뷰어가 지연·보관 면을 끈다 — D12). 상세 단추 「필요 단축 일정에서 이 공정 보기」 는 대기 칸만 적고 다음 회차
     본문 맨 앞(`switch_to_queued_shortening`)이 옮긴다. epoch 는 바뀌지 않는다(레이어·목표·칩·흐림은 epoch 밖). 사이드바
-    시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다).
+    시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다). 공정 칩은
+    `release_process_chip` 이 칩 위젯·도면 payload 전에 푼다(None 을 적는다) — 목표를 바꿔(층마다 칩을 마지막으로 본 목표
+    `space_shortening_chip_levels` 와 다르다) 칩 공정이 「단축 없음」 이 됐거나, 그 회차에 도면에서 칩 밖 공정 호기를 눌렀을 때다
+    (뷰어 누르기 콜백 `_pick_unit` 이 `note_unit_pick` 표지를 남기고 층 상세가 `take_unit_pick` 으로 거둔다). 링크가 정한 칩은
+    목표를 바꾼 것으로 보지 않는다.
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
     분기 눈금 글자는 트랙 폭에 맞춰 솎는다(editor.js 순수 구획 `<fader-ticks>` — 「오늘」 은 늘 서고, 트랙 밖이거나 이웃과

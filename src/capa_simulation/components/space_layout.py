@@ -651,3 +651,12 @@ def picked_unit_rows(rows: pd.DataFrame, unit_id: str) -> pd.DataFrame:
         key=lambda index: (names[index] != unit_id, natural_name_key(str(names[index]))),
     )
     return rows.loc[order]
+
+
+def picked_unit_processes(rows: pd.DataFrame) -> frozenset[str]:
+    """누른 호기 줄(`picked_unit_rows`)의 공정소분류(앞뒤 공백을 걷는다, 빈 값은 뺀다). 칸이 없으면
+    빈 묶음이다 — 필요 단축 보기는 공정을 모르는 호기를 칩 밖으로 본다(`floor_layer` 와 같다)."""
+    if "공정소분류" not in rows.columns:
+        return frozenset()
+    values = rows["공정소분류"].astype("string").str.strip().dropna()
+    return frozenset(str(value) for value in values if str(value))
