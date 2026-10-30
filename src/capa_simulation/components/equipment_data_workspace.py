@@ -3813,6 +3813,18 @@ COMMON_ONLY_HISTORY_NOTE = (
 )
 
 
+def common_history_label(commons: Sequence[EquipmentRevisionSummary]) -> str:
+    """「공통 대장 저장 이력」 펼침 머리. 목록은 최신 50개까지라
+    (`load_equipment_revision_summaries`) 그보다 옛 리비전이 있으면 「n건」 이 전체처럼 읽히지
+    않게 「최근 n건(rA~rB)」 으로 범위를 적는다 — 공통 번호는 1 부터 붙고 지우지 않으므로 가장 옛
+    줄이 r1 이 아니면 더 옛 리비전이 있다(일정 리비전 표 머리 줄이 한도에 걸렸을 때만 전체 수를
+    덧붙이는 것과 같은 뜻)."""
+    numbers = [item.revision_no for item in commons]
+    if not numbers or min(numbers) <= 1:
+        return f"공통 대장 저장 이력 {len(commons):,}건"
+    return f"공통 대장 저장 이력 최근 {len(commons):,}건(r{min(numbers)}~r{max(numbers)})"
+
+
 def _render_common_history(
     commons: Sequence[EquipmentRevisionSummary],
     revisions: Sequence[EquipmentScheduleRevisionSummary],
@@ -3829,7 +3841,7 @@ def _render_common_history(
         if item.common_revision_id is not None:
             paired.setdefault(item.common_revision_id, []).append(f"r{item.revision_no}")
     with st.expander(
-        f"공통 대장 저장 이력 {len(commons):,}건", expanded=False, key=COMMON_HISTORY_EXPANDER_KEY
+        common_history_label(commons), expanded=False, key=COMMON_HISTORY_EXPANDER_KEY
     ):
         # 펼침 첫 표 — 도구 막대가 펼침 머리 오른쪽 끝 누름을 먹지 않게 띄운다(AGENTS 9장).
         toolbar_clearance()

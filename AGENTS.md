@@ -2306,7 +2306,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 뜻이다.
   - 저장 이력은 고른 설비 시나리오의 일정 리비전(번호·저장자·출처·공통 rN)이고 조회는 `load_saved_pair`(저장 때의 짝)다.
     목록은 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지이고, 한도에 걸리면 머리 한 줄 끝에 「최근 50줄 · 전체 N줄 — 더 옛 …」 을
-    붙인다(`revision_count_line` — 새 줄을 세우지 않아 아래 칸이 밀리지 않는다). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
+    붙인다(`revision_count_line` — 새 줄을 세우지 않아 아래 칸이 밀리지 않는다). 공통 칸만 바꾼 저장은 일정 리비전을 만들지
+    않아 그 표에 없으므로 표 아래 안내 한 줄과 펼침 「공통 대장 저장 이력」(공통 rN·저장자·변경메모·호기행·그 공통을 함께 본 이
+    시나리오 일정 rN — `_render_common_history`, 최신 50개)이 선다. 그보다 옛 공통 리비전이 있으면 머리가 「최근 n건(rA~rB)」 이다
+    (`common_history_label`). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
     필요」·표 풍선)은 공식 일정 + 편집본 공통 칸이다(`official_confirmation_master` — 세션 칸 한 벌).
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).

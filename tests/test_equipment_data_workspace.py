@@ -12,6 +12,7 @@ Space 층 사용 상태가 동·층 고르는 값을 좁히는지. AppTest 는 �
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -43,8 +44,10 @@ from capa_simulation.components.equipment_data_workspace import (
     NOTHING_SAVED_MESSAGE,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
+    SMALL_EDITOR_REQUIRED,
     TARGET_KEY,
     build_import_review,
+    common_history_label,
     discarded_notice,
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
@@ -64,7 +67,10 @@ from capa_simulation.navigation import (
     EQUIPMENT_TAB_KEY,
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentRevisionSummary,
+)
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
@@ -828,6 +834,27 @@ def test_the_history_also_lists_a_common_only_save_with_its_memo(
     ]
 
 
+def _common(number: int) -> EquipmentRevisionSummary:
+    return EquipmentRevisionSummary(
+        revision_id=f"c{number}",
+        revision_no=number,
+        note=None,
+        baseline_row_count=0,
+        equipment_row_count=1,
+        downtime_row_count=0,
+        created_at=pd.Timestamp("2026-10-01").to_pydatetime(),
+    )
+
+
+def test_the_common_history_label_names_its_range_only_past_the_list_limit() -> None:
+    """공통 대장 리비전 목록은 최신 50개까지다 — 더 옛 리비전이 있으면 머리 「50건」 이 전체처럼
+    읽히지 않게 「최근 n건(rA~rB)」 으로 범위를 적는다(일정 리비전 표 머리 줄이 한도에 걸렸을 때만
+    전체 수를 덧붙이는 것과 같은 뜻). r1 까지 다 보이면 그대로 「n건」 이다."""
+    assert common_history_label([_common(2), _common(1)]) == "공통 대장 저장 이력 2건"
+    limited = [_common(number) for number in range(80, 30, -1)]
+    assert common_history_label(limited) == "공통 대장 저장 이력 최근 50건(r31~r80)"
+
+
 def _small_editor_key(app: AppTest, key: str) -> str:
     generation_key = f"{key}__generation"
     generation = app.session_state[generation_key] if generation_key in app.session_state else 0
@@ -870,9 +897,9 @@ def test_each_small_editor_says_a_new_row_needs_its_required_cells_before_applyi
         empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
     )
     app = _app(tmp_path / "equipment.duckdb")
-    for table, columns in (
-        ("기존 보유대수", "공정·분류·기존 보유대수"),
-        ("비가동 일정", "설비명·비가동유형·시작일"),
+    for table, columns, key in (
+        ("기존 보유대수", "공정·분류·기존 보유대수", BASELINE_EDITOR_KEY),
+        ("비가동 일정", "설비명·비가동유형·시작일", DOWNTIME_EDITOR_KEY),
     ):
         app.session_state[TABLE_KEY] = table
         _ok(app.run())
@@ -881,6 +908,20 @@ def test_each_small_editor_says_a_new_row_needs_its_required_cells_before_applyi
             "「편집본에 적용」 때 버려집니다."
         )
         assert any(text.startswith(expected) for text in _texts(app, "caption")), table
+        # 안내가 적는 칸은 그 편집표가 실제로 `required=True` 로 건 칸의 화면 이름과 같다(한쪽만
+        # 고치면 어긋난다 — 「기존보유대수」 칸은 「기존 보유대수」 로 보인다).
+        widget = _small_editor_key(app, key)
+        (proto,) = [
+            node.proto
+            for node in app._tree
+            if str(getattr(getattr(node, "proto", None), "id", "")).endswith(f"-{widget}")
+        ]
+        required = {
+            config.get("label") or name
+            for name, config in json.loads(proto.columns).items()
+            if config.get("required")
+        }
+        assert required == set(SMALL_EDITOR_REQUIRED[table]), table
 
 
 def test_a_small_editor_apply_on_the_run_that_saw_someone_elses_save_is_not_applied(
