@@ -29,16 +29,20 @@
 
 /* 목록이 옆으로 넘치면 탭이 더 있는 쪽 가장자리를 흐리고 작은 화살표를 둔다 — JS 가 `has-more-start`·`has-more-end` 를
    단다(`<tabs-edges>`). 390px 에서 HOME 등 왼쪽 탭이 화면 밖에 있는 줄 모르기 쉬웠다. 화살표는 표지일 뿐 누름을 받지
-   않는다 — 목록은 그대로 옆으로 굴린다. 흐림 폭(2rem)은 JS 의 `EDGE_PX` 와 같다. */
+   않는다 — 목록은 그대로 옆으로 굴린다. 흐림 폭(2rem)은 JS 의 `EDGE_PX` 와 같다. 접두 꼴도 둔다 — 접두 없는
+   `mask-image` 는 Chrome 120 부터다(입장 화면 `.stage.masked` 와 같다). */
 .capa-tabs.has-more-start .capa-tabs-list {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 2rem);
   mask-image: linear-gradient(to right, transparent, black 2rem);
 }
 
 .capa-tabs.has-more-end .capa-tabs-list {
+  -webkit-mask-image: linear-gradient(to left, transparent, black 2rem);
   mask-image: linear-gradient(to left, transparent, black 2rem);
 }
 
 .capa-tabs.has-more-start.has-more-end .capa-tabs-list {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
   mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
 }
 

@@ -696,7 +696,9 @@ def test_an_overflowing_strip_marks_the_side_that_has_more_tabs() -> None:
     assert "S.resizer.observe(list)" in JS and "S.resizer.disconnect()" in JS
     for side, edge in (("start", "before"), ("end", "after")):
         assert f"nav.classList.toggle('has-more-{side}', more.{side})" in JS
-        assert "mask-image" in _rule(f".capa-tabs.has-more-{side} .capa-tabs-list")
+        mask = _rule(f".capa-tabs.has-more-{side} .capa-tabs-list")
+        # 접두 없는 `mask-image` 는 Chrome 120 부터라 접두 꼴도 둔다(입장 화면 `.stage.masked` 와 같다).
+        assert "\n  mask-image:" in mask and "-webkit-mask-image:" in mask
         assert f".capa-tabs.has-more-{side}::{edge}" in CSS
     marks = _rule(".capa-tabs::before,\n.capa-tabs::after")
     assert "pointer-events: none" in marks and "opacity: 0" in marks
