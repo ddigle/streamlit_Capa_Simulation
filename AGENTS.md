@@ -1687,7 +1687,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
       편집표를 숨기는 고르기를 새로 두면 판정에 그 고르기를 같이 넣는다.
   - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
-    처리기 하나) 띠 CSS 변수 `--capa-equipment-return`(`app_header.EQUIPMENT_RETURN_VARIABLE`)에 이름이 있으면 탭의
+    처리기 하나) 떠나는 까닭에 맞는 띠 CSS 변수(테마 단추면 `--capa-equipment-return` — `app_header.EQUIPMENT_RETURN_VARIABLE`,
+    새로고침이면 `--capa-equipment-return-reload` — `EQUIPMENT_RELOAD_RETURN_VARIABLE`)에 이름이 있으면 탭의
     `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,
     글은 `TEXT["returned"]`·`TEXT["themed"]`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
     문서가 다시 알린다. 떠날 때 이름이 없으면 적지 않는다(알리기 전에 떠난 문서의 몫을 지우지 않는다). 테마 단추의 표지
@@ -1877,13 +1878,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
-  - 같은 띠 CSS 가 **늘** `EQUIPMENT_RETURN_VARIABLE`(`--capa-equipment-return`)을 정한다 — 세션 설비 시나리오가 최신 공식
-    발행 쌍이 아니면 「「셋업 B」 r8」(퍼센트 인코딩 글, `equipment_return_mark`), 아니면 `none`. 그리는 쪽(잠근 꼴은 공식)이
+  - 같은 띠 CSS 가 **늘** 두 변수를 정한다 — 테마 단추 몫 `EQUIPMENT_RETURN_VARIABLE`(`--capa-equipment-return`)은 세션 설비
+    시나리오가 최신 공식 발행 쌍이 아니면(공식 시나리오의 다른 리비전 포함) 「「셋업 B」 r8」(퍼센트 인코딩 글,
+    `equipment_return_mark` 의 `label`), 새로고침 몫 `EQUIPMENT_RELOAD_RETURN_VARIABLE`(`--capa-equipment-return-reload`)은
+    그 가운데 가정 설비 시나리오일 때만 같은 글(`assumed`), 아니면 `none` 이다(가름 「테마 단추는 정확히, F5 는 직전이 가정이었을
+    때만」). 그리는 쪽(잠근 꼴은 공식)이
     아니라 세션 라벨(`equipment_scenario_activation.remembered_equipment_label`)로 정하고, `app.py` 와 사이드바 설비 시나리오 줄
     (같은 회차에 띠를 다시 보낸다)이 함께 넘긴다. 테마 단추·새로고침은 새 세션이라 공식으로 돌아가는데(E5), 탭 줄 JS 가 문서를
     떠날 때(`pagehide`) 이 값을 탭의 `sessionStorage` 에 적고 새로 읽은 문서가 탭 줄 알림 칸에 한 번 알린다(`page_tabs.js`
-    `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 글). 서버에 아무것도 남기지 않고, 앞
-    세션이 공식 발행 쌍이었으면 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
+    `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 몫과 테마 글). 서버에 아무것도 남기지
+    않고, 앞 세션이 공식 발행 쌍이었으면(새로고침은 가정이 아니었으면) 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
     탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래), 큰 제목 칸 sr-only

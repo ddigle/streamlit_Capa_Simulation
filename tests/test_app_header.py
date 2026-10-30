@@ -612,10 +612,13 @@ def _equipment_label(**changes: object) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("label", "mark"),
     [
-        (_equipment_label(), "「셋업 B」 r8"),
-        # 공식 시나리오라도 공식 발행이 아닌 리비전이면 새 세션에서 바뀐다.
-        (_equipment_label(scenario_name="운영 일정", official_scenario=True), "「운영 일정」 r8"),
-        (_equipment_label(revision_no=None), "「셋업 B」"),
+        (_equipment_label(), ("「셋업 B」 r8", True)),
+        # 공식 시나리오라도 공식 발행이 아닌 리비전이면 새 세션에서 바뀐다 — 가정은 아니다.
+        (
+            _equipment_label(scenario_name="운영 일정", official_scenario=True),
+            ("「운영 일정」 r8", False),
+        ),
+        (_equipment_label(revision_no=None), ("「셋업 B」", True)),
         (_equipment_label(official_scenario=True, official_pair=True), None),
         (_equipment_label(unmerged=True), None),
         (_equipment_label(scenario_name=""), None),
@@ -623,35 +626,74 @@ def _equipment_label(**changes: object) -> dict[str, object]:
     ],
 )
 def test_the_return_mark_names_a_session_equipment_scenario_other_than_the_release(
-    label: dict[str, object] | None, mark: str | None
+    label: dict[str, object] | None, mark: tuple[str, bool] | None
 ) -> None:
     """새 세션은 최신 공식 발행 쌍으로 열린다 — 그 쌍이 아닌 세션만 새로 읽은 뒤 알릴 거리가
-    있다."""
+    있고, 가정 설비 시나리오인지를 함께 낸다(새로고침 알림은 가정일 때만)."""
     from capa_simulation.components.app_header import equipment_return_mark
 
     assert equipment_return_mark(label) == mark
 
 
+def _return_values(css: str) -> dict[str, str]:
+    """`:root{이름:값;이름:값}` 꼴 규칙을 이름 → 값으로 푼다."""
+    body = css.removeprefix(":root{").removesuffix("}")
+    return dict(part.split(":", 1) for part in body.split(";"))
+
+
 def test_the_return_mark_is_a_percent_encoded_css_string_or_none() -> None:
     """이름은 사람이 적은 글이다 — 따옴표·꺾쇠·역슬래시가 CSS 를 깨지 않게 퍼센트 인코딩한다."""
     from capa_simulation.components.app_header import (
+        EQUIPMENT_RELOAD_RETURN_VARIABLE,
         EQUIPMENT_RETURN_VARIABLE,
         equipment_return_css,
         equipment_return_mark,
     )
 
     hostile = equipment_return_mark(_equipment_label(scenario_name='가정 "B"</style>\\'))
-    css = equipment_return_css(hostile)
-    value = css.removeprefix(f":root{{{EQUIPMENT_RETURN_VARIABLE}:").removesuffix("}")
-    assert value.startswith('"') and value.endswith('"')
-    assert re.fullmatch(r"[A-Za-z0-9%._~-]*", value[1:-1])
-    assert equipment_return_css(None) == f":root{{{EQUIPMENT_RETURN_VARIABLE}:none}}"
+    values = _return_values(equipment_return_css(hostile))
+    for value in values.values():
+        assert value.startswith('"') and value.endswith('"')
+        assert re.fullmatch(r"[A-Za-z0-9%._~-]*", value[1:-1])
+    assert set(values) == {EQUIPMENT_RETURN_VARIABLE, EQUIPMENT_RELOAD_RETURN_VARIABLE}
+    assert equipment_return_css(None) == (
+        f":root{{{EQUIPMENT_RETURN_VARIABLE}:none;{EQUIPMENT_RELOAD_RETURN_VARIABLE}:none}}"
+    )
     long_name = equipment_return_mark(_equipment_label(scenario_name="가" * 100))
-    assert long_name is not None and len(long_name) < 70 and "…" in long_name
+    assert long_name is not None and len(long_name.label) < 70 and "…" in long_name.label
+
+
+def test_a_reload_names_only_an_assumed_equipment_scenario() -> None:
+    """가름 「테마 단추는 정확히, F5 는 직전이 가정이었을 때만」(개선 거리 I1) — 공식 시나리오의
+    옛 리비전(「운영 일정」 r6, 최신 r7)을 보던 세션은 테마 단추 몫에만 이름이 실리고 새로고침
+    몫은 `none` 이다. 이 둘을 한 변수로 싣던 때는 F5 뒤에도 「공식으로 돌아왔습니다」 가 섰다(E2E
+    10-31)."""
+    from capa_simulation.components.app_header import (
+        EQUIPMENT_RELOAD_RETURN_VARIABLE,
+        EQUIPMENT_RETURN_VARIABLE,
+        equipment_return_css,
+        equipment_return_mark,
+    )
+
+    official_old = equipment_return_mark(
+        _equipment_label(
+            scenario_name="운영 일정",
+            revision_no=6,
+            latest_revision_no=7,
+            official_scenario=True,
+            stale=True,
+        )
+    )
+    values = _return_values(equipment_return_css(official_old))
+    assert values[EQUIPMENT_RETURN_VARIABLE] != "none"
+    assert values[EQUIPMENT_RELOAD_RETURN_VARIABLE] == "none"
+
+    assumed = _return_values(equipment_return_css(equipment_return_mark(_equipment_label())))
+    assert assumed[EQUIPMENT_RELOAD_RETURN_VARIABLE] == assumed[EQUIPMENT_RETURN_VARIABLE] != "none"
 
 
 def test_every_header_style_sets_the_return_variable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """띠는 늘 그 변수를 정한다 — 설비 화면이 같은 회차에 다시 보내는 띠가 앞의 값을 `none` 으로도
+    """띠는 늘 두 변수를 정한다 — 설비 화면이 같은 회차에 다시 보내는 띠가 앞의 값을 `none` 으로도
     덮어야 고른 회차에 늦지 않는다."""
     import streamlit as st
 
@@ -665,11 +707,15 @@ def test_every_header_style_sets_the_return_variable(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(st, "session_state", {})
 
     app_header.render_app_header()
-    app_header.render_app_header(equipment_return="「셋업 B」 r8")
+    app_header.render_app_header(
+        equipment_return=app_header.EquipmentReturn("「셋업 B」 r8", assumed=True)
+    )
 
     variable = app_header.EQUIPMENT_RETURN_VARIABLE
-    assert f"{variable}:none" in sent[0]
-    assert f'{variable}:"%E3%80%8C%EC%85%8B%EC%97%85%20B%E3%80%8D%20r8"' in sent[1]
+    reload = app_header.EQUIPMENT_RELOAD_RETURN_VARIABLE
+    encoded = '"%E3%80%8C%EC%85%8B%EC%97%85%20B%E3%80%8D%20r8"'
+    assert f"{variable}:none" in sent[0] and f"{reload}:none" in sent[0]
+    assert f"{variable}:{encoded}" in sent[1] and f"{reload}:{encoded}" in sent[1]
 
 
 def test_app_and_the_equipment_row_pass_the_session_label_mark() -> None:

@@ -75,11 +75,13 @@ localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Commu
 사라졌다 서지 않게).
 
 **새로 읽은 화면의 「공식으로 돌아왔습니다」**(개선 거리 I1). 테마 단추·새로고침은 새 세션이라
-세션이 든 설비 시나리오가 공식으로 돌아간다. 같은 띠 CSS 에 이 세션의 설비 시나리오가 공식 발행
-쌍이 아닐 때만 그 이름·rN 을 CSS 변수(`EQUIPMENT_RETURN_VARIABLE`, 퍼센트 인코딩 글)로 싣는다 —
-페이지가 그 회차에 띠를 다시 보내므로 고른 회차에도 늦지 않는다. 탭 줄 JS 가 문서를 떠날 때
-(`pagehide`) 그 값을 `sessionStorage` 에 적고 새로 읽은 문서에서 한 번 알린다(`page_tabs.js` 의
-`<tabs-return>`). 서버에는 아무것도 남기지 않는다.
+세션이 든 설비 시나리오가 공식으로 돌아간다. 같은 띠 CSS 에 그 이름·rN 을 CSS 변수 둘(퍼센트 인코딩
+글)로 싣는다 — 테마 단추 몫(`EQUIPMENT_RETURN_VARIABLE`)은 세션이 공식 발행 쌍이 아닐 때 모두(공식
+시나리오의 다른 리비전 포함), 새로고침 몫(`EQUIPMENT_RELOAD_RETURN_VARIABLE`)은 가정 설비 시나리오일
+때만이다(가름 「테마 단추는 정확히, F5 는 직전이 가정이었을 때만」). 페이지가 그 회차에 띠를 다시
+보내므로 고른 회차에도 늦지 않는다. 탭 줄 JS 가 문서를 떠날 때(`pagehide`) 떠나는 까닭에 맞는
+값을 `sessionStorage` 에 적고 새로 읽은 문서에서 한 번 알린다(`page_tabs.js` 의 `<tabs-return>`).
+서버에는 아무것도 남기지 않는다.
 
 `data-testid` 는 emotion 클래스와 달리 판올림 사이에 비교적 안정적이지만 어디까지나
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
@@ -89,6 +91,7 @@ import unicodedata
 import urllib.parse
 from collections.abc import Mapping
 from datetime import datetime
+from typing import NamedTuple
 
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
@@ -131,9 +134,11 @@ EQUIPMENT_HEADER_HEAD = "설비 시나리오"
 # ({"page": 페이지 스크립트 해시, "suffix": 글}). 둘 다 세션 칸이라 DB 를 읽지 않는다.
 EQUIPMENT_HEADER_DRAWN_KEY = "app_header_equipment_drawn_v1"
 EQUIPMENT_HEADER_LABEL_KEY = "app_header_equipment_label_v1"
-# 이 세션의 설비 시나리오가 공식 발행 쌍이 아닐 때 그 이름·rN(퍼센트 인코딩한 CSS 글) — 아니면
-# `none`. 새로 읽은 화면이 「공식으로 돌아왔습니다」 를 알리는 재료다(탭 줄 JS 가 읽는다).
+# 새로 읽은 화면이 「공식으로 돌아왔습니다」 를 알리는 재료 — 이 세션의 설비 시나리오 이름·rN(퍼센트
+# 인코딩한 CSS 글), 알릴 것이 없으면 `none`(탭 줄 JS 가 떠날 때 읽는다). 테마 단추 몫은 공식 발행
+# 쌍이 아니면 모두, 새로고침(F5) 몫은 가정 설비 시나리오일 때만이다(개선 거리 I1 가름).
 EQUIPMENT_RETURN_VARIABLE = "--capa-equipment-return"
+EQUIPMENT_RELOAD_RETURN_VARIABLE = "--capa-equipment-return-reload"
 # 알림에 싣는 이름의 최대 글자 수(넘으면 말줄임).
 _RETURN_LABEL_LIMIT = 60
 
@@ -770,13 +775,22 @@ def equipment_header_suffix(
     return " · ".join(parts)
 
 
-def equipment_return_mark(label: Mapping[str, object] | None) -> str | None:
-    """새로 읽으면 공식으로 돌아갈 설비 시나리오 — 「「셋업 B」 r8」. 공식 발행 쌍이면 None.
+class EquipmentReturn(NamedTuple):
+    """새로 읽으면 공식으로 돌아갈 설비 시나리오 — 알림에 싣는 이름(「「셋업 B」 r8」)과, 가정 설비
+    시나리오였는가(새로고침 알림은 가정일 때만 — `equipment_return_css`)."""
+
+    label: str
+    assumed: bool
+
+
+def equipment_return_mark(label: Mapping[str, object] | None) -> EquipmentReturn | None:
+    """새로 읽으면 공식으로 돌아갈 설비 시나리오. 공식 발행 쌍이면 None.
 
     `label` 은 세션 라벨(`EquipmentSession.label()` — 화면이 잠가 공식을 보이는 회차에도 세션
     값)이다. 새 세션은 최신 공식 발행 쌍으로 열리므로(E5) 그 쌍이 아니면 — 가정 시나리오든,
-    공식 시나리오의 다른 리비전이든 — 새로 읽은 뒤 바뀐다. 일정 없이 연 세션(`unmerged`)은 새
-    세션도 같아 알리지 않는다.
+    공식 시나리오의 다른 리비전이든 — 새로 읽은 뒤 바뀐다. 테마 단추는 그 모두를 알리고 새로고침은
+    가정 시나리오만 알리므로(가름 「테마 단추는 정확히, F5 는 직전이 가정이었을 때만」) 가정인지를
+    함께 낸다. 일정 없이 연 세션(`unmerged`)은 새 세션도 같아 알리지 않는다.
     """
     if not label or label.get("official_pair") or label.get("unmerged"):
         return None
@@ -787,14 +801,26 @@ def equipment_return_mark(label: Mapping[str, object] | None) -> str | None:
     if len(text) > _RETURN_LABEL_LIMIT:
         text = text[: _RETURN_LABEL_LIMIT - 1] + "…"
     revision_no = label.get("revision_no")
-    return f"「{text}」 r{revision_no}" if isinstance(revision_no, int) else f"「{text}」"
+    return EquipmentReturn(
+        label=f"「{text}」 r{revision_no}" if isinstance(revision_no, int) else f"「{text}」",
+        assumed=not label.get("official_scenario"),
+    )
 
 
-def equipment_return_css(mark: str | None) -> str:
-    """`EQUIPMENT_RETURN_VARIABLE` 를 정하는 규칙 — 늘 낸다(뒤에 그린 띠가 앞의 값을 `none` 으로도
-    덮어야 한다). 이름은 퍼센트 인코딩해 따옴표·역슬래시·꺾쇠가 CSS 를 깨지 않는다."""
-    value = f'"{urllib.parse.quote(mark, safe="")}"' if mark else "none"
-    return f":root{{{EQUIPMENT_RETURN_VARIABLE}:{value}}}"
+def _css_text(text: str | None) -> str:
+    """CSS 글 값 — 퍼센트 인코딩해 따옴표·역슬래시·꺾쇠가 CSS 를 깨지 않는다. 없으면 `none`."""
+    return f'"{urllib.parse.quote(text, safe="")}"' if text else "none"
+
+
+def equipment_return_css(mark: EquipmentReturn | None) -> str:
+    """`EQUIPMENT_RETURN_VARIABLE`(테마 단추 몫)·`EQUIPMENT_RELOAD_RETURN_VARIABLE`(새로고침 몫 —
+    가정 설비 시나리오만)를 정하는 규칙 — 늘 둘 다 낸다(뒤에 그린 띠가 앞의 값을 `none` 으로도
+    덮어야 한다)."""
+    theme = _css_text(mark.label if mark is not None else None)
+    reload = _css_text(mark.label if mark is not None and mark.assumed else None)
+    return (
+        f":root{{{EQUIPMENT_RETURN_VARIABLE}:{theme};{EQUIPMENT_RELOAD_RETURN_VARIABLE}:{reload}}}"
+    )
 
 
 def _page_hash() -> str | None:
@@ -812,7 +838,7 @@ def remembered_equipment_suffix() -> str | None:
 
 
 def render_app_header(
-    *, equipment_suffix: str | None = None, equipment_return: str | None = None
+    *, equipment_suffix: str | None = None, equipment_return: EquipmentReturn | None = None
 ) -> None:
     """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다(설비 시나리오 꼬리가
     그 회차에 바뀐 페이지만 `refresh_equipment_header` 로 한 번 더 보낸다).
@@ -839,7 +865,9 @@ def render_app_header(
     )
 
 
-def refresh_equipment_header(suffix: str | None, *, equipment_return: str | None = None) -> None:
+def refresh_equipment_header(
+    suffix: str | None, *, equipment_return: EquipmentReturn | None = None
+) -> None:
     """페이지가 그 회차 목록으로 정한 설비 시나리오 꼬리를 남기고 띠를 한 번 더 그린다(뒤의
     스타일이 앞의 것을 덮는다 — 한 회차 늦지 않게).
 
