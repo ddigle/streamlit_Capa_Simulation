@@ -253,3 +253,31 @@ def test_reads_tolerate_hand_written_rows_and_the_key_blocks_duplicates(tmp_path
     assert repository.save_floor_states({("C1", "1F"): "UNUSED"}, expected_version=0, source="t")
     after = repository.load_floor_states()
     assert (after.rows, after.version) == ((("C1", "1F", "UNUSED"),), 1)
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t\n"], ids=["빈 글", "공백", "탭·줄바꿈"])
+def test_a_hand_written_blank_reason_reads_as_unused(tmp_path: Path, blank: str) -> None:
+    """앱으로는 만들 수 없는 빈 사유 비활성 행(손으로 넣은 행)은 읽을 때 「사용 안 함」
+    (`UNUSED`)이다 — 「비우고 끄면 사용 안 함」(저장 입구)과 같은 뜻. 빈 글 그대로 실으면 편집
+    초안이 그 층을 사용으로 떨어뜨려 편집을 켜자마자 「바뀐 층 1개」 로 셌다(2026-10-27 표적
+    E2E). DB 행은 고치지 않는다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO equipment_ops.floor_state (building, floor_name, reason) VALUES "
+            "('C1', '3F', ?), ('C2', '1F', '창고')",
+            [blank],
+        )
+
+    states = repository.load_floor_states()
+    # 빈 사유만 바꾼다 — 글이 있는 사유는 저장된 그대로다.
+    assert states.rows == (("C1", "3F", "UNUSED"), ("C2", "1F", "창고"))
+
+    # 같은 내용을 다시 저장하면 쓰지 않는다 — 빈 사유 행은 DB 에 그대로 남는다.
+    assert not repository.save_floor_states(dict(states.inactive), expected_version=0, source="t")
+    with duckdb.connect(str(path), read_only=True) as connection:
+        stored = connection.execute(
+            "SELECT reason FROM equipment_ops.floor_state WHERE building = 'C1'"
+        ).fetchall()
+    assert stored == [(blank,)]

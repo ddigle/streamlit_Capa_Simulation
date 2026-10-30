@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import duckdb
 import pandas as pd
 import pytest
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
@@ -405,6 +406,38 @@ def test_saving_without_changes_says_so_and_writes_nothing(tmp_path: Path) -> No
     assert not app.success
     assert _version(database) == 1
     assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    clear_equipment_repository()
+
+
+def test_a_hand_written_blank_reason_floor_stays_inactive_in_the_editor(
+    tmp_path: Path, _stub_editor: list[dict[str, Any]]
+) -> None:
+    """손으로 넣은 빈 사유 비활성 행(앱으로는 못 만든다)은 도면·목록·편집표가 같은 「사용 안
+    함」 이고, 편집을 켠 것만으로 바뀐 층이 생기지 않는다 — 편집표가 그 층을 「사용」 으로 그리고
+    「바뀐 층 1개」 로 세던 것(2026-10-27 표적 E2E). 그대로 저장해도 그 층은 사용으로 돌아가지
+    않는다."""
+    database = _database(tmp_path)
+    with duckdb.connect(str(database)) as connection:
+        connection.execute(
+            "INSERT INTO equipment_ops.floor_state (building, floor_name, reason) "
+            "VALUES ('C1', '3F', '')"
+        )
+    clear_equipment_repository()
+    _, inactive = _floor_tables(_app(database).run())
+    assert inactive[["동", "층", "사유"]].values.tolist() == [["C1", "3F", "사용 안 함"]]
+    fab = [data for data in _stub_editor if data.get("scope") == "fab"][-1]
+    assert fab["linkStats"]["C1 3F"]["inactive"] == "사용 안 함"
+
+    app, tables = _start_editing(database)
+    frame = _editor_frame(app)
+    position = _position("C1", "3F")
+    assert not frame["사용"].tolist()[position]
+    assert frame["사유"].tolist()[position] == "사용 안 함"
+    assert any("바뀐 층 0개" in caption.value for caption in app.caption)
+
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
+    assert _states(database) == {("C1", "3F"): "UNUSED"}
     clear_equipment_repository()
 
 

@@ -2033,8 +2033,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `FloorStates`(비활성 층만의 (동, 층, 사유) 행 — 사유는 직접 적은 글이고 옛 코드 `UNUSED` 사용 안 함·`NOT_LINE` 생산라인
   아님도 그대로 둔다, 2026-10-26 결정)와 규칙. 저장 입구 `prepare_floor_states`(30개 층, 빈 값 = 사용, 사유는
   `floor_reason_code` — 짝 없는 서로게이트·앞뒤 공백 뗌, 옛 코드의 글·코드 글자는 그 코드 — 를 거쳐 `floor_reason_refusal`
-  이 20자·제어 문자(Cc·Cf·Zl·Zp·Cs)를 거절, 거절 글에 사람 글을 싣지 않는다)만 엄격하고 읽기는 관용이다(`inactive_label` —
-  옛 코드는 그 글, 적은 글은 길이를 보지 않고 그대로, 빈 사유만 「비활성」, 제어 문자는 빈칸. 편집표 칸만은
+  이 20자·제어 문자(Cc·Cf·Zl·Zp·Cs)를 거절, 거절 글에 사람 글을 싣지 않는다)만 엄격하고 읽기는 관용이다(`stored_reason` —
+  손으로 넣은 빈 사유 행은 저장 입구의 「비우고 끄면 사용 안 함」 과 같이 `UNUSED` 로 읽는다, 2026-10-27 표적 E2E — 빈 글이면
+  편집 초안이 그 층을 사용으로 떨어뜨렸다 · `inactive_label` —
+  옛 코드는 그 글, 적은 글은 길이를 보지 않고 그대로, 빈 글은 「비활성」, 제어 문자는 빈칸. 편집표 칸만은
   `reason_cell_text` — 저장할 글 그대로). 사유 글을 고치거나 막지 않는다 — 마크다운 자리는 그리는 쪽이
   `literal_markdown`(저장 미리보기 경고는 `inactive_floor_warnings(escape=)`). 동 머리(`building_state` — 옛 코드만 값,
   `with_building`), 끄기 확인 대상(`newly_inactive` — 사유만 바꾼 층은 아님)과 층별 설비
@@ -2727,7 +2729,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
   `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과
   견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지
-  않는다). 읽기는 30개 층 밖 행을 버리고 머리 없는 층 행은 version 0 으로 싣는다.
+  않는다). 읽기는 30개 층 밖 행을 버리고 머리 없는 층 행은 version 0 으로 싣고 빈 사유는 `UNUSED` 로 읽는다(DB 행은
+  고치지 않는다 — 같은 내용 저장은 쓰지 않는다).
 - `src/capa_simulation/persistence/manual_downtime_store.py` — 입력 비가동 대수(설비 DB `0032` — 머리
   `manual_downtime_profile`, 칸 `manual_downtime` 행 = 0 아닌 (공정, 달)·PK (공정, 달), 이력 `manual_downtime_save`)의 읽기·쓰기 SQL.
   쓰기는 층 사용과 같은 꼴로 **바뀐 칸만** 고치고(비운 칸 DELETE · 값만 바꾼 칸 UPDATE · 새 칸 INSERT) 머리를 다음 version 으로 쓴 뒤
