@@ -83,6 +83,7 @@ from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
 from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, THEME_RULE_SCRIPT
 from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
+from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.settings import APP_LABEL, APP_NAME, APP_SUBTITLE
 
 _ASSETS = Path(__file__).with_name("intro_overlay_assets")
@@ -122,6 +123,15 @@ SUMMARY_LABEL_ARIA = f"{APP_NAME} — Summary 열기"
 SUMMARY_LABEL_OPEN = "공식버전 요약 보기"
 SUMMARY_LABEL_WAITING = "공식버전 요약을 준비하는 중입니다"
 SUMMARY_LABEL_OFF = "공식버전 요약을 열 수 없습니다"
+# 연 단추가 없는 입장(처음 입장 화면·거기서 연 Summary·티저)에서 앱으로 들어갈 때 초점을 둘 자리 —
+# 화면 탭 줄(`components/page_tabs.py` — 그림자 DOM 안)의 지금 탭, 탭 줄이 없으면 본문 첫 제목.
+# 두지 않으면 초점이 body 에 남아 키보드 사용자가 처음부터 다시 찾았다(E2E). 지금 탭 선택자는 탭 줄
+# JS 가 다는 `aria-current="page"` 다.
+LANDING_FOCUS = {
+    "tabs": f".st-key-{PAGE_TABS_COMPONENT_KEY}",
+    "current": '.capa-tabs-tab[aria-current="page"]',
+    "heading": '[data-testid="stMain"] h1',
+}
 # `archivo-capa.woff2` 를 만든 글자 목록. 위 넷과 시트의 달(`26.10`)에 새 글자를 쓰면 이 목록을
 # 고치고 글꼴을 다시 만든다 — `tests/test_intro_overlay.py` 는 목록에 빠진 글자만 잡고 woff2 안은
 # 보지 않는다. 타이틀은 CSS 가 대문자로 바꾸므로 대문자도 들어 있어야 한다. 만드는 길은 둘이고
@@ -215,6 +225,7 @@ def _data() -> dict[str, Any]:
             "button_id": THEME_BUTTON_ID,
         },
         "steps": _steps(),
+        "landing": dict(LANDING_FOCUS),
         "text": {
             "boot": "시나리오와 기준정보를 불러오는 중",
             "waiting": "준비 중",

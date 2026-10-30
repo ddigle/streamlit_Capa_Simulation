@@ -1639,7 +1639,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     것만 서버에 닿아 누른 탭은 남았다) 지금 탭을 고정했다(2026-10-26 E2E). 같은 탭의 둘째 누름(핀 두 번)과 키보드 누름
     (`detail` 0 — 좌표가 없다)은 그대로다.
   - 상한(10개) — JS 가 사이드바·본문 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 먼저 받아, 열린 탭이
-    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 지나 보낸 링크가 여는 탭은
+    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 알림(8초)은 누름을 받지
+    않는다(`pointer-events: none` — 그 밑 HOME 주요 Case 칩을 가렸다). 지나 보낸 링크가 여는 탭은
     그 탭이 data 에 올 때까지(같은 `epoch`, 길어야 `BUSY_MS`) 열린 탭으로 센다(순수 구획 `<tabs-links>`) — 세지 않으면 탭
     9개에서 링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차 data 의 탭 9개로 세어 거름을 지났고, 서버 되돌림이
     두 화면을 기록에 쌓아 뒤로가기가 갇혔다(2026-10-27 E2E). 그래도 들어온 이동(뒤로·
@@ -1648,7 +1649,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     2단계(떠 있는 창) 대비로 화면 주소(`href`)를 싣는다.
   - 핀 단추 이름은 고정 여부와 상관없이 「… 고정」 하나이고 상태는 `aria-pressed` 가 말한다. 지금 탭이 아닌 고정 안 한 탭의
     핀은 가리킬 때만 보이고 숨은 동안 누름을 받지 않는다(`pointer-events: none` — 터치로 탭 이름 오른쪽을 누르면 고정이
-    됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다.
+    됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다. 640px 이하 창에서는 고정하지 않은 지금 탭의 핀도
+    두지 않는다(이름 자리). 지금 탭은 줄지 않는다(`flex-shrink: 0` — 이름이 다 보이는 제 폭, 길어야 15rem) — 탭이 많아 모두
+    최소 폭(5.5rem)으로 줄면 지금 탭 이름이 핀·× 에 밀려 「A.」 로 줄었다. 지금 탭 최소 폭을 넓히지는 않는다 — 탭이 적을
+    때도 HOME 처럼 짧은 지금 탭이 넓어져 탭을 옮길 때마다 뒤 탭들이 옆으로 밀렸다.
+  - 목록이 옆으로 넘치면 탭이 더 있는 쪽 가장자리를 흐리고(목록 `mask-image`, 2rem) 누름을 받지 않는 화살표 표지를 단다
+    (`page_tabs.js` 의 순수 구획 `<tabs-edges>` 가 `has-more-start`·`has-more-end` 를 정한다 — 굴릴 때·목록 폭이 바뀔 때·data
+    가 바뀔 때). 지금 탭을 보이게 굴릴 때는 흐림 폭만큼(`EDGE_PX`) 띄운다.
+  - 키보드 초점은 탭 줄 안에 남긴다(순수 구획 `<tabs-focus>`) — 키보드 초점(`:focus-visible`)이 있던 탭을 닫으면 숨기기
+    전에 이웃 탭(서버가 지금 탭을 닫고 옮겨 가는 이웃과 같은 규칙 — 오른쪽, 없으면 왼쪽)으로 옮기고(마우스로 누른 × 는
+    옮기지 않는다 — 이웃 탭의 숨은 핀이 `:focus-within` 으로 드러나 남았다), 키보드(`click` 의 `detail` 0)로 옮긴
+    화면이 다 선 뒤 초점이 body 로 빠졌으면 — 그 사이 다른 키·포인터 입력이 없을 때만 — 지금 탭으로 돌려준다. 기다리던
+    누름은 옮긴 화면 회차가 끝나기 전에도 보내므로(`MOVED_GRACE_MS`) 초점은 그 회차 끝을 따로 기다린다(길어야 `BUSY_MS`).
+    로빙 tabindex(탭마다 Tab 세 번 멈춤 줄이기)는 2단계 끌기와 함께 본다(TODO).
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름·꺼진 링크 표지)를 같은 iframe 에
   싣는다(`extra_scripts`).
@@ -1732,6 +1745,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `FONT_SUBSET_TEXT` 를 고치고 다시 만든다. 심볼 넷(`static/icons/capa_mark.svg` 포함)은 `test_intro_overlay` 가 맞춘다.
   - 등록 JS 맨 앞에 브라우저 기록 지킴이(`history_guard.history_guard_script()`)가 실려 모듈을 읽는 순간 건다 — 회차 맨
     앞 요소라 링크 인자 화면이 첫 회차에 인자를 지우는 주소 메시지보다 먼저다(3장 `page_tabs.py` 「기록 한 칸」).
+  - 앱으로 들어갈 때 초점 — 사이드바 라벨로 연 Summary 는 그 라벨로 돌려주고, 연 단추가 없는 입장(처음 입장 화면·거기서
+    연 Summary·티저)은 화면 탭 줄의 지금 탭(그림자 DOM 안), 탭 줄이 없으면 본문 첫 제목에 둔다(`LANDING_FOCUS` — 탭 줄
+    key·`aria-current` 표지를 `data.landing` 으로 받는다). 두지 않으면 body 에 남았다.
+  - 무대(`.stage`)는 옆으로 넘치지 않는다 — 읽기 도구용 표는 1px 칸(`div.sr`) 안에 둔다(표에 바로 1px 를 주면 내용 폭으로
+    늘어 390px 무대가 639px 로 넘쳤다). 520px 이하에서는 머리 칩(공식버전 이름)이 토글 셋과 함께 둘째 줄(`.tail`)로 내려
+    남는 폭을 쓰고 두 줄까지 접는다 — 넓은 창에서 `.tail` 은 `display: contents` 라 머리 줄은 그대로다.
 - `src/capa_simulation/components/history_guard.py` — 탭 줄 JS(`page_tabs.js`)의 기록 지킴이 두 구획(`<tabs-history>`·
   `<tabs-history-install>`)을 떼어 입장 화면 등록 JS 앞에 싣는 글로 낸다. 글은 탭 줄 자산 한 벌이다(옮기지 않는다 — 두 벌이면
   한쪽만 고쳐 다른 지킴이가 먼저 걸린다). 컴포넌트를 등록하지 않아 `page_tabs` 를 불러오지 않는 모듈이 쓸 수 있다.
@@ -1763,9 +1782,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
-    보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 둘이다 — 화면
-    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래)와 큰 제목 칸 sr-only
-    (`PAGE_TITLE_SELECTOR`). 인쇄에는 제목이 보인다.
+    보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
+    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래), 큰 제목 칸 sr-only
+    (`PAGE_TITLE_SELECTOR`), 모달 동안 탭 줄 흐림(`#root[inert]` — 1.63 은 `st.dialog` 가 열리면 앱 뿌리에 `inert` 를 단다,
+    탭 줄 누름이 말없이 먹혔다). 인쇄에는 제목이 보인다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
   - 회차마다 소켓으로 다시 가는 스타일이라 CSS 안에 주석을 두지 않는다 — 규칙 설명은 그 조각 바로 위 파이썬 주석이다
     (9장 「스크립트와 컴포넌트」).

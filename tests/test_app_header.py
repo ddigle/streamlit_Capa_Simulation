@@ -309,12 +309,17 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
 
 
 def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> None:
-    """화면 덩어리는 둘뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
+    """화면 덩어리는 셋뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
     밑에 붙고 z-index 는 펼침 목록·팝업보다 낮다. 큰 제목은 `display: none` 이 아니라 sr-only 라
-    읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다)."""
+    읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다). 셋째는 모달 동안 탭
+    줄 흐림."""
     block = _screen_block()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
-    assert {selector.strip() for selector, _ in rules} == {PAGE_TABS_SELECTOR, PAGE_TITLE_SELECTOR}
+    assert {selector.strip() for selector, _ in rules} == {
+        PAGE_TABS_SELECTOR,
+        PAGE_TITLE_SELECTOR,
+        f"#root[inert] {PAGE_TABS_SELECTOR}",
+    }
     by_selector = {selector.strip(): body for selector, body in rules}
     strip = by_selector[PAGE_TABS_SELECTOR]
     assert "position: sticky;" in strip and "top: 3.75rem;" in strip
@@ -325,6 +330,22 @@ def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> 
     assert "clip-path: inset(50%);" in title and "position: absolute !important;" in title
     assert PAGE_TITLE_SELECTOR.endswith(f".st-key-{PAGE_TITLE_KEY})")
     assert PAGE_TABS_SELECTOR == f".st-key-{PAGE_TABS_COMPONENT_KEY}"
+
+
+def test_the_tab_strip_dims_while_a_modal_holds_the_page() -> None:
+    """모달(`st.dialog` — Guide 등)이 열린 동안 탭 줄 누름은 말없이 먹힌다 — 1.63 은 앱 뿌리
+    `#root` 에 `inert` 를 단다(브라우저 확인). 탭 줄은 띠 바로 밑에 늘 보여 눌릴 것처럼 보였으므로
+    그동안 흐린다(E2E). 뿌리 속성과 자손 하나로 고르고 `:has()` 를 쓰지 않는다."""
+    block = _screen_block()
+    rules = dict(
+        (selector.strip(), body)
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
+    )
+    dim = rules[f"#root[inert] {PAGE_TABS_SELECTOR}"]
+    opacity = re.search(r"opacity: ([\d.]+);", dim)
+    assert opacity is not None and float(opacity.group(1)) <= 0.5
+    assert "transition: opacity" in rules[PAGE_TABS_SELECTOR]
+    assert ":has(" not in PAGE_TABS_SELECTOR
 
 
 def test_print_keeps_screen_colours_and_leaves_orientation_to_the_browser() -> None:

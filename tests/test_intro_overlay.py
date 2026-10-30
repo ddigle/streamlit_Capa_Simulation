@@ -887,7 +887,8 @@ def test_closing_the_summary_returns_focus_to_the_sidebar_label() -> None:
     """사이드바 라벨로 연 요약을 Esc·Detail 로 닫으면 포커스가 그 라벨로 돌아간다.
 
     돌려주지 않으면 body 에 남아 키보드 사용자가 제자리를 잃었다(2026-10-05 E2E — Guide 는
-    `#capa-guide-button` 으로 돌려준다). 처음 입장 화면은 연 단추가 없으니 돌려줄 곳도 없다.
+    `#capa-guide-button` 으로 돌려준다). 연 단추가 없는 입장(처음 입장 화면·거기서 연
+    Summary·티저)은 아래 `test_entering_without_an_opener_lands_focus_on_the_current_tab` 이 본다.
     """
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     opening = js[js.index("async function openFromApp(button)") :]
@@ -895,6 +896,33 @@ def test_closing_the_summary_returns_focus_to_the_sidebar_label() -> None:
     closing = js[js.index("async function toDetail(origin = detail)") : js.index("function hide()")]
     assert closing.index("hide();") < closing.index("opener.focus(")
     assert "opener = null;" in closing
+
+
+def test_entering_without_an_opener_lands_focus_on_the_current_tab() -> None:
+    """처음 입장 화면에서 Detail(Enter)로 들어가거나 거기서 연 Summary 를 Esc 로 닫으면 초점이
+    body 로 빠졌다(E2E — 사이드바 라벨로 연 Summary 는 라벨로 돌아오는 것과 달랐다). 연 단추가
+    없으면 화면 탭 줄의 지금 탭(그림자 DOM 안), 탭 줄이 없으면 본문 첫 제목으로 초점을 둔다."""
+    from capa_simulation.components import app_header
+
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    closing = js[js.index("async function toDetail(origin = detail)") : js.index("function hide()")]
+    assert "if (opener && opener.isConnected) opener.focus({ preventScroll: true });\n" in closing
+    assert closing.index("opener.focus(") < closing.index("else focusLanding();")
+    landing = js[js.index("function focusLanding() {") :]
+    landing = landing[: landing.index("\n  }\n")]
+    assert landing.index("holder.shadowRoot.querySelector(landing.current)") < landing.index(
+        "document.querySelector(landing.heading)"
+    )
+    assert 'heading.setAttribute("tabindex", "-1")' in landing
+    data = intro_overlay._data()
+    assert data["landing"] == intro_overlay.LANDING_FOCUS
+    assert data["landing"]["tabs"] == app_header.PAGE_TABS_SELECTOR
+    # 지금 탭 선택자는 탭 줄 JS 가 다는 표지 그대로다.
+    # 탭 줄 모듈은 읽으면 컴포넌트를 등록하므로(`app.py` 에서만 불러온다) 자산 파일을 읽는다.
+    tabs_js = (ASSETS.parent / "page_tabs_assets" / "page_tabs.js").read_text(encoding="utf-8")
+    assert data["landing"]["current"] == '.capa-tabs-tab[aria-current="page"]'
+    assert "tab.className = 'capa-tabs-tab'" in tabs_js
+    assert "setAttr(P.tab, 'aria-current', active ? 'page' : null)" in tabs_js
 
 
 def test_tab_stays_inside_the_overlay_while_it_is_open() -> None:
@@ -917,6 +945,36 @@ def test_tab_stays_inside_the_overlay_while_it_is_open() -> None:
         assert guard in focusables, guard
     assert 'document.addEventListener("focusin", onFocusIn);' in js
     assert 'document.removeEventListener("focusin", onFocusIn);' in js
+
+
+def test_the_phone_summary_does_not_overflow_and_shows_the_release_chip_whole() -> None:
+    """390px Summary 무대의 가로 scrollWidth 가 639 였다(E2E) — 읽기 도구용 표에 바로 1px 를 주면
+    표는 내용 폭으로 늘어 무대를 넘친다. 표는 1px 칸 안에 두어 칸의 overflow 가 넘침을 가둔다.
+    머리 칩(공식버전 이름)은 휴대폰 폭 머리 줄에 70px 남짓만 남아 「70공정 합…」 으로 잘렸다 —
+    520px 이하에서는 토글 줄 오른쪽으로 내려 남는 폭을 다 쓰고 두 줄까지 접는다. 넓은 창의 머리
+    줄은 그대로다."""
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert '<div class="sr"><table data-slot="table"></table></div>' in html
+    assert "<table class=" not in html
+    sr = re.search(r"\n\.sr \{([^}]*)\}", css)
+    assert sr is not None and "overflow: hidden;" in sr.group(1) and "width: 1px;" in sr.group(1)
+    # 토글 셋과 칩을 싼 칸은 넓은 창에서 상자가 없다 — 머리 줄 flex 항목은 그대로 둘이다.
+    assert re.search(r"\n\.tail \{\s*display: contents;\s*\}", css)
+    head = html[html.index('<header class="head">') : html.index("</header>")]
+    assert '<span class="tail"><span class="toggles"' in head
+    phone = re.search(r"@media \(max-width: 520px\) \{(.*?)\n\}", css, re.S)
+    assert phone is not None
+    tail = re.search(r"\.tail \{([^}]*)\}", phone.group(1))
+    assert tail is not None
+    for rule in ("position: absolute;", "top: 40px;", "left: 0;", "right: 0;", "display: flex;"):
+        assert rule in tail.group(1), rule
+    assert re.search(r"\.tail \.toggles \{\s*position: static;", phone.group(1))
+    chip = re.search(r"\.asof \.chip \{([^}]*)\}", phone.group(1))
+    assert chip is not None
+    assert "-webkit-line-clamp: 2;" in chip.group(1) and "white-space: normal;" in chip.group(1)
+    # 위아래 여백은 테두리다 — padding 이면 접힌 셋째 줄이 그 여백에 비친다.
+    assert "padding: 0 7px;" in chip.group(1) and "border-block:" in chip.group(1)
 
 
 # --------------------------------------------------------- Summary 토글 셋(선행 B/O·선행 입고·GAP)

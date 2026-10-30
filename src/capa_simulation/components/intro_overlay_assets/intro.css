@@ -262,6 +262,11 @@
    줄이 흔들리지 않는다. 켜지면 면·테두리가 강조색으로 물들고 글자가 밝아지며 왼쪽 표식이 차오른다
    (aria-pressed). 표식 색은 그 토글이 그림에 쓰는 색이라 범례를 겸한다(선행 B/O 강조색 · 선행 입고 글자색 ·
    GAP 늘림/줄임 두 색). 글자는 본문 글꼴이다 — 부분 글꼴에 한글이 없다. */
+/* 토글 셋과 기준 칩을 싸는 칸. 넓은 창에서는 상자 없이(머리 줄 flex 의 항목은 그대로 둘) 휴대폰 폭에서만 둘째 줄이 된다. */
+.tail {
+  display: contents;
+}
+
 .toggles {
   display: flex;
   flex: none;
@@ -769,6 +774,8 @@
   color: var(--muted);
 }
 
+/* 읽기 도구용 표는 이 1px 칸 안에 둔다. 표에 바로 1px 를 주면 표는 내용 폭으로 늘어(휴대폰 폭 639px) 무대를 옆으로
+   넘쳤다 — 칸의 overflow 가 그 넘침을 가둔다. */
 .sr {
   position: absolute;
   width: 1px;
@@ -871,6 +878,41 @@
   .sum-label .legend i {
     width: 8px;
     height: 8px;
+  }
+}
+
+/* 휴대폰 폭(390px 안팎)에는 머리 줄에 머리 칩(공식버전 이름)이 들 자리가 70px 남짓이라 「70공정 합…」 으로 잘렸다. 칩을
+   토글 줄 오른쪽으로 내려 남는 폭을 다 쓰고, 그래도 넘치면 두 줄까지 접어 끝에서 줄인다. 위아래 여백은 같은 색 테두리로
+   준다 — padding 이면 접힌 셋째 줄 윗부분이 그 여백에 비친다. 줄 칸의 빈 자리는 누름을 받지 않는다(그 밑 장면 풍선). */
+@media (max-width: 520px) {
+  .tail {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .tail > * {
+    pointer-events: auto;
+  }
+
+  .tail .toggles {
+    position: static;
+  }
+
+  .asof .chip {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    padding: 0 7px;
+    border-block: 3px solid var(--accent);
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

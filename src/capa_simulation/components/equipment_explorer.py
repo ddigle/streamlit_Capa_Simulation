@@ -278,15 +278,16 @@ def _confirmation_caption(notice: str | None) -> None:
 def _usage_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
     """사용기준이 HBM·EDP 가 아니어서 가용대수에서 뺀 설비 한 줄. 0대면 `None`.
 
-    일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 설비 마스터가 검증을 못 넘으면
-    알리지 않는다 — 그 오류는 결과 자리가 이미 알린다.
+    일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 바로 위 줄이 「총 · 가용 ·
+    비가동」 대수라 그 셋 모두에서 뺐다고 적는다(`totals`). 설비 마스터가 검증을 못 넘으면 알리지
+    않는다 — 그 오류는 결과 자리가 이미 알린다.
     """
     try:
         excluded = get_usage_excluded_equipment(equipment)
     except ValueError:
         return None
     unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    return usage_exclusion_notice(excluded, unit_ids=unit_ids)
+    return usage_exclusion_notice(excluded, unit_ids=unit_ids, totals=True)
 
 
 def _usage_caption(notice: str | None) -> None:

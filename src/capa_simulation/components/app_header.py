@@ -168,11 +168,15 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 # - 화면 탭 줄(`PAGE_TABS_SELECTOR`)도 뺀다 — 화면을 옮기는 단추라 종이에는 쓸모가 없다. 대신
 #   화면에서 숨긴 큰 제목이 인쇄에는 보인다(아래 화면 덩어리가 `@media screen` 안이다).
 #
-# 화면 덩어리(`@media screen`)는 둘이다(2026-10-24 사용자 결정 — 페이지 탭).
+# 화면 덩어리(`@media screen`)는 셋이다(2026-10-24 사용자 결정 — 페이지 탭).
 # - 화면 탭 줄은 머리 띠 바로 밑에 붙어 본문과 함께 스크롤되지 않는다(`position: sticky` — 스크롤
 #   칸은 `stMain` 이고 띠는 그 밖이라 띠 높이 3.75rem 아래에 선다). z-index 는 본문 위·머리 띠
 #   (999990)·진행 막대(999991) 아래이고, 펼침 목록·팝업(baseweb 층)보다도 아래인 100 이다 — 높이면
 #   위로 펼친 목록이 탭 줄 밑에 깔린다. 바탕은 컴포넌트 안 `nav` 가 칠한다.
+# - 모달(`st.dialog` — Guide 등)이 열린 동안 탭 줄을 흐린다. 1.63 은 모달을 `body` 끝에 붙이고 앱
+#   뿌리(`#root`)에 `inert` 를 단다 — 탭 줄 누름은 말없이 먹히는데 탭 줄은 띠 바로 밑에 늘 보여 눌릴
+#   것처럼 보였다(E2E). 입장 화면·Summary 덮개도 같은 `inert` 를 다는데 그때 탭 줄은 덮개 밑이다.
+#   `:has()` 를 쓰지 않는다 — 뿌리 속성 하나와 자손 하나라 다시 그리기가 탭 줄에만 닿는다.
 # - 큰 제목 칸(`PAGE_TITLE_SELECTOR`)은 화면에서만 시각적으로 숨긴다(sr-only — 1px 상자 밖을
 #   자른다). `display: none` 이 아니라 h1 이 읽기 도구에 남는다. 흐름에서 빠져 요소 간격도 먹지
 #   않는다.
@@ -190,6 +194,10 @@ SHELL_STYLE = (
     position: sticky;
     top: 3.75rem;
     z-index: 100;
+    transition: opacity 0.15s;
+  }
+  #root[inert] __PAGE_TABS__ {
+    opacity: 0.4;
   }
   __PAGE_TITLE__ {
     position: absolute !important;

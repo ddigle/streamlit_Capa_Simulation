@@ -2223,6 +2223,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const palette = data.palette || {};
   const text = data.text || {};
+  const landing = data.landing || {};
   const steps = Array.isArray(data.steps) && data.steps.length ? data.steps : [{ label: "" }];
   const app = document.querySelector('[data-testid="stApp"]');
   const frame0 = app ? getComputedStyle(app).backgroundColor : palette.surface;
@@ -3164,7 +3165,25 @@ function createOverlay(api, data, initial, syncToolbar) {
     hide();
     busy = false;
     if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+    else focusLanding();
     opener = null;
+  }
+
+  // 연 단추가 없는 입장(처음 입장 화면 · 거기서 연 Summary · 티저)에서 앱으로 들어가면 키보드 사용자가 다음 Tab 에 닿을
+  // 자리로 초점을 둔다 — 화면 탭 줄의 지금 탭(그림자 DOM 안), 탭 줄이 없으면 본문 첫 제목. 두지 않으면 body 에 남아
+  // 처음부터 다시 찾았다(E2E — 사이드바 라벨로 연 Summary 를 닫으면 라벨로 돌아오는 것과 달랐다).
+  function focusLanding() {
+    const strip = landing.tabs ? document.querySelector(landing.tabs) : null;
+    const holder = strip ? [...strip.querySelectorAll("*")].find((el) => el.shadowRoot) : null;
+    const current = holder && landing.current ? holder.shadowRoot.querySelector(landing.current) : null;
+    if (current) {
+      current.focus({ preventScroll: true });
+      return;
+    }
+    const heading = landing.heading ? document.querySelector(landing.heading) : null;
+    if (!heading) return;
+    if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+    heading.focus({ preventScroll: true });
   }
 
   function hide() {
