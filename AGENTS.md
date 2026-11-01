@@ -92,8 +92,8 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   `Dynamic가용대수`·`Dynamic확보율`·`process_detail_dynamic_absent` 같은 이름과 그것을 설명하는 주석의
   「Dynamic」은 설비 일정 기준 가용을 뜻한다. 내부 컬럼이 화면 표 머리로 나갈 때만 표시용 이름으로 바꾼다.
 - **「확보율 보정」**: HOME 의 토글·Preference 편집기·풍선 글자다(옛 화면 이름 「실행 Loss」·「실행 Capa
-  반영」·「실행 반영 ±n%p」). 뜻은 「기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 % 로 더하고 빼는
-  손입력 보정」이고 실행 관리 그룹과 상관없다. 코드·저장 이름은 `execution` 그대로다(공용 프로필
+  반영」·「실행 반영 ±n[퍼센트 포인트 기호]」 — 기호 자리만 [ ] 로 바꿔 적음). 뜻은 「기준정보 밖 변수
+  (비가동·UPEH·재공)를 확보율에 % 로 더하고 빼는 손입력 보정」이고 실행 관리 그룹과 상관없다. 코드·저장 이름은 `execution` 그대로다(공용 프로필
   `app_meta.global_execution_capacity`, 마이그레이션 0021, 토글 키 `EXECUTION_TOGGLE_KEY`, 내부 컬럼
   `실행 비고`).
 - **「UPEH 가정」**(2026-10-22 사용자 요청): 공정 Capa 상세·필요 단축 일정 조건 카드 끝 「이 세션만」 % 칸이다. 뜻은 「적용
@@ -1034,6 +1034,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
 - `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, 세 탭의 key·라벨(`HOME_TAB_KEY`)을
   UI·저장소 import 없이 선언한다. 페이지 스크립트는 import 할 수 없어 탭 상수도 여기다(주요 Case 칩이 탭을 옮긴다).
+  토글 값 읽기는 `home_toggle(st.session_state, key)` 한 길이다 — 칸이 없으면 기본값이고, 기본값 표에 없는 키는 `KeyError`
+  (토글이 아닌 칸을 이 길로 읽지 않는다). 기본값을 세션에 심는 자리(Preference 카드·시나리오 바꿈)만 `HOME_TOGGLE_DEFAULTS` 를 돈다.
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
   - 칸 클릭 콜백은 이동 대기 칸만 적고(`queue_home_cell`), HOME 프래그먼트 본문 첫 줄이 전달 칸을 적어 옮기며
     (`switch_to_queued_process_detail` → `open_process_detail`), 받는 페이지 맨 앞에서 꺼낸다(`take_process_detail_request`).
@@ -1254,7 +1256,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/monthly_table_base.py` — Plotly 월별 표가 공유하는 색·치수·글자 계산이다. 분류 칸 글자는
   반드시 `classification_cell_text()` 를 거친다(8장).
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 필수 컬럼 검증·업무 키 정규화의 단일 정의다(14-5).
-  정확 일치 검사는 `require_exact_columns` 하나다(`tests/test_exact_column_contracts.py`).
+  정확 일치 검사는 `require_exact_columns` 하나다(`tests/test_exact_column_contracts.py`). 표 칸 빈칸 판정(None·`pd.NA`·
+  NaN·NaT — 빈 글자·0 은 값이다)도 `blank_cell` 하나다.
 - `src/capa_simulation/services/frame_checks.py` — 중복 키 검사(`assert_unique_keys`)·텍스트 키 strip 의 단일 정의다.
   다음 주기에 `frame_contracts.py` 로 합칠 임시 자리라 새 검증을 더 쌓지 않는다.
 - `src/capa_simulation/services/virtual_product.py` — 기준정보를 새 제품 키로 복제해 가상 제품을 만든다(8표, 계획 수량 0).
@@ -2820,7 +2823,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   ▲ 뜻을 말한다 — 넘는 점이 없으면 축은 예전(모든 선의 범위) 그대로다. 그림 모양을 바꾸면
   `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다(2판 옵션 행으로 5, 신규 대기 행·막대로 6, 「신규 설비로」·「보유 제약 설비로」
   행을 채우는 차례로 세워 7, 그래프 풍선 「최소 1대」 로 8, y 축 상한·▲ 로 9, 묶음 신규 모듈 몫 「HB-07(HB-07B)」·「보유로
-  제약 기간을 다 덮음」 풍선과 차이 「%」(「%p」 없음)·기준선을 판정 경계에 그어 10 — 2026-11-01 결정 B1 · B2 · N1, 계산표
+  제약 기간을 다 덮음」 풍선과 차이 「%」(퍼센트 포인트 기호 없음)·기준선을 판정 경계에 그어 10 — 2026-11-01 결정 B1 · B2 · N1, 계산표
   「신규 기여 시작」 풍선의 일반 설비 까닭을 호기마다 되짚고(2026-11-01 E2E) B1 증가마다로 뒤 증가부터 덮인 호기에 「27년 7월부터
   보유로 다 덮음」 을 적어 11 — 같은 날, 두 갈래 모두 배포 전이라 한 번 올림. 같은 날 리뷰 후속(「신규가 채움」 은 신규로 다 채운
   달만 · 제 몫으로 찬 달은 「이 호기 몫으로 다 참」 · B1 없이도 1대가 안 된 호기는 그 까닭)도 11 안이다). 보유 · 신규가
@@ -4499,8 +4502,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보지 않고 입혀, 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는
   나온다. Proc Rename 탭은 그 건수를 「무시」 가 아니라 그렇게 안내한다(2026-10-26 E2E). 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
   자연히 걸리지 않는다 — 축소 로직을 새로 넣지 않는다.
-- 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간·시나리오 월 `YYYY-MM` 은
-  `settings.format_month`, 표의 월 칸 `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
+- 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간 칸·시나리오 월 `YYYY-MM` 은
+  `settings.format_month`, 글 속 달 `YYYY-MM`(조회기간 밖 오류문·측정률 중립값 안내·Space 「필요 단축」 보기의 「2026-11」)은
+  `month_columns.iso_month_text`(해를 네 자리로 채우지 않아 `format_month` 와는 1000년 앞 달에서만 다르다), 표의 월 칸
+  `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
   차트·스크롤 폭은 `month_columns` 가 만든 라벨 목록 하나를 보고, 연간 Total 은 1~12월이 모두 조회범위 안인 해에만 둔다.
   글 속 달 구간(UPEH 가정 배지·CSV 표지 「UPEH 가정 110% · 26.07–26.12」)도 `month_label` 이다 — 「26-07」 같은 사본 꼴을
   두지 않는다. Plotly 날짜 x 축(설비 생애주기 Gantt)은 기본 눈금(「Oct 4 2026」)을 두지 않고 날·주 눈금은 `YYYY-MM-DD`,
@@ -4539,9 +4544,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     「%」 로 적는다(아래 「퍼센트 차이도 「%」」).
   - **필요 단축 일정의 목표(1.10 등 다섯 값)는 판정 기준이 아니라 셈의 목표**라 정확한 값 그대로다(반올림하지 않는다). 공식버전
     자동 갱신의 「기준 확보율」(80% 미만 off)도 판정 기준이 아니라 그대로다.
-- **퍼센트 차이도 「%」 다 — 「%p」 를 쓰지 않는다**(2026-11-01 사용자 결정 「%p표기하지말고 %로만」). 화면 글·풍선·표 머리·
-  숫자 꼴·알림·Chatbot·내려받기·Guide 모두(확보율 보정 「+5.0%」 · 확보율 영향 「−4.2%」 · 실적 Gap 「−10.9%」). 셈은 그대로이고
-  빼는 Gap 과 비율 Gap(`point`·`ratio`)이 같은 「%」 라 셈 글(`gap_formula`)을 함께 적는다. 가드는 `tests/test_percent_unit_text.py`.
+- **퍼센트 차이도 「%」 다 — 퍼센트 포인트 기호(% 뒤 p)를 쓰지 않는다**(2026-11-01 사용자 결정 「[퍼센트 포인트 기호]표기하지말고
+  %로만」 — 기호 자리만 [ ] 로 바꿔 적음). 화면 글·풍선·표 머리·숫자 꼴·알림·Chatbot·내려받기·Guide 모두
+  (확보율 보정 「+5.0%」 · 확보율 영향 「−4.2%」 · 실적 Gap 「−10.9%」). 셈은 그대로이고 빼는 Gap 과 비율 Gap(`point`·`ratio`)이
+  같은 「%」 라 셈 글(`gap_formula`)을 함께 적는다. 문서(README·AGENTS·HANDOFF·`docs/`)도 기호를 말할 때는 「퍼센트 포인트
+  기호」 로, 사용자 메모 인용은 기호 자리만 「[퍼센트 포인트 기호]」 로 적는다 — 런북 7장만 발송한 배포의 기록이라 다음 배포가
+  다시 쓸 때까지 그대로다. 가드는 `tests/test_percent_unit_text.py`.
 - **판정 기준 표시.** 확보·경고 기준(기본 110%·100%)을 화면에 **적는** 곳은 모두
   `services/threshold_label.threshold_percent_label` 로 사사오입한 정수 퍼센트를 쓴다 — 「110%」 하나이고 소수를 함께
   적지 않는다(공정 Capa 상세의 「110% (1.095)」 꼴은 걷었다 — 2026-11-01 N1 「(가) 정수만」). 지금 적는 곳은 HOME
