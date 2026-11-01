@@ -141,7 +141,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 9
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 10
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -399,7 +399,7 @@ def _first_overlapped_month(window: ModificationWindow, result: ConstraintResult
 
 def _waiting_hover(item: NewUnitAssignment) -> str:
     return (
-        f"<b>{html.escape(month_name(item.month))} 몫 · 신규 {html.escape(item.unit)} "
+        f"<b>{html.escape(month_name(item.month))} 몫 · 신규 {html.escape(item.label)} "
         f"{units_text(item.units)}대 대기</b><br>{html.escape(waiting_text(item))} — 셋업 때부터 "
         "제약용이라 기존 제품이 못 씀"
     )
@@ -409,7 +409,9 @@ def _first_waiting_month(item: NewUnitAssignment, result: ConstraintResult) -> i
     """신규 대기 막대를 누르면 고를 달 — 그 대기가 든 첫 보이는 달(없으면 그 몫의 달)."""
     for row in result.months:
         if any(
-            share.source_month == item.month and share.unit == item.unit
+            share.source_month == item.month
+            and share.unit == item.unit
+            and share.module == item.module
             for share in row.waiting_shares
         ):
             return row.month
@@ -1205,7 +1207,8 @@ def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
     「일반 설비(개조 30일 안에 늘어날 전용 없음)」. 나눠 붙었으면 몫마다 잇는다."""
     pieces = [item for item in result.assignments if item.unit == unit.name]
     parts = [
-        f"{month_name(item.month)} 몫 {units_text(item.units)}대 전용({waiting_text(item)})"
+        f"{month_name(item.month)} 몫 {_module_prefix(item)}{units_text(item.units)}대 전용"
+        f"({waiting_text(item)})"
         if len(pieces) > 1 or abs(item.units - unit.units) > 1e-9
         else f"{month_name(item.month)} 몫 전용({waiting_text(item)})"
         for item in pieces
@@ -1213,11 +1216,20 @@ def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
     left = result.left_units(unit)
     if left > 0:
         days = result.conditions.modification_days or 0
-        reason = f"개조 {days}일 안에 늘어날 전용 없음"
+        reason = (
+            "보유로 제약 기간을 다 덮음"
+            if result.new_units_skipped
+            else f"개조 {days}일 안에 늘어날 전용 없음"
+        )
         parts.append(
             f"남는 {units_text(left)}대 일반 설비({reason})" if pieces else f"일반 설비({reason})"
         )
     return " · ".join(parts)
+
+
+def _module_prefix(item: NewUnitAssignment) -> str:
+    """묶음 모듈 몫이면 「HB-07B 」(모듈 이름 + 빈칸), 하나짜리 호기는 빈 글자."""
+    return f"{item.module} " if item.module else ""
 
 
 def _new_starts_cell(row: ConstraintMonth, result: ConstraintResult) -> Cell:
@@ -1227,7 +1239,8 @@ def _new_starts_cell(row: ConstraintMonth, result: ConstraintResult) -> Cell:
     if not units:
         return Cell("", muted=True, hover=f"{_head(row)} · 이 달 기여를 시작하는 신규 설비 없음")
     lines = [
-        f"{html.escape(unit.name)} · {unit.start.isoformat()} 기여 시작 · "
+        f"{html.escape(unit.name)} · {unit.start.isoformat()} "
+        f"{'첫 모듈 ' if unit.modules else ''}기여 시작 · "
         f"{units_text(unit.units)}대 → {html.escape(new_unit_fate(unit, result))}"
         for unit in units
     ]
@@ -1242,7 +1255,7 @@ def _waiting_share_line(share: WaitingShare) -> str:
     shown = units_text(share.equivalent)
     mark = equals_mark(shown, units_text(round(share.units, 2) * share.days / share.window_days))
     return (
-        f"{html.escape(share.unit)} · {html.escape(month_name(share.source_month))} 몫 "
+        f"{html.escape(share.label)} · {html.escape(month_name(share.source_month))} 몫 "
         f"{units_text(share.units)}대 × {share.days}/{share.window_days}일 {mark} {shown}"
     )
 

@@ -73,8 +73,10 @@ from capa_simulation.services.process_capa_detail import (
     process_calculation_rows,
 )
 from capa_simulation.services.process_equipment_timeline import (
+    HeldUnitChoice,
     ProcessEquipmentTimeline,
     build_process_equipment_timeline,
+    held_unit_choices,
 )
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
@@ -2746,3 +2748,22 @@ def get_process_equipment_timeline(
         months=months,
         manual_downtime=manual,
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_process_held_units(
+    cache_key: ProcessEquipmentTimelineCacheKey,
+    cutoff_days: int,
+    _equipment: pd.DataFrame,
+) -> tuple[HeldUnitChoice, ...]:
+    """그 공정에서 보유 제약 설비로 고를 수 있는 호기(제약 시뮬레이션 「호기 고르기」 —
+    `held_unit_choices`).
+
+    키는 설비 일정 키(`process_timeline_key_from_shortening` — 같은 마스터 지문 · 달 · 공정)를
+    그대로 쓰고 Cut-off 는 그 공정의 내림 일수다(키의 Cut-off 지문이 이미 정한다). 마스터는 키를
+    만든 바로 그 표여야 한다(해시하지 않는다). 구간·월별 기여를 만들지 않아 가볍지만 제약 영향
+    모드가 매 회차 쓰므로 둔다. 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지
+    않는다).
+    """
+    *_, months, process, _manual = cache_key
+    return held_unit_choices(_equipment, process=process, cutoff_days=cutoff_days, months=months)

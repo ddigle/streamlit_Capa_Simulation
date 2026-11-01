@@ -29,9 +29,13 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
 **개조 없이 채우는 몫 두 가지**(2026-10-26 사용자 결정 — 개조 켬일 때만 걸린다. 개조 끔은 설비가
 서로 바뀐다는 뜻이라 개조 비가동이 애초에 없다).
 
-- **보유 제약 설비** `owned_units`(환산 대수 하나, 기간 내내 같다) — 가용 A 안에 이미 든 설비 가운데
-  제약 제품을 바로 돌릴 수 있는 대수다. 따로 더하는 설비가 아니다. 기간 밖과 쓰지 않는 동안은 기존
-  제품도 돌린다.
+- **보유 제약 설비** — 가용 A 안에 이미 든 설비 가운데 제약 제품을 바로 돌릴 수 있는 대수다. 따로
+  더하는 설비가 아니다. 기간 밖과 쓰지 않는 동안은 기존 제품도 돌린다. 그 공정 세션 설비 시나리오의
+  호기를 골라(`held_units` — 「호기 고르기」, 2026-11-01 사용자 결정 B3) 그 달 W/D 첫날에 **있는**
+  호기의 환산 합으로 세고(들어오기 전 호기·모듈은 아직 없고, 정지·반출/이설일부터는 뺀다 — 이미 쓴
+  몫은 풀지 않는다, B3-1), 목록에 없는 보유(기존보유 같은)는 숫자 칸 `owned_units`(환산 대수
+  하나, 기간 내내 같다 — B3-3)로 더한다(`ConstraintConditions.holdings_on`). 고른 호기는 신규
+  후보에서 빠진다(두 번 세지 않는다).
 - **신규 설비는 개조 없이** `new_unit_since`(기준일) — 기준일 이후 기여를 시작하는 신규 호기
   (`NewUnit` — 기여 시작 d · 환산 대수 · 반출)는 셋업 때 제약 제품으로 Qual 할 수 있다. 호기마다 d
   에서 개조 일수 D 안에 아직 채우지 않은 제약 몫 증가(그 달 W/D 첫날 t — `0 ≤ t − d ≤ D`)가 있으면
@@ -41,7 +45,10 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
   일반 설비와 같다(제약에 쓰려면 개조 — 사용자 답 1-2). 제약 기간 전에 들어온 신규도 같은 규칙이라
   기간 첫 달 증가가 D 일 안이면 미리 붙인다 — 답 1-3 은 「D 일보다 일찍 들어와 기존 제품에 쓰인
   신규는 개조」 로 좁혀졌다(2026-10-26 오후 사용자 결정 — 「같은 달 증가분만」·「반 달 신규는 다음
-  달」 을 대신한다).
+  달」 을 대신한다). 모듈 묶음은 **첫 모듈 날짜**가 d 다(기준일 판정 · 창 `[d, d + D]`, 2026-11-01
+  사용자 결정). 모듈마다 제 기여 시작부터 붙고 그 사이가 그 모듈의 대기이며(B2-1), t 에 아직 오지
+  않은 모듈은 그 증가에 붙지 않고 창 안의 다음 증가나 일반 설비가 된다(B2-2 — 환산비 나눔과 같은
+  꼴).
 
 제약 몫이 늘 때(가정 2 의 늘어난 대수 `growth = pool − pool(앞 달)`) `FILL_ORDER` 차례(① 신규 →
 ② 보유 — 2026-10-26 오후 사용자 답)로 채우고 남는 몫이 ③ 개조다 — **③ 만 개조 창을 낸다**
@@ -53,7 +60,10 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
 가정 3(줄이지 않음)은 ①·② 로 채운 몫에도 그대로 걸고, 기간 첫 달에 누적을 0 부터 센다. `pool`
 식·2단계(비가동·배정·확보율·비중)는 그대로이고 신규 대기가 개조 비가동 옆에 하나 더 빠질 뿐이라 보유
 0 · 신규 끔이면 1판과 모든 값이 같다. 보유가 그 달 필요보다 많으면 남는 대수는 기존 제품 몫
-그대로다(실제로 뗀 대수만 전용).
+그대로다(실제로 뗀 대수만 전용). **보유만으로 제약 기간 끝까지 늘어난 전용을 다 채우면 신규는
+붙이지 않는다**(2026-11-01 사용자 결정 B1 — 신규 먼저의 대가인 대기가 덕 없이 서지 않게) — 신규 없이
+1단계를 돌려 개조 창이 없으면 그 답을 쓰고(`ConstraintResult.new_units_skipped`), 아니면 차례 그대로
+다시 돌린다.
 
 판정은 경계를 이 모듈에 다시 적지 않는다(AGENTS 6장 「판정은 한 길」). 기준 확보율(G) 판정은
 `securement_threshold.capacity_status` 를 지나는 `secure()` 하나 — 허용치 없는 「이상」 이라 HOME
@@ -104,9 +114,11 @@ __all__ = [
     "ConstraintResult",
     "DowntimeShare",
     "FillSource",
+    "HeldUnit",
     "ModificationWindow",
     "NewUnit",
     "NewUnitAssignment",
+    "UnitModule",
     "WaitingShare",
     "constraint_month_inputs",
     "modification_window",
@@ -138,7 +150,7 @@ MODIFICATION_DAYS_RANGE: Final = (1, 365)
 """개조 기간(일)."""
 
 OWNED_UNITS_RANGE: Final = (0, 999)
-"""보유 제약 설비(환산 대수, 정수). 화면 숫자 칸의 범위와 검증이 이 한 값을 쓴다."""
+"""목록에 없는 보유 제약 설비(환산 대수, 정수). 화면 숫자 칸의 범위와 검증이 이 한 값을 쓴다."""
 
 FillSource = Literal["owned", "new"]
 FILL_OWNED: Final[FillSource] = "owned"
@@ -156,7 +168,8 @@ FILL_ORDER: Final[tuple[FillSource, ...]] = (FILL_NEW, FILL_OWNED)
 신규는 붙일 수 있는 날이 기여 시작 d 에서 D 일 안으로 한정되고 보유는 기간 내내 남는다 — 그래서
 그날 붙일 수 있는 신규를 먼저 쓰고 보유를 뒤 증가에 남긴다. 보유를 먼저 쓰면 그 신규는 D 일 안에
 다른 증가가 없을 때 일반 설비가 되고 뒤 증가가 보유 대신 개조로 간다. 대가는 붙인 신규의 대기(t − d,
-D 일 이하)다 — 보유만으로 기간을 다 덮을 수 있는 공정에서도 신규를 먼저 붙여 대기가 선다."""
+D 일 이하)다 — 보유만으로 기간을 다 덮을 수 있는 공정에서는 그 대기가 덕이 없어 신규를 붙이지 않는다
+(2026-11-01 사용자 결정 B1 — `simulate_constraint`)."""
 
 _ONE_DAY = timedelta(days=1)
 
@@ -185,10 +198,25 @@ class ConstraintMonthInput:
 
 
 @dataclass(frozen=True)
+class UnitModule:
+    """묶음(모듈) 호기의 모듈 하나 — 모듈은 제 날짜부터 센다(2026-11-01 사용자 결정 B2-1)."""
+
+    name: str
+    """설비명(모듈 행)."""
+
+    start: date | None
+    """기여 시작(Qual 다음 날). 보유 호기(`HeldUnit`)에서 None 이면 처음부터 있다 — 신규 호기의
+    모듈은 늘 날짜다."""
+
+    units: float
+    """그 모듈의 환산 대수."""
+
+
+@dataclass(frozen=True)
 class NewUnit:
     """기준일 이후 기여를 시작하는 신규 호기 하나(「신규 설비는 개조 없이」 의 재료).
 
-    날짜는 설비 일정 칸(공정 Capa 상세 ③)과 같다 —
+    날짜는 설비 일정 칸(공정 Capa 상세 ③ 의 Qual 일정)에서 온다 —
     `process_equipment_timeline.new_unit_availability`.
     """
 
@@ -196,7 +224,8 @@ class NewUnit:
     """설비키(③ 의 「호기」)."""
 
     start: date
-    """기여 시작 d(Qual 다음 날 — 모듈 묶음은 가장 늦은 모듈)."""
+    """기여 시작 d(Qual 다음 날). 모듈 묶음은 **첫 모듈**의 날이다 — 판정(기준일)과 개조 일수 창
+    `[d, d + D]` 이 이 날을 본다(2026-11-01 사용자 결정)."""
 
     units: float
     """환산 대수(모듈마다의 환산비 합). 0 보다 커야 붙일 수 있다."""
@@ -204,7 +233,57 @@ class NewUnit:
     until: date | None = None
     """정지·반출/이설일(그날부터 기여하지 않는다). None 이면 나가지 않는다 — 그날 이후의 증가에는
     붙이지 않는다. 붙인 뒤에 나가도 풀지 않는다(모자라면 2단계 배정이 「가용이 모자란 달」 로
-    알린다)."""
+    알린다). 묶음은 가장 이른 모듈의 날이고 모든 모듈에 걸린다."""
+
+    modules: tuple[UnitModule, ...] = ()
+    """묶음의 모듈(둘 이상일 때). 비면 호기 하나가 `start` 부터 `units` 대다. 있으면 모듈마다 제
+    기여 시작부터 붙고 그 사이가 그 모듈의 대기다(결정 B2-1) — 붙일 증가의 W/D 첫날 t 에 아직 오지
+    않은 모듈은 그 증가에 붙지 않고 창 `[d, d + D]` 안의 다음 증가나 일반 설비가 된다(결정 B2-2). 첫
+    모듈 날짜가 `start`, 모듈 몫의 합이 `units` 다 — 축 앞에 나가 축 안 기여가 없는 모듈은 몫이 없어
+    여기 들지 않으므로 `start` 가 남은 모듈의 첫 날보다 이를 수 있다."""
+
+    @property
+    def pieces(self) -> tuple[UnitModule, ...]:
+        """붙이는 몫의 단위 — 묶음은 모듈, 하나짜리 호기는 이름 없는 몫 하나."""
+        return self.modules or (UnitModule("", self.start, self.units),)
+
+
+@dataclass(frozen=True)
+class HeldUnit:
+    """보유 제약 설비로 고른 호기 하나(「호기 고르기」 — 2026-11-01 사용자 결정 B3). 가용 A 안에
+    이미 든 설비이고 제약 제품을 바로 돌릴 수 있다고 본다(따로 더하지 않는다).
+
+    보유는 그 달 W/D 첫날에 **있는** 호기만 센다 — 기여 시작 전이면 아직 없고, 정지·반출/이설일
+    부터는 보유에서 뺀다(결정 B3-1 — 신규의 `until` 과 같은 규칙: 그날 이후의 증가에는 쓰지 않고,
+    이미 쓴 몫은 풀지 않는다). 묶음은 모듈마다 제 날짜부터 센다.
+    """
+
+    name: str
+    """설비키."""
+
+    units: float
+    """환산 대수(모듈마다의 환산비 합)."""
+
+    start: date | None = None
+    """첫 모듈의 기여 시작. None 이면 처음부터 있다."""
+
+    until: date | None = None
+    """정지·반출/이설일(그날부터 보유에서 뺀다). None 이면 나가지 않는다."""
+
+    modules: tuple[UnitModule, ...] = ()
+    """묶음의 모듈(둘 이상일 때) — 비면 호기 하나가 `start` 부터 `units` 대."""
+
+    @property
+    def pieces(self) -> tuple[UnitModule, ...]:
+        return self.modules or (UnitModule("", self.start, self.units),)
+
+    def units_on(self, day: date) -> float:
+        """그날 보유로 셀 환산 대수 — 들어온 모듈의 합, 나간 날부터 0."""
+        if self.until is not None and day >= self.until:
+            return 0.0
+        return sum(
+            piece.units for piece in self.pieces if piece.start is None or piece.start <= day
+        )
 
 
 @dataclass(frozen=True)
@@ -226,6 +305,15 @@ class NewUnitAssignment:
 
     end: date
     """대기 끝 경계(불포함) = 그 달 W/D 첫날 t. `start == end` 면 대기가 없다."""
+
+    module: str = ""
+    """묶음 신규의 모듈(설비명) — 모듈은 제 기여 시작부터 대기한다(결정 B2-1). 하나짜리 호기는
+    빈 글자."""
+
+    @property
+    def label(self) -> str:
+        """화면에 적는 이름 — 「HB-07」, 묶음 모듈은 「HB-07(HB-07B)」."""
+        return f"{self.unit}({self.module})" if self.module else self.unit
 
     @property
     def days(self) -> int:
@@ -254,7 +342,14 @@ class ConstraintConditions:
     """그 공정의 Cut-off(내림 일수 — `wd_window` 와 같다)."""
 
     owned_units: int = 0
-    """보유 제약 설비(환산 대수) — 가용 A 안에 이미 든다. 개조 켬일 때만 쓴다."""
+    """목록에 없는 보유 제약 설비(환산 대수, 기간 내내 같다) — 가용 A 안에 이미 든다. 호기 고르기
+    (`held_units`)에 없는 보유(기존보유 같은)를 적는 숫자 칸이다(2026-11-01 사용자 결정 B3-3). 개조
+    켬일 때만 쓴다."""
+
+    held_units: tuple[HeldUnit, ...] = ()
+    """보유 제약 설비로 고른 호기(결정 B3) — 그 달 W/D 첫날에 있는 호기의 환산 합이 `owned_units`
+    에 더해진다. 고른 호기는 신규 후보에서 빠진다(부르는 쪽이 거른다 — 겹치면 검증 오류). 개조 켬일
+    때만 쓴다."""
 
     new_unit_since: date | None = None
     """「신규 설비는 개조 없이」 의 기준일. None 이면 끔. 계산은 켬·끔만 보고(호기는
@@ -267,8 +362,15 @@ class ConstraintConditions:
 
     @property
     def uses_owned_units(self) -> bool:
-        """보유 제약 설비가 걸리는가(개조 켬 · 보유 > 0)."""
-        return self.modifies and self.owned_units > 0
+        """보유 제약 설비가 걸리는가(개조 켬 · 목록에 없는 보유 > 0 또는 고른 호기 있음)."""
+        return self.modifies and (self.owned_units > 0 or bool(self.held_units))
+
+    def holdings_on(self, day: date) -> float:
+        """그날의 보유 제약 설비(환산 대수) = 목록에 없는 보유 + 그날 있는 고른 호기. 걸리지 않으면
+        0."""
+        if not self.uses_owned_units:
+            return 0.0
+        return _tidy(self.owned_units + sum(unit.units_on(day) for unit in self.held_units))
 
     @property
     def uses_new_units(self) -> bool:
@@ -342,6 +444,14 @@ class WaitingShare:
 
     window_days: int
     """그 달 W/D 구간 일수(분모)."""
+
+    module: str = ""
+    """묶음 신규의 모듈(`NewUnitAssignment.module`)."""
+
+    @property
+    def label(self) -> str:
+        """화면에 적는 이름(`NewUnitAssignment.label` 과 같다)."""
+        return f"{self.unit}({self.module})" if self.module else self.unit
 
     @property
     def equivalent(self) -> float:
@@ -446,6 +556,10 @@ class ConstraintMonth:
 
     waiting_shares: tuple[WaitingShare, ...] = ()
 
+    holdings: float = 0.0
+    """그 달 W/D 첫날의 보유 제약 설비(환산 대수 — `ConstraintConditions.holdings_on`). 보유가
+    걸리지 않으면 0. 고른 호기가 들어오거나 나가면 달마다 바뀐다."""
+
     @property
     def growth(self) -> int:
         """이 달 늘어난 전용 대수 = 보유 + 신규 + 개조(`increment`)."""
@@ -517,6 +631,11 @@ class ConstraintResult:
 
     waits_before_range: bool = False
     """신규 대기가 첫 보이는 달의 W/D 첫날보다 앞에서 시작 — 그 앞 달의 감소는 표에 없다."""
+
+    new_units_skipped: bool = False
+    """보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워(개조 없음) 신규를 붙이지 않았다
+    (2026-11-01 사용자 결정 B1) — 받은 신규는 모두 기존 제품 몫이다. 신규가 걸리고 받은 신규와
+    보유로 채운 몫이 있을 때만 참이다."""
 
     def month(self, month: int) -> ConstraintMonth:
         """그 달의 결과. 보이는 달이 아니면 KeyError."""
@@ -613,28 +732,43 @@ def _waiting_shares(
             continue
         days = window.overlap_days(item.start, item.last_day)
         if days > 0:
-            shares.append(WaitingShare(item.month, item.unit, item.units, days, window.days))
+            shares.append(
+                WaitingShare(item.month, item.unit, item.units, days, window.days, item.module)
+            )
     return tuple(shares)
 
 
 class _NewPool:
-    """붙일 수 있는 신규 호기와 남은 환산 대수 — 1단계가 증가 달마다 꺼내 쓴다."""
+    """붙일 수 있는 신규 몫(호기 · 묶음은 모듈)과 남은 환산 대수 — 1단계가 증가 달마다 꺼내 쓴다.
+
+    차례는 호기의 기여 시작(묶음은 첫 모듈) → 이름, 묶음 안은 모듈의 기여 시작 → 이름이다 — 「먼저
+    들어온 호기부터」(2026-10-26 오후 결정, 묶음은 첫 모듈 기준 — 2026-11-01).
+    """
 
     def __init__(self, units: Sequence[NewUnit], *, reach_days: int) -> None:
         self.units = tuple(sorted(units, key=lambda unit: (unit.start, unit.name)))
-        self.left = [float(unit.units) for unit in self.units]
+        self.pieces: tuple[tuple[NewUnit, UnitModule], ...] = tuple(
+            (unit, piece)
+            for unit in self.units
+            for piece in sorted(unit.pieces, key=lambda piece: (piece.start, piece.name))
+        )
+        self.left = [float(piece.units) for _unit, piece in self.pieces]
         self.reach = timedelta(days=reach_days)
 
     def take(
         self, wanted: int, *, month: int, first_day: date
     ) -> tuple[int, list[NewUnitAssignment]]:
-        """그 달 W/D 첫날 t 에 붙일 수 있는 호기(`d ≤ t ≤ d + D`, t 에 아직 나가지 않음)의 남은 몫
-        합을 내림한 정수와 `wanted` 가운데 작은 쪽을, 기여 시작이 이른 호기부터 꺼낸다."""
+        """그 달 W/D 첫날 t 에 붙일 수 있는 몫의 남은 환산 대수 합을 내림한 정수와 `wanted` 가운데
+        작은 쪽을, 차례대로 꺼낸다. 붙일 수 있는 몫은 — 호기의 창 `d ≤ t ≤ d + D`(d = 기여 시작,
+        묶음은 첫 모듈), 그 몫(모듈)이 t 에 이미 들어왔고(결정 B2-2), t 에 호기가 아직 나가지 않은
+        것이다."""
         eligible = [
             index
-            for index, unit in enumerate(self.units)
+            for index, (unit, piece) in enumerate(self.pieces)
             if self.left[index] > NEED_TOLERANCE
             and unit.start <= first_day <= unit.start + self.reach
+            and piece.start is not None
+            and piece.start <= first_day
             and (unit.until is None or first_day < unit.until)
         ]
         taken = min(wanted, _whole_units(sum(self.left[index] for index in eligible)))
@@ -646,14 +780,16 @@ class _NewPool:
             used = min(self.left[index], remaining)
             self.left[index] -= used
             remaining -= used
-            unit = self.units[index]
+            unit, piece = self.pieces[index]
+            assert piece.start is not None
             pieces.append(
                 NewUnitAssignment(
                     unit=unit.name,
                     month=month,
                     units=_tidy(used),
-                    start=unit.start,
+                    start=piece.start,
                     end=first_day,
+                    module=piece.name,
                 )
             )
         return taken, pieces
@@ -741,6 +877,7 @@ def _validate(months: Sequence[ConstraintMonthInput], conditions: ConstraintCond
         )
     if conditions.new_unit_since is not None and not isinstance(conditions.new_unit_since, date):
         raise ValueError(f"신규 설비 기준일은 날짜여야 합니다: {conditions.new_unit_since!r}")
+    _validate_held_units(conditions.held_units)
 
     previous: int | None = None
     for row in months:
@@ -764,7 +901,7 @@ def _validate(months: Sequence[ConstraintMonthInput], conditions: ConstraintCond
             )
 
 
-def _validate_new_units(units: Sequence[NewUnit]) -> None:
+def _validate_new_units(units: Sequence[NewUnit], held: Sequence[HeldUnit]) -> None:
     names: set[str] = set()
     for unit in units:
         if not isinstance(unit, NewUnit):
@@ -781,6 +918,81 @@ def _validate_new_units(units: Sequence[NewUnit]) -> None:
         _require_positive(
             unit.units, f"신규 설비 {unit.name} 의 환산 대수가 0 보다 큰 수가 아닙니다."
         )
+        _validate_modules(
+            f"신규 설비 {unit.name}", unit.modules, unit.start, unit.units, dated=True
+        )
+    overlap = sorted(names & {unit.name for unit in held})
+    if overlap:
+        raise ValueError(
+            "보유 제약 설비로 고른 호기가 신규 설비에도 들었습니다(두 번 셉니다): "
+            + ", ".join(overlap)
+        )
+
+
+def _validate_held_units(units: Sequence[HeldUnit]) -> None:
+    if not isinstance(units, tuple):
+        raise ValueError(f"보유 제약 호기는 튜플이어야 합니다: {units!r}")
+    names: set[str] = set()
+    for unit in units:
+        if not isinstance(unit, HeldUnit):
+            raise ValueError(f"보유 제약 호기는 HeldUnit 이어야 합니다: {unit!r}")
+        if not unit.name or unit.name in names:
+            raise ValueError(f"보유 제약 호기 이름이 비었거나 겹칩니다: {unit.name!r}")
+        names.add(unit.name)
+        for label, value in (("기여 시작", unit.start), ("반출일", unit.until)):
+            if value is not None and not isinstance(value, date):
+                raise ValueError(
+                    f"보유 제약 호기 {unit.name} 의 {with_subject_particle(label)} 날짜가 "
+                    f"아닙니다: {value!r}"
+                )
+        _require_positive(
+            unit.units, f"보유 제약 호기 {unit.name} 의 환산 대수가 0 보다 큰 수가 아닙니다."
+        )
+        _validate_modules(
+            f"보유 제약 호기 {unit.name}", unit.modules, unit.start, unit.units, dated=False
+        )
+
+
+def _validate_modules(
+    owner: str,
+    modules: tuple[UnitModule, ...],
+    start: date | None,
+    units: float,
+    *,
+    dated: bool,
+) -> None:
+    """묶음 모듈 — 이름이 있고 겹치지 않으며, 환산 몫은 0 보다 크고 합이 호기 대수, 첫 모듈 날짜가
+    호기 기여 시작이다(보유는 처음부터 있는 모듈이 있으면 None).
+
+    신규(`dated`)는 기여 시작이 모듈의 첫 날보다 **이를 수 있다** — 판정 · 창은 묶음의 첫 모듈
+    날이고(2026-11-01 사용자 결정), 축 앞에 나가 축 안 기여가 없는 첫 모듈은 모듈 몫(`modules`)에
+    들지 않기 때문이다(`new_unit_availability`). 늦을 수는 없다."""
+    if not modules:
+        return
+    seen: set[str] = set()
+    for module in modules:
+        if not isinstance(module, UnitModule) or not module.name or module.name in seen:
+            raise ValueError(f"{owner} 의 모듈 이름이 비었거나 겹칩니다: {module!r}")
+        seen.add(module.name)
+        if module.start is None and dated:
+            raise ValueError(f"{owner} 의 모듈 {module.name} 기여 시작이 비었습니다.")
+        if module.start is not None and not isinstance(module.start, date):
+            raise ValueError(f"{owner} 의 모듈 {module.name} 기여 시작이 날짜가 아닙니다.")
+        _require_positive(
+            module.units, f"{owner} 의 모듈 {module.name} 환산 몫이 0 보다 큰 수가 아닙니다."
+        )
+    total = sum(module.units for module in modules)
+    if abs(total - units) > SUM_TOLERANCE * max(1.0, abs(units)):
+        raise ValueError(
+            f"{owner} 의 모듈 환산 몫 합({total:g})이 환산 대수({units:g})와 다릅니다."
+        )
+    starts = [module.start for module in modules]
+    first = min(day for day in starts if day is not None) if all(starts) else None
+    if dated:
+        if start is None or first is None or start > first:
+            raise ValueError(f"{owner} 의 기여 시작이 첫 모듈 날짜보다 늦습니다: {start!r}")
+    elif first != start:
+        raise ValueError(f"{owner} 의 기여 시작이 첫 모듈 날짜와 다릅니다: {start!r}")
 
 
 # ================================================================== 계산
@@ -801,33 +1013,18 @@ class _Plan(NamedTuple):
     modified_dedicated: int
 
 
-def simulate_constraint(
+def _plan_period(
     months: Sequence[ConstraintMonthInput],
     conditions: ConstraintConditions,
-    new_units: Sequence[NewUnit] = (),
-) -> ConstraintResult:
-    """보이는 달마다 일곱 가정으로 제약 몫·개조 비가동·배정·확보율을 내고 요약을 붙인다.
-
-    `months` 는 보이는 달 오름차순이다(띄엄띄엄이어도 된다 — 「앞 달」 은 보이는 차례의 앞 달이고,
-    보이지 않는 달에 든 비가동·신규 대기는 셈하지 않는다). `new_units` 는 기준일로 이미 거른 신규
-    호기이고 「신규 설비는 개조 없이」 가 걸릴 때만 본다. 검증에 걸리면 화면에 낼 글의 `ValueError`
-    다.
-    """
-    _validate(months, conditions)
-    takes_new = conditions.uses_new_units
-    if takes_new:
-        _validate_new_units(new_units)
+    pool_of_new: _NewPool | None,
+) -> tuple[list[_Plan], list[ModificationWindow], list[NewUnitAssignment]]:
+    """1단계 — 제약 몫(가정 7·1·3·2·4)과 개조 창. 늘어난 대수는 `FILL_ORDER`(신규 · 보유) 차례로
+    채우고 남는 개조 몫만 창을 낸다(모듈 독스트링 「개조 없이 채우는 몫」). `pool_of_new` 가 None
+    이면 신규를 쓰지 않는다."""
     cutoff = conditions.cutoff_days
-
-    # 1단계 — 제약 몫(가정 7·1·3·2·4)과 개조 창. 늘어난 대수는 `FILL_ORDER`(신규 · 보유) 차례로
-    # 채우고 남는 개조 몫만 창을 낸다(모듈 독스트링 「개조 없이 채우는 몫」).
     plans: list[_Plan] = []
     windows: list[ModificationWindow] = []
     assignments: list[NewUnitAssignment] = []
-    owned_limit = conditions.owned_units if conditions.uses_owned_units else 0
-    pool_of_new = (
-        _NewPool(new_units, reach_days=conditions.modification_days or 0) if takes_new else None
-    )
     previous_in_period = False
     previous_pool = 0
     owned_used = new_used = modified_used = 0
@@ -840,6 +1037,7 @@ def simulate_constraint(
         if not continuing:
             owned_used = new_used = modified_used = 0
         owned_step = new_step = increment = 0
+        first_day = wd_window(row.month, cutoff).first_day
         if not inside:
             pool = 0
         elif conditions.modification_days is not None:
@@ -849,13 +1047,14 @@ def simulate_constraint(
                 if unfilled <= 0:
                     break
                 if source == FILL_OWNED:
-                    owned_step = min(unfilled, owned_limit - owned_used)
+                    # 그날 있는 보유(고른 호기는 들어온 것만 · 나간 날부터 뺌) 가운데 아직 쓰지 않은
+                    # 몫. 쓴 몫은 그 호기가 뒤에 나가도 풀지 않는다(결정 B3-1 — 신규 until 과 같다).
+                    spare = _whole_units(conditions.holdings_on(first_day) - owned_used)
+                    owned_step = max(0, min(unfilled, spare))
                     unfilled -= owned_step
                 elif pool_of_new is not None:
                     new_step, pieces = pool_of_new.take(
-                        unfilled,
-                        month=row.month,
-                        first_day=wd_window(row.month, cutoff).first_day,
+                        unfilled, month=row.month, first_day=first_day
                     )
                     assignments.extend(pieces)
                     unfilled -= new_step
@@ -889,6 +1088,42 @@ def simulate_constraint(
             )
         )
         previous_in_period, previous_pool = inside, pool
+    return plans, windows, assignments
+
+
+def simulate_constraint(
+    months: Sequence[ConstraintMonthInput],
+    conditions: ConstraintConditions,
+    new_units: Sequence[NewUnit] = (),
+) -> ConstraintResult:
+    """보이는 달마다 일곱 가정으로 제약 몫·개조 비가동·배정·확보율을 내고 요약을 붙인다.
+
+    `months` 는 보이는 달 오름차순이다(띄엄띄엄이어도 된다 — 「앞 달」 은 보이는 차례의 앞 달이고,
+    보이지 않는 달에 든 비가동·신규 대기는 셈하지 않는다). `new_units` 는 기준일로 이미 거른 신규
+    호기이고 「신규 설비는 개조 없이」 가 걸릴 때만 본다. 검증에 걸리면 화면에 낼 글의 `ValueError`
+    다.
+
+    신규가 걸려도 **보유만으로 제약 기간 끝까지 다 채우면**(신규 없이 1단계를 돌려 개조 창이 없으면)
+    신규를 붙이지 않는다 — 받은 신규는 모두 기존 제품 몫이다(2026-11-01 사용자 결정 B1, `FILL_ORDER`
+    의 「신규 먼저의 대가」 를 그 경우에만 없앤다). 다 채우지 못하면 차례 그대로(신규 → 보유 → 개조)
+    다시 돌린다.
+    """
+    _validate(months, conditions)
+    takes_new = conditions.uses_new_units
+    if takes_new:
+        _validate_new_units(new_units, conditions.held_units)
+    cutoff = conditions.cutoff_days
+
+    received = (
+        _NewPool(new_units, reach_days=conditions.modification_days or 0) if takes_new else None
+    )
+    plans, windows, assignments = _plan_period(months, conditions, None)
+    skipped = False
+    if received is not None and received.units:
+        if windows:
+            plans, windows, assignments = _plan_period(months, conditions, received)
+        else:
+            skipped = any(plan.owned_increment > 0 for plan in plans)
 
     # 2단계 — 개조 비가동(가정 5)·신규 대기·배정(가정 6)·확보율·비중 견주기.
     results: list[ConstraintMonth] = []
@@ -954,6 +1189,7 @@ def simulate_constraint(
                 modified_dedicated=plan.modified_dedicated,
                 waiting=waiting,
                 waiting_shares=waits,
+                holdings=conditions.holdings_on(month_window.first_day),
             )
         )
 
@@ -971,9 +1207,10 @@ def simulate_constraint(
         starts_before_range=starts_before,
         short_months=tuple(row.month for row in month_rows if row.short),
         overdrawn_months=tuple(row.month for row in month_rows if row.overdrawn),
-        new_units=pool_of_new.units if pool_of_new is not None else (),
+        new_units=received.units if received is not None else (),
         assignments=tuple(assignments),
         waits_before_range=waits_before,
+        new_units_skipped=skipped,
     )
 
 

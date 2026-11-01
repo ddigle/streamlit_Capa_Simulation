@@ -125,6 +125,8 @@ __all__ = [
     "UNIT_EVENT_COLUMNS",
     "UNIT_MONTH_COLUMNS",
     "DynamicReadiness",
+    "HeldUnitChoice",
+    "ModuleStart",
     "NewUnitAvailability",
     "NewUnitStart",
     "ProcessEquipmentTimeline",
@@ -136,6 +138,7 @@ __all__ = [
     "downtime_loss",
     "dynamic_readiness",
     "exiting_unit_rows",
+    "held_unit_choices",
     "keep_released_units",
     "month_share",
     "new_unit_availability",
@@ -772,6 +775,21 @@ def new_unit_rows(
     return frame
 
 
+class ModuleStart(NamedTuple):
+    """묶음(모듈) 호기의 모듈 하나 — 제약 시뮬레이션이 모듈마다 제 날짜부터 세는 재료(2026-11-01
+    사용자 결정 B2-1)."""
+
+    name: str
+    """설비명(모듈 행)."""
+
+    start: date | None
+    """기여 시작(Qual 다음 날). 보유 호기 고르기(`held_unit_choices`)에서 None 이면 축 첫 W/D 날부터
+    이미 가용이다 — 신규 호기(`NewUnitStart`)는 늘 날짜다."""
+
+    units: float
+    """그 모듈의 환산비."""
+
+
 class NewUnitStart(NamedTuple):
     """신규 호기 하나의 기여 시작 · 환산 대수 · 반출 — 제약 시뮬레이션이 호기 단위로 붙이는 재료."""
 
@@ -779,13 +797,19 @@ class NewUnitStart(NamedTuple):
     """설비키(③ 의 「호기」)."""
 
     start: date
-    """기여 시작(Qual 다음 날 — 묶음은 가장 늦은 모듈, ③ 과 같은 날)."""
+    """기여 시작(Qual 다음 날). 모듈 묶음은 **첫 모듈**의 날이다(2026-11-01 사용자 결정 — 판정과
+    개조 일수 창이 이 날을 본다). ③ 의 줄은 가장 늦은 모듈 날이라 묶음은 그보다 이를 수 있다."""
 
     units: float
     """환산 대수 — 묶음이 센 모듈마다의 환산비 합. 축 안에 기여가 없는 모듈은 빠진다."""
 
     until: date | None
     """가장 이른 정지·반출/이설일정(그날부터 기여하지 않는다). 없으면 None."""
+
+    modules: tuple[ModuleStart, ...] = ()
+    """모듈이 둘 이상인 묶음의 모듈마다 기여 시작 · 환산비(축 안에 기여가 있는 모듈, 기여 시작 →
+    이름 차례). 하나짜리 호기는 빈다 — `start`·`units` 가 곧 그 모듈이다. 축 앞에 나가 축 안 기여가
+    없는 첫 모듈은 들지 않아 `start` 가 여기 첫 날보다 이를 수 있다."""
 
 
 class NewUnitAvailability(NamedTuple):
@@ -797,7 +821,7 @@ class NewUnitAvailability(NamedTuple):
 
     since: date
     units: tuple[str, ...]
-    """신규로 본 설비키(③ 의 「호기」) — `new_units` 차례(기여 시작 → 호기 번호)."""
+    """신규로 본 설비키(③ 의 「호기」) — 기여 시작(묶음은 첫 모듈) → 호기 번호 차례."""
 
     in_axis: int
     """`units` 가운데 축의 어느 달에 기여가 있는 호기 수(축 뒤 호기·축 앞에 정지·반출된 호기는
@@ -809,11 +833,16 @@ class NewUnitAvailability(NamedTuple):
 
 
 def new_unit_availability(
-    timeline: ProcessEquipmentTimeline, *, since: date
+    timeline: ProcessEquipmentTimeline, *, since: date, excluded: Iterable[str] = ()
 ) -> NewUnitAvailability:
-    """`new_units` 가운데 기여 시작(Qual 다음 날 — 묶음은 가장 늦은 모듈)이 `since` 이후(그날
-    포함)인 호기와 그 기여 시작 · 환산 대수 · 반출. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ③·④ 와
-    같은 객체)을 거르기만 한다.
+    """`new_units` 가운데 기여 시작(Qual 다음 날)이 `since` 이후(그날 포함)인 호기와 그 기여 시작 ·
+    환산 대수 · 반출. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ③·④ 와 같은 객체)을 거르기만 한다.
+
+    모듈 묶음은 **첫 모듈 날짜**로 판정한다(2026-11-01 사용자 결정 — 첫 모듈이 기준일 전인 묶음은
+    신규가 아니다). 모듈마다의 기여 시작은 `모듈별 Qual` 의 다음 날이고 `NewUnitStart.modules` 에
+    싣는다 — 어느 증가에 어느 모듈을 붙일지는 계산 서비스가 정한다(뒤 모듈은 제 날짜부터).
+    `excluded` 의 설비키(보유 제약 설비로 고른 호기 — 결정 B3)는 신규 후보에서 뺀다(두 번 세지
+    않게).
 
     환산 대수는 모듈마다의 환산비를 더한 것이다 — 환산비는 `unit_months` 의 비가동 없음 기여에서
     되짚는다(환산대수 = 환산비 × 기여일수 ÷ 구간일수). 모듈 이름으로 묶는다 — 묶음 안에 대상이 아닌
@@ -822,28 +851,59 @@ def new_unit_availability(
     보지 않는다.
     """
     ratios = _module_ratios(timeline.unit_months)
-    units: list[str] = []
-    starts: list[NewUnitStart] = []
+    skip = {str(unit).strip() for unit in excluded}
+    found: list[tuple[date, str, NewUnitStart | None]] = []
     for row in _records(timeline.new_units):
-        start = _as_date(row["기여 시작"])
-        if start is None or start < since:
-            continue
         unit = str(row["호기"])
-        units.append(unit)
-        weight = _tidy(sum(ratios.get(name, 0.0) for name in _module_names(row)))
-        if weight > 0:
-            starts.append(NewUnitStart(unit, start, weight, _as_date(row["반출이설일"])))
+        if unit in skip:
+            continue
+        modules = _module_starts(row)
+        if not modules:
+            continue
+        first = min(start for _name, start in modules)
+        if first < since:
+            continue
+        pieces = tuple(
+            ModuleStart(name, start, _tidy(ratios[name]))
+            for name, start in sorted(modules, key=lambda module: (module[1], module[0]))
+            if ratios.get(name, 0.0) > 0
+        )
+        weight = _tidy(sum(piece.units for piece in pieces))
+        entry = (
+            NewUnitStart(
+                unit,
+                first,
+                weight,
+                _as_date(row["반출이설일"]),
+                pieces if len(modules) > 1 else (),
+            )
+            if weight > 0
+            else None
+        )
+        found.append((first, unit, entry))
+    found.sort(key=lambda item: (item[0], *_unit_order(item[1])))
+    starts = tuple(entry for _first, _unit, entry in found if entry is not None)
     return NewUnitAvailability(
-        since=since, units=tuple(units), in_axis=len(starts), starts=tuple(starts)
+        since=since,
+        units=tuple(unit for _first, unit, _entry in found),
+        in_axis=len(starts),
+        starts=starts,
     )
 
 
-def _module_names(row: Mapping[str, object]) -> tuple[str, ...]:
-    """`new_units` 한 행의 모듈 이름(묶음은 `모듈별 Qual` 튜플, 하나면 `설비명`)."""
+def _module_starts(row: Mapping[str, object]) -> tuple[tuple[str, date], ...]:
+    """`new_units` 한 행의 모듈마다 (이름, 기여 시작 = Qual 다음 날). 하나짜리 호기는 그 행의
+    `기여 시작`."""
     pairs = row["모듈별 Qual"]
     if isinstance(pairs, tuple) and pairs:
-        return tuple(str(name).strip() for name, _qual in pairs)
-    return (str(row[EQUIPMENT_ID_COLUMN]).strip(),)
+        found: list[tuple[str, date]] = []
+        for name, qual in pairs:
+            day = _as_date(qual)
+            if day is not None:
+                found.append((str(name).strip(), day + _ONE_DAY))
+        return tuple(found)
+    start = _as_date(row["기여 시작"])
+    return () if start is None else ((str(row[EQUIPMENT_ID_COLUMN]).strip(), start),)
 
 
 def _module_ratios(unit_months: pd.DataFrame) -> dict[str, float]:
@@ -861,6 +921,132 @@ def _module_ratios(unit_months: pd.DataFrame) -> dict[str, float]:
             continue
         ratios[name] = float(value) * int(span) / int(used)
     return ratios
+
+
+class HeldUnitChoice(NamedTuple):
+    """보유 제약 설비 「호기 고르기」 의 선택지 하나 — 그 공정 세션 설비 시나리오의 호기(설비키)
+    (2026-11-01 사용자 결정 B3). 날짜는 축 첫 W/D 날 · 끝 W/D 날로 다듬어 둔다 — 축 안에서 뜻이
+    없는 날은 None 이다."""
+
+    unit: str
+    """설비키(③ 의 「호기」 와 같은 이름)."""
+
+    model: str | None
+    existing: str | None
+    """기존설비여부(모듈 값을 「, 」 로 잇는다)."""
+
+    units: float
+    """환산 대수 — 센 모듈마다의 환산비 합(설비 일정 기준 가용이 곱하는 바로 그 값)."""
+
+    start: date | None
+    """첫 모듈의 기여 시작. 축 첫 W/D 날 이전부터 가용이면 None."""
+
+    until: date | None
+    """가장 이른 정지·반출/이설일정(그날부터 보유에서 뺀다 — 결정 B3-1). 축 끝 W/D 날 뒤면 None."""
+
+    until_kind: str | None
+    """`until` 이 온 컬럼의 구분(「정지」·「반출/이설」)."""
+
+    modules: tuple[ModuleStart, ...] = ()
+    """모듈이 둘 이상인 묶음의 모듈마다 기여 시작 · 환산비(기여 시작 → 이름 차례). 하나짜리 호기는
+    빈다."""
+
+
+def held_unit_choices(
+    equipment: pd.DataFrame,
+    *,
+    process: str,
+    cutoff_days: float,
+    months: Sequence[int],
+) -> tuple[HeldUnitChoice, ...]:
+    """그 공정에서 보유 제약 설비로 고를 수 있는 호기(설비키) — 호기 번호 차례.
+
+    대상은 그 공정(`공정소분류` 완전 일치)의 보관 N · 사용기준 HBM·EDP 이고 가용이 될 수 있는 행 —
+    기존설비 Y, 또는 Qual 일정이 있는 기존설비 N 이다(설비 일정 기준 가용에 드는 모듈과 같다).
+    모듈마다 기여 시작은 기존설비 Y 면 처음부터, N 이면 Qual 다음 날(③ 과 같은 규칙)이고 환산비는
+    마스터 `환산비` 다. 묶음의 정지·반출/이설은 가장 이른 날(③ 의 ▼ 와 같은 규칙)이다. 축(첫 달 W/D
+    첫날 ~ 끝 달 W/D 끝 날)에 하루도 있지 않은 호기와, 축 뒤에 들어오는 모듈은 뺀다 — 고를 뜻이
+    없다(환산 합에도 들지 않는다).
+
+    공정 하나만 고르고 구간·월별 기여는 만들지 않는다(가볍다 — 제약 영향 모드가 매 회차 쓴다).
+    """
+    ordered = sorted({int(month) for month in months})
+    if not ordered:
+        return ()
+    name = str(process).strip()
+    # 그 공정 행만 다듬는다 — 묶음은 검증이 같은 공정으로 막아 두어 쪼개지지 않고, 다듬기는 공정명을
+    # 앞뒤 공백만 떼므로 거르기 전후가 같다. 마스터 전체 검증은 같은 회차의 계획이 이미 했다.
+    if "공정소분류" in equipment.columns:
+        equipment = equipment.loc[_process_mask(equipment["공정소분류"], name).to_numpy()]
+    prepared = prepare_equipment_master(equipment)
+    if prepared.empty:
+        return ()
+    existing_rows = prepared["기존설비여부"].eq("Y")
+    eligible = (
+        (
+            _process_mask(prepared["공정소분류"], name)
+            & prepared[STORAGE_FLAG_COLUMN].eq("N")
+            & counts_for_capacity(prepared)
+            & (existing_rows | prepared["Qual일정"].notna())
+        )
+        .fillna(False)
+        .astype("bool")
+        .to_numpy()
+    )
+    chosen = prepared.loc[eligible]
+    if chosen.empty:
+        return ()
+    first_day = wd_window(ordered[0], cutoff_days).first_day
+    last_day = wd_window(ordered[-1], cutoff_days).boundary_end
+    keys = unit_keys(prepared).loc[chosen.index].astype(str)
+    ratios = {
+        str(unit).strip(): float(ratio)
+        for unit, ratio in zip(
+            chosen[EQUIPMENT_ID_COLUMN], chosen[CONVERSION_RATIO_COLUMN], strict=True
+        )
+    }
+    groups: dict[str, list[dict[str, object]]] = {}
+    for key, record in zip(keys, chosen.to_dict("records"), strict=True):
+        groups.setdefault(key, []).append({str(column): value for column, value in record.items()})
+    found: list[HeldUnitChoice] = []
+    for key, members in groups.items():
+        members.sort(key=lambda member: str(member[EQUIPMENT_ID_COLUMN]))
+        exit_day, exit_kind = _earliest_exit(members)
+        if exit_day is not None and exit_day <= first_day:
+            continue
+        pieces: list[ModuleStart] = []
+        for member in members:
+            module = str(member[EQUIPMENT_ID_COLUMN]).strip()
+            qual = _as_date(member["Qual일정"])
+            start = None if member["기존설비여부"] == "Y" or qual is None else qual + _ONE_DAY
+            if start is not None and start <= first_day:
+                start = None
+            # 축 끝 W/D 날 뒤에 들어오는 모듈은 축 안 가용에 들지 않는다 — 환산 합에서도 뺀다.
+            if start is None or start <= last_day:
+                pieces.append(ModuleStart(module, start, _tidy(ratios[module])))
+        if not pieces:
+            continue
+        pieces.sort(key=lambda piece: (piece.start or date.min, piece.name))
+        dated = [piece.start for piece in pieces if piece.start is not None]
+        first = min(dated) if len(dated) == len(pieces) else None
+        weight = _tidy(sum(piece.units for piece in pieces))
+        if weight <= 0:
+            continue
+        keep_exit = exit_day is not None and exit_day <= last_day
+        found.append(
+            HeldUnitChoice(
+                unit=key,
+                model=_distinct_text(member["Model"] for member in members),
+                existing=_distinct_text(member["기존설비여부"] for member in members),
+                units=weight,
+                start=first,
+                until=exit_day if keep_exit else None,
+                until_kind=exit_kind if keep_exit else None,
+                modules=tuple(pieces) if len(pieces) > 1 else (),
+            )
+        )
+    found.sort(key=lambda choice: _unit_order(choice.unit))
+    return tuple(found)
 
 
 def exiting_unit_rows(

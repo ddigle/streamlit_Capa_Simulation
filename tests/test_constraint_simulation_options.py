@@ -43,6 +43,7 @@ from capa_simulation.services.constraint_simulation import (
     FILL_NEW,
     FILL_OWNED,
     ConstraintConditions,
+    ConstraintMonthInput,
     ConstraintResult,
     FillSource,
     NewUnit,
@@ -434,28 +435,49 @@ def test_new_units_go_before_owned_units() -> None:
     _assert_conserved(result)
 
 
-def test_new_first_waits_even_when_the_owned_units_would_cover_the_period() -> None:
-    """신규 먼저의 대가 — 보유만으로 기간을 다 덮어도 그날 붙일 수 있는 신규를 먼저 붙여 대기가
-    선다(합성: 보유 2 · 5/20 신규 한 대 · 필요 6월 2 그대로, 개조 30일).
-
-    6월 증가 2 = 신규 1(5/20 → 5/25, 대기 5일) + 보유 1. 5월 W/D(4/24~5/24, 31일)에 대기 1 × 5/31 이
-    빠진다. 보유 먼저였다면 보유 2 로 덮고 그 신규는 일반 설비라 대기가 없다. 개조는 둘 다 0 이다.
-    """
-    months = [
+def _covering_months() -> list[ConstraintMonthInput]:
+    """보유가 기간을 덮는지 견주는 합성 — 필요 6월 2 그대로, 5월은 기간 밖."""
+    return [
         _one(202705, required=20, available=30),
         _one(202706, required=20, available=30, demand=2),
         _one(202707, required=20, available=30, demand=2),
     ]
+
+
+def test_owned_units_covering_the_period_skip_the_new_units() -> None:
+    """보유만으로 기간을 다 덮으면 신규를 붙이지 않는다(2026-11-01 사용자 결정 B1 — 합성: 보유 2 ·
+    5/20 신규 한 대 · 필요 6월 2 그대로, 개조 30일).
+
+    옛 차례(신규 먼저)는 6월 증가 2 = 신규 1(5/20 → 5/25, 대기 5일) + 보유 1 이라 5월에 대기 1 ×
+    5/31 이 빠졌다. 이제 보유 2 로 덮고 그 신규는 기존 제품 몫이라 대기가 없다. 개조는 둘 다 0 이다.
+    """
     conditions = ConstraintConditions(
         202706, 202707, 1.0, 30, 7, owned_units=2, new_unit_since=SINCE
     )
-    result = simulate_constraint(months, conditions, (_unit("N1", date(2027, 5, 20)),))
+    result = simulate_constraint(_covering_months(), conditions, (_unit("N1", date(2027, 5, 20)),))
+    june = result.month(202706)
+    assert (june.new_increment, june.owned_increment, june.increment) == (0, 2, 0)
+    assert result.assignments == ()
+    assert all(row.waiting == 0.0 for row in result.months)
+    assert result.new_units_skipped
+    assert [unit.name for unit in result.ordinary_units] == ["N1"]
+    assert result.kpis.modified_units == 0
+    assert (result.kpis.owned_used, result.kpis.new_used) == (2, 0)
+    _assert_conserved(result)
+
+
+def test_owned_units_short_of_the_period_keep_the_new_first_order() -> None:
+    """보유 1 이면 기간을 덮지 못해(보유만으로는 6월 개조 1) 차례 그대로 신규 먼저다 — 6월 증가 2 =
+    신규 1(대기 5일) + 보유 1, 개조 0. 5월 W/D(4/24~5/24, 31일)에 대기 1 × 5/31."""
+    conditions = ConstraintConditions(
+        202706, 202707, 1.0, 30, 7, owned_units=1, new_unit_since=SINCE
+    )
+    result = simulate_constraint(_covering_months(), conditions, (_unit("N1", date(2027, 5, 20)),))
     june = result.month(202706)
     assert (june.new_increment, june.owned_increment, june.increment) == (1, 1, 0)
     assert _assignments(result) == [("N1", 202706, 1.0, 5)]
     assert result.month(202705).waiting == pytest.approx(5 / 31)
-    assert result.kpis.modified_units == 0
-    assert result.kpis.owned_used == 1
+    assert not result.new_units_skipped
     _assert_conserved(result)
 
 
