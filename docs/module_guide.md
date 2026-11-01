@@ -23,7 +23,7 @@
 2. 이 문서(docs/module_guide.md)만 따른다. CLAUDE.md·AGENTS.md 는 코어 규칙이라 네 일이 아니다.
 3. 코어는 capa_simulation.module_api 하나만 import 한다. 같은 모듈의 파일은 from modules.<id> import <이름> 으로 부른다.
 4. 패키지를 설치하지 않는다(uv add·uv pip·pip install·uv sync 모두). 필요하면 담당자에게 「<id>: <패키지>==<판> <까닭>」 한 줄을 앱 관리자에게 전해 달라고 한다.
-5. 앱 관리자의 승인은 이 대화 안에서 받을 수 없다. 새 모듈을 처음 올리는 것·폴더 밖 변경·성숙도 L2 는 담당자가 앱 관리자에게 승인을 받아 온 뒤에만 하고, 커밋 본문에 「승인: 앱 관리자 <YYYY-MM-DD>」 를 적는다.
+5. 앱 관리자의 승인은 이 대화 안에서 받을 수 없다. 새 모듈을 처음 올리는 것·성숙도 L2 는 담당자가 앱 관리자에게 승인을 받아 온 뒤에만 하고, 커밋 본문에 「승인: 앱 관리자 <YYYY-MM-DD>」 를 적는다. 폴더 밖 변경은 승인을 받아도 네가 하지 않는다 — 담당자가 앱 관리자에게 전하고, 앱 관리자가 승인하면 「사외 요청」 으로 사외가 고쳐 배포한다.
 6. 커밋은 module(<id>): <무엇> 이고 modules/<id>/ 만 담는다(파일 이름으로 git add — git add -A·git add .·git commit -a 금지). 푸시는 담당자가 한다.
 7. 푸시가 거절되면 git pull --rebase 뒤 다시 푸시한다. git push --force·--force-with-lease 는 절대 쓰지 않는다 — 앱 관리자의 배포 기록이 사라진다.
 8. 위젯 콜백은 ctx.callback(함수) 로, 프래그먼트·팝업 본문은 with ctx.guard(): 로 감싼다. st.cache_* 는 modules/<id>/cache.py 에만 둔다.
@@ -233,8 +233,11 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
    ```
 
 4. 점검을 돌린다 — `uv run --no-sync python scripts/check_module.py demo_hello`. 뼈대는 그대로 「통과」 다.
-5. 커밋한다(8장) — `git add modules/demo_hello` 뒤 `git commit -m "module(demo_hello): 새 모듈 뼈대"`. 커밋 본문에
-   `승인: 앱 관리자 <YYYY-MM-DD>` 를 적는다.
+5. 커밋한다(8장) — `git add modules/demo_hello` 뒤 커밋 본문에 승인 줄을 넣어 친다(둘째 `-m` 이 본문이다).
+
+   ```powershell
+   git commit -m "module(demo_hello): 새 모듈 뼈대" -m "승인: 앱 관리자 <YYYY-MM-DD>"
+   ```
 
 ### 3-8. 예시 모듈 — 데이터 · 도움 코드 · 캐시가 있는 꼴 (`demo_memo`)
 
@@ -640,8 +643,12 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
 - 이름으로 스테이징한다 — 파일(`git add modules/<id>/page.py`)이나 자기 폴더(`git add modules/<id>`). `git add -A` · `git add .` ·
   `git commit -a` 는 쓰지 않는다.
 - `data/modules/` 는 커밋하지 않는다(git 이 무시한다). 다른 폴더의 파일이 스테이징돼 있으면 커밋하지 말고 담당자에게 알린다.
-- 앱 관리자의 승인이 필요한 커밋 — 새 모듈의 첫 커밋 · `modules/<id>/` 밖의 변경 · 성숙도 `L2` — 은 커밋 본문에
-  `승인: 앱 관리자 <YYYY-MM-DD>` 를 적는다. 승인은 담당자가 앱 관리자에게 받아 온다. 이 대화 안에서는 받을 수 없다.
+- 앱 관리자의 승인이 필요한 커밋 — 새 모듈의 첫 커밋 · 성숙도 `L2` — 은 커밋 본문에 `승인: 앱 관리자 <YYYY-MM-DD>` 를 적는다
+  (`git commit -m "module(<id>): <무엇>" -m "승인: 앱 관리자 <YYYY-MM-DD>"` — 둘째 `-m` 이 본문이다). 승인은 담당자가 앱 관리자에게
+  받아 온다. 이 대화 안에서는 받을 수 없다.
+- **`modules/<id>/` 밖의 변경은 승인을 받아도 커밋하지 않는다.** 밖은 코어(사외가 정본 — 다음 배포가 덮는다)이거나 다른 모듈(그 담당자 몫)이다.
+  배포 적용 쪽(런북 1-7)은 폴더 밖을 바꾼 모듈 커밋을 받지 않는다. 밖이 바뀌어야 하면 담당자가 앱 관리자에게 전하고, 앱 관리자가 승인하면
+  「사외 요청」 으로 사외가 고쳐 배포한다(패키지는 6장).
 
 ### 8-2. 올리기
 
@@ -659,12 +666,14 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
 
 ### 8-3. 기본값 셋 — 바꿀 수 있다
 
-아래 셋은 2026-11-01 에 「권장대로」 정한 기본값이다. 앱 관리자가 바꿀 수 있고, 바뀌면 이 문서를 고친다.
+아래 셋은 앱 관리자가 2026-11-01 에 「권장대로」 라고 맡겨, 이 앱을 만드는 쪽(사외)의 에이전트가 정한 기본값이다 — 앱 관리자가 하나하나
+고른 것이 아니다. 앱 관리자가 바꿀 수 있고, 바뀌면 이 문서를 고친다.
 
 1. 자리는 `modules/<id>/` 이고, 사이드바에 별도 상자 「사내 모듈」 하나를 둔다. 켜진 모듈이 없으면 상자를 숨긴다.
 2. 새 패키지는 모듈이 직접 넣지 않는다. 「사외 요청」 으로 받아 코어 의존성으로 배포한다(6장).
-3. 새 모듈 등록과 `modules/<id>/` 밖의 변경은 앱 관리자의 승인이 필요하다. 자기 폴더 안은 담당자가 커밋한다(사내 PR 이 되면 앱 관리자가
-   승인하는 PR, 안 되면 자기 폴더만 바꾸는 직접 커밋). 앱 관리자는 배포를 적용할 때마다 모듈 점검 결과를 본다.
+3. 새 모듈 등록과 `modules/<id>/` 밖의 변경은 앱 관리자의 승인이 필요하다(밖의 변경은 승인되면 「사외 요청」 으로 사외가 한다 — 8-1).
+   자기 폴더 안은 담당자가 커밋한다(사내 PR 이 되면 앱 관리자가 승인하는 PR, 안 되면 자기 폴더만 바꾸는 직접 커밋). 앱 관리자는 배포를
+   적용할 때마다 모듈 점검 결과를 본다.
 
 ### 8-4. 담당자 클론의 Claude 설정
 
@@ -796,7 +805,7 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
 | 자리 | 누가 감싸나 | 너는 |
 |---|---|---|
 | 화면 본문(파일 맨 위부터 끝까지) | 앱이 감싼다 — `SystemExit` 까지 잡는다 | 할 일 없다 |
-| 위젯 콜백(`on_click` 등) | **너** — `on_click=ctx.callback(함수)` | 늘 감싼다(M18). 콜백 오류는 다음 화면 맨 위에 「방금 한 동작에서 오류가 났습니다」 카드로 보인다 |
+| 위젯 콜백(`on_click` 등) | **너** — `on_click=ctx.callback(함수)` | 늘 감싼다(M18). 콜백 오류는 누른 뒤 다시 그려진 그 화면 맨 위에 「방금 한 동작에서 오류가 났습니다」 카드로 보인다 |
 | 프래그먼트(`@st.fragment`) · 팝업(`@st.dialog`) 본문 | **너** — 본문을 `with ctx.guard():` 로 | 늘 감싼다. 프래그먼트만 다시 도는 회차는 앱 바깥이라, 감싸지 않으면 Streamlit 이 오류 전문(서버 경로 포함)을 그린다 |
 
 ```python
@@ -948,11 +957,11 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. 모듈 폴더가 �
 ```text
 모듈 점검 — 뿌리 modules/ · 2개 = 통과 1 + 꺼짐 0 + 실패 1
 - m1 demo_memo 통과 · L0 · API 1.0 · 화면 1 · 경고 0 · ruff ok · 시험 2 통과
-- m2 demo_table 실패 · API 1.0 · 오류 1(M19 1) · ruff ok · 시험 1 통과
+- m2 demo_draft 실패 · API 1.0 · 오류 1(M19 1) · ruff ok · 시험 1 통과
 판 분포: api1 2
 제3자 패키지: pandas
 자세히
-  m2 demo_table 오류 M19 page.py:14 use_container_width — width="stretch" 로 바꾸세요
+  m2 demo_draft 오류 M19 page.py:14 use_container_width — width="stretch" 로 바꾸세요
 전송용 요약: 모듈 2 = 통과 1 + 꺼짐 0 + 실패 1; api1 2; 패키지 pandas; ng m2 오류1
 ```
 
