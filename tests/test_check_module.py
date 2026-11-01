@@ -203,6 +203,15 @@ def test_the_unwrapped_fixture_keys_are_caught(tmp_path: Path) -> None:
     assert "M08 error demo_keys_page.py" in _static(folder)
 
 
+def test_the_crash_fixture_missing_package_is_caught_through_importlib(tmp_path: Path) -> None:
+    """견본 demo_crash 는 없는 패키지를 `importlib.import_module("…")` 로 부른다.
+
+    앱에서는 그 화면이 import 오류 카드가 된다 — 점검이 미리 M09 로 잡는다(글자 상수 동적 import).
+    """
+    folder = _fixture_copy(tmp_path / "modules", "demo_crash")
+    assert "M09 error demo_crash_import.py" in _static(folder)
+
+
 # ------------------------------------------------------------------ 규칙마다(정적)
 
 
@@ -246,12 +255,49 @@ def test_the_unwrapped_fixture_keys_are_caught(tmp_path: Path) -> None:
         ("import modules\n", ("M06", "error")),
         ("import app_pages.home\n", ("M06", "error")),
         ("from scripts import check_module\n", ("M06", "error")),
+        # 창구 겉면(`module_api.__all__`) 밖 이름 — import·속성 어느 쪽으로도 코어 설정에 닿는다.
+        ("from capa_simulation.module_api import module_registry\n", ("M06", "error")),
+        (
+            "from capa_simulation import module_api as api\n"
+            "PATH = api.module_registry.settings.DUCKDB_PATH\n",
+            ("M06", "error"),
+        ),
+        (
+            "import capa_simulation.module_api\nPATH = capa_simulation.settings.DUCKDB_PATH\n",
+            ("M06", "error"),
+        ),
+        # 글자 상수로 부르는 동적 import 도 같은 규칙이다.
+        (
+            'import importlib\nimportlib.import_module("capa_simulation.settings")\n',
+            ("M06", "error"),
+        ),
+        ('__import__("threading")\n', ("M10", "error")),
+        (
+            'from importlib import import_module\nimport_module("demo_not_installed_package")\n',
+            ("M09", "error"),
+        ),
         ('PATH = "data/input/Core_Data.csv"\n', ("M07", "error")),
         ('PATH = "data\\\\temp\\\\x.csv"\n', ("M07", "error")),
         ('NAME = "capa_simulation.duckdb"\n', ("M07", "error")),
         ('NAME = "equipment_availability.duckdb"\n', ("M07", "error")),
         ('NAME = ".deploy/applied.json"\n', ("M07", "error")),
         ('NAME = "data/sample.csv"\n', ("M07", "warning")),
+        # 마디로 나눠 이은 코어 데이터 자리와 모듈 데이터 자리 밖으로 올라가기.
+        (
+            'from pathlib import Path\nPATH = Path(__file__).parents[2] / "data" / "input"\n',
+            ("M07", "error"),
+        ),
+        ('import os\nPATH = os.path.join("data", "temp", "x.csv")\n', ("M07", "error")),
+        (
+            "from capa_simulation import module_api as api\nctx = api.context(__file__)\n"
+            "PATH = ctx.data_dir.parent\n",
+            ("M07", "error"),
+        ),
+        (
+            "from capa_simulation import module_api as api\nctx = api.context(__file__)\n"
+            'PATH = ctx.data_dir / ".." / "x.csv"\n',
+            ("M07", "error"),
+        ),
         ("import threading\n", ("M10", "error")),
         ("import subprocess\n", ("M10", "error")),
         ("from concurrent.futures import ThreadPoolExecutor\n", ("M10", "error")),
@@ -284,6 +330,12 @@ def test_the_unwrapped_fixture_keys_are_caught(tmp_path: Path) -> None:
         ("import builtins\nbuiltins.print = len\n", ("M11", "error")),
         ('import plotly.io as pio\npio.templates.default = "plotly_dark"\n', ("M11", "error")),
         ('import warnings\nwarnings.filterwarnings("ignore")\n', ("M11", "warning")),
+        # 별명으로 비켜 간 캐시 장식자(화면 파일).
+        (
+            "import streamlit as st\ncache = st.cache_data\n\n\n@cache\ndef load() -> int:\n"
+            "    return 1\n",
+            ("M12", "error"),
+        ),
         (
             "import streamlit as st\n\n\ndef boom() -> None:\n    pass\n\n\n"
             'st.button("x", key="mod_demo_x__b", on_click=boom)\n',
@@ -291,6 +343,12 @@ def test_the_unwrapped_fixture_keys_are_caught(tmp_path: Path) -> None:
         ),
         (
             'import streamlit as st\nst.button("x", key="mod_demo_x__b", on_click=lambda: None)\n',
+            ("M18", "error"),
+        ),
+        # 위치로 넘긴 콜백(`st.button(label, key, help, on_click)`).
+        (
+            "import streamlit as st\n\n\ndef boom() -> None:\n    pass\n\n\n"
+            'st.button("x", "mod_demo_x__b", None, boom)\n',
             ("M18", "error"),
         ),
         (
@@ -318,6 +376,15 @@ def test_each_forbidden_pattern_is_flagged(
         "import streamlit as st\n\n\n@st.fragment\ndef tick() -> None:\n    pass\n",
         'import streamlit as st\nst.markdown("**굵게**")\n',
         'import os\nVALUE = os.environ.get("X", "")\n',
+        "from capa_simulation.module_api import ModuleContext, palette\n",
+        "from capa_simulation import module_api as api\nCOLORS = api.palette()\n",
+        'import importlib\nPANDAS = importlib.import_module("pandas")\n',
+        # 마디 경계에서만 맞댄다 — 모듈 데이터 자리 안의 `data/input.csv` 는 코어 자리가 아니다.
+        (
+            "from capa_simulation import module_api as api\nctx = api.context(__file__)\n"
+            'PATH = ctx.data_dir / "data" / "input.csv"\n'
+        ),
+        "import streamlit as st\nstate = st.session_state\n",
     ],
 )
 def test_allowed_patterns_raise_nothing(tmp_path: Path, body: str) -> None:
@@ -328,6 +395,11 @@ def test_allowed_patterns_raise_nothing(tmp_path: Path, body: str) -> None:
     ("body", "flagged"),
     [
         ('import streamlit as st\nst.text_input("x", key="x")\n', True),
+        # 위치로 넘긴 키(`st.button(label, key, …)`·`st.checkbox(label, value, key)`).
+        ('import streamlit as st\nst.button("x", "plain")\n', True),
+        ('import streamlit as st\ncol = st.container()\ncol.checkbox("x", False, "plain")\n', True),
+        ('import streamlit as st\nst.button("x", "mod_demo_x__go")\n', False),
+        ('import streamlit as st\nst.text_input("x", "기본값")\n', False),
         (
             "import streamlit as st\nfrom capa_simulation import module_api as api\n"
             'ctx = api.context(__file__)\nst.text_input("x", key=ctx.key("x"))\n',

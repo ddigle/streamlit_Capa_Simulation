@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import importlib.metadata
 import json
 import os
@@ -100,6 +101,22 @@ _SESSION_METHODS: Final = frozenset(
 )
 _CALLBACK_KEYWORDS: Final = ("on_change", "on_click", "on_submit", "on_select", "on_dismiss")
 _MODULE_API: Final = "capa_simulation.module_api"
+# 글자 상수 하나로 모듈을 불러오는 호출 — 같은 import 규칙(M06·M09·M10)으로 본다.
+_DYNAMIC_IMPORTS: Final = frozenset(
+    {"importlib.import_module", "importlib.__import__", "builtins.__import__"}
+)
+# 경로 마디를 잇는 호출 — 이은 글이 코어 데이터 자리를 가리키는지 본다(M07).
+_PATH_JOINERS: Final = frozenset(
+    {
+        "os.path.join",
+        "posixpath.join",
+        "ntpath.join",
+        "pathlib.Path",
+        "pathlib.PurePath",
+        "pathlib.PurePosixPath",
+        "pathlib.PureWindowsPath",
+    }
+)
 _CORE_TOP_NAMES: Final = frozenset({"app", "app_pages", "scripts", "tests"})
 _TEST_ONLY_PACKAGES: Final = frozenset({"pytest", "_pytest"})
 
@@ -549,8 +566,12 @@ class _Names:
                     resolved = self.resolve(value)
                 finally:
                     self._resolving.discard(node.id)
-                # 별명으로 믿는 것은 세션·주소 칸뿐이다(`state = st.session_state`).
-                if resolved in (_SESSION_STATE, _QUERY_PARAMS):
+                # 별명으로 믿는 것은 Streamlit 이름뿐이다(`state = st.session_state`·
+                # `cache = st.cache_data`·`sb = st.sidebar`) — 금지 이름을 별명으로 비켜 가지
+                # 못하게.
+                if resolved is not None and (
+                    resolved == "streamlit" or resolved.startswith("streamlit.")
+                ):
                     return resolved
             return None
         if isinstance(node, ast.Attribute):
@@ -610,6 +631,36 @@ class _FileContext:
     def add(self, rule: str, level: Level, node: ast.AST | int, message: str) -> None:
         line = node if isinstance(node, int) else int(getattr(node, "lineno", 0))
         self.findings.append(Finding(rule, level, self.rel, line, message))
+
+
+@functools.lru_cache(maxsize=1)
+def module_api_names() -> frozenset[str]:
+    """`capa_simulation.module_api.__all__` — 모듈이 창구에서 쓸 수 있는 이름(겉면) 전부."""
+    from capa_simulation import module_api
+
+    return frozenset(module_api.__all__)
+
+
+def _outside_surface(resolved: str) -> str | None:
+    """`capa_simulation.<…>` 참조가 창구 겉면 밖으로 처음 벗어난 마디까지의 이름(아니면 None).
+
+    마디마다 한 번만 걸리게 벗어난 그 마디에서만 이름을 돌려준다 — `api.module_registry.settings`
+    는 `…module_api.module_registry` 하나로 센다.
+    """
+    parts = resolved.split(".")
+    if parts[0] != "capa_simulation" or len(parts) == 1:
+        return None
+    if parts[1] != "module_api":
+        return resolved if len(parts) == 2 else None
+    if len(parts) == 3 and parts[2] not in module_api_names():
+        return resolved
+    return None
+
+
+def _root_name(node: ast.AST) -> ast.Name | None:
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node if isinstance(node, ast.Name) else None
 
 
 def _short(text: str, limit: int = 30) -> str:
@@ -689,6 +740,15 @@ def _check_one_import(
     if top == "__future__":
         return
     if top == "capa_simulation":
+        if module == _MODULE_API and member not in (None, "*") and member not in module_api_names():
+            context.add(
+                "M06",
+                "error",
+                node,
+                f"`{member}` 은 창구 겉면(`module_api.__all__`) 밖의 코어 이름입니다 — "
+                "겉면 이름만 씁니다",
+            )
+            return
         if full == _MODULE_API or full.startswith(_MODULE_API + ".") or module == _MODULE_API:
             return
         context.add(
@@ -910,10 +970,40 @@ def _check_references(tree: ast.Module, names: _Names, context: _FileContext) ->
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Name, ast.Attribute)):
             continue
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in ("parent", "parents")
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "data_dir"
+        ):
+            context.add(
+                "M07",
+                "error",
+                node,
+                f"`data_dir.{node.attr}` 는 모듈 데이터 자리 밖(코어 `data/`)입니다 — "
+                "`ctx.data_dir` 안만 씁니다",
+            )
         resolved = names.resolve(node)
         if resolved is None:
             continue
         _reference_rules(node, resolved, context)
+        outside = _outside_surface(resolved)
+        root = _root_name(node)
+        # import 문이 이미 M06 으로 걸린 이름(`from capa_simulation import settings`)은 다시 세지
+        # 않는다 — 허용된 import(`capa_simulation.module_api`·그 별명)로 들어와 속성으로 벗어난
+        # 것만 본다.
+        if (
+            outside is not None
+            and root is not None
+            and names.aliases.get(root.id) in ("capa_simulation", _MODULE_API)
+        ):
+            context.add(
+                "M06",
+                "error",
+                node,
+                f"`{_short(outside.replace(_MODULE_API, 'api'), 50)}` 은 창구 겉면"
+                "(`module_api.__all__`) 밖의 코어 이름입니다 — 겉면 이름만 씁니다",
+            )
         if context.is_test:
             continue
         if resolved in _BACKGROUND_CALLS or resolved.startswith(_BACKGROUND_PREFIXES):
@@ -956,6 +1046,7 @@ def _check_calls(tree: ast.Module, names: _Names, context: _FileContext) -> None
                 context.add(
                     "M10", "error", node, f"`{node.func.id}()` — 모듈은 프로세스를 끝내지 않습니다"
                 )
+        _check_dynamic_import(node, resolved, names, context)
         _check_unsafe_html(node, names, context)
         _check_widget_keywords(node, names, context)
         if resolved is not None:
@@ -985,6 +1076,98 @@ def _check_calls(tree: ast.Module, names: _Names, context: _FileContext) -> None
         _check_file_write(node, names, context)
 
 
+def _check_dynamic_import(
+    node: ast.Call, resolved: str | None, names: _Names, context: _FileContext
+) -> None:
+    """`importlib.import_module("x")`·`__import__("x")` — 글자 상수면 `import x` 와 같은 규칙."""
+    bare = (
+        isinstance(node.func, ast.Name)
+        and node.func.id == "__import__"
+        and node.func.id not in names.aliases
+    )
+    if not bare and resolved not in _DYNAMIC_IMPORTS:
+        return
+    target = names.constant(node.args[0]) if node.args else None
+    if not target or target.startswith("."):
+        return
+    _check_one_import(node, target, None, context, f"modules.{context.module_id}")
+
+
+def _path_pieces(node: ast.AST, names: _Names, depth: int = 0) -> list[str | None] | None:
+    """경로 식(`a / "b"`·`Path("a", "b")`·`os.path.join(…)`·`p.joinpath(…)`)의 마디 — 모르는 마디는
+    None. 경로 식이 아니면 None."""
+    if depth > 12:
+        return None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left = _path_pieces(node.left, names, depth + 1) or [names.constant(node.left)]
+        right = _path_pieces(node.right, names, depth + 1) or [names.constant(node.right)]
+        return [*left, *right]
+    if isinstance(node, ast.Call):
+        func = node.func
+        base: list[str | None] = []
+        if isinstance(func, ast.Attribute) and func.attr == "joinpath":
+            base = _path_pieces(func.value, names, depth + 1) or [None]
+        elif names.resolve(func) not in _PATH_JOINERS:
+            return None
+        pieces = [*base]
+        for argument in node.args:
+            pieces += _path_pieces(argument, names, depth + 1) or [names.constant(argument)]
+        return pieces
+    return None
+
+
+def _check_joined_paths(tree: ast.Module, names: _Names, context: _FileContext) -> None:
+    """마디로 나눠 이은 경로가 코어 데이터 자리를 가리키면 M07 오류.
+
+    `… / "data" / "input"`·`os.path.join("data", "temp")` 꼴과 `ctx.data_dir / ".."` 꼴이다. 글자
+    하나에 다 든 꼴은 글자 검사(`_check_strings`)가 이미 잡으므로 이은 뒤에야 서는 것만 본다.
+    마디 경계에서만 맞댄다(`"data" / "input.csv"` 는 `data/input` 이 아니다).
+    """
+    # 바깥 경로 식 하나만 본다 — 안쪽 마디(`a / "b"` 의 `a`)를 다시 보면 같은 줄을 두 번 센다.
+    inner: set[ast.AST] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            inner.update((node.left, node.right))
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "joinpath":
+                inner.add(node.func.value)
+                inner.update(node.args)
+            elif names.resolve(node.func) in _PATH_JOINERS:
+                inner.update(node.args)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.BinOp, ast.Call)) or node in inner:
+            continue
+        pieces = _path_pieces(node, names)
+        if not pieces or len(pieces) < 2:
+            continue
+        known = [piece for piece in pieces if piece is not None]
+        if any(_core_data_marker(piece) is not None for piece in known):
+            continue
+        joined = "/" + "/".join(piece if piece is not None else "?" for piece in pieces) + "/"
+        joined = joined.lower().replace("\\", "/")
+        marker = next(
+            (item for item in _CORE_DATA_MARKERS if f"/{item.strip('/')}/" in joined), None
+        )
+        if marker is not None:
+            context.add(
+                "M07",
+                "error",
+                node,
+                f"이은 경로가 코어 데이터 자리 `{marker.rstrip('/')}` 를 가리킵니다 — 모듈은 "
+                "`ctx.data_dir` 만 씁니다",
+            )
+        elif ".." in known and any(
+            isinstance(inner, ast.Attribute) and inner.attr == "data_dir"
+            for inner in ast.walk(node)
+        ):
+            context.add(
+                "M07",
+                "error",
+                node,
+                "`data_dir` 에서 `..` 로 올라갑니다 — 모듈 데이터 자리 밖(코어 `data/`)입니다",
+            )
+
+
 def _check_unsafe_html(node: ast.Call, names: _Names, context: _FileContext) -> None:
     flag = next((item.value for item in node.keywords if item.arg == "unsafe_allow_html"), None)
     if flag is None or (isinstance(flag, ast.Constant) and not flag.value):
@@ -1008,6 +1191,50 @@ def _check_unsafe_html(node: ast.Call, names: _Names, context: _FileContext) -> 
         )
 
 
+@functools.lru_cache(maxsize=256)
+def _positional_slots(widget: str) -> Mapping[str, int]:
+    """Streamlit 위젯 `st.<widget>` 의 `key`·콜백 인자가 위치 인자로도 올 수 있는 자리(0부터).
+
+    `st.button("x", "plain")` 처럼 키·콜백을 위치로 넘기면 키워드만 보는 검사를 비켜 간다.
+    """
+    import inspect
+
+    import streamlit
+
+    function = getattr(streamlit, widget, None)
+    if not callable(function):
+        return {}
+    try:
+        parameters = inspect.signature(function).parameters.values()
+    except (TypeError, ValueError):
+        return {}
+    positional = [
+        item.name
+        for item in parameters
+        if item.kind in (item.POSITIONAL_ONLY, item.POSITIONAL_OR_KEYWORD)
+    ]
+    wanted = ("key", *_CALLBACK_KEYWORDS)
+    return {name: index for index, name in enumerate(positional) if name in wanted}
+
+
+def _widget_arguments(node: ast.Call, names: _Names) -> list[tuple[str | None, ast.expr]]:
+    """(인자 이름, 값) — 키워드 인자와, Streamlit 위젯 서명에서 `key`·콜백 자리에 온 위치 인자."""
+    found: list[tuple[str | None, ast.expr]] = [(item.arg, item.value) for item in node.keywords]
+    resolved = names.resolve(node.func)
+    widget = (
+        resolved.rsplit(".", 1)[-1]
+        if resolved is not None
+        else node.func.attr
+        if isinstance(node.func, ast.Attribute)
+        else None
+    )
+    if widget is not None and node.args:
+        for name, index in _positional_slots(widget).items():
+            if index < len(node.args) and not isinstance(node.args[index], ast.Starred):
+                found.append((name, node.args[index]))
+    return found
+
+
 def _check_widget_keywords(node: ast.Call, names: _Names, context: _FileContext) -> None:
     widget = _is_widget_call(names, node)
     for keyword in node.keywords:
@@ -1019,19 +1246,19 @@ def _check_widget_keywords(node: ast.Call, names: _Names, context: _FileContext)
                 f"`{keyword.arg}=` 는 Streamlit 이 곧 지웁니다 — "
                 f"{_DEPRECATED_KEYWORDS[keyword.arg]}",
             )
-        if not widget:
-            continue
-        if keyword.arg == "key":
-            verdict, shown = _key_verdict(names, keyword.value, context.prefix)
+    if not widget:
+        return
+    for argument, value in _widget_arguments(node, names):
+        if argument == "key":
+            verdict, shown = _key_verdict(names, value, context.prefix)
             if verdict == "bad":
                 context.add(
                     "M08",
                     "error",
-                    keyword.value,
+                    value,
                     f'key="{_short(shown)}" — 접두 {context.prefix} 가 없습니다(ctx.key("…"))',
                 )
-        elif keyword.arg in _CALLBACK_KEYWORDS:
-            value = keyword.value
+        elif argument in _CALLBACK_KEYWORDS:
             if isinstance(value, ast.Constant) and (
                 value.value is None or isinstance(value.value, str)
             ):
@@ -1042,7 +1269,7 @@ def _check_widget_keywords(node: ast.Call, names: _Names, context: _FileContext)
                 "M18",
                 "error",
                 value,
-                f"`{keyword.arg}=` 콜백을 `ctx.callback(함수)` 로 감쌉니다 — 감싸지 않은 콜백의 "
+                f"`{argument}=` 콜백을 `ctx.callback(함수)` 로 감쌉니다 — 감싸지 않은 콜백의 "
                 "예외는 "
                 "사이드바·탭 줄까지 지웁니다",
             )
@@ -1482,6 +1709,7 @@ def check_source(
     context.taint = _write_taint(tree, names)
     _check_imports(tree, context)
     _check_strings(tree, context)
+    _check_joined_paths(tree, names, context)
     _check_references(tree, names, context)
     _check_calls(tree, names, context)
     _check_subscripts_and_targets(tree, names, context)
