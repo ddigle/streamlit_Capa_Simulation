@@ -1508,15 +1508,19 @@ def test_an_assumption_space_counts_unconfirmed_by_the_official_schedule(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
     """가정 세션 FAB 「미확인 N대」 는 공식 시나리오 일정 기준이다(설계 8-1 — 가용설비 Main 과 같은
-    규칙). 가정 일정으로 세면 다른 수가 나오는 DB 로 본다."""
+    규칙). 가정 일정으로 세면 다른 수가 나오는 DB 로 본다. 가정 Qual 일정은 오늘에서 잰 미래라 날이
+    지나도 미확인이 되지 않는다."""
+    from datetime import date, timedelta
+
     repository = _seeded(tmp_path)
     clone = _clone(repository)
     mine = _session(repository, clone.equipment_scenario_id)
+    later = (date.today() + timedelta(days=60)).isoformat()
     repository.save_equipment(
         _request(
             mine,
             clone.equipment_scenario_id,
-            equipment=_set(mine.equipment, "EQ-01", "Qual일정", "2027-01-01"),
+            equipment=_set(mine.equipment, "EQ-01", "Qual일정", later),
         )
     )
     session = _session(repository, clone.equipment_scenario_id)
