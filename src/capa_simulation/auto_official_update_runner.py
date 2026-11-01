@@ -428,7 +428,7 @@ def _execute(
         provider, candidate.simulation_code, repository.load_global_display_order().rules
     )
     previous_preset = repository.load_revision_preset(baseline.revision_id)
-    base = save_bigdataquery_scenario(
+    registration = save_bigdataquery_scenario(
         repository,
         prepared,
         # 레거시 확보·경고 값은 직전 공식버전 프리셋에서 실어 온다. 판정 기준 프로필을 한 번도
@@ -443,6 +443,7 @@ def _execute(
         revision_name=prefill.revision_name,
         note=registration_note(f"자동 갱신 등록 · {prefill.note}", detail_window),
     )
+    base = registration.snapshot
     log.note(
         created_scenario_id=base.scenario.scenario_id,
         created_scenario_name=base.scenario.scenario_name,
@@ -454,11 +455,17 @@ def _execute(
     log.advance("judge")
     outcome = full_capacity_outcome(base.tables, base.tables)
     if outcome.error is not None or outcome.required_equipment is None:
-        log.finish(
-            STATUS_PUBLISH_SKIPPED,
+        reason = (
             "Capa 계산이 실패해 확보율을 판정하지 못했습니다 — 발행하지 않았습니다. "
-            f"{outcome.error}",
+            f"{outcome.error}"
         )
+        if registration.capacity.stopped:
+            # 등록 때 돌려 본 대당 Capa 가 멈췄다 — 화면 등록의 경고 띠와 같은 푸는 길을 잇는다.
+            reason = (
+                f"{reason.rstrip().rstrip('.')}. "
+                f"{registration.capacity.fix_hint(base.revision.revision_no)}"
+            )
+        log.finish(STATUS_PUBLISH_SKIPPED, reason)
         return
     try:
         securement = calculate_securement_rate(

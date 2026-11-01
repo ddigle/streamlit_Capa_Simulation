@@ -164,7 +164,7 @@ def register_code(
         scenario_name=f"{name} ({code})",
         revision_name="초기 리비전",
         note="",
-    )
+    ).snapshot
 
 
 def publish_snapshot(

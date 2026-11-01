@@ -672,6 +672,9 @@ class FakeProvider:
         # 시험이 고른 행의 CS 를 비운다(행 번호 → 넣을 값). 사내 원천에 CS 가 빈 행이 온 꼴.
         for index, value in st.session_state.get("__blank_cs__", {}).items():
             frame.loc[int(index), "CS"] = value
+        # 시험이 고른 (행 번호, 컬럼) 칸을 비운다 — 대당 Capa 가 멈추는 원천의 꼴.
+        for index, column in st.session_state.get("__blank_cells__", []):
+            frame.loc[int(index), column] = None
         return CoreDataBatch(
             simulation_code=simulation_code,
             simulation_name=self._name,
@@ -747,8 +750,9 @@ def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Pat
         "DEMO_Final_Test",
         "DEMO_Wafer_Inspect",
     )
-    # CS 가 빈 행이 없으면 경고도 메모 조각도 없다.
+    # CS 가 빈 행이 없으면 경고도 메모 조각도 없다. 대당 Capa 도 서므로 그 경고도 없다.
     assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
+    assert registration.REGISTRATION_CAPACITY_FLASH_KEY not in app.session_state
 
 
 def _registration_app(database: Path, blank_cs: dict[int, str | None]) -> AppTest:
@@ -818,6 +822,53 @@ def test_rows_with_a_blank_cs_are_dropped_and_the_registration_still_saves(
     assert snapshot.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
     assert snapshot.tables["RQ_REQB"]["양산구분"].notna().all()
     assert repository.load_source_row_count(scenario.scenario_id) == len(source)
+
+
+def test_a_registration_whose_capacity_stops_still_saves_and_says_how_to_fix_it(
+    tmp_path: Path,
+) -> None:
+    """저장 전에 대당 Capa 를 한 번 돌려 보고, 멈추면 저장은 하고 경고 띠로 알린다(2026-11-01 사용자
+    결정 A1 「알리기만」). 사내 S27 은 등록은 됐는데 계산할 때 처음 멈췄다(리뷰 202610271800 발견
+    1)."""
+    from capa_simulation.components.flash import FlashNote
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    database = _registration_database(tmp_path)
+    source = build_builtin_seed_dataset().source_data
+    process = "DEMO_Wafer_Inspect"
+    month = int(source.loc[source["공정"].eq(process), "생산계획년월"].min())
+    rows = source.index[source["공정"].eq(process) & source["생산계획년월"].eq(month)]
+
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__blank_cells__"] = [(int(row), "CAPA_RUN_RATE") for row in rows]
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W44"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W44"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W44 (SIM-W44)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-10-30 09:00:00"
+    app.session_state[registration.FORM_NOTE_KEY] = ""
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 10, 23)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 1)
+    app.run()
+
+    assert not app.exception
+    assert not app.error
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    warning = FlashNote(*app.session_state[registration.REGISTRATION_CAPACITY_FLASH_KEY])
+    assert warning.kind == "warning"
+    assert warning.message.startswith(
+        "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — RQ_RUN_RATE의 "
+    )
+    assert "기준 정보 화면 「효율」 탭에서" in warning.message
+    assert "r2부터 계산이 섭니다" in warning.message
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    assert (snapshot.revision.note or "").startswith(
+        "상세 조회기간 2026-10-23 ~ 2026-11-01 · 대당 Capa 계산 멈춤(RQ_RUN_RATE 빈 값 키 "
+    )
 
 
 def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(
