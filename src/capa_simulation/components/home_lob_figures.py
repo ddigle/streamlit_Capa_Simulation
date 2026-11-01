@@ -1209,7 +1209,7 @@ def build_lob_summary_figures(
                 }
             )
         # 공정명은 띠(`LOB_TOP5_LABEL_ZONE_PX`) 안에서 끝나야 한다 — 넘치면 아래 도넛 위에
-        # 얹힌다(`top5_process_label_budget` 설명). 줄인 이름은 hover 가 전체를 보여 준다.
+        # 얹힌다(`top5_process_label_room_px` 설명). 줄인 이름은 hover 가 전체를 보여 준다.
         # 서체가 Calibri 라 그 서체로 잰 폭 모형을 쓴다(`_calibri_width_units`).
         process_budget = top5_process_label_room_px() / TOP5_PROCESS_LABEL_FONT_SIZE_PX
         for x_position, process in zip(top5_positions, monthly_top5["공정"], strict=True):
