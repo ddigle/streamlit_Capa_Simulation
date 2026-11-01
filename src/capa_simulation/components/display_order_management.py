@@ -403,22 +403,31 @@ def _render_clash_warning(clashes: list[ValueClash]) -> None:
 
 
 def _render_label_warnings(slot: DeltaGenerator) -> None:
-    """저장한 회차에 담아 둔 표시명 경고를 성공 문구 칸(`slot`) 안 그 아래에 한 번 그리고 비운다."""
+    """저장한 회차에 담아 둔 표시명 경고를 성공 문구 칸(`slot`) 안 그 아래에 한 번 그리고 비운다.
+
+    꺼내기와 그리기를 이 함수 한 곳에 둔다 — 알림 칸을 flash.py 밖에서 꺼내 그리는 자리를 찾는
+    그물(`tests/test_flash_messages.py` 의 `FLASH_POP_ALLOWED`)이 이 자리를 본다."""
     mistakes = st.session_state.pop(LABEL_WARNINGS_KEY, None)
-    if isinstance(mistakes, dict):
-        _draw_label_warnings(slot, mistakes)
+    if not isinstance(mistakes, dict):
+        return
+    for typed, column in mistakes.items():
+        slot.warning(_label_warning_text(typed, column), icon=":material/help:")
 
 
 def _draw_label_warnings(slot: DeltaGenerator, mistakes: Mapping[str, str]) -> None:
-    """표시명 경고(`{적은 표시명: 원본 컬럼명}`)를 `slot` 안에 그린다."""
+    """표시명 경고(`{적은 표시명: 원본 컬럼명}`)를 `slot` 안에 그린다 — 세션 칸을 꺼내지 않는 자리
+    (느린 둘째 누름이 그 저장의 경고를 다시 그릴 때)."""
     for typed, column in mistakes.items():
-        # 이름 뒤에 조사를 붙이지 않는다. `Customer` 같은 영문 이름은 받침을 가릴 수 없어
-        # 「`Customer` 을」로 틀렸다(2026-10-05 E2E).
-        slot.warning(
-            "화면 표시명을 적었습니다. 정렬은 원본 컬럼명을 보므로 원본 컬럼명으로 바꿔 적어야 "
-            f"걸립니다: `{typed}` → `{column}`",
-            icon=":material/help:",
-        )
+        slot.warning(_label_warning_text(typed, column), icon=":material/help:")
+
+
+def _label_warning_text(typed: str, column: str) -> str:
+    """표시명 경고 한 줄. 이름 뒤에 조사를 붙이지 않는다 — `Customer` 같은 영문 이름은 받침을
+    가릴 수 없어 「`Customer` 을」로 틀렸다(2026-10-05 E2E)."""
+    return (
+        "화면 표시명을 적었습니다. 정렬은 원본 컬럼명을 보므로 원본 컬럼명으로 바꿔 적어야 "
+        f"걸립니다: `{typed}` → `{column}`"
+    )
 
 
 def _save_global_display_order(
