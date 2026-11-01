@@ -239,6 +239,9 @@ CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
 CONTINUE_CONFIRM_KEY = "equipment_scenario_manage_continue_confirm_v1"
 # 이 구획 작업 알림 — 다음 회차에 한 번, 구획 맨 위.
 FLASH_KEY = "equipment_scenario_manage_flash_v1"
+# 같은 이름이라 쓰지 않은 「리비전명 저장」·「이름 바꾸기」 의 단추 아래 알림(개선 I5).
+REVISION_NAME_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 리비전명 그대로라 저장하지 않았습니다."
+SCENARIO_NAME_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 이름 그대로라 바꾸지 않았습니다."
 # 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 구획 맨 위(확인
 # 체크·입력 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
 REFUSED_KEY = "equipment_scenario_manage_refused_v1"
@@ -1574,9 +1577,11 @@ def _render_revision_name(
         held = seen(field.seen_key)
         seen_name = held if isinstance(held, str) else ""
         save_marks = own_save_marks()
+        notices = notice_marks()
         try:
             repository = get_equipment_repository(database_path)
             # 쓰기와 제 저장 짝 적기는 세션의 잠금 안에서 함께 한다(write_guard.save_remembered).
+            # 같은 이름이라 쓰지 않은 저장은 짝을 적지 않는다.
             renamed = save_remembered(
                 own_name,
                 seen_name,
@@ -1585,7 +1590,7 @@ def _render_revision_name(
                     name=label,
                     expected_name=seen_name or None,
                 ),
-                stored=lambda renamed: renamed.revision_name or "",
+                stored=lambda renamed: _renamed_to(renamed.revision_name or "", seen_name),
                 marks=save_marks,
             )
         except EquipmentScheduleRevisionNameMoved as exc:
@@ -1602,7 +1607,14 @@ def _render_revision_name(
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        _written(_revision_name_message(scenario, renamed, renamed.revision_name))
+        if (renamed.revision_name or "") == seen_name:
+            # 지금 리비전명 그대로다 — 저장소가 쓰지 않았다(개선 I5).
+            _unchanged(own_name, REVISION_NAME_UNCHANGED_MESSAGE)
+            return
+        message = _revision_name_message(scenario, renamed, renamed.revision_name)
+        # 느린 둘째 누름(새로 세운 칸에 닿아 같은 이름)이 이 알림을 다시 낸다(`_unchanged`).
+        note_notice(notices, own_name, message)
+        _written(message)
 
 
 def _revision_name_message(
@@ -1642,9 +1654,11 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
             _refused_noted(conflicts, own_name, SEEN_MISSING_MESSAGE)
             return
         save_marks = own_save_marks()
+        notices = notice_marks()
         try:
             repository = get_equipment_repository(database_path)
             # 쓰기와 제 저장 짝 적기는 세션의 잠금 안에서 함께 한다(write_guard.save_remembered).
+            # 같은 이름이라 쓰지 않은 저장은 짝을 적지 않는다.
             renamed = save_remembered(
                 own_name,
                 seen_name,
@@ -1653,7 +1667,7 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
                     name=name,
                     expected_name=seen_name,
                 ),
-                stored=lambda renamed: renamed.scenario_name,
+                stored=lambda renamed: _renamed_to(renamed.scenario_name, seen_name),
                 marks=save_marks,
             )
         except EquipmentScenarioNameMoved as exc:
@@ -1668,7 +1682,34 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        _written(_scenario_renamed_message(renamed.scenario_name))
+        if renamed.scenario_name == seen_name:
+            # 지금 이름 그대로다 — 저장소가 쓰지 않았다(개선 I5).
+            _unchanged(own_name, SCENARIO_NAME_UNCHANGED_MESSAGE)
+            return
+        message = _scenario_renamed_message(renamed.scenario_name)
+        # 느린 둘째 누름(새로 세운 칸에 닿아 같은 이름)이 이 알림을 다시 낸다(`_unchanged`).
+        note_notice(notices, own_name, message)
+        _written(message)
+
+
+def _renamed_to(name: str, seen_name: str) -> str | None:
+    """이름 바꾸기 결과의 제 저장 짝 값 — 이름이 바뀌었으면 그 이름, 본 이름 그대로면(쓰지 않음)
+    None(`write_guard.save_remembered` 가 짝을 적지 않는다)."""
+    return None if name == seen_name else name
+
+
+def _unchanged(notice_name: str, message: str) -> None:
+    """같은 이름이라 쓰지 않은 누름 — 「바뀐 것이 없습니다」 를 단추 아래에 적는다(개선 I5).
+
+    `notice_name` 쓰기의 성공이 `write_guard.TRAILING_PRESS_SECONDS` 안이면 이 누름은 같은 단추의
+    느린 둘째 누름이다 — 거부 회차가 칸을 새 이름으로 세운 뒤 닿아 같은 이름을 들었다. 그 성공을
+    다시 낸다(`_written` — 첫 누름이 낸 알림은 그 사이 회차가 꺼내 그렸다).
+    """
+    held = held_notice(notice_name)
+    if held is not None:
+        _written(held)
+    else:
+        st.info(message, icon=":material/info:")
 
 
 def _scenario_renamed_message(name: str) -> str:

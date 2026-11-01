@@ -76,7 +76,11 @@ from capa_simulation.persistence.cache import (
     load_scenario_snapshot,
 )
 from capa_simulation.persistence.models import RevisionSummary, ScenarioSnapshot, ScenarioSummary
-from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.persistence.repository import (
+    DuckDBScenarioRepository,
+    RevisionUnchanged,
+    revision_unchanged_message,
+)
 from capa_simulation.scenario_activation import (
     activate_persisted_snapshot,
     activate_saved_revision,
@@ -734,6 +738,9 @@ def _render_revision_save(
                     parent_revision_id=active_revision_id,
                     note=note_text,
                     virtual_products=virtual_products,
+                    # 바꾼 것 없는 저장은 새 리비전을 만들지 않는다 — 최신 리비전과 편집 표·프리셋·
+                    # 가상 제품 이력이 모두 같으면 저장소가 쓰지 않고 `RevisionUnchanged`(개선 I5).
+                    skip_unchanged=True,
                 ),
                 fingerprint=(
                     active_scenario_id,
@@ -749,6 +756,11 @@ def _render_revision_save(
             if snapshot is not None:
                 # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
                 activate_saved_revision(snapshot)
+    except RevisionUnchanged as exc:
+        # 쓰지 않았다 — 칸(리비전명·메모)은 그대로 두고 팝업 안에서 알린다. 예외로 끝난 쓰기는
+        # 표지를 남기지 않아(`write_once_value`) 편집을 적용하고 다시 누르면 저장소가 다시 견준다.
+        st.info(revision_unchanged_notice(exc.revision_no), icon=":material/info:")
+        return
     except BOOTSTRAP_ERRORS as exc:
         st.error(_revision_save_failure(written, bootstrap_error_message(exc)))
         return
@@ -770,6 +782,15 @@ def _render_revision_save(
     bump(SAVE_FORM_GENERATION_KEY)
     written.release()
     st.rerun()
+
+
+def revision_unchanged_notice(revision_no: int) -> str:
+    """바꾼 것 없는 「신규 리비전 저장」 의 알림(개선 I5) — 저장소 글에 이름표만 바꾸는 길을
+    덧붙인다."""
+    return (
+        f"{revision_unchanged_message(revision_no)} 이름표만 바꾸려면 시나리오 관리의 리비전 "
+        "표에서 리비전명을 고칩니다."
+    )
 
 
 def _revision_save_failure(written: Written[ScenarioSnapshot] | None, reason: str) -> str:

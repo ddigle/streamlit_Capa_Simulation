@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.admin_dialog import (
     admin_dialog_is_open,
@@ -25,9 +26,12 @@ from capa_simulation.components.table_toolbar import render_csv_download, toolba
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
+    held_notice,
     held_profile_conflict,
     is_own_save,
+    note_notice,
     note_profile_conflict,
+    notice_marks,
     own_save_marks,
     profile_conflict_marks,
     queue_refusal,
@@ -66,6 +70,12 @@ BASE_VERSION_KEY = "admin_area_process_rename_base_version"
 # 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 PROCESS_RENAME_SAVE_NAME = "admin_area_process_rename"
 PROCESS_RENAME_SAVED_MESSAGE = "공정 표시명을 공용 설정으로 저장했습니다."
+# 바꾼 것 없는 직접 편집 저장의 알림(2026-11-01 개선 I5 — 새 버전을 만들지 않는다).
+PROCESS_RENAME_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
+)
+# 직접 편집 저장의 결과 알림 칸(`flash`·`write_guard.held_notice`).
+PROCESS_RENAME_FLASH_KEY = "process_rename_flash"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -110,7 +120,8 @@ def render_process_rename_management(
             on_click=open_admin_dialog,
             args=(PASTE_DIALOG,),
         )
-    render_flash("process_rename_flash")
+    # 직접 편집 저장의 「바뀐 것이 없습니다」 도 이 칸(성공 알림 자리)에 선다.
+    notice = render_flash(PROCESS_RENAME_FLASH_KEY)
 
     labels = process_labels_from_rules(profile.rules, profile.version)
     # 안내에 늘어놓는 공정명·표시명은 사람 글이라 막아 적는다(AGENTS 9장 — 「ZZ~9~9 *q*」).
@@ -139,7 +150,7 @@ def render_process_rename_management(
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)
-    _render_direct_editor(repository, profile, available_processes)
+    _render_direct_editor(repository, profile, available_processes, notice)
 
 
 def _listed(names: list[str], limit: int = 10) -> str:
@@ -206,7 +217,7 @@ def _clipboard_dialog(
         # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
         st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
         queue_flash(
-            "process_rename_flash",
+            PROCESS_RENAME_FLASH_KEY,
             "붙여넣은 공정 표시명을 공용 설정으로 적용했습니다.",
         )
         close_admin_dialog()
@@ -217,10 +228,15 @@ def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     profile: GlobalProcessRename,
     available_processes: list[str],
+    notice: DeltaGenerator,
 ) -> None:
     """직접 편집 표. 저장은 **버전 대조**다 — 판정 기준과 같은 결로 편집을 시작한 회차의 version 을
     세션(`BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가
-    거부한다(그대로 쓰면 그 사람이 넣은 표시명을 모르는 채 덮는다)."""
+    거부한다(그대로 쓰면 그 사람이 넣은 표시명을 모르는 채 덮는다).
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5) — 최신 저장본을 보고 고친
+    표가 그 저장본과 같으면 쓰지 않고 `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경
+    메모만 적은 저장도 같다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
@@ -298,10 +314,18 @@ def _render_direct_editor(
         queue_refusal(PROCESS_RENAME_SAVE_NAME, SEEN_MISSING_MESSAGE)
         st.rerun()
     expected_version = submitted_base
+    notices = notice_marks()
     try:
         revised = drop_blank_process_rename_rows(
             pd.DataFrame(edited, columns=list(PROCESS_RENAME_COLUMNS))
         )
+        if _same_as_saved(profile, revised, expected_version):
+            # 방금 저장한 같은 표의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림 칸이 그 성공을
+            # 이미 다시 그렸다 — 「바뀐 것이 없습니다」 로 덮지도 겹쳐 쓰지도
+            # 않는다(write_guard.held_notice).
+            if held_notice(PROCESS_RENAME_FLASH_KEY) is None:
+                notice.info(PROCESS_RENAME_UNCHANGED_MESSAGE, icon=":material/info:")
+            return
         _save_process_rename(
             repository,
             revised,
@@ -316,7 +340,7 @@ def _render_direct_editor(
         clear_global_process_rename_cache()
         if is_own_save(PROCESS_RENAME_SAVE_NAME, exc.expected, exc.stored, save_marks):
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
-            queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
+            queue_flash(PROCESS_RENAME_FLASH_KEY, PROCESS_RENAME_SAVED_MESSAGE)
         else:
             message = bootstrap_error_message(exc)
             note_profile_conflict(conflict_marks, PROCESS_RENAME_SAVE_NAME, message)
@@ -325,8 +349,25 @@ def _render_direct_editor(
     except BOOTSTRAP_ERRORS as exc:
         st.error(_save_error_message(exc))
     else:
-        queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
+        # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
+        # 갈래).
+        note_notice(notices, PROCESS_RENAME_FLASH_KEY, PROCESS_RENAME_SAVED_MESSAGE)
+        queue_flash(PROCESS_RENAME_FLASH_KEY, PROCESS_RENAME_SAVED_MESSAGE)
         st.rerun()
+
+
+def _same_as_saved(
+    profile: GlobalProcessRename, revised: pd.DataFrame, expected_version: int
+) -> bool:
+    """직접 편집 표(`revised` — 빈 줄을 뺀 것)가 이 회차가 그린 최신 저장본과 같은가.
+
+    편집을 시작한 version 이 그 저장본이어야 한다 — 옛 화면의 저장은 견주지 않고 저장소의 버전
+    대조에 맡긴다(남의 저장 뒤라면 거부). 저장본이 없으면(v0) 늘 다르다고 본다. 같음은 저장소가 쓸
+    꼴(`prepare_process_rename_rules` — 1:1 위반이면 `ValueError`)끼리다.
+    """
+    if profile.version <= 0 or expected_version != profile.version:
+        return False
+    return prepare_process_rename_rules(revised).equals(prepare_process_rename_rules(profile.rules))
 
 
 def _save_process_rename(

@@ -524,6 +524,32 @@ def _history_products(repository: DuckDBScenarioRepository, revision_id: str) ->
     return repository.list_virtual_products(revision_id)["제품정보"].tolist()
 
 
+def test_a_sidebar_save_with_nothing_changed_makes_no_revision(tmp_path: Path) -> None:
+    """실제 DB — 리비전을 편집 없이 올린 세션의 「신규 리비전 저장」 은 새 리비전을 만들지 않고
+    팝업에 「바뀐 것이 없습니다」 를 적는다(2026-11-01 개선 I5). 올린 세션의 표는 DB 를 오간 형이라
+    등록 때 지은 지문과 갈려도 같은 내용으로 본다(저장소가 저장된 표로 지문을 다시 짓는다). 가상
+    제품을 등록하면(이력이 바뀜) 평소대로 저장한다."""
+    from capa_simulation.components.scenario_status import revision_unchanged_notice
+
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_with_sidebar_save(database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    repository = DuckDBScenarioRepository(database_path)
+    (scenario,) = repository.list_scenarios()
+    latest_no = scenario.active_revision_no
+
+    _save_revision(app, "그대로 저장")
+
+    notices = [str(item.value) for item in app.info if "바뀐 것이 없습니다" in str(item.value)]
+    assert notices == [revision_unchanged_notice(latest_no)]
+    assert [item.active_revision_no for item in repository.list_scenarios()] == [latest_no]
+
+    _register_virtual(app, "DEMO_VIRTUAL_A")
+    _save_revision(app, "가상 제품 A")
+    assert [item.active_revision_no for item in repository.list_scenarios()] == [latest_no + 1]
+
+
 def test_new_revision_inherits_the_loaded_revisions_virtual_products(tmp_path: Path) -> None:
     """r2 에 등록한 가상 제품이 r2 를 이어 저장한 r3 에도 남는다(2026-10-05 사용자 결정 N6 = A).
 
