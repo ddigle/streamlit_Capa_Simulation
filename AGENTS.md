@@ -4874,6 +4874,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   선다). 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
   값을 무시한다). 친 글의 확정과 버튼 누름이 한 회차에 겹치면 버튼이 이긴다(옛 세대 key 의 숫자 칸 콜백은 적지 않는다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
+- **버튼 줄 아래의 multiselect 는 초점 앞뒤로 높이가 같아야 한다.** 1.63 multiselect 는 초점 때 입력 칸 min-width 가 42px
+  (아니면 7px)라, 칩 옆에 들지 못하면 입력 칸이 새 줄로 내려가 칸이 한 줄 커진다. 사이드바가 끝까지 내려가 있으면 그만큼 위
+  위젯이 밀려, 그 칸에서 초점을 뺏는 첫 누름(pointerdown)이 버튼 위에서 시작해 다른 버튼 위에서 떼어져 사라졌다(2026-11-02
+  E2E — 제약 시뮬레이션 「보유 제약 호기」 를 고른 뒤 기준 확보율 · 개조 기간 버튼). 그런 칸에는 `.st-key-<key> input
+  { min-width: 7px !important; }` 를 준다(`app_pages/constraint_simulation.HELD_PICKER_STYLE` — 칩 줄바꿈은 그대로).
+  AppTest 로는 잡히지 않아 시험은 그 규칙이 실렸는지만 보고 행동은 브라우저로 잰다.
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다. `ConditionTabs` 는 탭 말고 **보기 값**으로도 가른다 — Space 현황은 색 기준 라디오(`space_color_basis`)가
