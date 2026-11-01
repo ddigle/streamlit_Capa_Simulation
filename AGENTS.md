@@ -5173,7 +5173,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (`_render_threshold_out_of_range_notice`), 선행 B/O·선행 입고의 조회기간 밖 저장분 줄(`_render_out_of_range_notice`), 확보율
     보정의 짝 없는 행·0 에서 자른 행 안내(`_render_execution_notices`). 누르지 않은 회차와 같은 화면에 알림만 더한다. 판정
     기준은 검증 오류(50 ~ 300% 밖 · 거꾸로 짝)로 거부한 회차와 남의 저장에 거부된 누름의 둘째 누름 회차도 같다 — 둘 다 쓰지 않아
-    다시 돌지 않고, 원인이 보이는 칸이면 오류 글이 숨은 달을 말하지 않는다. 붙여넣기
+    다시 돌지 않고, 원인이 보이는 칸이면 오류 글이 숨은 달을 말하지 않는다. 선행 B/O·선행 입고도 저장이 오류
+    (`BOOTSTRAP_ERRORS` — DB 잠김 등)로 끝난 회차에 조회기간 밖 저장분 줄을 그대로 그린다(버전 대조가 없어 둘째 누름
+    거부 갈래는 없다). 붙여넣기
     길(표시순서·Proc Rename)은 전부터 「현재 공용 설정과 동일합니다」 로 거절한다. 시험: `tests/test_admin_area_page.py`·
     `tests/test_threshold_editor.py`·`tests/test_revision_save_unchanged.py`·`tests/test_scenario_sidebar.py`·
     `tests/test_scenario_management_page.py`·`tests/test_equipment_scenario_unchanged_names.py`·
