@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import calendar
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +24,7 @@ from test_equipment_pages import _open_tab
 from test_required_shortening_tab import _database, _months, _shift
 
 from capa_simulation.components.availability_gap_panel import RESULT_VIEW_KEY
+from capa_simulation.components.equipment_explorer import END_DATE_KEY, START_DATE_KEY
 from capa_simulation.components.required_shortening_panel import SHORTENING_START_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.services.availability_sheet import ROW_STATIC_AVAILABLE
@@ -447,9 +450,20 @@ def test_an_edit_or_another_revision_reads_the_new_demand(tmp_path: Path) -> Non
     del app.session_state["test_demand_months"]
     app.session_state["test_token"] = f"{tmp_path.name}-full"
     _show(app, GAP)
+    # 교차검증은 설비 조회기간(시작일·종료일)이 덮는 달로 좁혀 맞댄다
+    # (`build_securement_cross_check`). 그 기본값(이달 1일 ~ 오늘 + 12주)은 오늘에 따라 셋째
+    # 또는 넷째 달에서 끝나, 월초 며칠은 아래에서 좁힐 넷째·다섯째 달이 표에 없다 — 설비
+    # 조회기간을 시나리오의 여섯 달에 맞춘다.
+    first_year, first_month = divmod(months[0], 100)
+    last_year, last_month = divmod(months[-1], 100)
+    app.date_input(key=START_DATE_KEY).set_value(date(first_year, first_month, 1))
+    app.date_input(key=END_DATE_KEY).set_value(
+        date(last_year, last_month, calendar.monthrange(last_year, last_month)[1])
+    )
     _view(app, "확보율 교차검증")
     before = _cross_check(app)
     assert before is not None and set(before["소요대수"]) == {12.0}
+    assert set(before["생산계획년월"]) == {month_label(m) for m in months}
     app.session_state["test_token"] = f"{tmp_path.name}-scaled"
     app.session_state["test_demand_scale"] = 9.0
     app.run()
