@@ -4923,7 +4923,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     Summary 공지(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
     프리셋의 이름·공정 차례까지 — 「＋ 새 프리셋」 은 늘 쓴다), 선행 B/O·선행 입고 실적(보이는 달을 합친 저장 행의 달·값,
     `monthly_amount.same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 끝자리 접음). 버전 대조가 있는 넷(표시순서·확보율 보정·
-    공지·구간)은 `_unchanged_profile_save`(본 version == 그린 version > 0)로 가르고, 프리셋은 제출 회차가 다시 읽은 묶음(고칠
+    공지·구간)은 본 version == 그린 version > 0 일 때만 견주고(Preference 셋은 `_unchanged_profile_save`, 표시순서는
+    `display_order_management._render_direct_editor` 안의 같은 조건), 프리셋은 제출 회차가 다시 읽은 묶음(고칠
     프리셋 대조 `_stale_key_process_target` 를 지난 뒤), 대조 없는 선행 둘은 제출 회차가 읽은 최신 저장본과 견준다. 겹친 둘째
     누름(저장본이 아직 낡은 회차)은 전처럼 `save_once`·제 저장 표지가 거른다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
     대조가 거부한다. 저장본이 없는 v0 의 첫 저장은 쓴다 — 판정 기준은 그때 보이는 공식버전 프리셋·코드 기본값을 공용으로
@@ -4933,7 +4934,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 열한 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
     닿은 느린 둘째 누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과
     같은 꼴 — 프로필 저장은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 그래서 저장
-    직후 창(`TRAILING_PRESS_SECONDS`) 안의 다른 회차에도 성공 알림이 한 번 더 선다. 사이드바 저장은
+    직후 창(`TRAILING_PRESS_SECONDS`) 안의 다른 회차에도 성공 알림이 한 번 더 선다. 표시순서의 느린 둘째 누름은 그 저장의
+    표시명 경고(같은 칸 — 앞 회차가 꺼내 그렸다)도 같은 표에서 다시 그린다 — 빠지면 성공만 남아 정렬이 조용히 걸리지
+    않는다(`tests/test_display_order_management.py`). 사이드바 저장은
     성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않으므로
     누르지 않은 회차가 그리던 안내 줄도 그대로 그린다 — 판정 기준의 조회기간 밖 월별 기준 줄
     (`_render_threshold_out_of_range_notice`), 선행 B/O·선행 입고의 조회기간 밖 저장분 줄(`_render_out_of_range_notice`), 확보율

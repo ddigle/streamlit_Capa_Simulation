@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 
 import pandas as pd
 import streamlit as st
@@ -334,6 +334,13 @@ def _render_direct_editor(
             # 칸이 그 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
             if held_notice(DISPLAY_ORDER_FLASH_KEY) is None:
                 notice.info(DISPLAY_ORDER_UNCHANGED_MESSAGE, icon=":material/info:")
+            else:
+                # 그 저장의 표시명 경고도 같은 칸에 다시 그린다 — 앞 회차(이 version 을 본 값으로
+                # 적은 회차)가 꺼내 그려 이 회차에는 없다. 빠지면 성공만 남아 정렬이 조용히 걸리지
+                # 않는다. 같은 표라 그 저장과 같은 경고다.
+                _draw_label_warnings(
+                    notice, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
+                )
             return
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
         # 고른 범위만 바꾸는 저장이다. 다른 범위에 이미 있던 겹친 분류값은 저장 사슬 끝까지 넘겨,
@@ -398,8 +405,12 @@ def _render_clash_warning(clashes: list[ValueClash]) -> None:
 def _render_label_warnings(slot: DeltaGenerator) -> None:
     """저장한 회차에 담아 둔 표시명 경고를 성공 문구 칸(`slot`) 안 그 아래에 한 번 그리고 비운다."""
     mistakes = st.session_state.pop(LABEL_WARNINGS_KEY, None)
-    if not isinstance(mistakes, dict):
-        return
+    if isinstance(mistakes, dict):
+        _draw_label_warnings(slot, mistakes)
+
+
+def _draw_label_warnings(slot: DeltaGenerator, mistakes: Mapping[str, str]) -> None:
+    """표시명 경고(`{적은 표시명: 원본 컬럼명}`)를 `slot` 안에 그린다."""
     for typed, column in mistakes.items():
         # 이름 뒤에 조사를 붙이지 않는다. `Customer` 같은 영문 이름은 받침을 가릴 수 없어
         # 「`Customer` 을」로 틀렸다(2026-10-05 E2E).

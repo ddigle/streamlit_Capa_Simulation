@@ -9,6 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.display_order_management import DISPLAY_ORDER_EDITOR_KEY
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 
 def test_display_order_management_renders_global_profile(tmp_path: Path) -> None:
@@ -141,6 +142,37 @@ def test_display_label_warning_survives_the_rerun_after_saving(
     assert not app.exception
     assert not app.success
     assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+
+
+def test_a_slow_second_press_keeps_the_label_warning_of_the_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """느린 두 번 누름(둘째 누름이 첫 저장 뒤 새로 그린 같은 표에 닿는다)은 바뀐 것이 없어 쓰지
+    않고 방금 성공을 다시 낸다(2026-11-01 개선 I5 넓힘). 그 저장의 표시명 경고도 같은 칸에 그대로
+    남는다 — 앞 회차가 꺼내 그린 경고가 이 회차에 빠지면 성공만 남아 정렬이 조용히 걸리지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "display-order-label-slow.duckdb"
+    app = AppTest.from_string(_label_script(database_path))
+    app.run(timeout=30)
+    assert not app.exception
+    _edit_first_order(app)
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+    assert not app.exception
+    assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
+
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert not app.info, [element.value for element in app.info]
+    assert [element.value for element in app.success] == [
+        "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다."
+    ]
+    warnings = [element for element in app.warning if "화면 표시명을 적었습니다" in element.value]
+    assert len(warnings) == 1
+    assert "`거래선` → `Customer`" in warnings[0].value
+    assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
 
 
 def test_the_label_warning_stands_in_the_flash_slot_and_moves_no_editor(tmp_path: Path) -> None:

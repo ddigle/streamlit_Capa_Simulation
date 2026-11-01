@@ -384,6 +384,29 @@ def test_a_top5_band_save_without_changes_makes_no_new_version(
     assert stored.min_rate == pytest.approx(0.6)
 
 
+def test_a_slow_second_press_of_the_top5_band_repeats_the_success(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """느린 두 번 누름(둘째 누름이 누른 화면의 구간을 한 번 더 보낸다)은 새로 그린 저장본과 같아
+    바뀐 것이 없지만, 창 안이라 방금 성공을 그대로 둔다(write_guard.held_notice — Summary 공지와
+    같다)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository.replace_global_top5_band(0.7, 1.3, source="처음 저장")
+    clear_global_top5_band_cache()
+    app = _app(repository, _TOP5)
+    app.number_input[0].set_value(60.0)
+    pressed = _pressed_states(app, "확보율 구간 저장")
+    app.run()
+    assert repository.load_global_top5_band().version == 2
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.info and not app.error, _infos(app) + _errors(app)
+    assert _successes(app) == [TOP5_SAVED_MESSAGE]
+    assert repository.load_global_top5_band().version == 2
+
+
 # ------------------------------------------------------------------------- 주요공정 프리셋
 
 _KEY_PROCESS = """
