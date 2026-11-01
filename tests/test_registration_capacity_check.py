@@ -159,6 +159,20 @@ def test_a_stopping_source_is_still_saved_with_its_shape_in_the_memo(tmp_path: P
             RegistrationCapacityCheck("RQ_RUN_DAY의 RUN_DAY 값은 0보다 커야 합니다: 1건, 예시 []"),
             "기준 정보 화면 「일수」 탭에서",
         ),
+        # 기준정보 연결 오류가 아니어도 표 자체가 깨진 꼴(키 중복 · Area_Name · 키 누락)은 칸을
+        # 채워 풀리지 않는다 — 「UPEH」 탭으로 보내지 않는다.
+        (
+            RegistrationCapacityCheck("RQ_UPEH의 연결 키가 중복되었습니다: 1건, 예시 []"),
+            "원천을 고쳐 다시 등록하세요.",
+        ),
+        (
+            RegistrationCapacityCheck("RQ_UPEH의 Area_Name은 Main 또는 MI여야 합니다: ['X']"),
+            "원천을 고쳐 다시 등록하세요.",
+        ),
+        (
+            RegistrationCapacityCheck("RQ_UPEH의 필수 연결 키에 누락값이 있습니다."),
+            "원천을 고쳐 다시 등록하세요.",
+        ),
     ],
 )
 def test_the_fix_hint_points_to_where_the_shape_can_be_fixed(
@@ -173,3 +187,10 @@ def test_a_plain_stop_names_its_table_in_the_memo() -> None:
 
     assert check.table == "RQ_UPEH"
     assert check.memo() == "대당 Capa 계산 멈춤(RQ_UPEH)"
+
+
+def test_a_stop_message_that_ends_with_a_period_is_not_doubled() -> None:
+    notice = RegistrationCapacityCheck("RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다.").notice(1)
+
+    assert ".." not in notice
+    assert "0보다 커야 합니다. 기준 정보 화면 「UPEH」 탭에서" in notice

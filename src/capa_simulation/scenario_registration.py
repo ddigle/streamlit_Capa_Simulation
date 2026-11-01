@@ -51,6 +51,10 @@ _EDIT_TABS: Final = {
 # 편집표에서 그 칸을 채우면 풀리는 꼴. 나머지 꼴(컬럼·월 형식·연결 키)은 표 자체가 깨져 편집표가
 # 서지 않는다.
 _CELL_SHAPES: Final = frozenset({JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MATCH})
+# 기준정보 연결 오류가 아닌 멈춤 가운데 칸 하나를 채우거나 고치면 풀리는 글 — 0 이하
+# (`unit_capacity._assert_positive`, MI 행 ST)와 UPEH·ST 누락(`_prepare_performance`). 그 밖의
+# 글(컬럼 없음·월 형식·연결 키 누락·Area_Name·키 중복)은 표 자체가 깨진 꼴이다.
+_CELL_MESSAGE_MARKERS: Final = ("0보다 커야 합니다", "누락값 또는 숫자가 아닌 값")
 _TABLE_NAME = re.compile(r"^(RQ_[A-Z_]+)")
 
 
@@ -100,7 +104,7 @@ class RegistrationCapacityCheck:
                 "모듈수(RQ_MODULE)는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천을 "
                 "고쳐 다시 등록하세요."
             )
-        if self.problem is not None and self.problem.shape not in _CELL_SHAPES:
+        if not self._cell_fixable():
             return (
                 "표 자체가 깨진 꼴(컬럼 · 월 형식 · 연결 키)이라 기준 정보 화면에서는 고칠 수 "
                 "없습니다 — 원천을 고쳐 다시 등록하세요."
@@ -112,13 +116,21 @@ class RegistrationCapacityCheck:
             f"r{revision_no + 1}부터 계산이 섭니다."
         )
 
+    def _cell_fixable(self) -> bool:
+        """기준 정보 편집표의 칸을 채우거나 고쳐 풀리는 꼴인가."""
+        if self.problem is not None:
+            return self.problem.shape in _CELL_SHAPES
+        return any(marker in (self.error or "") for marker in _CELL_MESSAGE_MARKERS)
+
     def notice(self, revision_no: int) -> str:
         """화면 등록의 경고 띠 — 저장은 됐고 그 리비전의 계산이 멈춘다. 멈추지 않았으면 빈 글."""
-        if not self.stopped:
+        if self.error is None:
             return ""
         revision = with_topic_particle(f"r{revision_no}")
+        # 「…합니다.」 로 끝나는 글도 있다 — 마침표를 겹치지 않는다.
+        error = self.error.rstrip().rstrip(".")
         return (
-            f"저장은 했지만 {revision} 대당 Capa 계산이 멈춥니다 — {self.error}. "
+            f"저장은 했지만 {revision} 대당 Capa 계산이 멈춥니다 — {error}. "
             f"{self.fix_hint(revision_no)}"
         )
 
