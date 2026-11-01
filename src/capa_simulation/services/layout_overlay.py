@@ -45,6 +45,7 @@ from capa_simulation.services.korean_particle import (
 )
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
+    finite_or_none,
     module_group_rows,
     module_layouts,
     natural_name_key,
@@ -258,15 +259,8 @@ def make_layout_overlay(
 
 
 def _number(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number):
-        return None
-    return round(number, CANVAS_DECIMALS)
+    number = finite_or_none(value)
+    return None if number is None else round(number, CANVAS_DECIMALS)
 
 
 def _text(value: object) -> str | None:
