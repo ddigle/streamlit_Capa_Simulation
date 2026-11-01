@@ -54,7 +54,10 @@ from capa_simulation.services.frame_contracts import (
     normalize_area_name,
     normalize_month_column,
 )
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import (
+    with_object_particle,
+    with_subject_particle,
+)
 from capa_simulation.services.unit_capacity import (
     PERFORMANCE_KEYS,
     RUN_DAY_KEYS,
@@ -530,7 +533,7 @@ def describe_missing_path_rows(
     # 탭끼리는 문장으로 끊는다. 경로 안의 키가 이미 ` / ` 로 이어져 있어 같은 기호로 이으면
     # 어디서 다음 탭이 시작하는지 읽히지 않는다.
     return (
-        f"{subject}가 쓰는 기준정보 행이 없습니다. "
+        f"{with_subject_particle(subject)} 쓰는 기준정보 행이 없습니다. "
         + "".join(f"{part}. " for part in parts)
         + "효율·여유율·일수에는 중립값이 없어 이대로 두면 계산 전체가 멈춥니다("
         + ", ".join(halts)
