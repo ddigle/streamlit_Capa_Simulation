@@ -59,8 +59,11 @@ MANIFEST_VERSION = 1
 DEPLOY_TAG_PREFIX = "deploy/"
 
 # 사내에만 있는 자리. 여기에 해당하는 경로는 **보내지도 않고 지우지도 않는다** —
-# 리뷰 기록과 적용 이력은 사내가 만든 것이라 사외 배포가 건드리면 안 된다.
-INTERNAL_ONLY_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/")
+# 리뷰 기록과 적용 이력은 사내가 만든 것이라 사외 배포가 건드리면 안 된다. `modules/` 는 사내
+# 모듈 자리다(모델 2 — 정본이 사내라 사외에는 그 폴더가 없다. 시험 견본은
+# `tests/fixtures/modules/`). 사외에 추적되면 빌드가 멈춘다. **전부 소문자로 적는다** — 대조가
+# `lower()` 를 거친다(`apply_deploy_package.is_preserved` 와 같은 꼴 — `Modules/…` 도 잡는다).
+INTERNAL_ONLY_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/", "modules/")
 
 # `git ls-files` 에 없지만 보내야 하는 파일. **지금은 비어 있다.**
 #
@@ -93,7 +96,13 @@ FORBIDDEN_SUFFIXES: tuple[str, ...] = (
 FORBIDDEN_NAMES: tuple[str, ...] = (".env", "secrets.toml")
 # `data/input/` 이 여기 있는 것은 위 `EXTRA_FILES` 의 결정을 규칙으로 못 박은 것이다 —
 # 그 아래는 실데이터 자리이므로 무엇이 들어오든 보내지 않는다(`.gitkeep` 만 예외).
-FORBIDDEN_PREFIXES: tuple[str, ...] = ("data/input/", "data/output/", "data/temp/")
+# `data/modules/` 는 사내 모듈 데이터 자리다(git·이미지 밖).
+FORBIDDEN_PREFIXES: tuple[str, ...] = (
+    "data/input/",
+    "data/output/",
+    "data/temp/",
+    "data/modules/",
+)
 
 # 위 폴더 아래여도 보내는 파일. 빈 폴더를 만들어 두는 자리표이지 데이터가 아니다.
 PLACEHOLDER_NAMES: tuple[str, ...] = (".gitkeep",)
@@ -288,8 +297,11 @@ def hygiene_report(root: Path, paths: Sequence[str]) -> dict[str, object]:
 
 
 def internal_only_entries(paths: Iterable[str]) -> list[str]:
-    """사내 전용 자리를 침범하는 경로. 하나라도 있으면 사내 기록을 덮는다."""
-    return sorted(path for path in paths if path.startswith(INTERNAL_ONLY_PREFIXES))
+    """사내 전용 자리를 침범하는 경로. 하나라도 있으면 사내 기록·사내 모듈을 덮는다.
+
+    대소문자를 가리지 않는다 — 사외에 `Modules/…` 가 커밋돼도 사내 Windows 에서는 같은 폴더다.
+    """
+    return sorted(path for path in paths if path.lower().startswith(INTERNAL_ONLY_PREFIXES))
 
 
 def build_archive(
