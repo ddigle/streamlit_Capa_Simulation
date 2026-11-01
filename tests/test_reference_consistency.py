@@ -771,3 +771,100 @@ def test_reviving_a_run_rate_route_whose_rows_are_there_or_that_stays_dropped_pa
         {**sparse, "RQ_UPEH": still_dropped},
     )
     assert not _calculation_halts(still_dropped, {**sparse, "RQ_RUN_RATE": after})
+
+
+# ---------------------- 거절 글이 인용하는 멈춤 글은 계산이 실제로 내는 글이다(E2E 2026-11-02).
+# 행은 있고 값만 빈 칸(BigDataQuery 원천의 빈 효율)은 계산이 「… 값이 빈 …」 으로 멈춘다 —
+# 「연결값이 없는」 은 행이 정말 없을 때다. 거절 판정은 그대로이고 괄호 안 인용만 가른다.
+
+
+def _calculation_error(upeh: pd.DataFrame, tables: dict[str, pd.DataFrame]) -> str:
+    """그 표들로 대당 Capa 를 돌려 멈춘 글(멈추지 않으면 빈 글)."""
+    from capa_simulation.services.unit_capacity import calculate_unit_capacity
+
+    ratio = pd.DataFrame(columns=PERFORMANCE_KEYS)
+    try:
+        calculate_unit_capacity(
+            upeh,
+            tables["RQ_RUN_RATE"],
+            tables["RQ_VITAL"],
+            pd.DataFrame({"공정": ["Process-A"], "모듈수": [1.0]}),
+            tables["RQ_RUN_DAY"],
+            ratio.assign(**{"Lot 측정률": pd.Series(dtype="float64")}),
+            ratio.assign(**{"WF측정률": pd.Series(dtype="float64")}),
+        )
+    except ValueError as error:
+        return str(error)
+    return ""
+
+
+def _with_blank_row(table: pd.DataFrame, value_column: str, month: int) -> pd.DataFrame:
+    """그 달의 Process-A 행을 값 칸만 빈 채로 더한다."""
+    row = {column: table[column].iloc[0] for column in table.columns}
+    row.update({"생산계획년월": month, value_column: None})
+    return pd.concat([table, pd.DataFrame([row])], ignore_index=True)
+
+
+@pytest.mark.parametrize("revive", [False, True], ids=["새 경로", "살린 경로"])
+def test_a_route_whose_run_rate_row_is_blank_quotes_the_blank_value_halt(revive: bool) -> None:
+    tables = _required_tables(
+        run_rate={202608: 0.9},
+        vital={202608: 1.0, 202609: 1.0},
+        run_day={202608: 30.0, 202609: 30.0},
+    )
+    tables["RQ_RUN_RATE"] = _with_blank_row(tables["RQ_RUN_RATE"], "CAPA_RUN_RATE", 202609)
+    before = _zero_upeh_route(202609) if revive else _upeh([_row(202608)])
+    after = _upeh([_row(202608), _row(202609)])
+    halt = "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다"
+    assert _calculation_error(after, tables).startswith(halt)
+
+    message = describe_missing_path_rows({}, missing_required_rows(before, after, tables))
+
+    assert "「효율」 탭에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in message
+    assert f"「{halt}」" in message
+    assert "연결값이 없는" not in message
+
+
+def test_a_revived_run_rate_route_whose_vital_row_is_blank_quotes_the_blank_value_halt() -> None:
+    upeh = _upeh([_row(202608), _row(202609)])
+    tables = _required_tables(
+        run_rate={202608: 0.9, 202609: 0.0}, vital={202608: 1.0}, run_day={202608: 30.0}
+    )
+    tables["RQ_VITAL"] = _with_blank_row(tables["RQ_VITAL"], "편중률", 202609)
+    before = tables["RQ_RUN_RATE"]
+    after = _run_rate({(202608, "Process-A"): 0.9, (202609, "Process-A"): 0.9})
+    halt = "RQ_VITAL의 편중률 값이 빈 대당 Capa 기준이 있습니다"
+    assert _calculation_error(upeh, {**tables, "RQ_RUN_RATE": after}).startswith(halt)
+
+    with pytest.raises(ValueError) as raised:
+        validate_required_edit(
+            "RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", {**tables, "RQ_UPEH": upeh}
+        )
+
+    message = str(raised.value)
+    # 여유율은 행이 있고 값만 비었고, 일수는 행이 없다 — 표마다 제 멈춤 글이다.
+    assert f"「{halt}」" in message
+    assert "「RQ_RUN_DAY 연결값이 없는 대당 Capa 기준이 있습니다」" in message
+    assert "RQ_VITAL 연결값이 없는" not in message
+
+
+def test_a_route_whose_run_rate_is_not_a_number_quotes_the_not_numeric_halt() -> None:
+    tables = _required_tables(
+        run_rate={202608: 0.9},
+        vital={202608: 1.0, 202609: 1.0},
+        run_day={202608: 30.0, 202609: 30.0},
+    )
+    run_rate = _with_blank_row(tables["RQ_RUN_RATE"], "CAPA_RUN_RATE", 202609).astype(
+        {"CAPA_RUN_RATE": "object"}
+    )
+    run_rate.loc[1, "CAPA_RUN_RATE"] = "높음"
+    tables["RQ_RUN_RATE"] = run_rate
+    before = _upeh([_row(202608)])
+    after = _upeh([_row(202608), _row(202609)])
+    halt = "RQ_RUN_RATE의 CAPA_RUN_RATE 컬럼에 숫자가 아닌 값이 있습니다"
+    assert _calculation_error(after, tables).startswith(halt)
+
+    message = describe_missing_path_rows({}, missing_required_rows(before, after, tables))
+
+    assert f"「{halt}」" in message
+    assert "연결값이 없는" not in message

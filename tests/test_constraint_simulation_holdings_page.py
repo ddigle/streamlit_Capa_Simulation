@@ -151,6 +151,19 @@ def _infos(app: AppTest) -> str:
     return " ".join(str(element.value) for element in app.info)
 
 
+def test_the_picker_input_keeps_one_width_with_and_without_focus(
+    early_databases: tuple[Path, Path],
+) -> None:
+    """「보유 제약 호기」 칸의 입력 칸은 초점 때도 넓어지지 않는다 — 1.63 multiselect 는 초점 때
+    입력 칸 min-width 가 42px 로 늘어 칩 옆에 들지 못하면 새 줄로 내려가 칸이 한 줄 커진다.
+    사이드바가 끝까지 내려가 있으면 그만큼 위 버튼(기준 확보율 · 개조 기간)이 밀려, 호기를 고른 뒤
+    처음 누른 버튼이 다른 버튼 위에서 떼어져 사라졌다(2026-11-02 E2E). 행동은 브라우저로 잰다."""
+    app = _opened(early_databases)
+
+    rule = f".st-key-{CONSTRAINT_HELD_INPUT_KEY} input {{ min-width: 7px !important; }}"
+    assert [el.proto.body for el in app.get("html") if rule in el.proto.body]
+
+
 # ------------------------------------------------------------------ 선택지·기본값
 
 

@@ -9,7 +9,6 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
     THRESHOLD_BASE_VERSION_KEY,
-    THRESHOLD_EDITOR_KEY,
     THRESHOLD_NOTE_KEY,
     THRESHOLD_SAVED_MESSAGE,
     THRESHOLD_UNCHANGED_MESSAGE,
@@ -60,8 +59,13 @@ def _save(app: AppTest) -> AppTest:
     return app.run()
 
 
+def _editor_key(app: AppTest) -> str:
+    """지금 그린 월별 편집표의 위젯 key — 위젯 id(`$$ID-<해시>-<key>`)의 끝이다."""
+    return str(app.dataframe[0].proto.id).split("-", 2)[2]
+
+
 def _edit(app: AppTest, edited_rows: dict[int, dict[str, float | None]]) -> None:
-    app.session_state[THRESHOLD_EDITOR_KEY] = {
+    app.session_state[_editor_key(app)] = {
         "edited_rows": edited_rows,
         "added_rows": [],
         "deleted_rows": [],
@@ -823,3 +827,177 @@ def test_an_out_of_range_month_outside_the_view_points_to_the_clear_box(database
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 2
     assert profile.rows["생산계획년월"].tolist() == [202602]
+
+
+# ---------------------- 남이 저장하면 이 화면의 보내지 않은 편집은 버려지고 최신 저장본이 선다(E2E
+# 2026-11-02). 칸 key 끝에 칸이 출발한 저장본 version 을 붙인다 — 입력 비가동 편집표 · Top5 구간과
+# 같은 길(AGENTS 9장 「본 값과 보이는 칸은 같은 version 이어야 한다」).
+
+
+def _other_session_saves(
+    database: Path, secure: float, warning: float, rows: pd.DataFrame | None = None
+) -> None:
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    repository = DuckDBScenarioRepository(database)
+    current = repository.load_global_securement_threshold()
+    repository.replace_global_securement_threshold(
+        secure,
+        warning,
+        empty_securement_threshold_rows() if rows is None else rows,
+        source="다른 세션",
+        expected_version=current.version,
+    )
+    clear_global_securement_threshold_cache()
+
+
+def _month_rows(month: int, secure: float) -> pd.DataFrame:
+    return pd.DataFrame({"생산계획년월": [month], "확보 기준": [secure], "경고 기준": [None]})
+
+
+def test_an_unsent_month_edit_is_dropped_when_another_session_saves_meanwhile(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """탭을 오가는 회차(제출 아님)가 남의 저장을 그리면 이 화면의 보내지 않은 월별 편집은 버려진다 —
+    본 version 만 최신으로 올라간 채 옛 편집이 남아 남의 월별 기준을 거부 없이 덮었다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _saved_once(database)
+    app = _app(database)
+    started = _editor_key(app)
+    _edit(app, {0: {"26.02": 115.0}})
+    _other_session_saves(database, 1.1, 1.0, _month_rows(202602, 1.25))
+
+    app.run()
+    assert app.session_state[THRESHOLD_BASE_VERSION_KEY] == 2
+    # 표는 새 저장본에서 출발한 새 위젯이다 — 브라우저가 들고 있던 옛 위젯의 편집은 닿지 않는다
+    # (AppTest 는 폼 안의 보내지 않은 편집을 회차 사이에 잇지 않아 key 로 본다 — 입력 비가동과
+    # 같다).
+    assert _editor_key(app) != started
+    assert _editor_key(app).endswith("v2")
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+    assert profile.thresholds.for_month(202602) == pytest.approx((1.25, 1.0))
+
+
+def test_a_month_edit_refused_by_another_sessions_save_does_not_come_back_on_the_next_press(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 뒤 표는 최신 저장본으로 다시 서고, 다시 누르면 옛 편집을 쓰지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _saved_once(database)
+    app = _app(database)
+    started = _editor_key(app)
+    _edit(app, {0: {"26.03": 116.0}})
+    _other_session_saves(database, 1.1, 1.0, _month_rows(202603, 1.26))
+
+    app = _save(app)
+    assert any("먼저" in element.value for element in app.error)
+    assert _editor_key(app) != started
+    assert _editor_key(app).endswith("v2")
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+    assert profile.thresholds.for_month(202603) == pytest.approx((1.26, 1.0))
+
+
+def test_a_month_edit_sent_with_the_press_still_reaches_the_version_check(
+    database: Path,
+) -> None:
+    """남이 먼저 저장한 뒤의 제출 회차는 표가 새 저장본으로 서지만 대조 값이 옛 version 이라
+    저장소가 거부한다 — 「바뀐 것이 없습니다」 나 조용한 저장이 되지 않는다."""
+    _saved_once(database)
+    app = _app(database)
+    started = _editor_key(app)
+    _edit(app, {0: {"26.01": 117.0}})
+    _other_session_saves(database, 1.1, 1.0)
+
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    app.run()
+
+    assert any("먼저" in element.value for element in app.error)
+    # 거부 뒤 회차는 새 저장본에서 출발한다.
+    assert _editor_key(app) != started
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+
+
+@pytest.mark.parametrize("refused", [True, False], ids=["거부 뒤", "탭 왕복"])
+def test_both_default_fields_stand_from_the_latest_save_together(
+    database: Path, monkeypatch: pytest.MonkeyPatch, refused: bool
+) -> None:
+    """남이 기본 확보만 바꿔 저장하면 이 화면의 두 칸이 함께 최신 저장본으로 선다 — key 없는 칸은
+    값이 바뀐 칸만 새로 서서 남의 확보 값과 이 화면이 친 경고 값이 섞인 채 저장됐다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _saved_once(database)
+    app = _app(database)
+    app.number_input[1].set_value(95)
+    _other_session_saves(database, 1.15, 1.0)
+
+    if refused:
+        app = _save(app)
+        assert any("먼저" in element.value for element in app.error)
+    else:
+        app.run()
+
+    assert [widget.value for widget in app.number_input] == [115, 100]
+    app = _save(app)
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.default_secure, profile.default_warning) == pytest.approx(
+        (2, 1.15, 1.0)
+    )
+
+
+def test_typed_default_values_survive_reruns_of_the_same_saved_version(database: Path) -> None:
+    """같은 저장본 안에서는 친 값이 회차를 넘어 남는다 — key 가 바뀌는 것은 저장본이 바뀔
+    때뿐이다."""
+    _saved_once(database)
+    app = _app(database)
+    app.number_input[1].set_value(95)
+    app.run()
+    app.run()
+
+    assert [widget.value for widget in app.number_input] == [112, 95]
+
+
+def test_unsaved_default_fields_follow_a_new_official_preset_together(database: Path) -> None:
+    """저장본이 없는 v0 의 두 칸은 최신 공식버전 프리셋 값이다 — 공식버전이 바뀌어 그 값이 바뀌면 두
+    칸이 함께 새 값으로 선다(version 만 key 에 두면 v0 에 머문 칸이 옛 프리셋을 들고 있었다)."""
+    script = f"""
+import streamlit as st
+
+from capa_simulation.components.home_preference import render_threshold_editor
+from capa_simulation.persistence.models import GlobalSecurementThreshold
+from capa_simulation.services.securement_threshold import empty_securement_threshold_rows
+
+secure, warning = st.session_state.get("__fallback__", (1.2, 1.0))
+render_threshold_editor(
+    months=[202601],
+    month_labels=["26.01"],
+    threshold_profile=GlobalSecurementThreshold(
+        version=0,
+        source="",
+        updated_at=None,
+        default_secure=secure,
+        default_warning=warning,
+        rows=empty_securement_threshold_rows(),
+        fallback="시험",
+    ),
+    database_path={str(database)!r},
+)
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert [widget.value for widget in app.number_input] == [120, 100]
+
+    app.session_state["__fallback__"] = (1.3, 1.05)
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [widget.value for widget in app.number_input] == [130, 105]

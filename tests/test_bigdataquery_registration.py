@@ -53,6 +53,22 @@ def test_conflict_report_renders_summary_and_download() -> None:
     assert len(app.get("download_button")) == 1
 
 
+@pytest.mark.parametrize("table", ["RQ_PKG_PLAN", "RQ_RUN_RATE"])
+def test_conflict_banner_points_at_the_rule_the_table_below_states(table: str) -> None:
+    """띠 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 표마다 「값이 있는 첫 행」
+    (효율 · UPEH 는 0 · 빈 값만 다르면 0 행)이라 원천 첫 행이 아닐 때가 많다(E2E 2026-11-02).
+    띠는 바로 아래 요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
+    from capa_simulation.services.reference_conflicts import conflict_resolution
+
+    app = AppTest.from_string(REPORT_SCRIPT.replace('"RQ_PKG_PLAN"]', f'"{table}"]')).run()
+
+    assert not app.exception
+    banner = app.warning[0].value
+    assert "원천 첫 행" not in banner
+    assert "그룹마다 아래 표 「임시처리」 규칙대로 한 행을 임시 적용했습니다" in banner
+    assert app.dataframe[0].value.loc[0, "임시처리"] == conflict_resolution(table)
+
+
 # 목록 결과를 세션에 심고 컴포넌트를 그리는 스크립트. 사내 패키지·DuckDB 없이 돈다.
 STEP_SCRIPT = """
 from datetime import date, datetime

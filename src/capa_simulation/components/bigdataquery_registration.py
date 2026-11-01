@@ -842,7 +842,7 @@ def _render_reference_conflict_report() -> None:
     summary = summarize_reference_conflicts(report)
     st.warning(
         f"{len(report):,}개 업무 키 그룹에서 값 충돌을 확인했습니다. "
-        "등록은 중단하지 않고 각 그룹의 원천 첫 행을 임시 적용했습니다."
+        "등록은 중단하지 않고 그룹마다 아래 표 「임시처리」 규칙대로 한 행을 임시 적용했습니다."
     )
     st.dataframe(summary, hide_index=True, width="stretch")
     render_csv_download(

@@ -707,8 +707,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
     블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
     블록 글자 줄 크기는 편집기 JS `// <block-text>` 구획의 순수 `blockTextLayout`(node 시험 `test_space_block_text_js.py`)
-    이 정한다 — 단축 줄은 이름·대수 줄 크기를 끌어내리지 않고 제 폭으로 따로 작아지며, 많이 줄면 「 · 」 경계에서 두
-    줄로 나뉘고 6px 아래면 그 줄만 숨는다(E2E r1 — 이름이 6~7px 이 되던 것).
+    이 정한다 — 단축 줄은 **폭 때문에** 이름·대수 줄을 끌어내리지 않고 제 폭으로 따로 작아지며, 많이 줄면 「 · 」 경계에서
+    두 줄로 나뉘고 6px 아래면 그 줄만 숨는다(E2E r1 — 이름이 6~7px 이 되던 것). 높이는 단축 줄 몫도 나누므로 높이가
+    모자란 블록(화면 약 63px 밑)은 줄 수 몫으로 이름·대수 줄도 조금 작아진다(1500 폭 낮은 층에서 13 → 약 12px — node 시험
+    `test_a_low_block_keeps_the_name_size_instead_of_splitting_the_short_line` 이 그 크기를 고정한다). 세 줄로는 위 줄이 7px 아래인 낮은 블록도
+    단축 줄부터 빼고, 이름·대수 두 줄로도 7px 아래일 때만 이름 줄 하나로 접는다(2026-11-02 E2E — 키 23 ~ 34px 블록에서
+    「필요 단축」 을 켜면 대수 줄까지 사라졌다).
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
     판정한다. 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
 - `src/capa_simulation/components/space_floor_list.py` — Space FAB 전체 아래 **층 목록**(2026-10-24 결정 S1~S6). 보기는
@@ -1219,6 +1223,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「경로가 쓰는 칸」 은 제외(Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수) 뒤에도 남는 경로의 칸이다(`_live_upeh` — 계산과 같은
   자리에서 멈추게). 그래서 두 검증은 `RQ_UPEH` 와 효율·측정률이 든 시나리오 표 묶음을 받는다. 빠지던 경로를 살리는 편집
   (UPEH·효율 0 이하 → 0 보다 큼)은 새 경로로 센다(`revived_route_rows` — 7장 「검사는 계산이 멈추는 조건과 같게」).
+  거절 글(`describe_missing_path_rows`)이 괄호에 인용하는 멈춤 글은 계산이 실제로 낼 글이다 — 결손 줄마다 행 없음 ·
+  값이 빈 행 · 숫자 아님을 갈라(`_missing_required_for`, `unit_capacity._raise_on_unusable_values` 와 같은 갈래) 「… 연결값이
+  없는 …」 · 「…의 {값 칸} 값이 빈 …」 · 「… 숫자가 아닌 값이 있습니다」 를 고른다(BigDataQuery 원천의 빈 값 행).
 - `src/capa_simulation/services/reference_transformer.py` — XLSB `Q_Core_Data` 와 15개 Core 파생 Power Query 를 pandas 로
   대체하고 값 충돌 보고서를 함께 낸다(수동 `RQ_DISPLAY_ORDER` 는 `display_order_editor.transform_display_order`).
   - 경로 중복 접기·빈 대여 = 0 보정 때문에 `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 Power Query 와 일부러 다를 수
@@ -1328,7 +1335,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     글·동층/상태 허용값)로 다듬고 못 맞추면 그 규칙 문구의 `CellParseError` 를 준다. 시간대가 붙은 날짜는 세 쓰임 모두 못 읽은
     날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 비가동 일정 날짜(`_normalize_date`)도 같은 길로 읽어
     시간대가 섞인 붙여넣기가 pandas 예외 대신 그 값을 든 문구로 막힌다. 시간대 탓으로 못 읽은 값은 까닭을 말하는 문구
-    (`_zoned_date_message` — 「{칸}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요」)로 따로 낸다 — 칸 결과는 줄마다,
+    (`_zoned_date_message` — 「{칸}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요」)로 따로 낸다 — 시간 없는
+    오프셋 꼴(`2026-11-05+09:00`·`2026-11-05Z`, pandas 가 그냥 못 읽는 값)도 이 문구다(`_offset_only_date` — 못 읽은 줄의
+    문구 고르기에만 쓰고 칸을 가리는 `_zoned_date` 는 넓히지 않는다). 칸 결과는 줄마다,
     저장·붙여넣기 거부는 시간대 줄부터 그 값만 예시로. 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
     문구를 글자 그대로(예시·다섯 개 제한까지) 고정한다(`tests/test_equipment_validation_issues.py`).
   - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사는 저장할 때만
@@ -2131,6 +2140,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
     이름·공정 칸의 key 끝에는 고칠 프리셋 저장본의 지문을 붙여, 남의 저장에 거부된 뒤 두 칸이 함께 저장본으로 선다(5장 25).
+    판정 기준 월별 표의 key 끝에는 그 회차가 그린 저장본 version 을 붙인다(`threshold_widget_key` — Top5 구간과 같다. 남이
+    저장하면 보내지 않은 편집은 버려지고 최신이 서며, 제출 회차면 대조 값이 옛 version 이라 거부된다 — 9장 「본 값과 보이는 칸」).
     바꾼 것 없는 저장(판정 기준·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
     폼 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5·넓힘 — 9장 「바꾼 것 없는 저장」).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
@@ -3512,7 +3523,8 @@ RQ_MODULE
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
     확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 칸에는 고정 key 를 두지 않는다 — 칸이 둘 이상이면 key 끝에
     저장본 version 을 붙인다(Top5 구간 — key 가 없으면 위젯 id 가 값을 따라 값이 바뀐 칸만 새로 서서, 거부된 뒤 남의 저장값과
-    이 화면이 친 값이 섞였다, 2026-10-27 표적 E2E). 묶음의 한 항목만 대조하는 편집기는 version 대신 **그 항목 저장본의 지문**을
+    이 화면이 친 값이 섞였다, 2026-10-27 표적 E2E. HOME 판정 기준 기본 확보·경고 두 칸도 같은 꼴이 2026-11-02 E2E 에서 나와
+    같은 길로 고쳤다 — `home_preference.threshold_widget_key`, 저장본이 없는 v0 은 보이는 프리셋 두 값도 붙인다). 묶음의 한 항목만 대조하는 편집기는 version 대신 **그 항목 저장본의 지문**을
     붙인다(HOME 주요공정 프리셋 이름·공정 — `home_preference._key_process_widget_key`, 2026-11-01 결정 N7-preset; 묶음 version 을
     넣으면 다른 프리셋을 남이 고친 회차에 칸이 새로 서 이 화면의 입력이 버려진 채 저장된다). 넘기는 대조 값은 **본 값**
     (`write_guard.seen`)이다 — 폼을 제출하지 않은 회차·초안을 세운 자리에만 적고(`remember_seen`), 없으면 지금 값으로
@@ -4373,7 +4385,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `reference_conflicts`). 숫자 `0` 과 빈 글자는 값 없음이라 형제 행에 실제 값이 있으면 그 값이 저장된다(모두 `0` 이면
   `0`). 효율·UPEH 는 0 행과 빈 값 행만 있으면 원천 행 차례와 상관없이 0 행이다(2026-11-01 사용자 결정 — 0 은 그 경로만
   제외, 빈 값은 계산 전체 멈춤이라 BigDataQuery 의 차례 없는 조회가 같은 원천을 서게도 멈추게도 했다). 다른 표는 0 의 뜻을
-  확인할 때까지 차례 그대로다. BigDataQuery 등록 화면은 표별 충돌 건수·임시 제외 행 수와 충돌 CSV 를 준다. 원천 정합성 확인용 임시 정책이며
+  확인할 때까지 차례 그대로다. BigDataQuery 등록 화면은 표별 충돌 건수·임시 제외 행 수와 충돌 CSV 를 준다 — 경고 띠는
+  고른 행을 따로 말하지 않고 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다. 원천 정합성 확인용 임시 정책이며
   실제 집계 규칙을 대신하지 않는다. `RQ_PKG_PLAN` 의 Pack Code 별 수량은 충돌이 아니라 별도 행이다(4장).
 
 ## 8. 표시·정렬 규칙
@@ -4872,6 +4885,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   선다). 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
   값을 무시한다). 친 글의 확정과 버튼 누름이 한 회차에 겹치면 버튼이 이긴다(옛 세대 key 의 숫자 칸 콜백은 적지 않는다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
+- **버튼 줄 아래의 multiselect 는 초점 앞뒤로 높이가 같아야 한다.** 1.63 multiselect 는 초점 때 입력 칸 min-width 가 42px
+  (아니면 7px)라, 칩 옆에 들지 못하면 입력 칸이 새 줄로 내려가 칸이 한 줄 커진다. 사이드바가 끝까지 내려가 있으면 그만큼 위
+  위젯이 밀려, 그 칸에서 초점을 뺏는 첫 누름(pointerdown)이 버튼 위에서 시작해 다른 버튼 위에서 떼어져 사라졌다(2026-11-02
+  E2E — 제약 시뮬레이션 「보유 제약 호기」 를 고른 뒤 기준 확보율 · 개조 기간 버튼). 그런 칸에는 `.st-key-<key> input
+  { min-width: 7px !important; }` 를 준다(`app_pages/constraint_simulation.HELD_PICKER_STYLE` — 칩 줄바꿈은 그대로).
+  AppTest 로는 잡히지 않아 시험은 그 규칙이 실렸는지만 보고 행동은 브라우저로 잰다.
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다. `ConditionTabs` 는 탭 말고 **보기 값**으로도 가른다 — Space 현황은 색 기준 라디오(`space_color_basis`)가
@@ -5032,7 +5051,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     남이 저장하면 보내지 않은 편집은 버려지고 최신이 서며(화면 안내·Guide 에 적는다), 제출 회차에 옛 key 의 편집이 오면 저장소가
     거부한다. AppTest 는 회차 사이 편집표의 브라우저 편집을 잇지 않아 이 결함을 못 재현한다 — 시험은 key 가 version 을 따라가는지와
     거부 뒤 최신이 서는지를 보고, 행동은 브라우저로 잰다. 같은 꼴(키 고정 편집표 + 폼 + `remember_seen`)인 HOME 판정 기준 월별
-    표·확보율 보정 편집표는 아직 재지 않았다(`docs/TODO.md`).
+    표도 탭 왕복 · 거부 뒤 둘째 누름에 남의 월별 기준을 덮어(2026-11-02 E2E) key 에 version 을 넣어 고쳤다
+    (`home_preference.threshold_widget_key` — Top5 구간처럼 제출 회차도 그 회차가 그린 저장본 version 이다. 거부된 누름의
+    둘째 누름 회차가 본 version 을 최신으로 적으므로 그 회차의 칸과 다음 누름의 칸이 같은 위젯이어야 한다). 확보율 보정
+    편집표(`num_rows="dynamic"`)는 같은 E2E 에서 남의 값이 서서 결함이 아니었다.
   - **제 저장 판정.** 둘째 누름의 회차가 첫 저장의 rerun 회차(콜백이면 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가
     거부하고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E — 버전 대조 저장(Proc Rename·표시순서
     직접 편집·판정 기준·확보율 보정·HOME Summary 공지·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`

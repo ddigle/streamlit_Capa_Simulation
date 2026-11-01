@@ -130,3 +130,18 @@ def test_a_tiny_inactive_block_keeps_a_mark_in_front_of_its_name() -> None:
     assert [row["text"] for row in tiny] == ["⊘ C4 6F"]
     assert [row["text"] for row in roomy] == ["C4 6F", "사용 안 함"]
     assert [row["text"] for row in used] == ["C4 6F"]
+
+
+def test_a_low_block_drops_the_short_line_before_the_count_line() -> None:
+    """키 23 ~ 34px 블록 — 단축 줄까지 세 줄이면 위 줄이 7px 아래라도 단축 줄을 먼저 빼고 이름 ·
+    대수 두 줄이 7px 이상이면 그 둘을 남긴다(단축 줄은 풍선에 남는다). 예전에는 단축 줄 몫까지
+    나눈 크기로 판정해 「배치 n대」 까지 빼고 이름만 남겨, 이 보기가 강조하려는 블록에서만 대수가
+    사라졌다(2026-11-02 E2E G7-10b). 두 줄로도 7px 아래면 지금처럼 이름 줄만이다."""
+    lw, lh, upp = 6.9, 3.0, 0.1
+    low, lower = _layout([_case(lw, lh, upp=upp), _case(lw, 2.0, upp=upp)])
+
+    assert [(row["text"], row["role"]) for row in low] == [("C1 3F", "head"), ("배치 12대", "sub")]
+    expected = min(lh * 0.8 / (2 * 1.3), lw * 0.9 / _em("배치 12대"), 13 * upp)
+    assert abs(low[0]["size"] - expected) < 1e-9
+    assert expected / upp >= 7 > lh * 0.8 / (3 * 1.3) / upp
+    assert [row["text"] for row in lower] == ["C1 3F"]
