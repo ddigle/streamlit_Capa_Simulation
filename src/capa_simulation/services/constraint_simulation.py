@@ -941,7 +941,8 @@ def _validate_held_units(units: Sequence[HeldUnit]) -> None:
         for label, value in (("기여 시작", unit.start), ("반출일", unit.until)):
             if value is not None and not isinstance(value, date):
                 raise ValueError(
-                    f"보유 제약 호기 {unit.name} 의 {label}이 날짜가 아닙니다: {value!r}"
+                    f"보유 제약 호기 {unit.name} 의 {with_subject_particle(label)} 날짜가 "
+                    f"아닙니다: {value!r}"
                 )
         _require_positive(
             unit.units, f"보유 제약 호기 {unit.name} 의 환산 대수가 0 보다 큰 수가 아닙니다."

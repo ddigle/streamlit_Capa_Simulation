@@ -623,7 +623,7 @@ def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
 
 def holdings_text(result: ConstraintResult) -> str:
     """보유의 출처와 크기 — 「입력 4대」(목록에 없는 보유 칸만), 「고른 호기 3대 · 보유 2.50대」,
-    「고른 호기 2대 + 입력 1대 · 보유 3대 · 27년 7월부터 2대」(그 달 W/D 첫날 보유가 기간 안에서
+    「고른 호기 2대 · 입력 1대 · 보유 3대 · 27년 7월부터 2대」(그 달 W/D 첫날 보유가 기간 안에서
     바뀌면 바뀐 달 둘까지, 그 뒤는 「외 n번」). 보유가 걸리지 않으면 빈 글자."""
     conditions = result.conditions
     if not conditions.uses_owned_units:
@@ -632,7 +632,7 @@ def holdings_text(result: ConstraintResult) -> str:
         return f"입력 {conditions.owned_units}대"
     source = f"고른 호기 {len(conditions.held_units)}대"
     if conditions.owned_units:
-        source += f" + 입력 {conditions.owned_units}대"
+        source = f"{source} · 입력 {conditions.owned_units}대"
     steps: list[tuple[int, float]] = []
     for row in result.months:
         if row.in_period and (not steps or abs(row.holdings - steps[-1][1]) > 1e-9):

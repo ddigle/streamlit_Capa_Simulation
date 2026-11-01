@@ -152,7 +152,7 @@ def test_picked_units_and_the_number_field_add_up(early_databases: tuple[Path, P
     app = _pick(_ok(app.run()), "CA-03")
     assert "보유 제약 호기 1대 + 2대" in _header_line(app)
     captions = _plain(_captions(app))
-    assert "보유 제약 설비 1대(고른 호기 1대 + 입력 2대 · 보유 3대 중)" in captions
+    assert "보유 제약 설비 1대(고른 호기 1대 · 입력 2대 · 보유 3대 중)" in captions
 
 
 def test_a_picked_new_unit_is_no_longer_a_new_unit(
