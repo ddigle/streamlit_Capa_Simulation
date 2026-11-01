@@ -21,7 +21,11 @@
   편집을 그대로 들고 있다 — 남이 저장한 칸이 보이지 않은 채 본 version 만 최신으로 올라가 그
   저장을 거부 없이 덮었다(2026-10-27 리뷰, 사본 앱 두 세션). 그래서 제출이 아닌 회차는 그 회차가
   그린 저장본의 version 으로, 제출 회차는 본 version 으로 key 를 짓는다 — 「본 값」 과 「보이는
-  칸」 이 늘 같은 version 이다. 남이 저장하면(거부 뒤 포함) 보내지 않은 편집은 버려지고 최신이
+  칸」 이 늘 같은 version 이다. 예외 하나 — 남의 저장에 거부된 누름의 둘째 누름 회차
+  (`held_profile_conflict`)는 저장하지 않고 본 version 을 그 회차가 그린 저장본으로 적으므로 key 도
+  그 version 이다. 본 version 으로 그리면 거부 뒤 회차를 끊은 둘째 누름(본 값이 옛 version 그대로)이
+  옛 편집을 다시 세우고, 그 위에 친 칸은 다음 누름의 최신 key 위젯에 닿지 않아 「바뀐 칸이 없어」 로
+  버려졌다(2026-11-02 E2E). 남이 저장하면(거부 뒤 포함) 보내지 않은 편집은 버려지고 최신이
   선다. 제출 회차에 옛 key 의 편집이 들어오면 저장소가 거부한다. 바깥 상자는 늘 같은 key
   (`MANUAL_EDITOR_KEY`)라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
 - **같은 입력의 꼬리 누름**(0.5~1초 간격 두 번 — 둘째 누름이 첫 저장 뒤 새로 그린 표에서 온다)은
@@ -293,7 +297,12 @@ def _render_editor(
         # 저장본(모듈 docstring). 남이 저장한 뒤의 회차는 새 위젯이라 보내지 않은 편집을 버리고
         # 최신을 그린다. 이것은 **위젯 key** 일 뿐 대조 값이 아니다 — 저장소에 넘기는 대조 값은
         # 아래 본 값(`submitted_base`) 그대로이고, 없으면 저장하지 않는다(write_guard).
-        if submitted and isinstance(submitted_base, int):
+        # 남의 저장에 거부된 누름의 둘째 누름(held)은 저장하지 않고 본 version 을 이 회차가 그린
+        # 저장본으로 적으므로(아래) 칸도 그 version 으로 그린다 — 본 값과 보이는 칸이 같은 위젯이다.
+        held = (
+            held_profile_conflict(profile_conflict_marks(), MANUAL_SAVE_NAME) if submitted else None
+        )
+        if submitted and held is None and isinstance(submitted_base, int):
             started = submitted_base
         else:
             started = profile.version
@@ -331,10 +340,10 @@ def _render_editor(
     # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     conflict_marks = profile_conflict_marks()
-    held = held_profile_conflict(conflict_marks, MANUAL_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
-        # 알린다. 본 version 은 이 회차가 그린 최신 저장본으로 적는다(확보율 보정과 같다).
+        # 알린다. 본 version 은 이 회차가 그린 최신 저장본으로 적는다(확보율 보정과 같다 — 칸도
+        # 위에서 그 version 으로 그렸다).
         remember_seen(MANUAL_BASE_VERSION_KEY, profile.version)
         if refused != held:
             notice.error(held)

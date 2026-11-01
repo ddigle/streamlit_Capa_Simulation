@@ -8,12 +8,14 @@
 
 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key`) — 남이 저장한 뒤의 회차·거부 뒤
 회차는 새 key 로 최신을 그린다(보내지 않은 편집이 남의 칸을 가린 채 본 version 만 오르던 결함 —
-2026-10-27 리뷰). 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 성공으로 다시 알린다.
+2026-10-27 리뷰). 남의 저장에 거부된 누름의 둘째 누름 회차도 최신 key 로 그려 그 뒤 친 칸이 다음
+누름에 닿는다. 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 성공으로 다시 알린다.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -23,6 +25,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.manual_downtime_tab import (
+    MANUAL_BASE_VERSION_KEY,
     MANUAL_EDITOR_KEY,
     MANUAL_NOTE_KEY,
     MANUAL_SAVE_BUTTON,
@@ -106,6 +109,13 @@ def _editor_id(app: AppTest) -> str:
     return str(
         next(frame for frame in app.dataframe if MANUAL_EDITOR_KEY in frame.proto.id).proto.id
     )
+
+
+def _drawn_version(app: AppTest) -> int:
+    """이 회차가 그린 편집표 key 의 version — 브라우저에서 사용자가 칸을 치는 위젯이다."""
+    found = re.search(r"__v(\d+)", _editor_id(app))
+    assert found is not None, _editor_id(app)
+    return int(found.group(1))
 
 
 def test_edit_save_and_the_table_redraws_the_saved_values(tmp_path: Path) -> None:
@@ -204,6 +214,47 @@ def test_another_sessions_save_redraws_the_table_from_the_new_version(tmp_path: 
     _save(second)
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202607, 12.0)), 2)
+
+
+def test_the_second_press_of_a_refused_press_redraws_the_latest_so_the_next_press_saves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 누름의 둘째 누름(held)이 거부 뒤 회차를 끊었을 때 — 그 회차는 본
+    version 을 최신으로 적으므로 칸도 최신 key 로 그린다. 옛 key(본 값 v0)로 그리면 거부된 옛 편집이
+    선 채 남고, 그 위에 친 칸은 다음 누름의 최신 key 위젯에 닿지 않아 「바뀐 칸이 없어」 로
+    버려졌다(2026-11-02 E2E — 둘째 누름 간격 0.13 ~ 0.23초)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    path = tmp_path / "equipment.duckdb"
+    app, other = _app(path), _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    # 남이 v0 위에서 다른 칸을 저장한다(v1).
+    _edit(other, {(1 - row_a, "202608"): 0.5})
+    _save(other)
+    # 이 화면은 v0 표에 적어 둔 칸(보내지 않음)으로 누른다 — 거부된다.
+    _edit(app, {(row_a, "202607"): 9.0})
+    app = _save(app)
+    assert any("다른 사용자가 먼저" in item.value for item in app.error)
+
+    # 둘째 누름이 거부 뒤 회차를 본 값을 적기 전에 끊었다 — 본 값은 v0 그대로이고, 브라우저는 옛 v0
+    # 표의 편집을 든 채 보낸다.
+    app.session_state[MANUAL_BASE_VERSION_KEY] = 0
+    _edit(app, {(row_a, "202607"): 9.0})
+    app = _save(app)
+    errors = [item.value for item in app.error]
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert manual_editor_key(1) in _editor_id(app)
+    values = _editor_values(app)
+    assert bool(pd.Series(values["202607"], dtype="object").isna().iloc[row_a])
+    assert values["202608"][1 - row_a] == pytest.approx(0.5)
+    assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
+
+    # 창이 지난 뒤 보이는 표에 새로 친 칸으로 누르면 그 칸이 든다 — 남의 칸도 그대로다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit(app, {(row_a, "202608"): 1.25}, version=_drawn_version(app))
+    app = _save(app)
+    assert not any("바뀐 칸이 없어" in item.value for item in app.info)
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202608, 1.25)), 2)
 
 
 def test_a_trailing_press_of_the_same_input_repeats_the_success(

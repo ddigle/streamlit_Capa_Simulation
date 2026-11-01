@@ -2722,7 +2722,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
   `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다.
   - 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key` — 제출 회차는 본 version, 그 밖은 그린 저장본 version, 9장
-    「본 값과 보이는 칸」). 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
+    「본 값과 보이는 칸」). 남의 저장에 거부된 누름의 둘째 누름(`held_profile_conflict`) 회차는 제출 회차여도 그린 저장본 version
+    이다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인
+    `equipment_preference` 가 그 칸으로 찾는다.
   - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
     잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
@@ -5048,6 +5050,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     본 값은 최신으로 오르는데 그 칸에는 남의 값이 아니라 제 편집이 보여, 저장이 거부 없이 남의 저장을 덮었다(2026-10-27 리뷰 —
     Preference 입력 비가동, 사본 앱 두 세션. 거부 뒤에도 제 편집이 남아 1초 뒤 다시 누르면 덮었다). 그런 표는 위젯 key 에 **표가
     출발한 version** 을 넣는다 — 제출 회차는 본 값, 그 밖은 그 회차가 그린 저장본 version(`manual_downtime_tab.manual_editor_key`).
+    거부된 누름의 둘째 누름(held) 회차는 제출 회차여도 그린 저장본 version 이다 — 그 회차가 본 값을 최신으로 적으므로, 본 값(옛
+    version — 둘째 누름이 거부 뒤 회차를 적기 전에 끊었다)으로 그리면 옛 편집이 다시 서고 그 위에 친 칸이 다음 누름의 최신 key
+    위젯에 닿지 않아 「바뀐 칸이 없어」 로 버려졌다(2026-11-02 E2E — 둘째 누름 0.13 ~ 0.23초).
     남이 저장하면 보내지 않은 편집은 버려지고 최신이 서며(화면 안내·Guide 에 적는다), 제출 회차에 옛 key 의 편집이 오면 저장소가
     거부한다. AppTest 는 회차 사이 편집표의 브라우저 편집을 잇지 않아 이 결함을 못 재현한다 — 시험은 key 가 version 을 따라가는지와
     거부 뒤 최신이 서는지를 보고, 행동은 브라우저로 잰다. 같은 꼴(키 고정 편집표 + 폼 + `remember_seen`)인 HOME 판정 기준 월별
