@@ -84,9 +84,12 @@ def test_the_noise_boundary_paints_warning_but_counts_zero() -> None:
 
 
 def test_the_cause_follows_the_status_on_the_noise_boundary() -> None:
-    """총보유 = 가용인 달은 원인이 늘 「보유로도 부족」이다. 원인도 판정과 같은 비율로 가른다."""
+    """총보유 = 가용인 달은 원인이 늘 「보유로도 부족」이다. 원인도 판정과 같은 비율로 가른다.
+
+    잡음 경계는 판정 경계(기준 110% 면 1.095 — 확보율을 사사오입해 견준다, 2026-11-01)에 선다 — 새
+    저장값 1.10 에서도 옛 1.095 와 같은 행이 경고로 칠해진다."""
     balance = securement_balance(
-        _frame([(202601, "Edge", 55.0, 55.0, 50.00000000000001)]),
+        _frame([(202601, "Edge", 10.95, 10.95, 10.000000000000002)]),
         thresholds=SecurementThresholds(1.1, 0.9),
     )
 

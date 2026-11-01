@@ -12,7 +12,7 @@
   아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
 - **조건 카드**(제약 모드와 같은 카드 이름·자리) — 대상(공정 — 제약 모드와 같은 칸) / 이 세션만 /
   개조(대수 · 기간 버튼 + 직접 · 동시 상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준
-  확보율 — 제약 모드와 **한 정본** · 안전 여유 %p · 목적) / Cut-off 읽기만.
+  확보율 — 제약 모드와 **한 정본**, 정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
 - **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
   render_equipment_plan` — 멈추는 갈래 · 까닭 카드 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
   키**로).
@@ -135,8 +135,10 @@ from capa_simulation.services.modification_schedule import (
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_threshold import (
+    judgment_boundary,
     securement_threshold_caption,
 )
+from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import wd_window
 from capa_simulation.sidebar_status import condition_card
 from capa_simulation.upeh_assumption_state import (
@@ -175,7 +177,7 @@ LIST_CARD_KEY: Final = "constraint_sim_sched_list"
 SHORTFALL_CARD_KEY: Final = "constraint_sim_sched_shortfall"
 _MEMO_LIMIT: Final = 4
 # 결과 모양(서비스 dataclass)을 바꾸면 올린다 — 세션 memo 의 옛 결과를 쓰지 않게.
-_RESULT_SCHEMA_VERSION: Final = 2
+_RESULT_SCHEMA_VERSION: Final = 3
 _EMPTY: Final = "—"
 
 DOUBLE_COUNT_NOTE: Final = (
@@ -205,7 +207,7 @@ FELL_BACK_LABEL: Final = "가장 고르게 → 가장 빨리로 배치"
 DEADLINE_HELP: Final = (
     "기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다 — 기한을 고르지 않았으면 「없음」 "
     "입니다. 못 맞추면 남은 대수를 적고, 기준을 낮춰 기한 안에 다 넣을 수 있으면 그 폭도 "
-    "적습니다(「기준 n%p 낮추기」 — 0.01%p 올림이라 적힌 만큼 낮추면 들어갑니다). 0% 까지 낮춰도 "
+    "적습니다(「기준 n% 낮추기」 — 0.01% 올림이라 적힌 만큼 낮추면 들어갑니다). 0% 까지 낮춰도 "
     "못 넣으면 폭 대신 그 까닭을 아래 「다 넣지 못했습니다 — 대안」 이 적습니다."
 )
 
@@ -439,7 +441,8 @@ def _render_conditions(
     )
 
     st.caption("**기준**")
-    home_percent = thresholds.default_secure * 100
+    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — 제약 영향 모드와 같은 칸·같은 꼴.
+    home_percent = threshold_percent(thresholds.default_secure)
     general = render_preset_number_field(
         "기준 확보율",
         value_key=CONSTRAINT_GENERAL_KEY,
@@ -447,15 +450,16 @@ def _render_conditions(
         input_key=CONSTRAINT_GENERAL_INPUT_KEY,
         presets=GENERAL_PRESETS,
         default=None,
-        minimum=GENERAL_INPUT_RANGE[0] * 100,
-        maximum=GENERAL_INPUT_RANGE[1] * 100,
-        step=0.5,
+        minimum=round(GENERAL_INPUT_RANGE[0] * 100),
+        maximum=round(GENERAL_INPUT_RANGE[1] * 100),
+        step=1,
         unit="%",
-        number_format="%.1f",
+        number_format="%d",
         fallback=home_percent,
         preset_label=lambda value: "HOME 기준" if value is None else f"{value:g}%",
         help=(
-            "개조 뒤 공정 확보율이 모든 달 이 값 이상이어야 합니다. 「HOME 기준」 은 HOME → "
+            "개조 뒤 공정 확보율이 모든 달 이 값(정수 %) 이상이어야 합니다 — 확보율을 사사오입한 "
+            "정수 % 로 견주므로 110% 면 109.5% 도 지킨 것입니다. 「HOME 기준」 은 HOME → "
             "Preference 공용 판정 기준(기본 + 월별 예외)을 달마다 씁니다. 제약 영향 모드와 한 값을 "
             "나눕니다."
         ),
@@ -476,10 +480,10 @@ def _render_conditions(
         minimum=MARGIN_RANGE[0] * 100,
         maximum=MARGIN_RANGE[1] * 100,
         step=0.5,
-        unit="%p",
+        unit="%",
         number_format="%.1f",
         fallback=DEFAULT_MARGIN_POINTS,
-        preset_label=lambda value: f"{value:g}%p" if value is not None else "",
+        preset_label=lambda value: f"{value:g}%" if value is not None else "",
         help=(
             "기준 확보율에 더해 띄울 여유. 「가장 빨리」 는 기준에 딱 붙기 쉬워 계획이 조금만 "
             "늘어도 미달이 됩니다 — 여유를 넣으면 같은 계산이 그만큼 띄웁니다."
@@ -610,9 +614,11 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
     thresholds = page_inputs.thresholds
 
     def general_target(month: int) -> float:
+        """그 달 G — 기준(HOME 그 달 확보기준 또는 고른 정수 %)의 판정 경계(110% 면 1.095)다. 배치가
+        그 선에 붙고, 판정·글자는 그 선에서 정수 기준을 되읽는다(`securement_threshold`)."""
         if choice.general_percent is None:
-            return float(thresholds.secure_for(month))
-        return choice.general_percent / 100
+            return thresholds.boundary_for(month)[0]
+        return judgment_boundary(choice.general_percent / 100)
 
     cutoff = equipment_plan.cutoff_days
     try:
@@ -661,7 +667,7 @@ def _header_line(bold: str, result: ScheduleResult, labels: ScheduleLabels) -> s
         bold,
         f"개조 {conditions.units}대 × {conditions.days}일",
         f"기준 {literal_markdown(general_text(labels, result))}"
-        + (f" +{conditions.margin * 100:g}%p" if conditions.margin > 0 else ""),
+        + (f" +{conditions.margin * 100:g}%" if conditions.margin > 0 else ""),
         FELL_BACK_LABEL if result.fell_back else OBJECTIVE_LABELS[conditions.objective],
         "동시 상한 없음"
         if conditions.concurrent is None
@@ -765,7 +771,9 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
             help=(
                 "개조 비가동이 든 달 가운데 기준 대비 여유(개조 뒤 확보율 − 그 달 기준)가 "
                 f"가장 작은 달입니다(기준 {general_text(labels, result)}). 「가장 고르게」 는 이 "
-                "값을 가장 크게 둡니다. 기준을 지키는 것은 늘 보장합니다 — 0.0%p 이상입니다."
+                "값을 가장 크게 둡니다. 기준을 지키는 것은 늘 보장합니다 — 0.0% 이상입니다. "
+                "판정은 확보율을 사사오입한 정수 % 라 반올림으로 겨우 기준에 든 달(110% 기준의 "
+                "109.5%)은 여유 0.0% 입니다."
             ),
         )
         tone4: MetricTone

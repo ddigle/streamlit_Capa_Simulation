@@ -143,6 +143,7 @@ def test_threshold_keys_and_defaults_have_one_definition() -> None:
     HOME 사이드바와 Static Capa 본문의 컨트롤은 같은 세션 키를 공유한다. 어느 한쪽이
     문자열이나 기본값을 따로 적어 두면 상수를 바꿔도 그쪽만 조용히 옛 값에 남는다.
     """
+    import re
     from pathlib import Path
 
     from capa_simulation.scenario_preset_state import (
@@ -153,11 +154,12 @@ def test_threshold_keys_and_defaults_have_one_definition() -> None:
     )
 
     owner = Path(__file__).resolve().parents[1] / "src/capa_simulation/scenario_preset_state.py"
-    literals = (
-        f'"{SECURE_THRESHOLD_KEY}"',
-        f'"{WARNING_THRESHOLD_KEY}"',
-        str(DEFAULT_SECURE_THRESHOLD_PERCENT),
-        str(DEFAULT_WARNING_THRESHOLD_PERCENT),
+    literals = (f'"{SECURE_THRESHOLD_KEY}"', f'"{WARNING_THRESHOLD_KEY}"')
+    # 기본값은 정수 %(110·100 — 2026-11-01)라 글자 하나로는 다른 100 과 가를 수 없다. 기준 이름에 그
+    # 값을 다시 매기는 줄을 찾는다.
+    defaults = re.compile(
+        r"THRESHOLD\w*\s*(?::[^=\n]*)?=\s*"
+        rf"({DEFAULT_SECURE_THRESHOLD_PERCENT}|{DEFAULT_WARNING_THRESHOLD_PERCENT})(\.0)?\b"
     )
     pages = sorted((Path(__file__).resolve().parents[1] / "app_pages").glob("*.py"))
     offenders = [
@@ -165,9 +167,14 @@ def test_threshold_keys_and_defaults_have_one_definition() -> None:
         for page in pages
         for literal in literals
         if literal in page.read_text(encoding="utf-8")
+    ] + [
+        f"{page.name}: {found.group(0)}"
+        for page in pages
+        for found in defaults.finditer(page.read_text(encoding="utf-8"))
     ]
 
     assert not offenders, f"{owner.name} 의 상수를 import 하세요: {offenders}"
+    assert (DEFAULT_SECURE_THRESHOLD_PERCENT, DEFAULT_WARNING_THRESHOLD_PERCENT) == (110, 100)
 
 
 def test_pending_preset_restores_standard_target_view_settings() -> None:

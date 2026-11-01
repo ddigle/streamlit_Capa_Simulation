@@ -131,8 +131,9 @@ class GlobalAdvanceShipment:
 class GlobalSecurementThreshold:
     """Scenario-independent securement thresholds: a default pair plus monthly overrides.
 
-    값은 비율이다(109.5% 는 1.095). `rows` 는 `생산계획년월`·`확보 기준`·`경고 기준` 이고
-    빈 칸은 그 달 그 항목이 기본값을 따른다는 뜻이다.
+    값은 비율이다(110% 는 1.1). 판정은 사사오입 정수 % 기준으로 읽는다 — 옛 저장값 1.095 도
+    110% 다(`thresholds` 가 맞춘다, `securement_threshold.normalize_threshold`). `rows` 는
+    `생산계획년월`·`확보 기준`·`경고 기준` 이고 빈 칸은 그 달 그 항목이 기본값을 따른다는 뜻이다.
 
     프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`, `updated_at=None`,
     행 0건이고 기본값은 **최신 공식버전 리비전 프리셋의 값**(그것도 없으면 코드 기본값)이다 —
@@ -356,8 +357,8 @@ class ScenarioPreset:
     start_month: int
     end_month: int
     included_processes: tuple[str, ...]
-    secure_threshold: float = 1.095
-    warning_threshold: float = 0.995
+    secure_threshold: float = 1.10
+    warning_threshold: float = 1.00
     schema_version: int = 3
     standard_target_processes: tuple[str, ...] = ()
     # 표준 목표 Capa 「조회·집계 설정」. 날짜는 사이드바 조회기간에서 파생되므로

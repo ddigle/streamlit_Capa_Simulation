@@ -196,8 +196,11 @@ from capa_simulation.services.securement_rate import (
     OWNED_COLUMN,
     STATUS_COLUMN,
 )
-from capa_simulation.services.securement_threshold import SecurementThresholds
-from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.services.securement_threshold import SecurementThresholds, judgment_boundary
+from capa_simulation.services.threshold_label import (
+    boundary_percent_label,
+    threshold_percent_label,
+)
 
 __all__ = [
     "IMPACT_LABEL_HOVER",
@@ -661,8 +664,8 @@ def _summary_rows(
             text=threshold_percent_label(secure),
             muted=True,
             hover=(
-                f"{head} · 확보기준 {threshold_percent_label(secure)} ({_ratio(secure)}) · "
-                f"경고기준 {threshold_percent_label(warning)} ({_ratio(warning)})"
+                f"{head} · 확보기준 {threshold_percent_label(secure)} · "
+                f"경고기준 {threshold_percent_label(warning)}"
             ),
         )
     rows = [_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, ())]
@@ -878,18 +881,20 @@ def _balance_hover(
 ) -> str:
     if balance is None:
         return f"{head} · 확보기준 과부족 {_EMPTY}"
-    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수 둘째 자리로 단다. 그 아래 식의
+    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 판정 경계)을 소수 둘째 자리로 단다. 과부족은 확보기준
+    # 의 판정 경계(110% 면 109.5% — 사사오입 판정)에 대한 대수다(`securement_balance`). 그 아래 식의
     # 적힌 가용·소요(첫째 자리)로 다시 셈한 값이 그 값과 다르면 식 앞에 「≈」 를 둔다.
+    bound = judgment_boundary(secure)
     unrounded = ""
     mark = EQUALS
     if available is not None and demand is not None:
-        raw = _signed_two(available - demand * secure)
+        raw = _signed_two(available - demand * bound)
         unrounded = f" ({raw})"
-        mark = equals_mark(raw, _signed_two(round(available, 1) - round(demand, 1) * secure))
+        mark = equals_mark(raw, _signed_two(round(available, 1) - round(demand, 1) * bound))
     text = (
         f"{head} · 확보기준 과부족 {_signed_int(balance)}대{unrounded}"
         f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
-        f"소요 {_one(demand)} × {_ratio(secure)} (부족은 올림, 여유는 내림)"
+        f"소요 {_one(demand)} × {boundary_percent_label(secure)} (부족은 올림, 여유는 내림)"
     )
     reason = "" if _blank(cause) else str(cause)
     if reason:
@@ -2261,11 +2266,6 @@ def _difference(left: float | None, right: float | None) -> float | None:
 
 def _changed(before: float | None, after: float | None) -> bool:
     return before is not None and after is not None and abs(after - before) > 1e-9
-
-
-def _ratio(value: float) -> str:
-    """판정 기준 비율을 사람이 적은 꼴로(1.095 → 「1.095」)."""
-    return f"{value:g}"
 
 
 def _two(value: float | None) -> str:

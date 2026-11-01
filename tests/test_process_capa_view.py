@@ -134,9 +134,11 @@ def test_the_judgement_card_writes_both_formulas_with_the_month_threshold() -> N
     assert (
         f"확보율 = {available:,.2f} ÷ {required:,.2f} = {available / required:.1%}" in card.formula
     )
-    assert f"{required:,.2f}×1.095" in card.formula
+    # 과부족 식은 판정 경계(110% → 109.5%)를 곱하고, 기준은 정수만 적는다(2026-11-01 — N1 정수만).
+    assert f"{required:,.2f}×109.5%" in card.formula
     assert card.formula.endswith(f"{MINUS}{abs(int(record['확보기준 과부족'])):,}")  # type: ignore[call-overload]
-    assert "확보기준 110% (1.095) · 경고기준 100% (0.995)" in card.notes
+    assert "확보기준 110% · 경고기준 100% — 사사오입 판정(확보 109.5% 이상)" in card.notes
+    assert not any("(1.095)" in note for note in card.notes)
     assert any(note.startswith("원인: ") for note in card.notes)
 
 
@@ -145,8 +147,8 @@ def test_a_month_threshold_exception_reaches_the_card() -> None:
     summary = _summary(thresholds=thresholds)
     card = judgement_card(_record(summary, 202703), thresholds, 202703)
 
-    assert "×1.2 " in card.formula
-    assert "확보기준 120% (1.2)" in card.notes[0]
+    assert "×119.5% " in card.formula
+    assert card.notes[0].startswith("확보기준 120% · ")
 
 
 def test_a_painted_zero_on_the_noise_boundary_is_explained() -> None:
@@ -240,11 +242,11 @@ def test_the_shortening_card_stands_only_when_the_month_is_not_met() -> None:
     assert shortening_card(dynamic, met[0]) is None
     card = shortening_card(dynamic, unmet[0])
     assert card is not None and card.reference
-    # 필요 단축 일정 탭의 110% 는 1.10 이다 — 이 화면은 소수를 함께 적는다.
-    assert card.title == "④ 단축 근거 (설비 일정 · 목표 110% (1.095))"
+    # 목표는 정수 기준 「110%」 만 적고(2026-11-01 — N1 정수만), 식 줄은 곱한 판정 경계 109.5% 다.
+    assert card.title == "④ 단축 근거 (설비 일정 · 목표 110%)"
     assert card.formula.startswith("목표 ")
     head = card.formula.split("\n")[0]
-    assert " × 1.095" in head and ("=" in head or "≈" in head)
+    assert " × 109.5%" in head and ("=" in head or "≈" in head)
     assert "구간 " in card.formula and "바닥 " in card.formula
     assert "→ 단축 후 " in card.formula
     assert any(note.startswith("상태: ") for note in card.notes)
@@ -421,8 +423,8 @@ def test_the_schedule_cause_skips_months_before_today() -> None:
 
 def test_the_target_reads_the_preference_threshold_by_month() -> None:
     uniform = MonthlyTarget(1.095)
-    assert target_text(uniform, MONTHS) == "HOME Preference 확보기준(월별) 110% (1.095)"
-    assert short_target_text(uniform, MONTHS) == "110% (1.095)"
+    assert target_text(uniform, MONTHS) == "HOME Preference 확보기준(월별) 110%"
+    assert short_target_text(uniform, MONTHS) == "110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
     assert target_text(varied, MONTHS) == "HOME Preference 확보기준(월별) — 달마다 다름"
     assert short_target_text(varied, MONTHS) == "달마다 확보기준"
@@ -516,11 +518,12 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
 
 def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() -> None:
     """구획 접기·모듈 라벨 제거(4), ③ 세 줄 풍선 · 풍선 없는 칸 trace · 줄 이름 칸 풍선 표적(5),
-    풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글), ② 「비가동 영향」 줄(7)로 그림 모양이
-    바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양 버전이 7 이다(AGENTS 5장 16)."""
+    풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글), ② 「비가동 영향」 줄(7), 정수 기준 글과 판정
+    경계 과부족 풍선(8 — 2026-11-01 사용자 결정)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을
+    다시 쓰지 않게 모양 버전이 8 이다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 7
+    assert CANVAS_SCHEMA_VERSION == 8
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 

@@ -56,8 +56,9 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
 그대로다(실제로 뗀 대수만 전용).
 
 판정은 경계를 이 모듈에 다시 적지 않는다(AGENTS 6장 「판정은 한 길」). 기준 확보율(G) 판정은
-`securement_threshold.capacity_status` 를 지나는 `secure()` 하나 — 허용치 없는 「이상」 이라 HOME
-과 같은 비율을 같게 칠한다. 제약 충족(`met`)은 `allocated >= need` **정수 비교**다 — `need` 가 제약
+`securement_threshold.capacity_status` 를 지나는 `secure()` 하나 — HOME 과 같은 「이상」(확보율을
+사사오입한 정수 % 가 G 의 정수 % 이상 — 110% 면 109.5% 확보, 2026-11-01 사용자 결정)이라 HOME 과
+같은 비율을 같게 칠한다. 제약 충족(`met`)은 `allocated >= need` **정수 비교**다 — `need` 가 제약
 확보율을 맞추는 가장 작은 정수라 「제약 % ≥ T」 와 같은 뜻이고 부동소수 잡음이
 없다(`tests/test_constraint_simulation.py`). 「영향 시작」 의 0.05%p 문턱(`IMPACT_TOLERANCE`)은
 판정이 아니라 표시 문턱이다.
@@ -181,7 +182,8 @@ class ConstraintMonthInput:
     """A — 설비 일정 기준 가용(환산 대수, 개조 전·단축 전)."""
 
     general_target: float
-    """G(m) — 그 달 기준 확보율(비율). 0 보다 크기만 하면 된다."""
+    """G(m) — 그 달 기준 확보율의 판정 경계(비율 — 화면이 `judgment_boundary` 로 넘긴다, 110% 면
+    1.095). 0 보다 크기만 하면 된다. 판정(`secure`)은 경계 꼴의 G 를 반올림해도 같은 선이다."""
 
 
 @dataclass(frozen=True)
@@ -574,7 +576,7 @@ def required_units(demand: float, target: float) -> int:
 
 
 def secure(rate: float | None, target: float) -> bool:
-    """확보율이 기준 이상인가. 경계는 `capacity_status` 한 길이다(허용치 없음 — HOME 과 같다).
+    """확보율이 기준 이상인가. 경계는 `capacity_status` 한 길이다(사사오입 정수 % — HOME 과 같다).
 
     확보율이 없으면(None) False 다 — 판정 대상이 아니라는 뜻은 부르는 쪽이 None 으로 가른다.
     """

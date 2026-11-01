@@ -1145,7 +1145,8 @@ def build_lob_summary_figures(
             for pick in (0, 1)
             for segment_start, segment_end, threshold in _threshold_runs(
                 month_line_segments,
-                [thresholds.for_month(month)[pick] for month in month_by_position],
+                # 선의 자리는 판정 경계다(110% 면 1.095) — 확보로 칠한 막대가 선 위에 선다.
+                [thresholds.boundary_for(month)[pick] for month in month_by_position],
             )
             if 0 < threshold <= top5_rate_band[1]
         ]

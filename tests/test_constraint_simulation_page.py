@@ -738,61 +738,36 @@ def test_a_new_typed_field_that_reaches_the_browser_without_its_value_stands_at_
     assert header in _header_line(app)
 
 
-def test_the_general_target_takes_half_percent_and_home(
+def test_the_general_target_takes_whole_percent_and_home(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
+    """기준 확보율 칸은 정수 %(1 단위)다 — 판정 기준은 정수 % 이고 판정은 확보율을 사사오입해 견준다
+    (2026-11-01 사용자 결정, 0.5% 단위 칸을 대신한다). HOME 일 때 칸은 HOME 기본의 정수 T(110)다."""
     app = _opened(dynamic_databases)
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
-    # HOME 일 때 숫자 칸은 HOME 기본 확보 기준(%)을 보인다.
-    shown = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).value
-    assert shown == pytest.approx(109.5)
-    app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107.5)
+    field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
+    assert field.value == 110 and isinstance(field.value, int)
+    assert field.step == 1
+    assert field.proto.format == "%d"
+    app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107)
     _ok(app.run())
-    assert app.session_state[CONSTRAINT_GENERAL_KEY] == pytest.approx(107.5)
-    assert "기준 107.5%" in _header_line(app)
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == 107
+    assert "기준 107%" in _header_line(app)
     app.button_group(key=CONSTRAINT_GENERAL_PILLS_KEY).set_value("__none__")
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
     assert "기준 HOME" in _header_line(app)
 
 
-@pytest.mark.parametrize(("typed", "folded"), [(112.34, 112.3), (112.25, 112.3), (107.3, 107.3)])
-def test_a_typed_general_target_folds_to_the_one_decimal_the_field_shows(
-    dynamic_databases: tuple[Path, Path], typed: float, folded: float
-) -> None:
-    """기준 확보율 칸은 소수 첫째 자리까지 보인다(`%.1f`) — 112.34 를 그대로 정본에 두면 칸은
-    112.3, 머리·판정 글·그래프는 112.34% 로 갈렸다(2026-10-27 E2E). 친 값은 칸이 보이는 자리까지
-    접고(반은 올림 — 브라우저 칸의 `toFixed` 와 같다) 모든 자리가 같은 값을 보인다. 0.5 단위로
-    맞추지는 않는다."""
-    app = _opened(dynamic_databases)
-    (typed_key,) = _typed_field_keys(app, "기준 확보율 직접 입력")
-    app.number_input(key=typed_key).set_value(typed)
-    _ok(app.run())
-    assert app.session_state[CONSTRAINT_GENERAL_KEY] == folded
-    assert app.number_input(key=typed_key).value == folded
-    assert f"기준 {folded:g}%" in _header_line(app)
-    assert f"{typed:g}%" not in _header_line(app) or typed == folded
-
-
-def test_the_general_target_keeps_a_typed_value_off_the_half_steps_as_the_guide_says(
-    dynamic_databases: tuple[Path, Path],
-) -> None:
-    """기준 확보율 칸은 0.5 단위가 아닌 값(107.3)도 그대로 받아 쓴다 — +/− 단추만 0.5% 씩이다.
-    Guide 가 「직접 50~200%(0.5% 단위)」 라고 적어 동작과 어긋났다(2026-10-25 E2E #18·#108) —
-    Guide 는 지금 동작을 적는다."""
-    app = _opened(dynamic_databases)
-    app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107.3)
-    _ok(app.run())
-    assert app.session_state[CONSTRAINT_GENERAL_KEY] == pytest.approx(107.3)
-    assert "기준 107.3%" in _header_line(app)
-
+def test_the_guide_says_the_general_target_is_a_whole_percent_judged_by_rounding() -> None:
+    """Guide 의 기준 확보율 줄은 지금 동작(정수 % · 1% 단위 · 반올림 판정)을 적는다 — 0.5% 단위 글이
+    남으면 칸과 어긋난다(2026-10-25 E2E #18·#108 과 같은 결)."""
     guide = (PROJECT_ROOT / "src/capa_simulation/guides/constraint_simulation.md").read_text(
         encoding="utf-8"
     )
     (row,) = [line for line in guide.splitlines() if line.startswith("| 확보율 | **기준 확보율**")]
-    assert "(0.5% 단위)" not in row
-    assert "+/− 단추는 0.5% 씩" in row and "107.3" in row
-    assert "소수 첫째 자리" in row
+    assert "0.5%" not in row and "107.3" not in row
+    assert "1% 단위" in row and "109.5%" in row
 
 
 def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(

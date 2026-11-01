@@ -32,9 +32,15 @@
 4. **시작일 격자(C5)** — 날 단위가 기본, 달 맞춤 창(`aligned` — 그 달 W/D 끝 날에 끝나는 창, 제약
    모드 창 꼴)은 선택지다. 같은 날 시작하는 묶음을 한 차수로 적는다(C4).
 5. **개조 중·뒤(C6·C7)** — 개조 중 완전 비가동, 끝나면 원래 능력으로 일반 가용에 돌아온다.
-6. **기준과 여유(C10·C11)** — 배치 기준은 그 달 G + 안전 여유 δ(기본 0). 개조 없이도 배치 기준
-   미달인 달(`blocked`)에는 하루도 넣지 않는다. R 0 달은 가용이 음수가 아니기만 본다. 판정은
-   `constraint_simulation.secure`(→ `capacity_status`) 한 길이다(AGENTS 6장 「판정은 한 길」).
+6. **기준과 여유(C10·C11)** — G(m) 은 그 달 기준의 **판정 경계**다(화면이 `judgment_boundary` 로
+   넘긴다 — 기준 110% 면 1.095. 기준은 사사오입 정수 % 로 판정한다, 2026-11-01 사용자 결정). 배치
+   기준은 G + 안전 여유 δ(기본 0)라 δ 0 이 곧 판정 선이고, 옛 저장값 1.095 에서 세운 계획이
+   그대로다. 배치는 그 연속값과 반올림 없이 견주고(`meets_boundary` — δ 가 이분 탐색의 실수라서),
+   개조 전·뒤 판정(`baseline_secure`·`secure_after`)은 `constraint_simulation.secure`(→
+   `capacity_status`) 한 길이다(AGENTS 6장 「판정은 한 길」 — 경계 꼴의 G 는 반올림해도 같은 선).
+   개조 없이도 배치 기준 미달인 달(`blocked`)에는 하루도 넣지 않는다. R 0 달은 가용이 음수가
+   아니기만 본다. 화면에 적는 기준 대비 여유(`ScheduleMonth.margin`)는 확보율 − 정수 기준 T 이고
+   반올림으로 겨우 확보인 달은 0 이다(`threshold_margin`).
 7. **못 맞출 때(C12)** — 기한(없으면 조회기간 끝)까지 넣을 수 있는 대수 · 기한 없이 끝나는 날 ·
    기한을 지키려면 필요한 기준 완화 %p 를 함께 낸다(`ScheduleShortfall`). 0% 까지 낮춰도 못 넣으면
    그 까닭(넣을 창이 없음 · 동시 상한 · 가용)을 가른다.
@@ -79,6 +85,7 @@ from capa_simulation.services.constraint_simulation import (
     NEED_TOLERANCE,
     secure,
 )
+from capa_simulation.services.securement_threshold import meets_boundary, threshold_margin
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -158,7 +165,8 @@ class ScheduleMonthInput:
     """A — 설비 일정 기준 가용(환산 대수, 단축 전)."""
 
     general_target: float
-    """G(m) — 그 달 기준 확보율(비율). 0 보다 크기만 하면 된다."""
+    """G(m) — 그 달 기준 확보율의 판정 경계(비율 — 기준 110% 면 1.095, `judgment_boundary`). 0 보다
+    크기만 하면 된다. 화면 글자는 사사오입한 정수(「110%」)다."""
 
 
 @dataclass(frozen=True)
@@ -226,7 +234,7 @@ class ScheduleMonth:
     """G(m) — 판정(`secure_after`) 기준."""
 
     threshold: float
-    """배치 기준 = G(m) + 적용 여유."""
+    """배치 기준 = G(m)(판정 경계) + 적용 여유."""
 
     open: bool
     """그 W/D 구간에 넣을 수 있는 날이 있다(가장 이른 시작 ~ 끝 날 상한과 겹친다)."""
@@ -260,8 +268,9 @@ class ScheduleMonth:
 
     @property
     def margin(self) -> float | None:
-        """기준 대비 여유 = 개조 뒤 확보율 − G(m). R 0 이면 None."""
-        return None if self.rate is None else self.rate - self.general_target
+        """기준 대비 여유 = 개조 뒤 확보율 − 정수 기준 T(`threshold_margin` — 판정이 확보인데 음수면
+        0, 110% 기준의 109.5% 는 0). R 0 이면 None."""
+        return None if self.rate is None else threshold_margin(self.rate, self.general_target)
 
 
 @dataclass(frozen=True)
@@ -567,14 +576,18 @@ class _Model:
     # ------------------------------------------------------------ 판정
 
     def ok(self, index: int, unit_days: int, target: float) -> bool:
-        """그 달 비가동 대·일 합이 `unit_days` 일 때 확보율이 `target` 이상인가(R 0 은 가용 ≥ 0)."""
+        """그 달 비가동 대·일 합이 `unit_days` 일 때 확보율이 `target` 이상인가(R 0 은 가용 ≥ 0).
+
+        `target` 은 배치 기준(G 판정 경계 + δ)이라 반올림하지 않고 그대로 견준다(`meets_boundary`) —
+        δ 0 이면 판정(`secure`)과 같은 선이다.
+        """
         row = self.rows[index]
         usable = row.available - unit_days / self.windows[index].days
         if usable < -NEED_TOLERANCE:
             return False
         if row.required <= 0:
             return True
-        return secure(usable / row.required, target)
+        return meets_boundary(usable / row.required, target)
 
     def _cap(self, index: int, target: float) -> int:
         """`ok` 인 가장 큰 대·일 합(−1 이면 하루도 못 넣는다). 닫힌 식으로 어림한 뒤 판정으로 맞춘다
@@ -1052,9 +1065,14 @@ def _result(
 
 
 def _margin_key(row: ScheduleMonth) -> float:
-    """기준 대비 여유 최저 고르기 열쇠(같으면 `min` 이 앞 달을 남긴다)."""
-    margin = row.margin
-    return math.inf if margin is None else margin
+    """기준 대비 여유 최저 고르기 열쇠(같으면 `min` 이 앞 달을 남긴다).
+
+    판정 경계 G 까지의 실제 거리(확보율 − G)로 견준다 — 적는 여유(`margin`)는 반올림으로 든 달을
+    0 으로 묶어 여럿이 같아지므로 고르는 데 쓰지 않는다.
+    """
+    if row.rate is None:
+        return math.inf
+    return row.rate - row.general_target
 
 
 def _max_concurrent(batches: Sequence[ScheduleBatch]) -> int:

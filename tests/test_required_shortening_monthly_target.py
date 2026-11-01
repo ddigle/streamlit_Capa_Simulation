@@ -178,18 +178,35 @@ def test_a_higher_later_target_pulls_more_than_the_default_would() -> None:
 
 
 def test_target_from_thresholds_takes_the_secure_threshold_of_each_month_in_range() -> None:
-    """확보 기준만 본다 — 경고만 적은 달·기간 밖 예외는 목표를 가르지 않는다."""
+    """확보 기준만 본다 — 경고만 적은 달·기간 밖 예외는 목표를 가르지 않는다. 목표는 그 달
+    확보기준의 판정 경계다(2026-11-01 — 기준 110% 면 1.095, 120% 면 1.195): 목표를 채운 달이 곧
+    확보로 판정된다."""
     thresholds = SecurementThresholds(
-        default_secure=1.095,
-        default_warning=0.995,
+        default_secure=1.10,
+        default_warning=1.00,
         monthly=((MAY, 1.2, None), (JUNE, None, 0.9), (202612, 1.3, None)),
     )
 
     target = target_from_thresholds(thresholds, [JUNE, MAY, JULY])
 
-    assert target == MonthlyTarget(1.095, ((MAY, 1.2),))
-    assert [target.for_month(month) for month in (MAY, JUNE, JULY)] == [1.2, 1.095, 1.095]
+    assert target == MonthlyTarget(1.095, ((MAY, 1.195),))
+    assert [target.for_month(month) for month in (MAY, JUNE, JULY)] == [1.195, 1.095, 1.095]
     assert target.for_month(202612) == 1.095
+    # 옛 저장값 1.095 는 같은 목표다(계획이 그대로).
+    assert target_from_thresholds(SecurementThresholds(1.095, 0.995), [MAY]) == MonthlyTarget(1.095)
+
+
+def test_the_export_target_percent_rounds_half_up() -> None:
+    """내보내기 목표 칸은 반을 올린다 — 판정 경계 1.205(기준 121%)는 121 이다(`round` 는 120)."""
+    from capa_simulation.services.required_shortening import level_percent
+
+    assert [level_percent(value) for value in (1.205, 1.095, 1.1, 0.9, 1.3)] == [
+        121,
+        110,
+        110,
+        90,
+        130,
+    ]
 
 
 def test_a_monthly_target_is_a_normalized_hashable_value() -> None:

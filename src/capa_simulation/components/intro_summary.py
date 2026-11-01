@@ -331,11 +331,14 @@ def summary_payload(
         "density": _density_payload(summary.density),
         "wafer": _wafer_payload(summary.wafer),
         "bn": bottlenecks,
-        # 숫자는 기준선의 **자리**(정확한 값), `*_label` 은 기준선 이름표에 적는 **글자**다 —
-        # 사사오입한 정수 퍼센트(109.5 → 110%). 109.7% 확보 막대가 선 위에 서야 하므로 둘을 나눈다.
-        # 달마다 하나씩이다. 값이 같은 달이 이어지면 JS 가 한 구간으로 묶어 긋는다.
-        "secure": [round(thresholds.secure_for(month) * 100.0, 1) for month in summary.months],
-        "warning": [round(thresholds.warning_for(month) * 100.0, 1) for month in summary.months],
+        # 숫자는 기준선의 **자리**(판정 경계 — 110% 면 109.5), `*_label` 은 기준선 이름표에
+        # 적는 **글자**다(정수 기준 「110%」). 반올림으로 확보가 된 109.7% 막대가 선 위에 서야
+        # 하므로 둘을 나눈다(`SecurementThresholds.boundary_for`). 달마다 하나씩이다. 값이 같은
+        # 달이 이어지면 JS 가 한 구간으로 묶어 긋는다.
+        "secure": [round(thresholds.boundary_for(month)[0] * 100.0, 1) for month in summary.months],
+        "warning": [
+            round(thresholds.boundary_for(month)[1] * 100.0, 1) for month in summary.months
+        ],
         "secure_label": [
             threshold_percent_label(thresholds.secure_for(month)) for month in summary.months
         ],

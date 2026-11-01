@@ -141,7 +141,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 9
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 10
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -261,15 +261,18 @@ def rate_text(value: float | None) -> str:
 
 
 def signed_points(value: float | None) -> str:
-    """%p 차이 — 「+1.2%p」·「−13.8%p」. 없으면 「—」."""
+    """퍼센트 차이 — 「+1.2%」·「−13.8%」. 없으면 「—」.
+
+    차이도 「%」 로 적는다 — 「%p」 를 쓰지 않는다(2026-11-01 사용자 결정 「%p표기하지말고 %로만」).
+    """
     if value is None or not math.isfinite(value):
         return EMPTY
     points = round(value * 100, 1)
     if points > 0:
-        return f"+{points:.1f}%p"
+        return f"+{points:.1f}%"
     if points < 0:
-        return f"{MINUS}{abs(points):.1f}%p"
-    return "0.0%p"
+        return f"{MINUS}{abs(points):.1f}%"
+    return "0.0%"
 
 
 def minimum_unit(row: ConstraintMonth) -> bool:
@@ -542,6 +545,8 @@ def rate_figure(
     proportional = [
         _percent(row.proportional_existing_rate) if row.in_period else None for row in rows
     ]
+    # 기준선의 자리는 G — 판정 경계다(화면이 넘긴다, 110% 면 109.5). 반올림으로 확보가 된 109.7%
+    # 점이 선 위에 서고, 선 끝 글은 정수 기준 「110%」 다.
     general = [row.general_target * 100 for row in rows]
     low, high, above_months = rate_axis(result, labels, show_proportional=show_proportional)
     above = [row.month in above_months for row in rows]
@@ -1024,7 +1029,7 @@ def build_sheet_canvas(
                 fill=_shortage_fill(row.existing_secure),
             ),
         ),
-        _row("rate_delta", "제약 없을 때 대비 (%p)", rows_in, _delta_cell),
+        _row("rate_delta", "제약 없을 때 대비 (%)", rows_in, _delta_cell),
     ]
     if show_proportional:
         rows.append(

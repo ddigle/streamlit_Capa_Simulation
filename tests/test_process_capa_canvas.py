@@ -700,7 +700,7 @@ def _balance_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:
 
 
 def test_the_balance_hover_adds_the_unrounded_value_to_two_decimals() -> None:
-    """칸 글자는 정수 그대로이고, 풍선은 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수
+    """칸 글자는 정수 그대로이고, 풍선은 정수 옆에 올림·내림 전 값(가용 − 소요 × 판정 경계)을 소수
     둘째 자리 부호 있는 값으로 단다 — ③ 판정 식의 결과와 같은 숫자다."""
     canvas = _canvas()
     hovers = _balance_hovers(canvas)
@@ -714,7 +714,8 @@ def test_the_balance_hover_adds_the_unrounded_value_to_two_decimals() -> None:
     }
     for month, text in expected.items():
         assert f"확보기준 과부족 {text}<br>" in hovers[month]
-    assert f"가용 48.0 {MINUS} 소요 44.0 × 1.095 (부족은 올림, 여유는 내림)" in hovers[202612]
+    # 식은 판정 경계를 곱한다 — 기준 110% 는 반올림 판정이라 경계가 109.5% 다(2026-11-01).
+    assert f"가용 48.0 {MINUS} 소요 44.0 × 109.5% (부족은 올림, 여유는 내림)" in hovers[202612]
     assert _row_texts(canvas, ROW_BALANCE)[2][0] == f"<b>{MINUS}3</b>"
 
 

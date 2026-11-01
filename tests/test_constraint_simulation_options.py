@@ -167,7 +167,10 @@ def test_four_owned_units_cover_the_first_month_before_any_modification() -> Non
     )
     assert kpis.window_count == 5
     assert kpis.first_downtime_day == date(2027, 4, 25)
-    assert kpis.below_months == (202705, 202706, 202707, 202708, 202710)
+    # 5월 109.68% 는 기준 110% 에 반올림으로 든다 — 확보율을 사사오입한 정수 % 로 판정한다
+    # (2026-11-01 사용자 결정, 1판의 5월 100.46% 는 그대로 미달).
+    assert kpis.below_months == (202706, 202707, 202708, 202710)
+    assert may.existing_secure is True
     assert CONDITIONS.modifies and replace(CONDITIONS, owned_units=4).splits_dedicated
     _assert_conserved(result)
 

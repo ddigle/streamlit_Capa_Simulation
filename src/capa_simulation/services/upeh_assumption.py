@@ -288,7 +288,8 @@ def percent_to_clear_securement(
     ):
         if not pd.isna(month) and float(need) > 0:
             found.append((int(month), float(need), float(supply)))
-    pairs = [(need * thresholds.secure_for(month), supply) for month, need, supply in found]
+    # 닫힌 식의 필요량은 판정 경계(110% 면 1.095)까지다 — 판정과 같은 선이라 맞춰 보기가 짧다.
+    pairs = [(need * thresholds.boundary_for(month)[0], supply) for month, need, supply in found]
 
     def met(factor: float) -> bool:
         return all(

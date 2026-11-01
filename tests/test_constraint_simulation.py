@@ -914,13 +914,14 @@ def test_a_fractional_cutoff_floors_like_the_wd_window() -> None:
 
 
 def test_the_securement_judgment_is_capacity_status_without_tolerance() -> None:
-    """41.8 ÷ 38 = 1.0999999999999999 < 1.1 — HOME 과 똑같이 「미달」 이다."""
+    """10.95 ÷ 10.000000000000002 = 1.0949999999999998 < 판정 경계 1.095(기준 110%) — HOME 과 똑같이
+    「미달」 이다(경계 잡음에 허용치를 두지 않는다)."""
     result = simulate_constraint(
-        [_one(202706, required=38, available=41.8)],
+        [_one(202706, required=10.000000000000002, available=10.95, general=1.095)],
         ConstraintConditions(202706, 202706, 1.2, None, 7),
     )
     row = result.month(202706)
-    rate = 41.8 / 38
+    rate = 10.95 / 10.000000000000002
 
     assert row.existing_rate == rate
     expected = capacity_status(rate, secure_threshold=1.1, warning_threshold=1.1) == "secure"
@@ -928,6 +929,21 @@ def test_the_securement_judgment_is_capacity_status_without_tolerance() -> None:
     assert secure(rate, 1.1) is expected
     assert secure(None, 1.1) is False
     assert result.kpis.below_months == (202706,)
+
+
+def test_the_general_target_judges_by_the_rounded_whole_percent() -> None:
+    """기준 110% 면 109.5% 는 지킨 것이다(2026-11-01 사용자 결정) — 41.8 ÷ 38 = 109.99…% 도,
+    41.62 ÷ 38 = 109.53% 도 확보. 화면이 넘기는 판정 경계 1.095 와 정수 기준 1.10 이 같은
+    판정이다."""
+    for available in (41.8, 41.62):
+        for target in (1.095, 1.1):
+            result = simulate_constraint(
+                [_one(202706, required=38, available=available, general=target)],
+                ConstraintConditions(202706, 202706, 1.2, None, 7),
+            )
+            assert result.month(202706).existing_secure is True, (available, target)
+            assert result.kpis.below_months == ()
+    assert secure(41.6 / 38, 1.1) is False
 
 
 def _compare_names(node: ast.Compare) -> set[str]:

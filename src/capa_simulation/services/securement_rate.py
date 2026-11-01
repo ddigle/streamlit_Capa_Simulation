@@ -5,7 +5,11 @@ from math import ceil, floor
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
-from capa_simulation.services.securement_threshold import CapacityStatus, SecurementThresholds
+from capa_simulation.services.securement_threshold import (
+    CapacityStatus,
+    SecurementThresholds,
+    judgment_boundary,
+)
 
 SECUREMENT_DIMENSIONS = ["공정"]
 
@@ -126,7 +130,10 @@ def build_securement_shortfall_tables(
     the warning threshold but remain below the secure threshold.
 
     기준은 **행의 달마다** 그 달의 실효 기준이다(`thresholds.for_month`). `경고기준`·`확보기준`
-    컬럼이 행마다 그 값을 적는다. 월별 예외가 없으면 모든 행이 기본값이다.
+    컬럼이 행마다 그 값(정수 % 기준 — 110% 는 1.1)을 적는다. 월별 예외가 없으면 모든 행이
+    기본값이다.
+    두 표는 판정(`thresholds.status`)으로 가르고, 필요대수는 판정 경계(`thresholds.boundary_for` —
+    110% 면 1.095)까지 모자란 정수다 — 그만큼 더하면 확보로 판정된다.
     """
     # 저장 단계가 거꾸로 된 짝을 막지만, 이 함수는 저장본이 아닌 값도 받는다(테스트·직접 호출).
     # 기본 짝과 월별 예외의 실효 짝을 모두 본다.
@@ -145,22 +152,32 @@ def build_securement_shortfall_tables(
     _prepare_shortfall_input(result)
     result = result.loc[result["소요대수"].gt(0)].copy()
     result["확보율"] = result["가용대수"] / result["소요대수"]
-    pairs = [thresholds.for_month(int(month)) for month in result["생산계획년월"]]
+    months = [int(month) for month in result["생산계획년월"]]
+    pairs = [thresholds.for_month(month) for month in months]
+    bounds = [thresholds.boundary_for(month) for month in months]
     result["경고기준"] = pd.Series([pair[1] for pair in pairs], index=result.index, dtype="float64")
     result["확보기준"] = pd.Series([pair[0] for pair in pairs], index=result.index, dtype="float64")
+    secure_bound = pd.Series([pair[0] for pair in bounds], index=result.index, dtype="float64")
+    warning_bound = pd.Series([pair[1] for pair in bounds], index=result.index, dtype="float64")
 
-    warning_gap = result["소요대수"].mul(result["경고기준"]).sub(result["가용대수"])
-    secure_gap = result["소요대수"].mul(result["확보기준"]).sub(result["가용대수"])
+    warning_gap = result["소요대수"].mul(warning_bound).sub(result["가용대수"])
+    secure_gap = result["소요대수"].mul(secure_bound).sub(result["가용대수"])
     result["경고기준 필요대수"] = warning_gap.map(_ceil_positive).astype("int64")
     result["확보목표 총 필요대수"] = secure_gap.map(_ceil_positive).astype("int64")
     result["확보기준 추가대수"] = result["확보목표 총 필요대수"] - result["경고기준 필요대수"]
 
+    statuses = pd.Series(
+        [
+            thresholds.status(float(rate), month)
+            for rate, month in zip(result["확보율"], months, strict=True)
+        ],
+        index=result.index,
+        dtype="object",
+    )
     sort_columns = ["생산계획년월", "확보율", "공정"]
-    warning_shortfalls = result.loc[result["확보율"].lt(result["경고기준"])]
+    warning_shortfalls = result.loc[statuses.eq("shortage")]
     warning_shortfalls = warning_shortfalls.sort_values(sort_columns, kind="stable")
-    secure_shortfalls = result.loc[
-        result["확보율"].ge(result["경고기준"]) & result["확보율"].lt(result["확보기준"])
-    ]
+    secure_shortfalls = result.loc[statuses.eq("warning")]
     secure_shortfalls = secure_shortfalls.sort_values(sort_columns, kind="stable")
     return (
         warning_shortfalls[SHORTFALL_COLUMNS].reset_index(drop=True),
@@ -180,14 +197,16 @@ def securement_balance(
 
     - **판정**(`판정`)은 `thresholds.status(가용 ÷ 소요, 달)` 한 길이다. 확보율 칸과 과부족 칸이 이
       한 값으로 칠해진다. 소요가 0 인 행은 확보율이 없어 판정도 없다(`None`).
-    - **과부족**(`확보기준 과부족`)은 판정이 확보가 아니면
-      `−_ceil_positive(소요 × 확보기준 − 가용)`, 아니면
-      `+floor(round(가용 − 소요 × 확보기준, 9))` 다. 모자란 쪽 크기는 Static Capa 의
-      「확보목표 총 필요대수」(`build_securement_shortfall_tables`)와 같은 정수다.
+    - **과부족**(`확보기준 과부족`)은 그 달 확보기준의 **판정 경계**(`thresholds.boundary_for` —
+      110% 면 1.095)에 대한 정수다. 판정이 확보가 아니면 `−_ceil_positive(소요 × 경계 − 가용)`
+      (그만큼 더하면 확보로 판정된다), 아니면 `+floor(round(가용 − 소요 × 경계, 9))`(그만큼 빼도
+      확보다 — 반올림으로 겨우 든 달은 0)다. 모자란 쪽 크기는 Static Capa 의
+      「확보목표 총 필요대수」(`build_securement_shortfall_tables`)와 같은 정수다. `확보기준`·
+      `경고기준` 칸은 화면에 적는 정수 % 기준(1.1)이다.
     - 판정은 반올림하지 않은 확보율을, 과부족은 9자리 반올림을 본다. 그래서 부동소수 잡음
       경계(차이가 1e-9 안)에서는 **경고·부족으로 칠한 칸에 0 이 찍힐 수 있다** — 소요
-      10.000000000000002·가용 10.95·확보기준 1.095 가 그렇다. 칠하기는 판정을, 숫자는 Static
-      Capa 와 같은 올림을 따른다.
+      10.000000000000002·가용 10.95·확보기준 110%(경계 1.095)가 그렇다. 칠하기는 판정을, 숫자는
+      Static Capa 와 같은 올림을 따른다.
     - **부족 원인**(`부족 원인`)은 판정이 확보가 아닌 행에만 적는다. 총보유로 판정해도
       (`thresholds.status(총보유 ÷ 소요, 달)`) 확보가 아니면 「보유로도 부족」(대여를 거둬도 못
       메운다 — 투자 검토), 총보유로는 확보인데 가용이 못 미치면 「대여 영향」이다. 확보인 행은 빈
@@ -195,7 +214,7 @@ def securement_balance(
       칠한 판정이 곧 「보유로도 부족」이고, 잡음 경계에서도 대여 없이 「대여 영향」이 나오지 않는다.
       이 함수는 대여대수를 모르므로 「대여 영향」은 가용 = 총보유 − 대여를 전제한 이름이다. 대여를
       아는 쪽(`process_capa_detail.build_process_capa_summary`)이 그 전제가 깨진 달을 다시 가른다.
-    - `경고기준 필요대수` 는 `_ceil_positive(소요 × 경고기준 − 가용)` 이다(소요 0 이면 0).
+    - `경고기준 필요대수` 는 `_ceil_positive(소요 × 경고 경계 − 가용)` 이다(소요 0 이면 0).
     """
     required = ["생산계획년월", "공정", OWNED_COLUMN, "가용대수", "소요대수"]
     require_columns(securement_rate, required, "확보율")
@@ -208,8 +227,11 @@ def securement_balance(
 
     months = [int(month) for month in result["생산계획년월"]]
     pairs = [thresholds.for_month(month) for month in months]
+    bounds = [thresholds.boundary_for(month) for month in months]
     result["확보기준"] = pd.Series([pair[0] for pair in pairs], index=result.index, dtype="float64")
     result["경고기준"] = pd.Series([pair[1] for pair in pairs], index=result.index, dtype="float64")
+    secure_bound = pd.Series([pair[0] for pair in bounds], index=result.index, dtype="float64")
+    warning_bound = pd.Series([pair[1] for pair in bounds], index=result.index, dtype="float64")
 
     demand = result["소요대수"].astype("float64")
     available = result["가용대수"].astype("float64")
@@ -223,8 +245,8 @@ def securement_balance(
     ]
     result[STATUS_COLUMN] = pd.Series(statuses, index=result.index, dtype="object")
 
-    secure_gap = demand.mul(result["확보기준"]).sub(available)
-    warning_gap = demand.mul(result["경고기준"]).sub(available)
+    secure_gap = demand.mul(secure_bound).sub(available)
+    warning_gap = demand.mul(warning_bound).sub(available)
     short = [status is not None and status != "secure" for status in statuses]
     result[BALANCE_COLUMN] = pd.Series(
         [
@@ -298,10 +320,10 @@ def warning_need_units(required: float, available: float, warning: float) -> int
     """경고 기준(`warning`, 비율)까지 모자라는 정수 대수 — 「경고기준 필요대수」 한 칸의 식.
 
     `build_securement_shortfall_tables`·`securement_balance` 가 열 단위로 내는 값과 같은 식·같은
-    올림(`_ceil_positive(소요 × 경고기준 − 가용)`)이다. 한 행만 세는 쪽(입장 화면 Summary 의 B/N
-    부족 대수)이 이것을 쓴다.
+    올림(`_ceil_positive(소요 × 경고 판정 경계 − 가용)` — 경계는 `judgment_boundary`, 100% 면
+    0.995)이다. 한 행만 세는 쪽(입장 화면 Summary 의 B/N 부족 대수)이 이것을 쓴다.
     """
-    return _ceil_positive(float(required) * float(warning) - float(available))
+    return _ceil_positive(float(required) * judgment_boundary(float(warning)) - float(available))
 
 
 def _ceil_positive(value: float) -> int:
