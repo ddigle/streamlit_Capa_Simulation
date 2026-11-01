@@ -46,7 +46,6 @@ Qual 이 끝난다)이고, 단축일수 = 확보 − 필요다.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -54,6 +53,7 @@ from itertools import zip_longest
 
 import pandas as pd
 
+from capa_simulation.services.frame_contracts import blank_cell
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
     KIND_SHORTENED,
@@ -448,17 +448,8 @@ def _total(values: pd.Series) -> int:
     return int(pd.to_numeric(values).fillna(0).sum())
 
 
-def _blank(value: object) -> bool:
-    return (
-        value is None
-        or value is pd.NA
-        or value is pd.NaT
-        or (isinstance(value, float) and math.isnan(value))
-    )
-
-
 def _day(value: object) -> date | None:
-    if _blank(value):
+    if blank_cell(value):
         return None
     if isinstance(value, datetime):
         return value.date()
@@ -469,4 +460,4 @@ def _day(value: object) -> date | None:
 
 
 def _whole(value: object) -> int | None:
-    return None if _blank(value) else round(float(str(value)))
+    return None if blank_cell(value) else round(float(str(value)))

@@ -119,6 +119,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.frame_contracts import blank_cell
 from capa_simulation.services.manual_downtime import (
     ManualRow,
     apply_manual_downtime,
@@ -725,7 +726,7 @@ def _distinct_text(values: Iterable[object]) -> str | None:
     """빈칸을 빼고 서로 다른 값을 처음 나온 차례로 「, 」로 잇는다. 하나도 없으면 None."""
     seen: list[str] = []
     for value in values:
-        if _blank(value):
+        if blank_cell(value):
             continue
         text = str(value).strip()
         if text and text not in seen:
@@ -733,19 +734,9 @@ def _distinct_text(values: Iterable[object]) -> str | None:
     return ", ".join(seen) if seen else None
 
 
-def _blank(value: object) -> bool:
-    """표 칸이 비었는가 — None·`pd.NA`·NaN·NaT."""
-    return (
-        value is None
-        or value is pd.NA
-        or value is pd.NaT
-        or (isinstance(value, float) and math.isnan(value))
-    )
-
-
 def _as_date(value: object) -> date | None:
     """표 칸의 날짜. `pd.NaT` 도 `datetime` 이라 먼저 걸러야 한다."""
-    if _blank(value) or not isinstance(value, date):
+    if blank_cell(value) or not isinstance(value, date):
         return None
     return value.date() if isinstance(value, datetime) else value
 
@@ -1247,7 +1238,7 @@ def _export_row(
     before, after = (math.nan, math.nan)
     if month is not None:
         before, after = gaps.get((process, month), (math.nan, math.nan))
-    contributed = "" if _blank(row["해소 기여 월"]) else str(row["해소 기여 월"])
+    contributed = "" if blank_cell(row["해소 기여 월"]) else str(row["해소 기여 월"])
     return {
         LEVEL_COLUMN: _target_percent(level, month),
         "공정": process,
@@ -1260,7 +1251,7 @@ def _export_row(
         "기존 기여 시작일": _iso_date(original + _ONE_DAY if original else None),
         "목표 Qual 완료일": _iso_date(target),
         "목표 기여 시작일": _iso_date(target + _ONE_DAY if target else None),
-        "단축일수": None if _blank(row["단축일수"]) else row["단축일수"],
+        "단축일수": None if blank_cell(row["단축일수"]) else row["단축일수"],
         # 하루씩 더한 몫이라 끝자리에 부동소수 찌꺼기가 남는다(1.0 이 0.9999999999999993).
         "늘어난 환산대수": round(float(str(row["늘어난 환산대수"])), _DECIMALS),
         "대상 월": _iso_month(month),
@@ -1314,7 +1305,7 @@ def process_month_export_frame(
 
 def _whole_number(value: object) -> int | None:
     """표 칸의 정수(`Int64` 의 빈칸은 None)."""
-    return None if _blank(value) else int(str(value))
+    return None if blank_cell(value) else int(str(value))
 
 
 def _iso_date(day: date | None) -> str | None:

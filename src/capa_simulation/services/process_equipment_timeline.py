@@ -99,6 +99,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.frame_contracts import blank_cell
 from capa_simulation.services.manual_downtime import clamp_manual_units
 from capa_simulation.services.monthly_equipment_availability import (
     BASELINE_CATEGORY,
@@ -1315,7 +1316,7 @@ def month_share(shares: object, month: int) -> float | None:
 
 def _month_tuple(value: object) -> tuple[int, ...]:
     """계획의 `해소 기여 월`(「YYYYMM, YYYYMM」 글자)을 정수 튜플로."""
-    if _blank(value):
+    if blank_cell(value):
         return ()
     return tuple(int(part) for part in str(value).split(",") if part.strip())
 
@@ -1833,18 +1834,9 @@ def _records(frame: pd.DataFrame) -> list[dict[str, object]]:
     return [{str(key): value for key, value in row.items()} for row in frame.to_dict("records")]
 
 
-def _blank(value: object) -> bool:
-    return (
-        value is None
-        or value is pd.NA
-        or value is pd.NaT
-        or (isinstance(value, float) and math.isnan(value))
-    )
-
-
 def _as_date(value: object) -> date | None:
     """표 칸의 날짜(`Timestamp`·`datetime`·`date`). 빈칸은 None."""
-    if _blank(value):
+    if blank_cell(value):
         return None
     if isinstance(value, datetime):
         return value.date()
@@ -1869,11 +1861,11 @@ def _distinct_text(values: Iterable[object]) -> str | None:
 
 
 def _text(value: object) -> str | None:
-    if _blank(value):
+    if blank_cell(value):
         return None
     text = str(value).strip()
     return text or None
 
 
 def _whole(value: object) -> int | None:
-    return None if _blank(value) else int(str(value))
+    return None if blank_cell(value) else int(str(value))

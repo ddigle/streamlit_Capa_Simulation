@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -28,6 +27,7 @@ from capa_simulation.services.equipment_contract import (
     CONVERSION_RATIO_COLUMN,
     EQUIPMENT_ID_COLUMN,
 )
+from capa_simulation.services.frame_contracts import blank_cell
 from capa_simulation.services.required_shortening import (
     KIND_SHORTENED,
     LEVEL_COLUMN,
@@ -281,7 +281,7 @@ def normalize_baseline_units(frame: pd.DataFrame) -> pd.DataFrame:
         result[column] = pd.to_numeric(result[column]).astype("float64").round(_DECIMALS)
     for column in _TEXT_COLUMNS:
         result[column] = pd.Series(
-            [None if _blank(value) else str(value) for value in result[column]],
+            [None if blank_cell(value) else str(value) for value in result[column]],
             index=result.index,
             dtype="object",
         )
@@ -299,18 +299,9 @@ def _empty_units() -> pd.DataFrame:
     return frame
 
 
-def _blank(value: object) -> bool:
-    return (
-        value is None
-        or value is pd.NA
-        or value is pd.NaT
-        or (isinstance(value, float) and math.isnan(value))
-    )
-
-
 def _as_date(value: object) -> date | None:
     """표 칸의 날짜. `Timestamp`·`datetime64` 는 날짜로 낮추고, 빈칸은 None 이다."""
-    if _blank(value):
+    if blank_cell(value):
         return None
     if isinstance(value, datetime):
         return value.date()
