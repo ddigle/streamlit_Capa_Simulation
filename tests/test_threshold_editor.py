@@ -846,3 +846,78 @@ def test_a_month_edit_sent_with_the_press_still_reaches_the_version_check(
     assert _editor_key(app) != started
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (2, "다른 세션")
+
+
+@pytest.mark.parametrize("refused", [True, False], ids=["거부 뒤", "탭 왕복"])
+def test_both_default_fields_stand_from_the_latest_save_together(
+    database: Path, monkeypatch: pytest.MonkeyPatch, refused: bool
+) -> None:
+    """남이 기본 확보만 바꿔 저장하면 이 화면의 두 칸이 함께 최신 저장본으로 선다 — key 없는 칸은
+    값이 바뀐 칸만 새로 서서 남의 확보 값과 이 화면이 친 경고 값이 섞인 채 저장됐다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _saved_once(database)
+    app = _app(database)
+    app.number_input[1].set_value(95)
+    _other_session_saves(database, 1.15, 1.0)
+
+    if refused:
+        app = _save(app)
+        assert any("먼저" in element.value for element in app.error)
+    else:
+        app.run()
+
+    assert [widget.value for widget in app.number_input] == [115, 100]
+    app = _save(app)
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.default_secure, profile.default_warning) == pytest.approx(
+        (2, 1.15, 1.0)
+    )
+
+
+def test_typed_default_values_survive_reruns_of_the_same_saved_version(database: Path) -> None:
+    """같은 저장본 안에서는 친 값이 회차를 넘어 남는다 — key 가 바뀌는 것은 저장본이 바뀔
+    때뿐이다."""
+    _saved_once(database)
+    app = _app(database)
+    app.number_input[1].set_value(95)
+    app.run()
+    app.run()
+
+    assert [widget.value for widget in app.number_input] == [112, 95]
+
+
+def test_unsaved_default_fields_follow_a_new_official_preset_together(database: Path) -> None:
+    """저장본이 없는 v0 의 두 칸은 최신 공식버전 프리셋 값이다 — 공식버전이 바뀌어 그 값이 바뀌면 두
+    칸이 함께 새 값으로 선다(version 만 key 에 두면 v0 에 머문 칸이 옛 프리셋을 들고 있었다)."""
+    script = f"""
+import streamlit as st
+
+from capa_simulation.components.home_preference import render_threshold_editor
+from capa_simulation.persistence.models import GlobalSecurementThreshold
+from capa_simulation.services.securement_threshold import empty_securement_threshold_rows
+
+secure, warning = st.session_state.get("__fallback__", (1.2, 1.0))
+render_threshold_editor(
+    months=[202601],
+    month_labels=["26.01"],
+    threshold_profile=GlobalSecurementThreshold(
+        version=0,
+        source="",
+        updated_at=None,
+        default_secure=secure,
+        default_warning=warning,
+        rows=empty_securement_threshold_rows(),
+        fallback="시험",
+    ),
+    database_path={str(database)!r},
+)
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert [widget.value for widget in app.number_input] == [120, 100]
+
+    app.session_state["__fallback__"] = (1.3, 1.05)
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [widget.value for widget in app.number_input] == [130, 105]

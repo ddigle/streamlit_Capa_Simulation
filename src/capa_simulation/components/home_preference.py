@@ -183,8 +183,11 @@ ADVANCE_NOTE_KEY = "home_preference_advance_note"
 ADVANCE_SHIPMENT_EDITOR_KEY = "home_preference_advance_shipment_editor"
 ADVANCE_SHIPMENT_NOTE_KEY = "home_preference_advance_shipment_note"
 ADVANCE_SHIPMENT_FLASH_KEY = "home_advance_shipment_flash"
-# 월별 판정 기준 편집표 key 머리 — 끝에 표가 출발한 저장본을 붙인다(`threshold_widget_key`).
+# 월별 판정 기준 편집표와 기본 확보·경고 두 칸의 key 머리 — 끝에 그 회차가 그린 저장본을 붙인다
+# (`threshold_widget_key`).
 THRESHOLD_EDITOR_KEY = "home_preference_threshold_editor"
+THRESHOLD_DEFAULT_SECURE_KEY = "home_preference_threshold_default_secure"
+THRESHOLD_DEFAULT_WARNING_KEY = "home_preference_threshold_default_warning"
 THRESHOLD_NOTE_KEY = "home_preference_threshold_note"
 THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
 # 판정 기준 편집을 시작할 때 본 공용 version. 저장 회차에는 이 회차가 새로 읽은 version 이 아니라
@@ -925,8 +928,22 @@ def render_threshold_editor(
                 refused = take_refusal(THRESHOLD_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
-            # **`key` 를 두지 않는다.** Top5 대역과 같은 이유다 — 키가 붙은 칸은 한 번 그려진 뒤
-            # 세션 값을 써서, 다른 사람이 바꾼 기본값을 이 화면이 못 본 채 저장 한 번으로 되돌린다.
+            # 두 칸도 key 끝에 이 회차가 그린 저장본 version 을 붙인다(`threshold_widget_key` —
+            # Top5 구간과 같다). key 가 없으면 위젯 id 가 `value` 를 따라 **값이 바뀐 칸만** 새로
+            # 서서, 남이 확보만 바꿔 저장하면 남의 확보 값과 이 화면이 친 경고 값이 섞인 채
+            # 저장됐다(2026-11-02 E2E). 고정 key 는 한 번 그려진 뒤 `value` 를 무시해 남이 바꾼
+            # 기본값을 못 본다. 저장본이 없는 v0 은 보이는 값이 최신 공식버전 프리셋이라 그 두
+            # 값도 붙여, 공식버전이 바뀌면 두 칸이 함께 새 값으로 선다. 이 칸은 세션에 적지
+            # 않으므로 `value=` 를 함께 줘도 경고가 없다.
+            defaults_view = (
+                (threshold_profile.version,)
+                if threshold_profile.version
+                else (
+                    0,
+                    _percent_value(threshold_profile.default_secure),
+                    _percent_value(threshold_profile.default_warning),
+                )
+            )
             secure_column, warning_column = st.columns(2)
             with secure_column:
                 typed_secure = st.number_input(
@@ -938,6 +955,7 @@ def render_threshold_editor(
                     min_value=0.0,
                     step=DEFAULT_THRESHOLD_STEP,
                     format=DEFAULT_THRESHOLD_FORMAT,
+                    key=threshold_widget_key(THRESHOLD_DEFAULT_SECURE_KEY, *defaults_view),
                     help=(
                         f"확보율이 이 값 이상이면 확보입니다({threshold_range_text()} 의 정수 % — "
                         "소수를 치면 사사오입한 정수로 보이고 저장합니다, 109.5 → 110). 확보율은 "
@@ -952,6 +970,7 @@ def render_threshold_editor(
                     min_value=0.0,
                     step=DEFAULT_THRESHOLD_STEP,
                     format=DEFAULT_THRESHOLD_FORMAT,
+                    key=threshold_widget_key(THRESHOLD_DEFAULT_WARNING_KEY, *defaults_view),
                     help=(
                         "이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다"
                         f"({threshold_range_text()} 의 정수 % — 소수는 사사오입, 확보 기준과 같이 "
@@ -1110,9 +1129,10 @@ def render_threshold_editor(
             st.rerun(scope="app")
 
 
-def threshold_widget_key(prefix: str, version: int) -> str:
+def threshold_widget_key(prefix: str, version: int, *identity: int) -> str:
     """판정 기준 칸의 위젯 key — 끝에 그 회차가 그린 저장본 version 을 든다(Top5 구간과 같은 규칙,
-    `render_threshold_editor`).
+    `render_threshold_editor`). `identity` 는 version 이 같아도 보이는 값이 바뀌는 v0 의 기본 두
+    칸이 그 값을 덧붙인다.
 
     key 가 같은 `num_rows="fixed"` 편집표는 데이터 서명(칸·행·형)이 같으면 같은 위젯이라 값이
     바뀌어도 브라우저가 보내지 않은 폼 편집을 들고 있다. 그 사이 본 version 만 최신으로 올라 남이
@@ -1121,7 +1141,7 @@ def threshold_widget_key(prefix: str, version: int) -> str:
     회차가 본 version 을 그 저장본으로 적으므로, 그 회차가 그린 칸과 다음 누름의 칸이 같은
     위젯이어야 그 뒤 친 값이 닿는다.
     """
-    return f"{prefix}__v{int(version)}"
+    return f"{prefix}__v{int(version)}" + "".join(f"_{int(part)}" for part in identity)
 
 
 def _threshold_rows(
