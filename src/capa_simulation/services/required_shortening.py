@@ -119,6 +119,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.frame_contracts import blank_cell
 from capa_simulation.services.manual_downtime import (
     ManualRow,
     apply_manual_downtime,
@@ -166,9 +167,13 @@ __all__ = [
     "plan_required_shortening",
     "process_month_export_frame",
     "shortening_candidates",
+    "single_target",
+    "target_for_month",
     "target_from_thresholds",
     "unit_export_frame",
     "unit_number",
+    "unit_order",
+    "whole_cell",
 ]
 
 TARGET_LEVELS: tuple[float, ...] = (0.9, 1.0, 1.1, 1.2, 1.3)
@@ -363,6 +368,17 @@ TargetLevel: TypeAlias = float | MonthlyTarget
 """목표 하나 — 모든 달에 같은 스칼라(다섯 값) 또는 달마다 다른 목표."""
 
 
+def target_for_month(level: TargetLevel, month: int) -> float:
+    """그 달의 목표 — 스칼라는 모든 달에 같은 값이다."""
+    return level.for_month(month) if isinstance(level, MonthlyTarget) else float(level)
+
+
+def single_target(level: TargetLevel, months: Iterable[int]) -> float | None:
+    """`months` 의 목표가 모두 같으면 그 값. 달마다 다르거나 달이 없으면 None."""
+    values = {target_for_month(level, month) for month in months}
+    return next(iter(values)) if len(values) == 1 else None
+
+
 def target_from_thresholds(
     thresholds: SecurementThresholds, months: Iterable[int]
 ) -> MonthlyTarget:
@@ -481,7 +497,8 @@ def level_percent(level: float) -> int:
     return threshold_percent(level)
 
 
-def _unit_order(name: str) -> tuple[int, int, str]:
+def unit_order(name: str) -> tuple[int, int, str]:
+    """호기 번호 차례 — 이름 끝 숫자, 없으면 번호 있는 호기 뒤."""
     number = unit_number(name)
     return (0 if number is not None else 1, number or 0, name)
 
@@ -543,7 +560,7 @@ def shortening_candidates(
         )
         for key, members in groups.items()
     ]
-    return tuple(sorted(units, key=lambda unit: (unit.process, _unit_order(unit.unit))))
+    return tuple(sorted(units, key=lambda unit: (unit.process, unit_order(unit.unit))))
 
 
 def _blocked_days(downtime: pd.DataFrame) -> dict[str, tuple[tuple[date, date | None], ...]]:
@@ -710,7 +727,7 @@ def _distinct_text(values: Iterable[object]) -> str | None:
     """빈칸을 빼고 서로 다른 값을 처음 나온 차례로 「, 」로 잇는다. 하나도 없으면 None."""
     seen: list[str] = []
     for value in values:
-        if _blank(value):
+        if blank_cell(value):
             continue
         text = str(value).strip()
         if text and text not in seen:
@@ -718,19 +735,9 @@ def _distinct_text(values: Iterable[object]) -> str | None:
     return ", ".join(seen) if seen else None
 
 
-def _blank(value: object) -> bool:
-    """표 칸이 비었는가 — None·`pd.NA`·NaN·NaT."""
-    return (
-        value is None
-        or value is pd.NA
-        or value is pd.NaT
-        or (isinstance(value, float) and math.isnan(value))
-    )
-
-
 def _as_date(value: object) -> date | None:
     """표 칸의 날짜. `pd.NaT` 도 `datetime` 이라 먼저 걸러야 한다."""
-    if _blank(value) or not isinstance(value, date):
+    if blank_cell(value) or not isinstance(value, date):
         return None
     return value.date() if isinstance(value, datetime) else value
 
@@ -826,9 +833,7 @@ def plan_from_availability(
 
 def _month_targets(level: TargetLevel, months: Sequence[int]) -> list[float]:
     """달마다의 목표(`months` 차례). 스칼라는 모든 달에 같은 값이다."""
-    if isinstance(level, MonthlyTarget):
-        return [level.for_month(month) for month in months]
-    return [float(level)] * len(months)
+    return [target_for_month(level, month) for month in months]
 
 
 def _level_plan(level: TargetLevel, process_months: pd.DataFrame, units: pd.DataFrame) -> LevelPlan:
@@ -957,7 +962,7 @@ def _next_candidate(states: list[_UnitState], floor: date, tried: set[str]) -> _
     eligible = [state for state in states if state.target > floor and state.unit.unit not in tried]
     if not eligible:
         return None
-    return min(eligible, key=lambda state: (state.target, _unit_order(state.unit.unit)))
+    return min(eligible, key=lambda state: (state.target, unit_order(state.unit.unit)))
 
 
 def _minimum_pull(
@@ -1059,7 +1064,7 @@ def _unit_rows(process: str, outcome: _ProcessOutcome) -> list[dict[str, object]
     }
     rows: list[dict[str, object]] = []
     moved = [state for state in outcome.states if state.target < state.unit.qual]
-    for state in sorted(moved, key=lambda s: (s.unit.qual, _unit_order(s.unit.unit))):
+    for state in sorted(moved, key=lambda s: (s.unit.qual, unit_order(s.unit.unit))):
         rows.append(
             {
                 "공정": process,
@@ -1230,11 +1235,11 @@ def _export_row(
     attributes = master.get(str(row["호기"]), {}) if shortened else {}
     original = _as_date(row["기존 Qual"]) if shortened else None
     target = _as_date(row["목표 Qual"])
-    month = _whole_number(row["대상 월"])
+    month = whole_cell(row["대상 월"])
     before, after = (math.nan, math.nan)
     if month is not None:
         before, after = gaps.get((process, month), (math.nan, math.nan))
-    contributed = "" if _blank(row["해소 기여 월"]) else str(row["해소 기여 월"])
+    contributed = "" if blank_cell(row["해소 기여 월"]) else str(row["해소 기여 월"])
     return {
         LEVEL_COLUMN: _target_percent(level, month),
         "공정": process,
@@ -1247,7 +1252,7 @@ def _export_row(
         "기존 기여 시작일": _iso_date(original + _ONE_DAY if original else None),
         "목표 Qual 완료일": _iso_date(target),
         "목표 기여 시작일": _iso_date(target + _ONE_DAY if target else None),
-        "단축일수": None if _blank(row["단축일수"]) else row["단축일수"],
+        "단축일수": None if blank_cell(row["단축일수"]) else row["단축일수"],
         # 하루씩 더한 몫이라 끝자리에 부동소수 찌꺼기가 남는다(1.0 이 0.9999999999999993).
         "늘어난 환산대수": round(float(str(row["늘어난 환산대수"])), _DECIMALS),
         "대상 월": _iso_month(month),
@@ -1299,9 +1304,9 @@ def process_month_export_frame(
     return pd.concat(blocks, ignore_index=True).loc[:, list(PROCESS_MONTH_EXPORT_COLUMNS)]
 
 
-def _whole_number(value: object) -> int | None:
+def whole_cell(value: object) -> int | None:
     """표 칸의 정수(`Int64` 의 빈칸은 None)."""
-    return None if _blank(value) else int(str(value))
+    return None if blank_cell(value) else int(str(value))
 
 
 def _iso_date(day: date | None) -> str | None:

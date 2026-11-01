@@ -76,6 +76,7 @@ from capa_simulation.components.home_dimensions import (
     NARROW_VIEWPORT_MAX_PX,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.month_sheet_canvas import signed_int
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
@@ -158,8 +159,9 @@ from capa_simulation.services.required_shortening import (
     STATUS_EXPIRED,
     STATUS_MET,
     STATUS_NEW_LIMIT,
-    MonthlyTarget,
     TargetLevel,
+    single_target,
+    target_for_month,
 )
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
@@ -501,9 +503,9 @@ def reopen_entry_section(source: str | None) -> None:
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(정수 %)도."""
-    values = {_target_for(target, month) for month in months}
-    if len(values) == 1:
-        return f"{TARGET_SOURCE_TEXT} {target_label(next(iter(values)))}"
+    value = single_target(target, months)
+    if value is not None:
+        return f"{TARGET_SOURCE_TEXT} {target_label(value)}"
     return f"{TARGET_SOURCE_TEXT} — 달마다 다름"
 
 
@@ -514,10 +516,6 @@ def target_label(value: float) -> str:
     정수가 곧 그 기준이다. 식 줄은 곱한 값을 판정 경계로 적는다(`boundary_percent_label`).
     """
     return threshold_percent_label(value)
-
-
-def _target_for(target: TargetLevel, month: int) -> float:
-    return target.for_month(month) if isinstance(target, MonthlyTarget) else float(target)
 
 
 def _ratio_percent(value: float) -> str:
@@ -1135,7 +1133,7 @@ def judgement_card(
     lines = [
         f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}",
         f"과부족 = {_two(available)} − {_two(required)}×{boundary_percent_label(secure)}"
-        f" {raw_mark} {raw_text} → {_signed_int(balance) if balance is not None else _EMPTY}",
+        f" {raw_mark} {raw_text} → {signed_int(balance) if balance is not None else _EMPTY}",
     ]
     if assumed is not None:
         lines.insert(0, _assumed_required_line(_number(record.get("소요대수")), required, token))
@@ -1198,7 +1196,7 @@ def _official_judgement_note(record: Mapping[str, object]) -> str:
     return (
         f"공식: 확보율 {available / required:.1%} → "
         f"{_STATUS_NAMES.get(str(record.get(STATUS_COLUMN)), _EMPTY)} · 과부족 "
-        + (_signed_int(balance) if balance is not None else _EMPTY)
+        + (signed_int(balance) if balance is not None else _EMPTY)
         + (f" · 원인 {cause}" if cause else "")
     )
 
@@ -1212,7 +1210,7 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
     if not state or state == STATUS_MET:
         return None
     canvas = dynamic.canvas
-    target = _target_for(canvas.target, month)
+    target = target_for_month(canvas.target, month)
     required = _number(record.get("소요대수"))
     target_units = _number(record.get("목표대수"))
     before = _number(record.get("가용대수"))
@@ -1528,9 +1526,9 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
 
 def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """대책 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
-    values = {_target_for(target, month) for month in months}
-    if len(values) == 1:
-        return target_label(next(iter(values)))
+    value = single_target(target, months)
+    if value is not None:
+        return target_label(value)
     return "달마다 확보기준"
 
 
@@ -1892,14 +1890,6 @@ def _signed_two(value: float | None) -> str:
     if rounded < 0:
         return f"{_MINUS}{abs(rounded):,.2f}"
     return "0.00"
-
-
-def _signed_int(value: int) -> str:
-    if value > 0:
-        return f"+{value:,}"
-    if value < 0:
-        return f"{_MINUS}{abs(value):,}"
-    return "0"
 
 
 def _ratio_text(value: float | None) -> str:

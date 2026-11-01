@@ -1,4 +1,4 @@
-# Purpose: 계산 서비스가 공유하는 DataFrame 컬럼 계약 검증과 업무 키 정규화 규칙을 제공한다.
+# Purpose: 계산 서비스가 공유하는 DataFrame 컬럼 계약 검증·업무 키 정규화·빈칸 판정 규칙을 제공한다.
 
 """Shared column contracts and business-key normalization for calculation services.
 
@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 
 import pandas as pd
@@ -233,3 +234,13 @@ def normalize_area_name(values: pd.Series, label: str) -> pd.Series:
         examples = values.loc[invalid].drop_duplicates().head(5).tolist()
         raise ValueError(f"{label}의 Area_Name은 Main 또는 MI여야 합니다: {examples}")
     return folded.map(_AREA_BY_CASEFOLD).astype("string")
+
+
+def blank_cell(value: object) -> bool:
+    """표 칸이 비었는가 — None·`pd.NA`·NaN·NaT. 빈 글자·공백 글자는 빈칸으로 치지 않는다."""
+    return (
+        value is None
+        or value is pd.NA
+        or value is pd.NaT
+        or (isinstance(value, float) and math.isnan(value))
+    )

@@ -99,13 +99,19 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.frame_contracts import blank_cell
 from capa_simulation.services.manual_downtime import clamp_manual_units
 from capa_simulation.services.monthly_equipment_availability import (
     BASELINE_CATEGORY,
     build_monthly_equipment_contributions,
 )
 from capa_simulation.services.process_cutoff import ALL_PRODUCTS, cutoff_setting
-from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED, unit_number
+from capa_simulation.services.required_shortening import (
+    KIND_NEW,
+    KIND_SHORTENED,
+    unit_order,
+    whole_cell,
+)
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -768,7 +774,7 @@ def new_unit_rows(
                 "축 안": not (position.before or position.after),
             }
         )
-    rows.sort(key=lambda row: (row["기여 시작"], *_unit_order(str(row["호기"]))))
+    rows.sort(key=lambda row: (row["기여 시작"], *unit_order(str(row["호기"]))))
     frame = pd.DataFrame(rows, columns=list(NEW_UNIT_COLUMNS))
     frame["모듈 수"] = frame["모듈 수"].astype("int64")
     frame["축 안"] = frame["축 안"].astype("bool")
@@ -881,7 +887,7 @@ def new_unit_availability(
             else None
         )
         found.append((first, unit, entry))
-    found.sort(key=lambda item: (item[0], *_unit_order(item[1])))
+    found.sort(key=lambda item: (item[0], *unit_order(item[1])))
     starts = tuple(entry for _first, _unit, entry in found if entry is not None)
     return NewUnitAvailability(
         since=since,
@@ -1045,7 +1051,7 @@ def held_unit_choices(
                 modules=tuple(pieces) if len(pieces) > 1 else (),
             )
         )
-    found.sort(key=lambda choice: _unit_order(choice.unit))
+    found.sort(key=lambda choice: unit_order(choice.unit))
     return tuple(found)
 
 
@@ -1114,7 +1120,7 @@ def exiting_unit_rows(
         )
     if not rows:
         return _empty(EXIT_UNIT_COLUMNS)
-    rows.sort(key=lambda row: (row["반출이설일"], *_unit_order(str(row["호기"]))))
+    rows.sort(key=lambda row: (row["반출이설일"], *unit_order(str(row["호기"]))))
     frame = pd.DataFrame(rows, columns=list(EXIT_UNIT_COLUMNS))
     frame["모듈 수"] = frame["모듈 수"].astype("int64")
     frame["반출이설 위치"] = frame["반출이설 위치"].astype("float64")
@@ -1243,9 +1249,9 @@ def _event(
     qual = _as_date(plan.get("기존 Qual")) if plan is not None else None
     if qual is None and base is not None:
         qual = _as_date(base["Qual일정"])
-    modules = _whole(plan.get("모듈 수")) if plan is not None else None
+    modules = whole_cell(plan.get("모듈 수")) if plan is not None else None
     if modules is None and base is not None:
-        modules = _whole(base["모듈 수"])
+        modules = whole_cell(base["모듈 수"])
     start = qual + _ONE_DAY if qual is not None else None
     arrival = _as_date(base[ARRIVAL_DATE_COLUMN]) if base is not None else None
     exit_day = _as_date(base["반출이설일"]) if base is not None else None
@@ -1267,7 +1273,7 @@ def _event(
         "모듈별 Qual": base["모듈별 Qual"] if base is not None else (),
         "목표 Qual": target,
         "목표 기여 시작": target_start,
-        "단축일수": None if plan is None else _whole(plan.get("단축일수")),
+        "단축일수": None if plan is None else whole_cell(plan.get("단축일수")),
         "늘어난 환산대수": (
             math.nan if plan is None else float(str(plan.get("늘어난 환산대수", math.nan)))
         ),
@@ -1280,7 +1286,7 @@ def _event(
             and arrival is not None
             and target < arrival
         ),
-        "대상 월": None if plan is None else _whole(plan.get("대상 월")),
+        "대상 월": None if plan is None else whole_cell(plan.get("대상 월")),
         "해소 기여 월": () if plan is None else _month_tuple(plan.get("해소 기여 월")),
         "반입 위치": x(None if arrival is None else arrival + _ONE_DAY),
         "기여 시작 위치": math.nan if start_position is None else start_position.x,
@@ -1315,7 +1321,7 @@ def month_share(shares: object, month: int) -> float | None:
 
 def _month_tuple(value: object) -> tuple[int, ...]:
     """계획의 `해소 기여 월`(「YYYYMM, YYYYMM」 글자)을 정수 튜플로."""
-    if _blank(value):
+    if blank_cell(value):
         return ()
     return tuple(int(part) for part in str(value).split(",") if part.strip())
 
@@ -1800,7 +1806,7 @@ def _ordered_arrows(records: list[dict[str, object]]) -> pd.DataFrame:
     records.sort(
         key=lambda record: (
             *first[str(record["설비키"])],
-            *_unit_order(str(record["설비키"])),
+            *unit_order(str(record["설비키"])),
             record["시작일"],
             str(record[EQUIPMENT_ID_COLUMN]),
         )
@@ -1833,24 +1839,9 @@ def _records(frame: pd.DataFrame) -> list[dict[str, object]]:
     return [{str(key): value for key, value in row.items()} for row in frame.to_dict("records")]
 
 
-def _unit_order(name: str) -> tuple[int, int, str]:
-    """호기 번호 차례 — 이름 끝 숫자, 없으면 번호 있는 호기 뒤(`required_shortening` 과 같다)."""
-    number = unit_number(name)
-    return (0 if number is not None else 1, number or 0, name)
-
-
-def _blank(value: object) -> bool:
-    return (
-        value is None
-        or value is pd.NA
-        or value is pd.NaT
-        or (isinstance(value, float) and math.isnan(value))
-    )
-
-
 def _as_date(value: object) -> date | None:
     """표 칸의 날짜(`Timestamp`·`datetime`·`date`). 빈칸은 None."""
-    if _blank(value):
+    if blank_cell(value):
         return None
     if isinstance(value, datetime):
         return value.date()
@@ -1875,11 +1866,7 @@ def _distinct_text(values: Iterable[object]) -> str | None:
 
 
 def _text(value: object) -> str | None:
-    if _blank(value):
+    if blank_cell(value):
         return None
     text = str(value).strip()
     return text or None
-
-
-def _whole(value: object) -> int | None:
-    return None if _blank(value) else int(str(value))

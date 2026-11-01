@@ -1,4 +1,4 @@
-# Purpose: 서비스 공용 컬럼 계약 검증과 업무 키 정규화 규칙을 검증한다.
+# Purpose: 서비스 공용 컬럼 계약 검증·업무 키 정규화·빈칸 판정 규칙을 검증한다.
 
 import pandas as pd
 import pytest
@@ -8,6 +8,7 @@ from capa_simulation.services.frame_contracts import (
     DEMAND_BASES,
     UNIMPLEMENTED_BASES,
     assert_complete,
+    blank_cell,
     normalize_area_name,
     normalize_demand_basis,
     normalize_demand_basis_value,
@@ -111,3 +112,21 @@ def test_to_numeric_strict_rejects_both_text_and_missing_values() -> None:
     for invalid in (["abc"], [None]):
         with pytest.raises(ValueError, match=r"부하량에 숫자가 아닌 값 또는 누락값이 있습니다"):
             to_numeric_strict(pd.Series(invalid), "부하량")
+
+
+def test_blank_cell_counts_only_missing_markers_not_empty_text() -> None:
+    for missing in (None, pd.NA, pd.NaT, float("nan")):
+        assert blank_cell(missing)
+    for present in (
+        "",
+        " ",
+        "nan",
+        0,
+        0.0,
+        -1.5,
+        float("inf"),
+        False,
+        (),
+        pd.Timestamp("2026-05-01"),
+    ):
+        assert not blank_cell(present)
