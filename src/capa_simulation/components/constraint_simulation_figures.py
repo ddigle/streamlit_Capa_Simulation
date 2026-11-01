@@ -147,7 +147,7 @@ __all__ = [
     "waiting_text",
 ]
 
-# 보유만으로 제약 기간을 다 덮어 신규를 붙이지 않은(결정 B1) 신규의 까닭(잇는 꼴).
+# 첫 증가부터 보유만으로 제약 기간을 다 덮어 신규를 붙이지 않은(결정 B1) 신규의 까닭(잇는 꼴).
 SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
@@ -1230,7 +1230,9 @@ def ordinary_reason_text(
     잇는 꼴(「…없어」 — 뒤에 「기존 제품 몫」 이 붙는다)이 기본이고 `noun` 이면 맺는 꼴(「…없음」 —
     계산표 풍선)이다. 모듈 이름은 `name` 을 지나 적는다(마크다운 칸은 `literal_markdown`).
 
-    - 기간을 보유로 다 덮음 — 「보유 제약 설비로 제약 기간을 다 덮어」.
+    - 남은 보유가 남은 증가를 다 덮음(결정 B1 — 증가마다) — 첫 증가부터면 「보유 제약 설비로 제약
+      기간을 다 덮어」(풍선 「보유로 제약 기간을 다 덮음」), 뒤 증가부터면 「27년 7월 증가부터 보유
+      제약 설비로 다 덮어」(풍선 「27년 7월부터 보유로 다 덮음」).
     - 창 안 증가 없음 — 「개조 30일 안에 늘어날 전용이 없어」.
     - 창 안 증가가 나간 뒤 — 「27년 7월 증가 전에 정지·반출/이설돼」.
     - 앞 차례 신규가 채움 — 「27년 7월 증가를 먼저 들어온 신규가 채워」.
@@ -1241,7 +1243,13 @@ def ordinary_reason_text(
     days = result.conditions.modification_days or 0
     growth = " · ".join(month_name(month) for month in reason.months)
     if reason.cause == "skipped":
-        return "보유로 제약 기간을 다 덮음" if noun else SKIPPED_REASON
+        if result.new_units_skipped:
+            return "보유로 제약 기간을 다 덮음" if noun else SKIPPED_REASON
+        return (
+            f"{growth}부터 보유로 다 덮음"
+            if noun
+            else f"{growth} 증가부터 보유 제약 설비로 다 덮어"
+        )
     if reason.cause == "no_growth":
         return f"개조 {days}일 안에 늘어날 " + ("전용 없음" if noun else "전용이 없어")
     if reason.cause == "gone":

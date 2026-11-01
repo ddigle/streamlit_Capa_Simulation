@@ -39,9 +39,13 @@
 줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 일정 카드의 「신규 대기」
 줄(`waiting_lines`)과 일반 설비가 된 신규 한 줄(`ordinary_line`)에 선다. 걸리지 않으면 1판 글
 그대로다. 보유의 출처와 크기(고른 호기 · 입력 칸 · 그 달 W/D 첫날 보유가 바뀌는 달)는 개조 일정 카드
-머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 보유로 기간이 덮여 신규를 붙이지 않았으면
-그 카드가 한 줄로 말한다(`NEW_SKIPPED_TEXT` — 결정 B1). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」
-처럼 모듈을 붙여 적는다(`NewUnitAssignment.label`).
+머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 남은 보유가 남은 증가를 다 덮어 신규를
+붙이지 않은 호기가 있으면 그 카드가 한 줄로 말한다(`new_stopped_line` — 결정 B1, 증가마다: 첫
+증가부터면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달). 일반 설비가 된 신규의 까닭은 호기마다 한
+길로 가른다(`ConstraintResult.ordinary_reason` → `figures.ordinary_reason_text` — B1 로 붙지 않은
+호기는 그 달부터 보유로 덮임, 그 밖은 창 안 증가 없음 · 나간 뒤 · 앞 차례 신규가 채움 · 1대가 안
+되거나 오지 않은 모듈). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」 처럼 모듈을 붙여 적는다
+(`NewUnitAssignment.label`).
 """
 
 from __future__ import annotations
@@ -139,6 +143,7 @@ __all__ = [
     "free_units_line",
     "holdings_text",
     "month_steps",
+    "new_stopped_line",
     "ordinary_line",
     "overdrawn_lines",
     "pick_chart_month",
@@ -599,12 +604,10 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
         ]
         if ordinary:
             causes = " / ".join(
-                f"{', '.join(names)} — {reason}"
+                f"{', '.join(names)} — {reason} 기존 제품 몫"
                 for reason, names in _by_reason(ordinary, result, limit=len(ordinary))
             )
-            notes.append(
-                f"이 달 들어온 신규 {causes} 기존 제품 몫입니다(나중에 제약에 쓰려면 개조)."
-            )
+            notes.append(f"이 달 들어온 신규 {causes}입니다(나중에 제약에 쓰려면 개조).")
     return MonthStep(body, " · ".join(notes))
 
 
@@ -714,18 +717,35 @@ def _ordinary_name(unit: NewUnit, result: ConstraintResult) -> str:
 
 
 def ordinary_line(result: ConstraintResult) -> str:
-    """일반 설비가 된 신규 한 줄 — 호기마다의 까닭(`ordinary_reason_text` — 같은 까닭은 묶는다)과
-    「기존 제품 몫」. 대수는 남는 몫의 환산 합이다(`left_units` — 일부만 붙은 호기는 남는 몫만).
-    없으면 빈 글자."""
+    """일반 설비가 된 신규 한 줄 — 까닭(`ordinary_reason_text` — 호기마다 되짚고 같은 까닭은
+    묶는다)마다 이름과 「기존 제품 몫」, 묶음 사이는 「 / 」. 대수는 남는 몫의 환산 합이다
+    (`left_units` — 일부만 붙은 호기는 남는 몫만). 이름은 까닭 묶음마다 넷까지(「외 n호기」). 없으면
+    빈 글자."""
     units = result.ordinary_units
     if not units:
         return ""
     total = sum(result.left_units(unit) for unit in units)
     causes = " / ".join(
-        f"{', '.join(names)} · {reason}"
+        f"{', '.join(names)} · {reason} 기존 제품 몫"
         for reason, names in _by_reason(units, result, limit=ORDINARY_NAME_LIMIT)
     )
-    return f"일반 설비가 된 신규 {units_text(total)}대 — {causes} 기존 제품 몫(제약에 쓰려면 개조)"
+    return f"일반 설비가 된 신규 {units_text(total)}대 — {causes}(제약에 쓰려면 개조)"
+
+
+def new_stopped_line(result: ConstraintResult) -> str:
+    """결정 B1 로 신규를 붙이지 않은 한 줄 — 붙지 않은 호기(`held_back_units`)가 있을 때만. 첫
+    증가부터 덮였으면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달을 적는다(2026-11-01 — 증가마다).
+    창 안에 증가가 없어 어차피 붙지 않았을 신규뿐이면 빈 글자다. 붙지 않은 호기의 까닭(일반 설비
+    줄 · 회색 줄 · 풍선 — `ConstraintResult.ordinary_reason` 의 `skipped`)도 같은 달을 적는다."""
+    stopped = result.new_units_stopped_month
+    if stopped is None or not result.held_back_units:
+        return ""
+    if result.new_units_skipped:
+        return NEW_SKIPPED_TEXT
+    return (
+        f"{month_name(stopped)} 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 "
+        "전용을 다 채워 신규 설비를 더 붙이지 않았습니다 — 그 뒤 신규는 기존 제품 몫입니다."
+    )
 
 
 def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> list[str]:
@@ -1101,8 +1121,9 @@ def _render_schedule(view: ConstraintView) -> None:
             elif not result.windows:
                 freed = result.kpis.owned_used + result.kpis.new_used
                 st.caption(FREE_ONLY_TEXT if free_line and freed > 0 else NO_WINDOWS_TEXT)
-            if result.new_units_skipped:
-                st.caption(NEW_SKIPPED_TEXT)
+            stopped_line = new_stopped_line(result)
+            if stopped_line:
+                st.caption(stopped_line)
             for line in schedule_lines(result.windows, today=view.today):
                 st.markdown(line)
             if result.starts_before_range:
