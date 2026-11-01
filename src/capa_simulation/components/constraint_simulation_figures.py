@@ -534,43 +534,28 @@ def rate_axis(
     return RateAxis(low, high, tuple(month for month, value in constrained if value > high))
 
 
-def rate_figure(
-    result: ConstraintResult,
-    labels: ConstraintLabels,
-    *,
-    selected_month: int | None,
-    show_proportional: bool,
-    generation: int = 0,
-) -> go.Figure:
-    """월별 확보율 그래프 — 선 넷(비중은 토글), 기준·제약 선, 제약 기간 칠, 고른 달 띠, 개조 비가동
-    막대."""
-    rows = result.months
-    months = [row.month for row in rows]
-    count = len(rows)
-    if count == 0:
-        raise ValueError("월별 확보율 그래프의 달이 비었습니다.")
-    xs = list(range(count))
-    cutoff = result.conditions.cutoff_days
-    target_percent = float(labels.target_percent)
+class _RateBand(NamedTuple):
+    """아래 띠(y2)에 서는 막대 — 개조 비가동 창 · 신규 대기 몫과 그 x 자리 · 줄(겹치면 아래 줄)."""
 
-    baseline = [_percent(row.baseline_rate) for row in rows]
-    existing = [_percent(row.existing_rate) for row in rows]
-    constrained = [_percent(row.constrained_rate) if row.in_period else None for row in rows]
-    proportional = [
-        _percent(row.proportional_existing_rate) if row.in_period else None for row in rows
-    ]
-    # 기준선의 자리는 G — 판정 경계다(화면이 넘긴다, 110% 면 109.5). 반올림으로 확보가 된 109.7%
-    # 점이 선 위에 서고, 선 끝 글은 정수 기준 「110%」 다.
-    general = [row.general_target * 100 for row in rows]
-    low, high, above_months = rate_axis(result, labels, show_proportional=show_proportional)
-    above = [row.month in above_months for row in rows]
-    # 위 끝을 넘는 제약 제품 점은 위 끝에 ▲ 로 찍는다(값은 표적 풍선).
-    constrained = [high if over else value for value, over in zip(constrained, above, strict=True)]
+    windows: tuple[ModificationWindow, ...]
+    waits: list[NewUnitAssignment]
+    spans: list[tuple[float, float]]
+    wait_spans: list[tuple[float, float]]
+    lanes: list[int]
+    wait_lanes: list[int]
+    lane_count: int
 
+    @property
+    def shown(self) -> bool:
+        """띠가 서는가 — 개조 창이나 신규 대기가 하나라도 있으면."""
+        return bool(self.windows) or bool(self.waits)
+
+
+def _rate_band(result: ConstraintResult, months: Sequence[int], cutoff: int) -> _RateBand:
+    """개조 창 · 신규 대기(대기 일수가 있는 몫)의 막대 자리. 신규 대기 줄은 개조 창이 채운 줄 끝을
+    이어 쓴다."""
     windows = result.windows
     waits = [item for item in result.assignments if item.days > 0]
-    has_band = bool(windows) or bool(waits)
-    main_domain = [_MAIN_BOTTOM, 1.0] if has_band else [0.0, 1.0]
     spans = [
         (day_position(window.start, months, cutoff), day_position(window.end, months, cutoff))
         for window in windows
@@ -583,26 +568,39 @@ def rate_figure(
     lanes = _window_lanes(spans, lane_ends)
     wait_lanes = _window_lanes(wait_spans, lane_ends)
     lane_count = max([*lanes, *wait_lanes], default=0) + 1
+    return _RateBand(windows, waits, spans, wait_spans, lanes, wait_lanes, lane_count)
 
-    data: list[dict[str, Any]] = [
-        {
-            "type": "bar",
-            "x": xs,
-            "y": [high - low] * count,
-            "base": [low] * count,
-            "width": [1.0] * count,
-            "marker": {"color": tokens.HIT_TARGET, "line": {"width": 0}},
-            "customdata": [
-                [row.month, _hit_hover(row, result.conditions, above=over)]
-                for row, over in zip(rows, above, strict=True)
-            ],
-            "hovertemplate": "%{customdata[1]}<extra></extra>",
-            "showlegend": False,
-            "name": "",
-        }
-    ]
+
+def _hit_trace(
+    result: ConstraintResult, xs: list[int], above: list[bool], *, low: float, high: float
+) -> dict[str, Any]:
+    """달마다 보이지 않는 표적 막대 하나 — 풍선과 누름(`customdata = (달, 풍선)`)을 받는다."""
+    rows = result.months
+    count = len(rows)
+    return {
+        "type": "bar",
+        "x": xs,
+        "y": [high - low] * count,
+        "base": [low] * count,
+        "width": [1.0] * count,
+        "marker": {"color": tokens.HIT_TARGET, "line": {"width": 0}},
+        "customdata": [
+            [row.month, _hit_hover(row, result.conditions, above=over)]
+            for row, over in zip(rows, above, strict=True)
+        ],
+        "hovertemplate": "%{customdata[1]}<extra></extra>",
+        "showlegend": False,
+        "name": "",
+    }
+
+
+def _reference_traces(
+    general: list[float], target_percent: float, xs: list[int]
+) -> list[dict[str, Any]]:
+    """기준선(달마다 G 가 다르면 `hv` 계단, 같으면 수평선)과 제약 목표 수평선."""
+    count = len(xs)
     same_general = len(set(general)) == 1
-    data.append(
+    return [
         {
             "type": "scatter",
             "x": [-0.5, count - 0.5] if same_general else [*[x - 0.5 for x in xs], count - 0.5],
@@ -617,9 +615,7 @@ def rate_figure(
             "hoverinfo": "skip",
             "showlegend": False,
             "name": "기준",
-        }
-    )
-    data.append(
+        },
         {
             "type": "scatter",
             "x": [-0.5, count - 0.5],
@@ -629,9 +625,30 @@ def rate_figure(
             "hoverinfo": "skip",
             "showlegend": False,
             "name": "제약 목표",
-        }
-    )
-    data.append(
+        },
+    ]
+
+
+def _rate_lines(
+    result: ConstraintResult,
+    xs: list[int],
+    above: list[bool],
+    *,
+    high: float,
+    show_proportional: bool,
+) -> list[dict[str, Any]]:
+    """확보율 선 — 제약 없을 때 · (비중대로) · 제약 제품(기간 안만, 위 끝을 넘는 점은 위 끝에 ▲) ·
+    기존 제품 차례."""
+    rows = result.months
+    baseline = [_percent(row.baseline_rate) for row in rows]
+    existing = [_percent(row.existing_rate) for row in rows]
+    constrained = [_percent(row.constrained_rate) if row.in_period else None for row in rows]
+    proportional = [
+        _percent(row.proportional_existing_rate) if row.in_period else None for row in rows
+    ]
+    # 위 끝을 넘는 제약 제품 점은 위 끝에 ▲ 로 찍는다(값은 표적 풍선).
+    constrained = [high if over else value for value, over in zip(constrained, above, strict=True)]
+    lines: list[dict[str, Any]] = [
         {
             "type": "scatter",
             "x": xs,
@@ -641,9 +658,9 @@ def rate_figure(
             "hoverinfo": "skip",
             "name": "제약 없을 때(공정 전체)",
         }
-    )
+    ]
     if show_proportional:
-        data.append(
+        lines.append(
             {
                 "type": "scatter",
                 "x": xs,
@@ -654,7 +671,7 @@ def rate_figure(
                 "name": "기존 제품 — 비중대로 나눴을 때",
             }
         )
-    data.append(
+    lines.append(
         {
             "type": "scatter",
             "x": xs,
@@ -675,7 +692,7 @@ def rate_figure(
             "name": "제약 제품",
         }
     )
-    data.append(
+    lines.append(
         {
             "type": "scatter",
             "x": xs,
@@ -694,14 +711,21 @@ def rate_figure(
             "name": "기존 제품 — 제약 반영",
         }
     )
+    return lines
+
+
+def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, Any]]:
+    """아래 띠(y2)의 가로 막대 — 개조 비가동(있으면) · 신규 대기(있으면) trace 하나씩."""
+    traces: list[dict[str, Any]] = []
+    windows, spans = band.windows, band.spans
     if windows:
-        data.append(
+        traces.append(
             {
                 "type": "bar",
                 "orientation": "h",
                 "x": [end - start for start, end in spans],
                 "base": [start for start, _ in spans],
-                "y": lanes,
+                "y": band.lanes,
                 "width": [0.8] * len(spans),
                 "yaxis": "y2",
                 "marker": {
@@ -721,15 +745,16 @@ def rate_figure(
                 "name": "개조 비가동",
             }
         )
+    waits, wait_spans = band.waits, band.wait_spans
     if waits:
         # 신규 대기 — 개조 비가동과 같은 띠에 같은 색의 빗금(새 색 토큰을 두지 않는다).
-        data.append(
+        traces.append(
             {
                 "type": "bar",
                 "orientation": "h",
                 "x": [end - start for start, end in wait_spans],
                 "base": [start for start, _ in wait_spans],
-                "y": wait_lanes,
+                "y": band.wait_lanes,
                 "width": [0.8] * len(wait_spans),
                 "yaxis": "y2",
                 "marker": {
@@ -749,7 +774,23 @@ def rate_figure(
                 "name": "신규 대기",
             }
         )
+    return traces
 
+
+def _rate_layout(
+    result: ConstraintResult,
+    xs: list[int],
+    band: _RateBand,
+    *,
+    low: float,
+    high: float,
+    main_domain: list[float],
+    generation: int,
+) -> dict[str, Any]:
+    """그래프 틀 — 여백 · 범례 · 수 x 축(기간 안 달 눈금은 굵게) · y 축 범위 · (띠가 서면) y2 축 ·
+    `meta` 세대."""
+    rows = result.months
+    count = len(rows)
     ticktext = [
         f"<b>{month_label(row.month)}</b>" if row.in_period else month_label(row.month)
         for row in rows
@@ -790,7 +831,7 @@ def rate_figure(
             "fixedrange": True,
             "tickfont": {"size": 11.5, "color": tokens.TEXT},
             "linecolor": tokens.BORDER,
-            "anchor": "y2" if has_band else "y",
+            "anchor": "y2" if band.shown else "y",
         },
         "yaxis": {
             "domain": main_domain,
@@ -803,15 +844,22 @@ def rate_figure(
         },
         "meta": {"generation": int(generation)},
     }
-    if has_band:
+    if band.shown:
         layout["yaxis2"] = {
             "domain": [0.0, _BAND_TOP],
-            "range": [lane_count - 0.5, -0.5],
+            "range": [band.lane_count - 0.5, -0.5],
             "visible": False,
             "fixedrange": True,
         }
-    figure = figure_from_spec({"data": data, "layout": layout})
+    return layout
 
+
+def _rate_shapes(
+    result: ConstraintResult, selected_month: int | None, main_domain: list[float]
+) -> list[dict[str, Any]]:
+    """도형 둘 — 제약 기간 칠(있으면)과 고른 달 띠(보이는 달이면)."""
+    rows = result.months
+    months = [row.month for row in rows]
     shapes: list[dict[str, Any]] = []
     period = [index for index, row in enumerate(rows) if row.in_period]
     if period:
@@ -847,10 +895,25 @@ def rate_figure(
                 "layer": "below",
             }
         )
+    return shapes
+
+
+def _end_annotations(
+    result: ConstraintResult,
+    labels: ConstraintLabels,
+    general: list[float],
+    *,
+    low: float,
+    high: float,
+) -> list[dict[str, Any]]:
+    """오른쪽 끝 두 글 — 「기준 …」(마지막 달 기준 높이) · 「제약 n%」(가까우면 비켜 선다 —
+    `end_label_anchors`)."""
+    count = len(result.months)
+    target_percent = float(labels.target_percent)
     general_anchor, target_anchor = end_label_anchors(
         general[-1], target_percent, low=low, high=high
     )
-    annotations = [
+    return [
         {
             "x": count - 0.5,
             "y": general[-1],
@@ -877,7 +940,52 @@ def rate_figure(
             "font": {"size": 11, "color": tokens.TEXT},
         },
     ]
-    append_layout_items(figure, shapes=shapes, annotations=annotations)
+
+
+def rate_figure(
+    result: ConstraintResult,
+    labels: ConstraintLabels,
+    *,
+    selected_month: int | None,
+    show_proportional: bool,
+    generation: int = 0,
+) -> go.Figure:
+    """월별 확보율 그래프 — 선 넷(비중은 토글), 기준·제약 선, 제약 기간 칠, 고른 달 띠, 개조 비가동
+    막대.
+
+    trace 차례: 표적 → 기준 · 제약 목표(`_reference_traces`) → 선(`_rate_lines`) → 띠 막대
+    (`_band_traces`). 틀은 `_rate_layout`, 도형은 `_rate_shapes`, 끝 글은 `_end_annotations` 다."""
+    rows = result.months
+    months = [row.month for row in rows]
+    count = len(rows)
+    if count == 0:
+        raise ValueError("월별 확보율 그래프의 달이 비었습니다.")
+    xs = list(range(count))
+    cutoff = result.conditions.cutoff_days
+    target_percent = float(labels.target_percent)
+    # 기준선의 자리는 G — 판정 경계다(화면이 넘긴다, 110% 면 109.5). 반올림으로 확보가 된 109.7%
+    # 점이 선 위에 서고, 선 끝 글은 정수 기준 「110%」 다.
+    general = [row.general_target * 100 for row in rows]
+    low, high, above_months = rate_axis(result, labels, show_proportional=show_proportional)
+    above = [row.month in above_months for row in rows]
+    band = _rate_band(result, months, cutoff)
+    main_domain = [_MAIN_BOTTOM, 1.0] if band.shown else [0.0, 1.0]
+
+    data: list[dict[str, Any]] = [
+        _hit_trace(result, xs, above, low=low, high=high),
+        *_reference_traces(general, target_percent, xs),
+        *_rate_lines(result, xs, above, high=high, show_proportional=show_proportional),
+        *_band_traces(result, band),
+    ]
+    layout = _rate_layout(
+        result, xs, band, low=low, high=high, main_domain=main_domain, generation=generation
+    )
+    figure = figure_from_spec({"data": data, "layout": layout})
+    append_layout_items(
+        figure,
+        shapes=_rate_shapes(result, selected_month, main_domain),
+        annotations=_end_annotations(result, labels, general, low=low, high=high),
+    )
     flush_layout_items(figure)
     keep_unselected_opaque(figure)
     return figure
