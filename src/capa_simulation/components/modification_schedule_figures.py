@@ -137,19 +137,20 @@ def _line_label(labels: ScheduleLabels, result: ScheduleResult) -> str:
     return "(월별)"
 
 
-def relief_points(value: float) -> str:
-    """기준을 낮춰야 하는 폭(비율, 양수)을 0.01% **올림** 글자로 — 적힌 만큼 낮추면 늘 들어간다.
+def relief_points(points: int) -> str:
+    """기준을 낮춰야 하는 폭을 정수 % 글자로(「2%」) — 기준 확보율 칸은 정수 % 만 받으므로 그 칸에
+    칠 수를 적는다(2026-11-01 사용자 결정 — 0.01% 올림 「1.71%」 를 대신한다). 수는 서비스가 같은
+    판정에 다시 넣어 확인한 정수다(`ScheduleShortfall.relief_percent` — 적힌 만큼 낮추면 늘
+    들어간다).
 
     퍼센트 차이도 「%」 로 적는다(「%p」 를 쓰지 않는다 — 2026-11-01 사용자 결정)."""
-    points = math.ceil(value * 10_000 - 1e-6) / 100
-    return f"{max(points, 0.01):.2f}%"
+    return f"{max(int(points), 1)}%"
 
 
-def relief_text(value: float) -> str:
-    """기준을 낮춰야 하는 폭 한 마디 — 「기준 1.71% 낮추기」(양수로 적는다 — 부호 붙은 「완화
-    −1.71%」 는 낮추는지 올리는지가 거꾸로 읽혔다). 기한 칸 캡션과 대안 셋 셋째 줄이 같은
-    글이다."""
-    return f"기준 {relief_points(value)} 낮추기"
+def relief_text(points: int) -> str:
+    """기준을 낮춰야 하는 폭 한 마디 — 「기준 2% 낮추기」(양수로 적는다 — 부호 붙은 「완화 −2%」 는
+    낮추는지 올리는지가 거꾸로 읽혔다). 기한 칸 캡션과 대안 셋 셋째 줄이 같은 글이다."""
+    return f"기준 {relief_points(points)} 낮추기"
 
 
 def batch_line(number: int, batch: ScheduleBatch) -> str:
@@ -191,9 +192,10 @@ def _blocked_reason(result: ScheduleResult) -> str:
 def shortfall_lines(result: ScheduleResult) -> list[str]:
     """다 넣지 못했을 때의 대안 셋(C12). 다 넣었으면 빈 목록.
 
-    셋째 줄은 낮출 폭(「기준 1.71% 낮추기」)이거나, 0% 까지 낮춰도 못 넣으면 그 까닭이다. 완전
-    탐색이 마디 한도에 걸렸으면(`exact` 거짓) 「이 계산으로 찾은 범위」 라고 끝에 적고, 「적힌 만큼
-    낮추면 들어간다」 는 괄호는 낮출 폭이 적혔을 때만 붙인다(까닭만 적혔으면 낮출 폭이 없다).
+    셋째 줄은 낮출 폭(「기준 2% 낮추기」 — 기준 확보율 칸에 칠 정수 %)이거나, 0% 까지 낮춰도 못
+    넣으면 그 까닭이다. 완전 탐색이 마디 한도에 걸렸으면(`exact` 거짓) 「이 계산으로 찾은 범위」
+    라고 끝에 적고, 「적힌 만큼 낮추면 들어간다」 는 괄호는 낮출 폭이 적혔을 때만 붙인다(까닭만
+    적혔으면 낮출 폭이 없다).
     """
     shortfall = result.shortfall
     if shortfall is None:
@@ -222,8 +224,8 @@ def shortfall_lines(result: ScheduleResult) -> list[str]:
     lines.append(
         f"{target} 안에 다 넣으려면: "
         + (
-            f"**{relief_text(shortfall.relief)}**"
-            if shortfall.relief is not None
+            f"**{relief_text(shortfall.relief_percent)}**"
+            if shortfall.relief_percent is not None
             else _blocked_reason(result)
         )
     )
@@ -233,7 +235,7 @@ def shortfall_lines(result: ScheduleResult) -> list[str]:
             + (
                 "더 넣거나 덜 낮춰도 될 수 있습니다(적힌 만큼 기준을 낮추면 들어가는 것은 "
                 "그대로입니다)."
-                if shortfall.relief is not None
+                if shortfall.relief_percent is not None
                 else "더 넣거나 기준을 낮춰 다 넣을 수도 있습니다."
             )
         )

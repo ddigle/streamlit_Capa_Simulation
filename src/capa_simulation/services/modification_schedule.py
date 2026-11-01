@@ -74,7 +74,7 @@ from __future__ import annotations
 import bisect
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Final, Literal, NamedTuple
 
@@ -85,7 +85,12 @@ from capa_simulation.services.constraint_simulation import (
     NEED_TOLERANCE,
     secure,
 )
-from capa_simulation.services.securement_threshold import meets_boundary, threshold_margin
+from capa_simulation.services.securement_threshold import (
+    judgment_boundary,
+    meets_boundary,
+    threshold_margin,
+)
+from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -104,6 +109,7 @@ __all__ = [
     "ScheduleShortfall",
     "ShortfallCause",
     "Strategy",
+    "lowered_target",
     "plan_modification_schedule",
     "schedule_month_inputs",
     "whole_units",
@@ -288,8 +294,8 @@ class ScheduleShortfall:
 
     finish_month_without_deadline: int | None
     relief: float | None
-    """끝 날 상한 안에 다 넣으려면 배치 기준에서 낮춰야 하는 폭(비율, 양수). 0% 까지 낮춰도 못
-    넣으면 None."""
+    """끝 날 상한 안에 다 넣으려면 배치 기준에서 낮춰야 하는 폭(비율, 양수 — 이분 탐색의 연속 값).
+    0% 까지 낮춰도 못 넣으면 None."""
 
     cause: ShortfallCause | None = None
     """`relief` 가 None 일 때 그 까닭(아니면 None)."""
@@ -298,6 +304,13 @@ class ScheduleShortfall:
     """넣을 수 있는 대수 · 필요 완화 · 까닭을 완전 탐색이 마디 한도 안에서 확인했다. 거짓이면 이
     계산으로 찾은 범위다 — 실제로는 더 넣거나 덜 낮춰도 될 수 있다(적힌 완화는 그래도 늘
     충분하다)."""
+
+    relief_percent: int | None = None
+    """화면이 적는 낮출 폭 — 기준 확보율 칸에 칠 **정수 %** k(≥ 1, 2026-11-01 사용자 결정). 기준 T
+    를 T − k 로 낮추면(판정 경계도 정확히 k% 내려간다 — 사사오입 정수 % 판정) 같은 배치 계산이 상한
+    안에 다 넣는 가장 작은 정수다. 연속 폭의 올림이 아니라 그 k 를 같은 판정(`feasible`)에 다시 넣어
+    확인한 값이다 — 판정 경계 기준의 폭이라 110% 기준에서 108.6% 가 묶는 계획은 1(109% 의 경계
+    108.5%)이지 2 가 아니다. `relief` 가 None 이면 None."""
 
 
 @dataclass(frozen=True)
@@ -919,6 +932,42 @@ class _Model:
             return None
         return margin - self.largest_delta(floor_delta, margin, limit, claim=True)
 
+    def whole_relief(self, margin: float, limit: int, relief: float) -> int:
+        """기준 확보율 칸에 칠 정수 % 낮출 폭 k — 달마다 기준을 k% 낮춘 판정
+        경계(`lowered_target`)로 같은 배치 판정(`feasible`)이 상한 안에 다 넣는 가장 작은 k ≥ 1.
+
+        화면은 기준 T 의 판정 경계 (T − 0.5) ÷ 100 을 G 로 넘기므로 k 는 「확보율을 사사오입한 정수
+        % ≥ T − k」 판정으로 맞춘 폭이다 — 묶는 달 확보율 108.6% · T 110 이면 1(109% 의 경계
+        108.5%)이지 연속 차이 1.4% 의 올림 2 가 아니다. 연속 폭 `relief` 의 올림을 첫 짐작으로 두고,
+        그 k 를 사용자가 칸에 T − k 를 친 것과 같은 경계(화면이 넘길 부동소수 그대로)로 다시 판정해
+        들지 않으면 올리고 k − 1 도 들면 내린다 — 이분 탐색 끝자리(`SEARCH_RESOLUTION`)나 경계의
+        끝자리가 정수 경계를 넘어 1 크게 올림하지 않게. 가장 낮은 달 기준을 0 까지 낮춘
+        배치(`relief` 가 None 이 아님 — 그때 든다) 아래는 다시 묻지 않는다. 다시 판정한 탐색이 마디
+        한도에 걸리면 `exhausted` 를 남긴다(그 k 는 이 계산으로 찾은 범위다).
+        """
+        floor_delta = -self.minimum_target
+
+        def fits(points: int) -> bool:
+            if margin - points / 100 <= floor_delta:
+                return True
+            lowered = _Model(
+                [
+                    replace(row, general_target=lowered_target(row.general_target, points))
+                    for row in self.rows
+                ],
+                self.conditions,
+            )
+            found = lowered.feasible(margin, limit, month_caps=lowered.month_caps, claim=True)
+            self.exhausted = self.exhausted or lowered.exhausted
+            return found
+
+        points = max(1, math.ceil(relief * 100))
+        while not fits(points):
+            points += 1
+        while points > 1 and fits(points - 1):
+            points -= 1
+        return points
+
     def cause(self, limit: int) -> ShortfallCause:
         """기준을 0 까지 낮춰도 못 넣는 까닭 — 창 · 동시 상한 · 가용."""
         if not self.candidates(limit):
@@ -928,6 +977,20 @@ class _Model:
         ):
             return "concurrent"
         return "capacity"
+
+
+def lowered_target(boundary: float, points: int) -> float:
+    """판정 경계 G 를 기준 k% 낮춘 판정 경계로(「기준 n% 낮추기」 를 다시 판정하는 길).
+
+    G 가 정수 기준 T 의 판정 경계면(화면이 넘기는 꼴 — (T − 0.5) ÷ 100, `judgment_boundary`) T − k
+    의 경계를 같은 함수로 다시 지어 사용자가 칸에 T − k 를 쳤을 때 화면이 넘길 부동소수와 같게
+    한다(G − k/100 은 그 값과 끝자리가 갈릴 수 있다). 아니면(서비스 시험의 G = 1.0 같은) G − k/100
+    이다.
+    """
+    percent = threshold_percent(boundary + 0.005)
+    if judgment_boundary(percent / 100) == boundary:
+        return judgment_boundary((percent - points) / 100)
+    return boundary - points / 100
 
 
 # ================================================================== 계산
@@ -967,6 +1030,7 @@ def plan_modification_schedule(
                 last = max(start for start, _ in free.batches) + model.days - 1
                 finish_day, finish_month = model.day(last), model.rows[index].month
         relief = model.relief(margin, limit)
+        relief_percent = None if relief is None else model.whole_relief(margin, limit, relief)
         shortfall = ScheduleShortfall(
             placed=placement.placed,
             by_deadline=by_deadline,
@@ -975,6 +1039,7 @@ def plan_modification_schedule(
             relief=relief,
             cause=None if relief is not None else model.cause(limit),
             exact=not model.exhausted,
+            relief_percent=relief_percent,
         )
     return _result(model, placement, delta, shortfall, fell_back=fell_back)
 

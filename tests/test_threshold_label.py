@@ -114,3 +114,30 @@ def test_the_caption_names_the_default_and_counts_exceptions_in_the_period() -> 
         )
         == "확보 기준 110% · 경고 기준 100% · 월별 예외 2개월"
     )
+
+
+@pytest.mark.parametrize(
+    ("typed", "expected"),
+    [
+        (109.5, 110),
+        (99.5, 100),
+        (108.5, 109),
+        (109.49, 109),
+        (110.0, 110),
+        (49.5, 50),
+        (300.4, 300),
+    ],
+)
+def test_a_typed_percent_reads_as_its_half_up_whole_percent(typed: float, expected: int) -> None:
+    """판정 기준 숫자 칸에 친 퍼센트는 사사오입한 정수 % 다(2026-11-01 사용자 결정 — 109.5 → 110,
+    99.5 → 100). 반은 늘 올린다 — 짝수 쪽으로 가르는 `round` 면 108.5 는 108 이다."""
+    from capa_simulation.services.threshold_label import whole_percent
+
+    assert whole_percent(typed) == expected
+
+
+def test_a_typed_percent_that_is_not_a_number_is_refused() -> None:
+    from capa_simulation.services.threshold_label import whole_percent
+
+    with pytest.raises(ValueError, match="숫자가 아닙니다"):
+        whole_percent(float("nan"))

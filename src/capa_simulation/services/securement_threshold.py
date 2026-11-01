@@ -21,6 +21,10 @@
 
 **여유**(`threshold_margin` — 기준 대비 차이)는 확보율 − T 이고, 판정이 확보인데 음수면(반올림으로
 겨우 든 공정 — 109.5% 대 110%) 0 이다. 화면에 기준을 적을 때는 정수 「110%」 하나다.
+
+**받는 범위**(`THRESHOLD_RANGE` — 50 ~ 300%, 제약 시뮬레이션 제약 확보율과 한 값)는 저장 직전에만
+본다(`require_threshold_range` — HOME › Preference 판정 기준 저장, 2026-11-01 사용자 결정). 1095%
+같은 오타를 막는 입력 정책이라 저장 검증(> 0 · 경고 ≤ 확보)과 읽기 · 판정은 범위를 보지 않는다.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from math import isclose, isfinite
-from typing import Literal
+from typing import Final, Literal
 
 import pandas as pd
 
@@ -46,6 +50,15 @@ WARNING_COLUMN = "경고 기준"
 # 프로필도 공식버전 프리셋도 없을 때 쓰는 코드 기본값(비율) — 업무 기준 110%·100% 그대로다.
 DEFAULT_SECURE_THRESHOLD = 1.10
 DEFAULT_WARNING_THRESHOLD = 1.00
+
+THRESHOLD_RANGE: Final = (0.5, 3.0)
+"""확보율 기준(비율)이 받는 범위 50 ~ 300%(양 끝 포함) — **한 값**이다(2026-11-01 사용자 결정
+「제약 확보율처럼 50 ~ 300% 밖은 저장을 막음」).
+
+HOME › Preference 판정 기준 저장(`require_threshold_range`)과 제약 시뮬레이션 제약 확보율 검증
+(`constraint_simulation.TARGET_RANGE`)이 이 값을 쓴다. 판정 기준은 사사오입 정수 T 로 견준다(49.5 →
+50 은 든다). 읽기 · 판정은 막지 않는다 — 범위 밖 옛 저장본(1095% 오타 같은)도 그대로 그려지고
+판정된다."""
 
 # 월별 예외 한 칸. 빈칸(None)은 그 항목이 기본값을 따른다는 뜻이다.
 MonthlyThreshold = tuple[int, float | None, float | None]
@@ -377,6 +390,85 @@ def _normalized_rows(prepared: pd.DataFrame) -> pd.DataFrame:
             months = _month_list(result.loc[invalid, "생산계획년월"])
             raise ValueError(f"{with_topic_particle(column)} 0 보다 큰 숫자여야 합니다: {months}")
     return result
+
+
+@dataclass(frozen=True)
+class OutOfRangeThreshold:
+    """받는 범위(`THRESHOLD_RANGE`) 밖의 판정 기준 한 칸."""
+
+    month: int | None
+    """그 칸의 달(YYYYMM). None 이면 기본값 칸이다."""
+
+    column: str
+    """`SECURE_COLUMN` 또는 `WARNING_COLUMN`."""
+
+    percent: int
+    """사사오입 정수 %(`threshold_percent`) — 범위도 이 값으로 견준다."""
+
+    @property
+    def label(self) -> str:
+        """「기본 확보 기준 1095%」·「26.03 경고 기준 49%」."""
+        place = "기본" if self.month is None else month_label(self.month)
+        return f"{place} {self.column} {self.percent}%"
+
+
+def threshold_range_text() -> str:
+    """받는 범위 글자 「50% ~ 300%」(`THRESHOLD_RANGE`)."""
+    low, high = (threshold_percent(bound) for bound in THRESHOLD_RANGE)
+    return f"{low}% ~ {high}%"
+
+
+def out_of_range_thresholds(
+    default_secure: float,
+    default_warning: float,
+    rows: pd.DataFrame,
+) -> tuple[OutOfRangeThreshold, ...]:
+    """기본 두 칸과 월별 칸 가운데 사사오입 정수 % 가 받는 범위(`THRESHOLD_RANGE`) 밖인 칸.
+
+    기본값 칸이 먼저, 월별 칸은 달 · 확보 · 경고 차례다. 빈칸 · 값이 아닌 칸은 보지 않는다 — 그런
+    칸은 저장 검증(`validate_securement_thresholds`)이 따로 거부한다.
+    """
+    low, high = (threshold_percent(bound) for bound in THRESHOLD_RANGE)
+    cells: list[tuple[int | None, str, object]] = [
+        (None, SECURE_COLUMN, default_secure),
+        (None, WARNING_COLUMN, default_warning),
+    ]
+    prepared = prepare_securement_threshold_rows(rows)
+    for month, secure, warning in zip(
+        prepared["생산계획년월"], prepared[SECURE_COLUMN], prepared[WARNING_COLUMN], strict=True
+    ):
+        cells.append((int(month), SECURE_COLUMN, secure))
+        cells.append((int(month), WARNING_COLUMN, warning))
+    found: list[OutOfRangeThreshold] = []
+    for month, column, value in cells:
+        numeric = pd.to_numeric(pd.Series([value], dtype="object"), errors="coerce").iloc[0]
+        if pd.isna(numeric) or not isfinite(float(numeric)):
+            continue
+        percent = threshold_percent(float(numeric))
+        if not low <= percent <= high:
+            found.append(OutOfRangeThreshold(month, column, percent))
+    return tuple(found)
+
+
+def threshold_range_message(cells: Sequence[OutOfRangeThreshold]) -> str:
+    """범위 밖 칸을 거부하는 글 — 어느 칸(달 · 항목 · 값)인지와 받는 범위를 함께 적는다."""
+    details = ", ".join(cell.label for cell in cells)
+    return (
+        f"판정 기준은 {threshold_range_text()} 안의 정수 % 여야 합니다 — 범위 밖이라 저장하지 "
+        f"않았습니다: {details}."
+    )
+
+
+def require_threshold_range(
+    default_secure: float,
+    default_warning: float,
+    rows: pd.DataFrame,
+) -> None:
+    """판정 기준 저장 직전 범위 검사(2026-11-01 사용자 결정) — 한 칸이라도 범위 밖이면 그 칸들을
+    적어 `ValueError` 로 거부한다. 값은 비율이고(110% 는 1.1) 사사오입 정수 % 로 견준다."""
+    cells = out_of_range_thresholds(default_secure, default_warning, rows)
+    if cells:
+        raise ValueError(threshold_range_message(cells))
 
 
 def reversed_threshold_months(thresholds: SecurementThresholds) -> tuple[int, ...]:

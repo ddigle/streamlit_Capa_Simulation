@@ -746,9 +746,9 @@ def test_the_general_target_takes_whole_percent_and_home(
     app = _opened(dynamic_databases)
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
     field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
-    assert field.value == 110 and isinstance(field.value, int)
+    assert field.value == 110
     assert field.step == 1
-    assert field.proto.format == "%d"
+    assert field.proto.format == "%.0f"
     app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] == 107
@@ -757,6 +757,71 @@ def test_the_general_target_takes_whole_percent_and_home(
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
     assert "기준 HOME" in _header_line(app)
+
+
+@pytest.mark.parametrize(
+    ("value_key", "input_key", "label", "typed", "kept", "header"),
+    [
+        (
+            CONSTRAINT_GENERAL_KEY,
+            CONSTRAINT_GENERAL_INPUT_KEY,
+            "기준 확보율",
+            109.5,
+            110,
+            "기준 110%",
+        ),
+        (
+            CONSTRAINT_GENERAL_KEY,
+            CONSTRAINT_GENERAL_INPUT_KEY,
+            "기준 확보율",
+            108.5,
+            109,
+            "기준 109%",
+        ),
+        (
+            CONSTRAINT_GENERAL_KEY,
+            CONSTRAINT_GENERAL_INPUT_KEY,
+            "기준 확보율",
+            107.4,
+            107,
+            "기준 107%",
+        ),
+        (
+            CONSTRAINT_TARGET_KEY,
+            CONSTRAINT_TARGET_INPUT_KEY,
+            "제약 확보율",
+            109.5,
+            110,
+            "제약 110%",
+        ),
+    ],
+)
+def test_the_whole_percent_fields_round_a_typed_decimal_half_up(
+    dynamic_databases: tuple[Path, Path],
+    value_key: str,
+    input_key: str,
+    label: str,
+    typed: float,
+    kept: int,
+    header: str,
+) -> None:
+    """기준 확보율 · 제약 확보율 칸은 소수를 받아 사사오입한 정수 % 로 읽는다 — HOME 판정 기준 칸과
+    한 규칙(2026-11-01 사용자 결정 — 109.5 → 110, 108.5 → 109). 정수 숫자 칸(`%d`)은 브라우저가 친
+    글을 `parseInt` 로, 서버가 `int()` 로 읽어 109.5 를 말없이 109 로 버렸다(2026-11-01 브라우저
+    훑기). 칸은 소수 칸이고 보이는 꼴은 반을 올리는 `%.0f` 이며 정본은 정수다."""
+    from streamlit.proto.NumberInput_pb2 import NumberInput as NumberInputProto
+
+    app = _opened(dynamic_databases)
+    field = app.number_input(key=input_key)
+    assert field.proto.data_type == NumberInputProto.FLOAT
+    assert field.proto.format == "%.0f"
+    field.set_value(typed)
+    _ok(app.run())
+    assert app.session_state[value_key] == kept
+    assert isinstance(app.session_state[value_key], int)
+    assert header in _header_line(app)
+    (shown,) = [item for item in app.number_input if item.label == f"{label} 직접 입력"]
+    assert shown.value == kept
 
 
 def test_the_guide_says_the_general_target_is_a_whole_percent_judged_by_rounding() -> None:

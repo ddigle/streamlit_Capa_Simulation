@@ -94,7 +94,7 @@ import pandas as pd
 
 from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
-from capa_simulation.services.securement_threshold import capacity_status
+from capa_simulation.services.securement_threshold import THRESHOLD_RANGE, capacity_status
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -142,8 +142,9 @@ SUM_TOLERANCE: Final = 1e-6
 """어댑터가 제품별 소요 합과 공정 소요를 맞댈 때의 상대 허용치(`× max(1, R)`) — 합 차례의 부동소수
 잡음."""
 
-TARGET_RANGE: Final = (0.5, 3.0)
-"""제약 확보율(비율) 50~300%."""
+TARGET_RANGE: Final = THRESHOLD_RANGE
+"""제약 확보율(비율) 50~300% — HOME 판정 기준 저장 범위와 한 값이다
+(`securement_threshold.THRESHOLD_RANGE`)."""
 
 GENERAL_INPUT_RANGE: Final = (0.5, 2.0)
 """기준 확보율 **직접 입력 칸**의 범위(50~200%). 서비스 검증에는 쓰지 않는다 — HOME 월별 예외는

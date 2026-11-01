@@ -608,15 +608,15 @@ def test_shortfall_lines_name_the_concurrency_cap_and_an_unfinished_search() -> 
 
 
 def test_the_alternatives_say_how_far_to_lower_the_target_as_a_positive_number() -> None:
-    """셋째 줄은 「기준 0.65% 낮추기」 — 부호 붙은 「필요한 기준 완화: −0.65%p」 는 낮추는지
-    올리는지가 거꾸로 읽혔다(2026-10-26 사용자 결정). 0.645% 는 0.01% 올림이다(차이도 「%」 —
-    2026-11-01)."""
+    """셋째 줄은 「기준 1% 낮추기」 — 부호 붙은 「필요한 기준 완화: −0.65%p」 는 낮추는지
+    올리는지가 거꾸로 읽혔다(2026-10-26 사용자 결정). 폭은 기준 확보율 칸에 칠 정수 % 다 — 연속 폭
+    0.645% 를 0.01% 올림한 「0.65%」 가 아니다(2026-11-01 사용자 결정, 차이도 「%」)."""
     lines = shortfall_lines(_missed_by_relief())
 
     assert lines == [
         "기한(2027-02-28)까지 넣을 수 있는 대수: **1 / 2대**",
         "기한 없이 기준을 지키면 끝나는 날: **2027-03-03** (27.03 W/D)",
-        "기한 안에 다 넣으려면: **기준 0.65% 낮추기**",
+        "기한 안에 다 넣으려면: **기준 1% 낮추기**",
     ]
     assert "완화" not in " ".join(lines) and "\u2212" not in " ".join(lines)
 
@@ -645,12 +645,12 @@ def _kpi_app() -> None:
 
 
 def test_the_deadline_card_says_how_far_to_lower_the_target_as_a_positive_number() -> None:
-    """못 맞춘 기한 칸 캡션도 대안 셋과 같은 글 「기준 0.65% 낮추기」 이고, 풍선이 그 글을 풀어
+    """못 맞춘 기한 칸 캡션도 대안 셋과 같은 글 「기준 1% 낮추기」 이고, 풍선이 그 글을 풀어
     말한다."""
     app = AppTest.from_function(_kpi_app, default_timeout=30)
     _ok(app.run())
 
-    assert _metric(app, "기한") == ("못 맞춤", "1대 남음 · 기준 0.65% 낮추기")
+    assert _metric(app, "기한") == ("못 맞춤", "1대 남음 · 기준 1% 낮추기")
     deadline = next(metric for metric in app.metric if metric.label == "기한")
     assert "「기준 n% 낮추기」" in str(deadline.proto.help)
     shown = " ".join(

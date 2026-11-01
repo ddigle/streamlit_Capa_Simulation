@@ -548,3 +548,155 @@ def test_a_stored_half_step_threshold_opens_as_its_whole_percent_and_saves_as_it
     assert profile.version == 2
     assert (profile.default_secure, profile.default_warning) == pytest.approx((1.1, 0.99))
     assert profile.rows["확보 기준"].tolist() == pytest.approx([1.2])
+
+
+def test_the_default_fields_take_a_decimal_point_and_save_the_rounded_whole_percent(
+    database: Path,
+) -> None:
+    """기본 확보 · 경고 칸도 월별 칸처럼 소수를 받아 사사오입한 정수 % 로 읽는다(2026-11-01 사용자
+    결정 — 109.5 → 110, 99.5 → 100). 정수 숫자 칸(`%d`)은 브라우저가 친 글을 `parseInt` 로, 서버가
+    `int()` 로 읽어 109.5 를 말없이 109 로 버렸다 — 같은 109.5 를 월별 칸은 110 으로 읽었다. 칸은
+    소수 칸이고 보이는 꼴은 반을 올리는 `%.0f` 다."""
+    from streamlit.proto.NumberInput_pb2 import NumberInput as NumberInputProto
+
+    app = _app(database)
+    assert [widget.proto.data_type for widget in app.number_input] == [NumberInputProto.FLOAT] * 2
+    assert [widget.proto.format for widget in app.number_input] == ["%.0f", "%.0f"]
+
+    app.number_input[0].set_value(109.5)
+    app.number_input[1].set_value(99.5)
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 1
+    assert (profile.default_secure, profile.default_warning) == pytest.approx((1.1, 1.0))
+
+    # 반은 늘 올린다 — 짝수 쪽으로 가르지 않는다(108.5 → 109, 파이썬 `round` 면 108).
+    app.number_input[0].set_value(108.5)
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 2
+    assert profile.default_secure == pytest.approx(1.09)
+
+
+def _threshold_rows_in_db(database: Path) -> tuple[int, int]:
+    """(헤더 version, 월별 행 수) — 저장소 SQL 그대로 센다(캐시를 거치지 않는다)."""
+    import duckdb
+
+    with duckdb.connect(str(database), read_only=True) as connection:
+        header = connection.execute(
+            "SELECT version FROM app_meta.global_securement_threshold WHERE profile_id = 1"
+        ).fetchone()
+        count = connection.execute(
+            "SELECT COUNT(*) FROM app_meta.global_securement_threshold_month"
+        ).fetchone()
+    return (0 if header is None else int(header[0]), 0 if count is None else int(count[0]))
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "named"),
+    [
+        ("month_secure", 1095.0, "26.02 확보 기준 1095%"),
+        ("month_secure", 301.0, "26.02 확보 기준 301%"),
+        ("month_warning", 49.0, "26.02 경고 기준 49%"),
+        ("default_secure", 1095.0, "기본 확보 기준 1095%"),
+        ("default_warning", 49.0, "기본 경고 기준 49%"),
+    ],
+)
+def test_a_threshold_outside_the_range_is_refused_naming_the_cell_and_the_range(
+    database: Path, field: str, value: float, named: str
+) -> None:
+    """판정 기준 값이 50 ~ 300% 밖이면 저장하지 않고 저장 단추 아래에 어느 칸(달 · 항목 · 값)인지와
+    받는 범위를 적는다(2026-11-01 사용자 결정 「제약 확보율처럼 50 ~ 300% 밖은 저장을 막음」 — 1095
+    같은 오타가 그대로 저장됐다). 저장소의 헤더 version 과 월별 행 수가 그대로다."""
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.1,
+        1.0,
+        pd.DataFrame({"생산계획년월": [202603], "확보 기준": [1.2], "경고 기준": [None]}),
+        source="처음 저장",
+        expected_version=0,
+    )
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
+    before = _threshold_rows_in_db(database)
+    app = _app(database)
+    if field == "month_secure":
+        _edit(app, {0: {"26.02": value}})
+    elif field == "month_warning":
+        _edit(app, {1: {"26.02": value}})
+    elif field == "default_secure":
+        app.number_input[0].set_value(value)
+    else:
+        app.number_input[1].set_value(value)
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [element.value for element in app.error]
+    assert len(errors) == 1, errors
+    assert named in errors[0] and "50% \\~ 300%" in errors[0], errors
+    assert "저장하지 않았습니다" in errors[0]
+    assert not app.success
+    assert _threshold_rows_in_db(database) == before == (1, 1)
+
+
+def test_the_range_ends_are_saved(database: Path) -> None:
+    """300 과 50 은 범위 안이다(양 끝 포함). 49.5 는 사사오입한 정수 50 으로 읽어 든다 — 범위도
+    저장할 정수 % 로 견준다."""
+    app = _app(database)
+    _edit(app, {0: {"26.02": 300.0}, 1: {"26.03": 50.0, "26.01": 49.5}})
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 1
+    assert profile.thresholds.for_month(202602) == pytest.approx((3.0, 1.0))
+    assert profile.thresholds.for_month(202603) == pytest.approx((1.1, 0.5))
+    assert profile.thresholds.for_month(202601) == pytest.approx((1.1, 0.5))
+
+
+def test_an_out_of_range_month_outside_the_view_points_to_the_clear_box(database: Path) -> None:
+    """조회기간 밖 달에 범위 밖 옛 저장본(2026-11-01 E2E 의 1095% 오타)이 남아 있으면 그 달을 적고
+    고칠 길(조회기간 넓히기 · 「조회기간 밖 월별 기준 지우기」)까지 적어 거부한다. 지우기를 체크하면
+    저장된다. 읽기 · 판정은 막지 않는다 — 옛 저장본은 그대로 그려진다."""
+    from capa_simulation.persistence import securement_threshold_store
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    repository = DuckDBScenarioRepository(database)
+    with repository._write_transaction() as connection:
+        securement_threshold_store.replace_global_securement_threshold(
+            connection,
+            default_secure=1.1,
+            default_warning=1.0,
+            prepared_rows=pd.DataFrame(
+                {
+                    "생산계획년월": pd.Series([202612], dtype="int64"),
+                    "확보 기준": pd.Series([10.95], dtype="float64"),
+                    "경고 기준": pd.Series([None], dtype="float64"),
+                }
+            ),
+            source="오타 저장",
+            expected_version=0,
+        )
+    clear_global_securement_threshold_cache()
+    app = _app(database)
+    _edit(app, {0: {"26.02": 120.0}})
+    app = _save(app)
+
+    errors = [element.value for element in app.error]
+    assert len(errors) == 1, errors
+    assert "26.12 확보 기준 1095%" in errors[0]
+    assert "조회기간 밖 달 26.12" in errors[0] and "지우기" in errors[0]
+    assert _threshold_rows_in_db(database) == (1, 1)
+
+    next(box for box in app.checkbox if "조회기간 밖 월별 기준" in box.label).check()
+    _edit(app, {0: {"26.02": 120.0}})
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 2
+    assert profile.rows["생산계획년월"].tolist() == [202602]

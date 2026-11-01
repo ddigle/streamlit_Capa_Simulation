@@ -177,7 +177,7 @@ LIST_CARD_KEY: Final = "constraint_sim_sched_list"
 SHORTFALL_CARD_KEY: Final = "constraint_sim_sched_shortfall"
 _MEMO_LIMIT: Final = 4
 # 결과 모양(서비스 dataclass)을 바꾸면 올린다 — 세션 memo 의 옛 결과를 쓰지 않게.
-_RESULT_SCHEMA_VERSION: Final = 3
+_RESULT_SCHEMA_VERSION: Final = 4
 _EMPTY: Final = "—"
 
 DOUBLE_COUNT_NOTE: Final = (
@@ -207,8 +207,8 @@ FELL_BACK_LABEL: Final = "가장 고르게 → 가장 빨리로 배치"
 DEADLINE_HELP: Final = (
     "기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다 — 기한을 고르지 않았으면 「없음」 "
     "입니다. 못 맞추면 남은 대수를 적고, 기준을 낮춰 기한 안에 다 넣을 수 있으면 그 폭도 "
-    "적습니다(「기준 n% 낮추기」 — 0.01% 올림이라 적힌 만큼 낮추면 들어갑니다). 0% 까지 낮춰도 "
-    "못 넣으면 폭 대신 그 까닭을 아래 「다 넣지 못했습니다 — 대안」 이 적습니다."
+    "적습니다(「기준 n% 낮추기」 — 기준 확보율 칸에 칠 정수 % 라 적힌 만큼 낮추면 들어갑니다). 0% "
+    "까지 낮춰도 못 넣으면 폭 대신 그 까닭을 아래 「다 넣지 못했습니다 — 대안」 이 적습니다."
 )
 
 
@@ -454,11 +454,14 @@ def _render_conditions(
         maximum=round(GENERAL_INPUT_RANGE[1] * 100),
         step=1,
         unit="%",
-        number_format="%d",
+        # 제약 영향 모드와 같은 칸 — 소수를 받아 반 올림한다(109.5 → 110, 2026-11-01).
+        number_format="%.0f",
+        decimal_entry=True,
         fallback=home_percent,
         preset_label=lambda value: "HOME 기준" if value is None else f"{value:g}%",
         help=(
-            "개조 뒤 공정 확보율이 모든 달 이 값(정수 %) 이상이어야 합니다 — 확보율을 사사오입한 "
+            "개조 뒤 공정 확보율이 모든 달 이 값(정수 % — 소수를 치면 사사오입합니다, 109.5 → 110) "
+            "이상이어야 합니다 — 확보율을 사사오입한 "
             "정수 % 로 견주므로 110% 면 109.5% 도 지킨 것입니다. 「HOME 기준」 은 HOME → "
             "Preference 공용 판정 기준(기본 + 월별 예외)을 달마다 씁니다. 제약 영향 모드와 한 값을 "
             "나눕니다."
@@ -796,8 +799,8 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
                 f"{result.remaining}대 남음"
                 + (" · 가장 빨리로 배치" if result.fell_back else "")
                 + (
-                    f" · {relief_text(shortfall.relief)}"
-                    if shortfall is not None and shortfall.relief is not None
+                    f" · {relief_text(shortfall.relief_percent)}"
+                    if shortfall is not None and shortfall.relief_percent is not None
                     else ""
                 )
             )
