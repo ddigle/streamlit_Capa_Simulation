@@ -36,10 +36,15 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.constraint_equipment_plan import (
+    CONVERTED_UNITS_NOTE,
+    SESSION_ONLY_CAPTION,
     EquipmentPlanSource,
     ReasonCard,
     equipment_readiness,
     render_equipment_plan,
+    source_equipment_text,
+    source_scenario_text,
+    upeh_assumption_note,
 )
 from capa_simulation.components.constraint_simulation_figures import (
     chart_min_width_px,
@@ -115,7 +120,6 @@ from capa_simulation.modification_schedule_state import (
     settle_units,
 )
 from capa_simulation.page_bootstrap import ProcessPageInputs, bootstrap_error_message
-from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
     MODIFICATION_DAYS_RANGE,
@@ -141,10 +145,6 @@ from capa_simulation.services.securement_threshold import (
 from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import wd_window
 from capa_simulation.sidebar_status import condition_card
-from capa_simulation.upeh_assumption_state import (
-    UPEH_ASSUMPTION_DEFAULT_PERCENT,
-    UPEH_ASSUMPTION_PERCENT_KEY,
-)
 
 __all__ = [
     "CHART_CARD_KEY",
@@ -349,7 +349,7 @@ def _render_conditions(
     """카드의 「이 세션만」 · 개조 · 일정 · 기준 묶음(지금 컨테이너 — 조건 카드 안)."""
     months = list(page_inputs.months)
     thresholds = page_inputs.thresholds
-    st.caption(":material/person: **이 세션만** — 저장하지 않습니다")
+    st.caption(SESSION_ONLY_CAPTION)
     st.caption("**개조**")
     settle_units(*UNITS_RANGE)
     units = st.number_input(
@@ -689,27 +689,18 @@ def _render_source_band(
     `manual_note` 는 계획이 건 입력 비가동(`manual_effect_band` — 없으면 빈 글자)이다."""
     with context.header_slot:
         st.caption(context.session_note)
-    scenario_label = active_scenario_label()
-    scenario_text = (
-        f"「{literal_markdown(scenario_label.scenario_name)} r{scenario_label.revision_no}」"
-        if scenario_label is not None
-        else "활성 시나리오"
-    )
+    scenario_text = source_scenario_text()
     session = context.equipment_session
     equipment_text = equipment_basis_label(session) if session is not None else None
     band = (
         f":material/database: 소요 = 활성 시나리오 {scenario_text} "
         f"{literal_markdown(process_label)} 공정 소요 · 가용 = 설비 일정 기준"
-        + (f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)")
-        + " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
+        + source_equipment_text(equipment_text)
+        + CONVERTED_UNITS_NOTE
     )
     if manual_note:
         band += f" · {manual_note}"
-    upeh_percent = st.session_state.get(
-        UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT
-    )
-    if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
-        band += " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
+    band += upeh_assumption_note()
     st.caption(band)
     st.caption(DOUBLE_COUNT_NOTE)
 

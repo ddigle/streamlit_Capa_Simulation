@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 두 모드(제약 영향 · 개조 일정)가 함께 쓰는 설비 일정 확인(판정 · 까닭
-# 카드)과 계획 칸 받기를 한 함수로 둔다.
+# 카드) · 계획 칸 받기와 조건 카드 · 출처 띠의 같은 글 조각을 한 곳에 둔다.
 
 """제약 시뮬레이션 — 두 모드가 함께 쓰는 「설비 일정 확인 → 계획」 블록.
 
@@ -22,6 +22,11 @@
   고르기」 선택지(`with_held_units` — 같은 마스터 지문의 가벼운 캐시, 2026-11-01 사용자 결정 B3).
   그 계산이 터져도 「설비 일정을 계산하지 못했습니다」 갈래다. 기준일 거르기 · 고른 호기 빼기는
   페이지가 고른 뒤에 한다(호기 고르기는 이 블록 뒤에 서므로).
+- **같은 글 조각** — 두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리
+  (`SESSION_ONLY_CAPTION`)와 출처 띠 조각: 소요 시나리오 이름표(`source_scenario_text`) · 설비 기준
+  괄호(`source_equipment_text`) · 환산 대수 단서(`CONVERTED_UNITS_NOTE`) · UPEH 가정을 켠 세션의
+  단서(`upeh_assumption_note`). 띠의 나머지(소요 설명 · 입력 비가동 · 보유 · 신규)는 모드마다
+  다르다.
 
 저장하지 않는다 — 어느 DB 에도 쓰지 않는다.
 """
@@ -30,7 +35,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date
-from typing import NamedTuple, Protocol
+from typing import Final, NamedTuple, Protocol
 
 import pandas as pd
 import streamlit as st
@@ -44,6 +49,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
 )
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
+from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_equipment_timeline import (
@@ -58,15 +64,36 @@ from capa_simulation.services.required_shortening import (
     target_from_thresholds,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
+from capa_simulation.upeh_assumption_state import (
+    UPEH_ASSUMPTION_DEFAULT_PERCENT,
+    UPEH_ASSUMPTION_PERCENT_KEY,
+)
 
 __all__ = [
+    "CONVERTED_UNITS_NOTE",
+    "SESSION_ONLY_CAPTION",
+    "UPEH_NOT_APPLIED_NOTE",
     "EquipmentPlan",
     "EquipmentPlanSource",
     "ReasonCard",
     "equipment_readiness",
     "first_ready_process",
     "render_equipment_plan",
+    "source_equipment_text",
+    "source_scenario_text",
+    "upeh_assumption_note",
 ]
+
+SESSION_ONLY_CAPTION: Final = ":material/person: **이 세션만** — 저장하지 않습니다"
+"""조건 카드 「이 세션만」 묶음의 머리 캡션."""
+
+CONVERTED_UNITS_NOTE: Final = (
+    " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
+)
+"""출처 띠의 대수 단서 — 설비 기준 괄호 바로 뒤에 잇는다(앞 「 · 」 까지 든다)."""
+
+UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
+"""UPEH 가정을 켠 세션의 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지 든다)."""
 
 
 class ReasonCard(Protocol):
@@ -278,3 +305,35 @@ def _load_plan(
         else ()
     )
     return plan, target_level, timeline, held_choices
+
+
+# ================================================================== 같은 글 조각
+
+
+def source_scenario_text() -> str:
+    """출처 띠의 소요 시나리오 — 이 세션 활성 리비전 이름표 「이름 rN」(이름은 막는다). 이름표가
+    없으면(`active_scenario_label` 이 None) 「활성 시나리오」."""
+    scenario_label = active_scenario_label()
+    return (
+        f"「{literal_markdown(scenario_label.scenario_name)} r{scenario_label.revision_no}」"
+        if scenario_label is not None
+        else "활성 시나리오"
+    )
+
+
+def source_equipment_text(equipment_text: str | None) -> str:
+    """출처 띠 「가용 = 설비 일정 기준」 뒤 괄호 — 「(설비 기준 글, 단축 전)」(글은 막는다). 설비
+    기준 글이 없거나 비면 「(단축 전)」."""
+    return f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)"
+
+
+def upeh_assumption_note() -> str:
+    """세션 UPEH 가정 %(정수)가 기본값이 아니면 출처 띠 끝 단서(`UPEH_NOT_APPLIED_NOTE`), 아니면 빈
+    글자 — 두 모드 모두 UPEH 가정을 걸지 않는다(공식 소요). 정수가 아닌 칸 값은 켬으로 보지
+    않는다."""
+    upeh_percent = st.session_state.get(
+        UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT
+    )
+    if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
+        return UPEH_NOT_APPLIED_NOTE
+    return ""
