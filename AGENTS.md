@@ -1034,6 +1034,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
 - `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, 세 탭의 key·라벨(`HOME_TAB_KEY`)을
   UI·저장소 import 없이 선언한다. 페이지 스크립트는 import 할 수 없어 탭 상수도 여기다(주요 Case 칩이 탭을 옮긴다).
+  토글 값 읽기는 `home_toggle(st.session_state, key)` 한 길이다 — 칸이 없으면 기본값이고, 기본값 표에 없는 키는 `KeyError`
+  (토글이 아닌 칸을 이 길로 읽지 않는다). 기본값을 세션에 심는 자리(Preference 카드·시나리오 바꿈)만 `HOME_TOGGLE_DEFAULTS` 를 돈다.
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
   - 칸 클릭 콜백은 이동 대기 칸만 적고(`queue_home_cell`), HOME 프래그먼트 본문 첫 줄이 전달 칸을 적어 옮기며
     (`switch_to_queued_process_detail` → `open_process_detail`), 받는 페이지 맨 앞에서 꺼낸다(`take_process_detail_request`).
@@ -1254,7 +1256,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/monthly_table_base.py` — Plotly 월별 표가 공유하는 색·치수·글자 계산이다. 분류 칸 글자는
   반드시 `classification_cell_text()` 를 거친다(8장).
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 필수 컬럼 검증·업무 키 정규화의 단일 정의다(14-5).
-  정확 일치 검사는 `require_exact_columns` 하나다(`tests/test_exact_column_contracts.py`).
+  정확 일치 검사는 `require_exact_columns` 하나다(`tests/test_exact_column_contracts.py`). 표 칸 빈칸 판정(None·`pd.NA`·
+  NaN·NaT — 빈 글자·0 은 값이다)도 `blank_cell` 하나다.
 - `src/capa_simulation/services/frame_checks.py` — 중복 키 검사(`assert_unique_keys`)·텍스트 키 strip 의 단일 정의다.
   다음 주기에 `frame_contracts.py` 로 합칠 임시 자리라 새 검증을 더 쌓지 않는다.
 - `src/capa_simulation/services/virtual_product.py` — 기준정보를 새 제품 키로 복제해 가상 제품을 만든다(8표, 계획 수량 0).
@@ -4497,8 +4500,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보지 않고 입혀, 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는
   나온다. Proc Rename 탭은 그 건수를 「무시」 가 아니라 그렇게 안내한다(2026-10-26 E2E). 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
   자연히 걸리지 않는다 — 축소 로직을 새로 넣지 않는다.
-- 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간·시나리오 월 `YYYY-MM` 은
-  `settings.format_month`, 표의 월 칸 `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
+- 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간 칸·시나리오 월 `YYYY-MM` 은
+  `settings.format_month`, 글 속 달 `YYYY-MM`(조회기간 밖 오류문·측정률 중립값 안내·Space 「필요 단축」 보기의 「2026-11」)은
+  `month_columns.iso_month_text`(해를 네 자리로 채우지 않아 `format_month` 와는 1000년 앞 달에서만 다르다), 표의 월 칸
+  `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
   차트·스크롤 폭은 `month_columns` 가 만든 라벨 목록 하나를 보고, 연간 Total 은 1~12월이 모두 조회범위 안인 해에만 둔다.
   글 속 달 구간(UPEH 가정 배지·CSV 표지 「UPEH 가정 110% · 26.07–26.12」)도 `month_label` 이다 — 「26-07」 같은 사본 꼴을
   두지 않는다. Plotly 날짜 x 축(설비 생애주기 Gantt)은 기본 눈금(「Oct 4 2026」)을 두지 않고 날·주 눈금은 `YYYY-MM-DD`,
