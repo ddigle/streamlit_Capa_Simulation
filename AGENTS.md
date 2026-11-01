@@ -707,8 +707,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
     블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
     블록 글자 줄 크기는 편집기 JS `// <block-text>` 구획의 순수 `blockTextLayout`(node 시험 `test_space_block_text_js.py`)
-    이 정한다 — 단축 줄은 이름·대수 줄 크기를 끌어내리지 않고 제 폭으로 따로 작아지며, 많이 줄면 「 · 」 경계에서 두
-    줄로 나뉘고 6px 아래면 그 줄만 숨는다(E2E r1 — 이름이 6~7px 이 되던 것). 세 줄로는 위 줄이 7px 아래인 낮은 블록도
+    이 정한다 — 단축 줄은 **폭 때문에** 이름·대수 줄을 끌어내리지 않고 제 폭으로 따로 작아지며, 많이 줄면 「 · 」 경계에서
+    두 줄로 나뉘고 6px 아래면 그 줄만 숨는다(E2E r1 — 이름이 6~7px 이 되던 것). 높이는 단축 줄 몫도 나누므로 높이가
+    모자란 블록(화면 약 63px 밑)은 줄 수 몫으로 이름·대수 줄도 조금 작아진다(1500 폭 낮은 층에서 13 → 약 12px — node 시험
+    `test_a_low_block_keeps_the_name_size_instead_of_splitting_the_short_line` 이 그 크기를 고정한다). 세 줄로는 위 줄이 7px 아래인 낮은 블록도
     단축 줄부터 빼고, 이름·대수 두 줄로도 7px 아래일 때만 이름 줄 하나로 접는다(2026-11-02 E2E — 키 23 ~ 34px 블록에서
     「필요 단축」 을 켜면 대수 줄까지 사라졌다).
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
