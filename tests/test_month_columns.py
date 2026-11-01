@@ -1,8 +1,9 @@
-# Purpose: 월 축에 연간 Total 열을 끼우는 규칙을 고정한다.
+# Purpose: 월 표기와, 월 축에 연간 Total 열을 끼우는 규칙을 고정한다.
 
 from capa_simulation.services.month_columns import (
     build_month_axis,
     complete_years,
+    iso_month_text,
     year_total_label,
 )
 
@@ -45,3 +46,10 @@ def test_no_complete_year_leaves_the_axis_untouched() -> None:
 
     assert labels == ["26.07", "26.08", "26.09"]
     assert totals == []
+
+
+def test_iso_month_text_is_year_dash_two_digit_month() -> None:
+    """글 속 달 `YYYY-MM` — 해는 채우지 않고 달만 두 자리로 채운다."""
+    assert iso_month_text(202611) == "2026-11"
+    assert iso_month_text(202601) == "2026-01"
+    assert iso_month_text(99912) == "999-12"

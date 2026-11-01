@@ -35,6 +35,7 @@ from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
 from capa_simulation.services.equipment_units import UNIT_KEY_COLUMN, unit_keys
 from capa_simulation.services.fab_layout import FLOOR_KEYS
 from capa_simulation.services.floor_layout_profile import FloorKey
+from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
     KIND_SHORTENED,
@@ -109,10 +110,6 @@ def day_text(left: int) -> str:
     return f"D-{left}"
 
 
-def _month_text(month: int | None) -> str:
-    return "" if month is None else f"{month // 100}-{month % 100:02d}"
-
-
 @dataclass(frozen=True)
 class ShorteningMark:
     """단축 호기 하나(모듈 묶음은 Main 설비 하나). `unit` 은 계획 `호기` 다."""
@@ -144,7 +141,7 @@ class ShorteningMark:
     @property
     def tip(self) -> str:
         """배지 풍선 「APW02 · 기존 Qual 2026-11-11 → 목표 2026-11-04 · 대상 월 2026-11」."""
-        month = f" · 대상 월 {_month_text(self.month)}" if self.month is not None else ""
+        month = f" · 대상 월 {iso_month_text(self.month)}" if self.month is not None else ""
         return (
             f"{self.unit} · 기존 Qual {self.original_qual.isoformat()} → 목표 "
             f"{self.target_qual.isoformat()}{month}"

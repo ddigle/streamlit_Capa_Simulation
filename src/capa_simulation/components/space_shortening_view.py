@@ -72,6 +72,7 @@ from capa_simulation.services.fab_layout import (
 )
 from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.korean_particle import with_subject_particle
+from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.required_shortening import (
     DEFAULT_TARGET_LEVEL,
     TARGET_LEVELS,
@@ -156,15 +157,11 @@ def _percent(level: float) -> str:
     return f"{level_percent(level)}%"
 
 
-def _month_text(month: int) -> str:
-    return f"{month // 100}-{month % 100:02d}"
-
-
 def _months_text(months: str) -> str:
     """계획의 「해소 기여 월」 글(「202611, 202612」)을 「2026-11, 2026-12」 로."""
     parts = [part.strip() for part in months.split(",") if part.strip()]
     return ", ".join(
-        _month_text(int(part)) if part.isdigit() and len(part) == 6 else part for part in parts
+        iso_month_text(int(part)) if part.isdigit() and len(part) == 6 else part for part in parts
     )
 
 
@@ -446,7 +443,7 @@ def render_layer_basis(
     if has_unsaved_scenario_changes():
         scenario += "(미저장 편집 포함)"
     months = space_layer.months
-    span = f"{_month_text(months[0])}~{_month_text(months[-1])}" if months else "달 없음"
+    span = f"{iso_month_text(months[0])}~{iso_month_text(months[-1])}" if months else "달 없음"
     equipment = (
         "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
     )
@@ -571,7 +568,7 @@ def _virtual_frame(virtuals: Sequence[VirtualUnit]) -> pd.DataFrame:
             "공정": [unit.process for unit in virtuals],
             "이름": [unit.name for unit in virtuals],
             "필요 Qual": [unit.target_qual.isoformat() for unit in virtuals],
-            "대상 월": [_month_text(unit.month) if unit.month else "" for unit in virtuals],
+            "대상 월": [iso_month_text(unit.month) if unit.month else "" for unit in virtuals],
         }
     )
 
@@ -724,7 +721,7 @@ def _render_picked(
         st.markdown(f"**{name}** · " + " · ".join(facts))
         st.markdown(f"### {mark.main_text} {_tag(mark)}")
         month = (
-            f"{_month_text(mark.month)} 부족을 메웁니다" if mark.month is not None else "—"
+            f"{iso_month_text(mark.month)} 부족을 메웁니다" if mark.month is not None else "—"
         ) + (f" (해소 기여 월 {_months_text(mark.contributes)})" if mark.contributes else "")
         lines = [
             f"Qual 일정 ~~{mark.original_qual.isoformat()}~~ → **{mark.target_qual.isoformat()}**",
