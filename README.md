@@ -276,6 +276,9 @@ Windows(PowerShell):
 - 단일 테스트: `.venv/bin/python -m pytest tests/test_home_page.py::test_home_renders_summary_dashboard_from_the_builtin_seed`
 - 화면·상태를 바꿨으면 `streamlit.testing.v1.AppTest` 나 실제 브라우저로 페이지 진입·수정·왕복까지 봅니다
   (`AGENTS.md` 2장).
+- 사외 GitHub Actions(`.github/workflows/ci.yml`)는 Linux 에서 네 관문(`verify`)을, Windows 에서 pytest 만(`windows-pytest` —
+  사내와 같은 OS)을 돌립니다. Windows 작업은 **막지 않습니다**(`continue-on-error` — 빨개도 워크플로는 초록, 판정은 `verify`).
+  Windows 에서만 깨지는 시험(경로 구분자·명령줄 길이·권한 비트)을 사내 리뷰 전에 보려는 것입니다(`AGENTS.md` 2장).
 
 ## 입력 데이터
 

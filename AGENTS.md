@@ -166,7 +166,10 @@ Windows(PowerShell):
   전체가 넘는다). `-e` 로 남은 자리(구획 하나·짧은 러너)는 6천 자 안쪽이다. ③ 권한 비트(0600·0700)는
   담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(`test_container_start.py` 의
   `keeps_permission_bits`, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
-  화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다.
+  화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. 사외 CI 의 둘째 작업
+  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 넷을 사내보다 먼저 보인다 — 작업 단위
+  `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux `verify` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
+  판 본 뒤 굳힐지 다시 묻는다). 그 칸이 빨가면 이 넷부터 본다. 계약은 `tests/test_ci_workflow.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
@@ -5669,6 +5672,6 @@ f-string 키는 넘겨받은 기준 키에서 파생되므로 그 기준 키가 
   표시가 근거이고, 없으면 통합하는 쪽이 직접 돌린 결과가 근거다.
 
 `.github/workflows/ci.yml` 이 **후보 브랜치(`cand/**`) 푸시**·PR·`main` 푸시에서 검증 4종을
-돌린다. 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
+돌린다(둘째 작업 `windows-pytest` 는 Windows pytest 만 — 막지 않는다, 2장). 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
 public 이고(2026-10-03 유지 결정) `main` 에 브랜치 보호를 걸지 않아 「통과해야만 병합」은 강제되지
 않는다** — 빨간 것은 합치지 않는다는 규칙을 사람이 지킨다.

@@ -9,7 +9,8 @@
 
 **앱 코드에는 OS 분기가 없다.** 데이터 경로는 `settings.PROJECT_ROOT` 하나에서 나오고, 앱 코드는 런타임에 밖으로 묻지 않으며(글꼴은
 `static/fonts/` 에서 앱이 보낸다, 사용 통계는 `.streamlit/config.toml` 에서 꺼져 있다 — Streamlit 자신의 시작 배너 질의는 3장),
-CI(`.github/workflows/ci.yml`)가 `ubuntu-latest` · Python 3.10.11 · `uv sync --frozen` 으로 4관문을 늘 돌린다. WSL 에서 걸리는 것은
+CI(`.github/workflows/ci.yml`)가 `ubuntu-latest` · Python 3.10.11 · `uv sync --frozen` 으로 4관문을 늘 돌린다(같은 설치로 `windows-latest`
+에서 pytest 만 도는 둘째 작업은 막지 않는다 — `AGENTS.md` 2장). WSL 에서 걸리는 것은
 아래의 환경 준비·샌드박스 사정과 Windows 에서만 되는 도구 몇 개뿐이다.
 
 ## 1. 한 번만 하는 준비 — 사용자, WSL 일반 셸(Claude 밖 tmux 창)

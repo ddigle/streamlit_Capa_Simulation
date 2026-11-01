@@ -2957,6 +2957,12 @@
 
 ### 운영·배포
 
+- (2026-11-01) **GitHub Actions 에 Windows pytest 를 막지 않는 작업으로 더한다**(결정 보드 A7 「(가) soft」 — 사내 리뷰 `202610271800`
+  발견 2: Windows 에서만 깨지는 시험 16개가 리뷰 한 바퀴 뒤에야 보였다). `.github/workflows/ci.yml` 의 둘째 작업 `windows-pytest` 가
+  `windows-latest` 에서 Linux 작업과 같은 설치(`setup-uv` · `uv python install 3.10.11` · `uv sync --frozen --python 3.10.11`)로 pytest
+  만 돌리고 작업 단위 `continue-on-error: true` 라 실패해도 워크플로는 초록이다(그 칸만 빨갛다 — 요약 칸에 「막지 않음」 을 적는다).
+  사외 저장소에서만 돈다(같은 `if:` 줄). 두어 판 본 뒤 굳힐지(`continue-on-error` 를 뺀다) 다시 묻는다. 대안: (나) 바로 막음 · (다)
+  사내 리뷰로만. 관련: `tests/test_ci_workflow.py` · AGENTS 2장 「시험은 사내 Windows 4관문에서도 돈다」 · 14-6
 - (2026-10-26) 7장 B 대행(사본 앱 · 헤드리스)이 못 센 칸은 `check_deploy_screens.py` 항목으로 옮기고, 사람만 볼 수 있는 칸(사용자
   Chrome · 글꼴 · 체감)만 사용자 칸으로 둔다 — 리뷰 202610231430 사외 요청 4 의 다섯 칸은 모두 항목이 됐다(`upeh_rows` ·
   `entry_sections` · `upeh_help` · `space_zone_fields`). 앱 콘솔 경고는 스크립트가 띄운 앱의 출력을 파이프로 받아 정한 문구가 든 줄
