@@ -28,6 +28,7 @@ import itertools
 import math
 import random
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,7 @@ from capa_simulation.services.modification_schedule import (
     plan_modification_schedule,
     schedule_month_inputs,
 )
+from capa_simulation.services.securement_threshold import judgment_boundary, meets_threshold
 from capa_simulation.services.wd_window import wd_window
 
 SOURCE = (
@@ -273,6 +275,92 @@ def test_lowering_by_the_reported_relief_fits_the_deadline() -> None:
     assert fitted.month(JAN).downtime_unit_days == 33
     assert fitted.month(FEB).downtime_unit_days == 29
     _assert_keeps_every_month(fitted)
+
+
+def _one_month_plan(available: float, percent: int, margin: float = 0.0) -> ScheduleResult:
+    """1월 한 달(R 10 · 31일)에 1대 × 31일 — 넣으면 확보율이 (A − 1) ÷ 10 이고 그것이 묶는다. 기준은
+    화면처럼 정수 % 의 판정 경계(`judgment_boundary`)로 넘긴다."""
+    months = [_month(JAN, available, target=judgment_boundary(percent / 100))]
+    return _plan(months, units=1, days=31, margin=margin)
+
+
+@pytest.mark.parametrize(
+    ("available", "margin", "points"),
+    [
+        # 묶는 확보율 108.6% · 기준 110 — 사사오입 109 ≥ 109 라 1(차이 1.4% 의 올림 2 가 아니다).
+        (11.86, 0.0, 1),
+        # 반 칸 경계 — 108.5% 는 109 로 올라 1. 연속 폭은 탐색 끝자리로 1.000001% 라 올림이 2 다.
+        (11.85, 0.0, 1),
+        # 경계 바로 밑 — 108.4999% 는 108 이라 2.
+        (11.84999, 0.0, 2),
+        # 폭이 꼭 정수 — 107.5% 는 108 로 올라 2.
+        (11.75, 0.0, 2),
+        # 묶는 확보율 100% — 110 − 100 = 10(연속 폭 9.5% 가 아니다).
+        (11.0, 0.0, 10),
+        # 안전 여유 2% 는 그대로 두고 기준만 낮춘다 — 108.6% 가 107% 기준 + 2% 를 넘어야 해 3.
+        (11.86, 0.02, 3),
+    ],
+)
+def test_the_reported_relief_is_the_whole_percent_to_type(
+    available: float, margin: float, points: int
+) -> None:
+    """「기준 n% 낮추기」 의 n 은 기준 확보율 칸에 칠 정수 % 다(2026-11-01 사용자 결정) — 기준을 T −
+    n 으로 낮추면 「확보율을 사사오입한 정수 % ≥ T − n」 판정으로 다 들고 T − n + 1 이면 못 드는 n.
+    그 수를 같은 계산에 다시 넣어(사용자가 칸에 친 것처럼 판정 경계를 새로 지어) 확인한다."""
+    missed = _one_month_plan(available, 110, margin)
+    shortfall = missed.shortfall
+    assert shortfall is not None and shortfall.relief is not None
+    assert shortfall.relief_percent == points
+
+    typed = _one_month_plan(available, 110 - points, margin)
+    assert typed.complete and typed.shortfall is None
+    (january,) = typed.months
+    assert january.rate is not None
+    assert meets_threshold(january.rate, (110 - points + margin * 100) / 100)
+    assert not _one_month_plan(available, 110 - points + 1, margin).complete
+
+
+def test_a_plan_already_within_the_threshold_reports_no_relief() -> None:
+    """이미 기준을 지키면(109.5% — 사사오입 110) 대안 셋도 낮출 폭도 없다."""
+    result = _one_month_plan(11.95, 110)
+    assert result.complete and result.shortfall is None
+
+
+def test_the_lowered_target_rebuilds_the_boundary_the_screen_would_pass() -> None:
+    """기준 k% 낮춘 판정 경계는 사용자가 칸에 T − k 를 쳤을 때 화면이 넘길 부동소수 그대로다(정수
+    기준의 경계가 아니면 G − k/100)."""
+    from capa_simulation.services.modification_schedule import lowered_target
+
+    assert lowered_target(judgment_boundary(1.10), 1) == judgment_boundary(1.09)
+    assert lowered_target(judgment_boundary(1.20), 15) == judgment_boundary(1.05)
+    assert lowered_target(1.0, 1) == pytest.approx(0.99)
+
+
+def _half_up_percent(rate: float) -> int:
+    """확보율의 십진 표기를 사사오입한 정수 % — 판정 경계(`judgment_boundary`)를 쓰지 않고 따로
+    센다."""
+    return int((Decimal(repr(rate)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+@pytest.mark.parametrize("percent", [100, 109, 110, 115])
+def test_the_whole_relief_is_t_minus_the_rounded_binding_rate_over_a_grid(percent: int) -> None:
+    """묶는 확보율 100.00 ~ 112.00%(0.05% 간격) · 기준 T 마다 「기준 n% 낮추기」 의 n 은
+    T − 사사오입(묶는 확보율)이다(0 이하면 이미 지켜 대안 셋이 없다 — 2026-11-01 사용자 결정).
+    연속 차이의 올림이 아니다(108.6% · T 110 은 1). 따로 센 n 을 같은 계산에 다시 넣어 T − n 은
+    들고 T − n + 1 은 못 드는지도 본다. 1월 한 달 R 10 · 1대 × 31일이라 묶는 확보율은
+    (A − 1) ÷ 10 하나다."""
+    for step in range(241):
+        available = float(Decimal("100.00") + Decimal("0.05") * step) / 10 + 1
+        rate = (available - 31 / 31) / 10
+        expected = max(0, percent - _half_up_percent(rate))
+        result = _one_month_plan(available, percent)
+        if expected == 0:
+            assert result.complete and result.shortfall is None, (percent, rate)
+            continue
+        assert result.shortfall is not None, (percent, rate)
+        assert result.shortfall.relief_percent == expected, (percent, rate)
+        assert _one_month_plan(available, percent - expected).complete, (percent, rate)
+        assert not _one_month_plan(available, percent - expected + 1).complete, (percent, rate)
 
 
 def test_a_deadline_before_any_open_day_places_nothing() -> None:

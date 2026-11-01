@@ -358,7 +358,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 확보율)·개조(토글·개조 기간·보유 제약 호기 고르기·목록에 없는 보유 제약 설비·「신규 설비는 개조 없이」 토글과 신규
     기준일·Cut-off 읽기만) 세 묶음이다
     (D2). 버튼 + 직접 입력은 `preset_number_field.py`(D10 — 기준 확보율 칸은 정수 %(1% 단위, 처음은 HOME 기본의 정수 T)다 —
-    2026-11-01 사용자 결정으로 D18 의 0.5% 단위를 대신한다, Guide 도 그렇게 적는다). 보유 제약 호기 고르기(multiselect,
+    2026-11-01 사용자 결정으로 D18 의 0.5% 단위를 대신한다, Guide 도 그렇게 적는다. 기준 확보율 · 제약 확보율 칸은 소수를 받아
+    사사오입한 정수로 읽는다 — `decimal_entry`, 109.5 → 110, 같은 날 밤 결정 — 8장 「판정 기준은 정수 %」). 보유 제약 호기 고르기(multiselect,
     2026-11-01 결정 B3)·목록에 없는 보유 제약 설비(환산 대수 숫자 칸, 기본 0 — B3-3 「같이 둠」)·신규 토글(기본 끔)·기준일
     (날짜 칸, 기본 오늘)은 2판 옵션이다 — 늘 서고 개조 끔이면 잠기며 그때는 서비스에 넘기지 않는다(고름·값은 세션에 남는다).
     목록에 없는 보유 대수는 사실 값이라 D10 버튼을 두지 않는다. **호기 고르기** 선택지는 그 공정 세션 설비 시나리오의 호기
@@ -1171,16 +1172,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/modification_schedule.py` — 제약 시뮬레이션 「개조 일정」 모드(2026-10-26 결정 3)의 순수 계산.
   N대 × D일 개조를 모든 달 기준 확보율(G 의 판정 경계 + 안전 여유)을 지키며 같은 날 개조 대수가 그 달 ⌊A⌋ 를 넘지 않게 언제 할지 찾는다
   (`plan_modification_schedule` — 이른 시작 탐욕 + 완료 달 고정 늦은 시작 탐욕 + 마디 한도 안 되짚기 완전 탐색, 「가장 고르게」 는
-  δ 이분 탐색, 못 맞추면 `ScheduleShortfall` 셋과 까닭 · `exact`). Streamlit·세션·캐시·DB 를 모르고 pandas 는 어댑터
+  δ 이분 탐색, 못 맞추면 `ScheduleShortfall` 셋과 까닭 · `exact` · 기준 칸에 칠 정수 % 낮출 폭 `relief_percent`). Streamlit·세션·캐시·DB 를 모르고 pandas 는 어댑터
   `schedule_month_inputs`(계획의 공정 x 월 표 → 달마다 R·A·G) 하나만 쓴다. 판정은 `constraint_simulation.secure` 한 길이고 이
   모듈에 기준과 비율을 직접 견주는 식이 없는지 · 완료 W/D 달 · 넣을 수 있는 대수 · 필요 완화 · 까닭 · 「가장 고르게」 δ 가 따로 짠
   작은 완전 탐색과 같은지 `tests/test_modification_schedule.py` 가 본다. 식은 6장 「개조 일정」.
 - `src/capa_simulation/services/securement_threshold.py` — 공용 판정 기준(기본 + 월별 예외)의 정규화·검증, 달별 실효 기준
   (`SecurementThresholds` — 저장값을 정수 % T/100 으로 읽는다), 판정 한 길 `meets_threshold`(확보율을 사사오입한 정수 % 가 T
   이상)와 그것을 쓰는 `capacity_status`, 판정 경계 `judgment_boundary`·반올림으로만 든 확보율 `rounded_in`·기준 대비 여유
-  `threshold_margin` 의 한 곳이다(6장·8장).
+  `threshold_margin`, 받는 범위 50 ~ 300%(`THRESHOLD_RANGE` — 제약 확보율과 한 값)와 저장 직전 범위 검사(`out_of_range_thresholds` ·
+  `require_threshold_range`)의 한 곳이다(6장·8장).
 - `src/capa_simulation/services/threshold_label.py` — 판정 기준 비율을 사사오입 정수 %(`threshold_percent`)와 그 글자
-  (`threshold_percent_label` — 「110%」, 식 줄용 판정 경계 글자 `boundary_percent_label` — 「109.5%」)로 바꾸는 한 곳이다(8장).
+  (`threshold_percent_label` — 「110%」, 식 줄용 판정 경계 글자 `boundary_percent_label` — 「109.5%」)로, 칸에 친 퍼센트를 사사오입
+  정수 %(`whole_percent` — 109.5 → 110)로 바꾸는 한 곳이다(8장).
 - `src/capa_simulation/services/equipment_count.py` — 보유·대여·가용 설비대수 월별 표다. 편집표 빈칸은 0 대로 받되(이 세
   표만) 원천 변환에서 미리 채우지 않는다 — 「미입력」과 「확인된 0 대」를 가른다.
 - `src/capa_simulation/services/equipment_availability.py` — 주차별 총·가용·비가동대수, 호기 생애주기 구간, 비가동 호기,
@@ -2783,7 +2786,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `set_value` 없이 브라우저에 처음 닿고, 기본값이 최소값(50)이면 그 50 이 되돌아와 정본이 말없이 50 이 됐다(2026-10-27 E2E —
   켜진 버튼 빠른 두 번 누름 뒤 더블클릭). 적은 회차에는 싣지 않아 「기본값과 세션 API」 경고가 없다. 친 값은 칸이 보이는 소수
   자리(`number_format` — 기준 확보율 `%.1f`)까지 반 올림으로 접는다 — 칸은 112.3 · 머리·판정 글·그래프는 112.34% 로 갈렸다
-  (2026-10-27 E2E). 반 올림은 브라우저 칸의 `toFixed` 와 같은 꼴(2진 값 그대로 — 112.25 → 112.3)이고 0.5 단위로 맞추지는 않는다. 켜진 버튼
+  (2026-10-27 E2E). 반 올림은 브라우저 칸의 `toFixed` 와 같은 꼴(2진 값 그대로 — 112.25 → 112.3)이고 0.5 단위로 맞추지는 않는다. 정수
+  칸(`step` · 최소값이 정수)의 정본도 반을 올린 정수다(108.5 → 109 — `round` 의 짝수 쪽이 아니다). **`decimal_entry`**(기준 확보율 ·
+  제약 확보율 — 2026-11-01 사용자 결정)는 정본은 정수인 채 숫자 칸만 소수 칸(`float`, `%.0f`)으로 세운다 — 정수 칸은 브라우저가 친
+  글을 `parseInt` 로, 서버가 `int()` 로 읽어 「109.5」 가 말없이 109 였다. 칸 범위(min · max)는 반올림 전에 칸이 막는다. 켜진 버튼
   주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
   `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
@@ -2869,7 +2875,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
   만드는 순수 함수. 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰
   없음 — 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%) 미달」). 기준선의 자리는 G 의 판정 경계다(8장). 낮출 폭은 양수
-  「기준 n% 낮추기」(`relief_text` — 기한 칸 캡션과 대안 셋 셋째 줄이 같은 글, 0.01% **올림** — 적힌 만큼 낮추면 들어간다), 0 까지 낮춰도 못 넣으면 까닭(짧은 창 · 시작보다
+  「기준 n% 낮추기」(`relief_text` — 기한 칸 캡션과 대안 셋 셋째 줄이 같은 글, n 은 기준 확보율 칸에 칠 **정수 %**
+  `ScheduleShortfall.relief_percent` — 적힌 만큼 낮추면 들어간다, 2026-11-01 사용자 결정으로 0.01% 올림을 대신한다), 0 까지 낮춰도 못 넣으면 까닭(짧은 창 · 시작보다
   앞선 상한 · 동시 상한 · 가용)을 적고, 탐색이 한도에 걸렸으면 「이 계산으로 찾은 범위」 한 줄(「적힌 만큼 낮추면 들어간다」 괄호는
   낮출 폭이 적혔을 때만 — 까닭만 적혔으면 낮출 폭이 없다). 차수 띠 높이는 겹친 차수 줄 수를 따른다(`_band_layout` — 줄마다
   `_LANE_PX` 26px, 한 줄이면 `_BAND_MIN_PX` 로 그림 340px 그대로, `_BAND_MAX_LANES` 줄에서 멈춤 — 본 그림 칸은 그대로이고 그림이
@@ -4225,8 +4232,13 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - **못 맞출 때(대안 셋).** 상한까지 넣을 수 있는 대수(부분 배치가 본문 목록), 기한이 있으면 기한 없이 끝나는 날과 그 W/D 달,
   상한 안에 다 넣으려면 필요한 기준 완화(같은 이분 탐색을 δ ∈ [−가장 낮은 b(G), 여유] 에서). 0 까지 낮춰도 못 넣으면 까닭을 가른다
   (`ScheduleShortfall.cause`) — 시작 후보가 하나도 없으면 「창」(넣을 수 있는 첫날 ~ 상한이 D 보다 짧거나 상한이 첫날보다 앞),
-  사용자 동시 상한을 걷으면 들면 「동시 상한」, 아니면 「가용」. 화면은 그 폭을 양수 「기준 n% 낮추기」 로 0.01% 올림해 적는다
-  (기한 칸 캡션 · 대안 셋 셋째 줄).
+  사용자 동시 상한을 걷으면 들면 「동시 상한」, 아니면 「가용」. 화면은 그 폭을 양수 「기준 n% 낮추기」 로 적는다(기한 칸 캡션 ·
+  대안 셋 셋째 줄). **n 은 기준 확보율 칸에 칠 정수 %** 다(2026-11-01 사용자 결정 — 칸은 정수만 받는다): 기준 T 를 T − n 으로
+  낮추면 사사오입 판정(「확보율을 사사오입한 정수 % ≥ T − n」)으로 상한 안에 다 드는 가장 작은 n ≥ 1 — 묶는 달 확보율 108.6% · T 110
+  이면 1(경계 108.5%)이지 연속 차이 1.4% 의 올림 2 가 아니다. 서비스가 연속 폭의 올림을 첫 짐작으로 두고 그 n 을 달마다 사용자가
+  T − n 을 친 것과 같은 경계(`lowered_target` — `judgment_boundary((T − n)/100)` 그대로)로 다시 지은 모델의 같은 판정(`feasible`)에
+  넣어 맞춘다(`whole_relief` → `ScheduleShortfall.relief_percent`, 연속 폭 `relief` 는 그대로 남는다). HOME(월별)이면 모든 달 기준을
+  n% 낮추는 폭이다.
 - **요약.** 완료 날(마지막 차수 끝 날)·그 W/D 달·차수 수, 최대 동시 대수(날 차례 sweep), 비가동이 든 달(R > 0) 가운데 판정 경계까지
   가장 가까운 달(`tightest_*` — 같으면 이른 달)·그 여유·그 달 확보율. 여유는 `threshold_margin`(개조 뒤 확보율 − G, 판정이 확보인데
   음수면 0)이라 반올림으로 겨우 기준에 든 달(110% 기준의 109.5%)은 「0.0%」 다(2026-11-01 사용자 결정 — 「실질적으로는 -0.5%지만,
@@ -4478,9 +4490,18 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자동적으로 소수점 한자리수 반올림한 기준으로 포함시켜 (110% 기준확보율 설정시, 확보율 109.5%인 공정은 확보 판정) 이렇게
   반올림해서 겨우 기준대로 확보된 공정의 경우엔 여유가 0으로 표기되어야함(실질적으로는 -0.5%지만, 0으로 표기)」). 셋으로 나뉜다.
   - **입력·저장.** 판정 기준을 넣는 칸(HOME › Preference 확보·경고 기본값과 월별 표, 제약 시뮬레이션·개조 일정의 기준 확보율
-    직접 입력)은 정수 %(1 단위, 기본 110·100)이고 새 저장은 T/100 이다. 월별 표(편집표) 칸만 소수점을 받아(`step` 0.1 ·
-    `%.0f`) 사사오입한 정수로 보이고 그 값으로 저장한다(109.5 → 110) — 1 단위 편집표 칸은 Glide 숫자 편집기가 소수점 키를 버려
-    「109.5」 가 1095 로 저장됐다(2026-11-01 E2E, `home_preference.MONTH_THRESHOLD_STEP`). 저장본은 고치지 않는다 — 옛 관례로 반 칸 낮춰 저장한
+    직접 입력)은 정수 %(1 단위, 기본 110·100)이고 새 저장은 T/100 이다. **모든 칸이 소수점을 받아 사사오입한 정수로 보이고 그
+    값으로 저장한다**(109.5 → 110 · 99.5 → 100 · 108.5 → 109 — 반은 늘 올린다, `threshold_label.whole_percent`, 2026-11-01 밤 사용자
+    결정 「한 규칙」). 월별 표(편집표) 칸은 `step` 0.1 · `%.0f` 다 — 1 단위 편집표 칸은 Glide 숫자 편집기가 소수점 키를 버려
+    「109.5」 가 1095 로 저장됐다(2026-11-01 E2E, `home_preference.MONTH_THRESHOLD_STEP`). 기본 두 칸 · 기준 확보율 칸은 소수 숫자 칸
+    (`float` · `%.0f` — `home_preference.DEFAULT_THRESHOLD_FORMAT`, `preset_number_field` 의 `decimal_entry`)이다 — 정수 숫자 칸은
+    브라우저가 친 글을 `parseInt` 로, 서버가 `int()` 로 읽어 109.5 가 109 였다. 제약 확보율 칸(판정 기준은 아니다)도 같은 칸이다.
+    **받는 범위는 50 ~ 300%** 다(`securement_threshold.THRESHOLD_RANGE` — 제약 확보율 검증 `constraint_simulation.TARGET_RANGE` 와
+    한 값, 2026-11-01 사용자 결정 「제약 확보율처럼 50 ~ 300% 밖은 저장을 막음」). Preference 저장은 사사오입 정수가 범위 밖인 칸이
+    하나라도 있으면 저장소에 가지 않고 저장 단추 아래에 그 칸(「26.02 확보 기준 1095%」 · 「기본 경고 기준 49%」)과 범위를 적는다
+    (`home_preference._reject_out_of_range` — 표에 없는 조회기간 밖 달이면 고칠 길도). 범위는 입력 정책이라 저장소 검증(> 0 ·
+    경고 ≤ 확보)·읽기·판정은 범위를 보지 않는다 — 범위 밖 옛 저장본도 그려지고 판정되며, 칸에는 상한을 두지 않는다(범위 밖 저장본이
+    칸 범위에 막히면 편집기가 서지 않는다). 저장본은 고치지 않는다 — 옛 관례로 반 칸 낮춰 저장한
     1.095·0.995(프로필·공식버전 프리셋)도 사사오입 정수 T(`threshold_label.threshold_percent` — 1.095 → 110, 0.995 → 100,
     1.20 → 120)로 읽는다(`SecurementThresholds` 가 만들 때 T/100 으로 맞춘다, 마이그레이션 없음). 리비전 프리셋의 레거시
     값(`scenario_preset_state` — 판정에 쓰지 않는다)의 기본값도 110·100 이다.
@@ -5340,8 +5361,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **브라우저에 싣는 스크립트·컴포넌트 내용은 회차마다 같아야 한다.** 툴바 iframe 과 입장 화면의 등록 JS·`data` 는 상수만
   든 고정 문자열로 보낸다 — 바뀌면 Streamlit 이 iframe 을 새로 만들어 옛 단추의 `onclick` 이 죽고 큰 메시지를 다시
   보낸다. 회차마다 달라지는 값(테마 등)은 브라우저 쪽에서 읽는다(`capaTheme.resolve`).
-- 스크립트를 싣는 칸은 `st.iframe` 이다 — `st.html` 은 스크립트를 실행하지 않고 `components.v1.html` 은 회차마다 폐기
-  예고를 찍는다. 헤더 툴바·사이드바 머리칸에 단추를 다는 스크립트는 iframe 을 따로 두지 않고 테마 버튼 iframe 의
+- 스크립트를 싣는 칸은 `st.iframe` 이다 — `st.html` 은 스크립트를 실행하지 않고(`unsafe_allow_javascript=True` 일 때만 —
+  아래 예외 하나) `components.v1.html` 은 회차마다 폐기 예고를 찍는다. **허용 예외 하나**: BigDataQuery 등록 저장 결과 칸 끝의
+  `REVEAL_NOTICE_SCRIPT`(`components/bigdataquery_registration.py` — `st.html(unsafe_allow_javascript=True)`, 알림을 그린 회차에만
+  회차마다 다른 일회 표지로 서서 칸이 화면 밖일 때만 `scrollIntoView({block: "nearest"})`)는 「회차마다 같은 내용」 · `st.iframe`
+  규칙 밖이다(2026-11-01 사용자 결정 「그대로 둠」). 다른 자리는 이 예외를 늘리지 않는다 — `tests/test_bigdataquery_registration.py`
+  가 `unsafe_allow_javascript` 를 쓰는 파일이 그 하나인지 본다. 헤더 툴바·사이드바 머리칸에 단추를 다는 스크립트는 iframe 을 따로 두지 않고 테마 버튼 iframe 의
   `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다). 접는 규칙(`theme_toggle._COLLAPSE_STYLE`)은
   높이 0 과 함께 `visibility: hidden` 을 건다 — 높이 0 이어도 iframe 은 Tab 정지이고 낭독기에 「st.iframe」 으로 읽혔다
   (`tests/test_theme_toggle.py`).

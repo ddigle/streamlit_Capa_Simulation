@@ -254,3 +254,38 @@ def test_a_reversed_month_is_not_written(tmp_path: Path) -> None:
         )
 
     assert repository.load_global_securement_threshold().version == 0
+
+
+def test_the_threshold_range_is_one_value_shared_with_the_constraint_target() -> None:
+    """판정 기준 저장 범위와 제약 시뮬레이션 제약 확보율 검증은 한 값(50 ~ 300%)이다(2026-11-01
+    사용자 결정 「제약 확보율처럼 50 ~ 300% 밖은 저장을 막음」 — 둘째 범위를 따로 두지 않는다)."""
+    from capa_simulation.services import constraint_simulation
+    from capa_simulation.services.securement_threshold import THRESHOLD_RANGE, threshold_range_text
+
+    assert THRESHOLD_RANGE == (0.5, 3.0)
+    assert constraint_simulation.TARGET_RANGE is THRESHOLD_RANGE
+    assert threshold_range_text() == "50% ~ 300%"
+
+
+def test_out_of_range_cells_are_named_by_place_and_whole_percent() -> None:
+    """범위는 사사오입한 정수 % 로 견준다 — 49.5% 는 50 이라 들고 300.5% 는 301 이라 밖이다. 빈칸 ·
+    값이 아닌 칸은 보지 않는다(저장 검증이 따로 거부한다)."""
+    from capa_simulation.services.securement_threshold import (
+        out_of_range_thresholds,
+        require_threshold_range,
+    )
+
+    rows = _rows((202602, 10.95, None), (202603, 3.0, 0.495), (202604, 3.005, 0.49))
+    cells = out_of_range_thresholds(1.1, 0.4, rows)
+
+    assert [cell.label for cell in cells] == [
+        "기본 경고 기준 40%",
+        "26.02 확보 기준 1095%",
+        "26.04 확보 기준 301%",
+        "26.04 경고 기준 49%",
+    ]
+    with pytest.raises(ValueError, match="50% ~ 300% 안의 정수 %") as raised:
+        require_threshold_range(1.1, 0.4, rows)
+    assert "26.02 확보 기준 1095%" in str(raised.value)
+    assert out_of_range_thresholds(3.0, 0.5, _rows((202602, 0.495, None))) == ()
+    require_threshold_range(1.1, 1.0, empty_securement_threshold_rows())

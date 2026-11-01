@@ -211,6 +211,25 @@ def test_a_value_folds_half_up_on_its_binary_value_like_the_browser_field(
     assert _number(175.4, True, 1) == 175
 
 
+@pytest.mark.parametrize(("typed", "kept"), [(109.5, 110), (99.5, 100), (108.5, 109), (107.4, 107)])
+def test_a_whole_field_folds_a_typed_decimal_half_up(typed: float, kept: int) -> None:
+    """정수 칸이 소수 친 값을 받는 꼴(`decimal_entry` — 기준 확보율 · 제약 확보율)의 정본은 반을
+    올린 정수다(2026-11-01 사용자 결정 — HOME 판정 기준 칸과 한 규칙). 파이썬 `round` 는 108.5 를
+    108 로 내린다."""
+    assert _number(typed, True) == kept
+    assert isinstance(_number(typed, True), int)
+
+
+def test_a_decimal_entry_field_stores_the_half_up_whole_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """소수 칸으로 세운 정수 칸에 109.5 를 치면 콜백이 정본에 정수 110 을 적는다."""
+    state: dict[str, object] = {_INPUT: 109.5}
+    _fake_session(monkeypatch, state)
+    _pick_number(_VALUE, _INPUT, _INPUT, True, 0)
+    assert state[_VALUE] == 110 and isinstance(state[_VALUE], int)
+
+
 def test_a_typed_value_folds_to_the_digits_the_field_shows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

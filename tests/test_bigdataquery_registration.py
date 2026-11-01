@@ -1064,3 +1064,18 @@ def test_the_missing_query_notice_puts_the_particle_on_the_fixed_word(
 
 def test_no_missing_query_notice_once_both_queries_are_set() -> None:
     assert registration.missing_query_notice(catalog_ready=True, detail_ready=True) is None
+
+
+def test_the_notice_reveal_is_the_only_script_run_through_st_html() -> None:
+    """`st.html(..., unsafe_allow_javascript=True)` 는 BigDataQuery 등록 저장 결과 칸의 「화면
+    밖이면 보이게 옮기기」 한 자리뿐이다 — AGENTS 9장 「스크립트와 컴포넌트」 가 이름을 적은 허용
+    예외(2026-11-01 사용자 결정 「그대로 둠」). 다른 스크립트는 그 절의 규칙(`st.iframe` · 회차마다
+    같은 내용)을 따른다."""
+    root = Path(__file__).resolve().parents[1]
+    sources = [root / "app.py", *(root / "app_pages").rglob("*.py"), *(root / "src").rglob("*.py")]
+    users = sorted(
+        str(path.relative_to(root))
+        for path in sources
+        if "unsafe_allow_javascript" in path.read_text(encoding="utf-8")
+    )
+    assert users == ["src/capa_simulation/components/bigdataquery_registration.py"]

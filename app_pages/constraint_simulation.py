@@ -548,10 +548,15 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         maximum=TARGET_RANGE[1] * 100,
         step=1,
         unit="%",
-        number_format="%d",
+        # 정수 % 칸이 소수를 받아 반 올림한다(109.5 → 110 — 판정 기준 칸과 한 규칙, 2026-11-01).
+        number_format="%.0f",
+        decimal_entry=True,
         fallback=DEFAULT_TARGET_PERCENT,
         preset_label=lambda value: f"{value:g}%" if value is not None else "",
-        help="제약 제품에 먼저 떼어 줄 몫 — 필요 대수 = 올림(제약 제품 소요 × 이 값).",
+        help=(
+            "제약 제품에 먼저 떼어 줄 몫 — 필요 대수 = 올림(제약 제품 소요 × 이 값). 정수 % 이고 "
+            "소수를 치면 사사오입합니다(109.5 → 110)."
+        ),
         tone="warning",
     )
     # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — HOME 기본도 정수 T 로 보인다.
@@ -567,13 +572,17 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         maximum=round(GENERAL_INPUT_RANGE[1] * 100),
         step=1,
         unit="%",
-        number_format="%d",
+        # 정수 % 칸이 소수를 받아 반 올림한다(109.5 → 110 — HOME 판정 기준 칸과 한 규칙,
+        # 2026-11-01).
+        number_format="%.0f",
+        decimal_entry=True,
         fallback=home_percent,
         preset_label=lambda value: "HOME 기준" if value is None else f"{value:g}%",
         help=(
-            "기존 제품 판정 기준(정수 %). 「HOME 기준」 은 HOME → Preference 공용 판정 기준"
-            "(기본 + 월별 예외)을 달마다 씁니다. 판정은 확보율을 사사오입한 정수 % 로 견줍니다 — "
-            "110% 면 109.5% 도 확보입니다."
+            "기존 제품 판정 기준(정수 % — 소수를 치면 사사오입합니다, 109.5 → 110). "
+            "「HOME 기준」 은 HOME → Preference 공용 판정 기준(기본 + 월별 예외)을 달마다 "
+            "씁니다. 판정은 확보율을 사사오입한 정수 % 로 견줍니다 — 110% 면 109.5% 도 "
+            "확보입니다."
         ),
     )
     st.caption(

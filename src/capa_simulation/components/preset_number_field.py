@@ -56,7 +56,16 @@
 움직이면 「지금 그 값」 을 치는 일이 잦다)은 `none_placeholder` 를 준다 — 정본이 `None` 이면 숫자
 칸이 **비고** 자리표시 글을 보여, 어떤 수를 쳐도 값이 바뀌어 콜백이 돈다.
 
-`step` 이 정수면 정본·숫자 칸 모두 `int` 로 접는다(위젯은 min·max·step 의 수 형이 같아야 한다).
+`step` 이 정수면 정본·숫자 칸 모두 `int` 로 접는다(위젯은 min·max·step 의 수 형이 같아야 한다). 반은
+올린다(108.5 → 109 — `round` 의 짝수 쪽 가르기가 아니다).
+
+**정수 칸이 소수 친 값을 받는 꼴**(`decimal_entry` — 제약 시뮬레이션 · 개조 일정의 기준 확보율 ·
+제약 확보율, 2026-11-01 사용자 결정): 정본은 그대로 정수이고 숫자 칸만 소수 칸(`float`)으로 세운다.
+정수 칸은 브라우저가 친 글을 `parseInt` 로 읽고(서버도 `int()`) 「109.5」 를 말없이 109 로 버렸다 —
+HOME 판정 기준 월별 칸은 110 으로 읽어 같은 기준이 칸마다 달랐다. 소수 칸은 친 값을 그대로 보내고
+콜백이 반을 올린 정수(110)로 정본을 적는다. 숫자 꼴은 `%.0f` 여야 칸이 보이는 수(브라우저 `toFixed`
+— 반 올림)와 정본이 같다. 칸 범위(min·max)는 그대로라 범위 밖 글(49.6 · 200.4)은 반올림 전에 칸이
+막는다.
 """
 
 from __future__ import annotations
@@ -85,12 +94,16 @@ PresetTone = Literal["accent", "warning"]
 
 
 def _number(value: float, integer: bool, decimals: int | None = None) -> float | int:
-    """정수 칸이면 `int`, 소수 자리(`decimals`)를 주면 그 자리까지 반 올림으로 접은 `float`."""
+    """정수 칸이면 반 올림한 `int`, 소수 자리(`decimals`)를 주면 그 자리까지 반 올림으로 접은
+    `float`.
+
+    브라우저 칸은 `toFixed` 로 보인다 — 2진 값 그대로의 반 올림이라 `Decimal(float)` 로 견준다(109.5
+    → 110 — 소수 칸으로 세운 정수 칸 `decimal_entry` 가 친 값도 이 길이다).
+    """
     if integer:
-        return int(round(value))
+        return int(Decimal(float(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     if decimals is None:
         return float(value)
-    # 브라우저 칸은 `toFixed` 로 보인다 — 2진 값 그대로의 반 올림이라 `Decimal(float)` 로 견준다.
     step = Decimal(1).scaleb(-decimals)
     return float(Decimal(float(value)).quantize(step, rounding=ROUND_HALF_UP))
 
@@ -240,14 +253,24 @@ def render_preset_number_field(
     help: str | None = None,
     tone: PresetTone = "accent",
     none_placeholder: str | None = None,
+    decimal_entry: bool = False,
 ) -> float | None:
     """버튼 줄과 숫자 칸을 지금 컨테이너에 그리고 정본 값을 돌려준다.
 
     정본 칸이 없거나 쓸 수 없는 값이면 `default` 를 심는다. `fallback` 은 정본이 `None` 일 때 숫자
     칸이 보일 값이다(HOME 기준이면 기본 확보 기준 %). `none_placeholder` 를 주면 정본이 `None` 일 때
-    숫자 칸을 비우고 그 글을 자리표시로 보인다(`fallback` 은 쓰지 않는다).
+    숫자 칸을 비우고 그 글을 자리표시로 보인다(`fallback` 은 쓰지 않는다). `decimal_entry` 면 정수
+    칸의 숫자 칸을 소수 칸으로 세워 친 소수를 반 올림한 정수로 받는다(모듈 머리말 — `number_format`
+    은 `%.0f`).
     """
     integer = float(step).is_integer() and float(minimum).is_integer()
+    # 숫자 칸(위젯)의 수 형 — 정수 칸이라도 `decimal_entry` 면 소수 칸이다(정본은 정수 그대로).
+    float_widget = decimal_entry or not integer
+
+    def widget_number(number: float) -> float | int:
+        folded = _number(number, integer)
+        return float(folded) if float_widget else folded
+
     held = st.session_state.get(value_key, _MISSING)
     if held is _MISSING or not _valid(held, minimum=minimum, maximum=maximum, presets=presets):
         st.session_state[value_key] = None if default is None else _number(float(default), integer)
@@ -265,7 +288,7 @@ def render_preset_number_field(
     else:
         shown = canonical if canonical is not None else float(fallback)
         shown = min(max(shown, float(minimum)), float(maximum))
-        field_value = _number(shown, integer)
+        field_value = widget_number(shown)
     # 적지 않은 회차에만 지금 값을 기본값으로 싣는다 — 끊긴 회차가 `set_value` 를 보내지 못한 새 key
     # 칸도 최소값이 아니라 이 값으로 선다(모듈 머리말). 적은 회차에 함께 주면 Streamlit 이 경고한다.
     # 자리표시 칸(`none_placeholder`)의 빈 값은 싣지 않는다 — 세션 칸이 `None` 이면 Streamlit 이
@@ -302,10 +325,10 @@ def render_preset_number_field(
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.number_input(
             f"{label} 직접 입력",
-            min_value=_number(minimum, integer),
-            max_value=_number(maximum, integer),
+            min_value=widget_number(minimum),
+            max_value=widget_number(maximum),
             value=field_default,
-            step=_number(step, integer),
+            step=widget_number(step),
             format=number_format,
             key=widget_key,
             on_change=_pick_number,

@@ -1,4 +1,4 @@
-# Purpose: 확보·경고 판정 기준(비율)을 사사오입 정수 퍼센트(값과 글자)로 바꾼다.
+# Purpose: 확보·경고 판정 기준(비율)과 칸에 친 퍼센트를 사사오입 정수 퍼센트(값과 글자)로 바꾼다.
 
 """판정 기준의 정수 퍼센트.
 
@@ -6,7 +6,8 @@
 저장된 비율은 모두 소수점에서 **사사오입**(half-up)한 정수 T 로 읽는다 — 옛 관례로 반 칸 낮춰 적은
 1.095·0.995 도 110·100 이다. 판정이 그 T 를 어떻게 쓰는지(확보율을 사사오입한 정수 % 가 T 이상)는
 `securement_threshold` 가 정하고, 이 모듈은 비율 하나를 정수 하나(`threshold_percent`)와 글자 하나
-(`threshold_percent_label` — 「110%」)로 바꿀 뿐이다.
+(`threshold_percent_label` — 「110%」)로, 칸에 친 퍼센트 하나를 정수 하나(`whole_percent` — 109.5 →
+110)로 바꿀 뿐이다.
 
 파이썬 `round` 와 서식 `:.0%` 는 반을 짝수 쪽으로 가른다(108.5 → 108, 1.085 → 108%). 109.5·99.5 는
 짝수가 위라 우연히 맞을 뿐이어서 둘 다 쓰지 않는다. 값 하나를 받아 하나를 돌려주므로 달마다 다른
@@ -33,6 +34,20 @@ def threshold_percent(ratio: float) -> int:
         raise ValueError(f"판정 기준이 숫자가 아닙니다: {ratio!r}")
     percent = (Decimal(repr(value)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return int(percent)
+
+
+def whole_percent(percent: float) -> int:
+    """칸에 친 퍼센트(109.5)를 사사오입한 정수 퍼센트(110)로 바꾼다. 값이 아니면 `ValueError`.
+
+    판정 기준 숫자 칸(HOME › Preference 기본 두 칸 · 월별 표, 제약 시뮬레이션 · 개조 일정의 기준
+    확보율)은 소수를 받아 이 한 규칙으로 읽는다(2026-11-01 사용자 결정 — 109.5 → 110, 99.5 → 100).
+    정수 숫자 칸은 브라우저가 친 글을 `parseInt` 로 읽어 109.5 를 말없이 109 로 버렸다. 반은 올린다
+    (`round` 의 짝수 쪽 가르기가 아니다 — 108.5 → 109).
+    """
+    value = float(percent)
+    if not isfinite(value):
+        raise ValueError(f"판정 기준이 숫자가 아닙니다: {percent!r}")
+    return int(Decimal(repr(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def threshold_percent_label(ratio: float) -> str:

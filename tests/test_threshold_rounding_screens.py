@@ -97,7 +97,7 @@ def test_differences_are_written_with_a_plain_percent_sign() -> None:
     """「%p」 를 쓰지 않는다(2026-11-01 사용자 결정 — 「%p표기하지말고 %로만」)."""
     assert signed_points(0.0) == "0.0%"
     assert signed_points(-0.005) == "−0.5%"
-    assert relief_points(0.0171) == "1.71%"
+    assert relief_points(2) == "2%"
 
 
 def test_the_preset_defaults_are_whole_percents() -> None:

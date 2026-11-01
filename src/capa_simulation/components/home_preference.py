@@ -156,9 +156,16 @@ from capa_simulation.services.securement_threshold import (
     WARNING_COLUMN,
     build_securement_thresholds,
     merge_securement_threshold_edits,
+    out_of_range_thresholds,
     reversed_threshold_months,
+    threshold_range_message,
+    threshold_range_text,
 )
-from capa_simulation.services.threshold_label import threshold_percent, threshold_percent_label
+from capa_simulation.services.threshold_label import (
+    threshold_percent,
+    threshold_percent_label,
+    whole_percent,
+)
 from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
@@ -190,9 +197,14 @@ THRESHOLD_FLASH_KEY = "home_threshold_flash"
 MONTH_THRESHOLD_STEP = 0.1
 MONTH_THRESHOLD_FORMAT = "%.0f"
 MONTH_THRESHOLD_HELP = (
-    "정수 % 로 넣습니다. 소수를 치면 사사오입한 정수로 보이고 저장합니다(109.5 → 110). 빈칸은 "
-    "기본값을 따릅니다."
+    f"{threshold_range_text()} 의 정수 % 로 넣습니다. 소수를 치면 사사오입한 정수로 보이고 "
+    "저장합니다(109.5 → 110). 빈칸은 기본값을 따릅니다."
 )
+# 기본 확보·경고 두 칸 — 월별 칸과 같은 읽기다(2026-11-01 사용자 결정). 칸을 소수 칸(`float`)으로
+# 세워야 「109.5」 가 그대로 오고(정수 칸은 브라우저가 `parseInt` 로, 서버가 `int()` 로 109 로
+# 버렸다) `%.0f` 가 반을 올려 110 으로 보인다. 저장은 사사오입 정수(`whole_percent`)다.
+DEFAULT_THRESHOLD_STEP = 1.0
+DEFAULT_THRESHOLD_FORMAT = "%.0f"
 # 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
 # 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
@@ -863,10 +875,12 @@ def render_threshold_editor(
 
     판정 기준은 시나리오와 무관한 공용 정책값이고 **여기 한 곳**에서만 정한다(사이드바 입력은
     없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 **정수 퍼센트**(120)이고
-    저장은 비율(1.2)이다(2026-11-01 사용자 결정 — 옛 저장값 1.095 도 칸에는 110 으로 선다). 월별 표
-    칸은 소수점을 받아 사사오입한 정수로 보이고 그 값으로 저장한다(`MONTH_THRESHOLD_STEP`). 판정은
-    확보율을 사사오입한 정수 % 로 견준다(`securement_threshold.meets_threshold`). 저장은 공용 프로필
-    교체이며 편집을 시작할 때 본 version 과 대조한다.
+    저장은 비율(1.2)이다(2026-11-01 사용자 결정 — 옛 저장값 1.095 도 칸에는 110 으로 선다). 기본 두
+    칸과 월별 표 칸은 모두 소수점을 받아 사사오입한 정수로 보이고 그 값으로 저장한다(109.5 → 110 —
+    `DEFAULT_THRESHOLD_FORMAT`·`MONTH_THRESHOLD_STEP`, `whole_percent`). 받는 범위는 50 ~ 300% 이고
+    밖의 칸이 있으면 저장하지 않고 그 칸을 적는다(`_reject_out_of_range` — 제약 확보율과 한 범위).
+    판정은 확보율을 사사오입한 정수 % 로 견준다(`securement_threshold.meets_threshold`). 저장은 공용
+    프로필 교체이며 편집을 시작할 때 본 version 과 대조한다.
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5) — 최신 저장본을 보고 고친
     값이 그 저장본과 같으면(`SecurementThresholds.same_as`) 쓰지 않고 「바뀐 것이 없습니다」 를
@@ -913,32 +927,38 @@ def render_threshold_editor(
             # 세션 값을 써서, 다른 사람이 바꾼 기본값을 이 화면이 못 본 채 저장 한 번으로 되돌린다.
             secure_column, warning_column = st.columns(2)
             with secure_column:
-                default_secure = st.number_input(
+                typed_secure = st.number_input(
                     "기본 확보 기준(%)",
-                    value=_percent_value(threshold_profile.default_secure),
-                    # 하한은 0 이다. 칸은 저장본·공식버전 프리셋이 무엇이든 그려져야 고칠 수 있고,
-                    # 0 이하 값은 저장 검증이 어느 칸인지 적어 거부한다.
-                    min_value=0,
-                    step=1,
-                    format="%d",
+                    value=float(_percent_value(threshold_profile.default_secure)),
+                    # 하한은 0 이고 상한은 두지 않는다. 칸은 저장본·공식버전 프리셋이 무엇이든
+                    # 그려져야 고칠 수 있고(범위 밖 값을 칸 범위로 막으면 칸이 서지 않는다), 범위
+                    # 밖·0 이하 값은 저장 검사가 어느 칸인지 적어 거부한다.
+                    min_value=0.0,
+                    step=DEFAULT_THRESHOLD_STEP,
+                    format=DEFAULT_THRESHOLD_FORMAT,
                     help=(
-                        "확보율이 이 값 이상이면 확보입니다(정수 %). 확보율은 소수 첫째 자리에서 "
-                        "반올림해 견줍니다 — 110 이면 109.5% 도 확보이고 여유는 0 으로 적습니다. "
-                        "월별 표에서 비워 둔 달은 이 값을 씁니다."
+                        f"확보율이 이 값 이상이면 확보입니다({threshold_range_text()} 의 정수 % — "
+                        "소수를 치면 사사오입한 정수로 보이고 저장합니다, 109.5 → 110). 확보율은 "
+                        "소수 첫째 자리에서 반올림해 견줍니다 — 110 이면 109.5% 도 확보이고 여유는 "
+                        "0 으로 적습니다. 월별 표에서 비워 둔 달은 이 값을 씁니다."
                     ),
                 )
             with warning_column:
-                default_warning = st.number_input(
+                typed_warning = st.number_input(
                     "기본 경고 기준(%)",
-                    value=_percent_value(threshold_profile.default_warning),
-                    min_value=0,
-                    step=1,
-                    format="%d",
+                    value=float(_percent_value(threshold_profile.default_warning)),
+                    min_value=0.0,
+                    step=DEFAULT_THRESHOLD_STEP,
+                    format=DEFAULT_THRESHOLD_FORMAT,
                     help=(
-                        "이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다(정수 % — 확보 "
-                        "기준과 같이 반올림해 견줍니다)."
+                        "이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다"
+                        f"({threshold_range_text()} 의 정수 % — 소수는 사사오입, 확보 기준과 같이 "
+                        "반올림해 견줍니다)."
                     ),
                 )
+            # 저장·견주기는 사사오입한 정수 % 다 — 칸이 보이는 값(`%.0f`)과 같은 수다.
+            default_secure = whole_percent(typed_secure)
+            default_warning = whole_percent(typed_warning)
             edited: pd.DataFrame | None = None
             if months:
                 table = pd.DataFrame(
@@ -1142,7 +1162,11 @@ def _save_thresholds(
     clear_outside: bool = False,
     save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalSecurementThreshold:
-    """표에 보이는 달만 갈아 끼우고(`_threshold_rows`) 검증한 뒤 공용 판정 기준을 교체한다."""
+    """표에 보이는 달만 갈아 끼우고(`_threshold_rows`) 검증한 뒤 공용 판정 기준을 교체한다.
+
+    받는 범위(50 ~ 300% — `THRESHOLD_RANGE`) 밖의 칸이 하나라도 있으면 저장소에 가지 않고 그 칸을
+    적어 거부한다(`_reject_out_of_range`, 2026-11-01 사용자 결정).
+    """
     rows = _threshold_rows(
         threshold_profile,
         months=months,
@@ -1150,6 +1174,7 @@ def _save_thresholds(
         edited=edited,
         clear_outside=clear_outside,
     )
+    _reject_out_of_range(months, default_secure / 100.0, default_warning / 100.0, rows)
     _reject_hidden_reversed_months(months, default_secure / 100.0, default_warning / 100.0, rows)
     saved = get_scenario_repository(database_path).replace_global_securement_threshold(
         default_secure / 100.0,
@@ -1166,6 +1191,31 @@ def _save_thresholds(
     # 입장 화면 Summary 도 같은 기준으로 판정한다(새 기준의 지문으로 새로 만든다).
     _recheck_intro_summary()
     return saved
+
+
+def _reject_out_of_range(
+    months: Sequence[int],
+    default_secure: float,
+    default_warning: float,
+    rows: pd.DataFrame,
+) -> None:
+    """받는 범위 밖의 칸(달 · 항목 · 값)을 적어
+    거부한다(`securement_threshold.require_threshold_range` 와 같은 글). 그 가운데 표에 보이지 않는
+    달이 있으면 고칠 길도 붙인다 — 범위 밖 옛 저장본(1095% 오타)이 조회기간 밖 달에 남아 있으면 그
+    달을 이 화면에서 볼 수 없다."""
+    cells = out_of_range_thresholds(default_secure, default_warning, rows)
+    if not cells:
+        return
+    message = threshold_range_message(cells)
+    visible = {int(month) for month in months}
+    hidden = sorted({cell.month for cell in cells if cell.month is not None} - visible)
+    if hidden:
+        message += (
+            f" 조회기간 밖 달 {with_topic_particle(_month_labels(hidden))} 표에 보이지 않습니다 — "
+            "조회기간을 넓혀 그 달을 고치거나, 「조회기간 밖 월별 기준 지우기」를 체크하고 "
+            "저장하세요."
+        )
+    raise ValueError(message)
 
 
 def _reject_hidden_reversed_months(
