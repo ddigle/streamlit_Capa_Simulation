@@ -728,3 +728,39 @@ def test_source_rows_that_differ_only_by_pack_code_stay_two_plan_rows() -> None:
     assert sorted(plan["생산수량"]) == [72.51, 100.0]
     assert sorted(plan["Pack Code"]) == ["PACK-2", "기준값"]
     assert "RQ_PKG_PLAN" not in prepared.reference_conflicts["RQ테이블"].tolist()
+
+
+@pytest.mark.parametrize("reverse", [False, True], ids=["0 먼저", "빈 값 먼저"])
+def test_a_zero_and_a_blank_run_rate_sibling_build_the_same_table_in_either_source_order(
+    reverse: bool,
+) -> None:
+    """같은 (월, 공정, 양산구분) 효율의 0 행과 빈 값 행은 원천 차례와 상관없이 0 으로 저장된다.
+
+    BigDataQuery 조회에는 차례가 없다. 예전에는 빈 값이 먼저 온 원천만 그 리비전의 대당 Capa 가
+    「값이 빈 대당 Capa 기준」 으로 멈췄다(2026-11-01 사용자 결정 — 효율·UPEH 부터 고정).
+    """
+    from capa_simulation.services.unit_capacity import (
+        CAPACITY_EXCLUSIONS_ATTR,
+        calculate_unit_capacity,
+    )
+
+    source = pd.concat([_core_data_row()] * 2, ignore_index=True)
+    source["STEP_SEQ"] = ["P100", "P200"]
+    source["CAPA_RUN_RATE"] = [0.0, None]
+    if reverse:
+        source = source.iloc[::-1].reset_index(drop=True)
+
+    tables = build_reference_tables(source, _display_order())
+
+    assert tables["RQ_RUN_RATE"]["CAPA_RUN_RATE"].astype("float64").tolist() == [0.0]
+    result = calculate_unit_capacity(
+        tables["RQ_UPEH"],
+        tables["RQ_RUN_RATE"],
+        tables["RQ_VITAL"],
+        tables["RQ_MODULE"],
+        tables["RQ_RUN_DAY"],
+        tables["RQ_LOT_RATIO"],
+        tables["RQ_WF_RATIO"],
+    )
+    assert result.empty
+    assert set(result.attrs[CAPACITY_EXCLUSIONS_ATTR]["제외사유"]) == {"CAPA_RUN_RATE 0 이하"}

@@ -15,7 +15,7 @@ from capa_simulation.io.core_data_source import (
 )
 from capa_simulation.services.core_data_derivation import BlankCsDrop
 from capa_simulation.services.frame_contracts import require_columns
-from capa_simulation.services.reference_conflicts import TEMPORARY_CONFLICT_RESOLUTION
+from capa_simulation.services.reference_conflicts import conflict_resolution
 from capa_simulation.services.reference_transformer import (
     build_reference_tables_with_conflicts,
 )
@@ -85,7 +85,7 @@ def summarize_reference_conflicts(conflicts: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index(drop=True)
     )
-    summary["임시처리"] = TEMPORARY_CONFLICT_RESOLUTION
+    summary["임시처리"] = summary["RQ테이블"].map(conflict_resolution)
     return summary[CONFLICT_SUMMARY_COLUMNS]
 
 

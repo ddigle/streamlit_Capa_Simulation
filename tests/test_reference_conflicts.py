@@ -8,10 +8,13 @@
 """
 
 import pandas as pd
+import pytest
 
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.services.reference_conflicts import (
     TEMPORARY_CONFLICT_RESOLUTION,
+    ZERO_BEFORE_BLANK_RESOLUTION,
+    conflict_resolution,
     validated_distinct,
 )
 
@@ -112,7 +115,7 @@ def test_rows_that_differ_only_by_pack_code_are_two_plans_not_a_conflict() -> No
 # `대당 Capa 0 이하` 로 조용히 제외돼 공정이 통째로 사라졌다. 아래가 그 회귀다.
 
 
-def _upeh_rows(first_upeh: float, second_upeh: float) -> pd.DataFrame:
+def _upeh_rows(first_upeh: float | None, second_upeh: float | None) -> pd.DataFrame:
     """RQ_UPEH 9키가 같고 `Capa Code` 만 다른 형제 두 행. 키에 없는 컬럼이라 접힌다."""
     base = {
         "생산계획년월": 202601,
@@ -145,7 +148,7 @@ def test_the_row_with_a_value_wins_even_when_the_zero_row_comes_first() -> None:
     assert distinct["UPEH"].tolist() == [80672.0]
     assert records[0]["선택값"] == '{"UPEH":80672.0}'
     # 선택 근거를 보고서가 그대로 적어야 사후에 왜 이 행이 이겼는지 알 수 있다.
-    assert records[0]["임시처리"] == TEMPORARY_CONFLICT_RESOLUTION
+    assert records[0]["임시처리"] == conflict_resolution("RQ_UPEH") == ZERO_BEFORE_BLANK_RESOLUTION
     assert records[0]["선택원천행번호"] == 2
 
 
@@ -187,3 +190,81 @@ def test_collapsed_row_order_is_unchanged_by_the_new_winner_rule() -> None:
 
     assert distinct["공정"].tolist() == ["Process-A", "Process-B", "Process-C"]
     assert distinct["UPEH"].tolist() == [80672.0, 5.0, 7.0]
+
+
+# ------------------------- 0 행과 빈 값 행 — 효율·UPEH 는 원천 행 차례와 상관없이 0 행(2026-11-01
+# 사용자 결정) 0 과 빈 값은 둘 다 「값 없음」 이라 예전에는 원천 행 차례로 골랐다. BigDataQuery
+# 조회에는 차례가 없어 같은 원천이 한 번은 0(그 경로만 제외)으로, 한 번은 빈 값(계산 전체 멈춤)으로
+# 저장됐다. 뜻이 확인된 두 표만 고정하고, 나머지 표는 0 의 뜻을 확인할 때까지 차례 그대로다.
+
+
+def _run_rate_rows(first: float | None, second: float | None) -> pd.DataFrame:
+    base = {"생산계획년월": 202606, "공정": "Process-A", "양산구분": "양산"}
+    return pd.DataFrame([{**base, "CAPA_RUN_RATE": first}, {**base, "CAPA_RUN_RATE": second}])
+
+
+@pytest.mark.parametrize(("first", "second"), [(0.0, None), (None, 0.0)])
+def test_a_zero_run_rate_wins_over_a_blank_sibling_in_either_order(
+    first: float | None, second: float | None
+) -> None:
+    records: list[dict[str, object]] = []
+
+    distinct = validated_distinct(
+        _run_rate_rows(first, second), "RQ_RUN_RATE", load_core_data_contract(), records
+    )
+
+    assert distinct["CAPA_RUN_RATE"].tolist() == [0.0]
+    assert records[0]["임시처리"] == ZERO_BEFORE_BLANK_RESOLUTION
+
+
+@pytest.mark.parametrize(("first", "second"), [(0.0, None), (None, 0.0)])
+def test_a_zero_upeh_wins_over_a_blank_sibling_in_either_order(
+    first: float | None, second: float | None
+) -> None:
+    distinct = validated_distinct(
+        _upeh_rows(first, second), "RQ_UPEH", load_core_data_contract(), []
+    )
+
+    assert distinct["UPEH"].tolist() == [0.0]
+
+
+def test_upeh_siblings_that_differ_only_in_which_column_is_zero_pick_the_same_row() -> None:
+    """0 칸 수가 같으면 앞 값 컬럼의 0 이 이긴다 — 등록이 만드는 표의 차례(UPEH → ST)라 UPEH 0
+    행이고, 어느 차례로 와도 같은 행이다."""
+    rows = _upeh_rows(0.0, None)
+    rows["ST"] = [None, 0.0]
+    rows = rows[[*[c for c in rows.columns if c not in ("UPEH", "ST")], "UPEH", "ST"]]
+    contract = load_core_data_contract()
+
+    forward = validated_distinct(rows, "RQ_UPEH", contract, [])
+    backward = validated_distinct(rows.iloc[::-1].reset_index(drop=True), "RQ_UPEH", contract, [])
+
+    pd.testing.assert_frame_equal(forward, backward)
+    assert forward["UPEH"].tolist() == [0.0]
+
+
+def test_a_real_value_still_beats_zero_and_real_value_conflicts_keep_the_source_order() -> None:
+    contract = load_core_data_contract()
+
+    assert validated_distinct(_run_rate_rows(None, 0.8), "RQ_RUN_RATE", contract, [])[
+        "CAPA_RUN_RATE"
+    ].tolist() == [0.8]
+    assert validated_distinct(_run_rate_rows(0.7, 0.8), "RQ_RUN_RATE", contract, [])[
+        "CAPA_RUN_RATE"
+    ].tolist() == [0.7]
+
+
+def test_other_tables_keep_the_source_order_until_their_zero_is_confirmed() -> None:
+    """편중률(여유율) 같은 다른 표는 지금대로다 — 0 의 뜻을 확인하면 `ZERO_BEFORE_BLANK_TABLES` 에
+    더한다."""
+    contract = load_core_data_contract()
+    base = {"생산계획년월": 202606, "공정": "Process-A", "양산구분": "양산"}
+    zero_first = pd.DataFrame([{**base, "편중률": 0.0}, {**base, "편중률": None}])
+    records: list[dict[str, object]] = []
+
+    assert validated_distinct(zero_first, "RQ_VITAL", contract, records)["편중률"].tolist() == [0.0]
+    blank_first = zero_first.iloc[::-1].reset_index(drop=True)
+    assert validated_distinct(blank_first, "RQ_VITAL", contract, [])["편중률"].isna().tolist() == [
+        True
+    ]
+    assert records[0]["임시처리"] == TEMPORARY_CONFLICT_RESOLUTION
