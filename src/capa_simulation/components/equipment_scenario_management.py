@@ -81,6 +81,7 @@ from capa_simulation.components.widget_generation import (
 )
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    NoticeMark,
     SeenToken,
     held_notice,
     held_profile_conflict,
@@ -221,6 +222,11 @@ PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
 RESTORE_SAVE_NAME = "equipment_scenario_restore"
 CLEAR_LAYOUT_SAVE_NAME = "equipment_scenario_clear_layout"
 PUBLISH_SAVE_NAME = "equipment_scenario_publish"
+# 이미 지금 공식인 리비전의 발행 팝오버 — 「공식으로 발행」 을 끈 까닭(개선 거리 I26, 2026-11-01
+# 사용자 결정). 켜 둔 단추 위에 「발행해도 바뀌지 않습니다」 가 서 서로 어긋났다(E2E #37·#97).
+ALREADY_OFFICIAL_LINE = (
+    "이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로 발행」 을 껐습니다."
+)
 REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
 SCENARIO_NAME_SAVE_NAME = "equipment_scenario_name"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
@@ -361,11 +367,14 @@ def _follow_and_announce(
     *,
     name: str,
     follows: dict[str, _PendingFollow],
+    notices: dict[str, NoticeMark] | None = None,
 ) -> None:
     """쓰기가 그 시나리오의 새 리비전(`schedule_revision_id`)을 만든 뒤 — 뒷정리 표지를 먼저
     적고(dict 칸이라 끊기지 않는다) 리비전 상자·세션을 옮긴 뒤 표지를 지우고 알린다
     (`message(옮김, 편집 때문에 남김)`). 옮기다 끊기면 다음 회차가 표지를 보고 잇는다
-    (`_resume_follows`)."""
+    (`_resume_follows`). `notices`(쓰기 전에 받아 둔 `notice_marks()`)를 주면 그 알림을 `name`
+    칸에 적는다 — 다시 그린 화면의 단추가 꺼져 빠른 둘째 누름이 버려지는 쓰기(공식 발행)는 구획
+    맨 위 칸이 창 안에서 그 알림을 다시 그린다(`held_notice`)."""
     follows[name] = _PendingFollow(
         scenario.equipment_scenario_id, schedule_revision_id, message, time.monotonic()
     )
@@ -373,7 +382,10 @@ def _follow_and_announce(
         database_path, session, scenario, schedule_revision_id
     )
     follows.pop(name, None)
-    _written(message(moved, kept_unsaved))
+    text = message(moved, kept_unsaved)
+    if notices is not None:
+        note_notice(notices, name, text)
+    _written(text)
 
 
 def _resume_follows(database_path: str, session: EquipmentSession) -> None:
@@ -743,6 +755,11 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     _resume_follows(database_path, session)
     flash = st.session_state.pop(FLASH_KEY, None)
     refused = st.session_state.pop(REFUSED_KEY, None)
+    # 첫 발행 뒤 다시 그린 화면의 「공식으로 발행」 은 그 리비전이 이제 공식이라 꺼진다 — 그 단추에
+    # 닿은 빠른 둘째 누름은 Streamlit 이 버려 그 회차가 첫 발행 알림(앞 회차가 꺼내 그렸다)을
+    # 지웠다. 창(`TRAILING_PRESS_SECONDS`) 안이면 적어 둔 알림을 같은 칸에 다시 그린다. 팝오버
+    # 세대는 올리지 않는다 — 첫 알림 회차가 이미 올려 팝오버는 닫힌 채 섰다.
+    held = held_notice(PUBLISH_SAVE_NAME) if flash is None and refused is None else None
     if (
         isinstance(flash, str)
         or isinstance(refused, str)
@@ -752,6 +769,8 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     with st.container():
         if isinstance(flash, str):
             st.success(flash)
+        elif held is not None:
+            st.success(held)
         if isinstance(refused, str):
             st.error(markdown_safe_tildes(refused))
     with st.container():
@@ -1908,9 +1927,10 @@ def publish_preview(
 
     지금 공식의 리비전 번호는 발행 줄이 들고 온 번호다(`official_release_revision_no` — 공식이 그
     시나리오 최신이 아니고 리비전 목록 한도 밖에 있어도 나온다). 모르면 번호를 적지 않는다. 고른
-    리비전이 이미 지금 공식이면 발행해도 쓰지 않으므로(저장소가 그 발행을 돌려준다) 「→ 새 공식」
-    을 적지 않고 지금 공식과 그 사실만 적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도
-    바뀌지 않습니다」 가 섰다).
+    리비전이 이미 지금 공식이면(`already_official`) 발행해도 쓰지 않으므로(저장소가 그 발행을
+    돌려준다) 「→ 새 공식」 을 적지 않고 지금 공식과, 단추를 끈 까닭(`ALREADY_OFFICIAL_LINE`)만
+    적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도 바뀌지 않습니다」 가 섰다, 단추를 끄는
+    것은 2026-11-01 사용자 결정 — 개선 거리 I26).
     """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
@@ -1922,7 +1942,7 @@ def publish_preview(
             f" r{official_revision}" if official_revision is not None else ""
         )
     next_no = (release.release_no if release is not None else 0) + 1
-    released = release is not None and release.schedule_revision_id == revision.schedule_revision_id
+    released = already_official(session, revision)
     lines = [
         current
         if released
@@ -1936,8 +1956,16 @@ def publish_preview(
             f"(r{scenario.latest_revision_no})이 아닙니다."
         )
     if released:
-        lines.append("이미 공식 발행인 리비전입니다 — 발행해도 바뀌지 않습니다.")
+        lines.append(ALREADY_OFFICIAL_LINE)
     return lines
+
+
+def already_official(session: EquipmentSession, revision: EquipmentScheduleRevisionSummary) -> bool:
+    """고른 리비전이 이미 지금 공식 발행인가 — 발행해도 저장소가 쓰지 않고 그 발행을 돌려준다.
+
+    참이면 발행 팝오버가 「→ 새 공식」 을 적지 않고 「공식으로 발행」 을 끈다(개선 거리 I26)."""
+    release = session.catalog.latest_release
+    return release is not None and release.schedule_revision_id == revision.schedule_revision_id
 
 
 def official_release_revision_no(session: EquipmentSession) -> int | None:
@@ -2079,12 +2107,16 @@ def _render_publish(
     )
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
+    # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 위 확인 글 끝 줄이 적는다
+    # (`ALREADY_OFFICIAL_LINE`). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 꺼진다 — 그 단추에
+    # 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은 구획 맨 위 칸이 다시 그린다
+    # (`held_notice` — 아래 `note_notice`).
     if not st.button(
         "공식으로 발행",
         type="primary",
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
-        disabled=blocked,
+        disabled=blocked or already_official(session, revision),
     ):
         # 이 회차가 그린 확인 글이 다음 누름이 본 글이다 — 누른 회차에는 적지 않는다.
         remember_seen(PUBLISH_SEEN_KEY, token)
@@ -2194,9 +2226,12 @@ def _render_publish(
             published_message,
             name=PUBLISH_SAVE_NAME,
             follows=follows,
+            notices=messages,
         )
-    # 첫 회차가 다시 그린 화면에 닿은 빠른 둘째 누름은 그 리비전이 이미 공식이라 쓰지 않는다 — 이
-    # 알림을 다시 낸다(위 「이미 공식」 갈래). dict 칸이라 끊기지 않는다.
+    # 첫 회차가 다시 그린 화면의 단추는 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른
+    # 둘째 누름은 Streamlit 이 버리고, 구획 맨 위 칸이 창 안에서 이 알림을 다시 그린다. 둘째 누름이
+    # 아직 켜진 단추로 들어오면 저장소가 쓰지 않고(위 「이미 공식」 갈래) 이 알림을 다시 낸다. dict
+    # 칸이라 끊기지 않는다.
     note_notice(messages, PUBLISH_SAVE_NAME, published_message(False, False))
     _written(published_message(False, False))
 
