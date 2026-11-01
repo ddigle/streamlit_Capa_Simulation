@@ -26,6 +26,7 @@ import streamlit as st
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation.components.app_header import (
+    STATUS_NEWER,
     STATUS_UNSAVED,
     UNMERGED_STATUS,
     equipment_header_suffix,
@@ -288,7 +289,7 @@ def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
     if session.is_official_pair and session.release_no is not None:
         return f":green-badge[공식 v{session.release_no}]"
     if session.stale and session.latest_revision_no is not None:
-        return f":orange-badge[최신 r{session.latest_revision_no} 있음]"
+        return f":orange-badge[{STATUS_NEWER.format(revision_no=session.latest_revision_no)}]"
     if session.layout_differs:
         return f":violet-badge[{LAYOUT_BADGE}]"
     return ":gray-badge[저장된 리비전]"
@@ -298,7 +299,7 @@ def unsaved_status(session: EquipmentSession) -> str:
     """미저장 배지 글 — 낡은 세션이면 「미저장 변경 · 최신 rM 있음」, 아니면 「미저장 변경」.
     머리 띠 꼬리(`equipment_header_suffix`)도 라벨 dict 로 같은 글을 낸다."""
     if session.stale and session.latest_revision_no is not None:
-        return f"{STATUS_UNSAVED} · 최신 r{session.latest_revision_no} 있음"
+        return f"{STATUS_UNSAVED} · {STATUS_NEWER.format(revision_no=session.latest_revision_no)}"
     return STATUS_UNSAVED
 
 

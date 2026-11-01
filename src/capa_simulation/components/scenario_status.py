@@ -34,6 +34,7 @@ import streamlit as st
 # 테스트가 `settings.DUCKDB_PATH` 를 갈아끼운다. 이름을 직접 import 하면 여기서 잡은
 # 바인딩이 교체를 무시하므로 호출 시점에 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -211,7 +212,7 @@ def scenario_status_badge(
     if official is not None and official[0] == active_revision_id:
         return f":green-badge[공식 v{official[1]}]"
     if newer_revision_no is not None:
-        return f":orange-badge[최신 r{newer_revision_no} 있음]"
+        return f":orange-badge[{STATUS_NEWER.format(revision_no=newer_revision_no)}]"
     return ":gray-badge[저장된 리비전]"
 
 

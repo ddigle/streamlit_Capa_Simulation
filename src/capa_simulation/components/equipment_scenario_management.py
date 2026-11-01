@@ -53,6 +53,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation.components import write_guard
+from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
     common_revision_words,
@@ -692,7 +693,7 @@ def session_heading(session: EquipmentSession) -> str:
     if session.is_official_pair and session.release_no is not None:
         parts.append(f"공식 v{session.release_no}")
     elif session.stale and session.latest_revision_no is not None:
-        parts.append(f"최신 r{session.latest_revision_no} 있음")
+        parts.append(STATUS_NEWER.format(revision_no=session.latest_revision_no))
     return "이 세션: " + " · ".join(parts)
 
 
