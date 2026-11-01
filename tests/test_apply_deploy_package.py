@@ -373,9 +373,12 @@ def test_the_two_deploy_scripts_agree_on_what_is_untouchable() -> None:
         assert member_problems([path]), path
 
     # 사내 전용 자리는 대소문자와 상관없이 양쪽이 같은 말을 한다 — 빌더는 싣지 않고 적용기는 지우지
-    # 않는다.
+    # 않는다. 빌더의 대조는 경로만 소문자로 바꾸므로 목록에 대문자를 섞어 적으면 그 항목만 조용히
+    # 아무것도 막지 않는다.
     from build_deploy_package import internal_only_entries
 
+    assert all(prefix == prefix.lower() for prefix in INTERNAL_ONLY_PREFIXES)
+    assert all(prefix == prefix.lower() for prefix in PRESERVED_PREFIXES)
     for path in ("modules/demo/page.py", "Modules/demo/page.py", "REVIEW/r.md"):
         assert internal_only_entries([path]) == [path], path
         assert is_preserved(path), path
@@ -886,6 +889,8 @@ def test_two_applies_keep_committed_and_untracked_module_files(
     untracked = root / "modules" / "demo_z" / "page.py"
     untracked.parent.mkdir(parents=True)
     untracked.write_bytes(b"# Purpose: draft\n")
+    # 모듈 밖의 추적 안 된 파일은 지금처럼 「정체불명」 으로 묻는다 — 보존은 `modules/` 아래만이다.
+    (root / "stray.py").write_bytes(b"stray\n")
     monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
     module_files = [
         "Modules/demo_y/page.py",
@@ -899,6 +904,7 @@ def test_two_applies_keep_committed_and_untracked_module_files(
     # 모듈 파일은 지움 계획·「사외에서 지워짐」·「정체불명」 어디에도 이름이 나오지 않는다.
     assert "modules/demo" not in out.lower()
     assert "- gone.py" in out
+    assert "정체불명 파일 1개" in out and "? stray.py" in out
 
     (root / "modules" / "demo_x" / "page.py").write_bytes(b"# Purpose: demo v2\n")
     _repo_git(root, "add", "modules/demo_x/page.py")

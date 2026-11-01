@@ -116,11 +116,48 @@ def test_ordinary_files_are_not_flagged() -> None:
     assert forbidden_entries(paths) == []
 
 
+def _core_shipped(tracked: list[str]) -> list[str]:
+    """배포 세트에서 사내 전용 자리(`internal_only_entries` — `review/`·사내 모듈 `modules/`
+    등)를 뺀 것.
+
+    사내 저장소는 그 자리를 추적한다. 사외 빌더는 그 자리가 세트에 있으면 따로 멈추므로(사내
+    전용 접두 말) 여기서는 코어만 본다. 빼지 않으면 모듈이 커밋한 `.duckdb`·`.db`·
+    `secrets.toml` 같은 이름이 **사내에서만** 이 시험을 떨어뜨린다 — 그것은 코어 결함이 아니라
+    모듈 점검(M13)이 잡을 일이다.
+    """
+    from build_deploy_package import internal_only_entries
+
+    internal = set(internal_only_entries(tracked))
+    return [path for path in deploy_set(tracked) if path not in internal]
+
+
 def test_the_real_repository_ships_nothing_forbidden() -> None:
     """규칙이 아니라 지금 저장소의 실제 목록으로 확인한다."""
     from build_deploy_package import tracked_files
 
-    assert forbidden_entries(deploy_set(tracked_files(PROJECT_ROOT))) == []
+    assert forbidden_entries(_core_shipped(tracked_files(PROJECT_ROOT))) == []
+
+
+def test_internal_only_data_files_are_left_to_the_module_check() -> None:
+    """사내 모듈이 데이터 꼴 파일을 커밋해도 코어 관문은 그대로다.
+
+    코어 자리의 같은 꼴 파일(시험 견본 `tests/fixtures/modules/` 포함)은 여전히 잡는다.
+    """
+    tracked = [
+        "app.py",
+        "modules/demo_x/assets/seed.duckdb",
+        "modules/demo_x/store.db",
+        "modules/demo_x/secrets.toml",
+        "Modules/demo_y/cache.wal",
+        "review/2026.sync.json",
+        "data/capa_simulation.duckdb",
+        "tests/fixtures/modules/demo_ok/seed.duckdb",
+    ]
+
+    assert forbidden_entries(_core_shipped(tracked)) == [
+        "data/capa_simulation.duckdb",
+        "tests/fixtures/modules/demo_ok/seed.duckdb",
+    ]
 
 
 def test_a_missing_file_stops_the_build(tmp_path: Path) -> None:
