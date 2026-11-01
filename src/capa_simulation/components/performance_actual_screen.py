@@ -145,21 +145,21 @@ def _render_summary(
         st.warning(
             f"**{literal_markdown(worst_name)}** — {int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
-            f"{float(worst['Gap']):.{metric.gap_decimals}%}, 영향 물량 비중 "
+            f"{metric.gap_text(float(worst['Gap']))}, 영향 물량 비중 "
             f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."
         )
 
     with metric_row(key=f"{key_prefix}_summary_metrics"):
         st.metric(
             f"실적 {metric.name}",
-            _format_value(float(overall[metric.actual_column]), metric),
-            delta=f"{float(overall['Gap']):.{metric.gap_decimals}%}",
+            metric.value_text(float(overall[metric.actual_column])),
+            delta=metric.gap_text(float(overall["Gap"])),
             delta_description="기준 대비",
             border=True,
         )
         st.metric(
             f"기준 {metric.name}",
-            _format_value(float(overall[metric.standard_column]), metric),
+            metric.value_text(float(overall[metric.standard_column])),
             border=True,
         )
         st.metric("개선 필요 공정", f"{len(needs_action):,}개", border=True)
@@ -339,12 +339,6 @@ def _render_actions(
             st.dataframe(shown_actions, hide_index=True, width="stretch")
 
 
-def _format_value(value: float, metric: MetricSpec) -> str:
-    if metric.value_format == "percent":
-        return f"{value:.{metric.value_decimals}%}"
-    return f"{value:,.{metric.value_decimals}f}"
-
-
 def _value_column(metric: MetricSpec) -> Any:
     """`st.column_config` 는 타입이 아니라 생성 함수라 반환형을 이름으로 적을 수 없다."""
     if metric.value_format == "percent":
@@ -438,7 +432,7 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
 
 
 def _value_tick_format(metric: MetricSpec) -> str:
-    """지표 값의 d3 형식. `_format_value` 와 같은 자릿수를 쓴다."""
+    """지표 값의 d3 형식. `MetricSpec.value_text` 와 같은 자릿수를 쓴다."""
     if metric.value_format == "percent":
         return f".{metric.value_decimals}%"
     return f",.{metric.value_decimals}f"
@@ -468,7 +462,7 @@ def _priority_figure(
                 ],
                 "line": {"color": tokens.SURFACE, "width": 1},
             },
-            text=[f"{value:.{metric.gap_decimals}%}" for value in ordered["Gap"]],
+            text=[metric.gap_text(value) for value in ordered["Gap"]],
             textposition="outside",
             # 막대가 0 에서 **왼쪽으로** 뻗으므로 바깥 라벨도 왼쪽으로 나간다. 축 밖으로
             # 나갈 수 있게 열어 두지 않으면 가장 긴 막대의 숫자가 잘린다.

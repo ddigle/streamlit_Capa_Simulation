@@ -81,18 +81,6 @@ def _gap_format(metric: MetricSpec) -> EvidenceFormat:
     return EvidenceFormat("percent", f"Gap ({metric.gap_unit})")
 
 
-def _value_text(value: float, metric: MetricSpec) -> str:
-    """기준·실적 값 글자 — 지표 화면의 값 칸과 같은 꼴(효율 82.0% · UPEH 2,400)."""
-    if metric.value_format == "percent":
-        return f"{value:.{metric.value_decimals}%}"
-    return f"{value:,.{metric.value_decimals}f}"
-
-
-def _gap_text(value: float, metric: MetricSpec) -> str:
-    """Gap 글자 — 단위까지(효율 -10.9% · UPEH -9.4%)."""
-    return f"{value:.{metric.gap_decimals}%}"
-
-
 def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
     """추천 질문 네 개와 그 답. 순서는 실제로 묻게 되는 차례다.
 
@@ -166,9 +154,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
         rows.append(
             {
                 "지표": metric.name,
-                "기준": _value_text(float(worst[metric.standard_column]), metric),
-                "실적": _value_text(float(worst[metric.actual_column]), metric),
-                "Gap": _gap_text(float(worst["Gap"]), metric),
+                "기준": metric.value_text(float(worst[metric.standard_column])),
+                "실적": metric.value_text(float(worst[metric.actual_column])),
+                "Gap": metric.gap_text(float(worst["Gap"])),
                 "공정": str(worst["공정"]),
             }
         )
