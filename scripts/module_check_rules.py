@@ -1706,6 +1706,16 @@ def check_source(
             "Python 3.10 문법 오류입니다 — 고쳐야 화면이 섭니다",
         )
         return context.findings, context.third_party, context.strings
+    except (ValueError, MemoryError, RecursionError) as error:
+        # 널 글자(`ValueError`)·지나치게 깊은 식 — 문법 오류가 아니라서 위에서 걸리지 않는다.
+        context.add(
+            "M13",
+            "error",
+            0,
+            f"파이썬 소스로 읽지 못했습니다({type(error).__name__} — 널 글자·지나치게 깊은 식) — "
+            "고쳐야 화면이 섭니다",
+        )
+        return context.findings, context.third_party, context.strings
     names = _Names(tree)
     context.taint = _write_taint(tree, names)
     _check_imports(tree, context)

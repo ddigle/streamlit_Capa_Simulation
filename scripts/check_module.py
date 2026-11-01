@@ -752,17 +752,28 @@ def main(
     git_checked = rules.inside_git_work_tree(root)
     results = [ModuleResult(number=index, record=record) for index, record in enumerate(records, 1)]
     for result in results:
-        check_one(
-            result,
-            root=root,
-            tree=PROJECT_ROOT,
-            environment=packages,
-            git=git_checked,
-            ruff=not args.no_ruff,
-            tests=not args.no_tests,
-            protect=protect,
-            timeout=timeout,
-        )
+        try:
+            check_one(
+                result,
+                root=root,
+                tree=PROJECT_ROOT,
+                environment=packages,
+                git=git_checked,
+                ruff=not args.no_ruff,
+                tests=not args.no_tests,
+                protect=protect,
+                timeout=timeout,
+            )
+        except Exception as error:  # 한 모듈의 점검 예외가 블록·요약 전체를 지우지 않는다
+            result.findings.append(
+                rules.Finding(
+                    "M13",
+                    "error",
+                    "*",
+                    0,
+                    f"점검 중 예외 {type(error).__name__} — 이 모듈만 멈췄습니다(파일 꼴을 봅니다)",
+                )
+            )
     lines = build_block(
         results,
         root=root,

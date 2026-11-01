@@ -749,6 +749,35 @@ def test_m13_a_python_310_syntax_error(tmp_path: Path) -> None:
     assert ("M13", "error") in _page_rules(tmp_path, "def broken(:\n    pass\n")
 
 
+def test_m13_a_source_with_a_null_byte_is_an_error_not_a_crash(tmp_path: Path) -> None:
+    """`ast.parse` 는 널 글자에 `SyntaxError` 가 아니라 `ValueError` 를 낸다 — 점검이 죽으면 런북
+    4-5 의 블록·요약이 통째로 없어진다."""
+    assert ("M13", "error") in _page_rules(tmp_path, "x = 1\x00\n")
+
+
+def test_one_module_crashing_the_checker_does_not_hide_the_others(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "modules"
+    _fixture_copy(root, "demo_ok")
+    _module(root, "demo_x", {"page.py": HEADER + "import streamlit as st\n"})
+    real = rules.check_module_folder
+
+    def flaky(folder: Path, **kwargs: object) -> rules.StaticResult:
+        if folder.name == "demo_x":
+            raise RuntimeError("점검 안 예외")
+        return real(folder, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(rules, "check_module_folder", flaky)
+
+    code, out = _run(["--all", "--root", str(root), "--no-ruff", "--no-tests"], capsys)
+
+    assert code == 1, out
+    assert "- m1 demo_ok 통과" in out
+    assert "  m2 demo_x 오류 M13 * 점검 중 예외 RuntimeError" in out
+    assert "모듈 2 = 통과 1 + 꺼짐 0 + 실패 1" in _summary(out)
+
+
 def test_m14_a_module_without_tests(tmp_path: Path) -> None:
     folder = _module(
         tmp_path / "modules",
