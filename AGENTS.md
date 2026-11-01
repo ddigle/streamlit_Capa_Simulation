@@ -2124,13 +2124,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/home_preference.py` — HOME `LOB 표시 조건` 카드·`Capa LOB 현황` 제목 줄과 `Preference`
   편집기 여덟을 그려 공용 프로필에 저장한다. 「비교 시나리오」 바로 아래에 「주요 Case」 상자(`home_main_cases`)를 세운다.
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
-  - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
+  - 저장은 **버전 대조**이고(선행 B/O·선행 입고 실적은 대조 없이 `write_guard.save_once` 만) 월별 값은 보이는 달만 갈아
+    끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
     이름·공정 칸의 key 끝에는 고칠 프리셋 저장본의 지문을 붙여, 남의 저장에 거부된 뒤 두 칸이 함께 저장본으로 선다(5장 25).
     바꾼 것 없는 저장(판정 기준·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
     폼 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5·넓힘 — 9장 「바꾼 것 없는 저장」).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
     (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
+    고치지 않은 「프리셋 저장」 의 「바뀐 것이 없습니다」 도 저장처럼 알림을 담고 앱 전체를 다시 돌린다 — 카드는 프래그먼트라
+    카드만 돌면 다른 저장 칸(Summary 공지 등)이 앞 회차에 그린 알림이 이 알림과 두 줄로 남았다(2026-11-01 리뷰,
+    `tests/test_home_key_process_fragment.py`). 느린 둘째 누름은 그 칸의 표지 글이 그 이름의 저장 성공 글일 때만으로 가른다 — 같은
+    칸의 「기본으로」·「삭제」 알림 뒤의 누름은 「바뀐 것이 없습니다」 다.
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
 - `src/capa_simulation/components/home_main_cases.py` — HOME `Preference` 의 「주요 Case」 상자(2026-10-23 사용자 요청).
   HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
@@ -2186,7 +2191,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/advance_shipment.py` — 선행 입고 실적 정규화·편집 병합과 LOB 칸 글자
   (`advance_shipment_notes`). 계산에 들지 않는 표시값이다.
 - `src/capa_simulation/services/monthly_amount.py` — 월별 억Gb 한 칸 공용 프로필(선행 B/O·선행 입고 실적)의 정규화·보인
-  달만 갈아 끼우는 병합·`{YYYYMM: 값}` 사전. 두 편집기가 같은 입력을 같게 저장하도록 규칙을 한 곳에 둔다.
+  달만 갈아 끼우는 병합·`{YYYYMM: 값}` 사전·바꾼 것 없는 저장 견주기(`same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 차례와
+  끝자리를 접는다, 9장 「바꾼 것 없는 저장」). 두 편집기가 같은 입력을 같게 저장하도록 규칙을 한 곳에 둔다.
 - `src/capa_simulation/services/execution_capacity.py` — 확보율 보정(`execution`)의 정규화와 적용
   (`기준 확보율 + 증감/100` — 증감은 확보율에 그대로 더하는 %, 화면 「확보율 보정 +5.0%」).
   - 조정이 없어도 세 컬럼(`기준 확보율`·`확보율 증감`·`실행 비고`)을 늘 만든다. 음수는 0 에서 자르고
@@ -5082,8 +5088,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     끊긴 경합이라 저장 세대로는 못 거른다. 창은 저장에 **들어올 때** 본다 — 설비 쪽 대조를 마친 뒤에 보면 그 사이 창이 지나
     사본 앱 브라우저에서 고침이 듣지 않았다. 설비 마스터 탭·사이드바 팝업 저장도 지나는 길,
     `tests/test_equipment_save_double_press.py`·`tests/test_space_fab_edit_page.py`).
-  - **버전 대조가 없는 공용 저장 폼**(Preference Summary 공지·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적)도
-    `save_once` 를 지나고 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을 0.15~0.4초 간격으로 두 번 누르면 공용 버전만
+  - **`save_once` 를 지나는 공용 저장 폼**(Preference Summary 공지·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적 —
+    공지·구간·프리셋은 버전 대조도 함께 하고, 선행 둘은 대조가 없다)은 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을
+    0.15~0.4초 간격으로 두 번 누르면 공용 버전만
     두 번 올랐다(2026-10-25 E2E). 창 안의 같은 입력은 쓰지 않고 첫 저장으로 알리고, 다른 입력은 창 안이라도 쓴다
     (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 아래 「바꾼 것 없는 저장」 이 거른다(개선 I5 ·
     넓힘) — `save_once` 는 그보다 뒤에서 겹친 둘째 누름(저장본이 아직 낡은 회차)만 맡는다.

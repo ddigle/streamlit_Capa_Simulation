@@ -466,6 +466,33 @@ def test_a_slow_second_press_of_a_preset_save_repeats_the_success(
     assert repository.load_global_key_process().version == 2
 
 
+def test_an_unchanged_preset_save_right_after_a_promotion_still_says_so(
+    repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「기본으로」·「삭제」 는 프리셋 저장과 같은 알림 칸에 적는다. 그 직후(느린 둘째 누름의 창
+    안) 고치지 않고 누른 「프리셋 저장」 은 방금 저장의 둘째 누름이 아니다 — 「기본으로」 알림을
+    다시 그리지 않고 「바뀐 것이 없습니다」 를 세운다(2026-11-01 리뷰 — 칸 이름만 보면 그 알림을
+    방금 저장의 성공으로 읽어 아무것도 알리지 않았다)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository.replace_global_key_process_presets(
+        [("A 그룹", ("DEMO-A",)), ("B 그룹", ("DEMO-B",))], source="처음 저장"
+    )
+    clear_global_key_process_cache()
+    app = _app(repository, _KEY_PROCESS)
+    app.selectbox[0].set_value("B 그룹").run()
+    app.button(key="home_key_process_preset_default").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert _successes(app) == ["「B 그룹」을 기본 프리셋으로 옮겼습니다."]
+    assert repository.load_global_key_process().version == 2
+
+    app = _press(app, "프리셋 저장")
+
+    assert _infos(app) == [KEY_PROCESS_UNCHANGED_MESSAGE]
+    assert not app.success and not app.error, _successes(app) + _errors(app)
+    stored = repository.load_global_key_process()
+    assert (stored.version, stored.preset_names) == (2, ("B 그룹", "A 그룹"))
+
+
 def test_a_new_preset_is_never_an_unchanged_save(repository: DuckDBScenarioRepository) -> None:
     """「＋ 새 프리셋」 은 늘 새로 넣는 저장이라 견주지 않는다 — 저장본 없는 v0 의 첫 프리셋도
     쓴다."""

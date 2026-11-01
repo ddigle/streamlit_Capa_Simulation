@@ -2126,14 +2126,29 @@ def _render_key_process_editor(
         try:
             new_name = normalize_preset_name(name)
             entry = (new_name, tuple(selected))
-            if not is_new and _unchanged_profile_save(
+            unchanged = not is_new and _unchanged_profile_save(
                 profile.version, profile.version, entry == (target, tuple(current))
-            ):
-                # 방금 저장한 같은 이름·공정의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시
-                # 그렸다(write_guard.held_notice — Summary 공지와 같다).
-                if held_notice(KEY_PROCESS_FLASH_KEY) is None:
-                    notice.info(KEY_PROCESS_UNCHANGED_MESSAGE, icon=":material/info:")
+            )
+        except BOOTSTRAP_ERRORS as exc:
+            _reject_key_process_write(exc, notice, save_marks, conflict_marks)
+            return
+        if unchanged:
+            # 방금 저장한 같은 이름·공정의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시
+            # 그렸다(write_guard.held_notice — Summary 공지와 같다). 같은 칸의 「기본으로」·「삭제」
+            # 알림은 그 둘째 누름이 아니다 — 저장 알림 글로 가른다(2026-11-01 리뷰).
+            if held_notice(KEY_PROCESS_FLASH_KEY) == _key_process_saved_message(new_name):
                 return
+            # 이 카드는 프래그먼트라 카드만 돌면 다른 저장 칸(Summary 공지 등)이 앞 회차에 그린
+            # 알림이 그대로 남아 이 알림과 두 줄로 섰다(2026-11-01 리뷰) — 저장처럼 앱 전체를 다시
+            # 돌려 그 칸들을 걷고 이 알림만 세운다.
+            queue_flash(
+                KEY_PROCESS_FLASH_KEY,
+                KEY_PROCESS_UNCHANGED_MESSAGE,
+                kind="info",
+                icon=":material/info:",
+            )
+            st.rerun(scope="app")
+        try:
             presets = (
                 [*profile.presets, entry]
                 if is_new
@@ -2160,7 +2175,7 @@ def _render_key_process_editor(
             _reject_key_process_write(exc, notice, save_marks, conflict_marks)
             return
         remember_own_save(KEY_PROCESS_SAVE_NAME, profile.version, saved.version, save_marks)
-        saved_message = f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다."
+        saved_message = _key_process_saved_message(new_name)
         # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
         # 갈래).
         note_notice(notices, KEY_PROCESS_FLASH_KEY, saved_message)
@@ -2170,6 +2185,11 @@ def _render_key_process_editor(
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(KEY_PROCESS_FLASH_KEY, saved_message)
         st.rerun(scope="app")
+
+
+def _key_process_saved_message(name: str) -> str:
+    """프리셋 저장 성공 알림 글 — 「바뀐 것이 없습니다」 갈래가 느린 둘째 누름을 이 글로 가른다."""
+    return f"프리셋 {quoted(name)}{object_particle(name)} 저장했습니다."
 
 
 def _key_process_widget_key(prefix: str, *identity: object) -> str:
