@@ -71,12 +71,13 @@ def _edit(app: AppTest, edited_rows: dict[int, dict[str, float | None]]) -> None
 def test_an_unsaved_profile_shows_the_default_it_falls_back_to(database: Path) -> None:
     app = _app(database)
 
-    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — 칸은 1 단위 정수이고 코드 기본값은 110·100.
+    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — 칸은 1 단위 소수 칸(`%.0f` — 보이는 수는 정수,
+    # 친 소수는 사사오입 · 아래 「take_a_decimal_point」 시험)이고 코드 기본값은 110·100.
     assert [(widget.label, widget.value) for widget in app.number_input] == [
-        ("기본 확보 기준(%)", 110),
-        ("기본 경고 기준(%)", 100),
+        ("기본 확보 기준(%)", 110.0),
+        ("기본 경고 기준(%)", 100.0),
     ]
-    assert [widget.step for widget in app.number_input] == [1, 1]
+    assert [widget.step for widget in app.number_input] == [1.0, 1.0]
     assert any("코드 기본값" in caption.value for caption in app.caption)
     assert app.session_state[THRESHOLD_BASE_VERSION_KEY] == 0
 
