@@ -126,6 +126,7 @@ __all__ = [
     "SKIPPED_REASON",
     "RateAxis",
     "SheetCanvas",
+    "axis_bounds",
     "build_sheet_canvas",
     "chart_min_width_px",
     "chart_point_month",
@@ -482,8 +483,9 @@ def end_label_anchors(general: float, target: float, *, low: float, high: float)
     return "bottom", "top"
 
 
-def _axis_bounds(values: Sequence[float]) -> tuple[float, float]:
-    """y 축 범위 — (최솟값 − 5) 의 10 단위 내림 ~ (최댓값 + 5) 의 10 단위 올림(초안과 같다)."""
+def axis_bounds(values: Sequence[float]) -> tuple[float, float]:
+    """y 축 범위 — (최솟값 − 5) 의 10 단위 내림 ~ (최댓값 + 5) 의 10 단위 올림(초안과 같다). 유한한
+    값이 없으면 0 ~ 100 이다. 개조 일정 그래프(`modification_schedule_figures`)도 이것을 쓴다."""
     finite = [value for value in values if math.isfinite(value)]
     if not finite:
         return 0.0, 100.0
@@ -504,7 +506,7 @@ def rate_axis(
     result: ConstraintResult, labels: ConstraintLabels, *, show_proportional: bool
 ) -> RateAxis:
     """y 축 범위. 제약 제품 선을 뺀 선(제약 없을 때·기존·비중대로)·기준·제약 목표로 먼저 잡고
-    (`_axis_bounds`), 제약 제품 점은 그 범위 폭만큼 위(`RATE_AXIS_STRETCH`)까지만 축에 넣는다 —
+    (`axis_bounds`), 제약 제품 점은 그 범위 폭만큼 위(`RATE_AXIS_STRETCH`)까지만 축에 넣는다 —
     소요가 아주 작은 달의 제약 확보율(4031%)이 축을 늘려 기존 제품 선과 기준선이 바닥에 눌리지
     않게(2026-10-25 E2E #13·#107). 그보다 큰 점은 위 끝에 ▲ 로 찍고 값은 풍선이 말한다."""
     rows = result.months
@@ -521,14 +523,14 @@ def rate_axis(
             )
             if value is not None
         ]
-    core_low, core_high = _axis_bounds(core)
+    core_low, core_high = axis_bounds(core)
     ceiling = core_high + RATE_AXIS_STRETCH * (core_high - core_low)
     constrained = [
         (row.month, value)
         for row in rows
         if row.in_period and (value := _percent(row.constrained_rate)) is not None
     ]
-    low, high = _axis_bounds(core + [value for _, value in constrained if value <= ceiling])
+    low, high = axis_bounds(core + [value for _, value in constrained if value <= ceiling])
     return RateAxis(low, high, tuple(month for month, value in constrained if value > high))
 
 
