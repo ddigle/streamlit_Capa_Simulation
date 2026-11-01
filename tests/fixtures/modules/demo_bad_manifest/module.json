@@ -1,0 +1,8 @@
+{
+  "id": "demo_bad_manifest",
+  "name": "데모 틀린 선언",
+  "api": 1,
+  "owner": "데모 담당",
+  "enable": true,
+  "maturity": "L0"
+}

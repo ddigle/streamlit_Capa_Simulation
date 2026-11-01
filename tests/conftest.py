@@ -17,6 +17,7 @@ from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
+from capa_simulation import module_failures, module_registry
 from capa_simulation.components import (
     equipment_master_grid,
     page_tabs,
@@ -111,6 +112,30 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _without_internal_modules(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[None]:
+    """사내 모듈 뿌리(`CAPA_MODULES_ROOT`)를 없는 자리로, 모듈 데이터 뿌리를 tmp 로 돌린다.
+
+    사내 저장소에는 `modules/` 가 있다. 진짜 `app.py` 를 도는 AppTest 와 시험이 하위 프로세스로
+    띄우는 앱(`test_check_deploy_screens` 의 Popen 등)이 그것을 찾으면 사이드바에 「사내 모듈」
+    상자가 더 서서 사내에서만 시험이 깨진다. 속성(`settings.MODULES_DIR`)이 아니라 **환경변수**로
+    돌린다 — 하위 프로세스까지 이어진다. 끄는 스위치(`CAPA_MODULES_DISABLED`)는 지우고, 찾기
+    캐시와 실행 기록은 앞뒤로 비운다. 견본이 필요한 시험은 `monkeypatch.setenv(ROOT_ENV_VAR, …)`
+    로 다시 돌린다(캐시 키에 환경변수 값이 들어 있어 따로 비울 필요가 없다).
+    """
+    base = tmp_path_factory.getbasetemp()
+    monkeypatch.setenv(module_registry.ROOT_ENV_VAR, str(base / "absent-modules"))
+    monkeypatch.setenv(module_registry.DATA_ROOT_ENV_VAR, str(base / "module-data"))
+    monkeypatch.delenv(module_registry.DISABLED_ENV_VAR, raising=False)
+    module_registry.clear_discovery_cache()
+    module_failures.clear_records()
+    yield
+    module_registry.clear_discovery_cache()
+    module_failures.clear_records()
 
 
 @pytest.fixture(autouse=True)
