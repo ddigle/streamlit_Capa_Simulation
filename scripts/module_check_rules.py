@@ -1379,6 +1379,11 @@ def _write_taint(tree: ast.Module, names: _Names) -> _WriteTaint:
     while changed:
         changed = False
         for name, value in names.single.items():
+            # 문맥 이름(`ctx = api.context(__file__)`)은 `__file__` 을 받아도 코드 폴더 경로가
+            # 아니다 — `ctx.data_dir` 는 데이터 자리라 쓰기를 권하는 길이고, 코드 폴더는
+            # `ctx.folder` 로만 잡는다.
+            if name in contexts:
+                continue
             if name not in tainted and _tainted(value, tainted, contexts):
                 tainted.add(name)
                 changed = True

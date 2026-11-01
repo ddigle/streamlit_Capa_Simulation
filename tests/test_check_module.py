@@ -759,6 +759,28 @@ def test_m13_file_rules(tmp_path: Path) -> None:
     assert "M13 error README.md" not in found
 
 
+def test_m13_writing_into_ctx_data_dir_is_not_a_code_folder_write(tmp_path: Path) -> None:
+    """문맥은 `api.context(__file__)` 로 만들지만 `ctx.data_dir` 는 데이터 자리다 — 지침서가
+    권하는 쓰기(`(ctx.data_dir / "x").write_bytes(…)`)에 「코드 폴더에 쓴다」 경고를 내면 안
+    된다. `ctx.folder` 로 쓰는 것만 경고다."""
+    body = (
+        "from capa_simulation import module_api as api\n\n"
+        "ctx = api.context(__file__)\n"
+        "TARGET = ctx.data_dir / 'b.csv'\n\n\n"
+        "def save() -> None:\n"
+        '    (ctx.data_dir / "a.csv").write_bytes(b"x")\n'
+        '    TARGET.write_text("x", encoding="utf-8")\n'
+        '    (ctx.folder / "c.csv").write_text("x", encoding="utf-8")\n'
+    )
+    folder = _module(tmp_path / "modules", "demo_x", {"page.py": HEADER + body})
+    result = rules.check_module_folder(
+        folder, module_id="demo_x", pages=["page.py"], environment=ENVIRONMENT, git=None
+    )
+    writes = [item for item in result.findings if item.rule == "M13" and item.level == "warning"]
+
+    assert [item.line for item in writes] == [11], [item.text() for item in writes]
+
+
 def test_m13_a_python_310_syntax_error(tmp_path: Path) -> None:
     assert ("M13", "error") in _page_rules(tmp_path, "def broken(:\n    pass\n")
 
