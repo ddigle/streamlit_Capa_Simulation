@@ -6,9 +6,10 @@
 값이고, v0 에서 편집을 시작한 다른 세션의 저장은 거부되며 DB 는 그대로다. 실제 화면에서는 탭 셋이
 서고 Preference 가 조회기간 줄만 세운다(`navigation`).
 
-편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key`) — 남이 저장한 뒤의 회차·거부 뒤
-회차는 새 key 로 최신을 그린다(보내지 않은 편집이 남의 칸을 가린 채 본 version 만 오르던 결함 —
-2026-10-27 리뷰). 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 성공으로 다시 알린다.
+편집표 key 는 그 회차가 그린 저장본 version 을 든다(`manual_editor_key` — 제출 회차도) — 남이 저장한
+뒤의 회차·거부 뒤 회차·거부된 누름의 둘째 누름 회차는 새 key 로 최신을 그린다(보내지 않은 편집이
+남의 칸을 가린 채 본 version 만 오르던 결함 — 2026-10-27 리뷰). 같은 입력의 꼬리 누름은 「바뀐 칸이
+없어」 가 아니라 성공으로 다시 알린다.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.manual_downtime_tab import (
+    MANUAL_BASE_VERSION_KEY,
     MANUAL_EDITOR_KEY,
     MANUAL_NOTE_KEY,
     MANUAL_SAVE_BUTTON,
@@ -75,8 +77,8 @@ def _app(database_path: Path) -> AppTest:
 
 
 def _edit(app: AppTest, cells: dict[tuple[int, str], float | None], *, version: int = 0) -> None:
-    """편집표 칸을 고친다 — 행 위치(표의 공정 차례 A, B)와 달 칸 이름. `version` 은 그 표가 출발한
-    저장본 version 이다(편집표 key 가 그것을 든다)."""
+    """편집표 칸을 고친다 — 행 위치(표의 공정 차례 A, B)와 달 칸 이름. `version` 은 그 표를 그린
+    회차의 저장본 version 이다(편집표 key 가 그것을 든다)."""
     edited: dict[int, dict[str, float | None]] = {}
     for (row, column), value in cells.items():
         edited.setdefault(row, {})[column] = value
@@ -179,6 +181,54 @@ def test_a_second_session_that_started_from_the_old_version_is_refused(tmp_path:
     _save(second)
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.rows, stored.version) == (((A, 202607, 2.0),), 2)
+
+
+def _drawn_version(app: AppTest) -> int:
+    """이 회차가 그린 편집표가 든 저장본 version(편집표 key 끝)."""
+    drawn = _editor_id(app)
+    return next(version for version in range(10) if manual_editor_key(version) in drawn)
+
+
+def test_a_value_typed_after_a_held_second_press_reaches_the_next_press(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 누름의 둘째 누름(held) 회차는 최신 저장본으로 표를 그리고, 그 표에 친 값은
+    다음 누름에 닿는다.
+
+    둘째 누름이 거부 뒤 회차를 본 version 을 적기 전에 끊으면 본 값이 옛 version 이다. 그 회차가 옛
+    key 로 표를 그리면 거부된 제 값이 남의 값 자리에 보이고, 본 version 은 최신으로 적혀 다음 누름의
+    표가 다른 위젯이 되므로 그 사이 친 값이 버려져 「바뀐 칸이 없어」 가 섰다(2026-11-02 사본 앱 두
+    세션 — 0.15초 더블클릭). 끊긴 회차는 본 version 을 옛 값으로 되살려 흉내 낸다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    path = tmp_path / "equipment.duckdb"
+    first, second = _app(path), _app(path)
+    row_a = _editor_values(first)["공정"].index("WM")
+    _edit(first, {(row_a, "202607"): 1.0})
+    _save(first)
+
+    _edit(second, {(row_a, "202607"): 9.0})
+    next(button for button in second.button if button.label == MANUAL_SAVE_BUTTON).click()
+    pressed = second._tree.get_widget_states()
+    second.run()
+    assert any("다른 사용자가 먼저" in item.value for item in second.error)
+    second.session_state[MANUAL_BASE_VERSION_KEY] = 0
+    second._run(widget_state=pressed)
+    assert not second.exception, [element.message for element in second.exception]
+    assert any("다른 사용자가 먼저" in item.value for item in second.error)
+    assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
+    # 그 회차의 표는 거부된 9.0 이 아니라 남이 저장한 1.0 이다.
+    assert _drawn_version(second) == 1
+    assert _editor_values(second)["202607"][row_a] == pytest.approx(1.0)
+
+    # 거부 표지의 창이 지났다 — 그 표에 새 값을 치고 한 번 누른 저장이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit(second, {(1 - row_a, "202608"): 0.5}, version=_drawn_version(second))
+    second = _save(second)
+
+    assert not any("바뀐 칸이 없어" in item.value for item in second.info)
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202607, 1.0)), 2)
 
 
 def test_another_sessions_save_redraws_the_table_from_the_new_version(tmp_path: Path) -> None:

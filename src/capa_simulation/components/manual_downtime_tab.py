@@ -16,13 +16,16 @@
   저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가 거부하고 최신을 다시 그린다(확보율
   보정 편집표와 같은 길 — 제 저장의 빠른 두 번 누름은 성공으로, 거부 뒤 둘째 누름은 거부로 다시
   알린다). 저장은 **보이는 범위(조회기간 달 × 보이는 공정)만** 갈아 쓰고 그 밖의 저장 칸은 남긴다.
-- **편집표 key 는 표가 출발한 version 을 든다**(`manual_editor_key`). key 붙은 `num_rows="fixed"`
-  편집표는 데이터 서명(칸·행·형)이 같으면 같은 위젯이라, 값이 바뀌어도 브라우저가 보내지 않은 폼
-  편집을 그대로 들고 있다 — 남이 저장한 칸이 보이지 않은 채 본 version 만 최신으로 올라가 그
-  저장을 거부 없이 덮었다(2026-10-27 리뷰, 사본 앱 두 세션). 그래서 제출이 아닌 회차는 그 회차가
-  그린 저장본의 version 으로, 제출 회차는 본 version 으로 key 를 짓는다 — 「본 값」 과 「보이는
-  칸」 이 늘 같은 version 이다. 남이 저장하면(거부 뒤 포함) 보내지 않은 편집은 버려지고 최신이
-  선다. 제출 회차에 옛 key 의 편집이 들어오면 저장소가 거부한다. 바깥 상자는 늘 같은 key
+- **편집표 key 는 그 회차가 그린 저장본 version 을 든다**(`manual_editor_key`). key 붙은
+  `num_rows="fixed"` 편집표는 데이터 서명(칸·행·형)이 같으면 같은 위젯이라, 값이 바뀌어도 브라우저가
+  보내지 않은 폼 편집을 그대로 들고 있다 — 남이 저장한 칸이 보이지 않은 채 본 version 만 최신으로
+  올라가 그 저장을 거부 없이 덮었다(2026-10-27 리뷰, 사본 앱 두 세션). 그래서 key 는 회차마다 그
+  회차가 그린 저장본의 version 으로 짓는다 — 제출 회차도 같다(HOME 판정 기준 · Top5 구간과 같은
+  규칙). 남이 저장하면(거부 뒤 포함) 보내지 않은 편집은 버려지고 최신이 서며, 남의 저장 뒤의
+  제출은 대조 값(본 값 — 옛 version)으로 저장소가 거부한다. 제출 회차를 본 version 으로 지으면
+  거부된 누름의 둘째 누름(held) 회차가 끊긴 거부 뒤 회차 대신 본 version 을 최신으로 적으면서 옛
+  key 로 표를 그려, 거부된 제 값이 남의 값 자리에 보이고 그 표에 친 값이 다음 누름의 새 key 에서
+  버려졌다(2026-11-02 사본 앱 두 세션 — 0.15초 더블클릭). 바깥 상자는 늘 같은 key
   (`MANUAL_EDITOR_KEY`)라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
 - **같은 입력의 꼬리 누름**(0.5~1초 간격 두 번 — 둘째 누름이 첫 저장 뒤 새로 그린 표에서 온다)은
   저장소가 바뀐 것이 없다고 돌려줘 「저장하지 않았습니다」 가 성공 알림 자리를 차지했다
@@ -121,7 +124,7 @@ _HISTORY_LIMIT: Final = 20
 
 
 def manual_editor_key(version: int) -> str:
-    """편집표 위젯 key — 표가 출발한 저장본 version 을 든다(모듈 docstring). 바깥 상자 key 는
+    """편집표 위젯 key — 그 회차가 그린 저장본 version 을 든다(모듈 docstring). 바깥 상자 key 는
     `MANUAL_EDITOR_KEY` 그대로다."""
     return f"{MANUAL_EDITOR_KEY}__v{int(version)}"
 
@@ -289,18 +292,14 @@ def _render_editor(
             refused = take_refusal(MANUAL_SAVE_NAME)
             if refused is not None:
                 st.error(refused)
-        # 편집표 key 는 표가 출발한 version — 제출 회차는 본 version, 그 밖은 이 회차가 그린
-        # 저장본(모듈 docstring). 남이 저장한 뒤의 회차는 새 위젯이라 보내지 않은 편집을 버리고
-        # 최신을 그린다. 이것은 **위젯 key** 일 뿐 대조 값이 아니다 — 저장소에 넘기는 대조 값은
-        # 아래 본 값(`submitted_base`) 그대로이고, 없으면 저장하지 않는다(write_guard).
-        if submitted and isinstance(submitted_base, int):
-            started = submitted_base
-        else:
-            started = profile.version
+        # 편집표 key 는 이 회차가 그린 저장본 version 이다 — 제출 회차도 같다(모듈 docstring). 남이
+        # 저장한 뒤의 회차(탭 왕복 · 거부 뒤 · 제출)는 새 위젯이라 보내지 않은 편집을 버리고 최신을
+        # 그린다. 이것은 **위젯 key** 일 뿐 대조 값이 아니다 — 저장소에 넘기는 대조 값은 아래 본
+        # 값(`submitted_base`) 그대로이고, 없으면 저장하지 않는다(write_guard).
         editor_box = st.container(key=MANUAL_EDITOR_KEY)
         edited = editor_box.data_editor(
             frame,
-            key=manual_editor_key(started),
+            key=manual_editor_key(profile.version),
             hide_index=True,
             num_rows="fixed",
             width="stretch",
