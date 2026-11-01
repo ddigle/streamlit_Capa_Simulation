@@ -27,7 +27,10 @@ from fragment_browser import FragmentBrowser, install_fragment_browser
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import home_preference
-from capa_simulation.persistence.cache import clear_global_key_process_cache
+from capa_simulation.persistence.cache import (
+    clear_global_key_process_cache,
+    clear_global_summary_note_cache,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
@@ -258,3 +261,43 @@ def test_card_operations_rerun_only_the_card_and_saving_reruns_the_whole_app(
     # 새 프로필을 읽어 기본(A)으로 다시 적었다. 사이드바 `주요공정 히트맵` 줄이 보는 칸이다.
     assert app.session_state[home_preference.KEY_PROCESS_PRESET_KEY] == A[0]
     assert app.session_state[TAB_KEY] == PREFERENCE
+
+
+def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
+    tmp_path: Path, browser: FragmentBrowser
+) -> None:
+    """고치지 않고 누른 「프리셋 저장」(「바뀐 것이 없습니다」)도 저장처럼 앱 전체 회차로 바뀐다.
+
+    카드만 돌면 다른 저장 칸이 앞 회차에 그린 알림(Summary 공지의 「바뀐 것이 없습니다」)이 그대로
+    남아 이 알림과 두 줄로 섰다(2026-11-01 리뷰 — 다른 저장 칸끼리는 새 알림이 앞 알림을 대신한다).
+    앱 전체 회차는 프리셋 알림 하나만 세우고 버전은 그대로다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_key_process_presets([A, B], source="시험")
+    repository.replace_global_summary_note("DEMO 잠정 계획", source="시험")
+    clear_global_key_process_cache()
+    clear_global_summary_note_cache()
+    app = AppTest.from_string(_counting_script(database_path), default_timeout=300)
+    app.run()
+    _assert_clean(app)
+    app.session_state[TAB_KEY] = PREFERENCE
+    app.run()
+    _assert_clean(app)
+    next(button for button in app.button if button.label == "Summary 저장").click().run()
+    _assert_clean(app)
+    assert home_preference.SUMMARY_UNCHANGED_MESSAGE in [str(item.value) for item in app.info]
+    full_runs = app.session_state[FULL_RUNS_KEY]
+
+    editor = browser.fragment_of(TARGET_KEY)
+    browser.fragment_queue = [editor]
+    next(button for button in app.button if button.label == "프리셋 저장").click().run()
+    _assert_clean(app)
+    assert browser.started == [[editor], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
+    infos = [str(item.value) for item in app.info]
+    assert home_preference.KEY_PROCESS_UNCHANGED_MESSAGE in infos
+    assert home_preference.SUMMARY_UNCHANGED_MESSAGE not in infos
+    assert repository.load_global_key_process().version == 1
+    clear_global_summary_note_cache()

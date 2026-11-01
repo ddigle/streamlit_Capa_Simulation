@@ -58,7 +58,7 @@ from __future__ import annotations
 
 import html
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Final, NamedTuple
@@ -1235,13 +1235,16 @@ def ordinary_reason_text(
       제약 설비로 다 덮어」(풍선 「27년 7월부터 보유로 다 덮음」).
     - 창 안 증가 없음 — 「개조 30일 안에 늘어날 전용이 없어」.
     - 창 안 증가가 나간 뒤 — 「27년 7월 증가 전에 정지·반출/이설돼」.
-    - 앞 차례 신규가 채움 — 「27년 7월 증가를 먼저 들어온 신규가 채워」.
+    - 앞 차례 신규가 채움 — 「27년 7월 증가를 먼저 들어온 신규가 채워」. 그 달 붙은 몫이 모두 이
+      호기 것이면(앞 모듈 · 일부만 붙은 하나짜리 호기) 「27년 7월 증가는 이 호기 몫으로 다 차」(풍선
+      「…다 참」), 둘이 섞이면 「27년 6월 증가를 먼저 들어온 신규가 채우고 27년 7월 증가는 이 호기
+      몫으로 다 차」.
     - 다 못 채운 증가에 못 붙음 — 「27년 7월 증가 때 들어온 0.50대로는 1대가 되지 않고 SMP-DAF-12B는
       아직 오지 않아」(일부만 붙은 호기는 「남은」, 들어온 몫이 없으면 「… 때 B가 아직 오지 않아」).
     """
     reason: OrdinaryReason = result.ordinary_reason(unit)
     days = result.conditions.modification_days or 0
-    growth = " · ".join(month_name(month) for month in reason.months)
+    growth = _month_names(reason.months)
     if reason.cause == "skipped":
         if result.new_units_skipped:
             return "보유로 제약 기간을 다 덮음" if noun else SKIPPED_REASON
@@ -1255,7 +1258,13 @@ def ordinary_reason_text(
     if reason.cause == "gone":
         return f"{growth} 증가 전에 정지·반출/이설{'' if noun else '돼'}"
     if reason.cause == "filled":
-        return f"{growth} 증가를 먼저 들어온 신규가 {'채움' if noun else '채워'}"
+        own = f"{_month_names(reason.own)} 증가는 이 호기 몫으로 다 {'참' if noun else '차'}"
+        others = _month_names(month for month in reason.months if month not in reason.own)
+        if not others:
+            return own
+        if not reason.own:
+            return f"{others} 증가를 먼저 들어온 신규가 {'채움' if noun else '채워'}"
+        return f"{others} 증가를 먼저 들어온 신규가 채우고 {own}"
     pending = ", ".join(name(module) for module in reason.pending)
     if reason.arrived <= 0:
         return f"{growth} 증가 때 {with_subject_particle(pending)} 아직 오지 " + (
@@ -1266,6 +1275,11 @@ def ordinary_reason_text(
     if not pending:
         return short + ("않음" if noun else "않아")
     return f"{short}않고 {with_topic_particle(pending)} 아직 오지 " + ("않음" if noun else "않아")
+
+
+def _month_names(months: Iterable[int]) -> str:
+    """증가 달 이름을 「 · 」 로 잇는다 — 「27년 6월 · 27년 7월」."""
+    return " · ".join(month_name(month) for month in months)
 
 
 def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:

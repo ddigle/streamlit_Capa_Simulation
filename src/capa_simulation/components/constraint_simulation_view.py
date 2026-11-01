@@ -41,10 +41,11 @@
 그대로다. 보유의 출처와 크기(고른 호기 · 입력 칸 · 그 달 W/D 첫날 보유가 바뀌는 달)는 개조 일정 카드
 머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 남은 보유가 남은 증가를 다 덮어 신규를
 붙이지 않은 호기가 있으면 그 카드가 한 줄로 말한다(`new_stopped_line` — 결정 B1, 증가마다: 첫
-증가부터면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달). 일반 설비가 된 신규의 까닭은 호기마다 한
-길로 가른다(`ConstraintResult.ordinary_reason` → `figures.ordinary_reason_text` — B1 로 붙지 않은
-호기는 그 달부터 보유로 덮임, 그 밖은 창 안 증가 없음 · 나간 뒤 · 앞 차례 신규가 채움 · 1대가 안
-되거나 오지 않은 모듈). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」 처럼 모듈을 붙여 적는다
+증가부터면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달. B1 없이도 붙지 않았을 신규뿐이면 서지 않는다).
+일반 설비가 된 신규의 까닭은 호기마다 한 길로 가른다(`ConstraintResult.ordinary_reason` →
+`figures.ordinary_reason_text` — B1 로 붙지 않은 호기는 그 달부터 보유로 덮임, 그 밖은 창 안 증가
+없음 · 나간 뒤 · 앞 차례 신규가 채움(제 몫으로만 찼으면 「이 호기 몫으로 다 차」) · 1대가 안 되거나
+오지 않은 모듈). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」 처럼 모듈을 붙여 적는다
 (`NewUnitAssignment.label`).
 """
 
@@ -733,9 +734,10 @@ def ordinary_line(result: ConstraintResult) -> str:
 
 
 def new_stopped_line(result: ConstraintResult) -> str:
-    """결정 B1 로 신규를 붙이지 않은 한 줄 — 붙지 않은 호기(`held_back_units`)가 있을 때만. 첫
-    증가부터 덮였으면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달을 적는다(2026-11-01 — 증가마다).
-    창 안에 증가가 없어 어차피 붙지 않았을 신규뿐이면 빈 글자다. 붙지 않은 호기의 까닭(일반 설비
+    """결정 B1 로 신규를 붙이지 않은 한 줄 — 실제로 붙지 않은 호기(`held_back_units` — B1 없이
+    다시 돌리면 몫을 받았을 호기가 있다)가 있을 때만. 첫 증가부터 덮였으면 `NEW_SKIPPED_TEXT`, 뒤
+    증가부터면 그 달을 적는다(2026-11-01 — 증가마다). 창 안에 증가가 없거나 남는 몫이 1대가 되지
+    않아 어차피 붙지 않았을 신규뿐이면 빈 글자다. 붙지 않은 호기의 까닭(일반 설비
     줄 · 회색 줄 · 풍선 — `ConstraintResult.ordinary_reason` 의 `skipped`)도 같은 달을 적는다."""
     stopped = result.new_units_stopped_month
     if stopped is None or not result.held_back_units:

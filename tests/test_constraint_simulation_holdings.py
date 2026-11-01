@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션의 보유 「호기 고르기」·묶음 신규 첫 모듈 규칙·보유로 덮이면 신규를 붙이지
-# 않는 규칙을 손계산과 맞댄다.
+# 않는 규칙과 신규가 일반 설비가 된 까닭을 손계산과 맞댄다.
 
 """제약 시뮬레이션 2판 옵션 — 2026-11-01 사용자 결정(B1 · B2 · B3)의 계산 몫.
 
@@ -37,6 +37,7 @@ from capa_simulation.services.constraint_simulation import (
     UnitModule,
     simulate_constraint,
 )
+from capa_simulation.services.wd_window import wd_window
 
 SINCE = date(2026, 10, 26)
 JUNE_FIRST = date(2027, 5, 25)
@@ -402,6 +403,22 @@ def _random_case(
     return months, conditions, units
 
 
+def _with_bundles(rng: random.Random, units: tuple[NewUnit, ...]) -> tuple[NewUnit, ...]:
+    """신규를 열에 일곱꼴로 두 모듈 묶음(반씩, 뒤 모듈은 0 ~ 60일 늦게)으로 바꾼다 — 남는 모듈이
+    증가 뒤에 오는 갈래(결정 B2-2)를 무작위 문제에 싣는다. 합성이다."""
+    return tuple(
+        _bundle(
+            unit.name,
+            (f"{unit.name}A", unit.start, unit.units / 2),
+            (f"{unit.name}B", unit.start + timedelta(days=rng.randint(0, 60)), unit.units / 2),
+            until=unit.until,
+        )
+        if rng.random() < 0.7
+        else unit
+        for unit in units
+    )
+
+
 def _splits(result: ConstraintResult) -> list[tuple[int, int, int]]:
     return [(row.new_increment, row.owned_increment, row.increment) for row in result.months]
 
@@ -607,7 +624,8 @@ def test_the_other_reasons_follow_what_the_increase_met() -> None:
     """X(5/20)가 6월 증가 1 을 채워 Y(5/21)는 `filled`, Z 는 6월 W/D 첫날(5/25)에 나가 `gone`,
     C(5/20 · 1.5)는 증가 2 에 1대가 붙고 남은 0.5대가 내림 0 이라 `short`(일부 붙음), 묶음
     H(H-A 5/10 1.0 · H-B 6/10 0.5)는 H-A 가 증가를 다 채워 H-B 가 와 있었어도 붙을 자리가
-    없었다 — `filled`."""
+    없었다 — `filled` 이고, 그 달 붙은 몫이 모두 H 것이라 `own` 이다(「이 호기 몫으로 다 참」 —
+    「먼저 들어온 신규가 채움」 은 다른 호기가 채운 것처럼 읽혔다, 2026-11-01 리뷰)."""
     first = NewUnit("X", date(2027, 5, 20), 1.0)
     second = NewUnit("Y", date(2027, 5, 21), 1.0)
     gone = NewUnit("Z", date(2027, 5, 20), 1.0, until=JUNE_FIRST)
@@ -624,7 +642,50 @@ def test_the_other_reasons_follow_what_the_increase_met() -> None:
 
     bundle = _bundle("H", ("H-A", date(2027, 5, 10), 1.0), ("H-B", date(2027, 6, 10), 0.5))
     met = _reason((bundle,), 1)
-    assert met.ordinary_reason(bundle) == OrdinaryReason("filled", months=(202706,), attached=True)
+    assert met.ordinary_reason(bundle) == OrdinaryReason(
+        "filled", months=(202706,), attached=True, own=(202706,)
+    )
+
+
+def test_filled_names_only_the_increases_new_units_filled() -> None:
+    """`filled` 의 달은 신규로 다 채운 증가뿐이다(2026-11-01 리뷰). 필요 6월 1 → 7월 2, 개조 45일,
+    묶음 G(G-A 5/20 0.75 · G-B 6/05 0.75 — 창 [5/20, 7/4]). 6월 증가(t 5/25)에는 G-A 0.75대만 와
+    있어 내림 0 — 개조 1 이다. 7월 증가(t 6/24)는 G-A 0.75 + G-B 0.25 가 채우고 G-B 0.5대가 남는다.
+    남는 G-B 는 6월에 아직 오지 않아 `short` 가 아니고, 까닭은 7월 증가가 다 찬 것뿐이다 — 옛 판은
+    창 안의 두 달을 다 적어 6월(개조 1대)도 「신규가 채워」 라고 했다. 7월은 G 몫으로만 찼다."""
+    months = _months(1, 2)
+    conditions = replace(_conditions(months, new=True), modification_days=45)
+    bundle = _bundle("G", ("G-A", date(2027, 5, 20), 0.75), ("G-B", date(2027, 6, 5), 0.75))
+    result = simulate_constraint(months, conditions, (bundle,))
+    assert _split(result, 202706) == (0, 0, 1)
+    assert _split(result, 202707) == (1, 0, 0)
+    assert [(item.label, item.month, item.units) for item in result.assignments] == [
+        ("G(G-A)", 202707, 0.75),
+        ("G(G-B)", 202707, 0.25),
+    ]
+    assert result.ordinary_reason(bundle) == OrdinaryReason(
+        "filled", months=(202707,), attached=True, own=(202707,)
+    )
+
+
+def test_filled_tells_its_own_increases_from_the_ones_others_filled() -> None:
+    """하나짜리 U(5/25 · 1.5)는 창 [5/25, 6/24] 안에 6월 · 7월 증가(1 씩)가 있다. 6월은 먼저 들어온
+    X(5/20)가 채우고 7월은 U 의 1대가 혼자 채워 0.5대가 남는다 — 두 달 모두 `filled` 이고 7월만
+    `own` 이다. U 하나만이면 6월 증가 1 을 U 가 혼자 채운다(`own` — 리뷰의 1.5대 보기)."""
+    first = NewUnit("X", date(2027, 5, 20), 1.0)
+    unit = NewUnit("U", JUNE_FIRST, 1.5)
+    both = _reason((first, unit), 1, 2)
+    assert [(item.unit, item.month) for item in both.assignments] == [
+        ("X", 202706),
+        ("U", 202707),
+    ]
+    assert both.ordinary_reason(unit) == OrdinaryReason(
+        "filled", months=(202706, 202707), attached=True, own=(202707,)
+    )
+    alone = _reason((replace(unit, start=date(2027, 5, 20)),), 1)
+    assert alone.ordinary_reason(alone.new_units[0]) == OrdinaryReason(
+        "filled", months=(202706,), attached=True, own=(202706,)
+    )
 
 
 def test_a_unit_held_back_by_the_cover_says_so_from_that_growth() -> None:
@@ -634,20 +695,25 @@ def test_a_unit_held_back_by_the_cover_says_so_from_that_growth() -> None:
     6월 증가를 X 가 채웠고 7월 증가(t 6/24)에는 붙을 수 있었다 — 까닭은 「7월부터 보유로
     덮임」(`skipped`)이지 7월 증가 때 1대가 안 돼서(`short`)가 아니다. Z(6/20)는 7월 W/D 첫날
     6/24 에 나가 `gone`, N2(7/1)는 창 안의 8월 증가가 0 이라 `no_growth` — 둘은 B1 로 붙지 않은
-    호기가 아니다."""
+    호기가 아니다. W(5/21 — 창 [5/21, 6/20])는 멈춘 달 **앞** 6월 증가에만 붙을 수 있었고 그
+    증가를 X 가 채웠다 — B1 로 붙지 않은 호기가 아니라 `filled` 다(「멈춘 달부터의 증가」 조건을
+    못박는다, 2026-11-01 리뷰)."""
     months = _months(1, 2, 2)
     first = NewUnit("X", date(2027, 5, 20), 1.0)
+    early = NewUnit("W", date(2027, 5, 21), 1.0)
     held = NewUnit("Y", JUNE_FIRST, 1.0)
     gone = NewUnit("Z", date(2027, 6, 20), 1.0, until=JULY_FIRST)
     late = NewUnit("N2", date(2027, 7, 1), 1.0)
     result = simulate_constraint(
-        months, _conditions(months, held=LATE_HELD, new=True), (first, held, gone, late)
+        months, _conditions(months, held=LATE_HELD, new=True), (first, early, held, gone, late)
     )
     assert _split(result, 202706) == (1, 0, 0)
     assert _split(result, 202707) == (0, 1, 0)
     assert result.new_units_stopped_month == 202707 and not result.new_units_skipped
     assert [unit.name for unit in result.held_back_units] == ["Y"]
+    assert result.held_back == ("Y",)
     assert result.ordinary_reason(held) == OrdinaryReason("skipped", months=(202707,))
+    assert result.ordinary_reason(early) == OrdinaryReason("filled", months=(202706,))
     assert result.ordinary_reason(gone) == OrdinaryReason("gone", months=(202707,))
     assert result.ordinary_reason(late) == OrdinaryReason("no_growth")
 
@@ -680,3 +746,115 @@ def test_a_module_still_missing_after_the_cover_keeps_its_own_reason() -> None:
     assert result.ordinary_reason(bundle) == OrdinaryReason(
         "short", months=(202706, 202707), pending=("G-B",), attached=True
     )
+
+
+# ------------------------------------------------------------------ B1 로 실제로 붙지 않은 호기
+#
+# 「붙일 수 있었나」(`_attachable`)만 보면 B1 이 없어도 붙지 않았을 호기(남는 몫의 내림이 0)가
+# 「보유로 덮어」 를 받고 카드 한 줄이 섰다(2026-11-01 리뷰 — 무작위 합성 문제에서 한 줄이 선 셋에
+# 하나꼴). 이제 멈춘 달부터 B1 없이 다시 돌려(같은 차례 · 내림 · 필요한 만큼만) 가른다.
+
+
+def test_a_unit_that_could_not_make_one_unit_is_not_held_back() -> None:
+    """리뷰의 보기 — 필요 6월 1 → 7월 2 → 8월 2, 목록에 없는 보유 1 + 고른 호기 셋, 신규 N0(5/05 ·
+    0.5대 — 창 [5/05, 6/04]). 6월 증가에서 보유가 다 덮어 멈추지만, B1 이 없어도 N0 의 0.5대는 내림
+    0 이라 6월 증가에 붙지 않는다 — 붙지 않은 호기가 아니고 까닭은 그 0.5대다(`short`)."""
+    months = _months(1, 2, 2)
+    held = (_held("H1"), _held("H2"), _held("H3"))
+    unit = NewUnit("N0", date(2027, 5, 5), 0.5)
+    result = simulate_constraint(months, _conditions(months, owned=1, held=held, new=True), (unit,))
+    assert result.new_units_stopped_month == 202706 and result.new_units_skipped
+    assert result.held_back_units == ()
+    assert result.ordinary_reason(unit) == OrdinaryReason("short", months=(202706,), arrived=0.5)
+
+
+def test_units_behind_one_that_would_have_filled_the_increase_are_held_back_too() -> None:
+    """필요 6월 1, 보유 1 이 덮어 6월(첫 증가)에 멈춘다. B1 이 없었다면 A(5/20)가 6월 증가 1 을
+    채웠다 — A 는 붙지 않은 호기다. B(5/21 · 1.0)와 C(5/22 · 0.5)도 그 증가에 붙을 수 있었지만 A 가
+    필요한 만큼을 채웠을 것이다. 실제로는 그 증가를 보유가 덮었으니 둘의 까닭도 「보유로 덮음」 이다
+    — 「먼저 들어온 신규가 채움」 은 일어나지 않은 일이다."""
+    months = _months(1)
+    units = (
+        NewUnit("A", date(2027, 5, 20), 1.0),
+        NewUnit("B", date(2027, 5, 21), 1.0),
+        NewUnit("C", date(2027, 5, 22), 0.5),
+    )
+    result = simulate_constraint(months, _conditions(months, owned=1, new=True), units)
+    assert result.new_units_skipped
+    assert result.held_back == ("A", "B", "C")
+    assert {result.ordinary_reason(unit).cause for unit in units} == {"skipped"}
+
+
+def test_only_the_fraction_below_one_unit_keeps_its_own_reason() -> None:
+    """필요 6월 2, 보유 2 가 덮어 6월에 멈춘다. B1 이 없었다면 6월 증가 2 에 A(1.0) + C(0.5) 의 내림
+    1대만 붙었다 — A 가 받고 C 는 남은 0.5대가 1대가 되지 않는다. A 는 붙지 않은 호기(카드 한 줄이
+    선다), C 는 `short` 다."""
+    months = _months(2)
+    first = NewUnit("A", date(2027, 5, 20), 1.0)
+    half = NewUnit("C", date(2027, 5, 22), 0.5)
+    result = simulate_constraint(months, _conditions(months, owned=2, new=True), (first, half))
+    assert result.held_back == ("A",)
+    assert result.ordinary_reason(first) == OrdinaryReason("skipped", months=(202706,))
+    assert result.ordinary_reason(half) == OrdinaryReason("short", months=(202706,), arrived=0.5)
+
+
+def test_held_back_units_follow_the_counterfactual_without_the_cover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """작은 무작위 문제 2000개(합성, 셋에 하나는 묶음) — 붙지 않은 호기는 B1 없이(늘 신규 먼저) 돈
+    답과 맞댄다. 멈춘 달부터 그 답에서 몫을 받은 호기와, 그 달부터의 증가 가운데 그 답이 신규로 다
+    채운 증가에 붙일 수 있던(창 · 들어옴 · 나가기 전 · 남는 몫) 호기를 합친 것이 `held_back` 이다.
+    카드 한 줄은 그 답에서 몫을 받은 호기가 있을 때만 선다."""
+    rng = random.Random(20261103)
+    seen = {"received": 0, "behind": 0, "floor_only": 0}
+    for case in range(2000):
+        months, conditions, units = _random_case(rng)
+        if case % 3 == 1:
+            units = _with_bundles(rng, units)
+        result = simulate_constraint(months, conditions, units)
+        stopped = result.new_units_stopped_month
+        if stopped is None:
+            assert result.held_back == ()
+            continue
+        plain = _forced(monkeypatch, months, conditions, units, None)
+        received = {item.unit for item in plain.assignments if item.month >= stopped}
+        reach = timedelta(days=conditions.modification_days or 0)
+        days = [
+            wd_window(row.month, conditions.cutoff_days).first_day
+            for row in plain.months
+            if row.month >= stopped
+            and row.new_increment > 0
+            and row.new_increment == constraint_simulation._offered_to_new(row)
+        ]
+        behind: set[str] = set()
+        for unit in result.new_units:
+            if unit.name in received:
+                continue
+            for piece in unit.pieces:
+                used = sum(
+                    item.units
+                    for item in result.assignments
+                    if item.unit == unit.name and item.module == piece.name
+                )
+                if piece.units - used > 1e-9 and any(
+                    unit.start <= day <= unit.start + reach
+                    and piece.start is not None
+                    and piece.start <= day
+                    and (unit.until is None or day < unit.until)
+                    for day in days
+                ):
+                    behind.add(unit.name)
+        expected = received | behind
+        assert set(result.held_back) == expected, (months, conditions, units)
+        assert bool(received) == bool(result.held_back)
+        seen["received"] += bool(received)
+        seen["behind"] += bool(behind)
+        seen["floor_only"] += any(
+            result.ordinary_reason(unit).cause == "short"
+            and result.ordinary_reason(unit).arrived > 0
+            and max(result.ordinary_reason(unit).months) >= stopped
+            for unit in result.ordinary_units
+        )
+    # 하네스가 세 갈래(받음 · 앞 차례가 채웠을 호기 · 1대가 안 돼 남는 호기)를 실제로 지나는지 —
+    # 표본이 바뀌면 다시 센다.
+    assert seen["received"] >= 100 and seen["behind"] >= 3 and seen["floor_only"] >= 20, seen

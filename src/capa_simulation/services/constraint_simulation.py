@@ -88,6 +88,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from copy import copy
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Final, Literal, NamedTuple
@@ -474,17 +475,20 @@ class OrdinaryReason(NamedTuple):
     (`ConstraintResult.ordinary_reason`).
 
     - `skipped` — 남은 보유만으로 제약 기간 끝까지 남은 증가를 다 채워 그 증가(`months` 의 한 달 —
-      `ConstraintResult.new_units_stopped_month`)부터 신규를 붙이지 않았고, 그 뒤 증가에 이 호기의
-      남는 몫을 붙일 수 있었다(결정 B1 — 증가마다, `ConstraintResult.held_back_units`). 그 달이 첫
-      증가면 보유만으로 제약 기간 끝까지 다 채운 것이다(`new_units_skipped`).
+      `ConstraintResult.new_units_stopped_month`)부터 신규를 붙이지 않았고, B1 이 없었다면 그 뒤
+      증가에 이 호기의 남는 몫이 붙었거나 붙을 수 있던 증가를 앞 차례 신규가 채웠을 것이다(결정 B1
+      — 증가마다, `ConstraintResult.held_back_units`). 그 달이 첫 증가면 보유만으로 제약 기간 끝까지
+      다 채운 것이다(`new_units_skipped`).
     - `no_growth` — 기여 시작 d 에서 개조 일수 D 안(그 달 W/D 첫날 t 가 `d ≤ t ≤ d + D`)에 신규
       차례로 온 늘어난 전용이 없다.
     - `gone` — 그런 증가는 있었지만 모두 그 호기가 나간 날(정지·반출/이설) 뒤다.
-    - `filled` — 그 증가가 있었지만 차례가 앞선 신규(같은 호기의 앞 모듈 포함)가 다 채웠다.
+    - `filled` — 그 증가가 있었지만 신규가 다 채웠다 — 차례가 앞선 신규가 채웠거나, 그 달 붙은
+      몫이 모두 이 호기 것이다(`own` — 같은 호기의 앞 모듈이나, 환산이 1 보다 커 일부만 붙은
+      하나짜리 호기). 신규로 다 채우지 않고 개조로 간 증가는 들지 않는다.
     - `short` — 신규로 다 채우지 않은 증가(B1 로 신규를 붙이지 않기 시작한 달부터의 증가 포함)에
       붙지 못했다 — 그때 들어와 있던 남는 몫(`arrived`)이 내림 정수 1대가 되지 않았거나(환산비
-      나눔), 묶음의 모듈이 그 증가의 t 까지 오지 않았다(`pending` — 결정 B2-2). B1 로 멈춘 뒤의
-      증가에 들어와 있던 몫이 남았으면 `skipped` 라 여기서는 `pending` 만 남는다.
+      나눔 — B1 이 없었어도 못 붙었을 몫이면 멈춘 뒤의 증가도 든다), 묶음의 모듈이 그 증가의 t 까지
+      오지 않았다(`pending` — 결정 B2-2).
     """
 
     cause: OrdinaryCause
@@ -500,6 +504,10 @@ class OrdinaryReason(NamedTuple):
 
     attached: bool = False
     """그 호기의 다른 몫은 증가에 붙었다(일부만 붙은 호기)."""
+
+    own: tuple[int, ...] = ()
+    """`filled` — `months` 가운데 그 달 붙은 신규 몫이 모두 이 호기 것인 달(「이 호기 몫으로 다
+    참」). 나머지 달은 앞 차례 신규가 채웠다."""
 
 
 @dataclass(frozen=True)
@@ -681,6 +689,11 @@ class ConstraintResult:
     보유로만 채우고 신규는 남는 몫 그대로 기존 제품 몫이다. 신규가 걸리고 받은 신규가 있을 때만
     선다 — 아니면 None."""
 
+    held_back: tuple[str, ...] = ()
+    """결정 B1 로 실제로 붙지 않은 신규의 설비키(받은 차례) — 1단계가 멈출 때 한 번
+    정한다(`_held_back`). 멈추지 않았으면 빈다. 화면은 `held_back_units` · `ordinary_reason` 으로
+    읽는다."""
+
     def month(self, month: int) -> ConstraintMonth:
         """그 달의 결과. 보이는 달이 아니면 KeyError."""
         for row in self.months:
@@ -715,50 +728,31 @@ class ConstraintResult:
 
     @property
     def held_back_units(self) -> tuple[NewUnit, ...]:
-        """결정 B1 로 붙지 않은 신규 — 남는 몫이 있고, 신규를 붙이지 않기 시작한 달
-        (`new_units_stopped_month`)부터의 어느 증가 t 에 그 몫을 붙일 수 있었던 호기(`_attachable`
-        — `_NewPool.take` 와 같은 판정). 화면이 일반 설비가 된 까닭을 호기마다 가른다 — 창 안에
-        증가가 없던 호기는 들지 않는다."""
-        stopped = self.new_units_stopped_month
-        if stopped is None:
-            return ()
-        reach = timedelta(days=self.conditions.modification_days or 0)
-        days = [
-            wd_window(row.month, self.conditions.cutoff_days).first_day
-            for row in self.months
-            if row.month >= stopped and row.growth > 0
-        ]
-        held: list[NewUnit] = []
-        for unit in self.new_units:
-            for piece in unit.pieces:
-                used = sum(
-                    item.units
-                    for item in self.assignments
-                    if item.unit == unit.name and item.module == piece.name
-                )
-                if piece.units - used > NEED_TOLERANCE and any(
-                    _attachable(unit, piece, day, reach) for day in days
-                ):
-                    held.append(unit)
-                    break
-        return tuple(held)
+        """결정 B1 로 실제로 붙지 않은 신규(`held_back` — 받은 차례). 신규를 붙이지 않기 시작한 달
+        (`new_units_stopped_month`)부터 B1 없이 1단계를 다시 돌렸다면 몫을 받았을 호기와, 그 증가에
+        붙일 수 있었는데 앞 차례 신규가 다 채웠을 호기다(`_held_back`). 창 안에 증가가 없던
+        호기와, 붙일 수 있었어도 남는 몫이 내림 정수 1대가 되지 않아 B1 없이도 못 붙었을 호기는
+        들지 않는다 — 화면이 일반 설비가 된 까닭을 호기마다 가르고, 카드 한 줄(「신규를 더 붙이지
+        않았습니다」)은 이 호기가 있을 때만 선다."""
+        return tuple(unit for unit in self.new_units if unit.name in self.held_back)
 
     def ordinary_reason(self, unit: NewUnit) -> OrdinaryReason:
         """그 신규 호기의 남는 몫이 증가에 붙지 못하고 기존 제품 몫이 된 까닭(`OrdinaryReason`).
 
-        1단계의 붙임(`_NewPool.take`)을 결과로 되짚는다. 결정 B1 로 붙지 않은 호기
-        (`held_back_units` — 신규를 붙이지 않기 시작한 달부터의 증가에 남는 몫을 붙일 수 있었던
-        호기)는 `skipped` 이고 그 달(`new_units_stopped_month`)을 든다(2026-11-01 — 증가마다). 그
-        밖에는 신규 차례로 온 늘어난 전용(`_offered_to_new` > 0)의 달 가운데 그 달 W/D 첫날 t 가
-        호기의 창 `[d, d + D]` 안인 달을 보고, 그런 달이 없으면 `no_growth`, 있으면 나간 뒤인지
-        (`gone`) · 남는 몫이 그때 와 있었는지 · 그 증가를 다 채웠는지(`filled` · `short`)로 가른다.
-        멈춘 달부터의 증가(신규 0)도 여기 든다 — 그 달에 붙일 수 없던 까닭(나감 · 아직 오지 않은
-        모듈)이 그대로 글이 된다. 「개조 D 일 안에 늘어날 전용이 없어」 를 모든 남는 몫에 적으면
-        묶음의 일부 모듈만 온 증가(0.5대 — 내림 0)에도 그 글이 섰다(2026-11-01 E2E).
+        1단계의 붙임(`_NewPool.take`)을 결과로 되짚는다. 결정 B1 로 실제로 붙지 않은 호기
+        (`held_back` — B1 이 없었다면 멈춘 달부터의 증가에 몫이 붙었거나 붙을 수 있던 증가를 앞 차례
+        신규가 채웠을 호기)는 `skipped` 이고 그 달(`new_units_stopped_month`)을 든다(2026-11-01 —
+        증가마다). 그 밖에는 신규 차례로 온 늘어난 전용(`_offered_to_new` > 0)의 달 가운데 그 달 W/D
+        첫날 t 가 호기의 창 `[d, d + D]` 안인 달을 보고, 그런 달이 없으면 `no_growth`, 있으면 나간
+        뒤인지(`gone`) · 남는 몫이 그때 와 있었는지 · 그 증가를 다 채웠는지(`filled` · `short`)로
+        가른다. 멈춘 달부터의 증가(신규 0)도 여기 든다 — 그 달에 붙일 수 없던 까닭(나감 · 아직 오지
+        않은 모듈 · B1 없이도 1대가 되지 않는 몫)이 그대로 글이 된다. 「개조 D 일 안에 늘어날 전용이
+        없어」 를 모든 남는 몫에 적으면 묶음의 일부 모듈만 온 증가(0.5대 — 내림 0)에도 그 글이
+        섰다(2026-11-01 E2E).
         """
         attached = self.assigned_units(unit) > 0
         stopped = self.new_units_stopped_month
-        if stopped is not None and any(item.name == unit.name for item in self.held_back_units):
+        if stopped is not None and unit.name in self.held_back:
             return OrdinaryReason("skipped", months=(stopped,), attached=attached)
         cutoff = self.conditions.cutoff_days
         reach = timedelta(days=self.conditions.modification_days or 0)
@@ -790,9 +784,18 @@ class ConstraintResult:
             and (not arrived or any(_came_by(piece, day) for piece, _ in arrived))
         ]
         if not short:
-            return OrdinaryReason(
-                "filled", months=tuple(row.month for row, _ in present), attached=attached
+            # 신규로 다 채운 증가만 — 남는 모듈이 아직 오지 않아 `short` 에서 빠진, 개조로 간 달까지
+            # 적으면 그 달 개조 일정 줄과 어긋났다(2026-11-01 리뷰). 마지막 달은 늘 여기 든다 —
+            # 다 채우지 않았다면 `short` 였다.
+            filled = tuple(
+                row.month for row, _ in present if row.new_increment >= _offered_to_new(row)
             )
+            own = tuple(
+                month
+                for month in filled
+                if all(item.unit == unit.name for item in self.assignments if item.month == month)
+            )
+            return OrdinaryReason("filled", months=filled, own=own, attached=attached)
         return OrdinaryReason(
             "short",
             months=tuple(short),
@@ -826,10 +829,15 @@ class ConstraintResult:
 
 
 def _offered_to_new(row: ConstraintMonth) -> int:
-    """그 달 늘어난 전용 가운데 신규 차례에 남아 있던 대수 — `FILL_ORDER` 에서 신규 앞에 선
-    몫(보유)을 뺀다. 신규가 맨 앞이면 늘어난 대수 그대로다."""
+    """그 달 늘어난 전용 가운데 신규 차례에 남아 있던 대수(`_new_turn`)."""
+    return _new_turn(row.growth, row.owned_increment)
+
+
+def _new_turn(growth: int, owned_increment: int) -> int:
+    """늘어난 전용 가운데 신규 차례에 남아 있던 대수 — `FILL_ORDER` 에서 신규 앞에 선 몫(보유)을
+    뺀다. 신규가 맨 앞이면 늘어난 대수 그대로다."""
     ahead = FILL_ORDER[: FILL_ORDER.index(FILL_NEW)]
-    return row.growth - (row.owned_increment if FILL_OWNED in ahead else 0)
+    return growth - (owned_increment if FILL_OWNED in ahead else 0)
 
 
 def _came_by(piece: UnitModule, day: date) -> bool:
@@ -931,6 +939,12 @@ class _NewPool:
         )
         self.left = [float(piece.units) for _unit, piece in self.pieces]
         self.reach = timedelta(days=reach_days)
+
+    def trial(self) -> _NewPool:
+        """남은 몫을 베낀 사본 — 시험 삼아 꺼내 써도 이 pool 은 그대로다(`_held_back`)."""
+        twin = copy(self)
+        twin.left = list(self.left)
+        return twin
 
     def take(
         self, wanted: int, *, month: int, first_day: date
@@ -1201,12 +1215,14 @@ _NO_CARRY: Final = _Carry()
 
 
 class _Period(NamedTuple):
-    """1단계 결과 — 달마다의 몫 · 개조 창 · 붙인 신규 몫 · 신규를 붙이지 않기 시작한 달(B1)."""
+    """1단계 결과 — 달마다의 몫 · 개조 창 · 붙인 신규 몫 · 신규를 붙이지 않기 시작한 달과 그래서
+    실제로 붙지 않은 신규(B1)."""
 
     plans: list[_Plan]
     windows: list[ModificationWindow]
     assignments: list[NewUnitAssignment]
     stopped_month: int | None
+    held_back: tuple[str, ...] = ()
 
 
 def _plan_period(
@@ -1214,6 +1230,8 @@ def _plan_period(
     conditions: ConstraintConditions,
     pool_of_new: _NewPool | None,
     carry: _Carry = _NO_CARRY,
+    *,
+    stops: bool = True,
 ) -> _Period:
     """1단계 — 제약 몫(가정 7·1·3·2·4)과 개조 창. 늘어난 대수는 `FILL_ORDER`(신규 · 보유) 차례로
     채우고 남는 개조 몫만 창을 낸다(모듈 독스트링 「개조 없이 채우는 몫」). `pool_of_new` 가 None
@@ -1221,12 +1239,15 @@ def _plan_period(
 
     신규가 걸리면 늘어나는 달마다 먼저 그 달부터 끝까지 신규 없이 돌려 보고 개조 창이 없으면(남은
     보유가 남은 증가를 다 덮음) 그 달부터 신규를 붙이지 않는다(2026-11-01 사용자 결정 B1 —
-    증가마다). 덮인 뒤의 달은 그 시험 답과 같아 다시 보지 않는다."""
+    증가마다). 덮인 뒤의 달은 그 시험 답과 같아 다시 보지 않는다. 멈추면 그래서 실제로 붙지 않은
+    신규를 한 번 정해 싣는다(`_held_back`). `stops` 가 거짓이면 B1 없이 늘 차례 그대로다(그
+    시험이 쓴다)."""
     cutoff = conditions.cutoff_days
     plans: list[_Plan] = []
     windows: list[ModificationWindow] = []
     assignments: list[NewUnitAssignment] = []
     stopped: int | None = None
+    stop_index, stop_carry = 0, carry
     previous_in_period, previous_pool = carry.in_period, carry.pool
     owned_used, new_used, modified_used = carry.owned_used, carry.new_used, carry.modified_used
     for index, row in enumerate(months):
@@ -1246,13 +1267,15 @@ def _plan_period(
             pool = max(carried, need)
             unfilled = pool - carried
             if (
-                stopped is None
+                stops
+                and stopped is None
                 and unfilled > 0
                 and pool_of_new is not None
                 and pool_of_new.units
                 and _holdings_cover_rest(months[index:], conditions, before)
             ):
                 stopped = row.month
+                stop_index, stop_carry = index, before
             new_source = pool_of_new if stopped is None else None
             for source in FILL_ORDER:
                 if unfilled <= 0:
@@ -1299,7 +1322,11 @@ def _plan_period(
             )
         )
         previous_in_period, previous_pool = inside, pool
-    return _Period(plans, windows, assignments, stopped)
+    held: tuple[str, ...] = ()
+    if stopped is not None and pool_of_new is not None:
+        # 멈춘 달부터는 신규를 꺼내지 않아 pool 이 그 달 앞 그대로다.
+        held = _held_back(months[stop_index:], conditions, pool_of_new, stop_carry)
+    return _Period(plans, windows, assignments, stopped, held)
 
 
 def _holdings_cover_rest(
@@ -1309,6 +1336,45 @@ def _holdings_cover_rest(
     `carry` 에서 1단계를 다시 돌려 개조 창이 하나도 없으면 참(결정 B1). 보유가 0 이면 늘어나는
     달에 늘 개조가 남아 거짓이다."""
     return not _plan_period(rest, conditions, None, carry).windows
+
+
+def _held_back(
+    rest: Sequence[ConstraintMonthInput],
+    conditions: ConstraintConditions,
+    pool: _NewPool,
+    carry: _Carry,
+) -> tuple[str, ...]:
+    """결정 B1 로 실제로 붙지 않은 신규의 설비키(받은 차례) — `rest` 는 신규를 붙이지 않기 시작한
+    달부터 끝까지, `pool` · `carry` 는 그 달 앞 값이다.
+
+    그 달부터 B1 없이(늘 신규 먼저) 1단계를 `pool` 사본으로 다시 돌려(같은 차례 · 내림 · 필요한
+    만큼만) 몫을 받는 호기가 B1 로 붙지 않은 호기다. 그 증가에 붙일 수 있었는데 앞 차례 신규가
+    필요한 만큼을 다 채웠을 호기도 든다 — 실제로는 그 증가를 보유가 덮었으니 「보유로 덮음」 이
+    참이고 「앞 차례 신규가 채움」 은 일어나지 않은 일이다. 붙일 수 있었어도 남는 몫이 내림 정수
+    1대가 되지 않아 B1 없이도 못 붙었을 호기는 들지 않는다 — 그 까닭(「…대로는 1대가 되지 않아」)이
+    그대로 글이 되고, 그런 호기뿐이면 카드 한 줄이 서지 않는다(2026-11-01 리뷰 — 「붙일 수
+    있었나」 만 보면 무작위 합성 문제에서 한 줄이 선 셋에 하나꼴로 B1 이 막은 호기가 없었다). 받은
+    몫이 없는 호기의 남은 몫은 사본에서도 그대로라 `pool.left` 로 본다."""
+    period = _plan_period(rest, conditions, pool.trial(), carry, stops=False)
+    names = {item.unit for item in period.assignments}
+    cutoff = conditions.cutoff_days
+    filled = [
+        wd_window(row.month, cutoff).first_day
+        for row, plan in zip(rest, period.plans, strict=True)
+        if plan.new_increment > 0
+        and plan.new_increment
+        == _new_turn(
+            plan.owned_increment + plan.new_increment + plan.increment, plan.owned_increment
+        )
+    ]
+    for index, (unit, piece) in enumerate(pool.pieces):
+        if (
+            unit.name not in names
+            and pool.left[index] > NEED_TOLERANCE
+            and any(_attachable(unit, piece, day, pool.reach) for day in filled)
+        ):
+            names.add(unit.name)
+    return tuple(unit.name for unit in pool.units if unit.name in names)
 
 
 def simulate_constraint(
@@ -1337,7 +1403,7 @@ def simulate_constraint(
     received = (
         _NewPool(new_units, reach_days=conditions.modification_days or 0) if takes_new else None
     )
-    plans, windows, assignments, stopped = _plan_period(months, conditions, received)
+    plans, windows, assignments, stopped, held_back = _plan_period(months, conditions, received)
 
     # 2단계 — 개조 비가동(가정 5)·신규 대기·배정(가정 6)·확보율·비중 견주기.
     results: list[ConstraintMonth] = []
@@ -1425,6 +1491,7 @@ def simulate_constraint(
         assignments=tuple(assignments),
         waits_before_range=waits_before,
         new_units_stopped_month=stopped,
+        held_back=held_back,
     )
 
 

@@ -38,6 +38,7 @@ from test_constraint_simulation_holdings import (
     _held,
     _months,
     _random_case,
+    _with_bundles,
 )
 from test_constraint_simulation_options import NEW_ON, SINCE, _unit
 
@@ -82,12 +83,14 @@ from capa_simulation.components.plotly_layout import plotly_validation
 from capa_simulation.design import tokens
 from capa_simulation.services.constraint_simulation import (
     FILL_NEW,
+    FILL_ORDER,
     FILL_OWNED,
     ConstraintMonthInput,
     ConstraintResult,
     NewUnit,
     simulate_constraint,
 )
+from capa_simulation.services.wd_window import wd_window
 
 LABELS = ConstraintLabels(
     process="TC Bonding",
@@ -1284,22 +1287,30 @@ def test_a_first_growth_cover_speaks_only_when_a_unit_was_held_back() -> None:
 
 def test_the_stop_line_and_the_reasons_tell_the_same_story() -> None:
     """B1 증가마다(`feat/b1-widen-1101`)와 호기마다 까닭(`fix/e2e-1101`)을 합친 꼴의 맞물림 — 작은
-    무작위 문제 400개(`_random_case`, 합성). 일반 설비가 된 신규마다:
+    무작위 문제 600개(`_random_case`, 셋에 하나는 묶음 — `_with_bundles`, 합성). 일반 설비가 된
+    신규마다:
 
-    - 까닭이 「보유로 덮임」(`skipped`)인 것은 B1 로 붙지 않은 호기(`held_back_units`)와 꼭 같고, 그
-      달은 신규를 붙이지 않기 시작한 달이다 — 글에 「보유」 가 드는 것도 그 호기뿐이다.
+    - 까닭이 「보유로 덮임」(`skipped`)인 것은 B1 로 실제로 붙지 않은 호기(`held_back_units`)와 꼭
+      같고, 그 달은 신규를 붙이지 않기 시작한 달이다 — 글에 「보유」 가 드는 것도 그 호기뿐이다.
+      붙지 않은 호기는 멈춘 달부터의 증가 가운데 붙일 수 있던 증가가 있다(무엇이 붙지 않은
+      호기인지는 `tests/test_constraint_simulation_holdings.py` 가 B1 없이 돈 답과 맞댄다).
     - 카드 한 줄(`new_stopped_line`)은 그런 호기가 있을 때만 선다 — 한 줄은 없는데 까닭만 「보유로
       덮어」 이거나, 한 줄은 섰는데 그렇게 적힌 호기가 없는 일이 없다.
-    - 멈춘 달부터의 증가는 신규가 0 이라 「앞 차례 신규가 채움」 · 「들어온 몫이 1대가 안 됨」 의
-      달에 들지 않는다(그 달에 들어와 있던 몫이 남았으면 붙지 않은 호기다).
+    - 멈춘 달부터의 증가는 신규가 0 이라 「신규가 채움」 의 달에 들지 않는다. 「들어온 몫이 1대가
+      안 됨」 에는 들 수 있다 — B1 없이도 그 증가에 1대가 되지 않는 몫이다.
+    - 「신규가 채움」 의 달은 신규로 다 채운 증가이고, 「이 호기 몫으로 다 참」 의 달은 그 달 붙은
+      몫이 모두 그 호기 것이다.
     """
     rng = random.Random(20261102)
-    seen = {"skipped": 0, "other_after_stop": 0}
-    for _case in range(400):
+    seen = {"skipped": 0, "other_after_stop": 0, "own": 0}
+    for case in range(600):
         months, conditions, units = _random_case(rng)
+        if case % 3 == 1:
+            units = _with_bundles(rng, units)
         result = simulate_constraint(months, conditions, units)
         stopped = result.new_units_stopped_month
         held = {unit.name for unit in result.held_back_units}
+        reach = conditions.modification_days or 0
         skipped = False
         for unit in result.ordinary_units:
             reason = result.ordinary_reason(unit)
@@ -1311,14 +1322,81 @@ def test_the_stop_line_and_the_reasons_tell_the_same_story() -> None:
                 seen["skipped"] += 1
                 assert reason.months == (stopped,)
                 assert figures.month_name(reason.months[0]) in text or result.new_units_skipped
-            elif stopped is not None:
-                if reason.cause == "filled" or (reason.cause == "short" and reason.arrived > 0):
+                assert stopped is not None
+                assert any(
+                    row.month >= stopped
+                    and row.growth > 0
+                    and unit.start <= (day := wd_window(row.month, 7).first_day)
+                    and (day - unit.start).days <= reach
+                    and (unit.until is None or day < unit.until)
+                    for row in result.months
+                ), (unit, months, conditions)
+            elif reason.cause == "filled":
+                assert reason.months, reason
+                for month in reason.months:
+                    row = result.month(month)
+                    offered = row.growth - (
+                        row.owned_increment
+                        if FILL_ORDER.index(FILL_OWNED) < FILL_ORDER.index(FILL_NEW)
+                        else 0
+                    )
+                    assert row.new_increment > 0 and row.new_increment == offered, reason
+                    owners = {item.unit for item in result.assignments if item.month == month}
+                    assert (month in reason.own) == (owners == {unit.name}), (reason, owners)
+                    seen["own"] += month in reason.own
+                if stopped is not None:
                     assert all(month < stopped for month in reason.months), reason
+            if stopped is not None and reason.cause != "skipped":
                 seen["other_after_stop"] += 1
         assert bool(new_stopped_line(result)) == skipped, (months, conditions, units)
-    # 표본이 두 갈래(붙지 않은 호기 · 멈춘 뒤 다른 까닭)를 실제로 지나는지 — 표본이 바뀌면 다시
-    # 센다.
-    assert seen["skipped"] >= 20 and seen["other_after_stop"] >= 20, seen
+    # 표본이 갈래(붙지 않은 호기 · 멈춘 뒤 다른 까닭 · 제 몫으로 참)를 실제로 지나는지 — 표본이
+    # 바뀌면 다시 센다.
+    assert seen["skipped"] >= 20 and seen["other_after_stop"] >= 20 and seen["own"] >= 5, seen
+
+
+def test_a_cover_where_no_unit_would_have_attached_says_nothing_on_the_card() -> None:
+    """2026-11-01 리뷰의 보기 — 보유가 6월 증가부터 다 덮어 멈췄지만 신규 N0(5/05 · 0.5대)은 B1 이
+    없어도 내림 0 이라 붙지 않았다. 카드 한 줄은 서지 않고(옛 판은 `NEW_SKIPPED_TEXT`), N0 의 까닭은
+    「보유로 덮어」 가 아니라 그 0.5대다."""
+    months = _months(1, 2, 2)
+    held = (_held("H1"), _held("H2"), _held("H3"))
+    unit = NewUnit("N0", date(2027, 5, 5), 0.5)
+    result = simulate_constraint(months, _conditions(months, owned=1, held=held, new=True), (unit,))
+    assert result.new_units_skipped
+    assert new_stopped_line(result) == ""
+    assert ordinary_line(result) == (
+        "일반 설비가 된 신규 0.50대 — N0 · 27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않아 기존 "
+        "제품 몫(제약에 쓰려면 개조)"
+    )
+
+
+def test_an_increase_the_unit_filled_by_itself_is_not_said_to_be_filled_by_another() -> None:
+    """그 달 붙은 몫이 모두 그 호기 것이면 「먼저 들어온 신규가 채워」 가 아니라 「이 호기 몫으로 다
+    차」 다(2026-11-01 리뷰). 묶음 G(G-A 5/20 0.75 · G-B 6/05 0.75, 개조 45일)는 7월 증가를 제
+    두 모듈로 채우고 G-B 0.5대가 남는다 — 6월(개조 1대)은 적지 않는다. 하나짜리 U(5/25 · 1.5)는
+    6월 증가를 앞선 X 가, 7월 증가를 제 1대가 채웠다 — 두 말을 잇는다."""
+    months = _months(1, 2)
+    conditions = replace(_conditions(months, new=True), modification_days=45)
+    bundle = _bundle("G", ("G-A", date(2027, 5, 20), 0.75), ("G-B", date(2027, 6, 5), 0.75))
+    result = simulate_constraint(months, conditions, (bundle,))
+    assert ordinary_line(result) == (
+        "일반 설비가 된 신규 0.50대 — G 남는 0.50대 · 27년 7월 증가는 이 호기 몫으로 다 차 기존 "
+        "제품 몫(제약에 쓰려면 개조)"
+    )
+    assert figures.new_unit_fate(bundle, result).endswith(
+        " · 남는 0.50대 일반 설비(27년 7월 증가는 이 호기 몫으로 다 참)"
+    )
+
+    unit = NewUnit("U", JUNE_FIRST, 1.5)
+    both = simulate_constraint(
+        months, _conditions(months, new=True), (NewUnit("X", date(2027, 5, 20), 1.0), unit)
+    )
+    assert figures.ordinary_reason_text(unit, both) == (
+        "27년 6월 증가를 먼저 들어온 신규가 채우고 27년 7월 증가는 이 호기 몫으로 다 차"
+    )
+    assert figures.ordinary_reason_text(unit, both, noun=True) == (
+        "27년 6월 증가를 먼저 들어온 신규가 채우고 27년 7월 증가는 이 호기 몫으로 다 참"
+    )
 
 
 def test_a_partly_attached_unit_is_named_with_its_leftover() -> None:
