@@ -106,7 +106,12 @@ from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_contributions,
 )
 from capa_simulation.services.process_cutoff import ALL_PRODUCTS, cutoff_setting
-from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED, unit_order
+from capa_simulation.services.required_shortening import (
+    KIND_NEW,
+    KIND_SHORTENED,
+    unit_order,
+    whole_cell,
+)
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -1244,9 +1249,9 @@ def _event(
     qual = _as_date(plan.get("기존 Qual")) if plan is not None else None
     if qual is None and base is not None:
         qual = _as_date(base["Qual일정"])
-    modules = _whole(plan.get("모듈 수")) if plan is not None else None
+    modules = whole_cell(plan.get("모듈 수")) if plan is not None else None
     if modules is None and base is not None:
-        modules = _whole(base["모듈 수"])
+        modules = whole_cell(base["모듈 수"])
     start = qual + _ONE_DAY if qual is not None else None
     arrival = _as_date(base[ARRIVAL_DATE_COLUMN]) if base is not None else None
     exit_day = _as_date(base["반출이설일"]) if base is not None else None
@@ -1268,7 +1273,7 @@ def _event(
         "모듈별 Qual": base["모듈별 Qual"] if base is not None else (),
         "목표 Qual": target,
         "목표 기여 시작": target_start,
-        "단축일수": None if plan is None else _whole(plan.get("단축일수")),
+        "단축일수": None if plan is None else whole_cell(plan.get("단축일수")),
         "늘어난 환산대수": (
             math.nan if plan is None else float(str(plan.get("늘어난 환산대수", math.nan)))
         ),
@@ -1281,7 +1286,7 @@ def _event(
             and arrival is not None
             and target < arrival
         ),
-        "대상 월": None if plan is None else _whole(plan.get("대상 월")),
+        "대상 월": None if plan is None else whole_cell(plan.get("대상 월")),
         "해소 기여 월": () if plan is None else _month_tuple(plan.get("해소 기여 월")),
         "반입 위치": x(None if arrival is None else arrival + _ONE_DAY),
         "기여 시작 위치": math.nan if start_position is None else start_position.x,
@@ -1865,7 +1870,3 @@ def _text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
-
-
-def _whole(value: object) -> int | None:
-    return None if blank_cell(value) else int(str(value))

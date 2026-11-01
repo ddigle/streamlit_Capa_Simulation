@@ -173,6 +173,7 @@ __all__ = [
     "unit_export_frame",
     "unit_number",
     "unit_order",
+    "whole_cell",
 ]
 
 TARGET_LEVELS: tuple[float, ...] = (0.9, 1.0, 1.1, 1.2, 1.3)
@@ -1234,7 +1235,7 @@ def _export_row(
     attributes = master.get(str(row["호기"]), {}) if shortened else {}
     original = _as_date(row["기존 Qual"]) if shortened else None
     target = _as_date(row["목표 Qual"])
-    month = _whole_number(row["대상 월"])
+    month = whole_cell(row["대상 월"])
     before, after = (math.nan, math.nan)
     if month is not None:
         before, after = gaps.get((process, month), (math.nan, math.nan))
@@ -1303,7 +1304,7 @@ def process_month_export_frame(
     return pd.concat(blocks, ignore_index=True).loc[:, list(PROCESS_MONTH_EXPORT_COLUMNS)]
 
 
-def _whole_number(value: object) -> int | None:
+def whole_cell(value: object) -> int | None:
     """표 칸의 정수(`Int64` 의 빈칸은 None)."""
     return None if blank_cell(value) else int(str(value))
 
