@@ -21,6 +21,7 @@ from capa_simulation.module_registry import (
     ROOT_ENV_VAR,
     ManifestError,
     ModuleScan,
+    TitleClash,
     cached_manifest,
     discovered,
     key_prefix,
@@ -318,7 +319,7 @@ def test_titles_with_markdown_characters_fail(tmp_path: Path, title: str) -> Non
 def test_titles_that_clash_with_core_names_fail(tmp_path: Path, title: str) -> None:
     _write_module(tmp_path, "demo_a", pages=[{"slug": "main", "file": "page.py", "title": title}])
 
-    assert _one(tmp_path) == ("failed", f"화면 이름 겹침: {title}")
+    assert _one(tmp_path) == ("failed", f"화면 이름 겹침: {title} — 코어 화면")
 
 
 def test_a_title_repeated_inside_one_module_is_a_manifest_error(tmp_path: Path) -> None:
@@ -341,10 +342,40 @@ def test_a_title_clash_between_modules_fails_only_the_later_one(tmp_path: Path) 
     # 꺼진 모듈은 겹침을 보지 않고 뒤 모듈을 막지도 않는다.
     _write_module(tmp_path, "demo_c", pages=same, order=5, enabled=False)
 
-    assert _states(scan_modules(tmp_path)) == {
+    scan = scan_modules(tmp_path)
+    assert _states(scan) == {
         "demo_c": ("off", "module.json enabled=false"),
         "demo_a": ("on", ""),
-        "demo_b": ("failed", "화면 이름 겹침: 같은 이름"),
+        "demo_b": ("failed", "화면 이름 겹침: 같은 이름 — 차례가 앞인 모듈 demo_a"),
+    }
+    clashes = {record.folder_name: record.clash for record in scan.records}
+    assert clashes == {"demo_c": None, "demo_a": None, "demo_b": TitleClash("같은 이름", "demo_a")}
+
+
+def test_a_new_module_earlier_in_order_pushes_out_a_running_one_and_is_named(
+    tmp_path: Path,
+) -> None:
+    """겹침은 「나중에 들어온 쪽」 이 아니라 차례(order → id)가 뒤인 쪽 **전체**를 뺀다 — 겹치지
+    않는 화면까지 빠진다. 기존 모듈 담당자가 자기가 바꾸지 않은 실패를 받으므로 까닭에 상대를
+    적는다(지침서 3-3 · 부록 B M01)."""
+    _write_module(
+        tmp_path,
+        "demo_port",
+        pages=[
+            {"slug": "main", "file": "page.py", "title": "개요"},
+            {"slug": "detail", "file": "detail.py", "title": "상세"},
+        ],
+    )
+    _write_module(
+        tmp_path,
+        "demo_table",
+        pages=[{"slug": "main", "file": "page.py", "title": "개요"}],
+        order=50,
+    )
+
+    assert _states(scan_modules(tmp_path)) == {
+        "demo_table": ("on", ""),
+        "demo_port": ("failed", "화면 이름 겹침: 개요 — 차례가 앞인 모듈 demo_table"),
     }
 
 

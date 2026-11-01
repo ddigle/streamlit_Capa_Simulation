@@ -153,3 +153,31 @@ def test_the_skeleton_passes_check_module_with_ruff_and_its_smoke_test(
         in out
     )
     assert "전송용 요약: 모듈 1 = 통과 1 + 꺼짐 0 + 실패 0; api1 1; 패키지 없음; ng 없음" in out
+
+
+def test_a_name_over_the_title_limit_without_title_points_at_the_title_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--name` 은 30자까지 받지만 `--title` 을 주지 않으면 첫 화면 이름(24자까지)으로도 쓴다.
+    거절 까닭이 담당자가 친 적 없는 `pages[0].title` 이 아니라 `--title` 을 함께 주라고 말한다."""
+    name = "데모 아주 긴 이름의 실적 관리 화면 모음 묶음"
+    assert 24 < len(name) <= 30
+    capsys.readouterr()
+
+    assert _make(tmp_path, "--name", name) == 2
+
+    err = capsys.readouterr().err
+    assert "pages[0].title" not in err
+    assert '`--title "<첫 화면 이름>"` 을 함께 줍니다' in err
+    assert not (tmp_path / "modules").exists()
+    assert _make(tmp_path, "--name", name, "--title", "데모 실적") == 0
+
+
+def test_a_title_option_problem_is_named_by_the_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    capsys.readouterr()
+
+    assert _make(tmp_path, "--title", "가" * 25) == 2
+
+    assert "1 ~ 24자여야 하는 칸입니다: --title" in capsys.readouterr().err

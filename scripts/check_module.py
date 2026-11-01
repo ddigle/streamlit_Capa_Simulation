@@ -23,9 +23,9 @@
 
 **이 트리로 본다.** `PROJECT_ROOT` 는 이 스크립트가 놓인 트리다 — 사본 트리의 스크립트를 부르면
 사본의 코어·`pyproject.toml`·`requirements.txt` 로 본다. 모듈 시험은 감시
-러너(`module_test_runner.py`)가 하위 프로세스로 돌린다 — 코어 `data/` 를 열거나 모듈 폴더에 쓰면
-실패하고, 같은 폴더 맨이름 import 는 앱처럼 깨진다. 임시 데이터 자리를 쓰므로 앱이 떠 있어도 운영
-모듈 데이터를 잠그지 않는다. DB 를 열지 않는다.
+러너(`module_test_runner.py`)가 하위 프로세스로 돌린다 — 코어 `data/` 를 열거나 모듈 폴더·트리
+안(상대 경로 쓰기)에 쓰면 실패하고, 같은 폴더 맨이름 import 는 앱처럼 깨진다. 임시 데이터
+자리를 쓰므로 앱이 떠 있어도 운영 모듈 데이터를 잠그지 않는다. DB 를 열지 않는다.
 
 **정적 오류가 먼저다.** M01·M06·M07·M10·M11 가운데 오류가 하나라도 있으면 시험을 돌리지
 않는다(실패로 센다). `CAPA_MODULES_ROOT`·`CAPA_MODULES_DISABLED` 는 따르지 않는다(앱 실행 때의
@@ -255,6 +255,8 @@ def run_tests(
             "--modules-root",
             str(root),
             *(item for place in protect for item in ("--protect", str(place))),
+            "--workspace",
+            str(tree),
             "--data-root",
             str(work),
             "--",
@@ -382,6 +384,32 @@ def check_one(
         result.tests = TestResult(state="blocked")
     else:
         result.tests = run_tests(folder, root=root, tree=tree, protect=protect, timeout=timeout)
+
+
+def clash_warnings(
+    records: Sequence[module_registry.ModuleRecord],
+) -> dict[str, list[rules.Finding]]:
+    """화면 이름을 먼저 차지해 차례가 뒤인 켜진 모듈을 실패로 만든 모듈 → 그 경고(M01).
+
+    겹침은 차례가 뒤인 모듈 전체를 빼므로, 새 모듈이 기존 모듈을 밀어내도 새 모듈 담당자의 점검은
+    통과로만 보인다. 차례가 앞인 쪽에도 알려 둘 중 누가 이름을 바꿀지 담당자끼리 정하게 한다.
+    """
+    found: dict[str, list[rules.Finding]] = {}
+    for record in records:
+        clash = record.clash
+        if clash is None or not clash.owner:
+            continue
+        found.setdefault(clash.owner, []).append(
+            rules.Finding(
+                "M01",
+                "warning",
+                module_registry.MANIFEST_NAME,
+                0,
+                f"화면 이름 「{clash.title}」 을 차례가 뒤인 모듈 {record.folder_name} 도 써서 "
+                "그 모듈 전체가 실패합니다 — 둘 가운데 하나의 화면 이름을 바꿉니다",
+            )
+        )
+    return found
 
 
 # --- 운영 체크아웃(--worktree-of) ----------------------------------------------------------------
@@ -737,6 +765,7 @@ def main(
         print(scan.root_error, file=sys.stderr)
         return 2
     records = list(scan.records)
+    pushed_out = clash_warnings(records)
     if args.ids:
         known = {record.folder_name for record in records}
         missing = [name for name in args.ids if name not in known]
@@ -774,6 +803,7 @@ def main(
                     f"점검 중 예외 {type(error).__name__} — 이 모듈만 멈췄습니다(파일 꼴을 봅니다)",
                 )
             )
+        result.findings.extend(pushed_out.get(result.record.folder_name, ()))
     lines = build_block(
         results,
         root=root,

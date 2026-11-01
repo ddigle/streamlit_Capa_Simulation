@@ -194,6 +194,42 @@ def test_broken_manifests_fail_as_m01_and_skip_everything_else(
     assert "ng m1 선언" in _summary(out)
 
 
+def _titled_module(root: Path, module_id: str, titles: Sequence[str], *, order: int) -> Path:
+    folder = _module(root, module_id, {"page.py": HEADER + "import streamlit as st\n"})
+    declared = json.loads((folder / "module.json").read_text(encoding="utf-8"))
+    declared["order"] = order
+    declared["pages"] = [
+        {"slug": f"p{index}", "file": "page.py" if index == 0 else f"p{index}.py", "title": title}
+        for index, title in enumerate(titles)
+    ]
+    for page in declared["pages"][1:]:
+        (folder / page["file"]).write_text(HEADER + "import streamlit as st\n", encoding="utf-8")
+    (folder / "module.json").write_text(json.dumps(declared, ensure_ascii=False), encoding="utf-8")
+    return folder
+
+
+def test_a_title_clash_names_the_other_module_on_both_sides(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """차례가 앞인 새 모듈이 기존 모듈의 화면 이름을 쓰면 기존 모듈 전체가 실패한다. 새 모듈
+    담당자의 점검은 통과로만 보이므로 그쪽에도 M01 경고를 단다 — 둘 다 상대 id 를 적는다."""
+    root = tmp_path / "modules"
+    _titled_module(root, "demo_port", ["개요", "상세"], order=100)
+    _titled_module(root, "demo_table", ["개요"], order=50)
+
+    code, out = _run(["demo_table", "--root", str(root), "--no-ruff", "--no-tests"], capsys)
+    assert code == 0, out
+    assert "- m1 demo_table 통과 · L0 · API 1.0 · 화면 1 · 오류 0 · 경고 1" in out
+    assert (
+        "  m1 demo_table 경고 M01 module.json 화면 이름 「개요」 을 차례가 뒤인 모듈 demo_port 도 "
+        "써서 그 모듈 전체가 실패합니다" in out
+    ), out
+
+    code, out = _run(["demo_port", "--root", str(root), "--no-ruff", "--no-tests"], capsys)
+    assert code == 1, out
+    assert "- m1 demo_port 실패 · 선언 — 화면 이름 겹침: 개요 — 차례가 앞인 모듈 demo_table" in out
+
+
 def _must_not_run(*args: object, **kwargs: object) -> object:
     raise AssertionError("선언이 틀린 모듈에는 ruff·시험을 돌리지 않는다")
 
@@ -779,6 +815,42 @@ def test_m13_writing_into_ctx_data_dir_is_not_a_code_folder_write(tmp_path: Path
     writes = [item for item in result.findings if item.rule == "M13" and item.level == "warning"]
 
     assert [item.line for item in writes] == [11], [item.text() for item in writes]
+
+
+def test_m13_a_relative_path_write_lands_in_the_working_folder(tmp_path: Path) -> None:
+    """상대 경로 쓰기는 앱에서 작업 폴더(운영 체크아웃 뿌리)에 말없이 남는다 — 글자 · 모듈 수준
+    이름 · `Path(…)` · `Path(…) / …` · 표 쓰기 모두 경고다. `ctx.data_dir` · 절대 경로 · 읽기는
+    넘기고, `data/` 로 시작하는 글자는 M07 이 알린다."""
+    body = (
+        "from pathlib import Path\n\n"
+        "import pandas as pd\n\n"
+        "from capa_simulation import module_api as api\n\n"
+        "ctx = api.context(__file__)\n"
+        'NOTE_PATH = "probe_notes.txt"\n\n\n'
+        "def save(frame: pd.DataFrame) -> None:\n"
+        '    with open(NOTE_PATH, "a", encoding="utf-8") as handle:\n'
+        '        handle.write("x")\n'
+        '    Path("out.txt").write_text("x", encoding="utf-8")\n'
+        '    (Path("out") / "x.txt").write_text("x", encoding="utf-8")\n'
+        '    frame.to_csv("rows.csv")\n'
+        '    (ctx.data_dir / "a.csv").write_bytes(b"x")\n'
+        '    Path("/srv/x.txt").write_text("x", encoding="utf-8")\n'
+        '    open(NOTE_PATH, encoding="utf-8").close()\n'
+        '    Path("data/x.txt").write_text("x", encoding="utf-8")\n'
+    )
+    folder = _module(tmp_path / "modules", "demo_x", {"page.py": HEADER + body})
+    result = rules.check_module_folder(
+        folder, module_id="demo_x", pages=["page.py"], environment=ENVIRONMENT, git=None
+    )
+    writes = sorted(
+        (item for item in result.findings if item.rule == "M13" and item.level == "warning"),
+        key=lambda item: item.line,
+    )
+
+    assert [item.line for item in writes] == [13, 15, 16, 17], [item.text() for item in writes]
+    assert "상대 경로 `probe_notes.txt`" in writes[0].message
+    assert 'ctx.data_dir / "<이름>"' in writes[0].message
+    assert ("M07", "warning") in {(item.rule, item.level) for item in result.findings}
 
 
 def test_m13_a_python_310_syntax_error(tmp_path: Path) -> None:

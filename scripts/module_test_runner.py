@@ -1,16 +1,19 @@
-# Purpose: 사내 모듈 시험을 감시 아래 pytest 로 돌린다(코어 data 접근·모듈 폴더 쓰기를 막는다).
+# Purpose: 사내 모듈 시험을 감시 아래 pytest 로 돌린다(코어 data 접근·저장소 안 쓰기를 막는다).
 
 """사내 모듈 시험 러너 — `scripts/check_module.py` 만 부른다(사람이 직접 칠 일은 없다).
 
     python scripts/module_test_runner.py --modules-root <뿌리> --protect <트리>/data \\
-        [--protect <운영 저장소>/data] --data-root <임시 폴더> -- <pytest 인자…>
+        [--protect <운영 저장소>/data] [--workspace <트리>] --data-root <임시 폴더> \\
+        -- <pytest 인자…>
 
 모듈 시험은 담당자가 쓴 코드를 실행한다. 코어 시험 틀(DB 자리 돌림·sessionfinish 검사)이 걸리지
 않으므로 이 러너가 그 몫을 한다. 감사 훅(`sys.addaudithook`)은 지울 수 없어 이 하위 프로세스
 안에서만 건다.
 
 - **감시** — `--protect` 아래는 읽기·쓰기 모두 막는다(임시 데이터 뿌리는 빼고). `--modules-root`
-  아래는 쓰기만 막는다(모듈 코드 폴더에는 실행 중 쓰지 않는다). 감사 사건이 없는 `duckdb.connect` 는
+  아래는 쓰기만 막는다(모듈 코드 폴더에는 실행 중 쓰지 않는다). `--workspace`(점검하는 트리 — 하위
+  프로세스의 작업 폴더) 아래도 쓰기만 막는다 — 상대 경로(`open("notes.txt", "a")`)로 쓴 파일은 그
+  뿌리에 생기고, 앱에서는 운영 체크아웃 뿌리에 말없이 남는다. 감사 사건이 없는 `duckdb.connect` 는
   감싸서 같은 규칙으로 본다(읽기 전용도 막는다 — 잠금이 사용자 앱과 겹친다). 막은 접근은 그 시험의
   실패가 되고(시험이 예외를 삼켜도), 끝에 「감시가 막은 접근 n」 을 찍는다. AppTest 의 import 길도
   앱과 같게 맞춘다(아래).
@@ -44,6 +47,11 @@ BLOCKED_PREFIX: Final = "감시가 막은 접근"
 STREAMLIT_SYS_PATH_NAME: Final = "modified_sys_path"
 _WRITE_FLAGS: Final = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 _SHOWN_BLOCKS: Final = 10
+_BLOCKED_WHAT: Final[dict[str, str]] = {
+    "protect": "코어 데이터 자리",
+    "modules": "모듈 코드 폴더 쓰기",
+    "workspace": "저장소 안 쓰기(상대 경로면 ctx.data_dir 로)",
+}
 # 감사 사건 → 인자 가운데 (경로 자리, 쓰기인가).
 _PATH_EVENTS: Final[dict[str, tuple[tuple[int, bool], ...]]] = {
     "os.remove": ((0, True),),
@@ -78,19 +86,30 @@ class Guard:
     protect: tuple[str, ...]
     modules_root: str
     data_root: str | None
+    workspace: str | None = None
     blocked: list[tuple[str, str]] = field(default_factory=list)
     _busy: threading.local = field(default_factory=threading.local)
 
     @classmethod
-    def build(cls, *, protect: Sequence[str], modules_root: str, data_root: str | None) -> Guard:
+    def build(
+        cls,
+        *,
+        protect: Sequence[str],
+        modules_root: str,
+        data_root: str | None,
+        workspace: str | None = None,
+    ) -> Guard:
         return cls(
             protect=tuple(_normalized(path) for path in protect),
             modules_root=_normalized(modules_root),
             data_root=None if data_root is None else _normalized(data_root),
+            workspace=None if workspace is None else _normalized(workspace),
         )
 
-    def verdict(self, path: str, *, write: bool) -> Literal["protect", "modules"] | None:
-        """막을 까닭(`protect` · `modules`) 또는 None. 임시 데이터 뿌리 아래는 늘 된다."""
+    def verdict(
+        self, path: str, *, write: bool
+    ) -> Literal["protect", "modules", "workspace"] | None:
+        """막을 까닭(`protect` · `modules` · `workspace`) 또는 None. 임시 데이터 뿌리는 늘 된다."""
         if path in (":memory:", "") or path.startswith(":memory:"):
             return None
         place = _normalized(path)
@@ -100,6 +119,8 @@ class Guard:
             return "protect"
         if write and _under(place, self.modules_root):
             return "modules"
+        if write and self.workspace is not None and _under(place, self.workspace):
+            return "workspace"
         return None
 
     def check(self, raw: object, *, write: bool, action: str) -> None:
@@ -114,11 +135,14 @@ class Guard:
         if kind is None:
             return
         self.blocked.append((action, self._relative(path, kind)))
-        what = "코어 데이터 자리" if kind == "protect" else "모듈 코드 폴더 쓰기"
+        what = _BLOCKED_WHAT[kind]
         raise PermissionError(f"모듈 시험 감시 — {what}를 막았습니다: {self._relative(path, kind)}")
 
     def _relative(self, path: str, kind: str) -> str:
         place = _normalized(path)
+        if kind == "workspace" and self.workspace is not None:
+            # 저장소 뿌리 기준 상대 꼴 — 뿌리 폴더 이름(사본 트리면 임시 이름)은 붙이지 않는다.
+            return Path(os.path.relpath(place, self.workspace)).as_posix()
         roots = self.protect if kind == "protect" else (self.modules_root,)
         for root in roots:
             if _under(place, root):
@@ -283,6 +307,9 @@ def _parse(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--data-root", default=None, help="모듈 시험의 임시 데이터 뿌리(막지 않는다)"
     )
+    parser.add_argument(
+        "--workspace", default=None, help="점검하는 트리 — 그 아래 쓰기를 막는다(상대 경로 쓰기)"
+    )
     return parser.parse_args(argv)
 
 
@@ -299,7 +326,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     own_args, pytest_args = _split(sys.argv[1:] if argv is None else argv)
     args = _parse(own_args)
     guard = Guard.build(
-        protect=args.protect, modules_root=args.modules_root, data_root=args.data_root
+        protect=args.protect,
+        modules_root=args.modules_root,
+        data_root=args.data_root,
+        workspace=args.workspace,
     )
     if not install_app_like_sys_path(args.modules_root):
         print(

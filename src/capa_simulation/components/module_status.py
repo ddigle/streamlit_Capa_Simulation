@@ -14,6 +14,7 @@ import os
 
 import pandas as pd
 import streamlit as st
+from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import module_failures
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
@@ -31,9 +32,11 @@ from capa_simulation.sidebar_status import remembered_expander
 # 과 같은 꼴).
 EXPANDER_KEY = "admin_area_module_status"
 RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄운 뒤 보입니다."
+# 「모듈 이름」 은 `module.json` 의 `name` 이다 — 화면 이름(`pages[].title`)과 가른다(같은 줄의 까닭
+# 「화면 이름 겹침: …」 은 화면 이름을 말한다).
 COLUMNS = (
     "모듈",
-    "화면 이름",
+    "모듈 이름",
     "상태",
     "까닭",
     "성숙도",
@@ -88,6 +91,14 @@ def build_status_table(scan: ModuleScan) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=list(COLUMNS))
 
 
+def status_column_config() -> dict[str, ColumnConfig]:
+    """까닭·마지막 오류는 기본 폭에서 잘리므로 넓힌다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다."""
+    return {
+        "까닭": st.column_config.TextColumn(width="large"),
+        "마지막 오류": st.column_config.TextColumn(width="medium"),
+    }
+
+
 def environment_caption(scan: ModuleScan) -> str:
     """끄는 스위치·뿌리 환경변수의 지금 값(id 만 담는다)과 폴더가 없는 끈 id."""
     parts = []
@@ -110,6 +121,11 @@ def render_module_status() -> None:
         if scan.root_error:
             st.warning(literal_markdown(scan.root_error))
         if scan.records:
-            st.dataframe(build_status_table(scan), hide_index=True, width="stretch")
+            st.dataframe(
+                build_status_table(scan),
+                column_config=status_column_config(),
+                hide_index=True,
+                width="stretch",
+            )
         st.caption(environment_caption(scan))
         st.caption(RESTART_NOTICE)

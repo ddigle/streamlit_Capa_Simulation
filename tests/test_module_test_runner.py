@@ -174,6 +174,87 @@ def test_blocked_accesses_fail_their_tests_and_are_counted(tmp_path: Path) -> No
     assert (data / "a.txt").read_text(encoding="utf-8") == "x"
 
 
+RELATIVE_WRITE_TESTS = """# Purpose: 감시 러너 시험 — 작업 폴더 기준 상대 경로 쓰기.
+
+NOTE_PATH = "probe_notes.txt"
+
+
+def test_a_relative_write() -> None:
+    with open(NOTE_PATH, "a", encoding="utf-8") as handle:
+        handle.write("x")
+"""
+
+
+def test_a_relative_write_into_the_workspace_fails_its_test(tmp_path: Path) -> None:
+    """상대 경로 쓰기는 작업 폴더(점검하는 트리 — 앱에서는 운영 체크아웃 뿌리)에 말없이 남는다.
+    `--workspace` 아래 쓰기는 막혀 그 시험이 실패하고 파일도 생기지 않는다."""
+    workspace = tmp_path / "tree"
+    workspace.mkdir()
+    root = tmp_path / "modules"
+    data = tmp_path / "module-data"
+    data.mkdir()
+    folder = _module(
+        root,
+        {"page.py": "# Purpose: x.\n", "tests/test_demo_x_note.py": RELATIVE_WRITE_TESTS},
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "module_test_runner.py"),
+            "--modules-root",
+            str(root),
+            "--protect",
+            str(tmp_path / "core-data"),
+            "--workspace",
+            str(workspace),
+            "--data-root",
+            str(data),
+            "--",
+            "--basetemp",
+            str(data / "pytest"),
+            *_pytest_args(folder),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=workspace,
+        env=_environment(root, data),
+        timeout=300,
+        check=False,
+    )
+
+    lines = completed.stdout.splitlines()
+    assert lines[-1] == "module-tests 0 1 1", completed.stdout
+    assert f"{runner.BLOCKED_PREFIX} 1" in lines, completed.stdout
+    assert "  open probe_notes.txt" in lines, completed.stdout
+    assert list(workspace.iterdir()) == []
+
+
+def test_check_module_guards_its_tree_as_the_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """점검은 러너를 트리에서 돌리고(`cwd`) 그 트리를 `--workspace` 로 넘긴다."""
+    seen: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen["command"], seen["cwd"] = command, kwargs.get("cwd")
+        return subprocess.CompletedProcess(command, 0, f"{runner.SUMMARY_PREFIX} 1 0 1\n", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    tree = tmp_path / "tree"
+    folder = tmp_path / "modules" / "demo_x"
+
+    check_module.run_tests(
+        folder, root=folder.parent, tree=tree, protect=[tree / "data"], timeout=60
+    )
+
+    command = seen["command"]
+    assert isinstance(command, list)
+    assert command[command.index("--workspace") + 1] == str(tree)
+    assert seen["cwd"] == tree
+
+
 def test_a_same_folder_bare_import_breaks_under_the_runner_like_in_the_app(
     tmp_path: Path,
 ) -> None:
@@ -261,6 +342,27 @@ def test_the_guard_verdicts(tmp_path: Path) -> None:
     with pytest.raises(PermissionError):
         guard.check(str(protect / "x.csv"), write=False, action="open")
     assert guard.blocked == [("open", "data/x.csv")]
+
+
+def test_the_workspace_verdict_blocks_writes_only(tmp_path: Path) -> None:
+    workspace = tmp_path / "tree"
+    data_root = workspace / "tmp-data"
+    guard = runner.Guard.build(
+        protect=[str(workspace / "data")],
+        modules_root=str(workspace / "modules"),
+        data_root=str(data_root),
+        workspace=str(workspace),
+    )
+
+    assert guard.verdict(str(workspace / "notes.txt"), write=True) == "workspace"
+    assert guard.verdict(str(workspace / "pyproject.toml"), write=False) is None
+    assert guard.verdict(str(workspace / "modules" / "demo_x" / "a.txt"), write=True) == "modules"
+    assert guard.verdict(str(workspace / "data" / "x.duckdb"), write=True) == "protect"
+    assert guard.verdict(str(data_root / "a.csv"), write=True) is None
+    assert guard.verdict(str(tmp_path / "elsewhere.txt"), write=True) is None
+    with pytest.raises(PermissionError, match="ctx.data_dir"):
+        guard.check(str(workspace / "sub" / "notes.txt"), write=True, action="open")
+    assert guard.blocked == [("open", "sub/notes.txt")]
 
 
 def test_the_audit_hook_reads_open_flags(tmp_path: Path) -> None:

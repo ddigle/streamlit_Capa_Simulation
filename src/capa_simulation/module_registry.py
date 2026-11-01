@@ -349,6 +349,20 @@ def page_problems(folder: Path, manifest: ModuleManifest) -> list[str]:
 
 
 @dataclass(frozen=True)
+class TitleClash:
+    """화면 이름 겹침 — 겹친 이름과 그 이름을 먼저 차지한 쪽(모듈 id, 코어면 빈 글자)."""
+
+    title: str
+    owner: str
+
+
+def clash_reason(clash: TitleClash) -> str:
+    """겹침 까닭 한 줄 — 상대(코어 · 차례가 앞인 모듈)를 함께 적는다."""
+    holder = "코어 화면" if not clash.owner else f"차례가 앞인 모듈 {clash.owner}"
+    return f"화면 이름 겹침: {clash.title} — {holder}"
+
+
+@dataclass(frozen=True)
 class ModuleRecord:
     folder_name: str
     path: Path
@@ -357,6 +371,8 @@ class ModuleRecord:
     reason: str
     # 선언을 못 읽었으면 None.
     manifest: ModuleManifest | None
+    # 화면 이름 겹침으로 실패했으면 그 겹침(점검이 차례가 앞인 모듈에 경고를 단다).
+    clash: TitleClash | None = None
 
 
 @dataclass(frozen=True)
@@ -408,6 +424,7 @@ class _Draft:
     state: State
     reason: str
     manifest: ModuleManifest | None
+    clash: TitleClash | None = None
 
     @property
     def sort_key(self) -> tuple[int, str]:
@@ -461,8 +478,9 @@ def scan_modules(
 
     `disabled` 는 끄는 환경변수 값 글자(None 이면 아무것도 끄지 않는다)이고, `reserved_titles`
     는 모듈 화면이 쓸 수 없는 이름(코어 화면 이름에서 「(구현중)」 을 뗀 것)이다. 화면 이름
-    겹침은 켜질 모듈만 보고 **뒤 모듈이** 실패한다 — 꺼질 모듈은 겹침을 보지 않고 다른 모듈을
-    막지도 않는다.
+    겹침은 켜질 모듈만 보고 **차례(order → id)가 뒤인 모듈 전체가** 실패한다 — 먼저 돌던
+    모듈이라도 차례가 뒤면 빠진다. 까닭에는 상대(코어 · 차례가 앞인 모듈 id)를 적는다. 꺼질 모듈은
+    겹침을 보지 않고 다른 모듈을 막지도 않는다.
     """
     disabled_value = disabled or ""
     all_off, disabled_ids = parse_disabled(disabled_value)
@@ -498,22 +516,31 @@ def scan_modules(
                 _Draft(folder.name, folder, "failed", f"검사 중 예외 {type(error).__name__}", None)
             )
     drafts.sort(key=lambda draft: draft.sort_key)
-    taken = {*reserved_titles, GROUP_MAIN_TITLE}
+    # 이름 → 먼저 차지한 쪽(코어는 빈 글자, 모듈은 id).
+    taken = dict.fromkeys((*reserved_titles, GROUP_MAIN_TITLE), "")
     for draft in drafts:
         if draft.state != "on" or draft.manifest is None:
             continue
         titles = [page.title for page in draft.manifest.pages]
-        clash = next((title for title in titles if title in taken), None)
-        if clash is not None:
-            draft.state, draft.reason = "failed", f"화면 이름 겹침: {clash}"
+        title = next((title for title in titles if title in taken), None)
+        if title is not None:
+            draft.clash = TitleClash(title, taken[title])
+            draft.state, draft.reason = "failed", clash_reason(draft.clash)
             continue
-        taken.update(titles)
+        taken.update(dict.fromkeys(titles, draft.folder_name))
     names = {draft.folder_name for draft in drafts}
     return ModuleScan(
         root=root,
         root_exists=True,
         records=tuple(
-            ModuleRecord(draft.folder_name, draft.path, draft.state, draft.reason, draft.manifest)
+            ModuleRecord(
+                draft.folder_name,
+                draft.path,
+                draft.state,
+                draft.reason,
+                draft.manifest,
+                draft.clash,
+            )
             for draft in drafts
         ),
         disabled_value=disabled_value,

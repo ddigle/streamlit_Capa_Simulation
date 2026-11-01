@@ -4,7 +4,7 @@
 
 담당자 클론(사내 PC, PowerShell — 저장소 뿌리에서):
 
-    uv run --no-sync python scripts/new_module.py <id> --name "<화면 이름>"
+    uv run --no-sync python scripts/new_module.py <id> --name "<모듈 이름>"
     uv run --no-sync python scripts/new_module.py demo_new --name "데모 새 모듈" --owner "데모 담당"
 
 사외(개발 PC, WSL — 시험·견본용, 사외 저장소에는 `modules/` 를 두지 않는다):
@@ -12,7 +12,8 @@
     .venv/bin/python scripts/new_module.py demo_new --name "데모 새 모듈" --root <저장소 밖>/modules
 
 선택: `--owner "<담당 역할>"`(기본 「담당 미정」 — 사람 이름·사번이 아니라 역할 이름) ·
-`--title "<첫 화면 이름>"`(기본 `--name`) · `--root <모듈 뿌리>`(기본 <이 트리>/modules — 이름이
+`--title "<첫 화면 이름>"`(기본 `--name` — 첫 화면 이름은 24자까지라 `--name` 이 24자를 넘거나
+Markdown 글자가 들면 함께 준다) · `--root <모듈 뿌리>`(기본 <이 트리>/modules — 이름이
 `modules` 여야 한다. 도움 import `modules.<id>` 가 그 뿌리로 풀린다).
 
 만드는 것은 `<뿌리>/<id>/` 안의 넷뿐이다 — `module.json`·`page.py`·`tests/test_<id>_smoke.py`·
@@ -43,6 +44,8 @@ MODULES_FOLDER_NAME: Final = "modules"
 DEFAULT_OWNER: Final = "담당 미정"
 PAGE_FILE: Final = "page.py"
 LINE_WIDTH: Final = 100
+# 선언 검증이 첫 화면 이름 칸을 부르는 이름 — 거절 까닭에서 담당자가 친 옵션 이름으로 바꾼다.
+TITLE_FIELD: Final = "pages[0].title"
 
 
 def _width(text: str) -> int:
@@ -158,13 +161,33 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
         description="사내 모듈 뼈대를 modules/<id>/ 안에만 만든다(새 모듈은 앱 관리자 승인 뒤)"
     )
     parser.add_argument("id", help="모듈 id — 소문자·숫자·밑줄 하나, 2 ~ 24자")
-    parser.add_argument("--name", required=True, help="모듈 이름(화면 이름, 1 ~ 30자)")
+    parser.add_argument(
+        "--name",
+        required=True,
+        help="모듈 이름(1 ~ 30자 — 24자를 넘으면 --title 로 첫 화면 이름을 따로 준다)",
+    )
     parser.add_argument("--owner", default=DEFAULT_OWNER, help="담당 역할 이름(사람 이름 아님)")
     parser.add_argument("--title", default=None, help="첫 화면 이름(기본 --name, 1 ~ 24자)")
     parser.add_argument(
         "--root", default=None, help="모듈 뿌리(기본 <이 트리>/modules — 이름이 modules 여야 한다)"
     )
     return parser.parse_args(argv)
+
+
+def option_reason(reason: str, *, title_given: bool) -> str:
+    """선언 검증 까닭의 칸 이름을 친 옵션 이름으로 바꾼다 — 첫 화면 이름은 `--title` 이고, 주지
+    않았으면 `--name` 이 그 자리에 들어가므로 `--title` 을 함께 주라고 안내한다."""
+    if TITLE_FIELD in reason:
+        if title_given:
+            return reason.replace(TITLE_FIELD, "--title")
+        return (
+            reason.replace(TITLE_FIELD, "--name(--title 을 주지 않아 첫 화면 이름으로 씀)")
+            + ' — `--title "<첫 화면 이름>"` 을 함께 줍니다'
+        )
+    for field, option in (("name", "--name"), ("owner", "--owner")):
+        if reason.endswith(f": {field}"):
+            return reason.removesuffix(field) + option
+    return reason
 
 
 def _refuse(message: str) -> int:
@@ -206,7 +229,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         module_registry.parse_manifest(manifest.encode("utf-8"), folder_name=module_id)
     except module_registry.ManifestError as error:
-        return _refuse(f"선언 규칙 — {error.reason}")
+        reason = option_reason(error.reason, title_given=args.title is not None)
+        return _refuse(f"선언 규칙 — {reason}")
     files = {
         module_registry.MANIFEST_NAME: manifest,
         PAGE_FILE: page_text(module_id, name=name, title=title),
