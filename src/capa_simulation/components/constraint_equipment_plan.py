@@ -16,9 +16,12 @@
   머리 한 줄과 까닭(카드 또는 오류)을 그리고 None 을 돌려준다 — `st.stop` 은 부르는 쪽이 쥔다.
 - **계획** — 공정 Capa 상세 ② 와 같은 칸을 **같은 키**로(`load_required_shortening_for_target`,
   목표는 키 맞춤용 HOME 확보기준 — 단축 열은 읽지 않는다). 계산 함수는 부를 때 `simulation_cache`
-  모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 제약 영향 모드가 「신규 설비는 개조 없이」 를 켠
-  회차에는 같은 키의 설비 일정 칸(공정 Capa 상세 ③·④)을 기준일로 거른 신규 호기도 같은 `try` 안에서
-  받는다 — 그 계산이 터져도 「설비 일정을 계산하지 못했습니다」 갈래다.
+  모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 제약 영향 모드는 같은 `try` 안에서 두 가지를 더
+  받는다 — 「신규 설비는 개조 없이」 를 켠 회차에는 같은 키의 설비 일정 칸(공정 Capa 상세 ③·④ —
+  `with_timeline`), 개조를 켠 회차에는 보유 「호기 고르기」 선택지(`with_held_units` — 같은 마스터
+  지문의 가벼운 캐시, 2026-11-01 사용자 결정 B3). 그 계산이 터져도 「설비 일정을 계산하지
+  못했습니다」 갈래다. 기준일 거르기 · 고른 호기 빼기는 페이지가 고른 뒤에 한다(호기 고르기는 이
+  블록 뒤에 서므로).
 
 저장하지 않는다 — 어느 DB 에도 쓰지 않는다.
 """
@@ -45,9 +48,9 @@ from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_equipment_timeline import (
     DynamicReadiness,
-    NewUnitAvailability,
+    HeldUnitChoice,
+    ProcessEquipmentTimeline,
     dynamic_readiness,
-    new_unit_availability,
 )
 from capa_simulation.services.required_shortening import (
     MonthlyTarget,
@@ -95,8 +98,12 @@ class EquipmentPlan(NamedTuple):
     """키 맞춤용 HOME 확보기준 — `plan.at(target_level)` 로 공정 달을 꺼낸다."""
 
     cutoff_days: int
-    new_units: NewUnitAvailability | None
-    """`new_unit_since` 를 준 회차의 신규 호기. 아니면 None."""
+    timeline: ProcessEquipmentTimeline | None
+    """`with_timeline` 을 준 회차의 그 공정 설비 일정(공정 Capa 상세 ③·④ 와 같은 키). 아니면
+    None."""
+
+    held_choices: tuple[HeldUnitChoice, ...]
+    """`with_held_units` 를 준 회차의 보유 「호기 고르기」 선택지. 아니면 빈다."""
 
 
 def equipment_readiness(
@@ -144,7 +151,8 @@ def render_equipment_plan(
     render_header: Callable[[str, str], None],
     render_reason_card: ReasonCard,
     before_plan: Callable[[], bool] | None = None,
-    new_unit_since: date | None = None,
+    with_timeline: bool = False,
+    with_held_units: bool = False,
 ) -> EquipmentPlan | None:
     """설비 일정 확인 → (`before_plan`) → 계획. 멈추는 갈래면 머리 한 줄과 까닭을 그리고 None.
 
@@ -175,8 +183,13 @@ def render_equipment_plan(
     if before_plan is not None and not before_plan():
         return None
     try:
-        plan, target_level, new_units = _load_plan(
-            source, snapshot, process=process, new_unit_since=new_unit_since
+        plan, target_level, timeline, held_choices = _load_plan(
+            source,
+            snapshot,
+            process=process,
+            cutoff_days=int(readiness.cutoff_days),
+            with_timeline=with_timeline,
+            with_held_units=with_held_units,
         )
     except BOOTSTRAP_ERRORS as exc:
         render_header(process, f"{bold} :blue-badge[설비 일정 없음: 계산 오류]")
@@ -206,7 +219,8 @@ def render_equipment_plan(
         plan=plan,
         target_level=target_level,
         cutoff_days=int(readiness.cutoff_days),
-        new_units=new_units,
+        timeline=timeline,
+        held_choices=held_choices,
     )
 
 
@@ -215,10 +229,14 @@ def _load_plan(
     snapshot: EquipmentSnapshot,
     *,
     process: str,
-    new_unit_since: date | None,
-) -> tuple[ShorteningPlan, MonthlyTarget, NewUnitAvailability | None]:
-    """공정 Capa 상세 ②·두 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보기준). 신규
-    기준일을 주면 같은 키의 설비 일정 칸을 그 날로 거른 신규 호기도 받는다. 예외는 그대로 올린다."""
+    cutoff_days: int,
+    with_timeline: bool,
+    with_held_units: bool,
+) -> tuple[
+    ShorteningPlan, MonthlyTarget, ProcessEquipmentTimeline | None, tuple[HeldUnitChoice, ...]
+]:
+    """공정 Capa 상세 ②·두 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보기준). 고르면
+    같은 키의 설비 일정 칸과 보유 「호기 고르기」 선택지도 받는다. 예외는 그대로 올린다."""
     page_inputs = source.page_inputs
     months = list(page_inputs.months)
     active_scenario = page_inputs.context.active_scenario
@@ -246,16 +264,17 @@ def _load_plan(
             reference_tables=page_inputs.context.reference_tables,
         ),
     )
-    new_units: NewUnitAvailability | None = None
-    if new_unit_since is not None:
-        new_units = new_unit_availability(
-            simulation_cache.get_process_equipment_timeline(
-                simulation_cache.process_timeline_key_from_shortening(shortening_key, process),
-                equipment,
-                downtime,
-                baseline,
-                source.cutoff,
-            ),
-            since=new_unit_since,
+    timeline_key = simulation_cache.process_timeline_key_from_shortening(shortening_key, process)
+    timeline = (
+        simulation_cache.get_process_equipment_timeline(
+            timeline_key, equipment, downtime, baseline, source.cutoff
         )
-    return plan, target_level, new_units
+        if with_timeline
+        else None
+    )
+    held_choices = (
+        simulation_cache.get_process_held_units(timeline_key, cutoff_days, equipment)
+        if with_held_units
+        else ()
+    )
+    return plan, target_level, timeline, held_choices

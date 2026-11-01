@@ -38,7 +38,10 @@
 「개조 대수」(값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 일정 카드 머리 한
 줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 일정 카드의 「신규 대기」
 줄(`waiting_lines`)과 일반 설비가 된 신규 한 줄(`ordinary_line`)에 선다. 걸리지 않으면 1판 글
-그대로다.
+그대로다. 보유의 출처와 크기(고른 호기 · 입력 칸 · 그 달 W/D 첫날 보유가 바뀌는 달)는 개조 일정 카드
+머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 보유로 기간이 덮여 신규를 붙이지 않았으면
+그 카드가 한 줄로 말한다(`NEW_SKIPPED_TEXT` — 결정 B1). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」
+처럼 모듈을 붙여 적는다(`NewUnitAssignment.label`).
 """
 
 from __future__ import annotations
@@ -123,6 +126,7 @@ from capa_simulation.sidebar_status import rerun_app_unless_alone
 
 __all__ = [
     "KPI_ROW_KEY",
+    "NEW_SKIPPED_TEXT",
     "SCHEDULE_CARD_KEY",
     "SHORT_INLINE_LIMIT",
     "SHORT_MONTHS_EXPANDER_KEY",
@@ -132,6 +136,7 @@ __all__ = [
     "MonthSteps",
     "default_month",
     "free_units_line",
+    "holdings_text",
     "month_steps",
     "ordinary_line",
     "overdrawn_lines",
@@ -176,6 +181,11 @@ SCHEDULE_DEFINITION: Final = (
 )
 NO_WINDOWS_TEXT: Final = "개조가 필요한 달이 없습니다."
 FREE_ONLY_TEXT: Final = "늘어난 전용 대수를 모두 보유·신규 설비로 채워 개조가 없습니다."
+NEW_SKIPPED_TEXT: Final = (
+    "보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 설비는 붙이지 않았습니다 — "
+    "신규는 기존 제품 몫입니다(신규 대기 없음)."
+)
+SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 MODIFY_OFF_TEXT: Final = "개조를 켜면 제약 제품에 떼어 줄 대수만큼 개조 비가동이 잡힙니다."
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
@@ -566,12 +576,12 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
     if not notes and row.increment > 0:
         notes.append(f"이 달 몫 {row.increment}대는 앞 달에 개조를 마칩니다.")
     notes += [
-        f"신규 {literal_markdown(share.unit)} {units_text(share.units)}대가 이 달 {share.days}일 "
+        f"신규 {literal_markdown(share.label)} {units_text(share.units)}대가 이 달 {share.days}일 "
         f"대기({month_name(share.source_month)} 몫) → {units_text(share.equivalent)}대"
         for share in row.waiting_shares
     ]
     notes += [
-        f"이 달 몫 신규 {literal_markdown(item.unit)} {units_text(item.units)}대 — "
+        f"이 달 몫 신규 {literal_markdown(item.label)} {units_text(item.units)}대 — "
         f"{_markdown_waiting(item)}"
         for item in result.assignments
         if item.month == row.month
@@ -587,9 +597,14 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
         ]
         if ordinary:
             names = ", ".join(_ordinary_name(unit, result) for unit in ordinary)
+            reason = (
+                SKIPPED_REASON
+                if result.new_units_skipped
+                else f"개조 {conditions.modification_days}일 안에 늘어날 전용이 없어"
+            )
             notes.append(
-                f"이 달 들어온 신규 {names} — 개조 {conditions.modification_days}일 안에 늘어날 "
-                "전용이 없어 기존 제품 몫입니다(나중에 제약에 쓰려면 개조)."
+                f"이 달 들어온 신규 {names} — {reason} 기존 제품 몫입니다(나중에 제약에 쓰려면 "
+                "개조)."
             )
     return MonthStep(body, " · ".join(notes))
 
@@ -606,6 +621,34 @@ def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
     return f"이 달 늘어난 전용 {row.growth}대 — {joined} 개조 없이, 개조 {row.increment}대"
 
 
+def holdings_text(result: ConstraintResult) -> str:
+    """보유의 출처와 크기 — 「입력 4대」(목록에 없는 보유 칸만), 「고른 호기 3대 · 보유 2.50대」,
+    「고른 호기 2대 + 입력 1대 · 보유 3대 · 27년 7월부터 2대」(그 달 W/D 첫날 보유가 기간 안에서
+    바뀌면 바뀐 달 둘까지, 그 뒤는 「외 n번」). 보유가 걸리지 않으면 빈 글자."""
+    conditions = result.conditions
+    if not conditions.uses_owned_units:
+        return ""
+    if not conditions.held_units:
+        return f"입력 {conditions.owned_units}대"
+    source = f"고른 호기 {len(conditions.held_units)}대"
+    if conditions.owned_units:
+        source += f" + 입력 {conditions.owned_units}대"
+    steps: list[tuple[int, float]] = []
+    for row in result.months:
+        if row.in_period and (not steps or abs(row.holdings - steps[-1][1]) > 1e-9):
+            steps.append((row.month, row.holdings))
+    if not steps:
+        return source
+    text = f"{source} · 보유 {units_text(steps[0][1])}대"
+    changes = steps[1:]
+    text += "".join(
+        f" · {month_name(month)}부터 {units_text(value)}대" for month, value in changes[:2]
+    )
+    if len(changes) > 2:
+        text += f" 외 {len(changes) - 2}번"
+    return text
+
+
 def free_units_line(result: ConstraintResult) -> str:
     """개조 일정 카드 머리 한 줄 — 개조 없이 쓰는 전용(`FILL_ORDER` 차례). 나눠 보이지 않으면 빈
     글자."""
@@ -616,7 +659,7 @@ def free_units_line(result: ConstraintResult) -> str:
     since = conditions.new_unit_since.isoformat() if conditions.new_unit_since else "—"
     parts = free_parts(
         conditions,
-        f"보유 제약 설비 {kpis.owned_used}대(입력 {conditions.owned_units}대 중)",
+        f"보유 제약 설비 {kpis.owned_used}대({holdings_text(result)} 중)",
         f"신규 설비 {kpis.new_used}대(기준일 {since} 이후 기여 시작 · 개조 "
         f"{conditions.modification_days}일 안에 늘어날 전용에 붙임)",
     )
@@ -629,7 +672,7 @@ def waiting_lines(assignments: Sequence[NewUnitAssignment], *, today: date) -> l
     lines: list[str] = []
     for item in assignments:
         line = (
-            f"{month_name(item.month)} 몫 · 신규 {literal_markdown(item.unit)} · "
+            f"{month_name(item.month)} 몫 · 신규 {literal_markdown(item.label)} · "
             f"{_markdown_waiting(item)} · **{units_text(item.units)}대**"
         )
         if item.days > 0 and item.start < today:
@@ -661,10 +704,14 @@ def ordinary_line(result: ConstraintResult) -> str:
     total = sum(result.left_units(unit) for unit in units)
     names = ", ".join(_ordinary_name(unit, result) for unit in units[:4])
     more = f" 외 {len(units) - 4}호기" if len(units) > 4 else ""
+    reason = (
+        SKIPPED_REASON
+        if result.new_units_skipped
+        else f"개조 {result.conditions.modification_days}일 안에 늘어날 전용이 없어"
+    )
     return (
-        f"일반 설비가 된 신규 {units_text(total)}대 — {names}{more} · 개조 "
-        f"{result.conditions.modification_days}일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
-        "쓰려면 개조)"
+        f"일반 설비가 된 신규 {units_text(total)}대 — {names}{more} · {reason} 기존 제품 몫"
+        "(제약에 쓰려면 개조)"
     )
 
 
@@ -1041,6 +1088,8 @@ def _render_schedule(view: ConstraintView) -> None:
             elif not result.windows:
                 freed = result.kpis.owned_used + result.kpis.new_used
                 st.caption(FREE_ONLY_TEXT if free_line and freed > 0 else NO_WINDOWS_TEXT)
+            if result.new_units_skipped:
+                st.caption(NEW_SKIPPED_TEXT)
             for line in schedule_lines(result.windows, today=view.today):
                 st.markdown(line)
             if result.starts_before_range:

@@ -11,10 +11,17 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 접두다(`tests/test_session_key_collisions.py`).
 
 - **위젯 칸**(`persist_state="session"`) — 공정·제약 제품·제약 시작·제약 끝 상자, 「개조
-  필요」·「신규 설비는 개조 없이」·「소요 비중대로 나눴을 때 함께 보기」 토글, 보유 제약 설비 숫자
-  칸(환산 대수 정수 — 미리 정할 버튼 값이 뜻이 없는 사실 값이라 D10 버튼을 두지 않는다)과 신규 설비
-  기준일 날짜 칸(2026-10-26 사용자 결정). 위젯 앞에서 칸이 없거나 틀린 꼴일 때만 심는다
+  필요」·「신규 설비는 개조 없이」·「소요 비중대로 나눴을 때 함께 보기」 토글, 목록에 없는 보유 제약
+  설비 숫자 칸(환산 대수 정수 — 미리 정할 버튼 값이 뜻이 없는 사실 값이라 D10 버튼을 두지 않는다)과
+  신규 설비 기준일 날짜 칸(2026-10-26 사용자 결정). 위젯 앞에서 칸이 없거나 틀린 꼴일 때만 심는다
   (`seed_owned_units`·`seed_new_since`·`seed_toggle`).
+- **보유 「호기 고르기」**(2026-11-01 사용자 결정 B3) — 정본은 위젯이 아닌 칸 하나에 공정마다 고른
+  설비키 목록(`CONSTRAINT_HELD_KEY` — `{공정: [설비키, …]}`)이고 multiselect 칸
+  (`CONSTRAINT_HELD_INPUT_KEY`)은 위젯 앞에서 매 회차 그 공정 목록을 다시 적는다(`settle_held_units`
+  — 선택지 글자가 바뀌어도 브라우저가 새 글자를 받게, `prune_list_selection` 과 같은 까닭). 공정을
+  바꿔도 공정마다의 고름이 남는다. 지금 선택지(세션 설비 시나리오의 그 공정 호기)에 없는 호기는
+  목록에서 빼고 한 줄 알림을 남긴다(B3-2 — `CONSTRAINT_HELD_DROPPED_KEY`, 같은 공정 · 같은 선택지인
+  동안 서고 고름을 바꾸면 걷는다).
 - **정본 칸**(위젯 아님) — 제약 확보율(정수 %)·기준 확보율(`None` = HOME 판정 기준, 아니면 %
   실수)·개조 기간(정수 일). 버튼과 직접 입력 칸 둘이 한 정본을 나눠
   쓴다(`components/preset_number_field.py`).
@@ -49,6 +56,9 @@ __all__ = [
     "CONSTRAINT_GENERAL_INPUT_KEY",
     "CONSTRAINT_GENERAL_KEY",
     "CONSTRAINT_GENERAL_PILLS_KEY",
+    "CONSTRAINT_HELD_DROPPED_KEY",
+    "CONSTRAINT_HELD_INPUT_KEY",
+    "CONSTRAINT_HELD_KEY",
     "CONSTRAINT_LOCKED_ARRIVAL_KEY",
     "CONSTRAINT_MODIFY_KEY",
     "CONSTRAINT_MOD_DAYS_INPUT_KEY",
@@ -83,13 +93,16 @@ __all__ = [
     "MOD_DAY_PRESETS",
     "PROCESS_PARAM",
     "TARGET_PRESETS",
+    "HeldSettle",
     "SettledPeriod",
     "constraint_query_params",
+    "follow_held_units",
     "follow_period_end",
     "follow_period_start",
     "seed_new_since",
     "seed_owned_units",
     "seed_toggle",
+    "settle_held_units",
     "settle_period",
     "take_constraint_process_request",
 ]
@@ -109,6 +122,11 @@ CONSTRAINT_MODIFY_KEY: Final = "constraint_sim_modify"
 CONSTRAINT_OWNED_KEY: Final = "constraint_sim_owned_units"
 CONSTRAINT_NEW_UNITS_KEY: Final = "constraint_sim_new_units"
 CONSTRAINT_NEW_SINCE_KEY: Final = "constraint_sim_new_since"
+# 보유 「호기 고르기」 — 정본(위젯 아님, `{공정: [설비키, …]}`)과 multiselect 칸, 빠진 호기
+# 알림(위젯 아님 — (공정, 그 회차 선택지, 뺀 설비키)).
+CONSTRAINT_HELD_KEY: Final = "constraint_sim_held_units"
+CONSTRAINT_HELD_INPUT_KEY: Final = "constraint_sim_held_units_input"
+CONSTRAINT_HELD_DROPPED_KEY: Final = "constraint_sim_held_dropped"
 # 본문 보기 전환(프래그먼트 안) — 하위 보기 전환은 본문이다(AGENTS 9장).
 CONSTRAINT_PROPORTIONAL_KEY: Final = "constraint_sim_proportional"
 
@@ -227,6 +245,70 @@ def seed_new_since(today: date) -> None:
     value = st.session_state.get(CONSTRAINT_NEW_SINCE_KEY)
     if not isinstance(value, date) or isinstance(value, datetime):
         st.session_state[CONSTRAINT_NEW_SINCE_KEY] = today
+
+
+# ------------------------------------------------------------------ 보유 「호기 고르기」
+
+
+class HeldSettle(NamedTuple):
+    """위젯 앞에서 잡은 그 공정의 고른 호기. `dropped` 는 지금 선택지에 없어 뺀 설비키이고 알림이
+    설 동안(같은 공정 · 같은 선택지) 그대로 돌려준다."""
+
+    picked: tuple[str, ...]
+    dropped: tuple[str, ...]
+
+
+def _held_map() -> dict[str, list[str]]:
+    """정본 칸 — 틀린 꼴이면 빈 것으로 본다(글자 목록이 아닌 값은 버린다)."""
+    saved = st.session_state.get(CONSTRAINT_HELD_KEY)
+    if not isinstance(saved, dict):
+        return {}
+    return {
+        str(process): [str(name) for name in names]
+        for process, names in saved.items()
+        if isinstance(names, list | tuple)
+    }
+
+
+def settle_held_units(process: str, choices: Sequence[str]) -> HeldSettle:
+    """그 공정의 고른 호기를 위젯 앞에서 잡는다 — 지금 선택지에 없는 호기는 정본에서 빼고 알림을
+    남긴 뒤(결정 B3-2), multiselect 칸에 남은 목록을 **매 회차** 적는다(고른 차례 그대로).
+
+    정본은 다를 때만 적는다. 알림은 같은 공정 · 같은 선택지인 동안 서고, 공정이나 선택지가 다시
+    바뀌면 그 회차의 뺀 것으로 바뀐다(없으면 걷힌다).
+    """
+    key = str(process)
+    allowed = {str(name) for name in choices}
+    signature = tuple(str(name) for name in choices)
+    mapping = _held_map()
+    saved = mapping.get(key, [])
+    kept = [name for name in dict.fromkeys(saved) if name in allowed]
+    dropped = tuple(name for name in dict.fromkeys(saved) if name not in allowed)
+    if dropped or kept != saved:
+        mapping[key] = kept
+        st.session_state[CONSTRAINT_HELD_KEY] = mapping
+    if dropped:
+        st.session_state[CONSTRAINT_HELD_DROPPED_KEY] = (key, signature, dropped)
+    notice = st.session_state.get(CONSTRAINT_HELD_DROPPED_KEY)
+    shown: tuple[str, ...] = ()
+    if isinstance(notice, tuple) and len(notice) == 3:
+        if notice[0] == key and notice[1] == signature:
+            shown = tuple(str(name) for name in notice[2])
+        else:
+            st.session_state.pop(CONSTRAINT_HELD_DROPPED_KEY, None)
+    st.session_state[CONSTRAINT_HELD_INPUT_KEY] = list(kept)
+    return HeldSettle(tuple(kept), shown)
+
+
+def follow_held_units(process: str) -> None:
+    """「보유 제약 호기」 multiselect 콜백 — 고른 목록을 그 공정의 정본에 옮기고 빠진 호기 알림을
+    걷는다(사용자가 고름을 바꿨다)."""
+    value = st.session_state.get(CONSTRAINT_HELD_INPUT_KEY)
+    names = [str(name) for name in value] if isinstance(value, list | tuple) else []
+    mapping = _held_map()
+    mapping[str(process)] = names
+    st.session_state[CONSTRAINT_HELD_KEY] = mapping
+    st.session_state.pop(CONSTRAINT_HELD_DROPPED_KEY, None)
 
 
 # ------------------------------------------------------------------ 제약 기간 상자 둘

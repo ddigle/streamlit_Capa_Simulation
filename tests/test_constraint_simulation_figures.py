@@ -985,8 +985,10 @@ def _new(*, owned: int = 0) -> ConstraintResult:
 def test_the_schema_version_moved_with_the_new_rows() -> None:
     """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
     16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이고, 8 은
-    그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판이다."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 9
+    그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판, 10 은
+    묶음 신규의 모듈 몫(「HB-07(HB-07B)」)과 「보유로 제약 기간을 다 덮음」 풍선 글을 실은 판이다
+    (2026-11-01 사용자 결정 B1 · B2)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 10
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:

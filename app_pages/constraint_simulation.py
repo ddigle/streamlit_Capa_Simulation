@@ -38,11 +38,16 @@
 본문은 머리 한 줄 → 출처 띠 → 요약 넷(프래그먼트 밖) → 본문
 프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
 
-개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 설비」 숫자 칸(환산
-대수, 기본 0)과 「신규 설비는 개조 없이」 토글 + 기준일(기본 오늘). 신규 호기(기여 시작 · 환산
-대수 · 반출)는 새 캐시 없이 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(`get_process_equipment_timeline`
-— 같은 키)을 기준일로 거른 값이고(`new_unit_availability`), 옵션을 켠 회차에만 받는다. 어느 증가에
-붙일지(개조 일수 안 — 그 사이 신규 대기)는 서비스가 정한다. 기준일은 어떤 캐시 키에도 들지 않는다.
+개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
+(그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
+칸(환산 대수, 기본 0 — B3-3), 「신규 설비는 개조 없이」 토글 + 기준일(기본 오늘). 호기 고르기
+선택지는 같은 마스터 지문의 가벼운 캐시(`get_process_held_units`)로 받고, 계획을 받은 뒤 카드 안
+자리(`held_slot`)에 그린다 — 계획 앞에서 멈추는 갈래는 잠긴 빈 칸을 그린다(카드 모양이 같게).
+신규 호기(기여 시작 · 환산 대수 · 반출 — 묶음은 첫 모듈 기준)는 새 캐시 없이 공정 Capa 상세
+③·④ 와 같은 설비 일정 칸(`get_process_equipment_timeline` — 같은 키)을 기준일로 거르고 고른
+호기를 뺀 값이고(`new_unit_availability`), 옵션을 켠 회차에만 받는다. 어느 증가에 붙일지(개조
+일수 안 — 그 사이 신규 대기)와 보유로 기간이 덮이면 신규를 붙이지 않는 것(B1)은 서비스가
+정한다. 기준일·고른 호기는 어떤 캐시 키에도 들지 않는다.
 """
 
 from datetime import date
@@ -59,6 +64,7 @@ from capa_simulation.components.constraint_equipment_plan import (
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
     general_label,
+    units_text,
 )
 from capa_simulation.components.constraint_simulation_view import (
     ConstraintView,
@@ -91,6 +97,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
+    CONSTRAINT_HELD_INPUT_KEY,
     CONSTRAINT_LOCKED_ARRIVAL_KEY,
     CONSTRAINT_MOD_DAYS_INPUT_KEY,
     CONSTRAINT_MOD_DAYS_KEY,
@@ -114,11 +121,13 @@ from capa_simulation.constraint_simulation_state import (
     GENERAL_PRESETS,
     MOD_DAY_PRESETS,
     TARGET_PRESETS,
+    follow_held_units,
     follow_period_end,
     follow_period_start,
     seed_new_since,
     seed_owned_units,
     seed_toggle,
+    settle_held_units,
     settle_period,
     take_constraint_process_request,
 )
@@ -160,7 +169,9 @@ from capa_simulation.services.constraint_simulation import (
     TARGET_RANGE,
     ConstraintConditions,
     ConstraintResult,
+    HeldUnit,
     NewUnit,
+    UnitModule,
     constraint_month_inputs,
     simulate_constraint,
 )
@@ -169,7 +180,12 @@ from capa_simulation.services.manual_downtime import ManualDowntime, manual_effe
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
 from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
-from capa_simulation.services.process_equipment_timeline import NewUnitAvailability
+from capa_simulation.services.process_equipment_timeline import (
+    HeldUnitChoice,
+    ModuleStart,
+    NewUnitAvailability,
+    new_unit_availability,
+)
 from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import get_process_product_demand
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
@@ -193,11 +209,22 @@ SESSION_NOTE = (
     "확보율·HOME·필요 단축 일정은 그대로입니다."
 )
 AVAILABLE_EQUIPMENT_PAGE = AVAILABLE_EQUIPMENT_STATUS.path
+HELD_LABEL = "보유 제약 호기"
+HELD_HELP = (
+    "이미 제약 제품을 돌릴 수 있게 개조·Qual 된 호기를 이 공정의 세션 설비 시나리오 호기에서 "
+    "고릅니다(찾기 됨 — 세션에만 두고 저장하지 않습니다). 보유 = 그 달 W/D 첫날에 있는 "
+    "고른 호기의 환산 합 — 기여 시작 전 호기는 아직 없고, 정지·반출/이설되는 날부터 뺍니다"
+    "(이미 쓴 몫은 풀지 않습니다). 제약 몫이 늘 때 그날 붙일 수 있는 신규 설비 다음으로 써 "
+    "그만큼 개조하지 않고, 보유만으로 제약 기간 끝까지 덮이면 신규를 붙이지 않습니다. 쓰지 "
+    "않는 동안과 기간 밖에는 기존 제품에 씁니다. 고른 호기는 신규 후보에서 빠집니다(두 번 "
+    "세지 않습니다). 설비 시나리오를 바꿔 없는 호기는 빼고 알립니다."
+)
+HELD_IDLE_PLACEHOLDER = "설비 일정이 서는 공정에서 고릅니다"
+OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
 OWNED_HELP = (
-    "이미 제약 제품을 돌릴 수 있게 개조·Qual 된 설비(환산 대수). 설비 일정 기준 가용 안에 "
-    "든다고 보고, 제약 몫이 늘 때 그날 붙일 수 있는 신규 설비 다음으로 써 그만큼 개조하지 "
-    "않습니다. 쓰지 않는 동안과 기간 밖에는 "
-    "기존 제품에 씁니다. 「신규 설비는 개조 없이」 에 드는 호기는 빼고 적으세요(두 번 셉니다)."
+    "위 「보유 제약 호기」 목록에 없는 보유(기존보유처럼 설비 마스터 호기가 아닌 대수)를 "
+    "적습니다 — 환산 대수, 기간 내내 같습니다. 고른 호기에 더해 보유로 셉니다. 목록에 있는 "
+    "호기는 여기 적지 말고 위에서 고르세요(신규 후보와 두 번 셉니다)."
 )
 NEW_UNITS_HELP = (
     "기여 시작(Qual 다음 날)이 기준일 이후인 신규 호기(공정 Capa 상세 ③ 과 같은 날짜)는 셋업 때 "
@@ -205,7 +232,9 @@ NEW_UNITS_HELP = (
     "(그 달 W/D 첫날)이 있으면 개조 없이 그 몫에 붙이고, 그 달까지는 기존 제품이 못 쓰는 "
     "「신규 대기」 로 뺍니다(개조보다 짧습니다). 개조 기간 안에 늘어날 몫이 없으면 기존 제품에 "
     "쓰여 그 뒤로는 일반 설비와 같습니다(제약에 쓰려면 개조). 제약 기간 전에 들어온 신규도 "
-    "같습니다."
+    "같습니다. 묶음(모듈) 설비는 첫 모듈 날짜로 보고 모듈마다 제 날짜부터 붙입니다 — 증가 날까지 "
+    "오지 않은 모듈은 그 증가에 붙지 않습니다. 보유 제약 설비만으로 제약 기간 끝까지 덮이면 신규는 "
+    "붙이지 않습니다(기존 제품 몫)."
 )
 
 
@@ -572,11 +601,13 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         preset_label=lambda value: f"{value:g}일" if value is not None else "",
         disabled=not modify,
     )
-    # 2판 옵션 — 늘 그리고 개조 끔이면 잠근다(갈래마다 카드 모양이 같다). 보유 대수는 사람마다 아는
+    # 2판 옵션 — 늘 그리고 개조 끔이면 잠근다(갈래마다 카드 모양이 같다). 호기 고르기는 선택지가
+    # 계획 뒤에 서므로 자리만 잡는다(`render_held_picker`). 목록에 없는 보유 대수는 사람마다 아는
     # 사실 값이라 D10 버튼을 두지 않는다.
+    held_slot = st.container()
     seed_owned_units(OWNED_UNITS_RANGE[1])
     owned_units = st.number_input(
-        "보유 제약 설비 (환산 대수)",
+        OWNED_LABEL,
         min_value=OWNED_UNITS_RANGE[0],
         max_value=OWNED_UNITS_RANGE[1],
         step=1,
@@ -609,7 +640,80 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
     cutoff_slot = st.container()
 
 
+def render_idle_held_picker() -> None:
+    """계획 앞에서 멈추는 갈래의 호기 고르기 자리 — 잠긴 빈 칸(카드 모양이 같게). 정본은 건드리지
+    않는다(설비 일정이 다시 서면 그 공정의 고름이 돌아온다)."""
+    with held_slot:
+        st.multiselect(
+            HELD_LABEL,
+            [],
+            disabled=True,
+            placeholder=HELD_IDLE_PLACEHOLDER,
+            help=HELD_HELP,
+        )
+
+
+def held_choice_label(choice: HeldUnitChoice) -> str:
+    """선택지 글 — 「HB-07 · 환산 0.5 · 2027-03-01 반출/이설」(축 안에서 뜻 있는 날만)."""
+    text = f"{choice.unit} · 환산 {units_text(choice.units)}"
+    if choice.start is not None:
+        text += f" · {choice.start.isoformat()} 기여 시작"
+    if choice.until is not None:
+        text += f" · {choice.until.isoformat()} {choice.until_kind or '반출'}"
+    return text
+
+
+def render_held_picker(
+    process: str, choices: tuple[HeldUnitChoice, ...], *, disabled: bool
+) -> list[str]:
+    """보유 「호기 고르기」 — 위젯 앞에서 그 공정의 고름을 잡고(없는 호기는 빼고 한 줄 알림 — 결정
+    B3-2) 카드 자리에 그린다. 고른 설비키(고른 차례)를 돌려준다."""
+    settled = settle_held_units(process, [choice.unit for choice in choices])
+    if settled.dropped:
+        names = ", ".join(literal_markdown(name) for name in settled.dropped[:4])
+        more = f" 외 {len(settled.dropped) - 4}대" if len(settled.dropped) > 4 else ""
+        notices.info(
+            f"고른 보유 제약 호기 가운데 지금 설비 시나리오의 이 공정 목록에 없는 "
+            f"{len(settled.dropped)}대({names}{more})를 뺐습니다.",
+            icon=":material/playlist_remove:",
+        )
+    labels = {choice.unit: held_choice_label(choice) for choice in choices}
+    with held_slot:
+        picked = st.multiselect(
+            HELD_LABEL,
+            list(labels),
+            key=CONSTRAINT_HELD_INPUT_KEY,
+            format_func=lambda name: labels.get(str(name), str(name)),
+            on_change=follow_held_units,
+            args=(process,),
+            disabled=disabled,
+            placeholder="호기 고르기" if choices else "이 공정에 고를 호기가 없습니다",
+            help=HELD_HELP,
+        )
+        if picked:
+            weights = {choice.unit: choice.units for choice in choices}
+            total = sum(weights.get(str(name), 0.0) for name in picked)
+            st.caption(f"고른 호기 {len(picked)}대 · 환산 합 {units_text(total)}대")
+    return [str(name) for name in picked]
+
+
+def held_unit(choice: HeldUnitChoice) -> HeldUnit:
+    """고른 선택지 → 계산 서비스의 보유 호기."""
+    return HeldUnit(
+        name=choice.unit,
+        units=choice.units,
+        start=choice.start,
+        until=choice.until,
+        modules=_unit_modules(choice.modules),
+    )
+
+
+def _unit_modules(modules: tuple[ModuleStart, ...]) -> tuple[UnitModule, ...]:
+    return tuple(UnitModule(module.name, module.start, module.units) for module in modules)
+
+
 if selected_process is None or not months or period is None:
+    render_idle_held_picker()
     st.info("조회기간에 확보율을 낼 공정이 없습니다.", icon=":material/info:")
     st.stop()
 
@@ -657,14 +761,33 @@ equipment_plan = render_equipment_plan(
     render_header=render_header,
     render_reason_card=render_reason_card,
     before_plan=product_ready,
-    new_unit_since=new_unit_since,
+    with_timeline=new_unit_since is not None,
+    with_held_units=True,
 )
 if equipment_plan is None or selected_product is None:
+    render_idle_held_picker()
     st.stop()
 product = str(selected_product)
 plan = equipment_plan.plan
 target_level = equipment_plan.target_level
-new_shares = equipment_plan.new_units
+# 보유 「호기 고르기」(개조 끔이면 잠긴다 — 고름은 세션에 남고 계산에 걸리지 않는다). 고른 호기는
+# 신규 후보에서 뺀다(결정 B3 — 두 번 세지 않게).
+picked_held = render_held_picker(process, equipment_plan.held_choices, disabled=not modify)
+picked_set = set(picked_held)
+held_units = (
+    tuple(held_unit(choice) for choice in equipment_plan.held_choices if choice.unit in picked_set)
+    if modify
+    else ()
+)
+new_shares = (
+    new_unit_availability(
+        equipment_plan.timeline,
+        since=new_unit_since,
+        excluded=[unit.name for unit in held_units],
+    )
+    if equipment_plan.timeline is not None and new_unit_since is not None
+    else None
+)
 
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
@@ -699,6 +822,7 @@ conditions = ConstraintConditions(
     ),
     cutoff_days=equipment_plan.cutoff_days,
     owned_units=owned_value,
+    held_units=held_units,
     new_unit_since=new_unit_since,
 )
 with new_units_slot:
@@ -715,7 +839,13 @@ try:
     )
     new_units = (
         tuple(
-            NewUnit(name=entry.unit, start=entry.start, units=entry.units, until=entry.until)
+            NewUnit(
+                name=entry.unit,
+                start=entry.start,
+                units=entry.units,
+                until=entry.until,
+                modules=_unit_modules(entry.modules),
+            )
             for entry in new_shares.starts
         )
         if new_shares is not None
@@ -747,7 +877,10 @@ period_text = (
 )
 modification_text = f"개조 {conditions.modification_days}일" if conditions.modifies else "개조 없음"
 if conditions.uses_owned_units:
-    modification_text += f" · 보유 제약 {conditions.owned_units}대"
+    holdings = [f"호기 {len(conditions.held_units)}대"] if conditions.held_units else []
+    if conditions.owned_units:
+        holdings.append(f"{conditions.owned_units}대")
+    modification_text += " · 보유 제약 " + " + ".join(holdings)
 if conditions.uses_new_units and new_unit_since is not None:
     modification_text += f" · 신규 개조 없이({new_unit_since.isoformat()}~)"
 render_header(
@@ -781,10 +914,15 @@ if manual_note:
 upeh_percent = st.session_state.get(UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT)
 if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
     band += " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
+if conditions.held_units:
+    band += (
+        f" · 보유 호기 = {literal_markdown(equipment_text or '세션 설비 시나리오')}에서 고른 "
+        f"{len(conditions.held_units)}대"
+    )
 if new_shares is not None:
     band += (
         f" · 신규 = 기여 시작 {new_shares.since.isoformat()} 이후 호기 {len(new_shares.units)}대"
-        "(공정 Capa 상세 ③ 과 같은 날짜)"
+        "(공정 Capa 상세 ③ 의 Qual 다음 날 — 묶음은 첫 모듈)"
     )
 st.caption(band)
 if period.moved:
