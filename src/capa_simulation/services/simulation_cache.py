@@ -290,7 +290,7 @@ def required_shortening_cache_key(
     날짜도 키에 든다.
 
     여덟째 칸은 **UPEH 가정 토큰**(`upeh_assumption.UpehToken`)이다 — 공식 계획은 `()`.
-    가정의 배수는 늘 이 칸에서만 나온다(`required_shortening_plan_demand`). 이 키를 쓰는
+    가정의 배수는 늘 이 칸에서만 나온다(`assumed_required_equipment`). 이 키를 쓰는
     CSV·진척 캐시는 키만으로 칸이 갈린다.
 
     끝 칸은 **입력 비가동 칸**(가용설비 현황 › Preference, `manual_downtime_key` — 계산할 달로 좁힌
