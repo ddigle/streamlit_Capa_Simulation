@@ -1685,6 +1685,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`small_editor_edits` — 시나리오 편집 등록부에는 넣지 않는다, 시나리오 저장 경고가 아니다)은 지금 탭에만 찍는다. 지금 화면의 그 둘이 있으면 다른 탭
     누름·지금 탭 × 에서 `confirm` 으로 묻는다(`leave_notice`). 사이드바 링크·뒤로가기에는 묻지 않는다. 시나리오 미저장·
     Cut-off 초안·Qual 계산기는 점 대상이 아니다. 테마 단추의 「저장 안 함」 표지도 이 판정 하나를 쓴다.
+    - 문서를 떠날 때(새로고침·브라우저 탭 닫기·주소 바꾸기)는 브라우저 확인 창이다(순수 구획 `<tabs-unload>`, 개선 거리 I3 —
+      2026-11-01 사용자 결정). 탭 줄이 문서에 `beforeunload` 처리기를 하나 걸고(`installUnloadGuard` — `window.__capaUnloadGuard`,
+      걸고 풀지 않는다) 떠나는 순간 테마 단추의 저장 안 함 표지(`--capa-unsaved-edits` — `theme_toggle.UNSAVED_EDITS_CSS_VARIABLE`,
+      `app.py` 가 `has_unsaved_scenario_changes()` 또는 탭 점으로 단다)가 '1' 일 때만 `preventDefault`·`returnValue` 로 묻는다.
+      편집이 없으면 묻지 않는다. 테마 단추는 제 확인 창으로 이미 물었으므로 새로 읽기 직전에 부모 창에
+      `theme_toggle.RELOAD_ASKED_FLAG`(`__capaReloadAsked`)를 달고 처리기는 그것과 열릴 때의 테마 키 맞추기 새로고침
+      (`__capaThemeReloading`)을 보고 지나간다 — 두 번 묻지 않는다. 창의 글은 브라우저가 정한다(사이트 글을 싣지 못하고, Chrome
+      은 그 문서에서 사람이 한 번이라도 누른 뒤에만 띄운다). 떠나기는 기다려 주지 않아 붙들 수 없다 — 칸 편집기에 쓰는 중(Enter
+      전)인 글은 표지가 서기 전이라 묻지 않는다. Playwright 드라이버(`check_deploy_screens`·가이드 생성기)는 새 문맥·한 번
+      들어가기라 이 창에 걸리지 않는다 — 편집을 남긴 채 같은 쪽에서 `goto`·`reload` 하는 드라이버는 `dialog` 를 받아 넘겨야 한다.
     - 묻기는 앞 회차 data 의 `leave` 로 정하므로, 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후의 누름은 그 편집을 실은
       회차가 돌아올 때까지 붙든다(`page_tabs.js` 의 순수 구획 `<tabs-hold>` — 누를 때 포커스가 편집표였거나 마지막 편집표
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
@@ -1781,7 +1791,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS`)에 넣고, `app_header`
     의 오른쪽 비움 폭(`_NARROW_HEADER_RULES` 포함)과 진행 막대 자리(`_status_slot_css`)를 다시 잰다 — 셋 다 지금 툴바를
     잰 값이다.
-  - 전환은 새 세션이라 미저장 시나리오·설비 편집이 있으면 `confirm` 으로 묻는다(표지 `unsaved_edits_marker`).
+  - 전환은 새 세션이라 미저장 시나리오·설비 편집이 있으면 `confirm` 으로 묻는다(표지 `unsaved_edits_marker`). 새로 읽기
+    직전에 부모 창에 `RELOAD_ASKED_FLAG` 를 달아 탭 줄의 새로고침 확인 창(`page_tabs.js` 의 `<tabs-unload>`)이 다시 묻지 않게
+    한다. 같은 표지를 그 확인 창도 읽는다.
     시나리오 밖의 것 — 설비 편집본·Space FAB 전체 배치 대기분(설비 편집본 세대 밖)·Space 층 사용 편집 초안·적용 전
     편집(편집표·붙여넣기 대기)·Past Data 초안·시나리오 관리 표 초안 — 은 `app.py` 가 같은 회차의 탭 점
     판정(`page_tabs.page_unsaved_marks`)으로 넣는다.
@@ -2552,11 +2564,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지금 공식이 최신처럼 읽혔고(2026-10-26 E2E 3회차), 리비전 목록에서 찾으면 공식이 그때의 목록 한도(최근 50줄) 밖일 때
     빠졌다(개선 I25 — 지금 구획 목록은 전부지만 발행 줄 번호를 그대로 쓴다). 발행 줄에 번호가 없는 옛 캐시 값이면 최신·세션 스냅샷에서만 찾고,
     없으면 번호를 뺀다.
-    고른 리비전이 이미 지금 공식이면 저장소가 쓰지 않고 그 발행을 돌려주므로 확인 글은 「→ 새 공식」 없이 지금 공식과 「이미 공식
-    발행인 리비전입니다 — 발행해도 바뀌지 않습니다」 만 적고, 누르면 「「…」 rK은 이미 공식 vN입니다 — 새로 발행하지
-    않았습니다」 다(`already_released_message` — 「공식 vN로 발행했습니다」 로 새 발행처럼 알렸다, 2026-10-27 E2E). 단추는 끄지
-    않는다 — 첫 발행 뒤 다시 그린 화면에 닿은 빠른 둘째 누름이 잠긴 단추에 버려지면 첫 발행 알림이 지워진다. 그 둘째 누름은 첫
-    발행 알림을 다시 낸다(`note_notice`·`held_notice`). 쓰지 않은 발행은 제 저장 짝을 적지 않는다.
+    고른 리비전이 이미 지금 공식이면(`already_official`) 저장소가 쓰지 않고 그 발행을 돌려주므로 확인 글은 「→ 새 공식」 없이
+    지금 공식과 단추를 끈 까닭(`ALREADY_OFFICIAL_LINE` — 「이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로
+    발행」 을 껐습니다.」)만 적고 「공식으로 발행」 을 끈다(개선 거리 I26, 2026-11-01 사용자 결정 — 「발행해도 바뀌지 않습니다」
+    위에 켜진 단추가 서로 어긋났다, E2E #37·#97). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 단추가 꺼지고, 그 단추에 닿은
+    빠른 둘째 누름은 Streamlit 이 버려(1.63 `SessionState` 가 꺼진 위젯의 값을 버린다) 그 회차가 첫 발행 알림을 지웠다. 발행은
+    알림을 `note_notice`(칸 `PUBLISH_SAVE_NAME`)로 적고 — 정리 발행은 `_follow_and_announce(notices=…)` 가 옮김까지 든 글을 —
+    구획 맨 위 알림 칸이 담아 둔 알림·거절이 없는 회차에 창(`TRAILING_PRESS_SECONDS`) 안이면 그 글을 다시 그린다(`held_notice`,
+    팝오버 세대는 올리지 않는다 — 첫 알림 회차가 올렸다). 둘째 누름이 아직 켜진 단추로 들어오면(목록 캐시가 늦은 회차) 저장소가
+    쓰지 않고 「「…」 rK은 이미 공식 vN입니다 — 새로 발행하지 않았습니다」 다(`already_released_message` — 「공식 vN로
+    발행했습니다」 로 새 발행처럼 알렸다, 2026-10-27 E2E). 창 안이면 첫 발행 알림을 다시 낸다. 쓰지 않은 발행은 제 저장 짝을 적지
+    않는다. 꺼진 단추에 닿은 누름은 AppTest 가 `click()` 으로 보내지 못해 시험은 누름 값을 바로 싣는다
+    (`tests/test_equipment_scenario_publish_guard.stale_press`).
   - **팝오버·알림 자리**(2026-10-25 E2E). 맨 위 작업 알림·거절 알림, 옛 배포 흔적 구획, 옛 판 흔적 줄·경고, 구획 머리의
     세션 이동 알림은 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는 `st.container()` 칸 안에 그린다(9장 「key 가
     있어도 자리는 고정한다」 — 알림이 빠지는 회차에 key 없던 팝오버 줄이 한 칸 당겨져 다시 서며, 알림 뒤 처음 누른 확인

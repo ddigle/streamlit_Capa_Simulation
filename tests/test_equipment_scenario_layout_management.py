@@ -23,6 +23,7 @@ from typing import Any
 import duckdb
 import pytest
 from streamlit.testing.v1 import AppTest
+from test_equipment_scenario_publish_guard import stale_press
 from test_equipment_scenario_repository import (
     OPERATIONS,
     _clone,
@@ -32,6 +33,7 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
     CLEAR_LAYOUT_BUTTON_KEY,
     CLEAR_LAYOUT_CONFIRM_KEY,
@@ -737,6 +739,40 @@ def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revisi
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
     assert app.selectbox(key=REVISION_KEY).value == newest.schedule_revision_id
     assert not app.error, [item.value for item in app.error]
+
+
+def test_a_quick_second_press_of_a_cleaning_publish_keeps_its_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """정리 발행 뒤 다시 그린 화면은 리비전 상자가 정리 리비전 r3(이제 공식)으로 옮겨 「공식으로
+    발행」 이 꺼진다(개선 거리 I26). 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버린다 — 창
+    (`TRAILING_PRESS_SECONDS`) 안이면 구획 맨 위 칸이 첫 발행 알림(「… 이 세션을 r3으로
+    옮겼습니다.」)을 다시 그린다. 예전에는 정리 발행이 그 알림을 적어 두지 않아 켜진 단추의 둘째
+    누름이 「r3은 이미 공식 v2입니다 — 새로 발행하지 않았습니다」 로 첫 알림을 덮었다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository, setup, latest = _moved_setup(tmp_path)
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    clear_equipment_repository()
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+    assert app.selectbox(key=REVISION_KEY).value == latest
+
+    _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
+    first = [str(item.value) for item in app.success]
+    assert len(first) == 1, first
+    assert "공식 v2로 발행했습니다" in first[0], first
+    assert "이 세션을 r3으로 옮겼습니다." in first[0], first
+
+    _ok(stale_press(app, PUBLISH_BUTTON_KEY))
+
+    assert [str(item.value) for item in app.success] == first
+
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 2
 
 
 def test_the_branch_confirm_names_the_layout_it_copies() -> None:

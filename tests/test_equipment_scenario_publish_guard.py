@@ -31,8 +31,10 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+import capa_simulation.components.equipment_scenario_management as management
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
+    ALREADY_OFFICIAL_LINE,
     CONTINUE_BUTTON_KEY,
     PUBLISH_BUTTON_KEY,
     SCENARIO_KEY,
@@ -147,6 +149,17 @@ render_equipment_scenario_management({str(path)!r}, session)
 def _ok(app: AppTest) -> AppTest:
     assert not app.exception, [item.message for item in app.exception]
     return app
+
+
+def stale_press(app: AppTest, key: str) -> AppTest:
+    """옛 화면에서 아직 켜져 있던 단추의 누름이 그 단추를 끈 회차에 닿는다 — 빠른 둘째 누름.
+
+    AppTest 는 꺼진 단추를 누르지 못하게 막으므로(`click` — 브라우저도 꺼진 단추는 보내지 않는다)
+    누름 값을 바로 실어 보낸다. 서버는 꺼진 위젯의 값을 버린다(Streamlit 1.63 `SessionState`)."""
+    button = app.button(key=key)
+    assert button.disabled, "켜진 단추는 `click()` 으로 누른다"
+    button._value = True
+    return app.run()
 
 
 def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
@@ -503,20 +516,74 @@ def test_an_already_official_revision_shows_no_new_release_in_the_preview(tmp_pa
     captions = [str(item.value) for item in app.caption]
     assert "지금 공식 v1 · 「운영 일정」 r1" in captions, captions
     assert not any("새 공식 v2" in text for text in captions), captions
-    assert "이미 공식 발행인 리비전입니다 — 발행해도 바뀌지 않습니다." in captions
+    assert ALREADY_OFFICIAL_LINE in captions, captions
 
 
-def test_publishing_an_already_official_revision_says_nothing_was_published(
+def test_an_already_official_revision_turns_the_publish_button_off_with_the_reason(
+    tmp_path: Path,
+) -> None:
+    """E2E #37·#97(개선 거리 I26, 2026-11-01 사용자 결정 「진행」) — 이미 공식인 리비전의 발행
+    팝오버가 「발행해도 바뀌지 않습니다」 라 적으면서 단추는 켜 두어 서로 어긋났다. 단추를 끄고
+    까닭을 적는다. 공식이 아닌 리비전으로 바꾸면 단추가 다시 켜지고 그 줄은 없다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+    app = _ok(_tab(repository.database_path).run())
+
+    assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    captions = [str(item.value) for item in app.caption]
+    assert ALREADY_OFFICIAL_LINE in captions, captions
+    assert "「공식으로 발행」 을 껐습니다" in ALREADY_OFFICIAL_LINE
+
+    app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
+    _ok(app.run())
+
+    assert not app.button(key=PUBLISH_BUTTON_KEY).disabled
+    captions = [str(item.value) for item in app.caption]
+    assert ALREADY_OFFICIAL_LINE not in captions, captions
+    assert any("→ 새 공식 v2" in text for text in captions), captions
+
+
+def test_a_press_that_reaches_the_turned_off_publish_button_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """지금 공식인 리비전에 「공식으로 발행」 을 누르면 저장소는 쓰지 않는다 — 「공식 v1로
-    발행했습니다」 라 새 발행처럼 알리지 않고 이미 공식이라 새로 발행하지 않았다고 알린다."""
+    """꺼진 단추에 닿은 누름(옛 화면의 빠른 둘째 누름)은 Streamlit 이 버린다 — 저장소에 가지 않고
+    알림도 내지 않는다(창 밖이면 다시 그릴 첫 발행 알림도 없다). 예전에는 켜진 단추가 눌려
+    「이미 공식 v1입니다 — 새로 발행하지 않았습니다」 를 알렸다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     repository = _seeded(tmp_path)
     app = _ok(_tab(repository.database_path).run())
 
-    app.button(key=PUBLISH_BUTTON_KEY).click()
-    _ok(app.run())
+    calls: list[object] = []
+    original = DuckDBEquipmentRepository.publish_equipment_release
+
+    def counted(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> EquipmentRelease:
+        calls.append(args)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "publish_equipment_release", counted)
+    _ok(stale_press(app, PUBLISH_BUTTON_KEY))
+
+    assert calls == []
+    assert [str(item.value) for item in app.success] == []
+    assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 1
+
+
+def test_a_press_that_gets_past_the_turned_off_button_still_says_nothing_was_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """단추를 끄는 판정(`already_official`)을 지나 켜진 단추로 들어온 누름이 지금 공식인 리비전에
+    닿아도 저장소는 쓰지 않는다 — 「공식 v1로 발행했습니다」 로 새 발행처럼 알리지 않고 이미
+    공식이라 새로 발행하지 않았다고 알린다(2026-10-27 E2E). 단추를 끈 뒤에도 남은 저장소 쪽 막이라
+    판정을 거짓으로 바꿔 그 길을 연다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    monkeypatch.setattr(management, "already_official", lambda *_args: False)
+    repository = _seeded(tmp_path)
+    app = _ok(_tab(repository.database_path).run())
+    assert not app.button(key=PUBLISH_BUTTON_KEY).disabled
+
+    _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
 
     written = [str(item.value) for item in app.success]
     assert written == ["「운영 일정」 r1은 이미 공식 v1입니다 — 새로 발행하지 않았습니다."], written
@@ -527,9 +594,10 @@ def test_publishing_an_already_official_revision_says_nothing_was_published(
 def test_a_slow_double_press_of_a_fresh_publish_keeps_the_published_notice(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """첫 누름이 「셋업 실무」 r1 을 공식 v2 로 낸 뒤 다시 그린 화면에 닿은 빠른 둘째 누름은 그
-    리비전이 이미 공식이라 쓰지 않는다 — 창(`TRAILING_PRESS_SECONDS`) 안이면 「이미 공식」 으로
-    바꾸지 않고 첫 발행의 알림을 다시 낸다."""
+    """첫 누름이 「셋업 실무」 r1 을 공식 v2 로 낸 뒤 다시 그린 화면은 그 리비전이 이제 공식이라
+    「공식으로 발행」 이 꺼진다(개선 거리 I26). 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버려
+    그 회차가 첫 발행 알림을 지웠다 — 창(`TRAILING_PRESS_SECONDS`) 안이면 구획 맨 위 칸이 첫 발행의
+    알림을 다시 그린다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     repository = _seeded(tmp_path)
     setup = _clone(repository)
@@ -537,10 +605,12 @@ def test_a_slow_double_press_of_a_fresh_publish_keeps_the_published_notice(
     app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
     _ok(app.run())
 
+    _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
     for _ in range(2):
-        app.button(key=PUBLISH_BUTTON_KEY).click()
-        _ok(app.run())
         written = [str(item.value) for item in app.success]
         assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
+        _ok(stale_press(app, PUBLISH_BUTTON_KEY))
+    written = [str(item.value) for item in app.success]
+    assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2

@@ -25,6 +25,8 @@
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
 // 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
 // 문서에서 한 번 알린다(`<tabs-return>`).
+// 새로고침·브라우저 탭 닫기처럼 문서 자체를 떠날 때는 저장하지 않은 편집이 있으면 브라우저 확인 창을 띄운다 — 표지는 테마
+// 단추가 읽는 것과 같은 CSS 변수다(`<tabs-unload>`). 앱이 스스로 새로 읽는 것(테마 단추 — 이미 물었다)은 묻지 않는다.
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
@@ -275,6 +277,37 @@ function returnNotice(stored, text) {
   return template ? template.split('{label}').join(record.label) : ''
 }
 // </tabs-return>
+
+// <tabs-unload>
+// 새로고침·브라우저 탭 닫기·주소 바꾸기(문서를 떠남)에 브라우저 확인 창을 띄운다(개선 거리 I3). 새 문서는 새 Streamlit 세션이라
+// 적용·저장하지 않은 편집이 말없이 사라졌다(E2E #101·#119 — 테마 단추는 묻는데 새로고침은 묻지 않았다). 묻는 표지는 테마 단추가
+// 읽는 것과 같은 CSS 변수다(`UNSAVED_VARIABLE` — 파이썬 `theme_toggle.UNSAVED_EDITS_CSS_VARIABLE`, 값은 탭 점과 한 벌의 판정
+// `unsaved_edits_marker`). 그 값이 '1' 일 때만 묻고 편집이 없으면 묻지 않는다. 앱이 스스로 새로 읽는 중이면 묻지 않는다 — 테마
+// 단추는 제 확인 창으로 이미 물었고(`RELOAD_ASKED` — 파이썬 `theme_toggle.RELOAD_ASKED_FLAG`), 열릴 때 테마 키를 맞추는
+// 새로고침(`__capaThemeReloading`)은 편집이 생기기 전이다. 앱 안의 화면 이동(탭·사이드바 링크)은 문서를 떠나지 않아 이 길이
+// 아니다. 확인 창의 글은 브라우저가 정한다(사이트 글을 싣지 못한다). 표지는 떠나는 순간 읽는다 — 처리기는 문서에 하나다.
+const UNSAVED_VARIABLE = '--capa-unsaved-edits'
+const RELOAD_ASKED = '__capaReloadAsked'
+function unloadAsks(unsaved, reloading) {
+  return String(unsaved || '').trim() === '1' && !reloading
+}
+function installUnloadGuard(win, doc) {
+  if (win.__capaUnloadGuard) return
+  win.__capaUnloadGuard = true
+  win.addEventListener('beforeunload', (event) => {
+    let unsaved = ''
+    try {
+      unsaved = win.getComputedStyle(doc.documentElement).getPropertyValue(UNSAVED_VARIABLE)
+    } catch (error) {
+      return
+    }
+    if (!unloadAsks(unsaved, Boolean(win[RELOAD_ASKED] || win.__capaThemeReloading))) return
+    event.preventDefault()
+    // 옛 꼴의 브라우저는 `returnValue` 를 적어야 묻는다.
+    event.returnValue = ''
+  })
+}
+// </tabs-unload>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -727,6 +760,8 @@ export default function (component) {
       } catch (error) { /* 저장소를 못 쓰면 알리지 않는다 */ }
     })
   }
+  // 문서를 떠날 때 저장하지 않은 편집이 있으면 브라우저 확인 창(`<tabs-unload>`). 문서에 하나이고 걸고 풀지 않는다.
+  installUnloadGuard(window, document)
 
   // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)과
   // 앞서 지나 보낸 링크가 여는 탭(`<tabs-links>`)에 없고, 그 둘을 합쳐 이미 상한이다. 걸리면 알림 글을, 아니면 빈 글자를

@@ -931,6 +931,109 @@ def test_the_theme_button_leave_goes_through_the_same_edit_hold() -> None:
     assert "const held = S.items.get(hold.id)" in release and "hold.go()" in release
 
 
+_UNLOAD_RUNNER = """
+// 창 · 문서 대역 — 걸린 `beforeunload` 처리기를 모으고, 떠날 때 CSS 변수 값을 돌려준다.
+const fakeWindow = (value, extra) => {
+  const win = {
+    handlers: [],
+    addEventListener(type, fn) { this.handlers.push([type, fn]) },
+    getComputedStyle(element) {
+      if (value === null) throw new Error('detached')
+      return { getPropertyValue: (name) => (name === UNSAVED_VARIABLE ? value : '') }
+    },
+  }
+  return Object.assign(win, extra || {})
+}
+const leave = (win) => {
+  const event = {
+    prevented: false,
+    returnValue: undefined,
+    preventDefault() { this.prevented = true },
+  }
+  for (const [type, fn] of win.handlers) if (type === 'beforeunload') fn(event)
+  return [event.prevented, event.returnValue === undefined ? null : event.returnValue]
+}
+const doc = { documentElement: {} }
+const out = {}
+const cases = {
+  clean: [''],
+  none: ['0'],
+  dirty: ['1'],
+  spaced: [' 1 '],
+  themeAsked: ['1', { [RELOAD_ASKED]: true }],
+  themeSync: ['1', { __capaThemeReloading: true }],
+  detached: [null],
+}
+for (const [name, [value, extra]] of Object.entries(cases)) {
+  const win = fakeWindow(value, extra)
+  installUnloadGuard(win, doc)
+  out[name] = leave(win)
+}
+// 처리기는 문서에 하나다 — 탭 줄이 다시 마운트돼 두 번 불러도 하나만 건다.
+const twice = fakeWindow('1')
+installUnloadGuard(twice, doc)
+installUnloadGuard(twice, doc)
+out.handlers = twice.handlers.map(([type]) => type)
+// 표지는 떠나는 순간 읽는다 — 건 뒤에 편집이 생기거나 사라져도 그때의 값으로 묻는다.
+let live = ''
+const late = fakeWindow('')
+late.getComputedStyle = () => ({ getPropertyValue: () => live })
+installUnloadGuard(late, doc)
+live = '1'
+out.lateDirty = leave(late)
+live = ''
+out.lateClean = leave(late)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def _unload_block() -> str:
+    match = re.search(r"// <tabs-unload>\n(?P<body>.*?)\n// </tabs-unload>", JS, re.S)
+    assert match, "page_tabs.js 에 // <tabs-unload> 구획이 없습니다"
+    return match.group("body")
+
+
+def test_a_reload_or_tab_close_asks_only_while_there_are_unsaved_edits() -> None:
+    """새로고침·브라우저 탭 닫기는 새 세션이라 저장 전 설비 편집·적용 전 편집이 말없이 사라졌다
+    (E2E #101·#119 — 테마 단추는 묻는데 새로고침은 묻지 않았다, 개선 거리 I3). 탭 줄 JS 가 문서에
+    `beforeunload` 처리기를 하나 걸고, 떠나는 순간 저장 안 함 표지(테마 단추와 같은 CSS 변수)가
+    '1' 일 때만 브라우저 확인 창을 띄운다. 편집이 없으면 묻지 않는다. 테마 단추가 이미 물은 새로
+    읽기와 열릴 때의 테마 키 맞추기 새로고침도 묻지 않는다. 표지를 못 읽으면 묻지 않는다."""
+    out = _node(_UNLOAD_RUNNER, prelude=_unload_block())
+
+    assert out["clean"] == [False, None]
+    assert out["none"] == [False, None]
+    assert out["dirty"] == [True, ""]
+    assert out["spaced"] == [True, ""]
+    assert out["themeAsked"] == [False, None]
+    assert out["themeSync"] == [False, None]
+    assert out["detached"] == [False, None]
+    assert out["handlers"] == ["beforeunload"]
+    assert out["lateDirty"] == [True, ""]
+    assert out["lateClean"] == [False, None]
+
+
+def test_the_unload_guard_reads_the_theme_button_marker_and_is_installed_by_the_strip() -> None:
+    """확인 창의 표지는 테마 단추가 읽는 CSS 변수(`unsaved_edits_marker` — 탭 점과 한 벌의 판정)와
+    같은 이름이고, 테마 단추가 새로 읽기 직전에 다는 창 표지도 같은 이름이다 — 둘이 어긋나면 테마
+    단추가 물은 뒤 브라우저가 한 번 더 묻거나, 편집이 있는데 묻지 않는다. 탭 줄이 그릴 때 문서에
+    건다(처리기는 문서에 하나 — `installUnloadGuard` 가 거른다)."""
+    from capa_simulation.components.theme_toggle import (
+        RELOAD_ASKED_FLAG,
+        UNSAVED_EDITS_CSS_VARIABLE,
+    )
+
+    block = _unload_block()
+    assert f"const UNSAVED_VARIABLE = '{UNSAVED_EDITS_CSS_VARIABLE}'" in block
+    assert f"const RELOAD_ASKED = '{RELOAD_ASKED_FLAG}'" in block
+    assert "win.addEventListener('beforeunload'," in block
+    body = JS[JS.index("export default function (component) {") :]
+    assert body.count("installUnloadGuard(window, document)") == 1
+    # 처리기는 컴포넌트가 내려가도 걷지 않는다(떠날 때의 표지를 그때 읽는다).
+    cleanup = body[body.rindex("  return () => {") :]
+    assert "beforeunload" not in cleanup
+
+
 _GATE_RUNNER = """
 (() => {
   // 시계·타이머 대역 — `advance(t)` 가 t 까지 걸린 타이머를 차례로 부른다.
