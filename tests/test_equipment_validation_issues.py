@@ -685,6 +685,34 @@ def test_a_zoned_date_beside_other_unreadable_text_gets_its_own_reason() -> None
     ]
 
 
+@pytest.mark.parametrize("value", ["2026-11-05+09:00", "2026-11-05Z", " 2026-11-05 +0900 "])
+def test_a_date_with_only_an_offset_gets_the_time_zone_reason(value: str) -> None:
+    """시간 없이 시간대만 붙은 날짜(`2026-11-05+09:00`·`…Z`)도 시간대 문구로 막는다 — pandas 는 이
+    꼴을 시간대 꼴로 읽지 못하고 그냥 못 읽지만, 떼면 읽히는 값이라 까닭이 같다. 막는 줄·규칙은
+    그대로이고 문구만 그 까닭을 말한다(E2E 2026-11-02)."""
+    refused = coerce_master_cell("반입일정", value)
+    assert isinstance(refused, CellParseError)
+    assert (refused.rule, refused.message) == ("date_unreadable", _zoned("반입일정"))
+
+    frame = _date_text(_master(), "물류일정")
+    frame.at[0, "물류일정"] = "다음 주"
+    frame.at[1, "물류일정"] = value
+    blocking = _blocking(equipment_master_issues(frame))
+    assert sorted((issue.position, issue.rule, issue.message) for issue in blocking) == [
+        (0, "date_unreadable", "물류일정은 날짜 형식이어야 합니다"),
+        (1, "date_unreadable", _zoned("물류일정")),
+    ]
+    with pytest.raises(ValueError) as caught:
+        prepare_equipment_master(frame)
+    assert str(caught.value) == f"{_zoned('물류일정')}: [{value!r}]"
+
+
+def test_a_minus_offset_date_that_pandas_reads_as_a_time_is_not_newly_refused() -> None:
+    """`2026-11-05-05:00` 은 pandas 가 뒤를 시각 05:00 으로 읽어 지금 받는 값이다 — 문구 판정을
+    넓혀도 받는 값이 막히지 않는다(받을지는 따로 정할 일이다)."""
+    assert coerce_master_cell("반입일정", "2026-11-05-05:00") == pd.Timestamp("2026-11-05")
+
+
 def test_a_time_zoned_date_waits_for_the_earlier_rules() -> None:
     frame = _master()
     frame.at[0, "물류일정"] = "2026-05-24T00:00+09:00"

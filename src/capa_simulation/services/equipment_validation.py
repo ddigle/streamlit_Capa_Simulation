@@ -252,7 +252,7 @@ def coerce_master_cell(column: str, text: str) -> CellValue | CellParseError:
     if column in DATE_COLUMNS:
         dates, invalid = _read_master_dates(cell)
         if bool(invalid.iloc[0]):
-            if _zoned_date(text):
+            if _zoned_date(text) or _offset_only_date(text):
                 return refuse("date_unreadable", _zoned_date_message(column))
             return refuse("date_unreadable", _date_message(column))
         return _cell_value(dates.iloc[0])
@@ -1451,10 +1451,29 @@ def _zoned_date(value: object) -> bool:
     return scattered or isinstance(dates.dtype, pd.DatetimeTZDtype)
 
 
+# 시간 없이 시간대만 붙은 날짜(`2026-11-05+09:00`·`2026-11-05Z`) — pandas 는 이 꼴을 시간대 꼴로
+# 읽지 못하고 그냥 못 읽는다(NaT). 떼면 읽히는 값이라 문구만 시간대 까닭으로 고른다.
+_OFFSET_ONLY_DATE = re.compile(r"\s*\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\s*(?:[Zz]|[+-]\d{2}:?\d{2})\s*")
+
+
+def _offset_only_date(value: object) -> bool:
+    """값이 시간 없이 시간대만 붙은 날짜 글인가 — **못 읽은 값의 문구를 고를 때만** 쓴다.
+
+    `_zoned_date` 를 넓히지 않는 까닭: `_read_master_dates` 가 그 판정으로 칸 전체 값을 가린다.
+    `2026-11-05-05:00` 은 pandas 가 뒤를 시각 05:00 으로 읽어 받는 값인데, 가리는 판정에 넣으면
+    시간대가 섞인 칸에서만 막혀 칸마다 갈린다. 문구 고르기는 이미 못 읽은 줄에만 닿아 받는 값이
+    달라지지 않는다.
+    """
+    return isinstance(value, str) and _OFFSET_ONLY_DATE.fullmatch(value) is not None
+
+
 def _zoned_rows(entered: pd.Series, rows: pd.Series) -> pd.Series:
-    """`rows` 줄 가운데 입력 값이 시간대 꼴 날짜인 줄(그 밖은 거짓) — 못 읽은 줄만 하나씩 본다."""
+    """`rows` 줄 가운데 입력 값이 시간대 꼴 날짜인 줄(그 밖은 거짓) — 못 읽은 줄만 하나씩 본다.
+
+    시간 없이 시간대만 붙은 날짜(`_offset_only_date`)도 시간대 꼴로 센다 — 문구 고르기에만 쓴다.
+    """
     flags = [
-        bool(row) and _zoned_date(value)
+        bool(row) and (_zoned_date(value) or _offset_only_date(value))
         for value, row in zip(entered.tolist(), rows.tolist(), strict=True)
     ]
     return pd.Series(flags, index=entered.index, dtype=bool)

@@ -599,6 +599,17 @@ def test_downtime_paste_names_the_time_zone_before_other_unreadable_starts() -> 
     assert str(caught.value) == f"{ZONED_START}: ['2026-11-01T00:00:00Z']"
 
 
+@pytest.mark.parametrize("value", ["2026-11-05+09:00", "2026-11-05Z"])
+def test_downtime_paste_names_the_time_zone_of_a_date_with_only_an_offset(value: str) -> None:
+    """시간 없이 시간대만 붙은 시작일도 「날짜 형식」 이 아니라 시간대 까닭으로 막는다(설비 마스터
+    날짜 칸과 같은 판정 — E2E 2026-11-02)."""
+    equipment = prepare_equipment_master(_equipment())
+
+    with pytest.raises(ValueError) as caught:
+        read_downtime_clipboard(_downtime_paste(["다음 주", value]), equipment=equipment)
+    assert str(caught.value) == f"{ZONED_START}: [{value!r}]"
+
+
 @pytest.mark.parametrize("value", ["2026-10-11 99:99", "2026/10/11 23:75", "2026-10-11 24:00"])
 def test_downtime_paste_rejects_an_impossible_time_written_alone(value: str) -> None:
     """꼴이 섞이지 않은 값 하나여도 첫 읽기에서 못 읽은 값은 다시 읽는 길로 간다. 그 길이
