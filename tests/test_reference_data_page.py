@@ -1831,6 +1831,58 @@ def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_fil
     assert set(capacity.loc[capacity["STEP_SEQ"].eq("P100"), "생산계획년월"]) == {202608, 202609}
 
 
+# 양산 경로 P100 의 202609 UPEH 가 0 이라 그 경로는 계산에서 빠진다. 그 달의 측정률·여유율·
+# 일수는 갖췄지만 **효율 (202609, Process-A, 양산) 행이 없다** — 빠지는 동안은 계산이 멈추지
+# 않는다(2026-11-01 사용자 결정 — 0655 결정 7). 효율 편집표에 202609 열이 서게 쓰지 않는 개발
+# 행 하나를 둔다.
+REVIVE_TEST_SCRIPT = _with_tables(
+    REAL_APPLY_TEST_SCRIPT,
+    """
+_add("RQ_UPEH", 생산계획년월=202609, UPEH=0.0)
+for _name in ("RQ_LOT_RATIO", "RQ_WF_RATIO", "RQ_VITAL", "RQ_RUN_DAY"):
+    _add(_name, 생산계획년월=202609)
+_add("RQ_RUN_RATE", 생산계획년월=202609, 양산구분="개발")
+""",
+    "test-capacity-real-apply-page",
+    "test-capacity-revive-page",
+).replace(
+    'st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")',
+    'st.session_state["production_month_range_v2"] = ("2026-08", "2026-09")',
+)
+
+
+def test_reviving_a_zero_upeh_route_without_a_run_rate_row_is_blocked() -> None:
+    """UPEH 0 으로 빠지던 경로를 0 보다 크게 살리면 새 경로처럼 효율 행을 먼저 갖추게 한다.
+
+    빠지는 동안 멈추지 않던 효율 행 없음이 살아나 계산 전체를 멈추는데, 새 경로만 보던 검사는
+    그 경로를 보지 않아 적용이 성공으로 알렸다(반박 검토 — 「검사는 계산이 멈추는 조건과 같게」).
+    """
+    app = AppTest.from_string(REVIVE_TEST_SCRIPT, default_timeout=60)
+    app = _open_filtered(app, "UPEH", "capa_upeh_editor_filter_양산구분", ["양산"])
+    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+
+    assert not app.exception
+    errors = [str(error.value) for error in app.error]
+    assert any(
+        "0 이하에서 다시 살린 경로가 쓰는 기준정보 행이 없습니다" in error
+        and "「효율」 탭에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in error
+        for error in errors
+    ), errors
+    assert "active_scenario" not in app.session_state
+
+    # 안내대로 효율 탭에서 먼저 채우면 같은 편집이 적용되고 계산은 멈추지 않는다.
+    app = _open_filtered(app, "효율", "capa_run_rate_editor_filter_양산구분", ["양산"])
+    app = _edit_and_apply(app, "capa_run_rate_editor", "202609", 0.9)
+    assert [error.value for error in app.error] == []
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+
+    assert [error.value for error in app.error] == []
+    capacity = _scenario_unit_capacity(app)
+    assert set(capacity.loc[capacity["STEP_SEQ"].eq("P100"), "생산계획년월"]) == {202608, 202609}
+
+
 def test_a_zero_in_a_vital_cell_an_upeh_path_uses_is_blocked() -> None:
     """여유율·일수는 쓰는 칸의 0 도 막는다(결함 B). 전에는 비우기만 막고 0 은 적용·저장됐다.
 
