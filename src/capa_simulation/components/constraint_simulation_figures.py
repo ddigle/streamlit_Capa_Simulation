@@ -140,6 +140,7 @@ __all__ = [
     "month_name",
     "new_unit_fate",
     "ordinary_reason_text",
+    "percent_or_none",
     "rate_axis",
     "rate_figure",
     "rate_text",
@@ -457,7 +458,9 @@ def _hit_hover(
     return text + "<br>누르면 이 달 계산"
 
 
-def _percent(value: float | None) -> float | None:
+def percent_or_none(value: float | None) -> float | None:
+    """확보율 비율을 그래프의 % 값으로(1.2 → 120). 없는 값(None)은 그대로 None 이다(점을 찍지
+    않는다). 개조 일정 그래프(`modification_schedule_figures`)도 이것을 쓴다."""
     return None if value is None else value * 100
 
 
@@ -515,9 +518,9 @@ def rate_axis(
         core += [
             value
             for value in (
-                _percent(row.baseline_rate),
-                _percent(row.existing_rate),
-                _percent(row.proportional_existing_rate)
+                percent_or_none(row.baseline_rate),
+                percent_or_none(row.existing_rate),
+                percent_or_none(row.proportional_existing_rate)
                 if show_proportional and row.in_period
                 else None,
             )
@@ -528,7 +531,7 @@ def rate_axis(
     constrained = [
         (row.month, value)
         for row in rows
-        if row.in_period and (value := _percent(row.constrained_rate)) is not None
+        if row.in_period and (value := percent_or_none(row.constrained_rate)) is not None
     ]
     low, high = axis_bounds(core + [value for _, value in constrained if value <= ceiling])
     return RateAxis(low, high, tuple(month for month, value in constrained if value > high))
@@ -640,11 +643,11 @@ def _rate_lines(
     """확보율 선 — 제약 없을 때 · (비중대로) · 제약 제품(기간 안만, 위 끝을 넘는 점은 위 끝에 ▲) ·
     기존 제품 차례."""
     rows = result.months
-    baseline = [_percent(row.baseline_rate) for row in rows]
-    existing = [_percent(row.existing_rate) for row in rows]
-    constrained = [_percent(row.constrained_rate) if row.in_period else None for row in rows]
+    baseline = [percent_or_none(row.baseline_rate) for row in rows]
+    existing = [percent_or_none(row.existing_rate) for row in rows]
+    constrained = [percent_or_none(row.constrained_rate) if row.in_period else None for row in rows]
     proportional = [
-        _percent(row.proportional_existing_rate) if row.in_period else None for row in rows
+        percent_or_none(row.proportional_existing_rate) if row.in_period else None for row in rows
     ]
     # 위 끝을 넘는 제약 제품 점은 위 끝에 ▲ 로 찍는다(값은 표적 풍선).
     constrained = [high if over else value for value, over in zip(constrained, above, strict=True)]

@@ -1,4 +1,4 @@
-# Purpose: 바꾼 것 없는 공용 저장 일곱 자리(개선 I5 넓힘)가 새 버전 없이 그대로라고 알리는지 잰다.
+# Purpose: 바꾼 것 없는 공용 저장의 「그대로」 알림과 쓰지 않은 저장 회차의 안내 줄을 잰다.
 
 """표시순서 직접 편집·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적.
 
@@ -609,6 +609,62 @@ def test_a_slow_second_press_of_the_advance_load_repeats_the_success(
     assert not app.info and not app.error, _infos(app) + _errors(app)
     assert _successes(app) == [ADVANCE_LOAD_SAVED]
     assert repository.load_global_advance_load().version == 2
+
+
+@pytest.mark.parametrize(
+    ("body", "label", "editor_key", "write", "value_column"),
+    [
+        (
+            _ADVANCE_LOAD,
+            "선행 B/O 저장",
+            ADVANCE_EDITOR_KEY,
+            "replace_global_advance_load",
+            "선행 물량",
+        ),
+        (
+            _ADVANCE_SHIPMENT,
+            "선행 입고 저장",
+            ADVANCE_SHIPMENT_EDITOR_KEY,
+            "replace_global_advance_shipment",
+            "선행 입고",
+        ),
+    ],
+    ids=["advance-load", "advance-shipment"],
+)
+def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    label: str,
+    editor_key: str,
+    write: str,
+    value_column: str,
+) -> None:
+    """저장이 오류(`BOOTSTRAP_ERRORS` — DB 잠김 · 디스크 등)로 끝난 회차도 쓰지 않아 다시 돌지
+    않는다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖 저장분 줄이 오류 옆에 그대로 선다(판정
+    기준과 같다). 오류 글은 숨은 달을 말하지 않는다."""
+    getattr(repository, write)(
+        pd.DataFrame({"생산계획년월": [202610, 202612], value_column: [1.25, 3.0]}),
+        source="처음 저장",
+    )
+    _clear_caches()
+    app = _app(repository, body)
+    shown = [caption.value for caption in app.caption if "조회기간 밖" in caption.value]
+    assert len(shown) == 1 and "26.12" in shown[0], shown
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError("디스크에 쓸 수 없습니다")
+
+    monkeypatch.setattr(DuckDBScenarioRepository, write, refuse)
+    _edit_cells(app, editor_key, {0: {"26.11": 2.0}})
+    app = _press(app, label)
+
+    errors = _errors(app)
+    assert len(errors) == 1 and "디스크에 쓸 수 없습니다" in errors[0], errors
+    assert "26.12" not in errors[0]
+    assert [caption.value for caption in app.caption if "조회기간 밖" in caption.value] == shown
+    stored = getattr(repository, write.replace("replace_", "load_"))()
+    assert (stored.version, stored.source) == (1, "처음 저장")
 
 
 # --------------------------------------------------------------------- 저장본 없는 v0 첫 저장

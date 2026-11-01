@@ -45,6 +45,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     CHART_HEIGHT_PX,
     axis_bounds,
     day_position,
+    percent_or_none,
     rate_text,
     signed_points,
     units_text,
@@ -246,10 +247,6 @@ def shortfall_lines(result: ScheduleResult) -> list[str]:
 # ================================================================== 그래프
 
 
-def _percent(value: float | None) -> float | None:
-    return None if value is None else value * 100
-
-
 def _lanes(spans: Sequence[tuple[float, float]]) -> list[int]:
     """겹치는 막대를 아래 줄로 — 줄마다 마지막 끝 이후에 시작하는 첫 줄(차수는 시작 차례다)."""
     ends: list[float] = []
@@ -317,8 +314,8 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
     months = [row.month for row in rows]
     xs = list(range(count))
     cutoff = result.conditions.cutoff_days
-    before = [_percent(row.baseline_rate) for row in rows]
-    after = [_percent(row.rate) for row in rows]
+    before = [percent_or_none(row.baseline_rate) for row in rows]
+    after = [percent_or_none(row.rate) for row in rows]
     # 기준선의 자리는 G — 판정 경계다(110% 면 109.5 — δ 0 의 배치 기준과 같은 선). 반올림으로
     # 확보가 된 109.7% 점이 선 위에 서고, 선 끝 글은 정수 기준 「110%」 다.
     general = [row.general_target * 100 for row in rows]

@@ -1607,6 +1607,9 @@ def _render_monthly_amount_editor(
             save(values, note.strip() or "웹 직접 편집")
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
+            # 쓰지 않아 다시 돌지 않는 회차다 — 오류 글은 숨은 달을 말하지 않으므로 누르지 않은
+            # 회차의 조회기간 밖 저장분 줄을 그대로 그린다(판정 기준과 같다).
+            _render_out_of_range_notice(months, stored)
         else:
             # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
             # 없습니다」 갈래).

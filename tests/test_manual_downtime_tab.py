@@ -191,6 +191,48 @@ def test_a_second_session_that_started_from_the_old_version_is_refused(tmp_path:
     assert (stored.rows, stored.version) == (((A, 202607, 2.0),), 2)
 
 
+def test_a_value_typed_after_a_held_second_press_reaches_the_next_press(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 누름의 둘째 누름(held) 회차는 최신 저장본으로 표를 그리고, 그 표에 친 값은
+    다음 누름에 닿는다.
+
+    둘째 누름이 거부 뒤 회차를 본 version 을 적기 전에 끊으면 본 값이 옛 version 이다. 그 회차가 옛
+    key 로 표를 그리면 거부된 제 값이 남의 값 자리에 보이고, 본 version 은 최신으로 적혀 다음 누름의
+    표가 다른 위젯이 되므로 그 사이 친 값이 버려져 「바뀐 칸이 없어」 가 섰다(2026-11-02 사본 앱 두
+    세션 — 0.15초 더블클릭). 끊긴 회차는 본 version 을 옛 값으로 되살려 흉내 낸다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    path = tmp_path / "equipment.duckdb"
+    first, second = _app(path), _app(path)
+    row_a = _editor_values(first)["공정"].index("WM")
+    _edit(first, {(row_a, "202607"): 1.0})
+    _save(first)
+
+    _edit(second, {(row_a, "202607"): 9.0})
+    next(button for button in second.button if button.label == MANUAL_SAVE_BUTTON).click()
+    pressed = second._tree.get_widget_states()
+    second.run()
+    assert any("다른 사용자가 먼저" in item.value for item in second.error)
+    second.session_state[MANUAL_BASE_VERSION_KEY] = 0
+    second._run(widget_state=pressed)
+    assert not second.exception, [element.message for element in second.exception]
+    assert any("다른 사용자가 먼저" in item.value for item in second.error)
+    assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
+    # 그 회차의 표는 거부된 9.0 이 아니라 남이 저장한 1.0 이다.
+    assert _drawn_version(second) == 1
+    assert _editor_values(second)["202607"][row_a] == pytest.approx(1.0)
+
+    # 거부 표지의 창이 지났다 — 그 표에 새 값을 치고 한 번 누른 저장이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit(second, {(1 - row_a, "202608"): 0.5}, version=_drawn_version(second))
+    second = _save(second)
+
+    assert not any("바뀐 칸이 없어" in item.value for item in second.info)
+    stored = DuckDBEquipmentRepository(path).load_manual_downtime()
+    assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202607, 1.0)), 2)
+
+
 def test_another_sessions_save_redraws_the_table_from_the_new_version(tmp_path: Path) -> None:
     """남이 저장하면 다음 회차(제출 아님)는 새 key 로 그 저장본을 그린다 — 보내지 않은 편집이 남의
     칸을 가린 채 본 version 만 최신으로 오르지 않는다(2026-10-27 리뷰 samecell)."""

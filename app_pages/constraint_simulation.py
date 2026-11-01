@@ -226,13 +226,6 @@ HELD_HELP = (
     "세지 않습니다). 설비 시나리오나 조회기간을 바꿔 목록에서 사라진 호기는 빼고 알립니다."
 )
 HELD_IDLE_PLACEHOLDER = "설비 일정이 서는 공정에서 고릅니다"
-# 「보유 제약 호기」 칸의 입력 칸 너비를 초점 앞뒤로 같게 둔다. 1.63 multiselect 는 초점 때 입력 칸
-# min-width 가 42px(아니면 7px)라 칩 옆에 들지 못하면 새 줄로 내려가 칸이 한 줄 커진다. 사이드바가
-# 끝까지 내려가 있으면 그만큼 위 버튼(기준 확보율 · 개조 기간)이 밀려, 호기를 고른 뒤 처음 누른
-# 버튼이 다른 버튼 위에서 떼어져 사라졌다(2026-11-02 E2E — AGENTS 9장). 칩 줄바꿈은 그대로다.
-HELD_PICKER_STYLE = (
-    f"<style>.st-key-{CONSTRAINT_HELD_INPUT_KEY} input {{ min-width: 7px !important; }}</style>"
-)
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
 OWNED_HELP = (
     "위 「보유 제약 호기」 목록에 없는 보유(기존보유처럼 설비 마스터 호기가 아닌 대수)를 "
@@ -703,7 +696,7 @@ def render_held_picker(
         )
     labels = {choice.unit: held_choice_label(choice) for choice in choices}
     with held_slot:
-        st.html(HELD_PICKER_STYLE)
+        # 초점 앞뒤로 키가 같다 — 사이드바 multiselect 공용 규칙(`sidebar_style`, AGENTS 9장).
         picked = st.multiselect(
             HELD_LABEL,
             list(labels),
