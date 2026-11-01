@@ -507,3 +507,44 @@ def test_no_regular_modules_package_hides_the_namespace() -> None:
 
     assert spec is None or spec.origin in (None, "namespace")
     assert not (PROJECT_ROOT / "modules" / "__init__.py").exists()
+
+
+# ------------------------------------------------------------------ 키 견주기(가짜 세션)
+
+
+class _FakeState(dict[str, Any]):
+    """`to_dict()` 가 `fresh` 칸을 읽을 때마다 새 객체로 돌려주는 세션(Components v2 위젯 값 꼴)."""
+
+    fresh: frozenset[str] = frozenset()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {key: (object() if key in self.fresh else value) for key, value in self.items()}
+
+
+def test_values_rebuilt_on_every_read_are_not_reported_as_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """브라우저 확인에서 입장 화면·Summary·탭 줄(Components v2) 칸이 「바꿈 3」 으로 거짓 알렸다."""
+    from capa_simulation import module_runtime
+
+    state = _FakeState(page_tabs_strip={}, plain=object())
+    state.fresh = frozenset({"page_tabs_strip"})
+    warned: list[str] = []
+    monkeypatch.setattr(
+        module_runtime,
+        "st",
+        SimpleNamespace(session_state=state, warning=lambda text, icon=None: warned.append(text)),
+    )
+    spec = PageSpec(
+        "modules/demo_a/page.py", "시험 (구현중)", url_path="mod-demo_a-main", module="demo_a"
+    )
+
+    module_runtime.run_module_page(lambda: None, spec)
+    assert warned == []
+
+    def replace_plain() -> None:
+        state["plain"] = object()
+
+    module_runtime.run_module_page(replace_plain, spec)
+    (warning,) = warned
+    assert "새로 0 · 바꿈 1 · 지움 0" in warning and "plain" in warning

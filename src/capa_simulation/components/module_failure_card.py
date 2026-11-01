@@ -74,11 +74,11 @@ def import_hint(exc: BaseException, *, module_id: str, folder: Path) -> str:
     if head == "modules" or head in _local_names(folder):
         helper = head if head != "modules" else "<이름>"
         return (
-            f"같은 모듈의 파일은 `from modules.{module_id} import {helper}` 으로 부릅니다"
+            f"같은 모듈의 파일은 이렇게 부릅니다 — `from modules.{module_id} import {helper}`"
             f"(`{GUIDE_DOCUMENT}` 3장)."
         )
     return (
-        f"패키지 `{head}` 가 이 서버에 없습니다 — 담당자가 앱 관리자에게 알리면 앱 관리자가 "
+        f"이 서버에 없는 패키지입니다: `{head}` — 담당자가 앱 관리자에게 알리면 앱 관리자가 "
         f"「사외 요청」 으로 코어 의존성에 넣습니다(`{GUIDE_DOCUMENT}` 6장)."
     )
 
@@ -147,7 +147,7 @@ def render_failure_parts(
     owner_text = f" 담당 {literal_markdown(owner)}." if owner else ""
     st.caption(
         f"{stopped}{owner_text} 끄려면 `module.json` 의 `enabled` 를 false 로 하거나 실행 "
-        f"환경변수 `{DISABLED_ENV_VAR}={module_id}` 를 넣고 앱을 다시 띄웁니다."
+        f"환경변수(`{DISABLED_ENV_VAR}={module_id}`)를 넣고 앱을 다시 띄웁니다."
     )
     if parts.hint:
         st.caption(parts.hint)

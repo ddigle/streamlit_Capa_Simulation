@@ -14,8 +14,11 @@
   카드 없이 정상으로 돌아온다. 다시 던지면 그 회차가 끝나지 않은 회차가 된다.
 - `StopException`(`st.stop()`)·`RerunException`(`st.rerun`·`st.switch_page`)은 다시 던진다.
 - 앞선 콜백 실패(세션 표지)는 그 화면 맨 위에 카드로 먼저 그린다.
-- 접두 없는 세션 키(새로·바꿈·지움)를 실행 앞뒤 `id(값)` 로 견주어 알린다 — 제자리 바꿈과
-  콜백에서 바뀐 키는 놓친다(알 수 있는 만큼, 정적 점검이 주된 그물이다).
+- 접두 없는 세션 키(새로·바꿈·지움)를 실행 앞뒤 값의 객체(`is`)로 견주어 알린다 — 제자리 바꿈과
+  콜백에서 바뀐 키는 놓친다(알 수 있는 만큼, 정적 점검이 주된 그물이다). 읽을 때마다 새 객체가
+  나오는 칸(Components v2 위젯 값 — 입장 화면·Summary·탭 줄)은 실행 앞에 두 번 읽어 가려내고
+  「바꿈」 을 보지 않는다(브라우저 확인에서 거짓 알림으로 드러났다 — AppTest 는 그 컴포넌트를
+  대역으로 바꿔 보지 못한다).
 - `st.stop()` 뒤에는 화면에 그리는 것도 세션 칸을 읽고 쓰는 것도 다시 멈춤 예외를 낸다(Streamlit
   1.63 — 그러면 `app.py` 가 「끊긴 회차」 로 본다). 그래서 견주기는 멈추지 않는
   `st.session_state.to_dict()` 로 하고, 그 알림은 기록(Admin)에 바로 적고 화면에는 같은 세션의
@@ -29,6 +32,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -153,19 +157,37 @@ def _render_pending_callback_failure(spec: PageSpec) -> None:
     )
 
 
-def _unprefixed_snapshot(module_id: str) -> dict[str, int]:
-    """접두 없는 글자 키 → `id(값)`. 읽기만 한다(위젯 값은 한 번 읽으면 같은 객체로 남는다).
+def _unprefixed_snapshot(module_id: str) -> dict[str, object]:
+    """접두 없는 글자 키 → 값(객체 그대로). 읽기만 한다(위젯 값은 한 번 읽으면 같은 객체로 남는다).
 
     `to_dict()` 는 멈춤 요청을 보지 않는다 — `st.stop()` 뒤에도 돈다(칸 하나씩 읽으면 다시 멈춘다).
+    `id()` 가 아니라 객체를 쥐고 `is` 로 견준다 — 버려진 객체의 `id` 는 새 객체에 다시 쓰인다.
     """
     prefix = module_registry.key_prefix(module_id)
     return {
-        key: id(value)
+        key: value
         for key, value in st.session_state.to_dict().items()
         if isinstance(key, str)
         and not key.startswith(prefix)
         and key not in CORE_KEYS_DURING_MODULE_RUN
     }
+
+
+@dataclass(frozen=True)
+class KeySnapshot:
+    """실행 앞 접두 없는 키 → 값과, 두 번 읽어 다른 객체였던(읽을 때마다 새 객체인) 키."""
+
+    values: Mapping[str, object]
+    unstable: frozenset[str]
+
+
+def key_snapshot(module_id: str) -> KeySnapshot:
+    first = _unprefixed_snapshot(module_id)
+    second = _unprefixed_snapshot(module_id)
+    unstable = frozenset(
+        key for key, value in first.items() if key in second and second[key] is not value
+    )
+    return KeySnapshot(second, unstable)
 
 
 def key_warning_text(new: int, changed: int, removed: int, names: list[str]) -> str:
@@ -176,11 +198,15 @@ def key_warning_text(new: int, changed: int, removed: int, names: list[str]) -> 
     )
 
 
-def _key_changes(module_id: str, before: Mapping[str, int]) -> tuple[str, list[str]] | None:
+def _key_changes(module_id: str, before: KeySnapshot) -> tuple[str, list[str]] | None:
     after = _unprefixed_snapshot(module_id)
-    new = sorted(set(after) - set(before))
-    removed = sorted(set(before) - set(after))
-    changed = sorted(key for key in set(before) & set(after) if before[key] != after[key])
+    new = sorted(set(after) - set(before.values))
+    removed = sorted(set(before.values) - set(after))
+    changed = sorted(
+        key
+        for key in set(before.values) & set(after) - before.unstable
+        if before.values[key] is not after[key]
+    )
     if not (new or removed or changed):
         return None
     names = [*new, *changed, *removed][: module_failures.MAX_KEY_WARNINGS]
@@ -194,7 +220,7 @@ def _render_pending_key_warning(module_id: str) -> None:
         st.warning(text, icon=KEY_WARNING_ICON)
 
 
-def _finish(spec: PageSpec, before: Mapping[str, int], started: float, *, stopped: bool) -> None:
+def _finish(spec: PageSpec, before: KeySnapshot, started: float, *, stopped: bool) -> None:
     module_id = spec.module or ""
     module_failures.note_run_seconds(module_id, time.perf_counter() - started)
     changes = _key_changes(module_id, before)
@@ -222,7 +248,7 @@ def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:
     if module_id is None:
         run()
         return
-    before = _unprefixed_snapshot(module_id)
+    before = key_snapshot(module_id)
     _render_pending_callback_failure(spec)
     _render_pending_key_warning(module_id)
     started = time.perf_counter()

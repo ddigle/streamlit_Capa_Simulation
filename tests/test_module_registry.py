@@ -176,7 +176,7 @@ def test_broken_json_fails_with_where_it_broke(tmp_path: Path) -> None:
     (folder / MANIFEST_NAME).write_text('{"id": "demo_a",', encoding="utf-8")
 
     state, reason = _one(tmp_path)
-    assert state == "failed" and reason.startswith("module.json 가 JSON 이 아닙니다 — 1줄")
+    assert state == "failed" and reason.startswith("module.json 파일이 JSON 이 아닙니다 — 1줄")
 
 
 def test_utf8_with_a_bom_is_read_and_utf16_is_not(tmp_path: Path) -> None:
@@ -187,14 +187,14 @@ def test_utf8_with_a_bom_is_read_and_utf16_is_not(tmp_path: Path) -> None:
 
     other = _write_module(tmp_path / "utf16", "demo_a")
     (other / MANIFEST_NAME).write_bytes(text.encode("utf-16"))
-    assert _one(tmp_path / "utf16") == ("failed", "module.json 가 UTF-8 이 아닙니다")
+    assert _one(tmp_path / "utf16") == ("failed", "module.json 파일이 UTF-8 이 아닙니다")
 
 
 def test_a_manifest_over_64_kb_fails(tmp_path: Path) -> None:
     folder = _write_module(tmp_path, "demo_a")
     (folder / MANIFEST_NAME).write_text(" " * 65_537, encoding="utf-8")
 
-    assert _one(tmp_path) == ("failed", "module.json 가 64 KB 를 넘습니다")
+    assert _one(tmp_path) == ("failed", "module.json 파일이 64 KB 를 넘습니다")
     with pytest.raises(ManifestError, match="64 KB"):
         parse_manifest(b" " * 65_537, folder_name="demo_a")
 
@@ -202,7 +202,7 @@ def test_a_manifest_over_64_kb_fails(tmp_path: Path) -> None:
 def test_a_missing_manifest_fails(tmp_path: Path) -> None:
     (tmp_path / "demo_a").mkdir()
 
-    assert _one(tmp_path) == ("failed", "module.json 가 없습니다")
+    assert _one(tmp_path) == ("failed", "module.json 파일이 없습니다")
 
 
 # ------------------------------------------------------------------ id
@@ -211,7 +211,7 @@ def test_a_missing_manifest_fails(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("folder", "module_id", "expected"),
     [
-        ("demo_a", "demo_b", "id demo_b 가 폴더 이름 demo_a 와 다릅니다"),
+        ("demo_a", "demo_b", "id 와 폴더 이름이 다릅니다: id demo_b · 폴더 demo_a"),
         ("Demo_a", "Demo_a", "폴더 이름이 규칙에 맞지 않음"),
         ("demo__a", "demo__a", "폴더 이름이 규칙에 맞지 않음"),
         ("demo_", "demo_", "폴더 이름이 규칙에 맞지 않음"),
@@ -331,7 +331,7 @@ def test_a_title_repeated_inside_one_module_is_a_manifest_error(tmp_path: Path) 
         ],
     )
 
-    assert _one(tmp_path) == ("failed", "모듈 안에서 화면 title 가 겹칩니다: 같은 이름")
+    assert _one(tmp_path) == ("failed", "모듈 안에서 겹치는 화면 title: 같은 이름")
 
 
 def test_a_title_clash_between_modules_fails_only_the_later_one(tmp_path: Path) -> None:
@@ -367,17 +367,17 @@ def test_a_module_switched_off_by_the_variable_does_not_block_others(tmp_path: P
     [
         ({"enable": True}, "모르는 칸: enable"),
         ({"enabled": "true"}, 'enabled 는 true 또는 false 여야 합니다(글자 "true" 안 됨)'),
-        ({"order": 1000}, "order 는 0 ~ 999 사이 정수여야 합니다"),
-        ({"order": -1}, "order 는 0 ~ 999 사이 정수여야 합니다"),
-        ({"order": True}, "order 는 0 ~ 999 사이 정수여야 합니다"),
+        ({"order": 1000}, "0 ~ 999 사이 정수여야 하는 칸입니다: order"),
+        ({"order": -1}, "0 ~ 999 사이 정수여야 하는 칸입니다: order"),
+        ({"order": True}, "0 ~ 999 사이 정수여야 하는 칸입니다: order"),
         ({"api": "1"}, "api 는 정수여야 합니다"),
         ({"maturity": "L3"}, "maturity 는 L0 · L1 · L2 가운데 하나여야 합니다"),
-        ({"name": ""}, "name 는 1 ~ 30자여야 합니다"),
-        ({"owner": "가" * 31}, "owner 는 1 ~ 30자여야 합니다"),
-        ({"description": "가" * 121}, "description 는 0 ~ 120자여야 합니다"),
+        ({"name": ""}, "1 ~ 30자여야 하는 칸입니다: name"),
+        ({"owner": "가" * 31}, "1 ~ 30자여야 하는 칸입니다: owner"),
+        ({"description": "가" * 121}, "0 ~ 120자여야 하는 칸입니다: description"),
         ({"pages": []}, "pages 는 화면 1 ~ 8개의 배열이어야 합니다"),
         ({"pages": None}, "빠진 칸: pages"),
-        ({"api_minor": 100}, "api_minor 는 0 ~ 99 사이 정수여야 합니다"),
+        ({"api_minor": 100}, "0 ~ 99 사이 정수여야 하는 칸입니다: api_minor"),
     ],
 )
 def test_manifest_fields_are_checked(tmp_path: Path, fields: dict[str, Any], expected: str) -> None:

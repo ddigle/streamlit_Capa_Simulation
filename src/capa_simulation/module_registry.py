@@ -156,12 +156,12 @@ def _text(raw: Mapping[str, Any], name: str, limits: tuple[int, int], where: str
     value = raw[name]
     label = f"{where}{name}"
     if not isinstance(value, str):
-        raise ManifestError(f"{label} 는 글자여야 합니다")
+        raise ManifestError(f"글자여야 하는 칸입니다: {label}")
     low, high = limits
     if len(value) > high or (low > 0 and not value.strip()):
-        raise ManifestError(f"{label} 는 {low} ~ {high}자여야 합니다")
+        raise ManifestError(f"{low} ~ {high}자여야 하는 칸입니다: {label}")
     if value != value.strip():
-        raise ManifestError(f"{label} 앞뒤에 공백이 있습니다")
+        raise ManifestError(f"앞뒤에 공백이 있는 칸입니다: {label}")
     return value
 
 
@@ -173,13 +173,13 @@ def _number(
     value = raw[name]
     low, high = limits
     if not _is_int(value) or not low <= value <= high:
-        raise ManifestError(f"{where}{name} 는 {low} ~ {high} 사이 정수여야 합니다")
+        raise ManifestError(f"{low} ~ {high} 사이 정수여야 하는 칸입니다: {where}{name}")
     return int(value)
 
 
 def _fields(raw: object, allowed: frozenset[str], required: tuple[str, ...], where: str) -> None:
     if not isinstance(raw, dict):
-        raise ManifestError(f"{where.rstrip('.') or '선언'} 이 JSON 객체({{…}})가 아닙니다")
+        raise ManifestError(f"JSON 객체({{…}})가 아닙니다: {where.rstrip('.') or '선언'}")
     unknown = sorted(str(name) for name in raw if name not in allowed)
     if unknown:
         raise ManifestError(f"{where}모르는 칸: {', '.join(unknown)}")
@@ -231,16 +231,16 @@ def parse_manifest(raw: bytes, *, folder_name: str) -> ModuleManifest:
     실패다 — `enable` 같은 오타를 잡는다.
     """
     if len(raw) > MANIFEST_MAX_BYTES:
-        raise ManifestError(f"{MANIFEST_NAME} 가 64 KB 를 넘습니다")
+        raise ManifestError(f"{MANIFEST_NAME} 파일이 64 KB 를 넘습니다")
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        raise ManifestError(f"{MANIFEST_NAME} 가 UTF-8 이 아닙니다") from None
+        raise ManifestError(f"{MANIFEST_NAME} 파일이 UTF-8 이 아닙니다") from None
     try:
         data = json.loads(text)
     except json.JSONDecodeError as error:
         raise ManifestError(
-            f"{MANIFEST_NAME} 가 JSON 이 아닙니다 — {error.lineno}줄 {error.colno}칸"
+            f"{MANIFEST_NAME} 파일이 JSON 이 아닙니다 — {error.lineno}줄 {error.colno}칸"
         ) from None
     _fields(data, _MANIFEST_FIELDS, _MANIFEST_REQUIRED, "")
     assert isinstance(data, dict)
@@ -250,7 +250,7 @@ def parse_manifest(raw: bytes, *, folder_name: str) -> ModuleManifest:
             "id 가 규칙(소문자·숫자·밑줄 하나, 2 ~ 24자, 파이썬 예약어 아님)에 맞지 않습니다"
         )
     if module_id != folder_name:
-        raise ManifestError(f"id {module_id} 가 폴더 이름 {folder_name} 와 다릅니다")
+        raise ManifestError(f"id 와 폴더 이름이 다릅니다: id {module_id} · 폴더 {folder_name}")
     name = _text(data, "name", NAME_LENGTH)
     api = data["api"]
     if not _is_int(api):
@@ -275,7 +275,7 @@ def parse_manifest(raw: bytes, *, folder_name: str) -> ModuleManifest:
         values = [getattr(page, attribute) for page in pages]
         repeated = sorted({value for value in values if values.count(value) > 1})
         if repeated:
-            raise ManifestError(f"모듈 안에서 화면 {label} 가 겹칩니다: {', '.join(repeated)}")
+            raise ManifestError(f"모듈 안에서 겹치는 화면 {label}: {', '.join(repeated)}")
     return ModuleManifest(
         id=module_id,
         name=name,
@@ -295,13 +295,13 @@ def read_manifest(folder: Path) -> ModuleManifest:
     path = folder / MANIFEST_NAME
     try:
         if not path.is_file():
-            raise ManifestError(f"{MANIFEST_NAME} 가 없습니다")
+            raise ManifestError(f"{MANIFEST_NAME} 파일이 없습니다")
         if path.stat().st_size > MANIFEST_MAX_BYTES:
-            raise ManifestError(f"{MANIFEST_NAME} 가 64 KB 를 넘습니다")
+            raise ManifestError(f"{MANIFEST_NAME} 파일이 64 KB 를 넘습니다")
         raw = path.read_bytes()
     except OSError as error:
         raise ManifestError(
-            f"{MANIFEST_NAME} 를 읽지 못했습니다 — {type(error).__name__}"
+            f"{MANIFEST_NAME} 파일을 읽지 못했습니다 — {type(error).__name__}"
         ) from None
     return parse_manifest(raw, folder_name=folder.name)
 
@@ -570,7 +570,9 @@ def module_folder_for(file: str | os.PathLike[str]) -> Path:
         if folder.parent == folder:
             break
         folder = folder.parent
-    raise ManifestError(f"이 파일 위 {_FOLDER_SEARCH_DEPTH}단계 안에 {MANIFEST_NAME} 가 없습니다")
+    raise ManifestError(
+        f"이 파일 위 {_FOLDER_SEARCH_DEPTH}단계 안에 {MANIFEST_NAME} 파일이 없습니다"
+    )
 
 
 @functools.lru_cache(maxsize=64)
@@ -584,7 +586,7 @@ def cached_manifest(folder: Path) -> ModuleManifest:
     try:
         stat = path.stat()
     except OSError:
-        raise ManifestError(f"{MANIFEST_NAME} 가 없습니다") from None
+        raise ManifestError(f"{MANIFEST_NAME} 파일이 없습니다") from None
     return _manifest_at(os.fspath(path), stat.st_mtime_ns, stat.st_size)
 
 
