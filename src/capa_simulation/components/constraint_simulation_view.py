@@ -39,9 +39,11 @@
 줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 일정 카드의 「신규 대기」
 줄(`waiting_lines`)과 일반 설비가 된 신규 한 줄(`ordinary_line`)에 선다. 걸리지 않으면 1판 글
 그대로다. 보유의 출처와 크기(고른 호기 · 입력 칸 · 그 달 W/D 첫날 보유가 바뀌는 달)는 개조 일정 카드
-머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 보유로 기간이 덮여 신규를 붙이지 않았으면
-그 카드가 한 줄로 말한다(`NEW_SKIPPED_TEXT` — 결정 B1). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」
-처럼 모듈을 붙여 적는다(`NewUnitAssignment.label`).
+머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 남은 보유가 남은 증가를 다 덮어 신규를
+붙이지 않은 호기가 있으면 그 카드가 한 줄로 말한다(`new_stopped_line` — 결정 B1, 증가마다: 첫
+증가부터면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달). 일반 설비가 된 신규의 까닭은 호기마다
+가른다(`held_back_from`). 묶음 신규의 모듈 몫은 「HB-07(HB-07B)」 처럼 모듈을 붙여 적는다
+(`NewUnitAssignment.label`).
 """
 
 from __future__ import annotations
@@ -68,6 +70,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     dedicated_split_text,
     free_parts,
     general_label,
+    held_back_from,
     minimum_rate,
     minimum_unit,
     month_name,
@@ -138,6 +141,7 @@ __all__ = [
     "free_units_line",
     "holdings_text",
     "month_steps",
+    "new_stopped_line",
     "ordinary_line",
     "overdrawn_lines",
     "pick_chart_month",
@@ -595,13 +599,8 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
         ordinary = [
             unit for unit in result.units_starting_in(row.month) if result.left_units(unit) > 0
         ]
-        if ordinary:
-            names = ", ".join(_ordinary_name(unit, result) for unit in ordinary)
-            reason = (
-                SKIPPED_REASON
-                if result.new_units_skipped
-                else f"개조 {conditions.modification_days}일 안에 늘어날 전용이 없어"
-            )
+        for reason, members in _by_reason(ordinary, result):
+            names = ", ".join(_ordinary_name(unit, result) for unit in members)
             notes.append(
                 f"이 달 들어온 신규 {names} — {reason} 기존 제품 몫입니다(나중에 제약에 쓰려면 "
                 "개조)."
@@ -695,23 +694,57 @@ def _ordinary_name(unit: NewUnit, result: ConstraintResult) -> str:
     return name
 
 
+def _ordinary_reason(unit: NewUnit, result: ConstraintResult) -> str:
+    """일반 설비가 된 신규의 까닭 — 이음 꼴(뒤에 「기존 제품 몫」 이 붙는다). 결정 B1 로 붙지 않은
+    호기(`held_back_from`)는 첫 증가부터 덮였으면 `SKIPPED_REASON`, 뒤 증가부터면 「27년 7월
+    증가부터 보유 제약 설비로 다 덮어」(2026-11-01 — 증가마다), 창 안에 증가가 없던 호기는 「개조
+    30일 안에 늘어날 전용이 없어」. 풍선 꼴(`new_unit_fate`)과 같은 갈래다."""
+    stopped = held_back_from(unit, result)
+    if stopped is None:
+        return f"개조 {result.conditions.modification_days}일 안에 늘어날 전용이 없어"
+    if result.new_units_skipped:
+        return SKIPPED_REASON
+    return f"{month_name(stopped)} 증가부터 보유 제약 설비로 다 덮어"
+
+
+def _by_reason(
+    units: Sequence[NewUnit], result: ConstraintResult
+) -> list[tuple[str, list[NewUnit]]]:
+    """까닭이 같은 호기끼리 묶는다 — 처음 나온 차례 그대로(까닭이 하나면 한 묶음)."""
+    groups: dict[str, list[NewUnit]] = {}
+    for unit in units:
+        groups.setdefault(_ordinary_reason(unit, result), []).append(unit)
+    return list(groups.items())
+
+
 def ordinary_line(result: ConstraintResult) -> str:
-    """일반 설비가 된 신규 한 줄 — 개조 일수 안에 늘어날 전용이 없어 기존 제품 몫. 대수는 남는
-    몫의 환산 합이다(`left_units` — 일부만 붙은 호기는 남는 몫만). 없으면 빈 글자."""
+    """일반 설비가 된 신규 한 줄 — 까닭(`_ordinary_reason`)마다 이름과 「기존 제품 몫」, 묶음 사이는
+    「 / 」. 대수는 남는 몫의 환산 합이다(`left_units` — 일부만 붙은 호기는 남는 몫만). 이름은 까닭
+    묶음마다 넷까지(「외 n호기」). 없으면 빈 글자."""
     units = result.ordinary_units
     if not units:
         return ""
     total = sum(result.left_units(unit) for unit in units)
-    names = ", ".join(_ordinary_name(unit, result) for unit in units[:4])
-    more = f" 외 {len(units) - 4}호기" if len(units) > 4 else ""
-    reason = (
-        SKIPPED_REASON
-        if result.new_units_skipped
-        else f"개조 {result.conditions.modification_days}일 안에 늘어날 전용이 없어"
-    )
+    parts: list[str] = []
+    for reason, members in _by_reason(units, result):
+        names = ", ".join(_ordinary_name(unit, result) for unit in members[:4])
+        more = f" 외 {len(members) - 4}호기" if len(members) > 4 else ""
+        parts.append(f"{names}{more} · {reason} 기존 제품 몫")
+    return f"일반 설비가 된 신규 {units_text(total)}대 — {' / '.join(parts)}(제약에 쓰려면 개조)"
+
+
+def new_stopped_line(result: ConstraintResult) -> str:
+    """결정 B1 로 신규를 붙이지 않은 한 줄 — 붙지 않은 호기(`held_back_units`)가 있을 때만. 첫
+    증가부터 덮였으면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달을 적는다(2026-11-01 — 증가마다).
+    창 안에 증가가 없어 어차피 붙지 않았을 신규뿐이면 빈 글자다."""
+    stopped = result.new_units_stopped_month
+    if stopped is None or not result.held_back_units:
+        return ""
+    if result.new_units_skipped:
+        return NEW_SKIPPED_TEXT
     return (
-        f"일반 설비가 된 신규 {units_text(total)}대 — {names}{more} · {reason} 기존 제품 몫"
-        "(제약에 쓰려면 개조)"
+        f"{month_name(stopped)} 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 "
+        "전용을 다 채워 신규 설비를 더 붙이지 않았습니다 — 그 뒤 신규는 기존 제품 몫입니다."
     )
 
 
@@ -1088,8 +1121,9 @@ def _render_schedule(view: ConstraintView) -> None:
             elif not result.windows:
                 freed = result.kpis.owned_used + result.kpis.new_used
                 st.caption(FREE_ONLY_TEXT if free_line and freed > 0 else NO_WINDOWS_TEXT)
-            if result.new_units_skipped:
-                st.caption(NEW_SKIPPED_TEXT)
+            stopped_line = new_stopped_line(result)
+            if stopped_line:
+                st.caption(stopped_line)
             for line in schedule_lines(result.windows, today=view.today):
                 st.markdown(line)
             if result.starts_before_range:

@@ -131,6 +131,7 @@ __all__ = [
     "minimum_rate",
     "minimum_unit",
     "month_name",
+    "held_back_from",
     "new_unit_fate",
     "rate_axis",
     "rate_figure",
@@ -141,7 +142,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 10
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 11
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -1215,16 +1216,32 @@ def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
     ]
     left = result.left_units(unit)
     if left > 0:
-        days = result.conditions.modification_days or 0
-        reason = (
-            "보유로 제약 기간을 다 덮음"
-            if result.new_units_skipped
-            else f"개조 {days}일 안에 늘어날 전용 없음"
-        )
+        reason = _fate_reason(unit, result)
         parts.append(
             f"남는 {units_text(left)}대 일반 설비({reason})" if pieces else f"일반 설비({reason})"
         )
     return " · ".join(parts)
+
+
+def held_back_from(unit: NewUnit, result: ConstraintResult) -> int | None:
+    """결정 B1 로 붙지 않은 신규(`held_back_units`)면 신규를 붙이지 않기 시작한 달, 아니면 None —
+    창 안에 증가가 없던 호기는 None 이다. 풍선(`new_unit_fate`)과 화면 글(`ordinary_line` · 고른 달
+    회색 줄)이 까닭을 이 한 길로 가른다(2026-11-01 — 증가마다)."""
+    stopped = result.new_units_stopped_month
+    if stopped is not None and any(item.name == unit.name for item in result.held_back_units):
+        return stopped
+    return None
+
+
+def _fate_reason(unit: NewUnit, result: ConstraintResult) -> str:
+    """일반 설비가 된 몫의 까닭(풍선 꼴) — 「보유로 제약 기간을 다 덮음」(첫 증가부터) · 「27년
+    7월부터 보유로 다 덮음」(뒤 증가부터) · 「개조 30일 안에 늘어날 전용 없음」."""
+    stopped = held_back_from(unit, result)
+    if stopped is None:
+        return f"개조 {result.conditions.modification_days or 0}일 안에 늘어날 전용 없음"
+    if result.new_units_skipped:
+        return "보유로 제약 기간을 다 덮음"
+    return f"{month_name(stopped)}부터 보유로 다 덮음"
 
 
 def _module_prefix(item: NewUnitAssignment) -> str:

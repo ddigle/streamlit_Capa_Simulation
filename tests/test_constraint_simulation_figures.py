@@ -28,6 +28,14 @@ from typing import Any
 import plotly.io as pio
 import pytest
 from test_constraint_simulation import CONDITIONS, _inputs, _run
+from test_constraint_simulation_holdings import (
+    JUNE_FIRST,
+    LATE_HELD,
+    LATE_UNIT,
+    _conditions,
+    _held,
+    _months,
+)
 from test_constraint_simulation_options import NEW_ON, SINCE, _unit
 
 from capa_simulation.components import constraint_simulation_figures as figures
@@ -51,11 +59,13 @@ from capa_simulation.components.constraint_simulation_figures import (
 from capa_simulation.components.constraint_simulation_view import (
     FREE_ONLY_TEXT,
     LATE_SUFFIX,
+    NEW_SKIPPED_TEXT,
     SHORT_INLINE_LIMIT,
     WAIT_LATE_SUFFIX,
     default_month,
     free_units_line,
     month_steps,
+    new_stopped_line,
     ordinary_line,
     overdrawn_lines,
     render_constraint_kpis,
@@ -72,6 +82,7 @@ from capa_simulation.services.constraint_simulation import (
     FILL_OWNED,
     ConstraintMonthInput,
     ConstraintResult,
+    NewUnit,
     simulate_constraint,
 )
 
@@ -987,8 +998,10 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이고, 8 은
     그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판, 10 은
     묶음 신규의 모듈 몫(「HB-07(HB-07B)」)과 「보유로 제약 기간을 다 덮음」 풍선 글을 실은 판이다
-    (2026-11-01 사용자 결정 B1 · B2)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 10
+    (2026-11-01 사용자 결정 B1 · B2). 11 은 B1 을 증가마다로 넓혀 풍선의 일반 설비 까닭을 호기마다
+    가른 판이다(「27년 7월부터 보유로 다 덮음」 · 창 안에 증가가 없던 호기는 「개조 30일 안에 늘어날
+    전용 없음」 — 같은 날)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 11
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
@@ -1200,6 +1213,65 @@ def test_the_schedule_card_lists_the_waits_and_the_ordinary_units() -> None:
     )
     assert ordinary_line(_owned()) == ""
     assert waiting_lines(_run().assignments, today=date(2026, 10, 26)) == []
+
+
+def test_a_later_cover_names_its_month_and_splits_the_reasons() -> None:
+    """B1 증가마다(2026-11-01 넓힘) — 필요 6월 2 → 7월 3 → 8월 3, 고른 H1(6/1). 7월 증가부터
+    남은 보유가 남은 증가를 다 덮어 신규를 붙이지 않았다. 카드 한 줄은 그 달을 적고, 일반 설비가 된
+    신규의 까닭은 호기마다 — N1(6/20)은 7월 증가에 붙을 수 있었으니 「27년 7월 증가부터 보유 제약
+    설비로 다 덮어」, N2(7/1)는 창 안에 증가가 없어 「개조 30일 안에 늘어날 전용이 없어」 다. 풍선 ·
+    고른 달 회색 줄이 같은 갈래를 쓴다."""
+    months = _months(2, 3, 3)
+    units = (LATE_UNIT, NewUnit("N2", date(2027, 7, 1), 1.0))
+    result = simulate_constraint(months, _conditions(months, held=LATE_HELD, new=True), units)
+    assert new_stopped_line(result) == (
+        "27년 7월 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 "
+        "설비를 더 붙이지 않았습니다 — 그 뒤 신규는 기존 제품 몫입니다."
+    )
+    assert ordinary_line(result) == (
+        "일반 설비가 된 신규 2대 — N1 · 27년 7월 증가부터 보유 제약 설비로 다 덮어 기존 제품 몫 / "
+        "N2 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 쓰려면 개조)"
+    )
+    first, second = result.new_units
+    assert figures.new_unit_fate(first, result) == "일반 설비(27년 7월부터 보유로 다 덮음)"
+    assert figures.new_unit_fate(second, result) == "일반 설비(개조 30일 안에 늘어날 전용 없음)"
+    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
+    assert (
+        "이 달 들어온 신규 N1 — 27년 7월 증가부터 보유 제약 설비로 다 덮어 기존 제품 몫입니다"
+        in june.steps[2].note
+    )
+    july = month_steps(result.month(202707), result, LABELS, show_proportional=False)
+    assert (
+        "이 달 들어온 신규 N2 — 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫입니다"
+        in july.steps[2].note
+    )
+
+
+def test_a_first_growth_cover_speaks_only_when_a_unit_was_held_back() -> None:
+    """첫 증가부터 덮이면(옛 「기간 전체로 한 번」) 카드 한 줄은 `NEW_SKIPPED_TEXT` 그대로다. 다만
+    이제 붙지 않은 호기가 있을 때만 선다 — 6/20 신규는 6월 증가(t 5/25) 앞이고 7월 증가가 없어
+    어차피 붙지 않았을 호기라 한 줄이 서지 않고, 까닭도 「보유 제약 설비로 제약 기간을 다 덮어」 가
+    아니라 「개조 30일 안에 늘어날 전용이 없어」 다(옛 판은 두 글을 썼다 — cs2 리뷰가 남긴 작은
+    어긋남). 5/25 신규는 6월 증가에 붙을 수 있었으니 옛 글 그대로다."""
+    months = _months(2, 2)
+    conditions = _conditions(months, held=(_held("H1"), _held("H2")), new=True)
+    late = simulate_constraint(months, conditions, (LATE_UNIT,))
+    assert late.new_units_skipped
+    assert new_stopped_line(late) == ""
+    assert ordinary_line(late) == (
+        "일반 설비가 된 신규 1대 — N1 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
+        "쓰려면 개조)"
+    )
+    early = simulate_constraint(months, conditions, (NewUnit("N0", JUNE_FIRST, 1.0),))
+    assert new_stopped_line(early) == NEW_SKIPPED_TEXT
+    assert ordinary_line(early) == (
+        "일반 설비가 된 신규 1대 — N0 · 보유 제약 설비로 제약 기간을 다 덮어 기존 제품 몫(제약에 "
+        "쓰려면 개조)"
+    )
+    assert (
+        figures.new_unit_fate(early.new_units[0], early) == "일반 설비(보유로 제약 기간을 다 덮음)"
+    )
+    assert new_stopped_line(_new()) == ""
 
 
 def test_a_partly_attached_unit_is_named_with_its_leftover() -> None:
