@@ -362,6 +362,19 @@ def test_the_toggle_sink_is_hidden_and_short_runs_do_not_dim_the_body() -> None:
     ]
 
 
+def test_sidebar_multiselect_inputs_keep_one_width_with_and_without_focus() -> None:
+    """사이드바 multiselect 의 입력 칸은 초점 때도 넓어지지 않는다 — 1.63 은 초점 때 입력 칸
+    min-width 가 42px 로 늘어 칩 옆에 들지 못하면 새 줄로 내려가 칸이 한 줄 커진다. 사이드바가
+    끝까지 내려가 있으면 초점을 뺏는 누름에 칸이 줄며 위 위젯이 밀려, 위 단추 · 선택 상자를 누른
+    첫 누름이 사라졌다(2026-11-02 E2E — 제약 시뮬레이션, 같은 날 사본 앱에서 다른 화면의 사이드바
+    multiselect 도). 규칙은 모든 화면이 받는 이 시트 하나에 있다. 행동은 브라우저로 잰다."""
+    block = _style_block()
+
+    assert _rules_with(block, "min-width: 7px !important;") == [
+        ['[data-testid="stSidebarContent"] [data-testid="stMultiSelect"] input']
+    ]
+
+
 def test_a_lone_conditions_heading_is_hidden_by_css_only() -> None:
     """「조회 조건」 제목 아래에 설 상자가 사이드바에 하나도 없을 때만 제목을 감춘다.
 

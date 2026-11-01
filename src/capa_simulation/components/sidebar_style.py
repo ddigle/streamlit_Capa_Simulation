@@ -472,6 +472,16 @@ def build_sidebar_stylesheet(
         [data-testid="stSidebarContent"] [data-testid="stVerticalBlock"] {{
             gap: {_SIDEBAR_BLOCK_GAP};
         }}"""
+        # **사이드바 multiselect 는 초점 앞뒤로 키가 같다.** 1.63 multiselect 는 초점 때 입력
+        # 칸 min-width 가 42px(아니면 7px)라, 칩 옆에 들지 못하면 입력 칸이 새 줄로 내려가 칸이
+        # 한 줄 커진다. 사이드바가 끝까지 내려가 있으면 그 칸에서 초점을 뺏는 누름(pointerdown)에
+        # 칸이 줄며 위 위젯이 밀려, 위 단추 · 선택 상자 · 조건 칸을 누른 첫 누름이 다른 자리에서
+        # 떼어져 사라졌다(2026-11-02 E2E — 제약 시뮬레이션 「보유 제약 호기」, 같은 날 사본 앱에서
+        # 다른 화면의 사이드바 multiselect 도 — AGENTS 9장). 칩 줄바꿈은 그대로다.
+        f"""
+        [data-testid="stSidebarContent"] [data-testid="stMultiSelect"] input {{
+            min-width: 7px !important;
+        }}"""
         # 조회 컨트롤 넷에 주던 `padding: 0.55rem 0.7rem` 은 없앴다. 상자였을 때는 안쪽 위젯을
         # 들여놓는 여백이었는데, 확장 패널은 제 여백을 갖는다 — 남겨 두면 그 여백이 **요약 줄과
         # 테두리까지** 밀어 접힌 줄이 그룹 상자보다 안쪽으로 들어간다.
