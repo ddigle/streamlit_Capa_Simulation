@@ -2014,7 +2014,7 @@ def _save_preset_name_only(app: AppTest, name: str) -> None:
 def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path: Path) -> None:
     """DEMO_Final_Test 의 표시명이 다른 공정의 원본 DEMO_Chip_Attach 와 같다(2026-10-10 후속).
 
-    프리셋 편집 상자는 key 없는 multiselect 라 값을 보이는 글자로 주고받는다 — 같은 글자면 고른
+    프리셋 편집 상자는 multiselect 라 값을 보이는 글자로 주고받는다 — 같은 글자면 고른
     것과 다른 공정이 공용 프리셋에 저장됐다. 「표시명 (원본)」 으로 갈라 보이고 저장값은 원본이다.
     확보율 보정 편집표의 `공정` 칸은 값을 옵션 `value` 로 주고받아 값은 섞이지 않지만, 목록에서 둘을
     가려 고를 수 있게 같은 글자로 가른다.

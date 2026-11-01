@@ -1,11 +1,11 @@
 # Purpose: HOME Preference 의 공지·Top5 구간·주요공정 프리셋 저장이 남의 저장을 덮지 않는지 본다.
 
 """세 편집기는 칸에 고정 key 가 없다(숨은 탭의 첫 값이 세션에 박히지 않게 — Top5 두 칸은 key 끝에
-저장본 version 을 붙여 함께 다시 선다). 그래서 남이 먼저 저장하면 옛 화면의 제출 회차에 칸이 새
-저장본으로 서서 이 화면의 입력이 버려진다. 대조가 없으면 그 값을
-version 만 올려 다시 쓰고 「저장했습니다」 를 띄웠다(2026-10-26 E2E — 두 문맥에서 세 칸 모두 재현).
-판정 기준·확보율 보정과 같은 버전 대조로 거부하고, 이 세션의 빠른 두 번 누름은 거부가 아니라
-저장으로 알린다(`write_guard.is_own_profile_save`).
+저장본 version 을, 주요공정 프리셋 이름·공정 두 칸은 고칠 프리셋 저장본의 지문을 붙여 함께 다시
+선다). 그래서 남이 먼저 저장하면 옛 화면의 제출 회차에 칸이 새 저장본으로 서서 이 화면의 입력이
+버려진다. 대조가 없으면 그 값을 version 만 올려 다시 쓰고 「저장했습니다」 를 띄웠다(2026-10-26
+E2E — 두 문맥에서 세 칸 모두 재현). 판정 기준·확보율 보정과 같은 버전 대조로 거부하고, 이 세션의
+빠른 두 번 누름은 거부가 아니라 저장으로 알린다(`write_guard.is_own_profile_save`).
 """
 
 from __future__ import annotations
@@ -193,6 +193,86 @@ def test_a_preset_save_from_a_stale_screen_is_rejected(database: Path) -> None:
     profile = DuckDBScenarioRepository(database).load_global_key_process()
     assert profile.version == 2
     assert profile.presets == (("기본", PROCESSES[:1]), ("뒤 묶음", PROCESSES[2:]))
+
+
+@pytest.mark.parametrize(
+    ("other", "expected"),
+    [
+        ((("기본", PROCESSES[:1]), ("뒤 묶음", PROCESSES[2:])), ("기본", PROCESSES[:1])),
+        ((("새 기본", PROCESSES[:2]), ("뒤 묶음", PROCESSES[2:])), ("새 기본", PROCESSES[:2])),
+        ((("새 기본", PROCESSES[1:2]), ("뒤 묶음", PROCESSES[2:])), ("새 기본", PROCESSES[1:2])),
+    ],
+    ids=["공정만", "이름만", "둘 다"],
+)
+def test_after_a_refused_preset_save_name_and_processes_show_the_latest_save(
+    database: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    other: tuple[tuple[str, tuple[str, ...]], ...],
+    expected: tuple[str, tuple[str, ...]],
+) -> None:
+    """남의 저장에 거부된 뒤 이름·공정 두 칸이 **둘 다** 고칠 프리셋의 최신 저장본이다(Top5 구간과
+    같은 꼴, 2026-11-01 결정 N7-preset). 칸에 key 가 없으면 위젯 id 가 값을 따라 남이 바꾼 칸만 새로
+    섰다 — 공정만 바뀌면 이름 칸에 이 화면이 친 이름이, 맨 앞 프리셋 이름만 바뀌면 공정 칸에 이
+    화면이 고른 공정이 남아 아무도 정하지 않은 프리셋이 보였고, 다시 누르면 그대로 저장됐다."""
+    app = _app(database)
+    assert (app.text_input[0].value, app.multiselect[0].value) == ("기본", list(PROCESSES[:2]))
+    DuckDBScenarioRepository(database).replace_global_key_process_presets(
+        list(other), source="다른 세션", expected_version=1
+    )
+    clear_global_key_process_cache()
+    app.text_input[0].input("A 이름")
+    app.multiselect[0].set_value([PROCESSES[2]])
+    app = _press(app, "프리셋 저장")
+
+    assert not _successes(app)
+    assert any("다른 사용자가 먼저 주요공정 프리셋을 저장" in message for message in _errors(app))
+    assert (app.text_input[0].value, app.multiselect[0].value) == (expected[0], list(expected[1]))
+    assert app.session_state[KEY_PROCESS_SEEN_KEY] == (2, expected[0], expected[1])
+
+    # 거부 창이 지난 뒤 다시 누르면 실제로 저장한다 — 섞인 프리셋이 아니라 최신 저장본이 v3 이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = _press(app, "프리셋 저장")
+    assert not _errors(app), _errors(app)
+    assert _successes(app) == [f"프리셋 「{expected[0]}」을 저장했습니다."]
+    profile = DuckDBScenarioRepository(database).load_global_key_process()
+    assert profile.version == 3
+    assert profile.presets == (expected, ("뒤 묶음", PROCESSES[2:]))
+
+
+def test_switching_the_preset_to_edit_still_shows_each_saved_preset(database: Path) -> None:
+    """두 칸의 key 는 고칠 프리셋 저장본을 따른다 — 다른 프리셋으로 옮기면 그 프리셋의 저장본이
+    서고, 돌아오면 친 값이 아니라 저장본이다(key 가 없던 때와 같다)."""
+    app = _app(database)
+    app.text_input[0].input("치다 만 이름")
+    app.multiselect[0].set_value([PROCESSES[2]])
+    app.selectbox[0].set_value("뒤 묶음")
+    app = app.run()
+    assert (app.text_input[0].value, app.multiselect[0].value) == ("뒤 묶음", list(PROCESSES[2:]))
+    app.selectbox[0].set_value("기본")
+    app = app.run()
+    assert (app.text_input[0].value, app.multiselect[0].value) == ("기본", list(PROCESSES[:2]))
+    assert not _errors(app)
+
+
+def test_a_changed_process_label_still_restores_the_saved_processes(database: Path) -> None:
+    """공정 칸 key 에는 보이는 글자도 든다 — key 가 붙은 multiselect 는 위젯 id 에 선택지 글자가
+    들지 않아, 빼 두면 공정 목록이 바뀐 회차(이 화면에 없는 공정이 생김)에 고르던 값이 저장본
+    대신 남는다. key 가 없던 때처럼 저장본으로 다시 선다."""
+    script = _script(database).replace(
+        f"process_options=list({PROCESSES!r}),",
+        f"process_options=st.session_state.get('test_options', list({PROCESSES!r})),",
+    )
+    app = AppTest.from_string("import streamlit as st\n" + script, default_timeout=60).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.multiselect[0].set_value([PROCESSES[2]])
+    app = app.run()
+    assert app.multiselect[0].value == [PROCESSES[2]]
+    app.session_state["test_options"] = list(PROCESSES[1:])
+    app = app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.multiselect[0].value == list(PROCESSES[:2])
+    assert app.text_input[0].value == "기본"
 
 
 def test_a_preset_renamed_by_someone_else_is_not_saved_over_another_preset(

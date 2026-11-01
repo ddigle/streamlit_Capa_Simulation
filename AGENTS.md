@@ -2070,6 +2070,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
   - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
+    이름·공정 칸의 key 끝에는 고칠 프리셋 저장본의 지문을 붙여, 남의 저장에 거부된 뒤 두 칸이 함께 저장본으로 선다(5장 25).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
     (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
@@ -3381,9 +3382,11 @@ RQ_MODULE
     프리셋**(version·이름·공정)을 대조해 그것이 바뀌었을 때만 저장·「기본으로」·「삭제」 를 거부하고, 쓰기는 그 회차가
     읽은 version 을 넘긴다(`home_preference._stale_key_process_target`). Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
-    확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 숫자 칸에는 고정 key 를 두지 않는다 — 칸이 둘 이상이면 key 끝에
+    확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 칸에는 고정 key 를 두지 않는다 — 칸이 둘 이상이면 key 끝에
     저장본 version 을 붙인다(Top5 구간 — key 가 없으면 위젯 id 가 값을 따라 값이 바뀐 칸만 새로 서서, 거부된 뒤 남의 저장값과
-    이 화면이 친 값이 섞였다, 2026-10-27 표적 E2E). 넘기는 대조 값은 **본 값**
+    이 화면이 친 값이 섞였다, 2026-10-27 표적 E2E). 묶음의 한 항목만 대조하는 편집기는 version 대신 **그 항목 저장본의 지문**을
+    붙인다(HOME 주요공정 프리셋 이름·공정 — `home_preference._key_process_widget_key`, 2026-11-01 결정 N7-preset; 묶음 version 을
+    넣으면 다른 프리셋을 남이 고친 회차에 칸이 새로 서 이 화면의 입력이 버려진 채 저장된다). 넘기는 대조 값은 **본 값**
     (`write_guard.seen`)이다 — 폼을 제출하지 않은 회차·초안을 세운 자리에만 적고(`remember_seen`), 없으면 지금 값으로
     대체하지 않고 「다시 불러와」 로 막는다(`expected_version=None` 은 대조하지 않는다는 뜻이라 대체보다 더 위험하다).
     충돌 회차는 본 값을 올리지 않는다. 예외 하나 — Cut-off 는 「지문 없는 옛 세션(초안만 있음)은 지금 저장본이 출발점」
@@ -4229,8 +4232,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리: 가용설비 현황 Main `공정소분류`·Static 대비 일정 `공정`·필요 단축 일정 `공정`·「설정」 팝업 `표 보기 설정`
   공정 필터, 산출 결과 대당 Capa 공정 필터, `column_filter` 의 공정 칸(산출 결과 소요대수·확보율, 기준
   정보 설비대수, 월별 편집기 필터), 표준 목표 공정 필터·로직 분석 `공정`, 표준 대비 재공 `공정`, Dynamic
-  Capa 상위 `공정`, 실적 세 화면(효율·UPEH·수율) `공정`, HOME Preference 주요공정 프리셋 `공정`(key 없는
-  상자 — 아래 9장), 기준 정보 STEP 복제·삭제 대상(`capacity_step_route` — 글자에 경로 키 전부·MCP/STEP 을
+  Capa 상위 `공정`, 실적 세 화면(효율·UPEH·수율) `공정`, HOME Preference 주요공정 프리셋 `공정`(저장본
+  지문 key 상자 — 아래 9장), 기준 정보 STEP 복제·삭제 대상(`capacity_step_route` — 글자에 경로 키 전부·MCP/STEP 을
   싣고 공정은 갈라, 같은 글자가 남으면 「 #n」; 값은 행 위치가 아니라 경로 키),
   ③ Figure 라벨(LOB 공정명 annotation·hover, 상세 B/N 이름·hover, 재공 격자 제목,
   Dynamic Capa 공정 비교 막대의 y축, 실적 세 화면 공정 우선순위 막대·월 × 공정 Gap 격자의 y축, 가용설비 현황 Main
@@ -4458,9 +4461,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `tests/widget_browser.py` 의 `BrowserChoice`(selectbox·multiselect·radio)로 잰다.
   AppTest 의 `select`·`set_value` 는 **값**을 받아 `format_func` 로 글자를 만든다 — 보이는 글자(「가공」)를
   넘기면 선택지 밖 값으로 걷힌다. 사용자가 보이는 글자를 고르는 것을 재려면 `BrowserChoice.pick` 을 쓴다.
-  **key 없는 상자**(HOME 주요공정 프리셋 `공정` — `default=` 로 프리셋 값을 받는다)는 위젯 id 에 보이는
-  글자가 들어가 글자가 바뀌면 새 위젯으로 선다. 옛 글자가 되돌아올 자리가 없어 다시 적을 칸도 까닭도
-  없고 글자만 가른다.
+  **저장본 지문 key 상자**(HOME 주요공정 프리셋 `공정` — `default=` 로 프리셋 값을 받고, key 끝에 고칠 프리셋
+  저장본과 보이는 글자의 지문을 붙인다 — key 가 붙은 multiselect 는 위젯 id 에 선택지 글자가 들지 않는다)는
+  글자가 바뀌면 새 위젯으로 선다. 옛 글자가 되돌아올 자리가 없어 다시 적을 칸도 까닭도 없고 글자만 가른다.
 - **세션에 값을 적는 위젯에는 `value=`(`default=`·`expanded=`) 기본값을 주지 않는다.** 둘을 함께
   주면 Streamlit 이 「기본값과 세션 API 를 함께 썼다」고 경고한다(기본값이 `False`·첫 항목이면
   조용하다). 기본값은 위젯 앞에서 칸이 없을 때만 세션에 심는다(HOME 토글 — `render_home_view_card`,
