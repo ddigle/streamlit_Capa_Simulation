@@ -7,9 +7,11 @@
 표를 만들면 같은 질문에 세 가지 답이 나온다. 여기서 한 번만 계산하고 화면은 지표
 사양(`MetricSpec`)만 바꿔 끼운다.
 
-**Gap 의 뜻이 지표마다 다르다.** 효율과 수율은 비율 그 자체라 차이를 `%p` 로 읽고,
-UPEH 는 절대 수량이라 차이를 비율로 읽어야 공정 간 비교가 된다. 이 차이를 화면이 아니라
-사양이 갖는다 — 화면에 흩어 두면 한 곳만 고쳐지고 나머지는 조용히 틀린 단위로 남는다.
+**Gap 의 뜻이 지표마다 다르다.** 효율과 수율은 비율 그 자체라 `실적 − 기준` 으로 빼고,
+UPEH 는 절대 수량이라 `실적 ÷ 기준 − 1` 비율로 읽어야 공정 간 비교가 된다. 이 차이를 화면이 아니라
+사양이 갖는다 — 화면에 흩어 두면 한 곳만 고쳐지고 나머지는 조용히 틀린 셈으로 남는다. 두 Gap 은
+화면에서 모두 「%」 다(「%p」 를 쓰지 않는다 — 2026-11-01 사용자 결정). 단위 글자가 같아 셈의 갈림은
+`gap_formula` 가 글로 밝힌다.
 
 데모는 `dynamic_capacity.DEMO_PROFILES` 에서 나온다. 상위 워터폴과 같은 공정·제품
 세계라야 「그 손실을 이 화면에서 파고든다」가 성립한다. 난수를 쓰지 않는다 — 다시 열
@@ -51,8 +53,8 @@ DEMO_MONTH_COUNT = 12
 class MetricSpec:
     """한 지표를 화면에 올리는 데 필요한 것 전부.
 
-    `gap_kind` 가 `"point"` 면 `실적 − 기준` 을 `%p` 로, `"ratio"` 면 `실적 ÷ 기준 − 1` 을
-    `%` 로 읽는다. 둘을 섞으면 UPEH 2,400 과 2,050 의 차이가 `-350%p` 로 적힌다.
+    `gap_kind` 가 `"point"` 면 `실적 − 기준`, `"ratio"` 면 `실적 ÷ 기준 − 1` 이다. 둘을 섞으면
+    UPEH 2,400 과 2,050 의 차이가 비율이 아닌 `-350` 으로 나온다. 화면 단위는 둘 다 「%」 다.
     """
 
     name: str
@@ -62,20 +64,23 @@ class MetricSpec:
     value_format: str
     source: str
     description: str
-    # 소수 자릿수는 지표마다 다르다. 수율은 Gap 이 0.5%p 수준이라 한 자리로 적으면
-    # `-0.0%p` 로 뭉개져 화면이 「차이가 없다」고 거짓말한다.
+    # 소수 자릿수는 지표마다 다르다. 수율은 Gap 이 0.5% 수준이라 한 자리로 적으면
+    # `-0.0%` 로 뭉개져 화면이 「차이가 없다」고 거짓말한다.
     value_decimals: int = 1
     gap_decimals: int = 1
 
     @property
     def gap_unit(self) -> str:
-        """라벨에 적는 단위. `Gap (%p)` 처럼 쓴다."""
-        return "%p" if self.gap_kind == "point" else "%"
+        """라벨에 적는 단위(`Gap (%)`). 빼는 Gap 도 비율 Gap 도 「%」 다 — 「%p」 를 쓰지 않는다
+        (2026-11-01 사용자 결정 「%p표기하지말고 %로만」)."""
+        return "%"
 
     @property
-    def gap_suffix(self) -> str:
-        """이미 `%` 로 서식한 **값 뒤**에 붙일 것. `%` 를 또 붙이면 `4.3%%p` 가 된다."""
-        return "p" if self.gap_kind == "point" else ""
+    def gap_formula(self) -> str:
+        """Gap 셈 글자 — 단위가 같아 두 셈(`gap_kind`)의 갈림은 이 글로만 보인다."""
+        if self.gap_kind == "point":
+            return f"{self.actual_column} − {self.standard_column}"
+        return f"{self.actual_column} ÷ {self.standard_column} − 1"
 
 
 EFFICIENCY_METRIC = MetricSpec(
@@ -315,9 +320,7 @@ def build_improvement_actions(metric: MetricSpec, priority: pd.DataFrame) -> pd.
                 "담당": template[1],
                 "목표월": _shift_month(DEMO_START_MONTH, DEMO_MONTH_COUNT + offset),
                 "진행": template[2],
-                "기대 효과": (
-                    f"{metric.name} {recovery:.{metric.gap_decimals}%}{metric.gap_suffix} 회복"
-                ),
+                "기대 효과": (f"{metric.name} {recovery:.{metric.gap_decimals}%} 회복"),
             }
         )
     return pd.DataFrame.from_records(records, columns=list(_ACTION_COLUMNS))

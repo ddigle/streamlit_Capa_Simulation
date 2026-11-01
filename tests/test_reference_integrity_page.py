@@ -120,6 +120,26 @@ def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
     assert any("Gap 해석" in markdown.value for markdown in app.markdown)
 
 
+def test_the_efficiency_gap_reads_percent_not_percent_point() -> None:
+    """공정 상세 「효율 실적 / 기준」 의 증감과 산식 가이드 「Gap 해석」 은 「%」 다 — 「%p」 를
+    쓰지 않는다(2026-11-01 사용자 결정 「%p표기하지말고 %로만」). 효율 Gap 은 그대로
+    `실적 − 표준` 이다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
+
+    assert not app.exception
+    efficiency = next(metric for metric in app.metric if metric.label == "효율 실적 / 기준")
+    assert str(efficiency.delta).endswith("%") and "%p" not in str(efficiency.delta)
+
+    app.session_state["dynamic_capa_active_tab"] = "산식 가이드"
+    app.run()
+
+    assert not app.exception
+    guide = next(markdown.value for markdown in app.markdown if "효율 Gap" in markdown.value)
+    assert "`실적 효율 − 표준 효율`" in guide and "%p" not in guide
+
+
 # ------------------------------------------------------------------ 공정 상세 · 제품·Stack·WF 속성
 PROCESS_KEY = "dynamic_capacity_process_filter"
 PRODUCT_KEY = "dynamic_capacity_product_filter"

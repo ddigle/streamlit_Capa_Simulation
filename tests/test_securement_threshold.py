@@ -52,33 +52,37 @@ def test_a_blank_month_falls_back_to_the_default_per_item() -> None:
         1.095, 0.995, _rows((202607, 1.195, None), (202608, None, 1.05))
     )
 
-    assert thresholds.for_month(202606) == (1.095, 0.995)
+    # 저장값은 사사오입 정수 % 의 T/100 으로 읽는다(2026-11-01 — 1.095 → 1.1, 0.995 → 1.0).
+    assert thresholds.for_month(202606) == (1.1, 1.0)
     # 확보만 적은 달의 경고는 기본값이다.
-    assert thresholds.for_month(202607) == (1.195, 0.995)
-    assert thresholds.for_month(202608) == (1.095, 1.05)
+    assert thresholds.for_month(202607) == (1.2, 1.0)
+    assert thresholds.for_month(202608) == (1.1, 1.05)
     assert thresholds.exception_months == (202607, 202608)
     assert thresholds.exception_months_within([202606, 202607]) == (202607,)
 
     table = effective_securement_thresholds(thresholds, [202608, 202606, 202607])
     assert table["생산계획년월"].tolist() == [202606, 202607, 202608]
-    assert table["확보 기준"].tolist() == [1.095, 1.195, 1.095]
-    assert table["경고 기준"].tolist() == [0.995, 0.995, 1.05]
+    assert table["확보 기준"].tolist() == [1.1, 1.2, 1.1]
+    assert table["경고 기준"].tolist() == [1.0, 1.0, 1.05]
 
 
 def test_the_value_is_hashable_and_its_digest_follows_the_content() -> None:
     first = build_securement_thresholds(1.095, 0.995, _rows((202607, 1.195, None)))
     same = build_securement_thresholds(1.095, 0.995, _rows((202607, 1.195, None)))
-    other = build_securement_thresholds(1.095, 0.995, _rows((202607, 1.2, None)))
+    other = build_securement_thresholds(1.095, 0.995, _rows((202607, 1.21, None)))
+    # 같은 정수 % 로 읽히는 저장값(1.195 와 1.2, 1.095 와 1.1)은 같은 판정이라 지문도 같다.
+    rounded_same = build_securement_thresholds(1.1, 1.0, _rows((202607, 1.2, None)))
 
     assert hash(first) == hash(same)
     assert first.digest == same.digest
     assert first.digest != other.digest
+    assert first.digest == rounded_same.digest
     assert SecurementThresholds(1.095, 0.995).digest != first.digest
 
 
 def test_validation_merges_with_the_default_and_names_the_reversed_month() -> None:
     """확보만 낮춰 적은 달도 기본 경고와 합치면 거꾸로 짝이다. 어느 달인지 말한다."""
-    with pytest.raises(ValueError, match=r"26\.07\(경고 99\.5% > 확보 95%\)"):
+    with pytest.raises(ValueError, match=r"26\.07\(경고 100% > 확보 95%\)"):
         validate_securement_thresholds(1.095, 0.995, _rows((202607, 0.95, None)))
 
     with pytest.raises(ValueError, match="기본 경고 기준"):
@@ -90,8 +94,16 @@ def test_validation_merges_with_the_default_and_names_the_reversed_month() -> No
     secure, warning, prepared = validate_securement_thresholds(
         1.095, 0.995, _rows((202607, 1.195, None))
     )
-    assert (secure, warning) == (1.095, 0.995)
+    # 새 저장은 정수 % 의 T/100 이다(2026-11-01 사용자 결정).
+    assert (secure, warning) == (1.1, 1.0)
     assert prepared["생산계획년월"].tolist() == [202607]
+    assert prepared["확보 기준"].tolist() == [1.2]
+
+    # 사사오입해 0 이 되는 기준(0.4%)은 0 기준이라 거부한다.
+    with pytest.raises(ValueError, match="0 보다 큰"):
+        validate_securement_thresholds(1.1, 0.004, empty_securement_threshold_rows())
+    with pytest.raises(ValueError, match="26.07"):
+        validate_securement_thresholds(1.1, 1.0, _rows((202607, None, 0.004)))
 
 
 def test_editing_a_narrow_view_keeps_the_months_it_could_not_show() -> None:
@@ -157,13 +169,14 @@ def publish_official_preset(database: Path, secure: float, warning: float) -> No
 
 def test_an_unsaved_profile_follows_the_latest_official_preset(tmp_path: Path) -> None:
     database = tmp_path / "scenario.duckdb"
-    publish_official_preset(database, 1.195, 1.0)
+    publish_official_preset(database, 1.195, 0.995)
     repository = DuckDBScenarioRepository(database)
 
     profile = repository.load_global_securement_threshold()
 
     assert profile.version == 0
-    assert (profile.default_secure, profile.default_warning) == (1.195, 1.0)
+    # 옛 프리셋의 반 칸 낮춘 값도 정수 % 로 읽는다(1.195 → 120%, 0.995 → 100%).
+    assert (profile.default_secure, profile.default_warning) == (1.2, 1.0)
     assert profile.fallback == "공식 v1 프리셋"
     # 읽기만 했다 — 사용자가 저장하기 전에는 DB 에 쓰지 않는다.
     with repository._connect() as connection:
@@ -208,8 +221,11 @@ def test_the_profile_round_trips_and_rejects_a_stale_save(tmp_path: Path) -> Non
     assert saved.version == 1
     assert saved.source == "첫 저장"
     assert saved.fallback == ""
-    assert saved.thresholds.for_month(202607) == (1.195, 0.995)
-    assert saved.thresholds.for_month(202608) == (1.095, 1.0)
+    assert saved.thresholds.for_month(202607) == (1.2, 1.0)
+    assert saved.thresholds.for_month(202608) == (1.1, 1.0)
+    # 저장소에도 정수 % 의 T/100 으로 들어간다.
+    assert (saved.default_secure, saved.default_warning) == (1.1, 1.0)
+    assert saved.rows["확보 기준"].tolist()[0] == 1.2
     # 빈칸은 NULL 로 저장되어 그대로 빈칸으로 돌아온다.
     assert saved.rows["경고 기준"].isna().tolist() == [True, False]
 

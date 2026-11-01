@@ -59,6 +59,7 @@ from capa_simulation.services.securement_threshold import (
     DEFAULT_WARNING_THRESHOLD,
     CapacityStatus,
     capacity_status,
+    judgment_boundary,
 )
 
 # `get_capacity_and_demand` 는 Streamlit 캐시 래퍼 모듈에 있다. 실행 문맥 밖이라 래퍼마다
@@ -471,6 +472,8 @@ def _equipment_plan(
     대여는 평소 1대이고, 부족 칸은 하한 아래로 내려갈 만큼 늘린다.
     """
     out: dict[tuple[int, str], tuple[int, int]] = {}
+    # 경고 판정 경계(100% 면 0.995) — 그 아래로 내린 칸이 앱 판정으로 부족이 된다.
+    warning_floor = judgment_boundary(DEFAULT_WARNING_THRESHOLD)
     for process in PROCESSES:
         have: int | None = None
         for month in months:
@@ -480,13 +483,13 @@ def _equipment_plan(
                 have = want + 1
             elif want > have and not (
                 (process.name, month) in DELAYED_CELLS
-                and have >= math.ceil(required * DEFAULT_WARNING_THRESHOLD)
+                and have >= math.ceil(required * warning_floor)
             ):
                 have += 2 * math.ceil((want - have) / 2)
             available = have
             if with_short_cells and (process.name, month) in SHORT_CELLS:
                 below = 2 if (process.name, month) == (STORY_PROCESS, STORY_MONTH) else 1
-                available = min(have, math.ceil(required * DEFAULT_WARNING_THRESHOLD) - below)
+                available = min(have, math.ceil(required * warning_floor) - below)
             out[(month, process.name)] = (have + 1, 1 + have - available)
     return out
 

@@ -64,7 +64,7 @@ def _frames(*, adjusted: bool = False) -> dict[str, pd.DataFrame]:
         }
     )
     if adjusted:
-        # 확보율 보정 +5%p — 막대 위에 증감 조각이 선다.
+        # 확보율 보정 +5% — 막대 위에 증감 조각이 선다.
         for frame in (bottleneck, top5):
             frame["기준 확보율"] = frame["확보율"] - 0.05
             frame["확보율 증감"] = [5.0 if pd.notna(rate) else 0.0 for rate in frame["확보율"]]

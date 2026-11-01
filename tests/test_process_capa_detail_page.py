@@ -501,7 +501,7 @@ def test_the_home_transfer_slot_opens_the_cell_and_shows_the_origin_band(
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
     assert _origin_bands(app) == [
         f"{ORIGIN_BAND_ICON} HOME 상세 B/N 공정 · {month_label(month)} 칸에서 열었습니다 · "
-        "표시 103% = 원 확보율 98% + 확보율 보정 +5.0%p · 아래는 원 확보율"
+        "표시 103% = 원 확보율 98% + 확보율 보정 +5.0% · 아래는 원 확보율"
     ]
     # 알림 상자 세 색은 뜻으로 가른다 — 출처는 「조건에 맞는 것이 없다」(`st.info`)가 아니다.
     assert not any("칸에서 열었습니다" in str(element.value) for element in app.info)
@@ -989,7 +989,7 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보기준 과부족"):
         assert row in labels
     assert "판정 대조 · UPEH 가정" in labels
-    # ② 비가동 영향은 %p 가 가정 소요로 바뀌어 표지를 단다.
+    # ② 비가동 영향은 % 가 가정 소요로 바뀌어 표지를 단다.
     assert "비가동 영향 · UPEH 가정" in labels
     # ② 가용·전월 대비와 ④ 는 UPEH 와 무관해 표지를 달지 않는다.
     assert "가용 (환산) · UPEH 가정" not in labels and "전월 대비 · UPEH" not in labels

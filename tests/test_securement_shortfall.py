@@ -132,8 +132,9 @@ def test_each_row_uses_its_months_threshold() -> None:
 
     assert warning_rows.empty
     assert secure_rows["생산계획년월"].tolist() == [202607]
-    assert secure_rows["확보기준"].tolist() == [1.195]
-    assert secure_rows["경고기준"].tolist() == [0.995]
+    # 칸은 정수 % 기준이다(옛 저장값 1.195·0.995 → 120%·100%, 2026-11-01). 대수는 판정 경계까지다.
+    assert secure_rows["확보기준"].tolist() == [1.2]
+    assert secure_rows["경고기준"].tolist() == [1.0]
     assert secure_rows["확보기준 추가대수"].tolist() == [1]
 
 

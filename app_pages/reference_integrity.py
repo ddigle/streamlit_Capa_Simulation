@@ -427,7 +427,7 @@ def _render_detail(
             st.metric(
                 "효율 실적 / 기준",
                 f"{detail_summary['실적 효율']:.1%} / {detail_summary['표준 효율']:.1%}",
-                delta=f"{detail_summary['효율 Gap']:.1%}p",
+                delta=f"{detail_summary['효율 Gap']:.1%}",
                 border=True,
             )
             st.metric(
@@ -520,7 +520,7 @@ def _render_guide() -> None:
     with st.container(border=True):
         st.markdown("##### Gap 해석")
         st.markdown(
-            "- **효율 Gap**: `실적 효율 − 표준 효율`이며 `%p`로 해석합니다. 음수이면 표준보다 "
+            "- **효율 Gap**: `실적 효율 − 표준 효율`이며 `%`로 적습니다. 음수이면 표준보다 "
             "효율이 낮습니다.\n"
             "- **UPEH Gap**: `실적 UPEH ÷ 표준 UPEH − 1`입니다. 음수이면 표준보다 생산성이 "
             "낮습니다.\n"

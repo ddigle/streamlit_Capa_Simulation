@@ -1,4 +1,4 @@
-# Purpose: 판정 기준 표시 글자가 사사오입한 정수 퍼센트이고 판정은 정확한 기준을 쓰는지 검증한다.
+# Purpose: 판정 기준 표시 글자가 사사오입한 정수 퍼센트이고 판정이 같은 정수 기준을 쓰는지 검증한다.
 
 from __future__ import annotations
 
@@ -64,8 +64,9 @@ def test_the_legend_names_three_states_without_numbers() -> None:
     assert "과거 구간" not in markup
 
 
-def test_judgement_stays_exact_while_labels_are_rounded() -> None:
-    """화면 글자는 110%·100% 지만, 109.7% 는 확보·109.4% 는 경고로 판정한다(기준 109.5%)."""
+def test_judgement_rounds_the_rate_against_the_whole_threshold() -> None:
+    """화면 글자는 110%·100% 이고, 판정은 확보율을 사사오입한 정수 % 로 견준다 — 109.7% 는 확보·
+    109.4% 는 경고(2026-11-01 사용자 결정, 옛 저장값 1.095·0.995 도 같은 판정)."""
     assert capacity_status(1.097, secure_threshold=1.095, warning_threshold=0.995) == "secure"
     assert capacity_status(1.094, secure_threshold=1.095, warning_threshold=0.995) == "warning"
     assert capacity_status(0.995, secure_threshold=1.095, warning_threshold=0.995) == "warning"

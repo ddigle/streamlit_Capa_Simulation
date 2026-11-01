@@ -156,6 +156,7 @@ from capa_simulation.services.securement_threshold import (
     merge_securement_threshold_edits,
     reversed_threshold_months,
 )
+from capa_simulation.services.threshold_label import threshold_percent, threshold_percent_label
 from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
@@ -378,7 +379,7 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
             key=ADVANCE_SHIPMENT_TOGGLE_KEY,
             persist_state="session",
         )
-        # 기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 %p 로 더하고 빼는 손입력 보정. 화면 이름만
+        # 기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 % 로 더하고 빼는 손입력 보정. 화면 이름만
         # 「확보율 보정」이고 세션 키·공용 프로필(`global_execution_capacity`)은 `execution`
         # 그대로다.
         st.toggle(
@@ -834,8 +835,10 @@ def render_threshold_editor(
     """확보율 판정 기준 — 기본 확보·경고 두 칸과 월별 예외 표(2026-10-06 사용자 결정).
 
     판정 기준은 시나리오와 무관한 공용 정책값이고 **여기 한 곳**에서만 정한다(사이드바 입력은
-    없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 퍼센트(119.5)이고 저장은
-    비율(1.195)이다. 저장은 공용 프로필 교체이며 편집을 시작할 때 본 version 과 대조한다.
+    없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 **정수 퍼센트**(120)이고
+    저장은 비율(1.2)이다(2026-11-01 사용자 결정 — 옛 저장값 1.095 도 칸에는 110 으로 선다). 판정은
+    확보율을 사사오입한 정수 % 로 견준다(`securement_threshold.meets_threshold`). 저장은 공용 프로필
+    교체이며 편집을 시작할 때 본 version 과 대조한다.
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5) — 최신 저장본을 보고 고친
     값이 그 저장본과 같으면(`SecurementThresholds.same_as`) 쓰지 않고 「바뀐 것이 없습니다」 를
@@ -887,22 +890,26 @@ def render_threshold_editor(
                     value=_percent_value(threshold_profile.default_secure),
                     # 하한은 0 이다. 칸은 저장본·공식버전 프리셋이 무엇이든 그려져야 고칠 수 있고,
                     # 0 이하 값은 저장 검증이 어느 칸인지 적어 거부한다.
-                    min_value=0.0,
-                    step=0.1,
-                    format="%.1f",
+                    min_value=0,
+                    step=1,
+                    format="%d",
                     help=(
-                        "확보율이 이 값 이상이면 확보입니다. 월별 표에서 비워 둔 달은 이 값을 "
-                        "씁니다."
+                        "확보율이 이 값 이상이면 확보입니다(정수 %). 확보율은 소수 첫째 자리에서 "
+                        "반올림해 견줍니다 — 110 이면 109.5% 도 확보이고 여유는 0 으로 적습니다. "
+                        "월별 표에서 비워 둔 달은 이 값을 씁니다."
                     ),
                 )
             with warning_column:
                 default_warning = st.number_input(
                     "기본 경고 기준(%)",
                     value=_percent_value(threshold_profile.default_warning),
-                    min_value=0.0,
-                    step=0.1,
-                    format="%.1f",
-                    help="이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다.",
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    help=(
+                        "이 값 미만은 부족, 이 값 이상·확보 기준 미만은 경고입니다(정수 % — 확보 "
+                        "기준과 같이 반올림해 견줍니다)."
+                    ),
                 )
             edited: pd.DataFrame | None = None
             if months:
@@ -932,7 +939,7 @@ def render_threshold_editor(
                             DIMENSION_COLUMN, width="small"
                         ),
                         **{
-                            label: st.column_config.NumberColumn(label, step=0.1, format="%.1f")
+                            label: st.column_config.NumberColumn(label, step=1, format="%d")
                             for label in month_labels
                         },
                     },
@@ -1187,25 +1194,26 @@ def _thresholds_by_month(
     }
 
 
-def _percent_value(ratio: float) -> float:
-    """비율을 입력 칸의 퍼센트로. 1.195 × 100 = 119.49999… 가 칸에 그대로 보이지 않게 다듬는다."""
-    return round(float(ratio) * 100.0, 6)
+def _percent_value(ratio: float) -> int:
+    """비율 기준을 입력 칸의 정수 % 로(사사오입 — 옛 저장값 1.095 도 110, `threshold_percent`)."""
+    return threshold_percent(ratio)
 
 
 def _exact_percent(ratio: float) -> str:
-    """캡션용 정확한 퍼센트. 입력한 값(119.5)을 그대로 보여 준다."""
-    return f"{_percent_value(ratio):g}%"
+    """캡션용 기준 글자 — 정수 %(옛 저장값 1.095 도 「110%」)."""
+    return threshold_percent_label(ratio)
 
 
 def _cell_percent(pair: tuple[float | None, float | None] | None, index: int) -> float | None:
     if pair is None:
         return None
     value = pair[index]
-    return None if value is None else _percent_value(value)
+    return None if value is None else float(_percent_value(value))
 
 
 def _ratio_or_none(value: object) -> float | None:
-    """표 칸(퍼센트)을 비율로. 빈칸은 None — 그 달 그 항목은 기본값이다."""
+    """표 칸(정수 %)을 비율로. 빈칸은 None — 그 달 그 항목은 기본값이다. 소수가 들어와도 저장
+    검증이 사사오입 정수 % 로 맞춘다(`validate_securement_thresholds`)."""
     numeric = pd.to_numeric(pd.Series([value], dtype="object"), errors="coerce").iloc[0]
     return None if pd.isna(numeric) else float(numeric) / 100.0
 
@@ -2262,7 +2270,7 @@ def _render_execution_editor(
                         required=True,
                     ),
                     "증감 확보율": st.column_config.NumberColumn(
-                        "증감 확보율(%p)",
+                        "증감 확보율(%)",
                         step=0.1,
                         format="%.1f",
                         required=True,

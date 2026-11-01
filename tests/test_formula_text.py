@@ -367,7 +367,7 @@ def _impact_record(
         "가용대수": available,
         "확보율": available / demand,
         "비가동 없는 확보율": (available + loss) / demand,
-        "확보율 영향(%p)": loss / demand * 100,
+        "확보율 영향(%)": loss / demand * 100,
     }
 
 
@@ -403,10 +403,10 @@ def test_the_impact_split_recomputes(units: float, manual: float) -> None:
 )
 def test_the_impact_rate_pair_recomputes(loss: float, available: float, demand: float) -> None:
     """② 비가동 영향 풍선의 「비가동 없으면 확보율 X% → 지금 Y%」 — 적힌 Y − X 가 첫 줄
-    %p 다. 결과가 다른 줄에 있는 등호 없는 식이라 AST 가드가 보지 못한다. 어긋날 때만(그때는
+    % 다. 결과가 다른 줄에 있는 등호 없는 식이라 AST 가드가 보지 못한다. 어긋날 때만(그때는
     늘) 짝 앞이 「≈」 다."""
     head, detail = _impact_lines(loss, 0.0, available, demand)
-    points = head.rsplit(" · ", 1)[1].removesuffix("%p")
+    points = head.rsplit(" · ", 1)[1].removesuffix("%")
     pair = detail.split(" · ", 1)[0]
     marked = pair.startswith(f"{APPROX} ")
     free, rate = re.findall(r"[\d,.]+%", pair)
@@ -424,10 +424,10 @@ def test_the_impact_rate_pair_recomputes(loss: float, available: float, demand: 
 def test_the_impact_rate_pair_marks_the_review_cases(
     loss: float, available: float, demand: float, free: str, rate: str, points: str
 ) -> None:
-    """리뷰가 짚은 꼴 — 짝 앞이 「≈」 다. 셈이 맞으면(1.8 ÷ 45 → 104.0% → 100.0% · −4.0%p) 앞붙임이
+    """리뷰가 짚은 꼴 — 짝 앞이 「≈」 다. 셈이 맞으면(1.8 ÷ 45 → 104.0% → 100.0% · −4.0%) 앞붙임이
     없다."""
     head, detail = _impact_lines(loss, 0.0, available, demand)
-    assert head.endswith(f" · {MINUS}{points}%p")
+    assert head.endswith(f" · {MINUS}{points}%")
     assert detail.startswith(f"{APPROX} 비가동 없으면 확보율 {free} → 지금 {rate} · ")
     exact = _impact_lines(1.2, 0.6, 45.0, 45.0)[1]
     assert exact.startswith("비가동 없으면 확보율 104.0% → 지금 100.0% · 호기 비가동 ")
@@ -435,7 +435,7 @@ def test_the_impact_rate_pair_marks_the_review_cases(
 
 @pytest.mark.parametrize("value", (*VALUES, 0.0004, 0.00004, 4e-6, 6e-10, *LARGE))
 def test_a_nonzero_impact_is_never_written_as_zero(value: float) -> None:
-    """② 비가동 영향의 대수·%p 글 — 0 이 아닌 값(빈칸 문턱 `round(값, 9)` 위)은 0 이 아니게
+    """② 비가동 영향의 대수·% 글 — 0 이 아닌 값(빈칸 문턱 `round(값, 9)` 위)은 0 이 아니게
     적는다."""
     text = _nonzero_signed(-value)
     assert text.startswith(MINUS)

@@ -700,7 +700,7 @@ def _balance_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:
 
 
 def test_the_balance_hover_adds_the_unrounded_value_to_two_decimals() -> None:
-    """칸 글자는 정수 그대로이고, 풍선은 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수
+    """칸 글자는 정수 그대로이고, 풍선은 정수 옆에 올림·내림 전 값(가용 − 소요 × 판정 경계)을 소수
     둘째 자리 부호 있는 값으로 단다 — ③ 판정 식의 결과와 같은 숫자다."""
     canvas = _canvas()
     hovers = _balance_hovers(canvas)
@@ -714,7 +714,8 @@ def test_the_balance_hover_adds_the_unrounded_value_to_two_decimals() -> None:
     }
     for month, text in expected.items():
         assert f"확보기준 과부족 {text}<br>" in hovers[month]
-    assert f"가용 48.0 {MINUS} 소요 44.0 × 1.095 (부족은 올림, 여유는 내림)" in hovers[202612]
+    # 식은 판정 경계를 곱한다 — 기준 110% 는 반올림 판정이라 경계가 109.5% 다(2026-11-01).
+    assert f"가용 48.0 {MINUS} 소요 44.0 × 109.5% (부족은 올림, 여유는 내림)" in hovers[202612]
     assert _row_texts(canvas, ROW_BALANCE)[2][0] == f"<b>{MINUS}3</b>"
 
 
@@ -1609,7 +1610,7 @@ def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_chang
     canvas = _assumed_canvas(110, set(MONTHS), dynamic=marked)
     labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
     assert "판정 대조 · UPEH 가정" in labels and "과부족 · UPEH 가정" in labels
-    # 비가동 영향은 %p 가 가정 소요로 바뀌어 표지를 단다.
+    # 비가동 영향은 % 가 가정 소요로 바뀌어 표지를 단다.
     assert "비가동 영향 · UPEH 가정" in labels
     assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
     unit_hover = _label_hovers(canvas)["unit:EQ-21"]

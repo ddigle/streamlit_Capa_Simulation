@@ -71,29 +71,32 @@ def _edit(app: AppTest, edited_rows: dict[int, dict[str, float | None]]) -> None
 def test_an_unsaved_profile_shows_the_default_it_falls_back_to(database: Path) -> None:
     app = _app(database)
 
+    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — 칸은 1 단위 정수이고 코드 기본값은 110·100.
     assert [(widget.label, widget.value) for widget in app.number_input] == [
-        ("기본 확보 기준(%)", 109.5),
-        ("기본 경고 기준(%)", 99.5),
+        ("기본 확보 기준(%)", 110),
+        ("기본 경고 기준(%)", 100),
     ]
+    assert [widget.step for widget in app.number_input] == [1, 1]
     assert any("코드 기본값" in caption.value for caption in app.caption)
     assert app.session_state[THRESHOLD_BASE_VERSION_KEY] == 0
 
 
 def test_saving_writes_the_defaults_and_only_the_months_that_were_filled(database: Path) -> None:
     app = _app(database)
-    app.number_input[0].set_value(110.5)
-    _edit(app, {0: {"26.02": 119.5}})
+    app.number_input[0].set_value(111)
+    _edit(app, {0: {"26.02": 120.0}})
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error), [element.value for element in app.error]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 1
-    assert profile.default_secure == pytest.approx(1.105)
-    assert profile.default_warning == pytest.approx(0.995)
+    # 새 저장은 정수 % 의 T/100 이다.
+    assert profile.default_secure == pytest.approx(1.11)
+    assert profile.default_warning == pytest.approx(1.0)
     assert profile.rows["생산계획년월"].tolist() == [202602]
-    assert profile.thresholds.for_month(202602) == pytest.approx((1.195, 0.995))
-    assert profile.thresholds.for_month(202601) == pytest.approx((1.105, 0.995))
+    assert profile.thresholds.for_month(202602) == pytest.approx((1.2, 1.0))
+    assert profile.thresholds.for_month(202601) == pytest.approx((1.11, 1.0))
     # 저장 뒤 화면은 새 저장본을 그리고 플래시를 띄운다.
     assert any("저장했습니다" in element.value for element in app.success)
     assert app.session_state[THRESHOLD_BASE_VERSION_KEY] == 1
@@ -154,7 +157,7 @@ def test_an_official_preset_with_a_zero_threshold_still_opens_the_editor(tmp_pat
     app = _app(database)
 
     # 쓸 수 없는 레거시 짝 대신 코드 기본값을 그리고, 어디서 왔는지 캡션이 말한다.
-    assert [widget.value for widget in app.number_input] == [109.5, 99.5]
+    assert [widget.value for widget in app.number_input] == [110, 100]
     assert any("공식 v1 프리셋 값은 쓸 수 없어" in caption.value for caption in app.caption)
 
 
@@ -183,7 +186,7 @@ render_threshold_editor(
     app = AppTest.from_string(script, default_timeout=60).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [widget.value for widget in app.number_input] == [109.5, 0.0]
+    assert [widget.value for widget in app.number_input] == [110, 0]
     app = _save(app)
     assert not list(app.exception)
     assert any("기본 경고 기준" in element.value for element in app.error)
@@ -199,7 +202,7 @@ def test_a_hidden_month_that_blocks_a_new_default_can_be_cleared(database: Path)
         expected_version=0,
     )
     app = _app(database)
-    app.number_input[1].set_value(105.0)
+    app.number_input[1].set_value(105)
     app = _save(app)
 
     # 표에 없는 26.12 가 새 기본 경고 105% 와 거꾸로 짝이다. 고칠 길까지 적어 거부한다.
@@ -208,7 +211,7 @@ def test_a_hidden_month_that_blocks_a_new_default_can_be_cleared(database: Path)
     assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 1
 
     next(box for box in app.checkbox if "조회기간 밖 월별 기준" in box.label).check()
-    app.number_input[1].set_value(105.0)
+    app.number_input[1].set_value(105)
     app = _save(app)
 
     assert not list(app.error), [element.value for element in app.error]
@@ -357,9 +360,10 @@ def test_a_single_press_after_a_held_double_press_saves_from_the_latest_version(
 
 
 def _saved_once(database: Path) -> None:
-    """v1 — 소수 끝자리가 퍼센트 칸을 오가며 흔들리는 값(112.3%·119.5%)과 월별 예외 하나."""
+    """v1 — 비율이 퍼센트 칸을 오가는 값(112%)과 반 칸 낮춘 옛 관례 값(0.995·1.195 — 저장이 정수 %
+    100·120 으로 맞춘다), 월별 예외 하나."""
     DuckDBScenarioRepository(database).replace_global_securement_threshold(
-        1.123,
+        1.12,
         0.995,
         pd.DataFrame({"생산계획년월": [202602], "확보 기준": [1.195], "경고 기준": [None]}),
         source="처음 저장",
@@ -374,12 +378,12 @@ def test_a_save_without_changes_makes_no_new_version(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """바꾼 것 없는 「판정 기준 저장」 은 새 버전을 만들지 않고 「바뀐 것이 없습니다」 를
-    알린다(2026-11-01 개선 I5 — E2E #41: v2→v3→v4). 칸이 퍼센트를 오가며 생기는 끝자리(1.123 → 112.3
-    → 1.1230…02)는 바뀐 것이 아니다. 변경 메모만 적은 저장도 같고, 값을 고치면 평소대로 저장한다."""
+    알린다(2026-11-01 개선 I5 — E2E #41: v2→v3→v4). 칸이 정수 퍼센트를 오가는 것(1.12 → 112 → 112 ÷
+    100)은 바뀐 것이 아니다. 변경 메모만 적은 저장도 같고, 값을 고치면 평소대로 저장한다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     _saved_once(database)
     app = _app(database)
-    assert app.number_input[0].value == pytest.approx(112.3)
+    assert app.number_input[0].value == 112
 
     app = _save(app)
     assert not list(app.exception), [element.message for element in app.exception]
@@ -409,7 +413,8 @@ def test_the_first_save_of_an_unsaved_profile_writes_the_values_it_shows(databas
     assert not app.info and not app.error, [element.value for element in app.info]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 1
-    assert (profile.default_secure, profile.default_warning) == pytest.approx((1.095, 0.995))
+    # 보이는 값은 정수 % 110·100 이고 저장은 그 T/100 이다(2026-11-01 사용자 결정 N1).
+    assert (profile.default_secure, profile.default_warning) == pytest.approx((1.1, 1.0))
 
 
 def test_a_slow_second_press_of_save_repeats_the_success(
@@ -420,7 +425,7 @@ def test_a_slow_second_press_of_save_repeats_the_success(
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     _saved_once(database)
     app = _app(database)
-    app.number_input[0].set_value(115.0)
+    app.number_input[0].set_value(115)
     app = _save(app)
     assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 2
 
@@ -455,3 +460,61 @@ def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
     assert any("조회기간 밖" in caption.value for caption in app.caption)
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "12월 예외")
+
+
+def test_a_stored_half_step_threshold_opens_as_its_whole_percent_and_saves_as_it(
+    database: Path,
+) -> None:
+    """옛 관례로 반 칸 낮춰 저장한 1.095·0.995·1.195 는 칸에 110·100·120 으로 서고, 다른 칸을 고쳐
+    저장하면 손대지 않은 칸도 정수 % 의 T/100 으로 저장된다(2026-11-01 사용자 결정 — 판정은
+    그대로다). 아무것도 고치지 않은 저장은 같은 기준이라 쓰지 않는다(2026-11-01 개선 I5)."""
+    from streamlit.dataframe_util import convert_arrow_bytes_to_pandas_df
+
+    from capa_simulation.persistence import securement_threshold_store
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    # 옛 저장본 그대로 — 저장 검증(이제 T/100 으로 맞춘다)을 거치지 않고 저장소 SQL 로
+    # 반 칸 낮춘 값을 쓴다.
+    repository = DuckDBScenarioRepository(database)
+    with repository._write_transaction() as connection:
+        securement_threshold_store.replace_global_securement_threshold(
+            connection,
+            default_secure=1.095,
+            default_warning=0.995,
+            prepared_rows=pd.DataFrame(
+                {
+                    "생산계획년월": pd.Series([202602], dtype="int64"),
+                    "확보 기준": pd.Series([1.195], dtype="float64"),
+                    "경고 기준": pd.Series([None], dtype="float64"),
+                }
+            ),
+            source="옛 저장",
+            expected_version=0,
+        )
+    stored = repository.load_global_securement_threshold()
+    assert (stored.default_secure, stored.default_warning) == (1.095, 0.995)
+    assert stored.rows["확보 기준"].tolist() == [1.195]
+    clear_global_securement_threshold_cache()
+    app = _app(database)
+
+    assert [widget.value for widget in app.number_input] == [110, 100]
+    (editor,) = app.get("dataframe")
+    drawn = convert_arrow_bytes_to_pandas_df(editor.proto.arrow_data.data)
+    assert drawn.loc[0, "26.02"] == 120.0
+    assert any("확보 110% · 경고 100%" in caption.value for caption in app.caption)
+
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    unchanged = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (unchanged.version, unchanged.default_secure) == (1, 1.095)
+
+    app.number_input[1].set_value(99)
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 2
+    assert (profile.default_secure, profile.default_warning) == pytest.approx((1.1, 0.99))
+    assert profile.rows["확보 기준"].tolist() == pytest.approx([1.2])

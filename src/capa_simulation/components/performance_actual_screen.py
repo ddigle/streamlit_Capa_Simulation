@@ -111,11 +111,7 @@ def _render_pending_screen(metric: MetricSpec) -> None:
     )
     with st.container(border=True):
         st.markdown("#### :material/rule: 연결되면 계산할 것")
-        st.markdown(
-            f"- **Gap** = `{metric.actual_column} − {metric.standard_column}`"
-            if metric.gap_kind == "point"
-            else f"- **Gap** = `{metric.actual_column} ÷ {metric.standard_column} − 1`"
-        )
+        st.markdown(f"- **Gap** = `{metric.gap_formula}` ({metric.gap_unit})")
         st.markdown(
             "- **상태** = 마지막 달 기준 연속 미달 개월. 0 정상 · 1~2 관찰 · 3 이상 개선 필요\n"
             "- **우선순위 점수** = `미달폭 × 영향 비중 × 연속 미달 가중`\n"
@@ -149,7 +145,7 @@ def _render_summary(
         st.warning(
             f"**{literal_markdown(worst_name)}** — {int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
-            f"{float(worst['Gap']):.{metric.gap_decimals}%}{metric.gap_suffix}, 영향 물량 비중 "
+            f"{float(worst['Gap']):.{metric.gap_decimals}%}, 영향 물량 비중 "
             f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."
         )
 
@@ -157,7 +153,7 @@ def _render_summary(
         st.metric(
             f"실적 {metric.name}",
             _format_value(float(overall[metric.actual_column]), metric),
-            delta=f"{float(overall['Gap']):.{metric.gap_decimals}%}{metric.gap_suffix}",
+            delta=f"{float(overall['Gap']):.{metric.gap_decimals}%}",
             delta_description="기준 대비",
             border=True,
         )
@@ -257,7 +253,10 @@ def _render_detail(
 
     with st.container(border=True):
         st.markdown(f"#### :material/grid_on: 월 × 공정 {metric.name} Gap")
-        st.caption(f"음수는 기준 미달입니다. 단위는 {metric.gap_unit} 이고 색이 짙을수록 큽니다.")
+        st.caption(
+            f"음수는 기준 미달입니다. Gap = {metric.gap_formula}({metric.gap_unit})이고 "
+            "색이 짙을수록 큽니다."
+        )
         st.plotly_chart(
             _gap_matrix_figure(view, metric, labels),
             width="stretch",
@@ -469,9 +468,7 @@ def _priority_figure(
                 ],
                 "line": {"color": tokens.SURFACE, "width": 1},
             },
-            text=[
-                f"{value:.{metric.gap_decimals}%}{metric.gap_suffix}" for value in ordered["Gap"]
-            ],
+            text=[f"{value:.{metric.gap_decimals}%}" for value in ordered["Gap"]],
             textposition="outside",
             # 막대가 0 에서 **왼쪽으로** 뻗으므로 바깥 라벨도 왼쪽으로 나간다. 축 밖으로
             # 나갈 수 있게 열어 두지 않으면 가장 긴 막대의 숫자가 잘린다.

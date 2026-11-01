@@ -1,17 +1,26 @@
-# Purpose: 공용 확보율 판정 기준(기본값·월별 예외)의 정규화·검증과 달마다의 실효 기준을 정한다.
+# Purpose: 공용 확보율 판정 기준을 정수 % 로 읽고 검증하며 판정·판정 경계·여유를 한 곳에서 정한다.
 
-"""확보율 판정 기준 — 기본 확보·경고 기준과 월별 예외.
+"""확보율 판정 기준 — 기본 확보·경고 기준과 월별 예외, 그리고 판정 한 길.
 
 판정 기준은 시나리오와 무관한 공용 정책값이다(2026-10-06 사용자 결정). HOME → Preference 한
 곳에서 정하고 모든 시나리오·공식버전 Summary 가 같은 값을 쓴다. 기본값 한 짝이 있고, 특정 달만
 다른 기준을 쓸 때(예: 미래 구간을 120% 로 보는 경우) 그 달에만 값을 둔다. **월별 칸이 비어
 있으면 그 달 그 항목은 기본값이다** — 확보만 채우고 경고는 비워 두는 것이 보통이다.
 
-값은 모두 **비율**이다(109.5% 는 1.095). 판정(`capacity_status`)과 표시(`threshold_percent_label`)가
-비율을 받는다. 퍼센트로 바꾸는 것은 입력 칸을 그리는 화면뿐이다.
+**기준은 정수 퍼센트 T 다**(2026-11-01 사용자 결정 — 「기준확보율 입력을 110% 정수 기준으로 할테니,
+분류하는 기준적용시엔 자동적으로 소수점 한자리수 반올림한 기준으로 포함시켜」). 값은 비율로
+주고받지만(110% 는 1.1) 저장된 비율은 모두 사사오입 정수 T(`threshold_label.threshold_percent`)로
+읽는다 — 옛 관례로 반 칸 낮춰 저장한 1.095·0.995 도 110·100 이다. 저장본은 고치지 않는다
+(프로필·공식버전 프리셋은 append-only). `SecurementThresholds` 가 만들 때 T/100 으로 맞춘다.
 
-기준은 **실제 판정값**이다. 업무 기준 110% 를 아슬아슬하게 모자란 공정까지 넣으려고 109.5 로 적는
-관례가 그대로 이어진다. 화면에 적을 때만 사사오입 정수 %(`threshold_percent_label`)로 보인다.
+**판정**(`meets_threshold` — `capacity_status` 와 기준과 견주는 모든 화면이 이 한 함수를 지난다)은
+확보율을 사사오입한 정수 % 가 T 이상인가다 — T = 110 이면 109.5% 는 확보, 109.4999% 는 아니다.
+그 경계 비율((T − 0.5) ÷ 100, `judgment_boundary`)은 옛 저장값 1.095·0.995 와 같아서 옛 저장본의
+판정은 그대로다. 「확보가 되려면 몇 대」 같은 판정을 맞추는 셈(필요대수·과부족·단축 목표·개조 일정
+배치·차트 기준선의 자리)도 이 경계를 쓴다.
+
+**여유**(`threshold_margin` — 기준 대비 차이)는 확보율 − T 이고, 판정이 확보인데 음수면(반올림으로
+겨우 든 공정 — 109.5% 대 110%) 0 이다. 화면에 기준을 적을 때는 정수 「110%」 하나다.
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from math import isclose, isfinite
 from typing import Literal
 
@@ -27,20 +37,88 @@ import pandas as pd
 from capa_simulation.services.frame_contracts import require_exact_columns
 from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.services.threshold_label import threshold_percent, threshold_percent_label
 
 SECUREMENT_THRESHOLD_COLUMNS = ("생산계획년월", "확보 기준", "경고 기준")
 SECURE_COLUMN = "확보 기준"
 WARNING_COLUMN = "경고 기준"
 
-# 프로필도 공식버전 프리셋도 없을 때 쓰는 코드 기본값(비율). 업무 기준 110%·100% 를 반 칸 낮춘
-# 값이다(`threshold_label` 모듈 설명).
-DEFAULT_SECURE_THRESHOLD = 1.095
-DEFAULT_WARNING_THRESHOLD = 0.995
+# 프로필도 공식버전 프리셋도 없을 때 쓰는 코드 기본값(비율) — 업무 기준 110%·100% 그대로다.
+DEFAULT_SECURE_THRESHOLD = 1.10
+DEFAULT_WARNING_THRESHOLD = 1.00
 
 # 월별 예외 한 칸. 빈칸(None)은 그 항목이 기본값을 따른다는 뜻이다.
 MonthlyThreshold = tuple[int, float | None, float | None]
 CapacityStatus = Literal["secure", "warning", "shortage"]
+
+
+def normalize_threshold(ratio: float) -> float:
+    """저장된 비율을 업무 기준 T/100 으로 읽는다(1.095 → 1.1, 0.995 → 1.0, 1.2 → 1.2).
+
+    T 는 사사오입 정수 %(`threshold_percent`)다. 값이 아닌 기준(NaN·무한)은 그대로 둔다 — 그런
+    기준과 견준 판정은 늘 거짓이다(`meets_threshold`).
+    """
+    value = float(ratio)
+    if not isfinite(value):
+        return value
+    return threshold_percent(value) / 100
+
+
+@lru_cache(maxsize=256)
+def judgment_boundary(threshold: float) -> float:
+    """기준 T% 의 판정 경계 비율 — 사사오입한 정수 % 가 T 이상이 되는 가장 작은 확보율.
+
+    (T − 0.5) ÷ 100 이다(T = 110 이면 1.095, 100 이면 0.995). T − 0.5 는 정확한 이진수이고 나눗셈은
+    올바르게 반올림되므로 이 값은 십진 경계에 가장 가까운 부동소수다. 그래서 `확보율 >= 경계` 는
+    확보율의 십진 표기(`repr`)를 사사오입한 정수 % 가 T 이상인 것과 같다 — `확보율 × 100` 을
+    부동소수로 반올림하지 않는다(1.095 × 100 같은 곱은 109.4999… 로 떨어질 수 있다). 값이 아닌
+    기준은 NaN 이다.
+    """
+    value = float(threshold)
+    if not isfinite(value):
+        return float("nan")
+    return (threshold_percent(value) - 0.5) / 100
+
+
+def meets_boundary(rate: float, boundary: float) -> bool:
+    """확보율이 이미 판정 경계로 옮긴 선(`judgment_boundary` 값, 또는 그 위에 연속 여유를 더한 배치
+    기준) 이상인가 — 반올림하지 않고 그대로 견준다. `meets_threshold(rate, T)` 는
+    `meets_boundary(rate, judgment_boundary(T))` 이다. 개조 일정처럼 경계에 실수 여유 δ 를 더해
+    탐색하는 셈이 쓴다(그 선은 정수 % 가 아니라 다시 반올림하면 안 된다).
+    """
+    return float(rate) >= float(boundary)
+
+
+def meets_threshold(rate: float, threshold: float) -> bool:
+    """확보율이 기준 이상인가 — **판정의 한 길**이다.
+
+    확보율을 사사오입한 정수 % 가 T(기준의 사사오입 정수 %) 이상이면 참이다(T = 110 이면 109.5% 는
+    참, 109.4999% 는 거짓). 확보·경고 판정(`capacity_status`)과 기준과 견주는 모든 화면이 이 함수를
+    지난다 — 경계를 각자 적으면 한쪽만 바꿨을 때 같은 값을 두고 화면마다 다른 말을 한다. 확보율이나
+    기준이 값이 아니면 거짓이다.
+    """
+    return meets_boundary(rate, judgment_boundary(threshold))
+
+
+def rounded_in(rate: float, threshold: float) -> bool:
+    """반올림으로만 기준에 든 확보율인가 — 판정은 기준 이상(`meets_threshold`)인데 확보율이 T/100
+    밑이다(110% 기준의 109.5% ~ 109.99…%). 그런 공정의 여유는 % 든 대수든 0 으로 적는다
+    (`threshold_margin`·`securement_rate.securement_balance` — 2026-11-01 사용자 결정).
+    """
+    value = float(rate)
+    return meets_threshold(value, threshold) and value < normalize_threshold(threshold)
+
+
+def threshold_margin(rate: float, threshold: float) -> float:
+    """기준 대비 여유(비율) = 확보율 − T/100. 판정이 확보인데 음수면 0 이다.
+
+    반올림으로 겨우 기준에 든 공정(110% 기준의 109.5%, `rounded_in`)은 실제로는 −0.5% 지만 확보로
+    판정했으므로 여유 0 으로 적는다(2026-11-01 사용자 결정). 판정이 확보가 아니면 실제 음수 여유
+    그대로다.
+    """
+    if rounded_in(rate, threshold):
+        return 0.0
+    return float(rate) - normalize_threshold(threshold)
 
 
 def capacity_status(
@@ -49,13 +127,13 @@ def capacity_status(
     """확보율 하나를 확보·경고·부족 세 상태로 판정한다.
 
     HOME 막대·히트맵의 색, 확보율 히트맵의 계단, 결론 한 줄의 색, Summary 막대 색, B/N 공정
-    선택의 구역이 모두 이 부등호 하나를 본다. 경계를 각자 적으면 한쪽만 바꿨을 때 같은 값을 두고
-    화면마다 다른 말을 한다. 확보는 확보 기준 **이상**, 경고는 경고 기준 **이상**, 나머지가
-    부족이다 — 기준과 같은 확보율은 확보다(2026-10-06 사용자 결정).
+    선택의 구역이 모두 이 판정을 본다. 확보는 확보 기준 **이상**, 경고는 경고 기준 **이상**,
+    나머지가 부족이다 — 기준과 같은 확보율은 확보다(2026-10-06 사용자 결정). 「이상」 은
+    `meets_threshold`(사사오입 정수 % 로 견줌) 하나다.
     """
-    if rate >= secure_threshold:
+    if meets_threshold(rate, secure_threshold):
         return "secure"
-    if rate >= warning_threshold:
+    if meets_threshold(rate, warning_threshold):
         return "warning"
     return "shortage"
 
@@ -64,12 +142,30 @@ def capacity_status(
 class SecurementThresholds:
     """기본 기준 한 짝과 월별 예외. 해시 가능해 그대로 캐시 키 원소가 된다.
 
-    `monthly` 는 달 오름차순이고, 두 칸이 다 빈 달은 들지 않는다(정규화가 지운다).
+    `monthly` 는 달 오름차순이고, 두 칸이 다 빈 달은 들지 않는다(정규화가 지운다). 만들 때 모든 값을
+    업무 기준 T/100 으로 맞춘다(`normalize_threshold` — 옛 저장값 1.095 도 1.1 이다). 그래서
+    `for_month` 가 답하는 값은 화면에 적는 「110%」 그대로이고, 판정 경계는 `boundary_for` 다.
     """
 
     default_secure: float
     default_warning: float
     monthly: tuple[MonthlyThreshold, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "default_secure", normalize_threshold(self.default_secure))
+        object.__setattr__(self, "default_warning", normalize_threshold(self.default_warning))
+        object.__setattr__(
+            self,
+            "monthly",
+            tuple(
+                (
+                    int(month),
+                    None if secure is None else normalize_threshold(secure),
+                    None if warning is None else normalize_threshold(warning),
+                )
+                for month, secure, warning in self.monthly
+            ),
+        )
 
     def for_month(self, month: int | None) -> tuple[float, float]:
         """그 달의 실효 (확보, 경고). 월별 칸이 비었거나 달이 없으면(`None`) 기본값이다."""
@@ -82,6 +178,15 @@ class SecurementThresholds:
                     self.default_warning if warning is None else warning,
                 )
         return self.default_secure, self.default_warning
+
+    def boundary_for(self, month: int | None) -> tuple[float, float]:
+        """그 달의 판정 경계 (확보, 경고) 비율(`judgment_boundary` — 110% 면 1.095).
+
+        「확보가 되려면 몇 대」 처럼 판정을 맞추는 셈과 차트 기준선의 자리가 쓴다 — 판정과 같은
+        선이라 그 대수를 더하면 확보로 판정되고, 확보로 칠한 막대는 선 위에 선다.
+        """
+        secure, warning = self.for_month(month)
+        return judgment_boundary(secure), judgment_boundary(warning)
 
     def secure_for(self, month: int | None) -> float:
         return self.for_month(month)[0]
@@ -109,9 +214,10 @@ class SecurementThresholds:
         )
 
     def same_as(self, other: SecurementThresholds) -> bool:
-        """값이 같은 기준인가 — 달·빈칸 자리는 정확히, 값은 화면 칸(퍼센트 119.5)을 오가며 생기는
-        부동소수 끝자리(상대 1e-9 아래)를 접어 견준다. 바꾼 것 없는 판정 기준 저장을 새 버전으로
-        쓰지 않는 데 쓴다(2026-11-01 개선 I5). `digest` 는 끝자리까지 갈라 캐시 키로만 쓴다."""
+        """값이 같은 기준인가 — 달·빈칸 자리는 정확히, 값은 화면 칸(정수 퍼센트)과 비율을 오가며
+        생기는 부동소수 끝자리(상대 1e-9 아래)를 접어 견준다. 바꾼 것 없는 판정 기준 저장을 새
+        버전으로 쓰지 않는 데 쓴다(2026-11-01 개선 I5). `digest` 는 끝자리까지 갈라 캐시 키로만
+        쓴다."""
         if not (
             _close(self.default_secure, other.default_secure)
             and _close(self.default_warning, other.default_warning)
@@ -179,10 +285,14 @@ def empty_securement_threshold_rows() -> pd.DataFrame:
 
 
 def _require_positive(value: object, label: str) -> float:
+    """0 보다 큰 정수 % 기준(T/100). 사사오입해 0 이 되는 값(0.4%)도 0 이라 거부한다."""
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
-    if pd.isna(numeric) or not isfinite(float(numeric)) or float(numeric) <= 0:
+    if pd.isna(numeric) or not isfinite(float(numeric)):
         raise ValueError(f"{with_topic_particle(label)} 0 보다 큰 숫자여야 합니다.")
-    return float(numeric)
+    normalized = normalize_threshold(float(numeric))
+    if normalized <= 0:
+        raise ValueError(f"{with_topic_particle(label)} 0 보다 큰 숫자여야 합니다.")
+    return normalized
 
 
 def prepare_securement_threshold_rows(frame: pd.DataFrame) -> pd.DataFrame:
@@ -228,9 +338,10 @@ def validate_securement_thresholds(
 ) -> tuple[float, float, pd.DataFrame]:
     """저장 직전 검증. 정규화한 (기본 확보, 기본 경고, 월별 행)을 돌려준다.
 
-    모든 값은 0 보다 커야 하고, **기본값과 합친 결과로** 각 달의 경고 기준이 확보 기준 이하여야
-    한다. 확보만 적은 달이 기본 경고보다 낮아도 거꾸로 짝이다 — 그 달 그대로 판정하면 경고 구간이
-    사라진다. 어긋나면 어느 달인지 적어 거부한다.
+    값은 모두 사사오입 정수 % 의 T/100 으로 맞춰 돌려준다(`normalize_threshold` — 새 저장은 늘
+    정수 % 다). 모든 값은 0 보다 커야 하고, **기본값과 합친 결과로** 각 달의 경고 기준이 확보 기준
+    이하여야 한다. 확보만 적은 달이 기본 경고보다 낮아도 거꾸로 짝이다 — 그 달 그대로 판정하면
+    경고 구간이 사라진다. 어긋나면 어느 달인지 적어 거부한다.
     """
     secure = _require_positive(default_secure, "기본 확보 기준")
     warning = _require_positive(default_warning, "기본 경고 기준")
@@ -238,7 +349,7 @@ def validate_securement_thresholds(
         raise ValueError(
             f"기본 경고 기준({_percent(warning)})이 기본 확보 기준({_percent(secure)})보다 큽니다."
         )
-    prepared = prepare_securement_threshold_rows(rows)
+    prepared = _normalized_rows(prepare_securement_threshold_rows(rows))
     thresholds = build_securement_thresholds(secure, warning, prepared)
     reversed_months = [
         (month, *thresholds.for_month(month)) for month in reversed_threshold_months(thresholds)
@@ -250,6 +361,22 @@ def validate_securement_thresholds(
         )
         raise ValueError(f"경고 기준이 확보 기준보다 큰 달이 있습니다: {details}")
     return secure, warning, prepared
+
+
+def _normalized_rows(prepared: pd.DataFrame) -> pd.DataFrame:
+    """월별 칸을 T/100 으로 맞춘다. 사사오입해 0 이 되는 칸(0.4%)은 0 기준이라 거부한다."""
+    result = prepared.copy()
+    for column in (SECURE_COLUMN, WARNING_COLUMN):
+        result[column] = pd.Series(
+            [None if pd.isna(value) else normalize_threshold(value) for value in result[column]],
+            index=result.index,
+            dtype="float64",
+        )
+        invalid = result[column].notna() & result[column].le(0)
+        if invalid.any():
+            months = _month_list(result.loc[invalid, "생산계획년월"])
+            raise ValueError(f"{with_topic_particle(column)} 0 보다 큰 숫자여야 합니다: {months}")
+    return result
 
 
 def reversed_threshold_months(thresholds: SecurementThresholds) -> tuple[int, ...]:
@@ -343,7 +470,7 @@ def _optional(value: object) -> float | None:
 
 
 def _percent(ratio: float) -> str:
-    """검증 문구용 정확한 퍼센트. 사사오입 글자로 적으면 119.6 과 119.5 가 둘 다 120% 로 보인다."""
+    """검증 문구용 퍼센트. 값은 이미 정수 % 로 맞춘 기준이라 정수 글자 그대로다."""
     return f"{round(float(ratio) * 100, 6):g}%"
 
 

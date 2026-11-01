@@ -12,7 +12,7 @@
    확보율(달마다 확보기준 % — 회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
 2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(기준✕·일정✕ 만
    칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 비가동 영향(그 달 비가동이 깎은 가용
-   「−1.8대」 와 둘째 줄 확보율 영향 「−4.2%p」 — 깎은 것이 없으면 빈칸, 소요 0 이면 대수만), 목표
+   「−1.8대」 와 둘째 줄 확보율 영향 「−4.2%」 — 깎은 것이 없으면 빈칸, 소요 0 이면 대수만), 목표
    과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄). 목표는 달마다 다른 확보기준이다
    (`MonthlyTarget`).
 3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에
@@ -46,7 +46,7 @@
 빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
 가정이 켜지면 부족 띠·② 판정 대조는 가정 요약의 판정으로 칠한다(②~④ 가 가정 계획이라 한 그림에서
 공식 판정과 섞이지 않게) — ② 판정 대조 풍선도 「공식은 …」 이 아니라 「UPEH 가정 기준은 …」
-이다. 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정 대조·비가동 영향(%p 가
+이다. 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정 대조·비가동 영향(% 가
 가정 소요로 바뀐다)·목표 과부족의 행 라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라
 UPEH 와 무관하다.
 공식 계획에서는 당겼지만 가정 계획에서는 덜 당기는 호기는 ③ 에 흐린 줄로 남고 풍선에 「공식 −45일 →
@@ -73,7 +73,7 @@ UPEH 와 무관하다.
 소요 「공식 ÷ f」, ② 목표 과부족 「가용 − 목표대수」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한
 값이 결과와 다르면 「=」 대신 「≈」 다(`formula_text.equals_mark` — 근거 패널 ③·④ 와 같은 길). 두
 과부족 식 줄과 ② 비가동 영향 풍선의 두 식(「비가동 없으면 확보율 X% → 지금 Y%」 — 첫 줄
-%p 를 낸다, 「호기 비가동 −a대 + 입력 비가동 −b대」 — 첫 줄 대수를 낸다)은 결과가 앞 줄에
+% 를 낸다, 「호기 비가동 −a대 + 입력 비가동 −b대」 — 첫 줄 대수를 낸다)은 결과가 앞 줄에
 있고 등호가 없어 어긋날 때만 식 앞에 「≈」 를 둔다.
 
 순수 함수다. 세션·캐시·DB 를 보지 않는다. 그림 캐시·칸 선택 콜백·범례는 페이지가 맡는다.
@@ -195,9 +195,13 @@ from capa_simulation.services.securement_rate import (
     CAUSE_OWNED_SHORT,
     OWNED_COLUMN,
     STATUS_COLUMN,
+    surplus_held_at_zero,
 )
-from capa_simulation.services.securement_threshold import SecurementThresholds
-from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.services.securement_threshold import SecurementThresholds, judgment_boundary
+from capa_simulation.services.threshold_label import (
+    boundary_percent_label,
+    threshold_percent_label,
+)
 
 __all__ = [
     "IMPACT_LABEL_HOVER",
@@ -307,10 +311,10 @@ ROW_DYNAMIC_COMPARE: Final = "dynamic_compare"
 ROW_DYNAMIC_AVAILABLE: Final = "dynamic_available"
 ROW_DYNAMIC_DELTA: Final = "dynamic_delta"
 ROW_DYNAMIC_BALANCE: Final = "dynamic_balance"
-# ② 「비가동 영향」 — 전월 대비 바로 아래. 그 달 비가동(호기 + 입력)이 깎은 가용과 확보율 영향(%p).
+# ② 「비가동 영향」 — 전월 대비 바로 아래. 그 달 비가동(호기 + 입력)이 깎은 가용과 확보율 영향(%).
 ROW_DYNAMIC_IMPACT: Final = "dynamic_impact"
 IMPACT_LABEL_HOVER: Final = (
-    "그 달 비가동이 없었다면 더 있었을 가용(환산)과 그만큼의 확보율 차이(%p)<br>"
+    "그 달 비가동이 없었다면 더 있었을 가용(환산)과 그만큼의 확보율 차이(%)<br>"
     "호기 비가동(④ 진한 화살표) + 입력 비가동(Preference — 가용에서 실제로 뺀 몫)<br>"
     "확보율 = 단축 전 가용 ÷ 소요 · 깎은 것이 없으면 빈칸 · 소요 0 이면 대수만"
 )
@@ -661,8 +665,8 @@ def _summary_rows(
             text=threshold_percent_label(secure),
             muted=True,
             hover=(
-                f"{head} · 확보기준 {threshold_percent_label(secure)} ({_ratio(secure)}) · "
-                f"경고기준 {threshold_percent_label(warning)} ({_ratio(warning)})"
+                f"{head} · 확보기준 {threshold_percent_label(secure)} · "
+                f"경고기준 {threshold_percent_label(warning)}"
             ),
         )
     rows = [_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, ())]
@@ -878,19 +882,30 @@ def _balance_hover(
 ) -> str:
     if balance is None:
         return f"{head} · 확보기준 과부족 {_EMPTY}"
-    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수 둘째 자리로 단다. 그 아래 식의
+    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 판정 경계)을 소수 둘째 자리로 단다. 과부족은 확보기준
+    # 의 판정 경계(110% 면 109.5% — 사사오입 판정)에 대한 대수다(`securement_balance`). 그 아래 식의
     # 적힌 가용·소요(첫째 자리)로 다시 셈한 값이 그 값과 다르면 식 앞에 「≈」 를 둔다.
+    bound = judgment_boundary(secure)
     unrounded = ""
     mark = EQUALS
     if available is not None and demand is not None:
-        raw = _signed_two(available - demand * secure)
+        raw = _signed_two(available - demand * bound)
         unrounded = f" ({raw})"
-        mark = equals_mark(raw, _signed_two(round(available, 1) - round(demand, 1) * secure))
+        mark = equals_mark(raw, _signed_two(round(available, 1) - round(demand, 1) * bound))
     text = (
         f"{head} · 확보기준 과부족 {_signed_int(balance)}대{unrounded}"
         f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
-        f"소요 {_one(demand)} × {_ratio(secure)} (부족은 올림, 여유는 내림)"
+        f"소요 {_one(demand)} × {boundary_percent_label(secure)} (부족은 올림, 여유는 내림)"
     )
+    held = (
+        balance == 0
+        and available is not None
+        and demand is not None
+        and surplus_held_at_zero(available, demand, secure)
+    )
+    if held:
+        # 반올림으로만 확보인 달 — 경계식은 1대 이상 남지만 확보율이 기준 밑이라 여유가 아니다.
+        text += f"<br>반올림으로 겨우 확보 — {threshold_percent_label(secure)} 에 못 미쳐 여유 0"
     reason = "" if _blank(cause) else str(cause)
     if reason:
         text += f"<br>원인 {html.escape(reason)}"
@@ -926,7 +941,7 @@ def _dynamic_rows(
     if not today_position.before and not today_position.after:
         detail += f" · 점선은 오늘({dynamic.today:%m.%d})"
     rows: list[_Row] = [_section_title_row(SECTION_DYNAMIC, detail, folded)]
-    # UPEH 가정 계획이면 바뀌는 행(판정 대조·비가동 영향 %p·목표 과부족)의 라벨에만 표지를 단다 —
+    # UPEH 가정 계획이면 바뀌는 행(판정 대조·비가동 영향 %·목표 과부족)의 라벨에만 표지를 단다 —
     # 제목 줄 높이는 그대로다.
     assumed_mark = " · UPEH 가정" if dynamic.official_pulls is not None else ""
     compare = _Row(
@@ -950,7 +965,7 @@ def _dynamic_rows(
         label="전월 대비",
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
-    # 대수와 %p 를 한 줄에 적으면 달 칸(100px)을 넘는다 — 가용 (환산)·목표 과부족처럼 둘째 줄에 %p.
+    # 대수와 % 를 한 줄에 적으면 달 칸(100px)을 넘는다 — 가용 (환산)·목표 과부족처럼 둘째 줄에 %.
     impact = _Row(
         ROW_DYNAMIC_IMPACT,
         _VALUE,
@@ -1128,21 +1143,21 @@ def _impact_cell(
     """② 비가동 영향 칸 하나 — `downtime_impact` 한 행(없으면 빈 dict).
 
     깎은 것이 없으면(손실 0) 빈칸이다. 첫 줄은 손실 대수 「−1.8대」, 둘째 줄은 확보율 영향
-    「−4.2%p」 이고 소요가 0 이면(영향 NaN) 대수만 적는다. 풍선 둘째 줄은 「비가동 없으면 확보율
+    「−4.2%」 이고 소요가 0 이면(영향 NaN) 대수만 적는다. 풍선 둘째 줄은 「비가동 없으면 확보율
     X% → 지금 Y%」 와 손실의 갈림(0 인 쪽은 뺀다)이다. 둘 다 결과가 첫 줄에 있는 등호 없는 식이라
     적힌 수로 다시 셈한 글이 첫 줄과 다를 때만 그 식 앞에 「≈」 를 둔다(과부족 풍선과 같은 길) —
-    갈림 둘을 적힌 대로 더한 값이 첫 줄 대수와, 적힌 Y − X 가 첫 줄 %p 와 견줄 짝이다(X·Y 를 소수
-    첫째 자리로 따로 반올림하면 %p 와 0.1 어긋날 수 있다).
+    갈림 둘을 적힌 대로 더한 값이 첫 줄 대수와, 적힌 Y − X 가 첫 줄 % 와 견줄 짝이다(X·Y 를 소수
+    첫째 자리로 따로 반올림하면 % 와 0.1 어긋날 수 있다).
     """
     units_loss = _number(record.get("호기 비가동 손실")) or 0.0
     manual_loss = _number(record.get("입력 비가동 손실")) or 0.0
     loss = _number(record.get("비가동 손실")) or 0.0
     if round(loss, 9) <= 0:
         return _Cell(muted=past, hover=f"{head} · 비가동 영향 없음 — 가용을 깎은 비가동이 없습니다")
-    points = _number(record.get("확보율 영향(%p)"))
+    points = _number(record.get("확보율 영향(%)"))
     points_number = _nonzero_signed(-points) if points is not None else ""
     units_text = f"{_nonzero_signed(-loss)}대"
-    points_text = f"{points_number}%p" if points_number else ""
+    points_text = f"{points_number}%" if points_number else ""
     parts = [
         f"{name} {_nonzero_signed(-value)}대"
         for name, value in (("호기 비가동", units_loss), ("입력 비가동", manual_loss))
@@ -2261,11 +2276,6 @@ def _difference(left: float | None, right: float | None) -> float | None:
 
 def _changed(before: float | None, after: float | None) -> bool:
     return before is not None and after is not None and abs(after - before) > 1e-9
-
-
-def _ratio(value: float) -> str:
-    """판정 기준 비율을 사람이 적은 꼴로(1.095 → 「1.095」)."""
-    return f"{value:g}"
 
 
 def _two(value: float | None) -> str:

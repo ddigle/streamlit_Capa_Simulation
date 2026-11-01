@@ -137,7 +137,8 @@ def test_summary_carries_the_securement_numbers_unchanged(tables: dict[str, pd.D
         assert summary["총보유대수"].tolist() == pd.to_numeric(owned["설비보유"]).tolist()
         assert not summary[MISMATCH_COLUMN].any()
         assert summary.loc[summary["생산계획년월"].eq(202603), "확보기준"].tolist() == [1.2]
-        assert set(summary.loc[summary["생산계획년월"].ne(202603), "확보기준"]) == {1.095}
+        # `확보기준` 칸은 정수 % 기준이다 — 옛 저장값 1.095 도 1.1(110%)로 읽는다(2026-11-01).
+        assert set(summary.loc[summary["생산계획년월"].ne(202603), "확보기준"]) == {1.1}
 
 
 def test_summary_marks_months_where_owned_minus_lent_is_not_available(
@@ -823,7 +824,7 @@ def test_the_period_slice_bounds_the_product_months(
 
 
 def test_home_display_rates_follow_the_home_chain() -> None:
-    """확보율 보정(%p)을 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
+    """확보율 보정(%)을 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
     securement = pd.DataFrame(
         {
             "생산계획년월": [202611, 202612, 202611],

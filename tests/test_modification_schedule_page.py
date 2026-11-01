@@ -326,15 +326,15 @@ def test_deadline_options_follow_the_start() -> None:
 
 
 def _points(text: str) -> float:
-    """「+94,821.1%p」 꼴 글자에서 %p 수 하나."""
-    found = re.search(r"([+\u2212-]?[\d,]+\.\d)%p", text)
+    """「+94,821.1%」 꼴 글자에서 % 수 하나(차이도 「%」 로 적는다 — 2026-11-01 사용자 결정)."""
+    found = re.search(r"([+\u2212-]?[\d,]+\.\d)%", text)
     assert found is not None, text
     return float(found.group(1).replace(",", "").replace("\u2212", "-"))
 
 
 def test_the_even_objective_opens_only_with_a_deadline(databases: tuple[Path, Path]) -> None:
     """「가장 고르게」 는 기한이 있어야 열리고, 열리면 「가장 빨리」 보다 최저 여유가 크다 — 여유가
-    큰 공정(내장 시드 확보율 수천 %)에서도 고정 위 끝(+100%p)에 멈추지 않는다."""
+    큰 공정(내장 시드 확보율 수천 %)에서도 고정 위 끝(+100%)에 멈추지 않는다."""
     app = _schedule(databases)
     app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202606)
     _ok(app.run())
@@ -350,7 +350,9 @@ def test_the_even_objective_opens_only_with_a_deadline(databases: tuple[Path, Pa
     even_margin = _points(_metric(app, "개조 달 최저 여유")[0])
     assert applied > 100.0
     assert even_margin > earliest_margin
-    assert even_margin == pytest.approx(applied, abs=0.05)
+    # 배치 +δ 는 판정 경계(109.5%) 위로 올린 폭이고, 최저 여유는 정수 기준 110% 대비다(2026-11-01 —
+    # 반 칸 차이).
+    assert even_margin == pytest.approx(applied - 0.5, abs=0.05)
     assert "가장 고르게" in _header(app)
 
     # 기한을 걷으면 「가장 빨리」 로 적고 잠근다.
@@ -377,11 +379,11 @@ def test_an_even_run_that_misses_the_deadline_says_it_placed_the_earliest_way(
 
 
 def test_the_tightest_margin_kpi_reads_the_margin_first(databases: tuple[Path, Path]) -> None:
-    """요약 셋째 칸은 기준 대비 여유(%p)가 값이고 그 달 확보율이 캡션이다 — HOME 기준 109.5% 에
-    딱 붙은 「가장 빨리」 결과가 「기준 110%」 옆에서 미달처럼 읽히지 않게."""
+    """요약 셋째 칸은 기준 대비 여유(%)가 값이고 그 달 확보율이 캡션이다 — 「%p」 는 쓰지 않는다
+    (2026-11-01 사용자 결정)."""
     app = _schedule(databases)
     value, caption = _metric(app, "개조 달 최저 여유")
-    assert value.startswith("+") and value.endswith("%p")
+    assert value.startswith("+") and value.endswith("%") and not value.endswith("%p")
     assert " · 확보율 " in caption
 
 
@@ -546,7 +548,7 @@ def test_both_modes_check_equipment_and_load_the_plan_through_one_function() -> 
 
 
 def _blocked_by_margin() -> Any:
-    """기준 110% · 여유 3%p · 1월 개조 전 111% — 기준은 넘지만 배치 기준(113%)에는 못 미친다."""
+    """기준 110% · 여유 3% · 1월 개조 전 111% — 기준은 넘지만 배치 기준(113%)에는 못 미친다."""
     months = [
         ScheduleMonthInput(202701, 10.0, 11.1, 1.1),
         ScheduleMonthInput(202702, 10.0, 14.0, 1.1),
@@ -563,7 +565,7 @@ def test_the_month_hover_names_the_placement_threshold_when_a_margin_is_set() ->
     figure = schedule_figure(result, ScheduleLabels(process_label="P", general_percent=110.0))
     hovers = [row[1] for row in figure.data[0].customdata]
 
-    assert "개조 없이도 배치 기준(기준 +3.0%p) 미달 — 넣지 않음" in hovers[0]
+    assert "개조 없이도 배치 기준(기준 +3.0%) 미달 — 넣지 않음" in hovers[0]
     assert "개조 없이도 기준 미달" not in hovers[0]
 
 
@@ -580,7 +582,7 @@ def _capped_by_concurrency() -> ScheduleResult:
 
 
 def _missed_by_relief() -> ScheduleResult:
-    """2대 × 31일을 2/28 까지 — 1대뿐이고, 기준을 2/310 = 0.645%p 낮추면 다 든다(손계산은
+    """2대 × 31일을 2/28 까지 — 1대뿐이고, 기준을 2/310 = 0.645% 낮추면 다 든다(손계산은
     `tests/test_modification_schedule.py` 의 「대안 셋」 시험)."""
     months = [ScheduleMonthInput(month, 10.0, 11.0, 1.0) for month in (202701, 202702, 202703)]
     return plan_modification_schedule(
@@ -606,14 +608,15 @@ def test_shortfall_lines_name_the_concurrency_cap_and_an_unfinished_search() -> 
 
 
 def test_the_alternatives_say_how_far_to_lower_the_target_as_a_positive_number() -> None:
-    """셋째 줄은 「기준 0.65%p 낮추기」 — 부호 붙은 「필요한 기준 완화: −0.65%p」 는 낮추는지
-    올리는지가 거꾸로 읽혔다(2026-10-26 사용자 결정). 0.645%p 는 0.01%p 올림이다."""
+    """셋째 줄은 「기준 0.65% 낮추기」 — 부호 붙은 「필요한 기준 완화: −0.65%p」 는 낮추는지
+    올리는지가 거꾸로 읽혔다(2026-10-26 사용자 결정). 0.645% 는 0.01% 올림이다(차이도 「%」 —
+    2026-11-01)."""
     lines = shortfall_lines(_missed_by_relief())
 
     assert lines == [
         "기한(2027-02-28)까지 넣을 수 있는 대수: **1 / 2대**",
         "기한 없이 기준을 지키면 끝나는 날: **2027-03-03** (27.03 W/D)",
-        "기한 안에 다 넣으려면: **기준 0.65%p 낮추기**",
+        "기한 안에 다 넣으려면: **기준 0.65% 낮추기**",
     ]
     assert "완화" not in " ".join(lines) and "\u2212" not in " ".join(lines)
 
@@ -642,14 +645,14 @@ def _kpi_app() -> None:
 
 
 def test_the_deadline_card_says_how_far_to_lower_the_target_as_a_positive_number() -> None:
-    """못 맞춘 기한 칸 캡션도 대안 셋과 같은 글 「기준 0.65%p 낮추기」 이고, 풍선이 그 글을 풀어
+    """못 맞춘 기한 칸 캡션도 대안 셋과 같은 글 「기준 0.65% 낮추기」 이고, 풍선이 그 글을 풀어
     말한다."""
     app = AppTest.from_function(_kpi_app, default_timeout=30)
     _ok(app.run())
 
-    assert _metric(app, "기한") == ("못 맞춤", "1대 남음 · 기준 0.65%p 낮추기")
+    assert _metric(app, "기한") == ("못 맞춤", "1대 남음 · 기준 0.65% 낮추기")
     deadline = next(metric for metric in app.metric if metric.label == "기한")
-    assert "「기준 n%p 낮추기」" in str(deadline.proto.help)
+    assert "「기준 n% 낮추기」" in str(deadline.proto.help)
     shown = " ".join(
         f"{metric.value} {metric.proto.delta} {metric.proto.help}" for metric in app.metric
     )

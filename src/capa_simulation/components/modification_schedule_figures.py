@@ -13,11 +13,11 @@ rate_figure`)와 같은 틀이다.
   (`day_position`, 가용대수가 일할된 바로 그 좌표). 그래서 달력 11월 비가동이 12월 W/D 칸에 설 수
   있다(Cut-off 좌표 — 본문 캡션이 말한다).
 - 선: 개조 전(`TEXT_MUTED` 파선) · 개조 뒤(`ACCENT` 굵게, 점은 기준 미달이면 `STATUS_SHORTAGE`) ·
-  기준선(달마다 G 가 다르면 `hv` 계단) · 안전 여유나 「가장 고르게」 로 기준을 올렸으면 배치 기준선
-  (점선). 오른쪽 끝 글은 글자색(`TEXT_MUTED`)이다.
+  기준선(자리는 G 의 판정 경계 — 110% 면 109.5, 달마다 G 가 다르면 `hv` 계단) · 안전 여유나
+  「가장 고르게」 로 기준을 올렸으면 배치 기준선(점선). 오른쪽 끝 글은 글자색(`TEXT_MUTED`)이다.
 - 개조 없이도 배치 기준(기준 + 안전 여유) 미달이라 비가동을 넣지 않은 달은 옅은 부족색 칠, 넣을 수
   없는 달(가장 이른 시작 앞·끝 날 상한 뒤)은 옅은 회색 칠이다(도형 `opacity` — 새 색 토큰을 두지
-  않는다). 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%p) 미달」 이라고 적는다 — 그 달 확보율이
+  않는다). 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%) 미달」 이라고 적는다 — 그 달 확보율이
   기준 자체는 넘을 수 있다.
 - 아래 띠(y2): 차수마다 가로 막대 하나(`base` = 시작 위치, `x` = 길이, 글 = 대수). 겹치는 차수는
   아래 줄로 내린다. **띠 높이는 줄 수를 따른다**(`_band_layout` — 줄마다 `_LANE_PX`, 한 줄이면
@@ -77,7 +77,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 4
+SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 5
 _MARGIN_LEFT_PX: Final = 52
 _MARGIN_RIGHT_PX: Final = 76
 _MARGIN_TOP_PX: Final = 36
@@ -96,7 +96,7 @@ _BAND_MAX_LANES: Final = 10
 _BAR_WIDTH: Final = 0.8
 _BLOCKED_OPACITY: Final = 0.10
 _CLOSED_OPACITY: Final = 0.06
-# 배치 기준선을 기준선과 따로 그리는 차이(%p) — 이보다 작으면 같은 선이다.
+# 배치 기준선을 기준선과 따로 그리는 차이(%) — 이보다 작으면 같은 선이다.
 _SHIFT_HIDDEN_POINTS: Final = 0.005
 # 차수 막대 글(「N대」)의 글자 크기(px)와 그 아래로는 줄이지 않는 하한 — 막대가 짧아 하한보다 작아질
 # 자리면 Plotly 가 글을 숨긴다(`uniformtext` hide). 대수는 풍선과 차수 목록에 남는다.
@@ -138,14 +138,16 @@ def _line_label(labels: ScheduleLabels, result: ScheduleResult) -> str:
 
 
 def relief_points(value: float) -> str:
-    """기준을 낮춰야 하는 폭(비율, 양수)을 0.01%p **올림** 글자로 — 적힌 만큼 낮추면 늘 들어간다."""
+    """기준을 낮춰야 하는 폭(비율, 양수)을 0.01% **올림** 글자로 — 적힌 만큼 낮추면 늘 들어간다.
+
+    퍼센트 차이도 「%」 로 적는다(「%p」 를 쓰지 않는다 — 2026-11-01 사용자 결정)."""
     points = math.ceil(value * 10_000 - 1e-6) / 100
-    return f"{max(points, 0.01):.2f}%p"
+    return f"{max(points, 0.01):.2f}%"
 
 
 def relief_text(value: float) -> str:
-    """기준을 낮춰야 하는 폭 한 마디 — 「기준 1.71%p 낮추기」(양수로 적는다 — 부호 붙은 「완화
-    −1.71%p」 는 낮추는지 올리는지가 거꾸로 읽혔다). 기한 칸 캡션과 대안 셋 셋째 줄이 같은
+    """기준을 낮춰야 하는 폭 한 마디 — 「기준 1.71% 낮추기」(양수로 적는다 — 부호 붙은 「완화
+    −1.71%」 는 낮추는지 올리는지가 거꾸로 읽혔다). 기한 칸 캡션과 대안 셋 셋째 줄이 같은
     글이다."""
     return f"기준 {relief_points(value)} 낮추기"
 
@@ -189,7 +191,7 @@ def _blocked_reason(result: ScheduleResult) -> str:
 def shortfall_lines(result: ScheduleResult) -> list[str]:
     """다 넣지 못했을 때의 대안 셋(C12). 다 넣었으면 빈 목록.
 
-    셋째 줄은 낮출 폭(「기준 1.71%p 낮추기」)이거나, 0% 까지 낮춰도 못 넣으면 그 까닭이다. 완전
+    셋째 줄은 낮출 폭(「기준 1.71% 낮추기」)이거나, 0% 까지 낮춰도 못 넣으면 그 까닭이다. 완전
     탐색이 마디 한도에 걸렸으면(`exact` 거짓) 「이 계산으로 찾은 범위」 라고 끝에 적고, 「적힌 만큼
     낮추면 들어간다」 는 괄호는 낮출 폭이 적혔을 때만 붙인다(까닭만 적혔으면 낮출 폭이 없다).
     """
@@ -324,6 +326,8 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
     cutoff = result.conditions.cutoff_days
     before = [_percent(row.baseline_rate) for row in rows]
     after = [_percent(row.rate) for row in rows]
+    # 기준선의 자리는 G — 판정 경계다(110% 면 109.5 — δ 0 의 배치 기준과 같은 선). 반올림으로
+    # 확보가 된 109.7% 점이 선 위에 서고, 선 끝 글은 정수 기준 「110%」 다.
     general = [row.general_target * 100 for row in rows]
     shifted = [row.threshold * 100 for row in rows]
     shows_shift = abs(result.applied_margin * 100) >= _SHIFT_HIDDEN_POINTS

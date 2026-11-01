@@ -187,8 +187,12 @@ from capa_simulation.services.process_equipment_timeline import (
     NewUnitAvailability,
     new_unit_availability,
 )
-from capa_simulation.services.securement_threshold import securement_threshold_caption
+from capa_simulation.services.securement_threshold import (
+    judgment_boundary,
+    securement_threshold_caption,
+)
 from capa_simulation.services.simulation_cache import get_process_product_demand
+from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 from capa_simulation.upeh_assumption_state import (
@@ -549,7 +553,8 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         help="제약 제품에 먼저 떼어 줄 몫 — 필요 대수 = 올림(제약 제품 소요 × 이 값).",
         tone="warning",
     )
-    home_percent = thresholds.default_secure * 100
+    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — HOME 기본도 정수 T 로 보인다.
+    home_percent = threshold_percent(thresholds.default_secure)
     general_value = render_preset_number_field(
         "기준 확보율",
         value_key=CONSTRAINT_GENERAL_KEY,
@@ -557,17 +562,17 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         input_key=CONSTRAINT_GENERAL_INPUT_KEY,
         presets=GENERAL_PRESETS,
         default=None,
-        minimum=GENERAL_INPUT_RANGE[0] * 100,
-        maximum=GENERAL_INPUT_RANGE[1] * 100,
-        step=0.5,
+        minimum=round(GENERAL_INPUT_RANGE[0] * 100),
+        maximum=round(GENERAL_INPUT_RANGE[1] * 100),
+        step=1,
         unit="%",
-        number_format="%.1f",
+        number_format="%d",
         fallback=home_percent,
         preset_label=lambda value: "HOME 기준" if value is None else f"{value:g}%",
         help=(
-            "기존 제품 판정 기준. 「HOME 기준」 은 HOME → Preference 공용 판정 기준(기본 + "
-            f"월별 예외)을 달마다 씁니다 — HOME 기본은 정확히 {home_percent:g}% 라 버튼 "
-            "110%(110.0%)와 다를 수 있습니다."
+            "기존 제품 판정 기준(정수 %). 「HOME 기준」 은 HOME → Preference 공용 판정 기준"
+            "(기본 + 월별 예외)을 달마다 씁니다. 판정은 확보율을 사사오입한 정수 % 로 견줍니다 — "
+            "110% 면 109.5% 도 확보입니다."
         ),
     )
     st.caption(
@@ -806,10 +811,15 @@ def new_units_caption(shares: NewUnitAvailability) -> str:
 
 
 def general_target(month: int) -> float:
-    """그 달 기준 확보율(비율) — HOME 이면 공용 판정 기준의 그 달 값, 아니면 고른 스칼라."""
+    """그 달 기준 확보율의 판정 경계(비율) — HOME 이면 공용 판정 기준의 그 달 값, 아니면 고른
+    정수 %.
+
+    기준은 사사오입 정수 % 로 판정하므로(2026-11-01 사용자 결정) 서비스에는 그 판정 경계(110% 면
+    1.095)를 넘긴다 — 판정·그래프 기준선 자리가 그 선이고 글자는 정수 「110%」 로 되읽는다.
+    """
     if general_value is None:
-        return float(thresholds.secure_for(month))
-    return float(general_value) / 100
+        return thresholds.boundary_for(month)[0]
+    return judgment_boundary(float(general_value) / 100)
 
 
 target_percent = int(round(target_value if target_value is not None else DEFAULT_TARGET_PERCENT))

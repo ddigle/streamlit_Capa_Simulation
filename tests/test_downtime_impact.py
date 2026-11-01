@@ -3,7 +3,7 @@
 """② 「비가동 영향」(2026-10-27 사용자 결정 「같이 넣어」).
 
 달마다 손실 = 호기 비가동 손실(비가동을 비운 반사실 − 실제) + 입력 비가동 반영(0 에서 멈춘 뒤
-실제로 뺀 몫)이고, 확보율 영향은 그 손실 ÷ 소요 × 100(%p)이다 — 가용·소요는 계획의 단축 전 값
+실제로 뺀 몫)이고, 확보율 영향은 그 손실 ÷ 소요 × 100(%)이다 — 가용·소요는 계획의 단축 전 값
 (② 확보율과 같은 길)이다. 계산(`downtime_impact`)은 손으로 셀 수 있는 표와 실제 설비 일정 둘로
 보고, 그림은 결합 캔버스 시험의 설비 일정(`_dynamic`)에 손실 칸만 덧입혀 본다.
 """
@@ -77,7 +77,7 @@ def _impact_rows(bridge: dict[str, list[Any]], plan: dict[str, list[Any]]) -> pd
 
 def test_the_loss_is_the_unit_and_input_split_and_the_points_divide_by_demand() -> None:
     """5월: 호기 0.6 + 입력 0.4 = 1.0 대, 소요 5 · 가용 4 → 비가동 없으면 5 (100%) · 지금 80% ·
-    20%p. 6월은 깎은 것이 없고, 7월은 소요 0 이라 대수만, 8월은 계획에 없는 달이다."""
+    20%. 6월은 깎은 것이 없고, 7월은 소요 0 이라 대수만, 8월은 계획에 없는 달이다."""
     frame = _impact_rows(
         {
             "생산계획년월": [MAY, JUNE, JULY, AUGUST],
@@ -97,18 +97,16 @@ def test_the_loss_is_the_unit_and_input_split_and_the_points_divide_by_demand() 
     assert may["비가동 없는 가용대수"] == 5.0
     assert may["확보율"] == pytest.approx(0.8)
     assert may["비가동 없는 확보율"] == pytest.approx(1.0)
-    assert may["확보율 영향(%p)"] == pytest.approx(20.0)
+    assert may["확보율 영향(%)"] == pytest.approx(20.0)
     # 영향은 두 확보율의 차이 그 자체다.
-    assert may["확보율 영향(%p)"] == pytest.approx(
-        (may["비가동 없는 확보율"] - may["확보율"]) * 100
-    )
+    assert may["확보율 영향(%)"] == pytest.approx((may["비가동 없는 확보율"] - may["확보율"]) * 100)
     june = frame.loc[JUNE]
-    assert (june["비가동 손실"], june["확보율 영향(%p)"]) == (0.0, 0.0)
+    assert (june["비가동 손실"], june["확보율 영향(%)"]) == (0.0, 0.0)
     assert june["비가동 없는 가용대수"] == june["가용대수"] == 4.0
     july = frame.loc[JULY]
     assert july["비가동 손실"] == pytest.approx(0.3)
     assert july["비가동 없는 가용대수"] == pytest.approx(2.3)
-    for column in ("확보율", "비가동 없는 확보율", "확보율 영향(%p)"):
+    for column in ("확보율", "비가동 없는 확보율", "확보율 영향(%)"):
         assert math.isnan(july[column]), column
     august = frame.loc[AUGUST]
     assert august["비가동 손실"] == pytest.approx(0.7)
@@ -169,7 +167,7 @@ def test_the_unit_loss_is_the_hand_counted_counterfactual_gap_per_month() -> Non
 def test_the_input_share_is_clamped_and_no_downtime_at_all_is_the_free_schedule() -> None:
     """6월에 입력 2.0 은 그대로 빠지고, 5월에 넣은 99.0 은 그 달 가용(기존보유 3 + 호기 가용)에서
     멈춘 몫만 손실이다. 비가동이 하나도 없을 때의 가용은 호기 비가동도 입력도 없는 설비 일정의
-    가용이다. %p 는 계획(같은 입력)의 단축 전 가용 · 소요로 낸다."""
+    가용이다. % 는 계획(같은 입력)의 단축 전 가용 · 소요로 낸다."""
     rows, downtime = _arrow_fixture()
     manual = ((MAY, 99.0), (JUNE, 2.0))
     bridge = _impact_timeline(rows, downtime, manual)
@@ -200,7 +198,7 @@ def test_the_input_share_is_clamped_and_no_downtime_at_all_is_the_free_schedule(
     free = _impact_timeline(rows, _downtime()).set_index("생산계획년월")
     assert list(impact["비가동 없는 가용대수"]) == pytest.approx(list(free["가용대수"]))
     assert list(impact["가용대수"]) == pytest.approx(list(by_month["가용대수"]))
-    assert list(impact["확보율 영향(%p)"]) == pytest.approx(list(impact["비가동 손실"] / 5.0 * 100))
+    assert list(impact["확보율 영향(%)"]) == pytest.approx(list(impact["비가동 손실"] / 5.0 * 100))
     assert list(impact["확보율"]) == pytest.approx(list(plan.process_months["확보율"]))
 
 
@@ -279,16 +277,16 @@ def test_the_impact_row_sits_right_under_the_monthly_change_with_two_lines() -> 
 
 def test_the_cell_reads_units_then_points_and_the_hover_names_both_rates_and_the_split() -> None:
     """26.11: 호기 1.2 + 입력 0.6 = 1.8 대, 소요 45 · 가용 45 → 비가동 없으면 104.0% · 지금 100.0% ·
-    −4.0%p."""
+    −4.0%."""
     dynamic = _impact_dynamic({0: 1.2}, {0: 0.6}, plan={0: (45.0, 45.0)})
     canvas = _canvas(dynamic=dynamic)
     lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
 
-    assert [text for text, _ in lines[0]] == [f"{MINUS}1.8대", f"{MINUS}4.0%p"]
+    assert [text for text, _ in lines[0]] == [f"{MINUS}1.8대", f"{MINUS}4.0%"]
     assert {color for _, color in lines[0]} == {tokens.TEXT}
     hover = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[0]]
     first, second = hover.split("<br>")
-    assert first == f"<b>26.11</b> · 비가동 영향 {MINUS}1.8대 · {MINUS}4.0%p"
+    assert first == f"<b>26.11</b> · 비가동 영향 {MINUS}1.8대 · {MINUS}4.0%"
     assert second == (
         f"비가동 없으면 확보율 104.0% → 지금 100.0% · 호기 비가동 {MINUS}1.2대 + "
         f"입력 비가동 {MINUS}0.6대"
@@ -303,17 +301,17 @@ def test_a_month_without_loss_is_blank_and_says_so_in_the_hover() -> None:
     assert set(lines) == {0}
     for month in MONTHS[1:]:
         assert "비가동 영향 없음" in hovers[month]
-        assert "%p" not in hovers[month]
+        assert "%" not in hovers[month]
 
 
 def test_an_input_only_month_names_only_the_input_share() -> None:
-    """27.01: 입력 0.5 만 — 소요 47.5 라 −1.1%p, 갈림은 입력 하나(0 인 호기 쪽은 뺀다)."""
+    """27.01: 입력 0.5 만 — 소요 47.5 라 −1.1%, 갈림은 입력 하나(0 인 호기 쪽은 뺀다)."""
     canvas = _canvas(dynamic=_impact_dynamic({}, {2: 0.5}))
     lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
     hover = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[2]]
 
     assert REQUIRED[2] == 47.5
-    assert [text for text, _ in lines[2]] == [f"{MINUS}0.5대", f"{MINUS}1.1%p"]
+    assert [text for text, _ in lines[2]] == [f"{MINUS}0.5대", f"{MINUS}1.1%"]
     assert hover.endswith(f" · 입력 비가동 {MINUS}0.5대")
     assert "호기 비가동" not in hover and " + " not in hover
 
@@ -352,18 +350,18 @@ def test_a_tiny_loss_is_not_written_as_zero() -> None:
     tiny = _canvas(dynamic=_impact_dynamic({2: 0.0004}, {}, plan={2: (10.0, 9.0)}))
     assert [text for text, _ in _cell_lines(tiny, ROW_DYNAMIC_IMPACT)[2]] == [
         f"{MINUS}0.0004대",
-        f"{MINUS}0.004%p",
+        f"{MINUS}0.004%",
     ]
     hover = _hovers(tiny, ROW_DYNAMIC_IMPACT)[MONTHS[2]]
     assert hover.endswith(f" · 호기 비가동 {MINUS}0.0004대")
 
 
 def test_a_rate_pair_that_does_not_recompute_as_written_gets_the_approx_mark() -> None:
-    """소요 100 · 가용 98.46 · 손실 6.48 — 적힌 확보율 짝 98.5 − 104.9 는 −6.4 인데 첫 줄은 −6.5%p
-    다(따로 반올림). 짝 앞에 「≈」. 셈이 맞는 짝(104.0% → 100.0% · −4.0%p)은 앞붙임이 없다."""
+    """소요 100 · 가용 98.46 · 손실 6.48 — 적힌 확보율 짝 98.5 − 104.9 는 −6.4 인데 첫 줄은 −6.5%
+    다(따로 반올림). 짝 앞에 「≈」. 셈이 맞는 짝(104.0% → 100.0% · −4.0%)은 앞붙임이 없다."""
     canvas = _canvas(dynamic=_impact_dynamic({0: 6.48}, {}, plan={0: (100.0, 98.46)}))
     first, second = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[0]].split("<br>")
-    assert first.endswith(f"비가동 영향 {MINUS}6.5대 · {MINUS}6.5%p")
+    assert first.endswith(f"비가동 영향 {MINUS}6.5대 · {MINUS}6.5%")
     assert second.startswith("≈ 비가동 없으면 확보율 104.9% → 지금 98.5% · ")
     exact = _canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6}, plan={0: (45.0, 45.0)}))
     assert (
@@ -379,7 +377,7 @@ def test_past_months_are_muted_in_the_impact_row() -> None:
 
 
 def test_the_upeh_plan_marks_the_impact_row_and_its_hover() -> None:
-    """가정 계획이면 %p 가 가정 소요로 바뀌어 라벨에 표지를 달고 풍선이 그 기준을 밝힌다."""
+    """가정 계획이면 % 가 가정 소요로 바뀌어 라벨에 표지를 달고 풍선이 그 기준을 밝힌다."""
     dynamic = _impact_dynamic({0: 1.0}, {})
     marked = DynamicCanvasInput(**{**dynamic.__dict__, "official_pulls": {}})
     canvas = _canvas(dynamic=marked)

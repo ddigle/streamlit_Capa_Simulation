@@ -131,7 +131,8 @@ from capa_simulation.services.monthly_equipment_availability import (
 from capa_simulation.services.process_cutoff import cutoff_lookup
 from capa_simulation.services.securement_cross_check import dynamic_available_equipment
 from capa_simulation.services.securement_rate import calculate_securement_rate
-from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.services.securement_threshold import SecurementThresholds, judgment_boundary
+from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -365,15 +366,19 @@ TargetLevel: TypeAlias = float | MonthlyTarget
 def target_from_thresholds(
     thresholds: SecurementThresholds, months: Iterable[int]
 ) -> MonthlyTarget:
-    """공용 판정 기준의 확보기준을 달마다 목표로 쓴다(`thresholds.for_month(M)` 의 확보 기준).
+    """공용 판정 기준의 확보기준을 달마다 목표로 쓴다 — 그 달 확보기준의 **판정 경계**다.
+
+    기준은 사사오입 정수 % 로 판정하므로(`securement_threshold.judgment_boundary` — 110% 면 1.095)
+    단축 목표도 그 경계다. 목표를 채운 달이 곧 확보로 판정되는 달이고, 옛 저장값 1.095 에서 세운
+    계획이 그대로다. 화면은 이 목표를 정수 「110%」 로 적는다(`threshold_percent_label`).
 
     `months` 밖의 월별 예외는 싣지 않는다 — 계산하지 않는 달이 목표(캐시 키)를 가르지 않게.
     """
-    default = float(thresholds.default_secure)
+    default = judgment_boundary(thresholds.default_secure)
     return MonthlyTarget(
         default=default,
         monthly=tuple(
-            (month, float(thresholds.secure_for(month)))
+            (month, thresholds.boundary_for(month)[0])
             for month in sorted({int(value) for value in months})
         ),
     )
@@ -468,8 +473,12 @@ def unit_number(name: str) -> int | None:
 
 
 def level_percent(level: float) -> int:
-    """목표 확보율의 백분율 정수(1.1 → 110). 내보내기의 목표 칸과 파일 이름이 쓴다."""
-    return round(level * 100)
+    """목표 확보율의 백분율 정수(1.1 → 110). 내보내기의 목표 칸과 파일 이름이 쓴다.
+
+    반은 올린다(`threshold_percent`) — HOME 확보기준에서 온 목표는 판정 경계(121% 면 1.205)라
+    파이썬 `round` 의 짝수 쪽 가르기로는 120 이 된다.
+    """
+    return threshold_percent(level)
 
 
 def _unit_order(name: str) -> tuple[int, int, str]:

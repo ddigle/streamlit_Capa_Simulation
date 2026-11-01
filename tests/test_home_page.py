@@ -513,7 +513,8 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         (widget.label, widget.value)
         for widget in app.main.number_input
         if widget.label.startswith("기본")
-    ] == [("기본 확보 기준(%)", 109.5), ("기본 경고 기준(%)", 99.5)]
+    ] == [("기본 확보 기준(%)", 110), ("기본 경고 기준(%)", 100)]
+    # 내장 시드 공식버전 프리셋의 1.095·0.995 를 정수 % 로 읽는다(2026-11-01 사용자 결정).
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
     # 글자가 전부 layout 항목이다), 계획 세부수량 라벨은 글자 trace 둘(머리글·값), 나머지 라벨
@@ -699,7 +700,7 @@ def _rebuilt_bundles(app: AppTest) -> set[str]:
     return set()
 
 
-def _save_default_warning(app: AppTest, percent: float) -> AppTest:
+def _save_default_warning(app: AppTest, percent: int) -> AppTest:
     """Preference 의 판정 기준 편집기로 기본 경고 기준을 저장한다."""
     next(
         widget for widget in app.main.number_input if widget.label == "기본 경고 기준(%)"
@@ -720,7 +721,7 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
     # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7). 기준은 사이드바가
     # 아니라 Preference 의 공용 프로필에서 바꾼다.
     try:
-        app = _save_default_warning(app, 95.0)
+        app = _save_default_warning(app, 95)
 
         assert not list(app.exception), [element.message for element in app.exception]
         assert not list(app.error), [element.value for element in app.error]
@@ -732,8 +733,8 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
         app.run()
         assert _cache_state(app) == "적중"
     finally:
-        # 모듈 공용 DB 다. 뒤 테스트가 같은 기준(99.5%)에서 출발하게 되돌린다.
-        app = _save_default_warning(app, 99.5)
+        # 모듈 공용 DB 다. 뒤 테스트가 같은 기준(100% — 옛 99.5 와 같은 판정)에서 출발하게 되돌린다.
+        app = _save_default_warning(app, 100)
     assert not list(app.error), [element.value for element in app.error]
 
 
@@ -1700,7 +1701,8 @@ def test_a_past_month_takes_the_securement_adjustment_like_a_calculated_month(
     assert not list(app.exception), [element.message for element in app.exception]
     cell = _key_process_cell(app, "25.12")
     assert cell[2] == "90.0%"
-    assert "확보율 보정 -20.0%p" in str(cell[5])
+    # 「%p」 가 아니라 「%」 다(2026-11-01 사용자 결정 「%p표기하지말고 %로만」).
+    assert "확보율 보정 -20.0%<br>비고 과거 실적 보정" in str(cell[5])
     assert not [item.value for item in app.warning if "짝이 없어" in str(item.value)]
 
 
@@ -1730,7 +1732,8 @@ def test_the_home_guide_carries_what_left_the_body() -> None:
     for text in (
         "LOB 표시 조건",
         "반비례",
-        "퍼센트포인트",
+        # 확보율 보정은 더하기다 — 단위 글자는 「%」(2026-11-01 사용자 결정).
+        "비율 곱셈이 아닙니다",
         "EDP-TSV",
         "거래선",
         "계산이 이깁니다",
@@ -2045,6 +2048,8 @@ def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path:
     labels = {option["value"]: option["label"] for option in options}
     assert labels["DEMO_Final_Test"] == "DEMO_Chip_Attach (DEMO_Final_Test)"
     assert labels["DEMO_Chip_Attach"] == "DEMO_Chip_Attach"
+    # 증감 칸 머리도 「%」 다 — 「%p」 를 쓰지 않는다(2026-11-01 사용자 결정).
+    assert json.loads(editor.proto.columns)["증감 확보율"]["label"] == "증감 확보율(%)"
 
 
 def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(

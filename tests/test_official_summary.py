@@ -210,7 +210,9 @@ def test_a_month_warned_above_100_percent_shows_its_shortage_count() -> None:
     january = payload["bn"][3]
     assert january["rate"] == 101.0 and january["status"] == "shortage"
     assert january["short"] == 4
-    assert payload["warning"][3] == 105.0
+    # 기준선 자리는 판정 경계(105% → 104.5)이고 이름표는 정수 기준이다(2026-11-01 사용자 결정).
+    assert payload["warning"][3] == 104.5
+    assert payload["warning_label"][3] == "105%"
     # 판정이 부족인 달은 모두 대수가 있다(JS 가 「부족 N대」로 세운다).
     assert all(
         month["short"] > 0 for month in payload["bn"] if month and month["status"] == "shortage"

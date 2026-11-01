@@ -168,10 +168,14 @@ from capa_simulation.services.securement_rate import (
     CAUSE_RENTAL,
     OWNED_COLUMN,
     STATUS_COLUMN,
+    surplus_held_at_zero,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import ScenarioCacheKey
-from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.services.threshold_label import (
+    boundary_percent_label,
+    threshold_percent_label,
+)
 from capa_simulation.services.upeh_assumption import (
     NO_ASSUMPTION,
     UpehToken,
@@ -232,7 +236,12 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 7
+CANVAS_SCHEMA_VERSION: Final = 8
+
+# ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
+ROUNDED_IN_NOTE: Final = (
+    "반올림으로 겨우 확보 — 확보율이 {threshold} 에 못 미쳐 남는 대수는 0 으로 적습니다"
+)
 
 # 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
 SECTION_LABELS: Final[Mapping[str, str]] = {
@@ -491,7 +500,7 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(소수 그대로)도."""
+    """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(정수 %)도."""
     values = {_target_for(target, month) for month in months}
     if len(values) == 1:
         return f"{TARGET_SOURCE_TEXT} {target_label(next(iter(values)))}"
@@ -499,13 +508,21 @@ def target_text(target: TargetLevel, months: Sequence[int]) -> str:
 
 
 def target_label(value: float) -> str:
-    """목표 하나 — 「110% (1.095)」. 필요 단축 일정 화면의 「110%」 는 1.10 이라 같은 백분율 글자가
-    다른 값을 가리킨다 — 이 화면은 늘 소수를 함께 적는다(설계 logic_final 2)."""
-    return f"{threshold_percent_label(value)} ({value:g})"
+    """목표 하나 — 정수 기준 「110%」(2026-11-01 사용자 결정 — 기준은 정수만 적는다).
+
+    목표 값은 HOME 확보기준의 판정 경계(`target_from_thresholds` — 110% 면 1.095)라 사사오입한
+    정수가 곧 그 기준이다. 식 줄은 곱한 값을 판정 경계로 적는다(`boundary_percent_label`).
+    """
+    return threshold_percent_label(value)
 
 
 def _target_for(target: TargetLevel, month: int) -> float:
     return target.for_month(month) if isinstance(target, MonthlyTarget) else float(target)
+
+
+def _ratio_percent(value: float) -> str:
+    """식 줄에 곱한 목표 비율을 퍼센트로(1.095 → 「109.5%」) — 곱한 값 그대로라 검산된다."""
+    return f"{round(float(value) * 100, 6):g}%"
 
 
 # ================================================================== 캔버스
@@ -1086,21 +1103,25 @@ def judgement_card(
     내린다(부족 띠·② 판정 대조·KPI·다음 화면 줄이 가정 요약을 읽는 것과 같은 기준이다).
     """
     secure, warning = thresholds.for_month(month)
+    secure_bound = thresholds.boundary_for(month)[0]
     basis = record if assumed is None else assumed
     available = _number(basis.get("가용대수"))
     required = _number(basis.get("소요대수"))
     status = basis.get(STATUS_COLUMN)
     title = "③ 판정" if assumed is None else f"③ 판정 (UPEH 가정 {token_percent(token)}%)"
+    # 기준은 정수 하나다. 판정은 확보율을 사사오입한 정수 % 로 견주므로 과부족 식은 그 판정 경계
+    # (110% 면 109.5%)를 곱한다 — 그만큼 더하면 확보로 판정된다.
     bases = (
-        f"확보기준 {threshold_percent_label(secure)} ({secure:g}) · 경고기준 "
-        f"{threshold_percent_label(warning)} ({warning:g})"
+        f"확보기준 {threshold_percent_label(secure)} · 경고기준 "
+        f"{threshold_percent_label(warning)} — 사사오입 판정(확보 "
+        f"{boundary_percent_label(secure)} 이상)"
     )
     if required is None or required <= 0 or available is None:
         return EvidenceCard(title, "소요 없음 — 판정하지 않습니다", (bases,))
     rate = available / required
     name = _STATUS_NAMES.get(str(status), _EMPTY)
     balance = _whole(basis.get(BALANCE_COLUMN))
-    raw = available - required * secure
+    raw = available - required * secure_bound
     # 식의 숫자는 소수 둘째 자리다. 적은 숫자로 다시 셈한 값이 결과와 다르면 「≈」 로 밝힌다 —
     # 결과는 반올림 전 값으로 낸다(판정·과부족이 그 값을 쓴다).
     shown_available, shown_required = round(available, 2), round(required, 2)
@@ -1110,11 +1131,11 @@ def judgement_card(
         f"{shown_available / shown_required:.1%}" if shown_required > 0 else "",
     )
     raw_text = _signed_two(raw)
-    raw_mark = equals_mark(raw_text, _signed_two(shown_available - shown_required * secure))
+    raw_mark = equals_mark(raw_text, _signed_two(shown_available - shown_required * secure_bound))
     lines = [
         f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}",
-        f"과부족 = {_two(available)} − {_two(required)}×{secure:g} {raw_mark} {raw_text}"
-        f" → {_signed_int(balance) if balance is not None else _EMPTY}",
+        f"과부족 = {_two(available)} − {_two(required)}×{boundary_percent_label(secure)}"
+        f" {raw_mark} {raw_text} → {_signed_int(balance) if balance is not None else _EMPTY}",
     ]
     if assumed is not None:
         lines.insert(0, _assumed_required_line(_number(record.get("소요대수")), required, token))
@@ -1124,6 +1145,8 @@ def judgement_card(
         notes.append(cause_note)
     if str(status) in _SHORT_STATUSES and balance == 0:
         notes.append("잡음 경계 — 확보율이 기준에 아주 조금 못 미쳐 칠했지만 과부족은 0 입니다")
+    if str(status) == "secure" and surplus_held_at_zero(available, required, secure):
+        notes.append(ROUNDED_IN_NOTE.format(threshold=threshold_percent_label(secure)))
     if assumed is not None:
         notes.append(_official_judgement_note(record))
     return EvidenceCard(title, "\n".join(lines), tuple(notes))
@@ -1209,7 +1232,7 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
         else "",
     )
     lines = [
-        f"목표 {_two(target_units)} {target_mark} 소요 {_two(required)} × {target:g}",
+        f"목표 {_two(target_units)} {target_mark} 소요 {_two(required)} × {_ratio_percent(target)}",
         f"가용 {_two(before)} − 목표 {_two(target_units)} {gap_mark} {_signed_two(gap)}",
         f"구간 {_day(window.first_day, canvas.today)}~{_day(window.boundary_end, canvas.today)}"
         f" · 바닥 {_day(floor, canvas.today)}(구간 시작·오늘 중 늦은 날)",
@@ -1504,7 +1527,7 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
 
 
 def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """대책 카드의 목표 — 달마다 같으면 「110% (1.095)」, 다르면 「달마다 확보기준」."""
+    """대책 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
     values = {_target_for(target, month) for month in months}
     if len(values) == 1:
         return target_label(next(iter(values)))

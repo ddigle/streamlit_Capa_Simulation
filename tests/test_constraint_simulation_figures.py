@@ -114,8 +114,10 @@ def test_unit_and_rate_texts_follow_the_mock_rounding() -> None:
     assert units_text(None) == "—"
     assert rate_text(1.00460829) == "100.5%"
     assert rate_text(None) == "—"
-    assert signed_points(-0.13826) == "−13.8%p"
-    assert signed_points(0.012) == "+1.2%p"
+    # 퍼센트 차이도 「%」 로 적는다 — 「%p」 를 쓰지 않는다(2026-11-01 사용자 결정).
+    assert signed_points(-0.13826) == "−13.8%"
+    assert signed_points(0.012) == "+1.2%"
+    assert signed_points(0.0) == "0.0%"
 
 
 @pytest.mark.parametrize(
@@ -524,7 +526,7 @@ def test_the_sheet_fills_shortfall_cells_and_marks_decreases() -> None:
     assert _fills(canvas).count(tokens.STATUS_SHORTAGE) == len(result.kpis.below_months) == 5
     decreases = [text for color, text in _texts(canvas) if color == tokens.DELTA_DECREASE]
     assert "−5.81" in decreases
-    assert "−13.8%p" in decreases
+    assert "−13.8%" in decreases
 
 
 def test_the_sheet_outlines_the_selected_month_and_tints_the_period_head() -> None:
@@ -575,7 +577,7 @@ def test_the_month_steps_walk_through_the_five_calculations() -> None:
     assert may.steps[0].note == "제약 기간 밖이라 HBM라E 도 기존 제품에 함께 셉니다."
     assert may.steps[2].note == "27년 6월 몫 6대가 이 달 30일 개조 중 → 5.81대"
     assert may.steps[3].note == "공정 가용 − 개조 중"
-    assert may.steps[4].note == "제약 없을 때 114.3% · −13.8%p"
+    assert may.steps[4].note == "제약 없을 때 114.3% · −13.8%"
     assert may.verdict == "기존 제품이 기준 110% 에 못 미칩니다"
     assert may.verdict_secure is False
     assert may.proportional == ""
@@ -986,8 +988,9 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
     16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이고, 8 은
     그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판, 10 은
-    묶음 신규의 모듈 몫(「HB-07(HB-07B)」)과 「보유로 제약 기간을 다 덮음」 풍선 글을 실은 판이다
-    (2026-11-01 사용자 결정 B1 · B2)."""
+    묶음 신규의 모듈 몫(「HB-07(HB-07B)」)과 「보유로 제약 기간을 다 덮음」 풍선 글을
+    싣고(2026-11-01 사용자 결정 B1 · B2) 차이를 「%」 로 적고(「%p」 없음) 기준선을 판정
+    경계에 그은 판이다(2026-11-01 사용자 결정 N1 — 같은 배포의 두 갈래라 한 번 올렸다)."""
     assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 10
 
 

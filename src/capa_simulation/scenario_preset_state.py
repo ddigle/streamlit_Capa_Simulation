@@ -32,8 +32,10 @@ WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
 # 프로필(`services/securement_threshold`)이 정하고, 리비전 프리셋의 `secure_threshold`·
 # `warning_threshold` 는 판정에 쓰지 않는다. 저장 구조를 바꾸지 않으려고 프리셋 값만 세션을 거쳐
 # 그대로 다음 리비전에 실어 보낸다 — 화면 위젯은 없다. 세션이 비어 있으면 아래 기본값을 싣는다.
-DEFAULT_SECURE_THRESHOLD_PERCENT = 109.5
-DEFAULT_WARNING_THRESHOLD_PERCENT = 99.5
+# 기준은 정수 % 다(2026-11-01 사용자 결정) — 옛 프리셋의 109.5·99.5 도 읽을 때 110·100 이다
+# (`securement_threshold.normalize_threshold`).
+DEFAULT_SECURE_THRESHOLD_PERCENT = 110
+DEFAULT_WARNING_THRESHOLD_PERCENT = 100
 STANDARD_TARGET_PROCESS_SELECTION_KEY = "standard_target_process_filter"
 STANDARD_TARGET_PROCESS_DEFAULT_KEY = "standard_target_process_default"
 # 표준 목표 Capa 「조회·집계 설정」도 리비전 프리셋이 소유하므로 세션 키를 여기서 선언한다.
