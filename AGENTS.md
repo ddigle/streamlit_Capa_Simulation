@@ -1219,6 +1219,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「경로가 쓰는 칸」 은 제외(Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수) 뒤에도 남는 경로의 칸이다(`_live_upeh` — 계산과 같은
   자리에서 멈추게). 그래서 두 검증은 `RQ_UPEH` 와 효율·측정률이 든 시나리오 표 묶음을 받는다. 빠지던 경로를 살리는 편집
   (UPEH·효율 0 이하 → 0 보다 큼)은 새 경로로 센다(`revived_route_rows` — 7장 「검사는 계산이 멈추는 조건과 같게」).
+  거절 글(`describe_missing_path_rows`)이 괄호에 인용하는 멈춤 글은 계산이 실제로 낼 글이다 — 결손 줄마다 행 없음 ·
+  값이 빈 행 · 숫자 아님을 갈라(`_missing_required_for`, `unit_capacity._raise_on_unusable_values` 와 같은 갈래) 「… 연결값이
+  없는 …」 · 「…의 {값 칸} 값이 빈 …」 · 「… 숫자가 아닌 값이 있습니다」 를 고른다(BigDataQuery 원천의 빈 값 행).
 - `src/capa_simulation/services/reference_transformer.py` — XLSB `Q_Core_Data` 와 15개 Core 파생 Power Query 를 pandas 로
   대체하고 값 충돌 보고서를 함께 낸다(수동 `RQ_DISPLAY_ORDER` 는 `display_order_editor.transform_display_order`).
   - 경로 중복 접기·빈 대여 = 0 보정 때문에 `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 Power Query 와 일부러 다를 수

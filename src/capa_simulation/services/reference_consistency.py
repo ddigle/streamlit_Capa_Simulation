@@ -444,7 +444,8 @@ def missing_required_rows(
     - 쓰지 않는 소요기준(`UNIMPLEMENTED_BASES`)의 행은 조인 전에 빠지므로 새 경로로 세지 않는다.
     - 여유율·일수는 **0 이하 값도 없는 것과 같다**(`_assert_positive` 로 멈춘다). 효율 0 이하는 그
       경로만 제외 목록으로 빠지므로 행이 있으면 있는 것이다.
-    - 값이 숫자가 아닌 행은 없는 것으로 본다.
+    - 값이 숫자가 아닌 행은 없는 것으로 본다. 다만 거절 글이 인용하는 멈춤 글은 계산과 같이
+      행 없음 · 값이 빈 행 · 숫자 아님을 가른다(`_missing_required_for`).
     - 새 경로가 뒤에서 빠질 경로(넣은 UPEH 0 이하 · 그 달 효율 0 이하 · 측정률 음수 —
       `_live_upeh`)면 세 표의 행이 없어도 계산이 멈추지 않으므로 세지 않는다.
     - 거꾸로 **빠지던 경로를 살린 것**(Main UPEH 0 이하 → 0 보다 큼)은 새 경로로 센다. 빠지는
@@ -455,11 +456,34 @@ def missing_required_rows(
     return _missing_required_for(added, tables, tuple(REQUIRED_TABLE_KEYS))
 
 
+# 결손 줄마다 계산이 무엇으로 멈추는지 — `unit_capacity._raise_on_unusable_values` 의 세 갈래(숫자
+# 아님 → 빈 값 → 연결값 없음)와 같다. 값이 있으면(0 이하) 비운다. 거절 글이 계산이 실제로 낼 멈춤
+# 글을 인용하게 한다 — 행은 있고 값만 빈 칸(BigDataQuery 원천)을 「연결값이 없는」 으로 인용하면 한
+# 화면 안에서 등록 띠와 글이 갈렸다(E2E 2026-11-02).
+_GAP_STATE_COLUMN = "_결손_까닭"
+_GAP_NOT_NUMERIC = "not_numeric"
+_GAP_BLANK = "blank"
+_GAP_NO_ROW = "no_row"
+
+
+def _gap_states(table: pd.DataFrame, keyed: pd.DataFrame, value_column: str) -> pd.Series:
+    """`_keyed_values` 줄마다 값이 숫자가 아닐 때의 까닭 — 빈 값(결측·빈 글자)인가 숫자 아님인가.
+    숫자면 결측이다. 빈 글자 판정은 계산(`unit_capacity._join_reference`)과 같다."""
+    raw = table[value_column].reset_index(drop=True)
+    blank = raw.isna()
+    if not pd.api.types.is_numeric_dtype(raw):
+        blank |= raw.astype("string").str.strip().eq("").fillna(False)
+    states = pd.Series(_GAP_NOT_NUMERIC, index=keyed.index, dtype="object")
+    states[blank.to_numpy(bool)] = _GAP_BLANK
+    return states.where(keyed[value_column].isna())
+
+
 def _missing_required_for(
     added: pd.DataFrame, tables: Mapping[str, pd.DataFrame], table_names: Sequence[str]
 ) -> dict[str, pd.DataFrame]:
-    """경로 키(`PERFORMANCE_KEYS`) 가운데 `table_names` 표의 행이 없거나(숫자 아님 포함) 여유율·
-    일수가 0 이하인 것 — 표 이름마다 결손 (월 + 키)와 지금 값(행이 없으면 NaN)."""
+    """경로 키(`PERFORMANCE_KEYS`) 가운데 `table_names` 표의 행이 없거나(값이 비거나 숫자 아님 포함)
+    여유율·일수가 0 이하인 것 — 표 이름마다 결손 (월 + 키)와 지금 값(행이 없으면 NaN), 그리고 값이
+    없는 줄의 까닭(`_GAP_STATE_COLUMN` — 행 없음 · 빈 값 · 숫자 아님)."""
     if added.empty:
         return {}
     result: dict[str, pd.DataFrame] = {}
@@ -470,8 +494,9 @@ def _missing_required_for(
             continue
         value_column = REQUIRED_VALUE_COLUMNS[table_name]
         need = added[keys].drop_duplicates().reset_index(drop=True)
-        have = _keyed_values(table, keys, value_column, table_name)
-        have = have.loc[have[value_column].notna()]
+        keyed = _keyed_values(table, keys, value_column, table_name)
+        keyed[_GAP_STATE_COLUMN] = _gap_states(table, keyed, value_column)
+        have = keyed.loc[keyed[value_column].notna()].drop(columns=_GAP_STATE_COLUMN)
         if table_name in POSITIVE_REQUIRED_COLUMNS:
             # 0 이하 행은 결손으로 알리되 지금 값을 함께 적는다 — 「행이 없다」와 고칠 곳이 같다.
             usable = have.loc[have[value_column].gt(0), keys].drop_duplicates()
@@ -489,6 +514,17 @@ def _missing_required_for(
             gap = gap.assign(**{value_column: float("nan")})
         else:
             gap = gap.merge(values, on=keys, how="left")
+        unusable = keyed.loc[keyed[_GAP_STATE_COLUMN].notna(), [*keys, _GAP_STATE_COLUMN]]
+        if unusable.empty:
+            gap = gap.assign(**{_GAP_STATE_COLUMN: None})
+        else:
+            gap = gap.merge(unusable.drop_duplicates(subset=keys), on=keys, how="left")
+        no_value = gap[value_column].isna()
+        gap[_GAP_STATE_COLUMN] = (
+            gap[_GAP_STATE_COLUMN]
+            .where(no_value)
+            .mask(no_value & gap[_GAP_STATE_COLUMN].isna(), _GAP_NO_ROW)
+        )
         result[table_name] = gap.sort_values(keys, kind="stable").reset_index(drop=True)
     return result
 
@@ -518,7 +554,14 @@ def describe_missing_path_rows(
             f"{_key_examples(gap, table_name, limit, value_column)}"
         )
         values = pd.to_numeric(gap[value_column], errors="coerce")
-        if values.isna().any():
+        # 값이 없는 줄은 그 까닭대로 계산이 멈추는 글을 든다 — 계산의 차례(숫자 아님 → 빈 값 →
+        # 연결값 없음)와 같다.
+        states = gap[_GAP_STATE_COLUMN]
+        if states.eq(_GAP_NOT_NUMERIC).any():
+            halts.append(f"「{table_name}의 {value_column} 컬럼에 숫자가 아닌 값이 있습니다」")
+        if states.eq(_GAP_BLANK).any():
+            halts.append(f"「{table_name}의 {value_column} 값이 빈 대당 Capa 기준이 있습니다」")
+        if states.eq(_GAP_NO_ROW).any():
             halts.append(f"「{table_name} 연결값이 없는 대당 Capa 기준이 있습니다」")
         if values.le(0).any():
             halts.append(f"「{table_name}의 {value_column} 값은 0보다 커야 합니다」")
