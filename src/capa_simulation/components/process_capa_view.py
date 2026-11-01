@@ -159,6 +159,7 @@ from capa_simulation.services.required_shortening import (
     STATUS_MET,
     STATUS_NEW_LIMIT,
     TargetLevel,
+    single_target,
     target_for_month,
 )
 from capa_simulation.services.securement_rate import (
@@ -501,9 +502,9 @@ def reopen_entry_section(source: str | None) -> None:
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(정수 %)도."""
-    values = {target_for_month(target, month) for month in months}
-    if len(values) == 1:
-        return f"{TARGET_SOURCE_TEXT} {target_label(next(iter(values)))}"
+    value = single_target(target, months)
+    if value is not None:
+        return f"{TARGET_SOURCE_TEXT} {target_label(value)}"
     return f"{TARGET_SOURCE_TEXT} — 달마다 다름"
 
 
@@ -1524,9 +1525,9 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
 
 def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """대책 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
-    values = {target_for_month(target, month) for month in months}
-    if len(values) == 1:
-        return target_label(next(iter(values)))
+    value = single_target(target, months)
+    if value is not None:
+        return target_label(value)
     return "달마다 확보기준"
 
 

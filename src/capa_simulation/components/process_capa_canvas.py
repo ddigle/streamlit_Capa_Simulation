@@ -187,6 +187,7 @@ from capa_simulation.services.required_shortening import (
     STATUS_EXPIRED,
     STATUS_NEW_LIMIT,
     TargetLevel,
+    single_target,
     target_for_month,
 )
 from capa_simulation.services.securement_rate import (
@@ -1608,16 +1609,16 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
 
 
 def _target_text(target: TargetLevel, axis: Sequence[int]) -> str:
-    values = {target_for_month(target, month) for month in axis}
-    if len(values) == 1:
-        return f"단축 목표 {threshold_percent_label(next(iter(values)))}"
+    value = single_target(target, axis)
+    if value is not None:
+        return f"단축 목표 {threshold_percent_label(value)}"
     return "단축 목표 = 확보기준(달마다)"
 
 
 def _target_balance_label(target: TargetLevel, axis: Sequence[int]) -> str:
-    values = {target_for_month(target, month) for month in axis}
-    if len(values) == 1:
-        return f"목표({threshold_percent_label(next(iter(values)))}) 과부족"
+    value = single_target(target, axis)
+    if value is not None:
+        return f"목표({threshold_percent_label(value)}) 과부족"
     return "목표 과부족"
 
 
