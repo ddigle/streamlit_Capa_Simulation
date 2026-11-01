@@ -145,6 +145,10 @@ PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/required_shortening_panel.py", "_lob_rows"): (
         "LOB 칸 HTML — 그리는 자리가 html.escape(_escape)"
     ),
+    ("src/capa_simulation/scenario_registration.py", "check_registration_capacity"): (
+        "등록 때 돌려 본 대당 Capa 계산 글 — 리비전 메모에는 싣지 않고(꼴·개수만), 등록 경고 띠는 "
+        "그리는 자리(bigdataquery_registration._save_scenario)에서 markdown_safe_tildes"
+    ),
 }
 
 # 평문 자리로도 가는 글을 짓는 함수 — 짓는 곳에서 막지 않고 마크다운으로 그리는 자리에서 막는다.

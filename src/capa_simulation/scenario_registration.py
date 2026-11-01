@@ -38,14 +38,15 @@ from capa_simulation.services.unit_capacity import (
 
 BIGDATAQUERY_PIPELINE_VERSION: Final = "bigdataquery-core-data-v6"
 
-# 대당 Capa 를 멈춘 표 → 기준 정보 화면의 탭. 모듈수(`RQ_MODULE`)는 편집·리비전 대상이 아니다.
+# 대당 Capa 를 멈춘 표 → 기준 정보 화면의 탭(낫표까지 — 앱이 지은 이름이다). 모듈수(`RQ_MODULE`)는
+# 편집·리비전 대상이 아니다.
 _EDIT_TABS: Final = {
-    "RQ_UPEH": "UPEH",
-    "RQ_RUN_RATE": "효율",
-    "RQ_VITAL": "여유율",
-    "RQ_RUN_DAY": "일수",
-    "RQ_LOT_RATIO": "Lot측정률",
-    "RQ_WF_RATIO": "WF측정률",
+    "RQ_UPEH": "「UPEH」",
+    "RQ_RUN_RATE": "「효율」",
+    "RQ_VITAL": "「여유율」",
+    "RQ_RUN_DAY": "「일수」",
+    "RQ_LOT_RATIO": "「Lot측정률」",
+    "RQ_WF_RATIO": "「WF측정률」",
 }
 # 편집표에서 그 칸을 채우면 풀리는 꼴. 나머지 꼴(컬럼·월 형식·연결 키)은 표 자체가 깨져 편집표가
 # 서지 않는다.
@@ -105,7 +106,7 @@ class RegistrationCapacityCheck:
                 "없습니다 — 원천을 고쳐 다시 등록하세요."
             )
         tab = _EDIT_TABS.get(table or "")
-        where = f"기준 정보 화면 「{tab}」 탭" if tab else "기준 정보 화면"
+        where = f"기준 정보 화면 {tab} 탭" if tab else "기준 정보 화면"
         return (
             f"{where}에서 그 칸에 0보다 큰 값을 넣고 「변경사항 적용」 뒤 새 리비전으로 저장하면 "
             f"r{revision_no + 1}부터 계산이 섭니다."
