@@ -2873,7 +2873,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   설비 일정이 서는 첫 공정, 설비 프레임은 한 번만 거른다)도 여기서 판정해 페이지가 `dynamic_readiness` 를 직접 부르지 않는다.
   두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리(`SESSION_ONLY_CAPTION`)와 출처 띠 조각 — 소요 시나리오
   이름표(`source_scenario_text`) · 설비 기준 괄호(`source_equipment_text`) · 환산 대수 단서(`CONVERTED_UNITS_NOTE`) · UPEH 가정
-  단서(`upeh_assumption_note`) — 도 여기 한 벌이다(띠의 나머지는 모드마다 다르다).
+  단서(`upeh_assumption_note`) — 도 여기 한 벌이다(띠의 나머지는 모드마다 다르다). 그 글도
+  `tests/test_constraint_equipment_plan.py` 가 못 박는다.
 - `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
   만드는 순수 함수. 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰

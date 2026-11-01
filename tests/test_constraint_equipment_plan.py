@@ -1,14 +1,15 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인 · 계획 블록(`render_equipment_plan`)의
-# 멈추는 갈래 차례와 까닭 글을 화면 없이 본다.
+# 멈추는 갈래 차례와 까닭 글, 같은 출처 띠 글 조각을 화면 없이 본다.
 
-"""`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출).
+"""`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출)와 같은 글 조각.
 
 페이지 시험(`tests/test_constraint_simulation_page.py` ·
 `tests/test_modification_schedule_page.py`)은 두 모드의 화면 갈래를 AppTest 로 본다. 여기서는 함수
 하나가 두 모드에 같은 갈래 차례를 주는지 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어
 `subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 · 까닭 카드 그리기를 적는
 가짜로 본다. 계획 받기가 불리면 실패하는 가짜 `simulation_cache` 함수로 「앞 갈래가 멈추면 계획을
-받지 않는다」 를 잡는다.
+받지 않는다」 를 잡는다. 두 모드 출처 띠의 같은 조각(소요 시나리오 이름표 · 설비 기준 괄호 · UPEH
+가정 단서)의 글도 여기서 못 박는다.
 """
 
 from __future__ import annotations
