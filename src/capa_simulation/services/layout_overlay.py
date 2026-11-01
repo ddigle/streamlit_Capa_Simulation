@@ -68,7 +68,6 @@ LAYOUT_ROLES: Final = ("official", "overlay")
 # 빈 배치 차이의 지문(`layout_hash`). 0031 뒤 코드는 빈 차이에도 이 값을 적는다 — NULL 은 이관
 # 리비전이거나 0031 을 모르는 코드가 쓴 리비전이다.
 EMPTY_LAYOUT_DIGEST: Final = "empty"
-MARK_CHANGE_KINDS: Final = ("set", "drop")
 # 일정 리비전 출처(`origin`)의 허용값 — 0027 DDL 주석의 다섯에 「배치 차이 모두 지우기」·공식 발행
 # 정리(`layout_clear`)를 더한다. DuckDB 는 CHECK 를 고칠 수 없어 서비스가 본다.
 SCHEDULE_REVISION_ORIGINS: Final = (
