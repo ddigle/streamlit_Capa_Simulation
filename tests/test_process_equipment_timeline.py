@@ -48,10 +48,13 @@ from capa_simulation.services.process_equipment_timeline import (
     ROW_VIRTUAL,
     UNIT_EVENT_COLUMNS,
     UNIT_MONTH_COLUMNS,
+    HeldUnitChoice,
+    ModuleStart,
     NewUnitStart,
     ProcessEquipmentTimeline,
     build_process_equipment_timeline,
     dynamic_readiness,
+    held_unit_choices,
     new_unit_availability,
     production_position,
     unit_events,
@@ -930,32 +933,43 @@ def test_a_cutoff_change_moves_the_cells_and_the_key() -> None:
 # 시뮬레이션)
 
 
-def test_new_unit_availability_keeps_units_starting_on_or_after_the_reference_day() -> None:
-    """기준일 6/12 — 기여 시작 6/21 인 G1(묶음은 가장 늦은 모듈)과 축 뒤 LATE1 만 신규다.
+G1_MODULES = (
+    ModuleStart("M1", date(2026, 6, 11), 0.5),
+    ModuleStart("M2", date(2026, 6, 21), 0.5),
+)
+"""G1 묶음의 모듈마다 기여 시작(Qual 다음 날) · 환산비 — 첫 모듈 M1 6/11, 뒤 모듈 M2 6/21."""
 
-    G1 의 환산 대수는 모듈 M1 0.5 + M2 0.5 = 1.0 이다(묶음이 센 모듈의 환산비 합). LATE1(8/21)은 축
+
+def test_new_unit_availability_keeps_units_starting_on_or_after_the_reference_day() -> None:
+    """기준일 6/10 — 첫 모듈(M1) 기여 시작 6/11 인 G1 과 축 뒤 LATE1 만 신규다.
+
+    G1 의 환산 대수는 모듈 M1 0.5 + M2 0.5 = 1.0 이다(묶음이 센 모듈의 환산비 합). 묶음은 첫 모듈
+    날짜(6/11)로 판정하고 모듈마다의 기여 시작을 싣는다(2026-11-01 사용자 결정). LATE1(8/21)은 축
     뒤라 기여가 없어 `starts` 에 들지 않는다. EQ1(6/6)·EQ2(5/16)·EARLY1(3/2)·OLD1(기존 Y)·ST1(보관)·
     GEN1(범용)은 신규가 아니다.
     """
     rows, _ = _new_unit_fixture()
-    shares = new_unit_availability(_timeline(rows), since=date(2026, 6, 12))
-    assert shares.since == date(2026, 6, 12)
+    shares = new_unit_availability(_timeline(rows), since=date(2026, 6, 10))
+    assert shares.since == date(2026, 6, 10)
     assert shares.units == ("G1", "LATE1")
     assert shares.in_axis == 1
-    assert shares.starts == (NewUnitStart("G1", date(2026, 6, 21), 1.0, None),)
+    assert shares.starts == (NewUnitStart("G1", date(2026, 6, 11), 1.0, None, G1_MODULES),)
 
 
 @pytest.mark.parametrize(
     ("since", "units", "starts"),
     [
-        (date(2026, 6, 21), ("G1", "LATE1"), ("G1",)),
-        (date(2026, 6, 22), ("LATE1",), ()),
+        (date(2026, 6, 11), ("G1", "LATE1"), ("G1",)),
+        # 첫 모듈이 기준일 전이면 묶음 전체가 신규가 아니다 — 뒤 모듈(M2 6/21)이 기준일 뒤여도
+        # 빠진다(옛 규칙은 가장 늦은 모듈 6/21 로 판정해 6/21 까지 신규였다).
+        (date(2026, 6, 12), ("LATE1",), ()),
+        (date(2026, 6, 21), ("LATE1",), ()),
     ],
 )
 def test_the_reference_day_itself_counts_as_after(
     since: date, units: tuple[str, ...], starts: tuple[str, ...]
 ) -> None:
-    """「이후」 는 그날을 넣는다 — G1 기여 시작(6/21)이 기준일이면 들고 하루 뒤면 빠진다."""
+    """「이후」 는 그날을 넣는다 — G1 첫 모듈 기여 시작(6/11)이 기준일이면 들고 하루 뒤면 빠진다."""
     rows, _ = _new_unit_fixture()
     shares = new_unit_availability(_timeline(rows), since=since)
     assert shares.units == units
@@ -963,7 +977,8 @@ def test_the_reference_day_itself_counts_as_after(
 
 
 def test_units_that_came_before_the_axis_keep_their_start_and_exit() -> None:
-    """기준일 3/1 — EARLY1(3/2, 축 앞)·EQ2(5/16, 7/1 정지)·EQ1(6/6)·G1(6/21)·LATE1 이 신규다.
+    """기준일 3/1 — EARLY1(3/2, 축 앞)·EQ2(5/16, 7/1 정지)·EQ1(6/6)·G1(첫 모듈 6/11)·LATE1 이
+    신규다.
 
     축 앞에 들어온 EARLY1 도 축 안에 기여하므로 기여 시작 그대로 든다 — 어느 증가에 붙일지(개조 일수
     안)는 제약 계산이 정한다. EQ2 는 정지일(7/1)이 `until` 이다. 축 뒤 LATE1 만 빠진다.
@@ -976,8 +991,70 @@ def test_units_that_came_before_the_axis_keep_their_start_and_exit() -> None:
         NewUnitStart("EARLY1", date(2026, 3, 2), 1.0, None),
         NewUnitStart("EQ2", date(2026, 5, 16), 1.0, date(2026, 7, 1)),
         NewUnitStart("EQ1", date(2026, 6, 6), 1.0, None),
-        NewUnitStart("G1", date(2026, 6, 21), 1.0, None),
+        NewUnitStart("G1", date(2026, 6, 11), 1.0, None, G1_MODULES),
     )
+
+
+def test_units_picked_as_holdings_are_not_new_units() -> None:
+    """보유 제약 설비로 고른 호기(결정 B3)는 신규 후보에서 빠진다 — 두 번 세지 않는다."""
+    rows, _ = _new_unit_fixture()
+    shares = new_unit_availability(
+        _timeline(rows), since=date(2026, 3, 1), excluded=("EQ1", "G1", "NOPE")
+    )
+    assert shares.units == ("EARLY1", "EQ2", "LATE1")
+    assert tuple(entry.unit for entry in shares.starts) == ("EARLY1", "EQ2")
+
+
+def test_held_unit_choices_list_the_units_that_can_be_held() -> None:
+    """보유 「호기 고르기」 선택지 — 보관 N · HBM·EDP 이고 축 안에 하루라도 있는 호기(호기 번호
+    차례).
+
+    OLD1(기존 Y)·EARLY1(3/2 — 축 첫 W/D 날 4/21 전)은 처음부터 있어 기여 시작이 None 이다. EQ2 는
+    7/1 정지가 축 끝(7/21) 안이라 남고, G1 은 모듈 둘의 날짜를 싣는다. ST1(보관)·GEN1(범용)과 축
+    뒤에 들어오는 LATE1(8/21)은 없다.
+    """
+    rows, _ = _new_unit_fixture()
+    choices = held_unit_choices(_master(rows), process=PROCESS, cutoff_days=10, months=AXIS)
+    # 호기 번호 차례 — 이름 끝 숫자(1 넷 → 2), 같으면 이름.
+    assert [choice.unit for choice in choices] == ["EARLY1", "EQ1", "G1", "OLD1", "EQ2"]
+    by_unit = {choice.unit: choice for choice in choices}
+    assert by_unit["OLD1"] == HeldUnitChoice("OLD1", None, "Y", 1.0, None, None, None)
+    assert by_unit["EARLY1"].start is None
+    assert by_unit["EQ1"].start == date(2026, 6, 6)
+    assert (by_unit["EQ2"].until, by_unit["EQ2"].until_kind) == (date(2026, 7, 1), "정지")
+    group = by_unit["G1"]
+    assert (group.units, group.start, group.modules) == (1.0, date(2026, 6, 11), G1_MODULES)
+    assert group.model == "BOND-X, BOND-Y"
+
+
+def test_held_unit_choices_trim_dates_to_the_axis() -> None:
+    """축 첫 W/D 날 전에 나간 호기는 없고, 축 뒤 정지·반출은 None 이다. 축 뒤에 들어오는 모듈은 환산
+    합에서 빠진다(묶음 H: H1 6/1 · H2 9/1 → 0.5대)."""
+    rows = [
+        _unit(
+            "GONE1",
+            date(2026, 1, 10),
+            arrival=date(2026, 1, 1),
+            existing="Y",
+            removal=date(2026, 4, 21),
+        ),
+        _unit(
+            "STAY1",
+            date(2026, 1, 10),
+            arrival=date(2026, 1, 1),
+            existing="Y",
+            relocation=date(2026, 7, 22),
+        ),
+        _unit("H1", date(2026, 5, 31), ratio=0.5, parent="H"),
+        _unit("H2", date(2026, 8, 31), ratio=0.5, parent="H"),
+    ]
+    choices = held_unit_choices(_master(rows), process=PROCESS, cutoff_days=10, months=AXIS)
+    assert [choice.unit for choice in choices] == ["STAY1", "H"]
+    stay, held = choices
+    assert (held.units, held.start, held.modules) == (0.5, date(2026, 6, 1), ())
+    assert (stay.until, stay.until_kind) == (None, None)
+    assert held_unit_choices(_master(rows), process="없는 공정", cutoff_days=10, months=AXIS) == ()
+    assert held_unit_choices(_master(rows), process=PROCESS, cutoff_days=10, months=()) == ()
 
 
 def test_operating_downtime_does_not_change_the_new_units() -> None:
