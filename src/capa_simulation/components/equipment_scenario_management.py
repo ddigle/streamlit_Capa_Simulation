@@ -17,9 +17,9 @@
 - **리비전 표**: 고른 시나리오의 일정 리비전(r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동
   행·배치·공식·메모). 「배치」 는 저장된 배치 차이 행 수(최신 줄에는 시나리오 표와 같은 실효 표지),
   옛 판 흔적은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을
-  적는다. 표와 리비전 상자는 최근 `SCHEDULE_REVISION_LIST_LIMIT` 줄까지이고, 표 아래 한 줄이 늘
-  전체 수와 출처별 수를 적는다(「전체 12줄(이관 10 · 저장 2)」, 한도에 걸리면 「최근 50줄 · 전체
-  82줄(…) — 더 옛 32줄은 …」).
+  적는다. 표와 리비전 상자는 리비전을 **전부** 싣는다(2026-11-01 사용자 결정 A4 — 표는 스크롤·
+  찾기, 상자는 글로 찾음. 사이드바 팝업 라디오만 최근 50). 표 아래 한 줄이 늘 전체 수와 출처별 수를
+  적는다(「전체 82줄(이관 70 · 저장 12)」).
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
   불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 바뀌는 호기
   수와 「일정 없음」 이 되는 호기를 보이고 확인 체크 뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을
@@ -55,6 +55,7 @@ import capa_simulation.settings as settings
 from capa_simulation.components import write_guard
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
+    common_revision_words,
     equipment_write_token,
     has_unsaved_equipment_edits,
     revision_count_line,
@@ -499,11 +500,7 @@ def revision_rows(
                 "저장시각": item.created_at,
                 "저장자": item.saved_by,
                 "출처": ORIGIN_WORDS.get(item.origin, item.origin),
-                "공통": (
-                    f"r{common_numbers[item.common_revision_id]}"
-                    if item.common_revision_id in common_numbers
-                    else ""
-                ),
+                "공통": common_revision_words(item, common_numbers),
                 "호기행": item.unit_row_count,
                 "비가동행": item.downtime_row_count,
                 "배치": (
@@ -622,7 +619,7 @@ def layout_trace_sentence(
     if not traces:
         return (
             f"{name} 에 옛 판이 저장해 앞 리비전의 가정 배치가 빠진 리비전이 "
-            f"{scenario.layout_trace_count:,}개 있습니다(아래 표보다 옛 리비전) — 빠지기 전 "
+            f"{scenario.layout_trace_count:,}개 있습니다 — 빠지기 전 "
             "리비전으로 되돌리면(이 리비전으로 되돌리기) 되살아납니다."
         )
     latest = max(traces)
@@ -890,11 +887,9 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             "배치": st.column_config.TextColumn(width="medium"),
         },
     )
-    # 표가 목록 한도(최근 n줄)에 걸려도 전체 수와 출처별 수를 늘 한 줄로 — 늘 서 있어 아래 칸 자리가
-    # 그대로다.
-    st.caption(
-        revision_count_line(len(revisions), origins, unit="줄", place="이 표와 「리비전」 상자")
-    )
+    # 전체 수와 출처별 수를 늘 한 줄로 — 늘 서 있어 아래 칸 자리가 그대로다. 사내 런북은 표를 세지
+    # 않고 이 줄의 이관 수를 8-4s `L` 과 견준다.
+    st.caption(revision_count_line(len(revisions), origins, unit="줄"))
     by_id = {item.schedule_revision_id: item for item in revisions}
     default_revision = (
         scenario.latest_schedule_revision_id
@@ -2261,7 +2256,10 @@ def _released_revision(
     database_path: str, scenario_id: str, release_no: int
 ) -> EquipmentScheduleRevisionSummary | None:
     """공식 `release_no` 가 지금 최신 발행이고 그 설비 시나리오의 것이면 그 발행이 가리킨 일정
-    리비전. 캐시가 아니라 저장소에서 바로 읽는다(거부 직후에 부른다). 아니거나 읽지 못하면 None."""
+    리비전. 캐시가 아니라 저장소에서 바로 읽는다(거부 직후에 부른다). 아니거나 읽지 못하면 None.
+
+    그 리비전은 id 로 한 줄만 읽는다 — 리비전 목록은 한도 없이 전부라(결정 A4) 거기서 찾을 까닭이
+    없다."""
     repository = get_equipment_repository(database_path)
     try:
         release = repository.load_scenario_catalog().latest_release
@@ -2271,13 +2269,9 @@ def _released_revision(
             or release.equipment_scenario_id != scenario_id
         ):
             return None
-        revisions = repository.list_schedule_revisions(scenario_id)
+        return repository.schedule_revision_summary(release.schedule_revision_id)
     except BOOTSTRAP_ERRORS:
         return None
-    return next(
-        (item for item in revisions if item.schedule_revision_id == release.schedule_revision_id),
-        None,
-    )
 
 
 def publish_result_message(

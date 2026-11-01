@@ -277,6 +277,9 @@ class EquipmentScheduleRevisionSummary:
     layout_unit_count: int = 0
     layout_mark_count: int = 0
     layout_label_count: int = 0
+    # 함께 본 공통 대장의 번호(화면 「공통 rN」). 공통 리비전 번호는 불변이라 합친 본문 캐시에도
+    # 실어도 된다. 모르면(공통 없음·옛 캐시 값) None — 화면은 공통 이력 목록에서 찾는다.
+    common_revision_no: int | None = None
 
     @property
     def layout_digest(self) -> str:
@@ -2164,10 +2167,15 @@ class DuckDBEquipmentRepository:
             return [_scenario_summary(row) for row in scenario_store.scenario_rows(connection)]
 
     def list_schedule_revisions(
-        self, equipment_scenario_id: str, *, limit: int = 50
+        self, equipment_scenario_id: str, *, limit: int | None = None
     ) -> list[EquipmentScheduleRevisionSummary]:
-        """한 설비 시나리오의 일정 리비전, 번호 큰 것부터."""
-        if limit <= 0:
+        """한 설비 시나리오의 일정 리비전, 번호 큰 것부터. `limit` 이 None 이면 전부(2026-11-01
+        사용자 결정 A4 — 시나리오 관리 리비전 표·상자와 저장 이력은 한도 없이 싣는다).
+
+        읽는 시간은 한도와 거의 상관없다 — 투영의 하위 셈이 그 시나리오 리비전을 모두 돈다(샘플
+        관측: 합성 사본 3,000개에서 최근 50 · 전부 둘 다 약 70ms).
+        """
+        if limit is not None and limit <= 0:
             raise ValueError("설비 시나리오 리비전 조회 건수는 1 이상이어야 합니다.")
         with self._connect() as connection:
             rows = scenario_store.schedule_revision_rows(
@@ -2175,12 +2183,13 @@ class DuckDBEquipmentRepository:
             )
         return [_schedule_revision_summary(row) for row in rows]
 
-    def count_schedule_revisions_by_origin(self, equipment_scenario_id: str) -> dict[str, int]:
-        """한 설비 시나리오의 일정 리비전 수를 출처(`legacy`·`save`·…)별로 —
-        `list_schedule_revisions` 의 `limit` 밖까지 센 전체 수(화면이 「최근 n · 전체 N」 과
-        출처별 수를 적는다)."""
+    def schedule_revision_summary(
+        self, schedule_revision_id: str
+    ) -> EquipmentScheduleRevisionSummary | None:
+        """일정 리비전 한 줄(목록과 같은 투영). 없으면 None — 목록 한도와 상관없이 id 로 찾는다."""
         with self._connect() as connection:
-            return scenario_store.schedule_revision_origin_counts(connection, equipment_scenario_id)
+            row = scenario_store.schedule_revision_row(connection, schedule_revision_id)
+        return _schedule_revision_summary(row) if row is not None else None
 
     def load_scenario_catalog(self) -> EquipmentScenarioCatalog:
         """설비 시나리오 목록·최신 공식 발행·옛 배포 흔적 수를 **연결 하나**로 읽는다(목록
@@ -4381,6 +4390,9 @@ def _schedule_revision_summary(row: Mapping[str, object]) -> EquipmentScheduleRe
         note=_optional_str(row["note"]),
         saved_by=_optional_str(row["saved_by"]),
         common_revision_id=_optional_str(row["common_revision_id"]),
+        common_revision_no=None
+        if row["common_revision_no"] is None
+        else as_int(row["common_revision_no"], "공통 대장 리비전 번호"),
         legacy_revision_id=_optional_str(row["legacy_revision_id"]),
         unit_row_count=as_int(row["unit_row_count"], "일정 행 수"),
         downtime_row_count=as_int(row["downtime_row_count"], "비가동 일정 행 수"),

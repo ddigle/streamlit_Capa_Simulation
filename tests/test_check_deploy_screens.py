@@ -2106,20 +2106,27 @@ def test_the_revision_count_carries_the_whole_count_past_the_list_limit() -> Non
 def test_the_revision_total_pattern_reads_the_app_line() -> None:
     """스크립트는 앱 모듈을 부르지 않고 꼴만 옮긴다 — 앱이 팝업에 적는 한도 줄을 그 꼴이 읽는다."""
     from capa_simulation.components.equipment_data_workspace import revision_count_line
+    from capa_simulation.components.equipment_scenario_status import OLDER_REVISIONS_PLACE
 
     text = revision_count_line(
-        50, {"legacy": 70, "save": 12}, unit="개", place="이 목록", by_origin=False
+        50,
+        {"legacy": 70, "save": 12},
+        unit="개",
+        elsewhere=OLDER_REVISIONS_PLACE,
+        by_origin=False,
     )
     found = screens.REVISION_TOTAL_PATTERN.search(text)
     assert found is not None and found.groups() == ("50", "82")
     assert (
         screens.REVISION_TOTAL_PATTERN.search(
-            revision_count_line(4, {"save": 4}, unit="개", place="이 목록", by_origin=False)
+            revision_count_line(
+                4, {"save": 4}, unit="개", elsewhere=OLDER_REVISIONS_PLACE, by_origin=False
+            )
         )
         is None
     )
     status = _text(COMPONENTS / "equipment_scenario_status.py")
-    assert 'unit="개", place="이 목록", by_origin=False' in " ".join(status.split())
+    assert 'unit="개", elsewhere=OLDER_REVISIONS_PLACE, by_origin=False' in " ".join(status.split())
 
 
 def test_the_space_scenario_row_contract_matches_the_app() -> None:

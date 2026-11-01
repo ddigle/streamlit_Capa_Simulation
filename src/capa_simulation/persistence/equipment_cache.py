@@ -478,9 +478,11 @@ def load_layout_publish_preview(
     )
 
 
-# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표·설비
-# 마스터 탭 저장 이력). 한도 밖 리비전은 목록에 없고, 전체 수는 출처별 셈
-# (`load_equipment_schedule_revision_counts`)이 따로 적는다.
+# 사이드바 설비 시나리오 팝업 라디오가 싣는 최근 리비전 수 — 라디오는 한 줄씩 길어 최근 n 개만
+# 싣는다(2026-11-01 사용자 결정 A4 「표 · 상자는 전부, 팝업만 50」). 시나리오 관리 「설비 시나리오」
+# 구획 표·리비전 상자와 설비 마스터 탭 저장 이력은 한도 없이 전부 싣는다 — 표는 스크롤·찾기가 되고
+# 상자는 글을 쳐서 찾는다. 처음 설비 이력 목록의 `limit=50` 기본값을 물려받은 수이고 성능 장치가
+# 아니다(전부 읽어도 시간이 거의 같다 — `list_schedule_revisions`).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
 
@@ -496,19 +498,16 @@ def _load_schedule_revisions_payload(
     stamp: DatabaseStamp,
     generation: WriteGeneration,
 ) -> _ScheduleRevisionsPayload:
-    """최근 `SCHEDULE_REVISION_LIST_LIMIT` 줄과 출처별 전체 수를 한 칸에 — 둘이 같은 키(세대·
-    stat·TTL)로 함께 채워지고 함께 갈려, 표의 줄과 그 아래 「전체 N줄」 이 서로 다른 때의 값을
-    오래 들지 않는다."""
+    """그 시나리오의 일정 리비전 전부와 출처별 수를 한 칸에 — 출처별 수는 같은 줄에서 세어 표와 그
+    아래 「전체 N줄(이관 L · …)」 이 늘 같은 읽기에서 나온다."""
     del stamp, generation
-    repository = get_equipment_repository(database_path)
+    rows = get_equipment_repository(database_path).list_schedule_revisions(equipment_scenario_id)
+    origins: dict[str, int] = {}
+    for summary in rows:
+        origins[summary.origin] = origins.get(summary.origin, 0) + 1
     return {
-        "rows": [
-            _payload(summary, EquipmentScheduleRevisionSummary)
-            for summary in repository.list_schedule_revisions(
-                equipment_scenario_id, limit=SCHEDULE_REVISION_LIST_LIMIT
-            )
-        ],
-        "origins": repository.count_schedule_revisions_by_origin(equipment_scenario_id),
+        "rows": [_payload(summary, EquipmentScheduleRevisionSummary) for summary in rows],
+        "origins": dict(sorted(origins.items())),
     }
 
 
@@ -526,7 +525,8 @@ def _schedule_revisions_payload(
 def load_equipment_schedule_revisions(
     database_path: str, equipment_scenario_id: str
 ) -> tuple[EquipmentScheduleRevisionSummary, ...]:
-    """한 설비 시나리오의 일정 리비전(번호 큰 것부터, 최근 `SCHEDULE_REVISION_LIST_LIMIT` 개).
+    """한 설비 시나리오의 일정 리비전 전부(번호 큰 것부터) — 시나리오 관리 「설비 시나리오」 구획
+    표·리비전 상자, 설비 마스터 탭 저장 이력.
 
     남의 저장(함께 넣기 포함)으로 늘 수 있어 목록과 같은 세대·stat·TTL 로 지킨다.
     """
@@ -536,13 +536,27 @@ def load_equipment_schedule_revisions(
     )
 
 
+def load_recent_equipment_schedule_revisions(
+    database_path: str, equipment_scenario_id: str
+) -> tuple[EquipmentScheduleRevisionSummary, ...]:
+    """최근 `SCHEDULE_REVISION_LIST_LIMIT` 개(번호 큰 것부터) — 사이드바 설비 시나리오 팝업 라디오.
+
+    전부 읽은 칸(`load_equipment_schedule_revisions` 와 같은 칸)의 앞머리다 — 따로 읽지 않는다.
+    한도는 부를 때 이 모듈에서 찾는다(시험이 갈아 끼운다).
+    """
+    rows = _schedule_revisions_payload(database_path, equipment_scenario_id)["rows"]
+    return tuple(
+        EquipmentScheduleRevisionSummary(**item) for item in rows[:SCHEDULE_REVISION_LIST_LIMIT]
+    )
+
+
 def load_equipment_schedule_revision_counts(
     database_path: str, equipment_scenario_id: str
 ) -> dict[str, int]:
-    """그 설비 시나리오의 일정 리비전 수를 출처(`origin`)별로 — 목록 한도 밖까지 센 전체 수.
+    """그 설비 시나리오의 일정 리비전 수를 출처(`origin`)별로 — 합이 전체 리비전 수다.
 
-    `load_equipment_schedule_revisions` 와 같은 캐시 칸(같은 세대·stat·TTL)에서 읽는다. 합이 전체
-    리비전 수다. 받은 쪽이 고쳐도 캐시 값이 바뀌지 않게 새 dict 로 준다.
+    `load_equipment_schedule_revisions` 와 같은 캐시 칸(같은 세대·stat·TTL)의 같은 줄에서 센다.
+    받은 쪽이 고쳐도 캐시 값이 바뀌지 않게 새 dict 로 준다.
     """
     return dict(_schedule_revisions_payload(database_path, equipment_scenario_id)["origins"])
 

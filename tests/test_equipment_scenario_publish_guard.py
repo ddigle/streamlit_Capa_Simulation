@@ -307,9 +307,10 @@ def test_the_release_row_carries_its_revision_number(tmp_path: Path) -> None:
 def test_the_official_revision_beyond_the_list_limit_is_still_named(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """개선 I25 — 리비전 목록이 최근 n 줄까지라(`SCHEDULE_REVISION_LIST_LIMIT`, 사내 리뷰
-    202610271800 사외 요청 4) 공식 r1 이 한도 밖으로 밀려도 발행 확인 글과 시나리오 표가 「r1」 을
-    적는다 — 이 세션은 최신 r3 을 들고 있어 최신·세션으로는 찾지 못한다."""
+    """개선 I25 — 사이드바 팝업 라디오가 최근 n 개까지라(`SCHEDULE_REVISION_LIST_LIMIT`, 사내 리뷰
+    202610271800 사외 요청 4) 공식 r1 이 그 한도 밖으로 밀려도 발행 확인 글과 시나리오 표가 「r1」
+    을 적는다 — 이 세션은 최신 r3 을 들고 있어 최신·세션으로는 찾지 못한다. 구획 리비전 표는 그
+    한도와 상관없이 전부 싣는다(2026-11-01 결정 A4)."""
     repository = _seeded(tmp_path)
     for day in ("2026-08-24", "2026-08-31"):
         session = _session(repository)
@@ -327,9 +328,10 @@ def test_the_official_revision_beyond_the_list_limit_is_still_named(
     assert "지금 공식 v1 · 「운영 일정」 r1 → 새 공식 v2 · 「운영 일정」 r3" in captions, captions
     table = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
     assert table["상태"].tolist() == ["공식 v1 · r1"]
-    # 리비전 표는 한도대로 한 줄(r3)뿐이다 — 번호는 목록이 아니라 발행 줄에서 왔다.
+    # 리비전 표는 팝업 한도와 상관없이 전부(r3·r2·r1)이고 공식 v1 은 r1 줄에 선다.
     revisions = next(frame.value for frame in app.dataframe if "리비전명" in frame.value)
-    assert revisions["리비전"].tolist() == ["r3"]
+    assert revisions["리비전"].tolist() == ["r3", "r2", "r1"]
+    assert revisions["공식"].tolist() == ["", "", "v1"]
 
 
 def test_the_preview_names_an_older_official_revision_the_session_does_not_hold(

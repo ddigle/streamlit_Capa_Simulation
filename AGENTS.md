@@ -166,7 +166,10 @@ Windows(PowerShell):
   전체가 넘는다). `-e` 로 남은 자리(구획 하나·짧은 러너)는 6천 자 안쪽이다. ③ 권한 비트(0600·0700)는
   담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(`test_container_start.py` 의
   `keeps_permission_bits`, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
-  화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다.
+  화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. 사외 CI 의 둘째 작업
+  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 넷을 사내보다 먼저 보인다 — 작업 단위
+  `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux `verify` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
+  판 본 뒤 굳힐지 다시 묻는다). 그 칸이 빨가면 이 넷부터 본다. 계약은 `tests/test_ci_workflow.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
@@ -2451,8 +2454,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「공통 — 공식 일정 기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」(`equipment_grid.scenario_column_help`)이고 표 범례가
     같은 뜻이다.
   - 저장 이력은 고른 설비 시나리오의 일정 리비전(번호·저장자·출처·공통 rN)이고 조회는 `load_saved_pair`(저장 때의 짝)다.
-    목록은 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지이고, 한도에 걸리면 머리 한 줄 끝에 「최근 50줄 · 전체 N줄 — 더 옛 …」 을
-    붙인다(`revision_count_line` — 새 줄을 세우지 않아 아래 칸이 밀리지 않는다). 공통 칸만 바꾼 저장은 일정 리비전을 만들지
+    표와 「조회 리비전」 상자는 리비전을 **전부** 싣는다(2026-11-01 사용자 결정 A4 — 표는 스크롤·찾기, 상자는 글로 찾음).
+    「공통」 칸은 리비전 줄이 들고 온 번호(`common_revision_no`)가 먼저다(`common_revision_words` — 공통 대장 이력 목록은
+    최신 50개라 옛 줄의 공통이 그 밖에 있다). 공통 칸만 바꾼 저장은 일정 리비전을 만들지
     않아 그 표에 없으므로 표 아래 안내 한 줄과 펼침 「공통 대장 저장 이력」(공통 rN·저장자·변경메모·호기행·그 공통을 함께 본 이
     시나리오 일정 rN — `_render_common_history`, 최신 50개)이 선다. 그보다 옛 공통 리비전이 있으면 머리가 「최근 n건(rA~rB)」 이다
     (`common_history_label`). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
@@ -2469,8 +2473,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꺼진 단추라 풍선이 없다. 푸는 법 「이 화면 탭을 닫고 다시 여세요」 까지 적는다). Space 현황은 고를 수 있는 줄이다(S3).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
-    선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23). 리비전 라디오는 최근 50개까지이고, 한도에 걸리면 라디오
-    아래(팝업 맨 끝) 「최근 50개 · 전체 N개 — 더 옛 n개는 이 목록에 없습니다.」 한 줄이 선다. 화면 확인 스크립트
+    선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23). 리비전 라디오는 최근 50개까지이고(한 줄씩 길어 — 결정
+    A4. `load_recent_equipment_schedule_revisions` 가 전부 읽은 칸의 앞머리를 준다), 한도에 걸리면 라디오 아래(팝업 맨 끝)
+    「최근 50개 · 전체 N개 — 더 옛 n개는 시나리오 관리 › 설비 시나리오에서 고릅니다.」 한 줄이 선다(`OLDER_REVISIONS_PLACE`).
+    화면 확인 스크립트
     (`equipment_scenario_line`·`space_scenario_row`)가 그 줄의 전체 수를 「리비전 50개(전체 N개)」 로 옮긴다
     (`REVISION_TOTAL_PATTERN` — 글 꼴을 바꾸면 함께 고친다).
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
@@ -2501,9 +2507,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   표(「공식 vN · rM」/활성 — rM 은 공식 발행 리비전, 발행 확인 글과 같은 `official_release_revision_no` 로 찾고 못 찾으면 「공식 vN」 만·최신 rN·
   리비전 수·저장된 배치 차이)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가
   있으면 「배치 차이 모두 지우기」 도), 리비전 표(리비전명·출처 `이관/저장/복제/함께 넣기/되돌리기/배치 차이 정리`·공통 rN·행
-  수·배치 — 표와 리비전 상자는 최근 `SCHEDULE_REVISION_LIST_LIMIT`(50) 줄까지, 표 아래 한 줄이 늘 전체 수와 출처별 수
-  「전체 12줄(이관 10 · 저장 2)」/「최근 50줄 · 전체 82줄(이관 70 · 저장 12) — 더 옛 32줄은 …」 을 적는다 — 사내 런북의
-  「리비전 N줄 = 이관 N」 은 표를 세지 않고 이 줄의 이관 수를 8-4s `L` 과 견준다)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
+  수·배치 — 표와 리비전 상자는 리비전을 **전부** 싣는다(2026-11-01 사용자 결정 A4 — 사이드바 팝업 라디오만 최근 50). 표
+  아래 한 줄이 늘 전체 수와 출처별 수 「전체 82줄(이관 70 · 저장 12)」 을 적는다 — 사내 런북의 「리비전 N줄 = 이관 N」 은
+  이 줄의 이관 수를 8-4s `L` 과 견준다. 상자가 길어도 `prune_named_choice` 는 지금 선택지 글자를 늘 든다)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
   시나리오」·「리비전명」·「공식으로 발행…」(지금 공식 → 새 공식, 최신이 아니면 그 사실, 발행 번호 대조) — 과 옛 배포 흔적이
   있을 때만 「이대로 이어 쓰기」. 구획 본문은 DB 경로와 그 회차 세션만 받아 따로 선다.
   - 쓰기는 저장소가 하고 그 뒤 이 화면이 `clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 import 하지
@@ -2543,8 +2549,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확인 글 「지금 공식 vN · 「…」 rK」 의 rK 는 발행 줄이 들고 온 번호다(`official_release_revision_no` — 저장소
     `latest_release_row` 가 발행한 일정 리비전의 `revision_no` 를 함께 읽어 `EquipmentRelease.revision_no` 로 싣는다, 목록 캐시와
     같은 칸). 그 시나리오 최신·세션 스냅샷만 보면 공식이 그 시나리오 최신이 아니고 세션이 그것을 들고 있지 않을 때 번호가 빠져
-    지금 공식이 최신처럼 읽혔고(2026-10-26 E2E 3회차), 리비전 목록에서 찾으면 공식이 목록 한도(최근
-    `SCHEDULE_REVISION_LIST_LIMIT` 줄) 밖일 때 빠졌다(개선 I25). 발행 줄에 번호가 없는 옛 캐시 값이면 최신·세션 스냅샷에서만 찾고,
+    지금 공식이 최신처럼 읽혔고(2026-10-26 E2E 3회차), 리비전 목록에서 찾으면 공식이 그때의 목록 한도(최근 50줄) 밖일 때
+    빠졌다(개선 I25 — 지금 구획 목록은 전부지만 발행 줄 번호를 그대로 쓴다). 발행 줄에 번호가 없는 옛 캐시 값이면 최신·세션 스냅샷에서만 찾고,
     없으면 번호를 뺀다.
     고른 리비전이 이미 지금 공식이면 저장소가 쓰지 않고 그 발행을 돌려주므로 확인 글은 「→ 새 공식」 없이 지금 공식과 「이미 공식
     발행인 리비전입니다 — 발행해도 바뀌지 않습니다」 만 적고, 누르면 「「…」 rK은 이미 공식 vN입니다 — 새로 발행하지
@@ -2993,8 +2999,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 쪽은 **리비전 내용(불변)과 바뀔 수 있는 것**을 나눈다. 합친 본문 `_load_merged_payload`(공개
     `load_merged_equipment_snapshot`)는 (DB, 공통 id, 일정 id) **쌍 키**에 세대가 없다(`MERGED_SNAPSHOT_CACHE_ENTRIES` 16칸).
     설비 시나리오 목록(`load_equipment_scenario_catalog` — 시나리오·각 최신·리비전 수·최신 발행·흔적 수)과 시나리오 리비전
-    목록(`load_equipment_schedule_revisions` — 최근 `SCHEDULE_REVISION_LIST_LIMIT` 줄, 같은 칸에 한도 밖까지 센 출처별 수
-    `load_equipment_schedule_revision_counts` 를 함께 실어 표와 그 아래 「전체 N줄」 이 함께 갈린다)은 (DB, stat, 세대
+    목록(`load_equipment_schedule_revisions` — 그 시나리오 리비전 전부, 같은 칸에 같은 줄에서 센 출처별 수
+    `load_equipment_schedule_revision_counts` 를 함께 실어 표와 그 아래 「전체 N줄」 이 함께 갈린다. 팝업 라디오의 최근
+    `SCHEDULE_REVISION_LIST_LIMIT` 개는 `load_recent_equipment_schedule_revisions` 가 같은 칸에서 자른다)은 (DB, stat, 세대
     `"equipment_scenario"`) 키에 TTL 15초, 8칸이다. 공식 스냅샷
     (`load_official_equipment_snapshot`)은 공통 최신 id + 목록의 최신 발행 → 합친 본문이라 발행만 바뀌어도 다른 쌍 키로 간다.
     CSV 바이트도 쌍 키다. 이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터
@@ -4470,7 +4477,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   항목에 걸렸다(보관함 「되돌리기」 가 다른 보관본까지 되돌림, 2026-10-27 E2E). 첫 누름이 그 글자를 바꿨어도(이름 바꾸기·리비전명)
   풀지 못해 고름이 세션 시나리오·최신 리비전으로 튀고 그 대상에 같은 이름 쓰기를 한 뒤 그 이름으로 성공을 알렸다(설비 시나리오
   「이름 바꾸기」, 같은 날 E2E). `prune_named_choice` 는 앞 회차들이 그린
-  글자를 들어 글자만 바뀐 항목은 그대로 잇고, 정말 빠진 항목이면 바꾼 회차와 그 뒤 `TRAILING_PRESS_SECONDS` 안의 회차를
+  글자를 들어(지금 선택지 글자는 늘, 지난 글자는 256 개까지 — 리비전 상자는 리비전을 전부 실어 256 보다 길 수 있다) 글자만 바뀐 항목은 그대로 잇고, 정말 빠진 항목이면 바꾼 회차와 그 뒤 `TRAILING_PRESS_SECONDS` 안의 회차를
   `moved` 로 알린다 — 부르는 쪽은 그 회차의 쓰기 누름을 걸지 않는다(보관함은 이 세션이 방금 쓴 것이면 그 성공 알림을, 남이
   먼저 처리한 것이면 「그 사이 보관함에서 빠졌습니다」 를 낸다, `tests/test_scenario_archive_double_press.py`). 설비
   시나리오·리비전은 지우는 길이 없어 글자 잇기만 쓴다(`tests/test_equipment_scenario_double_press.py`). 시나리오
@@ -5688,6 +5695,6 @@ f-string 키는 넘겨받은 기준 키에서 파생되므로 그 기준 키가 
   표시가 근거이고, 없으면 통합하는 쪽이 직접 돌린 결과가 근거다.
 
 `.github/workflows/ci.yml` 이 **후보 브랜치(`cand/**`) 푸시**·PR·`main` 푸시에서 검증 4종을
-돌린다. 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
+돌린다(둘째 작업 `windows-pytest` 는 Windows pytest 만 — 막지 않는다, 2장). 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
 public 이고(2026-10-03 유지 결정) `main` 에 브랜치 보호를 걸지 않아 「통과해야만 병합」은 강제되지
 않는다** — 빨간 것은 합치지 않는다는 규칙을 사람이 지킨다.

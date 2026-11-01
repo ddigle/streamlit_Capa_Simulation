@@ -94,7 +94,8 @@ OPERATIONS_SCENARIO_ID = "operations"
 
 # 시나리오 일정 리비전 한 줄의 투영 — 별칭이 곧 `EquipmentScheduleRevisionSummary` 필드 이름이다.
 # 이관 리비전(`legacy_revision_id`)은 옛 마스터·비가동 표의 행 수를 센다 — 공통 리비전
-# 요약과 같은 표다.
+# 요약과 같은 표다. 함께 본 공통 대장의 번호(`common_revision_no` — 화면 「공통 rN」)도 싣는다 —
+# 리비전 표는 한도 없이 전부라 공통 대장 이력 목록(최신 50개)에 없는 공통도 번호가 선다.
 _SCHEDULE_REVISION_PROJECTION = """
     s.schedule_revision_id AS schedule_revision_id,
     s.equipment_scenario_id AS equipment_scenario_id,
@@ -105,6 +106,8 @@ _SCHEDULE_REVISION_PROJECTION = """
     s.note AS note,
     s.saved_by AS saved_by,
     s.common_revision_id AS common_revision_id,
+    (SELECT r.revision_no FROM equipment_ops.revision r
+     WHERE r.revision_id = s.common_revision_id) AS common_revision_no,
     s.legacy_revision_id AS legacy_revision_id,
     CASE
         WHEN s.legacy_revision_id IS NULL
@@ -141,9 +144,10 @@ _SCHEDULE_REVISION_PROJECTION = """
      WHERE g.schedule_revision_id = s.schedule_revision_id) AS layout_label_count
 """
 
-# 공식 발행 한 줄 — 발행한 일정 리비전의 번호(`revision_no` — 화면의 「rN」)를 함께 싣는다. 리비전
-# 목록은 최근 n 줄까지라(`equipment_cache.SCHEDULE_REVISION_LIST_LIMIT`) 공식이 그 밖으로 밀리면
-# 목록에서 번호를 찾지 못한다 — 발행 줄이 늘 번호를 들고 온다.
+# 공식 발행 한 줄 — 발행한 일정 리비전의 번호(`revision_no` — 화면의 「rN」)를 함께 싣는다.
+# 사이드바 팝업 라디오는 최근 n 개까지라(`equipment_cache.SCHEDULE_REVISION_LIST_LIMIT`) 공식이 그
+# 밖으로 밀릴 수 있고, 시나리오 표·발행 확인 글은 리비전 목록을 읽지 않는다 — 발행 줄이 늘 번호를
+# 들고 온다.
 _RELEASE_PROJECTION = """
     o.release_no AS release_no,
     o.equipment_scenario_id AS equipment_scenario_id,
@@ -182,9 +186,12 @@ def schedule_revision_row(
 
 
 def schedule_revision_rows(
-    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str, *, limit: int
+    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str, *, limit: int | None = None
 ) -> list[dict[str, object]]:
-    """한 시나리오의 일정 리비전, 번호 큰 것부터."""
+    """한 시나리오의 일정 리비전, 번호 큰 것부터. `limit` 이 None 이면 전부."""
+    parameters: list[object] = [equipment_scenario_id]
+    if limit is not None:
+        parameters.append(limit)
     return _rows(
         connection,
         f"""
@@ -192,28 +199,10 @@ def schedule_revision_rows(
         FROM equipment_ops.equipment_schedule_revision s
         WHERE s.equipment_scenario_id = ?
         ORDER BY s.revision_no DESC
-        LIMIT ?
+        {"LIMIT ?" if limit is not None else ""}
         """,
-        [equipment_scenario_id, limit],
+        parameters,
     )
-
-
-def schedule_revision_origin_counts(
-    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str
-) -> dict[str, int]:
-    """한 시나리오의 일정 리비전 수를 출처(`origin`)별로 — 목록 한도(`schedule_revision_rows` 의
-    `limit`)와 상관없는 전체 셈. 리비전이 없으면 빈 dict."""
-    rows = connection.execute(
-        """
-        SELECT s.origin, COUNT(*)
-        FROM equipment_ops.equipment_schedule_revision s
-        WHERE s.equipment_scenario_id = ?
-        GROUP BY s.origin
-        ORDER BY s.origin
-        """,
-        [equipment_scenario_id],
-    ).fetchall()
-    return {str(origin): int(count) for origin, count in rows}
 
 
 def scenario_rows(connection: duckdb.DuckDBPyConnection) -> list[dict[str, object]]:
