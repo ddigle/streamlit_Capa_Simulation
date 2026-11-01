@@ -310,7 +310,9 @@ def prune_choice(key: str, options: Sequence[str], *, default: str | None) -> st
     return value
 
 
-# `prune_named_choice` 가 세션에 드는 이름 수의 상한 — 이름 바꾸기마다 하나씩 는다.
+# `prune_named_choice` 가 세션에 드는 **지난** 이름 수의 상한 — 이름 바꾸기마다 하나씩 는다.
+# 지금 선택지 글자는 이 수와 상관없이 늘 든다(설비 시나리오 리비전 상자는 리비전을 전부 싣는다 —
+# 결정 A4).
 _REMEMBERED_NAMES_LIMIT = 256
 
 
@@ -368,7 +370,10 @@ def prune_named_choice(key: str, names: Mapping[str, str], *, default: str) -> N
     for option, label in names.items():
         remembered.pop(label, None)
         remembered[label] = option
-    while len(remembered) > _REMEMBERED_NAMES_LIMIT:
+    # 지금 글자는 방금 맨 뒤로 옮겼으므로 앞에서 지우는 것은 지난 글자뿐이다 — 상한을 선택지 수에
+    # 얹지 않으면 선택지가 상한보다 많을 때 먼저 넣은 지금 글자(번호 큰 최근 리비전)가 지워져 이름을
+    # 바꾼 그 항목의 둘째 누름이 기본값으로 튀었다.
+    while len(remembered) > len(names) + _REMEMBERED_NAMES_LIMIT:
         remembered.pop(next(iter(remembered)))
     st.session_state[names_key] = remembered
     if moved:

@@ -2769,8 +2769,9 @@ _SCENARIO_DIALOG_JS = """(box, radio) => {
       .map((caption) => caption.innerText.trim()),
   };
 }"""
-# 설비 시나리오 팝업의 리비전 라디오는 최근 n개까지다. 한도에 걸리면 라디오 아래 캡션이
-# 「최근 50개 · 전체 82개 — 더 옛 32개는 이 목록에 없습니다.」 를 적는다
+# 설비 시나리오 팝업의 리비전 라디오는 최근 n개까지다(시나리오 관리 구획 표·상자는 전부 — 결정
+# A4). 한도에 걸리면 라디오 아래 캡션이 「최근 50개 · 전체 82개 — 더 옛 32개는 시나리오 관리 ›
+# 설비 시나리오에서 고릅니다.」 를 적는다
 # (`equipment_data_workspace.revision_count_line`). 결과 줄은 라디오 수 뒤에 그 전체 수를
 # 붙인다 — 「리비전 50개(전체 82개)」.
 REVISION_TOTAL_PATTERN: Final = re.compile(r"최근 ([\d,]+)개 · 전체 ([\d,]+)개")

@@ -66,7 +66,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_equipment_csv_payloads,
     load_equipment_revision_summaries,
     load_equipment_scenario_catalog,
-    load_equipment_schedule_revision_counts,
     load_equipment_schedule_revisions,
     load_merged_equipment_snapshot,
     load_units_scheduled_elsewhere,
@@ -3687,17 +3686,22 @@ def origin_count_words(origins: Mapping[str, int]) -> str:
 
 
 def revision_count_line(
-    shown: int, origins: Mapping[str, int], *, unit: str, place: str, by_origin: bool = True
+    shown: int,
+    origins: Mapping[str, int],
+    *,
+    unit: str,
+    elsewhere: str | None = None,
+    by_origin: bool = True,
 ) -> str:
-    """리비전 목록의 머릿수 한 줄 — 목록 한도(최근 `SCHEDULE_REVISION_LIST_LIMIT` 개)와
-    상관없는 전체 수.
+    """리비전 목록의 머릿수 한 줄 — 목록이 싣는 수와 상관없는 전체 수.
 
-    다 보이면 「전체 12줄(이관 10 · 저장 2)」, 한도에 걸리면 「최근 50줄 · 전체 82줄(이관 70 ·
-    저장 12) — 더 옛 32줄은 이 표와 리비전 상자에 없습니다.」. `shown` 은 목록에 든 수,
-    `origins` 는 출처별 전체 수(`load_equipment_schedule_revision_counts` — 목록과 같은 캐시
-    칸)이고 `by_origin=False` 면 괄호를 뺀다. 사내 런북의 「리비전 N줄 = 이관 N」 확인은 표를
-    세지 않고 이 줄의 이관 수를 8-4s `L` 과 견준다 — 이관 뒤 저장이 쌓이면 이관 리비전이 한도
-    밖으로 밀린다.
+    다 보이면 「전체 82줄(이관 70 · 저장 12)」(시나리오 관리 리비전 표 — 늘 전부 싣는다). 최근
+    n 개만 싣는 목록(사이드바 팝업 라디오 — `SCHEDULE_REVISION_LIST_LIMIT`)이면 「최근 50개 · 전체
+    82개 — 더 옛 32개는 시나리오 관리 › 설비 시나리오에서 고릅니다.」(`elsewhere` 가 그 자리 —
+    없으면 「… 이 목록에 없습니다.」). `shown` 은 목록에 든 수, `origins` 는 출처별 전체 수
+    (`load_equipment_schedule_revision_counts` — 목록과 같은 캐시 칸)이고 `by_origin=False` 면
+    괄호를 뺀다. 사내 런북의 「리비전 N줄 = 이관 N」 확인은 표를 세지 않고 이 줄의 이관 수를 8-4s
+    `L` 과 견준다.
     """
     total = max(sum(origins.values()), shown)
     head = (
@@ -3711,7 +3715,8 @@ def revision_count_line(
     if shown >= total:
         return head
     hidden = with_topic_particle(f"{total - shown:,}{unit}")
-    return f"{head} — 더 옛 {hidden} {place}에 없습니다."
+    tail = f"{elsewhere}에서 고릅니다" if elsewhere else "이 목록에 없습니다"
+    return f"{head} — 더 옛 {hidden} {tail}."
 
 
 def schedule_revision_title(revision: EquipmentScheduleRevisionSummary) -> str:
@@ -3743,6 +3748,8 @@ def _render_history(
     if scenario_id is None:
         st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
         return
+    # 표와 「조회 리비전」 상자는 리비전을 전부 싣는다(2026-11-01 사용자 결정 A4 — 표는 스크롤·찾기,
+    # 상자는 글로 찾음).
     revisions = load_equipment_schedule_revisions(database_path, scenario_id)
     if not revisions:
         st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
@@ -3750,28 +3757,11 @@ def _render_history(
     latest_common = latest_equipment_revision_id(database_path)
     commons = load_equipment_revision_summaries(database_path, latest_common)
     common_numbers = {item.revision_id: item.revision_no for item in commons}
-    # 목록 한도에 걸렸을 때만 전체 수를 덧붙인다(머리 한 줄 안 — 줄이 생기거나 빠져 아래 칸이 밀리지
-    # 않게).
-    origins = load_equipment_schedule_revision_counts(database_path, scenario_id)
-    limited = (
-        " "
-        + revision_count_line(
-            len(revisions),
-            origins,
-            unit="줄",
-            place="이 표와 「조회 리비전」 상자",
-            by_origin=False,
-        )
-        if len(revisions) < sum(origins.values())
-        else ""
-    )
     if scenario_name:
         st.caption(
             f"「{literal_markdown(scenario_name)}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 "
-            f"리비전입니다.{limited}"
+            "리비전입니다."
         )
-    elif limited:
-        st.caption(limited.strip())
     st.dataframe(
         pd.DataFrame(
             [
@@ -3781,7 +3771,7 @@ def _render_history(
                     "저장시각": item.created_at,
                     "저장자": item.saved_by,
                     "출처": ORIGIN_WORDS.get(item.origin, item.origin),
-                    "공통": _common_words(item, common_numbers),
+                    "공통": common_revision_words(item, common_numbers),
                     "호기행": item.unit_row_count,
                     "비가동행": item.downtime_row_count,
                     "변경메모": item.note,
@@ -3940,11 +3930,18 @@ def _render_common_history(
         )
 
 
-def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, int]) -> str:
-    """이력 표의 「공통」 칸 — 그 저장이 함께 본 공통 대장 번호(목록 밖이면 빈칸)."""
+def common_revision_words(
+    item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, int]
+) -> str:
+    """일정 리비전 표의 「공통」 칸(설비 마스터 탭 저장 이력 · 시나리오 관리 리비전 표) — 그 저장이
+    함께 본 공통 대장 번호 「r12」. 리비전 줄이 들고 온 번호(`common_revision_no`)가 먼저다 — 표는
+    리비전을 전부 싣는데 `numbers`(공통 대장 이력 목록)는 최신 50개라 옛 줄의 공통이 그 밖에 있다.
+    번호가 없는 옛 캐시 값이면 `numbers` 에서 찾고, 어디에도 없으면 빈칸."""
     if item.common_revision_id is None:
         return ""
-    number = numbers.get(item.common_revision_id)
+    number = item.common_revision_no
+    if number is None:
+        number = numbers.get(item.common_revision_id)
     return f"r{number}" if number is not None else ""
 
 
