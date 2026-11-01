@@ -455,6 +455,20 @@ def test_m18_accepts_wrapped_and_literal_callbacks(tmp_path: Path) -> None:
     assert ("M18", "error") not in _page_rules(tmp_path, body)
 
 
+@pytest.mark.parametrize(("callback", "flagged"), [("ctx.callback(save)", False), ("save", True)])
+def test_m18_follows_a_callback_named_inside_a_function(
+    tmp_path: Path, callback: str, flagged: bool
+) -> None:
+    """화면을 `def main()` 으로 짜는 꼴 — 함수 안 이름에 담은 감싼 콜백은 통과, 맨 함수는 오류."""
+    body = (
+        "import streamlit as st\nfrom capa_simulation import module_api as api\n"
+        "ctx = api.context(__file__)\n\n\ndef save() -> None:\n    pass\n\n\n"
+        f"def main() -> None:\n    handler = {callback}\n"
+        '    st.button("x", key=ctx.key("b"), on_click=handler)\n\n\nmain()\n'
+    )
+    assert (("M18", "error") in _page_rules(tmp_path, body)) is flagged
+
+
 def test_a_same_folder_bare_import_is_m06_not_m09(tmp_path: Path) -> None:
     folder = _module(
         tmp_path / "modules",

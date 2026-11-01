@@ -554,6 +554,20 @@ class _Names:
             name: values[0] for name, values in assigned.items() if len(values) == 1
         }
         self.module_names = set(assigned)
+        # 함수 안까지 파일 전체에서 한 번만 대입한 이름 — `def main(): cb = ctx.callback(f)` 꼴의
+        # 감싼 콜백을 알아본다(`is_method_call` 만 쓴다 — 별명 풀기는 모듈 수준만 믿는다).
+        everywhere: dict[str, list[ast.expr]] = {}
+        for inner in ast.walk(tree):
+            if isinstance(inner, ast.Assign):
+                for target in inner.targets:
+                    if isinstance(target, ast.Name):
+                        everywhere.setdefault(target.id, []).append(inner.value)
+            elif isinstance(inner, ast.AnnAssign) and inner.value is not None:
+                if isinstance(inner.target, ast.Name):
+                    everywhere.setdefault(inner.target.id, []).append(inner.value)
+        self.single_anywhere: dict[str, ast.expr] = {
+            name: values[0] for name, values in everywhere.items() if len(values) == 1
+        }
         self._resolving: set[str] = set()
 
     def resolve(self, node: ast.AST) -> str | None:
@@ -594,7 +608,7 @@ class _Names:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             return node.func.attr == method
         if isinstance(node, ast.Name) and depth < 3:
-            value = self.single.get(node.id)
+            value = self.single.get(node.id) or self.single_anywhere.get(node.id)
             if value is not None:
                 return self.is_method_call(value, method, depth + 1)
         return False
