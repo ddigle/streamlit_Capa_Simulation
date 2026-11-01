@@ -1221,7 +1221,7 @@ def _render_save_section(
         SAVE_FIELDS_PREFIX,
         release_exists=basis is None or basis.release_no > 0,
         # 가정 설비 시나리오면 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리
-        # 한 규칙).
+        # 한 규칙), 함께 넣기를 켜 두면 Space 저장 칸과 같은 공식 가용대수 경고가 선다.
         reach=official_reach(frames) if basis is not None and not basis.official_scenario else None,
         persist_saved_by=True,
     )

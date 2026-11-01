@@ -13,10 +13,14 @@
   마스터 탭 저장 칸·「새 호기」 칸·사이드바 팝업 「저장」·Space 「배치 저장」). 호기 목록은 공통
   대장 하나이고 설비 시나리오마다 다른 것은 일정·가정 배치뿐이게 — 가정 세션에서 넣은 새 호기도
   다른 설비 시나리오에 같은 일정으로 든다(끄면 그 시나리오에서는 「일정 없음」). 가정 세션 Space
-  저장 상자(`assumption=True`)는 짧은 라벨을 쓰고 켜 있으면 공식 가용대수에 센다는 경고를 세우며,
-  기본값은 `DEFAULT_PROPAGATE_NEW_UNITS` 를 그대로 따른다(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`).
-  key 는 공식 자리와 가른다(라벨·경고가 다른 칸이라 세션 역할이 바뀌어도 한 칸의 고름을 다른 칸이
-  잇지 않게).
+  저장 상자(`assumption=True`)는 짧은 라벨을 쓰고, 기본값은 `DEFAULT_PROPAGATE_NEW_UNITS` 를 그대로
+  따른다(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`). key 는 공식 자리와 가른다(라벨·경고가 다른
+  칸이라 세션 역할이 바뀌어도 한 칸의 고름을 다른 칸이 잇지 않게).
+- **가정 세션 저장 칸 셋은 함께 넣기 체크가 켜 있으면 같은 경고 한 줄을 세운다**
+  (`ASSUMPTION_PROPAGATE_WARNING` — 「켜 두면 … 공식 가용대수에 셉니다」, 2026-11-01 N2 후속).
+  Space 저장 상자(`assumption=True`)와 설비 마스터 탭 저장 칸·사이드바 팝업 「저장」(`reach` 를 준
+  자리)이 같은 글·같은 조건이고, 「새 호기」 칸도 같은 글을 쓴다(`equipment_master_tab` —
+  `propagate_warning`).
 - **가정 세션의 발행 체크는 세 자리 모두 한 규칙이다**(`reach` — `OfficialReach`): 이 저장이
   공식 설비 시나리오에 새 일정 리비전을 만들 수 있을 때(「새 호기」 칸에서 켠 새 호기, 저장 칸
   체크를 따르는 새 호기·새 비가동이 체크로 켜 있음)만 「함께 넣은 공식 리비전 발행」(기본 켬)이
@@ -45,8 +49,10 @@ PUBLISH_OFFICIAL_LABEL = "공식 설비 시나리오에 새 일정 리비전이 
 # 가정 세션 Space 저장 상자 — 기본값은 탭·「새 호기」 칸·팝업과 같은 F6(N2 — 네 자리 한 값).
 DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS = DEFAULT_PROPAGATE_NEW_UNITS
 ASSUMPTION_PROPAGATE_UNITS_LABEL = "새 호기를 다른 설비 시나리오에도 넣기"
+# 가정 세션 저장 칸 셋·「새 호기」 칸이 함께 넣기를 켜 두었을 때 세우는 한 줄(처음부터 켬이라
+# 「켜 두면」).
 ASSUMPTION_PROPAGATE_WARNING = (
-    "켜면 새 호기가 공식 설비 시나리오에 자리 없는 새 호기로 들어가 공식 가용대수에 셉니다."
+    "켜 두면 새 호기가 공식 설비 시나리오에 자리 없는 새 호기로 들어가 공식 가용대수에 셉니다."
 )
 ASSUMPTION_PUBLISH_LABEL = "함께 넣은 공식 리비전 발행"
 _ASSUMPTION_SUFFIX = "_assumption"
@@ -128,9 +134,10 @@ def render_equipment_save_fields(
     `release_exists` 가 거짓이면(공식 발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을
     둔다 — 저장소가 첫 일정 리비전을 늘 공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
 
-    `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 짧은 라벨·켜 있으면 공식 가용대수
-    경고, 기본값은 다른 자리와 같은 켬). `reach` 를 주면
-    가정 세션이다 — 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만 선다(모듈 설명).
+    `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 짧은 라벨, 기본값은 다른 자리와 같은
+    켬). `reach` 를 주면 가정 세션이다 — 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만 선다(모듈
+    설명). 둘 다 가정 세션이라 함께 넣기 체크가 켜 있으면 두 체크 아래에 같은 공식 가용대수 경고를
+    세운다(`_render_assumption_warning`).
 
     `persist_saved_by` 면 저장자 칸에 `persist_state="session"` 을 준다 — 그 칸을 그리지 않는 회차가
     있는 자리(가용설비 현황 탭 ① 은 숨은 회차에 그리지 않는다, 개편 명세 2-3)에서도 위 약속(세션에
@@ -160,8 +167,7 @@ def render_equipment_save_fields(
             value=DEFAULT_PROPAGATE_NEW_DOWNTIME,
             key=f"{prefix}_propagate_downtime",
         )
-        if propagate_units:
-            st.caption(f":material/warning: {ASSUMPTION_PROPAGATE_WARNING}")
+        _render_assumption_warning(bool(propagate_units))
         publish = _reach_publish(
             f"{prefix}_publish{_ASSUMPTION_SUFFIX}",
             reach or OfficialReach(),
@@ -188,6 +194,7 @@ def render_equipment_save_fields(
     )
     publish = DEFAULT_PUBLISH_OFFICIAL
     if reach is not None:
+        _render_assumption_warning(bool(propagate_units))
         publish = _reach_publish(
             f"{prefix}_publish",
             reach,
@@ -207,6 +214,14 @@ def render_equipment_save_fields(
         propagate_new_downtime=bool(propagate_downtime),
         publish_official=bool(publish),
     )
+
+
+def _render_assumption_warning(propagate_units: bool) -> None:
+    """가정 세션 저장 칸의 함께 넣기 체크가 켜 있으면 두 체크 아래 경고 한 줄(모듈 설명 — 세
+    저장 자리 같은 글·같은 조건). 끄면 걷는다 — 그때 새 호기는 공식에서 「일정 없음」 이라 세지
+    않는다."""
+    if propagate_units:
+        st.caption(f":material/warning: {ASSUMPTION_PROPAGATE_WARNING}")
 
 
 def _reach_publish(

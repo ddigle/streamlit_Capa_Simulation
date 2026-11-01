@@ -39,7 +39,10 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
     SIDE_NEW,
 )
-from capa_simulation.components.equipment_save_fields import ASSUMPTION_PUBLISH_LABEL
+from capa_simulation.components.equipment_save_fields import (
+    ASSUMPTION_PROPAGATE_WARNING,
+    ASSUMPTION_PUBLISH_LABEL,
+)
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -682,6 +685,93 @@ def test_an_assumption_space_save_spreads_a_new_unit_to_the_official_by_default(
         assert _value(official, "EQ-09", column) == _value(mine, "EQ-09", column), column
     after = repository.latest_equipment_release()
     assert after is not None and after.release_no == before.release_no + 1
+
+
+_SAVE_BOX_WARNING = f":material/warning: {ASSUMPTION_PROPAGATE_WARNING}"
+
+
+def _captions(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.caption]
+
+
+def test_the_assumption_tab_save_box_warns_while_spreading_new_units_is_on(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """N2 후속(2026-11-01 사용자 결정 「1~5 권장대로」 5) — 가정 설비 시나리오 세션의 설비 마스터
+    탭 저장 칸도 Space 「저장 칸」 처럼 「새로 넣은 호기를 …」 체크가 켜 있으면(처음엔 켬) 그
+    아래에 같은 경고 한 줄(같은 상수 — 「켜 두면 … 공식 가용대수에 셉니다」)을 세우고, 끄면 걷는다.
+    공식 세션 저장 칸에는 서지 않는다(새 호기가 공식 가용대수에 드는 것이 그 저장의 뜻이다)."""
+    assert ASSUMPTION_PROPAGATE_WARNING.startswith("켜 두면 새 호기가 ")
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+
+    box = app.checkbox(key=f"{SAVE_FIELDS_PREFIX}_propagate_units")
+    assert box.value is True
+    assert _captions(app).count(_SAVE_BOX_WARNING) == 1, _captions(app)
+    _ok(box.uncheck().run())
+    assert _SAVE_BOX_WARNING not in _captions(app)
+
+    official = _page(repository, OPERATIONS)
+    official.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(official.run())
+    assert official.checkbox(key=f"{SAVE_FIELDS_PREFIX}_propagate_units").value is True
+    assert _SAVE_BOX_WARNING not in _captions(official)
+
+
+def _popup_save_box(database: str) -> None:
+    """설비 화면 한 회차의 편집본 + 사이드바 설비 시나리오 팝업 본문(「저장」 구획)."""
+    from pathlib import Path
+
+    from capa_simulation.components.equipment_data_workspace import ensure_equipment_drafts
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+    )
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    ensure_equipment_drafts(resolve_equipment_session(database).snapshot)
+    render_equipment_scenario_dialog_body(Path(database), page_file="available_equipment_status.py")
+
+
+def test_the_assumption_sidebar_popup_save_warns_while_spreading_new_units_is_on(
+    tmp_path: Path,
+) -> None:
+    """N2 후속 — 가정 설비 시나리오 세션의 사이드바 팝업 「저장」 도 함께 넣기 체크가 켜 있으면
+    Space 「저장 칸」·설비 마스터 탭과 같은 경고 한 줄을 세우고, 끄면 걷는다. 공식 세션 팝업에는
+    없다."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_MODE,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        SAVE_FIELDS_PREFIX as POPUP_PREFIX,
+    )
+
+    repository, setup = _two_scenarios(tmp_path)
+
+    def popup(scenario_id: str) -> AppTest:
+        clear_equipment_repository()
+        app = AppTest.from_function(
+            _popup_save_box, args=(str(repository.database_path),), default_timeout=60
+        )
+        app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+        app.session_state[SELECTION_KEY] = {
+            "scenario_id": scenario_id,
+            "schedule_revision_id": None,
+        }
+        return _ok(app.run())
+
+    app = popup(setup)
+    box = app.checkbox(key=f"{POPUP_PREFIX}_propagate_units")
+    assert box.value is True
+    assert _captions(app).count(_SAVE_BOX_WARNING) == 1, _captions(app)
+    _ok(box.uncheck().run())
+    assert _SAVE_BOX_WARNING not in _captions(app)
+
+    official = popup(OPERATIONS)
+    assert official.checkbox(key=f"{POPUP_PREFIX}_propagate_units").value is True
+    assert _SAVE_BOX_WARNING not in _captions(official)
 
 
 def _popup_with_panel_unit(database: str) -> None:
