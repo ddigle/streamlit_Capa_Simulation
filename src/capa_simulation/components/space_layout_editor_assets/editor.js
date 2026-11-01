@@ -714,8 +714,9 @@ export default function (component) {
   //   줄어 강조하려는 층 이름이 6~7px 이 됐다(E2E r1). 위 줄은 제 폭으로 맞추고(높이는 단축 줄 몫도 나눈다), 단축 줄만 제 폭에
   //   맞춰 더 작아진다. 한 줄로 많이 줄면(위 줄의 0.75 배 아래) 「 · 」 경계에서 두 줄로 나눠 본다 — 나눈 줄이 1.15 배 넘게
   //   커지고 위 줄이 0.9 배 밑으로 줄지 않을 때만 나눈다(낮은 블록에서는 줄을 늘리면 이름이 작아진다).
-  // - 위 줄이 둘 이상인데 화면 7px 아래면 이름 줄만 남긴다(단축 줄도 뺀다 — 풍선에 남는다). 비활성 층(`off`)이면 이름
-  //   앞에 「⊘」 를 달아 사유 줄이 빠진 좁은 화면에서도 사용 층과 가른다(390px — E2E r1).
+  // - 위 줄이 둘 이상인데 화면 7px 아래면 단축 줄부터 뺀다 — 단축 줄 없이 위 줄이 7px 이상이면 이름·대수 두 줄을 남기고
+  //   (단축 줄 몫을 나눈 크기로 판정해 대수 줄까지 빼던 것 — 2026-11-02 E2E), 그래도 7px 아래면 이름 줄만 남긴다(풍선에
+  //   남는다). 비활성 층(`off`)이면 이름 앞에 「⊘」 를 달아 사유 줄이 빠진 좁은 화면에서도 사용 층과 가른다(390px — E2E r1).
   // - 단축 줄이 화면 6px 아래면 그 줄만 숨긴다. 이름 줄이 6px 아래면 부르는 쪽이 숨긴다.
   function blockTextLayout(main, short, off, lw, lh, upp, em) {
     const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), 13 * upp)
@@ -743,6 +744,10 @@ export default function (component) {
       const split = two ? lay(main, two) : null
       const better = split && split.shortSize > one.shortSize * 1.15 && split.size >= one.size * 0.9 && split.size / upp >= 7
       pick = better && one.shortSize < one.size * 0.75 ? split : one
+    }
+    if (main.length > 1 && pick.size / upp < 7 && pick.shortRows.length) {
+      const bare = lay(main, [])
+      if (bare.size / upp >= 7) pick = bare
     }
     if (main.length > 1 && pick.size / upp < 7) {
       const head = off ? `⊘ ${main[0]}` : main[0]
