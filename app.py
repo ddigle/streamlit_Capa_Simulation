@@ -58,6 +58,7 @@ from capa_simulation.components.typography import render_typography_style
 from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
 from capa_simulation.design import theme
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
+from capa_simulation.module_runtime import run_module_page
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
@@ -285,7 +286,13 @@ with pinned_connections(DUCKDB_PATH):
     # 페이지만 가리키므로 선택자로 쓸 수 있다.
     active_href = navigation.url_path
     current_spec = pages.spec_for(navigation.url_path)
-    page_file = None if current_spec is None else Path(current_spec.path).name
+    # 사내 모듈 화면은 코어 등록부(적용 전 편집·탭 점 — `app_pages/<파일 이름>` 꼴)에 들지 않는다.
+    # 모듈 파일 이름이 `home.py` 같으면 코어 화면의 편집 표지가 잘못 붙는다.
+    page_file = (
+        None
+        if current_spec is None or current_spec.module is not None
+        else Path(current_spec.path).name
+    )
     # 탭 줄 콜백이 적어 둔 이동(다른 탭 고르기·지금 탭 닫기)과 탭 상한(10개). 상한은 옮기기 전에
     # 막고(탭 줄 JS·`refused_at_tab_limit`), 그래도 들어온 화면(뒤로가기로 닫은 탭의 기록)만 여기서
     # 직전 화면으로 되돌린다. 사이드바·머리 띠를 보내기 전에 끊는다. 직전 화면 주소는 아래에서
@@ -514,9 +521,14 @@ with pinned_connections(DUCKDB_PATH):
     # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
+    # 사내 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림).
+    # 처리한 실패는 정상으로 돌아와 아래 꼬리가 돈다. `st.stop()`·`st.rerun()` 은 지금처럼 지나간다.
     try:
         with equipment_pin:
-            navigation.run()
+            if current_spec is not None and current_spec.module is not None:
+                run_module_page(navigation.run, current_spec)
+            else:
+                navigation.run()
     except StopException as stop:
         app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))

@@ -29,9 +29,6 @@ MAX_KEY_WARNINGS: Final = 5
 # 콜백 실패 표지 칸의 꼬리. 모듈 키는 `_` 로 시작하지 못하므로(`ModuleContext.key`) 모듈 자기 키와
 # 겹치지 않는다.
 CALLBACK_FAILURE_SUFFIX: Final = "_core_callback_failure"
-# `st.stop()` 뒤에는 화면에 아무것도 그릴 수 없어(Streamlit 이 다음 요소에서 다시 멈춘다), 그 회차의
-# 접두 없는 키 알림을 다음 회차 맨 위로 넘기는 표지 칸의 꼬리.
-KEY_WARNING_SUFFIX: Final = "_core_key_warning"
 
 
 @dataclass(frozen=True)
@@ -112,8 +109,3 @@ def clear_records() -> None:
 def callback_failure_key(module_id: str) -> str:
     """콜백 실패 표지 칸 — `mod_<id>___core_callback_failure`(접두 + `_` 로 시작하는 꼬리)."""
     return key_prefix(module_id) + CALLBACK_FAILURE_SUFFIX
-
-
-def key_warning_key(module_id: str) -> str:
-    """`st.stop()` 으로 멈춘 회차의 키 알림을 다음 회차로 넘기는 표지 칸."""
-    return key_prefix(module_id) + KEY_WARNING_SUFFIX

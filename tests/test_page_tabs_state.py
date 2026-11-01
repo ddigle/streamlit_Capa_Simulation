@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from streamlit.errors import StreamlitPageNotFoundError
 
-from capa_simulation import page_tabs_state
+from capa_simulation import module_registry, navigation, page_tabs_state, settings
 from capa_simulation.navigation import (
     ALL_SPECS,
     CAPA_CHATBOT,
@@ -37,9 +39,11 @@ from capa_simulation.page_tabs_state import (
     pop_fresh_notice,
     reentered_open_tab,
     refused_at_tab_limit,
+    spec_for_path,
     store_strip,
     switch_to_queued_tab,
     tab_label,
+    valid_tabs,
 )
 
 H, A, B, C = HOME.path, LOAD_CONVERSION.path, SCENARIO_MANAGEMENT.path, CAPA_CHATBOT.path
@@ -281,3 +285,88 @@ def test_a_page_helper_is_refused_before_moving_when_the_strip_is_full(
     store_strip(_strip(*paths[:-1]))
     assert not refused_at_tab_limit(detail)
     assert session.reruns == 1
+
+
+# ------------------------------------------------------------------ 사내 모듈 화면
+
+DEMO_OK_PAGE = "tests/fixtures/modules/demo_ok/demo_ok_page.py"
+
+
+@pytest.fixture
+def fixture_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    root = Path(__file__).resolve().parent / "fixtures" / "modules"
+    monkeypatch.setenv(module_registry.ROOT_ENV_VAR, str(root))
+
+
+def test_a_module_page_tab_is_a_repository_relative_path(fixture_modules: None) -> None:
+    """탭 id 는 브라우저로 나간다 — 서버 경로(사용자 폴더)가 아니라 저장소 상대 경로다."""
+    assert DEMO_OK_PAGE in valid_tabs()
+    assert not any(str(settings.PROJECT_ROOT) in path for path in valid_tabs())
+    spec = spec_for_path(DEMO_OK_PAGE)
+    assert spec is not None and spec.module == "demo_ok"
+    assert tab_label(spec) == "데모 화면"
+    # 꺼진·실패한 모듈의 화면은 탭이 될 수 없다.
+    assert not any("demo_off" in path or "demo_future" in path for path in valid_tabs())
+
+
+def test_a_module_outside_the_repository_keeps_an_absolute_tab_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    folder = tmp_path / "modules" / "demo_a"
+    folder.mkdir(parents=True)
+    (folder / "page.py").write_text("# Purpose: 시험.\n", encoding="utf-8")
+    declared = {
+        "id": "demo_a",
+        "name": "시험",
+        "api": 1,
+        "owner": "시험 담당",
+        "enabled": True,
+        "maturity": "L2",
+        "pages": [{"slug": "main", "file": "page.py", "title": "밖 화면"}],
+    }
+    (folder / "module.json").write_text(json.dumps(declared, ensure_ascii=False), "utf-8")
+    monkeypatch.setenv(module_registry.ROOT_ENV_VAR, str(tmp_path / "modules"))
+
+    assert (folder / "page.py").as_posix() in valid_tabs()
+
+
+def test_noting_a_module_page_adds_its_tab(session: SimpleNamespace, fixture_modules: None) -> None:
+    note_current_page(H, page_changed=True)
+    note_current_page(DEMO_OK_PAGE, page_changed=True)
+
+    assert session.session_state[PAGE_TABS_OPEN_KEY] == (H, DEMO_OK_PAGE)
+
+
+def test_a_queued_module_tab_is_switched_to(
+    session: SimpleNamespace, fixture_modules: None
+) -> None:
+    session.session_state[PAGE_TABS_QUEUED_KEY] = DEMO_OK_PAGE
+
+    switch_to_queued_tab(H)
+
+    assert session.switched == [(DEMO_OK_PAGE, None)]
+
+
+def test_a_module_page_at_the_limit_is_sent_back_with_a_notice(
+    session: SimpleNamespace, fixture_modules: None
+) -> None:
+    paths = tuple(spec.path for spec in ALL_SPECS)[:MAX_TABS]
+    store_strip(_strip(*paths))
+
+    switch_to_queued_tab(DEMO_OK_PAGE, current_title="데모 화면", previous_path=paths[1])
+
+    assert session.switched == [(paths[1], None)]
+    notice = pop_fresh_notice()
+    assert notice is not None and "「데모 화면」" in notice[1]
+
+
+def test_the_tab_index_is_built_once_for_the_same_declarations(fixture_modules: None) -> None:
+    first = navigation.runtime_specs()
+    assert valid_tabs() is valid_tabs()
+    assert navigation.runtime_specs() is first
+    assert len(first) == len(ALL_SPECS) + 5
+
+
+def test_without_modules_the_tabs_are_the_core_declarations() -> None:
+    assert navigation.runtime_specs() is ALL_SPECS
+    assert valid_tabs() == frozenset(spec.path for spec in ALL_SPECS)

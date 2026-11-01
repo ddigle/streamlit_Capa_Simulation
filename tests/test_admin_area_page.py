@@ -679,3 +679,47 @@ if st.session_state.get("on_admin", True):
     app.run(timeout=60)
 
     assert opened() == [True]
+
+
+# ------------------------------------------------------------------ 사내 모듈 상태
+
+
+def _module_status_labels(app: AppTest) -> list[str]:
+    labels = [item.label for item in app.expander] + [item.label for item in app.status]
+    return [label for label in labels if "사내 모듈 상태" in label]
+
+
+def test_the_module_status_stands_above_the_tabs_only_with_modules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """모듈 폴더가 있으면(사내) 탭 위 펼침에 상태·까닭·회차 시간이 선다. 없으면(사외) 없다."""
+    from capa_simulation import module_failures, module_registry
+
+    script = _page_script(tmp_path / "scenario.duckdb")
+    app = AppTest.from_string(script).run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _module_status_labels(app) == []
+
+    monkeypatch.setenv(
+        module_registry.ROOT_ENV_VAR, str(PROJECT_ROOT / "tests" / "fixtures" / "modules")
+    )
+    module_failures.record_failure("demo_crash", page="main", kind="RuntimeError", where="page")
+    module_failures.note_run_seconds("demo_ok", 0.123)
+    app = AppTest.from_string(script).run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert _module_status_labels(app) == ["사내 모듈 상태 — 켜짐 3 · 꺼짐 1 · 실패 2"]
+    table = app.dataframe[0].value
+    rows = {row["모듈"]: row for row in table.to_dict("records")}
+    assert rows["demo_ok"]["상태"] == "켜짐" and rows["demo_ok"]["마지막 회차 시간"] == "0.12"
+    assert rows["demo_off"]["까닭"] == "module.json enabled=false"
+    assert rows["demo_bad_manifest"]["상태"] == "실패"
+    assert rows["demo_future_api"]["API"] == "99.0"
+    assert rows["demo_crash"]["마지막 오류"].endswith("RuntimeError · page · main")
+    assert any("앱을 다시 띄운 뒤" in caption.value for caption in app.caption)
+    # 탭은 그대로 넷이다.
+    assert len(app.main.tabs) == 4
+
+    monkeypatch.setenv(module_registry.ROOT_ENV_VAR, "off")
+    app = AppTest.from_string(script).run(timeout=120)
+    assert _module_status_labels(app) == []

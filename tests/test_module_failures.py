@@ -16,7 +16,6 @@ from capa_simulation.module_failures import (
     clear_records,
     exclude_page,
     excluded_pages,
-    key_warning_key,
     key_warnings,
     last_failures,
     last_run_seconds,
@@ -106,5 +105,4 @@ def test_clearing_empties_every_record() -> None:
 def test_the_marker_keys_sit_behind_the_module_prefix_with_an_underscore() -> None:
     """모듈 키는 `_` 로 시작하지 못하므로(`ModuleContext.key`) 표지 칸과 겹치지 않는다."""
     assert callback_failure_key("demo_ok") == "mod_demo_ok___core_callback_failure"
-    assert key_warning_key("demo_ok") == "mod_demo_ok___core_key_warning"
     assert module_failures.CALLBACK_FAILURE_SUFFIX.startswith("_")

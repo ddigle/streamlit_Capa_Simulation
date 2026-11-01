@@ -123,3 +123,19 @@ def test_no_session_key_is_defined_in_two_modules() -> None:
         "  · 상수 둘 → 같은 위젯을 두 번 선언한 것이다. 하나를 지운다\n"
         "허용목록에 더하지 마세요 — 예외가 하나 생기면 보장이 사라집니다.\n" + "\n".join(lines)
     )
+
+
+def test_no_core_key_starts_with_the_module_prefix() -> None:
+    """사내 모듈 키는 `mod_<id>__` 로 시작한다 — 코어는 `mod_` 로 시작하는 키를 만들지 않는다(지킴).
+
+    그래야 모듈끼리·모듈과 코어의 키가 구조적으로 겹치지 않는다. `modules/` 는 이 검사가 훑지
+    않으므로 모듈 쪽은 점검 스크립트(M08)와 실행 알림(`module_runtime`)이 본다.
+    """
+    offenders = sorted(
+        (value, path.relative_to(PROJECT_ROOT).as_posix())
+        for path in _scanned_files()
+        for value, _ in _definitions(path)
+        if value.startswith("mod_")
+    )
+
+    assert not offenders, offenders
