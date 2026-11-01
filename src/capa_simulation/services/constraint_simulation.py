@@ -128,9 +128,13 @@ __all__ = [
     "WaitingShare",
     "constraint_month_inputs",
     "modification_window",
+    "require_non_negative",
+    "require_positive",
+    "require_visible_month",
     "required_units",
     "secure",
     "simulate_constraint",
+    "valid_month",
 ]
 
 NEED_TOLERANCE: Final = 1e-9
@@ -1007,7 +1011,9 @@ def _proportional_share(available: float, constrained: float, required: float) -
 # ================================================================== 검증
 
 
-def _valid_month(value: int) -> bool:
+def valid_month(value: int) -> bool:
+    """YYYYMM 달인가(해 1001~9999 · 달 1~12). 개조 일정 검증(`modification_schedule`)도 이것을
+    쓴다."""
     year, month = divmod(int(value), 100)
     return 1001 <= year <= 9999 and 1 <= month <= 12
 
@@ -1018,19 +1024,30 @@ def _require_within(value: float, bounds: tuple[float, float], message: str) -> 
         raise ValueError(message)
 
 
-def _require_non_negative(value: float, message: str) -> None:
+def require_non_negative(value: float, message: str) -> None:
+    """유한한 0 이상이 아니면(NaN · 무한 · 음수) `message` 로 거부한다."""
     if not math.isfinite(value) or value < 0:
         raise ValueError(message)
 
 
-def _require_positive(value: float, message: str) -> None:
+def require_positive(value: float, message: str) -> None:
+    """유한한 0 보다 큰 수가 아니면(NaN · 무한 · 0 이하) `message` 로 거부한다."""
     if not math.isfinite(value) or value <= 0:
         raise ValueError(message)
 
 
+def require_visible_month(month: int, previous: int | None) -> None:
+    """보이는 달 한 줄 — YYYYMM 이고 앞 줄 달(`previous`, 첫 줄은 None)보다 뒤여야 한다(겹치지 않는
+    오름차순). 두 모드의 검증이 줄마다 맨 먼저 같은 글로 거른다."""
+    if not valid_month(month):
+        raise ValueError(f"보이는 달은 YYYYMM 이어야 합니다: {month}")
+    if previous is not None and month <= previous:
+        raise ValueError(f"보이는 달은 겹치지 않는 오름차순이어야 합니다: {previous} → {month}")
+
+
 def _validate(months: Sequence[ConstraintMonthInput], conditions: ConstraintConditions) -> None:
     for value in (conditions.period_start, conditions.period_end):
-        if not _valid_month(value):
+        if not valid_month(value):
             raise ValueError(f"제약 기간은 YYYYMM 이어야 합니다: {value}")
     if conditions.period_start > conditions.period_end:
         raise ValueError(
@@ -1067,19 +1084,14 @@ def _validate(months: Sequence[ConstraintMonthInput], conditions: ConstraintCond
 
     previous: int | None = None
     for row in months:
-        if not _valid_month(row.month):
-            raise ValueError(f"보이는 달은 YYYYMM 이어야 합니다: {row.month}")
-        if previous is not None and row.month <= previous:
-            raise ValueError(
-                f"보이는 달은 겹치지 않는 오름차순이어야 합니다: {previous} → {row.month}"
-            )
+        require_visible_month(row.month, previous)
         previous = row.month
-        _require_non_negative(row.required, f"{row.month} 공정 소요가 0 이상의 수가 아닙니다.")
-        _require_non_negative(
+        require_non_negative(row.required, f"{row.month} 공정 소요가 0 이상의 수가 아닙니다.")
+        require_non_negative(
             row.constrained_demand, f"{row.month} 제약 제품 소요가 0 이상의 수가 아닙니다."
         )
-        _require_non_negative(row.available, f"{row.month} 가용대수가 0 이상의 수가 아닙니다.")
-        _require_positive(row.general_target, f"{row.month} 기준 확보율은 0 보다 큰 수여야 합니다.")
+        require_non_negative(row.available, f"{row.month} 가용대수가 0 이상의 수가 아닙니다.")
+        require_positive(row.general_target, f"{row.month} 기준 확보율은 0 보다 큰 수여야 합니다.")
         if row.constrained_demand > row.required:
             raise ValueError(
                 f"{row.month} 제약 제품 소요({row.constrained_demand:g})가 공정 소요"
@@ -1101,7 +1113,7 @@ def _validate_new_units(units: Sequence[NewUnit], held: Sequence[HeldUnit]) -> N
             )
         if unit.until is not None and not isinstance(unit.until, date):
             raise ValueError(f"신규 설비 {unit.name} 의 반출일이 날짜가 아닙니다: {unit.until!r}")
-        _require_positive(
+        require_positive(
             unit.units, f"신규 설비 {unit.name} 의 환산 대수가 0 보다 큰 수가 아닙니다."
         )
         _validate_modules(
@@ -1131,7 +1143,7 @@ def _validate_held_units(units: Sequence[HeldUnit]) -> None:
                     f"보유 제약 호기 {unit.name} 의 {with_subject_particle(label)} 날짜가 "
                     f"아닙니다: {value!r}"
                 )
-        _require_positive(
+        require_positive(
             unit.units, f"보유 제약 호기 {unit.name} 의 환산 대수가 0 보다 큰 수가 아닙니다."
         )
         _validate_modules(
@@ -1164,7 +1176,7 @@ def _validate_modules(
             raise ValueError(f"{owner} 의 모듈 {module.name} 기여 시작이 비었습니다.")
         if module.start is not None and not isinstance(module.start, date):
             raise ValueError(f"{owner} 의 모듈 {module.name} 기여 시작이 날짜가 아닙니다.")
-        _require_positive(
+        require_positive(
             module.units, f"{owner} 의 모듈 {module.name} 환산 몫이 0 보다 큰 수가 아닙니다."
         )
     total = sum(module.units for module in modules)

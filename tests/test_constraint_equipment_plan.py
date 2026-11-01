@@ -1,14 +1,15 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인 · 계획 블록(`render_equipment_plan`)의
-# 멈추는 갈래 차례와 까닭 글을 화면 없이 본다.
+# 멈추는 갈래 차례와 까닭 글, 같은 출처 띠 글 조각을 화면 없이 본다.
 
-"""`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출).
+"""`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출)와 같은 글 조각.
 
 페이지 시험(`tests/test_constraint_simulation_page.py` ·
 `tests/test_modification_schedule_page.py`)은 두 모드의 화면 갈래를 AppTest 로 본다. 여기서는 함수
 하나가 두 모드에 같은 갈래 차례를 주는지 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어
 `subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 · 까닭 카드 그리기를 적는
 가짜로 본다. 계획 받기가 불리면 실패하는 가짜 `simulation_cache` 함수로 「앞 갈래가 멈추면 계획을
-받지 않는다」 를 잡는다.
+받지 않는다」 를 잡는다. 두 모드 출처 띠의 같은 조각(소요 시나리오 이름표 · 설비 기준 괄호 · UPEH
+가정 단서)의 글도 여기서 못 박는다.
 """
 
 from __future__ import annotations
@@ -22,11 +23,16 @@ import pytest
 import streamlit as st
 
 # 공용 블록은 계획 함수를 부를 때 이 모듈에서 찾는다 — 모듈 속성을 바꿔 끼운다.
+import capa_simulation.components.constraint_equipment_plan as constraint_equipment_plan
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_equipment_plan import (
+    UPEH_NOT_APPLIED_NOTE,
     EquipmentPlanSource,
     equipment_readiness,
     render_equipment_plan,
+    source_equipment_text,
+    source_scenario_text,
+    upeh_assumption_note,
 )
 from capa_simulation.page_bootstrap import ProcessPageInputs
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
@@ -35,6 +41,10 @@ from capa_simulation.services.process_equipment_timeline import (
     NO_EQUIPMENT,
     READY,
     DynamicReadiness,
+)
+from capa_simulation.upeh_assumption_state import (
+    UPEH_ASSUMPTION_DEFAULT_PERCENT,
+    UPEH_ASSUMPTION_PERCENT_KEY,
 )
 
 PROCESS = "DEMO_Chip_Attach"
@@ -209,3 +219,35 @@ def test_a_failure_while_building_the_plan_key_is_the_plan_error(
     assert error.startswith("설비 일정을 계산하지 못했습니다 — ")
     assert "계산 칸을 꺼내지 못했습니다" in error
     assert not recorder.cards
+
+
+# ------------------------------------------------------------------ 같은 글 조각
+
+
+def test_the_shared_source_band_pieces_keep_their_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    """두 모드 출처 띠의 같은 조각 — 소요 시나리오 이름표는 이름을 막고 없으면 「활성 시나리오」,
+    설비 기준 글이 없거나 비면 「(단축 전)」, UPEH 가정 단서는 세션 칸이 기본값이 아닌 정수일 때만
+    (소수 · 글자 칸은 켬으로 보지 않는다 — 두 모드가 따로 들던 판정 그대로)."""
+    label = SimpleNamespace(scenario_name="DEMO_*~가정", revision_no=3)
+    monkeypatch.setattr(constraint_equipment_plan, "active_scenario_label", lambda: label)
+    assert source_scenario_text() == "「DEMO\\_\\*\\~가정 r3」"
+    monkeypatch.setattr(constraint_equipment_plan, "active_scenario_label", lambda: None)
+    assert source_scenario_text() == "활성 시나리오"
+
+    assert source_equipment_text("DEMO_설비 r2") == "(DEMO\\_설비 r2, 단축 전)"
+    assert source_equipment_text(None) == "(단축 전)"
+    assert source_equipment_text("") == "(단축 전)"
+
+    state: dict[str, object] = {}
+    monkeypatch.setattr(st, "session_state", state)
+    assert upeh_assumption_note() == ""
+    for value, note in (
+        (UPEH_ASSUMPTION_DEFAULT_PERCENT, ""),
+        (110, UPEH_NOT_APPLIED_NOTE),
+        (90, UPEH_NOT_APPLIED_NOTE),
+        (110.0, ""),
+        ("110", ""),
+        (None, ""),
+    ):
+        state[UPEH_ASSUMPTION_PERCENT_KEY] = value
+        assert upeh_assumption_note() == note, value

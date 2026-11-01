@@ -56,10 +56,15 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.constraint_equipment_plan import (
+    CONVERTED_UNITS_NOTE,
+    SESSION_ONLY_CAPTION,
     EquipmentPlanSource,
     equipment_readiness,
     first_ready_process,
     render_equipment_plan,
+    source_equipment_text,
+    source_scenario_text,
+    upeh_assumption_note,
 )
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
@@ -162,7 +167,6 @@ from capa_simulation.process_detail_state import (
 from capa_simulation.process_detail_state import (
     PROCESS_PARAM as DETAIL_PROCESS_PARAM,
 )
-from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
     MODIFICATION_DAYS_RANGE,
@@ -195,10 +199,6 @@ from capa_simulation.services.simulation_cache import get_process_product_demand
 from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
-from capa_simulation.upeh_assumption_state import (
-    UPEH_ASSUMPTION_DEFAULT_PERCENT,
-    UPEH_ASSUMPTION_PERCENT_KEY,
-)
 
 CARD_LABEL = "제약 시뮬레이션 조건"
 CARD_NAME = "constraint_simulation"
@@ -535,7 +535,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
             disabled=not months,
         )
 
-    st.caption(":material/person: **이 세션만** — 저장하지 않습니다")
+    st.caption(SESSION_ONLY_CAPTION)
     st.caption("**확보율**")
     target_value = render_preset_number_field(
         "제약 확보율",
@@ -914,28 +914,22 @@ render_header(
 with header_marks:
     st.caption(SESSION_NOTE)
 
-# 출처 띠 — 소요는 활성 시나리오(세션만 읽음), 가용은 세션 설비 시나리오.
-scenario_label = active_scenario_label()
-scenario_text = (
-    f"「{literal_markdown(scenario_label.scenario_name)} r{scenario_label.revision_no}」"
-    if scenario_label is not None
-    else "활성 시나리오"
-)
+# 출처 띠 — 소요는 활성 시나리오(세션만 읽음), 가용은 세션 설비 시나리오. 두 모드가 같은 조각은
+# `constraint_equipment_plan` 에서 받는다.
+scenario_text = source_scenario_text()
 equipment_text = equipment_basis_label(equipment_session) if equipment_session is not None else None
 band = (
     f":material/database: 소요 = 활성 시나리오 {scenario_text} "
     f"{literal_markdown(process_label)} 소요를 제품정보로 나눔"
     f"({literal_markdown(product)} / 그 밖) · 가용 = 설비 일정 기준"
-    + (f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)")
-    + " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
+    + source_equipment_text(equipment_text)
+    + CONVERTED_UNITS_NOTE
 )
 # 계획이 실제로 건 칸으로 적는다 — 이 공정에 0 아닌 칸이 있을 때만.
 manual_note = manual_effect_band(plan.manual_downtime, (process,))
 if manual_note:
     band += f" · {manual_note}"
-upeh_percent = st.session_state.get(UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT)
-if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
-    band += " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
+band += upeh_assumption_note()
 if conditions.held_units:
     band += (
         f" · 보유 호기 = {literal_markdown(equipment_text or '세션 설비 시나리오')}에서 고른 "

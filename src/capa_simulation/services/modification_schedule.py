@@ -83,6 +83,9 @@ import pandas as pd
 from capa_simulation.services.constraint_simulation import (
     MODIFICATION_DAYS_RANGE,
     NEED_TOLERANCE,
+    require_non_negative,
+    require_positive,
+    require_visible_month,
     secure,
 )
 from capa_simulation.services.securement_threshold import (
@@ -367,21 +370,8 @@ class ScheduleResult:
 
 
 # ================================================================== 검증
-
-
-def _valid_month(value: int) -> bool:
-    year, month = divmod(int(value), 100)
-    return 1001 <= year <= 9999 and 1 <= month <= 12
-
-
-def _require_finite_non_negative(value: float, message: str) -> None:
-    if not math.isfinite(value) or value < 0:
-        raise ValueError(message)
-
-
-def _require_positive(value: float, message: str) -> None:
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError(message)
+#
+# 달 · 0 이상 · 0 보다 큼 · 보이는 달 줄 검사는 제약 모드(`constraint_simulation`)와 한 함수다.
 
 
 def _validate(months: Sequence[ScheduleMonthInput], conditions: ScheduleConditions) -> None:
@@ -419,20 +409,11 @@ def _validate(months: Sequence[ScheduleMonthInput], conditions: ScheduleConditio
 
     previous: int | None = None
     for row in months:
-        if not _valid_month(row.month):
-            raise ValueError(f"보이는 달은 YYYYMM 이어야 합니다: {row.month}")
-        if previous is not None and row.month <= previous:
-            raise ValueError(
-                f"보이는 달은 겹치지 않는 오름차순이어야 합니다: {previous} → {row.month}"
-            )
+        require_visible_month(row.month, previous)
         previous = row.month
-        _require_finite_non_negative(
-            row.required, f"{row.month} 공정 소요가 0 이상의 수가 아닙니다."
-        )
-        _require_finite_non_negative(
-            row.available, f"{row.month} 가용대수가 0 이상의 수가 아닙니다."
-        )
-        _require_positive(row.general_target, f"{row.month} 기준 확보율은 0 보다 큰 수여야 합니다.")
+        require_non_negative(row.required, f"{row.month} 공정 소요가 0 이상의 수가 아닙니다.")
+        require_non_negative(row.available, f"{row.month} 가용대수가 0 이상의 수가 아닙니다.")
+        require_positive(row.general_target, f"{row.month} 기준 확보율은 0 보다 큰 수여야 합니다.")
     fleet = max(whole_units(row.available) for row in months)
     if conditions.units > fleet:
         raise ValueError(

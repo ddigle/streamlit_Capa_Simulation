@@ -326,7 +326,7 @@ def test_a_huge_constrained_rate_is_pinned_to_the_top_with_a_triangle() -> None:
         )
         if value is not None
     ] + [float(LABELS.target_percent)]
-    assert plain_spec["layout"]["yaxis"]["range"] == list(figures._axis_bounds(every))
+    assert plain_spec["layout"]["yaxis"]["range"] == list(figures.axis_bounds(every))
     (plain_line,) = _traces_in(plain_spec, "제약 제품")
     assert set(plain_line["marker"]["symbol"]) == {"circle"}
     assert plain_line["cliponaxis"] is True

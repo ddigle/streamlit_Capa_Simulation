@@ -35,7 +35,6 @@ rate_figure`)와 같은 틀이다.
 from __future__ import annotations
 
 import html
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final
@@ -44,6 +43,7 @@ import plotly.graph_objects as go
 
 from capa_simulation.components.constraint_simulation_figures import (
     CHART_HEIGHT_PX,
+    axis_bounds,
     day_position,
     rate_text,
     signed_points,
@@ -249,16 +249,6 @@ def _percent(value: float | None) -> float | None:
     return None if value is None else value * 100
 
 
-def _axis_bounds(values: Sequence[float]) -> tuple[float, float]:
-    """y 축 범위 — (최솟값 − 5) 의 10 단위 내림 ~ (최댓값 + 5) 의 10 단위 올림(제약 모드와 같다)."""
-    finite = [value for value in values if math.isfinite(value)]
-    if not finite:
-        return 0.0, 100.0
-    low = math.floor((min(finite) - 5) / 10) * 10
-    high = math.ceil((max(finite) + 5) / 10) * 10
-    return float(low), float(high if high > low else low + 10)
-
-
 def _lanes(spans: Sequence[tuple[float, float]]) -> list[int]:
     """겹치는 막대를 아래 줄로 — 줄마다 마지막 끝 이후에 시작하는 첫 줄(차수는 시작 차례다)."""
     ends: list[float] = []
@@ -333,7 +323,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
     general = [row.general_target * 100 for row in rows]
     shifted = [row.threshold * 100 for row in rows]
     shows_shift = abs(result.applied_margin * 100) >= _SHIFT_HIDDEN_POINTS
-    low, high = _axis_bounds(
+    low, high = axis_bounds(
         [value for value in (*before, *after) if value is not None]
         + general
         + (shifted if shows_shift else [])
