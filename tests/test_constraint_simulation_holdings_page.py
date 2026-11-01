@@ -12,14 +12,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from typing import Any
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_options_page import (
     BEFORE_NEW_UNIT,
     EARLY_UNIT,
+    FAR_UNIT,
     NEW_UNIT,
     _options_database,
     _with_new_units,
@@ -36,7 +41,9 @@ from test_constraint_simulation_page import (
     _opened,
     _plain,
 )
+from test_required_shortening import _cutoff, _downtime, _master, _unit
 
+import capa_simulation.services.constraint_simulation as constraint_simulation
 from capa_simulation.components.constraint_simulation_view import NEW_SKIPPED_TEXT
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_HELD_DROPPED_KEY,
@@ -46,8 +53,13 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MODIFY_KEY,
     CONSTRAINT_OWNED_KEY,
 )
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 
 HELD_LABEL = "보유 제약 호기"
+ARRIVING_HELD = "CA-N5"
+"""기간 첫 달 W/D 첫날(2025-12-25) 뒤 2026-03-11 에 기여를 시작하는 호기 — 보유로 고른다."""
+LATE_NEW = "CA-N6"
+"""2026-05-20 에 기여를 시작하는 신규 — 6월 W/D 첫날(5/25)이 개조 30일 안이다."""
 
 
 @pytest.fixture(scope="module")
@@ -73,6 +85,61 @@ def empty_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
     """설비 DB 가 빈 벌 — 까닭 카드 갈래."""
     root = tmp_path_factory.mktemp("constraint_simulation_held_empty")
     return root / "scenario.duckdb", root / "equipment.duckdb"
+
+
+@pytest.fixture(scope="module")
+def far_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """신규 CA-N0 이 1월 W/D 첫날(12/25)보다 개조 기간(30일)을 넘게 앞서(11/21) 들어온 벌."""
+    root = tmp_path_factory.mktemp("constraint_simulation_held_far")
+    return root / "scenario.duckdb", _options_database(
+        root / "equipment.duckdb",
+        new_unit=FAR_UNIT,
+        qual=date(2025, 11, 20),
+        arrival=date(2025, 11, 1),
+    )
+
+
+@pytest.fixture(scope="module")
+def later_cover_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """기존 8대에 축 안에서 들어오는 두 대(`ARRIVING_HELD` 3/11 · `LATE_NEW` 5/20)를 더한 벌."""
+    root = tmp_path_factory.mktemp("constraint_simulation_held_later")
+    path = root / "equipment.duckdb"
+    repository = DuckDBEquipmentRepository(path)
+    repository.initialize()
+    units = [
+        _unit(
+            f"CA-{index:02d}", date(2025, 1, 10), process=DYNAMIC_PROCESS, arrival=date(2024, 12, 1)
+        )
+        for index in range(1, 9)
+    ]
+    units.append(
+        _unit(ARRIVING_HELD, date(2026, 3, 10), process=DYNAMIC_PROCESS, arrival=date(2026, 3, 1))
+    )
+    units.append(
+        _unit(LATE_NEW, date(2026, 5, 19), process=DYNAMIC_PROCESS, arrival=date(2026, 5, 1))
+    )
+    baseline = pd.DataFrame(
+        {"공정": [DYNAMIC_PROCESS], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
+    )
+    repository.save_snapshot(baseline, _master(units), _downtime([]))
+    repository.save_process_cutoff(_cutoff(7, DYNAMIC_PROCESS))
+    return root / "scenario.duckdb", path
+
+
+def _june_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    """시드 소요는 제약 몫이 늘 1대라 증가가 첫 달 하나뿐이다 — 26.06 부터 제약 소요를 1.5(×120% →
+    2대)로 올려 둘째 증가를 세운다(합성 — 화면 갈래를 보려는 것이다)."""
+    original = constraint_simulation.constraint_month_inputs
+
+    def stepped(*args: Any, **kwargs: Any) -> Sequence[constraint_simulation.ConstraintMonthInput]:
+        return [
+            replace(row, required=max(row.required, 2.0), constrained_demand=1.5)
+            if row.month >= 202606
+            else row
+            for row in original(*args, **kwargs)
+        ]
+
+    monkeypatch.setattr(constraint_simulation, "constraint_month_inputs", stepped)
 
 
 def _pick(app: AppTest, *names: str) -> AppTest:
@@ -188,6 +255,46 @@ def test_holdings_covering_the_period_skip_the_new_unit(
     )
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 0 · 보유 1 · 개조 0"
     assert not any("대기 4일" in _plain(text) for text in _markdown(app))
+
+
+def test_a_later_cover_names_its_month_on_the_schedule_card(
+    later_cover_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """뒤 증가에서만 덮이는 꼴(결정 B1 — 증가마다). 1월 증가는 보유가 아직 없어(CA-N5 는 3/11)
+    개조로 채우고, 6월 증가(W/D 첫날 5/25)에서 남은 보유 CA-N5 가 남은 증가를 다 덮어 그 증가부터
+    신규를 붙이지 않는다 — B1 이 없었다면 CA-N6(5/20)이 6월 몫에 붙었다. 카드 한 줄은 그 달을
+    적는다(첫 증가 꼴의 `NEW_SKIPPED_TEXT` 가 아니다 — 화면이 `new_stopped_line` 을 그리는지,
+    2026-11-01 리뷰)."""
+    _june_step(monkeypatch)
+    app = _with_new_units(_opened(later_cover_databases), date(2026, 1, 1))
+    app = _pick(app, ARRIVING_HELD)
+    captions = _plain(_captions(app))
+    assert (
+        "26년 6월 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 "
+        "설비를 더 붙이지 않았습니다" in captions
+    )
+    assert NEW_SKIPPED_TEXT not in captions
+    assert (
+        f"일반 설비가 된 신규 1대 — {LATE_NEW} · 26년 6월 증가부터 보유 제약 설비로 다 덮어 기존 "
+        "제품 몫" in captions
+    )
+    assert "**신규 대기**" not in captions
+
+
+def test_a_first_cover_holding_back_no_unit_says_nothing_on_the_card(
+    far_databases: tuple[Path, Path],
+) -> None:
+    """첫 증가에서 보유(CA-01)가 다 덮었지만 신규 CA-N0(11/21)은 1월 증가(12/25)가 34일 뒤라 B1 이
+    없어도 붙지 않았다 — 카드 한 줄(`NEW_SKIPPED_TEXT`)은 서지 않고, 까닭은 창 안 증가 없음이다."""
+    app = _with_new_units(_opened(far_databases), date(2025, 11, 1))
+    app = _pick(app, "CA-01")
+    captions = _plain(_captions(app))
+    assert NEW_SKIPPED_TEXT not in captions
+    assert "신규 설비를 더 붙이지 않았습니다" not in captions
+    assert (
+        f"일반 설비가 된 신규 1대 — {FAR_UNIT} · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫"
+        in captions
+    )
 
 
 # ------------------------------------------------------------------ 시나리오에 없는 호기(B3-2)
