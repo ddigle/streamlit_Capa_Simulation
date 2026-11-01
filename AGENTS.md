@@ -965,6 +965,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
     알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 밑 경고 띠, 자동 갱신은 판정 실패 사유 끝에 무엇이
     멈췄고 어디서 푸는지(기준 정보 탭 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록)를 적는다.
+  - 화면의 저장 결과 칸(저장 알림 · CS 빈 행 경고 · 대당 Capa 경고 띠 · 저장하지 못한 까닭)은 폼 맨 아래 `DB 조회 후 시나리오
+    저장` 단추 **바로 아래** 늘 서 있는 한 칸이고(탭 맨 위 칸은 스크롤한 화면에서 보이지 않았다 — 2026-11-01 E2E), 알림을 그린
+    회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
+    화면 밖일 때만 본문을 옮긴다(`scrollIntoView({block: "nearest"})`).
 - `src/capa_simulation/auto_official_update_runner.py` — 공식버전 자동 갱신 한 회차를 세션 없이 돌리고 실행 기록에 남긴다.
   - 조회·시계·발행 뒤 정리는 주입받는다. 위험하면 발행하지 않고(`PUBLISH_SKIPPED` — 계산 실패·판정 가능 공정 0·발행 검사
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.

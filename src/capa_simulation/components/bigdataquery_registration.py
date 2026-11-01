@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -23,8 +24,9 @@ from typing import Any, Final, cast
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -78,6 +80,26 @@ REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 # 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고 띠(`RegistrationCapacityCheck`). 같은 칸
 # 맨 밑.
 REGISTRATION_CAPACITY_FLASH_KEY = "bigdataquery_registration_capacity_flash"
+REGISTRATION_FLASH_KEYS: Final = (
+    REGISTRATION_FLASH_KEY,
+    REGISTRATION_DROP_FLASH_KEY,
+    REGISTRATION_CAPACITY_FLASH_KEY,
+)
+# 저장 결과 칸(저장 단추 바로 아래)이 화면 밖이면 마지막 알림이 화면 아래에 닿게 본문을 옮기는
+# 스크립트 — 이미 보이면 움직이지 않는다(`block: "nearest"`). 단추를 화면 맨 아래에 두고 누르면 그
+# 아래 칸이 화면 밖이라 저장됐는지도 대당 Capa 경고 띠도 보이지 않았다(2026-11-01 E2E —
+# 1920×1080). 글은 알림(저장 결과 · 저장하지 못한 까닭)을 그린 회차에만 그 칸 끝에 서고, 앞머리의
+# 일회 표지가 회차마다 달라 같은 자리에서도 다시 돈다(Streamlit 은 같은 글의 스크립트를 다시 돌리지
+# 않는다).
+REVEAL_NOTICE_SCRIPT: Final = """<script>/* {nonce} */
+(() => {{
+  const me = document.currentScript;
+  const slot = me && me.closest('[data-testid="stVerticalBlock"]');
+  const notes = slot ? slot.querySelectorAll('[data-testid="stAlert"]') : [];
+  const last = notes[notes.length - 1];
+  if (last) requestAnimationFrame(() => last.scrollIntoView({{block: "nearest"}}));
+}})();
+</script>"""
 
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
@@ -169,10 +191,6 @@ def render_bigdataquery_registration(
     _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     st.subheader("BigDataQuery 시나리오 등록")
-    # 등록 알림은 늘 서 있는 한 칸에 그린다 — 생기고 사라질 때 아래 폼·표의 자리가 밀리지 않게.
-    render_flash(
-        REGISTRATION_FLASH_KEY, REGISTRATION_DROP_FLASH_KEY, REGISTRATION_CAPACITY_FLASH_KEY
-    )
 
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
@@ -597,8 +615,26 @@ def _render_registration_form(
             width="stretch",
             disabled=not configured or unsavable,
         )
+    # 저장 결과(성공 · CS 빈 행 경고 · 대당 Capa 경고 띠 · 실패)는 누른 단추 바로 아래 늘 서 있는
+    # 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글 올리기와 같은 꼴). 탭 맨 위에 두면 단추가 폼 맨
+    # 아래라 스크롤한 화면에서 결과가 보이지 않았다(2026-11-01 E2E — 1500×950 에서 알림이 화면 위
+    # 밖). 칸은 알림이 없어도 서서 아래 충돌 보고서의 자리가 밀리지 않는다. 알림을 그린 회차에는 칸
+    # 끝의 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
+    queued = any(pending_flash(key) is not None for key in REGISTRATION_FLASH_KEYS)
+    notice = render_flash(*REGISTRATION_FLASH_KEYS)
+    if queued:
+        _reveal_notice(notice)
     if submitted:
-        _save_scenario(repository, database_path, existing_names=existing_names)
+        with notice:
+            _save_scenario(repository, database_path, existing_names=existing_names)
+        # 저장하면 다음 회차로 넘어가므로(`st.rerun`) 여기까지 오면 칸에 저장하지 못한 까닭이 섰다.
+        _reveal_notice(notice)
+
+
+def _reveal_notice(slot: DeltaGenerator) -> None:
+    """저장 결과 칸 끝에 칸이 화면 밖일 때만 본문을 옮기는 스크립트를 세운다
+    (`REVEAL_NOTICE_SCRIPT`)."""
+    slot.html(REVEAL_NOTICE_SCRIPT.format(nonce=uuid.uuid4().hex), unsafe_allow_javascript=True)
 
 
 def _save_scenario(
