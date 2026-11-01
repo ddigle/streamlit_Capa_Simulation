@@ -28,6 +28,7 @@ import itertools
 import math
 import random
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -333,6 +334,33 @@ def test_the_lowered_target_rebuilds_the_boundary_the_screen_would_pass() -> Non
     assert lowered_target(judgment_boundary(1.10), 1) == judgment_boundary(1.09)
     assert lowered_target(judgment_boundary(1.20), 15) == judgment_boundary(1.05)
     assert lowered_target(1.0, 1) == pytest.approx(0.99)
+
+
+def _half_up_percent(rate: float) -> int:
+    """확보율의 십진 표기를 사사오입한 정수 % — 판정 경계(`judgment_boundary`)를 쓰지 않고 따로
+    센다."""
+    return int((Decimal(repr(rate)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+@pytest.mark.parametrize("percent", [100, 109, 110, 115])
+def test_the_whole_relief_is_t_minus_the_rounded_binding_rate_over_a_grid(percent: int) -> None:
+    """묶는 확보율 100.00 ~ 112.00%(0.05% 간격) · 기준 T 마다 「기준 n% 낮추기」 의 n 은
+    T − 사사오입(묶는 확보율)이다(0 이하면 이미 지켜 대안 셋이 없다 — 2026-11-01 사용자 결정).
+    연속 차이의 올림이 아니다(108.6% · T 110 은 1). 따로 센 n 을 같은 계산에 다시 넣어 T − n 은
+    들고 T − n + 1 은 못 드는지도 본다. 1월 한 달 R 10 · 1대 × 31일이라 묶는 확보율은
+    (A − 1) ÷ 10 하나다."""
+    for step in range(241):
+        available = float(Decimal("100.00") + Decimal("0.05") * step) / 10 + 1
+        rate = (available - 31 / 31) / 10
+        expected = max(0, percent - _half_up_percent(rate))
+        result = _one_month_plan(available, percent)
+        if expected == 0:
+            assert result.complete and result.shortfall is None, (percent, rate)
+            continue
+        assert result.shortfall is not None, (percent, rate)
+        assert result.shortfall.relief_percent == expected, (percent, rate)
+        assert _one_month_plan(available, percent - expected).complete, (percent, rate)
+        assert not _one_month_plan(available, percent - expected + 1).complete, (percent, rate)
 
 
 def test_a_deadline_before_any_open_day_places_nothing() -> None:

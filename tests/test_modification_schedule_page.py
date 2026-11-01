@@ -451,6 +451,32 @@ def test_the_general_target_is_one_value_for_both_modes(databases: tuple[Path, P
     assert "제약 제품 확보율 충족" in [metric.label for metric in app.metric]
 
 
+@pytest.mark.parametrize(("typed", "kept"), [(109.5, 110), (108.5, 109), (107.4, 107)])
+def test_the_schedule_general_target_rounds_a_typed_decimal_half_up(
+    databases: tuple[Path, Path], typed: float, kept: int
+) -> None:
+    """개조 일정 모드의 「기준 확보율」 직접 입력 칸도 소수를 받아 사사오입한 정수 % 로 읽는다 —
+    제약 영향 모드 · HOME 판정 기준 칸과 한 규칙(2026-11-01 사용자 결정 — 109.5 → 110, 108.5 →
+    109). 정수 숫자 칸(`%d`)은 브라우저가 친 글을 `parseInt` 로, 서버가 `int()` 로 읽어 109.5 를
+    109 로 버렸다. 칸은 소수 칸 · `%.0f` 이고 정본은 정수다."""
+    from streamlit.proto.NumberInput_pb2 import NumberInput as NumberInputProto
+
+    from capa_simulation.constraint_simulation_state import CONSTRAINT_GENERAL_INPUT_KEY
+
+    app = _schedule(databases)
+    field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
+    assert field.proto.data_type == NumberInputProto.FLOAT
+    assert field.proto.format == "%.0f"
+    field.set_value(typed)
+    _ok(app.run())
+
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == kept
+    assert isinstance(app.session_state[CONSTRAINT_GENERAL_KEY], int)
+    assert f"기준 {kept}%" in _header(app)
+    (shown,) = [item for item in app.number_input if item.label == "기준 확보율 직접 입력"]
+    assert shown.value == kept
+
+
 # ------------------------------------------------------------------ 갈래
 
 
