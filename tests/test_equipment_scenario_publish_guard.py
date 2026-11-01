@@ -31,6 +31,7 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+import capa_simulation.components.equipment_scenario_management as management
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
     ALREADY_OFFICIAL_LINE,
@@ -563,6 +564,27 @@ def test_a_press_that_reaches_the_turned_off_publish_button_writes_nothing(
     assert calls == []
     assert [str(item.value) for item in app.success] == []
     assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 1
+
+
+def test_a_press_that_gets_past_the_turned_off_button_still_says_nothing_was_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """단추를 끄는 판정(`already_official`)을 지나 켜진 단추로 들어온 누름이 지금 공식인 리비전에
+    닿아도 저장소는 쓰지 않는다 — 「공식 v1로 발행했습니다」 로 새 발행처럼 알리지 않고 이미
+    공식이라 새로 발행하지 않았다고 알린다(2026-10-27 E2E). 단추를 끈 뒤에도 남은 저장소 쪽 막이라
+    판정을 거짓으로 바꿔 그 길을 연다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    monkeypatch.setattr(management, "already_official", lambda *_args: False)
+    repository = _seeded(tmp_path)
+    app = _ok(_tab(repository.database_path).run())
+    assert not app.button(key=PUBLISH_BUTTON_KEY).disabled
+
+    _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
+
+    written = [str(item.value) for item in app.success]
+    assert written == ["「운영 일정」 r1은 이미 공식 v1입니다 — 새로 발행하지 않았습니다."], written
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 1
 
