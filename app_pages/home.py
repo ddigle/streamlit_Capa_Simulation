@@ -82,11 +82,11 @@ from capa_simulation.home_state import (
     HOME_PAST_TAB,
     HOME_TAB_KEY,
     HOME_TAB_LABELS,
-    HOME_TOGGLE_DEFAULTS,
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     PRODUCT_SHARE_BASIS_DEFAULT,
     PRODUCT_SHARE_BASIS_KEY,
+    home_toggle,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -257,7 +257,7 @@ home_trace = PerformanceTrace()
 # 토글의 위젯은 아래(탭을 만든 뒤) 사이드바 `LOB 표시 조건` 카드에서 그리지만 값은 계산보다
 # 먼저 필요하다. 위젯이 `key` 로 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의
 # 이 줄에 새 값이 들어온다. 카드가 서지 않는 회차(다른 탭)에도 값은 `persist_state` 가 지킨다.
-include_edp = bool(st.session_state.get(EDP_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY]))
+include_edp = home_toggle(st.session_state, EDP_TOGGLE_KEY)
 # `제품별 비중` 행의 단위. 모르는 값(예전 세션에 남은 값)은 기본 단위로 읽는다.
 product_share_basis = str(
     st.session_state.get(PRODUCT_SHARE_BASIS_KEY, PRODUCT_SHARE_BASIS_DEFAULT)
@@ -266,25 +266,13 @@ if product_share_basis not in PRODUCT_SHARE_BASES:
     product_share_basis = PRODUCT_SHARE_BASIS_DEFAULT
 # 기본은 **켬**이다. 끄면 과거 구간을 화면에서 빼고 활성 시나리오의 계산 결과만 남긴다.
 # 토글도 `home_state` 의 같은 기본값을 읽어 첫 계산과 첫 위젯 표시를 맞춘다.
-include_past = bool(
-    st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
-)
+include_past = home_toggle(st.session_state, PAST_DATA_TOGGLE_KEY)
 # 「선행 B/O」 — 계획 밖 B/O 재공을 부하에 더한다. 키 이름(advance)은 세션 계약이라 그대로다.
-show_advance = bool(
-    st.session_state.get(ADVANCE_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[ADVANCE_TOGGLE_KEY])
-)
+show_advance = home_toggle(st.session_state, ADVANCE_TOGGLE_KEY)
 # 「선행 입고」 — 계산은 그대로 두고 Density 칸에 선행 입고 실적을 적기만 한다.
-show_advance_shipment = bool(
-    st.session_state.get(
-        ADVANCE_SHIPMENT_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[ADVANCE_SHIPMENT_TOGGLE_KEY]
-    )
-)
-show_execution = bool(
-    st.session_state.get(EXECUTION_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[EXECUTION_TOGGLE_KEY])
-)
-plan_detail_customer = bool(
-    st.session_state.get(PLAN_DETAIL_CUSTOMER_KEY, HOME_TOGGLE_DEFAULTS[PLAN_DETAIL_CUSTOMER_KEY])
-)
+show_advance_shipment = home_toggle(st.session_state, ADVANCE_SHIPMENT_TOGGLE_KEY)
+show_execution = home_toggle(st.session_state, EXECUTION_TOGGLE_KEY)
+plan_detail_customer = home_toggle(st.session_state, PLAN_DETAIL_CUSTOMER_KEY)
 # 비교 대상은 공용 프로필이라 새 브라우저 세션에도 남아 있다. 세션 키를 읽기 **전에**
 # 심어야 첫 화면부터 「GAP」 토글이 켜진다 — 심는 자리가 Preference 피커 안에만 있으면
 # 탭을 한 번 다녀와야 켜진다.
@@ -292,10 +280,7 @@ seed_comparison_selection(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
 comparison_ready = bool(comparison_scenario_id and comparison_revision_id)
-show_comparison = (
-    bool(st.session_state.get(COMPARISON_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY]))
-    and comparison_ready
-)
+show_comparison = home_toggle(st.session_state, COMPARISON_TOGGLE_KEY) and comparison_ready
 plan_detail_dimensions = (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS if plan_detail_customer else PRODUCTION_DETAIL_DIMENSIONS
 )

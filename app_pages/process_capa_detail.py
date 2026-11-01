@@ -99,8 +99,8 @@ from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
-    HOME_TOGGLE_DEFAULTS,
     PAST_DATA_TOGGLE_KEY,
+    home_toggle,
 )
 from capa_simulation.navigation import CONSTRAINT_SIMULATION, HOME
 from capa_simulation.page_bootstrap import (
@@ -536,11 +536,11 @@ def home_view_flags() -> tuple[bool, bool, bool]:
     토글."""
     if entry.origin is not None:
         return entry.origin.show_execution, entry.origin.show_advance, entry.origin.include_edp
-
-    def toggle(key: str) -> bool:
-        return bool(st.session_state.get(key, HOME_TOGGLE_DEFAULTS[key]))
-
-    return toggle(EXECUTION_TOGGLE_KEY), toggle(ADVANCE_TOGGLE_KEY), toggle(EDP_TOGGLE_KEY)
+    return (
+        home_toggle(st.session_state, EXECUTION_TOGGLE_KEY),
+        home_toggle(st.session_state, ADVANCE_TOGGLE_KEY),
+        home_toggle(st.session_state, EDP_TOGGLE_KEY),
+    )
 
 
 def home_advance_ratio(include_edp: bool) -> pd.DataFrame | None:
@@ -554,9 +554,7 @@ def home_advance_ratio(include_edp: bool) -> pd.DataFrame | None:
     같다. 범위가 비면 None(선행을 얹지 않는다).
     """
     source = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
-    include_past = bool(
-        st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
-    )
+    include_past = home_toggle(st.session_state, PAST_DATA_TOGGLE_KEY)
     past_months = (
         [
             int(month)

@@ -54,7 +54,7 @@ from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
-    HOME_TOGGLE_DEFAULTS,
+    home_toggle,
 )
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import prune_choice
@@ -341,10 +341,6 @@ def home_cell_request(link: HomeCellLink, *, section: str) -> ProcessDetailReque
     토글은 위젯 키(`home_state`)를 그대로 읽는다. 토글을 바꾸면 HOME 이 앱 전체로 다시 돌아 그림이
     바뀌므로 누른 그림과 이 값은 늘 같은 조건이다.
     """
-
-    def toggle(key: str) -> bool:
-        return bool(st.session_state.get(key, HOME_TOGGLE_DEFAULTS[key]))
-
     return ProcessDetailRequest(
         process=link.process,
         month=link.month,
@@ -355,9 +351,9 @@ def home_cell_request(link: HomeCellLink, *, section: str) -> ProcessDetailReque
         available=link.available,
         required=link.required,
         execution_delta=link.execution_delta,
-        show_advance=toggle(ADVANCE_TOGGLE_KEY),
-        show_execution=toggle(EXECUTION_TOGGLE_KEY),
-        include_edp=toggle(EDP_TOGGLE_KEY),
+        show_advance=home_toggle(st.session_state, ADVANCE_TOGGLE_KEY),
+        show_execution=home_toggle(st.session_state, EXECUTION_TOGGLE_KEY),
+        include_edp=home_toggle(st.session_state, EDP_TOGGLE_KEY),
     )
 
 
