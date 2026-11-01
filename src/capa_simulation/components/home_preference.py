@@ -41,6 +41,7 @@ from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
+    held_notice,
     held_profile_conflict,
     is_own_save,
     note_notice,
@@ -190,6 +191,10 @@ KEY_PROCESS_ONCE_NAME = "home_key_process_preset"
 ADVANCE_LOAD_SAVE_NAME = "home_advance_load"
 ADVANCE_SHIPMENT_SAVE_NAME = "home_advance_shipment"
 THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장했습니다."
+# 바꾼 것 없는 판정 기준 저장의 알림(2026-11-01 개선 I5 — 새 버전을 만들지 않는다).
+THRESHOLD_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 기본값·월별 기준이 지금 판정 기준 그대로라 새 버전을 만들지 않았습니다."
+)
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
@@ -826,6 +831,11 @@ def render_threshold_editor(
     판정 기준은 시나리오와 무관한 공용 정책값이고 **여기 한 곳**에서만 정한다(사이드바 입력은
     없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 퍼센트(119.5)이고 저장은
     비율(1.195)이다. 저장은 공용 프로필 교체이며 편집을 시작할 때 본 version 과 대조한다.
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5) — 최신 저장본을 보고 고친
+    값이 그 저장본과 같으면(`SecurementThresholds.same_as`) 쓰지 않고 「바뀐 것이 없습니다」 를
+    알린다(변경 메모만 적은 저장도 같다). 아직 저장본이 없으면(v0 — 보이는 값은 공식버전 프리셋·코드
+    기본값) 첫 저장이 그 값을 공용 기준으로 고정하므로 쓴다.
     """
     submitted_base = seen(THRESHOLD_BASE_VERSION_KEY)
     with st.container(border=True):
@@ -964,7 +974,30 @@ def render_threshold_editor(
             queue_refusal(THRESHOLD_SAVE_NAME, SEEN_MISSING_MESSAGE)
             st.rerun(scope="app")
         expected_version = submitted_base
+        notices = notice_marks()
         try:
+            if _thresholds_same_as_saved(
+                threshold_profile,
+                expected_version,
+                default_secure=float(default_secure) / 100.0,
+                default_warning=float(default_warning) / 100.0,
+                rows=_threshold_rows(
+                    threshold_profile,
+                    months=months,
+                    month_labels=month_labels,
+                    edited=edited,
+                    clear_outside=clear_outside,
+                ),
+            ):
+                # 방금 저장한 같은 값의 느린 둘째 누름(새로 그린 칸에 닿았다)이면 알림 칸이 그
+                # 성공을 이미 다시 그렸다 — 「바뀐 것이 없습니다」 로 덮지도 겹쳐 쓰지도
+                # 않는다(write_guard.held_notice).
+                if held_notice(THRESHOLD_FLASH_KEY) is None:
+                    notice.info(THRESHOLD_UNCHANGED_MESSAGE, icon=":material/info:")
+                # 쓰지 않아 다시 돌지 않는 회차다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖
+                # 월별 기준 줄도 그린다(빠지면 「그대로」 알림 옆에서 숨은 달 안내만 사라진다).
+                _render_threshold_out_of_range_notice(months, threshold_profile)
+                return
             _save_thresholds(
                 database_path,
                 months=months,
@@ -996,8 +1029,55 @@ def render_threshold_editor(
             # 그대로).
             notice.error(bootstrap_error_message(exc))
         else:
+            # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
+            # 없습니다」 갈래).
+            note_notice(notices, THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             st.rerun(scope="app")
+
+
+def _threshold_rows(
+    threshold_profile: GlobalSecurementThreshold,
+    *,
+    months: Sequence[int],
+    month_labels: Sequence[str],
+    edited: pd.DataFrame | None,
+    clear_outside: bool = False,
+) -> pd.DataFrame:
+    """저장할 월별 행 — 표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와
+    같은 규칙). `clear_outside` 면 조회기간 밖 월별 기준을 지운 뒤 합친다."""
+    rows = threshold_profile.rows
+    if clear_outside:
+        rows = rows.loc[rows["생산계획년월"].isin([int(month) for month in months])]
+    if edited is not None and months:
+        secure_row = edited.iloc[0]
+        warning_row = edited.iloc[1]
+        rows = merge_securement_threshold_edits(
+            rows,
+            list(months),
+            [_ratio_or_none(secure_row[label]) for label in month_labels],
+            [_ratio_or_none(warning_row[label]) for label in month_labels],
+        )
+    return rows
+
+
+def _thresholds_same_as_saved(
+    threshold_profile: GlobalSecurementThreshold,
+    expected_version: int,
+    *,
+    default_secure: float,
+    default_warning: float,
+    rows: pd.DataFrame,
+) -> bool:
+    """저장할 기준(비율)이 이 회차가 그린 최신 저장본과 같은가 — 바꾼 것 없는 저장(개선 I5).
+
+    편집을 시작한 version 이 그 저장본이어야 한다 — 옛 화면의 저장은 견주지 않고 저장소의 버전
+    대조에 맡긴다(남의 저장 뒤라면 거부). 저장본이 없으면(v0) 늘 다르다고 본다.
+    """
+    if threshold_profile.version <= 0 or expected_version != threshold_profile.version:
+        return False
+    candidate = build_securement_thresholds(default_secure, default_warning, rows)
+    return candidate.same_as(threshold_profile.thresholds)
 
 
 def _save_thresholds(
@@ -1014,22 +1094,14 @@ def _save_thresholds(
     clear_outside: bool = False,
     save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalSecurementThreshold:
-    """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와 같은 규칙).
-
-    `clear_outside` 면 조회기간 밖 월별 기준을 지운 뒤 합친다.
-    """
-    rows = threshold_profile.rows
-    if clear_outside:
-        rows = rows.loc[rows["생산계획년월"].isin([int(month) for month in months])]
-    if edited is not None and months:
-        secure_row = edited.iloc[0]
-        warning_row = edited.iloc[1]
-        rows = merge_securement_threshold_edits(
-            rows,
-            list(months),
-            [_ratio_or_none(secure_row[label]) for label in month_labels],
-            [_ratio_or_none(warning_row[label]) for label in month_labels],
-        )
+    """표에 보이는 달만 갈아 끼우고(`_threshold_rows`) 검증한 뒤 공용 판정 기준을 교체한다."""
+    rows = _threshold_rows(
+        threshold_profile,
+        months=months,
+        month_labels=month_labels,
+        edited=edited,
+        clear_outside=clear_outside,
+    )
     _reject_hidden_reversed_months(months, default_secure / 100.0, default_warning / 100.0, rows)
     saved = get_scenario_repository(database_path).replace_global_securement_threshold(
         default_secure / 100.0,

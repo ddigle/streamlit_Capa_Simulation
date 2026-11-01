@@ -24,9 +24,11 @@ from capa_simulation.components.scenario_status import (
     SCENARIO_FIELD_KEY,
     SIDEBAR_REVISION_KEY,
     SIDEBAR_SCENARIO_KEY,
+    revision_unchanged_notice,
     scenario_status_badge,
 )
 from capa_simulation.page_bootstrap import forget_page_dialogs
+from capa_simulation.persistence.repository import RevisionUnchanged
 from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY, pristine_content_token
 from capa_simulation.services.virtual_product import VirtualProductRecord
 
@@ -107,6 +109,11 @@ class FakeRepository:
         preset: object,
         **kwargs: Any,
     ) -> SimpleNamespace:
+        # 화면이 「바꾼 것 없는 저장」 견주기를 켰는지(개선 I5). 켰고 시험이 「최신과 같다」 고 정해
+        # 두면 실제 저장소처럼 쓰지 않고 거절한다.
+        st.session_state["test_skip_unchanged"] = kwargs.get("skip_unchanged")
+        if kwargs.get("skip_unchanged") and st.session_state.get("test_same_as_latest"):
+            raise RevisionUnchanged(1)
         st.session_state["test_saved_revision_name"] = kwargs["revision_name"]
         st.session_state["test_saved_virtual_products"] = list(kwargs.get("virtual_products", ()))
         return SimpleNamespace(
@@ -456,6 +463,26 @@ def test_the_dialog_saves_current_state_as_a_new_revision(sidebar_app: AppTest) 
     # 방금 보던 내용을 적은 리비전이라 HOME 토글을 풀지 않는 경로로 올린다.
     assert app.session_state["test_activation_path"] == "저장"
     assert SCENARIO_DIALOG_KEY not in app.session_state
+
+
+def test_a_save_with_nothing_changed_makes_no_revision_and_says_so(sidebar_app: AppTest) -> None:
+    """바꾼 것 없는 「신규 리비전 저장」 은 새 리비전을 만들지 않는다(2026-11-01 개선 I5 — E2E #10:
+    「저장된 리비전」 · 미저장 없음인데 r1 과 같은 r3 이 생겼다). 화면은 저장소에 견주기를 켜고,
+    같다는 거절을 받으면 팝업 안에 「바뀐 것이 없습니다」 를 적고 칸(리비전명)을 그대로 둔다."""
+    app = sidebar_app
+    app.session_state["test_same_as_latest"] = True
+    app = _save(_open_save(app.run()), "그대로 저장")
+
+    assert not app.exception
+    assert app.session_state["test_skip_unchanged"] is True
+    assert [str(item.value) for item in app.info] == [revision_unchanged_notice(1)]
+    assert "바뀐 것이 없습니다" in revision_unchanged_notice(1)
+    assert "test_saved_revision_name" not in app.session_state
+    assert "test_activated_revision" not in app.session_state
+    assert not app.success and not app.error
+    assert app.session_state[SCENARIO_DIALOG_KEY] is True
+    name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
+    assert name.value == "그대로 저장"
 
 
 def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -> None:

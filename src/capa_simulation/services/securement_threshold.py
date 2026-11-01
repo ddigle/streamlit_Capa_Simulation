@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from math import isfinite
+from math import isclose, isfinite
 from typing import Literal
 
 import pandas as pd
@@ -108,6 +108,23 @@ class SecurementThresholds:
             if self.for_month(month) != defaults
         )
 
+    def same_as(self, other: SecurementThresholds) -> bool:
+        """값이 같은 기준인가 — 달·빈칸 자리는 정확히, 값은 화면 칸(퍼센트 119.5)을 오가며 생기는
+        부동소수 끝자리(상대 1e-9 아래)를 접어 견준다. 바꾼 것 없는 판정 기준 저장을 새 버전으로
+        쓰지 않는 데 쓴다(2026-11-01 개선 I5). `digest` 는 끝자리까지 갈라 캐시 키로만 쓴다."""
+        if not (
+            _close(self.default_secure, other.default_secure)
+            and _close(self.default_warning, other.default_warning)
+            and len(self.monthly) == len(other.monthly)
+        ):
+            return False
+        return all(
+            month == other_month and _close(secure, other_secure) and _close(warning, other_warning)
+            for (month, secure, warning), (other_month, other_secure, other_warning) in zip(
+                self.monthly, other.monthly, strict=True
+            )
+        )
+
     @property
     def digest(self) -> str:
         """내용 지문. 같은 기준이면 같은 글자다 — 캐시 키에 version 대신 넣을 수 있다.
@@ -117,6 +134,14 @@ class SecurementThresholds:
         """
         text = repr((self.default_secure, self.default_warning, self.monthly))
         return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _close(left: float | None, right: float | None) -> bool:
+    """두 기준값(빈칸은 None)이 같은가 — 둘 다 빈칸이거나 상대 1e-9
+    안(`SecurementThresholds.same_as`)."""
+    if left is None or right is None:
+        return left is None and right is None
+    return isclose(left, right, rel_tol=1e-9, abs_tol=1e-12)
 
 
 def securement_threshold_caption(

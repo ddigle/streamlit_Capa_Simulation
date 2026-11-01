@@ -10,6 +10,9 @@ import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
     THRESHOLD_BASE_VERSION_KEY,
     THRESHOLD_EDITOR_KEY,
+    THRESHOLD_NOTE_KEY,
+    THRESHOLD_SAVED_MESSAGE,
+    THRESHOLD_UNCHANGED_MESSAGE,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.securement_threshold import empty_securement_threshold_rows
@@ -276,8 +279,9 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
     첫 누름은 거부되지만 그 회차가 편집 시작 version 을 최신으로 올려, 둘째 누름이 대조를 지나
     저장했다 — A 가 적은 값은 버려지고(키 없는 칸이 새 기본값으로 섰다) 거부 대신 「저장했습니다」만
     남았다. 거부 직후(`TRAILING_PRESS_SECONDS`)의 둘째 누름은 저장하지 않고 그 거부를 다시 알린다.
-    창이 지난 누름은 새 화면을 보고 다시 누른 저장이라 평소대로 저장한다. AppTest 의 두 회차 사이
-    시간이 들쭉날쭉해 창은 시험이 정한다.
+    창이 지난 누름은 새 화면을 보고 다시 누른 저장이라 평소대로 대조를 지난다 — 그 화면은 B 의 값을
+    그렸고(키 없는 칸) 그대로 누른 것이라 바뀐 것이 없어 새 버전을 만들지 않는다(2026-11-01 개선
+    I5). AppTest 의 두 회차 사이 시간이 들쭉날쭉해 창은 시험이 정한다.
     """
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
     app = _app(database)
@@ -304,7 +308,8 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
         assert (profile.version, profile.source) == (1, "다른 세션")
     else:
         assert not list(app.error), [element.value for element in app.error]
-        assert profile.version == 2
+        assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+        assert (profile.version, profile.source) == (1, "다른 세션")
     clear_global_securement_threshold_cache()
 
 
@@ -349,3 +354,104 @@ def test_a_single_press_after_a_held_double_press_saves_from_the_latest_version(
     assert profile.version == 2
     assert abs(profile.default_secure - 1.73) < 1e-9
     clear_global_securement_threshold_cache()
+
+
+def _saved_once(database: Path) -> None:
+    """v1 — 소수 끝자리가 퍼센트 칸을 오가며 흔들리는 값(112.3%·119.5%)과 월별 예외 하나."""
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.123,
+        0.995,
+        pd.DataFrame({"생산계획년월": [202602], "확보 기준": [1.195], "경고 기준": [None]}),
+        source="처음 저장",
+        expected_version=0,
+    )
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
+
+
+def test_a_save_without_changes_makes_no_new_version(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바꾼 것 없는 「판정 기준 저장」 은 새 버전을 만들지 않고 「바뀐 것이 없습니다」 를
+    알린다(2026-11-01 개선 I5 — E2E #41: v2→v3→v4). 칸이 퍼센트를 오가며 생기는 끝자리(1.123 → 112.3
+    → 1.1230…02)는 바뀐 것이 아니다. 변경 메모만 적은 저장도 같고, 값을 고치면 평소대로 저장한다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _saved_once(database)
+    app = _app(database)
+    assert app.number_input[0].value == pytest.approx(112.3)
+
+    app = _save(app)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert not app.success and not app.error
+
+    app.text_input(key=THRESHOLD_NOTE_KEY).set_value("메모만 적음")
+    app = _save(app)
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "처음 저장")
+
+    _edit(app, {0: {"26.03": 121.0}})
+    app = _save(app)
+    assert not app.info and not app.error, [element.value for element in app.info]
+    assert [element.value for element in app.success] == [THRESHOLD_SAVED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 2
+    assert profile.rows["생산계획년월"].tolist() == [202602, 202603]
+
+
+def test_the_first_save_of_an_unsaved_profile_writes_the_values_it_shows(database: Path) -> None:
+    """저장본이 없으면(v0 — 보이는 값은 공식버전 프리셋·코드 기본값) 고치지 않은 저장도 그 값을 공용
+    기준으로 고정한다 — 바꾼 것 없는 저장 판정(개선 I5)은 저장본이 있을 때만이다."""
+    app = _save(_app(database))
+
+    assert not app.info and not app.error, [element.value for element in app.info]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 1
+    assert (profile.default_secure, profile.default_warning) == pytest.approx((1.095, 0.995))
+
+
+def test_a_slow_second_press_of_save_repeats_the_success(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """느린 두 번 누름(둘째 누름이 첫 저장 뒤 새로 그린 칸에 닿는다 — 같은 값이라 바뀐 것이 없다)은
+    「바뀐 것이 없습니다」 로 방금 성공을 덮지 않는다(write_guard.held_notice 창 안)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    _saved_once(database)
+    app = _app(database)
+    app.number_input[0].set_value(115.0)
+    app = _save(app)
+    assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 2
+
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not app.info and not app.error, [element.value for element in app.info]
+    assert [element.value for element in app.success] == [THRESHOLD_SAVED_MESSAGE]
+    assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 2
+
+
+def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않는다 — 누르지 않은 회차와 같은 화면이게
+    조회기간 밖 월별 기준 줄도 그대로 선다(개선 I5)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.095,
+        0.995,
+        pd.DataFrame({"생산계획년월": [202612], "확보 기준": [1.3], "경고 기준": [None]}),
+        source="12월 예외",
+        expected_version=0,
+    )
+    app = _app(database)
+    assert any("조회기간 밖" in caption.value for caption in app.caption)
+
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "12월 예외")

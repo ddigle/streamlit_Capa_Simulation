@@ -677,6 +677,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
     저장 폼은 성공 회차에만 key 세대(`SAVE_FORM_GENERATION_KEY`)를 올려 비운다.
   - 저장은 부모 리비전의 가상 제품 이력에 세션 등록을 더해 넘긴다(`inherit_virtual_product_records`, 활성화 전에 읽음).
+    `skip_unchanged=True` 로 넘겨 최신 리비전과 내용이 같으면 쓰지 않는다 — `RevisionUnchanged` 를 받으면 팝업 안 info
+    (`revision_unchanged_notice`)를 적고 칸은 그대로 둔다(개선 I5, 5장 8).
   - 올라와 있는 시나리오가 목록(보관본 빼고)에 없으면 — 이 세션이 보관하면 활성화를 풀므로 다른 세션이 그 사이 보관·영구
     삭제한 것이다 — 저장 구획은 보관본까지 읽어(`list_scenarios(include_archived=True)`) 까닭과 길(보관함에서 목록으로
     되돌리기·「지금 편집본 복제」·다른 시나리오 불러오기)을 적고 시나리오 관리 링크를 세운다(`missing_scenario_notice`, E2E #55).
@@ -1962,7 +1964,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소이고 계산 캐시 키·`content_token` 에는 넣지 않는다.
 - `src/capa_simulation/components/process_rename_management.py` — Admin Area `Proc Rename` 탭. 공용 공정 표시명의
   CSV·Excel 붙여넣기·직접 편집과 저장이다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
-  - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다.
+  - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다. 최신을 보고 고친
+    표가 그 저장본과 같으면 쓰지 않고 머리 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 — 9장 「바꾼 것 없는 저장」).
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
   저장 성공과 그 저장의 표시명 경고(성공 칸 안), 저장된 겹침 경고는 각각 늘 서 있는 칸에 서서 저장(`st.rerun()`)
@@ -2941,6 +2944,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   경계. 커밋과 변경 신호는 Repository 만 갖고 store 는 열린 연결을 받는다.
   - 교체 실패 시 행·버전을 복구하고 신호를 내지 않는다. 바뀐 것이 없는 쓰기(`initialize_global_display_order` 등)는
     트랜잭션을 열지 않는다. `load_revision_table` 은 확인·읽기를 한 트랜잭션에서 하고 없으면 `KeyError` 다.
+  - `save_revision(..., skip_unchanged=True)`(화면 길만 — 자동 갱신·시험은 기본 False)는 쓰기 잠금 안에서 그 시나리오
+    `active_revision_id`(최신) 리비전과 견줘 같으면 아무것도 쓰지 않고 `RevisionUnchanged(revision_no)` 다(개선 I5).
+    견주기는 `_same_revision_content` — 프리셋(`_preset_key`: 포함 공정은 집합, 레거시 확보·경고는 9자리)·가상 제품 이력(행
+    집합)을 먼저, 표 14 는 저장된 `reference_hash` 와 같으면 같고 다르면 그 리비전 표를 `rev_data` 에서 읽어 지문을 다시
+    짓는다 — 등록 때 지문은 변환 직후의 형으로 지어 DB 를 오간 세션 표와 갈린다. 리비전명·메모는 보지 않는다.
 - `src/capa_simulation/persistence/models.py` — Repository 가 주고받는 타입.
 - `src/capa_simulation/persistence/display_order_store.py` — 공용 표시순서 프로필의 검증·이관·저장.
 - `src/capa_simulation/persistence/process_rename_store.py` — 공용 공정 표시명 프로필의 조회·교체 SQL.
@@ -3109,7 +3117,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` — 흔적 수
     대조 뒤 경계 행 하나)가 1단계 관리 쓰기다.
   - **E7 리비전 도구**: 리비전명(`rename_schedule_revision` — 이름표 한 칸만 UPDATE, 비우면 NULL, 비교 후 쓰기 →
-    `EquipmentScheduleRevisionNameMoved`, 같은 이름이면 쓰지 않음, 보관 시나리오 거절)과 되돌리기(`restore_schedule_revision` —
+    `EquipmentScheduleRevisionNameMoved`, 같은 이름이면 쓰지 않음 — 화면은 성공 대신 「바뀐 것이 없습니다」(개선 I5), 보관
+    시나리오 거절)과 되돌리기(`restore_schedule_revision` —
     고른 리비전을 **지금 공통 대장**과 합친 일정·비가동으로 같은 시나리오에 새 리비전 `origin='restore'`, 메모 「rK 일정으로
     되돌림」. 옛 배포 흔적이면 `EquipmentLegacyTraceError`, 확인 때 본 공통 최신·시나리오 최신이 바뀌었으면
     `EquipmentRevisionConflict`, 지금 최신과 같으면 쓰지 않음(`schedule=None`), 발행은 저장과 같은 `_plan_publish`, 공통을 쓰지
@@ -3289,6 +3298,9 @@ RQ_MODULE
    고치지 않고 그 일정을 새 리비전으로 다시 저장한다. 설비 `0027` 뒤 첫 저장은 무엇을 바꾸든 계약 v4 공통 한 벌을 쓴다(32).
    가정 설비 시나리오의 **배치 차이**(설비 `0031`)도 일정 리비전 내용이다 — 넣기만 하고 고치지 않는다(UPDATE·DELETE 없음,
    I1). 그래서 합친 본문 캐시의 (공통, 일정) 쌍 키가 그대로 맞고, 배치안의 이력·되돌리기·여기서 새 시나리오가 리비전으로 선다.
+   **바꾼 것 없는 사이드바 「신규 리비전 저장」 은 새 리비전을 만들지 않는다**(2026-11-01 개선 I5) — `save_revision(...,
+   skip_unchanged=True)` 가 쓰기 잠금 안에서 그 시나리오 **최신** 리비전과 표 14 지문·프리셋·가상 제품 이력을 견줘 모두 같으면
+   `RevisionUnchanged` 다(9장 「바꾼 것 없는 저장」). 옛 리비전을 불러와 그대로 저장해도 최신과 내용이 다르면 새 분기 리비전이다.
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 바뀐 쪽(공통 대장·설비 시나리오 일정)의
    새 전체 스냅샷을 만든다. 설비 시나리오는 설비 DB 안의 독립 시나리오이고 시뮬레이션 시나리오와 짝짓지 않는다(E1 — HOME·
@@ -4946,7 +4958,24 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `save_once` 를 지나고 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을 0.15~0.4초 간격으로 두 번 누르면 공용 버전만
     두 번 올랐다(2026-10-25 E2E). 창 안의 같은 입력은 쓰지 않고 첫 저장으로 알리고, 다른 입력은 창 안이라도 쓴다
     (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 지금처럼 새 버전이다 — 바꾼 것 없는 저장을
-    막는 것은 동작이 바뀌는 일이라 따로 정한다.
+    막는 자리는 아래 다섯뿐이다(개선 I5 범위).
+  - **바꾼 것 없는 저장은 새 버전·리비전을 만들지 않는다**(2026-11-01 개선 I5 — E2E #10·#41·#60·#96). 다섯 자리다.
+    Admin Proc Rename 직접 편집 「공용 공정 표시명 저장」·HOME Preference 「판정 기준 저장」 은 본 version 이 그 회차가 그린
+    최신 저장본이고 저장할 값이 그 저장본과 같으면(표는 `prepare_process_rename_rules` 꼴의 `.equals`, 판정 기준은
+    `SecurementThresholds.same_as` — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다) 저장소에 가지 않고 그 폼 알림 칸에
+    「바뀐 것이 없습니다 — …」 를 적는다. 변경 메모만 적은 저장도 같다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
+    대조가 거부한다. 저장본이 없는 v0 의 첫 저장은 쓴다 — 판정 기준은 그때 보이는 공식버전 프리셋·코드 기본값을 공용으로
+    고정한다. 사이드바 「신규 리비전 저장」 은 저장소가 쓰기 잠금 안에서 견준다(`save_revision(..., skip_unchanged=True)` →
+    `RevisionUnchanged`, 5장 8 · 3장 `repository.py`). 설비 시나리오 「이름 바꾸기」·「리비전명 저장」 은 저장소가 이미 같은
+    이름이면 쓰지 않았는데 화면이 성공을 띄웠다 — 이제 단추 아래 「바뀐 것이 없습니다」 를 적고 제 저장 짝도 적지 않는다
+    (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 네 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
+    닿은 느린 둘째 누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과
+    같은 꼴 — 프로필 둘은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 사이드바 저장은
+    성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 판정 기준의 「바뀐 것이 없습니다」 회차도 조회기간 밖 월별
+    기준 줄(`_render_threshold_out_of_range_notice`)은 그대로 그린다 — 누르지 않은 회차와 같은 화면에 알림만 더한다. 붙여넣기 길(표시순서·Proc
+    Rename)은 전부터 「현재 공용 설정과 동일합니다」 로 거절한다. 시험: `tests/test_admin_area_page.py`·
+    `tests/test_threshold_editor.py`·`tests/test_revision_save_unchanged.py`·`tests/test_scenario_sidebar.py`·
+    `tests/test_scenario_management_page.py`·`tests/test_equipment_scenario_unchanged_names.py`.
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

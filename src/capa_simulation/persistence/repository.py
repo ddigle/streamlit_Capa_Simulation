@@ -299,6 +299,81 @@ def _require_unique_scenario_name(
         raise ValueError(DUPLICATE_SCENARIO_NAME_MESSAGE)
 
 
+def _same_revision_content(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+    *,
+    reference_hash: str,
+    preset: ScenarioPreset,
+    virtual_products: Sequence[Mapping[str, str]],
+) -> int | None:
+    """`revision_id` 리비전의 내용이 새로 적으려는 내용과 같으면 그 번호, 다르면 None.
+
+    프리셋은 `_preset_key`, 가상 제품 이력은 행 집합으로 먼저 견준다(싸다). 편집 14표는 내용
+    지문(`hash_tables`)이다 — 저장된 `reference_hash` 와 같으면 같다. 다르면 그 리비전의 표를 DB
+    에서 읽어 지문을 다시 짓는다: 저장된 지문은 그때 넘긴 표(등록·변환 직후의 형)로 지은 것이라,
+    같은 값도 DB 를 오가 형이 바뀐 표(리비전을 불러온 세션)와 지문이 갈린다(시드 등록 r1). 고쳤다
+    되돌린 편집이 형까지 달라 지문이 갈리면 다르다고 본다 — 새 리비전을 만드는 쪽(지금 동작)으로
+    물러선다.
+    """
+    row = connection.execute(
+        "SELECT revision_no, reference_hash FROM app_meta.scenario_revision WHERE revision_id = ?",
+        [revision_id],
+    ).fetchone()
+    if row is None:
+        return None
+    if _preset_key(load_preset(connection, revision_id)) != _preset_key(preset):
+        return None
+    stored = {
+        (str(product), str(stack), str(source_product), str(source_stack))
+        for product, stack, source_product, source_stack in connection.execute(
+            """
+            SELECT "제품정보", "Stack", source_product, source_stack
+            FROM app_meta.revision_virtual_product
+            WHERE revision_id = ?
+            """,
+            [revision_id],
+        ).fetchall()
+    }
+    incoming = {
+        (
+            str(record["product"]),
+            str(record["stack"]),
+            str(record["source_product"]),
+            str(record["source_stack"]),
+        )
+        for record in virtual_products
+    }
+    if stored != incoming:
+        return None
+    if str(row[1]) != reference_hash:
+        loaded = {
+            logical_name: load_frame(
+                connection,
+                schema="rev_data",
+                table_name=table_name,
+                owner_column="revision_id",
+                owner_id=revision_id,
+            )
+            for logical_name, table_name in REVISION_TABLES.items()
+        }
+        if hash_tables(loaded, tuple(REVISION_TABLES)) != reference_hash:
+            return None
+    return int(row[0])
+
+
+def _preset_key(preset: ScenarioPreset) -> ScenarioPreset:
+    """프리셋 견주기 꼴 — 포함 공정은 차례 없는 집합(필터라 차례가 뜻이 없다 — HOME 이 아는 공정을
+    다시 세우며 차례만 바꾼다), 레거시 확보·경고 값은 세션 퍼센트 칸을 오간 부동소수 끝자리를
+    접는다."""
+    return replace(
+        preset,
+        included_processes=tuple(sorted(preset.included_processes)),
+        secure_threshold=round(preset.secure_threshold, 9),
+        warning_threshold=round(preset.warning_threshold, 9),
+    )
+
+
 _WRITE_LOCK = threading.RLock()
 
 
@@ -335,6 +410,28 @@ class RevisionNameMoved(ValueError):
 def name_moved_message(current: str) -> str:
     """비교 후 쓰기가 이름을 거부한 까닭 — 다른 사용자가 먼저 바꾼 지금 이름을 함께 적는다."""
     return f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current})."
+
+
+class RevisionUnchanged(ValueError):
+    """새 리비전으로 적으려는 내용이 그 시나리오의 최신 리비전과 같다. 아무것도 쓰지 않았다.
+
+    `save_revision(..., skip_unchanged=True)` 만 올린다(사이드바 「신규 리비전 저장」 — 바꾼 것 없는
+    저장은 새 리비전을 만들지 않는다, 2026-11-01 개선 I5). 같음은 편집 14표의 내용 지문
+    (`reference_hash`)·프리셋(조회기간·공정 필터·표준 목표 설정)·가상 제품 이력 셋 모두다 —
+    리비전명·메모는 이름표라 보지 않는다. `revision_no` 는 같은 최신 리비전의 번호다.
+    """
+
+    def __init__(self, revision_no: int) -> None:
+        super().__init__(revision_unchanged_message(revision_no))
+        self.revision_no = revision_no
+
+
+def revision_unchanged_message(revision_no: int) -> str:
+    """바꾼 것 없는 「신규 리비전 저장」 의 알림 — 무엇이 같아 무엇을 하지 않았는지."""
+    return (
+        f"바뀐 것이 없습니다 — 편집 표·조회기간·공정 필터가 최신 리비전 r{revision_no} 그대로라 새 "
+        "리비전을 만들지 않았습니다."
+    )
 
 
 class BatchEditRefused(ValueError):
@@ -1306,7 +1403,16 @@ class DuckDBScenarioRepository:
         parent_revision_id: str | None = None,
         note: str | None = None,
         virtual_products: Sequence[Mapping[str, str]] = (),
+        skip_unchanged: bool = False,
     ) -> ScenarioSnapshot:
+        """편집 14표·프리셋을 그 시나리오의 새 리비전으로 적고 시나리오의 최신을 그것으로 옮긴다.
+
+        `skip_unchanged` 면 쓰기 잠금 안에서 그 시나리오의 최신 리비전과 내용을 견줘, 같으면
+        아무것도 쓰지 않고 `RevisionUnchanged` 를 올린다(사이드바 「신규 리비전 저장」 — 2026-11-01
+        개선 I5). 최신이 아닌 옛 리비전을 불러와 그대로 저장해도 최신과 내용이 다르면 새
+        리비전이다(옛 내용을 최신으로 되살리는 저장). 기본은 견주지 않는다 — 공식버전 자동
+        갱신·시험처럼 화면 밖에서 부르는 길은 그대로다.
+        """
         require_tables(revision_tables, tuple(REVISION_TABLES), "리비전")
         revision_label = required_text(revision_name, "리비전명")
         reference_hash = hash_tables(revision_tables, tuple(REVISION_TABLES))
@@ -1347,6 +1453,16 @@ class DuckDBScenarioRepository:
                         f"상위 리비전이 현재 시나리오에 속하지 않습니다: {selected_parent_id}"
                     )
             validate_preset_processes(preset, revision_tables["RQ_REQB"])
+            if skip_unchanged and active_revision_id:
+                same_no = _same_revision_content(
+                    connection,
+                    str(active_revision_id),
+                    reference_hash=reference_hash,
+                    preset=preset,
+                    virtual_products=virtual_products,
+                )
+                if same_no is not None:
+                    raise RevisionUnchanged(same_no)
             self._insert_revision(
                 connection,
                 revision_id=revision_id,

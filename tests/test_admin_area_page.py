@@ -9,6 +9,11 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.process_rename_management import (
+    EDITOR_KEY,
+    PROCESS_RENAME_SAVED_MESSAGE,
+    PROCESS_RENAME_UNCHANGED_MESSAGE,
+)
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -327,7 +332,8 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A 가 직접 편집 표를 연 뒤 B 가 표시명을 저장했다. A 의 저장은 막히고 B 의 저장본이 남는다
-    (판정 기준과 같은 버전 대조). 그 회차가 그린 최신 저장본에서 다시 누르면 저장된다."""
+    (판정 기준과 같은 버전 대조). 그 회차가 그린 최신 저장본에서 고쳐 다시 누르면 저장된다 — 고치지
+    않고 누르면 대조는 지나지만 바뀐 것이 없어 새 버전을 만들지 않는다(2026-11-01 개선 I5)."""
     database_path = tmp_path / "rename-conflict.duckdb"
     repository = DuckDBScenarioRepository(database_path)
     repository.initialize()
@@ -357,7 +363,93 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
     app.run(timeout=60)
     assert not list(app.error), [str(error.value) for error in app.error]
-    assert app.text[-1].value == "v3|SAW>절단;MOLD>성형"
+    assert [str(item.value) for item in app.info] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
+
+    _edit_display_name(app, 1, "몰드")
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    app.run(timeout=60)
+    assert not list(app.error), [str(error.value) for error in app.error]
+    assert app.text[-1].value == "v3|SAW>절단;MOLD>몰드"
+    clear_global_process_rename_cache()
+
+
+def _edit_display_name(app: AppTest, row: int, name: str) -> None:
+    """직접 편집 표 `row` 행의 표시명을 고친 것처럼 편집표 칸을 채운다(다음 회차가 그 편집을
+    보낸다)."""
+    app.session_state[EDITOR_KEY] = {
+        "edited_rows": {row: {"표시명": name}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+
+
+def _press_rename_save(app: AppTest) -> AppTest:
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    app.run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+    return app
+
+
+def test_a_direct_edit_save_without_changes_makes_no_new_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바꾼 것 없는 「공용 공정 표시명 저장」 은 새 버전을 만들지 않고 「바뀐 것이 없습니다」 를
+    알린다(2026-11-01 개선 I5 — E2E #41: v4→v5 로 올라가며 「저장했습니다」 를 띄웠다). 변경 메모만
+    적은 저장도 같다. 고친 칸이 있으면 평소대로 저장한다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "rename-unchanged.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="처음 저장"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v1|SAW>절단"
+
+    app = _press_rename_save(app)
+    assert [str(item.value) for item in app.info] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    assert not app.success and not app.error
+    assert app.text[-1].value == "v1|SAW>절단"
+
+    app.text_input(key="admin_area_process_rename_note").set_value("메모만 적음")
+    app = _press_rename_save(app)
+    assert [str(item.value) for item in app.info] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    profile = repository.load_global_process_rename()
+    assert (profile.version, profile.source) == (1, "처음 저장")
+
+    _edit_display_name(app, 0, "자르기")
+    app = _press_rename_save(app)
+    assert not app.info and not app.error
+    assert [str(item.value) for item in app.success] == [PROCESS_RENAME_SAVED_MESSAGE]
+    assert app.text[-1].value == "v2|SAW>자르기"
+    clear_global_process_rename_cache()
+
+
+def test_a_slow_second_press_of_the_direct_edit_save_repeats_the_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """느린 두 번 누름(둘째 누름이 첫 저장 뒤 새로 그린 표에 닿는다 — 같은 표라 바뀐 것이 없다)은
+    「바뀐 것이 없습니다」 로 방금 성공을 덮지 않는다(write_guard.held_notice 창 안)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "rename-slow-double.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="처음 저장"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    _edit_display_name(app, 0, "자르기")
+    app = _press_rename_save(app)
+    assert app.text[-1].value == "v2|SAW>자르기"
+
+    app = _press_rename_save(app)
+
+    assert not app.info and not app.error, [str(item.value) for item in app.info]
+    assert [str(item.value) for item in app.success] == [PROCESS_RENAME_SAVED_MESSAGE]
+    assert app.text[-1].value == "v2|SAW>자르기"
     clear_global_process_rename_cache()
 
 
@@ -430,14 +522,16 @@ def test_a_single_press_after_a_held_double_press_saves_the_process_rename(
     assert any("다른 사용자가 먼저" in str(error.value) for error in app.error)
     assert repository.load_global_process_rename().version == 2
 
-    # 거부 표지의 창이 지났다 — 최신 화면을 보고 다시 누른 저장이다.
+    # 거부 표지의 창이 지났다 — 최신 화면을 보고 고쳐 다시 누른 저장이다(고치지 않으면 바뀐 것이
+    # 없어 쓰지 않는다 — 개선 I5).
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit_display_name(app, 1, "몰드")
     next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
     app.run(timeout=60)
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error), [str(error.value) for error in app.error]
-    assert app.text[-1].value == "v3|SAW>절단;MOLD>성형"
+    assert app.text[-1].value == "v3|SAW>절단;MOLD>몰드"
     clear_global_process_rename_cache()
 
 
