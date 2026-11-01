@@ -1001,3 +1001,69 @@ render_threshold_editor(
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [widget.value for widget in app.number_input] == [130, 105]
+
+
+def test_a_press_refused_by_another_sessions_save_keeps_the_hidden_month_note_and_the_latest_cells(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 누름 — 거부 뒤 회차와 그 누름의 둘째 누름(held) 회차 모두 조회기간 밖
+    월별 기준 줄이 거부 옆에 서고, 기본 두 칸과 월별 표는 남의 최신 저장본으로 선다. 숨은 달 안내
+    (거부 · held 회차도 그림)와 칸 key 의 저장본 version(옛 칸의 친 값은 새 칸에 닿지 않음)이 한
+    회차에 함께 선다는 것을 지킨다. 창이 지난 뒤 그대로 누르면 「바뀐 것이 없습니다」 이고 남의
+    저장본이 그대로다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    _saved_once(database)
+    app = _app(database)
+    assert not _outside_notes(app)
+    app.number_input[0].set_value(125.0)
+    _edit(app, {0: {"26.03": 116.0}})
+    _other_session_saves(
+        database,
+        1.15,
+        1.0,
+        pd.DataFrame(
+            {
+                "생산계획년월": [202603, 202612],
+                "확보 기준": [1.26, 1.3],
+                "경고 기준": [None, None],
+            }
+        ),
+    )
+
+    def _assert_latest_screen() -> None:
+        assert not list(app.exception), [element.message for element in app.exception]
+        errors = [element.value for element in app.error]
+        assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+        notes = _outside_notes(app)
+        assert len(notes) == 1 and "26.12" in notes[0], notes
+        assert [widget.value for widget in app.number_input] == [115, 100]
+        assert _editor_key(app).endswith("v2")
+        drawn = app.dataframe[0].value
+        assert drawn.loc[0, "26.03"] == pytest.approx(126.0)
+        assert pd.isna(drawn.loc[0, "26.02"])
+
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    _assert_latest_screen()
+
+    app._run(widget_state=pressed)
+    _assert_latest_screen()
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not list(app.error), [element.value for element in app.error]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert len(_outside_notes(app)) == 1
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "다른 세션")
+    assert profile.thresholds.for_month(202603) == pytest.approx((1.26, 1.0))
+    assert profile.thresholds.for_month(202612) == pytest.approx((1.3, 1.0))
+    assert profile.thresholds.for_month(202602) == pytest.approx((1.15, 1.0))
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
