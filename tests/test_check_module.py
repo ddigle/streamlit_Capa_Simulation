@@ -329,6 +329,7 @@ def test_the_crash_fixture_missing_package_is_caught_through_importlib(tmp_path:
         ("import logging\nlogging.basicConfig(level=10)\n", ("M11", "error")),
         ("import builtins\nbuiltins.print = len\n", ("M11", "error")),
         ('import plotly.io as pio\npio.templates.default = "plotly_dark"\n', ("M11", "error")),
+        ('import plotly.express as px\npx.defaults.template = "plotly_dark"\n', ("M11", "error")),
         ('import warnings\nwarnings.filterwarnings("ignore")\n', ("M11", "warning")),
         # 별명으로 비켜 간 캐시 장식자(화면 파일).
         (

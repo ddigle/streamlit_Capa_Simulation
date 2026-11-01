@@ -182,7 +182,8 @@ _GLOBAL_TARGETS: Final = frozenset(
         "plotly.io.renderers.default",
     }
 )
-_GLOBAL_TARGET_PREFIXES: Final = ("pandas.options.",)
+# `px.defaults.template = …` 는 코어의 plotly express 그림(설비 일정 간트)까지 바꾼다.
+_GLOBAL_TARGET_PREFIXES: Final = ("pandas.options.", "plotly.express.defaults.")
 _GLOBAL_SUBSCRIPTS: Final = frozenset(
     {"os.environ", "sys.path", "sys.modules", "matplotlib.rcParams", "matplotlib.pyplot.rcParams"}
 )
