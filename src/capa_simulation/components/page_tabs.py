@@ -52,6 +52,13 @@
   `EQUIPMENT_RELOAD_RETURN_VARIABLE` — 가정 설비 시나리오만의 이름)를 탭의 `sessionStorage` 에 적고,
   새 문서에서 상한 알림 칸에 한 번 알린다(`<tabs-return>`, 글은 `RETURN_NOTICE`·
   `THEME_RETURN_NOTICE`). 서버에는 아무것도 남기지 않는다.
+- **문서를 떠날 때의 브라우저 확인 창.** 새로고침·브라우저 탭 닫기·주소 바꾸기는 새 세션이라 저장·
+  적용하지 않은 편집이 사라진다. JS 가 문서에 `beforeunload` 처리기를 하나 걸고, 떠나는 순간 테마
+  단추가 읽는 저장 안 함 표지(`theme_toggle.UNSAVED_EDITS_CSS_VARIABLE` — 탭 점과 한 벌의 판정)가
+  있을 때만 브라우저 확인 창을 띄운다(`<tabs-unload>`, 개선 거리 I3). 편집이 없으면 묻지 않고, 테마
+  단추가 제 확인 창으로 이미 물은 새로 읽기(`theme_toggle.RELOAD_ASKED_FLAG`)도 묻지 않는다. 창의
+  글은 브라우저가 정한다. 칸 편집기에 쓰는 중(Enter 전)인 글은 서버에 오기 전이라 표지가 없다 —
+  그때의 새로고침은 묻지 않는다(탭 줄·테마 단추처럼 붙들 수 없다 — 떠나기는 기다려 주지 않는다).
 - **그림자 DOM**(`isolate_styles` 기본값). 팝업 안이 아니라 포커스 순서 의무가 걸리지 않고, 따라하기
   가이드의 `document.querySelectorAll` 에도 걸리지 않는다. 색은 등록 CSS 의 `--st-*` 변수와 data 의
   팔레트로만 쓴다.

@@ -308,7 +308,8 @@ with pinned_connections(DUCKDB_PATH):
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
         # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
         # Data 초안·시나리오 관리 표 초안)이 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은
-        # 표지를 본다. 판정은 탭 점과 한 벌이다.
+        # 표지를 본다. 판정은 탭 점과 한 벌이다. 탭 줄 JS 도 이 표지로 새로고침·브라우저 탭 닫기에
+        # 브라우저 확인 창을 띄운다(`page_tabs.js` 의 `<tabs-unload>`).
         + unsaved_edits_marker(has_unsaved_scenario_changes() or bool(unsaved_marks))
     )
     # 머리 띠의 「공식 vN」은 위 요약이 이 회차에 확인한 값을 읽는다 — 요약보다 뒤여야 한다.

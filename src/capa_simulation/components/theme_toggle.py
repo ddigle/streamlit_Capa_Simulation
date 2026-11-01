@@ -48,7 +48,9 @@ Streamlit 1.63 은 그 키를 **번들을 읽는 순간의 경로**로 한 번�
 - **버튼을 누르면(`choose`)**: 앱 키·지금 경로와 표지가 있는 경로의 Streamlit 키·표지를 모두 새
   값으로 적고 `?theme` 을 맞춰 한 번 새로고침한다. 그 전에 화면 탭 줄의 떠나기 붙들기
   (`window.__capaLeaveGate` — `page_tabs.js` 의 `<tabs-hold>`)를 지난다 — 편집표 칸에 쓰는 중이거나
-  막 적용한 직후의 누름은 그 편집 회차가 돌아와 저장 안 함 표지가 선 뒤에 묻는다.
+  막 적용한 직후의 누름은 그 편집 회차가 돌아와 저장 안 함 표지가 선 뒤에 묻는다. 새로 읽기 직전에는
+  부모 창에 표지(`RELOAD_ASKED_FLAG`)를 단다 — 탭 줄 JS 가 새로고침·탭 닫기에 거는 브라우저 확인 창
+  (`<tabs-unload>`)이 이미 물은 편집을 두 번 묻지 않는다.
 - 저장소에 쓰지 못하면 Streamlit 키 때문에는 새로고침하지 않는다(쓰기 실패가 새로고침 반복이 되지
   않게). 그때는 예전처럼 `?theme` 만 밝게로 맞춘다.
 
@@ -124,13 +126,18 @@ THEME_RELOAD_GUARD_PREFIX = "capa-theme-reloaded-"
 # 이 세션에 저장하지 않은 편집이 있다는 표지. 버튼의 iframe 내용은 회차마다 같아야 하므로(모듈
 # 설명) 값을 iframe 에 싣지 않고, 매 회차 그리는 사이드바 스타일 끝에 CSS 변수로 단다
 # (`unsaved_edits_marker`). 버튼은 탭 줄의 떠나기 붙들기(`window.__capaLeaveGate`)를 지난 뒤
-# 그 변수를 읽는다 — 막 적용한 편집의 회차가 돌아와 표지가 선 뒤다.
+# 그 변수를 읽는다 — 막 적용한 편집의 회차가 돌아와 표지가 선 뒤다. 탭 줄 JS 도 새로고침·탭 닫기의
+# 브라우저 확인 창(`page_tabs.js` 의 `<tabs-unload>`)을 이 변수로 정한다.
 UNSAVED_EDITS_CSS_VARIABLE = "--capa-unsaved-edits"
 # 테마 단추가 새로 읽기 직전에 이 탭의 `sessionStorage` 에 남기는 표지. 탭 줄 JS 가 문서를 떠날
 # 때 읽고 지워, 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」 를 테마 전환 글로 낸다
 # (`page_tabs.js` 의 `<tabs-return>`). 탭 줄이 없던 문서에서 눌러 남은 표지는 새 문서의 탭 줄이
 # 처음 그릴 때 지운다.
 THEME_SWITCH_STORAGE_KEY = "capa-theme-switch"
+# 테마 단추가 새로 읽기 직전에 부모 창에 다는 표지(창 속성 이름). 저장하지 않은 편집은 단추가 제
+# 확인 창으로 이미 물었으므로, 문서를 떠날 때의 브라우저 확인 창(`page_tabs.js` 의 `<tabs-unload>`
+# — 개선 거리 I3)이 두 번 묻지 않게 이것을 보고 지나간다.
+RELOAD_ASKED_FLAG = "__capaReloadAsked"
 # 탭 줄 붙들기(`page_tabs.js` 의 `window.__capaLeaveGate`)에 맡긴 누름의 기다림 표지를 스스로
 # 걷는 때(ms). 붙들기는 길어야 `BUSY_MS`(10초) 뒤에 놓지만, 그 사이 탭 누름이 붙든 자리를
 # 차지하면 테마 누름은 버려진다 — 그때 단추가 「기다리는 중」 으로 남지 않게 그보다 조금 길게 둔다.
@@ -461,6 +468,9 @@ _SCRIPT = """
         syncParam(next.toLowerCase());
         // 새로 읽은 문서가 「테마를 바꾸며 … 공식으로 돌아왔습니다」 로 알리게 남긴다(탭 줄 JS).
         try { parentWindow.sessionStorage.setItem("%(switch_key)s", "1"); } catch (error) {}
+        // 저장 안 함 표지가 있으면 위에서 이미 물었다 — 문서를 떠날 때의 브라우저 확인 창(탭 줄
+        // JS)이 다시 묻지 않게 표지를 단다.
+        parentWindow.%(asked_flag)s = true;
         parentWindow.location.reload();
       }
       // 칸 편집기에 쓰는 중이거나 막 적용(Enter)한 직후의 누름은 그 편집 회차가 돌아와 표지가
@@ -526,6 +536,7 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
             "unsaved_var": UNSAVED_EDITS_CSS_VARIABLE,
             "unsaved_confirm": UNSAVED_EDITS_CONFIRM,
             "switch_key": THEME_SWITCH_STORAGE_KEY,
+            "asked_flag": RELOAD_ASKED_FLAG,
             "hold_reset_ms": LEAVE_HOLD_RESET_MS,
             # 버튼은 **반대 테마의 옷**을 입는다. 어두운 화면에서는 밝은 팔레트의 면과
             # 글자색을, 밝은 화면에서는 어두운 팔레트의 것을 쓴다.
@@ -540,7 +551,8 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
 
 
 def unsaved_edits_marker(dirty: bool) -> str:
-    """저장하지 않은 편집이 있으면 테마 버튼이 읽는 CSS 변수를 다는 스타일. 없으면 빈 문자열.
+    """저장하지 않은 편집이 있으면 테마 버튼(과 탭 줄의 새로고침·탭 닫기 확인 창)이 읽는 CSS 변수를
+    다는 스타일. 없으면 빈 문자열.
 
     새 요소로 그리지 않고 **늘 그리는 스타일 끝에** 붙인다. 조건부 요소는 아래 형제의 자리를
     밀어 `st.rerun()` 으로 끊긴 회차의 사본을 남길 수 있다(AGENTS.md 9장).

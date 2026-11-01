@@ -468,7 +468,7 @@ globalThis.clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].liv
 const run = new Function('window', input.script)
 const out = input.cases.map((c) => {
   timers = []
-  const log = { reloads: 0, confirms: 0, pressed: 0, held: [], button: null, mark: null }
+  const log = { reloads: 0, confirms: 0, pressed: 0, held: [], button: null, mark: null, asked: [] }
   const current = new URL(input.href)
   const doc = {
     querySelector() { return slot },
@@ -496,7 +496,12 @@ const out = input.cases.map((c) => {
     location: {
       get href() { return current.href },
       get pathname() { return current.pathname },
-      reload() { log.reloads += 1; log.mark = session.getItem(input.switchKey) },
+      reload() {
+        log.reloads += 1
+        log.mark = session.getItem(input.switchKey)
+        // 새로 읽는 순간 부모 창에 달린 표지 — 탭 줄의 떠나기 확인 창이 보고 지나간다.
+        log.asked.push(parent[input.askedFlag] === true)
+      },
     },
     history: { replaceState(_s, _t, url) { current.href = new URL(url, current.href).href } },
     performance: { getEntriesByType() { return [] } },
@@ -528,7 +533,7 @@ const out = input.cases.map((c) => {
     const resets = timers.filter((t) => t.live && t.ms === input.resetMs)
     resets.forEach((t) => { t.live = false; t.fn() })
   }
-  return { during, after: state(), pressed: log.pressed, held: log.held.length }
+  return { during, after: state(), pressed: log.pressed, held: log.held.length, asked: log.asked }
 })
 process.stdout.write(JSON.stringify(out))
 """
@@ -552,6 +557,7 @@ def test_the_theme_button_asks_and_reloads_only_when_the_leave_gate_lets_it_go(
         "unsavedVar": theme_toggle.UNSAVED_EDITS_CSS_VARIABLE,
         "switchKey": theme_toggle.THEME_SWITCH_STORAGE_KEY,
         "resetMs": theme_toggle.LEAVE_HOLD_RESET_MS,
+        "askedFlag": theme_toggle.RELOAD_ASKED_FLAG,
         "cases": [
             {"gate": None, "unsaved": "", "confirm": True, "then": None},
             {"gate": "hold", "unsaved": "", "confirm": True, "then": "release"},
@@ -579,3 +585,41 @@ def test_the_theme_button_asks_and_reloads_only_when_the_leave_gate_lets_it_go(
     # 붙들기가 깨졌으면 예전처럼 곧바로 묻고 새로 읽는다(표지를 남기지 않는다).
     assert broken["pressed"] == 1
     assert broken["after"] == {"reloads": 1, "confirms": 0, "busy": None, "mark": "1"}
+
+
+def test_the_theme_button_marks_its_own_reload_so_the_browser_does_not_ask_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """탭 줄 JS 는 새로고침·탭 닫기에 저장 안 함 표지가 있으면 브라우저 확인 창을 띄운다(개선 거리
+    I3). 테마 단추의 새로 읽기는 제 확인 창으로 이미 물었으므로(편집이 없으면 묻지 않고) 새로 읽기
+    직전에 부모 창에 `RELOAD_ASKED_FLAG` 를 단다 — 브라우저가 한 번 더 묻지 않는다. 취소하거나
+    버려진 누름은 새로 읽지 않고 표지도 달지 않는다."""
+    from test_space_module_group import _node
+    from test_theme_reopen_link import ORIGIN, _frame_script, _synced
+
+    payload = {
+        "script": _frame_script(monkeypatch),
+        "href": f"{ORIGIN}/space_status?theme=light",
+        "local": _synced("Light"),
+        "unsavedVar": theme_toggle.UNSAVED_EDITS_CSS_VARIABLE,
+        "switchKey": theme_toggle.THEME_SWITCH_STORAGE_KEY,
+        "resetMs": theme_toggle.LEAVE_HOLD_RESET_MS,
+        "askedFlag": theme_toggle.RELOAD_ASKED_FLAG,
+        "cases": [
+            {"gate": None, "unsaved": "", "confirm": True, "then": None},
+            {"gate": "hold", "unsaved": "1", "confirm": True, "then": "release"},
+            {"gate": "hold", "unsaved": "1", "confirm": False, "then": "release"},
+            {"gate": "hold", "unsaved": "", "confirm": True, "then": "drop"},
+        ],
+    }
+    result: Any = _node(_GATE_CLICK_RUNNER, payload)
+    clean, confirmed, cancelled, dropped = result
+
+    assert clean["asked"] == [True] and clean["after"]["reloads"] == 1
+    assert confirmed["asked"] == [True] and confirmed["after"]["confirms"] == 1
+    assert cancelled["asked"] == [] and cancelled["after"]["reloads"] == 0
+    assert dropped["asked"] == [] and dropped["after"]["reloads"] == 0
+    click = _frame_script(monkeypatch)
+    click = click[click.index("button.onclick") :]
+    flag = f"parentWindow.{theme_toggle.RELOAD_ASKED_FLAG} = true;"
+    assert click.index("confirm(") < click.index(flag) < click.index("location.reload()")
