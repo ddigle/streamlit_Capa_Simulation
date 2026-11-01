@@ -18,8 +18,11 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
     KEY_PROCESS_SEEN_KEY,
+    KEY_PROCESS_UNCHANGED_MESSAGE,
     SUMMARY_BASE_VERSION_KEY,
+    SUMMARY_UNCHANGED_MESSAGE,
     TOP5_BASE_VERSION_KEY,
+    TOP5_UNCHANGED_MESSAGE,
 )
 from capa_simulation.persistence.cache import (
     clear_global_key_process_cache,
@@ -99,6 +102,10 @@ def _errors(app: AppTest) -> list[str]:
     return [str(element.value) for element in app.error]
 
 
+def _infos(app: AppTest) -> list[str]:
+    return [str(element.value) for element in app.info]
+
+
 def test_a_summary_save_from_a_stale_screen_is_rejected_not_reported_as_saved(
     database: Path,
 ) -> None:
@@ -165,13 +172,15 @@ def test_after_a_refused_top5_save_both_boxes_show_the_latest_save(
     assert [box.value for box in app.number_input] == expected
     assert app.session_state[TOP5_BASE_VERSION_KEY] == 1
 
-    # 거부 창(`TRAILING_PRESS_SECONDS`)이 지난 뒤 다시 누르면 실제로 저장한다 — 섞인 구간이 아니라
-    # 최신 저장본이 v2 로 선다(창 안의 누름은 쓰지 않아 이 대조가 되지 않는다).
+    # 거부 창(`TRAILING_PRESS_SECONDS`)이 지난 뒤 다시 누르면 실제로 대조한다 — 두 칸이 최신
+    # 저장본 그대로라 바뀐 것이 없어 새 버전을 만들지 않는다(2026-11-01 개선 I5 넓힘). 섞인 구간이면
+    # 바뀐 것이라 그 구간이 v2 로 섰다(창 안의 누름은 쓰지 않아 이 대조가 되지 않는다).
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _press(app, "확보율 구간 저장")
-    assert any("Top5 확보율 구간을 저장했습니다" in message for message in _successes(app))
+    assert _infos(app) == [TOP5_UNCHANGED_MESSAGE]
+    assert not _errors(app), _errors(app)
     profile = DuckDBScenarioRepository(database).load_global_top5_band()
-    assert profile.version == 2
+    assert profile.version == 1
     assert [profile.min_rate * 100, profile.max_rate * 100] == pytest.approx(expected)
 
 
@@ -229,13 +238,16 @@ def test_after_a_refused_preset_save_name_and_processes_show_the_latest_save(
     assert (app.text_input[0].value, app.multiselect[0].value) == (expected[0], list(expected[1]))
     assert app.session_state[KEY_PROCESS_SEEN_KEY] == (2, expected[0], expected[1])
 
-    # 거부 창이 지난 뒤 다시 누르면 실제로 저장한다 — 섞인 프리셋이 아니라 최신 저장본이 v3 이다.
+    # 거부 창이 지난 뒤 다시 누르면 실제로 대조한다 — 두 칸이 고칠 프리셋의 최신 저장본 그대로라
+    # 바뀐 것이 없어 새 버전을 만들지 않는다(2026-11-01 개선 I5 넓힘 — Top5 구간과 같은 꼴).
+    # 섞인 프리셋이면 바뀐 것이라 그 프리셋이 v3 으로 섰다(창 안의 누름은 쓰지 않아 이 대조가
+    # 되지 않는다).
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _press(app, "프리셋 저장")
     assert not _errors(app), _errors(app)
-    assert _successes(app) == [f"프리셋 「{expected[0]}」을 저장했습니다."]
+    assert _infos(app) == [KEY_PROCESS_UNCHANGED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_key_process()
-    assert profile.version == 3
+    assert profile.version == 2
     assert profile.presets == (expected, ("뒤 묶음", PROCESSES[2:]))
 
 
@@ -338,7 +350,12 @@ def test_make_default_on_a_stale_screen_is_rejected(database: Path) -> None:
     assert profile.preset_names == ("기본", "뒤 묶음")
 
 
-def test_a_save_on_a_fresh_screen_still_saves(database: Path) -> None:
+def test_a_save_on_a_fresh_screen_still_saves(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """새 화면에서 고친 세 저장은 저장한다. 앞 저장의 성공 알림은 느린 둘째 누름의 창 안 회차에 다시
+    서므로(write_guard.held_notice) 창은 시험이 0 으로 정한다 — 저장마다 그 알림 하나만 본다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _app(database)
     app.text_area[0].input("새 공지")
     app = _press(app, "Summary 저장")
@@ -441,7 +458,9 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
     누름이 옛 화면의 입력을 든 채 대조를 지나 저장하고 「저장했습니다」 를 띄웠다 — key 없는 칸이 새
     저장본으로 서서 A 의 입력은 버려진다. 거부 직후(`TRAILING_PRESS_SECONDS`)의 둘째 누름은 저장하지
     않고 그 거부를 다시 알린다. 창이 지난 누름은 새 화면을 보고 다시 누른 저장이라 평소대로
-    대조한다.
+    대조한다 — 공지·구간·프리셋은 그 화면이 B 의 값을 그렸고(새로 선 칸 — 프리셋 두 칸의 key 는
+    고칠 프리셋 저장본의 지문을 든다, N7-preset) 그대로 누른 것이라 바뀐 것이 없어 새 버전을 만들지
+    않는다(2026-11-01 개선 I5 넓힘). 「기본으로」 는 바뀐 것 판정이 없어 쓴다.
     """
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
     app = _app(database)
@@ -465,6 +484,18 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
         errors = _errors(app)
         assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
         assert not _successes(app)
+        assert stored == first_version
+    elif editor == "summary":
+        assert not _errors(app), _errors(app)
+        assert _infos(app) == [SUMMARY_UNCHANGED_MESSAGE]
+        assert stored == first_version
+    elif editor == "top5":
+        assert not _errors(app), _errors(app)
+        assert _infos(app) == [TOP5_UNCHANGED_MESSAGE]
+        assert stored == first_version
+    elif editor == "key_process":
+        assert not _errors(app), _errors(app)
+        assert _infos(app) == [KEY_PROCESS_UNCHANGED_MESSAGE]
         assert stored == first_version
     else:
         assert not _errors(app), _errors(app)

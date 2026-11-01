@@ -19,6 +19,7 @@ import hashlib
 import html
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from math import isclose
 from pathlib import Path
 from typing import NoReturn
 
@@ -126,6 +127,7 @@ from capa_simulation.services.advance_load import (
 )
 from capa_simulation.services.advance_shipment import (
     ADVANCE_SHIPMENT_ROW_LABEL,
+    ADVANCE_SHIPMENT_VALUE_COLUMN,
     advance_shipment_by_month,
     merge_advance_shipment_edits,
 )
@@ -147,7 +149,7 @@ from capa_simulation.services.korean_particle import (
     with_topic_particle,
 )
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.monthly_amount import amounts_by_month
+from capa_simulation.services.monthly_amount import amounts_by_month, same_monthly_amounts
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
 from capa_simulation.services.securement_threshold import (
     SECURE_COLUMN,
@@ -166,6 +168,7 @@ EXECUTION_BASE_VERSION_KEY = "home_preference_execution_base_version"
 # 이 세션이 한 확보율 보정 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 EXECUTION_SAVE_NAME = "home_preference_execution"
 EXECUTION_SAVED_MESSAGE = "확보율 보정을 저장했습니다."
+EXECUTION_FLASH_KEY = "home_execution_flash"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
@@ -207,6 +210,18 @@ THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장
 THRESHOLD_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 기본값·월별 기준이 지금 판정 기준 그대로라 새 버전을 만들지 않았습니다."
 )
+# 판정 기준과 같은 꼴로 넓힌 다른 Preference 공용 저장의 알림(2026-11-01 개선 I5 넓힘). 선행
+# B/O·선행 입고 실적은 편집기 글자(`_MonthlyAmountEditor.unchanged_message`)가 든다.
+EXECUTION_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 표가 지금 확보율 보정 그대로라 새 버전을 만들지 않았습니다."
+)
+SUMMARY_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 공지 그대로라 새 버전을 만들지 않았습니다."
+TOP5_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 하한·상한이 지금 구간 그대로라 새 버전을 만들지 않았습니다."
+)
+KEY_PROCESS_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 이름·공정이 지금 프리셋 그대로라 새 버전을 만들지 않았습니다."
+)
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
@@ -217,9 +232,11 @@ THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
 # 「저장했습니다」 를 띄웠다(2026-10-26 E2E).
 SUMMARY_BASE_VERSION_KEY = "home_preference_summary_base_version"
 SUMMARY_SAVE_NAME = "home_preference_summary"
+SUMMARY_FLASH_KEY = "home_summary_note_flash"
 TOP5_BASE_VERSION_KEY = "home_preference_top5_base_version"
 TOP5_SAVE_NAME = "home_preference_top5"
 TOP5_SAVED_MESSAGE = "B/N Top5 확보율 구간을 저장했습니다."
+TOP5_FLASH_KEY = "home_top5_band_flash"
 # Top5 구간 두 칸의 key 머리 — 끝에 저장본 version 을 붙인다(`_render_top5_band_editor`).
 TOP5_MIN_KEY_PREFIX = "home_top5_band_min_v"
 TOP5_MAX_KEY_PREFIX = "home_top5_band_max_v"
@@ -1256,6 +1273,8 @@ class _MonthlyAmountEditor:
     editor_key: str
     row_label: str
     saved_message: str
+    unchanged_message: str
+    value_column: str
 
 
 _ADVANCE_LOAD_EDITOR = _MonthlyAmountEditor(
@@ -1269,6 +1288,10 @@ _ADVANCE_LOAD_EDITOR = _MonthlyAmountEditor(
     editor_key=ADVANCE_EDITOR_KEY,
     row_label=ADVANCE_LOAD_ROW_LABEL,
     saved_message="선행 B/O 를 공용 설정으로 저장했습니다.",
+    unchanged_message=(
+        "바뀐 것이 없습니다 — 보이는 달의 값이 지금 선행 B/O 그대로라 새 버전을 만들지 않았습니다."
+    ),
+    value_column=ADVANCE_LOAD_VALUE_COLUMN,
 )
 _ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
     title="#### :material/local_shipping: 선행 입고 실적",
@@ -1281,6 +1304,11 @@ _ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
     editor_key=ADVANCE_SHIPMENT_EDITOR_KEY,
     row_label=ADVANCE_SHIPMENT_ROW_LABEL,
     saved_message="선행 입고 실적을 공용 설정으로 저장했습니다.",
+    unchanged_message=(
+        "바뀐 것이 없습니다 — 보이는 달의 값이 지금 선행 입고 실적 그대로라 새 버전을 만들지 "
+        "않았습니다."
+    ),
+    value_column=ADVANCE_SHIPMENT_VALUE_COLUMN,
 )
 # 두 편집기가 같이 쓰는 `구분` 칸 폭(px). 두 상자의 행 이름 가운데 가장 긴 것에 맞춘다 —
 # `small`(75px)이면 「선행 입고 실적」이 「선행 입고 실ㅈ」로 잘린다. 폭이 하나라 두 상자의 달
@@ -1311,8 +1339,11 @@ def _render_advance_editor(
     """선행 B/O — 계획 밖으로 앞서 만든 B/O 재공(억Gb). 「선행 B/O」 토글을 켠 화면의 계획에
     더한다."""
 
+    def merge(values: Sequence[object]) -> pd.DataFrame:
+        return merge_advance_load_edits(advance_profile.rows, list(months), values)
+
     def save(values: Sequence[object], source: str) -> None:
-        frame = merge_advance_load_edits(advance_profile.rows, list(months), values)
+        frame = merge(values)
         repository = get_scenario_repository(database_path)
         save_once(
             ADVANCE_LOAD_SAVE_NAME,
@@ -1329,6 +1360,8 @@ def _render_advance_editor(
         month_labels=month_labels,
         profile=advance_profile,
         stored=amounts_by_month(advance_profile.rows, ADVANCE_LOAD_VALUE_COLUMN),
+        rows=advance_profile.rows,
+        merge=merge,
         save=save,
     )
 
@@ -1349,8 +1382,11 @@ def render_advance_shipment_editor(
     든다(실적이라 지난 달에 넣는 값이다). 조회기간 밖 저장분은 선행 B/O 처럼 보존한다.
     """
 
+    def merge(values: Sequence[object]) -> pd.DataFrame:
+        return merge_advance_shipment_edits(advance_shipment_profile.rows, list(months), values)
+
     def save(values: Sequence[object], source: str) -> None:
-        frame = merge_advance_shipment_edits(advance_shipment_profile.rows, list(months), values)
+        frame = merge(values)
         repository = get_scenario_repository(database_path)
         save_once(
             ADVANCE_SHIPMENT_SAVE_NAME,
@@ -1367,6 +1403,8 @@ def render_advance_shipment_editor(
         month_labels=month_labels,
         profile=advance_shipment_profile,
         stored=advance_shipment_by_month(advance_shipment_profile.rows),
+        rows=advance_shipment_profile.rows,
+        merge=merge,
         save=save,
     )
 
@@ -1391,12 +1429,20 @@ def _render_monthly_amount_editor(
     month_labels: Sequence[str],
     profile: VersionedProfile,
     stored: Mapping[int, float],
+    rows: pd.DataFrame,
+    merge: Callable[[Sequence[object]], pd.DataFrame],
     save: Callable[[Sequence[object], str], None],
 ) -> None:
-    """월별 억Gb 한 줄 편집기. 저장은 **표에 보이는 달만** 갈아 끼운다(`save` 가 병합한다).
+    """월별 억Gb 한 줄 편집기. 저장은 **표에 보이는 달만** 갈아 끼운다(`merge` 가 병합하고 `save` 가
+    그 병합으로 쓴다).
 
     보이지 않는 달까지 함께 지우면 조회기간을 좁힌 채 저장한 사람이 다른 달의 입력을 모르는 새
     날린다.
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘 — 판정 기준과 같은 꼴) —
+    병합한 행이 이 회차가 그린 최신 저장본(`rows`)과 같으면(`same_monthly_amounts`) 쓰지 않고 알림
+    칸에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다). 버전 대조가 없는 저장이라
+    견줄 저장본은 제출 회차가 읽은 최신이다. 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
     """
     with st.container(border=True):
         st.markdown(editor.title)
@@ -1449,11 +1495,27 @@ def _render_monthly_amount_editor(
             _render_out_of_range_notice(months, stored)
             return
         row = edited.iloc[0]
+        values = [row[label] for label in month_labels]
+        notices = notice_marks()
         try:
-            save([row[label] for label in month_labels], note.strip() or "웹 직접 편집")
+            if profile.version > 0 and same_monthly_amounts(
+                merge(values), rows, value_column=editor.value_column
+            ):
+                # 방금 저장한 같은 값의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림 칸이 그
+                # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+                if held_notice(editor.flash_key) is None:
+                    notice.info(editor.unchanged_message, icon=":material/info:")
+                # 쓰지 않아 다시 돌지 않는 회차다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖
+                # 저장분 줄도 그린다(판정 기준과 같다).
+                _render_out_of_range_notice(months, stored)
+                return
+            save(values, note.strip() or "웹 직접 편집")
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
         else:
+            # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
+            # 없습니다」 갈래).
+            note_notice(notices, editor.flash_key, editor.saved_message)
             queue_flash(editor.flash_key, editor.saved_message)
             st.rerun()
 
@@ -1489,6 +1551,10 @@ def _render_summary_note_editor(
     사라지는 것이 지우기의 뜻이다. 저장은 **버전 대조**다(판정 기준과 같다) — 편집을 시작한
     회차의 version 을 세션(`SUMMARY_BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다(`write_guard`
     본 값). 같은 글의 겹친·빠른 둘째 누름은 `save_once` 가 쓰지 않는다.
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘 — 판정 기준과 같은 꼴) —
+    최신 저장본을 보고 누른 글이 그 저장본 글 그대로면 쓰지 않고 「바뀐 것이 없습니다」 를 알린다.
+    아직 저장본이 없으면(v0) 빈 글의 첫 저장도 쓴다.
     """
     submitted_base = seen(SUMMARY_BASE_VERSION_KEY)
     with st.container(border=True):
@@ -1509,7 +1575,7 @@ def _render_summary_note_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
-                render_flash("home_summary_note_flash")
+                render_flash(SUMMARY_FLASH_KEY)
                 refused = take_refusal(SUMMARY_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
@@ -1546,6 +1612,15 @@ def _render_summary_note_editor(
             queue_refusal(SUMMARY_SAVE_NAME, SEEN_MISSING_MESSAGE)
             st.rerun(scope="app")
         expected_version = submitted_base
+        if _unchanged_profile_save(
+            summary_profile.version, expected_version, text == summary_profile.note
+        ):
+            # 방금 저장한 같은 글의 느린 둘째 누름(새로 그린 칸에 닿았다)이면 알림 칸이 그 성공을
+            # 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+            if held_notice(SUMMARY_FLASH_KEY) is None:
+                notice.info(SUMMARY_UNCHANGED_MESSAGE, icon=":material/info:")
+            return
+        notices = notice_marks()
         try:
             repository = get_scenario_repository(database_path)
             # 같은 글의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`write_guard.save_once`).
@@ -1567,14 +1642,17 @@ def _render_summary_note_editor(
                 SUMMARY_SAVE_NAME,
                 save_marks=save_marks,
                 conflict_marks=conflict_marks,
-                flash_key="home_summary_note_flash",
+                flash_key=SUMMARY_FLASH_KEY,
                 saved_message=message,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
+        # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
+        # 갈래).
+        note_notice(notices, SUMMARY_FLASH_KEY, message)
         clear_global_summary_note_cache()
-        queue_flash("home_summary_note_flash", message)
+        queue_flash(SUMMARY_FLASH_KEY, message)
         st.rerun(scope="app")
 
 
@@ -1583,7 +1661,13 @@ def _render_top5_band_editor(
     top5_band_profile: GlobalTop5Band,
     database_path: str,
 ) -> None:
-    """B/N Top5 막대가 표현하는 확보율 구간. 저장은 버전 대조다(Summary 공지와 같다)."""
+    """B/N Top5 막대가 표현하는 확보율 구간. 저장은 버전 대조다(Summary 공지와 같다).
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘) — 최신 저장본을 보고
+    누른 하한·상한이 그 저장본 그대로면(퍼센트 칸을 오간 끝자리는 접는다) 쓰지 않고 「바뀐 것이
+    없습니다」 를 알린다. 아직 저장본이 없으면(v0 — 보이는 값은 기본 구간) 첫 저장이 그 구간을
+    고정하므로 쓴다.
+    """
     submitted_base = seen(TOP5_BASE_VERSION_KEY)
     with st.container(border=True):
         st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
@@ -1605,7 +1689,7 @@ def _render_top5_band_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
-                render_flash("home_top5_band_flash")
+                render_flash(TOP5_FLASH_KEY)
                 refused = take_refusal(TOP5_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
@@ -1653,6 +1737,18 @@ def _render_top5_band_editor(
             st.rerun(scope="app")
         expected_version = submitted_base
         band = (float(minimum) / 100, float(maximum) / 100)
+        if _unchanged_profile_save(
+            top5_band_profile.version,
+            expected_version,
+            _same_ratio(band[0], top5_band_profile.min_rate)
+            and _same_ratio(band[1], top5_band_profile.max_rate),
+        ):
+            # 방금 저장한 같은 구간의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시 그렸다
+            # (write_guard.held_notice — Summary 공지와 같다).
+            if held_notice(TOP5_FLASH_KEY) is None:
+                notice.info(TOP5_UNCHANGED_MESSAGE, icon=":material/info:")
+            return
+        notices = notice_marks()
         try:
             repository = get_scenario_repository(database_path)
             # 같은 구간의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`save_once`).
@@ -1672,15 +1768,31 @@ def _render_top5_band_editor(
                 TOP5_SAVE_NAME,
                 save_marks=save_marks,
                 conflict_marks=conflict_marks,
-                flash_key="home_top5_band_flash",
+                flash_key=TOP5_FLASH_KEY,
                 saved_message=TOP5_SAVED_MESSAGE,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
+        note_notice(notices, TOP5_FLASH_KEY, TOP5_SAVED_MESSAGE)
         clear_global_top5_band_cache()
-        queue_flash("home_top5_band_flash", TOP5_SAVED_MESSAGE)
+        queue_flash(TOP5_FLASH_KEY, TOP5_SAVED_MESSAGE)
         st.rerun(scope="app")
+
+
+def _unchanged_profile_save(version: int, expected_version: int, same: bool) -> bool:
+    """버전 대조 공용 저장이 바꾼 것 없는 저장인가(2026-11-01 개선 I5 넓힘 — 판정 기준과 같은 규칙).
+
+    `same` 은 저장할 값이 이 회차가 그린 저장본과 같은가다. 편집을 시작한 version 이 그 저장본이어야
+    한다 — 옛 화면의 저장은 견주지 않고 저장소의 버전 대조에 맡긴다(남의 저장 뒤라면 거부). 저장본이
+    없으면(v0) 첫 저장이 보이는 값을 고정하므로 늘 쓴다.
+    """
+    return version > 0 and expected_version == version and same
+
+
+def _same_ratio(left: float, right: float) -> bool:
+    """퍼센트 칸을 오간 비율 둘이 같은가 — 끝자리(상대 1e-9 아래)를 접는다(판정 기준과 같은 셈)."""
+    return isclose(left, right, rel_tol=1e-9, abs_tol=1e-12)
 
 
 def _refuse_profile_write(
@@ -1897,6 +2009,10 @@ def _render_key_process_editor(
     고칠 프리셋을 세션(`KEY_PROCESS_SEEN_KEY`)에 두고, 그것이 바뀌었으면 저장·기본으로·삭제를
     거부한다(`_stale_key_process_target`). 쓰기는 이 회차가 읽은 version 을 넘겨 읽기와 쓰기 사이의
     남의 저장도 막는다.
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘) — 고칠 프리셋의 이름·
+    공정(차례까지 — 고른 차례가 행 순서다)이 이 회차가 다시 읽은 저장본 그대로면 쓰지 않고 「바뀐
+    것이 없습니다」 를 알린다. 새 프리셋은 늘 새로 넣는 것이라 견주지 않는다.
     """
     seen_target = seen(KEY_PROCESS_SEEN_KEY)
     try:
@@ -2006,9 +2122,18 @@ def _render_key_process_editor(
         if stale is not None:
             _reject_key_process_write(stale, notice, save_marks, conflict_marks)
             return
+        notices = notice_marks()
         try:
             new_name = normalize_preset_name(name)
             entry = (new_name, tuple(selected))
+            if not is_new and _unchanged_profile_save(
+                profile.version, profile.version, entry == (target, tuple(current))
+            ):
+                # 방금 저장한 같은 이름·공정의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시
+                # 그렸다(write_guard.held_notice — Summary 공지와 같다).
+                if held_notice(KEY_PROCESS_FLASH_KEY) is None:
+                    notice.info(KEY_PROCESS_UNCHANGED_MESSAGE, icon=":material/info:")
+                return
             presets = (
                 [*profile.presets, entry]
                 if is_new
@@ -2035,14 +2160,15 @@ def _render_key_process_editor(
             _reject_key_process_write(exc, notice, save_marks, conflict_marks)
             return
         remember_own_save(KEY_PROCESS_SAVE_NAME, profile.version, saved.version, save_marks)
+        saved_message = f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다."
+        # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
+        # 갈래).
+        note_notice(notices, KEY_PROCESS_FLASH_KEY, saved_message)
         clear_global_key_process_cache()
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
         if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
-        queue_flash(
-            KEY_PROCESS_FLASH_KEY,
-            f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다.",
-        )
+        queue_flash(KEY_PROCESS_FLASH_KEY, saved_message)
         st.rerun(scope="app")
 
 
@@ -2230,6 +2356,11 @@ def _render_execution_editor(
 
     저장은 **버전 대조**다 — 편집을 시작한 회차의 version 을 세션(`EXECUTION_BASE_VERSION_KEY`)에
     두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가 거부한다.
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘 — 판정 기준과 같은 꼴) —
+    최신 저장본을 보고 고친 표가 저장소가 쓸 꼴(`prepare_execution_capacity` — 증감 0·빈 줄은 없는
+    줄)로 그 저장본과 같으면 쓰지 않고 「바뀐 것이 없습니다」 를 알린다(변경 메모만 적은 저장도
+    같다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
     """
     submitted_base = seen(EXECUTION_BASE_VERSION_KEY)
     with st.container(border=True):
@@ -2257,7 +2388,7 @@ def _render_execution_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
-                render_flash("home_execution_flash")
+                render_flash(EXECUTION_FLASH_KEY)
                 refused = take_refusal(EXECUTION_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
@@ -2321,7 +2452,21 @@ def _render_execution_editor(
             queue_refusal(EXECUTION_SAVE_NAME, SEEN_MISSING_MESSAGE)
             st.rerun(scope="app")
         expected_version = submitted_base
+        notices = notice_marks()
         try:
+            if _unchanged_profile_save(
+                execution_profile.version,
+                expected_version,
+                _same_execution_capacity(edited, execution_profile),
+            ):
+                # 방금 저장한 같은 표의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림 칸이 그
+                # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+                if held_notice(EXECUTION_FLASH_KEY) is None:
+                    notice.info(EXECUTION_UNCHANGED_MESSAGE, icon=":material/info:")
+                # 쓰지 않아 다시 돌지 않는 회차다 — 누르지 않은 회차와 같은 화면이게 짝 없는 행·
+                # 0 에서 자른 행 안내도 그린다(판정 기준과 같다).
+                _render_execution_notices(unmatched, clamped, process_labels)
+                return
             saved = _save_execution_capacity(
                 database_path,
                 edited=edited,
@@ -2335,7 +2480,7 @@ def _render_execution_editor(
             clear_global_execution_capacity_cache()
             if is_own_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks):
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
-                queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
+                queue_flash(EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
             else:
                 message = bootstrap_error_message(exc)
                 note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
@@ -2348,7 +2493,10 @@ def _render_execution_editor(
             notice.error(bootstrap_error_message(exc))
             return
         remember_own_save(EXECUTION_SAVE_NAME, expected_version, saved.version, save_marks)
-        queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
+        # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
+        # 갈래).
+        note_notice(notices, EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
+        queue_flash(EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
         st.rerun(scope="app")
 
 
@@ -2363,6 +2511,17 @@ def _execution_editor_frame(execution_profile: GlobalExecutionCapacity) -> pd.Da
     if rows.empty:
         return empty_execution_capacity()
     return rows.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
+
+
+def _same_execution_capacity(
+    edited: pd.DataFrame, execution_profile: GlobalExecutionCapacity
+) -> bool:
+    """편집표가 저장본과 같은 확보율 보정인가 — 둘 다 저장소가 쓸 꼴(`prepare_execution_capacity`)로
+    견준다. 증감은 칸 값 그대로 저장하므로(비율로 바꾸지 않는다) 끝자리를 접지 않는다. 잘못된 입력
+    (`ValueError`)은 저장 길과 같은 오류로 알린다."""
+    candidate = prepare_execution_capacity(edited.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy())
+    stored = prepare_execution_capacity(_execution_editor_frame(execution_profile))
+    return candidate.equals(stored)
 
 
 def _save_execution_capacity(

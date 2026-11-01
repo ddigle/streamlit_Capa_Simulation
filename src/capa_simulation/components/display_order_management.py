@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 
 import pandas as pd
 import streamlit as st
@@ -23,9 +23,12 @@ from capa_simulation.components.table_toolbar import render_csv_download, toolba
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
+    held_notice,
     held_profile_conflict,
     is_own_save,
+    note_notice,
     note_profile_conflict,
+    notice_marks,
     own_save_marks,
     profile_conflict_marks,
     queue_refusal,
@@ -72,6 +75,12 @@ BASE_VERSION_KEY = "display_order_base_version"
 # 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 DISPLAY_ORDER_SAVE_NAME = "display_order_direct_edit"
 DISPLAY_ORDER_SAVED_MESSAGE = "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다."
+# 바꾼 것 없는 직접 편집 저장의 알림(2026-11-01 개선 I5 넓힘 — 새 버전을 만들지 않는다).
+DISPLAY_ORDER_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 이 범위의 규칙이 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
+)
+# 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
+DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -129,7 +138,9 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     # 저장 성공과 그 저장의 표시명 경고는 같은 칸이다 — 경고 수만큼 아래 직접 편집(key 있는
     # 편집표)이 밀리면 저장 회차(`st.rerun()` 으로 끊김)의 옛 자리에 흐린 사본이 남는다(AGENTS 9장
     # 「조건부 알림」).
-    _render_label_warnings(render_flash("display_order_flash"))
+    # 직접 편집 저장의 「바뀐 것이 없습니다」 도 이 칸(성공 알림 자리)에 선다.
+    notice = render_flash(DISPLAY_ORDER_FLASH_KEY)
+    _render_label_warnings(notice)
     # 겹침 경고도 늘 서 있는 칸이다 — 직접 편집으로 마지막 겹침을 고쳐 저장하면 다음 회차에 경고가
     # 빠지는데, 그때 아래 직접 편집이 한 칸 당겨지면 같은 흐린 사본 꼴이다.
     with st.container():
@@ -138,7 +149,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)
-    _render_direct_editor(repository, display_order, profile.version)
+    _render_direct_editor(repository, display_order, profile.version, notice)
 
 
 @st.dialog("Excel 붙여넣기 · 표시순서", width="large", on_dismiss=close_admin_dialog)
@@ -186,7 +197,7 @@ def _clipboard_dialog(
         # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
         st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
         queue_flash(
-            "display_order_flash",
+            DISPLAY_ORDER_FLASH_KEY,
             "붙여넣은 표시순서를 모든 시나리오의 공용 설정으로 적용했습니다.",
         )
         close_admin_dialog()
@@ -197,6 +208,7 @@ def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     display_order: pd.DataFrame,
     version: int,
+    notice: DeltaGenerator,
 ) -> None:
     """범위 하나의 직접 편집 표. 저장은 **버전 대조**다 — Proc Rename 과 같은 결로 폼을 제출하지
     않은 회차가 그린 version 을 본 값(`BASE_VERSION_KEY` — `write_guard.remember_seen`)으로 두고
@@ -208,6 +220,10 @@ def _render_direct_editor(
     (2026-10-26 E2E). 빠른 두 번 누름은 Proc Rename 과 같은 `write_guard` 표지로 거른다 — 제 저장의
     둘째 거부는 성공을 다시 알리고, 남의 저장에 거부된 누름의 둘째 누름은 저장하지 않고 그 거부를
     다시 알린다.
+
+    **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘 — Proc Rename 과 같은
+    꼴) — 최신 저장본을 보고 고친 범위가 그 저장본 그대로면(합친 전체 규칙이 같다) 쓰지 않고
+    `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다).
     """
     submitted_base = seen(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
@@ -304,6 +320,7 @@ def _render_direct_editor(
         queue_refusal(DISPLAY_ORDER_SAVE_NAME, SEEN_MISSING_MESSAGE)
         st.rerun()
     expected_version = submitted_base
+    notices = notice_marks()
     try:
         revised = replace_display_order_scope(
             display_order,
@@ -311,6 +328,20 @@ def _render_direct_editor(
             str(selected_tab),
             pd.DataFrame(edited),
         )
+        if version > 0 and expected_version == version and revised.equals(display_order):
+            # 바꾼 것 없는 저장이다 — 옛 화면(본 version 이 최신이 아님)은 견주지 않고 저장소의 버전
+            # 대조에 맡긴다. 방금 저장한 같은 범위의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림
+            # 칸이 그 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+            if held_notice(DISPLAY_ORDER_FLASH_KEY) is None:
+                notice.info(DISPLAY_ORDER_UNCHANGED_MESSAGE, icon=":material/info:")
+            else:
+                # 그 저장의 표시명 경고도 같은 칸에 다시 그린다 — 앞 회차(이 version 을 본 값으로
+                # 적은 회차)가 꺼내 그려 이 회차에는 없다. 빠지면 성공만 남아 정렬이 조용히 걸리지
+                # 않는다. 같은 표라 그 저장과 같은 경고다.
+                _draw_label_warnings(
+                    notice, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
+                )
+            return
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
         # 고른 범위만 바꾸는 저장이다. 다른 범위에 이미 있던 겹친 분류값은 저장 사슬 끝까지 넘겨,
         # 두 범위에 예전 겹침이 있어도 한 범위씩 고쳐 저장할 수 있게 한다. 고른 범위 안의 겹침과
@@ -336,7 +367,7 @@ def _render_direct_editor(
         clear_global_display_order_cache()
         if is_own_save(DISPLAY_ORDER_SAVE_NAME, exc.expected, exc.stored, save_marks):
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
-            queue_flash("display_order_flash", DISPLAY_ORDER_SAVED_MESSAGE)
+            queue_flash(DISPLAY_ORDER_FLASH_KEY, DISPLAY_ORDER_SAVED_MESSAGE)
         else:
             message = bootstrap_error_message(exc)
             note_profile_conflict(conflict_marks, DISPLAY_ORDER_SAVE_NAME, message)
@@ -345,7 +376,10 @@ def _render_direct_editor(
     except BOOTSTRAP_ERRORS as exc:
         save_status.error(bootstrap_error_message(exc))
     else:
-        queue_flash("display_order_flash", DISPLAY_ORDER_SAVED_MESSAGE)
+        # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
+        # 갈래).
+        note_notice(notices, DISPLAY_ORDER_FLASH_KEY, DISPLAY_ORDER_SAVED_MESSAGE)
+        queue_flash(DISPLAY_ORDER_FLASH_KEY, DISPLAY_ORDER_SAVED_MESSAGE)
         st.rerun()
 
 
@@ -371,8 +405,12 @@ def _render_clash_warning(clashes: list[ValueClash]) -> None:
 def _render_label_warnings(slot: DeltaGenerator) -> None:
     """저장한 회차에 담아 둔 표시명 경고를 성공 문구 칸(`slot`) 안 그 아래에 한 번 그리고 비운다."""
     mistakes = st.session_state.pop(LABEL_WARNINGS_KEY, None)
-    if not isinstance(mistakes, dict):
-        return
+    if isinstance(mistakes, dict):
+        _draw_label_warnings(slot, mistakes)
+
+
+def _draw_label_warnings(slot: DeltaGenerator, mistakes: Mapping[str, str]) -> None:
+    """표시명 경고(`{적은 표시명: 원본 컬럼명}`)를 `slot` 안에 그린다."""
     for typed, column in mistakes.items():
         # 이름 뒤에 조사를 붙이지 않는다. `Customer` 같은 영문 이름은 받침을 가릴 수 없어
         # 「`Customer` 을」로 틀렸다(2026-10-05 E2E).

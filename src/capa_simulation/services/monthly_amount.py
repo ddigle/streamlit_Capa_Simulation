@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from math import isclose
 
 import pandas as pd
 
@@ -105,3 +106,26 @@ def amounts_by_month(rows: pd.DataFrame, value_column: str) -> dict[int, float]:
         int(month): float(value)
         for month, value in zip(rows[MONTH_COLUMN], rows[value_column], strict=True)
     }
+
+
+def same_monthly_amounts(left: pd.DataFrame, right: pd.DataFrame, *, value_column: str) -> bool:
+    """두 저장 행이 같은 값인가 — 정규화(`prepare_monthly_amounts` — 0·빈칸은 넣지 않은 달)한
+    달·값끼리 견주고 값은 끝자리(상대 1e-9 아래)를 접는다.
+
+    바꾼 것 없는 공용 저장(선행 B/O·선행 입고 실적)을 새 버전으로 쓰지 않는 데 쓴다(2026-11-01
+    개선 I5 넓힘). 차례·dtype 은 정규화가 맞춘다.
+    """
+    left_amounts = amounts_by_month(
+        prepare_monthly_amounts(left, value_column=value_column, subject=value_column),
+        value_column,
+    )
+    right_amounts = amounts_by_month(
+        prepare_monthly_amounts(right, value_column=value_column, subject=value_column),
+        value_column,
+    )
+    if left_amounts.keys() != right_amounts.keys():
+        return False
+    return all(
+        isclose(value, right_amounts[month], rel_tol=1e-9, abs_tol=1e-12)
+        for month, value in left_amounts.items()
+    )

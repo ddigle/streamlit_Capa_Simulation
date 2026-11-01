@@ -9,7 +9,11 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
-from capa_simulation.components.home_preference import EXECUTION_BASE_VERSION_KEY
+from capa_simulation.components.home_preference import (
+    EXECUTION_BASE_VERSION_KEY,
+    EXECUTION_EDITOR_KEY,
+    EXECUTION_UNCHANGED_MESSAGE,
+)
 from capa_simulation.persistence import DuckDBScenarioRepository
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.cache import clear_global_execution_capacity_cache
@@ -140,6 +144,16 @@ def test_column_contract_is_enforced() -> None:
 # ------------------------------------------------------------------- 공용 프로필 버전 대조
 
 
+def _edit_first_rate(app: AppTest, rate: float = -20.0) -> None:
+    """편집표 첫 줄의 증감을 고친 것처럼 채운다(다음 회차가 그 편집을 보낸다) — 고친 칸 없는 저장은
+    쓰지 않으므로(2026-11-01 개선 I5 넓힘) 저장 길을 지나게 한다."""
+    app.session_state[EXECUTION_EDITOR_KEY] = {
+        "edited_rows": {0: {"증감 확보율": rate}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+
+
 def _scenario_repository(path: Path) -> DuckDBScenarioRepository:
     repository = DuckDBScenarioRepository(path)
     repository.initialize()
@@ -174,7 +188,8 @@ def test_the_execution_editor_refuses_to_overwrite_a_newer_save(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """화면: A 가 편집기를 연 뒤 B 가 저장했다. A 의 저장은 막히고 B 의 저장본이 남는다. 그 회차가
-    그린 최신 저장본에서 다시 누르면 저장된다."""
+    그린 최신 저장본에서 고쳐 다시 누르면 저장된다 — 고치지 않고 누르면 대조는 지나지만 바뀐 것이
+    없어 새 버전을 만들지 않는다(2026-11-01 개선 I5 넓힘)."""
     database_path = tmp_path / "scenario.duckdb"
     repository = _scenario_repository(database_path)
     repository.replace_global_execution_capacity(
@@ -220,6 +235,13 @@ _render_execution_editor(
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
     assert not app.exception
     assert not app.error, [str(item.value) for item in app.error]
+    assert [str(item.value) for item in app.info] == [EXECUTION_UNCHANGED_MESSAGE]
+    assert repository.load_global_execution_capacity().version == 2
+
+    _edit_first_rate(app)
+    next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
+    assert not app.exception
+    assert not app.error, [str(item.value) for item in app.error]
     assert repository.load_global_execution_capacity().version == 3
     clear_global_execution_capacity_cache()
 
@@ -257,6 +279,7 @@ _render_execution_editor(
     clear_global_execution_capacity_cache()
     app = AppTest.from_string(script, default_timeout=60).run()
     assert not app.exception
+    _edit_first_rate(app)
     next(button for button in app.button if button.label == "확보율 보정 저장").click()
     pressed = app._tree.get_widget_states()
     app.run()
@@ -375,7 +398,10 @@ _render_execution_editor(
     assert any("다른 사용자가 먼저" in str(item.value) for item in app.error)
     assert repository.load_global_execution_capacity().version == 2
 
+    # 거부 표지의 창이 지났다 — 최신 화면을 보고 고쳐 다시 누른 저장이다(고치지 않으면 바뀐 것이
+    # 없어 쓰지 않는다 — 개선 I5 넓힘).
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _edit_first_rate(app)
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
 
     assert not app.exception
