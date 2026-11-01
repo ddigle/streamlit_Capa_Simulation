@@ -1206,7 +1206,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/reference_conflicts.py` — 같은 업무 키의 값 충돌을 모아 보고서를 만들고 형제 행을 접는다.
   - 승자는 **값이 있는 첫 행**이다(숫자 `0`·빈 글자는 값 없음). 값을 지어내지 않고 행 순서를 바꾸지 않는다.
   - 효율·UPEH(`ZERO_BEFORE_BLANK_TABLES`)만 값 개수가 같으면 **0 이 빈 값보다 먼저**다 — 원천 행 차례와 상관없이 같은 행
-    (2026-11-01 사용자 결정). 다른 표는 0 의 뜻(수율 0 · 보유 0 …)을 확인할 때까지 원천 행 차례 그대로다.
+    (2026-11-01 사용자 결정). 0·빈 값만 다른 형제에만 쓴다 — 숫자 실값이 서로 다른 충돌은 원천 행 차례 그대로다
+    (`_real_values_agree`). 다른 표는 0 의 뜻(수율 0 · 보유 0 …)을 확인할 때까지 원천 행 차례 그대로다.
 - `src/capa_simulation/components/monthly_table_base.py` — Plotly 월별 표가 공유하는 색·치수·글자 계산이다. 분류 칸 글자는
   반드시 `classification_cell_text()` 를 거친다(8장).
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 필수 컬럼 검증·업무 키 정규화의 단일 정의다(14-5).

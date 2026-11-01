@@ -97,8 +97,9 @@ def _informative_first(
 
     `zero_before_blank` 인 표(`ZERO_BEFORE_BLANK_TABLES`)는 값 개수가 같은 형제 가운데 **0 이 빈
     값보다 먼저**다 — 0 칸이 많은 행, 같으면 앞 값 컬럼(표를 만드는 컬럼 차례 — `RQ_UPEH` 는 UPEH →
-    ST)부터 0 인 행. 0 과 빈 값만 다른 형제는 원천 행 차례와 상관없이 늘 같은 행이 이긴다. 실값끼리
-    다른 형제는 지금처럼 원천 행 차례다.
+    ST)부터 0 인 행. 0 과 빈 값만 다른 형제는 원천 행 차례와 상관없이 늘 같은 행이 이긴다. 숫자 값
+    컬럼의 실값(0·빈 값이 아닌 값)이 서로 다른 형제(`_real_values_agree` 가 거짓인 그룹)는 지금처럼
+    원천 행 차례다 — 다른 컬럼의 0 이 실값 충돌의 승자를 정하지 않는다.
 
     그룹의 자리(첫 등장 순서)와 그룹 간 순서는 그대로다. 접은 뒤의 행 순서가 예전과 같아야
     `source_row_no` 와 `reference_hash` 가 흔들리지 않는다.
@@ -110,13 +111,34 @@ def _informative_first(
     position = np.arange(len(frame))
     tie_breaks: list[npt.NDArray[np.int64]] = []
     if zero_before_blank:
-        # 앞 값 컬럼의 0 이 더 무겁다 — `lexsort` 에는 뒤 컬럼부터 넣는다.
-        tie_breaks = [-flag for flag in reversed(zeros)]
-        tie_breaks.append(-np.sum(zeros, axis=0, dtype="int64"))
+        # 0 과 빈 값만 다른 그룹에서만 가른다. 앞 값 컬럼의 0 이 더 무겁다 — `lexsort` 에는 뒤
+        # 컬럼부터 넣는다.
+        agree = _real_values_agree(frame, group_number, value_columns)
+        tie_breaks = [np.where(agree, -flag, 0) for flag in reversed(zeros)]
+        tie_breaks.append(np.where(agree, -np.sum(zeros, axis=0, dtype="int64"), 0))
     # `lexsort` 는 마지막 키가 1순위다. 그룹 → 값이 많은 행 → (0 이 빈 값보다 먼저) → 원천 행 순서.
     return frame.take(
         np.lexsort((position, *tie_breaks, -np.sum(usable, axis=0, dtype="int64"), group_number))
     )
+
+
+def _real_values_agree(
+    frame: pd.DataFrame, group_number: npt.NDArray[np.int64], value_columns: list[str]
+) -> npt.NDArray[np.bool_]:
+    """행마다 — 그 행의 그룹에서 숫자 값 컬럼의 실값(0·빈 값이 아닌 값)이 컬럼마다 하나뿐인가.
+
+    거짓이면 실값끼리 다른 충돌이라 0 이 빈 값보다 먼저인 규칙으로 가르지 않는다. 글자 컬럼은 보지
+    않는다(효율·UPEH 표의 값 컬럼은 모두 숫자다).
+    """
+    agree = np.ones(len(frame), dtype=bool)
+    groups = pd.Series(group_number)
+    for column in value_columns:
+        numeric = pd.to_numeric(frame[column], errors="coerce").reset_index(drop=True)
+        if not numeric.notna().any():
+            continue
+        real = numeric.where(numeric.ne(0))
+        agree &= real.groupby(groups).transform("nunique").le(1).to_numpy()
+    return agree
 
 
 def _value_flags(

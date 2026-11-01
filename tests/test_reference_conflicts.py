@@ -254,6 +254,23 @@ def test_a_real_value_still_beats_zero_and_real_value_conflicts_keep_the_source_
     ].tolist() == [0.7]
 
 
+def test_a_zero_in_another_column_does_not_decide_a_real_upeh_conflict() -> None:
+    """UPEH 실값끼리 다른 형제는 ST 의 0 · 빈 값과 상관없이 지금처럼 원천 행 차례다.
+
+    0 이 빈 값보다 먼저인 규칙은 0 과 빈 값만 다른 형제를 위한 것이다 — 실값 충돌의 승자까지 다른
+    컬럼의 0 으로 바꾸면 결정 밖의 동작이다.
+    """
+    rows = _upeh_rows(50.0, 60.0)
+    rows["ST"] = [0.0, None]
+    contract = load_core_data_contract()
+
+    forward = validated_distinct(rows, "RQ_UPEH", contract, [])
+    backward = validated_distinct(rows.iloc[::-1].reset_index(drop=True), "RQ_UPEH", contract, [])
+
+    assert forward["UPEH"].tolist() == [50.0]
+    assert backward["UPEH"].tolist() == [60.0]
+
+
 def test_other_tables_keep_the_source_order_until_their_zero_is_confirmed() -> None:
     """편중률(여유율) 같은 다른 표는 지금대로다 — 0 의 뜻을 확인하면 `ZERO_BEFORE_BLANK_TABLES` 에
     더한다."""
