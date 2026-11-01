@@ -131,6 +131,7 @@ def test_saving_thresholds_rechecks_the_summary(
     repo = _Repo()
     monkeypatch.setattr(home_preference, "get_scenario_repository", lambda path: repo)
     monkeypatch.setattr(home_preference, "_reject_hidden_reversed_months", lambda *args: None)
+    monkeypatch.setattr(home_preference, "_reject_out_of_range", lambda *args: None)
     home_preference._save_thresholds(
         DB,
         months=[],
