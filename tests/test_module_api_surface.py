@@ -78,6 +78,26 @@ def test_the_public_names_are_exactly_the_v1_surface() -> None:
         assert hasattr(module_api, name), name
 
 
+def test_no_public_name_outside_the_surface_reaches_into_the_core() -> None:
+    """`__all__` 밖의 공개 이름으로 코어에 닿지 않는다 — `api.module_registry.settings.DUCKDB_PATH`
+    같은 길이 서면 「데이터는 내지 않는다」 가 이름뿐이 된다. 코어 이름은 `_` 별명으로만 들인다."""
+
+    def core_origin(value: object) -> str:
+        if inspect.ismodule(value):
+            return value.__name__
+        return str(getattr(value, "__module__", "") or "")
+
+    leaks = sorted(
+        name
+        for name, value in vars(module_api).items()
+        if not name.startswith("_")
+        and name not in EXPECTED_ALL
+        and core_origin(value).startswith("capa_simulation")
+    )
+
+    assert not leaks, leaks
+
+
 def test_every_public_signature_is_pinned() -> None:
     found = {
         "context": str(inspect.signature(module_api.context)),
