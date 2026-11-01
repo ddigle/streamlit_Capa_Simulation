@@ -233,6 +233,36 @@ def test_month_cells_are_float_even_when_no_month_is_filled(database: Path) -> N
     assert drawn.loc[:, ["26.01", "26.02", "26.03"]].dtypes.astype(str).tolist() == ["float64"] * 3
 
 
+def test_month_cells_take_a_decimal_point_and_save_the_rounded_whole_percent(
+    database: Path,
+) -> None:
+    """월별 표 칸은 소수점을 받고 사사오입한 정수 % 로 보인다(2026-11-01 E2E). 칸의 `step` 이 1
+    이면 Glide 숫자 편집기가 소수점 키를 버려(소수 자리 0) 「109.5」 를 친 칸이 1095 가 되어 아무
+    경고 없이 1095% 로 저장됐다. 저장은 사사오입 정수 % 다(109.5 → 110)."""
+    import json
+
+    app = _app(database)
+    (editor,) = app.get("dataframe")
+    month_columns = {
+        name: config["type_config"]
+        for name, config in json.loads(editor.proto.columns).items()
+        if name in ("26.01", "26.02", "26.03")
+    }
+
+    assert len(month_columns) == 3
+    for config in month_columns.values():
+        # 정수 step 은 편집기의 소수 자리를 0 으로 둔다 — 소수 한 자리를 받는 step 이어야 한다.
+        assert not float(config["step"]).is_integer()
+        assert config["format"] == "%.0f"
+
+    _edit(app, {0: {"26.02": 109.5}})
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.rows["확보 기준"].tolist() == pytest.approx([1.1])
+
+
 def test_a_double_press_of_save_reports_the_save_not_a_conflict(database: Path) -> None:
     """「판정 기준 저장」을 사람 더블클릭 간격으로 두 번 누르면 성공 하나만 알린다(2026-10-26 E2E).
 
