@@ -845,9 +845,9 @@ def _percent(rate: float) -> str:
 def origin_band_text(origin: ProcessDetailRequest, *, month_text: str) -> str:
     """출처 띠 한 줄. HOME 표시값이 원 확보율과 어떻게 갈리는지 적는다.
 
-    HOME 확보율 = (원 확보율 + 확보율 보정 %p) × 선행 B/O 변동률이다(`execution_capacity`·
+    HOME 확보율 = (원 확보율 + 확보율 보정 %) × 선행 B/O 변동률이다(`execution_capacity`·
     `advance_load`). 이 화면의 표는 원 확보율이므로 차이를 먼저 밝힌다. 예: 「HOME 주요공정 확보율 ·
-    26.03 칸에서 열었습니다 · 표시 103% = 원 확보율 98% + 확보율 보정 +5.0%p · 아래는 원 확보율」.
+    26.03 칸에서 열었습니다 · 표시 103% = 원 확보율 98% + 확보율 보정 +5.0% · 아래는 원 확보율」.
     """
     place = f"{origin.section} · {month_text}" if origin.section else month_text
     head = f"HOME {place} 칸에서 열었습니다"
@@ -859,7 +859,7 @@ def origin_band_text(origin: ProcessDetailRequest, *, month_text: str) -> str:
         return f"{head} · 표시 {_percent(displayed)} = 원 확보율(아래 표와 같은 값)"
     formula = f"표시 {_percent(displayed)} = 원 확보율 {_percent(raw)}"
     if origin.execution_delta:
-        formula += f" + 확보율 보정 {origin.execution_delta:+.1f}%p"
+        formula += f" + 확보율 보정 {origin.execution_delta:+.1f}%"
     if origin.show_advance:
         formula += " (선행 B/O 반영)"
     return f"{head} · {formula} · 아래는 원 확보율"

@@ -1039,10 +1039,10 @@ def test_a_period_month_without_constrained_demand_keeps_the_dedicated_units() -
 def test_the_first_impact_ignores_differences_within_the_display_threshold(
     available: float, impact: int | None
 ) -> None:
-    """기존이 제약 없을 때보다 0.05%p 이하로 낮은 달은 영향 시작이 아니다.
+    """기존이 제약 없을 때보다 0.05% 이하로 낮은 달은 영향 시작이 아니다.
 
     R 100 · Rc 1 · 제약 100% · 개조 끔이면 기존 (A − 1)/99 − 제약 없을 때 A/100
-    = (A − 100)/9900 이다 — A 96 은 −0.040%p, A 94 는 −0.061%p.
+    = (A − 100)/9900 이다 — A 96 은 −0.040%, A 94 는 −0.061%.
     """
     result = simulate_constraint(
         [_one(202706, required=100, available=available, demand=1)],

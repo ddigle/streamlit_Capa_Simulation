@@ -278,7 +278,7 @@ def home_display_rates(
 ) -> dict[int, float | None]:
     """HOME 이 그 공정의 달마다 보이는 확보율 — 요약 표 「확보율 (HOME 표시)」 줄.
 
-    HOME 과 같은 함수·같은 차례다: 원 확보율에 확보율 보정 증감(%p)을 얹고
+    HOME 과 같은 함수·같은 차례다: 원 확보율에 확보율 보정 증감(%)을 얹고
     (`apply_execution_adjustment`, `execution_rows` 가 None 이면 얹지 않는다) 선행 B/O 변동률을
     곱한다 (`apply_advance_to_securement`, `advance_ratio` 가 None 이면 곱하지 않는다). 달은
     `months` 차례이고 확보율이 없는 달(소요 0)은 None 이다. 공정은 계산과 같은 정규화로 고른다.

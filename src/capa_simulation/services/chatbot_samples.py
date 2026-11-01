@@ -17,8 +17,8 @@ LLM 응답으로 채우면 된다 — 화면을 다시 뜯지 않는다.
 끝소리를 몰라 「은(는)」 처럼 겸용 조사가 된다.
 
 근거 표의 숫자 꼴(`SampleAnswer.evidence_formats`)은 옆 실적 화면과 같다 — 효율·수율 같은
-비율과 Gap 은 퍼센트 서식이고 Gap 칸 이름에 단위(`Gap (%p)`)를 단다. 서식 없이 내면 Gap 이
-분수(-0.1093)로 나와 결론의 「-10.9%p」 와 어긋났다(2026-10-30 E2E). 지표마다 단위가 다른 줄이
+비율과 Gap 은 퍼센트 서식이고 Gap 칸 이름에 단위(`Gap (%)`)를 단다. 서식 없이 내면 Gap 이
+분수(-0.1093)로 나와 결론의 「-10.9%」 와 어긋났다(2026-10-30 E2E). 지표마다 단위가 다른 줄이
 섞인 표(「왜 부족해?」 — 효율·UPEH·수율)는 칸 서식 하나로 못 적으므로 지표 화면과 같은 글자로
 미리 적는다.
 """
@@ -89,8 +89,8 @@ def _value_text(value: float, metric: MetricSpec) -> str:
 
 
 def _gap_text(value: float, metric: MetricSpec) -> str:
-    """Gap 글자 — 단위까지(효율 -10.9%p · UPEH -9.4%)."""
-    return f"{value:.{metric.gap_decimals}%}{metric.gap_suffix}"
+    """Gap 글자 — 단위까지(효율 -10.9% · UPEH -9.4%)."""
+    return f"{value:.{metric.gap_decimals}%}"
 
 
 def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
@@ -127,7 +127,7 @@ def _shortfall_answer(
     basis = f"{window} 기준으로 효율이 마지막 달까지 연속 미달인 "
     conclusion = (
         basis + f"공정(상태 「개선 필요」·「관찰」)은 {len(trouble):,}개입니다. "
-        f"가장 나쁜 곳은 **{worst_name}** — 기간 평균 {float(worst['Gap']):.1%}p, "
+        f"가장 나쁜 곳은 **{worst_name}** — 기간 평균 {float(worst['Gap']):.1%}, "
         f"{int(worst['연속 미달'])}개월 연속 미달입니다."
         if worst is not None
         else basis + "공정(상태 「개선 필요」·「관찰」)이 없습니다."
@@ -149,7 +149,7 @@ def _shortfall_answer(
         },
         conditions=(
             f"조회기간 {window} · 양산 구분 「양산」",
-            "Gap = 실적 효율 − 기준 효율 (%p)",
+            f"Gap = {EFFICIENCY_METRIC.gap_formula} ({EFFICIENCY_METRIC.gap_unit})",
             "상태 = 마지막 달 기준 연속 미달 개월 (0 정상 · 1~2 관찰 · 3 이상 개선 필요)",
         ),
         limits=("효율 한 지표만 본 답입니다. UPEH·수율은 다른 순서가 나옵니다.",),
@@ -157,7 +157,7 @@ def _shortfall_answer(
 
 
 def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName) -> SampleAnswer:
-    # 지표마다 단위가 달라(효율·수율은 %·%p, UPEH 는 대수·%) 칸 서식 하나로 적지 못한다 — 지표
+    # 지표마다 값의 꼴이 달라(효율·수율은 %, UPEH 는 대수) 칸 서식 하나로 적지 못한다 — 지표
     # 화면과 같은 글자로 적고 Gap 에 단위를 붙인다.
     rows: list[dict[str, object]] = []
     for metric in ALL_METRICS:
@@ -186,7 +186,7 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
         evidence_caption="각 지표 화면의 우선순위 1위 행에서 그대로 가져왔습니다.",
         conditions=(
             f"조회기간 {window} · 공정 {target}",
-            "효율·수율 Gap 은 %p, UPEH Gap 은 비율입니다",
+            "Gap 은 모두 % 입니다 — 효율·수율은 실적 − 기준, UPEH 는 실적 ÷ 기준 − 1",
             "비율은 월별 평균이 아니라 생산수량 가중으로 다시 계산했습니다",
         ),
         limits=(

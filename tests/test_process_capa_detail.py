@@ -824,7 +824,7 @@ def test_the_period_slice_bounds_the_product_months(
 
 
 def test_home_display_rates_follow_the_home_chain() -> None:
-    """확보율 보정(%p)을 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
+    """확보율 보정(%)을 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
     securement = pd.DataFrame(
         {
             "생산계획년월": [202611, 202612, 202611],

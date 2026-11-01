@@ -11,7 +11,7 @@
 - **위젯 칸**(`persist_state="session"`) — 모드 전환(본문 `segmented_control`), 개조 대수 숫자 칸,
   시작·기한 상자, 「달 맞춤 창」 토글, 목적(`segmented_control`).
 - **정본 칸**(위젯 아님) — 개조 기간(정수 일)·동시 개조 상한(`None` = 없음, 아니면 정수 대)·안전
-  여유(%p 실수). 버튼과 직접 입력 칸 둘이 한 정본을 나눠 쓴다(`components/preset_number_field.py`).
+  여유(% 실수). 버튼과 직접 입력 칸 둘이 한 정본을 나눠 쓴다(`components/preset_number_field.py`).
 - **결과 memo**(세션 칸 LRU — Streamlit 캐시가 아니다) — 「가장 고르게」 는 이분 탐색이라 수백 ms
   까지 가므로 조건 값으로 한 번만 푼다.
 

@@ -249,7 +249,8 @@ def test_hover_carries_the_adjustment_and_the_note() -> None:
 
     note = month_figure.data[0].customdata[0][6]
 
-    assert "확보율 보정 -20.0%p" in note
+    # 퍼센트 차이도 「%」 다 — 「%p」 를 쓰지 않는다(2026-11-01 사용자 결정).
+    assert "확보율 보정 -20.0%<br>" in note
     assert "비고 비가동 3대" in note
 
 

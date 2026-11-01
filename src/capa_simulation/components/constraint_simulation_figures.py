@@ -170,7 +170,7 @@ ABOVE_MARK: Final = "▲"
 _ABOVE_MARKER_SIZE: Final = 10
 # 소요가 1대 미만인 달에 올림으로 떼는 대수의 말(`minimum_unit`).
 MINIMUM_UNIT_WORDS: Final = "최소 1대"
-# 「제약 없을 때 대비」 칸이 빈칸인 차이(%p).
+# 「제약 없을 때 대비」 칸이 빈칸인 차이(%).
 _DELTA_HIDDEN_POINTS: Final = 0.05
 
 _FILL_ROW_IDS: Final[Mapping[FillSource, str]] = {

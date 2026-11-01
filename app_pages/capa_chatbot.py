@@ -98,7 +98,7 @@ def _reset_transcript(first_key: str) -> None:
 
 def _evidence_columns(answer: SampleAnswer) -> dict[str, Any]:
     """근거 표 숫자 칸의 꼴 — 대본이 정한 꼴(`SampleAnswer.evidence_formats`)을 칸 설정으로 옮긴다.
-    서식이 없으면 Gap 이 분수(-0.1093)로 나와 결론의 「-10.9%p」 와 어긋났다(2026-10-30 E2E)."""
+    서식이 없으면 Gap 이 분수(-0.1093)로 나와 결론의 「-10.9%」 와 어긋났다(2026-10-30 E2E)."""
     return {
         column: st.column_config.NumberColumn(spec.label, format=spec.format)
         for column, spec in answer.evidence_formats.items()

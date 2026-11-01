@@ -57,12 +57,12 @@ def _execution_note_parts(delta: object, note: object) -> tuple[float, str] | No
 
 
 def _execution_hover_note(delta: object, note: object) -> str:
-    """hover 끝에 붙일 「확보율 보정 ±n%p · 비고」 줄. 조정이 없으면 빈 문자열."""
+    """hover 끝에 붙일 「확보율 보정 ±n% · 비고」 줄. 조정이 없으면 빈 문자열."""
     parts = _execution_note_parts(delta, note)
     if parts is None:
         return ""
     amount, label = parts
-    text = f"<br>확보율 보정 {amount:+.1f}%p"
+    text = f"<br>확보율 보정 {amount:+.1f}%"
     if label:
         # 비고는 사용자가 적는 자유 텍스트다. 꺾쇠가 들어오면 hover 마크업이 깨진다.
         text += f"<br>비고 {html.escape(label)}"
@@ -70,12 +70,12 @@ def _execution_hover_note(delta: object, note: object) -> str:
 
 
 def _execution_delta_note(delta: object, note: object) -> str:
-    """증감 영역 hover 에 띄울 「확보율 보정 ±n%p · 비고」."""
+    """증감 영역 hover 에 띄울 「확보율 보정 ±n% · 비고」."""
     parts = _execution_note_parts(delta, note)
     if parts is None:
         return ""
     amount, label = parts
-    text = f"<b>확보율 보정 {amount:+.1f}%p</b>"
+    text = f"<b>확보율 보정 {amount:+.1f}%</b>"
     if label:
         text += f"<br>{html.escape(label)}"
     return text

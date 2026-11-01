@@ -1610,7 +1610,7 @@ def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_chang
     canvas = _assumed_canvas(110, set(MONTHS), dynamic=marked)
     labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
     assert "판정 대조 · UPEH 가정" in labels and "과부족 · UPEH 가정" in labels
-    # 비가동 영향은 %p 가 가정 소요로 바뀌어 표지를 단다.
+    # 비가동 영향은 % 가 가정 소요로 바뀌어 표지를 단다.
     assert "비가동 영향 · UPEH 가정" in labels
     assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
     unit_hover = _label_hovers(canvas)["unit:EQ-21"]

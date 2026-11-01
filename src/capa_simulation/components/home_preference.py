@@ -369,7 +369,7 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
             key=ADVANCE_SHIPMENT_TOGGLE_KEY,
             persist_state="session",
         )
-        # 기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 %p 로 더하고 빼는 손입력 보정. 화면 이름만
+        # 기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 % 로 더하고 빼는 손입력 보정. 화면 이름만
         # 「확보율 보정」이고 세션 키·공용 프로필(`global_execution_capacity`)은 `execution`
         # 그대로다.
         st.toggle(
@@ -2172,7 +2172,7 @@ def _render_execution_editor(
                         required=True,
                     ),
                     "증감 확보율": st.column_config.NumberColumn(
-                        "증감 확보율(%p)",
+                        "증감 확보율(%)",
                         step=0.1,
                         format="%.1f",
                         required=True,

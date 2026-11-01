@@ -42,7 +42,7 @@
    아니기만 본다. 화면에 적는 기준 대비 여유(`ScheduleMonth.margin`)는 확보율 − 정수 기준 T 이고
    반올림으로 겨우 확보인 달은 0 이다(`threshold_margin`).
 7. **못 맞출 때(C12)** — 기한(없으면 조회기간 끝)까지 넣을 수 있는 대수 · 기한 없이 끝나는 날 ·
-   기한을 지키려면 필요한 기준 완화 %p 를 함께 낸다(`ScheduleShortfall`). 0% 까지 낮춰도 못 넣으면
+   기한을 지키려면 필요한 기준 완화 % 를 함께 낸다(`ScheduleShortfall`). 0% 까지 낮춰도 못 넣으면
    그 까닭(넣을 창이 없음 · 동시 상한 · 가용)을 가른다.
 
 **알고리즘(검토 3-2 + 완전 탐색).** 판정은 달마다 「대·일 합 ≤ 그 달 예산」(`_Model.caps` — 확보율
@@ -127,10 +127,10 @@ CONCURRENT_RANGE: Final = (1, 500)
 """동시 개조 상한(대)."""
 
 MARGIN_RANGE: Final = (0.0, 0.3)
-"""안전 여유(비율 — 0.01 = 1%p). 기준에 더하기만 한다."""
+"""안전 여유(비율 — 0.01 = 1%). 기준에 더하기만 한다."""
 
 SEARCH_RESOLUTION: Final = 2e-8
-"""δ 이분 탐색 끝 폭(비율 — 0.000002%p). 위 끝이 데이터에서 오므로 횟수는 폭에서 정한다."""
+"""δ 이분 탐색 끝 폭(비율 — 0.000002%). 위 끝이 데이터에서 오므로 횟수는 폭에서 정한다."""
 
 _SEARCH_STEPS_LIMIT: Final = 64
 
@@ -394,7 +394,7 @@ def _validate(months: Sequence[ScheduleMonthInput], conditions: ScheduleConditio
         math.isfinite(conditions.margin) and MARGIN_RANGE[0] <= conditions.margin <= MARGIN_RANGE[1]
     ):
         raise ValueError(
-            f"안전 여유는 {MARGIN_RANGE[0] * 100:g}~{MARGIN_RANGE[1] * 100:g}%p 여야 합니다: "
+            f"안전 여유는 {MARGIN_RANGE[0] * 100:g}~{MARGIN_RANGE[1] * 100:g}% 여야 합니다: "
             f"{conditions.margin}"
         )
     if conditions.objective not in ("earliest", "even"):

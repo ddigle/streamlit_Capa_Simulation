@@ -115,10 +115,11 @@ def test_the_answers_show_the_same_evidence_as_a_fresh_build() -> None:
 
 def test_evidence_numbers_read_like_the_actual_screens() -> None:
     """근거 표 숫자 칸은 옆 실적 화면과 같은 꼴이다 — 서식 없이 내면 Gap 이 분수(-0.1093)로
-    나와 결론의 「-10.9%p」·조건의 「Gap … (%p)」 와 어긋났고 기준·실적도 0.82 · 0.7107
+    나와 결론의 「-10.9%」·조건의 「Gap … (%)」 와 어긋났고 기준·실적도 0.82 · 0.7107
     이었다(2026-10-30 E2E). 실수 칸은 모두 서식이 있고 Gap 은 퍼센트 서식에 칸 이름이 단위를
-    단다(`Gap (%p)`). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적고 Gap
-    에 단위를 붙인다."""
+    단다(`Gap (%)`). 지표마다 단위가 다른 「왜 부족해?」 표는 지표 화면과 같은 글자로 적고 Gap
+    에 단위를 붙인다. Gap 단위는 셈(빼기 · 비율)과 상관없이 「%」 다(「%p」 를 쓰지 않는다 —
+    2026-11-01 사용자 결정)."""
     app = _start()
     for index in (1, 2, 3):
         app.button(key=f"capa_chatbot_example_{index}").click().run()
@@ -136,15 +137,15 @@ def test_evidence_numbers_read_like_the_actual_screens() -> None:
                     column,
                 )
         if "Gap" in shown.columns and pd.api.types.is_float_dtype(shown["Gap"]):
-            assert config["Gap"]["label"] == "Gap (%p)"
+            assert config["Gap"]["label"] == "Gap (%)"
             assert config["Gap"]["type_config"]["format"] == "percent"
 
     cause = frames[[answer.key for answer in answers].index("cause")].value
     assert "단위" not in cause.columns
     gaps = dict(zip(cause["지표"], cause["Gap"], strict=True))
-    assert re.fullmatch(r"-?\d+\.\d%p", gaps["효율"]), gaps
+    assert re.fullmatch(r"-?\d+\.\d%", gaps["효율"]), gaps
     assert re.fullmatch(r"-?\d+\.\d%", gaps["UPEH"]), gaps
-    assert re.fullmatch(r"-?\d+\.\d{2}%p", gaps["수율"]), gaps
+    assert re.fullmatch(r"-?\d+\.\d{2}%", gaps["수율"]), gaps
     efficiency = cause.loc[cause["지표"].eq("효율")].iloc[0]
     assert str(efficiency["기준"]).endswith("%") and str(efficiency["실적"]).endswith("%")
     upeh = cause.loc[cause["지표"].eq("UPEH")].iloc[0]
@@ -310,12 +311,13 @@ def test_the_evidence_ratios_use_the_same_percent_format_as_the_actual_screens()
     shortfall, cause, priority, reference = list(app.dataframe)
 
     assert _column_formats(shortfall)["기준 효율"] == (None, "percent")
-    assert _column_formats(shortfall)["Gap"] == ("Gap (%p)", "percent")
+    assert _column_formats(shortfall)["Gap"] == ("Gap (%)", "percent")
     assert _column_formats(priority)["영향 비중"] == (None, "percent")
     assert _column_formats(reference)["실적 효율"] == (None, "percent")
     efficiency = cause.value.set_index("지표")
     assert str(efficiency.loc["효율", "기준"]).endswith("%")
-    assert str(efficiency.loc["효율", "Gap"]).endswith("%p")
+    assert str(efficiency.loc["효율", "Gap"]).endswith("%")
+    assert not str(efficiency.loc["효율", "Gap"]).endswith("%p")
     assert not str(efficiency.loc["UPEH", "기준"]).endswith("%")
 
 

@@ -60,7 +60,7 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
 사사오입한 정수 % 가 G 의 정수 % 이상 — 110% 면 109.5% 확보, 2026-11-01 사용자 결정)이라 HOME 과
 같은 비율을 같게 칠한다. 제약 충족(`met`)은 `allocated >= need` **정수 비교**다 — `need` 가 제약
 확보율을 맞추는 가장 작은 정수라 「제약 % ≥ T」 와 같은 뜻이고 부동소수 잡음이
-없다(`tests/test_constraint_simulation.py`). 「영향 시작」 의 0.05%p 문턱(`IMPACT_TOLERANCE`)은
+없다(`tests/test_constraint_simulation.py`). 「영향 시작」 의 0.05% 문턱(`IMPACT_TOLERANCE`)은
 판정이 아니라 표시 문턱이다.
 
 「소요 비중대로 나눴을 때」 견주기는 개조 비가동 없이 가용을 소요 비중대로 **사사오입** 정수로
@@ -121,7 +121,7 @@ NEED_TOLERANCE: Final = 1e-9
 내림은 1.4 − 12/30 = 0.9999999999999999 → 1(없으면 0)."""
 
 IMPACT_TOLERANCE: Final = 0.0005
-"""「영향 시작」: 기존 확보율이 제약 없을 때보다 0.05%p 넘게 낮은 첫 달. 판정이 아니라 표시
+"""「영향 시작」: 기존 확보율이 제약 없을 때보다 0.05% 넘게 낮은 첫 달. 판정이 아니라 표시
 문턱이다."""
 
 SUM_TOLERANCE: Final = 1e-6

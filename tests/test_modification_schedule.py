@@ -184,7 +184,7 @@ def test_a_month_already_below_the_threshold_gets_no_downtime() -> None:
 
 
 def test_the_safety_margin_lifts_the_placement_threshold() -> None:
-    """여유 5%p — 1월 예산 (11 − 10.5) × 31 = 15.5 → 15 대·일. 20일은 1/17(1월 15 · 2월 5)."""
+    """여유 5% — 1월 예산 (11 − 10.5) × 31 = 15.5 → 15 대·일. 20일은 1/17(1월 15 · 2월 5)."""
     plain = _plan(_three(), units=1, days=20)
     lifted = _plan(_three(), units=1, days=20, margin=0.05)
 
@@ -245,7 +245,7 @@ def test_months_before_the_earliest_start_are_closed() -> None:
 
 def test_a_missed_deadline_reports_the_three_alternatives() -> None:
     """2대 × 31일을 2/28 까지 — 1대뿐. 기한 없이 3/3 끝. 1월 33 · 2월 29 대·일로 넣으려면 1월이
-    (11 − 33/31) ÷ 10 = 1 − 2/310 → 기준을 2/310 = 0.645%p 낮춰야 한다."""
+    (11 − 33/31) ÷ 10 = 1 − 2/310 → 기준을 2/310 = 0.645% 낮춰야 한다."""
     result = _plan(_three(), units=2, days=31, deadline=date(2027, 2, 28))
 
     assert result.complete is False and result.placed == 1 and result.remaining == 1
@@ -391,7 +391,7 @@ def test_units_are_spread_when_the_greedy_would_bunch_them() -> None:
 
 
 def test_the_reported_relief_is_the_smallest_one() -> None:
-    """실수 입력 — 기한 9/18 · 여유 2%p 로 3대 × 33일을 넣으려면 13.67%p 가 아니라 11.53%p 면 된다
+    """실수 입력 — 기한 9/18 · 여유 2% 로 3대 × 33일을 넣으려면 13.67% 가 아니라 11.53% 면 된다
     (검토 탐침 probe1 seed 3 — 그 값은 완전 탐색이 낸 것이다)."""
     months = [
         ScheduleMonthInput(202608, 10.532963657848278, 11.62584257716873, 1.0),
@@ -415,7 +415,7 @@ def test_the_reported_relief_is_the_smallest_one() -> None:
 def test_the_even_objective_is_not_capped_by_a_fixed_span() -> None:
     """여유가 큰 공정(개조 전 400% · 150% · 400%) — 1월 · 3월에 한 대씩이면 두 달 모두 396.8%.
 
-    위 끝이 고정 +100%p 면 그 값에서 멈춰 「가장 빨리」 와 같은 배치(두 대 1/1)를 냈다(검토 탐침
+    위 끝이 고정 +100% 면 그 값에서 멈춰 「가장 빨리」 와 같은 배치(두 대 1/1)를 냈다(검토 탐침
     probe8).
     """
     months = [_month(JAN, 40.0), _month(FEB, 15.0), _month(MAR, 40.0)]

@@ -1701,7 +1701,8 @@ def test_a_past_month_takes_the_securement_adjustment_like_a_calculated_month(
     assert not list(app.exception), [element.message for element in app.exception]
     cell = _key_process_cell(app, "25.12")
     assert cell[2] == "90.0%"
-    assert "확보율 보정 -20.0%p" in str(cell[5])
+    # 「%p」 가 아니라 「%」 다(2026-11-01 사용자 결정 「%p표기하지말고 %로만」).
+    assert "확보율 보정 -20.0%<br>비고 과거 실적 보정" in str(cell[5])
     assert not [item.value for item in app.warning if "짝이 없어" in str(item.value)]
 
 
@@ -1731,7 +1732,8 @@ def test_the_home_guide_carries_what_left_the_body() -> None:
     for text in (
         "LOB 표시 조건",
         "반비례",
-        "퍼센트포인트",
+        # 확보율 보정은 더하기다 — 단위 글자는 「%」(2026-11-01 사용자 결정).
+        "비율 곱셈이 아닙니다",
         "EDP-TSV",
         "거래선",
         "계산이 이깁니다",
@@ -2046,6 +2048,8 @@ def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path:
     labels = {option["value"]: option["label"] for option in options}
     assert labels["DEMO_Final_Test"] == "DEMO_Chip_Attach (DEMO_Final_Test)"
     assert labels["DEMO_Chip_Attach"] == "DEMO_Chip_Attach"
+    # 증감 칸 머리도 「%」 다 — 「%p」 를 쓰지 않는다(2026-11-01 사용자 결정).
+    assert json.loads(editor.proto.columns)["증감 확보율"]["label"] == "증감 확보율(%)"
 
 
 def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
