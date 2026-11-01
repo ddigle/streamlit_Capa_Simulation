@@ -28,6 +28,7 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintResult,
     HeldUnit,
     NewUnit,
+    OrdinaryReason,
     UnitModule,
     simulate_constraint,
 )
@@ -346,3 +347,50 @@ def test_invalid_bundles_are_rejected(unit: NewUnit, message: str) -> None:
     months = _months(2)
     with pytest.raises(ValueError, match=message):
         simulate_constraint(months, _conditions(months, new=True), (unit,))
+
+
+# ------------------------------------------------------------------ 일반 설비가 된 까닭
+
+
+def _reason(units: tuple[NewUnit, ...], *demands: float) -> ConstraintResult:
+    months = _months(*demands)
+    return simulate_constraint(months, _conditions(months, new=True), units)
+
+
+def test_a_bundle_whose_late_module_misses_the_increase_is_short_not_without_growth() -> None:
+    """묶음 G(G-A 5/10 0.5 · G-B 6/10 0.5)는 창 [5/10, 6/9] 안에 6월 증가(W/D 첫날 5/25)가
+    있다 — 그때 G-A 0.5대만 와 있어 내림 0 이고 G-B 는 아직 오지 않았다(B2-2). 까닭은 「창 안
+    증가 없음」 이 아니다(2026-11-01 E2E — 사본 SMP-DAF-12 의 카드가 「개조 30일 안에 늘어날
+    전용이 없어」 라고 적었다). F(7/20)는 창 [7/20, 8/19] 안에 W/D 첫날이 없다."""
+    bundle = _bundle("G", ("G-A", date(2027, 5, 10), 0.5), ("G-B", date(2027, 6, 10), 0.5))
+    late = NewUnit("F", date(2027, 7, 20), 1.0)
+    result = _reason((bundle, late), 1, 1, 1)
+    assert _split(result, 202706) == (0, 0, 1)
+    assert result.ordinary_reason(bundle) == OrdinaryReason(
+        "short", months=(202706,), arrived=0.5, pending=("G-B",)
+    )
+    assert result.ordinary_reason(late) == OrdinaryReason("no_growth")
+
+
+def test_the_other_reasons_follow_what_the_increase_met() -> None:
+    """X(5/20)가 6월 증가 1 을 채워 Y(5/21)는 `filled`, Z 는 6월 W/D 첫날(5/25)에 나가 `gone`,
+    C(5/20 · 1.5)는 증가 2 에 1대가 붙고 남은 0.5대가 내림 0 이라 `short`(일부 붙음), 묶음
+    H(H-A 5/10 1.0 · H-B 6/10 0.5)는 H-A 가 증가를 다 채워 H-B 가 와 있었어도 붙을 자리가
+    없었다 — `filled`."""
+    first = NewUnit("X", date(2027, 5, 20), 1.0)
+    second = NewUnit("Y", date(2027, 5, 21), 1.0)
+    gone = NewUnit("Z", date(2027, 5, 20), 1.0, until=JUNE_FIRST)
+    filled = _reason((first, second, gone), 1)
+    assert filled.ordinary_reason(second) == OrdinaryReason("filled", months=(202706,))
+    assert filled.ordinary_reason(gone) == OrdinaryReason("gone", months=(202706,))
+
+    partly = NewUnit("C", date(2027, 5, 20), 1.5)
+    split = _reason((partly,), 2)
+    assert _split(split, 202706) == (1, 0, 1)
+    assert split.ordinary_reason(partly) == OrdinaryReason(
+        "short", months=(202706,), arrived=0.5, attached=True
+    )
+
+    bundle = _bundle("H", ("H-A", date(2027, 5, 10), 1.0), ("H-B", date(2027, 6, 10), 0.5))
+    met = _reason((bundle,), 1)
+    assert met.ordinary_reason(bundle) == OrdinaryReason("filled", months=(202706,), attached=True)

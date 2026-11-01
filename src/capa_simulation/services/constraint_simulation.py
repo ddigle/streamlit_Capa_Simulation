@@ -119,6 +119,8 @@ __all__ = [
     "ModificationWindow",
     "NewUnit",
     "NewUnitAssignment",
+    "OrdinaryCause",
+    "OrdinaryReason",
     "UnitModule",
     "WaitingShare",
     "constraint_month_inputs",
@@ -461,6 +463,38 @@ class WaitingShare:
         return self.units * self.days / self.window_days
 
 
+OrdinaryCause = Literal["skipped", "no_growth", "gone", "filled", "short"]
+"""신규 호기의 몫이 증가에 붙지 못하고 기존 제품 몫(일반 설비)이 된 까닭(`OrdinaryReason`)."""
+
+
+class OrdinaryReason(NamedTuple):
+    """신규 호기 하나의 남는 몫이 일반 설비가 된 까닭 — 화면 글은 이 값으로 짓는다
+    (`ConstraintResult.ordinary_reason`).
+
+    - `skipped` — 보유만으로 제약 기간 끝까지 다 채워 신규를 붙이지 않았다(결정 B1).
+    - `no_growth` — 기여 시작 d 에서 개조 일수 D 안(그 달 W/D 첫날 t 가 `d ≤ t ≤ d + D`)에 신규
+      차례로 온 늘어난 전용이 없다.
+    - `gone` — 그런 증가는 있었지만 모두 그 호기가 나간 날(정지·반출/이설) 뒤다.
+    - `filled` — 그 증가가 있었지만 차례가 앞선 신규(같은 호기의 앞 모듈 포함)가 다 채웠다.
+    - `short` — 그 증가를 다 채우지 못했는데 붙지 못했다 — 그때 들어와 있던 남는 몫(`arrived`)이
+      내림 정수 1대가 되지 않았거나(환산비 나눔), 묶음의 모듈이 그 증가의 t 까지 오지 않았다
+      (`pending` — 결정 B2-2).
+    """
+
+    cause: OrdinaryCause
+    months: tuple[int, ...] = ()
+    """그 까닭이 걸린 증가의 달(`no_growth`·`skipped` 는 빈다)."""
+
+    arrived: float = 0.0
+    """`short` — 그 증가 때 들어와 있었는데 남은 몫(환산 대수)."""
+
+    pending: tuple[str, ...] = ()
+    """`short` — 그 증가 때까지 들어오지 않아 남은 묶음 모듈(설비명)."""
+
+    attached: bool = False
+    """그 호기의 다른 몫은 증가에 붙었다(일부만 붙은 호기)."""
+
+
 @dataclass(frozen=True)
 class ConstraintMonth:
     """보이는 달 하나의 결과."""
@@ -663,6 +697,73 @@ class ConstraintResult:
         적는다."""
         return tuple(unit for unit in self.new_units if self.left_units(unit) > 0)
 
+    def ordinary_reason(self, unit: NewUnit) -> OrdinaryReason:
+        """그 신규 호기의 남는 몫이 증가에 붙지 못하고 기존 제품 몫이 된 까닭(`OrdinaryReason`).
+
+        1단계의 붙임(`_NewPool.take`)을 결과로 되짚는다 — 신규 차례로 온 늘어난
+        전용(`_offered_to_new` > 0)의 달 가운데 그 달 W/D 첫날 t 가 호기의 창 `[d, d + D]` 안인
+        달을 보고, 그런 달이 없으면 `no_growth`, 있으면 나간 뒤인지(`gone`) · 남는 몫이 그때 와
+        있었는지 · 그 증가를 다 채웠는지(`filled` · `short`)로 가른다. 「개조 D 일 안에 늘어날
+        전용이 없어」 를 모든 남는 몫에 적으면 묶음의 일부 모듈만 온 증가(0.5대 — 내림 0)에도 그
+        글이 섰다(2026-11-01 E2E).
+        """
+        attached = self.assigned_units(unit) > 0
+        if self.new_units_skipped:
+            return OrdinaryReason("skipped", attached=attached)
+        cutoff = self.conditions.cutoff_days
+        reach = timedelta(days=self.conditions.modification_days or 0)
+        reachable = [
+            (row, wd_window(row.month, cutoff).first_day)
+            for row in self.months
+            if row.in_period and _offered_to_new(row) > 0
+        ]
+        reachable = [
+            (row, day) for row, day in reachable if unit.start <= day <= unit.start + reach
+        ]
+        if not reachable:
+            return OrdinaryReason("no_growth", attached=attached)
+        present = [(row, day) for row, day in reachable if unit.until is None or day < unit.until]
+        if not present:
+            return OrdinaryReason(
+                "gone", months=tuple(row.month for row, _ in reachable), attached=attached
+            )
+        left = self._left_pieces(unit)
+        last = present[-1][1]
+        arrived = [(piece, value) for piece, value in left if _came_by(piece, last)]
+        pending = tuple(piece.name for piece, _ in left if not _came_by(piece, last))
+        # 다 채우지 못한 증가 — 남는 몫이 그때 와 있었으면 그 몫이 내림 정수 1대가 되지 않은
+        # 것이고, 남는 몫이 모두 아직 오지 않았으면 오지 않은 것이 까닭이다.
+        short = [
+            row.month
+            for row, day in present
+            if row.new_increment < _offered_to_new(row)
+            and (not arrived or any(_came_by(piece, day) for piece, _ in arrived))
+        ]
+        if not short:
+            return OrdinaryReason(
+                "filled", months=tuple(row.month for row, _ in present), attached=attached
+            )
+        return OrdinaryReason(
+            "short",
+            months=tuple(short),
+            arrived=_tidy(sum(value for _, value in arrived)),
+            pending=pending,
+            attached=attached,
+        )
+
+    def _left_pieces(self, unit: NewUnit) -> list[tuple[UnitModule, float]]:
+        """그 호기에서 증가에 붙지 않고 남은 몫(묶음은 모듈마다)과 그 환산 대수."""
+        left: list[tuple[UnitModule, float]] = []
+        for piece in unit.pieces:
+            used = sum(
+                item.units
+                for item in self.assignments
+                if item.unit == unit.name and item.module == piece.name
+            )
+            if piece.units - used > NEED_TOLERANCE:
+                left.append((piece, _tidy(piece.units - used)))
+        return left
+
     def units_starting_in(self, month: int) -> tuple[NewUnit, ...]:
         """기여 시작이 그 달 W/D 구간에 드는 신규 호기(받은 차례)."""
         window = wd_window(month, self.conditions.cutoff_days)
@@ -672,6 +773,18 @@ class ConstraintResult:
 
 
 # ================================================================== 작은 규칙
+
+
+def _offered_to_new(row: ConstraintMonth) -> int:
+    """그 달 늘어난 전용 가운데 신규 차례에 남아 있던 대수 — `FILL_ORDER` 에서 신규 앞에 선
+    몫(보유)을 뺀다. 신규가 맨 앞이면 늘어난 대수 그대로다."""
+    ahead = FILL_ORDER[: FILL_ORDER.index(FILL_NEW)]
+    return row.growth - (row.owned_increment if FILL_OWNED in ahead else 0)
+
+
+def _came_by(piece: UnitModule, day: date) -> bool:
+    """그 몫(모듈)이 그날 이미 들어와 있었나 — 기여 시작이 그날 이하."""
+    return piece.start is None or piece.start <= day
 
 
 def _whole_units(value: float) -> int:

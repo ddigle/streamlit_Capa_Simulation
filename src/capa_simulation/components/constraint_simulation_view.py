@@ -71,6 +71,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     minimum_rate,
     minimum_unit,
     month_name,
+    ordinary_reason_text,
     rate_axis,
     rate_figure,
     rate_text,
@@ -185,7 +186,8 @@ NEW_SKIPPED_TEXT: Final = (
     "보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 설비는 붙이지 않았습니다 — "
     "신규는 기존 제품 몫입니다(신규 대기 없음)."
 )
-SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
+# 일반 설비가 된 신규 한 줄에 까닭마다 적는 이름 수 — 넘으면 「외 n호기」.
+ORDINARY_NAME_LIMIT: Final = 4
 MODIFY_OFF_TEXT: Final = "개조를 켜면 제약 제품에 떼어 줄 대수만큼 개조 비가동이 잡힙니다."
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
@@ -596,17 +598,33 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
             unit for unit in result.units_starting_in(row.month) if result.left_units(unit) > 0
         ]
         if ordinary:
-            names = ", ".join(_ordinary_name(unit, result) for unit in ordinary)
-            reason = (
-                SKIPPED_REASON
-                if result.new_units_skipped
-                else f"개조 {conditions.modification_days}일 안에 늘어날 전용이 없어"
+            causes = " / ".join(
+                f"{', '.join(names)} — {reason}"
+                for reason, names in _by_reason(ordinary, result, limit=len(ordinary))
             )
             notes.append(
-                f"이 달 들어온 신규 {names} — {reason} 기존 제품 몫입니다(나중에 제약에 쓰려면 "
-                "개조)."
+                f"이 달 들어온 신규 {causes} 기존 제품 몫입니다(나중에 제약에 쓰려면 개조)."
             )
     return MonthStep(body, " · ".join(notes))
+
+
+def _by_reason(
+    units: Sequence[NewUnit], result: ConstraintResult, *, limit: int
+) -> list[tuple[str, list[str]]]:
+    """일반 설비가 된 신규를 까닭(`ordinary_reason_text`)마다 묶는다 — 처음 나온 차례, 묶음마다
+    이름 `limit` 개 뒤는 「외 n호기」. 호기마다 까닭이 다를 수 있다(2026-11-01 E2E — 묶음의 일부
+    모듈만 온 호기와 창 안 증가가 없던 호기가 한 까닭으로 적혔다)."""
+    groups: dict[str, list[NewUnit]] = {}
+    for unit in units:
+        reason = ordinary_reason_text(unit, result, name=literal_markdown)
+        groups.setdefault(reason, []).append(unit)
+    grouped: list[tuple[str, list[str]]] = []
+    for reason, members in groups.items():
+        names = [_ordinary_name(unit, result) for unit in members[:limit]]
+        if len(members) > limit:
+            names[-1] += f" 외 {len(members) - limit}호기"
+        grouped.append((reason, names))
+    return grouped
 
 
 def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
@@ -696,23 +714,18 @@ def _ordinary_name(unit: NewUnit, result: ConstraintResult) -> str:
 
 
 def ordinary_line(result: ConstraintResult) -> str:
-    """일반 설비가 된 신규 한 줄 — 개조 일수 안에 늘어날 전용이 없어 기존 제품 몫. 대수는 남는
-    몫의 환산 합이다(`left_units` — 일부만 붙은 호기는 남는 몫만). 없으면 빈 글자."""
+    """일반 설비가 된 신규 한 줄 — 호기마다의 까닭(`ordinary_reason_text` — 같은 까닭은 묶는다)과
+    「기존 제품 몫」. 대수는 남는 몫의 환산 합이다(`left_units` — 일부만 붙은 호기는 남는 몫만).
+    없으면 빈 글자."""
     units = result.ordinary_units
     if not units:
         return ""
     total = sum(result.left_units(unit) for unit in units)
-    names = ", ".join(_ordinary_name(unit, result) for unit in units[:4])
-    more = f" 외 {len(units) - 4}호기" if len(units) > 4 else ""
-    reason = (
-        SKIPPED_REASON
-        if result.new_units_skipped
-        else f"개조 {result.conditions.modification_days}일 안에 늘어날 전용이 없어"
+    causes = " / ".join(
+        f"{', '.join(names)} · {reason}"
+        for reason, names in _by_reason(units, result, limit=ORDINARY_NAME_LIMIT)
     )
-    return (
-        f"일반 설비가 된 신규 {units_text(total)}대 — {names}{more} · {reason} 기존 제품 몫"
-        "(제약에 쓰려면 개조)"
-    )
+    return f"일반 설비가 된 신규 {units_text(total)}대 — {causes} 기존 제품 몫(제약에 쓰려면 개조)"
 
 
 def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> list[str]:

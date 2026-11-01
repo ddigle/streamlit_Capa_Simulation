@@ -990,8 +990,10 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판, 10 은
     묶음 신규의 모듈 몫(「HB-07(HB-07B)」)과 「보유로 제약 기간을 다 덮음」 풍선 글을
     싣고(2026-11-01 사용자 결정 B1 · B2) 차이를 「%」 로 적고(「%p」 없음) 기준선을 판정
-    경계에 그은 판이다(2026-11-01 사용자 결정 N1 — 같은 배포의 두 갈래라 한 번 올렸다)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 10
+    경계에 그은 판이다(2026-11-01 사용자 결정 N1 — 같은 배포의 두 갈래라 한 번 올렸다). 11 은
+    계산표 「신규 기여 시작」 풍선의 일반 설비 까닭을 호기마다 되짚은 판이다(2026-11-01 E2E —
+    「개조 30일 안에 늘어날 전용 없음」 이 일부 모듈만 온 묶음에도 섰다)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 11
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
@@ -1208,24 +1210,57 @@ def test_the_schedule_card_lists_the_waits_and_the_ordinary_units() -> None:
 def test_a_partly_attached_unit_is_named_with_its_leftover() -> None:
     """환산 1.5 인 신규 C(5/25)는 6월 몫에 1대가 붙고 0.5대가 남는다 — 화면 글은 C 를 「붙음」 과
     「기존 제품 몫」 으로 통째로 함께 적지 않고 남는 0.50대만 기존 제품 몫으로 적는다(2026-10-26
-    리뷰). 일반 설비 대수도 호기 수가 아니라 남는 몫의 환산 합이다."""
+    리뷰). 일반 설비 대수도 호기 수가 아니라 남는 몫의 환산 합이다. 남는 까닭은 「창 안 증가
+    없음」 이 아니다 — 6월(개조 5대)·7월(W/D 첫날 6/24 = 5/25 + 30일) 증가가 창 안에 있었지만 남은
+    0.5대가 내림 정수 1대가 되지 않았다(2026-11-01 E2E — 까닭 글은 호기마다 되짚는다)."""
     result = simulate_constraint(_inputs(), NEW_ON, (_unit("C", date(2027, 5, 25), units=1.5),))
     june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
     note = june.steps[2].note
     assert "이 달 몫 신규 C 1대 — 대기 없음(W/D 첫날 기여 시작)" in note
     assert (
-        "이 달 들어온 신규 C 남는 0.50대 — 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫" in note
+        "이 달 들어온 신규 C 남는 0.50대 — 27년 6월 · 27년 7월 증가 때 남은 0.50대로는 1대가 되지 "
+        "않아 기존 제품 몫" in note
     )
     assert "이 달 들어온 신규 C —" not in note
     assert ordinary_line(result) == (
-        "일반 설비가 된 신규 0.50대 — C 남는 0.50대 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 "
-        "몫(제약에 쓰려면 개조)"
+        "일반 설비가 된 신규 0.50대 — C 남는 0.50대 · 27년 6월 · 27년 7월 증가 때 남은 0.50대로는 "
+        "1대가 되지 않아 기존 제품 몫(제약에 쓰려면 개조)"
     )
     # 같은 호기의 계산표 풍선(`new_unit_fate`)과 같은 말이다.
     assert figures.new_unit_fate(result.new_units[0], result) == (
-        "27년 6월 몫 1대 전용(대기 없음(W/D 첫날 기여 시작)) · 남는 0.50대 일반 설비(개조 30일 "
-        "안에 늘어날 전용 없음)"
+        "27년 6월 몫 1대 전용(대기 없음(W/D 첫날 기여 시작)) · 남는 0.50대 일반 설비(27년 6월 · "
+        "27년 7월 증가 때 남은 0.50대로는 1대가 되지 않음)"
     )
+
+
+def test_the_ordinary_line_says_why_each_unit_became_ordinary() -> None:
+    """일반 설비가 된 신규 한 줄 · 3단계 회색 줄 · 계산표 풍선은 호기마다 까닭을 적는다(2026-11-01
+    E2E). 묶음 G(G-A 5/25 · G-B 6/10)는 6월 증가(W/D 첫날 5/25)가 창 안에 있었는데 G-A 0.5대만 와
+    있었고 G-B 는 오지 않았다 — 「개조 30일 안에 늘어날 전용이 없어」 가 아니다. F 는 창 안 증가가
+    없어 그 글 그대로다."""
+    from test_constraint_simulation_holdings import _bundle, _conditions, _months
+
+    from capa_simulation.services.constraint_simulation import NewUnit as Unit
+
+    months = _months(1, 1, 1)
+    bundle = _bundle("G", ("G-A", date(2027, 5, 25), 0.5), ("G-B", date(2027, 6, 10), 0.5))
+    late = Unit("F", date(2027, 7, 20), 1.0)
+    result = simulate_constraint(months, _conditions(months, new=True), (bundle, late))
+
+    assert ordinary_line(result) == (
+        "일반 설비가 된 신규 2대 — G · 27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 "
+        "G\\-B는 아직 오지 않아 / F · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 쓰려면 "
+        "개조)"
+    )
+    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
+    assert (
+        "이 달 들어온 신규 G — 27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 G\\-B는 아직 "
+        "오지 않아 기존 제품 몫입니다" in june.steps[2].note
+    )
+    assert figures.new_unit_fate(bundle, result) == (
+        "일반 설비(27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 G-B는 아직 오지 않음)"
+    )
+    assert figures.new_unit_fate(late, result) == "일반 설비(개조 30일 안에 늘어날 전용 없음)"
 
 
 def test_the_ordinary_line_counts_leftovers_and_hosts_beyond_four() -> None:

@@ -99,10 +99,15 @@ from capa_simulation.services.constraint_simulation import (
     ModificationWindow,
     NewUnit,
     NewUnitAssignment,
+    OrdinaryReason,
     WaitingShare,
     secure,
 )
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import (
+    with_object_particle,
+    with_subject_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
@@ -118,6 +123,7 @@ __all__ = [
     "RATE_AXIS_STRETCH",
     "ROW_IDS",
     "ConstraintLabels",
+    "SKIPPED_REASON",
     "RateAxis",
     "SheetCanvas",
     "build_sheet_canvas",
@@ -132,6 +138,7 @@ __all__ = [
     "minimum_unit",
     "month_name",
     "new_unit_fate",
+    "ordinary_reason_text",
     "rate_axis",
     "rate_figure",
     "rate_text",
@@ -140,8 +147,11 @@ __all__ = [
     "waiting_text",
 ]
 
+# 보유만으로 제약 기간을 다 덮어 신규를 붙이지 않은(결정 B1) 신규의 까닭(잇는 꼴).
+SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
+
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 10
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 11
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -1207,6 +1217,49 @@ def _count_cell(value: int, *, bold: bool = False) -> Cell:
     return Cell(str(value) if value > 0 else "", bold=bold and value > 0)
 
 
+def ordinary_reason_text(
+    unit: NewUnit,
+    result: ConstraintResult,
+    *,
+    noun: bool = False,
+    name: Callable[[str], str] = str,
+) -> str:
+    """신규 호기의 남는 몫이 기존 제품 몫(일반 설비)이 된 까닭 한
+    마디(`ConstraintResult.ordinary_reason`).
+
+    잇는 꼴(「…없어」 — 뒤에 「기존 제품 몫」 이 붙는다)이 기본이고 `noun` 이면 맺는 꼴(「…없음」 —
+    계산표 풍선)이다. 모듈 이름은 `name` 을 지나 적는다(마크다운 칸은 `literal_markdown`).
+
+    - 기간을 보유로 다 덮음 — 「보유 제약 설비로 제약 기간을 다 덮어」.
+    - 창 안 증가 없음 — 「개조 30일 안에 늘어날 전용이 없어」.
+    - 창 안 증가가 나간 뒤 — 「27년 7월 증가 전에 정지·반출/이설돼」.
+    - 앞 차례 신규가 채움 — 「27년 7월 증가를 먼저 들어온 신규가 채워」.
+    - 다 못 채운 증가에 못 붙음 — 「27년 7월 증가 때 들어온 0.50대로는 1대가 되지 않고 SMP-DAF-12B는
+      아직 오지 않아」(일부만 붙은 호기는 「남은」, 들어온 몫이 없으면 「… 때 B가 아직 오지 않아」).
+    """
+    reason: OrdinaryReason = result.ordinary_reason(unit)
+    days = result.conditions.modification_days or 0
+    growth = " · ".join(month_name(month) for month in reason.months)
+    if reason.cause == "skipped":
+        return "보유로 제약 기간을 다 덮음" if noun else SKIPPED_REASON
+    if reason.cause == "no_growth":
+        return f"개조 {days}일 안에 늘어날 " + ("전용 없음" if noun else "전용이 없어")
+    if reason.cause == "gone":
+        return f"{growth} 증가 전에 정지·반출/이설{'' if noun else '돼'}"
+    if reason.cause == "filled":
+        return f"{growth} 증가를 먼저 들어온 신규가 {'채움' if noun else '채워'}"
+    pending = ", ".join(name(module) for module in reason.pending)
+    if reason.arrived <= 0:
+        return f"{growth} 증가 때 {with_subject_particle(pending)} 아직 오지 " + (
+            "않음" if noun else "않아"
+        )
+    came = "남은" if reason.attached else "들어온"
+    short = f"{growth} 증가 때 {came} {units_text(reason.arrived)}대로는 1대가 되지 "
+    if not pending:
+        return short + ("않음" if noun else "않아")
+    return f"{short}않고 {with_topic_particle(pending)} 아직 오지 " + ("않음" if noun else "않아")
+
+
 def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
     """신규 호기 하나가 어떻게 쓰였나 — 「27년 7월 몫 전용(2027-06-10 ~ 2027-06-23 대기 14일)」 ·
     「일반 설비(개조 30일 안에 늘어날 전용 없음)」. 나눠 붙었으면 몫마다 잇는다."""
@@ -1220,12 +1273,7 @@ def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
     ]
     left = result.left_units(unit)
     if left > 0:
-        days = result.conditions.modification_days or 0
-        reason = (
-            "보유로 제약 기간을 다 덮음"
-            if result.new_units_skipped
-            else f"개조 {days}일 안에 늘어날 전용 없음"
-        )
+        reason = ordinary_reason_text(unit, result, noun=True)
         parts.append(
             f"남는 {units_text(left)}대 일반 설비({reason})" if pieces else f"일반 설비({reason})"
         )
