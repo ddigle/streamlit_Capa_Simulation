@@ -967,7 +967,7 @@ def chosen_new_unit_counts(frames: Frames) -> tuple[int, int]:
     return sum(picked), len(picked) - sum(picked)
 
 
-# 가정 세션 저장 칸 아래 한 줄 꼬리(Q1 — Space 저장 상자 경고
+# 가정 세션 저장 칸 아래 한 줄 꼬리(Q1 — 세 저장 칸의 함께 넣기 경고
 # `ASSUMPTION_PROPAGATE_WARNING` 과 같은 뜻).
 NEW_UNIT_OFFICIAL_COUNT_NOTE = (
     "같은 일정으로 넣는 {count:,}대는 공식 설비 시나리오에 자리 없는 새 호기로 들어가 "

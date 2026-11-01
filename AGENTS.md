@@ -2551,7 +2551,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (G1 — 2026-10-24 결정 판 「권장대로」·F6·F2 — 바꾸려면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
     마스터 탭 저장 구획·Space 「저장 칸」 은 체크만 세운다 — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
   - **가정 세션의 Space 「배치 저장」**(`assumption=True`)은 짧은 라벨 「새 호기를 다른 설비 시나리오에도 넣기」 를 쓰고 켜 있으면
-    공식 가용대수에 센다는 경고를 세운다. 기본값은 다른 세 자리와 같은 켬이다(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS` =
+    공식 가용대수에 센다는 경고(`ASSUMPTION_PROPAGATE_WARNING` — 「켜 두면 …」)를 세운다. 가정 세션의 설비 마스터 탭 저장 칸·사이드바
+    팝업 「저장」(`reach` 를 준 자리)도 같은 글을 같은 조건(함께 넣기 체크가 켜 있을 때 두 체크 아래 — `_render_assumption_warning`
+    한 곳)으로 세운다(2026-11-01 N2 후속). 기본값은 다른 세 자리와 같은 켬이다(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS` =
     `DEFAULT_PROPAGATE_NEW_UNITS` — 2026-11-01 N2, 옛 Q1 은 끔). key 꼬리 `_assumption` 으로 공식 자리와 가른다. 발행 체크는 위 한
     규칙이다 — 옛 「함께 넣기를 켤 때만」 은 체크를 끈 채 「새 호기」 칸 고름·새 비가동이 공식에 들어가도 체크가 숨어 말없이 발행하지
     않았다.
