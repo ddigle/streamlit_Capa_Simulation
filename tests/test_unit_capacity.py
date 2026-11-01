@@ -763,51 +763,139 @@ def _assert_no_values(problem: ReferenceJoinProblem) -> None:
         assert "Product" not in text
 
 
-def test_a_blank_run_rate_on_routes_that_are_dropped_anyway_says_so() -> None:
-    """빈 효율 칸의 경로가 모두 Main UPEH 0 이하라 어차피 빠질 경로면 글과 꼴이 그렇게 말한다.
+# ------------------------- 뒤에서 빠질 경로의 빈 칸은 멈추지 않는다 — 제외 뒤에 남은 행만 검사한다
+# (2026-11-01 사용자 결정 — 0655 결정 7). 빼는 경로는 Main UPEH 0 이하 · 효율 0 이하 · 측정률
+# 음수다. 빈 칸·숫자 아님·행 없음이 그런 경로에만 붙었으면 그 경로는 제외 목록으로 빠지고 나머지는
+# 계산된다.
 
-    계산은 여전히 멈춘다 — 그 꼴을 고칠지는 사용자 결정(`docs/TODO.md` 결정 7)이다. 살아 있는 경로의
-    빈 칸과는 고칠 길이 달라서 갈라 센다.
+
+def _check_columns(frame: pd.DataFrame) -> list[str]:
+    """붙이며 더한 검사 칸이 결과·제외 목록에 새어 나가지 않았는지 본다."""
+    return [column for column in frame.columns if str(column).startswith("_")]
+
+
+def test_a_blank_run_rate_on_routes_that_are_dropped_anyway_does_not_stop() -> None:
+    """빈 효율 칸이 붙은 경로가 모두 Main UPEH 0 이하면 그 경로는 UPEH 사유로 빠지고 계산은 선다.
+
+    사내 리뷰 202610271800 발견 1(S27 r1)의 꼴이다 — 고치기 전에는 효율 표를 붙일 때 멈췄다.
     """
     inputs = _capacity_inputs(["Process-A", "Process-B"])
     inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0])
     inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, float("nan")])
 
-    error = _join_error(inputs)
+    result = calculate_unit_capacity(**inputs)
 
-    message = str(error)
-    assert message.startswith(
-        "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, "
-    )
-    assert "그 가운데 1건은 붙은 경로가 모두 뒤에서 계산 대상에서 빠질 경로" in message
-    assert error.problem == ReferenceJoinProblem(
-        "RQ_RUN_RATE", JOIN_BLANK_VALUE, columns=("CAPA_RUN_RATE",), keys=1, rows=1, dropped_keys=1
-    )
-    assert error.problem.label == "빈 값(붙은 경로가 모두 뒤에서 빠짐)"
-    assert error.problem.summary() == "빈 값 키 1 · 경로 1 · 모두 뒤에서 빠질 경로인 키 1"
-    _assert_no_values(error.problem)
+    assert result["공정"].tolist() == ["Process-A"]
+    assert result["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY])
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "UPEH 0 이하"}]
+    excluded = result.attrs[CAPACITY_EXCLUSIONS_ATTR]
+    assert excluded["CAPA_RUN_RATE"].isna().tolist() == [True]
+    assert _check_columns(result) == [] and _check_columns(excluded) == []
 
 
-def test_a_blank_vital_on_a_route_with_zero_run_rate_is_counted_as_dropped_later() -> None:
-    """편중률은 효율 다음에 붙으므로 효율 0 이하로 빠질 경로도 「뒤에서 빠질 경로」 로 센다."""
-    inputs = _capacity_inputs(["Process-A", "Process-B"], vital=[1.0, float("nan")])
+@pytest.mark.parametrize(("argument", "column"), [item[:2] for item in REQUIRED_REFERENCES[1:]])
+def test_a_blank_value_on_a_route_with_zero_run_rate_does_not_stop(
+    argument: str, column: str
+) -> None:
+    """편중률·모듈수·일수 빈 칸이 효율 0 으로 빠질 경로에만 붙었으면 그 경로는 효율 사유로 빠짐."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    blank: list[Any] = [HEALTHY_VALUES[argument], None]
+    inputs[argument] = inputs[argument].assign(**{column: blank})
     inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, 0.0])
 
-    problem = _join_error(inputs).problem
+    result = calculate_unit_capacity(**inputs)
 
-    assert (problem.table, problem.shape, problem.dropped_keys) == ("RQ_VITAL", JOIN_BLANK_VALUE, 1)
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "CAPA_RUN_RATE 0 이하"}]
+
+
+def test_a_blank_value_on_a_route_with_a_negative_ratio_does_not_stop() -> None:
+    """측정률 음수로 빠질 경로도 같다 — 측정률은 효율·편중률보다 뒤에 붙지만 검사는 제외 뒤다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"], vital=[1.0, float("nan")])
+    inputs["wf_ratio"] = inputs["wf_ratio"].assign(WF측정률=[1.0, -0.5])
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "WF측정률 음수"}]
+
+
+@pytest.mark.parametrize("argument", ["run_rate", "vital", "module", "run_day"])
+def test_a_missing_row_on_a_dropped_route_does_not_stop(argument: str) -> None:
+    """행이 없는 칸도 같은 규칙이다 — 기준 정보 편집표는 빈 칸을 행 없음으로 저장한다.
+
+    빈 값만 풀고 행 없음은 그대로 두면, 같은 칸이 원천에서 온 빈 값일 때는 계산이 서다가 그 표의
+    다른 칸을 고쳐 적용하는 순간(빈 칸 행이 빠진다) 「연결값이 없는」 으로 멈춘다.
+    """
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0])
+    inputs[argument] = inputs[argument].iloc[:1]
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _exclusion_records(result) == [{"공정": "Process-B", "제외사유": "UPEH 0 이하"}]
+
+
+@pytest.mark.parametrize(
+    ("argument", "column"),
+    [
+        *[item[:2] for item in REQUIRED_REFERENCES],
+        ("lot_ratio", "Lot 측정률"),
+        ("wf_ratio", "WF측정률"),
+    ],
+)
+def test_a_non_numeric_value_on_a_dropped_route_does_not_stop(argument: str, column: str) -> None:
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0])
+    values: list[Any] = [HEALTHY_VALUES.get(argument, 1.0), "N/A"]
+    inputs[argument] = inputs[argument].assign(**{column: values})
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert _check_columns(result.attrs[CAPACITY_EXCLUSIONS_ATTR]) == []
+
+
+def test_a_blank_shared_by_a_dropped_and_a_live_route_still_stops_and_counts_the_live_one() -> None:
+    """한 칸을 두 경로가 쓰고 하나라도 남으면 그 칸은 계산이 쓰는 칸이다 — 남은 경로만 센다."""
+    inputs = _capacity_inputs(["Process-A", "Process-A"])
+    inputs["upeh"] = inputs["upeh"].assign(UPEH=[0.0, 100.0])
+    inputs["run_rate"] = inputs["run_rate"].iloc[:1].assign(CAPA_RUN_RATE=float("nan"))
+    inputs["vital"] = inputs["vital"].iloc[:1]
+    inputs["run_day"] = inputs["run_day"].iloc[:1]
+    inputs["module"] = inputs["module"].iloc[:1]
+
+    error = _join_error(inputs)
+
+    assert str(error).startswith(
+        "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, "
+    )
+    assert error.problem == ReferenceJoinProblem(
+        "RQ_RUN_RATE", JOIN_BLANK_VALUE, columns=("CAPA_RUN_RATE",), keys=1, rows=1
+    )
 
 
 def test_a_blank_run_rate_on_a_live_route_is_a_plain_blank() -> None:
-    """한 경로라도 살아 있으면 그 칸은 계산이 쓰는 칸이다 — 「빈 값」 그대로, 덧붙인 말이 없다."""
+    """살아 있는 경로의 빈 칸은 그대로 멈춘다 — 「빈 값」 그대로, 덧붙인 말이 없다."""
     inputs = _capacity_inputs(["Process-A", "Process-B"])
     inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[0.8, float("nan")])
 
     error = _join_error(inputs)
 
-    assert "뒤에서 계산 대상에서 빠질" not in str(error)
-    assert (error.problem.label, error.problem.dropped_keys) == (JOIN_BLANK_VALUE, 0)
+    assert error.problem.label == JOIN_BLANK_VALUE
     assert error.problem.summary() == "빈 값 키 1 · 경로 1"
+    _assert_no_values(error.problem)
+
+
+def test_live_problems_keep_the_join_order_of_the_tables() -> None:
+    """두 표가 함께 걸리면 예전처럼 먼저 붙는 표(효율 → 편중률 …)의 글로 멈춘다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"], vital=[1.0, float("nan")])
+    inputs["run_rate"] = inputs["run_rate"].iloc[:1]
+
+    error = _join_error(inputs)
+
+    assert (error.problem.table, error.problem.shape) == ("RQ_RUN_RATE", JOIN_NO_MATCH)
 
 
 def test_keys_that_differ_only_by_spaces_are_named_as_such_when_they_collide() -> None:

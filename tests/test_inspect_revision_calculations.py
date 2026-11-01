@@ -298,14 +298,20 @@ def _spaced_run_rate(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
     return {**tables, "RQ_RUN_RATE": pd.concat([run_rate, spaced], ignore_index=True)}
 
 
+def test_a_blank_run_rate_only_on_routes_dropped_anyway_now_calculates(simulation_db: Path) -> None:
+    """빈 효율 칸이 붙은 경로가 모두 Main UPEH 0 이하면 그 리비전은 이제 선다(2026-11-01 사용자
+    결정 — 0655 결정 7). 사내 S27 r1 이 이 꼴이면 다음 배포 6-3 a 에서 `멈춤` 이 `됨` 이 된다."""
+    _, tables = _seed_tables(simulation_db)
+
+    outcome = script.calculate(_blank_run_rate(tables, drop_routes=True))
+
+    assert outcome.status != script.STOPPED
+    assert outcome.problem is None
+
+
 @pytest.mark.parametrize(
     ("damage", "cell", "shape"),
     [
-        (
-            lambda tables: _blank_run_rate(tables, drop_routes=True),
-            "빈 값 키 1 · 경로 1 · 모두 뒤에서 빠질 경로인 키 1",
-            "빈 값(붙은 경로가 모두 뒤에서 빠짐)",
-        ),
         (
             lambda tables: _blank_run_rate(tables, drop_routes=False),
             "빈 값 키 1 · 경로 1",
@@ -324,9 +330,8 @@ def test_a_run_rate_stop_is_split_by_its_shape_without_names(
     cell: str,
     shape: str,
 ) -> None:
-    """같은 「ValueError · RQ_RUN_RATE」 라도 꼴(빈 값 · 뒤에서 빠질 경로뿐인 빈 값 · 공백만 다른
-    겹침)이 고칠 길을 가른다. 리비전 칸은 꼴과 개수를, 갈래 표는 꼴 이름을 적고 공정 이름은 적지
-    않는다.
+    """같은 「ValueError · RQ_RUN_RATE」 라도 꼴(빈 값 · 공백만 다른 겹침)이 고칠 길을 가른다.
+    리비전 칸은 꼴과 개수를, 갈래 표는 꼴 이름을 적고 공정 이름은 적지 않는다.
     """
     seed, tables = _seed_tables(simulation_db)
 

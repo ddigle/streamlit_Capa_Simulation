@@ -203,7 +203,7 @@ def test_clearing_a_cell_an_upeh_path_uses_is_reported() -> None:
     after = _run_rate({(202608, "Process-A"): 0.9})
     upeh = _upeh([_row(202608), _row(202609), _row(202609, "Process-B")])
 
-    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", upeh)
+    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", {"RQ_UPEH": upeh})
 
     assert cleared.to_dict("records") == [
         {"생산계획년월": 202609, "공정": "Process-A", "양산구분": "양산"}
@@ -221,7 +221,9 @@ def test_a_path_the_calculation_skips_does_not_hold_a_cell() -> None:
     upeh = _upeh([_row(202608)])
     upeh["소요기준"] = " box "
 
-    assert cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", upeh).empty
+    assert cleared_keys_in_use(
+        "RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", {"RQ_UPEH": upeh}
+    ).empty
 
 
 def test_the_cleared_message_asks_for_a_value_above_zero() -> None:
@@ -401,7 +403,7 @@ def test_a_zero_in_a_cell_an_upeh_path_uses_is_reported() -> None:
     )
     upeh = _upeh([_row(202608), _row(202609)])
 
-    found = nonpositive_keys_in_use("RQ_VITAL", before, after, "편중률", upeh)
+    found = nonpositive_keys_in_use("RQ_VITAL", before, after, "편중률", {"RQ_UPEH": upeh})
 
     assert found.to_dict("records") == [
         {"생산계획년월": 202608, "공정": "Process-A", "양산구분": "양산", "편중률": 0.0}
@@ -412,7 +414,9 @@ def test_a_zero_in_a_cell_an_upeh_path_uses_is_reported() -> None:
     assert "RQ_VITAL의 편중률 값은 0보다 커야 합니다" in message
     # 음수도 같다(붙여넣기는 편집기의 하한을 지나지 않는다).
     negative = _vital({(202608, "Process-A"): -1.0})
-    assert not nonpositive_keys_in_use("RQ_VITAL", before, negative, "편중률", upeh).empty
+    assert not nonpositive_keys_in_use(
+        "RQ_VITAL", before, negative, "편중률", {"RQ_UPEH": upeh}
+    ).empty
 
 
 # ---------------------------- 적용 경계의 검증 조합(기준 정보 화면의 격자 적용·붙여넣기가 부른다)
@@ -521,8 +525,8 @@ def test_required_edit_validation_joins_cleared_then_nonpositive() -> None:
     before = _vital({(202608, "Process-A"): 1.0, (202609, "Process-A"): 1.0})
     after = _vital({(202608, "Process-A"): 0.0})
     upeh = _upeh([_row(202608), _row(202609)])
-    cleared = cleared_keys_in_use("RQ_VITAL", before, after, "편중률", upeh)
-    nonpositive = nonpositive_keys_in_use("RQ_VITAL", before, after, "편중률", upeh)
+    cleared = cleared_keys_in_use("RQ_VITAL", before, after, "편중률", {"RQ_UPEH": upeh})
+    nonpositive = nonpositive_keys_in_use("RQ_VITAL", before, after, "편중률", {"RQ_UPEH": upeh})
     assert not cleared.empty and not nonpositive.empty
     expected = " ".join(
         [
@@ -532,7 +536,7 @@ def test_required_edit_validation_joins_cleared_then_nonpositive() -> None:
     )
 
     with pytest.raises(ValueError) as raised:
-        validate_required_edit("RQ_VITAL", "여유율", before, after, "편중률", upeh)
+        validate_required_edit("RQ_VITAL", "여유율", before, after, "편중률", {"RQ_UPEH": upeh})
 
     assert str(raised.value) == expected
 
@@ -543,7 +547,7 @@ def test_required_edit_validation_lets_a_zero_run_rate_through() -> None:
     after = _run_rate({(202608, "Process-A"): 0.0})
     upeh = _upeh([_row(202608)])
 
-    validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", upeh)
+    validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", {"RQ_UPEH": upeh})
 
 
 def test_required_edit_validation_reports_only_the_cleared_cell_for_run_rate() -> None:
@@ -551,9 +555,135 @@ def test_required_edit_validation_reports_only_the_cleared_cell_for_run_rate() -
     before = _run_rate({(202608, "Process-A"): 0.9})
     after = before.head(0)
     upeh = _upeh([_row(202608)])
-    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", upeh)
+    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", {"RQ_UPEH": upeh})
 
     with pytest.raises(ValueError) as raised:
-        validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", upeh)
+        validate_required_edit(
+            "RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", {"RQ_UPEH": upeh}
+        )
 
     assert str(raised.value) == describe_cleared_keys_in_use("효율", "RQ_RUN_RATE", cleared)
+
+
+# ---------------------- 「경로가 쓰는 칸」 은 제외 뒤에도 남는 경로가 쓰는 칸이다(2026-11-01 사용자
+# 결정) 대당 Capa 는 Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수인 경로를 먼저 빼고, 남은
+# 경로에서만 빈 값 · 행 없음 · 0 이하로 멈춘다(0655 결정 7). 편집 검사가 빠질 경로의 칸까지 막으면
+# 계산이 받는 편집을 편집기만 막는다. 거꾸로 계산이 멈출 편집은 지금처럼 막는다 — 같은 표로 계산을
+# 돌려 맞대 본다.
+
+
+def _two_process_upeh(upeh_b: float = 100.0) -> pd.DataFrame:
+    upeh = _upeh([_row(202608), _row(202608, "Process-B")])
+    upeh.loc[1, "UPEH"] = upeh_b
+    return upeh
+
+
+def _halts(upeh: pd.DataFrame, tables: Mapping[str, pd.DataFrame]) -> bool:
+    """A·B 두 공정으로 대당 Capa 를 돌리면 멈추는가. 없는 표는 두 공정 모두 정상값이다."""
+    from capa_simulation.services.unit_capacity import calculate_unit_capacity
+
+    healthy = {
+        "RQ_RUN_RATE": _run_rate({(202608, "Process-A"): 0.9, (202608, "Process-B"): 0.9}),
+        "RQ_VITAL": _vital({(202608, "Process-A"): 1.0, (202608, "Process-B"): 1.0}),
+        "RQ_RUN_DAY": pd.DataFrame(
+            {"생산계획년월": [202608] * 2, "공정": ["Process-A", "Process-B"], "RUN_DAY": 30.0}
+        ),
+        **_tables(
+            [_row(202608), _row(202608, "Process-B")], [_row(202608), _row(202608, "Process-B")]
+        ),
+    }
+    merged = {**healthy, **tables}
+    try:
+        calculate_unit_capacity(
+            upeh,
+            merged["RQ_RUN_RATE"],
+            merged["RQ_VITAL"],
+            pd.DataFrame({"공정": ["Process-A", "Process-B"], "모듈수": [1.0, 1.0]}),
+            merged["RQ_RUN_DAY"],
+            merged["RQ_LOT_RATIO"],
+            merged["RQ_WF_RATIO"],
+        )
+    except ValueError:
+        return True
+    return False
+
+
+def test_clearing_a_run_rate_cell_only_a_zero_upeh_route_uses_is_allowed() -> None:
+    before = _run_rate({(202608, "Process-A"): 0.9, (202608, "Process-B"): 0.9})
+    after = _run_rate({(202608, "Process-A"): 0.9})
+    upeh = _two_process_upeh(upeh_b=0.0)
+    tables = {"RQ_UPEH": upeh, "RQ_RUN_RATE": before}
+
+    assert cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", tables).empty
+    validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", tables)
+    assert not _halts(upeh, {"RQ_RUN_RATE": after})
+
+
+def test_clearing_a_zero_run_rate_revives_its_route_and_is_still_blocked() -> None:
+    """효율 0 으로 빠지던 경로는 그 칸을 비우면 남는다 — 고친 뒤 값으로 가려야 막는다."""
+    before = _run_rate({(202608, "Process-A"): 0.9, (202608, "Process-B"): 0.0})
+    after = _run_rate({(202608, "Process-A"): 0.9})
+    upeh = _two_process_upeh()
+    tables = {"RQ_UPEH": upeh, "RQ_RUN_RATE": before}
+
+    cleared = cleared_keys_in_use("RQ_RUN_RATE", before, after, "CAPA_RUN_RATE", tables)
+
+    assert cleared["공정"].tolist() == ["Process-B"]
+    with pytest.raises(ValueError, match="「효율」 표에서 값을 지운 칸 1개"):
+        validate_required_edit("RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", tables)
+    assert _halts(upeh, {"RQ_RUN_RATE": after})
+
+
+@pytest.mark.parametrize(
+    "dropping",
+    [
+        pytest.param({"RQ_RUN_RATE": {"Process-B": 0.0}}, id="효율 0"),
+        pytest.param({"RQ_WF_RATIO": {"Process-B": -0.5}}, id="WF측정률 음수"),
+        pytest.param({"RQ_LOT_RATIO": {"Process-B": -0.5}}, id="Lot 측정률 음수"),
+        pytest.param({"RQ_UPEH": {"Process-B": 0.0}}, id="Main UPEH 0"),
+    ],
+)
+def test_a_zero_or_cleared_vital_on_a_route_that_is_dropped_anyway_is_allowed(
+    dropping: dict[str, dict[str, float]],
+) -> None:
+    upeh = _two_process_upeh(upeh_b=dropping.get("RQ_UPEH", {}).get("Process-B", 100.0))
+    tables: dict[str, pd.DataFrame] = {"RQ_UPEH": upeh}
+    if "RQ_RUN_RATE" in dropping:
+        tables["RQ_RUN_RATE"] = _run_rate({(202608, "Process-A"): 0.9, (202608, "Process-B"): 0.0})
+    for table_name, column in (("RQ_LOT_RATIO", "Lot 측정률"), ("RQ_WF_RATIO", "WF측정률")):
+        if table_name in dropping:
+            ratio = _ratio([_row(202608), _row(202608, "Process-B")], column)
+            ratio.loc[1, column] = -0.5
+            tables[table_name] = ratio
+    before = _vital({(202608, "Process-A"): 1.0, (202608, "Process-B"): 1.0})
+    zeroed = _vital({(202608, "Process-A"): 1.0, (202608, "Process-B"): 0.0})
+    cleared = _vital({(202608, "Process-A"): 1.0})
+
+    assert nonpositive_keys_in_use("RQ_VITAL", before, zeroed, "편중률", tables).empty
+    assert cleared_keys_in_use("RQ_VITAL", before, cleared, "편중률", tables).empty
+    for after in (zeroed, cleared):
+        validate_required_edit("RQ_VITAL", "여유율", before, after, "편중률", tables)
+        assert not _halts(upeh, {**tables, "RQ_VITAL": after})
+    # 같은 편집이 남는 경로의 칸이면 지금처럼 막는다.
+    live = {"RQ_UPEH": _two_process_upeh()}
+    assert not nonpositive_keys_in_use("RQ_VITAL", before, zeroed, "편중률", live).empty
+    assert _halts(live["RQ_UPEH"], {"RQ_VITAL": zeroed})
+
+
+def test_a_new_route_with_zero_upeh_needs_no_run_rate_row() -> None:
+    """UPEH 의 빈 달에 0 을 넣어 만든 경로는 빠질 경로다 — 효율·여유율·일수 행이 없어도 선다."""
+    before = _upeh([_row(202608)])
+    after = _upeh([_row(202608), _row(202609)])
+    after.loc[1, "UPEH"] = 0.0
+    tables = _required_tables(run_rate={202608: 0.9}, vital={202608: 1.0}, run_day={202608: 30.0})
+
+    assert missing_required_rows(before, after, tables) == {}
+    assert not _calculation_halts(after, tables)
+    # 0 보다 큰 값이면 새 경로는 남는다 — 지금처럼 세 표를 기다린다.
+    after.loc[1, "UPEH"] = 50.0
+    assert set(missing_required_rows(before, after, tables)) == {
+        "RQ_RUN_RATE",
+        "RQ_VITAL",
+        "RQ_RUN_DAY",
+    }
+    assert _calculation_halts(after, tables)
