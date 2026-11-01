@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
 import numpy.typing as npt
@@ -123,7 +123,7 @@ def _informative_first(
 
 
 def _real_values_agree(
-    frame: pd.DataFrame, group_number: npt.NDArray[np.int64], value_columns: list[str]
+    frame: pd.DataFrame, group_number: npt.NDArray[np.integer[Any]], value_columns: list[str]
 ) -> npt.NDArray[np.bool_]:
     """행마다 — 그 행의 그룹에서 숫자 값 컬럼의 실값(0·빈 값이 아닌 값)이 컬럼마다 하나뿐인가.
 
