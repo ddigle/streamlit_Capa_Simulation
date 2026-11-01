@@ -1,9 +1,10 @@
-# Purpose: HOME 토글의 세션 키와 기본값을 UI·계산·시나리오 초기화에 공유한다.
+# Purpose: HOME 토글의 세션 키·기본값과 그 값 읽기를 UI·계산·시나리오 초기화에 공유한다.
 
 """UI 모듈을 import 하지 않아도 읽을 수 있는 HOME 표시 상태 계약."""
 
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Any
 
 EDP_TOGGLE_KEY = "home_preference_include_edp"
 PAST_DATA_TOGGLE_KEY = "home_preference_include_past"
@@ -35,6 +36,16 @@ HOME_TOGGLE_DEFAULTS: Mapping[str, bool] = MappingProxyType(
         COMPARISON_TOGGLE_KEY: False,
     }
 )
+
+
+def home_toggle(state: Mapping[Any, Any], key: str) -> bool:
+    """HOME 토글 하나의 값 — 세션 칸(`st.session_state` 를 넘긴다)이 없으면 위 기본값.
+
+    위젯보다 먼저 도는 계산과 다른 화면이 HOME 토글을 읽는 한 길이다. 기본값 표에 없는 키는
+    `KeyError` 다(토글이 아닌 칸을 이 길로 읽지 않는다).
+    """
+    return bool(state.get(key, HOME_TOGGLE_DEFAULTS[key]))
+
 
 # HOME 의 세 탭(`stateful_tabs`)의 위젯 key 와 라벨. 페이지 스크립트는 import 할 수 없어 여기
 # 둔다. 제목 줄의 주요 Case 칩(`components/home_main_case_chips.py`)은 「지정 안 함」 칩을 누르면

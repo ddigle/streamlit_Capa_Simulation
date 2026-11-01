@@ -107,7 +107,7 @@ from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
 from capa_simulation.components.upeh_assumption_controls import render_upeh_assumption_controls
 from capa_simulation.design import tokens
-from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
+from capa_simulation.home_state import PAST_DATA_TOGGLE_KEY, home_toggle
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
@@ -1212,9 +1212,7 @@ def _lob_rows(context: PageContext, months: Sequence[int]) -> _LobRows:
     """
     try:
         source = available_month_range(context.reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
-        include_past = bool(
-            st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
-        )
+        include_past = home_toggle(st.session_state, PAST_DATA_TOGGLE_KEY)
         past_months = (
             [
                 int(month)

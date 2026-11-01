@@ -82,6 +82,16 @@ class MetricSpec:
             return f"{self.actual_column} − {self.standard_column}"
         return f"{self.actual_column} ÷ {self.standard_column} − 1"
 
+    def value_text(self, value: float) -> str:
+        """기준·실적 값 글자(효율 82.0% · UPEH 2,400) — 실적 화면 값 칸과 Chatbot 근거가 쓴다."""
+        if self.value_format == "percent":
+            return f"{value:.{self.value_decimals}%}"
+        return f"{value:,.{self.value_decimals}f}"
+
+    def gap_text(self, value: float) -> str:
+        """Gap 글자 — 단위까지(효율 -10.9% · UPEH -9.4%)."""
+        return f"{value:.{self.gap_decimals}%}"
+
 
 EFFICIENCY_METRIC = MetricSpec(
     name="효율",
