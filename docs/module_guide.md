@@ -39,7 +39,7 @@
 ## 1. 목적과 범위
 
 - 사내 동료가 따로 만든 Streamlit 기능을 이 앱 웹 안의 **별도 화면**으로 띄운다.
-  - 사이드바에 상자 「사내 모듈」 하나가 선다. 자리는 계산 그룹(Static · 실행 관리 · Dynamic) 다음, Admin 앞이다.
+  - 사이드바에 상자 「사내 모듈」 하나가 선다. 자리는 계산 그룹(Static · 실행 관리 · Dynamic) 다음, Support 상자(Admin Area) 앞이다.
   - 상자 머리 화면은 색인(켜진 모듈과 그 화면 링크)이고, 모듈 화면은 그 아래 링크로 든다.
   - 켜진 모듈이 없으면 상자도 없다.
 - **이번 단계는 같은 웹에 보이기만 한다.** 코어(이 앱의 계산·DB)와 데이터를 주고받지 않는다. 데이터 연계는 다음 단계다(10장).
@@ -219,7 +219,11 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
    from capa_simulation import module_api as api
 
    ctx = api.context(__file__)
-   api.page_header(ctx, "데모 인사", description="이 화면이 무엇을 하는지 한 줄로 적습니다.")
+   api.page_header(
+       ctx,
+       "데모 인사",
+       description="이 화면이 무엇을 하는지 한 줄로 적습니다.",
+   )
 
 
    def _greet() -> None:
@@ -851,10 +855,11 @@ def _detail() -> None:
 
 ### 9-3. Admin 「사내 모듈 상태」
 
-Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. 모듈 폴더가 있을 때만 선다.
+Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래에 모듈 폴더가 하나라도 있을 때만 선다(펼침 제목에 켜짐 · 꺼짐 · 실패 수).
 
 - 모듈마다 상태(켜짐 · 꺼짐 · 실패)와 까닭 · 성숙도 · 담당 · API 판 · 화면 수.
-- 마지막 오류(시각 · 형식 · 자리 — 화면 · 콜백 · guard · 불러오기 — · 화면). 메시지 본문은 적지 않는다.
+- 마지막 오류(시각 · 형식 · 자리 · 화면 slug). 자리는 `page`(화면 본문) · `callback`(위젯 콜백) · `guard`(프래그먼트 · 팝업 본문) ·
+  `load`(화면 등록 — 재시작까지 그 화면을 뺀다) 가운데 하나다. 메시지 본문은 적지 않는다.
 - 마지막 회차 시간(초) — 느린 모듈을 찾는다.
 - 접두 없는 키 수 · 빠진 화면 수.
 
@@ -937,10 +942,10 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. 모듈 폴더가 �
 | M08 | 세션 전역 조작 — `st.session_state.clear()` · `.popitem()` · `.update(…)`, `del st.session_state[…]` 의 키가 접두 있는 글자 상수나 `ctx.key(…)` 호출이 아님(변수 · 반복 포함) | 오류 |
 | M09 | 패키지 — 최상위 import 이름이 표준 라이브러리 · `streamlit` · `capa_simulation.module_api` · 자기 `modules.<id>` 가 아니면 그 배포 이름이 `requirements.txt` 에 고정돼 있어야 한다. 없으면 오류(「사외 요청」 안내). 설치되지 않은 이름도 오류. 3.10 에 없는 모듈(`tomllib`)도 오류. 줄 끝 환경 표지가 Linux 에서 거짓이면 오류 「CD(Linux)에 설치되지 않음」. 따질 수 없는 표지는 경고 | 오류 |
 | M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음 | 경고 |
-| M10 | 배경 실행 — `threading` · `_thread` · `multiprocessing` · `concurrent.futures` · `subprocess` import, `os.system` · `os.popen` · `os.fork` · `os.spawn*` · `signal` · `sys.exit` · `os._exit` · `exit()` · `quit()` | 오류 |
+| M10 | 배경 실행 — `threading` · `_thread` · `multiprocessing` · `concurrent.futures` · `subprocess` import, `os.system` · `os.popen` · `os.fork` · `os.forkpty` · `os.spawn*` · `os.posix_spawn*` · `os.exec*` · `os.abort` · `signal` · `sys.exit` · `os._exit` · `exit()` · `quit()` | 오류 |
 | M10 | `asyncio`, `st.fragment(run_every=…)`, `argparse` · `click` · `typer` · `fire` import | 경고 |
-| M11 | 프로세스 전역 상태 — `os.environ` 쓰기 · `os.putenv` · `os.chdir`, `sys.path` 바꾸기, `sys.modules` 바꾸기, `builtins.<이름> =`, `sys.excepthook =` · `threading.excepthook =`, `sys.setrecursionlimit`, `gc.disable` · `gc.set_threshold` · `gc.freeze`, `socket.setdefaulttimeout`, `locale.setlocale`, `pd.set_option` · `pandas.set_option` · `pd.reset_option` · `pd.options.<…> =`(`pd.option_context` 는 허용), `np.seterr` · `np.set_printoptions`, `plotly.io.templates.default =` · `pio.renderers.default =`, `alt.themes.enable` · `alt.theme.enable` · `alt.data_transformers.enable` · `alt.data_transformers.disable_max_rows`, `matplotlib.use` · `matplotlib.rcParams[…] =` · `rcParams.update` · `plt.style.use`, `logging.basicConfig` · 뿌리 로거(`logging.getLogger()` · `logging.root`)의 `addHandler` · `setLevel` | 오류 |
-| M11 | `warnings.filterwarnings` · `warnings.simplefilter`, 화면 밖 도움 파일의 `global` 문과 함수 안에서 바꾸는 모듈 수준 list · dict · set | 경고 |
+| M11 | 프로세스 전역 상태 — `os.environ` 쓰기 · `os.putenv` · `os.unsetenv` · `os.chdir` · `os.fchdir`, `sys.path` 바꾸기, `sys.modules` 바꾸기, `builtins.<이름> =`, `sys.excepthook =` · `threading.excepthook =`, `sys.setrecursionlimit` · `sys.settrace` · `sys.setprofile`, `gc.disable` · `gc.set_threshold` · `gc.freeze`, `socket.setdefaulttimeout`, `locale.setlocale`, `pd.set_option` · `pandas.set_option` · `pd.reset_option` · `pd.options.<…> =`(`pd.option_context` 는 허용), `np.seterr` · `np.set_printoptions`, `plotly.io.templates.default =` · `pio.renderers.default =` · `px.defaults.<…> =`(plotly express 기본값), `alt.themes.enable` · `alt.theme.enable` · `alt.data_transformers.enable` · `alt.data_transformers.disable_max_rows`, `matplotlib.use` · `matplotlib.rcParams[…] =` · `rcParams.update` · `plt.style.use`, `logging.basicConfig` · 뿌리 로거(`logging.getLogger()` · `logging.root`)의 `addHandler` · `removeHandler` · `setLevel` | 오류 |
+| M11 | `warnings.filterwarnings` · `warnings.simplefilter` · `warnings.resetwarnings`, 화면 밖 도움 파일의 `global` 문과 함수 안에서 바꾸는 모듈 수준 list · dict · set | 경고 |
 | M12 | 캐시 — `st.cache_data` · `st.cache_resource` 장식자가 `modules/<id>/cache.py` 밖에 있음, `max_entries` · `ttl` 이 둘 다 없음, 캐시 함수 본문이 모듈 전역 `ctx` 나 `api.context(…)` 를 읽음, 맨 `st.cache_data.clear()` · `st.cache_resource.clear()`(자기 함수의 `.clear()` 는 허용) | 오류 |
 | M12 | 캐시 함수 본문 안의 `api.palette()` 호출 | 경고 |
 | M13 | 파일 — `.py` 첫 줄 `# Purpose:` 없음, UTF-8 이 아닌 글 파일, `.ps1`, 데이터 파일(`.duckdb` · `.db` · `.sqlite` · `.wal` · `.sync.json` · `.xls*` · `.env` · `secrets.toml`), `.pkl` · `.pickle`, `.css` · `.js` · `.html` · `.htm`, `assets/` 밖의 데이터 꼴 파일(`.csv` · `.tsv` · `.parquet` · `.feather` · `.arrow` · `.npy` · `.npz`), 3.10 문법 오류, 대문자가 든 폴더 · 파일 이름, (git 검사) git 의 철자가 디스크 철자와 대소문자만 다름, (git 검사) git 이 무시하는 파일인데 코드 · `module.json` 이 그 이름을 글자로 가리킴 | 오류 |
@@ -956,16 +961,19 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. 모듈 폴더가 �
 
 ```text
 모듈 점검 — 뿌리 modules/ · 2개 = 통과 1 + 꺼짐 0 + 실패 1
-- m1 demo_memo 통과 · L0 · API 1.0 · 화면 1 · 경고 0 · ruff ok · 시험 2 통과
-- m2 demo_draft 실패 · API 1.0 · 오류 1(M19 1) · ruff ok · 시험 1 통과
+- m1 demo_draft 실패 · L0 · API 1.0 · 화면 1 · 오류 1(M19 1) · 경고 0 · ruff ok · 시험 1 통과
+- m2 demo_memo 통과 · L0 · API 1.0 · 화면 1 · 오류 0 · 경고 0 · ruff ok · 시험 2 통과
 판 분포: api1 2
 제3자 패키지: pandas
 자세히
-  m2 demo_draft 오류 M19 page.py:14 use_container_width — width="stretch" 로 바꾸세요
-전송용 요약: 모듈 2 = 통과 1 + 꺼짐 0 + 실패 1; api1 2; 패키지 pandas; ng m2 오류1
+  m1 demo_draft 오류 M19 page.py:23 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
+전송용 요약: 모듈 2 = 통과 1 + 꺼짐 0 + 실패 1; api1 2; 패키지 pandas; ng m1 오류1
 ```
 
+- 모듈 차례(`m<n>`)는 `module.json` 의 `order` 차례이고, 같으면 id 차례다.
 - 「전송용 요약」 줄은 앱 관리자가 리뷰에 옮기는 줄이다. id 가 없고 차례 번호 `m<n>` 만 있다.
+- 저장소가 아닌 자리(배포 적용의 `git archive` 사본 트리)에서 돌면 머리 다음에 `git 검사 건너뜀(사본)` 줄이 서고 M13 의 git 검사는 빠진다.
+  `CAPA_MODULES_ROOT` · `CAPA_MODULES_DISABLED` 가 걸려 있으면 그 값을 알리는 줄도 선다(점검은 따르지 않는다).
 
 ---
 

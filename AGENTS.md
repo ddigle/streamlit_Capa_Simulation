@@ -1524,7 +1524,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     라벨(바깥 `EQUIPMENT_TABS`·Summary 안쪽 `EQUIPMENT_SUMMARY_TABS`)도 사이드바가 열린 탭을 보므로 여기 둔다. 안쪽 탭을
     품은 바깥 탭은 `ConditionTabs.sub`(`SubTabs`)로 적고, 사이드바는 `ConditionTabs.active_label`(위젯 값 → 기억 칸 → 첫
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
-- `src/capa_simulation/module_registry.py` — 사내 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). 점검 스크립트(TOOLS)가 같은 검증을 쓴다.
+- `src/capa_simulation/module_registry.py` — 사내 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). `scripts/check_module.py` 가 같은 검증을 쓴다.
 - `src/capa_simulation/module_api.py` — 사내 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
 - `src/capa_simulation/module_failures.py` — 사내 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림).
@@ -5537,6 +5537,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
    `config/module_packages.json` 에 이름을 적고, 코어가 더는 쓰지 않아도 그 목록에 있으면 빼지 않는다.
 4. 견본 `tests/fixtures/modules/demo_ok` 가 새 겉면으로 도는지 본다(겉면의 모든 이름을 쓴다 — 창구가 깨지면 사외 관문에서 떨어진다).
 5. 1 · 2 · 3 의 변경은 다음 배포 7장에 「모듈 담당자에게 알릴 것」 한 줄로 적는다.
+6. 창구 · 점검 규칙(`scripts/module_check_rules.py` 의 `RULES`) · 뼈대(`scripts/new_module.py`) · 점검 출력(`scripts/check_module.py`)을
+   바꾸면 같은 변경에서 `docs/module_guide.md` 를 고친다 — 부록 A · B(출력 예시 포함) · 3-7 뼈대 화면 · 3-8 · 3-9 예시(정적 규칙을
+   통과해야 한다) · 9-2 환경변수는 `tests/test_module_guide_sync.py` 가 코드와 맞댄다.
 
 ## 13. 문서 우선순위
 

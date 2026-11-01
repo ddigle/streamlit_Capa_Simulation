@@ -102,7 +102,8 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `script
 `check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
 `scripts/new_module.py`(사내 모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
 자기 시험 — 사내 런북 4-5 는 `git archive` 사본 트리에서 돌린다, 끝에 「전송용 요약」 한 줄), `scripts/module_test_runner.py`(check_module 이 부르는 모듈
-시험 감시 러너 — 코어 `data/` 접근·모듈 폴더 쓰기를 실패로, AppTest import 길을 앱과 같게).
+시험 감시 러너 — 코어 `data/` 접근·모듈 폴더 쓰기를 실패로, AppTest import 길을 앱과 같게). 정적 규칙 부품은
+`scripts/module_check_rules.py` 이고 규칙 번호·창구 이름·예시·점검 출력은 `tests/test_module_guide_sync.py` 가 지침서와 맞댄다.
 
 `mypy`는 `tests/`·`scripts/`까지 같은 strict 로 검사한다. 테스트에서 끄는 것은 pandas 스칼라
 합집합 마찰인 `operator` 하나뿐이고 모듈 셋으로 좁혀 두었다(`pyproject.toml` 의 overrides).
