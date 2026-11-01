@@ -82,6 +82,7 @@ from capa_simulation.components.equipment_data_workspace import (
     carry_layout_memo,
     equipment_buffer_generation,
     floor_layout_words,
+    grid_loaded_ids,
     grid_overlay,
     grid_toasts,
     grid_undo_steps,
@@ -292,11 +293,6 @@ NEW_UNIT_LOCKED_NOTE: Final = (
 # ------------------------------------------------------------------ 세션 칸
 
 
-def loaded_ids() -> tuple[str, ...]:
-    value = st.session_state.get(GRID_LOADED_KEY)
-    return tuple(str(item) for item in value) if isinstance(value, (list, tuple)) else ()
-
-
 def _store_loaded(ids: Sequence[str]) -> None:
     st.session_state[GRID_LOADED_KEY] = tuple(ids)
 
@@ -322,7 +318,7 @@ def _grid_state() -> GridState:
         renames=pending_unit_renames(),
         overlay=grid_overlay(),
         undo=grid_undo_steps(),
-        loaded=loaded_ids(),
+        loaded=grid_loaded_ids(),
         draft_seq=_new_draft()[0],
     )
 
@@ -735,7 +731,7 @@ def _on_load(request: grid_component.LoadRequest) -> None:
     else:
         known = set(index.live) | set(index.deleted)
         ids = [row_id for row_id in request.ids if row_id in known]
-    result = load_ids(loaded_ids(), ids)
+    result = load_ids(grid_loaded_ids(), ids)
     _store_loaded(result.loaded)
     st.session_state[MISSING_KEY] = request.missing if request.kind == "names" else ()
     label = request.label or {"all": "전체", "alerts": "일정 확인 필요"}.get(request.kind, "")
@@ -814,14 +810,14 @@ def _on_grid_open(row_id: str) -> None:
 
 def _on_side_open(row_id: str) -> None:
     """「저장 전 변경」 의 고칠 것·호기 이름 — 목록에 없으면 맨 위로 불러와 상세로 연다."""
-    if row_id not in loaded_ids():
-        _store_loaded(load_ids(loaded_ids(), [row_id]).loaded)
+    if row_id not in grid_loaded_ids():
+        _store_loaded(load_ids(grid_loaded_ids(), [row_id]).loaded)
     _open_detail(row_id)
 
 
 def _on_unload(ids: list[str]) -> None:
     drop = set(ids)
-    _store_loaded(tuple(row_id for row_id in loaded_ids() if row_id not in drop))
+    _store_loaded(tuple(row_id for row_id in grid_loaded_ids() if row_id not in drop))
 
 
 def _on_goto(table: str, unit: str) -> None:
@@ -949,7 +945,7 @@ def _save_revision(
         removal_confirmed = removal
     renames = pending_unit_renames()
     id_map = save_id_map(grid_index(frames[1], _saved_frames()[1], renames.units), frames[1])
-    loaded, detail = loaded_ids(), _detail_id()
+    loaded, detail = grid_loaded_ids(), _detail_id()
     note = st.session_state.get(_NOTE_KEY)
     try:
         message = save_equipment_buffer(
@@ -1163,7 +1159,7 @@ def _render_grid_card(
     with st.container(border=True):
         with st.container(horizontal=True, horizontal_alignment="right"):
             _render_downloads(repository, latest_snapshot, context.scenario_name)
-        loaded = prune_loaded(loaded_ids(), view.index)
+        loaded = prune_loaded(grid_loaded_ids(), view.index)
         missing = st.session_state.get(MISSING_KEY)
         alert_ids = [row_id for row_id in view.index.live if row_id in view.alerts]
         grid_component.render_grid_loader(

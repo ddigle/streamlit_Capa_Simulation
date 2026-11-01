@@ -763,7 +763,7 @@ def equipment_header_suffix(
     elif unsaved:
         parts.append(STATUS_UNSAVED)
         if label.get("stale") and isinstance(latest_no, int):
-            parts.append(f"최신 r{latest_no} 있음")
+            parts.append(STATUS_NEWER.format(revision_no=latest_no))
     elif label.get("official_pair") and isinstance(release_no, int):
         parts.append(STATUS_OFFICIAL.format(release_no=release_no))
     elif label.get("stale") and isinstance(latest_no, int):

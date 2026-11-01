@@ -156,7 +156,6 @@ _MONTHS_CSV_KEY = "equipment_qualcalc_months_csv_v1"
 MONTH_COLUMN = "월"
 TARGET_COLUMN = "목표 가용대수"
 UNITS_COLUMN = "신규 호기"
-_EDITABLE_COLUMNS = (TARGET_COLUMN, UNITS_COLUMN)
 
 # 원본 입력 칸의 범위 — 연도 2000~2100, Cut-off 0 이상(한 해를 넘는 납기는 받지 않는다).
 _MIN_YEAR, _MAX_YEAR = 2000, 2100

@@ -53,6 +53,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation.components import write_guard
+from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
     common_revision_words,
@@ -290,10 +291,6 @@ def _generation() -> int:
 
 def _keyed(base: str) -> str:
     return widget_key(base, GENERATION_KEY)
-
-
-def _popover_generation() -> int:
-    return generation(POPOVER_GENERATION_KEY)
 
 
 def _popover_key(base: str) -> str:
@@ -696,7 +693,7 @@ def session_heading(session: EquipmentSession) -> str:
     if session.is_official_pair and session.release_no is not None:
         parts.append(f"공식 v{session.release_no}")
     elif session.stale and session.latest_revision_no is not None:
-        parts.append(f"최신 r{session.latest_revision_no} 있음")
+        parts.append(STATUS_NEWER.format(revision_no=session.latest_revision_no))
     return "이 세션: " + " · ".join(parts)
 
 
@@ -1051,12 +1048,28 @@ def restore_seen_token(
     )
 
 
+def _none_added_since(title: str) -> str:
+    """그 리비전 뒤에 공통 대장에 든 호기가 없을 때(0대)의 한 문장 — 안내·확인 글 셋이 함께 쓴다."""
+    return f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+
+
+def _moved_since_tail(preview: ScheduleRestorePreview) -> str:
+    """「그때 손대지 않은 호기는 지금 공식 자리를 따른다」 꼬리 — 그때와 자리가 다른 호기
+    (`layout_moved_since`)가 없으면 빈 글. 새 시나리오 안내와 되돌리기 확인 글이 함께 쓴다."""
+    return (
+        " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
+        f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
+        if preview.layout_moved_since
+        else ""
+    )
+
+
 def added_since_sentence(revision: EquipmentScheduleRevisionSummary, count: int) -> str:
     """그 리비전 뒤에 공통 대장에 든 호기가 「일정 없음」 이 된다는 한 문장(F4 — 수는 늘 적는다).
     0대면 빠지는 호기가 없다고 적는다."""
     title = f"r{revision.revision_no}"
     if not count:
-        return f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+        return _none_added_since(title)
     return (
         f"{title} 뒤에 공통 대장에 든 호기(지금 {count:,}대)는 {title}에 일정이 없어 이 설비 "
         "시나리오에서 「일정 없음」 이 됩니다 — 그 시나리오 계산·Space 에서 빠집니다."
@@ -1077,7 +1090,7 @@ def branch_unscheduled_sentence(
     added = (
         f"그 가운데 {title} 뒤에 공통 대장에 든 호기가 {preview.added_since:,}대입니다."
         if preview.added_since
-        else f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+        else _none_added_since(title)
     )
     return (
         f"{title}에 일정이 없는 호기 {preview.unscheduled_after:,}대는 새 시나리오에서도 「일정 "
@@ -1114,12 +1127,7 @@ def branch_layout_sentence(
             f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 옮길 "
             "것이 없습니다 — 새 시나리오는 공식 배치를 따릅니다."
         )
-    moved = (
-        " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
-        f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
-        if preview.layout_moved_since
-        else ""
-    )
+    moved = _moved_since_tail(preview)
     if stored != copied:
         return (
             f"{title}의 가정 배치(옮길 차이 {copied})도 새 시나리오로 옮깁니다 — {title}에 저장된 "
@@ -1216,12 +1224,7 @@ def restore_layout_sentence(
             else f"{title}의 가정 배치는 지금 최신과 같습니다 — 배치는 바뀌지 않습니다."
         )
     if restored:
-        moved = (
-            " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
-            f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
-            if preview.layout_moved_since
-            else ""
-        )
+        moved = _moved_since_tail(preview)
         if dropped:
             return f"{title}의 가정 배치(되살릴 차이 {restored})도 되살립니다 — {dropped}{moved}"
         return f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다.{moved}"
@@ -1244,7 +1247,7 @@ def restore_confirm_label(
     added = (
         f"{title} 뒤에 공통 대장에 든 호기 {preview.added_since:,}대는 「일정 없음」 이 됩니다."
         if preview.added_since
-        else f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+        else _none_added_since(title)
     )
     return (
         f"{with_direction_particle(title + '의 일정')} 되돌립니다 — 호기 "
@@ -2044,6 +2047,10 @@ def publish_seen_token(
     }
 
 
+# 발행 누름 회차의 확인 글 값이 없거나 대조할 수 없을 때 — 다시 그린 확인 글을 보게 한다.
+_PUBLISH_SEEN_REDRAWN = "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
+
+
 def publish_seen_refusal(
     seen: object,
     *,
@@ -2061,7 +2068,7 @@ def publish_seen_refusal(
     글을 보게 한다.
     """
     if not isinstance(seen, dict) or seen.get("revision") != schedule_revision_id:
-        return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
+        return _PUBLISH_SEEN_REDRAWN
     before = seen.get("release_no")
     if before != release_no:
         was = release_words(before if isinstance(before, int) else 0)
@@ -2076,7 +2083,7 @@ def publish_seen_refusal(
     was_no = seen.get("latest_no")
     latest = f"r{scenario.latest_revision_no}"
     if not isinstance(was_no, int) or scenario.latest_revision_no is None:
-        return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
+        return _PUBLISH_SEEN_REDRAWN
     name = quoted(scenario.scenario_name)
     return (
         f"확인 글을 본 뒤 {name} 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "

@@ -45,6 +45,7 @@ from capa_simulation.services.korean_particle import (
 )
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
+    finite_or_none,
     module_group_rows,
     module_layouts,
     natural_name_key,
@@ -68,7 +69,6 @@ LAYOUT_ROLES: Final = ("official", "overlay")
 # 빈 배치 차이의 지문(`layout_hash`). 0031 뒤 코드는 빈 차이에도 이 값을 적는다 — NULL 은 이관
 # 리비전이거나 0031 을 모르는 코드가 쓴 리비전이다.
 EMPTY_LAYOUT_DIGEST: Final = "empty"
-MARK_CHANGE_KINDS: Final = ("set", "drop")
 # 일정 리비전 출처(`origin`)의 허용값 — 0027 DDL 주석의 다섯에 「배치 차이 모두 지우기」·공식 발행
 # 정리(`layout_clear`)를 더한다. DuckDB 는 CHECK 를 고칠 수 없어 서비스가 본다.
 SCHEDULE_REVISION_ORIGINS: Final = (
@@ -259,15 +259,8 @@ def make_layout_overlay(
 
 
 def _number(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number):
-        return None
-    return round(number, CANVAS_DECIMALS)
+    number = finite_or_none(value)
+    return None if number is None else round(number, CANVAS_DECIMALS)
 
 
 def _text(value: object) -> str | None:

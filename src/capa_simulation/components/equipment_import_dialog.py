@@ -54,6 +54,7 @@ from capa_simulation.components.equipment_data_workspace import (
     assumption_group_paste_refusal,
     buffer_has_layout_edits,
     build_import_review,
+    grid_loaded_ids,
     grid_overlay,
     layout_paste_refusal,
     paste_split_summary,
@@ -249,11 +250,6 @@ def _review(
     )
 
 
-def _loaded() -> tuple[str, ...]:
-    value = st.session_state.get(GRID_LOADED_KEY)
-    return tuple(str(item) for item in value) if isinstance(value, (list, tuple)) else ()
-
-
 def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "official") -> str:
     """미리본 후보를 편집본에 넣는다(저장하지 않는다) — 편집본 세 표 통째 바꿈, 새로 든 설비명은 표
     목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움, 빠진 「새 호기」 칸 호기의 함께 넣기
@@ -268,7 +264,7 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     saved = st.session_state[EQUIPMENT_DRAFT_KEY]
     renames = pending_unit_renames()
     overlay = grid_overlay()
-    loaded = _loaded()
+    loaded = grid_loaded_ids()
     step = whole_step(
         "엑셀·CSV 넣기",
         GridState(frames=frames, saved=frames, renames=renames, overlay=overlay, loaded=loaded),
