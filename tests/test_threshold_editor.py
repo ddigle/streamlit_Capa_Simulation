@@ -361,13 +361,31 @@ def test_a_stored_half_step_threshold_opens_as_its_whole_percent_and_saves_as_it
     저장해도 정수 % 의 T/100 으로 저장된다(2026-11-01 사용자 결정 — 판정은 그대로다)."""
     from streamlit.dataframe_util import convert_arrow_bytes_to_pandas_df
 
-    DuckDBScenarioRepository(database).replace_global_securement_threshold(
-        1.095,
-        0.995,
-        pd.DataFrame({"생산계획년월": [202602], "확보 기준": [1.195], "경고 기준": [None]}),
-        source="옛 저장",
-        expected_version=0,
-    )
+    from capa_simulation.persistence import securement_threshold_store
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    # 옛 저장본 그대로 — 저장 검증(이제 T/100 으로 맞춘다)을 거치지 않고 저장소 SQL 로
+    # 반 칸 낮춘 값을 쓴다.
+    repository = DuckDBScenarioRepository(database)
+    with repository._write_transaction() as connection:
+        securement_threshold_store.replace_global_securement_threshold(
+            connection,
+            default_secure=1.095,
+            default_warning=0.995,
+            prepared_rows=pd.DataFrame(
+                {
+                    "생산계획년월": pd.Series([202602], dtype="int64"),
+                    "확보 기준": pd.Series([1.195], dtype="float64"),
+                    "경고 기준": pd.Series([None], dtype="float64"),
+                }
+            ),
+            source="옛 저장",
+            expected_version=0,
+        )
+    stored = repository.load_global_securement_threshold()
+    assert (stored.default_secure, stored.default_warning) == (1.095, 0.995)
+    assert stored.rows["확보 기준"].tolist() == [1.195]
+    clear_global_securement_threshold_cache()
     app = _app(database)
 
     assert [widget.value for widget in app.number_input] == [110, 100]

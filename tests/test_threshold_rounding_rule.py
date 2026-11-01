@@ -18,6 +18,7 @@ from capa_simulation.services.securement_rate import (
     STATUS_COLUMN,
     build_securement_shortfall_tables,
     securement_balance,
+    surplus_held_at_zero,
     warning_need_units,
 )
 from capa_simulation.services.securement_threshold import (
@@ -28,6 +29,7 @@ from capa_simulation.services.securement_threshold import (
     judgment_boundary,
     meets_threshold,
     normalize_threshold,
+    rounded_in,
     threshold_margin,
 )
 from capa_simulation.services.threshold_label import (
@@ -185,3 +187,26 @@ def test_need_counts_and_balances_aim_at_the_judgment_boundary(
     short = securement_balance(_rate_rows(99.4, 100.0), thresholds=thresholds)
     assert short[STATUS_COLUMN].tolist() == ["shortage"]
     assert warning_need_units(100.0, 99.4, thresholds.warning_for(202607)) == 1
+
+
+@pytest.mark.parametrize("stored", [(1.095, 0.995), (1.10, 1.00)])
+def test_a_rounded_in_month_keeps_zero_surplus_even_with_a_large_demand(
+    stored: tuple[float, float],
+) -> None:
+    """소요 400 · 가용 439.9 는 109.975% → 반올림 110% 로 확보다. 경계식
+    (439.9 − 400 × 1.095 = +1.9)을 내리면 1대지만 확보율이 110% 밑이라 여유가 아니다 — 남는
+    대수도 0 이다(「여유가 0으로」)."""
+    thresholds = SecurementThresholds(*stored)
+
+    held = securement_balance(_rate_rows(439.9, 400.0), thresholds=thresholds)
+    assert held[STATUS_COLUMN].tolist() == ["secure"]
+    assert held[BALANCE_COLUMN].tolist() == [0]
+    assert surplus_held_at_zero(439.9, 400.0, thresholds.secure_for(202607))
+    assert rounded_in(439.9 / 400.0, thresholds.secure_for(202607))
+
+    # 110% 이상이면 경계식 그대로다 — 444 − 438 = 6.
+    above = securement_balance(_rate_rows(444.0, 400.0), thresholds=thresholds)
+    assert above[BALANCE_COLUMN].tolist() == [6]
+    assert not surplus_held_at_zero(444.0, 400.0, thresholds.secure_for(202607))
+    # 작은 공정의 반올림으로 든 달은 원래도 0 이라 묶음 표지가 서지 않는다.
+    assert not surplus_held_at_zero(109.6, 100.0, thresholds.secure_for(202607))

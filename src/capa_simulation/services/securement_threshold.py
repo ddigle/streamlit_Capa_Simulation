@@ -100,16 +100,25 @@ def meets_threshold(rate: float, threshold: float) -> bool:
     return meets_boundary(rate, judgment_boundary(threshold))
 
 
+def rounded_in(rate: float, threshold: float) -> bool:
+    """반올림으로만 기준에 든 확보율인가 — 판정은 기준 이상(`meets_threshold`)인데 확보율이 T/100
+    밑이다(110% 기준의 109.5% ~ 109.99…%). 그런 공정의 여유는 % 든 대수든 0 으로 적는다
+    (`threshold_margin`·`securement_rate.securement_balance` — 2026-11-01 사용자 결정).
+    """
+    value = float(rate)
+    return meets_threshold(value, threshold) and value < normalize_threshold(threshold)
+
+
 def threshold_margin(rate: float, threshold: float) -> float:
     """기준 대비 여유(비율) = 확보율 − T/100. 판정이 확보인데 음수면 0 이다.
 
-    반올림으로 겨우 기준에 든 공정(110% 기준의 109.5%)은 실제로는 −0.5% 지만 확보로 판정했으므로
-    여유 0 으로 적는다(2026-11-01 사용자 결정). 판정이 확보가 아니면 실제 음수 여유 그대로다.
+    반올림으로 겨우 기준에 든 공정(110% 기준의 109.5%, `rounded_in`)은 실제로는 −0.5% 지만 확보로
+    판정했으므로 여유 0 으로 적는다(2026-11-01 사용자 결정). 판정이 확보가 아니면 실제 음수 여유
+    그대로다.
     """
-    margin = float(rate) - normalize_threshold(threshold)
-    if margin < 0 and meets_threshold(rate, threshold):
+    if rounded_in(rate, threshold):
         return 0.0
-    return margin
+    return float(rate) - normalize_threshold(threshold)
 
 
 def capacity_status(

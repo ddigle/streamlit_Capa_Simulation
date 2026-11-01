@@ -195,6 +195,7 @@ from capa_simulation.services.securement_rate import (
     CAUSE_OWNED_SHORT,
     OWNED_COLUMN,
     STATUS_COLUMN,
+    surplus_held_at_zero,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds, judgment_boundary
 from capa_simulation.services.threshold_label import (
@@ -896,6 +897,15 @@ def _balance_hover(
         f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
         f"소요 {_one(demand)} × {boundary_percent_label(secure)} (부족은 올림, 여유는 내림)"
     )
+    held = (
+        balance == 0
+        and available is not None
+        and demand is not None
+        and surplus_held_at_zero(available, demand, secure)
+    )
+    if held:
+        # 반올림으로만 확보인 달 — 경계식은 1대 이상 남지만 확보율이 기준 밑이라 여유가 아니다.
+        text += f"<br>반올림으로 겨우 확보 — {threshold_percent_label(secure)} 에 못 미쳐 여유 0"
     reason = "" if _blank(cause) else str(cause)
     if reason:
         text += f"<br>원인 {html.escape(reason)}"

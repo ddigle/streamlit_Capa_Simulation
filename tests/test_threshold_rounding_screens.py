@@ -68,6 +68,31 @@ def test_the_canvas_balance_balloon_multiplies_the_boundary() -> None:
     assert "소요 100.0 × 109.5%" in text
 
 
+def test_a_large_rounded_in_month_explains_its_zero_surplus() -> None:
+    """소요 400 · 가용 439.9(109.975% — 반올림으로 확보)는 경계식이 +1.90 이어도 과부족 0
+    이고, ③ 판정과 ① 과부족 풍선이 그 까닭(「반올림으로 겨우 확보」)을 한 줄 단다. 작은
+    공정(+0.10 → 0)은 달지 않는다."""
+    record: dict[str, object] = {
+        "가용대수": 439.9,
+        "소요대수": 400.0,
+        "판정": "secure",
+        "확보기준 과부족": 0,
+        OWNED_COLUMN: 439.9,
+        CAUSE_COLUMN: "",
+    }
+    card = judgement_card(record, SecurementThresholds(1.10, 1.00), MONTH)
+    assert "400.00×109.5% = +1.90 → 0" in card.formula
+    assert any(note.startswith("반올림으로 겨우 확보 — 확보율이 110% 에") for note in card.notes)
+
+    balloon = _balance_hover("<b>26.11</b>", 0, 439.9, 400.0, 1.10, None)
+    assert "반올림으로 겨우 확보 — 110% 에 못 미쳐 여유 0" in balloon
+
+    small: dict[str, object] = {**record, "가용대수": 109.6, "소요대수": 100.0, OWNED_COLUMN: 109.6}
+    small_card = judgement_card(small, SecurementThresholds(1.10, 1.00), MONTH)
+    assert not any("반올림으로 겨우 확보" in note for note in small_card.notes)
+    assert "반올림으로 겨우" not in _balance_hover("<b>26.11</b>", 0, 109.6, 100.0, 1.10, None)
+
+
 def test_differences_are_written_with_a_plain_percent_sign() -> None:
     """「%p」 를 쓰지 않는다(2026-11-01 사용자 결정 — 「%p표기하지말고 %로만」)."""
     assert signed_points(0.0) == "0.0%"

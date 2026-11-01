@@ -168,6 +168,7 @@ from capa_simulation.services.securement_rate import (
     CAUSE_RENTAL,
     OWNED_COLUMN,
     STATUS_COLUMN,
+    surplus_held_at_zero,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import ScenarioCacheKey
@@ -236,6 +237,11 @@ CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
 CANVAS_SCHEMA_VERSION: Final = 8
+
+# ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
+ROUNDED_IN_NOTE: Final = (
+    "반올림으로 겨우 확보 — 확보율이 {threshold} 에 못 미쳐 남는 대수는 0 으로 적습니다"
+)
 
 # 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
 SECTION_LABELS: Final[Mapping[str, str]] = {
@@ -1139,6 +1145,8 @@ def judgement_card(
         notes.append(cause_note)
     if str(status) in _SHORT_STATUSES and balance == 0:
         notes.append("잡음 경계 — 확보율이 기준에 아주 조금 못 미쳐 칠했지만 과부족은 0 입니다")
+    if str(status) == "secure" and surplus_held_at_zero(available, required, secure):
+        notes.append(ROUNDED_IN_NOTE.format(threshold=threshold_percent_label(secure)))
     if assumed is not None:
         notes.append(_official_judgement_note(record))
     return EvidenceCard(title, "\n".join(lines), tuple(notes))

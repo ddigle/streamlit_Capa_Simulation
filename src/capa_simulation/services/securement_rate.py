@@ -9,6 +9,7 @@ from capa_simulation.services.securement_threshold import (
     CapacityStatus,
     SecurementThresholds,
     judgment_boundary,
+    rounded_in,
 )
 
 SECUREMENT_DIMENSIONS = ["공정"]
@@ -200,7 +201,10 @@ def securement_balance(
     - **과부족**(`확보기준 과부족`)은 그 달 확보기준의 **판정 경계**(`thresholds.boundary_for` —
       110% 면 1.095)에 대한 정수다. 판정이 확보가 아니면 `−_ceil_positive(소요 × 경계 − 가용)`
       (그만큼 더하면 확보로 판정된다), 아니면 `+floor(round(가용 − 소요 × 경계, 9))`(그만큼 빼도
-      확보다 — 반올림으로 겨우 든 달은 0)다. 모자란 쪽 크기는 Static Capa 의
+      확보다)다. 다만 반올림으로만 확보인 달(`securement_threshold.rounded_in` — 확보율이
+      T 밑)은 늘 0 이다 — 경계로 낸 내림은 소요가 200 대를 넘으면 1대 이상일 수 있지만 그
+      달은 여유가 없다(2026-11-01 사용자 결정 「여유가 0으로」, `surplus_held_at_zero`).
+      모자란 쪽 크기는 Static Capa 의
       「확보목표 총 필요대수」(`build_securement_shortfall_tables`)와 같은 정수다. `확보기준`·
       `경고기준` 칸은 화면에 적는 정수 % 기준(1.1)이다.
     - 판정은 반올림하지 않은 확보율을, 과부족은 9자리 반올림을 본다. 그래서 부동소수 잡음
@@ -248,10 +252,19 @@ def securement_balance(
     secure_gap = demand.mul(secure_bound).sub(available)
     warning_gap = demand.mul(warning_bound).sub(available)
     short = [status is not None and status != "secure" for status in statuses]
+    # 반올림으로만 확보인 달은 남는 대수도 0 이다 — 경계로 낸 내림은 소요가 200 대를 넘으면
+    # 1대 이상이 될 수 있지만, 확보율이 기준 T 밑이라 여유가 아니다(2026-11-01 사용자 결정
+    # 「여유가 0으로」).
+    held = [
+        status == "secure" and rounded_in(float(available_count) / float(demand_count), pair[0])
+        for status, available_count, demand_count, pair in zip(
+            statuses, available, demand, pairs, strict=True
+        )
+    ]
     result[BALANCE_COLUMN] = pd.Series(
         [
-            -_ceil_positive(gap) if is_short else _floor_surplus(-gap)
-            for gap, is_short in zip(secure_gap, short, strict=True)
+            -_ceil_positive(gap) if is_short else 0 if is_held else _floor_surplus(-gap)
+            for gap, is_short, is_held in zip(secure_gap, short, held, strict=True)
         ],
         index=result.index,
         dtype="int64",
@@ -324,6 +337,22 @@ def warning_need_units(required: float, available: float, warning: float) -> int
     0.995)이다. 한 행만 세는 쪽(입장 화면 Summary 의 B/N 부족 대수)이 이것을 쓴다.
     """
     return _ceil_positive(float(required) * judgment_boundary(float(warning)) - float(available))
+
+
+def surplus_held_at_zero(available: float, required: float, secure: float) -> bool:
+    """반올림으로만 확보인 달이라 과부족을 0 으로 묶었는가(`securement_balance`).
+
+    판정 경계로 낸 여유(`+floor(round(가용 − 소요 × 경계, 9))`)는 1대 이상인데 확보율이
+    기준 T(`secure` — 비율) 밑이라 0 으로 적은 달이다. 소요가 200 대를 넘는 공정에서만 생긴다.
+    식 줄·풍선이 「경계식은 +1.90 인데 0」 의 까닭을 다는 데 쓴다.
+    """
+    demand = float(required)
+    if demand <= 0:
+        return False
+    supply = float(available)
+    return rounded_in(supply / demand, secure) and (
+        _floor_surplus(supply - demand * judgment_boundary(float(secure))) >= 1
+    )
 
 
 def _ceil_positive(value: float) -> int:
