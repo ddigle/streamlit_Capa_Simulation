@@ -213,6 +213,9 @@ _WRITE_METHODS: Final = frozenset(
 _FRAME_WRITERS: Final = frozenset(
     {"to_csv", "to_parquet", "to_excel", "to_json", "to_pickle", "to_feather"}
 )
+# 상대 경로 쓰기(M13 경고)에서 경로 글자를 감싸는 생성자와, 상대가 아닌 Windows 경로 꼴.
+_PATH_CONSTRUCTORS: Final = frozenset({"pathlib.Path", "pathlib.PurePath"})
+_WINDOWS_ABSOLUTE: Final = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/]{2})")
 _DEPRECATED_KEYWORDS: Final[Mapping[str, str]] = {
     "use_container_width": 'width="stretch" 또는 width="content" 로 바꿉니다',
 }
@@ -1418,7 +1421,9 @@ def _check_file_write(node: ast.Call, names: _Names, context: _FileContext) -> N
                 target = func.value
         elif func.attr in _FRAME_WRITERS:
             target = _first_argument(node, "path_or_buf") or _first_argument(node, "path")
-    if target is not None and _tainted(target, taint.names, taint.contexts):
+    if target is None:
+        return
+    if _tainted(target, taint.names, taint.contexts):
         context.add(
             "M13",
             "warning",
@@ -1426,6 +1431,47 @@ def _check_file_write(node: ast.Call, names: _Names, context: _FileContext) -> N
             "`__file__` 기준 경로에 씁니다 — 모듈 코드 폴더에는 실행 중 쓰지 않고 "
             "`ctx.data_dir` 에 씁니다",
         )
+        return
+    relative = _relative_literal_path(target, names)
+    if relative is not None:
+        context.add(
+            "M13",
+            "warning",
+            node,
+            f"상대 경로 `{relative}` 에 씁니다 — 앱에서는 작업 폴더(저장소 뿌리)에 말없이 생겨 "
+            '다른 PC · 배포 서버에 닿지 않습니다 — `ctx.data_dir / "<이름>"` 에 씁니다',
+        )
+
+
+def _relative_literal_path(node: ast.AST, names: _Names, depth: int = 0) -> str | None:
+    """경로 식이 상대 경로 글자에서 시작하면 그 글자 — `"x.txt"` · `NAME`(모듈 수준 글자) ·
+    `Path("x")` · `Path("out") / "x"`. `ctx.data_dir / …` · 변수 · 절대 경로는 None 이다.
+
+    `data/` 로 시작하는 글자는 M07 이 이미 알리므로 넘긴다. 상대 경로는 작업 폴더 기준이라 앱에서는
+    운영 체크아웃 뿌리에 쓴다(시험 러너는 트리 안 쓰기를 실패로 만든다).
+    """
+    if depth > 4:
+        return None
+    text = names.constant(node)
+    if text is not None:
+        posix = text.replace("\\", "/")
+        if (
+            "://" in text
+            or posix.startswith(("/", "~", "data/"))
+            or posix == "data"
+            or _WINDOWS_ABSOLUTE.match(text) is not None
+        ):
+            return None
+        return text
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        return _relative_literal_path(node.left, names, depth + 1)
+    if isinstance(node, ast.Call) and node.args and names.resolve(node.func) in _PATH_CONSTRUCTORS:
+        return _relative_literal_path(node.args[0], names, depth + 1)
+    if isinstance(node, ast.Name):
+        value = names.single.get(node.id)
+        if value is not None:
+            return _relative_literal_path(value, names, depth + 1)
+    return None
 
 
 def _check_subscripts_and_targets(tree: ast.Module, names: _Names, context: _FileContext) -> None:

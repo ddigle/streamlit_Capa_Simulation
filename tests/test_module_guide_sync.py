@@ -280,3 +280,109 @@ def test_the_deploy_agent_template_does_not_allow_the_module_check() -> None:
 
     assert not any("check_module.py" in rule for rule in template["permissions"]["allow"])
     assert "Edit(modules/**)" in template["permissions"]["deny"]
+
+
+def test_moved_conditions_keep_their_value_across_screens(tmp_path: Path) -> None:
+    """독립 앱의 사이드바 조건은 화면을 옮겨도 남는다. 본문으로 옮긴 위젯은 `persist_state` 가
+    없으면 화면을 옮겼다 오면 처음 값이다 — 3-9 의 옮긴 꼴과 「라우터 앱」 공용 조건이 그 꼴을
+    보이고(같은 `ctx.key` · `persist_state="session"`), 4장 · 5장이 까닭을 적는다."""
+    page = _python_block("데모 표 모듈의 첫 화면")
+    common = _python_block("데모 실적판 모듈의 공용 조건")
+    moving = _section("3-9.")
+
+    assert 'key=ctx.key("kind"), persist_state="session")' in page
+    assert 'key=ctx.key("region"), persist_state="session")' in common
+    for section in (moving, _section("4. 부딪치지 않게"), _section("5. 화면 일관성")):
+        assert 'persist_state="session"' in section
+    assert "라우터 앱" in moving and "바로 아래" in moving
+    screen = (
+        "# Purpose: 데모 실적판 모듈의 {name} 화면.\n\n"
+        "from capa_simulation import module_api as api\n"
+        "from modules.demo_port import common\n\n"
+        "ctx = api.context(__file__)\n"
+        'api.page_header(ctx, "{name}")\n'
+        "region = common.conditions(ctx)\n"
+    )
+    folder = _write(
+        tmp_path / "modules" / "demo_port",
+        {
+            "module.json": json.dumps(
+                {
+                    "id": "demo_port",
+                    "name": "데모 실적판",
+                    "api": 1,
+                    "owner": "데모 담당",
+                    "enabled": True,
+                    "maturity": "L0",
+                    "pages": [
+                        {"slug": "main", "file": "overview.py", "title": "개요"},
+                        {"slug": "detail", "file": "detail.py", "title": "상세"},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            "common.py": common,
+            "overview.py": screen.format(name="개요"),
+            "detail.py": screen.format(name="상세"),
+            "tests/test_demo_port_smoke.py": "# Purpose: 데모 실적판 시험 자리.\n",
+        },
+    )
+
+    assert [item.text() for item in _static_findings(folder)] == []
+
+
+def test_the_title_clash_reason_in_the_guide_is_the_registrys() -> None:
+    """3-3 이 「차례가 뒤인 모듈 전체」 가 실패한다고 적고, 그 까닭 꼴이 런타임 · 점검과 같다."""
+    declaration = _section("3-3.")
+
+    for clash in (
+        module_registry.TitleClash("<이름>", "<id>"),
+        module_registry.TitleClash("<이름>", ""),
+    ):
+        reason = module_registry.clash_reason(clash).removeprefix("화면 이름 겹침: <이름> ")
+        assert reason in declaration, reason
+    assert "뒤인 모듈 전체" in declaration
+    assert "나중에 넣은 쪽이 아니다" in declaration
+
+
+def test_the_line_width_rule_counts_wide_characters() -> None:
+    """ruff 의 E501 은 화면 폭으로 센다(한글 2칸) — 「100자」 로 적으면 한글 줄이 60자 안팎에서
+    걸린다."""
+    conflicts = _section("4. 부딪치지 않게")
+
+    assert f"폭 {new_module.LINE_WIDTH}칸" in conflicts
+    assert "한 자가 2칸" in conflicts
+    assert "100자" not in GUIDE
+    assert new_module._width("가" * 50) == new_module.LINE_WIDTH
+
+
+def test_transitive_packages_named_in_the_guide_warn_and_numpy_is_one() -> None:
+    """6장 「경고」 에 적은 이름은 지금 `requirements.txt` 에서 직접 의존이 아니다(경고가 난다) —
+    pandas 와 늘 함께 쓰는 numpy 가 그 하나라는 것을 담당자가 미리 안다."""
+    dependencies = _section("6. 의존성")
+    warned = dependencies.partition("경고가 나는 것:")[2].partition("오류가 나는 것:")[0]
+
+    assert "`numpy`" in warned
+    for name in ("numpy", "pyarrow", "pillow", "toml", "requests"):
+        requirement = ENVIRONMENT.requirements[rules.normalize_name(name)]
+        assert not requirement.direct, name
+
+
+def test_the_skeleton_section_says_when_to_give_a_title() -> None:
+    skeleton = _section("3-7.")
+    _, title_max = module_registry.TITLE_LENGTH
+    _, name_max = module_registry.NAME_LENGTH
+
+    assert f"{name_max}자까지" in skeleton and f"{title_max}자까지" in skeleton
+    assert "`--title` 을 함께 준다" in skeleton
+
+
+def test_data_modules_is_read_only_for_the_owner_agent() -> None:
+    """2장은 `data/modules/<id>/` 에 손으로 넣지 않는다고 한다 — 첫 지시(0장)와 담당자 클론 설정
+    (8-4)도 같은 말을 해야 에이전트가 「내 PC 에서만 되는」 데이터를 만들지 않는다."""
+    first_order = _blocks(_section("0. 에이전트에게"), "text")[0]
+    settings = json.loads(_blocks(_section("8-4."), "json")[0])
+
+    editable = next(line for line in first_order.splitlines() if line.startswith("1. "))
+    assert "data/modules/<id>/ 는 화면이 실행 중에 쓰는 자리라 읽기만 한다" in editable
+    assert not any("data/modules" in rule for rule in settings["permissions"]["allow"])

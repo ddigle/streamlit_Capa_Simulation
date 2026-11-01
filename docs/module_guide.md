@@ -19,7 +19,7 @@
 ```text
 너는 S.PKG CAPA AX Management 앱의 사내 모듈 <id> 를 맡은 에이전트다. 너와 대화하는 사람은 이 모듈의 담당자다.
 앱 관리자는 배포를 적용하고 승인하는 다른 한 사람이다 — 이 대화 안에 없다.
-1. 고칠 수 있는 곳은 modules/<id>/ 와 data/modules/<id>/ 뿐이다. 그 밖(app.py·app_pages/·src/·tests/·scripts/·docs/·config/·루트 파일·다른 모듈)은 읽기만 한다.
+1. 고칠 수 있는 곳은 modules/<id>/ 뿐이다. data/modules/<id>/ 는 화면이 실행 중에 쓰는 자리라 읽기만 한다 — 손으로 파일을 넣거나 고치지 않고, 지울 때는 먼저 묻는다. 그 밖(app.py·app_pages/·src/·tests/·scripts/·docs/·config/·루트 파일·다른 모듈)도 읽기만 한다.
 2. 이 문서(docs/module_guide.md)만 따른다. CLAUDE.md·AGENTS.md 는 코어 규칙이라 네 일이 아니다.
 3. 코어는 capa_simulation.module_api 하나만 import 한다. 같은 모듈의 파일은 from modules.<id> import <이름> 으로 부른다.
 4. 패키지를 설치하지 않는다(uv add·uv pip·pip install·uv sync 모두). 필요하면 담당자에게 「<id>: <패키지>==<판> <까닭>」 한 줄을 앱 관리자에게 전해 달라고 한다.
@@ -63,7 +63,7 @@
 | 자리 | 너(에이전트)는 | 까닭 |
 |---|---|---|
 | `modules/<id>/` | 쓴다 | 네 모듈의 코드다 |
-| `data/modules/<id>/` | 화면이 실행 중에 쓴다. 손으로 넣지 않는다 | 네 모듈의 데이터 자리다 — 코드에서는 `ctx.data_dir` |
+| `data/modules/<id>/` | 읽기만 한다 — 화면이 실행 중에 쓴다. 손으로 넣거나 고치지 않고, 지울 때는 먼저 묻는다 | 네 모듈의 데이터 자리다 — 코드에서는 `ctx.data_dir`. 손으로 넣은 파일은 그 PC 에만 있다(아래) |
 | 그 밖 전부 — `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/`·`docs/`·`config/`·루트 파일·다른 모듈 | 읽기만 한다 | 코어와 남의 모듈이다. 고쳐도 다음 배포가 덮는다 |
 | 코어 두 DB(`data/capa_simulation.duckdb`·`data/equipment_availability.duckdb`)·`data/input`·`data/output`·`data/temp`·`review/`·`.deploy/` | 열지도 않는다 | 운영 데이터와 배포 기록이다 |
 
@@ -81,6 +81,9 @@
 - 모듈 DB(DuckDB · SQLite)가 필요하면 `ctx.data_dir` 안에 둔다. 표를 만들고 고치는 일(마이그레이션)도 네 몫이고 코어 번호와 상관없다.
 - **모듈 코드 폴더에는 실행 중에 쓰지 않는다.** 쓰기는 `ctx.data_dir` 만이다. 코드 폴더에 쓴 파일은 커밋되지 않아 어느 점검에도
   보이지 않는다(M13 이 경고하고, 시험 러너는 실패로 만든다).
+- **상대 경로로 쓰지 않는다.** `open("notes.txt", "a")` · `Path("out") / "x.csv"` · `frame.to_csv("rows.csv")` 처럼 쓰면 앱의 작업
+  폴더 — 앱을 띄운 저장소의 뿌리(앱 관리자 PC 에서는 운영 체크아웃) — 에 말없이 생긴다. 독립 앱에서 옮긴 코드에 가장 흔히 남는
+  찌꺼기다. 늘 `ctx.data_dir / "<이름>"` 으로 쓴다(M13 이 경고하고, 시험 러너는 저장소 안 쓰기를 실패로 만든다).
 
 ---
 
@@ -104,7 +107,8 @@ data/modules/<id>/             ← ctx.data_dir — git·이미지 밖. 처음 �
 
 - `modules/` 바로 아래의 파일과, 이름이 `.`·`_` 로 시작하는 항목(`__pycache__` 등)은 모듈로 보지 않는다.
 - `modules/__init__.py` 를 만들지 않는다. 만들면 `from modules.<id> import …` 가 깨질 수 있다.
-- 모든 `.py` 첫 줄은 `# Purpose: <이 파일이 하는 일 한 문장>` 이다(M13).
+- 모든 `.py` 첫 줄은 `# Purpose: <이 파일이 하는 일 한 문장>` 이다(M13). 이 줄도 폭 100칸 안이다 — 한글은 한 자가 2칸이라
+  45자 안팎에서 넘는다(M15 · 4장).
 - 폴더·파일 이름에 대문자를 쓰지 않는다(M13).
 
 ### 3-2. id
@@ -155,11 +159,16 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
 | `pages` | 예 | 화면 1 ~ 8개의 배열 |
 | `pages[].slug` | 예 | id 와 같은 정규식, 1 ~ 24자. 모듈 안에서 겹치지 않는다. 주소 끝이 된다 |
 | `pages[].file` | 예 | `^[a-z][a-z0-9_]*\.py$`. 모듈 폴더 **바로 아래**의 보통 파일(심볼릭 링크 · 하위 폴더 안 됨). 디스크의 이름과 **대소문자까지** 같아야 한다 — Windows 는 `Page.py` 를 `page.py` 로도 열어 주지만 배포 서버는 못 연다 |
-| `pages[].title` | 예 | 1 ~ 24자. 사이드바 · 탭 이름이 된다. 「(구현중)」 을 넣지 않는다(성숙도가 붙인다). 코어 화면 이름 · 「현황 요약」 · 다른 켜진 모듈의 화면 이름과 같으면 실패. 모듈 안에서도 겹치지 않는다. Markdown 으로 그려지므로 별표 · 밑줄 · 역따옴표 · 대괄호 · 물결 · 역슬래시 · 샵 · 꺾쇠 · 세로줄 · 달러 · 쌍점을 넣으면 실패 |
+| `pages[].title` | 예 | 1 ~ 24자. 사이드바 · 탭 이름이 된다. 「(구현중)」 을 넣지 않는다(성숙도가 붙인다). 코어 화면 이름 · 「현황 요약」 과 같으면 실패. 다른 켜진 모듈의 화면 이름과 같으면 모듈 차례(`order`, 같으면 id)가 **뒤인 모듈 전체**가 실패한다(아래). 모듈 안에서도 겹치지 않는다. Markdown 으로 그려지므로 별표 · 밑줄 · 역따옴표 · 대괄호 · 물결 · 역슬래시 · 샵 · 꺾쇠 · 세로줄 · 달러 · 쌍점을 넣으면 실패 |
 | `pages[].icon` | 아니오 | `^:material/[a-z0-9_]+:$` 에 **정확히** 맞아야 한다. 앞뒤 공백 · 이모지는 안 된다. 기본은 `:material/extension:` |
 | `pages[].order` | 아니오 | 정수 0 ~ 999. 기본은 배열 차례 × 10. 모듈 안의 화면 차례(같으면 slug 차례) |
 
 - 선언이 틀리면 그 모듈은 「실패」 로 등록되지 않는다. 다른 모듈과 앱은 그대로 선다. 까닭은 앱 관리자가 Admin 「사내 모듈 상태」 에서 본다.
+- **모듈끼리 화면 이름이 겹치면 차례로 가른다 — 나중에 넣은 쪽이 아니다.** 모듈 차례(`order`, 같으면 id 차례)가 뒤인 모듈이
+  **겹치지 않는 화면까지 통째로** 「실패 · 화면 이름 겹침: <이름> — 차례가 앞인 모듈 <id>」 가 된다(코어 이름과 겹치면 「— 코어 화면」).
+  새 모듈의 `order` 가 작거나 id 가 앞이면 이미 돌던 모듈이 빠진다. 그래서 새 화면 이름은 앱의 「사내 모듈」 색인 화면에서 다른 모듈의
+  화면 이름을 보고 고른다. 점검은 차례가 앞인 모듈에도 M01 경고(「… 차례가 뒤인 모듈 <id> 도 써서 그 모듈 전체가 실패합니다」)를
+  낸다 — 그 경고가 보이면 담당자가 앱 관리자에게 알려 어느 쪽이 이름을 바꿀지 정한다.
 - `enabled: false` 여도 선언이 틀렸으면 「꺼짐」 이 아니라 「실패」 다 — 고칠 것이 보이게 한다.
 - **`module.json` 을 바꾸거나 모듈을 새로 넣으면 앱을 다시 띄워야 보인다.**
 
@@ -203,7 +212,9 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
    uv run --no-sync python scripts/new_module.py demo_hello --name "데모 인사" --owner "데모 담당"
    ```
 
-   `--title "<첫 화면 이름>"` 을 주지 않으면 `--name` 을 쓴다. 아래 넷이 생기고, 그 밖에는 아무것도 만들지 않는다
+   `--title "<첫 화면 이름>"` 을 주지 않으면 `--name` 을 첫 화면 이름으로도 쓴다. 모듈 이름(`--name`)은 30자까지지만 첫 화면 이름은
+   24자까지이고 Markdown 글자(쌍점 등)를 못 쓴다 — `--name` 이 24자를 넘거나 그런 글자가 들면 `--title` 을 함께 준다. 아래 넷이 생기고,
+   그 밖에는 아무것도 만들지 않는다
    (`data/modules/<id>/` 도 만들지 않는다).
    - `modules/demo_hello/module.json` — `api: 1` · `enabled: true` · `maturity: "L0"` · 화면 하나(`slug: "main"`, `file: "page.py"`).
    - `modules/demo_hello/page.py` — 아래.
@@ -411,15 +422,20 @@ def test_saving_a_memo_adds_one_row(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 이미 따로 도는 Streamlit 앱이 있으면 아래 차례대로 옮긴다. 한 단계씩 하고, 끝날 때마다 담당자에게 무엇을 바꿨는지 쉬운 말로 알린다.
 
 1. `new_module.py` 로 뼈대를 만든다(3-7 — 새 모듈이라 앱 관리자 승인이 먼저다).
-2. 원래 `app.py` 의 본문을 `page.py` 로 옮긴다.
+2. 원래 `app.py` 의 본문을 `page.py` 로 옮긴다. `app.py` 가 `st.navigation` 으로 화면을 고르는 진입 스크립트(라우터)면 그 파일은
+   옮기지 않는다 — 아래 「라우터 앱」 차례를 따른다.
 3. `st.set_page_config(…)` 를 지운다(앱이 한 번만 부른다 — M02).
 4. `st.title(…)` 을 `api.page_header(ctx, …)` 로 바꾼다. 맨 위에 `ctx = api.context(__file__)` 를 둔다.
-5. `st.sidebar.*` 를 본문 위의 `st.columns(…)` · `st.expander("조건")` 로 옮긴다(사이드바는 코어가 쓴다 — M04).
+5. `st.sidebar.*` 를 본문 위의 `st.columns(…)` · `st.expander("조건")` 로 옮긴다(사이드바는 코어가 쓴다 — M04). 옮긴 조건 위젯에는
+   **`persist_state="session"` 을 단다.** 독립 앱의 사이드바 위젯은 화면을 옮겨도 남지만, 본문 위젯은 달지 않으면 다른 화면(코어
+   화면 포함)에 갔다 오는 순간 처음 값(「전체」 등)으로 말없이 돌아간다(4장).
 6. 모든 `key=` 를 `ctx.key("…")` 로 바꾼다. `st.session_state["x"]` 는 `st.session_state[ctx.key("x")]` 로 바꾼다.
-   `st.session_state.clear()` 와 반복문 안의 `del st.session_state[…]` 는 지운다 — 코어의 칸까지 지운다(M08).
+   `st.session_state.clear()` 와 반복문 안의 `del st.session_state[…]` 는 지운다 — 코어의 칸까지 지운다(M08). 여러 화면이 함께 쓰던
+   조건(독립 앱의 사이드바 위젯 하나)은 화면마다 **같은 `ctx.key("…")` 와 `persist_state="session"`** 으로 그린다 — 한 화면에서 고른
+   값이 다른 화면에도 선다.
 7. `on_change=` · `on_click=` 같은 콜백을 `ctx.callback(함수)` 로 감싼다. `@st.fragment` · `@st.dialog` 본문은 `with ctx.guard():` 로 감싼다(M18).
-8. `pages/` 폴더나 `st.navigation` 으로 만든 여러 화면은 `module.json` 의 `pages` 로 옮긴다. 화면 사이 이동은 사이드바 · 탭 줄이
-   한다 — `st.switch_page` · `st.page_link` 를 지운다(M05).
+8. `pages/` 폴더나 `st.navigation` 으로 만든 여러 화면은 `module.json` 의 `pages` 로 옮긴다(아래 「라우터 앱」). 화면 사이 이동은
+   사이드바 · 탭 줄이 한다 — `st.switch_page` · `st.page_link` 를 지운다(M05).
 9. 데이터 파일 경로는 `ctx.data_dir / "<이름>"` 으로, 코드 옆 정적 파일은 `Path(__file__).parent / "assets" / "<이름>"`(읽기만)으로 바꾼다.
 10. 공통 코드는 `modules/<id>/<이름>.py` 에 두고 `from modules.<id> import <이름>` 으로 부른다(3-6).
 11. `st.cache_*` 는 `cache.py` 한 파일로 모으고 `ttl` · `max_entries` 를 단다. 캐시 함수는 `ctx` · `api.palette()` 를 안에서 읽지
@@ -430,6 +446,40 @@ def test_saving_a_memo_adds_one_row(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 14. `uv run --no-sync python scripts/check_module.py <id>` 를 돌려 패키지 · 키 · 규칙을 고친다.
 15. 스모크 시험과 핵심 함수 시험을 둔다(7장).
 16. 담당자가 앱 관리자의 승인을 받아 온 뒤 커밋한다(8장).
+17. 앱을 띄워(7장) 화면을 오가며 조건이 남는지 본다 — 조건을 고르고 다른 화면(코어 화면 하나 포함)에 갔다 돌아온다.
+
+**라우터 앱** — 진입 스크립트(`app.py`)가 `st.navigation([st.Page("views/overview.py", …), …])` 로 화면을 고르고, 화면 파일이 하위
+폴더(`views/`)에 있는 꼴이다. 진입 스크립트를 `page.py` 로 옮기면 라우터가 통째로 화면이 되어 M04 · M05 오류가 줄줄이 난다.
+
+1. 진입 스크립트는 옮기지 않는다. 그 `st.Page` 하나가 `module.json` 의 `pages[]` 한 줄이다 — `title` · `icon`(이모지는
+   `:material/<이름>:` 으로) · 차례를 옮긴다. 첫 화면(목록 첫째 또는 `default=True`)은 `order` 가 가장 작은 화면이다.
+2. 하위 폴더의 화면 파일은 모듈 폴더 **바로 아래**로 올린다(`views/overview.py` → `modules/<id>/overview.py`). `pages[].file` 은 하위
+   폴더를 받지 않는다(3-3). 화면 파일 이름은 자유다 — 뼈대의 `page.py` 는 첫 화면으로 쓰거나 지운다.
+3. 진입 스크립트가 화면보다 먼저 하던 공용 부분 — 세션 초기값(`if "region" not in st.session_state: …`)과 사이드바 공용 조건 — 은
+   도움 파일 한 곳의 함수로 모으고, 화면마다 머리말 바로 아래에서 부른다. 공용 조건은 같은 `ctx.key` · `persist_state="session"` 으로
+   그린다(5 · 6단계). 세션 초기값의 키도 `ctx.key` 로 바꾼다.
+4. 진입 스크립트의 나머지(`st.set_page_config` · CSS · `st.sidebar.title`)는 지운다(3 · 13단계).
+
+공용 조건 도움 파일(모듈 `demo_port` — 독립 앱의 사이드바 `st.sidebar.selectbox("지역", …, key="region")` 를 옮긴 것):
+
+```python
+# Purpose: 데모 실적판 모듈의 공용 조건 — 화면마다 같은 키로 그려 화면을 옮겨도 값이 남는다.
+
+import streamlit as st
+
+from capa_simulation import module_api as api
+
+REGIONS = ("전체", "DEMO-A", "DEMO-B")
+
+
+def conditions(ctx: api.ModuleContext) -> str:
+    """두 화면이 머리말 바로 아래에서 부른다. 고른 지역을 돌려준다."""
+    with st.expander("조건", expanded=True):
+        return st.selectbox("지역", REGIONS, key=ctx.key("region"), persist_state="session")
+```
+
+두 화면(`overview.py` · `detail.py`)은 맨 위가 같다 — `ctx = api.context(__file__)` · `api.page_header(ctx, "<화면 이름>")` 다음에
+`region = common.conditions(ctx)`(`from modules.demo_port import common`).
 
 옮기기 전 꼴(독립 앱):
 
@@ -491,7 +541,7 @@ def _keep_upload() -> None:
 
 
 with st.expander("조건", expanded=True):
-    kind = st.selectbox("종류", ["A", "B"], key=ctx.key("kind"))
+    kind = st.selectbox("종류", ["A", "B"], key=ctx.key("kind"), persist_state="session")
     st.file_uploader(
         "CSV 올리기", type="csv", key=ctx.key("upload"), on_change=ctx.callback(_keep_upload)
     )
@@ -528,7 +578,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 | 캐시 함수 안의 `api.palette()`(경고) | 색 값을 인자로 | 한 사람의 테마가 모든 사람에게 굳는다 | M12 |
 | `# Purpose:` 없는 `.py` · UTF-8 아닌 글 파일 · `.ps1` · DB · `.xls*` · `.env` · `.pkl` · `.css` · `.js` · `.html` · `assets/` 밖의 데이터 꼴 파일 · 대문자 이름 | 규칙대로 | 커밋되면 사내 git · 배포 이미지에 실린다. `.pkl` 은 열 때 코드가 돈다 | M13 |
 | `tests/test_*.py` 없음 | 스모크 시험 하나 이상 | 진입이 깨진 채 올라간다 | M14 |
-| ruff 위반 · 포맷 다름 | `uv run --no-sync python -m ruff format modules/<id>` 뒤 고친다 | 코어와 같은 규칙(줄 100자)으로 읽힌다 | M15 · M16 |
+| ruff 위반 · 포맷 다름 | `uv run --no-sync python -m ruff format modules/<id>` 뒤 고친다. 긴 주석 · 글자는 `ruff format` 이 나누지 않으므로 손으로 나누거나 줄인다 | 코어와 같은 규칙으로 읽힌다 — 한 줄은 **폭 100칸**이고 한글은 한 자가 2칸이다(한글만이면 50자 안팎, `# Purpose:` 줄은 45자 안팎에서 E501) | M15 · M16 |
 | 감싸지 않은 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 에 맨 함수 | `ctx.callback(함수)`(글자 `"rerun"` · `"ignore"` 는 그대로 된다) | 콜백은 앱 코드보다 먼저 돈다. 거기서 난 오류는 그 회차의 사이드바 · 머리 띠 · 탭 줄까지 지운다 | M18 |
 | `use_container_width=` | `width="stretch"` · `width="content"` | Streamlit 이 곧 지울 인자다. 올림 한 번에 그 화면이 오류 카드가 된다 | M19 |
 
@@ -538,6 +588,10 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
   전역 list · dict 도 그렇다.
 - **별도 프로세스가 아니다.** 오래 도는 계산은 앱을 쓰는 모든 사람의 화면을 느리게 한다. 모듈별 마지막 회차 시간이 Admin 에 보인다.
   무거운 계산은 캐시하고, 버튼을 눌렀을 때만 돈다.
+- **화면을 옮기면 `persist_state` 없는 위젯은 처음 값으로 돌아간다.** 앱은 화면을 옮길 때 그 화면에 그려지지 않은 위젯 값을
+  버린다 — 다른 화면(코어 화면 포함)에 갔다 오면 지역 · 기간 · 보기 방식 같은 조건이 「전체」 로 돌아가 있다. 화면을 오가도 남아야
+  하는 조건 위젯에는 `persist_state="session"` 을 단다(코어 화면과 같은 꼴). 모듈의 여러 화면이 함께 쓰는 조건은 화면마다 같은
+  `ctx.key("…")` 와 `persist_state="session"` 으로 그린다 — 한 화면에서 고른 값이 다른 화면에도 선다(3-9 「라우터 앱」).
 - **`ctx.key` 이름은 `_` 로 시작할 수 없다**(코어가 쓰는 자리다). 빈 이름도 안 된다.
 - 이름이 `_open_dialog` 로 끝나는 키는 화면을 떠나면 지워진다 — 「화면을 떠나면 닫히는 팝업 열림 칸」 으로 쓴다.
 - `st.cache_*` 는 서버 전체가 함께 쓴다(앱을 쓰는 사람끼리 나눈다). 함수를 고쳐도 옛 칸은 앱을 다시 띄울 때까지 남는다.
@@ -557,6 +611,8 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 - 색은 `api.palette()` 의 역할 색(`surface` · `border` · `text` · `accent` · `secure` · `warning` · `shortage` 등 — 부록 A)을 차트 · 표에 쓴다.
   테마(라이트 · 다크)에 맞춰 값이 바뀐다.
 - 서체를 정해야 하면 `api.FONT_FAMILY` 를 쓴다.
+- 조건 위젯(지역 · 기간 · 보기 방식)에는 `persist_state="session"` 을 달아 화면을 오가도 남게 한다(4장). 달지 않으면 화면을 옮겼다
+  돌아올 때 처음 값으로 돌아간다 — 피할 수 없는 일이 아니다.
 - **모듈의 저장하지 않은 편집은 탭의 점 · 테마 단추 확인에 잡히지 않는다.** 코어만 센다. 그래서 저장 단추를 분명히 두고, 저장 전에
   화면을 옮기면 사라진다는 것을 안내 글로 적는다.
 
@@ -593,10 +649,13 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 - 표준 라이브러리. 단 `tomllib` 은 Python 3.10 에 없다.
 - `streamlit`.
 - `requirements.txt` 의 **직접 의존** — `# via capa-simulation` 이 붙은 이름(pandas · plotly · altair · duckdb · pydantic 등).
+  **`numpy` 는 여기에 들지 않는다** — pandas · streamlit 이 끌어온 전이 의존이다(아래 「경고」).
 
 경고가 나는 것:
 
-- **전이 의존**(`toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다. 쓰려면 요청해서 직접 의존으로 올린다.
+- **전이 의존**(`numpy` · `pyarrow` · `PIL`(pillow) · `toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다.
+  `import numpy` 도 「직접 의존 아님」 경고(M09)다. 경고는 「통과」 를 막지 않는다 — 그대로 써도 점검은 통과한다. 오래 쓸 것이면
+  요청해서 직접 의존으로 올린다(위 「요청하는 길」 — 판은 `requirements.txt` 에 적힌 판, 예: `demo_memo: numpy==<그 판> 배열 계산`).
 - `requirements-company.txt` 에만 있는 사내 전용 패키지는 배포 서버 설치가 보장되지 않는다.
 
 오류가 나는 것:
@@ -620,7 +679,8 @@ uv run --no-sync python scripts/check_module.py <id>
 ```
 
 - 선언 · 규칙 · ruff · 시험을 함께 본다. 끝에 「통과」 · 「꺼짐」 · 「실패」 와 고칠 자리(`자세히` 줄 — 규칙 · 파일 · 줄 · 고칠 말)를 찍는다.
-- 시험은 감시 러너로 돈다. 시험이 코어 `data/` 를 열거나 모듈 코드 폴더에 쓰면 실패한다. 같은 폴더 맨이름 import 는 앱처럼 깨진다.
+- 시험은 감시 러너로 돈다. 시험이 코어 `data/` 를 열거나, 저장소 안 — 모듈 코드 폴더 · 상대 경로로 쓴 저장소 뿌리 자리 — 에 쓰면
+  실패한다(쓰기는 시험의 임시 `ctx.data_dir` 만 된다). 같은 폴더 맨이름 import 는 앱처럼 깨진다.
 - 정적 오류(M01 · M06 · M07 · M10 · M11)가 있으면 시험을 돌리지 않고 「시험 안 돎 — 정적 오류 먼저」 로 적는다. 그 오류부터 고친다.
 - **맨 `pytest` · `python -m pytest modules/<id>/tests` 는 쓰지 않는다.** 코어 시험의 보호가 걸리지 않아 그 클론의 진짜
   `data/modules/<id>/` 에 쓴다.
@@ -688,6 +748,8 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
 - 사내 PC 는 Windows 다. `Bash(…)` 규칙은 PowerShell 호출을 막지도 허용하지도 못하므로 모든 줄에 같은 `PowerShell(…)` 쌍둥이를 둔다.
 - 루트 파일 deny 는 `/` 로 앵커한다. 슬래시 없는 패턴은 모든 깊이에 걸린다 — `Edit(*.md)` 는 자기 `README.md` 까지 막는다.
 - deny 가 allow 를 이긴다. 그래서 다른 모듈 폴더는 deny 하지 않고 묻게 둔다(allow 에 없으면 `default` 모드가 묻는다).
+- `data/modules/<id>/` 는 allow 에 넣지 않는다 — 화면이 실행 중에 쓰는 자리라 에이전트가 손으로 넣지 않는다(0장 1번 · 2장). 손으로
+  넣은 파일은 그 PC 에서만 화면을 「되게」 한다. 꼭 손대야 하면 `default` 모드가 묻는다.
 - `new_module.py` 는 allow 에 넣지 않는다 — 새 모듈 등록은 승인 대상이라 매번 묻는다. `python -m pytest` 도 넣지 않는다 — 돌리는 줄은
   `check_module.py` 하나다.
 
@@ -698,7 +760,6 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
     "allow": [
       "Read",
       "Edit(/modules/<id>/**)",
-      "Edit(/data/modules/<id>/**)",
       "Bash(uv run --no-sync python scripts/check_module.py:*)",
       "PowerShell(uv run --no-sync python scripts/check_module.py:*)",
       "Bash(uv run --no-sync python -m ruff:*)",
@@ -857,7 +918,8 @@ def _detail() -> None:
 
 Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래에 모듈 폴더가 하나라도 있을 때만 선다(펼침 제목에 켜짐 · 꺼짐 · 실패 수).
 
-- 모듈마다 상태(켜짐 · 꺼짐 · 실패)와 까닭 · 성숙도 · 담당 · API 판 · 화면 수.
+- 모듈마다 id · 모듈 이름(`name`) · 상태(켜짐 · 꺼짐 · 실패)와 까닭 · 성숙도 · 담당 · API 판 · 화면 수. 까닭 칸은 넓게 서서 잘리지
+  않는다(표가 화면보다 넓으면 옆으로 민다).
 - 마지막 오류(시각 · 형식 · 자리 · 화면 slug). 자리는 `page`(화면 본문) · `callback`(위젯 콜백) · `guard`(프래그먼트 · 팝업 본문) ·
   `load`(화면 등록 — 재시작까지 그 화면을 뺀다) 가운데 하나다. 메시지 본문은 적지 않는다.
 - 마지막 회차 시간(초) — 느린 모듈을 찾는다.
@@ -928,7 +990,8 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 
 | 번호 | 무엇 | 등급 |
 |---|---|---|
-| M01 | 선언 — `module.json` 없음 · 못 읽음 · JSON 아님 · 칸 오류 · id ≠ 폴더 · 예약어 id · API 판(`api` · `api_minor`) · 화면 파일 없음 · 폴더 밖 · 디스크 철자 다름 · 아이콘 · 제목 Markdown 글자 · 화면 이름 겹침(코어 · 「현황 요약」 · 모듈 안 · 다른 켜진 모듈) | 오류 |
+| M01 | 선언 — `module.json` 없음 · 못 읽음 · JSON 아님 · 칸 오류 · id ≠ 폴더 · 예약어 id · API 판(`api` · `api_minor`) · 화면 파일 없음 · 폴더 밖 · 디스크 철자 다름 · 아이콘 · 제목 Markdown 글자 · 화면 이름 겹침(코어 · 「현황 요약」 · 모듈 안 · 다른 켜진 모듈 — 모듈끼리면 차례가 뒤인 모듈 전체가 실패하고 까닭에 상대를 적는다, 3-3) | 오류 |
+| M01 | 이 모듈의 화면 이름을 차례가 뒤인 켜진 모듈도 써서 **그 모듈**이 실패함(그 모듈 id 를 적는다) | 경고 |
 | M02 | `st.set_page_config` 호출 | 오류 |
 | M03 | 전역 CSS · JS · 끼워 넣기 — `st.html(…)`, `st.iframe(…)`, 글자 상수에 `<style` · `<script` · `<link` · `<iframe`(대소문자 무시), `streamlit.components` · `st.components` import · 사용, `unsafe_allow_html=True` 인데 첫 인자가 글자 상수가 아님(변수 · f-문자열 · 파일에서 읽은 글) | 오류 |
 | M03 | `unsafe_allow_html=True` 인데 첫 인자가 위 넷이 없는 글자 상수 | 경고 |
@@ -949,7 +1012,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | M12 | 캐시 — `st.cache_data` · `st.cache_resource` 장식자가 `modules/<id>/cache.py` 밖에 있음, `max_entries` · `ttl` 이 둘 다 없음, 캐시 함수 본문이 모듈 전역 `ctx` 나 `api.context(…)` 를 읽음, 맨 `st.cache_data.clear()` · `st.cache_resource.clear()`(자기 함수의 `.clear()` 는 허용) | 오류 |
 | M12 | 캐시 함수 본문 안의 `api.palette()` 호출 | 경고 |
 | M13 | 파일 — `.py` 첫 줄 `# Purpose:` 없음, UTF-8 이 아닌 글 파일, `.ps1`, 데이터 파일(`.duckdb` · `.db` · `.sqlite` · `.wal` · `.sync.json` · `.xls*` · `.env` · `secrets.toml`), `.pkl` · `.pickle`, `.css` · `.js` · `.html` · `.htm`, `assets/` 밖의 데이터 꼴 파일(`.csv` · `.tsv` · `.parquet` · `.feather` · `.arrow` · `.npy` · `.npz`), 3.10 문법 오류, 대문자가 든 폴더 · 파일 이름, (git 검사) git 의 철자가 디스크 철자와 대소문자만 다름, (git 검사) git 이 무시하는 파일인데 코드 · `module.json` 이 그 이름을 글자로 가리킴 | 오류 |
-| M13 | 5 MB 넘는 파일, `assets/` 안의 데이터 꼴 파일(「합성만」), 1 MB 넘는 `.json`, (git 검사) git 이 무시하는 파일(커밋되지 않아 운영 · 배포 서버에 없다), `open(…, "w"·"a"·"x")` · `Path.write_*` 의 경로 식에 `__file__` 이 든다(코드 폴더에 실행 중 쓰기), `modules/__init__.py` 있음 | 경고 |
+| M13 | 5 MB 넘는 파일, `assets/` 안의 데이터 꼴 파일(「합성만」), 1 MB 넘는 `.json`, (git 검사) git 이 무시하는 파일(커밋되지 않아 운영 · 배포 서버에 없다), `open(…, "w"·"a"·"x")` · `Path.write_*` 의 경로 식에 `__file__` 이 든다(코드 폴더에 실행 중 쓰기), 같은 쓰기(표의 `to_csv` 등 포함)의 경로가 상대 경로 글자다 — `"notes.txt"` · 그 글자를 담은 모듈 수준 이름 · `Path("…")` · `Path("…") / …`(작업 폴더 = 저장소 뿌리에 쓰기. `data/` 로 시작하면 M07), `modules/__init__.py` 있음 | 경고 |
 | M14 | 시험 — `tests/test_*.py` 없음 | 오류 |
 | M15 | `ruff check` 위반(수) | 오류 |
 | M16 | `ruff format --check` 다름(수) | 오류 |

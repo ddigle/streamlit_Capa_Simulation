@@ -716,6 +716,15 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     assert rows["demo_bad_manifest"]["상태"] == "실패"
     assert rows["demo_future_api"]["API"] == "99.0"
     assert rows["demo_crash"]["마지막 오류"].endswith("RuntimeError · page · main")
+    # `module.json` 의 name 은 「모듈 이름」 이다 — 같은 줄 까닭의 「화면 이름 겹침」
+    # (pages[].title)과 가른다. 까닭 · 마지막 오류는 기본 폭에서 잘리므로 넓힌 칸으로 싣는다.
+    assert "화면 이름" not in table.columns
+    assert rows["demo_ok"]["모듈 이름"] == "데모 모듈"
+    widths = {
+        name: config.get("width")
+        for name, config in json.loads(app.dataframe[0].proto.columns).items()
+    }
+    assert widths["까닭"] == "large" and widths["마지막 오류"] == "medium"
     assert any("앱을 다시 띄운 뒤" in caption.value for caption in app.caption)
     # 탭은 그대로 넷이다.
     assert len(app.main.tabs) == 4
