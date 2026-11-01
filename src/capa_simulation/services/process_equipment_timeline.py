@@ -808,7 +808,8 @@ class NewUnitStart(NamedTuple):
 
     modules: tuple[ModuleStart, ...] = ()
     """모듈이 둘 이상인 묶음의 모듈마다 기여 시작 · 환산비(축 안에 기여가 있는 모듈, 기여 시작 →
-    이름 차례). 하나짜리 호기는 빈다 — `start`·`units` 가 곧 그 모듈이다."""
+    이름 차례). 하나짜리 호기는 빈다 — `start`·`units` 가 곧 그 모듈이다. 축 앞에 나가 축 안 기여가
+    없는 첫 모듈은 들지 않아 `start` 가 여기 첫 날보다 이를 수 있다."""
 
 
 class NewUnitAvailability(NamedTuple):

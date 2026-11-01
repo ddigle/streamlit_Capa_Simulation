@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal
+from test_constraint_simulation import _one
 from test_equipment_view_cache import ANCHOR, MONTHS, _fleet
 from test_equipment_view_cache import _required as _fleet_required
 from test_required_shortening import (
@@ -31,6 +32,12 @@ from test_required_shortening import (
 )
 
 from capa_simulation.services import simulation_cache
+from capa_simulation.services.constraint_simulation import (
+    ConstraintConditions,
+    NewUnit,
+    UnitModule,
+    simulate_constraint,
+)
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_cutoff import prepare_process_cutoff
 from capa_simulation.services.process_equipment_timeline import (
@@ -1003,6 +1010,48 @@ def test_units_picked_as_holdings_are_not_new_units() -> None:
     )
     assert shares.units == ("EARLY1", "EQ2", "LATE1")
     assert tuple(entry.unit for entry in shares.starts) == ("EARLY1", "EQ2")
+
+
+def test_a_bundle_whose_first_module_left_before_the_axis_keeps_its_first_day() -> None:
+    """첫 모듈 M1(3/2 기여 시작)이 축 앞 4/10 에 정지해 축 안 기여가 없는 묶음 G1 — 판정 · 창은
+    첫 모듈 날(3/2) 그대로이고 모듈 몫에는 축 안에 기여하는 M2(6/11)만 든다. 제약 계산은 이 묶음을
+    검증 오류로 막지 않는다 — 4/10 정지가 모든 모듈에 걸려 어느 증가에도 붙지 않는 일반 설비다(옛
+    규칙 「가장 늦은 모듈」 로도 붙지 않았다)."""
+    rows = [
+        _unit(
+            "M1",
+            date(2026, 3, 1),
+            ratio=0.5,
+            parent="G1",
+            arrival=date(2026, 2, 1),
+            removal=date(2026, 4, 10),
+        ),
+        _unit("M2", date(2026, 6, 10), ratio=0.5, parent="G1"),
+    ]
+    shares = new_unit_availability(_timeline(rows), since=date(2026, 3, 1))
+    assert shares.starts == (
+        NewUnitStart(
+            "G1",
+            date(2026, 3, 2),
+            0.5,
+            date(2026, 4, 10),
+            (ModuleStart("M2", date(2026, 6, 11), 0.5),),
+        ),
+    )
+    (entry,) = shares.starts
+    unit = NewUnit(
+        entry.unit,
+        entry.start,
+        entry.units,
+        entry.until,
+        tuple(UnitModule(module.name, module.start, module.units) for module in entry.modules),
+    )
+    months = [_one(JUNE, required=20, available=30, demand=1)]
+    conditions = ConstraintConditions(JUNE, JUNE, 1.0, 30, 10, new_unit_since=date(2026, 3, 1))
+    result = simulate_constraint(months, conditions, (unit,))
+    assert result.assignments == ()
+    assert [ordinary.name for ordinary in result.ordinary_units] == ["G1"]
+    assert result.month(JUNE).increment == 1
 
 
 def test_held_unit_choices_list_the_units_that_can_be_held() -> None:

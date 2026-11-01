@@ -239,7 +239,8 @@ class NewUnit:
     """묶음의 모듈(둘 이상일 때). 비면 호기 하나가 `start` 부터 `units` 대다. 있으면 모듈마다 제
     기여 시작부터 붙고 그 사이가 그 모듈의 대기다(결정 B2-1) — 붙일 증가의 W/D 첫날 t 에 아직 오지
     않은 모듈은 그 증가에 붙지 않고 창 `[d, d + D]` 안의 다음 증가나 일반 설비가 된다(결정 B2-2). 첫
-    모듈 날짜가 `start`, 모듈 몫의 합이 `units` 다."""
+    모듈 날짜가 `start`, 모듈 몫의 합이 `units` 다 — 축 앞에 나가 축 안 기여가 없는 모듈은 몫이 없어
+    여기 들지 않으므로 `start` 가 남은 모듈의 첫 날보다 이를 수 있다."""
 
     @property
     def pieces(self) -> tuple[UnitModule, ...]:
@@ -961,7 +962,11 @@ def _validate_modules(
     dated: bool,
 ) -> None:
     """묶음 모듈 — 이름이 있고 겹치지 않으며, 환산 몫은 0 보다 크고 합이 호기 대수, 첫 모듈 날짜가
-    호기 기여 시작이다(보유는 처음부터 있는 모듈이 있으면 None)."""
+    호기 기여 시작이다(보유는 처음부터 있는 모듈이 있으면 None).
+
+    신규(`dated`)는 기여 시작이 모듈의 첫 날보다 **이를 수 있다** — 판정 · 창은 묶음의 첫 모듈
+    날이고(2026-11-01 사용자 결정), 축 앞에 나가 축 안 기여가 없는 첫 모듈은 모듈 몫(`modules`)에
+    들지 않기 때문이다(`new_unit_availability`). 늦을 수는 없다."""
     if not modules:
         return
     seen: set[str] = set()
@@ -983,7 +988,10 @@ def _validate_modules(
         )
     starts = [module.start for module in modules]
     first = min(day for day in starts if day is not None) if all(starts) else None
-    if first != start:
+    if dated:
+        if start is None or first is None or start > first:
+            raise ValueError(f"{owner} 의 기여 시작이 첫 모듈 날짜보다 늦습니다: {start!r}")
+    elif first != start:
         raise ValueError(f"{owner} 의 기여 시작이 첫 모듈 날짜와 다릅니다: {start!r}")
 
 

@@ -336,6 +336,10 @@ def test_bundles_are_taken_in_first_module_order() -> None:
             ),
             "겹칩니다",
         ),
+        (
+            NewUnit("G", JULY_FIRST, 1.0, modules=(UnitModule("G-A", JUNE_FIRST, 1.0),)),
+            "첫 모듈 날짜보다 늦습니다",
+        ),
     ],
 )
 def test_invalid_bundles_are_rejected(unit: NewUnit, message: str) -> None:
