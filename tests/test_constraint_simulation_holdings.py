@@ -7,7 +7,9 @@
 Cut-off 7, 개조 30일, 달마다 소요 20 · 가용 30. W/D 첫날은 6월 5/25 · 7월 6/24 · 8월 7/25 이고 W/D
 구간은 6월 5/25~6/23(30일) · 7월 6/24~7/24(31일)이다.
 
-- **B1** — 보유만으로 기간 끝까지 늘어난 전용을 다 채우면 신규를 붙이지 않는다.
+- **B1** — 늘어나는 달에서 남은 보유만으로 기간 끝까지 남은 증가를 다 채우면 그 증가부터 신규를
+  붙이지 않는다(같은 날 「기간 전체로 한 번」 에서 증가마다로 넓힘 — 첫 증가에서 덮이면 옛 답과
+  같다).
 - **B2** — 묶음 신규는 첫 모듈 날짜로 판정하고 창 `[d, d + D]` 도 그날부터 센다. 모듈마다 제
   날짜부터 대기하고(B2-1), 증가의 t 에 아직 오지 않은 모듈은 그 증가에 붙지 않는다(B2-2).
 - **B3** — 보유는 고른 호기 가운데 그 달 W/D 첫날에 있는 것의 환산 합 + 목록에 없는 보유 칸이다.
@@ -16,12 +18,15 @@ Cut-off 7, 개조 30일, 달마다 소요 20 · 가용 30. W/D 첫날은 6월 5/
 
 from __future__ import annotations
 
-from datetime import date
+import random
+from dataclasses import replace
+from datetime import date, timedelta
 from typing import cast
 
 import pytest
 from test_constraint_simulation import _one
 
+import capa_simulation.services.constraint_simulation as constraint_simulation
 from capa_simulation.services.constraint_simulation import (
     ConstraintConditions,
     ConstraintMonthInput,
@@ -39,7 +44,7 @@ JULY_FIRST = date(2027, 6, 24)
 
 def _months(*demands: float) -> list[ConstraintMonthInput]:
     """6월부터 달마다 제약 소요(= 필요 대수, 확보율 100%)."""
-    stamps = (202706, 202707, 202708)
+    stamps = (202706, 202707, 202708, 202709, 202710)
     return [
         _one(stamp, required=20, available=30, demand=demand)
         for stamp, demand in zip(stamps, demands, strict=False)
@@ -243,6 +248,232 @@ def test_without_growth_nothing_is_skipped() -> None:
         months, _conditions(months, owned=2, new=True), (NewUnit("N1", JUNE_FIRST, 1.0),)
     )
     assert result.assignments == () and not result.new_units_skipped
+
+
+# ------------------------------------------------------------------ B1 증가마다(2026-11-01 넓힘)
+#
+# 고른 H1(환산 1 · 6/1 들어옴)은 6월 W/D 첫날 5/25 에는 없고 7월 W/D 첫날 6/24 에는 있다 — 6월
+# 증가는 보유로 못 덮어 기간 전체 시험이 늘 떨어지고(옛 규칙은 신규 먼저로 다시 돌렸다), 뒤
+# 증가에서만 덮인다. 6/20 신규 N1 은 7월 증가(t 6/24)에 붙으면 6/20 ~ 6/23 4일 대기(6월 W/D
+# 5/25 ~ 6/23, 30일)다.
+
+LATE_HELD = (HeldUnit("H1", 1.0, start=date(2027, 6, 1)),)
+LATE_UNIT = NewUnit("N1", date(2027, 6, 20), 1.0)
+
+
+def test_holdings_covering_the_rest_stop_the_new_units_from_that_growth() -> None:
+    """필요 6월 2 → 7월 3. 6월 증가 2 는 보유 0 이라 개조 2(N1 은 아직 없음). 7월 증가 1 에서 남은
+    보유 1 이 남은 증가 1 을 다 덮어 그 증가부터 신규를 붙이지 않는다 — 보유 1, N1 은 기존 제품 몫,
+    대기 0. 옛 규칙(기간 전체로 한 번)은 6월 개조 때문에 신규 먼저로 돌려 N1 을 7월에 붙였고 6월에
+    대기 4/30 이 빠졌다(사본 앱 Die Attach 28.04 몫 CSS-DA2-012 대기 3일과 같은 꼴).
+
+    6월 기존 확보율 = (30 − 2) ÷ 18 — 개조 창(06 몫 2대, 4/25 ~ 5/24)은 보이지 않는 5월 W/D 에 든다.
+    """
+    months = _months(2, 3)
+    result = simulate_constraint(
+        months, _conditions(months, held=LATE_HELD, new=True), (LATE_UNIT,)
+    )
+    assert _split(result, 202706) == (0, 0, 2)
+    assert _split(result, 202707) == (0, 1, 0)
+    assert result.assignments == ()
+    assert all(row.waiting == 0.0 for row in result.months)
+    assert result.month(202706).existing_rate == pytest.approx((30 - 2) / 18)
+    assert [(window.month, window.units) for window in result.windows] == [(202706, 2)]
+    assert result.new_units_stopped_month == 202707
+    assert not result.new_units_skipped
+    assert [unit.name for unit in result.held_back_units] == ["N1"]
+    assert [unit.name for unit in result.ordinary_units] == ["N1"]
+
+
+def test_new_units_attached_before_the_cover_stay() -> None:
+    """필요 6월 2 → 7월 3 → 8월 4, 고른 H1 환산 2(6/1). 6월 증가 2 = 5/25 신규 N0 1(대기 0일) +
+    개조 1 — 보유가 아직 없어 덮이지 않는다. 7월 증가 1 에서 남은 보유 2 가 7월 1 · 8월 1 을 다
+    덮어 그 증가부터 신규를 붙이지 않는다 — 7월 · 8월 보유 1 씩, 6/20 N1 은 기존 제품 몫. 앞에
+    붙은 N0 은 그대로다. 옛 규칙이면 N1 이 7월에 붙어 4일 대기했다."""
+    months = _months(2, 3, 4)
+    held = (HeldUnit("H1", 2.0, start=date(2027, 6, 1)),)
+    units = (NewUnit("N0", JUNE_FIRST, 1.0), LATE_UNIT)
+    result = simulate_constraint(months, _conditions(months, held=held, new=True), units)
+    assert _split(result, 202706) == (1, 0, 1)
+    assert _split(result, 202707) == (0, 1, 0)
+    assert _split(result, 202708) == (0, 1, 0)
+    assert [(item.unit, item.month, item.days) for item in result.assignments] == [
+        ("N0", 202706, 0)
+    ]
+    assert result.month(202706).waiting == 0.0
+    assert result.new_units_stopped_month == 202707
+    assert [unit.name for unit in result.held_back_units] == ["N1"]
+    assert result.kpis.modified_units == 1
+    assert (result.kpis.owned_used, result.kpis.new_used) == (2, 1)
+
+
+def test_holdings_must_cover_every_remaining_growth() -> None:
+    """필요 6월 2 → 7월 3 → 8월 5. 7월 증가 1 은 보유 1 로 덮이지만 8월 증가 2 가 남아(보유만으로는
+    8월 개조 2) 남은 증가를 다 덮지 못한다 — 7월은 차례 그대로 N1 1(대기 4일), 8월 증가 2 = 보유 1 +
+    개조 1. 옛 규칙과 같은 답이다."""
+    months = _months(2, 3, 5)
+    result = simulate_constraint(
+        months, _conditions(months, held=LATE_HELD, new=True), (LATE_UNIT,)
+    )
+    assert _split(result, 202707) == (1, 0, 0)
+    assert _split(result, 202708) == (0, 1, 1)
+    assert [(item.unit, item.month, item.days) for item in result.assignments] == [
+        ("N1", 202707, 4)
+    ]
+    assert result.month(202706).waiting == pytest.approx(4 / 30)
+    assert result.new_units_stopped_month is None
+    assert result.held_back_units == ()
+
+
+def test_only_units_that_could_attach_after_the_stop_are_held_back() -> None:
+    """필요 6월 2 → 7월 3 → 8월 3. 7월 증가에서 덮여 그 뒤로 신규를 붙이지 않는다. N1(6/20)은
+    7월 증가(t 6/24)에 붙을 수 있었으니 결정 B1 로 붙지 않은 호기이고, N2(7/1)는 창 7/1 ~ 7/31
+    안에 증가가 없어(8월 증가 0) 어차피 붙지 않았을 호기라 들지 않는다 — 화면이 둘의 까닭을
+    가른다."""
+    months = _months(2, 3, 3)
+    units = (LATE_UNIT, NewUnit("N2", date(2027, 7, 1), 1.0))
+    result = simulate_constraint(months, _conditions(months, held=LATE_HELD, new=True), units)
+    assert result.new_units_stopped_month == 202707
+    assert [unit.name for unit in result.held_back_units] == ["N1"]
+    assert [unit.name for unit in result.ordinary_units] == ["N1", "N2"]
+
+
+def test_a_cover_from_the_first_growth_is_the_old_skip() -> None:
+    """첫 증가에서 덮이면 신규는 하나도 붙지 않는다 — 옛 「기간 전체로 한 번」 의 답과 같다
+    (`new_units_skipped`). 창 안에 증가가 없는 신규(6/20 — 6월 증가 t 5/25 앞, 7월 증가 0)는 붙지
+    않은 호기에 들지 않는다."""
+    months = _months(2, 2)
+    held = (_held("H1"), _held("H2"))
+    result = simulate_constraint(months, _conditions(months, held=held, new=True), (LATE_UNIT,))
+    assert result.new_units_stopped_month == 202706 and result.new_units_skipped
+    assert result.held_back_units == ()
+    early = simulate_constraint(
+        months, _conditions(months, held=held, new=True), (NewUnit("N0", JUNE_FIRST, 1.0),)
+    )
+    assert early.new_units_skipped
+    assert [unit.name for unit in early.held_back_units] == ["N0"]
+
+
+# ------------------------------------------------------------------ B1 증가마다 — 멈출 달 완전 탐색
+
+
+def _random_case(
+    rng: random.Random,
+) -> tuple[list[ConstraintMonthInput], ConstraintConditions, tuple[NewUnit, ...]]:
+    """합성 작은 문제 — 2 ~ 5달 제약 소요 사다리(줄기도 함), 목록에 없는 보유 0 ~ 2, 고른 호기 0 ~
+    3(들어옴 · 나감 · 환산 0.5 ~ 2), 신규 1 ~ 3(기여 시작 · 반출 · 환산 0.5 ~ 1.5), 개조 15 ~ 45일.
+    업무 사실이 아니다."""
+    count = rng.randint(2, 5)
+    level = 0
+    demands: list[float] = []
+    for _index in range(count):
+        level = max(0, level + rng.choice((-1, 0, 1, 1, 2, 3)))
+        demands.append(float(level))
+    months = _months(*demands)
+    first, last = date(2027, 4, 20), date(2027, 10, 20)
+    span = (last - first).days
+
+    def day() -> date:
+        return first + timedelta(days=rng.randint(0, span))
+
+    held = tuple(
+        HeldUnit(
+            f"H{index}",
+            rng.choice((0.5, 1.0, 1.0, 2.0)),
+            start=rng.choice((None, day())),
+            until=rng.choice((None, None, day())),
+        )
+        for index in range(rng.randint(0, 3))
+    )
+    units = tuple(
+        NewUnit(
+            f"N{index}",
+            day(),
+            rng.choice((0.5, 1.0, 1.0, 1.5)),
+            until=rng.choice((None, None, day())),
+        )
+        for index in range(rng.randint(1, 3))
+    )
+    conditions = replace(
+        _conditions(months, owned=rng.choice((0, 0, 1, 2)), held=held, new=True),
+        modification_days=rng.choice((15, 30, 45)),
+    )
+    return months, conditions, units
+
+
+def _splits(result: ConstraintResult) -> list[tuple[int, int, int]]:
+    return [(row.new_increment, row.owned_increment, row.increment) for row in result.months]
+
+
+def _forced(
+    monkeypatch: pytest.MonkeyPatch,
+    months: list[ConstraintMonthInput],
+    conditions: ConstraintConditions,
+    units: tuple[NewUnit, ...],
+    stop: int | None,
+) -> ConstraintResult:
+    """멈출 달을 `stop` 으로 못박은 답 — 그 증가 앞은 신규 먼저, 그 증가부터는 보유만(None 이면 늘
+    신규 먼저 — 결정 B1 이 없던 차례)."""
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            constraint_simulation,
+            "_holdings_cover_rest",
+            lambda rest, _conditions, _carry: stop is not None and rest[0].month == stop,
+        )
+        return simulate_constraint(months, conditions, units)
+
+
+def test_the_stop_is_the_earliest_growth_whose_rest_the_holdings_cover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """작은 무작위 문제 600개 — 멈출 달을 늘어나는 달마다 못박아 본 답(완전 탐색)과 맞댄다.
+
+    - 답은 「못박은 달부터 개조 창이 하나도 없는」 늘어나는 달 가운데 가장 이른 달을 못박은 답과
+      같다(그런 달이 없으면 늘 신규 먼저인 답과 같다). 그 앞 늘어나는 달은 모두 못박으면 그 달부터
+      개조가 남는다.
+    - 멈춘 달부터는 신규 · 개조 몫이 0 이고, 달마다 전용(`dedicated`)은 늘 신규 먼저인 답과
+      같으며 쓸 수 있는 가용(`usable`)은 그보다 작지 않고 개조 대수 · 대기는 그보다 크지 않다.
+    - 보유가 없으면(목록에 없는 보유 0 · 고른 호기 없음) 늘 신규 먼저인 답과 모든 값이 같다.
+    """
+    rng = random.Random(20261101)
+    seen = {"first": 0, "later": 0, "later_held_back": 0}
+    for _case in range(600):
+        months, conditions, units = _random_case(rng)
+        result = simulate_constraint(months, conditions, units)
+        plain = _forced(monkeypatch, months, conditions, units, None)
+        growth_months = [row.month for row in plain.months if row.growth > 0]
+        expected: int | None = None
+        for month in growth_months:
+            trial = _forced(monkeypatch, months, conditions, units, month)
+            if not [window for window in trial.windows if window.month >= month]:
+                expected = month
+                break
+        assert result.new_units_stopped_month == expected, (months, conditions, units)
+        reference = (
+            plain if expected is None else _forced(monkeypatch, months, conditions, units, expected)
+        )
+        assert _splits(result) == _splits(reference)
+        assert result.assignments == reference.assignments
+        assert [row.dedicated for row in result.months] == [row.dedicated for row in plain.months]
+        for row, base in zip(result.months, plain.months, strict=True):
+            assert row.usable >= base.usable - 1e-9
+            assert row.waiting <= base.waiting + 1e-9
+        assert (result.kpis.modified_units or 0) <= (plain.kpis.modified_units or 0)
+        if expected is not None:
+            after = [row for row in result.months if row.month >= expected]
+            assert all(row.new_increment == 0 and row.increment == 0 for row in after)
+            assert result.new_units_skipped == (expected == growth_months[0])
+            if result.new_units_skipped:
+                seen["first"] += 1
+            else:
+                seen["later"] += 1
+                seen["later_held_back"] += bool(result.held_back_units)
+        if conditions.owned_units == 0 and not conditions.held_units:
+            assert expected is None
+            assert result == replace(plain, new_units_stopped_month=None)
+    # 하네스가 멈추는 갈래(첫 증가 · 뒤 증가 · 뒤 증가에서 신규를 붙이지 않음)를 실제로 지나는지 —
+    # 표본이 바뀌면 다시 센다.
+    assert seen["first"] >= 100 and seen["later"] >= 20 and seen["later_held_back"] >= 5, seen
 
 
 # ------------------------------------------------------------------ B2 묶음 신규 — 첫 모듈 기준
