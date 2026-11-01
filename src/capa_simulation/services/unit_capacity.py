@@ -483,7 +483,9 @@ def _join_reference(
         result[status_column] = result[status_column].fillna(_VALUE_NO_MATCH).astype("int8")
         return result, check
     result[status_column] = result[status_column].fillna(_VALUE_OK).astype("int8")
-    result[value_column] = result[value_column].fillna(missing_value_default)
+    # 행이 없는 경로만 중립값으로 잇는다. 붙은 칸의 숫자 아님(NaN)은 그대로 둔다 — 그 경로가 다른
+    # 까닭으로 빠지면 제외 목록에 지어낸 1.0 이 아니라 빈 칸으로 보인다.
+    result.loc[unmatched, value_column] = missing_value_default
     if assumed is not None:
         assumed[table_name] = assumed.get(table_name, 0) + int(unmatched.sum())
     if assumed_months is not None and "생산계획년월" in result.columns:

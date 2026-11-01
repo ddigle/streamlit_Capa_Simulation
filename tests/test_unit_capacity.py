@@ -857,6 +857,28 @@ def test_a_non_numeric_value_on_a_dropped_route_does_not_stop(argument: str, col
     assert _check_columns(result.attrs[CAPACITY_EXCLUSIONS_ATTR]) == []
 
 
+@pytest.mark.parametrize("column", ["Lot 측정률", "WF측정률"])
+def test_a_non_numeric_ratio_on_a_dropped_route_is_not_shown_as_the_neutral_value(
+    column: str,
+) -> None:
+    """측정률 행이 없는 다른 경로가 있어도, 빠진 경로의 숫자 아닌 측정률은 제외 목록에 빈 칸이다.
+
+    중립값 1.0 은 행이 없는 경로에만 잇는다 — 「N/A」 를 1.0 으로 보이면 원천에 없던 값을 지어낸다.
+    """
+    argument = "lot_ratio" if column == "Lot 측정률" else "wf_ratio"
+    inputs = _capacity_inputs(["Process-A", "Process-B", "Process-C"])
+    inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0, 100.0])
+    values: list[Any] = [1.0, "N/A", 1.0]
+    inputs[argument] = inputs[argument].assign(**{column: values}).iloc[:2]
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A", "Process-C"]
+    excluded = result.attrs[CAPACITY_EXCLUSIONS_ATTR]
+    assert excluded["공정"].tolist() == ["Process-B"]
+    assert excluded[column].isna().tolist() == [True]
+
+
 def test_a_blank_shared_by_a_dropped_and_a_live_route_still_stops_and_counts_the_live_one() -> None:
     """한 칸을 두 경로가 쓰고 하나라도 남으면 그 칸은 계산이 쓰는 칸이다 — 남은 경로만 센다."""
     inputs = _capacity_inputs(["Process-A", "Process-A"])
