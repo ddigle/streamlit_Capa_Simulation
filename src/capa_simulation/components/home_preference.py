@@ -180,6 +180,16 @@ THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
 # **앞 회차(사용자가 보고 고친 화면)** 의 version 을 대조해야 다른 세션의 먼저 저장을 잡는다.
 THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
 THRESHOLD_FLASH_KEY = "home_threshold_flash"
+# 월별 판정 기준 표 칸 — 소수점을 받아(한 자리) 사사오입한 정수 % 로 보이고 저장한다. 칸의
+# `step` 이 정수면 Glide 숫자 편집기가 소수점 키를 받지 않아 「109.5」 를 친 칸이 1095 가
+# 된다(2026-11-01 E2E). `%.0f` 는 반을 올린다(109.5 → 110) — 저장 검증의
+# 사사오입(`threshold_percent`)과 같은 값이다.
+MONTH_THRESHOLD_STEP = 0.1
+MONTH_THRESHOLD_FORMAT = "%.0f"
+MONTH_THRESHOLD_HELP = (
+    "정수 % 로 넣습니다. 소수를 치면 사사오입한 정수로 보이고 저장합니다(109.5 → 110). 빈칸은 "
+    "기본값을 따릅니다."
+)
 # 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
 # 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
@@ -836,7 +846,8 @@ def render_threshold_editor(
 
     판정 기준은 시나리오와 무관한 공용 정책값이고 **여기 한 곳**에서만 정한다(사이드바 입력은
     없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 **정수 퍼센트**(120)이고
-    저장은 비율(1.2)이다(2026-11-01 사용자 결정 — 옛 저장값 1.095 도 칸에는 110 으로 선다). 판정은
+    저장은 비율(1.2)이다(2026-11-01 사용자 결정 — 옛 저장값 1.095 도 칸에는 110 으로 선다). 월별 표
+    칸은 소수점을 받아 사사오입한 정수로 보이고 그 값으로 저장한다(`MONTH_THRESHOLD_STEP`). 판정은
     확보율을 사사오입한 정수 % 로 견준다(`securement_threshold.meets_threshold`). 저장은 공용 프로필
     교체이며 편집을 시작할 때 본 version 과 대조한다.
 
@@ -938,8 +949,16 @@ def render_threshold_editor(
                         DIMENSION_COLUMN: st.column_config.TextColumn(
                             DIMENSION_COLUMN, width="small"
                         ),
+                        # 칸은 소수점을 받고(`step` 0.1) 사사오입한 정수 % 로 보인다(`%.0f` — 저장도
+                        # 사사오입 정수, `validate_securement_thresholds`). 1 단위 칸(`step=1`)은
+                        # Glide 편집기가 소수점 키를 버려 109.5 가 1095 로 저장됐다(2026-11-01 E2E).
                         **{
-                            label: st.column_config.NumberColumn(label, step=1, format="%d")
+                            label: st.column_config.NumberColumn(
+                                label,
+                                step=MONTH_THRESHOLD_STEP,
+                                format=MONTH_THRESHOLD_FORMAT,
+                                help=MONTH_THRESHOLD_HELP,
+                            )
                             for label in month_labels
                         },
                     },

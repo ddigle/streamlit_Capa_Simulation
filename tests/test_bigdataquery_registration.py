@@ -155,11 +155,83 @@ def test_the_dropped_row_warning_stands_under_the_saved_notice(
     successes = [item.value for item in app.success]
     warned = [item.value for item in app.warning]
     banner = "사내 BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다."
-    assert successes == ([saved, banner] if package_ready else [saved])
-    assert warned[0] == notice and warned.count(notice) == 1
+    # 알림 칸은 저장 단추 바로 아래라 맨 위 설정 띠보다 뒤에 선다.
+    assert successes == ([banner, saved] if package_ready else [saved])
+    assert warned[-1] == notice and warned.count(notice) == 1
     if not package_ready:
-        assert warned[1:] and "bigdataquery 패키지가 없어" in warned[1]
+        assert "bigdataquery 패키지가 없어" in warned[0]
     assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
+
+
+def _drawn_in_order(node: object) -> list[tuple[str, str]]:
+    """화면 차례대로 (요소 종류, 라벨 또는 글) — 블록(칸·폼)은 건너뛰고 그 안을 깊이 우선으로."""
+    drawn: list[tuple[str, str]] = []
+    for child in getattr(node, "children", {}).values():
+        if hasattr(child, "children"):
+            drawn.extend(_drawn_in_order(child))
+            continue
+        text = getattr(child, "label", None) or getattr(child, "value", None)
+        drawn.append((type(child).__name__, text if isinstance(text, str) else ""))
+    return drawn
+
+
+def test_the_saved_notices_stand_right_under_the_save_button(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """저장 결과(성공·대당 Capa 경고 띠)는 누른 「DB 조회 후 시나리오 저장」 바로 아래 칸에 선다
+    (2026-11-01 E2E). 단추가 폼 맨 아래라 탭 맨 위 칸에 그리면 스크롤한 화면(1500×950)에서 두 알림이
+    화면 위 밖이라 저장됐는지도 경고도 보이지 않았다."""
+    from capa_simulation.components.flash import FlashNote
+
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    saved = "「PSM W44」를 저장하고 r1을 올렸습니다."
+    stopped = "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — RQ_RUN_RATE 의 효율이 비었습니다."
+    app = _run(
+        **{
+            registration.REGISTRATION_FLASH_KEY: saved,
+            registration.REGISTRATION_CAPACITY_FLASH_KEY: FlashNote(
+                "warning", stopped, ":material/warning:"
+            ),
+        }
+    )
+
+    drawn = _drawn_in_order(app.main)
+    button = drawn.index(("Button", "DB 조회 후 시나리오 저장"))
+    assert drawn[button + 1 :][:2] == [("Success", saved), ("Warning", stopped)]
+    # 알림 뒤 칸 끝에 칸이 화면 밖일 때만 본문을 옮기는 스크립트가 선다(알림 회차에만).
+    (reveal,) = app.get("html")
+    assert reveal.proto.unsafe_allow_javascript
+    assert "scrollIntoView" in reveal.proto.body and 'block: "nearest"' in reveal.proto.body
+
+    app.run()
+
+    assert not app.get("html")
+    assert saved not in [item.value for item in app.success]
+
+
+def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """저장하지 못한 까닭도 같은 칸(저장 단추 바로 아래)에 서고 그 칸을 화면 안으로 옮기는
+    스크립트가 뒤따른다 — 성공과 실패가 같은 자리에서 답한다(`flash`)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+    app = _run()
+    assert not app.get("html")
+
+    next(button for button in app.button if button.label == "DB 조회 후 시나리오 저장").click()
+    app.run()
+
+    assert not app.exception
+    drawn = _drawn_in_order(app.main)
+    button = drawn.index(("Button", "DB 조회 후 시나리오 저장"))
+    kind, message = drawn[button + 1]
+    assert kind == "Error" and message.startswith("상세 조회 기간을 지정하거나")
+    (reveal,) = app.get("html")
+    assert reveal.proto.unsafe_allow_javascript and "scrollIntoView" in reveal.proto.body
 
 
 CATALOG_FAILURE_SCRIPT = """
