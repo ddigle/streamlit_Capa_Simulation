@@ -582,6 +582,49 @@ def test_the_default_fields_take_a_decimal_point_and_save_the_rounded_whole_perc
     assert profile.default_secure == pytest.approx(1.09)
 
 
+def test_typed_decimals_that_round_to_the_saved_values_are_unchanged_and_the_range_still_refuses(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """소수 칸 사사오입(2026-11-01 밤 답 ③)과 바꾼 것 없는 저장(개선 I5) · 범위 거부(답 ②)가 한
+    편집기에서 함께 선다. 저장본 112 · 100 · 26.02 확보 120 에 111.6 · 100.4 · 119.5 를 치면
+    저장할 정수 % 가 그대로라 쓰지 않고 「바뀐 것이 없습니다」 다. 같은 칸에 범위 밖 1095 를 치면
+    저장하지 않고 그 칸을 적고, 다시 120.4 로 고치면 그대로 「바뀐 것이 없습니다」 다 — 버전은
+    줄곧 v1 이다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _saved_once(database)
+    app = _app(database)
+    assert [widget.value for widget in app.number_input] == [112, 100]
+
+    app.number_input[0].set_value(111.6)
+    app.number_input[1].set_value(100.4)
+    _edit(app, {0: {"26.02": 119.5}})
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not list(app.error), [element.value for element in app.error]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert not app.success
+    assert _threshold_rows_in_db(database) == (1, 1)
+
+    _edit(app, {0: {"26.02": 1095.0}})
+    app = _save(app)
+
+    errors = [element.value for element in app.error]
+    assert len(errors) == 1, errors
+    assert "26.02 확보 기준 1095%" in errors[0] and "50% \\~ 300%" in errors[0], errors
+    assert "저장하지 않았습니다" in errors[0]
+    assert not app.info and not app.success
+    assert _threshold_rows_in_db(database) == (1, 1)
+
+    _edit(app, {0: {"26.02": 120.4}})
+    app = _save(app)
+
+    assert not list(app.error), [element.value for element in app.error]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "처음 저장")
+
+
 def _threshold_rows_in_db(database: Path) -> tuple[int, int]:
     """(헤더 version, 월별 행 수) — 저장소 SQL 그대로 센다(캐시를 거치지 않는다)."""
     import duckdb
