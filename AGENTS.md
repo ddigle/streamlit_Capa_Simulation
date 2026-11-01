@@ -1099,7 +1099,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록을 적는다(`prune_list_selection` 과 같은 까닭 — 선택지 글자에 날짜가 들어 시나리오를 바꾸면 글자가 바뀐다). 콜백
     `follow_held_units(공정)` 이 위젯 값을 정본으로 옮긴다. 공정마다 따로라 공정을 바꿔도 다른 공정의 고름이 남는다. 지금 선택지에
     없는 호기는 정본에서 빼고 (공정, 그 회차 선택지, 뺀 설비키) 를 알림 칸(`CONSTRAINT_HELD_DROPPED_KEY`)에 두어 같은 공정 · 같은
-    선택지인 동안 한 줄로 알리고, 공정·선택지가 바뀌거나 고름을 바꾸면 걷는다(B3-2).
+    선택지인 동안 한 줄로 알리고, 공정·선택지가 바뀌거나 고름을 바꾸면 걷는다(B3-2). 선택지는 조회기간에 하루라도 있는 호기라
+    조회기간을 좁혀 선택지에서 빠진 호기도 같은 길로 빠진다(알림 글은 「지금 설비 시나리오 · 조회기간의 이 공정 목록에 없는」).
+    계획 앞에서 멈추는 갈래의 잠긴 빈 칸은 제 key(`CONSTRAINT_HELD_IDLE_KEY`)로 선다.
   - 시나리오를 바꿔도 조건은 남는다(`scenario_activation._STALE_UI_KEYS` 에 넣지 않는다 — 값이 아니라 가정이다). 공정·제품은
     `prune_choice`, 기간은 `settle_period` 가 맞춘다.
 - `src/capa_simulation/modification_schedule_state.py` — 제약 시뮬레이션 「개조 일정」 모드의 모드 전환 칸(`constraint_sim_mode`)과

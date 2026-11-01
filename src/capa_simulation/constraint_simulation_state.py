@@ -57,6 +57,7 @@ __all__ = [
     "CONSTRAINT_GENERAL_KEY",
     "CONSTRAINT_GENERAL_PILLS_KEY",
     "CONSTRAINT_HELD_DROPPED_KEY",
+    "CONSTRAINT_HELD_IDLE_KEY",
     "CONSTRAINT_HELD_INPUT_KEY",
     "CONSTRAINT_HELD_KEY",
     "CONSTRAINT_LOCKED_ARRIVAL_KEY",
@@ -122,10 +123,11 @@ CONSTRAINT_MODIFY_KEY: Final = "constraint_sim_modify"
 CONSTRAINT_OWNED_KEY: Final = "constraint_sim_owned_units"
 CONSTRAINT_NEW_UNITS_KEY: Final = "constraint_sim_new_units"
 CONSTRAINT_NEW_SINCE_KEY: Final = "constraint_sim_new_since"
-# 보유 「호기 고르기」 — 정본(위젯 아님, `{공정: [설비키, …]}`)과 multiselect 칸, 빠진 호기
-# 알림(위젯 아님 — (공정, 그 회차 선택지, 뺀 설비키)).
+# 보유 「호기 고르기」 — 정본(위젯 아님, `{공정: [설비키, …]}`)과 multiselect 칸, 계획 앞에서 멈추는
+# 갈래의 잠긴 빈 칸, 빠진 호기 알림(위젯 아님 — (공정, 그 회차 선택지, 뺀 설비키)).
 CONSTRAINT_HELD_KEY: Final = "constraint_sim_held_units"
 CONSTRAINT_HELD_INPUT_KEY: Final = "constraint_sim_held_units_input"
+CONSTRAINT_HELD_IDLE_KEY: Final = "constraint_sim_held_units_idle"
 CONSTRAINT_HELD_DROPPED_KEY: Final = "constraint_sim_held_dropped"
 # 본문 보기 전환(프래그먼트 안) — 하위 보기 전환은 본문이다(AGENTS 9장).
 CONSTRAINT_PROPORTIONAL_KEY: Final = "constraint_sim_proportional"

@@ -97,6 +97,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
+    CONSTRAINT_HELD_IDLE_KEY,
     CONSTRAINT_HELD_INPUT_KEY,
     CONSTRAINT_LOCKED_ARRIVAL_KEY,
     CONSTRAINT_MOD_DAYS_INPUT_KEY,
@@ -217,7 +218,7 @@ HELD_HELP = (
     "(이미 쓴 몫은 풀지 않습니다). 제약 몫이 늘 때 그날 붙일 수 있는 신규 설비 다음으로 써 "
     "그만큼 개조하지 않고, 보유만으로 제약 기간 끝까지 덮이면 신규를 붙이지 않습니다. 쓰지 "
     "않는 동안과 기간 밖에는 기존 제품에 씁니다. 고른 호기는 신규 후보에서 빠집니다(두 번 "
-    "세지 않습니다). 설비 시나리오를 바꿔 없는 호기는 빼고 알립니다."
+    "세지 않습니다). 설비 시나리오나 조회기간을 바꿔 목록에서 사라진 호기는 빼고 알립니다."
 )
 HELD_IDLE_PLACEHOLDER = "설비 일정이 서는 공정에서 고릅니다"
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
@@ -647,6 +648,7 @@ def render_idle_held_picker() -> None:
         st.multiselect(
             HELD_LABEL,
             [],
+            key=CONSTRAINT_HELD_IDLE_KEY,
             disabled=True,
             placeholder=HELD_IDLE_PLACEHOLDER,
             help=HELD_HELP,
@@ -673,7 +675,7 @@ def render_held_picker(
         names = ", ".join(literal_markdown(name) for name in settled.dropped[:4])
         more = f" 외 {len(settled.dropped) - 4}대" if len(settled.dropped) > 4 else ""
         notices.info(
-            f"고른 보유 제약 호기 가운데 지금 설비 시나리오의 이 공정 목록에 없는 "
+            f"고른 보유 제약 호기 가운데 지금 설비 시나리오 · 조회기간의 이 공정 목록에 없는 "
             f"{len(settled.dropped)}대({names}{more})를 뺐습니다.",
             icon=":material/playlist_remove:",
         )
