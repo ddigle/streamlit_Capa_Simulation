@@ -994,6 +994,9 @@ def render_threshold_editor(
                 # 않는다(write_guard.held_notice).
                 if held_notice(THRESHOLD_FLASH_KEY) is None:
                     notice.info(THRESHOLD_UNCHANGED_MESSAGE, icon=":material/info:")
+                # 쓰지 않아 다시 돌지 않는 회차다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖
+                # 월별 기준 줄도 그린다(빠지면 「그대로」 알림 옆에서 숨은 달 안내만 사라진다).
+                _render_threshold_out_of_range_notice(months, threshold_profile)
                 return
             _save_thresholds(
                 database_path,

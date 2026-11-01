@@ -4919,9 +4919,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     고정한다. 사이드바 「신규 리비전 저장」 은 저장소가 쓰기 잠금 안에서 견준다(`save_revision(..., skip_unchanged=True)` →
     `RevisionUnchanged`, 5장 8 · 3장 `repository.py`). 설비 시나리오 「이름 바꾸기」·「리비전명 저장」 은 저장소가 이미 같은
     이름이면 쓰지 않았는데 화면이 성공을 띄웠다 — 이제 단추 아래 「바뀐 것이 없습니다」 를 적고 제 저장 짝도 적지 않는다
-    (`save_remembered` 의 `stored` 가 None). 다섯 자리 모두 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에 닿은 느린 둘째
-    누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과 같은 꼴 —
-    프로필 둘은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 붙여넣기 길(표시순서·Proc
+    (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 네 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
+    닿은 느린 둘째 누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과
+    같은 꼴 — 프로필 둘은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 사이드바 저장은
+    성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 판정 기준의 「바뀐 것이 없습니다」 회차도 조회기간 밖 월별
+    기준 줄(`_render_threshold_out_of_range_notice`)은 그대로 그린다 — 누르지 않은 회차와 같은 화면에 알림만 더한다. 붙여넣기 길(표시순서·Proc
     Rename)은 전부터 「현재 공용 설정과 동일합니다」 로 거절한다. 시험: `tests/test_admin_area_page.py`·
     `tests/test_threshold_editor.py`·`tests/test_revision_save_unchanged.py`·`tests/test_scenario_sidebar.py`·
     `tests/test_scenario_management_page.py`·`tests/test_equipment_scenario_unchanged_names.py`.

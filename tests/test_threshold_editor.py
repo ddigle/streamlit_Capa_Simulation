@@ -430,3 +430,28 @@ def test_a_slow_second_press_of_save_repeats_the_success(
     assert not app.info and not app.error, [element.value for element in app.info]
     assert [element.value for element in app.success] == [THRESHOLD_SAVED_MESSAGE]
     assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 2
+
+
+def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않는다 — 누르지 않은 회차와 같은 화면이게
+    조회기간 밖 월별 기준 줄도 그대로 선다(개선 I5)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.095,
+        0.995,
+        pd.DataFrame({"생산계획년월": [202612], "확보 기준": [1.3], "경고 기준": [None]}),
+        source="12월 예외",
+        expected_version=0,
+    )
+    app = _app(database)
+    assert any("조회기간 밖" in caption.value for caption in app.caption)
+
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "12월 예외")
