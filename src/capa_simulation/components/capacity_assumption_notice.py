@@ -22,6 +22,7 @@ from collections.abc import Mapping, Sequence
 
 import streamlit as st
 
+from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.unit_capacity import CapacityAssumptions
 
 # 표 이름을 화면 라벨로. 사용자가 여는 탭 이름과 같아야 어디를 고칠지 바로 안다.
@@ -65,7 +66,7 @@ def assumption_message(
 
 def _month_list(months: Sequence[int], limit: int = MONTH_LIST_LIMIT) -> str:
     """앞 몇 달만 적고 나머지는 개수로 줄인다. 달이 많으면 문장이 표가 된다."""
-    shown = ", ".join(f"{month // 100}-{month % 100:02d}" for month in months[:limit])
+    shown = ", ".join(iso_month_text(month) for month in months[:limit])
     rest = len(months) - limit
     return f"{shown} 외 {rest}개월" if rest > 0 else shown
 

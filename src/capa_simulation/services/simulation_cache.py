@@ -58,6 +58,7 @@ from capa_simulation.services.manual_downtime import (
     manual_downtime_key,
     manual_rows_for_process,
 )
+from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
@@ -1731,15 +1732,11 @@ def outside_period_error(start_month: int, end_month: int, error: str) -> str:
     못 박으면 수율 오류문이 가리키는 곳(생산 계획 → 수율 탭)과 어긋난다(2026-09-29 리뷰).
     """
     return (
-        f"조회기간({_month_text(start_month)}~{_month_text(end_month)}) 밖의 달에 기준정보 "
+        f"조회기간({iso_month_text(start_month)}~{iso_month_text(end_month)}) 밖의 달에 기준정보 "
         "오류가 있어 계산을 멈췄습니다. Capa 는 시나리오 전체 기간을 한 번에 계산하므로 어느 "
         "달이든 고쳐야 풀립니다 — 오류가 가리키는 화면(수율·PKG PLAN 은 생산 계획, 그 밖은 기준 "
         f"정보 페이지)에서 고친 뒤 새 리비전으로 저장하세요. 오류: {error}"
     )
-
-
-def _month_text(month: int) -> str:
-    return f"{month // 100}-{month % 100:02d}"
 
 
 def slice_capacity_months(frame: pd.DataFrame, start_month: int, end_month: int) -> pd.DataFrame:

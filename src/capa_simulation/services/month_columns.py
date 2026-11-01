@@ -1,4 +1,4 @@
-# Purpose: 조회 월 축에 완전한 해의 연간 Total 열을 끼워 넣는 규칙을 정의한다.
+# Purpose: 월 표기 두 꼴과, 조회 월 축에 완전한 해의 연간 Total 열을 끼우는 규칙을 정의한다.
 
 """월 축과 연간 Total 열.
 
@@ -19,6 +19,15 @@ FULL_YEAR_MONTH_COUNT = 12
 def month_label(month: int) -> str:
     """차트 월 칸 표기 `YY.MM`. 월 축을 만드는 모든 곳이 같은 함수를 써야 한다."""
     return f"{month // 100 % 100:02d}.{month % 100:02d}"
+
+
+def iso_month_text(month: int) -> str:
+    """글 속 달 `YYYY-MM`(문장·풍선·표 칸의 「2026-11」). 빈 달(None)은 부르는 쪽이 거른다.
+
+    해는 자리를 채우지 않는다 — 네 자리로 채우는 `settings.format_month` 와는 1000년 앞
+    달에서만 갈린다.
+    """
+    return f"{month // 100}-{month % 100:02d}"
 
 
 def year_total_label(year: int) -> str:
