@@ -1,0 +1,115 @@
+# Purpose: Admin Area 탭 위에 사내 모듈 찾기 결과와 마지막 오류를 펼침으로 보인다(모듈 없으면 없음).
+
+"""Admin Area 「사내 모듈 상태」.
+
+모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off` · 시험 기본값) 아무것도 그리지 않는다 — Admin
+화면이 사외와 같다. DB 를 열지 않는다 — 회차마다 캐시된 찾기 결과(`navigation.module_scan`)와 실행
+기록(`module_failures`)만 읽는다. 표는 평문 칸이라 사람이 지은 이름을 그대로 싣고, 캡션의 값은
+`literal_markdown` 으로 싣는다.
+"""
+
+from __future__ import annotations
+
+import os
+
+import pandas as pd
+import streamlit as st
+
+from capa_simulation import module_failures
+from capa_simulation.components.literal_markdown import literal_markdown, literal_names
+from capa_simulation.module_registry import (
+    DISABLED_ENV_VAR,
+    MATURITY_LABELS,
+    ROOT_ENV_VAR,
+    STATE_LABELS,
+    ModuleScan,
+)
+from capa_simulation.navigation import module_scan
+from capa_simulation.sidebar_status import remembered_expander
+
+# 펼침 key — 탭 묶음 위에 서므로 자리를 key 로 고정하고, 편 상태는 기억 칸에 둔다(「서버 시작 점검」
+# 과 같은 꼴).
+EXPANDER_KEY = "admin_area_module_status"
+RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄운 뒤 보입니다."
+COLUMNS = (
+    "모듈",
+    "화면 이름",
+    "상태",
+    "까닭",
+    "성숙도",
+    "담당",
+    "API",
+    "화면",
+    "마지막 오류",
+    "마지막 회차 시간",
+    "접두 없는 키",
+    "빠진 화면",
+)
+
+
+def status_title(scan: ModuleScan) -> str:
+    counts = {state: 0 for state in STATE_LABELS}
+    for record in scan.records:
+        counts[record.state] += 1
+    return f"사내 모듈 상태 — 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
+
+
+def build_status_table(scan: ModuleScan) -> pd.DataFrame:
+    """모듈마다 한 줄 — 찾기 결과와 실행 기록(마지막 오류·회차 시간·접두 없는 키·빠진 화면)."""
+    failures = module_failures.last_failures()
+    seconds = module_failures.last_run_seconds()
+    warnings = module_failures.key_warnings()
+    excluded = module_failures.excluded_pages()
+    rows = []
+    for record in scan.records:
+        manifest = record.manifest
+        module_id = record.folder_name
+        failure = failures.get(module_id)
+        rows.append(
+            (
+                module_id,
+                "" if manifest is None else manifest.name,
+                STATE_LABELS[record.state],
+                record.reason,
+                "" if manifest is None else MATURITY_LABELS.get(manifest.maturity, ""),
+                "" if manifest is None else manifest.owner,
+                "" if manifest is None else f"{manifest.api}.{manifest.api_minor}",
+                0 if manifest is None else len(manifest.pages),
+                ""
+                if failure is None
+                else " · ".join(
+                    part for part in (failure.at, failure.kind, failure.where, failure.page) if part
+                ),
+                "" if module_id not in seconds else f"{seconds[module_id]:.2f}",
+                len(warnings.get(module_id, ())),
+                sum(1 for owner, _ in excluded if owner == module_id),
+            )
+        )
+    return pd.DataFrame(rows, columns=list(COLUMNS))
+
+
+def environment_caption(scan: ModuleScan) -> str:
+    """끄는 스위치·뿌리 환경변수의 지금 값(id 만 담는다)과 폴더가 없는 끈 id."""
+    parts = []
+    root_value = os.environ.get(ROOT_ENV_VAR, "").strip()
+    if root_value:
+        parts.append(f"`{ROOT_ENV_VAR}` {literal_markdown(root_value)}")
+    disabled = scan.disabled_value.strip()
+    parts.append(f"`{DISABLED_ENV_VAR}` {literal_markdown(disabled) if disabled else '없음'}")
+    if scan.unknown_disabled:
+        parts.append(f"폴더가 없는 끈 id {literal_names(scan.unknown_disabled)}")
+    return " · ".join(parts)
+
+
+def render_module_status() -> None:
+    """모듈 기록이 있거나 뿌리를 못 읽었을 때만 펼침을 그린다."""
+    scan = module_scan()
+    if not scan.records and not scan.root_error:
+        return
+    with remembered_expander(status_title(scan), icon=":material/extension:", key=EXPANDER_KEY):
+        if scan.root_error:
+            st.warning(literal_markdown(scan.root_error))
+        if scan.records:
+            st.dataframe(build_status_table(scan), hide_index=True, width="stretch")
+        st.caption(environment_caption(scan))
+        st.caption(RESTART_NOTICE)

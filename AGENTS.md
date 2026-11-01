@@ -198,7 +198,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app.py` — 유일한 실행 진입점. 공식 시나리오 부트스트랩·공통 사이드바·조회기간을 세우고 페이지를 돌린다.
   - 차례 「입장 화면(`intro_overlay.py`) → 껍데기 스타일 → 서체 → 툴바 → 부트스트랩(최신 공식 리비전 활성화) →
     자동 갱신 예약 → 요약(`intro_summary.py`) → 올라온 시나리오 최신 확인(`check_active_scenario_latest`) → 사이드바 → 조건
-    팝업 칸 → 화면 탭 줄 → 페이지」는 `test_app_navigation.py`·
+    팝업 칸 → 화면 탭 줄 → 페이지(모듈 화면이면 `module_runtime.run_module_page` 로 돈다)」는 `test_app_navigation.py`·
     `test_page_tabs.py` 가 지킨다. 페이지가 `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘
     `static/icons/capa_mark.svg` 는 `test_settings.py` 가 본다.
   - 화면 탭 줄(`components/page_tabs.py`, 상태 `page_tabs_state.py`)의 훅은 세 자리다 — (a) `st.navigation()` 바로 뒤
@@ -567,6 +567,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 편 상태는 기억 칸(`remembered_expander`)이라
     다른 화면에 다녀와도 접히지 않는다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
+- `app_pages/internal_modules.py` — 사이드바 「사내 모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다).
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
   - 계산에 닿지 않는다 — 시나리오·조회기간을 읽지 않고 `load_page_context()` 를 부르지 않는다.
   - 본문·답글은 `st.text` 로 그리고 게시판 읽기는 캐시하지 않는다. 폼은 `clear_on_submit` 없이 콜백이 성공한
@@ -908,6 +909,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
+- `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「사내 모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
+- `src/capa_simulation/components/module_failure_card.py` — 사내 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 두 제외 표를 그리는 단일 렌더러다. 화면은
   표시명 복사본, CSV 는 원본이고, 캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다.
 - `src/capa_simulation/components/exclusion_waterfall.py` — 후보 경로 → 사유별 차감 → 남은 경로 워터폴(단위는 경로
@@ -1473,6 +1476,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     라벨(바깥 `EQUIPMENT_TABS`·Summary 안쪽 `EQUIPMENT_SUMMARY_TABS`)도 사이드바가 열린 탭을 보므로 여기 둔다. 안쪽 탭을
     품은 바깥 탭은 `ConditionTabs.sub`(`SubTabs`)로 적고, 사이드바는 `ConditionTabs.active_label`(위젯 값 → 기억 칸 → 첫
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
+- `src/capa_simulation/module_registry.py` — 사내 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). 점검 스크립트(TOOLS)가 같은 검증을 쓴다.
+- `src/capa_simulation/module_api.py` — 사내 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
+- `src/capa_simulation/module_failures.py` — 사내 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
+- `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
   조회기간과 원천 유효 구간 확정)다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
   - 잡은 예외의 화면 문구는 `bootstrap_error_message` 한 곳이다. `duckdb.Error` 는 갈래마다 조치를 바꾼다 — 쥔 PID 가

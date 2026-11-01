@@ -9,6 +9,9 @@
   `st.switch_page` 에 그대로 넘긴다. 사이드바·HOME 칸·카드 링크·뒤로가기·주소 직접 입력, 어느
   길로 화면에 들어와도 `app.py` 가 매 회차 그 화면을 목록에 더한다(`note_current_page`). 새 탭은
   끝에 붙는다.
+- **사내 모듈 화면도 탭이다.** 탭 id 는 그 화면 파일의 저장소 상대 경로(`modules/<id>/page.py` —
+  서버 경로가 브라우저로 나가지 않는다)이고, 탭이 될 수 있는 화면은 실행 때 찾은 선언
+  (`navigation.runtime_specs` — `valid_tabs`·`spec_for_path`)이다.
 - **고정.** HOME 은 고정 탭으로 시작한다. 어느 탭이든 고정·고정 풀기가 되고, 고정 탭은 왼쪽에
   모이며 닫기가 없다. 고정을 풀면 닫을 수 있다. 마지막 남은 탭 하나는 닫지 않는다.
 - **상한 10개.** 열린 탭이 10개일 때 목록에 없는 화면은 열지 않고 탭 줄에 「안 쓰는 탭을 닫아
@@ -37,7 +40,7 @@ import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 
 from capa_simulation.design.theme import THEME_QUERY_PARAM
-from capa_simulation.navigation import ALL_SPECS, HOME, IMPLEMENTING_SUFFIX, PageSpec
+from capa_simulation.navigation import HOME, IMPLEMENTING_SUFFIX, PageSpec, runtime_specs
 
 # 연 탭(보이는 차례, `PageSpec.path`)과 그 가운데 고정한 탭. 둘 다 글자 튜플이다 — 코드를 다시 읽은
 # 서버에서도 세션 값이 그대로 읽히게 클래스를 세션에 두지 않는다.
@@ -61,8 +64,6 @@ PAGE_TABS_COMPONENT_KEY = "page_tabs_strip"
 
 HOME_TAB: Final = HOME.path
 MAX_TABS: Final = 10
-VALID_TABS: Final = frozenset(spec.path for spec in ALL_SPECS)
-_SPECS: Final = {spec.path: spec for spec in ALL_SPECS}
 _IMPLEMENTING: Final = f" {IMPLEMENTING_SUFFIX}"
 # 상한 알림 글. 탭 줄 JS 도 같은 틀로 그 자리에서 알린다(`components/page_tabs.TEXT["limit"]`).
 # 화면 이름은 JS 도 채우므로 조사는 고정 명사 「화면」 에 붙인다(AGENTS 8장).
@@ -88,22 +89,48 @@ class TabStrip:
 
 INITIAL_STRIP: Final = TabStrip((HOME_TAB,), frozenset({HOME_TAB}))
 
+# 탭이 될 수 있는 화면 — 코어 선언과 켜진 사내 모듈 화면(`navigation.runtime_specs`). 모듈은 실행 때
+# 찾으므로 import 때 굳히지 않는다. 같은 선언 튜플이면 다시 짓지 않는다(키는 객체 동일성).
+_TAB_INDEX: list[tuple[tuple[PageSpec, ...], frozenset[str], dict[str, PageSpec]]] = []
+
+
+def _tab_index() -> tuple[frozenset[str], dict[str, PageSpec]]:
+    specs = runtime_specs()
+    cached = _TAB_INDEX[0] if _TAB_INDEX else None
+    if cached is not None and cached[0] is specs:
+        return cached[1], cached[2]
+    paths = frozenset(spec.path for spec in specs)
+    by_path = {spec.path: spec for spec in specs}
+    _TAB_INDEX[:] = [(specs, paths, by_path)]
+    return paths, by_path
+
+
+def valid_tabs() -> frozenset[str]:
+    """탭 id(`PageSpec.path`) 전부 — 코어 화면과 켜진 사내 모듈 화면(재시작까지 뺀 화면 제외)."""
+    return _tab_index()[0]
+
+
+def spec_for_path(path: str) -> PageSpec | None:
+    """탭 id 의 선언. 모르는 id 면 None."""
+    return _tab_index()[1].get(path)
+
 
 def tab_label(spec: PageSpec) -> str:
     """탭 이름 — 사이드바 라벨에서 「(구현중)」만 뗀 글. 배지는 본문 머리말에 남는다."""
     return spec.title.removesuffix(_IMPLEMENTING)
 
 
-def normalized(strip: TabStrip, valid: Collection[str] = VALID_TABS) -> TabStrip:
+def normalized(strip: TabStrip, valid: Collection[str] | None = None) -> TabStrip:
     """모르는 path·겹침을 걷고 고정 탭을 왼쪽에 모은다. 고정 탭끼리·나머지끼리의 차례는 그대로다.
 
     고정하면 그 탭은 고정 묶음의 끝으로, 풀면 나머지 묶음의 앞으로 간다 — 고정 탭이 늘 왼쪽에
     있으므로 차례를 지키며 모으는 것만으로 브라우저 탭과 같은 자리가 된다.
     """
+    allowed = valid_tabs() if valid is None else valid
     seen: set[str] = set()
     paths: list[str] = []
     for path in strip.paths:
-        if path in valid and path not in seen:
+        if path in allowed and path not in seen:
             seen.add(path)
             paths.append(path)
     pinned = frozenset(path for path in strip.pinned if path in seen)
@@ -119,11 +146,12 @@ def can_open(strip: TabStrip, path: str) -> bool:
     return path in strip.paths or len(strip.paths) < MAX_TABS
 
 
-def opened(strip: TabStrip, path: str, valid: Collection[str] = VALID_TABS) -> TabStrip:
+def opened(strip: TabStrip, path: str, valid: Collection[str] | None = None) -> TabStrip:
     """없으면 끝에 붙인다. 이미 있으면 차례 그대로다. 모르는 path·상한에 걸리면 그대로 돌려준다."""
-    if path not in valid or not can_open(strip, path) or path in strip.paths:
-        return normalized(strip, valid)
-    return normalized(TabStrip((*strip.paths, path), strip.pinned), valid)
+    allowed = valid_tabs() if valid is None else valid
+    if path not in allowed or not can_open(strip, path) or path in strip.paths:
+        return normalized(strip, allowed)
+    return normalized(TabStrip((*strip.paths, path), strip.pinned), allowed)
 
 
 def closed(strip: TabStrip, path: str, active: str | None) -> tuple[TabStrip, str | None]:
@@ -271,7 +299,7 @@ def refused_at_tab_limit(path: str) -> bool:
     """
     if not _at_limit(load_strip(), path):
         return False
-    spec = _SPECS.get(path)
+    spec = spec_for_path(path)
     _post_notice(limit_notice(path if spec is None else tab_label(spec)))
     st.rerun()
     return True
@@ -319,7 +347,7 @@ def switch_to_queued_tab(
     target = st.session_state.pop(PAGE_TABS_QUEUED_KEY, None)
     if current_path is None:
         return
-    if isinstance(target, str) and target != current_path and target in VALID_TABS:
+    if isinstance(target, str) and target != current_path and target in valid_tabs():
         _switch(target)
         return
     strip = load_strip()

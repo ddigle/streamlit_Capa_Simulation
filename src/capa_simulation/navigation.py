@@ -10,11 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Final, Literal
 
 import streamlit as st
 
+from capa_simulation import module_failures, module_registry, settings
 from capa_simulation.components.tab_state import remembered_tab_key
+from capa_simulation.module_registry import ModuleScan
 
 # 실적 DB 연결과 운영 기준 확정 전인 화면에 붙인다. 이전에는 사이드바에만
 # `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 표기가 섞여 있었고 페이지 본문 제목과도
@@ -133,6 +136,9 @@ class PageSpec:
     # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(설비 데이터를 읽지 않는 탭이 있는
     # 화면만 적는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
     equipment_scenario_tabs: frozenset[str] | None = None
+    # 사내 모듈 화면이면 그 모듈 id(`modules/<id>/` — 실행 때 `module_page_specs` 가 만든다). 코어
+    # 화면은 None 이다.
+    module: str | None = None
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
         """지금 열린 탭(`None` 은 탭을 가르지 않는 화면)에서 이 화면이 공통 조건을 읽는가."""
@@ -407,6 +413,20 @@ WIP_STATUS = PageSpec(
 )
 DYNAMIC_CAPA_SUBPAGES = (WIP_STATUS,)
 
+# 사내 모듈(모델 2 — 2026-11-01 사용자 결정) 색인 화면. 코어 화면이라 **늘 등록**하고(주소로는
+# 열린다), 사이드바에는 켜진 모듈이 있을 때만 별도 상자 「사내 모듈」 의 머리로
+# 선다(`build_navigation_pages`). 상자는 `SIDEBAR_GROUPS` 밖이다 — 실행 때 `modules/*/module.json`
+# 을 읽어 더하는 그룹이다.
+INTERNAL_MODULES = PageSpec(
+    "app_pages/internal_modules.py",
+    "사내 모듈",
+    ":material/extension:",
+    reads_scenario=False,
+    reads_period=False,
+)
+# 모듈 상자의 slug — 상자 key `internal_modules_box`, CSS 는 `build_sidebar_stylesheet` 가 낸다.
+MODULE_GROUP_SLUG: Final = "internal_modules"
+
 # 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다.
 # 공정 목록과 원천 품질이 활성 시나리오를 읽는다. 조회기간은 읽지 않는다.
 ADMIN_AREA = PageSpec(
@@ -477,9 +497,94 @@ SIDEBAR_SECTIONS: tuple[SidebarSectionSpec, ...] = (CONDITIONS_SECTION,)
 ALL_SPECS: tuple[PageSpec, ...] = (
     HOME,
     *(spec for group in SIDEBAR_GROUPS for spec in (group.main, *group.subpages)),
+    INTERNAL_MODULES,
     ADMIN_AREA,
     *ADMIN_BOX_PAGES,
 )
+_IMPLEMENTING_TAIL: Final = f" {IMPLEMENTING_SUFFIX}"
+# 모듈 화면이 쓸 수 없는 이름 — 코어 화면 이름에서 「(구현중)」 을 뗀 것.
+_CORE_PAGE_TITLES: Final = tuple(spec.title.removesuffix(_IMPLEMENTING_TAIL) for spec in ALL_SPECS)
+
+
+def core_page_titles() -> tuple[str, ...]:
+    """코어 화면 이름(「(구현중)」 뗀 것). 모듈 화면 이름이 이것과 겹치면 그 모듈이 실패한다."""
+    return _CORE_PAGE_TITLES
+
+
+def module_scan() -> ModuleScan:
+    """사내 모듈 찾기 결과 — 색인·Admin·탭 줄이 모두 이것만 부른다(같은 프로세스 캐시 칸)."""
+    return module_registry.discovered(reserved_titles=_CORE_PAGE_TITLES)
+
+
+def _tab_path(path: Path) -> str:
+    """탭 id·`st.Page` 대상 — 저장소 안이면 저장소 상대 POSIX 경로, 밖(시험 tmp 뿌리)이면 절대 경로.
+
+    탭 줄 data(`tabs[].id`)는 브라우저로 나간다. 서버 경로(사내 Windows 는 사용자 프로필 폴더 =
+    계정 이름)를 싣지 않는다. `st.Page`·`st.switch_page` 는 상대 경로를 주 스크립트 폴더 기준으로
+    푼다.
+    """
+    try:
+        return path.relative_to(settings.PROJECT_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _specs_for(scan: ModuleScan, excluded: frozenset[tuple[str, str]]) -> tuple[PageSpec, ...]:
+    specs: list[PageSpec] = []
+    for record in scan.active:
+        manifest = record.manifest
+        if manifest is None:
+            continue
+        tail = (
+            _IMPLEMENTING_TAIL if manifest.maturity in module_registry.IMPLEMENTING_LEVELS else ""
+        )
+        specs.extend(
+            PageSpec(
+                path=_tab_path(record.path / page.file),
+                title=page.title + tail,
+                icon=page.icon,
+                url_path=module_registry.page_url_path(manifest.id, page.slug),
+                reads_scenario=False,
+                reads_period=False,
+                module=manifest.id,
+            )
+            for page in manifest.pages
+            if (manifest.id, page.slug) not in excluded
+        )
+    return tuple(specs)
+
+
+# (scan, 제외 집합) → 모듈 화면 선언, 그리고 그 선언 → 탭 줄 선언 전체. 회차마다 여러 번 불려도 같은
+# 튜플을 돌려준다 — scan 은 프로세스 캐시라 객체가 같으면 내용도 같다(키는 객체 동일성).
+_MODULE_SPECS: list[tuple[ModuleScan, frozenset[tuple[str, str]], tuple[PageSpec, ...]]] = []
+_RUNTIME_SPECS: list[tuple[tuple[PageSpec, ...], tuple[PageSpec, ...]]] = []
+
+
+def module_page_specs() -> tuple[PageSpec, ...]:
+    """켜진 사내 모듈의 화면 선언(재시작까지 뺀 화면 — `excluded_pages` — 은 없다)."""
+    scan = module_scan()
+    if not scan.active:
+        return ()
+    excluded = module_failures.excluded_pages()
+    cached = _MODULE_SPECS[0] if _MODULE_SPECS else None
+    if cached is not None and cached[0] is scan and cached[1] == excluded:
+        return cached[2]
+    specs = _specs_for(scan, excluded)
+    _MODULE_SPECS[:] = [(scan, excluded, specs)]
+    return specs
+
+
+def runtime_specs() -> tuple[PageSpec, ...]:
+    """코어 선언(`ALL_SPECS`)과 켜진 모듈 화면 — 탭 줄이 쓴다. 같은 모듈 선언이면 같은 튜플이다."""
+    modules = module_page_specs()
+    if not modules:
+        return ALL_SPECS
+    cached = _RUNTIME_SPECS[0] if _RUNTIME_SPECS else None
+    if cached is not None and cached[0] is modules:
+        return cached[1]
+    specs = (*ALL_SPECS, *modules)
+    _RUNTIME_SPECS[:] = [(modules, specs)]
+    return specs
 
 
 @dataclass(frozen=True)
@@ -502,6 +607,9 @@ class NavigationPages:
     admin_box_pages: tuple[st.Page, ...]
     # 페이지와 그 선언의 짝. `app.py` 가 지금 화면이 읽는 공통 조건을 여기서 찾는다.
     specs: tuple[tuple[st.Page, PageSpec], ...] = ()
+    # 사내 모듈 색인 화면. 켜진 모듈이 있으면 `groups` 끝 모듈 상자의 머리이고, 없으면 상자 없이
+    # 등록만 된다(주소로는 열린다).
+    internal_modules: st.Page | None = None
 
     def spec_for(self, url_path: str) -> PageSpec | None:
         """주소로 선언을 찾는다. **`st.navigation()` 이 돈 뒤에만** 부른다.
@@ -514,28 +622,65 @@ class NavigationPages:
     @property
     def ordered(self) -> list[st.Page]:
         """`st.navigation`에 넘길 전체 페이지를 사이드바 표시 순서로 돌려준다."""
-        return [
-            self.home,
-            *(page for group in self.groups for page in (group.main, *group.subpages)),
-            self.admin_area,
-            *self.admin_box_pages,
-        ]
+        grouped = [page for group in self.groups for page in (group.main, *group.subpages)]
+        # 색인 화면은 언제나 정확히 한 번 든다 — 모듈 상자의 머리이거나, 모듈이 없으면 그 자리에
+        # 홀로.
+        loose = (
+            [self.internal_modules]
+            if self.internal_modules is not None
+            and not any(page is self.internal_modules for page in grouped)
+            else []
+        )
+        return [self.home, *grouped, *loose, self.admin_area, *self.admin_box_pages]
+
+
+def _module_pages() -> list[tuple[st.Page, PageSpec]]:
+    """켜진 모듈 화면의 `st.Page`. 만들다 실패한 화면은 재시작까지 빼고 이번 회차에도 넣지 않는다.
+
+    `st.Page` 는 회차마다 파일이 있는지 본다 — `git pull`·편집 중 잠깐 없을 때도 실패한다.
+    결정적이지 않은 실패를 회차마다 들락거리게 두면 사이드바 요소 수가 바뀌어 흐린 사본이 생기고,
+    탭은 남는데 누르면 아무 일이 없다. 뺀 화면은 `runtime_specs()` 에서도 빠져 탭 목록과 등록이 늘
+    같다.
+    """
+    pairs: list[tuple[st.Page, PageSpec]] = []
+    for spec in module_page_specs():
+        try:
+            pairs.append((spec.to_page(), spec))
+        except Exception as error:  # 한 모듈 화면의 등록 실패가 앱을 깨지 않는다
+            module_id = spec.module or ""
+            slug = (spec.url_path or "").removeprefix(f"mod-{module_id}-")
+            module_failures.exclude_page(module_id, slug, type(error).__name__)
+            module_failures.record_failure(
+                module_id, page=slug, kind=type(error).__name__, where="load"
+            )
+    return pairs
 
 
 def build_navigation_pages() -> NavigationPages:
-    """선언을 실제 `st.Page` 객체로 만든다."""
+    """선언을 실제 `st.Page` 객체로 만든다. 켜진 사내 모듈이 있으면 모듈 상자를 끝에 더한다."""
     pages: dict[PageSpec, st.Page] = {spec: spec.to_page() for spec in ALL_SPECS}
+    groups = [
+        SidebarGroup(
+            slug=group.slug,
+            main=pages[group.main],
+            subpages=tuple(pages[spec] for spec in group.subpages),
+        )
+        for group in SIDEBAR_GROUPS
+    ]
+    module_pairs = _module_pages()
+    if module_pairs:
+        groups.append(
+            SidebarGroup(
+                slug=MODULE_GROUP_SLUG,
+                main=pages[INTERNAL_MODULES],
+                subpages=tuple(page for page, _ in module_pairs),
+            )
+        )
     return NavigationPages(
         home=pages[HOME],
-        groups=tuple(
-            SidebarGroup(
-                slug=group.slug,
-                main=pages[group.main],
-                subpages=tuple(pages[spec] for spec in group.subpages),
-            )
-            for group in SIDEBAR_GROUPS
-        ),
+        groups=tuple(groups),
         admin_area=pages[ADMIN_AREA],
         admin_box_pages=tuple(pages[spec] for spec in ADMIN_BOX_PAGES),
-        specs=tuple((page, spec) for spec, page in pages.items()),
+        specs=(*((page, spec) for spec, page in pages.items()), *module_pairs),
+        internal_modules=pages[INTERNAL_MODULES],
     )

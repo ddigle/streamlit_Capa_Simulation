@@ -1,0 +1,11 @@
+{
+  "id": "demo_off",
+  "name": "데모 꺼짐",
+  "api": 1,
+  "owner": "데모 담당",
+  "enabled": false,
+  "maturity": "L0",
+  "pages": [
+    {"slug": "main", "file": "demo_off_page.py", "title": "꺼진 데모"}
+  ]
+}
