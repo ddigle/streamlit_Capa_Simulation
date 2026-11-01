@@ -573,6 +573,24 @@ def test_the_child_app_never_gets_the_auto_update_opt_in() -> None:
     assert ENV_VAR not in env and env["OTHER"] == "x"
 
 
+@pytest.mark.parametrize("parent", [None, "", "/somewhere/modules", "OFF"])
+def test_the_child_app_starts_without_internal_modules(parent: str | None) -> None:
+    """자식 앱은 사내 모듈 뿌리를 늘 `off` 로 받는다 — 부모 창에 다른 값이 있어도 덮는다.
+
+    사내에 모듈이 커밋되면 사이드바에 「사내 모듈」 상자가 더 서서 7장 A 의 사이드바 요약이
+    「정한 차례·수와 다름」 으로 거짓 ng 를 내고 가이드 그림에 동료 모듈 이름이 찍힌다. 모듈은
+    런북 4-5 가 본다.
+    """
+    base = {} if parent is None else {screens.MODULES_ROOT_ENV_VAR: parent, "OTHER": "x"}
+
+    env = screens.app_environment(PROJECT_ROOT, base)
+
+    assert screens.MODULES_ROOT_ENV_VAR == "CAPA_MODULES_ROOT"
+    assert env["CAPA_MODULES_ROOT"] == "off"
+    if parent is not None:
+        assert env["OTHER"] == "x"
+
+
 def test_an_app_that_would_open_another_database_is_not_started(tmp_path: Path) -> None:
     seen: dict[str, Any] = {}
     other = (tmp_path / "a.duckdb", tmp_path / "b.duckdb")

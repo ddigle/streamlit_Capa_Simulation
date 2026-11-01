@@ -101,6 +101,8 @@ def test_the_set_is_deduplicated_and_ordered() -> None:
         ".streamlit/secrets.toml",
         "data/output/result.csv",
         "data/temp/scratch.csv",
+        "data/modules/demo/a.csv",
+        "Data/Modules/demo/a.csv",
     ],
 )
 def test_forbidden_files_are_caught(path: str) -> None:
@@ -164,12 +166,30 @@ def test_the_manifest_never_hashes_itself(tmp_path: Path) -> None:
 
 
 def test_internal_only_paths_never_ship() -> None:
-    """사외에 `review/` 가 생기면 ZIP 에 실려 사내 리뷰 기록을 덮는다."""
+    """사외에 `review/` 가 생기면 ZIP 에 실려 사내 리뷰 기록을 덮는다.
+
+    사내 모듈 자리(`modules/` — 모델 2)도 같다. 사외에는 그 폴더가 없어야 하고, 시험 견본은
+    `tests/fixtures/modules/` 아래라 걸리지 않는다. Windows 철자 `Modules/` 도 잡는다.
+    """
     from build_deploy_package import internal_only_entries
 
-    flagged = internal_only_entries(["app.py", "review/2026.md", ".deploy/applied.json"])
+    flagged = internal_only_entries(
+        [
+            "app.py",
+            "review/2026.md",
+            ".deploy/applied.json",
+            "modules/demo/page.py",
+            "Modules/demo/module.json",
+            "tests/fixtures/modules/demo_ok/demo_ok_page.py",
+        ]
+    )
 
-    assert flagged == [".deploy/applied.json", "review/2026.md"]
+    assert flagged == [
+        ".deploy/applied.json",
+        "Modules/demo/module.json",
+        "modules/demo/page.py",
+        "review/2026.md",
+    ]
 
 
 def test_the_archive_carries_the_manifest_beside_the_files(tmp_path: Path) -> None:
@@ -651,3 +671,39 @@ def test_a_non_ascii_tracked_name_ships_under_its_own_name(
         manifest = json.loads(archive.read("DEPLOY_MANIFEST.json"))
     assert "docs/안내.md" in manifest["files"]
     assert manifest["changes"] == {"A": ["docs/안내.md"]}
+
+
+@pytest.mark.parametrize("folder", ["modules", "Modules"])
+@pytest.mark.parametrize("list_only", [False, True])
+def test_a_tracked_module_folder_in_the_outside_repository_stops_the_build(
+    pushed_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    folder: str,
+    list_only: bool,
+) -> None:
+    """사외에 `modules/` 가 추적되면 ZIP 에 실려 사내 모듈을 덮는다 — 만들지도 목록도 내지 않는다.
+
+    빌더는 태그도 남기지 않고 멈춘다(`--list-only` 도 같은 자리에서 멈춘다).
+    """
+    import build_deploy_package
+
+    page = pushed_repo / folder / "demo" / "page.py"
+    page.parent.mkdir(parents=True)
+    page.write_bytes(b"# Purpose: demo\n")
+    _git(pushed_repo, "add", folder)
+    _git(pushed_repo, "commit", "-q", "-m", "모듈을 잘못 커밋")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    out = tmp_path / "out"
+    args = ["--list-only"] if list_only else ["--out", str(out), "--stamp", "202610131200"]
+
+    assert build_deploy_package.main(args) == 1
+    captured = capsys.readouterr()
+    assert "사내 전용 자리를 침범하는 파일" in captured.err
+    assert f"{folder}/demo/page.py" in captured.err
+    assert "modules/" in captured.err
+    assert "총 " not in captured.out
+    assert not out.exists()
+    assert _git(pushed_repo, "tag", "--list") == ""

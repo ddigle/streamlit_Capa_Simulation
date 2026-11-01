@@ -45,6 +45,9 @@ data/*.db-*
 data/*.db.*.bak
 data/*.duckdb
 data/*.duckdb.*
+# 사내 모듈 데이터 자리(`data/modules/<id>/` — 모델 2). git·이미지 밖이다. 모듈 코드(뿌리의 `modules/`)는
+# 사내가 커밋하므로 무시하지 않는다. 가운데 `/` 가 있어 뿌리 기준이다.
+data/modules/
 *.xls
 *.xlsx
 *.xlsm
