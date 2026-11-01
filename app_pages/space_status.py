@@ -1267,7 +1267,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 # 저장자·함께 넣기·공식 발행 칸(설비 마스터 저장과 같은 부품). 수는 적지 않는다 —
                 # 실제로 퍼진 목록은 저장 결과 알림이 적는다.
                 with st.popover("저장 칸", icon=":material/tune:", key=SAVE_FIELDS_POPOVER_KEY):
-                    # 가정 세션은 「새 호기를 다른 설비 시나리오에도 넣기」 기본 끔(Q1).
+                    # 가정 세션도 「새 호기를 다른 설비 시나리오에도 넣기」 기본 켬(N2 — 탭·팝업과
+                    # 같음), 켜 있으면 공식 가용대수에 센다는 경고가 선다.
                     render_equipment_save_fields(
                         SPACE_SAVE_FIELDS_PREFIX,
                         release_exists=equipment_session.release_no is not None,
@@ -1419,8 +1420,8 @@ def _save_space_layout(
     배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다. 저장은 바뀐 쪽만
     — 세 표가 그대로면 층 값만 쓴다. `basis` 는 세션의 설비 시나리오다 — 공식이면 공식 배치에,
     가정이면 그 시나리오 새 리비전의 배치 차이에 간다(저장소가 역할로 가른다). `assumption` 이면
-    저장 칸이 가정 세션 꼴이다(함께 넣기 기본 끔 — Q1). `drawn` 은 단추를 그린 회차의 저장
-    세대(`_save_generation`)다."""
+    저장 칸이 가정 세션 꼴이다(key 꼬리 `_assumption` — 함께 넣기 기본 켬, N2). `drawn` 은
+    단추를 그린 회차의 저장 세대(`_save_generation`)다."""
     if drawn is not None and drawn != _save_generation():
         # 그린 회차의 저장 세대(변경 메모 칸 번호)가 지금과 다르다 — 이 세션이 그 사이 이미
         # 저장한 옛 화면의 누름이다(같은 단추를 0.15~0.5초 간격으로 두 번 눌러 첫 콜백이 끝까지 돈
