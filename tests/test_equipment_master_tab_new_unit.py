@@ -19,7 +19,7 @@ from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
-from test_equipment_scenario_repository import _request, _scenario, _session, _set
+from test_equipment_scenario_repository import _request, _scenario, _session, _set, _value
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
@@ -374,6 +374,8 @@ def test_an_assumption_session_warns_that_spreading_counts_in_the_official_scena
 
     assert panel["propagateWarning"] and "공식 가용대수" in panel["propagateWarning"]
     assert any("가정 설비 시나리오" in note for note in panel["notes"])
+    # 가정 세션도 「새 호기」 칸 함께 넣기 기본 켬(N2 — 저장 칸 넷과 같은 값).
+    assert panel["propagateDefault"] is True and panel["draft"]["propagate"] is True
 
 
 def test_a_new_unit_saved_in_an_assumption_session_has_no_official_place(
@@ -614,8 +616,8 @@ def test_an_assumption_tab_save_that_reaches_nothing_official_has_no_publish_box
 
 
 def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:
-    """Space 「저장 칸」 도 같은 한 줄 — 가정 세션은 저장 칸 함께 넣기가 기본 끔이라(Q1) 「새 호기」
-    칸에서 켠 호기가 공식에 든다는 것을 저장 전에 보인다."""
+    """Space 「저장 칸」 도 같은 한 줄 — 저장 칸 함께 넣기를 끈 채여도 「새 호기」 칸에서 켠 호기가
+    공식에 든다는 것을 저장 전에 보인다."""
     repository, setup = _two_scenarios(tmp_path)
     clear_equipment_repository()
     app = AppTest.from_string(
@@ -629,6 +631,10 @@ def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:
     app.session_state[NEW_UNIT_PROPAGATE_KEY] = {"EQ-09": True}
 
     _ok(app.run())
+    # 가정 세션도 저장 칸 함께 넣기는 기본 켬(N2) — 끈 채로 본다.
+    box = app.checkbox(key="space_layout_save_fields_propagate_units_assumption")
+    assert box.value is True
+    _ok(box.uncheck().run())
 
     captions = [str(item.value) for item in app.caption]
     assert any(
@@ -636,12 +642,46 @@ def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:
         and "공식 가용대수에 셉니다" in text
         for text in captions
     ), captions
-    # 저장 칸 함께 넣기는 꺼져 있어도(Q1) 그 칸에서 켠 호기가 공식에 들어가므로 발행 체크가
-    # 선다 — 옛 「함께 넣기를 켤 때만」 은 이 체크를 숨겨 말없이 발행하지 않았다(I53, 세 저장 자리
-    # 한 규칙).
-    assert app.checkbox(key="space_layout_save_fields_propagate_units_assumption").value is False
+    # 저장 칸 함께 넣기를 꺼도 그 칸에서 켠 호기가 공식에 들어가므로 발행 체크가 선다 — 옛
+    # 「함께 넣기를 켤 때만」 은 이 체크를 숨겨 말없이 발행하지 않았다(I53, 세 저장 자리 한 규칙).
     publish = app.checkbox(key="space_layout_save_fields_publish_assumption")
     assert (publish.label, publish.value) == (ASSUMPTION_PUBLISH_LABEL, True)
+
+
+def test_an_assumption_space_save_spreads_a_new_unit_to_the_official_by_default(
+    tmp_path: Path,
+) -> None:
+    """N2(2026-11-01 사용자 결정 「셋 다 켬」) — 가정 세션 Space 「배치 저장」 도 저장 칸을 그대로
+    두면 새 호기를 다른 설비 시나리오에 같은 일정으로 넣는다(설비 마스터 탭·사이드바 팝업과 같음).
+    호기 목록은 공통 대장 하나라 공식에도 그 호기가 있고, 기본값이면 일정도 같아 「일정 없음」 이
+    아니다. 발행 체크가 서고 기본으로 발행한다. 자리는 그 가정 시나리오의 배치에만 있다(Q1)."""
+    repository, setup = _two_scenarios(tmp_path)
+    clear_equipment_repository()
+    app = AppTest.from_string(
+        _page_script(SPACE_PAGE, repository.database_path), default_timeout=90
+    )
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    _ok(app.run())
+    _enter_elsewhere(app, "EQ-09", move="EQ-02")
+    _ok(app.run())
+    before = repository.latest_equipment_release()
+    assert before is not None
+    publish = app.checkbox(key="space_layout_save_fields_publish_assumption")
+    assert (publish.label, publish.value) == (ASSUMPTION_PUBLISH_LABEL, True)
+
+    app.button(key="space_layout_save").click()
+    _ok(app.run())
+
+    official = _session(repository, OPERATIONS)
+    mine = _session(repository, setup)
+    assert "EQ-09" in official.equipment["설비명"].tolist()
+    assert official.unscheduled_units == frozenset() == mine.unscheduled_units
+    for column in ("반입일정", "Qual일정"):
+        assert _value(official, "EQ-09", column) == _value(mine, "EQ-09", column), column
+    after = repository.latest_equipment_release()
+    assert after is not None and after.release_no == before.release_no + 1
 
 
 def _popup_with_panel_unit(database: str) -> None:

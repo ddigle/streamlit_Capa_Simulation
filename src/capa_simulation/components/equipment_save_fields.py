@@ -9,10 +9,14 @@
   (`equipment_data_workspace.new_unit_choice_line`)이 적는다.
 - 기본값 셋은 아래 상수 한 곳이다(질문 1 — 공식 발행 기본 켬, F6·F2 — 함께 넣기 기본 켬). 답이
   바뀌면 이 상수만 고친다.
-- **가정 세션의 Space 「배치 저장」**(`assumption=True` — 설비 시나리오 2단계 Q1)은 「새 호기를 다른
-  설비 시나리오에도 넣기」 가 **기본 끔**이다(배치 검토용 가상 호기가 공식 일정·가용대수에 들지
-  않게). 켜면 공식 가용대수에 센다는 경고가 선다. key 는 공식 자리와 가른다(같은 key 의 기본값이
-  세션 역할로 바뀌지 않게).
+- **가정 세션도 네 자리 모두 「새 호기를 다른 설비 시나리오에도 넣기」 기본 켬이다**(N2 — 설비
+  마스터 탭 저장 칸·「새 호기」 칸·사이드바 팝업 「저장」·Space 「배치 저장」). 호기 목록은 공통
+  대장 하나이고 설비 시나리오마다 다른 것은 일정·가정 배치뿐이게 — 가정 세션에서 넣은 새 호기도
+  다른 설비 시나리오에 같은 일정으로 든다(끄면 그 시나리오에서는 「일정 없음」). 가정 세션 Space
+  저장 상자(`assumption=True`)는 짧은 라벨을 쓰고 켜 있으면 공식 가용대수에 센다는 경고를 세우며,
+  기본값은 `DEFAULT_PROPAGATE_NEW_UNITS` 를 그대로 따른다(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`).
+  key 는 공식 자리와 가른다(라벨·경고가 다른 칸이라 세션 역할이 바뀌어도 한 칸의 고름을 다른 칸이
+  잇지 않게).
 - **가정 세션의 발행 체크는 세 자리 모두 한 규칙이다**(`reach` — `OfficialReach`): 이 저장이
   공식 설비 시나리오에 새 일정 리비전을 만들 수 있을 때(「새 호기」 칸에서 켠 새 호기, 저장 칸
   체크를 따르는 새 호기·새 비가동이 체크로 켜 있음)만 「함께 넣은 공식 리비전 발행」(기본 켬)이
@@ -38,8 +42,8 @@ DEFAULT_PROPAGATE_NEW_DOWNTIME = True
 PROPAGATE_UNITS_LABEL = "새로 넣은 호기를 다른 설비 시나리오에도 같은 일정으로 넣기"
 PROPAGATE_DOWNTIME_LABEL = "새로 넣은 비가동을 모든 설비 시나리오에 넣기"
 PUBLISH_OFFICIAL_LABEL = "공식 설비 시나리오에 새 일정 리비전이 생기면 공식으로 발행"
-# 가정 세션 Space 저장 상자(Q1).
-DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS = False
+# 가정 세션 Space 저장 상자 — 기본값은 탭·「새 호기」 칸·팝업과 같은 F6(N2 — 네 자리 한 값).
+DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS = DEFAULT_PROPAGATE_NEW_UNITS
 ASSUMPTION_PROPAGATE_UNITS_LABEL = "새 호기를 다른 설비 시나리오에도 넣기"
 ASSUMPTION_PROPAGATE_WARNING = (
     "켜면 새 호기가 공식 설비 시나리오에 자리 없는 새 호기로 들어가 공식 가용대수에 셉니다."
@@ -124,7 +128,8 @@ def render_equipment_save_fields(
     `release_exists` 가 거짓이면(공식 발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을
     둔다 — 저장소가 첫 일정 리비전을 늘 공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
 
-    `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 함께 넣기 기본 끔). `reach` 를 주면
+    `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 짧은 라벨·켜 있으면 공식 가용대수
+    경고, 기본값은 다른 자리와 같은 켬). `reach` 를 주면
     가정 세션이다 — 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만 선다(모듈 설명).
 
     `persist_saved_by` 면 저장자 칸에 `persist_state="session"` 을 준다 — 그 칸을 그리지 않는 회차가
@@ -229,7 +234,8 @@ def save_fields_from_state(
     단추 콜백(설비 마스터 탭 「리비전 저장」·Space 「배치 저장」)이라 그리는 회차의 돌려준 값을 쓸
     수 없을 때. 칸이 없으면 기본값이다. 다만 가정 세션의 발행 체크(`assumption` — Space 저장 상자,
     또는 `reach_rule` — `reach` 를 주고 그린 탭 저장 칸)는 그리지 않았으면 거짓이다 — 공식에 넣을
-    것이 없어 세우지 않은 체크다(모듈 설명). `assumption` 이면 가정 세션 칸(함께 넣기 기본 끔)."""
+    것이 없어 세우지 않은 체크다(모듈 설명). `assumption` 이면 가정 세션 Space 칸(key 꼬리
+    `_assumption` — 함께 넣기 기본값은 다른 자리와 같다)."""
 
     def flag(suffix: str, default: bool) -> bool:
         value = st.session_state.get(f"{prefix}_{suffix}", default)

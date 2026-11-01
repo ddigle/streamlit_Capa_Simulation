@@ -1267,7 +1267,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 # 저장자·함께 넣기·공식 발행 칸(설비 마스터 저장과 같은 부품). 수는 적지 않는다 —
                 # 실제로 퍼진 목록은 저장 결과 알림이 적는다.
                 with st.popover("저장 칸", icon=":material/tune:", key=SAVE_FIELDS_POPOVER_KEY):
-                    # 가정 세션은 「새 호기를 다른 설비 시나리오에도 넣기」 기본 끔(Q1).
+                    # 가정 세션도 「새 호기를 다른 설비 시나리오에도 넣기」 기본 켬(N2 — 탭·팝업과
+                    # 같음), 켜 있으면 공식 가용대수에 센다는 경고가 선다.
                     render_equipment_save_fields(
                         SPACE_SAVE_FIELDS_PREFIX,
                         release_exists=equipment_session.release_no is not None,
