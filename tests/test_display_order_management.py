@@ -84,6 +84,17 @@ render_display_order_management(repository)
 '''
 
 
+def _edit_first_order(app: AppTest, tab: str = "환산") -> None:
+    """「생산 계획 › `tab`」 직접 편집 표 첫 줄의 값표시순서를 고친 것처럼 채운다(다음 회차가 그
+    편집을 보낸다) — 고친 칸 없는 저장은 쓰지 않으므로(2026-11-01 개선 I5 넓힘) 저장 길을 지나게
+    한다."""
+    app.session_state[f"{DISPLAY_ORDER_EDITOR_KEY}::생산 계획::{tab}"] = {
+        "edited_rows": {0: {"값표시순서": 2}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+
+
 def _path_of(app: AppTest, matches: Callable[[Any], bool]) -> tuple[int, ...]:
     """`matches` 에 맞는 노드 하나의 델타 경로(본문 기준 자식 번호 차례)."""
     found: list[tuple[int, ...]] = []
@@ -99,9 +110,13 @@ def _path_of(app: AppTest, matches: Callable[[Any], bool]) -> tuple[int, ...]:
     return found[0]
 
 
-def test_display_label_warning_survives_the_rerun_after_saving(tmp_path: Path) -> None:
+def test_display_label_warning_survives_the_rerun_after_saving(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """저장 성공은 곧바로 `st.rerun()` 한다. 그 회차에 그린 경고는 화면에 닿지 않으므로
-    다음 회차에 성공 문구와 함께 한 번 그리고, 그다음 회차에는 지운다."""
+    다음 회차에 성공 문구와 함께 한 번 그리고, 그다음 회차에는 지운다. 성공 문구는 느린 둘째 누름의
+    창(`TRAILING_PRESS_SECONDS`) 안이면 다시 서므로 그 창은 시험이 0 으로 정한다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = AppTest.from_string(_label_script(tmp_path / "display-order-label.duckdb"))
     app.run(timeout=30)
     assert not app.exception
@@ -109,6 +124,7 @@ def test_display_label_warning_survives_the_rerun_after_saving(tmp_path: Path) -
 
     save = [button for button in app.button if button.label == "공용 표시순서 저장"]
     assert len(save) == 1
+    _edit_first_order(app)
     save[0].click().run(timeout=30)
 
     assert not app.exception
@@ -156,6 +172,7 @@ def test_the_label_warning_stands_in_the_flash_slot_and_moves_no_editor(tmp_path
         )
 
     before = places()
+    _edit_first_order(app)
     next(button for button in app.button if button.label == "공용 표시순서 저장").click()
     app.run(timeout=30)
     assert not app.exception
@@ -214,6 +231,7 @@ finally:
 '''
     app = AppTest.from_string(script).run(timeout=30)
     assert not app.exception
+    _edit_first_order(app)
     next(button for button in app.button if button.label == "공용 표시순서 저장").click().run(
         timeout=30
     )

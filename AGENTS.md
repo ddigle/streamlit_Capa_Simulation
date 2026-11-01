@@ -1949,7 +1949,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     프로필 전체 version 을 본다 — 편집표가 `num_rows="dynamic"` 이라 데이터가 신원에 들어가, 남의 저장으로 범위 줄이
     바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을 버린다. 대조가 없으면 지금 저장본을 다시 쓰며 version 만 올리고
     「저장했습니다」를 띄웠다(2026-10-26 E2E, `tests/test_display_order_management.py`). 빠른 두 번 누름은 Proc Rename 과
-    같은 `write_guard` 표지(제 저장 표지·충돌 표지)로 거른다(9장).
+    같은 `write_guard` 표지(제 저장 표지·충돌 표지)로 거른다(9장). 최신을 보고 고친 범위를 합친 전체 규칙이 그 저장본과
+    같으면 쓰지 않고 머리 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 넓힘 — 9장 「바꾼 것 없는 저장」).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
@@ -2073,6 +2074,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
   - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
+    바꾼 것 없는 저장(판정 기준·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적)은 쓰지 않고 그
+    폼 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5·넓힘 — 9장 「바꾼 것 없는 저장」).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
     (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
@@ -4908,25 +4911,37 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - **버전 대조가 없는 공용 저장 폼**(Preference Summary 공지·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적)도
     `save_once` 를 지나고 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을 0.15~0.4초 간격으로 두 번 누르면 공용 버전만
     두 번 올랐다(2026-10-25 E2E). 창 안의 같은 입력은 쓰지 않고 첫 저장으로 알리고, 다른 입력은 창 안이라도 쓴다
-    (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 지금처럼 새 버전이다 — 바꾼 것 없는 저장을
-    막는 자리는 아래 다섯뿐이다(개선 I5 범위).
-  - **바꾼 것 없는 저장은 새 버전·리비전을 만들지 않는다**(2026-11-01 개선 I5 — E2E #10·#41·#60·#96). 다섯 자리다.
-    Admin Proc Rename 직접 편집 「공용 공정 표시명 저장」·HOME Preference 「판정 기준 저장」 은 본 version 이 그 회차가 그린
-    최신 저장본이고 저장할 값이 그 저장본과 같으면(표는 `prepare_process_rename_rules` 꼴의 `.equals`, 판정 기준은
-    `SecurementThresholds.same_as` — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다) 저장소에 가지 않고 그 폼 알림 칸에
-    「바뀐 것이 없습니다 — …」 를 적는다. 변경 메모만 적은 저장도 같다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
+    (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 아래 「바꾼 것 없는 저장」 이 거른다(개선 I5 ·
+    넓힘) — `save_once` 는 그보다 뒤에서 겹친 둘째 누름(저장본이 아직 낡은 회차)만 맡는다.
+  - **바꾼 것 없는 저장은 새 버전·리비전을 만들지 않는다**(2026-11-01 개선 I5 — E2E #10·#41·#60·#96, 같은 날 사용자 답으로
+    일곱 자리를 더해 열두 자리). Admin Proc Rename 직접 편집 「공용 공정 표시명 저장」·HOME Preference 「판정 기준 저장」 은 본
+    version 이 그 회차가 그린 최신 저장본이고 저장할 값이 그 저장본과 같으면(표는 `prepare_process_rename_rules` 꼴의
+    `.equals`, 판정 기준은 `SecurementThresholds.same_as` — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다) 저장소에 가지 않고 그
+    폼 알림 칸에 「바뀐 것이 없습니다 — …」 를 적는다. 변경 메모만 적은 저장도 같다. **넓힌 일곱 자리**(같은 꼴 — 저장 꼴끼리
+    견준다): Admin 표시순서 직접 편집(고친 범위를 합친 전체 규칙 `replace_display_order_scope` 의 `.equals`, 머리 알림 칸),
+    HOME Preference 확보율 보정(`prepare_execution_capacity` 꼴의 `.equals` — 증감은 칸 값 그대로 저장해 끝자리를 접지 않는다),
+    Summary 공지(글 그대로), Top5 구간(하한·상한 비율 — 퍼센트 칸을 오간 끝자리 상대 1e-9 를 접는다), 주요공정 프리셋(고칠
+    프리셋의 이름·공정 차례까지 — 「＋ 새 프리셋」 은 늘 쓴다), 선행 B/O·선행 입고 실적(보이는 달을 합친 저장 행의 달·값,
+    `monthly_amount.same_monthly_amounts` — 0·빈칸은 넣지 않은 달, 끝자리 접음). 버전 대조가 있는 넷(표시순서·확보율 보정·
+    공지·구간)은 `_unchanged_profile_save`(본 version == 그린 version > 0)로 가르고, 프리셋은 제출 회차가 다시 읽은 묶음(고칠
+    프리셋 대조 `_stale_key_process_target` 를 지난 뒤), 대조 없는 선행 둘은 제출 회차가 읽은 최신 저장본과 견준다. 겹친 둘째
+    누름(저장본이 아직 낡은 회차)은 전처럼 `save_once`·제 저장 표지가 거른다. 옛 화면(본 version 이 최신이 아님)은 견주지 않고 버전
     대조가 거부한다. 저장본이 없는 v0 의 첫 저장은 쓴다 — 판정 기준은 그때 보이는 공식버전 프리셋·코드 기본값을 공용으로
     고정한다. 사이드바 「신규 리비전 저장」 은 저장소가 쓰기 잠금 안에서 견준다(`save_revision(..., skip_unchanged=True)` →
     `RevisionUnchanged`, 5장 8 · 3장 `repository.py`). 설비 시나리오 「이름 바꾸기」·「리비전명 저장」 은 저장소가 이미 같은
     이름이면 쓰지 않았는데 화면이 성공을 띄웠다 — 이제 단추 아래 「바뀐 것이 없습니다」 를 적고 제 저장 짝도 적지 않는다
-    (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 네 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
+    (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 열한 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
     닿은 느린 둘째 누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과
-    같은 꼴 — 프로필 둘은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 사이드바 저장은
-    성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 판정 기준의 「바뀐 것이 없습니다」 회차도 조회기간 밖 월별
-    기준 줄(`_render_threshold_out_of_range_notice`)은 그대로 그린다 — 누르지 않은 회차와 같은 화면에 알림만 더한다. 붙여넣기 길(표시순서·Proc
-    Rename)은 전부터 「현재 공용 설정과 동일합니다」 로 거절한다. 시험: `tests/test_admin_area_page.py`·
+    같은 꼴 — 프로필 저장은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 그래서 저장
+    직후 창(`TRAILING_PRESS_SECONDS`) 안의 다른 회차에도 성공 알림이 한 번 더 선다. 사이드바 저장은
+    성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않으므로
+    누르지 않은 회차가 그리던 안내 줄도 그대로 그린다 — 판정 기준의 조회기간 밖 월별 기준 줄
+    (`_render_threshold_out_of_range_notice`), 선행 B/O·선행 입고의 조회기간 밖 저장분 줄(`_render_out_of_range_notice`), 확보율
+    보정의 짝 없는 행·0 에서 자른 행 안내(`_render_execution_notices`). 누르지 않은 회차와 같은 화면에 알림만 더한다. 붙여넣기
+    길(표시순서·Proc Rename)은 전부터 「현재 공용 설정과 동일합니다」 로 거절한다. 시험: `tests/test_admin_area_page.py`·
     `tests/test_threshold_editor.py`·`tests/test_revision_save_unchanged.py`·`tests/test_scenario_sidebar.py`·
-    `tests/test_scenario_management_page.py`·`tests/test_equipment_scenario_unchanged_names.py`.
+    `tests/test_scenario_management_page.py`·`tests/test_equipment_scenario_unchanged_names.py`·
+    `tests/test_unchanged_profile_saves.py`(넓힌 일곱).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).
