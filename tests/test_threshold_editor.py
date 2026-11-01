@@ -71,12 +71,13 @@ def _edit(app: AppTest, edited_rows: dict[int, dict[str, float | None]]) -> None
 def test_an_unsaved_profile_shows_the_default_it_falls_back_to(database: Path) -> None:
     app = _app(database)
 
-    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — 칸은 1 단위 정수이고 코드 기본값은 110·100.
+    # 판정 기준은 정수 % 다(2026-11-01 사용자 결정) — 칸은 1 단위 소수 칸(`%.0f` — 보이는 수는 정수,
+    # 친 소수는 사사오입 · 아래 「take_a_decimal_point」 시험)이고 코드 기본값은 110·100.
     assert [(widget.label, widget.value) for widget in app.number_input] == [
-        ("기본 확보 기준(%)", 110),
-        ("기본 경고 기준(%)", 100),
+        ("기본 확보 기준(%)", 110.0),
+        ("기본 경고 기준(%)", 100.0),
     ]
-    assert [widget.step for widget in app.number_input] == [1, 1]
+    assert [widget.step for widget in app.number_input] == [1.0, 1.0]
     assert any("코드 기본값" in caption.value for caption in app.caption)
     assert app.session_state[THRESHOLD_BASE_VERSION_KEY] == 0
 
@@ -490,6 +491,85 @@ def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
     assert any("조회기간 밖" in caption.value for caption in app.caption)
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "12월 예외")
+
+
+def _outside_notes(app: AppTest) -> list[str]:
+    return [caption.value for caption in app.caption if "조회기간 밖에 월별 기준" in caption.value]
+
+
+def test_a_refused_save_keeps_the_note_on_months_outside_the_view(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """검증 오류(범위 밖 · 거꾸로 짝)로 거부한 회차도 쓰지 않아 다시 돌지 않는다 — 누르지 않은
+    회차와 같은 화면이게 조회기간 밖 월별 기준 줄이 오류 옆에 그대로 선다. 원인이 보이는 칸(기본
+    1095 · 26.02 경고 130)이라 오류 글은 숨은 달을 말하지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.1,
+        1.0,
+        pd.DataFrame({"생산계획년월": [202612], "확보 기준": [1.3], "경고 기준": [None]}),
+        source="12월 예외",
+        expected_version=0,
+    )
+    app = _app(database)
+    shown = _outside_notes(app)
+    assert len(shown) == 1 and "26.12" in shown[0], shown
+
+    app.number_input[0].set_value(1095.0)
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [element.value for element in app.error]
+    assert len(errors) == 1 and "기본 확보 기준 1095%" in errors[0], errors
+    assert "26.12" not in errors[0]
+    assert _outside_notes(app) == shown
+
+    app.number_input[0].set_value(110.0)
+    _edit(app, {1: {"26.02": 130.0}})
+    app = _save(app)
+
+    errors = [element.value for element in app.error]
+    assert len(errors) == 1 and "경고 기준이 확보 기준보다 큰 달" in errors[0], errors
+    assert _outside_notes(app) == shown
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "12월 예외")
+
+
+def test_a_held_second_press_keeps_the_note_on_months_outside_the_view(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 누름의 둘째 누름(거부를 다시 알리고 쓰지 않는다 — write_guard)도 다시 돌지
+    않는 회차다 — 그 남의 저장이 든 조회기간 밖 월별 기준 줄이 거부 옆에 그대로 선다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = _app(database)
+    assert not _outside_notes(app)
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.17,
+        1.0,
+        pd.DataFrame({"생산계획년월": [202612], "확보 기준": [1.3], "경고 기준": [None]}),
+        source="다른 세션",
+        expected_version=0,
+    )
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
+    app.number_input[0].set_value(122.0)
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in element.value for element in app.error)
+    shown = _outside_notes(app)
+    assert len(shown) == 1 and "26.12" in shown[0], shown
+
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [element.value for element in app.error]
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert _outside_notes(app) == shown
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "다른 세션")
+    clear_global_securement_threshold_cache()
 
 
 def test_a_stored_half_step_threshold_opens_as_its_whole_percent_and_saves_as_it(

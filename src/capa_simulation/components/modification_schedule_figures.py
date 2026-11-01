@@ -140,8 +140,9 @@ def _line_label(labels: ScheduleLabels, result: ScheduleResult) -> str:
 def relief_points(points: int) -> str:
     """기준을 낮춰야 하는 폭을 정수 % 글자로(「2%」) — 기준 확보율 칸은 정수 % 만 받으므로 그 칸에
     칠 수를 적는다(2026-11-01 사용자 결정 — 0.01% 올림 「1.71%」 를 대신한다). 수는 서비스가 같은
-    판정에 다시 넣어 확인한 정수다(`ScheduleShortfall.relief_percent` — 적힌 만큼 낮추면 늘
-    들어간다).
+    판정에 다시 넣어 확인한 정수다(`ScheduleShortfall.relief_percent` — 달마다 적힌 만큼 낮추면 늘
+    들어간다. 「HOME 기준」 에 월별 예외가 있으면 칸에 한 값을 친 것과 같지 않을 수 있다 —
+    `DEADLINE_HELP`).
 
     퍼센트 차이도 「%」 로 적는다(「%p」 를 쓰지 않는다 — 2026-11-01 사용자 결정)."""
     return f"{max(int(points), 1)}%"

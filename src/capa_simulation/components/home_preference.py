@@ -1036,6 +1036,8 @@ def render_threshold_editor(
             remember_seen(THRESHOLD_BASE_VERSION_KEY, threshold_profile.version)
             if refused != held:
                 notice.error(held)
+            # 쓰지 않아 다시 돌지 않는 회차다 — 아래 「바뀐 것이 없습니다」 · 검증 오류 갈래와 같다.
+            _render_threshold_out_of_range_notice(months, threshold_profile)
             return
         if not isinstance(submitted_base, int):
             # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
@@ -1096,6 +1098,9 @@ def render_threshold_editor(
             # 검증 실패(어느 달인지)는 ValueError 이고 원문이 고칠 곳을 말한다(물결표만 막아
             # 그대로).
             notice.error(bootstrap_error_message(exc))
+            # 쓰지 않아 다시 돌지 않는 회차다 — 원인이 보이는 칸이면 오류 글이 숨은 달을 말하지
+            # 않으므로 누르지 않은 회차의 조회기간 밖 월별 기준 줄을 그대로 그린다.
+            _render_threshold_out_of_range_notice(months, threshold_profile)
         else:
             # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
             # 없습니다」 갈래).

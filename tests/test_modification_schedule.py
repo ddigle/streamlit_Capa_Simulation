@@ -363,6 +363,36 @@ def test_the_whole_relief_is_t_minus_the_rounded_binding_rate_over_a_grid(percen
         assert not _one_month_plan(available, percent - expected + 1).complete, (percent, rate)
 
 
+@pytest.mark.parametrize(("february", "points"), [(10.7, 3), (10.8, 2), (10.9, 1)])
+def test_with_monthly_targets_the_relief_lowers_every_month_not_one_typed_value(
+    february: float, points: int
+) -> None:
+    """「HOME 기준」 에 기본보다 낮은 월별 예외(기본 110 · 2월 100)가 있고 그 달이 묶으면 「기준
+    n% 낮추기」 의 n 은 **모든 달 기준을 n% 낮추는 폭**이다(110 − n · 100 − n · 110 − n 이면 든다).
+    칸에 110 − n 한 값을 치면 모든 달이 같은 기준이 되어 2월 기준이 오히려 올라가 들지 않는다 —
+    Guide · 기한 칸 풍선이 그 단서를 적는다
+    (`test_the_relief_promise_names_the_monthly_exception_caveat`). 2월만 1대 × 28일, 1 · 3월은
+    가용이 넉넉하다."""
+
+    def plan(targets: tuple[int, int, int]) -> ScheduleResult:
+        months = [
+            _month(month, available, target=judgment_boundary(percent / 100))
+            for month, available, percent in zip(
+                (JAN, FEB, MAR), (13.0, february, 13.0), targets, strict=True
+            )
+        ]
+        return _plan(months, units=1, days=28, earliest=date(2027, 2, 1), deadline=date(2027, 3, 1))
+
+    home = plan((110, 100, 110))
+    assert home.shortfall is not None
+    assert home.shortfall.relief_percent == points
+
+    assert plan((110 - points, 100 - points, 110 - points)).complete
+    typed = plan((110 - points, 110 - points, 110 - points))
+    assert not typed.complete
+    assert typed.shortfall is not None and typed.shortfall.relief_percent == 10
+
+
 def test_a_deadline_before_any_open_day_places_nothing() -> None:
     result = _plan(_three(), units=1, days=5, deadline=date(2026, 12, 31))
 
