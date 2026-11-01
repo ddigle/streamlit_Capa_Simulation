@@ -105,7 +105,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_contributions,
 )
 from capa_simulation.services.process_cutoff import ALL_PRODUCTS, cutoff_setting
-from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED, unit_number
+from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED, unit_order
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -768,7 +768,7 @@ def new_unit_rows(
                 "축 안": not (position.before or position.after),
             }
         )
-    rows.sort(key=lambda row: (row["기여 시작"], *_unit_order(str(row["호기"]))))
+    rows.sort(key=lambda row: (row["기여 시작"], *unit_order(str(row["호기"]))))
     frame = pd.DataFrame(rows, columns=list(NEW_UNIT_COLUMNS))
     frame["모듈 수"] = frame["모듈 수"].astype("int64")
     frame["축 안"] = frame["축 안"].astype("bool")
@@ -881,7 +881,7 @@ def new_unit_availability(
             else None
         )
         found.append((first, unit, entry))
-    found.sort(key=lambda item: (item[0], *_unit_order(item[1])))
+    found.sort(key=lambda item: (item[0], *unit_order(item[1])))
     starts = tuple(entry for _first, _unit, entry in found if entry is not None)
     return NewUnitAvailability(
         since=since,
@@ -1045,7 +1045,7 @@ def held_unit_choices(
                 modules=tuple(pieces) if len(pieces) > 1 else (),
             )
         )
-    found.sort(key=lambda choice: _unit_order(choice.unit))
+    found.sort(key=lambda choice: unit_order(choice.unit))
     return tuple(found)
 
 
@@ -1114,7 +1114,7 @@ def exiting_unit_rows(
         )
     if not rows:
         return _empty(EXIT_UNIT_COLUMNS)
-    rows.sort(key=lambda row: (row["반출이설일"], *_unit_order(str(row["호기"]))))
+    rows.sort(key=lambda row: (row["반출이설일"], *unit_order(str(row["호기"]))))
     frame = pd.DataFrame(rows, columns=list(EXIT_UNIT_COLUMNS))
     frame["모듈 수"] = frame["모듈 수"].astype("int64")
     frame["반출이설 위치"] = frame["반출이설 위치"].astype("float64")
@@ -1800,7 +1800,7 @@ def _ordered_arrows(records: list[dict[str, object]]) -> pd.DataFrame:
     records.sort(
         key=lambda record: (
             *first[str(record["설비키"])],
-            *_unit_order(str(record["설비키"])),
+            *unit_order(str(record["설비키"])),
             record["시작일"],
             str(record[EQUIPMENT_ID_COLUMN]),
         )
@@ -1831,12 +1831,6 @@ def _tidy(value: float) -> float:
 
 def _records(frame: pd.DataFrame) -> list[dict[str, object]]:
     return [{str(key): value for key, value in row.items()} for row in frame.to_dict("records")]
-
-
-def _unit_order(name: str) -> tuple[int, int, str]:
-    """호기 번호 차례 — 이름 끝 숫자, 없으면 번호 있는 호기 뒤(`required_shortening` 과 같다)."""
-    number = unit_number(name)
-    return (0 if number is not None else 1, number or 0, name)
 
 
 def _blank(value: object) -> bool:

@@ -169,6 +169,7 @@ __all__ = [
     "target_from_thresholds",
     "unit_export_frame",
     "unit_number",
+    "unit_order",
 ]
 
 TARGET_LEVELS: tuple[float, ...] = (0.9, 1.0, 1.1, 1.2, 1.3)
@@ -481,7 +482,8 @@ def level_percent(level: float) -> int:
     return threshold_percent(level)
 
 
-def _unit_order(name: str) -> tuple[int, int, str]:
+def unit_order(name: str) -> tuple[int, int, str]:
+    """호기 번호 차례 — 이름 끝 숫자, 없으면 번호 있는 호기 뒤."""
     number = unit_number(name)
     return (0 if number is not None else 1, number or 0, name)
 
@@ -543,7 +545,7 @@ def shortening_candidates(
         )
         for key, members in groups.items()
     ]
-    return tuple(sorted(units, key=lambda unit: (unit.process, _unit_order(unit.unit))))
+    return tuple(sorted(units, key=lambda unit: (unit.process, unit_order(unit.unit))))
 
 
 def _blocked_days(downtime: pd.DataFrame) -> dict[str, tuple[tuple[date, date | None], ...]]:
@@ -957,7 +959,7 @@ def _next_candidate(states: list[_UnitState], floor: date, tried: set[str]) -> _
     eligible = [state for state in states if state.target > floor and state.unit.unit not in tried]
     if not eligible:
         return None
-    return min(eligible, key=lambda state: (state.target, _unit_order(state.unit.unit)))
+    return min(eligible, key=lambda state: (state.target, unit_order(state.unit.unit)))
 
 
 def _minimum_pull(
@@ -1059,7 +1061,7 @@ def _unit_rows(process: str, outcome: _ProcessOutcome) -> list[dict[str, object]
     }
     rows: list[dict[str, object]] = []
     moved = [state for state in outcome.states if state.target < state.unit.qual]
-    for state in sorted(moved, key=lambda s: (s.unit.qual, _unit_order(s.unit.unit))):
+    for state in sorted(moved, key=lambda s: (s.unit.qual, unit_order(s.unit.unit))):
         rows.append(
             {
                 "공정": process,
