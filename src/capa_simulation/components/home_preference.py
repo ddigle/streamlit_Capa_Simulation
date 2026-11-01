@@ -183,6 +183,7 @@ ADVANCE_NOTE_KEY = "home_preference_advance_note"
 ADVANCE_SHIPMENT_EDITOR_KEY = "home_preference_advance_shipment_editor"
 ADVANCE_SHIPMENT_NOTE_KEY = "home_preference_advance_shipment_note"
 ADVANCE_SHIPMENT_FLASH_KEY = "home_advance_shipment_flash"
+# 월별 판정 기준 편집표 key 머리 — 끝에 표가 출발한 저장본을 붙인다(`threshold_widget_key`).
 THRESHOLD_EDITOR_KEY = "home_preference_threshold_editor"
 THRESHOLD_NOTE_KEY = "home_preference_threshold_note"
 THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
@@ -198,7 +199,8 @@ MONTH_THRESHOLD_STEP = 0.1
 MONTH_THRESHOLD_FORMAT = "%.0f"
 MONTH_THRESHOLD_HELP = (
     f"{threshold_range_text()} 의 정수 % 로 넣습니다. 소수를 치면 사사오입한 정수로 보이고 "
-    "저장합니다(109.5 → 110). 빈칸은 기본값을 따릅니다."
+    "저장합니다(109.5 → 110). 빈칸은 기본값을 따릅니다. 저장하기 전에 다른 사람이 저장하면 적은 "
+    "칸은 버려지고 최신 저장본이 섭니다."
 )
 # 기본 확보·경고 두 칸 — 월별 칸과 같은 읽기다(2026-11-01 사용자 결정). 칸을 소수 칸(`float`)으로
 # 세워야 「109.5」 가 그대로 오고(정수 칸은 브라우저가 `parseInt` 로, 서버가 `int()` 로 109 로
@@ -973,9 +975,13 @@ def render_threshold_editor(
                 # 표 도구 막대가 바로 위 「기본 경고 기준(%)」 −/+ 를 덮지 않게 띄운다(AGENTS 9장
                 # 「표 도구 막대」 — 오른쪽 칸 숫자 칸이라 단추가 표 오른쪽 끝 위에 선다).
                 toolbar_clearance()
+                # key 끝에 이 회차가 그린 저장본 version 을 붙인다(`threshold_widget_key`) — 남이
+                # 저장한 뒤의 회차(탭 왕복 · 거부 뒤 · 제출)는 새 위젯이라 보내지 않은 편집을 버리고
+                # 최신을 그린다. 제출 회차라면 대조 값(`submitted_base`)이 옛 version 이라 저장소가
+                # 거부한다. 이것은 위젯 key 일 뿐 대조 값이 아니다.
                 edited = st.data_editor(
                     table,
-                    key=THRESHOLD_EDITOR_KEY,
+                    key=threshold_widget_key(THRESHOLD_EDITOR_KEY, threshold_profile.version),
                     hide_index=True,
                     num_rows="fixed",
                     width="stretch",
@@ -1102,6 +1108,20 @@ def render_threshold_editor(
             note_notice(notices, THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             st.rerun(scope="app")
+
+
+def threshold_widget_key(prefix: str, version: int) -> str:
+    """판정 기준 칸의 위젯 key — 끝에 그 회차가 그린 저장본 version 을 든다(Top5 구간과 같은 규칙,
+    `render_threshold_editor`).
+
+    key 가 같은 `num_rows="fixed"` 편집표는 데이터 서명(칸·행·형)이 같으면 같은 위젯이라 값이
+    바뀌어도 브라우저가 보내지 않은 폼 편집을 들고 있다. 그 사이 본 version 만 최신으로 올라 남이
+    저장한 월별 기준을 거부 없이 덮었다(2026-11-02 E2E — 입력 비가동 `manual_editor_key` 와 같은
+    결함). 제출 회차도 그린 저장본 version 이다 — 거부된 누름의 둘째 누름(`held_profile_conflict`)
+    회차가 본 version 을 그 저장본으로 적으므로, 그 회차가 그린 칸과 다음 누름의 칸이 같은
+    위젯이어야 그 뒤 친 값이 닿는다.
+    """
+    return f"{prefix}__v{int(version)}"
 
 
 def _threshold_rows(
