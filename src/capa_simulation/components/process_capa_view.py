@@ -76,6 +76,7 @@ from capa_simulation.components.home_dimensions import (
     NARROW_VIEWPORT_MAX_PX,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.month_sheet_canvas import signed_int
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
@@ -1132,7 +1133,7 @@ def judgement_card(
     lines = [
         f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}",
         f"과부족 = {_two(available)} − {_two(required)}×{boundary_percent_label(secure)}"
-        f" {raw_mark} {raw_text} → {_signed_int(balance) if balance is not None else _EMPTY}",
+        f" {raw_mark} {raw_text} → {signed_int(balance) if balance is not None else _EMPTY}",
     ]
     if assumed is not None:
         lines.insert(0, _assumed_required_line(_number(record.get("소요대수")), required, token))
@@ -1195,7 +1196,7 @@ def _official_judgement_note(record: Mapping[str, object]) -> str:
     return (
         f"공식: 확보율 {available / required:.1%} → "
         f"{_STATUS_NAMES.get(str(record.get(STATUS_COLUMN)), _EMPTY)} · 과부족 "
-        + (_signed_int(balance) if balance is not None else _EMPTY)
+        + (signed_int(balance) if balance is not None else _EMPTY)
         + (f" · 원인 {cause}" if cause else "")
     )
 
@@ -1889,14 +1890,6 @@ def _signed_two(value: float | None) -> str:
     if rounded < 0:
         return f"{_MINUS}{abs(rounded):,.2f}"
     return "0.00"
-
-
-def _signed_int(value: int) -> str:
-    if value > 0:
-        return f"+{value:,}"
-    if value < 0:
-        return f"{_MINUS}{abs(value):,}"
-    return "0"
 
 
 def _ratio_text(value: float | None) -> str:
