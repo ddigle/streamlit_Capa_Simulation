@@ -3741,8 +3741,9 @@ def _render_history(
     탭 오른쪽 칸 「저장 이력」. 폼 밖이라 조건을 바꾸면 바로 다시 그린다.
 
     목록은 설비 시나리오 리비전 목록 캐시(세대·stat·TTL), 조회는 그 리비전과 그 저장이 함께 본
-    공통 리비전 쌍의 합친 본문 캐시다(`load_saved_pair` 와 같은 쌍). 공통 대장 번호는 공통 이력
-    목록(최신 공통 id 키)에서 붙인다.
+    공통 리비전 쌍의 합친 본문 캐시다(`load_saved_pair` 와 같은 쌍). 표와 「조회 리비전」 상자는
+    리비전을 전부 싣고, 「공통」 칸 번호는 리비전 줄이 들고 온 번호가 먼저다(`common_revision_words`
+    — 공통 이력 목록은 최신 50개라 옛 줄의 공통이 그 밖에 있다).
     """
     database_path = str(repository.database_path)
     if scenario_id is None:
@@ -3881,8 +3882,8 @@ def common_history_label(commons: Sequence[EquipmentRevisionSummary]) -> str:
     """「공통 대장 저장 이력」 펼침 머리. 목록은 최신 50개까지라
     (`load_equipment_revision_summaries`) 그보다 옛 리비전이 있으면 「n건」 이 전체처럼 읽히지
     않게 「최근 n건(rA~rB)」 으로 범위를 적는다 — 공통 번호는 1 부터 붙고 지우지 않으므로 가장 옛
-    줄이 r1 이 아니면 더 옛 리비전이 있다(일정 리비전 표 머리 줄이 한도에 걸렸을 때만 전체 수를
-    덧붙이는 것과 같은 뜻)."""
+    줄이 r1 이 아니면 더 옛 리비전이 있다(사이드바 설비 시나리오 팝업 라디오가 한도에 걸렸을 때만
+    「최근 50개 · 전체 N개」 를 적는 것과 같은 뜻 — 일정 리비전 표는 전부 싣는다)."""
     numbers = [item.revision_no for item in commons]
     if not numbers or min(numbers) <= 1:
         return f"공통 대장 저장 이력 {len(commons):,}건"
