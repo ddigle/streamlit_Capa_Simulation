@@ -1244,8 +1244,9 @@
   50개) 밖의 옛 줄도 「공통 rN」 이 선다. 지금 공식 rN 은 전처럼 발행 줄 번호(I25), 발행 두 번 누름의 발행 리비전은 id 로 한 줄만
   읽는다. 리비전 상자가 이름 기억 상한(256)보다 길어져 `prune_named_choice` 는 지금 선택지 글자를 늘 들고 지난 글자만 256 개로 줄인다
   (상한이 최근 리비전 글자부터 지워 이름 바꾼 뒤 둘째 누름이 기본값으로 튀던 것). 샘플 관측(합성 사본 3,000줄 — 로컬 설비 DB 에
-  저장 리비전을 SQL 로 복제, AppTest 한 프로세스): 저장소 읽기 최근 50 · 전부 둘 다 약 70ms, 구획 첫 회차 1.27s(전 50줄 1.03s) · 다시
-  그림 0.04s(0.01s), 팝업 다시 그림 0.006s, 저장 이력 다시 그림 0.03s. 대안: (가) 50 그대로 · 전체 수 줄만, (다) 표 아래 「더 옛
+  저장 리비전을 SQL 로 복제, AppTest 한 프로세스): 저장소 읽기 최근 50 · 전부 둘 다 약 70ms, 구획 첫 회차 1.27s(모듈 불러오기 포함 —
+  전 50줄 1.03s) · 다시 그림 0.04s(0.01s), 팝업 다시 그림 0.006s, 저장 이력 다시 그림 0.03s. 사본 앱 + 헤드리스 Chrome 에서는 전환을 눌러
+  3,000줄 표가 서기까지 2.0s, 상자에 「r1 · 」 를 쳐서 고르기 2.6s(회차 끝 판정 기다림 1.3s 포함), 브라우저 오류 0. 대안: (가) 50 그대로 · 전체 수 줄만, (다) 표 아래 「더 옛
   50줄」 로 나눠 읽기 — 표 · 상자가 무거워지면 (다)로 옮긴다. 관련: `persistence/equipment_cache.py` ·
   `components/equipment_scenario_management.py` · `equipment_scenario_status.py` · `equipment_data_workspace.py` ·
   `page_bootstrap.prune_named_choice` · `tests/test_equipment_revision_list_limit.py`
