@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -199,10 +200,10 @@ THRESHOLD_UNCHANGED_MESSAGE = (
 # 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
 # Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
-# 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지·프리셋)
-# key 에 저장본 version 이 붙어(Top5) 남이 먼저 저장하면 제출 회차의 칸이 새 저장본으로 서서 이
-# 화면의 입력이 버려지는데, 대조가 없으면 그 값을 version 만 올려 다시 쓰고 「저장했습니다」 를
-# 띄웠다(2026-10-26 E2E).
+# 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지) key 에
+# 저장본 version(Top5)·고칠 프리셋 저장본의 지문(프리셋)이 붙어 남이 먼저 저장하면 제출 회차의 칸이
+# 새 저장본으로 서서 이 화면의 입력이 버려지는데, 대조가 없으면 그 값을 version 만 올려 다시 쓰고
+# 「저장했습니다」 를 띄웠다(2026-10-26 E2E).
 SUMMARY_BASE_VERSION_KEY = "home_preference_summary_base_version"
 SUMMARY_SAVE_NAME = "home_preference_summary"
 TOP5_BASE_VERSION_KEY = "home_preference_top5_base_version"
@@ -215,6 +216,10 @@ TOP5_MAX_KEY_PREFIX = "home_top5_band_max_v"
 # 둔다 — 다른 프리셋을 남이 고친 것은 이 화면의 쓰기가 다시 읽은 묶음 위에 남기므로 막지 않는다.
 KEY_PROCESS_SEEN_KEY = "home_preference_key_process_seen"
 KEY_PROCESS_SAVE_NAME = "home_preference_key_process"
+# 프리셋 이름·공정 두 칸의 key 머리 — 끝에 고칠 프리셋 저장본(이름·공정)의 지문을 붙인다
+# (`_key_process_widget_key`).
+KEY_PROCESS_NAME_KEY_PREFIX = "home_key_process_name_"
+KEY_PROCESS_PROCESSES_KEY_PREFIX = "home_key_process_processes_"
 # 빠른 두 번 누름의 둘째 회차가 다시 알리는 문구. 그 회차는 프리셋 고름이 첫 저장 뒤로 옮겨 가
 # 어느 프리셋을 어떻게 바꿨는지 다시 지을 수 없어 이름 없이 말한다.
 KEY_PROCESS_SAVED_MESSAGE = "주요공정 히트맵 프리셋을 저장했습니다."
@@ -1836,9 +1841,13 @@ def _render_key_process_editor(
     저장은 언제나 **묶음 전체**의 교체다(version+1). 이름을 바꾸면 사이드바에서 그 프리셋을
     보고 있던 선택도 새 이름으로 옮긴다 — 그 선택은 위젯이 아닌 세션 값이라 곧바로 적는다.
 
-    **공정·이름 위젯에 `key` 를 두지 않는다.** `Preference` 탭은 숨어 있어도 그려지므로 `key` 를
-    두면 첫 진입 값이 세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. 고칠 프리셋이 바뀌면
-    기본값이 바뀌어 위젯이 새로 선다.
+    **공정·이름 위젯의 key 끝에 고칠 프리셋 저장본(이름·공정)의 지문을 붙인다**
+    (`_key_process_widget_key`). 고정 key 는 `Preference` 탭이 숨어 있어도 그려지므로 첫 진입 값이
+    세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. key 가 없으면 위젯 id 가 값을 따라 **값이
+    바뀐 칸만** 새로 서서, 남의 저장에 거부된 뒤 이름·공정이 섞였다(Top5 구간과 같은 꼴 — 2026-11-01
+    결정 N7-preset). 지문이 바뀌면 두 칸이 함께 저장본으로 다시 서고, 같은 지문 안에서는 친 값이
+    남는다 — 다른 프리셋만 바뀐 저장은 이 프리셋의 지문을 바꾸지 않아 입력이 그대로 저장된다. 묶음
+    version 은 넣지 않는다(다른 프리셋을 남이 고친 회차에 이 화면의 입력이 버려진 채 저장된다).
 
     **프래그먼트다.** 「고칠 프리셋」 선택·삭제 확인·이름·공정 입력과 폼 제출은 이 카드만 다시
     돌린다 — 앱 전체(HOME 계산·Figure 직렬화)를 돌릴 까닭이 없는 조작이다. 저장·기본으로·삭제는
@@ -1854,11 +1863,11 @@ def _render_key_process_editor(
     `clear_global_key_process_cache` 가 프로세스 전역으로 비운다. 공정 목록·표시명은 앱 전체
     회차에서만 바뀌므로 인자 그대로 쓴다.
 
-    다시 읽어도 **고칠 프리셋**은 따로 대조한다. 칸에 key 가 없어 남이 먼저 고친 프리셋(공정·이름)은
-    제출 회차에 새 값으로 서서 이 화면의 입력이 버려지고, 이름이 바뀌었으면 「고칠 프리셋」 이 다른
-    프리셋으로 넘어간다. 그대로 쓰면 남의 값이나 다른 프리셋을 「저장했습니다」 로 다시
-    썼다(2026-10-26 E2E). 그래서 직전 회차(사용자가 보고 고친 화면)가 그린 고칠 프리셋을
-    세션(`KEY_PROCESS_SEEN_KEY`)에 두고, 그것이 바뀌었으면 저장·기본으로·삭제를
+    다시 읽어도 **고칠 프리셋**은 따로 대조한다. 칸 key 가 저장본 지문을 따라 남이 먼저 고친
+    프리셋(공정·이름)은 제출 회차에 두 칸이 새 값으로 서서 이 화면의 입력이 버려지고, 이름이
+    바뀌었으면 「고칠 프리셋」 이 다른 프리셋으로 넘어간다. 그대로 쓰면 남의 값이나 다른 프리셋을
+    「저장했습니다」 로 다시 썼다(2026-10-26 E2E). 그래서 직전 회차(사용자가 보고 고친 화면)가 그린
+    고칠 프리셋을 세션(`KEY_PROCESS_SEEN_KEY`)에 두고, 그것이 바뀌었으면 저장·기본으로·삭제를
     거부한다(`_stale_key_process_target`). 쓰기는 이 회차가 읽은 version 을 넘겨 읽기와 쓰기 사이의
     남의 저장도 막는다.
     """
@@ -1907,10 +1916,19 @@ def _render_key_process_editor(
         absent = [process for process in current if process not in known_options]
         # 값은 원본이고 글자만 표시명이다. 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다
         # (`unique_format_func`) — 같은 글자면 multiselect 가 첫 선택지로 돌아와 고른 것과 다른
-        # 공정이 공용 프리셋에 저장됐다. 이 상자는 key 가 없어 위젯 id 에 보이는 글자가 들어가므로,
-        # 글자가 바뀌면 새 위젯으로 서서 프리셋 값(`default`)을 다시 읽는다 — 매 회차 세션에 다시
-        # 적을 칸이 없고 적을 까닭도 없다.
-        base_format = process_labels.unique_format_func([*process_options, *absent])
+        # 공정이 공용 프리셋에 저장됐다. key 가 붙은 multiselect 는 위젯 id 에 보이는 글자가 들지
+        # 않으므로 그 글자를 key 지문에 넣는다 — 글자가 바뀌면 새 위젯으로 서서 프리셋
+        # 값(`default`)을 다시 읽는다(key 가 없던 때와 같다). 매 회차 세션에 다시 적을 칸이 없고
+        # 적을 까닭도 없다.
+        choices = [*process_options, *absent]
+        base_format = process_labels.unique_format_func(choices)
+
+        def choice_label(process: str) -> str:
+            if process in known_options:
+                return base_format(process)
+            return f"{base_format(process)} · 이 화면에 없음"
+
+        stored_target = (target, tuple(current))
         with st.form("home_key_process_form"):
             # 작업 줄(저장·이름)은 위다. 버튼이 왼쪽이다.
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
@@ -1924,6 +1942,7 @@ def _render_key_process_editor(
                     value="" if is_new else target,
                     max_chars=PRESET_NAME_LIMIT,
                     placeholder="예: A 그룹",
+                    key=_key_process_widget_key(KEY_PROCESS_NAME_KEY_PREFIX, stored_target),
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
@@ -1931,16 +1950,17 @@ def _render_key_process_editor(
                 _render_key_process_flash()
             selected = st.multiselect(
                 "공정",
-                options=[*process_options, *absent],
+                options=choices,
                 default=list(current),
-                format_func=lambda process: (
-                    base_format(process)
-                    if process in known_options
-                    else f"{base_format(process)} · 이 화면에 없음"
-                ),
+                format_func=choice_label,
                 max_selections=KEY_PROCESS_LIMIT,
                 # 몇 개까지 되는지는 고르기 전에 알아야 해 자리 글자에 둔다. 고른 차례가 행 순서다.
                 placeholder=f"공정을 고르세요 (최대 {KEY_PROCESS_LIMIT}개 · 고른 차례가 행 순서)",
+                key=_key_process_widget_key(
+                    KEY_PROCESS_PROCESSES_KEY_PREFIX,
+                    stored_target,
+                    tuple(choice_label(process) for process in choices),
+                ),
             )
         if not is_new:
             _render_key_process_notice(absent, process_labels)
@@ -1997,6 +2017,12 @@ def _render_key_process_editor(
             f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
+
+
+def _key_process_widget_key(prefix: str, *identity: object) -> str:
+    """프리셋 이름·공정 칸의 key — 머리 뒤에 고칠 프리셋 저장본(이름·공정)과 그 밖의 칸
+    정체(`identity`)의 지문을 붙인다. 이름·공정은 아무 글자나 될 수 있어 지문으로 줄인다."""
+    return f"{prefix}{hashlib.sha1(repr(identity).encode('utf-8')).hexdigest()[:16]}"
 
 
 def _key_process_error_message(exc: BaseException) -> str:
