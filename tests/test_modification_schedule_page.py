@@ -722,6 +722,28 @@ def test_the_guide_says_the_found_range_line_the_screen_way() -> None:
     )
 
 
+def test_the_relief_promise_names_the_monthly_exception_caveat() -> None:
+    """「기준 n% 낮추기」 를 「칸에 칠 정수 % — 적힌 만큼 낮추면 들어간다」 고 약속하는 자리(기한
+    칸 풍선 · Guide 「요약 넷」 · 「다 넣지 못하면」 · README)는 단서도 함께 적는다 — 「HOME 기준」
+    에 월별 예외가 있으면 n 은 모든 달 기준을 n% 낮추는 폭이라, 칸에 한 값을 치면 기본보다 낮던 달의
+    기준이 올라가 들지 않을 수 있다(서비스 쪽 사실은
+    `test_modification_schedule.test_with_monthly_targets_the_relief_lowers_every_month_not_one_typed_value`).
+    """
+    caveat = "월별 예외가 있으면 n 은 모든 달 기준을 n% 낮추는 폭"
+    assert caveat in " ".join(DEADLINE_HELP.split())
+
+    guide = " ".join(GUIDE.read_text(encoding="utf-8").split())
+    summary = guide[guide.index("**요약 넷**") : guide.index("**그래프**")]
+    shortfall = guide[guide.index("**다 넣지 못하면**") : guide.index("**아직 일정에 넣지")]
+    assert caveat in summary
+    assert caveat in shortfall
+    # 「다 넣지 못하면」 은 예로 푼다 — 기본 110 · 2월 100 에서 「기준 2% 낮추기」 는 108 · 2월 98.
+    assert "2월 98%" in shortfall
+
+    readme = " ".join((PROJECT_ROOT / "README.md").read_text(encoding="utf-8").split())
+    assert f"칸에 그대로 칠 정수 % 입니다(「HOME 기준」 에 {caveat}" in readme
+
+
 def test_the_written_relief_bracket_follows_only_a_relief_number() -> None:
     """탐색 한도에 걸린 대안 셋 — 「적힌 만큼 낮추면 들어간다」 괄호는 낮출 폭이 적혔을 때만 붙는다.
     동시 상한 같은 까닭만 적혔으면 적힌 폭이 없어 괄호도 「덜 낮춰도」 도 없다."""
