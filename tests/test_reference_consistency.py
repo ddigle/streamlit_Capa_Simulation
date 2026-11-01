@@ -687,3 +687,87 @@ def test_a_new_route_with_zero_upeh_needs_no_run_rate_row() -> None:
         "RQ_RUN_DAY",
     }
     assert _calculation_halts(after, tables)
+
+
+# ---------------------- 빠지던 경로를 살리는 편집은 새 경로와 같다(2026-11-01 사용자 결정의
+# 짝) 빠지는 동안은 그 경로에만 붙은 빈 칸 · 행 없음이 계산을 멈추지 않는다. 그 경로를
+# 살리면(UPEH · 효율 0 이하 → 0 보다 큼) 계산이 멈추므로, 적용 검사가 느슨하면 적용은 성공으로
+# 알리고 계산 전체가 멈춘다 — 「검사는 계산이 멈추는 조건과 같게 둔다」(AGENTS 7장). 결정 7
+# 이전에는 그 앞 상태가 이미 멈춰 있어 이 편집이 만든 멈춤이 아니었다.
+
+
+def _zero_upeh_route(month: int) -> pd.DataFrame:
+    upeh = _upeh([_row(202608), _row(month)])
+    upeh.loc[1, "UPEH"] = 0.0
+    return upeh
+
+
+def test_reviving_a_zero_upeh_route_needs_its_rows_like_a_new_route() -> None:
+    before = _zero_upeh_route(202609)
+    after = before.copy()
+    after.loc[1, "UPEH"] = 50.0
+    tables = _required_tables(run_rate={202608: 0.9}, vital={202608: 1.0}, run_day={202608: 30.0})
+    ratio_tables = _tables([_row(202608), _row(202609)], [_row(202608), _row(202609)])
+    assert not _calculation_halts(before, tables)
+    assert _calculation_halts(after, tables)
+
+    assert set(missing_required_rows(before, after, tables)) == {
+        "RQ_RUN_RATE",
+        "RQ_VITAL",
+        "RQ_RUN_DAY",
+    }
+    with pytest.raises(ValueError, match="0 이하에서 다시 살린 경로가 쓰는 기준정보 행이 없습니다"):
+        validate_upeh_edit(before, after, {**tables, **ratio_tables})
+
+
+def test_reviving_a_zero_run_rate_route_needs_its_vital_and_run_day_rows() -> None:
+    upeh = _upeh([_row(202608), _row(202609)])
+    tables = _required_tables(
+        run_rate={202608: 0.9, 202609: 0.0}, vital={202608: 1.0}, run_day={202608: 30.0}
+    )
+    before = tables["RQ_RUN_RATE"]
+    after = _run_rate({(202608, "Process-A"): 0.9, (202609, "Process-A"): 0.9})
+    assert not _calculation_halts(upeh, tables)
+    assert _calculation_halts(upeh, {**tables, "RQ_RUN_RATE": after})
+
+    with pytest.raises(ValueError) as raised:
+        validate_required_edit(
+            "RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", {**tables, "RQ_UPEH": upeh}
+        )
+
+    message = str(raised.value)
+    assert message.startswith(
+        "「효율」 표에서 0 이하이던 칸을 0보다 크게 바꿔 다시 계산에 드는 경로가 쓰는 "
+        "기준정보 행이 없습니다. 「여유율」 탭에 1건 — "
+    )
+    assert "「일수」 탭에 1건" in message
+    assert message.endswith("「변경사항 적용」을 누른 뒤 효율을 다시 적용하세요.")
+
+
+def test_reviving_a_run_rate_route_whose_rows_are_there_or_that_stays_dropped_passes() -> None:
+    upeh = _upeh([_row(202608), _row(202609)])
+    tables = _required_tables(
+        run_rate={202608: 0.9, 202609: 0.0},
+        vital={202608: 1.0, 202609: 1.0},
+        run_day={202608: 30.0, 202609: 30.0},
+    )
+    before = tables["RQ_RUN_RATE"]
+    after = _run_rate({(202608, "Process-A"): 0.9, (202609, "Process-A"): 0.9})
+
+    validate_required_edit(
+        "RQ_RUN_RATE", "효율", before, after, "CAPA_RUN_RATE", {**tables, "RQ_UPEH": upeh}
+    )
+    # 행이 없어도 Main UPEH 0 으로 여전히 빠지는 경로면 살아나지 않는다.
+    sparse = _required_tables(
+        run_rate={202608: 0.9, 202609: 0.0}, vital={202608: 1.0}, run_day={202608: 30.0}
+    )
+    still_dropped = _zero_upeh_route(202609)
+    validate_required_edit(
+        "RQ_RUN_RATE",
+        "효율",
+        before,
+        after,
+        "CAPA_RUN_RATE",
+        {**sparse, "RQ_UPEH": still_dropped},
+    )
+    assert not _calculation_halts(still_dropped, {**sparse, "RQ_RUN_RATE": after})

@@ -1182,7 +1182,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/reference_consistency.py` — 기준정보 편집이 다른 표의 행을 빠뜨렸는지 저장 전에 가린다
   (`validate_upeh_edit`·`validate_required_edit`). 줄이는 규칙은 `unit_capacity._join_reference` 와 같아야 한다.
   「경로가 쓰는 칸」 은 제외(Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수) 뒤에도 남는 경로의 칸이다(`_live_upeh` — 계산과 같은
-  자리에서 멈추게). 그래서 두 검증은 `RQ_UPEH` 와 효율·측정률이 든 시나리오 표 묶음을 받는다.
+  자리에서 멈추게). 그래서 두 검증은 `RQ_UPEH` 와 효율·측정률이 든 시나리오 표 묶음을 받는다. 빠지던 경로를 살리는 편집
+  (UPEH·효율 0 이하 → 0 보다 큼)은 새 경로로 센다(`revived_route_rows` — 7장 「검사는 계산이 멈추는 조건과 같게」).
 - `src/capa_simulation/services/reference_transformer.py` — XLSB `Q_Core_Data` 와 15개 Core 파생 Power Query 를 pandas 로
   대체하고 값 충돌 보고서를 함께 낸다(수동 `RQ_DISPLAY_ORDER` 는 `display_order_editor.transform_display_order`).
   - 경로 중복 접기·빈 대여 = 0 보정 때문에 `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 Power Query 와 일부러 다를 수
@@ -4141,7 +4142,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   일수 칸을 비우거나 여유율·일수·UPEH MI 행 ST 를 0 이하로 만드는 편집은 적용 전에 막는다(효율 0 은 그 경로만 제외
   목록으로 빠져 막지 않는다 — `services/reference_consistency.py`). 거꾸로 더 엄하지도 않다 — 「경로가 쓰는」 은 제외(Main
   UPEH 0 이하 · 효율 0 이하 · 측정률 음수) 뒤에도 남는 경로다(2026-11-01 사용자 결정). 새 경로도 빠질 경로면 행을 기다리지
-  않는다.
+  않는다. 그 짝으로 **빠지던 경로를 살리는 편집**(Main UPEH · 효율 0 이하 → 0 보다 큼)은 새 경로와 같다 — 빠지는 동안 멈추지
+  않던 그 경로의 빈 칸 · 행 없음이 살아나면 계산을 멈추므로, UPEH 편집은 효율·여유율·일수, 효율 편집은 여유율·일수 행을 먼저
+  갖추게 한다(`missing_required_rows`·`revived_route_rows`). 측정률 음수 → 0 이상 편집은 측정률 편집 검사가 없어 보지 않는다
+  (`docs/TODO.md` 2장 「발견 1 후속 — 남은 것」).
 - 편집 검증은 **이번 편집이 새로 만든 위반만** 막는다 — 쓰지 않는 칸과 원래부터 그렇던 칸은 그대로 둔다. 이미 저장된
   위반까지 막으면 상관없는 칸을 고치려던 사람이 되돌릴 길까지 잃는다(기준정보 짝 결손, MI 행 ST 0 이하, 붙여넣기 범위
   검사의 양식 값, 기준정보 붙여넣기 숫자 검사의 양식 `inf`).

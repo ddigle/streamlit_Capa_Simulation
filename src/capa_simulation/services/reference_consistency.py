@@ -23,7 +23,9 @@ reference_from_edit_table` 가 빈 칸을 `dropna` 로 버린다). 그래서 칸
 - **「경로가 쓰는 칸」 은 제외 뒤에도 남는 경로가 쓰는 칸이다**(`_live_upeh`). 대당 Capa 는
   Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수인 경로를 먼저 빼고 남은 경로에서만 빈 값 · 행 없음 ·
   0 이하로 멈춘다(2026-11-01 사용자 결정 — 0655 결정 7). 빠질 경로에만 붙은 칸을 막으면 계산이
-  받는 편집을 편집기만 막는다.
+  받는 편집을 편집기만 막는다. 거꾸로 **빠지던 경로를 살리는 편집**(UPEH·효율 0 이하 → 0 보다
+  큼)은 새 경로와 같다 — 빠지는 동안 멈추지 않던 그 경로의 빈 칸 · 행 없음이 살아나면 계산을
+  멈추므로 세 표의 행을 먼저 갖추게 한다(`missing_required_rows`·`revived_route_rows`).
 - **UPEH 의 MI 행 ST** — 0 이하면 계산 전체가 멈추는데 편집기 하한은 0 이다.
   `nonpositive_mi_st_rows`.
 
@@ -52,6 +54,7 @@ from capa_simulation.services.frame_contracts import (
     normalize_area_name,
     normalize_month_column,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.unit_capacity import (
     PERFORMANCE_KEYS,
     RUN_DAY_KEYS,
@@ -441,12 +444,24 @@ def missing_required_rows(
     - 값이 숫자가 아닌 행은 없는 것으로 본다.
     - 새 경로가 뒤에서 빠질 경로(넣은 UPEH 0 이하 · 그 달 효율 0 이하 · 측정률 음수 —
       `_live_upeh`)면 세 표의 행이 없어도 계산이 멈추지 않으므로 세지 않는다.
+    - 거꾸로 **빠지던 경로를 살린 것**(Main UPEH 0 이하 → 0 보다 큼)은 새 경로로 센다. 빠지는
+      동안은 그 경로의 빈 칸 · 행 없음이 계산을 멈추지 않았으니(0655 결정 7) 살리는 이 편집이 만든
+      멈춤이다.
     """
-    added = added_performance_keys(_calculated_upeh(before), _live_upeh(after, tables))
+    added = added_performance_keys(_live_upeh(before, tables), _live_upeh(after, tables))
+    return _missing_required_for(added, tables, tuple(REQUIRED_TABLE_KEYS))
+
+
+def _missing_required_for(
+    added: pd.DataFrame, tables: Mapping[str, pd.DataFrame], table_names: Sequence[str]
+) -> dict[str, pd.DataFrame]:
+    """경로 키(`PERFORMANCE_KEYS`) 가운데 `table_names` 표의 행이 없거나(숫자 아님 포함) 여유율·
+    일수가 0 이하인 것 — 표 이름마다 결손 (월 + 키)와 지금 값(행이 없으면 NaN)."""
     if added.empty:
         return {}
     result: dict[str, pd.DataFrame] = {}
-    for table_name, keys in REQUIRED_TABLE_KEYS.items():
+    for table_name in table_names:
+        keys = REQUIRED_TABLE_KEYS[table_name]
         table = tables.get(table_name)
         if table is None:
             continue
@@ -479,6 +494,9 @@ def describe_missing_path_rows(
     missing_ratio: dict[str, pd.DataFrame],
     missing_required: dict[str, pd.DataFrame],
     limit: int = 3,
+    *,
+    subject: str = "UPEH 에 새로 만들었거나 0 이하에서 다시 살린 경로",
+    retry: str = "UPEH 를",
 ) -> str:
     """UPEH 에 새로 만든 경로가 기다리는 행을 **한 오류문**으로 적는다.
 
@@ -512,14 +530,14 @@ def describe_missing_path_rows(
     # 탭끼리는 문장으로 끊는다. 경로 안의 키가 이미 ` / ` 로 이어져 있어 같은 기호로 이으면
     # 어디서 다음 탭이 시작하는지 읽히지 않는다.
     return (
-        "UPEH 에 새로 만든 경로가 쓰는 기준정보 행이 없습니다. "
+        f"{subject}가 쓰는 기준정보 행이 없습니다. "
         + "".join(f"{part}. " for part in parts)
         + "효율·여유율·일수에는 중립값이 없어 이대로 두면 계산 전체가 멈춥니다("
         + ", ".join(halts)
         + ")."
         + ratio_note
         + " 그 탭에서 같은 행의 같은 달 칸에 먼저 0보다 큰 값을 넣고 「변경사항 적용」을 누른 뒤 "
-        "UPEH 를 다시 적용하세요" + neutral_note
+        f"{retry} 다시 적용하세요" + neutral_note
     )
 
 
@@ -640,6 +658,10 @@ def validate_required_edit(
     (2026-09-29 2차 리뷰). 쓰는 경로가 없는 칸의 0 은 계산이 멈추지 않으므로 둔다 — 막는 범위를
     계산과 같게 하려고 편집기의 하한은 올리지 않는다. 효율 0 은 그 경로만 제외라 여기 없다.
     두 문제가 함께 있으면 비운 칸 → 0 이하 칸 순서로 한 오류문에 잇는다.
+
+    효율 편집이 0 이하이던 칸을 0 보다 크게 바꿔 빠지던 경로를 살리면 그 경로의 여유율·일수 행도
+    본다(`revived_route_rows`) — 빠지는 동안 멈추지 않던 빈 칸 · 행 없음이 살아나면 계산 전체가
+    멈춘다. 이 문제는 맨 뒤에 잇는다.
     """
     problems: list[str] = []
     cleared = cleared_keys_in_use(table_name, source, rows, value_column, scenario_tables)
@@ -653,5 +675,49 @@ def validate_required_edit(
             problems.append(
                 describe_nonpositive_keys_in_use(label, table_name, value_column, nonpositive)
             )
+    revived = revived_route_rows(table_name, source, rows, scenario_tables)
+    if revived:
+        problems.append(
+            describe_missing_path_rows(
+                {},
+                revived,
+                subject=f"「{label}」 표에서 0 이하이던 칸을 0보다 크게 바꿔 다시 계산에 드는 경로",
+                retry=with_object_particle(label),
+            )
+        )
     if problems:
         raise ValueError(" ".join(problems))
+
+
+def revived_route_rows(
+    table_name: str,
+    before: pd.DataFrame,
+    after: pd.DataFrame,
+    tables: Mapping[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """이번 효율 편집이 0 이하에서 0 보다 크게 바꿔 **다시 계산에 드는** 경로 가운데 여유율·일수
+    행이 없거나 0 이하인 것. 효율(`RQ_RUN_RATE`) 밖의 표는 경로를 빼지 않아 빈 결과다.
+
+    효율 0 이하 경로는 계산에서 빠지므로 그 경로에만 붙은 여유율·일수의 빈 칸 · 행 없음은 계산을
+    멈추지 않는다(2026-11-01 사용자 결정 — 0655 결정 7). 그 효율을 0 보다 크게 고치면 경로가 살아나
+    멈추므로, 이 편집이 만든 멈춤으로 막는다. `before` 는 편집표를 만든 같은 기간의 원본, `after` 는
+    적용할 행, `tables` 는 적용 전 활성 시나리오의 표다(`validate_required_edit` 와 같다). 살아나는
+    경로는 그 기간 안의 칸만이다 — 다른 측정률 음수 · Main UPEH 0 이하로 여전히 빠지면 세지 않는다.
+    """
+    if table_name != "RQ_RUN_RATE" or before.empty or after.empty:
+        return {}
+    keys = REQUIRED_TABLE_KEYS[table_name]
+    value_column = REQUIRED_VALUE_COLUMNS[table_name]
+    old = _keyed_values(before, keys, value_column, table_name)
+    old = old.loc[old[value_column].le(0), keys].drop_duplicates()
+    new = _keyed_values(after, keys, value_column, table_name)
+    new = new.loc[new[value_column].gt(0), keys].drop_duplicates()
+    revived = old.merge(new, on=keys, how="inner")
+    upeh = tables.get("RQ_UPEH")
+    if revived.empty or upeh is None or upeh.empty:
+        return {}
+    live = _live_upeh(upeh, {**tables, table_name: after})
+    if live.empty:
+        return {}
+    routes = _performance_keys(live, "RQ_UPEH").merge(revived, on=keys, how="inner")
+    return _missing_required_for(routes, tables, ("RQ_VITAL", "RQ_RUN_DAY"))
