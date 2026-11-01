@@ -31,6 +31,7 @@ from typing import Final
 
 import streamlit as st
 from streamlit.errors import FragmentHandledException
+from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlException
 
 # 코어 이름은 모두 `_` 별명으로 들인다 — 모듈이 `api.<이름>` 으로 닿는 공개 이름은 `__all__`
 # 뿐이어야 한다(`api.module_registry.settings` 같은 길로 코어 설정·DB 자리에 닿지 않게). 겉면
@@ -131,16 +132,19 @@ class ModuleContext:
     def callback(self, fn: Callable[..., object]) -> Callable[..., None]:
         """위젯 콜백(`on_change`·`on_click`·`on_submit`·`on_select`·`on_dismiss`)에 넘길 감싼 함수.
 
-        `Exception`·`SystemExit` 을 잡아 기록하고(자리 "callback") 세션 표지를 남긴다 — 같은
-        회차의 화면 감싸기가 그 화면 맨 위에 카드를 그린다. Streamlit 제어 예외(`st.stop`·
-        `st.rerun`)는 다시 던진다.
+        `Exception`·`SystemExit`(그 밖의 `BaseException` 도)을 잡아 기록하고(자리 "callback") 세션
+        표지를 남긴다 — 같은 회차의 화면 감싸기가 그 화면 맨 위에 카드를 그린다. Streamlit 제어
+        예외(`st.stop`·`st.rerun`)와 `KeyboardInterrupt` 는 다시 던진다.
         """
 
         @functools.wraps(fn)
         def wrapped(*args: object, **kwargs: object) -> None:
             try:
                 fn(*args, **kwargs)
-            except (Exception, SystemExit) as error:
+            except (ScriptControlException, KeyboardInterrupt):
+                raise
+            # SystemExit·CancelledError 도 잡는다 — 두면 회차 스레드가 끝나 세션이 멈춘다.
+            except BaseException as error:
                 self._note_callback_failure(error)
 
         return wrapped
@@ -172,9 +176,10 @@ class ModuleContext:
 def _guarded(ctx: ModuleContext) -> Iterator[None]:
     try:
         yield
-    except FragmentHandledException:
+    except (FragmentHandledException, ScriptControlException, KeyboardInterrupt):
         raise
-    except (Exception, SystemExit) as error:
+    # SystemExit·CancelledError 도 잡는다 — 두면 회차 스레드가 끝나 세션이 멈춘다.
+    except BaseException as error:
         _module_failures.record_failure(ctx.id, page="", kind=type(error).__name__, where="guard")
         _LOGGER.error("사내 모듈 %s guard 안 실패", ctx.id, exc_info=error)
         _render_module_failure_card(

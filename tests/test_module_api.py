@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -145,7 +146,9 @@ def test_a_wrapped_callback_passes_its_arguments_and_keeps_its_name() -> None:
     assert module_failures.last_failures() == {}
 
 
-@pytest.mark.parametrize("error", [RuntimeError("콜백 오류"), SystemExit(2)])
+@pytest.mark.parametrize(
+    "error", [RuntimeError("콜백 오류"), SystemExit(2), asyncio.CancelledError()]
+)
 def test_a_wrapped_callback_swallows_errors_and_records_them(error: BaseException) -> None:
     context = module_api.context(DEMO_OK_PAGE)
 
@@ -158,7 +161,9 @@ def test_a_wrapped_callback_swallows_errors_and_records_them(error: BaseExceptio
     assert (failure.where, failure.kind, failure.page) == ("callback", type(error).__name__, "")
 
 
-@pytest.mark.parametrize("control", [StopException(), RerunException(RerunData())])
+@pytest.mark.parametrize(
+    "control", [StopException(), RerunException(RerunData()), KeyboardInterrupt()]
+)
 def test_a_wrapped_callback_lets_streamlit_control_through(control: BaseException) -> None:
     context = module_api.context(DEMO_OK_PAGE)
 
@@ -230,7 +235,12 @@ st.write("뒤 줄")
 
 @pytest.mark.parametrize(
     "control",
-    [StopException(), RerunException(RerunData()), FragmentHandledException(RuntimeError("안쪽"))],
+    [
+        StopException(),
+        RerunException(RerunData()),
+        FragmentHandledException(RuntimeError("안쪽")),
+        KeyboardInterrupt(),
+    ],
 )
 def test_guard_lets_control_and_handled_fragment_errors_through(control: BaseException) -> None:
     context = module_api.context(DEMO_OK_PAGE)

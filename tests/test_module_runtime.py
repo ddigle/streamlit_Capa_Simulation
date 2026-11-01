@@ -353,6 +353,55 @@ def test_a_guarded_fragment_error_is_a_card_in_place(_app: AppTest, _lab: Path) 
     assert module_failures.last_failures()["demo_lab"].where == "guard"
 
 
+CANCEL_PAGES = {
+    "cancel.py": "import asyncio\n\nst.write('취소 앞')\nraise asyncio.CancelledError()\n",
+    "cancelcb.py": (
+        "import asyncio\n\n\ndef cancel() -> None:\n    raise asyncio.CancelledError()\n\n\n"
+        "st.write('취소 콜백 화면')\n"
+        "st.button('취소', key=ctx.key('cancel'), on_click=ctx.callback(cancel))\n"
+    ),
+    "cancelguard.py": (
+        "import asyncio\n\nwith ctx.guard():\n    raise asyncio.CancelledError()\n"
+        "st.write('취소 자리 뒤')\n"
+    ),
+}
+
+
+def test_a_base_exception_outside_exception_is_a_card_and_the_session_goes_on(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`asyncio.CancelledError` 는 `Exception` 이 아니다(3.8~).
+
+    `SystemExit` 처럼 두면 회차 스레드가 끝나 세션이 「실행 중」 에 머문다. 화면 본문·콜백·guard
+    셋 다 카드로 바뀌고 회차가 끝나야 한다.
+    """
+    root = tmp_path / "modules"
+    folder = _module(root, "demo_cancel", CANCEL_PAGES)
+    monkeypatch.setenv(module_registry.ROOT_ENV_VAR, str(root))
+    app = _ok(_app.run())
+
+    app.switch_page(str(folder / "cancel.py")).run(timeout=60)
+    _ok(app)
+    assert any("CancelledError" in text for text in _texts(app, "error"))
+    assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
+
+    app.switch_page(str(folder / "cancelcb.py")).run(timeout=60)
+    app.button(key="mod_demo_cancel__cancel").click().run(timeout=60)
+    _ok(app)
+    (card,) = _texts(app, "error")
+    assert card.startswith("방금 한 동작에서 오류가 났습니다") and "CancelledError" in card
+    assert module_failures.last_failures()["demo_cancel"].where == "callback"
+
+    app.switch_page(str(folder / "cancelguard.py")).run(timeout=60)
+    _ok(app)
+    assert any("CancelledError" in text for text in _texts(app, "error"))
+    assert "취소 자리 뒤" in _texts(app, "markdown")
+    assert module_failures.last_failures()["demo_cancel"].where == "guard"
+
+    app.switch_page(HOME.path).run(timeout=60)
+    _ok(app)
+
+
 def test_a_stopping_page_reports_its_unprefixed_key_on_the_next_run(
     _app: AppTest, _lab: Path
 ) -> None:

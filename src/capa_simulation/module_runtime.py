@@ -9,7 +9,9 @@
 - 화면 본문의 `Exception`·`SystemExit`(옮긴 독립 앱의 `argparse`·`sys.exit`)은 적고 그 화면에 카드를
   그린 뒤 **정상으로 돌아온다** — `app.py` 꼬리(`app_run.finish()`·`warm_intro_summary`)가 돌아
   회차가 정상으로 끝나고 사이드바·머리 띠·탭 줄·다른 화면은 그대로다. `SystemExit` 을 두면
-  ScriptRunner 스레드가 끝나 세션이 「실행 중」 에 머문다.
+  ScriptRunner 스레드가 끝나 세션이 「실행 중」 에 머문다. `Exception` 밖의 다른 `BaseException`
+  (`asyncio.CancelledError` 등 — Streamlit 은 `Exception` 만 잡는다)도 같은 까닭으로 같은 길이다.
+  Streamlit 제어 예외(`ScriptControlException`)와 `KeyboardInterrupt` 만 그대로 지나간다.
 - `FragmentHandledException`(전체 실행 안 프래그먼트 실패 — Streamlit 이 이미 그 안에 그렸다)은 적고
   카드 없이 정상으로 돌아온다. 다시 던지면 그 회차가 끝나지 않은 회차가 된다.
 - `StopException`(`st.stop()`)·`RerunException`(`st.rerun`·`st.switch_page`)은 다시 던진다.
@@ -39,7 +41,10 @@ from typing import TYPE_CHECKING, Final
 import streamlit as st
 from streamlit.errors import FragmentHandledException
 from streamlit.runtime.scriptrunner import get_script_run_ctx
-from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+from streamlit.runtime.scriptrunner_utils.exceptions import (
+    ScriptControlException,
+    StopException,
+)
 
 from capa_simulation import module_failures, module_registry, settings
 from capa_simulation.components.literal_markdown import literal_names
@@ -261,7 +266,10 @@ def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:
     except StopException:
         _finish(spec, before, started, stopped=True)
         raise
-    except (Exception, SystemExit) as error:
+    except (ScriptControlException, KeyboardInterrupt):
+        raise
+    # SystemExit·CancelledError 도 잡는다 — 두면 회차 스레드가 끝나 세션이 「실행 중」 에 머문다.
+    except BaseException as error:
         _record(spec, error)
         render_failure(spec, error)
     _finish(spec, before, started, stopped=False)
