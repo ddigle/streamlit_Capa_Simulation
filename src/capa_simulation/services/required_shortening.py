@@ -166,6 +166,7 @@ __all__ = [
     "plan_required_shortening",
     "process_month_export_frame",
     "shortening_candidates",
+    "target_for_month",
     "target_from_thresholds",
     "unit_export_frame",
     "unit_number",
@@ -362,6 +363,11 @@ class MonthlyTarget:
 
 TargetLevel: TypeAlias = float | MonthlyTarget
 """목표 하나 — 모든 달에 같은 스칼라(다섯 값) 또는 달마다 다른 목표."""
+
+
+def target_for_month(level: TargetLevel, month: int) -> float:
+    """그 달의 목표 — 스칼라는 모든 달에 같은 값이다."""
+    return level.for_month(month) if isinstance(level, MonthlyTarget) else float(level)
 
 
 def target_from_thresholds(
@@ -828,9 +834,7 @@ def plan_from_availability(
 
 def _month_targets(level: TargetLevel, months: Sequence[int]) -> list[float]:
     """달마다의 목표(`months` 차례). 스칼라는 모든 달에 같은 값이다."""
-    if isinstance(level, MonthlyTarget):
-        return [level.for_month(month) for month in months]
-    return [float(level)] * len(months)
+    return [target_for_month(level, month) for month in months]
 
 
 def _level_plan(level: TargetLevel, process_months: pd.DataFrame, units: pd.DataFrame) -> LevelPlan:

@@ -186,8 +186,8 @@ from capa_simulation.services.process_equipment_timeline import (
 from capa_simulation.services.required_shortening import (
     STATUS_EXPIRED,
     STATUS_NEW_LIMIT,
-    MonthlyTarget,
     TargetLevel,
+    target_for_month,
 )
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
@@ -1029,7 +1029,7 @@ def _dynamic_rows(
                 target_units,
                 before,
                 state,
-                target=_target_for(dynamic.target, month),
+                target=target_for_month(dynamic.target, month),
                 past=past,
             )
             impact.cells[index] = _impact_cell(
@@ -1608,21 +1608,17 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
 
 
 def _target_text(target: TargetLevel, axis: Sequence[int]) -> str:
-    values = {_target_for(target, month) for month in axis}
+    values = {target_for_month(target, month) for month in axis}
     if len(values) == 1:
         return f"단축 목표 {threshold_percent_label(next(iter(values)))}"
     return "단축 목표 = 확보기준(달마다)"
 
 
 def _target_balance_label(target: TargetLevel, axis: Sequence[int]) -> str:
-    values = {_target_for(target, month) for month in axis}
+    values = {target_for_month(target, month) for month in axis}
     if len(values) == 1:
         return f"목표({threshold_percent_label(next(iter(values)))}) 과부족"
     return "목표 과부족"
-
-
-def _target_for(target: TargetLevel, month: int) -> float:
-    return target.for_month(month) if isinstance(target, MonthlyTarget) else float(target)
 
 
 # ================================================================== 월 Figure

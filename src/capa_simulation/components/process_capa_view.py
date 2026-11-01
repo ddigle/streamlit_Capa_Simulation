@@ -158,8 +158,8 @@ from capa_simulation.services.required_shortening import (
     STATUS_EXPIRED,
     STATUS_MET,
     STATUS_NEW_LIMIT,
-    MonthlyTarget,
     TargetLevel,
+    target_for_month,
 )
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
@@ -501,7 +501,7 @@ def reopen_entry_section(source: str | None) -> None:
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(정수 %)도."""
-    values = {_target_for(target, month) for month in months}
+    values = {target_for_month(target, month) for month in months}
     if len(values) == 1:
         return f"{TARGET_SOURCE_TEXT} {target_label(next(iter(values)))}"
     return f"{TARGET_SOURCE_TEXT} — 달마다 다름"
@@ -514,10 +514,6 @@ def target_label(value: float) -> str:
     정수가 곧 그 기준이다. 식 줄은 곱한 값을 판정 경계로 적는다(`boundary_percent_label`).
     """
     return threshold_percent_label(value)
-
-
-def _target_for(target: TargetLevel, month: int) -> float:
-    return target.for_month(month) if isinstance(target, MonthlyTarget) else float(target)
 
 
 def _ratio_percent(value: float) -> str:
@@ -1212,7 +1208,7 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
     if not state or state == STATUS_MET:
         return None
     canvas = dynamic.canvas
-    target = _target_for(canvas.target, month)
+    target = target_for_month(canvas.target, month)
     required = _number(record.get("소요대수"))
     target_units = _number(record.get("목표대수"))
     before = _number(record.get("가용대수"))
@@ -1528,7 +1524,7 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
 
 def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """대책 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
-    values = {_target_for(target, month) for month in months}
+    values = {target_for_month(target, month) for month in months}
     if len(values) == 1:
         return target_label(next(iter(values)))
     return "달마다 확보기준"
