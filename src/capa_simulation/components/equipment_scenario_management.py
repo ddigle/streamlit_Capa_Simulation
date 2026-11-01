@@ -292,10 +292,6 @@ def _keyed(base: str) -> str:
     return widget_key(base, GENERATION_KEY)
 
 
-def _popover_generation() -> int:
-    return generation(POPOVER_GENERATION_KEY)
-
-
 def _popover_key(base: str) -> str:
     """팝오버 key — 팝오버 세대 꼬리를 늘 붙인다(`POPOVER_GENERATION_KEY`)."""
     return widget_key(base, POPOVER_GENERATION_KEY, style="__p", bare_zero=False)
