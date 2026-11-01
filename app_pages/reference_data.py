@@ -950,8 +950,9 @@ def _required_rows(
     def to_rows(table: pd.DataFrame) -> pd.DataFrame:
         rows = reference_from_edit_table(table, dimensions, value_column, f"{label} 편집값")
         source = edit_slices.get_or_stop(table_name)
-        upeh = active_scenario["tables"]["RQ_UPEH"]
-        validate_required_edit(table_name, label, source, rows, value_column, upeh)
+        validate_required_edit(
+            table_name, label, source, rows, value_column, active_scenario["tables"]
+        )
         return rows
 
     return to_rows

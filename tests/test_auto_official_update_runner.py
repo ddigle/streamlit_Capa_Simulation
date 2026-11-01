@@ -362,6 +362,30 @@ def test_a_broken_capacity_calculation_registers_but_does_not_publish(
     assert release is not None and release.release_no == 1
 
 
+def test_a_registration_whose_capacity_stops_says_how_to_fix_it_in_the_run_record(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """자동 갱신도 화면 등록과 같은 길로 저장 전에 대당 Capa 를 돌려 본다(2026-11-01 결정 A1).
+
+    리비전 1 메모에 꼴·개수가 남고, 실행 기록 사유 끝에 푸는 길(기준 정보 탭 → 다음 리비전)이
+    붙는다.
+    """
+    _official_w40(repository)
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": _source(broken_run_rate_month=202612)},
+    )
+
+    run = _run(repository, fake)
+
+    assert run.reason is not None
+    assert "기준 정보 화면 「효율」 탭에서 그 칸에 0보다 큰 값을 넣고" in run.reason
+    assert "r2부터 계산이 섭니다" in run.reason
+    assert run.reason.endswith("손으로 발행하세요.")
+    base = repository.load_revision(str(run.base_revision_id))
+    assert "대당 Capa 계산 멈춤(RQ_RUN_RATE 빈 값 키 " in (base.revision.note or "")
+
+
 def test_a_securement_failure_registers_but_does_not_publish(
     repository: DuckDBScenarioRepository,
 ) -> None:

@@ -25,6 +25,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
@@ -74,6 +75,9 @@ CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
 REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
 # 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고. 성공 알림 바로 밑, 같은 칸에 선다.
 REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
+# 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고 띠(`RegistrationCapacityCheck`). 같은 칸
+# 맨 밑.
+REGISTRATION_CAPACITY_FLASH_KEY = "bigdataquery_registration_capacity_flash"
 
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
@@ -166,7 +170,9 @@ def render_bigdataquery_registration(
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     st.subheader("BigDataQuery 시나리오 등록")
     # 등록 알림은 늘 서 있는 한 칸에 그린다 — 생기고 사라질 때 아래 폼·표의 자리가 밀리지 않게.
-    render_flash(REGISTRATION_FLASH_KEY, REGISTRATION_DROP_FLASH_KEY)
+    render_flash(
+        REGISTRATION_FLASH_KEY, REGISTRATION_DROP_FLASH_KEY, REGISTRATION_CAPACITY_FLASH_KEY
+    )
 
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
@@ -638,7 +644,7 @@ def _save_scenario(
                 prepared.batch.simulation_code,
             )
             preset = capture_full_data_scenario_preset(prepared.reference_tables)
-            snapshot = save_bigdataquery_scenario(
+            registration = save_bigdataquery_scenario(
                 repository,
                 prepared,
                 preset,
@@ -649,6 +655,7 @@ def _save_scenario(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    snapshot = registration.snapshot
     activate_persisted_snapshot(snapshot)
     # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
     _request_reset()
@@ -663,6 +670,15 @@ def _save_scenario(
         queue_flash(
             REGISTRATION_DROP_FLASH_KEY,
             prepared.blank_cs.notice(),
+            kind="warning",
+            icon=":material/warning:",
+        )
+    if registration.capacity.stopped:
+        # 저장은 됐다 — 막지 않고 무엇이 멈췄는지와 푸는 길을 알린다(2026-11-01 사용자 결정).
+        # 꼴·개수는 리비전 메모에도 남는다.
+        queue_flash(
+            REGISTRATION_CAPACITY_FLASH_KEY,
+            markdown_safe_tildes(registration.capacity.notice(snapshot.revision.revision_no)),
             kind="warning",
             icon=":material/warning:",
         )

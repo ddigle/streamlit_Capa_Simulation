@@ -117,10 +117,16 @@ UPEH_EXCLUSION_REASON = "UPEH 0 이하"
 # 대신 무엇이 0 인지 사유에 적는다.
 RUN_RATE_EXCLUSION_REASON = "CAPA_RUN_RATE 0 이하"
 
-# `_join_reference` 가 붙이는 동안만 들고 가는 칸. 붙은 행의 원래 적힌 값·빈 칸 여부·붙었는지.
-_RAW_VALUE = "_원래값"
-_BLANK_VALUE = "_빈값"
+# `_join_reference` 가 붙인 뒤 제외를 정할 때까지 들고 가는 칸의 머리. 표마다 하나씩 — 붙은 칸의
+# 상태(`_VALUE_OK` …)와, 숫자가 아닌 값이 있는 표만 원래 적힌 값.
+_CHECK_STATUS = "_검사상태:"
+_CHECK_RAW = "_검사원래값:"
 _JOINED = "_연결"
+# 붙은 칸의 상태. 제외 마스크 뒤에 남은 행에서만 본다(`_raise_on_unusable_values`).
+_VALUE_OK = 0
+_VALUE_NOT_NUMERIC = 1
+_VALUE_BLANK = 2
+_VALUE_NO_MATCH = 3
 
 # 기준정보 한 표를 경로에 붙이다 멈춘 꼴(`ReferenceJoinProblem.shape`). 여러 꼴이 모두 같은 표
 # 이름의 `ValueError` 로 올라오므로, 문구를 찍지 못하는 집계(사내 런북 6-3 a)는 이 이름과 개수로
@@ -133,9 +139,6 @@ JOIN_DUPLICATE_KEY = "연결 키 중복"
 JOIN_NOT_NUMERIC = "숫자 아님"
 JOIN_BLANK_VALUE = "빈 값"
 JOIN_NO_MATCH = "연결값 없음"
-# 붙일 때 이미 알 수 있는, 뒤에서 계산 대상에서 빠질 경로의 사유. 표를 붙이는 차례(효율 → 편중률 →
-# 모듈수 → 일수 → Lot 측정률 → WF측정률) 때문에 효율 표에서 멈추면 측정률 음수는 아직 모른다.
-DROPPED_LATER_RULE = "Main UPEH 0 이하 · CAPA_RUN_RATE 0 이하 · 측정률 음수"
 
 
 @dataclass(frozen=True)
@@ -147,11 +150,8 @@ class ReferenceJoinProblem:
     찍는다.
 
     - `keys` — 걸린 업무 키 수. `rows` — 걸린 행 수다. 붙인 뒤에 보는 꼴(빈 값·숫자 아님·
-      연결값 없음)은 그 키에 붙은 대당 Capa **경로** 행, 붙이기 전에 보는 꼴(월 형식·연결 키)은
-      그 기준정보 표의 행이다.
-    - `dropped_keys` — 빈 값·숫자 아님 가운데 붙은 경로가 모두 뒤에서 빠질 경로
-      (`DROPPED_LATER_RULE`)인 키. 그 키만 걸렸다면 계산이 어차피 쓰지 않을 칸 때문에 멈춘
-      것이다(`docs/TODO.md` 결정 7).
+      연결값 없음)은 그 키에 붙은 대당 Capa **경로** 행 가운데 제외 뒤에 남은 것, 붙이기 전에 보는
+      꼴(월 형식·연결 키)은 그 기준정보 표의 행이다.
     - `spacing_keys` — 연결 키 중복 가운데 원래 글자로는 다르고 앞뒤 공백을 떼면 같아지는 키.
       등록은 원래 글자로 접고 계산은 공백을 떼고 붙여서 생기는 겹침이다.
     """
@@ -161,16 +161,11 @@ class ReferenceJoinProblem:
     columns: tuple[str, ...] = ()
     keys: int = 0
     rows: int = 0
-    dropped_keys: int = 0
     spacing_keys: int = 0
 
     @property
     def label(self) -> str:
         """갈래 이름 — 개수 없이. 집계가 이 이름으로 리비전을 묶는다."""
-        if self.shape in (JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC):
-            if self.keys and self.dropped_keys == self.keys:
-                return f"{self.shape}(붙은 경로가 모두 뒤에서 빠짐)"
-            return self.shape
         if self.shape == JOIN_DUPLICATE_KEY and self.keys and self.spacing_keys == self.keys:
             return f"{self.shape}(앞뒤 공백만 다름)"
         if self.shape in (JOIN_MISSING_COLUMN, JOIN_BLANK_KEY) and self.columns:
@@ -180,10 +175,7 @@ class ReferenceJoinProblem:
     def summary(self) -> str:
         """개수까지 — 리비전 한 줄에 싣는다. 값·이름은 없다."""
         if self.shape in (JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MATCH):
-            text = f"{self.shape} 키 {self.keys:,} · 경로 {self.rows:,}"
-            if self.dropped_keys:
-                text += f" · 모두 뒤에서 빠질 경로인 키 {self.dropped_keys:,}"
-            return text
+            return f"{self.shape} 키 {self.keys:,} · 경로 {self.rows:,}"
         if self.shape == JOIN_DUPLICATE_KEY:
             text = f"{self.shape} 키 {self.keys:,} · 행 {self.rows:,}"
             if self.spacing_keys:
@@ -249,66 +241,58 @@ def calculate_unit_capacity(
     assumed: dict[str, int] = {}
     assumed_months: dict[str, set[int]] = {}
     result = performance
-    result = _join_reference(
-        result,
-        run_rate,
-        RUN_RATE_KEYS,
-        "CAPA_RUN_RATE",
-        "RQ_RUN_RATE",
-    )
-    result = _join_reference(
-        result,
-        vital,
-        VITAL_KEYS,
-        "편중률",
-        "RQ_VITAL",
-    )
-    result = _join_reference(result, module, MODULE_KEYS, "모듈수", "RQ_MODULE")
-    result = _join_reference(
-        result,
-        run_day,
-        RUN_DAY_KEYS,
-        "RUN_DAY",
-        "RQ_RUN_DAY",
-    )
-    result = _join_reference(
-        result,
-        lot_ratio,
-        PERFORMANCE_KEYS,
-        "Lot 측정률",
-        "RQ_LOT_RATIO",
-        missing_value_default=1.0,
-        assumed=assumed,
-        assumed_months=assumed_months,
-    )
-    result = _join_reference(
-        result,
-        wf_ratio,
-        PERFORMANCE_KEYS,
-        "WF측정률",
-        "RQ_WF_RATIO",
-        missing_value_default=1.0,
-        assumed=assumed,
-        assumed_months=assumed_months,
-    )
+    pending: list[_PendingCheck] = []
+    for reference, keys, value_column, table_name, neutral in (
+        (run_rate, RUN_RATE_KEYS, "CAPA_RUN_RATE", "RQ_RUN_RATE", None),
+        (vital, VITAL_KEYS, "편중률", "RQ_VITAL", None),
+        (module, MODULE_KEYS, "모듈수", "RQ_MODULE", None),
+        (run_day, RUN_DAY_KEYS, "RUN_DAY", "RQ_RUN_DAY", None),
+        (lot_ratio, PERFORMANCE_KEYS, "Lot 측정률", "RQ_LOT_RATIO", 1.0),
+        (wf_ratio, PERFORMANCE_KEYS, "WF측정률", "RQ_WF_RATIO", 1.0),
+    ):
+        result, check = _join_reference(
+            result,
+            reference,
+            keys,
+            value_column,
+            table_name,
+            missing_value_default=neutral,
+            assumed=assumed if neutral is not None else None,
+            assumed_months=assumed_months if neutral is not None else None,
+        )
+        pending.append(check)
+    check_columns = [column for check in pending for column in check.columns]
 
-    # 계산 대상 행을 먼저 확정한다. 어차피 빠질 행의 다른 기준값 때문에 화면 전체가
-    # 멈추면 그 값을 고칠 편집기조차 열리지 않는다. 0 을 1.0 으로 올리는 것이 먼저다 —
-    # 뒤에 두면 이미 뺀 행을 되살릴 수 없다.
+    # 계산 대상 행을 먼저 확정한다. 어차피 빠질 행의 다른 기준값 때문에 화면 전체가 멈추면 그 값을
+    # 고칠 편집기조차 열리지 않는다. 0 을 1.0 으로 올리는 것이 먼저다 — 뒤에 두면 이미 뺀 행을
+    # 되살릴 수 없다. 빈 값·숫자 아님·연결값 없음 칸은 비교가 거짓이라(NaN) 그 칸으로는 빠지지
+    # 않는다 — 다른 칸으로 빠지지 않으면 아래 검사가 멈춘다.
     excluded_frames: list[pd.DataFrame] = []
     nonpositive_upeh = result["환산_UPEH"].le(0)
-    excluded_frames.append(_exclusion_rows(result, nonpositive_upeh, UPEH_EXCLUSION_REASON))
+    excluded_frames.append(
+        _exclusion_rows(result, nonpositive_upeh, UPEH_EXCLUSION_REASON, check_columns)
+    )
     result = result.loc[~nonpositive_upeh].copy()
 
     nonpositive_run_rate = result["CAPA_RUN_RATE"].le(0)
-    excluded_frames.append(_exclusion_rows(result, nonpositive_run_rate, RUN_RATE_EXCLUSION_REASON))
+    excluded_frames.append(
+        _exclusion_rows(result, nonpositive_run_rate, RUN_RATE_EXCLUSION_REASON, check_columns)
+    )
     result = result.loc[~nonpositive_run_rate].copy()
 
     for column, reason in NEGATIVE_EXCLUDED_COLUMNS:
         result[column] = result[column].mask(result[column].eq(0), MEASUREMENT_RATIO_ZERO_DEFAULT)
         negative_ratio = result[column].lt(0)
-        excluded_frames.append(_exclusion_rows(result, negative_ratio, reason))
+        excluded_frames.append(_exclusion_rows(result, negative_ratio, reason, check_columns))
         result = result.loc[~negative_ratio].copy()
+
+    # 빈 값·숫자 아님·연결값 없음은 **제외 뒤에 남은 행에서만** 본다(2026-11-01 사용자 결정 —
+    # `docs/TODO.md` 3장, 0655 결정 7). 어차피 빠질 경로에만 붙은 빈 칸 하나가 공정 전체의 계산을
+    # 멈추면, 고칠 수 없는 저장 리비전(append-only)은 다시 등록하는 길밖에 없었다. 같은 칸의 0 이
+    # 아래 0 이하 검사에서 통과하던 것과도 이제 같다.
+    for check in pending:
+        _raise_on_unusable_values(result, check)
+    result = result.drop(columns=check_columns)
 
     for column, table_name, keys in (
         ("편중률", "RQ_VITAL", VITAL_KEYS),
@@ -331,7 +315,7 @@ def calculate_unit_capacity(
     # RUN_DAY 는 하드 오류, 측정률은 0 → 1.0). 그래서 이 제외는 언더플로 같은 경우만 받는
     # 마지막 안전망이다 — 사유를 보고 원인을 찾을 수 없으니 여기 걸리는 것이 정상은 아니다.
     nonpositive_capacity = result["대당 Capa"].le(0)
-    excluded_frames.append(_exclusion_rows(result, nonpositive_capacity, "대당 Capa 0 이하"))
+    excluded_frames.append(_exclusion_rows(result, nonpositive_capacity, "대당 Capa 0 이하", []))
     result = result.loc[~nonpositive_capacity].copy()
     columns = ["생산계획년월", *UNIT_CAPACITY_DIMENSIONS, "환산_UPEH", "대당 Capa"]
     output = (
@@ -410,6 +394,21 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+class _PendingCheck(NamedTuple):
+    """붙인 표 하나의 값 검사 — 제외 마스크 뒤에 남은 행에서 `_raise_on_unusable_values` 가 본다."""
+
+    table_name: str
+    value_column: str
+    keys: list[str]
+    status: str
+    raw: str | None
+
+    @property
+    def columns(self) -> list[str]:
+        """검사가 끝나면 지울, 붙이며 더한 칸."""
+        return [self.status] if self.raw is None else [self.status, self.raw]
+
+
 def _join_reference(
     base: pd.DataFrame,
     reference: pd.DataFrame,
@@ -420,7 +419,7 @@ def _join_reference(
     missing_value_default: float | None = None,
     assumed: dict[str, int] | None = None,
     assumed_months: dict[str, set[int]] | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, _PendingCheck]:
     """기준정보 한 표를 붙인다. **연결값이 없을 때의 처리가 표마다 다르다.**
 
     `missing_value_default` 가 **선언된 표만** 행이 없어도 그 값으로 이어 간다. 측정률
@@ -438,12 +437,13 @@ def _join_reference(
     1 보다 작으면(표본은 모두 그렇다) 대당 Capa 과소 → 소요대수 과대 → 확보율 과소로
     **보수 쪽**이고, 1 보다 큰 경로에서만 낙관 쪽이다.
 
-    **값 검사는 붙인 뒤, 실제로 붙은 행에만 한다.** 표 전체를 먼저 숫자로 검사하면 BOX·PCB 공정이나
-    UPEH 가 없는 달처럼 어느 경로에도 붙지 않는 행의 빈 칸 하나가 계산 전체를 멈추고, 그 값을
-    고칠 편집기조차 못 연다. 붙은 행이 걸리면 빈 값과 숫자가 아닌 값을 갈라 건수·키 예시와 함께
-    알린다. 행 자체가 없는 것(연결값 없음)과도 다른 문장이다. 이 검사는 계산 대상 행을 확정하기
-    **전**이라, 뒤에서 제외될 경로(UPEH·`CAPA_RUN_RATE` 0 이하, 측정률 음수)에만 붙은 행도 행 없음과
-    같이 멈춘다 — 0 이하 검사(`_assert_positive`)는 제외 뒤에 돈다.
+    **값 검사는 붙인 뒤, 실제로 붙은 행에만 하고, 계산 대상 행을 확정한 뒤에 한다.** 표 전체를 먼저
+    숫자로 검사하면 BOX·PCB 공정이나 UPEH 가 없는 달처럼 어느 경로에도 붙지 않는 행의 빈 칸 하나가
+    계산 전체를 멈추고, 그 값을 고칠 편집기조차 못 연다. 그래서 붙은 칸의 상태(빈 값·숫자
+    아님·연결값 없음)만 칸에 적어 들고 가고(`_PendingCheck`), 뒤에서 제외될 경로(UPEH·
+    `CAPA_RUN_RATE` 0 이하, 측정률 음수)를 뺀 뒤 남은 행에서 `_raise_on_unusable_values` 가 멈춘다 —
+    0 이하 검사(`_assert_positive`)와 같은 자리다. 표 자체가 깨진 것(컬럼·월 형식·연결 키)은 어느
+    행이 남든 붙일 수 없으므로 여기서 바로 멈춘다.
     """
     prepared = _prepared_reference(reference, keys, value_column, table_name)
     raw_values = prepared[value_column]
@@ -454,9 +454,18 @@ def _join_reference(
     if missing_value_default is not None:
         raw_values = raw_values.mask(blank, missing_value_default)
         blank = pd.Series(False, index=prepared.index)
-    prepared[value_column] = pd.to_numeric(raw_values, errors="coerce").astype("float64")
-    prepared[_RAW_VALUE] = raw_values
-    prepared[_BLANK_VALUE] = blank
+    numeric = pd.to_numeric(raw_values, errors="coerce").astype("float64")
+    not_numeric = ~blank & numeric.isna()
+    status_column = f"{_CHECK_STATUS}{table_name}"
+    raw_column: str | None = None
+    prepared[value_column] = numeric
+    prepared[status_column] = (
+        blank.astype("int8") * _VALUE_BLANK + not_numeric.astype("int8") * _VALUE_NOT_NUMERIC
+    ).astype("int8")
+    if bool(not_numeric.any()):
+        # 원래 적힌 값은 숫자가 아닌 값이 있는 표만 들고 간다 — 오류문이 그 값을 싣는다.
+        raw_column = f"{_CHECK_RAW}{table_name}"
+        prepared[raw_column] = raw_values
     result = base.merge(
         prepared,
         on=keys,
@@ -464,50 +473,71 @@ def _join_reference(
         validate="many_to_one",
         indicator=_JOINED,
     )
-    attached = result[_JOINED].eq("both")
-    blank_attached = attached & result[_BLANK_VALUE].eq(True)
-    invalid_attached = attached & ~blank_attached & result[value_column].isna()
-    if invalid_attached.any():
+    unmatched = result[_JOINED].ne("both")
+    result = result.drop(columns=[_JOINED])
+    check = _PendingCheck(table_name, value_column, keys, status_column, raw_column)
+    if not unmatched.any():
+        result[status_column] = result[status_column].astype("int8")
+        return result, check
+    if missing_value_default is None:
+        result[status_column] = result[status_column].fillna(_VALUE_NO_MATCH).astype("int8")
+        return result, check
+    result[status_column] = result[status_column].fillna(_VALUE_OK).astype("int8")
+    # 행이 없는 경로만 중립값으로 잇는다. 붙은 칸의 숫자 아님(NaN)은 그대로 둔다 — 그 경로가 다른
+    # 까닭으로 빠지면 제외 목록에 지어낸 1.0 이 아니라 빈 칸으로 보인다.
+    result.loc[unmatched, value_column] = missing_value_default
+    if assumed is not None:
+        assumed[table_name] = assumed.get(table_name, 0) + int(unmatched.sum())
+    if assumed_months is not None and "생산계획년월" in result.columns:
+        months = pd.to_numeric(result.loc[unmatched, "생산계획년월"], errors="coerce").dropna()
+        assumed_months.setdefault(table_name, set()).update(int(month) for month in months)
+    return result, check
+
+
+def _raise_on_unusable_values(joined: pd.DataFrame, check: _PendingCheck) -> None:
+    """제외 뒤에 남은 행에서 그 표의 붙은 칸이 숫자 아님 → 빈 값 → 연결값 없음이면 멈춘다.
+
+    표마다 이 차례로 보고, 표끼리는 붙인 차례(효율 → 편중률 → 모듈수 → 일수 → Lot 측정률 →
+    WF측정률)다 — 예전에 붙이며 멈추던 것과 같은 차례·같은 글이다. 걸린 경로는 모두 계산이 쓰는
+    경로다.
+    """
+    status = joined[check.status]
+    table_name, value_column, keys = check.table_name, check.value_column, check.keys
+    invalid = status.eq(_VALUE_NOT_NUMERIC)
+    if bool(invalid.any()):
         raise _attached_error(
             f"{table_name}의 {value_column} 컬럼에 숫자가 아닌 값이 있습니다: ",
-            result,
-            invalid_attached,
+            joined,
+            invalid,
             keys,
             ReferenceJoinProblem(table_name, JOIN_NOT_NUMERIC, columns=(value_column,)),
             value_column=value_column,
+            raw_column=check.raw,
         )
-    if blank_attached.any():
+    blank = status.eq(_VALUE_BLANK)
+    if bool(blank.any()):
         raise _attached_error(
             f"{table_name}의 {value_column} 값이 빈 대당 Capa 기준이 있습니다: ",
-            result,
-            blank_attached,
+            joined,
+            blank,
             keys,
             ReferenceJoinProblem(table_name, JOIN_BLANK_VALUE, columns=(value_column,)),
         )
-    result = result.drop(columns=[_RAW_VALUE, _BLANK_VALUE, _JOINED])
-    missing = result[value_column].isna()
-    if not missing.any():
-        return result
-    if missing_value_default is None:
-        missing_keys = result.loc[missing, keys].drop_duplicates()
-        raise ReferenceJoinError(
-            f"{table_name} 연결값이 없는 대당 Capa 기준이 있습니다: {len(missing_keys):,}건, "
-            f"예시 {missing_keys.head(5).to_dict('records')}",
-            ReferenceJoinProblem(
-                table_name,
-                JOIN_NO_MATCH,
-                columns=tuple(keys),
-                keys=len(missing_keys),
-                rows=int(missing.sum()),
-            ),
-        )
-    result[value_column] = result[value_column].fillna(missing_value_default)
-    if assumed is not None:
-        assumed[table_name] = assumed.get(table_name, 0) + int(missing.sum())
-    if assumed_months is not None and "생산계획년월" in result.columns:
-        months = pd.to_numeric(result.loc[missing, "생산계획년월"], errors="coerce").dropna()
-        assumed_months.setdefault(table_name, set()).update(int(month) for month in months)
-    return result
+    missing = status.eq(_VALUE_NO_MATCH)
+    if not bool(missing.any()):
+        return
+    missing_keys = joined.loc[missing, keys].drop_duplicates()
+    raise ReferenceJoinError(
+        f"{table_name} 연결값이 없는 대당 Capa 기준이 있습니다: {len(missing_keys):,}건, "
+        f"예시 {missing_keys.head(5).to_dict('records')}",
+        ReferenceJoinProblem(
+            table_name,
+            JOIN_NO_MATCH,
+            columns=tuple(keys),
+            keys=len(missing_keys),
+            rows=int(missing.sum()),
+        ),
+    )
 
 
 def _prepared_reference(
@@ -627,21 +657,6 @@ def _raise_on_duplicate_keys(
     )
 
 
-def _dropped_later(joined: pd.DataFrame) -> pd.Series:
-    """붙일 때까지 붙은 칸으로 아는, 뒤에서 계산 대상에서 빠질 경로(`DROPPED_LATER_RULE`).
-
-    `calculate_unit_capacity` 의 제외 차례(환산 UPEH 0 이하 → 효율 0 이하 → 측정률 음수)와 같은
-    판정이다. 아직 붙지 않은 칸은 보지 않는다.
-    """
-    dropped = joined["환산_UPEH"].le(0).fillna(False)
-    if "CAPA_RUN_RATE" in joined:
-        dropped |= joined["CAPA_RUN_RATE"].le(0).fillna(False)
-    for column, _reason in NEGATIVE_EXCLUDED_COLUMNS:
-        if column in joined:
-            dropped |= joined[column].lt(0).fillna(False)
-    return dropped
-
-
 def _attached_error(
     head: str,
     joined: pd.DataFrame,
@@ -650,36 +665,23 @@ def _attached_error(
     problem: ReferenceJoinProblem,
     *,
     value_column: str | None = None,
+    raw_column: str | None = None,
 ) -> ReferenceJoinError:
-    """붙은 행 가운데 걸린 것의 건수와 예시 키 5건. `value_column` 을 주면 원래 적힌 값도 싣는다.
-
-    걸린 키 가운데 붙은 경로가 모두 뒤에서 빠질 경로인 키를 세어 글 끝과 `problem` 에 싣는다 —
-    계산이 어차피 쓰지 않을 칸 때문에 멈춘 것인지(결정 7) 살아 있는 경로의 빈 칸인지가 고칠 길을
-    가른다.
-    """
+    """걸린 행의 건수와 예시 키 5건. `value_column` 을 주면 원래 적힌 값(`raw_column`)도 싣는다."""
     examples = joined.loc[mask, keys].copy()
-    if value_column is not None:
-        examples[value_column] = joined.loc[mask, _RAW_VALUE]
+    if value_column is not None and raw_column is not None:
+        examples[value_column] = joined.loc[mask, raw_column]
     distinct = examples.drop_duplicates(subset=keys)
     records = distinct.head(5).to_dict("records")
     count = len(distinct)
-    live = joined.loc[mask, keys].assign(_살아있음=~_dropped_later(joined.loc[mask]))
-    dropped_keys = int((~live.groupby(keys, dropna=False)["_살아있음"].any()).sum())
-    message = f"{head}{count:,}건, 예시 {records}"
-    if dropped_keys:
-        message += (
-            f" — 그 가운데 {dropped_keys:,}건은 붙은 경로가 모두 뒤에서 계산 대상에서 빠질 경로"
-            f"({DROPPED_LATER_RULE})입니다"
-        )
     detail = ReferenceJoinProblem(
         problem.table,
         problem.shape,
         columns=problem.columns,
         keys=count,
         rows=int(mask.sum()),
-        dropped_keys=dropped_keys,
     )
-    return ReferenceJoinError(message, detail)
+    return ReferenceJoinError(f"{head}{count:,}건, 예시 {records}", detail)
 
 
 def _assert_positive(
@@ -699,8 +701,13 @@ def _assert_positive(
     )
 
 
-def _exclusion_rows(data: pd.DataFrame, mask: pd.Series, reason: str) -> pd.DataFrame:
-    """Keep the joined reference values used by an excluded capacity row."""
-    excluded = data.loc[mask].copy()
+def _exclusion_rows(
+    data: pd.DataFrame, mask: pd.Series, reason: str, check_columns: list[str]
+) -> pd.DataFrame:
+    """제외한 행과 그 행이 쓴 기준값. 붙이며 더한 검사 칸(`check_columns`)은 뺀다.
+
+    빈 값·숫자 아님·연결값 없음 칸은 그 행이 다른 까닭으로 빠졌으면 빈 칸 그대로 남는다.
+    """
+    excluded = data.loc[mask].drop(columns=check_columns)
     excluded["제외사유"] = reason
     return excluded

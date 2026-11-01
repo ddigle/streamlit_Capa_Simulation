@@ -392,6 +392,14 @@ def test_publishing_a_revision_with_demand_outside_the_requirement_warns(tmp_pat
             "publish_official_revision",
             "full_capacity_outcome",
         ),
+        # 원천 등록(화면 · 자동 갱신)은 막지 않고 알린다 — 그래도 저장 **전에** 돌려 봐야 메모에
+        # 남는다.
+        (
+            "src/capa_simulation/scenario_registration.py",
+            "save_bigdataquery_scenario",
+            "create_scenario",
+            "check_registration_capacity",
+        ),
     ],
 )
 def test_every_write_path_checks_before_it_writes(

@@ -3196,11 +3196,12 @@ CENSUS_DIVISION_TABLES: Final[tuple[str, ...]] = (
     "RQ_YLD",
 )
 
-# 대당 Capa 계산(`unit_capacity.calculate_unit_capacity`)은 효율·편중률·모듈수·RUN_DAY 를 경로에
-# 붙인 뒤 **제외를 정하기 전에** 빈 칸을 막는다(결정 7). 이 SQL 은 그 빈 칸 가운데 붙은 경로가 모두
-# 뒤에서 빠질 경로(Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수)인 칸을 리비전마다 센다 — 그 칸
-# 때문에 그 리비전 계산이 멈춘다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다
-# (`Area_Name` 은 대소문자도 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다.
+# 대당 Capa 계산(`unit_capacity.calculate_unit_capacity`)은 효율·편중률·모듈수·RUN_DAY 의 빈 칸을
+# **제외 뒤에 남은 경로에서만** 막는다(2026-11-01 사용자 결정 — 결정 7 고침). 고치기 전에는 제외를
+# 정하기 전에 막아, 붙은 경로가 모두 뒤에서 빠질 경로(Main UPEH 0 이하 · 효율 0 이하 · 측정률
+# 음수)인 칸 하나에도 그 리비전 계산이 멈췄다. 이 SQL 은 그런 칸을 리비전마다 센다 — 고침이 살린
+# 칸의 규모다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다(`Area_Name` 은 대소문자도
+# 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다.
 _PERFORMANCE_JOIN: Final = (
     '{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
     'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
@@ -3552,10 +3553,10 @@ def _on_simulation(
 
 
 # 센서스 줄 차례. 근거는 `docs/TODO.md` 「사내 리뷰 `202610120655` 후속 — 사용자 결정 대기」 의
-# 번호와 그 리뷰의 결함 ID, 괄호는 그 결정 가운데 이 줄이 재는 부분이다 — 결정 7·9·10 처럼 권장이
-# 「지금대로」 가 아닌 결정도 있고, 센서스가 그 결정 전부를 재지도 않는다. 「참고 · 고침」 은 결정
-# 없이 이미 고친 것의 남은 꼴이다. 결정 6·9 는 옛 리비전이 대상이라 기본(활성·공식) 범위의 0 은
-# 근거가 되지 못한다.
+# 번호와 그 리뷰의 결함 ID, 괄호는 그 결정 가운데 이 줄이 재는 부분이다 — 결정 9·10 처럼 권장이
+# 「지금대로」 가 아닌 결정도 있고, 센서스가 그 결정 전부를 재지도 않는다. 「참고 · 고침」 은 이미
+# 고친 것(결정 7 처럼 사용자 결정으로 고친 것 포함)의 남은 꼴이다. 결정 6·9 는 옛 리비전이 대상이라
+# 기본(활성·공식) 범위의 0 은 근거가 되지 못한다.
 _OLD_REVISIONS: Final = " — 옛 리비전은 `--census-all-revisions` 일 때만"
 CENSUS_ITEMS: Final[tuple[CensusItem, ...]] = (
     CensusItem(
@@ -3617,7 +3618,7 @@ CENSUS_ITEMS: Final[tuple[CensusItem, ...]] = (
     CensusItem(
         "C9",
         "효율·편중률·모듈수·RUN_DAY 빈 칸 가운데 붙은 경로가 모두 뒤에서 빠질 칸",
-        "근거 · 결정 7(P6 빈 칸 꼴의 규모)",
+        "참고 · 고침 결정 7(P6 — 이제 멈추지 않는 빈 칸의 규모)",
         "칸",
         _per_revision(_census_blank_capacity),
     ),

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+from typing import Any, Final
 
 import numpy as np
 import numpy.typing as npt
@@ -15,6 +16,23 @@ from capa_simulation.io.core_data_source import CoreDataContract
 from capa_simulation.services.frame_contracts import require_columns
 
 TEMPORARY_CONFLICT_RESOLUTION = "값이 있는 첫 행 유지(0·빈값은 값 없음으로 본다)"
+# 같은 업무 키에 0 행과 빈 값 행이 함께 오면 원천 행 차례와 상관없이 0 행을 고르는 표(2026-11-01
+# 사용자 결정 — 효율·UPEH 부터). 두 표는 0 의 뜻이 확인됐다 — 효율 0 · Main UPEH 0 은 그 경로만 제외
+# 목록으로 빠지고, 빈 값은 그 경로가 남으면 계산 전체를 멈춘다(Main UPEH 는 늘). BigDataQuery
+# 조회에는 차례(ORDER BY)가 없어 같은 원천이 한 번은 서고 한 번은 멈췄다. 수율 0 · 보유 0 처럼 빈
+# 값과 결과가 다를 수 있는 다른 표는 0 의 뜻을 확인할 때까지 지금대로(원천 행 차례) 둔다.
+ZERO_BEFORE_BLANK_TABLES: Final = frozenset({"RQ_RUN_RATE", "RQ_UPEH"})
+ZERO_BEFORE_BLANK_RESOLUTION: Final = (
+    "값이 있는 첫 행 유지(0·빈값은 값 없음으로 보고, 그 둘만 다르면 0 행)"
+)
+
+
+def conflict_resolution(table_name: str) -> str:
+    """충돌 보고서 「임시처리」 칸 — 그 표에서 형제 행을 고른 규칙."""
+    if table_name in ZERO_BEFORE_BLANK_TABLES:
+        return ZERO_BEFORE_BLANK_RESOLUTION
+    return TEMPORARY_CONFLICT_RESOLUTION
+
 
 CONFLICT_REPORT_META_COLUMNS = [
     "RQ테이블",
@@ -46,7 +64,9 @@ def validated_distinct(
     if not duplicated.any():
         return frame.reset_index(drop=True)
     non_keys = [column for column in frame.columns if column not in keys]
-    ordered = _informative_first(frame, list(keys), non_keys)
+    ordered = _informative_first(
+        frame, list(keys), non_keys, zero_before_blank=table_name in ZERO_BEFORE_BLANK_TABLES
+    )
     _collect_conflicting_duplicates(
         ordered.loc[ordered.duplicated(subset=list(keys), keep=False)],
         table_name,
@@ -58,7 +78,11 @@ def validated_distinct(
 
 
 def _informative_first(
-    frame: pd.DataFrame, keys: list[str], value_columns: list[str]
+    frame: pd.DataFrame,
+    keys: list[str],
+    value_columns: list[str],
+    *,
+    zero_before_blank: bool = False,
 ) -> pd.DataFrame:
     """업무 키가 같은 형제 행 중 값이 있는 행을 그룹 안에서 앞으로 보낸다.
 
@@ -71,32 +95,73 @@ def _informative_first(
     그래서 승자를 '값이 있는 첫 행' 으로 바꾼다. **값을 지어내지 않는다** — 형제가 모두
     0 이면 결과는 종전과 같은 0 이다. 고르는 행만 달라지고 값은 원천 그대로다.
 
+    `zero_before_blank` 인 표(`ZERO_BEFORE_BLANK_TABLES`)는 값 개수가 같은 형제 가운데 **0 이 빈
+    값보다 먼저**다 — 0 칸이 많은 행, 같으면 앞 값 컬럼(표를 만드는 컬럼 차례 — `RQ_UPEH` 는 UPEH →
+    ST)부터 0 인 행. 0 과 빈 값만 다른 형제는 원천 행 차례와 상관없이 늘 같은 행이 이긴다. 숫자 값
+    컬럼의 실값(0·빈 값이 아닌 값)이 서로 다른 형제(`_real_values_agree` 가 거짓인 그룹)는 지금처럼
+    원천 행 차례다 — 다른 컬럼의 0 이 실값 충돌의 승자를 정하지 않는다.
+
     그룹의 자리(첫 등장 순서)와 그룹 간 순서는 그대로다. 접은 뒤의 행 순서가 예전과 같아야
     `source_row_no` 와 `reference_hash` 가 흔들리지 않는다.
     """
     if not value_columns:
         return frame
     group_number = frame.groupby(keys, dropna=False, sort=False).ngroup().to_numpy()
-    usable = _usable_value_count(frame, value_columns)
+    usable, zeros = _value_flags(frame, value_columns)
     position = np.arange(len(frame))
-    # `lexsort` 는 마지막 키가 1순위다. 그룹 → 값이 많은 행 → 원천 행 순서.
-    return frame.take(np.lexsort((position, -usable, group_number)))
+    tie_breaks: list[npt.NDArray[np.int64]] = []
+    if zero_before_blank:
+        # 0 과 빈 값만 다른 그룹에서만 가른다. 앞 값 컬럼의 0 이 더 무겁다 — `lexsort` 에는 뒤
+        # 컬럼부터 넣는다.
+        agree = _real_values_agree(frame, group_number, value_columns)
+        tie_breaks = [np.where(agree, -flag, 0) for flag in reversed(zeros)]
+        tie_breaks.append(np.where(agree, -np.sum(zeros, axis=0, dtype="int64"), 0))
+    # `lexsort` 는 마지막 키가 1순위다. 그룹 → 값이 많은 행 → (0 이 빈 값보다 먼저) → 원천 행 순서.
+    return frame.take(
+        np.lexsort((position, *tie_breaks, -np.sum(usable, axis=0, dtype="int64"), group_number))
+    )
 
 
-def _usable_value_count(frame: pd.DataFrame, value_columns: list[str]) -> npt.NDArray[np.int64]:
-    """행이 실제로 들고 있는 값의 개수. 숫자 컬럼의 0 과 빈 문자열은 값 없음으로 센다."""
-    counts = np.zeros(len(frame), dtype="int64")
+def _real_values_agree(
+    frame: pd.DataFrame, group_number: npt.NDArray[np.integer[Any]], value_columns: list[str]
+) -> npt.NDArray[np.bool_]:
+    """행마다 — 그 행의 그룹에서 숫자 값 컬럼의 실값(0·빈 값이 아닌 값)이 컬럼마다 하나뿐인가.
+
+    거짓이면 실값끼리 다른 충돌이라 0 이 빈 값보다 먼저인 규칙으로 가르지 않는다. 글자 컬럼은 보지
+    않는다(효율·UPEH 표의 값 컬럼은 모두 숫자다).
+    """
+    agree = np.ones(len(frame), dtype=bool)
+    groups = pd.Series(group_number)
+    for column in value_columns:
+        numeric = pd.to_numeric(frame[column], errors="coerce").reset_index(drop=True)
+        if not numeric.notna().any():
+            continue
+        real = numeric.where(numeric.ne(0))
+        agree &= real.groupby(groups).transform("nunique").le(1).to_numpy()
+    return agree
+
+
+def _value_flags(
+    frame: pd.DataFrame, value_columns: list[str]
+) -> tuple[list[npt.NDArray[np.int64]], list[npt.NDArray[np.int64]]]:
+    """값 컬럼마다 행이 실제로 값을 든 칸(1)과 숫자 0 인 칸(1). 숫자 컬럼의 0 과 빈 문자열은 값
+    없음이다."""
+    usable_flags: list[npt.NDArray[np.int64]] = []
+    zero_flags: list[npt.NDArray[np.int64]] = []
     for column in value_columns:
         series = frame[column]
         numeric = pd.to_numeric(series, errors="coerce")
         if numeric.notna().any():
             # 숫자로 읽히는 컬럼. 0 은 원천이 '해당 없음' 을 적는 표기라 값으로 세지 않는다.
             usable = (numeric.notna() & numeric.ne(0)).to_numpy()
+            zero = numeric.eq(0).fillna(False).to_numpy()
         else:
             text = series.astype("string").str.strip()
             usable = (text.notna() & text.ne("")).to_numpy()
-        counts += usable.astype("int64")
-    return counts
+            zero = np.zeros(len(frame), dtype=bool)
+        usable_flags.append(usable.astype("int64"))
+        zero_flags.append(zero.astype("int64"))
+    return usable_flags, zero_flags
 
 
 def _collect_conflicting_duplicates(
@@ -143,7 +208,7 @@ def _collect_conflicting_duplicates(
                 "임시제외행수": len(group) - 1,
                 "후보원천행번호": " | ".join(str(int(index) + 1) for index in group.index),
                 "선택원천행번호": int(group.index[0]) + 1,
-                "임시처리": TEMPORARY_CONFLICT_RESOLUTION,
+                "임시처리": conflict_resolution(table_name),
             }
         )
         conflict_records.append(record)
