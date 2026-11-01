@@ -774,6 +774,12 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     return frames
 
 
+def grid_loaded_ids() -> tuple[str, ...]:
+    """설비 마스터 표에 불러온 목록(행 id 차례) — 칸이 없거나 목록이 아니면 빈 튜플."""
+    value = st.session_state.get(GRID_LOADED_KEY)
+    return tuple(str(item) for item in value) if isinstance(value, (list, tuple)) else ()
+
+
 def _follow_saved_unit_renames(moved: Mapping[str, str]) -> None:
     """남의 저장이 이름을 바꾼 저장본 호기(`moved` — `s:옛` → `s:새`, `renamed_saved_ids`)를 설비
     마스터 표의 불러온 목록·상세에 연 id 에서 새 id 로 옮긴다. 행 id 가 `s:` + 저장본 설비명이라
