@@ -90,6 +90,9 @@ def history_key(table: str) -> str:
     return f"demo_grid_history__{table}"
 
 
+# 앱 화면과 같은 넓은 본문(앱은 `app.py` 가 wide 로 연다) — 큰 표의 월 칸이 보이게.
+st.set_page_config(layout="wide")
+
 if "demo_frames" not in st.session_state:
     st.session_state["demo_frames"] = {SMALL: _small(), BIG: _big()}
     st.session_state["demo_versions"] = {SMALL: 0, BIG: 0}
