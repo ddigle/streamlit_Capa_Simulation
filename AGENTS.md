@@ -986,7 +986,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
-- `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「사내 모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
+- `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「사내 모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 사내 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 두 제외 표를 그리는 단일 렌더러다. 화면은
   표시명 복사본, CSV 는 원본이고, 캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다.
@@ -1398,7 +1398,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 비가동 일정 날짜(`_normalize_date`)도 같은 길로 읽어
     시간대가 섞인 붙여넣기가 pandas 예외 대신 그 값을 든 문구로 막힌다. 시간대 탓으로 못 읽은 값은 까닭을 말하는 문구
     (`_zoned_date_message` — 「{칸}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요」)로 따로 낸다 — 시간 없는
-    오프셋 꼴(`2026-11-05+09:00`·`2026-11-05-05:00`·`2026-11-05Z`, 부호 뒤 `hh:mm`·`hhmm`)도 이 문구다(`_offset_only_date`).
+    오프셋 꼴(`2026-11-05+09:00`·`2026-11-05-05:00`·`11/05/2026 -0500`·`Nov 5, 2026-05:00`·`20261105-0500`·`2026-11-05Z` —
+    날짜는 연도가 앞인 꼴·월이 앞인 꼴·8자리·영문 달 꼴, 날짜 뒤 빈칸이나 `T`, 부호 뒤 `h:mm`·`hh:mm`·`hhmm`)도 이 문구다
+    (`_offset_only_date` — 부호 뒤가 두 자리뿐이거나 초까지 있으면 시각인지 갈리지 않아 시각으로 읽는 지금대로 둔다).
     더하기·Z 꼴은 pandas 가 그냥 못 읽지만 빼기 꼴은 뒤를 시각 05:00 으로 읽어 받으므로 `_read_master_dates` 가 칸을 읽기
     **전에** 빼기 꼴(`_minus_offset_date`)을 못 읽은 값으로 가린다(2026-11-02 사용자 결정 「막는다」 — 칸 첫 값이어도 칸의
     날짜 꼴을 정하지 않는다). 글자 값만 보므로 저장본(DATE)을 다시 읽는 리비전은 달라지지 않는다. 시간대가 섞인 칸에서만

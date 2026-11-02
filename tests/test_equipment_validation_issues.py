@@ -735,6 +735,49 @@ def test_a_minus_offset_date_that_pandas_reads_as_a_time_is_refused_as_a_time_zo
     _assert_unreadable_dates(frame, "물류일정", [row])
 
 
+# 연도가 앞이고 구분자가 있는 꼴 밖의 빼기 꼴 — 예전에는 빼기만 받고 같은 꼴의 더하기는
+# 「날짜 형식」 문구로 막았다. 월이 앞인 꼴, 영문 달 꼴, 구분자 없는 8자리, 부호 뒤 한 자리
+# 시각, 날짜 뒤 `T`.
+OTHER_FORM_MINUS_OFFSET_DATES = (
+    "11/05/2026-05:00",
+    "11/05/2026 -0500",
+    "11-05-2026-05:00",
+    "Nov 5, 2026 -0500",
+    "5 Nov 2026 -0500",
+    "20261105-0500",
+    "20261105-05:00",
+    "2026-11-05-5:00",
+    "2026-11-05T-05:00",
+)
+
+
+@pytest.mark.parametrize("value", OTHER_FORM_MINUS_OFFSET_DATES)
+@pytest.mark.parametrize("row", [0, 3])
+def test_a_minus_offset_date_in_other_date_forms_is_refused_like_its_plus_form(
+    value: str, row: int
+) -> None:
+    """연도가 앞인 꼴 밖의 날짜 꼴도 빼기 · 더하기 시간대를 같은 시간대 문구로 막는다(2026-11-02
+    사용자 결정 A2 「막는다」 — 반박 검토 2026-11-02). 예전에는 빼기 꼴을 2026-11-05 로 받고 같은
+    꼴의 더하기는 「날짜 형식」 문구로 막았다. 칸 첫 값(줄 0)이어도 그 줄만 탓한다."""
+    head, _, offset = value.rpartition("-")
+    plus = f"{head}+{offset}"
+    for text in (value, plus):
+        refused = coerce_master_cell("반입일정", text)
+        assert isinstance(refused, CellParseError), text
+        assert (refused.rule, refused.message) == ("date_unreadable", _zoned("반입일정")), text
+
+    frame = _date_text(_master(), "물류일정")
+    frame.at[row, "물류일정"] = value
+    _assert_unreadable_dates(frame, "물류일정", [row])
+
+
+@pytest.mark.parametrize("value", ["2026-11-05-05", "2026-11-05-05:00:00", "2026-11-05 -05"])
+def test_a_two_digit_or_seconds_tail_is_still_read_as_a_time(value: str) -> None:
+    """부호 뒤가 두 자리뿐이거나 초까지 있는 뒤는 시각인지 시간대인지 갈리지 않아 지금대로 받는다
+    (빼기 꼴 판정의 끝 — 시간대 꼴은 부호 뒤 세 자리 이상 `h:mm`·`hh:mm`·`hhmm` 이다)."""
+    assert coerce_master_cell("반입일정", value) == pd.Timestamp("2026-11-05")
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -748,7 +791,11 @@ def test_a_minus_offset_date_that_pandas_reads_as_a_time_is_refused_as_a_time_zo
         "2026-11-05 05:00:00",
         "2026-11-05T05:00",
         "11/05/2026",
+        "11-05-2026",
+        "11/05/2026 05:00",
         "Nov 5, 2026",
+        "November 5, 2026",
+        "5 Nov 2026",
     ],
 )
 def test_dates_the_app_read_before_are_still_read_beside_a_minus_offset_date(value: str) -> None:

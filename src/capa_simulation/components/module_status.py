@@ -33,7 +33,8 @@ from capa_simulation.sidebar_status import remembered_expander
 EXPANDER_KEY = "admin_area_module_status"
 RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄운 뒤 보입니다."
 # 회차 시간 칸 — 단위를 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 모두
-# 0.00 이라 서로 갈리지 않는다).
+# 0.00 이라 서로 갈리지 않는다). 숫자 칸(`Int64`, 기록이 없으면 빈칸)이라 머리글로 정렬하면 값
+# 차례로 선다 — 글 칸이면 「12,346」 < 「123」 < 「2」 처럼 글자 차례라 느린 모듈이 위로 안 온다.
 RUN_TIME_COLUMN = "마지막 회차 시간(ms)"
 # 「모듈 이름」 은 `module.json` 의 `name` 이다 — 화면 이름(`pages[].title`)과 가른다(같은 줄의 까닭
 # 「화면 이름 겹침: …」 은 화면 이름을 말한다).
@@ -60,9 +61,12 @@ def status_title(scan: ModuleScan) -> str:
     return f"사내 모듈 상태 — 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
 
 
-def run_time_text(seconds: float) -> str:
-    """기록한 회차 시간(초)을 칸 글로 — ms 정수(천 단위 쉼표). 1ms 아래 반올림은 0 이다."""
-    return f"{round(seconds * 1000):,}"
+def run_time_ms(seconds: float) -> int:
+    """기록한 회차 시간(초)을 ms 정수로 — 파이썬 `round`(.5 는 짝수 쪽)라 0.5ms 아래는 0 이다.
+
+    천 단위 쉼표는 칸 꼴(`status_column_config` 의 `localized`)이 붙인다.
+    """
+    return round(seconds * 1000)
 
 
 def build_status_table(scan: ModuleScan) -> pd.DataFrame:
@@ -91,21 +95,23 @@ def build_status_table(scan: ModuleScan) -> pd.DataFrame:
                 else " · ".join(
                     part for part in (failure.at, failure.kind, failure.where, failure.page) if part
                 ),
-                "" if module_id not in seconds else run_time_text(seconds[module_id]),
+                None if module_id not in seconds else run_time_ms(seconds[module_id]),
                 len(warnings.get(module_id, ())),
                 sum(1 for owner, _ in excluded if owner == module_id),
             )
         )
-    return pd.DataFrame(rows, columns=list(COLUMNS))
+    table = pd.DataFrame(rows, columns=list(COLUMNS))
+    table[RUN_TIME_COLUMN] = table[RUN_TIME_COLUMN].astype("Int64")
+    return table
 
 
 def status_column_config() -> dict[str, ColumnConfig]:
     """까닭·마지막 오류는 기본 폭에서 잘리므로 넓힌다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
-    회차 시간은 글 칸이지만(기록이 없는 모듈은 빈칸) 숫자처럼 오른쪽에 맞춘다."""
+    회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표를 붙인다."""
     return {
         "까닭": st.column_config.TextColumn(width="large"),
         "마지막 오류": st.column_config.TextColumn(width="medium"),
-        RUN_TIME_COLUMN: st.column_config.TextColumn(alignment="right"),
+        RUN_TIME_COLUMN: st.column_config.NumberColumn(format="localized"),
     }
 
 
