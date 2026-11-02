@@ -3,7 +3,8 @@
 // `capa_edit_grid_feed` 가 window.__capaEditGrid[host].feed 칸과 'capa-edit-grid' 이벤트로 넘긴다 — 차례에 기대지 않는다(feed 의
 // baseKey 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 그때 쓴다). 편집은 상태 값 outbox 하나다(트리거 없음 — 반영 안 된 op 전부를
 // {mount, ops} 로). 사용자 글은 textContent 로만 넣는다. 기능 파일(select·fill·toolbar)은 FEATURES 갈고리로 붙고, 아래 이름의
-// 함수를 부른다(내부 API — 이름을 바꾸지 않는다): paint · scrollToCell · setRange · displayText · rawText · valueAt · isLocked ·
+// 함수를 부른다(내부 API — 이름을 바꾸지 않는다. paintCell 갈고리는 같은 칸에 다시 불릴 수 있다 — 고름만 바뀌면 칸을 다시
+// 짓지 않고 표지만 고친다): paint · scrollToCell · setRange · displayText · rawText · valueAt · isLocked ·
 // rowKeys · colNames · queueOp · sendNow · sendOnce · startEdit · commitEdit · cancelEdit · setStatus · announce · toast ·
 // focusGrid · cellAtPoint · visibleRowCount · setWidths.
 
@@ -596,6 +597,39 @@ function egRow(S, r, range) {
   return line
 }
 
+// 고름만 바뀐 때 — 그려 둔 칸을 다시 짓지 않고 표지(지금 칸·aria-selected·기능 표지)만 고친다. 기능의 paintCell 은 같은
+// 칸에 다시 불려도 되게(classList.toggle 로) 짓는다. 그려 둔 창이 없으면 다시 그린다.
+function egRefresh(S) {
+  if (!S.dom || !S.model || !S.window) {
+    paint(S)
+    return
+  }
+  const range = S.range()
+  const activeId = S.mount + '-active'
+  for (const line of S.dom.body.children) {
+    const r = Number(line.dataset.r)
+    for (const cell of line.children) {
+      const c = Number(cell.dataset.c)
+      const active = r === S.anchor.r && c === S.anchor.c
+      cell.classList.toggle('is-active', active)
+      if (active) {
+        cell.id = activeId
+        if (cell.classList.contains('is-error')) cell.setAttribute('aria-describedby', S.dom.where.id)
+      } else if (cell.id) {
+        cell.id = ''
+        cell.removeAttribute('id')
+        cell.removeAttribute('aria-describedby')
+      }
+      const selected = r >= range.r0 && r <= range.r1 && c >= range.c0 && c <= range.c1
+      cell.setAttribute('aria-selected', selected ? 'true' : 'false')
+      for (const item of FEATURES) if (item.paintCell) item.paintCell(S, cell, r, c)
+    }
+  }
+  egPlaceEditor(S)
+  egActive(S)
+  for (const item of FEATURES) if (item.paintOverlay) item.paintOverlay(S)
+}
+
 function egActive(S) {
   const scroller = S.dom.scroller
   const active = S.window && S.anchor.r >= S.window.start && S.anchor.r < S.window.end
@@ -670,7 +704,7 @@ function setRange(S, anchor, focus) {
   const clampCell = (pos) => ({ r: clampNum(pos.r, 0, rows - 1), c: clampNum(pos.c, 0, m.colCount - 1) })
   S.anchor = clampCell(anchor)
   S.focus = clampCell(focus || anchor)
-  paint(S)
+  egRefresh(S)
   egWhere(S)
   for (const item of FEATURES) if (item.onSelect) item.onSelect(S)
 }

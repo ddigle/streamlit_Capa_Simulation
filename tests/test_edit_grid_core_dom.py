@@ -100,9 +100,12 @@ const R = {}
     frozen: has(0, 0, 'eg-fz'),
     grid: ['role', 'aria-rowcount', 'aria-colcount'].map((name) => scroller.getAttribute(name)),
   }
+  const drawn = cell(0, 2)
   key(scroller, 'ArrowRight')
   key(scroller, 'ArrowDown')
   R.moved = [here(S), has(1, 3, 'is-active'), scroller.getAttribute('aria-activedescendant')]
+  // 고름만 바뀌면 칸을 다시 짓지 않고 표지만 고친다(보이는 창 다시 그리기 비용).
+  R.kept = [cell(0, 2) === drawn, has(0, 2, 'is-active'), cell(0, 2).id, cell(1, 3).id]
   key(scroller, 'Enter')
   const editor = q('.eg-ed')
   R.editStart = {
@@ -236,6 +239,8 @@ def test_the_core_draws_edits_moves_and_talks_to_python() -> None:
     assert first["grid"] == ["grid", "4", "6"]
     anchor, active, descendant = result["moved"]
     assert anchor == {"r": 1, "c": 3} and active and descendant.endswith("-active")
+    kept, was_active, old_id, new_id = result["kept"]
+    assert kept and not was_active and old_id == "" and new_id == descendant
     assert result["editStart"] == {"hidden": False, "value": "79%", "top": "62px", "left": "288px"}
     commit = result["commit"]
     assert commit["hidden"] and commit["sends"] == 1 and commit["name"] == "outbox"
