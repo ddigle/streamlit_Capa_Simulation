@@ -1822,8 +1822,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
     `capa-edit-grid` 로 잇고(비공식 — 화면 탭 줄의 `window.__capaHistoryGuard` 선례), 무거운 JS 는 차례에 기대지 않는다(feed 의
     `baseKey` 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 쓴다). `render_edit_grid` 가 늘 같은 자리에서 feed → 무거운 요소 차례로
-    그리고(둘 다 key 고정 — `feed_key(host)` = `<host>__feed`), feed 칸은 스타일만 든 `st.html`(이벤트 칸 — 자리를 먹지 않는다)로
-    숨긴다(`hide_feed_style`). 호스트 key 는 `[\w-]+` 만.
+    그리고(둘 다 key 고정 — `feed_key(host)` = `<host>-feed` — CCv2 key 에는 `__` 를 쓸 수 없다, 트리거 id 구분자), feed 칸은 스타일만 든 `st.html`(이벤트 칸 — 자리를 먹지 않는다)로
+    숨긴다(`hide_feed_style`). 호스트 key 는 ASCII `[A-Za-z0-9_-]+` 만(feed JS 와 같은 글자), `__` 없이.
   - **편집은 상태 값 `outbox` 하나**(`STATE_NAMES`, 트리거 없음 — 9장). 콜백 몸통 `collect_outbox` 는 새 op 만 세션 inbox 에
     쌓고 마운트별 seq 를 올린다. 반영은 본문의 `apply_inbox`(표별로 나눠 `TableSlot` 의 색인·규격·세션 칸에 — 지금 그리지 않는
     표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`

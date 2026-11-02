@@ -52,7 +52,16 @@ def test_the_feed_and_the_grid_mount_in_a_fixed_order_with_fixed_keys(
     assert feed["gen"] and feed["acks"] == {} and feed["drows"] == []
     assert shell["palette"] == edit_grid.palette()
     assert shell["texts"]["changes"] == "적용 전 변경"
-    assert edit_grid.hide_feed_style(HOST) == "<style>.st-key-demo_grid__feed{display:none}</style>"
+    assert edit_grid.hide_feed_style(HOST) == "<style>.st-key-demo_grid-feed{display:none}</style>"
+
+
+def test_host_keys_refuse_the_component_id_delimiter() -> None:
+    """CCv2 key 에는 `__` 를 쓸 수 없다 — 트리거 id 구분자라 1.63 이 그리는 회차에
+    `BidiComponentInvalidIdError` 로 멈춘다(사본 앱 첫 확인에서 잡힘). 그리기 전에 막는다."""
+    assert edit_grid.feed_key("reference_grid") == "reference_grid-feed"
+    for bad in ("reference_grid__RQ_RUN_DAY", "a b", "표"):
+        with pytest.raises(ValueError):
+            edit_grid.feed_key(bad)
 
 
 def test_an_outbox_edit_lands_in_the_draft_and_comes_back_with_its_ack(

@@ -72,7 +72,7 @@ FEED_JS: Final = "feed.js"
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
 STATE_NAMES: Final = ("outbox",)
 TRIGGER_NAMES: Final[tuple[str, ...]] = ()
-HOST_PATTERN: Final = re.compile(r"[\w-]+")
+HOST_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]+")
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
 
 
@@ -110,13 +110,15 @@ _FEED = st.components.v2.component(FEED_COMPONENT, js=feed_js())
 
 
 def feed_key(host: str) -> str:
-    """feed 요소 key — 호스트 key 뒤에 붙인다."""
-    return f"{host}__feed"
+    """feed 요소 key — 호스트 key 뒤에 `-feed` 를 붙인다(CCv2 key 에는 `__` 를 쓸 수 없다 — 트리거
+    id 구분자라 1.63 이 `BidiComponentInvalidIdError` 로 멈춘다)."""
+    return f"{_check_host(host)}-feed"
 
 
 def _check_host(host: str) -> str:
-    if not HOST_PATTERN.fullmatch(host):
-        raise ValueError(f"그리드 호스트 key 는 영문·숫자·_·- 만 씁니다: {host!r}")
+    """호스트 key 는 영문·숫자·`_`·`-` 만, `__` 없이(CCv2 트리거 id 구분자)."""
+    if not HOST_PATTERN.fullmatch(host) or "__" in host:
+        raise ValueError(f"그리드 호스트 key 는 영문·숫자·_·- 만, __ 없이 씁니다: {host!r}")
     return host
 
 
