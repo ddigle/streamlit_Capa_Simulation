@@ -1418,3 +1418,41 @@ def test_the_change_cell_needs_both_accepted_and_work(
 
     assert code == checker.EXIT_OK
     assert capsys.readouterr().out.strip().endswith("고아 0; 덮어씀 0")
+
+
+def test_the_generator_stamps_each_assembly_and_keeps_its_last_line(
+    rig: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert rig.main() == builder.EXIT_OK
+    _out, shot_line = _last_line(capsys)
+    stamp = rig.work / core.ASSEMBLED_FILE
+    first = core.load_assembly_stamp(rig.work)
+    assert first == core.assembly_stamp(rig.work, SKELETON.content, SKELETON.plan)
+    block = rig.output.read_text(encoding="utf-8")
+    stamp.unlink()
+
+    code = rig.main("--assemble-only")
+    out, line = _last_line(capsys)
+
+    assert code == builder.EXIT_OK
+    assert core.load_assembly_stamp(rig.work) == first
+    assert line == shot_line and "바뀜" not in out  # 생성기 끝 줄에는 바뀜 칸이 없다
+    assert "조립 기록" not in rig.output.read_text(encoding="utf-8")
+    assert block.splitlines()[0] == rig.output.read_text(encoding="utf-8").splitlines()[0]
+
+
+def test_a_stamp_that_cannot_be_written_is_reported_by_kind_and_the_run_goes_on(
+    rig: Rig, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_work: Path, _stamp: Mapping[str, str]) -> None:
+        raise PermissionError("가짜")
+
+    monkeypatch.setattr(core, "save_assembly_stamp", fail)
+
+    code = rig.main()
+    captured = capsys.readouterr()
+
+    assert code == builder.EXIT_OK
+    assert "조립 기록을 쓰지 못했습니다 — PermissionError" in captured.err
+    assert captured.out.strip().splitlines()[-1].endswith("DB 변화 없음")
+    assert "조립 기록" not in rig.output.read_text(encoding="utf-8")
