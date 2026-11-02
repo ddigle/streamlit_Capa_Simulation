@@ -1968,6 +1968,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 앱으로 들어갈 때 초점 — 사이드바 라벨로 연 Summary 는 그 라벨로 돌려주고, 연 단추가 없는 입장(처음 입장 화면·거기서
     연 Summary·티저)은 화면 탭 줄의 지금 탭(그림자 DOM 안), 탭 줄이 없으면 본문 첫 제목에 둔다(`LANDING_FOCUS` — 탭 줄
     key·`aria-current` 표지를 `data.landing` 으로 받는다). 두지 않으면 body 에 남았다.
+  - 덮개 밑에 뜬 Streamlit 팝업은 덮개가 닫는다(순수 구획 `<intro-dialogs>`). 없는 화면 주소(꺼진 모듈 화면·주소를 바꾼 옛
+    화면)로 처음 오면 Streamlit 이 「Page not found」 팝업을 연다. 1.63 팝업(react-aria 모달)은 body 의 다른 자식을 inert 로
+    묶어, body 직속인 덮개 호스트가 눈으로는 맨 위인데 누름을 받지 못했다 — 첫 누름이 보이지 않는 팝업 바탕으로 가 팝업만
+    닫고 Detail 을 두 번 눌러야 들어갔다(키보드 Enter 는 팝업에 갇혔다, E2E 결함). 덮개가 보이는 동안은 앱이 inert 라 사람이 연
+    팝업일 수 없으므로, 호스트에 inert·aria-hidden 이 붙으면(`MutationObserver`) 팝업(`stDialog`)마다 그 대화 상자에 Esc 를
+    보내 닫는다 — 첫 누름이 하던 일이라 팝업 글은 전처럼 보이지 않고 HOME 이 열린다. 보낸 Esc 는 덮개 키 처리(Summary 의
+    Esc)가 지나친다. 덮개를 감춘 문서(같은 탭에서 이미 들어간 뒤)에서는 건드리지 않는다 — 그때 팝업은 보이고 사람이 닫는다.
+    글이 아니라 팝업 자리로 고르므로 Streamlit 을 올리면 팝업이 호스트를 묶는 꼴(속성 이름)을 다시 본다.
   - 무대(`.stage`)는 옆으로 넘치지 않는다 — 읽기 도구용 표는 1px 칸(`div.sr`) 안에 둔다(표에 바로 1px 를 주면 내용 폭으로
     늘어 390px 무대가 639px 로 넘쳤다). 520px 이하에서는 머리 칩(공식버전 이름)이 토글 셋과 함께 둘째 줄(`.tail`)로 내려
     남는 폭을 쓴다 — 넓은 창에서 `.tail` 은 `display: contents` 라 머리 줄은 그대로다. 머리 칩은 어느 폭에서도 자르지

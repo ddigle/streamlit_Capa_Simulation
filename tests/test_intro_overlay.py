@@ -5,7 +5,10 @@ from __future__ import annotations
 import base64
 import json
 import math
+import os
 import re
+import shutil
+import subprocess
 from typing import Any
 
 import pytest
@@ -1313,4 +1316,100 @@ def test_introduce_plays_the_bundled_teaser_not_the_pages_deck() -> None:
     api = text[head.end() : text.index(f"\n{head.group(1)}}};", head.end())]
     assert re.search(rf"^\s*{called.group(1)}\b\s*[,:(]", api, flags=re.MULTILINE), (
         f"티저 window.TEASER 에 intro.js 가 부르는 {called.group(1)} 멤버가 없습니다."
+    )
+
+
+_DIALOGS_RUNNER = """
+// 팝업 대역 — `querySelector` 는 대화 상자 칸을, `dispatchEvent` 는 받은 키를 적는다.
+class KeyboardEvent {
+  constructor(type, init) { Object.assign(this, init, { type }) }
+}
+const box = (log) => ({ dispatchEvent: (event) => { log.push(event); return true } })
+const dialog = (inner) => ({
+  querySelector: (selector) => (selector === DIALOG_BOX ? inner : null),
+})
+const doc = (dialogs) => ({
+  defaultView: { KeyboardEvent },
+  querySelectorAll: (selector) => (selector === STREAMLIT_DIALOG ? dialogs : []),
+})
+const out = {}
+const inner = []
+const sent = new WeakSet()
+out.count = dismissDialogs(doc([dialog(box(inner))]), sent)
+out.keys = inner.map((event) => [event.type, event.key, event.bubbles, sent.has(event)])
+// 대화 상자 칸이 없으면 팝업 칸에 보낸다.
+const outer = []
+const bare = {
+  querySelector: () => null,
+  dispatchEvent: (event) => { outer.push(event.key); return true },
+}
+out.bare = [dismissDialogs(doc([bare]), new WeakSet()), outer]
+out.none = dismissDialogs(doc([]), new WeakSet())
+const node = (inert, hidden) => ({
+  inert,
+  getAttribute: (name) => (name === 'aria-hidden' ? hidden : null),
+})
+out.blocked = [
+  blockedHost(node(true, null)),
+  blockedHost(node(false, 'true')),
+  blockedHost(node(false, null)),
+  blockedHost(null),
+]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def _intro_block(js: str, name: str) -> str:
+    match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", js, re.S)
+    assert match, f"intro.js 에 // <{name}> 구획이 없습니다"
+    return match.group("body")
+
+
+def test_a_streamlit_dialog_under_the_cover_is_closed_so_the_first_press_enters() -> None:
+    """없는 화면 주소(꺼진 모듈 화면 포함)로 처음 오면 Streamlit 의 「Page not found」 팝업이 덮개
+    밑에 열려, body 직속 덮개 호스트를 inert 로 묶었다 — 보이지 않는 팝업이 Detail 첫 누름(과
+    키보드 Enter)을 먹었다(E2E 결함). 덮개가 보이는 동안 호스트가 묶이면 그 팝업에 Esc 를 보내
+    닫는다(첫 누름이 하던 일 — 팝업 글은 전처럼 보이지 않는다). 글이 아니라 팝업 자리로 고르고,
+    보낸 Esc 는 덮개 키 처리(Summary 의 Esc)가 지나친다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    runtime = shutil.which("node") or shutil.which("bun")
+    if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다 — 입장 화면 JS 구획 시험을 건너뛸 수 없다")
+        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    completed = subprocess.run(
+        [runtime, "-e", _intro_block(js, "intro-dialogs") + "\n" + _DIALOGS_RUNNER],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    out = json.loads(completed.stdout)
+    assert out["count"] == 1
+    assert out["keys"] == [["keydown", "Escape", True, True]]
+    assert out["bare"] == [1, ["Escape"]]
+    assert out["none"] == 0
+    assert out["blocked"] == [True, True, False, False]
+    assert not re.search(r"[\"'`]Page not found", js)
+
+    # 덮개가 보이는 동안만, 호스트가 묶일 때(그리고 만든 직후 한 번) 닫는다. 멈출 때
+    # 지켜보기를 푼다.
+    section = js[
+        js.index("const dialogKeys = new WeakSet();") : js.index("  if (intro) {\n    render();")
+    ]
+    assert 'if (!alive || mode === "hidden" || !blockedHost(host)) return;' in section
+    assert "dismissDialogs(document, dialogKeys);" in section
+    assert (
+        'blockWatch.observe(host, { attributes: true, attributeFilter: ["inert", "aria-hidden"] });'
+        in section
+    )
+    assert section.rstrip().endswith("closeStrayDialogs();")
+    stop = js[js.index("  api.stop = () => {") :]
+    assert "if (blockWatch) blockWatch.disconnect();" in stop[: stop.index("\n  };\n")]
+    on_key = js[js.index("function onKey(event)") :]
+    on_key = on_key[: on_key.index("\n  }\n")]
+    assert on_key.index("if (dialogKeys.has(event)) return;") < on_key.index(
+        'event.key === "Escape"'
     )
