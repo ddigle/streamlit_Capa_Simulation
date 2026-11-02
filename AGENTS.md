@@ -219,8 +219,8 @@ Windows(PowerShell):
   ② node·bun 에 넘기는 스크립트가 길어질 수 있으면(자산 파일 전체 등) `-e` 가 아니라 임시 `.cjs` 파일로 넘기고 표준
   입력은 자료가 쓴다 — Windows 명령줄은 32,767자를 넘으면 `WinError 206` 으로 뜨지도 못한다(설비 마스터 표 `grid.js`
   전체가 넘는다). `-e` 로 남은 자리(구획 하나·짧은 러너)는 6천 자 안쪽이다. ③ 권한 비트(0600·0700)는
-  담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(`test_container_start.py` 의
-  `keeps_permission_bits`, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
+  담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(공용 픽스처 `tests/conftest.py` 의
+  `keeps_permission_bits` — 권한 비트를 단언하는 시험은 모두 받는다, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
   화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. 사외 CI 의 둘째 작업
   `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 넷을 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux `verify` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어

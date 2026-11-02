@@ -92,13 +92,16 @@ def test_env_lines_build_a_config_that_verifies_the_issued_token() -> None:
     assert login.loginid == "dev.user" and login.name == "개발사용자" and login.dept == "개발부서"
 
 
-def test_env_file_is_private(tmp_path: Path) -> None:
+def test_env_file_is_private(tmp_path: Path, keeps_permission_bits: bool) -> None:
+    """비밀값이 든 env 파일은 0600 이다. 비트를 담지 못하는 파일 체계(Windows)에서는 쓰기만 본다."""
     from sso_mock_idp import write_env_file
 
     target = tmp_path / "dev.env"
     write_env_file(target, ["export A='1'"])
 
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert target.read_text(encoding="utf-8").strip() == "export A='1'"
+    if keeps_permission_bits:
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
 def test_public_url_and_tls_change_the_authorize_address() -> None:

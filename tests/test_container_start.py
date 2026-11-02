@@ -176,26 +176,6 @@ def _ok(stdout: str = "") -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
 
 
-@pytest.fixture(scope="session")
-def keeps_permission_bits(tmp_path_factory: pytest.TempPathFactory) -> bool:
-    """이 파일 체계가 0600·0700 을 담는지. Windows 의 chmod 는 읽기 전용 표시 하나만 바꿔 이 비트를
-    담지 못한다 — 거기서는 토큰 파일·폴더의 권한 비트를 보지 않는다. 운영 CD 컨테이너는 Linux 라
-    비트가 살고, Linux CI 에서 담지 못하면 건너뛰지 않고 실패한다."""
-    folder = tmp_path_factory.mktemp("permission-probe")
-    probe = folder / "probe"
-    probe.write_bytes(b"")
-    probe.chmod(0o600)
-    folder.chmod(0o700)
-    kept = (
-        stat.S_IMODE(probe.stat().st_mode) == 0o600 and stat.S_IMODE(folder.stat().st_mode) == 0o700
-    )
-    if not kept and os.environ.get("GITHUB_ACTIONS") == "true":
-        pytest.fail(
-            "CI 러너의 파일 체계가 권한 비트를 담지 못한다 — 토큰 권한 시험을 건너뛸 수 없다"
-        )
-    return kept
-
-
 def _assert_no_secret(text: str) -> None:
     for secret in (
         FAKE_ART_TOKEN,

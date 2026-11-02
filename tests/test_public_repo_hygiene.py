@@ -112,9 +112,73 @@ def test_ignore_files_and_the_deploy_builder_block_key_files() -> None:
     dockerignore = (PROJECT_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
     for suffix in KEY_FILE_SUFFIXES:
         assert f"*{suffix}" in gitignore, suffix
-        assert f"*{suffix}" in dockerignore, suffix
+        # .dockerignore 의 `*.pem` 은 뿌리에만 걸린다 — 모든 깊이는 `**/` 꼴이어야 한다.
+        assert f"**/*{suffix}" in dockerignore, suffix
         assert suffix in FORBIDDEN_SUFFIXES, suffix
-    assert "cert/" in gitignore and "cert/" in dockerignore
+    assert "cert/" in gitignore and "**/cert/" in dockerignore
+
+
+def _docker_pattern(pattern: str) -> re.Pattern[str]:
+    """`.dockerignore` 한 줄 → Docker(moby patternmatcher)와 같은 뜻의 정규식.
+
+    빌드 컨텍스트 뿌리에서 시작하고, `*` · `?` 는 `/` 를 넘지 않으며, `**` 는 몇 단(0단 포함)의
+    폴더든 된다. 끝 `/` 는 지운다(Go `filepath.Clean`).
+    """
+    text = pattern.strip().removeprefix("./").rstrip("/")
+    out = ""
+    index = 0
+    while index < len(text):
+        if text.startswith("**/", index):
+            out += "(?:.*/)?"
+            index += 3
+        elif text.startswith("**", index):
+            out += ".*"
+            index += 2
+        elif text[index] == "*":
+            out += "[^/]*"
+            index += 1
+        elif text[index] == "?":
+            out += "[^/]"
+            index += 1
+        else:
+            out += re.escape(text[index])
+            index += 1
+    return re.compile(f"^{out}$")
+
+
+def _docker_excludes(path: str, lines: list[str]) -> bool:
+    """경로나 그 위 폴더 하나가 패턴에 맞으면 빠진다(뒤의 `!` 가 되살린다)."""
+    parts = path.split("/")
+    candidates = ["/".join(parts[: index + 1]) for index in range(len(parts))]
+    excluded = False
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        negate = line.startswith("!")
+        regex = _docker_pattern(line[1:] if negate else line)
+        if any(regex.match(each) for each in candidates):
+            excluded = not negate
+    return excluded
+
+
+def test_dockerignore_keeps_key_files_out_at_any_depth() -> None:
+    """`.dockerignore` 의 `*.pem` · `cert/` 는 뿌리에만 걸린다 — 모듈 · 설정 폴더 안의 키 파일도
+    이미지에 실리지 않아야 한다(`COPY . /project/`)."""
+    lines = (PROJECT_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+
+    for path in (
+        "cert/token.cer",
+        "private.pem",
+        "modules/demo/cert/k.pem",
+        "config/cert/x.pem",
+        "src/capa_simulation/auth/token.cer",
+        "modules/demo/keys/server.key",
+        "docs/a/b/c.p12",
+    ):
+        assert _docker_excludes(path, lines), path
+    for path in ("app.py", "capa_server.py", "src/capa_simulation/auth/names.py", "modules/x.py"):
+        assert not _docker_excludes(path, lines), path
 
 
 def test_the_needles_do_not_match_their_own_source() -> None:
