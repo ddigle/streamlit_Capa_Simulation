@@ -26,6 +26,7 @@ from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
+from capa_simulation.components.sso_refresh import refresh_script
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -395,13 +396,14 @@ def test_the_real_app_opens_home_with_the_name_on_the_card(
     real_app: AppTest, cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """켜짐 + 문지기 + 유효 쿠키 → HOME 이 서고 앱 정보 카드 셋째 줄에 이름 · 부서가 있다. 툴바
-    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠 스크립트가 실린다."""
+    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠와 쓰는 동안 로그인을 늘리는 갱신 스크립트가
+    실린다."""
     cfg, _ = _on(cookies)
     toolbar = _record_toolbar_scripts(monkeypatch)
 
     app = real_app.run()
 
-    assert toolbar and toolbar[-1][-1] == reconnect_script(cfg)
+    assert toolbar and toolbar[-1][-2:] == (reconnect_script(cfg), refresh_script(cfg))
 
     assert not list(app.exception), [element.message for element in app.exception]
     stops = {*sso_identity._PROBLEM_NOTICES.values(), sso_identity.ACCOUNT_CHANGED_NOTICE}
@@ -430,7 +432,7 @@ def test_the_real_app_stops_when_started_without_the_gate(
 def test_the_real_app_off_keeps_the_toolbar_scripts(
     real_app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """꺼짐(`ADFS_CLIENT_ID` 없음)이면 툴바 iframe 에 띠 스크립트를 싣지 않는다(내용이 그대로)."""
+    """꺼짐(`ADFS_CLIENT_ID` 없음)이면 툴바 iframe 에 띠 · 갱신 스크립트를 싣지 않는다(그대로)."""
     use_config(drop=[names.ENV_CLIENT_ID])
     toolbar = _record_toolbar_scripts(monkeypatch)
 
@@ -439,3 +441,4 @@ def test_the_real_app_off_keeps_the_toolbar_scripts(
     assert not list(app.exception), [element.message for element in app.exception]
     assert toolbar
     assert not [script for script in toolbar[-1] if BANNER_ID in script]
+    assert not [script for script in toolbar[-1] if names.REFRESH_PATH in script]

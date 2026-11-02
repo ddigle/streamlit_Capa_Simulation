@@ -301,6 +301,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     iframe(`render_theme_toggle` 의 `extra_scripts`)에 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를
     묻고 401 이면 한국어 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를 연결 오류 창 위에 세운다. IdP 로 저절로 보내지 않는다
     (로그아웃을 조용히 되돌리지 않게). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
+  - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
+    `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
+    시험 `tests/test_sso_refresh.py`(판정 구획 node).
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri

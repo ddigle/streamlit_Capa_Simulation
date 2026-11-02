@@ -148,8 +148,11 @@ function loginHref(base, prefix, loginPath, pathname, search) {
 """
 
 
-def _js(value: str) -> str:
-    """스크립트에 끼우는 글 — JSON 문자열에 `<` 를 막아 `</script>` 로 끊기지 않게."""
+def script_literal(value: str) -> str:
+    """스크립트에 끼우는 글 — JSON 문자열에 `<` 를 막아 `</script>` 로 끊기지 않게.
+
+    `sso_refresh` 도 같은 규칙으로 끼운다.
+    """
     return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c")
 
 
@@ -170,15 +173,15 @@ def reconnect_script(cfg: SsoConfig) -> str:
         "white-space:nowrap;"
     )
     return _SCRIPT % {
-        "banner_id": _js(BANNER_ID),
-        "box_style": _js(box_style),
-        "link_style": _js(link_style),
-        "notice": _js(RECONNECT_NOTICE),
-        "label": _js(LOGIN_AGAIN_LABEL),
-        "base": _js(cfg.public_url),
-        "prefix": _js(prefix),
-        "login_path": _js(names.LOGIN_PATH),
-        "host_config": _js(HOST_CONFIG_PATH),
+        "banner_id": script_literal(BANNER_ID),
+        "box_style": script_literal(box_style),
+        "link_style": script_literal(link_style),
+        "notice": script_literal(RECONNECT_NOTICE),
+        "label": script_literal(LOGIN_AGAIN_LABEL),
+        "base": script_literal(cfg.public_url),
+        "prefix": script_literal(prefix),
+        "login_path": script_literal(names.LOGIN_PATH),
+        "host_config": script_literal(HOST_CONFIG_PATH),
         "wait_ms": PROBE_WAIT_MS,
         "gap_ms": PROBE_GAP_MS,
         "tick_ms": TICK_MS,

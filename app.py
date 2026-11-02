@@ -55,6 +55,7 @@ from capa_simulation.components.scenario_status import (
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.sso_identity import require_signed_in, sso_credit_line
 from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
+from capa_simulation.components.sso_refresh import sso_refresh_scripts
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
@@ -244,6 +245,9 @@ render_theme_toggle(
         disabled_link_aria_script(),
         # 통합인증이 켜진 서버만 — 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠.
         *sso_reconnect_scripts(signed_in),
+        # 통합인증이 켜진 서버만 — 사람이 앱을 쓰면(입력) 5분에 한 번 로그인을 늘린다(타이머 없음 ·
+        # `components/sso_refresh.py`).
+        *sso_refresh_scripts(signed_in),
     )
 )
 
