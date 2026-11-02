@@ -22,6 +22,7 @@ from typing import Any, cast
 import duckdb
 import pytest
 
+from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -4089,7 +4090,10 @@ def test_the_upeh_help_item_reads_what_the_app_draws() -> None:
     help_line = next(line for line in page.splitlines() if line.strip().startswith('"RQ_UPEH": "'))
     for word in screens.UPEH_HELP_WORDS:
         assert word in help_line
-    assert '":material/timer: UPEH",' in page
+    # 탭 대신 종류 단추 — 단추 key·「UPEH」 글이 앱 선언과 같다(값만 옮긴 상수).
+    assert screens.REFERENCE_DATASET_KEY == DATASET_KEY
+    assert DATASETS["RQ_UPEH"] == screens.UPEH_DATASET_LABEL
+    assert "key=DATASET_KEY," in page
     assert "help=value_help," in _text(COMPONENTS / "month_editor.py")
     assert screens.REFERENCE_PAGE == "reference_data"
     assert '"app_pages/reference_data.py"' in _text(

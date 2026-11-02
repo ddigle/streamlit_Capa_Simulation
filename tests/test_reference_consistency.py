@@ -307,7 +307,7 @@ def test_filling_a_month_without_a_run_rate_row_is_reported_with_the_tab_and_key
         {"생산계획년월": 202609, "공정": "Process-A", "양산구분": "양산"}
     ]
     message = describe_missing_path_rows({}, missing)
-    assert "「효율」 탭에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in message
+    assert "「효율」 표에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in message
     assert "RQ_RUN_RATE 연결값이 없는 대당 Capa 기준이 있습니다" in message
     assert "1.0 으로 가정" not in message
     # 막지 않았다면 계산이 정말 멈췄다 — 검사가 계산과 같은 것을 본다.
@@ -738,9 +738,9 @@ def test_reviving_a_zero_run_rate_route_needs_its_vital_and_run_day_rows() -> No
     message = str(raised.value)
     assert message.startswith(
         "「효율」 표에서 0 이하이던 칸을 0보다 크게 바꿔 다시 계산에 드는 경로가 쓰는 "
-        "기준정보 행이 없습니다. 「여유율」 탭에 1건 — "
+        "기준정보 행이 없습니다. 「여유율」 표에 1건 — "
     )
-    assert "「일수」 탭에 1건" in message
+    assert "「일수」 표에 1건" in message
     assert message.endswith("「변경사항 적용」을 누른 뒤 효율을 다시 적용하세요.")
 
 
@@ -820,7 +820,7 @@ def test_a_route_whose_run_rate_row_is_blank_quotes_the_blank_value_halt(revive:
 
     message = describe_missing_path_rows({}, missing_required_rows(before, after, tables))
 
-    assert "「효율」 탭에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in message
+    assert "「효율」 표에 1건 — 202609 · 공정=Process-A / 양산구분=양산" in message
     assert f"「{halt}」" in message
     assert "연결값이 없는" not in message
 

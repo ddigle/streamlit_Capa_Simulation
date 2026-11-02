@@ -87,7 +87,7 @@ def test_a_blank_run_rate_on_a_live_route_is_caught_before_saving() -> None:
     notice = check.notice(1)
     assert notice.startswith("저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — RQ_RUN_RATE의 ")
     assert PROCESS in notice
-    assert "기준 정보 화면 「효율」 탭에서 그 칸에 0보다 큰 값을 넣고" in notice
+    assert "기준 정보 화면 「효율」 표에서 그 칸에 0보다 큰 값을 넣고" in notice
     assert "새 리비전으로 저장하면 r2부터 계산이 섭니다." in notice
 
 
@@ -132,7 +132,7 @@ def test_a_stopping_source_is_still_saved_with_its_shape_in_the_memo(tmp_path: P
                 "RQ_VITAL의 편중률 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 []",
                 ReferenceJoinProblem("RQ_VITAL", JOIN_BLANK_VALUE, keys=1, rows=1),
             ),
-            "기준 정보 화면 「여유율」 탭에서",
+            "기준 정보 화면 「여유율」 표에서",
         ),
         (
             RegistrationCapacityCheck(
@@ -153,11 +153,11 @@ def test_a_stopping_source_is_still_saved_with_its_shape_in_the_memo(tmp_path: P
             RegistrationCapacityCheck(
                 "RQ_UPEH의 Main 행에 UPEH 누락값 또는 숫자가 아닌 값이 있습니다."
             ),
-            "기준 정보 화면 「UPEH」 탭에서",
+            "기준 정보 화면 「UPEH」 표에서",
         ),
         (
             RegistrationCapacityCheck("RQ_RUN_DAY의 RUN_DAY 값은 0보다 커야 합니다: 1건, 예시 []"),
-            "기준 정보 화면 「일수」 탭에서",
+            "기준 정보 화면 「일수」 표에서",
         ),
         # 기준정보 연결 오류가 아니어도 표 자체가 깨진 꼴(키 중복 · Area_Name · 키 누락)은 칸을
         # 채워 풀리지 않는다 — 「UPEH」 탭으로 보내지 않는다.
@@ -193,4 +193,4 @@ def test_a_stop_message_that_ends_with_a_period_is_not_doubled() -> None:
     notice = RegistrationCapacityCheck("RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다.").notice(1)
 
     assert ".." not in notice
-    assert "0보다 커야 합니다. 기준 정보 화면 「UPEH」 탭에서" in notice
+    assert "0보다 커야 합니다. 기준 정보 화면 「UPEH」 표에서" in notice

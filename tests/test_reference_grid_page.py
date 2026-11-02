@@ -1,0 +1,341 @@
+# Purpose: 기준 정보 종류 단추와 범용 편집 그리드(시범 일수)의 새 동작을 AppTest 로 본다.
+
+"""기준 정보 화면은 탭 대신 종류 단추 한 줄과 큰 편집 표 하나다(2026-11-02 사용자 결정). 새 그리드로
+옮긴 표(`reference_grid.GRID_TABLES` — 시범은 일수)는 초안을 업무 키로 세션에 두므로, 옛
+`st.data_editor` 와 달리 종류를 바꾸거나 화면을 떠나거나 줄 차례만 바뀌어도 편집이 남고 필터를
+잠그지 않는다. 시험은 `tests/edit_grid_fake.py` 대역으로 브라우저가 보내는 op 를 넣는다.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
+from streamlit.testing.v1 import AppTest
+from test_reference_data_page import (
+    DATASET,
+    DISPLAY_ORDER_SWAP_TEST_SCRIPT,
+    REAL_APPLY_TEST_SCRIPT,
+    TEST_SCRIPT,
+    TWO_PROCESS_TEST_SCRIPT,
+    _filtered_editor_app,
+    _grid_write,
+    _open_paste,
+    _scenario_table,
+    _walk,
+)
+
+from capa_simulation.components import page_tabs, reference_grid
+from capa_simulation.components.edit_grid import feed_key
+from capa_simulation.components.month_editor import FILTER_LOCKED_NOTICE
+from capa_simulation.components.tab_marks import pending_segments_style
+from capa_simulation.reference_grid_keys import (
+    DATASET_KEY,
+    DATASETS,
+    DEFAULT_DATASET,
+    GRID_HOST,
+    cells_key,
+    history_key,
+)
+from capa_simulation.services.edit_grid import DROPPED_TOAST
+
+FEED = feed_key(GRID_HOST)
+RUN_DAY_CELLS = cells_key("RQ_RUN_DAY")
+APPLY = "capa_run_day_editor_apply"
+
+
+@pytest.fixture
+def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    return install_fake_edit_grid(monkeypatch)
+
+
+def _open(script: str, name: str = "일수") -> AppTest:
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET[name]
+    app.run()
+    assert not app.exception, app.exception
+    return app
+
+
+def _choose(app: AppTest, name: str) -> AppTest:
+    app.session_state[DATASET_KEY] = DATASET[name]
+    app.run()
+    assert not app.exception, app.exception
+    return app
+
+
+def _draft(app: AppTest) -> Any:
+    return app.session_state[RUN_DAY_CELLS] if RUN_DAY_CELLS in app.session_state else None
+
+
+def _shell_rows(calls: Calls) -> list[str]:
+    """마지막 껍데기의 보이는 줄 차례(분류 칸 하나 — 64자 코드 한 글자씩)."""
+    shell = last(calls, GRID_HOST)
+    alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
+    return [shell["dims"][0][alphabet.index(code)] for code in shell["codes"][0]]
+
+
+def test_dataset_buttons_replace_the_tabs(calls: Calls) -> None:
+    """탭이 없고 종류 단추 한 줄(옛 탭 차례, 기본 UPEH)이 선다 — 설비대수 안쪽 탭도 단추로 폈다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert not app.tabs
+    control = app.segmented_control(key=DATASET_KEY)
+    assert control.options == list(DATASETS.values())
+    assert control.value == DEFAULT_DATASET == "RQ_UPEH"
+    assert list(DATASETS) == [
+        "RQ_UPEH",
+        "RQ_EQP_OWN",
+        "RQ_EQP_LENT",
+        "RQ_EQP_AVBL",
+        "EQP_OVERVIEW",
+        "RQ_RUN_RATE",
+        "RQ_VITAL",
+        "RQ_RUN_DAY",
+        "RQ_LOT_RATIO",
+        "RQ_WF_RATIO",
+        "STEP",
+    ]
+    # 그리드 마운트는 기본 종류(아직 옮기지 않은 UPEH)에서도 표 없는 껍데기로 같은 자리에 선다.
+    assert [key for key, _ in calls] == [FEED, GRID_HOST]
+    assert last(calls, GRID_HOST)["table"] is None
+
+
+def test_switching_datasets_keeps_the_grid_draft_and_the_mount(calls: Calls) -> None:
+    """일수를 고치고 다른 종류(편집표·읽기 보기)를 골랐다 돌아와도 초안이 남는다. 그리드 요소는 모든
+    회차에 같은 key·같은 차례로 서고(다시 마운트되지 않는다) 고르지 않은 회차에는 표 없이 남는다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
+
+    for name in ("효율", "설비대수 현황", "STEP 구성", "UPEH"):
+        app = _choose(app, name)
+        assert last(calls, GRID_HOST)["table"] is None
+        assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
+    app = _choose(app, "일수")
+    feed = last(calls, FEED)
+    assert feed["table"] == "RQ_RUN_DAY" and feed["counts"]["cells"] == 1
+    assert feed["drows"]  # 초안이 다시 그려진다
+    keys = [key for key, _ in calls]
+    assert keys == [FEED, GRID_HOST] * (len(keys) // 2)
+
+
+def test_an_op_sent_just_before_switching_lands_in_its_own_table(calls: Calls) -> None:
+    """표를 바꾸는 회차에 함께 온 op(고친 뒤 곧바로 다른 종류를 누름)도 그 표 초안에 쓴다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app.session_state[DATASET_KEY] = DATASET["효율"]
+    app = send_ops(
+        app,
+        calls,
+        {"op": "write", "rows": ["Process-B"], "cols": ["202608"], "values": [["29"]]},
+        host=GRID_HOST,
+    )
+    assert not app.exception
+    assert last(calls, GRID_HOST)["table"] is None
+    assert _draft(app) == {"cells": {"Process-B": {"202608": 29.0}}, "bad": {}}
+
+
+def test_the_pending_dot_style_marks_the_nth_button() -> None:
+    style = pending_segments_style(DATASET_KEY, list(DATASETS), {"RQ_RUN_DAY", "RQ_UPEH"})
+    assert '[role="radio"]:nth-of-type(8)::after' in style
+    assert '[role="radio"]:nth-of-type(1)::after' in style
+    assert style.count("::after") == 2
+    assert pending_segments_style(DATASET_KEY, list(DATASETS), set()) == ""
+
+
+def test_a_row_order_change_keeps_the_grid_draft_on_its_business_key(calls: Calls) -> None:
+    """공용 표시순서만 바뀐 회차에 그리드 초안은 남고 같은 업무 키 칸에 붙는다 — 옛 편집표는 줄
+    위치라 비우고 알렸다(그 알림에 일수가 끼지 않는다)."""
+    app = _open(DISPLAY_ORDER_SWAP_TEST_SCRIPT)
+    assert _shell_rows(calls) == ["Process-A", "Process-B"]
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+
+    app.session_state["test_display_order_descending"] = True
+    app.run()
+    assert not app.exception
+    assert _shell_rows(calls) == ["Process-B", "Process-A"]
+    assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
+    assert not any("일수" in str(item.value) for item in app.warning)
+
+
+def test_the_filter_is_not_locked_while_a_grid_draft_is_pending(calls: Calls) -> None:
+    app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
+    app = _grid_write(app, calls, "Process-B", "202608", "20")
+    widget = app.sidebar.multiselect(key="capa_run_day_editor_filter_공정")
+    assert not widget.disabled
+    assert FILTER_LOCKED_NOTICE not in {str(item.value) for item in app.sidebar.caption}
+    # 필터를 풀어도 초안은 그대로다(업무 키).
+    widget.set_value([]).run()
+    assert not app.exception
+    assert last(calls, FEED)["filters"] is None
+    assert _draft(app) == {"cells": {"Process-B": {"202608": 20.0}}, "bad": {}}
+
+
+_LEAVE_PROBE = (
+    '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n'
+    "    from capa_simulation.components import page_tabs as _probe_tabs\n"
+    "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels as _labels\n"
+    '    st.session_state["probe_other_page"] = _labels("home.py")\n'
+    '    st.session_state["probe_leave"] = _probe_tabs.leave_notice("reference_data.py")\n'
+    '    st.session_state["probe_marks"] = _probe_tabs.page_unsaved_marks("home.py")\n'
+)
+
+
+def test_a_grid_draft_stays_when_leaving_and_shows_on_every_page(calls: Calls) -> None:
+    """그리드 초안은 세션 칸이라 화면을 떠나도 남는다 — 다른 화면의 사이드바 「적용 전 편집」·화면
+    탭 점에 「기준 정보 · 일수」 가 서고, 떠날 때 묻지 않는다."""
+    script = TWO_PROCESS_TEST_SCRIPT.replace(
+        '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n', _LEAVE_PROBE, 1
+    )
+    assert script != TWO_PROCESS_TEST_SCRIPT
+    app = _open(script)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert app.session_state["probe_other_page"] == ["기준 정보 · 일수"]
+    assert app.session_state["probe_leave"] == ""
+    assert "기준 정보 · 일수" in app.session_state["probe_marks"]["app_pages/reference_data.py"]
+
+
+def test_a_fractional_day_is_a_cell_error_and_apply_stops_on_it(calls: Calls) -> None:
+    """일수는 정수만 받는다 — 30.5 는 칸 오류로 남고(옛 편집표는 말없이 30), 「변경사항 적용」 은
+    고칠 칸을 알리고 멈춘다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "30.5")
+    feed = last(calls, FEED)
+    assert feed["counts"] == {"cells": 1, "rows": 1, "errors": 1}
+    assert feed["bad"] == [[0, 0, "30.5", "int"]]
+    assert "고칠 칸 1개" in " ".join(str(item.value) for item in app.markdown)
+
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert errors == [reference_grid.ERRORS_NOTICE.format(n="1", places="Process-A · 202608")], (
+        errors
+    )
+    assert "test_month_updates" not in app.session_state
+    assert _draft(app) == {"cells": {}, "bad": {"Process-A": {"202608": ("30.5", "int")}}}
+
+
+def test_thousands_commas_are_read_and_text_is_a_cell_error(calls: Calls) -> None:
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "1,234")
+    app = _grid_write(app, calls, "Process-B", "202608", "#N/A")
+    assert _draft(app) == {
+        "cells": {"Process-A": {"202608": 1234.0}},
+        "bad": {"Process-B": {"202608": ("#N/A", "num")}},
+    }
+
+
+def test_apply_raises_the_revision_and_drops_only_that_tables_draft(calls: Calls) -> None:
+    """적용은 옛 편집표와 같은 길이다 — 활성 리비전이 오르고 새 내용 토큰이 서며, 작업 줄 아래에
+    성공 글이 서고, 그 표 초안만 사라진다."""
+    app = _open(REAL_APPLY_TEST_SCRIPT)
+    # 시험 대본의 첫 활성 시나리오 — 리비전 1, 내용 토큰은 대본이 정한 값.
+    revision, token = 1, "test-capacity-real-apply-page"
+    assert "active_scenario" not in app.session_state
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+
+    after = app.session_state["active_scenario"]
+    assert after["revision"] == revision + 1
+    assert after["content_token"] != token
+    assert _scenario_table(app, "RQ_RUN_DAY")["RUN_DAY"].tolist() == [20.0]
+    assert any(
+        "RQ_RUN_DAY 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in app.success
+    )
+    assert _draft(app) is None
+    assert last(calls, FEED)["counts"]["cells"] == 0
+    assert app.button(key=APPLY).disabled
+
+
+def test_a_business_rule_error_is_a_sentence_and_keeps_the_draft(calls: Calls) -> None:
+    """UPEH 경로가 쓰는 일수 칸을 비우면 적용할 때 문장으로 막고(칸 오류가 아니다) 초안은 남는다."""
+    app = _open(TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "")
+    assert last(calls, FEED)["counts"] == {"cells": 1, "rows": 1, "errors": 0}
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert any("UPEH 경로가 씁니다" in error and "Process-A" in error for error in errors), errors
+    assert "test_month_updates" not in app.session_state
+    assert _draft(app) == {"cells": {"Process-A": {"202608": None}}, "bad": {}}
+
+
+def test_a_source_change_drops_the_grid_draft_and_the_ops_sent_before(calls: Calls) -> None:
+    """원본(버전·리비전·기간)이 바뀌면 초안·이력을 버린다 — 새 `gen` 이 서서 그 전에 보낸 op 는
+    버려지고 수가 토스트로 간다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    old_gen = last(calls, FEED)["gen"]
+
+    app.session_state["reference_data_source_token"] = "다른 원본"
+    app.run()
+    assert not app.exception
+    assert _draft(app) is None
+    assert last(calls, FEED)["gen"] != old_gen
+
+    app = send_ops(
+        app,
+        calls,
+        {"op": "write", "rows": ["Process-B"], "cols": ["202608"], "values": [["25"]]},
+        host=GRID_HOST,
+        gen=old_gen,
+    )
+    assert _draft(app) is None
+    toast = last(calls, FEED)["toast"]
+    assert toast is not None and DROPPED_TOAST.format(n="1") in toast["text"]
+
+
+def test_the_paste_popup_warns_about_the_draft_and_applying_it_drops_the_draft(
+    calls: Calls,
+) -> None:
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    app = _open_paste(app, "capa_run_day_editor")
+    assert reference_grid.PASTE_DROPS_DRAFT_NOTICE.format(n="1") in {
+        str(item.value) for item in app.warning
+    }
+    app.text_area(key="capa_run_day_editor_csv_clipboard").set_value(
+        "공정\t202608\nProcess-A\t28\nProcess-B\t31\n"
+    )
+    app = next(b for b in app.button if b.label == "붙여넣기 일괄 적용").click().run()
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
+        "Process-A": 28.0,
+        "Process-B": 31.0,
+    }
+    assert _draft(app) is None
+    assert history_key("RQ_RUN_DAY") not in app.session_state or (last(calls, FEED)["undo"] == 0)
+
+
+def test_undo_and_redo_go_through_the_server_history(calls: Calls) -> None:
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    app = send_ops(app, calls, {"op": "undo"}, host=GRID_HOST)
+    assert _draft(app) is None
+    assert (last(calls, FEED)["undo"], last(calls, FEED)["redo"]) == (0, 1)
+    app = send_ops(app, calls, {"op": "redo"}, host=GRID_HOST)
+    assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
+
+
+def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: Calls) -> None:
+    """작업 줄(적용·붙여넣기·편집 취소·변경 수)은 표 위다 — 「편집 취소」 는 그 표 초안만 버린다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    assert app.button(key=APPLY).disabled
+    assert "capa_run_day_editor_discard" not in {button.key for button in app.button}
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    elements = _walk(app.main)
+    keys = [getattr(node, "key", None) for node in elements]
+    assert keys.index(APPLY) < keys.index("capa_run_day_editor_discard")
+    assert "**변경사항 확인** &nbsp;1개 값 · 1개 행" in {str(item.value) for item in app.markdown}
+    app.button(key="capa_run_day_editor_discard").click().run()
+    assert not app.exception
+    assert _draft(app) is None
+
+
+def test_the_grid_host_holds_tab_clicks_like_the_other_edit_grids() -> None:
+    """화면 탭 줄 붙들기(`<tabs-hold>`)가 기준 정보 그리드도 편집 칸으로 본다."""
+    assert GRID_HOST in page_tabs.EDIT_HOST_KEYS
+    assert GRID_HOST == "reference_grid"

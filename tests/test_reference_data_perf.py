@@ -19,9 +19,8 @@ import pytest
 from streamlit.dataframe import lazy_df_source
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
-    EQP_TAB,
+    DATASET,
     REAL_APPLY_TEST_SCRIPT,
-    REF_TAB,
     TEST_SCRIPT,
     TWO_PROCESS_TEST_SCRIPT,
     _add_step,
@@ -31,6 +30,7 @@ from test_reference_data_page import (
     editor_widget_key_in,
 )
 
+from capa_simulation.reference_grid_keys import DATASET_KEY
 from capa_simulation.services import display_order_scopes as scopes
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -60,6 +60,7 @@ STEP_SUMMARY_COLUMNS = {
 # 활성 시나리오 표도 적어 두어, 테스트가 같은 표로 **직접** 계산한 값과 견준다.
 _PROBE = """
 import capa_simulation.components.month_editor as _probe_month_editor
+import capa_simulation.components.reference_grid as _probe_reference_grid
 import capa_simulation.scenario_state as _probe_state
 import capa_simulation.services.equipment_count as _probe_equipment
 
@@ -133,9 +134,18 @@ def _probe_render_month_editor(tab, default_table, dimensions, editor_key, *args
     )
 
 
+_probe_original_build_grid_table = _probe_reference_grid.build_grid_table
+
+
+def _probe_build_grid_table(table, title, editor_key, template, *args, **kwargs):
+    st.session_state["test_editor_templates"][editor_key] = template.copy()
+    return _probe_original_build_grid_table(table, title, editor_key, template, *args, **kwargs)
+
+
 _probe_state.scenario_month_table = _probe_month_table
 simulation_cache.get_route_step_tables = _probe_route_tables
 _probe_month_editor.render_month_editor = _probe_render_month_editor
+_probe_reference_grid.build_grid_table = _probe_build_grid_table
 _probe_equipment.build_equipment_count_table = _probe_count_table
 _probe_equipment.equipment_count_to_edit_table = _probe_count_edit
 _probe_month_editor.count_month_changes = _probe_change_count
@@ -144,6 +154,7 @@ _PROBE_RESTORE = (
     "    _probe_state.scenario_month_table = _probe_original_month_table\n"
     "    simulation_cache.get_route_step_tables = _probe_original_route_tables\n"
     "    _probe_month_editor.render_month_editor = _probe_original_render_month_editor\n"
+    "    _probe_reference_grid.build_grid_table = _probe_original_build_grid_table\n"
     "    _probe_equipment.build_equipment_count_table = _probe_original_count_table\n"
     "    _probe_equipment.equipment_count_to_edit_table = _probe_original_count_edit\n"
     "    _probe_month_editor.count_month_changes = _probe_original_change_count\n"
@@ -179,7 +190,7 @@ def _sliced(app: AppTest, back: int = 1) -> list[str]:
 
 
 def _open_tab(app: AppTest, name: str) -> AppTest:
-    app.session_state["reference_data_active_tab"] = REF_TAB[name]
+    app.session_state[DATASET_KEY] = DATASET[name]
     app.run()
     assert not app.exception
     return app
@@ -518,7 +529,7 @@ def test_an_unapplied_edit_left_in_a_closed_tab_applies_the_edited_row_only() ->
     key = editor_widget_key_in(app, "capa_run_rate_editor")
     edit = {"edited_rows": {0: {"202608": 0.5}}, "added_rows": [], "deleted_rows": []}
     app.session_state[key] = edit
-    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     assert not app.exception
     # 닫힌 탭이어도 적용하지 않은 편집이 남은 편집표는 그린다.
@@ -612,8 +623,7 @@ def _builds(app: AppTest) -> list[tuple[str, object]]:
 
 
 def _open_equipment(app: AppTest, sub_tab: str) -> AppTest:
-    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
-    app.session_state["equipment_count_active_tab"] = EQP_TAB[sub_tab]
+    app.session_state[DATASET_KEY] = DATASET[f"설비대수 {sub_tab}"]
     app.run()
     assert not app.exception
     return app
@@ -896,17 +906,18 @@ def _change_lines(app: AppTest) -> list[str]:
 
 
 def test_the_change_count_runs_only_with_unapplied_edits() -> None:
-    """편집이 없으면 셀 수를 세지 않고(줄도 없다), 고치면 예전과 같은 줄이 선다."""
+    """편집이 없으면 셀 수를 세지 않고(줄도 없다), 고치면 예전과 같은 줄이 선다(아직
+    `st.data_editor` 인 효율 — 일수는 새 그리드라 초안 수를 센다)."""
     app = AppTest.from_string(
         _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-change-count"), default_timeout=60
     )
-    app = _open_tab(app, "일수")
+    app = _open_tab(app, "효율")
     assert _change_counts(app) == []
     assert _change_lines(app) == []
 
-    key = editor_widget_key_in(app, "capa_run_day_editor")
+    key = editor_widget_key_in(app, "capa_run_rate_editor")
     app.session_state[key] = {
-        "edited_rows": {0: {"202608": 20.0}},
+        "edited_rows": {0: {"202608": 0.5}},
         "added_rows": [],
         "deleted_rows": [],
     }
@@ -917,7 +928,7 @@ def test_the_change_count_runs_only_with_unapplied_edits() -> None:
 
     # 같은 값으로 고친 칸은 편집이 남아도 바뀐 것이 없다 — 세지만 줄은 서지 않는다.
     app.session_state[key] = {
-        "edited_rows": {0: {"202608": 31.0}},
+        "edited_rows": {0: {"202608": 0.9}},
         "added_rows": [],
         "deleted_rows": [],
     }

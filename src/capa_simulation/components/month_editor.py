@@ -176,7 +176,7 @@ def render_month_editor(
                     help="이 표에서 적용하지 않은 편집을 버립니다.",
                 )
             change_slot = st.empty()
-        _render_scope(default_table, visible_table, month_columns)
+        render_scope(default_table, visible_table, month_columns)
         # **결과는 누른 자리에서 보인다.** 적용·붙여넣기의 성공과 적용 오류는 작업 줄 바로 아래
         # 자리에 쓴다. 오류는 적용이 표 뒤에서 도므로 이 자리를 세션에 적어 두고 페이지가 거기에
         # 쓴다(`editor_notice`).
@@ -235,7 +235,7 @@ def render_month_editor(
     if open_now and st.session_state.get(dialog_key) == editor_key:
         # 왕복 CSV·붙여넣기는 전체 표 계약이다. 걸러진 표를 넘기면 양식이 부분 표가 되고, 그
         # 부분 표는 검증을 통과해 나머지 공정을 조회기간에서 지운다.
-        _paste_dialog(
+        paste_dialog(
             default_table,
             table_name=table_name,
             dimensions=dimensions,
@@ -247,6 +247,7 @@ def render_month_editor(
             # 붙여넣기도 격자와 같은 범위를 지난다(격자만 막으면 붙여넣은 85·1.2·음수가 들어온다).
             min_value=min_value,
             max_value=max_value,
+            pending_notice=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(editor_key) else None,
         )
     return merged, submitted
 
@@ -355,7 +356,7 @@ def _discard_edits(editor_key: str) -> None:
     discard_editor(editor_key)
 
 
-def _paste_dialog(
+def paste_dialog(
     data: pd.DataFrame,
     *,
     table_name: str,
@@ -367,15 +368,22 @@ def _paste_dialog(
     rename_notice: bool,
     min_value: float | None,
     max_value: float | None,
+    pending_notice: str | None,
 ) -> None:
+    """「Excel 붙여넣기」 팝업(표 전체 CSV 양식 — 붙여넣어 적용하면 팝업이 닫힌다).
+
+    `pending_notice` 는 그 표에 적용하지 않은 편집이 있을 때 첫 줄에 쓰는 경고다 — 붙여넣기를
+    적용하면 원본이 바뀌어 그 편집을 버리므로 버리기 전에 말한다. 편집이 어디에 사는지(편집표
+    위젯·그리드 초안)는 부르는 쪽이 안다. `editor_key` 는 양식 칸·내려받기 key 의 앞머리다.
+    """
+
     def _close() -> None:
         st.session_state.pop(dialog_key, None)
 
     @st.dialog(f"Excel 붙여넣기 · {table_name}", width="large", on_dismiss=_close)
     def _body() -> None:
-        # 붙여넣기를 적용하면 원본이 바뀌어 표의 편집 상태를 비운다. 버리기 전에 말한다.
-        if editor_has_edits(editor_key):
-            st.warning(PASTE_DROPS_EDITS_NOTICE)
+        if pending_notice:
+            st.warning(pending_notice)
         if rename_notice:
             st.caption(RENAME_NOTICE)
         imported = render_reference_clipboard_form(
@@ -486,8 +494,8 @@ def merge_edited_months(
     return merged
 
 
-def _render_scope(
-    default_table: pd.DataFrame, visible_table: pd.DataFrame, month_columns: list[str]
+def render_scope(
+    default_table: pd.DataFrame, visible_table: pd.DataFrame, month_columns: Sequence[str]
 ) -> None:
     """무엇을 편집하고 있는지 한 줄. 표를 보기 전에 범위를 알려 준다.
 

@@ -279,10 +279,13 @@ EQUIPMENT_CARD_KEY: Final = "condition_card_equipment"
 GAP_PROCESS_KEY: Final = "equipment_gap_process_filter_v1"
 GAP_ALL_PROCESSES: Final = "전체 합계"
 GAP_DETAIL_LINK_LABEL: Final = "공정 Capa 상세 ④ 에서 비가동 화살표로 보기"
-# 기준 정보(`app_pages/reference_data.py`) 첫 탭 UPEH 편집표의 월 칸 머리 도움말
+# 기준 정보(`app_pages/reference_data.py`) 종류 단추 「UPEH」(기본 종류) 편집표의 월 칸 머리 도움말
 # (`EDITOR_VALUE_HELP`)에서 찾는 글 둘. 풍선은 머리 칸 위에 마우스를 올려야 선다(Glide 캔버스 —
-# 머리 칸 DOM 은 크기가 0).
+# 머리 칸 DOM 은 크기가 0). 종류 단추는 탭이 아니라 본문 전환(`reference_grid_keys.DATASET_KEY`)이다
+# — 값만 옮기고 테스트가 같은지 본다.
 REFERENCE_PAGE: Final = "reference_data"
+REFERENCE_DATASET_KEY: Final = "reference_dataset"
+UPEH_DATASET_LABEL: Final = "UPEH"
 UPEH_HELP_WORDS: Final = ("UPEH", "ST(분)")
 # 제약 시뮬레이션(`app_pages/constraint_simulation.py`)과 그 화면의 컨테이너 key
 # (`constraint_simulation_state`·`constraint_simulation_view`·페이지 까닭 카드). 값만 옮기고
@@ -4983,12 +4986,21 @@ def summarize_upeh_help(text: str | None) -> str:
 
 
 def check_upeh_help(screen: Screen) -> str:
-    """기준 정보 → UPEH 편집표의 월 칸 머리에 마우스를 올려 도움말 풍선이 서는지, 그 글이 Main
-    UPEH · MI ST(분)를 밝히는지. 머리 칸 DOM 은 크기가 0 이라(Glide 캔버스) 머리 줄 좌표를 오른쪽
-    끝(월 칸)부터 왼쪽으로 훑는다. 칸은 고치지 않는다."""
+    """기준 정보 → 종류 단추 「UPEH」 편집표의 월 칸 머리에 마우스를 올려 도움말 풍선이 서는지, 그
+    글이 Main UPEH · MI ST(분)를 밝히는지. 머리 칸 DOM 은 크기가 0 이라(Glide 캔버스) 머리 줄 좌표를
+    오른쪽 끝(월 칸)부터 왼쪽으로 훑는다. 칸은 고치지 않는다. 고른 종류는 세션에 남아 다음 항목·
+    사람 손에 남지 않게 끝에 되돌린다."""
     screen.step("페이지 열기")
     screen.open_page(REFERENCE_PAGE)
-    screen.open_tab("UPEH")
+    before = _choose_segment(screen, REFERENCE_DATASET_KEY, UPEH_DATASET_LABEL)
+    try:
+        return _read_upeh_help(screen)
+    finally:
+        if before and before != UPEH_DATASET_LABEL:
+            _choose_segment(screen, REFERENCE_DATASET_KEY, before)
+
+
+def _read_upeh_help(screen: Screen) -> str:
     grid = screen.page.locator(
         '[data-testid="stMain"] [data-testid="stDataFrame"], '
         '[data-testid="stMain"] [data-testid="stDataEditor"]'

@@ -379,7 +379,7 @@ def test_a_registration_whose_capacity_stops_says_how_to_fix_it_in_the_run_recor
     run = _run(repository, fake)
 
     assert run.reason is not None
-    assert "기준 정보 화면 「효율」 탭에서 그 칸에 0보다 큰 값을 넣고" in run.reason
+    assert "기준 정보 화면 「효율」 표에서 그 칸에 0보다 큰 값을 넣고" in run.reason
     assert "r2부터 계산이 섭니다" in run.reason
     assert run.reason.endswith("손으로 발행하세요.")
     base = repository.load_revision(str(run.base_revision_id))

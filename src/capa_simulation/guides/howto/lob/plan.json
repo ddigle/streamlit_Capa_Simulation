@@ -169,14 +169,13 @@
     {
       "id": "08_ref_avail",
       "page": "기준 정보",
-      "note": "기준 정보 · 설비대수 · 가용",
+      "note": "기준 정보 · 종류 단추 「설비대수 가용」",
       "from": "07_sidebar_static_open",
       "writes": "none",
-      "ops": [{"op": "nav", "text": "기준 정보"}, {"op": "tab", "text": "설비대수"}, {"op": "tab", "text": "가용"}],
+      "ops": [{"op": "nav", "text": "기준 정보"}, {"op": "click", "target": "button:설비대수 가용"}],
       "targets": {
-        "tab_eqp": "tab:설비대수",
-        "subtab_avail": "tab:가용",
-        "subtab_own": "tab:보유",
+        "subtab_avail": "button:설비대수 가용",
+        "subtab_own": "button:설비대수 보유",
         "ref_table": "named:GRID",
         "ref_apply": "button:변경사항 적용",
         "ref_paste": "button:Excel 붙여넣기"
@@ -201,8 +200,7 @@
       ],
       "targets": {
         "ref_change_notice": "text:변경사항 확인",
-        "ref_tab_dot": "tab:가용",
-        "ref_tab_dot_parent": "tab:설비대수",
+        "ref_tab_dot": "button:설비대수 가용",
         "ref_apply": "button:변경사항 적용",
         "ref_cancel": "button:편집 취소",
         "ref_edited_cell": "named:EDIT_CELL",
@@ -222,7 +220,7 @@
         "sidebar_scenario": "named:SIDEBAR_SCEN",
         "sidebar_badge": "named:SIDEBAR_BADGE",
         "header_band": "named:HEADER_BAND",
-        "ref_tab_dot": "tab:가용"
+        "ref_tab_dot": "button:설비대수 가용"
       }
     },
     {

@@ -23,11 +23,11 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from edit_grid_fake import install_fake_edit_grid, last
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
+    DATASET,
     DISPLAY_ORDER_SWAP_TEST_SCRIPT,
-    EQP_TAB,
-    REF_TAB,
     TEST_SCRIPT,
     TWO_PROCESS_TEST_SCRIPT,
     editor_widget_key_in,
@@ -40,6 +40,7 @@ from capa_simulation.components import (
     widget_generation,
     write_guard,
 )
+from capa_simulation.reference_grid_keys import DATASET_KEY, GRID_HOST
 from capa_simulation.scenario_state import ActiveScenario
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -310,7 +311,7 @@ def test_a_display_order_change_drops_the_reference_edit_instead_of_saving_it_on
     """
     editor_key = "capa_run_rate_editor"
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB["효율"]
+    app.session_state[DATASET_KEY] = DATASET["효율"]
     app.run()
     assert not app.exception
     assert app.session_state[f"captured_order::{editor_key}"] == ["Process-A", "Process-B"]
@@ -347,7 +348,7 @@ def test_an_unchanged_display_order_keeps_the_reference_edit_and_applies_it_to_i
     """표시순서가 그대로인 회차에는 편집이 남고 적용은 고친 줄에 든다(회귀)."""
     editor_key = "capa_run_rate_editor"
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB["효율"]
+    app.session_state[DATASET_KEY] = DATASET["효율"]
     app.run()
     edit = _edit(MONTH, 0.5)
     app.session_state[editor_widget_key_in(app, editor_key)] = edit
@@ -371,8 +372,7 @@ def test_a_display_order_change_also_drops_an_equipment_count_edit() -> None:
     """설비대수 세 표도 같은 표시순서로 줄을 세운다 — 함께 비워지고 이름이 알림에 실린다."""
     editor_key = "capa_eqp_own_editor"
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
-    app.session_state["equipment_count_active_tab"] = EQP_TAB["보유"]
+    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
     app.run()
     assert not app.exception
     edit = _edit(MONTH, 0.333)
@@ -672,7 +672,7 @@ EQUIPMENT_FORMATS = {
 def test_ratio_editors_carry_no_step_and_keep_the_percent_format(tab_name: str) -> None:
     editor_key, number_format = REFERENCE_FORMATS[tab_name]
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB[tab_name]
+    app.session_state[DATASET_KEY] = DATASET[tab_name]
     app.run()
     assert not app.exception
 
@@ -688,8 +688,7 @@ def test_ratio_editors_carry_no_step_and_keep_the_percent_format(tab_name: str) 
 def test_equipment_count_editors_carry_no_step_and_keep_two_decimals(tab_name: str) -> None:
     editor_key = EQUIPMENT_FORMATS[tab_name]
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
-    app.session_state["equipment_count_active_tab"] = EQP_TAB[tab_name]
+    app.session_state[DATASET_KEY] = DATASET[f"설비대수 {tab_name}"]
     app.run()
     assert not app.exception
 
@@ -700,14 +699,18 @@ def test_equipment_count_editors_carry_no_step_and_keep_two_decimals(tab_name: s
         assert config["type_config"]["format"] == "%,.2f"
 
 
-def test_the_run_day_editor_keeps_its_one_day_step() -> None:
-    """일수는 1일 단위로 충분해 그대로 둔다."""
+def test_the_run_day_grid_takes_whole_days_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """일수는 새 편집 그리드에서 정수만 받는다(옛 편집표는 1일 증분으로 소수를 말없이 버렸다 — 이제
+    소수는 칸 오류다). 표시는 천 단위 + 소수 없음."""
+    calls = install_fake_edit_grid(monkeypatch)
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.session_state[DATASET_KEY] = DATASET["일수"]
     app.run()
-    configs = _month_configs(app, "capa_run_day_editor")
-    assert configs
-    assert all(config["type_config"]["step"] == 1.0 for config in configs.values())
+    assert not app.exception
+    shell = last(calls, GRID_HOST)
+    assert shell["table"] == "RQ_RUN_DAY"
+    assert (shell["fmt"]["kind"], shell["fmt"]["digits"], shell["fmt"]["int"]) == ("fixed", 0, True)
+    assert not any(widget.key == "capa_run_day_editor" for widget in app.dataframe)
 
 
 def test_the_yield_and_plan_editors_keep_their_formats() -> None:
@@ -739,8 +742,7 @@ def test_an_all_integer_month_table_is_drawn_as_float_without_a_step() -> None:
     )
     assert script != TWO_PROCESS_TEST_SCRIPT
     app = AppTest.from_string(script, default_timeout=60)
-    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
-    app.session_state["equipment_count_active_tab"] = EQP_TAB["보유"]
+    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
     app.run()
     assert not app.exception
 
