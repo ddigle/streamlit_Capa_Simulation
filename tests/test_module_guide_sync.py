@@ -393,6 +393,23 @@ def test_data_modules_is_read_only_for_the_owner_agent() -> None:
     assert not any("data/modules" in rule for rule in settings["permissions"]["allow"])
 
 
+def test_the_first_instruction_and_upload_section_go_through_a_pull_request() -> None:
+    """사내 main 은 PR 로만 바뀐다(2026-11-02 — 사내 GitHub 에서 PR · 가지 보호를 쓴다).
+    첫 지시는 번호 줄 앞에서 PR 길을 먼저 말하고, 8-2 는 「PR 을 못 쓰면 직접 커밋」 갈래 없이
+    앱 관리자의 PR 점검(런북 4-6) 뒤 합침으로 끝난다 — 담당자 에이전트가 사내 main 에 바로
+    올리는 길을 찾지 않는다."""
+    first_order = _blocks(_section("0. 에이전트에게"), "text")[0].splitlines()
+    numbered = next(n for n, line in enumerate(first_order) if line.startswith("1. "))
+    upload = _section("8-2.")
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+
+    assert any("PR 로만 사내 main 에 들어간다" in line for line in first_order[:numbered])
+    assert "PR 을 쓸 수 없으면" not in upload and "직접 커밋" not in upload
+    assert "git switch -c module/<id>/<주제>" in upload and "Squash and merge" in upload
+    assert "런북 4-6" in upload and "### 4-6. 사내 모듈 PR 점검" in runbook
+    assert "안 되면 자기 폴더만 바꾸는 직접 커밋" not in _section("8-3.")
+
+
 def _agents_bullet(start: str) -> str:
     """AGENTS.md 에서 `- <start>` 로 여는 글머리 하나(두 칸 들여 쓴 이어진 줄까지)."""
     lines = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()

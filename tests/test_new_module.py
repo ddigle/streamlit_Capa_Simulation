@@ -138,6 +138,20 @@ def test_a_quote_in_the_title_still_gives_ruff_clean_files(tmp_path: Path) -> No
     assert ruff.total == 0, [finding.text() for finding in ruff.findings]
 
 
+def test_the_next_steps_send_the_skeleton_up_by_a_pull_request(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사내 main 은 PR 로만 바뀐다(지침서 8-2) — 뼈대의 「다음 할 일」 도 가지 커밋 → PR 이다."""
+    capsys.readouterr()
+    assert _make(tmp_path) == 0
+    steps = capsys.readouterr().out.partition("다음 할 일:")[2].splitlines()
+
+    commit = next(line for line in steps if "git commit" in line)
+    assert "자기 가지(module/demo_new/<주제>)에서" in commit
+    assert '-m "승인: 앱 관리자 <YYYY-MM-DD>"' in commit
+    assert any("PR 을 연다" in line and "지침서 8-2" in line for line in steps)
+
+
 def test_the_skeleton_passes_check_module_with_ruff_and_its_smoke_test(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

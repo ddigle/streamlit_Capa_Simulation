@@ -254,12 +254,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     root_option = "" if args.root is None else f" --root {args.root}"
     print("다음 할 일:")
     print(
-        "  1) 앱 관리자의 승인을 받는다(새 모듈 등록 — 커밋 본문에 `승인: 앱 관리자 <YYYY-MM-DD>`)"
+        "  1) 앱 관리자의 승인을 받는다(새 모듈 등록 — 커밋 본문과 PR 본문에 "
+        "`승인: 앱 관리자 <YYYY-MM-DD>`)"
     )
     print(f"  2) uv run --no-sync python scripts/check_module.py {module_id}{root_option}")
     print(
-        f"  3) git add {MODULES_FOLDER_NAME}/{module_id} → git commit -m "
-        f'"module({module_id}): 새 모듈 뼈대" -m "승인: 앱 관리자 <YYYY-MM-DD>"'
+        f"  3) 자기 가지(module/{module_id}/<주제>)에서 "
+        f"git add {MODULES_FOLDER_NAME}/{module_id} → "
+        f'git commit -m "module({module_id}): 새 모듈 뼈대" -m "승인: 앱 관리자 <YYYY-MM-DD>"'
+    )
+    print(
+        "  4) 담당자가 그 가지를 푸시하고 사내 GitHub 에서 PR 을 연다 — 앱 관리자가 점검한 뒤 "
+        "합친다(지침서 8-2)"
     )
     return 0
 
