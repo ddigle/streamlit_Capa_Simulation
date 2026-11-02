@@ -55,7 +55,7 @@
   코어가 판 범위(`numpy>=2.2,<3`)를 스스로 지키고, pandas · streamlit 이 자기 의존을 바꿔도 빠지지 않는다.
 - **전이 의존**은 pandas · streamlit 이 끌어와 깔려 있을 뿐인 것이다. 지금은 있어도 그 둘이 판을 올리며 의존을 바꾸면 판이 말없이 바뀌거나
   빠질 수 있고, 그것을 import 하는 코드(코어든 모듈이든)가 그날 깨진다. 모듈 점검 M09 가 전이 의존에 경고를 내는 까닭이다.
-- numpy 는 pandas 가 늘 필요로 해 실제로 빠질 일은 거의 없지만, 코어 `src` · `app_pages` 9파일이 직접 import 하는데 목록에 없던 빈틈이었다.
+- numpy 는 pandas 가 늘 필요로 해 실제로 빠질 일은 거의 없지만, 코어 `src` 9파일이 직접 import 하는데 목록에 없던 빈틈이었다.
   이번 고침으로 그 빈틈이 메워지고, 모듈이 numpy 를 써도 M09 경고가 나지 않는다.
 - 깔리는 판은 그대로다(2.2.6 — 락 두 줄 · `requirements.txt` 한 줄만 바뀜). 사내 적용에서 새로 받을 패키지는 없다. pyarrow · pillow 는 전이
   의존 그대로라 모듈이 쓰면 경고가 남는다(오래 쓸 것이면 사외 요청으로 직접 의존에 올린다 — 지침서 「요청하는 길」).
@@ -88,7 +88,7 @@
   `data-test-script-state` 를 폴링한다. 소켓 바이트는 `ForwardMsg` 를 풀어 요소별로 센다.
 - **브라우저 확인**은 샌드박스 안 Chrome 으로, 8510 이상 포트·DB 사본에서 앱 띄우기·확인·끄기를 한 명령에.
   `/tmp` 는 재부팅 때 지워져 Playwright 를 다시 깐다. 앱 사본은 `PYTHONPATH=<사본>/src` 로 띄운다(편집 설치가 본 저장소를 본다).
-- **사내 글꼴 흉내** — 사내 화면 글꼴 Noto Sans KR 은 WSL 에 없고(있는 것은 Noto Sans CJK KR), Chrome 은 fontconfig 별칭으로
+- **사내 글꼴 흉내** — 앱 첫 글꼴 Noto Sans KR(사내 PC 에 깔렸는지는 미확인 — 없으면 맑은 고딕으로 떨어진다)은 WSL 에 없고(있는 것은 Noto Sans CJK KR), Chrome 은 fontconfig 별칭으로
   바꾼 이름을 받지 않는다. 브라우저 확인 때 `@font-face { font-family: "Noto Sans KR"; src: local("NotoSansCJKkr-Regular") }`
   (굵은 쪽은 `-Bold`)를 init 스크립트로 넣는다.
 - **서피스의 파일 가져오기** — WSL 의 `surface` 접속은 서피스 `C:\Dev\update_publishing` 에 갇혀 있다. 사내 리뷰는 사용자가 그
