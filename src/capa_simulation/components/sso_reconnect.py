@@ -158,11 +158,12 @@ def reconnect_script(cfg: SsoConfig) -> str:
     prefix = urlsplit(cfg.public_url).path.rstrip("/")
     fill = tokens.palette_value("light", "ACCENT")
     ink = tokens.palette_value("light", "ACCENT_TEXT")
+    shade = tokens.palette_value("light", "NAV_SHADOW")
     box_style = (
         "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;"
         "max-width:min(720px,calc(100vw - 24px));box-sizing:border-box;padding:12px 16px;"
         f"border-radius:8px;background:{fill};color:{ink};font-family:{tokens.FONT_FAMILY};"
-        "font-size:14px;line-height:1.5;box-shadow:0 6px 24px rgba(0,0,0,.28);"
+        f"font-size:14px;line-height:1.5;box-shadow:0 6px 24px {shade};"
     )
     link_style = (
         f"margin-left:10px;color:{ink};font-weight:700;text-decoration:underline;"
