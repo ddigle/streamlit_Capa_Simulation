@@ -52,11 +52,17 @@ from capa_simulation.components.literal_markdown import literal_markdown
 # 이 세션이 처음 본 계정(loginid). 매 회차 쿠키에서 다시 검증한 값과 견주어 계정 바뀜을 가른다 —
 # 신원의 근거가 아니다.
 SSO_LOGINID_KEY = "sso_signed_in_loginid"
-# 앱 정보 카드에 「로그인 n분 남음」 을 붙이기 시작하는 때(초).
+# 앱 정보 카드에 남은 시간을 붙이기 시작하는 때(초) — 실제로 끝나는 시각 기준.
 EXPIRY_WARNING_SECONDS = 30 * 60
 
+# 앱 정보 카드 셋째 줄 끝의 남은 시간 — 쓰는 동안은 유휴 끝이 늘 멀어서 사실상 최대 시간 앞에만
+# 선다. 유휴 끝 경고는 오래 쉬다 돌아온 첫 회차에 잠깐 보일 수 있다(그 글도 사실이다).
+CAP_WARNING_SUFFIX = " · 로그인 최대 시간까지 {minutes}분 — 저장해 두세요"
+IDLE_WARNING_SUFFIX = " · 로그인 {minutes}분 남음 — 저장해 두세요"
+
 EXPIRED_NOTICE = (
-    "통합인증 로그인 시간이 끝났습니다. 다시 로그인하면 이 탭에서 저장하지 않은 편집은 사라집니다."
+    "통합인증 로그인 시간이 끝났습니다(오래 쓰지 않았거나 로그인 최대 시간이 지났습니다). "
+    "다시 로그인하면 이 탭에서 저장하지 않은 편집은 사라집니다."
 )
 REVOKED_NOTICE = "이 브라우저에서 로그아웃했습니다."
 MISSING_NOTICE = "로그인 정보가 없습니다."
@@ -161,8 +167,10 @@ def require_signed_in() -> Identity | None:
 def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:
     """앱 정보 카드 셋째 줄 — 「이름 · 부서 · 로그아웃」. 꺼짐(신원 없음)이면 `None`.
 
-    이름이 없으면 loginid 를 싣고, 부서가 없으면 뺀다. 만료 30분 전부터 끝에 남은 시간을 붙인다.
-    이름 · 부서는 IdP 가 준 사람 글이라 `literal_markdown` 으로 막는다. 이 줄은 원문 HTML 을 허락한
+    이름이 없으면 loginid 를 싣고, 부서가 없으면 뺀다. 실제로 끝나는 시각(갱신 표까지 견준
+    `session_end_of`) 30분 전부터 끝에 남은 시간을 붙인다 — 최대 시간이 정한 끝이면
+    `CAP_WARNING_SUFFIX`, 마지막 사용 뒤 유지 시간이 정한 끝이면 `IDLE_WARNING_SUFFIX`. 이름 ·
+    부서는 IdP 가 준 사람 글이라 `literal_markdown` 으로 막는다. 이 줄은 원문 HTML 을 허락한
     캡션으로 그린다(로그아웃 링크를 같은 탭에서 열려고).
     """
     if identity is None:
@@ -174,9 +182,10 @@ def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str
     parts.append(_same_tab_link(public_link(cfg, names.LOGOUT_PATH), LOGOUT_LABEL))
     line = " · ".join(parts)
     moment = _now() if now is None else now
-    end, _capped = session_end_of(identity, cfg, moment)
+    end, capped = session_end_of(identity, cfg, moment)
     left = end - moment
     if left <= EXPIRY_WARNING_SECONDS:
         minutes = max(1, math.ceil(left / 60))
-        line += f" · 로그인 {minutes}분 남음 — 저장해 두세요"
+        suffix = CAP_WARNING_SUFFIX if capped else IDLE_WARNING_SUFFIX
+        line += suffix.format(minutes=minutes)
     return line

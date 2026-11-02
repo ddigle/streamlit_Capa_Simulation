@@ -14,7 +14,9 @@ redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩
   문지기 없이 뜬 것이고 `app.py` 가 먼저 멈춘다 — 그래도 판정은 그대로 그린다.
 
 설정은 프로세스가 기동 때 한 번 읽은 것(`auth.runtime.config`)이고, 최근 사건은 프로세스 메모리의
-고리(재시작하면 비워진다)다. DB 를 열지 않는다.
+고리(재시작하면 비워진다)다. 켜짐이면 로그인 유지 시간(마지막 사용 뒤 · 최대) 사실 줄 아래에 로그인
+갱신(`POST /auth/sso/refresh`) 결과 누계 한 줄을 싣는다 — 갱신은 사건 고리에 적지 않는다(5분마다
+사람마다 한 줄이면 고리가 갱신으로만 찬다). DB 를 열지 않는다.
 """
 
 from __future__ import annotations
@@ -51,6 +53,17 @@ VERDICT_ON = "켜짐"
 VERDICT_OFF = "꺼짐"
 VERDICT_OFF_PROD = "꺼짐(운영)"
 VERDICT_BROKEN = "막힘"
+
+# 로그인 갱신 결과 누계의 화면 이름(`runtime.REFRESH_OUTCOMES` 차례).
+REFRESH_OUTCOME_LABELS: dict[str, str] = {
+    "renewed": "다시 발급",
+    "skipped": "건너뜀",
+    "unauthorized": "로그인 없음",
+    "forbidden": "출처·머리 거절",
+    "bad_request": "꼴 거절",
+}
+# 「출처·머리 거절」 만 늘고 「다시 발급」 이 0 일 때 누계 줄 끝에 붙이는 안내.
+REFRESH_ORIGIN_HINT = f" — 접속 주소가 `{names.ENV_PUBLIC_URL}` 과 같은지 보세요"
 
 OFF_IN_PRODUCTION_WARNING = (
     "운영 서버인데 통합인증이 꺼져 있습니다 — 주소를 아는 사람은 누구나 들어옵니다. "
@@ -125,7 +138,7 @@ def _days_left(now: datetime, not_after: datetime) -> int:
 
 
 def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
-    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 지문 · 세션 시간 · 쿠키 이름 · 문지기."""
+    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 지문 · 로그인 유지 · 쿠키 이름 · 문지기."""
     moment = now or datetime.now(timezone.utc)
     redirect = literal_markdown(cfg.redirect_uri) if cfg.redirect_uri else "계산하지 못함"
     issuer = literal_markdown(cfg.issuer) if cfg.issuer else "없음"
@@ -141,12 +154,27 @@ def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
             f"만료 {cert.not_after.strftime('%Y-%m-%d')}(남은 날 {days}) · RSA {cert.key_bits}비트"
         )
     lines += [
-        f"세션 시간: {cfg.session_hours}시간 · "
+        f"로그인 유지: 마지막 사용 뒤 {cfg.session_hours}시간 · 최대 {cfg.session_max_hours}시간 · "
         f"세션 쿠키 이름: {literal_markdown(cfg.session_cookie)}",
         f"문지기: {'있음' if runtime.gate_installed() else '없음(app.py 로 뜸)'} · "
         f"잠금(`{names.ENV_SSO}=required`): {'예' if cfg.locked else '아니오'}",
     ]
     return lines
+
+
+def refresh_count_line() -> str:
+    """로그인 갱신 결과 누계 한 줄(기동 뒤 — 재시작하면 0).
+
+    「출처·머리 거절」 이 있는데 「다시 발급」 이 0 이면 앞단이 갱신 머리 · `Origin` 을 버리거나
+    접속 주소가 `CAPA_PUBLIC_URL` 과 다른 것이다 — 그때만 안내를 붙인다.
+    """
+    counts = runtime.refresh_counts()
+    items = " · ".join(
+        f"{REFRESH_OUTCOME_LABELS[outcome]} {counts[outcome]}"
+        for outcome in runtime.REFRESH_OUTCOMES
+    )
+    hint = REFRESH_ORIGIN_HINT if counts["forbidden"] and not counts["renewed"] else ""
+    return f"로그인 갱신(기동 뒤 누계 — 재시작하면 0): {items}{hint}"
 
 
 def readiness_line(cfg: SsoConfig) -> str:
@@ -241,6 +269,9 @@ def render_sso_status() -> None:
             )
         st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
         st.caption("  \n".join(fact_lines(cfg, now=now)))
+        if cfg.mode is SsoMode.ON:
+            # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이다 — 켜짐에서만 싣는다.
+            st.caption(refresh_count_line())
         events = recent_event_table()
         if events.empty:
             st.caption("최근 사건 없음(프로세스 메모리 — 재시작하면 비워진다)")

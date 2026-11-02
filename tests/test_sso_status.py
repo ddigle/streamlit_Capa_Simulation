@@ -94,7 +94,7 @@ def test_on_shows_facts_without_any_secret() -> None:
     assert (secret_row["상태"], secret_row["까닭"]) == ("있음", sso_status.SECRET_CHECKS_PASSED)
     assert "redirect\\_uri" in text and "auth\\/callback" in text
     assert signing().x5t.replace("-", "\\-").replace("_", "\\_") in text
-    assert "문지기: 있음" in text and "세션 시간: 6시간" in text
+    assert "문지기: 있음" in text and "로그인 유지: 마지막 사용 뒤 6시간 · 최대 24시간" in text
     events = app.dataframe[1].value
     assert events["사건"].tolist() == ["login_fail", "login_ok", "config"]
     assert events["사유 코드"].tolist()[0] == "aud_mismatch"
@@ -102,6 +102,56 @@ def test_on_shows_facts_without_any_secret() -> None:
     assert sso_status._event_code({"days": "12", "x5t": "abc"}) == "남은 날 12"
     assert sso_status._event_code({"loginid": "-"}) == "-"
     assert cfg.public_url == PUBLIC_URL
+
+
+def _refresh_caption(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.caption if str(item.value).startswith("로그인 갱신(")]
+
+
+def test_the_status_shows_how_long_a_login_lasts_and_the_refresh_counts() -> None:
+    """켜짐: 사실 줄에 유지 시간(마지막 사용 뒤 · 최대), 그 아래 갱신 결과 누계 한 줄."""
+    use_config({names.ENV_SESSION_HOURS: "4", names.ENV_SESSION_MAX_HOURS: "10"})
+    runtime.mark_gate_installed()
+    for outcome, times in (("renewed", 3), ("skipped", 2), ("unauthorized", 1)):
+        for _ in range(times):
+            runtime.count_refresh(outcome)
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    assert "로그인 유지: 마지막 사용 뒤 4시간 · 최대 10시간 · 세션 쿠키 이름: " in _all_text(app)
+    assert _refresh_caption(app) == [
+        "로그인 갱신(기동 뒤 누계 — 재시작하면 0): 다시 발급 3 · 건너뜀 2 · 로그인 없음 1 · "
+        "출처·머리 거절 0 · 꼴 거절 0"
+    ]
+    # 사건 표는 그대로 둘째 데이터프레임이다 — 갱신은 사건 고리에 적지 않는다.
+    assert len(app.dataframe) == 2
+    assert "refresh" not in "".join(app.dataframe[1].value["사건"].tolist())
+
+
+def test_the_refresh_counts_hint_at_the_address_only_when_nothing_was_renewed() -> None:
+    use_config()
+    runtime.count_refresh("forbidden")
+    runtime.count_refresh("bad_request")
+
+    line = sso_status.refresh_count_line()
+    assert line.endswith("출처·머리 거절 1 · 꼴 거절 1" + sso_status.REFRESH_ORIGIN_HINT), line
+    assert f"`{names.ENV_PUBLIC_URL}`" in sso_status.REFRESH_ORIGIN_HINT
+
+    runtime.count_refresh("renewed")
+    assert sso_status.refresh_count_line().endswith("출처·머리 거절 1 · 꼴 거절 1")
+    assert list(sso_status.REFRESH_OUTCOME_LABELS) == list(runtime.REFRESH_OUTCOMES)
+
+
+def test_the_refresh_counts_are_not_shown_while_off_in_production() -> None:
+    """꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 — 그리지 않는다."""
+    use_config(drop=[names.ENV_CLIENT_ID])
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert _labels(app) == ["통합인증 점검 · 꺼짐(운영)"]
+    assert _refresh_caption(app) == []
+    assert "로그인 유지: 마지막 사용 뒤 6시간 · 최대 24시간" in _all_text(app)
 
 
 def test_the_start_check_row_follows_the_current_setting() -> None:

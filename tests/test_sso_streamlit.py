@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from sso_support import PUBLIC_URL, use_config
+from sso_support import PUBLIC_URL, renewed_session, use_config
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.auth import names, runtime
@@ -158,16 +158,56 @@ def test_the_name_and_dept_are_escaped(cookies: dict[str, str], name: str, shown
 
 
 def test_the_card_warns_thirty_minutes_before_the_end() -> None:
+    """마지막 사용 뒤 유지 시간이 정한 끝(= 토큰 exp) 30분 전부터 남은 분을 붙인다."""
     cfg = use_config()
     _token, identity = _session(cfg, now=1_000_000)
 
     later = identity.exp - 25 * 60
     line = sso_identity.sso_credit_line(identity, now=later)
-    assert line is not None and line.endswith(" · 로그인 25분 남음 — 저장해 두세요")
+    assert line is not None
+    assert line.endswith(sso_identity.IDLE_WARNING_SUFFIX.format(minutes=25))
+    assert line.endswith(" · 로그인 25분 남음 — 저장해 두세요")
     earlier = identity.exp - 31 * 60
     line = sso_identity.sso_credit_line(identity, now=earlier)
-    assert line is not None and "남음" not in line
+    assert line is not None and "남음" not in line and "최대" not in line
     assert sso_identity.sso_credit_line(None) is None
+
+
+def test_the_card_warns_before_the_maximum_in_its_own_words() -> None:
+    """쓰는 동안 갱신해도 최대 시간은 못 넘는다 — 그 끝이 가까우면 「최대 시간까지」 로 말한다."""
+    cfg = use_config()
+    login_at = 1_000_000
+    cap = login_at + cfg.session_max_seconds
+    renewed_at = cap - cfg.session_seconds + 600
+    _token, claims = renewed_session(cfg, login_at=login_at, renew_at=[renewed_at])
+    identity = Identity.from_claims(claims)
+    assert identity.exp == cap, "갱신이 상한에서 멈췄다"
+
+    line = sso_identity.sso_credit_line(identity, now=cap - 25 * 60)
+
+    assert line is not None
+    assert line.endswith(sso_identity.CAP_WARNING_SUFFIX.format(minutes=25))
+    assert line.endswith(" · 로그인 최대 시간까지 25분 — 저장해 두세요")
+    assert "남음" not in line
+    line = sso_identity.sso_credit_line(identity, now=cap - 31 * 60)
+    assert line is not None and "최대" not in line
+
+
+def test_the_card_counts_down_to_the_renewed_end_of_an_open_tab() -> None:
+    """열린 탭의 신원은 핸드셰이크 때 토큰이다 — 남은 시간은 갱신 표가 늘린 실제 끝으로 잰다."""
+    cfg = use_config()
+    now = 2_000_000
+    _token, identity = _session(cfg, now=now - cfg.session_seconds + 20 * 60)
+    assert identity.exp - now == 20 * 60
+    line = sso_identity.sso_credit_line(identity, now=now)
+    assert line is not None and line.endswith(sso_identity.IDLE_WARNING_SUFFIX.format(minutes=20))
+
+    runtime.note_renewal(identity.sid, now + cfg.session_seconds, now=now)
+
+    line = sso_identity.sso_credit_line(identity, now=now)
+    assert line is not None and "남음" not in line and "최대" not in line
+    line = sso_identity.sso_credit_line(identity, now=now + cfg.session_seconds - 10 * 60)
+    assert line is not None and line.endswith(sso_identity.IDLE_WARNING_SUFFIX.format(minutes=10))
 
 
 @pytest.mark.parametrize(
