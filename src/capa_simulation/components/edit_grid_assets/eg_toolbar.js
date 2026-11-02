@@ -308,12 +308,14 @@ function tbInit(S) {
   tbLabels(S)
   tbListen(S, input, 'input', () => tbFindSoon(S))
   tbListen(S, input, 'keydown', (event) => tbFindKey(S, event))
-  tbListen(S, prev, 'click', () => tbFindGo(S, -1))
-  tbListen(S, next, 'click', () => tbFindGo(S, 1))
+  tbListen(S, prev, 'click', (event) => tbGridCommand(S, event, () => tbFindGo(S, -1)))
+  tbListen(S, next, 'click', (event) => tbGridCommand(S, event, () => tbFindGo(S, 1)))
   tbListen(S, undo, 'click', (event) => tbGridCommand(S, event, () => tbHistoryButton(S, 'undo')))
   tbListen(S, redo, 'click', (event) => tbGridCommand(S, event, () => tbHistoryButton(S, 'redo')))
-  tbListen(S, fit, 'click', (event) => tbGridCommand(S, event, () => tbFitColumns(S, null, false)))
-  tbListen(S, changes, 'click', () => tbToggleDrawer(S))
+  tbListen(S, fit, 'click', (event) => tbGridCommand(S, event, () => {
+    tbFitColumns(S, null, false)
+  }))
+  tbListen(S, changes, 'click', (event) => tbGridCommand(S, event, () => tbToggleDrawer(S)))
   tbListen(S, full, 'click', () => tbSetFull(S, !S.full))
   tbListen(S, close, 'click', () => {
     tbToggleDrawer(S, false)
@@ -531,14 +533,15 @@ function tbFindSelect(S, at) {
   scrollToCell(S, r, c)
 }
 
-// 다음·이전 일치로 — 지금 칸이 일치 칸이면 거기서 한 걸음, 아니면 지금 칸에서 가까운 쪽으로.
+// 다음·이전 일치로 — 지금 칸이 일치 칸이면 거기서 한 걸음, 아니면 지금 칸에서 가까운 쪽으로. 찾을 글이 없어 찾기 칸에
+// 초점을 주었으면 false(단추가 초점을 표로 돌리지 않는다).
 function tbFindGo(S, dir) {
   tbFindFlush(S)
   const f = tbFindFresh(S)
-  if (!S.model) return
+  if (!S.model) return false
   if (!f.needle) {
     tbFocusFind(S)
-    return
+    return false
   }
   if (!f.list.length) {
     setStatus(S, tbText(S, 'find', '찾기') + ' ' + tbFindCount(S))
@@ -577,7 +580,7 @@ function tbFindKey(S, event) {
     event.preventDefault()
     tbFindClear(S)
     focusGrid(S)
-  } else if ((event.ctrlKey || event.metaKey) && !event.altKey && key.length === 1 && key.toLowerCase() === 'f') {
+  } else if ((event.ctrlKey || event.metaKey) && !event.altKey && shortcutLetter(key, event.code) === 'f') {
     event.preventDefault()
     tbFocusFind(S)
   }
@@ -611,7 +614,7 @@ function tbKey(S, event) {
   if (S.edit || !S.model) return false
   const ctrl = event.ctrlKey || event.metaKey
   const key = event.key
-  if (ctrl && !event.altKey && !event.shiftKey && key.length === 1 && key.toLowerCase() === 'f') {
+  if (ctrl && !event.altKey && !event.shiftKey && shortcutLetter(key, event.code) === 'f') {
     event.preventDefault()
     tbFocusFind(S)
     return true
@@ -638,12 +641,13 @@ function tbPointerDown(S, event, hit) {
 
 // ---------------------------------------------------------------- 되돌리기 단추
 
-// 표에 하는 단추(되돌리기·다시 실행·칸 폭 맞춤)를 마우스로 누르면 초점을 표로 돌린다 — 이어 누르는 Ctrl+Z·화살표·Ctrl+C/V·
-// Delete 가 단추가 아니라 표에 간다(뿌리가 keydown 을 페이지로 내보내지 않으므로 단추에 남으면 아무 일도 없다). 자판(Enter·
-// Space — click 의 detail 0)으로 누르면 단추에 남아 되풀이해 누를 수 있다.
+// 표에 하는 단추(되돌리기·다시 실행·칸 폭 맞춤·적용 전 변경·찾기 ▲▼)를 마우스로 누르면 초점을 표로 돌린다 — 이어 누르는
+// Ctrl+Z·화살표·Ctrl+C/V·Delete 가 단추가 아니라 표에 간다(뿌리가 keydown 을 페이지로 내보내지 않으므로 단추에 남으면 아무
+// 일도 없다). 자판(Enter·Space — click 의 detail 0)으로 누르면 단추에 남아 되풀이해 누를 수 있다. run 이 false 를 돌려주면
+// (다른 칸에 초점을 주었다) 돌리지 않는다.
 function tbGridCommand(S, event, run) {
-  run()
-  if (event && event.detail > 0) focusGrid(S)
+  const result = run()
+  if (result !== false && event && event.detail > 0) focusGrid(S)
 }
 
 function tbHistoryButton(S, kind) {

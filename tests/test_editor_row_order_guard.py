@@ -107,6 +107,22 @@ def test_the_source_token_changes_with_the_row_order_alone() -> None:
     assert _token("a") == _token("a")
 
 
+def test_only_a_revision_change_is_told_apart_from_other_source_changes() -> None:
+    """다른 화면의 적용은 활성 리비전만 올린다 — 그 회차만 「리비전만 바뀜」 이고(기준 정보 그리드가
+    표마다 내용을 견줘 초안을 남긴다), 기준정보 버전·기간·줄 차례가 바뀐 회차나 꼴이 다른 앞 토큰
+    (첫 회차·옛 꼴)은 아니다."""
+    same = _token("a")
+    assert scenario_edit_bar.only_revision_changed(same, _token("a", revision=2))
+    assert not scenario_edit_bar.only_revision_changed(same, same)
+    assert not scenario_edit_bar.only_revision_changed(same, _token("b", revision=2))
+    other_period = scenario_edit_bar.source_token(1, _active(2), 202608, 202701, row_order="a")
+    assert not scenario_edit_bar.only_revision_changed(same, other_period)
+    other_version = scenario_edit_bar.source_token(2, _active(2), 202608, 202612, row_order="a")
+    assert not scenario_edit_bar.only_revision_changed(same, other_version)
+    for previous in (None, "다른 원본", "duckdb:1:1:202608:202612"):
+        assert not scenario_edit_bar.only_revision_changed(previous, _token("a", revision=2))
+
+
 def test_a_row_order_change_drops_the_pending_edits_and_names_them(
     session: SimpleNamespace,
 ) -> None:

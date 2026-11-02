@@ -189,6 +189,30 @@ def test_nothing_is_fixed_on_screen() -> None:
         assert "position = 'fixed'" not in text
 
 
+def _z_index(css: str, selector: str) -> int:
+    """`selector {…}` 덩어리 하나의 z-index(정확히 그 선택자만)."""
+    match = re.search(rf"(?:^|\n){re.escape(selector)} \{{(?P<body>[^}}]*)\}}", css)
+    assert match, selector
+    value = re.search(r"z-index:\s*(\d+)", match.group("body"))
+    assert value, selector
+    return int(value.group(1))
+
+
+def test_the_cell_editor_scrolls_under_the_header_and_the_frozen_columns() -> None:
+    """칸 편집기는 캔버스 좌표에 놓여 표와 함께 구른다 — 머리 줄(sticky)·고정 분류 칸 **아래**로
+    숨어야 그 글을 가리지 않는다(엑셀 틀 고정, 2026-11-03 리뷰: z 6 이 머리 4·고정 2 위에 떴다).
+    지금 칸 테(1)보다 낮지는 않다 — 같은 z 면 DOM 차례가 뒤인 편집기가 위다."""
+    core = CSS_FILES["eg_core.css"]
+    editor = _z_index(core, ".eg-ed")
+    assert editor < _z_index(core, ".eg-head")
+    assert editor < _z_index(core, ".eg-fz")
+    assert editor < _z_index(core, ".eg-fz.is-active")
+    assert editor >= _z_index(core, ".eg-c.is-active")
+    assert core.index(".eg-ed {") > core.index(".eg-c.is-active {")
+    assert "canvas.appendChild(editor)" in CORE
+    assert CORE.index("canvas.appendChild(editor)") > CORE.index("canvas.appendChild(body)")
+
+
 def test_css_files_carry_no_comments() -> None:
     """등록 CSS 는 data 가 바뀐 회차마다 요소와 함께 다시 간다 — 주석을 싣지 않는다."""
     for name, text in CSS_FILES.items():
@@ -443,6 +467,29 @@ done({
     ]
     assert result["unknown"] is None
     assert result["tab"] == [cell(3, 9), None, None]
+
+
+def test_shortcut_letters_read_the_key_position_under_a_hangul_layout() -> None:
+    """단축키 글자는 라틴 key 를 먼저, 아니면 자판 자리(code)로 — 한글 자판의 Ctrl 조합은 key 가
+    「ㅋ」 로 온다(2026-11-03 리뷰: Ctrl+ㅋ·ㅁ·ㄹ 가 먹지 않고 Ctrl+ㅁ→ㅊ 이 페이지 글을 복사했다).
+    그리드의 Ctrl 단축키는 모두 이 한 길이다."""
+    runner = (
+        RUNNER_HEAD
+        + """
+done([
+  shortcutLetter('z', 'KeyZ'), shortcutLetter('Z', 'KeyZ'), shortcutLetter('ㅋ', 'KeyZ'),
+  shortcutLetter('ㅁ', 'KeyA'), shortcutLetter('Process', 'KeyC'), shortcutLetter('z', 'KeyW'),
+  shortcutLetter('ArrowLeft', 'ArrowLeft'), shortcutLetter('ㄹ', ''),
+  shortcutLetter(undefined, undefined), shortcutLetter('5', 'Digit5'),
+])
+"""
+    )
+    result = run_node(_pure("eg-nav"), runner, {})
+    assert result == ["z", "z", "z", "a", "c", "z", "", "", "", ""]
+    for name in ("eg_core.js", "eg_select.js", "eg_fill.js", "eg_toolbar.js"):
+        body = JS_FILES[name]
+        assert "shortcutLetter(" in body, name
+        assert "key.toLowerCase() === 'f'" not in body and "lower === '" not in body, name
 
 
 def test_the_view_filters_by_codes_and_sorts_stably_with_blanks_last() -> None:

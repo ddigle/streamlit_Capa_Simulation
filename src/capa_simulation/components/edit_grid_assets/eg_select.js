@@ -13,7 +13,8 @@
 // - `selCopied(S)` — 지금 복사 점선 범위(없거나 낡았으면 null), `selDropCopy(S)` — 점선 지우기.
 
 // <eg-rect>
-// 고른 범위는 보기 좌표다(c 는 열쇠 칸을 포함한 전체 칸 번호). anchor 가 지금 칸, focus 가 맞은편 모서리다.
+// 고른 범위는 보기 좌표다(c 는 열쇠 칸을 포함한 전체 칸 번호). 고정 모서리(origin — 없으면 지금 칸 anchor)와 맞은편
+// 모서리(focus)가 범위를 정하고, 지금 칸은 범위 안 어디든 있을 수 있다.
 function rectNorm(a, b) {
   return { r0: Math.min(a.r, b.r), r1: Math.max(a.r, b.r), c0: Math.min(a.c, b.c), c1: Math.max(a.c, b.c) }
 }
@@ -34,13 +35,14 @@ function rectEdges(rect, r, c) {
   return (r === rect.r0 ? 1 : 0) | (r === rect.r1 ? 2 : 0) | (c === rect.c0 ? 4 : 0) | (c === rect.c1 ? 8 : 0)
 }
 
-// 큰 고름 — 'all'(Ctrl+A) 표 전체, 'row'(Shift+Space) 고른 줄들의 모든 칸, 'col'(Ctrl+Space) 고른 칸들의 모든 줄. 지금 칸(anchor)은
-// 그 줄·칸을 지키고 맞은편 모서리만 끝으로 민다(표 전체는 왼쪽 위가 지금 칸). 표가 비면 null.
-function rectSpan(kind, anchor, focus, rows, cols) {
+// 큰 고름 — 'all'(Ctrl+A) 표 전체, 'row'(Shift+Space) 고른 줄들의 모든 칸, 'col'(Ctrl+Space) 고른 칸들의 모든 줄. 새 고정
+// 모서리(origin)와 맞은편 모서리(focus)만 돌려준다 — 지금 칸은 그대로 둔다(엑셀 — 이어 친 값·Ctrl+Enter 가 그 칸에서 시작).
+// fixed 는 지금 고정 모서리(origin 이 없으면 지금 칸). 표가 비면 null.
+function rectSpan(kind, fixed, focus, rows, cols) {
   if (rows <= 0 || cols <= 0) return null
-  if (kind === 'all') return { anchor: { r: 0, c: 0 }, focus: { r: rows - 1, c: cols - 1 } }
-  if (kind === 'row') return { anchor: { r: anchor.r, c: 0 }, focus: { r: focus.r, c: cols - 1 } }
-  if (kind === 'col') return { anchor: { r: 0, c: anchor.c }, focus: { r: rows - 1, c: focus.c } }
+  if (kind === 'all') return { origin: { r: 0, c: 0 }, focus: { r: rows - 1, c: cols - 1 } }
+  if (kind === 'row') return { origin: { r: fixed.r, c: 0 }, focus: { r: focus.r, c: cols - 1 } }
+  if (kind === 'col') return { origin: { r: 0, c: fixed.c }, focus: { r: rows - 1, c: focus.c } }
   return null
 }
 
@@ -184,16 +186,17 @@ function selDropCopy(S) {
   selMarkAll(S)
 }
 
-// 칸 표지 셈 — 지금 칸·맞은편 모서리·복사 범위가 같으면 앞 셈을 그대로 쓴다(보이는 칸마다 불린다).
+// 칸 표지 셈 — 지금 칸·두 모서리·복사 범위가 같으면 앞 셈을 그대로 쓴다(보이는 칸마다 불린다).
 function selMarks(S) {
   const sel = S.sel
   const a = S.anchor
   const f = S.focus
+  const o = S.origin || a
   const copied = selCopied(S)
   const last = sel.marks
-  if (last && last.ar === a.r && last.ac === a.c && last.fr === f.r && last.fc === f.c && last.copied === copied) return last
-  const rect = rectNorm(a, f)
-  sel.marks = { ar: a.r, ac: a.c, fr: f.r, fc: f.c, copied, rect, multi: rectSize(rect).cells > 1 }
+  if (last && last.ar === a.r && last.ac === a.c && last.fr === f.r && last.fc === f.c && last.or === o.r && last.oc === o.c && last.copied === copied) return last
+  const rect = rectNorm(o, f)
+  sel.marks = { ar: a.r, ac: a.c, fr: f.r, fc: f.c, or: o.r, oc: o.c, copied, rect, multi: rectSize(rect).cells > 1 }
   return sel.marks
 }
 
@@ -431,15 +434,15 @@ function selPageCols(S) {
 }
 
 function selSpan(S, kind) {
-  const span = rectSpan(kind, S.anchor, S.focus, S.view.order.length, S.model.colCount)
-  if (span) setRange(S, span.anchor, span.focus)
+  const span = rectSpan(kind, S.origin || S.anchor, S.focus, S.view.order.length, S.model.colCount)
+  if (span) setRange(S, S.anchor, span.focus, span.origin)
 }
 
 function selKey(S, event) {
   if (S.edit || !S.model) return false
   const ctrl = event.ctrlKey || event.metaKey
   const key = event.key
-  const lower = key.length === 1 ? key.toLowerCase() : key
+  const letter = ctrl ? shortcutLetter(key, event.code) : ''
   if (key === 'Escape') {
     // 끌기(범위 고르기·채우기 손잡이) 중이면 이 Esc 는 끌기 몫이다 — 끌기만 거두고(채우기는 보내지 않는다) 복사 점선은 다음 Esc 가
     // 지운다. 점선을 먼저 지우면 손잡이 끌기가 거둬지지 않고 놓을 때 채운다.
@@ -455,17 +458,17 @@ function selKey(S, event) {
   }
   if (!S.view.order.length) return false
   const plainCtrl = ctrl && !event.altKey && !event.shiftKey
-  if (plainCtrl && lower === 'c') {
+  if (plainCtrl && letter === 'c') {
     // 막지 않는다 — 브라우저가 초점 칸(스크롤 칸)에 copy 이벤트를 쏜다. 페이지 글이 골라져 있으면 그 글이 가므로 먼저 지운다.
     selClearPageSelection()
     return true
   }
-  if (plainCtrl && lower === 'x') {
+  if (plainCtrl && letter === 'x') {
     event.preventDefault()
     setStatus(S, selText(S, 'cut', ''))
     return true
   }
-  if (plainCtrl && lower === 'a') {
+  if (plainCtrl && letter === 'a') {
     event.preventDefault()
     selSpan(S, 'all')
     return true
@@ -480,7 +483,8 @@ function selKey(S, event) {
     const moved = moveCell(S.focus, key, { ctrl, alt: event.altKey }, S.view.order.length, m.colCount, visibleRowCount(S), selPageCols(S), (r, c) => selIsBlank(S, r, c))
     if (!moved) return false
     event.preventDefault()
-    setRange(S, S.anchor, moved)
+    // 고정 모서리는 그대로 — Ctrl+A·Shift+Space 로 넓힌 범위도 Shift+화살표가 맞은편 모서리만 민다.
+    setRange(S, S.anchor, moved, S.origin)
     scrollToCell(S, moved.r, moved.c)
     return true
   }

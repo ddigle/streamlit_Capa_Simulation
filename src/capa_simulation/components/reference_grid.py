@@ -38,10 +38,12 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components import edit_grid
 from capa_simulation.components.column_filter import apply_column_filters, column_filter_key
 from capa_simulation.components.flash import render_flash
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.month_editor import APPLY_NOTICE, render_scope
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.reference_grid_keys import (
     APPLIED_KEY,
+    DISCARDED_KEY,
     EDIT_TABLES,
     GRID_HOST,
     INBOX_KEY,
@@ -64,7 +66,9 @@ from capa_simulation.services.simulation_cache import ScenarioCacheKey, get_edit
 
 # 변경 목록 이름 — 사이드바 「적용 전 편집」·단추 「변경사항 적용」 과 같은 말.
 CHANGES_LABEL: Final = "적용 전 변경"
-KEYS: Final = edit_grid.GridKeys(inbox=INBOX_KEY, applied=APPLIED_KEY, toast=TOAST_KEY)
+KEYS: Final = edit_grid.GridKeys(
+    inbox=INBOX_KEY, applied=APPLIED_KEY, toast=TOAST_KEY, discarded=DISCARDED_KEY
+)
 # 값 칸의 표시·다듬기 규칙(옛 `EDITOR_FORMATS` 를 옮김). 효율·측정률은 분수 1 이 상한, 일수는 정수만
 # (옛 편집표는 소수를 말없이 버렸다 — 이제 칸 오류), 설비대수는 빈칸 = 0.
 GRID_FORMATS: Final[Mapping[str, ValueFormat]] = {
@@ -126,11 +130,6 @@ class GridTable:
     @property
     def months(self) -> tuple[str, ...]:
         return self.spec.value_columns
-
-    @property
-    def session_keys(self) -> tuple[str, str]:
-        """초안·이력 세션 칸 — 적용·「편집 취소」·붙여넣기 적용이 함께 지운다."""
-        return (cells_key(self.table), history_key(self.table))
 
     @property
     def slot(self) -> edit_grid.TableSlot:
@@ -272,8 +271,9 @@ def draft_counts(table: str) -> tuple[int, int, int]:
 
 
 def discard_draft(table: str) -> None:
-    """그 표의 초안·이력을 버린다(「편집 취소」 — 다음 회차에 새 `gen` 이 선다)."""
-    edit_grid.discard_table((cells_key(table), history_key(table)))
+    """그 표의 초안·이력을 버린다(「편집 취소」 — 다음 회차에 새 `gen` 이 선다). 누름 직전에 보낸
+    op 는 알림 없이 버린다(`edit_grid.discard_table` 의 `keys`)."""
+    edit_grid.discard_table((cells_key(table), history_key(table)), KEYS)
 
 
 def merged_template(table: GridTable) -> pd.DataFrame:
@@ -308,7 +308,8 @@ def filter_codes(table: GridTable, key_prefix: str) -> dict[int, list[int]] | No
 
 def error_notice(table: GridTable, process_label: Callable[[object], str]) -> str | None:
     """「변경사항 적용」 을 막는 칸 오류 알림(오류가 없으면 None) — 앞 몇 곳을 분류 표시명 ·
-    월로."""
+    월로. 알림은 마크다운(`st.error`)으로 그리므로 사람이 적은 분류 값·표시명은 칸마다
+    `literal_markdown` 으로 막는다(「E2E~가정~A」 가 지움선이 되지 않게)."""
     draft = edit_grid.draft_of(cells_key(table.table))
     errors = change_counts(draft)[2]
     if not errors:
@@ -319,10 +320,10 @@ def error_notice(table: GridTable, process_label: Callable[[object], str]) -> st
             continue
         row = table.template.iloc[entry.row]
         parts = [
-            process_label(row[column]) if column == "공정" else str(row[column])
+            literal_markdown(process_label(row[column]) if column == "공정" else row[column])
             for column in table.dimensions
         ]
-        places.append(f"{' · '.join(parts)} · {entry.month}")
+        places.append(f"{' · '.join(parts)} · {literal_markdown(entry.month)}")
         if len(places) == ERROR_PLACES:
             break
     return ERRORS_NOTICE.format(n=f"{errors:,}", places=", ".join(places))

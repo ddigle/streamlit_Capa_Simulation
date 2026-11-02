@@ -34,6 +34,7 @@ from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
+    only_revision_changed,
     register_pending_edits,
     reset_editors_on_source_change,
     source_token,
@@ -49,6 +50,7 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.reference_grid_keys import (
+    BASES_KEY,
     DATASET_KEY,
     DATASETS,
     DEFAULT_DATASET,
@@ -99,6 +101,7 @@ from capa_simulation.services.route_step_editor import (
 )
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
+    frame_digest,
     get_reference_edit_table,
     get_route_step_tables,
     scenario_cache_key,
@@ -352,24 +355,10 @@ SOURCE_TOKEN_KEY = "reference_data_source_token"
 # 이 화면이 스스로 적용한 편집(표 하나·STEP). 원본이 바뀌어도 그 적용이 건드린 표만 비운다 —
 # 다른 표에서 고치고 아직 적용하지 않은 편집은 남는다.
 OWN_CHANGE_KEY = "reference_data_own_change"
-# 줄 차례 지문은 편집 표 캐시 키와 같은 표시순서 지문이다 — 아홉 표가 모두 이 표시순서로 줄을
-# 세운다(설비대수 세 표는 `apply_display_order`). 그리드 초안(업무 키)과 STEP 복제·삭제 상자(경로
-# 키)는 차례만 바뀐 회차에 남는다 — 비우고 알리지 않는다.
-# 원본(버전·리비전·기간)이 바뀌면 모두 버린다 — 그리드 이력도 함께 지워져 다음 회차의 새 `gen` 이 그
-# 전에 보낸 op 를 버린다.
-reset_editors_on_source_change(
-    SOURCE_TOKEN_KEY,
-    source_token(
-        reference_version,
-        active_scenario,
-        effective_start_month,
-        effective_end_month,
-        row_order=edit_display_order_key,
-    ),
-    (),
-    other_keys=(*step_widget_keys, *grid_session_keys),
-    own_change_key=OWN_CHANGE_KEY,
-    order_free_keys=(*step_widget_keys, *grid_session_keys),
+# 다른 화면의 적용으로 그리드 초안을 버린 회차의 알림(표 이름 · 칸 수).
+GRID_DROPPED_NOTICE = (
+    "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집({tables})을 버렸습니다"
+    " — 다시 입력하세요."
 )
 
 
@@ -380,6 +369,101 @@ def _template_or_stop(table_name: str) -> pd.DataFrame:
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         st.stop()
+
+
+def _template_digest(table_name: str) -> str:
+    """그 표 양식(분류 칸 + 월 칸, 줄 차례대로)의 내용 지문."""
+    return frame_digest(_template_or_stop(table_name))
+
+
+def _grid_survivors(previous: object, token: str) -> tuple[set[str], dict[str, int]]:
+    """다른 화면의 적용(활성 리비전만 오름)에 남길 그리드 표와 버릴 표(표 → 적용하지 않은 칸 수).
+
+    다른 화면(생산 계획 PKG PLAN·수율 등)의 적용은 원본 토큰의 리비전을 올리지만 이 화면의
+    표 대부분은 그대로다. 초안은 업무 키 + 월이라 그 표의 양식 내용이 같으면 같은 칸에 그대로
+    붙는다 — 초안이 있는 표마다 지금 양식의 지문을 초안을 둔 때의 지문(`BASES_KEY`,
+    `_remember_grid_bases`)과 견줘 같으면 남기고, 다르거나 지문이 없으면 버리고 알린다
+    (2026-11-03 리뷰 — 전에는 어느 화면의 적용이든 아홉 표 초안을 말없이 모두 버렸다). 이 화면
+    자신의 적용(`OWN_CHANGE_KEY`)·시나리오·기간·줄 차례가 바뀐 회차는
+    `reset_editors_on_source_change` 가 지금처럼 가른다.
+    """
+    if st.session_state.get(OWN_CHANGE_KEY) is not None or not only_revision_changed(
+        previous, token
+    ):
+        return set(), {}
+    bases = st.session_state.get(BASES_KEY)
+    saved = bases if isinstance(bases, dict) else {}
+    kept: set[str] = set()
+    dropped: dict[str, int] = {}
+    for table_name in EDIT_TABLES:
+        cells = reference_grid.draft_counts(table_name)[0]
+        if not cells:
+            continue
+        before = saved.get(table_name)
+        if isinstance(before, tuple) and before[1] == _template_digest(table_name):
+            kept.add(table_name)
+        else:
+            dropped[table_name] = cells
+    return kept, dropped
+
+
+def _remember_grid_bases() -> None:
+    """초안이 있는 표의 양식 지문을 적어 둔다(`_grid_survivors` 가 다음에 견줄 값). 양식 키
+    (내용 토큰·기간·줄 차례)가 그대로면 다시 재지 않는다 — 적용·리비전이 바뀐 회차에만 초안이
+    있는 표를 잰다."""
+    stamp = f"{edit_cache_key}|{edit_display_order_key}"
+    bases = st.session_state.get(BASES_KEY)
+    saved = dict(bases) if isinstance(bases, dict) else {}
+    for table_name in EDIT_TABLES:
+        if not reference_grid.draft_counts(table_name)[0]:
+            saved.pop(table_name, None)
+            continue
+        before = saved.get(table_name)
+        if not (isinstance(before, tuple) and before[0] == stamp):
+            saved[table_name] = (stamp, _template_digest(table_name))
+    if saved != bases:
+        st.session_state[BASES_KEY] = saved
+
+
+# 줄 차례 지문은 편집 표 캐시 키와 같은 표시순서 지문이다 — 아홉 표가 모두 이 표시순서로 줄을
+# 세운다(설비대수 세 표는 `apply_display_order`). 그리드 초안(업무 키)과 STEP 복제·삭제 상자(경로
+# 키)는 차례만 바뀐 회차에 남는다 — 비우고 알리지 않는다.
+# 기준정보 버전·기간이 바뀌면 모두 버린다 — 그리드 이력도 함께 지워져 다음 회차의 새 `gen` 이
+# 그 전에 보낸 op 를 버린다. 리비전만 바뀐 회차(다른 화면의 적용)에는 내용이 그대로인 표의
+# 그리드 초안·이력을 남기고, 바뀐 표만 버리고 작업 줄 칸에 한 번 알린다(`_grid_survivors`).
+reference_token = source_token(
+    reference_version,
+    active_scenario,
+    effective_start_month,
+    effective_end_month,
+    row_order=edit_display_order_key,
+)
+grid_kept, grid_dropped = _grid_survivors(st.session_state.get(SOURCE_TOKEN_KEY), reference_token)
+kept_grid_keys = {
+    key for table_name in grid_kept for key in (cells_key(table_name), history_key(table_name))
+}
+reset_editors_on_source_change(
+    SOURCE_TOKEN_KEY,
+    reference_token,
+    (),
+    other_keys=(
+        *step_widget_keys,
+        *(key for key in grid_session_keys if key not in kept_grid_keys),
+    ),
+    own_change_key=OWN_CHANGE_KEY,
+    order_free_keys=(*step_widget_keys, *grid_session_keys),
+)
+if grid_dropped:
+    with actions_box:
+        st.warning(
+            GRID_DROPPED_NOTICE.format(
+                tables=" · ".join(
+                    f"{TABLE_NAMES[table_name]} {cells:,}칸"
+                    for table_name, cells in grid_dropped.items()
+                )
+            ),
+            icon=":material/sync_problem:",
+        )
 
 
 def _filter_prefix(table_name: str) -> str:
@@ -419,6 +503,7 @@ grid_tables = {
     if table_name == current_dataset or table_name in _inbox_tables
 }
 reference_grid.apply_grid_inbox(grid_tables)
+_remember_grid_bases()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
 # 초안은 세션 칸이라 어느 화면에서나 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이
 # 함께 따라오고, 떠날 때는 묻지 않는다). 방금 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
@@ -1065,8 +1150,8 @@ if current_grid is not None:
         grid_editor = _editor(current_dataset, current_grid.template)
         fmt = reference_grid.GRID_FORMATS[current_dataset]
         # 왕복 CSV·붙여넣기는 전체 표 계약이다(걸러진 표를 넘기면 나머지 공정을 그 기간에서
-        # 지운다). 붙여넣기도 그리드와 같은 하한·상한을 지난다(그리드만 막으면 붙여넣은 85·1.2·
-        # 음수가 들어온다).
+        # 지운다). 붙여넣기도 그리드와 같은 하한·상한·정수 규칙을 지난다(그리드만 막으면 붙여넣은
+        # 85·1.2·음수·일수 30.5 가 들어온다).
         paste_dialog(
             current_grid.template,
             table_name=current_dataset,
@@ -1078,6 +1163,7 @@ if current_grid is not None:
             rename_notice=bool(current_grid.labels),
             min_value=fmt.min_value,
             max_value=fmt.max_value,
+            integer=fmt.integer,
             pending_notice=reference_grid.paste_notice(current_dataset),
         )
 else:

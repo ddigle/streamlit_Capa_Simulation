@@ -318,6 +318,15 @@ function tabMove(pos, back, cols) {
   const c = pos.c + (back ? -1 : 1)
   return c < 0 || c >= cols ? null : { r: pos.r, c }
 }
+
+// 단축키 글자(소문자 라틴) — key 가 라틴 글자면 그 글자, 아니면 자판 자리(code 'KeyZ' → 'z'). 한글 자판에서는 Ctrl 조합의
+// key 가 「ㅋ」 처럼 오므로 Ctrl+Z·Y·A·C·X·D·R·F 판정은 모두 이 한 길을 탄다. 글자 키가 아니면 빈 글.
+function shortcutLetter(key, code) {
+  const text = String(key === null || key === undefined ? '' : key)
+  if (/^[a-z]$/i.test(text)) return text.toLowerCase()
+  const match = /^Key([A-Z])$/.exec(String(code === null || code === undefined ? '' : code))
+  return match ? match[1].toLowerCase() : ''
+}
 // </eg-nav>
 
 // <eg-view>

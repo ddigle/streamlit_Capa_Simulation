@@ -91,6 +91,25 @@ def test_discarding_edits_leaves_nothing_unsaved(
     assert reset["revision"] > pristine["revision"]
 
 
+def test_discarding_also_drops_the_reference_grid_drafts(
+    session: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「편집 되돌리기」 는 모든 화면의 적용하지 않은 편집을 버린다 — 기준 정보 그리드 초안·이력·
+    반영 전 op 도. 그 화면은 리비전만 바뀐 회차에 내용이 그대로인 표의 초안을 남기므로(다른 화면의
+    적용) 되돌리기가 따로 지운다."""
+    from capa_simulation import scenario_activation
+    from capa_simulation.reference_grid_keys import SESSION_KEYS, cells_key, history_key
+
+    monkeypatch.setattr(scenario_activation, "st", session)
+    _activate(7)
+    session.session_state[cells_key("RQ_RUN_DAY")] = {"cells": {"P": {"202601": 1.0}}, "bad": {}}
+    session.session_state[history_key("RQ_RUN_DAY")] = {"gen": "g1", "undo": [], "redo": []}
+
+    scenario_activation.discard_unsaved_scenario_changes(TABLES, 7)
+
+    assert not [key for key in SESSION_KEYS if key in session.session_state]
+
+
 def test_discarding_without_a_saved_revision_invents_no_saved_mark(
     session: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

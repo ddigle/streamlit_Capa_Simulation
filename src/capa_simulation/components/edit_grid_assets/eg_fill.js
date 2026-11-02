@@ -306,10 +306,9 @@ function fillKey(S, event) {
     return true
   }
   if (!ctrl || event.altKey || event.shiftKey) return false
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
-  // 한글 입력 상태에서는 key 가 「ㅇ」·「ㄱ」 로 온다 — 라틴 글자가 아니면 자판 자리(code)로 본다.
-  const latin = /^[a-z]$/.test(key)
-  const axis = key === 'd' || (!latin && event.code === 'KeyD') ? 'down' : key === 'r' || (!latin && event.code === 'KeyR') ? 'right' : ''
+  // 한글 입력 상태에서는 key 가 「ㅇ」·「ㄱ」 로 온다 — 라틴 글자가 아니면 자판 자리(code)로 본다(`shortcutLetter`).
+  const letter = shortcutLetter(event.key, event.code)
+  const axis = letter === 'd' ? 'down' : letter === 'r' ? 'right' : ''
   if (!axis) return false
   // 브라우저 기본(Ctrl+D 책갈피·Ctrl+R 새로 읽기)을 막는다.
   event.preventDefault()

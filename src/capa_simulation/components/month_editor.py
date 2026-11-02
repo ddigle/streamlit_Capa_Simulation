@@ -3,16 +3,17 @@
 """월 컬럼 표(분류 컬럼 + 월 컬럼)를 고치는 화면이 함께 쓰는 조각.
 
 기준 정보 편집 표 아홉의 칸 편집은 범용 편집 그리드(`components/reference_grid.py` —
-2026-11-02 사용자 결정 「편집 표 횡전개」)가 맡는다. 여기에는 그 그리드와 생산 계획 화면
-(`load_conversion.py`)이 함께 쓰는 조각만 둔다.
+2026-11-02 사용자 결정 「편집 표 횡전개」)가 맡는다. 여기에는 기준 정보 화면과 생산 계획 화면
+(`load_conversion.py`)이 쓰는 조각만 둔다.
 
 - `paste_dialog` — 「Excel 붙여넣기」 표 전체 팝업(CSV 양식 왕복). **왕복 CSV·붙여넣기는 전체 표
   계약이다** — 걸러진 표를 넘기면 그 부분 표가 검증을 통과해 나머지 공정을 조회기간에서 지운다.
 - `render_scope` — 「편집 범위」 한 줄(월 · 개월 수 · 행 수 · 필터로 보이는 행 수).
 - `classification_styled` — 분류 컬럼 배경색(작은 표만 — `CLASSIFICATION_STYLE_MAX_CELLS`).
-- `merge_edited_months` · `count_month_changes` — 걸러진 표의 월 값을 원본 전체에 분류 키로
-  되머지하고, 적용하면 실제로 달라지는 칸·행을 센다(빈값끼리는 변경이 아니다).
 - `float_month_columns` — 정수 dtype 월 칸을 실수로(생산 계획 편집표가 소수를 버리지 않게).
+
+걸러진 편집표를 원본 전체에 되머지하던 조각은 없다 — 기준 정보 그리드의 초안은 업무 키라 적용이
+언제나 전체 양식에 덮고(`reference_grid.merged_template`), 생산 계획 편집표는 제 화면이 맡는다.
 """
 
 from __future__ import annotations
@@ -106,12 +107,14 @@ def paste_dialog(
     min_value: float | None,
     max_value: float | None,
     pending_notice: str | None,
+    integer: bool = False,
 ) -> None:
     """「Excel 붙여넣기」 팝업(표 전체 CSV 양식 — 붙여넣어 적용하면 팝업이 닫힌다).
 
     `pending_notice` 는 그 표에 적용하지 않은 편집이 있을 때 첫 줄에 쓰는 경고다 — 붙여넣기를
     적용하면 원본이 바뀌어 그 편집을 버리므로 버리기 전에 말한다. 편집이 어디에 사는지(편집표
     위젯·그리드 초안)는 부르는 쪽이 안다. `editor_key` 는 양식 칸·내려받기 key 의 앞머리다.
+    `min_value`·`max_value`·`integer` 는 그 표 그리드 칸의 하한·상한·정수 규칙이다.
     """
 
     def _close() -> None:
@@ -131,6 +134,7 @@ def paste_dialog(
             key=f"{editor_key}_csv",
             min_value=min_value,
             max_value=max_value,
+            integer=integer,
         )
         if imported is None:
             return
@@ -143,35 +147,6 @@ def paste_dialog(
         st.rerun()
 
     _body()
-
-
-def merge_edited_months(
-    default_table: pd.DataFrame,
-    edited: pd.DataFrame,
-    dimensions: list[str],
-    month_columns: list[str],
-) -> pd.DataFrame:
-    """필터로 좁힌 편집표의 월 값을 원본 전체에 되머지한다.
-
-    `dimensions` 를 키로 쓴다. 결과는 `default_table` 과 행 수·행 순서·분류값이 같고 월
-    값만 편집값으로 덮인다. 필터가 걸리지 않았으면 편집표가 곧 전체 표라 그대로 돌려준다.
-    """
-    if edited.index.equals(default_table.index):
-        return edited
-    merged = default_table.copy()
-    if not dimensions or not month_columns or edited.empty:
-        return merged
-    target_keys = pd.MultiIndex.from_frame(merged[dimensions].astype(str))
-    edited_keys = pd.MultiIndex.from_frame(edited[dimensions].astype(str))
-    positions = target_keys.get_indexer(edited_keys)
-    matched = positions >= 0
-    if not matched.any():
-        return merged
-    # 위치가 아니라 분류 키로 찾은 행에만 쓴다. 필터가 인덱스를 어떻게 바꾸든 값이 다른
-    # 행에 얹히지 않는다.
-    target_labels = merged.index[positions[matched]]
-    merged.loc[target_labels, month_columns] = edited.loc[matched, month_columns].to_numpy()
-    return merged
 
 
 def render_scope(
@@ -199,27 +174,3 @@ def render_scope(
         f"**편집 범위** &nbsp;{span} · {len(month_columns)}개월 · "
         f"전체 {len(default_table):,}개 행{filtered}"
     )
-
-
-def count_month_changes(
-    default_table: pd.DataFrame,
-    merged: pd.DataFrame,
-    month_columns: list[str],
-) -> tuple[int, int]:
-    """적용을 누르면 **실제로 달라지는** 칸 수와 행 수.
-
-    편집표가 아니라 `merge_edited_months` 를 거친 **전체 표**를 원본과 맞댄다. 그래야
-    필터로 가려진 행까지 셈에 들어가고, 화면마다 다른 빈칸 규칙(PKG PLAN 은 표시용
-    빈칸을 0 으로 저장하고 수율은 아니다)을 여기서 따로 알 필요가 없다 — 되머지가 이미
-    그 화면의 규칙대로 값을 써 놓았기 때문이다.
-
-    **같은 빈값끼리는 변경이 아니다.** `NaN != NaN` 이라 그냥 비교하면 손대지 않은 빈칸이
-    전부 변경으로 잡힌다.
-    """
-    columns = [column for column in month_columns if column in default_table.columns]
-    if not columns or merged.empty or not merged.index.equals(default_table.index):
-        return 0, 0
-    before = default_table[columns].apply(pd.to_numeric, errors="coerce")
-    after = merged[columns].apply(pd.to_numeric, errors="coerce")
-    differs = (before != after) & ~(before.isna() & after.isna())
-    return int(differs.to_numpy().sum()), int(differs.any(axis=1).sum())

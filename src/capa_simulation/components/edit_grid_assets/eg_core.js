@@ -36,13 +36,16 @@ function egState(host) {
     host, mount: 'g-' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4),
     hostKey: '', shell: null, feedData: null, model: null, gen: '', texts: {}, limits: {},
     view: { order: new Int32Array(0), rank: new Int32Array(0), filtered: false, sort: null, filterKey: 'null' },
-    anchor: { r: 0, c: 0 }, focus: { r: 0, c: 0 }, edit: null, full: false, committing: false,
+    anchor: { r: 0, c: 0 }, focus: { r: 0, c: 0 }, origin: null, edit: null, full: false, committing: false,
     box: createBox(), pending: new Map(), pendingBySeq: new Map(),
     widths: [], lefts: [], total: 0, frozen: 1, frozenWidth: 0, widthsTable: null,
     rowH: 30, headH: 32, dom: null, listeners: [], timers: {}, frames: {}, observer: null,
     lastToast: null, seenFeed: false, setState: null, inRender: false, sendQueued: false, window: null, paletteKey: '',
+    pageBlock: null,
   }
-  S.range = () => egRange(S.anchor, S.focus)
+  // 고른 범위 = 고정 모서리(origin — 없으면 지금 칸)와 맞은편 모서리(focus). 지금 칸(anchor)은 범위 안 어디든 있을 수 있다
+  // (Ctrl+A·Shift+Space 는 지금 칸을 지킨 채 범위만 넓힌다 — 엑셀).
+  S.range = () => egRange(S.origin || S.anchor, S.focus)
   return S
 }
 
@@ -202,6 +205,7 @@ function egReceiveShell(S, data) {
   }
   if (S.edit) commitEdit(S, null, false)
   egSaveView(S)
+  egHushNotes(S)
   S.shell = data
   S.feedData = null
   S.pending.clear()
@@ -225,6 +229,18 @@ function egReceiveShell(S, data) {
   egWhere(S)
 }
 
+// 앞 표(모델)의 토스트·상태 글과 그 타이머를 걷는다 — 표를 바꾼 뒤 다른 표 위에 그 표 이야기가 남지 않게.
+function egHushNotes(S) {
+  for (const name of ['toast', 'note']) {
+    if (S.timers[name]) clearTimeout(S.timers[name])
+    S.timers[name] = 0
+  }
+  if (!S.dom) return
+  S.dom.toast.hidden = true
+  S.dom.toast.textContent = ''
+  S.dom.note.textContent = ''
+}
+
 function egViewKey(S) {
   return S.hostKey + ':' + (S.model ? S.model.table : '')
 }
@@ -244,12 +260,15 @@ function egRestoreView(S) {
   S.restore = saved || null
 }
 
-// 보기 차례를 다시 짓는다(필터·정렬). keepCell 이면 지금 칸이 가리키던 원본 줄을 따라간다.
+// 보기 차례를 다시 짓는다(필터·정렬). keepCell 이면 지금 칸이 가리키던 원본 줄을 따라간다. 고른 범위는 보기 줄 사이라 차례가
+// 바뀌면 같은 두 모서리 사이에 남의 줄이 든다 — 한 원본 줄 안의 고름만 그 줄을 따라가고, 여러 줄이면 지금 칸 하나로 접는다
+// (이어 누르는 Delete·붙여넣기·채우기가 고르지 않은 줄에 가지 않게). 고름이 바뀌었으니 기능(요약 등)에 알린다.
 function egRebuildView(S, keepCell) {
   const m = S.model
   const old = S.view.order
+  const corner = S.origin || S.anchor
+  const oneRow = corner.r === S.focus.r && S.anchor.r === S.focus.r
   const anchorRow = keepCell && old.length ? old[Math.min(S.anchor.r, old.length - 1)] : -1
-  const focusRow = keepCell && old.length ? old[Math.min(S.focus.r, old.length - 1)] : -1
   const sort = S.view.sort && S.view.sort.col < m.colCount ? S.view.sort : null
   const numeric = Boolean(sort && sort.col >= m.keyCount)
   const keyOf = sort ? (row) => (numeric ? egNumberAt(S, row, sort.col - m.keyCount) : egLabel(S, row, sort.col)) : null
@@ -265,17 +284,22 @@ function egRebuildView(S, keepCell) {
     S.focus = Object.assign({}, S.anchor)
   } else if (keepCell) {
     const ar = anchorRow >= 0 ? S.view.rank[anchorRow] : -1
-    const fr = focusRow >= 0 ? S.view.rank[focusRow] : -1
+    const focusC = clampNum(S.focus.c, 0, m.colCount - 1)
+    const cornerC = clampNum(corner.c, 0, m.colCount - 1)
     S.anchor = { r: ar >= 0 ? ar : 0, c: clampNum(S.anchor.c, 0, m.colCount - 1) }
-    S.focus = fr >= 0 ? { r: fr, c: clampNum(S.focus.c, 0, m.colCount - 1) } : Object.assign({}, S.anchor)
+    S.focus = ar >= 0 && oneRow ? { r: S.anchor.r, c: focusC } : Object.assign({}, S.anchor)
+    S.origin = ar >= 0 && oneRow && cornerC !== S.anchor.c ? { r: S.anchor.r, c: cornerC } : null
   } else {
     S.anchor = { r: 0, c: Math.min(m.keyCount, m.colCount - 1) }
     S.focus = Object.assign({}, S.anchor)
   }
+  if (!keepCell || (restore && restore.anchor)) S.origin = null
   if (!n) {
     S.anchor = { r: 0, c: S.anchor.c }
     S.focus = Object.assign({}, S.anchor)
+    S.origin = null
   }
+  egSelected(S)
 }
 
 // ---------------------------------------------------------------- feed 받기
@@ -447,9 +471,21 @@ function setWidths(S, widths) {
   for (const item of FEATURES) if (item.onLayout) item.onLayout(S)
 }
 
+// 표 위쪽 Streamlit 요소(고칠 칸·적용 알림)가 서거나 걷히면 표가 위아래로 옮겨지지만 frame 크기는 그대로다 — 본문 블록
+// (`stMainBlockContainer`)의 크기도 지켜보다가 다시 잰다. 높이를 고치면 블록이 한 번 더 바뀌지만 같은 높이가 나와 멈춘다.
+function egWatchPage(S) {
+  if (S.pageBlock || !S.observer) return
+  const shadowHost = S.host.getRootNode && S.host.getRootNode().host
+  const block = shadowHost && shadowHost.closest ? shadowHost.closest('[data-testid="stMainBlockContainer"]') : null
+  if (!block) return
+  S.pageBlock = block
+  S.observer.observe(block)
+}
+
 // 표 높이 = 창 높이 − 표 위 끝 − 아래 여백(24px), 최소 360px. 전체 화면이면 창(대화 상자) 안에서 같은 셈.
 function egLayout(S) {
   if (!S.dom || !S.model) return
+  egWatchPage(S)
   const scroller = S.dom.scroller
   const statusHeight = S.dom.status.offsetHeight || 24
   const rect = scroller.getBoundingClientRect()
@@ -696,7 +732,8 @@ function egOnHeadOut(S, event) {
 
 // ---------------------------------------------------------------- 고름·옮김
 
-function setRange(S, anchor, focus) {
+// 고름을 바꾼다 — anchor 는 지금 칸, focus 는 움직이는 모서리, origin 은 고정 모서리(주지 않으면 지금 칸이 고정 모서리).
+function setRange(S, anchor, focus, origin) {
   const m = S.model
   if (!m) return
   const rows = S.view.order.length
@@ -704,8 +741,13 @@ function setRange(S, anchor, focus) {
   const clampCell = (pos) => ({ r: clampNum(pos.r, 0, rows - 1), c: clampNum(pos.c, 0, m.colCount - 1) })
   S.anchor = clampCell(anchor)
   S.focus = clampCell(focus || anchor)
+  S.origin = origin ? clampCell(origin) : null
   egRefresh(S)
   egWhere(S)
+  egSelected(S)
+}
+
+function egSelected(S) {
   for (const item of FEATURES) if (item.onSelect) item.onSelect(S)
 }
 
@@ -721,7 +763,7 @@ function scrollToCell(S, r, c) {
     const width = S.widths[c]
     if (left - S.frozenWidth < scroller.scrollLeft) scroller.scrollLeft = left - S.frozenWidth
     else if (left + width > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = left + width - scroller.clientWidth
-  }
+  } else scroller.scrollLeft = 0
 }
 
 // 화면 좌표 → 보기 칸. 가상 스크롤이라 손 밑 칸이 DOM 에 없을 수 있어 좌표로 셈한다. clamp 면 표 밖 좌표도 끝 칸으로.
@@ -823,13 +865,13 @@ function egCoreKey(S, event) {
   const rows = S.view.order.length
   const ctrl = event.ctrlKey || event.metaKey
   const key = event.key
-  const lower = key.length === 1 ? key.toLowerCase() : key
-  if (ctrl && !event.altKey && (lower === 'z' || lower === 'y')) {
-    egHistory(S, lower === 'y' || event.shiftKey ? 'redo' : 'undo')
+  const letter = ctrl ? shortcutLetter(key, event.code) : ''
+  if (ctrl && !event.altKey && (letter === 'z' || letter === 'y')) {
+    egHistory(S, letter === 'y' || event.shiftKey ? 'redo' : 'undo')
     return true
   }
   if (!rows) return false
-  if (ctrl && (lower === 'c' || lower === 'v' || lower === 'x')) return false
+  if (ctrl && (letter === 'c' || letter === 'v' || letter === 'x')) return false
   if (key === 'Tab') {
     const next = tabMove(S.anchor, event.shiftKey, m.colCount)
     if (!next) return false
@@ -1181,6 +1223,7 @@ export default function (component) {
     S.frames = {}
     if (S.observer) S.observer.disconnect()
     S.observer = null
+    S.pageBlock = null
     egSaveView(S)
     S.dom = null
     S.shell = null

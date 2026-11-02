@@ -82,8 +82,10 @@ def test_ctrl_d_and_ctrl_r_stop_the_browser_defaults_and_read_the_key_position_u
 ):
     key = FILL[FILL.index("function fillKey(") : FILL.index("function fillInit(")]
     assert "event.preventDefault()" in key
-    assert "event.code === 'KeyD'" in key and "event.code === 'KeyR'" in key
-    assert "/^[a-z]$/.test(key)" in key
+    # 한글 자판(key 「ㅇ」 · code 'KeyD')은 그리드의 다른 단축키와 같은 한 길(`shortcutLetter`)로
+    # 본다.
+    assert "shortcutLetter(event.key, event.code)" in key
+    assert "letter === 'd' ? 'down' : letter === 'r' ? 'right'" in key
 
 
 def test_the_fill_css_draws_with_palette_colours_only() -> None:

@@ -163,8 +163,8 @@ def render_table_view_controls(
         visible = data
     # `st.data_editor` 의 편집 델타는 행 **위치** 기반이다. 보이는 행 집합이 바뀌면 남아
     # 있던 편집이 다른 행에 붙는다. 위젯을 만들기 전에 버려야 그 오염이 저장까지 가지
-    # 않는다. `month_editor` 가 같은 이유로 같은 일을 한다. 세션 칸만 지우면 브라우저가 옛
-    # 편집을 다시 보내므로 `discard_editor` 로 위젯 키를 바꾼다(`components/editor_state.py`).
+    # 않는다. 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 `discard_editor` 로 위젯 키를
+    # 바꾼다(`components/editor_state.py`).
     # 처음 그리는 회차에는 버릴 것이 없다 — 세대를 올리지 않는다.
     signature_key = f"{key_prefix}_rows"
     signature = hash(tuple(visible.index))

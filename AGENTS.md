@@ -309,7 +309,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     UPEH·Lot·WF 의 초안·이력을 버리고(팝업이 먼저 경고, 완료 알림에 버린 표) 다른 표 초안은 남긴다.
   - 적용 검사는 계산이 멈추는 조건과 같게 `reference_consistency.py` 에 두고 페이지는 행만 만든다. 빈칸 뜻은 표마다
     다르고(경로 없음·1.0·0 대·중립값 없음), UPEH 검사는 적용 전 활성 시나리오와 견준다. 격자·붙여넣기는 한 길이다.
-  - 편집표와 적용은 같은 적용 기간(선택기간 ∩ 활성 리비전 UPEH 범위)을 쓴다. 필터는 보기만 좁힌다(`month_editor.py`).
+  - 편집표와 적용은 같은 적용 기간(선택기간 ∩ 활성 리비전 UPEH 범위)을 쓴다. 필터는 보기만 좁힌다(고른 값은 feed
+    `filters` 로 가 브라우저가 거른다 — `reference_grid.filter_codes`).
   - STEP 표·팝업은 「STEP 구성」 을 골랐거나 팝업이 열린 회차에만 만들고 팝업 값은 경로 키다
     (`test_reference_data_perf.py`).
   - UPEH 왕복은 고친 칸만 원본 위에 덮는다 — 원본 표기를 정규화해 저장하면 STEP 목록의 REQB 일치가 끊긴다.
@@ -318,6 +319,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는다.
   - 적용하지 않은 편집이 남은 종류 단추의 주황 점(`tab_marks.mark_pending_segments`)은 원본 토큰으로 편집을 비우고 그리드
     inbox 를 반영한 뒤에 정한다(`reference_grid.draft_pending`).
+  - **원본이 바뀐 회차의 그리드 초안**: 기준정보 버전·기간이 바뀌면 아홉 표 초안·이력을 모두 버리고(줄 차례만 바뀌면 남긴다 —
+    업무 키), 이 화면 자신의 적용은 그 표만 버린다(`mark_own_change`). **활성 리비전만 바뀐 회차**(다른 화면의 적용 —
+    `scenario_edit_bar.only_revision_changed`)에는 초안이 있는 표마다 지금 양식의 내용 지문(`frame_digest`)을 초안을 둔 때의
+    지문(`reference_grid_keys.BASES_KEY` — 양식 키가 바뀐 회차에만 다시 잰다)과 견줘 같으면 초안·이력을 남기고, 다르거나 지문이
+    없으면 그 표만 버리고 작업 줄 칸에 한 번 알린다(`GRID_DROPPED_NOTICE` — 2026-11-03 리뷰: 전에는 어느 화면의 적용이든 아홉 표
+    초안을 말없이 모두 버렸다). 사이드바 「편집 되돌리기」 는 모든 화면의 편집을 버리므로 그리드 칸(`SESSION_KEYS`)을 따로 지운다
+    (`scenario_activation.discard_unsaved_scenario_changes`). 「고칠 칸」 알림은 마크다운이라 분류 값을 칸마다 `literal_markdown`
+    으로 막는다. 「Excel 붙여넣기」 도 그리드와 같은 하한·상한·정수 규칙(일수 — `ValueFormat.integer`)을 지난다
+    (`reference_csv.assert_edit_value_range(integer=…)`).
   - 설비대수 세 편집표(보유 · 대여 · 가용)도 현황 표 · 다른 편집 탭과 같은 표시순서(`apply_display_order`)로 행을 세운다 —
     공정 이름순이 아니다.
 - `app_pages/calculation_result.py` — `산출 결과` 화면. `대당 Capa`·`소요대수`·`확보율` 탭(언패킹 순서 = `TAB_NAMES`)과
@@ -1833,7 +1843,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/edit_grid.py` (+ `edit_grid_assets/` HTML·CSS·JS) — 범용 편집 그리드(Components v2, 그림자
-  DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표가 옮겨 올 자리다(편집 표 횡전개 — 설비 마스터 표는 아직 제 등록 그대로).
+  DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표가 쓴다(편집 표 횡전개 — 설비 마스터 표는 아직 제 등록 그대로, 생산
+  계획은 다음 판).
   모듈을 읽을 때 두 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
   - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
@@ -1845,6 +1856,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쌓고 마운트별 seq 를 올린다. 반영은 본문의 `apply_inbox`(표별로 나눠 `TableSlot` 의 색인·규격·세션 칸에 — 지금 그리지 않는
     표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
     으로 정한다. 이력은 `history_of` 가 없으면 새 `gen` 으로 세우고, 초안을 버리는 길(`discard_table`)은 이력도 함께 지운다.
+    사용자가 일부러 버린 길(「편집 취소」 — `discard_table(…, keys)`, `GridKeys.discarded` 칸)은 버린 `gen` 을 적어(최근
+    `DISCARDED_GENS` 개) 그 직전 출납 묶음의 op 를 `apply_inbox` 가 토스트 없이 버린다(빈 초안 자리도 걷는다).
   - 글(`texts` — 오류 문구는 그 표 형식의 하한·상한으로 채움, 「적용 전 변경」 같은 변경 목록 이름은 부르는 쪽이)과 팔레트
     (`palette` — CSS 의 `var(--eg-*)` 는 모두 여기, 찾기 일치 칸 새 토큰 `GRID_MATCH_FILL`)는 회차마다 껍데기에 싣는다.
   - 자산: 등록 JS 는 기능별 파일을 `JS_PARTS` 차례(`eg_pure` → `eg_select` → `eg_fill` → `eg_toolbar` → `eg_core`)로 잇고 주석만 든
@@ -1854,7 +1867,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     폭의 45% 를 넘는 칸부터 풀림 — 첫 칸은 늘 고정)·칸 편집(Enter·F2·글자 입력, 확정 Enter/Shift+Enter/Tab, 취소 Esc)·한 칸
     붙여넣기(기능이 처리하지 않은 `paste`)·이동 키(화살표·Ctrl+화살표·PageUp/Down·Alt+PageUp/Down·Home/End·Ctrl+Home/End·Tab)·
     Delete·Ctrl+Z/Y·머리 정렬(보기만)·필터 보기(feed `filters`)·값 칸 머리 풍선(`role="tooltip"`, 300ms)·칸 오류(빨강 + 상태 줄 문구)·
-    바뀐 칸 표시·토스트·상태 줄을 맡는다. 기능이 부르는 내부
+    바뀐 칸 표시·토스트·상태 줄을 맡는다. 고른 범위는 고정 모서리(`S.origin` — 없으면 지금 칸)와 맞은편 모서리(`S.focus`)이고
+    지금 칸(`S.anchor`)은 그 안 어디든 있다 — Ctrl+A·Shift+Space·Ctrl+Space 는 지금 칸을 지킨 채 범위만 넓힌다(엑셀, 이어 친 값·
+    Ctrl+Enter 가 그 칸에서). 보기 차례가 바뀌면(정렬·필터) 한 원본 줄 안의 고름만 그 줄을 따라가고 여러 줄 고름은 지금 칸 하나로
+    접고 기능(요약)에 알린다. 고정 칸으로 옮기는 이동(Home·Ctrl+Home)은 가로 스크롤을 0 으로. 높이(`egLayout`)는 창 크기·frame
+    크기·본문 블록(`stMainBlockContainer` — 표 위 알림이 서고 걷힘)의 ResizeObserver 로 다시 잰다. 표(모델)를 바꾸면 앞 표의
+    토스트·상태 글을 걷는다. Ctrl 단축키 글자는 모두 `shortcutLetter(key, code)`(한글 자판이면 자판 자리 — `<eg-nav>`)다. 칸
+    편집기는 z 1 — 굴리면 머리 줄(4)·고정 칸(2) 아래로 숨는다. 기능이 부르는 내부
     함수 이름(`paint`·`setRange`·`queueOp`·`sendOnce` 등)은 바꾸지 않는다(`test_edit_grid_assets` 가 본다). 순수 구획은 node 로
     돈다(`tests/edit_grid_node.py`), AppTest 대역은 `tests/edit_grid_fake.py`, 시험 앱은 `tests/edit_grid_demo_app.py`(앱 화면에는
     없다).
@@ -1877,8 +1896,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     는 `tests/test_edit_grid_fill_js.py` 가 본다.
   - `eg_toolbar.js`·`eg_toolbar.css`(도구 막대)는 찾기(Ctrl+F·F3·Enter/Shift+Enter·Esc)·되돌리기/다시 실행 단추·칸 폭 맞춤·머리
     경계 끌어 폭 바꾸기(40~480px, 표마다 브라우저 저장)·적용 전 변경 서랍·전체 화면(그림자 DOM 안 `<dialog>.showModal()`)·상태 줄
-    선택 범위 요약(개수 · 합계 · 평균)을 맡는다. 되돌리기·다시 실행·칸 폭 맞춤을 마우스로 누르면 초점이 표로 돌아간다(이어
-    누르는 Ctrl+Z·화살표·Ctrl+C/V 가 표에 간다 — 자판으로 누르면 단추에 남는다). 순수 구획 `// <eg-search>`·`// <eg-summary>`·
+    선택 범위 요약(개수 · 합계 · 평균)을 맡는다. 되돌리기·다시 실행·칸 폭 맞춤·적용 전 변경·찾기 ▲▼ 를 마우스로 누르면 초점이
+    표로 돌아간다(`tbGridCommand` — 이어 누르는 Ctrl+Z·화살표·Ctrl+C/V 가 표에 간다, 자판으로 누르면 단추에 남는다, 찾을 글이 없어
+    찾기 칸에 초점을 준 ▲▼ 는 돌리지 않는다). 순수 구획 `// <eg-search>`·`// <eg-summary>`·
     `// <eg-width>` 과 가짜 DOM 동작은 `tests/test_edit_grid_toolbar_js.py` 가 본다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
@@ -2309,12 +2329,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   스크롤, 규칙은 호출자 `<style>` 에 섞는다)은 제약 시뮬레이션 그래프가 쓴다. 셸 CSS(`overflow-x: auto`)를 다른 모듈에
   손으로 적지 않는다(`tests/test_scroll_shell.py`).
 - `src/capa_simulation/components/month_editor.py` — 월별 Wide 기준정보 표의 공용 조각이다. 기준 정보 편집 표 아홉의 칸
-  편집은 범용 편집 그리드(`reference_grid.py`)가 맡고, 여기에는 그 그리드와 생산 계획 화면이 함께 쓰는 것만 둔다.
+  편집은 범용 편집 그리드(`reference_grid.py`)가 맡고, 여기에는 기준 정보 화면과 생산 계획 화면이 쓰는 것만 둔다.
   - 「Excel 붙여넣기」 팝업은 공개 함수 `paste_dialog`(경고 첫 줄 `pending_notice` 는 부르는 쪽이 — 그리드는 초안 칸 수)이고
     편집 범위 줄은 `render_scope` 다. 붙여넣기 팝업(`render_reference_clipboard_form`)·왕복 CSV 에는 필터 이전 전체 표를
     넘긴다(부분 표는 행 집합 검증을 통과해 나머지 공정을 지운다).
-  - `merge_edited_months`(걸러진 표의 월 값을 원본 전체에 분류 키로 되머지)·`count_month_changes`(적용하면 실제로 달라지는
-    칸·행 — 빈값끼리는 변경이 아니다)·`float_month_columns`(정수 dtype 월 칸을 실수로 — 생산 계획 편집표)를 둔다.
+  - `float_month_columns`(정수 dtype 월 칸을 실수로 — 생산 계획 편집표)를 둔다. 걸러진 편집표를 원본 전체에 되머지하던
+    조각(`merge_edited_months`·`count_month_changes`)은 그리드 횡전개 뒤 부르는 곳이 없어 걷었다(2026-11-03) — 그리드
+    초안은 업무 키라 적용이 늘 전체 양식에 덮는다(`reference_grid.merged_template`).
   - `process_labels` 를 import 하지 않는다. 분류 칸 회색 배경은 `classification_styled` 하나가 칸 수 상한까지만 입히고
     `load_conversion.py`·`reference_data.py`(설비대수 현황) 도 쓴다(`tests/test_classification_style.py`).
 - `src/capa_simulation/services/revision_compatibility.py` — 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지
@@ -4701,7 +4722,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `@st.cache_data` 가 들고 있으므로 반드시 복사본에 입힌다.
 - ⑤ 에서 **분류 컬럼의 값은 언제나 원본이다.** `SelectboxColumn` 은 옵션의 `value` 와
   `label` 을 나눠 갖고 편집 결과·복사 데이터로는 `value` 를 돌려주므로 셀에 보이는 글자만
-  바뀐다. 값 자체를 표시명으로 갈면 `merge_edited_months` 의 되머지 키가 어긋나 편집이
+  바뀐다. 값 자체를 표시명으로 갈면 분류 키 되머지가 어긋나 편집이
   조용히 버려지고, 필터를 걸지 않은 단축 반환 경로에서는 표시명이 그대로 `RQ_*` 저장값이
   된다. 옵션에는 그 표의 값 전체를 넣는다 — 옵션에 없는 값은 셀이 빈칸으로 그려진다.
 - 표시명이 닿으면 안 되는 곳은 다섯 갈래다. ① 왕복 CSV·클립보드 양식(기준정보 월별
@@ -5511,7 +5532,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **`st.data_editor` 의 편집은 행 위치로 기록된다.** 보이는 행 집합이 바뀌면 남은 편집이 다른 행에 붙으므로, 적용하지
   않은 편집이 있으면 필터를 잠그고, 필터 선택이 바뀌면 편집표를 만들기 전에 편집을 버려(key 세대를 올려) 새 위젯으로
   세운다(처음 그리는 회차는 올리지 않는다). 필터는 보기만 좁힌다 — 편집기가 돌려주는 표는 원본과 행 수·순서가 같은 전체
-  표다(`merge_edited_months` 되머지). `editor_key` 에는 필터를 섞지 않는다 — `reset_editors_on_source_change`·
+  표다(분류 키 되머지). `editor_key` 에는 필터를 섞지 않는다 — `reset_editors_on_source_change`·
   `register_pending_edits` 가 고정 키 목록으로 편집표를 찾으므로 키가 바뀌면 청소와 「적용 전 편집」 표시가 그 편집을
   놓친다.
 - **공용 표시순서로 줄을 세우는 편집표는 원본 토큰에 그 지문을 싣는다**(`scenario_edit_bar.source_token(...,

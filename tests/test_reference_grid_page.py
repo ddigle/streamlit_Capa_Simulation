@@ -18,12 +18,14 @@ from test_reference_data_page import (
     DISPLAY_ORDER_SWAP_TEST_SCRIPT,
     EDITOR_KEYS,
     REAL_APPLY_TEST_SCRIPT,
+    RENAMED_TWO_PROCESS_TEST_SCRIPT,
     TEST_SCRIPT,
     TWO_PROCESS_TEST_SCRIPT,
     _download_frame,
     _filtered_editor_app,
     _grid_write,
     _open_paste,
+    _paste,
     _scenario_table,
     _visible_keys,
     _walk,
@@ -31,6 +33,7 @@ from test_reference_data_page import (
 
 from capa_simulation.components import page_tabs, reference_grid
 from capa_simulation.components.edit_grid import feed_key
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.tab_marks import pending_segments_style
 from capa_simulation.reference_grid_keys import (
     DATASET_KEY,
@@ -41,7 +44,7 @@ from capa_simulation.reference_grid_keys import (
     cells_key,
     history_key,
 )
-from capa_simulation.services.edit_grid import DROPPED_TOAST
+from capa_simulation.services.edit_grid import DROPPED_TOAST, change_counts, draft_from
 
 FEED = feed_key(GRID_HOST)
 RUN_DAY_CELLS = cells_key("RQ_RUN_DAY")
@@ -219,9 +222,12 @@ def test_a_fractional_day_is_a_cell_error_and_apply_stops_on_it(calls: Calls) ->
     app.button(key=APPLY).click().run()
     assert not app.exception
     errors = [str(item.value) for item in app.error]
-    assert errors == [reference_grid.ERRORS_NOTICE.format(n="1", places="Process-A · 202608")], (
-        errors
-    )
+    # 알림은 마크다운이라 분류 값은 막아 싣는다(「Process-A」 의 `-`).
+    assert errors == [
+        reference_grid.ERRORS_NOTICE.format(
+            n="1", places=f"{literal_markdown('Process-A')} · 202608"
+        )
+    ], errors
     assert "test_month_updates" not in app.session_state
     assert _draft(app) == {"cells": {}, "bad": {"Process-A": {"202608": ("30.5", "int")}}}
 
@@ -525,7 +531,8 @@ def test_a_capped_table_counts_the_errors_of_rows_it_does_not_load(
     app.button(key=APPLY).click().run()
     assert not app.exception
     errors = [str(item.value) for item in app.error]
-    assert errors == [reference_grid.ERRORS_NOTICE.format(n="1", places="Process-A · 202608")]
+    place = f"{literal_markdown('Process-A')} · 202608"
+    assert errors == [reference_grid.ERRORS_NOTICE.format(n="1", places=place)]
 
 
 def test_the_paste_template_is_the_whole_table_while_the_filter_narrows_the_grid(
@@ -589,7 +596,185 @@ def test_the_first_edit_shows_in_the_sidebar_of_the_run_it_arrives_in(calls: Cal
 
 def test_an_empty_draft_slot_counts_as_no_edit() -> None:
     """빈 초안 자리는 초안이 아니다 — 「변경사항 적용」 을 켜지 않고 변경 수도 0 이다."""
-    from capa_simulation.services.edit_grid import change_counts, draft_from
-
     assert draft_from({"cells": {}, "bad": {}}) is None
     assert change_counts(draft_from({"cells": {}, "bad": {}})) == (0, 0, 0)
+
+
+# 다른 화면의 적용을 흉내 내는 대본 — 활성 리비전·내용 토큰은 세션 값(`probe_revision`·
+# `probe_token`)이고, `probe_run_day` 를 주면 그 적용이 일수 표 내용도 바꾼 것이다(생산 계획 화면의
+# 적용은 리비전과 내용 토큰만 바꾸고 기준 정보 표는 그대로다).
+OTHER_PAGE_APPLY_SCRIPT = (
+    TWO_PROCESS_TEST_SCRIPT.replace(
+        '    "revision": 1,\n', '    "revision": st.session_state.get("probe_revision", 1),\n', 1
+    )
+    .replace(
+        '    "content_token": "test-capacity-two-process-page",\n',
+        '    "content_token": st.session_state.get(\n'
+        '        "probe_token", "test-capacity-two-process-page"\n'
+        "    ),\n",
+        1,
+    )
+    .replace(
+        "\nactive = {\n",
+        "\nif st.session_state.get('probe_run_day') is not None:\n"
+        "    tables['RQ_RUN_DAY'] = tables['RQ_RUN_DAY'].assign("
+        "RUN_DAY=st.session_state['probe_run_day'])\n"
+        "\nactive = {\n",
+        1,
+    )
+)
+RUN_RATE_CELLS = cells_key("RQ_RUN_RATE")
+
+
+def _cells(app: AppTest, key: str) -> int:
+    value = app.session_state[key] if key in app.session_state else None
+    return change_counts(draft_from(value))[0]
+
+
+def _other_page_apply(app: AppTest, *, run_day: float | None = None) -> AppTest:
+    """다른 화면이 적용한 회차 — 활성 리비전이 오르고 새 내용 토큰이 선다(내용마다 다른 토큰 —
+    캐시는 프로세스 전역이다)."""
+    app.session_state["probe_revision"] = 2
+    app.session_state["probe_token"] = f"test-capacity-other-page-apply-{run_day}"
+    if run_day is not None:
+        app.session_state["probe_run_day"] = run_day
+    app.run()
+    assert not app.exception, app.exception
+    return app
+
+
+def _drafts_in_two_tables(calls: Calls) -> AppTest:
+    assert OTHER_PAGE_APPLY_SCRIPT.count("probe_") == 4, "대본 바꾸기 셋이 모두 걸렸다"
+    app = _open(OTHER_PAGE_APPLY_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    app = _choose(app, "효율")
+    app = send_ops(
+        app,
+        calls,
+        {"op": "write", "rows": ["Process-B\x1f양산"], "cols": ["202608"], "values": [["50%"]]},
+        host=GRID_HOST,
+    )
+    assert not app.exception
+    assert _cells(app, RUN_DAY_CELLS) == 1 and _cells(app, RUN_RATE_CELLS) == 1
+    return _choose(app, "일수")
+
+
+def test_another_pages_apply_keeps_the_drafts_of_the_tables_it_did_not_touch(
+    calls: Calls,
+) -> None:
+    """생산 계획(PKG PLAN·수율)처럼 다른 화면의 적용은 리비전만 올린다 — 내용이 그대로인 표의
+    초안·이력은 남고(업무 키라 같은 칸에 붙는다) 버렸다는 알림도 없다. 전에는 어느 화면의 적용이든
+    아홉 표 초안을 말없이 모두 버렸다(2026-11-03 리뷰 — Guide 「다른 화면에 다녀와도 그대로」 와
+    어긋남)."""
+    app = _drafts_in_two_tables(calls)
+    old_gen = last(calls, FEED)["gen"]
+
+    app = _other_page_apply(app)
+    assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
+    assert _cells(app, RUN_RATE_CELLS) == 1
+    assert not [item for item in app.warning if "버렸습니다" in str(item.value)]
+    # 이력(gen)도 남아 그 전에 보낸 op 가 그대로 붙는다.
+    assert last(calls, FEED)["gen"] == old_gen
+    app = send_ops(
+        app,
+        calls,
+        {"op": "write", "rows": ["Process-B"], "cols": ["202608"], "values": [["25"]]},
+        host=GRID_HOST,
+        gen=old_gen,
+    )
+    assert _draft(app) == {
+        "cells": {"Process-A": {"202608": 20.0}, "Process-B": {"202608": 25.0}},
+        "bad": {},
+    }
+    toast = last(calls, FEED)["toast"]
+    assert toast is None or DROPPED_TOAST.format(n="1") not in toast["text"]
+
+
+def test_another_pages_apply_that_changed_a_table_drops_only_its_draft_and_says_so(
+    calls: Calls,
+) -> None:
+    """다른 화면의 적용이 일수 표 내용도 바꿨다 — 그 표 초안만 버리고(옛 양식에 붙은 값이다) 작업
+    줄에 한 번 알린다. 효율 초안은 남는다."""
+    app = _drafts_in_two_tables(calls)
+
+    app = _other_page_apply(app, run_day=25.0)
+    assert _draft(app) is None
+    assert _cells(app, RUN_RATE_CELLS) == 1
+    warnings = [str(item.value) for item in app.warning]
+    assert any(
+        "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집(일수 1칸)을 버렸습니다" in text
+        for text in warnings
+    ), warnings
+    app.run()
+    assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
+
+
+def test_discarding_right_after_an_edit_drops_the_batched_op_without_a_retry_toast(
+    calls: Calls,
+) -> None:
+    """고친 직후(300ms 출납 묶음 안) 「편집 취소」 — 누름의 focusout 이 보낸 op 는 일부러 버린
+    편집이다. 초안은 비고(사이드바 「적용 전 편집」 도 서지 않는다) 「표가 바뀌기 전에 보낸 편집 …
+    다시 고쳐 주세요」 토스트는 서지 않는다(2026-11-03 리뷰)."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    batched = outbox(
+        calls,
+        {"op": "write", "rows": ["Process-B"], "cols": ["202608"], "values": [["23"]]},
+        host=GRID_HOST,
+    )
+    app.button(key="capa_run_day_editor_discard").click()
+    app.session_state[FAKE_EVENT_KEY] = (GRID_HOST, batched)
+    app.run()
+    assert not app.exception
+    app.run()
+    assert not app.exception
+    assert _draft(app) is None
+    toast = last(calls, FEED)["toast"]
+    assert toast is None or "다시 고쳐" not in toast["text"], toast
+    sidebar = " ".join(str(item.value) for item in app.sidebar.markdown)
+    assert "기준 정보 · 일수" not in sidebar
+
+
+def test_the_error_notice_escapes_the_names_it_puts_in_markdown(calls: Calls) -> None:
+    """「고칠 칸」 알림은 마크다운(`st.error`)이다 — 공정 표시명 「E2E~가정~A」 가 지움선이 되지
+    않게 칸마다 `literal_markdown` 으로 막는다."""
+    script = RENAMED_TWO_PROCESS_TEST_SCRIPT.replace(
+        '[("Process-A", "가공")]', '[("Process-A", "E2E~가정~A")]', 1
+    )
+    assert script != RENAMED_TWO_PROCESS_TEST_SCRIPT
+    app = _open(script)
+    app = _grid_write(app, calls, "Process-A", "202608", "30.5")
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert errors == [
+        reference_grid.ERRORS_NOTICE.format(
+            n="1", places=f"{literal_markdown('E2E~가정~A')} · 202608"
+        )
+    ], errors
+
+
+def test_the_paste_popup_refuses_a_fractional_day_like_the_grid() -> None:
+    """일수는 정수만 받는다 — 그리드는 30.5 를 칸 오류로 막고, 「Excel 붙여넣기」 도 같은 규칙으로
+    막는다(전에는 붙여넣기가 RUN_DAY 30.5 를 그대로 적용했다)."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t30.5\nProcess-B\t31\n")
+    errors = [str(item.value) for item in app.error]
+    assert any("0 이상 정수" in text and "'30.5'" in text for text in errors), errors
+    assert "test_month_updates" not in app.session_state
+    app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t30\nProcess-B\t31\n")
+    assert app.session_state["test_month_updates"]["RQ_RUN_DAY"]["RUN_DAY"].tolist() == [
+        30.0,
+        31.0,
+    ]
+
+
+def test_the_edited_dataset_button_gets_its_dot_drawn_on_the_page(calls: Calls) -> None:
+    """종류 단추 점은 페이지가 그리는 `<style>` 이다 — 고친 표(일수 = 8번째 단추)에 점 규칙이 서고,
+    고치기 전에는 없다(단위 시험은 CSS 만, 페이지 시험은 넘긴 집합만 보던 틈 — 2026-11-03 리뷰)."""
+    selector = '[role="radio"]:nth-of-type(8)::after'
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    assert not any(selector in element.proto.body for element in app.get("html"))
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    bodies = [element.proto.body for element in app.get("html") if selector in element.proto.body]
+    assert bodies == [pending_segments_style(DATASET_KEY, list(DATASETS), {"RQ_RUN_DAY"}).strip()]

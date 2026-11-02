@@ -376,6 +376,11 @@ def discard_unsaved_scenario_changes(
     active = reset_active_scenario(reference_tables, reference_version)
     if isinstance(st.session_state.get(ACTIVE_PERSISTED_SESSION_REVISION_KEY), int):
         st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
+    # 「편집 되돌리기」 는 **모든 화면의** 적용하지 않은 편집도 버린다. 기준 정보 그리드 초안은
+    # 리비전만 바뀐 회차에 내용이 그대로인 표의 것을 남기므로(다른 화면의 적용 —
+    # `reference_data.py`) 여기서 따로 지운다(불러오기·저장은 `_release_stale_ui_state` 가 지운다).
+    for key in REFERENCE_GRID_SESSION_KEYS:
+        st.session_state.pop(key, None)
     return active
 
 

@@ -46,10 +46,14 @@ DEFAULT_DATASET: Final = "RQ_UPEH"
 EDIT_TABLES: Final = tuple(
     dataset for dataset in DATASETS if dataset not in (EQUIPMENT_OVERVIEW, STEP_VIEW)
 )
-# 콜백이 쌓은 op(아직 반영 전), 마운트 → 마지막 seq(최근 8개), 마지막 토스트.
+# 콜백이 쌓은 op(아직 반영 전), 마운트 → 마지막 seq(최근 8개), 마지막 토스트, 「편집 취소」 로
+# 버린 이력 `gen`(그 직전에 보낸 op 를 알림 없이 버린다), 초안이 있는 표의 양식 지문(다른 화면의
+# 적용이 그 표를 바꿨는지 가른다 — `app_pages/reference_data.py`).
 INBOX_KEY: Final = "reference_grid_inbox"
 APPLIED_KEY: Final = "reference_grid_applied"
 TOAST_KEY: Final = "reference_grid_toast"
+DISCARDED_KEY: Final = "reference_grid_discarded"
+BASES_KEY: Final = "reference_grid_bases"
 
 
 def cells_key(table: str) -> str:
@@ -69,4 +73,6 @@ SESSION_KEYS: Final = (
     INBOX_KEY,
     APPLIED_KEY,
     TOAST_KEY,
+    DISCARDED_KEY,
+    BASES_KEY,
 )

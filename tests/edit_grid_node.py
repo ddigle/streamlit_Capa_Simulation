@@ -226,11 +226,14 @@ class FakeNode {
   matches(selector) {
     return selector.split(',').some((part) => {
       const text = part.trim()
-      const attr = text.match(/^\[([a-z-]+)\]$/)
+      const attr = text.match(/^\[([a-z-]+)(?:="([^"]*)")?\]$/)
       if (attr) {
         const name = attr[1]
-        if (name in this.attributes) return true
-        return name.startsWith('data-') && this.dataset[camel(name.slice(5))] !== undefined
+        const want = attr[2]
+        const data = name.startsWith('data-') ? this.dataset[camel(name.slice(5))] : undefined
+        const value = name in this.attributes ? this.attributes[name] : data
+        if (value === undefined) return false
+        return want === undefined || String(value) === want
       }
       const names = text.startsWith('.') ? text.slice(1).split('.') : null
       if (names) return names.every((name) => this.classList.contains(name))

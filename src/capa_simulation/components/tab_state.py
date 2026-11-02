@@ -16,8 +16,7 @@
 
 **숨은 탭에서는 위젯이 아니라 그림만 건너뛴다.** 본문을 통째로 건너뛰면 그 안의
 `multiselect` 같은 위젯이 렌더되지 않아 Streamlit 이 선택값을 버린다. 본문을 건너뛸 수밖에
-없는 자리(`month_editor` 의 조기 반환)는 위젯에 `persist_state="session"` 을 줘서 그 손실을
-막는다.
+없는 자리는 위젯에 `persist_state="session"` 을 줘서 그 손실을 막는다.
 """
 
 from __future__ import annotations

@@ -245,12 +245,18 @@ def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
 @dataclass(frozen=True)
 class GridKeys:
     """한 그리드 호스트의 세션 칸 — 콜백이 쌓은 op(inbox), 마운트별 마지막 seq(applied), 마지막
-    토스트.
+    토스트, 일부러 버린 이력의 `gen`(discarded — 주면 「편집 취소」 직전에 보낸 op 를 알림 없이
+    버린다).
     """
 
     inbox: str
     applied: str
     toast: str
+    discarded: str | None = None
+
+
+# 일부러 버린 이력 `gen` 을 몇 개까지 기억하는가(표마다 하나씩 쌓인다 — 늦게 온 op 도 덮는다).
+DISCARDED_GENS = 16
 
 
 @dataclass(frozen=True)
@@ -325,6 +331,16 @@ def apply_inbox(keys: GridKeys, slots: Mapping[str, TableSlot]) -> bool:
     받을 표가 없는 op 는 버리고 수를 알린다. 토스트를 남기고, 초안이 바뀌었으면 참."""
     pending = st.session_state.pop(keys.inbox, None)
     ops = [op for op in pending if isinstance(op, Op)] if isinstance(pending, list) else []
+    # 사용자가 「편집 취소」 로 버린 이력의 op(누름 직전 출납 묶음 안에 남았던 편집)는 알리지 않고
+    # 버린다 — 일부러 버린 편집을 「다시 고쳐 주세요」 라고 하지 않는다.
+    quiet = _discarded_gens(keys)
+    for op in [op for op in ops if op.gen in quiet]:
+        slot = slots.get(op.table)
+        # 출납 콜백이 둔 빈 초안 자리(`{"cells": {}, "bad": {}}`)는 걷는다 — 남으면 사이드바가
+        # 「적용 전 편집」 으로 센다(반영 길은 결과 초안 None 을 적어 같은 일을 한다).
+        if slot is not None and draft_of(slot.cells_key) is None:
+            st.session_state[slot.cells_key] = None
+    ops = [op for op in ops if op.gen not in quiet]
     if not ops:
         return False
     by_table: dict[str, list[Op]] = {}
@@ -351,8 +367,27 @@ def apply_inbox(keys: GridKeys, slots: Mapping[str, TableSlot]) -> bool:
     return changed
 
 
-def discard_table(slot_keys: tuple[str, str]) -> None:
-    """그 표의 초안·이력을 지운다(적용·「편집 취소」·원본이 바뀜). 다음 회차에 새 `gen` 이 선다."""
+def _discarded_gens(keys: GridKeys) -> set[str]:
+    if keys.discarded is None:
+        return set()
+    saved = st.session_state.get(keys.discarded)
+    return {gen for gen in saved if isinstance(gen, str)} if isinstance(saved, list) else set()
+
+
+def discard_table(slot_keys: tuple[str, str], keys: GridKeys | None = None) -> None:
+    """그 표의 초안·이력을 지운다(적용·「편집 취소」·원본이 바뀜). 다음 회차에 새 `gen` 이 선다.
+
+    `keys`(그 칸 `discarded` 가 있을 때)를 주면 사용자가 **일부러** 버린 것이다 — 버린 이력의
+    `gen` 을 적어 두어, 버리기 직전에 보낸 op(300ms 출납 묶음 안의 편집 — 「편집 취소」 를 누른
+    focusout 이 보낸다)를 `apply_inbox` 가 「표가 바뀌기 전에 보낸 편집 … 다시 고쳐 주세요」
+    토스트 없이 버린다.
+    """
+    if keys is not None and keys.discarded is not None:
+        history = history_from(st.session_state.get(slot_keys[1]))
+        if history is not None:
+            saved = st.session_state.get(keys.discarded)
+            gens = [gen for gen in saved if isinstance(gen, str)] if isinstance(saved, list) else []
+            st.session_state[keys.discarded] = [*gens, history["gen"]][-DISCARDED_GENS:]
     for key in slot_keys:
         st.session_state.pop(key, None)
 

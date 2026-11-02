@@ -18,6 +18,8 @@ from capa_simulation.persistence.models import (
 )
 from capa_simulation.reference_grid_keys import (
     APPLIED_KEY,
+    BASES_KEY,
+    DISCARDED_KEY,
     EDIT_TABLES,
     INBOX_KEY,
     TOAST_KEY,
@@ -371,6 +373,8 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
         INBOX_KEY,
         APPLIED_KEY,
         TOAST_KEY,
+        DISCARDED_KEY,
+        BASES_KEY,
     }
     assert set(REFERENCE_GRID_SESSION_KEYS) == generated
     assert all(table in literals for table in EDIT_TABLES)

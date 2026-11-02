@@ -43,7 +43,7 @@ def test_copy_goes_through_the_synchronous_copy_event_only() -> None:
     assert "navigator.clipboard" not in SELECT and "execCommand" not in SELECT
     assert "selListen(S, scroller, 'copy'" in SELECT
     assert "event.clipboardData.setData('text/plain', text)" in SELECT
-    ctrl_c = SELECT[SELECT.index("if (plainCtrl && lower === 'c')") :]
+    ctrl_c = SELECT[SELECT.index("if (plainCtrl && letter === 'c')") :]
     ctrl_c = ctrl_c[: ctrl_c.index("}")]
     assert "preventDefault" not in ctrl_c and "selClearPageSelection()" in ctrl_c
 
@@ -96,10 +96,11 @@ done({
     assert result["has"] == [True, True, False]
     # 1 위 · 2 아래 · 4 왼쪽 · 8 오른쪽 — 왼쪽 위 모서리 5, 오른쪽 아래 10, 안 0, 오른쪽 위 9.
     assert result["edges"] == [5, 10, 0, 9, 0, 15]
-    assert result["all"] == {"anchor": {"r": 0, "c": 0}, "focus": {"r": 9, "c": 7}}
+    # 큰 고름은 고정 모서리(origin)와 맞은편 모서리만 낸다 — 지금 칸은 부르는 쪽이 그대로 둔다.
+    assert result["all"] == {"origin": {"r": 0, "c": 0}, "focus": {"r": 9, "c": 7}}
     # 줄 고르기는 고른 줄들(4 → 2)을 끝까지, 칸 고르기는 고른 칸들(3 → 5)을 위에서 아래까지.
-    assert result["row"] == {"anchor": {"r": 4, "c": 0}, "focus": {"r": 2, "c": 7}}
-    assert result["col"] == {"anchor": {"r": 0, "c": 3}, "focus": {"r": 9, "c": 5}}
+    assert result["row"] == {"origin": {"r": 4, "c": 0}, "focus": {"r": 2, "c": 7}}
+    assert result["col"] == {"origin": {"r": 0, "c": 3}, "focus": {"r": 9, "c": 5}}
     assert result["empty"] is None and result["unknown"] is None
 
 
@@ -394,12 +395,21 @@ def test_shift_keys_grow_the_range_from_the_active_cell_and_mark_it() -> None:
 
 
 def test_whole_table_row_and_column_selections() -> None:
+    """Ctrl+A·Shift+Space·Ctrl+Space 는 범위만 넓히고 지금 칸은 그대로다(엑셀) — 지금 칸이 잠긴
+    분류 칸으로 가지 않아 이어 친 값이 그 칸 편집을 연다. Shift+화살표는 넓힌 범위의 맞은편
+    모서리만 민다."""
     body = r"""
   key('ArrowDown')
   key('ArrowRight')
   key('ArrowDown', { shiftKey: true })
   key('a', { ctrlKey: true })
-  R.all = [range(), Object.assign({}, S.anchor)]
+  R.all = [range(), Object.assign({}, S.anchor), cell(1, 3).classList.contains('is-active'),
+    cell(0, 0).classList.contains('is-sel'), cell(1, 3).classList.contains('is-sel')]
+  key('ArrowUp', { shiftKey: true })
+  R.shrunk = [range(), Object.assign({}, S.anchor)]
+  key('5')
+  R.typed = [S.edit && { r: S.edit.r, c: S.edit.c }, q('.eg-ed').value, note()]
+  fire(q('.eg-ed'), 'keydown', { key: 'Escape' })
   key('ArrowDown')
   key('ArrowRight')
   key('ArrowDown', { shiftKey: true })
@@ -407,17 +417,21 @@ def test_whole_table_row_and_column_selections() -> None:
   R.row = [range(), Object.assign({}, S.anchor)]
   key('ArrowRight')
   key(' ', { ctrlKey: true })
-  R.col = range()
+  R.col = [range(), Object.assign({}, S.anchor)]
   key(' ', { ctrlKey: true, shiftKey: true })
   R.allAgain = range()
   R.noEdit = S.edit === null && q('.eg-ed').hidden
   process.stdout.write(JSON.stringify(R))
 """
     result = _run(body, _payloads())
-    assert result["all"] == [{"r0": 0, "r1": ROWS - 1, "c0": 0, "c1": 5}, {"r": 0, "c": 0}]
-    assert result["row"] == [{"r0": 1, "r1": 2, "c0": 0, "c1": 5}, {"r": 1, "c": 0}]
-    assert result["col"] == {"r0": 0, "r1": ROWS - 1, "c0": 1, "c1": 1}
-    assert result["allAgain"] == {"r0": 0, "r1": ROWS - 1, "c0": 0, "c1": 5}
+    every = {"r0": 0, "r1": ROWS - 1, "c0": 0, "c1": 5}
+    assert result["all"] == [every, {"r": 1, "c": 3}, True, True, False]
+    # Shift+↑ 은 고정 모서리(왼쪽 위)를 두고 맞은편 모서리만 한 줄 올린다.
+    assert result["shrunk"] == [{**every, "r1": ROWS - 2}, {"r": 1, "c": 3}]
+    assert result["typed"] == [{"r": 1, "c": 3}, "5", ""], "Ctrl+A 뒤 친 값은 지금 칸 편집을 연다"
+    assert result["row"] == [{"r0": 2, "r1": 3, "c0": 0, "c1": 5}, {"r": 2, "c": 4}]
+    assert result["col"] == [{"r0": 0, "r1": ROWS - 1, "c0": 5, "c1": 5}, {"r": 2, "c": 5}]
+    assert result["allAgain"] == every
     assert result["noEdit"], "Shift+Space 는 칸 편집을 열지 않는다"
 
 

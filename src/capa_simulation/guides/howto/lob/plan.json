@@ -4,7 +4,7 @@
   "viewport": {"width": 1440, "height": 900, "scale": 2},
   "mask": ["named:SIDEBAR_FOOTER"],
   "params": {
-    "edit_process": {"type": "text", "default": "Pre B/D", "about": "기준 정보 › 설비대수 › 가용 표에서 고칠 행의 공정 이름(「공정」 열 글자)"},
+    "edit_process": {"type": "text", "default": "Pre B/D", "about": "기준 정보 › 「설비대수 가용」 표에서 고칠 행의 공정 이름(「공정」 열 글자)"},
     "edit_month": {"type": "text", "default": "202612", "about": "고칠 달 — 가용 표의 달 열 머리(YYYYMM). 사이드바 조회기간 안이어야 한다"},
     "edit_delta": {"type": "int", "default": 2, "about": "그 칸에 더할 대수"},
     "revision_name": {"type": "text", "default": "12월 Pre B/D 가용 +2", "about": "저장 팝업 「새 리비전명」에 적을 글"},
