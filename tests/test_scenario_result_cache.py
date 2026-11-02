@@ -230,8 +230,8 @@ def test_a_hit_does_not_unpickle_the_capacity_frames(
 def _edited_upeh(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """UPEH 를 반으로 줄이고, 조회기간 안 한 경로는 0 으로 둬 대당 Capa 에서 뺀 시나리오 표.
 
-    반으로 줄이면 대당 Capa·소요대수·확보율이 바뀌고, 0 인 경로는 제외 목록·대당 Capa 행 수를
-    바꾼다 — 요약 캐시가 낡으면 드러난다.
+    반으로 줄이면 대당 Capa·소요대수·확보율이 바뀌고, 0 인 경로는 제외 목록에 한 줄을 더한다 —
+    요약 캐시가 낡으면 그 제외 목록 길이에서 드러난다.
     """
     edited = dict(tables)
     upeh = tables["RQ_UPEH"].copy()
