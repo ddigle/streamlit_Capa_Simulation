@@ -60,6 +60,7 @@ from capa_simulation.services.edit_grid_payload import (
     encode_base,
     encode_feed,
 )
+from capa_simulation.services.korean_particle import with_subject_particle
 
 _ASSETS: Final = Path(__file__).with_name("edit_grid_assets")
 GRID_COMPONENT: Final = "capa_edit_grid"
@@ -183,7 +184,7 @@ def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
         "resizeHint": "끌어 칸 폭 바꾸기 · 두 번 눌러 맞춤",
         "widthDone": "칸 폭 {width}px",
         "changesTitle": "{label} {n}칸",
-        "changesEmpty": f"{changes_label}이 없습니다",
+        "changesEmpty": f"{with_subject_particle(changes_label)} 없습니다",
         "changesMore": "외 {n}개 — 목록은 앞 500개만 보입니다",
         "changesHidden": "지금 보기(필터)에 없는 줄입니다 — 표 조건을 풀면 보입니다",
         "changesBlank": "빈칸",
