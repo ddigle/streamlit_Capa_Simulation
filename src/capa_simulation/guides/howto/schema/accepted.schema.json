@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "따라하기 가이드 검수 마친 판(review/guide/accepted.json)",
+  "description": "사내가 지난번 검수를 마친 판 — 다음 회차의 점검기가 이것과 견줘 바뀐 자리만 검수 목록(바뀜 n/N)에 올린다. 점검기 --accept 만 쓴다(편집 도구로 열거나 쓰지 않는다). 담는 것은 원고 자리 ID · 표적@상태 ID · 화면 안으로 자른 정수 좌표 · 지문 · 판 · 날짜 · 봉인뿐이다 — 화면 글자 · 매개값의 값 · 데이터를 따라 움직이는 표적(데이터 자리)의 좌표가 들어갈 칸은 없다. 봉인(seal)이 어긋나거나 형식에 맞지 않으면 점검기는 이 파일을 버리고 모든 자리를 본다(바뀜 na — 멈추지 않는다).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["form", "rules", "skeleton", "mode", "date", "viewport", "scale", "seal", "places"],
+  "properties": {
+    "form": {"const": 1, "description": "꼴 번호(page_guide_core.ACCEPTED_FORM)"},
+    "rules": {"type": "integer", "minimum": 1, "description": "조립 규칙 판(page_guide_core.ACCEPT_RULES) — 다르면 모든 자리가 바뀜이다"},
+    "skeleton": {"$ref": "#/$defs/version"},
+    "mode": {"enum": ["example", "internal"]},
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "--accept 를 돌린 PC 의 날짜"},
+    "viewport": {
+      "type": "array",
+      "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+      "items": false,
+      "minItems": 2,
+      "description": "촬영 창(CSS px) — 다르면 모든 자리가 바뀜이다"
+    },
+    "scale": {"type": "number", "exclusiveMinimum": 0, "description": "촬영 배율 — 다르면 모든 자리가 바뀜이다"},
+    "seal": {"$ref": "#/$defs/digest", "description": "seal 칸을 뺀 문서의 지문"},
+    "places": {
+      "type": "object",
+      "propertyNames": {"pattern": "^(step|thumb|map|concept):[a-z0-9_.]+$"},
+      "additionalProperties": {"$ref": "#/$defs/place"},
+      "description": "원고 자리 → 검수를 마친 때의 기록. 데이터 자리는 적지 않는다"
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*@[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "뼈대 판 — 「가이드 이름@원고 날짜」"
+    },
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{12}$"},
+    "box": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4},
+        {"type": "null"}
+      ],
+      "description": "[x, y, w, h] 정수(화면 CSS px) 또는 null(못 찾음 · 그림 없는 조각)"
+    },
+    "place": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["f", "t", "sk", "tx", "pl"],
+      "properties": {
+        "f": {"type": "array", "items": {"$ref": "#/$defs/box"}, "description": "자르기 틀 — 조각마다, 원고 차례"},
+        "t": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[a-z0-9_]+@[a-z0-9_]+$"},
+          "additionalProperties": {"$ref": "#/$defs/box"},
+          "description": "표적@상태 → 화면 안으로 자른 자리 · 크기"
+        },
+        "sk": {"$ref": "#/$defs/digest", "description": "원고(뼈대) 객체의 지문"},
+        "tx": {"$ref": "#/$defs/digest", "description": "덮어쓰기를 얹은 같은 객체의 지문"},
+        "pl": {"$ref": "#/$defs/digest", "description": "촬영 동작(그 상태들의 from 사슬 · viewport · mask)의 지문"}
+      }
+    }
+  }
+}

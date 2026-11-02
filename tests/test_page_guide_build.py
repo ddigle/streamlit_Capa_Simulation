@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import re
@@ -1142,3 +1143,74 @@ def test_generator_files_are_tracked_so_the_archived_copy_carries_them() -> None
         check=False,
     )
     assert listed.returncode == 0, listed.stderr
+
+
+# ------------------------------------------------------------------ 바뀐 자리 검수(순수 함수)
+
+# 실데이터가 자리 · 크기를 정한다고 코드로 확인한 넷(명세 1-3) — 측정으로 후보를 빼도 남는다.
+CONFIRMED_DATA_SHAPED = {"BN_CELL", "EDIT_CELL", "EDIT_ROW", "HEADER_BAND", "SIDEBAR_BADGE"}
+CONFIRMED_DATA_PLACES = {
+    "concept:read_state",
+    "step:bn_drill.pick_cell",
+    "step:change_avail.edit_cell",
+    "thumb:change_avail",
+}
+
+
+def test_fingerprint_is_the_sorted_compact_json_sha256_head() -> None:
+    expected = hashlib.sha256('{"a":"가","b":[1,null]}'.encode()).hexdigest()[:12]
+
+    assert core._fingerprint({"b": [1, None], "a": "가"}) == expected
+    assert core.seal({"seal": "x", "b": [1, None], "a": "가"}) == expected
+
+
+def test_the_lob_script_has_38_places_and_the_data_places_follow_data_shaped() -> None:
+    places = core.place_order(SKELETON.content)
+    data = core.data_places(SKELETON)
+
+    assert len(places) == 38
+    assert CONFIRMED_DATA_SHAPED <= core.DATA_SHAPED <= set(core.NAMED_TARGETS)
+    assert CONFIRMED_DATA_PLACES <= data <= set(places)
+    planned = {state["id"]: state["targets"] for state in SKELETON.plan["states"]}
+    for where, state, target in core._target_refs(SKELETON.content):
+        words = planned[state][target]
+        shaped = any(
+            word.startswith("named:") and word[6:].partition("(")[0] in core.DATA_SHAPED
+            for word in ([words] if isinstance(words, str) else words)
+        )
+        assert not shaped or where in data, (where, target)
+
+
+def test_the_internal_first_pass_compares_34_places(tmp_path: Path, example_dir: Path) -> None:
+    shots, _run = core.board_shots(SKELETON, _internal_work(tmp_path))
+
+    compared = core.compared_places(SKELETON.content, shots)
+
+    assert len(compared) == 34
+    assert set(core.place_order(SKELETON.content)) - set(compared) == {
+        "thumb:gap",
+        "step:gap.pick_compare",
+        "step:save_revision.badge",
+        "step:set_official.check",
+    }
+
+
+def test_place_geometry_holds_ids_integers_and_digests_only(
+    tmp_path: Path, example_dir: Path
+) -> None:
+    work = _internal_work(tmp_path)
+    shots = core.load_shots(work)
+    shots.states["02_home_lower"].targets["bn_cell"] = [-10.4, 880.6, 30.2, 60.0]
+    core.save_shots(shots, work)
+    shots, _run = core.board_shots(SKELETON, work)
+
+    records = core.place_geometry(SKELETON, SKELETON.content, shots)
+
+    assert list(records) == core.place_order(SKELETON.content)
+    # 화면 밖으로 나간 부분은 잘라 정수로
+    assert records["step:bn_drill.pick_cell"]["t"]["bn_cell@02_home_lower"] == [0, 881, 20, 19]
+    for record in records.values():
+        assert set(record) == {"f", "t", "sk", "tx", "pl"}
+        boxes = [*record["f"], *record["t"].values()]
+        assert all(box is None or all(type(v) is int for v in box) for box in boxes)
+        assert all(re.fullmatch(r"[0-9a-f]{12}", record[key]) for key in ("sk", "tx", "pl"))

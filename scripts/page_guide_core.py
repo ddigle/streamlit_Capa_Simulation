@@ -17,6 +17,11 @@
   (`template.html`)의 `/*__DATA__*/null` 자리에 JSON 으로 넣는다. 자르기 규칙은 시안
   `build_guide.py` 그대로다(아래 상수).
 - **리뷰 한 줄** `review_line` — 리뷰 md 에 옮길 압축 꼴. ID · 수만 담는다.
+- **바뀐 자리 검수** `compare_accepted` — 원고 자리마다(`place_geometry`) 표적 자리 · 자르기 틀 ·
+  원고 · 덮어쓰기 · 촬영 동작의 지문을 사내 기준 파일(`review/guide/accepted.json` — 지난번 검수를 마친
+  판, 점검기 `--accept` 만 쓴다)과 견줘 바뀐 자리만 검수 목록에 올린다(리뷰 칸 `바뀜 n/N`). 기준 파일을
+  못 읽으면 멈추지 않고 `바뀜 na` 다. 데이터 자리(`DATA_SHAPED`)는 좌표를 남기지 않고 늘 목록에 든다.
+  생성기는 조립할 때마다 조립 도장(`--work/assembled.json`)을 남긴다.
 
 화면 글자는 여기서 다루지 않는다 — 좌표와 상태 ID · 표적 이름만 다룬다.
 """
@@ -25,8 +30,11 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import io
 import json
+import os
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,7 +45,7 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HOWTO_DIR: Final = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto"
-SCHEMA_NAMES: Final = ("content", "plan", "overrides", "params")
+SCHEMA_NAMES: Final = ("content", "plan", "overrides", "params", "accepted")
 DEFAULT_GUIDE: Final = "lob"
 
 # 쓰기 등급(plan.schema.json 의 `writes`). 사내 1단계는 사슬 전체가 앞의 둘인 상태만 찍는다.
@@ -1218,3 +1226,456 @@ def review_for_work(
     details += [f"예시 {where}" for where in sorted(examples)]
     details += [f"남은 상태 {state_id}" for state_id in run.left]
     return line, details
+
+
+# ------------------------------------------------------------------ 바뀐 자리 검수
+
+# 검수 마친 판(사내 `review/guide/accepted.json`, 점검기 `--accept` 만 쓴다)과 조립 도장
+# (`--work/assembled.json`, 생성기가 조립할 때마다 쓴다)의 파일 이름.
+ACCEPTED_FILE: Final = "accepted.json"
+ASSEMBLED_FILE: Final = "assembled.json"
+# 검수 마친 판의 꼴 번호 — 칸을 바꾸면 올리고 `schema/accepted.schema.json` 의 `form` 도 고친다.
+ACCEPTED_FORM: Final = 1
+# 조립 규칙 판 — 사외가 손으로 1 올린다. 좌표(`t` · `f`)로 잡히지 않는 그리기를 바꿀 때다:
+# 상자 · 틀 식의 코드 숫자(`frame_around` · `Assembler.board` 의 지도 칸 보정 · 나눠 쌓기 갈래),
+# `pct`, 틀 `template.html` 의 상자 그리기. 올리지 않는 것 — PAD · MIN_* · SPLIT_* 같은 틀 상수
+# (바뀌면 `f` 로 잡힌다), 화질 · 출력 폭 상수(CROP_QUALITY · FULL_W · THUMB_WIDTH · SPOT_WIDTH 등 —
+# 좌표와 상관없다). 올리면 다음 회차는 모든 자리를 바뀜으로 본다(`바뀜 전부 조립 규칙`).
+ACCEPT_RULES: Final = 1
+# 표적 자리 · 크기와 자르기 틀이 이 px 를 넘게 움직이면 바뀜이다(사내 첫 두 회차의 `흔들림` 으로
+# 다시 정한다 — 명세 7절 8단계).
+MOVE_TOL_PX: Final = 2
+# 데이터 자리 — 실데이터가 자리나 크기를 정하는 `named:` 표적(첫 부족 칸 · 고칠 칸이 놓인 행 ·
+# 머리 띠 글 폭 · 배지 글 · 행 수나 공정에 따라 높이가 바뀌는 그림 · 표). 원고 자리가 이 가운데
+# 하나라도 쓰면 그 자리는 기준 파일에 좌표 · 틀 · 지문을 적지 않고 회차마다 `바뀜 <자리> 데이터
+# 자리` 로 검수 목록에 든다. 처음에는 확인한 넷(BN_CELL · EDIT_CELL · EDIT_ROW · HEADER_BAND ·
+# SIDEBAR_BADGE)과 후보를 모두 넣었다(더 잡는 쪽). 사외가 합성 시드를 바꿔 다시 찍어 움직이지
+# 않는 후보를 뺀다(확인한 넷은 빼지 않는다).
+DATA_SHAPED: Final = frozenset(
+    {
+        "BN_CELL",
+        "EDIT_CELL",
+        "EDIT_ROW",
+        "HEADER_BAND",
+        "SIDEBAR_BADGE",
+        "GRID",
+        "LAST_GRID",
+        "DETAIL_BN",
+        "KEY_PROCESS_GRID",
+        "LOB_CHART",
+        "LOB_LABEL",
+        "LOB_BN_BARS",
+        "PROC_MONTH_CANVAS",
+    }
+)
+# 흔들림 구간 — 기준과 견준 배치 자리마다 가장 큰 Δ(px)를 센다.
+WOBBLE_BINS: Final = (("0", 0, 0), ("1-2", 1, 2), ("3-9", 3, 9), ("10+", 10, None))
+_VERSION_TEXT: Final = re.compile(r"[a-z][a-z0-9_]*@[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_DATE_TEXT: Final = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+Box = list[int] | None
+
+
+def _fingerprint(value: Any) -> str:
+    """지문 — 정렬한 JSON(공백 없음)의 sha256 앞 12자."""
+    text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def seal(document: Mapping[str, Any]) -> str:
+    """검수 마친 판의 봉인 — `seal` 칸을 뺀 문서의 지문."""
+    return _fingerprint({key: value for key, value in document.items() if key != "seal"})
+
+
+def place_order(content: Mapping[str, Any]) -> list[str]:
+    """원고 자리 — 원고 차례, 겹치지 않게."""
+    return list(dict.fromkeys(where for where, _state in picture_refs(content)))
+
+
+def _place_objects(content: Mapping[str, Any]) -> dict[str, Any]:
+    """자리마다 지문을 뜨는 원고 객체 — 단계 · 과업(`steps` · `map` 빼고) · 지도 · 개념."""
+    objects: dict[str, Any] = {}
+    for task in content["tasks"]:
+        objects[f"thumb:{task['id']}"] = {
+            key: value for key, value in task.items() if key not in ("steps", "map")
+        }
+        if "map" in task:
+            objects[f"map:{task['id']}"] = task["map"]
+        for step in task.get("steps", []):
+            objects[f"step:{task['id']}.{step['id']}"] = step
+    for concept in content["concepts"]:
+        objects[f"concept:{concept['id']}"] = concept
+    return objects
+
+
+def _place_states(content: Mapping[str, Any]) -> dict[str, list[str]]:
+    """자리가 가리키는 상태 — 그림 상태와 표적을 빌려 오는 상태(`from`)."""
+    states: dict[str, list[str]] = {}
+    for where, state in picture_refs(content):
+        states.setdefault(where, [])
+        if state not in states[where]:
+            states[where].append(state)
+    for where, state, _target in _target_refs(content):
+        if state not in states.setdefault(where, []):
+            states[where].append(state)
+    return states
+
+
+def _place_targets(content: Mapping[str, Any]) -> dict[str, list[str]]:
+    """자리가 상자로 가리키는 `표적@상태` — 원고 차례, 겹치지 않게."""
+    keys: dict[str, list[str]] = {}
+    for where, state, target in _target_refs(content):
+        key = f"{target}@{state}"
+        if key not in keys.setdefault(where, []):
+            keys[where].append(key)
+    return keys
+
+
+def _named_names(word: str | Sequence[str]) -> set[str]:
+    """표적 낱말(또는 합집합 목록)이 쓰는 `named:` 이름."""
+    words = [word] if isinstance(word, str) else list(word)
+    return {item[len("named:") :].partition("(")[0] for item in words if item.startswith("named:")}
+
+
+def data_places(skeleton: Skeleton) -> set[str]:
+    """데이터 자리 — `DATA_SHAPED` 표적을 하나라도 쓰는 원고 자리."""
+    planned = {state["id"]: state["targets"] for state in skeleton.plan["states"]}
+    return {
+        where
+        for where, state, target in _target_refs(skeleton.content)
+        if _named_names(planned[state][target]) & DATA_SHAPED
+    }
+
+
+def _clip(rect: Sequence[float], viewport: tuple[int, int]) -> list[int]:
+    """표적 사각형을 화면 안으로 잘라 정수로(`pct` 와 같은 자르기, 틀은 화면 전체)."""
+    x0, y0 = max(rect[0], 0.0), max(rect[1], 0.0)
+    x1, y1 = min(rect[0] + rect[2], viewport[0]), min(rect[1] + rect[3], viewport[1])
+    return [round(x0), round(y0), round(max(0.0, x1 - x0)), round(max(0.0, y1 - y0))]
+
+
+def _plan_print(skeleton: Skeleton, states: Iterable[str]) -> str:
+    """촬영 동작 지문 — 그 상태들의 `from` 사슬 정의(뿌리까지, `note` 만 빼고 `look` 은 넣는다)와
+    계획의 `viewport` · `mask`. 매개값을 얹기 전의 계획으로 뜬다."""
+    links: dict[str, Any] = {}
+    for state_id in states:
+        for link in skeleton.chain(state_id):
+            links[link] = {
+                key: value for key, value in skeleton.state(link).items() if key != "note"
+            }
+    return _fingerprint(
+        {"states": links, "viewport": skeleton.plan["viewport"], "mask": skeleton.plan["mask"]}
+    )
+
+
+def place_geometry(
+    skeleton: Skeleton, content: Mapping[str, Any], shots: ShotSet
+) -> dict[str, dict[str, Any]]:
+    """원고 자리마다 지금 촬영의 기록 — `f` 자르기 틀(조각마다, 그림 없는 조각은 None) · `t`
+    표적(`표적@상태` → 화면 안으로 자른 정수 `[x, y, w, h]`, 못 찾았으면 None) · `sk` 원고 지문 ·
+    `tx` 덮어쓴 원고 지문 · `pl` 촬영 동작 지문. 좌표 · ID · 지문만 담는다(그림 · 화면 글자 ·
+    매개값의 값은 읽지 않는다). `content` 는 덮어쓰기를 얹은 원고다."""
+    assembler = Assembler(shots, pictures=False)
+    for task in content["tasks"]:
+        assembler.task(task)
+    for concept in content["concepts"]:
+        assembler.concept(concept)
+    script = _place_objects(skeleton.content)
+    written = _place_objects(content)
+    states = _place_states(skeleton.content)
+    targets = _place_targets(skeleton.content)
+    records: dict[str, dict[str, Any]] = {}
+    for where in place_order(skeleton.content):
+        boxes: dict[str, Box] = {}
+        for key in targets.get(where, []):
+            name, _, state_id = key.partition("@")
+            rect = assembler.target(state_id, name)
+            boxes[key] = _clip(rect, shots.viewport) if rect else None
+        records[where] = {
+            "f": list(assembler.frames.get(where, [])),
+            "t": boxes,
+            "sk": _fingerprint(script[where]),
+            "tx": _fingerprint(written.get(where, script[where])),
+            "pl": _plan_print(skeleton, states[where]),
+        }
+    return records
+
+
+def compared_places(content: Mapping[str, Any], shots: ShotSet) -> list[str]:
+    """견줄 자리(N) — 가리키는 상태가 모두 찍혔고 예시로 대신하지 않은 자리(원고 차례)."""
+
+    def real(state_id: str) -> bool:
+        return shots.ok(state_id) and not shots.states[state_id].substitute
+
+    states = _place_states(content)
+    return [where for where in place_order(content) if all(map(real, states[where]))]
+
+
+def load_accepted(path: Path, howto: Path = HOWTO_DIR) -> tuple[dict[str, Any] | None, str]:
+    """검수 마친 판을 읽는다 — (문서, "") 또는 (None, 까닭). 까닭은 `없음` · `버림 — <종류>` 이고,
+    못 읽어도 예외를 내지 않는다(기준 파일 문제로 멈추지 않는다 — 리뷰 칸은 `바뀜 na`)."""
+    try:
+        if not path.exists():
+            return None, "없음"
+        document = load_json(path)
+    except (OSError, ValueError) as exc:
+        return None, f"버림 — {type(exc).__name__}"
+    if schema_errors(document, "accepted", howto) or not (
+        _VERSION_TEXT.fullmatch(document["skeleton"]) and _DATE_TEXT.fullmatch(document["date"])
+    ):
+        return None, "버림 — 형식"
+    if document["seal"] != seal(document):
+        return None, "버림 — 봉인"
+    return document, ""
+
+
+@dataclass
+class ChangeReport:
+    """검수 마친 판과 견준 결과 — 자리 ID · 까닭 낱말 · 수만 담는다.
+
+    `baseline` 이 None 이면 기준이 없거나 버렸다(`problem` 이 까닭). `whole` 은 모든 자리를
+    바뀜으로 보는 까닭(`그림 크기` · `조립 규칙`)이다. `records` 는 견준 자리 가운데 데이터 자리가
+    아닌 자리의 지금 기록이다(`--accept` 가 쓴다)."""
+
+    order: list[str]
+    data: set[str]
+    compared: list[str]
+    records: dict[str, dict[str, Any]]
+    baseline: dict[str, Any] | None = None
+    problem: str = ""
+    whole: list[str] = field(default_factory=list)
+    changed: list[tuple[str, list[str]]] = field(default_factory=list)
+    wobble: list[int] = field(default_factory=lambda: [0] * len(WOBBLE_BINS))
+
+    @property
+    def count(self) -> int:
+        """n — 바뀜 · 새 자리 · 데이터 자리(모두 바뀜이면 N)."""
+        return len(self.compared) if self.whole else len(self.changed)
+
+    @property
+    def cell(self) -> str:
+        """리뷰 한 줄의 칸 — `바뀜 n/N` 또는 `바뀜 na`."""
+        if self.baseline is None:
+            return "바뀜 na"
+        return f"바뀜 {self.count}/{len(self.compared)}"
+
+    def lines(self) -> list[str]:
+        """stderr 줄(앞 두 칸은 붙이지 않는다) — 기준 → 흔들림 → 바뀜. ID · 수 · 고정 낱말만."""
+        if self.baseline is None:
+            return [f"기준 {self.problem} — 모든 자리"]
+        head = (
+            f"기준 {compact_version(self.baseline['skeleton'])} · {self.baseline['date']} · "
+            f"{len(self.baseline['places'])}자리"
+        )
+        if self.whole:
+            return [head, *[f"바뀜 전부 {why}" for why in self.whole]]
+        wobble = " ".join(
+            f"{label}:{count}"
+            for (label, _low, _high), count in zip(WOBBLE_BINS, self.wobble, strict=True)
+        )
+        return [
+            head,
+            f"흔들림 {wobble}",
+            *[f"바뀜 {where} {' · '.join(reasons)}" for where, reasons in self.changed],
+        ]
+
+
+def _delta(before: Sequence[int], after: Sequence[int]) -> int:
+    return max(abs(int(a) - int(b)) for a, b in zip(before, after, strict=True))
+
+
+def _place_reasons(
+    before: Mapping[str, Any], now: Mapping[str, Any]
+) -> tuple[list[str], int | None]:
+    """배치 자리 하나의 (까닭 낱말, 가장 큰 Δ — 조각 수가 다르면 None)."""
+    reasons: list[str] = []
+    deltas: list[int] = []
+    for key, box in now["t"].items():
+        if key not in before["t"]:
+            continue  # 원고가 바뀌어 생긴 표적 — `원고` 가 잡는다
+        old = before["t"][key]
+        if old is None and box is not None:
+            reasons.append(f"찾음 {key}")
+        elif old is not None and box is None:
+            reasons.append(f"잃음 {key}")
+        elif old is not None and box is not None:
+            deltas.append(_delta(old, box))
+            if deltas[-1] > MOVE_TOL_PX:
+                reasons.append(f"상자 {key}")
+    same_count = len(before["f"]) == len(now["f"])
+    moved = not same_count
+    if same_count:
+        for old, box in zip(before["f"], now["f"], strict=True):
+            if (old is None) != (box is None):
+                moved = True
+            elif old is not None and box is not None:
+                deltas.append(_delta(old, box))
+                moved = moved or deltas[-1] > MOVE_TOL_PX
+    if moved:
+        reasons.append("틀")
+    if before["pl"] != now["pl"]:
+        reasons.append("계획")
+    if before["sk"] != now["sk"]:
+        reasons.append("원고")
+    elif before["tx"] != now["tx"]:
+        reasons.append("덮어씀")
+    return reasons, (max(deltas, default=0) if same_count else None)
+
+
+def compare_accepted(
+    skeleton: Skeleton,
+    content: Mapping[str, Any],
+    shots: ShotSet,
+    accepted: tuple[dict[str, Any] | None, str],
+) -> ChangeReport:
+    """지금 촬영을 검수 마친 판(`load_accepted` 의 결과)과 견준다. 모드가 다른 판은 버린다.
+    판(`skeleton`)이 달라도 자리 ID 로 그대로 견준다."""
+    data = data_places(skeleton)
+    compared = compared_places(skeleton.content, shots)
+    records = place_geometry(skeleton, content, shots)
+    report = ChangeReport(
+        order=place_order(skeleton.content),
+        data=data,
+        compared=compared,
+        records={where: records[where] for where in compared if where not in data},
+    )
+    baseline, problem = accepted
+    if baseline is not None and baseline["mode"] != shots.mode:
+        baseline, problem = None, "버림 — 모드"
+    report.baseline, report.problem = baseline, problem
+    if baseline is None:
+        return report
+    if list(baseline["viewport"]) != list(shots.viewport) or float(baseline["scale"]) != float(
+        shots.scale
+    ):
+        report.whole.append("그림 크기")
+    if baseline["rules"] != ACCEPT_RULES:
+        report.whole.append("조립 규칙")
+    if report.whole:
+        return report
+    for where in compared:
+        if where in data:
+            report.changed.append((where, ["데이터 자리"]))
+            continue
+        before = baseline["places"].get(where)
+        if before is None:
+            report.changed.append((where, ["새 자리"]))
+            continue
+        reasons, delta = _place_reasons(before, report.records[where])
+        if delta is not None:
+            for index, (_label, low, high) in enumerate(WOBBLE_BINS):
+                if delta >= low and (high is None or delta <= high):
+                    report.wobble[index] += 1
+        if reasons:
+            report.changed.append((where, reasons))
+    return report
+
+
+def merge_accepted(report: ChangeReport) -> dict[str, dict[str, Any]]:
+    """새로 쓸 `places` — 이번에 바뀜 · 새 자리로 찍힌 자리만 지금 값으로 바꾸고, 문턱 안의 자리와
+    견주지 않은 자리(예시 · 그림 없음)는 앞 값을 둔다. 데이터 자리와 지금 원고에 없는 자리는 버린다.
+    기준이 없거나 버렸거나 모든 자리가 바뀜이면(그림 크기 · 조립 규칙) 지금 값으로 새로 쓴다."""
+    if report.baseline is None or report.whole:
+        return {where: report.records[where] for where in report.order if where in report.records}
+    changed = {where for where, _reasons in report.changed}
+    before: Mapping[str, Any] = report.baseline["places"]
+    places: dict[str, dict[str, Any]] = {}
+    for where in report.order:
+        if where in report.data:
+            continue
+        if where in report.records and (where in changed or where not in before):
+            places[where] = report.records[where]
+        elif where in before:
+            places[where] = before[where]
+    return places
+
+
+def accepted_key_problems(skeleton: Skeleton, document: Mapping[str, Any]) -> list[str]:
+    """쓰기 전에 본다 — 자리 키가 지금 원고의 자리이고 데이터 자리가 아니며, 표적 키가 그 자리가
+    가리키는 `표적@상태` 인가. 어긋난 키(원고 · 계획 ID)만 돌려준다."""
+    targets = _place_targets(skeleton.content)
+    data = data_places(skeleton)
+    problems: list[str] = []
+    for where, record in document["places"].items():
+        if where not in targets or where in data:
+            problems.append(where)
+        problems += [key for key in record["t"] if key not in targets.get(where, [])]
+    return problems
+
+
+def accepted_record(
+    skeleton: Skeleton,
+    report: ChangeReport,
+    shots: ShotSet,
+    *,
+    date: str,
+    howto: Path = HOWTO_DIR,
+) -> dict[str, Any]:
+    """새로 쓸 검수 마친 판(봉인까지). 앞 판에서 가져온 자리가 지금 원고와 어긋나면 그 자리를 버린다
+    (다음 회차는 `새 자리`). 형식 · 키가 어긋나면 `ValueError` — 쓰지 않는다."""
+    places = merge_accepted(report)
+    targets = _place_targets(skeleton.content)
+    for where in list(places):
+        if set(places[where]["t"]) != set(targets.get(where, [])):
+            if where in report.records:
+                places[where] = report.records[where]
+            else:
+                del places[where]
+    document: dict[str, Any] = {
+        "form": ACCEPTED_FORM,
+        "rules": ACCEPT_RULES,
+        "skeleton": skeleton.version,
+        "mode": shots.mode,
+        "date": date,
+        "viewport": list(shots.viewport),
+        "scale": shots.scale,
+        "places": places,
+    }
+    document["seal"] = seal(document)
+    if schema_errors(document, "accepted", howto) or accepted_key_problems(skeleton, document):
+        raise ValueError(ACCEPTED_FILE)
+    return document
+
+
+def save_accepted(path: Path, document: Mapping[str, Any]) -> None:
+    """검수 마친 판을 원자적으로 쓴다 — 옆 `.tmp` 에 쓰고 `os.replace`. 실패하면 `.tmp` 를 걷고
+    예외를 그대로 낸다(옛 파일은 그대로다)."""
+    temporary = path.with_name(path.name + ".tmp")
+    text = json.dumps(document, ensure_ascii=False, indent=1) + "\n"
+    try:
+        temporary.write_bytes(text.encode("utf-8"))
+        os.replace(temporary, path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def assembly_stamp(
+    work: Path, content: Mapping[str, Any], plan: Mapping[str, Any]
+) -> dict[str, str]:
+    """조립 도장 — `shots.json` 바이트 · 덮어쓴 원고 · 계획의 지문. 조립한 뒤 이것들이 바뀌었으면
+    `--accept` 가 거절한다(검수한 것이 조립한 것이 아니다)."""
+    shots_digest = hashlib.sha256((work / SHOTS_FILE).read_bytes()).hexdigest()[:12]
+    return {"shots": shots_digest, "content": _fingerprint(content), "plan": _fingerprint(plan)}
+
+
+def save_assembly_stamp(work: Path, stamp: Mapping[str, str]) -> None:
+    """조립 도장을 쓴다. 옛 도장을 먼저 걷는다 — 쓰다 실패해도 옛 도장이 남아 맞아 보이지 않게."""
+    path = work / ASSEMBLED_FILE
+    path.unlink(missing_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_bytes((json.dumps(dict(stamp), ensure_ascii=False) + "\n").encode("utf-8"))
+    os.replace(temporary, path)
+
+
+def load_assembly_stamp(work: Path) -> dict[str, str] | None:
+    """조립 도장 — 없거나 꼴이 아니면 None(`조립 기록 없음`)."""
+    try:
+        stamp = load_json(work / ASSEMBLED_FILE)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(stamp, dict) or set(stamp) != {"shots", "content", "plan"}:
+        return None
+    if not all(isinstance(value, str) for value in stamp.values()):
+        return None
+    return {str(key): str(value) for key, value in stamp.items()}
