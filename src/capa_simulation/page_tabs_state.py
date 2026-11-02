@@ -14,6 +14,8 @@
   (`navigation.runtime_specs` — `valid_tabs`·`spec_for_path`)이다.
 - **고정.** HOME 은 고정 탭으로 시작한다. 어느 탭이든 고정·고정 풀기가 되고, 고정 탭은 왼쪽에
   모이며 닫기가 없다. 고정을 풀면 닫을 수 있다. 마지막 남은 탭 하나는 닫지 않는다.
+- **차례.** 고정하지 않은 탭은 끌어서(키보드는 `Ctrl+Shift+←/→`) 차례를 바꾼다(`moved`,
+  2026-11-02 사용자 요청). 고정 탭은 움직이지 않고, 고정하지 않은 탭은 고정 묶음 앞으로 가지 못한다.
 - **상한 10개.** 열린 탭이 10개일 때 목록에 없는 화면은 열지 않고 탭 줄에 「안 쓰는 탭을 닫아
   주세요」를 띄운다. 막는 자리는 옮기기 **전**이다 — 사이드바·본문 화면 링크는 탭 줄 JS 가,
   화면을 옮기는 파이썬 도우미(HOME 칸·공정 Capa 상세의 다음 화면 단추)는 `refused_at_tab_limit`
@@ -27,7 +29,9 @@
   화면의 보기 조건은 지우지 않는다 — 다시 열면 이어진다.
 
 콜백(`components/page_tabs.py`)은 목록 칸과 이동 대기 칸만 적는다. `st.switch_page` 는 회차 본문
-(`app.py` 의 `st.navigation()` 바로 뒤)에서 부른다(AGENTS 9장 「팝업과 콜백」).
+(`app.py` 의 `st.navigation()` 바로 뒤)에서 부른다(AGENTS 9장 「팝업과 콜백」). 화면을 옮기지 않는
+누름(고정·차례·다른 탭 닫기)은 목록만 바꾸므로 페이지를 다시 돌리지 않는다(같은 9장 「여닫을 때
+본문을 다시 돌리지 않는다」).
 """
 
 from __future__ import annotations
@@ -177,6 +181,23 @@ def pinned_to(strip: TabStrip, path: str, pinned: bool) -> TabStrip:
     return normalized(TabStrip(strip.paths, marks))
 
 
+def moved(strip: TabStrip, path: str, before: str | None) -> TabStrip:
+    """고정하지 않은 탭 `path` 를 `before` 탭 앞으로 옮긴다(끌어서 차례 바꾸기 — 2026-11-02).
+
+    `before` 가 None 이거나 목록에 없으면(그 사이 닫혔다) 끝으로 간다. 고정 탭·없는 탭은 옮기지
+    않는다. 고정 탭은 늘 왼쪽 묶음에 그대로 있다 — `before` 가 고정 탭이어도 `normalized` 가 고정
+    묶음을 다시 앞에 모아 `path` 는 고정하지 않은 묶음의 맨 앞이 된다. 탭 줄 JS 의
+    `movedOrder`(`<tabs-order>`)와 같은 규칙이다(`tests/test_page_tabs_assets.py` 가 맞댄다).
+    `before` 를 위치 번호가 아니라 탭 id 로 받는 것은 그 사이 닫힘·새 탭에도 뜻이 남게 하려는
+    것이다.
+    """
+    if path not in strip.paths or path in strip.pinned or path == before:
+        return strip
+    rest = [other for other in strip.paths if other != path]
+    rest.insert(rest.index(before) if before in rest else len(rest), path)
+    return normalized(TabStrip(tuple(rest), strip.pinned))
+
+
 def fallback_tab(strip: TabStrip, previous: str | None) -> str:
     """상한에 걸린 이동을 되돌릴 탭 — 직전 화면이 목록에 있으면 그것, 아니면 맨 앞 탭."""
     if previous is not None and previous in strip.paths:
@@ -216,6 +237,16 @@ def store_strip(strip: TabStrip) -> None:
     st.session_state[PAGE_TABS_PINNED_KEY] = tuple(
         path for path in strip.paths if path in strip.pinned
     )
+    st.session_state[PAGE_TABS_EPOCH_KEY] = tabs_epoch() + 1
+
+
+def resync_strip() -> None:
+    """목록은 그대로 두고 epoch 만 올린다 — 탭 줄 JS 가 그린 차례가 서버 목록과 어긋난 때.
+
+    부품 함수는 data 가 바뀔 때만 다시 불리므로, 서버가 그 누름을 받지 않아 목록이 그대로면(그 사이
+    목록이 바뀌었다) 다음 앱 전체 회차의 data 도 그대로라 JS 의 그림이 어긋난 채 남는다. epoch 를
+    올리면 data 가 달라져 JS 가 서버 목록으로 다시 그린다.
+    """
     st.session_state[PAGE_TABS_EPOCH_KEY] = tabs_epoch() + 1
 
 

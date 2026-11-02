@@ -1757,6 +1757,8 @@ NEW_ITEM_KEYS = [
     "space_zone_fields",
     # 2026-10-27 — 가용설비 현황 셋째 탭 「Preference」(입력 비가동 대수, 설비 0032).
     "equipment_preference",
+    # 2026-11-02 사용자 요청 — 화면 탭 줄 틀(스크롤에 움직이지 않음)·고정(페이지 그대로)·끌기.
+    "page_tabs_frame",
 ]
 
 
@@ -3368,6 +3370,164 @@ def test_the_page_tab_line_counts_only(
     opened: list[dict[str, bool]], back_home: bool, closed: list[dict[str, bool]], verdict: str
 ) -> None:
     assert screens.summarize_page_tabs(opened, back_home, closed) == verdict
+
+
+class _StripTab:
+    """탭 줄의 `li` 하나 — 닫으면 탭 줄 JS 처럼 숨기기만 한다(다음 앱 전체 회차까지 DOM 에
+    남는다)."""
+
+    def __init__(self, tab_id: str, *, pinned: bool = False, active: bool = False) -> None:
+        self.tab_id = tab_id
+        self.pinned = pinned
+        self.active = active
+        self.hidden = False
+        self.touched_hidden = False
+
+
+class _StripPart:
+    """탭(`li`) 또는 그 안 단추의 로케이터. 숨은 탭을 누르거나 올라서면 Playwright 처럼 시간이
+    다 된다."""
+
+    def __init__(self, tab: _StripTab, part: str | None = None) -> None:
+        self.tab = tab
+        self.part = part
+
+    def _reach(self) -> None:
+        if self.tab.hidden:
+            self.tab.touched_hidden = True
+            raise TimeoutError("Locator.hover: Timeout 30000ms exceeded.")
+
+    def hover(self) -> None:
+        self._reach()
+
+    def locator(self, part: str) -> _StripPart:
+        return _StripPart(self.tab, part)
+
+    def click(self) -> None:
+        self._reach()
+        if self.part == ".capa-tabs-x":
+            self.tab.hidden = True
+
+
+class _StripPage:
+    """그림자 DOM 탭 줄을 가진 페이지 대역. 로케이터는 두 꼴(숨김 포함 · 숨김 뺌)만 안다."""
+
+    def __init__(self, tabs: list[_StripTab]) -> None:
+        self.tabs = tabs
+        self.selectors: list[str] = []
+
+    def visible(self) -> list[_StripTab]:
+        return [tab for tab in self.tabs if not tab.hidden]
+
+    def evaluate(self, script: str, arg: object = None) -> Any:
+        if script == screens._PAGE_TABS_JS:
+            # 탭 줄 JS 와 같은 셈 — 숨긴 탭은 뺀다.
+            return [
+                {
+                    "active": tab.active,
+                    "closable": not tab.pinned and len(self.visible()) > 1,
+                    "pinned": tab.pinned,
+                }
+                for tab in self.visible()
+            ]
+        if script == screens._RUNNING_JS:
+            return False
+        raise AssertionError(f"모르는 스크립트: {script[:40]}")
+
+    def locator(self, selector: str) -> SimpleNamespace:
+        self.selectors.append(selector)
+        every = f".st-key-{screens.PAGE_TABS_KEY} .capa-tabs-item"
+        if selector == every:
+            found = list(self.tabs)
+        elif selector == every + ":not([hidden])":
+            found = self.visible()
+        else:
+            raise AssertionError(f"모르는 선택자: {selector}")
+        return SimpleNamespace(nth=lambda index: _StripPart(found[index]))
+
+
+class _StripScreen(Screen):
+    def __init__(self, page: _StripPage) -> None:
+        super().__init__(page=page, base_url="http://127.0.0.1:8559/")
+
+    def wait_idle(self, timeout: float = 90.0) -> None:
+        return None
+
+
+def test_tab_presses_pick_the_visible_tab_that_page_tabs_counted() -> None:
+    """지금 탭이 아닌 탭을 닫으면 탭 줄 JS 가 그 탭을 숨기고 서버는 빈 프래그먼트만 다시 돌린다 —
+    다음 앱 전체 회차까지 숨은 `li` 가 DOM 에 남는다. `page_tabs()` 는 숨긴 탭을 빼고 세므로
+    `tab_item` 도 같이 세야 한다. 숨긴 탭까지 세면 둘째 닫기부터 숨은 탭을 집어 `hover` 가 30초
+    기다리다 끝나 page_tabs · page_tabs_frame 이 탭 여럿에서 미기록이었다(2026-11-02 반박 검토)."""
+    tabs = [
+        _StripTab("home", pinned=True, active=True),
+        _StripTab("process_capa_detail"),
+        _StripTab("available_equipment_status"),
+        _StripTab("space_status"),
+        _StripTab("voc"),
+    ]
+    page = _StripPage(tabs)
+    screen = _StripScreen(page)
+
+    # check_page_tabs · check_page_tabs_frame 이 앞 항목들이 남긴 탭을 닫는 고리 그대로.
+    closed = 0
+    for _ in range(screens.PAGE_TABS_MAX):
+        if not screens._close_first_closable_tab(screen):
+            break
+        closed += 1
+
+    assert closed == 4
+    assert [tab.tab_id for tab in page.visible()] == ["home"]
+    assert not any(tab.touched_hidden for tab in tabs)
+    # 숨은 탭이 앞에 남아도 `tab_item(1)` 은 보이는 둘째 탭이다(page_tabs_frame 의 고정 · 끌기).
+    gone, kept = _StripTab("process_capa_detail"), _StripTab("voc")
+    gone.hidden = True
+    other = _StripScreen(_StripPage([_StripTab("home", pinned=True, active=True), gone, kept]))
+    other.tab_item(1).locator(".capa-tabs-pin").click()
+    assert other.tab_item(1).tab is kept
+    assert not gone.touched_hidden
+
+
+@pytest.mark.parametrize(
+    ("tops", "progress", "moved", "kept", "verdict"),
+    [
+        (
+            [{"y": 0, "top": 52.5}, {"y": 60, "top": 52.5}],
+            [False, False],
+            True,
+            True,
+            "스크롤 탭 줄 이동 0px · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 주소 그대로"
+            " — 정한 동작과 같음",
+        ),
+        (
+            # 바탕 3aad85d — 스크롤 0 에서 56px, 내리면 52.5px. 고정마다 HOME 이 다시 돈다.
+            [{"y": 0, "top": 56}, {"y": 60, "top": 52.5}],
+            [True, True],
+            False,
+            True,
+            "스크롤 탭 줄 이동 3.5px · 고정 진행 막대 2/2 · 끌어 옮김 안 됨 · 주소 그대로"
+            " — 정한 동작과 다름",
+        ),
+        (
+            [{"y": 0, "top": 52.5}, {"y": 0, "top": 52.5}],
+            [False, None],
+            True,
+            False,
+            "스크롤 탭 줄 이동 스크롤 안 됨 · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 주소 바뀜"
+            " — 정한 동작과 다름",
+        ),
+    ],
+)
+def test_the_tab_strip_frame_line_counts_only(
+    tops: list[dict[str, float]],
+    progress: list[bool | None],
+    moved: bool,
+    kept: bool,
+    verdict: str,
+) -> None:
+    """탭 줄 틀(2026-11-02 사용자 요청) — 스크롤해도 탭 줄이 움직이지 않고(0px), 고정이 페이지를
+    다시 돌리지 않으며(HOME 진행 막대 0), 끌어 옮겨도 화면은 그대로다."""
+    assert screens.summarize_page_tabs_frame(tops, progress, moved, kept) == verdict
 
 
 # ------------------------------------------------------------------ 제약 시뮬레이션

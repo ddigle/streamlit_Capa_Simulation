@@ -260,14 +260,15 @@ def build_sidebar_stylesheet(
         # 자리다 — 브라우저에서 재니 2.25rem 에서 제목 줄상자가 띠 안으로 8.8px 들어가고 2.75rem
         # 에서도 1.3px 겹친다. 3rem 이 글자 윗선과 띠 사이에 12px 을 남기는 최소값이다. 좌우만
         # 줄인다 — 표와 차트가 가로로 길어 0.25rem 을 덜어도 읽는 데 지장이 없고, 사이드바를 좁힌
-        # 만큼 본문이 그 폭을 가져간다.
-        """
+        # 만큼 본문이 그 폭을 가져간다. 위 여백 값은 화면 탭 줄의 제자리를 sticky 자리에 맞추는 계산
+        # (`tokens.PAGE_TABS_LIFT_REM`)과 한 벌이다.
+        f"""
         <style>
-        [data-testid="stMainBlockContainer"] {
+        [data-testid="stMainBlockContainer"] {{
             padding-left: 1.25rem !important;
             padding-right: 1.25rem !important;
-            padding-top: 3rem !important;
-        }
+            padding-top: {tokens.rem(tokens.MAIN_TOP_PADDING_REM)} !important;
+        }}
 """
         # 「돌아오는 자리」는 그라데이션 테두리가 말하고 글자는 그 위에 한 단계만 올라선다. 상자
         # 머리글(1rem)의 1.38배다. **`a` 와 `a p` 를 함께 적는다** — 요약 줄과 같은 이유로, 안쪽

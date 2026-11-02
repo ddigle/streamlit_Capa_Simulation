@@ -817,6 +817,25 @@ FONT_FAMILY_DISPLAY: Final = "CapaDisplay, " + FONT_FAMILY
 # 증감(+-) 표기는 화면 어디에서나 이 한 크기를 쓴다. 표 칸 12, 막대 13, 세부수량 10 으로
 # 갈려 있던 탓에 같은 뜻의 글자가 자리마다 달라 보였다.
 DELTA_FONT_SIZE_PX: Final = 12
+# --------------------------------------------------------------------- 화면 틀 세로 치수(rem)
+# 머리 띠 높이 — 화면 탭 줄이 붙는 sticky 자리다(`app_header.SHELL_STYLE`).
+HEADER_BAND_REM: Final = 3.75
+# 본문 위 여백(`sidebar_style` 의 `stMainBlockContainer`) — 겹쳐 있는 머리 띠를 피하는 자리다.
+MAIN_TOP_PADDING_REM: Final = 3.0
+# Streamlit 1.63 본문 세로 블록의 요소 간격. 탭 줄 앞에는 늘 높이 0 인 테마 단추 iframe 한 칸이
+# 서서, 탭 줄의 제자리(스크롤 0)는 본문 위 여백 + 이 간격이다. 그 제자리가 sticky 자리보다 아래면
+# 스크롤을 처음 내리는 동안 탭 줄이 그 차이만큼 따라 올라갔다 붙었다(2026-11-02 사용자 요청 —
+# 스크롤을 내릴 때 틀이 살짝 움직였다). `app_header` 가 탭 줄을 그 차이만큼 끌어올려 둘을
+# 맞춘다(`PAGE_TABS_LIFT_REM`).
+BLOCK_GAP_REM: Final = 1.0
+PAGE_TABS_LIFT_REM: Final = HEADER_BAND_REM - MAIN_TOP_PADDING_REM - BLOCK_GAP_REM
+
+
+def rem(value: float) -> str:
+    """CSS 길이 글자(`3.0` → `3rem`, `-0.25` → `-0.25rem`)."""
+    return f"{value:g}rem"
+
+
 # --------------------------------------------------------------------- 표 치수
 TABLE_HEADER_HEIGHT_PX: Final = 36
 TABLE_ROW_HEIGHT_PX: Final = 27

@@ -91,9 +91,51 @@
   border-bottom: none;
   border-radius: 0.5rem 0.5rem 0 0;
   color: color-mix(in srgb, var(--st-text-color) 72%, transparent);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .capa-tabs-item[hidden] {
+  display: none;
+}
+
+/* 끄는 탭(`<tabs-drag>`)은 포인터를 따라가며(JS 의 `translateX`) 다른 탭 위에 불투명하게 떠 보인다. 놓을 자리는 세로
+   막대(`.capa-tabs-drop`)가 말한다. 지금 탭이면 위쪽 강조 선은 남긴다. 끄는 동안은 가리킬 때만 뜨는 핀을 숨긴다 — 끄는 탭
+   이름을 덮었다(사본 브라우저). */
+.capa-tabs-item.is-dragging {
+  z-index: 3;
+  background: var(--st-background-color);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--st-text-color) 18%, transparent);
+}
+
+.capa-tabs.is-dragging .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.capa-tabs-item.is-active.is-dragging {
+  box-shadow: inset 0 2px 0 var(--st-primary-color), 0 2px 8px color-mix(in srgb, var(--st-text-color) 18%, transparent);
+}
+
+.capa-tabs.is-dragging,
+.capa-tabs.is-dragging .capa-tabs-tab {
+  cursor: grabbing;
+}
+
+.capa-tabs-drop {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.25rem;
+  z-index: 4;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--st-primary-color);
+  pointer-events: none;
+}
+
+.capa-tabs-drop[hidden] {
   display: none;
 }
 
