@@ -591,6 +591,10 @@ odd==1.0 ; platform_machine == 'x86_64'
         ("import yaml_not_installed_x\n", {("M09", "error")}),
         ("import tomllib\n", {("M09", "error")}),
         ("import toml\n", {("M09", "warning")}),
+        # numpy 는 코어 직접 의존(`pyproject.toml`)이라 경고가 없다. 전이 의존 둘은 그대로 경고.
+        ("import numpy as np\n", set()),
+        ("import pyarrow\n", {("M09", "warning")}),
+        ("from PIL import Image\n", {("M09", "warning")}),
     ],
 )
 def test_m09_with_the_real_requirements(

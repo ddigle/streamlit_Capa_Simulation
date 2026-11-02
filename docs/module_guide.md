@@ -663,14 +663,14 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 
 - 표준 라이브러리. 단 `tomllib` 은 Python 3.10 에 없다.
 - `streamlit`.
-- `requirements.txt` 의 **직접 의존** — `# via capa-simulation` 이 붙은 이름(pandas · plotly · altair · duckdb · pydantic 등).
-  **`numpy` 는 여기에 들지 않는다** — pandas · streamlit 이 끌어온 전이 의존이다(아래 「경고」).
+- `requirements.txt` 의 **직접 의존** — `# via capa-simulation` 이 붙은 이름(pandas · numpy · plotly · altair · duckdb · pydantic 등).
+  `numpy` 도 여기에 든다 — 코어가 직접 쓰는 의존이라 코어가 판을 지킨다(2026-11-02 부터).
 
 경고가 나는 것:
 
-- **전이 의존**(`numpy` · `pyarrow` · `PIL`(pillow) · `toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다.
-  `import numpy` 도 「직접 의존 아님」 경고(M09)다. 경고는 「통과」 를 막지 않는다 — 그대로 써도 점검은 통과한다. 오래 쓸 것이면
-  요청해서 직접 의존으로 올린다(위 「요청하는 길」 — 판은 `requirements.txt` 에 적힌 판, 예: `demo_memo: numpy==<그 판> 배열 계산`).
+- **전이 의존**(`pyarrow` · `PIL`(pillow) · `toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다.
+  `import pyarrow` · `import PIL` 은 「직접 의존 아님」 경고(M09)다. 경고는 「통과」 를 막지 않는다 — 그대로 써도 점검은 통과한다. 오래
+  쓸 것이면 요청해서 직접 의존으로 올린다(위 「요청하는 길」 — 판은 `requirements.txt` 에 적힌 판, 예: `demo_memo: pyarrow==<그 판> parquet 읽기`).
 - `requirements-company.txt` 에만 있는 사내 전용 패키지(`bigdataquery`)는 모듈이 써도 된다(2026-11-01 앱 관리자 결정). 점검은 경고(M09)라
   「통과」 를 막지 않는다. 다만 배포 서버 설치는 보장되지 않는다 — 배포 서버에 없으면 그 화면만 import 오류가 난다.
 
@@ -1020,7 +1020,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | M08 | 키 접두 — `key=` 의 글자(또는 f-문자열의 앞 상수), `st.session_state[…]` · `.get` · `.pop` · `.setdefault` · `in st.session_state` · 속성 접근, `st.query_params[…]` 의 글자가 `mod_<id>__` 로 시작하지 않음. `ctx.key(…)` 호출과 판정할 수 없는 읽기 식은 넘긴다 | 오류 |
 | M08 | 세션 전역 조작 — `st.session_state.clear()` · `.popitem()` · `.update(…)`, `del st.session_state[…]` 의 키가 접두 있는 글자 상수나 `ctx.key(…)` 호출이 아님(변수 · 반복 포함) | 오류 |
 | M09 | 패키지 — 최상위 import 이름이 표준 라이브러리 · `streamlit` · `capa_simulation.module_api` · 자기 `modules.<id>` 가 아니면 그 배포 이름이 `requirements.txt` 에 고정돼 있어야 한다. 없으면 오류(「사외 요청」 안내). 설치되지 않은 이름도 오류. 3.10 에 없는 모듈(`tomllib`)도 오류. 줄 끝 환경 표지가 Linux 에서 거짓이면 오류 「CD(Linux)에 설치되지 않음」. 따질 수 없는 표지는 경고 | 오류 |
-| M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음 | 경고 |
+| M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `pyarrow` · `PIL`(pillow) · `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음 | 경고 |
 | M10 | 배경 실행 — `threading` · `_thread` · `multiprocessing` · `concurrent.futures` · `subprocess` import, `os.system` · `os.popen` · `os.fork` · `os.forkpty` · `os.spawn*` · `os.posix_spawn*` · `os.exec*` · `os.abort` · `signal` · `sys.exit` · `os._exit` · `exit()` · `quit()` | 오류 |
 | M10 | `asyncio`, `st.fragment(run_every=…)`, `argparse` · `click` · `typer` · `fire` import | 경고 |
 | M11 | 프로세스 전역 상태 — `os.environ` 쓰기 · `os.putenv` · `os.unsetenv` · `os.chdir` · `os.fchdir`, `sys.path` 바꾸기, `sys.modules` 바꾸기, `builtins.<이름> =`, `sys.excepthook =` · `threading.excepthook =`, `sys.setrecursionlimit` · `sys.settrace` · `sys.setprofile`, `gc.disable` · `gc.set_threshold` · `gc.freeze`, `socket.setdefaulttimeout`, `locale.setlocale`, `pd.set_option` · `pandas.set_option` · `pd.reset_option` · `pd.options.<…> =`(`pd.option_context` 는 허용), `np.seterr` · `np.set_printoptions`, `plotly.io.templates.default =` · `pio.renderers.default =` · `px.defaults.<…> =`(plotly express 기본값), `alt.themes.enable` · `alt.theme.enable` · `alt.data_transformers.enable` · `alt.data_transformers.disable_max_rows`, `matplotlib.use` · `matplotlib.rcParams[…] =` · `rcParams.update` · `plt.style.use`, `logging.basicConfig` · 뿌리 로거(`logging.getLogger()` · `logging.root`)의 `addHandler` · `removeHandler` · `setLevel` | 오류 |

@@ -356,16 +356,21 @@ def test_the_line_width_rule_counts_wide_characters() -> None:
     assert new_module._width("가" * 50) == new_module.LINE_WIDTH
 
 
-def test_transitive_packages_named_in_the_guide_warn_and_numpy_is_one() -> None:
-    """6장 「경고」 에 적은 이름은 지금 `requirements.txt` 에서 직접 의존이 아니다(경고가 난다) —
-    pandas 와 늘 함께 쓰는 numpy 가 그 하나라는 것을 담당자가 미리 안다."""
+def test_transitive_packages_named_in_the_guide_warn_and_numpy_is_direct() -> None:
+    """6장 「경고」 에 적은 이름은 지금 `requirements.txt` 에서 직접 의존이 아니다(경고가 난다).
+    pandas 와 늘 함께 쓰는 numpy 는 코어 직접 의존이라 「바로 써도 되는 것」 에 든다 — 담당자가
+    numpy 경고를 찾아 헤매지 않는다."""
     dependencies = _section("6. 의존성")
+    usable = dependencies.partition("바로 써도 되는 것:")[2].partition("경고가 나는 것:")[0]
     warned = dependencies.partition("경고가 나는 것:")[2].partition("오류가 나는 것:")[0]
 
-    assert "`numpy`" in warned
-    for name in ("numpy", "pyarrow", "pillow", "toml", "requests"):
+    assert "`numpy`" in usable and "numpy" not in warned
+    assert ENVIRONMENT.requirements["numpy"].direct
+    for name in ("pyarrow", "pillow", "toml", "requests"):
         requirement = ENVIRONMENT.requirements[rules.normalize_name(name)]
         assert not requirement.direct, name
+    for shown in ("`pyarrow`", "`PIL`(pillow)", "`toml`", "`requests`"):
+        assert shown in warned, shown
 
 
 def test_the_skeleton_section_says_when_to_give_a_title() -> None:
