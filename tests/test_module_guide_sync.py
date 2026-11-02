@@ -386,3 +386,26 @@ def test_data_modules_is_read_only_for_the_owner_agent() -> None:
     editable = next(line for line in first_order.splitlines() if line.startswith("1. "))
     assert "data/modules/<id>/ 는 화면이 실행 중에 쓰는 자리라 읽기만 한다" in editable
     assert not any("data/modules" in rule for rule in settings["permissions"]["allow"])
+
+
+def _agents_bullet(start: str) -> str:
+    """AGENTS.md 에서 `- <start>` 로 여는 글머리 하나(두 칸 들여 쓴 이어진 줄까지)."""
+    lines = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()
+    first = next(n for n, line in enumerate(lines) if line.startswith(f"- {start}"))
+    end = next(
+        (n for n in range(first + 1, len(lines)) if not lines[n].startswith("  ")), len(lines)
+    )
+    return "\n".join(lines[first:end])
+
+
+def test_agents_defaults_bullet_is_the_guides_three_defaults_only() -> None:
+    """AGENTS 1장의 「메인 세션이 정한 기본값 셋」 은 지침서 8-3 의 셋 그대로다. 사용자가 직접
+    「권장대로」 로 정한 사양 10장 답(v1 은 운영 모듈 데이터를 백업하지 않는다 — 10장 5)은 그 묶음에
+    넣지 않고 따로 적는다 — 묶음에 섞으면 사용자 결정이 「바꿀 수 있는 기본값」 으로 읽힌다."""
+    defaults = _agents_bullet("**메인 세션이 「권장대로」 로 정한 기본값 셋")
+
+    assert re.findall("[①②③④⑤]", defaults) == ["①", "②", "③"]
+    assert len(re.findall(r"^\d+\. ", _section("8-3."), re.M)) == 3
+    assert "백업" not in defaults and "백업" not in _section("8-3.")
+    backup = _agents_bullet("**v1 은 운영 모듈 데이터를 백업하지 않는다**")
+    assert "사용자 「권장대로」" in backup and "10장 5" in backup
