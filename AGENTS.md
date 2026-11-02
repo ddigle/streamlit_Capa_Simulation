@@ -3784,7 +3784,9 @@ RQ_MODULE
     aud · iss · exp · 폐기 목록)를 쓰고, 세션 상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르는 사본일 뿐이다. 로그아웃 폐기 목록 ·
     쓴 state · 진단 · 사건은 프로세스 메모리(`auth.runtime`, replica 1 전제 — 재시작하면 비워진다)이고 DB 에 쓰지 않으며 캐시
     경계도 아니다(`st.cache_*` 없음). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
-    사내 WebIDE · 시험의 요소 순번이 그대로다.
+    사내 WebIDE · 시험의 요소 순번이 그대로다. 열린 탭은 websocket 핸드셰이크 때의 쿠키로 계속 돌고 위젯 콜백 · 프래그먼트
+    회차는 `app.py` 를 지나지 않으므로, 만료 · 로그아웃은 문지기가 그 연결의 메시지마다 본다(`gate._WatchedSocket` — 9장).
+    새 콜백 · `run_every` 를 더할 때 따로 막을 것은 없다.
 
 ## 6. 핵심 계산 규칙
 
