@@ -21,6 +21,16 @@ data/modules/
 # 비밀값.
 .env
 .streamlit/secrets.toml
+# 키 · 인증서 파일. 통합인증 서명 인증서는 환경변수로만 받는다 — 이미지에 실리지 않게.
+cert/
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.jks
 
 # 이미지가 쓰지 않는 것.
 .git/

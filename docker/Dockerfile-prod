@@ -8,7 +8,9 @@ RUN sudo chown -R $DSUSER:$DSUSER /project
 
 RUN pip install -U pip
 RUN pip install -U setuptools
-RUN pip install -r /project/requirements.txt --no-cache-dir
+# 통합인증의 cryptography · cffi 는 휠만 받는다. 휠이 없으면 Rust 소스 빌드로 넘어가 멈추는 대신
+# 「휠 없음」 으로 바로 실패해 원인이 보이게 한다.
+RUN pip install -r /project/requirements.txt --no-cache-dir --only-binary=cryptography,cffi
 
 WORKDIR /project
 

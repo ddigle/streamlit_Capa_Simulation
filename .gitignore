@@ -25,6 +25,18 @@ dist/
 # Streamlit secrets
 .streamlit/secrets.toml
 
+# 키 · 인증서 파일. 통합인증의 서명 인증서는 C-DEP 환경변수 표로만 받는다.
+# 공개 저장소라 사내 인증서 · 개인키가 커밋되면 이력에서 되돌릴 수 없다.
+cert/
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.jks
+
 # Environment variables
 .env
 .env.*
