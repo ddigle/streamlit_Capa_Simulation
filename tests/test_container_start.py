@@ -827,10 +827,10 @@ def _dockerignore_excludes(path: str, patterns: Sequence[str]) -> bool:
 
 
 def test_the_image_carries_module_code_but_not_module_data() -> None:
-    """사내 모듈(모델 2)은 코드(`modules/<id>/`)만 이미지에 싣고 데이터는 뺀다.
+    """모듈(모델 2)은 코드(`modules/<id>/`)만 이미지에 싣고 데이터는 뺀다.
 
     CD 는 사내 저장소 하나를 `COPY . /project/` 로 담는다. 모듈 코드가 빠지면 CD 위에서
-    사이드바 「사내 모듈」 상자가 서지 않고, 모듈 데이터(`data/modules/<id>/`)가 들어가면 그
+    사이드바 「모듈」 상자가 서지 않고, 모듈 데이터(`data/modules/<id>/`)가 들어가면 그
     PC 의 파일이 이미지 레이어에 남는다. 사외에는 `modules/` 가 없어 `IMAGE_NEEDS`(있어야 하는
     파일) 대신 경로 판정만 본다.
     """

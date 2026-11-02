@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈 뼈대(module.json·첫 화면·스모크 시험·README)를 modules/<id>/ 안에만 만든다.
+# Purpose: 모듈 뼈대(module.json·첫 화면·스모크 시험·README)를 modules/<id>/ 안에만 만든다.
 
-"""사내 모듈 뼈대 만들기 — 새 모듈 등록은 앱 관리자의 승인 뒤에 한다.
+"""모듈 뼈대 만들기 — 새 모듈 등록은 앱 관리자의 승인 뒤에 한다.
 
 담당자 클론(사내 PC, PowerShell — 저장소 뿌리에서):
 
@@ -89,9 +89,7 @@ def manifest_text(module_id: str, *, name: str, owner: str, title: str) -> str:
 
 
 def page_text(module_id: str, *, name: str, title: str) -> str:
-    purpose = _purpose(
-        f"{name} 사내 모듈의 첫 화면을 그린다.", f"사내 모듈 {module_id} 의 첫 화면을 그린다."
-    )
+    purpose = _purpose(f"{name} 모듈의 첫 화면을 그린다.", f"모듈 {module_id} 의 첫 화면을 그린다.")
     return f"""{purpose}
 
 import streamlit as st
@@ -118,7 +116,7 @@ if name and st.session_state.get(ctx.key("greeted")):
 
 
 def smoke_test_text(module_id: str, *, title: str) -> str:
-    return f'''# Purpose: 사내 모듈 {module_id} 의 첫 화면이 빈 데이터 자리로 오류 없이 서는지 본다.
+    return f'''# Purpose: 모듈 {module_id} 의 첫 화면이 빈 데이터 자리로 오류 없이 서는지 본다.
 
 from pathlib import Path
 
@@ -158,7 +156,7 @@ def readme_text(module_id: str, *, name: str, owner: str, title: str) -> str:
 
 def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="사내 모듈 뼈대를 modules/<id>/ 안에만 만든다(새 모듈은 앱 관리자 승인 뒤)"
+        description="모듈 뼈대를 modules/<id>/ 안에만 만든다(새 모듈은 앱 관리자 승인 뒤)"
     )
     parser.add_argument("id", help="모듈 id — 소문자·숫자·밑줄 하나, 2 ~ 24자")
     parser.add_argument(
@@ -248,7 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if created_root:
             shutil.rmtree(root, ignore_errors=True)
         return _refuse(f"파일을 쓰지 못했습니다 — {type(error).__name__}")
-    print(f"사내 모듈 뼈대를 만들었습니다 — {MODULES_FOLDER_NAME}/{module_id}/")
+    print(f"모듈 뼈대를 만들었습니다 — {MODULES_FOLDER_NAME}/{module_id}/")
     for rel in files:
         print(f"  {MODULES_FOLDER_NAME}/{module_id}/{rel}")
     root_option = "" if args.root is None else f" --root {args.root}"
@@ -264,7 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f'git commit -m "module({module_id}): 새 모듈 뼈대" -m "승인: 앱 관리자 <YYYY-MM-DD>"'
     )
     print(
-        "  4) 담당자가 그 가지를 푸시하고 사내 GitHub 에서 PR 을 연다 — 앱 관리자가 점검한 뒤 "
+        "  4) 담당자가 그 가지를 푸시하고 GitHub 에서 PR 을 연다 — 앱 관리자가 점검한 뒤 "
         "합친다(지침서 8-2)"
     )
     return 0

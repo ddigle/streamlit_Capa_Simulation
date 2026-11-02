@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈 오류 카드(이름·형식·첫 줄·끄는 법·import 안내·모듈 안 프레임)를 그린다.
+# Purpose: 모듈 오류 카드(이름·형식·첫 줄·끄는 법·import 안내·모듈 안 프레임)를 그린다.
 
-"""사내 모듈 오류 카드.
+"""모듈 오류 카드.
 
 화면 본문 감싸기(`module_runtime.render_failure`)·콜백 표지(`module_runtime` 이 다음 회차 맨 위에)·
 프래그먼트 감싸기(`module_api` 의 `ctx.guard`)가 함께 쓴다. 그 화면(또는 그 자리)만 멈추고 사이드바·

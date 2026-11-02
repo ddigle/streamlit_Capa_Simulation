@@ -126,7 +126,7 @@ def test_no_session_key_is_defined_in_two_modules() -> None:
 
 
 def test_no_core_key_starts_with_the_module_prefix() -> None:
-    """사내 모듈 키는 `mod_<id>__` 로 시작한다 — 코어는 `mod_` 로 시작하는 키를 만들지 않는다(지킴).
+    """모듈 키는 `mod_<id>__` 로 시작한다 — 코어는 `mod_` 로 시작하는 키를 만들지 않는다(지킴).
 
     그래야 모듈끼리·모듈과 코어의 키가 구조적으로 겹치지 않는다. `modules/` 는 이 검사가 훑지
     않으므로 모듈 쪽은 점검 스크립트(M08)와 실행 알림(`module_runtime`)이 본다.

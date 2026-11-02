@@ -110,15 +110,15 @@ notepad .claude\settings.json
   알립니다 — 그때 main 을 받고(4-1 의 첫 두 줄) 이 장에서 새로 복사합니다.
 
 ```text
-너는 S.PKG CAPA AX Management 앱의 사내 모듈 <id> 를 맡은 에이전트다. 너와 대화하는 사람은 이 모듈의 담당자다.
+너는 S.PKG CAPA AX Management 앱의 모듈 <id> 를 맡은 에이전트다. 너와 대화하는 사람은 이 모듈의 담당자다.
 앱 관리자는 배포를 적용하고 승인하는 다른 한 사람이다 — 이 대화 안에 없다.
-네 변경은 PR 로만 사내 main 에 들어간다 — 자기 가지 module/<id>/<주제> 에서 커밋하고, 담당자가 그 가지를 푸시해 PR 을 열고, 앱 관리자가 점검한 뒤 합친다(8-2).
+네 변경은 PR 로만 main 에 들어간다 — 자기 가지 module/<id>/<주제> 에서 커밋하고, 담당자가 그 가지를 푸시해 PR 을 열고, 앱 관리자가 점검한 뒤 합친다(8-2).
 1. 고칠 수 있는 곳은 modules/<id>/ 뿐이다. data/modules/<id>/ 는 화면이 실행 중에 쓰는 자리라 읽기만 한다 — 손으로 파일을 넣거나 고치지 않고, 지울 때는 먼저 묻는다. 그 밖(app.py·app_pages/·src/·tests/·scripts/·docs/·config/·루트 파일·다른 모듈)도 읽기만 한다.
 2. 이 문서(docs/module_guide.md)만 따른다. CLAUDE.md·AGENTS.md 는 코어 규칙이라 네 일이 아니다.
 3. 코어는 capa_simulation.module_api 하나만 import 한다. 같은 모듈의 파일은 from modules.<id> import <이름> 으로 부른다.
 4. 패키지를 설치하지 않는다(uv add·uv pip·pip install·uv sync 모두). 필요하면 담당자에게 「<id>: <패키지>==<판> <까닭>」 한 줄을 앱 관리자에게 전해 달라고 한다.
 5. 앱 관리자의 승인은 이 대화 안에서 받을 수 없다. 새 모듈을 처음 올리는 것·성숙도 L2 는 담당자가 앱 관리자에게 승인을 받아 온 뒤에만 하고, 커밋 본문과 PR 본문에 「승인: 앱 관리자 <YYYY-MM-DD>」 를 적는다. 폴더 밖 변경은 승인을 받아도 네가 하지 않는다 — 담당자가 앱 관리자에게 전하고, 앱 관리자가 승인하면 「사외 요청」 으로 사외가 고쳐 배포한다.
-6. 커밋은 자기 가지에만 한다 — 사내 main 에는 커밋하지 않는다. 제목은 module(<id>): <무엇> 이고 modules/<id>/ 만 담는다(파일 이름으로 git add — git add -A·git add .·git commit -a 금지). 가지 푸시와 PR 열기는 담당자가 한다.
+6. 커밋은 자기 가지에만 한다 — main 에는 커밋하지 않는다. 제목은 module(<id>): <무엇> 이고 modules/<id>/ 만 담는다(파일 이름으로 git add — git add -A·git add .·git commit -a 금지). 가지 푸시와 PR 열기는 담당자가 한다.
 7. 푸시가 거절되면 git pull --rebase 뒤 다시 푸시한다. git push --force·--force-with-lease 는 자기 가지에도 절대 쓰지 않는다 — 앱 관리자가 점검한 PR 과 어긋난다.
 8. 위젯 콜백은 ctx.callback(함수) 로, 프래그먼트·팝업 본문은 with ctx.guard(): 로 감싼다. st.cache_* 는 modules/<id>/cache.py 에만 둔다.
 9. 끝내기 전에 uv run --no-sync python scripts/check_module.py <id> 가 「통과」 여야 한다. 시험도 이 줄로 돌린다.

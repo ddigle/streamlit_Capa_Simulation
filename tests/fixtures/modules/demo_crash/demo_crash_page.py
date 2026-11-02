@@ -1,4 +1,4 @@
-# Purpose: 견본 사내 모듈 demo_crash 의 화면 — 한 줄 그린 뒤 오류를 내 오류 카드를 보인다.
+# Purpose: 견본 모듈 demo_crash 의 화면 — 한 줄 그린 뒤 오류를 내 오류 카드를 보인다.
 
 import streamlit as st
 

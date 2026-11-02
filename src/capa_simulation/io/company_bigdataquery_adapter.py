@@ -448,7 +448,7 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
                 f"요청자 계정({BDQ_USER_NAME_ENV}) 없음", type_names=failure_type_names(error)
             )
             raise RuntimeError(
-                f"BigDataQuery 조회에 요청자의 사내 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
+                f"BigDataQuery 조회에 요청자의 AD 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
                 f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
                 f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
                 f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
@@ -521,11 +521,11 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ),
 )
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
-    QUERY_FAILURE_TIMEOUT: "사내 DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
+    QUERY_FAILURE_TIMEOUT: "DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
     "기간을 줄여 다시 하세요.",
-    QUERY_FAILURE_CONNECTION: "사내 DB 에 닿지 못했습니다 — 사내망 연결을 확인하고 잠시 뒤 같은 "
+    QUERY_FAILURE_CONNECTION: "DB 에 닿지 못했습니다 — 네트워크 연결을 확인하고 잠시 뒤 같은 "
     "조회를 다시 하세요.",
-    QUERY_FAILURE_SQL: "사내 DB 가 조회문을 받지 않았습니다 — 다시 해도 같으니 아래 원문을 "
+    QUERY_FAILURE_SQL: "DB 가 조회문을 받지 않았습니다 — 다시 해도 같으니 아래 원문을 "
     "관리자에게 알려 주세요.",
     QUERY_FAILURE_OTHER: "잠시 뒤 같은 조회를 다시 하세요. 같은 실패가 이어지면 아래 원문을 "
     "관리자에게 알려 주세요.",
@@ -631,20 +631,20 @@ def load_bigdataquery_module() -> ModuleType:
         if exc.name in (None, "bigdataquery"):
             raise RuntimeError(
                 "현재 환경에 bigdataquery 패키지가 없습니다. "
-                "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
-                "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
+                "이 패키지는 공개 인덱스(PyPI)에 없어 pyproject.toml 의존성에 넣지 않습니다. "
+                "README 「초기 설정」 4단계대로 따로 설치한 뒤 실행하세요."
                 + _start_check_line(STEP_INSTALL)
             ) from exc
         raise RuntimeError(
             "bigdataquery 패키지를 불러오지 못했습니다 — 패키지가 쓰는 모듈 "
             f"{with_subject_particle(f'`{exc.name}`')} "
-            "없습니다. 사내 환경에서 패키지를 다시 설치한 뒤 실행하세요(README 「초기 설정」 "
+            "없습니다. 패키지를 다시 설치한 뒤 실행하세요(README 「초기 설정」 "
             "4단계)."
         ) from exc
     except Exception as exc:  # 패키지 초기화가 낼 예외 종류를 모른다
         _log_failure("패키지 초기화 실패", type_names=failure_type_names(exc))
         raise RuntimeError(
-            "bigdataquery 패키지를 불러오지 못했습니다. 사내 환경에서 패키지를 다시 설치한 뒤 "
+            "bigdataquery 패키지를 불러오지 못했습니다. 패키지를 다시 설치한 뒤 "
             "실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 아래 원문을 관리자에게 "
             f"알려 주세요.\n\n원문 — {_original_text(exc)}"
         ) from exc

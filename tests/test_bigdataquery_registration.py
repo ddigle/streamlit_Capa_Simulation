@@ -170,7 +170,7 @@ def test_the_dropped_row_warning_stands_under_the_saved_notice(
 
     successes = [item.value for item in app.success]
     warned = [item.value for item in app.warning]
-    banner = "사내 BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다."
+    banner = "BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다."
     # 알림 칸은 저장 단추 바로 아래라 맨 위 설정 띠보다 뒤에 선다.
     assert successes == ([banner, saved] if package_ready else [saved])
     assert warned[-1] == notice and warned.count(notice) == 1
@@ -1073,7 +1073,7 @@ def test_the_missing_query_notice_puts_the_particle_on_the_fixed_word(
     )
 
     assert notice is not None
-    assert notice.startswith("사내 조회 SQL이 아직 설정되지 않았습니다 — ")
+    assert notice.startswith("조회 SQL이 아직 설정되지 않았습니다 — ")
     assert all(place in notice for place in places)
     assert "이(가)" not in notice
 

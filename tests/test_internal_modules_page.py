@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 색인 화면이 켜진 모듈과 화면 링크·꺼짐 실패 수를 보이고 단독으로도 서는지 본다.
+# Purpose: 모듈 색인 화면이 켜진 모듈과 화면 링크·꺼짐 실패 수를 보이고 단독으로도 서는지 본다.
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ def test_without_modules_the_index_says_so_in_one_line() -> None:
     app = AppTest.from_file(str(PAGE)).run(timeout=60)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [title.value for title in app.title] == ["사내 모듈"]
-    assert [info.value for info in app.info] == ["켜진 사내 모듈이 없습니다."]
+    assert [title.value for title in app.title] == ["모듈"]
+    assert [info.value for info in app.info] == ["켜진 모듈이 없습니다."]
     assert not any("꺼짐" in caption.value for caption in app.caption)
 
 

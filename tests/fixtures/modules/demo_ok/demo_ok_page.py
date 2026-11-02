@@ -1,4 +1,4 @@
-# Purpose: 견본 사내 모듈 demo_ok 의 첫 화면 — 공개 창구 v1 의 이름을 모두 쓰는 합성 화면이다.
+# Purpose: 견본 모듈 demo_ok 의 첫 화면 — 공개 창구 v1 의 이름을 모두 쓰는 합성 화면이다.
 
 import pandas as pd
 import streamlit as st

@@ -106,7 +106,7 @@ NAMED_TARGETS: Final[dict[str, bool]] = {
 
 # 그림 밑 꼬리표(handoff §7). 사내판의 사내 화면은 촬영 날짜를 단다.
 EXAMPLE_LABEL: Final = "예시 화면 · 합성 샘플"
-INTERNAL_LABEL: Final = "사내 화면 · {date}"
+INTERNAL_LABEL: Final = "실제 화면 · {date}"
 
 # 조립 규칙(시안 build_guide.py 그대로). 좌표는 화면 CSS px, 그림은 배율(scale)배다.
 PAD: Final = 44  # 잘라 낼 때 표적 둘레 여백

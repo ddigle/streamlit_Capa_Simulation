@@ -7,7 +7,7 @@
 > **사내(WebIDE)에서 이 문서를 읽고 있다면 `docs/dual_env_workflow.md` 와
 > `docs/internal_update_runbook.md` 를 먼저 읽는다.** 사내에서는 소스를 고치지 않고
 > `review/` 에만 쓴다. 어느 환경인지는 `git remote -v` 로 가른다 — `github.com` 이면
-> 사외다. 사내 모듈 담당자의 에이전트라면 `docs/module_guide.md` 만 따르고 자기 `modules/<id>/` 밖을 고치지 않는다.
+> 사외다. 모듈 담당자의 에이전트라면 `docs/module_guide.md` 만 따르고 자기 `modules/<id>/` 밖을 고치지 않는다.
 
 ## 0. 소스 파일 Purpose 헤더 규칙
 
@@ -108,9 +108,9 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   네 제목은 표시순서 DB 의 페이지 키다(`services/display_order_scopes.py`). 그룹을 옮긴 화면의 북마크는
   그대로 산다.
 
-### 사내 모듈 영역 — 모델 2 (2026-11-01 사용자 결정)
+### 모듈 영역 — 모델 2 (2026-11-01 사용자 결정)
 
-사내 동료가 따로 만든 Streamlit 기능을 이 앱 웹 안의 별도 화면으로 띄운다. 코어와의 데이터 연계는 다음 단계다. 정본을 **폴더로**
+동료가 따로 만든 Streamlit 기능을 이 앱 웹 안의 별도 화면으로 띄운다. 코어와의 데이터 연계는 다음 단계다. 정본을 **폴더로**
 가른다(보드 C3 는 이 결정으로 닫혔다).
 
 | 무엇 | 정본 | 자리 |
@@ -129,7 +129,7 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   5. 들어갈 때만 불러오기 — 찾기는 `module.json` 만 읽고 `.py` 를 import 하지 않는다.
 - 깨진 모듈은 그 화면만 오류 카드다 — 화면 본문은 `module_runtime.run_module_page`, 위젯 콜백은 `ctx.callback`, 프래그먼트 · 팝업
   본문은 `ctx.guard` 가 감싼다. 끄는 스위치는 둘이다 — `module.json` 의 `"enabled": false` 와 실행 환경변수 `CAPA_MODULES_DISABLED`
-  (`*` 또는 id 들). 사이드바 상자 「사내 모듈」 은 켜진 모듈이 있을 때만 서고 자리는 Dynamic 다음 · Support 앞이다.
+  (`*` 또는 id 들). 사이드바 상자 「모듈」 은 켜진 모듈이 있을 때만 서고 자리는 Dynamic 다음 · Support 앞이다.
   `CAPA_MODULES_ROOT=off` 는 사외와 같은 화면이다(상자 · Admin 펼침 · 색인 캡션이 모두 없다) — 화면 확인 · 가이드 자식 앱이 쓴다.
 - **역할 이름 둘** — **담당자**(모듈을 맡아 그 에이전트와 대화하는 동료)와 **앱 관리자**(배포를 적용하고 승인하는 한 사람 — 이
   저장소의 사용자). 동료 세션에서 「사용자」 는 담당자 자신이라 지침서는 「앱 관리자의 승인」 이라고만 쓴다. 그 승인은 동료 에이전트의
@@ -153,18 +153,18 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   | L2 검증 | 실데이터 정합성 확인 | 표기 없음 | 사내 읽기 전용 점검(집계만)으로 기준값 대조 통과 |
   | (L3 통합) | 코어 계산이 모듈 출력을 쓴다 — 사외가 코어에 다시 구현하므로 그때부터 모듈이 아니다 | — | 사외 리뷰 · AGENTS 반영 |
 
-- **메인 세션이 「권장대로」 로 정한 기본값 셋(사용자가 바꿀 수 있다)** — ① 자리는 `modules/<id>/`, 사이드바 별도 상자 「사내 모듈」
+- **메인 세션이 「권장대로」 로 정한 기본값 셋(사용자가 바꿀 수 있다)** — ① 자리는 `modules/<id>/`, 사이드바 별도 상자 「모듈」
   하나(켜진 모듈이 없으면 숨김) ② 새 패키지는 모듈이 직접 넣지 않고 리뷰 「사외 요청」 으로 받아 사외가 코어 의존성(`pyproject.toml` →
   `uv.lock` → `requirements.txt`)에 넣어 배포한다(이름은 `config/module_packages.json` 에도 — 12장) ③ 새 모듈 등록과 `modules/<id>/` 밖
   변경은 앱 관리자 승인, 자기 폴더 안은 담당자가 자기 가지에 커밋하고 PR 로 올려 앱 관리자가 점검 뒤 합친다(2026-11-02 — 직접 커밋 길은
   닫았다). 밖 변경은 승인 뒤에도 모듈 커밋이 아니라 리뷰 「사외 요청」 으로 사외가 한다 — 코어는 사외가 정본이고 앱 관리자는 폴더 밖을 바꾼
   PR 을 합치지 않으며 런북 1-7 도 그런 모듈 커밋을 받지 않는다. 앱 관리자는 배포를 적용할 때마다 모듈 점검 결과를 본다.
 - **v1 은 운영 모듈 데이터를 백업하지 않는다** — 잃어도 되는 것만 둔다(런북 1-3 에 선택 줄을 더하지 않는다). 위 기본값이 아니라
-  2026-11-01 사용자 「권장대로」 로 정한 것이다(사양 10장 5 — `docs/TODO.md` 3장 「사내 모듈 사양 10장」).
+  2026-11-01 사용자 「권장대로」 로 정한 것이다(사양 10장 5 — `docs/TODO.md` 3장 「모듈 사양 10장」).
 - 모듈 쪽 정본은 `docs/module_guide.md`, 코어 창구는 `module_api`(하위 호환으로만 — 12장 「코어 공개 창구(`module_api`) 변경」).
 - 담당자(사람)가 읽는 안내서는 `docs/module_colleague_guide.md` 다(2026-11-03 — `docs/TODO.md` 3장 「운영·배포」). 지침서의 사람 몫을
-  쉬운 말로 옮긴 것이라 규칙을 새로 정하지 않고, 어긋나면 지침서를 따른다. 첫 지시 블록은 지침서 0장 그대로이고 그 밖의 글에는
-  「사내」 를 쓰지 않는다(`tests/test_module_guide_sync.py` 가 맞댄다). 지침서의 사람 몫 차례(0장 첫 지시 · 2장 자리 · 3-7 뼈대 ·
+  쉬운 말로 옮긴 것이라 규칙을 새로 정하지 않고, 어긋나면 지침서를 따른다. 첫 지시 블록은 지침서 0장 그대로이고 지침서 · 안내서
+  모두 「사내」 를 쓰지 않는다(2026-11-03 — `tests/test_module_guide_sync.py` 가 맞댄다). 지침서의 사람 몫 차례(0장 첫 지시 · 2장 자리 · 3-7 뼈대 ·
   6장 패키지 · 8-2 올리기 · 9-2 끄기)를 바꾸면 같은 변경에서 안내서도 고친다.
 
 ## 2. 실행환경과 검증 기준
@@ -662,7 +662,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 편 상태는 기억 칸(`remembered_expander`)이라
     다른 화면에 다녀와도 접히지 않는다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
-- `app_pages/internal_modules.py` — 사이드바 「사내 모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다).
+- `app_pages/internal_modules.py` — 사이드바 「모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다).
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
   - 계산에 닿지 않는다 — 시나리오·조회기간을 읽지 않고 `load_page_context()` 를 부르지 않는다.
   - 본문·답글은 `st.text` 로 그리고 게시판 읽기는 캐시하지 않는다. 폼은 `clear_on_submit` 없이 콜백이 성공한
@@ -1010,8 +1010,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
-- `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「사내 모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
-- `src/capa_simulation/components/module_failure_card.py` — 사내 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
+- `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
+- `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 두 제외 표를 그리는 단일 렌더러다. 화면은
   표시명 복사본, CSV 는 원본이고, 캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다.
 - `src/capa_simulation/components/plan_comparison_dumbbell.py` — 두 시나리오의 기간 계획 물량 차이를 분류별 덤벨로
@@ -1619,9 +1619,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     라벨(바깥 `EQUIPMENT_TABS`·Summary 안쪽 `EQUIPMENT_SUMMARY_TABS`)도 사이드바가 열린 탭을 보므로 여기 둔다. 안쪽 탭을
     품은 바깥 탭은 `ConditionTabs.sub`(`SubTabs`)로 적고, 사이드바는 `ConditionTabs.active_label`(위젯 값 → 기억 칸 → 첫
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
-- `src/capa_simulation/module_registry.py` — 사내 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). `scripts/check_module.py` 가 같은 검증을 쓴다. 모듈끼리 화면 이름이 겹치면 차례(order → id)가 뒤인 모듈 전체가 실패하고 까닭에 상대(코어 · 앞 모듈 id)를 적는다(`ModuleRecord.clash` — 점검은 앞 모듈에 M01 경고를 단다).
-- `src/capa_simulation/module_api.py` — 사내 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
-- `src/capa_simulation/module_failures.py` — 사내 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
+- `src/capa_simulation/module_registry.py` — 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). `scripts/check_module.py` 가 같은 검증을 쓴다. 모듈끼리 화면 이름이 겹치면 차례(order → id)가 뒤인 모듈 전체가 실패하고 까닭에 상대(코어 · 앞 모듈 id)를 적는다(`ModuleRecord.clash` — 점검은 앞 모듈에 M01 경고를 단다).
+- `src/capa_simulation/module_api.py` — 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
+- `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
   조회기간과 원천 유효 구간 확정)다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
@@ -3582,7 +3582,7 @@ RQ_MODULE
    **배경 스레드는 공식버전 자동 갱신 예약(`auto_update_scheduler.py`) 하나뿐**이고 캐시 경계가 아니다 —
    `st.cache_resource` 없이 스레드 이름으로 프로세스에 하나를 지키고, 스레드 안에서는 `st.*`·세션·`st.cache_data`
    래퍼를 부르지 않으며 전역 범위 `st.cache_data` 의 `.clear()` 만 부른다(9장 「배경 스레드」).
-   사내 모듈(`modules/<id>/`)은 이 경계 밖이고 코어 시험도 훑지 않는다 — 모듈 캐시는 그 모듈의 `cache.py` 한 파일에만 두고
+   모듈(`modules/<id>/`)은 이 경계 밖이고 코어 시험도 훑지 않는다 — 모듈 캐시는 그 모듈의 `cache.py` 한 파일에만 두고
    `max_entries`·`ttl` 을 달며 전역 `.clear()` 를 부르지 않고(`check_module.py` M12), 모듈도 스레드를 세우지 않는다(M10).
 5. **공식버전은 append-only다.** 특정 시나리오·리비전을 새 공식버전으로 발행하며 과거
    공식 이력을 갱신하지 않는다. 최신 공식 시나리오는 다른 공식 발행 전 삭제하지 않는다.
@@ -4969,7 +4969,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   선다. 그 안에서 `st.*` 화면 명령·`st.session_state`·`st.cache_data`/`st.cache_resource` 래퍼를 부르지
   않는다 — 계산은 순수 코어(`simulation_cache.full_capacity_outcome`·`calculate_securement_rate`), 등록은
   세션 없는 `scenario_registration` 이다. 캐시 정리는 전역 범위 `st.cache_data` 함수의 `.clear()` 처럼
-  문맥을 찾지 않는 것만 쓴다. 새 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다. 사내 모듈도 같다(1장 「사내 모듈 영역」).
+  문맥을 찾지 않는 것만 쓴다. 새 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다. `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
 - **DuckDB 연결 핀.** 앱은 rerun 한 번을 `pinned_connections` 로 감싼다(게으른 핀 — 첫 연결 뒤에 잡고 가장 바깥 블록이
   끝날 때 닫는다). 설비 DB 를 rerun 한 번에 **여러 번** 여는 화면만 `navigation.PageSpec.uses_equipment_db` 를 선언해 같은
   핀을 받는다. 위젯 콜백(본문 전)과 팝업 본문 프래그먼트는 실행 핀 밖에서 돌므로 DB 를 여러 번 여는 콜백·팝업은 스스로
@@ -5178,7 +5178,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   순번 칸(`home_bn_tile_<i>`)으로 감싼다.
 - 세션 키 리터럴은 그것을 쓰는 페이지가 소유하고, 공용 헬퍼(`page_bootstrap.prune_choice`·`prune_list_selection`,
   `scenario_edit_bar` 의 원본 토큰 키)는 키를 인자로 받는다.
-- 사내 모듈의 키는 `mod_<id>__` 로 시작한다 — `test_session_key_collisions.py` 는 `modules/` 를 훑지 않으므로
+- 모듈의 키는 `mod_<id>__` 로 시작한다 — `test_session_key_collisions.py` 는 `modules/` 를 훑지 않으므로
   `check_module.py`(M08)와 실행 알림(`module_runtime`)이 본다.
 
 ### 프래그먼트·이벤트 칸·토스트
@@ -5706,7 +5706,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - `data/*.duckdb` 및 DuckDB 보조 파일
 - `.env`, `.streamlit/secrets.toml`
 - `data/input`, `data/output`, `data/temp`의 실제 데이터
-- `data/modules/` 아래 사내 모듈 데이터(이미지에도 싣지 않는다)
+- `data/modules/` 아래 모듈 데이터(이미지에도 싣지 않는다)
 - 로그와 가상환경
 
 `templates/structure_template.xlsb`, `data/capa_simulation.db`,
@@ -5722,7 +5722,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 `config/object_storage.json` 의 `mode` 는 반드시 `local` 이다. 그 자리도 `subprocess.run` 기본(`close_fds=True` — Windows 에서
 핸들을 물려주지 않는다)으로 부르고 `close_fds=False`·`os.system`·`os.spawn*` 은 쓰지 않는다 — Streamlit 1.63 은 듣는 소켓을
 상속 가능으로 열어(`starlette_server._bind_socket` 의 `set_inheritable(True)`), 핸들을 물려받은 자식은 앱을 끈 뒤에도 8501 을
-쥔다(런북 4-2 「접속이 안 되면」). 사내 모듈은 `subprocess` 를 쓰지 않는다(M10).
+쥔다(런북 4-2 「접속이 안 되면」). 모듈은 `subprocess` 를 쓰지 않는다(M10).
 
 ## 10-1. 로컬 데이터는 합성 표본이다 — 관측을 업무 사실로 적지 않는다
 
@@ -6005,7 +6005,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 
 ### 코어 공개 창구(`module_api`) 변경
 
-사외는 사내 모듈을 볼 수 없다. 깨짐을 막는 것은 겉면 시험(`tests/test_module_api_surface.py`)·견본과 압축본의 판 분포 · 패키지
+사외는 모듈을 볼 수 없다. 깨짐을 막는 것은 겉면 시험(`tests/test_module_api_surface.py`)·견본과 압축본의 판 분포 · 패키지
 이름뿐이다 — 기대 글자를 고칠 때는 아래 1 · 2 가운데 어느 쪽인지 커밋에 적는다.
 
 1. 같은 큰 판 안에서는 **더하기만** 한다(새 함수 · 새 선택 인자 · 새 `PALETTE_KEYS` 항목 · `module.json` 의 새 선택 칸). 더하면 작은 판
@@ -6028,7 +6028,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - 확정된 업무 결정 및 향후 항목: `docs/TODO.md`
 - 사용자 설치·운영 안내: `README.md`
 - 개발 구조와 에이전트 작업 규칙: `AGENTS.md`
-- 사내 모듈 담당자 규칙·코어 공개 창구: `docs/module_guide.md`(담당자 사람용 안내서 `docs/module_colleague_guide.md` 는 그것을
+- 모듈 담당자 규칙·코어 공개 창구: `docs/module_guide.md`(담당자 사람용 안내서 `docs/module_colleague_guide.md` 는 그것을
   옮긴 것 — 어긋나면 지침서)
 - 직전 세션 인수인계 스냅샷: `HANDOFF.md`. 정본이 아니라 그 시점 상태의 기록이므로 위 네
   항목과 어긋나면 위를 따른다.
@@ -6213,7 +6213,7 @@ f-string 키는 넘겨받은 기준 키에서 파생되므로 그 기준 키가 
 
 접두(`<페이지명>__`)는 **권고**다. 겹침을 애초에 쓰지 않게 하고 키를 읽기 쉽게 하지만,
 지금 저장소의 키 163개가 그 꼴이 아니고 검사도 강제하지 않는다 — 강제하는 것은 위 겹침
-검사다. 사내 모듈 키는 접두가 **필수**다.
+검사다. 모듈 키는 접두가 **필수**다.
 
 앞의 다섯 파일은 텍스트 충돌이라 git 이 알려 준다.
 

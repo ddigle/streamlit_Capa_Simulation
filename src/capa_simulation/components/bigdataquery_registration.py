@@ -254,7 +254,7 @@ def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | No
         missing.append("상세 조회 SQL(company_bigdataquery_adapter.py의 QUERY_TEMPLATE)")
     if not missing:
         return None
-    return "사내 조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
+    return "조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
 
 
 def _render_configuration_banner(
@@ -272,10 +272,10 @@ def _render_configuration_banner(
         hint = start_check_hint(STEP_INSTALL)
         st.warning(
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
-            "실제 조회는 사내 PC 에서만 성공합니다." + (f"\n\n{hint}" if hint else "")
+            "실제 조회는 패키지를 깐 PC 에서만 성공합니다." + (f"\n\n{hint}" if hint else "")
         )
         return
-    st.success("사내 BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.")
+    st.success("BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.")
 
 
 def _registered_scenarios(
@@ -335,9 +335,7 @@ def _submitted_window() -> QueryWindow | None:
 
 def _run_catalog_query(window: QueryWindow) -> None:
     try:
-        with st.spinner(
-            f"사내 DB에서 {window.label()} 구간의 시뮬레이션 코드를 조회하는 중입니다..."
-        ):
+        with st.spinner(f"DB에서 {window.label()} 구간의 시뮬레이션 코드를 조회하는 중입니다..."):
             frame = fetch_simulation_catalog(window)
             catalog = normalize_catalog(frame)
             first_registered = first_registration_dates(frame)
@@ -671,7 +669,7 @@ def _save_scenario(
             window=window,
         )
         with st.spinner(
-            f"사내 DB에서 Core Data를 조회하고 검증하는 중입니다 — 상세 조회 {window.label()}"
+            f"DB에서 Core Data를 조회하고 검증하는 중입니다 — 상세 조회 {window.label()}"
             f"({window.days}일)..."
         ):
             prepared = fetch_core_data_dataset(provider, simulation_code, display_order)

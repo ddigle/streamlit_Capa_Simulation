@@ -775,12 +775,12 @@ if st.session_state.get("on_admin", True):
     assert opened() == [True]
 
 
-# ------------------------------------------------------------------ 사내 모듈 상태
+# ------------------------------------------------------------------ 모듈 상태
 
 
 def _module_status_labels(app: AppTest) -> list[str]:
     labels = [item.label for item in app.expander] + [item.label for item in app.status]
-    return [label for label in labels if "사내 모듈 상태" in label]
+    return [label for label in labels if "모듈 상태" in label]
 
 
 def test_the_module_run_time_is_whole_milliseconds_with_the_unit_in_the_column(
@@ -830,7 +830,7 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     app = AppTest.from_string(script).run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
 
-    assert _module_status_labels(app) == ["사내 모듈 상태 — 켜짐 3 · 꺼짐 1 · 실패 2"]
+    assert _module_status_labels(app) == ["모듈 상태 — 켜짐 3 · 꺼짐 1 · 실패 2"]
     table = app.dataframe[0].value
     rows = {row["모듈"]: row for row in table.to_dict("records")}
     # 회차 시간은 단위를 칸 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 0.00).

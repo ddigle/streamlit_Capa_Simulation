@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 찾기·module.json 검증·상태와 까닭·끄는 환경변수·찾기 캐시를 고정한다.
+# Purpose: 모듈 찾기·module.json 검증·상태와 까닭·끄는 환경변수·찾기 캐시를 고정한다.
 
 from __future__ import annotations
 

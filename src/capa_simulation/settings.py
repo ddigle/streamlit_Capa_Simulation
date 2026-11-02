@@ -35,7 +35,7 @@ FAVICON_PATH = PROJECT_ROOT / "static" / "icons" / "capa_mark.svg"
 # 카드가 여기서 적용된 배포 번호(`stamp`)를 읽는다 — 사외(개발 PC)에는 없다.
 DEPLOY_STATE_PATH = PROJECT_ROOT / ".deploy" / "applied.json"
 DATA_DIR = PROJECT_ROOT / "data"
-# 사내 모듈(모델 2 — 사내 저장소에만 있는 `modules/<id>/`, 사외에는 없다)의 뿌리와 모듈 데이터 자리
+# 모듈(모델 2 — 사내 저장소에만 있는 `modules/<id>/`, 사외에는 없다)의 뿌리와 모듈 데이터 자리
 # (`data/modules/<id>/` — git·이미지 밖). 찾기(`module_registry`)는 부를 때마다 이 속성을 읽고,
 # 시험·하위 프로세스는 환경변수(`CAPA_MODULES_ROOT`·`CAPA_MODULES_DATA_ROOT`)로 자리를 돌린다.
 MODULES_DIR = PROJECT_ROOT / "modules"

@@ -1,4 +1,4 @@
-# Purpose: 견본 사내 모듈 demo_future_api 의 화면 — 이 코어가 받지 않는 API 판이라 등록되지 않는다.
+# Purpose: 견본 모듈 demo_future_api 의 화면 — 이 코어가 받지 않는 API 판이라 등록되지 않는다.
 
 import streamlit as st
 

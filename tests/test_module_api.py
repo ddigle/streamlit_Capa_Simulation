@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 창구 module_api 의 문맥·키·데이터 자리·머리말·색·콜백·guard 동작을 고정한다.
+# Purpose: 모듈 창구 module_api 의 문맥·키·데이터 자리·머리말·색·콜백·guard 동작을 고정한다.
 
 from __future__ import annotations
 

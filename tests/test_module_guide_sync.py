@@ -1,8 +1,8 @@
-# Purpose: 사내 모듈 지침서가 창구·규칙·뼈대·예시·출력·환경변수·권한·사람용 안내서와 같은지 본다.
+# Purpose: 모듈 지침서가 창구·규칙·뼈대·예시·출력·환경변수·권한·사람용 안내서와 같은지 본다.
 
 """지침서(`docs/module_guide.md`)와 코드 맞대기.
 
-지침서는 동료(담당자)의 에이전트가 받는 유일한 문서다. 사외는 사내 모듈을 볼 수 없어, 지침서의
+지침서는 동료(담당자)의 에이전트가 받는 유일한 문서다. 사외는 모듈을 볼 수 없어, 지침서의
 이름·예시·출력이 코드와 어긋나면 그 어긋남이 사내에서 처음 드러난다. 그래서 지침서에 옮겨 적은 것
 가운데 코드로 따질 수 있는 것은 여기서 코드에 댄다 — 창구 이름(부록 A), 규칙 번호(부록 B ·
 4장 · 7장), 뼈대 화면(3-7), 예시 모듈(3-8 · 3-9 — 정적 규칙을 통과해야 한다), 점검 출력 꼴(부록 B),
@@ -165,7 +165,7 @@ def test_the_skeleton_section_shows_what_new_module_writes(tmp_path: Path) -> No
     assert new_module.main(argv) == 0
     assert 'new_module.py demo_hello --name "데모 인사" --owner "데모 담당"' in section
     page = (root / "demo_hello" / "page.py").read_text(encoding="utf-8")
-    assert _python_block("데모 인사 사내 모듈의 첫 화면") == page
+    assert _python_block("데모 인사 모듈의 첫 화면") == page
     written = sorted(
         path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
     )
@@ -405,23 +405,28 @@ def test_the_first_instruction_and_upload_section_go_through_a_pull_request() ->
     upload = _section("8-2.")
     runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
 
-    assert any("PR 로만 사내 main 에 들어간다" in line for line in first_order[:numbered])
+    assert any("PR 로만 main 에 들어간다" in line for line in first_order[:numbered])
     assert "PR 을 쓸 수 없으면" not in upload and "직접 커밋" not in upload
     assert "git switch -c module/<id>/<주제>" in upload and "Squash and merge" in upload
-    assert "런북 4-6" in upload and "### 4-6. 사내 모듈 PR 점검" in runbook
+    assert "런북 4-6" in upload and "### 4-6. 모듈 PR 점검" in runbook
     assert "안 되면 자기 폴더만 바꾸는 직접 커밋" not in _section("8-3.")
 
 
 def test_the_colleague_guide_hands_over_the_first_instruction_unchanged() -> None:
     """담당자는 첫 지시를 사람용 안내서(3장)에서 복사해 붙인다 — 그 블록이 지침서 0장과 한 글자라도
     다르면 옛 지시가 에이전트에게 간다. 지침서 0장을 고치면 안내서 3장의 블록도 같은 글로 고친다.
-    안내서의 그 밖의 글에는 「사내」 를 쓰지 않는다(2026-11-03 사용자 — 앱은 회사 안에서 쓰는 것이
-    기본이라 「사내 모듈」 은 「모듈」 이다)."""
+    지침서 · 안내서 모두 「사내」 를 쓰지 않는다(2026-11-03 사용자 — 앱은 회사 안에서 쓰는 것이
+    기본이라 「사내 모듈」 은 「모듈」 이고 「사내 main」 은 「main」 이다). CLAUDE.md 머리의 세션
+    가름 줄도 첫 지시와 같은 이름을 쓴다."""
     colleague = COLLEAGUE_GUIDE_PATH.read_text(encoding="utf-8")
     first_order = _blocks(_section("0. 에이전트에게"), "text")[0]
+    claude_md = (PROJECT_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    routing = next(line for line in claude_md.splitlines() if "세션이 누구인지" in line)
 
     assert _blocks(colleague, "text").count(first_order) == 1
-    assert "사내" not in colleague.replace(first_order, "")
+    assert "사내" not in colleague and "사내" not in GUIDE
+    assert "앱의 모듈 <id> 를 맡은 에이전트다" in first_order
+    assert "첫 지시가 「모듈 `<id>` 를 맡은 에이전트」" in routing
 
 
 def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:

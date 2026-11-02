@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈의 선언·정적 규칙·ruff·자기 시험을 보고 리뷰 블록과 전송용 요약 한 줄을 찍는다.
+# Purpose: 모듈의 선언·정적 규칙·ruff·자기 시험을 보고 리뷰 블록과 전송용 요약 한 줄을 찍는다.
 
-"""사내 모듈 점검 — 선언(M01)·정적 규칙(M02 ~ M14·M18 ~ M20)·ruff(M15·M16)·자기 시험(M17).
+"""모듈 점검 — 선언(M01)·정적 규칙(M02 ~ M14·M18 ~ M20)·ruff(M15·M16)·자기 시험(M17).
 
 사외(개발 PC, WSL):
 
@@ -693,7 +693,7 @@ def _empty_block(root: Path, *, exists: bool, worktree: WorktreeState | None) ->
 
 def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="사내 모듈의 선언·정적 규칙·ruff·자기 시험을 보고 리뷰에 붙일 블록을 찍는다"
+        description="모듈의 선언·정적 규칙·ruff·자기 시험을 보고 리뷰에 붙일 블록을 찍는다"
     )
     parser.add_argument("ids", nargs="*", help="볼 모듈 id(폴더 이름)")
     parser.add_argument("--all", action="store_true", help="뿌리 아래 모든 모듈")

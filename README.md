@@ -95,7 +95,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 | **생산 진도** | 빈 화면(「준비 중」 — 보일 내용은 정해지는 대로 채움) |
 | **Dynamic Capa** | 표준 Capa → 효율 → UPEH → Rundown → 실제 실적의 손실 분해(데모 데이터) |
 | └ 표준 대비 재공 현황 (구현중) | 오늘 −7일~+3일의 보유 재공·유입·Flow 와 일 표준 가능량(결정론적 샘플) |
-| 사내 모듈 (사내만) | 사내 동료가 만든 화면(`modules/<id>/`)을 별도 상자로 띄움. 켜진 모듈이 없으면 상자도 없음(사외에는 늘 없음) |
+| 모듈 (사내만) | 동료가 만든 화면(`modules/<id>/`)을 별도 상자로 띄움. 켜진 모듈이 없으면 상자도 없음(사외에는 늘 없음) |
 | Admin Area | 공정 표시명(`Proc Rename`)·공용 표시순서 관리, 원천 품질, 계산 알림을 한곳에 모은 `알림 모음` |
 | VOC | 질문·개선 요청·오류 신고 게시판(시나리오와 무관) |
 
@@ -167,7 +167,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 - Python **3.10.11 64-bit** 고정, 실행은 저장소의 `.venv`
 - 패키지 관리 `uv`(의존성 선언은 `pyproject.toml` 하나, 개발 도구는 `[dependency-groups]` 의 `dev`). 루트
   `requirements.txt` 는 사내 WebIDE 컨테이너용으로 `uv export` 로 뽑은 `uv.lock` 의 그림자라 손으로 고치지 않습니다
-  (`tests/test_requirements_export.py` 가 대조). 사내 모듈은 패키지를 직접 넣지 않습니다 — 담당자가 앱 관리자에게 전하고 앱 관리자가
+  (`tests/test_requirements_export.py` 가 대조). 모듈은 패키지를 직접 넣지 않습니다 — 담당자가 앱 관리자에게 전하고 앱 관리자가
   리뷰 「사외 요청」 에 넣으면 사외가 이 선언에 더하고 `config/module_packages.json` 에 이름을 적어 배포합니다. 배포가 들어온 뒤 담당자
   클론은 `uv sync --inexact` 를 칩니다
 - 사외 개발·배포 빌드: 데스크탑 WSL(Ubuntu x86_64) 한 곳 — [`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md)
@@ -542,8 +542,8 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
-| `new_module.py` | 사내 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
-| `check_module.py` | 사내 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
+| `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
+| `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
 | `module_test_runner.py` | `check_module.py` 가 부르는 모듈 시험 감시 러너 — 코어 `data/` 접근·저장소 안 쓰기(모듈 폴더·상대 경로)를 실패로, AppTest import 길을 앱과 같게 |
 | `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18 ~ M20 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
 | `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run app.py --server.port 8080`)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
@@ -570,7 +570,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/parallel_agent_briefing.md` | 병행 개발 에이전트의 시작 절차와 하루 흐름(규칙은 AGENTS 14장) |
 | `docs/scenario_merge_shift_implementation.md` | 시나리오 월 머지·연도 Shift 구현 설명 |
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |
-| `docs/module_guide.md` | 사내 모듈 지침서 — 동료(담당자)의 에이전트가 받는 것. 자리·`module.json`·`module_api` v1·점검 규칙·사내 Git 운영 |
+| `docs/module_guide.md` | 모듈 지침서 — 동료(담당자)의 에이전트가 받는 것. 자리·`module.json`·`module_api` v1·점검 규칙·Git 운영 |
 | `docs/module_colleague_guide.md` | 모듈 담당자(사람)용 안내서 — 비전문 동료가 읽는 쉬운 말 판. 할 수 있는 것·첫 지시·하루 흐름(가지 → PR)·에이전트에게 말하는 법·막힐 때. 규칙의 정본은 지침서 |
 | `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용) |
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
@@ -588,4 +588,4 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 - BOX·PCB 부하량과 Capa 산식(지금은 계산에서 빼 둠 — 제외가 아니라 추가 예정), `MCP_Chip_Ratio` 소요대수 보정
 - 결과 Excel 내려받기와 계산 실행 이력(화면 표·제외 목록의 CSV 내려받기는 있음)
 - 실적효율·생산실적·재공 실적 DB 의 원천 조회와 컬럼·시점 정의, 공정·STEP·제품 매핑
-- 사내 모듈과 코어의 데이터 연계(모듈 출력 계약 → 코어 읽기, `module_api` v2)
+- 모듈과 코어의 데이터 연계(모듈 출력 계약 → 코어 읽기, `module_api` v2)

@@ -286,7 +286,7 @@ with pinned_connections(DUCKDB_PATH):
     # 페이지만 가리키므로 선택자로 쓸 수 있다.
     active_href = navigation.url_path
     current_spec = pages.spec_for(navigation.url_path)
-    # 사내 모듈 화면은 코어 등록부(적용 전 편집·탭 점 — `app_pages/<파일 이름>` 꼴)에 들지 않는다.
+    # 모듈 화면은 코어 등록부(적용 전 편집·탭 점 — `app_pages/<파일 이름>` 꼴)에 들지 않는다.
     # 모듈 파일 이름이 `home.py` 같으면 코어 화면의 편집 표지가 잘못 붙는다.
     page_file = (
         None
@@ -522,7 +522,7 @@ with pinned_connections(DUCKDB_PATH):
     # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
-    # 사내 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림).
+    # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림).
     # 처리한 실패는 정상으로 돌아와 아래 꼬리가 돈다. `st.stop()`·`st.rerun()` 은 지금처럼 지나간다.
     try:
         with equipment_pin:

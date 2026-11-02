@@ -118,10 +118,10 @@ def _without_container_start_report(
 def _without_internal_modules(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[None]:
-    """사내 모듈 뿌리(`CAPA_MODULES_ROOT`)를 없는 자리로, 모듈 데이터 뿌리를 tmp 로 돌린다.
+    """모듈 뿌리(`CAPA_MODULES_ROOT`)를 없는 자리로, 모듈 데이터 뿌리를 tmp 로 돌린다.
 
     사내 저장소에는 `modules/` 가 있다. 진짜 `app.py` 를 도는 AppTest 와 시험이 하위 프로세스로
-    띄우는 앱(`test_check_deploy_screens` 의 Popen 등)이 그것을 찾으면 사이드바에 「사내 모듈」
+    띄우는 앱(`test_check_deploy_screens` 의 Popen 등)이 그것을 찾으면 사이드바에 「모듈」
     상자가 더 서서 사내에서만 시험이 깨진다. 속성(`settings.MODULES_DIR`)이 아니라 **환경변수**로
     돌린다 — 하위 프로세스까지 이어진다. 끄는 스위치(`CAPA_MODULES_DISABLED`)는 지우고, 찾기
     캐시와 실행 기록은 앞뒤로 비운다. 견본이 필요한 시험은 `monkeypatch.setenv(ROOT_ENV_VAR, …)`

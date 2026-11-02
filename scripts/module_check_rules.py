@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈 점검의 정적 규칙(M02 ~ M14·M18 ~ M20)을 모듈 폴더의 파일과 AST 로 본다.
+# Purpose: 모듈 점검의 정적 규칙(M02 ~ M14·M18 ~ M20)을 모듈 폴더의 파일과 AST 로 본다.
 
-"""사내 모듈 정적 규칙 — `scripts/check_module.py` 가 부른다(사람이 직접 칠 일은 없다).
+"""모듈 정적 규칙 — `scripts/check_module.py` 가 부른다(사람이 직접 칠 일은 없다).
 
 규칙 번호와 뜻은 `docs/module_guide.md` 부록 B 와 같아야 한다(`RULES` 가 코드 쪽 표다).
 여기서는 모듈의 `.py` 를 import 하지 않는다 — `ast.parse(..., feature_version=(3, 10))` 로만

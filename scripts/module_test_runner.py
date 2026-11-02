@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈 시험을 감시 아래 pytest 로 돌린다(코어 data 접근·저장소 안 쓰기를 막는다).
+# Purpose: 모듈 시험을 감시 아래 pytest 로 돌린다(코어 data 접근·저장소 안 쓰기를 막는다).
 
-"""사내 모듈 시험 러너 — `scripts/check_module.py` 만 부른다(사람이 직접 칠 일은 없다).
+"""모듈 시험 러너 — `scripts/check_module.py` 만 부른다(사람이 직접 칠 일은 없다).
 
     python scripts/module_test_runner.py --modules-root <뿌리> --protect <트리>/data \\
         [--protect <운영 저장소>/data] [--workspace <트리>] --data-root <임시 폴더> \\
@@ -297,9 +297,7 @@ def _split(argv: Sequence[str]) -> tuple[list[str], list[str]]:
 
 
 def _parse(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="사내 모듈 시험 감시 러너(check_module.py 가 부른다)"
-    )
+    parser = argparse.ArgumentParser(description="모듈 시험 감시 러너(check_module.py 가 부른다)")
     parser.add_argument("--modules-root", required=True, help="모듈 뿌리 — 그 아래 쓰기를 막는다")
     parser.add_argument(
         "--protect", action="append", default=[], help="읽기·쓰기를 모두 막을 폴더(여러 번)"

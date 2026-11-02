@@ -1,4 +1,4 @@
-# Purpose: 견본 사내 모듈 demo_keys 의 화면 — 접두 없는 세션 키를 만들어 실행 알림을 보인다.
+# Purpose: 견본 모듈 demo_keys 의 화면 — 접두 없는 세션 키를 만들어 실행 알림을 보인다.
 
 import streamlit as st
 

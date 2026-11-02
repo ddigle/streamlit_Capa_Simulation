@@ -91,7 +91,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 넣을 수 있는 것은 **배포 설정의 환경변수 표(key·value)** 뿐이다. 그래서 이미지(`docker/Dockerfile-prod`)의 `CMD` 가
 시작 스크립트 `scripts/container_start.py` 를 부르고, 스크립트가 아래 환경변수만으로 위 0·1·2 를 푼 뒤
 `streamlit run app.py --server.port 8080` 으로 바뀐다. 어느 단계가 실패해도 앱은 뜬다.
-사내 모듈이 있는 사내 main 은 누른 때 그대로 빌드된다 — CI/CD 단추는 앱 관리자만,
+모듈이 있는 사내 main 은 누른 때 그대로 빌드된다 — CI/CD 단추는 앱 관리자만,
 런북 4-5 모듈 점검을 본 뒤에 누른다(`docs/module_guide.md` 8장).
 
 ### 넣을 환경변수

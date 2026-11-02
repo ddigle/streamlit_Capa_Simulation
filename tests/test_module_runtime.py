@@ -1,6 +1,6 @@
-# Purpose: 진짜 app.py 로 사내 모듈 상자·화면 감싸기·콜백·프래그먼트·키 알림·등록 실패 격리를 본다.
+# Purpose: 진짜 app.py 로 모듈 상자·화면 감싸기·콜백·프래그먼트·키 알림·등록 실패 격리를 본다.
 
-"""사내 모듈 런타임 — 진짜 `app.py` 를 `AppTest.from_file` 로 돈다(`_app` 준비는 내비 시험 꼴).
+"""모듈 런타임 — 진짜 `app.py` 를 `AppTest.from_file` 로 돈다(`_app` 준비는 내비 시험 꼴).
 
 뿌리는 견본(`tests/fixtures/modules`) 이거나 tmp 모듈(`<tmp>/modules`)이다 — `CAPA_MODULES_ROOT`
 환경변수로 돌린다. 기본(conftest)은 없는 자리라 모듈이 없을 때 사이드바·Admin 이 바탕과 같다.
@@ -147,11 +147,11 @@ def test_without_modules_the_sidebar_is_unchanged(
     app = _ok(_app.run())
 
     assert MODULE_BOX not in _sidebar_keys(app)
-    assert all("사내 모듈" not in link.proto.label for link in app.sidebar.get("page_link"))
+    assert all(link.proto.label != "모듈" for link in app.sidebar.get("page_link"))
     app.switch_page("app_pages/admin_area.py").run()
     _ok(app)
     labels = _expander_labels(app)
-    assert not any("사내 모듈 상태" in label for label in labels)
+    assert not any("모듈 상태" in label for label in labels)
 
 
 def test_every_module_switched_off_hides_the_box_but_admin_still_tells(
@@ -164,7 +164,7 @@ def test_every_module_switched_off_hides_the_box_but_admin_still_tells(
     app.switch_page("app_pages/admin_area.py").run()
     _ok(app)
     labels = _expander_labels(app)
-    assert "사내 모듈 상태 — 켜짐 0 · 꺼짐 4 · 실패 2" in labels
+    assert "모듈 상태 — 켜짐 0 · 꺼짐 4 · 실패 2" in labels
 
 
 # ------------------------------------------------------------------ 화면 실행

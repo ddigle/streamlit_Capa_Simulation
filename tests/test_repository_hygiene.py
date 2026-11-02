@@ -73,7 +73,7 @@ ALLOWED_TOP_LEVEL = {
 # 위 필수 목록에 넣으면 사외에서 「선언에는 있는데 없다」로 깨지고, 아무 데도 안 적으면
 # **사내에서만** 「선언되지 않은 항목」으로 깨진다 — 사내는 그것을 진짜 결함으로 보아 리뷰에
 # 적고 사외에서는 재현되지 않는다. 이 저장소가 없애려는 바로 그 실패 유형이라 따로 둔다.
-# `modules/` 는 사내 모듈 자리다(모델 2 — 사내가 정본, 사외에는 없다). 모듈 코드는 코어 시험이
+# `modules/` 는 모듈 자리다(모델 2 — 사내가 정본, 사외에는 없다). 모듈 코드는 코어 시험이
 # 아니라 `scripts/check_module.py` 가 본다. **전부 소문자로 적는다**(`_core_tracked` 가 소문자로
 # 견준다).
 INTERNAL_ONLY_TOP_LEVEL = {".deploy/", "review/", "modules/"}
@@ -94,7 +94,7 @@ def _tracked(pattern: str = "") -> list[str]:
 def _core_tracked(paths: Iterable[str]) -> list[str]:
     """사내에만 생기는 최상위(`INTERNAL_ONLY_TOP_LEVEL`) 아래를 뺀 추적 목록 — 코어만 남긴다.
 
-    저장소 전체를 훑는 검사가 사내 모듈·리뷰 글까지 읽으면 **사내에서만** 깨진다 — cp949 로 저장한
+    저장소 전체를 훑는 검사가 모듈·리뷰 글까지 읽으면 **사내에서만** 깨진다 — cp949 로 저장한
     모듈 파일이 UTF-8 읽기를 죽이고, 모듈 글이 코어 문서를 가리켜 「아무도 안 가리키는 문서」 를
     가린다. 대소문자를 가리지 않는다(Windows 에서 `Modules/…` 로 커밋될 수 있다). 시험 견본
     `tests/fixtures/modules/` 는 코어라 남는다.
@@ -274,7 +274,7 @@ def test_documented_app_launch_lines_name_the_port() -> None:
     missing = [
         f"{path}:{number}: {line.strip()}"
         # 사내 리뷰는 옛 명령을 옮겨 적는 기록이라 보지 않는다(사내만 깨지고 고칠 수도 없다).
-        # 사내 모듈 글도 담당자 몫이다.
+        # 모듈 글도 담당자 몫이다.
         for path in _core_tracked(_tracked("*.md"))
         if path not in _LAUNCH_PORT_EXEMPT
         for number, line in enumerate(
@@ -303,7 +303,7 @@ def _ignored(path: str) -> bool:
 
 
 def test_module_data_is_ignored_but_module_code_is_not() -> None:
-    """사내 모듈 데이터(`data/modules/<id>/`)는 git 밖이고, 모듈 코드(`modules/<id>/`)는 사내가
+    """모듈 데이터(`data/modules/<id>/`)는 git 밖이고, 모듈 코드(`modules/<id>/`)는 사내가
     커밋한다 — 무시되면 담당자 커밋이 비고 CD 이미지에 화면이 오르지 않는다."""
     assert _ignored("data/modules/demo/a.csv")
     assert _ignored("data/modules/demo/store.duckdb")

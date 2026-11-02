@@ -696,8 +696,8 @@ def test_internal_board_labels_its_own_pictures_with_the_date(
     data, report = core.assemble(SKELETON.content, shots)
     steps = {(t["id"], s["id"]): s for t in data["tasks"] for s in t.get("steps", [])}
 
-    assert data["shotLabel"] == f"사내 화면 · {DATE}"
-    assert steps[("change_avail", "apply")]["crop"]["cap"] == f"사내 화면 · {DATE}"
+    assert data["shotLabel"] == f"실제 화면 · {DATE}"
+    assert steps[("change_avail", "apply")]["crop"]["cap"] == f"실제 화면 · {DATE}"
     assert steps[("save_revision", "badge")]["crop"]["cap"] == core.EXAMPLE_LABEL
     assert report.example_spots == {
         "step:save_revision.badge",

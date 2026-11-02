@@ -1,6 +1,6 @@
-# Purpose: Admin Area 탭 위에 사내 모듈 찾기 결과와 마지막 오류를 펼침으로 보인다(모듈 없으면 없음).
+# Purpose: Admin Area 탭 위에 모듈 찾기 결과와 마지막 오류를 펼침으로 보인다(모듈 없으면 없음).
 
-"""Admin Area 「사내 모듈 상태」.
+"""Admin Area 「모듈 상태」.
 
 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off` · 시험 기본값) 아무것도 그리지 않는다 — Admin
 화면이 사외와 같다. DB 를 열지 않는다 — 회차마다 캐시된 찾기 결과(`navigation.module_scan`)와 실행
@@ -58,7 +58,7 @@ def status_title(scan: ModuleScan) -> str:
     counts = {state: 0 for state in STATE_LABELS}
     for record in scan.records:
         counts[record.state] += 1
-    return f"사내 모듈 상태 — 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
+    return f"모듈 상태 — 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
 
 
 def run_time_ms(seconds: float) -> int:

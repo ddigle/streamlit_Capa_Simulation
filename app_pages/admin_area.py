@@ -1,4 +1,4 @@
-# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 그 위 서버 시작 점검·사내 모듈 상태를 보인다.
+# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 그 위 서버 시작 점검·모듈 상태를 보인다.
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ render_page_guide("admin_area", title="Admin Area")
 # C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
 # 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
 render_container_start_check()
-# 사내 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패와 까닭·마지막 오류를 펼침으로 보인다. 사외와
+# 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패와 까닭·마지막 오류를 펼침으로 보인다. 사외와
 # `CAPA_MODULES_ROOT=off` 에서는 아무것도 그리지 않는다(DB 를 열지 않는다).
 render_module_status()
 

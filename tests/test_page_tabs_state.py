@@ -327,7 +327,7 @@ def test_a_page_helper_is_refused_before_moving_when_the_strip_is_full(
     assert session.reruns == 1
 
 
-# ------------------------------------------------------------------ 사내 모듈 화면
+# ------------------------------------------------------------------ 모듈 화면
 
 DEMO_OK_PAGE = "tests/fixtures/modules/demo_ok/demo_ok_page.py"
 

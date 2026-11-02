@@ -1,9 +1,9 @@
-# Purpose: 사내 모듈의 실행 실패·제외된 화면·회차 시간·접두 없는 키를 프로세스 안에 적고 읽는다.
+# Purpose: 모듈의 실행 실패·제외된 화면·회차 시간·접두 없는 키를 프로세스 안에 적고 읽는다.
 
-"""사내 모듈 실행 기록(UI 없음 — Streamlit 실행 문맥 없이 돈다).
+"""모듈 실행 기록(UI 없음 — Streamlit 실행 문맥 없이 돈다).
 
 모듈 화면 감싸기(`module_runtime`), 콜백·프래그먼트 감싸기(`module_api` 의 `ctx.callback`·
-`ctx.guard`), 화면 등록 실패(`navigation`)가 모두 여기에 적고 Admin Area 「사내 모듈 상태」 가
+`ctx.guard`), 화면 등록 실패(`navigation`)가 모두 여기에 적고 Admin Area 「모듈 상태」 가
 읽는다.
 세 곳이 서로를 import 하지 않게(순환 막기) 저장소를 UI 없는 이 파일 하나로 뗐다.
 

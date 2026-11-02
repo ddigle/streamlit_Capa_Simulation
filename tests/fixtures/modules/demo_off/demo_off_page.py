@@ -1,4 +1,4 @@
-# Purpose: 견본 사내 모듈 demo_off 의 화면 — module.json 이 꺼 두어 앱에 등록되지 않는다.
+# Purpose: 견본 모듈 demo_off 의 화면 — module.json 이 꺼 두어 앱에 등록되지 않는다.
 
 import streamlit as st
 

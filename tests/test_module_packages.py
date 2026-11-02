@@ -86,7 +86,7 @@ def _core_import_tops() -> set[str]:
 
 def test_every_third_party_package_the_core_imports_is_a_direct_dependency() -> None:
     """코어가 import 하는 제3자 패키지는 다른 패키지가 끌어온 전이 의존에 기대지 않는다 — 끌어온
-    쪽이 의존을 바꾸면 사내 이미지에서 말없이 빠진다. 사내 모듈 점검(M09)도 같은 직접 의존 표를
+    쪽이 의존을 바꾸면 사내 이미지에서 말없이 빠진다. 모듈 점검(M09)도 같은 직접 의존 표를
     본다."""
     dependencies = _project_dependencies((PROJECT_ROOT / "pyproject.toml").read_text("utf-8"))
     pinned = rules.parse_requirements((PROJECT_ROOT / "requirements.txt").read_text("utf-8"))

@@ -1,4 +1,4 @@
-# Purpose: 견본 사내 모듈 demo_ok 의 둘째 화면 — 한 모듈이 화면 여럿을 두는 꼴을 보인다.
+# Purpose: 견본 모듈 demo_ok 의 둘째 화면 — 한 모듈이 화면 여럿을 두는 꼴을 보인다.
 
 import streamlit as st
 

@@ -136,7 +136,7 @@ class PageSpec:
     # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(설비 데이터를 읽지 않는 탭이 있는
     # 화면만 적는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
     equipment_scenario_tabs: frozenset[str] | None = None
-    # 사내 모듈 화면이면 그 모듈 id(`modules/<id>/` — 실행 때 `module_page_specs` 가 만든다). 코어
+    # 모듈 화면이면 그 모듈 id(`modules/<id>/` — 실행 때 `module_page_specs` 가 만든다). 코어
     # 화면은 None 이다.
     module: str | None = None
 
@@ -427,13 +427,13 @@ WIP_STATUS = PageSpec(
 )
 DYNAMIC_CAPA_SUBPAGES = (WIP_STATUS,)
 
-# 사내 모듈(모델 2 — 2026-11-01 사용자 결정) 색인 화면. 코어 화면이라 **늘 등록**하고(주소로는
-# 열린다), 사이드바에는 켜진 모듈이 있을 때만 별도 상자 「사내 모듈」 의 머리로
+# 모듈(모델 2 — 2026-11-01 사용자 결정) 색인 화면. 코어 화면이라 **늘 등록**하고(주소로는
+# 열린다), 사이드바에는 켜진 모듈이 있을 때만 별도 상자 「모듈」 의 머리로
 # 선다(`build_navigation_pages`). 상자는 `SIDEBAR_GROUPS` 밖이다 — 실행 때 `modules/*/module.json`
 # 을 읽어 더하는 그룹이다.
 INTERNAL_MODULES = PageSpec(
     "app_pages/internal_modules.py",
-    "사내 모듈",
+    "모듈",
     ":material/extension:",
     reads_scenario=False,
     reads_period=False,
@@ -527,7 +527,7 @@ def core_page_titles() -> tuple[str, ...]:
 
 
 def module_scan() -> ModuleScan:
-    """사내 모듈 찾기 결과 — 색인·Admin·탭 줄이 모두 이것만 부른다(같은 프로세스 캐시 칸)."""
+    """모듈 찾기 결과 — 색인·Admin·탭 줄이 모두 이것만 부른다(같은 프로세스 캐시 칸)."""
     return module_registry.discovered(reserved_titles=_CORE_PAGE_TITLES)
 
 
@@ -576,7 +576,7 @@ _RUNTIME_SPECS: list[tuple[tuple[PageSpec, ...], tuple[PageSpec, ...]]] = []
 
 
 def module_page_specs() -> tuple[PageSpec, ...]:
-    """켜진 사내 모듈의 화면 선언(재시작까지 뺀 화면 — `excluded_pages` — 은 없다)."""
+    """켜진 모듈의 화면 선언(재시작까지 뺀 화면 — `excluded_pages` — 은 없다)."""
     scan = module_scan()
     if not scan.active:
         return ()
@@ -622,7 +622,7 @@ class NavigationPages:
     admin_box_pages: tuple[st.Page, ...]
     # 페이지와 그 선언의 짝. `app.py` 가 지금 화면이 읽는 공통 조건을 여기서 찾는다.
     specs: tuple[tuple[st.Page, PageSpec], ...] = ()
-    # 사내 모듈 색인 화면. 켜진 모듈이 있으면 `groups` 끝 모듈 상자의 머리이고, 없으면 상자 없이
+    # 모듈 색인 화면. 켜진 모듈이 있으면 `groups` 끝 모듈 상자의 머리이고, 없으면 상자 없이
     # 등록만 된다(주소로는 열린다).
     internal_modules: st.Page | None = None
 
@@ -672,7 +672,7 @@ def _module_pages() -> list[tuple[st.Page, PageSpec]]:
 
 
 def build_navigation_pages() -> NavigationPages:
-    """선언을 실제 `st.Page` 객체로 만든다. 켜진 사내 모듈이 있으면 모듈 상자를 끝에 더한다."""
+    """선언을 실제 `st.Page` 객체로 만든다. 켜진 모듈이 있으면 모듈 상자를 끝에 더한다."""
     pages: dict[PageSpec, st.Page] = {spec: spec.to_page() for spec in ALL_SPECS}
     groups = [
         SidebarGroup(

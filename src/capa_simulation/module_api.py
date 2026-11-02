@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈이 import 하는 유일한 코어 창구 v1 — 문맥·키·머리말·색만 내고 데이터는 없다.
+# Purpose: 모듈이 import 하는 유일한 코어 창구 v1 — 문맥·키·머리말·색만 내고 데이터는 없다.
 
-"""사내 모듈 공개 창구 v1(모델 2 — 2026-11-01 사용자 결정).
+"""모듈 공개 창구 v1(모델 2 — 2026-11-01 사용자 결정).
 
 모듈(`modules/<id>/`)은 코어에서 **이 모듈 하나만** import 한다. 겉면은 `__all__` 이 전부이고
 `tests/test_module_api_surface.py` 가 이름·서명·칸을 고정한다. 바꾸는 법(AGENTS 12장 「코어 공개
@@ -161,7 +161,7 @@ class ModuleContext:
         _module_failures.record_failure(
             self.id, page="", kind=type(error).__name__, where="callback"
         )
-        _LOGGER.error("사내 모듈 %s 콜백 실패", self.id, exc_info=error)
+        _LOGGER.error("모듈 %s 콜백 실패", self.id, exc_info=error)
         parts = _failure_parts(error, module_id=self.id, folder=self.folder)
         with contextlib.suppress(Exception):  # 실행 문맥 밖(단위 시험)에서는 표지를 남기지 않는다
             st.session_state[_module_failures.callback_failure_key(self.id)] = {
@@ -181,7 +181,7 @@ def _guarded(ctx: ModuleContext) -> Iterator[None]:
     # SystemExit·CancelledError 도 잡는다 — 두면 회차 스레드가 끝나 세션이 멈춘다.
     except BaseException as error:
         _module_failures.record_failure(ctx.id, page="", kind=type(error).__name__, where="guard")
-        _LOGGER.error("사내 모듈 %s guard 안 실패", ctx.id, exc_info=error)
+        _LOGGER.error("모듈 %s guard 안 실패", ctx.id, exc_info=error)
         _render_module_failure_card(
             module_id=ctx.id,
             module_name=ctx.name,

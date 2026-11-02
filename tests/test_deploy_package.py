@@ -117,7 +117,7 @@ def test_ordinary_files_are_not_flagged() -> None:
 
 
 def _core_shipped(tracked: list[str]) -> list[str]:
-    """배포 세트에서 사내 전용 자리(`internal_only_entries` — `review/`·사내 모듈 `modules/`
+    """배포 세트에서 사내 전용 자리(`internal_only_entries` — `review/`·모듈 `modules/`
     등)를 뺀 것.
 
     사내 저장소는 그 자리를 추적한다. 사외 빌더는 그 자리가 세트에 있으면 따로 멈추므로(사내
@@ -139,7 +139,7 @@ def test_the_real_repository_ships_nothing_forbidden() -> None:
 
 
 def test_internal_only_data_files_are_left_to_the_module_check() -> None:
-    """사내 모듈이 데이터 꼴 파일을 커밋해도 코어 관문은 그대로다.
+    """모듈이 데이터 꼴 파일을 커밋해도 코어 관문은 그대로다.
 
     코어 자리의 같은 꼴 파일(시험 견본 `tests/fixtures/modules/` 포함)은 여전히 잡는다.
     """
@@ -205,7 +205,7 @@ def test_the_manifest_never_hashes_itself(tmp_path: Path) -> None:
 def test_internal_only_paths_never_ship() -> None:
     """사외에 `review/` 가 생기면 ZIP 에 실려 사내 리뷰 기록을 덮는다.
 
-    사내 모듈 자리(`modules/` — 모델 2)도 같다. 사외에는 그 폴더가 없어야 하고, 시험 견본은
+    모듈 자리(`modules/` — 모델 2)도 같다. 사외에는 그 폴더가 없어야 하고, 시험 견본은
     `tests/fixtures/modules/` 아래라 걸리지 않는다. Windows 철자 `Modules/` 도 잡는다.
     """
     from build_deploy_package import internal_only_entries
@@ -720,7 +720,7 @@ def test_a_tracked_module_folder_in_the_outside_repository_stops_the_build(
     folder: str,
     list_only: bool,
 ) -> None:
-    """사외에 `modules/` 가 추적되면 ZIP 에 실려 사내 모듈을 덮는다 — 만들지도 목록도 내지 않는다.
+    """사외에 `modules/` 가 추적되면 ZIP 에 실려 모듈을 덮는다 — 만들지도 목록도 내지 않는다.
 
     빌더는 태그도 남기지 않고 멈춘다(`--list-only` 도 같은 자리에서 멈춘다).
     """

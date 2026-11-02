@@ -139,8 +139,8 @@ EXPECTED_PAGES = [
     ("app_pages/production_progress.py", "생산 진도", ":material/trending_up:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
-    # 사내 모듈 색인 — 늘 등록하고 사이드바에는 켜진 모듈이 있을 때만 상자 머리로 선다(2026-11-01).
-    ("app_pages/internal_modules.py", "사내 모듈", ":material/extension:", False),
+    # 모듈 색인 — 늘 등록하고 사이드바에는 켜진 모듈이 있을 때만 상자 머리로 선다(2026-11-01).
+    ("app_pages/internal_modules.py", "모듈", ":material/extension:", False),
     (
         "app_pages/admin_area.py",
         "Admin Area",
@@ -2599,7 +2599,7 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
         assert names == ["설비 DB", "시뮬레이션 DB"], path
 
 
-# ------------------------------------------------------------ 사내 모듈(모델 2)
+# ------------------------------------------------------------ 모듈(모델 2)
 
 
 def test_the_module_index_page_is_ordered_exactly_once_with_or_without_modules(
@@ -2614,7 +2614,7 @@ def test_the_module_index_page_is_ordered_exactly_once_with_or_without_modules(
     real_navigation = st.navigation
 
     def counting(pages: list[Any], **kwargs: Any) -> Any:
-        counted.append(sum(1 for page in pages if page.title == "사내 모듈"))
+        counted.append(sum(1 for page in pages if page.title == "모듈"))
         return real_navigation(pages, **kwargs)
 
     monkeypatch.setattr(st, "navigation", counting)

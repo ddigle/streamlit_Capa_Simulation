@@ -36,7 +36,7 @@ LF = "\n"
 def _powershell_files() -> list[Path]:
     """저장소가 **소유한** `.ps1` 만. `rglob` 은 `.venv` 안의 `activate.ps1` 까지 훑는다.
 
-    사내에만 생기는 최상위(`review/`·`.deploy/`·사내 모듈 `modules/`)는 뺀다 — 모듈의 `.ps1` 은
+    사내에만 생기는 최상위(`review/`·`.deploy/`·모듈 `modules/`)는 뺀다 — 모듈의 `.ps1` 은
     `scripts/check_module.py` 가 막는 것이고, 여기서 보면 **사내에서만** 코어 관문이 깨진다.
     """
     return [PROJECT_ROOT / path for path in _core_tracked(_tracked_powershell())]

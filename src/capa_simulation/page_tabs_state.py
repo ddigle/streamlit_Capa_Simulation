@@ -9,7 +9,7 @@
   `st.switch_page` 에 그대로 넘긴다. 사이드바·HOME 칸·카드 링크·뒤로가기·주소 직접 입력, 어느
   길로 화면에 들어와도 `app.py` 가 매 회차 그 화면을 목록에 더한다(`note_current_page`). 새 탭은
   끝에 붙는다.
-- **사내 모듈 화면도 탭이다.** 탭 id 는 그 화면 파일의 저장소 상대 경로(`modules/<id>/page.py` —
+- **모듈 화면도 탭이다.** 탭 id 는 그 화면 파일의 저장소 상대 경로(`modules/<id>/page.py` —
   서버 경로가 브라우저로 나가지 않는다)이고, 탭이 될 수 있는 화면은 실행 때 찾은 선언
   (`navigation.runtime_specs` — `valid_tabs`·`spec_for_path`)이다.
 - **고정.** HOME 은 고정 탭으로 시작한다. 어느 탭이든 고정·고정 풀기가 되고, 고정 탭은 왼쪽에
@@ -93,7 +93,7 @@ class TabStrip:
 
 INITIAL_STRIP: Final = TabStrip((HOME_TAB,), frozenset({HOME_TAB}))
 
-# 탭이 될 수 있는 화면 — 코어 선언과 켜진 사내 모듈 화면(`navigation.runtime_specs`). 모듈은 실행 때
+# 탭이 될 수 있는 화면 — 코어 선언과 켜진 모듈 화면(`navigation.runtime_specs`). 모듈은 실행 때
 # 찾으므로 import 때 굳히지 않는다. 같은 선언 튜플이면 다시 짓지 않는다(키는 객체 동일성).
 _TAB_INDEX: list[tuple[tuple[PageSpec, ...], frozenset[str], dict[str, PageSpec]]] = []
 
@@ -110,7 +110,7 @@ def _tab_index() -> tuple[frozenset[str], dict[str, PageSpec]]:
 
 
 def valid_tabs() -> frozenset[str]:
-    """탭 id(`PageSpec.path`) 전부 — 코어 화면과 켜진 사내 모듈 화면(재시작까지 뺀 화면 제외)."""
+    """탭 id(`PageSpec.path`) 전부 — 코어 화면과 켜진 모듈 화면(재시작까지 뺀 화면 제외)."""
     return _tab_index()[0]
 
 

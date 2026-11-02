@@ -777,7 +777,7 @@ def test_the_stop_reason_on_stderr_is_utf8_like_stdout_in_a_cp949_pipe(tmp_path:
     assert "멈췄습니다 — ZIP 을 찾지 못했습니다" in completed.stderr
 
 
-# 사내 모듈 자리(모델 2) — `modules/<id>/` 는 사내가 정본이라 ZIP 이 싣지도 덮지도 지우지도 않는다.
+# 모듈 자리(모델 2) — `modules/<id>/` 는 사내가 정본이라 ZIP 이 싣지도 덮지도 지우지도 않는다.
 # 모듈 데이터(`data/modules/<id>/`)는 운영 데이터처럼 어떤 경우에도 지우지 않는다.
 
 
@@ -959,7 +959,7 @@ def test_uncommitted_module_edits_stop_the_apply_with_the_module_message(
 
     assert apply_deploy_package.main([str(archive)]) == 1
     stderr = capsys.readouterr().err
-    assert "커밋하지 않은 사내 모듈 수정이 1개" in stderr
+    assert "커밋하지 않은 모듈 수정이 1개" in stderr
     assert "배포 체크아웃에서는 모듈을 고치지 않습니다" in stderr
     assert "런북 1-7" in stderr
     assert "되돌리지 않고" in stderr
@@ -986,7 +986,7 @@ def test_a_core_edit_beside_a_module_edit_keeps_the_general_message(
     stderr = capsys.readouterr().err
     assert "미저장 변경이 있습니다" in stderr
     assert "먼저 커밋하거나 되돌리세요" in stderr
-    assert "사내 모듈 수정" not in stderr
+    assert "모듈 수정" not in stderr
     assert "app.py" in stderr and "modules/demo_x/page.py" in stderr
     assert (root / "app.py").read_bytes() == b"x = 99  # temp fix\n"
 

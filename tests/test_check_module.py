@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 점검이 규칙마다 금지 꼴을 잡고 견본을 통과시키며 결과 블록 꼴을 지킴을 본다.
+# Purpose: 모듈 점검이 규칙마다 금지 꼴을 잡고 견본을 통과시키며 결과 블록 꼴을 지킴을 본다.
 
 from __future__ import annotations
 

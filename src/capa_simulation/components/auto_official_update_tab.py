@@ -320,7 +320,7 @@ def scheduler_stall_message(status: SchedulerStatus, now: datetime) -> str | Non
             return None
         return (
             f"예약 회차가 {format(status.last_tick_at, DATETIME_FORMAT)}부터 "
-            f"{int(elapsed.total_seconds() // 60)}분째 도는 중입니다 — 사내 조회가 응답하지 "
+            f"{int(elapsed.total_seconds() // 60)}분째 도는 중입니다 — DB 조회가 응답하지 "
             "않을 수 있습니다. 그동안 「지금 실행」과 다음 예약도 돌지 않습니다. 오래 이어지면 "
             "앱을 다시 띄우세요(실행 기록의 「실행 중」 줄은 다시 띄울 때 오류로 닫힙니다)."
         )
@@ -365,7 +365,7 @@ def _render_settings_form(
                     value=config.check_time,
                     step=60,
                     width=160,
-                    help="사내 PC 시계(OS 시각) 기준입니다. 매일 이 시각에 한 번 돕니다.",
+                    help="PC 시계(OS 시각) 기준입니다. 매일 이 시각에 한 번 돕니다.",
                 )
                 keyword = st.text_input(
                     "시뮬레이션명 키워드",
@@ -531,7 +531,7 @@ def _render_run_now(
         st.caption(
             "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전을 "
             "발행합니다. 켜짐·실행 줄 허락과 상관없이 돌고 결과는 아래 실행 기록에 남습니다. "
-            "같은 날 예약 회차와는 따로 셉니다(이미 받은 코드는 다시 받지 않습니다). 사내 조회와 "
+            "같은 날 예약 회차와는 따로 셉니다(이미 받은 코드는 다시 받지 않습니다). DB 조회와 "
             "전체 기간 계산이라 몇십 초 걸릴 수 있습니다."
         )
         clicked = st.button(

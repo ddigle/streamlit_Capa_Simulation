@@ -1,6 +1,6 @@
-# Purpose: 사내 모듈 화면 실행을 감싸 그 화면에만 오류 카드를 그리고 접두 없는 세션 키를 알린다.
+# Purpose: 모듈 화면 실행을 감싸 그 화면에만 오류 카드를 그리고 접두 없는 세션 키를 알린다.
 
-"""사내 모듈 화면 실행 감싸기(고장 격리 — 화면 본문).
+"""모듈 화면 실행 감싸기(고장 격리 — 화면 본문).
 
 `app.py` 가 **모듈 화면일 때만** `navigation.run()` 을 `run_module_page` 로 부른다. 고장 격리는 세
 겹이다 — 화면 본문은 여기, 위젯 콜백은 `module_api` 의 `ctx.callback`(콜백은 회차 맨 앞, `app.py`
@@ -244,7 +244,7 @@ def _record(spec: PageSpec, exc: BaseException) -> None:
     module_failures.record_failure(
         spec.module or "", page=_slug(spec), kind=type(exc).__name__, where="page"
     )
-    _LOGGER.error("사내 모듈 %s 화면 %s 실패", spec.module, _slug(spec), exc_info=exc)
+    _LOGGER.error("모듈 %s 화면 %s 실패", spec.module, _slug(spec), exc_info=exc)
 
 
 def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:

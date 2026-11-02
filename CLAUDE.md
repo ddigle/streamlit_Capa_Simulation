@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **이 세션이 누구인지 먼저 가른다.** 첫 지시가 「사내 모듈 `<id>` 를 맡은 에이전트」 이면 이 파일의 나머지 대신 `docs/module_guide.md` 만
+> **이 세션이 누구인지 먼저 가른다.** 첫 지시가 「모듈 `<id>` 를 맡은 에이전트」 이면 이 파일의 나머지 대신 `docs/module_guide.md` 만
 > 따른다. 그 밖의 사내 세션은 배포 적용이다(`docs/internal_update_runbook.md`). 사외 세션은 아래를 따른다.
 
 ## 문서 우선순위
@@ -35,9 +35,9 @@ Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진
 전체 절차와 리뷰 문서 양식은 `docs/dual_env_workflow.md` 에 있다. 사내에서 작업을 시작하기
 전에 그 문서를 먼저 읽는다.
 
-## 사내 모듈 담당자라면 (모델 2 — 2026-11-01)
+## 모듈 담당자라면 (모델 2 — 2026-11-01)
 
-사내 동료가 만든 화면은 사내 저장소 `modules/<id>/` 에 두고 사이드바 별도 상자 「사내 모듈」 로 띄운다. **모듈 담당자의
+동료가 만든 화면은 사내 저장소 `modules/<id>/` 에 두고 사이드바 별도 상자 「모듈」 로 띄운다. **모듈 담당자의
 에이전트는 이 파일 대신 `docs/module_guide.md` 만 따른다** — 고칠 수 있는 곳은 자기 `modules/<id>/` 뿐이고
 `data/modules/<id>/`(화면이 실행 중에 쓰는 자리 — 손으로 넣지 않는다)와 그 밖은 읽기만 한다. 코어는 배포 ZIP 이 싣는 것 전부이고 정본은 사외(`origin/main`)다. `modules/` 는 사내가 정본이며
 ZIP 이 싣지도 덮지도 지우지도 않는다. 사외에는 그 폴더가 없다 — 사외 세션은 `modules/` 를 만들지 않고 시험 견본은
@@ -102,7 +102,7 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `script
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
 `origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
 `check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
-`scripts/new_module.py`(사내 모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
+`scripts/new_module.py`(모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
 자기 시험 — 사내 런북 4-5 는 `git archive` 사본 트리에서 돌린다, 끝에 「전송용 요약」 한 줄), `scripts/module_test_runner.py`(check_module 이 부르는 모듈
 시험 감시 러너 — 코어 `data/` 접근·모듈 폴더 쓰기를 실패로, AppTest import 길을 앱과 같게). 정적 규칙 부품은
 `scripts/module_check_rules.py` 이고 규칙 번호·창구 이름·예시·점검 출력은 `tests/test_module_guide_sync.py` 가 지침서와 맞댄다.
@@ -143,13 +143,13 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   실행 관리(이행: 공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·가용설비·Space·실적 셋) → Dynamic Capa(실적:
   실현 Capa·재공). 「Dynamic」 은 실적 Capa 에만 쓰고, 설비 일정으로 낸 가용대수는 화면에서 「설비 일정
   기준 가용대수」, HOME 의 확보율 % 손입력은 「확보율 보정」이다 — 코드·키·DB 이름(`dynamic_*`·`execution`)은
-  그대로다(AGENTS 1장 「세 영역」). 사내 모듈 화면은 이 선언 밖이다 — `module_registry.py` 가 실행 때 `modules/*/module.json` 을 읽어
-  별도 상자 「사내 모듈」 을 세우고(켜진 모듈이 없으면 상자가 없다) `SIDEBAR_GROUPS` 에 넣지 않는다. 색인 화면 `app_pages/internal_modules.py`
+  그대로다(AGENTS 1장 「세 영역」). 모듈 화면은 이 선언 밖이다 — `module_registry.py` 가 실행 때 `modules/*/module.json` 을 읽어
+  별도 상자 「모듈」 을 세우고(켜진 모듈이 없으면 상자가 없다) `SIDEBAR_GROUPS` 에 넣지 않는다. 색인 화면 `app_pages/internal_modules.py`
   만 `ALL_SPECS` 에 있다.
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·
   조회기간)와 공용 예외 튜플 `BOOTSTRAP_ERRORS`. 페이지가 각자 예외 튜플을 만들지 않는다.
 - `app_pages/` — UI만. 계산 로직을 페이지에 넣지 않는다.
-- 사내 모듈(`modules/<id>/`) — 코어 공개 창구 `module_api.py` 만 import 하고 코어는 모듈을 import 하지 않는다.
+- 모듈(`modules/<id>/`) — 코어 공개 창구 `module_api.py` 만 import 하고 코어는 모듈을 import 하지 않는다.
   배경 스레드·`subprocess`·전역 CSS·`st.sidebar`·`st.set_page_config` 를 쓰지 않고 키는 `mod_<id>__` 로 시작한다. 실행 감싸기(그 화면만 오류 카드)는
   `module_runtime.py`, 콜백·프래그먼트 감싸기는 `module_api` 의 `ctx.callback`·`ctx.guard`, 기록은 `module_failures.py` — `scripts/check_module.py` 가
   규칙을 보고 모듈 시험은 감시 러너 `scripts/module_test_runner.py` 로 돈다.
@@ -163,7 +163,7 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   `display_order_management.py`·`process_rename_management.py`다. 뒤의 둘은 탭 국소
   예외로, 공용 프로필 `version`만 키로 쓰고 DB를 읽지 않는 CSV 직렬화다(항상 그리는 탭이라
   그 비용이 모든 rerun에 실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource`를
-  새로 두지 않으며, 이 예외를 늘리려면 여기 목록을 같이 고친다. 사내 모듈의 `st.cache_*` 는 이 목록 밖이다 — 그 모듈의 `cache.py` 한 파일에만 두고(화면 파일에 두면 `__main__` 이라 모듈끼리
+  새로 두지 않으며, 이 예외를 늘리려면 여기 목록을 같이 고친다. 모듈의 `st.cache_*` 는 이 목록 밖이다 — 그 모듈의 `cache.py` 한 파일에만 두고(화면 파일에 두면 `__main__` 이라 모듈끼리
   칸이 겹친다) `check_module.py`(M12)가 본다.
 - `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신 예약. 앱 프로세스의 **유일한
   배경 스레드**이고 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있을 때만 `app.py` 부트스트랩
@@ -185,7 +185,7 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 필요 단축 일정의 공용 조회 조건·기준선은 안 읽음), `제약 시뮬레이션`(실행 관리, 공정 Capa 상세와 같은 계획 칸을
 **읽기만** — 어느 DB 에도 쓰지 않음), `표준 대비 재공 현황`(Dynamic, 표준 목표의 주차별
 가용대수를 **읽기만**), `시나리오 관리`(「설비 시나리오」 구획을 고른 회차에만 — 설비 시나리오 목록·발행)다 — AGENTS 5장 9.
-사내 모듈은 코어 두 DB 를 열지 않고 `data/modules/<id>/` 만 쓴다(모듈 마이그레이션은 코어 번호 밖). v1 은 코어 데이터와
+모듈은 코어 두 DB 를 열지 않고 `data/modules/<id>/` 만 쓴다(모듈 마이그레이션은 코어 번호 밖). v1 은 코어 데이터와
 이어지지 않는다.
 
 ### 상태·캐시 불변조건 (AGENTS.md 5장이 전문)
@@ -244,7 +244,7 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 `*.xlsb`·`*.xlsx` 등 Excel, `data/*.duckdb`·`data/*.db`와 보조 파일, `.env`,
 `.streamlit/secrets.toml`, `data/input`·`data/output`·`data/temp`의 실제 데이터는 커밋하지
 않는다. `config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두고
-실제 제품·고객·공정·설비 식별값을 넣지 않는다. `data/modules/`(사내 모듈 데이터 — git·이미지 밖)도 커밋하지 않는다. 사외 저장소에는
+실제 제품·고객·공정·설비 식별값을 넣지 않는다. `data/modules/`(모듈 데이터 — git·이미지 밖)도 커밋하지 않는다. 사외 저장소에는
 `modules/` 를 두지 않는다(빌더가 멈춘다).
 
 ## 발표 자료는 저장소 밖에서 운영한다

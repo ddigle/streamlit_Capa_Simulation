@@ -45,7 +45,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_NAME = "DEPLOY_MANIFEST.json"
 SUPPORTED_MANIFEST_VERSIONS = (1,)
 
-# 사내가 만든 것. 배포가 지우지도 덮지도 않는다. `modules/` 는 사내 모듈 자리다(모델 2 — 사내가
+# 사내가 만든 것. 배포가 지우지도 덮지도 않는다. `modules/` 는 모듈 자리다(모델 2 — 사내가
 # 정본이고 ZIP 은 싣지도 덮지도 지우지도 않는다). **전부 소문자로 적는다** — 대조가 `lower()` 를
 # 거친다(`is_preserved`). Windows 에서 `Modules/…` 로 커밋된 것도 지우지 않게 한다.
 PRESERVED_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/", "modules/")
@@ -69,7 +69,7 @@ NEVER_REMOVE_SUFFIXES: tuple[str, ...] = (
 # **전부 소문자로 적는다** — 대조가 `lower()` 를 거친다. 대문자를 섞어 적으면 그 항목만
 # 조용히 아무것도 막지 않는다.
 NEVER_REMOVE_NAMES: tuple[str, ...] = (".env", "secrets.toml")
-# `data/modules/` 는 사내 모듈 데이터 자리다(git·이미지 밖). 추적돼 버려도 지우지 않고 알린다.
+# `data/modules/` 는 모듈 데이터 자리다(git·이미지 밖). 추적돼 버려도 지우지 않고 알린다.
 NEVER_REMOVE_PREFIXES: tuple[str, ...] = (
     "data/input/",
     "data/output/",
@@ -134,7 +134,7 @@ _INSIDE_MODULES = ":(icase)modules/"
 def dirty_outside_modules(root: Path) -> list[str]:
     """`modules/` 밖의 미저장 변경. **비었는지만 본다** — 줄을 새로 해석하지 않는다.
 
-    `dirty_entries` 가 비지 않았는데 이것이 비었으면 미저장 변경이 모두 사내 모듈 아래에 있다.
+    `dirty_entries` 가 비지 않았는데 이것이 비었으면 미저장 변경이 모두 모듈 아래에 있다.
     그때도 적용은 멈춘다 — 적용이 실패했을 때 되돌리는 한 줄이 `git checkout -- .` 라, 적용하는
     동안 작업트리에 모듈 수정이 있으면 그 줄이 「손대지 않는다」 고 한 모듈 수정을 지운다. 바꾸는
     것은 말뿐이다(배포 체크아웃에서는 모듈을 고치지 않는다 — 런북 1-5 · 1-7).
@@ -157,7 +157,7 @@ def dirty_stop_message(dirty: Sequence[str], outside_modules: Sequence[str]) -> 
     listed = "\n  " + "\n  ".join(dirty[:10])
     if dirty and not outside_modules:
         return (
-            f"커밋하지 않은 사내 모듈 수정이 {len(dirty)}개 있습니다 — 배포 체크아웃에서는 모듈을 "
+            f"커밋하지 않은 모듈 수정이 {len(dirty)}개 있습니다 — 배포 체크아웃에서는 모듈을 "
             "고치지 않습니다. 담당자가 자기 클론에서 커밋해 올리면 런북 1-7 로 받습니다. "
             "에이전트는 되돌리지 않고 앱 관리자(사용자)에게 알립니다:" + listed
         )
@@ -274,7 +274,7 @@ def plan_removals(
     2. 송장이 남기라고 한 파일(`kept`) — 지금은 비어 있다(`build_deploy_package.EXCLUDED_FILES`)
        — 선언·락(`pyproject.toml`·`uv.lock`)도 ZIP 이 싣는다. 다시 빼야 할 파일이 생기면 사내
        것이라 지우면 **복구할 길이 없으므로** 자리를 남겨 둔다.
-    3. 사내 전용 자리(`preserved`) — 리뷰 기록·적용 이력·권한 설정·사내 모듈(`modules/`).
+    3. 사내 전용 자리(`preserved`) — 리뷰 기록·적용 이력·권한 설정·모듈(`modules/`).
        대소문자를 가리지 않는다(`is_preserved`).
     4. 무시된 파일 — `git ls-files` 에 없어 애초에 후보가 아니다. `git clean -x` 를 쓰지
        않는 이유가 이것이다.
@@ -294,10 +294,10 @@ def plan_removals(
 
 
 def is_preserved(path: str, prefixes: Sequence[str] = PRESERVED_PREFIXES) -> bool:
-    """사내 전용 자리(리뷰 기록·적용 이력·권한 설정·사내 모듈)인가. 대소문자를 가리지 않는다.
+    """사내 전용 자리(리뷰 기록·적용 이력·권한 설정·모듈)인가. 대소문자를 가리지 않는다.
 
     Windows 는 대소문자를 가리지 않아 `Modules/demo/page.py` 로 커밋될 수 있다. 원래 철자로 보면
-    그 파일이 「사외에서 지워짐」 이 되어 배포가 사내 모듈을 지운다 — `is_protected` 가 소문자로
+    그 파일이 「사외에서 지워짐」 이 되어 배포가 모듈을 지운다 — `is_protected` 가 소문자로
     보는 것과 같은 까닭이다.
     """
     return path.lower().startswith(tuple(prefix.lower() for prefix in prefixes))

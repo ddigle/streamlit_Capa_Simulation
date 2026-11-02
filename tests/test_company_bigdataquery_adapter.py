@@ -175,8 +175,8 @@ def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(
 
 _PACKAGE_MISSING_TEXT = (
     "현재 환경에 bigdataquery 패키지가 없습니다. "
-    "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
-    "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
+    "이 패키지는 공개 인덱스(PyPI)에 없어 pyproject.toml 의존성에 넣지 않습니다. "
+    "README 「초기 설정」 4단계대로 따로 설치한 뒤 실행하세요."
 )
 
 
@@ -718,7 +718,7 @@ def test_a_missing_account_in_the_cd_container_adds_the_start_check_line(
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
 
     text = str(raised.value)
-    assert text.startswith("BigDataQuery 조회에 요청자의 사내 계정이 필요합니다.")
+    assert text.startswith("BigDataQuery 조회에 요청자의 AD 계정이 필요합니다.")
     assert "서버 시작 점검" in text and "C-DEP" in text
 
 

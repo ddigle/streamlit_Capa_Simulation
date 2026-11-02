@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 뼈대가 제 폴더 안에만 넷을 만들고 거절하면 아무것도 쓰지 않음을 고정한다.
+# Purpose: 모듈 뼈대가 제 폴더 안에만 넷을 만들고 거절하면 아무것도 쓰지 않음을 고정한다.
 
 from __future__ import annotations
 

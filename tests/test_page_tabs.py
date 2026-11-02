@@ -957,7 +957,7 @@ def test_the_scenario_management_tab_is_remembered_across_a_tab_round_trip(
     assert app.session_state[key] == query
 
 
-# ------------------------------------------------------------------ 사내 모듈 화면
+# ------------------------------------------------------------------ 모듈 화면
 
 
 def test_a_module_page_becomes_a_tab_without_server_paths(
