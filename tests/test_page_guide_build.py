@@ -1256,6 +1256,44 @@ def test_the_internal_first_pass_compares_34_places(tmp_path: Path, example_dir:
     }
 
 
+RUNBOOK = PROJECT_ROOT / "docs" / "internal_update_runbook.md"
+
+
+def _runbook_guide_chapter() -> str:
+    """런북 10장(따라하기 가이드 — 끝 장이라 파일 끝까지). 줄바꿈 · 들여쓰기는
+    띄어쓰기 하나로 접는다."""
+    text = RUNBOOK.read_text(encoding="utf-8")
+    return " ".join(text[text.index("## 10. 코드 밖 산출물 만들기") :].split())
+
+
+def test_the_runbook_change_floor_follows_the_script_and_data_shaped(
+    tmp_path: Path, example_dir: Path
+) -> None:
+    """런북 10-4 · 10-7 의 「바뀐 것이 없는 판의 `바뀜` 바닥」(사내 · 사외 예시판) ·
+    `N =` · 데이터 자리 수 · `예시 n` 이 원고 · `DATA_SHAPED` 에서 센 수와 같다.
+
+    원고나 데이터 표적 목록이 바뀌면 이 수가 말없이 낡아, 사내 검수자가 런북만 보고
+    바닥을 「바뀐 자리」 로(또는 다른 바닥을 「바뀐 것 없음」 으로) 읽는다."""
+    data = len(core.data_places(SKELETON))
+    places = len(core.place_order(SKELETON.content))
+    internal_shots, _run = core.board_shots(SKELETON, _internal_work(tmp_path))
+    internal = len(core.compared_places(SKELETON.content, internal_shots))
+    example_shots = _fake_shots(tmp_path / "example", SKELETON.state_ids(), mode="example")
+    example = len(core.compared_places(SKELETON.content, example_shots))
+    chapter = _runbook_guide_chapter()
+
+    floors = [tuple(map(int, pair)) for pair in re.findall(r"바뀜 (\d+)/(\d+)", chapter)]
+    assert {(data, internal), (data, example)} <= set(floors), floors
+    assert set(floors) <= {(data, internal), (data, example)}, floors
+    assert re.findall(r"사외 예시판은 `(\d+)/(\d+)`", chapter) == [(str(data), str(example))]
+    assert re.findall(r"N = (\d+)", chapter) == [str(internal)]
+    data_counts = re.findall(r"데이터 자리 (\d+) 는|\((\d+) 는 지금 원고의 데이터 자리", chapter)
+    assert len(data_counts) == 2
+    assert {int(a or b) for a, b in data_counts} == {data}
+    examples = re.findall(r"예시 (\d+)[;`]", chapter)
+    assert examples and set(examples) == {str(places - internal)}, examples
+
+
 def test_place_geometry_holds_ids_integers_and_digests_only(
     tmp_path: Path, example_dir: Path
 ) -> None:
