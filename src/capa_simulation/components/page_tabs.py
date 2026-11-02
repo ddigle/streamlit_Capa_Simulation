@@ -36,7 +36,8 @@
   인자 지우기보다 늦었다) 탭 줄은 안전망으로 다시 부른다.
 - **편집표에서 막 손을 뗀 누름은 붙든다.** 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다 — 칸을
   쓰는 중이거나 Enter 직후에 누르면 그 편집 회차가 돌아오기 전이라 확인 없이 옮겼다. JS 가 그 편집
-  회차가 돌아올 때까지 누름을 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
+  회차가 돌아올 때까지 누름을 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 편집표는 glide 격자와
+  그림자 DOM Components v2 편집 칸(`EDIT_HOST_KEYS` — data `grids`, 설비 마스터 표·오른쪽 칸)이다.
 - **탭 누름은 한 번에 하나.** 다른 탭 고르기·지금 탭 닫기는 트리거를 보내기 전에 JS 가 누름
   기다림을 건다. 옮긴 화면의 탭 줄이 오고 그 회차가 다 돌거나 탭 줄이 온 뒤 1초가 지나기 전에 누른
   탭은 마지막 것만 기다렸다 보낸다(`<tabs-queue>`) — 탭 줄이 오기 전에 보낸 누름은 프런트가 떠나는
@@ -69,7 +70,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import streamlit as st
 
@@ -147,6 +148,17 @@ TEXT = {
     "returned": RETURN_NOTICE,
     "themed": THEME_RETURN_NOTICE,
 }
+# 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비
+# 마스터 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`). 그림자 DOM 이라 JS 가
+# 바깥 key 칸(`.st-key-<key>`)으로 본다(`<tabs-grid>`). 그 모듈은 읽을 때 컴포넌트를 등록해
+# 여기서 불러오지 않는다 — key 가 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가
+# 누름보다 늦게 오는 편집 칸을 새로 두면 여기에 더한다.
+EDIT_HOST_KEYS: Final = (
+    "equipment_grid_table",
+    "equipment_grid_side_detail",
+    "equipment_grid_side_new",
+    "equipment_grid_side_changes",
+)
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
 # Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름 — 편집표 몫과 같은
@@ -249,7 +261,8 @@ def tabs_data(
     """탭 줄 data. 같은 목록·점이면 회차마다 같은 값이다(시각·카운터를 싣지 않는다).
 
     `pages` 는 등록된 모든 화면의 주소(`url_path` — HOME 은 빈 글자) → 탭 이름이다. JS 가 상한에서
-    화면 링크 누름을 거를 때 아는 화면인지와 알림에 쓸 이름을 여기서 읽는다(모듈 설명).
+    화면 링크 누름을 거를 때 아는 화면인지와 알림에 쓸 이름을 여기서 읽는다(모듈 설명). `grids` 는
+    떠나기 붙들기가 편집표로 보는 Components v2 칸 key 다(`EDIT_HOST_KEYS`).
     """
     tabs = []
     for path in strip.paths:
@@ -282,6 +295,7 @@ def tabs_data(
         },
         "palette": {"pending": tokens.PENDING_MARK},
         "text": TEXT,
+        "grids": list(EDIT_HOST_KEYS),
     }
 
 

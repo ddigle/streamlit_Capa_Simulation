@@ -164,6 +164,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 _SECTIONS = (
     "tabs-history",
     "tabs-hold",
+    "tabs-grid",
     "tabs-queue",
     "tabs-press",
     "tabs-links",
@@ -1164,3 +1165,155 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     assert out["dropped"] == ["tab:b"]
     assert out["capEarly"] == []
     assert out["capLate"] == ["theme"]
+
+
+def test_the_equipment_master_grid_and_its_side_panels_count_as_edit_tables() -> None:
+    """떠나기 붙들기가 편집표로 보는 Components v2 칸은 설비 마스터 표와 오른쪽 칸의 key
+    다 — 그 모듈의 key 를 바꾸면 이 묶음도 같이 바뀌어야 한다(`page_tabs` 는 읽을 때
+    컴포넌트를 등록하는 그 모듈을 불러오지 않는다). 탭 줄 data 의 `grids` 로 실려 JS 가 그릴
+    때마다 선택자를 다시 짓는다."""
+    from capa_simulation.components import equipment_master_grid as emg
+    from capa_simulation.page_tabs_state import INITIAL_STRIP
+
+    assert set(page_tabs.EDIT_HOST_KEYS) == {
+        emg.GRID_KEY,
+        *(emg.side_key(panel) for panel in emg.SIDE_PANELS),
+    }
+    assert emg.LOADER_KEY not in page_tabs.EDIT_HOST_KEYS
+    data = page_tabs.tabs_data(
+        INITIAL_STRIP,
+        active=INITIAL_STRIP.paths[0],
+        hrefs={},
+        marks={},
+        leave="",
+        epoch=1,
+        notice=None,
+    )
+    assert data["grids"] == list(page_tabs.EDIT_HOST_KEYS)
+    assert "S.gridSelector = gridSelector(GRID, data.grids)" in JS
+    assert "node.closest(S.gridSelector)" in JS
+    assert "node.closest(GRID)" not in JS
+
+
+_EDIT_HOST_RUNNER = """
+(() => {
+  let now = 0
+  Date.now = () => now
+  const timers = []
+  const setTimeout = (fn, ms) => {
+    timers.push({ fn, at: now + (ms || 0), live: true })
+    return timers.length
+  }
+  const clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].live = false }
+  const advance = (to) => {
+    for (;;) {
+      const due = timers.filter((t) => t.live && t.at <= to).sort((a, b) => a.at - b.at)[0]
+      if (!due) break
+      due.live = false
+      now = Math.max(now, due.at)
+      due.fn()
+    }
+    now = to
+  }
+  let scriptState = 'notRunning'
+  const listeners = []
+  const document = {
+    querySelector: () => ({ getAttribute: () => scriptState }),
+    addEventListener: (type, fn) => listeners.push([type, fn]),
+  }
+  const window = {}
+  %(constants)s
+  // DOM 대역 — `closest` 는 그 칸이나 조상이 맞는 선택자 조각(쉼표로 가른 것)이
+  // 하나라도 있으면 맞는다.
+  const node = (...marks) => ({
+    closest: (selector) =>
+      selector.split(',').some((part) => marks.includes(part.trim())) ? {} : null,
+  })
+  const fire = (type, target) => {
+    for (const [kind, fn] of listeners) if (kind === type) fn({ type, target })
+  }
+  const mount = (S, log) => {
+    const setAttr = (element, name, value) => { if (element) element[name] = value }
+    const busy = (item) => setAttr(item.__parts.tab, 'aria-busy', 'true')
+    const sendSelect = (item) => log.push('tab:' + item.dataset.id)
+    %(slice)s
+    if (!S.onEdit) {
+%(edit)s
+    }
+    return { gate }
+  }
+  // 칸 편집기에 쓰는 중(Enter 전) 테마 단추를 누른다 — 문서 capture 단계에서 보면
+  // 그림자 DOM 칸 편집기의 focusin·keydown 대상은 그림자 호스트다. 누르는 순간
+  // (pointerdown) 붙들기에 편집표 포커스를 적고, 초점이 단추로 옮긴 뒤 놓는다. 편집
+  // 회차가 돌고 끝나 새 data 가 오면 그때 잇는다.
+  const press = (grids, target) => {
+    timers.length = 0; listeners.length = 0; now = 1000; scriptState = 'notRunning'
+    const log = []
+    const S = {
+      items: new Map(), queue: createSelectQueue(), data: { active: 'a', grids },
+      editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+      gridSelector: gridSelector(GRID, grids),
+    }
+    const T = mount(S, log)
+    fire('focusin', target)
+    fire('keydown', target)
+    now = 7000
+    T.gate.press()
+    fire('focusin', node())
+    T.gate.go(() => log.push('theme'))
+    const at = log.slice()
+    scriptState = 'running'
+    advance(7100)
+    const running = log.slice()
+    scriptState = 'notRunning'
+    S.data = { ...S.data }
+    advance(7200)
+    return [at, running, log.slice()]
+  }
+  const hosts = ['equipment_grid_table', 'equipment_grid_side_detail']
+  const out = {}
+  out.gridHost = press(hosts, node('.st-key-equipment_grid_table'))
+  out.sideHost = press(hosts, node('.st-key-equipment_grid_side_detail'))
+  out.withoutHosts = press(undefined, node('.st-key-equipment_grid_table'))
+  out.otherHost = press(hosts, node('.st-key-equipment_grid_loader'))
+  out.glide = press(hosts, node('.gdg-clip-region'))
+  out.selector = gridSelector('.base', ['equipment_grid_table', 'a b', 'x"]', 3, ''])
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+
+
+def test_a_theme_press_while_typing_in_the_equipment_master_grid_waits_for_the_edit() -> None:
+    """설비 마스터 표(그림자 DOM Components v2)의 칸 편집기에 쓰는 중(Enter 전) 누른 테마
+    단추는 그 편집 회차가 돌아올 때까지 붙든다(E2E 결함 — 문서 capture 단계 대상이 그림자
+    호스트로 바뀌어 glide 격자 선택자에 들지 않았다. 누름이 회차 왕복보다 짧으면 저장 안 함
+    표지가 서기 전이라 확인 없이 새로 읽어 친 글이 사라졌다). data `grids` 의 key 칸
+    (`.st-key-<key>`)으로 알아본다 — 그 key 가 없으면 붙들지 않는 것이 결함의 꼴이다. glide
+    격자는 그대로 붙들고, 묶음 밖 칸(불러오기)은 붙들지 않는다."""
+    lines = [
+        re.search(rf"^const {name} = .+$", JS, re.M)
+        for name in ("GRID", "BUSY_MS", "SETTLE_POLL_MS", "HOLD_MS", "EDIT_MS", "APP_ROOT")
+    ]
+    constants = "\n".join(line.group(0) for line in lines if line is not None)
+    assert len(constants.splitlines()) == len(lines)
+    start = JS.index("  const appRunning = () => {")
+    end = JS.index("  window.__capaLeaveGate = gate")
+    edit_start = JS.index("    const inGrid = (node) =>")
+    listen = "    for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input'])"
+    edit_end = JS.index(listen, edit_start)
+    runner = _EDIT_HOST_RUNNER % {
+        "constants": constants,
+        "slice": JS[start:end],
+        "edit": JS[edit_start:edit_end]
+        + listen
+        + " document.addEventListener(type, S.onEdit, true)",
+    }
+
+    out = _node(runner)
+
+    assert out["gridHost"] == [[], [], ["theme"]]
+    assert out["sideHost"] == [[], [], ["theme"]]
+    assert out["glide"] == [[], [], ["theme"]]
+    assert out["withoutHosts"][0] == ["theme"]
+    assert out["otherHost"][0] == ["theme"]
+    assert out["selector"] == ".base, .st-key-equipment_grid_table"

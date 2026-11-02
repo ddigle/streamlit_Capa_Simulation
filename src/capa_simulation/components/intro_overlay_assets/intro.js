@@ -155,6 +155,32 @@ function setInert(on) {
   }
 }
 
+// <intro-dialogs>
+// 덮개 밑에 뜬 Streamlit 팝업(`createOverlay` 의 「덮개 밑 팝업」). Streamlit 1.63 팝업은 react-aria 모달이라 열리면 body 의
+// 다른 자식을 inert(옛 브라우저는 aria-hidden)로 묶는다 — body 직속인 덮개 호스트도 묶여, 눈으로는 맨 위인데 누름을 받지
+// 못한다. `blockedHost` 는 호스트가 그렇게 묶였는가다. `dismissDialogs` 는 문서의 팝업(`stDialog`)마다 그 안 대화 상자에
+// Escape 를 보낸다 — 사람의 Esc 와 같은 길로 닫힌다. 닫지 못하게 연 팝업은 Escape 를 받지 않아 그대로 남는다. 보낸 키는
+// `sent` 에 적는다 — 덮개의 키 처리(Summary 의 Esc = Detail)가 그 키를 지나친다. 닫으려 한 팝업 수를 돌려준다. 고르는
+// 것은 팝업 자리이고 글(영문 「Page not found」)이 아니다.
+const STREAMLIT_DIALOG = '[data-testid="stDialog"]';
+const DIALOG_BOX = '[role="dialog"], [role="alertdialog"]';
+function blockedHost(node) {
+  return Boolean(node && (node.inert === true || node.getAttribute("aria-hidden") === "true"));
+}
+function dismissDialogs(doc, sent) {
+  const KeyEvent = doc.defaultView.KeyboardEvent;
+  let count = 0;
+  for (const dialog of doc.querySelectorAll(STREAMLIT_DIALOG)) {
+    const box = dialog.querySelector(DIALOG_BOX) || dialog;
+    const event = new KeyEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true, composed: true });
+    sent.add(event);
+    box.dispatchEvent(event);
+    count += 1;
+  }
+  return count;
+}
+// </intro-dialogs>
+
 // HTML 글자(타이틀·단추·머리 줄과 사이드바 라벨의 위 줄 `S.PKG CAPA`)가 쓰는 글꼴. 워커는 따로 받는다(`fontBuffers`).
 function registerFont() {
   if (!document.fonts || typeof FontFace === "undefined") return;
@@ -2391,10 +2417,12 @@ function createOverlay(api, data, initial, syncToolbar) {
   const timers = [];
   let alive = true;
   let poller = 0;
+  let blockWatch = null;
   api.stop = () => {
     alive = false;
     timers.forEach((id) => window.clearTimeout(id));
     window.clearInterval(poller);
+    if (blockWatch) blockWatch.disconnect();
     document.removeEventListener("keydown", onKey);
     document.removeEventListener("focusin", onFocusIn);
     window.removeEventListener("resize", onResize);
@@ -3256,6 +3284,8 @@ function createOverlay(api, data, initial, syncToolbar) {
   }
 
   function onKey(event) {
+    // 덮개 밑 팝업을 닫으려고 보낸 Esc 다(`dismissDialogs`) — 팝업이 받지 않고 흘려도 Summary 를 닫지 않는다.
+    if (dialogKeys.has(event)) return;
     if (mode !== "hidden" && event.key === "Tab") cycleFocus(event);
     else if (mode === "intro" && event.key === "Enter" && !detail.disabled && event.target === document.body) toDetail();
     else if (mode === "summary" && event.key === "Escape") toDetail();
@@ -3341,6 +3371,24 @@ function createOverlay(api, data, initial, syncToolbar) {
       });
     }
   }
+
+  /* ------------------------------------------------------------------------ 덮개 밑 팝업 */
+  // 없는 화면 주소(꺼진 모듈 화면·이름을 바꾼 옛 화면 주소)로 처음 오면 Streamlit 이 「Page not found」 팝업을 연다. 그 팝업이
+  // 덮개 호스트를 묶어(`<intro-dialogs>`) 첫 누름이 보이지 않는 팝업 바탕으로 가 팝업만 닫았다 — Detail 을 두 번 눌러야
+  // 들어갔고 키보드 Enter 는 팝업에 갇혔다(E2E 결함). 덮개가 서 있는 동안은 앱(#root)이 inert 라 사람이 연 팝업일 수 없다.
+  // 그래서 덮개가 보이는 동안 호스트가 묶이면 그 팝업을 닫는다 — 첫 누름이 하던 일을 미리 할 뿐이라 팝업 글은 전처럼 보이지
+  // 않고 HOME 이 열린다. 묶임은 팝업이 덮개보다 먼저 열려도 덮개를 붙이는 순간 달린다(react-aria 가 새 body 자식을 묶는다).
+  // 덮개를 감춘 동안(같은 탭의 다음 문서)에는 건드리지 않는다 — 그때 팝업은 보이고 사람이 닫는다.
+  const dialogKeys = new WeakSet();
+  const closeStrayDialogs = () => {
+    if (!alive || mode === "hidden" || !blockedHost(host)) return;
+    dismissDialogs(document, dialogKeys);
+  };
+  if (typeof MutationObserver === "function") {
+    blockWatch = new MutationObserver(closeStrayDialogs);
+    blockWatch.observe(host, { attributes: true, attributeFilter: ["inert", "aria-hidden"] });
+  }
+  closeStrayDialogs();
 
   if (intro) {
     render();
