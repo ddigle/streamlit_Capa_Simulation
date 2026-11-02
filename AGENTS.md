@@ -1658,10 +1658,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/equipment_master_tab.py` — 가용설비 현황 탭 ① 「설비 마스터」 본문(개편 B1-c·d — 옛 RawData
   폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` · 설비 시나리오 알약 · 리비전 · 「저장 전 변경 n건」) → 알림 칸 →
-  두 칸(7:3 — 표 카드 또는 작은 편집표 · 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
-  이력」). 두 고르기는 `persist_state="session"` 이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다
+  두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 카드 또는 작은 편집표 · 오른쪽
+  `equipment_master_right` 칸막이 마운트 → 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
+  이력」 → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
+  이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다
   (`required=True`). 받기 콜백이 오른쪽 칸을 바꿀 때는 그 칸을 바로 적지 않고 `_SIDE_NEXT_KEY` 에 두어 다음 고르기 **앞**에서
   적는다(진짜 콜백은 회차 맨 앞이라 같은 회차 — 시험 대역은 고르기 뒤 마운트에서 부르므로 위젯을 만든 뒤 적는 오류를 피한다).
+  - **오른쪽 칸 폭·접기·높이 상한**(2026-11-02 사용자 결정 — 「늘이고 줄이거나, 최소화」 · 「너비에 한계를 두고 … 스크롤」):
+    오른쪽 칸 왼쪽 끝 칸막이(`equipment_master_grid.render_side_splitter` — 작은 별도 등록)를 끌어 폭을 바꾸고(두 번 누르면 처음
+    폭, 키보드 ←·→ 16px · Shift 64px · Home 최대 · End 최소 · Enter 접기), › 로 44px 세로 띠(높이 240px, 지금 칸 이름)로 접고 띠를
+    눌러 편다. 폭 한계는 `clamp(min(320px, 40%), 저장 폭 또는 30% − 28px, min(760px, 60%))`(줄 1,165px 에서 320~699, 처음
+    322)이고 창 폭이 바뀌어도 페이지 CSS 가 JS 없이 지킨다. 본문 칸은 `max(360px, 100vh − 붙는 높이 − 200px)`(붙는 높이 = 화면
+    탭 줄 아래 끝 + 8px — 950 창 650px · 800 창 500px) 안에서 스크롤하고(`overflow-y: auto` — 페이지를 늘리지 않는다), 오른쪽
+    칸은 그 높이에 붙는다(sticky). 접어도 패널은 `display:none` 으로 그대로 그려 두어 다시 마운트되지 않고 보내지 않은 출납을
+    잃지 않는다. 폭·접힘은 브라우저에만 둔다(9장 「브라우저 전용 보기 상태」). 받기 콜백이 오른쪽 칸을 열면(`_switch_side` —
+    표 설비명·「+ 새 호기」·가져오기·「호기 추가」·저장 전 변경의 고칠 것 줄) 연 수 `SIDE_REVEAL_KEY` 를 올려 칸막이 data
+    `reveal` 로 보내고, 칸막이는 그 수가 오르면 접힌 칸을 편다(누른 것이 보이게). 칸 안 너비 560px 이상이면 상세·새 호기 칸
+    묶음이 3열(`grid.css` container query)이다. 「저장 전 변경」 목록 `max-height 420px`(본문 칸 안 겹 스크롤)은 그대로 둔다.
+    창 폭 640px 이하는 위아래로 쌓고(칸막이·접기 없음) 인쇄는 상한·sticky 를 풀고 접힘도 펼친 꼴이다. Streamlit 1.63 DOM
+    (`stLayoutWrapper` 감싸개 · key 가로 칸 `overflow`)에 기대므로 Streamlit 을 올리면 이 CSS(`side_layout_style`)를 다시 본다.
   - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸은 세션 초안(`NEW_UNIT_DRAFT_KEY` — {번호, 39칸 글, 함께 넣기}, 저장해도
     남는다)을 그 회차 편집본 위에서 `new_unit_check` 로 보고 그린다(합성 3천 대 한 번 약 0.05 s — 샘플 관측, 칸 결과처럼
     메모하지 않는다). 브라우저는 칸을 확정할 때마다 상태 값 `draft`(번호를 올림)를 보내고 받기 콜백은 번호가 세션 초안보다 작지
@@ -1744,6 +1759,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·새
     호기·저장 전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
     잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
+  - **오른쪽 칸 칸막이**는 따로 등록한다(`capa_equipment_side_splitter` — `equipment_master_grid_assets/splitter.js`·`splitter.css`,
+    `render_side_splitter`·대역 `tests/conftest.py`). data 는 팔레트(`_splitter_palette` — `--ess-*`)·지금 칸 이름·`reveal`·폭 한계
+    (`side_bounds` — 페이지 CSS 와 같은 수)·두 칸 key·화면 탭 줄 선택자뿐이라 거의 늘 같다. 상태 값·트리거가 없다 — 폭·접힘은
+    브라우저 저장소 `capa-equipment-side-v1` `{w, min}`(try 안)과 `<html>` 의 CSS 변수 `--emd-side-w`·`--emd-top`·`--emd-gap`·속성
+    `data-emd-side="min"` 에만 둔다. 끌기는 rAF 로 한 프레임에 한 번(회차 0), 끌기 시작에서 `preventDefault`(글자 고름 없음).
+    칸막이는 절대 위치(흐름 높이 0)라 오른쪽 칸 차례(칸막이 → 고르기 → 본문 칸)를 바꾸지 않는다. 배치 서식은 회차마다 같은 글의
+    스타일만 든 `st.html` 하나(`side_layout_style` — 이벤트 칸 한 자리, 1,000B 이상이라 해시 참조, CSS 주석 없음)다 — 가로 칸
+    flex 항목은 `stLayoutWrapper:has(> .st-key-…)` 한 겹으로 고르고(`:has` 를 겹치면 규칙이 버려진다), `wrap=False` 가로 칸에
+    `overflow: visible` 을 건다(아니면 sticky 가 줄 기준으로 잡힌다). 순수 구획 `// <splitter-…>`(폭 식·끌기·키)와 마운트(가짜
+    DOM)는 `tests/test_equipment_side_panel.py` 가 node 로 돌린다.
   - data 는 `services/equipment_grid` 의 dict + 팔레트(`_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
     대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」 — 「호기 추가」 도
     `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는
@@ -5561,8 +5586,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `sendOnce` 로 보낸다 — 이름·인자가 모두 같은 op 가 아직 ack 되지 않았으면(`hasPendingOp`) 더블클릭의 둘째 누름이라 보내지 않는다.
   상대 op(밀기)는 두 번 밀렸고, 나머지는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를 되살렸습니다」)가 첫 결과와 그 「되돌리기」 를
   덮었다(2026-10-27 E2E).
-- Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
-  try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 브라우저 안에서 끝낼
+- Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
+  try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
+  하면 `<html>` 의 CSS 변수·속성만 쓰고 그 변수를 읽는 규칙은 페이지 서식(`st.html`)에 둔다(설비 마스터 오른쪽 칸 칸막이 —
+  `--emd-side-w`·`data-emd-side`). 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
   다시 그리는 시간이라 프래그먼트로 감싸도 크게 줄지 않는다.
 - **회차마다 소켓으로 다시 가는 스타일 문자열에는 CSS 주석(`/* */`)을 싣지 않는다** — 사이드바 시트·머리 띠·껍데기

@@ -1194,3 +1194,13 @@ textarea.emg-ed {
   font-size: 12px;
   color: var(--emg-muted);
 }
+
+.emg[data-mode="side"] {
+  container-type: inline-size;
+}
+
+@container (min-width: 560px) {
+  .emg-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
