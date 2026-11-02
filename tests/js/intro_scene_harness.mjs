@@ -82,7 +82,7 @@ async function open(summary, { reduce = false, width = 1400, height = 900 } = {}
   send({ type: "init", canvas: fakeCanvas(log), palette: PALETTE, brand: "S.PKG CAPA", reduce, paused: false, family: "D", number: "N", body: "B", frame0: PALETTE.surface, width, height, dpr: 1, fonts: [] });
   send({ type: "begin", at: clock });
   send({ type: "progress", reached: 6, total: 6, ready: true });
-  send({ type: "summary", summary: { ...summary, text: { secure: "확보", warning: "경고", shortage: "부족", lowest: "최저", wafer: "Wafer 계획" } } });
+  send({ type: "summary", summary: { ...summary, text: { secure: "확보", warning: "경고", shortage: "부족", lowest: "최저", wafer: "Wafer 계획", past: "과거 구간" } } });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const tick = (to) => {
     while (clock < to) {
@@ -229,5 +229,17 @@ for (const [w, h] of [[390, 844], [768, 1024], [1100, 800]]) {
       };
     }
   }
+}
+// 7) 과거 구간 달(`past` — 제품별 Wafer 가 없어 도넛이 빈다)은 도넛 자리에 「과거 구간」 을 적는다. 과거가 아닌 달은 도넛이
+// 비어도 적지 않는다(2026-11-02 사용자 요청(검수표) home-02 — 기본 창 첫 달이 과거 구간 달이다).
+{
+  const emptyFirst = plain.mix.map((month, i) => (i === 0 ? [] : month));
+  const pastTexts = async (summary) => {
+    const scene = await open(summary);
+    scene.tick(scene.now() + 3000);
+    return scene.frame().filter((c) => c[0] === "fillText" && String(c[1]) === "과거 구간").length;
+  };
+  results.past_texts = await pastTexts({ ...plain, mix: emptyFirst, past: plain.months.map((_, i) => i === 0) });
+  results.past_plain_texts = await pastTexts({ ...plain, mix: emptyFirst });
 }
 console.log(JSON.stringify(results));

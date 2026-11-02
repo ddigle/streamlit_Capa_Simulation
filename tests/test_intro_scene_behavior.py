@@ -239,3 +239,10 @@ def test_threshold_labels_keep_off_the_bar_texts_on_short_phones(
             assert crowded["intoNames"] == [], (payload, width, crowded)
             assert crowded["lowestAbove"] is False, (payload, width, crowded)
         assert sorted(scene_results[f"crowded_{payload}_390"]["labels"]) == ["100%", "110%"]
+
+
+def test_a_past_month_names_its_empty_donut(scene_results: dict[str, Any]) -> None:
+    """과거 구간 달은 제품별 Wafer 가 없어 도넛이 빈다 — 그 자리에 「과거 구간」 을 한 번
+    적는다(풍선·낭독 표와 같은 말). 과거가 아닌 달은 도넛이 비어도 적지 않는다."""
+    assert scene_results["past_texts"] == 1
+    assert scene_results["past_plain_texts"] == 0

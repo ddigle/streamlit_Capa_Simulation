@@ -3,9 +3,9 @@
 """저장 뒤 곧바로 다시 확인해야 Summary 가 새 값을 싣는다.
 
 요약은 세션에 `RECHECK_SECONDS` 동안 들고 있는 값을 보낸다. 판정 기준·선행 B/O·선행 입고 실적·비교
-대상·표시순서·공정 표시명을 저장하거나 비교 대상이 걸린 시나리오를 보관·삭제·이름 변경하면 그 세션의
-확인을 비워(`forget_intro_summary_check`) 다음 회차가 새 값을 보게 한다. 저장 콜백을 직접 불러
-세션 칸(`intro_summary._SESSION_KEY`)이 비었는지 본다.
+대상·표시순서·공정 표시명·과거 구간을 저장하거나 비교 대상이 걸린 시나리오를 보관·삭제·이름
+변경하면 그 세션의 확인을 비워(`forget_intro_summary_check`) 다음 회차가 새 값을 보게 한다. 저장
+콜백을 직접 불러 세션 칸(`intro_summary._SESSION_KEY`)이 비었는지 본다.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from capa_simulation.components import (
     display_order_management,
     home_preference,
     intro_summary,
+    past_data_management,
     process_rename_management,
     scenario_management,
 )
@@ -251,6 +252,29 @@ def test_a_failed_display_order_or_process_name_save_keeps_the_summary_check(
     """저장이 실패하면 바뀐 것이 없으니 들고 있는 요약을 그대로 둔다."""
     with pytest.raises(ValueError, match="저장 실패"):
         admin_profile_savers[store](_FailingRepo())
+    assert not _forgotten(session)
+
+
+def test_saving_past_data_rechecks_the_summary(
+    session: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """과거 구간은 Summary 의 달·계획을 채운다(2026-11-02 사용자 요청(검수표) home-02) — 저장하면 그
+    세션의 다음 회차가 새 판으로 요약을 다시 만든다."""
+    repo = _Repo()
+    monkeypatch.setattr(past_data_management, "get_scenario_repository", lambda path: repo)
+    monkeypatch.setattr(past_data_management, "clear_global_past_data_cache", lambda: None)
+    past_data_management.save_past_tables(DB, {}, source="시험")
+    assert repo.calls == ["replace_global_past_data"] and _forgotten(session)
+
+
+def test_a_failed_past_data_save_keeps_the_summary_check(
+    session: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        past_data_management, "get_scenario_repository", lambda path: _FailingRepo()
+    )
+    with pytest.raises(ValueError, match="저장 실패"):
+        past_data_management.save_past_tables(DB, {}, source="시험")
     assert not _forgotten(session)
 
 

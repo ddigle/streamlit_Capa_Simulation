@@ -2001,8 +2001,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 무대(`.stage`)는 옆으로 넘치지 않는다 — 읽기 도구용 표는 1px 칸(`div.sr`) 안에 둔다(표에 바로 1px 를 주면 내용 폭으로
     늘어 390px 무대가 639px 로 넘쳤다). 520px 이하에서는 머리 칩(공식버전 이름)이 토글 셋과 함께 둘째 줄(`.tail`)로 내려
     남는 폭을 쓴다 — 넓은 창에서 `.tail` 은 `display: contents` 라 머리 줄은 그대로다. 머리 칩은 어느 폭에서도 자르지
-    않는다 — 두 줄까지 접히고 그 끝에서만 줄이며, 빠듯한 머리 줄에서는 기간 글자가 먼저 준다(바닥 84px). 360px 아래에서는
-    토글이 짧은 이름이다(2026-10-30 E2E — 761 ~ 990px·320px 에서 칩이 잘렸다).
+    않는다 — 두 줄까지 접히고 그 끝에서만 줄인다(기간 글자는 줄지 않는다 — 아래 요약 기간). 360px 아래에서는 토글이 짧은
+    이름이다(2026-10-30 E2E — 761 ~ 990px·320px 에서 칩이 잘렸다).
+  - 요약 기간 −·+(2026-11-02 사용자 요청(검수표) home-02). 값은 공식버전의 모든 달이고 화면은 여섯 달 창이다 — 창 자르기·
+    옮기기는 순수 구획 `<intro-window>`(`WINDOW_FIELDS`·`windowedSummary`·`windowStartFor` — node 시험
+    `tests/test_intro_window.py` 가 파이썬 값의 달 목록을 모두 맞대 본다)이고 파이썬으로 아무것도 보내지 않는다(rerun 없음).
+    기본 창은 파이썬의 `start`(지난달부터), 옮긴 창은 첫 달 이름으로 이 탭 sessionStorage `capa-summary-window`(입장 화면
+    「들어갔음」 표지와 같은 범위)와 `api.summaryWindow` 에 남아 사이드바 라벨로 다시 열어도·새로고침해도 그대로다. 단추는 머리
+    칩 오른쪽 `.window`(기간 글자 + 18px 네모 둘)이고 끝에서는 `aria-disabled` + 풍선 까닭, 옮긴 뒤 `live` 칸이 새 기간을 읽는다.
+    기간 글자는 줄지 않고 칩이 줄며 접힌다. 760px 이하는 둘째 줄(토글 줄) 오른쪽 끝, 520px 이하는 생산계획 이름 띠 오른쪽
+    끝(`summaryGrid` 좁은 창 첫 줄 띠 96px — 머리 줄 위 여백 18px 에 맞춘 자리라 그 둘을 바꾸면 함께 본다)이다. 범례는 창 안에
+    조각이 있는 제품만이고 색은 그대로다. 과거 구간 달은 도넛 자리에 「과거 구간」, 풍선·낭독 표에 「과거 구간 입력값」 이다.
   - B/N 확보율 판의 기준선 이름표는 막대 칸(판 위 ~ 막대 바닥, 그 아래 50px 는 공정 이름·상태 띠) 안에서 막대·확보율
     글자·「최저」·기준선·다른 이름표를 피하는 자리를 고르고, 없으면 글자만 피하는 자리에 바탕을 깔아 단다 — 그것도 없으면
     쓰지 않는다. 「최저」 도 판 위로 나가면 쓰지 않는다(낮은 휴대폰 창에서 막대 축이 몇십 px 라 확보율 글자와 기준선이 한 줄에
@@ -2018,13 +2027,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쓸 수 없어 이 길이다.
   - 모든 페이지 앞에서 돌므로 어떤 예외도 내보내지 않는다(`available: false` 와 까닭). 공식 리비전의 결정적
     키로 HOME 과 같은 캐시를 쓰고, 판정 기준은 공용 프로필(`load_global_securement_threshold`)이다.
+  - 값은 공식버전의 **모든 달**이다 — HOME 기본 조회기간(`settings.MONTH_SELECTION_*`)으로 `display_month_range`(HOME 과 같은
+    함수)가 낸 범위라 공식 시나리오를 기본 조회기간으로 연 HOME 과 `get_home_simulation` 키가 같다. 과거 구간(`GlobalPastData`)은
+    HOME 기본(켬)처럼 이어(`official_summary.merge_summary_past`) 그 version 이 요약·세 몫의 서버 키에 든다 — 과거 구간 저장
+    (`past_data_management.save_past_tables`)도 `forget_intro_summary_check` 를 부른다. 기본 창 차례 `start`(지난달부터 —
+    `default_window_start`, 서버 날짜 `_current_month`)는 날짜로 바뀌어 서버 캐시 밖(`_look_up`)에서 싣는다.
   - 서버 캐시는 요약(`get_intro_summary_payload`)과 토글 몫(`simulation_cache.shared_intro_toggle_store`) 둘이다.
     GAP 몫이 없으면 「준비 중」으로 보내고 페이지 뒤 `warm_intro_summary` 가 만든다.
   - 확인 주기는 `RECHECK_SECONDS` 이고 무효화는 `forget_intro_summary_check`(`tests/test_summary_recheck_paths.py`)다.
     확인 때 본 `latest_official_revision` 을 머리 띠가 읽는다(이름까지 든 같은 값 `latest_official_identity` 는 HOME 공식
     칩). 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나다.
-- `src/capa_simulation/services/official_summary.py` — Summary 가 그리는 공식버전 6개월 요약(생산계획·B/N·부족
-  대수·제품 비중)의 순수 계산이다. HOME 토글 기본값과 같은 화면이고 B/N 은 HOME 과 같은 순위 함수다.
+- `src/capa_simulation/services/official_summary.py` — Summary 가 그리는 공식버전 요약(생산계획·B/N·부족
+  대수·제품 비중 — 모든 달, 화면은 여섯 달 창)의 순수 계산이다. HOME 토글 기본값(과거 구간 포함)과 같은 화면이고 B/N 은 HOME 과
+  같은 순위 함수다. 달은 `summary_months`(빈 달도 칸), 기본 창은 `default_window_start`(지난달부터 — 데이터 밖이면 가장 가까운
+  여섯 달), 과거 구간은 `merge_summary_past`(계산이 있는 달은 계산이 이긴다, 과거 확보율 행은 대수가 없어 부족 대수가 빈다).
   부족 대수는 B/N 공정이 그 달 실효 경고 기준까지 모자란 정수 대수다(6장 「경고 기준 필요대수」와 같은 식).
   - 토글 값은 `build_advance_summary`(HOME 「선행 B/O」와 같은 차례)·`build_comparison_summary`(선행 전 − 비교)다.
 - `src/capa_simulation/services/plan_gap.py` — 계획 증감 글자(선행 B/O 전후·비교 GAP)의 형식과 0 근처를 적지
@@ -4410,9 +4426,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   Preference 의 입력 표 년월에도 과거 달이 든다(`tests/test_home_page.py` 가 화면 칸 값과 짝 없는 행 안내로 묶는다).
 - **비교 GAP 은 선행 전 원데이터끼리 잰다**(`baseline_lob_summary`). 비교 리비전에서는 계획 한 장만 읽고 환산 표(수율·
   Chip)는 현재 것을 쓴다 — 기준정보 변화는 계획 변동이 아니다. 비교 시나리오에만 있는 분류 조합도 행으로 남긴다.
-- **HOME 과 입장 화면 Summary 는 같은 함수로 같은 말을 한다.** Summary 의 B/N 순위·선행 B/O 반영·GAP·증감 글자·판정은
-  HOME 과 같은 함수(`official_summary` 의 순위·`apply_advance_to_*`, `plan_gap`, `SecurementThresholds.status`,
-  `simulation_cache.get_home_comparison_plan`)로 낸다 — HOME 쪽 규칙을 바꾸면 Summary 도 함께 본다.
+- **HOME 과 입장 화면 Summary 는 같은 함수로 같은 말을 한다.** Summary 의 B/N 순위·선행 B/O 반영·GAP·증감 글자·판정·
+  과거 구간 병합·달 범위는 HOME 과 같은 함수(`official_summary` 의 순위·`apply_advance_to_*`, `plan_gap`,
+  `SecurementThresholds.status`, `simulation_cache.get_home_comparison_plan`, `past_data.merge_past_months`·`merge_past_frame`·
+  `display_month_range`)로 낸다 — HOME 쪽 규칙을 바꾸면 Summary 도 함께 본다.
 
 ## 7. 조인과 데이터 검증 규칙
 

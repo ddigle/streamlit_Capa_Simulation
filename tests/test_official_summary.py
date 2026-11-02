@@ -1,4 +1,5 @@
-# Purpose: 입장 화면 Summary 의 공식버전 6개월 요약 계산과 브라우저로 보내는 값을 검증한다.
+# Purpose: 입장 화면 Summary 의 공식버전 요약(모든 달·기본 창·과거 구간) 계산과 브라우저로 보내는
+# 값을 검증한다.
 
 from __future__ import annotations
 
@@ -15,9 +16,16 @@ from capa_simulation.design import tokens
 from capa_simulation.services.official_summary import (
     OfficialSummary,
     build_official_summary,
+    default_window_start,
+    merge_summary_past,
     shift_month,
     short_units,
     summary_months,
+)
+from capa_simulation.services.past_data import (
+    PAST_MONTH_COLUMNS,
+    PAST_SECUREMENT_COLUMNS,
+    display_month_range,
 )
 from capa_simulation.services.securement_rate import (
     OWNED_COLUMN,
@@ -38,13 +46,135 @@ def test_months_shift_across_year_ends_in_both_directions() -> None:
     assert shift_month(202601, 24) == 202801
 
 
-def test_the_window_starts_at_the_later_of_the_saved_start_and_the_first_plan_month() -> None:
-    """앞쪽은 데이터가 없는 달이고, 뒤쪽은 공식버전을 지정한 사람이 보라고 저장한 시작이다."""
-    assert summary_months(202601, 202610, 202812) == MONTHS
-    assert summary_months(202611, 202610, 202812)[0] == 202611
-    # 계획이 여섯 달보다 짧으면 있는 달까지만.
-    assert summary_months(202610, 202610, 202612) == [202610, 202611, 202612]
-    assert summary_months(202701, 202610, 202612) == []
+def test_the_summary_keeps_every_month_of_the_range_without_gaps() -> None:
+    """요약은 범위의 모든 달을 빠짐없이 가진다 — 값이 없는 달도 칸이다(선이 떨어진 두 달을 잇지
+    않게)."""
+    assert summary_months(202610, 202703) == MONTHS
+    assert summary_months(202611, 202702) == [202611, 202612, 202701, 202702]
+    assert summary_months(202610, 202610) == [202610]
+    assert summary_months(202701, 202612) == []
+    assert len(summary_months(202601, 202812)) == 36
+
+
+ALL_MONTHS = summary_months(202601, 202812)
+
+
+@pytest.mark.parametrize(
+    ("today", "first"),
+    [
+        # 2026-11-02 사용자 요청(검수표) home-02 — 오늘이 11월이면 10월부터 여섯 달(10월 ~ 3월).
+        (202611, 202610),
+        (202601, 202601),  # 지난달(25.12)이 데이터 앞이면 처음부터
+        (202701, 202612),  # 해를 넘는 지난달
+        (202809, 202807),  # 끝에서 여섯 달이 안 남으면 마지막 여섯 달(28.07 ~ 28.12)
+        (203001, 202807),  # 데이터 뒤
+        (202401, 202601),  # 데이터 앞
+    ],
+)
+def test_the_default_window_starts_last_month(today: int, first: int) -> None:
+    start = default_window_start(ALL_MONTHS, today)
+    assert ALL_MONTHS[start] == first
+    assert len(ALL_MONTHS[start : start + 6]) == 6
+
+
+def test_a_short_range_is_drawn_whole_from_its_first_month() -> None:
+    """달이 창보다 적으면 있는 달을 다 그린다 — 창은 늘 처음부터다."""
+    assert default_window_start([202611, 202612, 202701], 202702) == 0
+    assert default_window_start([], 202611) == 0
+
+
+def test_the_sample_shape_opens_on_october_through_march() -> None:
+    """검수 샘플 꼴 — 계산 원천 26.11 ~ 28.12, 과거 구간 26.01 ~ 26.10. HOME 기본 조회기간과 같은
+    범위 (`display_month_range`)가 26.01 ~ 28.12 이고, 2026-11 에 연 기본 창은 26.10 ~ 27.03
+    이다(26.10 은 과거 구간 달)."""
+    span = display_month_range((202501, 203012), (202611, 202812), summary_months(202601, 202610))
+    months = summary_months(span.start, span.end)
+    start = default_window_start(months, 202611)
+    assert (months[0], months[-1], len(months)) == (202601, 202812, 36)
+    assert months[start : start + 6] == [202610, 202611, 202612, 202701, 202702, 202703]
+
+
+def _past_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    monthly = pd.DataFrame(
+        {"생산계획년월": [202609, 202610, 202611], "Density": [9.5, 9.9, 99.0]},
+    ).assign(**{"Wafer Total": [150000.0, 151000.0, 999000.0]})[list(PAST_MONTH_COLUMNS)]
+    securement = pd.DataFrame(
+        [
+            (202610, "P-A", 1.07),
+            (202610, "P-B", 1.30),
+            (202610, "P-LOW", 0.40),
+            (202611, "P-A", 0.10),
+        ],
+        columns=list(PAST_SECUREMENT_COLUMNS),
+    )
+    return monthly, securement
+
+
+def test_past_months_fill_only_months_the_calculation_lacks() -> None:
+    """과거 구간은 HOME 처럼 계산에 없는 달만 채운다 — 계산이 있는 26.11 의 과거 값(99·0.10)은 쓰지
+    않는다. 범위 밖(26.09 — 조회 시작 앞)도 들지 않는다. 과거 확보율 행에는 대수가 없다."""
+    monthly, securement = _past_frames()
+    calc_months = [202611, 202612]
+    frames = merge_summary_past(
+        monthly_density=pd.DataFrame({"생산계획년월": calc_months, "부하량": [14.0, 15.0]}),
+        monthly_wafer=pd.DataFrame({"생산계획년월": calc_months, "Wafer 부하량": [2e5, 2.1e5]}),
+        securement_rate=_securement().loc[lambda frame: frame["생산계획년월"].isin(calc_months)],
+        past_monthly=monthly,
+        past_securement=securement,
+        start_month=202610,
+        end_month=202612,
+    )
+    assert frames.past == frozenset({202610})
+    months = [202610, 202611, 202612]
+    summary = build_official_summary(
+        months=months,
+        monthly_density=frames.density,
+        monthly_wafer=frames.wafer,
+        securement_rate=frames.securement,
+        product_volume=_volume(edp=False).loc[
+            lambda frame: frame["생산계획년월"].isin(calc_months)
+        ],
+        slot_volume=_volume(edp=False),
+        display_order=None,
+        included_processes=["P-A", "P-B"],
+        thresholds=THRESHOLDS,
+        past_months=frames.past,
+    )
+    assert summary.past == (True, False, False)
+    assert summary.density == pytest.approx((9.9, 14.0, 15.0))
+    assert summary.wafer == pytest.approx((151000.0, 2e5, 2.1e5))
+    october = summary.bottlenecks[0]
+    assert october is not None
+    # 필터 안에서 가장 낮은 과거 확보율(P-LOW 는 필터 밖). 대수가 없어 부족 대수는 빈다.
+    assert october.process == "P-A" and october.rate == pytest.approx(1.07)
+    assert (october.required, october.available, october.short_units) == (None, None, None)
+    # 과거 달은 제품별 Wafer 가 없어 도넛이 빈다(HOME Wafer 단위 도넛과 같다).
+    assert summary.mix[0] == () and summary.mix[1]
+    payload = summary_payload(
+        summary,
+        release_name="공식 v4",
+        scenario_name="DEMO",
+        thresholds=THRESHOLDS,
+        process_label=str,
+    )
+    assert payload["past"] == [True, False, False]
+    assert payload["bn"][0]["short"] is None and payload["bn"][0]["status"] == "warning"
+
+
+def test_without_past_input_nothing_is_marked_past() -> None:
+    empty_monthly = pd.DataFrame(columns=list(PAST_MONTH_COLUMNS))
+    empty_securement = pd.DataFrame(columns=list(PAST_SECUREMENT_COLUMNS))
+    frames = merge_summary_past(
+        monthly_density=pd.DataFrame({"생산계획년월": MONTHS, "부하량": [1.0] * 6}),
+        monthly_wafer=pd.DataFrame({"생산계획년월": MONTHS, "Wafer 부하량": [1.0] * 6}),
+        securement_rate=_securement(),
+        past_monthly=empty_monthly,
+        past_securement=empty_securement,
+        start_month=MONTHS[0],
+        end_month=MONTHS[-1],
+    )
+    assert frames.past == frozenset()
+    assert frames.density["생산계획년월"].tolist() == MONTHS
 
 
 @pytest.mark.parametrize(
@@ -265,7 +395,9 @@ def test_the_payload_is_rounded_theme_independent_and_serializable() -> None:
 
     assert json.loads(json.dumps(payload)) == payload
     assert payload["available"] is True
+    # 모든 달의 범위·수와 창(브라우저가 그리는 달 수). 과거 구간 없이 만든 요약은 과거 달이 없다.
     assert payload["period"] == "26.10–27.03" and payload["count"] == 6
+    assert payload["window"] == 6 and payload["past"] == [False] * 6
     assert payload["wafer"][0] == pytest.approx(211.0)
     # 숫자는 기준선 자리라 정확하고, 이름표 글자는 사사오입한 정수 퍼센트다. 달마다 하나씩이다.
     assert payload["secure"] == [109.5] * 6 and payload["warning"] == [99.5] * 6
@@ -328,7 +460,9 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         fail=None,
         module=intro_summary,
         thresholds=SecurementThresholds(1.095, 0.995),
-        versions={"advance": 0, "shipment": 0, "comparison": 0},
+        versions={"advance": 0, "shipment": 0, "comparison": 0, "past": 0},
+        month=202611,
+        months=[202610],
         profile_reads=0,
         parts=[],
         part_fail=None,
@@ -348,7 +482,10 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         )
 
     def fake_build(
-        path: str, release: SimpleNamespace, thresholds: SecurementThresholds
+        path: str,
+        release: SimpleNamespace,
+        thresholds: SecurementThresholds,
+        past: SimpleNamespace,
     ) -> dict[str, object]:
         env.builds.append(release.official_release_id)
         if env.fail is not None:
@@ -357,7 +494,8 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         return {
             "available": True,
             "release": release.official_release_id,
-            "_context": {"months": [202610]},
+            "past_version": past.version,
+            "_context": {"months": list(env.months)},
         }
 
     def fake_part(name: str) -> Callable[..., dict[str, object]]:
@@ -386,6 +524,12 @@ def summary_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
         lambda path: SimpleNamespace(thresholds=env.thresholds),
     )
     monkeypatch.setattr(intro_summary, "load_toggle_profiles", fake_profiles)
+    monkeypatch.setattr(
+        intro_summary,
+        "load_global_past_data",
+        lambda path: SimpleNamespace(version=env.versions["past"]),
+    )
+    monkeypatch.setattr(intro_summary, "_current_month", lambda: env.month)
     monkeypatch.setattr(intro_summary, "_build", fake_build)
     for name in ("advance", "shipment", "comparison"):
         monkeypatch.setattr(intro_summary, f"_{name}_part", fake_part(name))
@@ -407,6 +551,38 @@ def test_home_reruns_reuse_the_session_value_without_touching_the_db(
     assert data("db") == first
     # 다시 확인해도 같은 공식버전이면 서버 캐시에서 꺼낸다 — 다시 만들지 않는다.
     assert summary_env.repo.calls == 2 and summary_env.builds == ["rel-1"]
+
+
+def test_the_default_window_is_set_outside_the_server_cache(summary_env: SimpleNamespace) -> None:
+    """기본 창(지난달부터)은 날짜에 따라 바뀐다 — 서버에 든 요약은 그대로 두고 확인할 때마다 싣는다.
+    공식버전이 그대로인 채 달이 바뀌면 다음 확인에 새 지난달로 선다(다시 만들지 않는다)."""
+    summary_env.months = summary_months(202601, 202812)
+    data = summary_env.module.official_summary_data
+    sent = data("db")
+    assert summary_env.months[sent["start"]] == 202610
+    summary_env.month = 202612
+    summary_env.now += 10
+    assert data("db")["start"] == sent["start"]  # 확인 주기 안은 세션 값 그대로
+    summary_env.now += summary_env.module.RECHECK_SECONDS
+    moved = data("db")
+    assert summary_env.months[moved["start"]] == 202611
+    assert summary_env.builds == ["rel-1"]
+
+
+def test_saving_past_data_rebuilds_the_summary_and_every_part(
+    summary_env: SimpleNamespace,
+) -> None:
+    """과거 구간은 요약의 달·계획을 바꾼다 — 판(version)이 요약과 세 몫의 서버 키에 모두 든다."""
+    module = summary_env.module
+    module.official_summary_data("db")
+    summary_env.parts.clear()
+    summary_env.versions["past"] += 1
+    module.forget_intro_summary_check()
+    sent = module.official_summary_data("db")
+    assert summary_env.builds == ["rel-1", "rel-1"] and sent["past_version"] == 1
+    # GAP 은 이 세션이 요약을 이미 받았으므로 페이지 뒤에서 만든다(다른 키 변화와 같다).
+    assert summary_env.parts == ["advance", "shipment"]
+    assert sent["toggles"]["comparison"]["pending"] is True
 
 
 def test_toggle_profiles_are_read_only_when_the_official_version_is_checked(

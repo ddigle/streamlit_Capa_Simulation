@@ -1360,11 +1360,12 @@ def get_home_comparison_plan(
 # 같은 값(최신 공식버전)을 보므로 서버에 한 벌만 둔다 — 세션마다 다시 만들면
 # 새 탭·F5·테마 전환마다 HOME 보다 먼저 0.5초를 썼다(로컬 합성 DB 사본에서 잰 소요시간).
 # 키는 (공식버전 id, 그 시나리오 이름, 공용 표시순서 판, 공정 표시명 판, 공용 판정 기준의
-# 내용 지문)이고 요약에 들어가는 것을 모두 덮는다(공식 리비전은 고칠 수 없다). `_build` 는
+# 내용 지문, 과거 구간 판)이고 요약에 들어가는 것을 모두 덮는다(공식 리비전은 고칠 수 없다). 날짜에
+# 따라 바뀌는 기본 창(`start`)은 여기 든 값에 넣지 않는다(`intro_summary._look_up`). `_build` 는
 # 키에 넣지 않는다. 머리 줄 토글 셋의 몫은 여기 넣지 않는다 — 아래 `shared_intro_toggle_store`
 # 에 몫마다 따로 둔다(선행 B/O 를 저장해도 이 요약을 다시 만들지 않게).
 # 일시적일 수 있는 실패(DB 잠금 등)는 `_build` 가 예외로 올리므로 여기 남지 않는다.
-IntroSummaryCacheKey = tuple[str, str, int, int, str]
+IntroSummaryCacheKey = tuple[str, str, int, int, str, int]
 # 토글 몫(선행 B/O·선행 입고·GAP) 칸 수. 한 칸은 JSON 몇 KB 다.
 INTRO_TOGGLE_MAX_ENTRIES = 24
 

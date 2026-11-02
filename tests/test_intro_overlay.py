@@ -961,11 +961,16 @@ def test_the_phone_summary_does_not_overflow_and_shows_the_release_chip_whole() 
 
     칩은 모든 폭에서 자르지 않는다 — 768px 안팎(기간 글자가 서는 빠듯한 머리 줄)에서 칩이 93px 로
     줄어 말줄임이 됐고, 320px 에서는 온전한 토글 이름 셋이 줄을 먹어 칩이 42px 였다(2026-10-30
-    E2E). 기간 글자가 먼저 주고(바닥 84px), 칩은 두 줄까지 접히며, 360px 아래에서는 토글이 짧은
-    이름이 된다."""
+    E2E). 칩은 두 줄까지 접히고, 360px 아래에서는 토글이 짧은 이름이 된다.
+
+    요약 기간 묶음(기간 글자 · −·+ — 2026-11-02 사용자 요청(검수표) home-02)은 줄지 않고 칩이 남는
+    폭만큼 준다(칩이 줄지 않으면 768px 에서 칩이 기간 글자를 덮었다 — 사본 브라우저 확인). 760px
+    이하에서는 둘째 줄(토글 줄) 오른쪽 끝, 520px 이하(둘째 줄을 토글과 칩이 다 쓴다)에서는 생산계획
+    이름 띠의 오른쪽 끝으로 내려 칩이 전처럼 남는 폭을 다 쓴다(320 ~ 1440px 폭마다 칩 · 기간 글자
+    겹침 없음 · 칩 잘림 없음 · 가로 넘침 없음 — 사본 브라우저 확인)."""
     html = (ASSETS / "intro.html").read_text(encoding="utf-8")
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
-    assert '<div class="sr"><table data-slot="table"></table></div>' in html
+    assert '<div class="sr"><table data-slot="table"></table>' in html
     assert "<table class=" not in html
     sr = re.search(r"\n\.sr \{([^}]*)\}", css)
     assert sr is not None and "overflow: hidden;" in sr.group(1) and "width: 1px;" in sr.group(1)
@@ -988,23 +993,77 @@ def test_the_phone_summary_does_not_overflow_and_shows_the_release_chip_whole() 
     assert "text-overflow" not in chip.group(1)
     # 위아래 여백은 테두리다 — padding 이면 접힌 셋째 줄이 그 여백에 비친다.
     assert "padding: 0 7px;" in chip.group(1) and "border-block:" in chip.group(1)
-    # 빠듯한 머리 줄에서는 기간 글자가 먼저 준다 — 칩은 줄지 않고 기간 글자 바닥(84px)과
-    # 틈(8px)을 뺀 폭까지만 선다. 칩도 줄게 두면 한 px 만 모자라도 두 줄로 접힌다. 기간 글자를
-    # 감추는 창에서는 칩 혼자 남는 폭을 다 쓴다.
-    period = re.search(r"\n\.asof \.period \{([^}]*)\}", css)
-    assert period is not None
-    assert "flex: 0 1 auto;" in period.group(1) and "min-width: 84px;" in period.group(1)
-    assert "flex: none;" in chip.group(1) and "max-width: calc(100% - 92px);" in chip.group(1)
+    # 요약 기간 묶음은 줄지 않고 칩이 남는 폭(`.asof`)만큼 준다.
+    window = re.search(r"\n\.window \{([^}]*)\}", css)
+    assert window is not None and "flex: none;" in window.group(1)
+    assert "flex: 0 1 auto;" in chip.group(1) and "max-width: 100%;" in chip.group(1)
+    # 기간 글자는 줄거나 숨지 않는다 — 옮기는 대상이라 늘 다 읽혀야 한다.
+    assert ".asof .period" not in css and not re.search(r"\.period \{[^}]*display: none", css)
+    head = html[html.index('<header class="head">') : html.index("</header>")]
+    assert head.index('data-slot="asof"') < head.index('data-slot="window"')
+    assert '<span class="window" data-slot="window"><span class="period"></span>' in head
     hidden = css[
         css.index("@media (max-width: 760px) {") : css.index("@media (max-width: 520px) {")
     ]
-    assert re.search(r"\.asof \.period \{\s*display: none;", hidden)
+    lowered = re.search(r"\.window \{([^}]*)\}", hidden)
+    assert lowered is not None
+    for rule in ("position: absolute;", "top: 44px;", "right: 0;"):
+        assert rule in lowered.group(1), rule
     assert re.search(r"\.asof \.chip \{\s*flex: 0 1 auto;\s*max-width: none;", hidden)
+    assert re.search(r"\.tail \.window \{\s*top: 38px;", phone.group(1))
     tiny = re.search(r"@media \(max-width: 359px\) \{(.*?)\n\}", css, re.S)
     assert tiny is not None
     assert re.search(r"\.tg \.full \{\s*display: none;", tiny.group(1))
     assert re.search(r"\.tg \.short \{\s*display: inline;", tiny.group(1))
     assert css.index("@media (max-width: 760px)") < css.index("@media (max-width: 359px)")
+
+
+def test_the_summary_period_shifts_in_the_browser_with_reasons_at_the_ends() -> None:
+    """요약 기간 −·+(2026-11-02 사용자 요청(검수표) home-02). 기간 글자 바로 옆 18px 네모 둘이고
+    입장 화면에서는 보이지 않는다(Tab 차례도 없다). 끝에 닿으면 `disabled` 가 아니라 `aria-disabled`
+    로 두고 풍선·읽는 이름에 까닭을 단다(토글과 같다). 옮기기는 브라우저 안에서만 한다 — 파이썬으로
+    보내는 길(`setTriggerValue`·`__capaSummaryRefresh`)을 부르지 않는다. 고른 창은 이 탭의
+    sessionStorage 에 첫 달 이름으로 남고, 옮긴 뒤 새 기간을 낭독기에 알린다."""
+    text = intro_overlay._data()["text"]
+    window = text["window"]
+    assert (window["prev"], window["next"]) == ("한 달 이전으로", "한 달 다음으로")
+    assert "{month}" in window["first"] and "{month}" in window["last"]
+    assert "months" not in text  # 「시작월부터 N개월」 꼬리는 없다(창은 지난달부터 옮겨 다닌다)
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    head = html[html.index('<header class="head">') : html.index("</header>")]
+    for name in ("prev", "next"):
+        button = re.search(rf'<button type="button" class="sh {name}"[^>]*>', head)
+        assert button is not None and 'aria-disabled="true"' in button.group(0)
+        assert " disabled" not in button.group(0)
+    assert (
+        head.index('class="period"') < head.index('class="sh prev"') < head.index('class="sh next"')
+    )
+    assert 'data-slot="live" role="status" aria-live="polite"' in html
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\n\.window \{[^}]*visibility: hidden;", css)
+    assert re.search(r"\.stage\.summary \.window \{\s*visibility: visible;", css)
+    sh = re.search(r"\n\.sh \{([^}]*)\}", css)
+    assert sh is not None and "width: 18px;" in sh.group(1) and "height: 18px;" in sh.group(1)
+    assert re.search(r'\.sh\[aria-disabled="true"\] \{[^}]*cursor: not-allowed;', css)
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    shift = _between(
+        js,
+        "function shiftWindow(delta)",
+        "/* ------------------------------------------------ 상태",
+    )
+    assert "setTriggerValue" not in shift and "__capaSummaryRefresh" not in shift
+    assert "rememberWindow(windowChoice.label);" in shift
+    assert 'live.textContent = `${windowText.moved || ""} ${summary.period}`.trim();' in shift
+    assert 'if (button.getAttribute("aria-disabled") === "true") return;' in shift
+    assert 'const WINDOW_KEY = "capa-summary-window";' in js
+    assert "window.sessionStorage.setItem(WINDOW_KEY, label);" in js
+    # 값이 다시 와도 고른 창을 지킨다 — 오버레이를 다시 만들어도(`api.summaryWindow`) 같다.
+    assert (
+        "const windowChoice = api.summaryWindow"
+        " || (api.summaryWindow = { label: rememberedWindow() });" in js
+    )
+    set_summary = _between(js, "function setSummary(payload) {", "function buildLabels() {")
+    assert "windowedSummary(full, windowStartFor(full, windowChoice.label))" in set_summary
 
 
 # --------------------------------------------------------- Summary 토글 셋(선행 B/O·선행 입고·GAP)
@@ -1030,7 +1089,7 @@ def test_summary_toggles_sit_right_after_the_docked_detail() -> None:
     # 머리 줄이 빠듯하면 라벨은 한 줄을 지키고 기간 글자·공식버전 칩이 준다(768px 에서 라벨이
     # 접혔다).
     assert re.search(r"\.brand \{\s*flex: none;\s*white-space: nowrap;", css)
-    assert re.search(r"\n\.asof \.chip \{\s*flex: none;\s*min-width: 0;", css)
+    assert re.search(r"\n\.asof \.chip \{\s*flex: 0 1 auto;\s*min-width: 0;", css)
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     entry = _between(js, "async function summaryFromEntry(", "function snapToSummary(")
     assert entry.index("dockDetail(true);") < entry.index("revealToggles(true);")
