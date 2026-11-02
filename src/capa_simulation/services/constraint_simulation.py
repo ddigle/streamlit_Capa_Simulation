@@ -153,9 +153,13 @@ TARGET_RANGE: Final = THRESHOLD_RANGE
 """제약 확보율(비율) 50~300% — HOME 판정 기준 저장 범위와 한 값이다
 (`securement_threshold.THRESHOLD_RANGE`)."""
 
-GENERAL_INPUT_RANGE: Final = (0.5, 2.0)
-"""기준 확보율 **직접 입력 칸**의 범위(50~200%). 서비스 검증에는 쓰지 않는다 — HOME 월별 예외는
-범위 밖일 수 있다."""
+GENERAL_INPUT_RANGE: Final = THRESHOLD_RANGE
+"""기준 확보율 **직접 입력 칸**(제약 영향 · 개조 일정 두 모드)의 범위 50~300% — HOME 판정
+기준 저장 범위와 한 값이다(`securement_threshold.THRESHOLD_RANGE`, 2026-11-02 사용자 결정 —
+50~200% 이던 칸에는 Preference 가 저장한 200% 넘는 기준을 칠 수 없었고, 「HOME 기준」 일 때
+칸이 보이는 HOME 기본도 200 으로 잘렸다). 이 칸만 쓴다 — 제약 확보율 칸은 `TARGET_RANGE`(같은
+값), 개조 기간은 `MODIFICATION_DAYS_RANGE`. 서비스 검증에는 쓰지 않는다 — 범위를 보기 전에
+저장한 HOME 옛 기준(월별 예외 포함)은 범위 밖일 수 있다."""
 
 MODIFICATION_DAYS_RANGE: Final = (1, 365)
 """개조 기간(일)."""

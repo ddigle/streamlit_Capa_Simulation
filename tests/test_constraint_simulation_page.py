@@ -759,6 +759,55 @@ def test_the_general_target_takes_whole_percent_and_home(
     assert "기준 HOME" in _header_line(app)
 
 
+def test_the_general_target_field_takes_the_home_threshold_range(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """기준 확보율 직접 입력 칸은 HOME 판정 기준 저장 범위와 같은 50 ~ 300% 다(2026-11-02
+    사용자 결정 — 50 ~ 200% 이던 칸은 250 을 받지 않아 정본이 「HOME 기준」 으로 돌아갔다).
+    같은 카드의 다른 칸 범위(제약 확보율 50 ~ 300% · 개조 기간 1 ~ 365일)는 그대로다."""
+    app = _opened(dynamic_databases)
+    field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
+    assert (field.min, field.max) == (50, 300)
+    target = app.number_input(key=CONSTRAINT_TARGET_INPUT_KEY)
+    assert (target.min, target.max) == (50, 300)
+    days = app.number_input(key=CONSTRAINT_MOD_DAYS_INPUT_KEY)
+    assert (days.min, days.max) == (1, 365)
+
+    field.set_value(250)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == 250
+    assert "기준 250%" in _header_line(app)
+    (shown,) = [item for item in app.number_input if item.label == "기준 확보율 직접 입력"]
+    assert shown.value == 250
+    # 계산이 그 기준을 쓴다 — 그래프 기준선은 판정 경계 249.5%(정수 기준 250 의 사사오입 경계)다.
+    traces = _chart_spec(app, CONSTRAINT_CHART_KEY)["data"]
+    (general_line,) = [trace for trace in traces if trace.get("name") == "기준"]
+    assert general_line["y"] == pytest.approx([249.5, 249.5])
+
+
+def test_the_general_target_field_shows_a_home_default_above_200_unclipped(
+    own_databases: tuple[Path, Path],
+) -> None:
+    """「HOME 기준」 일 때 숫자 칸은 HOME 기본 확보 기준을 보인다 — Preference 가 받는 250% 면
+    칸도 250 이다(칸이 50 ~ 200% 이던 때는 200 으로 잘려 머리 「HOME 250%」 와 어긋났다,
+    2026-11-02 결정)."""
+    app = _opened(own_databases)
+    repository = DuckDBScenarioRepository(own_databases[0])
+    threshold = repository.load_global_securement_threshold()
+    repository.replace_global_securement_threshold(
+        2.5,
+        2.4,
+        pd.DataFrame(columns=["생산계획년월", "확보 기준", "경고 기준"]),
+        source="시험",
+        expected_version=threshold.version,
+    )
+    clear_global_securement_threshold_cache()
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
+    assert app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).value == 250
+    assert "기준 HOME 250%" in _header_line(app)
+
+
 @pytest.mark.parametrize(
     ("value_key", "input_key", "label", "typed", "kept", "header"),
     [
@@ -856,7 +905,7 @@ def test_home_thresholds_follow_the_shared_profile_even_outside_the_input_range(
     own_databases: tuple[Path, Path],
 ) -> None:
     """「HOME 기준」 은 공용 판정 기준을 달마다 쓴다 — 기준을 올리면 미달 셈이 따라가고, 월별 예외가
-    입력 칸 범위(50~200%) 밖이어도 예외 없이 그 달이 판정된다(명세 2-7·6-2 ⑦⑰)."""
+    입력 칸 범위(50~300%) 밖이어도 예외 없이 그 달이 판정된다(명세 2-7·6-2 ⑦⑰)."""
     app = _opened(own_databases)
     assert _metric(app, "기준 미달 달 (기존 제품)") == "없음"
     repository = DuckDBScenarioRepository(own_databases[0])
