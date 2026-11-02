@@ -153,6 +153,8 @@ done({
   daysWhole: run([30, 30], 2, 2, days),
   units: run([1, 2, 0.5], 3, 3, units),
   upeh: run([1234.5, 100], 2, 2, upeh),
+  upehBig: run([123456.7, 900000], 2, 2, upeh),
+  upehHuge: run(Array.from({ length: 79800 }, () => 293.346), 79800, 79800, upeh),
   big: run(Array.from({ length: 1200 }, () => 1000), 1200, 1200, days),
   textOnly: run(['abc', null], 2, 2, percent),
   keysOnly: run([], 6, 0, percent),
@@ -177,6 +179,11 @@ done({
     assert result["daysWhole"][1] == "개수 2 · 합계 60 · 평균 30"
     assert result["units"][1] == "개수 3 · 합계 3.50 · 평균 1.17"
     assert result["upeh"][1] == "개수 2 · 합계 1,334.5 · 평균 667.25"
+    # 유효숫자 6자리 형식은 1,000,000 이상에서 지수 꼴(1.02346e+06)이 된다 — 요약은 천 단위 +
+    # 소수 둘째 자리.
+    assert result["upehBig"][1] == "개수 2 · 합계 1,023,456.7 · 평균 511,728"
+    assert result["upehHuge"][1].startswith("개수 79,800 · 합계 23,409,0")
+    assert "e+" not in result["upehHuge"][1] and result["upehHuge"][1].endswith(" · 평균 293.346")
     assert result["big"][1] == "개수 1,200 · 합계 1,200,000 · 평균 1,000"
     assert result["textOnly"][1] == "개수 1"
     assert result["keysOnly"][1] == "칸 6개"

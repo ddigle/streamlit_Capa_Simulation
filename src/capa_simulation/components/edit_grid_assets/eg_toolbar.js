@@ -76,14 +76,17 @@ function summaryAdd(acc, value) {
   }
 }
 
-// 평균 글 — 표 형식 그대로, 다만 고정 소수 표(일수 0자리·설비대수 2자리)는 소수 둘째 자리까지 보이고 끝 0 을 걷는다(30.5).
-function summaryAverage(value, fmt) {
-  if (fmt.kind !== 'fixed') return formatValue(value, fmt)
-  return groupedText(stripZeros(value.toFixed(Math.max(Number(fmt.digits) || 0, 2))))
+// 합계·평균 글 — 표 형식 그대로. 다만 고정 소수 표(일수 0자리·설비대수 2자리)의 평균은 소수 둘째 자리까지(끝 0 걷음 — 30.5),
+// 유효숫자 표(UPEH)는 지수 꼴이 되는 큰 수(10^digits 이상)를 천 단위 + 소수 둘째 자리로(23,409,039.71) 보인다.
+function summaryNumber(value, fmt, average) {
+  const digits = Number(fmt.digits) || 0
+  if (fmt.kind === 'fixed' && average) return groupedText(stripZeros(value.toFixed(Math.max(digits, 2))))
+  if (fmt.kind === 'sig' && Math.abs(value) >= Math.pow(10, Math.max(digits, 1))) return groupedText(stripZeros(value.toFixed(2)))
+  return formatValue(value, fmt)
 }
 
 // 요약 글. cells = 고른 칸 수, valueCells = 그 가운데 값 칸 수. 한 칸이면 빈 글, 값 칸이 없으면 「칸 n개」, 수가 없으면
-// 「개수 n」, 그 밖은 「개수 · 합계 · 평균」(합계는 표 형식).
+// 「개수 n」, 그 밖은 「개수 · 합계 · 평균」.
 function summaryText(acc, cells, valueCells, fmt, texts) {
   const pick = (name, fallback) => (texts && typeof texts[name] === 'string' ? texts[name] : fallback)
   const count = (n) => Number(n).toLocaleString('ko-KR')
@@ -92,8 +95,8 @@ function summaryText(acc, cells, valueCells, fmt, texts) {
   if (!acc.nums) return pick('summaryCount', '개수 {count}').replace('{count}', count(acc.count))
   return pick('summary', '개수 {count} · 합계 {sum} · 평균 {avg}')
     .replace('{count}', count(acc.count))
-    .replace('{sum}', formatValue(acc.sum, fmt))
-    .replace('{avg}', summaryAverage(acc.sum / acc.nums, fmt))
+    .replace('{sum}', summaryNumber(acc.sum, fmt, false))
+    .replace('{avg}', summaryNumber(acc.sum / acc.nums, fmt, true))
 }
 // </eg-summary>
 
