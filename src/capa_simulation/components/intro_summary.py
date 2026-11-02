@@ -9,10 +9,14 @@
 `data` 로 보내지 않는 것은 그쪽이 회차마다 같은 값이어야 하기 때문이다(`intro_overlay`).
 
 **무엇을 보내는가.** `services/official_summary.py` 가 정한 값이다 — 최신 공식버전 하나, 그
-시나리오 시작월부터 여섯 달, HOME 토글 기본값. `get_home_simulation` 에 공식 리비전의 결정적
-키(`reference_version_for_revision`·`pristine_content_token`)를 넘기므로 **무거운 시나리오 전체 Capa
-계산(`get_full_capacity_outcome`)은 HOME·공식 발행 검사와 한 칸을 나눠 쓴다.** 여섯 달로 자른
-결과는 HOME 의 조회기간과 대개 달라 따로 캐시된다(가벼운 부분이다).
+공식버전이 데이터를 가진 **모든 달**(HOME 기본 조회기간과 같은 범위 — 계산 원천 + 과거 구간), HOME
+토글 기본값. 화면은 그중 여섯 달 창을 그리고 창은 브라우저가 옮긴다(2026-11-02 사용자 요청(검수표)
+home-02 — `intro.js` 의 `<intro-window>`, −·+ 에 rerun 이 없다). 기본 창의 첫 달 차례(`start` —
+지난달부터)는 서버 날짜로 정하므로 서버 캐시 밖에서 싣는다(`_look_up`). `get_home_simulation` 에
+공식 리비전의 결정적 키(`reference_version_for_revision`·`pristine_content_token`)와 HOME 기본
+조회기간의 달을 넘기므로 **무거운 시나리오 전체 Capa 계산(`get_full_capacity_outcome`)은 HOME·공식
+발행 검사와, 달로 자른 결과는 공식 시나리오를 기본 조회기간으로 연 HOME 과 한 칸을 나눠 쓴다.** 값은
+달 수만큼 길어진다(합성 샘플 36달 — 요약 한 벌 수십 KB).
 
 **HOME 을 무겁게 하지 않는다**(2026-10-03 사용자 결정 — 주 업무가 HOME 이다).
 완성된 요약은 서버에 한 벌만 둔다(`simulation_cache.get_intro_summary_payload` —
@@ -34,9 +38,10 @@ Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐�
 `toggles` 로 싣는다 — HOME 의 같은 토글과 같은 함수다(`services/official_summary.py`). 쓰는
 공용 프로필(선행 B/O·선행 입고 실적·비교 시나리오)은 공식버전을 확인할 때(`RECHECK_SECONDS` 에
 한 번)만 캐시된 로더로 읽고, 각 프로필의 version 과 비교 대상을 서버 캐시 키에 넣어 프로필이
-바뀌면 새로 만든다. 켤 수 없는 토글은 까닭을 단다(`available: false`) — 요약 기간에 입력이
-없거나, 비교 대상이 없거나 지워졌거나 공식버전 자신일 때다. 한 토글의 값을 만들다 데이터 오류가
-나도 그 토글만 끄고 요약은 그대로 보낸다.
+바뀌면 새로 만든다. 과거 구간(`GlobalPastData`)도 같은 때 읽고 그 version 은 요약과 세 몫의 키에
+모두 든다 — 요약의 달과 계획이 그것으로 바뀐다. 켤 수 없는 토글은 까닭을 단다(`available: false`) —
+요약 기간에 입력이 없거나, 비교 대상이 없거나 지워졌거나 공식버전 자신일 때다. 한 토글의 값을 만들다
+데이터 오류가 나도 그 토글만 끄고 요약은 그대로 보낸다.
 
 **최신 공식버전을 함께 기억한다.** 공식버전을 확인할 때 본 그 리비전 id·번호를 세션에 같이
 둔다(`latest_official_revision`). 머리 띠(`app_header`)가 「공식 vN」을 적을 때 그것만 읽어
@@ -60,6 +65,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from datetime import date
 from typing import Any, NamedTuple
 
 import duckdb
@@ -86,6 +92,7 @@ from capa_simulation.persistence.cache import (
     load_global_advance_shipment,
     load_global_comparison_scenario,
     load_global_display_order,
+    load_global_past_data,
     load_global_securement_threshold,
     load_scenario_plan,
     load_scenario_snapshot,
@@ -94,6 +101,7 @@ from capa_simulation.persistence.models import (
     GlobalAdvanceLoad,
     GlobalAdvanceShipment,
     GlobalComparisonScenario,
+    GlobalPastData,
     OfficialReleaseSummary,
     RevisionSummary,
 )
@@ -103,6 +111,7 @@ from capa_simulation.services.dashboard import PRODUCTION_DETAIL_DIMENSIONS
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.official_summary import (
+    SUMMARY_MONTH_COUNT,
     AdvanceSummary,
     BottleneckMonth,
     ComparisonSummary,
@@ -110,8 +119,11 @@ from capa_simulation.services.official_summary import (
     build_advance_summary,
     build_comparison_summary,
     build_official_summary,
+    default_window_start,
+    merge_summary_past,
     summary_months,
 )
+from capa_simulation.services.past_data import display_month_range
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import (
     IntroSummaryCacheKey,
@@ -123,6 +135,7 @@ from capa_simulation.services.simulation_cache import (
     shared_intro_toggle_store,
 )
 from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.settings import MONTH_SELECTION_END, MONTH_SELECTION_START
 
 # 컴포넌트 칸의 key 이자 숨김 규칙의 훅.
 INTRO_SUMMARY_KEY = "capa_intro_summary"
@@ -308,6 +321,11 @@ def summary_payload(
 ) -> dict[str, Any]:
     """브라우저로 보낼 값. 반올림·차례를 고정해 같은 요약이면 늘 같은 값이 된다.
 
+    달마다 하나씩인 목록(`months`·`density`·`wafer`·`bn`·기준 넷·`past`·`mix`)은 요약의 **모든
+    달**이고, 화면은 그중 `window` 달을 그린다 — 자르는 일은 브라우저가 한다(`intro.js` 의
+    `WINDOW_FIELDS`, 새 달 목록을 더하면 거기에도 적는다). `period`·`count` 는 모든 달의 범위·수다.
+    기본 창의 첫 달 차례(`start`)는 날짜에 따라 바뀌어 서버 캐시 밖에서 싣는다(`_look_up`).
+
     판정 기준은 시나리오와 무관한 공용 프로필(HOME → Preference)이다. B/N 막대 색과 기준선은
     **달마다 그 달의 실효 기준**을 쓴다 — 기준 네 목록(`secure`·`warning`·`*_label`)이 `months` 와
     같은 차례·같은 길이다.
@@ -327,7 +345,10 @@ def summary_payload(
         "scenario": scenario_name,
         "period": f"{labels[0]}–{labels[-1]}" if labels else "",
         "count": len(labels),
+        "window": SUMMARY_MONTH_COUNT,
         "months": list(labels),
+        # 과거 구간 입력으로 채운 달(도넛 자리에 「과거 구간」, 풍선·낭독 표에 같은 말).
+        "past": [bool(flag) for flag in summary.past] or [False] * len(labels),
         "density": _density_payload(summary.density),
         "wafer": _wafer_payload(summary.wafer),
         "bn": bottlenecks,
@@ -479,20 +500,35 @@ def comparison_part(
 
 
 def _build(
-    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+    database_path: str,
+    release: OfficialReleaseSummary,
+    thresholds: SecurementThresholds,
+    past: GlobalPastData | None = None,
 ) -> dict[str, Any]:
     """요약 한 벌(토글 몫 없이). 토글 몫이 쓸 재료를 `_context` 로 함께 둔다 — 보내기 전에 뗀다.
 
-    재료는 요약을 만든 바로 그 프레임(계획은 EDP 제외)이다. 토글 몫은 이것만으로 만들어 서버
-    캐시에 든 요약·리비전 스냅샷을 다시 풀지 않는다.
+    재료는 요약을 만든 바로 그 프레임(계획은 EDP 제외, 과거 구간을 이은 것)이다. 토글 몫은
+    이것만으로 만들어 서버 캐시에 든 요약·리비전 스냅샷을 다시 풀지 않는다.
+
+    달은 HOME 이 기본 조회기간으로 그리는 달 그대로다 — 계산 원천 범위를 과거 구간(`past`, 없으면
+    과거 없음)만큼 넓혀 기본 조회기간으로 자른 범위(`display_month_range`, HOME 과 같은 함수)다.
+    그래서 공식 시나리오를 기본 조회기간으로 연 HOME 과 계산 캐시 키가 같다.
     """
     snapshot = load_scenario_snapshot(database_path, release.revision_id)
     tables = snapshot.tables
     preset = snapshot.preset
     source_start, source_end = available_month_range(tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
-    months = summary_months(preset.start_month, source_start, source_end)
+    past_monthly = past.monthly if past is not None else None
+    past_securement = past.securement if past is not None else None
+    past_months = (
+        [int(value) for value in past_monthly["생산계획년월"]] if past_monthly is not None else []
+    )
+    span = display_month_range(
+        (MONTH_SELECTION_START, MONTH_SELECTION_END), (source_start, source_end), past_months
+    )
+    months = summary_months(span.start, span.end)
     if not months:
-        return _unavailable("공식버전의 시작월 뒤로 생산계획이 없습니다.")
+        return _unavailable("공식버전에 요약할 생산계획 달이 없습니다.")
     # 공식 리비전은 편집되지 않은 원본이라 키가 결정적이다 — HOME·공식 발행 검사와 같은 칸이다.
     reference_version = reference_version_for_revision(release.revision_id)
     display_order = tables["RQ_DISPLAY_ORDER"]
@@ -514,6 +550,20 @@ def _build(
         _tables=tables,
         _display_order=display_order,
     )
+    past_frames = None
+    if past_monthly is not None and past_securement is not None:
+        past_frames = merge_summary_past(
+            monthly_density=monthly_density,
+            monthly_wafer=monthly_wafer,
+            securement_rate=securement_rate,
+            past_monthly=past_monthly,
+            past_securement=past_securement,
+            start_month=months[0],
+            end_month=months[-1],
+        )
+        monthly_density = past_frames.density
+        monthly_wafer = past_frames.wafer
+        securement_rate = past_frames.securement
     summary = build_official_summary(
         months=months,
         monthly_density=monthly_density,
@@ -524,6 +574,7 @@ def _build(
         display_order=display_order,
         included_processes=preset.included_processes,
         thresholds=thresholds,
+        past_months=past_frames.past if past_frames is not None else (),
     )
     payload = summary_payload(
         summary,
@@ -546,12 +597,15 @@ def _build(
 
 
 def _build_or_unavailable(
-    database_path: str, release: OfficialReleaseSummary, thresholds: SecurementThresholds
+    database_path: str,
+    release: OfficialReleaseSummary,
+    thresholds: SecurementThresholds,
+    past: GlobalPastData,
 ) -> dict[str, Any]:
     """서버 캐시가 부르는 계산. 일시적일 수 있는 실패는 그대로 올려 캐시에 남기지 않고,
     그 밖의 실패(데이터 오류)는 「만들지 못함」으로 돌려 캐시에 남긴다."""
     try:
-        return _build(database_path, release, thresholds)
+        return _build(database_path, release, thresholds, past)
     except _TRANSIENT_ERRORS:
         raise
     except Exception as exc:  # 다시 해도 같은 결과다 — 회차마다 다시 계산하지 않게 남긴다
@@ -668,6 +722,7 @@ def _toggle_parts(
     *,
     order_version: int,
     labels: ProcessLabels,
+    past_version: int,
     defer: bool,
 ) -> tuple[dict[str, Any], bool]:
     """토글 셋의 값과, 이번에 「준비 중」으로 남긴 몫이 있는지.
@@ -678,7 +733,8 @@ def _toggle_parts(
     1.4초) `defer` 면 HOME 페이지 **앞**에서 치르지 않고 「준비 중」으로 보낸 뒤 페이지를 그린 다음
     `warm_intro_summary` 가 만든다. 일시적 실패도 「준비 중」으로 두고 남기지 않는다. 표시순서·공정
     표시명 판은 요약 키를 만들 때 읽은 그 값(`order_version`·`labels`)이다 — 따로 다시 읽으면 그
-    사이 저장된 판이 요약과 몫에 갈라 들어간다.
+    사이 저장된 판이 요약과 몫에 갈라 들어간다. 과거 구간 판(`past_version`)은 셋 모두에 든다 — 몫이
+    쓰는 달과 계획(재료)이 과거 구간으로 바뀐다.
     """
     store = shared_intro_toggle_store()
     profiles = load_toggle_profiles(database_path)
@@ -689,21 +745,21 @@ def _toggle_parts(
             "advance",
             "선행 B/O",
             ("advance", official, order_version, labels.version, thresholds.digest)
-            + (profiles.advance.version,),
+            + (past_version, profiles.advance.version),
             lambda: _advance_part(context, profiles.advance, thresholds, labels.format_func()),
             False,
         ),
         (
             "shipment",
             "선행 입고",
-            ("shipment", official, profiles.shipment.version),
+            ("shipment", official, past_version, profiles.shipment.version),
             lambda: _shipment_part(context, profiles.shipment),
             False,
         ),
         (
             "comparison",
             "GAP",
-            ("comparison", official, order_version, comparison.version)
+            ("comparison", official, order_version, past_version, comparison.version)
             + (comparison.scenario_id or "", comparison.revision_id or ""),
             lambda: _comparison_part(database_path, release, comparison, context),
             # 비교 대상이 없거나 공식버전 자신이면 까닭만 내면 된다(DB·환산 없음) — 미루지 않는다.
@@ -737,6 +793,13 @@ class _Transient(Exception):
     """이번 확인이 일시적 실패로 끝났다. 세션이 들고 있던 값을 지우지 않는다."""
 
 
+def _current_month() -> int:
+    """오늘(서버 날짜)의 `YYYYMM` — Summary 기본 창(지난달부터)의 기준. 시험은 이 함수를 바꿔
+    끼운다."""
+    today = date.today()
+    return today.year * 100 + today.month
+
+
 def _official_identity(release: OfficialReleaseSummary | None) -> dict[str, Any] | None:
     if release is None:
         return None
@@ -763,6 +826,8 @@ def _look_up(
         thresholds = load_global_securement_threshold(database_path).thresholds
         order_version = load_global_display_order(database_path).version
         labels = get_process_labels()
+        # 과거 구간은 HOME 기본(켬)처럼 요약의 달·계획을 채운다. version 이 키에 든다.
+        past = load_global_past_data(database_path)
         cache_key: IntroSummaryCacheKey = (
             release.official_release_id,
             # 시나리오 이름은 바꿔도 공식버전 id 가 그대로라 따로 넣는다(머리 줄 풍선이 쓴다).
@@ -770,13 +835,20 @@ def _look_up(
             order_version,
             labels.version,
             thresholds.digest,
+            past.version,
         )
         payload = get_intro_summary_payload(
-            cache_key, _build=lambda: _build_or_unavailable(database_path, release, thresholds)
+            cache_key,
+            _build=lambda: _build_or_unavailable(database_path, release, thresholds, past),
         )
         context = payload.pop(_CONTEXT, None)
         if not payload.get("available") or not isinstance(context, Mapping):
             return payload, identity, False
+        # 기본 창(지난달부터)은 날짜로 정하므로 서버 캐시에 든 값에 싣지 않는다 — 공식버전이
+        # 그대로인 채 달이 바뀌면 다음 확인(`RECHECK_SECONDS`)에 새 지난달로 선다.
+        payload["start"] = default_window_start(
+            [int(month) for month in context["months"]], _current_month()
+        )
         toggles, pending = _toggle_parts(
             database_path,
             release,
@@ -784,6 +856,7 @@ def _look_up(
             context,
             order_version=order_version,
             labels=labels,
+            past_version=past.version,
             defer=defer,
         )
         payload["toggles"] = toggles

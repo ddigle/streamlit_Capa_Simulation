@@ -181,6 +181,100 @@ function dismissDialogs(doc, sent) {
 }
 // </intro-dialogs>
 
+// <intro-window>
+// Summary 의 여섯 달 창(2026-11-02 사용자 요청(검수표) home-02). 파이썬은 공식버전이 데이터를 가진 **모든 달**을 한 번에
+// 보내고(`intro_summary` — HOME 기본 조회기간과 같은 범위), 화면은 그중 `window` 달만 그린다. 머리 줄 기간 글자 옆 −·+ 가
+// 창을 한 달씩 옮긴다 — 파이썬에 묻지 않고(rerun 없음) 이 함수들로 잘라 장면에 다시 보낸다. 기본 창은 파이썬이 정한
+// `start`(지난달부터 — 서버 날짜)이고, 사용자가 옮긴 창은 그 첫 달 이름(`26.10`)으로 기억한다(`createOverlay` 의
+// `rememberWindow` — 이 탭의 sessionStorage, 입장 화면의 「들어갔음」 표지와 같은 범위). 기억한 달이 새 값에 없으면 기본
+// 창이다. 순수 구획이다 — node 시험(`tests/test_intro_window.py`)이 그대로 돌린다.
+//
+// `WINDOW_FIELDS` 는 달마다 하나씩인 목록이다 — 파이썬 값에 그런 목록을 더하면 여기에도 적는다(시험이 파이썬 값의 모든
+// 목록과 맞대 본다). 범례(`products`)는 창 안에 조각이 있는 제품만 남기고 조각의 제품 번호를 새 차례로 옮긴다 — 차례와
+// 색은 그대로다. 선행 B/O 가 반영하지 못한 달(`unapplied` — 달 이름)도 창 안의 것만 남긴다. 토글을 켤 수 있는지는 모든
+// 달로 정한 그대로 둔다 — 창마다 바꾸면 창을 옮길 때 켜 둔 토글이 꺼졌다 켜졌다 한다.
+const WINDOW_FIELDS = Object.freeze({
+  summary: ["months", "density", "wafer", "bn", "secure", "warning", "secure_label", "warning_label", "past", "mix"],
+  advance: ["density", "wafer", "bn", "density_delta", "wafer_delta", "rate_delta"],
+  shipment: ["notes"],
+  comparison: ["density", "wafer", "density_gap", "wafer_gap"],
+});
+const WINDOW_DEFAULT_SIZE = 6;
+function windowSize(full) {
+  const size = Number(full && full.window);
+  return Number.isInteger(size) && size > 0 ? size : WINDOW_DEFAULT_SIZE;
+}
+// 창 첫 달 차례를 0 ~ (달 수 − 창) 안으로. 달이 창보다 적으면 늘 0 이다.
+function clampWindowStart(start, total, size) {
+  const value = Number.isFinite(start) ? Math.trunc(start) : 0;
+  return Math.min(Math.max(0, total - size), Math.max(0, value));
+}
+// 처음 그릴 창 — 기억한 첫 달이 새 값에 있으면 그 달부터, 없으면 파이썬이 정한 기본(`start`)이다.
+function windowStartFor(full, remembered) {
+  const months = (full && Array.isArray(full.months) && full.months) || [];
+  const at = remembered ? months.indexOf(remembered) : -1;
+  return clampWindowStart(at >= 0 ? at : Number(full && full.start), months.length, windowSize(full));
+}
+// 창 하나의 요약 — 장면·낭독 표·풍선이 받던 여섯 달 값과 같은 모양이다. `start`·`total` 은 창의 자리, `period`·`count` 는
+// 창의 범위·달 수다.
+function windowedSummary(full, start) {
+  const total = full.months.length;
+  const size = windowSize(full);
+  const from = clampWindowStart(start, total, size);
+  const to = Math.min(total, from + size);
+  const cut = (part, fields) => {
+    const copy = { ...part };
+    for (const field of fields) if (Array.isArray(part[field])) copy[field] = part[field].slice(from, to);
+    return copy;
+  };
+  const out = cut(full, WINDOW_FIELDS.summary);
+  const used = new Set();
+  for (const month of out.mix || []) for (const [p] of month) used.add(p);
+  const keep = (full.products || []).map((_, i) => i).filter((i) => used.has(i));
+  const renumber = new Map(keep.map((old, i) => [old, i]));
+  out.products = keep.map((i) => full.products[i]);
+  out.mix = (out.mix || []).map((month) => month.map(([p, share]) => [renumber.get(p), share]));
+  if (full.toggles && typeof full.toggles === "object") {
+    out.toggles = {};
+    for (const [key, part] of Object.entries(full.toggles)) {
+      if (!part || !part.available || !WINDOW_FIELDS[key]) {
+        out.toggles[key] = part;
+        continue;
+      }
+      const copy = cut(part, WINDOW_FIELDS[key]);
+      if (Array.isArray(part.unapplied)) copy.unapplied = part.unapplied.filter((label) => out.months.includes(label));
+      out.toggles[key] = copy;
+    }
+  }
+  out.start = from;
+  out.total = total;
+  out.count = out.months.length;
+  out.period = out.months.length ? `${out.months[0]}–${out.months[out.months.length - 1]}` : "";
+  return out;
+}
+// 창을 `delta` 달 옮긴 첫 달 차례. 끝에 닿아 옮길 수 없으면 지금 차례 그대로다.
+function shiftedWindowStart(summary, delta, size) {
+  return clampWindowStart(summary.start + delta, summary.total, size);
+}
+// </intro-window>
+
+// 옮긴 창의 첫 달 이름을 이 탭에 남긴다. 저장소를 못 쓰면(사생활 보호 창 등) 이 문서가 살아 있는 동안만 기억한다.
+const WINDOW_KEY = "capa-summary-window";
+function rememberedWindow() {
+  try {
+    return window.sessionStorage.getItem(WINDOW_KEY) || "";
+  } catch (error) {
+    return "";
+  }
+}
+function rememberWindow(label) {
+  try {
+    window.sessionStorage.setItem(WINDOW_KEY, label);
+  } catch (error) {
+    /* 남기지 못하면 새로고침 뒤 기본 창(지난달부터)으로 돌아갈 뿐이다 */
+  }
+}
+
 // HTML 글자(타이틀·단추·머리 줄과 사이드바 라벨의 위 줄 `S.PKG CAPA`)가 쓰는 글꼴. 워커는 따로 받는다(`fontBuffers`).
 function registerFont() {
   if (!document.fonts || typeof FontFace === "undefined") return;
@@ -1871,6 +1965,14 @@ function scene(port, gridOf) {
           g.fillStyle = pal.muted;
           g.fillText(fit(sum.products[topP] ? sum.products[topP].name : "", s.box * 0.62), s.cx, s.cy + s.box * 0.12);
         }
+      } else if (s.box > 0 && sum.past && sum.past[i] && sum.text.past) {
+        // 과거 구간 달은 제품별 Wafer 가 없어 도넛이 빈다(HOME `Wafer` 단위 도넛과 같다) — 그 자리에 까닭을 적는다.
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillStyle = pal.muted;
+        g.font = `500 ${Math.max(10, Math.min(12, Math.round(s.box * 0.1)))}px ${bodyStack}`;
+        g.fillText(fit(sum.text.past, s.w - K.pad * 2), s.cx, s.cy);
+        g.textBaseline = "alphabetic";
       }
       g.restore();
     }
@@ -2342,12 +2444,16 @@ function createOverlay(api, data, initial, syncToolbar) {
   back.setAttribute("aria-label", text.back_title || "");
   const actions = $(".actions");
   const asof = $('[data-slot="asof"]');
+  // 머리 칩 오른쪽의 요약 기간 묶음(기간 글자 · −·+). 칩과 같은 때 떠오른다.
+  const windowBox = $('[data-slot="window"]');
+  const periodText = $(".window .period");
   const main = $(".main");
   const status = $(".status");
   const hint = $(".hint");
   const tip = $(".tip");
   const labels = $('[data-slot="labels"]');
   const table = $('[data-slot="table"]');
+  const live = $('[data-slot="live"]');
   const items = $$(".steps li");
 
   // 덮개 위 휠·터치가 아래 앱을 굴리지 않게 한다.
@@ -2358,7 +2464,11 @@ function createOverlay(api, data, initial, syncToolbar) {
   if (intro) setInert(true);
 
   let hits = [];
+  // `full` 은 파이썬이 보낸 모든 달의 요약, `summary` 는 그중 지금 창(`windowedSummary`)이다 — 장면·표·풍선은 창만 본다.
+  let full = null;
   let summary = null;
+  // 과거 구간 입력으로 채운 달(파이썬 `past`). 풍선·낭독 표·시트 도넛 자리가 같은 말을 한다.
+  const isPast = (i) => !!(summary && Array.isArray(summary.past) && summary.past[i]);
   let summaryArrived = false;
   let prepared = false;
   let preparedWaiters = [];
@@ -2554,6 +2664,77 @@ function createOverlay(api, data, initial, syncToolbar) {
         if (round === revealRound) toggleBox.inert = false;
       });
     }
+  }
+
+  /* ------------------------------------------------ 요약 기간 옮기기(−·+ — 머리 줄 기간 글자 옆) */
+  // 2026-11-02 사용자 요청(검수표) home-02. 창은 브라우저 안에서만 옮긴다(`<intro-window>` — rerun 없음). 고른 창은 이 탭에
+  // 남고(`rememberWindow`) 오버레이를 다시 만들어도(`api.summaryWindow`) 사이드바 라벨로 다시 열어도 그대로다. 끝에 닿은
+  // 단추는 `disabled` 가 아니라 `aria-disabled` 로 두고 풍선에 까닭을 단다 — Tab 으로 닿아 까닭을 읽을 수 있다(토글과 같다).
+  // 옮긴 뒤 새 기간을 낭독기에 한 번 알린다(`live`).
+  const windowChoice = api.summaryWindow || (api.summaryWindow = { label: rememberedWindow() });
+  const windowText = text.window || {};
+  const shiftBox = $('[data-slot="shift"]');
+  shiftBox.setAttribute("aria-label", windowText.group || "");
+  const shiftButtons = { prev: $(".sh.prev"), next: $(".sh.next") };
+
+  function syncWindowButtons() {
+    if (!summary || !full) return;
+    const size = windowSize(full);
+    for (const [name, button] of Object.entries(shiftButtons)) {
+      const delta = name === "prev" ? -1 : 1;
+      const next = shiftedWindowStart(summary, delta, size);
+      const can = next !== summary.start;
+      const action = windowText[name] || "";
+      let reason = "";
+      if (can) reason = windowedSummary(full, next).period;
+      else {
+        const edge = name === "prev" ? full.months[0] : full.months[full.months.length - 1];
+        reason = (windowText[name === "prev" ? "first" : "last"] || "").replace("{month}", edge || "");
+      }
+      button.setAttribute("aria-disabled", can ? "false" : "true");
+      button.title = can ? `${action} — ${reason}` : reason;
+      button.setAttribute("aria-label", `${action} — ${reason}`);
+    }
+  }
+
+  function postSummary() {
+    sceneHandle.post({
+      type: "summary",
+      summary: {
+        ...summary,
+        text: { ...(text.status || {}), lowest: text.lowest || "", wafer: "Wafer 계획", past: text.past || "" },
+      },
+    });
+  }
+
+  function shiftWindow(delta) {
+    if (!full || !summary || mode !== "summary") return;
+    const next = shiftedWindowStart(summary, delta, windowSize(full));
+    if (next === summary.start) return;
+    summary = windowedSummary(full, next);
+    windowChoice.label = full.months[next];
+    rememberWindow(windowChoice.label);
+    tip.style.opacity = "0";
+    postSummary();
+    buildLabels();
+    buildTable();
+    syncToggles();
+    syncWindowButtons();
+    if (live) live.textContent = `${windowText.moved || ""} ${summary.period}`.trim();
+    // 기간 글자가 옮긴 쪽에서 살짝 밀려 들어온다(움직임을 줄인 사용자에게는 없다). 차트는 장면이 새 창으로 곧바로 그린다.
+    if (!reduce) {
+      periodText.getAnimations().forEach((a) => a.cancel());
+      periodText.animate([{ opacity: 0.2, transform: `translateX(${delta * 6}px)` }, { opacity: 1, transform: "none" }], {
+        duration: 220,
+        easing: OUT,
+      });
+    }
+  }
+  for (const [name, button] of Object.entries(shiftButtons)) {
+    button.addEventListener("click", () => {
+      if (button.getAttribute("aria-disabled") === "true") return;
+      shiftWindow(name === "prev" ? -1 : 1);
+    });
   }
 
   /* ------------------------------------------------ 상태: intro(입장) · summary(요약) · hidden(감춤) */
@@ -2783,18 +2964,15 @@ function createOverlay(api, data, initial, syncToolbar) {
   function setSummary(payload) {
     const readyBefore = Object.fromEntries(toggleSpecs.map((spec) => [spec.key, canToggle(spec.key)]));
     summaryArrived = true;
-    summary = payload && payload.available ? payload : null;
+    full = payload && payload.available && Array.isArray(payload.months) ? payload : null;
+    // 값이 다시 와도(「준비 중」 GAP 이 닿은 회차 등) 고른 창을 지킨다 — 기억한 첫 달이 새 값에 없으면 기본 창이다.
+    summary = full ? windowedSummary(full, windowStartFor(full, windowChoice.label)) : null;
     reasonText = payload && !payload.available ? String(payload.reason || "") : "";
     prepared = false;
     if (summary) {
       buildLabels();
-      sceneHandle.post({
-        type: "summary",
-        summary: {
-          ...summary,
-          text: { ...(text.status || {}), lowest: text.lowest || "", wafer: "Wafer 계획" },
-        },
-      });
+      postSummary();
+      syncWindowButtons();
     }
     // 켤 수 없게 된 토글은 끈다. 이 장면이 처음 받는 상태면 움직임 없이 그 모습으로 시작한다(탭이 기억한
     // 상태로 새 오버레이를 만든 때). 켜 둔 채 「준비 중」이던 토글에 값이 닿으면 그 토글은 움직여 들어온다.
@@ -2827,8 +3005,9 @@ function createOverlay(api, data, initial, syncToolbar) {
       cell(rows[1] || {}, legend(legendStatus)) +
       cell(rows[2] || {}, legend(summary.products.map((p) => [p.color, p.name])));
     $(".asof .chip").textContent = summary.release || "";
-    $(".asof .period").textContent = `${summary.period} · ${(text.months || "").replace("{n}", summary.count)}`;
+    periodText.textContent = summary.period || "";
     asof.title = summary.scenario || "";
+    periodText.title = summary.scenario || "";
     placeLabels();
   }
 
@@ -2846,7 +3025,8 @@ function createOverlay(api, data, initial, syncToolbar) {
       const b = (adv ? adv.bn : summary.bn)[i];
       const density = (adv ? adv.density : summary.density)[i];
       const wafer = (adv ? adv.wafer : summary.wafer)[i];
-      const row = [month, density ?? "", wafer ?? "", b ? b.process : "", b ? b.rate : "", b && b.short != null ? b.short : ""];
+      const name = isPast(i) ? `${month} (${text.past_note || text.past || ""})` : month;
+      const row = [name, density ?? "", wafer ?? "", b ? b.process : "", b ? b.rate : "", b && b.short != null ? b.short : ""];
       if (ship) row.push(ship.notes[i] || "");
       if (cmp) row.push(cmp.density_gap[i] || "", cmp.wafer_gap[i] || "");
       return row;
@@ -2905,6 +3085,10 @@ function createOverlay(api, data, initial, syncToolbar) {
   }
   // 말풍선은 켠 토글의 값으로 말한다 — 선행 B/O 를 켰으면 반영 값과 그 전 값, 선행 입고·GAP 을 켰으면 그 줄을 더한다.
   function tipHtml(h) {
+    const html = tipBody(h);
+    return isPast(h.i) ? `${html}<br><span class="dim">${escapeHtml(text.past_note || text.past || "")}</span>` : html;
+  }
+  function tipBody(h) {
     const month = summary.months[h.i];
     const adv = isOn("advance") ? toggleOf("advance") : null;
     const ship = isOn("shipment") ? toggleOf("shipment") : null;
@@ -3071,6 +3255,14 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     revealToggles(true);
     anim(asof, [{ opacity: 0, transform: "translateX(12px)" }, { opacity: 1, transform: "none" }], { duration: reduce ? 1 : 700, delay: reduce ? 0 : T.asofDelay, easing: OUT });
+    if (!reduce) {
+      windowBox.animate([{ opacity: 0, transform: "translateX(12px)" }, { opacity: 1, transform: "none" }], {
+        duration: 700,
+        delay: T.asofDelay + 60,
+        easing: OUT,
+        fill: "backwards",
+      });
+    }
     main.style.visibility = "hidden";
     detail.focus({ preventScroll: true });
     // 그래프가 조립되는 동안에도 Detail · Esc 는 바로 받는다.
@@ -3080,7 +3272,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   /* ------------------------------------------------------------ 원래 화면 ↔ 요약 */
   // 입장 화면을 거치지 않고(또는 Detail 로 나갔다가) 요약을 열 때 쓰는 끝 모습.
   function snapToSummary() {
-    cancelAll([title, $(".load"), summaryButton, introduceButton, asof, $(".btn.detail .bg"), $(".btn.detail .tx"), ...$$(".head > *")]);
+    cancelAll([title, $(".load"), summaryButton, introduceButton, asof, windowBox, $(".btn.detail .bg"), $(".btn.detail .tx"), ...$$(".head > *")]);
     $$(".head > .logo, .head > .brand").forEach((el) => {
       el.style.opacity = "1";
     });
@@ -3114,7 +3306,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     sceneHandle.post({ type: "summary-off", at: absoluteNow(), ms: reduce ? 0 : BACK_MS });
     const brand = $(".head > .brand");
     const parts = $$(".main > *");
-    cancelAll([title, brand, back, summaryButton, introduceButton, asof, ...parts, ...$$(".sum-label")]);
+    cancelAll([title, brand, back, summaryButton, introduceButton, asof, windowBox, ...parts, ...$$(".sum-label")]);
     stage.classList.remove("summary");
     undockDetail();
     // 요약에서 붙인 인라인 값을 걷어 입장 화면의 처음 값(CSS)으로 돌린다.

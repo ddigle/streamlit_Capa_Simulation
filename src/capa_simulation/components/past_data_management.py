@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import (
@@ -287,13 +288,24 @@ def _render_save(
         return
     merged = merged_past_tables(database_path, draft)
     try:
-        get_scenario_repository(database_path).replace_global_past_data(
-            merged, source=note.strip() or "웹 붙여넣기"
-        )
+        save_past_tables(database_path, merged, source=note.strip() or "웹 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
-    clear_global_past_data_cache()
     st.session_state.pop(PAST_DRAFT_KEY, None)
     queue_flash("past_data_save_flash", "과거 구간을 공용 설정으로 저장했습니다.")
     st.rerun()
+
+
+def save_past_tables(
+    database_path: str, tables: Mapping[str, pd.DataFrame], *, source: str
+) -> None:
+    """과거 구간 세 표를 저장하고 그것을 읽는 캐시·확인을 비운다.
+
+    입장 화면 Summary 도 과거 구간으로 달·계획을 채운다(2026-11-02 사용자 요청(검수표) home-02) — 이
+    세션의 요약 확인을 비워(`forget_intro_summary_check`) 다음 회차가 새 판으로 다시 만든다. 저장이
+    실패하면 아무것도 비우지 않는다(바뀐 것이 없다).
+    """
+    get_scenario_repository(database_path).replace_global_past_data(tables, source=source)
+    clear_global_past_data_cache()
+    forget_intro_summary_check()

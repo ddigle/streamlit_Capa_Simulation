@@ -483,8 +483,13 @@ class _Release(SimpleNamespace):
     pass
 
 
-def _wired(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], dict[str, Any]]:
-    """`_build` 를 가짜 HOME 계산에 물린다. EDP 를 포함한 계획은 일부러 다른 값(+100)이다."""
+def _wired(
+    monkeypatch: pytest.MonkeyPatch, past: Any = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`_build` 를 가짜 HOME 계산에 물린다. EDP 를 포함한 계획은 일부러 다른 값(+100)이다.
+
+    계획 원천은 26.10 ~ 27.04 일곱 달이고 프리셋 시작월(26.01)은 요약의 달을 자르지 않는다 — 요약은
+    HOME 기본 조회기간과 같은 범위(모든 달)를 낸다(2026-11-02 사용자 요청(검수표) home-02)."""
     seen: dict[str, Any] = {}
     plan = pd.DataFrame({"생산계획년월": MONTHS + [202704]})
     snapshot = SimpleNamespace(
@@ -520,20 +525,51 @@ def _wired(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], dict[str, A
         scenario_name="DEMO",
         official_release_id="O",
     )
-    payload = intro_summary._build("db", release, THRESHOLDS)  # type: ignore[arg-type]
+    payload = intro_summary._build("db", release, THRESHOLDS, past)  # type: ignore[arg-type]
     return payload, seen
 
 
-def test_the_summary_and_its_parts_use_the_edp_free_six_month_plan(
+ALL_MONTHS = [*MONTHS, 202704]
+
+
+def test_past_months_widen_the_summary_like_the_default_home(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """요약·선행 B/O·GAP 은 HOME 토글 기본값(EDP 제외)의 계획과 요약 여섯 달 키를 쓴다 — EDP 를
+    """과거 구간은 HOME 기본(켬)처럼 요약의 달을 앞으로 넓힌다 — 계산 키의 달도 HOME 기본 조회기간과
+    같은 범위(26.08 ~ 27.04)다. 과거 달의 Density·Wafer 는 월별 실적, B/N 은 과거 확보율이고 그 달을
+    `past` 로 적는다. 빈 달(26.09 — 과거 입력이 없다)도 칸으로 둔다."""
+    past = SimpleNamespace(
+        version=3,
+        monthly=pd.DataFrame(
+            {"생산계획년월": [202608], "Density": [8.5], "Wafer Total": [120000.0]}
+        ),
+        securement=pd.DataFrame({"생산계획년월": [202608], "공정": ["P-A"], "확보율": [1.2]}),
+    )
+    payload, seen = _wired(monkeypatch, past)
+    assert (seen["key"]["start_month"], seen["key"]["end_month"]) == (202608, 202704)
+    assert payload["months"][:3] == ["26.08", "26.09", "26.10"]
+    assert payload["past"][:3] == [True, False, False]
+    assert payload["density"][:3] == [8.5, None, pytest.approx(14.97)]
+    assert payload["wafer"][0] == 120
+    assert payload["bn"][0]["process"] == "P-A" and payload["bn"][0]["short"] is None
+    assert payload["bn"][1] is None
+    context = payload[intro_summary._CONTEXT]
+    assert context["months"][0] == 202608 and len(context["months"]) == 9
+
+
+def test_the_summary_and_its_parts_use_the_edp_free_plan_of_every_month(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """요약·선행 B/O·GAP 은 HOME 토글 기본값(EDP 제외)의 계획과 요약의 모든 달 키를 쓴다 — EDP 를
     포함한 프레임이 들어가면 값이 100 만큼 어긋나 실패한다."""
     payload, seen = _wired(monkeypatch)
     context = payload[intro_summary._CONTEXT]
     assert payload["density"][0] == pytest.approx(14.97)
-    assert seen["key"]["start_month"] == MONTHS[0] and seen["key"]["end_month"] == MONTHS[-1]
-    assert context["months"] == MONTHS and context["home_key"] == ("home", MONTHS[0], MONTHS[-1])
+    assert payload["months"] == [month_label(month) for month in ALL_MONTHS]
+    assert payload["count"] == 7 and payload["window"] == 6
+    assert seen["key"]["start_month"] == MONTHS[0] and seen["key"]["end_month"] == ALL_MONTHS[-1]
+    assert context["months"] == ALL_MONTHS
+    assert context["home_key"] == ("home", MONTHS[0], ALL_MONTHS[-1])
     # 선행 B/O 는 프로필의 행으로, 같은 EDP 제외 계획에 건다.
     advance = intro_summary._advance_part(
         context,

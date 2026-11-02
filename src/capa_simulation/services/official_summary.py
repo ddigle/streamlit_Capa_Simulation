@@ -3,22 +3,29 @@
 """공식버전 요약 — 입장 화면 `Summary` 가 그리는 값.
 
 HOME 은 고른 시나리오·조회기간·토글로 **상세**를 보여 준다. 입장 화면의 `Summary` 는 그와 따로
-**사용자가 지정해 둔 최신 공식버전** 하나의 여섯 달만 요약한다(2026-10-02 사용자 결정).
+**사용자가 지정해 둔 최신 공식버전** 하나를 여섯 달 창으로 요약한다(2026-10-02 사용자 결정).
 
-- **기간**: 공식버전 시나리오의 시작월부터 여섯 달. 시작월은 그 리비전에 저장된 조회기간 시작
-  (`ScenarioPreset.start_month`)과 생산계획의 첫 달 중 **늦은 쪽**이다 — 앞쪽은 데이터가 없는
-  달이고, 뒤쪽은 공식버전을 지정한 사람이 보라고 저장해 둔 시작이다. 계획이 여섯 달보다 짧으면
-  있는 달까지만 그린다. 연간 Total 은 넣지 않는다.
+- **기간**(2026-11-02 사용자 요청(검수표) home-02): 값은 공식버전이 데이터를 가진 **모든 달**을 한
+  번에 낸다 — HOME 기본 조회기간(`settings.MONTH_SELECTION_START`~`END`)에 계산 원천 범위를 과거
+  구간만큼 넓혀 맞댄 범위(`past_data.display_month_range` — HOME 과 같은 함수라 공식 시나리오·기본
+  조회기간의 HOME 과 계산 캐시 키가 같다), 처음부터 끝까지 빠짐없는 달이다(`summary_months`). 화면은
+  그중 **여섯 달 창**만 그리고 기본 창은 **지난달부터**다(`default_window_start` — 오늘이 11월이면
+  10월~3월. 데이터 밖이면 가장 가까운 여섯 달). 창을 한 달씩 옮기는 것은 브라우저가 한다(입장 화면
+  `intro.js` 의 `<intro-window>` — rerun 없음). 연간 Total 은 넣지 않는다.
+- **과거 구간**: 계산 원천에 없는 달은 HOME 처럼 과거 구간 입력값(`GlobalPastData`)으로 채운다 —
+  Density·Wafer 는 월별 실적, B/N 은 과거 공정별 확보율(대수가 없어 부족 대수는 비운다). 제품 비중은
+  Wafer 기준이라 과거 달은 비운다(과거 입력에 제품별 Wafer 가 없다 — HOME `Wafer` 단위 도넛과 같다).
+  계산이 있는 달은 계산이 이긴다(`merge_summary_past`).
 - **생산계획**: HOME `Density (억Gb)` 행과 같은 값(`부하량`)이다.
 - **B/N 확보율**: 리비전 프리셋의 `B/N 집계 공정`(필터)만 놓고 달마다 확보율이 가장 낮은 공정 —
   HOME 의 B/N 과 같은 순위 함수다. 부족 대수는 그 공정이 **그 달 실효 경고 기준**까지 모자란 정수
   대수다 — 막대 색(판정)과 같은 기준이고, Static Capa 「경고기준 필요대수」와 같은 식·같은 올림
   (`securement_rate.warning_need_units`)이다.
 - **월별 시트**: 그 달의 Density · Wafer 계획 · 제품별 비중(Wafer 기준). 색 칸 배정은 HOME 과 같은
-  함수로 이 여섯 달에서 정한다.
+  함수로 요약의 모든 달에서 정한다 — HOME 기본 조회기간과 같은 범위라 색도 HOME 과 같고 창을 옮겨도
+  제품 색이 바뀌지 않는다(범례는 창 안에 조각이 있는 제품만 — `intro.js`).
 
-HOME 토글의 **기본값**과 같은 화면이다 — EDP 제외, 선행·확보율 보정 없음. 과거 구간은 이 기간에
-들어오지 않는다(시작월이 생산계획의 첫 달 이후다).
+HOME 토글의 **기본값**과 같은 화면이다 — EDP 제외, 과거 구간 포함, 선행·확보율 보정 없음.
 
 Summary 머리 줄의 토글 셋(선행 B/O·선행 입고·GAP)이 켜졌을 때의 값도 여기서 함께 낸다.
 토글은 브라우저 안에서만 바뀌므로 세 갈래를 미리 다 계산해 보낸다. **HOME 의 같은 토글과 같은
@@ -39,7 +46,7 @@ Summary 머리 줄의 토글 셋(선행 B/O·선행 입고·GAP)이 켜졌을 �
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
 import pandas as pd
@@ -58,6 +65,7 @@ from capa_simulation.services.dashboard import (
 from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.past_data import merge_past_frame, merge_past_months
 from capa_simulation.services.plan_gap import (
     DENSITY_GAP_FORMAT,
     GAP_EPSILON,
@@ -74,6 +82,7 @@ from capa_simulation.services.product_share import (
 from capa_simulation.services.securement_rate import warning_need_units
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
+# 화면이 한 번에 그리는 달(창) 수. 값은 모든 달을 보내고 창은 브라우저가 고른다.
 SUMMARY_MONTH_COUNT = 6
 
 
@@ -83,15 +92,100 @@ def shift_month(month: int, offset: int) -> int:
     return (index // 12) * 100 + index % 12 + 1
 
 
-def summary_months(
-    preset_start: int,
-    source_start: int,
-    source_end: int,
-    count: int = SUMMARY_MONTH_COUNT,
-) -> list[int]:
-    """요약이 그리는 달. 시작월부터 `count` 달이되 생산계획의 마지막 달을 넘지 않는다."""
-    start = max(preset_start, source_start)
-    return [month for month in (shift_month(start, k) for k in range(count)) if month <= source_end]
+def summary_months(start: int, end: int) -> list[int]:
+    """요약이 가진 달 — `start` 부터 `end` 까지 빠짐없이. 값이 없는 달(과거 구간과 계산 원천 사이의
+    빈 달 등)도 칸으로 둔다 — 건너뛰면 선이 떨어진 두 달을 이웃처럼 잇는다. `start > end` 면 빈
+    목록."""
+    months: list[int] = []
+    month = start
+    while month <= end:
+        months.append(month)
+        month = shift_month(month, 1)
+    return months
+
+
+def default_window_start(
+    months: Sequence[int], today_month: int, size: int = SUMMARY_MONTH_COUNT
+) -> int:
+    """기본 창의 첫 달 차례 — **지난달**부터 `size` 달(2026-11-02 사용자 요청(검수표) home-02:
+    오늘이 11월이면 10월~3월).
+
+    지난달이 데이터 밖이면 가장 가까운 창이다 — 첫 달보다 앞이면 처음부터, 끝에서 `size` 달이 안
+    남으면 마지막 `size` 달. 달이 `size` 보다 적으면 0 이다(있는 달을 다 그린다). `months` 는
+    오름차순 `YYYYMM` 이고 `today_month` 는 오늘의 `YYYYMM` 이다.
+    """
+    month_list = list(months)
+    last_start = max(0, len(month_list) - max(1, size))
+    target = shift_month(today_month, -1)
+    index = next((i for i, month in enumerate(month_list) if month >= target), len(month_list))
+    return min(index, last_start)
+
+
+@dataclass(frozen=True)
+class SummaryFrames:
+    """요약이 쓰는 월별 계획·확보율 — 계산 원천에 없는 달을 과거 구간으로 채운 것.
+
+    `past` 는 과거 구간 입력으로 채운 달이다(계산이 있는 달은 계산이 이겨 들지 않는다).
+    """
+
+    density: pd.DataFrame
+    wafer: pd.DataFrame
+    securement: pd.DataFrame
+    past: frozenset[int]
+
+
+def merge_summary_past(
+    *,
+    monthly_density: pd.DataFrame,
+    monthly_wafer: pd.DataFrame,
+    securement_rate: pd.DataFrame,
+    past_monthly: pd.DataFrame,
+    past_securement: pd.DataFrame,
+    start_month: int,
+    end_month: int,
+) -> SummaryFrames:
+    """HOME 과 같은 규칙으로 과거 구간을 잇는다(`app_pages/home.py` 의 과거 병합 — 같은 함수).
+
+    Density·Wafer 는 월별 실적(`Density`·`Wafer Total`), 확보율은 과거 공정별 확보율이다. 과거
+    확보율 행에는 대수 칸이 없어 결측으로 자리만 만든다 — B/N 부족 대수가 빈다. 제품별 수량은 잇지
+    않는다 — 요약의 제품 비중은 Wafer 기준이고 과거 입력에는 제품별 Wafer 가
+    없어(`past_product_volume`) 이어도 그 달 도넛은 빈다.
+    """
+    calculated = {
+        int(value)
+        for value in pd.to_numeric(monthly_density["생산계획년월"], errors="coerce").dropna()
+    }
+    density = merge_past_months(
+        monthly_density,
+        past_monthly,
+        value_columns={"Density": "부하량"},
+        start_month=start_month,
+        end_month=end_month,
+    )
+    wafer = merge_past_months(
+        monthly_wafer,
+        past_monthly,
+        value_columns={"Wafer Total": "Wafer 부하량"},
+        start_month=start_month,
+        end_month=end_month,
+    )
+    securement = merge_past_frame(
+        securement_rate, past_securement, start_month=start_month, end_month=end_month
+    )
+    for equipment_column in ("가용대수", "소요대수"):
+        if equipment_column not in securement.columns:
+            securement[equipment_column] = pd.NA
+    filled = {
+        int(value)
+        for frame in (density, securement)
+        for value in pd.to_numeric(frame["생산계획년월"], errors="coerce").dropna()
+    }
+    return SummaryFrames(
+        density=density,
+        wafer=wafer,
+        securement=securement,
+        past=frozenset(month for month in filled - calculated if start_month <= month <= end_month),
+    )
 
 
 @dataclass(frozen=True)
@@ -121,6 +215,9 @@ class OfficialSummary:
     product_slots: tuple[int | None, ...]
     # 달마다 (제품 차례, 비중) — 도넛 조각 차례 그대로.
     mix: tuple[tuple[tuple[int, float], ...], ...]
+    # 과거 구간 입력으로 채운 달인가(`merge_summary_past`). 화면은 그 달 도넛 자리에 「과거 구간」
+    # 을 적는다.
+    past: tuple[bool, ...] = ()
 
     @property
     def labels(self) -> tuple[str, ...]:
@@ -197,12 +294,14 @@ def build_official_summary(
     display_order: DisplayOrderInput,
     included_processes: Sequence[str],
     thresholds: SecurementThresholds,
+    past_months: Collection[int] = (),
 ) -> OfficialSummary:
     """캐시된 HOME 계산 결과로 요약 한 벌을 만든다.
 
     `product_volume` 은 그리는 수량(EDP 제외), `slot_volume` 은 색 칸을 정하는 수량(EDP 포함)이다 —
     HOME 과 같은 짝이라 EDP 가 빠져도 남은 제품의 색이 바뀌지 않는다. `thresholds` 는 공용 판정
-    기준이고 B/N 부족 대수를 그 달 실효 경고 기준까지 센다.
+    기준이고 B/N 부족 대수를 그 달 실효 경고 기준까지 센다. `past_months` 는 과거 구간으로 채운
+    달이다(`merge_summary_past` 의 `past`).
     """
     month_list = list(months)
     labels = [month_label(month) for month in month_list]
@@ -237,6 +336,7 @@ def build_official_summary(
         products=tuple(products),
         product_slots=tuple(product_slots),
         mix=mix,
+        past=tuple(month in past_months for month in month_list),
     )
 
 
