@@ -186,6 +186,14 @@ def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
         "cleared": "{n}칸 비움",
         "pasted": "{n}칸 붙여넣음",
         "pasteSkipped": "분류 칸 {n}칸은 건너뛰었습니다",
+        "pasteTiled": "고른 범위에 되풀이",
+        "filled": "{n}칸 채움",
+        "filledAll": "{n}칸에 같은 값을 넣음",
+        "fillNoSource": (
+            "채울 원본이 없습니다 — 두 줄(칸) 이상 고르거나, 바로 위(Ctrl+D)·왼쪽(Ctrl+R)에 값"
+            " 칸이 있어야 합니다"
+        ),
+        "fillHandle": "끌어서 채우기 — 고른 값을 되풀이합니다 (Ctrl+D 아래 · Ctrl+R 오른쪽)",
         "locked": "분류 칸은 고칠 수 없습니다",
         "cut": "잘라내기는 없습니다 — 복사(Ctrl+C) 뒤 Delete 로 지우세요",
         "blankZero": "빈칸 = 0",
