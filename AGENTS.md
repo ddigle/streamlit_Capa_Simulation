@@ -2987,8 +2987,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그 단서를 적는다), 0 까지 낮춰도 못 넣으면 까닭(짧은 창 · 시작보다
   앞선 상한 · 동시 상한 · 가용)을 적고, 탐색이 한도에 걸렸으면 「이 계산으로 찾은 범위」 한 줄(「적힌 만큼 낮추면 들어간다」 괄호는
   낮출 폭이 적혔을 때만 — 까닭만 적혔으면 낮출 폭이 없다). 차수 띠 높이는 겹친 차수 줄 수를 따른다(`_band_layout` — 줄마다
-  `_LANE_PX` 26px, 한 줄이면 `_BAND_MIN_PX` 로 그림 340px 그대로, `_BAND_MAX_LANES` 줄에서 멈춤 — 본 그림 칸은 그대로이고 그림이
-  길어진다. 고정 비율 띠는 세 줄에서 막대가 10px 라 글이 늘 숨었다). 차수 막대 글(「N대」)은 `uniformtext` 하한
+  `_LANE_PX` 30px, 한 줄이면 `_BAND_MIN_PX` 로 그림 340px 그대로, `_BAND_MAX_LANES` 줄에서 멈춤 — 본 그림 칸은 그대로이고 그림이
+  길어진다. 고정 비율 띠는 세 줄에서 막대가 10px 라 글이 늘 숨었다). 줄 높이는 앱 첫 글꼴 Noto Sans KR 지표의 글 상자(11px 글에
+  16px — 라틴 글꼴이면 12px)와 그림 칸의 자동 여백 손실(범례 줄 · 1280 창의 세운 달 눈금)을 넣고도 「N대」 가 드는 두께다 — 26px 은
+  띠가 두 줄 이상이면 1280 · 1500 · 1920 모두 막대 18 ~ 20px 라 글이 하나도 서지 않았다(2026-11-02 사용자 결정 A1, 시험
+  `tests/test_modification_schedule_page.py` 가 그 지표로 잰다). 차수 막대 글(「N대」)은 `uniformtext` 하한
   (`_BAR_TEXT_MIN_PX`) 아래로 줄이지 않고 숨긴다(대수는 막대 풍선 · 차수 목록에 늘 있다). 그림 모양을 바꾸면
   `SCHEDULE_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/modification_schedule_view.py` — 「개조 일정」 모드 한 회차 — 본문 맨 위 모드 전환
