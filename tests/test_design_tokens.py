@@ -705,6 +705,7 @@ def test_equipment_grid_marks_read_on_their_fills_in_both_themes() -> None:
         "GRID_LAYOUT_HEAD",
         "GRID_SELECTED_FILL",
         "GRID_NEW_FILL",
+        "GRID_MATCH_FILL",
     )
     for mode, palette in tokens._PALETTES.items():
         for fill in fills:

@@ -1202,6 +1202,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 필요 단축 일정 계획 키 끝 칸은 UPEH 가정 토큰이다. 공식 칸과 가정 칸(공정 Capa 상세의 목표 하나 칸 하나 —
     `ASSUMED_PLAN_MAX_ENTRIES`)은 따로이고 서로의 키를 받지 않으며, 계획은 키와 한 묶음(`KeyedShorteningPlan`)으로만
     CSV·진척 캐시에 간다 — 그 둘은 공식 키만 받는다(5장 31, `tests/test_upeh_assumption_cache.py`).
+  - 범용 편집 그리드 껍데기(`get_edit_grid_base`)는 키 전용 래퍼다 — 양식·규격·표시명은 `_` 인자로, 키는 내용 토큰·줄 차례 지문·
+    표 이름·표시명 지문이고 색인(op 반영)과 껍데기 본문을 한 묶음(`EditGridBase`)으로 돌려준다.
 
 ### 계산 서비스
 
@@ -1813,6 +1815,31 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     새 호기 칸 막힘 힌트의 칸 이름은 체크 상자 차례(에러 없이 → Y/N → 가용대수 → 도면) 다음 표 차례다. 고른 줄 띠의 「반입·Qual
     일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
+- `src/capa_simulation/components/edit_grid.py` (+ `edit_grid_assets/` HTML·CSS·JS) — 범용 편집 그리드(Components v2, 그림자
+  DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표가 옮겨 올 자리다(편집 표 횡전개 — 설비 마스터 표는 아직 제 등록 그대로).
+  모듈을 읽을 때 두 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
+  - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
+    작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
+    `capa-edit-grid` 로 잇고(비공식 — 화면 탭 줄의 `window.__capaHistoryGuard` 선례), 무거운 JS 는 차례에 기대지 않는다(feed 의
+    `baseKey` 가 껍데기와 다르면 칸에 둔 채 껍데기가 오면 쓴다). `render_edit_grid` 가 늘 같은 자리에서 feed → 무거운 요소 차례로
+    그리고(둘 다 key 고정 — `feed_key(host)` = `<host>__feed`), feed 칸은 스타일만 든 `st.html`(이벤트 칸 — 자리를 먹지 않는다)로
+    숨긴다(`hide_feed_style`). 호스트 key 는 `[\w-]+` 만.
+  - **편집은 상태 값 `outbox` 하나**(`STATE_NAMES`, 트리거 없음 — 9장). 콜백 몸통 `collect_outbox` 는 새 op 만 세션 inbox 에
+    쌓고 마운트별 seq 를 올린다. 반영은 본문의 `apply_inbox`(표별로 나눠 `TableSlot` 의 색인·규격·세션 칸에 — 지금 그리지 않는
+    표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
+    으로 정한다. 이력은 `history_of` 가 없으면 새 `gen` 으로 세우고, 초안을 버리는 길(`discard_table`)은 이력도 함께 지운다.
+  - 글(`texts` — 오류 문구는 그 표 형식의 하한·상한으로 채움, 「적용 전 변경」 같은 변경 목록 이름은 부르는 쪽이)과 팔레트
+    (`palette` — CSS 의 `var(--eg-*)` 는 모두 여기, 찾기 일치 칸 새 토큰 `GRID_MATCH_FILL`)는 회차마다 껍데기에 싣는다.
+  - 자산: 등록 JS 는 기능별 파일을 `JS_PARTS` 차례(`eg_pure` → `eg_select` → `eg_fill` → `eg_toolbar` → `eg_core`)로 잇고 주석만 든
+    줄을 걷는다(`registered_js`). `eg_pure.js` 는 순수 구획 `// <eg-codes>`·`<eg-format>`·`<eg-outbox>`·`<eg-nav>`·`<eg-view>`·
+    `<eg-layout>`·`<eg-changes>` 과 기능 갈고리 표(`feature(def)` — init·keydown·pointerdown·paintCell·paintOverlay·onFeed·onSelect·
+    onLayout·cleanup, 차례 select → fill → toolbar)이고, `eg_core.js` 가 마운트·가상 스크롤(줄 30px)·여러 열쇠 칸 고정(누적 폭이 표
+    폭의 45% 를 넘는 칸부터 풀림 — 첫 칸은 늘 고정)·칸 편집(Enter·F2·글자 입력, 확정 Enter/Shift+Enter/Tab, 취소 Esc)·한 칸
+    붙여넣기(기능이 처리하지 않은 `paste`)·이동 키(화살표·Ctrl+화살표·PageUp/Down·Alt+PageUp/Down·Home/End·Ctrl+Home/End·Tab)·
+    Delete·Ctrl+Z/Y·머리 정렬(보기만)·필터 보기(feed `filters`)·값 칸 머리 풍선(`role="tooltip"`, 300ms)·칸 오류(빨강 + 상태 줄 문구)·
+    바뀐 칸 표시·토스트·상태 줄을 맡는다. 기능 파일(`eg_select`·`eg_fill`·`eg_toolbar`)은 CORE 에서 빈 틀이다. 기능이 부르는 내부
+    함수 이름(`paint`·`setRange`·`queueOp`·`sendOnce` 등)은 바꾸지 않는다(`test_edit_grid_assets` 가 본다). 순수 구획은 node 로
+    돈다(`tests/edit_grid_node.py`).
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
@@ -5588,6 +5615,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `sendOnce` 로 보낸다 — 이름·인자가 모두 같은 op 가 아직 ack 되지 않았으면(`hasPendingOp`) 더블클릭의 둘째 누름이라 보내지 않는다.
   상대 op(밀기)는 두 번 밀렸고, 나머지는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를 되살렸습니다」)가 첫 결과와 그 「되돌리기」 를
   덮었다(2026-10-27 E2E).
+- **범용 편집 그리드(`components/edit_grid.py`)는 두 등록으로 보낸다** — 표 본문과 JS 를 실은 껍데기 요소는 편집 회차에 바뀌지
+  않아 해시 참조로 가고, 편집 회차마다 바뀌는 초안·ack 는 작은 feed 요소에 싣는다(CCv2 는 data 가 바뀐 회차마다 등록 JS·CSS 를
+  요소와 함께 다시 보낸다 — 한 요소에 다 실으면 UPEH 칸 하나 고칠 때 표 + JS 가 다시 갔다, D2 시제품). 둘은 같은 문서의
+  `window.__capaEditGrid[host]` 칸과 `capa-edit-grid` 이벤트로 잇고(비공식 — 판올림에서 다시 본다) 차례에 기대지 않는다. 등록 JS 는
+  기능별 파일을 이어 붙이고 주석만 든 줄을 걷는다(파일 사이 최상위 이름이 겹치지 않는지 시험이 본다). 전체 화면은 그림자 DOM 안
+  `<dialog>.showModal()`(top layer)로 한다 — `position: fixed` 덮개는 긴 회차에 Streamlit 이 요소 칸에 opacity 0.33 을 걸어 머리
+  띠·사이드바·탭 줄 밑으로 묻힌다(D2). 복사는 동기 `copy` 이벤트의 `clipboardData` 로만(비동기 `navigator.clipboard` 는 쓰지
+  않는다). op 마다 그 표 이력의 `gen` 을 싣고, 초안을 버리면 이력도 지워 다음 `gen` 이 달라 그 전에 보낸 op 는 버려진다. 받은 data
+  로 다시 불린 함수 안에서는 보내지 않는다(`queueMicrotask` 뒤로). 초안이 없던 표의 첫 op 는 기다리지 않고 바로 보낸다.
 - Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
   try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를

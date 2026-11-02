@@ -28,6 +28,8 @@ from capa_simulation.services.display_order import (
     prepare_display_order,
     reorder_display_columns,
 )
+from capa_simulation.services.edit_grid import GridSpec
+from capa_simulation.services.edit_grid_payload import EditGridBase, Labels, build_base
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
     build_equipment_status_as_of,
@@ -695,6 +697,33 @@ def get_reference_edit_table(
         page=page,
         tab=tab,
     )
+
+
+# 범용 편집 그리드 껍데기 칸 수. 기준 정보 9표 × 두어 기간이면 찬다(한 칸이 UPEH 2,660×39
+# 합성 표본에서 색인 약 0.8 MB + 본문 약 0.1 MB — 샘플 관측).
+EDIT_GRID_BASE_MAX_ENTRIES = 24
+
+
+@st.cache_data(show_spinner=False, max_entries=EDIT_GRID_BASE_MAX_ENTRIES)
+def get_edit_grid_base(
+    cache_key: ScenarioCacheKey | str,
+    order_digest: str,
+    table: str,
+    labels_digest: str,
+    *,
+    _template: pd.DataFrame,
+    _spec: GridSpec,
+    _labels: Labels | None,
+) -> EditGridBase:
+    """범용 편집 그리드 표 하나의 양식 색인(op 반영)과 껍데기 본문(64자 코드·값 사전·줄 RLE).
+
+    키 전용 래퍼다 — 큰 양식은 `_template` 로 넘기고 키는 내용 토큰(`cache_key` — 기준 정보는
+    `content_token` 이 든 `edit_cache_key`)·줄 차례 지문(`order_digest` — 표시순서는 버전을
+    바꾸지 않고 바뀐다)·표 이름·표시명 지문(`edit_grid_payload.labels_digest`)이다. `_template`·
+    `_spec`·`_labels` 는 키를 만든 바로 그 양식·규격·표시명이어야 한다. `st.cache_data` 는 꺼낼
+    때마다 사본을 준다."""
+    del cache_key, order_digest, table, labels_digest
+    return build_base(_template, _spec, _labels)
 
 
 class StandardTargetSummary(NamedTuple):
