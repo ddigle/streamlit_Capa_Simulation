@@ -8,8 +8,8 @@
   303 으로 앱에 들여보낸다. 실패는 진단을 보관하고 **303 → 오류 화면**(PRG — 새로고침해도 폼이 다시
   가지 않는다).
 - `GET /auth/sso/login?next=` — 이미 로그인이면 next 로, 아니면 IdP 로(302).
-- `GET /auth/sso/logout` — 쿠키를 지우고 세션을 폐기 목록에 넣은 뒤 안내 화면. IdP 로 자동으로
-  보내지 않는다.
+- `GET /auth/sso/logout` — 쿠키를 지우고 세션 묶음(sid)을 폐기 목록에 넣은 뒤 안내 화면. IdP 로
+  자동으로 보내지 않는다.
 - `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. 진단이 없거나 지났으면 질의 `code` 를
   싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다.
 
@@ -41,9 +41,11 @@ from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.auth.tokens import (
+    SESSION_LEEWAY,
     STATE_TTL,
     SsoReject,
     clean_text,
+    decode_session,
     issue_session,
     issue_state,
     verify_id_token,
@@ -713,15 +715,26 @@ def _state_cookie_names(cfg: SsoConfig, cookies: Mapping[str, str]) -> Sequence[
 
 
 async def logout(request: Request) -> Response:
-    """`GET /auth/sso/logout` — 쿠키 셋을 지우고 세션을 폐기 목록에. IdP 로 보내지 않는다."""
+    """`GET /auth/sso/logout` — 쿠키 셋을 지우고 세션 묶음(sid)을 폐기 목록에. IdP 로 보내지 않는다.
+
+    쿠키는 서명 · 꼴만 본다(`decode_session` — 끝 시각은 안 봄). 막 끝난 쿠키로 눌러도 같은 sid 의
+    다른 탭 열린 연결 · 옛 토큰을 멈추게. 폐기는 그 묶음의 상한(`auth_time + 최대`) + 여유까지다.
+    """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
     if guarded is not None:
         return guarded
-    identity = identity_from_cookies(request.cookies, cfg, _now())
-    if isinstance(identity, Identity):
-        runtime.revoke(identity.jti, identity.exp)
-        runtime.record_event("logout", loginid=identity.loginid)
+    now = _now()
+    token = request.cookies.get(cfg.session_cookie, "")
+    try:
+        claims = decode_session(token, cfg, now=now) if token else None
+    except SsoReject:
+        claims = None
+    if claims is not None:
+        until = claims.auth_time + cfg.session_max_seconds + SESSION_LEEWAY
+        runtime.revoke_session(claims.sid, until=until, now=now)
+        runtime.forget_renewal(claims.sid)
+        runtime.record_event("logout", loginid=claims.loginid, sid=claims.sid[:8])
     response = logout_page(cfg)
     clear_session_cookie(response, cfg)
     clear_attempt_cookie(response, cfg)

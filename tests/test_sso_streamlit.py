@@ -72,15 +72,7 @@ def _session(
 ) -> tuple[str, Identity]:
     moment = int(time.time()) if now is None else now
     token, claims = issue_session(cfg, loginid=loginid, name=name, dept=dept, now=moment)
-    identity = Identity(
-        loginid=claims.loginid,
-        name=claims.name,
-        dept=claims.dept,
-        iat=claims.iat,
-        exp=claims.exp,
-        jti=claims.jti,
-    )
-    return token, identity
+    return token, Identity.from_claims(claims)
 
 
 def _on(
@@ -201,7 +193,7 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
         cookies[cfg.session_cookie] = token
     elif make_cookie == "revoked":
         token, identity = _session(cfg)
-        runtime.revoke(identity.jti, identity.exp)
+        runtime.revoke_session(identity.sid, until=identity.auth_time + cfg.session_max_seconds)
         cookies[cfg.session_cookie] = token
     elif make_cookie == "forged":
         cookies[cfg.session_cookie] = "x.y.z"
@@ -219,6 +211,46 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
     assert href.startswith(f"{PUBLIC_URL}{names.LOGIN_PATH}?next=")
     assert parse_qs(urlsplit(href).query)["next"] == ["/process_detail?theme=dark"]
     assert 'target="_self"' in link and sso_identity.LOGIN_AGAIN_LABEL in link
+
+
+def _ended_session(cfg: SsoConfig) -> tuple[str, Identity, int]:
+    """핸드셰이크 때 찍힌 쿠키가 이미 끝난 탭 — (토큰, 신원, 지금)."""
+    now = int(time.time())
+    token, identity = _session(cfg, now=now - cfg.session_seconds - 120)
+    return token, identity, now
+
+
+def test_an_open_tab_keeps_working_past_the_handshake_token_when_renewed(
+    cookies: dict[str, str],
+) -> None:
+    """열린 탭의 쿠키는 핸드셰이크 때 것이다 — 그 뒤 갱신 경로가 늘린 끝(갱신 표)까지 산다."""
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    token, identity, now = _ended_session(cfg)
+    cookies[cfg.session_cookie] = token
+    runtime.note_renewal(identity.sid, now + 3600, now=now)
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    assert not list(app.warning)
+    assert _texts(app) == ["끝까지 돌았다"]
+    [caption] = _caption_values(app)
+    assert caption.split("  \n")[2].startswith("개발 사용자 · 개발부서 · <a href=")
+    assert "남음" not in caption
+
+
+def test_an_open_tab_stops_when_the_renewal_ran_out_too(cookies: dict[str, str]) -> None:
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    token, identity, now = _ended_session(cfg)
+    cookies[cfg.session_cookie] = token
+    runtime.note_renewal(identity.sid, now - 60, now=now - 120)
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert [warning.value for warning in app.warning] == [sso_identity.EXPIRED_NOTICE]
+    assert _texts(app) == []
 
 
 def test_a_new_account_in_the_same_session_stops(cookies: dict[str, str]) -> None:

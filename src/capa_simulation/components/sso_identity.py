@@ -5,14 +5,16 @@
 문지기(`auth/gate.py`)가 첫 벽이다 — 쿠키 없는 요청은 앱에 닿지 않는다. 그래도 앱 스크립트가 매
 회차 다시 본다. 문지기는 websocket 핸드셰이크 때 한 번 보고, 세션은 그 뒤로 몇 시간이고 이어진다:
 
-- **만료** — 세션 시간이 지나도 열린 탭은 그대로 돈다.
-- **로그아웃** — 다른 탭에서 로그아웃하면 그 세션 토큰은 폐기 목록에 오른다(`runtime.revoke`).
+- **만료** — 마지막 사용 뒤 유지 시간이 지났거나 최대 시간에 닿아도 열린 탭은 그대로 돈다. 열린
+  탭의 쿠키는 핸드셰이크 때 것이라 갱신 표(`runtime.renewed_exp`)와 견준다.
+- **로그아웃** — 다른 탭에서 로그아웃하면 그 세션 묶음(sid)이 폐기 목록에 오른다
+  (`runtime.revoke_session`).
 - **계정 바뀜** — 같은 Streamlit 세션이 다른 계정의 쿠키로 다시 이어질 수 있다.
 - **문지기 없음** — 통합인증을 켜는 설정인데 `streamlit run app.py` 로 떴다(진입점이 아님).
 
 신원은 세션 상태가 아니라 `st.context.cookies` 의 HttpOnly 세션 쿠키에서 **매 회차** 다시
-검증한다(서명 · aud · iss · exp · 폐기 목록 — 문지기와 같은 `identity_from_cookies`). 세션 상태의
-`SSO_LOGINID_KEY` 는 계정 바뀜을 가르려는 사본일 뿐이다. 쿠키는 websocket 핸드셰이크 때 한 번
+검증한다(서명 · aud · iss · 끝 시각 · 폐기 목록 — 문지기와 같은 `identity_from_cookies`). 세션
+상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르려는 사본일 뿐이다. 쿠키는 websocket 핸드셰이크 때 한 번
 찍혀 그 세션 끝까지 같다 — 테마 단추의 새로고침(`location.reload`)이 만든 새 세션도 쿠키를 다시
 본다(실측). `?token=` 이나 질의 인자를 쓰지 않고 지우지도 않는다(`query_params.clear` 금지).
 
@@ -38,7 +40,12 @@ import streamlit as st
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
-from capa_simulation.auth.identity import Identity, IdentityProblem, identity_from_cookies
+from capa_simulation.auth.identity import (
+    Identity,
+    IdentityProblem,
+    identity_from_cookies,
+    session_end_of,
+)
 from capa_simulation.auth.web import public_link, sanitize_next
 from capa_simulation.components.literal_markdown import literal_markdown
 
@@ -140,7 +147,8 @@ def require_signed_in() -> Identity | None:
     if not runtime.gate_installed() or cfg.mode is SsoMode.BROKEN:
         # 막힘이면 문지기가 websocket 을 닫아 여기에 닿지 않는다 — 닿았다면 문지기가 없는 것이다.
         _stop_without_gate(cfg)
-    found = identity_from_cookies(session_cookies(), cfg, _now())
+    # 핸드셰이크 때 찍힌 쿠키라 그 뒤의 갱신은 갱신 표에 있다.
+    found = identity_from_cookies(session_cookies(), cfg, _now(), renewals=True)
     if isinstance(found, IdentityProblem):
         _stop_signed_out(cfg, found)
     seen = st.session_state.get(SSO_LOGINID_KEY)
@@ -165,7 +173,9 @@ def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str
         parts.append(literal_markdown(identity.dept))
     parts.append(_same_tab_link(public_link(cfg, names.LOGOUT_PATH), LOGOUT_LABEL))
     line = " · ".join(parts)
-    left = identity.seconds_left(_now() if now is None else now)
+    moment = _now() if now is None else now
+    end, _capped = session_end_of(identity, cfg, moment)
+    left = end - moment
     if left <= EXPIRY_WARNING_SECONDS:
         minutes = max(1, math.ceil(left / 60))
         line += f" · 로그인 {minutes}분 남음 — 저장해 두세요"

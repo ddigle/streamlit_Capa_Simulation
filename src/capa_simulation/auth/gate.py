@@ -22,7 +22,9 @@
    끝까지 같고, Streamlit 은 위젯 콜백을 스크립트 본문보다 먼저 돌리며 프래그먼트 회차(`run_every`
    포함)에서는 `app.py` 를 아예 돌리지 않는다 — `app.py` 의 두 번째 벽만으로는 만료 · 로그아웃한
    열린 탭의 콜백 · 프래그먼트가 DB 를 읽고 썼다. 그 요청은 모두 이 연결의
-   `websocket.receive`(BackMsg)로 오므로 여기서 끊는다.
+   `websocket.receive`(BackMsg)로 오므로 여기서 끊는다. 연결 중 검사는 핸드셰이크 토큰의 끝과 갱신
+   표(`runtime.renewed_exp`) 중 늦은 것을 본다 — 쓰는 동안 갱신 경로가 그 표를 늘린다. 새 요청은
+   표를 보지 않는다.
 
 허용 목록은 정확 일치만 쓴다 — 끝 `/` · `//` 변형은 막힘 쪽으로 떨어진다. `/_stcore/` 를 접두로 열지
 않는다.
@@ -38,8 +40,10 @@ from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, url_origin
 from capa_simulation.auth.identity import (
     Identity,
+    IdentityProblem,
     identity_from_cookie_header,
     parse_cookie_header,
+    session_end_of,
     session_problem,
 )
 from capa_simulation.auth.web import config_page, next_from_scope, start_login, text_response
@@ -95,15 +99,17 @@ def origin_allowed(origin: str | None, cfg: SsoConfig) -> bool:
 class _WatchedSocket:
     """넘긴 websocket 한 연결 — 브라우저가 보낸 메시지마다 핸드셰이크 때의 신원을 다시 본다.
 
-    만료됐거나 로그아웃(폐기 목록)이면 그 메시지를 앱에 넘기지 않는다. 브라우저에는 close 1008 을
+    끝났거나(핸드셰이크 토큰의 끝과 갱신 표 중 늦은 것 — 상한까지) 로그아웃(sid 폐기)이면 그
+    메시지를 앱에 넘기지 않는다. 브라우저에는 close 1008 을
     보내고 앱에는 끊김(`websocket.disconnect`)을 넘긴다 — Streamlit 은 끊긴 세션으로 정리하고, 그 뒤
     앱이 보내는 것은 버린다. 브라우저는 다시 붙으려 하고 그때 문지기가 쿠키를 다시 본다(재로그인
     띠는 `components/sso_reconnect.py`). 검사는 시각 비교와 폐기 목록 조회뿐이다 — 메시지마다 서명을
     다시 풀지 않는다.
     """
 
-    def __init__(self, identity: Identity, receive: Receive, send: Send) -> None:
+    def __init__(self, identity: Identity, cfg: SsoConfig, receive: Receive, send: Send) -> None:
         self._identity = identity
+        self._cfg = cfg
         self._receive = receive
         self._send = send
         self._closed = False
@@ -114,11 +120,19 @@ class _WatchedSocket:
         message = await self._receive()
         if message.get("type") != "websocket.receive":
             return message
-        problem = session_problem(self._identity, int(time.time()))
+        now = int(time.time())
+        problem = session_problem(self._identity, self._cfg, now)
         if problem is None:
             return message
         self._closed = True
-        runtime.record_event("session_closed", reason=problem.value, loginid=self._identity.loginid)
+        loginid = self._identity.loginid
+        if problem is IdentityProblem.EXPIRED:
+            # 「쓰는 중인데 끊겼다」 문의에 하루 상한(max)인지 유휴(idle)인지 바로 보이게.
+            _, capped = session_end_of(self._identity, self._cfg, now)
+            end = "max" if capped else "idle"
+            runtime.record_event("session_closed", reason=problem.value, loginid=loginid, end=end)
+        else:
+            runtime.record_event("session_closed", reason=problem.value, loginid=loginid)
         try:
             await self._send({"type": "websocket.close", "code": POLICY_VIOLATION, "reason": ""})
         except (OSError, RuntimeError):
@@ -171,7 +185,7 @@ class SsoGate:
                 if not origin_allowed(headers.get("origin"), cfg):
                     await self._close(send)
                     return
-                watched = _WatchedSocket(identity, receive, send)
+                watched = _WatchedSocket(identity, cfg, receive, send)
                 await self.app(scope, watched.receive, watched.send)
                 return
             await self.app(scope, receive, send)

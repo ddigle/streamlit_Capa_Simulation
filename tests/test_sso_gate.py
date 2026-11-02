@@ -25,7 +25,20 @@ from capa_simulation.auth import gate, names, runtime
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.gate import SsoGate, is_navigation, origin_allowed
 from capa_simulation.auth.server import sso_middleware, sso_routes
-from capa_simulation.auth.tokens import SESSION_LEEWAY, SessionClaims, issue_session, verify_state
+from capa_simulation.auth.tokens import (
+    SESSION_LEEWAY,
+    SessionClaims,
+    issue_session,
+    renew_session,
+    verify_state,
+)
+
+
+def revoke(cfg: SsoConfig, issued: SessionClaims) -> None:
+    """로그아웃과 같은 폐기 — 그 세션 묶음(sid)을 상한 + 여유까지."""
+    until = issued.auth_time + cfg.session_max_seconds + SESSION_LEEWAY
+    runtime.revoke_session(issued.sid, until=until)
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -200,7 +213,7 @@ def test_expired_or_revoked_cookie_is_treated_as_missing() -> None:
     old = int(time.time()) - cfg.session_seconds - 120
     expired = session_cookie(cfg, now=old)
     token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=int(time.time()))
-    runtime.revoke(issued.jti, issued.exp)
+    revoke(cfg, issued)
 
     assert http(gated_app(), "GET", "/", headers={**NAVIGATE, **expired}).status == 302
     revoked = {"cookie": f"{cfg.session_cookie}={token}"}
@@ -263,7 +276,7 @@ def test_websocket_with_forged_expired_or_revoked_cookie_is_closed() -> None:
     forged = {"cookie": f"{cfg.session_cookie}=eyJhbGciOiJIUzI1NiJ9.e30.x", **ORIGIN}
     expired = {**session_cookie(cfg, now=int(time.time()) - cfg.session_seconds - 120), **ORIGIN}
     token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=int(time.time()))
-    runtime.revoke(issued.jti, issued.exp)
+    revoke(cfg, issued)
     revoked = {"cookie": f"{cfg.session_cookie}={token}", **ORIGIN}
 
     for headers in (forged, expired, revoked):
@@ -311,7 +324,7 @@ def test_open_websocket_is_closed_on_the_next_message_after_logout() -> None:
 
     def logout_elsewhere(index: int) -> None:
         if index == 1:
-            runtime.revoke(issued.jti, issued.exp)
+            revoke(cfg, issued)
 
     sent = websocket_talk(
         gated_app(),
@@ -354,7 +367,9 @@ def test_open_websocket_is_closed_on_the_next_message_after_expiry(
     assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
     assert ECHO_DISCONNECTS == [1008]
     closed = [event for event in runtime.recent_events() if event.event == "session_closed"]
-    assert [event.value("reason") for event in closed] == ["expired"]
+    assert [(event.value("reason"), event.value("end")) for event in closed] == [
+        ("expired", "idle")
+    ]
 
 
 def test_expiry_leeway_matches_the_session_cookie_check(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -378,6 +393,152 @@ def test_expiry_leeway_matches_the_session_cookie_check(monkeypatch: pytest.Monk
     )
 
     assert _echoed(sent) == [b"echo:before", b"echo:at-edge"]
+
+
+HOUR = 3600
+
+
+def _clock_at(monkeypatch: pytest.MonkeyPatch, moment: int) -> None:
+    """문지기 시계를 `moment` 로 — 갱신 표 · 폐기 표도 같은 시각으로 판정된다(`now` 를 넘긴다)."""
+    monkeypatch.setattr(gate, "time", SimpleNamespace(time=lambda: float(moment)))
+
+
+def _talk_after(
+    monkeypatch: pytest.MonkeyPatch, headers: dict[str, str], moment: int
+) -> tuple[Message, ...]:
+    """첫 프레임 뒤 시계를 `moment` 로 옮기고 둘째 프레임을 보낸다."""
+
+    def move_clock(index: int) -> None:
+        if index == 1:
+            _clock_at(monkeypatch, moment)
+
+    return websocket_talk(
+        gated_app(),
+        "/_stcore/echo",
+        headers=headers,
+        frames=[b"before", b"after"],
+        before_frame=move_clock,
+    )
+
+
+def _closed_events() -> list[tuple[str, str]]:
+    return [
+        (event.value("reason"), event.value("end"))
+        for event in runtime.recent_events()
+        if event.event == "session_closed"
+    ]
+
+
+def test_open_websocket_outlives_the_handshake_token_when_renewed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """쓰는 동안 갱신 경로가 표를 늘리면 핸드셰이크 토큰이 끝나도 열린 연결은 산다."""
+    cfg = use_config()
+    headers, issued = _signed_in(cfg)
+    runtime.note_renewal(issued.sid, issued.iat + 9 * HOUR, now=issued.iat + 3 * HOUR)
+    ECHO_DISCONNECTS.clear()
+
+    sent = _talk_after(monkeypatch, headers, issued.exp + SESSION_LEEWAY + 1)
+
+    assert _echoed(sent) == [b"echo:before", b"echo:after"]
+    assert "websocket.close" not in _kinds(sent)
+    assert _closed_events() == []
+
+
+def test_open_websocket_closes_when_the_renewal_ran_out_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = use_config()
+    headers, issued = _signed_in(cfg)
+    renewed_end = issued.iat + 9 * HOUR
+    runtime.note_renewal(issued.sid, renewed_end, now=issued.iat + 3 * HOUR)
+    ECHO_DISCONNECTS.clear()
+
+    sent = _talk_after(monkeypatch, headers, renewed_end + SESSION_LEEWAY + 1)
+
+    assert _echoed(sent) == [b"echo:before"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert ECHO_DISCONNECTS == [1008]
+    assert _closed_events() == [("expired", "idle")]
+
+
+def test_renewal_never_carries_an_open_socket_past_the_maximum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """갱신 표에 상한을 넘는 값이 있어도 열린 연결은 처음 로그인 + 최대 + 여유에서 닫힌다."""
+    cfg = use_config()
+    headers, issued = _signed_in(cfg)
+    runtime.note_renewal(issued.sid, issued.auth_time + 30 * HOUR, now=issued.iat + 20 * HOUR)
+    cap = issued.auth_time + cfg.session_max_seconds
+    ECHO_DISCONNECTS.clear()
+
+    alive = _talk_after(monkeypatch, headers, cap + SESSION_LEEWAY)
+    assert _echoed(alive) == [b"echo:before", b"echo:after"]
+
+    monkeypatch.undo()
+    ECHO_DISCONNECTS.clear()
+    sent = _talk_after(monkeypatch, headers, cap + SESSION_LEEWAY + 1)
+
+    assert _echoed(sent) == [b"echo:before"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert _closed_events() == [("expired", "max")]
+
+
+def test_logout_closes_sockets_opened_with_an_older_token_of_the_session() -> None:
+    """핸드셰이크는 옛 토큰 A, 갱신으로 B — B 로 로그아웃하면 같은 sid 인 A 의 연결도 닫힌다."""
+    cfg = use_config()
+    headers, first = _signed_in(cfg)
+    renewed = renew_session(cfg, first, now=first.iat + 2 * 60)
+    assert renewed is not None
+    _, second = renewed
+    assert (second.sid, second.jti != first.jti) == (first.sid, True)
+    ECHO_DISCONNECTS.clear()
+
+    def logout_with_the_new_token(index: int) -> None:
+        if index == 1:
+            revoke(cfg, second)
+
+    sent = websocket_talk(
+        gated_app(),
+        "/_stcore/echo",
+        headers=headers,
+        frames=[b"before", b"after-logout"],
+        before_frame=logout_with_the_new_token,
+    )
+
+    assert _echoed(sent) == [b"echo:before"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert _closed_events() == [("revoked", "")]
+
+
+def _ended_but_renewed(cfg: SsoConfig) -> dict[str, str]:
+    """끝난 토큰 A 의 쿠키 — 갱신 표에는 그 sid 의 앞날 끝이 있다(옛 토큰을 다시 쓰는 꼴)."""
+    now = int(time.time())
+    token, issued = issue_session(
+        cfg, loginid=LOGINID, name=None, dept=None, now=now - cfg.session_seconds - 120
+    )
+    runtime.note_renewal(issued.sid, now + 3 * HOUR, now=now)
+    return {"cookie": f"{cfg.session_cookie}={token}"}
+
+
+def test_a_new_handshake_ignores_the_renewal_table() -> None:
+    """새 핸드셰이크는 브라우저가 지금 실은 쿠키라 그 토큰의 끝만 본다(탈취된 옛 토큰 재생)."""
+    cfg = use_config()
+
+    headers = {**_ended_but_renewed(cfg), **ORIGIN}
+
+    assert websocket_connect(gated_app(), "/_stcore/stream", headers=headers) == ("closed", 1008)
+
+
+def test_http_requests_ignore_the_renewal_table() -> None:
+    cfg = use_config()
+    cookie = _ended_but_renewed(cfg)
+
+    assert http(gated_app(), "GET", "/", headers={**NAVIGATE, **cookie}).status == 302
+    fetch = http(
+        gated_app(), "GET", "/_stcore/host-config", headers={"sec-fetch-mode": "cors", **cookie}
+    )
+    assert fetch.status == 401
 
 
 def test_origin_allowed_compares_normalised_origins() -> None:

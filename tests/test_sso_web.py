@@ -628,6 +628,7 @@ def test_logout_clears_three_cookies_and_revokes_the_session() -> None:
     cfg = use_config()
     now = int(time.time())
     token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=now)
+    runtime.note_renewal(issued.sid, issued.exp, now=now)
     state_name = cfg.state_cookie("q" * 43)
     cookies = {cfg.session_cookie: token, cfg.attempt_cookie: "1", state_name: "x"}
 
@@ -644,9 +645,11 @@ def test_logout_clears_three_cookies_and_revokes_the_session() -> None:
     assert attempt is not None and attempt.deleted and attempt.has("secure")
     state = response.cookie(state_name)
     assert state is not None and state.deleted
-    assert runtime.is_revoked(issued.jti)
+    assert runtime.session_revoked(issued.sid)
+    assert runtime.renewed_exp(issued.sid) is None, "로그아웃한 sid 는 갱신 표에서 빠진다"
     assert identity_from_cookies({cfg.session_cookie: token}, cfg, now) is IdentityProblem.REVOKED
     assert runtime.recent_events()[0].event == "logout"
+    assert runtime.recent_events()[0].value("sid") == issued.sid[:8]
 
 
 def test_logout_page_links_idp_logout_only_when_configured() -> None:

@@ -1,10 +1,18 @@
-# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·폐기 목록·진단·사건·로거.
+# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·세션 폐기·갱신 표·진단·사건·로거.
 
 """통합인증 프로세스 상태.
 
-모두 프로세스 메모리이고(replica 1 전제) 재시작하면 비워진다 — 로그아웃 폐기 목록이 사라지면 지운
-쿠키를 다시 넣은 탭이 만료까지 살아나지만, 쿠키 자체는 지웠으므로 받아들인다. DB 에는 아무것도 쓰지
-않는다. 세션 상태(`st.session_state`)도 아니다 — 문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
+로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리를
+둔다. 모두 프로세스 메모리이고(replica 1 전제) 재시작하면 비워진다 — 로그아웃 폐기 목록이
+사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는 지웠으므로 받아들인다.
+갱신 표가 비는 것은 해가 없다 — 열린 연결은 재시작으로 어차피 끊기고, 다시 붙을 때 브라우저가
+갱신된 쿠키를 싣는다. DB 에는 아무것도 쓰지 않는다. 세션 상태(`st.session_state`)도 아니다 —
+문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
+
+갱신 표(`sid → 최신 exp`)는 핸드셰이크에 묶인 신원만 본다(문지기의 열린 연결 · `app.py`) —
+websocket 은 핸드셰이크 때의 쿠키만 알아서 그 뒤 갱신 경로가 다시 발급한 쿠키를 모른다. 시각을
+받는 함수는 `now` 를 넘겨받을 수 있다 — 시험이 문지기 시계만 바꿔도 갱신 표 · 폐기 표가 같은
+시각으로 판정된다.
 
 배경 스레드를 세우지 않는다(AGENTS 9장 「배경 스레드」 는 자동 갱신 예약 하나). 만료된 항목은 읽거나
 쓸 때 치운다. 모든 읽기 · 쓰기는 잠금 하나로 묶는다 — 문지기(이벤트 루프)와 앱 스크립트 스레드가
@@ -25,6 +33,7 @@ from dataclasses import dataclass, field
 
 from capa_simulation.auth import names
 from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
+from capa_simulation.auth.tokens import SESSION_LEEWAY
 
 LOGGER = logging.getLogger(names.LOGGER_NAME)
 MAX_EVENTS = 50
@@ -35,7 +44,20 @@ ANONYMOUS_EVENTS = frozenset({"login_fail", "idp_error"})
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
 MAX_REVOKED = 10_000
+# 갱신 표 상한. 넘치면 exp 가 가장 이른 항목을 뺀다 — 빠진 sid 의 열린 연결은 핸드셰이크
+# 토큰의 끝에서 닫히고, 다시 붙을 때 갱신된 쿠키로 통과한다(해가 작다).
+MAX_RENEWALS = 10_000
 MAX_USED_STATES = 10_000
+# 갱신 경로(`POST /auth/sso/refresh`)의 결과 — 사건 고리에 적지 않고 누계만 센다(5분마다 사람마다
+# 한 줄이면 고리가 금방 갱신으로만 찬다). 다시 발급 · 건너뜀(60초 안 · 상한) · 로그인 없음(401) ·
+# 출처 · 머리 거절(403) · 꼴 거절(400).
+REFRESH_OUTCOMES: tuple[str, ...] = (
+    "renewed",
+    "skipped",
+    "unauthorized",
+    "forbidden",
+    "bad_request",
+)
 _FIELD_LIMIT = 200
 
 
@@ -59,6 +81,10 @@ class _State:
     started: bool = False
     gate_installed: bool = False
     revoked: dict[str, int] = field(default_factory=dict)
+    renewals: dict[str, int] = field(default_factory=dict)
+    refresh_counts: dict[str, int] = field(
+        default_factory=lambda: dict.fromkeys(REFRESH_OUTCOMES, 0)
+    )
     used_states: dict[str, int] = field(default_factory=dict)
     diagnostics: OrderedDict[str, tuple[int, dict[str, str]]] = field(default_factory=OrderedDict)
     events: deque[SsoEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENTS))
@@ -161,27 +187,87 @@ def _prune(table: dict[str, int], now: int) -> None:
         del table[key]
 
 
-def revoke(jti: str, exp: int) -> None:
-    """로그아웃한 세션 토큰을 만료까지 막는다(다른 탭의 재연결 · 새로고침도)."""
-    now = _now()
-    with _LOCK:
-        _prune(_STATE.revoked, now)
-        if len(_STATE.revoked) >= MAX_REVOKED:
-            oldest = min(_STATE.revoked, key=_STATE.revoked.__getitem__)
-            del _STATE.revoked[oldest]
-        _STATE.revoked[jti] = exp
+def _drop_earliest(table: dict[str, int]) -> None:
+    oldest = min(table, key=table.__getitem__)
+    del table[oldest]
 
 
-def is_revoked(jti: str) -> bool:
-    now = _now()
+def revoke_session(sid: str, until: int, *, now: int | None = None) -> None:
+    """로그아웃한 세션 묶음(`sid`)을 `until` 까지 막는다 — 갱신으로 생긴 그 묶음의 모든 토큰이
+    함께 막힌다(다른 탭의 열린 연결 · 재연결 · 새로고침 · 갱신 요청도). 부르는 쪽은
+    `auth_time + 최대 + SESSION_LEEWAY` 를 넘긴다."""
+    moment = _now() if now is None else now
     with _LOCK:
-        expires = _STATE.revoked.get(jti)
+        _prune(_STATE.revoked, moment)
+        if until < moment:
+            return
+        if sid not in _STATE.revoked and len(_STATE.revoked) >= MAX_REVOKED:
+            _drop_earliest(_STATE.revoked)
+        _STATE.revoked[sid] = max(until, _STATE.revoked.get(sid, until))
+
+
+def session_revoked(sid: str, *, now: int | None = None) -> bool:
+    """이 세션 묶음이 로그아웃으로 폐기됐는가."""
+    moment = _now() if now is None else now
+    with _LOCK:
+        expires = _STATE.revoked.get(sid)
         if expires is None:
             return False
-        if expires < now:
-            del _STATE.revoked[jti]
+        if expires < moment:
+            del _STATE.revoked[sid]
             return False
         return True
+
+
+def _prune_renewals(now: int) -> None:
+    ended = [sid for sid, exp in _STATE.renewals.items() if exp + SESSION_LEEWAY < now]
+    for sid in ended:
+        del _STATE.renewals[sid]
+
+
+def note_renewal(sid: str, exp: int, *, now: int | None = None) -> None:
+    """갱신 경로가 다시 발급한 세션의 끝을 적는다 — 그 sid 의 열린 연결이 이 끝까지 산다."""
+    moment = _now() if now is None else now
+    with _LOCK:
+        _prune_renewals(moment)
+        if exp + SESSION_LEEWAY < moment:
+            return
+        if sid not in _STATE.renewals and len(_STATE.renewals) >= MAX_RENEWALS:
+            _drop_earliest(_STATE.renewals)
+        _STATE.renewals[sid] = max(exp, _STATE.renewals.get(sid, exp))
+
+
+def renewed_exp(sid: str, *, now: int | None = None) -> int | None:
+    """이 sid 의 갱신 표 끝. 없거나 끝 + 여유가 지났으면 `None`(지난 것은 그 자리에서 지운다)."""
+    moment = _now() if now is None else now
+    with _LOCK:
+        exp = _STATE.renewals.get(sid)
+        if exp is None:
+            return None
+        if exp + SESSION_LEEWAY < moment:
+            del _STATE.renewals[sid]
+            return None
+        return exp
+
+
+def forget_renewal(sid: str) -> None:
+    """로그아웃한 sid 를 갱신 표에서 뺀다."""
+    with _LOCK:
+        _STATE.renewals.pop(sid, None)
+
+
+def count_refresh(outcome: str) -> None:
+    """갱신 경로 결과 하나를 센다. 모르는 결과는 부르는 쪽 실수다(`ValueError`)."""
+    if outcome not in REFRESH_OUTCOMES:
+        raise ValueError(outcome)
+    with _LOCK:
+        _STATE.refresh_counts[outcome] += 1
+
+
+def refresh_counts() -> dict[str, int]:
+    """기동 뒤 갱신 경로 결과 누계 — `REFRESH_OUTCOMES` 차례, 재시작하면 0."""
+    with _LOCK:
+        return {outcome: _STATE.refresh_counts[outcome] for outcome in REFRESH_OUTCOMES}
 
 
 def remember_used_state(digest: str, exp: int) -> bool:
@@ -293,7 +379,8 @@ def anonymous_failure_counts() -> dict[str, int]:
 
 
 def reset() -> None:
-    """시험 전용 — 설정 · 표지 · 폐기 목록 · state · 진단 · 사건을 비우고 stdout 처리기를 뗀다."""
+    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건을 비우고
+    stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

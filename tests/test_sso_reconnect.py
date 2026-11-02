@@ -39,7 +39,14 @@ from capa_simulation.components.sso_reconnect import (
 def _identity() -> Identity:
     now = int(time.time())
     return Identity(
-        loginid=LOGINID, name=None, dept=None, iat=now, exp=now + 3600, jti="jti-0000-0000"
+        loginid=LOGINID,
+        name=None,
+        dept=None,
+        iat=now,
+        exp=now + 3600,
+        jti="jti-0000-0000",
+        sid="sid-0000-0000-0000-00",
+        auth_time=now,
     )
 
 
