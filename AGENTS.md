@@ -2103,7 +2103,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을 버린다. 대조가 없으면 지금 저장본을 다시 쓰며 version 만 올리고
     「저장했습니다」를 띄웠다(2026-10-26 E2E, `tests/test_display_order_management.py`). 빠른 두 번 누름은 Proc Rename 과
     같은 `write_guard` 표지(제 저장 표지·충돌 표지)로 거른다(9장). 최신을 보고 고친 범위를 합친 전체 규칙이 그 저장본과
-    같으면 쓰지 않고 머리 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 넓힘 — 9장 「바꾼 것 없는 저장」).
+    같으면 쓰지 않고 머리 알림 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 넓힘 — 9장 「바꾼 것 없는 저장」). 표에 화면
+    표시명을 적은 분류컬럼이 남았으면 그 알림 아래 같은 칸에 저장 회차와 같은 판정(`display_label_mistakes`)의 표시명 경고도
+    그린다 — 막지 않고 알리기만 한다(2026-11-02 결정 A3 — 창이 지난 뒤의 누름에 「바뀐 것이 없습니다」 만 서서 표의 표시명이
+    정렬에 걸리지 않는 것을 알 길이 없었다).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
@@ -5282,7 +5285,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     같은 꼴 — 프로필 저장은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 그래서 저장
     직후 창(`TRAILING_PRESS_SECONDS`) 안의 다른 회차에도 성공 알림이 한 번 더 선다. 표시순서의 느린 둘째 누름은 그 저장의
     표시명 경고(같은 칸 — 앞 회차가 꺼내 그렸다)도 같은 표에서 다시 그린다 — 빠지면 성공만 남아 정렬이 조용히 걸리지
-    않는다(`tests/test_display_order_management.py`). 사이드바 저장은
+    않는다(`tests/test_display_order_management.py`). 창이 지난 뒤의 「바뀐 것이 없습니다」 회차도 표에 남은 표시명 경고를
+    그 알림 아래에 그린다(2026-11-02 결정 A3). 사이드바 저장은
     성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않으므로
     누르지 않은 회차가 그리던 안내 줄도 그대로 그린다 — 판정 기준의 조회기간 밖 월별 기준 줄
     (`_render_threshold_out_of_range_notice`), 선행 B/O·선행 입고의 조회기간 밖 저장분 줄(`_render_out_of_range_notice`), 확보율
