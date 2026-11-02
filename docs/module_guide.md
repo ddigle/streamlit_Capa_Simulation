@@ -464,7 +464,7 @@ def test_saving_a_memo_adds_one_row(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     `api.palette()` 를 차트 · 표에 쓴다. `use_container_width=True` 는 `width="stretch"` 로 바꾼다(M03 · M19).
 14. `uv run --no-sync python scripts/check_module.py <id>` 를 돌려 패키지 · 키 · 규칙을 고친다.
 15. 스모크 시험과 핵심 함수 시험을 둔다(7장).
-16. 담당자가 앱 관리자의 승인을 받아 온 뒤 커밋한다(8장).
+16. 담당자가 앱 관리자의 승인을 받아 온 뒤 자기 가지에서 커밋하고, 담당자가 PR 로 올린다(8-2).
 17. 앱을 띄워(7장) 화면을 오가며 조건이 남는지 본다 — 조건을 고르고 다른 화면(코어 화면 하나 포함)에 갔다 돌아온다.
 
 **라우터 앱** — 진입 스크립트(`app.py`)가 `st.navigation([st.Page("views/overview.py", …), …])` 로 화면을 고르고, 화면 파일이 하위
@@ -770,7 +770,8 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
   충돌이 없다. 충돌이 나면 멈추고 담당자가 앱 관리자에게 묻는다.
 - **`git push --force` · `--force-with-lease` 는 절대 쓰지 않는다** — 자기 가지에도. 사내 main 은 보호 규칙이 막는다. 가지를 덮으면
   앱 관리자가 점검한 머리와 PR 의 머리가 어긋난다.
-- **사내 main 에 바로 푸시하지 않는다** — 보호 규칙이 거절한다. main 에 커밋해 버렸으면 그 자리에서 `git switch -c module/<id>/<주제>`
+- **사내 main 에 바로 푸시하지 않는다** — 보호 규칙이 걸려 있으면 거절된다. 거절되지 않아도 올리지 않는다 — 앱 관리자가 점검하지 않은
+  변경이 그대로 사내 main 에 들어간다. main 에 커밋해 버렸으면 그 자리에서 `git switch -c module/<id>/<주제>`
   로 가지를 만들어(커밋이 그 가지에 실린다) 그 가지를 푸시하고, 자기 PC 의 main 을 되돌리는 일은 담당자가 앱 관리자에게 묻는다.
 - 푸시는 담당자가 자기 창에서 친다. 에이전트 설정이 `git push` 를 막는다.
 - **CI/CD 단추는 앱 관리자만 누른다.** 담당자는 누르지 않는다. 합친 모듈은 앱 관리자가 배포 적용 때 다시 점검(런북 4-5)한 뒤 배포 서버에 오른다.

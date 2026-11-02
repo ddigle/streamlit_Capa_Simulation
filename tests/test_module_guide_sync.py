@@ -410,6 +410,22 @@ def test_the_first_instruction_and_upload_section_go_through_a_pull_request() ->
     assert "안 되면 자기 폴더만 바꾸는 직접 커밋" not in _section("8-3.")
 
 
+def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:
+    """런북 4-5(배포 때) · 4-6(PR 점검)의 `check_module.py` 줄은 모두 `--worktree-of .` 를 단다 —
+    그래야 감시 러너가 사본의 `data/` 에 더해 운영 저장소의 `data/`(운영 DB)도 모듈 시험에서
+    막는다. 4-6 은 아직 아무도 보지 않은 PR 의 시험 코드를 돌리는 자리다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    for start in ("### 4-5.", "### 4-6."):
+        body = re.split(r"\n#{2,3} ", runbook.partition(start)[2], maxsplit=1)[0]
+        lines = [
+            line
+            for line in body.replace("\\", "/").splitlines()
+            if "scripts/check_module.py" in line
+        ]
+        assert lines, start
+        assert all("--worktree-of ." in line for line in lines), (start, lines)
+
+
 def _agents_bullet(start: str) -> str:
     """AGENTS.md 에서 `- <start>` 로 여는 글머리 하나(두 칸 들여 쓴 이어진 줄까지)."""
     lines = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()

@@ -716,7 +716,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
      하고 1 부터 다시 한다.
    - 셋째 줄이 **모두 한 모듈의 `modules/<id>/` 아래인지** 본다(1-7 의 2 와 같은 판정). 아니면 합치지 않고 멈춘다 — 폴더 밖은 「사외 요청」 거리다.
    - 넷째 줄이 찍으면 새 모듈이다 — 사용자가 등록을 승인했는지 묻는다(PR 본문의 `승인: 앱 관리자 <날짜>`). 사용자가 합치는 것이 승인이다.
-3. PR 머리의 사본 트리에서 그 모듈을 점검한다(6-3 1) 과 같은 꼴 — `HEAD` 대신 `$pr`). 4-5 처럼 매번 묻는 줄이다.
+3. PR 머리의 사본 트리에서 그 모듈을 점검한다(6-3 1) 과 같은 꼴 — `HEAD` 대신 `$pr`). 4-5 처럼 매번 묻는 줄이고, 운영 저장소에서 친다.
 
    ```powershell
    $prtree = "$HOME\e2e_copy\pr-$(Get-Date -Format yyyyMMddHHmm)"
@@ -724,8 +724,13 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    git archive --format=zip -o "$prtree.zip" $pr
    Expand-Archive "$prtree.zip" $prtree
    $py = "$PWD\.venv\Scripts\python.exe"
-   & $py "$prtree\scripts\check_module.py" <id>
+   & $py "$prtree\scripts\check_module.py" <id> --worktree-of .
    ```
+
+   - `--worktree-of .` 를 빼지 않는다 — 4-5 와 같이 운영 저장소의 `data/`(운영 DB)를 모듈 시험에서 막는다. 빼면 사본의 `data/` 만 막혀,
+     아직 아무도 보지 않은 PR 의 시험 코드가 운영 DB 를 열어도 실패로 잡히지 않는다.
+   - WebIDE 면 리눅스 꼴이다(6-3 5) 끝) — `pr=$(git rev-parse FETCH_HEAD)` · `mkdir -p <사본 폴더> && git archive $pr | tar -x -C <사본 폴더>`
+     뒤 `<저장소>/.venv/bin/python <사본 폴더>/scripts/check_module.py <id> --worktree-of .`.
 
 4. 결과를 사용자에게 쉬운 말로 알린다.
    - 「통과」(경고만 있어도) — 사용자가 PR 화면에서 「Squash and merge」 로 합친다. 사내 main 에는 `module(<id>): …` 커밋 하나가 남는다.
