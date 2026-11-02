@@ -762,6 +762,7 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
    「Squash and merge」 로 합친다 — 사내 main 에는 PR 하나가 `module(<id>): …` 커밋 하나로 남는다.
    - 고칠 것을 PR 에 적어 오면 같은 가지에서 고쳐 커밋하고 담당자가 다시 `git push` 한다. PR 이 따라온다 — 새 PR 을 열지 않는다.
    - 「가지를 main 에 맞춰 달라」 고 하면 담당자가 PR 화면의 「Update branch」 단추를 누르고, 자기 PC 에서는 `git pull --rebase` 로 받는다.
+   - PR 을 연 뒤 더 올렸으면 담당자가 앱 관리자에게 알린다 — 앱 관리자는 점검한 머리만 합치므로 처음부터 다시 점검한다(사내 런북 4-6).
 7. **합쳐진 뒤** 다음 일은 1 부터 다시 한다. 다 쓴 가지는 그대로 둬도 된다(지우려면 먼저 묻는다).
 
 그 밖에 지킬 것:

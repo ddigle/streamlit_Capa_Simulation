@@ -426,6 +426,26 @@ def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:
         assert all("--worktree-of ." in line for line in lines), (start, lines)
 
 
+def test_the_pr_check_merges_only_the_head_it_checked() -> None:
+    """런북 4-6 — PR 의 합치는 단추는 누른 때의 머리를 합친다. 그래서 점검한 머리의 7자를 알리고,
+    합치기 앞에 PR 화면의 마지막 커밋이 그것과 같을 때만 합친다(점검 뒤 더 올린 커밋이 점검 없이
+    들어가지 않게). 성숙도 `L2` 줄은 `:` 둘레 빈칸이 없는 JSON 도 잡고 지운 줄 · 다른 단계는
+    넘긴다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    body = re.split(r"\n#{2,3} ", runbook.partition("### 4-6.")[2], maxsplit=1)[0]
+    report = body.partition("\n4. ")[2]
+
+    assert "git rev-parse --short=7 $pr" in report
+    assert "마지막 커밋 7자가 그 7자와 같은지" in report and "1 부터 다시 한다" in report
+    patterns = re.findall(r"Select-String '([^']+)'", body) + re.findall(r"grep -E '([^']+)'", body)
+    assert len(patterns) == 2, patterns
+    for pattern in patterns:
+        assert re.search(pattern, '+  "maturity": "L2",'), pattern
+        assert re.search(pattern, '+  "maturity":"L2",'), pattern
+        assert not re.search(pattern, '-  "maturity": "L2",'), pattern
+        assert not re.search(pattern, '+  "maturity": "L1",'), pattern
+
+
 def _agents_bullet(start: str) -> str:
     """AGENTS.md 에서 `- <start>` 로 여는 글머리 하나(두 칸 들여 쓴 이어진 줄까지)."""
     lines = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()

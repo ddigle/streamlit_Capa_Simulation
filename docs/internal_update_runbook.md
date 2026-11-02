@@ -710,7 +710,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    git merge-base --is-ancestor origin/main $pr; $LASTEXITCODE
    git diff --name-only "origin/main...$pr"
    git diff --name-only --diff-filter=A "origin/main...$pr" -- "modules/*/module.json"
-   git diff "origin/main...$pr" -- "modules/*/module.json" | Select-String '^\+\s*"maturity": "L2"'
+   git diff "origin/main...$pr" -- "modules/*/module.json" | Select-String '^\+\s*"maturity"\s*:\s*"L2"'
    ```
 
    - 둘째 줄이 `1` 이면 PR 이 지금 사내 main 보다 뒤처져 있다(점검이 옛 코어로 돈다). 담당자에게 PR 화면의 「Update branch」 를 눌러 달라고
@@ -718,7 +718,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    - 셋째 줄이 **모두 한 모듈의 `modules/<id>/` 아래인지** 본다(1-7 의 2 와 같은 판정). 아니면 합치지 않고 멈춘다 — 폴더 밖은 「사외 요청」 거리다.
    - 넷째 줄이 찍으면 새 모듈이다 — 사용자가 등록을 승인했는지 묻는다(PR 본문의 `승인: 앱 관리자 <날짜>`). 사용자가 합치는 것이 승인이다.
    - 다섯째 줄이 찍으면 성숙도를 `L2` 로 올리는 PR 이다(배지가 떨어진다 — 지침서 3-4) — 넷째 줄과 같이 사용자가 승인했는지 묻는다.
-   - WebIDE(bash)면 `pr=$(git rev-parse FETCH_HEAD)` 로 고정하고, 둘째 줄 끝은 `; echo $?`, 다섯째 줄 끝은 `| grep -E '^\+\s*"maturity": "L2"'` 다.
+   - WebIDE(bash)면 `pr=$(git rev-parse FETCH_HEAD)` 로 고정하고, 둘째 줄 끝은 `; echo $?`, 다섯째 줄 끝은 `| grep -E '^\+\s*"maturity"\s*:\s*"L2"'` 다.
 3. PR 머리의 사본 트리에서 그 모듈을 점검한다(6-3 1) 과 같은 꼴 — `HEAD` 대신 `$pr`). 4-5 처럼 매번 묻는 줄이고, 운영 저장소에서 친다.
 
    ```powershell
@@ -735,8 +735,10 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    - WebIDE 면 리눅스 꼴이다(6-3 5) 끝) — `pr=$(git rev-parse FETCH_HEAD)` · `mkdir -p <사본 폴더> && git archive $pr | tar -x -C <사본 폴더>`
      뒤 `<저장소>/.venv/bin/python <사본 폴더>/scripts/check_module.py <id> --worktree-of .`.
 
-4. 결과를 사용자에게 쉬운 말로 알린다.
+4. 결과를 사용자에게 쉬운 말로 알린다 — 점검한 머리의 앞 7자(`git rev-parse --short=7 $pr`)를 함께 적는다.
    - 「통과」(경고만 있어도) — 사용자가 PR 화면에서 「Squash and merge」 로 합친다. 사내 main 에는 `module(<id>): …` 커밋 하나가 남는다.
+     합치기 바로 앞에 PR 화면 「Commits」 의 마지막 커밋 7자가 그 7자와 같은지 본다 — 다르면 점검 뒤 담당자가 더 올린 것이라(합치는 단추는
+     그때의 머리를 합친다) 1 부터 다시 한다. 합칠 때 뜨는 커밋 제목 칸은 `module(<id>): ` 로 시작해야 한다 — 1-6 이 제목으로 가른다.
    - 「실패」 — 합치지 않는다. `자세히` 줄(규칙 · 파일 · 줄 · 고칠 말)을 사용자가 PR 에 적어 돌려보낸다. 에이전트는 사내 GitHub 에 쓰지 않는다.
 5. 끝나면 사본 트리와 ZIP(`$prtree` · `$prtree.zip`)을 지울지 사용자에게 묻는다.
 
