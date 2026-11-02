@@ -1851,8 +1851,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     마지막 줄이 빈 글이면 끝 CRLF 하나 더)를 싣는다 — 수 칸은 원값(`rawText` — percent 는 분수), 분류 칸은 표시명, 보기 차례.
     칸 편집기 안의 복사·붙여넣기는 브라우저 기본이다. 다른 기능이 쓰는 창구: `selDrag(S, event, {move, end})`(채우기 손잡이 끌기)와
     갈고리 `paste(S, matrix, event)`(true 면 기준 칸 붙여넣기를 건너뜀 — 채우기의 되풀이 붙여넣기 자리). 순수 구획
-    `// <eg-rect>`·`// <eg-clip>` 과 가짜 DOM 동작은 `tests/test_edit_grid_select_js.py` 가 본다. `eg_fill`·`eg_toolbar` 는 아직
-    빈 틀이다.
+    `// <eg-rect>`·`// <eg-clip>` 과 가짜 DOM 동작은 `tests/test_edit_grid_select_js.py` 가 본다. 끌기(고르기·채우기 손잡이) 중
+    Esc 는 끌기만 거둔다 — 복사 점선이 떠 있어도 먼저이고(손잡이 끌기는 놓아도 채우지 않는다), 점선은 그다음 Esc 가 지운다.
+  - `eg_fill.js`·`eg_fill.css`(붙여넣기·채우기)는 `paste` 갈고리(값 하나 → 고른 범위 전체, 고른 범위가 덩어리의 정수 배면 되풀이,
+    아니면 기준 칸부터)·채우기 손잡이(고른 범위 오른쪽 아래 7px — 세로·가로 가운데 더 멀리 끈 쪽 하나로 원본 덩어리를 되풀이,
+    수열 외삽 없음)·Ctrl+D/Ctrl+R·편집 중 Ctrl+Enter(고른 범위 전체에 그 값)를 맡는다. 채우기는 값을 싣지 않고 `fill` op 를 보내
+    서버가 지금 원본 칸 값에서 되풀이한다. 순수 구획 `// <eg-paste>`·`// <eg-fill>` 과 사례 표(`tests/fixtures/edit_grid_cases.json`)
+    는 `tests/test_edit_grid_fill_js.py` 가 본다.
+  - `eg_toolbar.js`·`eg_toolbar.css`(도구 막대)는 찾기(Ctrl+F·F3·Enter/Shift+Enter·Esc)·되돌리기/다시 실행 단추·칸 폭 맞춤·머리
+    경계 끌어 폭 바꾸기(40~480px, 표마다 브라우저 저장)·적용 전 변경 서랍·전체 화면(그림자 DOM 안 `<dialog>.showModal()`)·상태 줄
+    선택 범위 요약(개수 · 합계 · 평균)을 맡는다. 되돌리기·다시 실행·칸 폭 맞춤을 마우스로 누르면 초점이 표로 돌아간다(이어
+    누르는 Ctrl+Z·화살표·Ctrl+C/V 가 표에 간다 — 자판으로 누르면 단추에 남는다). 순수 구획 `// <eg-search>`·`// <eg-summary>`·
+    `// <eg-width>` 과 가짜 DOM 동작은 `tests/test_edit_grid_toolbar_js.py` 가 본다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와

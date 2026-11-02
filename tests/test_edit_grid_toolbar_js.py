@@ -629,6 +629,41 @@ def test_undo_and_redo_buttons_follow_the_feed_and_wait_for_the_ack() -> None:
     assert result["editing"] == "false"
 
 
+def test_a_mouse_click_on_a_grid_button_hands_the_keyboard_back_to_the_grid() -> None:
+    """되돌리기·다시 실행·칸 폭 맞춤을 마우스로 누르면(detail ≥ 1) 초점이 표로 돌아가 이어 누르는
+    Ctrl+Z 가 표에 간다. 자판으로 누르면(detail 0) 단추에 남는다."""
+    body = r"""
+  const d = tb()
+  sendFeed(input.feed2)
+  const focused = () => (document.activeElement === scroller ? 'grid'
+    : document.activeElement === d.undo ? 'undo' : document.activeElement === d.redo ? 'redo'
+      : document.activeElement === d.fit ? 'fit' : 'other')
+  R.after = []
+  for (const [name, detail] of [['undo', 1], ['redo', 2], ['fit', 1], ['undo', 0], ['fit', 0]]) {
+    d[name].focus()
+    fire(d[name], 'click', { detail })
+    R.after.push([name, detail, focused()])
+  }
+  // 마우스로 되돌리기를 누른 뒤의 Ctrl+Z 는 표의 keydown 으로 간다(되돌리기 op 하나 더).
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: S.box.seq } }))
+  d.undo.focus()
+  fire(d.undo, 'click', { detail: 1 })
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: S.box.seq } }))
+  const before = sent.length
+  const down = fire(document.activeElement, 'keydown', { key: 'z', ctrlKey: true })
+  R.chain = [focused(), sent.length - before, lastSent().map((op) => op.op), down.defaultPrevented]
+"""
+    result = _run(body, _payloads(undo=2, redo=1))
+    assert result["after"] == [
+        ["undo", 1, "grid"],
+        ["redo", 2, "grid"],
+        ["fit", 1, "grid"],
+        ["undo", 0, "undo"],
+        ["fit", 0, "fit"],
+    ]
+    assert result["chain"] == ["grid", 1, ["undo"], True]
+
+
 def test_the_status_bar_sums_the_numeric_cells_of_the_selection() -> None:
     body = r"""
   const summary = () => q('.eg-summary').textContent

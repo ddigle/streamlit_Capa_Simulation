@@ -603,6 +603,57 @@ def test_dragging_up_or_left_fills_away_from_the_source_and_escape_cancels() -> 
     }
 
 
+def test_escape_during_a_drag_cancels_the_drag_before_it_drops_the_copy_marquee() -> None:
+    """복사 점선이 떠 있어도 끌기 중 Esc 는 끌기 몫이다 — 손잡이 끌기는 거둬 놓아도 채우지 않고,
+    고르기 끌기는 끌던 데까지에서 멈춘다. 점선은 그다음 Esc 가 지운다."""
+    body = r"""
+  const store = {}
+  const clip = { setData: (type, value) => { store[type] = value } }
+  pick(1, 2, 2, 3)
+  fire(scroller, 'copy', { clipboardData: clip })
+  const marked = S.sel.copied !== null
+  pick(4, 2, 4, 2)
+  drag([7, 2])
+  const during = S.fill.drag !== null
+  const esc = key('Escape')
+  R.handle = { marked, during, prevented: esc.defaultPrevented, drag: S.fill.drag,
+    selDrag: S.sel.drag, marquee: S.sel.copied !== null, box: box().hidden, range: range() }
+  fire(scroller, 'pointerup', { clientX: xOf(2), clientY: yOf(7), pointerId: 1 })
+  R.released = { ops: S.box.ops.length, sent: sent.length }
+  fire(scroller, 'pointerdown', { clientX: xOf(2), clientY: yOf(8), pointerId: 1 })
+  fire(scroller, 'pointermove', { clientX: xOf(3), clientY: yOf(9), pointerId: 1 })
+  const esc2 = key('Escape')
+  R.select = { prevented: esc2.defaultPrevented, selDrag: S.sel.drag, range: range(),
+    marquee: S.sel.copied !== null }
+  fire(scroller, 'pointermove', { clientX: xOf(5), clientY: yOf(11), pointerId: 1 })
+  fire(scroller, 'pointerup', { clientX: xOf(5), clientY: yOf(11), pointerId: 1 })
+  R.after = range()
+  const esc3 = key('Escape')
+  R.third = { prevented: esc3.defaultPrevented, marquee: S.sel.copied !== null }
+  process.stdout.write(JSON.stringify(R))
+"""
+    result = _run(body)
+    assert result["handle"] == {
+        "marked": True,
+        "during": True,
+        "prevented": True,
+        "drag": None,
+        "selDrag": None,
+        "marquee": True,
+        "box": True,
+        "range": {"r0": 4, "r1": 4, "c0": 2, "c1": 2},
+    }
+    assert result["released"] == {"ops": 0, "sent": 0}
+    assert result["select"] == {
+        "prevented": True,
+        "selDrag": None,
+        "range": {"r0": 8, "r1": 9, "c0": 2, "c1": 3},
+        "marquee": True,
+    }
+    assert result["after"] == {"r0": 8, "r1": 9, "c0": 2, "c1": 3}
+    assert result["third"] == {"prevented": True, "marquee": False}
+
+
 def test_ctrl_d_and_ctrl_r_fill_down_and_right_and_explain_when_they_cannot() -> None:
     body = r"""
   pick(2, 2, 4, 3)

@@ -441,6 +441,13 @@ function selKey(S, event) {
   const key = event.key
   const lower = key.length === 1 ? key.toLowerCase() : key
   if (key === 'Escape') {
+    // 끌기(범위 고르기·채우기 손잡이) 중이면 이 Esc 는 끌기 몫이다 — 끌기만 거두고(채우기는 보내지 않는다) 복사 점선은 다음 Esc 가
+    // 지운다. 점선을 먼저 지우면 손잡이 끌기가 거둬지지 않고 놓을 때 채운다.
+    if (S.sel && S.sel.drag) {
+      event.preventDefault()
+      selDragEnd(S, true)
+      return true
+    }
     if (!selCopied(S)) return false
     event.preventDefault()
     selDropCopy(S)

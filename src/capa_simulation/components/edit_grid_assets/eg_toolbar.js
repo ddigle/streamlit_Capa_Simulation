@@ -310,9 +310,9 @@ function tbInit(S) {
   tbListen(S, input, 'keydown', (event) => tbFindKey(S, event))
   tbListen(S, prev, 'click', () => tbFindGo(S, -1))
   tbListen(S, next, 'click', () => tbFindGo(S, 1))
-  tbListen(S, undo, 'click', () => tbHistoryButton(S, 'undo'))
-  tbListen(S, redo, 'click', () => tbHistoryButton(S, 'redo'))
-  tbListen(S, fit, 'click', () => tbFitColumns(S, null, false))
+  tbListen(S, undo, 'click', (event) => tbGridCommand(S, event, () => tbHistoryButton(S, 'undo')))
+  tbListen(S, redo, 'click', (event) => tbGridCommand(S, event, () => tbHistoryButton(S, 'redo')))
+  tbListen(S, fit, 'click', (event) => tbGridCommand(S, event, () => tbFitColumns(S, null, false)))
   tbListen(S, changes, 'click', () => tbToggleDrawer(S))
   tbListen(S, full, 'click', () => tbSetFull(S, !S.full))
   tbListen(S, close, 'click', () => {
@@ -637,6 +637,14 @@ function tbPointerDown(S, event, hit) {
 }
 
 // ---------------------------------------------------------------- 되돌리기 단추
+
+// 표에 하는 단추(되돌리기·다시 실행·칸 폭 맞춤)를 마우스로 누르면 초점을 표로 돌린다 — 이어 누르는 Ctrl+Z·화살표·Ctrl+C/V·
+// Delete 가 단추가 아니라 표에 간다(뿌리가 keydown 을 페이지로 내보내지 않으므로 단추에 남으면 아무 일도 없다). 자판(Enter·
+// Space — click 의 detail 0)으로 누르면 단추에 남아 되풀이해 누를 수 있다.
+function tbGridCommand(S, event, run) {
+  run()
+  if (event && event.detail > 0) focusGrid(S)
+}
 
 function tbHistoryButton(S, kind) {
   if (!S.model) return
