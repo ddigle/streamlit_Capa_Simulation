@@ -5640,7 +5640,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 (`*.pem` · `*.key` · `*.p12` · `*.pfx` · `*.cer` · `*.crt` · `*.der` · `*.jks` · `cert/`)은 커밋하지 않는다 — `.gitignore` ·
 `.dockerignore` · 배포 ZIP 금지 접미사가 막고 `tests/test_public_repo_hygiene.py` 가 회사 도메인 접미사 · 개인키 표지 · 그
 확장자를 감시한다. 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
-비밀값 `JWT_SECRET_KEY` 는 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start`). 시작 스크립트는 통합인증
+비밀값 `JWT_SECRET_KEY` 는 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start` — 하위 프로세스가 물려받지
+않게 할 뿐, 기동 때 환경 사본은 `/proc/<pid>/environ` 에 남고 같은 프로세스 코드는 메모리에 닿는다). 시작 스크립트는 통합인증
 값을 앱에 넘기되 결과 파일에는 이름(있음/없음)만 남기고 하위 프로세스에는 비밀값을 넘기지 않는다. 화면 · 로그 · 리뷰에 토큰 ·
 state · nonce · 쿠키 값 · 비밀값 · 클레임 값을 싣지 않는다. 사내 모듈은 통합인증 환경변수를 읽지 않는다.
 

@@ -374,7 +374,7 @@ def test_session_from_the_wall_clock_past_is_expired(cfg: SsoConfig) -> None:
 
 def test_session_signed_with_another_secret_is_invalid(cfg: SsoConfig) -> None:
     now = int(time.time())
-    other = use_config({names.ENV_SECRET: "another-0123456789-abcdefghij-KLMNOP"})
+    other = use_config({names.ENV_SECRET: "another-q7Lm2Xp9Rt4Vb8Nc3Kd6Hf1Js5Gw"})
     token, _ = issue_session(other, loginid="dev.user", name=None, dept=None, now=now)
 
     with pytest.raises(SsoReject) as caught:

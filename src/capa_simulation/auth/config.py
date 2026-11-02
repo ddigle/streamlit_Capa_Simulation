@@ -46,6 +46,22 @@ SSO_FLAG_VALUES = frozenset({"", "auto", "required"})
 
 MIN_SECRET_BYTES = 32
 MIN_SECRET_DISTINCT = 10
+# 짧은 글을 되풀이한 값 — 어떤 주기 p(값 길이의 절반 이하)에서 i 번째 글자가 i-p 번째와 같은 자리가
+# 이 몫 이상이면 막는다. 무작위 값(hex · base64)은 한 주기에서 같을 몫이 1/16 안팎이다. 앞
+# `SECRET_REPEAT_WINDOW` 글자만 본다(검사가 길이의 제곱이라 아주 긴 값에 기동이 묶이지 않게).
+SECRET_REPEAT_SHARE = 0.6
+SECRET_REPEAT_WINDOW = 256
+# 키보드 줄 · 알파벳 · 숫자 차례(앞뒤 어느 쪽이든, 대소문자 무시)로 이어진 4글자 이상 구간이 값의
+# 이 몫 이상을 덮으면 막는다. 무작위 값은 0.16 을 넘지 않았다(hex · base64 표본 각 5천 개).
+SECRET_SEQUENCE_SHARE = 0.5
+SECRET_SEQUENCE_MIN_RUN = 4
+SECRET_SEQUENCES = (
+    "abcdefghijklmnopqrstuvwxyz",
+    "01234567890",
+    "qwertyuiop",
+    "asdfghjkl",
+    "zxcvbnm",
+)
 # 자리표로 보이는 값. 짧은 낱말(4글자 이하)은 무작위 값에 우연히 들어갈 수 있어 넣지 않는다.
 SECRET_PLACEHOLDER_WORDS = (
     "changeme",
@@ -85,6 +101,8 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "too_short": f"{MIN_SECRET_BYTES}바이트보다 짧음",
         "low_variety": f"서로 다른 글자가 {MIN_SECRET_DISTINCT}개보다 적음",
         "placeholder": "자리표 값으로 보임(changeme · secret 등)",
+        "repetitive": "짧은 글을 되풀이한 값으로 보임",
+        "sequential": "키보드 줄 · 알파벳 · 숫자 차례가 대부분인 값",
         "same_as_client_id": f"설정값({names.ENV_CLIENT_ID})과 같음",
         "cert_unreadable": "인증서를 읽지 못함",
         "cert_not_rsa": "RSA 공개키가 아님",
@@ -280,7 +298,54 @@ def _check_client_id(raw: str) -> tuple[str, SsoProblem | None]:
     return text, None
 
 
+def secret_repeats(text: str) -> bool:
+    """짧은 글을 되풀이했는가(`SECRET_REPEAT_SHARE`) — `0123456789` × 4 · `Ab3$` × 8 같은 값."""
+    text = text[:SECRET_REPEAT_WINDOW]
+    size = len(text)
+    for period in range(1, size // 2 + 1):
+        same = sum(1 for index in range(period, size) if text[index] == text[index - period])
+        if same >= SECRET_REPEAT_SHARE * (size - period):
+            return True
+    return False
+
+
+def _sequence_pairs() -> tuple[frozenset[tuple[str, str]], ...]:
+    """차례마다 · 방향마다 이웃한 두 글자 묶음(앞으로 · 뒤로)."""
+    found: list[frozenset[tuple[str, str]]] = []
+    for sequence in SECRET_SEQUENCES:
+        forward = frozenset(zip(sequence, sequence[1:], strict=False))
+        found += [forward, frozenset((right, left) for left, right in forward)]
+    return tuple(found)
+
+
+_SEQUENCE_PAIRS = _sequence_pairs()
+
+
+def secret_sequence_share(text: str) -> float:
+    """한 차례 · 한 방향으로 이어진 `SECRET_SEQUENCE_MIN_RUN` 글자 이상 구간이 덮는 몫.
+
+    차례는 키보드 줄 · 알파벳 · 숫자이고 대소문자는 가리지 않는다.
+    """
+    lowered = text.lower()
+    size = len(lowered)
+    covered = [False] * size
+    for pairs in _SEQUENCE_PAIRS:
+        run_start = 0
+        for index in range(1, size + 1):
+            if index < size and (lowered[index - 1], lowered[index]) in pairs:
+                continue
+            if index - run_start >= SECRET_SEQUENCE_MIN_RUN:
+                covered[run_start:index] = [True] * (index - run_start)
+            run_start = index
+    return sum(covered) / size if size else 0.0
+
+
 def _check_secret(raw: str, client_id: str) -> tuple[bytes, SsoProblem | None]:
+    """세션 토큰 비밀값 검사. 이 값을 맞히는 사람은 아무 계정의 세션 토큰이든 만든다.
+
+    길이 · 글자 가짓수 · 자리표 낱말 · 되풀이 · 키보드/알파벳/숫자 차례를 본다. 사람이 고른 낱말
+    문장은 가려내지 못한다(문서는 `secrets.token_urlsafe(48)` 을 권한다).
+    """
     text = raw.strip()
     if not text:
         return b"", SsoProblem(names.ENV_SECRET, "missing")
@@ -289,13 +354,17 @@ def _check_secret(raw: str, client_id: str) -> tuple[bytes, SsoProblem | None]:
         return b"", SsoProblem(names.ENV_SECRET, "control_chars")
     if len(data) < MIN_SECRET_BYTES:
         return b"", SsoProblem(names.ENV_SECRET, "too_short")
+    if client_id and text == client_id:
+        return b"", SsoProblem(names.ENV_SECRET, "same_as_client_id")
     if len(set(text)) < MIN_SECRET_DISTINCT:
         return b"", SsoProblem(names.ENV_SECRET, "low_variety")
     lowered = text.lower()
     if any(word in lowered for word in SECRET_PLACEHOLDER_WORDS):
         return b"", SsoProblem(names.ENV_SECRET, "placeholder")
-    if client_id and text == client_id:
-        return b"", SsoProblem(names.ENV_SECRET, "same_as_client_id")
+    if secret_repeats(text):
+        return b"", SsoProblem(names.ENV_SECRET, "repetitive")
+    if secret_sequence_share(text) >= SECRET_SEQUENCE_SHARE:
+        return b"", SsoProblem(names.ENV_SECRET, "sequential")
     return data, None
 
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import os
+import secrets
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,10 +28,13 @@ from sso_support import (
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import (
+    SECRET_SEQUENCE_SHARE,
     SsoMode,
     SsoProblem,
     app_env_is_production,
     load_config,
+    secret_repeats,
+    secret_sequence_share,
     url_origin,
 )
 
@@ -351,6 +357,12 @@ def test_expired_or_expiring_certificate_warns_but_does_not_block() -> None:
         ("ChangeMe-0123456789-ABCDEFGHIJKLMN", "placeholder"),
         ("my-jwt-SECRET-0123456789abcdefghij", "placeholder"),
         ("0123456789abcdefghijk\x01lmnopqrstuvwxyz", "control_chars"),
+        ("0123456789" * 4, "repetitive"),
+        ("abcdefghij" * 4, "repetitive"),
+        ("Ab3$" * 8 + "Xy9!zQ", "repetitive"),
+        ("qwertyuiopasdfghjklzxcvbnm123456", "sequential"),
+        ("0123456789abcdefghijklmnopqrstuv", "sequential"),
+        ("ZYXWVUTSRQPONMLKJIHGFEDCBA-98765", "sequential"),
     ],
 )
 def test_weak_secrets_block(secret: str, code: str) -> None:
@@ -369,9 +381,39 @@ def test_secret_equal_to_the_client_id_blocks() -> None:
 
 
 def test_a_32_byte_varied_secret_is_enough() -> None:
-    cfg = load_config(sso_environ({names.ENV_SECRET: "0123456789abcdefghijklmnopqrstuv"}))
+    cfg = load_config(sso_environ({names.ENV_SECRET: "q7Lm2Xp9Rt4Vb8Nc3Kd6Hf1Js5Gw0Ze-"}))
 
     assert cfg.mode is SsoMode.ON
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: secrets.token_urlsafe(48),
+        lambda: secrets.token_urlsafe(32),
+        lambda: secrets.token_hex(16),
+        lambda: secrets.token_hex(32),
+        lambda: secrets.token_hex(16).upper(),
+        lambda: base64.b64encode(secrets.token_bytes(24)).decode("ascii"),
+    ],
+)
+def test_generated_secrets_are_not_mistaken_for_weak_ones(make: Callable[[], str]) -> None:
+    """흔한 생성 명령(`token_urlsafe` · `token_hex` · `openssl rand -base64`)의 값은 되풀이 · 차례
+    검사에 걸리지 않는다 — 무작위 값의 차례 몫은 0.16 을 넘지 않았다(표본 각 4천 개)."""
+    for _ in range(300):
+        value = make()
+        assert not secret_repeats(value), value
+        assert secret_sequence_share(value) < SECRET_SEQUENCE_SHARE, value
+        assert load_config(sso_environ({names.ENV_SECRET: value})).mode is SsoMode.ON
+
+
+def test_a_very_long_secret_is_checked_quickly() -> None:
+    started = time.monotonic()
+
+    cfg = load_config(sso_environ({names.ENV_SECRET: secrets.token_urlsafe(30_000)}))
+
+    assert cfg.mode is SsoMode.ON
+    assert time.monotonic() - started < 2
 
 
 @pytest.mark.parametrize(

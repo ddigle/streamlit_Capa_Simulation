@@ -44,6 +44,9 @@ ANONYMOUS_EVENT_LIMIT = 10
 ANONYMOUS_COUNT_LIMIT = 8
 CERT_WARNING_DAYS = 30
 
+# 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
+SECRET_CHECKS_PASSED = "길이 · 글자 가짓수 · 자리표 · 되풀이 · 차례 검사 통과(무작위 값인지는 모름)"
+
 VERDICT_ON = "켜짐"
 VERDICT_OFF = "꺼짐"
 VERDICT_OFF_PROD = "꺼짐(운영)"
@@ -107,7 +110,7 @@ def environment_table(cfg: SsoConfig) -> pd.DataFrame:
             status = "틀림" if present else "없음"
             reason = _problem_text(found)
         elif name == names.ENV_SECRET and present:
-            status, reason = "있음", "길이 · 글자 수 검사 통과"
+            status, reason = "있음", SECRET_CHECKS_PASSED
         else:
             status, reason = ("있음" if present else "없음"), ""
         extra = _problem_text(notices.pop(name, []))

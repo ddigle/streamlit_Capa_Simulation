@@ -119,8 +119,9 @@ def start(environ: MutableMapping[str, str]) -> SsoConfig:
         if _STATE.started and _STATE.config is not None:
             return _STATE.config
         cfg = load_config(environ)
-        # 사내 모듈 · 하위 프로세스 · 환경 덤프로 새지 않게. 같은 프로세스 코드는 어차피 메모리에
-        # 닿는다.
+        # 앱이 띄우는 하위 프로세스가 물려받지 않게 · `os.environ` 덤프에 실리지 않게. 막는 범위는
+        # 여기까지다 — 커널은 기동 때의 환경 사본을 `/proc/<pid>/environ` 에 남겨 같은 사용자의
+        # 프로세스가 읽을 수 있고, 같은 프로세스 코드(사내 모듈 포함)는 메모리에 닿는다.
         environ.pop(names.ENV_SECRET, None)
         _STATE.config = cfg
         _STATE.started = True
