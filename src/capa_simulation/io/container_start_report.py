@@ -101,6 +101,9 @@ class ContainerStartReport:
     os_user_masked: str | None = None
     os_user_is_bdq_user: bool | None = None
     home_masked: str | None = None
+    # 시작 때 통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)가 있었는지 — 이름 → 있음. 값은 없다.
+    # 옛 꼴 파일에는 없어 `None` 이다.
+    sso_environment: Mapping[str, bool] | None = None
 
 
 def mask_account(name: str) -> str:
@@ -170,11 +173,19 @@ def parse_report(data: object) -> ContainerStartReport | None:
         os_user_masked=_text_or_none(runtime.get("os_user")),
         os_user_is_bdq_user=same_user if isinstance(same_user, bool) else None,
         home_masked=_text_or_none(runtime.get("home")),
+        sso_environment=_presence_or_none(data.get("sso_environment")),
     )
 
 
 def _mapping(value: object) -> Mapping[str, object]:
     return value if isinstance(value, dict) else {}
+
+
+def _presence_or_none(value: object) -> dict[str, bool] | None:
+    """`{이름: 있음}` 칸. 없거나 꼴이 다르면 `None`(옛 꼴 파일). 참·거짓이 아닌 값은 버린다."""
+    if not isinstance(value, dict):
+        return None
+    return {str(name): flag for name, flag in value.items() if isinstance(flag, bool)}
 
 
 def _text_or_none(value: object) -> str | None:

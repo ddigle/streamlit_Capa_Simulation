@@ -53,6 +53,8 @@ from capa_simulation.components.scenario_status import (
     show_scenario_dialog,
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
+from capa_simulation.components.sso_identity import require_signed_in, sso_credit_line
+from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
@@ -192,6 +194,13 @@ with st.container(key=SIDEBAR_TOGGLE_SINK_KEY):
 # 이 실행이 쓸 테마를 먼저 정한다. **토큰을 하나라도 읽기 전**이어야 한다 — 색을 읽는
 # 쪽은 여기서 담아 둔 값을 본다. 바뀌었으면 그 세션의 Figure 캐시도 여기서 비운다.
 theme.begin_run()
+# 통합인증 두 번째 벽(`components/sso_identity.py`). 문지기(`capa_server.py`)는 websocket
+# 핸드셰이크 때 한 번 보므로 열린 세션의 만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기 없이 뜬
+# 서버는 여기서 매 회차 쿠키를 다시 검증해 멈춘다. 자리: `st.stop()` 이 걸릴 수 있는 어떤
+# 곳보다 앞이어야 하는 상자 여닫기 싱크 **뒤**, 토큰을 읽는 멈춤 화면이라 `theme.begin_run()`
+# **뒤**, 로그인하지 않은 세션에 입장 화면 · DB · 예약 스레드가 돌지 않게 입장 화면 · 부트스트랩
+# **앞**. 꺼짐(`ADFS_CLIENT_ID` 없음)이면 아무것도 그리지 않는다(요소 순번 그대로).
+signed_in = require_signed_in()
 # 탭을 처음 연 사용자에게 첫 로딩을 덮는 입장 화면. 무거운 부트스트랩보다 **먼저** 보내야
 # 그동안을 덮는다. 토큰을 읽으므로 `theme.begin_run()` 뒤다. 매 회차 같은 자리에 같은 내용으로
 # 그려야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다 — 이미 들어간 탭이면 브라우저 쪽에서
@@ -233,6 +242,8 @@ render_theme_toggle(
         plotly_touch_scroll_script(CELL_SELECT_CHART_KEYS),
         cell_press_guard_script(HOME_CELL_CHART_KEYS),
         disabled_link_aria_script(),
+        # 통합인증이 켜진 서버만 — 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠.
+        *sso_reconnect_scripts(signed_in),
     )
 )
 
@@ -311,6 +322,8 @@ with pinned_connections(DUCKDB_PATH):
             pages.groups,
             active_href,
             admin_box_key=ADMIN_BOX_KEY,
+            # 통합인증이 켜진 서버는 앱 정보 카드가 셋째 줄까지라 스크롤 여유가 크다.
+            app_credit_lines=2 if signed_in is None else 3,
         )
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
         # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
@@ -423,8 +436,9 @@ with pinned_connections(DUCKDB_PATH):
 
     # 앱 이름·버전·빌드와 개발 팀·문의처 두 줄. **페이지보다 먼저** 그린다 — 페이지가 `st.stop()`
     # 하면 그 뒤로는 아무것도 브라우저에 닿지 않는다. 사이드바 맨 아래 자리와 바닥 고정(목록이 길면
-    # 그 밑으로 지나간다)은 CSS 가 이 카드의 key 로 지킨다.
-    render_app_credits()
+    # 그 밑으로 지나간다)은 CSS 가 이 카드의 key 로 지킨다. 통합인증이 켜진 서버는 셋째 줄에
+    # 「이름 · 부서 · 로그아웃」 이 붙는다(위에서 검증한 신원 — 꺼짐이면 두 줄 그대로).
+    render_app_credits(sso_credit_line(signed_in))
 
     # 여기서부터는 다른 화면으로 가는 목록이 아니라 **지금 화면의 계산 조건**이다. 그 경계에 구역
     # 제목 한 줄을 세우고, 바로 아래에 **늘 펼친 통합 패널 하나**를 세운다(2026-10-10 사용자 결정).

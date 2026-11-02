@@ -92,6 +92,16 @@ FORBIDDEN_SUFFIXES: tuple[str, ...] = (
     ".db",
     ".wal",
     ".sync.json",
+    # 키 · 인증서 파일. 통합인증의 서명 인증서는 환경변수로만 받는다 — 파일로 저장소에 들어오면
+    # (특히 개인키) 메일 배포로 새어 되돌릴 수 없다. 공개키 인증서도 사내 값이라 싣지 않는다.
+    ".pem",
+    ".key",
+    ".p12",
+    ".pfx",
+    ".cer",
+    ".crt",
+    ".der",
+    ".jks",
 )
 FORBIDDEN_NAMES: tuple[str, ...] = (".env", "secrets.toml")
 # `data/input/` 이 여기 있는 것은 위 `EXTRA_FILES` 의 결정을 규칙으로 못 박은 것이다 —

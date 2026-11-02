@@ -1,4 +1,4 @@
-# Purpose: 모든 시험이 공유하는 자동 복원 장치와 Space 편집기·탭 줄·설비 표·편집 그리드 대역을 둔다.
+# Purpose: 시험 공용 자동 복원·권한 비트 판정과 Space 편집기·탭 줄·설비 표·편집 그리드 대역을 둔다.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -8,6 +8,8 @@ AppTest 는 같은 프로세스에서 스크립트를 실행하므로 스크립�
 `try/finally` 를 넣는 대신 여기서 한 번 복원한다. 스크립트가 도중에 예외로 멈춰도 복원된다.
 """
 
+import os
+import stat
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
@@ -18,6 +20,8 @@ from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
 from capa_simulation import module_failures, module_registry
+from capa_simulation.auth import names as sso_names
+from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
     edit_grid,
     equipment_master_grid,
@@ -55,6 +59,27 @@ AUTO_UPDATE_ENV_VAR = "CAPA_AUTO_OFFICIAL_UPDATE"
 # 저장소의 실제 DB 자리. 테스트가 경로를 갈아끼우기 **전** 값을 잡아 둔다.
 _REPOSITORY_DATABASES = (settings.DUCKDB_PATH, settings.EQUIPMENT_DUCKDB_PATH)
 _EXISTED_AT_START: dict[str, bool] = {}
+
+
+@pytest.fixture(scope="session")
+def keeps_permission_bits(tmp_path_factory: pytest.TempPathFactory) -> bool:
+    """이 파일 체계가 0600·0700 을 담는지 — 권한 비트를 단언하는 시험이 함께 쓴다.
+
+    Windows 의 chmod 는 읽기 전용 표시 하나만 바꿔 이 비트를 담지 못한다(사내 4관문 · CI
+    `windows-pytest`) — 거기서는 비트를 보지 않는다. 운영 CD 컨테이너는 Linux 라 비트가 살고, Linux
+    CI 에서 담지 못하면 건너뛰지 않고 실패한다.
+    """
+    folder = tmp_path_factory.mktemp("permission-probe")
+    probe = folder / "probe"
+    probe.write_bytes(b"")
+    probe.chmod(0o600)
+    folder.chmod(0o700)
+    kept = (
+        stat.S_IMODE(probe.stat().st_mode) == 0o600 and stat.S_IMODE(folder.stat().st_mode) == 0o700
+    )
+    if not kept and os.name != "nt" and os.environ.get("GITHUB_ACTIONS") == "true":
+        pytest.fail("CI 러너의 파일 체계가 권한 비트를 담지 못한다 — 권한 시험을 건너뛸 수 없다")
+    return kept
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -113,6 +138,21 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)를 지우고 통합인증 프로세스 상태를 비운다.
+
+    C-DEP 처럼 `ADFS_CLIENT_ID` 가 있는 창에서 pytest 를 돌리면 진짜 `app.py` 를 도는 AppTest 가
+    「문지기 없이 시작됨」 으로 멈추고, 앞 시험이 읽어 둔 설정 · 로그아웃 폐기 목록이 뒤 시험에
+    남는다. 통합인증이 필요한 시험은 `tests/sso_support.py` 의 `use_config` 로 따로 세운다.
+    """
+    for name in sso_names.SSO_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    sso_runtime.reset()
+    yield
+    sso_runtime.reset()
 
 
 @pytest.fixture(autouse=True)

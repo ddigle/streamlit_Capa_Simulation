@@ -16,10 +16,13 @@ CD 서버에는 셸도 로그도 없어(시작 명령도 못 바꾼다) 시작 �
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.sso_status import sso_start_step, started_environment_caption
 from capa_simulation.io.container_start_report import (
     BDQ_USER_NAME_ENV,
     STATUS_LABELS,
@@ -41,14 +44,17 @@ EXPANDER_KEY = "admin_area_container_start_check"
 GUIDE_DOCUMENT = "docs/bigdataquery_webide_setup.md"
 
 
-def build_step_table(report: ContainerStartReport) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "단계": [STEP_LABELS[step] for step in STEPS],
-            "결과": [STATUS_LABELS[report.steps[step].status] for step in STEPS],
-            "까닭": [report.steps[step].reason for step in STEPS],
-        }
-    )
+def build_step_table(
+    report: ContainerStartReport, extra_rows: Sequence[tuple[str, str, str]] = ()
+) -> pd.DataFrame:
+    """단계 | 결과 | 까닭. `extra_rows` 는 결과 파일이 아니라 지금 프로세스에서 판정한 줄이다
+    (통합인증 — `sso_status.sso_start_step`)."""
+    rows = [
+        (STEP_LABELS[step], STATUS_LABELS[report.steps[step].status], report.steps[step].reason)
+        for step in STEPS
+    ]
+    rows += list(extra_rows)
+    return pd.DataFrame(rows, columns=["단계", "결과", "까닭"])
 
 
 def fact_lines(report: ContainerStartReport) -> list[str]:
@@ -103,8 +109,18 @@ def render_container_start_check() -> None:
         key=EXPANDER_KEY,
     ):
         st.caption(report_origin_caption(report))
-        st.dataframe(build_step_table(report), hide_index=True, width="stretch")
-        st.caption("  \n".join(fact_lines(report)))
+        # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
+        # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
+        st.dataframe(
+            build_step_table(report, (sso_start_step(),)), hide_index=True, width="stretch"
+        )
+        lines = fact_lines(report)
+        started = started_environment_caption(
+            None if report.sso_environment is None else dict(report.sso_environment)
+        )
+        if started is not None:
+            lines.append(started)
+        st.caption("  \n".join(lines))
         if report.missing_environment:
             names = " · ".join(f"`{name}`" for name in report.missing_environment)
             st.caption(f"시작 때 비어 있던 CD 환경변수: {names}")

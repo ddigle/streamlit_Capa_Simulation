@@ -42,6 +42,10 @@ ALLOWED_TOP_LEVEL = {
     "README.md",
     "app.py",
     "app_pages/",
+    # C-DEP 운영 진입점(`streamlit run capa_server.py`). `app.py` 를 `st.App` 으로 감싸 통합인증
+    # 경로 · 문지기를 붙인다. Streamlit 이 `.streamlit/config.toml` · `static/` 을 진입 파일 옆에서
+    # 찾으므로 `app.py` 와 같은 루트여야 한다.
+    "capa_server.py",
     "config/",
     # 사내 GitHub Pages 로 띄우는 발표 자료(혁신대회 발표 덱 — 2026-10-08 중간 보고 덱을
     # 대체). 글꼴·애니메이션 라이브러리까지 한 파일에 담은 단독 문서라 폐쇄망 브라우저로 바로

@@ -90,7 +90,8 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/CD 단추 → 통과하면 바로 실행되고 접속 링크만 준다).
 넣을 수 있는 것은 **배포 설정의 환경변수 표(key·value)** 뿐이다. 그래서 이미지(`docker/Dockerfile-prod`)의 `CMD` 가
 시작 스크립트 `scripts/container_start.py` 를 부르고, 스크립트가 아래 환경변수만으로 위 0·1·2 를 푼 뒤
-`streamlit run app.py --server.port 8080` 으로 바뀐다. 어느 단계가 실패해도 앱은 뜬다.
+`streamlit run capa_server.py --server.port 8080` 으로 바뀐다(`capa_server.py` 는 `app.py` 를 감싸 통합인증 경로·문지기를
+붙인 진입점 — [`sso_setup.md`](sso_setup.md)). 어느 단계가 실패해도 앱은 뜬다.
 모듈이 있는 사내 main 은 누른 때 그대로 빌드된다 — CI/CD 단추는 앱 관리자만,
 런북 4-5 모듈 점검을 본 뒤에 누른다(`docs/module_guide.md` 8장).
 
@@ -121,6 +122,20 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 - 하위 프로세스(import 확인·pip)와 앱 프로세스에는 두 토큰을 넘기지 않는다 — 깔린 패키지의 import 코드가 그 값을
   읽지 못하게 한다.
 
+**통합인증(SSO) 칸** — 같은 환경변수 표에 넣는다. 이름과 뜻만 적는다(값 · 첫 배포 순서는 [`sso_setup.md`](sso_setup.md) 2 · 5장).
+
+| key | 뜻 |
+|---|---|
+| `ADFS_CLIENT_ID` | 켜는 스위치 — 포털 승인 메일의 Client ID. 비면 통합인증 꺼짐(지금처럼 열림) |
+| `JWT_SECRET_KEY` | 로그인 세션 토큰의 비밀값(32바이트 이상 고정값) |
+| `APP_ENV` | `prod` 면 운영 규칙(https 만 · 꺼짐 경고) |
+| `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` | ADFS authorize 주소 · id_token 의 iss · 토큰 서명 인증서(한 줄) |
+| `CAPA_PUBLIC_URL` | 브라우저가 여는 앱 주소(포털 Endpoint URL 은 이 값 + `/auth/callback`) |
+| `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` | 선택 |
+
+시작 스크립트는 이 값들을 앱에 넘기고(앱이 검증한다) 결과 파일에는 이름(있음/없음)만 남긴다. `JWT_SECRET_KEY` 는 하위 프로세스에
+넘기지 않고, 앱이 기동 때 읽은 뒤 프로세스 환경에서 지운다.
+
 ### 토큰 값 얻는 법
 
 1. WebIDE 에서 위 1단계(로그인)를 한다 — `bdq.login()` 이 `/config/.credential/bigdataquery.token.<AD 계정>` 을 만든다.
@@ -136,7 +151,11 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 있음/없음, 컨테이너의 실행 사용자·HOME, pip 출력 끝을 남긴다(계정 값은 모두 앞 두 글자만). 시작 점검이 도중에
 예상하지 못하게 멈춰도 세 단계를 「도중에 멈춤」 실패로 적은 파일을 남기고 앱은 뜬다.
 
-- **Admin Area 「서버 시작 점검」** — 탭 위 펼침 하나다. 파일이 있을 때만 선다(개발·사내 PC 에는 없다).
+- **Admin Area 「서버 시작 점검」** — 탭 위 펼침 하나다. 파일이 있을 때만 선다(개발·사내 PC 에는 없다). 표 넷째 줄
+  「통합인증」 은 결과 파일이 아니라 앱의 지금 설정에서 판정한다(정상 · 건너뜀(`ADFS_CLIENT_ID` 없음) · 실패(문제 이름)) — 시작
+  때 있던 통합인증 환경변수 이름도 한 줄 붙는다.
+- **Admin Area 「통합인증 점검」** — 바로 아래 펼침. 판정 · 환경변수 이름별 상태와 까닭 · 계산한 redirect_uri · 서명 인증서
+  지문과 만료일 · 최근 로그인 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 서지 않는다([`sso_setup.md`](sso_setup.md) 7장).
 - **BigDataQuery 안내** — 「패키지가 없습니다」·로그인 토큰 오류·`user_name` 안내 뒤에 그 단계의 결과 한 줄과 넣을
   환경변수 이름이 붙는다.
 - **펼침이 「결과 없음」 이면** — CD 환경변수(`CAPA_ARTIFACTORY_*`·`CAPA_BDQ_TOKEN`)는 앱에 들어왔는데 결과 파일이
@@ -160,6 +179,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
   BDQ 토큰으로 하는 조회는 **넣은 사람 본인 권한**으로 나간다 — 그 서버로 조회하는 모든 사용자가 그 사람 이름으로
   조회한다는 뜻이다.
 - 값은 사람마다 다르고 비밀이라 저장소·배포 ZIP 에 넣지 않는다(예시도 `<AD 계정>` 꼴로만 적는다).
+- **환경변수 표를 본 사람은 `JWT_SECRET_KEY` 로 로그인 토큰을 만들 수 있다** — 통합인증을 켜면 그 표를 볼 수 있는 사람을 좁힌다.
 
 ## 참고
 

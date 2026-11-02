@@ -519,17 +519,25 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     import capa_simulation.components.app_header as app_header
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.components.sso_identity as sso_identity
     import capa_simulation.components.theme_toggle as theme_toggle
     import capa_simulation.components.typography as typography
     import capa_simulation.scenario_activation as scenario_activation
 
     order: list[str] = []
+    original_signed_in = sso_identity.require_signed_in
+
+    def _recording_signed_in() -> object:
+        order.append("sso")
+        return original_signed_in()
+
     original_bootstrap = scenario_activation.bootstrap_latest_official_scenario
 
     def _recording_bootstrap(*args: Any, **kwargs: Any) -> object:
         order.append("bootstrap")
         return original_bootstrap(*args, **kwargs)
 
+    monkeypatch.setattr(sso_identity, "require_signed_in", _recording_signed_in)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: order.append("intro"))
     original_shell_style = app_header.render_shell_style
 
@@ -569,7 +577,9 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     # 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다 — 오류
     # 화면의 제목도 같은 서체로 선다.
     # 「준비 중」으로 보낸 Summary GAP 은 페이지를 다 그린 **뒤** 만든다(`warm_intro_summary`).
-    one_run = ["intro", "shell", "type", "toolbar:6", "bootstrap", "summary", "warm"]
+    # 통합인증 확인(`require_signed_in`)은 입장 화면보다도 앞이다 — 로그인하지 않은 세션에 입장
+    # 화면 · DB · 예약 스레드가 돌지 않는다(꺼짐이면 아무것도 그리지 않는다).
+    one_run = ["sso", "intro", "shell", "type", "toolbar:6", "bootstrap", "summary", "warm"]
     assert order == one_run * 2
     # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
     sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]

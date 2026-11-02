@@ -4,7 +4,8 @@
 
 CD 서버에는 셸이 없고 시작 명령도 바꿀 수 없다 — 이 스크립트가 런타임 환경변수만으로 사내
 `bigdataquery` 설치·로그인 토큰 파일·요청자 계정을 갖추고, 결과를 파일로 남긴 뒤 지금과 같은
-`streamlit run` 줄로 바뀐다. pip·하위 프로세스·`exec` 는 모두 가짜로 바꿔 부른다.
+`streamlit run capa_server.py` 줄(통합인증 진입점)로 바뀐다. pip·하위 프로세스·`exec` 는 모두
+가짜로 바꿔 부른다.
 
 여기 쓰는 계정·토큰은 **분명한 가짜 문자열**이다. 저장소가 공개라 실제 값을 넣지 않는다.
 """
@@ -28,6 +29,7 @@ from pathlib import Path
 import pytest
 
 import capa_simulation.settings as settings
+from capa_simulation.auth import names as sso_names
 from capa_simulation.io import container_start_report as report_contract
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +51,8 @@ ALL_ENVIRONMENT = {
     report_contract.BDQ_USER_NAME_ENV: FAKE_BDQ_USER,
 }
 
-OLD_CMD = ["streamlit", "run", "app.py", "--server.port", "8080"]
+# 옛 `CMD`(`streamlit run app.py --server.port 8080`)에서 진입 파일 자리만 운영 진입점으로 바뀐 줄.
+APP_CMD = ["streamlit", "run", "capa_server.py", "--server.port", "8080"]
 
 
 def _probe(state: str, detail: str = "") -> str:
@@ -173,26 +176,6 @@ def _ok(stdout: str = "") -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
 
 
-@pytest.fixture(scope="session")
-def keeps_permission_bits(tmp_path_factory: pytest.TempPathFactory) -> bool:
-    """이 파일 체계가 0600·0700 을 담는지. Windows 의 chmod 는 읽기 전용 표시 하나만 바꿔 이 비트를
-    담지 못한다 — 거기서는 토큰 파일·폴더의 권한 비트를 보지 않는다. 운영 CD 컨테이너는 Linux 라
-    비트가 살고, Linux CI 에서 담지 못하면 건너뛰지 않고 실패한다."""
-    folder = tmp_path_factory.mktemp("permission-probe")
-    probe = folder / "probe"
-    probe.write_bytes(b"")
-    probe.chmod(0o600)
-    folder.chmod(0o700)
-    kept = (
-        stat.S_IMODE(probe.stat().st_mode) == 0o600 and stat.S_IMODE(folder.stat().st_mode) == 0o700
-    )
-    if not kept and os.environ.get("GITHUB_ACTIONS") == "true":
-        pytest.fail(
-            "CI 러너의 파일 체계가 권한 비트를 담지 못한다 — 토큰 권한 시험을 건너뛸 수 없다"
-        )
-    return kept
-
-
 def _assert_no_secret(text: str) -> None:
     for secret in (
         FAKE_ART_TOKEN,
@@ -225,11 +208,13 @@ def test_without_cd_environment_it_installs_nothing_and_starts_the_same_app(
     assert report["missing_environment"] == list(report_contract.CD_ENVIRONMENT)
     assert not (place / "config").exists(), "토큰 값이 없으면 /config 자리를 만들지도 않는다"
     [(file, args, env)] = fake_exec.calls
-    assert (file, args) == ("streamlit", OLD_CMD)
+    assert (file, args) == ("streamlit", APP_CMD)
     assert env == {"PATH": "/usr/bin"}
-    assert Path.cwd() == container_start.PROJECT_ROOT, "app.py 를 저장소 뿌리에서 찾게 한다"
+    assert Path.cwd() == container_start.PROJECT_ROOT, "진입 파일을 저장소 뿌리에서 찾게 한다"
     printed = capsys.readouterr().out
-    assert "bigdataquery 설치" in printed and "streamlit run app.py" in printed
+    assert "bigdataquery 설치" in printed and "streamlit run capa_server.py" in printed
+    assert "통합인증 환경변수 — 있음: - · 없음: ADFS_CLIENT_ID" in printed
+    assert report["sso_environment"] == dict.fromkeys(sso_names.SSO_ENVIRONMENT, False)
 
 
 IMAGE_PIP_ENVIRONMENT = {
@@ -297,7 +282,7 @@ def test_a_missing_package_is_installed_from_the_company_index_with_os_certifica
     _assert_no_secret(text)
     # 실행 줄에 남은 두 비밀값은 앱에 넘기지 않는다 — 앱은 요청자 계정만 읽는다.
     [(_, args, env)] = fake_exec.calls
-    assert args == OLD_CMD
+    assert args == APP_CMD
     assert report_contract.ARTIFACTORY_TOKEN_ENV not in env
     assert report_contract.BDQ_TOKEN_ENV not in env
     assert env[report_contract.BDQ_USER_NAME_ENV] == FAKE_BDQ_USER
@@ -414,7 +399,7 @@ def test_a_failed_install_keeps_the_pip_tail_without_credentials(
     assert isinstance(tail, list) and tail and len(tail) <= container_start.PIP_TAIL_LINES + 1
     assert any("***" in line for line in tail)
     _assert_no_secret(json.dumps(report, ensure_ascii=False) + capsys.readouterr().out)
-    assert fake_exec.calls and fake_exec.calls[0][1] == OLD_CMD, "실패해도 앱은 띄운다"
+    assert fake_exec.calls and fake_exec.calls[0][1] == APP_CMD, "실패해도 앱은 띄운다"
 
 
 def test_an_install_past_the_time_limit_is_failed_and_the_app_still_starts(
@@ -433,7 +418,7 @@ def test_an_install_past_the_time_limit_is_failed_and_the_app_still_starts(
     assert install["status"] == report_contract.STATUS_FAILED
     assert str(container_start.INSTALL_TIMEOUT_SECONDS) in install["reason"]
     _assert_no_secret(json.dumps(report, ensure_ascii=False) + capsys.readouterr().out)
-    assert fake_exec.calls[0][1] == OLD_CMD
+    assert fake_exec.calls[0][1] == APP_CMD
 
 
 def test_an_exception_text_with_credentials_is_masked(
@@ -619,7 +604,7 @@ def test_an_unexpected_failure_in_a_step_still_writes_the_report_and_starts_the_
     assert install["status"] == report_contract.STATUS_FAILED
     assert "RuntimeError" in install["reason"]
     assert _steps(report)[report_contract.STEP_TOKEN]["status"] == report_contract.STATUS_OK
-    assert fake_exec.calls[0][1] == OLD_CMD
+    assert fake_exec.calls[0][1] == APP_CMD
 
 
 def test_the_report_written_by_the_script_is_read_back_by_the_app(place: Path) -> None:
@@ -765,8 +750,8 @@ def test_the_script_does_not_load_the_app_stack_before_it_hands_over() -> None:
     깨진 의존성이 앱 띄우기 전에 스크립트를 죽이지 않게 한다."""
     code = (
         "import sys; sys.path.insert(0, 'scripts'); import container_start; "
-        "print(sorted(name for name in ('streamlit', 'pandas', 'duckdb', 'bigdataquery') "
-        "if name in sys.modules))"
+        "print(sorted(name for name in ('streamlit', 'pandas', 'duckdb', 'bigdataquery', "
+        "'jwt', 'cryptography', 'starlette') if name in sys.modules))"
     )
     completed = subprocess.run(
         [sys.executable, "-c", code],
@@ -786,7 +771,8 @@ def test_the_image_starts_through_the_script_with_the_same_app_command() -> None
     assert 'CMD ["python", "scripts/container_start.py"]' in dockerfile
     assert 'CMD ["streamlit"' not in dockerfile
     assert "WORKDIR /project" in dockerfile
-    assert container_start.app_command(container_start.APP_PORT) == OLD_CMD
+    assert container_start.app_command(container_start.APP_PORT) == APP_CMD
+    assert container_start.APP_ENTRY == "capa_server.py"
 
     patterns = _dockerignore_patterns()
     for path in IMAGE_NEEDS:
@@ -801,6 +787,11 @@ IMAGE_NEEDS = (
     "requirements.txt",
     "src/capa_simulation/settings.py",
     "src/capa_simulation/io/container_start_report.py",
+    # 시작 스크립트 · 결과 꼴이 통합인증 환경변수 이름을 여기서 읽는다(표준 라이브러리만).
+    "src/capa_simulation/auth/__init__.py",
+    "src/capa_simulation/auth/names.py",
+    # 앱 진입 파일(통합인증 경로 · 문지기)과 그것이 감싸는 앱.
+    "capa_server.py",
     "app.py",
 )
 
@@ -1029,7 +1020,7 @@ def test_an_undecodable_environment_value_still_starts_the_app(place: Path) -> N
 
     report, fake_exec = _main(place, environ, runner)
 
-    assert fake_exec.calls and fake_exec.calls[0][1] == OLD_CMD
+    assert fake_exec.calls and fake_exec.calls[0][1] == APP_CMD
     assert _steps(report)[report_contract.STEP_INSTALL]["status"] == report_contract.STATUS_OK
     assert "%FF" in runner.pip_envs[0]["PIP_INDEX_URL"], "깨진 바이트는 원래 바이트로 옮긴다"
 
@@ -1043,7 +1034,7 @@ def test_a_non_utf8_stdout_does_not_stop_the_app(
 
     report, fake_exec = _main(place, {"PATH": "/usr/bin"}, FakeRunner([_probe("missing")]))
 
-    assert fake_exec.calls and fake_exec.calls[0][1] == OLD_CMD
+    assert fake_exec.calls and fake_exec.calls[0][1] == APP_CMD
     assert _steps(report)[report_contract.STEP_INSTALL]["status"] == report_contract.STATUS_SKIPPED
     sys.stdout.flush()
     assert b"[container_start]" in raw.getvalue()
@@ -1166,3 +1157,65 @@ def test_the_withheld_environment_notice_names_the_keys_without_a_dual_particle(
         "CD 환경변수가 앱에 그대로 있습니다(`CAPA_ARTIFACTORY_TOKEN`·`CAPA_BDQ_TOKEN`)." in notice
     )
     assert "이(가)" not in notice and "` 가 " not in notice
+
+
+FAKE_SSO_SECRET = "FAKE-sso-session-secret-0123456789-abcdefghij"
+
+
+def test_the_sso_values_reach_the_app_but_only_their_names_reach_the_report(
+    place: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """통합인증 값은 앱이 써야 하므로 앱에 넘긴다 — 결과 파일과 진행 출력에는 이름(있음/없음)만
+    남고, 비밀값은 하위 프로세스(import 확인 · pip)에도 넘기지 않는다."""
+    environ = {
+        **ALL_ENVIRONMENT,
+        sso_names.ENV_CLIENT_ID: "fake-client-id",
+        sso_names.ENV_SECRET: FAKE_SSO_SECRET,
+        sso_names.ENV_PUBLIC_URL: "https://capa.example.invalid",
+    }
+    runner = FakeRunner([_probe("missing"), _probe("ok", "9.9.9")], [_ok(), _ok()])
+
+    report, fake_exec = _main(place, environ, runner)
+
+    presence = report["sso_environment"]
+    assert isinstance(presence, dict)
+    assert list(presence) == list(sso_names.SSO_ENVIRONMENT)
+    assert presence[sso_names.ENV_CLIENT_ID] is True
+    assert presence[sso_names.ENV_SECRET] is True
+    assert presence[sso_names.ENV_ISSUER] is False
+    printed = capsys.readouterr().out
+    written = json.dumps(report, ensure_ascii=False)
+    for text in (printed, written):
+        assert FAKE_SSO_SECRET not in text
+        assert "fake-client-id" not in text
+        assert "capa.example.invalid" not in text
+    assert "통합인증 환경변수 — 있음: ADFS_CLIENT_ID, JWT_SECRET_KEY, CAPA_PUBLIC_URL" in printed
+    [(_file, _args, app_env)] = fake_exec.calls
+    assert app_env[sso_names.ENV_SECRET] == FAKE_SSO_SECRET, "앱은 읽어야 한다(앱이 읽고 지운다)"
+    assert app_env[sso_names.ENV_CLIENT_ID] == "fake-client-id"
+    for env in runner.envs:
+        assert sso_names.ENV_SECRET not in env, "하위 프로세스에는 통합인증 비밀값도 넘기지 않는다"
+
+
+def test_the_report_reader_keeps_sso_names_and_old_reports_have_none(place: Path) -> None:
+    """결과 꼴은 더하기만 했다(`REPORT_VERSION` 그대로) — 옛 파일은 그 칸이 없어 `None` 이다."""
+    report, _ = _main(place, {sso_names.ENV_CLIENT_ID: "x"}, FakeRunner([_probe("missing")]))
+
+    parsed = report_contract.parse_report(report)
+    assert parsed is not None and parsed.sso_environment is not None
+    assert parsed.sso_environment[sso_names.ENV_CLIENT_ID] is True
+    old = {key: value for key, value in report.items() if key != "sso_environment"}
+    parsed_old = report_contract.parse_report(old)
+    assert parsed_old is not None and parsed_old.sso_environment is None
+    assert report["version"] == 1
+
+
+def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
+    """시작 스크립트가 쓰는 이름 튜플은 `auth.names` 하나다(무거운 auth 모듈을 끌어오지 않는다)."""
+    assert container_start.CHILD_WITHHELD_ENVIRONMENT == (
+        *report_contract.APP_WITHHELD_ENVIRONMENT,
+        sso_names.ENV_SECRET,
+    )
+    assert container_start.sso_presence({sso_names.ENV_SCOPE: " "}) == dict.fromkeys(
+        sso_names.SSO_ENVIRONMENT, False
+    )

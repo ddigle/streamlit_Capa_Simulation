@@ -12,6 +12,9 @@ dependencies = [
     # 화면 2곳이 직접 import 한다. streamlit 이 전이 의존으로 끌고 와서 지금은 동작하지만,
     # streamlit 이 그 의존을 끊으면 가용설비·Space 화면이 ImportError 로 죽는다.
     "altair>=5,<7",
+    # 통합인증 서명 인증서(X.509 · RSA 공개키)를 `auth/config.py` 가 직접 읽는다. `pyjwt[crypto]` 가 끌어오는
+    # 판(락 그대로)이지만 코어 import 는 직접 적는다 — 끌어오는 쪽이 바뀌어도 빠지지 않게.
+    "cryptography>=42,<51",
     "duckdb==1.5.5",
     # `src` 의 계산·설비 서비스가 직접 import 한다. pandas·streamlit 이 끌어와 지금도 깔리지만, 직접 적어야
     # 그 둘이 의존을 바꿔도 빠지지 않는다. 모듈 점검(M09)도 이 줄로 numpy 를 「직접 의존」 으로 본다.
@@ -21,6 +24,13 @@ dependencies = [
     "plotly>=5.24,<7",
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.
     "pydantic>=2.9,<3",
+    # 통합인증(`capa_simulation.auth`)의 ID 토큰(RS256) · 세션 토큰(HS256) 검증. RS256 에
+    # cryptography 가 필요해 `[crypto]` 로 받는다. 하한 2.10.1 은 2.10.0 의 iss 부분 일치
+    # 결함(issuer 문자열 일부만 맞아도 통과)을 피한다. 통합인증이 꺼진 서버는 import 하지 않는다.
+    "pyjwt[crypto]>=2.10.1,<3",
+    # 통합인증 문지기(`auth/gate.py`) · 경로(`auth/web.py`)가 직접 import 한다. Streamlit 1.63 의 서버가 이미 쓰는
+    # 판(락 그대로)이지만 코어 import 는 직접 적는다.
+    "starlette>=1.6,<2",
     # 마이너 하나에 묶는다. 화면이 `persist_state`·`st.container(horizontal=)`·fragment 같은
     # 최신 위젯 API 에 기대고 있어 마이너가 오르면 배치가 바뀔 수 있다. 락(`uv.lock`)과 그 그림자
     # `requirements.txt` 도 배포 ZIP 에 실려 사내에 그대로 가지만(`build_deploy_package` 의
@@ -77,7 +87,7 @@ strict = true
 # pytest 가 저장소 루트를 sys.path 에 넣어 테스트끼리의 맨이름 import 가 죽는다) 모듈 이름이
 # `test_dashboard`·`compact_duckdb` 같은 맨이름이다. 아래 overrides 도 그 이름으로 적는다
 # (`tests.*` 는 아무것도 잡지 않고, `test_*` 같은 접두 와일드카드는 mypy 가 거절한다).
-files = ["app.py", "app_pages", "src/capa_simulation", "tests", "scripts"]
+files = ["app.py", "capa_server.py", "app_pages", "src/capa_simulation", "tests", "scripts"]
 # `tests/test_deploy_package.py` 처럼 테스트가 `scripts/` 모듈을 맨이름으로 부르는 것을 찾는
 # 경로. 위 `files` 전체를 돌릴 때는 없어도 찾지만, 파일 하나만 넘길 때(`mypy tests/x.py`,
 # 편집기)는 이것이 있어야 찾는다. 상대경로라 저장소 루트에서 돌린다.

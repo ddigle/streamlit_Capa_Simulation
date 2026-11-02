@@ -28,7 +28,8 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 없음」으로 덮어쓰고(지난 실행의 블록이 남지 않게), 일찍 끝나면 「미룸 — …」·「멈춤 — …」 한 줄로,
 항목이 돌면 그때마다 전체 블록으로 바꾼다.
 
-**하는 일.** 사용자 앱이 떠 있는지 먼저 본다 — `streamlit run … app.py` 프로세스, 그리고
+**하는 일.** 사용자 앱이 떠 있는지 먼저 본다 — `streamlit run … app.py`(또는 운영 진입점
+`capa_server.py`) 프로세스, 그리고
 두 DuckDB 를 열 수 있는지. 있으면 「사용자 앱이 떠 있습니다 — 화면 확인은 미룹니다」 한 줄과
 코드 3 으로 멈춘다(사용자 앱은 절대 끄지 않는다). 앱은 rerun 동안만 DB 를 쥐어 가만히 떠 있는
 앱은 잠금 확인을 지나치므로 프로세스를 함께 본다(살피지 못하면 없다고 넘기지 않고 미룬다).
@@ -692,9 +693,11 @@ def migration_targets() -> tuple[tuple[Path, str, frozenset[int]], ...]:
     )
 
 
-# `streamlit run … app.py` 꼴의 명령줄. 런북의 사람 규칙(「명령줄에 app.py 가 있으면 사용자
+# `streamlit run … app.py` 꼴의 명령줄 — 운영 진입점 `capa_server.py`(`app.py` 를 `st.App` 으로 감싼
+# 것)도 같은 사용자 앱이다. 런북의 사람 규칙(「명령줄에 app.py 나 capa_server.py 가 있으면 사용자
 # 앱」)과 같다.
-_APP_COMMAND = re.compile(r"streamlit.*\brun\b.*\bapp\.py\b", re.IGNORECASE)
+APP_ENTRY_FILES: Final = ("app.py", "capa_server.py")
+_APP_COMMAND = re.compile(r"streamlit.*\brun\b.*\b(?:app|capa_server)\.py\b", re.IGNORECASE)
 # 그 명령줄을 돌리는 프로그램. 셸(`bash -c "… streamlit run app.py …"`)이나 그 글자를 찾는 명령은
 # 앱이 아니다 — 파이썬·streamlit 실행 파일만 센다.
 _APP_PROGRAM = re.compile(r"(python[\d.]*w?|streamlit)(\.exe)?", re.IGNORECASE)
@@ -721,24 +724,25 @@ def _program(command_line: str) -> str:
 
 
 def is_app_command(command_line: str) -> bool:
-    """파이썬·streamlit 이 `streamlit run … app.py` 를 돌리는 명령줄인가."""
+    """파이썬·streamlit 이 `streamlit run … app.py`(또는 `capa_server.py`)를 돌리는 명령줄인가."""
     return bool(
         _APP_PROGRAM.fullmatch(_program(command_line)) and _APP_COMMAND.search(command_line)
     )
 
 
 def _same_app(command_line: str, cwd: str | None, root: Path) -> bool:
-    """그 명령줄의 `app.py` 가 이 저장소의 것인가. 작업 폴더를 모르면 같다고 본다(보수적으로)."""
-    target = os.path.normcase(str((root / "app.py").resolve()))
+    """그 명령줄의 진입 파일(`app.py`·`capa_server.py`)이 이 저장소의 것인가. 작업 폴더를 모르면
+    같다고 본다(보수적으로)."""
+    targets = {os.path.normcase(str((root / name).resolve())) for name in APP_ENTRY_FILES}
     for token in re.split(r"[\s\"']+", command_line):
-        if not token or Path(token).name.lower() != "app.py":
+        if not token or Path(token).name.lower() not in APP_ENTRY_FILES:
             continue
         candidate = Path(token)
         if not candidate.is_absolute():
             if cwd is None:
                 return True
             candidate = Path(cwd) / candidate
-        if os.path.normcase(str(candidate.resolve())) == target:
+        if os.path.normcase(str(candidate.resolve())) in targets:
             return True
     return False
 
@@ -924,6 +928,27 @@ AUTO_UPDATE_ENV_VAR: Final = "CAPA_AUTO_OFFICIAL_UPDATE"
 # 상자가 더 서서 사이드바 요약(7장 A)·좁은 폭 `links_cut` 이 사외 기대와 어긋나고, 가이드
 # 그림에 동료 모듈 이름이 찍힌다. 모듈은 런북 4-5 가 따로 본다. 무거운 import 를 피해 글자로 적는다.
 MODULES_ROOT_ENV_VAR: Final = "CAPA_MODULES_ROOT"
+# 통합인증 환경변수(`capa_simulation.auth.names.SSO_ENVIRONMENT`). 확인용 자식 앱에는 넘기지
+# 않는다 — 사용자 앱을 띄운 창(`ADFS_CLIENT_ID` 가 든 환경)에서 돌려도 자식은 `app.py` 로 뜨므로
+# 「문지기 없이 시작됨」 으로 멈춰 항목이 하나도 돌지 않는다. 무거운 import 를 피해 글자로 적고
+# 시험이 튜플과 대 본다.
+SSO_ENVIRONMENT: Final = (
+    "ADFS_CLIENT_ID",
+    "JWT_SECRET_KEY",
+    "APP_ENV",
+    "ADFS_AUTHORIZE_URL",
+    "ADFS_ISSUER",
+    "ADFS_SIGNING_CERT",
+    "CAPA_PUBLIC_URL",
+    "CAPA_SSO_SESSION_HOURS",
+    "CAPA_SSO",
+    "ADFS_SCOPE",
+    "ADFS_RESOURCE",
+    "ADFS_CLAIM_LOGINID",
+    "ADFS_CLAIM_USERNAME",
+    "ADFS_CLAIM_DEPTNAME",
+    "ADFS_LOGOUT_URL",
+)
 
 
 def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -932,10 +957,13 @@ def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[s
     editable 설치가 다른 작업 폴더(예: 본 저장소)를 가리켜도 자식이 이 저장소의 코드와 DB 를 쓴다
     (설정의 DB 경로는 `settings.py` 가 놓인 저장소에서 나온다). 사내는 이미 그렇다. 사용자 앱을 띄운
     창에서 이 스크립트를 돌려도 자식은 예약 스레드를 세우지 않는다(`AUTO_UPDATE_ENV_VAR`).
-    모듈은 부모 환경과 상관없이 끈다(`MODULES_ROOT_ENV_VAR`).
+    모듈은 부모 환경과 상관없이 끈다(`MODULES_ROOT_ENV_VAR`). 통합인증 환경변수도 뺀다
+    (`SSO_ENVIRONMENT` — 자식은 통합인증 꺼짐으로 뜬다).
     """
     env = dict(os.environ if base is None else base)
     env.pop(AUTO_UPDATE_ENV_VAR, None)
+    for name in SSO_ENVIRONMENT:
+        env.pop(name, None)
     env[MODULES_ROOT_ENV_VAR] = "off"
     source = str(root / "src")
     rest = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part and part != source]

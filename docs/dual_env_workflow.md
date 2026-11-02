@@ -326,6 +326,9 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 
 - 좋음 — 「`Pack Code` 에 `4.00E+02` 꼴(지수 표기)인 값이 2종, 5행」
 - 나쁨 — 실제 Pack Code 값을 그대로 적는 것
+- 통합인증(SSO) 환경변수는 **이름과 판정만** 적는다(예: 「`ADFS_ISSUER` 틀림 · 사유 `iss_mismatch`」). 값 — client id · ADFS 주소 ·
+  issuer · 서명 인증서 · `CAPA_PUBLIC_URL` · `JWT_SECRET_KEY` — 과 로그인한 사람의 loginid · 이름 · 부서는 압축본 · 전문 어디에도 옮기지
+  않는다(사외 저장소는 공개라 그 값이 커밋 · 문서로 번지면 지울 수 없다 — `docs/sso_setup.md`).
 
 ### 모듈 — 패키지 요청과 id
 

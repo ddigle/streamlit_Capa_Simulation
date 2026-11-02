@@ -1,4 +1,4 @@
-# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 그 위 서버 시작 점검·모듈 상태를 보인다.
+# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 위의 서버 시작·통합인증 점검·모듈 상태를 보인다.
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
 from capa_simulation.components.source_quality import render_source_quality
+from capa_simulation.components.sso_status import render_sso_status
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -38,6 +39,9 @@ render_page_guide("admin_area", title="Admin Area")
 # C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
 # 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
 render_container_start_check()
+# 통합인증의 설정 판정 · 서명 인증서 · 최근 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도
+# 그리지 않는다(개발·사내 PC 화면 그대로). 값은 싣지 않는다.
+render_sso_status()
 # 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패와 까닭·마지막 오류를 펼침으로 보인다. 사외와
 # `CAPA_MODULES_ROOT=off` 에서는 아무것도 그리지 않는다(DB 를 열지 않는다).
 render_module_status()

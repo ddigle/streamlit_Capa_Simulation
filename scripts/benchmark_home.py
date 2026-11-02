@@ -389,6 +389,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         # AppTest 의 app.py 가 임시 DB 로 예약 스레드를 세우지 않는다.
         stack.enter_context(patch.dict(os.environ))
         os.environ.pop("CAPA_AUTO_OFFICIAL_UPDATE", None)
+        # 통합인증 환경변수도 뺀다 — 운영 창(`ADFS_CLIENT_ID` 가 든 환경)에서 돌려도 AppTest 의
+        # app.py 가 「문지기 없이 시작됨」 으로 멈추지 않고 HOME 을 잰다(통합인증 꺼짐).
+        from capa_simulation.auth.names import SSO_ENVIRONMENT
+
+        for name in SSO_ENVIRONMENT:
+            os.environ.pop(name, None)
         started_at = perf_counter()
         # 사본은 이름·경로·행 수를 찍지 않는다 — 출력이 리뷰 문서로 나간다.
         sample = (

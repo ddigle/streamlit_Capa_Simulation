@@ -103,6 +103,14 @@ def test_the_set_is_deduplicated_and_ordered() -> None:
         "data/temp/scratch.csv",
         "data/modules/demo/a.csv",
         "Data/Modules/demo/a.csv",
+        "cert/token-signing.cer",
+        "keys/private.pem",
+        "config/sso.key",
+        "certs/idp.CRT",
+        "certs/store.p12",
+        "certs/store.pfx",
+        "certs/idp.der",
+        "certs/store.jks",
     ],
 )
 def test_forbidden_files_are_caught(path: str) -> None:

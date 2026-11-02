@@ -669,8 +669,13 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     [expander] = _start_check_expanders(app)
     assert "실패" in expander
     [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
-    assert steps.value["결과"].tolist() == ["실패", "정상", "정상"]
+    # 넷째 줄 「통합인증」 은 결과 파일이 아니라 지금 설정에서 판정한다(시험 환경은 꺼짐).
+    assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀"]
+    assert steps.value["단계"].iloc[3] == "통합인증"
+    assert steps.value["까닭"].iloc[3] == "ADFS_CLIENT_ID 없음"
     assert "pip 종료 코드 1" in steps.value["까닭"].iloc[0]
+    # 옛 결과 파일에는 통합인증 칸이 없어 그 캡션도 없다.
+    assert not [c.value for c in app.caption if "시작 때 있던 통합인증" in c.value]
     assert any("No matching distribution" in block.value for block in app.code)
     assert any("fa\\*\\*\\*" in caption.value for caption in app.caption)
     assert [tab.label for tab in app.main.tabs] == [

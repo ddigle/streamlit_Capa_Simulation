@@ -10,7 +10,8 @@ MIGRATION_CATALOG = PROJECT_ROOT / "docs" / "migration_catalog.md"
 
 
 def _source_files() -> list[Path]:
-    files = [PROJECT_ROOT / "app.py"]
+    # 루트의 파이썬 파일 전부(`app.py` · 운영 진입점 `capa_server.py`).
+    files = sorted(PROJECT_ROOT.glob("*.py"))
     for directory in SOURCE_DIRECTORIES:
         files.extend(
             path
