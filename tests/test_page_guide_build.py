@@ -1167,6 +1167,53 @@ def test_fingerprint_is_the_sorted_compact_json_sha256_head() -> None:
     assert core.seal({"seal": "x", "b": [1, None], "a": "가"}) == expected
 
 
+def test_a_move_of_up_to_the_tolerance_is_not_a_change_for_boxes_and_frames() -> None:
+    def record(shift: int) -> dict[str, Any]:
+        return {
+            "f": [[shift, 10, 460, 250]],
+            "t": {"a@s": [40 + shift, 50, 220, 40]},
+            "sk": "0" * 12,
+            "tx": "0" * 12,
+            "pl": "0" * 12,
+        }
+
+    edge = core.MOVE_TOL_PX
+    assert core._place_reasons(record(0), record(edge)) == ([], edge)
+    assert core._place_reasons(record(0), record(edge + 1)) == (["상자 a@s", "틀"], edge + 1)
+
+
+def test_keys_outside_the_script_or_on_data_places_are_named_before_writing() -> None:
+    layout = "step:proc_filter.apply"
+    record = {"f": [], "t": {"pf_apply@04_procfilter_open": None}, "sk": "", "tx": "", "pl": ""}
+    document = {
+        "places": {
+            layout: record,
+            "step:proc_filter.nowhere": record,
+            "step:bn_drill.pick_cell": {**record, "t": {}},
+            "step:proc_filter.open": {**record, "t": {"pf_apply@04_procfilter_open": None}},
+        }
+    }
+
+    assert core.accepted_key_problems(SKELETON, document) == [
+        "step:proc_filter.nowhere",
+        "pf_apply@04_procfilter_open",
+        "step:bn_drill.pick_cell",
+        "pf_apply@04_procfilter_open",
+    ]
+
+
+def test_accepted_record_refuses_a_place_outside_the_script(
+    tmp_path: Path, example_dir: Path
+) -> None:
+    shots, _run = core.board_shots(SKELETON, _internal_work(tmp_path))
+    report = core.compare_accepted(SKELETON, SKELETON.content, shots, (None, "없음"))
+    report.records["step:proc_filter.nowhere"] = report.records["step:proc_filter.apply"]
+    report.order.append("step:proc_filter.nowhere")
+
+    with pytest.raises(ValueError):
+        core.accepted_record(SKELETON, report, shots, date=DATE)
+
+
 def test_data_shaped_keeps_the_measured_names() -> None:
     """2026-11-02 사외 측정(합성 시드를 바꾼 판 둘) — 움직인 이름은 데이터 자리로 남고, 두 판
     모두에서 Δ0 이던 LOB_CHART · LOB_LABEL 만 뺐다. 목록을 줄이려면 다시 재고 이 시험을 고친다."""
@@ -1401,6 +1448,7 @@ def test_checker_compares_with_the_accepted_board_and_lists_only_data_places(des
     ("spoil", "reason"),
     [
         ("json", "JSONDecodeError"),
+        ("empty", "JSONDecodeError"),
         ("extra", "형식"),
         ("form", "형식"),
         ("seal", "봉인"),
@@ -1413,6 +1461,8 @@ def test_a_baseline_that_cannot_be_used_is_dropped_with_na_and_exit_0(
     desk.write_baseline()
     if spoil == "json":
         desk.accepted.write_text("{not json", encoding="utf-8")
+    elif spoil == "empty":
+        desk.accepted.write_bytes(b"")
     elif spoil == "extra":
         desk.rewrite(text="화면 글")
     elif spoil == "form":
@@ -1732,6 +1782,36 @@ def test_data_places_leave_no_coordinates_in_the_board(desk: Desk) -> None:
         assert again.changed[where] == "데이터 자리"
 
 
+def test_a_place_that_became_a_data_place_is_dropped_from_the_board(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 앞 기준은 PF_TILES 가 데이터 표적이 아니던 판 — 사외가 DATA_SHAPED 에 이름을 더한 다음 회차
+    with monkeypatch.context() as earlier:
+        earlier.setattr(core, "DATA_SHAPED", core.DATA_SHAPED - {"PF_TILES"})
+        assert desk.accept().code == checker.EXIT_OK
+    grown = core.data_places(SKELETON) - {"thumb:proc_filter", "step:proc_filter.toggle"}
+    assert {"thumb:proc_filter", "step:proc_filter.toggle"} <= set(desk.baseline()["places"])
+    assert not grown & set(desk.baseline()["places"])
+
+    result = desk.accept()
+
+    assert result.code == checker.EXIT_OK
+    assert result.changed["step:proc_filter.toggle"] == "데이터 자리"
+    assert not core.data_places(SKELETON) & set(desk.baseline()["places"])
+
+
+@pytest.mark.parametrize("field", ["skeleton", "date"])
+def test_a_baseline_version_or_date_with_a_line_break_is_dropped(desk: Desk, field: str) -> None:
+    # 형식 pattern 의 `$` 는 끝 줄바꿈을 받는다 — stderr 첫 줄에 찍는 두 값은 코드가 한 번 더 본다
+    desk.write_baseline()
+    desk.rewrite(**{field: desk.baseline()[field] + "\n"})
+
+    result = desk.check()
+
+    assert result.code == checker.EXIT_OK and "; 바뀜 na; " in result.line
+    assert "  기준 버림 — 형식 — 모든 자리" in result.err.splitlines()
+
+
 @pytest.mark.parametrize("place", ["outside", "no_git", "linked", "missing"])
 def test_accept_refuses_a_place_that_is_not_review_guide_of_a_repository(
     desk: Desk, place: str
@@ -1763,6 +1843,23 @@ def test_accept_refuses_a_place_that_is_not_review_guide_of_a_repository(
     assert not target.exists() and not list(desk.root.rglob(core.ACCEPTED_FILE))
 
 
+@pytest.mark.parametrize("linked", ["file", "folder"])
+def test_accept_refuses_a_board_linked_to_another_repository(desk: Desk, linked: str) -> None:
+    # 이름 셋(review · guide · accepted.json)과 뿌리 검사는 맞는 다른 저장소 — 연결 검사만 막는다
+    other = _review_repo(desk.root / "other") / "review" / "guide" / core.ACCEPTED_FILE
+    if linked == "file":
+        desk.accepted.symlink_to(other)
+    else:
+        desk.accepted.parent.rmdir()
+        desk.accepted.parent.symlink_to(other.parent, target_is_directory=True)
+
+    result = desk.accept()
+
+    assert result.code == checker.EXIT_NOT_READY
+    assert result.out.strip() == "기준을 쓰지 않았습니다 — 자리가 아님"
+    assert not other.exists()
+
+
 def test_accept_needs_all_four_paths(desk: Desk, capsys: pytest.CaptureFixture[str]) -> None:
     code = checker.main(
         ["--work", str(desk.work), "--params", str(desk.params)]
@@ -1782,9 +1879,12 @@ def test_accept_needs_all_four_paths(desk: Desk, capsys: pytest.CaptureFixture[s
         ("no_stamp", "조립 기록 없음"),
         ("shots_after", "조립 뒤 바뀜"),
         ("overrides_after", "조립 뒤 바뀜"),
+        ("plan_after", "조립 뒤 바뀜"),
     ],
 )
-def test_accept_refuses_and_keeps_the_old_board(desk: Desk, spoil: str, reason: str) -> None:
+def test_accept_refuses_and_keeps_the_old_board(
+    desk: Desk, spoil: str, reason: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     desk.accept()
     old = desk.accepted.read_bytes()
     desk.edit(LAYOUT, y=30.0)
@@ -1800,6 +1900,11 @@ def test_accept_refuses_and_keeps_the_old_board(desk: Desk, spoil: str, reason: 
         (desk.work / core.ASSEMBLED_FILE).unlink()
     elif spoil == "shots_after":
         desk.edit(LAYOUT, x=5.0)
+    elif spoil == "plan_after":
+        # 조립 뒤 계획만 바뀜(note 는 촬영 동작 지문에 들지 않지만 도장에는 든다)
+        plan = copy.deepcopy(dict(SKELETON.plan))
+        plan["states"][0]["note"] = "조립 뒤에 고친 메모"
+        monkeypatch.setattr(core, "load_skeleton", lambda *_a, **_k: _skeleton_with(plan=plan))
     else:
         desk.write_overrides(text={"proc_filter.apply.do": "조립 뒤에 고친 문장"})
 
