@@ -17,7 +17,7 @@ from starlette.requests import cookie_parser
 
 from capa_simulation.auth import runtime
 from capa_simulation.auth.config import SsoConfig
-from capa_simulation.auth.tokens import SsoReject, verify_session
+from capa_simulation.auth.tokens import SESSION_LEEWAY, SsoReject, verify_session
 
 
 @dataclass(frozen=True)
@@ -73,6 +73,19 @@ def identity_from_cookies(
         exp=claims.exp,
         jti=claims.jti,
     )
+
+
+def session_problem(identity: Identity, now: int) -> IdentityProblem | None:
+    """이미 검증한 신원이 지금도 유효한가 — 만료(세션 토큰 검증과 같은 여유)와 로그아웃 폐기 목록.
+
+    문지기가 websocket 핸드셰이크 뒤 메시지마다 부른다(서명은 핸드셰이크 때 이미 봤다 — HMAC 을 다시
+    풀지 않는다). 유효하면 `None`.
+    """
+    if now > identity.exp + SESSION_LEEWAY:
+        return IdentityProblem.EXPIRED
+    if runtime.is_revoked(identity.jti):
+        return IdentityProblem.REVOKED
+    return None
 
 
 def identity_from_cookie_header(

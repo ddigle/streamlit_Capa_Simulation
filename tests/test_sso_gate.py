@@ -7,24 +7,25 @@ import sys
 import time
 from collections.abc import MutableMapping
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
-from asgi_driver import App, AsgiResponse, http, websocket_connect
+from asgi_driver import App, AsgiResponse, Message, http, websocket_connect, websocket_talk
 from sso_support import LOGINID, PUBLIC_URL, environ_from_lines, hidden_field, use_config
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route, WebSocketRoute
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import gate, names, runtime
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.gate import SsoGate, is_navigation, origin_allowed
 from capa_simulation.auth.server import sso_middleware, sso_routes
-from capa_simulation.auth.tokens import issue_session, verify_state
+from capa_simulation.auth.tokens import SESSION_LEEWAY, SessionClaims, issue_session, verify_state
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -43,12 +44,28 @@ async def _stream(websocket: WebSocket) -> None:
     await websocket.close()
 
 
+# 메아리 websocket 이 받은 끊김 코드(앱 쪽에서 본 것). 시험마다 비운다.
+ECHO_DISCONNECTS: list[int] = []
+
+
+async def _echo(websocket: WebSocket) -> None:
+    """받은 프레임마다 `echo:` 를 붙여 돌려준다 — Streamlit 의 BackMsg 고리 자리."""
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            await websocket.send_bytes(b"echo:" + data)
+    except WebSocketDisconnect as exc:
+        ECHO_DISCONNECTS.append(exc.code)
+
+
 def gated_app() -> App:
-    """문지기 + 우리 경로 넷 + 앱 자리(모든 http 경로 · `/_stcore/stream` websocket)."""
+    """문지기 + 우리 경로 넷 + 앱 자리(모든 http 경로 · `/_stcore/stream` · 메아리 websocket)."""
     inner = Starlette(
         routes=[
             *sso_routes(),
             WebSocketRoute("/_stcore/stream", _stream),
+            WebSocketRoute("/_stcore/echo", _echo),
             Route("/{rest:path}", _inner, methods=["GET", "HEAD", "POST"]),
         ]
     )
@@ -254,6 +271,113 @@ def test_websocket_with_forged_expired_or_revoked_cookie_is_closed() -> None:
             "closed",
             1008,
         )
+
+
+def _signed_in(cfg: SsoConfig) -> tuple[dict[str, str], SessionClaims]:
+    token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=int(time.time()))
+    return {"cookie": f"{cfg.session_cookie}={token}", **ORIGIN}, issued
+
+
+def _kinds(sent: tuple[Message, ...]) -> list[str]:
+    return [str(message["type"]) for message in sent]
+
+
+def _echoed(sent: tuple[Message, ...]) -> list[bytes]:
+    return [bytes(message["bytes"]) for message in sent if message["type"] == "websocket.send"]
+
+
+def test_open_websocket_keeps_talking_while_the_session_is_valid() -> None:
+    cfg = use_config()
+    headers, _ = _signed_in(cfg)
+    ECHO_DISCONNECTS.clear()
+
+    sent = websocket_talk(
+        gated_app(), "/_stcore/echo", headers=headers, frames=[b"one", b"two", b"three"]
+    )
+
+    assert _kinds(sent)[0] == "websocket.accept"
+    assert _echoed(sent) == [b"echo:one", b"echo:two", b"echo:three"]
+    assert "websocket.close" not in _kinds(sent)
+    assert ECHO_DISCONNECTS == [1000]
+    assert not [event for event in runtime.recent_events() if event.event == "session_closed"]
+
+
+def test_open_websocket_is_closed_on_the_next_message_after_logout() -> None:
+    """다른 탭에서 로그아웃하면 열린 탭의 다음 메시지(콜백 · 프래그먼트 회차 요청)는 앱에 닿지
+    않는다. 핸드셰이크 때만 보면 폐기된 세션의 위젯 콜백이 DB 에 글을 쓴다(검토 실측)."""
+    cfg = use_config()
+    headers, issued = _signed_in(cfg)
+    ECHO_DISCONNECTS.clear()
+
+    def logout_elsewhere(index: int) -> None:
+        if index == 1:
+            runtime.revoke(issued.jti, issued.exp)
+
+    sent = websocket_talk(
+        gated_app(),
+        "/_stcore/echo",
+        headers=headers,
+        frames=[b"before", b"after-logout", b"later"],
+        before_frame=logout_elsewhere,
+    )
+
+    assert _echoed(sent) == [b"echo:before"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert ECHO_DISCONNECTS == [1008], "앱은 끊김을 받는다 — 그 메시지는 넘기지 않는다"
+    closed = [event for event in runtime.recent_events() if event.event == "session_closed"]
+    assert [(event.value("reason"), event.value("loginid")) for event in closed] == [
+        ("revoked", LOGINID)
+    ]
+
+
+def test_open_websocket_is_closed_on_the_next_message_after_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = use_config()
+    headers, issued = _signed_in(cfg)
+    ECHO_DISCONNECTS.clear()
+    later = float(issued.exp + SESSION_LEEWAY + 1)
+
+    def clock_passes_expiry(index: int) -> None:
+        if index == 1:
+            monkeypatch.setattr(gate, "time", SimpleNamespace(time=lambda: later))
+
+    sent = websocket_talk(
+        gated_app(),
+        "/_stcore/echo",
+        headers=headers,
+        frames=[b"before", b"after-expiry"],
+        before_frame=clock_passes_expiry,
+    )
+
+    assert _echoed(sent) == [b"echo:before"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert ECHO_DISCONNECTS == [1008]
+    closed = [event for event in runtime.recent_events() if event.event == "session_closed"]
+    assert [event.value("reason") for event in closed] == ["expired"]
+
+
+def test_expiry_leeway_matches_the_session_cookie_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """문지기의 연결 중 검사는 쿠키 검증(`verify_session`)과 같은 여유를 준다 — 경계에서 둘이 갈리지
+    않는다."""
+    cfg = use_config()
+    headers, issued = _signed_in(cfg)
+    ECHO_DISCONNECTS.clear()
+    edge = float(issued.exp + SESSION_LEEWAY)
+
+    def clock_at_the_edge(index: int) -> None:
+        if index == 1:
+            monkeypatch.setattr(gate, "time", SimpleNamespace(time=lambda: edge))
+
+    sent = websocket_talk(
+        gated_app(),
+        "/_stcore/echo",
+        headers=headers,
+        frames=[b"before", b"at-edge"],
+        before_frame=clock_at_the_edge,
+    )
+
+    assert _echoed(sent) == [b"echo:before", b"echo:at-edge"]
 
 
 def test_origin_allowed_compares_normalised_origins() -> None:

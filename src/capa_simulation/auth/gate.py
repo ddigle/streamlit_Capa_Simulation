@@ -17,6 +17,12 @@
 5. 켜짐: 공개 경로(정확 일치 — 상태 검사와 우리 경로 넷)는 넘기고, 나머지는 세션 쿠키를 검증한다.
    신원이 있으면(websocket 은 Origin 까지 맞으면) 넘기고, 없으면 websocket 은 수락 전 close 1008
    (→ HTTP 403), 최상위 탐색은 IdP 로 302, 그 밖(fetch · iframe · 업로드)은 401.
+6. 넘긴 websocket 은 **브라우저가 보낸 메시지마다** 핸드셰이크 때의 신원을 다시
+   본다(`_WatchedSocket` — 만료 · 로그아웃 폐기 목록). 쿠키는 핸드셰이크 때 한 번 찍혀 그 연결
+   끝까지 같고, Streamlit 은 위젯 콜백을 스크립트 본문보다 먼저 돌리며 프래그먼트 회차(`run_every`
+   포함)에서는 `app.py` 를 아예 돌리지 않는다 — `app.py` 의 두 번째 벽만으로는 만료 · 로그아웃한
+   열린 탭의 콜백 · 프래그먼트가 DB 를 읽고 썼다. 그 요청은 모두 이 연결의
+   `websocket.receive`(BackMsg)로 오므로 여기서 끊는다.
 
 허용 목록은 정확 일치만 쓴다 — 끝 `/` · `//` 변형은 막힘 쪽으로 떨어진다. `/_stcore/` 를 접두로 열지
 않는다.
@@ -26,11 +32,16 @@ from __future__ import annotations
 
 import time
 
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, url_origin
-from capa_simulation.auth.identity import Identity, identity_from_cookie_header, parse_cookie_header
+from capa_simulation.auth.identity import (
+    Identity,
+    identity_from_cookie_header,
+    parse_cookie_header,
+    session_problem,
+)
 from capa_simulation.auth.web import config_page, next_from_scope, start_login, text_response
 
 POLICY_VIOLATION = 1008
@@ -81,6 +92,46 @@ def origin_allowed(origin: str | None, cfg: SsoConfig) -> bool:
     return bool(origin) and bool(expected) and url_origin(origin or "") == expected
 
 
+class _WatchedSocket:
+    """넘긴 websocket 한 연결 — 브라우저가 보낸 메시지마다 핸드셰이크 때의 신원을 다시 본다.
+
+    만료됐거나 로그아웃(폐기 목록)이면 그 메시지를 앱에 넘기지 않는다. 브라우저에는 close 1008 을
+    보내고 앱에는 끊김(`websocket.disconnect`)을 넘긴다 — Streamlit 은 끊긴 세션으로 정리하고, 그 뒤
+    앱이 보내는 것은 버린다. 브라우저는 다시 붙으려 하고 그때 문지기가 쿠키를 다시 본다(재로그인
+    띠는 `components/sso_reconnect.py`). 검사는 시각 비교와 폐기 목록 조회뿐이다 — 메시지마다 서명을
+    다시 풀지 않는다.
+    """
+
+    def __init__(self, identity: Identity, receive: Receive, send: Send) -> None:
+        self._identity = identity
+        self._receive = receive
+        self._send = send
+        self._closed = False
+
+    async def receive(self) -> Message:
+        if self._closed:
+            return {"type": "websocket.disconnect", "code": POLICY_VIOLATION}
+        message = await self._receive()
+        if message.get("type") != "websocket.receive":
+            return message
+        problem = session_problem(self._identity, int(time.time()))
+        if problem is None:
+            return message
+        self._closed = True
+        runtime.record_event("session_closed", reason=problem.value, loginid=self._identity.loginid)
+        try:
+            await self._send({"type": "websocket.close", "code": POLICY_VIOLATION, "reason": ""})
+        except (OSError, RuntimeError):
+            # 브라우저 쪽이 이미 끊겼다 — 앱에 끊김을 넘기는 것은 그대로다.
+            pass
+        return {"type": "websocket.disconnect", "code": POLICY_VIOLATION}
+
+    async def send(self, message: Message) -> None:
+        if self._closed:
+            return
+        await self._send(message)
+
+
 class SsoGate:
     """순수 ASGI 문지기. 만들어지면 「문지기 있음」 표지를 세운다 — 앱 스크립트가 그것으로
     진입 파일 없이 뜬 서버(통합인증이 켜졌는데 문지기가 없음)를 알아챈다."""
@@ -116,8 +167,12 @@ class SsoGate:
         now = int(time.time())
         identity = identity_from_cookie_header(headers.get("cookie"), cfg, now)
         if isinstance(identity, Identity):
-            if kind == "websocket" and not origin_allowed(headers.get("origin"), cfg):
-                await self._close(send)
+            if kind == "websocket":
+                if not origin_allowed(headers.get("origin"), cfg):
+                    await self._close(send)
+                    return
+                watched = _WatchedSocket(identity, receive, send)
+                await self.app(scope, watched.receive, watched.send)
                 return
             await self.app(scope, receive, send)
             return

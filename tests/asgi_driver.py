@@ -5,13 +5,14 @@
 Starlette 의 `TestClient` 는 httpx 가 있어야 하는데 이 저장소의 의존성에는 httpx 가 없다(넣지
 않는다). 그래서 ASGI 앱을 `asyncio` 로 직접 부른다 — 받은 메시지를 모아 상태 · 머리(여러 Set-Cookie)
 · 본문으로 돌려준다. websocket 은 첫 응답 메시지가 `websocket.accept` 인지 `websocket.close` 인지만
-본다(수락 전 닫으면 서버가 핸드셰이크에 HTTP 403 으로 답한다).
+본다(수락 전 닫으면 서버가 핸드셰이크에 HTTP 403 으로 답한다). 핸드셰이크 뒤 메시지를 주고받는
+대화(`websocket_talk`)는 앱이 브라우저로 보낸 메시지를 차례대로 돌려준다.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping, MutableMapping
+from collections.abc import Awaitable, Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
@@ -167,11 +168,9 @@ def websocket_connect(
     return asyncio.run(_websocket(app, target, headers))
 
 
-async def _websocket(
-    app: App, target: str, headers: Mapping[str, str] | None
-) -> str | tuple[str, int]:
+def _websocket_scope(target: str, headers: Mapping[str, str] | None) -> Scope:
     raw_path, query = _split_target(target)
-    scope: Scope = {
+    return {
         "type": "websocket",
         "asgi": {"version": "3.0"},
         "http_version": "1.1",
@@ -185,6 +184,12 @@ async def _websocket(
         "server": ("127.0.0.1", 8581),
         "subprotocols": [],
     }
+
+
+async def _websocket(
+    app: App, target: str, headers: Mapping[str, str] | None
+) -> str | tuple[str, int]:
+    scope = _websocket_scope(target, headers)
     connected = False
     first: asyncio.Future[Message] = asyncio.get_running_loop().create_future()
 
@@ -218,3 +223,62 @@ async def _websocket(
     if message["type"] == "websocket.close":
         return ("closed", int(message.get("code", 1000)))
     raise AssertionError(f"모르는 첫 메시지: {message['type']}")
+
+
+def websocket_talk(
+    app: App,
+    target: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+    frames: Sequence[bytes],
+    before_frame: Callable[[int], None] | None = None,
+) -> tuple[Message, ...]:
+    """핸드셰이크 뒤 `frames` 를 하나씩 보내는 대화 → 앱이 브라우저로 보낸 메시지 차례.
+
+    각 프레임을 보낸 뒤 앱이 무언가 보내거나 끝날 때까지 기다린다. `before_frame(i)` 는 i 번째
+    프레임을 보내기 직전에 불린다(로그아웃 · 시계 넘김을 끼우는 자리). 앱이 연결을 닫았으면 남은
+    프레임은 보내지 않고, 앱이 아직 돌면 끝에 브라우저 쪽 끊김(1000)을 보낸다.
+    """
+    return asyncio.run(_websocket_talk(app, target, headers, frames, before_frame))
+
+
+async def _settle(sent: list[Message], before: int, task: asyncio.Future[None]) -> None:
+    for _ in range(500):
+        if len(sent) > before or task.done():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("websocket 앱이 5초 안에 답하지 않았습니다")
+
+
+async def _websocket_talk(
+    app: App,
+    target: str,
+    headers: Mapping[str, str] | None,
+    frames: Sequence[bytes],
+    before_frame: Callable[[int], None] | None,
+) -> tuple[Message, ...]:
+    scope = _websocket_scope(target, headers)
+    inbox: asyncio.Queue[Message] = asyncio.Queue()
+    inbox.put_nowait({"type": "websocket.connect"})
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        return await inbox.get()
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    task: asyncio.Future[None] = asyncio.ensure_future(app(scope, receive, send))
+    await _settle(sent, 0, task)
+    for index, frame in enumerate(frames):
+        if task.done() or any(message["type"] == "websocket.close" for message in sent):
+            break
+        if before_frame is not None:
+            before_frame(index)
+        before = len(sent)
+        inbox.put_nowait({"type": "websocket.receive", "bytes": frame})
+        await _settle(sent, before, task)
+    if not task.done():
+        inbox.put_nowait({"type": "websocket.disconnect", "code": 1000})
+    await asyncio.wait_for(task, timeout=10)
+    return tuple(sent)

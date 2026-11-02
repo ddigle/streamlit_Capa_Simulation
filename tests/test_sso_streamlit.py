@@ -25,6 +25,7 @@ from capa_simulation.auth.identity import Identity
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
+from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -303,13 +304,32 @@ def real_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     return AppTest.from_file(str(APP_PATH), default_timeout=300)
 
 
+def _record_toolbar_scripts(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
+    """`app.py` 가 테마 버튼 iframe 에 싣는 덧붙임 스크립트를 회차마다 받아 둔다."""
+    import capa_simulation.components.theme_toggle as theme_toggle
+
+    seen: list[tuple[str, ...]] = []
+    original = theme_toggle.render_theme_toggle
+
+    def record(extra_scripts: tuple[str, ...] = ()) -> None:
+        seen.append(tuple(extra_scripts))
+        original(extra_scripts)
+
+    monkeypatch.setattr(theme_toggle, "render_theme_toggle", record)
+    return seen
+
+
 def test_the_real_app_opens_home_with_the_name_on_the_card(
-    real_app: AppTest, cookies: dict[str, str]
+    real_app: AppTest, cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """켜짐 + 문지기 + 유효 쿠키 → HOME 이 서고 앱 정보 카드 셋째 줄에 이름 · 부서가 있다."""
-    _on(cookies)
+    """켜짐 + 문지기 + 유효 쿠키 → HOME 이 서고 앱 정보 카드 셋째 줄에 이름 · 부서가 있다. 툴바
+    iframe 에는 다시 붙지 못한 탭의 「다시 로그인」 띠 스크립트가 실린다."""
+    cfg, _ = _on(cookies)
+    toolbar = _record_toolbar_scripts(monkeypatch)
 
     app = real_app.run()
+
+    assert toolbar and toolbar[-1][-1] == reconnect_script(cfg)
 
     assert not list(app.exception), [element.message for element in app.exception]
     stops = {*sso_identity._PROBLEM_NOTICES.values(), sso_identity.ACCOUNT_CHANGED_NOTICE}
@@ -333,3 +353,17 @@ def test_the_real_app_stops_when_started_without_the_gate(
     assert not list(app.exception), [element.message for element in app.exception]
     assert [error.value for error in app.error] == [sso_identity.NO_GATE_NOTICE]
     assert not list(app.main.tabs)
+
+
+def test_the_real_app_off_keeps_the_toolbar_scripts(
+    real_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """꺼짐(`ADFS_CLIENT_ID` 없음)이면 툴바 iframe 에 띠 스크립트를 싣지 않는다(내용이 그대로)."""
+    use_config(drop=[names.ENV_CLIENT_ID])
+    toolbar = _record_toolbar_scripts(monkeypatch)
+
+    app = real_app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert toolbar
+    assert not [script for script in toolbar[-1] if BANNER_ID in script]
