@@ -18,6 +18,8 @@ from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
 from capa_simulation import module_failures, module_registry
+from capa_simulation.auth import names as sso_names
+from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
     equipment_master_grid,
     page_tabs,
@@ -112,6 +114,21 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)를 지우고 통합인증 프로세스 상태를 비운다.
+
+    C-DEP 처럼 `ADFS_CLIENT_ID` 가 있는 창에서 pytest 를 돌리면 진짜 `app.py` 를 도는 AppTest 가
+    「문지기 없이 시작됨」 으로 멈추고, 앞 시험이 읽어 둔 설정 · 로그아웃 폐기 목록이 뒤 시험에
+    남는다. 통합인증이 필요한 시험은 `tests/sso_support.py` 의 `use_config` 로 따로 세운다.
+    """
+    for name in sso_names.SSO_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    sso_runtime.reset()
+    yield
+    sso_runtime.reset()
 
 
 @pytest.fixture(autouse=True)
