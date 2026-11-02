@@ -99,6 +99,8 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     assert "location.href =" not in script and "top.location" not in script
     # 띠는 Streamlit 의 연결 오류 창(모달 배경)보다 위에 선다.
     assert "z-index:2147483647" in script
+    # 그 창(react-aria 모달)은 바깥을 inert 로 만든다 — 띠는 react-aria 의 제외 표지를 단다.
+    assert 'box.setAttribute("data-react-aria-top-layer", "")' in script
     assert 'link.target = "_self"' in script
 
 

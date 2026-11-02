@@ -19,8 +19,10 @@ Streamlit 이 스스로 다시 붙으므로 아무것도 하지 않는다. 다�
 **자동으로 IdP 로 보내지 않는다.** 로그아웃은 이 브라우저의 앱 로그인을 끝내는 일이다 — 열어 둔
 다른 탭이 `run_every` 프래그먼트 회차나 클릭 하나로 저절로 다시 로그인하면 로그아웃이 조용히
 되돌려진다. 사람이 띠를 읽고 「다시 로그인」 을 누른다(만료 멈춤 화면과 같은 안내 — 다시 로그인하면
-저장하지 않은 편집은 사라진다). 띠는 Streamlit 의 연결 오류 창보다 위에 선다(창의 배경이 누름을
-막지 않게).
+저장하지 않은 편집은 사라진다). 띠는 Streamlit 의 연결 오류 창보다 위에 선다(z-index). 그 창은
+react-aria 모달이라 열리는 동안 바깥 요소를 `inert` 로 만든다 — 그러면 띠가 보여도 누름이 창으로
+떨어진다(브라우저 실측). react-aria 가 비워 두는 표지 `data-react-aria-top-layer` 를 띠에 달아 그
+대상에서 뺀다.
 
 링크는 `CAPA_PUBLIC_URL` 바탕의 `/auth/sso/login?next=<지금 경로 + 질의>` 다 — 경로에서 공개 주소의
 경로 접두(WebIDE `/proxy/<포트>`)를 떼는 것은 `sso_identity.return_path` 와 같은 규칙이고, 서버가
@@ -100,6 +102,8 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     var box = doc.createElement("div");
     box.id = %(banner_id)s;
     box.setAttribute("role", "alert");
+    // 연결 오류 창(react-aria 모달)이 바깥을 inert 로 만들 때 이 띠는 빼게 한다.
+    box.setAttribute("data-react-aria-top-layer", "");
     box.style.cssText = %(box_style)s;
     var text = doc.createElement("span");
     text.textContent = %(notice)s;
