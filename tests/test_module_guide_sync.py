@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 지침서가 창구·점검 규칙·뼈대·예시·점검 출력·환경변수·권한 설정과 같은지 본다.
+# Purpose: 사내 모듈 지침서가 창구·규칙·뼈대·예시·출력·환경변수·권한·사람용 안내서와 같은지 본다.
 
 """지침서(`docs/module_guide.md`)와 코드 맞대기.
 
@@ -6,7 +6,8 @@
 이름·예시·출력이 코드와 어긋나면 그 어긋남이 사내에서 처음 드러난다. 그래서 지침서에 옮겨 적은 것
 가운데 코드로 따질 수 있는 것은 여기서 코드에 댄다 — 창구 이름(부록 A), 규칙 번호(부록 B ·
 4장 · 7장), 뼈대 화면(3-7), 예시 모듈(3-8 · 3-9 — 정적 규칙을 통과해야 한다), 점검 출력 꼴(부록 B),
-환경변수(9-2), 담당자 클론 설정(8-4)과 배포 적용 템플릿.
+환경변수(9-2), 담당자 클론 설정(8-4)과 배포 적용 템플릿. 담당자(사람)가 읽는 안내서
+(`docs/module_colleague_guide.md`)는 첫 지시 블록이 지침서 0장과 같은지만 본다.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from capa_simulation import module_api, module_registry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GUIDE_PATH = PROJECT_ROOT / "docs" / "module_guide.md"
+COLLEAGUE_GUIDE_PATH = PROJECT_ROOT / "docs" / "module_colleague_guide.md"
 SETTINGS_TEMPLATE = PROJECT_ROOT / "docs" / "internal_claude_settings.json"
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
@@ -408,6 +410,18 @@ def test_the_first_instruction_and_upload_section_go_through_a_pull_request() ->
     assert "git switch -c module/<id>/<주제>" in upload and "Squash and merge" in upload
     assert "런북 4-6" in upload and "### 4-6. 사내 모듈 PR 점검" in runbook
     assert "안 되면 자기 폴더만 바꾸는 직접 커밋" not in _section("8-3.")
+
+
+def test_the_colleague_guide_hands_over_the_first_instruction_unchanged() -> None:
+    """담당자는 첫 지시를 사람용 안내서(3장)에서 복사해 붙인다 — 그 블록이 지침서 0장과 한 글자라도
+    다르면 옛 지시가 에이전트에게 간다. 지침서 0장을 고치면 안내서 3장의 블록도 같은 글로 고친다.
+    안내서의 그 밖의 글에는 「사내」 를 쓰지 않는다(2026-11-03 사용자 — 앱은 회사 안에서 쓰는 것이
+    기본이라 「사내 모듈」 은 「모듈」 이다)."""
+    colleague = COLLEAGUE_GUIDE_PATH.read_text(encoding="utf-8")
+    first_order = _blocks(_section("0. 에이전트에게"), "text")[0]
+
+    assert _blocks(colleague, "text").count(first_order) == 1
+    assert "사내" not in colleague.replace(first_order, "")
 
 
 def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:
