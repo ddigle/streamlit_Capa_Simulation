@@ -1,0 +1,247 @@
+.eg-tb-find {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.eg-tb-q {
+  width: 180px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--eg-border-strong);
+  border-radius: 6px;
+  background: var(--eg-surface);
+  outline: none;
+}
+
+.eg-tb-q:focus {
+  border-color: var(--eg-accent);
+  box-shadow: 0 0 0 1px var(--eg-accent);
+}
+
+.eg-tb-q::placeholder {
+  color: var(--eg-muted);
+}
+
+.eg-tb-count {
+  min-width: 48px;
+  font-size: 12px;
+  color: var(--eg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.eg-tb-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--eg-border);
+  border-radius: 6px;
+  background: var(--eg-surface);
+  font-size: 12px;
+  line-height: 26px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eg-tb-btn:hover {
+  background: var(--eg-subtle);
+  border-color: var(--eg-border-strong);
+}
+
+.eg-tb-btn:focus-visible {
+  outline: 2px solid var(--eg-accent);
+  outline-offset: 1px;
+}
+
+.eg-tb-btn.is-off {
+  color: var(--eg-muted);
+  background: var(--eg-surface);
+  border-color: var(--eg-border);
+  cursor: default;
+}
+
+.eg-tb-btn.is-busy {
+  cursor: progress;
+}
+
+.eg-tb-btn.is-busy::after {
+  content: "…";
+}
+
+.eg-tb-btn[aria-pressed="true"] {
+  background: var(--eg-selected-fill);
+  border-color: var(--eg-accent);
+}
+
+.eg-tb-icon {
+  min-width: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.eg-tb-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--eg-border);
+}
+
+.eg-c.is-match:not(.is-sel) {
+  background-color: var(--eg-match-fill);
+}
+
+.eg-c.is-match-now {
+  box-shadow: inset 0 0 0 2px var(--eg-warn-line);
+}
+
+.eg-edge {
+  z-index: 1;
+  cursor: col-resize;
+}
+
+.eg-edge:hover {
+  background: var(--eg-accent);
+}
+
+.eg-frame.has-drawer .eg-scroll,
+.eg-frame.has-drawer .eg-empty {
+  margin-right: calc(min(320px, 60%) + 6px);
+}
+
+.eg-drawer {
+  position: absolute;
+  z-index: 7;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 60%);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--eg-border-strong);
+  border-radius: 6px;
+  background: var(--eg-surface);
+  overflow: hidden;
+}
+
+.eg-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 4px 2px 8px;
+  border-bottom: 1px solid var(--eg-border-strong);
+  background: var(--eg-header);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eg-drawer-head .eg-tb-btn {
+  border-color: transparent;
+  background: transparent;
+}
+
+.eg-drawer-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.eg-chg {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--eg-border);
+}
+
+.eg-chg.is-pending {
+  opacity: 0.5;
+}
+
+.eg-chg-go {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eg-chg-go:hover,
+.eg-chg-go:focus-visible {
+  background: var(--eg-subtle);
+  outline: none;
+}
+
+.eg-chg-where {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--eg-muted);
+}
+
+.eg-chg-val {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eg-chg-old {
+  color: var(--eg-muted);
+}
+
+.eg-chg.is-bad .eg-chg-new {
+  color: var(--eg-error-line);
+  font-weight: 700;
+}
+
+.eg-drawer-list .eg-chg-x {
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--eg-muted);
+}
+
+.eg-drawer-list .eg-chg-x:hover {
+  color: var(--eg-error-line);
+  background: var(--eg-subtle);
+}
+
+.eg-drawer-more,
+.eg-drawer-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--eg-muted);
+}
+
+.eg-dialog {
+  width: calc(100vw - 16px);
+  height: calc(100vh - 16px);
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--eg-border-strong);
+  border-radius: 8px;
+  background: var(--eg-surface);
+  color: var(--eg-text);
+  overflow: hidden;
+}
+
+.eg-dialog::backdrop {
+  background: color-mix(in srgb, var(--eg-text) 40%, transparent);
+}
+
+@media print {
+  .eg-toolbar,
+  .eg-drawer {
+    display: none;
+  }
+}
