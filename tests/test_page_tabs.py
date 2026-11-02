@@ -7,6 +7,7 @@ data 를 보고, 누름은 두 겹으로 잰다 — 콜백 함수는 가짜 세�
 
 from __future__ import annotations
 
+import json
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -768,3 +769,32 @@ def test_the_scenario_management_tab_is_remembered_across_a_tab_round_trip(
 
     assert app.session_state[remembered_tab_key(key)] == query
     assert app.session_state[key] == query
+
+
+# ------------------------------------------------------------------ 사내 모듈 화면
+
+
+def test_a_module_page_becomes_a_tab_without_server_paths(
+    _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from capa_simulation import module_registry, settings
+
+    monkeypatch.setenv(
+        module_registry.ROOT_ENV_VAR, str(PROJECT_ROOT / "tests" / "fixtures" / "modules")
+    )
+    page = "tests/fixtures/modules/demo_ok/demo_ok_page.py"
+    app = _ok(_app.run())
+    _ok(app.switch_page(page).run())
+
+    assert _ids(sent) == [H, page]
+    tab = _tab(sent, page)
+    assert (tab["label"], tab["icon"], tab["href"]) == (
+        "데모 화면",
+        "extension",
+        "mod-demo_ok-main",
+    )
+    data = _data(sent)
+    assert data["active"] == page
+    assert data["pages"]["mod-demo_ok-main"] == "데모 화면"
+    assert len(data["pages"]) == len(ALL_SPECS) + 5
+    assert str(settings.PROJECT_ROOT) not in json.dumps(data, ensure_ascii=False)

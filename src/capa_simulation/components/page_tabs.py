@@ -85,13 +85,13 @@ from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, REVI
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
-    ALL_SPECS,
     AVAILABLE_EQUIPMENT_STATUS,
     HOME,
     SCENARIO_MANAGEMENT,
     SPACE_STATUS,
     NavigationPages,
     PageSpec,
+    runtime_specs,
 )
 from capa_simulation.page_tabs_state import (
     LIMIT_NOTICE,
@@ -103,6 +103,7 @@ from capa_simulation.page_tabs_state import (
     pinned_to,
     pop_fresh_notice,
     queue_switch,
+    spec_for_path,
     store_strip,
     switch_to_queued_tab,
     tab_label,
@@ -146,7 +147,6 @@ TEXT = {
     "returned": RETURN_NOTICE,
     "themed": THEME_RETURN_NOTICE,
 }
-_SPECS: dict[str, PageSpec] = {spec.path: spec for spec in ALL_SPECS}
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
 # Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름 — 편집표 몫과 같은
@@ -253,7 +253,7 @@ def tabs_data(
     """
     tabs = []
     for path in strip.paths:
-        spec = _SPECS.get(path)
+        spec = spec_for_path(path)
         if spec is None:
             continue
         note = marks.get(path, "")
@@ -277,7 +277,9 @@ def tabs_data(
         "leave": leave,
         "notice": None if notice is None else {"id": notice[0], "text": notice[1]},
         "max": MAX_TABS,
-        "pages": {hrefs[path]: tab_label(spec) for path, spec in _SPECS.items() if path in hrefs},
+        "pages": {
+            hrefs[spec.path]: tab_label(spec) for spec in runtime_specs() if spec.path in hrefs
+        },
         "palette": {"pending": tokens.PENDING_MARK},
         "text": TEXT,
     }

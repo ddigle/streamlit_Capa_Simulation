@@ -18,8 +18,9 @@ dependencies = [
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.
     "pydantic>=2.9,<3",
     # 마이너 하나에 묶는다. 화면이 `persist_state`·`st.container(horizontal=)`·fragment 같은
-    # 최신 위젯 API 에 기대고 있어 마이너가 오르면 배치가 바뀔 수 있다. 사내에는 락을
-    # 보내지 않으므로 개발·사내를 같은 버전으로 묶는 수단이 이 범위뿐이다.
+    # 최신 위젯 API 에 기대고 있어 마이너가 오르면 배치가 바뀔 수 있다. 락(`uv.lock`)과 그 그림자
+    # `requirements.txt` 도 배포 ZIP 에 실려 사내에 그대로 가지만(`build_deploy_package` 의
+    # `EXCLUDED_FILES` 는 비어 있다), `uv lock --upgrade` 한 번에 마이너가 넘어가지 않게 범위로도 묶는다.
     "streamlit>=1.63,<1.64",
     "xlwings>=0.33,<1",
 ]
@@ -56,7 +57,11 @@ line-length = 100
 target-version = "py310"
 # `review/` 는 사내가 쓰는 리뷰 문서 자리다. ruff 0.16 은 Markdown 의 ```python 블록까지 포맷 검사해서
 # 사내 리뷰 문서 하나가 4대 관문을 떨어뜨렸다(202610061748 리뷰). 코드가 아니므로 검사에서 뺀다.
-extend-exclude = [".venv*", "review"]
+# `./modules` 는 사내에만 있는 사내 모듈 자리(`modules/<id>/`)다. 코어 관문 수가 사내·사외에서 같게
+# 빼고, 모듈은 `scripts/check_module.py` 가 경로를 직접 주어 같은 규칙으로 따로 본다. 반드시 `./` 를
+# 붙인다 — 맨 `modules` 는 모든 깊이를 빼서 `tests/fixtures/modules/` 견본까지 검사 밖으로 나간다
+# (`tests/test_repository_hygiene.py` 가 고정한다).
+extend-exclude = [".venv*", "review", "./modules"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

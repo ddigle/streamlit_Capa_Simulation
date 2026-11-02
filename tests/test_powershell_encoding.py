@@ -21,7 +21,11 @@ cp949 라, BOM 없이 UTF-8 로 저장한 `.ps1` 안의 한글이 **파일을 �
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+from test_repository_hygiene import _core_tracked
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BOM = b"\xef\xbb\xbf"
@@ -30,7 +34,15 @@ LF = "\n"
 
 
 def _powershell_files() -> list[Path]:
-    """저장소가 **소유한** `.ps1` 만. `rglob` 은 `.venv` 안의 `activate.ps1` 까지 훑는다."""
+    """저장소가 **소유한** `.ps1` 만. `rglob` 은 `.venv` 안의 `activate.ps1` 까지 훑는다.
+
+    사내에만 생기는 최상위(`review/`·`.deploy/`·사내 모듈 `modules/`)는 뺀다 — 모듈의 `.ps1` 은
+    `scripts/check_module.py` 가 막는 것이고, 여기서 보면 **사내에서만** 코어 관문이 깨진다.
+    """
+    return [PROJECT_ROOT / path for path in _core_tracked(_tracked_powershell())]
+
+
+def _tracked_powershell() -> list[str]:
     completed = subprocess.run(
         ["git", "ls-files", "*.ps1"],
         cwd=PROJECT_ROOT,
@@ -39,7 +51,25 @@ def _powershell_files() -> list[Path]:
         text=True,
         encoding="utf-8",
     )
-    return [PROJECT_ROOT / line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def test_internal_only_powershell_files_are_left_to_their_owners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracked = [
+        "scripts/new_worktree.ps1",
+        "modules/demo/run.ps1",
+        "Modules/demo/run.ps1",
+        "review/run.ps1",
+        "tests/fixtures/modules/demo/run.ps1",
+    ]
+    monkeypatch.setattr(sys.modules[__name__], "_tracked_powershell", lambda: tracked)
+
+    assert _powershell_files() == [
+        PROJECT_ROOT / "scripts/new_worktree.ps1",
+        PROJECT_ROOT / "tests/fixtures/modules/demo/run.ps1",
+    ]
 
 
 def test_powershell_scripts_start_with_a_byte_order_mark() -> None:

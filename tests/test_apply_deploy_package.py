@@ -22,6 +22,7 @@ from apply_deploy_package import (  # noqa: E402
     describe_plan,
     describe_reconcile,
     digest_mismatches,
+    is_preserved,
     is_protected,
     member_problems,
     order_problems,
@@ -118,16 +119,12 @@ def test_directory_placeholders_in_the_archive_are_not_refused() -> None:
 def test_the_current_deploy_set_passes_the_member_checks() -> None:
     """규칙이 아니라 지금 빌더가 보낼 실제 목록으로 확인한다 — 정상 배포가 멈추면 안 된다.
 
-    사내 전용 자리는 뺀다. 사내 저장소는 `review/` 를 추적하고, 빌더는 그 자리를 따로
-    (`internal_only_entries`) 막아 ZIP 에 싣지 않는다.
+    사내 전용 자리는 뺀다. 사내 저장소는 `review/`·`modules/` 를 추적하고, 빌더는 그 자리를 따로
+    (`internal_only_entries` — 대소문자를 가리지 않는다) 막아 ZIP 에 싣지 않는다.
     """
     from build_deploy_package import deploy_set, tracked_files
 
-    shipped = [
-        path
-        for path in deploy_set(tracked_files(PROJECT_ROOT))
-        if not path.startswith(PRESERVED_PREFIXES)
-    ]
+    shipped = [path for path in deploy_set(tracked_files(PROJECT_ROOT)) if not is_preserved(path)]
 
     assert member_problems(shipped) == []
 
@@ -369,10 +366,25 @@ def test_the_two_deploy_scripts_agree_on_what_is_untouchable() -> None:
         "data/capa_simulation.duckdb.sync.json",
         "data/output/result.csv",
         "data/temp/scratch.csv",
+        "data/modules/demo/a.csv",
     ):
         assert forbidden_entries([path]) == [path], path
         assert is_protected(path), path
         assert member_problems([path]), path
+
+    # 사내 전용 자리는 대소문자와 상관없이 양쪽이 같은 말을 한다 — 빌더는 싣지 않고 적용기는 지우지
+    # 않는다. 빌더의 대조는 경로만 소문자로 바꾸므로 목록에 대문자를 섞어 적으면 그 항목만 조용히
+    # 아무것도 막지 않는다.
+    from build_deploy_package import internal_only_entries
+
+    assert all(prefix == prefix.lower() for prefix in INTERNAL_ONLY_PREFIXES)
+    assert all(prefix == prefix.lower() for prefix in PRESERVED_PREFIXES)
+    for path in ("modules/demo/page.py", "Modules/demo/page.py", "REVIEW/r.md"):
+        assert internal_only_entries([path]) == [path], path
+        assert is_preserved(path), path
+    for path in ("tests/fixtures/modules/demo_ok/demo_ok_page.py", "src/modules/x.py"):
+        assert internal_only_entries([path]) == [], path
+        assert not is_preserved(path), path
 
     for placeholder in ("data/input/.gitkeep", "data/output/.gitkeep", "data/temp/.gitkeep"):
         assert forbidden_entries([placeholder]) == [], placeholder
@@ -763,3 +775,244 @@ def test_the_stop_reason_on_stderr_is_utf8_like_stdout_in_a_cp949_pipe(tmp_path:
 
     assert completed.returncode == 1
     assert "멈췄습니다 — ZIP 을 찾지 못했습니다" in completed.stderr
+
+
+# 사내 모듈 자리(모델 2) — `modules/<id>/` 는 사내가 정본이라 ZIP 이 싣지도 덮지도 지우지도 않는다.
+# 모듈 데이터(`data/modules/<id>/`)는 운영 데이터처럼 어떤 경우에도 지우지 않는다.
+
+
+def test_module_folders_are_never_removed_in_any_spelling() -> None:
+    """추적된 모듈 파일은 ZIP 에 없지만 「사외에서 지워짐」 이 아니다 — `Modules/` 철자도 같다."""
+    tracked = [
+        "app.py",
+        "gone.py",
+        "modules/demo_x/page.py",
+        "modules/demo_x/module.json",
+        "Modules/demo_y/page.py",
+        "tests/fixtures/modules/demo_ok/demo_ok_page.py",
+    ]
+
+    removals = plan_removals(tracked, ["app.py"])
+
+    # 시험 견본은 코어 파일이라 사외에서 지워지면 함께 지운다.
+    assert removals == ["gone.py", "tests/fixtures/modules/demo_ok/demo_ok_page.py"]
+    report = reconcile(
+        tracked,
+        ["modules/demo_z/page.py", "MODULES/demo_z/notes.md", "leftover.py"],
+        ["app.py"],
+    )
+    assert report["사외에서_지워짐"] == [
+        "gone.py",
+        "tests/fixtures/modules/demo_ok/demo_ok_page.py",
+    ]
+    assert report["정체불명"] == ["leftover.py"]
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        ("modules/demo_x/page.py", "사내 전용 자리"),
+        ("Modules/demo_x/page.py", "사내 전용 자리"),
+        ("data/modules/demo_x/a.csv", "운영 데이터"),
+        ("DATA/Modules/demo_x/a.csv", "운영 데이터"),
+    ],
+)
+def test_an_archive_that_would_write_module_places_is_refused(name: str, reason: str) -> None:
+    problems = member_problems([name])
+
+    assert any(reason in problem for problem in problems), (name, problems)
+
+
+def test_tracked_module_data_is_kept_and_named_in_the_plan() -> None:
+    """모듈 데이터가 추적돼 버렸어도 지우지 않고 「주의」 로 알린다(`git rm -r --cached`)."""
+    tracked = ["app.py", "data/modules/demo/x.csv"]
+
+    assert plan_removals(tracked, ["app.py"]) == []
+    assert is_protected("data/modules/demo/x.csv")
+    text = describe_plan({"zip_name": "z.zip", "file_count": 1}, [], ["app.py"], tracked=tracked)
+    assert "! data/modules/demo/x.csv" in text
+    assert "git rm -r --cached" in text
+    assert "modules/" in text.split("보존", 1)[1].splitlines()[0]
+
+
+def _stamped_zip(
+    tmp_path: Path, stamp: str, files: Mapping[str, bytes], *, previous_commit: str = ""
+) -> Path:
+    """stamp 를 고른 배포 ZIP — 두 번 적용하는 흐름에 쓴다."""
+    manifest = {
+        "manifest_version": 1,
+        "stamp": stamp,
+        "zip_name": f"{stamp}.zip",
+        "commit": stamp.ljust(40, "0"),
+        "commit_subject": f"사외 커밋 {stamp}",
+        "previous_commit": previous_commit,
+        "kept_on_target": [],
+        "file_count": len(files),
+        "files": {
+            path: "sha256:" + hashlib.sha256(data).hexdigest() for path, data in files.items()
+        },
+    }
+    path = tmp_path / f"{stamp}.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("DEPLOY_MANIFEST.json", json.dumps(manifest, ensure_ascii=False))
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return path
+
+
+def _repo_with_modules(tmp_path: Path) -> Path:
+    """사내 흉내 저장소에 담당자가 커밋한 모듈 둘(소문자·대문자 뿌리)을 더한다."""
+    root = _internal_repo(tmp_path, None)
+    for path, data in (
+        ("modules/demo_x/module.json", b'{"id": "demo_x"}\n'),
+        ("modules/demo_x/page.py", b"# Purpose: demo\n"),
+        ("Modules/demo_y/page.py", b"# Purpose: upper\n"),
+    ):
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    _repo_git(root, "add", "modules", "Modules")
+    _repo_git(root, "commit", "-q", "-m", "module(demo_x): 새 모듈 뼈대")
+    return root
+
+
+def test_two_applies_keep_committed_and_untracked_module_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """적용 → 담당자 모듈 커밋 → 다음 적용. 모듈은 두 번 다 남고, 추적되며, `deploy:` 커밋에 없다.
+
+    옛 적용기는 추적된 모듈 파일을 「사외에서 지워짐」 으로 지우고 그 삭제를 `deploy:` 커밋에
+    실었다.
+    커밋 전 모듈 파일(추적 안 됨)은 「정체불명」 으로 묻지도 않고 적용을 멈추지도 않는다.
+    """
+    root = _repo_with_modules(tmp_path)
+    untracked = root / "modules" / "demo_z" / "page.py"
+    untracked.parent.mkdir(parents=True)
+    untracked.write_bytes(b"# Purpose: draft\n")
+    # 모듈 밖의 추적 안 된 파일은 지금처럼 「정체불명」 으로 묻는다 — 보존은 `modules/` 아래만이다.
+    (root / "stray.py").write_bytes(b"stray\n")
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    module_files = [
+        "Modules/demo_y/page.py",
+        "modules/demo_x/module.json",
+        "modules/demo_x/page.py",
+    ]
+
+    first = _stamped_zip(tmp_path, "202611010900", {"app.py": b"x = 2\n"})
+    assert apply_deploy_package.main([str(first)]) == 0
+    out = capsys.readouterr().out
+    # 모듈 파일은 지움 계획·「사외에서 지워짐」·「정체불명」 어디에도 이름이 나오지 않는다.
+    assert "modules/demo" not in out.lower()
+    assert "- gone.py" in out
+    assert "정체불명 파일 1개" in out and "? stray.py" in out
+
+    (root / "modules" / "demo_x" / "page.py").write_bytes(b"# Purpose: demo v2\n")
+    _repo_git(root, "add", "modules/demo_x/page.py")
+    _repo_git(root, "commit", "-q", "-m", "module(demo_x): 화면 고침")
+
+    second = _stamped_zip(
+        tmp_path,
+        "202611011700",
+        {"app.py": b"x = 3\n", "src/new.py": b"y = 1\n"},
+        previous_commit="202611010900".ljust(40, "0"),
+    )
+    assert apply_deploy_package.main([str(second)]) == 0
+    capsys.readouterr()
+
+    assert sorted(_repo_git(root, "ls-files", "modules", "Modules").splitlines()) == module_files
+    assert (root / "modules" / "demo_x" / "page.py").read_bytes() == b"# Purpose: demo v2\n"
+    assert (root / "Modules" / "demo_y" / "page.py").is_file()
+    assert untracked.read_bytes() == b"# Purpose: draft\n"
+    assert _repo_git(root, "ls-files", "modules/demo_z") == ""
+    deploys = _repo_git(root, "log", "--format=%H", "--grep=^deploy: ").splitlines()
+    assert len(deploys) == 2
+    for commit in deploys:
+        touched = _repo_git(root, "show", "--name-only", "--format=", commit).lower()
+        assert "modules/" not in touched, touched
+    assert _repo_git(root, "status", "--porcelain", "--untracked-files=no") == ""
+    assert (root / "app.py").read_bytes() == b"x = 3\n"
+    assert _repo_git(root, "ls-files", "gone.py") == ""
+
+
+@pytest.mark.parametrize("staged", [False, True])
+@pytest.mark.parametrize("path", ["modules/demo_x/page.py", "Modules/demo_y/page.py"])
+def test_uncommitted_module_edits_stop_the_apply_with_the_module_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    staged: bool,
+    path: str,
+) -> None:
+    """모듈 아래만 미저장이어도 멈춘다 — 실패 때 되돌리는 `git checkout -- .` 가 모듈 수정을 지운다.
+
+    다른 미저장 변경과 같이 멈추되 말은 모듈 전용이다: 배포 체크아웃에서는 모듈을 고치지 않고,
+    에이전트는 되돌리지 않고 알린다(런북 1-5 · 1-7).
+    """
+    root = _repo_with_modules(tmp_path)
+    edited = b"# Purpose: local edit\n"
+    (root / path).write_bytes(edited)
+    if staged:
+        _repo_git(root, "add", path)
+    head_before = _repo_git(root, "rev-parse", "HEAD")
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    archive = _stamped_zip(tmp_path, "202611010900", {"app.py": b"x = 2\n"})
+
+    assert apply_deploy_package.main([str(archive)]) == 1
+    stderr = capsys.readouterr().err
+    assert "커밋하지 않은 사내 모듈 수정이 1개" in stderr
+    assert "배포 체크아웃에서는 모듈을 고치지 않습니다" in stderr
+    assert "런북 1-7" in stderr
+    assert "되돌리지 않고" in stderr
+    assert path in stderr
+    assert "먼저 커밋하거나 되돌리세요" not in stderr
+    assert (root / path).read_bytes() == edited
+    assert (root / "app.py").read_bytes() == b"x = 1\n"
+    assert (root / "gone.py").is_file()
+    assert _repo_git(root, "rev-parse", "HEAD") == head_before
+    assert not (root / ".deploy" / "applied.json").exists()
+
+
+def test_a_core_edit_beside_a_module_edit_keeps_the_general_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """코어가 섞이면 모듈 말이 아니다 — 지금의 「먼저 커밋하거나 되돌리세요」 그대로다."""
+    root = _repo_with_modules(tmp_path)
+    (root / "modules" / "demo_x" / "page.py").write_bytes(b"# Purpose: local edit\n")
+    (root / "app.py").write_bytes(b"x = 99  # temp fix\n")
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    archive = _stamped_zip(tmp_path, "202611010900", {"app.py": b"x = 2\n"})
+
+    assert apply_deploy_package.main([str(archive)]) == 1
+    stderr = capsys.readouterr().err
+    assert "미저장 변경이 있습니다" in stderr
+    assert "먼저 커밋하거나 되돌리세요" in stderr
+    assert "사내 모듈 수정" not in stderr
+    assert "app.py" in stderr and "modules/demo_x/page.py" in stderr
+    assert (root / "app.py").read_bytes() == b"x = 99  # temp fix\n"
+
+
+@pytest.mark.parametrize("flag", ["--dry-run", "--reconcile-only"])
+def test_a_preview_names_uncommitted_module_edits_but_does_not_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flag: str
+) -> None:
+    root = _repo_with_modules(tmp_path)
+    (root / "modules" / "demo_x" / "page.py").write_bytes(b"# Purpose: local edit\n")
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    archive = _stamped_zip(tmp_path, "202611010900", {"app.py": b"x = 2\n"})
+
+    assert apply_deploy_package.main([str(archive), flag]) == 0
+    out = capsys.readouterr().out
+    assert "주의    커밋하지 않은 모듈 수정 1개 — 이대로는 적용이 멈춥니다(런북 1-5)" in out
+    assert "보기만 했습니다" in out
+
+
+def test_a_preview_without_module_edits_has_no_module_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _repo_with_modules(tmp_path)
+    (root / "app.py").write_bytes(b"x = 99\n")
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    archive = _stamped_zip(tmp_path, "202611010900", {"app.py": b"x = 2\n"})
+
+    assert apply_deploy_package.main([str(archive), "--dry-run"]) == 0
+    assert "커밋하지 않은 모듈 수정" not in capsys.readouterr().out

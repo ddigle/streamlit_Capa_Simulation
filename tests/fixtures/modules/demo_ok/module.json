@@ -1,0 +1,14 @@
+{
+  "id": "demo_ok",
+  "name": "데모 모듈",
+  "api": 1,
+  "owner": "데모 담당",
+  "enabled": true,
+  "maturity": "L0",
+  "description": "합성 데이터로 도는 예시 모듈",
+  "order": 10,
+  "pages": [
+    {"slug": "main", "file": "demo_ok_page.py", "title": "데모 화면", "icon": ":material/extension:", "order": 10},
+    {"slug": "second", "file": "demo_ok_second.py", "title": "데모 둘째", "icon": ":material/widgets:", "order": 20}
+  ]
+}

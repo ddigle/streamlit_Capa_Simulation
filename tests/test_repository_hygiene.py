@@ -15,7 +15,11 @@
 
 import re
 import subprocess
+import sys
+from collections.abc import Iterable
 from pathlib import Path
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,7 +73,10 @@ ALLOWED_TOP_LEVEL = {
 # 위 필수 목록에 넣으면 사외에서 「선언에는 있는데 없다」로 깨지고, 아무 데도 안 적으면
 # **사내에서만** 「선언되지 않은 항목」으로 깨진다 — 사내는 그것을 진짜 결함으로 보아 리뷰에
 # 적고 사외에서는 재현되지 않는다. 이 저장소가 없애려는 바로 그 실패 유형이라 따로 둔다.
-INTERNAL_ONLY_TOP_LEVEL = {".deploy/", "review/"}
+# `modules/` 는 사내 모듈 자리다(모델 2 — 사내가 정본, 사외에는 없다). 모듈 코드는 코어 시험이
+# 아니라 `scripts/check_module.py` 가 본다. **전부 소문자로 적는다**(`_core_tracked` 가 소문자로
+# 견준다).
+INTERNAL_ONLY_TOP_LEVEL = {".deploy/", "review/", "modules/"}
 
 
 def _tracked(pattern: str = "") -> list[str]:
@@ -82,6 +89,40 @@ def _tracked(pattern: str = "") -> list[str]:
         encoding="utf-8",
     )
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _core_tracked(paths: Iterable[str]) -> list[str]:
+    """사내에만 생기는 최상위(`INTERNAL_ONLY_TOP_LEVEL`) 아래를 뺀 추적 목록 — 코어만 남긴다.
+
+    저장소 전체를 훑는 검사가 사내 모듈·리뷰 글까지 읽으면 **사내에서만** 깨진다 — cp949 로 저장한
+    모듈 파일이 UTF-8 읽기를 죽이고, 모듈 글이 코어 문서를 가리켜 「아무도 안 가리키는 문서」 를
+    가린다. 대소문자를 가리지 않는다(Windows 에서 `Modules/…` 로 커밋될 수 있다). 시험 견본
+    `tests/fixtures/modules/` 는 코어라 남는다.
+    """
+    prefixes = tuple(INTERNAL_ONLY_TOP_LEVEL)
+    return [path for path in paths if not path.lower().startswith(prefixes)]
+
+
+def test_core_tracked_drops_only_the_internal_only_top_level() -> None:
+    paths = [
+        "app.py",
+        "modules/demo/page.py",
+        "Modules/demo/page.py",
+        "review/2026.md",
+        ".deploy/applied.json",
+        "tests/fixtures/modules/demo_ok/demo_ok_page.py",
+        "src/capa_simulation/module_api.py",
+        "docs/modules.md",
+    ]
+
+    assert _core_tracked(paths) == [
+        "app.py",
+        "tests/fixtures/modules/demo_ok/demo_ok_page.py",
+        "src/capa_simulation/module_api.py",
+        "docs/modules.md",
+    ]
+    assert "modules/" in INTERNAL_ONLY_TOP_LEVEL
+    assert all(entry == entry.lower() for entry in INTERNAL_ONLY_TOP_LEVEL)
 
 
 def test_agents_does_not_name_modules_that_no_longer_exist() -> None:
@@ -117,7 +158,7 @@ def test_no_source_module_is_left_unreferenced() -> None:
 
     읽는 쪽은 그것이 살아 있는 코드인지 알 수 없어 일단 읽는다. 지울 것은 지워야 한다.
     """
-    py_files = _tracked("*.py")
+    py_files = _core_tracked(_tracked("*.py"))
     sources = {path: (PROJECT_ROOT / path).read_text(encoding="utf-8") for path in py_files}
 
     orphans = []
@@ -193,7 +234,7 @@ def test_every_docs_file_is_reachable_from_somewhere() -> None:
 
     아무도 가리키지 않는 문서는 읽히지 않으면서 낡고, 낡은 채로 남아 읽는 쪽을 오도한다.
     """
-    tracked = _tracked()
+    tracked = _core_tracked(_tracked())
     texts = {
         path: (PROJECT_ROOT / path).read_text(encoding="utf-8", errors="ignore") for path in tracked
     }
@@ -232,9 +273,10 @@ def test_documented_app_launch_lines_name_the_port() -> None:
     """
     missing = [
         f"{path}:{number}: {line.strip()}"
-        for path in _tracked("*.md")
         # 사내 리뷰는 옛 명령을 옮겨 적는 기록이라 보지 않는다(사내만 깨지고 고칠 수도 없다).
-        if path not in _LAUNCH_PORT_EXEMPT and not path.startswith(tuple(INTERNAL_ONLY_TOP_LEVEL))
+        # 사내 모듈 글도 담당자 몫이다.
+        for path in _core_tracked(_tracked("*.md"))
+        if path not in _LAUNCH_PORT_EXEMPT
         for number, line in enumerate(
             (PROJECT_ROOT / path).read_text(encoding="utf-8").splitlines(), start=1
         )
@@ -245,3 +287,74 @@ def test_documented_app_launch_lines_name_the_port() -> None:
         "포트를 적지 않은 앱 실행 줄입니다. `--server.port <번호>` 를 붙입니다"
         "(까닭은 `docs/internal_update_runbook.md` 4-2):\n" + "\n".join(missing)
     )
+
+
+def _ignored(path: str) -> bool:
+    """`.gitignore` 가 그 경로를 무시하는가(추적 여부와 상관없이 규칙만 본다)."""
+    completed = subprocess.run(
+        ["git", "check-ignore", "--no-index", "-q", path],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode in (0, 1), completed.stderr
+    return completed.returncode == 0
+
+
+def test_module_data_is_ignored_but_module_code_is_not() -> None:
+    """사내 모듈 데이터(`data/modules/<id>/`)는 git 밖이고, 모듈 코드(`modules/<id>/`)는 사내가
+    커밋한다 — 무시되면 담당자 커밋이 비고 CD 이미지에 화면이 오르지 않는다."""
+    assert _ignored("data/modules/demo/a.csv")
+    assert _ignored("data/modules/demo/store.duckdb")
+    assert not _ignored("modules/demo/page.py")
+    assert not _ignored("modules/demo/module.json")
+    assert not _ignored("tests/fixtures/modules/demo_ok/demo_ok_page.py")
+
+
+def _ruff_rc(command: str, path: str, source: str) -> int:
+    """저장소 설정으로 `ruff <command>` 가 그 경로의 글을 검사하면 1, 검사 밖이면 0 을 낸다."""
+    extra = ["--check"] if command == "format" else []
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            command,
+            *extra,
+            "--no-cache",
+            "--force-exclude",
+            "--stdin-filename",
+            path,
+            "-",
+        ],
+        cwd=PROJECT_ROOT,
+        input=source,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=120,
+    )
+    assert completed.returncode in (0, 1), completed.stderr
+    return completed.returncode
+
+
+@pytest.mark.parametrize(
+    ("path", "checked"),
+    [
+        ("modules/demo_x/x.py", False),
+        ("modules/demo_x/tests/test_demo_x_smoke.py", False),
+        ("tests/fixtures/modules/demo_x/x.py", True),
+        ("src/capa_simulation/modules/x.py", True),
+    ],
+)
+def test_core_ruff_leaves_only_the_root_modules_folder_out(path: str, checked: bool) -> None:
+    """코어 관문(`ruff check .`·`ruff format --check .`)은 뿌리의 `modules/` 만 빼고 본다.
+
+    사내 4관문 수가 사외와 같아야 하고, 모듈은 `scripts/check_module.py` 가 경로를 직접 주어
+    같은 규칙으로 따로 본다. 제외를 맨 `modules` 로 적으면 모든 깊이가 빠져 시험 견본까지 검사
+    밖으로 나간다 — `./modules` 여야 한다(`pyproject.toml`).
+    """
+    assert _ruff_rc("check", path, "import os\n") == int(checked)
+    assert _ruff_rc("format", path, "x=1\n") == int(checked)
