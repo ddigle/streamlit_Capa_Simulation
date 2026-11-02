@@ -2822,7 +2822,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   남긴 달의 큰 확보율이나 가용이 모자라 배정 0 인 달의 0% 는 그 까닭이 아니다). y 축은 제약 제품을
   뺀 선·기준·제약 목표로 잡고 제약 제품 점은 그 범위 폭만큼 위(`RATE_AXIS_STRETCH`)까지만 넣는다(`rate_axis` — 4031% 가 축을
   늘려 기존 선이 바닥에 눌렸다, 2026-10-25 E2E). 넘는 점은 위 끝 ▲(`cliponaxis` 끔)·풍선 「▲ 그래프 위 끝 넘음」, 카드 회색 줄이
-  ▲ 뜻을 말한다 — 넘는 점이 없으면 축은 예전(모든 선의 범위) 그대로다. 그림 모양을 바꾸면
+  ▲ 뜻을 말한다 — 넘는 점이 없으면 축은 예전(모든 선의 범위) 그대로다. 확보율 비율을 그래프 % 값으로 바꾸는 것은
+  `percent_or_none`(없는 값은 None — 점을 찍지 않는다), y 축 범위(최솟값 − 5 의 10 단위 내림 ~ 최댓값 + 5 의 10 단위 올림)는
+  `axis_bounds` 한 벌이다 — 개조 일정 그래프(`modification_schedule_figures`)도 이 둘을 가져다 쓰고 사본을 두지 않는다. 그림 모양을 바꾸면
   `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다(2판 옵션 행으로 5, 신규 대기 행·막대로 6, 「신규 설비로」·「보유 제약 설비로」
   행을 채우는 차례로 세워 7, 그래프 풍선 「최소 1대」 로 8, y 축 상한·▲ 로 9, 묶음 신규 모듈 몫 「HB-07(HB-07B)」·「보유로
   제약 기간을 다 덮음」 풍선과 차이 「%」(퍼센트 포인트 기호 없음)·기준선을 판정 경계에 그어 10 — 2026-11-01 결정 B1 · B2 · N1, 계산표
@@ -2895,7 +2897,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/test_constraint_equipment_plan.py` 가 못 박는다.
 - `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
-  만드는 순수 함수. 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰
+  만드는 순수 함수. 확보율 % 값과 y 축 범위는 제약 모드 그래프의 `percent_or_none` · `axis_bounds` 를 가져다 쓴다(사본을 두지
+  않는다). 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰
   없음 — 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%) 미달」). 기준선의 자리는 G 의 판정 경계다(8장). 낮출 폭은 양수
   「기준 n% 낮추기」(`relief_text` — 기한 칸 캡션과 대안 셋 셋째 줄이 같은 글, n 은 기준 확보율 칸에 칠 **정수 %**
   `ScheduleShortfall.relief_percent` — 적힌 만큼 낮추면 들어간다, 2026-11-01 사용자 결정으로 0.01% 올림을 대신한다. 「HOME 기준」 에
@@ -4904,7 +4907,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   거르기 · 필요 단축 일정 공정 · Space 현황 공정소분류 · 표준 목표 공정 필터 · 산출 결과 표 조건 칸 위의 선택 상자 · 조건 칸도).
   규칙은 사이드바 시트 한 곳(`sidebar_style` — `[data-testid="stSidebarContent"] [data-testid="stMultiSelect"] input
   { min-width: 7px !important; }`)이라 모든 화면의 사이드바 multiselect 가 받는다. 칩 줄바꿈은 그대로다. AppTest 로는 잡히지
-  않아 시험은 그 규칙이 실렸는지만 보고(`tests/test_sidebar_stylesheet.py`) 행동은 브라우저로 잰다.
+  않아 시험은 그 규칙이 실렸는지만 보고(`tests/test_sidebar_stylesheet.py`) 행동은 브라우저로 잰다. **대가**: 규칙은 칩 줄 끝
+  남은 폭이 42px 미만일 때만 작동하므로, 밀림을 막는 바로 그 경우마다 초점 입력 칸이 7 ~ 41px 로 남아 친 검색 글이 잘려
+  보인다(끝 몇 글자만 — 1500×950 사본 실측: 공정 Capa 상세 제품 거르기 2칩 21px · 6칩 12px, 제약 시뮬레이션 보유 제약 호기는
+  칩마다 한 줄이라 1 ~ 6칩 모두 11px). 목록 거르기는 그대로 된다. 다른 꼴(늘 42px 등)은 사용자 답 대기다(TODO 4장 「2026-11-02
+  아침 세 병합 리뷰」).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다. `ConditionTabs` 는 탭 말고 **보기 값**으로도 가른다 — Space 현황은 색 기준 라디오(`space_color_basis`)가
