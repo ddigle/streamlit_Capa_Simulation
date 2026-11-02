@@ -538,5 +538,6 @@ def test_scroll_room_grows_with_the_sso_third_card_line() -> None:
     assert f"scroll-padding-bottom: {APP_CREDITS_SCROLL_ROOM_SSO}" in room(3)
     two = float(APP_CREDITS_SCROLL_ROOM.removesuffix("rem"))
     three = float(APP_CREDITS_SCROLL_ROOM_SSO.removesuffix("rem"))
-    # 좁은 사이드바: 위아래 여백 1.05rem + 0.75rem × 줄 높이 1.45 의 줄 일곱(두 줄이 넷, 셋째가 셋).
-    assert three >= 1.05 + 7 * 0.75 * 1.45 > two
+    # 좁은 사이드바(200px) 실측 8.73rem — 위아래 여백 1.05rem + 0.75rem × 줄 높이 1.45 의 줄 일곱에
+    # 이름 · 부서가 한 줄 더 접힐 여유.
+    assert three >= 1.05 + 8 * 0.75 * 1.45 > two
