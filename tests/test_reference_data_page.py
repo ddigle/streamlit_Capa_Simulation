@@ -906,7 +906,7 @@ def _filtered_editor_app(tab_name: str, editor_key: str, filter_column: str) -> 
 
 @pytest.fixture
 def grid_calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
-    """기준 정보 편집 그리드(새 그리드로 옮긴 표)의 대역 — 받은 (key, data) 를 적는다."""
+    """기준 정보 편집 그리드(편집 표 아홉)의 대역 — 받은 (key, data) 를 적는다."""
     return install_fake_edit_grid(monkeypatch)
 
 
