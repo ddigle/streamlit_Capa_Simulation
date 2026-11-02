@@ -389,10 +389,11 @@ SIDE_RAIL_PX: Final = 44
 SIDE_RAIL_HEIGHT_PX: Final = 240
 # 본문 높이 상한 = max(360px, 창 높이 − 붙는 높이 − 200px). 200px = 고르기 42 + 간격 16 +
 # Streamlit 본문 아래 여백 약 140(1500×950 측정). 붙는 높이(`--emd-top`)는 칸막이가 화면 탭
-# 줄 아래 끝 + 8px 로 잰다 — 재기 전에는 100px(측정값).
+# 줄이 붙었을 때의 아래 끝 + 8px 로 잰다(1.63 — 탭 줄 sticky top 52.5 + 높이 36 → 97px).
+# 재기 전에는 그 측정값을 쓴다.
 SIDE_BODY_MIN_PX: Final = 360
 SIDE_BODY_RESERVE_PX: Final = 200
-SIDE_TOP_FALLBACK_PX: Final = 100
+SIDE_TOP_FALLBACK_PX: Final = 97
 # 두 칸 사이 간격(칸막이를 그 한가운데 둔다) — 칸막이가 재기 전의 값.
 SIDE_GAP_FALLBACK_PX: Final = 28
 SIDE_GUTTER_PX: Final = 16

@@ -506,12 +506,17 @@ globalThis.window = {
   addEventListener() { windowListeners += 1 },
   removeEventListener() { windowListeners -= 1 },
 }
+let stripPosition = 'sticky'
+window.getComputedStyle = (node) => node === stripNode
+  ? { position: stripPosition, top: '52.5px' }
+  : { position: 'static', top: 'auto' }
+const stripNode = { getBoundingClientRect: () => ({ top: 56, bottom: 92, height: 36 }) }
 globalThis.document = {
   activeElement: null,
   documentElement: html,
   createElement: (tag) => new Node(tag),
   querySelector(selector) {
-    if (selector === input.data.cover) return { getBoundingClientRect: () => ({ bottom: 92 }) }
+    if (selector === input.data.cover) return stripNode
     if (selector === '[data-testid="stMain"]') return { getBoundingClientRect: () => ({ top: 0 }) }
     return null
   },
@@ -595,12 +600,14 @@ out.reset = { width: snap(m.host).width, store: snap(m.host).store }
 out.windowBefore = windowListeners
 m.cleanup()
 out.windowAfter = windowListeners
-// 9. 저장소가 막혀도 마운트·접기가 된다(이 문서에서만 산다).
+// 9. 저장소가 막혀도 마운트·접기가 된다(이 문서에서만 산다). 탭 줄이 붙는 칸이 아니면 지금 아래
+// 끝으로 잰다.
 storageBroken = true
+stripPosition = 'static'
 html.removeAttribute('data-emd-side')
 m = mount(input.data)
 part(m.host, 'ess-toggle').click()
-out.blocked = { attr: snap(m.host).attr, min: snap(m.host).min }
+out.blocked = { attr: snap(m.host).attr, min: snap(m.host).min, top: snap(m.host).top }
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -611,7 +618,8 @@ def _dom_source() -> str:
 
 
 def test_the_splitter_mount_restores_folds_resizes_and_cleans_up() -> None:
-    """마운트 한 바퀴(줄 1,165px · 간격 27px · 화면 탭 줄 아래 끝 92px): 저장값(폭 500 · 접힘)을
+    """마운트 한 바퀴(줄 1,165px · 간격 27px · 화면 탭 줄 sticky top 52.5 + 높이 36 — 붙는 높이
+    97px, 붙는 칸이 아니면 지금 아래 끝 92 + 8): 저장값(폭 500 · 접힘)을
     문서에 다시 걸고, 띠 누름은 펴고 접기 단추는 접으며(초점은 서로에게), 표가 연 회차(`reveal`
     이 오름)에만 편다. 키는 폭을 바꿔 저장하고 모르는 키는 놓아 둔다. 끌기는 한 프레임에 한 번
     바꾸고 최대에서 멈추며 놓을 때 저장한다. 두 번 누르면 처음 폭. 정리는 창 듣기를 풀고,
@@ -630,7 +638,7 @@ def test_the_splitter_mount_restores_folds_resizes_and_cleans_up() -> None:
     assert out["restored"] == {
         "attr": "min",
         "width": "500px",
-        "top": "100px",
+        "top": "97px",
         "gap": None,
         "min": True,
         "store": {"w": 500, "min": True},
@@ -657,4 +665,4 @@ def test_the_splitter_mount_restores_folds_resizes_and_cleans_up() -> None:
     assert out["dragMax"] == {"width": "699px", "store": 699, "cursor": ""}
     assert out["reset"] == {"width": None, "store": {"w": None, "min": False}}
     assert out["windowBefore"] == 1 and out["windowAfter"] == 0
-    assert out["blocked"] == {"attr": "min", "min": True}
+    assert out["blocked"] == {"attr": "min", "min": True, "top": "100px"}

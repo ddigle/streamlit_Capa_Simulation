@@ -124,13 +124,22 @@ function minimized() {
   return document.documentElement.getAttribute(ATTR) === 'min'
 }
 
-// 붙는 높이 — 화면 탭 줄(sticky) 아래 끝(본문 스크롤 칸 위 끝 기준) + 8px, 탭 줄이 없으면 머리 띠 72px + 8px.
+// 붙는 높이 — 화면 탭 줄 아래 끝(본문 스크롤 칸 위 끝 기준) + 8px, 탭 줄이 없으면 머리 띠 72px + 8px. 탭 줄이 붙는
+// 칸(sticky)이면 붙었을 때의 아래 끝(그 `top` + 높이)을 쓴다 — 잰 때의 스크롤과 상관없이 같다(맨 위에서는 탭 줄이 3px
+// 아래에 있어 지금 자리로 재면 내린 뒤 오른쪽 칸이 탭 줄과 11px 떨어졌다).
 function coverTop(selector) {
   const strip = selector ? document.querySelector(selector) : null
   const main = document.querySelector('[data-testid="stMain"]')
-  const bottom = strip ? strip.getBoundingClientRect().bottom : 0
   const top = main ? main.getBoundingClientRect().top : 0
-  return Math.round(Math.max(HEADER_COVER, bottom - top)) + COVER_GAP
+  let bottom = 0
+  if (strip) {
+    const rect = strip.getBoundingClientRect()
+    bottom = rect.bottom - top
+    const style = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(strip) : null
+    const stuck = style && style.position === 'sticky' ? parseFloat(style.top) : NaN
+    if (Number.isFinite(stuck)) bottom = stuck + rect.height
+  }
+  return Math.round(Math.max(HEADER_COVER, bottom)) + COVER_GAP
 }
 
 function measure(S) {
