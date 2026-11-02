@@ -53,7 +53,7 @@ INBOX_KEY: Final = "reference_grid_inbox"
 APPLIED_KEY: Final = "reference_grid_applied"
 TOAST_KEY: Final = "reference_grid_toast"
 DISCARDED_KEY: Final = "reference_grid_discarded"
-BASES_KEY: Final = "reference_grid_bases"
+TEMPLATE_DIGESTS_KEY: Final = "reference_grid_template_digests"
 
 
 def cells_key(table: str) -> str:
@@ -74,5 +74,5 @@ SESSION_KEYS: Final = (
     APPLIED_KEY,
     TOAST_KEY,
     DISCARDED_KEY,
-    BASES_KEY,
+    TEMPLATE_DIGESTS_KEY,
 )

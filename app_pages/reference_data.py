@@ -50,13 +50,13 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
 )
 from capa_simulation.reference_grid_keys import (
-    BASES_KEY,
     DATASET_KEY,
     DATASETS,
     DEFAULT_DATASET,
     EDIT_TABLES,
     EQUIPMENT_OVERVIEW,
     STEP_VIEW,
+    TEMPLATE_DIGESTS_KEY,
     cells_key,
     history_key,
 )
@@ -381,8 +381,8 @@ def _grid_survivors(previous: object, token: str) -> tuple[set[str], dict[str, i
 
     다른 화면(생산 계획 PKG PLAN·수율 등)의 적용은 원본 토큰의 리비전을 올리지만 이 화면의
     표 대부분은 그대로다. 초안은 업무 키 + 월이라 그 표의 양식 내용이 같으면 같은 칸에 그대로
-    붙는다 — 초안이 있는 표마다 지금 양식의 지문을 초안을 둔 때의 지문(`BASES_KEY`,
-    `_remember_grid_bases`)과 견줘 같으면 남기고, 다르거나 지문이 없으면 버리고 알린다
+    붙는다 — 초안이 있는 표마다 지금 양식의 지문을 초안을 둔 때의 지문(`TEMPLATE_DIGESTS_KEY`,
+    `_remember_grid_digests`)과 견줘 같으면 남기고, 다르거나 지문이 없으면 버리고 알린다
     (2026-11-03 리뷰 — 전에는 어느 화면의 적용이든 아홉 표 초안을 말없이 모두 버렸다). 이 화면
     자신의 적용(`OWN_CHANGE_KEY`)·시나리오·기간·줄 차례가 바뀐 회차는
     `reset_editors_on_source_change` 가 지금처럼 가른다.
@@ -391,8 +391,8 @@ def _grid_survivors(previous: object, token: str) -> tuple[set[str], dict[str, i
         previous, token
     ):
         return set(), {}
-    bases = st.session_state.get(BASES_KEY)
-    saved = bases if isinstance(bases, dict) else {}
+    digests = st.session_state.get(TEMPLATE_DIGESTS_KEY)
+    saved = digests if isinstance(digests, dict) else {}
     kept: set[str] = set()
     dropped: dict[str, int] = {}
     for table_name in EDIT_TABLES:
@@ -407,13 +407,13 @@ def _grid_survivors(previous: object, token: str) -> tuple[set[str], dict[str, i
     return kept, dropped
 
 
-def _remember_grid_bases() -> None:
+def _remember_grid_digests() -> None:
     """초안이 있는 표의 양식 지문을 적어 둔다(`_grid_survivors` 가 다음에 견줄 값). 양식 키
     (내용 토큰·기간·줄 차례)가 그대로면 다시 재지 않는다 — 적용·리비전이 바뀐 회차에만 초안이
     있는 표를 잰다."""
     stamp = f"{edit_cache_key}|{edit_display_order_key}"
-    bases = st.session_state.get(BASES_KEY)
-    saved = dict(bases) if isinstance(bases, dict) else {}
+    digests = st.session_state.get(TEMPLATE_DIGESTS_KEY)
+    saved = dict(digests) if isinstance(digests, dict) else {}
     for table_name in EDIT_TABLES:
         if not reference_grid.draft_counts(table_name)[0]:
             saved.pop(table_name, None)
@@ -421,8 +421,8 @@ def _remember_grid_bases() -> None:
         before = saved.get(table_name)
         if not (isinstance(before, tuple) and before[0] == stamp):
             saved[table_name] = (stamp, _template_digest(table_name))
-    if saved != bases:
-        st.session_state[BASES_KEY] = saved
+    if saved != digests:
+        st.session_state[TEMPLATE_DIGESTS_KEY] = saved
 
 
 # 줄 차례 지문은 편집 표 캐시 키와 같은 표시순서 지문이다 — 아홉 표가 모두 이 표시순서로 줄을
@@ -503,7 +503,7 @@ grid_tables = {
     if table_name == current_dataset or table_name in _inbox_tables
 }
 reference_grid.apply_grid_inbox(grid_tables)
-_remember_grid_bases()
+_remember_grid_digests()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
 # 초안은 세션 칸이라 어느 화면에서나 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이
 # 함께 따라오고, 떠날 때는 묻지 않는다). 방금 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
