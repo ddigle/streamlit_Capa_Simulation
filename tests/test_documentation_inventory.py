@@ -18,6 +18,8 @@ SHARED_HELPERS = (
     ("capa_simulation.services.frame_contracts", "require_exact_columns"),
     ("capa_simulation.services.frame_contracts", "blank_cell"),
     ("capa_simulation.home_state", "home_toggle"),
+    ("capa_simulation.components.constraint_simulation_figures", "percent_or_none"),
+    ("capa_simulation.components.constraint_simulation_figures", "axis_bounds"),
 )
 
 
