@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
+from edit_grid_fake import FAKE_EVENT_KEY, Calls, install_fake_edit_grid, last, outbox, send_ops
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     DATASET,
@@ -542,3 +542,54 @@ def test_the_paste_template_is_the_whole_table_while_the_filter_narrows_the_grid
         app = _open_paste(app, editor_key)
         exported = _download_frame(app, f"{editor_key}_csv_download")
         assert exported["공정"].tolist() == ["Process-A", "Process-B"], name
+
+
+def test_the_first_edit_shows_in_the_sidebar_of_the_run_it_arrives_in(calls: Calls) -> None:
+    """사이드바 「적용 전 편집」 은 페이지 본문보다 먼저 그린다. 첫 편집(초안 없던 표)의 op 가
+    온 회차에 그 표가 바로 서야 한다 — 그리드는 첫 편집 뒤 다시 보내지 않아, 한 회차 늦으면 다음
+    조작까지 사이드바·화면 탭 점이 편집을 모른다. 출납 콜백이 빈 초안 자리를 두고 본문이 진짜
+    초안으로 덮는다(빈 자리는 「변경사항 적용」·단추 점에 들지 않는다)."""
+    probe = "test_pre_page_labels"
+    script = TWO_PROCESS_TEST_SCRIPT.replace(
+        '    PAGE_NAME = "reference_data.py"\n',
+        "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels\n"
+        f"    st.session_state.setdefault({probe!r}, []).append(\n"
+        "        (pending_edit_labels('reference_data.py'),"
+        " st.session_state.get('reference_grid_cells__RQ_RUN_RATE'))\n"
+        "    )\n"
+        '    PAGE_NAME = "reference_data.py"\n',
+        1,
+    )
+    assert script != TWO_PROCESS_TEST_SCRIPT
+    app = _open(script, "효율")
+    # 대역은 콜백을 그리는 자리에서 부른다 — 진짜는 회차 맨 앞이다. 콜백이 돈 회차 다음 회차의
+    # 페이지 앞 탐침이 진짜 회차의 사이드바 자리다.
+    app.session_state[FAKE_EVENT_KEY] = (
+        GRID_HOST,
+        outbox(
+            calls,
+            {"op": "write", "rows": ["Process-A\x1f양산"], "cols": ["202608"], "values": [["0.5"]]},
+            host=GRID_HOST,
+        ),
+    )
+    app.run()
+    assert not app.exception
+    assert app.session_state[cells_key("RQ_RUN_RATE")] == {"cells": {}, "bad": {}}
+    app.run()
+    assert not app.exception
+    labels, slot = app.session_state[probe][-1]
+    assert labels == ["기준 정보 · 효율"]
+    assert slot == {"cells": {}, "bad": {}}
+    # 본문이 진짜 초안으로 덮었다.
+    assert app.session_state[cells_key("RQ_RUN_RATE")] == {
+        "cells": {"Process-A\x1f양산": {"202608": 0.5}},
+        "bad": {},
+    }
+
+
+def test_an_empty_draft_slot_counts_as_no_edit() -> None:
+    """빈 초안 자리는 초안이 아니다 — 「변경사항 적용」 을 켜지 않고 변경 수도 0 이다."""
+    from capa_simulation.services.edit_grid import change_counts, draft_from
+
+    assert draft_from({"cells": {}, "bad": {}}) is None
+    assert change_counts(draft_from({"cells": {}, "bad": {}})) == (0, 0, 0)

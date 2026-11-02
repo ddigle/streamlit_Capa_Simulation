@@ -29,7 +29,6 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from functools import partial
 from typing import Final
 
 import pandas as pd
@@ -43,6 +42,7 @@ from capa_simulation.components.month_editor import APPLY_NOTICE, render_scope
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.reference_grid_keys import (
     APPLIED_KEY,
+    EDIT_TABLES,
     GRID_HOST,
     INBOX_KEY,
     TOAST_KEY,
@@ -239,6 +239,23 @@ def inbox_tables() -> set[str]:
     return {op.table for op in pending if isinstance(op, Op)}
 
 
+def collect_outbox() -> None:
+    """출납 콜백 — 새 op 를 inbox 에 쌓고(`edit_grid.collect_outbox`), 초안이 없던 표에는 빈 초안
+    자리를 둔다.
+
+    사이드바 「적용 전 편집」·화면 탭 점(`scenario_edit_bar.pending_edit_pages` — 세션 칸이 None
+    이 아니면 센다)은 `app.py` 가 페이지 본문보다 **먼저** 그린다. op 는 본문이 반영하므로 빈 자리가
+    없으면 첫 편집이 그 회차 사이드바에 서지 않고 다음 조작까지 늦는다(그리드는 첫 편집 뒤 다시
+    보내지 않는다). 빈 자리(`{"cells": {}, "bad": {}}`)는 초안으로는 비어 있어(`draft_from` 이
+    None) 「변경사항 적용」·단추 점·변경 수에 들지 않고, 같은 회차 본문의 반영이 진짜 초안(또는
+    None)으로 덮는다.
+    """
+    edit_grid.collect_outbox(GRID_HOST, KEYS)
+    for table in inbox_tables():
+        if table in EDIT_TABLES and st.session_state.get(cells_key(table)) is None:
+            st.session_state[cells_key(table)] = {"cells": {}, "bad": {}}
+
+
 def apply_grid_inbox(tables: Mapping[str, GridTable]) -> bool:
     """inbox 의 op 를 표별 초안·이력에 반영한다(받을 표가 없는 op 는 버리고 수를 알린다)."""
     return edit_grid.apply_inbox(KEYS, {name: table.slot for name, table in tables.items()})
@@ -339,7 +356,7 @@ def render_grid(table: GridTable | None, *, key_prefix: str | None = None) -> No
         GRID_HOST,
         _shell(table),
         feed,
-        on_outbox=partial(edit_grid.collect_outbox, GRID_HOST, KEYS),
+        on_outbox=collect_outbox,
     )
 
 
