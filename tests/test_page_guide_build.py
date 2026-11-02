@@ -1839,3 +1839,31 @@ def test_accept_keeps_the_old_record_of_a_place_not_compared_this_time(
     assert f"; 바뀜 {_data_count()}/{PLACES_COMPARED - 1}; " in result.line
     assert "예시 step:gap.gap_on" in result.err
     assert desk.baseline()["places"]["step:gap.gap_on"] == before
+
+
+def test_raising_a_state_look_names_every_place_whose_chain_has_it(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    desk.accept()
+    plan = copy.deepcopy(dict(SKELETON.plan))
+    state = next(state for state in plan["states"] if state["id"] == "08_ref_avail")
+    state["look"] = 2
+    looked = _skeleton_with(plan=plan)
+    assert core.skeleton_problems(looked) == []  # 계획 형식이 `look` 을 받는다
+    monkeypatch.setattr(core, "load_skeleton", lambda *_a, **_k: looked)
+
+    changed = desk.check().changed
+
+    planned = {where for where, why in changed.items() if "계획" in why.split(" · ")}
+    assert planned == _layout_places_using({"08_ref_avail"})
+
+
+def test_a_state_note_is_not_part_of_the_capture_fingerprint(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    desk.accept()
+    plan = copy.deepcopy(dict(SKELETON.plan))
+    next(state for state in plan["states"] if state["id"] == "08_ref_avail")["note"] = "메모만"
+    monkeypatch.setattr(core, "load_skeleton", lambda *_a, **_k: _skeleton_with(plan=plan))
+
+    assert set(desk.check().changed.values()) == {"데이터 자리"}

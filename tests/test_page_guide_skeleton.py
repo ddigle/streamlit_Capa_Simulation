@@ -760,3 +760,12 @@ def test_skeleton_carries_no_owner_or_contact_values() -> None:
         assert settings.APP_OWNER_TEAM not in text, name
         assert settings.APP_CONTACT_EMAIL not in text, name
         assert not re.findall(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", text), name
+
+
+@pytest.mark.parametrize(("look", "ok"), [(1, True), (3, True), (0, False), ("2", False)])
+def test_plan_states_may_carry_a_look_number(look: Any, ok: bool) -> None:
+    """`look` — 사외가 그 화면을 바꿔 사내가 다시 보게 할 때 올리는 정수(바뀐 자리 검수)."""
+    plan = _plan()
+    plan["states"][0]["look"] = look
+
+    assert (_schema_errors(plan, "plan") == []) is ok
