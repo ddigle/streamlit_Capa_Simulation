@@ -171,8 +171,11 @@ def test_the_right_column_holds_the_splitter_then_the_choice_then_one_body(
     # 저장 이력(저장본이 없으면 안내 한 줄)도 본문 칸 안이고, 오른쪽 칸의 차례는 그대로다.
     assert body().children
     assert _child_keys(_node_of(app, emg.RIGHT_KEY))[1:] == [SIDE_KEY, emg.SIDE_BODY_KEY]
-    # 떠나기 붙들기가 보는 편집 칸 key 는 그대로다(오른쪽 칸 마운트 셋 + 표).
-    assert set(EDIT_HOST_KEYS) == {emg.GRID_KEY, *(emg.side_key(p) for p in emg.SIDE_PANELS)}
+    # 떠나기 붙들기가 보는 설비 마스터 편집 칸 key 는 그대로다(오른쪽 칸 마운트 셋 + 표) — 칸막이는
+    # 편집 칸이 아니다. 다른 화면의 편집 칸(기준 정보 그리드)은 이 시험이 보지 않는다.
+    equipment_hosts = {key for key in EDIT_HOST_KEYS if key.startswith("equipment_")}
+    assert equipment_hosts == {emg.GRID_KEY, *(emg.side_key(p) for p in emg.SIDE_PANELS)}
+    assert emg.SPLITTER_KEY not in EDIT_HOST_KEYS
     assert last(calls, emg.GRID_KEY)["rows"]
 
 
