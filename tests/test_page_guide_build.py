@@ -1843,6 +1843,8 @@ def test_accept_refuses_a_place_that_is_not_review_guide_of_a_repository(
         target = desk.root / "elsewhere" / core.ACCEPTED_FILE
         target.parent.mkdir()
     elif place == "dotdot":
+        if os.name == "nt":
+            pytest.skip("Windows 는 `..` 를 글자로 먼저 푼다 — 연결 뒤 `..` 가 밖으로 안 나간다")
         # 글자로는 review/guide/accepted.json 이지만 연결 `x` 를 따라 풀면 저장소 밖(far/)이다
         far = desk.root / "far" / "sub"
         far.mkdir(parents=True)
