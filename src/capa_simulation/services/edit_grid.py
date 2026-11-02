@@ -222,8 +222,8 @@ def number_text(value: float) -> str:
 
 
 def _parse_number(body: str, *, percent: bool = False) -> tuple[float | None, str | None]:
-    """수 글 → 값. `percent` 면 소수점을 두 자리 옮긴 글로 읽는다(「99.99%」 → 0.9999 — 100 으로 나누면
-    0.9998999… 이 된다)."""
+    """수 글 → 값. `percent` 면 소수점을 두 자리 옮긴 글로 읽는다(「99.99%」 → 0.9999 — 100 으로
+    나누면 0.9998999… 이 된다)."""
     if "," in body:
         if not _GROUPED.fullmatch(body):
             return None, "num"
