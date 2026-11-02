@@ -466,3 +466,29 @@ def test_a_value_already_outside_the_range_in_the_template_passes_unchanged() ->
     result = _ranged_paste(modified, template)
 
     assert result["202609"].astype(float).tolist() == pytest.approx([1.05, 0.81])
+
+
+def test_an_integer_only_table_refuses_a_fraction_it_did_not_have() -> None:
+    """일수처럼 그리드가 정수만 받는 표는 붙여넣기도 정수만 받는다 — 그리드 칸 오류(int)와 같은
+    규칙. 양식에 이미 있던 소수는 이번 붙여넣기가 만든 것이 아니라 막지 않는다(범위 검사와 같다)."""
+    template = _template()
+    template.loc[0, "202609"] = 30.5
+    modified = template.astype({"202608": "object"})
+    modified.loc[1, "202608"] = "30.5"
+
+    def paste(table: pd.DataFrame) -> pd.DataFrame:
+        return parse_reference_edit_clipboard(
+            table.to_csv(index=False, sep="\t"),
+            template,
+            ["공정", "양산구분"],
+            "RQ_RUN_DAY",
+            min_value=0.0,
+            integer=True,
+        )
+
+    with pytest.raises(ValueError) as error:
+        paste(modified)
+    message = str(error.value)
+    assert "범위(0 이상 정수)" in message and "202608 칸 '30.5'" in message
+    modified.loc[1, "202608"] = "30"
+    assert paste(modified)["202609"].astype(float).tolist()[0] == 30.5

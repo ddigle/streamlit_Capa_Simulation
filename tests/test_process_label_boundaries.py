@@ -498,54 +498,6 @@ def test_saving_a_rename_does_not_clear_the_revision_snapshot_cache() -> None:
     assert "snapshot" not in body
 
 
-# ------------------------------------------- 편집기는 값은 원본, 표시만 표시명
-
-
-def test_month_editor_dimension_uses_a_selectbox_that_splits_value_and_label() -> None:
-    """`SelectboxColumn` 은 옵션의 `value` 와 `label` 을 나눠 갖는다.
-
-    셀에 그려지는 것은 `label`, 편집 결과·복사 데이터로 돌아오는 것은 `value` 다. 그래서
-    분류 컬럼의 값이 원본으로 남고 `merge_edited_months` 의 되머지 키가 어긋나지 않는다.
-    """
-    from capa_simulation.components.month_editor import _dimension_column_config
-
-    config = _dimension_column_config(_monthly_frame(), ["공정"], LABELS.value_labels())
-    type_config = config["공정"]["type_config"]
-
-    assert type_config is not None and type_config["type"] == "selectbox"
-    assert type_config["options"] == [
-        {"value": "SAW", "label": "절단"},
-        {"value": "MOLD", "label": "MOLD"},
-    ]
-
-
-def test_month_editor_dimension_stays_a_text_column_without_a_mapping() -> None:
-    """매핑이 없는 컬럼은 `TextColumn` 이라 원본 공정명이 그대로 보인다."""
-    from capa_simulation.components.month_editor import _dimension_column_config
-
-    config = _dimension_column_config(_monthly_frame(), ["공정"], None)
-
-    type_config = config["공정"]["type_config"]
-    assert type_config is not None and type_config["type"] == "text"
-    assert config["공정"]["alignment"] == "center"
-
-
-def test_month_editor_selectbox_options_cover_every_value_in_the_table() -> None:
-    """옵션에 없는 값은 셀이 빈칸으로 그려진다. 표의 값 전체가 옵션이어야 한다."""
-    from capa_simulation.components.month_editor import _dimension_column_config
-
-    frame = _monthly_frame()
-    config = _dimension_column_config(frame, ["공정"], LABELS.value_labels())
-    type_config = config["공정"]["type_config"]
-    assert type_config is not None and type_config["type"] == "selectbox"
-    options = type_config["options"] or []
-    # 옵션은 값·표시명을 나눠 가진 dict 여야 한다. 문자열 옵션은 표시명을 따로 줄 수 없다.
-    assert all(isinstance(option, dict) for option in options)
-    values = {option["value"] for option in options if isinstance(option, dict)}
-
-    assert values == set(frame["공정"])
-
-
 def test_home_process_dialog_buttons_keep_original_callback_and_selection_values() -> None:
     """공정 버튼은 표시명을 그리지만 콜백과 적용 목록은 원본 공정 키를 사용한다.
 

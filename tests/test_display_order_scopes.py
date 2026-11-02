@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 
 from capa_simulation import navigation
+from capa_simulation.services import display_order_scopes
 from capa_simulation.services.display_order_scopes import (
     DISPLAY_ORDER_SCOPES,
     LEGACY_SCOPE_RENAMES,
@@ -88,7 +89,26 @@ def _tab_names(module: str) -> set[str]:
             if isinstance(element, ast.Constant) and isinstance(element.value, str):
                 names.add(ICON_PREFIX.sub("", element.value))
         return names
-    return set()
+    return _imported_scope_names(tree)
+
+
+def _imported_scope_names(tree: ast.Module) -> set[str]:
+    """탭 목록 없이 범위 상수를 직접 쓰는 페이지(기준 정보 — 탭 대신 종류 단추, 2026-11-02)의 범위
+    이름 — `display_order_scopes` 에서 들여와 본문이 실제로 쓰는 `TAB_*` 상수의 값이다."""
+    imported = {
+        alias.asname or alias.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "capa_simulation.services.display_order_scopes"
+        for alias in node.names
+        if alias.name.startswith("TAB_")
+    }
+    used = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    return {str(getattr(display_order_scopes, name)) for name in imported & used}
 
 
 def test_every_page_scope_is_a_real_page_title() -> None:

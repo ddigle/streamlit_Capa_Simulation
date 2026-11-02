@@ -1,0 +1,29 @@
+.eg-handle {
+  position: absolute;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--eg-on-accent);
+  background: var(--eg-accent);
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.eg-handle::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+
+.eg-fill-box {
+  position: absolute;
+  z-index: 3;
+  border: 1px dashed var(--eg-accent);
+  pointer-events: none;
+}
+
+.eg-scroll.is-filling,
+.eg-scroll.is-filling .eg-c {
+  cursor: crosshair;
+}

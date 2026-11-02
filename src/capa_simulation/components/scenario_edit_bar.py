@@ -62,6 +62,30 @@ def _row_order_of(token: object) -> str | None:
     return token.rpartition(_ROW_ORDER_MARK)[2]
 
 
+def _without_revision(token: object) -> str | None:
+    """토큰에서 활성 리비전 칸만 뺀 글(기준정보 버전·기간·줄 차례). `source_token` 꼴이 아니면
+    `None`."""
+    if not isinstance(token, str):
+        return None
+    head, mark, order = token.partition(_ROW_ORDER_MARK)
+    parts = head.split(":")
+    if not mark or len(parts) != 5 or parts[0] != "duckdb":
+        return None
+    return ":".join((parts[0], parts[1], parts[3], parts[4])) + mark + order
+
+
+def only_revision_changed(previous: object, token: str) -> bool:
+    """두 원본 토큰이 **활성 리비전만** 다른가 — 기준정보 버전·기간·줄 차례는 같다.
+
+    다른 화면의 적용(생산 계획 PKG PLAN·수율 등)은 리비전만 올린다. 그 적용이 건드리지 않은 표는
+    그대로라, 업무 키로 남는 편집(기준 정보 그리드 초안)은 표마다 내용을 견줘 남길 수 있다
+    (`app_pages/reference_data.py`). 시나리오를 바꾸거나 기간·줄 차례가 바뀐 회차는 여기 들지
+    않는다.
+    """
+    before = _without_revision(previous)
+    return before is not None and previous != token and before == _without_revision(token)
+
+
 def _source_of(token: object) -> object:
     """토큰에서 줄 차례 지문을 뺀 앞부분(기준정보 버전·리비전·기간). 지문이 없는 토큰은 그대로다."""
     if not isinstance(token, str) or _ROW_ORDER_MARK not in token:

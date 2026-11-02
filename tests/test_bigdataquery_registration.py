@@ -949,7 +949,7 @@ def test_a_registration_whose_capacity_stops_still_saves_and_says_how_to_fix_it(
     assert warning.message.startswith(
         "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — RQ_RUN_RATE의 "
     )
-    assert "기준 정보 화면 「효율」 탭에서" in warning.message
+    assert "기준 정보 화면 「효율」 표에서" in warning.message
     assert "r2부터 계산이 섭니다" in warning.message
     repository = DuckDBScenarioRepository(database)
     [scenario] = repository.list_scenarios()

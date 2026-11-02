@@ -149,7 +149,6 @@
     "target:ref_success@10_ref_applied",
     "target:ref_tab_dot@09_ref_edited",
     "target:ref_tab_dot@10_ref_applied",
-    "target:ref_tab_dot_parent@09_ref_edited",
     "target:ref_table@08_ref_avail",
     "target:ref_table@09_ref_edited",
     "target:repo_status@15_scenmgmt_list",
@@ -180,7 +179,6 @@
     "target:subtab_avail@08_ref_avail",
     "target:subtab_own@08_ref_avail",
     "target:tab_convert@12_loadconv_pkgplan",
-    "target:tab_eqp@08_ref_avail",
     "target:tab_main@01_home_main",
     "target:tab_past@01_home_main",
     "target:tab_pkgplan@12_loadconv_pkgplan",
@@ -199,6 +197,8 @@
     "task:set_official"
   ],
   "retired": [
-    "target:official_history@17_official_dialog"
+    "target:official_history@17_official_dialog",
+    "target:ref_tab_dot_parent@09_ref_edited",
+    "target:tab_eqp@08_ref_avail"
   ]
 }

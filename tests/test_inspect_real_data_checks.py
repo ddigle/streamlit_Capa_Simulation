@@ -2904,22 +2904,18 @@ def test_the_census_counts_every_revision_only_when_asked(
 
 
 def test_the_census_value_ranges_follow_the_reference_editor() -> None:
-    """상한 1·하한 0 은 기준 정보 편집 격자(`app_pages/reference_data.EDITOR_FORMATS`)의 범위다.
-    화면 모듈이라 불러오지 않고 글자로 읽어 맞댄다 — 격자에 표가 늘면 센서스도 늘린다."""
-    source = (PROJECT_ROOT / "app_pages" / "reference_data.py").read_text(encoding="utf-8")
-    formats = next(
-        node.value
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.AnnAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == "EDITOR_FORMATS"
-    )
-    assert formats is not None
-    editors: dict[str, tuple[str, float | None, float | None]] = ast.literal_eval(formats)
+    """상한 1·하한 0 은 기준 정보 편집 표의 범위다 — 편집 표 아홉의 값 형식
+    (`reference_grid.GRID_FORMATS`). 편집 표가 늘면 센서스도 늘린다."""
+    from capa_simulation.components import reference_grid
+    from capa_simulation.reference_grid_keys import EDIT_TABLES
 
-    assert {table for table, *_ in checks.CENSUS_VALUE_COLUMNS} == set(editors)
+    tops = {table: fmt.max_value for table, fmt in reference_grid.GRID_FORMATS.items()}
+    assert set(tops) == set(EDIT_TABLES)
+    assert all(fmt.min_value == 0.0 for fmt in reference_grid.GRID_FORMATS.values())
+
+    assert {table for table, *_ in checks.CENSUS_VALUE_COLUMNS} == set(tops)
     assert {table for table, *_ in checks.CENSUS_RATIO_COLUMNS} == {
-        table for table, (_, _, top) in editors.items() if top == 1.0
+        table for table, top in tops.items() if top == 1.0
     }
 
 

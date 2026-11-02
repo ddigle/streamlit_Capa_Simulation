@@ -348,6 +348,9 @@ _LIGHT: Final[dict[str, Any]] = {
     "GRID_LAYOUT_HEAD": "#EEF0FA",
     "GRID_SELECTED_FILL": "#E6F4F2",
     "GRID_NEW_FILL": "#F0FDFA",
+    # 범용 편집 그리드 찾기 일치 칸 면(지금 일치는 경고 테가 함께 간다). 본문 글자·흐린 글자
+    # 4.5:1 이상(대비 시험).
+    "GRID_MATCH_FILL": "#FEF9C3",
     # ------------------------------------------------------------------ 스크롤바 색
     "SCROLLBAR_TRACK": "#ECEEF1",
     "SCROLLBAR_THUMB": "#8F9399",
@@ -550,6 +553,7 @@ _DARK: Final[dict[str, Any]] = {
     "GRID_LAYOUT_HEAD": "#262A3D",
     "GRID_SELECTED_FILL": "#16332F",
     "GRID_NEW_FILL": "#132B28",
+    "GRID_MATCH_FILL": "#37310F",
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
     "SCROLLBAR_TRACK": "#22222A",
     "SCROLLBAR_THUMB": "#55555F",
@@ -657,6 +661,7 @@ if TYPE_CHECKING:
     GRID_ERROR_LINE: Final[str] = ""
     GRID_LAYOUT_HEAD: Final[str] = ""
     GRID_LOCK_FILL: Final[str] = ""
+    GRID_MATCH_FILL: Final[str] = ""
     GRID_NEW_FILL: Final[str] = ""
     GRID_SCENARIO_HEAD: Final[str] = ""
     GRID_SELECTED_FILL: Final[str] = ""

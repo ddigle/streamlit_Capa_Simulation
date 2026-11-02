@@ -1,9 +1,9 @@
-# Purpose: 기준 정보가 닫힌 탭의 표를 건너뛰어도 같은 값을 보이고 내용이 바뀌면 다시 만드는지 본다.
+# Purpose: 기준 정보가 고르지 않은 종류의 표를 건너뛰어도 같은 값이고 바뀌면 다시 만드는지 본다.
 
 """기준 정보 rerun 비용 줄이기의 회귀 검사.
 
-닫힌 탭의 표(STEP 경로표·편집 기간 조각·설비대수 블록)를 건너뛰어도 **보이는 값은 고치기 전과
-같아야** 하고, 적용·리비전 전환으로 내용이 바뀌면 **다시 만들어야** 한다. 화면 픽스처는
+고르지 않은 종류의 표(STEP 경로표·편집 기간 조각·설비대수 블록)를 건너뛰어도 **보이는 값은 고치기
+전과 같아야** 하고, 적용·리비전 전환으로 내용이 바뀌면 **다시 만들어야** 한다. 화면 픽스처는
 `test_reference_data_page` 의 것을 그대로 쓰고, 그 위에 무엇을 몇 번 만들었는지 적는 탐침만 얹는다.
 """
 
@@ -16,21 +16,23 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from edit_grid_fake import Calls, install_fake_edit_grid
 from streamlit.dataframe import lazy_df_source
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
-    EQP_TAB,
+    DATASET,
     REAL_APPLY_TEST_SCRIPT,
-    REF_TAB,
     TEST_SCRIPT,
     TWO_PROCESS_TEST_SCRIPT,
     _add_step,
     _edit_and_apply,
     _frame_with_column,
+    _grid_write,
     _real_apply,
-    editor_widget_key_in,
+    _visible_keys,
 )
 
+from capa_simulation.reference_grid_keys import DATASET_KEY
 from capa_simulation.services import display_order_scopes as scopes
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -45,6 +47,14 @@ from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.route_step_editor import route_step_tables
 
 REFERENCE_DATA_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "reference_data.py"
+
+
+@pytest.fixture
+def grid_calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    """기준 정보 편집 그리드 대역 — 받은 (key, data) 를 적는다(`tests/edit_grid_fake.py`)."""
+    return install_fake_edit_grid(monkeypatch)
+
+
 DIALOG_KEY = "reference_data_open_dialog"
 STEP_SUMMARY_COLUMNS = {
     "생산계획년월": "월",
@@ -59,7 +69,7 @@ STEP_SUMMARY_COLUMNS = {
 # 집는다.
 # 활성 시나리오 표도 적어 두어, 테스트가 같은 표로 **직접** 계산한 값과 견준다.
 _PROBE = """
-import capa_simulation.components.month_editor as _probe_month_editor
+import capa_simulation.components.reference_grid as _probe_reference_grid
 import capa_simulation.scenario_state as _probe_state
 import capa_simulation.services.equipment_count as _probe_equipment
 
@@ -72,7 +82,6 @@ st.session_state["test_active_tables"] = {
 }
 _probe_original_month_table = _probe_state.scenario_month_table
 _probe_original_route_tables = simulation_cache.get_route_step_tables
-_probe_original_render_month_editor = _probe_month_editor.render_month_editor
 _probe_original_count_table = _probe_equipment.build_equipment_count_table
 _probe_original_count_edit = _probe_equipment.equipment_count_to_edit_table
 
@@ -85,16 +94,6 @@ def _probe_count_table(own, lent, available, *, detailed):
 def _probe_count_edit(data, category, value_column):
     st.session_state["test_equipment_builds"].append(("양식", category))
     return _probe_original_count_edit(data, category, value_column)
-
-
-_probe_original_change_count = _probe_month_editor.count_month_changes
-st.session_state["test_change_counts"] = []
-
-
-def _probe_change_count(default_table, merged, month_columns):
-    counted = _probe_original_change_count(default_table, merged, month_columns)
-    st.session_state["test_change_counts"].append(counted)
-    return counted
 
 
 def _probe_month_table(scenario, table_name, start, end):
@@ -126,27 +125,26 @@ def _probe_route_tables(cache_key, *, _upeh, _reqb):
     )
 
 
-def _probe_render_month_editor(tab, default_table, dimensions, editor_key, *args, **kwargs):
-    st.session_state["test_editor_templates"][editor_key] = default_table.copy()
-    return _probe_original_render_month_editor(
-        tab, default_table, dimensions, editor_key, *args, **kwargs
-    )
+_probe_original_build_grid_table = _probe_reference_grid.build_grid_table
+
+
+def _probe_build_grid_table(table, title, editor_key, template, *args, **kwargs):
+    st.session_state["test_editor_templates"][editor_key] = template.copy()
+    return _probe_original_build_grid_table(table, title, editor_key, template, *args, **kwargs)
 
 
 _probe_state.scenario_month_table = _probe_month_table
 simulation_cache.get_route_step_tables = _probe_route_tables
-_probe_month_editor.render_month_editor = _probe_render_month_editor
+_probe_reference_grid.build_grid_table = _probe_build_grid_table
 _probe_equipment.build_equipment_count_table = _probe_count_table
 _probe_equipment.equipment_count_to_edit_table = _probe_count_edit
-_probe_month_editor.count_month_changes = _probe_change_count
 """
 _PROBE_RESTORE = (
     "    _probe_state.scenario_month_table = _probe_original_month_table\n"
     "    simulation_cache.get_route_step_tables = _probe_original_route_tables\n"
-    "    _probe_month_editor.render_month_editor = _probe_original_render_month_editor\n"
+    "    _probe_reference_grid.build_grid_table = _probe_original_build_grid_table\n"
     "    _probe_equipment.build_equipment_count_table = _probe_original_count_table\n"
     "    _probe_equipment.equipment_count_to_edit_table = _probe_original_count_edit\n"
-    "    _probe_month_editor.count_month_changes = _probe_original_change_count\n"
 )
 _TRY_ANCHOR = "\ntry:\n    # `file_name`"
 _FINALLY_ANCHOR = "    st.download_button = original_download_button\n"
@@ -179,7 +177,7 @@ def _sliced(app: AppTest, back: int = 1) -> list[str]:
 
 
 def _open_tab(app: AppTest, name: str) -> AppTest:
-    app.session_state["reference_data_active_tab"] = REF_TAB[name]
+    app.session_state[DATASET_KEY] = DATASET[name]
     app.run()
     assert not app.exception
     return app
@@ -369,7 +367,7 @@ def test_a_step_change_rebuilds_the_route_tables_with_the_new_token() -> None:
     pd.testing.assert_frame_equal(displayed, _expected_summary(app), check_dtype=False)
 
 
-def test_an_apply_on_another_tab_is_seen_when_the_step_tab_opens() -> None:
+def test_an_apply_on_another_tab_is_seen_when_the_step_tab_opens(grid_calls: Calls) -> None:
     """STEP 탭이 닫힌 채 다른 탭에서 적용해도, 나중에 STEP 탭을 열면 새 내용으로 계산한다.
 
     Process-A 의 UPEH 칸을 비워 적용하면 그 달 경로가 없어진다 — 팝업의 경로 목록에서 빠져야 한다.
@@ -387,7 +385,7 @@ def test_an_apply_on_another_tab_is_seen_when_the_step_tab_opens() -> None:
     calls_before = _route_calls(app)
 
     app = _open_tab(app, "UPEH")
-    app = _edit_and_apply(app, "capa_upeh_editor", "202608", None)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", None)
     assert not app.exception
     assert [error.value for error in app.error] == []
     # 닫힌 STEP 탭의 경로표는 적용 회차에도 만들지 않는다.
@@ -509,26 +507,22 @@ def test_each_edit_table_equals_the_direct_build_of_this_runs_slice(tab_name: st
         pd.testing.assert_frame_equal(template, expected)
 
 
-def test_an_unapplied_edit_left_in_a_closed_tab_applies_the_edited_row_only() -> None:
-    """효율 칸을 고친 채 다른 탭으로 갔다가 돌아와 적용해도, 그 칸만 바뀌고 나머지 행은 원본이다."""
+def test_an_unapplied_edit_left_in_a_closed_tab_applies_the_edited_row_only(
+    grid_calls: Calls,
+) -> None:
+    """효율 칸을 고친 채 다른 표로 갔다가 돌아와 적용해도, 그 칸만 바뀌고 나머지 행은 원본이다.
+    다른 표를 보는 동안 효율 양식은 만들지 않는다 — 초안은 세션 칸(업무 키)이라 양식 없이 남는다."""
     app = AppTest.from_string(
         _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-closed-pending"), default_timeout=60
     )
     app = _open_tab(app, "효율")
-    key = editor_widget_key_in(app, "capa_run_rate_editor")
-    edit = {"edited_rows": {0: {"202608": 0.5}}, "added_rows": [], "deleted_rows": []}
-    app.session_state[key] = edit
-    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
-    app.run()
-    assert not app.exception
-    # 닫힌 탭이어도 적용하지 않은 편집이 남은 편집표는 그린다.
-    assert "capa_run_rate_editor_apply" in {button.key for button in app.button}
+    app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.5")
+    app = _open_tab(app, "UPEH")
+    assert "capa_run_rate_editor" not in app.session_state["test_editor_templates"]
+    assert "capa_run_rate_editor_apply" not in {button.key for button in app.button}
 
-    app.session_state[key] = edit
     app = _open_tab(app, "효율")
-    app.session_state[key] = edit
-    next(button for button in app.button if button.key == "capa_run_rate_editor_apply").click()
-    app.run()
+    app.button(key="capa_run_rate_editor_apply").click().run()
 
     assert not app.exception
     assert [error.value for error in app.error] == []
@@ -612,8 +606,7 @@ def _builds(app: AppTest) -> list[tuple[str, object]]:
 
 
 def _open_equipment(app: AppTest, sub_tab: str) -> AppTest:
-    app.session_state["reference_data_active_tab"] = REF_TAB["설비대수"]
-    app.session_state["equipment_count_active_tab"] = EQP_TAB[sub_tab]
+    app.session_state[DATASET_KEY] = DATASET[f"설비대수 {sub_tab}"]
     app.run()
     assert not app.exception
     return app
@@ -770,20 +763,15 @@ def test_each_equipment_form_follows_the_display_order(sub_tab: str) -> None:
     pd.testing.assert_frame_equal(template, expected)
 
 
-def test_an_equipment_edit_in_display_order_lands_on_its_process() -> None:
-    """표시순서로 줄이 바뀐 보유 편집표에서 첫 줄을 고쳐 적용하면 그 줄의 공정에 든다."""
+def test_an_equipment_edit_in_display_order_lands_on_its_process(grid_calls: Calls) -> None:
+    """표시순서로 줄이 바뀐 보유 그리드에서 첫 줄을 고쳐 적용하면 그 줄의 공정에 든다."""
     app = AppTest.from_string(
         _probed(_descending_equipment_script(), "test-ref-perf-equipment-order-apply"),
         default_timeout=60,
     )
     app = _open_equipment(app, "보유")
-    key = editor_widget_key_in(app, "capa_eqp_own_editor")
-    edit = {"edited_rows": {0: {"202608": 7.0}}, "added_rows": [], "deleted_rows": []}
-    app.session_state[key] = edit
-    app.run()
-    app.session_state[key] = edit
-    next(button for button in app.button if button.key == "capa_eqp_own_editor_apply").click()
-    app.run()
+    assert _visible_keys(grid_calls) == ["Process-B", "Process-A"]
+    app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
 
     assert not app.exception
     assert [error.value for error in app.error] == []
@@ -794,29 +782,23 @@ def test_an_equipment_edit_in_display_order_lands_on_its_process() -> None:
     }
 
 
-def test_a_pending_equipment_edit_keeps_its_form_and_lands_on_its_row() -> None:
-    """보유 칸을 고친 채 다른 탭으로 옮겨도 보유 양식을 만들고, 돌아와 적용하면 그 행에 든다."""
+def test_a_pending_equipment_edit_keeps_its_draft_and_lands_on_its_row(grid_calls: Calls) -> None:
+    """보유 칸을 고친 채 다른 표로 옮기면 보유 양식은 만들지 않고(초안은 세션 칸 — 업무 키) 그 표의
+    양식만 만든다. 돌아와 적용하면 그 행에 든다."""
     app = AppTest.from_string(
         _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-equipment-pending"), default_timeout=60
     )
     app = _open_equipment(app, "보유")
-    key = editor_widget_key_in(app, "capa_eqp_own_editor")
-    edit = {"edited_rows": {1: {"202608": 7.0}}, "added_rows": [], "deleted_rows": []}
+    app = _grid_write(app, grid_calls, "Process-B", "202608", "7")
 
-    app.session_state[key] = edit
     app = _open_equipment(app, "대여")
-    assert sorted(_builds(app)) == [("양식", "대여"), ("양식", "보유")]
-
-    app.session_state[key] = edit
+    assert _builds(app) == [("양식", "대여")]
     app = _open_tab(app, "UPEH")
-    assert _builds(app) == [("양식", "보유")]
-    assert "capa_eqp_own_editor_apply" in {button.key for button in app.button}
+    assert _builds(app) == []
+    assert "capa_eqp_own_editor_apply" not in {button.key for button in app.button}
 
-    app.session_state[key] = edit
     app = _open_equipment(app, "보유")
-    app.session_state[key] = edit
-    next(button for button in app.button if button.key == "capa_eqp_own_editor_apply").click()
-    app.run()
+    app.button(key="capa_eqp_own_editor_apply").click().run()
 
     assert not app.exception
     assert [error.value for error in app.error] == []
@@ -827,7 +809,7 @@ def test_a_pending_equipment_edit_keeps_its_form_and_lands_on_its_row() -> None:
     }
 
 
-def test_an_equipment_apply_shows_in_the_overview() -> None:
+def test_an_equipment_apply_shows_in_the_overview(grid_calls: Calls) -> None:
     """보유를 적용하면(새 토큰) 현황 상세가 그 값으로 다시 만들어진다."""
     script = _real_apply(
         TWO_PROCESS_TEST_SCRIPT, "test-capacity-two-process-page", "test-capacity-two-process-page"
@@ -840,7 +822,7 @@ def test_an_equipment_apply_shows_in_the_overview() -> None:
     assert own_a.tolist() == [2.0]
 
     app = _open_equipment(app, "보유")
-    app = _edit_and_apply(app, "capa_eqp_own_editor", "202608", 7.0)
+    app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
     assert not app.exception
     app = _open_equipment(app, "현황")
     after = _frame_with_column(app, "공정")
@@ -886,41 +868,24 @@ def test_the_overview_message_is_identical_across_reruns() -> None:
 # ---------------------------------------------------------------- R8 변경 개수
 
 
-def _change_counts(app: AppTest) -> list[tuple[int, int]]:
-    counts: list[tuple[int, int]] = list(app.session_state["test_change_counts"])
-    return counts
-
-
 def _change_lines(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.markdown if "변경사항 확인" in str(item.value)]
 
 
-def test_the_change_count_runs_only_with_unapplied_edits() -> None:
-    """편집이 없으면 셀 수를 세지 않고(줄도 없다), 고치면 예전과 같은 줄이 선다."""
+def test_the_change_line_shows_only_with_unapplied_edits(grid_calls: Calls) -> None:
+    """편집이 없으면 「변경사항 확인」 줄이 없고, 고치면 초안 수로 선다. 양식과 같은 값으로 되돌린
+    칸은 초안에서 빠져 줄도 사라진다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙과 같은 뜻)."""
     app = AppTest.from_string(
         _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-change-count"), default_timeout=60
     )
-    app = _open_tab(app, "일수")
-    assert _change_counts(app) == []
+    app = _open_tab(app, "효율")
     assert _change_lines(app) == []
+    assert app.button(key="capa_run_rate_editor_apply").disabled
 
-    key = editor_widget_key_in(app, "capa_run_day_editor")
-    app.session_state[key] = {
-        "edited_rows": {0: {"202608": 20.0}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
-    app.run()
-    assert not app.exception
-    assert _change_counts(app) == [(1, 1)]
+    app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.5")
     assert _change_lines(app) == ["**변경사항 확인** &nbsp;1개 값 · 1개 행"]
+    assert not app.button(key="capa_run_rate_editor_apply").disabled
 
-    # 같은 값으로 고친 칸은 편집이 남아도 바뀐 것이 없다 — 세지만 줄은 서지 않는다.
-    app.session_state[key] = {
-        "edited_rows": {0: {"202608": 31.0}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
-    app.run()
-    assert _change_counts(app) == [(0, 0)]
+    app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.9")
     assert _change_lines(app) == []
+    assert app.button(key="capa_run_rate_editor_apply").disabled

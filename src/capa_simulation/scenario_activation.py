@@ -25,6 +25,7 @@ from capa_simulation.persistence.cache import (
     load_scenario_snapshot,
 )
 from capa_simulation.persistence.models import ScenarioSnapshot
+from capa_simulation.reference_grid_keys import SESSION_KEYS as REFERENCE_GRID_SESSION_KEYS
 from capa_simulation.scenario_preset_state import queue_scenario_preset
 from capa_simulation.scenario_state import (
     ACTIVE_SCENARIO_KEY,
@@ -95,6 +96,9 @@ _STALE_VALUE_KEYS = (
     "load_conversion_own_change",
     "reference_data_own_change",
     HOME_FIGURE_CACHE_KEY,
+    # 기준 정보 편집 그리드의 표마다 초안·이력과 반영 전 op — 앞 시나리오 양식에 붙은 편집이다.
+    # 세션 칸이라 다른 화면에 있어도 사이드바 「적용 전 편집」 이 세므로 바꾸는 자리에서 지운다.
+    *REFERENCE_GRID_SESSION_KEYS,
 )
 _STALE_UI_KEYS = (*_STALE_VALUE_KEYS, *HOME_TOGGLE_DEFAULTS)
 
@@ -372,6 +376,11 @@ def discard_unsaved_scenario_changes(
     active = reset_active_scenario(reference_tables, reference_version)
     if isinstance(st.session_state.get(ACTIVE_PERSISTED_SESSION_REVISION_KEY), int):
         st.session_state[ACTIVE_PERSISTED_SESSION_REVISION_KEY] = active["revision"]
+    # 「편집 되돌리기」 는 **모든 화면의** 적용하지 않은 편집도 버린다. 기준 정보 그리드 초안은
+    # 리비전만 바뀐 회차에 내용이 그대로인 표의 것을 남기므로(다른 화면의 적용 —
+    # `reference_data.py`) 여기서 따로 지운다(불러오기·저장은 `_release_stale_ui_state` 가 지운다).
+    for key in REFERENCE_GRID_SESSION_KEYS:
+        st.session_state.pop(key, None)
     return active
 
 

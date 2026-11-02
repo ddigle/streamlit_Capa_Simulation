@@ -16,6 +16,17 @@ from capa_simulation.persistence.models import (
     ScenarioSnapshot,
     ScenarioSummary,
 )
+from capa_simulation.reference_grid_keys import (
+    APPLIED_KEY,
+    DISCARDED_KEY,
+    EDIT_TABLES,
+    INBOX_KEY,
+    TEMPLATE_DIGESTS_KEY,
+    TOAST_KEY,
+    cells_key,
+    history_key,
+)
+from capa_simulation.reference_grid_keys import SESSION_KEYS as REFERENCE_GRID_SESSION_KEYS
 from capa_simulation.scenario_activation import _STALE_UI_KEYS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -311,6 +322,8 @@ def test_only_previous_values_and_home_toggles_are_dropped() -> None:
         "load_conversion_own_change",
         "reference_data_own_change",
         HOME_FIGURE_CACHE_KEY,
+        # 기준 정보 편집 그리드의 표마다 초안·이력과 반영 전 op(2026-11-02 편집 표 횡전개).
+        *REFERENCE_GRID_SESSION_KEYS,
     }
 
 
@@ -353,8 +366,22 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
                     literals.add(node.value)
 
+    # 기준 정보 편집 그리드의 표마다 칸은 이름을 함수로 짓는다(`cells_key(table)` 등) — 그 함수가
+    # 짓는 이름과 같은지로 본다. 종류 id 는 `reference_grid_keys.DATASETS` 의 글자다.
+    generated = {
+        *(key for table in EDIT_TABLES for key in (cells_key(table), history_key(table))),
+        INBOX_KEY,
+        APPLIED_KEY,
+        TOAST_KEY,
+        DISCARDED_KEY,
+        TEMPLATE_DIGESTS_KEY,
+    }
+    assert set(REFERENCE_GRID_SESSION_KEYS) == generated
+    assert all(table in literals for table in EDIT_TABLES)
     fossils = sorted(
-        key for key in set(_STALE_UI_KEYS) - _home_toggle_keys() if key not in literals
+        key
+        for key in set(_STALE_UI_KEYS) - _home_toggle_keys()
+        if key not in literals and key not in generated
     )
 
     assert not fossils, (

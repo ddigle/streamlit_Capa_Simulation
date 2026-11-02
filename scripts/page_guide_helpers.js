@@ -90,6 +90,16 @@ g.locateCell = (el, s)=>{ const G=g.gridGeom(el); if(!G) return null;
 g.editRow = (el, row)=>{ const a=g.cellRect(el, 0, row); const G=g.gridGeom(el); if(!a||!G) return null; const w=G.cols.reduce((s,c)=>s+c.w,0); return [a[0], a[1], Math.min(w, G.canvas[2]), a[3]]; };
 g.gridColumn = (el, title)=>{ const c=g.colIndex(el, title); if(c<0) return null; const h=g.cellRect(el,c,-1), b=g.cellRect(el,c,0); return h&&b? [h[0],h[1],h[2],b[1]+b[3]-h[1]] : null; };
 // 화면 고유 표적(시안 capture.mjs 에서 옮김)
+// 범용 편집 그리드(components/edit_grid — CCv2 그림자 DOM, 가상 굴림). 칸은 진짜 DOM 이라 글·자리를 바로 읽는다.
+g.egridRoot = ()=>{ const host=document.querySelector('[data-testid="stMain"] .st-key-reference_grid'); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot && e.shadowRoot.querySelector('.eg-grid')); return sh ? sh.shadowRoot : null; };
+g.egrid = ()=>{ const r=g.egridRoot(); const e=r && r.querySelector('.eg-grid'); return e && g.vis(e) ? e : null; };
+g.egridCol = (r, label)=> [...r.querySelectorAll('.eg-head [role="columnheader"]')].findIndex(h=>{ const l=h.querySelector('.eg-hl'); return l && g.norm(l.textContent)===String(label); });
+g.egridFind = (s)=>{ const r=g.egridRoot(); if(!r) return null; const sc=r.querySelector('[role="grid"]'); if(!sc) return null; const kc=s.rowColumn ? g.egridCol(r, s.rowColumn) : 0; const vc=g.egridCol(r, s.column); if(kc<0||vc<0) return {found:false, end:true};
+  const line=[...r.querySelectorAll('.eg-body > [role="row"]')].find(l=>{ const c=l.querySelector('[data-c="'+kc+'"]'); return c && g.norm(c.textContent)===String(s.row); });
+  if(line){ const cell=line.querySelector('[data-c="'+vc+'"]'); if(cell){ if(!g.inView(cell)) cell.scrollIntoView({block:'center', inline:'center'}); return {found:true, rect:g.R(cell), text:g.norm(cell.textContent)}; } }
+  return {found:false, end: sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1}; };
+g.egridScroll = (top)=>{ const r=g.egridRoot(); const sc=r && r.querySelector('[role="grid"]'); if(!sc) return false; if(top) sc.scrollTop=0; else sc.scrollTop += Math.max(sc.clientHeight-64, 30); sc.dispatchEvent(new Event('scroll')); return true; };
+g.egridChanged = ()=>{ const r=g.egridRoot(); return r ? [...r.querySelectorAll('.eg-body [data-changed="1"]')].filter(g.vis)[0] || null : null; };
 g.grid = ()=> [...document.querySelectorAll('[data-testid="stDataFrame"]')].filter(g.vis)[0] || null;
 g.lastGrid = ()=> [...document.querySelectorAll('[data-testid="stMain"] [data-testid="stDataFrame"]')].filter(g.vis).pop() || null;
 // 지금 화면의 이름 — 화면 탭 줄(그림자 DOM)의 지금 탭. 큰 제목(h1)은 화면에서 숨어(sr-only) 1px 칸이라 표적이 못 된다 —

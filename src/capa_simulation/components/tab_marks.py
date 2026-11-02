@@ -1,4 +1,4 @@
-# Purpose: 적용하지 않은 편집이 남은 탭의 이름 옆에 점을 찍는다.
+# Purpose: 적용하지 않은 편집이 남은 탭·종류 단추의 이름 옆에 점을 찍는다.
 
 """탭 이름 옆의 **미적용 점**(2026-09-29 사용자 결정 — 탭 목록 개선안 C).
 
@@ -14,6 +14,12 @@
 
 **비공식 경로다.** `data-testid="stTab"`·`stTabPanel` 이 판올림에서 바뀌면 점이 **안 보일
 뿐** 화면과 동작은 그대로다.
+
+**종류 단추(`st.segmented_control`)에도 같은 점을 찍는다**(`mark_pending_segments` — 기준 정보 종류
+단추, 2026-11-02 편집 표 횡전개). 단추 글도 위젯 값이라 점은 CSS 로 얹는다. 1.63 의 segmented
+control 은 key 칸(`st-key-<key>`) 아래 `[data-testid="stButtonGroup"]` 안에 단추(`role="radio"`)를
+형제로 늘어놓으므로 그 n 번째 단추에 `::after` 를 건다. 이것도 비공식 경로라 판올림에서 바뀌면 점이
+안 보일 뿐이다.
 """
 
 from __future__ import annotations
@@ -25,17 +31,7 @@ import streamlit as st
 from capa_simulation.design import tokens
 
 
-def pending_tabs_style(key: str, labels: Sequence[str], pending: Collection[str]) -> str:
-    """점을 찍을 탭의 CSS. 찍을 탭이 없으면 빈 문자열이다."""
-    positions = [index + 1 for index, label in enumerate(labels) if label in pending]
-    if not positions:
-        return ""
-    root = f".st-key-{key}"
-    selectors = ",\n".join(
-        f'{root} [data-testid="stTab"]:nth-child({position})'
-        f':not({root} [data-testid="stTabPanel"] *)::after'
-        for position in positions
-    )
+def _dot_rule(selectors: str) -> str:
     return f"""
 <style>
 {selectors} {{
@@ -51,6 +47,42 @@ def pending_tabs_style(key: str, labels: Sequence[str], pending: Collection[str]
 }}
 </style>
 """
+
+
+def pending_tabs_style(key: str, labels: Sequence[str], pending: Collection[str]) -> str:
+    """점을 찍을 탭의 CSS. 찍을 탭이 없으면 빈 문자열이다."""
+    positions = [index + 1 for index, label in enumerate(labels) if label in pending]
+    if not positions:
+        return ""
+    root = f".st-key-{key}"
+    return _dot_rule(
+        ",\n".join(
+            f'{root} [data-testid="stTab"]:nth-child({position})'
+            f':not({root} [data-testid="stTabPanel"] *)::after'
+            for position in positions
+        )
+    )
+
+
+def pending_segments_style(key: str, options: Sequence[str], pending: Collection[str]) -> str:
+    """점을 찍을 종류 단추의 CSS(`options` 는 단추 차례의 선택지 값). 찍을 단추가 없으면 빈 글자."""
+    positions = [index + 1 for index, option in enumerate(options) if option in pending]
+    if not positions:
+        return ""
+    root = f'.st-key-{key} [data-testid="stButtonGroup"]'
+    return _dot_rule(
+        ",\n".join(
+            f'{root} [role="radio"]:nth-of-type({position})::after' for position in positions
+        )
+    )
+
+
+def mark_pending_segments(key: str, options: Sequence[str], pending: Collection[str]) -> None:
+    """`st.segmented_control(options, key=key)` 의 단추 가운데 `pending` 에 든 단추 옆에 점을
+    찍는다.
+
+    탭 점과 같은 까닭으로 찍을 것이 없어도 빈 규칙을 매 회차 그린다(`mark_pending_tabs`)."""
+    st.html(pending_segments_style(key, options, pending) or "<style></style>")
 
 
 def mark_pending_tabs(key: str, labels: Sequence[str], pending: Collection[str]) -> None:
