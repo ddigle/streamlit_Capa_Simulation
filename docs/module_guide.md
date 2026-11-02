@@ -596,6 +596,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 | ruff 위반 · 포맷 다름 | `uv run --no-sync python -m ruff format modules/<id>` 뒤 고친다. 긴 주석 · 글자는 `ruff format` 이 나누지 않으므로 손으로 나누거나 줄인다 | 코어와 같은 규칙으로 읽힌다 — 한 줄은 **폭 100칸**이고 한글은 한 자가 2칸이다(한글만이면 50자 안팎, `# Purpose:` 줄은 45자 안팎에서 E501) | M15 · M16 |
 | 감싸지 않은 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 에 맨 함수 | `ctx.callback(함수)`(글자 `"rerun"` · `"ignore"` 는 그대로 된다) | 콜백은 앱 코드보다 먼저 돈다. 거기서 난 오류는 그 회차의 사이드바 · 머리 띠 · 탭 줄까지 지운다 | M18 |
 | `use_container_width=` | `width="stretch"` · `width="content"` | Streamlit 이 곧 지울 인자다. 올림 한 번에 그 화면이 오류 카드가 된다 | M19 |
+| 화면이 처음 그려질 때(첫 회차) 팝업을 스스로 열기 · `st.dialog(dismissible=False)`(경고) | 팝업은 단추를 눌렀을 때만 연다. `dismissible` 은 적지 않는다 — 닫기(✕ · Esc · 바깥 누름)가 남는다 | 누가 그 화면 주소로 처음 오면 입장 화면이 먼저 덮인다. 닫을 수 없는 팝업은 그 밑에 숨어 앱 화면을 묶는다 — 아무것도 누를 수 없고 새로고침해도 같아 앱에 들어갈 수 없다 | M20 |
 
 그 밖에 알아 둘 것:
 
@@ -897,6 +898,7 @@ def _detail() -> None:
 ```
 
 - `st.stop()` · `st.rerun()` 은 오류가 아니다. 감싸기를 그대로 지나간다.
+- 팝업은 단추를 눌렀을 때만 열고 닫기를 남긴다(4장 M20).
 
 ### 9-2. 끄는 스위치 둘
 
@@ -1035,6 +1037,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | M17 | 자기 시험 실패(실패 수/전체). M01 · M06 · M07 · M10 · M11 오류가 있으면 돌리지 않고 「시험 안 돎」(실패로 센다) | 오류 |
 | M18 | 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 인자에 글자 상수(`"rerun"` · `"ignore"`)도 `<무엇>.callback(…)` 호출도 아닌 값이 옴 | 오류 |
 | M19 | 폐기 예정 Streamlit 인자 — `use_container_width=`(`width="stretch"` · `width="content"` 로) | 오류 |
+| M20 | 닫을 수 없는 팝업 — `st.dialog(…)` 의 `dismissible=` 에 `True` 가 아닌 값(`False` · 변수). 처음 들어온 사람의 입장 화면 밑에 숨어 앱 화면을 묶는다(4장) | 경고 |
 
 점검 출력의 꼴(합성 예):
 

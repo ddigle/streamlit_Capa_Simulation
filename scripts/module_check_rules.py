@@ -1,4 +1,4 @@
-# Purpose: 사내 모듈 점검의 정적 규칙(M02 ~ M14·M18·M19)을 모듈 폴더의 파일과 AST 로 본다.
+# Purpose: 사내 모듈 점검의 정적 규칙(M02 ~ M14·M18 ~ M20)을 모듈 폴더의 파일과 AST 로 본다.
 
 """사내 모듈 정적 규칙 — `scripts/check_module.py` 가 부른다(사람이 직접 칠 일은 없다).
 
@@ -50,6 +50,7 @@ RULES: Final[Mapping[str, str]] = {
     "M17": "자기 시험",
     "M18": "감싸지 않은 콜백",
     "M19": "폐기 예정 Streamlit 인자",
+    "M20": "닫을 수 없는 팝업",
 }
 # 이 규칙 가운데 하나라도 오류면 자기 시험(M17)을 돌리지 않는다 — 코어 데이터 자리·코어 내부·배경
 # 실행·프로세스 전역을 건드리는 코드를 실행하지 않는다.
@@ -219,6 +220,9 @@ _WINDOWS_ABSOLUTE: Final = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/]{2})")
 _DEPRECATED_KEYWORDS: Final[Mapping[str, str]] = {
     "use_container_width": 'width="stretch" 또는 width="content" 로 바꿉니다',
 }
+# 닫을 수 없게 연 팝업(M20 경고) — 처음 들어온 사람에게는 입장 화면이 먼저 덮이는데, 그 밑에 숨은
+# 팝업이 앱 화면을 묶어 누름 · Enter · Esc 가 모두 보이지 않는 팝업에 닿는다(새로고침해도 같다).
+_DIALOG: Final = "streamlit.dialog"
 
 # CD 는 Linux 다 — 요구 파일의 환경 표지를 이 값으로 따진다.
 LINUX_MARKER_VALUES: Final[Mapping[str, str]] = {
@@ -1082,6 +1086,8 @@ def _check_calls(tree: ast.Module, names: _Names, context: _FileContext) -> None
                         node,
                         "`st.fragment(run_every=…)` 는 모든 사용자 세션에서 계속 돕니다",
                     )
+            if resolved == _DIALOG and not context.is_test:
+                _check_dialog(node, context)
             if resolved in ("streamlit.query_params.clear", "streamlit.query_params.from_dict"):
                 context.add(
                     "M05",
@@ -1092,6 +1098,21 @@ def _check_calls(tree: ast.Module, names: _Names, context: _FileContext) -> None
         if not context.is_test:
             _check_root_logger(node, names, context)
         _check_file_write(node, names, context)
+
+
+def _check_dialog(node: ast.Call, context: _FileContext) -> None:
+    """`st.dialog(…, dismissible=…)` 에 `True` 가 아닌 값 — 닫기(✕·Esc·바깥 누름)가 없는 팝업."""
+    dismissible = next((item.value for item in node.keywords if item.arg == "dismissible"), None)
+    if dismissible is None or (isinstance(dismissible, ast.Constant) and dismissible.value is True):
+        return
+    shown = repr(dismissible.value) if isinstance(dismissible, ast.Constant) else "…"
+    context.add(
+        "M20",
+        "warning",
+        dismissible,
+        f"`st.dialog(dismissible={shown})` — 닫을 수 없는 팝업은 처음 들어온 사람의 입장 화면 밑에 "
+        "숨어 앱을 묶습니다. dismissible 을 빼고 단추를 눌렀을 때만 엽니다",
+    )
 
 
 def _check_dynamic_import(
@@ -2022,7 +2043,7 @@ def check_module_folder(
     environment: PackageEnvironment,
     git: GitView | None,
 ) -> StaticResult:
-    """모듈 폴더 하나의 정적 규칙(M02 ~ M14·M18·M19) 전부."""
+    """모듈 폴더 하나의 정적 규칙(M02 ~ M14·M18 ~ M20) 전부."""
     files = module_files(folder)
     page_files = frozenset(pages)
     local_names = local_import_names(folder)
