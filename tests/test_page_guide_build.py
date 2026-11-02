@@ -1214,3 +1214,207 @@ def test_place_geometry_holds_ids_integers_and_digests_only(
         boxes = [*record["f"], *record["t"].values()]
         assert all(box is None or all(type(v) is int for v in box) for box in boxes)
         assert all(re.fullmatch(r"[0-9a-f]{12}", record[key]) for key in ("sk", "tx", "pl"))
+
+
+# ------------------------------------------------------------------ 바뀐 자리 검수(점검기)
+
+PLACES_COMPARED = 34  # 사내 1단계 — 자리 38 가운데 예시 4 를 뺀다(명세 1-4)
+
+
+def _data_count() -> int:
+    """k — 데이터 자리 수(`DATA_SHAPED` 로 센다). 사내 1단계에서 모두 견준다."""
+    return len(core.data_places(SKELETON))
+
+
+def _review_repo(root: Path) -> Path:
+    """`--accept` 가 받는 가짜 저장소 뿌리 — `.git` · `app.py` · `src/capa_simulation/` ·
+    `review/guide/`."""
+    (root / ".git").mkdir(parents=True)
+    (root / "app.py").write_text("", encoding="utf-8")
+    (root / "src" / "capa_simulation").mkdir(parents=True)
+    (root / "review" / "guide").mkdir(parents=True)
+    return root
+
+
+@dataclass
+class Outcome:
+    code: int
+    out: str
+    err: str
+
+    @property
+    def line(self) -> str:
+        lines = self.out.strip().splitlines()
+        return lines[-1] if lines else ""
+
+    @property
+    def changed(self) -> dict[str, str]:
+        """stderr 의 `  바뀜 <자리> <까닭>` → {자리: 까닭}(「바뀜 전부」 줄은 뺀다)."""
+        rows = [row.strip()[3:] for row in self.err.splitlines() if row.startswith("  바뀜 ")]
+        return dict(row.partition(" ")[::2] for row in rows if not row.startswith("전부"))
+
+
+@dataclass
+class Desk:
+    """점검기의 바뀐 자리 검수를 돌리는 판 — 사내 1단계 가짜 촬영 · 가짜 저장소 · 사내 두 파일."""
+
+    root: Path
+    work: Path
+    capsys: pytest.CaptureFixture[str]
+
+    @property
+    def accepted(self) -> Path:
+        return self.root / "repo" / "review" / "guide" / core.ACCEPTED_FILE
+
+    @property
+    def overrides(self) -> Path:
+        return self.root / "overrides.json"
+
+    @property
+    def params(self) -> Path:
+        return self.root / "params.json"
+
+    def write_overrides(self, **parts: Any) -> None:
+        text = json.dumps(_overrides(**parts), ensure_ascii=False)
+        self.overrides.write_text(text, encoding="utf-8")
+
+    def write_params(self, values: Mapping[str, Any] | None = None) -> None:
+        document = {"skeleton": SKELETON.version, "values": dict(values or {})}
+        self.params.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+
+    def content(self) -> dict[str, Any]:
+        skeleton = core.load_skeleton()
+        document = core.load_json(self.overrides)
+        return core.apply_overrides(skeleton.content, document, version=skeleton.version)[0]
+
+    def write_baseline(self) -> None:
+        """지금 촬영을 검수 마친 판으로 쓴다(점검기를 거치지 않는 길 — 읽는 쪽 시험용)."""
+        skeleton = core.load_skeleton()
+        shots, _run = core.board_shots(skeleton, self.work)
+        report = core.compare_accepted(
+            skeleton, self.content(), shots, core.load_accepted(self.accepted)
+        )
+        core.save_accepted(self.accepted, core.accepted_record(skeleton, report, shots, date=DATE))
+
+    def baseline(self) -> dict[str, Any]:
+        return dict(json.loads(self.accepted.read_text(encoding="utf-8")))
+
+    def rewrite(self, *, reseal: bool = True, **change: Any) -> None:
+        document = {**self.baseline(), **change}
+        if reseal:
+            document["seal"] = core.seal(document)
+        self.accepted.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+
+    def edit(self, key: str, **delta: float) -> None:
+        """촬영 결과의 표적 하나를 옮긴다(`x` · `y` · `w` · `h` 에 더한다)."""
+        name, _, state_id = key.partition("@")
+        shots = core.load_shots(self.work)
+        rect = shots.states[state_id].targets[name]
+        for index, axis in enumerate("xywh"):
+            rect[index] += delta.get(axis, 0.0)
+        core.save_shots(shots, self.work)
+
+    def check(self, *extra: str) -> Outcome:
+        code = checker.main(
+            ["--work", str(self.work), "--overrides", str(self.overrides)]
+            + ["--params", str(self.params), "--accepted", str(self.accepted), *extra]
+        )
+        captured = self.capsys.readouterr()
+        return Outcome(code, captured.out, captured.err)
+
+
+@pytest.fixture
+def desk(tmp_path: Path, example_dir: Path, capsys: pytest.CaptureFixture[str]) -> Desk:
+    built = Desk(tmp_path, _internal_work(tmp_path), capsys)
+    _review_repo(tmp_path / "repo")
+    built.write_overrides()
+    built.write_params()
+    return built
+
+
+def test_review_line_puts_the_change_cell_between_examples_and_db(
+    tmp_path: Path, example_dir: Path
+) -> None:
+    work = _internal_work(tmp_path)
+    shots, run = core.board_shots(SKELETON, work)
+    report = core.compare_accepted(SKELETON, SKELETON.content, shots, (None, "없음"))
+
+    plain = core.review_line(SKELETON, shots, run, core.OverrideReport(), example_count=4)
+    line = core.review_line(
+        SKELETON, shots, run, core.OverrideReport(), example_count=4, changes=report
+    )
+
+    assert plain.endswith("예시 4; DB 변화 없음")
+    assert line == plain.replace("예시 4; ", "예시 4; 바뀜 na; ")
+
+
+def test_checker_without_a_baseline_file_says_na_and_exits_0(desk: Desk) -> None:
+    result = desk.check()
+
+    assert result.code == checker.EXIT_OK
+    assert result.line.endswith("예시 4; 바뀜 na; DB 변화 없음")
+    assert "  기준 없음 — 모든 자리" in result.err.splitlines()
+    assert not desk.accepted.exists()
+
+
+def test_checker_compares_with_the_accepted_board_and_lists_only_data_places(desk: Desk) -> None:
+    desk.write_baseline()
+
+    result = desk.check()
+    lines = result.err.splitlines()
+
+    assert result.code == checker.EXIT_OK
+    assert f"바뀜 {_data_count()}/{PLACES_COMPARED};" in result.line
+    assert set(result.changed.values()) == {"데이터 자리"}
+    assert set(result.changed) == core.data_places(SKELETON)
+    start = lines.index(f"  기준 lob@1023 · {DATE} · {PLACES_COMPARED - _data_count()}자리")
+    assert lines[start + 1] == f"  흔들림 0:{PLACES_COMPARED - _data_count()} 1-2:0 3-9:0 10+:0"
+    # 기준 줄들은 지금 목록(못 찾은 표적 → 고아 → 예시 → 남은 상태) 뒤에 온다
+    assert all(not row.startswith("  예시 ") for row in lines[start:])
+    assert "px" not in result.err
+
+
+@pytest.mark.parametrize(
+    ("spoil", "reason"),
+    [
+        ("json", "JSONDecodeError"),
+        ("extra", "형식"),
+        ("form", "형식"),
+        ("seal", "봉인"),
+        ("mode", "모드"),
+    ],
+)
+def test_a_baseline_that_cannot_be_used_is_dropped_with_na_and_exit_0(
+    desk: Desk, spoil: str, reason: str
+) -> None:
+    desk.write_baseline()
+    if spoil == "json":
+        desk.accepted.write_text("{not json", encoding="utf-8")
+    elif spoil == "extra":
+        desk.rewrite(text="화면 글")
+    elif spoil == "form":
+        desk.rewrite(form=2)
+    elif spoil == "seal":
+        places = desk.baseline()["places"]
+        first = next(iter(places.values()))
+        first["f"][0][0] += 1
+        desk.rewrite(reseal=False, places=places)
+    else:
+        desk.rewrite(mode="example")
+
+    result = desk.check()
+
+    assert result.code == checker.EXIT_OK
+    assert "; 바뀜 na; " in result.line
+    assert f"  기준 버림 — {reason} — 모든 자리" in result.err.splitlines()
+
+
+def test_the_change_cell_needs_both_accepted_and_work(
+    desk: Desk, capsys: pytest.CaptureFixture[str]
+) -> None:
+    desk.write_baseline()
+
+    code = checker.main(["--overrides", str(desk.overrides), "--accepted", str(desk.accepted)])
+
+    assert code == checker.EXIT_OK
+    assert capsys.readouterr().out.strip().endswith("고아 0; 덮어씀 0")

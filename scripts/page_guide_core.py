@@ -17,11 +17,11 @@
   (`template.html`)의 `/*__DATA__*/null` 자리에 JSON 으로 넣는다. 자르기 규칙은 시안
   `build_guide.py` 그대로다(아래 상수).
 - **리뷰 한 줄** `review_line` — 리뷰 md 에 옮길 압축 꼴. ID · 수만 담는다.
-- **바뀐 자리 검수** `compare_accepted` — 원고 자리마다(`place_geometry`) 표적 자리 · 자르기 틀 ·
-  원고 · 덮어쓰기 · 촬영 동작의 지문을 사내 기준 파일(`review/guide/accepted.json` — 지난번 검수를 마친
-  판, 점검기 `--accept` 만 쓴다)과 견줘 바뀐 자리만 검수 목록에 올린다(리뷰 칸 `바뀜 n/N`). 기준 파일을
-  못 읽으면 멈추지 않고 `바뀜 na` 다. 데이터 자리(`DATA_SHAPED`)는 좌표를 남기지 않고 늘 목록에 든다.
-  생성기는 조립할 때마다 조립 도장(`--work/assembled.json`)을 남긴다.
+- **바뀐 자리 검수** `compare_accepted` — 원고 자리마다(`place_geometry`) 표적 자리 · 자르기
+  틀 · 원고 · 덮어쓰기 · 촬영 동작의 지문을 사내 기준 파일(`review/guide/accepted.json` — 지난번
+  검수를 마친 판, 점검기 `--accept` 만 쓴다)과 견줘 바뀐 자리만 검수 목록에 올린다(리뷰 칸
+  `바뀜 n/N`). 기준 파일을 못 읽으면 멈추지 않고 `바뀜 na` 다. 데이터 자리(`DATA_SHAPED`)는 좌표를
+  남기지 않고 늘 목록에 든다. 생성기는 조립할 때마다 조립 도장(`--work/assembled.json`)을 남긴다.
 
 화면 글자는 여기서 다루지 않는다 — 좌표와 상태 ID · 표적 이름만 다룬다.
 """
@@ -1151,6 +1151,16 @@ def example_spots(content: Mapping[str, Any], shots: ShotSet) -> set[str]:
     }
 
 
+def stale_versions(overrides: OverrideReport, params: ParamReport | None) -> list[str]:
+    """뼈대와 판이 다른 사내 파일 — `덮어쓰기 lob@1015` 꼴(리뷰 한 줄의 「판 다름」)."""
+    stale = []
+    if overrides.skeleton is not None and not overrides.version_matches:
+        stale.append(f"덮어쓰기 {compact_version(overrides.skeleton)}")
+    if params is not None and params.skeleton is not None and not params.version_matches:
+        stale.append(f"매개값 {compact_version(params.skeleton)}")
+    return stale
+
+
 def review_line(
     skeleton: Skeleton,
     shots: ShotSet | None,
@@ -1159,17 +1169,15 @@ def review_line(
     params: ParamReport | None = None,
     *,
     example_count: int = 0,
+    changes: ChangeReport | None = None,
 ) -> str:
     """리뷰 md 에 옮길 한 줄(handoff §6 의 압축 꼴). ID · 수 · 고정 글자만 담는다.
 
     `가이드 lob@1022 상태 18/18; 표적 n/N ok|ng <표적@상태>; 고아 0; 덮어씀 n; 예시 4; DB 변화 없음`
+    — 검수 마친 판과 견줬으면(`changes`) `예시 4;` 뒤에 `바뀜 n/N;` 또는 `바뀜 na;` 가 선다.
     """
     head = f"가이드 {compact_version(skeleton.version)}"
-    stale = []
-    if overrides.skeleton is not None and not overrides.version_matches:
-        stale.append(f"덮어쓰기 {compact_version(overrides.skeleton)}")
-    if params is not None and params.skeleton is not None and not params.version_matches:
-        stale.append(f"매개값 {compact_version(params.skeleton)}")
+    stale = stale_versions(overrides, params)
     if stale:
         head += f" 판 다름({' · '.join(stale)})"
     parts: list[str] = []
@@ -1190,6 +1198,8 @@ def review_line(
     parts += [f"고아 {len(overrides.orphans)}", f"덮어씀 {overrides.applied}"]
     if shots is not None and run is not None:
         parts.append(f"예시 {example_count}")
+        if changes is not None:
+            parts.append(changes.cell)
         parts.append(DB_WORDS.get(run.db, DB_WORDS["unchecked"]))
     return f"{head} " + "; ".join(parts)
 
@@ -1208,24 +1218,62 @@ def board_shots(skeleton: Skeleton, work: Path) -> tuple[ShotSet, RunFacts]:
     return shots, run
 
 
+@dataclass
+class WorkReview:
+    """작업 폴더 하나의 점검 결과 — 리뷰 한 줄 · stderr 목록과 그 바탕(점검기 `--accept` 가 씀)."""
+
+    line: str
+    details: list[str]
+    shots: ShotSet
+    run: RunFacts
+    changes: ChangeReport | None
+    stale: list[str]
+
+
+def work_review(
+    skeleton: Skeleton,
+    content: Mapping[str, Any],
+    work: Path,
+    overrides: OverrideReport,
+    params: ParamReport | None,
+    *,
+    accepted: Path | None = None,
+) -> WorkReview:
+    """작업 폴더로 리뷰 한 줄과 자세한 목록을 낸다. 목록 차례는 못 찾은 표적 → 고아 → 예시 →
+    남은 상태, 검수 마친 판(`accepted`)을 주면 그 뒤에 기준 → 흔들림 → 바뀜(원고 차례)이다."""
+    shots, run = board_shots(skeleton, work)
+    examples = example_spots(content, shots)
+    changes = (
+        None
+        if accepted is None
+        else compare_accepted(skeleton, content, shots, load_accepted(accepted))
+    )
+    line = review_line(
+        skeleton, shots, run, overrides, params, example_count=len(examples), changes=changes
+    )
+    _, _, missing = target_tally(skeleton, shots, expected_states(skeleton, run))
+    details = [f"못 찾은 표적 {item}" for item in missing]
+    details += [f"고아 {address}" for address in overrides.orphans]
+    details += [f"예시 {where}" for where in sorted(examples)]
+    details += [f"남은 상태 {state_id}" for state_id in run.left]
+    if changes is not None:
+        details += changes.lines()
+    return WorkReview(line, details, shots, run, changes, stale_versions(overrides, params))
+
+
 def review_for_work(
     skeleton: Skeleton,
     content: Mapping[str, Any],
     work: Path,
     overrides: OverrideReport,
     params: ParamReport | None,
+    *,
+    accepted: Path | None = None,
 ) -> tuple[str, list[str]]:
-    """작업 폴더로 리뷰 한 줄과 자세한 목록(못 찾은 표적 · 고아 주소)을 낸다 — 생성기 끝과
-    점검기가 같은 길을 쓴다."""
-    shots, run = board_shots(skeleton, work)
-    examples = example_spots(content, shots)
-    line = review_line(skeleton, shots, run, overrides, params, example_count=len(examples))
-    _, _, missing = target_tally(skeleton, shots, expected_states(skeleton, run))
-    details = [f"못 찾은 표적 {item}" for item in missing]
-    details += [f"고아 {address}" for address in overrides.orphans]
-    details += [f"예시 {where}" for where in sorted(examples)]
-    details += [f"남은 상태 {state_id}" for state_id in run.left]
-    return line, details
+    """작업 폴더로 리뷰 한 줄과 자세한 목록(못 찾은 표적 · 고아 주소 …)을 낸다 — 생성기 끝과
+    점검기가 같은 길을 쓴다. 생성기는 `accepted` 를 주지 않는다(리뷰 칸 `바뀜` 은 점검기만)."""
+    review = work_review(skeleton, content, work, overrides, params, accepted=accepted)
+    return review.line, review.details
 
 
 # ------------------------------------------------------------------ 바뀐 자리 검수

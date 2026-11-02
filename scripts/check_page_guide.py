@@ -42,6 +42,12 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--work", type=Path, default=None, help="생성기의 --work(촬영 결과)")
     parser.add_argument("--overrides", type=Path, default=None, help="사내 덮어쓰기")
     parser.add_argument("--params", type=Path, default=None, help="사내 매개값")
+    parser.add_argument(
+        "--accepted",
+        type=Path,
+        default=None,
+        help="검수 마친 판(review/guide/accepted.json) — 주면 리뷰 한 줄에 「바뀜 n/N」 칸",
+    )
     return parser.parse_args(argv)
 
 
@@ -62,7 +68,9 @@ def check(argv: Sequence[str] | None = None) -> int:
             line = core.review_line(skeleton, None, None, overrides, params)
             details = [f"고아 {address}" for address in overrides.orphans]
         else:
-            line, details = core.review_for_work(skeleton, content, args.work, overrides, params)
+            line, details = core.review_for_work(
+                skeleton, content, args.work, overrides, params, accepted=args.accepted
+            )
     except core.GuideInputError as exc:
         print(str(exc))
         for problem in exc.problems:
