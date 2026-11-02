@@ -367,8 +367,8 @@ def test_a_registration_whose_capacity_stops_says_how_to_fix_it_in_the_run_recor
 ) -> None:
     """자동 갱신도 화면 등록과 같은 길로 저장 전에 대당 Capa 를 돌려 본다(2026-11-01 결정 A1).
 
-    리비전 1 메모에 꼴·개수가 남고, 실행 기록 사유 끝에 푸는 길(기준 정보 탭 → 다음 리비전)이
-    붙는다.
+    리비전 1 메모에 꼴·개수가 남고, 실행 기록 사유 끝에 푸는 길(기준 정보 화면 그 표 → 다음
+    리비전)이 붙는다.
     """
     _official_w40(repository)
     fake = FakeBigDataQuery(

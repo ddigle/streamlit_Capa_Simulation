@@ -412,9 +412,9 @@ def test_removed_values_are_counted_so_the_apply_message_can_say_it() -> None:
 
 
 # ------------------------------- 값 칸 범위 (격자의 min/max 를 붙여넣기도 지난다)
-# 편집 격자는 `EDITOR_FORMATS` 의 하한·상한으로 값을 받는다. 붙여넣기가 그 범위를 지나지 않으면
-# 측정률에 `85`(= 85% 를 백분율로 적은 것)·`1.2`·음수가 그대로 들어가 대당 Capa 가 조용히 틀린다
-# (사내 감사 E5).
+# 편집 격자는 `reference_grid.GRID_FORMATS` 의 하한·상한으로 값을 받는다. 붙여넣기가 그 범위를
+# 지나지 않으면 측정률에 `85`(= 85% 를 백분율로 적은 것)·`1.2`·음수가 그대로 들어가 대당 Capa 가
+# 조용히 틀린다(사내 감사 E5).
 
 
 def _ranged_paste(modified: pd.DataFrame, template: pd.DataFrame | None = None) -> pd.DataFrame:

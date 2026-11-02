@@ -2414,21 +2414,27 @@ def test_the_equipment_header_summary_counts_and_names_only_missing_contract_nam
     assert screens.summarize_equipment_headers({}, False).startswith("새 이름 0/8 있음(없음: ")
 
 
-# ------------------------------------------------------------------ 사이드바 그룹 셋
+# ------------------------------------------------------------------ 사이드바 계산 그룹
 
 
 def test_the_sidebar_group_boxes_match_the_navigation_declaration() -> None:
-    """스크립트는 선언을 부르지 않고 값만 옮긴다 — 하위가 있는 그룹의 slug·제목·하위 수가 선언과
-    같은지 여기서 본다. 상자 key 는 `app.py` 가 `<slug>_box` 로 단다."""
+    """스크립트는 선언을 부르지 않고 값만 옮긴다 — 계산 그룹(Static Capa 부터 Dynamic Capa
+    까지, 하위가 없는 「생산 진도」 도)의 slug·제목·하위 수가 선언과 같은지 여기서 본다. 전에는
+    하위가 있는 그룹만 견줘 생산 진도 상자가 빠져도 몰랐다(2026-11-03 마지막 검토). 상자 key 는
+    `app.py` 가 `<slug>_box` 로 단다."""
     from capa_simulation.navigation import SIDEBAR_GROUPS
 
-    declared = tuple(
-        (group.slug, group.main.title, len(group.subpages))
-        for group in SIDEBAR_GROUPS
-        if group.subpages
-    )
+    slugs = [group.slug for group in SIDEBAR_GROUPS]
+    calculation = SIDEBAR_GROUPS[slugs.index("static_capa") : slugs.index("dynamic_capa") + 1]
+    declared = tuple((group.slug, group.main.title, len(group.subpages)) for group in calculation)
     assert screens.SIDEBAR_GROUP_BOXES == declared
+    assert ("production_progress", "생산 진도", 0) in declared
     assert 'key=f"{group.slug}_box"' in (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+    # 하위가 없는 상자는 펼침 상자가 아니다 — 제목은 그 안 링크 글에서 읽는다.
+    assert (
+        'a[data-testid="stPageLink-NavLink"] [data-testid="stMarkdownContainer"] p'
+        in screens._SIDEBAR_GROUPS_JS
+    )
 
 
 def _box(
@@ -2456,22 +2462,27 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
 
     assert screens.summarize_sidebar_groups(every) == (
-        "Static Capa 머리 + 4 · 실행 관리 머리 + 8 · Dynamic Capa 머리 + 1 — "
+        "Static Capa 머리 + 4 · 실행 관리 머리 + 8 · 생산 진도 머리 + 0 · Dynamic Capa 머리 + 1 — "
         "정한 차례·수와 같음 · 상자 제목 한 줄 · 잘림 없음"
     )
     # 차례가 바뀌거나 하나가 빠지거나 하위 수가 다르면 「다름」, 줄바꿈·말줄임은 그 상자 이름만
     # 적는다.
-    swapped = [every[1], every[0], _box("dynamic_capa", "Dynamic Capa", 2)]
+    swapped = [every[1], every[0], every[2], _box("dynamic_capa", "Dynamic Capa", 2)]
     swapped[0] = {**swapped[0], "lines": 2}
     line = screens.summarize_sidebar_groups(swapped)
     assert line == (
-        "실행 관리 머리 + 8 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
+        "실행 관리 머리 + 8 · Static Capa 머리 + 4 · 생산 진도 머리 + 0 · Dynamic Capa 머리 + 2 — "
         "정한 차례·수와 다름 · 줄바꿈: 실행 관리"
     )
-    missing = screens.summarize_sidebar_groups([every[0], {**every[2], "clipped": True}])
+    missing = screens.summarize_sidebar_groups([every[0], every[2], {**every[3], "clipped": True}])
     assert missing.endswith("정한 차례·수와 다름(없음: 실행 관리) · 잘림: Dynamic Capa")
+    # 하위가 없는 생산 진도 상자가 빠져도 「다름」 이다.
+    no_progress = screens.summarize_sidebar_groups([every[0], every[1], every[3]])
+    assert no_progress.endswith(
+        "정한 차례·수와 다름(없음: 생산 진도) · 상자 제목 한 줄 · 잘림 없음"
+    )
     # 문단 안에서는 넘치지 않아도 조상 칸이 글자를 자르면 잘림이다.
-    cut = screens.summarize_sidebar_groups([every[0], {**every[1], "cut": True}, every[2]])
+    cut = screens.summarize_sidebar_groups([every[0], {**every[1], "cut": True}, *every[2:]])
     assert cut.endswith("정한 차례·수와 같음 · 잘림: 실행 관리")
     # 화면 제목이 다르면 화면 글자를 옮기지 않고 「제목 다름」만 적는다.
     renamed = screens.summarize_sidebar_groups([{**every[0], "title": SENTINEL}, *every[1:]])
@@ -2486,20 +2497,20 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
 def test_the_narrow_sidebar_summary_accepts_ellipsis_and_flags_wrapping() -> None:
     """좁게 끈 폭에서는 말줄임이 정한 모양(개수만)이고 줄바꿈이 결함이다(2026-10-17 사용자 결정)."""
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
-    clipped = [every[0], {**every[1], "clipped": True, "ellipsis": True}, every[2]]
+    clipped = [every[0], {**every[1], "clipped": True, "ellipsis": True}, *every[2:]]
 
     assert screens.summarize_sidebar_narrow({"width": 213, "boxes": every}) == "좁은 폭 213px 한 줄"
     assert (
         screens.summarize_sidebar_narrow({"width": 213, "boxes": clipped})
         == "좁은 폭 213px 한 줄(말줄임 1)"
     )
-    wrapped = [every[0], {**every[1], "lines": 2, "clipped": True, "ellipsis": True}, every[2]]
+    wrapped = [every[0], {**every[1], "lines": 2, "clipped": True, "ellipsis": True}, *every[2:]]
     assert (
         screens.summarize_sidebar_narrow({"width": 200, "boxes": wrapped})
         == "좁은 폭 200px 줄바꿈: 실행 관리"
     )
     # 넘쳤는데 말줄임이 없거나(규칙이 빠짐) 조상 칸이 자르면 결함이다. 보이는 링크도 센다.
-    bare = [every[0], {**every[1], "clipped": True}, {**every[2], "cut": True}]
+    bare = [every[0], {**every[1], "clipped": True}, every[2], {**every[3], "cut": True}]
     assert (
         screens.summarize_sidebar_narrow({"width": 200, "boxes": bare, "links_cut": 2})
         == "좁은 폭 200px 말줄임 없이 잘림: 실행 관리, Dynamic Capa"

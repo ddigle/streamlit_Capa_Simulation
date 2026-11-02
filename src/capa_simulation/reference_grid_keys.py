@@ -12,7 +12,7 @@ UI 를 모르는 모듈이라 `scenario_activation`(시나리오를 바꾸면 �
   않고 표만 바꿔 싣는다.
 - **초안은 표마다 세션 칸**(`cells_key`·`history_key`) — 업무 키 + 월이라 그리지 않는 표의 편집도
   남고 줄 차례(공용 표시순서)만 바뀐 회차에도 같은 칸에 붙는다. 시나리오를 바꾸면 `SESSION_KEYS` 를
-  지운다.
+  지운다(토스트 번호 칸은 남긴다).
 """
 
 from __future__ import annotations
@@ -66,13 +66,14 @@ def history_key(table: str) -> str:
     return f"reference_grid_history__{table}"
 
 
-# 시나리오를 바꾸면 지우는 칸 — 앞 시나리오 양식에 붙은 초안·이력과 아직 반영하지 않은 op.
+# 시나리오를 바꾸면 지우는 칸 — 앞 시나리오 양식에 붙은 초안·이력과 아직 반영하지 않은 op. 토스트
+# 칸(`TOAST_KEY`)은 넣지 않는다 — 번호가 1 로 돌아가면 마운트된 그리드 JS 가 들고 있는 마지막 번호와
+# 같아져 다음 서버 토스트를 삼킨다(번호는 세션 동안 오르기만 한다).
 SESSION_KEYS: Final = (
     *(cells_key(table) for table in EDIT_TABLES),
     *(history_key(table) for table in EDIT_TABLES),
     INBOX_KEY,
     APPLIED_KEY,
-    TOAST_KEY,
     DISCARDED_KEY,
     TEMPLATE_DIGESTS_KEY,
 )

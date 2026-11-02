@@ -372,11 +372,12 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
         *(key for table in EDIT_TABLES for key in (cells_key(table), history_key(table))),
         INBOX_KEY,
         APPLIED_KEY,
-        TOAST_KEY,
         DISCARDED_KEY,
         TEMPLATE_DIGESTS_KEY,
     }
     assert set(REFERENCE_GRID_SESSION_KEYS) == generated
+    # 토스트 번호 칸은 지우지 않는다 — 마운트된 그리드가 같은 번호의 다음 토스트를 삼킨다.
+    assert TOAST_KEY not in REFERENCE_GRID_SESSION_KEYS
     assert all(table in literals for table in EDIT_TABLES)
     fossils = sorted(
         key

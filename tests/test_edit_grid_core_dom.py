@@ -455,3 +455,106 @@ def test_view_changes_layout_hangul_keys_toolbar_focus_and_table_switches() -> N
     assert result["keyboardFindFocus"], "자판으로 누른 ▲ 는 단추에 남는다"
     assert result["shownBefore"] == [False, "앞 표 상태 글"]
     assert result["hushed"] == [True, "", "", False, False]
+
+
+RUNNER_ACKS = r"""
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const sent = []
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.setAttribute('data-eg-root', '')
+host.className = 'eg'
+const mount = (data) => globalThis.__mount({
+  data, parentElement,
+  setStateValue: (name, value) => sent.push(JSON.parse(JSON.stringify(value))),
+})
+const sendFeed = (feed) => {
+  const store = (window.__capaEditGrid = window.__capaEditGrid || {})
+  ;(store[feed.host] = store[feed.host] || {}).feed = feed
+  window.dispatchEvent(new CustomEvent('capa-edit-grid', { detail: feed.host }))
+}
+const docListeners = {}
+document.addEventListener = (type, fn) => {
+  ;(docListeners[type] = docListeners[type] || []).push(fn)
+}
+document.removeEventListener = (type, fn) => {
+  docListeners[type] = (docListeners[type] || []).filter((f) => f !== fn)
+}
+const fireDoc = (type) => (docListeners[type] || []).slice().forEach((fn) => fn({ type }))
+const q = (selector) => host.querySelector(selector)
+const key = (target, name, extra) => fire(target, 'keydown', Object.assign({ key: name }, extra))
+const seqs = () => (sent.length ? sent[sent.length - 1].ops.map((op) => op.seq) : [])
+const edit = (value) => {
+  key(q('.eg-scroll'), 'Enter')
+  q('.eg-ed').value = value
+  key(q('.eg-ed'), 'Enter')
+}
+const R = {}
+;(async () => {
+  sendFeed(input.feed)
+  mount(input.shell)
+  const S = host.__eg
+  key(q('.eg-scroll'), 'ArrowRight')
+  key(q('.eg-scroll'), 'ArrowRight')
+  edit('50%')  // 초안 없는 표의 첫 편집 — 곧바로 보낸다(seq 1)
+  R.firstEdit = { sent: sent.length, box: S.box.ops.length, seqs: seqs() }
+  // 보낸 op 가 아직 ack 되지 않았다 — 브라우저 탭을 바꿔도 다시 보내지 않는다.
+  fireDoc('visibilitychange')
+  R.inFlight = { sent: sent.length }
+  // 읽기 보기 — 같은 회차가 표 없는 껍데기와 그 op 의 ack 를 싣고 온다(feed 다음 껍데기 차례).
+  sendFeed(Object.assign({}, input.emptyFeed, { acks: { [S.mount]: 1 } }))
+  mount(input.emptyShell)
+  R.readView = { box: S.box.ops.length, model: S.model }
+  fireDoc('visibilitychange')
+  R.readViewHidden = { sent: sent.length }
+  // 표로 돌아와(초안 1칸) 고치면 300ms 묶음 — 묶음 안의 op 는 아직 보내지 않았으니 탭을 바꾸면
+  // 보낸다.
+  sendFeed(Object.assign({}, input.feed2, { acks: { [S.mount]: 1 } }))
+  mount(input.shell)
+  edit('60%')
+  R.batched = { sent: sent.length, box: S.box.ops.length }
+  fireDoc('visibilitychange')
+  R.flushed = { sent: sent.length, seqs: seqs() }
+  // 묶음이 차서 보낸 뒤(ack 전) 그리드를 내리면 정리 함수는 다시 보내지 않는다.
+  edit('71%')
+  await tick(360)
+  R.timed = { sent: sent.length, seqs: seqs() }
+  const cleanup = mount(input.shell)
+  cleanup()
+  R.cleanup = { sent: sent.length }
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def test_read_view_takes_acks_and_a_flush_sends_only_unsent_ops() -> None:
+    """읽기 보기(표 없는 껍데기)를 고른 회차의 feed 도 ack 를 싣는다 — 그리드가 그 ack 로 출납을
+    비우고, focusout·visibilitychange·정리 함수의 「보내기」 는 아직 보내지 않은 op 가 있을 때만
+    보낸다. 전에는 읽기 보기에서 ack 를 버려(`!S.model`) 이미 반영된 op 를 탭을 바꿀 때마다·화면을
+    떠날 때 다시 보내 앱 회차가 하나씩 더 돌았다(2026-11-03 마지막 검토 C3)."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    feed = _feed(index, "k1", None)
+    feed2 = _feed(index, "k1", {"cells": {"DEMO_B\x1f양산": {"202702": 0.5}}, "bad": {}}, undo=1)
+    empty_shell = edit_grid.shell_data(
+        "demo_grid", None, None, base_key="", changes_label="적용 전 변경"
+    )
+    empty_feed = encode_feed(None, None, None, host="demo_grid", base_key="", acks={}, toast=None)
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        RUNNER_ACKS,
+        {
+            "shell": shell,
+            "feed": feed,
+            "feed2": feed2,
+            "emptyShell": empty_shell,
+            "emptyFeed": empty_feed,
+        },
+    )
+    assert result["firstEdit"] == {"sent": 1, "box": 1, "seqs": [1]}
+    assert result["inFlight"] == {"sent": 1}, "ack 전에 탭을 바꿔도 같은 op 를 다시 보내지 않는다"
+    assert result["readView"] == {"box": 0, "model": None}, "읽기 보기 회차의 ack 로 출납이 빈다"
+    assert result["readViewHidden"] == {"sent": 1}
+    assert result["batched"] == {"sent": 1, "box": 1}
+    assert result["flushed"] == {"sent": 2, "seqs": [2]}, "묶음 안의 op 는 탭을 바꾸면 보낸다"
+    assert result["timed"] == {"sent": 3, "seqs": [2, 3]}, "보낼 때는 ack 안 된 op 전부를 싣는다"
+    assert result["cleanup"] == {"sent": 3}, "정리 함수는 이미 보낸 op 를 다시 보내지 않는다"

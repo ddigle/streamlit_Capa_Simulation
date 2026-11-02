@@ -13,13 +13,15 @@
   않는다(브라우저가 feed `filters` 로 거른다).
 - **편집은 출납 콜백이 세션 inbox 에 쌓기만** 하고(`edit_grid.collect_outbox`) 본문이 원본 토큰을 본
   뒤 반영한다(`apply_grid_inbox`) — 원본이 바뀌어 초안·이력을 버린 회차에는 새 `gen` 이 서서 그 전에
-  보낸 op 가 버려지고 수가 토스트로 간다. 지금 보이지 않는 표의 op 도 그 표 초안에 쓴다.
+  보낸 op 가 버려지고 수가 토스트로 간다. 지금 보이지 않는 표의 op 도 그 표 초안에 쓴다. 반영이 초안
+  칸을 비우면 화면이 한 번 다시 돈다(본문보다 먼저 그린 사이드바·탭 점이 옛 칸으로 섰다).
 - **오류의 자리는 둘이다.** 숫자·범위·해석 오류는 칸 안(빨강 + 상태 줄 문구 — 그리드가 그린다)이고
   「변경사항 적용」 을 누르면 고칠 칸 알림으로 멈춘다(`error_notice`). 업무 규칙 오류
   (`reference_consistency`)는 적용할 때 문장으로(오늘과 같다 — 화면이 쓴다).
 - **큰 표 안전 상한**(명세 1-2 의 22). 칸 수가 `CAP_CELLS` 를 넘거나 껍데기 본문이 `CAP_BYTES` 를
   넘으면 사이드바 「표 조건」 필터를 서버에서 걸어 그 줄만 싣고, 필터가 없거나 걸러도 넘치면 앞
-  `CAP_ROWS` 줄만 싣고 작업 줄 아래에 알린다. 초안이 업무 키라 실은 줄이 바뀌어도 편집은 제 줄에
+  `CAP_ROWS` 줄만 싣고 작업 줄 아래에 알린다(바이트 상한을 넘는 표의 전체 본문은 캐시에 두지
+  않는다 — `get_edit_grid_base_within`). 초안이 업무 키라 실은 줄이 바뀌어도 편집은 제 줄에
   남고, 적용은 언제나 **전체 양식**에 덮는다(`merged_template`). 합성 표본 최대는 UPEH 2,660줄 ×
   30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 다음 배포에 잰다.
 """
@@ -62,7 +64,11 @@ from capa_simulation.services.edit_grid import (
     merge_into_template,
 )
 from capa_simulation.services.edit_grid_payload import EditGridBase, base_key, labels_digest
-from capa_simulation.services.simulation_cache import ScenarioCacheKey, get_edit_grid_base
+from capa_simulation.services.simulation_cache import (
+    ScenarioCacheKey,
+    get_edit_grid_base,
+    get_edit_grid_base_within,
+)
 
 # 변경 목록 이름 — 사이드바 「적용 전 편집」·단추 「변경사항 적용」 과 같은 말.
 CHANGES_LABEL: Final = "적용 전 변경"
@@ -206,12 +212,21 @@ def build_grid_table(
     content = "/".join(str(part) for part in cache_key)
     cells = len(template) * len(spec.value_columns)
     if cells <= CAP_CELLS:
-        base = get_edit_grid_base(
-            cache_key, order_digest, table, digest, _template=template, _spec=spec, _labels=labels
+        # 본문이 `CAP_BYTES` 를 넘는 표는 캐시가 본문 대신 None 을 담는다 — 넘는 표의 전체 본문을
+        # 캐시에 두거나 크기만 보려고 회차마다 풀지 않는다.
+        whole = get_edit_grid_base_within(
+            cache_key,
+            order_digest,
+            table,
+            digest,
+            CAP_BYTES,
+            _template=template,
+            _spec=spec,
+            _labels=labels,
         )
-        if base.size <= CAP_BYTES:
+        if whole is not None:
             key = base_key(table, content, order_digest, digest)
-            return GridTable(spec, editor_key, template, base, key, labels)
+            return GridTable(spec, editor_key, template, whole, key, labels)
     shown, filtered = _capped_rows(template, spec.key_columns, filter_prefix)
     rows_key = f"{digest}:{_rows_digest(shown)}"
     base = get_edit_grid_base(
@@ -256,8 +271,15 @@ def collect_outbox() -> None:
 
 
 def apply_grid_inbox(tables: Mapping[str, GridTable]) -> bool:
-    """inbox 의 op 를 표별 초안·이력에 반영한다(받을 표가 없는 op 는 버리고 수를 알린다)."""
-    return edit_grid.apply_inbox(KEYS, {name: table.slot for name, table in tables.items()})
+    """inbox 의 op 를 표별 초안·이력에 반영한다(받을 표가 없는 op 는 버리고 수를 알린다).
+
+    반영이 어느 표의 초안 칸을 **비웠으면** 참이다 — None 이 아니던 칸이 None 이 됨(Ctrl+Z 로
+    0칸, 초안 없던 표의 첫 op 가 아무것도 바꾸지 않아 출납 콜백의 빈 자리를 걷음). 사이드바 「적용
+    전 편집」·화면 탭 점·테마 표지는 `app.py` 가 본문보다 먼저 그 칸으로 그렸으므로 부르는 쪽이 한
+    번 다시 돈다(`st.rerun()` — 다음 회차엔 inbox 가 비어 거짓이라 되풀이되지 않는다)."""
+    held = [name for name in tables if st.session_state.get(cells_key(name)) is not None]
+    edit_grid.apply_inbox(KEYS, {name: table.slot for name, table in tables.items()})
+    return any(st.session_state.get(cells_key(name)) is None for name in held)
 
 
 def draft_pending(table: str) -> bool:

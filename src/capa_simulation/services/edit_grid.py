@@ -42,7 +42,6 @@ DUPLICATE_SEPARATOR: Final = "\x1e"
 
 OP_NAMES: Final = frozenset({"write", "fill", "clear", "revert", "undo", "redo"})
 FILL_DIRECTIONS: Final = frozenset({"down", "up", "right", "left"})
-ERROR_CODES: Final = ("num", "finite", "min", "max", "int")
 
 UNDO_LIMIT: Final = 40
 # 이력 전체 칸 수(단계마다 줄 × 칸) 상한 — 넘으면 오래된 단계부터 버린다(맨 새 단계는 남긴다).

@@ -373,14 +373,16 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
     # 수 있는 줄 — 그 시나리오의 배치를 그린다)만 선다(이 항목은 기본 색 기준에서 돈다).
     (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
 )
-# 사이드바 계산 그룹 셋(2026-10-17 사용자 결정 — 약속 · 이행 · 실적) — (상자 slug, 상자 제목,
-# 하위 화면 수), 사이드바 차례 그대로. 상자는 `st-key-<slug>_box`, 안의 링크는 머리(「현황 요약」)
-# 하나와 하위다.
+# 사이드바 계산 그룹(2026-10-17 사용자 결정 — 약속 · 이행 · 실적, 2026-11-02 「생산 진도」 를 이행과
+# 실적 사이에 더함) — (상자 slug, 상자 제목, 하위 화면 수), 사이드바 차례 그대로. 상자는
+# `st-key-<slug>_box`, 안의 링크는 머리(「현황 요약」) 하나와 하위다. 하위가 없는 그룹(생산 진도)은
+# 펼침 상자가 아니라 링크 하나 든 상자이고 제목은 그 링크 글이다.
 # 앱 선언(`navigation.SIDEBAR_GROUPS`)을 부르지 않고 값만 옮긴다 — 화면이 선언과 같은지 따로 보는
 # 확인이라 선언에서 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 선언과 같은지 본다.
 SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("static_capa", "Static Capa", 4),
     ("execution_management", "실행 관리", 8),
+    ("production_progress", "생산 진도", 0),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
 # 좁게 끈 사이드바 폭(px). Streamlit 1.63 이 끌어 주는 가장 좁은 폭이다(200~600px) — 이 폭에서도
@@ -2871,7 +2873,12 @@ _SIDEBAR_GROUPS_JS = (
   const boxes = [...side.querySelectorAll(slugs.map((slug) => `.st-key-${slug}_box`).join(", "))];
   return boxes.map((box) => {
     const slug = slugs.find((name) => box.classList.contains(`st-key-${name}_box`));
-    const label = box.querySelector('summary [data-testid="stMarkdownContainer"] p');
+    // 하위가 없는 그룹(생산 진도)은 펼침 상자가 아니다 — 제목은 상자 안 링크 하나의 글이다.
+    const label =
+      box.querySelector('summary [data-testid="stMarkdownContainer"] p') ||
+      box.querySelector(
+        'a[data-testid="stPageLink-NavLink"] [data-testid="stMarkdownContainer"] p'
+      );
     let lines = 0;
     let clip = { clipped: false, ellipsis: false, cut: false };
     if (label) {
@@ -3636,7 +3643,7 @@ def summarize_sidebar_narrow(narrow: Mapping[str, Any] | None) -> str:
 
 
 def check_sidebar_groups(screen: Screen) -> str:
-    """사이드바 계산 그룹 셋 — Static Capa · 실행 관리 · Dynamic Capa 가 그 차례로
+    """사이드바 계산 그룹 — Static Capa · 실행 관리 · 생산 진도 · Dynamic Capa 가 그 차례로
     서고 상자마다 하위 화면 수가 정한 대로인가, 상자 제목이 줄바꿈·말줄임 없이 한 줄로 보이는가
     (「Dynamic Capa」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
     상자를 펴지 않는다. 기본 폭에서 잰 뒤 사이드바를 가장 좁게 끈 폭(`SIDEBAR_NARROW_WIDTH_PX`)에서
@@ -5267,7 +5274,7 @@ ITEMS: tuple[Item, ...] = (
     Item("process_popup", "공정 필터 팝업", check_process_popup),
     Item("process_detail", "공정 Capa 상세", check_process_detail),
     Item("equipment_headers", "설비 마스터 표 머리(39열)", check_equipment_headers),
-    Item("sidebar_groups", "사이드바 그룹 셋", check_sidebar_groups),
+    Item("sidebar_groups", "사이드바 계산 그룹", check_sidebar_groups),
     Item("space_fader", "Space 기준일 페이더", check_space_fader),
     Item("gap_sheet", "Static 대비 일정 비교 시트", check_gap_sheet),
     Item("equipment_scenario_line", "설비 시나리오 줄·팝업", check_equipment_scenario_line),

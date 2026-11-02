@@ -110,6 +110,30 @@ def test_discarding_also_drops_the_reference_grid_drafts(
     assert not [key for key in SESSION_KEYS if key in session.session_state]
 
 
+def test_discarding_keeps_the_grid_toast_number_rising(
+    session: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「편집 되돌리기」·시나리오 전환은 그리드 초안을 지우지만 토스트 번호는 이어 간다 — 마운트된
+    그리드 JS 는 마지막 번호(`lastToast`)를 들고 있어, 번호가 1 로 돌아가면 그 번호의 다음 서버
+    토스트를 이미 띄운 것으로 보고 삼킨다(2026-11-03 마지막 검토 C2)."""
+    from capa_simulation import scenario_activation
+    from capa_simulation.components import edit_grid, reference_grid
+
+    monkeypatch.setattr(scenario_activation, "st", session)
+    monkeypatch.setattr(edit_grid, "st", session)
+    _activate(7)
+    edit_grid.post_toast(reference_grid.KEYS, ["첫 알림"])
+    first = session.session_state[reference_grid.KEYS.toast]["id"]
+
+    scenario_activation.discard_unsaved_scenario_changes(TABLES, 7)
+    edit_grid.post_toast(reference_grid.KEYS, ["둘째 알림"])
+
+    assert session.session_state[reference_grid.KEYS.toast] == {
+        "id": first + 1,
+        "text": "둘째 알림",
+    }
+
+
 def test_discarding_without_a_saved_revision_invents_no_saved_mark(
     session: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

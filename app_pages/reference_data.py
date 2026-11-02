@@ -26,6 +26,7 @@ import streamlit as st
 
 from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.month_editor import classification_styled, paste_dialog
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
@@ -360,6 +361,9 @@ GRID_DROPPED_NOTICE = (
     "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집({tables})을 버렸습니다"
     " — 다시 입력하세요."
 )
+# 그 알림 칸(작업 줄 맨 위 — `render_flash` 가 늘 세우는 한 칸).
+GRID_DROPPED_FLASH_KEY = "reference_grid_dropped_flash"
+GRID_DROPPED_ICON = ":material/sync_problem:"
 
 
 def _template_or_stop(table_name: str) -> pd.DataFrame:
@@ -453,17 +457,21 @@ reset_editors_on_source_change(
     own_change_key=OWN_CHANGE_KEY,
     order_free_keys=(*step_widget_keys, *grid_session_keys),
 )
-if grid_dropped:
-    with actions_box:
-        st.warning(
-            GRID_DROPPED_NOTICE.format(
-                tables=" · ".join(
-                    f"{TABLE_NAMES[table_name]} {cells:,}칸"
-                    for table_name, cells in grid_dropped.items()
-                )
-            ),
-            icon=":material/sync_problem:",
+# 버림 알림은 이 회차에 한 번이다 — 아래 inbox 반영이 이 회차를 다시 돌리면(초안을 비운 회차) 다시
+# 담아 다시 돈 회차가 그린다(그 회차에는 `_grid_survivors` 가 더 버리지 않는다).
+grid_dropped_notice = (
+    GRID_DROPPED_NOTICE.format(
+        tables=" · ".join(
+            f"{TABLE_NAMES[table_name]} {cells:,}칸" for table_name, cells in grid_dropped.items()
         )
+    )
+    if grid_dropped
+    else None
+)
+if grid_dropped_notice is not None:
+    queue_flash(GRID_DROPPED_FLASH_KEY, grid_dropped_notice, kind="warning", icon=GRID_DROPPED_ICON)
+with actions_box:
+    render_flash(GRID_DROPPED_FLASH_KEY)
 
 
 def _filter_prefix(table_name: str) -> str:
@@ -502,7 +510,16 @@ grid_tables = {
     for table_name in EDIT_TABLES
     if table_name == current_dataset or table_name in _inbox_tables
 }
-reference_grid.apply_grid_inbox(grid_tables)
+if reference_grid.apply_grid_inbox(grid_tables):
+    # 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던 표의 첫 op 가 아무것도 바꾸지
+    # 않음). 사이드바 「적용 전 편집」·화면 탭 점·테마 표지는 `app.py` 가 이 본문보다 **먼저** 옛
+    # 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는 다시 보내지 않는다). 한 번 다시
+    # 돈다(양식·색인은 캐시라 싸고, 다음 회차는 inbox 가 비어 되풀이되지 않는다).
+    if grid_dropped_notice is not None:
+        queue_flash(
+            GRID_DROPPED_FLASH_KEY, grid_dropped_notice, kind="warning", icon=GRID_DROPPED_ICON
+        )
+    st.rerun()
 _remember_grid_digests()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
 # 초안은 세션 칸이라 어느 화면에서나 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이

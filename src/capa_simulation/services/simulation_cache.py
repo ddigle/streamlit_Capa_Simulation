@@ -724,6 +724,28 @@ def get_edit_grid_base(
     return build_base(_template, _spec, _labels)
 
 
+@st.cache_data(show_spinner=False, max_entries=EDIT_GRID_BASE_MAX_ENTRIES)
+def get_edit_grid_base_within(
+    cache_key: ScenarioCacheKey | str,
+    order_digest: str,
+    table: str,
+    labels_digest: str,
+    max_bytes: int,
+    *,
+    _template: pd.DataFrame,
+    _spec: GridSpec,
+    _labels: Labels | None,
+) -> EditGridBase | None:
+    """`get_edit_grid_base` 와 같되 껍데기 본문 JSON 이 `max_bytes` 를 넘는 표는 본문 대신 None 을
+    담는다 — 큰 표 상한(`reference_grid.CAP_BYTES`)에 걸린 표의 전체 본문(수 MB)이 캐시 칸을
+    차지해 다른 칸을 밀어내거나, 크기만 보려고 회차마다 통째로 풀리지 않게. 넘는 표는 처음 한 번
+    지어 재고 버리며, 부르는 쪽은 실을 줄만 `get_edit_grid_base` 로 따로 짓는다. 키·인자 규칙은
+    `get_edit_grid_base` 와 같다(`max_bytes` 도 키다)."""
+    del cache_key, order_digest, table, labels_digest
+    base = build_base(_template, _spec, _labels)
+    return None if base.size > max_bytes else base
+
+
 class StandardTargetSummary(NamedTuple):
     """표준 목표가 매 회차 쓰는 시나리오 수준의 작은 값. 큰 프레임 대신 이것만 푼다."""
 
