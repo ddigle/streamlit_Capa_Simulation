@@ -94,7 +94,7 @@ def test_on_shows_facts_without_any_secret() -> None:
     assert (secret_row["상태"], secret_row["까닭"]) == ("있음", sso_status.SECRET_CHECKS_PASSED)
     assert "redirect\\_uri" in text and "auth\\/callback" in text
     assert signing().x5t.replace("-", "\\-").replace("_", "\\_") in text
-    assert "문지기: 있음" in text and "세션 시간: 12시간" in text
+    assert "문지기: 있음" in text and "세션 시간: 6시간" in text
     events = app.dataframe[1].value
     assert events["사건"].tolist() == ["login_fail", "login_ok", "config"]
     assert events["사유 코드"].tolist()[0] == "aud_mismatch"

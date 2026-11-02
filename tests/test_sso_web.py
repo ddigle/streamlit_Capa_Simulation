@@ -248,7 +248,7 @@ def test_callback_success_sets_the_session_cookie_and_clears_the_rest() -> None:
     assert session.has("httponly") and session.has("secure")
     assert session.get("samesite") == "lax"
     assert session.get("path") == "/"
-    assert session.get("max-age") == str(12 * 3600)
+    assert session.get("max-age") == str(6 * 3600)
     assert not session.has("domain")
     claims = verify_session(session.value, cfg, now=int(time.time()))
     assert claims.loginid == LOGINID and claims.name == "개발 사용자"

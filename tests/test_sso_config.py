@@ -68,7 +68,9 @@ def test_full_environment_is_on() -> None:
     assert cfg.enabled
     assert cfg.prod
     assert cfg.redirect_uri == f"{PUBLIC_URL}/auth/callback"
-    assert cfg.session_hours == 12
+    assert cfg.session_hours == 6
+    assert cfg.session_max_hours == 24
+    assert cfg.session_max_seconds == 86400
     assert cfg.scope == "openid"
     assert (cfg.claim_loginid, cfg.claim_username, cfg.claim_deptname) == (
         "loginid",
@@ -419,14 +421,14 @@ def test_a_very_long_secret_is_checked_quickly() -> None:
 @pytest.mark.parametrize(
     ("value", "hours", "code"),
     [
-        ("", 12, None),
+        ("", 6, None),
         ("1", 1, None),
         ("24", 24, None),
-        ("0", 12, "out_of_range"),
-        ("25", 12, "out_of_range"),
-        ("-3", 12, "not_integer"),
-        ("twelve", 12, "not_integer"),
-        ("1.5", 12, "not_integer"),
+        ("0", 6, "out_of_range"),
+        ("25", 6, "out_of_range"),
+        ("-3", 6, "not_integer"),
+        ("twelve", 6, "not_integer"),
+        ("1.5", 6, "not_integer"),
     ],
 )
 def test_session_hours(value: str, hours: int, code: str | None) -> None:
@@ -438,6 +440,54 @@ def test_session_hours(value: str, hours: int, code: str | None) -> None:
         assert cfg.session_seconds == hours * 3600
     else:
         assert f"CAPA_SSO_SESSION_HOURS:{code}" in codes(cfg.problems)
+
+
+@pytest.mark.parametrize(
+    ("value", "hours", "code"),
+    [
+        ("", 24, None),
+        ("6", 6, None),
+        ("72", 72, None),
+        ("5", 24, "max_out_of_range"),
+        ("73", 24, "max_out_of_range"),
+        ("x", 24, "not_integer"),
+        ("1.5", 24, "not_integer"),
+    ],
+)
+def test_session_max_hours(value: str, hours: int, code: str | None) -> None:
+    """최대 로그인 시간 — 세션 시간(기본 6) 이상 72 이하. 틀리면 켜짐 설정이 막히고 대체값은 24."""
+    cfg = load_config(sso_environ({names.ENV_SESSION_MAX_HOURS: value}))
+
+    assert cfg.session_max_hours == hours
+    if code is None:
+        assert cfg.mode is SsoMode.ON
+        assert cfg.session_max_seconds == hours * 3600
+    else:
+        assert cfg.mode is SsoMode.BROKEN
+        assert codes(cfg.problems) == {f"CAPA_SSO_SESSION_MAX_HOURS:{code}"}
+
+
+def test_max_hours_is_compared_with_the_session_hours() -> None:
+    shorter = load_config(
+        sso_environ({names.ENV_SESSION_HOURS: "12", names.ENV_SESSION_MAX_HOURS: "8"})
+    )
+    same = load_config(
+        sso_environ({names.ENV_SESSION_HOURS: "12", names.ENV_SESSION_MAX_HOURS: "12"})
+    )
+
+    assert codes(shorter.problems) == {"CAPA_SSO_SESSION_MAX_HOURS:max_out_of_range"}
+    assert shorter.mode is SsoMode.BROKEN
+    assert same.mode is SsoMode.ON
+    assert (same.session_hours, same.session_max_hours) == (12, 12)
+    assert "세션 시간(CAPA_SSO_SESSION_HOURS) 이상 72 이하" in shorter.problems[0].reason
+
+
+def test_readiness_previews_a_bad_max_while_off() -> None:
+    cfg = load_config(sso_environ({names.ENV_SESSION_MAX_HOURS: "100"}, drop=[names.ENV_CLIENT_ID]))
+
+    assert cfg.mode is SsoMode.OFF
+    assert codes(cfg.readiness) == {"CAPA_SSO_SESSION_MAX_HOURS:max_out_of_range"}
+    assert cfg.problems == ()
 
 
 def test_scope_must_keep_openid() -> None:

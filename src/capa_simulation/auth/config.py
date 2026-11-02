@@ -81,6 +81,8 @@ MAX_SIGNING_CERTS = 3
 MIN_RSA_BITS = 2048
 CERT_WARNING_DAYS = 30
 SESSION_HOURS_RANGE = (1, 24)
+# 최대 로그인 시간의 위 한계(아래 한계는 세션 시간 — 유휴보다 짧은 최대는 뜻이 없다).
+SESSION_MAX_HOURS_LIMIT = 72
 _CLAIM_NAME = re.compile(r"^[\x21-\x7e]{1,200}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
@@ -112,6 +114,9 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "cert_expiring": f"인증서 만료가 {CERT_WARNING_DAYS}일 안(막지 않음)",
         "not_integer": "정수가 아님",
         "out_of_range": f"{SESSION_HOURS_RANGE[0]}~{SESSION_HOURS_RANGE[1]} 밖",
+        "max_out_of_range": (
+            f"세션 시간({names.ENV_SESSION_HOURS}) 이상 {SESSION_MAX_HOURS_LIMIT} 이하가 아님"
+        ),
         "unknown_value": "auto · required 가 아님",
         "unknown_app_env": "모르는 값이라 운영(prod)으로 봄",
         "no_openid": "openid 가 없음",
@@ -159,7 +164,11 @@ class SigningCert:
 
 @dataclass(frozen=True)
 class SsoConfig:
-    """검증된 통합인증 설정 한 벌. 기동 때 한 번 만들고 바꾸지 않는다."""
+    """검증된 통합인증 설정 한 벌. 기동 때 한 번 만들고 바꾸지 않는다.
+
+    `session_hours` 는 마지막 사용 뒤 유지 시간(유휴 만료 — 앱을 쓰면 갱신 경로가 늘린다),
+    `session_max_hours` 는 써도 넘지 못하는 최대 시간(처음 ADFS 로그인에서)이다.
+    """
 
     mode: SsoMode
     prod: bool
@@ -172,6 +181,7 @@ class SsoConfig:
     public_url: str
     redirect_uri: str
     session_hours: int
+    session_max_hours: int
     scope: str
     resource: str
     claim_loginid: str
@@ -194,6 +204,10 @@ class SsoConfig:
     @property
     def session_seconds(self) -> int:
         return self.session_hours * 3600
+
+    @property
+    def session_max_seconds(self) -> int:
+        return self.session_max_hours * 3600
 
     def _cookie_prefix(self) -> str:
         return names.HOST_PREFIX if self.secure_cookies else ""
@@ -381,6 +395,23 @@ def _check_hours(raw: str) -> tuple[int, SsoProblem | None]:
     return hours, None
 
 
+def _check_max_hours(raw: str, session_hours: int) -> tuple[int, SsoProblem | None]:
+    """최대 로그인 시간 — 세션 시간(`_check_hours` 가 돌려준 값) 이상 72 이하.
+
+    틀리면 기본값(24)을 돌려주고 문제를 적는다. 켜짐이면 막힘, 꺼짐이면 「켜면 막힐 문제」 다.
+    """
+    text = raw.strip()
+    default = names.DEFAULT_SESSION_MAX_HOURS
+    if not text:
+        return default, None
+    if not text.isascii() or not text.isdigit():
+        return default, SsoProblem(names.ENV_SESSION_MAX_HOURS, "not_integer")
+    hours = int(text)
+    if not session_hours <= hours <= SESSION_MAX_HOURS_LIMIT:
+        return default, SsoProblem(names.ENV_SESSION_MAX_HOURS, "max_out_of_range")
+    return hours, None
+
+
 def _check_scope(raw: str) -> tuple[str, SsoProblem | None]:
     text = " ".join(raw.split()) or names.DEFAULT_SCOPE
     if len(text) > 500:
@@ -562,6 +593,7 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
     )
     public_url = public_url.rstrip("/")
     hours, hours_problem = _check_hours(value(names.ENV_SESSION_HOURS))
+    max_hours, max_hours_problem = _check_max_hours(value(names.ENV_SESSION_MAX_HOURS), hours)
     scope, scope_problem = _check_scope(value(names.ENV_SCOPE))
     resource, resource_problem = _check_plain(names.ENV_RESOURCE, value(names.ENV_RESOURCE))
     claim_loginid, loginid_problem = _check_claim_name(
@@ -599,6 +631,7 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
             issuer_problem,
             public_problem,
             hours_problem,
+            max_hours_problem,
             scope_problem,
             resource_problem,
             loginid_problem,
@@ -654,6 +687,7 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         public_url=public_url,
         redirect_uri=f"{public_url}{names.CALLBACK_PATH}" if public_url else "",
         session_hours=hours,
+        session_max_hours=max_hours,
         scope=scope,
         resource=resource,
         claim_loginid=claim_loginid,

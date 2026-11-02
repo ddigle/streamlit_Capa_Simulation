@@ -21,7 +21,10 @@ ENV_AUTHORIZE_URL = "ADFS_AUTHORIZE_URL"
 ENV_ISSUER = "ADFS_ISSUER"
 ENV_SIGNING_CERT = "ADFS_SIGNING_CERT"
 ENV_PUBLIC_URL = "CAPA_PUBLIC_URL"
+# 마지막 사용 뒤 유지 시간(유휴 만료). 앱을 쓰면 늘어난다.
 ENV_SESSION_HOURS = "CAPA_SSO_SESSION_HOURS"
+# 써도 넘지 못하는 최대 로그인 시간(처음 ADFS 로그인에서). 하루 한 번 ADFS 로 계정을 다시 확인한다.
+ENV_SESSION_MAX_HOURS = "CAPA_SSO_SESSION_MAX_HOURS"
 # 비거나 `auto` → client id 로 판정, `required` → 잠금(client id 가 지워져도 막힘).
 ENV_SSO = "CAPA_SSO"
 ENV_SCOPE = "ADFS_SCOPE"
@@ -42,6 +45,7 @@ SSO_ENVIRONMENT: tuple[str, ...] = (
     ENV_SIGNING_CERT,
     ENV_PUBLIC_URL,
     ENV_SESSION_HOURS,
+    ENV_SESSION_MAX_HOURS,
     ENV_SSO,
     ENV_SCOPE,
     ENV_RESOURCE,
@@ -82,7 +86,8 @@ DEFAULT_CLAIM_DEPTNAME = "deptname"
 
 # --- 그 밖 ----------------------------------------------------------------------------------
 LOGGER_NAME = "capa_simulation.sso"
-DEFAULT_SESSION_HOURS = 12
+DEFAULT_SESSION_HOURS = 6
+DEFAULT_SESSION_MAX_HOURS = 24
 DEFAULT_SCOPE = "openid"
 # 문서 자리(설정 화면 · 점검이 가리킨다).
 SETUP_DOC = "docs/sso_setup.md"
