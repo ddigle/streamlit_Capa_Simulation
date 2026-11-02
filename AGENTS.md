@@ -294,7 +294,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `newer_than_the_cached_list`.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
-  - `Main` 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 계산
+  - HOME 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 계산
     알림은 Admin Area `알림 모음`(`components/alert_board.py`)이 시나리오 전체 기간으로 모은다. 측정률 가정 한 줄은 남는다.
   - 주요 Case 칩 셋(`공식 vN`·`Case1`·`Case2` — `components/home_main_case_chips.py`, 2026-10-23)은 `LOB 표시 조건`
     카드 맨 위 항목이다(2026-11-02 — 전에는 본문 제목 줄 끝). 카드는 그래서 HOME 에서 처음 펼친 채 선다
@@ -404,6 +404,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고친다. 설명은 `guides/execution_management.md`.
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
+- `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용을
+  아직 정하지 않아 머리말과 「준비 중」 한 줄만 그리는 빈 자리다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을 읽지
+  않아 공통 조건 줄도 조건 카드도 없다). 하위가 없어 사이드바 상자는 펼침 상자가 아니라 링크 하나 든 상자다
+  (`navigation.PRODUCTION_PROGRESS_SUBPAGES` 에 하위를 더하면 펼침 상자가 된다). 내용은 `docs/TODO.md` 4장 「답 대기」.
 - `app_pages/reference_integrity.py` — `Dynamic Capa` 머리(주소 `dynamic_capa`). 실행 관리가 모은 실적으로 표준 Capa 의
   실현 Capa·손실을 다시 내는 데모 프로토타입이다(요약·공정 상세·산식 가이드 탭).
   - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
@@ -1077,7 +1081,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     부르는 쪽 몫이다.
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
     알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 밑 경고 띠, 자동 갱신은 판정 실패 사유 끝에 무엇이
-    멈췄고 어디서 푸는지(기준 정보 탭 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록)를 적는다.
+    멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록)를 적는다.
   - 화면의 저장 결과 칸(저장 알림 · CS 빈 행 경고 · 대당 Capa 경고 띠 · 저장하지 못한 까닭)은 폼 맨 아래 `DB 조회 후 시나리오
     저장` 단추 **바로 아래** 늘 서 있는 한 칸이고(탭 맨 위 칸은 스크롤한 화면에서 보이지 않았다 — 2026-11-01 E2E), 알림을 그린
     회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
@@ -1255,7 +1259,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `ASSUMED_PLAN_MAX_ENTRIES`)은 따로이고 서로의 키를 받지 않으며, 계획은 키와 한 묶음(`KeyedShorteningPlan`)으로만
     CSV·진척 캐시에 간다 — 그 둘은 공식 키만 받는다(5장 31, `tests/test_upeh_assumption_cache.py`).
   - 범용 편집 그리드 껍데기(`get_edit_grid_base`)는 키 전용 래퍼다 — 양식·규격·표시명은 `_` 인자로, 키는 내용 토큰·줄 차례 지문·
-    표 이름·표시명 지문이고 색인(op 반영)과 껍데기 본문을 한 묶음(`EditGridBase`)으로 돌려준다.
+    표 이름·표시명 지문이고 색인(op 반영)과 껍데기 본문을 한 묶음(`EditGridBase`)으로 돌려준다. `get_edit_grid_base_within` 은
+    같은 키에 본문 바이트 상한(`max_bytes`)을 더해 넘는 표는 본문 대신 None 을 담는다 — 큰 표 상한에 걸린 표의 전체 본문(수
+    MB)이 캐시 칸을 차지하거나 크기만 보려고 회차마다 풀리지 않게(2026-11-03 마지막 검토 C6).
 
 ### 계산 서비스
 
@@ -1913,7 +1919,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     숨긴다(`hide_feed_style`). 호스트 key 는 ASCII `[A-Za-z0-9_-]+` 만(feed JS 와 같은 글자), `__` 없이.
   - **편집은 상태 값 `outbox` 하나**(`STATE_NAMES`, 트리거 없음 — 9장). 콜백 몸통 `collect_outbox` 는 새 op 만 세션 inbox 에
     쌓고 마운트별 seq 를 올린다. 반영은 본문의 `apply_inbox`(표별로 나눠 `TableSlot` 의 색인·규격·세션 칸에 — 지금 그리지 않는
-    표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
+    표도 op 의 `table` 로)이고, `feed_data` 의 ack 는 그 마운트별 seq 기억이다. 브라우저는 ack 를 표와 상관없이 그 마운트의 것으로
+    받는다(표 없는 껍데기 — 읽기 보기 — 나 다른 표의 feed 에서도 출납을 비운다). 보내기(`sendNow` — 300ms 묶음·focusout·
+    visibilitychange·정리 함수)는 **아직 한 번도 보내지 않은 op 가 있을 때만** 반영 안 된 op 전부를 싣는다 — 이미 보낸 op 만 남은
+    출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돌았다(2026-11-03 마지막 검토 C3). 세션 칸 이름은 부르는 쪽이 `GridKeys`·`TableSlot`
     으로 정한다. 이력은 `history_of` 가 없으면 새 `gen` 으로 세우고, 초안을 버리는 길(`discard_table`)은 이력도 함께 지운다.
     사용자가 일부러 버린 길(「편집 취소」 — `discard_table(…, keys)`, `GridKeys.discarded` 칸)은 버린 `gen` 을 적어(최근
     `DISCARDED_GENS` 개) 그 직전 출납 묶음의 op 를 `apply_inbox` 가 토스트 없이 버린다(빈 초안 자리도 걷는다).
@@ -1934,7 +1943,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     토스트·상태 글을 걷는다. Ctrl 단축키 글자는 모두 `shortcutLetter(key, code)`(한글 자판이면 자판 자리 — `<eg-nav>`)다. 칸
     편집기는 z 1 — 굴리면 머리 줄(4)·고정 칸(2) 아래로 숨는다. 기능이 부르는 내부
     함수 이름(`paint`·`setRange`·`queueOp`·`sendOnce` 등)은 바꾸지 않는다(`test_edit_grid_assets` 가 본다). 순수 구획은 node 로
-    돈다(`tests/edit_grid_node.py`), AppTest 대역은 `tests/edit_grid_fake.py`, 시험 앱은 `tests/edit_grid_demo_app.py`(앱 화면에는
+    돈다(`tests/edit_grid_node.py`), AppTest 대역은 `tests/edit_grid_fake.py`(`early=True` 면 출납 콜백을 진짜처럼 회차 맨 앞에서
+    부른다 — 페이지 앞에서 그린 사이드바·탭 점의 때맞춤을 본다, `deliver_ops`), 시험 앱은 `tests/edit_grid_demo_app.py`(앱 화면에는
     없다).
   - `eg_select.js`·`eg_select.css`(고르기)는 끌어 고르기(스크롤 칸 pointer capture + rAF 자동 스크롤 — 창 밖으로 멀수록 빨리
     `min(4 + 거리 × 0.5, 80)`px/프레임, 값 칸에서 시작한 끌기는 고정 칸 위에서 먼저 왼쪽으로 다 굴린 뒤에 분류 칸을 고른다)·
@@ -1984,7 +1994,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       회차가 돌아올 때까지 붙든다(`page_tabs.js` 의 순수 구획 `<tabs-hold>` — 누를 때 포커스가 편집표였거나 마지막 편집표
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
       없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`),
-      그리고 그림자 DOM Components v2 편집 칸(가용설비 현황 설비 마스터 표·오른쪽 칸 — `page_tabs.EDIT_HOST_KEYS`, 탭 줄 data
+      그리고 그림자 DOM Components v2 편집 칸(가용설비 현황 설비 마스터 표·오른쪽 칸과 기준 정보 편집 그리드
+      `reference_grid_keys.GRID_HOST` — `page_tabs.EDIT_HOST_KEYS`, 탭 줄 data
       `grids`)의 바깥 key 칸(`.st-key-<key>`)으로 알아본다(순수 구획 `<tabs-grid>`). 문서 capture 단계에서는 그림자 DOM 안
       칸 편집기의 focusin·keydown 대상이 호스트로 바뀌어 안쪽 클래스로는 맞지 않는다 — 빠졌을 때 설비 마스터 칸에 쓰는 중
       (Enter 전) 누른 테마 단추가 그 편집 회차(누름 뒤 약 0.1초)보다 먼저 와 확인 없이 새로 읽었다(E2E 결함 — 칸 편집기는
@@ -2396,22 +2407,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/reference_grid.py` — 기준 정보 편집 표 아홉을 범용 편집 그리드(`edit_grid.py`)에 잇는 어댑터.
   표마다 값 형식(`GRID_FORMATS` — 옛 `EDITOR_FORMATS` 를 옮김: UPEH 유효숫자 6 · 효율·측정률 percent
   상한 1 · 여유율 percent · 일수 정수 · 설비대수 소수 둘째 자리 빈칸 = 0), 양식 → 규격·색인·껍데기(`build_grid_table` — 캐시
-  `get_edit_grid_base`, 키는 편집 캐시 키·표시순서 지문·표시명 지문), inbox 반영(`apply_grid_inbox` — 지금 고르지 않은 표의
-  op 도 그 표에), 사이드바 필터 → feed `filters`(분류 사전 코드 — 브라우저가 거른다), 작업 줄(`render_actions` — 알림 칸은
+  `get_edit_grid_base_within`·`get_edit_grid_base`, 키는 편집 캐시 키·표시순서 지문·표시명 지문), inbox 반영(`apply_grid_inbox` —
+  지금 고르지 않은 표의 op 도 그 표에), 사이드바 필터 → feed `filters`(분류 사전 코드 — 브라우저가 거른다), 작업 줄(`render_actions` — 알림 칸은
   `render_flash`), 고칠 칸 알림(`error_notice` — 앞 다섯 곳을 분류 표시명 · 월로), 초안 되머지(`merged_template`)가 한 곳이다.
   머리 글은 `COLUMN_LABELS` 의 짧은 이름이다(껍데기는 회차마다 새 dict 라 캐시 본문을 고치지 않는다).
   - 출납 콜백(`collect_outbox`)은 op 를 inbox 에 쌓기만 하고, 초안이 없던 표에는 빈 초안 자리(`{"cells": {}, "bad": {}}`)를
     둔다 — 사이드바 「적용 전 편집」·화면 탭 점은 `app.py` 가 본문보다 먼저 세므로(세션 칸이 None 이 아니면) 빈 자리가 없으면
     첫 편집이 다음 조작까지 늦게 선다. 빈 자리는 `draft_from` 으로 None(「변경사항 적용」·단추 점·변경 수에 들지 않음)이고 같은
     회차 본문의 반영이 진짜 초안(또는 None)으로 덮는다.
+  - 거꾸로 반영이 초안 칸을 **비우면**(None 이 아니던 칸이 None — Ctrl+Z 로 0칸, 초안 없던 표의 첫 op 가 아무것도 바꾸지 않음)
+    `apply_grid_inbox` 가 참을 돌려주고 화면이 한 번 다시 돈다(`st.rerun()` — 양식·색인은 캐시라 싸고, 다음 회차는 inbox 가 비어
+    되풀이되지 않는다). 다시 돌지 않으면 본문보다 먼저 그린 사이드바 「적용 전 편집」·탭 점·테마 표지가 다음 조작까지 남았다
+    (2026-11-03 마지막 검토 C1). 그 회차에 띄운 「다른 화면의 적용으로 … 버렸습니다」 알림은 같은 원본 토큰의 다음 회차로
+    넘긴다(`GRID_DROPPED_CARRY_KEY`).
   - **큰 표 안전 상한**(`CAP_CELLS` 300,000칸 · `CAP_BYTES` 껍데기 본문 400 KB): 넘으면 사이드바 「표 조건」 필터 선택(세션 값)으로
-    고른 줄만, 필터가 없거나 걸러도 넘치면 앞 `CAP_ROWS`(1,000) 줄만 싣고 작업 줄 아래에 알린다. 실은 줄의 본문은 캐시
+    고른 줄만, 필터가 없거나 걸러도 넘치면 앞 `CAP_ROWS`(1,000) 줄만 싣고 작업 줄 아래에 알린다. 바이트 상한을 넘는 표의 전체
+    본문은 캐시에 두지 않는다(`get_edit_grid_base_within` 이 None 을 담는다). 실은 줄의 본문은 캐시
     키 표 이름에 `#rows`, 표시명 지문에 줄 지문을 더해 따로 둔다. 초안은 업무 키라 실은 줄이 바뀌어도 제 줄에 남고, 적용·
     붙여넣기 양식·고칠 칸 알림(`full_index`)은 언제나 전체 양식이다. 합성 표본 최대는 UPEH 79,800칸이라 걸리지 않는다
     (사내 실데이터 크기는 다음 배포 런북 셈 줄).
 - `src/capa_simulation/reference_grid_keys.py` — 기준 정보 그리드의 이름(UI 모름): 그리드 호스트 key(`GRID_HOST`), 종류 단추 key·
   선택지(`DATASET_KEY`·`DATASETS`·`EDIT_TABLES`), 표마다 초안·이력 세션 칸(`cells_key`·`history_key`)과 inbox·ack·토스트 칸,
-  시나리오를 바꾸면 지울 칸(`SESSION_KEYS`). `scenario_activation`(`_STALE_VALUE_KEYS`)과 `page_tabs`(`EDIT_HOST_KEYS`)가 읽는다.
+  시나리오를 바꾸면 지울 칸(`SESSION_KEYS` — 토스트 번호 칸은 넣지 않는다: 1 로 돌아가면 마운트된 그리드가 마지막 번호와 같은
+  다음 서버 토스트를 삼킨다, 2026-11-03 마지막 검토 C2). `scenario_activation`(`_STALE_VALUE_KEYS`)과 `page_tabs`(`EDIT_HOST_KEYS`)가 읽는다.
 - `src/capa_simulation/components/status_metric.py` — 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
@@ -4113,7 +4131,7 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
   적으면 **이중 계상**이다 — 가동일수가 줄어 대당 Capa 가 작아지고(소요대수 증가) 비가동으로
   가용대수도 줄어 확보율이 양쪽에서 깎인다. 비가동 일정의 유형 `공사` 는 그 호기만의 공사다.
   코드가 두 입력을 맞대어 막지는 않는다(가동일수는 월·공정별 개수라 어느 날인지 모른다) — 이
-  규칙은 기준 정보 `일수` 탭과 가용설비 비가동 일정 Guide 가 사용자에게 알린다.
+  규칙은 기준 정보 `일수` 표와 가용설비 비가동 일정 Guide 가 사용자에게 알린다.
 - 계산 대상 행을 먼저 확정한 뒤 편중률·모듈수·`RUN_DAY`의 0 이하 검증을 남은 행에만 돌린다.
   어차피 제외될 행의 기준값이 화면 전체를 멈추면 그 값을 고칠 편집기조차 열 수 없다.
   이 세 검증은 실패 시 위반 건수와 문제 업무 키·값 예시 5건을 메시지에 싣는다.
@@ -4761,7 +4779,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **원천 등록은 저장 전에 대당 Capa 를 한 번 돌려 보고, 멈춰도 저장한 뒤 알린다**(2026-11-01 사용자 결정 — 사내 S27 은
   등록은 됐고 계산할 때 처음 멈췄다). `scenario_registration.check_registration_capacity` 가 화면 등록·자동 갱신의 같은 길에서
   돌고, 리비전 1 메모 끝에 `대당 Capa 계산 멈춤(<표> <꼴> 키 n · 경로 m)`(값·이름 없음), 화면은 저장 알림 밑 경고 띠(계산 글 +
-  기준 정보 「탭」 → 다음 리비전), 자동 갱신은 판정 실패 사유 끝에 같은 푸는 길을 적는다. 막지 않는다 — 막으면 원천을 다시
+  기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 판정 실패 사유 끝에 같은 푸는 길을 적는다. 막지 않는다 — 막으면 원천을 다시
   받아야만 풀린다.
 - **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
   저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 프레임 전체를 보는 정규화(`WF 구분` 표기 고르기
@@ -5648,7 +5666,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   천 단위 쉼표는 엄격한 세 자리 묶음만(「1,234.5」 받음, 「1,5」 칸 오류) · percent 표만 「85%」 → 0.85 · 하한 0 · 효율·측정률
   상한 1 · 일수는 정수만 · 설비대수는 빈칸을 0 으로. 숫자·범위·해석 오류는 칸 안(빨강 + 상태 줄 문구 — 적은 글이 그대로 남는다)이고
   「변경사항 적용」 이 고칠 칸 알림으로 멈추며, 업무 규칙 오류(`reference_consistency`)는 적용할 때 문장으로 알린다(오늘과 같다).
-  복사 글은 수 칸 원값(percent 는 분수)·분류 칸 표시명의 엑셀 따옴표 TSV(줄 끝 CRLF)이고, 붙여넣기는 값 하나면 고른 범위 전체,
+  복사 글은 수 칸 원값(percent 는 분수 — 「88%」 칸은 `0.88`, Guide 에 적음. 「88%」 로 낼지는 TODO 4장 「답 대기」)·분류 칸
+  표시명의 엑셀 따옴표 TSV(줄 끝 CRLF)이고, 붙여넣기는 값 하나면 고른 범위 전체,
   고른 범위가 덩어리의 정수 배면 되풀이, 아니면 기준 칸부터(잠긴 분류 칸은 건너뜀, 한 번에 15,000칸 — 넘으면 「Excel
   붙여넣기」). 「Excel 붙여넣기」 표 전체 팝업(CSV 양식)은 그대로이고 그 표에 초안이 있으면 첫 줄에 버려질 칸 수를 말한다.
   생산 계획(PKG PLAN·수율)과 설비 마스터 표는 아직 옛 편집기다(옮기기는 나중 — TODO).

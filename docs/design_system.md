@@ -460,9 +460,10 @@ E2E). 값은 팔레트의 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`)�
   (`docs/TODO.md` 결정 기록, 옛 3-1). Streamlit 가로 컨테이너는 `flex-wrap: wrap`이라 폭이
   모자라면 다음 줄로 접힐 뿐이고, 앱을 띄워 `scrollWidth == clientWidth`까지 재 보니
   잘리지도 가로 스크롤이 생기지도 않았다.
-- **HOME 만 제목 아래 설명이 없다.** 탭(`Main`·`Preference`·`Past Data`)이 그 자리를 쓰면서
-  설명 문구·상세표 토글·세부수량 CSV 를 함께 뺐다(`AGENTS.md` 3장 `app_pages/home.py`).
-  빠진 것이 아니므로 다시 넣지 않는다.
+- **HOME 만 제목 아래 설명이 없다.** 예전 탭(`Main`·`Preference`·`Past Data`)이 그 자리를 쓰면서
+  설명 문구·상세표 토글·세부수량 CSV 를 함께 뺐다. 탭은 2026-11-02 에 걷혔고(`Preference`·
+  `Past Data` 는 사이드바 「HOME 설정」 팝업의 안쪽 탭) 본문은 탭 없이 바로 대시보드다
+  (`AGENTS.md` 3장 `app_pages/home.py`). 빠진 것이 아니므로 다시 넣지 않는다.
 
 ## 5. 아직 남은 것
 
