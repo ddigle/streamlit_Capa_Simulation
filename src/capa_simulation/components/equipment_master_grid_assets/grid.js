@@ -326,6 +326,14 @@ function showsError(hasError, fresh, value, touched, base) {
 function needsReveal(top, margin) {
   return Number(top) < Number(margin || 0)
 }
+
+// 스크롤 칸 안 토스트를 그 칸 위 끝으로 — 토스트 머리(`top`)가 칸 위 끝(`boxTop`)보다 위에 있는 만큼 올린 스크롤 자리(0 아래로
+// 가지 않는다). 칸 안에서 머리가 보이면 지금 자리(`scrollTop`) 그대로.
+function boxScrollFor(scrollTop, top, boxTop) {
+  const now = Number(scrollTop) || 0
+  const over = Number(boxTop) - Number(top)
+  return over > 0 ? Math.max(0, now - over) : now
+}
 // </grid-new>
 
 // <grid-choice>
@@ -363,6 +371,8 @@ const SEND_MS = 300
 const COLSET_KEY = 'capa.equipmentGrid.colSet'
 // 머리 띠 밑에 붙는 화면 탭 줄(`app_header.PAGE_TABS_SELECTOR` — 시험이 같은지 본다).
 const PAGE_TABS_STRIP = '.st-key-page_tabs_strip'
+// 페이지 본문 스크롤 칸 — 토스트를 감싼 스크롤 칸을 찾을 때 여기서 멈춘다(그 위는 scrollIntoView 몫).
+const PAGE_SCROLLER = '[data-testid="stMain"]'
 // 빈 날짜 칸 자리표시 — 꼴만 적는다. 실제 날짜(「2026-11-09」)를 적으면 어두운 테마에서 값처럼 읽혔다(E2E).
 const DATE_PLACEHOLDER = 'YYYY-MM-DD'
 // 저장 갈래 꼬리표(칸 머리·상세 묶음·값 넣기 칸·변경 줄). 공통·상태 칸은 꼬리표 없이 「공통」 이다.
@@ -1942,8 +1952,35 @@ function revealToast(toast) {
   const frame = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (fn) => setTimeout(fn, 0)
   frame(() => {
     if (!toast.isConnected || toast.hidden) return
+    // 넘치는 스크롤 칸(설비 마스터 오른쪽 칸 본문 칸) 안이면 먼저 그 칸만 올린다 — 바로 scrollIntoView 하면 Chrome 이 붙은
+    // (sticky) 자리가 아니라 원래 흐름 자리로 셈해 바깥 페이지(stMain)까지 밀어 왼쪽 표가 튄다(사본 앱 1500×950 에서 0 → 223px).
+    // 칸 위 끝 아래·머리 띠 아래에 가려 있던 토스트(칸이 조금만 내려가 있을 때)도 이 길로 보인다.
+    const box = scrollBoxOf(toast)
+    if (box) {
+      const next = boxScrollFor(box.scrollTop, toast.getBoundingClientRect().top, box.getBoundingClientRect().top)
+      if (next !== box.scrollTop) box.scrollTop = next
+    }
+    // 그래도 머리 띠 아래로 가려 있으면(칸이 페이지 흐름에 있을 때 — 좁은 창에서 쌓인 칸 등) 칸 머리를 보인다.
     if (needsReveal(toast.getBoundingClientRect().top, TOAST_REVEAL_MARGIN)) toast.scrollIntoView({ block: 'start' })
   })
+}
+
+// 토스트를 감싼 가장 가까운 넘치는 스크롤 칸 — 그림자 DOM 밖으로 건너 올라간다. 페이지 본문(`PAGE_SCROLLER`)에 닿거나 못
+// 찾으면 null.
+function scrollBoxOf(node) {
+  if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return null
+  for (let at = node; at;) {
+    let up = at.parentElement || null
+    if (!up) {
+      const root = at.getRootNode ? at.getRootNode() : null
+      up = root && root.host ? root.host : null
+    }
+    if (!up || (up.matches && up.matches(PAGE_SCROLLER))) return null
+    const overflow = window.getComputedStyle(up).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && up.scrollHeight > up.clientHeight) return up
+    at = up
+  }
+  return null
 }
 
 // 화면 위를 가리는 높이 — 머리 띠 밑에 붙는 화면 탭 줄(sticky, `app_header.PAGE_TABS_SELECTOR`)이 있으면 그 아래 끝, 없으면
