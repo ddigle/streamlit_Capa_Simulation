@@ -1,0 +1,672 @@
+{
+ "formats": {
+  "rate": {
+   "kind": "percent",
+   "digits": 2,
+   "int": false,
+   "min": 0.0,
+   "max": 1.0,
+   "blankZero": false
+  },
+  "vital": {
+   "kind": "percent",
+   "digits": 2,
+   "int": false,
+   "min": 0.0,
+   "max": null,
+   "blankZero": false
+  },
+  "days": {
+   "kind": "fixed",
+   "digits": 0,
+   "int": true,
+   "min": 0.0,
+   "max": null,
+   "blankZero": false
+  },
+  "count": {
+   "kind": "fixed",
+   "digits": 2,
+   "int": false,
+   "min": 0.0,
+   "max": null,
+   "blankZero": true
+  },
+  "upeh": {
+   "kind": "sig",
+   "digits": 6,
+   "int": false,
+   "min": 0.0,
+   "max": null,
+   "blankZero": false
+  }
+ },
+ "coerce": [
+  {
+   "raw": "85%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": " 0.85 ",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "85",
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "max",
+   "text": "85"
+  },
+  {
+   "raw": "85",
+   "fmt": "rate",
+   "template": 85.0,
+   "value": 85.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "120%",
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "max",
+   "text": "120%"
+  },
+  {
+   "raw": "100%",
+   "fmt": "rate",
+   "template": null,
+   "value": 1.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-5%",
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "min",
+   "text": "-5%"
+  },
+  {
+   "raw": "98.75%",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.9875,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "85 %",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "%",
+   "fmt": "vital",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "%"
+  },
+  {
+   "raw": "85%",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "85%"
+  },
+  {
+   "raw": "1,234.5",
+   "fmt": "upeh",
+   "template": null,
+   "value": 1234.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1,5",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "1,5"
+  },
+  {
+   "raw": "12,34",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "12,34"
+  },
+  {
+   "raw": "1,234,567",
+   "fmt": "upeh",
+   "template": null,
+   "value": 1234567.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1e3",
+   "fmt": "upeh",
+   "template": null,
+   "value": 1000.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1E-2",
+   "fmt": "upeh",
+   "template": null,
+   "value": 0.01,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-0",
+   "fmt": "upeh",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "inf",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "inf"
+  },
+  {
+   "raw": "-Infinity",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "-Infinity"
+  },
+  {
+   "raw": "NaN",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "NaN"
+  },
+  {
+   "raw": "1e999",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "1e999"
+  },
+  {
+   "raw": "30.5",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "int",
+   "text": "30.5"
+  },
+  {
+   "raw": "30",
+   "fmt": "days",
+   "template": null,
+   "value": 30.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "30.0",
+   "fmt": "days",
+   "template": null,
+   "value": 30.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-1",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "min",
+   "text": "-1"
+  },
+  {
+   "raw": "-1.5",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "min",
+   "text": "-1.5"
+  },
+  {
+   "raw": "#N/A",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "#N/A"
+  },
+  {
+   "raw": "",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "   ",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "",
+   "fmt": "count",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": null,
+   "fmt": "count",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": null,
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "abc",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "abc"
+  },
+  {
+   "raw": "12abc",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "12abc"
+  },
+  {
+   "raw": "+5",
+   "fmt": "upeh",
+   "template": null,
+   "value": 5.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": ".5",
+   "fmt": "upeh",
+   "template": null,
+   "value": 0.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "5.",
+   "fmt": "upeh",
+   "template": null,
+   "value": 5.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0x10",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "0x10"
+  },
+  {
+   "raw": "1_000",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "1_000"
+  },
+  {
+   "raw": " 12　",
+   "fmt": "upeh",
+   "template": null,
+   "value": 12.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "１２",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "１２"
+  },
+  {
+   "raw": 85,
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "max",
+   "text": "85"
+  },
+  {
+   "raw": 0.5,
+   "fmt": "rate",
+   "template": null,
+   "value": 0.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-3",
+   "fmt": "upeh",
+   "template": -3.0,
+   "value": -3.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "2.5",
+   "fmt": "days",
+   "template": 2.5,
+   "value": 2.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1,234%",
+   "fmt": "vital",
+   "template": null,
+   "value": 12.34,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-0.0",
+   "fmt": "days",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1e3",
+   "fmt": "days",
+   "template": null,
+   "value": 1000.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0.1",
+   "fmt": "count",
+   "template": null,
+   "value": 0.1,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1,000.25",
+   "fmt": "count",
+   "template": null,
+   "value": 1000.25,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "85%",
+   "fmt": "rate",
+   "template": 0.85,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "99.99%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.9999,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1e2%",
+   "fmt": "rate",
+   "template": null,
+   "value": 1.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0.5%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.005,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "5.%",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.05,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": ".5%",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.005,
+   "error": null,
+   "text": null
+  }
+ ],
+ "format": [
+  {
+   "value": 0.9875,
+   "fmt": "vital",
+   "text": "98.75%"
+  },
+  {
+   "value": 0.85,
+   "fmt": "vital",
+   "text": "85%"
+  },
+  {
+   "value": 1,
+   "fmt": "vital",
+   "text": "100%"
+  },
+  {
+   "value": 0.987,
+   "fmt": "vital",
+   "text": "98.7%"
+  },
+  {
+   "value": 0.00125,
+   "fmt": "vital",
+   "text": "0.13%"
+  },
+  {
+   "value": 12.3456,
+   "fmt": "vital",
+   "text": "1,234.56%"
+  },
+  {
+   "value": 0,
+   "fmt": "vital",
+   "text": "0%"
+  },
+  {
+   "value": 0.33333333,
+   "fmt": "rate",
+   "text": "33.33%"
+  },
+  {
+   "value": 30,
+   "fmt": "days",
+   "text": "30"
+  },
+  {
+   "value": 1234,
+   "fmt": "days",
+   "text": "1,234"
+  },
+  {
+   "value": 2.5,
+   "fmt": "days",
+   "text": "3"
+  },
+  {
+   "value": 0.125,
+   "fmt": "count",
+   "text": "0.13"
+  },
+  {
+   "value": 1234.5,
+   "fmt": "count",
+   "text": "1,234.50"
+  },
+  {
+   "value": 0,
+   "fmt": "count",
+   "text": "0.00"
+  },
+  {
+   "value": -1.005,
+   "fmt": "count",
+   "text": "-1.00"
+  },
+  {
+   "value": 0.3333333333333333,
+   "fmt": "count",
+   "text": "0.33"
+  },
+  {
+   "value": 1234.5,
+   "fmt": "upeh",
+   "text": "1,234.5"
+  },
+  {
+   "value": 1234567,
+   "fmt": "upeh",
+   "text": "1.23457e+06"
+  },
+  {
+   "value": 1234565,
+   "fmt": "upeh",
+   "text": "1.23457e+06"
+  },
+  {
+   "value": 999999.5,
+   "fmt": "upeh",
+   "text": "1e+06"
+  },
+  {
+   "value": 0.000123456789,
+   "fmt": "upeh",
+   "text": "0.000123457"
+  },
+  {
+   "value": 1.23456e-05,
+   "fmt": "upeh",
+   "text": "1.23456e-05"
+  },
+  {
+   "value": 100,
+   "fmt": "upeh",
+   "text": "100"
+  },
+  {
+   "value": 0.1,
+   "fmt": "upeh",
+   "text": "0.1"
+  },
+  {
+   "value": 0.6666666666666666,
+   "fmt": "upeh",
+   "text": "0.666667"
+  },
+  {
+   "value": 123456,
+   "fmt": "upeh",
+   "text": "123,456"
+  },
+  {
+   "value": -42.5,
+   "fmt": "upeh",
+   "text": "-42.5"
+  },
+  {
+   "value": 1e+21,
+   "fmt": "upeh",
+   "text": "1e+21"
+  },
+  {
+   "value": null,
+   "fmt": "upeh",
+   "text": ""
+  },
+  {
+   "value": 1e-05,
+   "fmt": "upeh",
+   "text": "1e-05"
+  },
+  {
+   "value": 99999.95,
+   "fmt": "upeh",
+   "text": "99,999.9"
+  },
+  {
+   "value": 5e-324,
+   "fmt": "upeh",
+   "text": "4.94066e-324"
+  }
+ ]
+}

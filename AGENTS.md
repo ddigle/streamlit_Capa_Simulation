@@ -1472,6 +1472,33 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「공식 배치에는 자리 없이」(설계 Q1). 가져오기는 `copied_draft`(호기 정보 묶음 — 설비명·Main 설비 뺌 — 와 동·층·레이아웃표시,
     기존설비여부 N, 투자구분 기존 → 신규)·`copy_source`(같은 이름 → 앞부분 첫 줄)이고, 추가 뒤 초안은 `kept_draft`(공정소분류·동·층).
     칸 data 는 `new_unit_data`(칸 자리 번호의 오류·경고·잠금·체크 줄·초안 번호 `seq`·`checked`).
+- `src/capa_simulation/services/edit_grid.py` — 범용 편집 그리드(Components v2 — 화면 공통 계층의 같은 이름 컴포넌트)의 streamlit 을
+  모르는 규칙. 열 규격(`GridSpec`·`ValueFormat` — percent·fixed·sig, 정수·하한·상한·빈칸 = 0), 업무 키(`row_keys` — 분류 칸
+  `astype(str)` 을 `\x1f` 로 잇고 같은 키의 둘째부터 `\x1e<n>`), 양식 색인(`build_index` — 키 → 줄, 값 float64 행렬, 월 → 칸),
+  값 다듬기(`coerce`)·표시 형식(`format_value`), op 고르기(`parse_outbox`·`new_ops` — 마운트별 seq, `(at, mount, seq)` 차례,
+  최근 마운트 `MOUNT_LIMIT` 8개), op 반영(`apply_ops` — 받은 초안·이력을 바꾸지 않는다), 변경 수·목록(`change_counts`·
+  `change_list`)과 양식 되머지(`merge_into_template` — 업무 키로, 오류 칸이 있으면 ValueError)가 한 곳이다.
+  - **초안은 업무 키 + 월**(`DraftState` = ``{"cells": {키: {월: 값|None}}, "bad": {키: {월: (적은 글, 코드)}}}`` 또는 None)이라
+    줄 차례(공용 표시순서)가 바뀌어도 같은 칸에 붙는다. 양식과 같은 값이 되면 그 칸을 지운다. 세션에는 기본형만 둔다(5장 21).
+  - **값 다듬기는 Python 이 정본**이고 브라우저(`eg_pure.js` `parseInput`)는 같은 규칙의 미리보기다 — 공백은 정한 글자 묶음만
+    걷고(`_STRIP` — `str.strip()`·JS `trim()` 은 걷는 글자가 다르다), 수는 유한한 값만, 천 단위 쉼표는 엄격한 세 자리 묶음만,
+    `percent` 표만 「85%」(소수점을 두 자리 옮긴 글로 읽는다 — 「99.99%」 → 0.9999), 하한·상한·정수 검사는 양식과 같은 값이면
+    하지 않는다. 오류 코드 다섯(`num`·`finite`·`min`·`max`·`int`)이고 오류 칸은 적은 글이 그대로 남는다. 표시 형식은 이진 값
+    그대로에서 반올림한다(Decimal `ROUND_HALF_UP` — JS `toFixed`·`toPrecision` 과 같다). 둘 다 `tests/fixtures/edit_grid_cases.json`
+    의 같은 사례를 같은 답으로 낸다(쌍둥이 시험 `test_edit_grid_service`·`test_edit_grid_assets`).
+  - **op**(`OP_NAMES`): `write`(줄 × 칸 직사각형에 값 덩어리를 `(i mod h, j mod w)` 로 되풀이 — 덩어리의 `null` 은 그 칸을 그대로
+    둔다, 값 칸 `PASTE_CELL_LIMIT` 15,000 넘으면 버리고 안내)·`fill`(`src` 직사각형 + `dir` down·up·right·left — 원본에서 멀어지는
+    차례 k 로 down·right 는 `k mod h`, up·left 는 `h-1-(k mod h)`, 원본 값은 서버의 지금 값(초안 ∪ 양식))·`clear`·`revert`(초안을
+    지워 양식으로)·`undo`·`redo`. op 하나 = 되돌리기 한 단계(직사각형의 전·후 상태), `UNDO_LIMIT` 40 · 이력 칸 `HISTORY_CELL_LIMIT`
+    200,000(넘으면 오래된 단계부터 — 맨 새 단계는 남긴다), 새 op 가 오면 다시 실행 목록을 비운다. 이력 `gen` 과 다른 op·다른 표의
+    op·꼴이 틀린 op(`kind="bad"`)는 버리되 ack 는 하고 수를 토스트로 알린다. 양식에 없는 줄은 건너뛰고 센다.
+- `src/capa_simulation/services/edit_grid_payload.py` — 범용 편집 그리드가 보내는 두 data 의 꼴(streamlit 모름). 껍데기
+  본문(`encode_table` — 분류 칸 사전 `dims`·표시명 `labels`·줄마다 고정 폭 64자 코드 `codes`, 값 사전 `vals`(0 번은 빈칸)·줄마다
+  (값 코드 + 길이 1글자) RLE `runs`(63 넘는 런은 나눔), 중복 키 꼬리표 `dupes`)과 색인을 한 번에 짓는다(`build_base` — 캐시
+  `simulation_cache.get_edit_grid_base` 가 부른다, numpy 로 벡터화). `encode_base` 가 호스트·`baseKey`(`base_key` = 표:내용 토큰:줄
+  차례 지문:표시명 지문)·글·팔레트·줄 높이·상한을 더하고, `encode_feed` 는 초안(줄마다 (코드 + 길이) RLE — 0 초안 없음 · 1 빈칸 ·
+  2 못 읽음 · 3.. 값 사전 `dvals`)·오류 칸 앞 `BAD_LIMIT` 2,000개·수·되돌리기 수·ack·토스트·필터를 싣는다. 바이트 예산은
+  `tests/test_edit_grid_payload.py`(합성 2,660×30 껍데기 ≤ 100,000 B, feed 1·100·15,000칸 ≤ 1·4·64 KB).
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
