@@ -45,11 +45,13 @@
 묶음(Windows Job Object · Linux `PR_SET_PDEATHSIG`) · 경로 거절은 `check_deploy_screens.py` 의
 것을 그대로 쓴다.
 
-**출력.** `--work`(중간 그림 · `shots.json` · `run.json` · 사내 `db_baseline.json`) · `--dist`(결과
-HTML) · `--output`(진행 블록) · `--playwright-dir` 는 저장소 밖만 받는다(사내는 사본 밖도). stdout ·
-로그 · 진행 블록에는 상태 ID · 수 · 예외 종류만 찍는다 — 화면 글자는 판정에만 쓴다. 마지막 줄은
-리뷰 md 에 옮길 한 줄(`page_guide_core.review_line`)이고, 같은 줄을 점검기
-(`scripts/check_page_guide.py`)가 다시 낸다.
+**출력.** `--work`(중간 그림 · `shots.json` · `run.json` · 사내 `db_baseline.json` · 조립할 때마다
+쓰는 조립 도장 `assembled.json`) · `--dist`(결과 HTML) · `--output`(진행 블록) · `--playwright-dir`
+는 저장소 밖만 받는다(사내는 사본 밖도). stdout · 로그 · 진행 블록에는 상태 ID · 수 · 예외 종류만
+찍는다 — 화면 글자는 판정에만 쓴다. 마지막 줄은 리뷰 md 에 옮길 한 줄(`page_guide_core.review_line`)
+이고, 같은 줄을 점검기(`scripts/check_page_guide.py`)가 다시 낸다. 생성기는 검수 마친 판(사내
+`review/guide/accepted.json`)을 읽지도 쓰지도 않는다 — 견주기와 쓰기는 점검기(`--accepted` ·
+`--accept`)만 한다.
 
 **시간.** 15분 예산(`--budget-minutes`)을 시작부터 재고, 넘기면 남은 상태는 찍지 않고 조립한 뒤
 3(미룸)으로 끝낸다 — `--states a,b` 로 남은 것만 다시 돌리면 앞 결과에 합친다. `--assemble-only`
@@ -495,7 +497,19 @@ def assemble_to_dist(inputs: Inputs, args: argparse.Namespace) -> core.AssemblyR
         exported = core.export_examples(shots, substitute, args.dist / core.EXAMPLE_DIR)
         _progress(f"예시 그림 {len(exported)}/{len(substitute)}장을 내보냈습니다")
     _progress(f"조립 — 그림 {report.images}장 · 그림 없는 자리 {len(report.no_picture)}")
+    stamp_assembly(inputs, args.work)
     return report
+
+
+def stamp_assembly(inputs: Inputs, work: Path) -> None:
+    """조립 도장(`--work/assembled.json` — `shots.json` 바이트 · 덮어쓴 원고 · 계획의 지문)을 쓴다.
+    점검기 `--accept` 가 「검수한 것이 마지막 조립과 같은가」를 이것으로 본다. 쓰지 못하면 진행 줄에
+    예외 종류만 찍고 계속한다 — 도장이 없으면 `--accept` 가 「조립 기록 없음」으로 거절한다."""
+    try:
+        stamp = core.assembly_stamp(work, inputs.content, inputs.skeleton.plan)
+        core.save_assembly_stamp(work, stamp)
+    except OSError as exc:
+        _progress(f"조립 기록을 쓰지 못했습니다 — {type(exc).__name__}")
 
 
 def run(argv: Sequence[str] | None = None) -> int:

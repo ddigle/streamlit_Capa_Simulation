@@ -94,6 +94,11 @@
         "id": {"$ref": "#/$defs/state_id"},
         "page": {"$ref": "#/$defs/text"},
         "note": {"$ref": "#/$defs/text"},
+        "look": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "다시 보기 번호 — 사외가 그 화면을 바꿔 사내가 다시 보게 할 때 올린다(없으면 처음 판). 바뀐 자리 검수의 촬영 동작 지문(pl)에 들어 그 상태와 자손 상태를 쓰는 자리가 「계획」 으로 검수 목록에 오른다. note 는 지문에 들지 않는다"
+        },
         "from": {"$ref": "#/$defs/state_id", "description": "이 상태의 동작이 출발하는 화면(앞 상태). 뿌리 상태에는 없다"},
         "writes": {
           "enum": ["none", "session", "db", "shared"],

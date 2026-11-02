@@ -1936,6 +1936,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `--work` 로 다시 돌 때도(`--states` 여부와 상관없이) 그것과 견줘 사본이 이미 다르면 앱을 띄우지 않고 멈춘다 — 바뀐 DB 를
     새 기준으로 삼지 않는다. 앱 오류 · 예외로 멈출 때도 판정을 `run.json` 에 적는다. 점검기 `scripts/check_page_guide.py` 가
     같은 리뷰 한 줄을 다시 낸다.
+  - **바뀐 자리만 검수**(2026-10-25 사용자 결정 — 명세는 쇼케이스 `guide/handoff/guide-review-diff.md`, 끝 절은 2026-10-26 결정).
+    점검기 `--accepted review/guide/accepted.json` 이 원고 자리(`step:` · `thumb:` · `map:` · `concept:` — `lob` 은 38, 사내
+    1단계가 견주는 것은 예시 넷을 뺀 34)마다 표적 자리 · 크기(화면 안으로 자른 정수) · 자르기 틀 · 원고 · 덮어쓰기 · 촬영 동작의
+    지문을 지난번 검수를 마친 판과 견줘 리뷰 칸 `바뀜 n/N` 과 stderr `바뀜 <자리> <까닭>` 을 낸다(`page_guide_core.compare_accepted`).
+    기준을 못 읽으면 멈추지 않고 `바뀜 na`(0) 다. 그 판은 점검기 `--accept` 만 쓰고(인자 모자람 · 자리가 아님 · 판 다름 · DB 변화
+    있음 · 조립 기록 없음 · 조립 뒤 바뀜 · 쓰지 못함이면 2), 생성기는 조립할 때마다 조립 도장 `--work/assembled.json` 만 남긴다. 데이터
+    자리(`DATA_SHAPED` — 실데이터가 자리 · 크기를 정하는 `named:` 표적을 쓰는 자리)는 좌표를 남기지 않고 늘 목록에 든다. 화면 글자 ·
+    매개값의 값 · 그림은 읽지도 남기지도 않는다. 상자 · 틀 그리기 식(`pct` · `frame_around` · 지도 칸 보정 · 틀 `template.html` 의
+    상자)을 바꾸면 `ACCEPT_RULES` 를 올리고, 앱 화면을 바꿔 사내가 그 상태를 다시 보게 하려면 계획 상태의 `look` 을 올린다(형식
+    `schema/accepted.schema.json` · `plan.schema.json`).
 - `src/capa_simulation/components/print_button.py` — 헤더 툴바의 `Print` 버튼 스크립트다(감춘 ⋮ 메뉴의 인쇄를
   대신). 실행 중이면 멈출 때까지 기다렸다 인쇄하고, 어두운 테마면 `DARK_PRINT_CONFIRM` 으로 먼저 묻는다.
 - `src/capa_simulation/components/plotly_touch_scroll.py` — 칸 선택(`on_select`)을 켠 Plotly 그림 위에서 시작한

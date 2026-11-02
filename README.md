@@ -521,7 +521,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `check_deploy_screens.py` | 런북 7장 화면 확인을 별도 포트 앱과 저장소 밖 Playwright 로 돌린다 |
 | **따라하기 가이드** | |
 | `build_page_guide.py` | 앱 사본을 띄워 가이드를 찍고 원고 · 덮어쓰기와 한 파일 HTML 로 묶는다(`--example` 합성 예시판 · `--internal` 사내판, 결과는 저장소 밖) |
-| `check_page_guide.py` | 덮어쓰기 · 매개값 · 촬영 결과를 뼈대에 대 보고 리뷰 한 줄을 낸다 |
+| `check_page_guide.py` | 덮어쓰기 · 매개값 · 촬영 결과를 뼈대에 대 보고 리뷰 한 줄을 낸다(`--accepted` 로 검수 마친 판과 견줘 바뀐 자리만 `바뀜 n/N`, `--accept` 로 그 판을 쓴다) |
 | `guide_example_seed.py` | 예시판이 띄울 합성 시나리오 DB 를 만든다(생성기 `--example` 의 시드 단계) |
 | `page_guide_core.py` · `page_guide_capture.py` · `page_guide_helpers.js` | 생성기 부품 — 조립 · 덮어쓰기(순수), Playwright 촬영, 페이지 도우미 |
 | **배포·병행 개발** | |

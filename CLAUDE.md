@@ -96,7 +96,8 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `scripts/guide_example_seed.py`, `--internal` 은 런북 6-3 사본
 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
 `page_guide_capture.py`·`page_guide_helpers.js`), `scripts/check_page_guide.py`(가이드 점검기 — 덮어쓰기·매개값·촬영 결과를
-뼈대에 대 보고 리뷰 한 줄을 낸다. 앱·브라우저 없이 돈다).
+뼈대에 대 보고 리뷰 한 줄을 낸다. 앱·브라우저 없이 돈다. `--accepted` 는 사내 검수 마친 판과 견줘 바뀐 자리만 `바뀜 n/N` 으로 —
+못 읽으면 `바뀜 na` 로 멈추지 않는다 — `--accept` 는 검수 끝 뒤 그 판을 쓴다).
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
 `origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
 `check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).

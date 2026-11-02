@@ -37,7 +37,12 @@
     "이 템플릿은 배포 적용 에이전트용입니다. 사내 모듈(`modules/<id>/`)은 배포 적용 에이전트가 고치지 않으므로",
     "`Edit(modules/**)` 를 막습니다. 모듈 담당자는 이 템플릿이 아니라 `docs/module_guide.md` 의 설정을 씁니다.",
     "모듈 점검(런북 4-5 의 `check_module.py`)은 allow 에 일부러 넣지 않았습니다 — 담당자가 쓴 시험 코드를",
-    "실행하는 줄이라 사람이 읽고 승인합니다."
+    "실행하는 줄이라 사람이 읽고 승인합니다.",
+    "",
+    "따라하기 가이드 생성기 · 점검기(런북 10장의 `build_page_guide.py` · `check_page_guide.py`)도 allow 에 일부러",
+    "넣지 않았습니다. 점검기 `--accept` 줄의 승인 프롬프트를 사용자가 허락하는 것이 「검수 끝」 확인입니다(런북 10-4).",
+    "검수 마친 판 `review/guide/accepted.json` 은 점검기만 쓰므로 `Edit(review/guide/accepted.json)` 를 막습니다 —",
+    "`Edit(review/**)` allow 보다 deny 가 이깁니다. 봉인이 어긋나거나 지워지면 다음 회차는 모든 자리를 봅니다."
   ],
   "permissions": {
     "defaultMode": "default",
@@ -58,6 +63,7 @@
       "Edit(.gitattributes)",
       "Edit(.dockerignore)",
       "Edit(modules/**)",
+      "Edit(review/guide/accepted.json)",
       "Edit(/*.md)",
       "Edit(/*.txt)",
       "Edit(/*.html)",

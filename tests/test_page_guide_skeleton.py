@@ -40,7 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HOWTO = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto"
 SCHEMA_DIR = HOWTO / "schema"
 LOB = HOWTO / "lob"
-SCHEMAS = ("content", "plan", "overrides", "params")
+SCHEMAS = ("content", "plan", "overrides", "params", "accepted")
 
 WRITES = core.WRITE_GRADES
 # 동작 · 표적 낱말의 정본은 생성기(`scripts/page_guide_core.py`)다 — 계획 형식이 같은지 본다.
@@ -364,6 +364,87 @@ def test_param_schema_rejects_code_lists_and_markup(value: Any) -> None:
     assert _schema_errors(document, "params")
 
 
+# 바뀐 자리 검수의 사내 기준 파일(`review/guide/accepted.json`) — 명세 2-1 의 보기 꼴.
+ACCEPTED_SHAPE: dict[str, Any] = {
+    "form": 1,
+    "rules": 1,
+    "skeleton": "lob@2026-10-23",
+    "mode": "internal",
+    "date": "2026-10-25",
+    "viewport": [1440, 900],
+    "scale": 2,
+    "seal": "9c41d0e2a7b3",
+    "places": {
+        "step:change_avail.badge": {
+            "f": [[0, 311, 460, 250], None],
+            "t": {"sidebar_scenario@10_ref_applied": [38, 355, 223, 51], "ref_success@10_x": None},
+            "sk": "3f9a1c2b7d10",
+            "tx": "3f9a1c2b7d10",
+            "pl": "a1b2c3d4e5f6",
+        }
+    },
+}
+
+
+def test_accepted_schema_accepts_the_spec_shape() -> None:
+    assert _schema_errors(ACCEPTED_SHAPE, "accepted") == []
+    assert (
+        core.ACCEPTED_FORM
+        == _load(SCHEMA_DIR / "accepted.schema.json")["properties"]["form"]["const"]
+    )
+
+
+def _with_place(**change: Any) -> dict[str, Any]:
+    place = {**ACCEPTED_SHAPE["places"]["step:change_avail.badge"], **change}
+    return {**ACCEPTED_SHAPE, "places": {"step:change_avail.badge": place}}
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {**ACCEPTED_SHAPE, "text": "사내 화면 글"},
+        {**ACCEPTED_SHAPE, "form": 2},
+        {**ACCEPTED_SHAPE, "rules": 0},
+        {**ACCEPTED_SHAPE, "mode": "both"},
+        {**ACCEPTED_SHAPE, "seal": "9C41D0E2A7B3"},
+        {**ACCEPTED_SHAPE, "date": "26-10-25"},
+        {**ACCEPTED_SHAPE, "viewport": [1440]},
+        {**ACCEPTED_SHAPE, "viewport": [1440, 900, 2]},
+        {**ACCEPTED_SHAPE, "skeleton": "lob-2026-10-23"},
+        {
+            **ACCEPTED_SHAPE,
+            "places": {"task:change_avail": ACCEPTED_SHAPE["places"]["step:change_avail.badge"]},
+        },
+        _with_place(text="화면에서 읽은 글"),
+        _with_place(f=[[0.5, 311, 460, 250]]),
+        _with_place(f=[[0, 311, 460]]),
+        _with_place(t={"sidebar_scenario@10_ref_applied": "38,355,223,51"}),
+        _with_place(t={"사이드바@10_ref_applied": [38, 355, 223, 51]}),
+        _with_place(sk="사내"),
+    ],
+)
+def test_accepted_schema_has_no_room_for_screen_text_or_fractions(document: dict[str, Any]) -> None:
+    assert _schema_errors(document, "accepted")
+
+
+def test_accepted_schema_has_no_free_text_field() -> None:
+    """기준 파일의 글자 칸은 꼴(pattern) · 고르기(enum)뿐이다 — 화면 글자가 들어갈 칸이 없다."""
+    schema = _load(SCHEMA_DIR / "accepted.schema.json")
+
+    def strings(node: Any) -> Iterator[Any]:
+        if isinstance(node, dict):
+            if node.get("type") == "string":
+                yield node
+            for value in node.values():
+                yield from strings(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from strings(value)
+
+    nodes = list(strings({key: value for key, value in schema.items() if key != "description"}))
+    assert nodes and all("pattern" in node or "enum" in node for node in nodes)
+
+
 # ------------------------------------------------------------------ ID 와 참조
 
 
@@ -679,3 +760,12 @@ def test_skeleton_carries_no_owner_or_contact_values() -> None:
         assert settings.APP_OWNER_TEAM not in text, name
         assert settings.APP_CONTACT_EMAIL not in text, name
         assert not re.findall(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", text), name
+
+
+@pytest.mark.parametrize(("look", "ok"), [(1, True), (3, True), (0, False), ("2", False)])
+def test_plan_states_may_carry_a_look_number(look: Any, ok: bool) -> None:
+    """`look` — 사외가 그 화면을 바꿔 사내가 다시 보게 할 때 올리는 정수(바뀐 자리 검수)."""
+    plan = _plan()
+    plan["states"][0]["look"] = look
+
+    assert (_schema_errors(plan, "plan") == []) is ok
