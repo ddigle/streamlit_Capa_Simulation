@@ -279,14 +279,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
     는 설비 DB 를 열지 않는다(9장).
 - `capa_server.py` — C-DEP 운영 진입점(`streamlit run capa_server.py` — 앱 스크립트는 `app.py` 하나 그대로). `app.py` 를
-  `st.App` 으로 감싸 통합인증 경로 넷과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
+  `st.App` 으로 감싸 통합인증 경로 다섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다.
 - `src/capa_simulation/auth/` — 통합인증(ADFS · form_post). Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서
   돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
-  `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 →
-  신원은 `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 프로세스 상태(설정 한 벌 · 문지기 표지 · 로그아웃 폐기 목록 ·
-  진단 · 사건 · 로거)는 `auth/runtime.py`, 경로 넷(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
-  `/auth/sso/error`) · 로그인 시작 · 화면은 `auth/web.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
+  `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새
+  `jti` 로 다시 서명, 끝 시각 규칙은 `session_end` 한 곳) · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 → 신원은
+  `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 프로세스 상태(설정 한 벌 · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
+  갱신 누계 · 진단 · 사건 · 로거)는 `auth/runtime.py`, 경로 다섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
+  `/auth/sso/error` · `POST /auth/sso/refresh`) · 로그인 시작 · 화면은 `auth/web.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
@@ -296,7 +297,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
     없이 뜬 서버는 멈춤 화면 + `st.stop()`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
     벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
-    은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 시험은 `tests/test_sso_streamlit.py`.
+    은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
+    (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
+    시험은 `tests/test_sso_streamlit.py`.
   - `components/sso_reconnect.py` — 만료 · 로그아웃으로 다시 붙지 못한 탭의 「다시 로그인」 띠. 통합인증이 켜진 서버만 툴바
     iframe(`render_theme_toggle` 의 `extra_scripts`)에 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를
     묻고 401 이면 한국어 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를 연결 오류 창 위에 세운다. IdP 로 저절로 보내지 않는다
@@ -309,7 +312,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
     (`CAPA_PUBLIC_URL` 바탕) · `ADFS_ISSUER` · 서명 인증서 지문(x5t · SHA-256 앞 16자)은 포털 등록값과 한 글자씩 대 보려고 보인다.
     이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「로그인 전 실패」(무인증 실패 —
-    따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 시험은 `tests/test_sso_status.py`.
+    따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 사실 줄은 「로그인 유지: 마지막 사용 뒤 n시간 · 최대 n시간」,
+    켜짐이면 그 아래 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
+    재시작하면 0)를 한 줄로 보인다(갱신은 사건 고리에 적지 않는다). 시험은 `tests/test_sso_status.py`.
   - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌
     `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다.
 - `app_pages/home.py` — HOME 대시보드. 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정 `Preference`(공용
@@ -4085,9 +4090,14 @@ RQ_MODULE
 36. **통합인증 신원은 매 회차 HttpOnly 세션 쿠키에서 다시 검증한다**(2026-11-02, `docs/sso_setup.md`). 근거는 쿠키 하나 —
     `?token=` 질의 인자와 `st.session_state` 보관은 쓰지 않는다(테마 단추의 `location.reload` 가 새 세션을 만들어 세션 상태의
     로그인이 사라지고, 질의 인자는 지우지 못한다). 문지기와 `app.py` 가 같은 함수(`auth.identity.identity_from_cookies` — 서명 ·
-    aud · iss · exp · 폐기 목록)를 쓰고, 세션 상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르는 사본일 뿐이다. 로그아웃 폐기 목록 ·
-    쓴 state · 진단 · 사건은 프로세스 메모리(`auth.runtime`, replica 1 전제 — 재시작하면 비워진다)이고 DB 에 쓰지 않으며 캐시
-    경계도 아니다(`st.cache_*` 없음). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
+    aud · iss · exp · 폐기 목록)를 쓰고, 세션 상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르는 사본일 뿐이다. 유효 판정은 끝 =
+    `min(유휴 끝, auth_time + 최대)` + 여유 30초 하나다(`tokens.session_end` — 유휴 끝은 `exp` 를 지금 설정 `iat + 세션 시간` 으로
+    한 번 더 깎은 값, 쿠키 `Max-Age` 도 끝 − 지금 + 30초). 새 요청(문지기 http · 새 핸드셰이크 · 갱신 경로 · 로그인 경로)은 브라우저가
+    지금 실은 쿠키 자신의 끝만 보고, 핸드셰이크에 묶인 신원(`gate._WatchedSocket` · `app.py` 의 `require_signed_in`)만 그 끝과 갱신 표
+    (`runtime.renewed_exp` — 갱신 경로가 다시 발급할 때 적는 `sid` → 최신 `exp`) 가운데 늦은 것을 본다(갱신 전에 복사된 옛 토큰이 새
+    요청에서 살아나지 않게). 로그아웃 폐기는 `sid` 단위다(`runtime.revoke_session` — `auth_time` + 최대 + 30초까지). 갱신 표 · 폐기
+    목록 · 갱신 누계 · 쓴 state · 진단 · 사건은 프로세스 메모리(`auth.runtime`, replica 1 전제 — 재시작하면 비워진다, 열린 연결은
+    다시 붙을 때 갱신된 쿠키로 통과)이고 DB 에 쓰지 않으며 캐시 경계도 아니다(`st.cache_*` 없음). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
     사내 WebIDE · 시험의 요소 순번이 그대로다. 열린 탭은 websocket 핸드셰이크 때의 쿠키로 계속 돌고 위젯 콜백 · 프래그먼트
     회차는 `app.py` 를 지나지 않으므로, 만료 · 로그아웃은 문지기가 그 연결의 메시지마다 본다(`gate._WatchedSocket` — 9장).
     새 콜백 · `run_every` 를 더할 때 따로 막을 것은 없다.
@@ -5222,7 +5232,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   문맥을 찾지 않는 것만 쓴다. 새 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다. `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
 - **통합인증 문지기는 순수 ASGI 미들웨어 하나다**(`auth/gate.py`, `capa_server.py` 의 `st.App(middleware=…)`). Starlette 의
   `BaseHTTPMiddleware` 는 websocket 을 그냥 넘기므로 쓰지 않는다(실측). 허용 목록은 정확 일치만(`/_stcore/health` 와 우리 경로
-  넷) — `/_stcore/` 를 접두로 열지 않는다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
+  다섯) — `/_stcore/` 를 접두로 열지 않는다. 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은
+  처리기가 하고, 켜짐에서 POST 밖 메서드는 문지기가 405(`Allow: POST`)로 답한다 — Streamlit 의 정적 Mount 가 모르는 GET 경로에
+  `index.html` 을 내서 라우터의 405 가 서지 않는다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
   `st.login` 경로(`/auth/login` · `/auth/logout` · `/oauth2callback`)와 예약 접두(`/_stcore/` · `/media/` · `/component/` ·
   `/static/`)는 쓰지 않는다. 모든 주소(Location · 링크 · redirect_uri)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청 Host ·
   `X-Forwarded-*` 로 짓지 않는다. `auth/` 는 Streamlit 을 import 하지 않고(문지기는 이벤트 루프에서 돈다) 배경 스레드를
@@ -5231,7 +5243,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (`run_every` 포함)는 `app.py` 를 돌리지 않으므로 `app.py` 의 두 번째 벽(`require_signed_in`)만으로는 만료 · 로그아웃한 열린
     탭의 콜백 · 프래그먼트가 DB 를 읽고 쓴다. 문지기가 `websocket.receive` 마다 핸드셰이크 때의 신원으로 만료(세션 토큰과 같은
     여유) · 폐기 목록을 보고, 어긋나면 그 메시지를 넘기지 않고 close 1008 · 앱에는 끊김을 넘긴다. 콜백 · 프래그먼트를 하나씩
-    막지 않는다 — 새 콜백 · `run_every` 를 더해도 이 자리가 막는다.
+    막지 않는다 — 새 콜백 · `run_every` 를 더해도 이 자리가 막는다. 만료는 핸드셰이크 토큰의 끝과 로그인 갱신 표(`sid` 의 최신
+    `exp`) 가운데 늦은 것으로 본다 — 쓰는 동안 갱신 경로가 쿠키를 다시 발급하면 열린 연결도 그만큼 산다(만료로 닫으면
+    `session_closed` 에 `end=idle|max`).
 - **DuckDB 연결 핀.** 앱은 rerun 한 번을 `pinned_connections` 로 감싼다(게으른 핀 — 첫 연결 뒤에 잡고 가장 바깥 블록이
   끝날 때 닫는다). 설비 DB 를 rerun 한 번에 **여러 번** 여는 화면만 `navigation.PageSpec.uses_equipment_db` 를 선언해 같은
   핀을 받는다. 위젯 콜백(본문 전)과 팝업 본문 프래그먼트는 실행 핀 밖에서 돌므로 DB 를 여러 번 여는 콜백·팝업은 스스로
@@ -6315,6 +6329,19 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 6. 창구 · 점검 규칙(`scripts/module_check_rules.py` 의 `RULES`) · 뼈대(`scripts/new_module.py`) · 점검 출력(`scripts/check_module.py`)을
    바꾸면 같은 변경에서 `docs/module_guide.md` 를 고친다 — 부록 A · B(출력 예시 포함) · 3-7 뼈대 화면 · 3-8 · 3-9 예시(정적 규칙을
    통과해야 한다) · 9-2 환경변수는 `tests/test_module_guide_sync.py` 가 코드와 맞댄다.
+
+### 통합인증 변경
+
+1. 시각 판정은 `auth/tokens.session_end` 한 곳이다 — 문지기 · `app.py` · 갱신 경로 · 카드 경고 · 쿠키 `Max-Age` 가 같은 끝을 쓰는지,
+   새 판정이 갱신 표를 볼 자리(핸드셰이크에 묶인 신원)인지 새 요청(쿠키 자신의 끝만)인지 가른다(5장 36).
+2. 새 경로는 `auth/names.SSO_PATHS` 에 둔다 — 문지기 공개 정확 일치 · `tests/test_sso_entry.py` 경로 목록 · `docs/sso_setup.md` 1장 ·
+   3장 `capa_server.py` · `auth/` 줄과 9장의 경로 수를 같이 고친다.
+3. 새 환경변수는 `auth/names.SSO_ENVIRONMENT` · `scripts/check_deploy_screens.py` 의 글자 튜플 · `docs/sso_setup.md` 2장 표 · 런북 3-3 ·
+   `docs/bigdataquery_webide_setup.md` 「통합인증(SSO) 칸」 에 함께 적는다(이름만 — 값은 어디에도 적지 않는다, 10장).
+4. 화면 글은 「사내」 · 토큰 · 클레임 값 없이(`tests/test_app_text_wording.py` · `tests/test_sso_status.py`), 문서 · 시험 예시는
+   `*.example.invalid`(`tests/test_public_repo_hygiene.py`).
+5. Streamlit 판을 올리면 툴바 iframe 이 앱과 같은 출처인지 브라우저로 한 번 본다 — 갱신 POST 가 `204` + `Set-Cookie` 를 받는지
+   (`docs/sso_setup.md` 8장 「갱신을 눈으로 보려면」). 같은 출처가 아니게 되면 쓰는 중에도 처음 로그인 뒤 유지 시간에 끊긴다.
 
 ## 13. 문서 우선순위
 

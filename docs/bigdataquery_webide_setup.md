@@ -131,7 +131,8 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 | `APP_ENV` | `prod` 면 운영 규칙(https 만 · 꺼짐 경고) |
 | `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` | ADFS authorize 주소 · id_token 의 iss · 토큰 서명 인증서(한 줄) |
 | `CAPA_PUBLIC_URL` | 브라우저가 여는 앱 주소(포털 Endpoint URL 은 이 값 + `/auth/callback`) |
-| `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` | 선택 |
+| `CAPA_SSO_SESSION_HOURS` · `CAPA_SSO_SESSION_MAX_HOURS` | 선택 — 로그인 유지 시간(마지막 사용 뒤, 기본 6) · 써도 넘지 못하는 최대 시간(기본 24) |
+| `CAPA_SSO` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` | 선택 |
 
 시작 스크립트는 이 값들을 앱에 넘기고(앱이 검증한다) 결과 파일에는 이름(있음/없음)만 남긴다. `JWT_SECRET_KEY` 는 하위 프로세스에
 넘기지 않고, 앱이 기동 때 읽은 뒤 프로세스 환경에서 지운다.
@@ -155,7 +156,8 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
   「통합인증」 은 결과 파일이 아니라 앱의 지금 설정에서 판정한다(정상 · 건너뜀(`ADFS_CLIENT_ID` 없음) · 실패(문제 이름)) — 시작
   때 있던 통합인증 환경변수 이름도 한 줄 붙는다.
 - **Admin Area 「통합인증 점검」** — 바로 아래 펼침. 판정 · 환경변수 이름별 상태와 까닭 · 계산한 redirect_uri · 서명 인증서
-  지문과 만료일 · 최근 로그인 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 서지 않는다([`sso_setup.md`](sso_setup.md) 7장).
+  지문과 만료일 · 로그인 유지 시간과 「로그인 갱신」 누계 · 최근 로그인 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 서지
+  않는다([`sso_setup.md`](sso_setup.md) 7장).
 - **BigDataQuery 안내** — 「패키지가 없습니다」·로그인 토큰 오류·`user_name` 안내 뒤에 그 단계의 결과 한 줄과 넣을
   환경변수 이름이 붙는다.
 - **펼침이 「결과 없음」 이면** — CD 환경변수(`CAPA_ARTIFACTORY_*`·`CAPA_BDQ_TOKEN`)는 앱에 들어왔는데 결과 파일이

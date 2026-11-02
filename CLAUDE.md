@@ -93,6 +93,8 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 `--data-dir <사본 폴더>` 만 받고 같은 판정으로 저장소 안은 거절), `scripts/validate_duckdb_persistence.py`
 (영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
 `scripts/generate_sample_core_data.py`(합성 Core Data 생성),
+`scripts/sso_mock_idp.py`(개발용 가짜 통합인증 IdP — 키를 메모리에만 만들고 form_post 로 id_token 을 보내 `capa_server.py` 의 로그인을
+끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
 `scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
 HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `scripts/guide_example_seed.py`, `--internal` 은 런북 6-3 사본
 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
@@ -136,6 +138,9 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   앞에서 그 화면 Summary 가 그릴 공식버전 요약과 `Introduce` 티저 칸(`components/intro_summary.py`)을 보낸다.
   페이지 바로 앞에는 머리 띠 아래 연 화면 탭 줄(`components/page_tabs.py`, 상태 `page_tabs_state.py`)을 그리고
   `st.navigation()` 바로 뒤에서 탭이 적어 둔 이동을 한다.
+- `capa_server.py` — C-DEP 운영 진입점(시작 스크립트가 `streamlit run capa_server.py --server.port 8080` 으로 띄운다). `app.py` 를
+  `st.App` 으로 감싸 통합인증 경로·문지기를 같은 프로세스에 붙인다(`src/capa_simulation/auth/`). 개발·WebIDE·시험·화면 확인은
+  `app.py` 로 띄운다(통합인증 꺼짐). 자세한 것은 `docs/sso_setup.md`.
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
