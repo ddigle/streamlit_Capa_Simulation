@@ -47,6 +47,11 @@ CONDITION_CARD_PREFIX = "condition_card_"
 # 채로 남는다(2026-09-28 사용자 결정).
 TABLE_CARD_LABEL = "표 조건"
 TABLE_CARD_ICON = ":material/filter_alt:"
+# **팝업 상자**의 key 접두어 — 조회 조건 아래 따로 서서 한 번 누르면 곧바로 팝업이 뜨는 상자(펼치는
+# 확장 패널이 아니다 — 상자 자체가 단추). 지금은 HOME 「HOME 설정」
+# 하나(`components/home_settings.py`, 2026-11-02 사용자 요청). `sidebar_style.py` 가 이 접두어
+# 하나로 조건 카드와 같은 면·글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸) 표식을 건다.
+DIALOG_BOX_PREFIX = "sidebar_dialog_box_"
 
 
 # **상자를 접고 펼 때는 본문을 다시 돌리지 않는다**(2026-09-30 사용자 지적 — 접고 펼 때마다 본문이
@@ -254,16 +259,31 @@ def _only_this_widget_changed(key: str) -> bool:
     (2026-09-30 브라우저 실측). Streamlit 은 이것을 공개 API 로 알려 주지 않아 세션 상태 내부
     (`_widget_changed`)를 읽는다 — 버전은 `streamlit==1.63.0` 으로 고정돼 있고, 내부가 바뀌어 읽지
     못하면 앱 전체 재실행(지금까지의 동작)으로 물러난다.
+
+    Components v2 부품(화면 탭 줄)은 위젯이 둘이다 — 상태 칸(`key` 의 위젯)과 트리거를 모아 받는 칸
+    (`own_widget_ids` 의 둘째). 트리거 누름은 둘째 칸만 바꾸므로 둘 다 `key` 의 위젯으로 센다.
     """
     try:
         from streamlit.runtime.state.session_state_proxy import get_session_state
 
         session = get_session_state()._state
-        own = session._get_widget_id(key)
+        own = own_widget_ids(session._get_widget_id(key))
         changed = {wid for wid in session._new_widget_state if session._widget_changed(wid)}
     except Exception:  # noqa: BLE001 — 내부가 바뀌면 안전한 쪽(앱 전체 재실행)으로 물러난다
         return False
-    return changed == {own}
+    return bool(changed) and changed <= own
+
+
+def own_widget_ids(widget_id: str) -> frozenset[str]:
+    """위젯 id 하나와 그 위젯 몫으로 세는 id. Components v2 부품이면 트리거 모음 칸 id 가 더 붙는다.
+
+    모음 칸 id 는 Streamlit 1.63 `bidi_component.main._make_trigger_id(<부품 id>, "events")` 다 —
+    내부 이름이라 판을 올려 바뀌면 그 칸이 「다른 위젯」 으로 세어져 지금처럼 앱 전체 회차로
+    물러난다.
+    """
+    from streamlit.components.v2.bidi_component.main import _make_trigger_id
+
+    return frozenset({widget_id, _make_trigger_id(widget_id, "events")})
 
 
 def remembered_box_key(key: str) -> str:
@@ -285,11 +305,11 @@ def sidebar_expander(
     아니라 `on_box_toggle` 콜백이다 — 여닫을 때 본문을 다시 돌리지 않는다(2026-09-30).
     `expanded=` 는 주지 않는다 — 세션 값과 둘을 같이 주면 Streamlit 이 경고를 남긴다.
 
-    **위젯 값만으로는 모자라는 자리가 둘이다.** 하나는 탭·페이지에 딸린 조건 카드다(HOME
-    `LOB 표시 조건` 은 Main 탭에서만 선다). 다른 탭·페이지에 갔다 오면 그 회차에 만들어지지 않은
-    위젯이라 값이 버려진다. 다른 하나는 라벨이 바뀌는 상자다 — **라벨이 위젯 id 계산에 들어가서**
-    라벨이 바뀌는 순간 위젯이 통째로 새로 만들어지고 펼침 상태가 기본값으로 돌아간다(본문 VOC 글의
-    「답변 N」). 둘 다 실측으로 확인했다.
+    **위젯 값만으로는 모자라는 자리가 둘이다.** 하나는 탭·페이지에 딸린 조건 카드다(산출 결과 「표
+    조건」 은 탭마다 안이 바뀌고, 모든 카드는 그 페이지에서만 선다). 다른 탭·페이지에 갔다 오면 그
+    회차에 만들어지지 않은 위젯이라 값이 버려진다. 다른 하나는 라벨이 바뀌는 상자다 — **라벨이 위젯
+    id 계산에 들어가서** 라벨이 바뀌는 순간 위젯이 통째로 새로 만들어지고 펼침 상태가 기본값으로
+    돌아간다(본문 VOC 글의 「답변 N」). 둘 다 실측으로 확인했다.
 
     그래서 위젯이 아닌 칸에 `(펼침, 라벨)` 을 적어 두고 **값이 사라졌거나 라벨이 바뀐
     회차에만** 되돌려 놓는다. 매 회차 덮어쓰면 방금 누른 사용자의 클릭을 지운다.
@@ -337,7 +357,9 @@ def _remembered_box(
     return box
 
 
-def condition_card(label: str, *, name: str, icon: str = ":material/tune:") -> DeltaGenerator:
+def condition_card(
+    label: str, *, name: str, icon: str = ":material/tune:", default: bool = False
+) -> DeltaGenerator:
     """그 화면이 **실제로 읽는 고유 조건**을 모으는 사이드바 상자(2026-09-28 사용자 결정).
 
     사이드바 「조회 조건」 구역은 지금 화면의 조건을 모으는 한 곳이다. 공통 조건(시나리오·
@@ -347,9 +369,11 @@ def condition_card(label: str, *, name: str, icon: str = ":material/tune:") -> D
     **기본은 접힘이고, 한 번 편 카드는 탭·페이지를 오가도 편 채로 남는다.** 탭에 딸린 카드는
     그 탭이 열렸을 때만 그려지는데, 안 그려진 회차에는 위젯 값이 버려지므로
     `sidebar_expander` 의 기억 칸이 되돌린다. 페이지가 그리는 요소라 파이썬 차례로는
-    `Support` 뒤에 붙지만 CSS 의 `order` 가 `Support` 를 맨 아래로 민다.
+    `Support` 뒤에 붙지만 CSS 의 `order` 가 `Support` 를 맨 아래로 민다. `default=True` 는 처음
+    펼친 채 서는 카드다 — HOME 「LOB 표시 조건」 하나(주요 Case 칩이 그 안이라 접혀 있으면 칩이
+    보이지 않는다, 2026-11-02). 한 번 접으면 그 뒤로는 기억 칸을 따른다.
     """
-    return sidebar_expander(label, key=f"{CONDITION_CARD_PREFIX}{name}", icon=icon)
+    return sidebar_expander(label, key=f"{CONDITION_CARD_PREFIX}{name}", icon=icon, default=default)
 
 
 def table_card(name: str) -> DeltaGenerator:

@@ -163,7 +163,7 @@ try:
     capacity_exclusions = summary.capacity_exclusions
     assumptions = summary.capacity_assumptions
     required_exclusions = summary.required_exclusions
-    # 판정 기준은 HOME → Preference 의 **공용 프로필**이다. 이 페이지는 위젯을 두지 않고
+    # 판정 기준은 HOME 설정 → Preference 의 **공용 프로필**이다. 이 페이지는 위젯을 두지 않고
     # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:

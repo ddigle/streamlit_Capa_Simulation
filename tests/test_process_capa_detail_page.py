@@ -792,9 +792,9 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
         for row_id, _ in trace["customdata"]
     )
     assert "staticPlot" not in _chart_config(app, "process_detail_summary_labels")
-    # 단축 목표는 HOME Preference 확보기준 표시뿐이다 — 고르는 위젯이 없다.
+    # 단축 목표는 HOME 설정 → Preference 확보기준 표시뿐이다 — 고르는 위젯이 없다.
     assert any(
-        "단축 목표 = HOME Preference 확보기준(월별)" in str(element.value)
+        "단축 목표 = HOME 설정 → Preference 확보기준(월별)" in str(element.value)
         for element in app.caption
     )
     # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).

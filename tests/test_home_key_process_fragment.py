@@ -103,6 +103,8 @@ def _fragment_app(tmp_path: Path) -> tuple[AppTest, DuckDBScenarioRepository]:
     repository.replace_global_key_process_presets([A, B], source="시험")
     clear_global_key_process_cache()
     app = AppTest.from_string(_script(database_path), default_timeout=300)
+    # 카드는 「HOME 설정」 팝업의 Preference 탭 안이다 — 팝업을 연 채 그린다.
+    app.session_state[HOME_DIALOG_KEY] = "settings"
     app.run()
     _assert_clean(app)
     app.session_state[EMULATE_KEY] = True
@@ -155,8 +157,8 @@ def test_the_preset_editor_is_a_fragment() -> None:
     assert "key_process_profile" not in inspect.signature(editor).parameters
 
 
-TAB_KEY = "home_active_tab"
-PREFERENCE = ":material/tune: Preference"
+# 「HOME 설정」 팝업 열림 칸(2026-11-02 — 전에는 HOME 의 Preference 탭).
+HOME_DIALOG_KEY = "home_open_dialog"
 FULL_RUNS_KEY = "test_full_app_runs"
 
 
@@ -213,9 +215,9 @@ def test_card_operations_rerun_only_the_card_and_saving_reruns_the_whole_app(
     app = AppTest.from_string(_counting_script(database_path), default_timeout=300)
     app.run()
     _assert_clean(app)
-    # 사이드바에서 B 를 보고 있고, Preference 탭을 연다(탭 전환은 앱 전체 회차다).
+    # 사이드바에서 B 를 보고 있고, 「HOME 설정」 팝업을 연다(여는 상자는 앱 전체 회차다).
     app.session_state[home_preference.KEY_PROCESS_PRESET_KEY] = B[0]
-    app.session_state[TAB_KEY] = PREFERENCE
+    app.session_state[HOME_DIALOG_KEY] = "settings"
     app.run()
     _assert_clean(app)
     assert browser.started == [[]]
@@ -241,8 +243,8 @@ def test_card_operations_rerun_only_the_card_and_saving_reruns_the_whole_app(
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     assert repository.load_global_key_process().presets == (A, ("B2", B[1]), C)
     assert app.selectbox(key=TARGET_KEY).value == "B2"
-    # 카드 밖 위젯 상태(열린 탭)는 카드 회차를 지나도 남는다.
-    assert app.session_state[TAB_KEY] == PREFERENCE
+    # 카드 밖 상태(열린 팝업)는 카드 회차를 지나도 남는다 — 저장 뒤에도 팝업은 열려 있다.
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
     full_runs += 1
 
     # 삭제 확인은 카드만, 삭제는 앱 전체 회차로.
@@ -260,7 +262,7 @@ def test_card_operations_rerun_only_the_card_and_saving_reruns_the_whole_app(
     # 보던 B2 가 지워졌다. 카드의 삭제 경로는 이 칸을 건드리지 않는다 — HOME 본문(앱 전체 회차)이
     # 새 프로필을 읽어 기본(A)으로 다시 적었다. 사이드바 `주요공정 히트맵` 줄이 보는 칸이다.
     assert app.session_state[home_preference.KEY_PROCESS_PRESET_KEY] == A[0]
-    assert app.session_state[TAB_KEY] == PREFERENCE
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
 
 
 def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
@@ -282,7 +284,7 @@ def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
     app = AppTest.from_string(_counting_script(database_path), default_timeout=300)
     app.run()
     _assert_clean(app)
-    app.session_state[TAB_KEY] = PREFERENCE
+    app.session_state[HOME_DIALOG_KEY] = "settings"
     app.run()
     _assert_clean(app)
     next(button for button in app.button if button.label == "Summary 저장").click().run()

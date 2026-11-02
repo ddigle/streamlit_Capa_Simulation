@@ -15,14 +15,14 @@
     "compare_scenario": {
       "type": "text",
       "default": "26년 9월 정기 Capa 검토",
-      "about": "Preference 「비교 시나리오」에서 고를 시나리오 이름(앞부분만 적어도 첫 일치를 고른다)"
+      "about": "HOME 설정 팝업 Preference 「비교 시나리오」에서 고를 시나리오 이름(앞부분만 적어도 첫 일치를 고른다)"
     }
   },
   "states": [
     {
       "id": "01_home_main",
       "page": "HOME",
-      "note": "HOME · Main 탭 첫 화면(최신 공식)",
+      "note": "HOME 첫 화면(최신 공식) — 탭 없이 한 화면, 공용 설정은 사이드바 「HOME 설정」 팝업",
       "writes": "none",
       "ops": [{"op": "enter_app"}],
       "targets": {
@@ -34,9 +34,8 @@
         "sidebar_heatmap": "key:condition_field_key_process",
         "guide_btn": "button:Guide",
         "header_band": "named:HEADER_BAND",
-        "tab_main": "tab:Main",
-        "tab_pref": "tab:Preference",
-        "tab_past": "tab:Past Data",
+        "sidebar_chips": "key:home_main_case_chips",
+        "sidebar_settings": "key:home_settings_open",
         "lob_chart": "named:LOB_CHART",
         "lob_density": "named:LOB_LABEL(Density)",
         "lob_wafer_plan": "named:LOB_LABEL(Wafer 계획)",
@@ -106,10 +105,10 @@
     {
       "id": "05_lobcond_open",
       "page": "HOME",
-      "note": "사이드바 「LOB 표시 조건」 펼침",
+      "note": "사이드바 「LOB 표시 조건」 펼침(처음부터 펼친 채 선다 — 맨 위가 주요 Case 칩)",
       "from": "01_home_main",
       "writes": "none",
-      "ops": [{"op": "click", "target": "named:EXPANDER(condition_card_home)"}],
+      "ops": [{"op": "scroll", "target": "named:EXPANDER(condition_card_home)", "block": "center"}],
       "targets": {
         "lc_card": "named:EXPANDER(condition_card_home)",
         "lc_gap": "key:home_show_comparison",
@@ -120,12 +119,13 @@
     {
       "id": "06_home_pref",
       "page": "HOME",
-      "note": "HOME · Preference 탭 — 확보율 판정 기준 · 비교 시나리오",
+      "note": "HOME 설정 팝업 · Preference 탭 — 확보율 판정 기준 · 비교 시나리오",
       "from": "01_home_main",
       "writes": "none",
       "ops": [
-        {"op": "tab", "text": "Preference"},
-        {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start", "offset": -76}
+        {"op": "open_popup", "target": "key:home_settings_open"},
+        {"op": "tab", "text": "Preference", "scope": "dialog"},
+        {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start"}
       ],
       "targets": {
         "pref_criteria_box": "named:HEAD_BOX(확보율 판정 기준)",
@@ -228,10 +228,10 @@
     {
       "id": "11_home_after_apply",
       "page": "HOME",
-      "note": "적용 뒤 HOME · Main — 머리 띠와 사이드바가 미저장 변경을 단다",
+      "note": "적용 뒤 HOME — 머리 띠와 사이드바가 미저장 변경을 단다",
       "from": "10_ref_applied",
       "writes": "none",
-      "ops": [{"op": "nav", "text": "HOME"}, {"op": "tab", "text": "Main"}, {"op": "scroll", "to": "top"}],
+      "ops": [{"op": "nav", "text": "HOME"}, {"op": "scroll", "to": "top"}],
       "targets": {
         "sidebar_scenario": "named:SIDEBAR_SCEN",
         "sidebar_badge": "named:SIDEBAR_BADGE",
@@ -398,15 +398,16 @@
     {
       "id": "20_home_pref_compare",
       "page": "HOME",
-      "note": "Preference · 비교 시나리오를 고른 뒤 「비교 리비전」 칸(공용 프로필에 적힌다)",
+      "note": "HOME 설정 팝업 Preference · 비교 시나리오를 고른 뒤 「비교 리비전」 칸(공용 프로필에 적힌다)",
       "from": "19_scenario_popup_load",
       "writes": "shared",
       "ops": [
         {"op": "key", "key": "Escape"},
         {"op": "nav", "text": "HOME"},
-        {"op": "tab", "text": "Preference"},
+        {"op": "open_popup", "target": "key:home_settings_open"},
+        {"op": "tab", "text": "Preference", "scope": "dialog"},
         {"op": "fill", "label": "비교 시나리오", "value": {"param": "compare_scenario", "default": "26년 9월 정기 Capa 검토"}},
-        {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start", "offset": -76}
+        {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start"}
       ],
       "targets": {
         "pref_compare_box": "named:HEAD_BOX(비교 시나리오)",

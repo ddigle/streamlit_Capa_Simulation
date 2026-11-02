@@ -1,6 +1,6 @@
-# Purpose: HOME Past Data 탭에서 과거 구간 세 표를 CSV·붙여넣기로 받아 공용 프로필에 저장한다.
+# Purpose: HOME 설정 팝업 Past Data 탭에서 과거 구간 세 표를 받아 공용 프로필에 저장한다.
 
-"""HOME `Past Data` 탭.
+"""HOME 「설정」 팝업의 `Past Data` 탭(2026-11-02 — 전에는 HOME 의 `Past Data` 탭).
 
 DB 원천은 적재 시점 이후의 달만 담는다. 지난 해를 함께 보려면 그 구간을 손으로 넣어야 하고,
 과거는 이미 끝난 값이라 불변이므로 시나리오 리비전이 아니라 공용 프로필에 둔다.
@@ -8,6 +8,12 @@ DB 원천은 적재 시점 이후의 달만 담는다. 지난 해를 함께 보�
 세 표가 **한 버전을 공유한다.** 한 표만 고쳐도 저장할 때 세 표를 함께 쓴다 — 부분 저장을
 허용하면 어느 표가 어느 버전인지 알 수 없다. 그래서 화면은 세 표를 모두 세션에 들고 있다가
 한 번에 저장한다.
+
+**붙여넣기는 팝업이 아니라 그 표 상자 안 칸이다.** 이 탭은 이미 「설정」 팝업(`st.dialog`) 안이고
+Streamlit 은 팝업 안에 팝업을 열지 못한다(「Dialogs may not be nested inside other dialogs」).
+표마다 「Excel 붙여넣기」 를 누르면 그 표 상자 안에 붙여넣기 칸(폼)이 펴지고, 한 번에 한 표만 편다
+(`PAST_PASTE_KEY` — 세션 칸 하나). 「설정」 팝업을 열고 닫는 콜백이 그 칸을 걷는다
+(`forget_past_paste`).
 """
 
 from __future__ import annotations
@@ -24,7 +30,6 @@ from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
-    PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
 )
 from capa_simulation.persistence.cache import (
@@ -47,11 +52,12 @@ HOME_PAST_DOWNLOAD_KEY = "home_past_download"
 PAST_CLIPBOARD_KEY = "home_past_clipboard"
 PAST_NOTE_KEY = "home_past_note"
 PAST_DRAFT_KEY = "home_past_draft"
-# 지금 열린 붙여넣기 팝업의 표 이름. HOME 한 화면에 팝업 칸은 하나다(`PAGE_DIALOG_SUFFIX` —
-# 페이지를 떠나면 `forget_page_dialogs` 가 비운다).
-PAST_DIALOG_KEY = f"home{PAGE_DIALOG_SUFFIX}"
+# 지금 붙여넣기 칸을 편 표 이름(한 번에 한 표). 팝업 열림 칸이 아니다 — 「설정」 팝업 안의 칸이라
+# 열림 칸 접미(`_open_dialog`)를 달지 않고, 「설정」 팝업을 열고 닫는 콜백이
+# 걷는다(`forget_past_paste`).
+PAST_PASTE_KEY = "home_past_paste_target"
 # 저장은 읽어 둔 표로 저장된 그 표를 **지우고 다시 넣는다**(`replace_global_past_data`). 새 달만
-# 붙여넣고 저장하면 이전 달이 사라진다. 누르기 전에 알아야 해 팝업과 저장 버튼에 남긴다.
+# 붙여넣고 저장하면 이전 달이 사라진다. 누르기 전에 알아야 해 붙여넣기 칸과 저장 버튼에 남긴다.
 PAST_REPLACE_NOTICE = (
     "저장하면 이 표는 붙여넣은 내용으로 통째로 바뀝니다 — 붙여넣지 않은 달·행은 지워지고 되돌릴 수 "
     "없습니다. 기존 행을 남기려면 함께 붙여넣으세요."
@@ -66,7 +72,7 @@ class PastTableSpec:
     title: str
     icon: str
     columns: tuple[str, ...]
-    # 무엇을 넣는 표인지. 본문이 아니라 붙여넣기 팝업에 적는다 — 넣을 때 읽는 글이다.
+    # 무엇을 넣는 표인지. 상자 본문이 아니라 붙여넣기 칸에 적는다 — 넣을 때 읽는 글이다.
     caption: str
 
 
@@ -107,7 +113,7 @@ PAST_TABLE_SPECS = (
 
 
 def render_past_data_management(database_path: str, profile: GlobalPastData) -> None:
-    """세 표의 양식 내려받기·붙여넣기(팝업)와 한 번의 저장(맨 위 작업 줄).
+    """세 표의 양식 내려받기·붙여넣기(그 표 상자 안 칸)와 한 번의 저장(맨 위 작업 줄).
 
     저장은 세 표가 한 버전을 공유해 **한 번**이다. 붙여넣기 결과는 대기로 쌓이고 맨 위
     `과거 구간 저장` 이 한꺼번에 기록한다(2026-09-29 — 저장 버튼을 표들 아래에서 위로).
@@ -124,16 +130,14 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
         _render_save(database_path, draft)
     for spec in PAST_TABLE_SPECS:
         _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)
-    opened = st.session_state.get(PAST_DIALOG_KEY)
-    for spec in PAST_TABLE_SPECS:
-        if spec.name == opened:
-            _paste_dialog(spec, draft)
 
 
 def past_data_has_pending() -> bool:
-    """붙여넣기로 읽어 두고 아직 저장하지 않은 표가 있는가. HOME 이 Past Data 탭에 점을 찍는다.
+    """붙여넣기로 읽어 두고 아직 저장하지 않은 표가 있는가. HOME 이 사이드바 「HOME 설정」 상자와
+    팝업 안 `Past Data` 탭에 점을 찍고, 화면 탭 줄이 HOME 탭에 점을 찍는다.
 
-    읽기와 저장 모두 끝나면 곧바로 다시 돌므로(`st.rerun`) 탭을 만드는 회차의 값이 곧 지금 상태다.
+    읽기와 저장 모두 끝나면 곧바로 앱 전체가 다시 돌므로(`st.rerun`) 상자를 그리는 회차의 값이 곧
+    지금 상태다.
     """
     return bool(st.session_state.get(PAST_DRAFT_KEY))
 
@@ -160,11 +164,13 @@ def merged_past_tables(
 
 
 def _open_paste(name: str) -> None:
-    st.session_state[PAST_DIALOG_KEY] = name
+    st.session_state[PAST_PASTE_KEY] = name
 
 
-def _close_paste() -> None:
-    st.session_state.pop(PAST_DIALOG_KEY, None)
+def forget_past_paste() -> None:
+    """편 붙여넣기 칸을 걷는다 — 「설정」 팝업을 열고 닫는 콜백과 붙여넣기 칸의 「닫기」가
+    부른다."""
+    st.session_state.pop(PAST_PASTE_KEY, None)
 
 
 def _render_table_editor(
@@ -178,8 +184,8 @@ def _render_table_editor(
     current = stored if pending is None else pending
     with st.container(border=True):
         st.markdown(f"#### {spec.icon} {spec.title}")
-        # 작업 줄: 붙여넣기(팝업)·양식 내려받기와 저장·대기 행 수. 여는 버튼은 콜백으로 연다 —
-        # 한 회차에 팝업이 둘 뜨지 않는다.
+        # 작업 줄: 붙여넣기(이 상자 안 칸)·양식 내려받기와 저장·대기 행 수. 여는 버튼은 콜백으로
+        # 연다 — 칸은 한 번에 한 표만 편다.
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "Excel 붙여넣기",
@@ -189,7 +195,7 @@ def _render_table_editor(
                 args=(spec.name,),
             )
             render_csv_download(
-                # 탭이 닫혀 있어도 그리므로 인코딩을 HOME 의 매 실행에 얹지 않는다.
+                # 팝업 안 탭이 닫혀 있어도 그리므로 인코딩을 팝업의 매 실행에 얹지 않는다.
                 data=past_table_csv(
                     database_path,
                     version,
@@ -205,6 +211,8 @@ def _render_table_editor(
                 f"저장 {len(stored):,}행"
                 + ("" if pending is None else f" · 대기 {len(pending):,}행")
             )
+        if st.session_state.get(PAST_PASTE_KEY) == spec.name:
+            _render_paste_form(spec, draft)
         render_flash(f"past_data_read_flash_{spec.name}")
         if not current.empty:
             with st.expander(
@@ -215,11 +223,13 @@ def _render_table_editor(
                 st.dataframe(current, hide_index=True, width="stretch", height=240)
 
 
-def _paste_dialog(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
-    """표 하나를 붙여넣어 **대기**로 읽는다. 기록은 맨 위 `과거 구간 저장` 이 한다."""
+def _render_paste_form(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
+    """표 하나를 붙여넣어 **대기**로 읽는 칸(그 표 상자 안). 기록은 맨 위 `과거 구간 저장` 이 한다.
 
-    @st.dialog(f"Excel 붙여넣기 · {spec.title}", width="large", on_dismiss=_close_paste)
-    def _body() -> None:
+    읽으면 칸을 걷고 앱 전체를 다시 돌린다 — 사이드바 「HOME 설정」 상자와 화면 탭 줄의 대기 점이 그
+    회차에 선다(팝업 안 위젯의 회차는 팝업만 돈다). 열림 칸이 남아 「설정」 팝업은 그대로 열려 있다.
+    """
+    with st.container(border=True):
         st.caption(spec.caption)
         # 되돌릴 수 없는 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다.
         st.caption(PAST_REPLACE_NOTICE)
@@ -235,6 +245,12 @@ def _paste_dialog(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
                 icon=":material/content_paste:",
                 type="primary",
             )
+        st.button(
+            "닫기",
+            icon=":material/close:",
+            key=f"{PAST_CLIPBOARD_KEY}_{spec.name}_close",
+            on_click=forget_past_paste,
+        )
         if not submitted:
             return
         try:
@@ -242,14 +258,12 @@ def _paste_dialog(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
         except BOOTSTRAP_ERRORS as exc:
             st.error(bootstrap_error_message(exc))
             return
-        queue_flash(
-            f"past_data_read_flash_{spec.name}",
-            f"{len(draft[spec.name]):,}행을 읽었습니다. 맨 위 「과거 구간 저장」을 누르세요.",
-        )
-        _close_paste()
-        st.rerun()
-
-    _body()
+    queue_flash(
+        f"past_data_read_flash_{spec.name}",
+        f"{len(draft[spec.name]):,}행을 읽었습니다. 맨 위 「과거 구간 저장」을 누르세요.",
+    )
+    forget_past_paste()
+    st.rerun()
 
 
 def _render_save(

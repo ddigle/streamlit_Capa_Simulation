@@ -138,6 +138,71 @@ def test_the_box_and_another_widget_changed_together_is_not_only_the_box() -> No
     assert app.session_state[PROBE_KEY] is False
 
 
+def _component_judgement_script() -> None:
+    """Components v2 부품(화면 탭 줄 꼴)의 트리거 콜백이 `_only_this_widget_changed` 의 답을
+    적는다."""
+    import streamlit as st
+
+    from capa_simulation.sidebar_status import _only_this_widget_changed
+
+    strip_key = "sidebar_box_toggle_test_box"
+
+    def record() -> None:
+        st.session_state["sidebar_box_toggle_test_probe"] = _only_this_widget_changed(strip_key)
+
+    strip = st.components.v2.component(
+        "sidebar_box_toggle_test_strip", html="<div></div>", js="export default function () {}"
+    )
+    strip(key=strip_key, on_pin_change=record, data={"tabs": []})
+    st.text_input("다른 입력", key="sidebar_box_toggle_test_other")
+
+
+def _press_component(app: AppTest, *, other: str | None = None) -> None:
+    """브라우저처럼 부품 트리거 하나(와 `other` 면 입력칸 값)를 한 상호작용으로 보낸다."""
+    import json
+
+    from streamlit.components.v2.bidi_component.main import _make_trigger_id
+    from streamlit.proto.WidgetStates_pb2 import WidgetState
+
+    strip_id = next(
+        str(element.proto.id)
+        for element in app._tree.children[0].children.values()
+        if getattr(element, "type", None) == "bidi_component"
+    )
+    events_id = _make_trigger_id(strip_id, "events")
+    states = app._tree.get_widget_states()
+    for state in states.widgets:
+        if other is not None and state.id.endswith(f"-{OTHER_KEY}"):
+            state.string_value = other
+    states.widgets.append(WidgetState(id=strip_id, json_value="{}"))
+    payload = [{"event": "pin", "value": {"id": "x", "pinned": True}}]
+    states.widgets.append(WidgetState(id=events_id, json_trigger_value=json.dumps(payload)))
+    app._run(states)
+
+
+def test_a_components_v2_trigger_alone_counts_as_only_that_widget() -> None:
+    """화면 탭 줄의 핀은 Components v2 트리거다 — 누름이 바꾸는 것은 부품 key 의 위젯이 아니라
+    트리거 모음 칸(`<부품 id>__events`)이라, 그 칸을 다른 위젯으로 세면 핀을 누를 때마다 앱 전체가
+    다시 돌았다(2026-11-02 사용자 요청 — 핀 고정에 페이지 로딩). 입력칸이 함께 바뀌면 여전히
+    거짓이다."""
+    app = AppTest.from_function(_component_judgement_script).run()
+
+    _press_component(app)
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROBE_KEY] is True
+
+    _press_component(app, other="값")
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[PROBE_KEY] is False
+
+    # 판정이 그 위젯 몫으로 세는 칸은 Streamlit 이 트리거 모음 칸에 붙이는 이름 그대로다.
+    from streamlit.components.v2.bidi_component.main import _make_trigger_id
+
+    from capa_simulation.sidebar_status import own_widget_ids
+
+    assert own_widget_ids("w") == {"w", _make_trigger_id("w", "events")}
+
+
 def test_the_callback_does_not_rerun_the_fragment_before_a_completed_run(
     rerun_calls: list[tuple[object, ...]],
 ) -> None:

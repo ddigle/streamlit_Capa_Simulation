@@ -314,7 +314,6 @@ HOME_LINK_KEY: Final = "home_navigation"
 # 않는다.
 PAGE_TABS_KEY: Final = "page_tabs_strip"
 PAGE_TABS_MAX: Final = 10
-HOME_MAIN_TAB: Final = "Main"
 # 사이드바 「조회 조건」 통합 패널. 앱 모듈(`sidebar_status`·`condition_field`·`scenario_status`·
 # `period_field`·`home_preference`)을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
 # 본다.
@@ -324,7 +323,8 @@ CONDITIONS_BOX_KEY: Final = "sidebar_conditions_box"
 CONDITION_NAME_ROW_PREFIX: Final = "condition_name_"
 CONDITION_CARD_PREFIX: Final = "condition_card_"
 LOB_CARD_LABEL: Final = "LOB 표시 조건"
-# 패널 줄 이름(정한 어휘)과 HOME Main 탭의 차례. 시나리오 줄 이름은 「시나리오 · rN」이다.
+# 패널 줄 이름(정한 어휘)과 HOME 의 차례. 시나리오 줄 이름은 「시나리오 · rN」이다. HOME 은 탭 없이
+# 한 화면이라(2026-11-02) 네 줄과 `LOB 표시 조건` 카드가 늘 선다.
 PANEL_ROW_NAMES: Final = ("시나리오", "조회기간", "공정 필터", "주요공정 히트맵")
 # 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세·Space 현황)의 설비 시나리오 줄 이름. HOME
 # 에는 서지 않는다(`navigation.PageSpec.equipment_scenario`).
@@ -361,7 +361,7 @@ EQUIPMENT_STATUS_BADGES: Final = (
     "미저장 변경",
     "일정 없이 엶",
 )
-THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합니다."
+THRESHOLD_POINTER: Final = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
 # 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
@@ -1531,8 +1531,14 @@ class Screen:
         return list(self.js(_PAGE_TABS_JS, PAGE_TABS_KEY) or [])
 
     def tab_item(self, index: int) -> Any:
-        """화면 탭 줄의 `index` 번째 탭(그림자 DOM — Playwright CSS 가 뚫는다)."""
-        return self.page.locator(f".st-key-{PAGE_TABS_KEY} .capa-tabs-item").nth(index)
+        """화면 탭 줄의 보이는 탭 가운데 `index` 번째(그림자 DOM — Playwright CSS 가 뚫는다).
+
+        `page_tabs()` 와 같이 숨긴 탭을 빼고 센다 — 지금 탭이 아닌 탭을 닫으면 탭 줄 JS 가 그
+        탭을 숨기고(`hidden`) 서버는 빈 프래그먼트만 다시 돌려 다음 앱 전체 회차까지 그 탭이 DOM
+        에 남는다. 숨긴 탭까지 세면 둘째 닫기부터 숨은 탭을 집어 `hover` 가 30초를 기다리다
+        끝났다(2026-11-02 반박 검토 — 탭 여럿에서 page_tabs · page_tabs_frame 미기록)."""
+        visible = f".st-key-{PAGE_TABS_KEY} .capa-tabs-item:not([hidden])"
+        return self.page.locator(visible).nth(index)
 
     def make_tab_room(self) -> None:
         """탭이 상한(`PAGE_TABS_MAX`)이면 지금 탭이 아닌 닫을 수 있는 탭 하나를 닫는다.
@@ -2967,7 +2973,7 @@ def _title_text(title: str | None, expected: str) -> str:
 
 
 def summarize_panel(facts: Mapping[str, Any] | None, old_titles: int) -> str:
-    """HOME Main 탭의 패널 — 구역 제목·줄 이름 차례와 수·옛 상자 제목 수·LOB 카드 자리."""
+    """HOME 의 패널 — 구역 제목·줄 이름 차례와 수·옛 상자 제목 수·LOB 카드 자리."""
     if not facts or facts["rows"] is None:
         return f"「{CONDITIONS_SECTION_TITLE}」 패널 없음 · 옛 상자 제목 {old_titles}곳"
     names = _row_names(facts["rows"]) or ()
@@ -3056,12 +3062,12 @@ def summarize_process_dialog(
 
 
 def check_sidebar_panel(screen: Screen) -> str:
-    """HOME Main 탭의 「조회 조건」 패널 — 줄 이름 차례·수, 옛 상자 제목, 아래 `LOB 표시 조건` 카드.
+    """HOME 의 「조회 조건」 패널 — 줄 이름 차례·수, 옛 상자 제목, 아래 `LOB 표시 조건` 카드.
 
-    공정 필터·주요공정 히트맵 줄은 HOME 계산 뒤에 차므로 네 줄이 설 때까지 기다린다.
+    공정 필터·주요공정 히트맵 줄은 HOME 계산 뒤에 차므로 네 줄이 설 때까지 기다린다. HOME 은 탭
+    없이 한 화면이라(2026-11-02) 탭을 고르지 않는다.
     """
     screen.open_home()
-    screen.open_tab(HOME_MAIN_TAB)
     facts = screen.poll(
         lambda: _panel_facts(screen),
         timeout=60,
@@ -3434,6 +3440,128 @@ def check_page_tabs(screen: Screen) -> str:
     closed = screen.poll(lambda: screen.page_tabs(), timeout=10, accept=lambda tabs: len(tabs) < 2)
     screen.wait_idle()
     return summarize_page_tabs(opened, back_home, closed)
+
+
+# 탭 줄 틀(`page_tabs_frame`, 2026-11-02 사용자 요청). 본문 스크롤 칸(`stMain`)을 0 과 60px 에 두고
+# 탭 줄 칸의 top 을 읽는다 — 스크롤을 처음 내리는 동안 탭 줄이 따라 올라가면 두 값이 다르다(바탕
+# 3aad85d 56 → 52.5px). 끝에 0 으로 되돌린다.
+_STRIP_TOPS_JS = """(key) => {
+  const main = document.querySelector('[data-testid="stMain"]');
+  const host = document.querySelector('.st-key-' + key);
+  if (!main || !host) return null;
+  const tops = [];
+  for (const y of [0, 60]) {
+    main.scrollTop = y;
+    tops.push({ y: main.scrollTop, top: host.getBoundingClientRect().top });
+  }
+  main.scrollTop = 0;
+  return tops;
+}"""
+# 탭 줄 안 보이는 탭의 차례(화면 경로 — 판정에만 쓴다). 화면 이름은 찍지 않는다.
+_TAB_IDS_JS = """(key) => {
+  const host = document.querySelector('.st-key-' + key);
+  const holder = host && [...host.querySelectorAll('*')].find((e) => e.shadowRoot);
+  const root = holder && holder.shadowRoot;
+  if (!root) return [];
+  const items = [...root.querySelectorAll('.capa-tabs-item')];
+  return items.filter((li) => !li.hidden).map((li) => li.dataset.id);
+}"""
+# 진행 막대(HOME `LoadingProgress`)가 한 프레임이라도 섰는가를 프레임마다 적는다 — 고정 누름이
+# 페이지를 다시 돌리면 HOME 은 막대가 잠깐 선다(바탕 12/12).
+_PROGRESS_WATCH_JS = """() => {
+  if (window.__capaProgressWatch) window.__capaProgressWatch.on = false;
+  const watch = { on: true, seen: false };
+  window.__capaProgressWatch = watch;
+  const tick = () => {
+    if (!watch.on) return;
+    if (document.querySelector('[data-testid="stProgress"]')) watch.seen = true;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}"""
+_PROGRESS_SEEN_JS = """() => {
+  const watch = window.__capaProgressWatch;
+  if (!watch) return null;
+  watch.on = false;
+  return watch.seen;
+}"""
+
+
+def summarize_page_tabs_frame(
+    tops: Sequence[Mapping[str, Any]] | None,
+    progress: Sequence[bool | None],
+    moved: bool,
+    kept: bool,
+) -> str:
+    """탭 줄 틀 한 줄 — 스크롤 0·60px 의 탭 줄 top 차이(px), HOME 에서 다른 탭을 고정했다 풀 때 진행
+    막대가 선 누름 수, 고정하지 않은 탭을 끌어 고정 묶음 바로 뒤로 옮겼는가, 주소가 그대로인가.
+    정한 동작은 「0px · 막대 0/2 · 옮김 · 그대로」 다(2026-11-02 사용자 요청)."""
+    scrolled = bool(tops) and len(tops or []) == 2 and float((tops or [])[1]["y"]) > 0
+    shift = abs(float(tops[1]["top"]) - float(tops[0]["top"])) if tops and scrolled else None
+    bars = sum(1 for seen in progress if seen)
+    same = (
+        shift is not None and shift < 0.5 and bars == 0 and None not in progress and moved and kept
+    )
+    shift_text = "스크롤 안 됨" if shift is None else f"{shift:g}px"
+    return (
+        f"스크롤 탭 줄 이동 {shift_text} · 고정 진행 막대 {bars}/{len(progress)} · "
+        f"끌어 옮김 {'됨' if moved else '안 됨'} · 주소 {'그대로' if kept else '바뀜'} — "
+        f"정한 동작과 {'같음' if same else '다름'}"
+    )
+
+
+def _drag_tab(screen: Screen, source: int, target_x: float) -> None:
+    """탭 줄의 `source` 번째 탭을 마우스로 끌어 `target_x` 에 놓는다(가로 5px 를 넘어야 끌기다)."""
+    box = screen.tab_item(source).bounding_box()
+    if box is None:
+        return
+    x0, y0 = box["x"] + 24, box["y"] + box["height"] / 2
+    screen.page.mouse.move(x0, y0)
+    screen.page.mouse.down()
+    for step in range(1, 13):
+        screen.page.mouse.move(x0 + (target_x - x0) * step / 12, y0)
+        screen.page.wait_for_timeout(16)
+    screen.page.mouse.up()
+
+
+def check_page_tabs_frame(screen: Screen) -> str:
+    """머리 띠 아래 화면 탭 줄의 틀 — (1) 긴 화면(HOME)을 스크롤해도 탭 줄이 움직이지 않는가, (2)
+    다른 탭 고정·풀기가 페이지를 다시 돌리지 않는가(HOME 진행 막대), (3) 고정하지 않은 탭을 끌어
+    차례를 바꾸면 화면은 그대로인가. 개수·px·있음/없음만 찍는다. 보는 조작이라 DB 에 쓰지 않는다 —
+    고정은 풀어 되돌리고, 탭 차례는 세션에만 산다."""
+    screen.open_home()
+    for _ in range(PAGE_TABS_MAX):
+        if not _close_first_closable_tab(screen):
+            break
+    for href in (SCENARIO_MANAGEMENT_PAGE, ADMIN_AREA_PAGE):
+        screen.open_page(href)
+    screen.open_home()
+    screen.step("스크롤")
+    tops = screen.js(_STRIP_TOPS_JS, PAGE_TABS_KEY)
+    screen.step("고정")
+    progress: list[bool | None] = []
+    for _ in range(2):
+        item = screen.tab_item(1)
+        item.hover()
+        screen.js(_PROGRESS_WATCH_JS)
+        item.locator(".capa-tabs-pin").click()
+        time.sleep(0.6)
+        screen.wait_idle()
+        progress.append(screen.js(_PROGRESS_SEEN_JS))
+    screen.step("끌기")
+    before = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
+    pinned = sum(1 for tab in screen.page_tabs() if tab["pinned"])
+    moved = kept = False
+    if len(before) >= pinned + 2:
+        first = screen.tab_item(pinned).bounding_box()
+        if first is not None:
+            _drag_tab(screen, len(before) - 1, first["x"] + 6)
+            time.sleep(0.6)
+            screen.wait_idle()
+            after = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
+            moved = after == [*before[:pinned], before[-1], *before[pinned:-1]]
+            kept = screen.path() in ("", "/")
+    return summarize_page_tabs_frame(tops, progress, moved, kept)
 
 
 def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
@@ -5153,6 +5281,7 @@ ITEMS: tuple[Item, ...] = (
     Item("upeh_help", "기준 정보 UPEH 월 칸 도움말", check_upeh_help),
     Item("space_zone_fields", "Space 배치 편집기 영역 칸", check_space_zone_fields),
     Item("equipment_preference", "설비 Preference 입력 비가동 표", check_equipment_preference),
+    Item("page_tabs_frame", "화면 탭 줄 틀·고정·끌기", check_page_tabs_frame),
 )
 
 

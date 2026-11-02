@@ -65,7 +65,9 @@ if TYPE_CHECKING:
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-HOME_TAB_KEY = "home_active_tab"
+# 「HOME 설정」 팝업 열림 칸(`home_state.HOME_DIALOG_KEY` — 앱 모듈을 먼저 부르지 않으려고 값만
+# 옮긴다).
+HOME_DIALOG_KEY = "home_open_dialog"
 _COPY_MODE_SUFFIX = "(사본이라 문구는 찍지 않는다)"
 
 
@@ -189,8 +191,9 @@ def run_phase(app: AppTest, phase: str) -> dict[str, object]:
         raise HomeFailure(phase, failures)
     chart_count = len(app.get("plotly_chart"))
     applied = applied_lob_key(app)
-    # 비교가 붙으면 격자 여덟 Figure 아래에 분류별 덤벨 하나가 추가된다.
-    expected_charts = 0 if phase == "hidden_main_tab" else 8 + bool(applied.comparison_revision_id)
+    # 비교가 붙으면 격자 여덟 Figure 아래에 분류별 덤벨 하나가 추가된다. 「HOME 설정」 팝업이 열린
+    # 회차도 뒤의 대시보드를 그대로 그린다(팝업 안에는 그림이 없다).
+    expected_charts = 8 + bool(applied.comparison_revision_id)
     if chart_count != expected_charts:
         raise BenchmarkStop(f"{phase}의 Figure 수가 {expected_charts}개가 아닙니다: {chart_count}")
     return {
@@ -268,9 +271,10 @@ def measure_phases(app: AppTest, *, skip_unavailable: bool = False) -> list[dict
     # 켠 상태 그대로 한 번 더. 캐시가 흡수하는 몫을 가른다.
     results.append(run_phase(app, "warm_all_on"))
 
-    # 숨은 탭으로 옮긴다. `stateful_tabs` 가 Main 의 Figure 를 건너뛰는 몫이다.
-    app.session_state[HOME_TAB_KEY] = ":material/history: Past Data"
-    results.append(run_phase(app, "hidden_main_tab"))
+    # 「HOME 설정」 팝업을 연다(전에는 숨은 탭 단계 — HOME 은 2026-11-02 부터 탭이 없다). 팝업 본문
+    # (Preference·Past Data 편집기)을 그리는 몫이다. 뒤의 그림은 캐시에서 꺼낸다.
+    app.session_state[HOME_DIALOG_KEY] = "settings"
+    results.append(run_phase(app, "settings_popup"))
     return results
 
 

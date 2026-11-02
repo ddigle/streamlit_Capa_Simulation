@@ -21,10 +21,11 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_PANEL_TITLE_GAP_PX,
-    DASHBOARD_SECTION_GAP_PX,
-    DASHBOARD_TITLE_HEIGHT_PX,
+    DASHBOARD_TITLE_BAND_PX,
+    DASHBOARD_TITLE_LINE_PX,
 )
 from capa_simulation.components.home_preference import (
+    LOB_UNAPPLIED_NOTICE_KEY,
     SECTION_BAR_GAP_PX,
     SECTION_TITLE_FONT_PX,
     STATUS_LEGEND_CLASS,
@@ -386,9 +387,10 @@ def latest_home_figure_key(cache_root: object, bundle: HomeFigureBundle[KeyT, An
     """세션 칸(`st.session_state[HOME_FIGURE_CACHE_KEY]`)에서 그 묶음이 가장 최근에 쓴 키.
 
     벤치마크가 「켠 토글이 그림에 실제로 적용됐나」를 보는 창구다. 꺼내 쓴 칸도 맨 뒤로 옮기므로
-    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다. **Main 이 숨은 회차에는
-    갱신되지 않는다** — 그 회차는 칸을 꺼내지도 쓰지도 않으므로(`app_pages/home.py`) 그때 읽으면
-    직전 Main 회차의 키다. 숨은 탭에서 저장한 값이 적용됐는지는 Main 을 연 회차 뒤에 본다.
+    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다. **「HOME 설정」 팝업이 열린
+    회차에는 팝업을 열기 전 그림의 키다** — 그 회차는 저장으로 바뀐 조건의 그림을 만들지 않고
+    마지막에 그린 그림을 꺼내 쓰므로(`app_pages/home.py`) 팝업에서 저장한 값이 적용됐는지는 팝업을
+    닫은 회차 뒤에 본다.
     """
     if not isinstance(cache_root, dict):
         return None
@@ -442,6 +444,40 @@ def store_home_figures(
         shared_home_figure_store(bundle.name).put(themed, _figures_to_blob(figures))
 
 
+# 마지막으로 그린 Figure 조건(`HomeFigureCacheKey`). 「HOME 설정」 팝업이 열린 회차는 이 조건의
+# 그림을 그대로 쓴다(`app_pages/home.py` — 팝업 안 저장이 바꾼 조건의 그림은 팝업을 닫는 회차에
+# 만든다).
+HOME_DRAWN_CONDITIONS_KEY = "home_drawn_figure_conditions"
+
+
+def take_home_figure_set(
+    conditions: HomeFigureCacheKey,
+) -> tuple[HomeFigureSet, PlanDetailFigures] | None:
+    """`conditions` 의 네 묶음을 꺼내 한 벌로 — 하나라도 없으면 None(부르는 쪽이 지금 조건으로
+    만든다).
+
+    계획 세부수량 묶음은 덤벨 그림도 들어 따로 함께 돌려준다. 꺼낸 칸은 가장 최근 칸으로 옮긴다
+    (`take_home_figures`).
+    """
+    lob = take_home_figures(LOB_FIGURES, conditions)
+    plan_detail = take_home_figures(PLAN_DETAIL_FIGURES, conditions)
+    key_process = take_home_figures(KEY_PROCESS_FIGURES, conditions)
+    bottleneck = take_home_figures(BOTTLENECK_FIGURES, conditions)
+    if lob is None or plan_detail is None or key_process is None or bottleneck is None:
+        return None
+    figure_set = HomeFigureSet(
+        lob_labels=lob.labels,
+        lob_months=lob.months,
+        plan_detail_labels=plan_detail.labels,
+        plan_detail_months=plan_detail.months,
+        key_process_labels=key_process.labels,
+        key_process_months=key_process.months,
+        bottleneck_labels=bottleneck.labels,
+        bottleneck_months=bottleneck.months,
+    )
+    return figure_set, plan_detail
+
+
 # 공용 칸의 값은 **바이트**다 — 객체를 그대로 나누면 한 세션이 꺼낸 Figure 를 고칠 때 남의
 # 화면이 바뀐다. Figure 를 통째로 pickle 하면 꺼낼 때 `Figure(...)` 검증 생성자가 모든 속성을
 # 다시 검사해 새 세션마다 그 비용을 치른다. 그래서 필드 차례대로 `to_dict()` 목록을 넣고,
@@ -493,14 +529,15 @@ def render_home_performance(
 ) -> None:
     """단계별 시간과 Figure 캐시 결과. `rebuilt` 는 이번 회차에 새로 만든 묶음의 표시 이름이다.
 
-    한 줄 요약은 네 묶음이 모두 맞았을 때만 「적중」이고 하나라도 만들었으면 「생성」이다.
-    어느 묶음을 만들었는지는 다음 줄이 적는다. Main 이 숨어 캐시를 보지도 않은 회차(`skipped`)는
-    「건너뜀」이다 — 「적중」으로 적으면 그림이 준비된 것처럼 읽힌다.
+    한 줄 요약은 네 묶음이 모두 맞았을 때만 「적중」이고 하나라도 만들었으면 「생성」이다. 어느
+    묶음을 만들었는지는 다음 줄이 적는다. 「HOME 설정」 팝업이 열려 팝업을 열기 전 그림을 그대로 쓴
+    회차(`skipped` — 지금 조건의 캐시는 보지도 않았다)는 「유지」다 — 「적중」으로 적으면 지금
+    조건의 그림이 준비된 것처럼 읽힌다.
     """
     if not enabled:
         return
     with st.sidebar.expander("HOME 실행 시간", expanded=True):
-        state = "건너뜀" if skipped else ("생성" if rebuilt else "적중")
+        state = "유지" if skipped else ("생성" if rebuilt else "적중")
         st.caption(f"Figure 캐시: {state}")
         if rebuilt:
             st.caption(f"새로 만든 묶음: {' · '.join(rebuilt)}")
@@ -512,33 +549,74 @@ def render_home_performance(
 
 
 def dashboard_title_row_style() -> str:
-    """네 구획 제목 줄과 그 짝인 빈 줄의 높이를 하나로 못박는다.
+    """네 구획 제목 줄과 그 짝인 빈 줄의 높이를 못박는다.
 
     위젯 기본 높이에 맡기면 브라우저 글꼴이나 Streamlit 판이 바뀔 때마다 두 칸이
-    어긋난다. 네 제목이 같은 높이라야 제목과 표 사이 간격도 하나로 맞는다.
+    어긋난다. 제목 줄이 같은 높이라야 제목과 표 사이 간격도 하나로 맞는다.
 
-    **한 줄이라도 빠지면 그 아래 전부가 어긋난다.** 월 칸 스페이서는 여기서 44px 로
-    못박히는데 라벨 칸 제목 줄은 CSS 가 없으면 Streamlit 기본 높이다 — 증상은 그
-    구획이 아니라 **그 아래 구획**에서 먼저 보인다.
+    `Capa LOB 현황` 줄은 제목 글줄(`DASHBOARD_TITLE_LINE_PX`)만이고 — 위는 상자 안쪽 여백, 아래는
+    상자 gap 과 스크롤바 자리다 — 나머지 셋은 제목 띠(`DASHBOARD_TITLE_BAND_PX`)다. 띠는 구획 사이
+    (`tokens.SECTION_GAP_PX`)를 위 여백으로, 제목→시트(`tokens.SECTION_TITLE_SHEET_GAP_PX`)를 아래
+    여백으로 품고 남은 글줄 높이 한가운데에 제목을 세운다. 월 칸의 짝 빈 줄은 띠 높이만 같으면 된다.
+
+    **한 줄이라도 빠지면 그 아래 전부가 어긋난다.** 월 칸 스페이서는 띠 높이로 못박히는데 라벨 칸
+    제목 줄은 CSS 가 없으면 Streamlit 기본 높이다 — 증상은 그 구획이 아니라 **그 아래 구획**에서
+    먼저 보인다.
     """
     return (
         f"""
     <style>
-    .st-key-lob_title_row,
+    .st-key-lob_title_row {{
+        height: {DASHBOARD_TITLE_LINE_PX}px;
+        min-height: {DASHBOARD_TITLE_LINE_PX}px;
+        margin: 0;
+    }}
     .st-key-plan_detail_title_row,
     .st-key-plan_detail_title_spacer,
     .st-key-key_process_title_row,
     .st-key-key_process_title_spacer,
     .st-key-bottleneck_title_row,
     .st-key-bottleneck_title_spacer {{
-        height: {DASHBOARD_TITLE_HEIGHT_PX}px;
-        min-height: {DASHBOARD_TITLE_HEIGHT_PX}px;
+        height: {DASHBOARD_TITLE_BAND_PX}px;
+        min-height: {DASHBOARD_TITLE_BAND_PX}px;
         margin: 0;
+        box-sizing: border-box;
+    }}
+    .st-key-plan_detail_title_row,
+    .st-key-key_process_title_row,
+    .st-key-bottleneck_title_row {{
+        padding: {tokens.SECTION_GAP_PX}px 0 {tokens.SECTION_TITLE_SHEET_GAP_PX}px;
     }}
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}"""
+        # 「적용하지 못한 달」 알림은 제목→시트 틈(상자 gap 0)에 끼므로 제목과 알림 · 알림과 시트(월
+        # 칸은 스크롤바) 사이를 제목→시트 간격만큼 띄운다 — 알림 상자가 제목 글줄과 스크롤바에 붙지
+        # 않게.
+        f"""
+    .st-key-{LOB_UNAPPLIED_NOTICE_KEY} {{
+        padding: {tokens.SECTION_TITLE_SHEET_GAP_PX}px 0;
+    }}"""
+        # 제목 글줄 상자가 줄 높이와 꼭 같아야 위 · 아래 틈이 띠 여백 그대로다. 마크다운은 한 줄
+        # HTML 을 문단(`p`, 본문 14px · 줄높이 22.4px)으로 감싸고, 그 본문 글줄의 기준선에
+        # 제목(줄높이 24px)이 얹혀 문단이 28.4px 로 커진다 — 제목 글은 문단 위쪽에 붙어 아래로 4.4px
+        # 가 더 빈다. 문단을 flex 로 두면 본문 글줄(strut)이 사라져 문단이 제목 글줄 높이가 되고,
+        # 문단의 아래 여백(1rem)과 그것을 걷는 칸의 음수 여백(-1rem)은 짝으로 0 으로 둔다. 범례 칸은
+        # 문단이 없는 HTML 블록이라 닿지 않는다.
+        """
+    .st-key-lob_title_row [data-testid="stMarkdownContainer"],
+    .st-key-plan_detail_title_row [data-testid="stMarkdownContainer"],
+    .st-key-key_process_title_row [data-testid="stMarkdownContainer"],
+    .st-key-bottleneck_title_row [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
+    .st-key-lob_title_row [data-testid="stMarkdownContainer"] > p,
+    .st-key-plan_detail_title_row [data-testid="stMarkdownContainer"] > p,
+    .st-key-key_process_title_row [data-testid="stMarkdownContainer"] > p,
+    .st-key-bottleneck_title_row [data-testid="stMarkdownContainer"] > p {
+        display: flex;
+        align-items: center;
+        margin: 0;
+    }"""
         # 구분 칸의 세 제목 줄은 **넘쳐도 한 줄**이다(`section_title_markup` 이 말줄임한다).
         # 그러려면 줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들 수 있어야 한다 — flex 항목의
         # 기본 `min-width:auto` 가 한 겹이라도 남으면 제목이 칸 밖(월 칸 위)으로 삐져나간다.
@@ -703,7 +781,7 @@ def home_dashboard_panel() -> Iterator[None]:
     fragment 밖에서 그리므로 상자만 한 단계 위로 올리고 제목 줄과 Figure 를 나란히 받는다.
     보는 조건 토글은 제목 줄이 아니라 사이드바 `LOB 표시 조건` 카드다.
 
-    `gap` 이 `DASHBOARD_SECTION_GAP_PX` 가 아닌 이유는 상수 주석에 적었다 — 라벨 캔버스가
+    `gap` 이 `tokens.SECTION_TITLE_SHEET_GAP_PX` 가 아닌 이유는 상수 주석에 적었다 — 라벨 캔버스가
     스크롤바 높이만큼 이미 내려와 있어 남는 몫만 여기서 준다.
     """
     st.html(dashboard_title_row_style())
@@ -756,9 +834,10 @@ def render_home_figures(
     그리지 않는다. 어긋난 글자가 그대로 남는다. 보이지 않는 그림을 만들어 보내지 않는 몫도
     있다(`components/tab_state.py`).
 
-    `figures` 가 None 인 것은 Main 이 숨은 회차다 — HOME 은 그 회차에 그림을 꺼내지도 만들지도
-    않는다(`app_pages/home.py`). 그래도 이 함수는 부른다. 프래그먼트가 감싸는 빈 칸이 늘 같은
-    자리에 서야 탭을 오갈 때 본문 배치가 흔들리지 않는다.
+    `figures` 가 None 이면 그리지 않는다(HOME 은 늘 한 벌을 넘긴다 — 「HOME 설정」 팝업이 열린
+    회차에는 팝업을 열기 전 그림이다, `app_pages/home.py`). `owner_tab` 이 숨은 탭이어도 그리지
+    않는다. 그래도 이 함수는 부른다 — 프래그먼트가 감싸는 빈 칸이 늘 같은 자리에 서야 본문 배치가
+    흔들리지 않는다.
 
     이 안의 위젯은 `Capa LOB 현황`·`주요공정 확보율`·`상세 B/N 공정` 월 그림의 **칸 선택**
     셋뿐이다 — 누르면 그 공정·그 달로 공정 Capa 상세가 열린다(`open_clicked_home_cell`, 과거
@@ -791,9 +870,11 @@ def render_home_figures(
         gap=None,
     )
     with label_column:
+        # gap 은 0 이다 — 구획 사이와 제목→시트는 제목 띠가 위 · 아래 여백으로 품는다
+        # (`dashboard_title_row_style`). 월 칸 캔버스도 같은 0 이어야 두 칸의 행이 맞는다.
         with st.container(
             key="production_lob_label_canvas",
-            gap=DASHBOARD_SECTION_GAP_PX,
+            gap=0,
         ):
             st.plotly_chart(
                 figures.lob_labels,
@@ -854,7 +935,7 @@ def render_home_figures(
                 content_width_px=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
                 hide_native_scrollbar=True,
                 padding_bottom="0.25rem",
-                gap=DASHBOARD_SECTION_GAP_PX,
+                gap=0,
             ):
                 # 생산계획 LOB 의 B/N 막대·B/N Top 5 막대를 누르면 그 공정·그 달로 공정 Capa 상세가
                 # 열린다 — 히트맵·상세 B/N 칸과 같은 콜백이다. 꺾은선·도넛·표 칸은 이동 정보가 없어
@@ -886,7 +967,7 @@ def render_home_figures(
                 # Streamlit 이 아예 그리지 않아 월 칸만 위로 올라붙는다.
                 st.container(
                     key="plan_detail_title_spacer",
-                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    height=DASHBOARD_TITLE_BAND_PX,
                     border=False,
                 )
                 st.plotly_chart(
@@ -898,7 +979,7 @@ def render_home_figures(
                 # 라벨 칸의 `주요공정 확보율` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
                     key="key_process_title_spacer",
-                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    height=DASHBOARD_TITLE_BAND_PX,
                     border=False,
                 )
                 # 히트맵은 hover 로 확보율·가용/필요대수를 읽는다. `staticPlot` 은 hover
@@ -919,7 +1000,7 @@ def render_home_figures(
                 # 라벨 칸의 `상세 B/N 공정` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
                     key="bottleneck_title_spacer",
-                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    height=DASHBOARD_TITLE_BAND_PX,
                     border=False,
                 )
                 # 상세 B/N 월 Figure 는 hover 를 쓰므로 `staticPlot` 을 빼 둔다.

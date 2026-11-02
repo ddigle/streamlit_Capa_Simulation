@@ -121,6 +121,13 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 - **범주형 색은 항상 명시 scale로 넘긴다.** Altair에 `scale`을 주지 않으면 `config.toml`의
   `chartCategoricalColors` 4색을 순환한다. 설비 상태는 9종이라 5~9번째가 앞의 것과 같은
   색으로 그려졌다.
+- **구획 제목은 제 시트에 붙고, 구획 사이는 한 값이다**(2026-11-02 사용자 요청 — HOME 대시보드). 제목 글줄
+  상자 아래 끝 → 시트 위 끝은 `tokens.SECTION_TITLE_SHEET_GAP_PX`(10px), 앞 시트 아래 끝 → 다음 제목 글줄 위 끝은
+  `tokens.SECTION_GAP_PX`(24px) 두 값만 쓴다. 제목→시트가 구획 사이보다 좁아야 제목이 아래 시트의 머리로 읽힌다 —
+  예전에는 반대(글줄 상자 기준 20.2 · 15.8px)라 제목이 위 시트 꼬리처럼 떠 보였다. 컨테이너 `gap` 은 한 값이라 두
+  간격을 gap 으로 내지 않는다: 제목 줄을 위 · 아래 안쪽 여백을 품은 띠(`home_dimensions.DASHBOARD_TITLE_BAND_PX`)로
+  두고 캔버스 gap 은 0 이다. 마크다운으로 그린 제목은 문단(`p`)이 본문 글줄을 끌고 와 글 아래가 더 빈다 — 제목 줄
+  CSS 가 문단을 flex 로 둬 걷는다(`home_rendering.dashboard_title_row_style`).
 
 ## 2-1. 면의 층
 

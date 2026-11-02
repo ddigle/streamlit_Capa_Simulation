@@ -193,9 +193,16 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 #
 # 화면 덩어리(`@media screen`)는 셋이다(2026-10-24 사용자 결정 — 페이지 탭).
 # - 화면 탭 줄은 머리 띠 바로 밑에 붙어 본문과 함께 스크롤되지 않는다(`position: sticky` — 스크롤
-#   칸은 `stMain` 이고 띠는 그 밖이라 띠 높이 3.75rem 아래에 선다). z-index 는 본문 위·머리 띠
-#   (999990)·진행 막대(999991) 아래이고, 펼침 목록·팝업(baseweb 층)보다도 아래인 100 이다 — 높이면
-#   위로 펼친 목록이 탭 줄 밑에 깔린다. 바탕은 컴포넌트 안 `nav` 가 칠한다.
+#   칸은 `stMain` 이고 띠는 그 밖이라 띠 높이 `tokens.HEADER_BAND_REM` 아래에 선다). z-index 는 본문
+#   위·머리 띠(999990)·진행 막대(999991) 아래이고, 펼침 목록·팝업(baseweb 층)보다도 아래인 100 이다
+#   — 높이면 위로 펼친 목록이 탭 줄 밑에 깔린다. 바탕은 컴포넌트 안 `nav` 가 칠한다.
+#   **탭 줄의 제자리(스크롤 0)를 sticky 자리와 같게 끌어올린다**(`margin-top` —
+#   `tokens.PAGE_TABS_LIFT_REM`). 제자리는 본문 위 여백(3rem) + 그 앞 높이 0 테마 iframe 과의 요소
+#   간격(1rem) = 4rem 이라 sticky 자리 3.75rem 보다 3.5px 아래였다 — 스크롤을 처음 내리는 3.5px 동안
+#   탭 줄이 따라 올라갔다 붙고, 맨 위로 돌아오면 다시 내려왔다(2026-11-02 사용자 요청 — 「스크롤
+#   아래로 내릴 때 틀이 살짝 움직임」). `top` 을 4rem 으로 내리는 길은 띠와 탭 줄 사이 3.5px 틈으로
+#   본문이 비쳐 지나가 쓰지 않는다. 진행 막대 자리·`grid.js` 의 가린 높이는 실행 때 탭 줄 상자를
+#   읽어 따로 고칠 것이 없다.
 # - 모달(`st.dialog` — Guide 등)이 열린 동안 탭 줄을 흐린다. 1.63 은 모달을 `body` 끝에 붙이고 앱
 #   뿌리(`#root`)에 `inert` 를 단다 — 탭 줄 누름은 말없이 먹히는데 탭 줄은 띠 바로 밑에 늘 보여 눌릴
 #   것처럼 보였다(E2E). 입장 화면·Summary 덮개도 같은 `inert` 를 다는데 그때 탭 줄은 덮개 밑이다.
@@ -215,7 +222,8 @@ SHELL_STYLE = (
 @media screen {
   __PAGE_TABS__ {
     position: sticky;
-    top: 3.75rem;
+    top: __TABS_TOP__;
+    margin-top: __TABS_LIFT__;
     z-index: 100;
     transition: opacity 0.15s;
   }
@@ -258,6 +266,8 @@ SHELL_STYLE = (
 </style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
+    .replace("__TABS_TOP__", tokens.rem(tokens.HEADER_BAND_REM))
+    .replace("__TABS_LIFT__", tokens.rem(tokens.PAGE_TABS_LIFT_REM))
 )
 
 # CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다. 색·글자 자리에

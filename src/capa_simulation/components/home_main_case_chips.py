@@ -1,11 +1,16 @@
-# Purpose: HOME 제목 줄 끝의 주요 Case 칩 셋 — 누르면 사이드바와 같은 길로 그 리비전을 올린다.
+# Purpose: LOB 표시 조건 카드의 주요 Case 칩 — 누르면 사이드바와 같은 길로 그 리비전을 올린다.
 
-"""HOME `Capa LOB Summary` 제목 줄 끝의 주요 Case 칩(2026-10-23 사용자 결정 — 시안 C · 동작 (가)).
+"""HOME 주요 Case 칩(2026-10-23 사용자 결정 — 시안 C · 동작 (가)).
 
-슬롯은 셋으로 고정이다 — `공식 vN`(지금 최신 공식버전) · `Case1` · `Case2`(HOME `Preference`
-「주요 Case」 에서 지정 — `home_main_cases`). **칩 글자는 이것뿐이다.** 어느 시나리오·리비전인지는
-마우스를 올리면 뜨는 풍선(단추 `help`)이 말하고, 지금 적용된 시나리오는 머리 띠(`app_header`)가
-말하므로 칩 옆에 다시 적지 않는다.
+**자리는 사이드바 「LOB 표시 조건」 카드의 첫 항목이다**(2026-11-02 사용자 요청 — 전에는 본문 제목
+줄 끝). 이름 줄 「주요 Case」 밑에 칩 셋이 카드 폭을 같은 폭으로 나눠 서고, 그 밑에 칩 알림 칸, 얇은
+선 뒤로 토글들이 온다. 본문 맨 위에는 칩 줄이 남지 않아 화면 탭 줄 바로 밑에서 Summary 가 시작한다.
+카드는 HOME 에서 처음 펼친 채 선다(`condition_card(default=True)` — 접으면 칩이 보이지 않는다).
+
+슬롯은 셋으로 고정이다 — `공식 vN`(지금 최신 공식버전) · `Case1` · `Case2`(「HOME 설정」 팝업
+`Preference` 탭의 「주요 Case」 에서 지정 — `home_main_cases`). **칩 글자는 이것뿐이다.** 어느
+시나리오·리비전인지는 마우스를 올리면 뜨는 풍선(단추 `help`)이 말하고, 지금 적용된 시나리오는 머리
+띠(`app_header`)가 말하므로 칩 옆에 다시 적지 않는다.
 
 **누르면 사이드바에서 그 리비전을 불러온 것과 똑같다.** 불러오기는 사이드바 팝업의 길
 (`scenario_status.load_saved_revision`)을 그대로 쓴다 — 세션 활성 시나리오가 바뀌어 다른 화면도 그
@@ -32,13 +37,14 @@ HOME 토글 기본값 쓰기(`_release_stale_ui_state`)와 리비전 프리셋 �
   않는다 — 머리 띠·사이드바 배지처럼 「미저장」이 먼저다. 칠한 칩을 다시 눌러도 편집이 없으면
   아무것도 하지 않는다 — 이미 그 Case 를 보고 있다(다시 불러오면 조회기간·공정 필터가 리비전
   프리셋으로 돌아간다). 편집이 있으면 팝업 확인을 거쳐 저장본으로 되돌리는 길이 된다.
-- 어느 슬롯과도 같지 않으면 칩 줄 앞에 작은 회색 「슬롯 밖」 한 마디뿐이다. 머리 띠는 가상요소라
-  HOME 만의 상태를 실을 자리가 없고 모든 화면이 함께 쓴다. 그 글자는 늘 그리고 슬롯 안이면 감춘다
-  (`visibility: hidden`) — 자리를 늘 잡아 두어 나타나고 사라질 때 칩이 옆으로 밀리거나 칩 줄이
-  접히지 않는다. 칩 줄은 오른쪽으로 붙으므로 칩 앞의 빈자리는 보이지 않는다.
-- 미지정 Case 는 점선 칩이고(풍선 「Case2 · 지정 안 함」) 누르면 HOME `Preference` 탭으로 옮긴다 —
-  「주요 Case」 상자는 그 탭의 둘째 상자라 탭을 열면 위쪽에 보인다. 가리키던 시나리오를 보관·영구
-  삭제하면 저장소가 그 Case 를 비우므로 이 점선 칩이 된다.
+- 어느 슬롯과도 같지 않으면 이름 줄 오른쪽 끝에 작은 회색 「슬롯 밖」 한 마디뿐이다. 머리 띠는
+  가상요소라 HOME 만의 상태를 실을 자리가 없고 모든 화면이 함께 쓴다. 이름 줄은 늘 서 있으므로 그
+  글자가 나타나고 사라져도 칩 줄은 움직이지 않는다(제목 줄에 있던 때의 숨은 자리표시자는 걷었다).
+- 미지정 Case 는 점선 칩이고(풍선 「Case2 · 지정 안 함」) 누르면 「HOME 설정」 팝업을 `Preference`
+  탭으로 연다(`home_settings.open_home_settings`) — 「주요 Case」 상자는 그 탭의 둘째 상자라 위쪽에
+  보인다. 가리키던 시나리오를 보관·영구 삭제하면 저장소가 그 Case 를 비우므로 이 점선 칩이 된다.
+  계산이 멈춘 회차에는 팝업을 열 수 없어(본문이 계산 결과를 쓴다) 이 칩을 잠그고 풍선이 까닭을
+  말한다.
 - 가리키는 시나리오·리비전을 목록에서 찾지 못하면(저장소 밖에서 고친 DB 등 — 보관·삭제는 위처럼
   비운다) 누를 수 없고 풍선이 다시 지정하라고 한다. 공식버전이 없으면(내장 시드 등) 공식 칩도 누를
   수 없다.
@@ -51,13 +57,15 @@ vN」 과 같은 값)이고, Case 는 주요 Case 쓰기 세대를 키로 한
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_main_cases import UNSET_CHOICE
+from capa_simulation.components.home_settings import open_home_settings
 from capa_simulation.components.intro_summary import (
     forget_intro_summary_check,
     latest_official_identity,
@@ -69,7 +77,7 @@ from capa_simulation.components.scenario_status import (
     open_scenario_dialog_on,
 )
 from capa_simulation.design import tokens
-from capa_simulation.home_state import HOME_PREFERENCE_TAB, HOME_TAB_KEY
+from capa_simulation.home_state import HOME_PREFERENCE_TAB
 from capa_simulation.navigation import HOME
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -88,17 +96,23 @@ from capa_simulation.services.main_cases import (
     main_case_slots,
 )
 
-# 칩 줄 컨테이너와 칩 셋의 key. 칩 모양 CSS 가 `st-key-<key>` 클래스로 잡는다.
+# 칩 필드(이름 줄 + 칩 줄 + 알림 칸)·칩 줄 컨테이너와 칩 셋의 key. 칩 모양 CSS 가 `st-key-<key>`
+# 클래스로 잡는다 — CSS 로 고르는 컨테이너 key 는 계약이다(AGENTS 9장).
+CHIP_FIELD_KEY = "home_main_case_field"
+CHIP_FIELD_NAME = "주요 Case"
 CHIP_ROW_KEY = "home_main_case_chips"
 OFFICIAL_CHIP_KEY = "home_main_case_chip_official"
 CASE1_CHIP_KEY = "home_main_case_chip_case1"
 CASE2_CHIP_KEY = "home_main_case_chip_case2"
-# 칩으로 불러오지 못했을 때의 한 줄. 다음 회차의 제목 줄 밑 칸이 꺼내 보인다.
+# 칩으로 불러오지 못했을 때의 한 줄. 다음 회차의 칩 줄 밑 칸이 꺼내 보인다.
 CHIP_NOTICE_KEY = "home_main_case_chip_notice"
 OFFICIAL_CHIP_TEXT = "공식"
 OUTSIDE_SLOTS_TEXT = "슬롯 밖"
-MISSING_REVISION_HELP = "리비전 없음 — Preference 에서 다시 지정"
-# 올릴 리비전이 없는 칩(미지정·잠김)의 짝. 미지정 칩은 누르면 `Preference` 로 옮긴다. 잠긴 칩은
+MISSING_REVISION_HELP = "리비전 없음 — HOME 설정 → Preference 에서 다시 지정"
+# 계산이 멈춘 회차의 미지정 칩 풍선 꼬리 — 그 회차에는 「HOME 설정」 팝업을 열 수 없다.
+STOPPED_UNSET_HELP = "계산이 멈춰 HOME 설정을 열 수 없습니다"
+# 올릴 리비전이 없는 칩(미지정·잠김)의 짝. 미지정 칩은 누르면 「HOME 설정」 팝업의 `Preference`
+# 탭을 연다. 잠긴 칩은
 # 눌리지 않는다 — 그린 뒤에 잠길 상태가 된 칩을 누르면 콜백이 다시 풀어 알림만 남긴다.
 _NO_TARGET: tuple[str | None, str | None] = (None, None)
 _CASE_CHIP_KEYS = (CASE1_CHIP_KEY, CASE2_CHIP_KEY)
@@ -111,7 +125,8 @@ HOME_PAGE_FILE = Path(HOME.path).name
 
 @dataclass(frozen=True)
 class SlotChip:
-    """칩 하나. `target` 은 누르면 올릴 (시나리오 id, 리비전 id) — 없으면 `Preference` 로 옮긴다."""
+    """칩 하나. `target` 은 누르면 올릴 (시나리오 id, 리비전 id) — 없으면 「HOME 설정」 팝업의
+    `Preference` 탭을 연다."""
 
     key: str
     text: str
@@ -174,7 +189,7 @@ def _ready_chip(
 
 
 def _case_chip(key: str, slot: MainCaseSlot) -> SlotChip:
-    """미지정(점선, 누르면 `Preference`)·찾지 못함(잠금) Case 칩."""
+    """미지정(점선, 누르면 「HOME 설정」 → `Preference`)·찾지 못함(잠금) Case 칩."""
     if slot.status == SLOT_UNSET:
         return SlotChip(
             key,
@@ -197,7 +212,7 @@ def _case_chip(key: str, slot: MainCaseSlot) -> SlotChip:
 
 
 def outside_slots(chips: tuple[SlotChip, ...], active: tuple[str | None, str | None]) -> bool:
-    """칠할 기준 리비전이 있는데 어느 칩도 칠하지 않았는가 — 칩 줄 앞 「슬롯 밖」."""
+    """칠할 기준 리비전이 있는데 어느 칩도 칠하지 않았는가 — 이름 줄 끝 「슬롯 밖」."""
     return active[1] is not None and not any(chip.painted for chip in chips)
 
 
@@ -236,52 +251,66 @@ def _slot_chips_now(
     )
 
 
-def render_main_case_chips(database_path: str) -> None:
-    """제목 줄 끝 칸의 칩 셋(`page_header.render_page_header_with_status` 의 `trailing`).
+def stopped_chips(chips: tuple[SlotChip, ...]) -> tuple[SlotChip, ...]:
+    """계산이 멈춘 회차의 칩 셋 — 미지정 칩(누르면 팝업을 여는 칩)만 잠그고 풍선에 까닭을 붙인다.
 
-    Case 재료를 읽지 못하면 칩 줄을 세우지 않는다 — 같은 오류는 `Preference` 의 「주요 Case」 상자가
-    알린다.
+    올릴 리비전이 있는 칩은 그대로 누를 수 있다 — 다른 Case 로 옮기는 것이 멈춘 화면에서 벗어나는
+    길이기도 하다.
+    """
+    return tuple(
+        replace(chip, disabled=True, help=f"{chip.help} — {STOPPED_UNSET_HELP}")
+        if chip.dashed and not chip.disabled
+        else chip
+        for chip in chips
+    )
+
+
+def render_main_case_chips(database_path: str, *, settings_ready: bool = True) -> None:
+    """「LOB 표시 조건」 카드 맨 위의 칩 필드 — 이름 줄 「주요 Case」(슬롯 밖이면 오른쪽 끝에 그
+    한 마디), 같은 폭 칩 셋, 칩 알림 칸.
+
+    Case 재료를 읽지 못하면 칩 필드를 세우지 않는다 — 같은 오류는 「HOME 설정」 팝업 `Preference`
+    탭의 「주요 Case」 상자가 알린다. `settings_ready` 가 거짓이면(계산이 멈춘 회차) 미지정 칩을
+    잠근다(`stopped_chips`).
     """
     active = painting_reference()
     try:
         chips = _slot_chips_now(database_path, active=active)
     except BOOTSTRAP_ERRORS:
         return
-    st.html(chip_style(chips, outside=outside_slots(chips, active)))
-    with st.container(
-        key=CHIP_ROW_KEY,
-        horizontal=True,
-        horizontal_alignment="right",
-        vertical_alignment="center",
-        gap="small",
-    ):
-        # 늘 그리고 슬롯 안이면 CSS 로 감춘다(모듈 설명). 풍선(`help`)을 달지 않는다 — 물음표
-        # 아이콘 하나가 더 서서 칩 줄이 시끄러워진다(브라우저 확인). 어느 시나리오인지는 머리 띠가
-        # 말한다.
-        st.caption(OUTSIDE_SLOTS_TEXT, width="content")
-        for index, chip in enumerate(chips):
-            st.button(
-                chip.text,
-                key=chip.key,
-                # 풍선은 마크다운으로 그려진다 — 사람이 적은 이름을 글자 그대로 싣는다.
-                help=literal_markdown(chip.help),
-                type="primary" if chip.painted else "secondary",
-                disabled=chip.disabled,
-                on_click=_open_slot,
-                args=(database_path, index, chip.target),
-            )
-
-
-def render_main_case_chip_notice() -> None:
-    """칩으로 불러오지 못한 까닭 한 줄. 제목 줄 바로 밑, 늘 서 있는 칸 안에 그린다(AGENTS 9장).
-
-    알림이 생기고 사라질 때 아래 탭의 자리가 밀리지 않게 한다 — 빈 칸은 높이가 없다.
-    """
-    render_flash(CHIP_NOTICE_KEY)
+    shown = chips if settings_ready else stopped_chips(chips)
+    st.html(chip_style(shown))
+    with st.container(key=CHIP_FIELD_KEY, gap=None):
+        condition_name_row(
+            CHIP_FIELD_NAME,
+            slug="main_case",
+            status=OUTSIDE_SLOTS_TEXT if outside_slots(chips, active) else None,
+        )
+        with st.container(
+            key=CHIP_ROW_KEY,
+            horizontal=True,
+            vertical_alignment="center",
+            gap="small",
+        ):
+            for index, chip in enumerate(shown):
+                st.button(
+                    chip.text,
+                    key=chip.key,
+                    # 풍선은 마크다운으로 그려진다 — 사람이 적은 이름을 글자 그대로 싣는다.
+                    help=literal_markdown(chip.help),
+                    type="primary" if chip.painted else "secondary",
+                    disabled=chip.disabled,
+                    on_click=_open_slot,
+                    args=(database_path, index, chip.target),
+                    width="stretch",
+                )
+        # 칩으로 불러오지 못한 까닭 한 줄. 늘 서 있는 칸 안에 그린다(AGENTS 9장) — 알림이 생기고
+        # 사라질 때 아래 토글이 밀리지 않게 한다(빈 칸은 높이가 없다).
+        render_flash(CHIP_NOTICE_KEY)
 
 
 def _notify(text: str) -> None:
-    """칩 콜백의 알림을 담는다 — 다음 회차 제목 줄 밑 칸이 한 번 그린다(`flash`)."""
+    """칩 콜백의 알림을 담는다 — 다음 회차 칩 줄 밑 칸이 한 번 그린다(`flash`)."""
     queue_flash(CHIP_NOTICE_KEY, text, kind="warning", icon=":material/info:")
 
 
@@ -294,13 +323,13 @@ def changed_slot_notice(index: int) -> str:
 
 
 def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | None]) -> None:
-    """칩의 콜백. 그린 짝이 낡았으면 알림, 미지정이면 `Preference` 탭, 편집이 있으면 사이드바
-    팝업, 아니면 곧바로 올린다.
+    """칩의 콜백. 그린 짝이 낡았으면 알림, 미지정이면 「HOME 설정」 팝업(`Preference` 탭), 편집이
+    있으면 사이드바 팝업, 아니면 곧바로 올린다.
 
-    짝은 누르는 순간 다시 푼다(모듈 설명 — 콜백 인자는 그린 회차의 값이다). 탭 key 를 적는 것은 탭
-    위젯이 그려지기 전(콜백)이라 그 회차의 `stateful_tabs` 가 그 탭을 연다. 적용 전 편집은 사이드바
-    팝업이 세는 것과 같은 함수로 센다(`pending_edit_labels`). 곧바로 올릴 때는 콜백이 `app.py` 의
-    실행 핀 밖에서 돌므로 여기서 DB 핀을 잡는다(팝업 본문과 같다).
+    짝은 누르는 순간 다시 푼다(모듈 설명 — 콜백 인자는 그린 회차의 값이다). 팝업 열림 칸과 안쪽 탭
+    key 를 적는 것은 탭 위젯이 그려지기 전(콜백)이라 그 회차의 팝업이 그 탭으로 선다. 적용 전 편집은
+    사이드바 팝업이 세는 것과 같은 함수로 센다(`pending_edit_labels`). 곧바로 올릴 때는 콜백이
+    `app.py` 의 실행 핀 밖에서 돌므로 여기서 DB 핀을 잡는다(팝업 본문과 같다).
     """
     try:
         chip = _slot_chips_now(database_path, active=_NO_TARGET)[index]
@@ -314,7 +343,7 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
         return
     scenario_id, revision_id = chip.target
     if scenario_id is None or revision_id is None:
-        st.session_state[HOME_TAB_KEY] = HOME_PREFERENCE_TAB
+        open_home_settings(HOME_PREFERENCE_TAB)
         return
     if has_unsaved_scenario_changes() or pending_edit_labels(HOME_PAGE_FILE):
         open_scenario_dialog_on(scenario_id, revision_id)
@@ -352,29 +381,45 @@ def _official_still_current(database_path: str, target: tuple[str | None, str | 
     return False
 
 
-def chip_style(chips: tuple[SlotChip, ...], *, outside: bool) -> str:
-    """칩 모양 — 작은 알약, 미지정은 점선 테두리, 칠한 칩 글자는 강조 면 위 글자색.
+def chip_style(chips: tuple[SlotChip, ...]) -> str:
+    """칩 필드 모양 — 이름 줄, 같은 폭 작은 알약 칩, 미지정은 점선 테두리, 칠한 칩 글자는 강조 면 위
+    글자색, 필드 밑 얇은 선(토글과 가른다).
 
     색은 Streamlit 단추 테마 그대로이고 칠한 칩의 **글자색만** 토큰(`ACCENT_TEXT`)으로 다시
     건다 — 어두운 테마의 강조색(`[theme.dark] primaryColor`)은 밝아서 Streamlit 의 흰 글자로는
-    대비가 1.9:1 이다. 칩은 HOME 맨 위에 늘 하나 칠해져 있다. 점선은 그 회차의 미지정 칩 key 에만
-    건다(`st-key-<key>`). 칩은 한 줄을 지키고(`nowrap`), 「슬롯 밖」 은 슬롯 안이면 감춘다(자리는
-    둔다). 스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
+    대비가 1.9:1 이다. 칩은 늘 하나 칠해져 있다. 점선은 그 회차의 미지정 칩 key 에만 건다
+    (`st-key-<key>`). 칩 글은 자르지 않는다 — 칩 칸(Streamlit 이 `flex: 1 1 fit-content`·`min-width:
+    14px` 를 건 `stElementContainer`)의 최소 폭을 글 폭(`max-content`)으로 두고 줄은 감싸
+    내린다(`flex-wrap: wrap`). 보통 폭(사이드바 256px 이상)에서는 셋이 카드 폭을 나눠 한 줄이고,
+    사이드바를 끌어 200~220px 로 줄이면 들지 않는 칩이 다음 줄로 내려가 그 줄을 채운다(전에는
+    `nowrap` 이라 칩이 글보다 좁아져 「공…」 · 「C..」 로 잘렸다 — 2026-11-02 검토). 「공식 v12」
+    같은 글도 칸 안에 들게 글자·좌우 여백을 줄였다. 이름 줄은 조회 조건 패널의 이름 줄과 같은 작은
+    보조 글이다(패널 서식은 패널 안만 고르므로 여기서 같은 값을 건다 — 캡션 칸의 아래 음수 여백과
+    흐림을 걷는다). 스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
     """
+    field = f".st-key-{CHIP_FIELD_KEY}"
     row = f".st-key-{CHIP_ROW_KEY}"
+    name_row = f"{field} .st-key-condition_name_main_case"
     dashed = ", ".join(f".st-key-{chip.key} button" for chip in chips if chip.dashed)
     painted = f'{row} button[kind="primary"]'
     rules = [
-        f"{row} {{ flex-wrap: nowrap; }}",
+        f"{field} {{ gap: 0.3rem; padding-bottom: 0.6rem;"
+        f" border-bottom: 1px solid {tokens.BORDER}; }}",
+        f"{name_row} {{ min-height: 1.15rem; flex-wrap: nowrap; }}",
+        f'{name_row} [data-testid="stCaptionContainer"] {{ margin-bottom: 0; opacity: 1; }}',
+        f'{name_row} [data-testid="stCaptionContainer"] p {{ margin: 0; font-size: 0.75rem;'
+        f" line-height: 1.25; color: {tokens.TEXT_MUTED}; white-space: nowrap; }}",
+        f'{name_row} > [data-testid="stElementContainer"]:first-child p {{ font-weight: 600; }}',
+        f"{row} {{ flex-wrap: wrap; row-gap: 0.35rem; }}",
+        f'{row} > [data-testid="stElementContainer"] {{ min-width: max-content; }}',
         f"{row} button {{"
-        " min-height: 1.75rem; padding: 0.1rem 0.8rem; border-radius: 999px;"
-        " font-size: 0.85rem; font-weight: 600; line-height: 1.2; }",
-        f"{row} button p {{ font-size: inherit; font-weight: inherit; color: inherit; }}",
+        " min-height: 1.75rem; padding: 0.1rem 0.35rem; border-radius: 999px;"
+        " font-size: 0.8rem; font-weight: 600; line-height: 1.2; }",
+        f"{row} button p {{ font-size: inherit; font-weight: inherit; color: inherit;"
+        " white-space: nowrap; }",
         f"{painted}, {painted}:hover, {painted}:active, {painted}:focus, {painted}:focus-visible"
         f" {{ color: {tokens.ACCENT_TEXT}; }}",
     ]
     if dashed:
         rules.append(f"{dashed} {{ border-style: dashed; }}")
-    if not outside:
-        rules.append(f'{row} [data-testid="stCaptionContainer"] {{ visibility: hidden; }}')
     return "<style>" + "\n".join(rules) + "</style>"

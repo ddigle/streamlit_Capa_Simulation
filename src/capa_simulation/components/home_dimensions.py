@@ -198,19 +198,27 @@ TOP5_BAR_OUTLINE_WIDTH_PX = 0.8
 # 막대가 크고 면색이 진해 같은 굵기면 테두리가 묻힌다.
 LOB_BAR_OUTLINE_WIDTH_PX = 1.2
 
-# 구획 사이 간격과 제목 줄 높이. 제목은 줄 **한가운데**에 서므로 제목과 표 사이에 보이는
-# 틈은 `줄 높이의 절반 + 이 간격` 이다. 44 + 16 이면 30px 이 되어 제목이 어느 표에도
-# 붙지 않고 떠 보였다. 36 + 12 로 내려 18 + 12 = 30 → 30px 를 유지하되 제목 줄 자체가
-# 얇아져 위아래 표가 가까워진다. 둘을 함께 줄여야 네 구획의 리듬이 그대로 간다.
-DASHBOARD_SECTION_GAP_PX = 12
+# 구획 제목 글줄 높이 — 20px 굵은 제목의 줄 상자(`home_preference.section_title_markup` 이 이 값을
+# `line-height` 로 쓴다). 제목 줄은 이 높이에 글줄 상자를 **꼭 맞게** 세운다. 마크다운 문단이 본문
+# 글줄(14px · 22.4px)을 끌고 오면 문단이 28.4px 로 커지고 제목 글은 그 위쪽에 붙는다 — 높은 줄
+# 가운데에 세워도 글 아래가 4.4px 더 비어 제목→시트 틈이 구획 사이보다 넓어지고 제목이 위 시트에
+# 붙어 보인다(2026-11-02 사용자 요청). 그 문단 겹은 `home_rendering.dashboard_title_row_style` 이
+# 걷는다.
+DASHBOARD_TITLE_LINE_PX = 24
 
-DASHBOARD_TITLE_HEIGHT_PX = 36
+# 계획 세부수량 · 주요공정 · 상세 B/N 의 제목 띠(라벨 칸 제목 줄과 월 칸의 짝 빈 줄이 같은 높이) =
+# 구획 사이 + 제목 글줄 + 제목→시트. 띠가 두 간격을 위 · 아래 안쪽 여백으로 품고 두 캔버스의 gap 은
+# 0 이다 — 컨테이너 gap 은 한 값이라 「제목 위는 넓게, 아래는 좁게」 를 gap 으로는 낼 수 없다.
+DASHBOARD_TITLE_BAND_PX = (
+    tokens.SECTION_GAP_PX + DASHBOARD_TITLE_LINE_PX + tokens.SECTION_TITLE_SHEET_GAP_PX
+)
 
-# 테두리 상자가 `Capa LOB 현황` 제목 줄과 두 칸을 함께 감쌀 때 그 사이 간격.
-# 라벨 캔버스는 월 칸 스크롤바 높이만큼 `padding-top` 으로 이미 내려와 있다. 제목 아래
-# 간격이 다른 두 구획과 같은 `DASHBOARD_SECTION_GAP_PX` 로 보이려면 그만큼 뺀 값만
-# 상자 gap 으로 준다. 손으로 적지 않고 두 값의 차로 둬야 한쪽을 고칠 때 따라 움직인다.
-DASHBOARD_PANEL_TITLE_GAP_PX = DASHBOARD_SECTION_GAP_PX - tokens.SCROLLBAR_HEIGHT_PX
+# 테두리 상자가 `Capa LOB 현황` 제목 줄과 두 칸을 함께 감쌀 때 그 사이 간격. 라벨 캔버스는 월 칸
+# 스크롤바 높이만큼 `padding-top` 으로 이미 내려와 있다(월 칸은 그 자리에 스크롤바가 선다).
+# 제목→시트가 다른 세 구획과 같은 `SECTION_TITLE_SHEET_GAP_PX` 로 보이려면 그만큼 뺀 값만 상자 gap
+# 으로 준다 — 지금 값으로는 0 이다. 손으로 적지 않고 두 값의 차로 둬야 한쪽을 고칠 때 따라
+# 움직인다(음수가 되면 시험이 막는다).
+DASHBOARD_PANEL_TITLE_GAP_PX = tokens.SECTION_TITLE_SHEET_GAP_PX - tokens.SCROLLBAR_HEIGHT_PX
 
 # 상세 B/N 공정 시트. 한 칸에는 가로막대 한 줄과 그 위의 공정명만 들어가고, 순위 20행이
 # 한 화면에 담기는 행 높이다. 세 값은 Figure 높이·표 높이·행 경계 계산이 함께 보므로

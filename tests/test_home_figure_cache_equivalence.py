@@ -56,6 +56,9 @@ from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
 from capa_simulation.services.simulation_cache import shared_home_figure_store
 
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
+# 「HOME 설정」 팝업 열림 칸(2026-11-02 — 비교 시나리오 상자는 그 팝업의 Preference 탭
+# 안이다).
+HOME_DIALOG_KEY = "home_open_dialog"
 PRESET_KEY = "home_key_process_preset"
 THEME_KEY = "spy_theme"
 FRESH_KEY = "spy_fresh"
@@ -718,12 +721,16 @@ def test_saved_profiles_and_a_new_comparison_revision_rebuild_what_they_reach(
     )
     assert _saved(app, "과거 구간 저장") == ALL_BUNDLES
 
-    # 비교 리비전 교체 — 계획만 다른 다른 시나리오의 리비전으로. 시나리오 상자로 고른다. 리비전은
-    # 그 회차의 Preference 피커가 따라 잡는데 피커는 Figure **뒤에** 서므로, 고른 회차의 그림은 아직
-    # 앞 리비전이 그 시나리오 것이 아니라 비교 없이 그려진다(Main 은 그때 숨은 탭이다). 한 회차를
-    # 넘긴 뒤에 본다.
+    # 비교 리비전 교체 — 계획만 다른 다른 시나리오의 리비전으로. 「HOME 설정」 팝업의 시나리오
+    # 상자로 고른다. 리비전은 그 회차의 Preference 피커가 따라 잡는데 피커는 Figure **뒤에** 서고,
+    # 팝업이 열린 동안의 그림은 팝업을 열기 전 그림 그대로다. 팝업을 닫은(열림 칸을 비운) 회차에
+    # 본다.
+    app.session_state[HOME_DIALOG_KEY] = "settings"
+    app.run()
+    _assert_clean(app)
     app.selectbox(key=COMPARISON_SCENARIO_KEY).set_value(other_scenario).run()
     _assert_clean(app)
+    del app.session_state[HOME_DIALOG_KEY]
     _, rebuilt = _assert_same_as_fresh(app, "비교 리비전 교체")
     assert app.session_state[COMPARISON_REVISION_KEY] == other_revision
     assert rebuilt == {LOB, PLAN}

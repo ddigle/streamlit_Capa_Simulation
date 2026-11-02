@@ -1,13 +1,14 @@
 # Purpose: HOME Preference 「주요 Case」 상자 — Case1·Case2 의 시나리오·리비전을 공용 지정한다.
 
-"""HOME `Preference` 탭의 「주요 Case」 상자(2026-10-23 사용자 요청).
+"""「HOME 설정」 팝업 `Preference` 탭의 「주요 Case」 상자(2026-10-23 사용자 요청 — 2026-11-02 부터
+HOME 본문 탭이 아니라 사이드바 「HOME 설정」 팝업 안이다).
 
 HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버전(따로 지정하지 않는다 — 공식 지정은
 시나리오 관리 한 곳), 슬롯 2·3 은 여기서 고르는 Case1·Case2 다. 상자 첫 줄은 슬롯 1 을 글로만
 보이고, Case 마다 「시나리오」·「리비전」 두 상자를 둔다. 고르는 것이 곧 저장이고(비교 시나리오와
 같다) 값은 공용 프로필 `app_meta.global_main_cases`(마이그레이션 0036)에 Case 하나씩 짝으로
-들어간다. HOME Main 의 슬롯 고르기는 시안을 고른 뒤의 2단계다 — 그쪽은
-`services/main_cases.main_case_slots` 와 캐시 `load_global_main_cases` 를 쓴다.
+들어간다. 슬롯을 올리는 칩은 사이드바 「LOB 표시 조건」 카드 맨 위다(`home_main_case_chips`) —
+그쪽은 `services/main_cases.main_case_slots` 와 캐시 `load_main_case_targets` 를 쓴다.
 
 **공용 프로필이 정본이고 상자는 그 거울이다.** 비교 시나리오는 세션 값이 보는 사람의 GAP 상태라
 세션을 우선하지만, 주요 Case 는 모두가 같이 쓰는 지정이라 회차마다 프로필 값을 상자 칸에 **적는다**.
@@ -23,12 +24,12 @@ HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버�
 때 그 시나리오 첫 리비전으로 메우기(본 version 대조 — 그 사이 남이 고른 값을 덮지 않는다). 선택지
 라벨에는 활성 상태를 붙이지 않는다(`_comparison_active_note` 와 같은 까닭).
 
-**숨은 Preference 회차는 DB 를 읽지도 쓰지도 않는다.** HOME 은 `stateful_tabs` 라 숨은 탭 본문도
-회차마다 돈다 — Main 의 조작마다 목록 읽기 넷이 실리고, 위 두 쓰기와 그 한 번뿐인 알림이 아무도 보지
-않는 탭에서 소비된다. 그래서 탭이 숨으면 마지막으로 보인 화면(`MAIN_CASE_VIEW_KEY`)을 그대로 다시
-그린다 — 탭을 누르는 순간 브라우저가 보이는 것이 그 화면이고, 이어지는 회차(탭은
-`on_change="rerun"`)가 DB 에서 새로 그린다. 세션의 첫 회차가 숨은 탭이면 그 한 번만 읽고(쓰지
-않고) 화면을 만든다.
+**숨은 Preference 회차는 DB 를 읽지도 쓰지도 않는다.** 팝업 안 탭은 `stateful_tabs` 라 `Past Data`
+탭을 보는 동안에도 숨은 `Preference` 본문이 회차마다 돈다 — 그 조작마다 목록 읽기 넷이 실리고, 위 두
+쓰기와 그 한 번뿐인 알림이 아무도 보지 않는 탭에서 소비된다. 그래서 탭이 숨으면 마지막으로 보인
+화면(`MAIN_CASE_VIEW_KEY`)을 그대로 다시 그린다 — 탭을 누르는 순간 브라우저가 보이는 것이 그
+화면이고, 이어지는 회차(탭은 `on_change="rerun"`)가 DB 에서 새로 그린다. 팝업을 `Past Data` 탭으로
+처음 열면 그 한 번만 읽고(쓰지 않고) 화면을 만든다. 팝업이 닫힌 회차에는 상자를 그리지 않는다.
 """
 
 from __future__ import annotations
@@ -116,7 +117,8 @@ class _PickerView:
 
 
 def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = None) -> None:
-    """「주요 Case」 상자. `owner_tab` 은 HOME `Preference` 탭이다(모르면 `None` — 보인다고 본다).
+    """「주요 Case」 상자. `owner_tab` 은 「HOME 설정」 팝업의 `Preference` 탭이다(모르면 `None` —
+    보인다고 본다).
 
     보이는 회차의 읽기는 목록 둘(최신 공식버전·시나리오)과 Case 가 가리키는 시나리오의 리비전
     목록뿐이고, 쓰기는 위 모듈 설명의 두 메우기뿐이다. 숨은 회차는 지난 화면을 다시 그린다.
