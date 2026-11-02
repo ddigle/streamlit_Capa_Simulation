@@ -73,7 +73,8 @@ def test_tabs_are_dragged_with_pointer_events_and_a_keyboard_alternative() -> No
     assert "text.moved" in JS and page_tabs.TEXT["moved"].startswith("{label} 탭을 {index}번째로")
     # 끄는 중에 새 data 가 오면 끌기를 접는다 — 새 data 가 탭을 다시 놓는다.
     head = JS[JS.index("export default function") :]
-    assert head.index("if (S.drag && S.endDrag) S.endDrag(false)") < head.index("const paint =")
+    folded = head.index("if (S.drag && S.endDrag) S.endDrag(false, true)")
+    assert folded < head.index("const paint =")
     # 비수동 touchmove 로만 끄는 동안의 목록 굴리기를 막는다.
     assert "list.addEventListener('touchmove', S.onTouchMove, { passive: false })" in JS
     assert "list.removeEventListener('touchmove', S.onTouchMove)" in JS
@@ -738,6 +739,112 @@ def test_a_drag_starts_past_a_slop_stops_at_the_pinned_group_and_swallows_its_cl
     assert out["slots"] == [1, 2, 2, 4, 0]
     assert out["edge"] == [-12, -5, 0, 9, 12]
     assert out["click"] == [False, True, False]
+
+
+_DRAG_BOUND_RUNNER = """
+const out = {}
+// 넘친 줄(사본 1000px · 탭 10개 — 반박 검토 측정): 끄는 탭(91px) 밖 아홉 탭의 left.
+// 모두 91px 로 줄었다. scrollWidth 928.
+const lefts = [0, 186, 279, 372, 465, 558, 651, 744, 837]
+const mids = lefts.map((left) => left + 91 / 2)
+const low = 91
+const high = 928 - 91
+// 오른쪽 가장자리까지 끌었다 — 끄는 탭이 끝(high)에 묶인다. 맨 끝 자리(9)다.
+const end = dragLeft(1000, low, high)
+out.end = [end.left, end.bound, dropSlot(mids, end.left + 91 / 2, 1, end.bound)]
+// 가운데만 보던 옛 판정은 끝에서 둘째(8)였다.
+out.centerOnly = dropSlot(mids, high + 91 / 2, 1, null)
+// 넘치지 않는 줄(사본 1500px): 고정 HOME(0·91)·VOC(93·91)·공정 Capa 상세(186·134) 앞으로
+// 가용설비 현황(128px)을 끈다 — 고정 묶음 바로 뒤(1)다. 옛 판정은 끄는 탭 가운데가 이미 VOC
+// 가운데를 지나 2였다.
+const short = [45.5, 93 + 45.5, 186 + 67]
+const front = dragLeft(-50, 91, 1155 - 128)
+out.front = [front.left, front.bound, dropSlot(short, front.left + 64, 1, front.bound)]
+out.frontCenterOnly = dropSlot(short, 91 + 64, 1, null)
+// 두 끝 사이는 가운데로 센다. 고정 탭이 없으면 앞 끝은 맨 앞(0)이다.
+const middle = dragLeft(300, low, high)
+out.middle = [middle.left, middle.bound, dropSlot(mids, middle.left + 45.5, 1, middle.bound)]
+out.noPin = dropSlot(mids, 0, 0, 'low')
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_tab_dragged_against_either_end_lands_in_that_end_slot() -> None:
+    """끄는 탭이 끝(고정 묶음 바로 뒤·목록 끝)에 묶이면 그 끝 자리다. 가운데만 보면 끄는 탭이 이웃
+    탭보다 넓거나 같을 때 끝 자리에 못 놓였다 — 넘친 줄은 맨 끝에 놓을 수 없었고(끝에서 둘째),
+    넘치지 않아도 긴 이름 탭을 짧은 이름 탭 앞에 놓을 수 없었다(2026-11-02 반박 검토)."""
+    out = _node(_DRAG_BOUND_RUNNER)
+
+    assert out["end"] == [837, "high", 9]
+    assert out["centerOnly"] == 8
+    assert out["front"] == [91, "low", 1]
+    assert out["frontCenterOnly"] == 2
+    assert out["middle"] == [300, None, 3]
+    assert out["noPin"] == 0
+    # 그리기도 그 판정을 쓴다 — 묶은 왼쪽과 닿은 끝을 함께 넘긴다.
+    assert "dragLeft(d.x - box.left + list.scrollLeft - d.grab, d.low, high)" in JS
+    assert "d.slot = dropSlot(mids, left + d.width / 2, d.pinned, bound)" in JS
+
+
+_HELD_RELEASE_RUNNER = """
+const out = {}
+let held = 1
+let endedAt = 1000
+const step = (type, pointer, now) => {
+  const next = heldRelease(held, type, pointer, now)
+  held = next.held
+  if (next.endedAt !== null) endedAt = next.endedAt
+  return [held, next.endedAt]
+}
+// Esc 로 끌기를 접었다(1000ms) — 포인터 1 은 아직 눌려 있다. 다른 포인터의 놓음은 상관없다.
+out.otherPointer = step('pointerup', 2, 1500)
+// 손떨림 뒤 1800ms 에 놓았다 — 그 click(1801ms)은 버린다. 접은 시각부터만 세던 옛 판정은
+// 버리지 못했다.
+out.release = step('pointerup', 1, 1800)
+out.click = [dragClick(endedAt, 1801, 400), dragClick(1000, 1801, 400)]
+// 놓은 뒤에는 지켜보지 않는다 — 다음 누름의 click 은 고르기다.
+out.afterRelease = step('pointerup', 1, 2600)
+out.laterClick = dragClick(endedAt, 2600, 400)
+// 놓음을 놓쳤다(창 밖에서 놓음) — 같은 포인터의 새 누름이 기다림을 거둔다. 그 누름의 click 은
+// 고르기다.
+held = 1
+endedAt = 1000
+out.missed = step('pointerdown', 1, 5000)
+out.missedClick = dragClick(endedAt, 5100, 400)
+// 포인터 취소 뒤에는 click 이 없다 — 기다림만 거둔다.
+held = 1
+out.cancel = step('pointercancel', 1, 6000)
+out.none = heldRelease(null, 'pointerup', 1, 7000)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_drag_cancelled_with_escape_swallows_the_click_of_its_release() -> None:
+    """Esc(또는 끄는 중 새 data)로 접은 끌기는 포인터가 아직 눌려 있다 — 그 포인터를 놓을 때의
+    click 도 고르기로 보내지 않는다. 접은 시각부터 0.4초만 버리면 손을 떼기 전 작은 움직임 뒤 0.4초
+    넘어 놓은 click 이 그 탭으로 화면을 옮겼다(2026-11-02 반박 검토 — 사본 1280: Esc · 3단계 되돌림
+    · 0.8초 뒤 놓기 → `/reference_data`)."""
+    out = _node(_HELD_RELEASE_RUNNER)
+
+    assert out["otherPointer"] == [1, None]
+    assert out["release"] == [None, 1800]
+    assert out["click"] == [True, False]
+    assert out["afterRelease"] == [None, None]
+    assert out["laterClick"] is False
+    assert out["missed"] == [None, None]
+    assert out["missedClick"] is False
+    assert out["cancel"] == [None, None]
+    assert out["none"] == {"held": None, "endedAt": None}
+    # Esc 와 끄는 중 새 data 는 눌린 포인터를 지켜보게 접고, 포인터 취소·떼어 냄은 그러지 않는다.
+    assert "key.stopPropagation()\n        endDrag(false, true)\n" in JS
+    assert "if (S.drag && S.endDrag) S.endDrag(false, true)" in JS
+    assert "if (own(cancel)) endDrag(false) }" in JS
+    end = JS[JS.index("const endDrag = (commit, pressed = false) => {") :]
+    assert end.index("S.dragEndAt = Date.now()") < end.index("if (pressed) watchRelease(d.pointer)")
+    watch = "for (const type of RELEASE_EVENTS) window.addEventListener(type, S.onRelease, true)"
+    assert watch in JS
+    cleanup = JS[JS.rindex("return () => {") :]
+    assert "stopRelease()" in cleanup
 
 
 _LINKS_RUNNER = """

@@ -1531,8 +1531,14 @@ class Screen:
         return list(self.js(_PAGE_TABS_JS, PAGE_TABS_KEY) or [])
 
     def tab_item(self, index: int) -> Any:
-        """화면 탭 줄의 `index` 번째 탭(그림자 DOM — Playwright CSS 가 뚫는다)."""
-        return self.page.locator(f".st-key-{PAGE_TABS_KEY} .capa-tabs-item").nth(index)
+        """화면 탭 줄의 보이는 탭 가운데 `index` 번째(그림자 DOM — Playwright CSS 가 뚫는다).
+
+        `page_tabs()` 와 같이 숨긴 탭을 빼고 센다 — 지금 탭이 아닌 탭을 닫으면 탭 줄 JS 가 그
+        탭을 숨기고(`hidden`) 서버는 빈 프래그먼트만 다시 돌려 다음 앱 전체 회차까지 그 탭이 DOM
+        에 남는다. 숨긴 탭까지 세면 둘째 닫기부터 숨은 탭을 집어 `hover` 가 30초를 기다리다
+        끝났다(2026-11-02 반박 검토 — 탭 여럿에서 page_tabs · page_tabs_frame 미기록)."""
+        visible = f".st-key-{PAGE_TABS_KEY} .capa-tabs-item:not([hidden])"
+        return self.page.locator(visible).nth(index)
 
     def make_tab_room(self) -> None:
         """탭이 상한(`PAGE_TABS_MAX`)이면 지금 탭이 아닌 닫을 수 있는 탭 하나를 닫는다.

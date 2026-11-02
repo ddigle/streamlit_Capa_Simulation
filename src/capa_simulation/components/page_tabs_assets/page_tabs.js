@@ -57,6 +57,8 @@ const DRAG_SLOP_PX = 5
 const TOUCH_HOLD_MS = 350
 const DRAG_EDGE_SPEED_PX = 12
 const DRAG_CLICK_MS = 400
+// Esc·새 data 로 접은 끌기의 포인터를 놓을 때까지 지켜보는 창 사건(`heldRelease`).
+const RELEASE_EVENTS = ['pointerup', 'pointerdown', 'pointercancel']
 const MOVE_KEYS = 'Control+Shift+ArrowLeft Control+Shift+ArrowRight'
 // 넘친 목록 가장자리 흐림 폭(`page_tabs.css` 의 2rem). 지금 탭을 보이게 굴릴 때도 이만큼 띄워 흐림 밖에 둔다.
 const EDGE_PX = 32
@@ -254,10 +256,17 @@ function keyboardMove(ids, pinned, id, step) {
 // 그림자 DOM 목록 안에서 축을 묶고, 고정 묶음 앞에서 멈추고, 끈 뒤의 누름을 버리고, 터치 길게 누르기를 직접 다룬다.
 // `dragStarts` — 마우스·펜은 가로로 `slop` 를 넘게 움직이면 끌기다(그 전의 누름은 고르기·고정·× 그대로). 세로만 움직이면
 // 끌지 않는다(세로로 끌어 떼어 내기는 떠 있는 창 몫으로 남긴다). 터치는 `holdMs` 길게 누른 뒤에야 끌기이고, 그 전에 움직이면
-// 목록 굴리기라 그만둔다('cancel'). `dropSlot` — 끄는 탭의 가운데(`x`)가 지난 다른 탭 가운데(`mids`, 보이는 차례) 수이고
-// 고정 탭 수(`min`) 아래로 내려가지 않는다(고정 묶음 앞으로 못 간다). `edgeSpeed` — 목록 가장자리 `edge` 안에서 끄는 동안
-// 굴릴 한 프레임 px(왼쪽은 음수). `dragClick` — 끌기가 끝난 뒤 `ms` 안의 누름은 고르기로 보내지 않는다(끈 탭을 놓은 자리의
-// click).
+// 목록 굴리기라 그만둔다('cancel'). `dragLeft` — 포인터가 바라는 끄는 탭의 왼쪽(`want`)을 고정 묶음 뒤(`low`)와 목록
+// 끝(`high`) 사이로 묶고 어느 끝에 닿았는지(`bound` — 'low'·'high'·null)를 함께 준다. `dropSlot` — 끝에 닿았으면 그 끝 자리
+// (고정 묶음 바로 뒤·맨 끝)이고, 아니면 끄는 탭의 가운데(`x`)가 지난 다른 탭 가운데(`mids`, 보이는 차례) 수다. 고정 탭 수
+// (`min`) 아래로 내려가지 않는다(고정 묶음 앞으로 못 간다). 가운데만 보면 끄는 탭이 이웃보다 넓거나 같을 때 끝 자리에 못
+// 놓였다 — 넘친 줄은 탭이 같은 폭으로 줄어 맨 끝에 놓을 수 없었고(끝에서 둘째에 멈춤), 넘치지 않아도 긴 이름 탭을 짧은
+// 이름 탭 앞(고정 묶음 바로 뒤)에 놓을 수 없었다(2026-11-02 반박 검토). `edgeSpeed` — 목록 가장자리 `edge` 안에서 끄는
+// 동안 굴릴 한 프레임 px(왼쪽은 음수). `dragClick` — 끌기가 끝난 뒤 `ms` 안의 누름은 고르기로 보내지 않는다(끈 탭을 놓은
+// 자리의 click). `heldRelease` — Esc·새 data 로 접은 끌기는 포인터가 아직 눌려 있다(`held` — 그 포인터 id, 없으면 null).
+// 그 포인터를 놓는 순간(`pointerup`)부터 `dragClick` 창을 다시 연다 — 접은 시각부터만 세면 손을 떼기 전 작은 움직임 뒤
+// 0.4초 넘어 놓은 click 이 고르기로 가 화면을 옮겼다(2026-11-02 반박 검토). 같은 포인터의 새 누름(놓음을 놓쳤다)·포인터
+// 취소(click 이 없다)는 기다림만 거둔다. 돌려주는 `{held, endedAt}` 의 `endedAt` 은 새 창의 시작(없으면 null)이다.
 function dragStarts(kind, dx, dy, held, slop, holdMs) {
   if (kind === 'touch') {
     if (held >= holdMs) return 'drag'
@@ -265,10 +274,21 @@ function dragStarts(kind, dx, dy, held, slop, holdMs) {
   }
   return Math.abs(dx) > slop ? 'drag' : 'wait'
 }
-function dropSlot(mids, x, min) {
+function dragLeft(want, low, high) {
+  if (want <= low) return { left: low, bound: 'low' }
+  if (want >= high) return { left: high, bound: 'high' }
+  return { left: want, bound: null }
+}
+function dropSlot(mids, x, min, bound) {
+  if (bound === 'low') return min
+  if (bound === 'high') return Math.max(min, mids.length)
   let slot = 0
   while (slot < mids.length && mids[slot] < x) slot += 1
   return Math.max(min, slot)
+}
+function heldRelease(held, type, pointer, now) {
+  if (held === null || pointer !== held) return { held, endedAt: null }
+  return { held: null, endedAt: type === 'pointerup' ? now : null }
 }
 function edgeSpeed(x, left, right, edge, max) {
   if (x < left + edge) return -Math.ceil(max * Math.min(1, (left + edge - x) / edge))
@@ -462,10 +482,11 @@ export default function (component) {
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
-    drag: null, endDrag: null, dragEndAt: null, onTouchMove: null,
+    drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
   })
-  // 끄는 중에 새 data 가 왔다(다른 회차가 목록을 바꿨다) — 끌기를 접고 새 data 대로 그린다. 놓은 자리를 보내지 않는다.
-  if (S.drag && S.endDrag) S.endDrag(false)
+  // 끄는 중에 새 data 가 왔다(다른 회차가 목록을 바꿨다) — 끌기를 접고 새 data 대로 그린다. 놓은 자리를 보내지 않는다. 포인터는
+  // 아직 눌려 있다 — 놓을 때의 click 도 고르기가 아니다(`heldRelease`).
+  if (S.drag && S.endDrag) S.endDrag(false, true)
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
   // 이미 걸었다(`<tabs-history-install>`). 이것은 그 JS 가 서지 못한 문서의 안전망이다.
   installHistoryGuard()
@@ -835,10 +856,10 @@ export default function (component) {
     if (!d || !d.on) return
     const box = list.getBoundingClientRect()
     const high = Math.max(d.low, list.scrollWidth - d.width)
-    const left = Math.min(high, Math.max(d.low, d.x - box.left + list.scrollLeft - d.grab))
+    const { left, bound } = dragLeft(d.x - box.left + list.scrollLeft - d.grab, d.low, high)
     d.item.style.transform = `translateX(${left - d.left0}px)`
     const mids = d.others.map((other) => other.offsetLeft + other.offsetWidth / 2)
-    d.slot = dropSlot(mids, left + d.width / 2, d.pinned)
+    d.slot = dropSlot(mids, left + d.width / 2, d.pinned, bound)
     const next = d.others[d.slot]
     const last = d.others[d.others.length - 1]
     const edge = next ? next.offsetLeft - d.gap / 2 : last ? last.offsetLeft + last.offsetWidth + d.gap / 2 : 0
@@ -866,9 +887,26 @@ export default function (component) {
     if (verdict === 'cancel') endDrag(false)
     else if (verdict === 'drag') beginDrag()
   }
-  // 끌기를 끝낸다. `commit` 이면 놓은 자리로 옮긴다. 끄는 중이 아니었으면(문턱 전) 아무것도 바꾸지 않는다 — 그 누름은
-  // 평소의 고르기다.
-  const endDrag = (commit) => {
+  // 접은 끌기의 포인터를 놓을 때까지 지켜본다(`heldRelease`) — 놓는 순간부터 `dragClick` 창을 다시 연다. 창 처리기는 그동안만
+  // 단다(놓음·같은 포인터의 새 누름·포인터 취소에 뗀다).
+  const stopRelease = () => {
+    if (S.onRelease) for (const type of RELEASE_EVENTS) window.removeEventListener(type, S.onRelease, true)
+    S.onRelease = null
+    S.heldPointer = null
+  }
+  const watchRelease = (pointer) => {
+    stopRelease()
+    S.heldPointer = pointer
+    S.onRelease = (event) => {
+      const next = heldRelease(S.heldPointer, event.type, event.pointerId, Date.now())
+      if (next.endedAt !== null) S.dragEndAt = next.endedAt
+      if (next.held === null) stopRelease()
+    }
+    for (const type of RELEASE_EVENTS) window.addEventListener(type, S.onRelease, true)
+  }
+  // 끌기를 끝낸다. `commit` 이면 놓은 자리로 옮긴다. `pressed` 면 포인터가 아직 눌려 있다(Esc·새 data 로 접었다) — 그 포인터를
+  // 놓을 때 뒤따르는 click 도 버린다. 끄는 중이 아니었으면(문턱 전) 아무것도 바꾸지 않는다 — 그 누름은 평소의 고르기다.
+  const endDrag = (commit, pressed = false) => {
     const d = S.drag
     if (!d) return
     S.drag = null
@@ -880,6 +918,7 @@ export default function (component) {
     } catch (error) { /* 이미 풀렸다 */ }
     if (!d.on) return
     S.dragEndAt = Date.now()
+    if (pressed) watchRelease(d.pointer)
     nav.classList.remove('is-dragging')
     d.item.classList.remove('is-dragging')
     d.item.style.transform = ''
@@ -923,7 +962,7 @@ export default function (component) {
         if (key.key !== 'Escape' || S.drag !== d) return
         key.preventDefault()
         key.stopPropagation()
-        endDrag(false)
+        endDrag(false, true)
       }],
     ]
     for (const [type, fn] of d.listeners) window.addEventListener(type, fn, true)
@@ -1134,6 +1173,7 @@ export default function (component) {
 
   return () => {
     if (S.drag && S.endDrag) S.endDrag(false)
+    stopRelease()
     if (S.onTouchMove) list.removeEventListener('touchmove', S.onTouchMove)
     S.onTouchMove = null
     clearTimeout(S.noticeTimer)
