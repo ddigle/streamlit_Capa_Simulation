@@ -63,6 +63,15 @@ _APP_CREDITS_BLEED = "3rem"
 # 「표준 목표 조건」 카드의 Weeknum·WF 속성, E2E r3 static). 카드는 위아래 여백 1.05rem + 0.75rem
 # 글 두 줄(줄 높이 1.45)이고 좁은 사이드바에서는 네 줄까지 접혀 약 5.4rem 이다 — 그보다 조금 넉넉히.
 APP_CREDITS_SCROLL_ROOM = "5.5rem"
+# 통합인증이 켜진 서버의 카드는 셋째 줄(「이름 · 부서 · 로그아웃」, 만료 30분 전부터 「· 로그인
+# n분 남음 — 저장해 두세요」)이 붙는다. 좁은 사이드바에서 그 줄이 세 줄까지 접혀 모두 일곱 줄 —
+# 1.05rem + 7 × 1.0875rem ≈ 8.66rem 이다. 모자라면 가려진 자리를 누를 때 「로그아웃」 이 눌린다.
+APP_CREDITS_SCROLL_ROOM_SSO = "8.75rem"
+
+
+def app_credits_scroll_room(card_lines: int) -> str:
+    """앱 정보 카드 줄 수(두 줄 · 통합인증 셋째 줄까지 세 줄)에 맞는 스크롤 여유."""
+    return APP_CREDITS_SCROLL_ROOM_SSO if card_lines > 2 else APP_CREDITS_SCROLL_ROOM
 
 
 def lone_conditions_heading_selector() -> str:
@@ -94,10 +103,12 @@ def build_sidebar_stylesheet(
     active_href: str,
     *,
     admin_box_key: str,
+    app_credit_lines: int = 2,
 ) -> str:
     """현재 실행의 테마를 읽어 CSS를 만든다. 위젯 생성·상태 변경·HTML 주입은 하지 않는다.
 
     호출부는 ``theme.begin_run()`` 뒤에 호출하며 컨테이너 키는 각 소유자가 넘긴다.
+    `app_credit_lines` 는 앱 정보 카드의 줄 수다(통합인증이 켜진 서버는 셋 — 스크롤 여유가 커진다).
     """
     # 선택자도 같은 선언에서 낸다. 손으로 적으면 그룹을 더할 때 한쪽만 고치게 된다.
     # **하위가 있는 그룹만 상자를 갖는다.** 나머지는 평평한 링크라 걸 것이 없다.
@@ -640,7 +651,7 @@ def build_sidebar_stylesheet(
         [data-testid="stSidebarContent"] {{
             display: flex;
             flex-direction: column;
-            scroll-padding-bottom: {APP_CREDITS_SCROLL_ROOM};
+            scroll-padding-bottom: {app_credits_scroll_room(app_credit_lines)};
         }}"""
         """
         [data-testid="stSidebarHeader"] {

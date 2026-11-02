@@ -517,3 +517,26 @@ def test_muted_sidebar_captions_drop_the_caption_opacity(
 
     assert muted, "TEXT_MUTED 캡션 규칙을 찾지 못했습니다"
     assert sorted(muted - opaque) == []
+
+
+def test_scroll_room_grows_with_the_sso_third_card_line() -> None:
+    """통합인증이 켜진 서버는 앱 정보 카드에 셋째 줄(이름 · 부서 · 로그아웃)이 붙는다 — 좁은
+    사이드바에서 카드가 두 줄 기준 여유(5.5rem)보다 높아져 가려진 자리를 누르면 「로그아웃」 이
+    눌린다. 꺼짐(두 줄)은 그대로다."""
+    from capa_simulation.components.sidebar_style import (
+        APP_CREDITS_SCROLL_ROOM,
+        APP_CREDITS_SCROLL_ROOM_SSO,
+    )
+
+    def room(lines: int) -> list[str]:
+        block = build_sidebar_stylesheet(
+            SIDEBAR_GROUPS, "", admin_box_key="test_admin", app_credit_lines=lines
+        )
+        return _declarations(block.strip(), ['[data-testid="stSidebarContent"]'])
+
+    assert f"scroll-padding-bottom: {APP_CREDITS_SCROLL_ROOM}" in room(2)
+    assert f"scroll-padding-bottom: {APP_CREDITS_SCROLL_ROOM_SSO}" in room(3)
+    two = float(APP_CREDITS_SCROLL_ROOM.removesuffix("rem"))
+    three = float(APP_CREDITS_SCROLL_ROOM_SSO.removesuffix("rem"))
+    # 좁은 사이드바: 위아래 여백 1.05rem + 0.75rem × 줄 높이 1.45 의 줄 일곱(두 줄이 넷, 셋째가 셋).
+    assert three >= 1.05 + 7 * 0.75 * 1.45 > two

@@ -322,6 +322,8 @@ with pinned_connections(DUCKDB_PATH):
             pages.groups,
             active_href,
             admin_box_key=ADMIN_BOX_KEY,
+            # 통합인증이 켜진 서버는 앱 정보 카드가 셋째 줄까지라 스크롤 여유가 크다.
+            app_credit_lines=2 if signed_in is None else 3,
         )
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
         # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
