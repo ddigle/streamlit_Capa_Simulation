@@ -395,10 +395,56 @@ const pick = (r0, c0, r1, c1) => S && setRange(S, { r: r0, c: c0 }, { r: r1, c: 
 const R = {}
 """
 
+# 가짜 DOM 에 잡기 단계(capture)를 더한다 — 공용 가짜(`edit_grid_node.FAKE_DOM`)는 거품 단계뿐이다.
+# 손잡이 두 번 누름 막기는 그리드 뿌리의 잡기 단계에서 돈다(실제 Chrome 은 pointer capture 뒤
+# dblclick 을 손잡이가 아니라 스크롤 칸에 쏜다). 마운트 앞에 붙인다.
+CAPTURE = r"""
+const bubbleAdd = FakeNode.prototype.addEventListener
+const bubbleRemove = FakeNode.prototype.removeEventListener
+const isCapture = (options) => options === true || Boolean(options && options.capture)
+FakeNode.prototype.addEventListener = function (type, handler, options) {
+  if (!isCapture(options)) return bubbleAdd.call(this, type, handler)
+  this.captures = this.captures || {}
+  ;(this.captures[type] = this.captures[type] || []).push(handler)
+}
+FakeNode.prototype.removeEventListener = function (type, handler, options) {
+  if (!isCapture(options)) return bubbleRemove.call(this, type, handler)
+  const list = (this.captures || {})[type] || []
+  this.captures[type] = list.filter((item) => item !== handler)
+}
+fire = function (target, type, extra) {
+  const event = Object.assign({
+    type, target, stopped: false, defaultPrevented: false, key: '', ctrlKey: false,
+    metaKey: false, shiftKey: false, altKey: false, isComposing: false, button: 0,
+    clientX: 0, clientY: 0,
+    stopPropagation() {
+      this.stopped = true
+    },
+    preventDefault() {
+      this.defaultPrevented = true
+    },
+  }, extra || {})
+  const path = []
+  for (let at = target; at; at = at.parentNode) path.push(at)
+  for (const at of path.slice().reverse()) {
+    for (const handler of ((at.captures || {})[type] || []).slice()) {
+      if (!event.stopped) handler.call(at, event)
+    }
+  }
+  for (const at of path) {
+    for (const handler of (at.listeners[type] || []).slice()) {
+      if (!event.stopped) handler.call(at, event)
+    }
+  }
+  return event
+}
+"""
+
 
 def _run(body: str) -> Any:
     source = FAKE_DOM + mountable(REGISTERED_JS)
-    return run_node(source, MOUNT + "\n;(async () => {\n" + body + "\n})()\n", _payloads())
+    runner = CAPTURE + MOUNT + "\n;(async () => {\n" + body + "\n})()\n"
+    return run_node(source, runner, _payloads())
 
 
 def _server(outboxes: list[Any]) -> eg.DraftState | None:
@@ -704,14 +750,27 @@ def test_paste_repeats_a_value_or_a_block_over_an_exact_multiple_selection() -> 
 
 
 def test_double_clicking_the_handle_keeps_the_range_and_opens_no_editor() -> None:
-    """손잡이를 두 번 누르면 core 의 칸 두 번 누름(그 칸만 골라 편집 시작)으로 가지 않는다."""
+    """손잡이를 두 번 누르면 core 의 칸 두 번 누름(그 칸만 골라 편집 시작)으로 가지 않는다.
+
+    Chrome 은 pointer capture 뒤 dblclick 을 스크롤 칸에 쏘므로 스크롤 칸에 쏘아 본다(손잡이에 쏴도
+    같다)."""
     body = r"""
   pick(1, 2, 3, 3)
-  fire(handle(), 'pointerdown', { clientX: xOf(3), clientY: yOf(3), pointerId: 1 })
-  fire(scroller, 'pointerup', { clientX: xOf(3), clientY: yOf(3), pointerId: 1 })
-  const dbl = fire(handle(), 'dblclick', { clientX: xOf(3), clientY: yOf(3) })
-  R.after = { range: range(), edit: S.edit, prevented: dbl.defaultPrevented, ops: S.box.ops.length }
-  // 칸 위 두 번 누름은 그대로 편집을 연다(core).
+  const press = () => {
+    fire(handle(), 'pointerdown', { clientX: xOf(3), clientY: yOf(3), pointerId: 1 })
+    fire(scroller, 'pointerup', { clientX: xOf(3), clientY: yOf(3), pointerId: 1 })
+  }
+  press()
+  press()
+  const dbl = fire(scroller, 'dblclick', { clientX: xOf(3), clientY: yOf(3) })
+  press()
+  press()
+  const onHandle = fire(handle(), 'dblclick', { clientX: xOf(3), clientY: yOf(3) })
+  R.after = { range: range(), edit: S.edit,
+    prevented: [dbl.defaultPrevented, onHandle.defaultPrevented], ops: S.box.ops.length }
+  // 칸을 눌러 두 번 누름은 그대로 편집을 연다(core).
+  fire(scroller, 'pointerdown', { clientX: xOf(2), clientY: yOf(5), pointerId: 1 })
+  fire(scroller, 'pointerup', { clientX: xOf(2), clientY: yOf(5), pointerId: 1 })
   fire(scroller, 'dblclick', { clientX: xOf(2), clientY: yOf(5) })
   R.cell = { edit: Boolean(S.edit), range: range() }
   process.stdout.write(JSON.stringify(R))
@@ -720,7 +779,7 @@ def test_double_clicking_the_handle_keeps_the_range_and_opens_no_editor() -> Non
     assert result["after"] == {
         "range": {"r0": 1, "r1": 3, "c0": 2, "c1": 3},
         "edit": None,
-        "prevented": True,
+        "prevented": [True, True],
         "ops": 0,
     }
     assert result["cell"] == {"edit": True, "range": {"r0": 5, "r1": 5, "c0": 2, "c1": 2}}
@@ -733,7 +792,9 @@ def test_cleanup_drops_a_fill_drag() -> None:
   const during = S.fill.drag !== null
   cleanup()
   R.after = { during, drag: S.fill.drag, filling: scroller.classList.contains('is-filling'),
-    ops: S.box.ops.length, dblclick: (S.fill.handle.listeners.dblclick || []).length }
+    ops: S.box.ops.length,
+    root: ['pointerdown', 'dblclick'].map((type) => (S.dom === null ? q('.eg-grid') : S.dom.root)
+      .captures[type].length) }
   process.stdout.write(JSON.stringify(R))
 """
     result = _run(body)
@@ -742,5 +803,5 @@ def test_cleanup_drops_a_fill_drag() -> None:
         "drag": None,
         "filling": False,
         "ops": 0,
-        "dblclick": 0,
+        "root": [0, 0],
     }

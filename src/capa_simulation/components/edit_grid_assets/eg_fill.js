@@ -319,8 +319,16 @@ function fillKey(S, event) {
 
 // ---------------------------------------------------------------- 마운트
 
-// 손잡이 두 번 누름은 core 의 칸 두 번 누름(그 자리 칸 하나만 골라 편집 시작)으로 올려 보내지 않는다 — 고른 범위를 잃는다.
-function fillStopDoubleClick(event) {
+// 손잡이 두 번 누름은 core 의 칸 두 번 누름(그 자리 칸 하나만 골라 편집 시작)으로 보내지 않는다 — 고른 범위를 잃는다. 끌기가
+// 스크롤 칸에 pointer capture 를 걸어 Chrome 은 dblclick 을 손잡이가 아니라 스크롤 칸에 쏜다. 그래서 그리드 뿌리의 잡기
+// 단계(capture)에서 마지막 누름이 손잡이였는지 적어 두고, 그랬으면 dblclick 을 멈춘다.
+function fillOnPress(S, event) {
+  const target = event.target
+  S.fill.pressedHandle = Boolean(target && target.closest && target.closest('.eg-handle'))
+}
+
+function fillOnDoubleClick(S, event) {
+  if (!S.fill.pressedHandle) return
   event.preventDefault()
   event.stopPropagation()
 }
@@ -329,20 +337,26 @@ function fillInit(S) {
   const handle = document.createElement('div')
   handle.className = 'eg-handle'
   handle.hidden = true
-  handle.addEventListener('dblclick', fillStopDoubleClick)
   const box = document.createElement('div')
   box.className = 'eg-fill-box'
   box.hidden = true
   S.dom.overlay.appendChild(box)
   S.dom.overlay.appendChild(handle)
-  S.fill = { handle, box, drag: null }
+  S.fill = { handle, box, drag: null, pressedHandle: false, listeners: [] }
+  for (const [type, run] of [['pointerdown', fillOnPress], ['dblclick', fillOnDoubleClick]]) {
+    const handler = (event) => run(S, event)
+    S.dom.root.addEventListener(type, handler, true)
+    S.fill.listeners.push([type, handler])
+  }
 }
 
 function fillCleanup(S) {
   if (!S.fill) return
   S.fill.drag = null
-  S.fill.handle.removeEventListener('dblclick', fillStopDoubleClick)
-  if (S.dom) S.dom.scroller.classList.remove('is-filling')
+  if (!S.dom) return
+  for (const [type, handler] of S.fill.listeners) S.dom.root.removeEventListener(type, handler, true)
+  S.fill.listeners = []
+  S.dom.scroller.classList.remove('is-filling')
 }
 
 feature({ name: 'fill', init: fillInit, keydown: fillKey, pointerdown: fillPointerDown, paintOverlay: fillPaintOverlay, paste: fillPaste, cleanup: fillCleanup })
