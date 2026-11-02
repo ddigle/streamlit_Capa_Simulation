@@ -1839,7 +1839,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Delete·Ctrl+Z/Y·머리 정렬(보기만)·필터 보기(feed `filters`)·값 칸 머리 풍선(`role="tooltip"`, 300ms)·칸 오류(빨강 + 상태 줄 문구)·
     바뀐 칸 표시·토스트·상태 줄을 맡는다. 기능 파일(`eg_select`·`eg_fill`·`eg_toolbar`)은 CORE 에서 빈 틀이다. 기능이 부르는 내부
     함수 이름(`paint`·`setRange`·`queueOp`·`sendOnce` 등)은 바꾸지 않는다(`test_edit_grid_assets` 가 본다). 순수 구획은 node 로
-    돈다(`tests/edit_grid_node.py`).
+    돈다(`tests/edit_grid_node.py`), AppTest 대역은 `tests/edit_grid_fake.py`, 시험 앱은 `tests/edit_grid_demo_app.py`(앱 화면에는
+    없다).
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
