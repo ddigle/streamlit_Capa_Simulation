@@ -182,6 +182,10 @@ def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
             " — 큰 표는 「Excel 붙여넣기」 를 쓰세요"
         ),
         "clipped": "표 끝을 넘은 {n}칸은 버렸습니다",
+        "copied": "{n}칸 복사함 — 붙여넣을 칸에서 Ctrl+V",
+        "cleared": "{n}칸 비움",
+        "pasted": "{n}칸 붙여넣음",
+        "pasteSkipped": "분류 칸 {n}칸은 건너뛰었습니다",
         "locked": "분류 칸은 고칠 수 없습니다",
         "cut": "잘라내기는 없습니다 — 복사(Ctrl+C) 뒤 Delete 로 지우세요",
         "blankZero": "빈칸 = 0",

@@ -1,0 +1,63 @@
+.eg-c.is-sel {
+  background-color: var(--eg-selected-fill);
+}
+
+.eg-c.is-sel.is-changed {
+  background-color: color-mix(in srgb, var(--eg-selected-fill) 55%, var(--eg-changed-fill));
+}
+
+.eg-c.is-sel.is-error {
+  background-color: color-mix(in srgb, var(--eg-selected-fill) 45%, var(--eg-error-fill));
+}
+
+.eg-c.in-rng::after,
+.eg-c.is-cp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 0 solid var(--eg-accent);
+  background-repeat: no-repeat;
+}
+
+.eg-c.sel-t::after {
+  border-top-width: 2px;
+}
+
+.eg-c.sel-b::after {
+  border-bottom-width: 2px;
+}
+
+.eg-c.sel-l::after {
+  border-left-width: 2px;
+}
+
+.eg-c.sel-r::after {
+  border-right-width: 2px;
+}
+
+.eg-c.cp-t {
+  --egs-cp-t: repeating-linear-gradient(90deg, var(--eg-accent) 0 4px, transparent 4px 7px);
+}
+
+.eg-c.cp-b {
+  --egs-cp-b: repeating-linear-gradient(90deg, var(--eg-accent) 0 4px, transparent 4px 7px);
+}
+
+.eg-c.cp-l {
+  --egs-cp-l: repeating-linear-gradient(180deg, var(--eg-accent) 0 4px, transparent 4px 7px);
+}
+
+.eg-c.cp-r {
+  --egs-cp-r: repeating-linear-gradient(180deg, var(--eg-accent) 0 4px, transparent 4px 7px);
+}
+
+.eg-c.is-cp::after {
+  background-image: var(--egs-cp-t, none), var(--egs-cp-b, none), var(--egs-cp-l, none), var(--egs-cp-r, none);
+  background-size: 100% 1px, 100% 1px, 1px 100%, 1px 100%;
+  background-position: left top, left bottom, left top, right top;
+}
+
+.eg-hc.is-sel-col {
+  box-shadow: inset 0 -2px 0 var(--eg-accent);
+}

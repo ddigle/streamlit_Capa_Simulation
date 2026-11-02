@@ -1837,10 +1837,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     폭의 45% 를 넘는 칸부터 풀림 — 첫 칸은 늘 고정)·칸 편집(Enter·F2·글자 입력, 확정 Enter/Shift+Enter/Tab, 취소 Esc)·한 칸
     붙여넣기(기능이 처리하지 않은 `paste`)·이동 키(화살표·Ctrl+화살표·PageUp/Down·Alt+PageUp/Down·Home/End·Ctrl+Home/End·Tab)·
     Delete·Ctrl+Z/Y·머리 정렬(보기만)·필터 보기(feed `filters`)·값 칸 머리 풍선(`role="tooltip"`, 300ms)·칸 오류(빨강 + 상태 줄 문구)·
-    바뀐 칸 표시·토스트·상태 줄을 맡는다. 기능 파일(`eg_select`·`eg_fill`·`eg_toolbar`)은 CORE 에서 빈 틀이다. 기능이 부르는 내부
+    바뀐 칸 표시·토스트·상태 줄을 맡는다. 기능이 부르는 내부
     함수 이름(`paint`·`setRange`·`queueOp`·`sendOnce` 등)은 바꾸지 않는다(`test_edit_grid_assets` 가 본다). 순수 구획은 node 로
     돈다(`tests/edit_grid_node.py`), AppTest 대역은 `tests/edit_grid_fake.py`, 시험 앱은 `tests/edit_grid_demo_app.py`(앱 화면에는
     없다).
+  - `eg_select.js`·`eg_select.css`(고르기)는 끌어 고르기(스크롤 칸 pointer capture + rAF 자동 스크롤 — 창 밖으로 멀수록 빨리
+    `min(4 + 거리 × 0.5, 80)`px/프레임, 값 칸에서 시작한 끌기는 고정 칸 위에서 먼저 왼쪽으로 다 굴린 뒤에 분류 칸을 고른다)·
+    Shift+누름·Shift+이동 키(화살표·Ctrl+화살표·Page·Home/End)·Ctrl+A·Shift+Space(줄)·Ctrl+Space(칸)·Ctrl+C·Delete(고른 범위의
+    값 칸 `clear` 하나 — 분류 칸은 건너뜀)·기준 칸 붙여넣기(고른 범위 왼쪽 위부터 덩어리 그대로 `write` 하나 — 분류 칸에 걸린 칸은
+    건너뛰고 표 끝을 넘은 칸은 버림, `limits.paste` 칸 상한)·Ctrl+X 안내·복사 점선(Esc·칸 편집·Delete 에 지움 — 고름을 옮겨도
+    남는다, 엑셀처럼)·범위 표지(지금 칸은 칠하지 않음)·고른 칸 머리 밑줄을 맡는다. **복사는 Ctrl+C keydown 을 막지 않고**(페이지
+    글 고름만 지운다) 브라우저가 초점 칸(스크롤 칸)에 쏘는 동기 `copy` 이벤트에서 `clipboardData` 에 엑셀 따옴표 TSV(줄 사이 CRLF,
+    마지막 줄이 빈 글이면 끝 CRLF 하나 더)를 싣는다 — 수 칸은 원값(`rawText` — percent 는 분수), 분류 칸은 표시명, 보기 차례.
+    칸 편집기 안의 복사·붙여넣기는 브라우저 기본이다. 다른 기능이 쓰는 창구: `selDrag(S, event, {move, end})`(채우기 손잡이 끌기)와
+    갈고리 `paste(S, matrix, event)`(true 면 기준 칸 붙여넣기를 건너뜀 — 채우기의 되풀이 붙여넣기 자리). 순수 구획
+    `// <eg-rect>`·`// <eg-clip>` 과 가짜 DOM 동작은 `tests/test_edit_grid_select_js.py` 가 본다. `eg_fill`·`eg_toolbar` 는 아직
+    빈 틀이다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와

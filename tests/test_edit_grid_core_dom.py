@@ -1,6 +1,7 @@
 # Purpose: 범용 편집 그리드 core JS 를 가짜 DOM 에 마운트해 그리기·편집·이동·출납·feed 받기를 본다.
 
-"""브라우저 없이 core 의 배선을 본다 — 등록 JS 전체(기능 파일은 빈 틀)를
+"""브라우저 없이 core 의 배선을 본다 — 등록 JS 전체(고르기 기능 `eg_select` 포함 — 그 기능 몫은
+`test_edit_grid_select_js` 가 따로 본다)를
 `tests/edit_grid_node.FAKE_DOM` 에 마운트하고, 껍데기·feed 는 Python 이 지은 그대로 넘긴다. 실제
 그리기 크기·스크롤·초점은 사본 앱 브라우저로 본다(명세 13-5)."""
 
@@ -162,14 +163,14 @@ const R = {}
   R.home = here(S)
   key(scroller, 'PageDown')
   R.pageDown = here(S)
-  // 기능이 처리하지 않은 붙여넣기 — 지금 칸에 첫 값 하나(분류 칸이면 안내만).
+  // 붙여넣기 — 고르기 기능(eg_select)이 지금 칸부터 덩어리를 편다(분류 칸뿐이면 안내만).
   key(scroller, 'ArrowRight')
   fire(scroller, 'paste', { clipboardData: { getData: () => 'x' } })
   R.pasteLocked = q('.eg-note').textContent
   key(scroller, 'ArrowRight')
   fire(scroller, 'paste', { clipboardData: { getData: () => '12%\t13%\r\n' } })
   await tick(360)
-  R.paste = lastOps().filter((op) => op.op === 'write').map((op) => op.values)
+  R.paste = lastOps().filter((op) => op.op === 'write').map((op) => [op.values, op.cols])
   // 머리 누름 = 정렬(보기만) — 지금 칸은 같은 원본 줄을 따라간다.
   fire(q('.eg-head').children[3].children[0], 'click')
   R.sorted = {
@@ -271,10 +272,10 @@ def test_the_core_draws_edits_moves_and_talks_to_python() -> None:
     assert result["end"] == {"r": 2, "c": 5} and result["home"] == {"r": 0, "c": 0}
     assert result["pageDown"] == {"r": 2, "c": 0}
     assert result["pasteLocked"] == "분류 칸은 고칠 수 없습니다"
-    assert result["paste"][-1] == [["12%"]]
+    assert result["paste"][-1] == [[["12%", "13%"]], ["202701", "202702"]]
     assert result["sorted"]["sort"] == "ascending"
-    # 202702 오름차순 — 지금 보이는 값(초안 포함)으로: B 50% < C 70% < A 90%.
-    assert result["sorted"]["order"] == [1, 2, 0]
+    # 202702 오름차순 — 지금 보이는 값(초안·붙여넣기 미리보기 포함)으로: C 13% < B 50% < A 90%.
+    assert result["sorted"]["order"] == [2, 1, 0]
     assert result["tip"] == [False, "데모 월 칸 풍선", "tooltip", True]
     assert result["ignored"]
     assert result["switched"] == {"same": True, "table": "RQ_OTHER", "gen": "", "cols": 5}
