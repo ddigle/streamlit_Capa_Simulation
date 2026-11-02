@@ -7,7 +7,9 @@
 감추므로 이 카드가 그 값을 보여 주는 유일한 곳이다. 값은 `settings.py` 가 단일 근거다.
 
 **두 줄뿐이다.** 앱·버전·배포 한 줄과 개발 팀·문의처 한 줄. 보안 등급·인증번호·취급 주의 문장은
-싣지 않는다(2026-10-07 사용자 결정).
+싣지 않는다(2026-10-07 사용자 결정). 예외는 통합인증이 켜진 서버 하나다 — 셋째 줄에 로그인한
+사람의 「이름 · 부서 · 로그아웃」 을 붙인다(`components/sso_identity.sso_credit_line`, 2026-11-02
+메인 세션이 정한 기본값). 꺼진 서버(개발 PC · 사내 WebIDE · 시험)는 두 줄 그대로다.
 
 **첫 줄 끝은 적용된 배포 번호다**(2026-10-08 사용자 결정). 손으로 적던 빌드일은 배포마다 고치지
 않아 낡은 날짜가 남았다. 사내에서 배포 ZIP 을 적용하면 남는 기록(`settings.DEPLOY_STATE_PATH`)의
@@ -77,7 +79,15 @@ def credit_lines(stamp: str | None = None) -> tuple[str, str]:
     )
 
 
-def render_app_credits() -> None:
-    """사이드바에 캡션 한 묶음으로 그린다. 바닥 고정·윗선·면은 사이드바 CSS 가 맡는다."""
+def render_app_credits(sso_line: str | None = None) -> None:
+    """사이드바에 캡션 한 묶음으로 그린다. 바닥 고정·윗선·면은 사이드바 CSS 가 맡는다.
+
+    `sso_line` 은 통합인증이 켜졌을 때의 셋째 줄이다(`sso_credit_line` — 이름 · 부서는 이미 막았고
+    로그아웃은 같은 탭에서 여는 원문 HTML 링크). 그 줄이 있을 때만 원문 HTML 을 허락한다 — 없으면
+    지금과 같은 호출이다.
+    """
     with st.sidebar.container(key=APP_CREDITS_KEY):
-        st.caption("  \n".join(credit_lines()))
+        if sso_line is None:
+            st.caption("  \n".join(credit_lines()))
+        else:
+            st.caption("  \n".join((*credit_lines(), sso_line)), unsafe_allow_html=True)

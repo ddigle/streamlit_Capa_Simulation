@@ -250,7 +250,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 ### 실행과 UI
 
 - `app.py` — 유일한 실행 진입점. 공식 시나리오 부트스트랩·공통 사이드바·조회기간을 세우고 페이지를 돌린다.
-  - 차례 「입장 화면(`intro_overlay.py`) → 껍데기 스타일 → 서체 → 툴바 → 부트스트랩(최신 공식 리비전 활성화) →
+  - 차례 「통합인증 확인(`sso_identity.require_signed_in` — 꺼짐이면 아무것도 그리지 않는다) → 입장 화면(`intro_overlay.py`) →
+    껍데기 스타일 → 서체 → 툴바 → 부트스트랩(최신 공식 리비전 활성화) →
     자동 갱신 예약 → 요약(`intro_summary.py`) → 올라온 시나리오 최신 확인(`check_active_scenario_latest`) → 사이드바 → 조건
     팝업 칸 → 화면 탭 줄 → 페이지(모듈 화면이면 `module_runtime.run_module_page` 로 돈다)」는 `test_app_navigation.py`·
     `test_page_tabs.py` 가 지킨다. 페이지가 `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘
@@ -260,7 +261,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`note_current_page`), (c) 조건 팝업 칸 바로 뒤 탭 줄 그리기(`render_page_tabs`). 점 판정(`page_unsaved_marks`)은
     한 번 내어 테마 표지와 탭 줄이 함께 쓴다.
   - 사이드바는 `navigation.py` 선언을 그리기만 한다(CSS `sidebar_style.py`, 상자·카드 `sidebar_status.py`). 순번 고정 —
-    그룹 상자 → `Support`·앱 카드(`app_credits.py`, `apply_deploy_package.py` 가 쓴 `.deploy/applied.json`) → 조회 조건.
+    그룹 상자 → `Support`·앱 카드(`app_credits.py`, `apply_deploy_package.py` 가 쓴 `.deploy/applied.json` — 통합인증이 켜진
+    서버만 셋째 줄 「이름 · 부서 · 로그아웃」) → 조회 조건.
   - 조건 패널(`condition_field.py`)의 시나리오(`scenario_status.py`)·조회기간(`period_field.py`)·설비 시나리오
     (`equipment_scenario_status.py`) 팝업은 키 붙은 호스트 프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만
     서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
@@ -278,7 +280,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
   `scripts/sso_mock_idp.py`, 시험은 `tests/test_sso_*.py`(ASGI 운전기 `tests/asgi_driver.py`, 실행 때 만든 키
-  `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다.
+  `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다. 운영 · 개발 안내는 `docs/sso_setup.md`.
+  - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
+    `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
+    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
+    은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 시험은 `tests/test_sso_streamlit.py`.
+  - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음)과 「서버 시작 점검」
+    표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 값은 싣지 않는다(비밀값은 검사 통과 여부, client id 는
+    있음/없음, 계정은 앞 두 글자). 시험은 `tests/test_sso_status.py`.
+  - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌
+    `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다.
 - `app_pages/home.py` — HOME 대시보드. `Main`(계획·LOB·주요공정·B/N Figure)·`Preference`(공용 프로필 편집기)·
   `Past Data`(`past_data_management.py`) 세 탭으로 전체 계산 결과를 조합한다. 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
@@ -3733,6 +3744,13 @@ RQ_MODULE
     같은 값이다(2026-10-27 리뷰). 월별 분해·비교 키(`DynamicMonthlyCacheKey`·`AvailabilityComparisonCacheKey`)와 호기별 기여는
     호기 단위라 싣지 않는다. 시뮬레이션 쪽 키(`ScenarioCacheKey`·HOME·Static)와 주차별 가용 키에는 싣지 않는다 — 그 화면은 입력
     비가동을 빼지 않는다(6장). 프로필은 설비 캐시 경계(`equipment_cache.load_manual_downtime`)로만 읽는다.
+35. **통합인증 신원은 매 회차 HttpOnly 세션 쿠키에서 다시 검증한다**(2026-11-02, `docs/sso_setup.md`). 근거는 쿠키 하나 —
+    `?token=` 질의 인자와 `st.session_state` 보관은 쓰지 않는다(테마 단추의 `location.reload` 가 새 세션을 만들어 세션 상태의
+    로그인이 사라지고, 질의 인자는 지우지 못한다). 문지기와 `app.py` 가 같은 함수(`auth.identity.identity_from_cookies` — 서명 ·
+    aud · iss · exp · 폐기 목록)를 쓰고, 세션 상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르는 사본일 뿐이다. 로그아웃 폐기 목록 ·
+    쓴 state · 진단 · 사건은 프로세스 메모리(`auth.runtime`, replica 1 전제 — 재시작하면 비워진다)이고 DB 에 쓰지 않으며 캐시
+    경계도 아니다(`st.cache_*` 없음). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
+    사내 WebIDE · 시험의 요소 순번이 그대로다.
 
 ## 6. 핵심 계산 규칙
 
@@ -4851,6 +4869,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   않는다 — 계산은 순수 코어(`simulation_cache.full_capacity_outcome`·`calculate_securement_rate`), 등록은
   세션 없는 `scenario_registration` 이다. 캐시 정리는 전역 범위 `st.cache_data` 함수의 `.clear()` 처럼
   문맥을 찾지 않는 것만 쓴다. 새 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다. 사내 모듈도 같다(1장 「사내 모듈 영역」).
+- **통합인증 문지기는 순수 ASGI 미들웨어 하나다**(`auth/gate.py`, `capa_server.py` 의 `st.App(middleware=…)`). Starlette 의
+  `BaseHTTPMiddleware` 는 websocket 을 그냥 넘기므로 쓰지 않는다(실측). 허용 목록은 정확 일치만(`/_stcore/health` 와 우리 경로
+  넷) — `/_stcore/` 를 접두로 열지 않는다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
+  `st.login` 경로(`/auth/login` · `/auth/logout` · `/oauth2callback`)와 예약 접두(`/_stcore/` · `/media/` · `/component/` ·
+  `/static/`)는 쓰지 않는다. 모든 주소(Location · 링크 · redirect_uri)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청 Host ·
+  `X-Forwarded-*` 로 짓지 않는다. `auth/` 는 Streamlit 을 import 하지 않고(문지기는 이벤트 루프에서 돈다) 배경 스레드를
+  세우지 않는다(만료 항목은 읽을 때 치운다). PyJWT 는 함수 안에서 import 한다 — 꺼짐 서버는 그 패키지 없이도 뜬다.
 - **DuckDB 연결 핀.** 앱은 rerun 한 번을 `pinned_connections` 로 감싼다(게으른 핀 — 첫 연결 뒤에 잡고 가장 바깥 블록이
   끝날 때 닫는다). 설비 DB 를 rerun 한 번에 **여러 번** 여는 화면만 `navigation.PageSpec.uses_equipment_db` 를 선언해 같은
   핀을 받는다. 위젯 콜백(본문 전)과 팝업 본문 프래그먼트는 실행 핀 밖에서 돌므로 DB 를 여러 번 여는 콜백·팝업은 스스로
@@ -5586,6 +5611,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 `config/bootstrap_display_order.json`과 `builtin_seed.py`에는 합성 `DEMO_*` 값만 두며 실제
 제품·고객·공정·설비 식별값을 시드로 추가하지 않는다. 실제 표시순서 CSV는
 `data/input/RQ_DISPLAY_ORDER.csv`에 두고 Git에 커밋하지 않는다.
+
+**통합인증(2026-11-02).** 이 저장소는 공개다 — 사내 호스트 · URL · 인증서 · client id 를 파일 · 시험 · 문서에 적지 않고(예시는
+`*.example.invalid`), **커밋 메시지 · 브랜치 이름에도 적지 않는다**(감시 시험이 보지 못하는 자리라 손 규칙이다). 키 · 인증서 파일
+(`*.pem` · `*.key` · `*.p12` · `*.pfx` · `*.cer` · `*.crt` · `*.der` · `*.jks` · `cert/`)은 커밋하지 않는다 — `.gitignore` ·
+`.dockerignore` · 배포 ZIP 금지 접미사가 막고 `tests/test_public_repo_hygiene.py` 가 회사 도메인 접미사 · 개인키 표지 · 그
+확장자를 감시한다. 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
+비밀값 `JWT_SECRET_KEY` 는 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start`). 시작 스크립트는 통합인증
+값을 앱에 넘기되 결과 파일에는 이름(있음/없음)만 남기고 하위 프로세스에는 비밀값을 넘기지 않는다. 화면 · 로그 · 리뷰에 토큰 ·
+state · nonce · 쿠키 값 · 비밀값 · 클레임 값을 싣지 않는다. 사내 모듈은 통합인증 환경변수를 읽지 않는다.
 
 앱 코드의 `subprocess` 는 `io/object_storage.py` 한 곳에만 둔다(명령 실행기를 주입받아 시험한다). C-DEP CD 시작
 스크립트(`scripts/container_start.py`)의 pip·import 확인은 앱이 서기 전 `scripts/` 몫이라 이 규칙 밖이고, 앱 쪽(어댑터·

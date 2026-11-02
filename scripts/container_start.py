@@ -4,7 +4,9 @@
 C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하면 바로 실행·접속 링크만 준다) 서버
 셸에도 들어갈 수 없다. 넣을 수 있는 것은 배포 설정의 **환경변수 표(key·value)** 뿐이다. 그래서
 이미지의 `CMD` 가 이 스크립트를 부르고, 스크립트가 그 환경변수만으로 BigDataQuery 의 세 관문
-(`docs/bigdataquery_webide_setup.md`)을 푼 뒤 지금과 같은 `streamlit run` 줄로 바뀐다.
+(`docs/bigdataquery_webide_setup.md`)을 푼 뒤 `streamlit run capa_server.py` 줄로 바뀐다
+(`APP_ENTRY` — `app.py` 를 `st.App` 으로 감싸 사내 통합인증 경로 · 문지기를 붙인 운영 진입점,
+`docs/sso_setup.md`).
 
 0. 설치 — `bigdataquery` 가 없고 `CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN` 이 있으면 pip 를
    두 번 부른다. 판·인덱스는 `requirements-company.txt` 가 정본이다.
@@ -24,6 +26,13 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 패키지의 import 코드가 그 값을 읽지 못하게 한다. 어느 단계가 실패해도, 이 스크립트에서 예상하지
 못한 예외가 나도 앱은 띄운다. 앱은 `os.execvpe` 로 이 프로세스를 갈아 끼워 신호·종료 동작이 옛
 `CMD` 와 같고, 실행 줄의 두 비밀값은 앱에 넘기지 않는다.
+
+통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)는 앱이 써야 하므로 **앱에는 넘긴다** — 비밀값
+`JWT_SECRET_KEY` 는 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start`). 이
+스크립트는 그 값을 검증하지 않고 있음/없음만 결과 파일(`sso_environment`)과 진행 한 줄에 남긴다.
+하위 프로세스(import 확인·pip)에는 `JWT_SECRET_KEY` 도 넘기지 않는다. 진입 파일이 없거나 import 에
+실패해도 `app.py` 로 **물러서지 않는다** — 통합인증이 켜진 서버가 문지기 없이 열리는 길이 된다
+(그때 `app.py` 는 「문지기 없이 시작됨」 으로 멈추지만, 첫 벽을 스스로 치우지 않는다).
 
 개발·사내 PC 에서는 부르지 않는다. 시험만 쓰는 내부 인자(`--credential-dir`·`--port`)가 있고, 운영
 자리는 고정이다.
@@ -52,6 +61,7 @@ from types import FrameType
 from typing import Protocol
 
 from capa_simulation import settings
+from capa_simulation.auth import names as sso_names
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
     ARTIFACTORY_TOKEN_ENV,
@@ -78,6 +88,9 @@ APP_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 CREDENTIAL_DIR = Path("/config/.credential")
 TOKEN_FILE_PREFIX = "bigdataquery.token."
 APP_PORT = "8080"
+# 앱 진입 파일(저장소 뿌리 — `.streamlit/config.toml`·`static/` 을 그 옆에서 찾는다). 실패해도
+# `app.py` 로 물러서지 않는다(모듈 설명).
+APP_ENTRY = "capa_server.py"
 # 앱 포트는 이 단계들이 끝난 뒤에야 열린다 — CD 의 상태 검사가 그 사이 컨테이너를 죽이지 않게
 # 짧게 잡는다. 설치 제한은 두 pip 를 합친 것이고, pip 자신도 연결마다 짧게 포기한다.
 INSTALL_TIMEOUT_SECONDS = 240
@@ -96,6 +109,9 @@ PROBE_MARKER = "capa-bdq-probe"
 # 앱과 하위 프로세스에 넘기지 않는 실행 줄 값. 앱은 요청자 계정만 읽는다. 앱 쪽 「결과 없음」
 # 안내가 같은 이름으로 스크립트가 돌았는지 가른다.
 SECRET_ENVIRONMENT = APP_WITHHELD_ENVIRONMENT
+# 하위 프로세스(import 확인·pip)에 넘기지 않는 값 — 두 비밀값과 통합인증 비밀값. 통합인증
+# 비밀값은 앱에는 넘긴다(앱이 읽고 지운다).
+CHILD_WITHHELD_ENVIRONMENT = (*APP_WITHHELD_ENVIRONMENT, *sso_names.SECRET_ENVIRONMENT)
 _PROBE_CODE = f"""
 import importlib, importlib.metadata
 try:
@@ -232,8 +248,10 @@ def dependency_pip_command(
 
 
 def child_environment(environ: Mapping[str, str]) -> dict[str, str]:
-    """하위 프로세스(import 확인·pip)에 넘기는 환경 — 두 비밀값을 뺀다."""
-    return {name: value for name, value in environ.items() if name not in SECRET_ENVIRONMENT}
+    """하위 프로세스(import 확인·pip)에 넘기는 환경 — 두 비밀값과 통합인증 비밀값을 뺀다."""
+    return {
+        name: value for name, value in environ.items() if name not in CHILD_WITHHELD_ENVIRONMENT
+    }
 
 
 def company_pip_environment(environ: Mapping[str, str], index_url: str) -> dict[str, str]:
@@ -262,6 +280,10 @@ class Redactor:
     def from_environ(cls, environ: Mapping[str, str]) -> Redactor:
         token = environ.get(BDQ_TOKEN_ENV, "").strip()
         secrets = [environ.get(ARTIFACTORY_TOKEN_ENV, "").strip(), token]
+        # 통합인증 비밀값도 어떤 출력에도 남기지 않는다(하위 프로세스에는 넘기지 않지만 예외 글 등).
+        # 너무 짧은 값(틀린 설정)까지 가리면 출력이 뭉개진다 — 앱이 「짧음」 으로 막는다.
+        sso_secrets = [environ.get(name, "").strip() for name in sso_names.SECRET_ENVIRONMENT]
+        secrets += [value for value in sso_secrets if len(value) >= 8]
         if token.startswith("base64:"):
             secrets.append(token.removeprefix("base64:").strip())
             try:
@@ -625,6 +647,8 @@ def collect_report(
     }
     for name, result in steps.items():
         echo(f"{STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
+    presence = sso_presence(environ)
+    echo(sso_presence_line(presence))
     account = environ.get(BDQ_USER_NAME_ENV, "").strip()
     target = token_file_path(credential_dir, account) if account else None
     return {
@@ -646,6 +670,7 @@ def collect_report(
             name for name in CD_ENVIRONMENT if not environ.get(name, "").strip()
         ],
         "pip_tail": [redactor(line) for line in install.pip_tail],
+        "sso_environment": presence,
     }
 
 
@@ -663,7 +688,22 @@ def fallback_report(environ: Mapping[str, str], error_name: str) -> dict[str, ob
             name for name in CD_ENVIRONMENT if not environ.get(name, "").strip()
         ],
         "pip_tail": [],
+        "sso_environment": sso_presence(environ),
     }
+
+
+def sso_presence(environ: Mapping[str, str]) -> dict[str, bool]:
+    """통합인증 환경변수 이름 → 있음. 값은 싣지 않는다 — 앱(Admin Area)이 검증한다."""
+    return {name: bool(environ.get(name, "").strip()) for name in sso_names.SSO_ENVIRONMENT}
+
+
+def sso_presence_line(presence: Mapping[str, bool]) -> str:
+    """진행 한 줄 — 이름만."""
+    present = [name for name, flag in presence.items() if flag]
+    absent = [name for name, flag in presence.items() if not flag]
+    return (
+        f"통합인증 환경변수 — 있음: {', '.join(present) or '-'} · 없음: {', '.join(absent) or '-'}"
+    )
 
 
 def write_report(report: Mapping[str, object], path: Path) -> None:
@@ -676,8 +716,9 @@ def write_report(report: Mapping[str, object], path: Path) -> None:
 
 
 def app_command(port: str) -> list[str]:
-    """옛 `CMD` 와 같은 줄. `WORKDIR /project` 에서 `app.py` 를 찾는다."""
-    return ["streamlit", "run", "app.py", "--server.port", port]
+    """앱을 띄우는 줄. `WORKDIR /project` 에서 진입 파일(`APP_ENTRY`)을 찾는다 — 옛 `CMD` 의
+    `app.py` 자리만 바뀌었고 나머지(`--server.port`)는 같다."""
+    return ["streamlit", "run", APP_ENTRY, "--server.port", port]
 
 
 def app_environment(environ: Mapping[str, str]) -> dict[str, str]:

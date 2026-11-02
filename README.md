@@ -217,6 +217,9 @@ uv pip install -r requirements-company.txt
 - C-DEP CD(배포 서버)에는 셸이 없어 위 명령을 칠 수 없습니다. 배포 설정의 환경변수 표에 값을 넣으면 이미지의 시작
   스크립트(`scripts/container_start.py`)가 설치·로그인 토큰을 갖추고 결과를 Admin Area 「서버 시작 점검」에 남깁니다 —
   넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」.
+- C-DEP CD 서버는 사내 통합인증(SSO)으로 로그인한 사람만 들어오게 할 수 있습니다 — 시작 스크립트가 진입 파일
+  `capa_server.py`(`app.py` 를 감싸 콜백 경로·문지기를 붙인 것)로 앱을 띄우고, 환경변수 표의 `ADFS_CLIENT_ID` 가 켜는
+  스위치입니다(비면 지금처럼 열림). 넣을 값·첫 배포 순서·가짜 IdP 로 개발하는 법은 `docs/sso_setup.md`.
 
 ### 5단계. 배포 적용 도구 자리 잡기 (사내, 최초 1회)
 
@@ -531,7 +534,8 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `check_module.py` | 사내 모듈의 선언·정적 규칙(M01 ~ M19)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
 | `module_test_runner.py` | `check_module.py` 가 부르는 모듈 시험 감시 러너 — 코어 `data/` 접근·저장소 안 쓰기(모듈 폴더·상대 경로)를 실패로, AppTest import 길을 앱과 같게 |
 | `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18·M19 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
-| `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run app.py --server.port 8080`)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
+| `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run capa_server.py --server.port 8080` — 통합인증 진입점)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
+| `sso_mock_idp.py` | 개발·시험용 가짜 통합인증 IdP — 실행 때 키를 메모리에만 만들고 form_post 로 id_token 을 보낸다. 앱이 읽을 환경변수 파일을 저장소 밖에 쓴다(운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장) |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |
 | `check_worktree_isolation.py` | 작업 폴더가 제 가상환경·코드·DuckDB 만 쓰는지 확인한다 |
 
@@ -551,6 +555,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(사외 뼈대 · 사내 완성), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
 | `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장)·따라하기 가이드 사내판 만들기(10장) 포함 |
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
+| `docs/sso_setup.md` | C-DEP 운영 서버의 사내 통합인증(SSO) — 환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
 | `docs/parallel_agent_briefing.md` | 병행 개발 에이전트의 시작 절차와 하루 흐름(규칙은 AGENTS 14장) |
 | `docs/scenario_merge_shift_implementation.md` | 시나리오 월 머지·연도 Shift 구현 설명 |

@@ -94,8 +94,10 @@ git remote -v
 ### 1-1. 앱이 꺼졌는지 본다 — 에이전트가 끄지 않는다
 
 ```powershell
-Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -like '*app.py*' } | Select-Object ProcessId, CreationDate
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -like '*app.py*' -or $_.CommandLine -like '*capa_server.py*' } | Select-Object ProcessId, CreationDate
 ```
+
+명령줄에 `app.py` 나 `capa_server.py`(운영 진입점 — `app.py` 를 감싸 통합인증을 붙인 것)가 있으면 사용자 앱이다.
 
 한 줄이라도 나오면 **사용자에게 꺼 달라고 요청한다**(그 창에서 `Ctrl+C`). 에이전트가 프로세스를 죽이지 않는다 —
 다른 사람이 쓰고 있을 수 있다. 사용자가 껐다고 하면 위 명령을 다시 쳐 빈 것을 확인한 뒤 진행한다. 명령줄에는 경로가
@@ -186,7 +188,7 @@ uv run --no-sync python -c "import shutil, time, pathlib as p; b = p.Path.home()
 옛 버전으로 덮는다. 무엇이 추적 중인지 모르는 채로 1-5 에 들어가면 안 된다.
 
 ```powershell
-git ls-files | Select-String -Pattern '\.duckdb|\.db$|\.wal$|^data/input/|^data/output/|^data/temp/|^data/modules/|^\.agents/|^\.omo/|\.xlsx?$|\.xlsb$|\.tmp$|^modules/[^/]+/(?!assets/).*\.(csv|tsv|parquet|feather|arrow|npy|npz)$|^modules/.*\.(pkl|pickle)$'
+git ls-files | Select-String -Pattern '\.duckdb|\.db$|\.wal$|^data/input/|^data/output/|^data/temp/|^data/modules/|^\.agents/|^\.omo/|\.xlsx?$|\.xlsb$|\.tmp$|^modules/[^/]+/(?!assets/).*\.(csv|tsv|parquet|feather|arrow|npy|npz)$|^modules/.*\.(pkl|pickle)$|\.(pem|key|p12|pfx|cer|crt|der|jks)$|^cert/'
 ```
 
 **한 줄이라도 나오면 여기서 멈춘다.** `docs/dual_env_workflow.md` 8장의 정리를 먼저 끝내야
@@ -195,9 +197,13 @@ git ls-files | Select-String -Pattern '\.duckdb|\.db$|\.wal$|^data/input/|^data/
 `data/temp/.gitkeep` 세 줄은 빼고 본다** — 배포가 싣는 빈 폴더 자리표라 늘 추적된다(데이터가 아니다). 2-1 의 `주의` 블록에도
 같은 세 줄이 찍힌다. 그 셋 말고 한 줄이라도 나오면 멈춘다.
 
-패턴 끝의 둘은 사내 모듈 몫이다 — `^data/modules/`(모듈 데이터 자리는 git 밖이어야 한다)와 모듈 폴더 안의 데이터 꼴 파일
+`^data/modules/` 와 모듈 폴더 안 데이터 꼴 파일 둘은 사내 모듈 몫이다 — `^data/modules/`(모듈 데이터 자리는 git 밖이어야 한다)와 모듈 폴더 안의 데이터 꼴 파일
 (`git add modules/<id>` 가 폴더 안 실데이터를 사내 git · CD 이미지에 싣는 것을 막는다). `assets/` 아래 합성 표본은 걸지 않는다 — 모듈 점검
 (4-5, `check_module.py` M13)이 「합성만」 경고로 본다. 나오면 위와 같이 멈추고 dual_env 8장 정리를 한다.
+
+패턴 맨 끝 둘은 통합인증 몫이다 — 키 · 인증서 파일(`.pem` · `.key` · `.p12` · `.pfx` · `.cer` · `.crt` · `.der` · `.jks`)과 `cert/` 폴더.
+통합인증 샘플의 `cert/` 를 사내 저장소로 옮겨 오면 개인키가 사내 git · CD 이미지에 실린다. 서명 인증서는 파일이 아니라 C-DEP
+환경변수(`ADFS_SIGNING_CERT`, 한 줄)로만 넣는다(`docs/sso_setup.md` 3장). 나오면 멈추고 사용자에게 알린다.
 
 정리를 건너뛰고 적용하면 두 가지가 한꺼번에 일어난다. ① 그 파일들은 ZIP 에 없으므로
 「사외에서 지워진 파일」로 판정돼 적용이 지운다. ② 1-5 의 되돌리기가 그 전에 실데이터를
@@ -437,8 +443,12 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
   한쪽만 보고 판단하지 않는다.
 - 그 이미지의 시작 명령(`CMD`)은 `scripts/container_start.py` 다 — C-DEP 배포 설정의 환경변수로 사내
   `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 `data/temp/container_start.json`(Admin Area 「서버 시작
-  점검」)에 남긴 뒤 `streamlit run app.py --server.port 8080` 으로 바뀐다. 사내 WebIDE 터미널에서는 부르지 않는다
+  점검」)에 남긴 뒤 `streamlit run capa_server.py --server.port 8080` 으로 바뀐다(`capa_server.py` 는 `app.py` 를 감싸 사내
+  통합인증 경로·문지기를 붙인 운영 진입점). 사내 WebIDE 터미널에서는 부르지 않는다 — WebIDE 는 지금처럼 `app.py` 다
   (넣을 key 는 [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」).
+- 통합인증 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `ADFS_CLIENT_ID`(켜는 스위치 — 비면 꺼짐) · `JWT_SECRET_KEY` · `APP_ENV` ·
+  `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_PUBLIC_URL` · 선택 `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` ·
+  `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL`. 첫 배포 순서 · 진단은 [`sso_setup.md`](sso_setup.md).
 - 사내 모듈이 새 패키지가 필요하면 이 파일·`pyproject.toml` 에 넣지 않고 「사외 요청」 으로 낸다(담당자 → 사용자 → 리뷰).
 
 ### 3-4. 지움이 있는 배포 — 적용 직후 재대조에 `사외에서 지워진 파일` 이 그대로 찍힌다

@@ -325,6 +325,10 @@ def test_applied_versions_reads_the_migration_table(tmp_path: Path) -> None:
         ("python -m pytest tests/test_app_navigation.py", False),
         ("python scripts/check_deploy_screens.py --port 8551", False),
         ("python -m streamlit run other_app.py", False),
+        # 운영 진입점(`app.py` 를 `st.App` 으로 감싼 것)도 같은 사용자 앱이다.
+        ("/usr/bin/python3.10 -m streamlit run capa_server.py --server.port 8080", True),
+        ("streamlit run /srv/repo/capa_server.py", True),
+        ("python -m streamlit run my_capa_server.py", False),
     ],
 )
 def test_app_command_lines_are_recognised(command: str, expected: bool) -> None:
@@ -346,6 +350,17 @@ def test_the_app_counts_only_when_its_app_py_is_this_repository(tmp_path: Path) 
     ]
 
     assert REAL_RUNNING_APP_COUNT(list_commands=lambda: commands) == 3
+
+
+def test_the_entry_file_of_this_repository_counts_as_the_users_app(tmp_path: Path) -> None:
+    """`streamlit run capa_server.py`(통합인증 진입점)로 띄운 이 저장소의 앱도 사용자 앱이다."""
+    commands = [
+        (f"python -m streamlit run {PROJECT_ROOT / 'capa_server.py'}", None),
+        ("python -m streamlit run capa_server.py", str(PROJECT_ROOT)),
+        ("python -m streamlit run capa_server.py", str(tmp_path)),
+    ]
+
+    assert REAL_RUNNING_APP_COUNT(list_commands=lambda: commands) == 2
 
 
 def test_a_failed_process_scan_is_unknown_not_zero() -> None:
@@ -571,6 +586,21 @@ def test_the_child_app_never_gets_the_auto_update_opt_in() -> None:
     assert screens.AUTO_UPDATE_ENV_VAR == ENV_VAR
     env = screens.app_environment(PROJECT_ROOT, {ENV_VAR: "1", "OTHER": "x"})
     assert ENV_VAR not in env and env["OTHER"] == "x"
+
+
+def test_the_child_app_starts_with_sso_off() -> None:
+    """운영 창(통합인증 환경변수가 든 환경)에서 돌려도 자식 앱은 통합인증 꺼짐으로 뜬다 — 자식은
+    `app.py` 로 뜨므로 켜진 설정이면 「문지기 없이 시작됨」 으로 멈춰 항목이 하나도 돌지 않는다.
+    이름 튜플은 무거운 import 를 피해 글자로 적었으니 `auth.names` 와 대 본다."""
+    from capa_simulation.auth.names import SSO_ENVIRONMENT
+
+    assert screens.SSO_ENVIRONMENT == SSO_ENVIRONMENT
+    base = {name: "x" for name in SSO_ENVIRONMENT} | {"OTHER": "y"}
+
+    env = screens.app_environment(PROJECT_ROOT, base)
+
+    assert not set(SSO_ENVIRONMENT) & set(env)
+    assert env["OTHER"] == "y"
 
 
 @pytest.mark.parametrize("parent", [None, "", "/somewhere/modules", "OFF"])

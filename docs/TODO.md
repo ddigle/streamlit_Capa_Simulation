@@ -61,9 +61,23 @@
   때도 들어가는지) ② bigdataquery(2.5.0)를 깐 사내 베이스 이미지가 있는지(경로 · Python 판 · ODBC · 갱신 주기) ③ 공용 계정의
   Artifactory 읽기 전용 토큰과 BDQ 로그인 토큰의 만료 주기 · 갱신 담당 ④ 운영 pod 에 `/project/data` 영속 볼륨을 붙일 수 있는지
   (replica 1) ⑤ 운영 pod → BDQ 서버 네트워크가 열렸는지 ⑥ C-DEP 앞단 SSO 가 접속한 사람의 AD ID 를 요청 헤더로 넘기는지(헤더
-  이름). 답 뒤 — 베이스 이미지가 있으면 `docker/Dockerfile-prod` 의 `FROM` 만 바꾸고, 없으면 BuildKit 빌드 비밀값 덩어리와 그
+  이름 — **2026-11-02 닫음**: 앱이 직접 통합인증(ADFS form_post)을 한다(아래 「통합인증 켜기」 · 3장 「운영·배포」 2026-11-02) —
+  앞단 헤더에 기대지 않으므로 이 질문은 보내지 않는다. 사람마다 BDQ 계정을 넘기는 일은 범위 밖 그대로). 답 뒤 — 베이스 이미지가 있으면 `docker/Dockerfile-prod` 의 `FROM` 만 바꾸고, 없으면 BuildKit 빌드 비밀값 덩어리와 그
   시험을 싣는다(빌더가 BuildKit · buildah 일 때만 — 옛 빌더 · kaniko 는 `RUN --mount` 문법에서 빌드가 멈춘다). 어느 쪽이든 그 뒤
   C-DEP 환경변수 표에서 Artifactory 두 값을 뺀다. 사람마다 SSO 계정을 넘기는 길은 ⑥ · BDQ 대리 조회 확인 뒤의 일이다.
+- [ ] **통합인증(SSO) 켜기 — 사내 확인 · 첫 배포 순서**(2026-11-02 — 가지 `feat/sso-1102`, 안내 `docs/sso_setup.md`). C-DEP 운영
+  서버의 진입 파일이 `capa_server.py`(`app.py` 를 `st.App` 으로 감싸 `POST /auth/callback` · 문지기를 붙인 것)로 바뀌었고 환경변수
+  `ADFS_CLIENT_ID` 가 켜는 스위치다(비면 지금처럼 열림). 사용자 몫 — ① 이 배포를 적용하고 C-DEP 환경변수 표에 `APP_ENV=prod` ·
+  `JWT_SECRET_KEY` · `CAPA_PUBLIC_URL` · `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT`(토큰 서명 인증서 base64 한 줄)를
+  넣고 client id 는 비운 채 CI/CD → Admin Area 「통합인증 점검 · 꺼짐(운영)」 의 「켜면 막힐 문제: 없음」 확인 ② 포털 승인 메일의
+  client id 를 넣고 CI/CD → 로그인. 실패면 오류 화면의 사유 코드 · 받은 iss/aud · 받은 클레임 이름(값 아님)을 알려 준다 ③ 되면
+  `CAPA_SSO=required`. 사내 확인(포털 · ADFS · C-DEP 담당, `docs/sso_setup.md` 9장): issuer 정확한 문자열 · `aud` 가 문자열 하나인지 ·
+  「Legacy (OpenID)」 가 `id_token` + `form_post` 를 허용하는지 · 클레임이 id_token 에 실리려면 scope/resource 가 필요한지 · 클레임
+  이름과 loginid 꼴(도메인 접두) · 넣을 인증서가 토큰 서명 인증서인지와 교체 주기 · 로그아웃 주소 · 상태 검사 방식과 환경변수 값
+  길이 제한 · 인그레스 Host · replica 1 · 사내 미러가 pyjwt · cryptography · cffi · pycparser 휠을 주는지 · 들어올 사람 범위를 포털이
+  정하는지 · 환경변수 표를 볼 수 있는 사람. 사외에서는 가짜 IdP(`scripts/sso_mock_idp.py`)와 자체서명 HTTPS 의 교차 사이트
+  브라우저 흐름으로만 확인했다 — 실제 ADFS 의 form_post 필드 · 클레임 이름 · issuer 문자열, C-DEP 앞단의 Host · 상태 검사는
+  확인하지 못했다. 이 변경이 실린 배포의 7장에 「새 의존성 넷 — 사내 미러에서 받는지(런북 4-1 `uv sync --inexact`)」 를 적는다.
 
 ## 2. 구현 사항
 
@@ -694,8 +708,13 @@
 
 ### Admin Area·권한
 
-- [ ] 관리자 권한 게이트. 페이지 이름을 `Admin Area` 로 잡은 이유이며 아직 인증·권한 계층이 없어 사내 배포본에 그대로
-  노출한다. 2장의 「설비 운영 이력의 등록자 식별과 승인 권한을 구현한다」 항목과 함께 설계한다.
+- [ ] 관리자 권한 게이트. 페이지 이름을 `Admin Area` 로 잡은 이유이며 아직 권한 계층이 없어 사내 배포본에 그대로
+  노출한다. 2장의 「설비 운영 이력의 등록자 식별과 승인 권한을 구현한다」 항목과 함께 설계한다. **인증은 생겼다**(2026-11-02
+  통합인증 — C-DEP 운영 서버에서 켰을 때 로그인한 사람의 loginid · 이름 · 부서를 매 회차 안다, `components/sso_identity.py`).
+  남은 것은 권한 — 역할, Admin Area 를 loginid 목록으로 여는 것.
+- [ ] 통합인증 다음 일(2026-11-02 범위 밖으로 둔 것 — `docs/sso_setup.md`): VOC 작성자를 SSO 이름으로 자동 채우기 · 사람별 BDQ 계정 ·
+  사내 모듈 창구(`module_api`)에 로그인한 사용자 노출 · 서명 인증서 JWKS 자동 받기 · ADFS 로그아웃 연동(id_token_hint) · 재로그인
+  없는 세션 연장.
 
 ### Space
 
@@ -3348,6 +3367,23 @@
 
 ### 운영·배포
 
+- (2026-11-02) **사내 통합인증(ADFS form_post)을 앱이 직접 한다**(사용자 요청 — C-DEP 운영 서버의 계정 인증 연동). 아래는 메인
+  세션이 정한 기본값이다 — 사용자가 바꿀 수 있다. ① 한 프로세스 `st.App` + 순수 ASGI 문지기(`capa_server.py`), nginx · FastAPI
+  사이드카는 쓰지 않는다. C-DEP 만 그 진입 파일로 띄우고 개발 · WebIDE · 시험은 `app.py` ② 경로 `POST /auth/callback`(포털 등록값) ·
+  `GET /auth/sso/login` · `/auth/sso/logout` · `/auth/sso/error` ③ 미로그인 탐색은 IdP 로 바로 302, fetch · iframe 401, websocket 403
+  ④ 쿠키: 세션 `__Host-capa_session`(HttpOnly · Lax), 상태 쿠키(None + Secure, 10분), 시도 쿠키(2분 3회 — 되돌이 막기). `?token=` ·
+  세션 상태 보관은 쓰지 않는다(테마 새로고침이 새 세션을 만든다 — 10-23 조사 결론) ⑤ 세션 12시간(1~24), 만료 30분 전 카드 경고,
+  지나면 멈춤(유예 없음) ⑥ client id 비면 꺼짐(지금처럼 열림) + 운영이면 경고, 반쯤 설정은 막힘(health 만 살리고 `/` 는 설정
+  화면 200), `CAPA_SSO=required` 잠금 ⑦ `ADFS_ISSUER` 필수 · 짐작하지 않음, 서명 인증서는 환경변수 한 줄 핀 고정(체인 검증 · JWKS
+  없음, 만료는 경고만), ID 토큰은 RS256 · aud · iss · nonce · exp/iat 를 모두 본다 ⑧ 클레임 기본 이름 `loginid` · `username` ·
+  `deptname`(환경변수로 바꿈) ⑨ `.env` 로더 없음 — C-DEP 환경변수 표가 그 자리, `JWT_SECRET_KEY` 는 앱이 읽고 환경에서 뺀다 ⑩ 사이드바
+  표시는 앱 정보 카드 셋째 줄(2026-10-07 「두 줄뿐」 의 예외 — 켜짐에서만) ⑪ Admin 「통합인증 점검」 펼침 + 「서버 시작 점검」 넷째
+  줄 ⑫ 로그는 stdout 한 줄 · 사건 50개 메모리, DB 기록 없음, 폐기 목록은 프로세스 메모리(replica 1) ⑬ 의존성 `pyjwt[crypto]` 하나
+  (휠만 — Dockerfile `--only-binary`) ⑭ 공개 저장소 감시 시험(회사 도메인 접미사 · 개인키 표지 · 키/인증서 확장자) ⑮ 시작
+  스크립트는 진입 파일이 실패해도 `app.py` 로 물러서지 않는다. 사용자 샘플의 결함(aud · iss · nonce 미검증, 개인키 동봉, 하드코딩
+  비밀번호, 앞단 `$host` 포트 손실)은 옮기지 않았고 샘플 코드는 보지 않았다. 사용자 확인으로 남긴 것 — client id 전에 운영 앱을
+  열어 둘지 · 세션 12시간과 유예 없음 · 카드 셋째 줄 자리 · `CLAUDE.md` 아키텍처 한 줄. 관련: `docs/sso_setup.md` · 1장 「통합인증
+  켜기」 · AGENTS 3장 · 5장 35 · 9장 · 10장
 - (2026-11-01 기록 — 결정은 2026-10-25) **사내 따라하기 가이드의 실화면 그림 검수는 (나) — 사내 에이전트도 그림을 열어 검수한다.**
   조건: 보안 담당 확인 항목(실화면 상시 보관 · DRM)에 「에이전트 세션 기록의 실화면」 을 더해 확인받은 뒤 런북 0장 · 6-2 · 10-4 와
   dual_env 1-1 「실화면 그림 검수」 행을 고친다. 그 전에는 지금처럼 사용자가 본다(옛 권장 (가) 「사용자 몫」 은 이 결정으로 닫았다 —
