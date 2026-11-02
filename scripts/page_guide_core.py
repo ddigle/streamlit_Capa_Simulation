@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import copy
 import hashlib
 import io
@@ -1469,7 +1470,7 @@ def load_accepted(path: Path, howto: Path = HOWTO_DIR) -> tuple[dict[str, Any] |
         if not path.exists():
             return None, "없음"
         document = load_json(path)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:  # RecursionError — 너무 깊게 겹친 JSON
         return None, f"버림 — {type(exc).__name__}"
     if schema_errors(document, "accepted", howto) or not (
         _VERSION_TEXT.fullmatch(document["skeleton"]) and _DATE_TEXT.fullmatch(document["date"])
@@ -1689,17 +1690,27 @@ def accepted_record(
     return document
 
 
-def save_accepted(path: Path, document: Mapping[str, Any]) -> None:
-    """검수 마친 판을 원자적으로 쓴다 — 옆 `.tmp` 에 쓰고 `os.replace`. 실패하면 `.tmp` 를 걷고
-    예외를 그대로 낸다(옛 파일은 그대로다)."""
+def _replace_file(path: Path, data: bytes) -> None:
+    """옆 `.tmp` 를 새로 만들어 쓰고 `os.replace` 로 바꾼다. 남은 `.tmp` 는 먼저 걷고 `x`(있으면
+    실패 — 연결을 따라가지 않는다)로 만든다 — 앞 실행이 남긴 `.tmp` 가 연결(symlink · 하드 링크)
+    이면 그 너머 파일에 쓰게 되기 때문이다. 실패하면 `.tmp` 를 걷고 예외를 그대로 낸다(옛 파일은
+    그대로다)."""
     temporary = path.with_name(path.name + ".tmp")
-    text = json.dumps(document, ensure_ascii=False, indent=1) + "\n"
     try:
-        temporary.write_bytes(text.encode("utf-8"))
+        temporary.unlink(missing_ok=True)
+        with temporary.open("xb") as handle:
+            handle.write(data)
         os.replace(temporary, path)
     except OSError:
-        temporary.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            temporary.unlink(missing_ok=True)
         raise
+
+
+def save_accepted(path: Path, document: Mapping[str, Any]) -> None:
+    """검수 마친 판을 원자적으로 쓴다(`_replace_file` — 옆 `.tmp` 에 쓰고 `os.replace`)."""
+    text = json.dumps(document, ensure_ascii=False, indent=1) + "\n"
+    _replace_file(path, text.encode("utf-8"))
 
 
 def assembly_stamp(
@@ -1715,9 +1726,7 @@ def save_assembly_stamp(work: Path, stamp: Mapping[str, str]) -> None:
     """조립 도장을 쓴다. 옛 도장을 먼저 걷는다 — 쓰다 실패해도 옛 도장이 남아 맞아 보이지 않게."""
     path = work / ASSEMBLED_FILE
     path.unlink(missing_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes((json.dumps(dict(stamp), ensure_ascii=False) + "\n").encode("utf-8"))
-    os.replace(temporary, path)
+    _replace_file(path, (json.dumps(dict(stamp), ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 def load_assembly_stamp(work: Path) -> dict[str, str] | None:

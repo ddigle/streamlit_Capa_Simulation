@@ -1449,6 +1449,7 @@ def test_checker_compares_with_the_accepted_board_and_lists_only_data_places(des
     [
         ("json", "JSONDecodeError"),
         ("empty", "JSONDecodeError"),
+        ("deep", "RecursionError"),
         ("extra", "형식"),
         ("form", "형식"),
         ("seal", "봉인"),
@@ -1463,6 +1464,8 @@ def test_a_baseline_that_cannot_be_used_is_dropped_with_na_and_exit_0(
         desk.accepted.write_text("{not json", encoding="utf-8")
     elif spoil == "empty":
         desk.accepted.write_bytes(b"")
+    elif spoil == "deep":  # 너무 깊게 겹친 JSON — 읽는 쪽이 RecursionError 로 멈추지 않는다
+        desk.accepted.write_text("[" * 100_000, encoding="utf-8")
     elif spoil == "extra":
         desk.rewrite(text="화면 글")
     elif spoil == "form":
@@ -1512,6 +1515,24 @@ def test_the_generator_stamps_each_assembly_and_keeps_its_last_line(
     assert line == shot_line and "바뀜" not in out  # 생성기 끝 줄에는 바뀜 칸이 없다
     assert "조립 기록" not in rig.output.read_text(encoding="utf-8")
     assert block.splitlines()[0] == rig.output.read_text(encoding="utf-8").splitlines()[0]
+
+
+def test_a_stamp_that_fails_to_write_leaves_no_old_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    core.save_assembly_stamp(tmp_path, {"shots": "a", "content": "b", "plan": "c"})
+    assert core.load_assembly_stamp(tmp_path) is not None
+
+    def fail(_source: Any, _target: Any) -> None:
+        raise OSError("가짜")
+
+    monkeypatch.setattr(os, "replace", fail)
+    with pytest.raises(OSError):
+        core.save_assembly_stamp(tmp_path, {"shots": "d", "content": "e", "plan": "f"})
+
+    # 옛 도장이 남으면 「조립 기록 없음」 대신 옛 조립과 견주게 된다
+    assert core.load_assembly_stamp(tmp_path) is None
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_a_stamp_that_cannot_be_written_is_reported_by_kind_and_the_run_goes_on(
@@ -1812,7 +1833,7 @@ def test_a_baseline_version_or_date_with_a_line_break_is_dropped(desk: Desk, fie
     assert "  기준 버림 — 형식 — 모든 자리" in result.err.splitlines()
 
 
-@pytest.mark.parametrize("place", ["outside", "no_git", "linked", "missing"])
+@pytest.mark.parametrize("place", ["outside", "no_git", "linked", "dotdot", "missing"])
 def test_accept_refuses_a_place_that_is_not_review_guide_of_a_repository(
     desk: Desk, place: str
 ) -> None:
@@ -1821,6 +1842,12 @@ def test_accept_refuses_a_place_that_is_not_review_guide_of_a_repository(
     if place == "outside":
         target = desk.root / "elsewhere" / core.ACCEPTED_FILE
         target.parent.mkdir()
+    elif place == "dotdot":
+        # 글자로는 review/guide/accepted.json 이지만 연결 `x` 를 따라 풀면 저장소 밖(far/)이다
+        far = desk.root / "far" / "sub"
+        far.mkdir(parents=True)
+        (repo / "review" / "guide" / "x").symlink_to(far, target_is_directory=True)
+        target = Path(f"{repo / 'review' / 'guide' / 'x'}{os.sep}..{os.sep}{core.ACCEPTED_FILE}")
     elif place == "no_git":
         (repo / ".git").rmdir()
     elif place == "linked":
@@ -1858,6 +1885,26 @@ def test_accept_refuses_a_board_linked_to_another_repository(desk: Desk, linked:
     assert result.code == checker.EXIT_NOT_READY
     assert result.out.strip() == "기준을 쓰지 않았습니다 — 자리가 아님"
     assert not other.exists()
+
+
+@pytest.mark.parametrize("link", ["symlink", "hardlink"])
+def test_accept_does_not_write_through_a_temporary_file_left_as_a_link(
+    desk: Desk, link: str
+) -> None:
+    outside = desk.root / "outside.txt"
+    outside.write_bytes(b"OUTSIDE")
+    temporary = desk.accepted.with_name(core.ACCEPTED_FILE + ".tmp")
+    if link == "symlink":
+        temporary.symlink_to(outside)
+    else:
+        os.link(outside, temporary)
+
+    result = desk.accept()
+
+    assert result.code == checker.EXIT_OK
+    assert outside.read_bytes() == b"OUTSIDE"
+    assert not desk.accepted.is_symlink() and not temporary.exists()
+    assert core.load_accepted(desk.accepted)[1] == ""
 
 
 def test_accept_needs_all_four_paths(desk: Desk, capsys: pytest.CaptureFixture[str]) -> None:

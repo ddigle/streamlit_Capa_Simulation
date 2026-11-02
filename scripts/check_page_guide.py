@@ -30,11 +30,13 @@ stdout 에는 리뷰 md 에 옮길 한 줄만 찍는다. 생성기(`build_page_g
 모드가 어긋나면 멈추지 않고 `바뀜 na`(모든 자리를 본다)로 0 이다.
 
 `--accept` 는 그 판을 새로 쓴다 — 이번에 바뀜 · 새 자리로 찍힌 자리만 지금 값으로, 나머지는 앞 값을
-두고 데이터 자리는 적지 않는다. 옆 `.tmp` 에 써서 `os.replace` 한다. `--work` · `--accepted` ·
-`--overrides` · `--params` 가 다 있어야 하고, `--accepted` 는 git 저장소 뿌리(`.git` · `app.py` ·
-`src/capa_simulation/`)의 이미 있는 `review/guide/` 안 `accepted.json` 이어야 한다(연결 폴더 거절 —
-사본 트리에는 `.git` 이 없어 쓰지 않는다). 성공하면 stderr 에 `기준 씀 — n자리` 를 찍고 앞 기준과
-견준 리뷰 한 줄을 낸다.
+두고 데이터 자리는 적지 않는다. 옆 `.tmp` 를 새로 만들어 써서 `os.replace` 한다(남은
+`.tmp` 는 먼저 걷는다 — 연결을 따라 쓰지 않는다). `--work` · `--accepted` · `--overrides` ·
+`--params` 가 다 있어야 하고, `--accepted` 는 git 저장소 뿌리(`.git` · `app.py` ·
+`src/capa_simulation/`)의 이미 있는 `review/guide/` 안 `accepted.json` 이어야 한다(연결 폴더 ·
+연결 파일 · 연결 뒤 `..` 거절 — 사본 트리에는 `.git` 이 없어 쓰지 않는다). 검사한 그 경로를
+읽고 그 경로에 쓴다. 성공하면 stderr 에 `기준 씀 — n자리` 를 찍고 앞 기준과 견준 리뷰 한 줄을
+낸다.
 
 종료 코드: 0 한 줄을 냄(`ng` · 고아가 있어도, 기준 파일을 못 읽어도) · 2 멈춤(뼈대가 깨짐 · 조립
 거절 · 읽지 못함 · 작업 폴더가 다른 뼈대 판, `--accept` 거절 — 인자 모자람 · 자리가 아님 · 판
@@ -80,37 +82,40 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def accepted_place_ok(path: Path) -> bool:
-    """`--accept` 가 쓸 자리인가 — `<저장소 뿌리>/review/guide/accepted.json`.
+def accepted_place(path: Path) -> Path | None:
+    """`--accept` 가 쓸 자리 — `<저장소 뿌리>/review/guide/accepted.json` 이면 resolve 한 그 경로,
+    아니면 None. 점검기는 이 경로를 읽고 이 경로에 쓴다(검사한 자리와 쓰는 자리가 같다).
 
     resolve 한 경로의 이름 셋(`accepted.json` · `guide` · `review`)을 보고, `review` ·
     `review/guide` 가 연결(symlink · junction — 부모를 resolve 한 자리 + 이름과 다르게 풀림)이거나
-    파일이 연결이면 거절한다. 뿌리에 `.git` · `app.py` · `src/capa_simulation/` 가 있어야 하고(사본
-    트리에는 `.git` 이 없다), `review/guide/` 는 이미 있어야 한다(만들지 않는다). 뿌리를 이 파일
-    자리로 정하지 않는다 — 점검기는 사본 트리의 `scripts/` 에서 돈다."""
+    파일이 연결이면 거절한다. 글자로 줄인 경로와 연결을 따라 푼 경로가 다르면(연결 뒤의 `..`)
+    거절한다. 뿌리에 `.git` · `app.py` · `src/capa_simulation/` 가 있어야 하고(사본 트리에는
+    `.git` 이 없다), `review/guide/` 는 이미 있어야 한다(만들지 않는다). 뿌리를 이 파일 자리로
+    정하지 않는다 — 점검기는 사본 트리의 `scripts/` 에서 돈다."""
     try:
         absolute = Path(os.path.abspath(path))
         resolved = absolute.resolve()
-        if absolute.is_symlink():
-            return False
+        if absolute.is_symlink() or Path(path).resolve() != resolved:
+            return None
         if (resolved.name, resolved.parent.name, resolved.parent.parent.name) != (
             core.ACCEPTED_FILE,
             "guide",
             "review",
         ):
-            return False
+            return None
         for folder in (absolute.parent.parent, absolute.parent):
             if folder.resolve() != folder.parent.resolve() / folder.name:
-                return False
+                return None
         root = resolved.parent.parent.parent
-        return (
+        placed = (
             (root / ".git").exists()
             and (root / "app.py").is_file()
             and (root / "src" / "capa_simulation").is_dir()
             and resolved.parent.is_dir()
         )
     except (OSError, RuntimeError, ValueError):
-        return False
+        return None
+    return resolved if placed else None
 
 
 def accept_refusal(
@@ -138,9 +143,11 @@ def check(argv: Sequence[str] | None = None) -> int:
         if None in (args.work, args.accepted, args.overrides, args.params):
             print(NOT_WRITTEN.format("인자 모자람"))
             return EXIT_NOT_READY
-        if not accepted_place_ok(args.accepted):
+        place = accepted_place(args.accepted)
+        if place is None:
             print(NOT_WRITTEN.format("자리가 아님"))
             return EXIT_NOT_READY
+        args.accepted = place
     review: core.WorkReview | None = None
     try:
         skeleton = core.load_skeleton(args.guide)
@@ -179,7 +186,7 @@ def check(argv: Sequence[str] | None = None) -> int:
             document = core.accepted_record(
                 skeleton, review.changes, review.shots, date=datetime.date.today().isoformat()
             )
-            core.save_accepted(args.accepted.resolve(), document)
+            core.save_accepted(args.accepted, document)
         except (OSError, ValueError) as exc:
             print(WRITE_FAILED.format(type(exc).__name__))
             return EXIT_NOT_READY
