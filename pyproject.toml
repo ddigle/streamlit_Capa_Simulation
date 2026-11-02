@@ -77,7 +77,7 @@ strict = true
 # pytest 가 저장소 루트를 sys.path 에 넣어 테스트끼리의 맨이름 import 가 죽는다) 모듈 이름이
 # `test_dashboard`·`compact_duckdb` 같은 맨이름이다. 아래 overrides 도 그 이름으로 적는다
 # (`tests.*` 는 아무것도 잡지 않고, `test_*` 같은 접두 와일드카드는 mypy 가 거절한다).
-files = ["app.py", "app_pages", "src/capa_simulation", "tests", "scripts"]
+files = ["app.py", "capa_server.py", "app_pages", "src/capa_simulation", "tests", "scripts"]
 # `tests/test_deploy_package.py` 처럼 테스트가 `scripts/` 모듈을 맨이름으로 부르는 것을 찾는
 # 경로. 위 `files` 전체를 돌릴 때는 없어도 찾지만, 파일 하나만 넘길 때(`mypy tests/x.py`,
 # 편집기)는 이것이 있어야 찾는다. 상대경로라 저장소 루트에서 돌린다.

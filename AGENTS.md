@@ -265,6 +265,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`equipment_scenario_status.py`) 팝업은 키 붙은 호스트 프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만
     서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
     는 설비 DB 를 열지 않는다(9장).
+- `capa_server.py` — C-DEP 운영 진입점(`streamlit run capa_server.py`). `app.py` 를 `st.App` 으로 감싸 통합인증 경로 넷과
+  문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
+  조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다.
+- `src/capa_simulation/auth/` — 사내 통합인증(ADFS · form_post). Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서
+  돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
+  `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 →
+  신원은 `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 프로세스 상태(설정 한 벌 · 문지기 표지 · 로그아웃 폐기 목록 ·
+  진단 · 사건 · 로거)는 `auth/runtime.py`, 경로 넷(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
+  `/auth/sso/error`) · 로그인 시작 · 화면은 `auth/web.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
+  websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
+  없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
+  씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
+  `scripts/sso_mock_idp.py`, 시험은 `tests/test_sso_*.py`(ASGI 운전기 `tests/asgi_driver.py`, 실행 때 만든 키
+  `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다.
 - `app_pages/home.py` — HOME 대시보드. `Main`(계획·LOB·주요공정·B/N Figure)·`Preference`(공용 프로필 편집기)·
   `Past Data`(`past_data_management.py`) 세 탭으로 전체 계산 결과를 조합한다. 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
