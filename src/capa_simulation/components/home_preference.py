@@ -633,13 +633,14 @@ def seed_comparison_selection(database_path: str) -> None:
 def forget_unlisted_comparison(database_path: str) -> None:
     """세션의 비교 시나리오가 목록에서 사라졌으면(보관·영구 삭제) 세션의 비교 짝을 걷는다.
 
-    `seed_comparison_selection` 바로 뒤, HOME 이 비교 값을 읽기 **전에** 부른다. 다른 곳에서 보관·
+    `seed_comparison_selection` 바로 앞, HOME 이 비교 값을 읽기 **전에** 부른다. 다른 곳에서 보관·
     삭제하면 저장소는 공용 프로필만 비우고 세션 값은 그대로다 — 심기는 세션 값이 있으면 덮지 않는다.
     걷지 않으면 이 세션은 보관된 시나리오와 계속 견주고(GAP 이 그대로 그려진다), 영구 삭제면 토글이
-    켜진 채 증감 없이 비어 있다(`_owned_comparison_revision` 이 조용히 끈다). 걷으면 「GAP」 토글이
-    잠기고 툴팁이 까닭(`GAP_LOCKED_HELP`)을 말한다. 피커(`_render_comparison_picker`)도 같은 일을
-    하지만 「HOME 설정」 팝업을 연 회차에만 돈다 — 전에는 숨은 `Preference` 탭이 매 회차 돌려 이
-    정리를 맡았다(2026-11-02 팝업으로 옮긴 뒤 검토에서 찾음).
+    켜진 채 증감 없이 비어 있다(`_owned_comparison_revision` 이 조용히 끈다). 걷은 뒤 이어지는
+    심기가 공용 프로필 값(다른 사용자가 고른 다른 시나리오 — 있으면)을 같은 회차에 심고, 없으면
+    「GAP」 토글이 잠기고 툴팁이 까닭(`GAP_LOCKED_HELP`)을 말한다. 피커
+    (`_render_comparison_picker`)도 같은 일을 하지만 「HOME 설정」 팝업을 연 회차에만 돈다 — 전에는
+    숨은 `Preference` 탭이 매 회차 돌려 이 정리를 맡았다(2026-11-02 팝업으로 옮긴 뒤 검토에서 찾음).
 
     **회차마다 DB 를 보지 않는다** — 목록은 비교 대상 프로필과 같은 쓰기 세대의
     캐시(`listed_comparison_candidates`)라 보관·삭제 뒤 한 번만 읽는다. 새로 만든 시나리오는 세대를

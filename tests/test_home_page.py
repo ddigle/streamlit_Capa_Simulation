@@ -1330,6 +1330,50 @@ def test_a_comparison_scenario_removed_elsewhere_leaves_the_session_and_locks_ga
     assert gap.help == GAP_LOCKED_HELP
 
 
+def test_a_removed_comparison_gives_way_to_the_shared_profile_in_the_same_run(
+    tmp_path: Path,
+) -> None:
+    """걷은 회차에 공용 프로필이 다른 비교 대상을 가리키면 그 회차에 바로 그것으로 선다(새 세션과
+    같다).
+
+    정리가 심기 **앞**이라 그렇다 — 뒤였다면 그 회차는 비교 없이 그리고 다음 회차에야 프로필 값이
+    심긴다.
+    """
+    from capa_simulation.components.home_preference import COMPARISON_SCENARIO_KEY
+    from capa_simulation.persistence.cache import (
+        clear_global_comparison_scenario_cache,
+        clear_global_main_cases_cache,
+        clear_scenario_snapshot_cache,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    removed_id, removed_revision_id = _create_comparison_scenario(database_path, 0.5)
+    shared_id, shared_revision_id = _create_comparison_scenario(
+        database_path, 2.0, name="공용 비교"
+    )
+    repository = DuckDBScenarioRepository(database_path)
+    repository.replace_global_comparison_scenario(shared_id, shared_revision_id, source="시험")
+    clear_global_comparison_scenario_cache()
+    _pick_comparison(app, removed_id, removed_revision_id)
+    app.run()
+    assert app.session_state[COMPARISON_SCENARIO_KEY] == removed_id
+
+    repository.archive_scenario(removed_id)
+    clear_scenario_snapshot_cache()
+    clear_global_comparison_scenario_cache()
+    clear_global_main_cases_cache()
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[COMPARISON_SCENARIO_KEY] == shared_id
+    gaps = _gap_annotations(app)
+    # 계획을 두 배로 늘린 공용 비교 대상과 견주므로 전부 감소다.
+    assert gaps and all(text.startswith("-") for text in gaps), gaps
+
+
 def test_a_comparison_scenario_newer_than_the_cached_list_is_kept(tmp_path: Path) -> None:
     """비교 후보 목록은 캐시라 새로 만든 시나리오가 늦게 든다 — 그런 세션 값은 DB 로 확인하고
     남긴다.

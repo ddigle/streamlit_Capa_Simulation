@@ -276,8 +276,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     팝업은 닫으며, 미지정 주요 Case 칩도 잠근다(`home_main_case_chips.stopped_chips`).
   - 얹기 규칙(EDP 제외 범위·확보율 보정 → 선행 `advance_load.py`·GAP 기준)은 6장, 판정 기준은 `securement_threshold.py`.
     비교 대상 프로필은 바뀔 때만 쓴다(`test_comparison_profile_writeback.py`·`test_summary_recheck_paths.py`).
-  - 세션의 비교 짝은 HOME 첫머리에서 심고(`seed_comparison_selection`) 바로 **걷는다**(`forget_unlisted_comparison` — 가리키는
-    시나리오가 보관·영구 삭제됐으면). 비교 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은 `Preference` 탭이
+  - 세션의 비교 짝은 HOME 첫머리에서 **걷고**(`forget_unlisted_comparison` — 가리키는 시나리오가 보관·영구 삭제됐으면) 바로
+    심는다(`seed_comparison_selection` — 걷었으면 같은 회차에 공용 프로필 값으로 선다). 비교 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은 `Preference` 탭이
     매 회차 걷었다 — 2026-11-02 검토). 목록은 비교 대상 프로필과 같은 쓰기 세대의 캐시
     (`persistence/cache.listed_comparison_candidates` — 보관·삭제가 그 세대를 올린다)이고, 캐시에 없을 때만 DB 목록으로 한 번
     더 본 뒤 걷는다(새 시나리오는 세대를 올리지 않는다). `tests/test_home_page.py` 의 `removed_elsewhere` ·

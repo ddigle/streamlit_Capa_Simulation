@@ -273,11 +273,12 @@ show_execution = home_toggle(st.session_state, EXECUTION_TOGGLE_KEY)
 plan_detail_customer = home_toggle(st.session_state, PLAN_DETAIL_CUSTOMER_KEY)
 # 비교 대상은 공용 프로필이라 새 브라우저 세션에도 남아 있다. 세션 키를 읽기 **전에**
 # 심어야 첫 화면부터 「GAP」 토글이 켜진다 — 심는 자리가 Preference 피커 안에만 있으면
-# 「HOME 설정」 팝업을 한 번 열어야 켜진다. 거꾸로 세션 값이 가리키는 시나리오를 다른 곳에서
-# 보관·삭제했으면 여기서 걷는다 — 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은
-# Preference 탭이 매 회차 걷었다). 목록은 캐시라 회차마다 DB 를 보지 않는다.
-seed_comparison_selection(str(DUCKDB_PATH.resolve()))
+# 「HOME 설정」 팝업을 한 번 열어야 켜진다. 그 앞에서 세션 값이 가리키는 시나리오를 다른 곳에서
+# 보관·삭제했으면 걷는다 — 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은
+# Preference 탭이 매 회차 걷었다). 목록은 캐시라 회차마다 DB 를 보지 않는다. 걷은 뒤 심으므로 같은
+# 회차에 공용 프로필 값(있으면)으로 선다 — 새 세션과 같다.
 forget_unlisted_comparison(str(DUCKDB_PATH.resolve()))
+seed_comparison_selection(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
 comparison_ready = bool(comparison_scenario_id and comparison_revision_id)
