@@ -22,6 +22,7 @@ from typing import Any, cast
 import duckdb
 import pytest
 
+from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS, GRID_HOST
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -4248,8 +4249,21 @@ def test_the_upeh_help_item_reads_what_the_app_draws() -> None:
     help_line = next(line for line in page.splitlines() if line.strip().startswith('"RQ_UPEH": "'))
     for word in screens.UPEH_HELP_WORDS:
         assert word in help_line
-    assert '":material/timer: UPEH",' in page
-    assert "help=value_help," in _text(COMPONENTS / "month_editor.py")
+    # 탭 대신 종류 단추 — 단추 key·「UPEH」 글이 앱 선언과 같다(값만 옮긴 상수).
+    assert screens.REFERENCE_DATASET_KEY == DATASET_KEY
+    assert DATASETS["RQ_UPEH"] == screens.UPEH_DATASET_LABEL
+    assert "key=DATASET_KEY," in page
+    # 그리드가 월 칸 머리(`data-kind="value"` columnheader)·풍선(`role="tooltip"`)·표 이름표를
+    # 그리는 글과, 페이지가 도움말을 그 표 규격에 싣는 글이 이 항목이 찾는 것과 같다.
+    assert screens.REFERENCE_GRID_SELECTOR == f".st-key-{GRID_HOST}"
+    core = _text(COMPONENTS / "edit_grid_assets" / "eg_core.js")
+    assert "cell.dataset.kind = isKey ? 'key' : 'value'" in core
+    assert "cell.setAttribute('role', 'columnheader')" in core
+    assert "tip.setAttribute('role', 'tooltip')" in core
+    assert "scroller.setAttribute('aria-label', m.title)" in core
+    assert screens.GRID_VALUE_HEAD_SELECTOR == '[role="columnheader"][data-kind="value"]'
+    assert screens.GRID_TOOLTIP_SELECTOR == '[role="tooltip"]'
+    assert "value_help=EDITOR_VALUE_HELP.get(table_name)," in page
     assert screens.REFERENCE_PAGE == "reference_data"
     assert '"app_pages/reference_data.py"' in _text(
         PROJECT_ROOT / "src" / "capa_simulation" / "navigation.py"

@@ -219,16 +219,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         " 않는다(`tests/test_reference_data_perf.py`)"
     ),
     (
-        "src/capa_simulation/components/month_editor.py",
-        "render_month_editor",
-        "f'{editor_key}_apply_flash'",
-    ): ("`st.empty` 한 자리 — 페이지가 같은 자리에 적용 오류를 덮어 쓴다(`editor_notice`)"),
-    (
-        "src/capa_simulation/components/month_editor.py",
-        "render_month_editor",
-        "_notice_key(editor_key)",
-    ): ("알림이 아니라 그 자리(`st.empty`) 손잡이를 비운다"),
-    (
         "src/capa_simulation/components/equipment_scenario_management.py",
         "render_equipment_scenario_management",
         "FLASH_KEY",

@@ -76,7 +76,7 @@ REQUIRED_TABLE_KEYS: dict[str, list[str]] = {
 # 그 가운데 0 이하 값도 계산 전체를 멈추는 표와 값 컬럼(`unit_capacity._assert_positive`).
 # 효율(`CAPA_RUN_RATE`) 0 이하는 그 경로만 제외 목록으로 빠지므로 여기 없다.
 POSITIVE_REQUIRED_COLUMNS: dict[str, str] = {"RQ_VITAL": "편중률", "RQ_RUN_DAY": "RUN_DAY"}
-# 오류문이 가리키는 기준 정보 화면의 탭 이름.
+# 오류문이 가리키는 기준 정보 화면의 표 이름(종류 단추 글).
 REQUIRED_TABLE_LABELS: dict[str, str] = {
     "RQ_RUN_RATE": "효율",
     "RQ_VITAL": "여유율",
@@ -158,7 +158,7 @@ def _ratio_parts(missing: dict[str, pd.DataFrame], limit: int) -> list[str]:
             examples.append(f"{month} · {path}")
         more = f" 외 {len(gap) - limit:,}건" if len(gap) > limit else ""
         parts.append(
-            f"「{labels.get(table_name, table_name)}」 탭에 {len(gap):,}건 — "
+            f"「{labels.get(table_name, table_name)}」 표에 {len(gap):,}건 — "
             f"{'; '.join(examples)}{more}"
         )
     return parts
@@ -179,7 +179,7 @@ def describe_missing_ratio_rows(missing: dict[str, pd.DataFrame], limit: int = 3
         "UPEH 에 새로 만든 경로의 측정률 행이 없습니다. 새 경로는 측정률을 먼저 갖춘 뒤에 "
         "만듭니다 — 이대로 두면 계산이 그 경로의 측정률을 1.0 으로 가정합니다. "
         + " / ".join(_ratio_parts(missing, limit))
-        + ". 그 탭에서 같은 행의 같은 달 칸에 값을 넣고 「변경사항 적용」을 누른 뒤 UPEH 를 "
+        + ". 그 표에서 같은 행의 같은 달 칸에 값을 넣고 「변경사항 적용」을 누른 뒤 UPEH 를 "
         "다시 적용하세요 — 측정 대상이 아닌 경로라면 `1` 이 중립값입니다."
     )
 
@@ -378,8 +378,8 @@ def nonpositive_keys_in_use(
 
     여유율·일수(`POSITIVE_REQUIRED_COLUMNS`)에만 쓴다. 둘은 0 이하면 계산 전체가
     「… 0보다 커야 합니다」(`unit_capacity._assert_positive`)로 멈추는데, 편집기는 0 을 받는다
-    (`month_editor` 의 `min_value` 0). 비우기만 막고 0 은 받아, 쓰는 칸에 0 을 넣으면 적용·저장이
-    되고 계산이 멈췄다(2026-09-29 2차 리뷰).
+    (편집 그리드 칸 하한 0 — `reference_grid.GRID_FORMATS`). 비우기만 막고 0 은 받아, 쓰는 칸에
+    0 을 넣으면 적용·저장이 되고 계산이 멈췄다(2026-09-29 2차 리뷰).
 
     막는 범위는 계산과 같다 — **쓰는 경로가 없는 칸의 0 은 둔다**(계산이 멈추지 않는다). 0 이하
     검사는 제외 뒤에 남은 경로에만 돌므로 뒤에서 빠질 경로에만 붙은 칸도 쓰지 않는 칸이다.
@@ -550,7 +550,7 @@ def describe_missing_path_rows(
     for table_name, gap in missing_required.items():
         value_column = REQUIRED_VALUE_COLUMNS[table_name]
         parts.append(
-            f"「{REQUIRED_TABLE_LABELS[table_name]}」 탭에 {len(gap):,}건 — "
+            f"「{REQUIRED_TABLE_LABELS[table_name]}」 표에 {len(gap):,}건 — "
             f"{_key_examples(gap, table_name, limit, value_column)}"
         )
         values = pd.to_numeric(gap[value_column], errors="coerce")
@@ -582,7 +582,7 @@ def describe_missing_path_rows(
         + ", ".join(halts)
         + ")."
         + ratio_note
-        + " 그 탭에서 같은 행의 같은 달 칸에 먼저 0보다 큰 값을 넣고 「변경사항 적용」을 누른 뒤 "
+        + " 그 표에서 같은 행의 같은 달 칸에 먼저 0보다 큰 값을 넣고 「변경사항 적용」을 누른 뒤 "
         f"{retry} 다시 적용하세요" + neutral_note
     )
 

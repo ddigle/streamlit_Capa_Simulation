@@ -279,10 +279,12 @@ EQUIPMENT_CARD_KEY: Final = "condition_card_equipment"
 GAP_PROCESS_KEY: Final = "equipment_gap_process_filter_v1"
 GAP_ALL_PROCESSES: Final = "전체 합계"
 GAP_DETAIL_LINK_LABEL: Final = "공정 Capa 상세 ④ 에서 비가동 화살표로 보기"
-# 기준 정보(`app_pages/reference_data.py`) 첫 탭 UPEH 편집표의 월 칸 머리 도움말
-# (`EDITOR_VALUE_HELP`)에서 찾는 글 둘. 풍선은 머리 칸 위에 마우스를 올려야 선다(Glide 캔버스 —
-# 머리 칸 DOM 은 크기가 0).
+# 기준 정보(`app_pages/reference_data.py`) 종류 단추 「UPEH」(기본 종류) 그리드의 월 칸 머리 도움말
+# (`EDITOR_VALUE_HELP`)에서 찾는 글 둘. 풍선은 머리 칸 위에 마우스를 올려야 선다. 종류 단추는 탭이
+# 아니라 본문 전환(`reference_grid_keys.DATASET_KEY`)이다 — 값만 옮기고 테스트가 같은지 본다.
 REFERENCE_PAGE: Final = "reference_data"
+REFERENCE_DATASET_KEY: Final = "reference_dataset"
+UPEH_DATASET_LABEL: Final = "UPEH"
 UPEH_HELP_WORDS: Final = ("UPEH", "ST(분)")
 # 제약 시뮬레이션(`app_pages/constraint_simulation.py`)과 그 화면의 컨테이너 key
 # (`constraint_simulation_state`·`constraint_simulation_view`·페이지 까닭 카드). 값만 옮기고
@@ -5076,25 +5078,14 @@ def check_entry_sections(screen: Screen) -> str:
     return summarize_entry_sections(collapsed, home, warnings, gap, restored)
 
 
-# 데이터 편집기(Glide)의 보이는 첫 표 — 그 상자 좌표. 머리 칸 풍선은 머리 줄 위에 마우스가 있을 때만
-# 선다(`stDataFrameTooltipContent`).
-_FIRST_GRID_JS = """() => {
-  const main = document.querySelector('[data-testid="stMain"]');
-  const selector = '[data-testid="stDataFrame"], [data-testid="stDataEditor"]';
-  const grids = [...(main ? main.querySelectorAll(selector) : [])].filter(
-    (grid) => grid.getBoundingClientRect().width > 0
-  );
-  if (!grids.length) return null;
-  const rect = grids[0].getBoundingClientRect();
-  return {left: rect.left, top: rect.top, width: rect.width};
-}"""
-_GRID_TOOLTIP_JS = """() => {
-  const tip = document.querySelector('[data-testid="stDataFrameTooltipContent"]');
-  return tip ? (tip.innerText || "").trim() : "";
-}"""
-# 머리 줄의 세로 자리(표 위 끝부터, px)와 훑는 가로 걸음.
-GRID_HEADER_PROBE_Y_PX: Final = 17
-GRID_HEADER_PROBE_STEP_PX: Final = 60
+# 기준 정보 범용 편집 그리드(`components/edit_grid` — 그림자 DOM, Playwright CSS 로케이터가 열린
+# 그림자를 뚫는다)의 값 칸 머리와 그 머리 풍선 칸. 풍선은 머리에 마우스를 올린 뒤 300ms 에 선다.
+# 값만 옮기고 시험이 그리드 자산 글과 같은지 본다.
+REFERENCE_GRID_SELECTOR: Final = ".st-key-reference_grid"
+GRID_VALUE_HEAD_SELECTOR: Final = '[role="columnheader"][data-kind="value"]'
+GRID_TOOLTIP_SELECTOR: Final = '[role="tooltip"]'
+# 그 표가 UPEH 인지 — 스크롤 칸(`role="grid"`)의 이름표가 표 제목이다.
+GRID_SELECTOR: Final = '[role="grid"]'
 
 
 def summarize_upeh_help(text: str | None) -> str:
@@ -5111,31 +5102,42 @@ def summarize_upeh_help(text: str | None) -> str:
 
 
 def check_upeh_help(screen: Screen) -> str:
-    """기준 정보 → UPEH 편집표의 월 칸 머리에 마우스를 올려 도움말 풍선이 서는지, 그 글이 Main
-    UPEH · MI ST(분)를 밝히는지. 머리 칸 DOM 은 크기가 0 이라(Glide 캔버스) 머리 줄 좌표를 오른쪽
-    끝(월 칸)부터 왼쪽으로 훑는다. 칸은 고치지 않는다."""
+    """기준 정보 → 종류 단추 「UPEH」 그리드의 첫 월 칸 머리에 마우스를 올려 도움말 풍선이 서는지,
+    그 글이 Main UPEH · MI ST(분)를 밝히는지. 칸은 고치지 않는다. 고른 종류는 세션에 남아 다음 항목·
+    사람 손에 남지 않게 끝에 되돌린다."""
     screen.step("페이지 열기")
     screen.open_page(REFERENCE_PAGE)
-    screen.open_tab("UPEH")
-    grid = screen.page.locator(
-        '[data-testid="stMain"] [data-testid="stDataFrame"], '
-        '[data-testid="stMain"] [data-testid="stDataEditor"]'
-    )
-    if not screen.poll(grid.count, timeout=120, accept=lambda count: count > 0):
+    before = _choose_segment(screen, REFERENCE_DATASET_KEY, UPEH_DATASET_LABEL)
+    try:
+        return _read_upeh_help(screen)
+    finally:
+        if before and before != UPEH_DATASET_LABEL:
+            _choose_segment(screen, REFERENCE_DATASET_KEY, before)
+
+
+def _read_upeh_help(screen: Screen) -> str:
+    host = screen.page.locator(f'[data-testid="stMain"] {REFERENCE_GRID_SELECTOR}')
+    grid = host.locator(GRID_SELECTOR)
+    head = host.locator(GRID_VALUE_HEAD_SELECTOR)
+
+    def upeh_ready() -> bool:
+        if not grid.count() or not head.count():
+            return False
+        return bool(grid.first.get_attribute("aria-label") == UPEH_DATASET_LABEL)
+
+    if not screen.poll(upeh_ready, timeout=120, accept=bool):
         return summarize_upeh_help(None)
-    grid.first.scroll_into_view_if_needed()
-    screen.step("머리 줄 훑기")
-    box = screen.wait_stable(lambda: screen.js(_FIRST_GRID_JS), timeout=15)
-    y = float(box["top"]) + GRID_HEADER_PROBE_Y_PX
-    right = float(box["left"]) + float(box["width"]) - 20
-    text = ""
-    x = right
-    while x > float(box["left"]) and not text:
-        screen.page.mouse.move(x, y)
-        text = str(screen.poll(lambda: screen.js(_GRID_TOOLTIP_JS), timeout=1.5, accept=bool))
-        x -= GRID_HEADER_PROBE_STEP_PX
-    screen.page.mouse.move(float(box["left"]), max(y - 60, 1.0))
-    return summarize_upeh_help(text)
+    head.first.scroll_into_view_if_needed()
+    screen.step("월 칸 머리에 올리기")
+    head.first.hover()
+    tip = host.locator(GRID_TOOLTIP_SELECTOR).first
+    text = screen.poll(
+        lambda: tip.inner_text().strip() if tip.is_visible() else "", timeout=3, accept=bool
+    )
+    box = host.first.bounding_box()
+    if box is not None:
+        screen.page.mouse.move(float(box["x"]), max(float(box["y"]) - 60, 1.0))
+    return summarize_upeh_help(str(text or ""))
 
 
 # 배치 편집기 영역 요소(그림자 DOM — 로케이터가 뚫는다). 영역은 이름표만 눌림을 받는다.

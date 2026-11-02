@@ -38,8 +38,8 @@ from capa_simulation.services.unit_capacity import (
 
 BIGDATAQUERY_PIPELINE_VERSION: Final = "bigdataquery-core-data-v6"
 
-# 대당 Capa 를 멈춘 표 → 기준 정보 화면의 탭(낫표까지 — 앱이 지은 이름이다). 모듈수(`RQ_MODULE`)는
-# 편집·리비전 대상이 아니다.
+# 대당 Capa 를 멈춘 표 → 기준 정보 화면의 표(종류 단추 글, 낫표까지 — 앱이 지은 이름이다).
+# 모듈수(`RQ_MODULE`)는 편집·리비전 대상이 아니다.
 _EDIT_TABS: Final = {
     "RQ_UPEH": "「UPEH」",
     "RQ_RUN_RATE": "「효율」",
@@ -97,7 +97,7 @@ class RegistrationCapacityCheck:
         return f"대당 Capa 계산 멈춤({self.table or '기준정보'})"
 
     def fix_hint(self, revision_no: int) -> str:
-        """어떻게 푸는지 — 고칠 탭과 다음 리비전 번호."""
+        """어떻게 푸는지 — 고칠 표와 다음 리비전 번호."""
         table = self.table
         if table == "RQ_MODULE":
             return (
@@ -110,7 +110,7 @@ class RegistrationCapacityCheck:
                 "없습니다 — 원천을 고쳐 다시 등록하세요."
             )
         tab = _EDIT_TABS.get(table or "")
-        where = f"기준 정보 화면 {tab} 탭" if tab else "기준 정보 화면"
+        where = f"기준 정보 화면 {tab} 표" if tab else "기준 정보 화면"
         return (
             f"{where}에서 그 칸에 0보다 큰 값을 넣고 「변경사항 적용」 뒤 새 리비전으로 저장하면 "
             f"r{revision_no + 1}부터 계산이 섭니다."

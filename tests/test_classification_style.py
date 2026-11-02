@@ -11,7 +11,6 @@ import pandas as pd
 from pandas.io.formats.style import Styler
 from streamlit.elements.lib.pandas_styler_utils import marshall_styler
 from streamlit.proto.ArrowData_pb2 import ArrowData
-from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.month_editor import (
     CLASSIFICATION_STYLE_MAX_CELLS,
@@ -71,53 +70,3 @@ def test_small_table_marshals_exactly_as_before() -> None:
 
     assert actual.SerializeToString() == expected.SerializeToString()
     assert f"background-color: {tokens.SURFACE_CLASSIFICATION}" in actual.styler.styles
-
-
-EDITOR_SCRIPT = r"""
-import pandas as pd
-import streamlit as st
-
-import capa_simulation.components.month_editor as month_editor
-from capa_simulation.components.tab_state import stateful_tabs
-
-ROWS = 3
-table = pd.DataFrame(
-    {
-        "공정": [f"Process-{index}" for index in range(ROWS)],
-        "202608": [float(index) for index in range(ROWS)],
-        "202609": [float(index) for index in range(ROWS)],
-    }
-)
-tabs = stateful_tabs(["편집"], key="style_test_tab")
-month_editor.render_month_editor(
-    tabs[0],
-    table,
-    ["공정"],
-    "style_demo_editor",
-    "%,.0f",
-    1.0,
-    table_name="RQ_DEMO",
-    csv_file_name="demo.csv",
-    dialog_key="style_demo_dialog",
-    on_paste=lambda imported: None,
-    card_name="style_demo",
-)
-"""
-
-
-def _editor_styles(rows: int) -> str:
-    app = AppTest.from_string(
-        EDITOR_SCRIPT.replace("ROWS = 3", f"ROWS = {rows}"), default_timeout=60
-    ).run()
-    assert not app.exception
-    (editor,) = app.get("dataframe")
-    return str(editor.proto.arrow_data.styler.styles)
-
-
-def test_month_editor_paints_small_tables_and_skips_large_ones() -> None:
-    """편집기는 그리는 표가 상한 이하이면 분류 컬럼을 칠하고, 넘으면 Styler 를 보내지 않는다."""
-    small_styles = _editor_styles(3)
-    large_rows = CLASSIFICATION_STYLE_MAX_CELLS // 3 + 1
-
-    assert f"background-color: {tokens.SURFACE_CLASSIFICATION}" in small_styles
-    assert _editor_styles(large_rows) == ""

@@ -94,6 +94,7 @@ def parse_reference_edit_clipboard(
     *,
     min_value: float | None = None,
     max_value: float | None = None,
+    integer: bool = False,
 ) -> pd.DataFrame:
     """Read a header-inclusive Excel clipboard block using the existing table contract."""
     source = parse_clipboard_table(content, table_name)
@@ -104,6 +105,7 @@ def parse_reference_edit_clipboard(
         table_name,
         min_value=min_value,
         max_value=max_value,
+        integer=integer,
     )
 
 
@@ -115,10 +117,12 @@ def validate_reference_edit_table(
     *,
     min_value: float | None = None,
     max_value: float | None = None,
+    integer: bool = False,
 ) -> pd.DataFrame:
     """Require the same columns and classification rows as the current edit template.
 
-    `min_value`·`max_value` 는 그 표 편집 격자의 하한·상한이다(`assert_edit_value_range`).
+    `min_value`·`max_value`·`integer` 는 그 표 편집 격자의 하한·상한·정수 규칙이다
+    (`assert_edit_value_range`).
     """
     source = source.dropna(how="all").reset_index(drop=True)
     expected_columns = [str(column) for column in template.columns]
@@ -180,6 +184,7 @@ def validate_reference_edit_table(
         table_name,
         min_value=min_value,
         max_value=max_value,
+        integer=integer,
     )
     return result
 
@@ -273,8 +278,11 @@ def assert_edit_value_range(
     *,
     min_value: float | None,
     max_value: float | None,
+    integer: bool = False,
 ) -> None:
-    """붙여넣은 값 칸이 편집 격자와 **같은 범위** 안인지 본다. 둘 다 `None` 이면 보지 않는다.
+    """붙여넣은 값 칸이 편집 격자와 **같은 범위** 안인지 본다. 하한·상한이 둘 다 `None` 이고
+    정수 규칙(`integer` — 일수)도 없으면 보지 않는다. 정수 규칙은 그리드 칸 오류와 같다 —
+    그리드가 막는 일수 30.5 를 붙여넣기가 받으면 두 입력 길이 어긋난다.
 
     격자는 `NumberColumn` 의 하한·상한(`reference_data.EDITOR_FORMATS`)으로 값을 받는다. 붙여넣기가
     그 범위를 지나지 않으면 측정률 85% 를 `85` 로 적거나 `1.2`·음수를 붙여넣은 것이 그대로 적용돼
@@ -284,7 +292,7 @@ def assert_edit_value_range(
     칸과 맞댄다. **양식과 같은 값은 보지 않는다** — 원천에 이미 있던 값까지 막으면 다른 칸을
     고치려던 사람이 자기가 만들지 않은 값에 걸린다(격자도 고치지 않은 칸은 검사하지 않는다).
     """
-    if min_value is None and max_value is None:
+    if min_value is None and max_value is None and not integer:
         return
     value_columns = [column for column in table.columns if column not in key_columns]
     key_rows = table[key_columns].to_numpy()
@@ -295,8 +303,10 @@ def assert_edit_value_range(
             if _is_blank(value):
                 continue
             number = float(str(value).strip())
-            if (min_value is None or number >= min_value) and (
-                max_value is None or number <= max_value
+            if (
+                (min_value is None or number >= min_value)
+                and (max_value is None or number <= max_value)
+                and (not integer or number.is_integer())
             ):
                 continue
             if before is not None and _same_number(before[position], number):
@@ -312,7 +322,7 @@ def assert_edit_value_range(
             break
     if not offenders:
         return
-    bounds = _range_text(min_value, max_value)
+    bounds = _range_text(min_value, max_value, integer=integer)
     ratio_hint = " 비율 칸은 85% 를 `85` 가 아니라 `0.85` 로 적습니다." if max_value == 1.0 else ""
     raise ValueError(
         f"{table_name} 입력 표에 편집 표가 받는 범위({bounds}) 밖의 값이 있습니다: "
@@ -330,12 +340,18 @@ def _same_number(before: object, number: float) -> bool:
         return False
 
 
-def _range_text(min_value: float | None, max_value: float | None) -> str:
-    if max_value is None:
-        return f"{min_value:g} 이상"
-    if min_value is None:
-        return f"{max_value:g} 이하"
-    return f"{min_value:g} ~ {max_value:g}"
+def _range_text(min_value: float | None, max_value: float | None, *, integer: bool = False) -> str:
+    if min_value is None and max_value is None:
+        text = ""
+    elif max_value is None:
+        text = f"{min_value:g} 이상"
+    elif min_value is None:
+        text = f"{max_value:g} 이하"
+    else:
+        text = f"{min_value:g} ~ {max_value:g}"
+    if not integer:
+        return text
+    return f"{text} 정수" if text else "정수"
 
 
 def count_removed_values(
@@ -345,9 +361,9 @@ def count_removed_values(
 ) -> int:
     """양식에는 값이 있는데 붙여넣은 표에서는 빈 칸이 된 자리 수.
 
-    **오류가 아니다** — 그 달을 지우는 것은 정당한 편집이다. 다만 붙여넣기는 격자와 달리
-    적용 전에 변경 수를 보여 주지 않아(`month_editor.count_month_changes` 는 격자 표만
-    센다) 한 열이 통째로 비어 온 것도 조용히 지나간다. 적용 뒤 문구로 알린다.
+    **오류가 아니다** — 그 달을 지우는 것은 정당한 편집이다. 다만 붙여넣기는 편집 그리드와
+    달리 적용 전에 변경 수를 보여 주지 않아(그리드는 작업 줄 「변경사항 확인 N개 값」) 한 열이
+    통째로 비어 온 것도 조용히 지나간다. 적용 뒤 문구로 알린다.
     """
     value_columns = [
         column

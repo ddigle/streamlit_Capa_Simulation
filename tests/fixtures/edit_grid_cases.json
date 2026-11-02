@@ -1,0 +1,2369 @@
+{
+ "formats": {
+  "rate": {
+   "kind": "percent",
+   "digits": 2,
+   "int": false,
+   "min": 0.0,
+   "max": 1.0,
+   "blankZero": false
+  },
+  "vital": {
+   "kind": "percent",
+   "digits": 2,
+   "int": false,
+   "min": 0.0,
+   "max": null,
+   "blankZero": false
+  },
+  "days": {
+   "kind": "fixed",
+   "digits": 0,
+   "int": true,
+   "min": 0.0,
+   "max": null,
+   "blankZero": false
+  },
+  "count": {
+   "kind": "fixed",
+   "digits": 2,
+   "int": false,
+   "min": 0.0,
+   "max": null,
+   "blankZero": true
+  },
+  "upeh": {
+   "kind": "sig",
+   "digits": 6,
+   "int": false,
+   "min": 0.0,
+   "max": null,
+   "blankZero": false
+  }
+ },
+ "coerce": [
+  {
+   "raw": "85%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": " 0.85 ",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "85",
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "max",
+   "text": "85"
+  },
+  {
+   "raw": "85",
+   "fmt": "rate",
+   "template": 85.0,
+   "value": 85.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "120%",
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "max",
+   "text": "120%"
+  },
+  {
+   "raw": "100%",
+   "fmt": "rate",
+   "template": null,
+   "value": 1.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-5%",
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "min",
+   "text": "-5%"
+  },
+  {
+   "raw": "98.75%",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.9875,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "85 %",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "%",
+   "fmt": "vital",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "%"
+  },
+  {
+   "raw": "85%",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "85%"
+  },
+  {
+   "raw": "1,234.5",
+   "fmt": "upeh",
+   "template": null,
+   "value": 1234.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1,5",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "1,5"
+  },
+  {
+   "raw": "12,34",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "12,34"
+  },
+  {
+   "raw": "1,234,567",
+   "fmt": "upeh",
+   "template": null,
+   "value": 1234567.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1e3",
+   "fmt": "upeh",
+   "template": null,
+   "value": 1000.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1E-2",
+   "fmt": "upeh",
+   "template": null,
+   "value": 0.01,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-0",
+   "fmt": "upeh",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "inf",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "inf"
+  },
+  {
+   "raw": "-Infinity",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "-Infinity"
+  },
+  {
+   "raw": "NaN",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "NaN"
+  },
+  {
+   "raw": "1e999",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "finite",
+   "text": "1e999"
+  },
+  {
+   "raw": "30.5",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "int",
+   "text": "30.5"
+  },
+  {
+   "raw": "30",
+   "fmt": "days",
+   "template": null,
+   "value": 30.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "30.0",
+   "fmt": "days",
+   "template": null,
+   "value": 30.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-1",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "min",
+   "text": "-1"
+  },
+  {
+   "raw": "-1.5",
+   "fmt": "days",
+   "template": null,
+   "value": null,
+   "error": "min",
+   "text": "-1.5"
+  },
+  {
+   "raw": "#N/A",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "#N/A"
+  },
+  {
+   "raw": "",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "   ",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "",
+   "fmt": "count",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": null,
+   "fmt": "count",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": null,
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "abc",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "abc"
+  },
+  {
+   "raw": "12abc",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "12abc"
+  },
+  {
+   "raw": "+5",
+   "fmt": "upeh",
+   "template": null,
+   "value": 5.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": ".5",
+   "fmt": "upeh",
+   "template": null,
+   "value": 0.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "5.",
+   "fmt": "upeh",
+   "template": null,
+   "value": 5.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0x10",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "0x10"
+  },
+  {
+   "raw": "1_000",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "1_000"
+  },
+  {
+   "raw": " 12　",
+   "fmt": "upeh",
+   "template": null,
+   "value": 12.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "１２",
+   "fmt": "upeh",
+   "template": null,
+   "value": null,
+   "error": "num",
+   "text": "１２"
+  },
+  {
+   "raw": 85,
+   "fmt": "rate",
+   "template": null,
+   "value": null,
+   "error": "max",
+   "text": "85"
+  },
+  {
+   "raw": 0.5,
+   "fmt": "rate",
+   "template": null,
+   "value": 0.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-3",
+   "fmt": "upeh",
+   "template": -3.0,
+   "value": -3.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "2.5",
+   "fmt": "days",
+   "template": 2.5,
+   "value": 2.5,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1,234%",
+   "fmt": "vital",
+   "template": null,
+   "value": 12.34,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "-0.0",
+   "fmt": "days",
+   "template": null,
+   "value": 0.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1e3",
+   "fmt": "days",
+   "template": null,
+   "value": 1000.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0.1",
+   "fmt": "count",
+   "template": null,
+   "value": 0.1,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1,000.25",
+   "fmt": "count",
+   "template": null,
+   "value": 1000.25,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "85%",
+   "fmt": "rate",
+   "template": 0.85,
+   "value": 0.85,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "99.99%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.9999,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "1e2%",
+   "fmt": "rate",
+   "template": null,
+   "value": 1.0,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "0.5%",
+   "fmt": "rate",
+   "template": null,
+   "value": 0.005,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": "5.%",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.05,
+   "error": null,
+   "text": null
+  },
+  {
+   "raw": ".5%",
+   "fmt": "vital",
+   "template": null,
+   "value": 0.005,
+   "error": null,
+   "text": null
+  }
+ ],
+ "format": [
+  {
+   "value": 0.9875,
+   "fmt": "vital",
+   "text": "98.75%"
+  },
+  {
+   "value": 0.85,
+   "fmt": "vital",
+   "text": "85%"
+  },
+  {
+   "value": 1,
+   "fmt": "vital",
+   "text": "100%"
+  },
+  {
+   "value": 0.987,
+   "fmt": "vital",
+   "text": "98.7%"
+  },
+  {
+   "value": 0.00125,
+   "fmt": "vital",
+   "text": "0.13%"
+  },
+  {
+   "value": 12.3456,
+   "fmt": "vital",
+   "text": "1,234.56%"
+  },
+  {
+   "value": 0,
+   "fmt": "vital",
+   "text": "0%"
+  },
+  {
+   "value": 0.33333333,
+   "fmt": "rate",
+   "text": "33.33%"
+  },
+  {
+   "value": 30,
+   "fmt": "days",
+   "text": "30"
+  },
+  {
+   "value": 1234,
+   "fmt": "days",
+   "text": "1,234"
+  },
+  {
+   "value": 2.5,
+   "fmt": "days",
+   "text": "3"
+  },
+  {
+   "value": 0.125,
+   "fmt": "count",
+   "text": "0.13"
+  },
+  {
+   "value": 1234.5,
+   "fmt": "count",
+   "text": "1,234.50"
+  },
+  {
+   "value": 0,
+   "fmt": "count",
+   "text": "0.00"
+  },
+  {
+   "value": -1.005,
+   "fmt": "count",
+   "text": "-1.00"
+  },
+  {
+   "value": 0.3333333333333333,
+   "fmt": "count",
+   "text": "0.33"
+  },
+  {
+   "value": 1234.5,
+   "fmt": "upeh",
+   "text": "1,234.5"
+  },
+  {
+   "value": 1234567,
+   "fmt": "upeh",
+   "text": "1.23457e+06"
+  },
+  {
+   "value": 1234565,
+   "fmt": "upeh",
+   "text": "1.23457e+06"
+  },
+  {
+   "value": 999999.5,
+   "fmt": "upeh",
+   "text": "1e+06"
+  },
+  {
+   "value": 0.000123456789,
+   "fmt": "upeh",
+   "text": "0.000123457"
+  },
+  {
+   "value": 1.23456e-05,
+   "fmt": "upeh",
+   "text": "1.23456e-05"
+  },
+  {
+   "value": 100,
+   "fmt": "upeh",
+   "text": "100"
+  },
+  {
+   "value": 0.1,
+   "fmt": "upeh",
+   "text": "0.1"
+  },
+  {
+   "value": 0.6666666666666666,
+   "fmt": "upeh",
+   "text": "0.666667"
+  },
+  {
+   "value": 123456,
+   "fmt": "upeh",
+   "text": "123,456"
+  },
+  {
+   "value": -42.5,
+   "fmt": "upeh",
+   "text": "-42.5"
+  },
+  {
+   "value": 1e+21,
+   "fmt": "upeh",
+   "text": "1e+21"
+  },
+  {
+   "value": null,
+   "fmt": "upeh",
+   "text": ""
+  },
+  {
+   "value": 1e-05,
+   "fmt": "upeh",
+   "text": "1e-05"
+  },
+  {
+   "value": 99999.95,
+   "fmt": "upeh",
+   "text": "99,999.9"
+  },
+  {
+   "value": 5e-324,
+   "fmt": "upeh",
+   "text": "4.94066e-324"
+  }
+ ],
+ "grid": {
+  "keyCount": 2,
+  "fmt": "upeh",
+  "values": [
+   [
+    1,
+    2,
+    3,
+    4
+   ],
+   [
+    5,
+    6,
+    null,
+    8
+   ],
+   [
+    9,
+    10,
+    11,
+    12
+   ],
+   [
+    13,
+    14,
+    15,
+    16
+   ],
+   [
+    17,
+    18,
+    19,
+    20
+   ],
+   [
+    21,
+    22,
+    23,
+    24
+   ]
+  ]
+ },
+ "fill": [
+  {
+   "name": "handle-down",
+   "select": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "drag": [
+    4,
+    3
+   ],
+   "plan": {
+    "dir": "down",
+    "rows": [
+     2,
+     3,
+     4
+    ],
+    "cols": [
+     2,
+     3
+    ],
+    "srcRows": [
+     0,
+     1
+    ],
+    "srcCols": [
+     2,
+     3
+    ],
+    "cells": 6,
+    "skipped": 0,
+    "span": {
+     "r0": 0,
+     "r1": 4,
+     "c0": 2,
+     "c1": 3
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     1,
+     2,
+     11,
+     12
+    ],
+    [
+     5,
+     6,
+     15,
+     16
+    ],
+    [
+     1,
+     2,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-up",
+   "select": [
+    3,
+    4,
+    4,
+    5
+   ],
+   "drag": [
+    0,
+    5
+   ],
+   "plan": {
+    "dir": "up",
+    "rows": [
+     2,
+     1,
+     0
+    ],
+    "cols": [
+     4,
+     5
+    ],
+    "srcRows": [
+     3,
+     4
+    ],
+    "srcCols": [
+     4,
+     5
+    ],
+    "cells": 6,
+    "skipped": 0,
+    "span": {
+     "r0": 0,
+     "r1": 4,
+     "c0": 4,
+     "c1": 5
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     19,
+     20
+    ],
+    [
+     5,
+     6,
+     15,
+     16
+    ],
+    [
+     9,
+     10,
+     19,
+     20
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-right",
+   "select": [
+    1,
+    2,
+    2,
+    3
+   ],
+   "drag": [
+    2,
+    5
+   ],
+   "plan": {
+    "dir": "right",
+    "rows": [
+     1,
+     2
+    ],
+    "cols": [
+     4,
+     5
+    ],
+    "srcRows": [
+     1,
+     2
+    ],
+    "srcCols": [
+     2,
+     3
+    ],
+    "cells": 4,
+    "skipped": 0,
+    "span": {
+     "r0": 1,
+     "r1": 2,
+     "c0": 2,
+     "c1": 5
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     5,
+     6
+    ],
+    [
+     9,
+     10,
+     9,
+     10
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-left-into-keys",
+   "select": [
+    0,
+    0,
+    4,
+    5
+   ],
+   "drag": [
+    0,
+    1
+   ],
+   "plan": {
+    "dir": "left",
+    "rows": [
+     0
+    ],
+    "cols": [
+     3,
+     2
+    ],
+    "srcRows": [
+     0
+    ],
+    "srcCols": [
+     4,
+     5
+    ],
+    "cells": 2,
+    "skipped": 1,
+    "span": {
+     "r0": 0,
+     "r1": 0,
+     "c0": 1,
+     "c1": 5
+    }
+   },
+   "result": [
+    [
+     3,
+     4,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-left-partial-pattern",
+   "select": [
+    5,
+    5,
+    3,
+    5
+   ],
+   "drag": [
+    5,
+    2
+   ],
+   "plan": {
+    "dir": "left",
+    "rows": [
+     5
+    ],
+    "cols": [
+     2
+    ],
+    "srcRows": [
+     5
+    ],
+    "srcCols": [
+     3,
+     4,
+     5
+    ],
+    "cells": 1,
+    "skipped": 0,
+    "span": {
+     "r0": 5,
+     "r1": 5,
+     "c0": 2,
+     "c1": 5
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     24,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-tie-goes-vertical",
+   "select": [
+    2,
+    2,
+    3,
+    3
+   ],
+   "drag": [
+    3,
+    4
+   ],
+   "plan": {
+    "dir": "down",
+    "rows": [
+     3
+    ],
+    "cols": [
+     3
+    ],
+    "srcRows": [
+     2
+    ],
+    "srcCols": [
+     3
+    ],
+    "cells": 1,
+    "skipped": 0,
+    "span": {
+     "r0": 2,
+     "r1": 3,
+     "c0": 3,
+     "c1": 3
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     10,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-down-keys-skipped",
+   "select": [
+    0,
+    0,
+    0,
+    3
+   ],
+   "drag": [
+    1,
+    3
+   ],
+   "plan": {
+    "dir": "down",
+    "rows": [
+     1
+    ],
+    "cols": [
+     2,
+     3
+    ],
+    "srcRows": [
+     0
+    ],
+    "srcCols": [
+     2,
+     3
+    ],
+    "cells": 2,
+    "skipped": 2,
+    "span": {
+     "r0": 0,
+     "r1": 1,
+     "c0": 0,
+     "c1": 3
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     1,
+     2,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-down-repeats-blank",
+   "select": [
+    0,
+    2,
+    4,
+    4
+   ],
+   "drag": [
+    5,
+    4
+   ],
+   "plan": {
+    "dir": "down",
+    "rows": [
+     3,
+     4,
+     5
+    ],
+    "cols": [
+     4
+    ],
+    "srcRows": [
+     0,
+     1,
+     2
+    ],
+    "srcCols": [
+     4
+    ],
+    "cells": 3,
+    "skipped": 0,
+    "span": {
+     "r0": 0,
+     "r1": 5,
+     "c0": 4,
+     "c1": 4
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     3,
+     16
+    ],
+    [
+     17,
+     18,
+     null,
+     20
+    ],
+    [
+     21,
+     22,
+     11,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "handle-inside-does-nothing",
+   "select": [
+    0,
+    2,
+    2,
+    3
+   ],
+   "drag": [
+    1,
+    2
+   ],
+   "plan": null
+  },
+  {
+   "name": "ctrl-d-rows",
+   "select": [
+    2,
+    4,
+    3,
+    4
+   ],
+   "key": "down",
+   "plan": {
+    "dir": "down",
+    "rows": [
+     3,
+     4
+    ],
+    "cols": [
+     3,
+     4
+    ],
+    "srcRows": [
+     2
+    ],
+    "srcCols": [
+     3,
+     4
+    ],
+    "cells": 4,
+    "skipped": 0,
+    "span": {
+     "r0": 2,
+     "r1": 4,
+     "c0": 3,
+     "c1": 4
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     10,
+     11,
+     16
+    ],
+    [
+     17,
+     10,
+     11,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "ctrl-d-one-row-takes-the-row-above",
+   "select": [
+    1,
+    1,
+    2,
+    5
+   ],
+   "key": "down",
+   "plan": {
+    "dir": "down",
+    "rows": [
+     1
+    ],
+    "cols": [
+     2,
+     3,
+     4,
+     5
+    ],
+    "srcRows": [
+     0
+    ],
+    "srcCols": [
+     2,
+     3,
+     4,
+     5
+    ],
+    "cells": 4,
+    "skipped": 0,
+    "span": {
+     "r0": 0,
+     "r1": 1,
+     "c0": 2,
+     "c1": 5
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "ctrl-d-copies-a-blank",
+   "select": [
+    1,
+    2,
+    4,
+    4
+   ],
+   "key": "down",
+   "plan": {
+    "dir": "down",
+    "rows": [
+     2
+    ],
+    "cols": [
+     4
+    ],
+    "srcRows": [
+     1
+    ],
+    "srcCols": [
+     4
+    ],
+    "cells": 1,
+    "skipped": 0,
+    "span": {
+     "r0": 1,
+     "r1": 2,
+     "c0": 4,
+     "c1": 4
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     null,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "ctrl-d-top-row-has-no-source",
+   "select": [
+    0,
+    0,
+    2,
+    3
+   ],
+   "key": "down",
+   "plan": {
+    "error": "noSource"
+   }
+  },
+  {
+   "name": "ctrl-r-whole-rows-skip-keys",
+   "select": [
+    4,
+    5,
+    0,
+    5
+   ],
+   "key": "right",
+   "plan": {
+    "dir": "right",
+    "rows": [
+     4,
+     5
+    ],
+    "cols": [
+     3,
+     4,
+     5
+    ],
+    "srcRows": [
+     4,
+     5
+    ],
+    "srcCols": [
+     2
+    ],
+    "cells": 6,
+    "skipped": 4,
+    "span": {
+     "r0": 4,
+     "r1": 5,
+     "c0": 2,
+     "c1": 5
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     17,
+     17,
+     17
+    ],
+    [
+     21,
+     21,
+     21,
+     21
+    ]
+   ]
+  },
+  {
+   "name": "ctrl-r-one-column-takes-the-left",
+   "select": [
+    1,
+    2,
+    4,
+    4
+   ],
+   "key": "right",
+   "plan": {
+    "dir": "right",
+    "rows": [
+     1,
+     2
+    ],
+    "cols": [
+     4
+    ],
+    "srcRows": [
+     1,
+     2
+    ],
+    "srcCols": [
+     3
+    ],
+    "cells": 2,
+    "skipped": 0,
+    "span": {
+     "r0": 1,
+     "r1": 2,
+     "c0": 3,
+     "c1": 4
+    }
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     6,
+     8
+    ],
+    [
+     9,
+     10,
+     10,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "ctrl-r-first-value-column-has-no-source",
+   "select": [
+    0,
+    0,
+    2,
+    2
+   ],
+   "key": "right",
+   "plan": {
+    "error": "noSource"
+   }
+  },
+  {
+   "name": "ctrl-r-keys-only-is-locked",
+   "select": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "key": "right",
+   "plan": {
+    "error": "locked"
+   }
+  }
+ ],
+ "paste": [
+  {
+   "name": "one-value-fills-the-range",
+   "select": [
+    1,
+    3,
+    3,
+    4
+   ],
+   "matrix": [
+    [
+     "7"
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 1,
+    "r1": 3,
+    "c0": 3,
+    "c1": 4,
+    "values": [
+     [
+      "7"
+     ]
+    ],
+    "cells": 6,
+    "valueCells": 1,
+    "clipped": 0,
+    "skipped": 0
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     7,
+     7,
+     8
+    ],
+    [
+     9,
+     7,
+     7,
+     12
+    ],
+    [
+     13,
+     7,
+     7,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "column-block-repeats-down",
+   "select": [
+    0,
+    3,
+    2,
+    2
+   ],
+   "matrix": [
+    [
+     "31"
+    ],
+    [
+     "32"
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 0,
+    "r1": 3,
+    "c0": 2,
+    "c1": 2,
+    "values": [
+     [
+      "31"
+     ],
+     [
+      "32"
+     ]
+    ],
+    "cells": 4,
+    "valueCells": 2,
+    "clipped": 0,
+    "skipped": 0
+   },
+   "result": [
+    [
+     31,
+     2,
+     3,
+     4
+    ],
+    [
+     32,
+     6,
+     null,
+     8
+    ],
+    [
+     31,
+     10,
+     11,
+     12
+    ],
+    [
+     32,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "repeat-from-a-key-column-keeps-the-excel-phase",
+   "select": [
+    0,
+    1,
+    1,
+    4
+   ],
+   "matrix": [
+    [
+     "41",
+     "42"
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 0,
+    "r1": 1,
+    "c0": 2,
+    "c1": 4,
+    "values": [
+     [
+      "42",
+      "41"
+     ]
+    ],
+    "cells": 6,
+    "valueCells": 2,
+    "clipped": 0,
+    "skipped": 2
+   },
+   "result": [
+    [
+     42,
+     41,
+     42,
+     4
+    ],
+    [
+     42,
+     41,
+     42,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "not-a-multiple-pastes-at-the-anchor",
+   "select": [
+    0,
+    2,
+    2,
+    4
+   ],
+   "matrix": [
+    [
+     "51",
+     "52"
+    ],
+    [
+     "53",
+     "54"
+    ]
+   ],
+   "plan": {
+    "tiled": false,
+    "r0": 0,
+    "r1": 1,
+    "c0": 2,
+    "c1": 3,
+    "values": [
+     [
+      "51",
+      "52"
+     ],
+     [
+      "53",
+      "54"
+     ]
+    ],
+    "cells": 4,
+    "valueCells": 4,
+    "clipped": 0,
+    "skipped": 0
+   },
+   "result": [
+    [
+     51,
+     52,
+     3,
+     4
+    ],
+    [
+     53,
+     54,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "anchor-clips-at-the-table-end",
+   "select": [
+    5,
+    5,
+    5,
+    5
+   ],
+   "matrix": [
+    [
+     "61",
+     "62"
+    ],
+    [
+     "63",
+     "64"
+    ]
+   ],
+   "plan": {
+    "tiled": false,
+    "r0": 5,
+    "r1": 5,
+    "c0": 5,
+    "c1": 5,
+    "values": [
+     [
+      "61"
+     ]
+    ],
+    "cells": 1,
+    "valueCells": 1,
+    "clipped": 3,
+    "skipped": 0
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     61
+    ]
+   ]
+  },
+  {
+   "name": "block-repeats-both-ways",
+   "select": [
+    0,
+    3,
+    2,
+    5
+   ],
+   "matrix": [
+    [
+     "1.5",
+     "2.5"
+    ],
+    [
+     "3.5",
+     "4.5"
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 0,
+    "r1": 3,
+    "c0": 2,
+    "c1": 5,
+    "values": [
+     [
+      "1.5",
+      "2.5"
+     ],
+     [
+      "3.5",
+      "4.5"
+     ]
+    ],
+    "cells": 16,
+    "valueCells": 4,
+    "clipped": 0,
+    "skipped": 0
+   },
+   "result": [
+    [
+     1.5,
+     2.5,
+     1.5,
+     2.5
+    ],
+    [
+     3.5,
+     4.5,
+     3.5,
+     4.5
+    ],
+    [
+     1.5,
+     2.5,
+     1.5,
+     2.5
+    ],
+    [
+     3.5,
+     4.5,
+     3.5,
+     4.5
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "ragged-block-keeps-the-missing-cells",
+   "select": [
+    0,
+    1,
+    2,
+    5
+   ],
+   "matrix": [
+    [
+     "8",
+     "9"
+    ],
+    [
+     "10"
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 0,
+    "r1": 1,
+    "c0": 2,
+    "c1": 5,
+    "values": [
+     [
+      "8",
+      "9"
+     ],
+     [
+      "10",
+      null
+     ]
+    ],
+    "cells": 6,
+    "valueCells": 4,
+    "clipped": 0,
+    "skipped": 0
+   },
+   "result": [
+    [
+     8,
+     9,
+     8,
+     9
+    ],
+    [
+     10,
+     6,
+     10,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     19,
+     20
+    ],
+    [
+     21,
+     22,
+     23,
+     24
+    ]
+   ]
+  },
+  {
+   "name": "keys-only-range-writes-nothing",
+   "select": [
+    0,
+    1,
+    0,
+    1
+   ],
+   "matrix": [
+    [
+     "X"
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 0,
+    "r1": 1,
+    "c0": 2,
+    "c1": 1,
+    "values": [],
+    "cells": 0,
+    "valueCells": 0,
+    "clipped": 0,
+    "skipped": 4
+   }
+  },
+  {
+   "name": "blank-clears-the-range",
+   "select": [
+    4,
+    5,
+    4,
+    5
+   ],
+   "matrix": [
+    [
+     ""
+    ]
+   ],
+   "plan": {
+    "tiled": true,
+    "r0": 4,
+    "r1": 5,
+    "c0": 4,
+    "c1": 5,
+    "values": [
+     [
+      ""
+     ]
+    ],
+    "cells": 4,
+    "valueCells": 1,
+    "clipped": 0,
+    "skipped": 0
+   },
+   "result": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    [
+     5,
+     6,
+     null,
+     8
+    ],
+    [
+     9,
+     10,
+     11,
+     12
+    ],
+    [
+     13,
+     14,
+     15,
+     16
+    ],
+    [
+     17,
+     18,
+     null,
+     null
+    ],
+    [
+     21,
+     22,
+     null,
+     null
+    ]
+   ]
+  }
+ ]
+}

@@ -5,14 +5,11 @@
 Streamlit 1.63 `st.data_editor` 는 `placeholder` 를 주지 않으면 결측 칸에 회색 `None` 글자를
 쓴다. 가이드·경고문은 그 칸을 「빈칸」이라 부르므로(비운 붙여넣기, 값이 없는 달, 편집 불가 달)
 화면과 글이 어긋났다. 편집표를 새로 더할 때 인자를 빠뜨리는 것이 이 결함의 모양이라 소스 전체를
-훑어 막고, 공용 월 편집기는 실제로 그린 위젯에서 한 번 더 본다.
+훑어 막는다(기준 정보 편집 표 아홉은 범용 편집 그리드라 빈칸을 그리드가 빈 글로 그린다).
 """
 
 import ast
 from pathlib import Path
-
-from streamlit.testing.v1 import AppTest
-from test_month_editor_filter import EDITOR_SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = (ROOT / "app.py", ROOT / "app_pages", ROOT / "src")
@@ -73,16 +70,3 @@ def test_the_list_of_editors_fixed_elsewhere_is_not_stale() -> None:
         name for name in FIXED_ELSEWHERE if (ROOT / name).exists() and name not in missing
     )
     assert not stale, stale
-
-
-def test_the_month_editor_widget_carries_an_empty_placeholder() -> None:
-    """기준 정보 탭들이 함께 쓰는 월 편집기가 실제로 그린 편집표에 빈 `placeholder` 가 실린다."""
-    app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
-    assert not app.exception
-
-    # 읽기 전용 표(`st.dataframe`)는 `editing_mode` 가 0 이다. 편집표만 고른다.
-    editors = [element.proto for element in app.dataframe if element.proto.editing_mode]
-    assert editors
-    for proto in editors:
-        assert proto.HasField("placeholder")
-        assert proto.placeholder == ""

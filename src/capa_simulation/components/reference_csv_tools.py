@@ -25,13 +25,15 @@ def render_reference_clipboard_form(
     key: str,
     min_value: float | None = None,
     max_value: float | None = None,
+    integer: bool = False,
 ) -> pd.DataFrame | None:
     """양식 내려받기와 붙여넣기 칸을 그리고, 제출되면 검증한 표를 돌려준다.
 
     팝업(`st.dialog`) 안에서 쓴다 — 붙여넣기는 표 위 작업 줄의 「Excel 붙여넣기」 팝업이다
     (2026-09-28·29 사용자 결정). 완료 알림은 팝업이 닫힌 뒤 본문 작업 줄 아래에 떠야 보이므로
     부르는 쪽이 정하고, 설명은 Guide 가 맡는다. `min_value`·`max_value` 는 같은 표 편집 격자의
-    하한·상한이다 — 붙여넣은 값도 그 범위를 지난다(`reference_csv.assert_edit_value_range`).
+    하한·상한이고 `integer` 는 정수 규칙(일수)이다 — 붙여넣은 값도 그 범위를 지난다
+    (`reference_csv.assert_edit_value_range`).
     """
     render_csv_download(
         data=reference_edit_csv_bytes(data, key_columns),
@@ -64,6 +66,7 @@ def render_reference_clipboard_form(
             table_name,
             min_value=min_value,
             max_value=max_value,
+            integer=integer,
         )
     except ValueError as exc:
         st.error(bootstrap_error_message(exc))
