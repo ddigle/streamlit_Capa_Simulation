@@ -28,6 +28,10 @@ from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
 
 LOGGER = logging.getLogger(names.LOGGER_NAME)
 MAX_EVENTS = 50
+# 로그인하지 않은 누구나 남길 수 있는 사건(콜백 · 로그인 시작의 실패). 따로 둔 고리에만 쌓고
+# 사유별로 센다 — 한 고리에 두면 무인증 요청 수십 번으로 실제 로그인 · 로그아웃 · 설정 기록이
+# 밀려난다(C-DEP 에는 로그 창구가 없어 이 고리가 운영자가 보는 유일한 감사 창이다).
+ANONYMOUS_EVENTS = frozenset({"login_fail", "idp_error"})
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
 MAX_REVOKED = 10_000
@@ -42,6 +46,8 @@ class SsoEvent:
     at: int
     event: str
     fields: tuple[tuple[str, str], ...]
+    # 기동 뒤 몇 번째 사건인가 — 두 고리를 합칠 때 같은 초 안의 차례를 지킨다.
+    seq: int = 0
 
     def value(self, key: str) -> str:
         return dict(self.fields).get(key, "")
@@ -56,6 +62,9 @@ class _State:
     used_states: dict[str, int] = field(default_factory=dict)
     diagnostics: OrderedDict[str, tuple[int, dict[str, str]]] = field(default_factory=OrderedDict)
     events: deque[SsoEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENTS))
+    anonymous_events: deque[SsoEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENTS))
+    anonymous_counts: dict[str, int] = field(default_factory=dict)
+    event_seq: int = 0
 
 
 _LOCK = threading.Lock()
@@ -223,22 +232,63 @@ def _clean_field(value: object) -> str:
     return cleaned[:_FIELD_LIMIT] or "-"
 
 
-def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> None:
-    """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(최대 50).
+def is_anonymous(item: SsoEvent) -> bool:
+    """로그인하지 않은 누구나 남길 수 있는 사건인가 — 서명이 통과하기 전의 실패(계정 없음)."""
+    return item.event in ANONYMOUS_EVENTS and item.value("loginid") in ("", "-")
 
-    토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽 규칙).
+
+def _anonymous_key(item: SsoEvent) -> str:
+    code = item.value("reason") or item.value("error") or "-"
+    return f"{item.event}:{code}"
+
+
+def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> None:
+    """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
+
+    무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다 — 다른 사건(설정 · 로그인 ·
+    로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을 밀어내지 못한다. 토큰 · state · nonce · 쿠키 ·
+    비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽 규칙).
     """
     cleaned = tuple((key, _clean_field(value)) for key, value in fields.items())
     line = f"sso event={_clean_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
     LOGGER.log(level, line)
     with _LOCK:
-        _STATE.events.append(SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned))
+        _STATE.event_seq += 1
+        item = SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned, seq=_STATE.event_seq)
+        if is_anonymous(item):
+            _STATE.anonymous_events.append(item)
+            key = _anonymous_key(item)
+            if key in _STATE.anonymous_counts or len(_STATE.anonymous_counts) < MAX_EVENTS:
+                _STATE.anonymous_counts[key] = _STATE.anonymous_counts.get(key, 0) + 1
+            else:
+                other = f"{item.event}:other"
+                _STATE.anonymous_counts[other] = _STATE.anonymous_counts.get(other, 0) + 1
+        else:
+            _STATE.events.append(item)
 
 
-def recent_events(limit: int = MAX_EVENTS) -> list[SsoEvent]:
-    """최근 사건, 새것 먼저."""
+def recent_events(limit: int = MAX_EVENTS, *, anonymous: bool | None = None) -> list[SsoEvent]:
+    """최근 사건, 새것 먼저. `anonymous` 가 `False` 면 무인증 실패를 뺀 것, `True` 면 그것만,
+    `None` 이면 두 고리를 시각 차례로 합친 것."""
     with _LOCK:
-        return list(reversed(_STATE.events))[:limit]
+        if anonymous is None:
+            pool = sorted(
+                [*_STATE.events, *_STATE.anonymous_events],
+                key=lambda item: item.seq,
+                reverse=True,
+            )
+        elif anonymous:
+            pool = list(reversed(_STATE.anonymous_events))
+        else:
+            pool = list(reversed(_STATE.events))
+    return pool[:limit]
+
+
+def anonymous_failure_counts() -> dict[str, int]:
+    """기동 뒤 무인증 실패 누계 — `사건:사유` 별, 많은 것 먼저. 고리에서 밀려난 것도 센다."""
+    with _LOCK:
+        counts = dict(_STATE.anonymous_counts)
+    return dict(sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])))
 
 
 def reset() -> None:

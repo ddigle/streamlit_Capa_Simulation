@@ -372,7 +372,27 @@ def test_unknown_idp_error_text_is_not_echoed() -> None:
         body=urlencode({"error": "<script>x</script>", "state": "s" * 43}).encode(),
     )
 
-    assert error_code_of(response) == "idp_error:unknown"
+    assert error_code_of(response) == "idp_error:other"
+    (event,) = [item for item in runtime.recent_events() if item.event == "idp_error"]
+    assert event.value("error") == "unknown"
+
+
+def test_a_nonstandard_idp_error_is_kept_for_the_admin_but_not_shown() -> None:
+    """콜백은 누구나 보낸다 — 표준이 아닌 오류 이름은 사유 코드에 싣지 않고 사건 기록에만 남긴다."""
+    use_config()
+
+    response = http(
+        routes_app(),
+        "POST",
+        names.CALLBACK_PATH,
+        headers=FORM,
+        body=urlencode({"error": "call_the_it_desk_now", "state": "s" * 43}).encode(),
+    )
+
+    assert error_code_of(response) == "idp_error:other"
+    assert "call_the_it_desk_now" not in (response.header("location") or "")
+    (event,) = [item for item in runtime.recent_events() if item.event == "idp_error"]
+    assert event.value("error") == "call_the_it_desk_now"
 
 
 def test_missing_state_cookie_is_state_missing() -> None:
@@ -504,6 +524,39 @@ def test_error_page_without_a_kept_diagnostic_shows_the_code_only() -> None:
 
     assert known.status == 400 and "state_missing" in known.text
     assert odd.status == 400 and "unknown" in odd.text and "<b>" not in odd.text
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "claim_missing:SESSION_LOCKED.Call_IT_desk_and_read_your_AD_password_to_the_agent",
+        "phishing_notice:Call_the_IT_desk",
+        "idp_error:read_your_password_to_the_agent",
+        "claim_invalid:another_claim",
+        "state_missing:extra",
+    ],
+)
+def test_error_page_does_not_show_a_made_up_code(code: str) -> None:
+    """로그인 없이 여는 오류 주소의 질의 글을 그대로 실으면 앱 화면에 남이 고른 문장이 선다."""
+    use_config()
+
+    page = http(routes_app(), "GET", f"{names.ERROR_PATH}?{urlencode({'code': code})}")
+
+    assert page.status == 400
+    assert "사유 코드 <code>unknown</code>" in page.text
+    assert code.split(":", 1)[-1] not in page.text
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["state_missing", "idp_error:access_denied", "idp_error:other", "claim_missing:loginid"],
+)
+def test_error_page_shows_the_codes_this_server_makes(code: str) -> None:
+    use_config()
+
+    page = http(routes_app(), "GET", f"{names.ERROR_PATH}?{urlencode({'code': code})}")
+
+    assert f"사유 코드 <code>{code}</code>" in page.text
 
 
 def test_session_cookie_too_large_fails(monkeypatch: pytest.MonkeyPatch) -> None:

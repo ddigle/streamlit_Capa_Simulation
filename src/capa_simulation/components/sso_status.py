@@ -40,6 +40,8 @@ from capa_simulation.sidebar_status import remembered_expander
 EXPANDER_KEY = "admin_area_sso_status"
 START_STEP_LABEL = "통합인증"
 RECENT_EVENT_LIMIT = 20
+ANONYMOUS_EVENT_LIMIT = 10
+ANONYMOUS_COUNT_LIMIT = 8
 CERT_WARNING_DAYS = 30
 
 VERDICT_ON = "켜짐"
@@ -162,13 +164,15 @@ def _event_code(fields: dict[str, str]) -> str:
     return f"남은 날 {days}" if days else "-"
 
 
-def recent_event_table(limit: int = RECENT_EVENT_LIMIT) -> pd.DataFrame:
+def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = False) -> pd.DataFrame:
     """최근 사건(새것 먼저) — 시각 | 사건 | 사유 코드 | 계정(앞 두 글자).
 
-    IdP 의 오류 설명(`error_description`)은 싣지 않는다.
+    기본은 무인증 실패를 뺀 고리(설정 · 로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)다 —
+    로그인하지 않은 누구나 남길 수 있는 실패가 이 표를 밀어내지 못한다. `anonymous=True` 면 그
+    실패만 따로 본다. IdP 의 오류 설명(`error_description`)은 싣지 않는다.
     """
     rows = []
-    for event in runtime.recent_events(limit):
+    for event in runtime.recent_events(limit, anonymous=anonymous):
         fields = dict(event.fields)
         loginid = fields.get("loginid", "-")
         rows.append(
@@ -180,6 +184,21 @@ def recent_event_table(limit: int = RECENT_EVENT_LIMIT) -> pd.DataFrame:
             )
         )
     return pd.DataFrame(rows, columns=["시각", "사건", "사유 코드", "계정"])
+
+
+def anonymous_failure_line(limit: int = ANONYMOUS_COUNT_LIMIT) -> str | None:
+    """무인증 실패 누계 한 줄(기동 뒤 · 사유별 · 많은 것 먼저). 없으면 `None`."""
+    counts = runtime.anonymous_failure_counts()
+    if not counts:
+        return None
+    total = sum(counts.values())
+    items = list(counts.items())
+    shown = " · ".join(f"{literal_markdown(key)} {count}" for key, count in items[:limit])
+    rest = f" · 그 밖 {len(items) - limit}가지" if len(items) > limit else ""
+    return (
+        f"로그인 전 실패(로그인하지 않은 누구나 보낼 수 있는 요청 — 따로 셉니다): 누계 {total} · "
+        f"{shown}{rest}"
+    )
 
 
 def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
@@ -225,3 +244,11 @@ def render_sso_status() -> None:
         else:
             st.caption("최근 사건(새것 먼저 · 재시작하면 비워진다)")
             st.dataframe(events, hide_index=True, width="stretch")
+        anonymous = anonymous_failure_line()
+        if anonymous is not None:
+            st.caption(anonymous)
+            st.dataframe(
+                recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
+                hide_index=True,
+                width="stretch",
+            )

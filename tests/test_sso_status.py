@@ -145,3 +145,70 @@ def test_the_started_environment_caption_lists_names_only(
     presence: dict[str, bool] | None, expected: str | None
 ) -> None:
     assert sso_status.started_environment_caption(presence) == expected
+
+
+def _flood(times: int) -> None:
+    """로그인하지 않은 사람이 콜백으로 남길 수 있는 실패를 `times` 번 남긴다."""
+    for index in range(times):
+        runtime.record_event("idp_error", level=logging.WARNING, error="access_denied")
+        runtime.record_event(
+            "login_fail",
+            level=logging.WARNING,
+            reason="idp_error:access_denied" if index % 2 else "state_missing",
+            loginid="-",
+        )
+
+
+def test_anonymous_failures_cannot_push_out_the_audit_events() -> None:
+    """무인증 콜백 수십 번이 실제 로그인 · 설정 · 인증서 기록을 고리에서 밀어내지 못한다."""
+    use_config()
+    runtime.record_event("cert_expiring", level=logging.WARNING, days="12", x5t="abcd")
+    runtime.record_event("login_ok", loginid="dev.user", hours="12", jti="abcdefgh")
+    runtime.record_event(
+        "login_fail", level=logging.WARNING, reason="aud_mismatch", loginid="dev.user"
+    )
+
+    _flood(runtime.MAX_EVENTS * 2)
+
+    kept = [event.event for event in runtime.recent_events(anonymous=False)]
+    assert kept == ["login_fail", "login_ok", "cert_expiring", "config"]
+    anonymous = runtime.recent_events(anonymous=True)
+    assert len(anonymous) == runtime.MAX_EVENTS
+    assert {event.event for event in anonymous} == {"idp_error", "login_fail"}
+    assert runtime.anonymous_failure_counts() == {
+        "idp_error:access_denied": 100,
+        "login_fail:idp_error:access_denied": 50,
+        "login_fail:state_missing": 50,
+    }
+    merged = runtime.recent_events(runtime.MAX_EVENTS * 3)
+    assert len(merged) == runtime.MAX_EVENTS + 4
+
+
+def test_anonymous_failure_kinds_are_capped() -> None:
+    """IdP 오류 원문은 남이 고를 수 있다 — 사유 가짓수는 고리 크기까지만 세고 나머지는 한데 센다."""
+    use_config()
+
+    for index in range(runtime.MAX_EVENTS + 10):
+        runtime.record_event("idp_error", level=logging.WARNING, error=f"made_up_{index}")
+
+    counts = runtime.anonymous_failure_counts()
+    assert len(counts) == runtime.MAX_EVENTS + 1
+    assert counts["idp_error:other"] == 10
+
+
+def test_the_status_shows_audit_events_and_anonymous_failures_apart() -> None:
+    use_config()
+    runtime.mark_gate_installed()
+    runtime.record_event("login_ok", loginid="dev.user", hours="12", jti="abcdefgh")
+    _flood(30)
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    events = app.dataframe[1].value
+    assert events["사건"].tolist() == ["login_ok", "config"]
+    caption = [str(c.value) for c in app.caption if str(c.value).startswith("로그인 전 실패")]
+    assert len(caption) == 1 and "누계 60" in caption[0]
+    anonymous = app.dataframe[2].value
+    assert len(anonymous) == sso_status.ANONYMOUS_EVENT_LIMIT
+    assert set(anonymous["계정"].tolist()) == {"-"}

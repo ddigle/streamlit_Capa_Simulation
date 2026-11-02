@@ -10,7 +10,8 @@
 - `GET /auth/sso/login?next=` — 이미 로그인이면 next 로, 아니면 IdP 로(302).
 - `GET /auth/sso/logout` — 쿠키를 지우고 세션을 폐기 목록에 넣은 뒤 안내 화면. IdP 로 자동으로
   보내지 않는다.
-- `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면.
+- `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. 진단이 없거나 지났으면 질의 `code` 를
+  싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다.
 
 모든 주소(Location · 링크)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청의 Host · `X-Forwarded-*` 는 보지
 않는다(앞단을 거치며 포트가 사라지는 일을 막는다). 화면에 싣는 값은 모두 `html.escape` 하고, 토큰 ·
@@ -70,8 +71,34 @@ HTML_HEADERS = {
 
 _STATE_VALUE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 _DIAGNOSTIC_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
-_REASON_CODE = re.compile(r"^[a-z_]{1,40}(:[\x21-\x7e]{1,200})?$")
 _IDP_ERROR = re.compile(r"^[a-z_]{1,40}$")
+# IdP 가 form_post 로 보낼 수 있는 오류 코드(OAuth 2.0 · OpenID Connect 의 인가 응답 오류). 화면 ·
+# 오류 주소의 사유 코드에는 이 이름만 싣고, 그 밖은 `other` 다 — 콜백은 누구나 보낼 수 있어 아무
+# 글이나 앱 화면에 띄우는 길이 된다. 받은 원문(꼴이 맞을 때)은 관리자만 보는 사건 기록에 남긴다.
+IDP_ERROR_CODES = frozenset(
+    {
+        "invalid_request",
+        "unauthorized_client",
+        "access_denied",
+        "unsupported_response_type",
+        "invalid_scope",
+        "server_error",
+        "temporarily_unavailable",
+        "interaction_required",
+        "login_required",
+        "account_selection_required",
+        "consent_required",
+        "invalid_request_uri",
+        "invalid_request_object",
+        "request_not_supported",
+        "request_uri_not_supported",
+        "registration_not_supported",
+        "invalid_client",
+        "invalid_grant",
+        "unsupported_grant_type",
+    }
+)
+IDP_ERROR_OTHER = "other"
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 SameSite = Literal["lax", "strict", "none"]
@@ -467,6 +494,24 @@ def reason_text(code: str) -> str:
     return REASON_TEXT.get(code, "로그인하지 못했습니다.")
 
 
+def allowed_reason_codes(cfg: SsoConfig) -> frozenset[str]:
+    """오류 주소의 질의 `code` 로 받아 화면에 실을 수 있는 사유 코드 — 이 서버가 내는 것뿐이다.
+
+    `GET /auth/sso/error?code=` 는 로그인 없이 열리고 링크로 보낼 수 있다. 질의 글을 그대로 실으면
+    앱의 출처 · 「로그인하지 못했습니다」 제목 아래 남이 고른 문장(피싱 안내)이 선다. 그래서 정해
+    둔 이름(`REASON_TEXT` · IdP 오류 코드 · 설정한 loginid 클레임 이름의 빠짐/꼴)만 받고 그 밖은
+    `unknown`.
+    """
+    return frozenset(
+        {
+            *REASON_TEXT,
+            *(f"idp_error:{code}" for code in (*IDP_ERROR_CODES, IDP_ERROR_OTHER)),
+            f"claim_missing:{cfg.claim_loginid}",
+            f"claim_invalid:{cfg.claim_loginid}",
+        }
+    )
+
+
 def error_page(
     cfg: SsoConfig, code: str, details: Mapping[str, str] | None, *, status: int
 ) -> HTMLResponse:
@@ -600,10 +645,11 @@ async def callback(request: Request) -> Response:
 
     idp_error = form.get("error")
     if idp_error is not None:
-        detail = idp_error if _IDP_ERROR.match(idp_error) else "unknown"
+        received = idp_error if _IDP_ERROR.match(idp_error) else "unknown"
+        detail = idp_error if idp_error in IDP_ERROR_CODES else IDP_ERROR_OTHER
         description = clean_text(form.get("error_description", ""), 200)
         runtime.record_event(
-            "idp_error", level=logging.WARNING, error=detail, description=description
+            "idp_error", level=logging.WARNING, error=received, description=description
         )
         return _fail(cfg, f"idp_error:{detail}", state=state, now=now)
 
@@ -696,6 +742,6 @@ async def error(request: Request) -> Response:
         code = record.get("code", "unknown")
     else:
         code = request.query_params.get("code", "")
-        if not _REASON_CODE.match(code):
+        if code not in allowed_reason_codes(cfg):
             code = "unknown"
     return error_page(cfg, code, record, status=400)
