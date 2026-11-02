@@ -1294,11 +1294,14 @@ ACCEPT_RULES: Final = 1
 # 다시 정한다 — 명세 7절 8단계).
 MOVE_TOL_PX: Final = 2
 # 데이터 자리 — 실데이터가 자리나 크기를 정하는 `named:` 표적(첫 부족 칸 · 고칠 칸이 놓인 행 ·
-# 머리 띠 글 폭 · 배지 글 · 행 수나 공정에 따라 높이가 바뀌는 그림 · 표). 원고 자리가 이 가운데
-# 하나라도 쓰면 그 자리는 기준 파일에 좌표 · 틀 · 지문을 적지 않고 회차마다 `바뀜 <자리> 데이터
-# 자리` 로 검수 목록에 든다. 처음에는 확인한 넷(BN_CELL · EDIT_CELL · EDIT_ROW · HEADER_BAND ·
-# SIDEBAR_BADGE)과 후보를 모두 넣었다(더 잡는 쪽). 사외가 합성 시드를 바꿔 다시 찍어 움직이지
-# 않는 후보를 뺀다(확인한 넷은 빼지 않는다).
+# 머리 띠 글 폭 · 배지 글 · 행 수나 공정에 따라 높이가 바뀌는 그림 · 표 · 팝업). 원고 자리가 이
+# 가운데 하나라도 쓰면 그 자리는 기준 파일에 좌표 · 틀 · 지문을 적지 않고 회차마다 `바뀜 <자리>
+# 데이터 자리` 로 검수 목록에 든다. 코드로 확인한 넷(BN_CELL · EDIT_CELL · EDIT_ROW · HEADER_BAND ·
+# SIDEBAR_BADGE)은 빼지 않는다. 나머지는 사외가 합성 시드를 바꿔 다시 찍어 움직인 것이다(2026-11-02
+# — 행 · 부족 칸 · 이름 길이 · 리비전 · 시나리오를 늘린 판과 제품 · 공정을 줄인 판): 후보 가운데
+# 움직인 GRID · LAST_GRID · DETAIL_BN · KEY_PROCESS_GRID · LOB_BN_BARS · PROC_MONTH_CANVAS 는 두고
+# 움직이지 않은 LOB_CHART · LOB_LABEL 은 뺐으며, 후보 밖에서 움직인 PF_TILES(공정 수만큼 타일) ·
+# DIALOG(그 안의 타일 · 리비전 목록)를 더했다. 같은 HEAD 두 벌은 모든 표적이 Δ0 이었다.
 DATA_SHAPED: Final = frozenset(
     {
         "BN_CELL",
@@ -1310,10 +1313,10 @@ DATA_SHAPED: Final = frozenset(
         "LAST_GRID",
         "DETAIL_BN",
         "KEY_PROCESS_GRID",
-        "LOB_CHART",
-        "LOB_LABEL",
         "LOB_BN_BARS",
         "PROC_MONTH_CANVAS",
+        "PF_TILES",
+        "DIALOG",
     }
 )
 # 흔들림 구간 — 기준과 견준 배치 자리마다 가장 큰 Δ(px)를 센다.
@@ -1641,11 +1644,12 @@ def merge_accepted(report: ChangeReport) -> dict[str, dict[str, Any]]:
 def accepted_key_problems(skeleton: Skeleton, document: Mapping[str, Any]) -> list[str]:
     """쓰기 전에 본다 — 자리 키가 지금 원고의 자리이고 데이터 자리가 아니며, 표적 키가 그 자리가
     가리키는 `표적@상태` 인가. 어긋난 키(원고 · 계획 ID)만 돌려준다."""
+    known = set(place_order(skeleton.content))
     targets = _place_targets(skeleton.content)
     data = data_places(skeleton)
     problems: list[str] = []
     for where, record in document["places"].items():
-        if where not in targets or where in data:
+        if where not in known or where in data:
             problems.append(where)
         problems += [key for key in record["t"] if key not in targets.get(where, [])]
     return problems

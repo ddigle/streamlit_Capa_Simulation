@@ -1167,6 +1167,17 @@ def test_fingerprint_is_the_sorted_compact_json_sha256_head() -> None:
     assert core.seal({"seal": "x", "b": [1, None], "a": "가"}) == expected
 
 
+def test_data_shaped_keeps_the_measured_names() -> None:
+    """2026-11-02 사외 측정(합성 시드를 바꾼 판 둘) — 움직인 이름은 데이터 자리로 남고, 두 판
+    모두에서 Δ0 이던 LOB_CHART · LOB_LABEL 만 뺐다. 목록을 줄이려면 다시 재고 이 시험을 고친다."""
+    moved = {"GRID", "LAST_GRID", "DETAIL_BN", "KEY_PROCESS_GRID", "LOB_BN_BARS"}
+    moved |= {"PROC_MONTH_CANVAS", "PF_TILES", "DIALOG"}
+
+    assert core.DATA_SHAPED == CONFIRMED_DATA_SHAPED | moved
+    assert {"thumb:proc_filter", "step:proc_filter.toggle"} <= core.data_places(SKELETON)
+    assert "thumb:lob_map" not in core.data_places(SKELETON)
+
+
 def test_the_lob_script_has_38_places_and_the_data_places_follow_data_shaped() -> None:
     places = core.place_order(SKELETON.content)
     data = core.data_places(SKELETON)
@@ -1520,7 +1531,8 @@ def test_a_move_within_the_tolerance_is_not_a_change_and_keeps_the_old_record(de
     result = desk.check()
 
     assert f"; 바뀜 {_data_count()}/{PLACES_COMPARED}; " in result.line
-    assert "  흔들림 0:22 1-2:1 3-9:0 10+:0" in result.err.splitlines()
+    layout = PLACES_COMPARED - _data_count()
+    assert f"  흔들림 0:{layout - 1} 1-2:1 3-9:0 10+:0" in result.err.splitlines()
     desk.accept()
     assert desk.baseline()["places"]["step:proc_filter.apply"] == before
 
@@ -1549,7 +1561,7 @@ def test_a_box_shared_by_places_is_compared_in_each_place(desk: Desk) -> None:
 
 
 def test_a_lost_and_then_found_target_is_named(desk: Desk) -> None:
-    key = "pf_all_on@04_procfilter_open"
+    key = "subtab_own@08_ref_avail"  # 배치 자리 하나(step:change_avail.tabs)만 쓰는 표적
     name, _, state_id = key.partition("@")
     shots = core.load_shots(desk.work)
     rect = shots.states[state_id].targets.pop(name)
@@ -1567,11 +1579,11 @@ def test_a_lost_and_then_found_target_is_named(desk: Desk) -> None:
     core.save_shots(shots, desk.work)
     lost = desk.check()
 
-    assert f"찾음 {key}" in found.changed["step:proc_filter.toggle"].split(" · ")
-    assert f"잃음 {key}" in lost.changed["step:proc_filter.toggle"].split(" · ")
+    assert f"찾음 {key}" in found.changed["step:change_avail.tabs"].split(" · ")
+    assert f"잃음 {key}" in lost.changed["step:change_avail.tabs"].split(" · ")
     assert f"ng {key}" in lost.line
     assert {where for where, why in lost.changed.items() if "잃음" in why} == {
-        "step:proc_filter.toggle"
+        "step:change_avail.tabs"
     }
 
 
@@ -1579,11 +1591,11 @@ def test_a_different_piece_count_is_a_frame_change_and_is_not_counted_as_wobble(
     desk: Desk,
 ) -> None:
     desk.accept()
-    desk.edit("pf_all_on@04_procfilter_open", x=1100.0)  # 흩어져 SPLIT_W 를 넘는다
+    desk.edit("subtab_own@08_ref_avail", x=1100.0)  # 흩어져 SPLIT_W 를 넘는다
 
     result = desk.check()
 
-    assert "틀" in result.changed["step:proc_filter.toggle"].split(" · ")
+    assert "틀" in result.changed["step:change_avail.tabs"].split(" · ")
     counted = sum(int(part.split(":")[1]) for part in result.err.split("흔들림 ")[1].split()[:4])
     assert counted == PLACES_COMPARED - _data_count() - 1
 
@@ -1627,17 +1639,17 @@ def test_a_changed_script_step_is_named_only_there(
 
 
 def test_changed_override_text_is_named_on_its_step_and_its_task_card(desk: Desk) -> None:
-    desk.write_overrides(text={"proc_filter.apply.do": "사내 문장 A"})
+    desk.write_overrides(text={"criteria.find_box.do": "사내 문장 A"})
     desk.accept()
     desk.write_overrides(
-        text={"proc_filter.apply.do": "사내 문장 B", "proc_filter.title": "사내 제목 B"}
+        text={"criteria.find_box.do": "사내 문장 B", "criteria.title": "사내 제목 B"}
     )
 
     result = desk.check()
 
     assert {where: why for where, why in result.changed.items() if why != "데이터 자리"} == {
-        "thumb:proc_filter": "덮어씀",
-        "step:proc_filter.apply": "덮어씀",
+        "thumb:criteria": "덮어씀",
+        "step:criteria.find_box": "덮어씀",
     }
     assert "사내" not in result.err
 
