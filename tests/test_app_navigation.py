@@ -136,6 +136,8 @@ EXPECTED_PAGES = [
     ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
+    # 사내 모듈 색인 — 늘 등록하고 사이드바에는 켜진 모듈이 있을 때만 상자 머리로 선다(2026-11-01).
+    ("app_pages/internal_modules.py", "사내 모듈", ":material/extension:", False),
     (
         "app_pages/admin_area.py",
         "Admin Area",
@@ -2546,3 +2548,73 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
         assert not list(app.exception), [element.message for element in app.exception]
         names = sorted(warning.split("가 이 코드보다", 1)[0] for warning in ahead_warnings(app))
         assert names == ["설비 DB", "시뮬레이션 DB"], path
+
+
+# ------------------------------------------------------------ 사내 모듈(모델 2)
+
+
+def test_the_module_index_page_is_ordered_exactly_once_with_or_without_modules(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """색인 화면은 모듈 상자의 머리이거나(모듈 있음) 그 자리에 홀로(모듈 없음) — 늘 한 번이다."""
+    import streamlit as st
+
+    from capa_simulation import module_registry
+
+    counted: list[int] = []
+    real_navigation = st.navigation
+
+    def counting(pages: list[Any], **kwargs: Any) -> Any:
+        counted.append(sum(1 for page in pages if page.title == "사내 모듈"))
+        return real_navigation(pages, **kwargs)
+
+    monkeypatch.setattr(st, "navigation", counting)
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    monkeypatch.setenv(
+        module_registry.ROOT_ENV_VAR, str(PROJECT_ROOT / "tests" / "fixtures" / "modules")
+    )
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert counted == [1, 1]
+
+
+def test_a_module_page_has_no_core_page_file(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """모듈 화면이면 `page_file` 이 None 이다 — 모듈 파일 이름이 `home.py` 여도 코어 등록부(적용 전
+    편집·탭 점, `app_pages/<파일 이름>` 꼴)가 그 화면에 붙지 않는다."""
+    import capa_simulation.components.page_tabs as page_tabs
+    from capa_simulation import module_registry
+
+    folder = tmp_path / "modules" / "demo_home"
+    folder.mkdir(parents=True)
+    declared = {
+        "id": "demo_home",
+        "name": "시험 홈",
+        "api": 1,
+        "owner": "시험 담당",
+        "enabled": True,
+        "maturity": "L0",
+        "pages": [{"slug": "main", "file": "home.py", "title": "모듈 홈"}],
+    }
+    (folder / "module.json").write_text(json.dumps(declared, ensure_ascii=False), "utf-8")
+    (folder / "home.py").write_text(
+        "# Purpose: 시험.\nimport streamlit as st\n\nst.write('모듈 home')\n", "utf-8"
+    )
+    monkeypatch.setenv(module_registry.ROOT_ENV_VAR, str(tmp_path / "modules"))
+    seen: list[str | None] = []
+    real_marks = page_tabs.page_unsaved_marks
+
+    def recording(page_file: str | None) -> dict[str, str]:
+        seen.append(page_file)
+        return real_marks(page_file)
+
+    monkeypatch.setattr(page_tabs, "page_unsaved_marks", recording)
+    app = _app.run()
+    app.switch_page(str(folder / "home.py")).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert seen == ["home.py", None]
+    assert "모듈 home" in [str(element.value) for element in app.markdown]

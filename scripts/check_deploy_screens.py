@@ -915,6 +915,11 @@ def app_command(port: int) -> list[str]:
 # 자식 앱에는 넘기지 않는다 — 사용자 앱과 같은 DB 로 예약 회차를 돌려 시나리오를 등록·발행하면 안
 # 된다.
 AUTO_UPDATE_ENV_VAR: Final = "CAPA_AUTO_OFFICIAL_UPDATE"
+# 사내 모듈 뿌리를 바꾸는 환경변수(`capa_simulation.module_registry.ROOT_ENV_VAR`). 확인용 자식
+# 앱은 값 `off`(뿌리 없음 — 사외와 같은 화면)로 띄운다. 사내에 모듈이 커밋되면 사이드바에 「사내
+# 모듈」 상자가 더 서서 사이드바 요약(7장 A)·좁은 폭 `links_cut` 이 사외 기대와 어긋나고, 가이드
+# 그림에 동료 모듈 이름이 찍힌다. 모듈은 런북 4-5 가 따로 본다. 무거운 import 를 피해 글자로 적는다.
+MODULES_ROOT_ENV_VAR: Final = "CAPA_MODULES_ROOT"
 
 
 def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -922,10 +927,12 @@ def app_environment(root: Path, base: Mapping[str, str] | None = None) -> dict[s
 
     editable 설치가 다른 작업 폴더(예: 본 저장소)를 가리켜도 자식이 이 저장소의 코드와 DB 를 쓴다
     (설정의 DB 경로는 `settings.py` 가 놓인 저장소에서 나온다). 사내는 이미 그렇다. 사용자 앱을 띄운
-    창에서 이 스크립트를 돌려도 자식은 예약 스레드를 세우지 않는다(`AUTO_UPDATE_ENV_VAR`).
+    창에서 이 스크립트를 돌려도 자식은 예약 스레드를 세우지 않는다(`AUTO_UPDATE_ENV_VAR`). 사내
+    모듈은 부모 환경과 상관없이 끈다(`MODULES_ROOT_ENV_VAR`).
     """
     env = dict(os.environ if base is None else base)
     env.pop(AUTO_UPDATE_ENV_VAR, None)
+    env[MODULES_ROOT_ENV_VAR] = "off"
     source = str(root / "src")
     rest = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part and part != source]
     env["PYTHONPATH"] = os.pathsep.join([source, *rest])

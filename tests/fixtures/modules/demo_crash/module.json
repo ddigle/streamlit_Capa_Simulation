@@ -1,0 +1,14 @@
+{
+  "id": "demo_crash",
+  "name": "데모 고장",
+  "api": 1,
+  "owner": "데모 담당",
+  "enabled": true,
+  "maturity": "L0",
+  "description": "오류 카드와 import 실패 격리를 보이는 견본",
+  "order": 20,
+  "pages": [
+    {"slug": "main", "file": "demo_crash_page.py", "title": "고장 데모"},
+    {"slug": "import", "file": "demo_crash_import.py", "title": "패키지 없음 데모"}
+  ]
+}

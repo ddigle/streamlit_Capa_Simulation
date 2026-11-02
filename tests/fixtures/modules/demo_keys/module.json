@@ -1,0 +1,12 @@
+{
+  "id": "demo_keys",
+  "name": "데모 키",
+  "api": 1,
+  "owner": "데모 담당",
+  "enabled": true,
+  "maturity": "L0",
+  "order": 30,
+  "pages": [
+    {"slug": "main", "file": "demo_keys_page.py", "title": "키 데모"}
+  ]
+}

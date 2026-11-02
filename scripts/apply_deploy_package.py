@@ -45,8 +45,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_NAME = "DEPLOY_MANIFEST.json"
 SUPPORTED_MANIFEST_VERSIONS = (1,)
 
-# 사내가 만든 것. 배포가 지우지도 덮지도 않는다.
-PRESERVED_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/")
+# 사내가 만든 것. 배포가 지우지도 덮지도 않는다. `modules/` 는 사내 모듈 자리다(모델 2 — 사내가
+# 정본이고 ZIP 은 싣지도 덮지도 지우지도 않는다). **전부 소문자로 적는다** — 대조가 `lower()` 를
+# 거친다(`is_preserved`). Windows 에서 `Modules/…` 로 커밋된 것도 지우지 않게 한다.
+PRESERVED_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/", "modules/")
 # 적용 이력. **두 저장소는 히스토리가 달라 커밋 조상 관계를 볼 수 없으므로**, 무엇을 어디까지
 # 적용했는지 사내가 스스로 적어 둔다. 보존 목록 안에 있어 배포가 지우지 않는다.
 STATE_PATH = ".deploy/applied.json"
@@ -67,7 +69,13 @@ NEVER_REMOVE_SUFFIXES: tuple[str, ...] = (
 # **전부 소문자로 적는다** — 대조가 `lower()` 를 거친다. 대문자를 섞어 적으면 그 항목만
 # 조용히 아무것도 막지 않는다.
 NEVER_REMOVE_NAMES: tuple[str, ...] = (".env", "secrets.toml")
-NEVER_REMOVE_PREFIXES: tuple[str, ...] = ("data/input/", "data/output/", "data/temp/")
+# `data/modules/` 는 사내 모듈 데이터 자리다(git·이미지 밖). 추적돼 버려도 지우지 않고 알린다.
+NEVER_REMOVE_PREFIXES: tuple[str, ...] = (
+    "data/input/",
+    "data/output/",
+    "data/temp/",
+    "data/modules/",
+)
 # 위 폴더 아래여도 배포가 싣는 파일. 빈 폴더를 만들어 두는 자리표이지 데이터가 아니다.
 # `build_deploy_package.PLACEHOLDER_NAMES` 와 같아야 한다 — 다르면 정상 배포가 멈춘다.
 PLACEHOLDER_NAMES: tuple[str, ...] = (".gitkeep",)
@@ -115,6 +123,48 @@ def dirty_entries(root: Path) -> list[str]:
     """미저장 변경. 있으면 멈춘다 — 지우고 푸는 과정이 그것을 소리 없이 없앤다."""
     listed = git(root, "status", "--porcelain", "--untracked-files=no")
     return [line.strip() for line in listed.splitlines() if line.strip()]
+
+
+# 모듈 자리를 뺀 pathspec. `icase` 라 `Modules/…` 도 함께 빠진다. 적용기는 저장소 뿌리를 cwd 로
+# git 을 부르므로 상대 경로가 곧 뿌리 기준이다.
+_OUTSIDE_MODULES = ":(exclude,icase)modules/"
+_INSIDE_MODULES = ":(icase)modules/"
+
+
+def dirty_outside_modules(root: Path) -> list[str]:
+    """`modules/` 밖의 미저장 변경. **비었는지만 본다** — 줄을 새로 해석하지 않는다.
+
+    `dirty_entries` 가 비지 않았는데 이것이 비었으면 미저장 변경이 모두 사내 모듈 아래에 있다.
+    그때도 적용은 멈춘다 — 적용이 실패했을 때 되돌리는 한 줄이 `git checkout -- .` 라, 적용하는
+    동안 작업트리에 모듈 수정이 있으면 그 줄이 「손대지 않는다」 고 한 모듈 수정을 지운다. 바꾸는
+    것은 말뿐이다(배포 체크아웃에서는 모듈을 고치지 않는다 — 런북 1-5 · 1-7).
+    """
+    listed = git(root, "status", "--porcelain", "--untracked-files=no", "--", _OUTSIDE_MODULES)
+    return [line for line in listed.splitlines() if line.strip()]
+
+
+def dirty_module_count(root: Path) -> int:
+    """`modules/` 아래 미저장 변경(추적 파일의 수정·스테이징)의 수. 추적 안 된 파일은 세지 않는다.
+
+    보기만 하는 길(`--dry-run`·`--reconcile-only`)은 멈추지 않으므로 계획 끝에 이 수를 알린다.
+    """
+    listed = git(root, "status", "--porcelain", "--untracked-files=no", "--", _INSIDE_MODULES)
+    return sum(1 for line in listed.splitlines() if line.strip())
+
+
+def dirty_stop_message(dirty: Sequence[str], outside_modules: Sequence[str]) -> str:
+    """미저장 변경으로 멈출 때의 말. 모듈 아래만이면 되돌리지 말라는 모듈 전용 말이다."""
+    listed = "\n  " + "\n  ".join(dirty[:10])
+    if dirty and not outside_modules:
+        return (
+            f"커밋하지 않은 사내 모듈 수정이 {len(dirty)}개 있습니다 — 배포 체크아웃에서는 모듈을 "
+            "고치지 않습니다. 담당자가 자기 클론에서 커밋해 올리면 런북 1-7 로 받습니다. "
+            "에이전트는 되돌리지 않고 앱 관리자(사용자)에게 알립니다:" + listed
+        )
+    return (
+        "작업트리에 미저장 변경이 있습니다. 지우고 푸는 과정이 그것을 없앱니다 — "
+        "먼저 커밋하거나 되돌리세요:" + listed
+    )
 
 
 # ---------- 송장 ----------
@@ -193,7 +243,7 @@ def member_problems(names: Sequence[str]) -> list[str]:
         if name.startswith("/") or ".." in Path(name).parts or ":" in name:
             problems.append(f"경로가 저장소 밖을 가리킵니다: {name}")
             continue
-        if name.startswith(PRESERVED_PREFIXES):
+        if is_preserved(name):
             problems.append(f"사내 전용 자리를 덮으려 합니다: {name}")
             continue
         # 운영 데이터는 무시 파일이라 덮이면 `git checkout -- .` 로도 돌아오지 않는다. 빌더의
@@ -218,12 +268,14 @@ def plan_removals(
 ) -> list[str]:
     """지울 대상 — **ZIP 이 트리를 정의하되 남기라고 한 것은 빼고.**
 
-    네 가지를 뺀다.
+    다섯 가지를 뺀다.
 
     1. ZIP 이 다시 깔 파일(`members`) — 지웠다 쓰는 것은 같은 결과이고, 실패 지점만 는다.
-    2. 송장이 남기라고 한 파일(`kept`) — `pyproject.toml`·`uv.lock` 이다. 사내 Artifactory
-       인덱스와 그 락은 사내 것이라 보내지 않으므로, 지우면 **복구할 길이 없다.**
-    3. 사내 전용 자리(`preserved`) — 리뷰 기록·적용 이력·권한 설정.
+    2. 송장이 남기라고 한 파일(`kept`) — 지금은 비어 있다(`build_deploy_package.EXCLUDED_FILES`)
+       — 선언·락(`pyproject.toml`·`uv.lock`)도 ZIP 이 싣는다. 다시 빼야 할 파일이 생기면 사내
+       것이라 지우면 **복구할 길이 없으므로** 자리를 남겨 둔다.
+    3. 사내 전용 자리(`preserved`) — 리뷰 기록·적용 이력·권한 설정·사내 모듈(`modules/`).
+       대소문자를 가리지 않는다(`is_preserved`).
     4. 무시된 파일 — `git ls-files` 에 없어 애초에 후보가 아니다. `git clean -x` 를 쓰지
        않는 이유가 이것이다.
     5. 운영 데이터(`is_protected`) — 4번이 이미 막아 줄 것 같지만, **그것은 사내
@@ -237,8 +289,18 @@ def plan_removals(
     return sorted(
         path
         for path in tracked
-        if path not in keep and not path.startswith(tuple(preserved)) and not is_protected(path)
+        if path not in keep and not is_preserved(path, preserved) and not is_protected(path)
     )
+
+
+def is_preserved(path: str, prefixes: Sequence[str] = PRESERVED_PREFIXES) -> bool:
+    """사내 전용 자리(리뷰 기록·적용 이력·권한 설정·사내 모듈)인가. 대소문자를 가리지 않는다.
+
+    Windows 는 대소문자를 가리지 않아 `Modules/demo/page.py` 로 커밋될 수 있다. 원래 철자로 보면
+    그 파일이 「사외에서 지워짐」 이 되어 배포가 사내 모듈을 지운다 — `is_protected` 가 소문자로
+    보는 것과 같은 까닭이다.
+    """
+    return path.lower().startswith(tuple(prefix.lower() for prefix in prefixes))
 
 
 def is_protected(path: str) -> bool:
@@ -275,13 +337,12 @@ def reconcile(
     """
     expected_set = set(expected)
     kept_set = set(kept)
-    prefixes = tuple(preserved)
 
     def owned(path: str) -> bool:
         # 운영 데이터도 「사내 것」이다. `plan_removals` 가 지우지 않기로 한 파일을 여기서
         # 「사외에서 지워짐」으로 적으면, 같은 출력 안의 두 블록이 서로 다른 말을 한다 —
         # 계획은 안 지운다고 하고 대조는 지울 것이라고 한다.
-        return path.startswith(prefixes) or path in kept_set or is_protected(path)
+        return is_preserved(path, preserved) or path in kept_set or is_protected(path)
 
     return {
         "사외에서_지워짐": sorted(
@@ -360,6 +421,7 @@ def describe_plan(
     members: Sequence[str],
     *,
     tracked: Sequence[str] = (),
+    uncommitted_modules: int = 0,
 ) -> str:
     changes = manifest.get("changes")
     lines = [
@@ -404,6 +466,11 @@ def describe_plan(
             lines.append(f"        … 외 {len(protected) - 8}개")
         lines.append("        `git rm -r --cached <경로>` 로 추적만 풉니다(파일은 남습니다).")
     lines.append(f"적용    {len(members):,}개 해제")
+    if uncommitted_modules:
+        lines.append(
+            f"주의    커밋하지 않은 모듈 수정 {uncommitted_modules}개 — "
+            "이대로는 적용이 멈춥니다(런북 1-5)"
+        )
     return "\n".join(lines)
 
 
@@ -580,7 +647,15 @@ def _run(args: argparse.Namespace) -> int:
         kept_paths = [str(item) for item in kept] if isinstance(kept, list) else []
         tracked = tracked_files(root)
         removals = plan_removals(tracked, members, kept_paths)
-        print(describe_plan(manifest, removals, members, tracked=tracked))
+        print(
+            describe_plan(
+                manifest,
+                removals,
+                members,
+                tracked=tracked,
+                uncommitted_modules=dirty_module_count(root),
+            )
+        )
         print(
             describe_reconcile(
                 reconcile(tracked, untracked_files(root), files, kept_paths), applied=False
@@ -594,10 +669,7 @@ def _run(args: argparse.Namespace) -> int:
 
         dirty = dirty_entries(root)
         if dirty:
-            raise ApplyError(
-                "작업트리에 미저장 변경이 있습니다. 지우고 푸는 과정이 그것을 없앱니다 — "
-                "먼저 커밋하거나 되돌리세요:\n  " + "\n  ".join(dirty[:10])
-            )
+            raise ApplyError(dirty_stop_message(dirty, dirty_outside_modules(root)))
 
         try:
             apply_archive(root, archive, members, removals)
