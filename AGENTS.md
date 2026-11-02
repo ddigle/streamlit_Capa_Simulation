@@ -5014,6 +5014,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   같은 「%」 라 셈 글(`gap_formula`)을 함께 적는다. 문서(README·AGENTS·HANDOFF·CLAUDE·`docs/`)도 기호를 말할 때는 「퍼센트
   포인트 기호」 로, 사용자 메모 인용은 기호 자리만 「[퍼센트 포인트 기호]」 로 적는다 — 런북 7장만 발송한 배포의 기록이라 다음 배포가
   다시 쓸 때까지 그대로다. 가드는 `tests/test_percent_unit_text.py`.
+- **앱 화면 글에 「사내」 를 쓰지 않는다**(2026-11-03 사용자 결정 — 회사 안에서 쓰는 것이 기본이라 어색하다, 기능 이름
+  「사내 모듈」 은 「모듈」). 개발 · 배포 문서와 주석 · docstring 의 사내/사외 **환경** 구분은 그대로다. 가드는
+  `tests/test_app_text_wording.py`(앱 안 Guide 마크다운 · 통합인증 화면 · 「서버 시작 점검」 에 실리는 글 — docstring 을 뺀 문자열
+  상수)와 `tests/test_module_guide_sync.py`(모듈 지침서 · 안내서)다. 다른 화면 모듈은 손 규칙이다.
 - **판정 기준 표시.** 확보·경고 기준(기본 110%·100%)을 화면에 **적는** 곳은 모두
   `services/threshold_label.threshold_percent_label` 로 사사오입한 정수 퍼센트를 쓴다 — 「110%」 하나이고 소수를 함께
   적지 않는다(공정 Capa 상세의 「110% (1.095)」 꼴은 걷었다 — 2026-11-01 N1 「(가) 정수만」). 지금 적는 곳은 HOME

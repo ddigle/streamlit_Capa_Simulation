@@ -449,7 +449,7 @@ def install_step(
         company_pip_environment(
             environ, index_url_with_credentials(requirement.index_url, user, token)
         ),
-        title="사내 인덱스에서 bigdataquery",
+        title="Artifactory 인덱스에서 bigdataquery",
         timeout=deadline - clock(),
         redactor=redactor,
     )
