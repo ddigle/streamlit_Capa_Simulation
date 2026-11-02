@@ -1,12 +1,12 @@
-# Purpose: 기준 정보 편집 표를 범용 편집 그리드에 잇는다 — 규격·초안·inbox·feed·작업 줄·칸 오류.
+# Purpose: 기준 정보 편집 표 아홉을 범용 편집 그리드에 잇는다 — 규격·초안·inbox·feed·작업 줄·칸 오류·큰 표 상한.
 
 """기준 정보 화면과 범용 편집 그리드(`components/edit_grid.py`) 사이의 어댑터(편집 표 횡전개 —
 2026-11-02 사용자 결정).
 
-- **옮긴 표**는 `GRID_TABLES` 다(차례: 일수 → 효율·여유율 → 설비대수 셋 → Lot·WF측정률 → UPEH).
-  나머지는 아직 `month_editor` 의 `st.data_editor` 이고 같은 종류 단추 뒤에 선다.
+- **편집 표 아홉이 모두 그리드다**(`reference_grid_keys.EDIT_TABLES` — UPEH · 설비대수 보유·대여·
+  가용 · 효율 · 여유율 · 일수 · Lot·WF측정률). 옛 `st.data_editor`(`month_editor`)는 이 화면에서 걷었다.
 - **그리드 마운트는 하나**(`reference_grid_keys.GRID_HOST`) — 종류 단추로 표를 바꿔도 같은 key·같은
-  자리에 표만 바꿔 싣는다. 읽기 보기나 아직 옮기지 않은 표를 고른 회차에는 표 없는 껍데기를 실어
+  자리에 표만 바꿔 싣는다. 읽기 보기(설비대수 현황·STEP 구성)를 고른 회차에는 표 없는 껍데기를 실어
   마운트만 남긴다(다시 마운트되면 보내지 않은 출납을 잃는다).
 - **초안은 표마다 세션 칸**(업무 키 + 월 — `services/edit_grid`). 그리지 않는 표의 편집도 남고, 줄
   차례(공용 표시순서)만 바뀐 회차에도 같은 칸에 붙는다 — 그래서 사이드바 「표 조건」 필터를 잠그지
@@ -17,10 +17,16 @@
 - **오류의 자리는 둘이다.** 숫자·범위·해석 오류는 칸 안(빨강 + 상태 줄 문구 — 그리드가 그린다)이고
   「변경사항 적용」 을 누르면 고칠 칸 알림으로 멈춘다(`error_notice`). 업무 규칙 오류
   (`reference_consistency`)는 적용할 때 문장으로(오늘과 같다 — 화면이 쓴다).
+- **큰 표 안전 상한**(명세 1-2 의 22). 칸 수가 `CAP_CELLS` 를 넘거나 껍데기 본문이 `CAP_BYTES` 를
+  넘으면 사이드바 「표 조건」 필터를 서버에서 걸어 그 줄만 싣고, 필터가 없거나 걸러도 넘치면 앞
+  `CAP_ROWS` 줄만 싣고 작업 줄 아래에 알린다. 초안이 업무 키라 실은 줄이 바뀌어도 편집은 제 줄에
+  남고, 적용은 언제나 **전체 양식**에 덮는다(`merged_template`). 합성 표본 최대는 UPEH 2,660줄 × 30
+  개월 = 79,800칸(본문 약 80 KB — 샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 다음 배포에 잰다.
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -31,7 +37,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components import edit_grid
-from capa_simulation.components.column_filter import column_filter_key
+from capa_simulation.components.column_filter import apply_column_filters, column_filter_key
 from capa_simulation.components.flash import render_flash
 from capa_simulation.components.month_editor import APPLY_NOTICE, render_scope
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
@@ -44,9 +50,11 @@ from capa_simulation.reference_grid_keys import (
     history_key,
 )
 from capa_simulation.services.edit_grid import (
+    GridIndex,
     GridSpec,
     Op,
     ValueFormat,
+    build_index,
     change_counts,
     change_list,
     merge_into_template,
@@ -54,8 +62,6 @@ from capa_simulation.services.edit_grid import (
 from capa_simulation.services.edit_grid_payload import EditGridBase, base_key, labels_digest
 from capa_simulation.services.simulation_cache import ScenarioCacheKey, get_edit_grid_base
 
-# 새 그리드로 옮긴 표. 여기 없는 편집 표는 아직 `month_editor` 다.
-GRID_TABLES: Final = ("RQ_RUN_DAY",)
 # 변경 목록 이름 — 사이드바 「적용 전 편집」·단추 「변경사항 적용」 과 같은 말.
 CHANGES_LABEL: Final = "적용 전 변경"
 KEYS: Final = edit_grid.GridKeys(inbox=INBOX_KEY, applied=APPLIED_KEY, toast=TOAST_KEY)
@@ -80,6 +86,18 @@ PASTE_DROPS_DRAFT_NOTICE: Final = (
     "이 표에 적용하지 않은 편집 {n}칸이 있습니다 — 붙여넣어 적용하면 그 편집은 버려집니다."
 )
 DISCARD_HELP: Final = "이 표에서 적용하지 않은 편집을 버립니다."
+# 큰 표 안전 상한(명세 1-2 의 22) — 칸 수 · 껍데기 본문 JSON 바이트 · 상한에 걸렸을 때 싣는 줄 수.
+CAP_CELLS: Final = 300_000
+CAP_BYTES: Final = 400_000
+CAP_ROWS: Final = 1_000
+CAP_FILTERED_NOTICE: Final = (
+    "표가 커서(전체 {rows:,}줄 · {cells:,}칸) 사이드바 「표 조건」 으로 고른 {shown:,}줄만 실었습니다"
+    " — 「변경사항 적용」 은 표 전체에 덮습니다."
+)
+CAP_HEAD_NOTICE: Final = (
+    "표가 커서(전체 {rows:,}줄 · {cells:,}칸) 앞 {shown:,}줄만 실었습니다 — 사이드바 「표 조건」 으로"
+    " 좁히면 고른 줄을 싣습니다. 「변경사항 적용」 은 표 전체에 덮습니다."
+)
 Labels = Mapping[str, Mapping[str, str]]
 
 
@@ -94,6 +112,8 @@ class GridTable:
     base: EditGridBase
     base_key: str
     labels: Labels | None
+    # 큰 표 상한에 걸려 일부 줄만 실었으면 그 알림(아니면 None — 본문 색인이 곧 전체 양식이다).
+    cap_notice: str | None = None
 
     @property
     def table(self) -> str:
@@ -118,6 +138,12 @@ class GridTable:
             self.base.index, self.spec, cells_key(self.table), history_key(self.table)
         )
 
+    def full_index(self) -> GridIndex:
+        """전체 양식의 색인 — 상한에 걸려 일부 줄만 실었을 때만 새로 짓는다(고칠 칸 알림)."""
+        if self.cap_notice is None:
+            return self.base.index
+        return build_index(self.template, self.spec)
+
 
 def grid_spec(
     table: str,
@@ -132,6 +158,27 @@ def grid_spec(
     return GridSpec(table, title, tuple(dimensions), months, GRID_FORMATS[table], value_help)
 
 
+def _capped_rows(
+    template: pd.DataFrame, dimensions: Sequence[str], filter_prefix: str | None
+) -> tuple[pd.DataFrame, bool]:
+    """상한에 걸린 표에서 실을 줄 — (줄, 사이드바 필터로 골랐는가). 필터로 골라도 칸 수가 넘치면
+    그 앞 `CAP_ROWS` 줄이다."""
+    months = len(template.columns) - len(dimensions)
+    if filter_prefix is not None:
+        chosen = apply_column_filters(template, list(dimensions), key_prefix=filter_prefix)
+        if len(chosen) < len(template):
+            if len(chosen) * months <= CAP_CELLS:
+                return chosen, True
+            return chosen.head(CAP_ROWS), True
+    return template.head(CAP_ROWS), False
+
+
+def _rows_digest(rows: pd.DataFrame) -> str:
+    """실은 줄(양식 줄 번호)의 지문 — 캐시 키·껍데기 지문에 더한다."""
+    hashed = pd.util.hash_pandas_object(rows.index, index=False).to_numpy()
+    return hashlib.sha1(hashed.tobytes()).hexdigest()[:12]
+
+
 def build_grid_table(
     table: str,
     title: str,
@@ -143,11 +190,13 @@ def build_grid_table(
     order_digest: str,
     value_labels: Labels | None,
     value_help: str | None = None,
+    filter_prefix: str | None = None,
 ) -> GridTable:
     """표 하나를 그리드에 싣는 묶음 — 색인·본문은 내용 토큰·줄 차례·표시명 지문으로 캐시한다.
 
     `cache_key`·`order_digest` 는 `template` 을 만든 바로 그 키여야 한다(`get_reference_edit_table`
-    과 같은 값 — 다르면 키와 내용이 어긋난다)."""
+    과 같은 값 — 다르면 키와 내용이 어긋난다). 표가 큰 표 상한(`CAP_CELLS`·`CAP_BYTES`)을 넘으면
+    `filter_prefix` 의 사이드바 필터 선택(세션 값)으로 고른 줄이나 앞 `CAP_ROWS` 줄만 싣는다."""
     spec = grid_spec(table, title, template, dimensions, value_help=value_help)
     labels = {
         column: mapping
@@ -155,13 +204,31 @@ def build_grid_table(
         if column in spec.key_columns and mapping
     } or None
     digest = labels_digest(labels)
-    base = get_edit_grid_base(
-        cache_key, order_digest, table, digest, _template=template, _spec=spec, _labels=labels
-    )
     content = "/".join(str(part) for part in cache_key)
-    return GridTable(
-        spec, editor_key, template, base, base_key(table, content, order_digest, digest), labels
+    cells = len(template) * len(spec.value_columns)
+    if cells <= CAP_CELLS:
+        base = get_edit_grid_base(
+            cache_key, order_digest, table, digest, _template=template, _spec=spec, _labels=labels
+        )
+        if base.size <= CAP_BYTES:
+            key = base_key(table, content, order_digest, digest)
+            return GridTable(spec, editor_key, template, base, key, labels)
+    shown, filtered = _capped_rows(template, spec.key_columns, filter_prefix)
+    rows_key = f"{digest}:{_rows_digest(shown)}"
+    base = get_edit_grid_base(
+        cache_key,
+        order_digest,
+        f"{table}#rows",
+        rows_key,
+        _template=shown,
+        _spec=spec,
+        _labels=labels,
     )
+    notice = (CAP_FILTERED_NOTICE if filtered else CAP_HEAD_NOTICE).format(
+        rows=len(template), cells=cells, shown=len(shown)
+    )
+    key = base_key(table, content, order_digest, rows_key)
+    return GridTable(spec, editor_key, template, base, key, labels, notice)
 
 
 def inbox_tables() -> set[str]:
@@ -230,7 +297,7 @@ def error_notice(table: GridTable, process_label: Callable[[object], str]) -> st
     if not errors:
         return None
     places = []
-    for entry in change_list(table.base.index, draft):
+    for entry in change_list(table.full_index(), draft):
         if entry.bad is None:
             continue
         row = table.template.iloc[entry.row]
@@ -322,6 +389,8 @@ def render_actions(
             fix = f" · :red[고칠 칸 {errors:,}개]" if errors else ""
             st.markdown(f"**변경사항 확인** &nbsp;{cells:,}개 값 · {rows:,}개 행{fix}")
     render_scope(table.template, visible, table.months)
+    if table.cap_notice is not None:
+        st.info(table.cap_notice, icon=":material/filter_alt:")
     # 적용·붙여넣기 결과는 누른 자리 바로 아래 한 칸이다(`queue_reference_import_flash` 가 담은 것 —
     # 옛 편집표와 같은 칸 이름). 적용 오류·고칠 칸 알림도 같은 칸에 더 쓴다.
     return Actions(submitted, render_flash(f"{table.editor_key}_apply_flash"))

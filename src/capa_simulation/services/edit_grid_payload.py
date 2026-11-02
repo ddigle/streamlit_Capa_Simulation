@@ -188,16 +188,19 @@ def encode_table(
 
 @dataclass(frozen=True)
 class EditGridBase:
-    """캐시하는 양식 몫 — op 반영에 쓰는 색인과 껍데기 본문."""
+    """캐시하는 양식 몫 — op 반영에 쓰는 색인과 껍데기 본문, 본문 JSON 바이트(큰 표 상한이 본다 —
+    회차마다 다시 재지 않게 지을 때 한 번 잰다)."""
 
     index: GridIndex
     body: dict[str, Any]
+    size: int = 0
 
 
 def build_base(template: pd.DataFrame, spec: GridSpec, labels: Labels | None) -> EditGridBase:
     """양식 하나의 색인과 본문(캐시 빗나감에만 — `simulation_cache.get_edit_grid_base`)."""
     index = build_index(template, spec)
-    return EditGridBase(index, encode_table(template, spec, labels, index))
+    body = encode_table(template, spec, labels, index)
+    return EditGridBase(index, body, payload_bytes(body))
 
 
 def encode_base(

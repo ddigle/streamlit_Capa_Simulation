@@ -4,38 +4,29 @@
 
 - **탭 대신 종류 단추 한 줄 + 큰 편집 표 하나**(2026-11-02 사용자 결정 — 편집 표 횡전개). 단추는
   네이티브 `st.segmented_control`(`reference_grid_keys.DATASET_KEY`)이고 옛 탭·안쪽 탭(설비대수 ›
-  보유·대여·가용·현황)을 한 줄로 편 것이다. 고른 종류의 표를 범용 편집 그리드(마운트 하나 —
-  `components/reference_grid.py`)에 싣는다. 적용하지 않은 편집이 남은 종류 단추 옆에는 주황 점이
-  찍힌다.
-- 아직 새 그리드로 옮기지 않은 표(`reference_grid.GRID_TABLES` 밖)는 `month_editor` 의
-  `st.data_editor` 를 그 종류 칸(`_DatasetSlot`)에 그린다. **그 표는 적용하지 않은 편집이 남으면
-  다른 종류를 골라도 숨은 칸에 그린다** — `st.data_editor` 는 그리지 않은 회차에 편집을 잃는다.
+  보유·대여·가용·현황)을 한 줄로 편 것이다. 고른 편집 표(아홉 모두)를 범용 편집 그리드(마운트 하나
+  — `components/reference_grid.py`)에 싣는다. 초안은 표마다 세션(업무 키)이라 다른 종류를 고르거나
+  화면을 떠나도 남고, 적용하지 않은 편집이 남은 종류 단추 옆에는 주황 점이 찍힌다.
+- 읽기 보기 둘(「설비대수 현황」·「STEP 구성」)은 그리드 자리 **아래** 보기 칸에 그 종류를 골랐을
+  때만 그린다 — 그 회차에도 그리드 마운트는 표 없이 같은 자리에 남는다.
 - 표 필터와 설비대수 현황의 「상세」는 사이드바 조건 카드 `표 조건` 이다. 모든 종류가 같은 카드를
-  써서 한 번 편 카드는 종류를 바꿔도 편 채다.
+  써서 한 번 편 카드는 종류를 바꿔도 편 채다. 그리드 표의 필터는 보기만 좁히고(브라우저가 거른다)
+  초안이 업무 키라 잠그지 않는다.
 - 작업 버튼(변경사항 적용·Excel 붙여넣기·편집 취소, STEP 추가·삭제)은 표 **위**다. 붙여넣기와
   STEP 추가·삭제는 팝업이다.
 - 설명은 Guide(`guides/reference_data.md`)다.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
-from types import TracebackType
 
 import pandas as pd
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import render_column_filter_controls
-from capa_simulation.components.editor_state import editor_has_edits
-from capa_simulation.components.month_editor import (
-    classification_styled,
-    editor_notice,
-    editor_will_render,
-    paste_dialog,
-    render_month_editor,
-)
+from capa_simulation.components.month_editor import classification_styled, paste_dialog
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -45,11 +36,9 @@ from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
     reset_editors_on_source_change,
-    show_row_order_reset,
     source_token,
 )
 from capa_simulation.components.tab_marks import mark_pending_segments
-from capa_simulation.components.tab_state import tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -120,7 +109,7 @@ from capa_simulation.sidebar_status import table_card
 # 종류 단추의 차례·글은 `reference_grid_keys.DATASETS` 다(옛 탭 차례 — 사용자가 정한 입력 순서).
 # 조건 카드 이름(사이드바 `표 조건`). 모든 종류가 하나를 쓴다.
 CARD_NAME = "reference_data"
-# 지금 열린 팝업: 편집표 key(붙여넣기) 또는 `STEP_DIALOG`. 한 칸이라 한 회차에 팝업은 하나다.
+# 지금 열린 팝업: 편집 표 key(붙여넣기) 또는 `STEP_DIALOG`. 한 칸이라 한 회차에 팝업은 하나다.
 DIALOG_KEY = f"reference_data{PAGE_DIALOG_SUFFIX}"
 STEP_DIALOG = "step"
 EDITOR_UPEH = "capa_upeh_editor"
@@ -152,6 +141,8 @@ RATIO_DIMENSIONS = [
 ]
 # 행이 없으면 1.0 으로 가정하는 표 — 통째로 비어도 화면을 세우지 않는다(`_ratio_month_table`).
 RATIO_TABLES = ("RQ_LOT_RATIO", "RQ_WF_RATIO")
+# STEP 을 더하거나 빼면 행이 바뀌는 표 — 그 표의 적용하지 않은 편집은 버린다(팝업이 먼저 말한다).
+STEP_ROUTE_EDIT_TABLES = ("RQ_UPEH", "RQ_LOT_RATIO", "RQ_WF_RATIO")
 # 기준정보 표(설비대수 셋 밖)의 편집 양식 — (분류 컬럼, 값 컬럼, 표시순서 범위). 양식은
 # `get_reference_edit_table` 이 편집 기간·표시순서 내용으로 캐시한다. UPEH 는 값 컬럼 둘(UPEH·ST)을
 # Main/MI 행으로 한 칸에 모은다(`value_column=None`).
@@ -163,7 +154,8 @@ TABLE_SOURCES: dict[str, tuple[list[str], str | None, str]] = {
     "RQ_LOT_RATIO": (RATIO_DIMENSIONS, "Lot 측정률", TAB_LOT_RATIO),
     "RQ_WF_RATIO": (RATIO_DIMENSIONS, "WF측정률", TAB_WF_RATIO),
 }
-# 편집 표 → 편집표 key(작업 줄 단추·알림 자리·사이드바 이름의 key).
+# 편집 표 → 편집 표 key(작업 줄 단추·알림 자리·필터·붙여넣기 칸의 key 앞머리 — 옛 편집표 key 그대로라
+# 사이드바 필터 선택·따라하기 가이드·화면 확인 스크립트가 같은 key 를 쓴다).
 EDITOR_KEYS: dict[str, str] = {
     "RQ_UPEH": EDITOR_UPEH,
     "RQ_RUN_RATE": EDITOR_RUN_RATE,
@@ -174,39 +166,16 @@ EDITOR_KEYS: dict[str, str] = {
     **{table_name: editor_key for table_name, _, _, editor_key in EQUIPMENT_EDITORS},
 }
 assert set(EDITOR_KEYS) == set(EDIT_TABLES)
-# 아직 `st.data_editor` 인 편집 표(새 그리드로 옮긴 표 밖).
-LEGACY_TABLES = tuple(table for table in EDIT_TABLES if table not in reference_grid.GRID_TABLES)
-# 편집 표 이름 — 사이드바 「적용 전 편집」 목록·줄 차례 비움 알림·고칠 칸 알림이 같은 이름을
-# 쓴다(종류 단추 글).
+# 편집 표 이름 — 사이드바 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다(종류
+# 단추 글). 값 칸의 표시·다듬기 규칙(형식·하한·상한·정수·빈칸 = 0)은 `reference_grid.GRID_FORMATS` 다
+# — UPEH 는 유효숫자 여섯 자리(MI 행 값은 ST(분)라 0.01 보다 작은 값이 정의대로 들어온다).
 TABLE_NAMES = {table_name: DATASETS[table_name] for table_name in EDIT_TABLES}
-# 편집기의 값 형식. (숫자 형식, 한 칸 증분, 최댓값)
-# **소수 아래 자리에 뜻이 있는 표는 증분을 두지 않는다**(`None`). Streamlit 1.63 숫자 칸은 증분의
-# 소수 자릿수 아래를 반올림하지 않고 **버린다** — 보이는 값·칸 복사·손 입력·칸 붙여넣기 모두. 0.001
-# 증분이면 98.75% 효율이 98.7% 로만 들어가고, 0.01 증분이면 1/3 모듈 설비대수 0.333… 이 0.33 이
-# 된다. 증분이 없으면 형식이 보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 소수 둘째
-# 자리까지, `%,.2f` 는 둘째 자리로 보인다). UPEH 는 유효숫자 여섯 자리로 그린다 — MI 행 값은
-# ST(분)라 0.01 보다 작은 값이 정의대로 들어온다. 새 그리드로 옮긴 표는 이 대신
-# `reference_grid.GRID_FORMATS` 를 쓴다(일수는 정수만 받는다).
-EDITOR_FORMATS: dict[str, tuple[str, float | None, float | None]] = {
-    "RQ_UPEH": ("%,.6g", None, None),
-    "RQ_RUN_RATE": ("percent", None, 1.0),
-    "RQ_VITAL": ("percent", None, None),
-    "RQ_LOT_RATIO": ("percent", None, 1.0),
-    "RQ_WF_RATIO": ("percent", None, 1.0),
-    "RQ_EQP_OWN": ("%,.2f", None, None),
-    "RQ_EQP_LENT": ("%,.2f", None, None),
-    "RQ_EQP_AVBL": ("%,.2f", None, None),
-}
 # 월 칸 머리의 도움말 — 한 칸에 행마다 다른 값이 들어가는 표만 그 뜻·단위를 밝힌다.
 EDITOR_VALUE_HELP: dict[str, str] = {
     "RQ_UPEH": "Main 행은 UPEH(시간당 처리량), MI 행은 ST(분) — 한 개를 처리하는 데 드는 분입니다.",
 }
 render_page_header("기준 정보")
 render_page_guide("reference_data", title="기준 정보")
-# 줄 차례가 바뀌어 적용 전 편집을 버린 회차의 알림 자리(`show_row_order_reset`). **늘 서 있는 한
-# 칸**이다 — 알림이 생기고 사라질 때 아래 종류 단추·표 자리가 밀리지 않게 한다(가용설비 현황의 알림
-# 칸).
-notices = st.container()
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
@@ -230,62 +199,14 @@ _chosen = st.segmented_control(
     label_visibility="collapsed",
 )
 current_dataset = _chosen if isinstance(_chosen, str) and _chosen in DATASETS else DEFAULT_DATASET
-# 작업 줄 → 그리드 자리 → 종류 칸들. 모두 **늘 서 있는 칸**이라 안의 칸 수가 바뀌어도 아래 자리
+# 작업 줄 → 그리드 자리 → 읽기 보기 칸. 모두 **늘 서 있는 칸**이라 안의 칸 수가 바뀌어도 아래 자리
 # (그리드 마운트의 앞 형제 순번)가 밀리지 않는다 — 밀리면 그리드가 다시 마운트되어 보내지 않은
-# 출납을 잃는다.
+# 출납을 잃는다. 읽기 보기(설비대수 현황·STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를
+# 밀지 않는다. 편집 표를 고른 회차에는 보기 칸이 비어 표 아래에 아무것도 없다(명세 1-2 의 19 — 표
+# 아래 단추에 초점이 가면 본문이 내려가 머리와 도구 막대가 탭 줄 밑으로 숨는다).
 actions_box = st.container(key="reference_actions")
 grid_box = st.container(key="reference_grid_box")
-
-
-@dataclass(frozen=True, eq=False)
-class _DatasetSlot:
-    """종류 하나의 칸 — 옛 탭을 대신한다(`tab_state.OpenTab` 꼴이라 `month_editor` 가 그대로 쓴다).
-
-    `open` 은 그 종류를 골랐는가다. 칸은 모든 종류마다 늘 같은 자리에 서고, 고르지 않은 칸은 페이지
-    CSS 로 숨긴다(`_hide_other_slots`) — 적용하지 않은 편집이 남은 `st.data_editor` 를 숨긴 채 그려
-    편집을 지킨다(옛 탭의 숨은 본문과 같다)."""
-
-    dataset: str
-    box: DeltaGenerator = field(repr=False)
-
-    @property
-    def open(self) -> bool:
-        return self.dataset == current_dataset
-
-    def __enter__(self) -> "_DatasetSlot":
-        self.box.__enter__()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None:
-        return self.box.__exit__(exc_type, exc_value, traceback)
-
-
-def _slot_key(dataset: str) -> str:
-    return f"reference_slot_{dataset}"
-
-
-slots: dict[str, _DatasetSlot] = {
-    dataset: _DatasetSlot(dataset, st.container(key=_slot_key(dataset)))
-    for dataset in DATASETS
-    if dataset not in reference_grid.GRID_TABLES
-}
-
-
-def _hide_other_slots() -> str:
-    """고르지 않은 종류 칸을 숨기는 CSS — 칸과 그 감싸개(간격을 먹지 않게)를 함께 숨긴다."""
-    hidden = [_slot_key(dataset) for dataset in slots if dataset != current_dataset]
-    selectors = ",".join(
-        f'.st-key-{key},[data-testid="stLayoutWrapper"]:has(> .st-key-{key})' for key in hidden
-    )
-    return f"<style>{selectors}{{display:none}}</style>" if hidden else "<style></style>"
-
-
-st.html(_hide_other_slots())
+view_box = st.container(key="reference_view")
 
 
 def _ratio_month_table(
@@ -309,8 +230,8 @@ def _ratio_month_table(
 class _EditSlices:
     """이 회차 적용 기간 조각 — **쓰는 순간에만** 자르고, 같은 회차 안에서는 다시 쓴다.
 
-    편집표는 탭이 닫혔거나 캐시가 적중하면 조각을 읽지 않고, STEP 경로표는 그 탭에서만 쓴다. 이
-    화면이 쓰지 않는 RQ_PKG_PLAN·RQ_YLD 는 자르지 않는다. 조각은 만든 회차의 활성 시나리오·적용
+    편집 표는 고르지 않았거나 캐시가 적중하면 조각을 읽지 않고, STEP 경로표는 그 종류에서만 쓴다.
+    이 화면이 쓰지 않는 RQ_PKG_PLAN·RQ_YLD 는 자르지 않는다. 조각은 만든 회차의 활성 시나리오·적용
     기간에 묶인다 — 팝업(fragment) 재실행도 그 회차 객체를 쓴다. 측정률 두 표는
     `_ratio_month_table` 특례(통째로 빈 표)를 지킨다.
     """
@@ -396,25 +317,13 @@ try:
         reference_version, active_scenario, effective_start_month, effective_end_month
     )
     edit_display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
-    # 아직 `st.data_editor` 인 편집표는 자기 종류를 골랐거나 **적용하지 않은 편집이 남았을 때만**
-    # 양식을 만든다(`editor_will_render` — `render_month_editor` 의 조기 반환과 같은 함수). 그 밖의
-    # 회차에는 month_editor 가 양식을 읽기 전에 돌아가므로 만들어 봐야 버려진다 — rerun 마다
-    # 519~793ms 를 피벗·정렬에 쓰고 있었다.
-    legacy_templates = {
-        table_name: (
-            _source_template(table_name)
-            if editor_will_render(slots[table_name], EDITOR_KEYS[table_name])
-            else pd.DataFrame()
-        )
-        for table_name in LEGACY_TABLES
-    }
-    # STEP 구성의 요약·목록. 쓰는 곳은 그 칸 본문과 STEP 팝업(경로 선택 상자는 팝업 안이다)
-    # 뿐이라, **그 종류를 골랐거나 팝업이 열린 회차에만** 만든다. 닫힌 칸에서도 만들면 적용마다(새
-    # 토큰) 경로표 전체를 다시 계산하고, 적중해도 RQ_REQB 를 회차마다 자르게 된다. 만들 때는 이 회차
-    # 활성 시나리오·적용 기간 조각(캐시가 빗나갈 때만 자른다)을 내용 토큰으로 캐시한다. 월 형식
-    # 오류는 여기 try 가 받는다 — 밖으로 옮기면 친절한 오류 대신 traceback 이 뜬다.
+    # STEP 구성의 요약·목록. 쓰는 곳은 그 보기와 STEP 팝업(경로 선택 상자는 팝업 안이다) 뿐이라,
+    # **그 종류를 골랐거나 팝업이 열린 회차에만** 만든다. 다른 종류에서도 만들면 적용마다(새 토큰)
+    # 경로표 전체를 다시 계산하고, 적중해도 RQ_REQB 를 회차마다 자르게 된다. 만들 때는 이 회차 활성
+    # 시나리오·적용 기간 조각(캐시가 빗나갈 때만 자른다)을 내용 토큰으로 캐시한다. 월 형식 오류는
+    # 여기 try 가 받는다 — 밖으로 옮기면 친절한 오류 대신 traceback 이 뜬다.
     step_tables: tuple[pd.DataFrame, pd.DataFrame] | None = None
-    if not tab_is_hidden(slots[STEP_VIEW]) or st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
+    if current_dataset == STEP_VIEW or st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
         step_tables = get_route_step_tables(
             edit_cache_key,
             _upeh=edit_slices.loader("RQ_UPEH"),
@@ -425,9 +334,7 @@ except BOOTSTRAP_ERRORS as exc:
     st.stop()
 
 
-# 아직 `st.data_editor` 인 편집표의 key(위젯 상태라 원본이 바뀌면 `discard_editor` 로 버린다).
-editor_keys = tuple(EDITOR_KEYS[table_name] for table_name in LEGACY_TABLES)
-# 새 그리드 표의 초안·이력 세션 칸 — 업무 키라 줄 차례만 바뀐 회차에도 남는다(`order_free_keys`).
+# 그리드 표의 초안·이력 세션 칸 — 업무 키라 줄 차례만 바뀐 회차에도 남는다(`order_free_keys`).
 grid_session_keys = tuple(
     key for table_name in EDIT_TABLES for key in (cells_key(table_name), history_key(table_name))
 )
@@ -444,14 +351,12 @@ SOURCE_TOKEN_KEY = "reference_data_source_token"
 # 이 화면이 스스로 적용한 편집(표 하나·STEP). 원본이 바뀌어도 그 적용이 건드린 표만 비운다 —
 # 다른 표에서 고치고 아직 적용하지 않은 편집은 남는다.
 OWN_CHANGE_KEY = "reference_data_own_change"
-# 편집표 이름 — 사이드바 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
-EDITOR_NAMES = {EDITOR_KEYS[table_name]: TABLE_NAMES[table_name] for table_name in LEGACY_TABLES}
-# 줄 차례 지문은 편집표 캐시 키와 같은 표시순서 지문이다 — 아홉 편집표가 모두 이 표시순서로 줄을
-# 세운다(설비대수 세 표는 `apply_display_order`). 바뀌면 `st.data_editor` 의 적용 전 편집(줄 위치)이
-# 다른 공정 줄에 붙으므로 비운다. 새 그리드의 초안(업무 키)과 STEP 복제·삭제 상자(경로 키)는 차례만
-# 바뀐 회차에는 남긴다. 원본(버전·리비전·기간)이 바뀌면 모두 버린다 — 그리드 이력도 함께 지워져 다음
-# 회차의 새 `gen` 이 그 전에 보낸 op 를 버린다.
-source_reset = reset_editors_on_source_change(
+# 줄 차례 지문은 편집 표 캐시 키와 같은 표시순서 지문이다 — 아홉 표가 모두 이 표시순서로 줄을
+# 세운다(설비대수 세 표는 `apply_display_order`). 그리드 초안(업무 키)과 STEP 복제·삭제 상자(경로 키)는
+# 차례만 바뀐 회차에 남는다 — 옛 편집표처럼 비우고 알리는 일이 이 화면에서 없어졌다(2026-11-02).
+# 원본(버전·리비전·기간)이 바뀌면 모두 버린다 — 그리드 이력도 함께 지워져 다음 회차의 새 `gen` 이 그
+# 전에 보낸 op 를 버린다.
+reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(
         reference_version,
@@ -460,13 +365,11 @@ source_reset = reset_editors_on_source_change(
         effective_end_month,
         row_order=edit_display_order_key,
     ),
-    editor_keys,
+    (),
     other_keys=(*step_widget_keys, *grid_session_keys),
     own_change_key=OWN_CHANGE_KEY,
-    names=EDITOR_NAMES,
     order_free_keys=(*step_widget_keys, *grid_session_keys),
 )
-show_row_order_reset(notices, source_reset)
 
 
 def _template_or_stop(table_name: str) -> pd.DataFrame:
@@ -478,8 +381,13 @@ def _template_or_stop(table_name: str) -> pd.DataFrame:
         st.stop()
 
 
+def _filter_prefix(table_name: str) -> str:
+    """사이드바 「표 조건」 필터 key 앞머리 — 표마다 따로라 한 표의 선택이 다른 표에 새지 않는다."""
+    return f"{EDITOR_KEYS[table_name]}_filter"
+
+
 def _grid_table(table_name: str) -> reference_grid.GridTable:
-    """새 그리드 표 하나 — 양식과 그 색인·껍데기 본문(캐시)."""
+    """그리드 표 하나 — 양식과 그 색인·껍데기 본문(캐시). 큰 표는 사이드바 필터 선택으로 줄을 고른다."""
     dimensions = (
         EQUIPMENT_DIMENSIONS
         if table_name in {name for name, _, _, _ in EQUIPMENT_EDITORS}
@@ -495,30 +403,28 @@ def _grid_table(table_name: str) -> reference_grid.GridTable:
         order_digest=edit_display_order_key,
         value_labels=process_labels.value_labels(),
         value_help=EDITOR_VALUE_HELP.get(table_name),
+        filter_prefix=_filter_prefix(table_name),
     )
 
 
-# 새 그리드 표는 **고른 표와 inbox 에 op 가 쌓인 표만** 싣는다(양식·색인은 캐시). 원본을 본 **뒤**
+# 그리드 표는 **고른 표와 inbox 에 op 가 쌓인 표만** 싣는다(양식·색인은 캐시). 원본을 본 **뒤**
 # 반영해야 버린 초안에 옛 op 가 붙지 않는다. 지금 고르지 않은 표의 op(표를 바꾸기 직전에 보낸
 # 편집)도 그 표 초안에 쓴다.
 _inbox_tables = reference_grid.inbox_tables()
 grid_tables = {
     table_name: _grid_table(table_name)
-    for table_name in reference_grid.GRID_TABLES
+    for table_name in EDIT_TABLES
     if table_name == current_dataset or table_name in _inbox_tables
 }
 reference_grid.apply_grid_inbox(grid_tables)
-# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 편집표
-# (`st.data_editor`)는 위젯 상태라 이 화면에서만 세고, 새 그리드 초안은 세션 칸이라 어느 화면에서나
-# 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이 함께 따라오고, 떠날 때는 묻지
-# 않는다). 방금 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
+# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
+# 초안은 세션 칸이라 어느 화면에서나 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이
+# 함께 따라오고, 떠날 때는 묻지 않는다). 방금 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
 register_pending_edits(
     "reference_data.py",
     "기준 정보",
-    EDITOR_NAMES,
-    staged={
-        cells_key(table_name): TABLE_NAMES[table_name] for table_name in reference_grid.GRID_TABLES
-    },
+    {},
+    staged={cells_key(table_name): TABLE_NAMES[table_name] for table_name in EDIT_TABLES},
     own_change_key=OWN_CHANGE_KEY,
 )
 
@@ -528,14 +434,7 @@ register_pending_edits(
 mark_pending_segments(
     DATASET_KEY,
     list(DATASETS),
-    {
-        *(table_name for table_name in LEGACY_TABLES if editor_has_edits(EDITOR_KEYS[table_name])),
-        *(
-            table_name
-            for table_name in reference_grid.GRID_TABLES
-            if reference_grid.draft_pending(table_name)
-        ),
-    },
+    {table_name for table_name in EDIT_TABLES if reference_grid.draft_pending(table_name)},
 )
 
 
@@ -626,13 +525,9 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
     """
     # STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 적용하지 않은 편집이 버려진다.
     dropped_edits = [
-        name
-        for key, name in (
-            (EDITOR_UPEH, "UPEH"),
-            (EDITOR_LOT_RATIO, "Lot측정률"),
-            (EDITOR_WF_RATIO, "WF측정률"),
-        )
-        if editor_has_edits(key)
+        TABLE_NAMES[table_name]
+        for table_name in STEP_ROUTE_EDIT_TABLES
+        if reference_grid.draft_pending(table_name)
     ]
     if dropped_edits:
         st.warning(
@@ -741,91 +636,104 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
         st.error(bootstrap_error_message(exc))
         return
     months_label = ", ".join(str(month) for month in step_result.affected_months)
+    # 버린 편집은 팝업이 미리 말했지만 닫힌 뒤에도 무엇이 사라졌는지 남긴다.
+    dropped_notice = (
+        f". {'·'.join(dropped_edits)} 표의 적용하지 않은 편집은 버렸습니다" if dropped_edits else ""
+    )
     st.session_state["capacity_step_flash"] = (
         f"STEP을 {action_label}했습니다. 적용월 {months_label} · "
         f"수요 변형 {step_result.affected_variants:,}개 · "
-        f"RQ_REQB {step_result.affected_reqb_rows:,}행"
+        f"RQ_REQB {step_result.affected_reqb_rows:,}행{dropped_notice}"
     )
-    # STEP 을 더하거나 빼면 UPEH·측정률 두 표의 행이 바뀐다 — 그 편집표와 STEP 선택만 비운다.
+    # STEP 을 더하거나 빼면 UPEH·측정률 두 표의 행이 바뀐다 — 그 표의 초안·이력과 STEP 선택만 비운다.
     mark_own_change(
         OWN_CHANGE_KEY,
-        (EDITOR_UPEH, EDITOR_LOT_RATIO, EDITOR_WF_RATIO, *step_widget_keys),
+        (
+            *(cells_key(table_name) for table_name in STEP_ROUTE_EDIT_TABLES),
+            *(history_key(table_name) for table_name in STEP_ROUTE_EDIT_TABLES),
+            *step_widget_keys,
+        ),
     )
     _close_dialog()
     st.rerun()
 
 
-# STEP 추가·삭제 알림은 매 회차 꺼낸다 — 그리는 것은 STEP 구성 칸을 그리는 회차뿐이다. 꺼내기까지
-# 칸에 묶으면 다른 종류를 보다 리비전을 불러온 뒤 STEP 구성을 고를 때 옛 문구가 남는다.
+def _render_step_view(
+    step_summary: pd.DataFrame, step_catalog: pd.DataFrame, flash_message: object
+) -> None:
+    """「STEP 구성」 보기 — 작업 줄(STEP 추가·삭제 팝업 열기)·알림·요약 표."""
+    if step_catalog.empty:
+        st.info(
+            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
+            "사이드바에서 조회기간을 넓혀 보세요."
+        )
+    else:
+        # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.button(
+                "STEP 추가·삭제",
+                icon=":material/edit_road:",
+                key="open_capacity_step_dialog",
+                type="primary",
+                on_click=_open_dialog,
+                args=(STEP_DIALOG,),
+            )
+    if isinstance(flash_message, str):
+        st.success(flash_message)
+    # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을 계산
+    # 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
+    displayed_step_summary = step_summary.rename(
+        columns={
+            "생산계획년월": "월",
+            "Area_Name": "Area",
+            "양산구분": "양산",
+            "제품정보": "제품",
+            "WF 구분": "속성",
+        }
+    ).copy()
+    displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
+    # 한꺼번에 보내는 표만 바이트를 줄이고 `lazy=False` 로 못 박는다. 그보다 긴 표는 예전처럼
+    # Streamlit 이 고르게 둔다(`STEP_SUMMARY_EAGER_MAX_ROWS`).
+    summary_is_eager = len(displayed_step_summary) <= STEP_SUMMARY_EAGER_MAX_ROWS
+    st.dataframe(
+        _compact_step_summary(displayed_step_summary)
+        if summary_is_eager
+        else displayed_step_summary,
+        hide_index=True,
+        width="stretch",
+        height=260,
+        column_config={
+            # 글자 열은 글자 칸으로 못 박는다 — category 열을 그대로 두면 화면이 선택 칸 꼴로 그려
+            # 글자 자리가 화소 단위로 어긋난다. 글자 칸이면 정렬·검색·CSV 까지 예전 글자 열과 같다.
+            **{
+                column: st.column_config.TextColumn()
+                for column in displayed_step_summary.columns
+                if column not in STEP_SUMMARY_NUMBER_COLUMNS
+            },
+            "STEP 수": st.column_config.NumberColumn(format="%d"),
+            "수요 변형 수": st.column_config.NumberColumn(format="%d"),
+        },
+        key="capacity_step_summary",
+        lazy=False if summary_is_eager else None,
+    )
+
+
+# STEP 추가·삭제 알림은 매 회차 꺼낸다 — 그리는 것은 STEP 구성 보기를 그리는 회차뿐이다. 꺼내기까지
+# 보기에 묶으면 다른 종류를 보다 리비전을 불러온 뒤 STEP 구성을 고를 때 옛 문구가 남는다.
 flash_message = st.session_state.pop("capacity_step_flash", None)
 if step_tables is not None:
     step_summary, step_catalog = step_tables
-    with slots[STEP_VIEW]:
-        if step_catalog.empty:
-            st.info(
-                "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
-                "사이드바에서 조회기간을 넓혀 보세요."
-            )
-        else:
-            # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
-            with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-                st.button(
-                    "STEP 추가·삭제",
-                    icon=":material/edit_road:",
-                    key="open_capacity_step_dialog",
-                    type="primary",
-                    on_click=_open_dialog,
-                    args=(STEP_DIALOG,),
-                )
-        if isinstance(flash_message, str):
-            st.success(flash_message)
-        # 요약 표는 그림이라 숨은 칸에서는 건너뛴다(팝업만 열린 회차).
-        if not tab_is_hidden(slots[STEP_VIEW]):
-            # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을
-            # 계산 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
-            displayed_step_summary = step_summary.rename(
-                columns={
-                    "생산계획년월": "월",
-                    "Area_Name": "Area",
-                    "양산구분": "양산",
-                    "제품정보": "제품",
-                    "WF 구분": "속성",
-                }
-            ).copy()
-            displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
-            # 한꺼번에 보내는 표만 바이트를 줄이고 `lazy=False` 로 못 박는다. 그보다 긴 표는
-            # 예전처럼 Streamlit 이 고르게 둔다(`STEP_SUMMARY_EAGER_MAX_ROWS`).
-            summary_is_eager = len(displayed_step_summary) <= STEP_SUMMARY_EAGER_MAX_ROWS
-            st.dataframe(
-                _compact_step_summary(displayed_step_summary)
-                if summary_is_eager
-                else displayed_step_summary,
-                hide_index=True,
-                width="stretch",
-                height=260,
-                column_config={
-                    # 글자 열은 글자 칸으로 못 박는다 — category 열을 그대로 두면 화면이 선택 칸
-                    # 꼴로 그려 글자 자리가 화소 단위로 어긋난다. 글자 칸이면 정렬·검색·CSV 까지
-                    # 예전 글자 열과 같다.
-                    **{
-                        column: st.column_config.TextColumn()
-                        for column in displayed_step_summary.columns
-                        if column not in STEP_SUMMARY_NUMBER_COLUMNS
-                    },
-                    "STEP 수": st.column_config.NumberColumn(format="%d"),
-                    "수요 변형 수": st.column_config.NumberColumn(format="%d"),
-                },
-                key="capacity_step_summary",
-                lazy=False if summary_is_eager else None,
-            )
-
+    # 팝업만 열린 회차(다른 종류를 고른 채)에는 보기를 그리지 않는다.
+    if current_dataset == STEP_VIEW:
+        with view_box:
+            _render_step_view(step_summary, step_catalog, flash_message)
     if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
         _step_dialog(step_catalog)
 
 # `현황` 은 보는 표다(보유·대여를 합친 값에 숫자를 쓸 자리가 없어 편집 대상이 아니다). 「상세」와
 # 필터는 사이드바 `표 조건` 카드이고 그 종류를 골랐을 때만 선다. 선택은 `persist_state` 로 남는다.
 # 표도 그 회차에만, 「상세」 값에 맞는 한 벌만 만든다.
-if not tab_is_hidden(slots[EQUIPMENT_OVERVIEW]):
+if current_dataset == EQUIPMENT_OVERVIEW:
     # 조각은 카드 밖에서 자른다 — 자르다 난 오류 문구가 사이드바 카드가 아니라 본문에 선다.
     own_count, lent_count, available_count = (
         edit_slices.get_or_stop(table_name) for table_name, _, _, _ in EQUIPMENT_EDITORS
@@ -855,7 +763,7 @@ if not tab_is_hidden(slots[EQUIPMENT_OVERVIEW]):
             key_prefix="equipment_count_filter",
             value_labels=process_labels.value_labels(),
         )
-    with slots[EQUIPMENT_OVERVIEW]:
+    with view_box:
         equipment_month_columns = [
             column for column in equipment_table.columns if column not in equipment_dimensions
         ]
@@ -918,7 +826,7 @@ REMOVED_EQUIPMENT = "빈칸 {count:,}개는 0 대로 저장했습니다. "
 # `eq=False` — 표(DataFrame)를 품어 값 비교가 뜻이 없다. 같은 편집표인지는 객체로 가른다.
 @dataclass(frozen=True, eq=False)
 class _Editor:
-    """편집표 하나의 적용 규칙. 격자 적용과 팝업 붙여넣기가 같은 규칙을 탄다.
+    """편집 표 하나의 적용 규칙. 그리드 적용과 팝업 붙여넣기가 같은 규칙을 탄다.
 
     `removed_notice` 는 붙여넣기로 비운 칸을 알리는 문구(`{count}` 자리)다. `blank_is_zero` 인
     표(설비대수)는 양식의 0 이 「원래 없던 조합」이라, 0 인 칸을 비운 것은 바뀐 것이 없어 세지
@@ -934,16 +842,9 @@ class _Editor:
     blank_is_zero: bool = False
 
     @property
-    def on_grid(self) -> bool:
-        """새 그리드 표인가 — 적용하면 초안·이력 세션 칸을, 아니면 편집표 위젯을 비운다."""
-        return self.table_name in reference_grid.GRID_TABLES
-
-    @property
     def own_keys(self) -> tuple[str, ...]:
-        """적용으로 다음 회차에 비울 이 표의 편집 상태."""
-        if self.on_grid:
-            return (cells_key(self.table_name), history_key(self.table_name))
-        return (self.editor_key,)
+        """적용으로 다음 회차에 비울 이 표의 편집 상태 — 그리드 초안·이력 세션 칸."""
+        return (cells_key(self.table_name), history_key(self.table_name))
 
 
 def _edit_flash(
@@ -961,16 +862,16 @@ def _edit_flash(
     남는다는 사실은 양쪽 모두 같다.
 
     **자리는 하나다.** 표 위 `변경사항 적용` 도, 팝업 붙여넣기도 결과는 작업 줄 바로 아래
-    (`f"{editor_key}_apply"` — `render_month_editor` 가 꺼낸다)다. 붙여넣기 팝업은 적용하면
-    닫히므로 그 결과(「지워진 칸」 경고 포함)도 작업 줄 아래에서 본다.
+    (`f"{editor_key}_apply"` — `reference_grid.render_actions` 가 꺼낸다)다. 붙여넣기 팝업은
+    적용하면 닫히므로 그 결과(「지워진 칸」 경고 포함)도 작업 줄 아래에서 본다.
 
-    **`editor_key` 는 편집기를 그릴 때 쓴 값 그대로여야 한다.** 여기에 리터럴을 다시 적으면
+    **`editor_key` 는 작업 줄을 그릴 때 쓴 값 그대로여야 한다.** 여기에 리터럴을 다시 적으면
     쓰는 키와 읽는 키가 갈라져 문구가 조용히 사라진다 — 실제로 `capa_` 접두어가 빠져 여섯
     탭이 그랬다.
     """
     origin = "붙여넣기 데이터를" if imported else "편집값을"
     # 지워진 칸은 대개 **오류가 아니라 정당한 편집**이다(효율·여유율·일수에서 UPEH 경로가 쓰는
-    # 칸은 적용 전에 막힌다). 다만 붙여넣기는 격자와 달리 적용 전에 변경 수를 보여 주지 않아, 한
+    # 칸은 적용 전에 막힌다). 다만 붙여넣기는 그리드와 달리 적용 전에 변경 수를 보여 주지 않아, 한
     # 열이 통째로 비어 와도 조용히 지나간다. 그래서 그 칸이 무엇이 됐는지를 표마다 맞는 말로
     # 알린다 — UPEH 는 경로가 빠져 부하량을 그대로 둔 채 대당 Capa 만 잃는다.
     removal = ""
@@ -985,7 +886,7 @@ def _edit_flash(
 
 
 def _removed_values(editor: _Editor, imported_table: pd.DataFrame | None) -> int:
-    """붙여넣기로 비워진 칸 수. 격자 편집은 이미 적용 전에 변경 수를 보여 준다."""
+    """붙여넣기로 비워진 칸 수. 그리드 편집은 이미 적용 전에 변경 수를 보여 준다."""
     if imported_table is None:
         return 0
     template = editor.template
@@ -1114,47 +1015,42 @@ def _equipment_rows(category: str, value_column: str) -> Callable[[pd.DataFrame]
     return to_rows
 
 
-# 아직 `st.data_editor` 인 편집표의 적용 규칙(종류 차례).
-LEGACY_EDITORS = tuple(
-    _editor(table_name, legacy_templates[table_name]) for table_name in LEGACY_TABLES
-)
-
-# 측정률 표에 이 기간 행이 없으면 편집표가 0 행이다(모든 칸을 비워 적용했거나 원천에 행이 없다).
+# 측정률 표에 이 기간 행이 없으면 편집 표가 0 행이다(모든 칸을 비워 적용했거나 원천에 행이 없다).
 # 계산은 1.0 으로 이어 가므로 오류가 아니지만, 빈 표만 보이면 무엇으로 계산되는지 알 수 없다.
-# 이 편집표는 행을 더할 수 없다(원래 한계) — 무엇이 계산되는지만 알린다(2026-09-29 2차 리뷰).
+# 이 표는 행을 더할 수 없다(원래 한계) — 무엇이 계산되는지만 알린다(2026-09-29 2차 리뷰).
 RATIO_EMPTY_NOTICE = (
     "이 기간에 {label} 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다. 이 표에서는 행을 더할 수 "
     "없습니다."
 )
-for ratio_table in RATIO_TABLES:
-    # 그 종류를 골랐을 때만 조각을 본다 — 고르지 않은 표 때문에 자르지 않는다.
-    if ratio_table in slots and not tab_is_hidden(slots[ratio_table]):
-        if edit_slices.get_or_stop(ratio_table).empty:
-            with slots[ratio_table]:
-                st.info(RATIO_EMPTY_NOTICE.format(label=TABLE_NAMES[ratio_table]))
 
 
 def _open_grid_paste(editor_key: str) -> None:
     st.session_state[DIALOG_KEY] = editor_key
 
 
-# 새 그리드 표를 고른 회차 — 표 조건(사이드바) → 작업 줄(표 위) → 그리드. 그리드 자리는 종류와
-# 상관없이 늘 같은 자리에서 그린다(고르지 않았으면 표 없는 껍데기 — 마운트만 남는다).
+# 편집 표를 고른 회차 — 표 조건(사이드바) → 작업 줄(표 위) → 그리드. 그리드 자리는 종류와 상관없이
+# 늘 같은 자리에서 그린다(읽기 보기를 골랐으면 표 없는 껍데기 — 마운트만 남는다).
 current_grid = grid_tables.get(current_dataset)
 grid_actions: reference_grid.Actions | None = None
 if current_grid is not None:
-    grid_filter_prefix = f"{current_grid.editor_key}_filter"
+    grid_filter_prefix = _filter_prefix(current_dataset)
     # 필터는 보기만 좁힌다 — 초안이 업무 키라 필터를 바꿔도 편집이 다른 줄에 붙지 않아 잠그지
-    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 줄은 서버가 같은 선택으로 센다).
-    with table_card(CARD_NAME):
-        grid_visible = render_column_filter_controls(
-            current_grid.template,
-            list(current_grid.dimensions),
-            key_prefix=grid_filter_prefix,
-            column_labels=COLUMN_LABELS,
-            value_labels=process_labels.value_labels(),
-        )
+    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 줄은 서버가 같은 선택으로 센다). 행이
+    # 없는 표(측정률이 통째로 빈 기간)에는 거를 것이 없어 세우지 않는다.
+    grid_visible = current_grid.template
+    if not current_grid.template.empty:
+        with table_card(CARD_NAME):
+            grid_visible = render_column_filter_controls(
+                current_grid.template,
+                list(current_grid.dimensions),
+                key_prefix=grid_filter_prefix,
+                column_labels=COLUMN_LABELS,
+                value_labels=process_labels.value_labels(),
+            )
     with actions_box:
+        # 그 종류를 골랐을 때만 조각을 본다 — 고르지 않은 표 때문에 자르지 않는다.
+        if current_dataset in RATIO_TABLES and edit_slices.get_or_stop(current_dataset).empty:
+            st.info(RATIO_EMPTY_NOTICE.format(label=TABLE_NAMES[current_dataset]))
         grid_actions = reference_grid.render_actions(
             current_grid,
             grid_visible,
@@ -1166,6 +1062,7 @@ if current_grid is not None:
         grid_editor = _editor(current_dataset, current_grid.template)
         fmt = reference_grid.GRID_FORMATS[current_dataset]
         # 왕복 CSV·붙여넣기는 전체 표 계약이다(걸러진 표를 넘기면 나머지 공정을 그 기간에서 지운다).
+        # 붙여넣기도 그리드와 같은 하한·상한을 지난다(그리드만 막으면 붙여넣은 85·1.2·음수가 들어온다).
         paste_dialog(
             current_grid.template,
             table_name=current_dataset,
@@ -1183,32 +1080,8 @@ else:
     with grid_box:
         reference_grid.render_grid(None)
 
-editor_results: list[tuple[_Editor, pd.DataFrame, bool]] = []
-for editor in LEGACY_EDITORS:
-    number_format, step, max_value = EDITOR_FORMATS[editor.table_name]
-    edited_table, applied = render_month_editor(
-        slots[editor.table_name],
-        editor.template,
-        editor.dimensions,
-        editor.editor_key,
-        number_format,
-        step,
-        max_value=max_value,
-        table_name=editor.table_name,
-        csv_file_name=f"{editor.table_name}_{effective_start_month}_{effective_end_month}.csv",
-        dialog_key=DIALOG_KEY,
-        on_paste=_paste_into(editor),
-        card_name=CARD_NAME,
-        # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
-        value_labels=process_labels.value_labels(),
-        value_help=EDITOR_VALUE_HELP.get(editor.table_name),
-    )
-    editor_results.append((editor, edited_table, applied))
-
-# 새 그리드 표의 「변경사항 적용」 — 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사
-# 전에). 아니면 양식에 초안을 업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는
-# 문장으로, 초안은 남긴다). 다른 표를 다 그린 **뒤**에 한다 — 멈춰도 숨은 편집표의 편집을 잃지
-# 않는다.
+# 「변경사항 적용」 — 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에). 아니면 양식에
+# 초안을 업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는 문장으로, 초안은 남긴다).
 if current_grid is not None and grid_actions is not None and grid_actions.submitted:
     blocked = reference_grid.error_notice(current_grid, process_labels.label)
     if blocked is not None:
@@ -1222,19 +1095,3 @@ if current_grid is not None and grid_actions is not None and grid_actions.submit
             grid_actions.notice.error(bootstrap_error_message(exc))
         else:
             st.rerun()
-
-for editor, edited_table, applied in editor_results:
-    if not applied:
-        continue
-    try:
-        _apply_edit(editor, edited_table, imported=False)
-    except (KeyError, ValueError) as exc:
-        # 표 위 `변경사항 적용` 에서 난 오류는 그 버튼 바로 아래 자리에 쓴다.
-        notice = editor_notice(editor.editor_key)
-        if notice is not None:
-            notice.error(bootstrap_error_message(exc))
-        else:
-            with slots[editor.table_name]:
-                st.error(bootstrap_error_message(exc))
-        st.stop()
-    st.rerun()
