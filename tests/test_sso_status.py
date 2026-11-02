@@ -99,6 +99,8 @@ def test_on_shows_facts_without_any_secret() -> None:
     assert events["사건"].tolist() == ["login_fail", "login_ok", "config"]
     assert events["사유 코드"].tolist()[0] == "aud_mismatch"
     assert set(events["계정"].tolist()[:2]) == {"de***"}
+    assert sso_status._event_code({"days": "12", "x5t": "abc"}) == "남은 날 12"
+    assert sso_status._event_code({"loginid": "-"}) == "-"
     assert cfg.public_url == PUBLIC_URL
 
 

@@ -153,11 +153,13 @@ def readiness_line(cfg: SsoConfig) -> str:
 
 
 def _event_code(fields: dict[str, str]) -> str:
+    """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 인증서 남은 날 차례."""
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
         if value and value != "-":
             return value
-    return "-"
+    days = fields.get("days", "")
+    return f"남은 날 {days}" if days else "-"
 
 
 def recent_event_table(limit: int = RECENT_EVENT_LIMIT) -> pd.DataFrame:
