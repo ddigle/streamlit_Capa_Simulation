@@ -13,6 +13,10 @@ dependencies = [
     # streamlit 이 그 의존을 끊으면 가용설비·Space 화면이 ImportError 로 죽는다.
     "altair>=5,<7",
     "duckdb==1.5.5",
+    # `src` 의 계산·설비 서비스가 직접 import 한다. pandas·streamlit 이 끌어와 지금도 깔리지만, 직접 적어야
+    # 그 둘이 의존을 바꿔도 빠지지 않는다. 사내 모듈 점검(M09)도 이 줄로 numpy 를 「직접 의존」 으로 본다.
+    # 판은 락 그대로다(Python 3.10 을 받는 마지막 마이너 2.2).
+    "numpy>=2.2,<3",
     "pandas>=2.2,<3",
     "plotly>=5.24,<7",
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.

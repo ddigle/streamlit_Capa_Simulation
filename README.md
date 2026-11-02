@@ -529,9 +529,9 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 사내 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
-| `check_module.py` | 사내 모듈의 선언·정적 규칙(M01 ~ M19)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
+| `check_module.py` | 사내 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
 | `module_test_runner.py` | `check_module.py` 가 부르는 모듈 시험 감시 러너 — 코어 `data/` 접근·저장소 안 쓰기(모듈 폴더·상대 경로)를 실패로, AppTest import 길을 앱과 같게 |
-| `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18·M19 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
+| `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18 ~ M20 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
 | `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run app.py --server.port 8080`)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |
 | `check_worktree_isolation.py` | 작업 폴더가 제 가상환경·코드·DuckDB 만 쓰는지 확인한다 |

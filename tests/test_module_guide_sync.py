@@ -356,16 +356,21 @@ def test_the_line_width_rule_counts_wide_characters() -> None:
     assert new_module._width("가" * 50) == new_module.LINE_WIDTH
 
 
-def test_transitive_packages_named_in_the_guide_warn_and_numpy_is_one() -> None:
-    """6장 「경고」 에 적은 이름은 지금 `requirements.txt` 에서 직접 의존이 아니다(경고가 난다) —
-    pandas 와 늘 함께 쓰는 numpy 가 그 하나라는 것을 담당자가 미리 안다."""
+def test_transitive_packages_named_in_the_guide_warn_and_numpy_is_direct() -> None:
+    """6장 「경고」 에 적은 이름은 지금 `requirements.txt` 에서 직접 의존이 아니다(경고가 난다).
+    pandas 와 늘 함께 쓰는 numpy 는 코어 직접 의존이라 「바로 써도 되는 것」 에 든다 — 담당자가
+    numpy 경고를 찾아 헤매지 않는다."""
     dependencies = _section("6. 의존성")
+    usable = dependencies.partition("바로 써도 되는 것:")[2].partition("경고가 나는 것:")[0]
     warned = dependencies.partition("경고가 나는 것:")[2].partition("오류가 나는 것:")[0]
 
-    assert "`numpy`" in warned
-    for name in ("numpy", "pyarrow", "pillow", "toml", "requests"):
+    assert "`numpy`" in usable and "numpy" not in warned
+    assert ENVIRONMENT.requirements["numpy"].direct
+    for name in ("pyarrow", "pillow", "toml", "requests"):
         requirement = ENVIRONMENT.requirements[rules.normalize_name(name)]
         assert not requirement.direct, name
+    for shown in ("`pyarrow`", "`PIL`(pillow)", "`toml`", "`requests`"):
+        assert shown in warned, shown
 
 
 def test_the_skeleton_section_says_when_to_give_a_title() -> None:
@@ -386,6 +391,59 @@ def test_data_modules_is_read_only_for_the_owner_agent() -> None:
     editable = next(line for line in first_order.splitlines() if line.startswith("1. "))
     assert "data/modules/<id>/ 는 화면이 실행 중에 쓰는 자리라 읽기만 한다" in editable
     assert not any("data/modules" in rule for rule in settings["permissions"]["allow"])
+
+
+def test_the_first_instruction_and_upload_section_go_through_a_pull_request() -> None:
+    """사내 main 은 PR 로만 바뀐다(2026-11-02 — 사내 GitHub 에서 PR · 가지 보호를 쓴다).
+    첫 지시는 번호 줄 앞에서 PR 길을 먼저 말하고, 8-2 는 「PR 을 못 쓰면 직접 커밋」 갈래 없이
+    앱 관리자의 PR 점검(런북 4-6) 뒤 합침으로 끝난다 — 담당자 에이전트가 사내 main 에 바로
+    올리는 길을 찾지 않는다."""
+    first_order = _blocks(_section("0. 에이전트에게"), "text")[0].splitlines()
+    numbered = next(n for n, line in enumerate(first_order) if line.startswith("1. "))
+    upload = _section("8-2.")
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+
+    assert any("PR 로만 사내 main 에 들어간다" in line for line in first_order[:numbered])
+    assert "PR 을 쓸 수 없으면" not in upload and "직접 커밋" not in upload
+    assert "git switch -c module/<id>/<주제>" in upload and "Squash and merge" in upload
+    assert "런북 4-6" in upload and "### 4-6. 사내 모듈 PR 점검" in runbook
+    assert "안 되면 자기 폴더만 바꾸는 직접 커밋" not in _section("8-3.")
+
+
+def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:
+    """런북 4-5(배포 때) · 4-6(PR 점검)의 `check_module.py` 줄은 모두 `--worktree-of .` 를 단다 —
+    그래야 감시 러너가 사본의 `data/` 에 더해 운영 저장소의 `data/`(운영 DB)도 모듈 시험에서
+    막는다. 4-6 은 아직 아무도 보지 않은 PR 의 시험 코드를 돌리는 자리다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    for start in ("### 4-5.", "### 4-6."):
+        body = re.split(r"\n#{2,3} ", runbook.partition(start)[2], maxsplit=1)[0]
+        lines = [
+            line
+            for line in body.replace("\\", "/").splitlines()
+            if "scripts/check_module.py" in line
+        ]
+        assert lines, start
+        assert all("--worktree-of ." in line for line in lines), (start, lines)
+
+
+def test_the_pr_check_merges_only_the_head_it_checked() -> None:
+    """런북 4-6 — PR 의 합치는 단추는 누른 때의 머리를 합친다. 그래서 점검한 머리의 7자를 알리고,
+    합치기 앞에 PR 화면의 마지막 커밋이 그것과 같을 때만 합친다(점검 뒤 더 올린 커밋이 점검 없이
+    들어가지 않게). 성숙도 `L2` 줄은 `:` 둘레 빈칸이 없는 JSON 도 잡고 지운 줄 · 다른 단계는
+    넘긴다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    body = re.split(r"\n#{2,3} ", runbook.partition("### 4-6.")[2], maxsplit=1)[0]
+    report = body.partition("\n4. ")[2]
+
+    assert "git rev-parse --short=7 $pr" in report
+    assert "마지막 커밋 7자가 그 7자와 같은지" in report and "1 부터 다시 한다" in report
+    patterns = re.findall(r"Select-String '([^']+)'", body) + re.findall(r"grep -E '([^']+)'", body)
+    assert len(patterns) == 2, patterns
+    for pattern in patterns:
+        assert re.search(pattern, '+  "maturity": "L2",'), pattern
+        assert re.search(pattern, '+  "maturity":"L2",'), pattern
+        assert not re.search(pattern, '-  "maturity": "L2",'), pattern
+        assert not re.search(pattern, '+  "maturity": "L1",'), pattern
 
 
 def _agents_bullet(start: str) -> str:
