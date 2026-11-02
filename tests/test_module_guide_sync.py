@@ -425,11 +425,11 @@ def test_the_colleague_guide_hands_over_the_first_instruction_unchanged() -> Non
 
 
 def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:
-    """런북 4-5(배포 때) · 4-6(PR 점검)의 `check_module.py` 줄은 모두 `--worktree-of .` 를 단다 —
-    그래야 감시 러너가 사본의 `data/` 에 더해 운영 저장소의 `data/`(운영 DB)도 모듈 시험에서
-    막는다. 4-6 은 아직 아무도 보지 않은 PR 의 시험 코드를 돌리는 자리다."""
+    """런북 4-5(배포 때) · 4-6(PR 점검) · 4-7(배포 사이에 올리기)의 `check_module.py` 줄은 모두
+    `--worktree-of .` 를 단다 — 그래야 감시 러너가 사본의 `data/` 에 더해 운영 저장소의 `data/`(운영
+    DB)도 모듈 시험에서 막는다. 4-6 은 아직 아무도 보지 않은 PR 의 시험 코드를 돌리는 자리다."""
     runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
-    for start in ("### 4-5.", "### 4-6."):
+    for start in ("### 4-5.", "### 4-6.", "### 4-7."):
         body = re.split(r"\n#{2,3} ", runbook.partition(start)[2], maxsplit=1)[0]
         lines = [
             line
@@ -458,6 +458,20 @@ def test_the_pr_check_merges_only_the_head_it_checked() -> None:
         assert re.search(pattern, '+  "maturity":"L2",'), pattern
         assert not re.search(pattern, '-  "maturity": "L2",'), pattern
         assert not re.search(pattern, '+  "maturity": "L1",'), pattern
+
+
+def test_a_merged_module_reaches_the_app_between_deploys_through_runbook_four_seven() -> None:
+    """지침서 8-2 끝 · 9-2 의 1 은 합친 모듈이 다음 배포 전에도 오른다고 말한다 — 그 길은 런북 4-7
+    하나다(2026-11-03). 4-7 은 점검한 `origin/main` 그대로를 빨리 감기로만 받고, 받은 HEAD 와 CI/CD
+    앞의 사내 main 이 점검한 7자와 같은지 본다 — 점검 뒤 합쳐진 PR 이 점검 없이 앱에 오르지 않게."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    body = re.split(r"\n#{2,3} ", runbook.partition("### 4-7.")[2], maxsplit=1)[0]
+
+    for heading in ("8-2.", "9-2."):
+        assert "런북 4-7" in " ".join(_section(heading).split()), heading
+    assert 'git archive --format=zip -o "$mtree.zip" origin/main' in body
+    assert "git merge --ff-only origin/main" in body and "git pull --rebase` 는" in body
+    assert body.count("3 의 7자") >= 2 and "git rev-list --count origin/main..HEAD" in body
 
 
 def _agents_bullet(start: str) -> str:
