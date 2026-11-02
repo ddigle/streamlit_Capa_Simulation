@@ -471,7 +471,6 @@ class ScenarioResultSummary(NamedTuple):
 
     capacity_exclusions: pd.DataFrame
     capacity_assumptions: CapacityAssumptions
-    unit_capacity_rows: int
     required_exclusions: pd.DataFrame
     # 소요대수의 공정 고유값(원본 값·원본 차례). 표시순서 정렬은 부르는 쪽이 한다.
     processes: pd.DataFrame
@@ -486,7 +485,7 @@ def get_scenario_result_summary(
     _scenario_tables: Mapping[str, pd.DataFrame],
     _reference_tables: Mapping[str, pd.DataFrame],
 ) -> ScenarioResultSummary:
-    """대당 Capa·소요대수 결과의 제외 목록·측정률 가정·행 수·공정 고유값.
+    """대당 Capa·소요대수 결과의 제외 목록·측정률 가정·공정 고유값.
 
     `attrs` 는 병합·슬라이스를 지나며 사라지므로 프레임째가 아니라 값을 꺼내 담는다. 계산 오류는
     캐시되지 않아 매 회차 다시 던진다 — 부르는 쪽은 `stop_calculation_on_error` 로 감싼다.
@@ -501,7 +500,6 @@ def get_scenario_result_summary(
     return ScenarioResultSummary(
         capacity_exclusions=unit_capacity.attrs.get(CAPACITY_EXCLUSIONS_ATTR, pd.DataFrame()),
         capacity_assumptions=capacity_assumptions(unit_capacity),
-        unit_capacity_rows=len(unit_capacity),
         required_exclusions=required_equipment.attrs.get(
             REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
         ),

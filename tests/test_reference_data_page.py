@@ -817,19 +817,40 @@ def test_effective_process_capacity_still_shows_every_process_without_a_filter()
     assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
 
 
-def test_the_view_mode_sits_in_the_body_and_the_filters_in_the_card() -> None:
-    """`표시 방식`(공정별·STEP별)은 탭 안의 하위 보기라 본문 표 위다(2026-09-29 사용자 결정).
+def test_the_view_mode_and_the_filters_sit_in_the_card() -> None:
+    """`표시 방식`(공정별·STEP별)은 집계 수준·공정 필터와 함께 `표 조건` 카드에 선다.
 
-    카드에 넣으면 지금 어느 표를 보는지 본문에서 사라진다. 집계 수준·공정 필터는 거르는 조건이라
-    `표 조건` 카드에 남는다.
+    「하위 보기 전환은 본문」 의 예외다(2026-11-02 사용자 요청(검수표)).
+    본문에는 조건 위젯이 하나도 남지 않는다.
     """
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert "unit_capacity_view_mode" in {widget.key for widget in app.main.segmented_control}
-    assert not app.sidebar.segmented_control
+    assert [widget.key for widget in app.sidebar.segmented_control] == ["unit_capacity_view_mode"]
+    assert not app.main.segmented_control
     assert "unit_capacity_process_filter" in {widget.key for widget in app.sidebar.multiselect}
     assert "unit_capacity_detail_level" in {widget.key for widget in app.sidebar.selectbox}
+
+
+def test_the_card_view_mode_switches_the_table_and_belongs_to_its_tab() -> None:
+    """카드의 「표시 방식」 이 본문 표를 바꾸고, 대당 Capa 탭이 열린 회차에만 서며, 값은 남는다."""
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    process_columns = app.session_state[CAPACITY_TABLE_KEY]
+
+    app.multiselect(key="unit_capacity_process_filter").set_value(["Process-A"])
+    app.sidebar.segmented_control(key="unit_capacity_view_mode").set_value(STEP_VIEW).run()
+
+    assert not app.exception
+    step_columns = app.session_state[CAPACITY_TABLE_KEY]
+    assert "STEP_SEQ" in step_columns and "STEP_SEQ" not in process_columns
+    assert app.sidebar.selectbox(key="unit_capacity_detail_level").disabled
+
+    _open_calc_tab(app, REQUIRED_TAB)
+    assert "unit_capacity_view_mode" not in {widget.key for widget in app.segmented_control}
+
+    _open_calc_tab(app, ":material/insights: 대당 Capa")
+    assert app.sidebar.segmented_control(key="unit_capacity_view_mode").value == STEP_VIEW
 
 
 def test_the_process_filter_placeholder_follows_the_view() -> None:
@@ -1466,7 +1487,7 @@ def test_calculation_result_guide_carries_what_left_the_body() -> None:
         "중복되지 않은 원수요 부하량을 STEP별 소요대수 합계로 나눈 값",
         "`부하량 ÷ 대당 Capa`",
         "`가용대수 ÷ 소요대수`",
-        "경로 수",
+        "`표시 방식`(공정별·STEP별)",
         "표 조건 카드의 필터가 히트맵에도",
         "칸 안 숫자와 hover 는 자르지 않은 확보율",
     ):

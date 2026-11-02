@@ -135,7 +135,6 @@ def test_summary_matches_the_old_page_path(
         required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()),
     )
     assert summary.capacity_assumptions == capacity_assumptions(unit)
-    assert summary.unit_capacity_rows == len(unit)
     display_order = prepare_display_order(tables["RQ_DISPLAY_ORDER"])
     expected_processes = (
         apply_display_order(
@@ -320,7 +319,7 @@ def test_a_new_content_token_recomputes(tables: dict[str, pd.DataFrame]) -> None
     pd.testing.assert_frame_equal(after_month, expected_month)
     assert after_dimensions == expected_dimensions
 
-    # 요약(제외 목록·대당 Capa 행 수) — 0 으로 둔 UPEH 경로가 새 요약에만 든다.
+    # 요약(제외 목록) — 0 으로 둔 UPEH 경로가 새 요약에만 든다.
     before_summary = sc.get_scenario_result_summary(
         before_key, _scenario_tables=tables, _reference_tables=tables
     )
@@ -328,8 +327,6 @@ def test_a_new_content_token_recomputes(tables: dict[str, pd.DataFrame]) -> None
         after_key, _scenario_tables=edited, _reference_tables=edited
     )
     edited_unit, _ = _frames(after_key, edited)
-    assert after_summary.unit_capacity_rows == len(edited_unit)
-    assert after_summary.unit_capacity_rows == before_summary.unit_capacity_rows - 1
     pd.testing.assert_frame_equal(
         after_summary.capacity_exclusions, edited_unit.attrs[CAPACITY_EXCLUSIONS_ATTR]
     )

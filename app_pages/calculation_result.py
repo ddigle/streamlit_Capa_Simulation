@@ -20,7 +20,6 @@ from capa_simulation.components.capacity_assumption_notice import (
 )
 from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.exclusion_table import render_exclusion_table
-from capa_simulation.components.exclusion_waterfall import render_exclusion_waterfall
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
@@ -201,41 +200,13 @@ else:
     prune_list_selection(process_filter_key, process_options)
 
     if open_tab is unit_capacity_tab:
-        with unit_capacity_tab:
-            render_capacity_assumption_notice(assumptions)
-            if not capacity_exclusions.empty:
-                st.warning(
-                    f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다."
-                )
-                # 표는 「무엇이 빠졌나」를 답하고 워터폴은 「얼마나·어디서 빠졌나」를 답한다.
-                # 확보율이 낮을 때 설비 부족인지 기준정보 결손인지를 가르는 것이 이 그림이다.
-                render_exclusion_waterfall(
-                    capacity_exclusions,
-                    remaining_rows=summary.unit_capacity_rows,
-                    key="unit_capacity_exclusion_waterfall",
-                    owner_tab=unit_capacity_tab,
-                )
-                # 닫힌 탭에서는 그리지 않으므로 편 상태는 기억 칸이 지킨다(히트맵 상자와 같다).
-                with remembered_expander(
-                    "제외 기준정보 확인", key=CAPACITY_EXCLUSIONS_EXPANDER_KEY
-                ):
-                    render_exclusion_table(
-                        capacity_exclusions,
-                        dimensions=UNIT_CAPACITY_DIMENSIONS,
-                        display_order=display_order,
-                        page=PAGE_CALCULATION,
-                        tab=TAB_UNIT_CAPACITY,
-                        labels=process_labels,
-                        file_name=(
-                            f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
-                        ),
-                        key="download_unit_capacity_exclusions_csv",
-                    )
-            # 표시 방식은 이 탭 안의 하위 보기라 카드가 아니라 본문 표 위다(2026-09-29 사용자
-            # 결정). 탭 이름이 이미 `대당 Capa` 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계
-            # 단위가 다른 것이지 다른 지표가 아니다. 같은 카드의 「집계 수준」·「공정 필터」처럼
-            # 다른 화면(탭)에 갔다 와도 남는다 — 하위 보기 전환도 보기 조건이다(2026-10-24 사용자
-            # 결정).
+        with table_card(CARD_NAME):
+            # 표시 방식은 탭 안의 하위 보기지만 사용자 요청으로 카드 첫 칸이다(2026-11-02 사용자
+            # 요청(검수표) — 「하위 보기 전환은 본문」 의 예외, AGENTS 9장). 아래 두 칸이 이 값을
+            # 따라 바뀌므로(집계 수준 잠금·공정 필터 안내) 그 위에 둔다. 탭 이름이 이미 `대당 Capa`
+            # 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계 단위가 다른 것이지 다른 지표가 아니다.
+            # 같은 카드의 「집계 수준」·「공정 필터」처럼 다른 화면(탭)에 갔다 와도 남는다 — 하위
+            # 보기 전환도 보기 조건이다(2026-10-24 사용자 결정).
             capacity_view = st.segmented_control(
                 "표시 방식",
                 options=["공정별", "STEP별"],
@@ -243,7 +214,6 @@ else:
                 key="unit_capacity_view_mode",
                 persist_state="session",
             )
-        with table_card(CARD_NAME):
             selected_level_label = st.selectbox(
                 "집계 수준",
                 options=list(CAPACITY_LEVEL_LABELS.values()),
@@ -269,6 +239,27 @@ else:
             level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
         )
         with unit_capacity_tab:
+            render_capacity_assumption_notice(assumptions)
+            if not capacity_exclusions.empty:
+                st.warning(
+                    f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다."
+                )
+                # 닫힌 탭에서는 그리지 않으므로 편 상태는 기억 칸이 지킨다(히트맵 상자와 같다).
+                with remembered_expander(
+                    "제외 기준정보 확인", key=CAPACITY_EXCLUSIONS_EXPANDER_KEY
+                ):
+                    render_exclusion_table(
+                        capacity_exclusions,
+                        dimensions=UNIT_CAPACITY_DIMENSIONS,
+                        display_order=display_order,
+                        page=PAGE_CALCULATION,
+                        tab=TAB_UNIT_CAPACITY,
+                        labels=process_labels,
+                        file_name=(
+                            f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
+                        ),
+                        key="download_unit_capacity_exclusions_csv",
+                    )
             # STEP 뷰는 경로 하나하나가 행이라 전 공정을 그리면 Plotly 표가 수천 행이 된다.
             # 미선택이면 표를 만들지도 CSV 로 인코딩하지도 않고 안내만 남긴다. 선택 해제를
             # 허용하는 컨트롤이라 `capacity_view` 는 None 일 수 있으므로 명시 비교로 판단한다.

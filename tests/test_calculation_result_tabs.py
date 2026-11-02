@@ -1,4 +1,4 @@
-# Purpose: 산출 결과가 열린 탭의 표만 만들고, 닫힌 탭을 건너도 제외 상자 펼침을 지키는지 검증한다.
+# Purpose: 산출 결과가 열린 탭 표만 만들고 제외 상자 펼침을 지키며 표 위 그림이 없는지 검증한다.
 
 """산출 결과는 열린 탭 하나의 몫만 만든다.
 
@@ -98,6 +98,22 @@ def test_an_opened_exclusion_box_stays_open_after_a_trip_to_another_tab() -> Non
     _open_calc_tab(app, UNIT_CAPACITY_TAB)
 
     assert _exclusion_boxes(app) == [True]
+
+
+def test_the_unit_capacity_tab_draws_no_chart_above_its_table() -> None:
+    """제외가 있어도 대당 Capa 탭 표 위에 그림(옛 제외 워터폴)을 세우지 않는다.
+
+    2026-11-02 사용자 요청(검수표) 「상단의 차트는 제거」. 제외 경고와 `제외 기준정보 확인`
+    목록은 그대로다 — 무엇이 왜 빠졌는지는 목록의 `제외사유` 칸이 말한다.
+    """
+    app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    assert not app.get("plotly_chart")
+    assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in {
+        warning.value for warning in app.warning
+    }
+    assert _exclusion_boxes(app) == [False]
 
 
 def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatch) -> None:
