@@ -319,10 +319,17 @@ function fillKey(S, event) {
 
 // ---------------------------------------------------------------- 마운트
 
+// 손잡이 두 번 누름은 core 의 칸 두 번 누름(그 자리 칸 하나만 골라 편집 시작)으로 올려 보내지 않는다 — 고른 범위를 잃는다.
+function fillStopDoubleClick(event) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
 function fillInit(S) {
   const handle = document.createElement('div')
   handle.className = 'eg-handle'
   handle.hidden = true
+  handle.addEventListener('dblclick', fillStopDoubleClick)
   const box = document.createElement('div')
   box.className = 'eg-fill-box'
   box.hidden = true
@@ -334,6 +341,7 @@ function fillInit(S) {
 function fillCleanup(S) {
   if (!S.fill) return
   S.fill.drag = null
+  S.fill.handle.removeEventListener('dblclick', fillStopDoubleClick)
   if (S.dom) S.dom.scroller.classList.remove('is-filling')
 }
 

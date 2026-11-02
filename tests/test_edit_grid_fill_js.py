@@ -703,6 +703,29 @@ def test_paste_repeats_a_value_or_a_block_over_an_exact_multiple_selection() -> 
     assert cells["DEMO_P11\x1fER"] == {"202701": 0.32, "202702": 0.31, "202703": 0.32}
 
 
+def test_double_clicking_the_handle_keeps_the_range_and_opens_no_editor() -> None:
+    """손잡이를 두 번 누르면 core 의 칸 두 번 누름(그 칸만 골라 편집 시작)으로 가지 않는다."""
+    body = r"""
+  pick(1, 2, 3, 3)
+  fire(handle(), 'pointerdown', { clientX: xOf(3), clientY: yOf(3), pointerId: 1 })
+  fire(scroller, 'pointerup', { clientX: xOf(3), clientY: yOf(3), pointerId: 1 })
+  const dbl = fire(handle(), 'dblclick', { clientX: xOf(3), clientY: yOf(3) })
+  R.after = { range: range(), edit: S.edit, prevented: dbl.defaultPrevented, ops: S.box.ops.length }
+  // 칸 위 두 번 누름은 그대로 편집을 연다(core).
+  fire(scroller, 'dblclick', { clientX: xOf(2), clientY: yOf(5) })
+  R.cell = { edit: Boolean(S.edit), range: range() }
+  process.stdout.write(JSON.stringify(R))
+"""
+    result = _run(body)
+    assert result["after"] == {
+        "range": {"r0": 1, "r1": 3, "c0": 2, "c1": 3},
+        "edit": None,
+        "prevented": True,
+        "ops": 0,
+    }
+    assert result["cell"] == {"edit": True, "range": {"r0": 5, "r1": 5, "c0": 2, "c1": 2}}
+
+
 def test_cleanup_drops_a_fill_drag() -> None:
     body = r"""
   pick(1, 2, 1, 2)
@@ -710,8 +733,14 @@ def test_cleanup_drops_a_fill_drag() -> None:
   const during = S.fill.drag !== null
   cleanup()
   R.after = { during, drag: S.fill.drag, filling: scroller.classList.contains('is-filling'),
-    ops: S.box.ops.length }
+    ops: S.box.ops.length, dblclick: (S.fill.handle.listeners.dblclick || []).length }
   process.stdout.write(JSON.stringify(R))
 """
     result = _run(body)
-    assert result["after"] == {"during": True, "drag": None, "filling": False, "ops": 0}
+    assert result["after"] == {
+        "during": True,
+        "drag": None,
+        "filling": False,
+        "ops": 0,
+        "dblclick": 0,
+    }
