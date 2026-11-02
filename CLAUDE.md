@@ -139,7 +139,7 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
-  Area만 배치가 달라 `app.py`가 손수 그린다. 계산 그룹은 셋이다(2026-10-17) — Static Capa(약속) →
+  Area만 배치가 달라 `app.py`가 손수 그린다. 계산 그룹은 셋이다(2026-10-17 — 2026-11-02 실행 관리와 Dynamic 사이에 아직 빈 「생산 진도」 상자가 섰다) — Static Capa(약속) →
   실행 관리(이행: 공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·가용설비·Space·실적 셋) → Dynamic Capa(실적:
   실현 Capa·재공). 「Dynamic」 은 실적 Capa 에만 쓰고, 설비 일정으로 낸 가용대수는 화면에서 「설비 일정
   기준 가용대수」, HOME 의 확보율 % 손입력은 「확보율 보정」이다 — 코드·키·DB 이름(`dynamic_*`·`execution`)은

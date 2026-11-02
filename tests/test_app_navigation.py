@@ -64,6 +64,8 @@ from capa_simulation.navigation import (
     IMPLEMENTING_SUFFIX,
     LOAD_CONVERSION,
     PROCESS_CAPA_DETAIL,
+    PRODUCTION_PROGRESS,
+    PRODUCTION_PROGRESS_SUBPAGES,
     REQUIRED_SHORTENING,
     SCENARIO_MANAGEMENT,
     SIDEBAR_GROUPS,
@@ -134,6 +136,7 @@ EXPECTED_PAGES = [
     ("app_pages/actual_efficiency.py", "효율 실적 (구현중)", ":material/speed:", False),
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
     ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
+    ("app_pages/production_progress.py", "생산 진도", ":material/trending_up:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
     # 사내 모듈 색인 — 늘 등록하고 사이드바에는 켜진 모듈이 있을 때만 상자 머리로 선다(2026-11-01).
@@ -167,15 +170,22 @@ def test_exactly_one_page_is_the_default_entry_point() -> None:
 
 
 def test_group_membership_matches_the_sidebar_sections() -> None:
-    """계산 그룹은 셋이다 — 약속(Static) → 이행(실행 관리) → 실적(Dynamic)
-    (2026-10-17 사용자 결정). 화면 파일·제목·주소는 그룹을 옮겨도 그대로다."""
+    """계산 그룹은 약속(Static) → 이행(실행 관리) → 생산 진도 → 실적(Dynamic) 차례다
+    (2026-10-17 사용자 결정, 생산 진도는 2026-11-02 사용자 요청). 화면 파일·제목·주소는
+    그룹을 옮겨도 그대로다."""
     assert [group.slug for group in SIDEBAR_GROUPS] == [
         "capa_chatbot",
         "scenario_management",
         "static_capa",
         "execution_management",
+        "production_progress",
         "dynamic_capa",
     ]
+    # 생산 진도는 아직 빈 머리 화면 하나다 — 데이터를 읽지 않아 공통 조건 줄이 없다.
+    assert PRODUCTION_PROGRESS.path == "app_pages/production_progress.py"
+    assert PRODUCTION_PROGRESS.title == "생산 진도"
+    assert not PRODUCTION_PROGRESS.reads_scenario and not PRODUCTION_PROGRESS.reads_period
+    assert PRODUCTION_PROGRESS_SUBPAGES == ()
     assert STATIC_CAPA.path == "app_pages/static_capa.py"
     # Static 하위 넷 — 표준 목표는 약속(대당 Capa)을 일·주로 푼 표준이라 Static 에 남는다.
     assert [spec.path for spec in STATIC_CAPA_SUBPAGES] == [

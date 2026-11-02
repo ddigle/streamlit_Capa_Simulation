@@ -202,7 +202,8 @@ SCENARIO_MANAGEMENT = PageSpec(
     uses_equipment_db=True,
 )
 
-# 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정): **Static Capa** 는 약속(기술팀이 정한 Capa
+# 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정 — 2026-11-02 실행 관리와 Dynamic 사이에 아직 빈
+# 「생산 진도」 상자가 섰다): **Static Capa** 는 약속(기술팀이 정한 Capa
 # 기준정보와 생산계획으로 낸 미래 Capa), **실행 관리**는 그 약속의 이행(약속된
 # Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 요청하고, 지킬 수 없으면
 # Static 반영까지 추적), **Dynamic Capa** 는 실행 관리가 모은 실적으로 다시 낸 Capa 와 그것으로 하는
@@ -393,6 +394,19 @@ EXECUTION_MANAGEMENT_SUBPAGES = (
     ),
 )
 
+# 생산 진도(2026-11-02 사용자 요청)는 실행 관리와 Dynamic Capa 사이의 그룹이다.
+# 무엇을 보일지 아직 정하지 않아 머리 화면은 빈 자리이고 데이터를 읽지 않는다 —
+# 공통 조건 줄도 조건 카드도 없다. 하위 화면이 생기면 `PRODUCTION_PROGRESS_SUBPAGES`
+# 에 더한다(그때 상자가 펼침 상자가 된다).
+PRODUCTION_PROGRESS = PageSpec(
+    "app_pages/production_progress.py",
+    "생산 진도",
+    ":material/trending_up:",
+    reads_scenario=False,
+    reads_period=False,
+)
+PRODUCTION_PROGRESS_SUBPAGES: tuple[PageSpec, ...] = ()
+
 # 실현 Capa 손실 분해(표준 → 실적)다. 실행 관리가 모은 실적으로 Capa 를 다시 내는 자리라 Dynamic
 # 머리로 둔다. 주소는 `dynamic_capa` 그대로다(북마크·사이드바 CSS 가 기댄다). 라벨에 `(구현중)` 을
 # 달지 않는 대신 이 화면 자신의 성숙도는 본문 헤더의 배지(프로토타입·연결 대기)가 말한다.
@@ -462,12 +476,13 @@ class SidebarGroupSpec:
 
 # HOME(가운데·큰 글씨)과 Admin Area(조회 컨트롤 아래)는 배치가 달라 `app.py` 가 손수 그린다.
 # 나머지 박스는 여기 선언에서 나온다 — 새 그룹을 더할 때 `app.py` 를 함께 고칠 필요가 없다. 계산
-# 그룹의 차례는 약속(Static) → 이행(실행 관리) → 실적(Dynamic)이다.
+# 그룹의 차례는 약속(Static) → 이행(실행 관리) → 생산 진도 → 실적(Dynamic)이다.
 SIDEBAR_GROUPS: tuple[SidebarGroupSpec, ...] = (
     SidebarGroupSpec("capa_chatbot", CAPA_CHATBOT),
     SidebarGroupSpec("scenario_management", SCENARIO_MANAGEMENT),
     SidebarGroupSpec("static_capa", STATIC_CAPA, STATIC_CAPA_SUBPAGES),
     SidebarGroupSpec("execution_management", EXECUTION_MANAGEMENT, EXECUTION_MANAGEMENT_SUBPAGES),
+    SidebarGroupSpec("production_progress", PRODUCTION_PROGRESS, PRODUCTION_PROGRESS_SUBPAGES),
     SidebarGroupSpec("dynamic_capa", DYNAMIC_CAPA, DYNAMIC_CAPA_SUBPAGES),
 )
 
