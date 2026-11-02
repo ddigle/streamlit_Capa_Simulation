@@ -5,8 +5,8 @@
 
 두 겹으로 본다. ① 글자 가드 — `app.py`·`app_pages/`·`src/`·`scripts/` 의 문자열 상수(독스트링은
 화면에 나가지 않아 뺀다)와 `src/capa_simulation/guides/` 의 Markdown 에 「%p」 가 없고, f-string 이
-`%` 서식 바로 뒤에 「p」 를 붙이지 않는다(`f"{x:.1%}p"`). 문서(README·AGENTS·HANDOFF·`docs/`, 런북
-7장 빼고)도 본다. ② 값으로만 정해지는 글 — 실적 지표의 Gap
+`%` 서식 바로 뒤에 「p」 를 붙이지 않는다(`f"{x:.1%}p"`). 문서(README·AGENTS·HANDOFF·CLAUDE·
+`docs/`, 런북 7장 빼고)도 본다. ② 값으로만 정해지는 글 — 실적 지표의 Gap
 단위(빼는 Gap 과 비율 Gap 이 셈은 다르고 단위는 둘 다 「%」), Chatbot 대본, 개조 일정 조건 오류문.
 입장 화면 티저(`intro_overlay_assets/capa-teaser.html`)는 쇼케이스 원본의 복사본이라
 (CLAUDE.md 「발표 자료는 저장소 밖에서 운영한다」) 가드 밖이다 — 그 「%p」 는 화면에 그리지 않는
@@ -48,7 +48,7 @@ from capa_simulation.services.process_equipment_timeline import IMPACT_COLUMNS
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("app.py", "app_pages", "src", "scripts")
 GUIDES = PROJECT_ROOT / "src" / "capa_simulation" / "guides"
-DOCUMENTS = ("README.md", "AGENTS.md", "HANDOFF.md", "docs")
+DOCUMENTS = ("README.md", "AGENTS.md", "HANDOFF.md", "CLAUDE.md", "docs")
 RUNBOOK = PROJECT_ROOT / "docs" / "internal_update_runbook.md"
 RUNBOOK_RECORD = ("## 7. ", "## 8. ")
 POINT = "%p"
@@ -173,8 +173,8 @@ def _document_lines(path: Path) -> Iterator[tuple[int, str]]:
 
 
 def test_no_document_writes_a_percent_point() -> None:
-    """문서(README · AGENTS · HANDOFF · `docs/`)에도 「%p」 가 없다 — 사용자 규칙은 「어디에도」
-    다. 기호를 말할 때는 「퍼센트 포인트 기호」 로, 사용자 메모 인용은 기호 자리만
+    """문서(README · AGENTS · HANDOFF · CLAUDE · `docs/`)에도 「%p」 가 없다 — 사용자 규칙은
+    「어디에도」 다. 기호를 말할 때는 「퍼센트 포인트 기호」 로, 사용자 메모 인용은 기호 자리만
     「[퍼센트 포인트 기호]」 로 적는다. 런북 7장은 발송한 배포(202610271800 은 그 기호로
     그렸다)의 기록이라 다음 배포가 7장을 다시 쓸 때까지 그대로다(`docs/TODO.md` 3장
     2026-11-01 「퍼센트 차이도 「%」」 ②)."""

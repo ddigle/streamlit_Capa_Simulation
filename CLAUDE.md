@@ -141,7 +141,7 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   Area만 배치가 달라 `app.py`가 손수 그린다. 계산 그룹은 셋이다(2026-10-17) — Static Capa(약속) →
   실행 관리(이행: 공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·가용설비·Space·실적 셋) → Dynamic Capa(실적:
   실현 Capa·재공). 「Dynamic」 은 실적 Capa 에만 쓰고, 설비 일정으로 낸 가용대수는 화면에서 「설비 일정
-  기준 가용대수」, HOME 의 %p 손입력은 「확보율 보정」이다 — 코드·키·DB 이름(`dynamic_*`·`execution`)은
+  기준 가용대수」, HOME 의 확보율 % 손입력은 「확보율 보정」이다 — 코드·키·DB 이름(`dynamic_*`·`execution`)은
   그대로다(AGENTS 1장 「세 영역」). 사내 모듈 화면은 이 선언 밖이다 — `module_registry.py` 가 실행 때 `modules/*/module.json` 을 읽어
   별도 상자 「사내 모듈」 을 세우고(켜진 모듈이 없으면 상자가 없다) `SIDEBAR_GROUPS` 에 넣지 않는다. 색인 화면 `app_pages/internal_modules.py`
   만 `ALL_SPECS` 에 있다.
