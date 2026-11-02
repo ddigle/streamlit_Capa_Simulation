@@ -101,9 +101,11 @@ from capa_simulation.page_tabs_state import (
     TabStrip,
     closed,
     load_strip,
+    moved,
     pinned_to,
     pop_fresh_notice,
     queue_switch,
+    resync_strip,
     spec_for_path,
     store_strip,
     switch_to_queued_tab,
@@ -111,6 +113,7 @@ from capa_simulation.page_tabs_state import (
     tabs_epoch,
 )
 from capa_simulation.process_detail_state import PROCESS_DETAIL_REQUEST_KEY
+from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_FRAGMENT_KEY, rerun_fragment_if_alone
 
 _ASSETS = Path(__file__).with_name("page_tabs_assets")
 
@@ -147,6 +150,9 @@ TEXT = {
     # 시나리오(「셋업 B」 r8 — `app_header.equipment_return_mark` 의 `label`)이고 JS 가 채운다.
     "returned": RETURN_NOTICE,
     "themed": THEME_RETURN_NOTICE,
+    # 끌거나 `Ctrl+Shift+←/→` 로 차례를 바꾼 뒤 읽기 도구에 알리는 글(`{index}` 는 보이는 차례,
+    # 1부터). 조사는 고정 명사 「탭」 에 붙인다(AGENTS 8장).
+    "moved": "{label} 탭을 {index}번째로 옮겼습니다",
 }
 # 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비
 # 마스터 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`). 그림자 DOM 이라 JS 가
@@ -329,23 +335,73 @@ def _on_select() -> None:
 def _on_close(active: str | None) -> None:
     """`close` — 목록에서 뺀다. 지금 탭이면 이웃을 대기 칸에. 고정·마지막 탭·없는 id 는 그대로 둔다.
 
-    `active` 는 이 탭 줄을 그린 회차의 지금 화면이다. 빠르게 둘을 닫아도 둘 다 닫힌다(id 기준)."""
+    `active` 는 이 탭 줄을 그린 회차의 지금 화면이다. 빠르게 둘을 닫아도 둘 다 닫힌다(id 기준). 지금
+    탭이 아닌 탭을 닫으면 화면은 그대로라 페이지를 다시 돌리지 않는다(`_settle_drawn`)."""
+    payload = _payload("close")
     target = _payload_id("close")
-    if target is None:
+    if payload is None or target is None:
         return
     strip, neighbour = closed(load_strip(), target, active)
     store_strip(strip)
     if neighbour is not None:
         queue_switch(neighbour)
+        return
+    _settle_drawn(strip, payload)
 
 
 def _on_pin() -> None:
-    """`pin` — `{id, pinned}` 로 고정하거나 푼다. 고정 탭은 왼쪽에 모인다."""
+    """`pin` — `{id, pinned}` 로 고정하거나 푼다. 고정 탭은 왼쪽에 모인다(페이지는 그대로)."""
     payload = _payload("pin")
     target = None if payload is None else payload.get("id")
     pinned = None if payload is None else payload.get("pinned")
-    if isinstance(target, str) and isinstance(pinned, bool):
-        store_strip(pinned_to(load_strip(), target, pinned))
+    if payload is None or not isinstance(target, str) or not isinstance(pinned, bool):
+        return
+    strip = pinned_to(load_strip(), target, pinned)
+    store_strip(strip)
+    _settle_drawn(strip, payload)
+
+
+def _on_move() -> None:
+    """`move` — `{id, before}` 로 고정하지 않은 탭을 `before` 탭 앞(없으면 끝)으로 옮긴다(끌기·
+    `Ctrl+Shift+←/→`, 2026-11-02 사용자 요청). 페이지는 다시 돌리지 않는다."""
+    payload = _payload("move")
+    target = None if payload is None else payload.get("id")
+    before = None if payload is None else payload.get("before")
+    if payload is None or not isinstance(target, str):
+        return
+    if before is not None and not isinstance(before, str):
+        return
+    strip = moved(load_strip(), target, before)
+    store_strip(strip)
+    _settle_drawn(strip, payload)
+
+
+def _settle_drawn(strip: TabStrip, payload: Mapping[str, Any]) -> None:
+    """화면을 옮기지 않는 누름(고정·차례·다른 탭 닫기) 콜백의 **마지막 줄**.
+
+    JS 는 누르자마자 서버와 같은 규칙(`<tabs-order>`)으로 탭 줄을 고쳐 그리고 그 결과를 싣는다 —
+    보이는 차례 `order` 와 고정 탭 `pins`. 서버 목록이 그와 같으면 앱 전체를 다시 돌릴 까닭이 없다 —
+    페이지가 다시 돌면 HOME 은 진행 막대가 뜨고 무거운 화면은 본문이 흐려졌다(2026-11-02 사용자 요청
+    — 「핀 고정으로 인해 데이터가 갱신될 것이 없어서 부적절한 동작」). 상자 여닫기와 같은 길로 빈
+    프래그먼트만 다시 돌린다(`rerun_fragment_if_alone` — 직전 앱 전체 회차가 끝나지 않았거나 다른
+    위젯도 바뀌었으면 지금처럼 앱 전체 회차로 물러난다, AGENTS 9장 「여닫을 때 본문을 다시 돌리지
+    않는다」). 탭 줄 data 는 다음 앱 전체 회차가 같은 목록으로 싣는다.
+
+    서버 목록이 JS 그림과 다르면(그 사이 목록이 바뀌어 서버가 다르게 받았다) epoch 를 올려 앱 전체
+    회차의 data 로 다시 그리게 한다(`resync_strip`).
+    """
+    order = payload.get("order")
+    pins = payload.get("pins")
+    drawn = (
+        isinstance(order, list)
+        and isinstance(pins, list)
+        and tuple(order) == strip.paths
+        and frozenset(pins) == strip.pinned
+    )
+    if not drawn:
+        resync_strip()
+        return
+    rerun_fragment_if_alone(SIDEBAR_TOGGLE_FRAGMENT_KEY, PAGE_TABS_COMPONENT_KEY)
 
 
 def route_page_tabs(
@@ -392,5 +448,6 @@ def render_page_tabs(
         on_select_change=_on_select,
         on_close_change=partial(_on_close, active),
         on_pin_change=_on_pin,
+        on_move_change=_on_move,
         width="stretch",
     )

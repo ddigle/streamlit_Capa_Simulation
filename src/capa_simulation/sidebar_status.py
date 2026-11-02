@@ -254,16 +254,31 @@ def _only_this_widget_changed(key: str) -> bool:
     (2026-09-30 브라우저 실측). Streamlit 은 이것을 공개 API 로 알려 주지 않아 세션 상태 내부
     (`_widget_changed`)를 읽는다 — 버전은 `streamlit==1.63.0` 으로 고정돼 있고, 내부가 바뀌어 읽지
     못하면 앱 전체 재실행(지금까지의 동작)으로 물러난다.
+
+    Components v2 부품(화면 탭 줄)은 위젯이 둘이다 — 상태 칸(`key` 의 위젯)과 트리거를 모아 받는 칸
+    (`own_widget_ids` 의 둘째). 트리거 누름은 둘째 칸만 바꾸므로 둘 다 `key` 의 위젯으로 센다.
     """
     try:
         from streamlit.runtime.state.session_state_proxy import get_session_state
 
         session = get_session_state()._state
-        own = session._get_widget_id(key)
+        own = own_widget_ids(session._get_widget_id(key))
         changed = {wid for wid in session._new_widget_state if session._widget_changed(wid)}
     except Exception:  # noqa: BLE001 — 내부가 바뀌면 안전한 쪽(앱 전체 재실행)으로 물러난다
         return False
-    return changed == {own}
+    return bool(changed) and changed <= own
+
+
+def own_widget_ids(widget_id: str) -> frozenset[str]:
+    """위젯 id 하나와 그 위젯 몫으로 세는 id. Components v2 부품이면 트리거 모음 칸 id 가 더 붙는다.
+
+    모음 칸 id 는 Streamlit 1.63 `bidi_component.main._make_trigger_id(<부품 id>, "events")` 다 —
+    내부 이름이라 판을 올려 바뀌면 그 칸이 「다른 위젯」 으로 세어져 지금처럼 앱 전체 회차로
+    물러난다.
+    """
+    from streamlit.components.v2.bidi_component.main import _make_trigger_id
+
+    return frozenset({widget_id, _make_trigger_id(widget_id, "events")})
 
 
 def remembered_box_key(key: str) -> str:

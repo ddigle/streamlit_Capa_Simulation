@@ -32,6 +32,7 @@ from capa_simulation.page_tabs_state import (
     closed,
     fallback_tab,
     load_strip,
+    moved,
     normalized,
     note_current_page,
     opened,
@@ -39,6 +40,7 @@ from capa_simulation.page_tabs_state import (
     pop_fresh_notice,
     reentered_open_tab,
     refused_at_tab_limit,
+    resync_strip,
     spec_for_path,
     store_strip,
     switch_to_queued_tab,
@@ -82,6 +84,32 @@ def test_pinning_and_unpinning_keep_pinned_tabs_on_the_left() -> None:
     assert unpinned.paths == (C, H, A, B)
     assert unpinned.closable(H)
     assert pinned_to(strip, "app_pages/gone.py", True) == strip
+
+
+def test_an_unpinned_tab_moves_before_the_named_tab_or_to_the_end() -> None:
+    """끌어서 차례 바꾸기(2026-11-02 사용자 요청). `before` 는 위치 번호가 아니라 탭 id 라 그 사이
+    닫힘·새 탭에도 뜻이 남는다. 없거나 모르는 `before` 는 끝이다."""
+    strip = _strip(H, A, B, C)
+
+    assert moved(strip, C, A).paths == (H, C, A, B)
+    assert moved(strip, A, C).paths == (H, B, A, C)
+    assert moved(strip, A, None).paths == (H, B, C, A)
+    assert moved(strip, A, "app_pages/gone.py").paths == (H, B, C, A)
+    # 옮긴 뒤에도 고정은 그대로다.
+    assert moved(strip, C, A).pinned == frozenset({H})
+
+
+def test_pinned_tabs_never_move_and_nothing_moves_in_front_of_them() -> None:
+    """고정 탭은 끌지 않는다. 고정하지 않은 탭을 고정 탭 앞에 놓아도 고정 묶음 바로 뒤에 선다."""
+    strip = _strip(H, C, A, B, pinned=(H, C))
+
+    assert moved(strip, H, None) == strip
+    assert moved(strip, C, B) == strip
+    assert moved(strip, B, H).paths == (H, C, B, A)
+    assert moved(strip, B, C).paths == (H, C, B, A)
+    # 없는 탭·자기 앞은 그대로다.
+    assert moved(strip, "app_pages/gone.py", A) == strip
+    assert moved(strip, A, A) == strip
 
 
 def test_closing_a_background_tab_keeps_the_page() -> None:
@@ -154,6 +182,18 @@ def test_the_epoch_rises_only_when_the_list_really_changes(session: SimpleNamesp
     store_strip(INITIAL_STRIP)
     assert session.session_state[PAGE_TABS_EPOCH_KEY] == first
     store_strip(_strip(H, A))
+    assert session.session_state[PAGE_TABS_EPOCH_KEY] == first + 1
+    assert load_strip() == _strip(H, A)
+
+
+def test_a_resync_raises_only_the_epoch(session: SimpleNamespace) -> None:
+    """탭 줄 JS 의 그림이 서버 목록과 어긋난 때 — 목록은 그대로 두고 epoch 만 올려 다음 data 가
+    달라지게 한다(같은 data 면 부품 함수가 다시 불리지 않아 어긋난 그림이 남는다)."""
+    store_strip(_strip(H, A))
+    first = session.session_state[PAGE_TABS_EPOCH_KEY]
+
+    resync_strip()
+
     assert session.session_state[PAGE_TABS_EPOCH_KEY] == first + 1
     assert load_strip() == _strip(H, A)
 

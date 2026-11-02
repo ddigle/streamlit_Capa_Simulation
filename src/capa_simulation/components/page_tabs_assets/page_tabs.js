@@ -1,5 +1,8 @@
 // 머리 띠 아래 화면 탭 줄. 파이썬(`components/page_tabs.py`)이 연 탭·지금 탭·점·고정을 data 로 주고, 누름은
-// 트리거(`select`·`close`·`pin`) 한 번으로만 돌려준다 — 남는 상태 값은 보내지 않는다(보내면 앱 전체가 다시 돈다).
+// 트리거(`select`·`close`·`pin`·`move`) 한 번으로만 돌려준다 — 남는 상태 값은 보내지 않는다(보내면 앱 전체가 다시 돈다).
+// 화면을 옮기지 않는 누름(고정·끌어서 차례 바꾸기·다른 탭 닫기)은 누르자마자 서버와 같은 규칙으로 탭 줄을 고쳐 그리고
+// (`<tabs-order>`) 그 차례를 트리거에 싣는다 — 서버는 같은 차례면 페이지를 다시 돌리지 않는다(`page_tabs._settle_drawn`).
+// 고정하지 않은 탭은 끌어서(`<tabs-drag>`) 또는 `Ctrl+Shift+←/→` 로 차례를 바꾼다.
 // 이 함수는 data·테마가 바뀔 때마다 다시 불린다. 뼈대는 처음 한 번 세우고, 다시 불리면 탭 id 로 맞춰 고친다.
 // 탭은 `<nav>` 안의 목록과 단추다. 탭 패널이 없는 이동 목록이라 탭 역할(ARIA)을 쓰지 않는다 — 배포 화면 확인
 // 스크립트가 그 역할로 본문 탭을 찾는다.
@@ -48,6 +51,13 @@ const HOLD_MS = 400
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
 const DOUBLE_PRESS_PX = 8
+// 끌기(`<tabs-drag>`) — 마우스·펜이 끌기로 넘어가는 가로 움직임, 터치 길게 누르기, 가장자리에서 한 프레임에 굴리는 최대 px,
+// 끈 뒤 누름을 버리는 창. 키보드 대안은 `MOVE_KEYS` 다(단추의 `aria-keyshortcuts`).
+const DRAG_SLOP_PX = 5
+const TOUCH_HOLD_MS = 350
+const DRAG_EDGE_SPEED_PX = 12
+const DRAG_CLICK_MS = 400
+const MOVE_KEYS = 'Control+Shift+ArrowLeft Control+Shift+ArrowRight'
 // 넘친 목록 가장자리 흐림 폭(`page_tabs.css` 의 2rem). 지금 탭을 보이게 굴릴 때도 이만큼 띄워 흐림 밖에 둔다.
 const EDGE_PX = 32
 // 새로 읽으면 공식으로 돌아갈 설비 시나리오(띠 CSS 변수 둘 — 파이썬 `app_header.EQUIPMENT_RETURN_VARIABLE` 은 테마 단추
@@ -200,6 +210,75 @@ function strayPress(last, id, now, x, y, ms, px) {
   return Math.abs(x - last.x) <= px && Math.abs(y - last.y) <= px
 }
 // </tabs-press>
+
+// <tabs-order>
+// 고정·끌기·닫기는 누르자마자 탭 줄을 고쳐 그린다 — 서버(`page_tabs_state`)와 **같은 규칙**으로. 그래서 서버는 페이지를 다시
+// 돌리지 않고 목록만 받는다(2026-11-02 사용자 요청 — 핀 고정에 페이지 로딩이 떴다). `ids` 는 보이는 차례, `pinned` 는 그 가운데
+// 고정한 탭이다. 돌려주는 `{ids, pinned}` 는 고정 탭을 왼쪽에 모은 차례다(`normalized`). `pinnedOrder` 는 `pinned_to` 와 같다 —
+// 고정하면 고정 묶음의 끝, 풀면 나머지 묶음의 앞. `movedOrder` 는 `moved` 와 같다 — 고정하지 않은 탭을 `before` 앞(없거나
+// 모르면 끝)으로, 고정 탭·없는 탭은 그대로. `closableIds` 는 `TabStrip.closable` 이다(고정 탭·마지막 하나는 닫지 않는다).
+// `keyboardMove` 는 `Ctrl+Shift+←/→` 한 칸 — 고정 묶음을 넘지 않고, 옮길 수 없으면 null, 옮기면 `{before}`.
+function normalizedOrder(ids, marks) {
+  const seen = []
+  for (const id of ids) if (!seen.includes(id)) seen.push(id)
+  const pinned = seen.filter((id) => marks.includes(id))
+  return { ids: [...pinned, ...seen.filter((id) => !marks.includes(id))], pinned }
+}
+function pinnedOrder(ids, pinned, id, pin) {
+  if (!ids.includes(id)) return normalizedOrder(ids, pinned)
+  const marks = pinned.filter((other) => other !== id)
+  return normalizedOrder(ids, pin ? [...marks, id] : marks)
+}
+function movedOrder(ids, pinned, id, before) {
+  if (!ids.includes(id) || pinned.includes(id) || id === before) return normalizedOrder(ids, pinned)
+  const rest = ids.filter((other) => other !== id)
+  const at = before !== null && rest.includes(before) ? rest.indexOf(before) : rest.length
+  rest.splice(at, 0, id)
+  return normalizedOrder(rest, pinned)
+}
+function closableIds(ids, pinned) {
+  return ids.length > 1 ? ids.filter((id) => !pinned.includes(id)) : []
+}
+function keyboardMove(ids, pinned, id, step) {
+  const at = ids.indexOf(id)
+  if (at < 0 || pinned.includes(id)) return null
+  const to = at + step
+  if (to < ids.filter((other) => pinned.includes(other)).length || to >= ids.length) return null
+  const rest = ids.filter((other) => other !== id)
+  return { before: to < rest.length ? rest[to] : null }
+}
+// </tabs-order>
+
+// <tabs-drag>
+// 고정하지 않은 탭을 끌어 차례를 바꾼다(2026-11-02 사용자 요청). HTML5 끌어 놓기가 아니라 포인터 이벤트다 — 가로로 넘치는
+// 그림자 DOM 목록 안에서 축을 묶고, 고정 묶음 앞에서 멈추고, 끈 뒤의 누름을 버리고, 터치 길게 누르기를 직접 다룬다.
+// `dragStarts` — 마우스·펜은 가로로 `slop` 를 넘게 움직이면 끌기다(그 전의 누름은 고르기·고정·× 그대로). 세로만 움직이면
+// 끌지 않는다(세로로 끌어 떼어 내기는 떠 있는 창 몫으로 남긴다). 터치는 `holdMs` 길게 누른 뒤에야 끌기이고, 그 전에 움직이면
+// 목록 굴리기라 그만둔다('cancel'). `dropSlot` — 끄는 탭의 가운데(`x`)가 지난 다른 탭 가운데(`mids`, 보이는 차례) 수이고
+// 고정 탭 수(`min`) 아래로 내려가지 않는다(고정 묶음 앞으로 못 간다). `edgeSpeed` — 목록 가장자리 `edge` 안에서 끄는 동안
+// 굴릴 한 프레임 px(왼쪽은 음수). `dragClick` — 끌기가 끝난 뒤 `ms` 안의 누름은 고르기로 보내지 않는다(끈 탭을 놓은 자리의
+// click).
+function dragStarts(kind, dx, dy, held, slop, holdMs) {
+  if (kind === 'touch') {
+    if (held >= holdMs) return 'drag'
+    return Math.hypot(dx, dy) > slop ? 'cancel' : 'wait'
+  }
+  return Math.abs(dx) > slop ? 'drag' : 'wait'
+}
+function dropSlot(mids, x, min) {
+  let slot = 0
+  while (slot < mids.length && mids[slot] < x) slot += 1
+  return Math.max(min, slot)
+}
+function edgeSpeed(x, left, right, edge, max) {
+  if (x < left + edge) return -Math.ceil(max * Math.min(1, (left + edge - x) / edge))
+  if (x > right - edge) return Math.ceil(max * Math.min(1, (x - right + edge) / edge))
+  return 0
+}
+function dragClick(endedAt, now, ms) {
+  return endedAt !== null && now - endedAt < ms
+}
+// </tabs-drag>
 // <tabs-links>
 // 상한에서 화면 링크 누름을 거른다. `open` 은 열린 탭 주소(닫는 중이라 숨긴 탭은 뺀다), `max` 는 상한, `pages` 는 아는
 // 화면 주소 → 이름이다. 앞서 지나 보낸 링크 누름(`flight` — {href, at, epoch})의 화면은 그 누름이 연 탭이 아직 탭 줄 data
@@ -376,12 +455,17 @@ export default function (component) {
   if (!nav || !data) return
   const list = nav.querySelector('.capa-tabs-list')
   const notice = nav.querySelector('.capa-tabs-notice')
+  const drop = nav.querySelector('.capa-tabs-drop')
+  const announcer = nav.querySelector('.capa-tabs-announce')
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
+    drag: null, endDrag: null, dragEndAt: null, onTouchMove: null,
   })
+  // 끄는 중에 새 data 가 왔다(다른 회차가 목록을 바꿨다) — 끌기를 접고 새 data 대로 그린다. 놓은 자리를 보내지 않는다.
+  if (S.drag && S.endDrag) S.endDrag(false)
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
   // 이미 걸었다(`<tabs-history-install>`). 이것은 그 JS 가 서지 못한 문서의 안전망이다.
   installHistoryGuard()
@@ -458,6 +542,8 @@ export default function (component) {
     setAttr(P.pin, 'aria-pressed', pinned ? 'true' : 'false')
     setAttr(P.pin, 'aria-label', fill(text.pin, { label }))
     setAttr(P.pin, 'title', fill(text.pin, { label }))
+    // 고정하지 않은 탭만 `Ctrl+Shift+←/→` 로 차례를 바꾼다(끌기의 키보드 대안).
+    setAttr(P.tab, 'aria-keyshortcuts', pinned ? null : MOVE_KEYS)
     P.close.hidden = !tab.closable
     setAttr(P.close, 'aria-label', fill(text.close, { label }))
     setAttr(P.close, 'title', fill(text.close, { label }))
@@ -516,6 +602,57 @@ export default function (component) {
   }
   S.onScroll()
 
+  // 보이는 탭(닫는 중이라 숨긴 탭은 뺀다)과 그 차례·고정 — 서버 목록과 견줄 그림이다(`<tabs-order>`).
+  const visibleItems = () => [...list.children].filter((item) => !item.hidden && S.items.get(item.dataset.id) === item)
+  const visibleIds = () => visibleItems().map((item) => item.dataset.id)
+  const pinnedIds = () => visibleItems().filter((item) => item.classList.contains('is-pinned')).map((item) => item.dataset.id)
+  // × 와 키보드 차례 바꾸기 표지를 서버 규칙(`closableIds`)대로 맞춘다 — 다음 data 가 올 때까지의 그림이다.
+  const syncControls = () => {
+    const shown = visibleItems()
+    const ids = shown.map((item) => item.dataset.id)
+    const closable = closableIds(ids, pinnedIds())
+    for (const item of shown) {
+      item.__parts.close.hidden = !closable.includes(item.dataset.id)
+      setAttr(item.__parts.tab, 'aria-keyshortcuts', item.classList.contains('is-pinned') ? null : MOVE_KEYS)
+    }
+  }
+  // 정한 차례(`{ids, pinned}`)대로 놓는다 — 자리가 다른 탭만 옮기고, 옮기며 빠진 초점은 같은 단추로 돌려준다.
+  const arrange = (plan) => {
+    const shadow = nav.getRootNode()
+    const focused = shadow.activeElement
+    let at = list.firstElementChild
+    for (const id of plan.ids) {
+      const item = S.items.get(id)
+      if (!item) continue
+      while (at && at !== item && at.hidden) at = at.nextElementSibling
+      if (at === item) at = at.nextElementSibling
+      else list.insertBefore(item, at)
+    }
+    for (const id of plan.ids) {
+      const item = S.items.get(id)
+      if (!item) continue
+      const pinned = plan.pinned.includes(id)
+      item.classList.toggle('is-pinned', pinned)
+      setAttr(item.__parts.pin, 'aria-pressed', pinned ? 'true' : 'false')
+    }
+    syncControls()
+    if (focused && focused.isConnected && shadow.activeElement !== focused) focused.focus({ preventScroll: true })
+  }
+  // 고정하지 않은 탭을 `before` 앞(null 이면 끝)으로 옮겨 그리고 `move` 를 보낸다. 차례가 그대로면 보내지 않는다. 옮긴 탭이
+  // 목록 밖이면 보이게 굴리고, 읽기 도구에 몇 번째로 갔는지 알린다.
+  function commitMove(item, before) {
+    const id = item.dataset.id
+    const ids = visibleIds()
+    const plan = movedOrder(ids, pinnedIds(), id, before)
+    if (plan.ids.join('\n') === ids.join('\n')) return false
+    arrange(plan)
+    S.send('move', { id, before, order: plan.ids, pins: plan.pinned, epoch: S.data.epoch })
+    const left = item.offsetLeft
+    const scroll = revealScroll(left, left + item.offsetWidth, list.scrollLeft, list.clientWidth, EDGE_PX)
+    if (scroll !== list.scrollLeft) list.scrollLeft = scroll
+    setText(announcer, fill(text.moved, { label: item.__parts.label.textContent, index: plan.ids.indexOf(id) + 1 }))
+    return true
+  }
   const leaveOk = () => !S.data.leave || window.confirm(fill(text.leave, { list: S.data.leave }))
   const busy = (item) => {
     setAttr(item.__parts.tab, 'aria-busy', 'true')
@@ -645,11 +782,13 @@ export default function (component) {
       const next = S.items.get(focusAfterClose(open, id))
       if (next) next.__parts.tab.focus({ preventScroll: true })
     }
-    // 곧바로 숨긴다 — 다음 회차가 목록에서 뺄 때까지 기다림이 보이지 않게.
+    // 곧바로 숨긴다 — 다음 회차가 목록에서 뺄 때까지 기다림이 보이지 않게. 남은 탭의 × 도 서버 규칙대로 맞춘다(마지막
+    // 하나는 닫지 않는다) — 지금 탭이 아닌 탭을 닫으면 서버는 페이지를 다시 돌리지 않아 다음 data 가 곧 오지 않는다.
     item.hidden = true
+    syncControls()
     // 지금 탭을 닫으면 서버가 이웃으로 옮긴다 — 그 이동도 기록 한 칸·한 번에 하나다.
     if (leaving) moving(null)
-    S.send('close', { id, epoch: S.data.epoch })
+    S.send('close', { id, order: visibleIds(), pins: pinnedIds(), epoch: S.data.epoch })
   }
   // 탭 줄 밖의 떠나기 — 머리 툴바의 테마 단추는 화면을 새로 읽어 세션을 바꾼다. 편집표에서 막 손을 뗀 누름이면 그 편집
   // 회차가 돌아와 저장 안 함 표지가 설 때까지 붙든 뒤(`<tabs-hold>`) 부른 쪽의 확인·새로고침(`fn`)을 잇는다. 단추가 누를
@@ -669,8 +808,152 @@ export default function (component) {
     },
   }
   window.__capaLeaveGate = gate
-  // 2단계(끌어서 떼어 내기·차례 바꾸기)가 포인터 처리를 붙일 자리.
-  const startDrag = () => {}
+  // ---- 끌어서 차례 바꾸기(`<tabs-drag>`). DOM 차례는 놓을 때 한 번만 바꾼다 — 끄는 동안은 끄는 탭이 포인터를 따라가고
+  // (`translateX`) 놓을 자리에 세로 막대(`.capa-tabs-drop`)가 선다. 놓으면 서버와 같은 규칙(`movedOrder`)으로 차례를 고치고
+  // `move` 를 보낸다. 고정 탭은 끌지 않고, 고정 묶음 앞에는 놓지 않는다. Esc·포인터 취소는 제자리로 돌린다.
+  const beginDrag = () => {
+    const d = S.drag
+    d.others = visibleItems().filter((other) => other !== d.item)
+    d.pinned = d.others.filter((other) => other.classList.contains('is-pinned')).length
+    const lastPinned = d.pinned > 0 ? d.others[d.pinned - 1] : null
+    d.low = lastPinned ? lastPinned.offsetLeft + lastPinned.offsetWidth : 0
+    d.left0 = d.item.offsetLeft
+    d.width = d.item.offsetWidth
+    d.grab = d.x0 - d.item.getBoundingClientRect().left
+    d.gap = parseFloat(window.getComputedStyle(list).columnGap) || 0
+    d.on = true
+    nav.classList.add('is-dragging')
+    d.item.classList.add('is-dragging')
+    try {
+      list.setPointerCapture(d.pointer)
+    } catch (error) { /* 포인터가 이미 떠났다 — 창 처리기가 받는다 */ }
+    placeDrag()
+  }
+  // 끄는 탭을 포인터 자리로 옮기고 놓을 자리(`slot`)와 막대를 정한다. 목록 가장자리면 목록을 굴린다.
+  function placeDrag() {
+    const d = S.drag
+    if (!d || !d.on) return
+    const box = list.getBoundingClientRect()
+    const high = Math.max(d.low, list.scrollWidth - d.width)
+    const left = Math.min(high, Math.max(d.low, d.x - box.left + list.scrollLeft - d.grab))
+    d.item.style.transform = `translateX(${left - d.left0}px)`
+    const mids = d.others.map((other) => other.offsetLeft + other.offsetWidth / 2)
+    d.slot = dropSlot(mids, left + d.width / 2, d.pinned)
+    const next = d.others[d.slot]
+    const last = d.others[d.others.length - 1]
+    const edge = next ? next.offsetLeft - d.gap / 2 : last ? last.offsetLeft + last.offsetWidth + d.gap / 2 : 0
+    const x = Math.min(list.offsetLeft + list.clientWidth, Math.max(list.offsetLeft, list.offsetLeft + edge - list.scrollLeft))
+    drop.style.left = `${x}px`
+    drop.hidden = false
+    cancelAnimationFrame(d.frame)
+    const speed = list.scrollWidth > list.clientWidth ? edgeSpeed(d.x, box.left, box.right, EDGE_PX, DRAG_EDGE_SPEED_PX) : 0
+    if (speed !== 0) {
+      d.frame = requestAnimationFrame(() => {
+        const was = list.scrollLeft
+        list.scrollLeft = was + speed
+        if (list.scrollLeft !== was) placeDrag()
+      })
+    }
+  }
+  const advanceDrag = () => {
+    const d = S.drag
+    if (!d) return
+    if (d.on) {
+      placeDrag()
+      return
+    }
+    const verdict = dragStarts(d.kind, d.x - d.x0, d.y - d.y0, Date.now() - d.at, DRAG_SLOP_PX, TOUCH_HOLD_MS)
+    if (verdict === 'cancel') endDrag(false)
+    else if (verdict === 'drag') beginDrag()
+  }
+  // 끌기를 끝낸다. `commit` 이면 놓은 자리로 옮긴다. 끄는 중이 아니었으면(문턱 전) 아무것도 바꾸지 않는다 — 그 누름은
+  // 평소의 고르기다.
+  const endDrag = (commit) => {
+    const d = S.drag
+    if (!d) return
+    S.drag = null
+    clearTimeout(d.holdTimer)
+    cancelAnimationFrame(d.frame)
+    for (const [type, fn] of d.listeners) window.removeEventListener(type, fn, true)
+    try {
+      if (list.hasPointerCapture(d.pointer)) list.releasePointerCapture(d.pointer)
+    } catch (error) { /* 이미 풀렸다 */ }
+    if (!d.on) return
+    S.dragEndAt = Date.now()
+    nav.classList.remove('is-dragging')
+    d.item.classList.remove('is-dragging')
+    d.item.style.transform = ''
+    drop.hidden = true
+    if (!commit || !d.item.isConnected || d.item.hidden) return
+    const next = d.others[d.slot]
+    commitMove(d.item, next ? next.dataset.id : null)
+  }
+  S.endDrag = endDrag
+  // 누름이 끌기가 될 수 있는가 — 왼쪽 단추(터치·펜은 첫 손가락)로 고정하지 않은 보이는 탭의 이름 칸을 눌렀고, 옮길 자리가 있다
+  // (고정하지 않은 탭이 둘 이상). 핀·× 를 누른 것은 그 단추의 누름이다.
+  const startDrag = (event) => {
+    if (event.button !== 0 || event.isPrimary === false) return
+    // 문턱을 넘지 않은 채 남은 앞 누름(놓는 사건을 놓쳤다)은 접는다 — 남겨 두면 다음 끌기가 시작되지 않는다.
+    if (S.drag) {
+      if (S.drag.on) return
+      endDrag(false)
+    }
+    const target = event.target
+    const button = target && target.closest ? target.closest('button') : null
+    if (button && !button.classList.contains('capa-tabs-tab')) return
+    const item = target && target.closest ? target.closest('.capa-tabs-item') : null
+    if (!item || !list.contains(item) || item.hidden || item.classList.contains('is-pinned')) return
+    if (visibleItems().filter((other) => !other.classList.contains('is-pinned')).length < 2) return
+    const d = {
+      item, pointer: event.pointerId, kind: event.pointerType || 'mouse', x0: event.clientX, y0: event.clientY,
+      x: event.clientX, y: event.clientY, at: Date.now(), on: false, slot: 0, frame: 0, holdTimer: 0, listeners: [],
+    }
+    S.drag = d
+    const own = (other) => other.pointerId === d.pointer && S.drag === d
+    d.listeners = [
+      ['pointermove', (move) => {
+        if (!own(move)) return
+        d.x = move.clientX
+        d.y = move.clientY
+        advanceDrag()
+      }],
+      ['pointerup', (up) => { if (own(up)) endDrag(true) }],
+      ['pointercancel', (cancel) => { if (own(cancel)) endDrag(false) }],
+      ['keydown', (key) => {
+        if (key.key !== 'Escape' || S.drag !== d) return
+        key.preventDefault()
+        key.stopPropagation()
+        endDrag(false)
+      }],
+    ]
+    for (const [type, fn] of d.listeners) window.addEventListener(type, fn, true)
+    if (d.kind === 'touch') d.holdTimer = setTimeout(advanceDrag, TOUCH_HOLD_MS)
+  }
+  // 끌기를 시작한 터치는 목록 굴리기·길게 누르기 메뉴로 넘기지 않는다. 처리기는 처음 한 번 단다(수동이 아니어야 막는다).
+  if (!S.onTouchMove) {
+    S.onTouchMove = (event) => {
+      if (S.drag && S.drag.on) event.preventDefault()
+    }
+    list.addEventListener('touchmove', S.onTouchMove, { passive: false })
+  }
+  list.oncontextmenu = (event) => {
+    if (S.drag && S.drag.kind === 'touch') event.preventDefault()
+  }
+  // 끌기의 키보드 대안 — 고정하지 않은 탭 단추에 초점이 있을 때 `Ctrl+Shift+←/→` 로 한 칸(고정 묶음은 넘지 않는다). 초점은
+  // 옮긴 탭에 남는다. 다른 조합은 브라우저·OS 가 먼저 가져간다(Ctrl+Shift+PageUp/Down — 브라우저 탭 옮기기, Alt+← — 뒤로가기,
+  // Alt+Shift — 입력 언어 바꾸기).
+  list.onkeydown = (event) => {
+    if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
+    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
+    const tab = step && event.target && event.target.closest ? event.target.closest('.capa-tabs-tab') : null
+    const item = tab ? tab.closest('.capa-tabs-item') : null
+    if (!item || !list.contains(item)) return
+    event.preventDefault()
+    const plan = keyboardMove(visibleIds(), pinnedIds(), item.dataset.id, step)
+    if (plan === null) return
+    commitMove(item, plan.before)
+    tab.focus({ preventScroll: true })
+  }
   // 누르는 순간(포커스가 탭으로 옮기기 전) 편집표에 포커스가 있었는지 적는다 — 칸 편집기는 바깥 누름에 편집을 적용하고 닫는다.
   list.onpointerdown = (event) => {
     S.pressFromGrid = S.gridFocused
@@ -687,6 +970,12 @@ export default function (component) {
       : null
   }
   list.onclick = (event) => {
+    // 끌기를 놓은 자리의 누름은 고르기가 아니다(`<tabs-drag>`).
+    if (dragClick(S.dragEndAt, Date.now(), DRAG_CLICK_MS)) {
+      S.dragEndAt = null
+      event.stopPropagation()
+      return
+    }
     const button = event.target.closest('button')
     const item = button && button.closest('.capa-tabs-item')
     if (!item || !list.contains(item)) return
@@ -701,7 +990,11 @@ export default function (component) {
       close(item)
     } else if (pinning) {
       pressed(event, item)
-      S.send('pin', { id: item.dataset.id, pinned: !item.classList.contains('is-pinned'), epoch: S.data.epoch })
+      // 서버와 같은 규칙으로 곧바로 옮겨 그리고(`<tabs-order>`) 그 차례를 싣는다 — 서버는 페이지를 다시 돌리지 않는다.
+      const id = item.dataset.id
+      const plan = pinnedOrder(visibleIds(), pinnedIds(), id, !item.classList.contains('is-pinned'))
+      arrange(plan)
+      S.send('pin', { id, pinned: plan.pinned.includes(id), order: plan.ids, pins: plan.pinned, epoch: S.data.epoch })
     } else {
       select(item)
     }
@@ -840,6 +1133,9 @@ export default function (component) {
   }
 
   return () => {
+    if (S.drag && S.endDrag) S.endDrag(false)
+    if (S.onTouchMove) list.removeEventListener('touchmove', S.onTouchMove)
+    S.onTouchMove = null
     clearTimeout(S.noticeTimer)
     clearTimeout(S.busyTimer)
     clearTimeout(S.settleTimer)

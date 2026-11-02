@@ -3436,6 +3436,128 @@ def check_page_tabs(screen: Screen) -> str:
     return summarize_page_tabs(opened, back_home, closed)
 
 
+# 탭 줄 틀(`page_tabs_frame`, 2026-11-02 사용자 요청). 본문 스크롤 칸(`stMain`)을 0 과 60px 에 두고
+# 탭 줄 칸의 top 을 읽는다 — 스크롤을 처음 내리는 동안 탭 줄이 따라 올라가면 두 값이 다르다(바탕
+# 3aad85d 56 → 52.5px). 끝에 0 으로 되돌린다.
+_STRIP_TOPS_JS = """(key) => {
+  const main = document.querySelector('[data-testid="stMain"]');
+  const host = document.querySelector('.st-key-' + key);
+  if (!main || !host) return null;
+  const tops = [];
+  for (const y of [0, 60]) {
+    main.scrollTop = y;
+    tops.push({ y: main.scrollTop, top: host.getBoundingClientRect().top });
+  }
+  main.scrollTop = 0;
+  return tops;
+}"""
+# 탭 줄 안 보이는 탭의 차례(화면 경로 — 판정에만 쓴다). 화면 이름은 찍지 않는다.
+_TAB_IDS_JS = """(key) => {
+  const host = document.querySelector('.st-key-' + key);
+  const holder = host && [...host.querySelectorAll('*')].find((e) => e.shadowRoot);
+  const root = holder && holder.shadowRoot;
+  if (!root) return [];
+  const items = [...root.querySelectorAll('.capa-tabs-item')];
+  return items.filter((li) => !li.hidden).map((li) => li.dataset.id);
+}"""
+# 진행 막대(HOME `LoadingProgress`)가 한 프레임이라도 섰는가를 프레임마다 적는다 — 고정 누름이
+# 페이지를 다시 돌리면 HOME 은 막대가 잠깐 선다(바탕 12/12).
+_PROGRESS_WATCH_JS = """() => {
+  if (window.__capaProgressWatch) window.__capaProgressWatch.on = false;
+  const watch = { on: true, seen: false };
+  window.__capaProgressWatch = watch;
+  const tick = () => {
+    if (!watch.on) return;
+    if (document.querySelector('[data-testid="stProgress"]')) watch.seen = true;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}"""
+_PROGRESS_SEEN_JS = """() => {
+  const watch = window.__capaProgressWatch;
+  if (!watch) return null;
+  watch.on = false;
+  return watch.seen;
+}"""
+
+
+def summarize_page_tabs_frame(
+    tops: Sequence[Mapping[str, Any]] | None,
+    progress: Sequence[bool | None],
+    moved: bool,
+    kept: bool,
+) -> str:
+    """탭 줄 틀 한 줄 — 스크롤 0·60px 의 탭 줄 top 차이(px), HOME 에서 다른 탭을 고정했다 풀 때 진행
+    막대가 선 누름 수, 고정하지 않은 탭을 끌어 고정 묶음 바로 뒤로 옮겼는가, 주소가 그대로인가.
+    정한 동작은 「0px · 막대 0/2 · 옮김 · 그대로」 다(2026-11-02 사용자 요청)."""
+    scrolled = bool(tops) and len(tops or []) == 2 and float((tops or [])[1]["y"]) > 0
+    shift = abs(float(tops[1]["top"]) - float(tops[0]["top"])) if tops and scrolled else None
+    bars = sum(1 for seen in progress if seen)
+    same = (
+        shift is not None and shift < 0.5 and bars == 0 and None not in progress and moved and kept
+    )
+    shift_text = "스크롤 안 됨" if shift is None else f"{shift:g}px"
+    return (
+        f"스크롤 탭 줄 이동 {shift_text} · 고정 진행 막대 {bars}/{len(progress)} · "
+        f"끌어 옮김 {'됨' if moved else '안 됨'} · 주소 {'그대로' if kept else '바뀜'} — "
+        f"정한 동작과 {'같음' if same else '다름'}"
+    )
+
+
+def _drag_tab(screen: Screen, source: int, target_x: float) -> None:
+    """탭 줄의 `source` 번째 탭을 마우스로 끌어 `target_x` 에 놓는다(가로 5px 를 넘어야 끌기다)."""
+    box = screen.tab_item(source).bounding_box()
+    if box is None:
+        return
+    x0, y0 = box["x"] + 24, box["y"] + box["height"] / 2
+    screen.page.mouse.move(x0, y0)
+    screen.page.mouse.down()
+    for step in range(1, 13):
+        screen.page.mouse.move(x0 + (target_x - x0) * step / 12, y0)
+        screen.page.wait_for_timeout(16)
+    screen.page.mouse.up()
+
+
+def check_page_tabs_frame(screen: Screen) -> str:
+    """머리 띠 아래 화면 탭 줄의 틀 — (1) 긴 화면(HOME)을 스크롤해도 탭 줄이 움직이지 않는가, (2)
+    다른 탭 고정·풀기가 페이지를 다시 돌리지 않는가(HOME 진행 막대), (3) 고정하지 않은 탭을 끌어
+    차례를 바꾸면 화면은 그대로인가. 개수·px·있음/없음만 찍는다. 보는 조작이라 DB 에 쓰지 않는다 —
+    고정은 풀어 되돌리고, 탭 차례는 세션에만 산다."""
+    screen.open_home()
+    for _ in range(PAGE_TABS_MAX):
+        if not _close_first_closable_tab(screen):
+            break
+    for href in (SCENARIO_MANAGEMENT_PAGE, ADMIN_AREA_PAGE):
+        screen.open_page(href)
+    screen.open_home()
+    screen.step("스크롤")
+    tops = screen.js(_STRIP_TOPS_JS, PAGE_TABS_KEY)
+    screen.step("고정")
+    progress: list[bool | None] = []
+    for _ in range(2):
+        item = screen.tab_item(1)
+        item.hover()
+        screen.js(_PROGRESS_WATCH_JS)
+        item.locator(".capa-tabs-pin").click()
+        time.sleep(0.6)
+        screen.wait_idle()
+        progress.append(screen.js(_PROGRESS_SEEN_JS))
+    screen.step("끌기")
+    before = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
+    pinned = sum(1 for tab in screen.page_tabs() if tab["pinned"])
+    moved = kept = False
+    if len(before) >= pinned + 2:
+        first = screen.tab_item(pinned).bounding_box()
+        if first is not None:
+            _drag_tab(screen, len(before) - 1, first["x"] + 6)
+            time.sleep(0.6)
+            screen.wait_idle()
+            after = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
+            moved = after == [*before[:pinned], before[-1], *before[pinned:-1]]
+            kept = screen.path() in ("", "/")
+    return summarize_page_tabs_frame(tops, progress, moved, kept)
+
+
 def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
     """사이드바 그룹 상자 한 줄 — 상자마다 「제목 머리 + 하위 수」, 정한 차례·수와 같은지, 상자
     제목이 한 줄로 다 보이는지. 제목은 고정 어휘(`SIDEBAR_GROUP_BOXES`)에서 적고 화면 글자는
@@ -5153,6 +5275,7 @@ ITEMS: tuple[Item, ...] = (
     Item("upeh_help", "기준 정보 UPEH 월 칸 도움말", check_upeh_help),
     Item("space_zone_fields", "Space 배치 편집기 영역 칸", check_space_zone_fields),
     Item("equipment_preference", "설비 Preference 입력 비가동 표", check_equipment_preference),
+    Item("page_tabs_frame", "화면 탭 줄 틀·고정·끌기", check_page_tabs_frame),
 )
 
 

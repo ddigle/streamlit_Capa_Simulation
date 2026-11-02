@@ -332,6 +332,42 @@ def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> 
     assert PAGE_TABS_SELECTOR == f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 
 
+def _rem_value(rule: str, name: str) -> float:
+    found = re.search(rf"(?<![\w-]){re.escape(name)}: (-?[\d.]+)rem( !important)?;", rule)
+    assert found is not None, (name, rule)
+    return float(found.group(1))
+
+
+def test_the_tab_strip_rests_where_it_sticks_so_scrolling_never_moves_it() -> None:
+    """스크롤을 내릴 때 틀(화면 탭 줄)이 살짝 움직였다(2026-11-02 사용자 요청). 탭 줄의
+    제자리(스크롤 0)는 본문 위 여백 + 그 앞 높이 0 테마 iframe 과의 요소 간격(1.63 은 1rem)인데, 그
+    합 4rem 이 sticky 자리 3.75rem 보다 3.5px 아래라 처음 3.5px 를 스크롤하는 동안 탭 줄이 따라
+    올라갔다(사본 브라우저 — 탭 줄 top 56 → 52.5px). 탭 줄을 그 차이만큼 끌어올려 「위 여백 + 간격 +
+    끌어올림 = sticky 자리」 로 맞춘다. 위 여백은 사이드바 시트가 실제로 보내는 값을 읽는다."""
+    from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
+    from capa_simulation.design import tokens
+    from capa_simulation.navigation import SIDEBAR_GROUPS
+
+    block = _screen_block()
+    rules = {
+        selector.strip(): body
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
+    }
+    strip = rules[PAGE_TABS_SELECTOR]
+    sheet = build_sidebar_stylesheet(SIDEBAR_GROUPS, "", admin_box_key="test_admin")
+    main = re.search(r'\[data-testid="stMainBlockContainer"\] \{([^}]*)\}', sheet)
+    assert main is not None
+    padding = _rem_value(main.group(1), "padding-top")
+    top = _rem_value(strip, "top")
+    lift = _rem_value(strip, "margin-top")
+
+    assert top == tokens.HEADER_BAND_REM
+    assert padding == tokens.MAIN_TOP_PADDING_REM
+    assert padding + tokens.BLOCK_GAP_REM + lift == pytest.approx(top)
+    # 띠 높이(진행 막대 자리·띠 면)와 같은 값이다.
+    assert f"height: {tokens.rem(tokens.HEADER_BAND_REM)};" in _status_slot_css()
+
+
 def test_the_tab_strip_dims_while_a_modal_holds_the_page() -> None:
     """모달(`st.dialog` — Guide 등)이 열린 동안 탭 줄 누름은 말없이 먹힌다 — 1.63 은 앱 뿌리
     `#root` 에 `inert` 를 단다(브라우저 확인). 탭 줄은 띠 바로 밑에 늘 보여 눌릴 것처럼 보였으므로

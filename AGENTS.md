@@ -1107,7 +1107,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/page_tabs_state.py` — 머리 띠 아래 화면 탭 줄의 상태다(2026-10-24 사용자 결정). 이 접속에서 연 탭
   (`PageSpec.path`, 보이는 차례)·고정한 탭·이동 대기 칸·「이미 연 탭으로 들어옴」 표지(`reentered_open_tab`)를 세션에 두고,
   열기(끝에 붙임)·닫기(지금 탭이면 오른쪽, 없으면 왼쪽 이웃)·고정(고정 탭은 왼쪽, 닫기 없음, 마지막 하나는 닫지 않음)·
-  상한(`MAX_TABS` 10 — 넘는 화면은 열지 않고 탭 줄에 알림)을 순수 함수로 정한다. UI 가 없어
+  차례(`moved` — 고정하지 않은 탭을 `before` 탭 앞, 없으면 끝으로. 고정 탭은 움직이지 않고 그 앞으로도 가지 않는다 —
+  2026-11-02 사용자 요청)·상한(`MAX_TABS` 10 — 넘는 화면은 열지 않고 탭 줄에 알림)을 순수 함수로 정한다. 탭 줄 JS 가
+  누르자마자 그린 차례와 서버 목록이 어긋나면 `resync_strip` 이 epoch 만 올려 다음 data 로 다시 그리게 한다. UI 가 없어
   `process_detail_state` 가 불러온다. 탭 줄 컴포넌트 key(`PAGE_TABS_COMPONENT_KEY`)도 여기다 — 껍데기 CSS 가 그 key 를 고른다.
   - 옮기는 것은 `app.py` 의 `st.navigation()` 바로 뒤 본문(`switch_to_queued_tab` — 테마 인자를 싣는 `st.switch_page`)이다.
     콜백은 칸만 적는다(9장 「팝업과 콜백」). 목록은 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만
@@ -1626,7 +1628,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `sidebar_expander`·`condition_card` 는 `key` + 상태 추적 `on_change` 로 펼침을 기억한다(`expanded=` 없음).
     조건 카드 key 는 `condition_card_<이름>` 이고 `sidebar_style.py` 가 그 접두어 하나로 서식을 건다.
   - 상자 여닫기는 9장 **여닫을 때 본문을 다시 돌리지 않는다**의 구현이다(`on_box_toggle`·`rerun_fragment_if_alone`·
-    `keeps_app_run_open`·`begin_app_run`). 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다.
+    `keeps_app_run_open`·`begin_app_run`). 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다. 「이번 상호작용에서
+    그 위젯만 바뀌었나」(`_only_this_widget_changed`)는 Components v2 부품의 트리거 모음 칸(1.63 `_make_trigger_id(<부품 id>,
+    "events")` — `own_widget_ids`)도 그 위젯으로 센다 — 화면 탭 줄 고정·차례가 이 길로 페이지를 다시 돌리지 않는다(2026-11-02).
+    내부 이름이 바뀌면 그 칸이 「다른 위젯」 으로 세어져 앱 전체 회차로 물러난다.
 - `src/capa_simulation/design/tokens.py` — 색·서체·표 치수를 역할 이름으로 단일 정의하고 지금 테마의 값을
   돌려준다(규칙 `docs/design_system.md`). Figure 공통 유틸은 `components/plotly_layout.py` 다.
   - 두 팔레트(`_LIGHT`·`_DARK`)를 `__getattr__`(PEP 562)로 골라 쓰는 쪽은 `tokens.SURFACE` 그대로다. 두 팔레트의
@@ -1779,8 +1784,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
-  컴포넌트」). data 는 세션 목록·`PageSpec` 상수뿐이고 DB 를 읽지 않는다. 트리거 셋(`select`·`close`·`pin`)의 콜백은 목록 칸·
-  이동 대기 칸만 적는다. 탭 이름은 사이드바 라벨에서 「(구현중)」만 뗀 글, 아이콘은 사이드바 Material 아이콘이다.
+  컴포넌트」). data 는 세션 목록·`PageSpec` 상수뿐이고 DB 를 읽지 않는다. 트리거 넷(`select`·`close`·`pin`·`move`)의 콜백은
+  목록 칸·이동 대기 칸만 적는다. 탭 이름은 사이드바 라벨에서 「(구현중)」만 뗀 글, 아이콘은 사이드바 Material 아이콘이다.
   - 점(`page_unsaved_marks`)은 세션만 읽는다 — 붙여넣기 대기·설비 편집본(가용설비·Space 두 탭)·Past Data 초안·시나리오
     관리 표 초안은 어느 화면에서나, 편집표의 적용 전 편집과 Space 층 사용 편집 초안(`floor_state_draft_pending` — `사용
     편집` 토글이 위젯 상태라 화면을 떠나면 초안이 버려진다)·가용설비 현황 설비 마스터 탭 작은 편집표 둘의 적용 전 편집
@@ -1881,7 +1886,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮기지 않는다 — 이웃 탭의 숨은 핀이 `:focus-within` 으로 드러나 남았다), 키보드(`click` 의 `detail` 0)로 옮긴
     화면이 다 선 뒤 초점이 body 로 빠졌으면 — 그 사이 다른 키·포인터 입력이 없을 때만 — 지금 탭으로 돌려준다. 기다리던
     누름은 옮긴 화면 회차가 끝나기 전에도 보내므로(`MOVED_GRACE_MS`) 초점은 그 회차 끝을 따로 기다린다(길어야 `BUSY_MS`).
-    로빙 tabindex(탭마다 Tab 세 번 멈춤 줄이기)는 2단계 끌기와 함께 본다(TODO).
+    로빙 tabindex(탭마다 Tab 세 번 멈춤 줄이기)는 아직이다(TODO — 끌기의 키보드 대안이 화살표 홀로를 비워 두었다).
+  - **화면을 옮기지 않는 누름은 페이지를 다시 돌리지 않는다**(2026-11-02 사용자 요청 — 핀 고정에 HOME 진행 막대가 떴다). 고정·
+    끌어서 차례·지금 탭이 아닌 탭 닫기는 JS 가 누르자마자 서버와 같은 규칙(순수 구획 `<tabs-order>` — `pinned_to`·`moved`·
+    `closable` 과 같은 표를 node 시험이 맞댄다)으로 탭 줄을 고쳐 그리고, 그린 차례(`order`)·고정(`pins`)을 트리거에 싣는다.
+    콜백의 마지막 줄 `_settle_drawn` 이 서버 목록과 같으면 상자 여닫기와 같은 빈 프래그먼트만 다시 돌리고
+    (`rerun_fragment_if_alone(SIDEBAR_TOGGLE_FRAGMENT_KEY, PAGE_TABS_COMPONENT_KEY)` — 직전 앱 전체 회차가 끝나지 않았거나 다른
+    위젯도 바뀌었으면 앱 전체 회차), 다르면 `resync_strip` 으로 epoch 를 올려 앱 전체 회차의 data 로 다시 그리게 한다. 탭 줄
+    data 는 다음 앱 전체 회차가 같은 목록으로 싣는다. 사본 측정(HOME, 고정·풀기 12번) — 바탕 델타 258 · 진행 막대 12/12 · 본문
+    흐림 표지 12/12(약 0.1초) → 델타 1 · 막대 0/12 · 흐림 표지 5/12(한두 프레임 — 콜백 회차가 앱 전체 회차로 시작하는 틈, 상자
+    여닫기도 같다). 다른 탭 고르기·지금 탭 닫기는 화면을 옮기므로 앱 전체 회차 그대로다.
+  - **고정하지 않은 탭은 끌어서 차례를 바꾼다**(순수 구획 `<tabs-drag>`, 2026-11-02 사용자 요청). HTML5 끌어 놓기가 아니라
+    포인터 이벤트다 — 마우스·펜은 가로 `DRAG_SLOP_PX`(5px)를 넘어야 끌기이고(그 전의 누름은 고르기·고정·× 그대로, 세로만
+    움직이면 끌지 않는다 — 세로 떼어 내기는 떠 있는 창 몫), 터치는 `TOUCH_HOLD_MS`(350ms) 길게 누른 뒤에야 끌기다(그 전에
+    움직이면 목록 굴리기). 끄는 동안 그 탭이 포인터를 따라가고(`translateX`) 놓을 자리에 세로 막대(`.capa-tabs-drop`)가 서며,
+    목록 가장자리(`EDGE_PX`)에서는 목록을 굴린다. 놓을 자리는 고정 탭 수 아래로 내려가지 않는다. 놓을 때 DOM 차례를 한 번
+    바꾸고 `move`(`{id, before}` — 위치 번호가 아니라 뒤 탭 id)를 보낸다. Esc·포인터 취소는 제자리, 끈 뒤 `DRAG_CLICK_MS` 안의
+    click 은 고르기로 보내지 않는다(화면을 옮기지 않는다). 끄는 중 새 data 가 오면 끌기를 접는다. 키보드 대안은 고정하지 않은
+    탭 단추의 `Ctrl+Shift+←/→`(한 칸, 고정 묶음을 넘지 않음 — 단추에 `aria-keyshortcuts`, 옮긴 뒤 `role="status"` 칸에
+    「… 탭을 n번째로 옮겼습니다」)이고, 초점은 옮긴 탭에 남는다. 차례는 다른 탭 상태처럼 세션에만 산다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름·꺼진 링크 표지)를 같은 iframe 에
   싣는다(`extra_scripts`).
@@ -2040,7 +2063,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않고, 앞 세션이 공식 발행 쌍이었으면(새로고침은 가정이 아니었으면) 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
-    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래), 큰 제목 칸 sr-only
+    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래. `top` 은 머리 띠 높이
+    `tokens.HEADER_BAND_REM` 이고, 제자리를 그 자리와 같게 `margin-top: tokens.PAGE_TABS_LIFT_REM`(-0.25rem)으로 끌어올린다 —
+    제자리는 본문 위 여백 `MAIN_TOP_PADDING_REM` + 그 앞 높이 0 테마 iframe 과의 요소 간격 `BLOCK_GAP_REM` 이라 3.5px 아래였고,
+    스크롤을 처음 내리는 동안 탭 줄이 따라 올라갔다 — 2026-11-02 사용자 요청 「스크롤 아래로 내릴 때 틀이 살짝 움직임」.
+    `tests/test_app_header.py` 가 「위 여백 + 간격 + 끌어올림 = sticky 자리」 를 맞댄다), 큰 제목 칸 sr-only
     (`PAGE_TITLE_SELECTOR`), 모달 동안 탭 줄 흐림(`#root[inert]` — 1.63 은 `st.dialog` 가 열리면 앱 뿌리에 `inert` 를 단다,
     탭 줄 누름이 말없이 먹혔다). 인쇄에는 제목이 보인다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
@@ -5022,7 +5049,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **여닫을 때 본문을 다시 돌리지 않는다.** 사이드바 상자 전부(페이지 그룹·`sidebar_expander`·조건 카드)의 `on_change` 는
   `sidebar_status.on_box_toggle` 이다 — 기억 칸을 적고 `app.py` 맨 위의 빈 프래그먼트(`SIDEBAR_TOGGLE_FRAGMENT_KEY`)만
   다시 돌린다. 같은 페이지의 끝까지 돈 실행 뒤(`begin_app_run` 의 `AppRun` 표지)이고 다른 위젯이 함께 바뀌지 않았을
-  때만 그렇게 하고(`fragment_rerun_is_safe`), 아니면 앱 전체를 다시 돌린다.
+  때만 그렇게 하고(`fragment_rerun_is_safe`), 아니면 앱 전체를 다시 돌린다. 화면 탭 줄의 화면을 옮기지 않는 누름(고정·
+  끌어서 차례·지금 탭이 아닌 탭 닫기 — 2026-11-02 사용자 요청)도 같은 길이다(`page_tabs._settle_drawn`). Components v2
+  트리거는 부품 key 의 위젯이 아니라 트리거 모음 칸을 바꾸므로 판정이 그 칸도 같은 위젯으로 센다(`own_widget_ids`).
 - 회차마다 페이지가 다시 채우는 자리표시자(사이드바 페이지 칸 등)는 `st.empty` 가 아니라 `st.container` 로 둔다 —
   `st.empty` 칸은 회차가 시작되자마자 앞 회차 내용을 지워 계산 동안 화면이 튀고, 블록은 페이지가 다시 보낼 때까지 앞
   내용을 남긴다. 빈 컨테이너는 그려지지 않아 높이가 없으므로 그런 칸에 `border`·`height` 를 주지 않는다.

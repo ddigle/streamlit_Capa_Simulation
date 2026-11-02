@@ -39,7 +39,7 @@ from capa_simulation.page_tabs_state import (
     PAGE_TABS_REENTRY_KEY,
     TabStrip,
 )
-from capa_simulation.sidebar_status import CONDITION_DIALOG_SINK_KEY
+from capa_simulation.sidebar_status import CONDITION_DIALOG_SINK_KEY, SIDEBAR_TOGGLE_FRAGMENT_KEY
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -533,6 +533,192 @@ def test_pinning_and_unpinning_through_the_app_keep_pinned_tabs_left(
     _ok(app.switch_page(H).run())
     assert _ids(sent) == [B, A, H]
     assert (_tab(sent, H)["pinned"], _tab(sent, H)["closable"]) == (False, True)
+
+
+def test_moving_a_tab_through_the_app_keeps_the_new_order_and_the_page(
+    _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """끌어서 차례 바꾸기(2026-11-02 사용자 요청) — 고정하지 않은 탭을 다른 탭 앞으로 옮기면 다음
+    회차의 data 가 그 차례를 싣고, 지금 화면은 그대로다. 고정 탭(HOME)은 옮기지 않는다."""
+    app = _ok(_app.run())
+    _ok(app.switch_page(A).run())
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [H, A, B]
+
+    _press(app, monkeypatch, page_tabs._on_move, {"move": {"id": B, "before": A, "epoch": 2}})
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [H, B, A] and _data(sent)["active"] == B
+
+    _press(app, monkeypatch, page_tabs._on_move, {"move": {"id": H, "before": None, "epoch": 3}})
+    _press(app, monkeypatch, page_tabs._on_move, {"move": {"id": A, "before": H, "epoch": 3}})
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [H, A, B]
+
+
+@pytest.fixture
+def strip_session(monkeypatch: pytest.MonkeyPatch) -> tuple[SimpleNamespace, list[tuple[str, ...]]]:
+    """가짜 세션 위의 탭 콜백과, 빈 프래그먼트 다시 돌리기(`rerun_fragment_if_alone`) 기록."""
+    fake = SimpleNamespace(session_state={})
+    monkeypatch.setattr(page_tabs, "st", fake)
+    monkeypatch.setattr(page_tabs_state, "st", fake)
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(page_tabs, "rerun_fragment_if_alone", lambda *args: calls.append(args))
+    page_tabs_state.store_strip(TabStrip((H, A, B), frozenset({H})))
+    return fake, calls
+
+
+_SINK = (SIDEBAR_TOGGLE_FRAGMENT_KEY, PAGE_TABS_COMPONENT_KEY)
+
+
+def test_strip_only_presses_rerun_only_the_empty_fragment(
+    strip_session: tuple[SimpleNamespace, list[tuple[str, ...]]],
+) -> None:
+    """고정·차례·다른 탭 닫기는 화면을 옮기지 않는다 — JS 가 누르자마자 그린 차례(`order`·`pins`)와
+    서버 목록이 같으면 페이지를 다시 돌리지 않고 빈 프래그먼트만 돌린다(2026-11-02 사용자 요청 — 핀
+    고정에 HOME 진행 막대가 떴다)."""
+    fake, calls = strip_session
+    state = fake.session_state
+
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "pin": {"id": B, "pinned": True, "order": [H, B, A], "pins": [H, B], "epoch": 1}
+    }
+    page_tabs._on_pin()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, B, A) and state[PAGE_TABS_PINNED_KEY] == (H, B)
+    assert calls == [_SINK]
+
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "pin": {"id": B, "pinned": False, "order": [H, B, A], "pins": [H], "epoch": 1}
+    }
+    page_tabs._on_pin()
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "move": {"id": A, "before": B, "order": [H, A, B], "pins": [H], "epoch": 1}
+    }
+    page_tabs._on_move()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, A, B)
+    assert calls == [_SINK] * 3
+
+    # 지금 탭(B)이 아닌 탭 닫기도 화면을 옮기지 않는다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"close": {"id": A, "order": [H, B], "pins": [H], "epoch": 1}}
+    page_tabs._on_close(B)
+    assert state[PAGE_TABS_OPEN_KEY] == (H, B)
+    assert PAGE_TABS_QUEUED_KEY not in state
+    assert calls == [_SINK] * 4
+
+
+def test_a_drawing_the_server_did_not_take_resyncs_through_a_full_run(
+    strip_session: tuple[SimpleNamespace, list[tuple[str, ...]]],
+) -> None:
+    """서버 목록이 JS 그림과 다르면(그 사이 목록이 바뀌어 서버가 받지 않았다) 프래그먼트만 돌리지
+    않는다 — 앱 전체 회차가 탭 줄 data 로 다시 그린다. 목록이 그대로여도 epoch 를 올려 그 data 가
+    달라지게 한다."""
+    fake, calls = strip_session
+    state = fake.session_state
+    epoch = state[PAGE_TABS_EPOCH_KEY]
+
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "move": {
+            "id": "app_pages/gone.py",
+            "before": A,
+            "order": ["app_pages/gone.py", H, A, B],
+            "pins": [H],
+            "epoch": 1,
+        }
+    }
+    page_tabs._on_move()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, A, B)
+    assert state[PAGE_TABS_EPOCH_KEY] == epoch + 1
+    # 차례 정보가 없는 트리거(옛 탭 줄)도 앱 전체 회차다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"pin": {"id": A, "pinned": True, "epoch": 1}}
+    page_tabs._on_pin()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, A, B) and state[PAGE_TABS_PINNED_KEY] == (H, A)
+    # 지금 탭 닫기는 화면을 옮긴다 — 대기 칸에 이웃을 적고 앱 전체 회차다.
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "close": {"id": B, "order": [H, A], "pins": [H, A], "epoch": 1}
+    }
+    page_tabs._on_close(B)
+    assert state[PAGE_TABS_QUEUED_KEY] == A
+    assert calls == []
+
+
+def _live_strip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """탭 줄을 이 AppTest 회차 **안에서** 등록해 진짜 트리거 칸을 세운다. 모듈을 읽을 때 등록한 것은
+    AppTest 실행 밖이라 그 실행에서 「미등록」이다(모듈 설명)."""
+    assets = page_tabs._ASSETS
+
+    def live(**kwargs: Any) -> Any:
+        component = st.components.v2.component(
+            "capa_page_tabs",
+            html=(assets / "page_tabs.html").read_text(encoding="utf-8"),
+            css=(assets / "page_tabs.css").read_text(encoding="utf-8"),
+            js=(assets / "page_tabs.js").read_text(encoding="utf-8"),
+        )
+        return component(**kwargs)
+
+    monkeypatch.setattr(page_tabs, "_PAGE_TABS", live)
+
+
+def _strip_widget_id(app: AppTest) -> str:
+    for element in app._tree.children[0].children.values():
+        proto = getattr(element, "proto", None)
+        widget_id = str(getattr(proto, "id", ""))
+        if getattr(element, "type", None) == "bidi_component" and widget_id.endswith(
+            f"-{PAGE_TABS_COMPONENT_KEY}"
+        ):
+            return widget_id
+    raise AssertionError("탭 줄 부품이 그려지지 않았다")
+
+
+def _press_strip(app: AppTest, event: str, value: dict[str, Any]) -> None:
+    """브라우저처럼 탭 줄 트리거 하나를 보낸 회차 — AppTest 는 Components v2 트리거를 보내지 못해
+    위젯 상태에 상태 칸(바뀌지 않음)과 트리거 모음 칸(Streamlit `_make_trigger_id(<부품 id>,
+    "events")`)을 더해 돌린다."""
+    from streamlit.components.v2.bidi_component.main import _make_trigger_id
+    from streamlit.proto.WidgetStates_pb2 import WidgetState
+
+    strip_id = _strip_widget_id(app)
+    events_id = _make_trigger_id(strip_id, "events")
+    states = app._tree.get_widget_states()
+    states.widgets.append(WidgetState(id=strip_id, json_value="{}"))
+    states.widgets.append(
+        WidgetState(id=events_id, json_trigger_value=json.dumps([{"event": event, "value": value}]))
+    )
+    app._run(states)
+
+
+def test_pinning_on_a_finished_home_reruns_only_the_empty_fragment(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """진짜 프래그먼트 회차로 본다 — HOME 이 끝까지 돈 뒤 다른 탭을 고정하면 콜백만 도는 회차와 빈
+    프래그먼트 회차만 돌고 HOME 본문은 다시 오지 않는다(바탕 3aad85d 는 앱 전체 회차 — 사본에서 델타
+    259개·HOME 진행 막대 12/12). 고정은 세션 목록에 들어 다음 앱 전체 회차의 data 가 싣는다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    _live_strip(monkeypatch)
+    app = _ok(_app.run())
+    _ok(app.switch_page(A).run())
+    _ok(app.switch_page(H).run())
+    sink = browser.fragment_keyed(SIDEBAR_TOGGLE_FRAGMENT_KEY)
+
+    _press_strip(app, "pin", {"id": A, "pinned": True, "order": [H, A], "pins": [H, A], "epoch": 2})
+
+    _ok(app)
+    assert browser.started == [[], [sink]]
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    )
+    assert app.session_state[PAGE_TABS_PINNED_KEY] == (H, A)
+
+    # 끌어서 옮기기도 같은 길이다 — 고정을 풀고 A 를 HOME 앞에 두려 해도 고정 묶음 뒤에 선다.
+    _ok(app.switch_page(H).run())
+    _press_strip(app, "pin", {"id": A, "pinned": False, "order": [H, A], "pins": [H], "epoch": 3})
+    assert browser.started == [[], [sink]]
+    _ok(app.switch_page(B).run())
+    _press_strip(app, "move", {"id": B, "before": A, "order": [H, B, A], "pins": [H], "epoch": 4})
+    assert browser.started == [[], [sink]]
+    assert app.session_state[PAGE_TABS_OPEN_KEY] == (H, B, A)
 
 
 # ------------------------------------------------------------------ 점·떠나기 확인

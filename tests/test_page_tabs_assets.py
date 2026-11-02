@@ -25,12 +25,58 @@ JS = (ASSETS / "page_tabs.js").read_text(encoding="utf-8")
 
 
 def test_the_strip_sends_only_one_shot_triggers() -> None:
-    """누름은 트리거 셋(`select`·`close`·`pin`)뿐이다 — 남는 상태 값은 앱 전체를 다시 돌린다."""
+    """누름은 트리거 넷(`select`·`close`·`pin`·`move`)뿐이다 — 남는 상태 값은 앱 전체를 다시 돌린다.
+    `move` 는 끌어서 차례 바꾸기(2026-11-02 사용자 요청)다."""
     assert "setStateValue" not in JS
-    assert set(re.findall(r"S\.send\('([a-z]+)'", JS)) == {"select", "close", "pin"}
+    assert set(re.findall(r"S\.send\('([a-z]+)'", JS)) == {"select", "close", "pin", "move"}
     source = Path(page_tabs.__file__).read_text(encoding="utf-8")
-    for name in ("on_select_change", "on_close_change", "on_pin_change"):
+    for name in ("on_select_change", "on_close_change", "on_pin_change", "on_move_change"):
         assert name in source
+
+
+def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
+    """고정·차례·닫기는 누르자마자 서버 규칙(`<tabs-order>`)으로 그리고 그
+    차례(`order`)·고정(`pins`)을 싣는다 — 서버(`page_tabs._settle_drawn`)는 같은 차례면 페이지를
+    다시 돌리지 않는다(2026-11-02 사용자 요청 — 핀 고정에 페이지 로딩)."""
+    for event in ("pin", "close", "move"):
+        call = re.search(rf"S\.send\('{event}', \{{([^}}]*)\}}\)", JS)
+        assert call is not None, event
+        assert "order:" in call.group(1) and "pins:" in call.group(1), event
+    click = JS[JS.index("list.onclick = (event) => {") :]
+    click = click[: click.index("\n  }\n")]
+    assert click.index("pinnedOrder(") < click.index("arrange(plan)") < click.index("S.send('pin'")
+    close = JS[JS.index("const closeNow = (item) => {") :]
+    close = close[: close.index("\n  }\n")]
+    assert (
+        close.index("item.hidden = true")
+        < close.index("syncControls()")
+        < close.index("S.send('close'")
+    )
+
+
+def test_tabs_are_dragged_with_pointer_events_and_a_keyboard_alternative() -> None:
+    """HTML5 끌어 놓기가 아니라 포인터 이벤트다 — 그림자 DOM·가로로 넘치는 목록 안에서 축을 묶고
+    고정 묶음 앞에서 멈추고 터치 길게 누르기를 다뤄야 한다. 끈 뒤의 누름은 고르기가 아니다(화면을
+    옮기지 않는다). 키보드 대안은 `Ctrl+Shift+←/→` 이고 단추가 `aria-keyshortcuts` 로 알린다. 놓을
+    자리는 세로 막대가 말하고 옮긴 뒤 읽기 도구에 알린다."""
+    assert "draggable" not in JS + HTML and "dragstart" not in JS
+    assert "list.onpointerdown = (event) => {" in JS and "startDrag(event)" in JS
+    for event in ("pointermove", "pointerup", "pointercancel"):
+        assert f"['{event}'," in JS
+    click = JS[JS.index("list.onclick = (event) => {") :]
+    assert click.index("dragClick(S.dragEndAt") < click.index("const button = ")
+    assert "event.ctrlKey" in JS and "event.shiftKey" in JS and "keyboardMove(" in JS
+    assert "const MOVE_KEYS = 'Control+Shift+ArrowLeft Control+Shift+ArrowRight'" in JS
+    assert "setAttr(P.tab, 'aria-keyshortcuts', pinned ? null : MOVE_KEYS)" in JS
+    assert 'class="capa-tabs-drop" aria-hidden="true" hidden' in HTML
+    assert 'class="capa-tabs-announce capa-tabs-sr" role="status"' in HTML
+    assert "text.moved" in JS and page_tabs.TEXT["moved"].startswith("{label} 탭을 {index}번째로")
+    # 끄는 중에 새 data 가 오면 끌기를 접는다 — 새 data 가 탭을 다시 놓는다.
+    head = JS[JS.index("export default function") :]
+    assert head.index("if (S.drag && S.endDrag) S.endDrag(false)") < head.index("const paint =")
+    # 비수동 touchmove 로만 끄는 동안의 목록 굴리기를 막는다.
+    assert "list.addEventListener('touchmove', S.onTouchMove, { passive: false })" in JS
+    assert "list.removeEventListener('touchmove', S.onTouchMove)" in JS
 
 
 def test_the_strip_is_a_labelled_nav_of_buttons_without_the_tab_role() -> None:
@@ -167,6 +213,8 @@ _SECTIONS = (
     "tabs-grid",
     "tabs-queue",
     "tabs-press",
+    "tabs-order",
+    "tabs-drag",
     "tabs-links",
     "tabs-edges",
     "tabs-focus",
@@ -554,6 +602,142 @@ def test_every_press_on_the_strip_consults_the_double_press_guard_first() -> Non
     assert aux.index("if (stray(event, item)) return") < aux.index("pressed(event, item)")
     assert aux.index("pressed(event, item)") < aux.index("close(item)")
     assert "event.detail > 0" in JS
+
+
+_ORDER_RUNNER = """
+const cases = JSON.parse(process.argv[1])
+const out = cases.map((c) => {
+  if (c.op === 'pin') return pinnedOrder(c.ids, c.pinned, c.id, c.pin)
+  if (c.op === 'move') return movedOrder(c.ids, c.pinned, c.id, c.before)
+  if (c.op === 'closable') return closableIds(c.ids, c.pinned)
+  const plan = keyboardMove(c.ids, c.pinned, c.id, c.step)
+  return plan === null ? null : movedOrder(c.ids, c.pinned, c.id, plan.before).ids
+})
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def _order_cases() -> tuple[list[dict[str, Any]], list[Any]]:
+    """`<tabs-order>` 과 서버 규칙을 맞댈 표 — (JS 에 줄 경우, 파이썬 답)."""
+    from capa_simulation.navigation import (
+        CAPA_CHATBOT,
+        HOME,
+        LOAD_CONVERSION,
+        SCENARIO_MANAGEMENT,
+    )
+    from capa_simulation.page_tabs_state import TabStrip, moved, pinned_to
+
+    h, a, b, c = HOME.path, LOAD_CONVERSION.path, SCENARIO_MANAGEMENT.path, CAPA_CHATBOT.path
+    gone = "app_pages/gone.py"
+    strips = [
+        TabStrip((h, a, b, c), frozenset({h})),
+        TabStrip((h, c, a, b), frozenset({h, c})),
+        TabStrip((a, b, c), frozenset()),
+        TabStrip((h, a), frozenset({h, a})),
+        TabStrip((a,), frozenset()),
+    ]
+    cases: list[dict[str, Any]] = []
+    answers: list[Any] = []
+    for strip in strips:
+        ids, pins = list(strip.paths), [p for p in strip.paths if p in strip.pinned]
+        base = {"ids": ids, "pinned": pins}
+        cases.append({**base, "op": "closable"})
+        answers.append([p for p in ids if strip.closable(p)])
+        for target in [*ids, gone]:
+            for pin in (True, False):
+                cases.append({**base, "op": "pin", "id": target, "pin": pin})
+                result = pinned_to(strip, target, pin)
+                answers.append(
+                    {
+                        "ids": list(result.paths),
+                        "pinned": [p for p in result.paths if p in result.pinned],
+                    }
+                )
+            for before in [*ids, gone, None]:
+                cases.append({**base, "op": "move", "id": target, "before": before})
+                result = moved(strip, target, before)
+                answers.append(
+                    {
+                        "ids": list(result.paths),
+                        "pinned": [p for p in result.paths if p in result.pinned],
+                    }
+                )
+            if target == gone:
+                continue
+            for step in (-1, 1):
+                cases.append({**base, "op": "key", "id": target, "step": step})
+                index, to = ids.index(target), ids.index(target) + step
+                if target in strip.pinned or to < len(pins) or to >= len(ids):
+                    answers.append(None)
+                else:
+                    swapped = list(ids)
+                    swapped[index], swapped[to] = swapped[to], swapped[index]
+                    answers.append(swapped)
+    return cases, answers
+
+
+def test_the_script_draws_presses_with_the_same_rules_as_the_server() -> None:
+    """누르자마자 그린 차례가 서버 목록과 같아야 페이지를 다시 돌리지 않는다 —
+    고정(`pinned_to`)·차례 (`moved`)·닫기 단추(`closable`)를 파이썬과 같은 표로 맞댄다. 키보드 한
+    칸은 이웃과 자리를 바꾸고 고정 묶음을 넘지 않는다."""
+    cases, answers = _order_cases()
+    runtime = shutil.which("node") or shutil.which("bun")
+    if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다 — 탭 줄 JS 구획 시험을 건너뛸 수 없다")
+        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    completed = subprocess.run(
+        [runtime, "-e", _sections() + "\n" + _ORDER_RUNNER, json.dumps(cases)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    got = json.loads(completed.stdout)
+    wrong = [
+        (case, want, have)
+        for case, want, have in zip(cases, answers, got, strict=True)
+        if want != have
+    ]
+    assert not wrong, wrong[:3]
+    assert len(cases) > 150
+
+
+_DRAG_RUNNER = """
+const out = {}
+// 마우스·펜 — 가로로 5px 를 넘어야 끌기다. 세로만 움직이면 끌지 않는다.
+out.mouse = [dragStarts('mouse', 5, 0, 0, 5, 350), dragStarts('mouse', -6, 0, 0, 5, 350),
+  dragStarts('pen', 0, 40, 900, 5, 350)]
+// 터치 — 길게 누른 뒤에야 끌기, 그 전에 움직이면 목록 굴리기라 그만둔다.
+out.touch = [dragStarts('touch', 2, 2, 100, 5, 350), dragStarts('touch', 9, 0, 100, 5, 350),
+  dragStarts('touch', 2, 1, 350, 5, 350)]
+// 놓을 자리 — 다른 탭 가운데를 지난 수. 고정 탭 수(1) 아래로는 내려가지 않는다.
+const mids = [40, 140, 240, 340]
+out.slots = [dropSlot(mids, 10, 1), dropSlot(mids, 141, 1), dropSlot(mids, 239, 1),
+  dropSlot(mids, 500, 1), dropSlot(mids, 10, 0)]
+// 가장자리 굴리기 — 가장자리에 가까울수록 빠르고 안쪽에서는 멈춘다.
+out.edge = [edgeSpeed(100, 100, 600, 32, 12), edgeSpeed(120, 100, 600, 32, 12),
+  edgeSpeed(300, 100, 600, 32, 12), edgeSpeed(590, 100, 600, 32, 12), edgeSpeed(700, 100, 600, 32,
+  12)]
+// 끈 뒤 400ms 안의 누름만 버린다.
+out.click = [dragClick(null, 0, 400), dragClick(1000, 1399, 400), dragClick(1000, 1400, 400)]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_drag_starts_past_a_slop_stops_at_the_pinned_group_and_swallows_its_click() -> None:
+    """끌기 판정 — 마우스는 가로 5px 문턱(그 전의 누름은 고르기·고정·× 그대로), 터치는 350ms 길게
+    누르기 (그 전에 움직이면 목록 굴리기). 놓을 자리는 다른 탭 가운데를 지난 수이고 고정 묶음
+    앞으로는 가지 않는다. 가장자리에서는 목록을 굴린다. 끈 뒤의 click 은 고르기로 보내지 않는다."""
+    out = _node(_DRAG_RUNNER)
+
+    assert out["mouse"] == ["wait", "drag", "wait"]
+    assert out["touch"] == ["wait", "cancel", "drag"]
+    assert out["slots"] == [1, 2, 2, 4, 0]
+    assert out["edge"] == [-12, -5, 0, 9, 12]
+    assert out["click"] == [False, True, False]
 
 
 _LINKS_RUNNER = """

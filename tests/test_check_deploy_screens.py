@@ -1757,6 +1757,8 @@ NEW_ITEM_KEYS = [
     "space_zone_fields",
     # 2026-10-27 — 가용설비 현황 셋째 탭 「Preference」(입력 비가동 대수, 설비 0032).
     "equipment_preference",
+    # 2026-11-02 사용자 요청 — 화면 탭 줄 틀(스크롤에 움직이지 않음)·고정(페이지 그대로)·끌기.
+    "page_tabs_frame",
 ]
 
 
@@ -3368,6 +3370,48 @@ def test_the_page_tab_line_counts_only(
     opened: list[dict[str, bool]], back_home: bool, closed: list[dict[str, bool]], verdict: str
 ) -> None:
     assert screens.summarize_page_tabs(opened, back_home, closed) == verdict
+
+
+@pytest.mark.parametrize(
+    ("tops", "progress", "moved", "kept", "verdict"),
+    [
+        (
+            [{"y": 0, "top": 52.5}, {"y": 60, "top": 52.5}],
+            [False, False],
+            True,
+            True,
+            "스크롤 탭 줄 이동 0px · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 주소 그대로"
+            " — 정한 동작과 같음",
+        ),
+        (
+            # 바탕 3aad85d — 스크롤 0 에서 56px, 내리면 52.5px. 고정마다 HOME 이 다시 돈다.
+            [{"y": 0, "top": 56}, {"y": 60, "top": 52.5}],
+            [True, True],
+            False,
+            True,
+            "스크롤 탭 줄 이동 3.5px · 고정 진행 막대 2/2 · 끌어 옮김 안 됨 · 주소 그대로"
+            " — 정한 동작과 다름",
+        ),
+        (
+            [{"y": 0, "top": 52.5}, {"y": 0, "top": 52.5}],
+            [False, None],
+            True,
+            False,
+            "스크롤 탭 줄 이동 스크롤 안 됨 · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 주소 바뀜"
+            " — 정한 동작과 다름",
+        ),
+    ],
+)
+def test_the_tab_strip_frame_line_counts_only(
+    tops: list[dict[str, float]],
+    progress: list[bool | None],
+    moved: bool,
+    kept: bool,
+    verdict: str,
+) -> None:
+    """탭 줄 틀(2026-11-02 사용자 요청) — 스크롤해도 탭 줄이 움직이지 않고(0px), 고정이 페이지를
+    다시 돌리지 않으며(HOME 진행 막대 0), 끌어 옮겨도 화면은 그대로다."""
+    assert screens.summarize_page_tabs_frame(tops, progress, moved, kept) == verdict
 
 
 # ------------------------------------------------------------------ 제약 시뮬레이션
