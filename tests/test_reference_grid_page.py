@@ -11,7 +11,15 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from edit_grid_fake import FAKE_EVENT_KEY, Calls, install_fake_edit_grid, last, outbox, send_ops
+from edit_grid_fake import (
+    FAKE_EVENT_KEY,
+    Calls,
+    deliver_ops,
+    install_fake_edit_grid,
+    last,
+    outbox,
+    send_ops,
+)
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     DATASET,
@@ -594,6 +602,92 @@ def test_the_first_edit_shows_in_the_sidebar_of_the_run_it_arrives_in(calls: Cal
     }
 
 
+# 페이지 앞에서 `app.py` 가 그리는 표지(사이드바 「적용 전 편집」·화면 탭 점)를 회차마다 적는 대본 —
+# 대역을 `early=True` 로 깔면 콜백이 진짜처럼 회차 맨 앞에서 돌아, 이 탐침이 진짜 회차의 사이드바
+# 자리다.
+PRE_PAGE_PROBE = "test_pre_page_marks"
+PRE_PAGE_PROBE_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
+    '    PAGE_NAME = "reference_data.py"\n',
+    "    from capa_simulation.components.page_tabs import page_unsaved_marks\n"
+    "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels\n"
+    f"    st.session_state.setdefault({PRE_PAGE_PROBE!r}, []).append(\n"
+    "        (pending_edit_labels('reference_data.py'), page_unsaved_marks('reference_data.py'))\n"
+    "    )\n"
+    '    PAGE_NAME = "reference_data.py"\n',
+    1,
+)
+assert PRE_PAGE_PROBE_SCRIPT != TWO_PROCESS_TEST_SCRIPT
+REFERENCE_TAB = "app_pages/reference_data.py"
+
+
+@pytest.fixture
+def early_calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    """출납 콜백을 진짜처럼 회차 맨 앞에서 부르는 대역(`edit_grid_fake` 의 `early`)."""
+    return install_fake_edit_grid(monkeypatch, early=True)
+
+
+def _probes(app: AppTest) -> list[tuple[list[str], dict[str, str]]]:
+    return list(app.session_state[PRE_PAGE_PROBE])
+
+
+def test_undo_back_to_no_edit_drops_the_sidebar_and_tab_marks_in_that_run(
+    early_calls: Calls,
+) -> None:
+    """Ctrl+Z 로 마지막 편집을 되돌려 초안이 0칸이 되면 그 회차에 사이드바 「적용 전 편집」·화면 탭
+    점이 사라진다. `app.py` 는 그 표지를 페이지(반영)보다 **먼저** 그리므로, 반영이 초안을 비운
+    회차는 한 번 다시 돈다 — 전에는 다음 조작까지 표지가 남았다(2026-11-03 마지막 검토 C1). 다시
+    도는 것은 한 번뿐이고 보통 편집 회차는 다시 돌지 않는다."""
+    app = _open(PRE_PAGE_PROBE_SCRIPT, "효율")
+    before = len(_probes(app))
+    app = deliver_ops(
+        app,
+        early_calls,
+        {"op": "write", "rows": ["Process-A\x1f양산"], "cols": ["202608"], "values": [["0.5"]]},
+        host=GRID_HOST,
+    )
+    # 첫 편집은 그 회차 사이드바에 선다(출납 콜백의 빈 초안 자리) — 다시 돌지 않는다.
+    assert len(_probes(app)) == before + 1
+    labels, marks = _probes(app)[-1]
+    assert labels == ["기준 정보 · 효율"]
+    assert REFERENCE_TAB in marks
+    assert change_counts(draft_from(app.session_state[cells_key("RQ_RUN_RATE")]))[0] == 1
+
+    before = len(_probes(app))
+    app = deliver_ops(app, early_calls, {"op": "undo"}, host=GRID_HOST)
+    assert app.session_state[cells_key("RQ_RUN_RATE")] is None
+    probes = _probes(app)
+    assert len(probes) == before + 2
+    # 반영 전에 그린 표지(옛 초안)는 같은 회차의 다시 돌기가 걷는다.
+    assert probes[-2][0] == ["기준 정보 · 효율"]
+    labels, marks = probes[-1]
+    assert labels == []
+    assert REFERENCE_TAB not in marks
+    # 다음 회차는 그대로다(다시 돌기가 되풀이되지 않는다).
+    before = len(_probes(app))
+    app.run()
+    assert not app.exception
+    assert len(_probes(app)) == before + 1
+    assert _probes(app)[-1][0] == []
+
+
+def test_a_first_op_that_changes_nothing_leaves_no_sidebar_mark(early_calls: Calls) -> None:
+    """초안이 없던 표의 첫 op 가 아무것도 바꾸지 않으면(빈칸에 Delete · 양식과 같은 값) 그 회차에
+    사이드바 「적용 전 편집」·화면 탭 점이 서지 않는다 — 출납 콜백이 둔 빈 초안 자리를 반영이 None
+    으로 걷고 한 번 다시 돈다(2026-11-03 마지막 검토 C1)."""
+    app = _open(PRE_PAGE_PROBE_SCRIPT, "효율")
+    for value in ("0.9", "90%"):
+        app = deliver_ops(
+            app,
+            early_calls,
+            {"op": "write", "rows": ["Process-A\x1f양산"], "cols": ["202608"], "values": [[value]]},
+            host=GRID_HOST,
+        )
+        assert app.session_state[cells_key("RQ_RUN_RATE")] is None
+        labels, marks = _probes(app)[-1]
+        assert labels == [], value
+        assert REFERENCE_TAB not in marks, value
+
+
 def test_an_empty_draft_slot_counts_as_no_edit() -> None:
     """빈 초안 자리는 초안이 아니다 — 「변경사항 적용」 을 켜지 않고 변경 수도 0 이다."""
     assert draft_from({"cells": {}, "bad": {}}) is None
@@ -709,6 +803,32 @@ def test_another_pages_apply_that_changed_a_table_drops_only_its_draft_and_says_
     assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
 
 
+def test_the_dropped_notice_survives_the_rerun_of_a_run_that_emptied_a_draft(
+    early_calls: Calls,
+) -> None:
+    """다른 화면의 적용이 일수 표를 바꾼 회차에 효율 초안을 비우는 op(Ctrl+Z)도 함께 왔다 — 반영이
+    초안을 비워 그 회차가 다시 돌아도(C1) 일수 초안을 버렸다는 알림은 다시 돈 회차에 선다. 그다음
+    회차에는 없다."""
+    app = _drafts_in_two_tables(early_calls)
+    gen = app.session_state[history_key("RQ_RUN_RATE")]["gen"]
+    app.session_state["probe_revision"] = 2
+    app.session_state["probe_token"] = "test-capacity-other-page-apply-carry"
+    app.session_state["probe_run_day"] = 26.0
+    app = deliver_ops(
+        app, early_calls, {"op": "undo"}, host=GRID_HOST, table="RQ_RUN_RATE", gen=gen
+    )
+    assert _draft(app) is None
+    assert _cells(app, RUN_RATE_CELLS) == 0
+    warnings = [str(item.value) for item in app.warning]
+    assert any(
+        "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집(일수 1칸)을 버렸습니다" in text
+        for text in warnings
+    ), warnings
+    app.run()
+    assert not app.exception
+    assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
+
+
 def test_discarding_right_after_an_edit_drops_the_batched_op_without_a_retry_toast(
     calls: Calls,
 ) -> None:
@@ -778,3 +898,63 @@ def test_the_edited_dataset_button_gets_its_dot_drawn_on_the_page(calls: Calls) 
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     bodies = [element.proto.body for element in app.get("html") if selector in element.proto.body]
     assert bodies == [pending_segments_style(DATASET_KEY, list(DATASETS), {"RQ_RUN_DAY"}).strip()]
+
+
+def test_a_table_over_the_byte_cap_never_caches_or_unpacks_its_whole_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """껍데기 본문이 `CAP_BYTES` 를 넘는 표는 앞 줄만 싣는다(알림은 그대로). 그 표의 **전체**
+    본문은 캐시에서 나오지 않는다 — 전에는 크기만 보려고 전체 본문을 캐시에 담고 회차마다 통째로
+    풀었다(수 MB — 다른 캐시 칸을 밀어냈다)(2026-11-03 마지막 검토 C6). 넘지 않는 표는 지금처럼
+    전체를 싣는다."""
+    import uuid
+
+    import pandas as pd
+
+    from capa_simulation.services import simulation_cache
+    from capa_simulation.services.edit_grid_payload import EditGridBase
+
+    template = pd.DataFrame({"공정": [f"DEMO_P{row:03d}" for row in range(60)]})
+    for month in ("202701", "202702", "202703"):
+        template[month] = [float(row) / 7 for row in range(60)]
+    served: list[object] = []
+
+    def _spy(function: Any) -> Any:
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            result = function(*args, **kwargs)
+            served.append(result)
+            return result
+
+        return wrapped
+
+    for name in ("get_edit_grid_base", "get_edit_grid_base_within"):
+        monkeypatch.setattr(reference_grid, name, _spy(getattr(simulation_cache, name)))
+    monkeypatch.setattr(reference_grid, "CAP_ROWS", 5)
+
+    def _build(cap_bytes: int) -> reference_grid.GridTable:
+        monkeypatch.setattr(reference_grid, "CAP_BYTES", cap_bytes)
+        return reference_grid.build_grid_table(
+            "RQ_RUN_DAY",
+            "일수",
+            "capa_run_day_editor",
+            template,
+            ("공정",),
+            cache_key=(1, f"test-byte-cap-{uuid.uuid4().hex}", 202701, 202703),
+            order_digest="order",
+            value_labels=None,
+        )
+
+    for _ in range(2):
+        capped = _build(10)
+        assert capped.cap_notice == reference_grid.CAP_HEAD_NOTICE.format(
+            rows=60, cells=180, shown=5
+        )
+        assert len(capped.base.index.keys) == 5
+    whole = [
+        base for base in served if isinstance(base, EditGridBase) and len(base.index.keys) == 60
+    ]
+    assert whole == []
+
+    served.clear()
+    roomy = _build(10_000_000)
+    assert roomy.cap_notice is None and len(roomy.base.index.keys) == 60

@@ -539,3 +539,46 @@ def test_clearing_a_whole_large_table_stays_fast_and_small() -> None:
         [eg.Op("m", 2, 2.0, spec.table, history["gen"], "undo")],
     )
     assert undone.draft is None
+
+
+def _code_texts() -> dict[str, str]:
+    """코어 코드·스크립트·시험의 `.py` 글(파일 → 글)."""
+    project = Path(__file__).resolve().parents[1]
+    paths = [project / "app.py"]
+    for folder in ("app_pages", "src", "scripts", "tests"):
+        paths.extend((project / folder).rglob("*.py"))
+    return {str(path.relative_to(project)): path.read_text(encoding="utf-8") for path in paths}
+
+
+def test_every_module_constant_is_used_and_no_comment_points_to_the_old_formats() -> None:
+    """이 모듈의 공개 상수는 모두 어딘가에서 쓴다(정의만 남은 죽은 상수가 없다). 옛 편집표의 값
+    형식 `reference_data.EDITOR_FORMATS` 는 `reference_grid.GRID_FORMATS` 로 옮겼다 — 주석·설명이
+    지운 이름을 가리키지 않는다(옮겼다는 「옛 `EDITOR_FORMATS`」 한 마디만 남는다)(2026-11-03 마지막
+    검토 C5)."""
+    import ast
+    import re
+
+    texts = _code_texts()
+    module = ast.parse(Path(eg.__file__).read_text(encoding="utf-8"))
+    names = [
+        node.target.id
+        for node in module.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and not node.target.id.startswith("_")
+    ]
+    assert names
+    dead = [
+        name
+        for name in names
+        if sum(len(re.findall(rf"\b{name}\b", text)) for text in texts.values()) < 2
+    ]
+    assert dead == []
+    pointers = [
+        path
+        for path, text in texts.items()
+        if not path.endswith("test_edit_grid_service.py")
+        for line in text.splitlines()
+        if "EDITOR_FORMATS" in line and "옛 `EDITOR_FORMATS`" not in line
+    ]
+    assert pointers == []

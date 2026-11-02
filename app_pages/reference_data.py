@@ -360,6 +360,8 @@ GRID_DROPPED_NOTICE = (
     "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집({tables})을 버렸습니다"
     " — 다시 입력하세요."
 )
+# 그 알림을 띄운 회차가 다시 돌 때 다음 회차로 넘기는 칸 — (원본 토큰, 알림 글).
+GRID_DROPPED_CARRY_KEY = "reference_grid_dropped_notice"
 
 
 def _template_or_stop(table_name: str) -> pd.DataFrame:
@@ -453,17 +455,24 @@ reset_editors_on_source_change(
     own_change_key=OWN_CHANGE_KEY,
     order_free_keys=(*step_widget_keys, *grid_session_keys),
 )
-if grid_dropped:
-    with actions_box:
-        st.warning(
-            GRID_DROPPED_NOTICE.format(
-                tables=" · ".join(
-                    f"{TABLE_NAMES[table_name]} {cells:,}칸"
-                    for table_name, cells in grid_dropped.items()
-                )
-            ),
-            icon=":material/sync_problem:",
+# 버림 알림은 이 회차에 한 번이다 — 아래 inbox 반영이 이 회차를 다시 돌리면(초안을 비운 회차) 같은
+# 원본 토큰의 다음 회차로 넘겨 거기서 띄운다(다시 돈 회차에는 `_grid_survivors` 가 더 버리지
+# 않는다).
+_carried = st.session_state.pop(GRID_DROPPED_CARRY_KEY, None)
+grid_dropped_notice = (
+    GRID_DROPPED_NOTICE.format(
+        tables=" · ".join(
+            f"{TABLE_NAMES[table_name]} {cells:,}칸" for table_name, cells in grid_dropped.items()
         )
+    )
+    if grid_dropped
+    else _carried[1]
+    if isinstance(_carried, tuple) and _carried[0] == reference_token
+    else None
+)
+if grid_dropped_notice is not None:
+    with actions_box:
+        st.warning(grid_dropped_notice, icon=":material/sync_problem:")
 
 
 def _filter_prefix(table_name: str) -> str:
@@ -502,7 +511,14 @@ grid_tables = {
     for table_name in EDIT_TABLES
     if table_name == current_dataset or table_name in _inbox_tables
 }
-reference_grid.apply_grid_inbox(grid_tables)
+if reference_grid.apply_grid_inbox(grid_tables):
+    # 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던 표의 첫 op 가 아무것도 바꾸지
+    # 않음). 사이드바 「적용 전 편집」·화면 탭 점·테마 표지는 `app.py` 가 이 본문보다 **먼저** 옛
+    # 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는 다시 보내지 않는다). 한 번 다시
+    # 돈다(양식·색인은 캐시라 싸고, 다음 회차는 inbox 가 비어 되풀이되지 않는다).
+    if grid_dropped_notice is not None:
+        st.session_state[GRID_DROPPED_CARRY_KEY] = (reference_token, grid_dropped_notice)
+    st.rerun()
 _remember_grid_digests()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
 # 초안은 세션 칸이라 어느 화면에서나 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이

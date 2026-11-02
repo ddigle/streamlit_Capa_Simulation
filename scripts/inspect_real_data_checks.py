@@ -3165,7 +3165,7 @@ _ACTIVE_REVISIONS: Final = (
 _ALL_REVISIONS: Final = "picked AS (SELECT revision_id FROM app_meta.scenario_revision)"
 
 # 편집 격자가 상한 1 로 받는 값 칸과, 하한 0 으로 받는 값 칸 전부. 격자의 범위는
-# `app_pages/reference_data.EDITOR_FORMATS` 다 — 화면 모듈이라 부르지 않고 시험이 맞대 본다.
+# `components/reference_grid.GRID_FORMATS` 다 — 화면 모듈이라 부르지 않고 시험이 맞대 본다.
 # Excel 붙여넣기가 그 범위를 거치지 않던 때(사내 리뷰 202610120655 E5)의 값이 저장 리비전에
 # 남았을 수 있다.
 CENSUS_RATIO_COLUMNS: Final[tuple[tuple[str, str], ...]] = (

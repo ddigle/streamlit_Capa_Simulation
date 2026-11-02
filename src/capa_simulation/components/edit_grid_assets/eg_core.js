@@ -37,7 +37,7 @@ function egState(host) {
     hostKey: '', shell: null, feedData: null, model: null, gen: '', texts: {}, limits: {},
     view: { order: new Int32Array(0), rank: new Int32Array(0), filtered: false, sort: null, filterKey: 'null' },
     anchor: { r: 0, c: 0 }, focus: { r: 0, c: 0 }, origin: null, edit: null, full: false, committing: false,
-    box: createBox(), pending: new Map(), pendingBySeq: new Map(),
+    box: createBox(), sentSeq: 0, pending: new Map(), pendingBySeq: new Map(),
     widths: [], lefts: [], total: 0, frozen: 1, frozenWidth: 0, widthsTable: null,
     rowH: 30, headH: 32, dom: null, listeners: [], timers: {}, frames: {}, observer: null,
     lastToast: null, seenFeed: false, setState: null, inRender: false, sendQueued: false, window: null, paletteKey: '',
@@ -308,20 +308,26 @@ function egTakeFeed(S) {
   const store = window.__capaEditGrid
   const slot = store && S.hostKey ? store[S.hostKey] : null
   const feed = slot && slot.feed
-  if (!feed || feed === S.feedData || !S.dom || !S.model || !S.shell) return
+  if (!feed || feed === S.feedData || !S.dom) return
+  // ack 는 표가 아니라 이 마운트의 것이다 — 표 없는 껍데기(읽기 보기)·다른 표의 feed 에서도 받아 반영된 op 를 출납에서
+  // 뺀다. 빼지 않으면 visibilitychange·정리 함수가 같은 op 를 다시 보내 앱 회차가 하나 더 돈다.
+  egTakeAcks(S, feed)
+  if (!S.model || !S.shell) return
   if (feed.table !== S.model.table || feed.baseKey !== S.shell.baseKey) return
   egApplyFeed(S, feed)
+}
+
+function egTakeAcks(S, feed) {
+  const acked = Number((feed.acks || {})[S.mount] || 0)
+  if (acked <= 0) return
+  for (const op of S.box.ops) if (op.seq <= acked) egDropPreview(S, op.seq)
+  boxAck(S.box, acked)
 }
 
 function egApplyFeed(S, feed) {
   const m = S.model
   S.feedData = feed
   S.gen = String(feed.gen || '')
-  const acked = Number((feed.acks || {})[S.mount] || 0)
-  if (acked > 0) {
-    for (const op of S.box.ops) if (op.seq <= acked) egDropPreview(S, op.seq)
-    boxAck(S.box, acked)
-  }
   for (const op of boxDropStale(S.box, m.table, S.gen)) egDropPreview(S, op.seq)
   const decoded = decodeDraft(feed, m.valueCount)
   m.draft = decoded.draft
@@ -1133,11 +1139,13 @@ function egDropPreview(S, seq) {
   S.pendingBySeq.delete(seq)
 }
 
-// 반영 안 된 op 전부를 보낸다(보낼 것이 있을 때만). 받은 data 로 다시 불린 함수 안에서는 보내지 않는다 — 마이크로태스크 뒤로.
+// 반영 안 된 op 전부를 보낸다 — 아직 한 번도 보내지 않은 op 가 있을 때만(focusout·visibilitychange·정리 함수가 이미 보낸
+// op 만 남은 출납을 다시 보내면 같은 값으로 앱 회차가 하나 더 돈다. 보낸 값은 서버가 받을 때까지 프런트가 들고 있다). 받은
+// data 로 다시 불린 함수 안에서는 보내지 않는다 — 마이크로태스크 뒤로.
 function sendNow(S) {
   if (S.timers.send) clearTimeout(S.timers.send)
   S.timers.send = 0
-  if (!S.box.ops.length || !S.setState) return
+  if (!S.setState || !S.box.ops.some((op) => op.seq > S.sentSeq)) return
   if (S.inRender) {
     if (!S.sendQueued) {
       S.sendQueued = true
@@ -1148,6 +1156,7 @@ function sendNow(S) {
     }
     return
   }
+  for (const op of S.box.ops) if (op.seq > S.sentSeq) S.sentSeq = op.seq
   S.setState('outbox', { mount: S.mount, ops: S.box.ops.slice() })
 }
 

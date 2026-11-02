@@ -1837,7 +1837,7 @@ def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:
 
 
 def test_a_pasted_ratio_outside_the_grid_range_is_refused_in_the_dialog() -> None:
-    """붙여넣기도 격자와 같은 하한·상한(`EDITOR_FORMATS`)을 지난다(사내 감사 E5).
+    """붙여넣기도 격자와 같은 하한·상한(`reference_grid.GRID_FORMATS`)을 지난다(사내 감사 E5).
 
     측정률 85% 를 `85` 로 붙여넣은 것이 적용되면 그 경로 대당 Capa 가 85 분의 1 이 된다.
     """
