@@ -559,6 +559,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/scenario_merge_shift_implementation.md` | 시나리오 월 머지·연도 Shift 구현 설명 |
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |
 | `docs/module_guide.md` | 사내 모듈 지침서 — 동료(담당자)의 에이전트가 받는 것. 자리·`module.json`·`module_api` v1·점검 규칙·사내 Git 운영 |
+| `docs/module_colleague_guide.md` | 모듈 담당자(사람)용 안내서 — 비전문 동료가 읽는 쉬운 말 판. 할 수 있는 것·첫 지시·하루 흐름(가지 → PR)·에이전트에게 말하는 법·막힐 때. 규칙의 정본은 지침서 |
 | `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용) |
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
 | `static/guides/howto/` | 따라하기 가이드 합성 예시판(한 파일 HTML — 뼈대는 `src/capa_simulation/guides/howto/`, 만들기는 `scripts/build_page_guide.py --example`) |
