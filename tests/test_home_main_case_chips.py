@@ -623,14 +623,22 @@ def test_the_chip_style_dashes_only_unset_chips() -> None:
     assert ".st-key-b button { border-style: dashed; }" in chip_style((plain, dashed))
 
 
-def test_the_chip_style_keeps_one_row_and_closes_the_field_with_a_line() -> None:
-    """칩 줄은 한 줄이다 — 카드 폭(사이드바)을 같은 폭으로 나누고 칩 글자는 접히지 않는다. 칩 필드
-    밑에는 얇은 선이 토글과 가른다. 「슬롯 밖」 을 감추는 규칙은 없다(이름 줄 끝 글자라 자리를 잡아
-    둘
-    까닭이 없다)."""
+def test_the_chip_style_never_cuts_a_chip_and_closes_the_field_with_a_line() -> None:
+    """칩 글은 잘리지 않는다 — 칩 칸의 최소 폭이 글 폭이고 칸이 모자라면 줄을 감싸 내린다. 칩 글자는
+    접히지 않는다. 칩 필드 밑에는 얇은 선이 토글과 가른다. 「슬롯 밖」 을 감추는 규칙은 없다(이름 줄
+    끝 글자라 자리를 잡아 둘 까닭이 없다).
+
+    전에는 `nowrap` 이라 사이드바를 200~220px 로 끌어 줄이면 칩이 글보다 좁아져 「공…」 · 「C..」 로
+    잘렸다(Streamlit 이 칩 칸에 `min-width: 14px` 를 건다 — 2026-11-02 검토, 사본 실측).
+    """
     chips = (SlotChip("a", "Case1", "", (None, None), painted=False, disabled=False, dashed=False),)
     style = chip_style(chips)
-    assert f".st-key-{CHIP_ROW_KEY} {{ flex-wrap: nowrap; }}" in style
+    assert f".st-key-{CHIP_ROW_KEY} {{ flex-wrap: wrap;" in style
+    assert f".st-key-{CHIP_ROW_KEY} {{ flex-wrap: nowrap; }}" not in style
+    assert (
+        f'.st-key-{CHIP_ROW_KEY} > [data-testid="stElementContainer"] {{ min-width: max-content; }}'
+        in style
+    )
     assert "white-space: nowrap" in style
     assert ".st-key-home_main_case_field { gap: 0.3rem; padding-bottom: 0.6rem;" in style
     assert "visibility: hidden" not in style

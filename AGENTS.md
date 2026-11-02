@@ -276,6 +276,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     팝업은 닫으며, 미지정 주요 Case 칩도 잠근다(`home_main_case_chips.stopped_chips`).
   - 얹기 규칙(EDP 제외 범위·확보율 보정 → 선행 `advance_load.py`·GAP 기준)은 6장, 판정 기준은 `securement_threshold.py`.
     비교 대상 프로필은 바뀔 때만 쓴다(`test_comparison_profile_writeback.py`·`test_summary_recheck_paths.py`).
+  - 세션의 비교 짝은 HOME 첫머리에서 심고(`seed_comparison_selection`) 바로 **걷는다**(`forget_unlisted_comparison` — 가리키는
+    시나리오가 보관·영구 삭제됐으면). 비교 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은 `Preference` 탭이
+    매 회차 걷었다 — 2026-11-02 검토). 목록은 비교 대상 프로필과 같은 쓰기 세대의 캐시
+    (`persistence/cache.listed_comparison_candidates` — 보관·삭제가 그 세대를 올린다)이고, 캐시에 없을 때만 DB 목록으로 한 번
+    더 본 뒤 걷는다(새 시나리오는 세대를 올리지 않는다). `tests/test_home_page.py` 의 `removed_elsewhere` ·
+    `newer_than_the_cached_list`.
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
   - `Main` 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 계산
@@ -2290,7 +2296,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     띠·사이드바 배지처럼 「미저장」이 먼저 — `painting_reference`). 칠한 칩을 편집 없이 다시 누르면 아무것도 하지
     않는다. 칠한 칩 글자색은 `tokens.ACCENT_TEXT` 다(어두운 테마 강조색 위 흰 글자는 1.9:1). 어느 칩도 칠하지 않으면
     이름 줄 「주요 Case」 **오른쪽 끝**에 회색 「슬롯 밖」 한 마디(풍선 없음) — 이름 줄이 늘 서 있어 칩 줄은 움직이지
-    않는다(제목 줄 끝에 있던 때의 숨은 자리표시자는 걷었다). 칩 줄은 한 줄(`nowrap`)이다.
+    않는다(제목 줄 끝에 있던 때의 숨은 자리표시자는 걷었다). 칩 글은 자르지 않는다 — 칩 칸 최소 폭이 글 폭(`max-content`)이고
+    줄은 감싸 내린다(`flex-wrap: wrap`). 보통 폭(사이드바 256px 이상)은 한 줄, 끌어 줄인 240px 이하는 셋째 칩이 다음 줄로
+    간다(2026-11-02 검토 — `nowrap` 이던 때 200~220px 에서 「공…」 · 「C..」 로 잘렸다).
   - 미지정 Case 는 점선 칩이고 누르면 「HOME 설정」 팝업을 `Preference` 탭으로 연다(`home_settings.open_home_settings` —
     열림 칸·탭 key 를 콜백에서 적는다). 계산이 멈춘 회차에는 팝업을 열 수 없어 그 칩만 잠근다(`stopped_chips`). 가리키던 시나리오를 보관·영구 삭제하면
     저장소가 그 Case 를 비우므로 점선 칩이 된다. 잠금은 목록에서 찾지 못하는 짝(저장소 밖에서 고친 DB 등)과 공식버전
@@ -2299,7 +2307,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Case 쓰기 세대를 키로 한 캐시 `persistence/cache.load_main_case_targets` 다. `tests/test_home_main_case_chips.py`,
     실제 `app.py` 배선과 둘째 회차 읽기 0 은 `tests/test_app_navigation.py`.
 - `src/capa_simulation/components/home_settings.py` — HOME 사이드바 「HOME 설정」 상자와 그 큰 팝업(안쪽 탭 `Preference`·
-  `Past Data`, 2026-11-02 사용자 요청 — 시안 (가) 조회 조건 아래 따로 선 상자). 가용설비 현황 「설정」
+  `Past Data`, 2026-11-02 사용자 요청 — 시안 (가) 조회 조건 패널 바로 밑 · `LOB 표시 조건` 카드 위에 따로 선 상자). 가용설비 현황 「설정」
   (`equipment_settings_dialog`)과 같은 꼴이다 — 열림 칸 하나(`home_state.HOME_DIALOG_KEY`, 값 `settings`), 여는 콜백은
   `forget_page_dialogs()` 부터(`open_home_settings` — 지난번 편 Past Data 붙여넣기 칸도 걷는다), 호스트는 본문 끝 이벤트
   칸 한 자리(열렸으면 팝업, 아니면 빈 스타일), 저장 뒤에도 열어 둔다(9장 「팝업과 콜백」 의 둘째 예외). 팝업 본문은
@@ -2310,6 +2318,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로다. Preference 편집기는 모두 폼이라 서버가 제출 전 편집을 모른다 — 닫으면 사라지고 점·떠나기 확인 대상이 아니다.
   - 계산이 멈춘 회차에는 상자를 잠근 채 같은 자리에 세운다(`stopped=True`). `tests/test_home_page.py`(열기·저장 뒤 열림·
     대기 점)·`tests/test_app_navigation.py`(실제 `app.py` 배선·여는 콜백이 다른 열림 키를 비움).
+  - 폼 저장(판정 기준·프리셋·Past Data 등)은 앱 범위 `st.rerun()` 이라 사이드바도 그 회차에 바뀌지만, 고르면 곧 저장되는 두
+    선택 상자(비교 시나리오·주요 Case)는 `on_change` 콜백뿐이라 팝업만 다시 돌고 사이드바(GAP 잠김·칩)는 닫는 회차에
+    바뀐다 — 고를 때마다 앱 전체를 돌리면 비교 계획까지 새로 읽는데 둘 다 모달 뒤다(2026-11-02 검토, Guide 「HOME 설정 팝업」).
+  - 팝업 안 표에는 전체 화면 단추가 없다 — Streamlit 이 `st.dialog` 안 표의 도구 막대에서 숨긴다(전에는 Preference 편집표 넷 —
+    판정 기준 월별·선행 B/O·선행 입고·확보율 보정 — 에 있었다). 기능을 팝업으로 옮기며 생긴 손실로 받아들였고 Guide 가 알린다.
 - `src/capa_simulation/services/main_cases.py` — 주요 Case 슬롯 셋(공식버전·Case1·Case2)을 (글자, 시나리오 id, 리비전 id,
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
@@ -5005,8 +5018,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **사이드바 = 보는 조건.** 사이드바 「조회 조건」은 지금 화면이 실제로 읽는 조건만 모으는 한 곳이다. 화면 고유의 거르는
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
-  계산이 멈춘 회차에도 선다, 3장 `home.py`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 카드
-  밑에 따로 선다(3장 `home_settings.py`). 쓰기
+  계산이 멈춘 회차에도 선다, 3장 `home.py`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
+  조건 패널 바로 밑, 카드 **위**에 따로 선다 — 펼친 카드(약 370px) 밑이면 1280×800 · 1500×950 사이드바 첫 화면 밖이다(3장
+  `home_settings.py`). 쓰기
   작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는 결과·그에 대한 행동·상태 알림만
   남기고 설명은 Guide 로 옮긴다(8장).
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라

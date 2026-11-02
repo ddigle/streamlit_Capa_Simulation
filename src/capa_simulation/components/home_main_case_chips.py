@@ -388,7 +388,11 @@ def chip_style(chips: tuple[SlotChip, ...]) -> str:
     색은 Streamlit 단추 테마 그대로이고 칠한 칩의 **글자색만** 토큰(`ACCENT_TEXT`)으로 다시
     건다 — 어두운 테마의 강조색(`[theme.dark] primaryColor`)은 밝아서 Streamlit 의 흰 글자로는
     대비가 1.9:1 이다. 칩은 늘 하나 칠해져 있다. 점선은 그 회차의 미지정 칩 key 에만 건다
-    (`st-key-<key>`). 칩은 한 줄을 지키고(`nowrap` — 카드 폭을 같은 폭으로 나눈다), 「공식 v12」
+    (`st-key-<key>`). 칩 글은 자르지 않는다 — 칩 칸(Streamlit 이 `flex: 1 1 fit-content`·`min-width:
+    14px` 를 건 `stElementContainer`)의 최소 폭을 글 폭(`max-content`)으로 두고 줄은 감싸
+    내린다(`flex-wrap: wrap`). 보통 폭(사이드바 256px 이상)에서는 셋이 카드 폭을 나눠 한 줄이고,
+    사이드바를 끌어 200~220px 로 줄이면 들지 않는 칩이 다음 줄로 내려가 그 줄을 채운다(전에는
+    `nowrap` 이라 칩이 글보다 좁아져 「공…」 · 「C..」 로 잘렸다 — 2026-11-02 검토). 「공식 v12」
     같은 글도 칸 안에 들게 글자·좌우 여백을 줄였다. 이름 줄은 조회 조건 패널의 이름 줄과 같은 작은
     보조 글이다(패널 서식은 패널 안만 고르므로 여기서 같은 값을 건다 — 캡션 칸의 아래 음수 여백과
     흐림을 걷는다). 스타일만 든 `st.html` 이라 본문 자리를 먹지 않는다.
@@ -406,7 +410,8 @@ def chip_style(chips: tuple[SlotChip, ...]) -> str:
         f'{name_row} [data-testid="stCaptionContainer"] p {{ margin: 0; font-size: 0.75rem;'
         f" line-height: 1.25; color: {tokens.TEXT_MUTED}; white-space: nowrap; }}",
         f'{name_row} > [data-testid="stElementContainer"]:first-child p {{ font-weight: 600; }}',
-        f"{row} {{ flex-wrap: nowrap; }}",
+        f"{row} {{ flex-wrap: wrap; row-gap: 0.35rem; }}",
+        f'{row} > [data-testid="stElementContainer"] {{ min-width: max-content; }}',
         f"{row} button {{"
         " min-height: 1.75rem; padding: 0.1rem 0.35rem; border-radius: 999px;"
         " font-size: 0.8rem; font-weight: 600; line-height: 1.2; }",

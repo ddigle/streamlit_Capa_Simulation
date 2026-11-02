@@ -28,6 +28,7 @@ from capa_simulation.components.home_preference import (
     COMPARISON_SCENARIO_KEY,
     KEY_PROCESS_PRESET_KEY,
     THRESHOLD_POINTER,
+    forget_unlisted_comparison,
     render_home_preference,
     render_home_view_card,
     render_key_process_field,
@@ -272,8 +273,11 @@ show_execution = home_toggle(st.session_state, EXECUTION_TOGGLE_KEY)
 plan_detail_customer = home_toggle(st.session_state, PLAN_DETAIL_CUSTOMER_KEY)
 # 비교 대상은 공용 프로필이라 새 브라우저 세션에도 남아 있다. 세션 키를 읽기 **전에**
 # 심어야 첫 화면부터 「GAP」 토글이 켜진다 — 심는 자리가 Preference 피커 안에만 있으면
-# 「HOME 설정」 팝업을 한 번 열어야 켜진다.
+# 「HOME 설정」 팝업을 한 번 열어야 켜진다. 거꾸로 세션 값이 가리키는 시나리오를 다른 곳에서
+# 보관·삭제했으면 여기서 걷는다 — 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은
+# Preference 탭이 매 회차 걷었다). 목록은 캐시라 회차마다 DB 를 보지 않는다.
 seed_comparison_selection(str(DUCKDB_PATH.resolve()))
+forget_unlisted_comparison(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
 comparison_ready = bool(comparison_scenario_id and comparison_revision_id)
@@ -563,11 +567,11 @@ except BOOTSTRAP_ERRORS as exc:
     # 흔들리지 않는다) 미지정 칩도 잠그며, 열려 있던 팝업은 닫는다(열림 칸이 남으면 다음 정상 회차에
     # 뜻밖에 다시 뜬다).
     close_home_settings()
+    render_home_settings_box(pending=past_data_has_pending(), stopped=True)
     render_home_view_card(
         comparison_ready=comparison_ready,
         chips=partial(render_main_case_chips, str(DUCKDB_PATH.resolve()), settings_ready=False),
     )
-    render_home_settings_box(pending=past_data_has_pending(), stopped=True)
     st.stop()
 
 # 히트맵이 **실제로 그릴** 목록. 고른 공정이 이 시나리오·조회기간에 없으면 건너뛰되
@@ -1032,21 +1036,24 @@ else:
     st.session_state[HOME_DRAWN_CONDITIONS_KEY] = figure_conditions
 
 # 보는 조건은 사이드바다(2026-09-29 사용자 결정). HOME 은 탭 없이 한 화면이라 늘 선다(2026-11-02 —
-# 전에는 Main 탭에서만 섰다). 주요공정 히트맵은 조건 패널의 둘째 칸, LOB 표시 조건은 패널 밑 카드(맨
-# 위가 주요 Case 칩 — 칩 줄은 회차마다 DB 를 보지 않는다, `home_main_case_chips`)이고, 그 밑에 공용
-# 설정을 여는 「HOME 설정」 상자가 따로 선다. 계산이 멈춘 회차의 카드·상자는 위 `except` 가 그린다.
+# 전에는 Main 탭에서만 섰다). 주요공정 히트맵은 조건 패널의 둘째 칸이고, 패널 바로 밑에 공용 설정을
+# 여는 「HOME 설정」 상자가 따로 서고, 그 밑이 LOB 표시 조건 카드(맨 위가 주요 Case 칩 — 칩 줄은
+# 회차마다 DB 를 보지 않는다, `home_main_case_chips`)다. 상자를 카드 **위**에 두는 까닭: 카드는
+# 칩 때문에 처음 펼친 채 서서(약 370px) 그 밑이면 1280×800 · 1500×950 에서 상자가 사이드바 첫 화면
+# 밖으로 밀린다 — 팝업에 닿는 길이 이 상자 하나뿐이다. 계산이 멈춘 회차의 상자·카드는 위 `except` 가
+# 같은 차례로 그린다.
 with page_condition_slot(1).container():
     render_key_process_field(
         key_process_profile, process_labels=process_labels, process_options=process_options
     )
-render_home_view_card(
-    comparison_ready=comparison_ready,
-    chips=partial(render_main_case_chips, str(DUCKDB_PATH.resolve())),
-)
 # 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 상자 왼쪽에 주황 띠, 팝업 안 `Past Data` 탭
 # 이름 옆에 점을 찍는다 — 다른 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가
 # 남아도 점이 없었다). 찍을 것이 없어도 매 회차 부른다 — 저장한 다음 회차에 앞 회차의 점을 덮는다.
 render_home_settings_box(pending=past_data_has_pending())
+render_home_view_card(
+    comparison_ready=comparison_ready,
+    chips=partial(render_main_case_chips, str(DUCKDB_PATH.resolve())),
+)
 view_month_labels = list(view_conditions.month_labels)
 # 가로 스크롤의 시작 위치는 과거 칸 경계를 본다. 앞머리의 과거 칸을 지나야 DB 계산 구간의 첫 달이
 # 화면 왼쪽에 선다. 그린 그림의 조건(월 축·과거 칸)에서 낸다.

@@ -4,7 +4,8 @@
 
 저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열두 종
 (표시순서·공정 표시명·비교 시나리오·주요 Case·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·
-주요공정·확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
+주요공정·확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다. 비교 시나리오 후보
+목록(HOME 이 회차마다 세션의 비교 시나리오를 대 보는 것)은 비교 대상 프로필과 한 세대를 쓴다.
 
 DB 를 읽는 캐시는 모두 키에 쓰기 세대(`WriteGeneration`)를 둔다 — `clear_*` 가 비우기 전에 그 종류의
 세대를 올린다(`_bump_write_generation`).
@@ -337,14 +338,44 @@ def load_global_comparison_scenario(database_path: str) -> GlobalComparisonScena
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _listed_comparison_candidates_payload(
+    database_path: str, generation: WriteGeneration
+) -> tuple[str, ...]:
+    del generation
+    return tuple(
+        scenario.scenario_id for scenario in get_scenario_repository(database_path).list_scenarios()
+    )
+
+
+def listed_comparison_candidates(database_path: str) -> frozenset[str]:
+    """비교 시나리오로 고를 수 있는 시나리오 id(보관하지 않은 것) — HOME 이 회차마다 세션 값을
+    대 본다.
+
+    키는 비교 대상 프로필과 **같은 쓰기 세대**다. 세션 값을 무르게 하는 일은 보관·영구 삭제뿐이고
+    (리비전 하나만 지우는 길은 저장소에 없다 — append-only), 그 둘은 저장소가 같은 트랜잭션에서
+    프로필도 비우고 호출부(`scenario_management`)가
+    `clear_global_comparison_scenario_cache()` 를 부른다. 그래서 HOME 회차는 보관·삭제 뒤 한 번만
+    DB 를 읽는다. 새로 만든 시나리오는 세대를 올리지 않아 이 목록에 늦게 들 수 있다 — 목록에 없는
+    세션 값은 부르는 쪽이 DB 로 한 번 더 확인한 뒤에만
+    걷는다(`home_preference.forget_unlisted_comparison`).
+    """
+    return frozenset(
+        _listed_comparison_candidates_payload(
+            database_path, _write_generation("comparison_scenario")
+        )
+    )
+
+
 def clear_global_comparison_scenario_cache() -> None:
-    """비교 대상 프로필만 비운다.
+    """비교 대상 프로필과 비교 후보 목록을 비운다.
 
     다른 공용 프로필과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 비교 대상은 어떤
     `RQ_*` 표에도 오버레이되지 않고 비교 계획을 어디서 읽을지만 정한다.
     """
     _bump_write_generation("comparison_scenario")
     _load_global_comparison_scenario_payload.clear()
+    _listed_comparison_candidates_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -614,9 +645,9 @@ def past_table_csv(
 ) -> bytes:
     """과거 구간 양식 CSV. 공용 버전이 같으면 결과도 같다.
 
-    Past Data 탭은 닫혀 있어도 본문을 그리므로 세 표의 정규화·직렬화가 HOME 의 모든
-    rerun 에 실린다. 세 표는 한 버전을 공유하고 교체할 때마다 version 이 오르므로 키에
-    version 과 표 이름만 있으면 된다.
+    「HOME 설정」 팝업이 열린 회차마다(안쪽 `Past Data` 탭이 숨어 있어도) 본문을 그리므로 세 표의
+    정규화·직렬화가 팝업 안 모든 rerun 에 실린다. 세 표는 한 버전을 공유하고 교체할 때마다
+    version 이 오르므로 키에 version 과 표 이름만 있으면 된다.
     """
     del database_path, version, table_name
     return past_table_to_csv(_frame, columns)
@@ -665,6 +696,7 @@ def clear_scenario_repository() -> None:
     _load_global_advance_shipment_payload.clear()
     _load_global_securement_threshold_payload.clear()
     _load_global_comparison_scenario_payload.clear()
+    _listed_comparison_candidates_payload.clear()
     _load_global_main_cases_payload.clear()
     _load_main_case_targets_payload.clear()
     _load_global_execution_capacity_payload.clear()

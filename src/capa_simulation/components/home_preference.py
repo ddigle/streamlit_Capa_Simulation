@@ -108,6 +108,7 @@ from capa_simulation.persistence.cache import (
     clear_global_summary_note_cache,
     clear_global_top5_band_cache,
     get_scenario_repository,
+    listed_comparison_candidates,
     load_global_comparison_scenario,
     load_global_key_process,
 )
@@ -627,6 +628,41 @@ def seed_comparison_selection(database_path: str) -> None:
     st.session_state[COMPARISON_SCENARIO_KEY] = profile.scenario_id
     if profile.revision_id is not None:
         st.session_state[COMPARISON_REVISION_KEY] = profile.revision_id
+
+
+def forget_unlisted_comparison(database_path: str) -> None:
+    """세션의 비교 시나리오가 목록에서 사라졌으면(보관·영구 삭제) 세션의 비교 짝을 걷는다.
+
+    `seed_comparison_selection` 바로 뒤, HOME 이 비교 값을 읽기 **전에** 부른다. 다른 곳에서 보관·
+    삭제하면 저장소는 공용 프로필만 비우고 세션 값은 그대로다 — 심기는 세션 값이 있으면 덮지 않는다.
+    걷지 않으면 이 세션은 보관된 시나리오와 계속 견주고(GAP 이 그대로 그려진다), 영구 삭제면 토글이
+    켜진 채 증감 없이 비어 있다(`_owned_comparison_revision` 이 조용히 끈다). 걷으면 「GAP」 토글이
+    잠기고 툴팁이 까닭(`GAP_LOCKED_HELP`)을 말한다. 피커(`_render_comparison_picker`)도 같은 일을
+    하지만 「HOME 설정」 팝업을 연 회차에만 돈다 — 전에는 숨은 `Preference` 탭이 매 회차 돌려 이
+    정리를 맡았다(2026-11-02 팝업으로 옮긴 뒤 검토에서 찾음).
+
+    **회차마다 DB 를 보지 않는다** — 목록은 비교 대상 프로필과 같은 쓰기 세대의
+    캐시(`listed_comparison_candidates`)라 보관·삭제 뒤 한 번만 읽는다. 새로 만든 시나리오는 세대를
+    올리지 않아 캐시에 늦게 들 수 있으므로, 캐시에 없을 때만 DB 목록으로 한 번 더 보고 거기에도 없을
+    때만 걷는다. 읽지 못하면 걷지 않는다 — 비교는 `_owned_comparison_revision` 이 회차마다 따로
+    본다. 리비전은 보지 않는다 — 리비전 하나만 지우는 길이 저장소에 없다(append-only).
+    """
+    scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
+    if scenario_id is None:
+        return
+    try:
+        if str(scenario_id) in listed_comparison_candidates(database_path):
+            return
+        listed = {
+            scenario.scenario_id
+            for scenario in get_scenario_repository(database_path).list_scenarios()
+        }
+    except BOOTSTRAP_ERRORS:
+        return
+    if str(scenario_id) in listed:
+        return
+    st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
+    st.session_state.pop(COMPARISON_REVISION_KEY, None)
 
 
 def _render_comparison_picker(database_path: str) -> None:

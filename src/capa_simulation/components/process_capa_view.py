@@ -267,7 +267,7 @@ CALCULATION_RESULT_PAGE: Final = "app_pages/calculation_result.py"
 # 보유로도 부족 원인의 표지 — 단축으로 못 메우는 투자 검토 대상이다.
 INVESTMENT_BADGE: Final = ":red-badge[투자 검토 대상]"
 # 표 도구 줄에 적는 단축 목표의 출처.
-TARGET_SOURCE_TEXT: Final = "HOME Preference 확보기준(월별)"
+TARGET_SOURCE_TEXT: Final = "HOME 설정 → Preference 확보기준(월별)"
 # 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 카드 제목(머리 배지와 같은 말).
 DYNAMIC_ERROR_TITLE: Final = "설비 일정 없음: 계산 오류"
 
@@ -502,7 +502,7 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(정수 %)도."""
+    """단축 목표 표기 — 「HOME 설정 → Preference 확보기준(월별)」, 달마다 같으면 그 값(정수 %)도."""
     value = single_target(target, months)
     if value is not None:
         return f"{TARGET_SOURCE_TEXT} {target_label(value)}"

@@ -186,6 +186,10 @@ def _run_process_dialog_app(database_path: Path) -> AppTest:
 # 탭).
 SETTINGS_BUTTON_KEY = "home_settings_open"
 HOME_DIALOG_KEY = "home_open_dialog"
+# 사이드바 최상위 칸 key — 「HOME 설정」 상자는 `LOB 표시 조건` 카드 바로 위다(펼친 카드 밑이면
+# 작은 화면의 사이드바 첫 화면 밖으로 밀린다).
+SETTINGS_BOX = "sidebar_dialog_box_home_settings"
+VIEW_CARD = "condition_card_home"
 
 
 def _open_settings(app: AppTest) -> AppTest:
@@ -557,11 +561,12 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     assert sorted(widget.label for widget in app.button) == sorted(
         ["공식", "Case1", "Case2", "Guide", "전체 3공정", "프리셋 없음", "HOME 설정"]
     )
+    # 「HOME 설정」 상자는 카드 위다 — 펼친 카드 밑이면 작은 화면의 사이드바 첫 화면 밖이다.
     assert [widget.label for widget in app.sidebar.button][-4:] == [
+        "HOME 설정",
         "공식",
         "Case1",
         "Case2",
-        "HOME 설정",
     ]
     assert list(app.number_input) == []
     assert [button.label for button in app.download_button] == []
@@ -915,8 +920,10 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     assert "EDP 를 포함해" in app.error[0].value
     assert [widget.label for widget in app.sidebar.toggle] == HOME_VIEW_TOGGLES
     assert app.sidebar.toggle(key=EDP_TOGGLE_KEY).value is False
-    # 「HOME 설정」 상자는 잠긴 채 같은 자리에 선다 — 팝업 본문이 계산 결과를 쓴다.
+    # 「HOME 설정」 상자는 잠긴 채 같은 자리(카드 바로 위)에 선다 — 팝업 본문이 계산 결과를 쓴다.
     assert app.button(key=SETTINGS_BUTTON_KEY).disabled
+    stopped_keys = _sidebar_keys(app)
+    assert stopped_keys.index(SETTINGS_BOX) == stopped_keys.index(VIEW_CARD) - 1
     assert app.session_state["spy_traces"] == []
 
     app.sidebar.toggle(key=EDP_TOGGLE_KEY).set_value(True)
@@ -925,6 +932,9 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     assert not list(app.exception), [element.message for element in app.exception]
     assert [element.value for element in app.error] == []
     assert not app.button(key=SETTINGS_BUTTON_KEY).disabled
+    # 정상 회차도 같은 차례다(상자 바로 밑이 카드).
+    keys = _sidebar_keys(app)
+    assert keys.index(SETTINGS_BOX) == keys.index(VIEW_CARD) - 1
     assert app.session_state["spy_traces"]
 
 
@@ -1149,8 +1159,10 @@ def _lob_traces(app: AppTest) -> dict[str, Any]:
     return {trace.name: trace for trace in figure.data}
 
 
-def _create_comparison_scenario(database_path: Path, factor: float) -> tuple[str, str]:
-    """현재 활성 계획의 수량만 바꾼 비교용 시나리오를 만든다.
+def _create_comparison_scenario(
+    database_path: Path, factor: float, *, name: str = "비교용"
+) -> tuple[str, str]:
+    """현재 활성 계획의 수량만 바꾼 비교용 시나리오를 만든다(이름은 겹칠 수 없어 둘째부터 `name`).
 
     계획만 다르고 나머지 기준정보는 같아야 GAP 이 계획 차이만 나타내는지 확인할 수 있다.
     """
@@ -1168,9 +1180,9 @@ def _create_comparison_scenario(database_path: Path, factor: float) -> tuple[str
     tables["RQ_PKG_PLAN"] = plan
     created = repository.create_scenario(
         ScenarioCreate(
-            scenario_name="비교용",
+            scenario_name=name,
             source_simulation_code="COMPARE-1",
-            source_simulation_name="비교용",
+            source_simulation_name=name,
             source_type="DUCKDB_SCENARIO_CLONE",
             pipeline_version="duckdb-rq-snapshot-v3",
         ),
@@ -1269,6 +1281,81 @@ def test_a_comparison_revision_deleted_after_the_check_draws_without_gap(
     assert not list(app.error), [element.value for element in app.error]
     assert "production_lob_months" in app.session_state["spy_figures"]
     assert _gap_annotations(app) == []
+
+
+@pytest.mark.parametrize("removal", ["archive_scenario", "delete_scenario"])
+def test_a_comparison_scenario_removed_elsewhere_leaves_the_session_and_locks_gap(
+    tmp_path: Path, removal: str
+) -> None:
+    """다른 곳(시나리오 관리)에서 비교 시나리오를 보관·영구 삭제하면 HOME 의 다음 회차가 세션의 비교
+    짝을 걷고 「GAP」 을 잠근다 — 「HOME 설정」 팝업을 열지 않아도.
+
+    저장소는 공용 프로필만 비우고 세션 값은 그대로다. 걷지 않으면 보관된 시나리오와 계속 견주고(GAP
+    주석이 그대로), 삭제면 토글이 켜진 채 증감 없이 비어 있다. 전에는 숨은 `Preference` 탭의 피커가
+    매 회차 걷었다 — 팝업으로 옮긴 뒤에는 HOME 첫머리의 정리(`forget_unlisted_comparison`)가 맡는다.
+    """
+    from capa_simulation.components.home_preference import (
+        COMPARISON_REVISION_KEY,
+        COMPARISON_SCENARIO_KEY,
+        GAP_LOCKED_HELP,
+    )
+    from capa_simulation.persistence.cache import (
+        clear_global_comparison_scenario_cache,
+        clear_global_main_cases_cache,
+        clear_scenario_snapshot_cache,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    comparison_id, comparison_revision_id = _create_comparison_scenario(database_path, 0.5)
+    _pick_comparison(app, comparison_id, comparison_revision_id)
+    app.run()
+    assert _gap_annotations(app), "고른 비교 시나리오의 GAP 이 처음부터 없다"
+
+    getattr(DuckDBScenarioRepository(database_path), removal)(comparison_id)
+    # 시나리오 관리의 보관·삭제가 부르는 비우기 그대로.
+    clear_scenario_snapshot_cache()
+    clear_global_comparison_scenario_cache()
+    clear_global_main_cases_cache()
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert COMPARISON_SCENARIO_KEY not in app.session_state
+    assert COMPARISON_REVISION_KEY not in app.session_state
+    assert _gap_annotations(app) == []
+    gap = next(toggle for toggle in app.toggle if toggle.key == COMPARISON_TOGGLE_KEY)
+    assert gap.disabled
+    assert gap.help == GAP_LOCKED_HELP
+
+
+def test_a_comparison_scenario_newer_than_the_cached_list_is_kept(tmp_path: Path) -> None:
+    """비교 후보 목록은 캐시라 새로 만든 시나리오가 늦게 든다 — 그런 세션 값은 DB 로 확인하고
+    남긴다.
+
+    목록을 채운 뒤 만든 시나리오를 (프로필을 쓰지 않고) 세션에 고르면 캐시에는 없다. 캐시만 믿고
+    걷으면 사용자가 방금 고른 비교가 말없이 사라진다.
+    """
+    from capa_simulation.components.home_preference import COMPARISON_SCENARIO_KEY
+
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    first_id, first_revision_id = _create_comparison_scenario(database_path, 0.5)
+    _pick_comparison(app, first_id, first_revision_id)
+    app.run()
+    assert _gap_annotations(app)
+
+    newer_id, newer_revision_id = _create_comparison_scenario(database_path, 2.0, name="비교용 2")
+    _pick_comparison(app, newer_id, newer_revision_id)
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[COMPARISON_SCENARIO_KEY] == newer_id
+    gaps = _gap_annotations(app)
+    # 계획을 두 배로 늘린 시나리오와 견주므로 현재가 더 적다 — 전부 감소여야 한다.
+    assert gaps and all(text.startswith("-") for text in gaps), gaps
 
 
 def test_comparison_can_target_another_revision_of_the_same_scenario(tmp_path: Path) -> None:

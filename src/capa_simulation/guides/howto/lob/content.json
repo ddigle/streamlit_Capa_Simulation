@@ -168,7 +168,7 @@
           "where": ["HOME"],
           "state": "01_home_main",
           "focus": [{"t": "sidebar_settings", "n": 1, "kind": "see"}, {"t": "sidebar_lobcond", "n": 2, "kind": "see"}],
-          "do": "팝업을 닫으면(X · 바깥 · Esc) 대시보드가 새 비교 대상으로 다시 그려집니다. GAP 토글은 그 위 「LOB 표시 조건」 카드에 있어요."
+          "do": "팝업을 닫으면(X · 바깥 · Esc) 대시보드가 새 비교 대상으로 다시 그려집니다. GAP 토글은 그 상자 바로 밑 「LOB 표시 조건」 카드에 있어요."
         },
         {
           "id": "gap_on",

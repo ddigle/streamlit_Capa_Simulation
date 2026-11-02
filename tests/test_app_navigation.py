@@ -1089,8 +1089,8 @@ def test_the_conditions_panel_holds_only_the_rows_the_screen_reads(
 ) -> None:
     """패널은 **늘 펼친** 한 상자이고, 줄은 그 화면이 실제로 읽는 조건뿐이다(`PageSpec`).
 
-    HOME 은 공통 두 줄 뒤에 페이지 칸 둘(공정 필터 — 세 탭 모두, 주요공정 히트맵 — Main 탭)을
-    채운다. 접히는 상자가 아니므로 펼침 상태가 없다.
+    HOME 은 공통 두 줄 뒤에 페이지 칸 둘(공정 필터 · 주요공정 히트맵 — HOME 은 탭 없이 한 화면이라
+    늘)을 채운다. 접히는 상자가 아니므로 펼침 상태가 없다.
     """
     app = _app.run()
     if page_path != HOME.path:
@@ -1107,7 +1107,9 @@ def test_the_home_panel_rows_and_settings_box_stay_while_the_settings_popup_is_o
     카드·「HOME 설정」 상자가 늘 선다 — 「HOME 설정」 팝업을 연 회차에도 그대로다.
 
     전에는 HOME 의 Preference·Past Data 탭에서 히트맵 줄과 카드가 빠졌다(Main 에만 그려지는
-    조건이었다). 상자는 카드 바로 밑, 사이드바 최상위 칸이다(`sidebar_dialog_box_home_settings`).
+    조건이었다). 상자는 카드 바로 **위**, 사이드바 최상위 칸이다
+    (`sidebar_dialog_box_home_settings`) — 펼친 카드 밑이면 1280×800 · 1500×950 사이드바 첫 화면
+    밖으로 밀린다(2026-11-02 검토).
     """
     app = _app.run()
     app.button(key="home_settings_open").click().run()
@@ -1120,7 +1122,7 @@ def test_the_home_panel_rows_and_settings_box_stay_while_the_settings_popup_is_o
         "home_key_process_field",
     ]
     keys = _sidebar_keys(app)
-    assert keys.index("sidebar_dialog_box_home_settings") == keys.index("condition_card_home") + 1
+    assert keys.index("sidebar_dialog_box_home_settings") == keys.index("condition_card_home") - 1
 
 
 @pytest.mark.parametrize(
@@ -1596,23 +1598,35 @@ def test_the_shared_sample_switch_stays_on_across_sample_pages(_app: AppTest) ->
 
 
 def test_a_tab_scoped_card_remembers_its_state_across_a_page_round_trip(_app: AppTest) -> None:
-    """HOME Main 탭에만 서는 `LOB 표시 조건` 카드는 **기억 칸**이 없으면 왕복할 때마다 접힌다.
+    """HOME 에만 서는 `LOB 표시 조건` 카드는 **기억 칸**이 없으면 왕복할 때마다 기본값으로 돌아간다.
 
     Streamlit 은 한 회차에 만들어지지 않은 위젯의 값을 버린다. 다른 페이지에 있는 동안
-    이 카드는 아예 그려지지 않으므로, 위젯 값만 믿으면 펴 둔 사람이 HOME 에 돌아올 때마다
-    다시 펴야 한다.
+    이 카드는 아예 그려지지 않으므로, 위젯 값만 믿으면 바꿔 둔 사람이 HOME 에 돌아올 때마다
+    다시 바꿔야 한다. 카드는 주요 Case 칩 때문에 **처음 펼친 채** 서므로(2026-11-02 —
+    `default=True`) 기본값과 다른 쪽인 **접힘**으로 왕복해야 기억 칸을 지킨다 — 펼친 채 왕복하면
+    기억 없이도 펼친 채 돌아와 아무것도 지키지 못한다(2026-11-02 검토). 다시 편 것도 기억한다.
     """
     card_key = f"{CONDITION_CARD_PREFIX}home"
     app = _app.run()
-    app.session_state[card_key] = True
-    app.run()
+    # 처음에는 펼친 채 선다.
     assert _control_boxes(app)[card_key] is True
+    app.session_state[card_key] = False
+    app.run()
+    assert _control_boxes(app)[card_key] is False
 
     app.switch_page(SCENARIO_MANAGEMENT.path).run()
     assert card_key not in _control_boxes(app)
     # 위젯 값은 버려져도 기억 칸은 남는다.
-    assert app.session_state[remembered_box_key(card_key)][0] is True
+    assert app.session_state[remembered_box_key(card_key)][0] is False
 
+    app.switch_page(HOME.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _control_boxes(app)[card_key] is False
+
+    # 다시 펴고 왕복해도 그 뜻대로다.
+    app.session_state[card_key] = True
+    app.run()
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
     app.switch_page(HOME.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _control_boxes(app)[card_key] is True
