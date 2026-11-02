@@ -70,19 +70,27 @@ function keyAction(key, shift, now, lo, hi) {
 }
 // </splitter-keys>
 
+// 저장소를 막은 브라우저(사내 DRM 등) — 읽기·쓰기가 한 번이라도 막히면 `<html>` 에 이 표를 단다. 그 뒤 마운트(안쪽 탭·
+// 화면을 옮겨 다시 그린 칸막이)는 저장값 대신 `<html>` 에 걸린 이 문서의 폭·접힘을 그대로 둔다 — 새로 읽어야 처음 상태다.
+const LOCAL_ONLY = '__essLocalOnly'
+
+// 저장값 — 저장소를 못 쓰면 null(문서 상태를 그대로 둔다).
 function readStore() {
+  if (document.documentElement[LOCAL_ONLY]) return null
   try {
     return storedState(window.localStorage.getItem(STORE), STORED_LIMIT)
   } catch (error) {
-    return { w: null, min: false }
+    document.documentElement[LOCAL_ONLY] = true
+    return null
   }
 }
 function writeStore(patch) {
+  const prev = readStore()
+  if (!prev) return
   try {
-    const next = { ...readStore(), ...patch }
-    window.localStorage.setItem(STORE, JSON.stringify(next))
+    window.localStorage.setItem(STORE, JSON.stringify({ ...prev, ...patch }))
   } catch (error) {
-    // 저장소를 막은 브라우저(사내 DRM 등)는 폭·접힘이 이 문서에서만 산다.
+    document.documentElement[LOCAL_ONLY] = true
   }
 }
 
@@ -102,16 +110,18 @@ function keyClass(name) {
   return typeof name === 'string' && /^[\w-]+$/.test(name) ? '.st-key-' + name : null
 }
 
-// 그림자 DOM 밖의 자리 — 두 칸 줄·오른쪽 칸 감싸개(flex 항목)·그 앞 형제(왼쪽 칸 감싸개).
+// 그림자 DOM 밖의 자리 — 두 칸 줄·오른쪽 칸 감싸개(flex 항목)·그 앞 형제(왼쪽 칸 감싸개)·오른쪽 칸 본문 칸(스크롤 칸).
 function anchors(host, keys) {
   const root = host.getRootNode ? host.getRootNode() : null
   const outer = root && root.host ? root.host : host
   const rowSel = keyClass(keys.row)
   const rightSel = keyClass(keys.right)
+  const bodySel = keyClass(keys.body)
   const row = rowSel && outer.closest ? outer.closest(rowSel) : null
   const right = rightSel && outer.closest ? outer.closest(rightSel) : null
   const column = right ? right.parentElement : null
-  return { row, column }
+  const body = right && bodySel && right.querySelector ? right.querySelector(bodySel) : null
+  return { row, column, body }
 }
 
 function rowWidth(S) {
@@ -293,23 +303,28 @@ export default function (component) {
   S.bounds = data.bounds
   S.cover = typeof data.cover === 'string' ? data.cover : ''
   S.label = String(data.label || '오른쪽 칸')
-  const { row, column } = anchors(host, data.keys || {})
+  const { row, column, body } = anchors(host, data.keys || {})
   S.row = row
   S.column = column
   const doc = document.documentElement
   if (!S.built) {
-    // 처음 마운트 — 저장해 둔 폭·접힘을 문서에 다시 건다(폭 한계는 CSS clamp 가 창 폭에 맞춘다).
+    // 처음 마운트 — 저장해 둔 폭·접힘을 문서에 다시 건다(폭 한계는 CSS clamp 가 창 폭에 맞춘다). 저장소를 못 쓰면
+    // `<html>` 에 걸린 이 문서의 폭·접힘을 그대로 둔다(`LOCAL_ONLY`).
     const stored = readStore()
-    if (stored.w !== null) doc.style.setProperty(VAR_W, stored.w + 'px')
-    else doc.style.removeProperty(VAR_W)
-    if (stored.min) doc.setAttribute(ATTR, 'min')
-    else doc.removeAttribute(ATTR)
+    if (stored) {
+      if (stored.w !== null) doc.style.setProperty(VAR_W, stored.w + 'px')
+      else doc.style.removeProperty(VAR_W)
+      if (stored.min) doc.setAttribute(ATTR, 'min')
+      else doc.removeAttribute(ATTR)
+    }
     build(S, host)
     S.reveal = data.reveal
   } else if (data.reveal !== S.reveal) {
-    // 표에서 호기 상세·새 호기를 연 회차 — 접혀 있으면 편다(누른 것이 보이게).
+    // 표에서 호기 상세·새 호기를 연 회차 — 접혀 있으면 편다(누른 것이 보이게). 본문 칸은 key 칸이라 회차가 바뀌어도 같은
+    // 요소로 남아 스크롤 자리를 잇는다 — 맨 위로 올려 새로 연 호기의 이름 머리(와 토스트)가 보이게 한다.
     S.reveal = data.reveal
     if (minimized()) setFolded(S, false, false)
+    if (body) body.scrollTop = 0
   }
   measure(S)
   paint(S)

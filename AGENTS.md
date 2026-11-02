@@ -1673,7 +1673,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸은 그 높이에 붙는다(sticky). 접어도 패널은 `display:none` 으로 그대로 그려 두어 다시 마운트되지 않고 보내지 않은 출납을
     잃지 않는다. 폭·접힘은 브라우저에만 둔다(9장 「브라우저 전용 보기 상태」). 받기 콜백이 오른쪽 칸을 열면(`_switch_side` —
     표 설비명·「+ 새 호기」·가져오기·「호기 추가」·저장 전 변경의 고칠 것 줄) 연 수 `SIDE_REVEAL_KEY` 를 올려 칸막이 data
-    `reveal` 로 보내고, 칸막이는 그 수가 오르면 접힌 칸을 편다(누른 것이 보이게). 칸 안 너비 560px 이상이면 상세·새 호기 칸
+    `reveal` 로 보내고, 칸막이는 그 수가 오르면 접힌 칸을 펴고 본문 칸을 맨 위로 올린다(누른 것이 보이게 — 본문 칸은 key 칸이라
+    다른 호기를 그려도 스크롤 자리가 남아 새 호기 이름 머리가 칸 위로 나가 있었다). 칸 안 너비 560px 이상이면 상세·새 호기 칸
     묶음이 3열(`grid.css` container query)이다. 「저장 전 변경」 목록 `max-height 420px`(본문 칸 안 겹 스크롤)은 그대로 둔다.
     창 폭 640px 이하는 위아래로 쌓고(칸막이·접기 없음) 인쇄는 상한·sticky 를 풀고 접힘도 펼친 꼴이다. Streamlit 1.63 DOM
     (`stLayoutWrapper` 감싸개 · key 가로 칸 `overflow`)에 기대므로 Streamlit 을 올리면 이 CSS(`side_layout_style`)를 다시 본다.
@@ -1761,9 +1762,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
   - **오른쪽 칸 칸막이**는 따로 등록한다(`capa_equipment_side_splitter` — `equipment_master_grid_assets/splitter.js`·`splitter.css`,
     `render_side_splitter`·대역 `tests/conftest.py`). data 는 팔레트(`_splitter_palette` — `--ess-*`)·지금 칸 이름·`reveal`·폭 한계
-    (`side_bounds` — 페이지 CSS 와 같은 수)·두 칸 key·화면 탭 줄 선택자뿐이라 거의 늘 같다. 상태 값·트리거가 없다 — 폭·접힘은
+    (`side_bounds` — 페이지 CSS 와 같은 수)·두 칸·본문 칸 key·화면 탭 줄 선택자뿐이라 거의 늘 같다. 상태 값·트리거가 없다 — 폭·접힘은
     브라우저 저장소 `capa-equipment-side-v1` `{w, min}`(try 안)과 `<html>` 의 CSS 변수 `--emd-side-w`·`--emd-top`·`--emd-gap`·속성
-    `data-emd-side="min"` 에만 둔다. 끌기는 rAF 로 한 프레임에 한 번(회차 0), 끌기 시작에서 `preventDefault`(글자 고름 없음).
+    `data-emd-side="min"` 에만 둔다. 저장소 읽기·쓰기가 한 번이라도 막히면(사내 DRM 등) `<html>` 에 표(`__essLocalOnly`)를 달고 그 뒤
+    마운트는 저장값 대신 `<html>` 에 걸린 이 문서의 폭·접힘을 그대로 둔다 — 안쪽 탭·화면을 옮겨 다시 마운트돼도 남고 새로 읽으면
+    처음이다. 끌기는 rAF 로 한 프레임에 한 번(회차 0), 끌기 시작에서 `preventDefault`(글자 고름 없음).
     칸막이는 절대 위치(흐름 높이 0)라 오른쪽 칸 차례(칸막이 → 고르기 → 본문 칸)를 바꾸지 않는다. 배치 서식은 회차마다 같은 글의
     스타일만 든 `st.html` 하나(`side_layout_style` — 이벤트 칸 한 자리, 1,000B 이상이라 해시 참조, CSS 주석 없음)다 — 가로 칸
     flex 항목은 `stLayoutWrapper:has(> .st-key-…)` 한 겹으로 고르고(`:has` 를 겹치면 규칙이 버려진다), `wrap=False` 가로 칸에
@@ -1802,7 +1805,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     비우기」(상세 칩도)는 `data-fk` 를 달아 초점이 돌아온다(키보드로 채우는 동안 칸 처음으로 가지 않게). 오른쪽 칸의 새 토스트가 화면
     위로 나가 있으면(칸 아래쪽에서 누른 「호기 추가」·「이 호기로 새 호기 만들기」·「이 호기 지우기」) 칸 머리를 보인다(`revealToast`·
     `needsReveal`, 토스트 `scroll-margin-top` 이 머리 띠를 비킨다) — 그 칸이 처음 선 회차이거나 「되돌리기」 가 달린 토스트만(칸 안에서
-    고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게). 상세 「비가동 일정 표에서 고치기」 는 누를 때 두 칸 줄(그림자 DOM 밖
+    고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게). 토스트가 넘치는 스크롤 칸(오른쪽 칸 본문 칸) 안이면 먼저 그 칸만 토스트
+    머리까지 올리고(`scrollBoxOf` — 그림자 DOM 밖으로 건너 올라가 `stMain` 앞에서 멈춘다 · `boxScrollFor`), 그래도 머리 띠 아래로
+    가려 있을 때만 `scrollIntoView` 한다 — 바로 `scrollIntoView` 하면 Chrome 이 붙은(sticky) 자리가 아니라 원래 흐름 자리로 셈해
+    바깥 페이지까지 밀어 왼쪽 표가 튄다. 상세 「비가동 일정 표에서 고치기」 는 누를 때 두 칸 줄(그림자 DOM 밖
     `stHorizontalBlock`)의 머리가 가린 높이 위로 나가 있으면 머리 띠·화면 탭 줄 아래로 올린다(`revealColumnsTop` — 그 표는 왼쪽
     칸 맨 위에 선다. 가린 높이는 sticky 화면 탭 줄 `PAGE_TABS_STRIP` 의 아래 끝 + 8px, 없으면 머리 띠 72px + 8px). 표지 색은 새 토큰 없이 팔레트(오류 선·강조·배치 머리 면·머리
     면)이고 글자(필수·가용대수·도면)가 함께 간다.

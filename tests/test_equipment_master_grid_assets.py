@@ -596,6 +596,13 @@ const results = {
     showsError(false, true, 'x', true, false),
   ],
   reveal: [needsReveal(-1104, 72), needsReveal(40, 72), needsReveal(300, 72)],
+  box: [
+    boxScrollFor(1474, -1172, 302),
+    boxScrollFor(120, 182, 302),
+    boxScrollFor(300, 250, 302),
+    boxScrollFor(0, 302, 302),
+    boxScrollFor(500, 400, 302),
+  ],
 }
 process.stdout.write(JSON.stringify(results))
 """
@@ -666,6 +673,83 @@ def test_the_floor_choice_narrows_by_the_rows_building_and_keeps_the_current_val
     assert JS.count("choiceOptions(") == 6
     assert "choiceOptions(columns, column, (j) => S.nd.values[j], value)" in JS
     assert "choiceOptions(columns, column, rowValueAt(S, unit), shown)" in JS
+
+
+_TOAST_BOX_RUNNER = """
+let calls = []
+const main = { matches: (selector) => selector === '[data-testid="stMain"]', parentElement: null }
+const box = {
+  overflowY: 'auto', scrollTop: 0, scrollHeight: 2200, clientHeight: 653, top: 302,
+  parentElement: main, matches: () => false,
+  getBoundingClientRect() { return { top: this.top } },
+}
+// 그림자 DOM 밖 마운트 자리 → 본문 칸. 그림자 안의 맨 위 요소는 parentElement 가 없어 뿌리의
+// host 로 건넌다.
+const outer = { parentElement: box, matches: () => false }
+const side = { parentElement: null, getRootNode: () => ({ host: outer }) }
+const toast = {
+  isConnected: true, hidden: false, parentElement: side,
+  getBoundingClientRect() { return { top: box.top - box.scrollTop } },
+  scrollIntoView(options) { calls.push(options) },
+}
+globalThis.window = {
+  requestAnimationFrame(fn) { fn(); return 1 },
+  getComputedStyle: (node) => ({ overflowY: node.overflowY || 'visible' }),
+}
+const run = (setup) => {
+  calls = []
+  setup()
+  revealToast(toast)
+  return { box: box.scrollTop, page: calls.length ? calls : null }
+}
+const out = {}
+// 붙은 오른쪽 칸, 본문 칸 맨 아래(사본 앱 1500×950 — 본문 칸 위 끝 302, 스크롤 1474).
+out.bottom = run(() => { box.scrollTop = 1474 })
+// 본문 칸이 조금만 내려가 토스트가 머리 띠 아래이지만 칸 위로 가려 있다.
+out.little = run(() => { box.scrollTop = 120 })
+// 칸 안에서 보인다.
+out.visible = run(() => { box.scrollTop = 0 })
+// 좁은 창에서 쌓인 칸이 화면 위로 나가 있다 — 칸을 올린 뒤에도 가려 있어 페이지를 옮긴다.
+out.stacked = run(() => { box.top = -500; box.scrollTop = 300 })
+// 넘치지 않는 칸은 스크롤 칸이 아니다 — 페이지 길(전과 같음).
+out.short = run(() => { box.top = -200; box.scrollTop = 0; box.scrollHeight = 653 })
+// 스크롤 칸 없이 페이지 본문(stMain) 바로 안.
+out.page = run(() => { box.scrollHeight = 2200; box.overflowY = 'visible'; box.top = -300 })
+// 내려간 토스트·떨어진 토스트는 건드리지 않는다.
+out.hidden = run(() => {
+  box.overflowY = 'auto'; box.top = 302; box.scrollTop = 1474; toast.hidden = true
+})
+toast.hidden = false
+out.detached = run(() => { toast.isConnected = false })
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_fresh_toast_in_the_side_scroll_box_scrolls_only_that_box() -> None:
+    """설비 마스터 오른쪽 칸 본문 칸(넘치면 스크롤하는 칸, 오른쪽 칸은 sticky) 안의 새 토스트 —
+    바로 `scrollIntoView` 하면 Chrome 이 붙은 자리가 아니라 원래 흐름 자리로 셈해 바깥 페이지
+    (stMain)까지 밀어 왼쪽 표가 튀었다(사본 앱 1500×950, 본문 칸 맨 아래에서 「이 호기 지우기」 —
+    stMain 0 → 223px, 250 → 310px). 그림자 DOM 밖으로 건너 올라가 가장 가까운 넘치는 스크롤 칸을
+    찾아 그 칸만 토스트 머리까지 올리고(`scrollBoxOf`·`boxScrollFor`), 그래도 머리 띠 아래로 가려
+    있을 때만(쌓인 좁은 창·스크롤 칸이 없는 페이지 흐름) 전처럼 `scrollIntoView` 한다. 칸이 조금만
+    내려가 칸 위 끝에 가려 있던 토스트(머리 띠 아래라 전에는 그대로 두던 것)도 보인다."""
+    pure = _node({}, _NEW_RUNNER)
+    assert pure["box"] == [0, 0, 248, 0, 500]
+
+    out = _node({}, _TOAST_BOX_RUNNER, source=_fake_dom_source())
+
+    start = [{"block": "start"}]
+    assert out == {
+        "bottom": {"box": 0, "page": None},
+        "little": {"box": 0, "page": None},
+        "visible": {"box": 0, "page": None},
+        "stacked": {"box": 0, "page": start},
+        "short": {"box": 0, "page": start},
+        "page": {"box": 0, "page": start},
+        "hidden": {"box": 1474, "page": None},
+        "detached": {"box": 1474, "page": None},
+    }
+    assert "const PAGE_SCROLLER = '[data-testid=\"stMain\"]'" in JS
 
 
 def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed() -> None:

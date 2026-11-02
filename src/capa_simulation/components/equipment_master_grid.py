@@ -507,7 +507,8 @@ def render_side_splitter(label: str, reveal: int) -> None:
     """오른쪽 칸 맨 앞의 칸막이 — 오른쪽 칸 왼쪽 끝을 끌어 폭을 바꾸고(두 번 누르면 처음 폭,
     키보드 ←·→·Home·End), › 로 접고 접힌 띠(지금 칸 이름 `label`)를 눌러 편다. 받는 값이
     없다(상태 값·트리거 없음 — 회차를 부르지 않는다). `reveal` 은 표·오른쪽 칸이 오른쪽 칸을 연
-    수(`equipment_master_tab._switch_side`) — 늘면 접힌 칸을 편다."""
+    수(`equipment_master_tab._switch_side`) — 늘면 접힌 칸을 펴고 본문 칸(`SIDE_BODY_KEY`)을 맨
+    위로 올린다(key 칸이라 다른 호기를 그려도 스크롤 자리가 남는다)."""
     _SPLITTER(
         key=SPLITTER_KEY,
         data={
@@ -515,7 +516,7 @@ def render_side_splitter(label: str, reveal: int) -> None:
             "label": label,
             "reveal": reveal,
             "bounds": side_bounds(),
-            "keys": {"row": SPLIT_KEY, "right": RIGHT_KEY},
+            "keys": {"row": SPLIT_KEY, "right": RIGHT_KEY, "body": SIDE_BODY_KEY},
             "cover": f".st-key-{PAGE_TABS_COMPONENT_KEY}",
         },
         width="stretch",
