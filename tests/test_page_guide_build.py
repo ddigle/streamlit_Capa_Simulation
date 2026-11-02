@@ -1867,3 +1867,16 @@ def test_a_state_note_is_not_part_of_the_capture_fingerprint(
     monkeypatch.setattr(core, "load_skeleton", lambda *_a, **_k: _skeleton_with(plan=plan))
 
     assert set(desk.check().changed.values()) == {"데이터 자리"}
+
+
+def test_the_internal_settings_template_asks_for_the_checker_and_guards_the_board() -> None:
+    """런북 10-4 — `--accept` 줄의 승인이 「검수 끝」 확인이라 점검기 · 생성기는 allow 에 없고,
+    검수 마친 판은 점검기만 쓴다(편집 도구로 쓰지 않는다)."""
+    template = json.loads(
+        (PROJECT_ROOT / "docs" / "internal_claude_settings.json").read_text(encoding="utf-8")
+    )
+    allow, deny = template["permissions"]["allow"], template["permissions"]["deny"]
+
+    assert not [rule for rule in allow if "page_guide" in rule]
+    assert "Edit(review/**)" in allow
+    assert f"Edit(review/guide/{core.ACCEPTED_FILE})" in deny
