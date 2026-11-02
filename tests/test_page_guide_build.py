@@ -185,6 +185,43 @@ def test_frame_false_targets_get_a_box_but_do_not_widen_the_cut(tmp_path: Path) 
     assert [box["kind"] for box in step["boxes"]] == ["do", "see"]
 
 
+def test_assembler_records_its_cut_frames_and_can_run_without_opening_pictures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바뀐 자리 검수의 틀 기록 — 원고 자리마다 `crop()` 에 넘긴 틀을 적고(그림을 못 낸 조각은
+    None), `pictures=False` 는 그림을 열지 않고 같은 데이터 · 같은 틀을 낸다."""
+    _fake_shots(tmp_path, SKELETON.state_ids(), mode="example")
+    _run_facts(tmp_path, mode="example", db="example")
+    shots, _run = core.board_shots(SKELETON, tmp_path)
+    shots.states["04_procfilter_open"].targets["pf_all_on"] = [1200.0, 700.0, 100.0, 40.0]
+    del shots.states["01_home_main"].targets["lob_chart"]
+
+    def assemble_with(assembler: core.Assembler) -> list[dict[str, Any]]:
+        pieces = [assembler.task(task) for task in SKELETON.content["tasks"]]
+        return pieces + [assembler.concept(concept) for concept in SKELETON.content["concepts"]]
+
+    pictured = core.Assembler(shots)
+    with_pictures = assemble_with(pictured)
+
+    def refuse_to_open(*_args: Any, **_kwargs: Any) -> Image.Image:
+        raise AssertionError("pictures=False 인데 그림을 열었다")
+
+    monkeypatch.setattr(Image, "open", refuse_to_open)
+    plain = core.Assembler(shots, pictures=False)
+
+    assert assemble_with(plain) == with_pictures
+    assert plain.images == {} and plain.frames == pictured.frames
+    assert plain.frames["thumb:lob_map"] == [None]  # 썸네일 표적을 못 찾았다
+    assert len(plain.frames["step:proc_filter.toggle"]) == 2  # 흩어진 표적은 표적마다 한 장
+    assert set(plain.frames) == {where for where, _state in core.picture_refs(SKELETON.content)}
+    cut = {
+        tuple(int(value) for value in key.split(":")[2].split(","))
+        for key in pictured.images
+        if key.startswith("crop:")
+    }
+    assert cut == {tuple(f) for frames in plain.frames.values() for f in frames if f is not None}
+
+
 def test_whole_board_assembles_from_fake_shots_and_injects_safe_json(tmp_path: Path) -> None:
     _fake_shots(tmp_path, SKELETON.state_ids(), mode="example")
     _run_facts(tmp_path, mode="example", db="example")

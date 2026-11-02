@@ -27,7 +27,7 @@ import base64
 import copy
 import io
 import json
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -728,14 +728,22 @@ class AssemblyReport:
 
 
 class Assembler:
-    """촬영 결과를 잘라 원고와 묶는다(시안 build_guide.py 의 규칙)."""
+    """촬영 결과를 잘라 원고와 묶는다(시안 build_guide.py 의 규칙).
 
-    def __init__(self, shots: ShotSet) -> None:
+    `frames` 는 원고 자리(`step:` · `thumb:` · `map:` · `concept:`)마다 `crop()` 에 넘긴 틀을
+    원고 차례로 적는다 — 그림을 못 낸 조각(표적을 못 찾은 썸네일 · 지도 · 개념 자리)은 None 이다.
+    `pictures=False` 면 그림을 열지도 자르지도 않고 같은 데이터(그림 자리 이름)와 틀만 낸다 —
+    바뀐 자리 검수(`place_geometry`)가 쓴다.
+    """
+
+    def __init__(self, shots: ShotSet, *, pictures: bool = True) -> None:
         self.shots = shots
+        self.pictures = pictures
         self.images: dict[str, str] = {}
         self._pictures: dict[str, Image.Image] = {}
         self.report = AssemblyReport()
         self.whole: list[int] = [0, 0, shots.viewport[0], shots.viewport[1]]
+        self.frames: dict[str, list[list[int] | None]] = {}
 
     # -- 표적
 
@@ -779,19 +787,24 @@ class Assembler:
     def _label(self, state_id: str) -> str:
         return label_for(self.shots.states[state_id], self.shots.mode)
 
-    def _put(self, key: str, picture: Image.Image, quality: int, state_id: str) -> dict[str, str]:
-        if key not in self.images:
+    def _put(
+        self, key: str, make: Callable[[], Image.Image], quality: int, state_id: str
+    ) -> dict[str, str]:
+        """그림 자리 하나 — 같은 자리는 한 번만 만든다. `pictures=False` 면 그림을 만들지 않는다."""
+        if self.pictures and key not in self.images:
             buffer = io.BytesIO()
-            picture.save(buffer, "WEBP", quality=quality, method=6)
+            make().save(buffer, "WEBP", quality=quality, method=6)
             encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
             self.images[key] = "data:image/webp;base64," + encoded
         return {"src": key, "cap": self._label(state_id)}
 
     def full(self, state_id: str) -> dict[str, str]:
-        picture = self._picture(state_id)
-        height = round(picture.height * FULL_W / picture.width)
-        resized = picture.resize((FULL_W, height), Image.Resampling.LANCZOS)
-        return self._put("full:" + state_id, resized, FULL_QUALITY, state_id)
+        def make() -> Image.Image:
+            picture = self._picture(state_id)
+            height = round(picture.height * FULL_W / picture.width)
+            return picture.resize((FULL_W, height), Image.Resampling.LANCZOS)
+
+        return self._put("full:" + state_id, make, FULL_QUALITY, state_id)
 
     def crop(
         self,
@@ -800,21 +813,31 @@ class Assembler:
         *,
         width: int = CROP_MAX,
         quality: int = CROP_QUALITY,
+        where: str | None = None,
     ) -> dict[str, str]:
-        scale = self.shots.states[state_id].scale
-        box = (
-            round(frame[0] * scale),
-            round(frame[1] * scale),
-            round((frame[0] + frame[2]) * scale),
-            round((frame[1] + frame[3]) * scale),
-        )
-        cut = self._picture(state_id).crop(box)
-        out_w = min(width, cut.width)
-        resized = cut.resize(
-            (out_w, max(1, round(cut.height * out_w / cut.width))), Image.Resampling.LANCZOS
-        )
+        if where is not None:
+            self.frames.setdefault(where, []).append([int(value) for value in frame])
+
+        def make() -> Image.Image:
+            scale = self.shots.states[state_id].scale
+            box = (
+                round(frame[0] * scale),
+                round(frame[1] * scale),
+                round((frame[0] + frame[2]) * scale),
+                round((frame[1] + frame[3]) * scale),
+            )
+            cut = self._picture(state_id).crop(box)
+            out_w = min(width, cut.width)
+            return cut.resize(
+                (out_w, max(1, round(cut.height * out_w / cut.width))), Image.Resampling.LANCZOS
+            )
+
         key = f"crop:{state_id}:{','.join(map(str, frame))}:{width}"
-        return self._put(key, resized, quality, state_id)
+        return self._put(key, make, quality, state_id)
+
+    def _no_piece(self, where: str) -> None:
+        """그림을 못 낸 조각 — 틀 기록에 None 을 남긴다."""
+        self.frames.setdefault(where, []).append(None)
 
     def boxes(
         self, state_id: str, focus: Sequence[Mapping[str, Any]], frame: Sequence[float]
@@ -841,6 +864,8 @@ class Assembler:
     def task(self, task: Mapping[str, Any]) -> dict[str, Any]:
         out = {key: value for key, value in task.items() if key not in ("steps", "thumb", "map")}
         thumb = task.get("thumb")
+        where = f"thumb:{task['id']}"
+        frame = None
         if thumb and self.shots.ok(thumb["state"]):
             frame = self.rect(
                 thumb["state"],
@@ -853,9 +878,11 @@ class Assembler:
                 frame = [frame[0], frame[1], THUMB_CLIP_W, frame[3]]
             if frame:
                 out["thumb"] = self.crop(
-                    thumb["state"], frame, width=THUMB_WIDTH, quality=THUMB_QUALITY
+                    thumb["state"], frame, width=THUMB_WIDTH, quality=THUMB_QUALITY, where=where
                 )
-                self._note_picture(f"thumb:{task['id']}", thumb["state"])
+                self._note_picture(where, thumb["state"])
+        if thumb and not frame:
+            self._no_piece(where)
         if task.get("map"):
             out["map"] = self.board(task)
         steps = [self.step(task, step) for step in task.get("steps", [])]
@@ -875,8 +902,9 @@ class Assembler:
         if frame is None:
             out["spots"] = board["spots"]
             self.report.no_picture.append(f"map:{task['id']}")
+            self._no_piece(f"map:{task['id']}")
             return out
-        out["crop"] = self.crop(state_id, frame)
+        out["crop"] = self.crop(state_id, frame, where=f"map:{task['id']}")
         out["full"] = self.full(state_id)
         out["fullBoxes"] = self.boxes(
             state_id, [{"t": name, "kind": "see"} for name in board["frame"]], self.whole
@@ -915,13 +943,16 @@ class Assembler:
                 if one[2] > clip_w:
                     one = [one[0], one[1], clip_w, one[3]]
                 crops.append(
-                    {"crop": self.crop(state_id, one), "boxes": self.boxes(state_id, [item], one)}
+                    {
+                        "crop": self.crop(state_id, one, where=where),
+                        "boxes": self.boxes(state_id, [item], one),
+                    }
                 )
             out["crops"] = crops
         else:
             if frame[2] > clip_w and len(framed) <= 1:
                 frame = [frame[0], frame[1], clip_w, frame[3]]
-            out["crop"] = self.crop(state_id, frame)
+            out["crop"] = self.crop(state_id, frame, where=where)
             out["boxes"] = self.boxes(state_id, focus, frame)
         out["full"] = self.full(state_id)
         out["fullBoxes"] = self.boxes(state_id, focus, self.whole)
@@ -933,6 +964,7 @@ class Assembler:
         out = dict(concept)
         if not concept.get("spots"):
             return out
+        where = f"concept:{concept['id']}"
         spots: list[dict[str, Any]] = []
         for spot in concept["spots"]:
             item = dict(spot)
@@ -942,7 +974,7 @@ class Assembler:
                     state_id, [spot["t"]], pad=SPOT_PAD, min_w=SPOT_MIN[0], min_h=SPOT_MIN[1]
                 )
                 assert frame is not None
-                item["crop"] = self.crop(state_id, frame, width=SPOT_WIDTH)
+                item["crop"] = self.crop(state_id, frame, width=SPOT_WIDTH, where=where)
                 number = len(spots) + 1
                 item["boxes"] = self.boxes(
                     state_id, [{"t": spot["t"], "n": number, "kind": "see"}], frame
@@ -951,9 +983,10 @@ class Assembler:
                 item["fullBoxes"] = self.boxes(
                     state_id, [{"t": spot["t"], "kind": "see"}], self.whole
                 )
-                self._note_picture(f"concept:{concept['id']}", state_id)
+                self._note_picture(where, state_id)
             else:
-                self.report.no_picture.append(f"concept:{concept['id']}.{spot['t']}")
+                self.report.no_picture.append(f"{where}.{spot['t']}")
+                self._no_piece(where)
             spots.append(item)
         out["spots"] = spots
         return out
