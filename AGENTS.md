@@ -4907,7 +4907,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   거르기 · 필요 단축 일정 공정 · Space 현황 공정소분류 · 표준 목표 공정 필터 · 산출 결과 표 조건 칸 위의 선택 상자 · 조건 칸도).
   규칙은 사이드바 시트 한 곳(`sidebar_style` — `[data-testid="stSidebarContent"] [data-testid="stMultiSelect"] input
   { min-width: 7px !important; }`)이라 모든 화면의 사이드바 multiselect 가 받는다. 칩 줄바꿈은 그대로다. AppTest 로는 잡히지
-  않아 시험은 그 규칙이 실렸는지만 보고(`tests/test_sidebar_stylesheet.py`) 행동은 브라우저로 잰다.
+  않아 시험은 그 규칙이 실렸는지만 보고(`tests/test_sidebar_stylesheet.py`) 행동은 브라우저로 잰다. **대가**: 규칙은 칩 줄 끝
+  남은 폭이 42px 미만일 때만 작동하므로, 밀림을 막는 바로 그 경우마다 초점 입력 칸이 7 ~ 41px 로 남아 친 검색 글이 잘려
+  보인다(끝 몇 글자만 — 1500×950 사본 실측: 공정 Capa 상세 제품 거르기 2칩 21px · 6칩 12px, 제약 시뮬레이션 보유 제약 호기는
+  칩마다 한 줄이라 1 ~ 6칩 모두 11px). 목록 거르기는 그대로 된다. 다른 꼴(늘 42px 등)은 사용자 답 대기다(TODO 4장 「2026-11-02
+  아침 세 병합 리뷰」).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다. `ConditionTabs` 는 탭 말고 **보기 값**으로도 가른다 — Space 현황은 색 기준 라디오(`space_color_basis`)가
