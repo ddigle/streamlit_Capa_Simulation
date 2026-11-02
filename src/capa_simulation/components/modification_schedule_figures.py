@@ -23,7 +23,8 @@ rate_figure`)와 같은 틀이다.
   아래 줄로 내린다. **띠 높이는 줄 수를 따른다**(`_band_layout` — 줄마다 `_LANE_PX`, 한 줄이면
   `_BAND_MIN_PX`) — 본 그림 칸 높이는 그대로 두고 그림이 그만큼 길어진다. 띠를 그림 높이의 고정
   비율로 두면 세 줄에서 막대가 10px 로 줄어 11px 글이 늘 숨었다(사본 앱 Wafer Saw 4대 × 30일, 샘플
-  관측). 줄이 `_BAND_MAX_LANES` 를 넘으면 띠는 그 높이에서 멈추고 줄이 얇아진다. 막대가 짧아 글이
+  관측). 줄 높이는 한글 글꼴(Noto Sans KR)의 글 상자와 자동 여백 손실을 넣고도 「N대」 가 드는
+  두께다. 줄이 `_BAND_MAX_LANES` 를 넘으면 띠는 그 높이에서 멈추고 줄이 얇아진다. 막대가 짧아 글이
   하한(`_BAR_TEXT_MIN_PX`)보다 작아질 자리면 글을 숨긴다(`uniformtext` hide — 읽을 수 없게 줄이지
   않는다). 대수는 그 막대 풍선과 차수 목록에 늘 있다.
 - 달마다 보이지 않는 표적 막대(`HIT_TARGET`)가 풍선을 받는다. 누름은 받지 않는다(이 모드는 달을
@@ -78,7 +79,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 5
+SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 6
 _MARGIN_LEFT_PX: Final = 52
 _MARGIN_RIGHT_PX: Final = 76
 _MARGIN_TOP_PX: Final = 36
@@ -88,11 +89,14 @@ _MARGIN_BOTTOM_PX: Final = 28
 _MAIN_PLOT_PX: Final = 216
 _BAND_GAP_PX: Final = 22
 _BAND_MIN_PX: Final = 38
-# 띠 한 줄 높이(px). 막대는 줄 칸의 0.8(`_BAR_WIDTH`)이라 21px 이다 — 11px 글(글 상자 12px)과
-# Plotly 막대 안 글 여백 위아래 3px 씩이 들어간다. 그림 칸은 세운 달 눈금 · 범례 줄바꿈의 자동
-# 여백만큼 줄어 막대가 그보다 얇다 — 24px 줄은 1280 · 390px 창에서 막대 17px 로 글이 하한에 겨우
-# 걸렸다(사본 앱 Wafer Saw, 샘플 관측). `_BAND_MAX_LANES` 보다 많은 줄은 띠를 더 키우지 않는다.
-_LANE_PX: Final = 26
+# 띠 한 줄 높이(px). 막대는 줄 칸의 0.8(`_BAR_WIDTH`)이라 24px 이다. 11px 글의 글 상자는
+# 앱 첫 글꼴 Noto Sans KR 지표(오름 + 내림 1.448em)로 16px 이고(라틴 글꼴이면 12px), Plotly 는
+# 막대 안 글을 (막대 − 위아래 여백 3px 씩) / 글 상자 비로 줄여 그 크기가 하한(`_BAR_TEXT_MIN_PX`)
+# 아래면 숨기므로 막대가 16 × 10/11 + 6 ≈ 20.6px 는 되어야 글이 선다. 그림 칸은 자동 여백(범례 줄
+# 위 · 1280 창의 세운 달 눈금 아래 — 합 33px)만큼 줄고 막대 끝은 정수 px 에 붙어 막대가 그보다
+# 얇다 — 26px 줄은 1280 · 1500 · 1920 모두 막대 18 ~ 20px 라 띠가 두 줄 이상이면 「N대」 가 하나도
+# 서지 않았다(사본 앱 Wafer Saw, 샘플 관측). `_BAND_MAX_LANES` 보다 많은 줄은 띠를 더 키우지 않는다.
+_LANE_PX: Final = 30
 _BAND_MAX_LANES: Final = 10
 _BAR_WIDTH: Final = 0.8
 _BLOCKED_OPACITY: Final = 0.10
