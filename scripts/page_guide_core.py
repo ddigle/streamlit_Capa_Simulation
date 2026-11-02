@@ -65,6 +65,7 @@ OPS: Final = frozenset(
         "scroll",
         "open_popup",
         "grid_edit",
+        "egrid_edit",
         "wait_idle",
     }
 )
@@ -84,6 +85,8 @@ NAMED_TARGETS: Final[dict[str, bool]] = {
     "LAST_GRID": False,
     "EDIT_CELL": False,
     "EDIT_ROW": False,
+    "EGRID": False,
+    "EGRID_CELL": False,
     "LOB_CHART": False,
     "LOB_BN_BARS": False,
     "KEY_PROCESS_GRID": False,
@@ -1302,12 +1305,15 @@ MOVE_TOL_PX: Final = 2
 # — 행 · 부족 칸 · 이름 길이 · 리비전 · 시나리오를 늘린 판과 제품 · 공정을 줄인 판): 후보 가운데
 # 움직인 GRID · LAST_GRID · DETAIL_BN · KEY_PROCESS_GRID · LOB_BN_BARS · PROC_MONTH_CANVAS 는 두고
 # 움직이지 않은 LOB_CHART · LOB_LABEL 은 뺐으며, 후보 밖에서 움직인 PF_TILES(공정 수만큼 타일) ·
-# DIALOG(그 안의 타일 · 리비전 목록)를 더했다. 같은 HEAD 두 벌은 모든 표적이 Δ0 이었다.
+# DIALOG(그 안의 타일 · 리비전 목록)를 더했다. 같은 HEAD 두 벌은 모든 표적이 Δ0 이었다. 범용 편집
+# 그리드의 고친 칸(EGRID_CELL)은 EDIT_CELL 과 같은 까닭(고칠 칸이 놓인 행)으로 든다 — 그리드 틀
+# (EGRID)은 창 높이로 서서 데이터가 크기를 정하지 않는다.
 DATA_SHAPED: Final = frozenset(
     {
         "BN_CELL",
         "EDIT_CELL",
         "EDIT_ROW",
+        "EGRID_CELL",
         "HEADER_BAND",
         "SIDEBAR_BADGE",
         "GRID",

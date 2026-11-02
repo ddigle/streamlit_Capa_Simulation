@@ -154,8 +154,8 @@ TABLE_SOURCES: dict[str, tuple[list[str], str | None, str]] = {
     "RQ_LOT_RATIO": (RATIO_DIMENSIONS, "Lot 측정률", TAB_LOT_RATIO),
     "RQ_WF_RATIO": (RATIO_DIMENSIONS, "WF측정률", TAB_WF_RATIO),
 }
-# 편집 표 → 편집 표 key(작업 줄 단추·알림 자리·필터·붙여넣기 칸의 key 앞머리 — 옛 편집표 key 그대로라
-# 사이드바 필터 선택·따라하기 가이드·화면 확인 스크립트가 같은 key 를 쓴다).
+# 편집 표 → 편집 표 key(작업 줄 단추·알림 자리·필터·붙여넣기 칸의 key 앞머리). 사이드바 필터 선택·
+# 따라하기 가이드·화면 확인 스크립트가 같은 key 를 쓴다.
 EDITOR_KEYS: dict[str, str] = {
     "RQ_UPEH": EDITOR_UPEH,
     "RQ_RUN_RATE": EDITOR_RUN_RATE,
@@ -166,9 +166,10 @@ EDITOR_KEYS: dict[str, str] = {
     **{table_name: editor_key for table_name, _, _, editor_key in EQUIPMENT_EDITORS},
 }
 assert set(EDITOR_KEYS) == set(EDIT_TABLES)
-# 편집 표 이름 — 사이드바 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다(종류
-# 단추 글). 값 칸의 표시·다듬기 규칙(형식·하한·상한·정수·빈칸 = 0)은 `reference_grid.GRID_FORMATS` 다
-# — UPEH 는 유효숫자 여섯 자리(MI 행 값은 ST(분)라 0.01 보다 작은 값이 정의대로 들어온다).
+# 편집 표 이름 — 사이드바 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다
+# (종류 단추 글). 값 칸의 표시·다듬기 규칙(형식·하한·상한·정수·빈칸 = 0)은
+# `reference_grid.GRID_FORMATS` 다 — UPEH 는 유효숫자 여섯 자리(MI 행 값은 ST(분)라 0.01 보다 작은
+# 값이 정의대로 들어온다).
 TABLE_NAMES = {table_name: DATASETS[table_name] for table_name in EDIT_TABLES}
 # 월 칸 머리의 도움말 — 한 칸에 행마다 다른 값이 들어가는 표만 그 뜻·단위를 밝힌다.
 EDITOR_VALUE_HELP: dict[str, str] = {
@@ -352,8 +353,8 @@ SOURCE_TOKEN_KEY = "reference_data_source_token"
 # 다른 표에서 고치고 아직 적용하지 않은 편집은 남는다.
 OWN_CHANGE_KEY = "reference_data_own_change"
 # 줄 차례 지문은 편집 표 캐시 키와 같은 표시순서 지문이다 — 아홉 표가 모두 이 표시순서로 줄을
-# 세운다(설비대수 세 표는 `apply_display_order`). 그리드 초안(업무 키)과 STEP 복제·삭제 상자(경로 키)는
-# 차례만 바뀐 회차에 남는다 — 옛 편집표처럼 비우고 알리는 일이 이 화면에서 없어졌다(2026-11-02).
+# 세운다(설비대수 세 표는 `apply_display_order`). 그리드 초안(업무 키)과 STEP 복제·삭제 상자(경로
+# 키)는 차례만 바뀐 회차에 남는다 — 비우고 알리지 않는다.
 # 원본(버전·리비전·기간)이 바뀌면 모두 버린다 — 그리드 이력도 함께 지워져 다음 회차의 새 `gen` 이 그
 # 전에 보낸 op 를 버린다.
 reset_editors_on_source_change(
@@ -387,7 +388,8 @@ def _filter_prefix(table_name: str) -> str:
 
 
 def _grid_table(table_name: str) -> reference_grid.GridTable:
-    """그리드 표 하나 — 양식과 그 색인·껍데기 본문(캐시). 큰 표는 사이드바 필터 선택으로 줄을 고른다."""
+    """그리드 표 하나 — 양식과 그 색인·껍데기 본문(캐시). 큰 표는 사이드바 필터 선택으로 줄을
+    고른다."""
     dimensions = (
         EQUIPMENT_DIMENSIONS
         if table_name in {name for name, _, _, _ in EQUIPMENT_EDITORS}
@@ -645,7 +647,8 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
         f"수요 변형 {step_result.affected_variants:,}개 · "
         f"RQ_REQB {step_result.affected_reqb_rows:,}행{dropped_notice}"
     )
-    # STEP 을 더하거나 빼면 UPEH·측정률 두 표의 행이 바뀐다 — 그 표의 초안·이력과 STEP 선택만 비운다.
+    # STEP 을 더하거나 빼면 UPEH·측정률 두 표의 행이 바뀐다 — 그 표의 초안·이력과 STEP 선택만
+    # 비운다.
     mark_own_change(
         OWN_CHANGE_KEY,
         (
@@ -1061,8 +1064,9 @@ if current_grid is not None:
     if st.session_state.get(DIALOG_KEY) == current_grid.editor_key:
         grid_editor = _editor(current_dataset, current_grid.template)
         fmt = reference_grid.GRID_FORMATS[current_dataset]
-        # 왕복 CSV·붙여넣기는 전체 표 계약이다(걸러진 표를 넘기면 나머지 공정을 그 기간에서 지운다).
-        # 붙여넣기도 그리드와 같은 하한·상한을 지난다(그리드만 막으면 붙여넣은 85·1.2·음수가 들어온다).
+        # 왕복 CSV·붙여넣기는 전체 표 계약이다(걸러진 표를 넘기면 나머지 공정을 그 기간에서
+        # 지운다). 붙여넣기도 그리드와 같은 하한·상한을 지난다(그리드만 막으면 붙여넣은 85·1.2·
+        # 음수가 들어온다).
         paste_dialog(
             current_grid.template,
             table_name=current_dataset,

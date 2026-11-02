@@ -1,6 +1,5 @@
 # Purpose: capacity standards page 관련 정상·예외·회귀 동작을 검증한다.
 
-import json
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -11,9 +10,10 @@ from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Error
 
-from capa_simulation.components import reference_grid
 from capa_simulation.components.edit_grid import feed_key
 from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS, GRID_HOST, cells_key
+from capa_simulation.services.edit_grid import DUPLICATE_SEPARATOR, KEY_SEPARATOR
+from capa_simulation.services.edit_grid_payload import CODE_ALPHABET
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -528,17 +528,13 @@ TAB_EDITORS = {
     "WF측정률": "capa_wf_ratio_editor",
     "일수": "capa_run_day_editor",
 }
-
-
-def editor_widget_key_in(app: AppTest, key: str) -> str:
-    """앱이 지금 편집표를 그리는 위젯 키(`editor_state.editor_widget_key` 와 같은 규칙).
-
-    필터가 바뀌거나 편집을 버리면 편집표가 새 세대 키로 선다. 브라우저는 그 키로 편집을
-    보내므로 테스트도 같은 키에 넣는다.
-    """
-    generation_key = f"{key}__generation"
-    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
-    return key if not generation else f"{key}__g{generation}"
+# 편집 표 id → 편집 표 key(작업 줄 단추 key 의 앞머리 — 앱의 `EDITOR_KEYS` 와 같은 값).
+EDITOR_KEYS = {
+    **{DATASET[name]: key for name, key in TAB_EDITORS.items()},
+    "RQ_EQP_OWN": "capa_eqp_own_editor",
+    "RQ_EQP_LENT": "capa_eqp_lent_editor",
+    "RQ_EQP_AVBL": "capa_eqp_avbl_editor",
+}
 
 
 def _open_paste(app: AppTest, editor_key: str) -> AppTest:
@@ -645,7 +641,9 @@ def test_calculation_result_shows_both_exclusion_expanders_with_csv_downloads() 
     }
 
 
-def test_capacity_editors_show_route_keys_without_exceptions() -> None:
+def test_capacity_editors_show_route_keys_without_exceptions(grid_calls: Calls) -> None:
+    """편집 표마다 붙여넣기 팝업이 열리고, 경로 표(UPEH·측정률)는 그리드 분류 칸 끝이
+    STEP·MCP 다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
@@ -667,11 +665,11 @@ def test_capacity_editors_show_route_keys_without_exceptions() -> None:
         app = _open_paste(app, TAB_EDITORS[tab_name])
 
         assert input_label in {text_area.label for text_area in app.text_area}
+        key_columns = [column["name"] for column in last(grid_calls, GRID_HOST)["keyCols"]]
         if tab_name in route_editor_tabs:
-            assert any(
-                list(frame.value.columns)[-3:-1] == ["STEP_SEQ", "MCP_SEQ"]
-                for frame in app.dataframe
-            )
+            assert key_columns[-2:] == ["STEP_SEQ", "MCP_SEQ"], tab_name
+        else:
+            assert "STEP_SEQ" not in key_columns, tab_name
 
 
 def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:
@@ -710,7 +708,7 @@ def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
         assert f"{table_name} 표 붙여넣기" in {text_area.label for text_area in app.text_area}
 
 
-def test_equipment_editor_saves_the_edited_month_to_the_scenario() -> None:
+def test_equipment_editor_saves_the_edited_month_to_the_scenario(grid_calls: Calls) -> None:
     """시트에 직접 쓴 값이 활성 시나리오까지 간다.
 
     필터로 좁힌 화면에서 고쳐도 걸러진 공정이 조회기간에서 지워지지 않아야 한다 —
@@ -722,7 +720,7 @@ def test_equipment_editor_saves_the_edited_month_to_the_scenario() -> None:
     app.run()
     assert not app.exception
 
-    app = _edit_and_apply(app, "capa_eqp_own_editor", "202608", 7.0)
+    app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
 
     assert not app.exception
     saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
@@ -841,24 +839,58 @@ def test_the_process_filter_placeholder_follows_the_view() -> None:
     )
 
 
-def _edit_and_apply(
-    app: AppTest, editor_key: str, month_column: str, value: float | None
-) -> AppTest:
-    """셀 하나를 고치고 곧바로 「변경사항 적용」 을 누른다.
+def _shell_codes(calls: Calls) -> list[tuple[int, ...]]:
+    """마지막 껍데기의 줄마다 분류 칸 사전 코드(껍데기 차례)."""
+    shell = last(calls, GRID_HOST)
+    base = len(CODE_ALPHABET)
+    rows: list[tuple[int, ...]] = []
+    for row in range(int(shell["rows"])):
+        codes = []
+        for text, width in zip(shell["codes"], shell["codeWidths"], strict=True):
+            code = 0
+            for char in text[row * width : (row + 1) * width]:
+                code = code * base + CODE_ALPHABET.index(char)
+            codes.append(code)
+        rows.append(tuple(codes))
+    return rows
 
-    편집 델타는 **보이는 표 안의 행 위치**로 기록되므로 필터를 건 다음에 넣어야 한다.
-    AppTest 는 세션에 직접 넣은 data_editor 값을 다음 run 한 번만 들고 있어, 편집과 클릭을
-    같은 run 에 태운다. 적용 버튼은 고친 것이 있는 회차에만 열리므로(고친 것이 없으면 잠긴다)
-    먼저 편집을 넣고 한 번 돌려 버튼을 연 뒤, 같은 편집을 다시 넣고 누른다 — 브라우저에서
-    칸을 고치면 한 번 다시 돌고 그다음에 누르는 것과 같다.
+
+def _shell_keys(calls: Calls) -> list[str]:
+    """마지막 껍데기의 줄마다 업무 키 — 분류 칸 원값을 `\x1f` 로 이은 글(같은 키 둘째부터
+    꼬리표)."""
+    shell = last(calls, GRID_HOST)
+    keys = [
+        KEY_SEPARATOR.join(shell["dims"][position][code] for position, code in enumerate(codes))
+        for codes in _shell_codes(calls)
+    ]
+    for row, count in shell["dupes"]:
+        keys[row] = f"{keys[row]}{DUPLICATE_SEPARATOR}{count}"
+    return keys
+
+
+def _visible_keys(calls: Calls) -> list[str]:
+    """브라우저가 보이는 줄의 업무 키 — 마지막 feed 의 필터(분류 칸 → 사전 코드)로 거른다."""
+    filters = last(calls, feed_key(GRID_HOST))["filters"] or {}
+    return [
+        key
+        for key, codes in zip(_shell_keys(calls), _shell_codes(calls), strict=True)
+        if all(codes[int(position)] in chosen for position, chosen in filters.items())
+    ]
+
+
+def _edit_and_apply(
+    app: AppTest, calls: Calls, editor_key: str, month_column: str, value: object
+) -> AppTest:
+    """보이는 첫 줄의 칸 하나를 고치고 곧바로 「변경사항 적용」 을 누른다.
+
+    그리드는 줄을 **업무 키**로 가리킨다 — 필터를 건 화면이면 걸러진 뒤 첫 줄의 키다. 고친 회차에
+    초안이 서고 「변경사항 적용」 이 켜지므로 그다음 회차에 누른다(브라우저에서 칸을 고친 뒤 누르는
+    것과 같다). `None` 은 칸 비우기다 — 그리드는 빈 글(``""``)로 보낸다(`write` 의 `null` 은
+    붙여넣기 덩어리의 「건드리지 않는 칸」이다).
     """
-    key = editor_widget_key_in(app, editor_key)
-    edit = {"edited_rows": {0: {month_column: value}}, "added_rows": [], "deleted_rows": []}
-    app.session_state[key] = edit
-    app.run()
-    app.session_state[key] = edit
-    apply_button = next(button for button in app.button if button.key == f"{editor_key}_apply")
-    apply_button.click()
+    sent = "" if value is None else value
+    app = _grid_write(app, calls, _visible_keys(calls)[0], month_column, sent)
+    app.button(key=f"{editor_key}_apply").click()
     return app.run()
 
 
@@ -931,41 +963,30 @@ def _walk(node: object) -> list[object]:
     return found
 
 
-def test_an_apply_error_shows_right_under_the_button_above_the_sheet() -> None:
-    """표 위 「변경사항 적용」 이 막힌 까닭은 그 버튼 바로 아래 뜬다 — 500px 표 아래가 아니다.
-
-    버튼만 표 위로 올리고 오류 자리를 그대로 두면 누른 자리에서 아무 일도 없어 보여 적용된
-    줄 안다(2026-09-28 리뷰에서 재현).
-    """
-    app = _filtered_editor_app("효율", "capa_run_rate_editor", "공정")
+@pytest.mark.parametrize(
+    ("name", "editor_key", "table", "value"),
+    [
+        ("일수", "capa_run_day_editor", "RQ_RUN_DAY", "15"),
+        ("효율", "capa_run_rate_editor", "RQ_RUN_RATE", "0.5"),
+        ("설비대수 보유", "capa_eqp_own_editor", "RQ_EQP_OWN", "7"),
+        ("UPEH", "capa_upeh_editor", "RQ_UPEH", "55"),
+    ],
+)
+def test_an_apply_error_shows_right_under_the_button_and_keeps_the_draft(
+    grid_calls: Calls, name: str, editor_key: str, table: str, value: str
+) -> None:
+    """표 위 「변경사항 적용」 이 막힌 까닭은 그 버튼 바로 아래 뜬다 — 표 아래가 아니다(누른
+    자리에서 아무 일도 없어 보이면 적용된 줄 안다 — 2026-09-28 리뷰에서 재현). 작업 줄 칸은 그리드
+    자리보다 앞이고, 막혀도 그 표 초안은 남아 고칠 수 있다."""
+    app = _filtered_editor_app(name, editor_key, "공정")
     app.session_state["test_fail_month_updates"] = True
-    app = _edit_and_apply(app, "capa_run_rate_editor", "202608", 0.5)
-
-    elements = _walk(app.main)
-    error = next(
-        index
-        for index, node in enumerate(elements)
-        if isinstance(node, Error) and "PROBE_APPLY_ERROR" in str(node.value)
-    )
-    sheet = next(
-        index
-        for index, node in enumerate(elements)
-        if getattr(node, "key", None) == editor_widget_key_in(app, "capa_run_rate_editor")
-    )
-    assert error < sheet
-
-
-def test_a_grid_apply_error_shows_right_under_the_button(grid_calls: Calls) -> None:
-    """새 그리드 표도 막힌 까닭은 그 버튼 바로 아래 자리에 선다 — 초안은 남아 고칠 수 있다."""
-    app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
-    app.session_state["test_fail_month_updates"] = True
-    app = _grid_edit_and_apply(app, grid_calls, "Process-B", "202608", "15")
+    app = _edit_and_apply(app, grid_calls, editor_key, "202608", value)
 
     elements = _walk(app.main)
     button = next(
         index
         for index, node in enumerate(elements)
-        if getattr(node, "key", None) == "capa_run_day_editor_apply"
+        if getattr(node, "key", None) == f"{editor_key}_apply"
     )
     error = next(
         index
@@ -973,16 +994,16 @@ def test_a_grid_apply_error_shows_right_under_the_button(grid_calls: Calls) -> N
         if isinstance(node, Error) and "PROBE_APPLY_ERROR" in str(node.value)
     )
     assert button < error
-    assert app.session_state[cells_key("RQ_RUN_DAY")] == {
-        "cells": {"Process-B": {"202608": 15.0}},
-        "bad": {},
-    }
+    draft = app.session_state[cells_key(table)]
+    assert draft is not None and draft["bad"] == {}
+    (row_cells,) = draft["cells"].values()
+    assert row_cells == {"202608": float(value)}
 
 
-def test_filtered_upeh_editor_keeps_the_process_the_filter_hid() -> None:
+def test_filtered_upeh_editor_keeps_the_process_the_filter_hid(grid_calls: Calls) -> None:
     """UPEH 탭은 분류 컬럼이 아홉 개다. 되머지 키가 탭마다 다르다는 것을 함께 고정한다."""
     app = _filtered_editor_app("UPEH", "capa_upeh_editor", "공정")
-    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 55.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 55.0)
 
     assert not app.exception
     saved = app.session_state["test_month_updates"]["RQ_UPEH"]
@@ -1006,7 +1027,7 @@ PENDING_PROBE_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
 )
 
 
-def test_the_sidebar_does_not_count_the_table_just_applied_as_pending() -> None:
+def test_the_sidebar_does_not_count_the_table_just_applied_as_pending(grid_calls: Calls) -> None:
     """「변경사항 적용」 다음 회차에 사이드바는 방금 적용한 표를 「적용 전 편집」으로 세지 않는다.
 
     적용은 `st.rerun()` 으로 끝나고, 다음 회차에는 사이드바가 페이지보다 먼저 돈다. 그 표를 버리는
@@ -1019,18 +1040,19 @@ def test_the_sidebar_does_not_count_the_table_just_applied_as_pending() -> None:
     assert not app.exception
     runs_before = len(app.session_state[PENDING_PROBE_KEY])
 
-    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 55.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 55.0)
 
     assert not app.exception
     assert "RQ_UPEH" in app.session_state["test_month_updates"]
     log = app.session_state[PENDING_PROBE_KEY][runs_before:]
-    # 고친 뒤 회차에는 그 편집이 보인다 — 이 탐침이 편집을 읽고 있다는 뜻이다.
-    assert log[0] == ["기준 정보 · UPEH"]
+    # 고친 뒤 회차(적용을 누른 회차)에는 그 편집이 보인다 — 이 탐침이 편집을 읽고 있다는 뜻이다.
+    # 그리드 op 는 콜백이 inbox 에 쌓고 본문이 반영하므로 페이지 앞 탐침에는 한 회차 늦게 선다.
+    assert ["기준 정보 · UPEH"] in log[:-1]
     # 적용 뒤 회차(사용자가 보는 사이드바)에는 남은 적용 전 편집이 없다.
     assert log[-1] == []
 
 
-def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
+def test_run_rate_and_vital_tabs_do_not_share_their_process_filter(grid_calls: Calls) -> None:
     """두 탭은 `dimensions` 가 `공정`·`양산구분` 으로 완전히 같다.
 
     필터 상태를 갈라 놓는 것은 `editor_key` 로 만든 위젯 key 뿐이다. 한쪽 선택이 다른 쪽에
@@ -1052,7 +1074,7 @@ def test_run_rate_and_vital_tabs_do_not_share_their_process_filter() -> None:
     assert app.multiselect(key="capa_vital_editor_filter_공정").value == []
 
     # 필터가 새지 않았으니 여유율 편집표의 첫 행은 걸러지지 않은 Process-A 다.
-    app = _edit_and_apply(app, "capa_vital_editor", "202608", 0.5)
+    app = _edit_and_apply(app, grid_calls, "capa_vital_editor", "202608", 0.5)
 
     assert not app.exception
     saved = app.session_state["test_month_updates"]["RQ_VITAL"]
@@ -1417,8 +1439,8 @@ def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
 def test_the_edited_tab_gets_a_pending_dot(
     monkeypatch: pytest.MonkeyPatch, grid_calls: Calls
 ) -> None:
-    """적용하지 않은 편집이 남은 종류 단추 옆에 점이 찍힌다 — 아직 `st.data_editor` 인 표(효율)와
-    새 그리드 표(일수) 모두. 편집이 없으면 아무 단추에도 없다."""
+    """적용하지 않은 편집이 남은 종류 단추 옆에 점이 찍힌다(일수 · 효율 — 표마다 따로). 편집이
+    없으면 아무 단추에도 없다."""
     import capa_simulation.components.tab_marks as tab_marks
 
     marked: dict[str, set[str]] = {}
@@ -1438,11 +1460,11 @@ def test_the_edited_tab_gets_a_pending_dot(
 
     app.session_state[DATASET_KEY] = DATASET["효율"]
     app.run()
-    app.session_state[editor_widget_key_in(app, "capa_run_rate_editor")] = {
-        "edited_rows": {0: {"202608": 0.5}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
+    app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.5")
+    assert marked[DATASET_KEY] == {"RQ_RUN_DAY", "RQ_RUN_RATE"}
+
+    # 다른 종류(읽기 보기 포함)를 골라도 점은 그대로다 — 초안은 세션에 남는다.
+    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
     app.run()
     assert not app.exception
     assert marked[DATASET_KEY] == {"RQ_RUN_DAY", "RQ_RUN_RATE"}
@@ -1459,25 +1481,28 @@ def test_the_table_filters_and_the_overview_detail_live_in_the_sidebar_card() ->
     assert not app.main.toggle
 
 
-def test_the_upeh_editor_names_st_minutes_and_keeps_small_values() -> None:
-    """UPEH 편집표의 월 칸은 머리 도움말에 「ST(분)」를 밝히고, 증분 없이 유효숫자 서식으로 그린다.
-
-    Streamlit 숫자 칸은 증분의 소수 자릿수에서 값을 자른다 — 0.01 증분이면 0.01분보다 작은 MI 의
-    ST 가 0.00 으로 보이고 손으로도 그렇게만 넣어진다. 다른 표의 증분은 그대로다.
-    """
+def test_the_upeh_editor_names_st_minutes_and_keeps_small_values(grid_calls: Calls) -> None:
+    """UPEH 그리드의 월 칸 머리 풍선(`valueHelp`)은 Main 행 UPEH · MI 행 「ST(분)」 를 밝히고, 값은
+    유효숫자 여섯 자리로 다룬다 — 0.01분보다 작은 MI 의 ST 가 0 으로 잘리지 않는다. 다른 표에는
+    풍선이 없다(한 칸에 행마다 다른 값이 드는 표만 밝힌다)."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     assert not app.exception
 
-    editor = next(frame for frame in app.dataframe if "Area_Name" in frame.value.columns)
-    config = json.loads(editor.proto.columns)
-    months = [column for column in editor.value.columns if str(column).isdigit()]
-    assert months
-    for month in months:
-        assert "ST(분)" in config[month]["help"]
-        assert config[month]["type_config"]["format"] == "%,.6g"
-        assert "step" not in config[month]["type_config"]
+    shell = last(grid_calls, GRID_HOST)
+    assert shell["table"] == "RQ_UPEH"
+    assert "ST(분)" in shell["valueHelp"] and "Main" in shell["valueHelp"]
+    assert shell["fmt"]["kind"] == "sig" and shell["fmt"]["digits"] == 6
+    assert [column["name"] for column in shell["keyCols"]][1] == "Area_Name"
+
+    key = _visible_keys(grid_calls)[0]
+    app = _grid_write(app, grid_calls, key, "202608", "0.000123")
+    assert app.session_state[cells_key("RQ_UPEH")]["cells"] == {key: {"202608": 0.000123}}
+
+    app.session_state[DATASET_KEY] = DATASET["효율"]
+    app.run()
+    assert last(grid_calls, GRID_HOST)["valueHelp"] is None
 
 
 def test_the_guide_carries_what_left_the_body() -> None:
@@ -1520,38 +1545,39 @@ def test_applying_one_table_keeps_another_tabs_unapplied_edits(grid_calls: Calls
     """한 표를 적용해도 다른 표에서 고치고 아직 적용하지 않은 편집은 버리지 않는다.
 
     적용은 활성 리비전을 올려 원본 토큰을 바꾼다. 전에는 그 토큰 변화가 **모든** 편집표를 비워
-    UPEH 에서 고친 값이 일수를 적용하는 순간 조용히 사라졌다(2026-09-29 리뷰에서 재현). 이제
-    적용한 표만 새로 세운다 — 그리드 표(일수)는 그 표의 초안·이력만, `st.data_editor` 표는 그
-    편집표만 비운다.
+    UPEH 에서 고친 값이 일수를 적용하는 순간 조용히 사라졌다(2026-09-29 리뷰에서 재현). 적용한 표만
+    그 표의 초안·이력을 비우고 새 `gen` 으로 선다.
     """
-
-    def generation(app: AppTest, key: str) -> int:
-        slot = f"{key}__generation"
-        return int(app.session_state[slot]) if slot in app.session_state else 0
-
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["일수"]
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     assert not app.exception
+    upeh_key = _visible_keys(grid_calls)[0]
+    app = _grid_write(app, grid_calls, upeh_key, "202608", "55")
+
+    app.session_state[DATASET_KEY] = DATASET["일수"]
+    app.run()
     gen = last(grid_calls, feed_key(GRID_HOST))["gen"]
-    before = generation(app, "capa_upeh_editor")
     app = _grid_edit_and_apply(app, grid_calls, "Process-A", "202608", "20")
     app.run()
 
     assert not app.exception
-    # 적용한 표는 초안·이력이 비고 새 `gen` 으로 섰다. 다른 표의 편집표는 그대로다.
+    # 적용한 표는 초안·이력이 비고 새 `gen` 으로 섰다. 다른 표의 초안은 그대로다.
     assert cells_key("RQ_RUN_DAY") not in app.session_state or (
         app.session_state[cells_key("RQ_RUN_DAY")] is None
     )
     assert last(grid_calls, feed_key(GRID_HOST))["gen"] != gen
-    assert generation(app, "capa_upeh_editor") == before
+    assert app.session_state[cells_key("RQ_UPEH")] == {
+        "cells": {upeh_key: {"202608": 55.0}},
+        "bad": {},
+    }
     assert "reference_data_own_change" not in app.session_state
 
-    # 거꾸로 — 일수 초안을 남긴 채 `st.data_editor` 표(효율)를 적용해도 일수 초안은 남는다.
+    # 거꾸로 — 일수 초안을 남긴 채 효율을 적용해도 일수 초안은 남는다.
     app = _grid_write(app, grid_calls, "Process-B", "202608", "25")
     app.session_state[DATASET_KEY] = DATASET["효율"]
     app.run()
-    app = _edit_and_apply(app, "capa_run_rate_editor", "202608", 0.5)
+    app = _edit_and_apply(app, grid_calls, "capa_run_rate_editor", "202608", 0.5)
     app.run()
     assert not app.exception
     assert app.session_state[cells_key("RQ_RUN_DAY")] == {
@@ -1560,20 +1586,41 @@ def test_applying_one_table_keeps_another_tabs_unapplied_edits(grid_calls: Calls
     }
 
 
-def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits() -> None:
-    """STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 편집이 버려진다. 먼저 말한다."""
-    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
-    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
+def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits(grid_calls: Calls) -> None:
+    """STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 편집이 버려진다. 팝업이 먼저
+    말하고, 더한 뒤에는 그 표들의 초안이 사라지며 알림이 무엇을 버렸는지 남긴다. 다른 표(일수)의
+    초안은 남는다."""
+    app = AppTest.from_string(REAL_APPLY_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
-    app.session_state[editor_widget_key_in(app, "capa_upeh_editor")] = {
-        "edited_rows": {0: {"202608": 1.0}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
-    app.button(key="open_capacity_step_dialog").click().run()
+    app = _grid_write(app, grid_calls, _visible_keys(grid_calls)[0], "202608", "1")
+    app.session_state[DATASET_KEY] = DATASET["Lot측정률"]
+    app.run()
+    app = _grid_write(app, grid_calls, _visible_keys(grid_calls)[0], "202608", "0.5")
+    app.session_state[DATASET_KEY] = DATASET["일수"]
+    app.run()
+    app = _grid_write(app, grid_calls, "Process-A", "202608", "20")
 
+    app = _open_step_dialog(app)
     assert not app.exception
-    assert any("UPEH 표에 적용하지 않은 편집" in item.value for item in app.warning)
+    assert any("UPEH·Lot측정률 표에 적용하지 않은 편집" in item.value for item in app.warning)
+
+    app = next(w for w in app.text_input if w.label == "신규 MCP_SEQ").set_value("2A").run()
+    app = next(w for w in app.text_input if w.label == "신규 STEP_SEQ").set_value("P200").run()
+    app = next(b for b in app.button if b.label == "STEP 일괄 추가").click().run()
+    assert not app.exception
+    assert sorted(_scenario_table(app, "RQ_UPEH")["STEP_SEQ"]) == ["P100", "P200"]
+    for table in ("RQ_UPEH", "RQ_LOT_RATIO"):
+        assert cells_key(table) not in app.session_state or (
+            app.session_state[cells_key(table)] is None
+        ), table
+    assert app.session_state[cells_key("RQ_RUN_DAY")] == {
+        "cells": {"Process-A": {"202608": 20.0}},
+        "bad": {},
+    }
+    assert any(
+        "UPEH·Lot측정률 표의 적용하지 않은 편집은 버렸습니다" in item.value for item in app.success
+    )
 
 
 # ---------------------------- 빈칸·적용 기준 횡전개 (2026-09-29 설비대수 빈칸 버그 보고)
@@ -1646,7 +1693,7 @@ def _paste(app: AppTest, editor_key: str, text: str) -> AppTest:
     return app
 
 
-def test_upeh_apply_after_a_step_add_checks_against_the_active_scenario() -> None:
+def test_upeh_apply_after_a_step_add_checks_against_the_active_scenario(grid_calls: Calls) -> None:
     """UPEH 적용 검사는 **적용 전 활성 시나리오**와 맞댄다(결함 1).
 
     저장 리비전과 맞대면 이 세션에서 먼저 한 STEP 추가가 안 보인다. 새 STEP 의 UPEH 행을 모두
@@ -1661,7 +1708,7 @@ def test_upeh_apply_after_a_step_add_checks_against_the_active_scenario() -> Non
 
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
-    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 120.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 120.0)
 
     assert not app.exception
     assert [error.value for error in app.error] == []
@@ -1692,7 +1739,7 @@ def test_reference_editors_use_the_same_window_as_the_apply(grid_calls: Calls) -
     assert app.session_state["test_step_reqb_rows"] == 2
 
 
-def test_clearing_a_run_rate_cell_an_upeh_path_uses_is_blocked() -> None:
+def test_clearing_a_run_rate_cell_an_upeh_path_uses_is_blocked(grid_calls: Calls) -> None:
     """효율·여유율·일수에는 중립값이 없다. 경로가 쓰는 칸을 비우면 적용 전에 막는다(결함 4).
 
     전에는 적용이 성공으로 알리고 행을 지웠고, 그 뒤 계산 전체가 「RQ_RUN_RATE 연결값이 없는
@@ -1702,7 +1749,7 @@ def test_clearing_a_run_rate_cell_an_upeh_path_uses_is_blocked() -> None:
     app.session_state[DATASET_KEY] = DATASET["효율"]
     app.run()
     assert not app.exception
-    app = _edit_and_apply(app, "capa_run_rate_editor", "202608", None)
+    app = _edit_and_apply(app, grid_calls, "capa_run_rate_editor", "202608", None)
 
     assert not app.exception
     errors = [str(error.value) for error in app.error]
@@ -1854,7 +1901,9 @@ def _open_filtered(app: AppTest, tab_name: str, filter_key: str, values: list[st
     return app
 
 
-def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_filled() -> None:
+def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_filled(
+    grid_calls: Calls,
+) -> None:
     """UPEH 의 빈 달을 채울 때 효율 행도 본다(2026-09-29 2차 리뷰 결함 A).
 
     측정률만 보던 검사가 효율·여유율·일수를 보지 않아, 효율 행이 없는 달을 채우면 적용은
@@ -1863,7 +1912,7 @@ def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_fil
     """
     app = AppTest.from_string(NEW_PATH_TEST_SCRIPT, default_timeout=60)
     app = _open_filtered(app, "UPEH", "capa_upeh_editor_filter_양산구분", ["양산"])
-    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202609", 100.0)
 
     assert not app.exception
     errors = [str(error.value) for error in app.error]
@@ -1875,12 +1924,12 @@ def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_fil
     assert "active_scenario" not in app.session_state
 
     app = _open_filtered(app, "효율", "capa_run_rate_editor_filter_양산구분", ["양산"])
-    app = _edit_and_apply(app, "capa_run_rate_editor", "202609", 0.9)
+    app = _edit_and_apply(app, grid_calls, "capa_run_rate_editor", "202609", 0.9)
     assert [error.value for error in app.error] == []
 
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
-    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202609", 100.0)
 
     assert [error.value for error in app.error] == []
     upeh = _scenario_table(app, "RQ_UPEH")
@@ -1909,7 +1958,7 @@ _add("RQ_RUN_RATE", 생산계획년월=202609, 양산구분="개발")
 )
 
 
-def test_reviving_a_zero_upeh_route_without_a_run_rate_row_is_blocked() -> None:
+def test_reviving_a_zero_upeh_route_without_a_run_rate_row_is_blocked(grid_calls: Calls) -> None:
     """UPEH 0 으로 빠지던 경로를 0 보다 크게 살리면 새 경로처럼 효율 행을 먼저 갖추게 한다.
 
     빠지는 동안 멈추지 않던 효율 행 없음이 살아나 계산 전체를 멈추는데, 새 경로만 보던 검사는
@@ -1917,7 +1966,7 @@ def test_reviving_a_zero_upeh_route_without_a_run_rate_row_is_blocked() -> None:
     """
     app = AppTest.from_string(REVIVE_TEST_SCRIPT, default_timeout=60)
     app = _open_filtered(app, "UPEH", "capa_upeh_editor_filter_양산구분", ["양산"])
-    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202609", 100.0)
 
     assert not app.exception
     errors = [str(error.value) for error in app.error]
@@ -1930,18 +1979,18 @@ def test_reviving_a_zero_upeh_route_without_a_run_rate_row_is_blocked() -> None:
 
     # 안내대로 효율 탭에서 먼저 채우면 같은 편집이 적용되고 계산은 멈추지 않는다.
     app = _open_filtered(app, "효율", "capa_run_rate_editor_filter_양산구분", ["양산"])
-    app = _edit_and_apply(app, "capa_run_rate_editor", "202609", 0.9)
+    app = _edit_and_apply(app, grid_calls, "capa_run_rate_editor", "202609", 0.9)
     assert [error.value for error in app.error] == []
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
-    app = _edit_and_apply(app, "capa_upeh_editor", "202609", 100.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202609", 100.0)
 
     assert [error.value for error in app.error] == []
     capacity = _scenario_unit_capacity(app)
     assert set(capacity.loc[capacity["STEP_SEQ"].eq("P100"), "생산계획년월"]) == {202608, 202609}
 
 
-def test_a_zero_in_a_vital_cell_an_upeh_path_uses_is_blocked() -> None:
+def test_a_zero_in_a_vital_cell_an_upeh_path_uses_is_blocked(grid_calls: Calls) -> None:
     """여유율·일수는 쓰는 칸의 0 도 막는다(결함 B). 전에는 비우기만 막고 0 은 적용·저장됐다.
 
     그 뒤 계산 전체가 「RQ_VITAL의 편중률 값은 0보다 커야 합니다」로 멈췄다.
@@ -1949,7 +1998,7 @@ def test_a_zero_in_a_vital_cell_an_upeh_path_uses_is_blocked() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["여유율"]
     app.run()
-    app = _edit_and_apply(app, "capa_vital_editor", "202608", 0.0)
+    app = _edit_and_apply(app, grid_calls, "capa_vital_editor", "202608", 0.0)
 
     assert not app.exception
     errors = [str(error.value) for error in app.error]
@@ -1978,7 +2027,7 @@ def test_a_zero_in_a_run_day_cell_by_paste_is_blocked_the_same_way() -> None:
     assert "test_month_updates" not in app.session_state
 
 
-def test_a_zero_in_a_cell_no_upeh_path_uses_is_still_allowed() -> None:
+def test_a_zero_in_a_cell_no_upeh_path_uses_is_still_allowed(grid_calls: Calls) -> None:
     """쓰는 경로가 없는 칸의 0 은 계산을 멈추지 않는다 — 막는 범위는 계산과 같다."""
     script = _with_tables(
         TEST_SCRIPT,
@@ -1988,14 +2037,14 @@ def test_a_zero_in_a_cell_no_upeh_path_uses_is_still_allowed() -> None:
     )
     app = AppTest.from_string(script, default_timeout=60)
     app = _open_filtered(app, "여유율", "capa_vital_editor_filter_양산구분", ["개발"])
-    app = _edit_and_apply(app, "capa_vital_editor", "202608", 0.0)
+    app = _edit_and_apply(app, grid_calls, "capa_vital_editor", "202608", 0.0)
 
     assert [error.value for error in app.error] == []
     saved = app.session_state["test_month_updates"]["RQ_VITAL"]
     assert dict(zip(saved["양산구분"], saved["편중률"], strict=True)) == {"양산": 1.0, "개발": 0.0}
 
 
-def test_emptying_a_ratio_table_keeps_the_page_open() -> None:
+def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
     """측정률 표를 통째로 비워도 화면이 서지 않는다(결함 C).
 
     전에는 적용 뒤 화면 전체가 「RQ_LOT_RATIO에 선택할 생산계획년월 데이터가 없습니다」로 섰다.
@@ -2004,7 +2053,7 @@ def test_emptying_a_ratio_table_keeps_the_page_open() -> None:
     app = AppTest.from_string(REAL_APPLY_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["Lot측정률"]
     app.run()
-    app = _edit_and_apply(app, "capa_lot_ratio_editor", "202608", None)
+    app = _edit_and_apply(app, grid_calls, "capa_lot_ratio_editor", "202608", None)
 
     assert not app.exception
     assert [error.value for error in app.error] == []
@@ -2022,7 +2071,7 @@ def test_emptying_a_ratio_table_keeps_the_page_open() -> None:
     assert not any("행이 없어" in item.value for item in app.info)
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
-    app = _edit_and_apply(app, "capa_upeh_editor", "202608", 150.0)
+    app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 150.0)
     assert [error.value for error in app.error] == []
     assert _scenario_table(app, "RQ_UPEH")["UPEH"].tolist() == [150.0]
 
@@ -2053,9 +2102,9 @@ def test_a_scenario_without_ratio_rows_opens_every_tab() -> None:
 
 
 # 공용 표시순서만 바꾼다 — 활성 리비전 번호·시나리오 토큰·기간은 그대로다. Admin 의 표시순서
-# 교체(`reference_cache.apply_global_display_order`)가 바로 이 모양이다. 편집표 여섯 개의 화면
-# 범위마다 `공정` 규칙을 하나씩 두고, 세션 상태 하나로 오름차순·내림차순을 고른다. 편집표에
-# 넘어간 기본 표의 공정 차례는 `render_month_editor` 를 감싸 그대로 적어 둔다.
+# 교체(`reference_cache.apply_global_display_order`)가 바로 이 모양이다. 편집 표 여섯 개의 화면
+# 범위마다 `공정` 규칙을 하나씩 두고, 세션 상태 하나로 오름차순·내림차순을 고른다. 그리드에 실은
+# 줄 차례는 대역이 적은 껍데기에서 읽는다.
 _DISPLAY_ORDER_SWAP = """
 from capa_simulation.services import display_order_scopes as _scopes
 
@@ -2083,58 +2132,40 @@ tables["RQ_DISPLAY_ORDER"] = pd.DataFrame(
     ]
 )
 
-import capa_simulation.components.month_editor as _month_editor_module
-
-_original_render_month_editor = _month_editor_module.render_month_editor
-
-
-def _record_month_editor(tab, default_table, dimensions, editor_key, *args, **kwargs):
-    if "공정" in default_table.columns:
-        st.session_state[f"captured_order::{editor_key}"] = default_table["공정"].tolist()
-    return _original_render_month_editor(
-        tab, default_table, dimensions, editor_key, *args, **kwargs
-    )
-
-
-_month_editor_module.render_month_editor = _record_month_editor
 """
 DISPLAY_ORDER_SWAP_TEST_SCRIPT = (
     TEST_SCRIPT.replace("ADD_SECOND_PROCESS = False", "ADD_SECOND_PROCESS = True")
     .replace("\nactive = {", _DISPLAY_ORDER_SWAP + "\nactive = {", 1)
     .replace('"test-capacity-standards-page"', '"test-reference-display-order-swap"')
-    .replace(
-        "    st.download_button = original_download_button\n",
-        "    st.download_button = original_download_button\n"
-        "    _month_editor_module.render_month_editor = _original_render_month_editor\n",
-        1,
-    )
 )
 
 
-@pytest.mark.parametrize(
-    "tab_name", [name for name in TAB_EDITORS if DATASET[name] not in reference_grid.GRID_TABLES]
-)
-def test_a_display_order_swap_reorders_the_cached_edit_table(tab_name: str) -> None:
-    """표시순서만 바뀌어도 편집표 행 차례가 바로 따라 바뀐다(캐시 키의 표시순서 다이제스트).
+@pytest.mark.parametrize("tab_name", list(TAB_EDITORS))
+def test_a_display_order_swap_reorders_the_cached_edit_table(
+    tab_name: str, grid_calls: Calls
+) -> None:
+    """표시순서만 바뀌어도 그리드 줄 차례가 바로 따라 바뀐다(캐시 키의 표시순서 다이제스트).
 
-    편집표는 `scenario_cache_key`(리비전 번호·시나리오 토큰·기간)로 캐시한다. 공용 표시순서
+    편집 양식은 `scenario_cache_key`(리비전 번호·시나리오 토큰·기간)로 캐시한다. 공용 표시순서
     교체는 그 셋 어느 것도 바꾸지 않으므로, 키에 표시순서 내용이 빠지면 옛 순서가 남는다.
     """
-    editor_key = TAB_EDITORS[tab_name]
-    captured = f"captured_order::{editor_key}"
+
+    def processes() -> list[str]:
+        return list(dict.fromkeys(key.split(KEY_SEPARATOR)[0] for key in _shell_keys(grid_calls)))
+
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET[tab_name]
     app.run()
     assert not app.exception
-    assert app.session_state[captured] == ["Process-A", "Process-B"]
+    assert processes() == ["Process-A", "Process-B"]
 
     app.session_state["test_display_order_descending"] = True
     app.run()
     assert not app.exception
-    assert app.session_state[captured] == ["Process-B", "Process-A"]
+    assert processes() == ["Process-B", "Process-A"]
 
     # 되돌리면 처음 차례다 — 처음 만든 표가 캐시에서 그대로 나온다.
     app.session_state["test_display_order_descending"] = False
     app.run()
     assert not app.exception
-    assert app.session_state[captured] == ["Process-A", "Process-B"]
+    assert processes() == ["Process-A", "Process-B"]

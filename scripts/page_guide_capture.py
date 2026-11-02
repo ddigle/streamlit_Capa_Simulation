@@ -5,14 +5,15 @@
 시안 `guide/capture/capture.mjs`·`lib.mjs`(Chrome DevTools 를 손으로 몰던 Node 스크립트)의 동작과
 표적 찾기를 Python Playwright 로 옮겼다. 계획은 정해진 낱말만 쓴다.
 
-- 동작(`OPS` 와 같은 열 개): `enter_app` · `nav` · `tab` · `click` · `fill` · `key` · `scroll` ·
-  `open_popup` · `grid_edit` · `wait_idle`. 모든 동작 뒤에 회차가 쉴 때까지 기다린다
+- 동작(`OPS` 와 같은 열한 개): `enter_app` · `nav` · `tab` · `click` · `fill` · `key` · `scroll` ·
+  `open_popup` · `grid_edit` · `egrid_edit` · `wait_idle`. 모든 동작 뒤에 회차가 쉴 때까지 기다린다
   (`stApp` 의 `data-test-script-state` 가 0.75초 동안 `notRunning`).
 - 표적: `key:` · `button:` · `tab:` · `nav:` · `text:` 와 `named:` 이름(`NAMED_JS`). 팝업이 열려
   있으면 글자로 찾는 표적은 팝업 안부터 찾는다. 배열은 여러 표적의 합집합 사각형이다.
 - 격자(glide 데이터 편집기)는 캔버스라 칸 자리를 React 속성(열 폭 · 행 높이 · 고정 열)과 굴림
   위치(`.dvn-scroller`)로 셈한다. 고칠 칸이 표 안 보이는 곳이면 표를 굴려 들인다(사내 표는
-  70행이 넘는다).
+  70행이 넘는다). 범용 편집 그리드(`egrid_edit` — 기준 정보 표)는 그림자 DOM 의 진짜 칸이라 머리
+  글로 칸을, 분류 칸 글로 줄을 찾고, 그리지 않은 줄이면 한 화면씩 굴려 찾는다.
 
 **값을 밖으로 내지 않는다.** 화면 글자는 판정에만 쓴다. 실패는 `상태.ops.<번호> <동작>` 과 예외
 종류만 남긴다. 매개값(사내 시나리오 이름 등)은 페이지 함수의 인자로만 넘긴다 — JS 글에 잇지
@@ -42,6 +43,8 @@ APP_CREDITS_KEY: Final = "sidebar_app_credits"
 INTRO_TIMEOUT_SECONDS: Final = 240.0
 SETTLE_TIMEOUT_SECONDS: Final = 120.0
 ACTION_TIMEOUT_MS: Final = 30_000
+# 범용 편집 그리드에서 고칠 줄을 찾을 때 굴리는 화면 수의 상한(한 화면 ≈ 20줄).
+EGRID_SCROLL_PAGES: Final = 400
 
 # 사내 PC 글꼴 흉내(Noto Sans KR → 깔린 Noto CJK)와 깜빡이는 커서 감추기. 없는 글꼴이면 그대로다.
 STYLE_JS: Final = (
@@ -102,6 +105,8 @@ def _named(name: str, arg: str | None, last_edit: LastEdit | None) -> str:
         ),
         "GRID": "__g.grid()",
         "LAST_GRID": "__g.lastGrid()",
+        "EGRID": "__g.egrid()",
+        "EGRID_CELL": "__g.egridChanged()",
         "LOB_CHART": "__g.lobChart()",
         "LOB_BN_BARS": "__g.lobBnBars()",
         "KEY_PROCESS_GRID": "__g.keyProcessGrid()",
@@ -307,6 +312,7 @@ class Camera:
             "scroll": self._scroll,
             "open_popup": self._open_popup,
             "grid_edit": self._grid_edit,
+            "egrid_edit": self._egrid_edit,
             "wait_idle": self._wait_idle,
         }
         for index, op in enumerate(ops):
@@ -521,6 +527,41 @@ class Camera:
             time.sleep(0.3)
             keyboard.type(new_text)
         time.sleep(0.3)
+        keyboard.press("Enter")
+        self.settle()
+        time.sleep(0.8)
+
+    def _egrid_edit(self, op: Mapping[str, Any]) -> None:
+        """범용 편집 그리드 칸 하나 — 머리 글로 칸, 분류 칸 글로 줄을 찾아(그리지 않은 줄이면 한
+        화면씩 굴린다) 누르고, 새 값을 쳐서 Enter 로 확정한다(글자를 치면 그 칸 편집이 시작된다)."""
+        spec = {"row": op["row"], "rowColumn": op.get("row_column"), "column": op["column"]}
+        self.js("__g.egridScroll(true)")
+        found: Any = None
+        for _ in range(EGRID_SCROLL_PAGES):
+            time.sleep(0.25)
+            found = self.js("__g.egridFind(arg)", spec)
+            if found is None or found.get("found") or found.get("end"):
+                break
+            self.js("__g.egridScroll(false)")
+        if not found or not found.get("found"):
+            raise CaptureError("고칠 칸 없음")
+        time.sleep(0.3)
+        found = self.js("__g.egridFind(arg)", spec)
+        if not found or not found.get("found"):
+            raise CaptureError("고칠 칸 없음")
+        if "delta" in op:
+            try:
+                number = float(str(found["text"]).replace(",", ""))
+            except ValueError:
+                raise CaptureError("숫자 칸이 아님") from None
+            new_text = _number_text(number + float(op["delta"]))
+        else:
+            new_text = str(op["value"])
+        self.click_at(found["rect"])
+        time.sleep(0.3)
+        keyboard = self.page.keyboard
+        keyboard.type(new_text)
+        time.sleep(0.2)
         keyboard.press("Enter")
         self.settle()
         time.sleep(0.8)

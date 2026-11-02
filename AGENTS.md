@@ -296,25 +296,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `st.segmented_control`(`reference_grid_keys.DATASET_KEY`, 선택지 = `DATASETS` 열한 개 — 옛 탭·설비대수 안쪽 탭을 옛 차례로
     편 것, 기본 UPEH, `persist_state="session"`, 기본값은 위젯 `default=` 가 아니라 세션에 심는다)이다. 그 아래 늘 서 있는 칸
     차례가 계약이다 — 작업 줄 칸(`reference_actions`) → 그리드 자리(`reference_grid_box` — 범용 편집 그리드 마운트 하나,
-    `reference_grid_keys.GRID_HOST`) → 종류 칸(`reference_slot_<종류 id>` — 새 그리드로 옮기지 않은 편집표·읽기 보기 둘). 그리드
-    마운트는 종류와 상관없이 같은 자리에서 그리고(고르지 않았으면 표 없는 껍데기), 종류 칸은 OpenTab 꼴(`_DatasetSlot` — `open`
-    은 그 종류를 골랐는가)이라 `month_editor` 가 옛 탭처럼 쓴다. 고르지 않은 종류 칸은 페이지 CSS 로 숨긴다 — 적용하지 않은
-    편집이 남은 `st.data_editor` 를 숨긴 채 그려 편집을 지킨다(옛 탭의 숨은 본문과 같은 까닭).
-  - 새 그리드로 옮긴 표(`reference_grid.GRID_TABLES` — 차례 일수 → 효율·여유율 → 설비대수 셋 → Lot·WF → UPEH, 지금은 일수)는
-    작업 줄(적용·Excel 붙여넣기·편집 취소·변경 수 — key·글은 옛 편집표와 같다)을 `reference_actions` 에 그리고 그리드에 싣는다.
-    「변경사항 적용」 은 칸 오류가 남았으면 고칠 칸 알림으로 멈추고, 아니면 양식에 초안을 업무 키로 덮어(`merged_template`) 옛
-    편집표와 같은 `_apply_edit` 길을 탄다. 다른 편집표를 다 그린 **뒤**에 적용한다(멈춰도 숨은 편집표의 편집을 잃지 않게).
+    `reference_grid_keys.GRID_HOST`) → 읽기 보기 칸(`reference_view` — 「설비대수 현황」·「STEP 구성」 을 골랐을 때만 채운다).
+    그리드 마운트는 종류와 상관없이 같은 자리에서 그린다(읽기 보기를 골랐으면 표 없는 껍데기 — 다시 마운트되면 보내지 않은
+    출납을 잃는다). 편집 표를 고른 회차에는 그리드 아래에 아무것도 없다(표 아래 단추에 초점이 가면 본문이 내려가 머리·도구
+    막대가 탭 줄 밑으로 숨는다).
+  - **편집 표 아홉이 모두 범용 편집 그리드다**(`reference_grid_keys.EDIT_TABLES` — UPEH · 설비대수 보유·대여·가용 · 효율 ·
+    여유율 · 일수 · Lot·WF측정률). 그 회차에는 고른 표와 inbox 에 op 가 쌓인 표의 양식만 만든다(양식·색인·껍데기는 캐시).
+    작업 줄(적용·Excel 붙여넣기·편집 취소·변경 수 — key 는 `f"{editor_key}_apply"` 등 표마다 같은 꼴)을 `reference_actions`
+    에 그리고 그리드에 싣는다. 「변경사항 적용」 은 칸 오류가 남았으면 고칠 칸 알림으로 멈추고, 아니면 양식에 초안을 업무
+    키로 덮어(`merged_template`) `_apply_edit` 길(`to_rows` 업무 규칙 검사 → `apply_month_updates`)을 탄다. 측정률 표가
+    통째로 비면 작업 줄 칸에 1.0 계산 알림을 쓰고 그리드는 빈 표(머리만)를 싣는다(필터는 서지 않는다). STEP 추가·삭제는
+    UPEH·Lot·WF 의 초안·이력을 버리고(팝업이 먼저 경고, 완료 알림에 버린 표) 다른 표 초안은 남긴다.
   - 적용 검사는 계산이 멈추는 조건과 같게 `reference_consistency.py` 에 두고 페이지는 행만 만든다. 빈칸 뜻은 표마다
     다르고(경로 없음·1.0·0 대·중립값 없음), UPEH 검사는 적용 전 활성 시나리오와 견준다. 격자·붙여넣기는 한 길이다.
   - 편집표와 적용은 같은 적용 기간(선택기간 ∩ 활성 리비전 UPEH 범위)을 쓴다. 필터는 보기만 좁힌다(`month_editor.py`).
   - STEP 표·팝업은 「STEP 구성」 을 골랐거나 팝업이 열린 회차에만 만들고 팝업 값은 경로 키다
     (`test_reference_data_perf.py`).
   - UPEH 왕복은 고친 칸만 원본 위에 덮는다 — 원본 표기를 정규화해 저장하면 STEP 목록의 REQB 일치가 끊긴다.
-  - UPEH 편집표는 증분 없이 유효숫자 서식(`EDITOR_FORMATS` 의 `%,.6g`)으로 그리고, 월 칸 머리 도움말
-    (`EDITOR_VALUE_HELP`)이 Main 행 UPEH · MI 행 ST(분)를 밝힌다. Streamlit 숫자 칸은 증분의 소수 자릿수에서 값을
-    잘라 0.01 증분이면 0.01분보다 작은 ST 가 0.00 으로 보이고 그렇게만 넣어진다.
+  - UPEH 그리드는 값을 유효숫자 여섯 자리(`GRID_FORMATS` 의 `sig 6`)로 다루고, 월 칸 머리 풍선(`EDITOR_VALUE_HELP` → 규격
+    `value_help` → 껍데기 `valueHelp`, `role="tooltip"`)이 Main 행 UPEH · MI 행 ST(분)를 밝힌다 — 0.01분보다 작은 ST 도 잘리지
+    않는다.
   - 적용하지 않은 편집이 남은 종류 단추의 주황 점(`tab_marks.mark_pending_segments`)은 원본 토큰으로 편집을 비우고 그리드
-    inbox 를 반영한 뒤에 정한다(옛 편집표는 `editor_has_edits`, 그리드 표는 `reference_grid.draft_pending`).
+    inbox 를 반영한 뒤에 정한다(`reference_grid.draft_pending`).
   - 설비대수 세 편집표(보유 · 대여 · 가용)도 현황 표 · 다른 편집 탭과 같은 표시순서(`apply_display_order`)로 행을 세운다 —
     공정 이름순이 아니다.
 - `app_pages/calculation_result.py` — `산출 결과` 화면. `대당 Capa`·`소요대수`·`확보율` 탭(언패킹 순서 = `TAB_NAMES`)과
@@ -2262,13 +2265,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
   `role="radio"` 단추의 n 번째) 옆 같은 점(`mark_pending_segments`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
-- `src/capa_simulation/components/reference_grid.py` — 기준 정보 편집 표를 범용 편집 그리드(`edit_grid.py`)에 잇는 어댑터.
-  옮긴 표 목록(`GRID_TABLES`), 표마다 값 형식(`GRID_FORMATS` — 옛 `EDITOR_FORMATS` 를 옮김: UPEH 유효숫자 6 · 효율·측정률 percent
+- `src/capa_simulation/components/reference_grid.py` — 기준 정보 편집 표 아홉을 범용 편집 그리드(`edit_grid.py`)에 잇는 어댑터.
+  표마다 값 형식(`GRID_FORMATS` — 옛 `EDITOR_FORMATS` 를 옮김: UPEH 유효숫자 6 · 효율·측정률 percent
   상한 1 · 여유율 percent · 일수 정수 · 설비대수 소수 둘째 자리 빈칸 = 0), 양식 → 규격·색인·껍데기(`build_grid_table` — 캐시
   `get_edit_grid_base`, 키는 편집 캐시 키·표시순서 지문·표시명 지문), inbox 반영(`apply_grid_inbox` — 지금 고르지 않은 표의
   op 도 그 표에), 사이드바 필터 → feed `filters`(분류 사전 코드 — 브라우저가 거른다), 작업 줄(`render_actions` — 알림 칸은
   `render_flash`), 고칠 칸 알림(`error_notice` — 앞 다섯 곳을 분류 표시명 · 월로), 초안 되머지(`merged_template`)가 한 곳이다.
   머리 글은 `COLUMN_LABELS` 의 짧은 이름이다(껍데기는 회차마다 새 dict 라 캐시 본문을 고치지 않는다).
+  - **큰 표 안전 상한**(`CAP_CELLS` 300,000칸 · `CAP_BYTES` 껍데기 본문 400 KB): 넘으면 사이드바 「표 조건」 필터 선택(세션 값)으로
+    고른 줄만, 필터가 없거나 걸러도 넘치면 앞 `CAP_ROWS`(1,000) 줄만 싣고 작업 줄 아래에 알린다. 실은 줄의 본문은 캐시
+    키 표 이름에 `#rows`, 표시명 지문에 줄 지문을 더해 따로 둔다. 초안은 업무 키라 실은 줄이 바뀌어도 제 줄에 남고, 적용·
+    붙여넣기 양식·고칠 칸 알림(`full_index`)은 언제나 전체 양식이다. 합성 표본 최대는 UPEH 79,800칸이라 걸리지 않는다
+    (사내 실데이터 크기는 다음 배포 런북 셈 줄).
 - `src/capa_simulation/reference_grid_keys.py` — 기준 정보 그리드의 이름(UI 모름): 그리드 호스트 key(`GRID_HOST`), 종류 단추 key·
   선택지(`DATASET_KEY`·`DATASETS`·`EDIT_TABLES`), 표마다 초안·이력 세션 칸(`cells_key`·`history_key`)과 inbox·ack·토스트 칸,
   시나리오를 바꾸면 지울 칸(`SESSION_KEYS`). `scenario_activation`(`_STALE_VALUE_KEYS`)과 `page_tabs`(`EDIT_HOST_KEYS`)가 읽는다.
@@ -2296,21 +2304,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   변형(`min_width_scroll_rules` · `min_width_scroll_canvas` — 캔버스에 가장 좁은 폭만 걸어 넓으면 칸을 채우고 좁을 때만
   스크롤, 규칙은 호출자 `<style>` 에 섞는다)은 제약 시뮬레이션 그래프가 쓴다. 셸 CSS(`overflow-x: auto`)를 다른 모듈에
   손으로 적지 않는다(`tests/test_scroll_shell.py`).
-- `src/capa_simulation/components/month_editor.py` — 월별 Wide 기준정보를 탭 안에서 편집하는 `data_editor` 와 표
-  위 작업 줄(적용·Excel 붙여넣기 팝업·편집 취소·변경 개수)이다.
-  - 필터(사이드바 `표 조건` 카드)는 보기만 좁히고 저장은 전체다 — 편집값은 `merge_edited_months` 로 전체 표에
-    되머지하고 붙여넣기 팝업(`render_reference_clipboard_form`)·왕복 CSV 에도 필터 이전 전체 표를 넘긴다.
-  - 적용 안 한 편집이 있는 표는 탭(기준 정보는 종류 칸)이 닫혀도 그리고 필터를 잠근다. 그릴지와 양식을 만들지는
-    `editor_will_render` 하나가 정한다. 결과·오류는 버튼 아래 `editor_notice` 자리에 쓴다(페이지 `reference_data.py` 가
-    받아 쓴다). 기준 정보에서 새 편집 그리드로 옮긴 표에는 이 규칙(필터 잠금·줄 차례 비움·`discard_editor`)이 걸리지 않는다.
-  - 「Excel 붙여넣기」 팝업은 공개 함수 `paste_dialog`(경고 첫 줄 `pending_notice` 는 부르는 쪽이 — 편집표는 위젯 편집, 그리드는
-    초안 칸 수)이고 편집 범위 줄은 `render_scope` 다 — 기준 정보 그리드 작업 줄이 함께 쓴다.
-  - 큰 표(`CLASSIFICATION_STYLE_MAX_CELLS` 초과)는 되풀이되는 글자 분류 컬럼만 화면 사본에서 category 로 보내고
-    (`_compact_dimensions`), 편집표가 돌려준 표에는 원본 분류 컬럼을 다시 끼운 뒤(`_restore_dimensions`) 되머지한다.
-    되머지 키(`astype(str)`)는 원본 dtype 으로 만든다 — category 결측은 `'nan'`, StringDtype 결측은 `'<NA>'` 라 섞으면
-    편집이 버려진다.
-  - `process_labels` 를 import 하지 않는다(표시명은 `value_labels=`). 분류 칸 회색 배경은 `classification_styled`
-    하나가 칸 수 상한까지만 입히고 `load_conversion.py`·`reference_data.py` 도 쓴다(`tests/test_classification_style.py`).
+- `src/capa_simulation/components/month_editor.py` — 월별 Wide 기준정보 표의 공용 조각이다. 기준 정보 편집 표 아홉의 칸
+  편집은 범용 편집 그리드(`reference_grid.py`)가 맡고, 여기에는 그 그리드와 생산 계획 화면이 함께 쓰는 것만 둔다.
+  - 「Excel 붙여넣기」 팝업은 공개 함수 `paste_dialog`(경고 첫 줄 `pending_notice` 는 부르는 쪽이 — 그리드는 초안 칸 수)이고
+    편집 범위 줄은 `render_scope` 다. 붙여넣기 팝업(`render_reference_clipboard_form`)·왕복 CSV 에는 필터 이전 전체 표를
+    넘긴다(부분 표는 행 집합 검증을 통과해 나머지 공정을 지운다).
+  - `merge_edited_months`(걸러진 표의 월 값을 원본 전체에 분류 키로 되머지)·`count_month_changes`(적용하면 실제로 달라지는
+    칸·행 — 빈값끼리는 변경이 아니다)·`float_month_columns`(정수 dtype 월 칸을 실수로 — 생산 계획 편집표)를 둔다.
+  - `process_labels` 를 import 하지 않는다. 분류 칸 회색 배경은 `classification_styled` 하나가 칸 수 상한까지만 입히고
+    `load_conversion.py`·`reference_data.py`(설비대수 현황) 도 쓴다(`tests/test_classification_style.py`).
 - `src/capa_simulation/services/revision_compatibility.py` — 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지
   **불러오기 전에** 판정한다(활성화 뒤에 죽으면 되돌릴 길이 없다).
   - 지금 막는 것은 `STEP_SEQ`·`MCP_SEQ` 가 빈 저장분이다. 값을 추정해 채우지 않는다.
@@ -3842,14 +3844,15 @@ RQ_MODULE
     같은 값이다(2026-10-27 리뷰). 월별 분해·비교 키(`DynamicMonthlyCacheKey`·`AvailabilityComparisonCacheKey`)와 호기별 기여는
     호기 단위라 싣지 않는다. 시뮬레이션 쪽 키(`ScenarioCacheKey`·HOME·Static)와 주차별 가용 키에는 싣지 않는다 — 그 화면은 입력
     비가동을 빼지 않는다(6장). 프로필은 설비 캐시 경계(`equipment_cache.load_manual_downtime`)로만 읽는다.
-35. **기준 정보 그리드 초안은 표마다 세션 칸이고 업무 키 + 월로 둔다**(2026-11-02 편집 표 횡전개). 새 편집 그리드로 옮긴 표의
+35. **기준 정보 그리드 초안은 표마다 세션 칸이고 업무 키 + 월로 둔다**(2026-11-02 편집 표 횡전개). 편집 표 아홉의
     적용 전 편집은 `reference_grid_keys.cells_key(표)`(초안 — `{"cells": {업무 키: {월: 값|None}}, "bad": {…}}` 또는 None)와
     `history_key(표)`(되돌리기 이력 `gen`·undo·redo)에 기본형으로 둔다 — 위젯 상태가 아니라 종류를 바꾸거나 화면을 떠나도 남고,
     줄 차례(공용 표시순서)만 바뀐 회차에도 같은 칸에 붙는다(`reset_editors_on_source_change` 의 `order_free_keys`). 원본(기준정보
     버전·활성 리비전·기간)이 바뀌면 모두 버리고, 이력과 함께 `gen` 이 지워져 다음 회차의 새 `gen` 이 그 전에 보낸 op 를 버린다(수는
     토스트로). 시나리오를 바꾸면 `scenario_activation._STALE_VALUE_KEYS` 가 `SESSION_KEYS` 를 지운다. 적용은 양식 사본에 초안을 업무
-    키로 덮은 뒤(`merge_into_template` — 칸 오류가 남으면 멈춘다) 옛 편집표와 같은 길(`apply_month_updates` — revision+1·새
-    `content_token`)이고, 그 표의 초안·이력만 `mark_own_change` 로 비운다. 사이드바 「적용 전 편집」 은 이 칸을 붙여넣기 대기처럼
+    키로 덮은 뒤(`merge_into_template` — 칸 오류가 남으면 멈춘다) 붙여넣기와 같은 길(`apply_month_updates` — revision+1·새
+    `content_token`)이고, 그 표의 초안·이력만 `mark_own_change` 로 비운다. STEP 추가·삭제는 행이 바뀌는 UPEH·Lot·WF 의 초안·이력을
+    비운다. 사이드바 「적용 전 편집」 은 이 칸을 붙여넣기 대기처럼
     어느 화면에서나 센다(`register_pending_edits(staged=…)` — 화면 탭 점·테마 단추·새로고침 확인이 따라오고 떠날 때는 묻지 않는다).
 
 ## 6. 핵심 계산 규칙
@@ -4681,7 +4684,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `value` 로 오가며, 브라우저가 보내는 편집은 「행 위치·컬럼·새 값」이다(2026-10-10 Streamlit 1.63 프런트
   번들·AppTest·실제 브라우저로 잼). 그래서 월별 편집기의 읽기 전용 분류 칸은 그대로 두고(표와 같은 갈래 —
   겹친 두 공정이 같은 글자로 보인다), 사용자가 목록에서 고르는 칸(HOME 확보율 보정의 `공정`)만 목록에서
-  가려 고르도록 `unique_format_func` 로 글자를 가른다.
+  가려 고르도록 `unique_format_func` 로 글자를 가른다. 기준 정보 편집 표 아홉(범용 편집 그리드)은 껍데기에 분류
+  사전을 원값으로, 표시명을 따로(`labels`) 싣고 줄을 업무 키(원값)로 가리킨다 — 같은 결함이 없다
+  (`tests/test_reference_data_page.py` 의 겹친 표시명 시험).
   ⑥ 버튼 라벨·`help`(HOME 의 B/N 공정 선택 바둑판). 글자와 도움말만 표시명이고 콜백
   인자(`args=`)·위젯 키·적용 때 되쓰는 값은 원본 `공정` 이다. 버튼은 값을 글자로 주고받지 않아 ② 의
   결함이 없고 글자를 가르지 않는다(겹친 두 공정은 같은 글자의 바둑판 두 칸으로 보인다).
@@ -4714,10 +4719,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `services/weekly_availability_input.py` 의 준비 함수가 `known_processes` 로 받은 보유
   공정 목록 밖의 이름을 한국어 `ValueError` 로 거절한다. 목록은 화면이 소유하므로
   페이지가 넘기고, 저장된 값을 되읽는 경로와 계산 경로는 목록 없이 부른다.
-- 월별 편집기의 왕복 CSV 는 필터 이전의 전체 표이고 언제나 원본 공정명이다. 화면이
-  표시명일 때는 편집기 아래에 그 사실과 양식을 보라는 안내를 함께 그린다. 표시명 조회는
-  페이지가 하고 `components/month_editor.py` 는 받은 매핑으로 필터 옵션과 분류 컬럼
-  라벨만 만든다.
+- 월별 편집 표의 왕복 CSV 는 필터 이전의 전체 표이고 언제나 원본 공정명이다. 화면이
+  표시명일 때는 붙여넣기 팝업에 그 사실과 양식을 보라는 안내(`month_editor.RENAME_NOTICE`)를 그린다.
+  표시명 조회는 페이지가 하고, 기준 정보 그리드는 분류 사전을 원값으로·표시명을 따로(`labels`) 싣는다
+  — 업무 키·저장값은 원값이라 표시명이 겹쳐도 다른 줄에 붙지 않는다.
 - 매핑에 없는 공정은 원본 공정명을 그대로 표시하고, 보유하지 않은 원본에 지정된
   표시명은 오류가 아니다 — 이 시나리오의 계산 화면에는 나오지 않지만 표시명은 원본이 보유 공정인지
   보지 않고 입혀, 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는
@@ -5044,11 +5049,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 편집 탭의 분류 필터 상태는 `f"{editor_key}_filter_{column}"` 로 갈린다. 효율과 여유율은
   `dimensions` 가 완전히 같아 이 key 가 유일한 분리 장치다 — 새 편집 탭에 `editor_key` 를
   재사용하지 않는다.
-- **`components/month_editor.py` 가 붙여넣기 팝업(`render_reference_clipboard_form`)에 넘기는 첫 인자와
+- **「Excel 붙여넣기」 팝업(`month_editor.paste_dialog` → `render_reference_clipboard_form`)에 넘기는 첫 인자와
   `key_columns` 는 반드시 필터 이전의 전체 표다.** 필터된 프레임을 넘기면 양식 CSV 가 부분
   표가 되고, 그 부분 표는 `services/reference_csv.py` 의 행 집합 검증을 통과해 조회기간의
-  나머지 공정을 지운다. `tests/test_month_editor_filter.py` 가 다운로드 바이트를 실제로
-  디코드해 이 계약을 고정한다.
+  나머지 공정을 지운다. 기준 정보는 그리드 양식(큰 표 상한에 걸려 일부 줄만 실어도 전체)을 넘기고
+  `tests/test_reference_grid_page.py` 가 다운로드 바이트를 실제로 디코드해 이 계약을 고정한다.
 - **가로 컨테이너 안의 제목은 `h1` 의 위아래 여백을 잃는다.** `st.container(horizontal=True)`
   에 `st.title` 을 넣으면 Streamlit 이 `padding: 0` 을 걸어 그 페이지만 제목이 위로
   올라붙고 앱 헤더에 닿는다. 제목 옆에 무언가를 두려면 `st.columns(...)` 를 쓴다 — 컬럼은
@@ -5460,8 +5465,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 ### 편집표와 내려받기
 
-- **기준 정보에서 새 편집 그리드로 옮긴 표**(`reference_grid.GRID_TABLES`, 2026-11-02 편집 표 횡전개)에는 아래 `st.data_editor` 규칙
-  가운데 필터 잠금(`FILTER_LOCKED_NOTICE`)·줄 차례가 바뀐 회차의 비움 알림·`discard_editor` 가 걸리지 않는다 — 초안이 업무 키라
+- **기준 정보 편집 표 아홉**(범용 편집 그리드, 2026-11-02 편집 표 횡전개)에는 아래 `st.data_editor` 규칙 가운데 필터 잠금·줄
+  차례가 바뀐 회차의 비움 알림·`discard_editor` 가 걸리지 않는다 — 초안이 업무 키라
   필터를 바꿔도 표시순서가 바뀌어도 제 칸에 남는다(5장 35). 사이드바 「표 조건」 필터는 그대로 서고 고른 값은 feed `filters` 로
   가 브라우저가 거른다. 값 다듬기는 Python(`services/edit_grid.coerce`)이 정본이다 — 공백 걷음 · 빈 글 = 빈칸 · 유한한 수만 ·
   천 단위 쉼표는 엄격한 세 자리 묶음만(「1,234.5」 받음, 「1,5」 칸 오류) · percent 표만 「85%」 → 0.85 · 하한 0 · 효율·측정률
@@ -5548,10 +5553,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   ② `lazy=False` 를 준다 — 자동 lazy(15만 행 초과, `lazy_df_source.AUTO_LAZY_ROW_THRESHOLD`)의 서버 정렬은 category
   열에서 「Failed to load data」 가 된다. ③ 그보다 긴 표는 줄이지 않고 `lazy=None` 으로 맡긴다 — 한꺼번에 받은 표가
   15만 행을 넘으면 프런트가 정렬을 끈다(끝 값은 `tests/test_reference_data_perf.py` 가 Streamlit 상수와 견준다).
-  표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다). 편집표(`month_editor._compact_dimensions`)는 ①·②
-  가 걸리지 않는다 — `st.data_editor` 에는 lazy 가 없고, 분류 열 설정은 `_dimension_column_config`(표시명 열은
-  `SelectboxColumn`, 나머지 `TextColumn`)를 그대로 쓴다. category 와 함께여도 화면이 같다(표시명 열에 `TextColumn` 을
-  못 박으면 표시명이 원본 값으로 돌아간다).
+  표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다).
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
   쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다.

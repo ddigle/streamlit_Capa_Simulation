@@ -1,60 +1,33 @@
-# Purpose: 월별 Wide 기준정보를 탭 안에서 편집하는 공통 data_editor 를 제공한다.
+# Purpose: 월별 Wide 기준정보 표의 공용 조각(붙여넣기 팝업·편집 범위·분류 칸 배경·되머지)을 둔다.
 
-"""Capa 기준정보 탭 여섯 개가 함께 쓰는 월 컬럼 편집기.
+"""월 컬럼 표(분류 컬럼 + 월 컬럼)를 고치는 화면이 함께 쓰는 조각.
 
-분류 컬럼은 고정·비활성으로 두고 월 컬럼만 숫자로 편집한다.
+기준 정보 편집 표 아홉의 칸 편집은 범용 편집 그리드(`components/reference_grid.py` —
+2026-11-02 사용자 결정 「편집 표 횡전개」)가 맡는다. 여기에는 그 그리드와 생산 계획 화면
+(`load_conversion.py`)이 함께 쓰는 조각만 둔다.
 
-**필터는 보기만 좁히고 저장은 전체다.** 분류 컬럼 필터는 화면에 그릴 행만 줄이고, 이
-함수가 돌려주는 표는 언제나 `default_table` 과 **행 수·행 순서가 같은 전체 표**다. 편집값은
-`dimensions` 를 키로 원본에 되머지한다. 이 되머지를 지우고 걸러진 표를 그대로 돌려주면
-`scenario_state.replace_month_range` 가 조회기간의 행을 편집값으로 통째로 갈아끼우므로
-**화면에서 걸러진 공정이 그 기간에서 조용히 삭제된다.**
-
-되머지가 정확한 근거는 `num_rows="fixed"` 와 `disabled=dimensions` 다. 행 추가·삭제가
-불가능하고 분류 컬럼도 잠겨 있어 사용자가 바꿀 수 있는 것은 월 컬럼 숫자뿐이다.
-
-**분류 컬럼의 값은 언제나 원본이다.** 표시명이 지정된 컬럼은 `SelectboxColumn` 으로 그려
-셀에 보이는 글자만 바꾼다. 그 컬럼 설정은 옵션의 `value` 와 `label` 을 나눠 갖고 편집
-결과·복사 데이터로는 `value` 를 돌려주므로 아래 되머지 키와 왕복 CSV 가 원본으로 남는다.
-값 자체를 표시명으로 갈면 되머지 키가 어긋나 편집이 조용히 버려지고, 필터를 걸지 않은
-단축 반환 경로에서는 표시명이 그대로 `RQ_*` 저장값이 된다.
+- `paste_dialog` — 「Excel 붙여넣기」 표 전체 팝업(CSV 양식 왕복). **왕복 CSV·붙여넣기는 전체 표
+  계약이다** — 걸러진 표를 넘기면 그 부분 표가 검증을 통과해 나머지 공정을 조회기간에서 지운다.
+- `render_scope` — 「편집 범위」 한 줄(월 · 개월 수 · 행 수 · 필터로 보이는 행 수).
+- `classification_styled` — 분류 컬럼 배경색(작은 표만 — `CLASSIFICATION_STYLE_MAX_CELLS`).
+- `merge_edited_months` · `count_month_changes` — 걸러진 표의 월 값을 원본 전체에 분류 키로
+  되머지하고, 적용하면 실제로 달라지는 칸·행을 센다(빈값끼리는 변경이 아니다).
+- `float_month_columns` — 정수 dtype 월 칸을 실수로(생산 계획 편집표가 소수를 버리지 않게).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Final
 
 import pandas as pd
 import streamlit as st
 from pandas.io.formats.style import Styler
-from streamlit.delta_generator import DeltaGenerator
-from streamlit.elements.lib.column_types import ColumnConfig
 
-from capa_simulation.components.column_filter import (
-    apply_column_filters,
-    render_column_filter_controls,
-)
-from capa_simulation.components.editor_state import (
-    discard_editor,
-    editor_has_edits,
-    editor_widget_key,
-)
-from capa_simulation.components.monthly_table_base import COLUMN_LABELS
-from capa_simulation.components.process_labels import ProcessLabelFormatter
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
-from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import bootstrap_error_message
-from capa_simulation.sidebar_status import table_card
 
-# 필터는 본문이 아니라 사이드바 조건 카드 `표 조건`(`sidebar_status.table_card`)에 선다
-# (2026-09-29 사용자 결정 — 필터·조건은 사이드바). 카드 이름은 페이지가 준다.
-# 필터를 바꾸면 보이는 행이 바뀌어 적용하지 않은 편집을 버려야 한다(편집 델타가 행 위치 기반).
-# 그래서 고친 것이 남아 있으면 필터를 잠근다 — 조용히 버리는 것보다 낫다.
-FILTER_LOCKED_NOTICE = (
-    "적용하지 않은 편집이 있어 필터를 잠갔습니다. 적용하거나 「편집 취소」를 누른 뒤 바꾸세요."
-)
 # 화면은 표시명이지만 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 붙여넣기 팝업에만 적는다.
 RENAME_NOTICE = (
     "분류 컬럼은 화면 표시명으로 보입니다. CSV 양식과 붙여넣기는 원본 공정명 계약이므로 "
@@ -75,181 +48,6 @@ APPLY_NOTICE = "적용 후 계산에 반영됩니다. 보관하려면 새 리비
 # 2,660×39 = 103,740칸 약 1.5 s). 그래서 약 150 ms 를 넘는 표, 곧 이 칸 수를 넘는 표는
 # 배경색 없이 그린다. 그보다 작은 표는 전과 똑같이 그린다.
 CLASSIFICATION_STYLE_MAX_CELLS: Final = 10_000
-# 표시명을 그리는 분류 컬럼의 폭 한계. `SelectboxColumn` 은 원본 값으로 폭을 재므로
-# 표시명이 더 길면 잘린다.
-DIMENSION_MIN_WIDTH_PX = 110
-DIMENSION_MAX_WIDTH_PX = 280
-
-
-def render_month_editor(
-    tab: OpenTab,
-    default_table: pd.DataFrame,
-    dimensions: list[str],
-    editor_key: str,
-    number_format: str,
-    step: float | None,
-    min_value: float = 0.0,
-    max_value: float | None = None,
-    *,
-    table_name: str,
-    csv_file_name: str,
-    dialog_key: str,
-    on_paste: Callable[[pd.DataFrame], None],
-    card_name: str,
-    value_labels: Mapping[str, Mapping[str, str]] | None = None,
-    outer_tab: OpenTab | None = None,
-    value_help: str | None = None,
-) -> tuple[pd.DataFrame, bool]:
-    """월 편집표 하나. 돌려주는 것은 (되머지한 전체 표, 적용 버튼이 눌렸는가) 다.
-
-    `step` 은 월 칸의 한 칸 증분이다. Streamlit 숫자 칸은 증분의 소수 자릿수에서 **값 자체를
-    자른다**(보이는 값과 손으로 넣는 값 모두) — 그 아래 자리가 뜻이 있는 표는 `None` 을 준다.
-    그때는 정수 dtype 월 칸을 실수로 바꿔 그린다(`float_month_columns`) — 정수 칸에는 Streamlit
-    이 증분 1 을 스스로 걸어 소수를 버린다.
-    `value_help` 는 월 칸 머리의 도움말로, 값 칸의 뜻·단위를 밝힌다.
-
-    돌려주는 「적용 버튼이 눌렸는가」는 **이 회차에 적용 전 편집이 있을 때만** 참이다. 버튼은
-    편집이 없으면 잠겨 그려지고(`disabled=not pending`), Streamlit 1.63 은 그 회차에 잠겨 그린
-    위젯의 값을 서버에서 버린다 — 원본·줄 차례가 바뀌어 편집을 버린 회차에 함께 온 클릭(버리기
-    전에 누른 것)도 여기서 거짓이 된다. 페이지가 따로 막지 않는다.
-
-    **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다.** `st.data_editor` 는 그리지 않은
-    회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을 누르는 순간 편집이
-    조용히 사라졌다. 편집이 없는 닫힌 탭은 예전처럼 건너뛴다(그리는 비용 때문에).
-
-    `outer_tab` 은 탭 안의 탭(설비대수 › 보유 등)의 바깥 탭이다. 안쪽 탭은 바깥이 닫혀도 제
-    선택만 알아서, 바깥을 함께 봐야 지금 화면에 보이는지 안다.
-
-    **붙여넣기는 팝업 안에서 끝난다.** 팝업은 fragment 라 안에서 제출하면 팝업 함수만 다시 돈다
-    — 결과를 페이지로 돌려줄 길이 없으므로 `on_paste` 가 검증·적용하고, 막히면
-    `KeyError`/`ValueError` 를 던진다. 팝업이 그 글을 팝업 안에 쓴다.
-    """
-    open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
-    pending = editor_has_edits(editor_key)
-    if not editor_will_render(tab, editor_key, outer_tab):
-        # 지난 회차의 알림 자리는 이번 화면에 없다. 남겨 두면 거기 쓴 오류가 사라진다.
-        st.session_state.pop(_notice_key(editor_key), None)
-        return pd.DataFrame(), False
-    month_columns = [column for column in default_table.columns if column not in dimensions]
-    if step is None:
-        default_table = float_month_columns(default_table, month_columns)
-    visible_table = _visible_table(
-        default_table,
-        dimensions,
-        editor_key,
-        value_labels,
-        card_name=card_name if open_now else None,
-        locked=pending,
-    )
-    with tab:
-        # 작업 줄은 표 **위**다. 표가 높이 500px 이라 아래에 두면 고친 뒤 버튼이 화면 밖이어서
-        # 적용하지 않고 넘어가기 쉽다(2026-09-28 사용자 지적). 버튼 값은 표보다 먼저 만들어도
-        # 누른 회차에 표의 편집값이 그대로 들어온다. 변경 개수는 표를 그린 뒤에야 알므로 자리만
-        # 먼저 잡아 두고 뒤에서 채운다.
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            # 고친 것이 없으면 누를 수 없다. 누르면 같은 값으로 리비전만 올라 사이드바가
-            # `미저장 변경` 을 켠다(2026-09-29 2차 리뷰).
-            submitted = st.button(
-                "변경사항 적용",
-                icon=":material/check:",
-                key=f"{editor_key}_apply",
-                type="primary",
-                help=APPLY_NOTICE,
-                disabled=not pending,
-            )
-            # 여는 버튼은 **콜백**으로 연다 — 콜백은 스크립트보다 먼저 돌아 한 회차에 팝업이 둘
-            # 뜨지 않는다(생산 계획과 같은 규칙).
-            st.button(
-                "Excel 붙여넣기",
-                icon=":material/content_paste:",
-                key=f"{editor_key}_open_paste",
-                on_click=_open_paste,
-                args=(dialog_key, editor_key),
-            )
-            if pending:
-                st.button(
-                    "편집 취소",
-                    icon=":material/undo:",
-                    key=f"{editor_key}_discard",
-                    on_click=_discard_edits,
-                    args=(editor_key,),
-                    help="이 표에서 적용하지 않은 편집을 버립니다.",
-                )
-            change_slot = st.empty()
-        render_scope(default_table, visible_table, month_columns)
-        # **결과는 누른 자리에서 보인다.** 적용·붙여넣기의 성공과 적용 오류는 작업 줄 바로 아래
-        # 자리에 쓴다. 오류는 적용이 표 뒤에서 도므로 이 자리를 세션에 적어 두고 페이지가 거기에
-        # 쓴다(`editor_notice`).
-        notice = st.empty()
-        st.session_state[_notice_key(editor_key)] = notice
-        applied_flash = st.session_state.pop(f"{editor_key}_apply_flash", None)
-        if isinstance(applied_flash, str):
-            notice.success(applied_flash)
-        # 큰 표는 분류 컬럼을 화면 사본에서만 category 로 보낸다(`_compact_dimensions`). 편집표가
-        # 돌려준 표에는 원본 분류 컬럼을 다시 끼워 되머지·적용이 예전과 같은 표로 돈다.
-        plain_visible_table = visible_table
-        visible_table = _compact_dimensions(plain_visible_table, dimensions)
-        edited = st.data_editor(
-            classification_styled(visible_table, dimensions),
-            # 편집을 버릴 때마다 바뀌는 위젯 키다 — 세션만 지우면 브라우저가 옛 편집을 다시 보낸다.
-            key=editor_widget_key(editor_key),
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
-            num_rows="fixed",
-            disabled=dimensions,
-            # **빈칸은 빈칸으로 그린다**(2026-10-01 브라우저 점검). `placeholder` 를 주지 않으면
-            # Streamlit 이 결측 칸에 회색 `None` 글자를 쓴다 — 가이드·경고가 「빈칸」이라 부르는
-            # 칸(비운 붙여넣기, 값이 없는 달)이 `None` 으로 읽혔다. 편집표는 모두 이 값을 준다.
-            placeholder="",
-            column_config={
-                **_dimension_column_config(default_table, dimensions, value_labels),
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        help=value_help,
-                        width=80,
-                        min_value=min_value,
-                        max_value=max_value,
-                        step=step,
-                        format=number_format,
-                        alignment="center",
-                    )
-                    for month in month_columns
-                },
-            },
-        )
-        edited = _restore_dimensions(edited, plain_visible_table, visible_table)
-        merged = merge_edited_months(default_table, edited, dimensions, month_columns)
-        # 편집이 없던 회차(`pending` 은 표를 만들기 전 세션의 위젯 값이다 — 이 회차에 편집이 새로
-        # 생길 수는 없고 필터가 버릴 수만 있다)에는 표가 원본 그대로라 셀 수가 늘 0 이다. 셀 수
-        # 비교(표 전체 to_numeric)를 건너뛴다.
-        changed_cells, changed_rows = (
-            count_month_changes(default_table, merged, month_columns) if pending else (0, 0)
-        )
-        if changed_cells:
-            change_slot.markdown(
-                f"**변경사항 확인** &nbsp;{changed_cells:,}개 값 · {changed_rows:,}개 행"
-            )
-    if open_now and st.session_state.get(dialog_key) == editor_key:
-        # 왕복 CSV·붙여넣기는 전체 표 계약이다. 걸러진 표를 넘기면 양식이 부분 표가 되고, 그
-        # 부분 표는 검증을 통과해 나머지 공정을 조회기간에서 지운다.
-        paste_dialog(
-            default_table,
-            table_name=table_name,
-            dimensions=dimensions,
-            file_name=csv_file_name,
-            editor_key=editor_key,
-            dialog_key=dialog_key,
-            on_paste=on_paste,
-            rename_notice=_has_display_labels(dimensions, value_labels),
-            # 붙여넣기도 격자와 같은 범위를 지난다(격자만 막으면 붙여넣은 85·1.2·음수가 들어온다).
-            min_value=min_value,
-            max_value=max_value,
-            pending_notice=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(editor_key) else None,
-        )
-    return merged, submitted
 
 
 def float_month_columns(table: pd.DataFrame, month_columns: Sequence[str]) -> pd.DataFrame:
@@ -269,17 +67,6 @@ def float_month_columns(table: pd.DataFrame, month_columns: Sequence[str]) -> pd
     if not integer_columns:
         return table
     return table.astype(dict.fromkeys(integer_columns, "float64"))
-
-
-def editor_will_render(tab: OpenTab, editor_key: str, outer_tab: OpenTab | None = None) -> bool:
-    """이 편집표를 이번 회차에 그리는가 — 탭(과 바깥 탭)이 보이거나, 적용하지 않은 편집이 남았다.
-
-    `render_month_editor` 의 조기 반환과, 페이지가 양식(`default_table`)을 만들지 정하는 자리가
-    **이 함수 하나**를 쓴다. 둘이 갈리면 그리는 회차에 양식이 빈 표라 편집이 행 위치로 다른 행에
-    붙거나 사라진다. 거짓인 회차에는 `render_month_editor` 가 양식을 읽지 않는다.
-    """
-    open_now = not (tab_is_hidden(tab) or tab_is_hidden(outer_tab))
-    return open_now or editor_has_edits(editor_key)
 
 
 def classification_styled(
@@ -304,56 +91,6 @@ def classification_styled(
     if uuid is not None:
         styler.set_uuid(uuid)
     return styler
-
-
-def _compact_dimensions(table: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame:
-    """편집표에 넘기는 화면 사본 — 큰 표의 글자 분류 컬럼만 `category` 로 바꾼다.
-
-    분류 컬럼은 몇 안 되는 글자가 행마다 되풀이되어 Arrow 글자로 실린다. category 는 고유 글자를
-    한 번만 싣는다. 보이는 글자·차례·잠금은 같다(분류 컬럼은 `disabled` 라 형식 검사도 없다).
-    배경색을 입히는 작은 표(`CLASSIFICATION_STYLE_MAX_CELLS` 이하)는 그대로 둔다 — 그 표의
-    바이트는 Styler 가 대부분이라 줄지 않고 바꾸는 비용만 회차마다 든다. 값이 모두 글자인
-    컬럼만 바꾼다(섞인 값의 category 는 Arrow 로 옮길 수 없다). 행마다 거의 다른 글자인 컬럼은
-    되풀이가 없어 사전과 번호만 더 실리므로 그대로 둔다(고유값이 행 수의 절반을 넘으면).
-    """
-    if table.size <= CLASSIFICATION_STYLE_MAX_CELLS:
-        return table
-    text_columns = [
-        column
-        for column in dimensions
-        if column in table.columns
-        and pd.api.types.infer_dtype(table[column], skipna=True) == "string"
-        and table[column].nunique(dropna=True) * 2 <= len(table)
-    ]
-    if not text_columns:
-        return table
-    return table.astype(dict.fromkeys(text_columns, "category"))
-
-
-def _restore_dimensions(
-    edited: pd.DataFrame, plain_table: pd.DataFrame, shown_table: pd.DataFrame
-) -> pd.DataFrame:
-    """편집표가 돌려준 표에 `_compact_dimensions` 전의 분류 컬럼을 다시 끼운다.
-
-    분류 컬럼은 잠겨 있어 편집표가 바꿀 수 없으므로 값은 같고 dtype 만 원본으로 돌아온다. 행 번호도
-    같다(`num_rows="fixed"`). 그래서 되머지 키(`astype(str)`)와 필터 없는 반환이 예전과 같은 표다.
-    """
-    if shown_table is plain_table:
-        return edited
-    changed = [
-        column
-        for column in plain_table.columns
-        if column in edited.columns and shown_table[column].dtype != plain_table[column].dtype
-    ]
-    return edited.assign(**{column: plain_table[column] for column in changed})
-
-
-def _open_paste(dialog_key: str, editor_key: str) -> None:
-    st.session_state[dialog_key] = editor_key
-
-
-def _discard_edits(editor_key: str) -> None:
-    discard_editor(editor_key)
 
 
 def paste_dialog(
@@ -406,63 +143,6 @@ def paste_dialog(
         st.rerun()
 
     _body()
-
-
-def _notice_key(editor_key: str) -> str:
-    return f"{editor_key}__notice"
-
-
-def editor_notice(editor_key: str) -> DeltaGenerator | None:
-    """이 편집표의 작업 줄 바로 아래 알림 자리. 이번 회차에 그 편집표를 그렸을 때만 있다.
-
-    적용은 표를 다 그린 뒤 페이지가 처리하므로 오류를 쓸 자리를 따로 받아야 한다. 없으면
-    (숨은 탭 등) `None` 이고 부르는 쪽은 예전처럼 탭 끝에 쓴다.
-    """
-    slot = st.session_state.get(_notice_key(editor_key))
-    return slot if isinstance(slot, DeltaGenerator) else None
-
-
-def _has_display_labels(
-    dimensions: list[str],
-    value_labels: Mapping[str, Mapping[str, str]] | None,
-) -> bool:
-    return any((value_labels or {}).get(column) for column in dimensions)
-
-
-def _dimension_column_config(
-    default_table: pd.DataFrame,
-    dimensions: list[str],
-    value_labels: Mapping[str, Mapping[str, str]] | None,
-) -> dict[str, ColumnConfig]:
-    """분류 컬럼의 `column_config`. 표시명이 있는 컬럼만 `SelectboxColumn` 으로 그린다.
-
-    매핑이 없는 컬럼은 `TextColumn` 으로 원본 값을 그대로 그린다. `SelectboxColumn` 에는
-    `alignment` 가 없어 그 컬럼만 가운데 정렬이 아니며, 열 폭은 표시명이 아니라 원본 값으로
-    재므로 명시 폭을 준다.
-    """
-    config: dict[str, ColumnConfig] = {}
-    for column in dimensions:
-        title = COLUMN_LABELS.get(column, column)
-        labels = (value_labels or {}).get(column)
-        if not labels or column not in default_table.columns:
-            config[column] = st.column_config.TextColumn(
-                title,
-                alignment="center",
-                pinned=True,
-            )
-            continue
-        # 셀 값이 옵션에 없으면 빈칸으로 그려진다. 표에 나오는 값 전체를 옵션에 넣는다.
-        options = default_table[column].dropna().drop_duplicates().tolist()
-        formatter = ProcessLabelFormatter(labels)
-        longest = max((len(formatter(option)) for option in options), default=0)
-        config[column] = st.column_config.SelectboxColumn(
-            title,
-            options=options,
-            format_func=formatter,
-            pinned=True,
-            width=min(DIMENSION_MAX_WIDTH_PX, max(DIMENSION_MIN_WIDTH_PX, 13 * longest)),
-        )
-    return config
 
 
 def merge_edited_months(
@@ -543,50 +223,3 @@ def count_month_changes(
     after = merged[columns].apply(pd.to_numeric, errors="coerce")
     differs = (before != after) & ~(before.isna() & after.isna())
     return int(differs.to_numpy().sum()), int(differs.any(axis=1).sum())
-
-
-def _visible_table(
-    default_table: pd.DataFrame,
-    dimensions: list[str],
-    editor_key: str,
-    value_labels: Mapping[str, Mapping[str, str]] | None,
-    *,
-    card_name: str | None,
-    locked: bool,
-) -> pd.DataFrame:
-    """화면에 그릴 행만 남긴 표. 필터를 걸 수 없는 표는 원본 그대로다.
-
-    필터 위젯은 사이드바 조건 카드에 선다(`card_name`). 탭이 닫혀 카드를 세우지 않는 회차
-    (`card_name=None` — 적용하지 않은 편집 때문에 닫힌 탭의 표를 그리는 경우)에는 세션에 남은
-    선택만 읽는다. `locked` 면 카드의 필터를 잠근다.
-
-    `value_labels` 는 필터 옵션의 **표시**에만 쓴다. 선택값·거른 프레임·편집표·왕복 CSV 는
-    모두 원본 공정명이다. 표시명 조회는 페이지가 하고 이 모듈은 받은 매핑만 넘긴다.
-    """
-    if default_table.empty or any(column not in default_table.columns for column in dimensions):
-        return default_table
-    key_prefix = f"{editor_key}_filter"
-    if card_name is None:
-        visible = apply_column_filters(default_table, dimensions, key_prefix=key_prefix)
-    else:
-        with table_card(card_name):
-            visible = render_column_filter_controls(
-                default_table,
-                dimensions,
-                key_prefix=key_prefix,
-                column_labels=COLUMN_LABELS,
-                value_labels=value_labels,
-                disabled=locked,
-            )
-            if locked:
-                st.caption(FILTER_LOCKED_NOTICE)
-    # data_editor 의 편집 델타는 행 '위치' 기반이라 보이는 행 집합이 바뀌면 남아 있던 편집이
-    # 다른 행에 붙는다. 위젯을 만들기 전에 버려야 그 오염이 저장까지 가지 않는다.
-    signature_key = f"{editor_key}_filter_rows"
-    signature = hash(tuple(visible.index))
-    previous = st.session_state.get(signature_key)
-    # 처음 적는 회차는 바뀐 것이 아니다 — 거기서 버리면 편집표가 처음부터 새 세대로 선다.
-    if previous is not None and previous != signature:
-        discard_editor(editor_key)
-    st.session_state[signature_key] = signature
-    return visible

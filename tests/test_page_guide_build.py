@@ -1151,7 +1151,16 @@ def test_generator_files_are_tracked_so_the_archived_copy_carries_them() -> None
 # ------------------------------------------------------------------ 바뀐 자리 검수(순수 함수)
 
 # 실데이터가 자리 · 크기를 정한다고 코드로 확인한 넷(명세 1-3) — 측정으로 후보를 빼도 남는다.
-CONFIRMED_DATA_SHAPED = {"BN_CELL", "EDIT_CELL", "EDIT_ROW", "HEADER_BAND", "SIDEBAR_BADGE"}
+# 코드로 확인한 데이터 자리 — 범용 편집 그리드의 고친 칸(EGRID_CELL)은 EDIT_CELL 과 같은 까닭(고칠
+# 칸이 놓인 행)이다.
+CONFIRMED_DATA_SHAPED = {
+    "BN_CELL",
+    "EDIT_CELL",
+    "EDIT_ROW",
+    "EGRID_CELL",
+    "HEADER_BAND",
+    "SIDEBAR_BADGE",
+}
 CONFIRMED_DATA_PLACES = {
     "concept:read_state",
     "step:bn_drill.pick_cell",

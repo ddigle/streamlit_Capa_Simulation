@@ -2,11 +2,12 @@
 
 """편집표 줄 차례 지키기 · 숫자 칸 `step` 버림 없애기(2026-10-24 사용자 결정 「권장대로」).
 
-- **줄 차례.** `st.data_editor` 의 편집은 줄 위치로 남는다. 기준 정보 9표·생산 계획 2표는 공용
-  표시순서로 줄을 세우는데 표시순서는 기준정보 버전·리비전을 바꾸지 않고 바뀐다. 원본 토큰
-  (`source_token`)에 줄 차례 지문이 없으면 적용 전 편집이 다른 공정 줄에 붙은 채 「적용」이 그대로
-  저장한다. 이제 지문이 바뀌면 편집을 비우고 한 번 알린다 — 틀린 저장이 없고 적용 전 편집만
-  잃는다. 안 바뀐 회차에는 편집이 그대로 남는다.
+- **줄 차례.** `st.data_editor` 의 편집은 줄 위치로 남는다. 생산 계획 2표는 공용 표시순서로 줄을
+  세우는데 표시순서는 기준정보 버전·리비전을 바꾸지 않고 바뀐다. 원본 토큰(`source_token`)에 줄 차례
+  지문이 없으면 적용 전 편집이 다른 공정 줄에 붙은 채 「적용」이 그대로 저장한다. 이제 지문이 바뀌면
+  편집을 비우고 한 번 알린다 — 틀린 저장이 없고 적용 전 편집만 잃는다. 안 바뀐 회차에는 편집이
+  그대로 남는다. 기준 정보 9표는 범용 편집 그리드라 초안이 업무 키 — 차례가 바뀌어도 제 줄에 남고
+  알리지 않는다(2026-11-02 편집 표 횡전개).
 - **증분 버림.** Streamlit 1.63 `NumberColumn` 은 `step` 의 소수 자릿수 아래를 반올림하지 않고
   버린다. 뜻이 걸리는 칸(효율·여유율·Lot·WF 측정률·수율·설비대수·기존 보유대수)은 `step` 없이
   `format` 만 둔다.
@@ -23,14 +24,15 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from edit_grid_fake import install_fake_edit_grid, last
+from edit_grid_fake import Calls, install_fake_edit_grid, last
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     DATASET,
     DISPLAY_ORDER_SWAP_TEST_SCRIPT,
     TEST_SCRIPT,
     TWO_PROCESS_TEST_SCRIPT,
-    editor_widget_key_in,
+    _grid_write,
+    _visible_keys,
 )
 
 from capa_simulation.components import (
@@ -40,7 +42,7 @@ from capa_simulation.components import (
     widget_generation,
     write_guard,
 )
-from capa_simulation.reference_grid_keys import DATASET_KEY, GRID_HOST
+from capa_simulation.reference_grid_keys import DATASET_KEY, GRID_HOST, cells_key
 from capa_simulation.scenario_state import ActiveScenario
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -288,6 +290,21 @@ def test_the_notice_names_what_was_dropped() -> None:
 # ------------------------------------------------------------------ 기준 정보 (AppTest)
 
 
+def editor_widget_key_in(app: AppTest, key: str) -> str:
+    """앱이 지금 편집표를 그리는 위젯 키(`editor_state.editor_widget_key` 와 같은 규칙) — 필터가
+    바뀌거나 편집을 버리면 새 세대 키로 선다. 브라우저는 그 키로 편집을 보내므로 시험도 같은 키에
+    넣는다."""
+    generation_key = f"{key}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    return key if not generation else f"{key}__g{generation}"
+
+
+@pytest.fixture
+def grid_calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    """기준 정보 편집 그리드 대역 — 받은 (key, data) 를 적는다(`tests/edit_grid_fake.py`)."""
+    return install_fake_edit_grid(monkeypatch)
+
+
 def _notices(app: AppTest) -> list[str]:
     return [str(warning.value) for warning in app.warning if NOTICE_HEAD in str(warning.value)]
 
@@ -301,65 +318,27 @@ def _apply_disabled(app: AppTest, button_key: str) -> bool:
     return bool(next(button for button in app.button if button.key == button_key).disabled)
 
 
-def test_a_display_order_change_drops_the_reference_edit_instead_of_saving_it_on_another_row() -> (
-    None
-):
+def test_a_display_order_change_keeps_the_reference_draft_on_its_business_key(
+    grid_calls: Calls,
+) -> None:
     """효율 표 첫 줄(Process-A)을 고친 채 표시순서가 뒤집힌 회차에 「변경사항 적용」을 누른다.
 
-    전에는 같은 원본 토큰이라 편집이 남아 첫 줄 — 이제 Process-B — 에 붙고 적용이 그대로 저장했다.
-    이제 편집을 비우고 그 회차에 한 번 알리며, 함께 온 클릭은 적용하지 않는다.
+    옛 편집표는 줄 위치라 그 회차에 편집을 비우고 알렸다(틀린 저장을 막으려고). 그리드 초안은 업무
+    키라 차례가 바뀌어도 고친 줄(Process-A)에 남고, 함께 온 클릭도 그 줄에 적용한다 — 알림이 없다.
     """
-    editor_key = "capa_run_rate_editor"
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["효율"]
     app.run()
     assert not app.exception
-    assert app.session_state[f"captured_order::{editor_key}"] == ["Process-A", "Process-B"]
-    edit = _edit(MONTH, 0.5)
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    app.run()
-    assert not app.exception
-    assert not _apply_disabled(app, f"{editor_key}_apply")
-    assert not _notices(app)
-    before = _generation_in(app, editor_key)
+    assert [key.split("\x1f")[0] for key in _visible_keys(grid_calls)] == ["Process-A", "Process-B"]
+    app = _grid_write(app, grid_calls, "Process-A\x1f양산", MONTH, "0.5")
+    assert not _apply_disabled(app, "capa_run_rate_editor_apply")
 
-    # 다른 곳에서 표시순서가 바뀐 뒤의 첫 조작 — 브라우저는 들고 있던 편집을 옛 위젯에 다시 보낸다.
     app.session_state["test_display_order_descending"] = True
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    next(button for button in app.button if button.key == f"{editor_key}_apply").click()
+    next(button for button in app.button if button.key == "capa_run_rate_editor_apply").click()
     app.run()
 
     assert not app.exception
-    assert app.session_state[f"captured_order::{editor_key}"] == ["Process-B", "Process-A"]
-    assert "test_month_updates" not in app.session_state
-    assert _generation_in(app, editor_key) == before + 1
-    assert _apply_disabled(app, f"{editor_key}_apply")
-    notices = _notices(app)
-    assert len(notices) == 1
-    assert "(효율)" in notices[0]
-
-    # 알림은 그 회차 한 번이다.
-    app.run()
-    assert not app.exception
-    assert not _notices(app)
-
-
-def test_an_unchanged_display_order_keeps_the_reference_edit_and_applies_it_to_its_row() -> None:
-    """표시순서가 그대로인 회차에는 편집이 남고 적용은 고친 줄에 든다(회귀)."""
-    editor_key = "capa_run_rate_editor"
-    app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["효율"]
-    app.run()
-    edit = _edit(MONTH, 0.5)
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    app.run()
-    before = _generation_in(app, editor_key)
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    next(button for button in app.button if button.key == f"{editor_key}_apply").click()
-    app.run()
-
-    assert not app.exception
-    assert _generation_in(app, editor_key) >= before
     assert not _notices(app)
     saved = app.session_state["test_month_updates"]["RQ_RUN_RATE"]
     assert dict(zip(saved["공정"], saved["CAPA_RUN_RATE"], strict=True)) == {
@@ -368,29 +347,44 @@ def test_an_unchanged_display_order_keeps_the_reference_edit_and_applies_it_to_i
     }
 
 
-def test_a_display_order_change_also_drops_an_equipment_count_edit() -> None:
-    """설비대수 세 표도 같은 표시순서로 줄을 세운다 — 함께 비워지고 이름이 알림에 실린다."""
-    editor_key = "capa_eqp_own_editor"
+def test_an_unchanged_display_order_keeps_the_reference_edit_and_applies_it_to_its_row(
+    grid_calls: Calls,
+) -> None:
+    """표시순서가 그대로인 회차에는 편집이 남고 적용은 고친 줄에 든다(회귀)."""
+    app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["효율"]
+    app.run()
+    app = _grid_write(app, grid_calls, "Process-A\x1f양산", MONTH, "0.5")
+    next(button for button in app.button if button.key == "capa_run_rate_editor_apply").click()
+    app.run()
+
+    assert not app.exception
+    assert not _notices(app)
+    saved = app.session_state["test_month_updates"]["RQ_RUN_RATE"]
+    assert dict(zip(saved["공정"], saved["CAPA_RUN_RATE"], strict=True)) == {
+        "Process-A": 0.5,
+        "Process-B": 0.9,
+    }
+
+
+def test_a_display_order_change_keeps_an_equipment_count_draft_too(grid_calls: Calls) -> None:
+    """설비대수 세 표도 같은 표시순서로 줄을 세운다 — 차례가 바뀌어도 초안은 제 공정에 남고 알리지
+    않는다."""
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
     app.run()
     assert not app.exception
-    edit = _edit(MONTH, 0.333)
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    app.run()
-    assert not app.exception
-    before = _generation_in(app, editor_key)
+    app = _grid_write(app, grid_calls, "Process-A", MONTH, "0.333")
 
-    # AppTest 는 세션에 넣은 편집표 값을 한 회차만 들고 있다 — 브라우저처럼 다음 조작에 다시 보낸다.
     app.session_state["test_display_order_descending"] = True
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
     app.run()
 
     assert not app.exception
-    assert _generation_in(app, editor_key) == before + 1
-    notices = _notices(app)
-    assert len(notices) == 1
-    assert "(설비대수 보유)" in notices[0]
+    assert not _notices(app)
+    assert app.session_state[cells_key("RQ_EQP_OWN")] == {
+        "cells": {"Process-A": {MONTH: 0.333}},
+        "bad": {},
+    }
 
 
 # ------------------------------------------------------------------ 생산 계획 (AppTest)
@@ -655,48 +649,50 @@ def _month_configs(app: AppTest, editor_key: str) -> dict[str, dict[str, Any]]:
     return {name: config for name, config in columns.items() if name.isdigit()}
 
 
+# 기준 정보 그리드 표의 값 형식(껍데기 `fmt`) — (종류, 소수 자리, 상한). 증분(step)이 없어 값을
+# 자르지 않는다 — 보이는 자리만 반올림하고 값은 적은 그대로다.
 REFERENCE_FORMATS = {
-    "효율": ("capa_run_rate_editor", "percent"),
-    "여유율": ("capa_vital_editor", "percent"),
-    "Lot측정률": ("capa_lot_ratio_editor", "percent"),
-    "WF측정률": ("capa_wf_ratio_editor", "percent"),
+    "효율": ("percent", 2, 1.0),
+    "여유율": ("percent", 2, None),
+    "Lot측정률": ("percent", 2, 1.0),
+    "WF측정률": ("percent", 2, 1.0),
 }
-EQUIPMENT_FORMATS = {
-    "보유": "capa_eqp_own_editor",
-    "대여": "capa_eqp_lent_editor",
-    "가용": "capa_eqp_avbl_editor",
-}
+EQUIPMENT_TABLES = {"보유": "RQ_EQP_OWN", "대여": "RQ_EQP_LENT", "가용": "RQ_EQP_AVBL"}
 
 
 @pytest.mark.parametrize("tab_name", list(REFERENCE_FORMATS))
-def test_ratio_editors_carry_no_step_and_keep_the_percent_format(tab_name: str) -> None:
-    editor_key, number_format = REFERENCE_FORMATS[tab_name]
+def test_ratio_grids_keep_the_percent_format_and_take_fractions_as_written(
+    tab_name: str, grid_calls: Calls
+) -> None:
+    kind, digits, top = REFERENCE_FORMATS[tab_name]
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET[tab_name]
     app.run()
     assert not app.exception
 
-    configs = _month_configs(app, editor_key)
-    assert configs
-    for config in configs.values():
-        type_config = config["type_config"]
-        assert "step" not in type_config, type_config
-        assert type_config["format"] == number_format
+    fmt = last(grid_calls, GRID_HOST)["fmt"]
+    assert (fmt["kind"], fmt["digits"], fmt["max"]) == (kind, digits, top)
+    key = _visible_keys(grid_calls)[0]
+    app = _grid_write(app, grid_calls, key, MONTH, "0.9875")
+    table = DATASET[tab_name]
+    assert app.session_state[cells_key(table)]["cells"] == {key: {MONTH: 0.9875}}
 
 
-@pytest.mark.parametrize("tab_name", list(EQUIPMENT_FORMATS))
-def test_equipment_count_editors_carry_no_step_and_keep_two_decimals(tab_name: str) -> None:
-    editor_key = EQUIPMENT_FORMATS[tab_name]
+@pytest.mark.parametrize("tab_name", list(EQUIPMENT_TABLES))
+def test_equipment_count_grids_keep_two_decimals_and_a_third_of_a_module(
+    tab_name: str, grid_calls: Calls
+) -> None:
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET[f"설비대수 {tab_name}"]
     app.run()
     assert not app.exception
 
-    configs = _month_configs(app, editor_key)
-    assert configs
-    for config in configs.values():
-        assert "step" not in config["type_config"], config
-        assert config["type_config"]["format"] == "%,.2f"
+    fmt = last(grid_calls, GRID_HOST)["fmt"]
+    assert (fmt["kind"], fmt["digits"], fmt["blankZero"]) == ("fixed", 2, True)
+    app = _grid_write(app, grid_calls, "Process-A", MONTH, "0.333")
+    assert app.session_state[cells_key(EQUIPMENT_TABLES[tab_name])]["cells"] == {
+        "Process-A": {MONTH: 0.333}
+    }
 
 
 def test_the_run_day_grid_takes_whole_days_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -733,8 +729,9 @@ def test_the_yield_and_plan_editors_keep_their_formats() -> None:
     assert all(config["type_config"]["step"] == 0.01 for config in plan_configs.values())
 
 
-def test_an_all_integer_month_table_is_drawn_as_float_without_a_step() -> None:
-    """정수만 붙여넣어 정수 dtype 이 된 표도 소수를 받는다 — 정수 칸은 증분 1 이 걸린다."""
+def test_an_all_integer_month_table_takes_a_fraction_on_the_grid(grid_calls: Calls) -> None:
+    """정수만 붙여넣어 정수 dtype 이 된 표도 소수를 받는다 — 그리드는 값 칸을 실수 행렬로 다루고
+    증분이 없어 0.333 대가 그대로 적용된다."""
     script = TWO_PROCESS_TEST_SCRIPT.replace(
         '{"생산계획년월": [202608], "공정": ["Process-A"], "설비보유": [2.0]}',
         '{"생산계획년월": [202608], "공정": ["Process-A"], "설비보유": [2]}',
@@ -746,14 +743,11 @@ def test_an_all_integer_month_table_is_drawn_as_float_without_a_step() -> None:
     app.run()
     assert not app.exception
 
-    configs = _month_configs(app, "capa_eqp_own_editor")
-    assert configs
-    editor = next(
-        frame
-        for frame in app.dataframe
-        if frame.proto.editing_mode and _is_editor(frame.proto.id, "capa_eqp_own_editor")
-    )
-    assert all(str(editor.value[month].dtype) == "float64" for month in configs)
+    app = _grid_write(app, grid_calls, "Process-A", MONTH, "0.333")
+    app.button(key="capa_eqp_own_editor_apply").click().run()
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
+    assert dict(zip(saved["공정"], saved["설비보유"], strict=True))["Process-A"] == 0.333
 
 
 def test_float_month_columns_only_touches_integer_month_columns() -> None:

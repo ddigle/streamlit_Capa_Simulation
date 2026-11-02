@@ -1,7 +1,7 @@
-# Purpose: 기준 정보 종류 단추와 범용 편집 그리드(시범 일수)의 새 동작을 AppTest 로 본다.
+# Purpose: 기준 정보 종류 단추와 범용 편집 그리드(편집 표 아홉)의 새 동작을 AppTest 로 본다.
 
-"""기준 정보 화면은 탭 대신 종류 단추 한 줄과 큰 편집 표 하나다(2026-11-02 사용자 결정). 새 그리드로
-옮긴 표(`reference_grid.GRID_TABLES` — 시범은 일수)는 초안을 업무 키로 세션에 두므로, 옛
+"""기준 정보 화면은 탭 대신 종류 단추 한 줄과 큰 편집 표 하나다(2026-11-02 사용자 결정). 편집 표
+아홉(`reference_grid_keys.EDIT_TABLES`)이 모두 범용 편집 그리드라 초안을 업무 키로 세션에 두므로, 옛
 `st.data_editor` 와 달리 종류를 바꾸거나 화면을 떠나거나 줄 차례만 바뀌어도 편집이 남고 필터를
 잠그지 않는다. 시험은 `tests/edit_grid_fake.py` 대역으로 브라우저가 보내는 op 를 넣는다.
 """
@@ -16,24 +16,27 @@ from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     DATASET,
     DISPLAY_ORDER_SWAP_TEST_SCRIPT,
+    EDITOR_KEYS,
     REAL_APPLY_TEST_SCRIPT,
     TEST_SCRIPT,
     TWO_PROCESS_TEST_SCRIPT,
+    _download_frame,
     _filtered_editor_app,
     _grid_write,
     _open_paste,
     _scenario_table,
+    _visible_keys,
     _walk,
 )
 
 from capa_simulation.components import page_tabs, reference_grid
 from capa_simulation.components.edit_grid import feed_key
-from capa_simulation.components.month_editor import FILTER_LOCKED_NOTICE
 from capa_simulation.components.tab_marks import pending_segments_style
 from capa_simulation.reference_grid_keys import (
     DATASET_KEY,
     DATASETS,
     DEFAULT_DATASET,
+    EDIT_TABLES,
     GRID_HOST,
     cells_key,
     history_key,
@@ -43,6 +46,10 @@ from capa_simulation.services.edit_grid import DROPPED_TOAST
 FEED = feed_key(GRID_HOST)
 RUN_DAY_CELLS = cells_key("RQ_RUN_DAY")
 APPLY = "capa_run_day_editor_apply"
+# 옛 `st.data_editor` 편집표가 적용하지 않은 편집이 있을 때 사이드바 필터 아래에 쓰던 잠금 문구.
+OLD_FILTER_LOCKED_NOTICE = (
+    "적용하지 않은 편집이 있어 필터를 잠갔습니다. 적용하거나 「편집 취소」를 누른 뒤 바꾸세요."
+)
 
 
 @pytest.fixture
@@ -97,21 +104,24 @@ def test_dataset_buttons_replace_the_tabs(calls: Calls) -> None:
         "RQ_WF_RATIO",
         "STEP",
     ]
-    # 그리드 마운트는 기본 종류(아직 옮기지 않은 UPEH)에서도 표 없는 껍데기로 같은 자리에 선다.
+    # 기본 종류 UPEH 도 그리드다 — 마운트는 feed 다음 껍데기 차례 하나다.
     assert [key for key, _ in calls] == [FEED, GRID_HOST]
-    assert last(calls, GRID_HOST)["table"] is None
+    assert last(calls, GRID_HOST)["table"] == "RQ_UPEH"
 
 
 def test_switching_datasets_keeps_the_grid_draft_and_the_mount(calls: Calls) -> None:
-    """일수를 고치고 다른 종류(편집표·읽기 보기)를 골랐다 돌아와도 초안이 남는다. 그리드 요소는 모든
-    회차에 같은 key·같은 차례로 서고(다시 마운트되지 않는다) 고르지 않은 회차에는 표 없이 남는다."""
+    """일수를 고치고 다른 종류(편집 표·읽기 보기)를 골랐다 돌아와도 초안이 남는다. 그리드 요소는
+    모든 회차에 같은 key·같은 차례로 서고(다시 마운트되지 않는다) 편집 표는 그 표를, 읽기 보기는 표
+    없는 껍데기를 싣는다."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
 
     for name in ("효율", "설비대수 현황", "STEP 구성", "UPEH"):
         app = _choose(app, name)
-        assert last(calls, GRID_HOST)["table"] is None
+        assert last(calls, GRID_HOST)["table"] == (
+            DATASET[name] if DATASET[name] in EDIT_TABLES else None
+        )
         assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
     app = _choose(app, "일수")
     feed = last(calls, FEED)
@@ -132,7 +142,7 @@ def test_an_op_sent_just_before_switching_lands_in_its_own_table(calls: Calls) -
         host=GRID_HOST,
     )
     assert not app.exception
-    assert last(calls, GRID_HOST)["table"] is None
+    assert last(calls, GRID_HOST)["table"] == "RQ_RUN_RATE"
     assert _draft(app) == {"cells": {"Process-B": {"202608": 29.0}}, "bad": {}}
 
 
@@ -164,7 +174,7 @@ def test_the_filter_is_not_locked_while_a_grid_draft_is_pending(calls: Calls) ->
     app = _grid_write(app, calls, "Process-B", "202608", "20")
     widget = app.sidebar.multiselect(key="capa_run_day_editor_filter_공정")
     assert not widget.disabled
-    assert FILTER_LOCKED_NOTICE not in {str(item.value) for item in app.sidebar.caption}
+    assert OLD_FILTER_LOCKED_NOTICE not in {str(item.value) for item in app.sidebar.caption}
     # 필터를 풀어도 초안은 그대로다(업무 키).
     widget.set_value([]).run()
     assert not app.exception
@@ -339,3 +349,196 @@ def test_the_grid_host_holds_tab_clicks_like_the_other_edit_grids() -> None:
     """화면 탭 줄 붙들기(`<tabs-hold>`)가 기준 정보 그리드도 편집 칸으로 본다."""
     assert GRID_HOST in page_tabs.EDIT_HOST_KEYS
     assert GRID_HOST == "reference_grid"
+
+
+# ------------------------------- 나머지 여덟 표 — 효율·여유율·설비대수 셋·Lot·WF·UPEH
+
+# 표마다 보이는 첫 줄에 쓸 값(그 표가 받는 값).
+VALID_VALUES = {
+    "RQ_UPEH": "55",
+    "RQ_EQP_OWN": "7",
+    "RQ_EQP_LENT": "1.5",
+    "RQ_EQP_AVBL": "3",
+    "RQ_RUN_RATE": "0.5",
+    "RQ_VITAL": "1.2",
+    "RQ_RUN_DAY": "20",
+    "RQ_LOT_RATIO": "0.5",
+    "RQ_WF_RATIO": "85%",
+}
+
+
+def test_every_edit_table_rides_the_one_grid_and_keeps_its_own_draft(calls: Calls) -> None:
+    """편집 표 아홉이 모두 같은 그리드 마운트에 실린다 — 종류를 바꾸면 그 표를 싣고(다시 마운트하지
+    않는다), 표마다 고친 초안은 다른 표를 고르고 돌아와도 제 표에 남는다. 그 표의 작업 줄(적용 단추
+    key)이 서고, 초안이 있는 표의 단추에 점이 찍힌다."""
+    assert set(VALID_VALUES) == set(EDIT_TABLES)
+    app = _open(TWO_PROCESS_TEST_SCRIPT, "UPEH")
+    written: dict[str, str] = {}
+    for table in EDIT_TABLES:
+        app.session_state[DATASET_KEY] = table
+        app.run()
+        assert not app.exception
+        shell = last(calls, GRID_HOST)
+        assert shell["table"] == table, table
+        key = _visible_keys(calls)[0]
+        app = _grid_write(app, calls, key, "202608", VALID_VALUES[table])
+        written[table] = key
+        assert f"{EDITOR_KEYS[table]}_apply" in {button.key for button in app.button}
+        assert not app.button(key=f"{EDITOR_KEYS[table]}_apply").disabled
+
+    for table, key in written.items():
+        draft = app.session_state[cells_key(table)]
+        assert draft is not None and draft["bad"] == {}, table
+        assert list(draft["cells"]) == [key], table
+    assert app.session_state[cells_key("RQ_WF_RATIO")]["cells"][written["RQ_WF_RATIO"]] == {
+        "202608": 0.85
+    }
+    keys = [name for name, _ in calls]
+    assert keys == [FEED, GRID_HOST] * (len(keys) // 2)
+    style = pending_segments_style(DATASET_KEY, list(DATASETS), set(EDIT_TABLES))
+    assert style.count("::after") == len(EDIT_TABLES)
+
+
+@pytest.mark.parametrize("name", ["효율", "Lot측정률", "WF측정률"])
+def test_ratio_tables_read_percent_and_refuse_a_whole_number(calls: Calls, name: str) -> None:
+    """효율·측정률은 분수 1 이 상한이다 — 「85」 는 칸 오류(85 배가 되는 실수를 막는다)로 남고,
+    「85%」 는 0.85 로 받는다. 오류 문구는 껍데기 글이 0.85 · 85% 꼴을 알려 준다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT, name)
+    table = DATASET[name]
+    shell = last(calls, GRID_HOST)
+    assert shell["fmt"]["kind"] == "percent" and shell["fmt"]["max"] == 1.0
+    assert "85% 는 0.85 또는 85% 로 적습니다" in shell["texts"]["errors"]["max"]
+    first, second = _visible_keys(calls)[:2]
+    app = _grid_write(app, calls, first, "202608", "85")
+    app = _grid_write(app, calls, second, "202608", "85%")
+    assert app.session_state[cells_key(table)] == {
+        "cells": {second: {"202608": 0.85}},
+        "bad": {first: {"202608": ("85", "max")}},
+    }
+    feed = last(calls, FEED)
+    assert feed["counts"]["errors"] == 1
+    app.button(key=f"{EDITOR_KEYS[table]}_apply").click().run()
+    assert not app.exception
+    assert any("고칠 칸 1개" in str(item.value) for item in app.error)
+    assert "test_month_updates" not in app.session_state
+
+
+def test_the_vital_table_takes_a_percent_over_one(calls: Calls) -> None:
+    """여유율(편중률)은 1 을 넘을 수 있다 — 「150%」 를 1.5 로 받는다(상한 없음)."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT, "여유율")
+    assert last(calls, GRID_HOST)["fmt"]["max"] is None
+    key = _visible_keys(calls)[0]
+    app = _grid_write(app, calls, key, "202608", "150%")
+    assert app.session_state[cells_key("RQ_VITAL")] == {"cells": {key: {"202608": 1.5}}, "bad": {}}
+
+
+@pytest.mark.parametrize(
+    ("name", "column"),
+    [
+        ("설비대수 보유", "설비보유"),
+        ("설비대수 대여", "설비대여평가"),
+        ("설비대수 가용", "가용대수"),
+    ],
+)
+def test_an_equipment_blank_is_zero_units(calls: Calls, name: str, column: str) -> None:
+    """설비대수는 빈칸 = 0 대다 — 비운 칸은 0 으로 다듬어 초안에 들고(양식이 0 이면 바뀐 것이
+    없다), 적용하면 0 대로 저장한다. 껍데기 형식이 그 규칙을 브라우저에 알린다(「빈칸 = 0」)."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT, name)
+    table = DATASET[name]
+    shell = last(calls, GRID_HOST)
+    assert shell["fmt"]["blankZero"] is True
+    assert shell["fmt"]["kind"] == "fixed" and shell["fmt"]["digits"] == 2
+    app = _grid_write(app, calls, "Process-A", "202608", "4")
+    app = _grid_write(app, calls, "Process-A", "202608", "")
+    draft = app.session_state[cells_key(table)]
+    template_zero = draft is None
+    if not template_zero:
+        assert draft == {"cells": {"Process-A": {"202608": 0.0}}, "bad": {}}
+        app.button(key=f"{EDITOR_KEYS[table]}_apply").click().run()
+        assert not app.exception
+        saved = app.session_state["test_month_updates"][table]
+        values = dict(zip(saved["공정"], saved[column], strict=True))
+        assert values.get("Process-A", 0.0) == 0.0
+
+
+def test_an_emptied_ratio_table_rides_the_grid_as_an_empty_table(calls: Calls) -> None:
+    """측정률 표가 통째로 비면 그리드는 빈 표(머리만)를 싣고, 작업 줄 칸에 1.0 계산 알림을 쓴다.
+    거를 줄이 없어 사이드바 필터는 서지 않는다."""
+    app = _open(REAL_APPLY_TEST_SCRIPT, "Lot측정률")
+    key = _visible_keys(calls)[0]
+    app = _grid_write(app, calls, key, "202608", "")
+    app.button(key="capa_lot_ratio_editor_apply").click().run()
+    assert not app.exception
+    app.run()
+    shell = last(calls, GRID_HOST)
+    assert shell["table"] == "RQ_LOT_RATIO" and shell["rows"] == 0
+    assert any("측정률 1.0 으로 계산합니다" in str(item.value) for item in app.info)
+    assert not any(
+        str(widget.key).startswith("capa_lot_ratio_editor_filter") for widget in app.multiselect
+    )
+
+
+def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole(
+    calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """큰 표 안전 상한(칸 수 · 껍데기 바이트)을 넘으면 사이드바 필터로 고른 줄이나 앞 줄만 싣고
+    알린다. 초안은 업무 키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은 언제나 전체 양식에 덮는다.
+    고칠 칸 알림도 지금 싣지 않은 줄의 오류까지 센다."""
+    monkeypatch.setattr(reference_grid, "CAP_CELLS", 1)
+    monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    assert _visible_keys(calls) == ["Process-A"]
+    notices = [str(item.value) for item in app.info]
+    assert reference_grid.CAP_HEAD_NOTICE.format(rows=2, cells=2, shown=1) in notices
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+
+    app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
+    app.run()
+    assert not app.exception
+    assert _visible_keys(calls) == ["Process-B"]
+    notices = [str(item.value) for item in app.info]
+    assert reference_grid.CAP_FILTERED_NOTICE.format(rows=2, cells=2, shown=1) in notices
+    app = _grid_write(app, calls, "Process-B", "202608", "15")
+    assert _draft(app) == {
+        "cells": {"Process-A": {"202608": 20.0}, "Process-B": {"202608": 15.0}},
+        "bad": {},
+    }
+
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
+        "Process-A": 20.0,
+        "Process-B": 15.0,
+    }
+
+
+def test_a_capped_table_counts_the_errors_of_rows_it_does_not_load(
+    calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(reference_grid, "CAP_CELLS", 1)
+    monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "30.5")
+    app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
+    app.run()
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert errors == [reference_grid.ERRORS_NOTICE.format(n="1", places="Process-A · 202608")]
+
+
+def test_the_paste_template_is_the_whole_table_while_the_filter_narrows_the_grid(
+    calls: Calls,
+) -> None:
+    """「Excel 붙여넣기」 양식은 필터 이전의 전체 표다(부분 표가 되면 행 집합 검증을 통과해 나머지
+    공정을 그 기간에서 지운다) — 그리드는 필터로 한 줄만 보여도 양식은 두 줄이다."""
+    for name, editor_key in (
+        ("효율", "capa_run_rate_editor"),
+        ("설비대수 가용", "capa_eqp_avbl_editor"),
+    ):
+        app = _filtered_editor_app(name, editor_key, "공정")
+        assert [key.split("\x1f")[0] for key in _visible_keys(calls)] == ["Process-B"]
+        app = _open_paste(app, editor_key)
+        exported = _download_frame(app, f"{editor_key}_csv_download")
+        assert exported["공정"].tolist() == ["Process-A", "Process-B"], name

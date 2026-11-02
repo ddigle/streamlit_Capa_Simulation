@@ -176,7 +176,7 @@
       "targets": {
         "subtab_avail": "button:설비대수 가용",
         "subtab_own": "button:설비대수 보유",
-        "ref_table": "named:GRID",
+        "ref_table": "named:EGRID",
         "ref_apply": "button:변경사항 적용",
         "ref_paste": "button:Excel 붙여넣기"
       }
@@ -189,8 +189,8 @@
       "writes": "session",
       "ops": [
         {
-          "op": "grid_edit",
-          "grid": "named:GRID",
+          "op": "egrid_edit",
+          "grid": "named:EGRID",
           "row": {"param": "edit_process", "default": "Pre B/D"},
           "row_column": "공정",
           "column": {"param": "edit_month", "default": "202612"},
@@ -203,9 +203,9 @@
         "ref_tab_dot": "button:설비대수 가용",
         "ref_apply": "button:변경사항 적용",
         "ref_cancel": "button:편집 취소",
-        "ref_edited_cell": "named:EDIT_CELL",
+        "ref_edited_cell": "named:EGRID_CELL",
         "sidebar_pending_notice": "named:SIDEBAR_PENDING",
-        "ref_table": "named:GRID"
+        "ref_table": "named:EGRID"
       }
     },
     {

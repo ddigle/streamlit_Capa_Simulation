@@ -89,11 +89,6 @@ def test_the_card_shows_only_on_the_conversion_tab_and_remembers_it_was_opened(
             "수율 변경사항 적용",
             "classification_styled(default_yield_table, YIELD_EDITOR_DIMENSIONS)",
         ),
-        (
-            ROOT / "src" / "capa_simulation" / "components" / "month_editor.py",
-            "변경사항 적용",
-            "classification_styled(visible_table, dimensions)",
-        ),
     ],
 )
 def test_apply_buttons_sit_above_their_sheets(path: Path, label: str, sheet: str) -> None:
