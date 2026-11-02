@@ -1798,8 +1798,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     - 묻기는 앞 회차 data 의 `leave` 로 정하므로, 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후의 누름은 그 편집을 실은
       회차가 돌아올 때까지 붙든다(`page_tabs.js` 의 순수 구획 `<tabs-hold>` — 누를 때 포커스가 편집표였거나 마지막 편집표
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
-      없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`)로
-      알아본다. 탭 줄 밖의 떠나기인 머리 툴바의 테마 단추도 같은 붙들기를 지난다 — 탭 줄이 그릴 때마다
+      없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`),
+      그리고 그림자 DOM Components v2 편집 칸(가용설비 현황 설비 마스터 표·오른쪽 칸 — `page_tabs.EDIT_HOST_KEYS`, 탭 줄 data
+      `grids`)의 바깥 key 칸(`.st-key-<key>`)으로 알아본다(순수 구획 `<tabs-grid>`). 문서 capture 단계에서는 그림자 DOM 안
+      칸 편집기의 focusin·keydown 대상이 호스트로 바뀌어 안쪽 클래스로는 맞지 않는다 — 빠졌을 때 설비 마스터 칸에 쓰는 중
+      (Enter 전) 누른 테마 단추가 그 편집 회차(누름 뒤 약 0.1초)보다 먼저 와 확인 없이 새로 읽었다(E2E 결함 — 칸 편집기는
+      초점이 표 밖으로 나가는 순간 보낸다). 초점이 나갈 때 보내 그 회차가 누름보다 늦게 오는 편집 칸을 새로 두면 그 key 를
+      `EDIT_HOST_KEYS` 에 더한다(`equipment_master_grid` 의 key 와 같은지는 `test_page_tabs_assets` 가 본다). 탭 줄 밖의 떠나기인 머리 툴바의 테마 단추도 같은 붙들기를 지난다 — 탭 줄이 그릴 때마다
       `window.__capaLeaveGate`(`press` — 단추 pointerdown 에서 편집표 포커스를 적는다, `go(fn)` — 붙든 뒤 `fn` 을
       부른다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
       곧바로 묻는다. 붙든 동안 탭을 누르면 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다

@@ -37,7 +37,8 @@ const SETTLE_POLL_MS = 100
 // 이 안에 회차가 끝나 전처럼 회차 끝에 보낸다(사외 사본 약 0.7초).
 const MOVED_GRACE_MS = 1000
 const APP_ROOT = '[data-testid="stApp"]'
-// 편집표(glide 격자)와 그 칸 편집기. 편집기는 격자 밖 포털에 뜰 수 있어 그 틀(`gdg-clip-region`)도 본다.
+// 편집표(glide 격자)와 그 칸 편집기. 편집기는 격자 밖 포털에 뜰 수 있어 그 틀(`gdg-clip-region`)도 본다. 그림자 DOM
+// Components v2 편집 칸(설비 마스터 표 등)은 data 의 `grids` 로 더한다(`<tabs-grid>`).
 const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"], .gdg-clip-region'
 // 편집표에서 손을 뗀 뒤 이만큼 안의 누름은 붙든다(쓰는 중이면 시간과 상관없이 붙든다).
 const EDIT_MS = 5000
@@ -131,6 +132,19 @@ function holdVerdict(hold, now, running, data, minMs, maxMs) {
   return 'go'
 }
 // </tabs-hold>
+
+// <tabs-grid>
+// 붙들기가 편집표로 보는 자리의 선택자 — glide 격자와 칸 편집기 틀(`base`)에 data 의 Components v2 편집 칸 key
+// (`keys` — 파이썬 `page_tabs.EDIT_HOST_KEYS`, 가용설비 현황 설비 마스터 표·오른쪽 칸)를 바깥 key 칸(`.st-key-<key>`)으로
+// 더한다. 그 칸은 그림자 DOM 이라 문서 capture 단계에서 보면 칸 편집기의 focusin·keydown 대상이 그림자 호스트로 바뀐다 —
+// 안쪽 클래스로는 맞지 않는다. 더하지 않으면 설비 마스터 칸에 쓰는 중(Enter 전)에 누른 테마 단추를 붙들지 않아, 누름이 그
+// 편집을 실은 회차보다 짧으면(마우스 누름 70ms 이하·터치 톡) 저장 안 함 표지가 서기 전이라 확인 없이 새로 읽어 친 글이
+// 사라졌다(E2E 결함 — 칸 편집기는 초점이 표 밖으로 나가는 순간 곧바로 보낸다). key 꼴이 아닌 값은 버린다.
+function gridSelector(base, keys) {
+  const hosts = (Array.isArray(keys) ? keys : []).filter((key) => typeof key === 'string' && /^[\w-]+$/.test(key))
+  return [base, ...hosts.map((key) => '.st-key-' + key)].join(', ')
+}
+// </tabs-grid>
 
 // <tabs-queue>
 // 옮기는 동안 누른 탭은 보내지 않고 기다린다 — 마지막 누름 하나만. 보낸 고르기는 옮긴 화면의 탭 줄(지금 탭이 바뀐
@@ -365,7 +379,7 @@ export default function (component) {
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
-    onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+    onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
@@ -374,6 +388,7 @@ export default function (component) {
   // 처리기는 처음 한 번 단다. 지금 data·트리거 함수는 S 에서 읽는다 — 다시 불릴 때마다 새 값으로 바뀐다.
   S.data = data
   S.send = setTriggerValue
+  S.gridSelector = gridSelector(GRID, data.grids)
   const text = data.text || {}
 
   setAttr(nav, 'aria-label', text.nav || '')
@@ -780,7 +795,8 @@ export default function (component) {
   }
   if (!S.onEdit) {
     // 편집표에서 손을 뗀 때와 포커스가 편집표에 있는지를 문서 capture 단계에서 적는다(DOM 이 아니라 시각·참거짓만).
-    const inGrid = (node) => Boolean(node && node.closest && node.closest(GRID))
+    // 편집표는 glide 격자와 data 의 Components v2 편집 칸이다(`<tabs-grid>` — 그림자 호스트는 바깥 key 칸으로 본다).
+    const inGrid = (node) => Boolean(node && node.closest && node.closest(S.gridSelector))
     S.onEdit = (event) => {
       if (event.type === 'focusin') S.gridFocused = inGrid(event.target)
       if (inGrid(event.target)) S.editAt = Date.now()
