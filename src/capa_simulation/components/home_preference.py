@@ -1,12 +1,15 @@
-# Purpose: HOME 의 LOB 표시 조건 카드·제목 줄과 Preference 탭 편집기를 그려 공용 프로필에 저장한다.
+# Purpose: HOME LOB 표시 조건 카드·제목 줄과 설정 팝업 Preference 편집기를 그려 저장한다.
 
-"""HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, `Preference` 탭.
+"""HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, 「HOME 설정」 팝업의 `Preference`
+탭.
 
 **화면을 보는 조건(선행 B/O·선행 입고·확보율 보정·GAP·상세·EDP·Past Data·제품별 비중 단위)은
 사이드바 조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에
-흩어져 있었다). 탭에는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행 B/O·선행
-입고 실적·`Summary 공지`·Top5 대역·주요공정·확보율 보정 편집기가 있고, 저장은 모두 공용 프로필
-교체다. 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
+흩어져 있었다). 카드 맨 위는 주요 Case 칩이다(2026-11-02 — `home_main_case_chips`, 부르는 쪽이
+넘긴다). `Preference` 탭(전에는 HOME 본문 탭, 2026-11-02 부터 사이드바 「HOME 설정」 팝업 안 —
+`home_settings`) 에는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행 B/O·선행 입고
+실적·`Summary 공지`·Top5 대역·주요공정·확보율 보정 편집기가 있고, 저장은 모두 공용 프로필 교체다.
+저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
 토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
@@ -239,9 +242,11 @@ TOP5_UNCHANGED_MESSAGE = (
 KEY_PROCESS_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 이름·공정이 지금 프리셋 그대로라 새 버전을 만들지 않았습니다."
 )
+# 비교 시나리오를 고르지 않아 잠긴 「GAP」 토글의 풍선.
+GAP_LOCKED_HELP = "HOME 설정 → Preference 에서 비교 시나리오를 먼저 고르세요."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
-THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
+THRESHOLD_POINTER = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
 # Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
 # 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지) key 에
 # 저장본 version(Top5)·고칠 프리셋 저장본의 지문(프리셋)이 붙어 남이 먼저 저장하면 제출 회차의 칸이
@@ -362,7 +367,7 @@ def status_legend_markup() -> str:
     색만으로 뜻을 나르지 않으려면 이름이 같이 있어야 한다.
 
     **경계 숫자는 적지 않는다**(2026-10-06 사용자 결정). 판정 기준은 달마다 다를 수 있어
-    (HOME → Preference 의 월별 기준) 숫자 한 짝으로 적으면 예외 달에서 거짓이 된다. 과거 구간
+    (HOME 설정 → Preference 의 월별 기준) 숫자 한 짝으로 적으면 예외 달에서 거짓이 된다. 과거 구간
     칩도 두지 않는다 — 범례는 판정 세 색만 말한다.
     """
     chips: tuple[tuple[str, str], ...] = (
@@ -388,14 +393,21 @@ def status_legend_markup() -> str:
     return f'<div class="{STATUS_LEGEND_CLASS}">{swatches}</div>'
 
 
-def render_home_view_card(*, comparison_ready: bool) -> None:
-    """사이드바 조건 카드 `LOB 표시 조건`. Main 탭이 열렸을 때만 선다(2026-09-29 사용자 결정).
+def render_home_view_card(
+    *, comparison_ready: bool, chips: Callable[[], None] | None = None
+) -> None:
+    """사이드바 조건 카드 `LOB 표시 조건`. HOME 이 열려 있으면 늘 선다(2026-11-02 — HOME 은 탭 없이
+    Main 한 화면이다. 전에는 Main 탭에서만 섰다).
 
-    예외는 계산이 멈춘 회차 하나다 — 탭이 없어도 `home.py` 의 `except` 가 그려, 오류문이 시키는
-    `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 하게 한다(2026-10-22 사용자 결정).
+    계산이 멈춘 회차에도 `home.py` 의 `except` 가 그려, 오류문이 시키는 `EDP 포함` 켜기·`GAP`
+    끄기를 그 자리에서 하게 한다(2026-10-22 사용자 결정).
+
+    `chips` 는 카드 맨 위에 그릴 주요 Case 칩 필드다(`home_main_case_chips.render_main_case_chips` —
+    2026-11-02 사용자 요청, 전에는 본문 제목 줄 끝). 칩이 카드 안이라 카드는 HOME 에서 처음 펼친 채
+    선다(`condition_card(default=True)` — 한 번 접으면 기억 칸을 따른다).
 
     토글은 값을 바꾸기만 하고 아무것도 계산하지 않는다. 다음 실행에서 `home.py` 가 이 키를
-    읽어 계산에 반영한다. 안 그려진 회차(다른 탭)에도 값은 `persist_state` 가 지킨다. 토글은
+    읽어 계산에 반영한다. 안 그려진 회차(다른 화면)에도 값은 `persist_state` 가 지킨다. 토글은
     조건 패널 팝업에 넣지 않고 패널 밑 카드로 둔다 — 바로 보이고 한 번에 눌려야 쓸모가 있다.
 
     **토글의 기본값은 위젯 `value=` 가 아니라 세션에 심는다.** 시나리오를 바꾸면
@@ -410,7 +422,9 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
     for key, default in HOME_TOGGLE_DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = default
-    with condition_card("LOB 표시 조건", name="home"):
+    with condition_card("LOB 표시 조건", name="home", default=True):
+        if chips is not None:
+            chips()
         # 「선행 B/O」 는 계획 밖 B/O 재공을 부하에 더하고(확보율이 그만큼 낮아진다), 「선행 입고」
         # 는 계획 안의 선행 입고 실적을 Density 칸에 적기만 한다(2026-10-06 사용자 결정).
         st.toggle(
@@ -436,7 +450,7 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
             key=COMPARISON_TOGGLE_KEY,
             persist_state="session",
             disabled=not comparison_ready,
-            help=None if comparison_ready else "Preference 탭에서 비교 시나리오를 먼저 고르세요.",
+            help=None if comparison_ready else GAP_LOCKED_HELP,
         )
         st.toggle(
             "상세 계획",
@@ -520,10 +534,12 @@ def render_home_preference(
     """비교 시나리오·주요 Case 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·
     주요공정·실행 Capa 입력 시트.
 
-    보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
-    주요공정 프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라 회차마다 공용 프로필을 스스로
-    읽는다(`_render_key_process_editor`). `owner_tab` 은 이 `Preference` 탭이다 — 주요 Case 상자가
-    숨은 회차에 DB 를 읽지 않으려고 본다(`home_main_cases`).
+    「HOME 설정」 팝업의 `Preference` 탭 본문이다(`home_settings` — 2026-11-02, 전에는 HOME 본문
+    탭). 보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건`
+    카드다(`render_home_view_card`). 주요공정 프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라
+    회차마다 공용 프로필을 스스로 읽는다(`_render_key_process_editor`). `owner_tab` 은 팝업 안
+    `Preference` 탭이다 — 주요 Case 상자가 숨은 회차(팝업의 `Past Data` 탭을 보는 회차)에 DB 를 읽지
+    않으려고 본다(`home_main_cases`).
     """
     _render_comparison_picker(database_path)
     render_main_case_picker(database_path, owner_tab=owner_tab)
@@ -586,9 +602,9 @@ def _recheck_intro_summary() -> None:
 def seed_comparison_selection(database_path: str) -> None:
     """비교 대상 공용 프로필을 세션에 심는다. 이미 세션 값이 있으면 덮지 않는다.
 
-    **`Preference` 탭이 그려질 때가 아니라 HOME 진입 첫 줄에서 불러야 한다.** 이 함수가
-    피커 안에만 있으면, 프로필에 비교 대상이 저장돼 있어도 첫 화면에서는 세션이 비어
-    있어 「GAP」 토글이 꺼진 채로 뜬다. 탭을 한 번 다녀와야 켜지는데 그 왕복이 사용자에게는
+    **「HOME 설정」 팝업의 `Preference` 탭이 그려질 때가 아니라 HOME 진입 첫 줄에서 불러야 한다.**
+    이 함수가 피커 안에만 있으면, 프로필에 비교 대상이 저장돼 있어도 첫 화면에서는 세션이 비어
+    있어 「GAP」 토글이 꺼진 채로 뜬다. 팝업을 한 번 열어야 켜지는데 그 왕복이 사용자에게는
     고장으로 읽힌다.
 
     세션 값이 있으면 그쪽이 최신이므로 덮지 않는다 — 이번 실행에서 사용자가 고른 값이다.
@@ -737,11 +753,11 @@ def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]
     있는가」**로 판정한다 — 프로필에 어긋난 짝(그 시나리오의 것이 아닌 리비전)이 남아 있으면 그것도
     바로잡는다. 집합은 피커가 이미 읽어 둔 것을 받으므로 DB 를 더 읽지 않는다.
 
-    **그 밖의 불일치는 쓰지 않는다.** 프로필은 시나리오에 딸리지 않은 공용 값이라 다른
-    사용자도 같은 행을 쓴다. 「세션과 다르다」를 「세션이 최신이다」로 읽으면, 남이 방금
-    고른 값을 이쪽 세션의 옛 값으로 되쓰게 된다. HOME 은 `st.tabs` 라 숨은 Preference
-    탭도 매 rerun 실행되므로, 두 사람이 서로의 선택을 계속 뒤집는 핑퐁이 된다. 아무도
-    아무것도 고르지 않아도 쓰기가 일어나 `version` 이 오르고 DB 가 dirty 로 표시된다.
+    **그 밖의 불일치는 쓰지 않는다.** 프로필은 시나리오에 딸리지 않은 공용 값이라 다른 사용자도 같은
+    행을 쓴다. 「세션과 다르다」를 「세션이 최신이다」로 읽으면, 남이 방금 고른 값을 이쪽 세션의 옛
+    값으로 되쓰게 된다. Preference 는 「HOME 설정」 팝업이 열린 동안 매 회차 실행되므로(전에는 HOME
+    탭이라 숨어서도 돌았다), 두 사람이 서로의 선택을 계속 뒤집는 핑퐁이 된다. 아무도 아무것도 고르지
+    않아도 쓰기가 일어나 `version` 이 오르고 DB 가 dirty 로 표시된다.
 
     사용자가 실제로 고른 값은 두 상자의 콜백(`_save_comparison_scenario`·
     `_save_comparison_revision`)이 맡는다. 여기는 메우는 일만 한다.
@@ -1678,8 +1694,8 @@ def _render_summary_note_editor(
                 if refused is not None:
                     st.error(refused)
             # **`key` 를 두지 않는다.** 키가 붙은 위젯은 한 번 그려진 뒤 `value` 를 무시하고
-            # 세션 값을 쓴다. Preference 는 숨은 탭에서도 위젯을 그리므로 HOME 첫 진입의
-            # 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
+            # 세션 값을 쓴다. Preference 는 팝업이 열린 동안 회차마다 위젯을 그리므로 처음 연
+            # 회차의 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
             # 영영 못 본 채 저장 버튼 한 번으로 덮어쓴다. 값은 폼 반환값으로 받으면 된다.
             note = st.text_area(
                 "Summary",
@@ -1791,15 +1807,15 @@ def _render_top5_band_editor(
                 refused = take_refusal(TOP5_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
-            # **key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤 `value` 를
-            # 무시하고 세션 값을 쓴다 — Preference 는 숨은 탭에서도 그려지므로 HOME 첫 진입의
-            # 구간이 세션에 박히고, 다른 사람이 바꾼 구간을 못 본 채 저장 한 번으로 되돌린다
-            # (위의 `공용 버전 v…` 캡션만 새 번호로 바뀌어 화면이 스스로 모순이 된다). key 가
-            # 없으면 위젯 id 가 `value` 를 따라 **값이 바뀐 칸만** 새로 서서, 남의 저장에 거부된
-            # 뒤 남이 바꾼 칸은 저장본·안 바꾼 칸은 이 화면이 친 값으로 섞였다(2026-10-27 표적
-            # E2E — 다시 누르면 아무도 정하지 않은 구간이 저장됐다). version 이 바뀌면 두 칸이
-            # 함께 저장본으로 다시 서고, 같은 version 안에서는 친 값이 남는다. 이 칸은 세션에
-            # 적지 않으므로 `value=` 를 함께 줘도 경고가 없다.
+            # **key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤 `value` 를 무시하고
+            # 세션 값을 쓴다 — Preference 는 팝업이 열린 동안 회차마다 그려지므로 처음 연 회차의
+            # 구간이 세션에 박히고, 다른 사람이 바꾼 구간을 못 본 채 저장 한 번으로 되돌린다 (위의
+            # `공용 버전 v…` 캡션만 새 번호로 바뀌어 화면이 스스로 모순이 된다). key 가 없으면 위젯
+            # id 가 `value` 를 따라 **값이 바뀐 칸만** 새로 서서, 남의 저장에 거부된 뒤 남이 바꾼
+            # 칸은 저장본·안 바꾼 칸은 이 화면이 친 값으로 섞였다(2026-10-27 표적 E2E — 다시 누르면
+            # 아무도 정하지 않은 구간이 저장됐다). version 이 바뀌면 두 칸이 함께 저장본으로 다시
+            # 서고, 같은 version 안에서는 친 값이 남는다. 이 칸은 세션에 적지 않으므로 `value=` 를
+            # 함께 줘도 경고가 없다.
             min_column, max_column = st.columns(2)
             with min_column:
                 minimum = st.number_input(
@@ -1972,7 +1988,7 @@ def render_key_process_field(
             slug="key_process",
             key=KEY_PROCESS_FIELD_KEY,
             icon=KEY_PROCESS_ICON,
-            status="Preference 탭에서 만듭니다",
+            status="HOME 설정에서 만듭니다",
             disabled=True,
         )
         return
@@ -2043,7 +2059,7 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     """
     st.caption(
         "히트맵이 보여 줄 공정 묶음입니다. 고르면 바로 바뀝니다. "
-        "프리셋은 Preference 탭에서 고칩니다."
+        "프리셋은 HOME 설정 → Preference 에서 고칩니다."
     )
     choice = st.radio(
         "프리셋",
@@ -2079,12 +2095,13 @@ def _render_key_process_editor(
     보고 있던 선택도 새 이름으로 옮긴다 — 그 선택은 위젯이 아닌 세션 값이라 곧바로 적는다.
 
     **공정·이름 위젯의 key 끝에 고칠 프리셋 저장본(이름·공정)의 지문을 붙인다**
-    (`_key_process_widget_key`). 고정 key 는 `Preference` 탭이 숨어 있어도 그려지므로 첫 진입 값이
-    세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. key 가 없으면 위젯 id 가 값을 따라 **값이
-    바뀐 칸만** 새로 서서, 남의 저장에 거부된 뒤 이름·공정이 섞였다(Top5 구간과 같은 꼴 — 2026-11-01
-    결정 N7-preset). 지문이 바뀌면 두 칸이 함께 저장본으로 다시 서고, 같은 지문 안에서는 친 값이
-    남는다 — 다른 프리셋만 바뀐 저장은 이 프리셋의 지문을 바꾸지 않아 입력이 그대로 저장된다. 묶음
-    version 은 넣지 않는다(다른 프리셋을 남이 고친 회차에 이 화면의 입력이 버려진 채 저장된다).
+    (`_key_process_widget_key`). 고정 key 는 팝업이 열린 동안 회차마다 그려지므로 처음 연 회차의
+    값이 세션에 박혀 다른 사람이 저장한 프리셋을 영영 못 본다. key 가 없으면 위젯 id 가 값을 따라
+    **값이 바뀐 칸만** 새로 서서, 남의 저장에 거부된 뒤 이름·공정이 섞였다(Top5 구간과 같은 꼴 —
+    2026-11-01 결정 N7-preset). 지문이 바뀌면 두 칸이 함께 저장본으로 다시 서고, 같은 지문 안에서는
+    친 값이 남는다 — 다른 프리셋만 바뀐 저장은 이 프리셋의 지문을 바꾸지 않아 입력이 그대로
+    저장된다. 묶음 version 은 넣지 않는다(다른 프리셋을 남이 고친 회차에 이 화면의 입력이 버려진 채
+    저장된다).
 
     **프래그먼트다.** 「고칠 프리셋」 선택·삭제 확인·이름·공정 입력과 폼 제출은 이 카드만 다시
     돌린다 — 앱 전체(HOME 계산·Figure 직렬화)를 돌릴 까닭이 없는 조작이다. 저장·기본으로·삭제는

@@ -166,6 +166,7 @@
     "target:sidebar_badge@11_home_after_apply",
     "target:sidebar_badge@14_scenario_saved",
     "target:sidebar_badge@18_official_done",
+    "target:sidebar_chips@01_home_main",
     "target:sidebar_heatmap@01_home_main",
     "target:sidebar_lobcond@01_home_main",
     "target:sidebar_pending_notice@09_ref_edited",
@@ -177,14 +178,12 @@
     "target:sidebar_scenario@11_home_after_apply",
     "target:sidebar_scenario@14_scenario_saved",
     "target:sidebar_scenario@18_official_done",
+    "target:sidebar_settings@01_home_main",
     "target:subtab_avail@08_ref_avail",
     "target:subtab_own@08_ref_avail",
     "target:tab_convert@12_loadconv_pkgplan",
     "target:tab_eqp@08_ref_avail",
-    "target:tab_main@01_home_main",
-    "target:tab_past@01_home_main",
     "target:tab_pkgplan@12_loadconv_pkgplan",
-    "target:tab_pref@01_home_main",
     "target:tab_scenmgmt@15_scenmgmt_list",
     "target:tab_yield@12_loadconv_pkgplan",
     "target:work_mode@15_scenmgmt_list",
@@ -199,6 +198,9 @@
     "task:set_official"
   ],
   "retired": [
-    "target:official_history@17_official_dialog"
+    "target:official_history@17_official_dialog",
+    "target:tab_main@01_home_main",
+    "target:tab_past@01_home_main",
+    "target:tab_pref@01_home_main"
   ]
 }

@@ -265,20 +265,30 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`equipment_scenario_status.py`) 팝업은 키 붙은 호스트 프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만
     서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
     는 설비 DB 를 열지 않는다(9장).
-- `app_pages/home.py` — HOME 대시보드. `Main`(계획·LOB·주요공정·B/N Figure)·`Preference`(공용 프로필 편집기)·
-  `Past Data`(`past_data_management.py`) 세 탭으로 전체 계산 결과를 조합한다. 설명은 `guides/home.md`.
+- `app_pages/home.py` — HOME 대시보드. 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정 `Preference`(공용
+  프로필 편집기)·`Past Data`(`past_data_management.py`)는 사이드바 「HOME 설정」 상자가 여는 큰 팝업의 안쪽 탭 둘이다
+  (`components/home_settings.py`, 2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data 세 탭). 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
     바꾸면 토글을 기본값으로 적어 푼다(`scenario_activation.py`·`test_scenario_activation.py`). 공정 필터는 패널 칸이다.
-  - 카드는 `Main` 탭에서만 서되(2026-09-29) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤 멈춘다 — 오류문이 시키는
-    `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 하게 하는 유일한 예외다(2026-10-22, `test_home_page.py` 의 `stopped_home`).
+  - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
+    멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
+    `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
+    팝업은 닫으며, 미지정 주요 Case 칩도 잠근다(`home_main_case_chips.stopped_chips`).
   - 얹기 규칙(EDP 제외 범위·확보율 보정 → 선행 `advance_load.py`·GAP 기준)은 6장, 판정 기준은 `securement_threshold.py`.
     비교 대상 프로필은 바뀔 때만 쓴다(`test_comparison_profile_writeback.py`·`test_summary_recheck_paths.py`).
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
   - `Main` 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 계산
     알림은 Admin Area `알림 모음`(`components/alert_board.py`)이 시나리오 전체 기간으로 모은다. 측정률 가정 한 줄은 남는다.
-  - 제목 줄 끝 칸은 주요 Case 칩 셋(`공식 vN`·`Case1`·`Case2` — `components/home_main_case_chips.py`, 2026-10-23)이고
-    칩이 못 불러온 까닭은 그 밑 한 칸이다. 세 탭의 key·라벨은 `home_state.py`(칩이 미지정 Case 를 누르면 `Preference`).
+  - 주요 Case 칩 셋(`공식 vN`·`Case1`·`Case2` — `components/home_main_case_chips.py`, 2026-10-23)은 `LOB 표시 조건`
+    카드 맨 위 항목이다(2026-11-02 — 전에는 본문 제목 줄 끝). 카드는 그래서 HOME 에서 처음 펼친 채 선다
+    (`condition_card(default=True)`). 제목 줄에는 끝 칸이 없어 본문이 화면 탭 줄 바로 밑에서 Summary 로 시작한다.
+    팝업 열림 칸·안쪽 탭 key·라벨은 `home_state.py`(칩이 미지정 Case 를 누르면 팝업을 `Preference` 탭으로 연다).
+  - **「HOME 설정」 팝업이 열린 회차에는 팝업을 열기 전 그림을 그대로 쓴다**(`HOME_DRAWN_CONDITIONS_KEY` 의 네 묶음 —
+    `home_rendering.take_home_figure_set`). 팝업은 저장 뒤에도 열려 있어 그 회차에 공용 프로필 version 이 바뀌어도 모달
+    뒤 그림을 만들지 않고, 닫는 회차(`on_dismiss` — 앱 전체)에 지금 조건으로 한 번 만든다(전에는 숨은 Main 탭이 같은 몫을
+    했다 — `tests/test_home_settings_kept_figures.py`). 월 축·과거 칸·덤벨 상자도 그 그림의 조건에서 읽는다. 꺼낼 묶음이
+    하나라도 없으면 평소처럼 만든다.
 - `app_pages/load_conversion.py` — `생산 계획` 화면. `환산`·`PKG PLAN`·`수율` 탭으로 계획·수율을 편집하고
   부하량 환산을 보인다. 조건 카드·Guide(`page_guide.py`, `guides/load_conversion.md`)를 처음 적용한 화면이다.
   - 환산 조건은 조건 카드이고 환산은 그 탭이 열렸을 때만 한다. 작업 줄(적용·붙여넣기·가상 제품 등록)은 표 위, 붙여넣기와
@@ -1086,8 +1096,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 리비전 스냅샷은 `st.cache_resource` 에 읽기 전용 한 벌을 두고 깊은 사본(`_private_copy`)을 넘긴다. 목록은 캐시하지
     않고, 무효화는 DB 를 바꾼 호출부의 `clear_*_cache()` 다(5장).
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
-- `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, 세 탭의 key·라벨(`HOME_TAB_KEY`)을
-  UI·저장소 import 없이 선언한다. 페이지 스크립트는 import 할 수 없어 탭 상수도 여기다(주요 Case 칩이 탭을 옮긴다).
+- `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, 「HOME 설정」 팝업의 열림 칸
+  (`HOME_DIALOG_KEY` — `home_open_dialog`)·안쪽 탭 key·라벨을 UI·저장소 import 없이 선언한다. 페이지 스크립트는 import 할
+  수 없어 팝업 상수도 여기다(주요 Case 칩이 팝업을 `Preference` 탭으로 연다).
   토글 값 읽기는 `home_toggle(st.session_state, key)` 한 길이다 — 칸이 없으면 기본값이고, 기본값 표에 없는 키는 `KeyError`
   (토글이 아닌 칸을 이 길로 읽지 않는다). 기본값을 세션에 심는 자리(Preference 카드·시나리오 바꿈)만 `HOME_TOGGLE_DEFAULTS` 를 돈다.
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
@@ -2072,6 +2083,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 화면을 옮길 때마다 소켓으로 가는 시트라 CSS 주석을 싣지 않는다(설명은 파이썬 주석, 9장 「스크립트와 컴포넌트」).
   - 사이드바 multiselect 의 입력 칸 너비를 초점 앞뒤로 같게 둔다(9장 「사이드바 multiselect 는 초점 앞뒤로 높이가 같아야
     한다」) — 화면마다 칸 key 로 따로 걸지 않는다.
+  - **팝업 상자**(`sidebar_status.DIALOG_BOX_PREFIX` — 조회 조건 아래 따로 선, 한 번 누르면 팝업이 뜨는 전폭 단추 상자. 지금은
+    HOME 「HOME 설정」 하나, 2026-11-02)는 조건 카드와 같은 면·`ACCENT` 아이콘·머리 글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸)
+    표식이다. key 끝 `PENDING_SUFFIX` 면 왼쪽 주황 띠, 잠기면 표식을 걷는다(`tests/test_sidebar_stylesheet.py`).
 - `src/capa_simulation/components/column_filter.py` — 분류 컬럼별 다중선택 필터와 초기화 버튼이다. 거른
   프레임을 돌려준다.
   - `value_labels` 는 표시만 바꾸고 값·세션 저장값은 원본이다. 표시명 칸은 `ProcessLabels.unique_format_func` 로
@@ -2200,9 +2214,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   산출하지 않는다 — Capa 는 확보율에서 곧장 나오고 B/N 순위는 확보율 오름차순이다.
   - 같은 달이 양쪽에 있으면 계산이 이긴다. `display_month_range` 는 HOME 계산 캐시 키의 달이라 HOME 과
     필요 단축 일정이 같은 함수를 쓴다. 빈칸을 0 으로 삼키지 않는다(`_BLANK_AS_ZERO` 가 칸별 규칙).
-- `src/capa_simulation/components/past_data_management.py` — HOME `Past Data` 탭. 한 버전을 공유하는 세 표를
-  붙여넣기 팝업(`PAST_DIALOG_KEY`)으로 세션에 모았다가 한 번에 저장한다(부분 저장 없음).
-  - 저장은 저장된 표를 통째로 바꾼다 — 그 경고(`PAST_REPLACE_NOTICE`)는 팝업·버튼 툴팁·캡션에 남긴다.
+- `src/capa_simulation/components/past_data_management.py` — 「HOME 설정」 팝업의 `Past Data` 탭. 한 버전을 공유하는 세
+  표를 그 표 상자 안 붙여넣기 칸(`PAST_PASTE_KEY` — 한 번에 한 표, 팝업 안이라 팝업을 또 열 수 없다)으로 세션에 모았다가
+  한 번에 저장한다(부분 저장 없음). 「설정」 팝업을 열고 닫는 콜백이 편 칸을 걷는다(`forget_past_paste`).
+  - 저장은 저장된 표를 통째로 바꾼다 — 그 경고(`PAST_REPLACE_NOTICE`)는 붙여넣기 칸·버튼 툴팁·캡션에 남긴다.
 - `src/capa_simulation/services/process_selection.py` — B/N 집계에 포함할 공정을 저장값·현재 옵션·이 세션이 아는
   공정에서 정한다.
   - 기준 없는 첫 렌더(`seen=None`)는 저장된 포함 목록을 그대로 믿는다(`seen=[]` 와 다르다). 아는 공정은
@@ -2219,8 +2234,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 축은 하나다 — 표·차트·스크롤 폭이 같은 라벨 목록을 본다. 월 칸 표기 `YY.MM` 은 `month_label` 한 벌이다.
     `leading_past_column_count` 는 과거 구간의 연속된 앞머리만 센다(`build_past_month_labels` 와 함께 면색·스크롤 근거).
 
-- `src/capa_simulation/components/home_preference.py` — HOME `LOB 표시 조건` 카드·`Capa LOB 현황` 제목 줄과 `Preference`
-  편집기 여덟을 그려 공용 프로필에 저장한다. 「비교 시나리오」 바로 아래에 「주요 Case」 상자(`home_main_cases`)를 세운다.
+- `src/capa_simulation/components/home_preference.py` — HOME `LOB 표시 조건` 카드(맨 위는 부르는 쪽이 넘긴 주요 Case 칩)·
+  `Capa LOB 현황` 제목 줄과 「HOME 설정」 팝업 `Preference` 탭 편집기 여덟을 그려 공용 프로필에 저장한다. 「비교 시나리오」
+  바로 아래에 「주요 Case」 상자(`home_main_cases`)를 세운다.
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
   - 저장은 **버전 대조**이고(선행 B/O·선행 입고 실적은 대조 없이 `write_guard.save_once` 만) 월별 값은 보이는 달만 갈아
     끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
@@ -2237,7 +2253,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_home_key_process_fragment.py`). 느린 둘째 누름은 그 칸의 표지 글이 그 이름의 저장 성공 글일 때만으로 가른다 — 같은
     칸의 「기본으로」·「삭제」 알림 뒤의 누름은 「바뀐 것이 없습니다」 다.
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
-- `src/capa_simulation/components/home_main_cases.py` — HOME `Preference` 의 「주요 Case」 상자(2026-10-23 사용자 요청).
+- `src/capa_simulation/components/home_main_cases.py` — 「HOME 설정」 팝업 `Preference` 의 「주요 Case」 상자(2026-10-23
+  사용자 요청).
   HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
   Case2 마다 「시나리오」·「리비전」 상자를 두고(넓으면 두 칸, 좁으면 위아래) 고르는 것이 곧 저장이다(공용 프로필 `0036`).
   - **공용 프로필이 정본이고 상자는 거울이다.** 비교 시나리오(세션 우선)와 달리 회차마다 프로필 값을 위젯 앞에서 상자에
@@ -2249,16 +2266,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 본문의 쓰기는 둘뿐이다 — 목록에 없는 시나리오를 가리키는 Case 비우기(조건부 UPDATE, 한 번 알림 + 출처 칸에 까닭),
     그 시나리오 것이 아닌 리비전 칸을 첫 리비전으로 메우기(본 version 대조). 둘 다 프로필만 보고 정해져 세션끼리
     뒤집지 않는다.
-  - **숨은 `Preference` 회차는 DB 를 읽지도 쓰지도 않는다**(`owner_tab`) — 마지막으로 보인 화면 재료
-    (`MAIN_CASE_VIEW_KEY`)로 위젯을 그대로 그린다(탭을 누른 순간 보이는 것이 그 화면). 세션 첫 회차가 숨은 탭이면 한
-    번만 읽고 쓰지 않는다. 위 두 쓰기와 그 알림·콜백 실패 알림은 보이는 회차로 미룬다.
+  - **숨은 `Preference` 회차(팝업의 `Past Data` 탭을 보는 회차)는 DB 를 읽지도 쓰지도 않는다**(`owner_tab`) — 마지막으로
+    보인 화면 재료(`MAIN_CASE_VIEW_KEY`)로 위젯을 그대로 그린다(탭을 누른 순간 보이는 것이 그 화면). 팝업을 `Past Data`
+    탭으로 처음 열면 한 번만 읽고 쓰지 않는다. 위 두 쓰기와 그 알림·콜백 실패 알림은 보이는 회차로 미룬다. 팝업이 닫힌
+    회차에는 상자를 그리지 않는다.
   - 비운 Case 는 세션 API 로 `None` 을 적어 브라우저가 자리표시를 띄우므로 `placeholder` 를 비우기 선택지 글자로 준다
     (주지 않으면 영문 「Choose an option」). 그 글자는 같은 이름의 시나리오가 있으면 「지정 안 함 (비움)」 으로
     비켜 선다(`unset_choice_label` — 1.63 은 같은 글자를 첫 선택지로 읽어 그 Case 를 비울 수 없었다).
   - Case1·Case2 가 같은 짝, Case 가 공식버전과 같은 리비전이면 저장하고 캡션으로 알린다(`main_case_overlap_notes`).
-    HOME 제목 줄에서 슬롯을 고르는 칩은 `home_main_case_chips` 다(같은 `services/main_cases.main_case_slots` 를 쓴다).
-- `src/capa_simulation/components/home_main_case_chips.py` — HOME 제목 줄 끝의 주요 Case 칩 셋(2026-10-23 사용자 결정 —
-  시안 C · 동작 (가)). 칩 글자는 `공식 vN`·`Case1`·`Case2` 뿐이고 시나리오·리비전은 단추 `help` 풍선이 말한다(사람 글은
+    HOME 에서 슬롯을 올리는 칩은 `home_main_case_chips` 다(같은 `services/main_cases.main_case_slots` 를 쓴다).
+- `src/capa_simulation/components/home_main_case_chips.py` — HOME `LOB 표시 조건` 카드 맨 위의 주요 Case 칩 셋(2026-10-23
+  사용자 결정 — 시안 C · 동작 (가), 2026-11-02 부터 본문 제목 줄 끝이 아니라 카드 맨 위 — 이름 줄 「주요 Case」 밑에
+  카드 폭을 같은 폭으로 나눈 칩 줄, 그 밑 칩 알림 칸, 얇은 선 뒤 토글). 칩 글자는 `공식 vN`·`Case1`·`Case2` 뿐이고 시나리오·리비전은 단추 `help` 풍선이 말한다(사람 글은
   `literal_markdown`). 지금 적용된 시나리오는 머리 띠가 말하므로 칩 옆에 적지 않는다.
   - **누르면 사이드바에서 그 리비전을 불러온 것과 똑같다** — `scenario_status.load_saved_revision` 을 **콜백**에서
     부른다(본문 `st.rerun()` 은 그 회차에 안 그린 위젯 값을 버린다 — 9장). 저장하지 않은 편집·적용 전 편집이 있으면
@@ -2266,18 +2285,31 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **콜백은 누르는 순간 슬롯을 다시 푼다** — 콜백 인자는 그린 회차의 값이라, 그사이 다른 세션이 Case 를 다시
     지정하거나 가리키던 시나리오를 보관하면 낡은 칩이 예전 Case·사이드바가 고를 수 없는 보관 시나리오를 올렸다. 칩은
     (슬롯 차례, 그린 짝)만 넘기고 콜백이 그리기와 같은 `_slot_chips_now` 로 지금 짝을 풀어 다르면 아무것도 올리지 않고
-    제목 밑 칸에 알린다(`changed_slot_notice`).
+    칩 줄 밑 칸에 알린다(`changed_slot_notice`).
   - 칠하기(primary)는 세션 활성 시나리오·**리비전까지** 같은 칩만이고, 저장하지 않은 편집이 있으면 칠하지 않는다(머리
     띠·사이드바 배지처럼 「미저장」이 먼저 — `painting_reference`). 칠한 칩을 편집 없이 다시 누르면 아무것도 하지
     않는다. 칠한 칩 글자색은 `tokens.ACCENT_TEXT` 다(어두운 테마 강조색 위 흰 글자는 1.9:1). 어느 칩도 칠하지 않으면
-    칩 줄 **앞**에 회색 「슬롯 밖」 한 마디(풍선 없음) — 늘 그리고 슬롯 안이면 `visibility: hidden` 으로 감춰 자리를
-    잡아 둔다(나타나고 사라질 때 칩이 밀리거나 칩 줄이 접히지 않는다). 칩 줄은 한 줄(`nowrap`)이다.
-  - 미지정 Case 는 점선 칩이고 누르면 `Preference` 탭(탭 key 를 콜백에서 적는다). 가리키던 시나리오를 보관·영구 삭제하면
+    이름 줄 「주요 Case」 **오른쪽 끝**에 회색 「슬롯 밖」 한 마디(풍선 없음) — 이름 줄이 늘 서 있어 칩 줄은 움직이지
+    않는다(제목 줄 끝에 있던 때의 숨은 자리표시자는 걷었다). 칩 줄은 한 줄(`nowrap`)이다.
+  - 미지정 Case 는 점선 칩이고 누르면 「HOME 설정」 팝업을 `Preference` 탭으로 연다(`home_settings.open_home_settings` —
+    열림 칸·탭 key 를 콜백에서 적는다). 계산이 멈춘 회차에는 팝업을 열 수 없어 그 칩만 잠근다(`stopped_chips`). 가리키던 시나리오를 보관·영구 삭제하면
     저장소가 그 Case 를 비우므로 점선 칩이 된다. 잠금은 목록에서 찾지 못하는 짝(저장소 밖에서 고친 DB 등)과 공식버전
     없음뿐이다(풍선이 까닭).
   - 회차마다 DB 를 보지 않는다 — 공식은 `intro_summary.latest_official_identity`(머리 띠와 같은 세션 값), Case 는 주요
     Case 쓰기 세대를 키로 한 캐시 `persistence/cache.load_main_case_targets` 다. `tests/test_home_main_case_chips.py`,
     실제 `app.py` 배선과 둘째 회차 읽기 0 은 `tests/test_app_navigation.py`.
+- `src/capa_simulation/components/home_settings.py` — HOME 사이드바 「HOME 설정」 상자와 그 큰 팝업(안쪽 탭 `Preference`·
+  `Past Data`, 2026-11-02 사용자 요청 — 시안 (가) 조회 조건 아래 따로 선 상자). 가용설비 현황 「설정」
+  (`equipment_settings_dialog`)과 같은 꼴이다 — 열림 칸 하나(`home_state.HOME_DIALOG_KEY`, 값 `settings`), 여는 콜백은
+  `forget_page_dialogs()` 부터(`open_home_settings` — 지난번 편 Past Data 붙여넣기 칸도 걷는다), 호스트는 본문 끝 이벤트
+  칸 한 자리(열렸으면 팝업, 아니면 빈 스타일), 저장 뒤에도 열어 둔다(9장 「팝업과 콜백」 의 둘째 예외). 팝업 본문은
+  `app_pages/home.py` 가 넘긴 함수 둘이다 — 이 모듈은 편집기를 들이지 않는다(주요 Case 칩이 여는 콜백을 쓰고 편집기 쪽이 칩을
+  그리므로 들이면 순환한다).
+  - 읽어 두고 저장하지 않은 Past Data(세션 칸)가 있으면 상자 key 끝 `_pending`(왼쪽 주황 띠)과 팝업 안 `Past Data` 탭 점
+    (`tab_marks.mark_pending_tabs` — 매 회차 스타일 한 자리)을 단다. 화면 탭 줄 HOME 점(`page_tabs.page_unsaved_marks`)은
+    그대로다. Preference 편집기는 모두 폼이라 서버가 제출 전 편집을 모른다 — 닫으면 사라지고 점·떠나기 확인 대상이 아니다.
+  - 계산이 멈춘 회차에는 상자를 잠근 채 같은 자리에 세운다(`stopped=True`). `tests/test_home_page.py`(열기·저장 뒤 열림·
+    대기 점)·`tests/test_app_navigation.py`(실제 `app.py` 배선·여는 콜백이 다른 열림 키를 비움).
 - `src/capa_simulation/services/main_cases.py` — 주요 Case 슬롯 셋(공식버전·Case1·Case2)을 (글자, 시나리오 id, 리비전 id,
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
@@ -3031,7 +3063,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `services/securement_threshold.py` 의 것).
   - 캐시는 세션 칸 → 공용 저장소, 묶음 넷이다. 묶음 키는 `home_rendering` 의존 표가 정본이라 조건을 더하면
     `tests/test_home_figure_cache.py` 의 `EXPECTED_DEPENDENTS` 도 고친다(`tests/test_home_figure_cache_equivalence.py`·
-    `tests/test_home_hidden_main_figures.py`). 그림 모양을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다.
+    `tests/test_home_settings_kept_figures.py`). 그림 모양을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다.
   - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace)다. 긴
     제품명·거래선은 제 칸 경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
 - `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
@@ -4604,7 +4636,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **판정 기준은 정수 % 다**(2026-11-01 사용자 결정 — 「기준확보율 입력을 110% 정수 기준으로 할테니, 분류하는 기준적용시엔
   자동적으로 소수점 한자리수 반올림한 기준으로 포함시켜 (110% 기준확보율 설정시, 확보율 109.5%인 공정은 확보 판정) 이렇게
   반올림해서 겨우 기준대로 확보된 공정의 경우엔 여유가 0으로 표기되어야함(실질적으로는 -0.5%지만, 0으로 표기)」). 셋으로 나뉜다.
-  - **입력·저장.** 판정 기준을 넣는 칸(HOME › Preference 확보·경고 기본값과 월별 표, 제약 시뮬레이션·개조 일정의 기준 확보율
+  - **입력·저장.** 판정 기준을 넣는 칸(HOME 설정 › Preference 확보·경고 기본값과 월별 표, 제약 시뮬레이션·개조 일정의 기준 확보율
     직접 입력)은 정수 %(1 단위, 기본 110·100)이고 새 저장은 T/100 이다. **모든 칸이 소수점을 받아 사사오입한 정수로 보이고 그
     값으로 저장한다**(109.5 → 110 · 99.5 → 100 · 108.5 → 109 — 반은 늘 올린다, `threshold_label.whole_percent`, 2026-11-01 밤 사용자
     결정 「한 규칙」). 월별 표(편집표) 칸은 `step` 0.1 · `%.0f` 다 — 1 단위 편집표 칸은 Glide 숫자 편집기가 소수점 키를 버려
@@ -4642,7 +4674,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `services/threshold_label.threshold_percent_label` 로 사사오입한 정수 퍼센트를 쓴다 — 「110%」 하나이고 소수를 함께
   적지 않는다(공정 Capa 상세의 「110% (1.095)」 꼴은 걷었다 — 2026-11-01 N1 「(가) 정수만」). 지금 적는 곳은 HOME
   공정 필터 팝업의 기간 줄(기본값 + 「월별 예외 N개월」), Static Capa 판정 기준 카드, 입장 화면
-  Summary 의 기준선 이름표(달마다 — 값이 바뀌는 구간마다 하나), HOME › Preference 캡션, 공정 Capa 상세·제약 시뮬레이션·개조
+  Summary 의 기준선 이름표(달마다 — 값이 바뀌는 구간마다 하나), HOME 설정 › Preference 캡션, 공정 Capa 상세·제약 시뮬레이션·개조
   일정의 기준·목표 글이다. 판정에 맞춰 대수를 셈한 **식 줄**만 곱한 판정 경계를 그대로 적는다(`boundary_percent_label` —
   「가용 − 소요 × 109.5%」 — 식은 검산되어야 한다). **범례에는 숫자를 적지 않는다** —
   HOME(`home_preference.status_legend_markup`)·Summary 범례 모두 「확보 · 경고 · 부족」 세 이름뿐이고
@@ -4889,7 +4921,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     않은 월·범위 밖 월·시작 > 끝은 보내지 않고 단추 옆에 까닭을 적는다. `min`·`max` 는 값이 바뀔 때만 다시 넣는다
     (같은 값이라도 넣으면 Chrome 이 두 자리 월 입력을 끊는다).
 - 숨은 탭에서 위젯을 그리지 않으면 Streamlit 이 그 값을 버린다. 본문에 남은 입력 위젯은
-  숨은 탭에서도 그리고 계산·표·차트만 건너뛴다. 공용 프로필을 그대로 비추는 상자(HOME `Preference` 의 주요 Case)는
+  숨은 탭에서도 그리고 계산·표·차트만 건너뛴다. 공용 프로필을 그대로 비추는 상자(「HOME 설정」 팝업 `Preference` 의 주요 Case)는
   숨은 회차에 DB 를 읽지 않고 마지막으로 보인 화면 재료로 위젯을 그린다(`home_main_cases`). **조건 카드로 옮긴 위젯**은 열린 탭에서만
   그리므로(사이드바 = 지금 화면의 조건) 반드시 `persist_state` 를 준다 — 그것이 닫힌 동안의
   값을 지킨다(`산출 결과`·`기준 정보`·`생산 계획`).
@@ -4964,7 +4996,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 - **사이드바 = 보는 조건.** 사이드바 「조회 조건」은 지금 화면이 실제로 읽는 조건만 모으는 한 곳이다. 화면 고유의 거르는
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
-  카드 하나) 기본 접힘으로 선다(예외 하나 — HOME `LOB 표시 조건` 은 계산이 멈춘 회차에도 선다, 3장 `home.py`). 쓰기
+  카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
+  계산이 멈춘 회차에도 선다, 3장 `home.py`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 카드
+  밑에 따로 선다(3장 `home_settings.py`). 쓰기
   작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는 결과·그에 대한 행동·상태 알림만
   남기고 설명은 Guide 로 옮긴다(8장).
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라
@@ -5083,7 +5117,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   됐다(「Cannot set a node at a delta path」, 2026-10-27 E2E — 표준 목표 「입력 초기화」 뒤 가용설비 0건 안내 갈래). 오류로 멈추는
   갈래는 그대로다. 시험은 진짜 프래그먼트 회차로 두 누름을 돌려 둘째 회차가 닫힌 팝업의 델타를 보내지 않는지 본다
   (`tests/fragment_browser.py` 의 `emitted`, `tests/test_standard_target_capa_page.py`).
-  예외 하나 — 가용설비 현황 「설정」 팝업(공정별 Cut-off, `equipment_settings_dialog`)은 저장·「설비 공정으로 채우기」 뒤에도
+  예외 둘 — HOME 「HOME 설정」 팝업(Preference·Past Data, `home_settings`)도 아래와 같은 까닭으로 저장 뒤에도 열림 키를 남기고
+  (그 회차의 Main 그림은 팝업을 열기 전 그림을 그대로 쓰고 닫는 회차에 만든다 — 3장 `home.py`), 가용설비 현황 「설정」
+  팝업(공정별 Cut-off, `equipment_settings_dialog`)은 저장·「설비 공정으로 채우기」 뒤에도
   열림 키를 남긴다. 앱 범위 `st.rerun()` 이라 바깥 화면(Static 대비 일정)도 그 회차에 새 Cut-off 로 다시 그려지고, 저장 결과
   (flash)가 누른 단추 바로 아래에 선다 — 닫으면 그 결과를 볼 자리가 「설정」 단추 옆밖에 없다. 그 팝업 안 편집표의 제출 전
   편집은 닫으면 사라진다(Guide 「닫기 전에 저장합니다」). 초안은 그리는 회차마다 다시 적히므로 여는 콜백이 초안·출발점·편집표를

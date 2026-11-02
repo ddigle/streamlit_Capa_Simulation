@@ -386,9 +386,10 @@ def latest_home_figure_key(cache_root: object, bundle: HomeFigureBundle[KeyT, An
     """세션 칸(`st.session_state[HOME_FIGURE_CACHE_KEY]`)에서 그 묶음이 가장 최근에 쓴 키.
 
     벤치마크가 「켠 토글이 그림에 실제로 적용됐나」를 보는 창구다. 꺼내 쓴 칸도 맨 뒤로 옮기므로
-    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다. **Main 이 숨은 회차에는
-    갱신되지 않는다** — 그 회차는 칸을 꺼내지도 쓰지도 않으므로(`app_pages/home.py`) 그때 읽으면
-    직전 Main 회차의 키다. 숨은 탭에서 저장한 값이 적용됐는지는 Main 을 연 회차 뒤에 본다.
+    (`take_home_figures`) 맨 뒤가 이번 회차에 화면에 나간 그림의 키다. **「HOME 설정」 팝업이 열린
+    회차에는 팝업을 열기 전 그림의 키다** — 그 회차는 저장으로 바뀐 조건의 그림을 만들지 않고
+    마지막에 그린 그림을 꺼내 쓰므로(`app_pages/home.py`) 팝업에서 저장한 값이 적용됐는지는 팝업을
+    닫은 회차 뒤에 본다.
     """
     if not isinstance(cache_root, dict):
         return None
@@ -442,6 +443,40 @@ def store_home_figures(
         shared_home_figure_store(bundle.name).put(themed, _figures_to_blob(figures))
 
 
+# 마지막으로 그린 Figure 조건(`HomeFigureCacheKey`). 「HOME 설정」 팝업이 열린 회차는 이 조건의
+# 그림을 그대로 쓴다(`app_pages/home.py` — 팝업 안 저장이 바꾼 조건의 그림은 팝업을 닫는 회차에
+# 만든다).
+HOME_DRAWN_CONDITIONS_KEY = "home_drawn_figure_conditions"
+
+
+def take_home_figure_set(
+    conditions: HomeFigureCacheKey,
+) -> tuple[HomeFigureSet, PlanDetailFigures] | None:
+    """`conditions` 의 네 묶음을 꺼내 한 벌로 — 하나라도 없으면 None(부르는 쪽이 지금 조건으로
+    만든다).
+
+    계획 세부수량 묶음은 덤벨 그림도 들어 따로 함께 돌려준다. 꺼낸 칸은 가장 최근 칸으로 옮긴다
+    (`take_home_figures`).
+    """
+    lob = take_home_figures(LOB_FIGURES, conditions)
+    plan_detail = take_home_figures(PLAN_DETAIL_FIGURES, conditions)
+    key_process = take_home_figures(KEY_PROCESS_FIGURES, conditions)
+    bottleneck = take_home_figures(BOTTLENECK_FIGURES, conditions)
+    if lob is None or plan_detail is None or key_process is None or bottleneck is None:
+        return None
+    figure_set = HomeFigureSet(
+        lob_labels=lob.labels,
+        lob_months=lob.months,
+        plan_detail_labels=plan_detail.labels,
+        plan_detail_months=plan_detail.months,
+        key_process_labels=key_process.labels,
+        key_process_months=key_process.months,
+        bottleneck_labels=bottleneck.labels,
+        bottleneck_months=bottleneck.months,
+    )
+    return figure_set, plan_detail
+
+
 # 공용 칸의 값은 **바이트**다 — 객체를 그대로 나누면 한 세션이 꺼낸 Figure 를 고칠 때 남의
 # 화면이 바뀐다. Figure 를 통째로 pickle 하면 꺼낼 때 `Figure(...)` 검증 생성자가 모든 속성을
 # 다시 검사해 새 세션마다 그 비용을 치른다. 그래서 필드 차례대로 `to_dict()` 목록을 넣고,
@@ -493,14 +528,15 @@ def render_home_performance(
 ) -> None:
     """단계별 시간과 Figure 캐시 결과. `rebuilt` 는 이번 회차에 새로 만든 묶음의 표시 이름이다.
 
-    한 줄 요약은 네 묶음이 모두 맞았을 때만 「적중」이고 하나라도 만들었으면 「생성」이다.
-    어느 묶음을 만들었는지는 다음 줄이 적는다. Main 이 숨어 캐시를 보지도 않은 회차(`skipped`)는
-    「건너뜀」이다 — 「적중」으로 적으면 그림이 준비된 것처럼 읽힌다.
+    한 줄 요약은 네 묶음이 모두 맞았을 때만 「적중」이고 하나라도 만들었으면 「생성」이다. 어느
+    묶음을 만들었는지는 다음 줄이 적는다. 「HOME 설정」 팝업이 열려 팝업을 열기 전 그림을 그대로 쓴
+    회차(`skipped` — 지금 조건의 캐시는 보지도 않았다)는 「유지」다 — 「적중」으로 적으면 지금
+    조건의 그림이 준비된 것처럼 읽힌다.
     """
     if not enabled:
         return
     with st.sidebar.expander("HOME 실행 시간", expanded=True):
-        state = "건너뜀" if skipped else ("생성" if rebuilt else "적중")
+        state = "유지" if skipped else ("생성" if rebuilt else "적중")
         st.caption(f"Figure 캐시: {state}")
         if rebuilt:
             st.caption(f"새로 만든 묶음: {' · '.join(rebuilt)}")
@@ -756,9 +792,10 @@ def render_home_figures(
     그리지 않는다. 어긋난 글자가 그대로 남는다. 보이지 않는 그림을 만들어 보내지 않는 몫도
     있다(`components/tab_state.py`).
 
-    `figures` 가 None 인 것은 Main 이 숨은 회차다 — HOME 은 그 회차에 그림을 꺼내지도 만들지도
-    않는다(`app_pages/home.py`). 그래도 이 함수는 부른다. 프래그먼트가 감싸는 빈 칸이 늘 같은
-    자리에 서야 탭을 오갈 때 본문 배치가 흔들리지 않는다.
+    `figures` 가 None 이면 그리지 않는다(HOME 은 늘 한 벌을 넘긴다 — 「HOME 설정」 팝업이 열린
+    회차에는 팝업을 열기 전 그림이다, `app_pages/home.py`). `owner_tab` 이 숨은 탭이어도 그리지
+    않는다. 그래도 이 함수는 부른다 — 프래그먼트가 감싸는 빈 칸이 늘 같은 자리에 서야 본문 배치가
+    흔들리지 않는다.
 
     이 안의 위젯은 `Capa LOB 현황`·`주요공정 확보율`·`상세 B/N 공정` 월 그림의 **칸 선택**
     셋뿐이다 — 누르면 그 공정·그 달로 공정 Capa 상세가 열린다(`open_clicked_home_cell`, 과거

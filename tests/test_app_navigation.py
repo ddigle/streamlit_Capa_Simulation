@@ -830,7 +830,8 @@ def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) 
 
     새 세션은 공식버전으로 열리므로 공식 칩이 칠해져 있다(`latest_official_identity`). Case1 을
     지정해 누르면 활성 시나리오와 사이드바 칸이 그 리비전이 되고, 켜 둔 HOME 토글이 기본값으로
-    돌아온다(콜백이 토글 위젯보다 먼저 적는다). 미지정 Case2 는 `Preference` 탭을 연다.
+    돌아온다(콜백이 토글 위젯보다 먼저 적는다). 미지정 Case2 는 「HOME 설정」 팝업을 `Preference`
+    탭으로 연다(2026-11-02 — 칩은 사이드바 `LOB 표시 조건` 카드 맨 위다).
     """
     import capa_simulation.settings as settings
     from capa_simulation.components.home_main_case_chips import (
@@ -840,8 +841,10 @@ def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) 
     )
     from capa_simulation.home_state import (
         EDP_TOGGLE_KEY,
+        HOME_DIALOG_KEY,
         HOME_PREFERENCE_TAB,
-        HOME_TAB_KEY,
+        HOME_SETTINGS_DIALOG,
+        HOME_SETTINGS_TAB_KEY,
         HOME_TOGGLE_DEFAULTS,
     )
     from capa_simulation.persistence.cache import clear_global_main_cases_cache
@@ -900,7 +903,14 @@ def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) 
 
     app = app.button(key=CASE2_CHIP_KEY).click().run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert app.session_state[HOME_TAB_KEY] == HOME_PREFERENCE_TAB
+    assert app.session_state[HOME_DIALOG_KEY] == HOME_SETTINGS_DIALOG
+    assert app.session_state[HOME_SETTINGS_TAB_KEY] == HOME_PREFERENCE_TAB
+    # 실제 `app.py` 에서 그 회차에 팝업이 서고, 안쪽 탭 둘 가운데 `Preference` 가 열려 있다.
+    assert [tab.label for tab in app.tabs if tab.label.endswith(("Preference", "Past Data"))] == [
+        HOME_PREFERENCE_TAB,
+        ":material/history: Past Data",
+    ]
+    assert any(element.key == "home_preference_case2_scenario" for element in app.selectbox)
 
 
 def test_a_revision_saved_elsewhere_marks_the_header_and_the_scenario_badge(
@@ -1090,39 +1100,51 @@ def test_the_conditions_panel_holds_only_the_rows_the_screen_reads(
     assert CONDITIONS_BOX_KEY not in _control_boxes(app)
 
 
-def test_the_home_heatmap_row_follows_the_main_tab_and_the_filter_stays(_app: AppTest) -> None:
-    """주요공정 히트맵 줄은 Main 탭에서만, 공정 필터 줄은 세 탭 모두에서 선다.
+def test_the_home_panel_rows_and_settings_box_stay_while_the_settings_popup_is_open(
+    _app: AppTest,
+) -> None:
+    """HOME 은 탭 없이 한 화면이라(2026-11-02) 주요공정 히트맵 줄·공정 필터 줄·`LOB 표시 조건`
+    카드·「HOME 설정」 상자가 늘 선다 — 「HOME 설정」 팝업을 연 회차에도 그대로다.
 
-    「사이드바 = 이 화면이 실제로 읽는 조건」(2026-09-29). 히트맵은 Main 에만 그려지고, 판정
-    대상은 HOME 의 결론·Top5·상세 B/N 이 읽고 리비전 저장 때 프리셋에 담긴다.
+    전에는 HOME 의 Preference·Past Data 탭에서 히트맵 줄과 카드가 빠졌다(Main 에만 그려지는
+    조건이었다). 상자는 카드 바로 밑, 사이드바 최상위 칸이다(`sidebar_dialog_box_home_settings`).
     """
     app = _app.run()
-    app.session_state["home_active_tab"] = ":material/tune: Preference"
-    app.run()
+    app.button(key="home_settings_open").click().run()
     assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["home_open_dialog"] == "settings"
     assert _panel_fields(app) == [
         SCENARIO_FIELD_KEY,
         PERIOD_FIELD_KEY,
         "dashboard_bottleneck_process_dialog_open",
+        "home_key_process_field",
     ]
+    keys = _sidebar_keys(app)
+    assert keys.index("sidebar_dialog_box_home_settings") == keys.index("condition_card_home") + 1
 
 
 @pytest.mark.parametrize(
-    "opener,stale_key,opened_key",
+    "opener,stale_key,opened",
     [
-        # 시나리오·조회기간 칸: 페이지 팝업(HOME Past Data 붙여넣기)이 남은 채 연다.
-        (SCENARIO_FIELD_KEY, "home_open_dialog", SCENARIO_DIALOG_KEY),
-        (PERIOD_FIELD_KEY, "home_open_dialog", PERIOD_DIALOG_KEY),
+        # 시나리오·조회기간 칸: 페이지 팝업(HOME 「HOME 설정」)이 남은 채 연다.
+        (SCENARIO_FIELD_KEY, "home_open_dialog", (SCENARIO_DIALOG_KEY, True)),
+        (PERIOD_FIELD_KEY, "home_open_dialog", (PERIOD_DIALOG_KEY, True)),
         # 공정 필터·주요공정 히트맵 칸: 사이드바 팝업 열림 키가 남은 채 연다(칸을 누른 회차에만
         # 여는 팝업이라 열림 키가 없다).
         ("dashboard_bottleneck_process_dialog_open", SCENARIO_DIALOG_KEY, None),
         ("home_key_process_field", PERIOD_DIALOG_KEY, None),
+        # 「HOME 설정」 상자(2026-11-02): 사이드바 시나리오 팝업 열림 키가 남은 채 연다.
+        ("home_settings_open", SCENARIO_DIALOG_KEY, ("home_open_dialog", "settings")),
     ],
 )
 def test_every_popup_opener_clears_the_other_popup_keys_first(
-    _app: AppTest, tmp_path: Path, opener: str, stale_key: str, opened_key: str | None
+    _app: AppTest,
+    tmp_path: Path,
+    opener: str,
+    stale_key: str,
+    opened: tuple[str, object] | None,
 ) -> None:
-    """팝업을 여는 칸 넷 모두 다른 팝업 열림 키부터 비운다(AGENTS 2장 — 여는 콜백의
+    """팝업을 여는 칸 다섯 모두 다른 팝업 열림 키부터 비운다(AGENTS 2장 — 여는 콜백의
     `forget_page_dialogs`). 한 실행에 팝업이 둘 불리면 `StreamlitInvalidLayoutContextError` 로
     화면이 멈춘다(2026-10-10 브라우저 실측). 2026-10-11 병합 전 리뷰가 넷 중 하나만 고정돼 있다고
     짚었다.
@@ -1139,12 +1161,12 @@ def test_every_popup_opener_clears_the_other_popup_keys_first(
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    app.session_state[stale_key] = "월별" if stale_key == "home_open_dialog" else True
+    app.session_state[stale_key] = "settings" if stale_key == "home_open_dialog" else True
     app.button(key=opener).click().run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert stale_key not in app.session_state
-    if opened_key is not None:
-        assert app.session_state[opened_key] is True
+    if opened is not None:
+        assert app.session_state[opened[0]] == opened[1]
 
 
 def test_the_official_popup_opener_clears_the_other_popup_keys_first(

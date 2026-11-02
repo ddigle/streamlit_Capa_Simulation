@@ -382,7 +382,7 @@ def test_saving_one_table_keeps_the_other_two_even_when_the_screen_emptied_them(
 
 
 def test_the_past_tab_is_given_the_stored_profile_not_the_display_filtered_one() -> None:
-    """HOME 이 관리 탭에 넘기는 것은 **저장된** 프로필이어야 한다.
+    """HOME 이 「HOME 설정」 팝업의 Past Data 탭에 넘기는 것은 **저장된** 프로필이어야 한다.
 
     표시용으로 비운 쪽을 넘기면 화면이 「저장 0행」으로 보이고, 저장이 그 빈 값을 되쓴다.
     배선이 한 글자만 어긋나도 데이터가 사라지므로 소스에서 고정한다.
@@ -391,7 +391,10 @@ def test_the_past_tab_is_given_the_stored_profile_not_the_display_filtered_one()
         encoding="utf-8"
     )
 
-    assert "render_past_data_management(str(DUCKDB_PATH.resolve()), stored_past_profile)" in source
+    assert (
+        "partial(render_past_data_management, str(DUCKDB_PATH.resolve()), stored_past_profile)"
+        in source
+    )
 
 
 # 붙여넣기의 빈칸·못 읽는 글자(2026-09-29 빈칸 횡전개). 이전에는 값 칸을
@@ -636,7 +639,7 @@ render_past_data_management(database_path, load_global_past_data(database_path))
 def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_table(
     tmp_path: Path, pasted: str, shown: str
 ) -> None:
-    """못 읽는 붙여넣기는 팝업에 행 예시와 함께 오류로 남고 대기에 들어가지 않는다.
+    """못 읽는 붙여넣기는 붙여넣기 칸에 행 예시와 함께 오류로 남고 대기에 들어가지 않는다.
 
     이전에는 `2025-11` 행이 모두 떨어져 「0행을 읽었습니다」가 대기로 쌓였고, 그대로 저장하면
     저장된 확보율 표가 통째로 비워졌다(되돌릴 수 없음).

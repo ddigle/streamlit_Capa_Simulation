@@ -136,7 +136,7 @@ CONSTRAINT_PROPORTIONAL_KEY: Final = "constraint_sim_proportional"
 CONSTRAINT_TARGET_KEY: Final = "constraint_sim_target"
 CONSTRAINT_TARGET_PILLS_KEY: Final = "constraint_sim_target_pills"
 CONSTRAINT_TARGET_INPUT_KEY: Final = "constraint_sim_target_input"
-# `None` 이면 HOME → Preference 공용 판정 기준(기본 + 월별 예외)을 달마다 쓴다.
+# `None` 이면 HOME 설정 → Preference 공용 판정 기준(기본 + 월별 예외)을 달마다 쓴다.
 CONSTRAINT_GENERAL_KEY: Final = "constraint_sim_general"
 CONSTRAINT_GENERAL_PILLS_KEY: Final = "constraint_sim_general_pills"
 CONSTRAINT_GENERAL_INPUT_KEY: Final = "constraint_sim_general_input"

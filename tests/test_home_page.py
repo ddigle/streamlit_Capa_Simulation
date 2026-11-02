@@ -180,6 +180,28 @@ def _run_process_dialog_app(database_path: Path) -> AppTest:
     return app
 
 
+# 사이드바 「HOME 설정」 상자의 단추·팝업 열림 칸(2026-11-02 — 전에는 HOME 의 Preference·Past Data
+# 탭).
+SETTINGS_BUTTON_KEY = "home_settings_open"
+HOME_DIALOG_KEY = "home_open_dialog"
+
+
+def _open_settings(app: AppTest) -> AppTest:
+    """사이드바 「HOME 설정」 상자를 눌러 팝업을 연다 — Preference·Past Data 편집기가 그 안이다."""
+    app.button(key=SETTINGS_BUTTON_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
+    return app
+
+
+def _close_settings(app: AppTest) -> AppTest:
+    """팝업을 닫는다(X·바깥·Esc 의 `on_dismiss` — AppTest 는 닫기를 못 눌러 열림 칸을 비운다)."""
+    del app.session_state[HOME_DIALOG_KEY]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    return app
+
+
 def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_path: Path) -> None:
     from capa_simulation.persistence.cache import clear_global_process_rename_cache
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -506,15 +528,9 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     # 공용 프로필이 정한다(2026-10-06 사용자 결정) — 저장 전에는 공식버전 프리셋 값을 쓴다.
     assert app.session_state["production_month_range_v2"] == ("2026-01", "2026-12")
     assert [widget.label for widget in app.sidebar.number_input] == []
-    # 「판정 기준은 HOME → Preference 에서 정합니다」는 사이드바가 아니라 공정 필터 팝업 머리와
+    # 「판정 기준은 HOME 설정 → Preference 에서 정합니다」는 사이드바가 아니라 공정 필터 팝업 머리와
     # Guide 에 있다(2026-10-10 사용자 결정 — 사이드바에 늘 한 줄을 차지하던 것을 걷었다).
     assert THRESHOLD_POINTER not in [element.value for element in app.sidebar.caption]
-    assert [
-        (widget.label, widget.value)
-        for widget in app.main.number_input
-        if widget.label.startswith("기본")
-    ] == [("기본 확보 기준(%)", 110), ("기본 경고 기준(%)", 100)]
-    # 내장 시드 공식버전 프리셋의 1.095·0.995 를 정수 % 로 읽는다(2026-11-01 사용자 결정).
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
     # 글자가 전부 layout 항목이다), 계획 세부수량 라벨은 글자 trace 둘(머리글·값), 나머지 라벨
@@ -529,31 +545,50 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     # 제목 줄과 Preference 의 표시 기준에 흩어져 있었다). 순서는 계산이 얹히는 순서와 같다 —
     # 선행 B/O(계획 밖 재공)·선행 입고(표시만) → 확보율 보정(기준정보 밖 변수) → GAP(비교 표기) →
     # 보는 폭(상세 계획·EDP·Past). 라벨은 2026-09-29·2026-10-06 사용자 결정이다.
-    assert [widget.label for widget in app.sidebar.toggle] == [
-        "선행 B/O",
-        "선행 입고",
-        "확보율 보정",
-        "GAP",
-        "상세 계획",
-        "EDP 포함",
-        "Past Data 포함",
-    ]
+    assert [widget.label for widget in app.sidebar.toggle] == HOME_VIEW_TOGGLES
     assert [widget.label for widget in app.main.toggle] == []
-    # Preference 「주요 Case」 상자(2026-10-23) — Case 마다 시나리오 상자가 서고 지정 전이라 빈다.
+    # 본문에는 편집기가 없다 — Preference·Past Data 는 사이드바 「HOME 설정」 팝업
+    # 안이다(2026-11-02). 주요 Case 칩 셋은 사이드바 `LOB 표시 조건` 카드 맨 위다 — 이 실행에는 입장
+    # 화면 요약이 없어 공식버전을 모르므로 공식 칩은
+    # 「공식」(잠김)이다(`test_home_main_case_chips.py`). `Guide` 는 툴바 버튼이 누르는 숨은
+    # 버튼이다.
+    assert sorted(widget.label for widget in app.button) == sorted(
+        ["공식", "Case1", "Case2", "Guide", "전체 3공정", "프리셋 없음", "HOME 설정"]
+    )
+    assert [widget.label for widget in app.sidebar.button][-4:] == [
+        "공식",
+        "Case1",
+        "Case2",
+        "HOME 설정",
+    ]
+    assert list(app.number_input) == []
+    assert [button.label for button in app.download_button] == []
+
+    app = _open_settings(app)
+
+    # 팝업 안 Preference — 내장 시드 공식버전 프리셋의 1.095·0.995 를 정수 % 로 읽는다(2026-11-01
+    # 사용자 결정). 「주요 Case」 상자(2026-10-23)는 Case 마다 시나리오 상자가 서고 지정 전이라
+    # 빈다.
+    assert [
+        (widget.label, widget.value)
+        for widget in app.number_input
+        if widget.label.startswith("기본")
+    ] == [("기본 확보 기준(%)", 110), ("기본 경고 기준(%)", 100)]
+    assert list(app.main.number_input) == []
     from capa_simulation.components.home_main_cases import main_case_scenario_key
 
     assert [app.selectbox(key=main_case_scenario_key(case)).value for case in (1, 2)] == [
         None,
         None,
     ]
-    # 붙여넣기는 표마다 작업 줄의 팝업이고, 저장은 Past Data 맨 위 한 곳이다. `Guide` 는
-    # 툴바 버튼이 누르는 숨은 버튼이다. 제목 줄 끝은 주요 Case 칩 셋이다 — 이 실행에는 입장 화면
-    # 요약이 없어 공식버전을 모르므로 공식 칩은 「공식」(잠김)이다(`test_home_main_case_chips.py`).
+    # 붙여넣기는 표마다 작업 줄의 단추(누르면 그 표 상자 안에 붙여넣기 칸)이고, 저장은 Past Data
+    # 맨 위 한 곳이다. 남은 내려받기는 Past Data 탭의 양식 세 개뿐이다.
     assert sorted(widget.label for widget in app.button) == sorted(
         [
             "공식",
             "Case1",
             "Case2",
+            "HOME 설정",
             "Excel 붙여넣기",
             "Excel 붙여넣기",
             "Excel 붙여넣기",
@@ -570,23 +605,33 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "확보율 구간 저장",
         ]
     )
-    # 제목 아래 설명 문구와 계획 세부수량 CSV 는 탭 자리를 내주고 사라졌다. 남은 내려받기는
-    # Past Data 탭의 양식 세 개뿐이다.
     assert [button.label for button in app.download_button] == ["양식 CSV"] * 3
+    # 팝업 뒤의 대시보드는 그대로다(그림 수·차례가 같다).
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
 
-def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: Path) -> None:
-    """차트별 설정을 담을 자리를 만들기 위한 탭이다. Main 은 기존 화면 그대로다."""
+def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path) -> None:
+    """HOME 은 탭 없이 Main 한 화면이다(2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data
+    세 탭). 탭 줄이 없어 화면 탭 줄 바로 밑에서 Summary 가 시작하고, 차트는 첫 회차부터 그린다.
+    공용 설정 팝업 안의 탭 둘(Preference·Past Data)은 팝업을 열었을 때만 선다."""
     app = _run(seeded_database)
 
-    tabs = [tab.label for tab in app.main.tabs]
-    assert tabs == [
-        ":material/dashboard: Main",
+    assert [tab.label for tab in app.tabs] == []
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
+    # 주요 Case 칩은 본문 제목 줄 끝이 아니라 사이드바 카드 안이다.
+    sidebar_keys = {str(button.key) for button in app.sidebar.button}
+    assert {
+        "home_main_case_chip_official",
+        "home_main_case_chip_case1",
+        "home_main_case_chip_case2",
+    } <= sidebar_keys
+    assert not [button for button in app.main.button if "home_main_case_chip" in str(button.key)]
+
+    app = _open_settings(app)
+    assert [tab.label for tab in app.tabs] == [
         ":material/tune: Preference",
         ":material/history: Past Data",
     ]
-    # 차트는 Main 탭 안에서만 그린다.
-    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
 
 REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"
@@ -701,10 +746,11 @@ def _rebuilt_bundles(app: AppTest) -> set[str]:
 
 
 def _save_default_warning(app: AppTest, percent: int) -> AppTest:
-    """Preference 의 판정 기준 편집기로 기본 경고 기준을 저장한다."""
-    next(
-        widget for widget in app.main.number_input if widget.label == "기본 경고 기준(%)"
-    ).set_value(percent)
+    """「HOME 설정」 팝업 Preference 의 판정 기준 편집기로 기본 경고 기준을 저장한다(팝업은 열린
+    채다 — 저장 뒤에도 열어 둔다)."""
+    next(widget for widget in app.number_input if widget.label == "기본 경고 기준(%)").set_value(
+        percent
+    )
     next(button for button in app.button if button.label == "판정 기준 저장").click()
     return app.run()
 
@@ -719,12 +765,18 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
     assert _cache_state(app) == "적중"
 
     # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7). 기준은 사이드바가
-    # 아니라 Preference 의 공용 프로필에서 바꾼다.
+    # 아니라 「HOME 설정」 팝업 Preference 의 공용 프로필에서 바꾼다. 팝업이 열린 동안은 팝업을 열기
+    # 전 그림을 그대로 쓰고(「유지」), 닫는 회차에 새 기준으로 만든다.
+    app = _open_settings(app)
     try:
         app = _save_default_warning(app, 95)
 
         assert not list(app.exception), [element.message for element in app.exception]
         assert not list(app.error), [element.value for element in app.error]
+        assert app.session_state[HOME_DIALOG_KEY] == "settings"
+        assert _cache_state(app) == "유지"
+
+        app = _close_settings(app)
         assert _cache_state(app) == "생성"
         # 판정 기준은 색을 칠하는 세 묶음에만 닿는다. 계획 세부수량은 그대로 꺼낸다.
         assert _rebuilt_bundles(app) == {"LOB", "주요공정", "상세 B/N"}
@@ -734,7 +786,9 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
         assert _cache_state(app) == "적중"
     finally:
         # 모듈 공용 DB 다. 뒤 테스트가 같은 기준(100% — 옛 99.5 와 같은 판정)에서 출발하게 되돌린다.
+        app = _open_settings(app)
         app = _save_default_warning(app, 100)
+        app = _close_settings(app)
     assert not list(app.error), [element.value for element in app.error]
 
 
@@ -789,11 +843,6 @@ def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_datab
     assert "데이터 범위" in app.error[0].value
 
 
-HOME_TABS = [
-    ":material/dashboard: Main",
-    ":material/tune: Preference",
-    ":material/history: Past Data",
-]
 HOME_VIEW_TOGGLES = [
     "선행 B/O",
     "선행 입고",
@@ -849,8 +898,8 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     """계산이 멈춘 회차에도 사이드바 `LOB 표시 조건` 카드가 선다(2026-10-22 사용자 결정).
 
     EDP 를 뺀 조회(기본)는 계획에 제품타입이 빈 행이 있으면 「… EDP 를 포함해 조회하세요」로
-    멈춘다. 카드가 Main 탭에서만 서면 멈춘 회차에는 탭이 없어 그 토글을 켤 곳이 없다. 토글 key 가
-    정상 회차와 같아야 켠 값으로 다음 회차가 정상 계산으로 돌아온다.
+    멈춘다. 카드가 정상 회차에서만 서면 그 토글을 켤 곳이 없다. 토글 key 가 정상 회차와 같아야 켠
+    값으로 다음 회차가 정상 계산으로 돌아온다.
     """
     database_path = tmp_path / "scenario.duckdb"
     AppTest.from_string(_home_script(database_path), default_timeout=300).run()
@@ -862,16 +911,18 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     assert len(app.error) == 1
     assert "제품타입이 비어" in app.error[0].value
     assert "EDP 를 포함해" in app.error[0].value
-    assert [tab.label for tab in app.main.tabs] == []
     assert [widget.label for widget in app.sidebar.toggle] == HOME_VIEW_TOGGLES
     assert app.sidebar.toggle(key=EDP_TOGGLE_KEY).value is False
+    # 「HOME 설정」 상자는 잠긴 채 같은 자리에 선다 — 팝업 본문이 계산 결과를 쓴다.
+    assert app.button(key=SETTINGS_BUTTON_KEY).disabled
+    assert app.session_state["spy_traces"] == []
 
     app.sidebar.toggle(key=EDP_TOGGLE_KEY).set_value(True)
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [element.value for element in app.error] == []
-    assert [tab.label for tab in app.main.tabs] == HOME_TABS
+    assert not app.button(key=SETTINGS_BUTTON_KEY).disabled
     assert app.session_state["spy_traces"]
 
 
@@ -889,7 +940,7 @@ def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it
     assert not list(app.exception), [element.message for element in app.exception]
     assert len(app.error) == 1
     assert "제품타입이 비어" in app.error[0].value
-    assert [tab.label for tab in app.main.tabs] == []
+    assert app.button(key=SETTINGS_BUTTON_KEY).disabled
     gap = app.sidebar.toggle(key=COMPARISON_TOGGLE_KEY)
     assert gap.value is True
     assert not gap.disabled
@@ -899,7 +950,7 @@ def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [element.value for element in app.error] == []
-    assert [tab.label for tab in app.main.tabs] == HOME_TABS
+    assert not app.button(key=SETTINGS_BUTTON_KEY).disabled
 
 
 def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
@@ -1076,6 +1127,7 @@ def test_the_advance_shipment_editor_offers_past_months_too(tmp_path: Path) -> N
     app.session_state["production_month_range_v2"] = ("2025-11", "2026-12")
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
+    app = _open_settings(app)
 
     editors = {
         str(frame.value.iloc[0]["구분"]): list(frame.value.columns)
@@ -1278,6 +1330,7 @@ def test_switching_the_comparison_scenario_shows_its_own_revision(tmp_path: Path
     _pick_comparison(app, str(official.scenario_id), str(official.revision_id))
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
+    app = _open_settings(app)
 
     app.selectbox(key=COMPARISON_SCENARIO_KEY).set_value(comparison_id).run()
 
@@ -1349,42 +1402,40 @@ def test_every_gap_uses_one_font_size(tmp_path: Path) -> None:
     assert sizes == {tokens.DELTA_FONT_SIZE_PX}, sizes
 
 
-def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Path) -> None:
-    """숨은 탭에서 그리면 재서 자리를 잡는 글자(주석 머리글 등)가 가운데를 놓치고 그대로 굳는다.
+def test_the_dashboard_stays_drawn_behind_the_settings_popup(seeded_database: Path) -> None:
+    """「HOME 설정」 팝업은 대시보드 위에 뜬다 — 연 회차에도 여덟 Figure 를 같은 차례로 그린다.
 
-    숨겨진 요소 안에서는 SVG 글자 폭 측정이 0 이라 Plotly 가 가운데 정렬 보정을 못 하고,
-    상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다. Preference 에서
-    비교 시나리오를 고르거나 선행 물량을 저장하면 앱이 다시 도는데, 그때 Main 이 닫혀
-    있으면 정확히 그 상황이 된다.
+    전에는 Preference·Past Data 가 HOME 의 탭이라 그 탭을 보는 동안 Main 의 그림을 그리지
+    않았다(숨은 탭에서 그리면 재서 자리를 잡는 글자가 어긋난다). 팝업은 본문을 가리지 않고 얹히므로
+    본문은 보이는 채로 그린다.
     """
     app = _run(seeded_database)
     assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
-    app.session_state["home_active_tab"] = ":material/tune: Preference"
-    app.run()
+    app = _open_settings(app)
 
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert app.session_state["spy_traces"] == []
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
+    app = _close_settings(app)
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
 
-def test_the_detail_toggle_survives_a_hidden_tab(seeded_database: Path) -> None:
-    """닫힌 동안 위젯을 그리지 않아도 값은 남아야 한다.
-
-    보는 조건 토글 여섯은 사이드바 `LOB 표시 조건` 카드라 Main 이 아닌 탭에서는 그리지 않는다.
-    `persist_state="session"` 이 그 값을 붙들어 주는데, 그것이 깨지면 탭을 오갈 때마다 분류가
-    초기화된다.
-    """
+def test_the_view_toggles_keep_their_values_across_the_settings_popup(
+    seeded_database: Path,
+) -> None:
+    """팝업을 열고 닫아도 사이드바 `LOB 표시 조건` 카드의 토글 값은 그대로다 — 카드는 HOME 에서
+    늘 서고(2026-11-02 — 전에는 Main 탭에서만), 팝업 안 위젯과 key 가 겹치지 않는다."""
     app = _run(seeded_database)
-    app.session_state["home_preference_plan_detail_customer"] = True
-    app.session_state["home_active_tab"] = ":material/tune: Preference"
-    app.run()
+    app.sidebar.toggle(key="home_preference_plan_detail_customer").set_value(True).run()
     assert not list(app.exception)
 
-    app.session_state["home_active_tab"] = ":material/dashboard: Main"
-    app.run()
+    app = _open_settings(app)
+    assert app.sidebar.toggle(key="home_preference_plan_detail_customer").value is True
+    app = _close_settings(app)
 
-    assert not list(app.exception), [element.message for element in app.exception]
     assert app.session_state["home_preference_plan_detail_customer"] is True
+    assert app.sidebar.toggle(key="home_preference_plan_detail_customer").value is True
+    app.sidebar.toggle(key="home_preference_plan_detail_customer").set_value(False).run()
+    assert not list(app.exception)
 
 
 def test_the_two_columns_keep_paired_children(seeded_database: Path) -> None:
@@ -1749,9 +1800,12 @@ def test_the_home_guide_carries_what_left_the_body() -> None:
     assert "년월이 **빈** 행만 읽지 않고 넘어갑니다" not in guide
 
 
-def test_past_data_paste_opens_in_a_popup_and_save_sits_on_top(seeded_database: Path) -> None:
-    """붙여넣기 칸은 본문을 차지하지 않고, 저장은 표들 위 한 곳이다."""
-    app = _run(seeded_database)
+def test_past_data_paste_opens_inside_its_table_box_in_the_settings_popup(
+    seeded_database: Path,
+) -> None:
+    """붙여넣기 칸은 그 표 상자 안에 펴진다 — Past Data 는 이미 「HOME 설정」 팝업 안이라 팝업을 또
+    열 수 없다(Streamlit 은 팝업 안 팝업을 막는다). 「닫기」 로 걷고, 팝업은 그대로 열려 있다."""
+    app = _open_settings(_run(seeded_database))
     assert not [area for area in app.text_area if area.label.endswith("붙여넣기")]
 
     app.button(key="home_past_clipboard_월별_open").click().run()
@@ -1759,29 +1813,47 @@ def test_past_data_paste_opens_in_a_popup_and_save_sits_on_top(seeded_database: 
     assert [area.label for area in app.text_area if area.label.endswith("붙여넣기")] == [
         "월별 Density · Wafer Total 붙여넣기"
     ]
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
+
+    app.button(key="home_past_clipboard_월별_close").click().run()
+    assert not app.exception
+    assert not [area for area in app.text_area if area.label.endswith("붙여넣기")]
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
 
 
-def test_a_past_data_paste_waiting_to_be_saved_puts_a_dot_on_its_tab(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def _sidebar_keys(app: AppTest) -> list[str]:
+    """사이드바 **최상위** 칸의 key — key 를 준 컨테이너는 id 끝이 그 key 다."""
+    keys: list[str] = []
+    for node in app.sidebar.children.values():
+        identifier = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        keys.append(identifier.rsplit("-", 1)[-1] if identifier else "")
+    return keys
+
+
+def _settings_tab_dot(app: AppTest) -> bool:
+    """팝업 안 `Past Data` 탭 이름 옆 점(스타일만 든 `st.html` — 둘째 탭 단추의 `::after`)."""
+    selector = '.st-key-home_settings_tab [data-testid="stTab"]:nth-child(2)'
+    return any(selector in str(element.proto.body) for element in app.get("html"))
+
+
+def test_a_past_data_paste_waiting_to_be_saved_marks_the_settings_box_and_its_tab(
+    tmp_path: Path,
 ) -> None:
-    """읽어 두고 저장하지 않은 과거 구간이 있으면 Past Data 탭 이름 옆에 점이 찍힌다.
+    """읽어 두고 저장하지 않은 과거 구간이 있으면 사이드바 「HOME 설정」 상자 왼쪽에 주황 띠(key 끝
+    `_pending`)가, 팝업 안 `Past Data` 탭 이름 옆에 점이 찍힌다. 팝업을 닫아도 남는다(대기는 세션
+    칸이다). 저장하면 둘 다 사라진다.
 
     다른 화면의 미적용 점과 같은 규칙이다. 전에는 「대기 N행」이 남아도 점이 없었다(2026-10-01
-    브라우저 점검). 저장하면 점이 사라진다.
+    브라우저 점검). 2026-11-02 부터 Past Data 가 HOME 탭이 아니라 「HOME 설정」 팝업 안이라 점은
+    팝업을 여는 상자에도 선다.
     """
-    import capa_simulation.components.tab_marks as tab_marks
-
-    marked: dict[str, set[str]] = {}
-    monkeypatch.setattr(
-        tab_marks,
-        "mark_pending_tabs",
-        lambda key, labels, pending: marked.__setitem__(key, set(pending)),
-    )
     app = AppTest.from_string(_home_script(tmp_path / "scenario.duckdb"), default_timeout=300)
     app.run()
     assert not app.exception
-    assert marked["home_active_tab"] == set()
+    assert "sidebar_dialog_box_home_settings" in _sidebar_keys(app)
+    assert not _settings_tab_dot(app)
 
+    app = _open_settings(app)
     app.button(key="home_past_clipboard_확보율_open").click().run()
     app.text_area(key="home_past_clipboard_확보율").set_value(
         "생산계획년월\t공정\t확보율\n202511\tDEMO_P\t1.05\n"
@@ -1789,12 +1861,22 @@ def test_a_past_data_paste_waiting_to_be_saved_puts_a_dot_on_its_tab(
     next(button for button in app.button if button.label == "붙여넣기 읽기").click()
     app.run()
     assert not app.exception
-    assert marked["home_active_tab"] == {":material/history: Past Data"}
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
+    assert "sidebar_dialog_box_home_settings_pending" in _sidebar_keys(app)
+    assert _settings_tab_dot(app)
+    assert "저장하지 않은 Past Data" in str(app.button(key=SETTINGS_BUTTON_KEY).help)
 
+    app = _close_settings(app)
+    assert "sidebar_dialog_box_home_settings_pending" in _sidebar_keys(app)
+
+    app = _open_settings(app)
     next(button for button in app.button if button.label == "과거 구간 저장").click()
     app.run()
     assert not app.exception
-    assert marked["home_active_tab"] == set()
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
+    assert "sidebar_dialog_box_home_settings" in _sidebar_keys(app)
+    assert "sidebar_dialog_box_home_settings_pending" not in _sidebar_keys(app)
+    assert not _settings_tab_dot(app)
 
 
 def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path: Path) -> None:
@@ -1890,16 +1972,18 @@ def _save_preset(app: AppTest, name: str, processes: list[str]) -> None:
 
 
 def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path: Path) -> None:
-    """Preference 의 「주요공정 히트맵 프리셋」 — 만들기·이름 바꾸기·기본으로·삭제.
+    """「HOME 설정」 팝업 Preference 의 「주요공정 히트맵 프리셋」 — 만들기·이름
+    바꾸기·기본으로·삭제.
 
     저장은 늘 묶음 전체의 교체이고, 맨 앞 프리셋이 새 세션의 기본이다. 이름을 바꾸면 사이드바에서
-    그 프리셋을 보고 있던 선택도 새 이름으로 옮긴다.
+    그 프리셋을 보고 있던 선택도 새 이름으로 옮긴다. 저장 뒤에도 팝업은 열려 있다.
     """
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
     database_path = tmp_path / "scenario.duckdb"
     app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
     assert not list(app.exception)
+    app = _open_settings(app)
     repository = DuckDBScenarioRepository(database_path)
     target = "home_key_process_preset_edit"
     assert app.selectbox(key=target).value == "＋ 새 프리셋"
@@ -1939,11 +2023,14 @@ def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path:
     app.button(key="home_key_process_preset_delete").click().run()
     assert not list(app.exception)
     assert repository.load_global_key_process().preset_names == ("A 그룹(개정)",)
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
 
 
 def test_a_preset_with_a_duplicate_name_is_refused(tmp_path: Path) -> None:
     database_path = tmp_path / "scenario.duckdb"
-    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    app = _open_settings(
+        AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    )
     _save_preset(app, "A 그룹", ["DEMO_Chip_Attach"])
     app.selectbox(key="home_key_process_preset_edit").set_value("＋ 새 프리셋").run()
     _save_preset(app, "A 그룹", ["DEMO_Final_Test"])
@@ -1964,7 +2051,10 @@ def test_a_preset_name_with_markdown_marks_reads_literally_everywhere(tmp_path: 
     picker = app.radio(key="home_key_process_preset_pick")
     assert picker.options == [literal_markdown(name)]
     assert picker.value == name
+    # 히트맵 칸의 팝업을 연 콜백이 「HOME 설정」 팝업 칸을 비웠다 — 한 실행에 팝업 하나.
+    assert HOME_DIALOG_KEY not in app.session_state
 
+    app = _open_settings(app)
     app.selectbox(key="home_key_process_preset_edit").set_value("＋ 새 프리셋").run()
     _save_preset(app, name, ["DEMO_Final_Test"])
 
@@ -1972,7 +2062,10 @@ def test_a_preset_name_with_markdown_marks_reads_literally_everywhere(tmp_path: 
     assert f"같은 이름의 프리셋이 이미 있습니다: {quoted(name)}" in errors, errors
 
 
-def _preset_app(tmp_path: Path, presets: list[tuple[str, list[str]]]) -> tuple[AppTest, Any]:
+def _preset_app(
+    tmp_path: Path, presets: list[tuple[str, list[str]]], *, settings: bool = False
+) -> tuple[AppTest, Any]:
+    """프리셋을 심은 DB 로 HOME 을 돌린다. `settings` 면 「HOME 설정」 팝업까지 연다(편집기)."""
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
     database_path = tmp_path / "scenario.duckdb"
@@ -1981,7 +2074,7 @@ def _preset_app(tmp_path: Path, presets: list[tuple[str, list[str]]]) -> tuple[A
     repository.replace_global_key_process_presets(presets, source="테스트")
     app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    return app, repository
+    return (_open_settings(app) if settings else app), repository
 
 
 def test_saving_a_preset_keeps_processes_this_screen_does_not_have(tmp_path: Path) -> None:
@@ -1993,6 +2086,7 @@ def test_saving_a_preset_keeps_processes_this_screen_does_not_have(tmp_path: Pat
     app, repository = _preset_app(
         tmp_path,
         [("A 그룹", ["ELSEWHERE", "DEMO_Chip_Attach"]), ("B 그룹", ["ONLY_ELSEWHERE"])],
+        settings=True,
     )
     target = "home_key_process_preset_edit"
     app.selectbox(key=target).set_value("A 그룹").run()
@@ -2035,6 +2129,7 @@ def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path:
     )
     app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
     assert not list(app.exception), [element.message for element in app.exception]
+    app = _open_settings(app)
 
     picker = next(widget for widget in app.multiselect if widget.label == "공정")
     assert "DEMO_Chip_Attach" in picker.options
@@ -2055,25 +2150,26 @@ def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path:
 def test_renaming_the_viewed_preset_from_preference_carries_the_view_on_return(
     tmp_path: Path,
 ) -> None:
-    """보던 프리셋의 이름을 Preference 에서 두 번 바꾸고 Main 으로 돌아오면 첫 화면부터 새 이름이다.
+    """보던 프리셋의 이름을 「HOME 설정」 팝업 Preference 에서 두 번 바꾸고 팝업을 닫으면 첫
+    화면부터 새 이름이다.
 
-    카드가 서지 않는 Preference 탭에서 옮긴 선택이 쌓이기만 해, 돌아온 첫 화면이 기본 프리셋을
-    그리고 두 번째 이름 변경은 아예 따라가지 못했다(2026-09-29 리뷰에서 재현).
+    전에는 Preference 가 HOME 탭이라 카드가 서지 않는 그 탭에서 옮긴 선택이 쌓이기만 해, 돌아온 첫
+    화면이 기본 프리셋을 그리고 두 번째 이름 변경은 아예 따라가지 못했다(2026-09-29 리뷰에서 재현).
+    팝업이 열린 동안에도 사이드바 칸은 저장 회차마다 새 이름으로 선다.
     """
     app, _ = _preset_app(
         tmp_path, [("A 그룹", ["DEMO_Chip_Attach"]), ("B 그룹", ["DEMO_Final_Test"])]
     )
     app.session_state["home_key_process_preset"] = "B 그룹"
     app.run()
-    app.session_state["home_active_tab"] = ":material/tune: Preference"
-    app.run()
+    app = _open_settings(app)
 
     app.selectbox(key="home_key_process_preset_edit").set_value("B 그룹").run()
     _save_preset_name_only(app, "B2")
     _save_preset_name_only(app, "B3")
+    assert app.button(key="home_key_process_field").label == "B3 · 1공정"
 
-    app.session_state["home_active_tab"] = ":material/dashboard: Main"
-    app.run()
+    app = _close_settings(app)
     assert not list(app.exception)
     assert app.session_state["home_key_process_preset"] == "B3"
     assert app.button(key="home_key_process_field").label == "B3 · 1공정"

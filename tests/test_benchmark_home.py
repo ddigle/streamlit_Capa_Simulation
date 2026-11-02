@@ -151,7 +151,7 @@ def test_a_copy_folder_is_measured_and_locked_toggles_are_skipped(tmp_path: Path
     assert phases["on_comparison"] == {"phase": "on_comparison", "skipped": "입력 없음(토글 잠김)"}
     for name in ("on_advance", "on_advance_shipment", "on_execution"):
         assert phases[name]["note"] == NOTE
-    assert phases["hidden_main_tab"]["figure_count"] == 0
+    assert phases["settings_popup"]["figure_count"] == 8
 
 
 def test_a_cp949_pipe_still_gets_the_whole_report(tmp_path: Path) -> None:
@@ -262,4 +262,4 @@ def test_every_phase_draws_its_figures_with_the_real_scrollbar() -> None:
     }
     assert phases["cold_summary"] == 8
     assert phases["warm_all_on"] == 9
-    assert phases["hidden_main_tab"] == 0
+    assert phases["settings_popup"] == 9

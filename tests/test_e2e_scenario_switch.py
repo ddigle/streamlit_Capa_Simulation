@@ -16,7 +16,8 @@
 
 1. HOME 토글 일곱 개가 **전부 풀린다.** 토글은 모두 기준정보 위에 무언가를 얹거나 빼는
    스위치라 앞 시나리오를 전제로 켠 것이 새 계획 위에 남으면 안 된다.
-2. 같은 전환에서 **탭과 조회 조건은 남는다.** 무엇을 보고 있는지는 값에 닿지 않는다.
+2. 같은 전환에서 **보던 자리(「HOME 설정」 팝업의 안쪽 탭)와 조회 조건은 남는다.** 무엇을 보고
+   있는지는 값에 닿지 않는다(HOME 은 2026-11-02 부터 탭 없이 한 화면이다).
 3. 전환 뒤 화면이 **새 리비전의 수치**를 보여 준다. 옛 그림이 캐시에 남아 있으면 안 된다.
 
 전환을 모듈 스코프에서 한 줄기로 돌리고 그때 본 것을 아래 검사들이 나눠 본다. HOME 한
@@ -83,7 +84,9 @@ def _open_scenario_dialog(app: AppTest) -> AppTest:
     return app.button(key=SCENARIO_FIELD_KEY).click().run()
 
 
-HOME_TAB_KEY = "home_active_tab"
+# 「HOME 설정」 팝업의 열림 칸·안쪽 탭(2026-11-02 — 전에는 HOME 의 Preference·Past Data 탭).
+HOME_DIALOG_KEY = "home_open_dialog"
+SETTINGS_TAB_KEY = "home_settings_tab"
 
 # 프리셋에 딸리지 않은 **페이지 국소** 조회 조건. HOME 의 조회 조건은 전부 리비전 프리셋
 # 소유라 전환에서 프리셋이 되살린다 — `persist_state="session"` 이 실제 앱 차례에서 듣는지는
@@ -149,8 +152,8 @@ def _session_value(app: AppTest, key: str) -> Any:
 def _toggle_values(app: AppTest) -> dict[str, Any]:
     """토글을 **화면이 읽는 방식으로** 읽는다 — 칸이 없으면 기본값이다.
 
-    일곱 토글은 사이드바 `LOB 표시 조건` 카드라 Main 이 아닌 탭에서는 위젯이 그려지지 않는다.
-    전환이 칸을 버리고 나면 Main 을 열기 전까지 칸 자체가 없는데, `app_pages/home.py` 는
+    일곱 토글은 사이드바 `LOB 표시 조건` 카드라 HOME 이 아닌 화면에서는 위젯이 그려지지 않는다.
+    전환이 칸을 버리고 나면 카드가 다시 서기 전까지 칸 자체가 없는데, `app_pages/home.py` 는
     그 자리를 `st.session_state.get(키, 기본값)` 으로 읽으므로 없는 것이 곧 기본값이다.
     없는 칸을 「풀리지 않았다」로 세면 실제와 다른 실패가 된다.
     """
@@ -287,21 +290,27 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
 
         app = AppTest.from_file(str(APP_PATH), default_timeout=600)
 
-        # 1. 공식버전이 올라온 첫 화면. Main 탭의 숫자를 지문으로 남긴다.
+        # 1. 공식버전이 올라온 첫 화면. HOME 의 숫자를 지문으로 남긴다.
         _DRAWN_FIGURES.clear()
         app.run()
         failures.extend(f"첫 화면: {element.message}" for element in app.exception)
         numbers_before = tuple(_DRAWN_FIGURES)
-        preference_tab = _tab_label(app, "Preference")
-        main_tab = _tab_label(app, "Main")
 
-        # 2. 사용자가 일곱 토글을 모두 기본값과 다르게 두고, Preference 탭을 보고 있다.
+        # 2. 사용자가 「HOME 설정」 팝업의 Past Data 탭을 한 번 보고 닫은 뒤, 일곱 토글을 모두
+        #    기본값과 다르게 둔다.
+        app.button(key="home_settings_open").click().run()
+        failures.extend(f"설정 팝업을 연 화면: {element.message}" for element in app.exception)
+        past_tab = _tab_label(app, "Past Data")
+        app.session_state[SETTINGS_TAB_KEY] = past_tab
+        app.run()
+        del app.session_state[HOME_DIALOG_KEY]
         for key, default in TOGGLE_DEFAULTS.items():
             app.session_state[key] = not default
-        app.session_state[HOME_TAB_KEY] = preference_tab
         app.run()
         failures.extend(f"토글을 켠 화면: {element.message}" for element in app.exception)
         toggles_before = _toggle_values(app)
+        # 브라우저가 들고 있는 토글 값 — 서버가 `set_value` 를 실은 회차에만 바뀐다.
+        shown_before_switch = _shown_toggle_values(app, {})
         view_before = {key: _session_value(app, key) for key in VIEW_CONDITION_KEYS}
         processes_before = _session_value(app, PROCESS_SELECTION_KEY)
         active_revision_before = _session_value(app, ACTIVE_PERSISTED_REVISION_ID_KEY)
@@ -317,25 +326,28 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         failures.extend(f"불러온 직후: {element.message}" for element in app.exception)
         numbers_during_switch = tuple(_DRAWN_FIGURES)
         toggles_after = _toggle_values(app)
+        # HOME 은 탭이 없어 불러온 회차에도 카드가 서고, 그 회차가 풀린 값을 브라우저에 밀어 준다.
+        shown_during_switch = _shown_toggle_values(app, shown_before_switch)
         view_after = {key: _session_value(app, key) for key in VIEW_CONDITION_KEYS}
         processes_after = _session_value(app, PROCESS_SELECTION_KEY)
-        tab_after = _session_value(app, HOME_TAB_KEY)
-        remembered_tab_after = _session_value(app, remembered_tab_key(HOME_TAB_KEY))
+        remembered_tab_after = _session_value(app, remembered_tab_key(SETTINGS_TAB_KEY))
         active_revision_after = _session_value(app, ACTIVE_PERSISTED_REVISION_ID_KEY)
 
-        # 4. Main 으로 돌아와 새 수치를 확인한다. 숨은 탭은 Figure 를 그리지 않으므로
-        #    (`render_home_figures` 가 `owner_tab` 으로 건너뛴다) 여기서만 지문이 나온다.
-        app.session_state[HOME_TAB_KEY] = main_tab
+        # 4. HOME 을 한 번 더 돌려 새 수치를 확인하고, 「HOME 설정」 팝업을 다시 열어 보던 안쪽
+        #    탭으로 서는지 본다.
         _DRAWN_FIGURES.clear()
         app.run()
-        failures.extend(f"전환 뒤 Main 탭: {element.message}" for element in app.exception)
+        failures.extend(f"전환 뒤 HOME: {element.message}" for element in app.exception)
         numbers_after = tuple(_DRAWN_FIGURES)
-        # Main 에서는 일곱 토글이 모두 다시 그려진다. 숨은 탭에서 칸이 없던 「상세 계획」까지
-        # 실제 위젯 값으로 확인할 수 있는 자리가 여기다.
+        # 일곱 토글이 모두 다시 그려진다 — 「상세 계획」까지 실제 위젯 값으로 확인하는 자리다.
         toggles_after_main = _toggle_values(app)
-        # 전환 회차의 화면은 Preference 라 카드가 없었다 — 브라우저에는 다시 새로 붙는 위젯이다.
-        toggles_shown_after_main = _shown_toggle_values(app, {})
+        toggles_shown_after_main = _shown_toggle_values(app, shown_during_switch)
         drawn_toggle_keys = tuple(str(toggle.key) for toggle in app.toggle)
+        app.button(key="home_settings_open").click().run()
+        failures.extend(f"전환 뒤 설정 팝업: {element.message}" for element in app.exception)
+        tab_after = _session_value(app, SETTINGS_TAB_KEY)
+        del app.session_state[HOME_DIALOG_KEY]
+        app.run()
 
         # 5. 페이지 국소 조회 조건을 건드린 뒤 **그 페이지에서** 다시 불러온다. 프리셋이
         #    되살려 주지 않는 값이라, 페이지가 돌지 않는 회차를 견디는 것은 위젯에 준
@@ -371,7 +383,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
             drawn_toggle_keys=drawn_toggle_keys,
             view_before=view_before,
             view_after=view_after,
-            tab_before=preference_tab,
+            tab_before=past_tab,
             tab_after=tab_after,
             remembered_tab_after=remembered_tab_after,
             processes_before=processes_before,
@@ -420,34 +432,33 @@ def test_loading_another_revision_releases_every_home_toggle(switch: SwitchObser
     )
 
 
-def test_the_released_toggles_are_still_released_back_on_the_main_tab(
+def test_the_released_toggles_are_still_released_on_the_next_home_run(
     switch: SwitchObservation,
 ) -> None:
-    """Main 으로 돌아와 일곱 위젯이 다시 그려져도 기본값이다.
+    """전환 다음 회차에 일곱 위젯이 다시 그려져도 기본값이다.
 
-    전환 회차의 화면은 Preference 탭이라 토글 칸(사이드바 카드)이 아예 없었다. 그 칸이 다시
-    생기는 자리가 여기이므로, 풀린 것이 **위젯 값으로도** 풀렸는지는 여기서만 확인된다.
-    Main 에서 카드의 위젯을 직접 켠 채 전환하는 흔한 경우는 아래 따로 본다.
-    그래서 칸이 있는지부터 본다 — 없는 칸을 기본값으로 읽으면 이 검사가 저절로 통과한다.
+    풀린 것이 **위젯 값으로도** 풀렸는지는 카드가 다시 그려지는 회차에서 확인된다. 카드의 위젯을
+    직접 켠 채 전환하는 흔한 경우는 아래 따로 본다. 그래서 칸이 있는지부터 본다 — 없는 칸을
+    기본값으로 읽으면 이 검사가 저절로 통과한다.
     """
     missing = [key for key in TOGGLE_DEFAULTS if key not in switch.drawn_toggle_keys]
-    assert not missing, f"Main 탭인데 토글 위젯이 그려지지 않았습니다: {missing}"
+    assert not missing, f"HOME 인데 토글 위젯이 그려지지 않았습니다: {missing}"
     assert switch.toggles_after_main == dict(TOGGLE_DEFAULTS)
     # 서버 값만이 아니라 **브라우저가 보이는 값**도 기본값이다. 위젯은 기본값을 `value=` 로
     # 받지 않으므로(`Past Data 포함` 의 위젯 기본은 끔), 켬은 서버가 밀어 줘야 보인다.
     assert switch.toggles_shown_after_main == dict(TOGGLE_DEFAULTS)
 
 
-def test_the_open_tab_survives_the_same_load(switch: SwitchObservation) -> None:
-    """같은 전환에서 보던 탭은 남는다.
+def test_the_settings_popup_reopens_on_the_tab_it_showed(switch: SwitchObservation) -> None:
+    """같은 전환 뒤에도 「HOME 설정」 팝업은 보던 안쪽 탭(Past Data)으로 다시 열린다.
 
-    「불러오기」가 부르는 `st.rerun()` 은 사이드바에서 실행을 끊으므로 페이지 본문이 그
-    회차에 돌지 않고, Streamlit 은 그 회차에 만들어지지 않은 위젯의 값을 버린다. 되돌려
-    놓는 것은 `stateful_tabs` 가 위젯 아닌 칸에 적어 둔 기억이다.
+    팝업이 닫힌 회차와 「불러오기」의 `st.rerun()` 이 끊은 회차에는 탭 위젯이 그려지지 않아
+    Streamlit 이 그 값을 버린다. 되돌려 놓는 것은 `stateful_tabs` 가 위젯 아닌 칸에 적어 둔
+    기억이다(전에는 HOME 본문 탭이 같은 기억으로 남았다).
     """
     assert switch.remembered_tab_after == switch.tab_before
     assert switch.tab_after == switch.tab_before, (
-        "시나리오를 바꾸니 보던 탭이 첫 칸으로 돌아갔습니다. "
+        "시나리오를 바꾸니 설정 팝업이 첫 탭으로 돌아갔습니다. "
         f"기대: {switch.tab_before}, 실제: {switch.tab_after}"
     )
 
@@ -506,7 +517,7 @@ def test_the_dashboard_shows_the_new_revision_numbers(switch: SwitchObservation)
     바꿨는데 숫자가 그대로」로 보인다.
     """
     assert switch.numbers_before, "첫 화면이 Figure 를 하나도 그리지 않았습니다."
-    assert switch.numbers_after, "전환 뒤 Main 탭이 Figure 를 하나도 그리지 않았습니다."
+    assert switch.numbers_after, "전환 뒤 HOME 이 Figure 를 하나도 그리지 않았습니다."
     assert switch.numbers_after != switch.numbers_before, (
         "리비전을 바꿨는데 화면 수치가 그대로입니다. 앞 시나리오의 Figure 가 그대로 남았습니다."
     )
@@ -518,21 +529,21 @@ def test_the_switch_actually_activated_the_other_revision(switch: SwitchObservat
     assert switch.active_revision_after == switch.loaded_revision_id
 
 
-def test_the_hidden_tab_draws_nothing_during_the_switch(switch: SwitchObservation) -> None:
-    """전환 회차에는 Preference 탭만 열려 있어 무거운 Figure 를 그리지 않는다.
-
-    이것이 깨지면 위 수치 검사가 아니라 **성능**이 먼저 무너진다 — 숨은 탭의 Figure 까지
-    매 전환에 그리게 된다.
-    """
-    assert switch.numbers_during_switch == ()
+def test_the_switch_run_already_draws_the_new_revision(switch: SwitchObservation) -> None:
+    """HOME 은 탭 없이 한 화면이라(2026-11-02) 불러온 회차가 곧 새 리비전의 그림을 그린다 — 다음
+    회차의 그림과 같고 첫 화면과 다르다(전에는 Preference 탭을 보는 중이면 그 회차에 그리지
+    않았다)."""
+    assert switch.numbers_during_switch
+    assert switch.numbers_during_switch == switch.numbers_after
+    assert switch.numbers_during_switch != switch.numbers_before
 
 
 def test_toggles_flipped_in_the_card_on_main_are_released_by_a_load(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """가장 흔한 경우 — Main 에서 사이드바 카드의 토글을 켠 채 다른 리비전을 불러온다.
+    """가장 흔한 경우 — HOME 에서 사이드바 카드의 토글을 켠 채 다른 리비전을 불러온다.
 
-    위의 모듈 시나리오는 Preference 탭에서 세션 값을 직접 바꾸므로 **그려진 위젯 값**이 풀리는지는
+    위의 모듈 시나리오는 세션 값을 직접 바꾸므로 **그려진 위젯 값**이 풀리는지는
     보지 않는다. 여기서는 카드의 위젯으로 켜고, 불러오기 뒤 같은 위젯이 기본값으로 서는지 본다.
 
     서버 값만 보면 이 검사는 결함이 있을 때도 통과했다(2026-10-08 안정화 점검 B1). 불러오기가

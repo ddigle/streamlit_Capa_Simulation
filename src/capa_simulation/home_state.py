@@ -1,4 +1,4 @@
-# Purpose: HOME 토글의 세션 키·기본값과 그 값 읽기를 UI·계산·시나리오 초기화에 공유한다.
+# Purpose: HOME 토글의 세션 키·기본값과 「설정」 팝업 열림 칸을 UI·계산·시나리오 초기화에 공유한다.
 
 """UI 모듈을 import 하지 않아도 읽을 수 있는 HOME 표시 상태 계약."""
 
@@ -47,12 +47,18 @@ def home_toggle(state: Mapping[Any, Any], key: str) -> bool:
     return bool(state.get(key, HOME_TOGGLE_DEFAULTS[key]))
 
 
-# HOME 의 세 탭(`stateful_tabs`)의 위젯 key 와 라벨. 페이지 스크립트는 import 할 수 없어 여기
-# 둔다. 제목 줄의 주요 Case 칩(`components/home_main_case_chips.py`)은 「지정 안 함」 칩을 누르면
-# 이 key 에 `Preference` 라벨을 적어 그 탭으로 옮긴다. 라벨은 탭의 위젯 값이라 바꾸면 세션에 남은
+# HOME 「설정」 팝업(2026-11-02 사용자 요청 — 전에는 HOME 의 `Preference`·`Past Data` 탭). HOME 은
+# 탭 없이 Main 한 화면이고, 공용 설정은 사이드바 「HOME 설정」 상자가 여는 큰 팝업의 안쪽 탭 둘이다
+# (`components/home_settings.py`). 페이지 스크립트는 import 할 수 없어 키·라벨을 여기 둔다 — 「LOB
+# 표시 조건」 카드의 주요 Case 칩(`components/home_main_case_chips.py`)은 「지정 안 함」 칩을 누르면
+# 이 팝업을 `Preference` 탭으로 연다.
+#
+# 열림 칸은 HOME 한 화면에 하나(`<페이지>_open_dialog` — `page_bootstrap.PAGE_DIALOG_SUFFIX`, AGENTS
+# 9장 「팝업과 콜백」)이고 값이 팝업을 가른다. 안쪽 탭 라벨은 탭의 위젯 값이라 바꾸면 세션에 남은
 # 값과 어긋난다.
-HOME_TAB_KEY = "home_active_tab"
-HOME_MAIN_TAB = ":material/dashboard: Main"
+HOME_DIALOG_KEY = "home_open_dialog"
+HOME_SETTINGS_DIALOG = "settings"
+HOME_SETTINGS_TAB_KEY = "home_settings_tab"
 HOME_PREFERENCE_TAB = ":material/tune: Preference"
 HOME_PAST_TAB = ":material/history: Past Data"
-HOME_TAB_LABELS = (HOME_MAIN_TAB, HOME_PREFERENCE_TAB, HOME_PAST_TAB)
+HOME_SETTINGS_TAB_LABELS = (HOME_PREFERENCE_TAB, HOME_PAST_TAB)

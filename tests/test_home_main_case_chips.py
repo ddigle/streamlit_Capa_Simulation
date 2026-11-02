@@ -1,10 +1,11 @@
-# Purpose: HOME 제목 줄 주요 Case 칩의 글자·풍선·칠하기·상태와 사이드바와 같은 불러오기를 지킨다.
+# Purpose: HOME LOB 표시 조건 카드 주요 Case 칩의 글자·풍선·칠하기·상태와 불러오기를 지킨다.
 
-"""HOME 제목 줄 끝의 주요 Case 칩 셋(2026-10-23 사용자 결정 — 시안 C · 동작 (가)).
+"""HOME 주요 Case 칩 셋(2026-10-23 사용자 결정 — 시안 C · 동작 (가)). 자리는 사이드바 「LOB 표시
+조건」 카드 맨 위다(2026-11-02 사용자 요청 — 전에는 본문 제목 줄 끝).
 
 칩을 누르면 사이드바에서 그 리비전을 불러온 것과 **똑같아야** 한다 — 세션 활성 시나리오, 사이드바
 「시나리오」 칸과 그 아래 알림, 머리 띠 위 줄까지. 그래서 실제 DB 와 실제 활성화로 사이드바 필드·
-팝업·칩·HOME 탭을 한 스크립트에 세워 본다(`app.py` 의 차례 — 필드와 팝업이 페이지보다 먼저다).
+팝업·칩 카드를 한 스크립트에 세워 본다(`app.py` 의 차례 — 필드와 팝업이 페이지보다 먼저다).
 """
 
 from __future__ import annotations
@@ -24,11 +25,13 @@ from capa_simulation.components.home_main_case_chips import (
     MISSING_REVISION_HELP,
     OFFICIAL_CHIP_KEY,
     OUTSIDE_SLOTS_TEXT,
+    STOPPED_UNSET_HELP,
     SlotChip,
     changed_slot_notice,
     chip_style,
     outside_slots,
     slot_chips,
+    stopped_chips,
 )
 from capa_simulation.components.intro_summary import _SESSION_KEY as OFFICIAL_SESSION_KEY
 from capa_simulation.components.intro_summary import OfficialIdentity
@@ -42,7 +45,12 @@ from capa_simulation.components.scenario_status import (
     SIDEBAR_SCENARIO_KEY,
 )
 from capa_simulation.design import tokens
-from capa_simulation.home_state import HOME_MAIN_TAB, HOME_PREFERENCE_TAB, HOME_TAB_KEY
+from capa_simulation.home_state import (
+    HOME_DIALOG_KEY,
+    HOME_PREFERENCE_TAB,
+    HOME_SETTINGS_DIALOG,
+    HOME_SETTINGS_TAB_KEY,
+)
 from capa_simulation.persistence.cache import (
     clear_global_main_cases_cache,
     clear_scenario_snapshot_cache,
@@ -64,10 +72,10 @@ from capa_simulation.services.main_cases import (
 )
 
 # `app.py` 차례 — 공식버전 부트스트랩·프리셋 적용 → 사이드바 시나리오 필드 → 열린 팝업 → 페이지(제목
-# 줄 칩·칩 알림·HOME 탭). 공식버전은 입장 화면 요약이 세션에 두는 칸(`intro_summary._SESSION_KEY`)에
-# 시험이 직접 넣는다 — 칩과 칩 콜백이 둘 다 그 칸을 읽는다. 실제 `app.py` 의 배선은
-# `test_app_navigation.py` 가 본다. 머리 띠 위 줄은 `header_lines` 를 그대로 불러 세션에 적는다(머리
-# 띠는 CSS 가상요소라 AppTest 가 못 읽는다).
+# 줄 · `LOB 표시 조건` 카드 맨 위 칩 · 칩 알림). 공식버전은 입장 화면 요약이 세션에 두는
+# 칸(`intro_summary._SESSION_KEY`)에 시험이 직접 넣는다 — 칩과 칩 콜백이 둘 다 그 칸을 읽는다. 실제
+# `app.py` 의 배선은 `test_app_navigation.py` 가 본다. 머리 띠 위 줄은 `header_lines` 를 그대로 불러
+# 세션에 적는다(머리 띠는 CSS 가상요소라 AppTest 가 못 읽는다).
 CHIPS_SCRIPT = """
 from pathlib import Path
 
@@ -78,10 +86,8 @@ import capa_simulation.settings as settings
 settings.DUCKDB_PATH = Path(st.session_state["database_path"])
 
 from capa_simulation.components.app_header import header_lines
-from capa_simulation.components.home_main_case_chips import (
-    render_main_case_chip_notice,
-    render_main_case_chips,
-)
+from capa_simulation.components.home_main_case_chips import render_main_case_chips
+from capa_simulation.components.home_preference import render_home_view_card
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_header import render_page_header_with_status
 from capa_simulation.components.scenario_status import (
@@ -89,8 +95,6 @@ from capa_simulation.components.scenario_status import (
     scenario_dialog_is_open,
     show_scenario_dialog,
 )
-from capa_simulation.components.tab_state import stateful_tabs
-from capa_simulation.home_state import HOME_TAB_KEY, HOME_TAB_LABELS
 from capa_simulation.scenario_activation import (
     active_scenario_label,
     bootstrap_latest_official_scenario,
@@ -103,12 +107,14 @@ apply_pending_scenario_preset()
 render_scenario_field()
 if scenario_dialog_is_open():
     show_scenario_dialog("home.py")
-render_page_header_with_status(
-    "Capa LOB Summary",
-    trailing=lambda: render_main_case_chips(st.session_state["database_path"]),
+render_page_header_with_status("Capa LOB Summary")
+render_home_view_card(
+    comparison_ready=False,
+    chips=lambda: render_main_case_chips(
+        st.session_state["database_path"],
+        settings_ready=st.session_state.get("test_settings_ready", True),
+    ),
 )
-render_main_case_chip_notice()
-stateful_tabs(HOME_TAB_LABELS, key=HOME_TAB_KEY)
 st.session_state["test_header_top"] = header_lines(
     active_scenario_label(),
     official=latest_official_revision(),
@@ -205,19 +211,12 @@ def _style(app: AppTest) -> str:
     )
 
 
-HIDDEN_OUTSIDE_RULE = (
-    f'.st-key-{CHIP_ROW_KEY} [data-testid="stCaptionContainer"] {{ visibility: hidden; }}'
-)
-
-
 def _outside_shown(app: AppTest) -> bool:
-    """칩 줄 앞 「슬롯 밖」 이 보이는가.
-
-    글자는 늘 그리고(자리를 잡아 둔다) 슬롯 안이면 CSS 로 감춘다.
-    """
-    captions = [str(item.value) for item in app.caption]
-    assert captions.count(OUTSIDE_SLOTS_TEXT) == 1, captions
-    return HIDDEN_OUTSIDE_RULE not in _style(app)
+    """칩 이름 줄 「주요 Case」 오른쪽 끝에 「슬롯 밖」 이 섰는가 — 슬롯 안이면 그 글자가 없다
+    (이름 줄은 늘 서 있어 칩 줄이 움직이지 않는다 — 숨은 자리표시자를 두지 않는다)."""
+    captions = [str(item.value) for item in app.sidebar.caption]
+    assert "주요 Case" in captions, captions
+    return OUTSIDE_SLOTS_TEXT in captions
 
 
 def _notices(app: AppTest) -> list[str]:
@@ -230,7 +229,8 @@ def test_three_chips_carry_only_their_short_names_and_tell_the_rest_on_hover(
     """칩 글자는 `공식 vN` · `Case1` · `Case2` 뿐이고 시나리오·리비전은 풍선이 말한다.
 
     새 세션은 공식버전으로 열리므로 공식 칩만 칠하고 「슬롯 밖」은 없다. 미지정 Case2 는 점선이고
-    누를 수 있다(누르면 `Preference`).
+    누를 수 있다(누르면 「HOME 설정」 팝업의 `Preference`). 칩은 사이드바 `LOB 표시 조건` 카드
+    맨 위다 — 본문에는 칩이 없다.
     """
     app = _app(seeded)
     official = seeded.official
@@ -254,8 +254,11 @@ def test_three_chips_carry_only_their_short_names_and_tell_the_rest_on_hover(
     assert f".st-key-{CASE2_CHIP_KEY} button {{ border-style: dashed; }}" in _style(app)
     assert f".st-key-{CASE1_CHIP_KEY} button" not in _style(app)
     assert not _outside_shown(app)
-    # 칩은 제목 줄 끝 칸이다 — 제목은 그대로 「Capa LOB Summary」.
+    # 칩은 사이드바 카드 안이다 — 본문 제목은 그대로 「Capa LOB Summary」 이고 끝 칸이 없다.
     assert [str(item.value) for item in app.title] == ["Capa LOB Summary"]
+    sidebar_keys = [str(button.key) for button in app.sidebar.button]
+    assert sidebar_keys == [OFFICIAL_CHIP_KEY, CASE1_CHIP_KEY, CASE2_CHIP_KEY]
+    assert not [button for button in app.main.button if "home_main_case_chip" in str(button.key)]
 
 
 def test_clicking_a_case_loads_it_exactly_like_the_sidebar(seeded: Seeded) -> None:
@@ -340,16 +343,65 @@ def test_painting_needs_the_same_revision_and_otherwise_says_outside_the_slots(
     assert _outside_shown(app)
 
 
-def test_an_unset_case_opens_the_preference_tab(seeded: Seeded) -> None:
-    """미지정 칩은 불러오지 않고 HOME `Preference` 탭(「주요 Case」 상자)으로 옮긴다."""
+def test_an_unset_case_opens_the_settings_popup_on_preference(seeded: Seeded) -> None:
+    """미지정 칩은 불러오지 않고 「HOME 설정」 팝업을 `Preference` 탭(「주요 Case」 상자)으로 연다
+    (2026-11-02 — 전에는 HOME `Preference` 탭으로 옮겼다). 여는 콜백은 다른 팝업 칸부터 비운다."""
     app = _app(seeded)
-    assert app.session_state[HOME_TAB_KEY] == HOME_MAIN_TAB
+    assert HOME_DIALOG_KEY not in app.session_state
+    app.session_state[HOME_SETTINGS_TAB_KEY] = ":material/history: Past Data"
+    app.session_state[SCENARIO_DIALOG_KEY] = True
 
     app = _ran(app.button(key=CASE2_CHIP_KEY).click().run())
 
-    assert app.session_state[HOME_TAB_KEY] == HOME_PREFERENCE_TAB
+    assert app.session_state[HOME_DIALOG_KEY] == HOME_SETTINGS_DIALOG
+    assert app.session_state[HOME_SETTINGS_TAB_KEY] == HOME_PREFERENCE_TAB
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
     assert SCENARIO_DIALOG_KEY not in app.session_state
+
+
+def test_a_stopped_home_locks_only_the_unset_chip(seeded: Seeded) -> None:
+    """계산이 멈춘 회차에는 「HOME 설정」 팝업을 열 수 없어(본문이 계산 결과를 쓴다) 미지정 칩만
+    잠그고 풍선이 까닭을 말한다. 올릴 리비전이 있는 칩은 그대로 누를 수 있다 — 다른 Case 로 옮기는
+    것이 멈춘 화면에서 벗어나는 길이기도 하다."""
+    app = AppTest.from_string(CHIPS_SCRIPT, default_timeout=120)
+    app.session_state["database_path"] = str(seeded.database)
+    app.session_state[OFFICIAL_SESSION_KEY] = {"official": seeded.official._asdict()}
+    app.session_state["test_settings_ready"] = False
+    app = _ran(app.run())
+
+    assert _chip(app, CASE2_CHIP_KEY) == (
+        "Case2",
+        f"Case2 · 지정 안 함 — {STOPPED_UNSET_HELP}",
+        "secondary",
+        True,
+    )
+    assert _chip(app, CASE1_CHIP_KEY)[3] is False
+    app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
+    assert _active(app) == (seeded.case_scenario, seeded.newer_revision)
+
+
+def test_stopped_chips_keep_locked_and_loadable_chips_as_they_are() -> None:
+    loadable = SlotChip(
+        "a", "Case1", "풍선", ("s", "r"), painted=False, disabled=False, dashed=False
+    )
+    unset = SlotChip("b", "Case2", "Case2 · 지정 안 함", (None, None), False, False, True)
+    missing = SlotChip(
+        "c", "Case2", "없음", (None, None), painted=False, disabled=True, dashed=False
+    )
+
+    assert stopped_chips((loadable, unset, missing)) == (
+        loadable,
+        SlotChip(
+            "b",
+            "Case2",
+            f"Case2 · 지정 안 함 — {STOPPED_UNSET_HELP}",
+            (None, None),
+            painted=False,
+            disabled=True,
+            dashed=True,
+        ),
+        missing,
+    )
 
 
 def test_a_vanished_revision_and_a_missing_official_lock_their_chips(seeded: Seeded) -> None:
@@ -567,19 +619,21 @@ def test_chips_paint_every_slot_on_the_active_revision_and_lock_what_cannot_load
 def test_the_chip_style_dashes_only_unset_chips() -> None:
     plain = SlotChip("a", "Case1", "", (None, None), painted=False, disabled=False, dashed=False)
     dashed = SlotChip("b", "Case2", "", (None, None), painted=False, disabled=False, dashed=True)
-    assert "border-style: dashed" not in chip_style((plain,), outside=False)
-    assert ".st-key-b button { border-style: dashed; }" in chip_style(
-        (plain, dashed), outside=False
-    )
+    assert "border-style: dashed" not in chip_style((plain,))
+    assert ".st-key-b button { border-style: dashed; }" in chip_style((plain, dashed))
 
 
-def test_the_chip_style_keeps_one_row_and_hides_outside_only_inside_the_slots() -> None:
-    """칩 줄은 한 줄이다. 「슬롯 밖」 은 늘 자리를 잡고 슬롯 안이면 감출 뿐이다 — 나타나고 사라질 때
-    칩이 옆으로 밀리거나 칩 줄이 두 줄로 접히지 않는다(사이드바를 편 900px 에서 접혔다)."""
+def test_the_chip_style_keeps_one_row_and_closes_the_field_with_a_line() -> None:
+    """칩 줄은 한 줄이다 — 카드 폭(사이드바)을 같은 폭으로 나누고 칩 글자는 접히지 않는다. 칩 필드
+    밑에는 얇은 선이 토글과 가른다. 「슬롯 밖」 을 감추는 규칙은 없다(이름 줄 끝 글자라 자리를 잡아
+    둘
+    까닭이 없다)."""
     chips = (SlotChip("a", "Case1", "", (None, None), painted=False, disabled=False, dashed=False),)
-    assert f".st-key-{CHIP_ROW_KEY} {{ flex-wrap: nowrap; }}" in chip_style(chips, outside=True)
-    assert HIDDEN_OUTSIDE_RULE in chip_style(chips, outside=False)
-    assert HIDDEN_OUTSIDE_RULE not in chip_style(chips, outside=True)
+    style = chip_style(chips)
+    assert f".st-key-{CHIP_ROW_KEY} {{ flex-wrap: nowrap; }}" in style
+    assert "white-space: nowrap" in style
+    assert ".st-key-home_main_case_field { gap: 0.3rem; padding-bottom: 0.6rem;" in style
+    assert "visibility: hidden" not in style
 
 
 @pytest.mark.parametrize("mode", ["light", "dark"])
@@ -591,7 +645,7 @@ def test_a_painted_chip_writes_in_the_text_colour_for_the_accent_fill(
     from capa_simulation.design import theme
 
     monkeypatch.setattr(theme, "current_mode", lambda: mode)
-    style = chip_style((), outside=False)
+    style = chip_style(())
     painted = f'.st-key-{CHIP_ROW_KEY} button[kind="primary"]'
     colour = tokens.palette_value(mode, "ACCENT_TEXT")
     assert (

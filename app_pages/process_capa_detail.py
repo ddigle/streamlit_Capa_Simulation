@@ -248,7 +248,7 @@ process_labels = get_process_labels()
 today = date.today()
 
 try:
-    # 판정 기준(HOME → Preference 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
+    # 판정 기준(HOME 설정 → Preference 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
     # 키·확보율·공정 선택지를 제약 시뮬레이션과 **같은 차례**로
     # 낸다(`page_bootstrap.process_page_inputs`) — 두 화면이 같은 계획 칸을 같은 키로 받는다. 기본
     # 공정·기본 달을 정할 때도 HOME·Static Capa 와 같은 판정 (`thresholds.status`)을 쓴다.

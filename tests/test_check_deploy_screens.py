@@ -2168,10 +2168,9 @@ def test_the_space_scenario_row_contract_matches_the_app() -> None:
         ("app_pages/home.py", 'PROCESS_FIELD_KEY = "dashboard_bottleneck_process_dialog_open"'),
         ("app_pages/home.py", "@st.dialog(\n    PROCESS_FIELD_LABEL,"),
         ("app_pages/home.py", "st.caption(THRESHOLD_POINTER)"),
-        ("src/capa_simulation/home_state.py", 'HOME_MAIN_TAB = ":material/dashboard: Main"'),
         (
             "src/capa_simulation/components/home_preference.py",
-            'condition_card("LOB 표시 조건", name="home")',
+            'condition_card("LOB 표시 조건", name="home", default=True)',
         ),
         ("src/capa_simulation/components/scenario_status.py", '"리비전",'),
         (

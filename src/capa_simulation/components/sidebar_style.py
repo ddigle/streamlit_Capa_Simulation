@@ -21,6 +21,7 @@ from capa_simulation.sidebar_status import (
     CONDITION_CARD_PREFIX,
     CONDITION_DIALOG_SINK_KEY,
     CONDITIONS_BOX_KEY,
+    DIALOG_BOX_PREFIX,
     SIDEBAR_TOGGLE_SINK_KEY,
 )
 
@@ -29,6 +30,8 @@ _SELECTOR_JOINER = ",\n        "
 # 화면 조건 카드 전부. 페이지마다 카드 이름이 달라 key 를 인자로 받을 수 없으므로 접두어로
 # 고른다 — Streamlit 은 `key` 를 `st-key-<key>` 클래스로 단다.
 _CONDITION_CARDS = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
+# 조회 조건 아래 따로 서서 한 번 누르면 곧바로 팝업이 뜨는 상자 전부(지금은 HOME 「HOME 설정」).
+_DIALOG_BOXES = f'[class*="st-key-{DIALOG_BOX_PREFIX}"]'
 
 # 사이드바 세로 블록의 칸 사이.
 _SIDEBAR_BLOCK_GAP = "0.42rem"
@@ -39,12 +42,13 @@ _CONDITION_FIELDS = f'[class*="st-key-{FIELD_KEY_PREFIX}"]'
 _CONDITION_NAME_ROWS = f'[class*="st-key-{NAME_ROW_KEY_PREFIX}"]'
 _PANEL_ROW_GAP = "0.6rem"
 _FIELD_INNER_GAP = "0.2rem"
-# **상자 오른쪽 끝의 표식.** 누르면 무슨 일이 일어나는지를 오른쪽 끝 기호가 늘 보이게 말한다.
-# 곧바로 다른 화면으로 가는 링크 상자는 `→`(`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은
-# `⌄`(`expand_more`, 펴면 뒤집힌다), 이 자리에서 **팝업이 뜨는** 조건 칸은 `⇕`(`unfold_more`,
-# 고르는 칸의 관례 — 2026-10-10 사용자 결정). `›` 는 Streamlit 이 hover 때 쓰는 글리프라 쓰지
-# 않는다. 이 Streamlit 의 확장 패널은 제 아이콘을 **제목 왼쪽**에만 그리고 오른쪽은 비워 둔다(실측
-# `stExpanderIcon` 32–46). 기호는 Streamlit 이 이미 불러 둔 Material Symbols 합자로 그린다.
+# **상자 오른쪽 끝의 표식.** 누르면 무슨 일이 일어나는지를 오른쪽 끝 기호가 늘 보이게 말한다. 곧바로
+# 다른 화면으로 가는 링크 상자는 `→`(`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은
+# `⌄`(`expand_more`, 펴면 뒤집힌다), 이 자리에서 **팝업이 뜨는** 조건 칸과 팝업 상자(HOME 「HOME
+# 설정」 — 2026-11-02)는 `⇕`(`unfold_more`, 고르는 칸의 관례 — 2026-10-10 사용자 결정). `›` 는
+# Streamlit 이 hover 때 쓰는 글리프라 쓰지 않는다. 이 Streamlit 의 확장 패널은 제 아이콘을 **제목
+# 왼쪽**에만 그리고 오른쪽은 비워 둔다(실측 `stExpanderIcon` 32–46). 기호는 Streamlit 이 이미 불러
+# 둔 Material Symbols 합자로 그린다.
 _MARKER_FONT = '"Material Symbols Rounded"'
 _LINK_MARKER_SIZE = "16px"
 _SUMMARY_MARKER_SIZE = "18px"
@@ -253,6 +257,7 @@ def build_sidebar_stylesheet(
         }}"""
     )
     conditions_panel_style = _conditions_panel_style()
+    dialog_box_style = _dialog_box_style()
     # 규칙마다 설명은 바로 위 파이썬 주석에 둔다 — 이 시트는 화면을 옮길 때마다 소켓으로 다시 가므로
     # CSS 주석을 실으면 그만큼이 매번 함께 간다.
     return (
@@ -599,6 +604,7 @@ def build_sidebar_stylesheet(
         }}
 
 {conditions_panel_style}
+{dialog_box_style}
 """
         # `Support` 상자에 서식 예외를 두지 않는다. 테두리도 요약 줄 글자도 다른 상자와 같다 — 계산
         # 흐름 밖이라는 것은 서식이 아니라 **맨 아래라는 자리와 앞 간격**이 말한다(바로 아래 규칙).
@@ -879,3 +885,80 @@ def _conditions_panel_style() -> str:
             box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};
         }}"""
     )
+
+
+def _dialog_box_style() -> str:
+    """조회 조건 아래 따로 선 **팝업 상자**(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)의 서식.
+
+    조건 카드(접히는 확장 패널)와 같은 면(`NAV_CONTROL_TINT`)·테두리·머리 글자(1rem·700)로 서서 조건
+    구역의 한 무리로 읽히고, 오른쪽 끝 표식만 `⇕`(팝업이 뜨는 칸 — 조건 패널 값 칸과 같은 기호)다 —
+    카드의 `⌄`(이 자리에서 펼침)와 누르면 일어나는 일이 갈린다(2026-11-02 시안 (가)). 왼쪽 아이콘은
+    조건 카드처럼 `ACCENT`. 상자 자체가 1.63 전폭 `st.button` 이라 값 칸과 같은 DOM(버튼 안 마크다운
+    칸)에 기댄다. 마우스를 올리면 테두리가 `ACCENT` 로, 키보드로 닿으면 2px 띄운 2px `ACCENT` 윤곽이
+    선다(값 칸과 같다). 읽어 두고 저장하지 않은 것이 있으면 key 끝 `PENDING_SUFFIX` — 왼쪽 3px 주황
+    띠 (`PENDING_MARK`, 조건 칸의 미저장 띠와 같다). 잠긴 상자(계산이 멈춘 회차)는 표식을 걷는다.
+    """
+    button = f'{_DIALOG_BOXES} [data-testid="stButton"] button'
+    pending = f'{_DIALOG_BOXES}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button'
+    return f"""
+        {button} {{
+            justify-content: flex-start;
+            gap: 0.5rem;
+            min-height: 2.5rem;
+            padding: 0.25rem 0.85rem;
+            background-color: {tokens.NAV_CONTROL_TINT};
+            border: 1px solid {tokens.BORDER};
+            border-radius: 0.5rem;
+            color: {tokens.TEXT};
+            text-align: left;
+        }}
+        {button}:hover,
+        {button}:active {{
+            background-color: {tokens.NAV_CONTROL_TINT};
+            border-color: {tokens.ACCENT};
+            color: {tokens.TEXT};
+        }}
+        {button}:focus-visible {{
+            border-color: {tokens.ACCENT};
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
+            box-shadow: none;
+        }}
+        {button} [data-testid="stIconMaterial"] {{
+            color: {tokens.ACCENT};
+        }}
+        {button} > div,
+        {button} > div > span {{
+            flex: 1 1 auto;
+            min-width: 0;
+            justify-content: flex-start;
+        }}
+        {button} [data-testid="stMarkdownContainer"] {{
+            flex: 1 1 auto;
+            min-width: 0;
+        }}
+        {button} [data-testid="stMarkdownContainer"] p {{
+            font-size: 1rem;
+            font-weight: 700;
+            text-align: left;
+        }}
+        {button}::after {{
+            content: "unfold_more";
+            content: "unfold_more" / "";
+            flex: 0 0 auto;
+            margin-left: auto;
+            font-family: {_MARKER_FONT};
+            font-size: {_SUMMARY_MARKER_SIZE};
+            font-weight: 400;
+            line-height: 1;
+            color: {tokens.TEXT_MUTED};
+        }}
+        {button}:disabled {{
+            color: {tokens.TEXT_MUTED};
+        }}
+        {button}:disabled::after {{
+            content: none;
+        }}
+        {pending} {{
+            box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};
+        }}"""
