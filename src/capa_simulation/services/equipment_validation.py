@@ -28,7 +28,7 @@ from typing import Any, TypeAlias
 
 import numpy as np
 import pandas as pd
-from pandas.api.types import is_datetime64_dtype
+from pandas.api.types import is_datetime64_any_dtype, is_datetime64_dtype
 from pandas.api.typing import NAType
 
 from capa_simulation.services.equipment_contract import (
@@ -1429,7 +1429,19 @@ def _read_master_dates(entered: pd.Series) -> tuple[pd.Series, pd.Series]:
     멈추며, 한 칸이 모두 시간대 꼴이면 시간대 없는 칸과 견주다 멈추거나 그대로 통과한다. 시간대를
     떼고 받지 않는다(그 날짜가 하루 밀릴 수 있다). 저장본은 시간대가 없으니 다시 읽는 리비전은 이
     길에서 달라지지 않는다.
+
+    **시간 없이 빼기 꼴 시간대만 붙은 값**(`2026-11-05-05:00`·`2026-11-05-0500`·
+    `11/05/2026-05:00`·`Nov 5, 2026 -0500`·`20261105-0500` — `_minus_offset_date`)도 못 읽은
+    값이고 칸을 읽기 **전에** 가린다. 더하기·Z 꼴
+    (`2026-11-05+09:00`·`2026-11-05Z`)은 pandas 가 그냥 못 읽지만 빼기 꼴은 뒤를 시각 05:00 으로
+    읽어 날짜로 받기 때문이다(2026-11-02 사용자 결정 「막는다」). 읽은 뒤에 가리면 그 값이 칸 첫
+    값일 때 칸의 날짜 꼴을 정해 버려, 가린 뒤 나머지 값만 다시 읽는다(위 시간대 값과 같은 꼴). 글자
+    값만 보므로 저장본(DATE)·숫자로 온 엑셀 일련번호처럼 글자가 아닌 값은 이 판정에 닿지 않는다.
     """
+    minus = _minus_offset_rows(entered)
+    if minus.any():
+        dates, invalid = _read_master_dates(entered.mask(minus))
+        return dates, invalid | minus
     dates, invalid, scattered = _read_date(entered)
     if not scattered and not isinstance(dates.dtype, pd.DatetimeTZDtype):
         return dates, invalid
@@ -1451,20 +1463,58 @@ def _zoned_date(value: object) -> bool:
     return scattered or isinstance(dates.dtype, pd.DatetimeTZDtype)
 
 
-# 시간 없이 시간대만 붙은 날짜(`2026-11-05+09:00`·`2026-11-05Z`) — pandas 는 이 꼴을 시간대 꼴로
-# 읽지 못하고 그냥 못 읽는다(NaT). 떼면 읽히는 값이라 문구만 시간대 까닭으로 고른다.
-_OFFSET_ONLY_DATE = re.compile(r"\s*\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\s*(?:[Zz]|[+-]\d{2}:?\d{2})\s*")
+# 시간 없이 시간대만 붙은 날짜의 날짜 부분 — 연도가 앞인 꼴(`2026-11-05`), 월·일이 앞인 꼴
+# (`11/05/2026`·`05.11.2026`), 구분자 없는 8자리(`20261105`), 영문 달 꼴(`Nov 5, 2026`·
+# `5 Nov 2026`).
+# 연도는 네 자리만 — 두 자리 연도 꼴은 뒤 부호가 날짜 구분자인지 시간대인지 갈리지 않는다.
+_OFFSET_DATE_PART = (
+    r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}"
+    r"|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}"
+    r"|\d{8}"
+    r"|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{1,2},?\s*\d{4}"
+    r"|\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s*\d{4}"
+)
+# 시간 없이 시간대만 붙은 날짜(`2026-11-05+09:00`·`2026-11-05-05:00`·`11/05/2026 -0500`·
+# `2026-11-05Z`) — 떼면 읽히는 날짜라 시간대 까닭으로 막는다. 날짜와 부호 사이는 빈칸이나 `T`
+# 하나까지, 부호 뒤는 `h:mm`·`hh:mm`·`hhmm`(세 자리 이상 — `2026-11-05-05` 처럼 두 자리뿐인 뒤는
+# 시각인지 시간대인지 갈리지 않아 지금대로 둔다). 더하기·Z 꼴은 pandas 가 그냥 못 읽고(NaT) 빼기
+# 꼴은 뒤를 시각으로 읽어 받으므로 빼기 꼴만 칸을 읽기 전에 가린다(`_read_master_dates`).
+_OFFSET_ONLY_DATE = re.compile(
+    rf"\s*(?:{_OFFSET_DATE_PART})\s*T?\s*(?P<offset>[Zz]|[+-]\d{{1,2}}:?\d{{2}})\s*",
+    re.ASCII | re.IGNORECASE,
+)
 
 
 def _offset_only_date(value: object) -> bool:
-    """값이 시간 없이 시간대만 붙은 날짜 글인가 — **못 읽은 값의 문구를 고를 때만** 쓴다.
+    """값이 시간 없이 시간대만 붙은 날짜 글인가 — 못 읽은 값의 문구를 시간대 까닭으로 고를 때 쓴다.
 
-    `_zoned_date` 를 넓히지 않는 까닭: `_read_master_dates` 가 그 판정으로 칸 전체 값을 가린다.
-    `2026-11-05-05:00` 은 pandas 가 뒤를 시각 05:00 으로 읽어 받는 값인데, 가리는 판정에 넣으면
-    시간대가 섞인 칸에서만 막혀 칸마다 갈린다. 문구 고르기는 이미 못 읽은 줄에만 닿아 받는 값이
-    달라지지 않는다.
+    `_zoned_date`(혼자 읽으면 시간대 꼴이 되는 값)를 넓히지 않는다 — 그 판정은 시간대가 섞인
+    칸에서만 칸 값을 가려, 넓히면 칸마다 갈린다. 받지 않을 값을 가리는 것은 빼기 꼴 판정
+    (`_minus_offset_date`)이 모든 칸에서 한다.
     """
     return isinstance(value, str) and _OFFSET_ONLY_DATE.fullmatch(value) is not None
+
+
+def _minus_offset_date(value: object) -> bool:
+    """값이 시간 없이 빼기 꼴 시간대만 붙은 날짜 글인가(`2026-11-05-05:00`·`2026-11-05 -0500`·
+    `11/05/2026-05:00`·`Nov 5, 2026 -0500`·`20261105-0500`·`2026-11-05-5:00`·`2026-11-05T-05:00`).
+
+    pandas 는 이 꼴의 뒤를 시각으로 읽어 날짜로 받는다 — 더하기 꼴과 같이 막으려고 따로 가린다.
+    날짜 꼴은 `_OFFSET_ONLY_DATE` 가 더하기 꼴과 같은 것을 보므로 두 부호가 같은 꼴에서 갈리지
+    않는다.
+    """
+    if not isinstance(value, str):
+        return False
+    match = _OFFSET_ONLY_DATE.fullmatch(value)
+    return match is not None and match["offset"].startswith("-")
+
+
+def _minus_offset_rows(entered: pd.Series) -> pd.Series:
+    """입력 값이 빼기 꼴 시간대만 붙은 날짜 글인 줄. 날짜형 칸(저장본)은 글자가 없어 모두 거짓."""
+    if is_datetime64_any_dtype(entered):
+        return pd.Series(False, index=entered.index, dtype=bool)
+    flags = [_minus_offset_date(value) for value in entered.tolist()]
+    return pd.Series(flags, index=entered.index, dtype=bool)
 
 
 def _zoned_rows(entered: pd.Series, rows: pd.Series) -> pd.Series:

@@ -707,10 +707,121 @@ def test_a_date_with_only_an_offset_gets_the_time_zone_reason(value: str) -> Non
     assert str(caught.value) == f"{_zoned('물류일정')}: [{value!r}]"
 
 
-def test_a_minus_offset_date_that_pandas_reads_as_a_time_is_not_newly_refused() -> None:
-    """`2026-11-05-05:00` 은 pandas 가 뒤를 시각 05:00 으로 읽어 지금 받는 값이다 — 문구 판정을
-    넓혀도 받는 값이 막히지 않는다(받을지는 따로 정할 일이다)."""
-    assert coerce_master_cell("반입일정", "2026-11-05-05:00") == pd.Timestamp("2026-11-05")
+# 시간 없이 빼기 꼴 시간대만 붙은 날짜 — pandas 는 뒤를 시각 05:00 으로 읽어 날짜로 받는다.
+MINUS_OFFSET_DATES = (
+    "2026-11-05-05:00",
+    "2026-11-05-0500",
+    " 2026-11-05 -05:00 ",
+    "2026/11/05-05:00",
+    "2026.11.05-05:00",
+)
+
+
+@pytest.mark.parametrize("value", MINUS_OFFSET_DATES)
+@pytest.mark.parametrize("row", [0, 3])
+def test_a_minus_offset_date_that_pandas_reads_as_a_time_is_refused_as_a_time_zone(
+    value: str, row: int
+) -> None:
+    """`2026-11-05-05:00` 은 예전에 2026-11-05 로 받았다(pandas 가 뒤를 시각 05:00 으로 읽는다) —
+    더하기 · Z 꼴과 같은 시간대 문구로 막는다(2026-11-02 사용자 결정 A2 「막는다」). 칸 하나
+    다듬기, 저장 거부, 칸 결과가 같다. 칸 첫 값(줄 0)이어도 그 줄만 탓하고 나머지 날짜 글은 그대로
+    읽는다."""
+    refused = coerce_master_cell("반입일정", value)
+    assert isinstance(refused, CellParseError)
+    assert (refused.rule, refused.message) == ("date_unreadable", _zoned("반입일정"))
+
+    frame = _date_text(_master(), "물류일정")
+    frame.at[row, "물류일정"] = value
+    _assert_unreadable_dates(frame, "물류일정", [row])
+
+
+# 연도가 앞이고 구분자가 있는 꼴 밖의 빼기 꼴 — 예전에는 빼기만 받고 같은 꼴의 더하기는
+# 「날짜 형식」 문구로 막았다. 월이 앞인 꼴, 영문 달 꼴, 구분자 없는 8자리, 부호 뒤 한 자리
+# 시각, 날짜 뒤 `T`.
+OTHER_FORM_MINUS_OFFSET_DATES = (
+    "11/05/2026-05:00",
+    "11/05/2026 -0500",
+    "11-05-2026-05:00",
+    "Nov 5, 2026 -0500",
+    "5 Nov 2026 -0500",
+    "20261105-0500",
+    "20261105-05:00",
+    "2026-11-05-5:00",
+    "2026-11-05T-05:00",
+)
+
+
+@pytest.mark.parametrize("value", OTHER_FORM_MINUS_OFFSET_DATES)
+@pytest.mark.parametrize("row", [0, 3])
+def test_a_minus_offset_date_in_other_date_forms_is_refused_like_its_plus_form(
+    value: str, row: int
+) -> None:
+    """연도가 앞인 꼴 밖의 날짜 꼴도 빼기 · 더하기 시간대를 같은 시간대 문구로 막는다(2026-11-02
+    사용자 결정 A2 「막는다」 — 반박 검토 2026-11-02). 예전에는 빼기 꼴을 2026-11-05 로 받고 같은
+    꼴의 더하기는 「날짜 형식」 문구로 막았다. 칸 첫 값(줄 0)이어도 그 줄만 탓한다."""
+    head, _, offset = value.rpartition("-")
+    plus = f"{head}+{offset}"
+    for text in (value, plus):
+        refused = coerce_master_cell("반입일정", text)
+        assert isinstance(refused, CellParseError), text
+        assert (refused.rule, refused.message) == ("date_unreadable", _zoned("반입일정")), text
+
+    frame = _date_text(_master(), "물류일정")
+    frame.at[row, "물류일정"] = value
+    _assert_unreadable_dates(frame, "물류일정", [row])
+
+
+@pytest.mark.parametrize("value", ["2026-11-05-05", "2026-11-05-05:00:00", "2026-11-05 -05"])
+def test_a_two_digit_or_seconds_tail_is_still_read_as_a_time(value: str) -> None:
+    """부호 뒤가 두 자리뿐이거나 초까지 있는 뒤는 시각인지 시간대인지 갈리지 않아 지금대로 받는다
+    (빼기 꼴 판정의 끝 — 시간대 꼴은 부호 뒤 세 자리 이상 `h:mm`·`hh:mm`·`hhmm` 이다)."""
+    assert coerce_master_cell("반입일정", value) == pd.Timestamp("2026-11-05")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-11-05",
+        "2026-11-5",
+        "2026/11/05",
+        "2026.11.05",
+        "2026. 11. 5.",
+        "20261105",
+        "2026-11-05 05:00",
+        "2026-11-05 05:00:00",
+        "2026-11-05T05:00",
+        "11/05/2026",
+        "11-05-2026",
+        "11/05/2026 05:00",
+        "Nov 5, 2026",
+        "November 5, 2026",
+        "5 Nov 2026",
+    ],
+)
+def test_dates_the_app_read_before_are_still_read_beside_a_minus_offset_date(value: str) -> None:
+    """빼기 꼴을 막아도 지금 받는 날짜 글은 그대로 받는다 — 칸 하나로도, 빼기 꼴 값이 칸 첫 값인
+    칸의 다른 줄로도(그 값이 칸의 날짜 꼴을 정하지 않는다)."""
+    assert coerce_master_cell("반입일정", value) == pd.Timestamp("2026-11-05")
+
+    frame = _master()
+    frame["Qual실적"] = None
+    frame.at[0, "Qual실적"] = "2026-06-30-05:00"
+    frame.at[1, "Qual실적"] = value
+    _assert_unreadable_dates(frame, "Qual실적", [0])
+
+
+def test_stored_dates_beside_a_pasted_minus_offset_date_are_not_refused() -> None:
+    """저장본 날짜(리비전을 다시 읽은 `Timestamp`·`date` 값)는 글자가 아니라 빼기 꼴 판정에 닿지
+    않는다 — 다시 읽는 리비전은 달라지지 않고, 새로 넣은 글자 줄만 막힌다."""
+    frame = _master()
+    stored = prepare_equipment_master(frame)
+    assert _blocking(equipment_master_issues(stored)) == []
+    assert stored.equals(prepare_equipment_master(stored))
+
+    dated = frame["물류일정"].notna()
+    frame.loc[dated, "물류일정"] = frame.loc[dated, "물류일정"].map(lambda value: value.date())
+    frame.at[4, "물류일정"] = "2026-05-04-05:00"
+    _assert_unreadable_dates(frame, "물류일정", [4])
 
 
 def test_a_time_zoned_date_waits_for_the_earlier_rules() -> None:
@@ -736,6 +847,24 @@ def test_pasting_time_zoned_dates_names_the_cells_instead_of_crashing() -> None:
     assert str(caught.value) == (
         f"{_zoned('물류일정')}: ['2026-05-03T00:00+09:00', '2026-05-04T00:00+00:00']"
     )
+
+
+@pytest.mark.parametrize("source", ["clipboard", "csv"])
+def test_pasting_a_minus_offset_date_is_refused_like_a_plus_offset(source: str) -> None:
+    """붙여넣기 · 「엑셀·CSV로 한꺼번에」 도 빼기 꼴 시간대 날짜를 더하기 꼴과 같은 문구로 막는다
+    (예전에는 2026-05-03 으로 받았다) — 같은 칸의 멀쩡한 날짜 글은 탓하지 않는다."""
+    current = _master()
+    first, second = current["설비명"].tolist()[:2]
+    kept = str(_date_text(current, "물류일정").at[1, "물류일정"])
+    payload = f"설비명\t물류일정\n{first}\t2026-05-03-05:00\n{second}\t{kept}"
+
+    with pytest.raises(ValueError) as caught:
+        if source == "clipboard":
+            read_equipment_update(payload, current)
+        else:
+            read_equipment_update(payload.replace("\t", ",").encode("utf-8-sig"), current)
+    assert type(caught.value) is ValueError
+    assert str(caught.value) == f"{_zoned('물류일정')}: ['2026-05-03-05:00']"
 
 
 # ------------------------------------------------------------------ 경고 셋

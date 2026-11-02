@@ -50,7 +50,8 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 반올림한 정수 % 가 기준과 같거나 크면 확보입니다(110% 면 109.5% 도 확보 — 이렇게 겨우 든 공정의 기준 대비 여유는 0 으로
 적습니다). 예전에 반 칸 낮춰 저장한 109.5%·99.5% 도 110%·100% 로 읽어 판정이 그대로입니다. 기준 칸(기본 두 칸 · 월별 표 ·
 제약 시뮬레이션과 개조 일정의 기준 확보율)에 소수를 치면 사사오입한 정수로 읽고(109.5 → 110), 판정 기준은 **50 ~ 300%** 안이어야
-저장됩니다 — 밖이면 저장하지 않고 저장 단추 아래에 어느 달 · 어느 칸인지 적습니다(제약 확보율과 같은 범위). 개조 일정이 기한을
+저장됩니다 — 밖이면 저장하지 않고 저장 단추 아래에 어느 달 · 어느 칸인지 적습니다(제약 확보율과 같은 범위). 제약 시뮬레이션과
+개조 일정의 기준 확보율 직접 입력 칸도 같은 50 ~ 300% 를 받아 Preference 에 저장한 기준을 그대로 칠 수 있습니다. 개조 일정이 기한을
 못 맞추면 「기준 n% 낮추기」 의 n 은 기준 확보율 칸에 그대로 칠 정수 % 입니다(「HOME 기준」 에 월별 예외가 있으면 n 은 모든 달 기준을 n% 낮추는
 폭이라, 칸에 한 값을 치면 기본보다 낮던 달의 기준이 올라가 들어가지 않을 수 있습니다).
 
@@ -531,9 +532,9 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 사내 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
-| `check_module.py` | 사내 모듈의 선언·정적 규칙(M01 ~ M19)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
+| `check_module.py` | 사내 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
 | `module_test_runner.py` | `check_module.py` 가 부르는 모듈 시험 감시 러너 — 코어 `data/` 접근·저장소 안 쓰기(모듈 폴더·상대 경로)를 실패로, AppTest import 길을 앱과 같게 |
-| `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18·M19 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
+| `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18 ~ M20 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
 | `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run capa_server.py --server.port 8080` — 통합인증 진입점)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
 | `sso_mock_idp.py` | 개발·시험용 가짜 통합인증 IdP — 실행 때 키를 메모리에만 만들고 form_post 로 id_token 을 보낸다. 앱이 읽을 환경변수 파일을 저장소 밖에 쓴다(운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장) |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |

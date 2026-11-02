@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import re
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
@@ -48,6 +50,7 @@ from capa_simulation.components.modification_schedule_view import (
 )
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
+    CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
     CONSTRAINT_HELD_INPUT_KEY,
@@ -63,14 +66,17 @@ from capa_simulation.modification_schedule_state import (
     SCHEDULE_CONCURRENT_INPUT_KEY,
     SCHEDULE_CONCURRENT_KEY,
     SCHEDULE_CONCURRENT_PILLS_KEY,
+    SCHEDULE_DAYS_INPUT_KEY,
     SCHEDULE_DAYS_KEY,
     SCHEDULE_DAYS_PILLS_KEY,
     SCHEDULE_DEADLINE_KEY,
+    SCHEDULE_MARGIN_INPUT_KEY,
     SCHEDULE_OBJECTIVE_KEY,
     SCHEDULE_START_KEY,
     SCHEDULE_UNITS_KEY,
 )
 from capa_simulation.navigation import CONSTRAINT_SIMULATION
+from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.modification_schedule import (
@@ -461,8 +467,6 @@ def test_the_schedule_general_target_rounds_a_typed_decimal_half_up(
     109 로 버렸다. 칸은 소수 칸 · `%.0f` 이고 정본은 정수다."""
     from streamlit.proto.NumberInput_pb2 import NumberInput as NumberInputProto
 
-    from capa_simulation.constraint_simulation_state import CONSTRAINT_GENERAL_INPUT_KEY
-
     app = _schedule(databases)
     field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
     assert field.proto.data_type == NumberInputProto.FLOAT
@@ -475,6 +479,65 @@ def test_the_schedule_general_target_rounds_a_typed_decimal_half_up(
     assert f"기준 {kept}%" in _header(app)
     (shown,) = [item for item in app.number_input if item.label == "기준 확보율 직접 입력"]
     assert shown.value == kept
+
+
+def test_the_schedule_general_target_takes_the_home_threshold_range(
+    databases: tuple[Path, Path],
+) -> None:
+    """개조 일정 모드의 「기준 확보율」 직접 입력 칸도 HOME 판정 기준 저장 범위와 같은 50 ~ 300%
+    다(2026-11-02 사용자 결정 — 50 ~ 200% 이던 칸은 250 을 막아 Preference 에 저장한 기준을
+    칠 수 없었다). 같은 카드의 다른 칸(개조 대수 · 개조 기간 · 동시 상한 · 안전 여유) 범위는
+    그대로다."""
+    app = _schedule(databases)
+    field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
+    assert (field.min, field.max) == (50, 300)
+    ranges = {
+        key: (app.number_input(key=key).min, app.number_input(key=key).max)
+        for key in (
+            SCHEDULE_UNITS_KEY,
+            SCHEDULE_DAYS_INPUT_KEY,
+            SCHEDULE_CONCURRENT_INPUT_KEY,
+            SCHEDULE_MARGIN_INPUT_KEY,
+        )
+    }
+    assert ranges == {
+        SCHEDULE_UNITS_KEY: (1, 500),
+        SCHEDULE_DAYS_INPUT_KEY: (1, 365),
+        SCHEDULE_CONCURRENT_INPUT_KEY: (1, 500),
+        SCHEDULE_MARGIN_INPUT_KEY: (0, 30),
+    }
+
+    field.set_value(250)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == 250
+    assert "기준 250%" in _header(app)
+    (shown,) = [item for item in app.number_input if item.label == "기준 확보율 직접 입력"]
+    assert shown.value == 250
+
+
+def test_the_schedule_general_target_shows_a_home_default_above_200_unclipped(
+    tmp_path: Path,
+) -> None:
+    """「HOME 기준」 일 때 개조 일정 칸도 HOME 기본 확보 기준을 자르지 않고 보인다 — Preference
+    가 받는 250% 면 칸도 250 이고 머리는 「HOME 250%」 다(칸이 50 ~ 200% 이던 때는 200 으로
+    잘렸다)."""
+    own = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    app = _schedule(own)
+    repository = DuckDBScenarioRepository(own[0])
+    threshold = repository.load_global_securement_threshold()
+    repository.replace_global_securement_threshold(
+        2.5,
+        2.4,
+        pd.DataFrame(columns=["생산계획년월", "확보 기준", "경고 기준"]),
+        source="시험",
+        expected_version=threshold.version,
+    )
+    clear_global_securement_threshold_cache()
+    _ok(app.run())
+
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
+    assert app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).value == 250
+    assert "기준 HOME 250%" in _header(app)
 
 
 # ------------------------------------------------------------------ 갈래
@@ -802,10 +865,22 @@ def _stacked_result(starts: tuple[int, ...]) -> ScheduleResult:
     return replace(result, batches=batches)
 
 
-def _band_px(figure: Any) -> tuple[float, float, float]:
-    """(본 그림 칸 px, 차수 한 줄 막대 두께 px, 그림 높이 px) — 범례가 위 여백 안에 든다고 본다."""
+# 차수 막대 글(「N대」)이 서는지 재는 브라우저 쪽 수(사본 앱 Wafer Saw 1280 · 1500 · 1920, 샘플
+# 관측). 11px 글의 글 상자(SVG getBBox 높이)는 앱 첫 글꼴 Noto Sans KR 지표(오름 + 내림
+# 1.448em)로 16px 다 — 라틴 글꼴 지표(12px)로 잰 옛 식은 26px 줄을 지나 보냈지만 브라우저에서는
+# 띠가 두 줄 이상이면 글이 하나도 서지 않았다. 그림 칸은 범례 줄(위 +11px)과 1280 창의 세운 달
+# 눈금(아래 +22px) 자동 여백만큼 줄어든다(1500 · 1920 은 아래 +9px — 1280 이 가장 크다). Plotly 는
+# 막대 안 글 위아래에 3px 씩 둔다.
+_KOREAN_TEXT_BOX_PX = 16
+_AUTO_MARGIN_LOSS_PX = 33
+_BAR_TEXT_PAD_PX = 3
+
+
+def _band_px(figure: Any, *, margin_loss: float = 0.0) -> tuple[float, float, float]:
+    """(본 그림 칸 px, 차수 한 줄 막대 두께 px, 그림 높이 px). `margin_loss` 는 자동 여백이 그림
+    칸에서 먹는 높이 — 0 이면 범례 · 눈금이 정한 여백 안에 든다고 본다."""
     layout = figure.layout
-    plot_px = layout.height - layout.margin.t - layout.margin.b
+    plot_px = layout.height - layout.margin.t - layout.margin.b - margin_loss
     main = (layout.yaxis.domain[1] - layout.yaxis.domain[0]) * plot_px
     band = (layout.yaxis2.domain[1] - layout.yaxis2.domain[0]) * plot_px
     lane_low, lane_high = sorted(layout.yaxis2.range)
@@ -817,17 +892,35 @@ def _band_px(figure: Any) -> tuple[float, float, float]:
 def test_the_batch_band_grows_with_its_rows_so_bar_labels_fit() -> None:
     """겹친 차수가 세 줄이면 띠를 그림 높이의 고정 비율로 둔 옛 꼴은 막대가 10px 라 11px 「N대」
     가 늘 숨었다(사본 앱 Wafer Saw 4대 × 30일, 샘플 관측). 띠는 줄 수만큼 길어지고 본 그림 칸은
-    그대로다 — 막대는 글(11px) + Plotly 막대 안 글 여백 위아래 3px 이 드는 두께다."""
+    그대로다.
+
+    막대는 한글 글꼴 지표로 글이 서는 두께다 — Plotly 는 글을 (막대 − 위아래 3px) / 글 상자 비로
+    줄여 그 크기가 `uniformtext` 하한 아래면 숨긴다. 그림 칸은 자동 여백만큼 줄고 막대 끝은 정수
+    px 에 붙어(`bargap` 0) 1px 까지 얇아지므로 그 두 손실을 뺀 내림 두께로 잰다. 줄 26px 은 두
+    줄부터 막대 18 ~ 19px 라 이 식에 걸린다(브라우저에서 1280 · 1500 · 1920 모두 글이 하나도
+    서지 않았다)."""
     labels = ScheduleLabels(process_label="P", general_percent=100.0)
     one = schedule_figure(_stacked_result((5,)), labels)
     three = schedule_figure(_stacked_result((5, 10, 15)), labels)
     (bars,) = [trace for trace in three.data if trace.orientation == "h"]
     assert sorted(bars.y) == [0, 1, 2]
+    uniform = three.layout.uniformtext
+    assert uniform.mode == "hide" and uniform.minsize is not None
+    needed = _KOREAN_TEXT_BOX_PX * uniform.minsize / bars.textfont.size + 2 * _BAR_TEXT_PAD_PX
 
-    one_main, one_bar, one_height = _band_px(one)
-    three_main, three_bar, three_height = _band_px(three)
-    needed = bars.textfont.size + 2 * 3 + 1
-    assert one_bar >= needed and three_bar >= needed
+    # 한 줄부터 띠가 멈추는 열 줄까지 — 모든 줄 수에서 막대 글이 선다.
+    thin: dict[int, float] = {}
+    for count in range(1, 11):
+        figure = schedule_figure(_stacked_result(tuple(range(1, count + 1))), labels)
+        (stacked,) = [trace for trace in figure.data if trace.orientation == "h"]
+        assert len(set(stacked.y)) == count
+        _, bar, _ = _band_px(figure, margin_loss=_AUTO_MARGIN_LOSS_PX)
+        if math.floor(bar) < needed:
+            thin[count] = round(bar, 2)
+    assert thin == {}, f"막대 글이 숨는 줄 수(막대 px): {thin} — 필요 {needed:.2f}px"
+
+    one_main, _, one_height = _band_px(one)
+    three_main, _, three_height = _band_px(three)
     assert three_main == pytest.approx(one_main, abs=0.5)
     assert three_height > one_height
     # 한 줄 띠는 다른 그림과 같은 높이(340px)다.

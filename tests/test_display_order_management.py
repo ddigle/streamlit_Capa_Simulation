@@ -55,8 +55,9 @@ render_display_order_management(repository)
     assert any("공용 버전 v1" in caption.value for caption in app.caption)
 
 
-def _label_script(database_path: Path) -> str:
-    """표시명(`거래선`)을 분류컬럼에 적은 프로필 — 저장하면 표시명 경고 한 줄이 남는다."""
+def _label_script(database_path: Path, column: str = "거래선") -> str:
+    """분류컬럼에 `column` 을 적은 프로필. 기본은 표시명(`거래선`)이라 저장하면 표시명 경고 한 줄이
+    남는다 — 원본 컬럼명(`Customer`)을 주면 경고가 없는 같은 꼴이다."""
     return f'''
 from pathlib import Path
 
@@ -73,7 +74,7 @@ repository.initialize_global_display_order(
             "페이지 구분": ["생산 계획"],
             "탭 구분": ["환산"],
             "정렬우선순위": [1],
-            "분류컬럼": ["거래선"],
+            "분류컬럼": ["{column}"],
             "정렬방식": ["사용자지정"],
             "분류값": ["X"],
             "값표시순서": [1],
@@ -173,6 +174,109 @@ def test_a_slow_second_press_keeps_the_label_warning_of_the_save(
     assert len(warnings) == 1
     assert "`거래선` → `Customer`" in warnings[0].value
     assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
+
+
+_UNCHANGED_PREFIX = "바뀐 것이 없습니다"
+
+
+def _flash_slot_path(app: AppTest, kind: str, text: str) -> tuple[int, ...]:
+    """머리 알림 칸 안 `kind`(info·warning) 알림 하나(`text` 를 담은)의 델타 경로."""
+    return _path_of(
+        app,
+        lambda node: getattr(node, "type", "") == kind and text in str(getattr(node, "value", "")),
+    )
+
+
+def _editor_path(app: AppTest) -> tuple[int, ...]:
+    """직접 편집 표(key 있는 편집표)의 델타 경로."""
+    return _path_of(
+        app,
+        lambda node: str(getattr(node, "key", "") or "").startswith(
+            f"{DISPLAY_ORDER_EDITOR_KEY}::"
+        ),
+    )
+
+
+def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표시명(`거래선`)을 적어 저장한 뒤 창(`TRAILING_PRESS_SECONDS`)이 지나 같은 표로 다시
+    누르면 쓰지 않고 「바뀐 것이 없습니다」 를 알린다. 그 알림 아래 같은 칸에 저장 회차와 같은
+    표시명 경고도 선다(2026-11-02 결정 A3 「다시 보인다」 — 막지 않고 알리기만). 전에는
+    「바뀐 것이 없습니다」 만 서서 표에 남은 표시명이 정렬에 걸리지 않는 것을 알 길이 없었다.
+    다음 회차(누르지 않음)에는 둘 다 빠지고 아래 직접 편집의 자리는 그대로다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "display-order-label-after-window.duckdb"
+    app = AppTest.from_string(_label_script(database_path))
+    app.run(timeout=30)
+    assert not app.exception
+    editor_path = _editor_path(app)
+    _edit_first_order(app)
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+    assert not app.exception
+    assert len([w for w in app.warning if "화면 표시명을 적었습니다" in w.value]) == 1
+    assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
+    app.run(timeout=30)
+    assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.success, [element.value for element in app.success]
+    infos = [element.value for element in app.info]
+    assert len(infos) == 1 and infos[0].startswith(_UNCHANGED_PREFIX), infos
+    warnings = [element for element in app.warning if "화면 표시명을 적었습니다" in element.value]
+    assert len(warnings) == 1
+    assert "`거래선` → `Customer`" in warnings[0].value
+    assert warnings[0].icon == ":material/help:"
+    # 같은 칸 안에서 「바뀐 것이 없습니다」 아래에 선다 — 아래 직접 편집은 밀리지 않는다.
+    info_path = _flash_slot_path(app, "info", _UNCHANGED_PREFIX)
+    warning_path = _flash_slot_path(app, "warning", "화면 표시명을 적었습니다")
+    assert info_path[:-1] == warning_path[:-1]
+    assert info_path[-1] < warning_path[-1]
+    assert _editor_path(app) == editor_path
+    assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
+
+    app.run(timeout=30)
+    assert not app.exception
+    assert not app.info, [element.value for element in app.info]
+    assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+
+
+@pytest.mark.parametrize(
+    ("column", "expected_warnings"),
+    [("거래선", ["`거래선` → `Customer`"]), ("Customer", [])],
+)
+def test_an_unchanged_press_warns_only_about_a_display_label_left_in_the_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    column: str,
+    expected_warnings: list[str],
+) -> None:
+    """이 화면에서 저장한 적 없이(붙여넣기·옛 저장본) 표에 남은 분류컬럼도 바뀐 것 없는 누름이 같은
+    판정(`display_label_mistakes`)으로 본다 — 표시명이면 「바뀐 것이 없습니다」 아래 경고 한 줄,
+    원본 컬럼명이면 경고 없이 그 알림만. 어느 쪽도 쓰지 않는다(막지 않고 알리기만)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / f"display-order-unchanged-{column}.duckdb"
+    app = AppTest.from_string(_label_script(database_path, column))
+    app.run(timeout=30)
+    assert not app.exception
+    assert not app.warning
+
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.success, [element.value for element in app.success]
+    infos = [element.value for element in app.info]
+    assert len(infos) == 1 and infos[0].startswith(_UNCHANGED_PREFIX), infos
+    warnings = [element.value for element in app.warning]
+    assert len(warnings) == len(expected_warnings), warnings
+    for text, expected in zip(warnings, expected_warnings, strict=True):
+        assert "화면 표시명을 적었습니다" in text and expected in text
+    assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 1
 
 
 def test_the_label_warning_stands_in_the_flash_slot_and_moves_no_editor(tmp_path: Path) -> None:

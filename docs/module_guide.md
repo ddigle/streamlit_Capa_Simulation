@@ -34,13 +34,14 @@
 ```text
 너는 S.PKG CAPA AX Management 앱의 사내 모듈 <id> 를 맡은 에이전트다. 너와 대화하는 사람은 이 모듈의 담당자다.
 앱 관리자는 배포를 적용하고 승인하는 다른 한 사람이다 — 이 대화 안에 없다.
+네 변경은 PR 로만 사내 main 에 들어간다 — 자기 가지 module/<id>/<주제> 에서 커밋하고, 담당자가 그 가지를 푸시해 PR 을 열고, 앱 관리자가 점검한 뒤 합친다(8-2).
 1. 고칠 수 있는 곳은 modules/<id>/ 뿐이다. data/modules/<id>/ 는 화면이 실행 중에 쓰는 자리라 읽기만 한다 — 손으로 파일을 넣거나 고치지 않고, 지울 때는 먼저 묻는다. 그 밖(app.py·app_pages/·src/·tests/·scripts/·docs/·config/·루트 파일·다른 모듈)도 읽기만 한다.
 2. 이 문서(docs/module_guide.md)만 따른다. CLAUDE.md·AGENTS.md 는 코어 규칙이라 네 일이 아니다.
 3. 코어는 capa_simulation.module_api 하나만 import 한다. 같은 모듈의 파일은 from modules.<id> import <이름> 으로 부른다.
 4. 패키지를 설치하지 않는다(uv add·uv pip·pip install·uv sync 모두). 필요하면 담당자에게 「<id>: <패키지>==<판> <까닭>」 한 줄을 앱 관리자에게 전해 달라고 한다.
-5. 앱 관리자의 승인은 이 대화 안에서 받을 수 없다. 새 모듈을 처음 올리는 것·성숙도 L2 는 담당자가 앱 관리자에게 승인을 받아 온 뒤에만 하고, 커밋 본문에 「승인: 앱 관리자 <YYYY-MM-DD>」 를 적는다. 폴더 밖 변경은 승인을 받아도 네가 하지 않는다 — 담당자가 앱 관리자에게 전하고, 앱 관리자가 승인하면 「사외 요청」 으로 사외가 고쳐 배포한다.
-6. 커밋은 module(<id>): <무엇> 이고 modules/<id>/ 만 담는다(파일 이름으로 git add — git add -A·git add .·git commit -a 금지). 푸시는 담당자가 한다.
-7. 푸시가 거절되면 git pull --rebase 뒤 다시 푸시한다. git push --force·--force-with-lease 는 절대 쓰지 않는다 — 앱 관리자의 배포 기록이 사라진다.
+5. 앱 관리자의 승인은 이 대화 안에서 받을 수 없다. 새 모듈을 처음 올리는 것·성숙도 L2 는 담당자가 앱 관리자에게 승인을 받아 온 뒤에만 하고, 커밋 본문과 PR 본문에 「승인: 앱 관리자 <YYYY-MM-DD>」 를 적는다. 폴더 밖 변경은 승인을 받아도 네가 하지 않는다 — 담당자가 앱 관리자에게 전하고, 앱 관리자가 승인하면 「사외 요청」 으로 사외가 고쳐 배포한다.
+6. 커밋은 자기 가지에만 한다 — 사내 main 에는 커밋하지 않는다. 제목은 module(<id>): <무엇> 이고 modules/<id>/ 만 담는다(파일 이름으로 git add — git add -A·git add .·git commit -a 금지). 가지 푸시와 PR 열기는 담당자가 한다.
+7. 푸시가 거절되면 git pull --rebase 뒤 다시 푸시한다. git push --force·--force-with-lease 는 자기 가지에도 절대 쓰지 않는다 — 앱 관리자가 점검한 PR 과 어긋난다.
 8. 위젯 콜백은 ctx.callback(함수) 로, 프래그먼트·팝업 본문은 with ctx.guard(): 로 감싼다. st.cache_* 는 modules/<id>/cache.py 에만 둔다.
 9. 끝내기 전에 uv run --no-sync python scripts/check_module.py <id> 가 「통과」 여야 한다. 시험도 이 줄로 돌린다.
 10. 실데이터 식별값(제품·고객·공정·설비·사람)을 id·파일 이름·커밋 메시지·시험 데이터에 쓰지 않는다.
@@ -83,7 +84,7 @@
 | 코어 두 DB(`data/capa_simulation.duckdb`·`data/equipment_availability.duckdb`)·`data/input`·`data/output`·`data/temp`·`review/`·`.deploy/` | 열지도 않는다 | 운영 데이터와 배포 기록이다 |
 
 - 배포 ZIP 은 `modules/` 를 싣지도 덮지도 지우지도 않는다. `data/modules/` 도 지우지 않는다.
-- **첫 배포 주의** — 이 지침서가 실린 배포를 앱 관리자가 사내에 적용하기 **전에는** 사내 저장소에 `modules/` 를 커밋하지 않는다.
+- **첫 배포 주의** — 이 지침서가 실린 배포를 앱 관리자가 사내에 적용하기 **전에는** 사내 저장소에 `modules/` 를 올리지 않는다(PR 도 합치지 않는다).
   그 전의 적용기는 모듈 파일을 「사외에서 지워짐」 으로 보고 지운다. 앱 관리자가 「적용을 마쳤다」 고 알린 뒤에 시작한다.
 
 ### 데이터
@@ -221,7 +222,8 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
 ### 3-7. 가장 작은 모듈 — 뼈대 만들기
 
 1. 담당자가 앱 관리자에게 새 모듈 등록 승인을 받는다(id · 이름 · 무엇을 하는지 한 줄).
-2. 뼈대를 만든다. 이 줄은 에이전트 설정에서 매번 묻게 해 두었다(8장) — 담당자가 줄을 읽고 승인한다.
+2. 새 가지를 만들고(8-2 의 1 — 예: `module/demo_hello/first`) 뼈대를 만든다. 뼈대 줄은 에이전트 설정에서 매번 묻게 해 두었다(8장) —
+   담당자가 줄을 읽고 승인한다.
 
    ```powershell
    uv run --no-sync python scripts/new_module.py demo_hello --name "데모 인사" --owner "데모 담당"
@@ -263,11 +265,13 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
    ```
 
 4. 점검을 돌린다 — `uv run --no-sync python scripts/check_module.py demo_hello`. 뼈대는 그대로 「통과」 다.
-5. 커밋한다(8장) — `git add modules/demo_hello` 뒤 커밋 본문에 승인 줄을 넣어 친다(둘째 `-m` 이 본문이다).
+5. 그 가지에서 커밋한다(8장) — `git add modules/demo_hello` 뒤 커밋 본문에 승인 줄을 넣어 친다(둘째 `-m` 이 본문이다).
 
    ```powershell
    git commit -m "module(demo_hello): 새 모듈 뼈대" -m "승인: 앱 관리자 <YYYY-MM-DD>"
    ```
+
+6. 담당자가 가지를 푸시하고 PR 을 연다 — 앱 관리자가 점검한 뒤 합친다(8-2 의 4 ~ 6). PR 본문에도 승인 줄을 적는다.
 
 ### 3-8. 예시 모듈 — 데이터 · 도움 코드 · 캐시가 있는 꼴 (`demo_memo`)
 
@@ -460,7 +464,7 @@ def test_saving_a_memo_adds_one_row(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     `api.palette()` 를 차트 · 표에 쓴다. `use_container_width=True` 는 `width="stretch"` 로 바꾼다(M03 · M19).
 14. `uv run --no-sync python scripts/check_module.py <id>` 를 돌려 패키지 · 키 · 규칙을 고친다.
 15. 스모크 시험과 핵심 함수 시험을 둔다(7장).
-16. 담당자가 앱 관리자의 승인을 받아 온 뒤 커밋한다(8장).
+16. 담당자가 앱 관리자의 승인을 받아 온 뒤 자기 가지에서 커밋하고, 담당자가 PR 로 올린다(8-2).
 17. 앱을 띄워(7장) 화면을 오가며 조건이 남는지 본다 — 조건을 고르고 다른 화면(코어 화면 하나 포함)에 갔다 돌아온다.
 
 **라우터 앱** — 진입 스크립트(`app.py`)가 `st.navigation([st.Page("views/overview.py", …), …])` 로 화면을 고르고, 화면 파일이 하위
@@ -596,6 +600,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 | ruff 위반 · 포맷 다름 | `uv run --no-sync python -m ruff format modules/<id>` 뒤 고친다. 긴 주석 · 글자는 `ruff format` 이 나누지 않으므로 손으로 나누거나 줄인다 | 코어와 같은 규칙으로 읽힌다 — 한 줄은 **폭 100칸**이고 한글은 한 자가 2칸이다(한글만이면 50자 안팎, `# Purpose:` 줄은 45자 안팎에서 E501) | M15 · M16 |
 | 감싸지 않은 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 에 맨 함수 | `ctx.callback(함수)`(글자 `"rerun"` · `"ignore"` 는 그대로 된다) | 콜백은 앱 코드보다 먼저 돈다. 거기서 난 오류는 그 회차의 사이드바 · 머리 띠 · 탭 줄까지 지운다 | M18 |
 | `use_container_width=` | `width="stretch"` · `width="content"` | Streamlit 이 곧 지울 인자다. 올림 한 번에 그 화면이 오류 카드가 된다 | M19 |
+| 화면이 처음 그려질 때(첫 회차) 팝업을 스스로 열기(점검이 잡지 않는다 — 이 지침으로만 지킨다) · `st.dialog(dismissible=False)`(M20 경고) | 팝업은 단추를 눌렀을 때만 연다. `dismissible` 은 적지 않는다 — 닫기(✕ · Esc · 바깥 누름)가 남는다 | 누가 그 화면 주소로 처음 오면 입장 화면이 먼저 덮인다. 닫을 수 없는 팝업은 그 밑에 숨어 앱 화면을 묶는다 — 아무것도 누를 수 없고 새로고침해도 같아 앱에 들어갈 수 없다 | M20 |
 
 그 밖에 알아 둘 것:
 
@@ -663,14 +668,14 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 
 - 표준 라이브러리. 단 `tomllib` 은 Python 3.10 에 없다.
 - `streamlit`.
-- `requirements.txt` 의 **직접 의존** — `# via capa-simulation` 이 붙은 이름(pandas · plotly · altair · duckdb · pydantic 등).
-  **`numpy` 는 여기에 들지 않는다** — pandas · streamlit 이 끌어온 전이 의존이다(아래 「경고」).
+- `requirements.txt` 의 **직접 의존** — `# via capa-simulation` 이 붙은 이름(pandas · numpy · plotly · altair · duckdb · pydantic 등).
+  `numpy` 도 여기에 든다 — 코어가 직접 쓰는 의존이라 코어가 판을 지킨다(2026-11-02 부터).
 
 경고가 나는 것:
 
-- **전이 의존**(`numpy` · `pyarrow` · `PIL`(pillow) · `toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다.
-  `import numpy` 도 「직접 의존 아님」 경고(M09)다. 경고는 「통과」 를 막지 않는다 — 그대로 써도 점검은 통과한다. 오래 쓸 것이면
-  요청해서 직접 의존으로 올린다(위 「요청하는 길」 — 판은 `requirements.txt` 에 적힌 판, 예: `demo_memo: numpy==<그 판> 배열 계산`).
+- **전이 의존**(`pyarrow` · `PIL`(pillow) · `toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다.
+  `import pyarrow` · `import PIL` 은 「직접 의존 아님」 경고(M09)다. 경고는 「통과」 를 막지 않는다 — 그대로 써도 점검은 통과한다. 오래
+  쓸 것이면 요청해서 직접 의존으로 올린다(위 「요청하는 길」 — 판은 `requirements.txt` 에 적힌 판, 예: `demo_memo: pyarrow==<그 판> parquet 읽기`).
 - `requirements-company.txt` 에만 있는 사내 전용 패키지(`bigdataquery`)는 모듈이 써도 된다(2026-11-01 앱 관리자 결정). 점검은 경고(M09)라
   「통과」 를 막지 않는다. 다만 배포 서버 설치는 보장되지 않는다 — 배포 서버에 없으면 그 화면만 import 오류가 난다.
 
@@ -719,41 +724,72 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
 ### 8-1. 자리와 커밋
 
 - **자기 클론에서 일한다.** 배포를 적용하는 체크아웃(앱 관리자 몫)과 다른 폴더다. 배포 체크아웃의 모듈 수정은 배포 적용을 멈춘다.
+- **일은 자기 가지에서 한다** — `module/<id>/<주제>`(8-2 의 1). 사내 main 에는 커밋하지 않는다. 사내 main 은 PR 로만 바뀐다(8-2).
 - 커밋 제목은 `module(<id>): <무엇>` 이고 `modules/<id>/` 만 담는다.
 - 이름으로 스테이징한다 — 파일(`git add modules/<id>/page.py`)이나 자기 폴더(`git add modules/<id>`). `git add -A` · `git add .` ·
   `git commit -a` 는 쓰지 않는다.
 - `data/modules/` 는 커밋하지 않는다(git 이 무시한다). 다른 폴더의 파일이 스테이징돼 있으면 커밋하지 말고 담당자에게 알린다.
 - 앱 관리자의 승인이 필요한 커밋 — 새 모듈의 첫 커밋 · 성숙도 `L2` — 은 커밋 본문에 `승인: 앱 관리자 <YYYY-MM-DD>` 를 적는다
-  (`git commit -m "module(<id>): <무엇>" -m "승인: 앱 관리자 <YYYY-MM-DD>"` — 둘째 `-m` 이 본문이다). 승인은 담당자가 앱 관리자에게
-  받아 온다. 이 대화 안에서는 받을 수 없다.
+  (`git commit -m "module(<id>): <무엇>" -m "승인: 앱 관리자 <YYYY-MM-DD>"` — 둘째 `-m` 이 본문이다). PR 본문에도 같은 줄을 적는다.
+  승인은 담당자가 앱 관리자에게 받아 온다. 이 대화 안에서는 받을 수 없다. 앱 관리자가 그 PR 을 합치는 것으로 승인이 끝난다.
 - **`modules/<id>/` 밖의 변경은 승인을 받아도 커밋하지 않는다.** 밖은 코어(사외가 정본 — 다음 배포가 덮는다)이거나 다른 모듈(그 담당자 몫)이다.
-  배포 적용 쪽(런북 1-7)은 폴더 밖을 바꾼 모듈 커밋을 받지 않는다. 밖이 바뀌어야 하면 담당자가 앱 관리자에게 전하고, 앱 관리자가 승인하면
-  「사외 요청」 으로 사외가 고쳐 배포한다(패키지는 6장).
+  앱 관리자는 폴더 밖을 바꾼 PR 을 합치지 않는다(사내 런북 4-6 · 1-7). 밖이 바뀌어야 하면 담당자가 앱 관리자에게 전하고, 앱 관리자가
+  승인하면 「사외 요청」 으로 사외가 고쳐 배포한다(패키지는 6장).
 
-### 8-2. 올리기
+### 8-2. 올리기 — PR 로만
 
-- **사내 PR 을 쓸 수 있으면** 가지 `module/<id>/<주제>` → PR(제목도 `module(<id>): …`) → 앱 관리자 승인 → 합침. 합침은
-  squash 나 rebase 로 한다 — 합침 커밋을 남기지 않는다.
-- **PR 을 쓸 수 없으면** 사내 main 에 자기 폴더만 바꾸는 직접 커밋을 올린다.
-- **푸시 전에 `git pull --rebase`** 를 한다. 배포의 `deploy:` · `review:` 커밋과 경로가 겹치지 않아 충돌이 없다. 충돌이 나면 멈추고
-  담당자가 앱 관리자에게 묻는다.
-- `git pull --ff-only` 는 쓰지 않는다. 아직 안 올린 모듈 커밋이 있으면 「Not possible to fast-forward」 로 멈추고, 그다음 흔한 시도가
-  강제 푸시다.
-- **`git push --force` · `--force-with-lease` 는 절대 쓰지 않는다.** 한 번이면 사내 main 에서 `deploy:` 커밋(`.deploy/applied.json`)과
-  `review:` 기록이 사라진다. 배포 서버가 옛 코어로 빌드되고 다음 적용의 순서 검사가 틀어진다.
+**올리는 길은 PR 하나다**(2026-11-02 앱 관리자 결정 — 사내 GitHub 에서 PR 과 가지 보호를 쓴다). 사내 main 에는 앱 관리자가 보호
+규칙을 건다 — 강제 푸시와 지우기를 막고, 걸 수 있으면 PR 필수도 건다. 규칙이 막든 막지 않든 담당자의 변경은 PR 로만 들어간다.
+차례는 아래 일곱이다. 너(에이전트)는 지금 몇 번째인지와 담당자가 다음에 할 일을 쉬운 말로 짚어 준다. 푸시와 PR 열기는 담당자가
+한다 — 에이전트 설정이 `git push` 를 막는다.
+
+1. **새 일을 시작할 때 가지를 만든다.** 가지는 사내 main 을 건드리지 않고 고치는 「내 작업 칸」 이다.
+
+   ```powershell
+   git switch main
+   git pull --rebase
+   git switch -c module/<id>/<주제>
+   ```
+
+   `<주제>` 는 영문 소문자 · 숫자 · `-` 로 짧게 짓는다(예: `module/demo_memo/kind-filter`). 하던 일의 가지가 이미 있으면 셋째 줄 대신
+   `git switch module/<id>/<주제>` 로 돌아간다.
+2. 고치고 점검한다 — `check_module.py <id>` 가 「통과」 여야 한다(7장).
+3. 그 가지에서 커밋한다(8-1).
+4. **담당자가 가지를 푸시한다** — 처음 한 번은 `git push -u origin module/<id>/<주제>`, 그 뒤로는 `git push`.
+5. **담당자가 사내 GitHub 화면에서 PR 을 연다.** 받는 쪽(base)은 `main`, 제목은 `module(<id>): <무엇>` 이다. 본문에는 무엇을 바꿨는지
+   한두 줄, 점검의 모듈 줄(`- m1 <id> 통과 · …`), 승인이 필요한 PR 이면 `승인: 앱 관리자 <YYYY-MM-DD>` 를 적는다. 본문은 네가 만들어
+   담당자에게 준다.
+6. **앱 관리자가 보고 합친다.** 앱 관리자는 PR 이 `modules/<id>/` 만 바꿨는지 보고 PR 머리에서 모듈 점검을 돌린 뒤(사내 런북 4-6)
+   「Squash and merge」 로 합친다 — 사내 main 에는 PR 하나가 `module(<id>): …` 커밋 하나로 남는다.
+   - 고칠 것을 PR 에 적어 오면 같은 가지에서 고쳐 커밋하고 담당자가 다시 `git push` 한다. PR 이 따라온다 — 새 PR 을 열지 않는다.
+   - 「가지를 main 에 맞춰 달라」 고 하면 담당자가 PR 화면의 「Update branch」 단추를 누르고, 자기 PC 에서는 `git pull --rebase` 로 받는다.
+   - PR 을 연 뒤 더 올렸으면 담당자가 앱 관리자에게 알린다 — 앱 관리자는 점검한 머리만 합치므로 처음부터 다시 점검한다(사내 런북 4-6).
+7. **합쳐진 뒤** 다음 일은 1 부터 다시 한다. 다 쓴 가지는 그대로 둬도 된다(지우려면 먼저 묻는다).
+
+그 밖에 지킬 것:
+
+- **푸시가 거절되면 `git pull --rebase` 뒤 다시 푸시한다**(자기 가지에서도 같다). 배포의 `deploy:` · `review:` 커밋과 경로가 겹치지 않아
+  충돌이 없다. 충돌이 나면 멈추고 담당자가 앱 관리자에게 묻는다.
+- **`git push --force` · `--force-with-lease` 는 절대 쓰지 않는다** — 자기 가지에도. 사내 main 은 보호 규칙이 막는다. 가지를 덮으면
+  앱 관리자가 점검한 머리와 PR 의 머리가 어긋난다.
+- **사내 main 에 바로 푸시하지 않는다** — 보호 규칙이 걸려 있으면 거절된다. 거절되지 않아도 올리지 않는다 — 앱 관리자가 점검하지 않은
+  변경이 그대로 사내 main 에 들어간다. main 에 커밋해 버렸으면 그 자리에서 `git switch -c module/<id>/<주제>`
+  로 가지를 만들어(커밋이 그 가지에 실린다) 그 가지를 푸시하고, 자기 PC 의 main 을 되돌리는 일은 담당자가 앱 관리자에게 묻는다.
 - 푸시는 담당자가 자기 창에서 친다. 에이전트 설정이 `git push` 를 막는다.
-- **CI/CD 단추는 앱 관리자만 누른다.** 담당자는 누르지 않는다. 모듈 변경은 앱 관리자가 배포 적용 때 모듈 점검을 본 뒤에 배포 서버에 오른다.
+- **CI/CD 단추는 앱 관리자만 누른다.** 담당자는 누르지 않는다. 합친 모듈은 앱 관리자가 런북 4-5 로 새 코어와 함께 다시 점검한 뒤 배포 서버에
+  오른다(배포 적용 때든 합친 뒤 따로든 — 단추는 4-5 를 본 뒤에만 누른다).
 
 ### 8-3. 기본값 셋 — 바꿀 수 있다
 
 아래 셋은 앱 관리자가 2026-11-01 에 「권장대로」 라고 맡겨, 이 앱을 만드는 쪽(사외)의 에이전트가 정한 기본값이다 — 앱 관리자가 하나하나
-고른 것이 아니다. 앱 관리자가 바꿀 수 있고, 바뀌면 이 문서를 고친다.
+고른 것이 아니다(3 의 「PR 로 올린다」 는 2026-11-02 앱 관리자가 사내 GitHub 에서 PR 을 쓸 수 있다고 확인해 정해졌다). 앱 관리자가
+바꿀 수 있고, 바뀌면 이 문서를 고친다.
 
 1. 자리는 `modules/<id>/` 이고, 사이드바에 별도 상자 「사내 모듈」 하나를 둔다. 켜진 모듈이 없으면 상자를 숨긴다.
 2. 새 패키지는 모듈이 직접 넣지 않는다. 「사외 요청」 으로 받아 코어 의존성으로 배포한다(6장).
 3. 새 모듈 등록과 `modules/<id>/` 밖의 변경은 앱 관리자의 승인이 필요하다(밖의 변경은 승인되면 「사외 요청」 으로 사외가 한다 — 8-1).
-   자기 폴더 안은 담당자가 커밋한다(사내 PR 이 되면 앱 관리자가 승인하는 PR, 안 되면 자기 폴더만 바꾸는 직접 커밋). 앱 관리자는 배포를
-   적용할 때마다 모듈 점검 결과를 본다.
+   자기 폴더 안은 담당자가 자기 가지에 커밋하고 PR 로 올리며, 앱 관리자가 PR 을 점검한 뒤 합친다(8-2 — 사내 main 에 바로 올리는
+   직접 커밋은 쓰지 않는다). 앱 관리자는 배포를 적용할 때마다 모듈 점검 결과를 다시 본다.
 
 ### 8-4. 담당자 클론의 Claude 설정
 
@@ -897,12 +933,14 @@ def _detail() -> None:
 ```
 
 - `st.stop()` · `st.rerun()` 은 오류가 아니다. 감싸기를 그대로 지나간다.
+- 팝업은 단추를 눌렀을 때만 열고 닫기를 남긴다(4장 M20).
 
 ### 9-2. 끄는 스위치 둘
 
 모듈이 깨져 운영에서 숨겨야 하면 둘 가운데 하나를 쓴다. 둘 다 **다음 앱 시작부터** 듣는다.
 
-1. `module.json` 의 `"enabled": false` — 담당자가 커밋 → 앱 관리자가 받아 다시 띄움(배포 서버는 다시 빌드).
+1. `module.json` 의 `"enabled": false` — 담당자가 PR 로 올림 → 앱 관리자가 PR 점검(사내 런북 4-6) 뒤 합쳐 받아 다시 띄움. 배포 서버는
+   앱 관리자가 그 main 을 런북 4-5(사본 트리)로 다시 본 뒤 CI/CD 단추로 다시 빌드한다(8-2 끝). 그 사이 급히 숨길 때는 2 를 쓴다.
 2. 실행 환경변수 `CAPA_MODULES_DISABLED` — 앱 관리자가 건다. 값은 `*`(모두 끔) 또는 `demo_a,demo_b`(쉼표로 가른 id).
    - 사내 PC(PowerShell) — 그 창에 남는다. 끝나면 지운다. 지우지 않으면 같은 창에서 나중에 띄운 앱의 모듈이 말없이 꺼진다.
 
@@ -938,7 +976,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
   않는다(표가 화면보다 넓으면 옆으로 민다).
 - 마지막 오류(시각 · 형식 · 자리 · 화면 slug). 자리는 `page`(화면 본문) · `callback`(위젯 콜백) · `guard`(프래그먼트 · 팝업 본문) ·
   `load`(화면 등록 — 재시작까지 그 화면을 뺀다) 가운데 하나다. 메시지 본문은 적지 않는다.
-- 마지막 회차 시간(초) — 느린 모듈을 찾는다.
+- 마지막 회차 시간(ms) — 그 모듈 화면 회차 하나가 걸린 시간을 ms 정수로 적는다(가벼운 모듈도 2 · 4 처럼 갈린다). 느린 모듈을 찾는다.
 - 접두 없는 키 수 · 빠진 화면 수.
 
 ### 9-4. API 판과 호환
@@ -1020,7 +1058,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | M08 | 키 접두 — `key=` 의 글자(또는 f-문자열의 앞 상수), `st.session_state[…]` · `.get` · `.pop` · `.setdefault` · `in st.session_state` · 속성 접근, `st.query_params[…]` 의 글자가 `mod_<id>__` 로 시작하지 않음. `ctx.key(…)` 호출과 판정할 수 없는 읽기 식은 넘긴다 | 오류 |
 | M08 | 세션 전역 조작 — `st.session_state.clear()` · `.popitem()` · `.update(…)`, `del st.session_state[…]` 의 키가 접두 있는 글자 상수나 `ctx.key(…)` 호출이 아님(변수 · 반복 포함) | 오류 |
 | M09 | 패키지 — 최상위 import 이름이 표준 라이브러리 · `streamlit` · `capa_simulation.module_api` · 자기 `modules.<id>` 가 아니면 그 배포 이름이 `requirements.txt` 에 고정돼 있어야 한다. 없으면 오류(「사외 요청」 안내). 설치되지 않은 이름도 오류. 3.10 에 없는 모듈(`tomllib`)도 오류. 줄 끝 환경 표지가 Linux 에서 거짓이면 오류 「CD(Linux)에 설치되지 않음」. 따질 수 없는 표지는 경고 | 오류 |
-| M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음 | 경고 |
+| M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `pyarrow` · `PIL`(pillow) · `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음 | 경고 |
 | M10 | 배경 실행 — `threading` · `_thread` · `multiprocessing` · `concurrent.futures` · `subprocess` import, `os.system` · `os.popen` · `os.fork` · `os.forkpty` · `os.spawn*` · `os.posix_spawn*` · `os.exec*` · `os.abort` · `signal` · `sys.exit` · `os._exit` · `exit()` · `quit()` | 오류 |
 | M10 | `asyncio`, `st.fragment(run_every=…)`, `argparse` · `click` · `typer` · `fire` import | 경고 |
 | M11 | 프로세스 전역 상태 — `os.environ` 쓰기 · `os.putenv` · `os.unsetenv` · `os.chdir` · `os.fchdir`, `sys.path` 바꾸기, `sys.modules` 바꾸기, `builtins.<이름> =`, `sys.excepthook =` · `threading.excepthook =`, `sys.setrecursionlimit` · `sys.settrace` · `sys.setprofile`, `gc.disable` · `gc.set_threshold` · `gc.freeze`, `socket.setdefaulttimeout`, `locale.setlocale`, `pd.set_option` · `pandas.set_option` · `pd.reset_option` · `pd.options.<…> =`(`pd.option_context` 는 허용), `np.seterr` · `np.set_printoptions`, `plotly.io.templates.default =` · `pio.renderers.default =` · `px.defaults.<…> =`(plotly express 기본값), `alt.themes.enable` · `alt.theme.enable` · `alt.data_transformers.enable` · `alt.data_transformers.disable_max_rows`, `matplotlib.use` · `matplotlib.rcParams[…] =` · `rcParams.update` · `plt.style.use`, `logging.basicConfig` · 뿌리 로거(`logging.getLogger()` · `logging.root`)의 `addHandler` · `removeHandler` · `setLevel` | 오류 |
@@ -1035,6 +1073,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | M17 | 자기 시험 실패(실패 수/전체). M01 · M06 · M07 · M10 · M11 오류가 있으면 돌리지 않고 「시험 안 돎」(실패로 센다) | 오류 |
 | M18 | 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 인자에 글자 상수(`"rerun"` · `"ignore"`)도 `<무엇>.callback(…)` 호출도 아닌 값이 옴 | 오류 |
 | M19 | 폐기 예정 Streamlit 인자 — `use_container_width=`(`width="stretch"` · `width="content"` 로) | 오류 |
+| M20 | 닫을 수 없는 팝업 — `st.dialog(…)` 의 `dismissible=` 에 `True` 가 아닌 값(`False` · 변수). 처음 들어온 사람의 입장 화면 밑에 숨어 앱 화면을 묶는다(4장) | 경고 |
 
 점검 출력의 꼴(합성 예):
 

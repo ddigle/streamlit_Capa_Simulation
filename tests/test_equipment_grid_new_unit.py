@@ -183,6 +183,11 @@ def test_cell_errors_come_from_the_same_rules_as_saving() -> None:
     bad = _check(_valid(반입일정="2026-13-45", 동="C9"))
     assert bad.errors["반입일정"] == "반입일정은 날짜 형식이어야 합니다"
     assert bad.errors["동"] == "동은 C1~C5, 층은 1F~6F 범위여야 합니다"
+    # 빼기 꼴 시간대 날짜도 더하기 꼴과 같은 시간대 문구다(2026-11-02 결정 A2).
+    minus = _check(_valid(반입일정="2026-11-05-05:00"))
+    assert minus.errors["반입일정"] == (
+        "반입일정에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요"
+    )
     # 같은 글이면 저장도 막는다(같은 규칙).
     row = check.values
     frame = pd.DataFrame([dict(zip(EQUIPMENT_COLUMNS, row, strict=True))])

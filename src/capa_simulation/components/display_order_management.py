@@ -138,7 +138,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     # 저장 성공과 그 저장의 표시명 경고는 같은 칸이다 — 경고 수만큼 아래 직접 편집(key 있는
     # 편집표)이 밀리면 저장 회차(`st.rerun()` 으로 끊김)의 옛 자리에 흐린 사본이 남는다(AGENTS 9장
     # 「조건부 알림」).
-    # 직접 편집 저장의 「바뀐 것이 없습니다」 도 이 칸(성공 알림 자리)에 선다.
+    # 직접 편집 저장의 「바뀐 것이 없습니다」 와 그 아래 표시명 경고도 이 칸(성공 알림 자리)에 선다.
     notice = render_flash(DISPLAY_ORDER_FLASH_KEY)
     _render_label_warnings(notice)
     # 겹침 경고도 늘 서 있는 칸이다 — 직접 편집으로 마지막 겹침을 고쳐 저장하면 다음 회차에 경고가
@@ -223,7 +223,9 @@ def _render_direct_editor(
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘 — Proc Rename 과 같은
     꼴) — 최신 저장본을 보고 고친 범위가 그 저장본 그대로면(합친 전체 규칙이 같다) 쓰지 않고
-    `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다).
+    `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다). 표에
+    화면 표시명을 적은 분류컬럼이 남아 있으면 그 알림 아래에 저장 회차와 같은 표시명 경고를 그린다
+    (막지 않는다).
     """
     submitted_base = seen(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
@@ -334,13 +336,14 @@ def _render_direct_editor(
             # 칸이 그 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
             if held_notice(DISPLAY_ORDER_FLASH_KEY) is None:
                 notice.info(DISPLAY_ORDER_UNCHANGED_MESSAGE, icon=":material/info:")
-            else:
-                # 그 저장의 표시명 경고도 같은 칸에 다시 그린다 — 앞 회차(이 version 을 본 값으로
-                # 적은 회차)가 꺼내 그려 이 회차에는 없다. 빠지면 성공만 남아 정렬이 조용히 걸리지
-                # 않는다. 같은 표라 그 저장과 같은 경고다.
-                _draw_label_warnings(
-                    notice, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
-                )
+            # 표에 남은 표시명 경고도 그 알림 아래 같은 칸에 그린다(막지 않고 알리기만 —
+            # 저장 회차와 같은 판정). 창 안의 느린 둘째 누름이면 그 저장의 경고다 — 앞 회차(이
+            # version 을 본 값으로 적은 회차)가 꺼내 그려 이 회차에는 없다. 창이 지난 뒤의
+            # 누름이면 「바뀐 것이 없습니다」 만 남아 표의 표시명이 정렬에 걸리지 않는 것을 알
+            # 길이 없었다(2026-11-02 결정 A3).
+            _draw_label_warnings(
+                notice, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
+            )
             return
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
         # 고른 범위만 바꾸는 저장이다. 다른 범위에 이미 있던 겹친 분류값은 저장 사슬 끝까지 넘겨,

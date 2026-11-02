@@ -788,6 +788,34 @@ def _module_status_labels(app: AppTest) -> list[str]:
     return [label for label in labels if "사내 모듈 상태" in label]
 
 
+def test_the_module_run_time_is_whole_milliseconds_with_the_unit_in_the_column(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """가벼운 모듈도 서로 갈린다 — 2.4ms · 3.6ms 가 「0.00」 둘이 아니라 2 · 4 다. 칸은 정수 숫자
+    칸이라 정렬이 값 차례다(글 칸이면 「12,346」 < 「2」 < 「4」 글자 차례 — 반박 검토
+    2026-11-02)."""
+    from capa_simulation import module_failures, module_registry
+    from capa_simulation.components import module_status
+
+    monkeypatch.delenv(module_registry.DISABLED_ENV_VAR, raising=False)
+    scan = module_registry.scan_modules(PROJECT_ROOT / "tests" / "fixtures" / "modules")
+    module_failures.note_run_seconds("demo_ok", 0.0024)
+    module_failures.note_run_seconds("demo_keys", 0.0036)
+    module_failures.note_run_seconds("demo_crash", 12.3456)
+
+    table = module_status.build_status_table(scan)
+    times = dict(zip(table["모듈"], table["마지막 회차 시간(ms)"], strict=True))
+
+    assert "마지막 회차 시간" not in table.columns
+    assert pd.api.types.is_integer_dtype(table["마지막 회차 시간(ms)"])
+    assert (times["demo_ok"], times["demo_keys"], times["demo_crash"]) == (2, 4, 12346)
+    assert pd.isna(times["demo_off"])
+    ordered = table.sort_values("마지막 회차 시간(ms)", ascending=False, na_position="last")
+    assert ordered["모듈"].tolist()[:3] == ["demo_crash", "demo_keys", "demo_ok"]
+    assert module_status.run_time_ms(0.0004) == 0
+    assert module_status.run_time_ms(0.0006) == 1
+
+
 def test_the_module_status_stands_above_the_tabs_only_with_modules(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -810,7 +838,9 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     assert _module_status_labels(app) == ["사내 모듈 상태 — 켜짐 3 · 꺼짐 1 · 실패 2"]
     table = app.dataframe[0].value
     rows = {row["모듈"]: row for row in table.to_dict("records")}
-    assert rows["demo_ok"]["상태"] == "켜짐" and rows["demo_ok"]["마지막 회차 시간"] == "0.12"
+    # 회차 시간은 단위를 칸 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 0.00).
+    assert rows["demo_ok"]["상태"] == "켜짐" and rows["demo_ok"]["마지막 회차 시간(ms)"] == 123
+    assert pd.isna(rows["demo_off"]["마지막 회차 시간(ms)"])
     assert rows["demo_off"]["까닭"] == "module.json enabled=false"
     assert rows["demo_bad_manifest"]["상태"] == "실패"
     assert rows["demo_future_api"]["API"] == "99.0"
@@ -824,6 +854,9 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
         for name, config in json.loads(app.dataframe[0].proto.columns).items()
     }
     assert widths["까닭"] == "large" and widths["마지막 오류"] == "medium"
+    # 회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표 꼴이다.
+    run_time = json.loads(app.dataframe[0].proto.columns)["마지막 회차 시간(ms)"]
+    assert run_time["type_config"] == {"type": "number", "format": "localized"}
     assert any("앱을 다시 띄운 뒤" in caption.value for caption in app.caption)
     # 탭은 그대로 넷이다.
     assert len(app.main.tabs) == 4

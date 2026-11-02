@@ -599,7 +599,9 @@ def test_downtime_paste_names_the_time_zone_before_other_unreadable_starts() -> 
     assert str(caught.value) == f"{ZONED_START}: ['2026-11-01T00:00:00Z']"
 
 
-@pytest.mark.parametrize("value", ["2026-11-05+09:00", "2026-11-05Z"])
+@pytest.mark.parametrize(
+    "value", ["2026-11-05+09:00", "2026-11-05Z", "2026-11-05-05:00", "2026-11-05 -0500"]
+)
 def test_downtime_paste_names_the_time_zone_of_a_date_with_only_an_offset(value: str) -> None:
     """시간 없이 시간대만 붙은 시작일도 「날짜 형식」 이 아니라 시간대 까닭으로 막는다(설비 마스터
     날짜 칸과 같은 판정 — E2E 2026-11-02)."""
@@ -608,6 +610,49 @@ def test_downtime_paste_names_the_time_zone_of_a_date_with_only_an_offset(value:
     with pytest.raises(ValueError) as caught:
         read_downtime_clipboard(_downtime_paste(["다음 주", value]), equipment=equipment)
     assert str(caught.value) == f"{ZONED_START}: [{value!r}]"
+
+
+@pytest.mark.parametrize("column", ["시작일", "종료일"])
+@pytest.mark.parametrize("source", ["clipboard", "csv"])
+def test_a_minus_offset_downtime_date_is_refused_even_as_the_first_value(
+    source: str, column: str
+) -> None:
+    """빼기 꼴 시간대 날짜(`2026-11-05-05:00`)는 pandas 가 뒤를 시각으로 읽어 예전에는 그 날로
+    받았다 — 더하기 꼴과 같은 시간대 문구로 막는다(2026-11-02 사용자 결정 A2 「막는다」). 칸 첫
+    값이어도 그 값만 들고, 뒤의 멀쩡한 날짜 글은 탓하지 않는다."""
+    equipment = prepare_equipment_master(_equipment())
+    starts = ["2026-11-05-05:00", "2026-11-06", "2026/11/07"]
+    if column == "시작일":
+        text = _downtime_paste(starts)
+    else:
+        rows = [
+            f"EQ-01\t고장\t2026-11-0{day}\t{end}\t\t"
+            for day, end in zip("123", starts, strict=True)
+        ]
+        text = "\n".join(["\t".join(DOWNTIME_COLUMNS), *rows])
+
+    with pytest.raises(ValueError) as caught:
+        if source == "clipboard":
+            read_downtime_clipboard(text, equipment=equipment)
+        else:
+            read_downtime_csv(text.replace("\t", ",").encode("utf-8-sig"), equipment=equipment)
+    assert type(caught.value) is ValueError
+    head = f"{column}에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요"
+    assert str(caught.value) == f"{head}: ['2026-11-05-05:00']"
+
+
+def test_stored_downtime_merged_with_a_minus_offset_start_blames_only_the_new_row() -> None:
+    """저장본 비가동(다시 읽은 날짜 값)은 그대로 받고, 합친 새 줄의 빼기 꼴 시작일만 막는다 —
+    다시 읽는 리비전은 달라지지 않는다."""
+    equipment = prepare_equipment_master(_equipment())
+    current = prepare_downtime_schedule(_downtime(), equipment=equipment)
+    assert prepare_downtime_schedule(current, equipment=equipment).equals(current)
+    incoming = current.astype(object)
+    incoming.loc[0, ["비가동유형", "시작일", "종료일"]] = ["공사", "2026-11-05-05:00", None]
+
+    with pytest.raises(ValueError) as caught:
+        merge_downtime_rows(current, incoming, equipment=equipment)
+    assert str(caught.value) == f"{ZONED_START}: ['2026-11-05-05:00']"
 
 
 @pytest.mark.parametrize("value", ["2026-10-11 99:99", "2026/10/11 23:75", "2026-10-11 24:00"])

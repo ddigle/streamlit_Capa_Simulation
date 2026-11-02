@@ -591,6 +591,10 @@ odd==1.0 ; platform_machine == 'x86_64'
         ("import yaml_not_installed_x\n", {("M09", "error")}),
         ("import tomllib\n", {("M09", "error")}),
         ("import toml\n", {("M09", "warning")}),
+        # numpy 는 코어 직접 의존(`pyproject.toml`)이라 경고가 없다. 전이 의존 둘은 그대로 경고.
+        ("import numpy as np\n", set()),
+        ("import pyarrow\n", {("M09", "warning")}),
+        ("from PIL import Image\n", {("M09", "warning")}),
     ],
 )
 def test_m09_with_the_real_requirements(
@@ -942,6 +946,71 @@ def test_git_checks_are_skipped_outside_a_work_tree(
     assert "git 검사 건너뜀(사본)" in out
 
 
+# ------------------------------------------------------------------ M20
+
+# 첫 회차에 스스로 연 닫을 수 없는 팝업 — 처음 들어온 사람에게는 입장 화면 밑에 숨어 앱을 묶는다.
+LOCKED_POPUP = """import streamlit as st
+
+from capa_simulation import module_api as api
+
+ctx = api.context(__file__)
+
+
+@st.dialog("데모 안내", dismissible=False)
+def _notice() -> None:
+    with ctx.guard():
+        st.write("합성 안내 42")
+
+
+_notice()
+"""
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        LOCKED_POPUP,
+        'import streamlit as st\nflag = len("x") > 1\nnotice = st.dialog("x", dismissible=flag)\n',
+        'from streamlit import dialog\n\n\n@dialog("x", dismissible=0)\ndef notice() -> None:\n'
+        "    pass\n",
+    ],
+)
+def test_m20_warns_about_a_popup_that_cannot_be_closed(tmp_path: Path, body: str) -> None:
+    assert _page_rules(tmp_path, body) == {("M20", "warning")}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'import streamlit as st\n\n\n@st.dialog("x")\ndef notice() -> None:\n    pass\n',
+        'import streamlit as st\n\n\n@st.dialog("x", dismissible=True)\ndef notice() -> None:\n'
+        "    pass\n",
+    ],
+)
+def test_m20_passes_a_popup_that_can_be_closed(tmp_path: Path, body: str) -> None:
+    assert _page_rules(tmp_path, body) == set()
+
+
+def test_m20_does_not_look_at_module_tests(tmp_path: Path) -> None:
+    assert _page_rules(tmp_path, LOCKED_POPUP, rel="tests/test_demo_x_more.py") == set()
+
+
+def test_m20_is_a_warning_that_keeps_the_module_passing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "modules"
+    _module(root, "demo_popup", {"page.py": "# Purpose: 데모 팝업 화면.\n\n" + LOCKED_POPUP})
+
+    code, out = _run(["demo_popup", "--root", str(root), "--no-ruff", "--no-tests"], capsys)
+
+    assert code == 0, out
+    assert "- m1 demo_popup 통과 · L0 · API 1.0 · 화면 1 · 오류 0 · 경고 1 · " in out
+    detail = next(line for line in out.splitlines() if " M20 " in line)
+    assert detail.startswith("  m1 demo_popup 경고 M20 page.py:")
+    assert "`st.dialog(dismissible=False)`" in detail and "입장 화면" in detail
+    assert _summary(out).endswith("ng 없음")
+
+
 # ------------------------------------------------------------------ ruff · 시험
 
 
@@ -1157,8 +1226,8 @@ def test_the_output_option_writes_the_same_block(
     assert target.read_text(encoding="utf-8") == out
 
 
-def test_the_rule_table_lists_m01_to_m19() -> None:
-    assert list(rules.RULES) == [f"M{number:02d}" for number in range(1, 20)]
+def test_the_rule_table_lists_m01_to_m20() -> None:
+    assert list(rules.RULES) == [f"M{number:02d}" for number in range(1, 21)]
     assert rules.BLOCKING_RULES == {"M01", "M06", "M07", "M10", "M11"}
 
 

@@ -64,8 +64,8 @@
 정수 칸은 브라우저가 친 글을 `parseInt` 로 읽고(서버도 `int()`) 「109.5」 를 말없이 109 로 버렸다 —
 HOME 판정 기준 월별 칸은 110 으로 읽어 같은 기준이 칸마다 달랐다. 소수 칸은 친 값을 그대로 보내고
 콜백이 반을 올린 정수(110)로 정본을 적는다. 숫자 꼴은 `%.0f` 여야 칸이 보이는 수(브라우저 `toFixed`
-— 반 올림)와 정본이 같다. 칸 범위(min·max)는 그대로라 범위 밖 글(49.6 · 200.4)은 반올림 전에 칸이
-막는다.
+— 반 올림)와 정본이 같다. 칸 범위(min·max)는 그대로라 범위 밖 글(기준 확보율 칸 50 ~ 300% 면
+49.6 · 300.4)은 반올림 전에 칸이 막는다.
 """
 
 from __future__ import annotations
@@ -287,6 +287,9 @@ def render_preset_number_field(
         field_value = None
     else:
         shown = canonical if canonical is not None else float(fallback)
+        # 위젯은 범위 밖 기본값을 받지 않는다 — 범위 밖 `fallback` 만 칸 끝으로 자른다(기준
+        # 확보율 칸은 범위가 HOME 판정 기준 저장 범위와 같아 Preference 로 저장한 HOME 기본은
+        # 잘리지 않는다).
         shown = min(max(shown, float(minimum)), float(maximum))
         field_value = widget_number(shown)
     # 적지 않은 회차에만 지금 값을 기본값으로 싣는다 — 끊긴 회차가 `set_value` 를 보내지 못한 새 key

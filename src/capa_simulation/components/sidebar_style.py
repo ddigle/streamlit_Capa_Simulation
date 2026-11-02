@@ -479,7 +479,7 @@ def build_sidebar_stylesheet(
         # 떼어져 사라졌다(2026-11-02 E2E — 제약 시뮬레이션 「보유 제약 호기」, 같은 날 사본 앱에서
         # 다른 화면의 사이드바 multiselect 도 — AGENTS 9장). 칩 줄바꿈은 그대로다.
         # 대가: 규칙이 작동하는 경우(칩 줄 끝 남은 폭 42px 미만)마다 초점 입력 칸이 7 ~ 41px 로
-        # 남아 친 검색 글이 잘려 보인다(거르기는 된다 — 다른 꼴은 사용자 답 대기, AGENTS 9장).
+        # 남아 친 검색 글이 잘려 보인다(거르기는 된다 — 대가와 대안은 AGENTS 9장).
         f"""
         [data-testid="stSidebarContent"] [data-testid="stMultiSelect"] input {{
             min-width: 7px !important;
