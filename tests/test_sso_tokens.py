@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import time
+from typing import Any
 
 import jwt
 import pytest
@@ -17,6 +18,7 @@ from sso_support import (
     id_token_claims,
     make_id_token,
     other_signing,
+    renewed_session,
     signing,
     sso_environ,
     tamper_signature,
@@ -27,13 +29,21 @@ from sso_support import (
 from capa_simulation.auth import names
 from capa_simulation.auth.config import SsoConfig, load_config
 from capa_simulation.auth.tokens import (
+    ISSUER as SESSION_ISSUER,
+)
+from capa_simulation.auth.tokens import (
+    RENEW_MIN_INTERVAL,
     SESSION_AUDIENCE,
+    SESSION_LEEWAY,
     STATE_AUDIENCE,
     SsoReject,
+    decode_session,
     derive_key,
     issue_session,
     issue_state,
     pick_certs,
+    renew_session,
+    session_end,
     session_key,
     state_key,
     verify_id_token,
@@ -343,12 +353,27 @@ def test_session_round_trip(cfg: SsoConfig) -> None:
     claims = verify_session(token, cfg, now=now)
 
     assert claims == issued
-    assert claims.exp - claims.iat == cfg.session_seconds
+    assert claims.auth_time == claims.iat == now
+    assert claims.exp == now + 6 * 3600 == now + cfg.session_seconds
+    assert 16 <= len(claims.sid) <= 64 and claims.sid != claims.jti
     payload = jwt.decode(token, options={"verify_signature": False})
     assert payload["aud"] == SESSION_AUDIENCE
-    assert payload["v"] == 1
+    assert payload["v"] == 2
+    assert (payload["sid"], payload["auth_time"]) == (claims.sid, now)
     assert "dept" not in payload
-    assert set(payload) <= {"iss", "aud", "sub", "name", "dept", "iat", "exp", "jti", "v"}
+    assert set(payload) <= {
+        "iss",
+        "aud",
+        "sub",
+        "name",
+        "dept",
+        "iat",
+        "exp",
+        "jti",
+        "sid",
+        "auth_time",
+        "v",
+    }
 
 
 def test_session_expiry_follows_the_given_clock(cfg: SsoConfig) -> None:
@@ -398,7 +423,9 @@ def test_state_token_cannot_be_used_as_a_session(cfg: SsoConfig) -> None:
             "iat": now,
             "exp": now + 60,
             "jti": "abcdefghij",
-            "v": 1,
+            "sid": "s" * 22,
+            "auth_time": now,
+            "v": 2,
         },
         session_key(cfg),
         algorithm="HS256",
@@ -446,3 +473,167 @@ def test_keys_need_a_secret() -> None:
         session_key(cfg)
 
     assert caught.value.code == "config_broken"
+
+
+# --- 세션 갱신 · 끝 시각 ---------------------------------------------------------------------
+
+HOUR = 3600
+LOGIN_AT = 1_800_000_000
+
+
+def _session_payload(cfg: SsoConfig, now: int, **changes: Any) -> dict[str, Any]:
+    """손으로 서명할 세션 페이로드 — `changes` 로 바꾸고 값이 None 이면 뺀다."""
+    payload: dict[str, Any] = {
+        "iss": SESSION_ISSUER,
+        "aud": SESSION_AUDIENCE,
+        "sub": LOGINID,
+        "iat": now,
+        "exp": now + cfg.session_seconds,
+        "jti": "j" * 22,
+        "sid": "s" * 22,
+        "auth_time": now,
+        "v": 2,
+    }
+    for key, value in changes.items():
+        if value is None:
+            payload.pop(key, None)
+        else:
+            payload[key] = value
+    return payload
+
+
+def _signed(cfg: SsoConfig, payload: dict[str, Any]) -> str:
+    return jwt.encode(payload, session_key(cfg), algorithm="HS256")
+
+
+def _session_code(token: str, cfg: SsoConfig, *, now: int) -> str:
+    with pytest.raises(SsoReject) as caught:
+        verify_session(token, cfg, now=now)
+    return caught.value.code
+
+
+def test_renew_keeps_the_person_and_session_but_moves_the_clock(cfg: SsoConfig) -> None:
+    _, issued = issue_session(cfg, loginid=LOGINID, name="이름", dept="부서", now=LOGIN_AT)
+    now = LOGIN_AT + 2 * HOUR
+
+    renewed = renew_session(cfg, issued, now=now)
+
+    assert renewed is not None
+    token, fresh = renewed
+    assert (fresh.loginid, fresh.name, fresh.dept) == (LOGINID, "이름", "부서")
+    assert (fresh.sid, fresh.auth_time) == (issued.sid, LOGIN_AT)
+    assert fresh.jti != issued.jti
+    assert (fresh.iat, fresh.exp) == (now, now + 6 * HOUR)
+    assert verify_session(token, cfg, now=now) == fresh
+
+
+def test_renew_within_a_minute_returns_none(cfg: SsoConfig) -> None:
+    _, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=LOGIN_AT)
+
+    assert renew_session(cfg, issued, now=LOGIN_AT + RENEW_MIN_INTERVAL - 1) is None
+    assert renew_session(cfg, issued, now=LOGIN_AT + RENEW_MIN_INTERVAL) is not None
+    assert renew_session(cfg, issued, now=LOGIN_AT - 5) is None, "시계가 뒤로 가도 다시 서명 안 함"
+
+
+def test_renew_stops_at_the_maximum(cfg: SsoConfig) -> None:
+    hours = [5, 10, 15, 20]
+    _, claims = renewed_session(
+        cfg, login_at=LOGIN_AT, renew_at=[LOGIN_AT + hour * HOUR for hour in hours]
+    )
+
+    assert claims.auth_time == LOGIN_AT
+    assert claims.exp == LOGIN_AT + 24 * HOUR == claims.auth_time + cfg.session_max_seconds
+    assert renew_session(cfg, claims, now=LOGIN_AT + 21 * HOUR) is None
+    assert renew_session(cfg, claims, now=LOGIN_AT + 23 * HOUR) is None
+
+
+def test_session_end_takes_the_earliest(cfg: SsoConfig) -> None:
+    iat = LOGIN_AT + 10 * HOUR
+
+    def end(exp: int, auth_time: int, renewed: int | None = None) -> int:
+        return session_end(exp=exp, iat=iat, auth_time=auth_time, cfg=cfg, renewed_exp=renewed)
+
+    assert end(iat + 6 * HOUR, iat) == iat + 6 * HOUR
+    assert end(iat + 12 * HOUR, iat) == iat + 6 * HOUR, "exp 를 지금 설정의 유휴로 깎는다"
+    assert end(iat + 6 * HOUR, iat - 20 * HOUR) == iat + 4 * HOUR, "상한(auth_time + 24h)"
+    assert end(iat + 6 * HOUR, iat, iat + 8 * HOUR) == iat + 8 * HOUR, "갱신 표가 늦으면 그것"
+    assert end(iat + 6 * HOUR, iat, iat + 2 * HOUR) == iat + 6 * HOUR, "갱신 표가 이르면 토큰"
+    assert end(iat + 6 * HOUR, iat, iat + 30 * HOUR) == iat + 24 * HOUR, "갱신 표도 상한까지"
+    assert end(iat + 6 * HOUR, iat - 20 * HOUR, iat + 6 * HOUR) == iat + 4 * HOUR
+
+
+def test_lowering_the_setting_takes_effect_at_once() -> None:
+    longer = load_config(sso_environ({names.ENV_SESSION_HOURS: "12"}))
+    default = load_config(sso_environ())
+    token, issued = issue_session(longer, loginid=LOGINID, name=None, dept=None, now=LOGIN_AT)
+    assert issued.exp == LOGIN_AT + 12 * HOUR
+
+    edge = LOGIN_AT + 6 * HOUR + SESSION_LEEWAY
+    assert verify_session(token, default, now=edge).sid == issued.sid
+    assert _session_code(token, default, now=edge + 1) == "session_expired"
+    assert verify_session(token, longer, now=edge + 1).sid == issued.sid
+
+    wide = load_config(sso_environ({names.ENV_SESSION_MAX_HOURS: "24"}))
+    narrow = load_config(sso_environ({names.ENV_SESSION_MAX_HOURS: "8"}))
+    token, claims = renewed_session(wide, login_at=LOGIN_AT, renew_at=[LOGIN_AT + 5 * HOUR])
+    assert claims.exp == LOGIN_AT + 11 * HOUR
+    cap = LOGIN_AT + 8 * HOUR + SESSION_LEEWAY
+    assert verify_session(token, narrow, now=cap).sid == claims.sid
+    assert _session_code(token, narrow, now=cap + 1) == "session_expired"
+    assert verify_session(token, wide, now=cap + 1).sid == claims.sid
+
+
+@pytest.mark.parametrize("dropped", ["sid", "auth_time"])
+def test_session_without_sid_or_auth_time_is_invalid(cfg: SsoConfig, dropped: str) -> None:
+    now = int(time.time())
+    token = _signed(cfg, _session_payload(cfg, now, **{dropped: None}))
+
+    assert _session_code(token, cfg, now=now) == "session_invalid"
+    assert verify_session(_signed(cfg, _session_payload(cfg, now)), cfg, now=now).sid == "s" * 22
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"v": 1},
+        {"v": 1, "sid": None, "auth_time": None},
+        {"v": None},
+        {"sid": "short"},
+        {"sid": "s" * 21 + "!"},
+        {"auth_time": "1800000000"},
+        {"auth_time": True},
+        {"iat": 1.5},
+    ],
+)
+def test_version_one_session_is_invalid(cfg: SsoConfig, changes: dict[str, Any]) -> None:
+    """v1(배포 전 꼴) · 꼴이 틀린 sid · 정수가 아닌 시각은 받지 않는다."""
+    now = int(time.time())
+
+    token = _signed(cfg, _session_payload(cfg, now, **changes))
+
+    assert _session_code(token, cfg, now=now) == "session_invalid"
+
+
+def test_auth_time_after_iat_or_future_iat_is_invalid(cfg: SsoConfig) -> None:
+    now = LOGIN_AT
+    later_login = _signed(cfg, _session_payload(cfg, now, auth_time=now + 1))
+    future = _signed(cfg, _session_payload(cfg, now + SESSION_LEEWAY + 1))
+    edge = _signed(cfg, _session_payload(cfg, now + SESSION_LEEWAY))
+
+    assert _session_code(later_login, cfg, now=now) == "session_invalid"
+    assert _session_code(future, cfg, now=now) == "session_invalid"
+    assert verify_session(edge, cfg, now=now).iat == now + SESSION_LEEWAY
+
+
+def test_decode_session_ignores_the_end_but_not_the_signature(cfg: SsoConfig) -> None:
+    token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=LOGIN_AT)
+    long_after = LOGIN_AT + 30 * HOUR
+
+    assert decode_session(token, cfg, now=long_after) == issued
+    assert _session_code(token, cfg, now=long_after) == "session_expired"
+    other = load_config(sso_environ({names.ENV_SECRET: "another-q7Lm2Xp9Rt4Vb8Nc3Kd6Hf1Js5Gw"}))
+    forged, _ = issue_session(other, loginid=LOGINID, name=None, dept=None, now=LOGIN_AT)
+    with pytest.raises(SsoReject) as caught:
+        decode_session(forged, cfg, now=LOGIN_AT)
+    assert caught.value.code == "session_invalid"
+    assert _session_code(forged, cfg, now=LOGIN_AT) == "session_invalid"

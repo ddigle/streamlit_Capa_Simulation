@@ -1,4 +1,4 @@
-# Purpose: ID 토큰(RS256) 검증과 세션·상태 토큰(HS256) 발급·검증 — 실패는 사유 코드로.
+# Purpose: ID 토큰(RS256) 검증과 세션(발급·갱신)·상태 토큰(HS256) — 실패는 사유 코드로.
 
 """통합인증 토큰.
 
@@ -7,7 +7,15 @@
   nonce · iat 신선도(10분)를 본다. 알고리즘은 RS256 하나로 묶는다(`none` · HS256 혼동을 막는 본
   방어).
 - **세션 토큰** — 우리가 발급하는 HS256 토큰. HttpOnly 쿠키에 담는다. 원 id_token · 그룹 · 이메일은
-  넣지 않는다.
+  넣지 않는다. `sid`(갱신해도 그대로인 세션 묶음 id)와 `auth_time`(처음 ADFS 로그인 시각)을 싣는다.
+  끝은 `session_end` 하나가 정한다 — `min(유휴 끝, auth_time + 최대)`, 유휴 끝은 `exp` 를 지금 설정
+  (`iat + 세션 시간`)으로 한 번 더 깎은 값이다. 시각 판정은 넘겨받은 `now` 로만 한다(PyJWT 의 exp ·
+  iat 검사는 끈다 — 시험이 시계를 쥔다).
+
+  갱신(`renew_session`)은 앱 화면에서 사람이 쓰는 동안 갱신 경로가 부른다. 새 `jti` · `iat=지금` ·
+  `exp=min(지금 + 세션 시간, auth_time + 최대)` 로 다시 서명하고 loginid · 이름 · 부서 · `sid` ·
+  `auth_time` 은 **검증된 클레임에서만** 옮긴다(요청 값을 쓰지 않는다 — 상한 우회를 막는다). 직전
+  발급에서 `RENEW_MIN_INTERVAL` 안이거나 상한에 닿아 늘 것이 없으면 다시 서명하지 않는다.
 - **상태 토큰** — 로그인 시작 때 state · nonce · 돌아갈 자리를 담아 쿠키로 둔다(10분).
 
 세션 · 상태 토큰의 키는 `JWT_SECRET_KEY` 에서 쓰임별로 파생한다 — 서로 바꿔 끼울 수 없다(aud 도
@@ -41,12 +49,14 @@ SESSION_AUDIENCE = "capa-simulation:session"
 STATE_AUDIENCE = "capa-simulation:sso-state"
 SESSION_PURPOSE = b"capa-sso/session/v1"
 STATE_PURPOSE = b"capa-sso/state/v1"
-SESSION_VERSION = 1
+SESSION_VERSION = 2
 
 ID_TOKEN_LEEWAY = 120
 ID_TOKEN_MAX_AGE = 600
 SESSION_LEEWAY = 30
 STATE_TTL = 600
+# 직전 발급이 이보다 가까우면(초) 갱신해도 다시 서명하지 않는다 — 탭 여럿 · 되풀이 요청을 거른다.
+RENEW_MIN_INTERVAL = 60
 
 LOGINID_PATTERN = re.compile(r"^[A-Za-z0-9._@-]{1,64}$")
 MAX_DISPLAY_LENGTH = 100
@@ -54,6 +64,7 @@ MAX_DIAGNOSTIC_LENGTH = 200
 MAX_CLAIM_NAMES = 60
 _HEADER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _JTI = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+_SID = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 
 class SsoReject(Exception):
@@ -87,12 +98,16 @@ class VerifiedLogin:
 
 @dataclass(frozen=True)
 class SessionClaims:
+    """세션 토큰의 클레임. `sid` · `auth_time` 은 갱신해도 그대로다."""
+
     loginid: str
     name: str | None
     dept: str | None
     iat: int
     exp: int
     jti: str
+    sid: str
+    auth_time: int
 
 
 @dataclass(frozen=True)
@@ -330,36 +345,111 @@ def verify_id_token(token: str, cfg: SsoConfig, *, expected_nonce: str, now: int
     )
 
 
-def issue_session(
-    cfg: SsoConfig, *, loginid: str, name: str | None, dept: str | None, now: int
-) -> tuple[str, SessionClaims]:
-    """우리 세션 토큰(HS256)을 만든다."""
-    jti = secrets.token_urlsafe(16)
-    exp = now + cfg.session_seconds
+def session_end(
+    *, exp: int, iat: int, auth_time: int, cfg: SsoConfig, renewed_exp: int | None = None
+) -> int:
+    """세션의 끝(초) — `min(유휴 끝, auth_time + 최대)`. 유효는 `now <= 끝 + SESSION_LEEWAY` 다.
+
+    유휴 끝은 토큰 `exp` 를 지금 설정(`iat + 세션 시간`)으로 한 번 더 깎은 값이고 상한도 지금 설정의
+    최대로 잰다 — 설정을 줄여 다시 띄우면 곧바로 듣는다. `renewed_exp` 는 핸드셰이크에 묶인 신원만
+    넘긴다(프로세스 메모리 갱신 표의 그 sid 최신 exp) — 유휴 끝과 견줘 늦은 것을 쓰되 상한은 넘지
+    못한다.
+    """
+    idle_end = min(exp, iat + cfg.session_seconds)
+    if renewed_exp is not None:
+        idle_end = max(idle_end, renewed_exp)
+    return min(idle_end, auth_time + cfg.session_max_seconds)
+
+
+def claims_end(claims: SessionClaims, cfg: SsoConfig) -> int:
+    """그 토큰 자신의 끝(갱신 표를 보지 않음)."""
+    return session_end(exp=claims.exp, iat=claims.iat, auth_time=claims.auth_time, cfg=cfg)
+
+
+def _encode_session(cfg: SsoConfig, claims: SessionClaims) -> str:
     payload: dict[str, Any] = {
         "iss": ISSUER,
         "aud": SESSION_AUDIENCE,
-        "sub": loginid,
-        "iat": now,
-        "exp": exp,
-        "jti": jti,
+        "sub": claims.loginid,
+        "iat": claims.iat,
+        "exp": claims.exp,
+        "jti": claims.jti,
+        "sid": claims.sid,
+        "auth_time": claims.auth_time,
         "v": SESSION_VERSION,
     }
-    if name:
-        payload["name"] = name
-    if dept:
-        payload["dept"] = dept
-    token = _api().encode(payload, session_key(cfg), algorithm="HS256")
-    return token, SessionClaims(loginid=loginid, name=name, dept=dept, iat=now, exp=exp, jti=jti)
+    if claims.name:
+        payload["name"] = claims.name
+    if claims.dept:
+        payload["dept"] = claims.dept
+    return _api().encode(payload, session_key(cfg), algorithm="HS256")
 
 
-def verify_session(token: str, cfg: SsoConfig, *, now: int) -> SessionClaims:
-    """세션 쿠키 값 → 신원. 만료는 `session_expired`, 그 밖 모든 실패는 `session_invalid`."""
+def issue_session(
+    cfg: SsoConfig, *, loginid: str, name: str | None, dept: str | None, now: int
+) -> tuple[str, SessionClaims]:
+    """ADFS 로그인 뒤 우리 세션 토큰(HS256)을 만든다 — 새 `sid` · `auth_time = now`."""
+    claims = SessionClaims(
+        loginid=loginid,
+        name=name,
+        dept=dept,
+        iat=now,
+        exp=min(now + cfg.session_seconds, now + cfg.session_max_seconds),
+        jti=secrets.token_urlsafe(16),
+        sid=secrets.token_urlsafe(16),
+        auth_time=now,
+    )
+    return _encode_session(cfg, claims), claims
+
+
+def renew_session(
+    cfg: SsoConfig, claims: SessionClaims, *, now: int
+) -> tuple[str, SessionClaims] | None:
+    """검증된 세션을 다시 서명한다. 늘릴 것이 없으면 `None`.
+
+    직전 발급(`iat`)이 `RENEW_MIN_INTERVAL` 안이거나, 상한(`auth_time + 최대`)에 닿아 새 끝이 지금
+    끝보다 늦지 않으면 `None`. 부르는 쪽은 `verify_session`(엄격)과 폐기 확인을 먼저 마친다.
+    """
+    if now - claims.iat < RENEW_MIN_INTERVAL:
+        return None
+    new_exp = min(now + cfg.session_seconds, claims.auth_time + cfg.session_max_seconds)
+    if new_exp <= claims_end(claims, cfg):
+        return None
+    fresh = SessionClaims(
+        loginid=claims.loginid,
+        name=claims.name,
+        dept=claims.dept,
+        iat=now,
+        exp=new_exp,
+        jti=secrets.token_urlsafe(16),
+        sid=claims.sid,
+        auth_time=claims.auth_time,
+    )
+    return _encode_session(cfg, fresh), fresh
+
+
+def _int_claim(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def decode_session(token: str, cfg: SsoConfig, *, now: int) -> SessionClaims:
+    """세션 쿠키 값 → 클레임. 서명 · aud · iss · 꼴만 본다 — **끝 시각은 보지 않는다**.
+
+    로그아웃이 막 끝난 쿠키의 sid 도 폐기하려고 쓴다. 새 요청은 `verify_session` 을 쓴다. 실패는
+    모두 `session_invalid`.
+    """
     import jwt
 
     if not token or len(token) > 4096:
         raise SsoReject("session_invalid")
-    options: Options = {"require": ["exp", "iat", "sub", "jti"], "strict_aud": True}
+    options: Options = {
+        "require": ["exp", "iat", "sub", "jti", "sid", "auth_time"],
+        "strict_aud": True,
+        "verify_exp": False,
+        "verify_iat": False,
+    }
     try:
         claims = _api().decode(
             token,
@@ -367,28 +457,29 @@ def verify_session(token: str, cfg: SsoConfig, *, now: int) -> SessionClaims:
             algorithms=["HS256"],
             audience=SESSION_AUDIENCE,
             issuer=ISSUER,
-            leeway=SESSION_LEEWAY,
             options=options,
         )
-    except jwt.ExpiredSignatureError as exc:
-        raise SsoReject("session_expired") from exc
     except jwt.PyJWTError as exc:
         raise SsoReject("session_invalid") from exc
-    sub, jti, iat, exp = claims.get("sub"), claims.get("jti"), claims.get("iat"), claims.get("exp")
+    sub, jti, sid = claims.get("sub"), claims.get("jti"), claims.get("sid")
+    iat = _int_claim(claims.get("iat"))
+    exp = _int_claim(claims.get("exp"))
+    auth_time = _int_claim(claims.get("auth_time"))
     if (
         not isinstance(sub, str)
         or not LOGINID_PATTERN.match(sub)
         or not isinstance(jti, str)
         or not _JTI.match(jti)
-        or isinstance(iat, bool)
-        or not isinstance(iat, int)
-        or isinstance(exp, bool)
-        or not isinstance(exp, int)
+        or not isinstance(sid, str)
+        or not _SID.match(sid)
+        or iat is None
+        or exp is None
+        or auth_time is None
         or claims.get("v") != SESSION_VERSION
+        or iat > now + SESSION_LEEWAY
+        or auth_time > iat
     ):
         raise SsoReject("session_invalid")
-    if now > exp + SESSION_LEEWAY:
-        raise SsoReject("session_expired")
     name, dept = claims.get("name"), claims.get("dept")
     return SessionClaims(
         loginid=sub,
@@ -397,7 +488,18 @@ def verify_session(token: str, cfg: SsoConfig, *, now: int) -> SessionClaims:
         iat=iat,
         exp=exp,
         jti=jti,
+        sid=sid,
+        auth_time=auth_time,
     )
+
+
+def verify_session(token: str, cfg: SsoConfig, *, now: int) -> SessionClaims:
+    """세션 쿠키 값 → 신원(새 요청용 — 엄격). 그 토큰 자신의 끝 + 여유가 지났으면 `session_expired`,
+    그 밖 모든 실패는 `session_invalid`."""
+    claims = decode_session(token, cfg, now=now)
+    if now > claims_end(claims, cfg) + SESSION_LEEWAY:
+        raise SsoReject("session_expired")
+    return claims
 
 
 def issue_state(cfg: SsoConfig, *, state: str, nonce: str, next_path: str, now: int) -> str:

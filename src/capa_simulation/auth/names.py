@@ -64,11 +64,19 @@ CALLBACK_PATH = "/auth/callback"
 LOGIN_PATH = "/auth/sso/login"
 LOGOUT_PATH = "/auth/sso/logout"
 ERROR_PATH = "/auth/sso/error"
+# 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(POST · 본문 없음 · 같은 출처).
+REFRESH_PATH = "/auth/sso/refresh"
 SSO_PATHS: tuple[str, ...] = (CALLBACK_PATH, LOGIN_PATH, LOGOUT_PATH, ERROR_PATH)
 # Streamlit 의 상태 검사. C-DEP 이 본다 — 막힘 모드에서도 열어 둔다.
 HEALTH_PATH = "/_stcore/health"
 # Streamlit 자체 `st.login` 경로. 우리 경로와 이름이 겹치지 않게 피했고, 통합인증이 켜지면 막는다.
 STREAMLIT_AUTH_PATHS: tuple[str, ...] = ("/auth/login", "/auth/logout", "/oauth2callback")
+
+# --- 갱신 요청 머리 ---------------------------------------------------------------------------
+# 같은 출처 fetch 만 실을 수 있다(폼은 못 싣고 교차 출처는 사전 요청에서 막힌다). 밑줄을 쓰지
+# 않는다 — nginx 계열 앞단이 밑줄 머리를 버린다.
+REFRESH_HEADER = "X-Capa-Sso-Refresh"
+REFRESH_HEADER_VALUE = "1"
 
 # --- 쿠키 바탕 이름 ---------------------------------------------------------------------------
 # https 공개 URL 이면 앞에 `__Host-` 를 붙인다(Secure · Path=/ · Domain 없음이 브라우저에서

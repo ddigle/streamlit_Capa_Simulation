@@ -1,4 +1,4 @@
-# Purpose: 통합인증 시험 도우미 — 실행 때 만든 키·인증서로 환경변수와 id_token 을 짓는다.
+# Purpose: 통합인증 시험 도우미 — 실행 때 만든 키·인증서로 환경변수·id_token·갱신 세션을 짓는다.
 
 """통합인증 시험 재료.
 
@@ -17,7 +17,7 @@ import re
 import secrets
 import shlex
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +29,7 @@ from cryptography.x509.oid import NameOID
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig, x5t_of
+from capa_simulation.auth.tokens import SessionClaims, issue_session, renew_session
 
 CLIENT_ID = "capa-test-client"
 ISSUER = "https://idp.example.invalid/adfs"
@@ -213,3 +214,48 @@ def hidden_field(page: str, name: str) -> str:
     match = re.search(rf'name="{re.escape(name)}" value="([^"]*)"', page)
     assert match is not None, name
     return html.unescape(match.group(1))
+
+
+def renewed_session(
+    cfg: SsoConfig,
+    *,
+    login_at: int,
+    renew_at: Sequence[int],
+    loginid: str = LOGINID,
+    name: str | None = None,
+    dept: str | None = None,
+) -> tuple[str, SessionClaims]:
+    """`login_at` 에 발급하고 `renew_at` 시각마다 차례로 갱신한 마지막 토큰 · 클레임.
+
+    갱신이 `None`(60초 안 · 상한)이면 시험 차림이 틀린 것이라 단언으로 멈춘다.
+    """
+    token, claims = issue_session(cfg, loginid=loginid, name=name, dept=dept, now=login_at)
+    for moment in renew_at:
+        renewed = renew_session(cfg, claims, now=moment)
+        assert renewed is not None, moment
+        token, claims = renewed
+    return token, claims
+
+
+def refresh_headers(cfg: SsoConfig, token: str | None, **overrides: str | None) -> dict[str, str]:
+    """갱신 경로(`POST /auth/sso/refresh`)에 브라우저가 싣는 머리 한 벌.
+
+    세션 쿠키(`token` 이 None 이면 없음) · Origin(공개 주소) · `Sec-Fetch-Site: same-origin` ·
+    `Sec-Fetch-Mode: cors` · 갱신 머리. `overrides` 의 이름은 밑줄을 줄표로 바꿔 머리 이름이 되고
+    (`sec_fetch_site` → `sec-fetch-site`), 값을 None 으로 주면 그 머리를 뺀다.
+    """
+    headers: dict[str, str] = {
+        "origin": PUBLIC_URL,
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        names.REFRESH_HEADER.lower(): names.REFRESH_HEADER_VALUE,
+    }
+    if token is not None:
+        headers["cookie"] = f"{cfg.session_cookie}={token}"
+    for key, value in overrides.items():
+        name = key.replace("_", "-").lower()
+        if value is None:
+            headers.pop(name, None)
+        else:
+            headers[name] = value
+    return headers
