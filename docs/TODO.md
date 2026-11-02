@@ -130,9 +130,12 @@
     공식 → 저장 → `Past Data` → `Esc`)에서 한 번 닫히지 않았고, 같은 차례 되풀이 4번 · 경우별 탐침(초점 자리 · 저장 뒤 · 칩 뒤) ·
     다시 돈 연기 — 모두 9번은 닫혔다(10번에 한 번, 원인 미상 — `~/projects/Deploy/worklog/ui-1102/integ/` 의 `run1/smoke.json` ·
     `esc_repeat.json` · `esc_probe_integ*.json`). 사내에서 다시 보이면 그때 초점 자리(`document.activeElement`)와 함께 잰다.
-  - 따라하기 가이드 예시판은 다시 묶었다(검토 고침 (라) — `build_page_guide.py --example --port 8608`, 끝 줄 「상태 21/21; 표적
-    120/120 ok; 고아 0; 덮어씀 0; 예시 0」, `static/guides/howto/lob.html` 과 예시 그림 셋 · `example/shots.json` 을 바꿈 — 옛
-    「Preference 탭 · Main 탭으로 돌아옵니다」 글은 남지 않는다). 사내 검수 판(`--accepted`)은 상태 01 · 05 · 06 · 11 · 20 이
+  - 따라하기 가이드 예시판은 다시 묶었다 — `integ/1102-ui` 검토 고침 (라)에서 한 번, 그 뒤 편집 그리드 원고(기준 정보 종류 단추)를
+    합친 `integ/1103` 위에서 마지막 검토 고침(`fix/final-1103`)이 한 번 더(`build_page_guide.py --example`, 끝 줄 「가이드 lob@1023
+    예시판 상태 21/21; 표적 118/118 ok; 고아 0; 덮어씀 0; 예시 0」 — 앞 묶음의 「표적 120/120」 은 `integ/1102-ui` 원고의 수이고 편집
+    그리드 원고가 기준 정보 상태의 표적을 둘 줄였다).
+    `static/guides/howto/lob.html` 과 예시 그림 셋 · `example/shots.json` 을 바꿈 — 옛 「Preference 탭 · Main 탭으로 돌아옵니다」 ·
+    「((설비대수)) 탭 → 안쪽 ((가용)) 탭」 글은 남지 않는다. 사이드바에 생산 진도 상자가 서서 사이드바 표적이 약 40px 내려왔다. 사내 검수 판(`--accepted`)은 상태 01 · 05 · 06 · 11 · 20 이
     「바뀜」 으로 나온다. 구획 간격(요청 (6))으로 HOME 대시보드가 든 상태는 모두 그림이 20px 짧아진다(제목 자리만 — 그림 내용
     그대로).
   - `check_deploy_screens.py` 에 「HOME 설정」 팝업 항목(열림 · 두 탭 · 저장 뒤 열림 · Esc 닫힘)을 더할지 — 더하면 런북 7장 압축본
@@ -1883,7 +1886,8 @@
       계획까지 새로 읽고 둘 다 모달 뒤라 택하지 않았다.
     - (라) 남은 옛 안내 — 공정 Capa 상세 표 도구 줄 · 가정 줄의 「HOME Preference 확보기준(월별)」 → 「HOME 설정 → Preference
       확보기준(월별)」, Guide 한 줄, 낡은 내부 설명(과거 구간 CSV 캐시 · 비교 되쓰기 시험 · 패널 시험)을 고쳤다. 예시판
-      `static/guides/howto/lob.html` 은 `build_page_guide.py --example` 로 다시 묶었다(2장 「HOME 설정 팝업」 항목 — 상태 21/21 · 표적 120/120).
+      `static/guides/howto/lob.html` 은 `build_page_guide.py --example` 로 다시 묶었다(2장 「HOME 설정 팝업」 항목 — 상태 21/21 · 표적은
+      그때 원고로 120/120 — 편집 그리드 원고를 합친 뒤 2026-11-03 마지막 검토 고침이 다시 묶어 지금은 118/118).
     - (마) `LOB 표시 조건` 카드 기억 시험이 기본값(펼침)과 같은 값으로 왕복해 아무것도 지키지 못했다 — 접은 채 왕복하고 다시 편
       것도 본다(기억 칸 읽기를 끄면 실패).
     - (바) **칩 줄은 감싸 내린다**(`flex-wrap: wrap` · 칩 칸 최소 폭 = 글 폭). `nowrap` 이라 사이드바를 끌어 줄이면 220px 에서
