@@ -763,7 +763,7 @@ def test_the_general_target_field_takes_the_home_threshold_range(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """기준 확보율 직접 입력 칸은 HOME 판정 기준 저장 범위와 같은 50 ~ 300% 다(2026-11-02
-    사용자 결정 — 50 ~ 200% 이던 칸은 250 을 받지 않아 정본이 「HOME 기준」 으로 돌아갔다).
+    사용자 결정 — 50 ~ 200% 이던 칸은 250 을 막아 Preference 에 저장한 기준을 칠 수 없었다).
     같은 카드의 다른 칸 범위(제약 확보율 50 ~ 300% · 개조 기간 1 ~ 365일)는 그대로다."""
     app = _opened(dynamic_databases)
     field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
