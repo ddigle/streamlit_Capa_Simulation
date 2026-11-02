@@ -21,10 +21,11 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     DASHBOARD_PANEL_TITLE_GAP_PX,
-    DASHBOARD_SECTION_GAP_PX,
-    DASHBOARD_TITLE_HEIGHT_PX,
+    DASHBOARD_TITLE_BAND_PX,
+    DASHBOARD_TITLE_LINE_PX,
 )
 from capa_simulation.components.home_preference import (
+    LOB_UNAPPLIED_NOTICE_KEY,
     SECTION_BAR_GAP_PX,
     SECTION_TITLE_FONT_PX,
     STATUS_LEGEND_CLASS,
@@ -548,33 +549,74 @@ def render_home_performance(
 
 
 def dashboard_title_row_style() -> str:
-    """네 구획 제목 줄과 그 짝인 빈 줄의 높이를 하나로 못박는다.
+    """네 구획 제목 줄과 그 짝인 빈 줄의 높이를 못박는다.
 
     위젯 기본 높이에 맡기면 브라우저 글꼴이나 Streamlit 판이 바뀔 때마다 두 칸이
-    어긋난다. 네 제목이 같은 높이라야 제목과 표 사이 간격도 하나로 맞는다.
+    어긋난다. 제목 줄이 같은 높이라야 제목과 표 사이 간격도 하나로 맞는다.
 
-    **한 줄이라도 빠지면 그 아래 전부가 어긋난다.** 월 칸 스페이서는 여기서 44px 로
-    못박히는데 라벨 칸 제목 줄은 CSS 가 없으면 Streamlit 기본 높이다 — 증상은 그
-    구획이 아니라 **그 아래 구획**에서 먼저 보인다.
+    `Capa LOB 현황` 줄은 제목 글줄(`DASHBOARD_TITLE_LINE_PX`)만이고 — 위는 상자 안쪽 여백, 아래는
+    상자 gap 과 스크롤바 자리다 — 나머지 셋은 제목 띠(`DASHBOARD_TITLE_BAND_PX`)다. 띠는 구획 사이
+    (`tokens.SECTION_GAP_PX`)를 위 여백으로, 제목→시트(`tokens.SECTION_TITLE_SHEET_GAP_PX`)를 아래
+    여백으로 품고 남은 글줄 높이 한가운데에 제목을 세운다. 월 칸의 짝 빈 줄은 띠 높이만 같으면 된다.
+
+    **한 줄이라도 빠지면 그 아래 전부가 어긋난다.** 월 칸 스페이서는 띠 높이로 못박히는데 라벨 칸
+    제목 줄은 CSS 가 없으면 Streamlit 기본 높이다 — 증상은 그 구획이 아니라 **그 아래 구획**에서
+    먼저 보인다.
     """
     return (
         f"""
     <style>
-    .st-key-lob_title_row,
+    .st-key-lob_title_row {{
+        height: {DASHBOARD_TITLE_LINE_PX}px;
+        min-height: {DASHBOARD_TITLE_LINE_PX}px;
+        margin: 0;
+    }}
     .st-key-plan_detail_title_row,
     .st-key-plan_detail_title_spacer,
     .st-key-key_process_title_row,
     .st-key-key_process_title_spacer,
     .st-key-bottleneck_title_row,
     .st-key-bottleneck_title_spacer {{
-        height: {DASHBOARD_TITLE_HEIGHT_PX}px;
-        min-height: {DASHBOARD_TITLE_HEIGHT_PX}px;
+        height: {DASHBOARD_TITLE_BAND_PX}px;
+        min-height: {DASHBOARD_TITLE_BAND_PX}px;
         margin: 0;
+        box-sizing: border-box;
+    }}
+    .st-key-plan_detail_title_row,
+    .st-key-key_process_title_row,
+    .st-key-bottleneck_title_row {{
+        padding: {tokens.SECTION_GAP_PX}px 0 {tokens.SECTION_TITLE_SHEET_GAP_PX}px;
     }}
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}"""
+        # 「적용하지 못한 달」 알림은 제목→시트 틈(상자 gap 0)에 끼므로 제목과 알림 · 알림과 시트(월
+        # 칸은 스크롤바) 사이를 제목→시트 간격만큼 띄운다 — 알림 상자가 제목 글줄과 스크롤바에 붙지
+        # 않게.
+        f"""
+    .st-key-{LOB_UNAPPLIED_NOTICE_KEY} {{
+        padding: {tokens.SECTION_TITLE_SHEET_GAP_PX}px 0;
+    }}"""
+        # 제목 글줄 상자가 줄 높이와 꼭 같아야 위 · 아래 틈이 띠 여백 그대로다. 마크다운은 한 줄
+        # HTML 을 문단(`p`, 본문 14px · 줄높이 22.4px)으로 감싸고, 그 본문 글줄의 기준선에
+        # 제목(줄높이 24px)이 얹혀 문단이 28.4px 로 커진다 — 제목 글은 문단 위쪽에 붙어 아래로 4.4px
+        # 가 더 빈다. 문단을 flex 로 두면 본문 글줄(strut)이 사라져 문단이 제목 글줄 높이가 되고,
+        # 문단의 아래 여백(1rem)과 그것을 걷는 칸의 음수 여백(-1rem)은 짝으로 0 으로 둔다. 범례 칸은
+        # 문단이 없는 HTML 블록이라 닿지 않는다.
+        """
+    .st-key-lob_title_row [data-testid="stMarkdownContainer"],
+    .st-key-plan_detail_title_row [data-testid="stMarkdownContainer"],
+    .st-key-key_process_title_row [data-testid="stMarkdownContainer"],
+    .st-key-bottleneck_title_row [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
+    .st-key-lob_title_row [data-testid="stMarkdownContainer"] > p,
+    .st-key-plan_detail_title_row [data-testid="stMarkdownContainer"] > p,
+    .st-key-key_process_title_row [data-testid="stMarkdownContainer"] > p,
+    .st-key-bottleneck_title_row [data-testid="stMarkdownContainer"] > p {
+        display: flex;
+        align-items: center;
+        margin: 0;
+    }"""
         # 구분 칸의 세 제목 줄은 **넘쳐도 한 줄**이다(`section_title_markup` 이 말줄임한다).
         # 그러려면 줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들 수 있어야 한다 — flex 항목의
         # 기본 `min-width:auto` 가 한 겹이라도 남으면 제목이 칸 밖(월 칸 위)으로 삐져나간다.
@@ -739,7 +781,7 @@ def home_dashboard_panel() -> Iterator[None]:
     fragment 밖에서 그리므로 상자만 한 단계 위로 올리고 제목 줄과 Figure 를 나란히 받는다.
     보는 조건 토글은 제목 줄이 아니라 사이드바 `LOB 표시 조건` 카드다.
 
-    `gap` 이 `DASHBOARD_SECTION_GAP_PX` 가 아닌 이유는 상수 주석에 적었다 — 라벨 캔버스가
+    `gap` 이 `tokens.SECTION_TITLE_SHEET_GAP_PX` 가 아닌 이유는 상수 주석에 적었다 — 라벨 캔버스가
     스크롤바 높이만큼 이미 내려와 있어 남는 몫만 여기서 준다.
     """
     st.html(dashboard_title_row_style())
@@ -828,9 +870,11 @@ def render_home_figures(
         gap=None,
     )
     with label_column:
+        # gap 은 0 이다 — 구획 사이와 제목→시트는 제목 띠가 위 · 아래 여백으로 품는다
+        # (`dashboard_title_row_style`). 월 칸 캔버스도 같은 0 이어야 두 칸의 행이 맞는다.
         with st.container(
             key="production_lob_label_canvas",
-            gap=DASHBOARD_SECTION_GAP_PX,
+            gap=0,
         ):
             st.plotly_chart(
                 figures.lob_labels,
@@ -891,7 +935,7 @@ def render_home_figures(
                 content_width_px=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
                 hide_native_scrollbar=True,
                 padding_bottom="0.25rem",
-                gap=DASHBOARD_SECTION_GAP_PX,
+                gap=0,
             ):
                 # 생산계획 LOB 의 B/N 막대·B/N Top 5 막대를 누르면 그 공정·그 달로 공정 Capa 상세가
                 # 열린다 — 히트맵·상세 B/N 칸과 같은 콜백이다. 꺾은선·도넛·표 칸은 이동 정보가 없어
@@ -923,7 +967,7 @@ def render_home_figures(
                 # Streamlit 이 아예 그리지 않아 월 칸만 위로 올라붙는다.
                 st.container(
                     key="plan_detail_title_spacer",
-                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    height=DASHBOARD_TITLE_BAND_PX,
                     border=False,
                 )
                 st.plotly_chart(
@@ -935,7 +979,7 @@ def render_home_figures(
                 # 라벨 칸의 `주요공정 확보율` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
                     key="key_process_title_spacer",
-                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    height=DASHBOARD_TITLE_BAND_PX,
                     border=False,
                 )
                 # 히트맵은 hover 로 확보율·가용/필요대수를 읽는다. `staticPlot` 은 hover
@@ -956,7 +1000,7 @@ def render_home_figures(
                 # 라벨 칸의 `상세 B/N 공정` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
                     key="bottleneck_title_spacer",
-                    height=DASHBOARD_TITLE_HEIGHT_PX,
+                    height=DASHBOARD_TITLE_BAND_PX,
                     border=False,
                 )
                 # 상세 B/N 월 Figure 는 hover 를 쓰므로 `staticPlot` 을 빼 둔다.

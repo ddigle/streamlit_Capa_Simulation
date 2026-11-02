@@ -3066,6 +3066,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_home_settings_kept_figures.py`). 그림 모양을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다.
   - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace)다. 긴
     제품명·거래선은 제 칸 경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
+  - 구획 간격은 두 값이다(2026-11-02 사용자 요청) — 제목 글줄 → 시트 `tokens.SECTION_TITLE_SHEET_GAP_PX`, 앞 시트 →
+    다음 제목 글줄 `tokens.SECTION_GAP_PX`. 계획 세부수량 · 주요공정 · 상세 B/N 제목 줄과 월 칸 짝 빈 줄은 띠
+    (`home_dimensions.DASHBOARD_TITLE_BAND_PX` = 구획 사이 + 제목 글줄 `DASHBOARD_TITLE_LINE_PX` + 제목→시트, 위 · 아래 안쪽
+    여백)이고 두 캔버스 gap 은 0 이다. `Capa LOB 현황` 은 글줄 높이 줄 + 상자 gap(`DASHBOARD_PANEL_TITLE_GAP_PX` = 제목→시트
+    − 스크롤바, 지금 0) + 라벨 캔버스 위 여백(스크롤바 높이)이라 제목→시트는 스크롤바보다 좁힐 수 없다. 제목 줄 문단(`p`)은
+    `dashboard_title_row_style` 이 flex 로 둬 본문 글줄을 걷는다(안 걷으면 글 아래가 4.4px 더 빈다). 「적용하지 못한 달」
+    알림 칸(`LOB_UNAPPLIED_NOTICE_KEY`)은 위 · 아래로 제목→시트만큼 띄운다. 그림 여백은 그대로라
+    `HOME_FIGURE_SCHEMA_VERSION` 은 올리지 않았다(`tests/test_home_page.py` 의 간격 시험).
 - `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
   글자와 등호를 고르는 순수 도우미(8장 「화면 숫자는 검산되어야 한다」). 길이 둘이고 화면마다 지금 쓰는 길을 지킨다 —
   「≈」 길(`equals_mark` — 인수는 화면 자릿수, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 「=」 대신 「≈」, 적힌 글자에서

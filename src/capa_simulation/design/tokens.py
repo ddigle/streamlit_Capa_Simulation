@@ -827,6 +827,14 @@ TABLE_ROW_HEIGHT_PX: Final = 27
 MONTH_GRID_ROW_HEIGHT_PX: Final = 30
 MONTH_COLUMN_WIDTH_PX: Final = 100
 SCROLLBAR_HEIGHT_PX: Final = 10
+# 구획 제목과 그 시트 사이(제목 글줄 상자 아래 끝 → 시트 위 끝)와 구획 사이(앞 시트 아래 끝 → 다음
+# 제목 글줄 상자 위 끝). HOME 대시보드 네 구획(Capa LOB 현황 · 계획 세부수량 · 주요공정 · 상세 B/N
+# 공정)이 이 두 값만 쓴다(2026-11-02 사용자 요청 — 제목은 제 시트에 붙고 구획 사이는 일정하게).
+# 제목→시트가 구획 사이보다 훨씬 좁아야 제목이 위 시트의 꼬리가 아니라 아래 시트의 머리로 읽힌다.
+# 제목→시트는 `SCROLLBAR_HEIGHT_PX` 보다 좁힐 수 없다 — `Capa LOB 현황` 은 월 칸 가로 스크롤바가 그
+# 틈에 선다(`home_dimensions.DASHBOARD_PANEL_TITLE_GAP_PX`).
+SECTION_TITLE_SHEET_GAP_PX: Final = 10
+SECTION_GAP_PX: Final = 24
 OUTER_BORDER_WIDTH_PX: Final = 1.8
 # 셀 사이를 나누는 얇은 격자선. 바깥 테두리·분기 경계보다 가늘어야 위계가 읽힌다.
 GRID_LINE_WIDTH_PX: Final = 0.8

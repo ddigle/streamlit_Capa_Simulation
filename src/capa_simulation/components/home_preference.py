@@ -32,6 +32,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
@@ -295,6 +296,9 @@ SECTION_BAR_HEIGHT_PX = 18
 SECTION_BAR_RADIUS_PX = 2
 SECTION_BAR_GAP_PX = 8
 STATUS_LEGEND_ROW_KEY = "home_status_legend"
+# `Capa LOB 현황` 제목 줄 밑 「적용하지 못한 달」 알림 칸. 제목→시트 틈(상자 gap 0 + 스크롤바)에
+# 끼므로 위 · 아래 여백은 `home_rendering.dashboard_title_row_style` 이 준다.
+LOB_UNAPPLIED_NOTICE_KEY = "lob_unapplied_notice"
 # 범례 안쪽 div 의 클래스. 높이를 물려주는 CSS 가 이 이름을 읽는다.
 STATUS_LEGEND_CLASS = "capa-status-legend"
 
@@ -343,7 +347,8 @@ def section_title_markup(text: str) -> str:
         f'<span role="heading" aria-level="2" title="{safe}" '
         f'style="display:inline-flex;align-items:center;max-width:100%;min-width:0;'
         f"gap:{SECTION_BAR_GAP_PX}px;"
-        f'font-size:{SECTION_TITLE_FONT_PX}px;font-weight:700;line-height:1.2">'
+        f"font-size:{SECTION_TITLE_FONT_PX}px;font-weight:700;"
+        f'line-height:{DASHBOARD_TITLE_LINE_PX}px">'
         f'<span aria-hidden="true" style="{section_accent_bar_css()}"></span>'
         f'<span style="min-width:0;overflow:hidden;white-space:nowrap;'
         f'text-overflow:ellipsis">{visible}</span></span>'
@@ -490,7 +495,7 @@ def render_lob_title_row(
     """`Capa LOB 현황` 제목과 오른쪽 끝의 판정 색 범례.
 
     **범례가 이 줄 안에 있는 이유.** 제목 줄과 Figure 사이 간격은 스크롤바 높이를 뺀
-    나머지(`DASHBOARD_PANEL_TITLE_GAP_PX`)뿐이라 거의 0 이다. 범례를 두 줄 사이에 독립
+    나머지(`DASHBOARD_PANEL_TITLE_GAP_PX`)뿐이라 0 이다. 범례를 두 줄 사이에 독립
     블록으로 끼우면 바로 아래 월 영역 위에 얹힌 가로 스크롤바와 겹친다. 제목 줄은 이미
     높이가 못박힌 가로 컨테이너라 여기에 넣으면 세로 자리를 새로 먹지 않는다.
     """
@@ -507,11 +512,12 @@ def render_lob_title_row(
             st.markdown(status_legend_markup(), unsafe_allow_html=True)
     if unapplied_months:
         labels = _month_labels(unapplied_months)
-        st.warning(
-            f"선행 B/O 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. "
-            "해당 달은 기존 계획 그대로 그립니다.",
-            icon=":material/report:",
-        )
+        with st.container(key=LOB_UNAPPLIED_NOTICE_KEY):
+            st.warning(
+                f"선행 B/O 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. "
+                "해당 달은 기존 계획 그대로 그립니다.",
+                icon=":material/report:",
+            )
 
 
 def render_home_preference(

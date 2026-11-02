@@ -10,7 +10,9 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
-    DASHBOARD_TITLE_HEIGHT_PX,
+    DASHBOARD_PANEL_TITLE_GAP_PX,
+    DASHBOARD_TITLE_BAND_PX,
+    DASHBOARD_TITLE_LINE_PX,
     LOB_BOTTOM_MARGIN_PX,
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
@@ -1478,7 +1480,117 @@ def test_the_title_spacers_keep_their_pinned_height(seeded_database: Path) -> No
 
     for key in ("plan_detail_title_spacer", "key_process_title_spacer", "bottleneck_title_spacer"):
         spacer = app.get_by_key(key)
-        assert spacer.proto.height_config.pixel_height == DASHBOARD_TITLE_HEIGHT_PX, key
+        assert spacer.proto.height_config.pixel_height == DASHBOARD_TITLE_BAND_PX, key
+
+
+def _pixel_gap(app: AppTest, key: str) -> int | None:
+    """컨테이너의 px gap. 이름 gap(`small` 등)이나 gap 없음이면 None."""
+    gap_config = app.get_by_key(key).proto.flex_container.gap_config
+    return gap_config.pixel_gap if gap_config.HasField("pixel_gap") else None
+
+
+def _css_rule(style: str, selector_tail: str) -> str:
+    """`selector_tail` 로 끝나는 선택자 묶음의 선언 본문(공백을 한 칸으로)."""
+    flat = " ".join(style.split())
+    head = flat.index(selector_tail + " {")
+    return flat[head + len(selector_tail) + 2 : flat.index("}", head)].strip()
+
+
+def test_section_spacing_tokens_keep_the_title_closer_to_its_own_sheet() -> None:
+    """제목→시트는 구획 사이보다 좁고, `Capa LOB 현황` 의 스크롤바가 드는 폭보다는 좁지 않다.
+
+    2026-11-02 사용자 요청 — 「각 타이틀과 시트의 간격을 일정하게 붙이고, 각각의 영역간 간격을
+    일정하게」. 제목→시트가 구획 사이보다 넓으면 제목이 위 시트의 꼬리로 읽힌다(바꾸기 전 사본 실측:
+    글줄 상자 기준 제목→시트 20.2px · 구획 사이 15.8px, 세 폭 같음).
+    """
+    assert tokens.SECTION_TITLE_SHEET_GAP_PX < tokens.SECTION_GAP_PX
+    assert 2 * tokens.SECTION_TITLE_SHEET_GAP_PX <= tokens.SECTION_GAP_PX + 4
+    assert tokens.SECTION_TITLE_SHEET_GAP_PX >= tokens.SCROLLBAR_HEIGHT_PX
+    assert DASHBOARD_PANEL_TITLE_GAP_PX >= 0
+    assert DASHBOARD_TITLE_BAND_PX == (
+        tokens.SECTION_GAP_PX + DASHBOARD_TITLE_LINE_PX + tokens.SECTION_TITLE_SHEET_GAP_PX
+    )
+
+
+def test_every_section_title_sits_the_same_gap_above_its_sheet(seeded_database: Path) -> None:
+    """네 구획의 제목→시트와 구획 사이가 각각 한 값이다 — 위치를 정하는 모든 몫을 모아 셈한다.
+
+    - 계획 세부수량 · 주요공정 · 상세 B/N: 두 캔버스의 gap 은 0 이고 제목 띠가 위 여백(구획 사이)과
+      아래 여백(제목→시트)을 품는다. 띠 높이 = 위 + 제목 글줄 + 아래라 글줄이 남김없이 찬다.
+    - `Capa LOB 현황`: 제목 줄은 글줄 높이 그대로이고, 제목→시트 = 상자 gap + 라벨 캔버스 위 여백
+      (월 칸 스크롤바 높이)이다.
+    """
+    from capa_simulation.components.home_rendering import dashboard_title_row_style
+
+    app = _run(seeded_database)
+    assert _pixel_gap(app, "production_lob_label_canvas") == 0
+    assert _pixel_gap(app, "production_lob_month_canvas") == 0
+    assert _pixel_gap(app, "home_dashboard_panel") == DASHBOARD_PANEL_TITLE_GAP_PX
+
+    style = dashboard_title_row_style()
+    band = _css_rule(style, ".st-key-bottleneck_title_spacer")
+    assert f"height: {DASHBOARD_TITLE_BAND_PX}px;" in band
+    assert "box-sizing: border-box;" in band
+    padding = _css_rule(style, ".st-key-bottleneck_title_row")
+    assert padding == (
+        f"padding: {tokens.SECTION_GAP_PX}px 0 {tokens.SECTION_TITLE_SHEET_GAP_PX}px;"
+    )
+    lob_row = _css_rule(style, ".st-key-lob_title_row")
+    assert f"height: {DASHBOARD_TITLE_LINE_PX}px;" in lob_row
+    # 띠 안 글줄 = 띠 - 위 - 아래 = 제목 글줄. 넷 다 같은 제목→시트다.
+    assert (
+        DASHBOARD_TITLE_BAND_PX - tokens.SECTION_GAP_PX - tokens.SECTION_TITLE_SHEET_GAP_PX
+        == DASHBOARD_TITLE_LINE_PX
+    )
+    assert (
+        DASHBOARD_PANEL_TITLE_GAP_PX + tokens.SCROLLBAR_HEIGHT_PX
+        == tokens.SECTION_TITLE_SHEET_GAP_PX
+    )
+
+
+def test_section_titles_drop_the_paragraph_line_box_under_the_title() -> None:
+    """제목 글줄 상자가 줄 높이와 꼭 같아야 위 · 아래 틈이 띠 여백 그대로다.
+
+    마크다운은 제목 HTML 을 문단으로 감싸고, 본문 글줄(14px · 22.4px)의 기준선에 제목이 얹혀 문단이
+    28.4px 가 된다 — 제목 글이 문단 위쪽에 붙어 아래가 4.4px 더 빈다(바꾸기 전 사본 실측: 36px 줄
+    안에서 글 위 3.8px · 아래 8.2px). 문단을 flex 로, 문단 아래 여백과 칸의 음수 여백을 0 으로 둔다.
+    """
+    from capa_simulation.components.home_preference import section_title_markup
+    from capa_simulation.components.home_rendering import dashboard_title_row_style
+
+    style = dashboard_title_row_style()
+    rows = ("lob", "plan_detail", "key_process", "bottleneck")
+    container = '[data-testid="stMarkdownContainer"]'
+    flat = " ".join(style.split())
+    # 네 제목 줄이 한 선택자 묶음으로 같은 선언을 받는다.
+    assert ", ".join(f".st-key-{row}_title_row {container}" for row in rows) + " {" in flat
+    assert ", ".join(f".st-key-{row}_title_row {container} > p" for row in rows) + " {" in flat
+    assert _css_rule(style, f".st-key-bottleneck_title_row {container}") == "margin-bottom: 0;"
+    assert _css_rule(style, f".st-key-bottleneck_title_row {container} > p") == (
+        "display: flex; align-items: center; margin: 0;"
+    )
+    assert f"line-height:{DASHBOARD_TITLE_LINE_PX}px" in section_title_markup("계획 세부수량")
+
+
+def _lob_title_row_with_unapplied_month() -> None:
+    from capa_simulation.components.home_preference import render_lob_title_row
+
+    render_lob_title_row(unapplied_months=[202607])
+
+
+def test_the_unapplied_month_notice_keeps_the_title_gap_on_both_sides() -> None:
+    """「적용하지 못한 달」 알림은 제목→시트 틈에 낀다. 상자 gap 이 0 이라 알림이 제목 글줄과 월 칸
+    스크롤바에 붙지 않도록 알림 칸이 위 · 아래로 제목→시트 간격만큼 띄운다."""
+    from capa_simulation.components.home_preference import LOB_UNAPPLIED_NOTICE_KEY
+    from capa_simulation.components.home_rendering import dashboard_title_row_style
+
+    app = AppTest.from_function(_lob_title_row_with_unapplied_month).run()
+    assert not list(app.exception)
+    notice = app.get_by_key(LOB_UNAPPLIED_NOTICE_KEY)
+    (warning,) = notice.warning
+    assert "적용하지 못한 달" in warning.value
+    rule = _css_rule(dashboard_title_row_style(), f".st-key-{LOB_UNAPPLIED_NOTICE_KEY}")
+    assert rule == f"padding: {tokens.SECTION_TITLE_SHEET_GAP_PX}px 0;"
 
 
 def test_the_lob_panel_border_closes_on_the_bottom_edge(seeded_database: Path) -> None:
