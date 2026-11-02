@@ -150,12 +150,12 @@ _TEASER_KEY = "intro_teaser_requested"
 _TRANSIENT_ERRORS = (duckdb.Error, OSError, MemoryError)
 
 # 켤 수 없는 토글의 까닭. Summary 머리 줄 토글의 풍선에 한 줄로 단다.
-ADVANCE_OFF_EMPTY = "요약 기간에 넣은 선행 B/O 가 없습니다 (HOME → Preference)"
+ADVANCE_OFF_EMPTY = "요약 기간에 넣은 선행 B/O 가 없습니다 (HOME 설정 → Preference)"
 ADVANCE_OFF_UNAPPLICABLE = "선행 B/O 를 더하면 계획이 0 이하가 되는 달뿐이라 반영할 수 없습니다"
-SHIPMENT_OFF_EMPTY = "요약 기간에 넣은 선행 입고 실적이 없습니다 (HOME → Preference)"
-COMPARISON_OFF_NONE = "비교 시나리오를 고르지 않았습니다 (HOME → Preference)"
+SHIPMENT_OFF_EMPTY = "요약 기간에 넣은 선행 입고 실적이 없습니다 (HOME 설정 → Preference)"
+COMPARISON_OFF_NONE = "비교 시나리오를 고르지 않았습니다 (HOME 설정 → Preference)"
 COMPARISON_OFF_MISSING = (
-    "고른 비교 리비전을 찾을 수 없습니다 (HOME → Preference 에서 다시 고릅니다)"
+    "고른 비교 리비전을 찾을 수 없습니다 (HOME 설정 → Preference 에서 다시 고릅니다)"
 )
 COMPARISON_OFF_SELF = "비교 대상이 이 공식버전 자신이라 차이가 없습니다"
 COMPARISON_OFF_UNCOVERED = "비교 시나리오에 요약 기간의 계획이 없습니다"
@@ -308,7 +308,7 @@ def summary_payload(
 ) -> dict[str, Any]:
     """브라우저로 보낼 값. 반올림·차례를 고정해 같은 요약이면 늘 같은 값이 된다.
 
-    판정 기준은 시나리오와 무관한 공용 프로필(HOME → Preference)이다. B/N 막대 색과 기준선은
+    판정 기준은 시나리오와 무관한 공용 프로필(HOME 설정 → Preference)이다. B/N 막대 색과 기준선은
     **달마다 그 달의 실효 기준**을 쓴다 — 기준 네 목록(`secure`·`warning`·`*_label`)이 `months` 와
     같은 차례·같은 길이다.
 

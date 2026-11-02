@@ -314,7 +314,6 @@ HOME_LINK_KEY: Final = "home_navigation"
 # 않는다.
 PAGE_TABS_KEY: Final = "page_tabs_strip"
 PAGE_TABS_MAX: Final = 10
-HOME_MAIN_TAB: Final = "Main"
 # 사이드바 「조회 조건」 통합 패널. 앱 모듈(`sidebar_status`·`condition_field`·`scenario_status`·
 # `period_field`·`home_preference`)을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
 # 본다.
@@ -324,7 +323,8 @@ CONDITIONS_BOX_KEY: Final = "sidebar_conditions_box"
 CONDITION_NAME_ROW_PREFIX: Final = "condition_name_"
 CONDITION_CARD_PREFIX: Final = "condition_card_"
 LOB_CARD_LABEL: Final = "LOB 표시 조건"
-# 패널 줄 이름(정한 어휘)과 HOME Main 탭의 차례. 시나리오 줄 이름은 「시나리오 · rN」이다.
+# 패널 줄 이름(정한 어휘)과 HOME 의 차례. 시나리오 줄 이름은 「시나리오 · rN」이다. HOME 은 탭 없이
+# 한 화면이라(2026-11-02) 네 줄과 `LOB 표시 조건` 카드가 늘 선다.
 PANEL_ROW_NAMES: Final = ("시나리오", "조회기간", "공정 필터", "주요공정 히트맵")
 # 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세·Space 현황)의 설비 시나리오 줄 이름. HOME
 # 에는 서지 않는다(`navigation.PageSpec.equipment_scenario`).
@@ -361,7 +361,7 @@ EQUIPMENT_STATUS_BADGES: Final = (
     "미저장 변경",
     "일정 없이 엶",
 )
-THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합니다."
+THRESHOLD_POINTER: Final = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
 # 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
@@ -2973,7 +2973,7 @@ def _title_text(title: str | None, expected: str) -> str:
 
 
 def summarize_panel(facts: Mapping[str, Any] | None, old_titles: int) -> str:
-    """HOME Main 탭의 패널 — 구역 제목·줄 이름 차례와 수·옛 상자 제목 수·LOB 카드 자리."""
+    """HOME 의 패널 — 구역 제목·줄 이름 차례와 수·옛 상자 제목 수·LOB 카드 자리."""
     if not facts or facts["rows"] is None:
         return f"「{CONDITIONS_SECTION_TITLE}」 패널 없음 · 옛 상자 제목 {old_titles}곳"
     names = _row_names(facts["rows"]) or ()
@@ -3062,12 +3062,12 @@ def summarize_process_dialog(
 
 
 def check_sidebar_panel(screen: Screen) -> str:
-    """HOME Main 탭의 「조회 조건」 패널 — 줄 이름 차례·수, 옛 상자 제목, 아래 `LOB 표시 조건` 카드.
+    """HOME 의 「조회 조건」 패널 — 줄 이름 차례·수, 옛 상자 제목, 아래 `LOB 표시 조건` 카드.
 
-    공정 필터·주요공정 히트맵 줄은 HOME 계산 뒤에 차므로 네 줄이 설 때까지 기다린다.
+    공정 필터·주요공정 히트맵 줄은 HOME 계산 뒤에 차므로 네 줄이 설 때까지 기다린다. HOME 은 탭
+    없이 한 화면이라(2026-11-02) 탭을 고르지 않는다.
     """
     screen.open_home()
-    screen.open_tab(HOME_MAIN_TAB)
     facts = screen.poll(
         lambda: _panel_facts(screen),
         timeout=60,

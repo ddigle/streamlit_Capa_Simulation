@@ -32,7 +32,7 @@ from capa_simulation.sidebar_status import APP_RUN_STATE_KEY, CONDITION_DIALOG_F
 
 OTHER_KEY = "condition_dialog_test_other"
 END_KEY = "condition_dialog_test_end"
-# 페이지 팝업 열림 칸(HOME Past Data 붙여넣기 같은 것). 여는 콜백이 먼저 비워야 한다.
+# 페이지 팝업 열림 칸(HOME 「HOME 설정」 팝업 같은 것). 여는 콜백이 먼저 비워야 한다.
 PAGE_DIALOG_KEY = "home_open_dialog"
 
 FIELDS = [

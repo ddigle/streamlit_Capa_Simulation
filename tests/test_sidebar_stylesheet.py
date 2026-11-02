@@ -24,7 +24,11 @@ from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, PENDING
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import SIDEBAR_GROUPS
-from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, CONDITIONS_BOX_KEY
+from capa_simulation.sidebar_status import (
+    CONDITION_CARD_PREFIX,
+    CONDITIONS_BOX_KEY,
+    DIALOG_BOX_PREFIX,
+)
 
 # `<style>` 여는 태그와 닫는 태그만 허용한다. 그 밖의 `<...>` 는 살균기가 태그로 읽는다.
 ALLOWED = {"<style>", "</style>"}
@@ -153,13 +157,40 @@ def test_condition_cards_wear_the_condition_box_face() -> None:
     face_rules = _rules_with(block, f"background-color: {tokens.NAV_CONTROL_TINT};")
     assert [f"{card} details"] in face_rules
     assert [f'[data-testid="stSidebarContent"] .st-key-{CONDITIONS_BOX_KEY}'] in face_rules
-    assert len(face_rules) == 2, face_rules
+    # 나머지 둘은 팝업 상자(「HOME 설정」)의 면과 그 마우스·누름 면이다 — 아래 따로 본다.
+    dialog_button = f'[class*="st-key-{DIALOG_BOX_PREFIX}"] [data-testid="stButton"] button'
+    assert [dialog_button] in face_rules
+    assert [f"{dialog_button}:hover", f"{dialog_button}:active"] in face_rules
+    assert len(face_rules) == 4, face_rules
     (icon_rule,) = [
         rule
         for rule in _rules_with(block, f"color: {tokens.ACCENT};")
         if any("stExpanderIcon" in selector for selector in rule)
     ]
     assert f'{card} summary [data-testid="stExpanderIcon"]' in icon_rule
+
+
+def test_a_dialog_box_wears_the_card_face_with_the_popup_marker() -> None:
+    """조회 조건 아래 따로 선 **팝업 상자**(HOME 「HOME 설정」 — 2026-11-02)는 조건 카드와 같은
+    면·`ACCENT` 아이콘·머리 글자(1rem·700)로 서고, 오른쪽 끝 표식만 `⇕`(팝업이 뜨는 칸 — 조건
+    패널 값 칸과 같은 기호)다. 대기가 있으면 key 끝 `_pending` 으로 왼쪽 주황 띠, 잠긴 상자는 표식을
+    걷는다. 키보드 초점은 2px 띄운 2px `ACCENT` 윤곽이다."""
+    block = _style_block()
+    button = f'[class*="st-key-{DIALOG_BOX_PREFIX}"] [data-testid="stButton"] button'
+
+    assert [f"{button}::after"] in _rules_with(block, 'content: "unfold_more" / "";')
+    assert [f"{button}:disabled::after"] in _rules_with(block, "content: none;")
+    assert [f'{button} [data-testid="stIconMaterial"]'] in _rules_with(
+        block, f"color: {tokens.ACCENT};"
+    )
+    assert [f'{button} [data-testid="stMarkdownContainer"] p'] in _rules_with(
+        block, "font-weight: 700;"
+    )
+    pending = f'[class*="st-key-{DIALOG_BOX_PREFIX}"][class*="{PENDING_SUFFIX}"]'
+    assert [f'{pending} [data-testid="stButton"] button'] in _rules_with(
+        block, f"box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};"
+    )
+    assert [f"{button}:focus-visible"] in _rules_with(block, f"outline: 2px solid {tokens.ACCENT};")
 
 
 def test_off_switches_on_the_condition_face_keep_a_visible_track() -> None:

@@ -1,4 +1,4 @@
-# Purpose: HOME 의 Main(계획·LOB·주요공정·B/N)·Preference(공용 프로필)·Past Data 세 탭을 그린다.
+# Purpose: HOME 대시보드와 사이드바 조건·주요 Case 칩·「HOME 설정」 팝업을 그린다.
 
 
 from collections.abc import Mapping
@@ -22,15 +22,13 @@ from capa_simulation.components.home_figures import (
     build_lob_summary_figures,
     build_plan_detail_figures,
 )
-from capa_simulation.components.home_main_case_chips import (
-    render_main_case_chip_notice,
-    render_main_case_chips,
-)
+from capa_simulation.components.home_main_case_chips import render_main_case_chips
 from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
     KEY_PROCESS_PRESET_KEY,
     THRESHOLD_POINTER,
+    forget_unlisted_comparison,
     render_home_preference,
     render_home_view_card,
     render_key_process_field,
@@ -39,6 +37,7 @@ from capa_simulation.components.home_preference import (
 )
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_FIGURES,
+    HOME_DRAWN_CONDITIONS_KEY,
     HOME_FIGURE_SCHEMA_VERSION,
     HOME_LOADING_STAGES,
     HOME_PERFORMANCE_KEY,
@@ -56,7 +55,14 @@ from capa_simulation.components.home_rendering import (
     render_home_performance,
     render_summary_notice,
     store_home_figures,
+    take_home_figure_set,
     take_home_figures,
+)
+from capa_simulation.components.home_settings import (
+    close_home_settings,
+    home_settings_open,
+    render_home_dialog_host,
+    render_home_settings_box,
 )
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_guide import render_page_guide
@@ -71,17 +77,13 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
-from capa_simulation.components.tab_marks import mark_pending_tabs
-from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY,
     ADVANCE_TOGGLE_KEY,
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
-    HOME_PAST_TAB,
-    HOME_TAB_KEY,
-    HOME_TAB_LABELS,
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     PRODUCT_SHARE_BASIS_DEFAULT,
@@ -237,26 +239,22 @@ def _owned_comparison_revision(
 render_page_guide("home", title="HOME", howto="lob")
 # 진행 표시는 화면 맨 위 띠(툴바 단추 바로 왼쪽)에 앉는다(2026-10-08 사용자 결정). 본문 흐름에
 # 두면 막대가 뜨고 질 때마다 아래 차트가 그만큼 밀려 보던 자리가 흔들린다. 띠 위에 고정되므로
-# 막대가 뜨고 져도 본문이 움직이지 않고, 어느 탭·어느 스크롤 자리에서든 같은 자리에서 읽힌다.
-# 제목 줄 끝은 주요 Case 칩 셋이다(공식 vN · Case1 · Case2 — 2026-10-23 사용자 결정). 누르면
-# 사이드바에서 그 리비전을 불러온 것과 같고(콜백), 칩 줄은 회차마다 DB 를 보지
-# 않는다(`home_main_case_chips`).
+# 막대가 뜨고 져도 본문이 움직이지 않고, 어느 스크롤 자리에서든 같은 자리에서 읽힌다.
+# 제목 줄에는 끝 칸이 없다 — 큰 제목은 화면에서 숨으므로(인쇄·읽기 도구에만) 본문이 화면 탭 줄 바로
+# 밑에서 시작한다. 주요 Case 칩은 사이드바 「LOB 표시 조건」 카드 맨 위, 공용 설정(전에는 본문의
+# `Preference`·`Past Data` 탭)은 그 밑 「HOME 설정」 상자가 여는 팝업이다(2026-11-02 사용자 요청).
 loading = LoadingProgress(
-    render_page_header_with_status(
-        "Capa LOB Summary",
-        trailing=partial(render_main_case_chips, str(DUCKDB_PATH.resolve())),
-    ),
+    render_page_header_with_status("Capa LOB Summary"),
     HOME_LOADING_STAGES,
 )
-render_main_case_chip_notice()
 # 성능 진단은 **위젯이 아니라 세션 스위치**다. 사이드바에 토글을 두면 모든 사용자가 늘
 # 보는 자리를 개발용 계측 하나가 차지한다. 단계별 소요 시간은 `scripts/benchmark_home.py`
 # 로 재는 것이 정본이고, 화면에서 봐야 할 때만 이 키를 세션에 직접 넣는다.
 show_home_performance = bool(st.session_state.get(HOME_PERFORMANCE_KEY, False))
 home_trace = PerformanceTrace()
-# 토글의 위젯은 아래(탭을 만든 뒤) 사이드바 `LOB 표시 조건` 카드에서 그리지만 값은 계산보다
+# 토글의 위젯은 아래(계산 뒤) 사이드바 `LOB 표시 조건` 카드에서 그리지만 값은 계산보다
 # 먼저 필요하다. 위젯이 `key` 로 쓰는 자리를 그대로 읽는다 — 사용자가 토글을 누르면 다음 실행의
-# 이 줄에 새 값이 들어온다. 카드가 서지 않는 회차(다른 탭)에도 값은 `persist_state` 가 지킨다.
+# 이 줄에 새 값이 들어온다. 카드가 서지 않는 회차(다른 화면)에도 값은 `persist_state` 가 지킨다.
 include_edp = home_toggle(st.session_state, EDP_TOGGLE_KEY)
 # `제품별 비중` 행의 단위. 모르는 값(예전 세션에 남은 값)은 기본 단위로 읽는다.
 product_share_basis = str(
@@ -275,7 +273,11 @@ show_execution = home_toggle(st.session_state, EXECUTION_TOGGLE_KEY)
 plan_detail_customer = home_toggle(st.session_state, PLAN_DETAIL_CUSTOMER_KEY)
 # 비교 대상은 공용 프로필이라 새 브라우저 세션에도 남아 있다. 세션 키를 읽기 **전에**
 # 심어야 첫 화면부터 「GAP」 토글이 켜진다 — 심는 자리가 Preference 피커 안에만 있으면
-# 탭을 한 번 다녀와야 켜진다.
+# 「HOME 설정」 팝업을 한 번 열어야 켜진다. 그 앞에서 세션 값이 가리키는 시나리오를 다른 곳에서
+# 보관·삭제했으면 걷는다 — 피커는 팝업을 연 회차에만 돌아 그 몫을 맡을 수 없다(전에는 숨은
+# Preference 탭이 매 회차 걷었다). 목록은 캐시라 회차마다 DB 를 보지 않는다. 걷은 뒤 심으므로 같은
+# 회차에 공용 프로필 값(있으면)으로 선다 — 새 세션과 같다.
+forget_unlisted_comparison(str(DUCKDB_PATH.resolve()))
 seed_comparison_selection(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
@@ -297,8 +299,8 @@ try:
     # 과거 구간은 계산 원천의 월 범위 밖에 있다. 원천 범위로만 자르면 넣어 둔 과거가 절대
     # 조회 범위에 들어오지 못한다. 볼 수 있는 범위를 과거 구간만큼 넓힌다.
     # **저장된 것**과 **화면에 그릴 것**을 갈라 둔다. 아래 토글은 대시보드에서 과거를 빼는
-    # 표시 설정일 뿐 데이터를 지우는 뜻이 아닌데, 비운 프로필 하나만 들고 다니면 Past Data
-    # 탭이 그것을 「저장된 값」으로 읽어 저장할 때 덮어쓴다.
+    # 표시 설정일 뿐 데이터를 지우는 뜻이 아닌데, 비운 프로필 하나만 들고 다니면 「HOME 설정」
+    # 팝업의 Past Data 탭이 그것을 「저장된 값」으로 읽어 저장할 때 덮어쓴다.
     stored_past_profile = load_global_past_data(str(DUCKDB_PATH.resolve()))
     past_profile = stored_past_profile
     if not include_past:
@@ -487,7 +489,7 @@ try:
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
     top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
     key_process_profile = load_global_key_process(str(DUCKDB_PATH.resolve()))
-    # 판정 기준은 시나리오와 무관한 공용 정책값이다. HOME → Preference 한 곳에서 정한다.
+    # 판정 기준은 시나리오와 무관한 공용 정책값이다. HOME 설정 → Preference 한 곳에서 정한다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
     # 공지는 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
     # 넣으면 문구 한 줄을 고칠 때마다 여섯 Figure 를 다시 그린다.
@@ -558,11 +560,19 @@ except BOOTSTRAP_ERRORS as exc:
             disabled=True,
         )
     st.error(bootstrap_error_message(exc))
-    # 보는 조건 카드는 Main 탭에서만 서지만 멈춘 회차에는 탭이 없다. 오류가 시키는 조치(EDP 포함을
-    # 켜기·GAP 끄기)가 이 카드의 토글이라, 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자
-    # 결정 — Main 탭 규칙의 유일한 예외). key 가 정상 회차와 같아 바꾼 값으로 다음 회차가 다시
-    # 계산한다.
-    render_home_view_card(comparison_ready=comparison_ready)
+    # 보는 조건 카드는 멈춘 회차에도 선다. 오류가 시키는 조치(EDP 포함을 켜기·GAP 끄기)가 이 카드의
+    # 토글이라 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자 결정). key 가 정상 회차와
+    # 같아 바꾼 값으로 다음 회차가 다시 계산한다. 주요 Case 칩도 그대로 선다 — 다른 Case 로 옮기는
+    # 것이 멈춘 화면에서 벗어나는 길이기도 하다. 다만 「HOME 설정」 팝업은 본문이 계산 결과(월
+    # 축·공정 목록)를 써서 열 수 없다 — 상자를 잠근 채 같은 자리에 세우고(사이드바가 회차마다
+    # 흔들리지 않는다) 미지정 칩도 잠그며, 열려 있던 팝업은 닫는다(열림 칸이 남으면 다음 정상 회차에
+    # 뜻밖에 다시 뜬다).
+    close_home_settings()
+    render_home_settings_box(pending=past_data_has_pending(), stopped=True)
+    render_home_view_card(
+        comparison_ready=comparison_ready,
+        chips=partial(render_main_case_chips, str(DUCKDB_PATH.resolve()), settings_ready=False),
+    )
     st.stop()
 
 # 히트맵이 **실제로 그릴** 목록. 고른 공정이 이 시나리오·조회기간에 없으면 건너뛰되
@@ -570,8 +580,8 @@ except BOOTSTRAP_ERRORS as exc:
 # `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정
 # 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
 # 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 줄의 팝업이 정한다(세션의 보는 조건, 위젯이
-# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. Preference 에서 보던 프리셋의 이름을 바꾸면
-# 그 저장이 이 칸을 곧바로 새 이름으로 적는다.
+# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. 「HOME 설정」 → Preference 에서 보던 프리셋의
+# 이름을 바꾸면 그 저장이 이 칸을 곧바로 새 이름으로 적는다.
 key_process_preset = resolve_preset_name(
     key_process_profile.preset_names, st.session_state.get(KEY_PROCESS_PRESET_KEY)
 )
@@ -713,11 +723,11 @@ def show_process_filter_dialog(
 # 화면이 읽는 것은 이번 선택지 안의 포함 공정이다. 보이지 않는 공정은 세션 값에만 남아 리비전을
 # 저장할 때 프리셋에 실린다.
 included_processes = visible_processes(st.session_state[PROCESS_SELECTION_KEY], process_options)
-# 판정 기준은 사이드바 입력이 아니라 HOME → Preference 의 공용 프로필 한 곳에서 정한다
+# 판정 기준은 사이드바 입력이 아니라 HOME 설정 → Preference 의 공용 프로필 한 곳에서 정한다
 # (2026-10-06 사용자 결정). 기본값과 월별 예외를 한 값으로 들고 다니며, 판정하는 모든 곳이
 # 달마다 그 달의 실효 기준을 쓴다. 거꾸로 된 짝(경고 > 확보)은 저장 단계에서 막는다.
 thresholds = threshold_profile.thresholds
-# 사이드바 조건 패널의 공정 필터 줄. 세 탭 모두에서 선다 — 판정 대상은 HOME 의 결론·Top5·상세
+# 사이드바 조건 패널의 공정 필터 줄. HOME 에서 늘 선다 — 판정 대상은 HOME 의 결론·Top5·상세
 # B/N 이 읽고 리비전을 저장할 때 프리셋에 담긴다. 좁혀 놓은 수가 값 칸에 늘 보여, B/N 결론이 일부
 # 공정으로만 계산됐다는 것을 팝업을 열지 않아도 읽는다. 공정을 좁혀도 미저장이 아니다(리비전
 # 프리셋이 저장 때 담는다) — 주황을 쓰지 않는다. 팝업은 칸을 누른 회차에만 연다. 콜백이 다른 팝업
@@ -769,9 +779,6 @@ gap_month_labels = {month_label(month) for month in calculated_months}
 # 같은 경계가 면색도 정한다. 과거 구간 열은 한 단계 눌러 지난 이력임을 알린다 — 값은
 # 그대로 읽히되 DB 계산 구간과 한눈에 갈린다.
 past_month_labels = build_past_month_labels(month_labels, year_total_labels, gap_month_labels)
-# 가로 스크롤의 시작 위치도 같은 경계를 본다. 앞머리의 과거 칸을 지나야 DB 계산 구간의
-# 첫 달이 화면 왼쪽에 선다.
-leading_past_months = leading_past_column_count(month_labels, past_month_labels)
 # 히트맵에 그릴 공정이 없을 때의 안내. 프리셋이 비었으면 고르라고, 프리셋의 공정이 이 화면에
 # 없으면 없다고 말한다.
 key_process_empty_notice = (
@@ -820,29 +827,31 @@ figure_conditions = HomeFigureCacheKey(
     past_month_labels=tuple(sorted(past_month_labels)),
     gap_month_labels=tuple(sorted(gap_month_labels)),
 )
-# 차트가 든 탭은 `stateful_tabs` 로 만든다. `key` 와 `on_change="rerun"` 이 있어야 서버가
-# 어느 탭이 열렸는지 알고, 숨은 채로 그려 머리글이 밀리는 것을 막을 수 있다.
-# **Figure 단계보다 먼저 만든다.** Main 이 숨은 회차인지 알아야 그 회차의 그림 조회·생성을 건너뛸
-# 수 있다. 여기서 아래 탭 본문까지는 본문 흐름에 요소를 내보내지 않으므로(진행 막대는 머리 띠
-# 자리다) 탭을 앞으로 당겨도 화면 배치는 같다.
-main_tab, preference_tab, past_tab = stateful_tabs(HOME_TAB_LABELS, key=HOME_TAB_KEY)
-# 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 Past Data 탭 이름 옆에 점을 찍는다 — 다른
-# 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가 남아도 점이 없었다). 찍을
-# 것이 없어도 매 회차 부른다 — 저장한 다음 회차에 앞 회차의 점을 덮는다.
-mark_pending_tabs(
-    HOME_TAB_KEY, HOME_TAB_LABELS, {HOME_PAST_TAB} if past_data_has_pending() else set()
+# **「HOME 설정」 팝업이 열린 회차에는 팝업을 열기 전에 그린 그림을 그대로 쓴다.** 팝업 안 저장은 앱
+# 범위 `st.rerun()` 이라(팝업은 열어 둔다 — `home_settings`) 그 회차에 공용 프로필 version 이 바뀌어
+# 묶음 키가 빗나가는데, 그 회차의 Main 은 모달 뒤라 새로 만든 그림이 보이지 않는다(전에는 HOME 의
+# `Preference`·`Past Data` 탭에서 저장한 회차가 숨은 Main 의 그림을 건너뛰었다). 그래서 마지막으로
+# 그린 조건(`HOME_DRAWN_CONDITIONS_KEY`)의 네 묶음을 꺼내 그대로 그리고, 팝업을 닫는
+# 회차(`on_dismiss` — 앱 전체)에 **현재 조건**(`figure_conditions`)으로 꺼내거나 만든다 — 저장을 N번
+# 하고 닫아도 한 번만 만든다. 꺼낼 묶음이 하나라도 없으면(밀려난 칸) 평소처럼 지금 조건으로 만든다.
+# 월 축·과거 칸도 그 그림의 조건에서 읽어야 그림과 축이 맞는다.
+drawn_conditions = st.session_state.get(HOME_DRAWN_CONDITIONS_KEY)
+kept_figures = (
+    take_home_figure_set(drawn_conditions)
+    if home_settings_open()
+    and isinstance(drawn_conditions, HomeFigureCacheKey)
+    and drawn_conditions != figure_conditions
+    else None
 )
-# **숨은 Main 의 그림은 꺼내지도 만들지도 않는다.** Preference·Past Data 에서 저장하면 공용 프로필
-# version 이 바뀌어 묶음 키가 빗나가는데, 그 회차에 그린 그림은 숨은 탭이라 화면에 나가지 않는다.
-# Main 을 여는 회차는 탭의 `on_change="rerun"` 덕에 늘 앱 전체 회차이고, 그때 **현재 조건**
-# (`figure_conditions`)으로 꺼내거나 만든다 — 키는 탭과 무관하게 위에서 그대로 만든다. 저장을 N번
-# 하고 돌아와도 한 번만 만든다. 탭을 모르면(`None`) 숨지 않은 것으로 보아 지금처럼 만든다.
-main_tab_hidden = tab_is_hidden(main_tab)
+view_conditions = figure_conditions
 cached_figures: HomeFigureSet | None = None
 plan_detail_figures: PlanDetailFigures | None = None
 rebuilt_figures: list[str] = []
-if main_tab_hidden:
-    home_trace.mark("Figure 건너뜀(숨은 Main)")
+if kept_figures is not None:
+    assert isinstance(drawn_conditions, HomeFigureCacheKey)
+    view_conditions = drawn_conditions
+    cached_figures, plan_detail_figures = kept_figures
+    home_trace.mark("Figure 유지(설정 팝업)")
     # 진행 막대는 어느 경로든 같은 횟수만 넘긴다 — 순위 집계·차트 두 단계를 그대로 지나 끝이 100%
     # 로 맞는다(입장 화면이 `HOME_LOADING_STAGES` 퍼센트를 읽는다).
     loading.advance()
@@ -1024,63 +1033,79 @@ else:
         bottleneck_labels=bottleneck_figures.labels,
         bottleneck_months=bottleneck_figures.months,
     )
+    # 다음 회차가 팝업이 열린 채 오면 이 조건의 그림을 그대로 쓴다(위 「팝업이 열린 회차」).
+    st.session_state[HOME_DRAWN_CONDITIONS_KEY] = figure_conditions
 
-# 보는 조건은 사이드바다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다 — 주요공정
-# 히트맵은 조건 패널의 둘째 칸, LOB 표시 조건은 패널 밑 카드다. 계산이 멈춘 회차의 카드는 위
-# `except` 가 그린다.
-if not main_tab_hidden:
-    with page_condition_slot(1).container():
-        render_key_process_field(
-            key_process_profile, process_labels=process_labels, process_options=process_options
-        )
-    render_home_view_card(comparison_ready=comparison_ready)
-with main_tab:
-    # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
-    # 나눠 가져 문구가 월 칸 너비에 갇힌다.
-    render_summary_notice(summary_profile.note)
-    # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
-    # 실제와 다르게 나오므로(측정률이 1 보다 작으면 낮게), 아래 결론을 읽기 전에 알아야 한다.
-    render_capacity_assumption_notice(assumed_capacity_defaults)
-    # 소요대수에 들지 않은 수요와 결론 두 줄(최저 확보율 공정·기준 미달 수)은 HOME 에 두지 않는다 —
-    # 경고가 HOME 에 줄줄이 달려 읽히지 않았다(2026-10-19 사용자 요청). 그런 알림은 Admin Area
-    # 「알림 모음」 탭이 시나리오 전체 기간으로 한곳에 모은다.
-    # 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 줄(제목·범례)은 fragment 인
-    # `render_home_figures` 밖에서 그리므로 상자만 여기서 연다.
-    with home_dashboard_panel():
-        # 범례는 이 제목 줄 **안** 오른쪽 끝이다. 제목과 Figure 사이에 독립 블록으로
-        # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.
-        render_lob_title_row(
-            unapplied_months=unapplied_advance_months,
-        )
-        render_home_figures(
-            cached_figures,
-            month_labels,
-            leading_past_month_count=leading_past_months,
-            owner_tab=main_tab,
-            # 프리셋이 있으면 접두를 「주요공정」으로 줄인다 — 구분 칸(260px)은 한 줄 말줄임이라 긴
-            # 접두가 프리셋 이름 자리를 먹었다(2026-10-02 사용자 결정).
-            key_process_title=(
-                f"주요공정 - {key_process_preset}" if key_process_preset else "주요공정 확보율"
-            ),
-        )
-    if comparison_detail is not None:
-        # 덤벨은 계획 세부수량 묶음과 함께 만들어 두었다(비교가 붙은 키에서만). 여기서는 그리기만
-        # 한다 — None 이면 두 계획의 차이가 없다는 안내가 선다. 상자는 Main 이 숨은 회차에도 전처럼
-        # 같은 자리에 세운다. 그 회차에는 묶음을 만들지 않아 안이 빈다.
-        with st.expander("시나리오 비교 · 차이 큰 분류", expanded=False):
-            if plan_detail_figures is not None:
-                render_plan_comparison_dumbbell(
-                    plan_detail_figures.comparison_dumbbell,
-                    key="home_plan_comparison_dumbbell",
-                    owner_tab=main_tab,
-                )
-with past_tab:
-    # 관리 탭은 **저장된** 프로필을 받는다. 표시용으로 비운 것을 주면 화면이
-    # 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에 되쓴다.
-    render_past_data_management(str(DUCKDB_PATH.resolve()), stored_past_profile)
-with preference_tab:
-    # 선행 B/O·선행 입고 실적은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가
-    # 아니다. 달은 `Capa LOB 현황` 월 축 그대로라 Past Data 를 켰으면 과거 구간 달도 든다.
+# 보는 조건은 사이드바다(2026-09-29 사용자 결정). HOME 은 탭 없이 한 화면이라 늘 선다(2026-11-02 —
+# 전에는 Main 탭에서만 섰다). 주요공정 히트맵은 조건 패널의 둘째 칸이고, 패널 바로 밑에 공용 설정을
+# 여는 「HOME 설정」 상자가 따로 서고, 그 밑이 LOB 표시 조건 카드(맨 위가 주요 Case 칩 — 칩 줄은
+# 회차마다 DB 를 보지 않는다, `home_main_case_chips`)다. 상자를 카드 **위**에 두는 까닭: 카드는
+# 칩 때문에 처음 펼친 채 서서(약 370px) 그 밑이면 1280×800 · 1500×950 에서 상자가 사이드바 첫 화면
+# 밖으로 밀린다 — 팝업에 닿는 길이 이 상자 하나뿐이다. 계산이 멈춘 회차의 상자·카드는 위 `except` 가
+# 같은 차례로 그린다.
+with page_condition_slot(1).container():
+    render_key_process_field(
+        key_process_profile, process_labels=process_labels, process_options=process_options
+    )
+# 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 상자 왼쪽에 주황 띠, 팝업 안 `Past Data` 탭
+# 이름 옆에 점을 찍는다 — 다른 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가
+# 남아도 점이 없었다). 찍을 것이 없어도 매 회차 부른다 — 저장한 다음 회차에 앞 회차의 점을 덮는다.
+render_home_settings_box(pending=past_data_has_pending())
+render_home_view_card(
+    comparison_ready=comparison_ready,
+    chips=partial(render_main_case_chips, str(DUCKDB_PATH.resolve())),
+)
+view_month_labels = list(view_conditions.month_labels)
+# 가로 스크롤의 시작 위치는 과거 칸 경계를 본다. 앞머리의 과거 칸을 지나야 DB 계산 구간의 첫 달이
+# 화면 왼쪽에 선다. 그린 그림의 조건(월 축·과거 칸)에서 낸다.
+leading_past_months = leading_past_column_count(
+    view_month_labels, set(view_conditions.past_month_labels)
+)
+# 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
+# 나눠 가져 문구가 월 칸 너비에 갇힌다.
+render_summary_notice(summary_profile.note)
+# 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
+# 실제와 다르게 나오므로(측정률이 1 보다 작으면 낮게), 아래 결론을 읽기 전에 알아야 한다.
+render_capacity_assumption_notice(assumed_capacity_defaults)
+# 소요대수에 들지 않은 수요와 결론 두 줄(최저 확보율 공정·기준 미달 수)은 HOME 에 두지 않는다 —
+# 경고가 HOME 에 줄줄이 달려 읽히지 않았다(2026-10-19 사용자 요청). 그런 알림은 Admin Area
+# 「알림 모음」 탭이 시나리오 전체 기간으로 한곳에 모은다.
+# 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 줄(제목·범례)은 fragment 인
+# `render_home_figures` 밖에서 그리므로 상자만 여기서 연다.
+with home_dashboard_panel():
+    # 범례는 이 제목 줄 **안** 오른쪽 끝이다. 제목과 Figure 사이에 독립 블록으로
+    # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.
+    render_lob_title_row(
+        unapplied_months=unapplied_advance_months,
+    )
+    render_home_figures(
+        cached_figures,
+        view_month_labels,
+        leading_past_month_count=leading_past_months,
+        # 프리셋이 있으면 접두를 「주요공정」으로 줄인다 — 구분 칸(260px)은 한 줄 말줄임이라 긴
+        # 접두가 프리셋 이름 자리를 먹었다(2026-10-02 사용자 결정).
+        key_process_title=(
+            f"주요공정 - {key_process_preset}" if key_process_preset else "주요공정 확보율"
+        ),
+    )
+if view_conditions.comparison_revision_id:
+    # 덤벨은 계획 세부수량 묶음과 함께 만들어 두었다(비교가 붙은 키에서만). 여기서는 그리기만
+    # 한다 — None 이면 두 계획의 차이가 없다는 안내가 선다. 그린 그림의 조건이 정한다(팝업이 열린
+    # 회차에는 팝업을 열기 전 그림이다).
+    with st.expander("시나리오 비교 · 차이 큰 분류", expanded=False):
+        if plan_detail_figures is not None:
+            render_plan_comparison_dumbbell(
+                plan_detail_figures.comparison_dumbbell,
+                key="home_plan_comparison_dumbbell",
+            )
+
+
+def _render_preference_tab(owner_tab: OpenTab | None) -> None:
+    """「HOME 설정」 팝업의 `Preference` 탭 본문. `owner_tab` 은 그 탭이다(주요 Case 상자가 본다).
+
+    선행 B/O·선행 입고 실적은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가
+    아니다. 달은 `Capa LOB 현황` 월 축 그대로라 Past Data 를 켰으면 과거 구간 달도 든다.
+    """
     advance_months = [int(value) for value in baseline_density["생산계획년월"]]
     render_home_preference(
         months=advance_months,
@@ -1097,13 +1122,22 @@ with preference_tab:
         unmatched_execution=unmatched_execution,
         clamped_execution=clamped_execution,
         database_path=str(DUCKDB_PATH.resolve()),
-        owner_tab=preference_tab,
+        owner_tab=owner_tab,
     )
+
+
+# 팝업 호스트는 본문 끝 한 자리다 — 열렸으면 「HOME 설정」 팝업, 아니면 빈 스타일(이벤트 칸 자리
+# 수를 회차마다 같게). Past Data 는 **저장된** 프로필을 받는다. 표시용으로 비운 것을 주면 화면이
+# 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에 되쓴다.
+render_home_dialog_host(
+    preference=_render_preference_tab,
+    past_data=partial(render_past_data_management, str(DUCKDB_PATH.resolve()), stored_past_profile),
+)
 home_trace.mark("Plotly 전달")
 loading.close()
 render_home_performance(
     home_trace,
     rebuilt=rebuilt_figures,
     enabled=show_home_performance,
-    skipped=main_tab_hidden,
+    skipped=kept_figures is not None,
 )

@@ -423,10 +423,10 @@ def test_the_schedule_cause_skips_months_before_today() -> None:
 
 def test_the_target_reads_the_preference_threshold_by_month() -> None:
     uniform = MonthlyTarget(1.095)
-    assert target_text(uniform, MONTHS) == "HOME Preference 확보기준(월별) 110%"
+    assert target_text(uniform, MONTHS) == "HOME 설정 → Preference 확보기준(월별) 110%"
     assert short_target_text(uniform, MONTHS) == "110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
-    assert target_text(varied, MONTHS) == "HOME Preference 확보기준(월별) — 달마다 다름"
+    assert target_text(varied, MONTHS) == "HOME 설정 → Preference 확보기준(월별) — 달마다 다름"
     assert short_target_text(varied, MONTHS) == "달마다 확보기준"
 
 

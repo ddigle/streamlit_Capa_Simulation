@@ -66,7 +66,7 @@ KEY_PROCESS_HOVER_TEMPLATE = (
     "<extra></extra>"
 )
 
-KEY_PROCESS_EMPTY_NOTICE = "Preference 탭에서 주요 공정을 고르세요"
+KEY_PROCESS_EMPTY_NOTICE = "HOME 설정 → Preference 에서 주요 공정을 고르세요"
 # 프리셋에 공정은 있는데 이 시나리오·조회기간에 하나도 없을 때. 「고르세요」는 거짓 안내다.
 KEY_PROCESS_ABSENT_NOTICE = "고른 프리셋의 공정이 이 시나리오·조회기간에 없습니다"
 

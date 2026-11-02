@@ -1,15 +1,18 @@
-# Purpose: HOME Main 탭이 숨은 회차는 그림을 미루고 Main 을 여는 회차에 같은 그림을 만드는지 본다.
+# Purpose: HOME 설정 팝업이 열린 회차는 그 전 그림을 쓰고 닫는 회차에 같은 그림을 만드는지 본다.
 
-"""숨은 Main 은 그림을 미루고, 돌아오는 회차에 지금 조건으로 한 번 만든다.
+"""「HOME 설정」 팝업이 열린 동안은 팝업을 열기 전 그림을 그대로 쓰고, 닫는 회차에 지금 조건으로
+한 번 만든다(2026-11-02 — 전에는 HOME 의 Preference·Past Data 탭이 열린 동안 숨은 Main 의 그림을
+미뤘다).
 
-Preference·Past Data 에서 저장하면 공용 프로필 version 이 바뀌어 묶음 키가 빗나간다. 전에는 그
-회차에 숨은 Main 의 그림까지 만들었다(화면에 나가지 않는 그림). 이제는 Main 을 여는 회차에 만든다.
-여기서 지키는 것:
+팝업 안에서 저장하면 공용 프로필 version 이 바뀌어 묶음 키가 빗나가고, 팝업은 저장 뒤에도 열려 있다
+(`home_settings`). 그 회차의 Main 은 모달 뒤라 새로 만든 그림이 보이지 않는다 — 그래서 만들지
+않는다. 여기서 지키는 것:
 
-- 숨은 회차에는 그림 생성기를 하나도 부르지 않는다(저장을 여러 번 해도).
-- Main 으로 돌아온 회차의 그림 == 같은 세션 상태에서 캐시 없이 새로 만든 그림(Plotly JSON).
+- 팝업이 열린 회차에는 그림 생성기를 하나도 부르지 않고(저장을 여러 번 해도) 팝업을 열기 전 그림을
+  그대로 보낸다.
+- 팝업을 닫은 회차의 그림 == 같은 세션 상태에서 캐시 없이 새로 만든 그림(Plotly JSON).
 - 저장한 값이 그 그림의 키에 실제로 들어간다(Top5 구간·판정 기준·과거 구간·미저장 편집·비교 리비전).
-- 진행 막대가 숨은 회차에도 같은 단계 수를 넘긴다.
+- 진행 막대가 팝업이 열린 회차에도 같은 단계 수를 넘긴다.
 
 합성 시드 위의 수치는 표본이다. 이 시험이 보는 것은 값이 아니라 **두 경로의 같음**이다.
 """
@@ -34,10 +37,8 @@ from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.simulation_cache import shared_home_figure_store
 
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
-TAB_KEY = "home_active_tab"
-MAIN = ":material/dashboard: Main"
-PREFERENCE = ":material/tune: Preference"
-PAST = ":material/history: Past Data"
+SETTINGS_BUTTON_KEY = "home_settings_open"
+HOME_DIALOG_KEY = "home_open_dialog"
 FRESH_KEY = "spy_fresh"
 LOB = "build_lob_summary_figures"
 PLAN = "build_plan_detail_figures"
@@ -186,7 +187,7 @@ def _figures(app: AppTest) -> dict[str, Any]:
 
 
 def _assert_same_as_fresh(app: AppTest, label: str) -> dict[str, Any]:
-    """방금 Main 이 그린 그림 == 같은 세션 상태에서 캐시를 끄고 새로 만든 그림."""
+    """방금 HOME 이 그린 그림 == 같은 세션 상태에서 캐시를 끄고 새로 만든 그림."""
     drawn = _figures(app)
     assert len(drawn) >= 8, label
     app.session_state[FRESH_KEY] = True
@@ -209,40 +210,52 @@ def _clear_profile_caches() -> None:
 def _save_top5(app: AppTest, maximum: float) -> AppTest:
     """Top5 구간의 상한을 저장한다. 상한은 축 위끝이라 늘 그림을 바꾼다(하한은 시드 확보율이
     모두 그보다 커서 막대를 바꾸지 못할 수 있다)."""
-    next(widget for widget in app.main.number_input if widget.label == "상한(%)").set_value(maximum)
+    next(widget for widget in app.number_input if widget.label == "상한(%)").set_value(maximum)
     next(button for button in app.button if button.label == "확보율 구간 저장").click()
     return _step(app)
 
 
-def _open_tab(app: AppTest, label: str) -> AppTest:
-    app.session_state[TAB_KEY] = label
+def _open_settings(app: AppTest) -> AppTest:
+    """사이드바 「HOME 설정」 상자를 누른다(그 조작의 생성기 호출만 남긴다)."""
+    app.button(key=SETTINGS_BUTTON_KEY).click()
+    _step(app)
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
+    return app
+
+
+def _close_settings(app: AppTest) -> AppTest:
+    """팝업을 닫는다(`on_dismiss` — AppTest 는 닫기를 못 눌러 열림 칸을 비운다)."""
+    del app.session_state[HOME_DIALOG_KEY]
     return _step(app)
 
 
-def test_a_save_on_preference_draws_nothing_and_main_draws_it_on_return(tmp_path: Path) -> None:
-    """Top5 저장은 숨은 Main 의 그림을 만들지 않는다. 돌아온 Main 이 새 구간으로 한 번 만든다."""
+def test_a_save_in_the_popup_builds_nothing_and_closing_draws_it(tmp_path: Path) -> None:
+    """Top5 저장은 팝업이 열린 동안 그림을 만들지 않고 팝업을 열기 전 그림을 그대로 보낸다. 팝업을
+    닫는 회차가 새 구간으로 한 번 만든다."""
     database_path = tmp_path / "scenario.duckdb"
     app = _open(database_path)
     assert set(_builds(app)) == set(BUILDERS)
     before = _lob_key(app)
     first_figures = _figures(app)
 
-    _open_tab(app, PREFERENCE)
+    _open_settings(app)
     assert _builds(app) == []
-    assert app.session_state["spy_figures"] == {}
+    assert _figures(app) == first_figures
 
     app.session_state["dashboard_show_performance"] = True
     _save_top5(app, 150.0)
     assert _builds(app) == []
-    assert app.session_state["spy_figures"] == {}
-    # 숨은 회차는 캐시를 보지도 않는다 — 가장 최근 키가 저장 전 그대로다.
+    # 팝업은 저장 뒤에도 열려 있고, 뒤의 그림은 팝업을 열기 전 그림 그대로다.
+    assert app.session_state[HOME_DIALOG_KEY] == "settings"
+    assert _figures(app) == first_figures
+    # 그 회차는 저장 전 키의 칸을 꺼내 쓴다 — 가장 최근 키가 저장 전 그대로다.
     assert _lob_key(app) == before
     assert [
         caption.value for caption in app.caption if caption.value.startswith("Figure 캐시: ")
-    ] == ["Figure 캐시: 건너뜀"]
+    ] == ["Figure 캐시: 유지"]
     app.session_state["dashboard_show_performance"] = False
 
-    _open_tab(app, MAIN)
+    _close_settings(app)
     # Top5 구간은 LOB 묶음에만 닿는다(의존 표).
     assert _builds(app) == [LOB]
     saved = DuckDBScenarioRepository(database_path).load_global_top5_band()
@@ -250,33 +263,35 @@ def test_a_save_on_preference_draws_nothing_and_main_draws_it_on_return(tmp_path
     assert after.top5_max_rate == pytest.approx(1.5)
     assert after.top5_band_version == saved.version
     assert after.top5_band_version != before.top5_band_version
-    drawn = _assert_same_as_fresh(app, "Top5 저장 뒤 Main")
+    drawn = _assert_same_as_fresh(app, "Top5 저장 뒤 팝업 닫음")
     # 실제로 그림이 바뀌었다 — 같음 시험이 맹물이 아니다.
     assert drawn["production_lob_months"] != first_figures["production_lob_months"]
 
 
-def test_several_saves_on_preference_build_once_when_main_opens(tmp_path: Path) -> None:
-    """저장을 세 번 해도 숨은 동안에는 만들지 않고, Main 을 열 때 마지막 값으로 한 번 만든다."""
+def test_several_saves_in_the_popup_build_once_when_it_closes(tmp_path: Path) -> None:
+    """저장을 세 번 해도 팝업이 열린 동안에는 만들지 않고, 닫을 때 마지막 값으로 한 번 만든다."""
     database_path = tmp_path / "scenario.duckdb"
     app = _open(database_path)
-    _open_tab(app, PREFERENCE)
+    _open_settings(app)
     for maximum in (150.0, 120.0, 180.0):
         _save_top5(app, maximum)
         assert _builds(app) == [], maximum
 
-    _open_tab(app, MAIN)
+    _close_settings(app)
     assert _builds(app) == [LOB]
     assert _lob_key(app).top5_max_rate == pytest.approx(1.8)
-    _assert_same_as_fresh(app, "Top5 세 번 저장 뒤 Main")
+    _assert_same_as_fresh(app, "Top5 세 번 저장 뒤 팝업 닫음")
 
     # 같은 조건으로 다시 돌면 적중이다.
     _step(app)
     assert _builds(app) == []
 
 
-def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_path: Path) -> None:
-    """숨은 동안 바뀐 것(다른 세션이 저장한 판정 기준·과거 구간, 이 세션의 미저장 편집)이
-    돌아온 Main 의 그림에 들어간다. 다시 만드는 묶음은 의존 표와 같다."""
+def test_profiles_saved_elsewhere_and_unsaved_edits_reach_the_dashboard_on_close(
+    tmp_path: Path,
+) -> None:
+    """팝업이 열린 동안 바뀐 것(다른 세션이 저장한 판정 기준·과거 구간, 이 세션의 미저장 편집)이
+    팝업을 닫은 회차의 그림에 들어간다. 다시 만드는 묶음은 의존 표와 같다."""
     database_path = tmp_path / "scenario.duckdb"
     app = _open(database_path)
     repository = DuckDBScenarioRepository(database_path)
@@ -284,7 +299,7 @@ def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_pat
     base = _figures(app)
 
     # 판정 기준 — 다른 세션의 저장처럼 저장소에 쓰고 프로필 캐시를 비운다.
-    _open_tab(app, PREFERENCE)
+    _open_settings(app)
     threshold = repository.load_global_securement_threshold()
     # 합성 시드의 확보율은 수천 % 대라 기준을 그만큼 올려야 색이 바뀐다(표본 관측).
     repository.replace_global_securement_threshold(
@@ -297,15 +312,16 @@ def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_pat
     _clear_profile_caches()
     _step(app)
     assert _builds(app) == []
-    _open_tab(app, MAIN)
+    _close_settings(app)
     assert set(_builds(app)) == {LOB, HEATMAP, BOTTLENECK}
-    after_threshold = _assert_same_as_fresh(app, "판정 기준 저장 뒤 Main")
+    after_threshold = _assert_same_as_fresh(app, "판정 기준 저장 뒤 팝업 닫음")
     # 시드에는 주요공정 프리셋이 없어 히트맵은 비어 있다 — 판정 색은 상세 B/N 에서 본다.
     assert after_threshold["bottleneck_detail_months"] != base["bottleneck_detail_months"]
 
-    # 과거 구간 — 네 묶음이 함께 읽는 기본 키의 과거 구간 version 에 닿는다. 숨은 동안 조회기간까지
-    # 바꾸면 월 축이 어차피 네 묶음 키를 가르므로, 먼저 Main 에서 기간을 넓히고 과거 구간 한 달을 둔
-    # 뒤 숨은 동안에는 **같은 달의 값만** 바꾼다 — 그래야 version 이 키에 드는지가 따로 드러난다.
+    # 과거 구간 — 네 묶음이 함께 읽는 기본 키의 과거 구간 version 에 닿는다. 팝업이 열린 동안
+    # 조회기간까지 바꾸면 월 축이 어차피 네 묶음 키를 가르므로, 먼저 팝업 없이 기간을 넓히고 과거
+    # 구간 한 달을 둔 뒤 팝업이 열린 동안에는 **같은 달의 값만** 바꾼다 — 그래야 version 이 키에
+    # 드는지가 따로 드러난다.
     def past(density: float, quantity: float, rate: float) -> dict[str, pd.DataFrame]:
         return {
             "월별": pd.DataFrame(
@@ -338,22 +354,23 @@ def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_pat
     before_past_key = _lob_key(app).base
     assert '"25.10"' in json.dumps(before_past["production_lob_months"])
 
-    _open_tab(app, PAST)
+    _open_settings(app)
     repository.replace_global_past_data(past(12.0, 200.0, 0.8), source="시험")
     _clear_profile_caches()
     _step(app)
     assert _builds(app) == []
-    _open_tab(app, MAIN)
+    assert _figures(app) == before_past
+    _close_settings(app)
     assert set(_builds(app)) == set(BUILDERS)
     after_past_key = _lob_key(app).base
     # 월 축은 그대로다 — 네 묶음을 다시 만든 까닭은 과거 구간 version 하나다.
     assert after_past_key.month_labels == before_past_key.month_labels
     assert after_past_key.past_profile_version != before_past_key.past_profile_version
-    after_past = _assert_same_as_fresh(app, "과거 구간 저장 뒤 Main")
+    after_past = _assert_same_as_fresh(app, "과거 구간 저장 뒤 팝업 닫음")
     assert after_past["production_lob_months"] != before_past["production_lob_months"]
 
     # 미저장 편집 — 이 세션의 계획을 바꾸고 내용 토큰을 새로 낸다(편집 적용이 하는 일).
-    _open_tab(app, PREFERENCE)
+    _open_settings(app)
     active = app.session_state[ACTIVE_SCENARIO_KEY]
     tables = dict(active["tables"])
     plan = tables["RQ_PKG_PLAN"].copy()
@@ -362,18 +379,44 @@ def test_profiles_saved_elsewhere_and_unsaved_edits_reach_main_on_return(tmp_pat
     app.session_state[ACTIVE_SCENARIO_KEY] = {
         **active,
         "tables": tables,
-        "content_token": "edited-hidden-main",
+        "content_token": "edited-under-popup",
     }
     _step(app)
     assert _builds(app) == []
-    _open_tab(app, MAIN)
+    _close_settings(app)
     assert set(_builds(app)) == set(BUILDERS)
-    edited = _assert_same_as_fresh(app, "미저장 편집 뒤 Main")
+    edited = _assert_same_as_fresh(app, "미저장 편집 뒤 팝업 닫음")
     assert edited["production_lob_months"] != after_past["production_lob_months"]
 
 
-def test_a_comparison_picked_on_preference_is_drawn_when_main_opens(tmp_path: Path) -> None:
-    """비교 시나리오를 Preference 에서 고르면 숨은 동안은 만들지 않고, Main 이 GAP·덤벨을 그린다."""
+def test_a_month_axis_change_under_the_popup_keeps_figures_and_axis_together(
+    tmp_path: Path,
+) -> None:
+    """팝업이 열린 동안 월 축이 바뀌어도(Past Data 저장으로 과거 달이 붙는 등) 뒤의 그림과 가로
+    스크롤 시작 칸은 팝업을 열기 전 그림의 축을 함께 쓴다 — 그림만 옛것이고 축이 새것이면 칸이
+    어긋난다. 닫는 회차에 새 축으로 함께 바뀐다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = _open(database_path)
+    before = _figures(app)
+    before_axis = _lob_key(app).base.month_labels
+
+    _open_settings(app)
+    app.session_state["production_month_range_v2"] = ("2026-01", "2026-06")
+    _step(app)
+    assert _builds(app) == []
+    assert _figures(app) == before
+    assert _lob_key(app).base.month_labels == before_axis
+
+    _close_settings(app)
+    assert set(_builds(app)) == set(BUILDERS)
+    after_axis = _lob_key(app).base.month_labels
+    assert after_axis != before_axis
+    _assert_same_as_fresh(app, "조회기간 바꾼 뒤 팝업 닫음")
+
+
+def test_a_comparison_picked_in_the_popup_is_drawn_when_it_closes(tmp_path: Path) -> None:
+    """비교 시나리오를 팝업 Preference 에서 고르면 열린 동안은 만들지 않고, 닫는 회차가 GAP·덤벨을
+    그린다."""
     from capa_simulation.components.home_preference import (
         COMPARISON_REVISION_KEY,
         COMPARISON_SCENARIO_KEY,
@@ -384,6 +427,7 @@ def test_a_comparison_picked_on_preference_is_drawn_when_main_opens(tmp_path: Pa
 
     database_path = tmp_path / "scenario.duckdb"
     app = _open(database_path)
+    first_figures = _figures(app)
     repository = DuckDBScenarioRepository(database_path)
     official = repository.latest_official_release()
     assert official is not None
@@ -395,7 +439,7 @@ def test_a_comparison_picked_on_preference_is_drawn_when_main_opens(tmp_path: Pa
     created = repository.create_scenario(
         ScenarioCreate(
             scenario_name="비교용",
-            source_simulation_code="COMPARE-HIDDEN",
+            source_simulation_code="COMPARE-POPUP",
             source_simulation_name="비교용",
             source_type="DUCKDB_SCENARIO_CLONE",
             pipeline_version="duckdb-rq-snapshot-v3",
@@ -405,46 +449,56 @@ def test_a_comparison_picked_on_preference_is_drawn_when_main_opens(tmp_path: Pa
     )
     scenario_id = str(created.scenario.scenario_id)
 
-    _open_tab(app, PREFERENCE)
+    _open_settings(app)
     app.session_state[COMPARISON_TOGGLE_KEY] = True
     app.selectbox(key=COMPARISON_SCENARIO_KEY).set_value(scenario_id)
     _step(app)
-    # 고른 회차에는 리비전이 피커 본문(회차 끝)에서야 채워져 비교가 아직 붙지 않는다 — 그 회차는
-    # 숨기지 않아도 만들 것이 없다. 비교가 **붙은** 첫 회차는 다음 회차다.
     assert app.session_state[COMPARISON_REVISION_KEY] == str(created.revision.revision_id)
     assert _builds(app) == []
-    assert app.session_state["spy_figures"] == {}
-    # Preference 에 머문 채 한 번 더 — 토글·시나리오·리비전이 모두 차 있어 이 회차 맨 위에서 비교가
-    # 켜진다(`show_comparison`). 숨기지 않던 코드는 바로 이 회차에 LOB·계획 세부수량을 만들었다.
+    assert _figures(app) == first_figures
+    # 팝업에 머문 채 한 번 더 — 토글·시나리오·리비전이 모두 차 있어 이 회차 맨 위에서 비교가 켜진다
+    # (`show_comparison`). 그래도 팝업이 열려 있어 만들지 않는다.
     assert app.session_state[COMPARISON_TOGGLE_KEY] is True
     assert app.session_state[COMPARISON_SCENARIO_KEY] == scenario_id
     _step(app)
     assert _builds(app) == []
-    assert app.session_state["spy_figures"] == {}
+    assert _figures(app) == first_figures
 
-    _open_tab(app, MAIN)
+    _close_settings(app)
     # 비교는 LOB(Density·Wafer 증감)와 계획 세부수량(+덤벨)에만 닿는다.
     assert set(_builds(app)) == {LOB, PLAN}
     assert _lob_key(app).comparison_revision_id == str(created.revision.revision_id)
-    drawn = _assert_same_as_fresh(app, "비교 고른 뒤 Main")
+    drawn = _assert_same_as_fresh(app, "비교 고른 뒤 팝업 닫음")
     assert DUMBBELL_CHART_KEY in drawn
 
-    # 비교가 붙은 채 다시 숨겨도 덤벨 상자가 오류 없이 선다(묶음이 없는 회차).
-    _open_tab(app, PREFERENCE)
+    # 비교가 붙은 채 팝업을 다시 열어도 조건이 같아 그대로 꺼내 그린다(덤벨 상자도 선다).
+    _open_settings(app)
     assert _builds(app) == []
-    assert DUMBBELL_CHART_KEY not in app.session_state["spy_figures"]
+    assert DUMBBELL_CHART_KEY in app.session_state["spy_figures"]
     assert any(expander.label == "시나리오 비교 · 차이 큰 분류" for expander in app.expander)
 
 
-def test_the_loading_bar_takes_the_same_steps_whether_main_is_open_or_hidden(
+def test_the_loading_bar_takes_the_same_steps_whether_the_popup_is_open_or_not(
     tmp_path: Path,
 ) -> None:
-    """입장 화면이 `HOME_LOADING_STAGES` 퍼센트를 읽는다. 숨은 회차도 같은 단계를 지난다."""
-    app = _open(tmp_path / "scenario.duckdb")
+    """입장 화면이 `HOME_LOADING_STAGES` 퍼센트를 읽는다. 팝업이 열린 회차도(그 전 그림을 그대로
+    쓰는 회차까지) 같은 단계를 지난다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = _open(database_path)
     steps: dict[str, list[str]] = {}
-    for label in (PREFERENCE, PAST, MAIN):
-        _open_tab(app, label)
-        steps[label] = list(app.session_state["spy_progress"])
-    assert steps[MAIN] == ["advance"] * 4 + ["close"]
-    assert steps[PREFERENCE] == steps[MAIN]
-    assert steps[PAST] == steps[MAIN]
+    _step(app)
+    steps["closed"] = list(app.session_state["spy_progress"])
+    _open_settings(app)
+    steps["open"] = list(app.session_state["spy_progress"])
+    repository = DuckDBScenarioRepository(database_path)
+    band = repository.load_global_top5_band()
+    repository.replace_global_top5_band(
+        band.min_rate, 1.7, source="시험", expected_version=band.version
+    )
+    _clear_profile_caches()
+    _step(app)
+    assert _builds(app) == []
+    steps["kept"] = list(app.session_state["spy_progress"])
+    assert steps["closed"] == ["advance"] * 4 + ["close"]
+    assert steps["open"] == steps["closed"]
+    assert steps["kept"] == steps["closed"]
