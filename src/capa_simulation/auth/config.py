@@ -85,7 +85,7 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "too_short": f"{MIN_SECRET_BYTES}바이트보다 짧음",
         "low_variety": f"서로 다른 글자가 {MIN_SECRET_DISTINCT}개보다 적음",
         "placeholder": "자리표 값으로 보임(changeme · secret 등)",
-        "same_as_client_id": f"{names.ENV_CLIENT_ID} 와 같음",
+        "same_as_client_id": f"설정값({names.ENV_CLIENT_ID})과 같음",
         "cert_unreadable": "인증서를 읽지 못함",
         "cert_not_rsa": "RSA 공개키가 아님",
         "cert_too_small": f"RSA {MIN_RSA_BITS}비트 미만",

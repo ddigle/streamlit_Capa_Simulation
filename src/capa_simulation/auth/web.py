@@ -20,6 +20,7 @@ state · nonce · 쿠키 값 · 비밀값 · 클레임 값(이름 · 부서 포�
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import hmac
 import html
@@ -97,8 +98,8 @@ REASON_TEXT: Mapping[str, str] = {
     "alg_not_allowed": _TOKEN_REASON,
     "signing_key_unknown": _KEY_REASON,
     "signature_invalid": _KEY_REASON,
-    "aud_mismatch": f"{names.ENV_CLIENT_ID} 가 토큰의 aud 와 다릅니다(아래 기대한 값과 받은 값).",
-    "iss_mismatch": f"{names.ENV_ISSUER} 가 토큰의 iss 와 다릅니다(아래 기대한 값과 받은 값).",
+    "aud_mismatch": f"토큰의 aud 가 설정값({names.ENV_CLIENT_ID})과 다릅니다 — 아래 두 값을 보세요",
+    "iss_mismatch": f"토큰의 iss 가 설정값({names.ENV_ISSUER})과 다릅니다 — 아래 두 값을 보세요",
     "token_expired": _TIME_REASON,
     "token_not_yet_valid": _TIME_REASON,
     "token_stale": _TIME_REASON,
@@ -125,15 +126,21 @@ DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
     ("at", "기록 시각"),
 )
 
-_CSS = """
-:root { color-scheme: light dark; --fg: #1d2433; --muted: #5b6475; --bg: #f6f7f9;
-  --card: #ffffff; --line: #d9dde5; --accent: #2f5bd3; }
-@media (prefers-color-scheme: dark) {
-  :root { --fg: #e6e9ef; --muted: #a3abba; --bg: #14171d; --card: #1d2129; --line: #323844;
-    --accent: #7ea2ff; }
-}
+# 화면 넷의 색 · 서체는 design/tokens 의 두 팔레트에서 온다(손으로 적은 색을 두지 않는다).
+# 지금 실행의 테마가 아니라 밝은 · 어두운 팔레트를 둘 다 실어 `prefers-color-scheme` 로 고른다 —
+# 이 화면은 Streamlit 바깥이라 앱 테마를 모른다.
+_PALETTE_ROLES = (
+    ("fg", "TEXT"),
+    ("muted", "TEXT_MUTED"),
+    ("bg", "SURFACE_PAGE"),
+    ("card", "SURFACE"),
+    ("line", "BORDER"),
+    ("accent", "ACCENT"),
+    ("accent-text", "ACCENT_TEXT"),
+)
+_CSS_BODY = """
 body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.6;
-  font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  font-family: var(--font); }
 main { max-width: 760px; margin: 48px auto; padding: 28px 32px; background: var(--card);
   border: 1px solid var(--line); border-radius: 12px; }
 h1 { font-size: 1.35rem; margin: 0 0 12px; }
@@ -145,8 +152,30 @@ th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: lef
 th { color: var(--muted); font-weight: 600; }
 .muted { color: var(--muted); font-size: .9rem; }
 a.button { display: inline-block; margin-top: 12px; padding: 8px 16px; border-radius: 8px;
-  background: var(--accent); color: #fff; text-decoration: none; }
+  background: var(--accent); color: var(--accent-text); text-decoration: none; }
 """
+
+
+@functools.cache
+def page_css() -> str:
+    """밝은 · 어두운 팔레트 변수 + 본문 규칙.
+
+    tokens 는 여기서만 불러온다 — `auth` 꾸러미가 import 때 Streamlit(테마 모듈이 딸려 온다)을
+    끌고 오지 않게. `palette_value` 는 실행 문맥을 보지 않는다.
+    """
+    from capa_simulation.design import tokens
+
+    def variables(mode: str) -> str:
+        return " ".join(
+            f"--{name}: {tokens.palette_value(mode, role)};" for name, role in _PALETTE_ROLES
+        )
+
+    font = f"--font: {tokens.FONT_FAMILY};"
+    return (
+        f":root {{ color-scheme: light dark; {variables('light')} {font} }}\n"
+        f"@media (prefers-color-scheme: dark) {{ :root {{ {variables('dark')} }} }}"
+        f"{_CSS_BODY}"
+    )
 
 
 def _esc(value: object) -> str:
@@ -167,7 +196,7 @@ def html_page(title: str, body: str, *, status: int) -> HTMLResponse:
     document = (
         '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{_esc(title)}</title><style>{_CSS}</style></head>"
+        f"<title>{_esc(title)}</title><style>{page_css()}</style></head>"
         f"<body><main><h1>{_esc(title)}</h1>{body}</main></body></html>"
     )
     return HTMLResponse(document, status_code=status, headers=HTML_HEADERS)
@@ -474,8 +503,8 @@ def logout_page(cfg: SsoConfig) -> HTMLResponse:
 def loop_page(cfg: SsoConfig) -> HTMLResponse:
     body = (
         "<p>로그인이 되풀이되고 있습니다. 로그인 쿠키가 저장되지 않는 것 같습니다 — "
-        "주소가 https 인지, 브라우저가 이 사이트의 쿠키를 막지 않는지 확인하세요. 관리자는 "
-        f"<code>{_esc(names.ENV_PUBLIC_URL)}</code> 가 실제 접속 주소와 같은지 봅니다.</p>"
+        "주소가 https 인지, 브라우저가 이 사이트의 쿠키를 막지 않는지 확인하세요. 관리자는 실제 "
+        f"접속 주소가 설정값(<code>{_esc(names.ENV_PUBLIC_URL)}</code>)과 같은지 봅니다.</p>"
         '<p class="muted">사유 코드 <code>login_loop</code> · 2분 뒤 다시 시도할 수 있습니다.</p>'
     )
     return html_page("로그인이 되풀이됩니다", body, status=200)

@@ -483,6 +483,23 @@ def test_start_removes_the_secret_from_the_environment_and_reads_once() -> None:
     assert sso_secret() not in repr(events)
 
 
+def test_start_sso_removes_the_secret_from_the_process_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """진입 파일의 `start_sso()` 는 `os.environ` 에서 비밀값을 뺀다(하위 프로세스로 안 샘)."""
+    from capa_simulation.auth.server import start_sso
+
+    for name, value in sso_environ().items():
+        monkeypatch.setenv(name, value)
+
+    cfg = start_sso()
+
+    assert cfg.mode is SsoMode.ON
+    assert names.ENV_SECRET not in os.environ
+    assert os.environ[names.ENV_CLIENT_ID] == "capa-test-client"
+    assert cfg.secret == sso_secret().encode("utf-8")
+
+
 def test_config_without_start_reads_the_process_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
