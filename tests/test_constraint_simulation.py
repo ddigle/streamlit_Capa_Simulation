@@ -485,11 +485,12 @@ def test_each_month_is_judged_against_its_own_threshold() -> None:
 
 
 def test_a_home_exception_outside_the_input_range_is_used_as_is() -> None:
-    """HOME 월별 예외는 50~200% 밖일 수 있다 — 막지 않고 그 달을 그대로 판정한다."""
-    result = _run(general_by_month={202709: 2.5, 202801: 0.3})
+    """HOME 월별 예외(범위를 보기 전에 저장한 옛 기준)는 직접 입력 칸 범위 50~300% 밖일 수 있다 —
+    막지 않고 그 달을 그대로 판정한다."""
+    result = _run(general_by_month={202709: 3.5, 202801: 0.3})
 
     assert 202709 in result.kpis.below_months
-    # 제약이 없어도 113.04% < 250% 라 미달이었다 — 「새로 미달」 이 아니다.
+    # 제약이 없어도 113.04% < 350% 라 미달이었다 — 「새로 미달」 이 아니다.
     assert 202709 not in result.kpis.newly_below_months
     assert 202801 not in result.kpis.below_months
 

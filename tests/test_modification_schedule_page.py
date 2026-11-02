@@ -25,6 +25,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
@@ -49,6 +50,7 @@ from capa_simulation.components.modification_schedule_view import (
 )
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
+    CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
     CONSTRAINT_HELD_INPUT_KEY,
@@ -64,14 +66,17 @@ from capa_simulation.modification_schedule_state import (
     SCHEDULE_CONCURRENT_INPUT_KEY,
     SCHEDULE_CONCURRENT_KEY,
     SCHEDULE_CONCURRENT_PILLS_KEY,
+    SCHEDULE_DAYS_INPUT_KEY,
     SCHEDULE_DAYS_KEY,
     SCHEDULE_DAYS_PILLS_KEY,
     SCHEDULE_DEADLINE_KEY,
+    SCHEDULE_MARGIN_INPUT_KEY,
     SCHEDULE_OBJECTIVE_KEY,
     SCHEDULE_START_KEY,
     SCHEDULE_UNITS_KEY,
 )
 from capa_simulation.navigation import CONSTRAINT_SIMULATION
+from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.modification_schedule import (
@@ -462,8 +467,6 @@ def test_the_schedule_general_target_rounds_a_typed_decimal_half_up(
     109 로 버렸다. 칸은 소수 칸 · `%.0f` 이고 정본은 정수다."""
     from streamlit.proto.NumberInput_pb2 import NumberInput as NumberInputProto
 
-    from capa_simulation.constraint_simulation_state import CONSTRAINT_GENERAL_INPUT_KEY
-
     app = _schedule(databases)
     field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
     assert field.proto.data_type == NumberInputProto.FLOAT
@@ -476,6 +479,65 @@ def test_the_schedule_general_target_rounds_a_typed_decimal_half_up(
     assert f"기준 {kept}%" in _header(app)
     (shown,) = [item for item in app.number_input if item.label == "기준 확보율 직접 입력"]
     assert shown.value == kept
+
+
+def test_the_schedule_general_target_takes_the_home_threshold_range(
+    databases: tuple[Path, Path],
+) -> None:
+    """개조 일정 모드의 「기준 확보율」 직접 입력 칸도 HOME 판정 기준 저장 범위와 같은 50 ~ 300%
+    다(2026-11-02 사용자 결정 — 50 ~ 200% 이던 칸은 250 을 막아 Preference 에 저장한 기준을
+    칠 수 없었다). 같은 카드의 다른 칸(개조 대수 · 개조 기간 · 동시 상한 · 안전 여유) 범위는
+    그대로다."""
+    app = _schedule(databases)
+    field = app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY)
+    assert (field.min, field.max) == (50, 300)
+    ranges = {
+        key: (app.number_input(key=key).min, app.number_input(key=key).max)
+        for key in (
+            SCHEDULE_UNITS_KEY,
+            SCHEDULE_DAYS_INPUT_KEY,
+            SCHEDULE_CONCURRENT_INPUT_KEY,
+            SCHEDULE_MARGIN_INPUT_KEY,
+        )
+    }
+    assert ranges == {
+        SCHEDULE_UNITS_KEY: (1, 500),
+        SCHEDULE_DAYS_INPUT_KEY: (1, 365),
+        SCHEDULE_CONCURRENT_INPUT_KEY: (1, 500),
+        SCHEDULE_MARGIN_INPUT_KEY: (0, 30),
+    }
+
+    field.set_value(250)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == 250
+    assert "기준 250%" in _header(app)
+    (shown,) = [item for item in app.number_input if item.label == "기준 확보율 직접 입력"]
+    assert shown.value == 250
+
+
+def test_the_schedule_general_target_shows_a_home_default_above_200_unclipped(
+    tmp_path: Path,
+) -> None:
+    """「HOME 기준」 일 때 개조 일정 칸도 HOME 기본 확보 기준을 자르지 않고 보인다 — Preference
+    가 받는 250% 면 칸도 250 이고 머리는 「HOME 250%」 다(칸이 50 ~ 200% 이던 때는 200 으로
+    잘렸다)."""
+    own = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    app = _schedule(own)
+    repository = DuckDBScenarioRepository(own[0])
+    threshold = repository.load_global_securement_threshold()
+    repository.replace_global_securement_threshold(
+        2.5,
+        2.4,
+        pd.DataFrame(columns=["생산계획년월", "확보 기준", "경고 기준"]),
+        source="시험",
+        expected_version=threshold.version,
+    )
+    clear_global_securement_threshold_cache()
+    _ok(app.run())
+
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
+    assert app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).value == 250
+    assert "기준 HOME 250%" in _header(app)
 
 
 # ------------------------------------------------------------------ 갈래

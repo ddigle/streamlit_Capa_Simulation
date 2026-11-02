@@ -267,6 +267,15 @@ def test_the_threshold_range_is_one_value_shared_with_the_constraint_target() ->
     assert threshold_range_text() == "50% ~ 300%"
 
 
+def test_the_general_target_field_range_is_the_threshold_range() -> None:
+    """제약 시뮬레이션 · 개조 일정의 「기준 확보율」 직접 입력 칸 범위도 판정 기준 저장 범위와 한 값
+    (50 ~ 300%)이다(2026-11-02 사용자 결정 — Preference 에 저장한 기준을 칸에 그대로 칠 수 있다)."""
+    from capa_simulation.services import constraint_simulation
+    from capa_simulation.services.securement_threshold import THRESHOLD_RANGE
+
+    assert constraint_simulation.GENERAL_INPUT_RANGE is THRESHOLD_RANGE
+
+
 def test_out_of_range_cells_are_named_by_place_and_whole_percent() -> None:
     """범위는 사사오입한 정수 % 로 견준다 — 49.5% 는 50 이라 들고 300.5% 는 301 이라 밖이다. 빈칸 ·
     값이 아닌 칸은 보지 않는다(저장 검증이 따로 거부한다)."""
