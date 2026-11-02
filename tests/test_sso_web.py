@@ -1,4 +1,4 @@
-# Purpose: 통합인증 경로 넷의 쿠키 속성·PRG·거절 사유·화면 이스케이프를 검증한다.
+# Purpose: 통합인증 경로 다섯의 쿠키 속성·PRG·거절 사유·화면 이스케이프를 검증한다.
 
 from __future__ import annotations
 
@@ -23,7 +23,14 @@ from capa_simulation.auth import names, runtime, web
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity, IdentityProblem, identity_from_cookies
 from capa_simulation.auth.server import sso_routes
-from capa_simulation.auth.tokens import issue_session, issue_state, verify_session, verify_state
+from capa_simulation.auth.tokens import (
+    SESSION_LEEWAY,
+    decode_session,
+    issue_session,
+    issue_state,
+    verify_session,
+    verify_state,
+)
 
 FORM = {"content-type": "application/x-www-form-urlencoded"}
 
@@ -248,17 +255,23 @@ def test_callback_success_sets_the_session_cookie_and_clears_the_rest() -> None:
     assert session.has("httponly") and session.has("secure")
     assert session.get("samesite") == "lax"
     assert session.get("path") == "/"
-    assert session.get("max-age") == str(6 * 3600)
+    assert session.get("max-age") == str(6 * 3600 + SESSION_LEEWAY)
     assert not session.has("domain")
     claims = verify_session(session.value, cfg, now=int(time.time()))
     assert claims.loginid == LOGINID and claims.name == "개발 사용자"
+    decoded = decode_session(session.value, cfg, now=int(time.time()))
+    assert decoded.sid == claims.sid and len(decoded.sid) >= 16
+    assert decoded.auth_time == decoded.iat
     state = response.cookie(login.cookie_name)
     assert state is not None and state.deleted and state.has("secure")
     assert state.get("samesite") == "none" and state.get("path") == "/"
     attempt = response.cookie(cfg.attempt_cookie)
     assert attempt is not None and attempt.deleted and attempt.has("secure")
-    assert runtime.recent_events()[0].event == "login_ok"
-    assert runtime.recent_events()[0].value("loginid") == LOGINID
+    login_ok = runtime.recent_events()[0]
+    assert login_ok.event == "login_ok"
+    assert login_ok.value("loginid") == LOGINID
+    assert (login_ok.value("hours"), login_ok.value("max_hours")) == ("6", "24")
+    assert login_ok.value("sid") == claims.sid[:8] and login_ok.value("jti") == claims.jti[:8]
 
 
 def test_callback_get_goes_back_to_the_app() -> None:
@@ -679,7 +692,7 @@ def test_identity_survives_until_logout() -> None:
 def test_routes_are_404_while_off(path: str) -> None:
     runtime.reset()
 
-    method = "POST" if path == names.CALLBACK_PATH else "GET"
+    method = "POST" if path in (names.CALLBACK_PATH, names.REFRESH_PATH) else "GET"
     response = http(routes_app(), method, path, headers=FORM, body=b"a=1")
 
     assert response.status == 404
@@ -689,7 +702,7 @@ def test_routes_are_404_while_off(path: str) -> None:
 def test_routes_show_the_setup_page_while_broken(path: str) -> None:
     use_config(drop=[names.ENV_ISSUER, names.ENV_SIGNING_CERT])
 
-    method = "POST" if path == names.CALLBACK_PATH else "GET"
+    method = "POST" if path in (names.CALLBACK_PATH, names.REFRESH_PATH) else "GET"
     response = http(routes_app(), method, path, headers=FORM, body=b"a=1")
 
     assert response.status == 503

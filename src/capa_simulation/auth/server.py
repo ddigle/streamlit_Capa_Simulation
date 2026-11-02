@@ -1,9 +1,9 @@
-# Purpose: 진입 파일이 부르는 셋 — 통합인증 기동·경로 넷·문지기 미들웨어.
+# Purpose: 진입 파일이 부르는 셋 — 통합인증 기동·경로 다섯·문지기 미들웨어.
 
 """진입 파일 창구.
 
 `capa_server.py` 가 모듈 수준에서 `start_sso()` 를 부른 뒤 `st.App(routes=sso_routes(),
-middleware=sso_middleware())` 로 감싼다. 꺼짐 모드에서도 같은 파일로 뜬다 — 경로 넷은 404 를,
+middleware=sso_middleware())` 로 감싼다. 꺼짐 모드에서도 같은 파일로 뜬다 — 경로 다섯은 404 를,
 문지기는 모두 통과를 돌려준다. 이 모듈은 PyJWT 를 import 하지 않는다(경로 처리기 안에서 필요할
 때만).
 """
@@ -26,12 +26,13 @@ def start_sso() -> SsoConfig:
 
 
 def sso_routes() -> list[BaseRoute]:
-    """우리 경로 넷. Streamlit 의 예약 접두 · `st.login` 경로와 겹치지 않는다."""
+    """우리 경로 다섯. Streamlit 의 예약 접두 · `st.login` 경로와 겹치지 않는다."""
     return [
         Route(names.CALLBACK_PATH, web.callback, methods=["GET", "POST"]),
         Route(names.LOGIN_PATH, web.login, methods=["GET"]),
         Route(names.LOGOUT_PATH, web.logout, methods=["GET"]),
         Route(names.ERROR_PATH, web.error, methods=["GET"]),
+        Route(names.REFRESH_PATH, web.refresh, methods=["POST"]),
     ]
 
 

@@ -13,7 +13,14 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 from asgi_driver import App, AsgiResponse, Message, http, websocket_connect, websocket_talk
-from sso_support import LOGINID, PUBLIC_URL, environ_from_lines, hidden_field, use_config
+from sso_support import (
+    LOGINID,
+    PUBLIC_URL,
+    environ_from_lines,
+    hidden_field,
+    refresh_headers,
+    use_config,
+)
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -21,9 +28,9 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from capa_simulation.auth import gate, names, runtime
+from capa_simulation.auth import gate, names, runtime, web
 from capa_simulation.auth.config import SsoConfig
-from capa_simulation.auth.gate import SsoGate, is_navigation, origin_allowed
+from capa_simulation.auth.gate import SsoGate, is_navigation
 from capa_simulation.auth.server import sso_middleware, sso_routes
 from capa_simulation.auth.tokens import (
     SESSION_LEEWAY,
@@ -32,6 +39,11 @@ from capa_simulation.auth.tokens import (
     renew_session,
     verify_state,
 )
+from capa_simulation.auth.web import origin_allowed
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+from sso_mock_idp import MockOptions, build_app, env_lines, make_signing_identity  # noqa: E402
 
 
 def revoke(cfg: SsoConfig, issued: SessionClaims) -> None:
@@ -39,10 +51,6 @@ def revoke(cfg: SsoConfig, issued: SessionClaims) -> None:
     until = issued.auth_time + cfg.session_max_seconds + SESSION_LEEWAY
     runtime.revoke_session(issued.sid, until=until)
 
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from sso_mock_idp import MockOptions, build_app, env_lines, make_signing_identity  # noqa: E402
 
 NAVIGATE = {"sec-fetch-mode": "navigate", "sec-fetch-dest": "document", "sec-fetch-site": "none"}
 ORIGIN = {"origin": PUBLIC_URL}
@@ -73,7 +81,7 @@ async def _echo(websocket: WebSocket) -> None:
 
 
 def gated_app() -> App:
-    """문지기 + 우리 경로 넷 + 앱 자리(모든 http 경로 · `/_stcore/stream` · 메아리 websocket)."""
+    """문지기 + 우리 경로 다섯 + 앱 자리(모든 http 경로 · `/_stcore/stream` · 메아리 websocket)."""
     inner = Starlette(
         routes=[
             *sso_routes(),
@@ -221,12 +229,32 @@ def test_expired_or_revoked_cookie_is_treated_as_missing() -> None:
 
 
 def test_sso_routes_stay_public() -> None:
-    use_config()
+    cfg = use_config()
 
     assert http(gated_app(), "GET", names.LOGIN_PATH).status == 302
     assert http(gated_app(), "GET", names.LOGOUT_PATH).status == 200
     assert http(gated_app(), "GET", f"{names.ERROR_PATH}?code=state_missing").status == 400
     assert http(gated_app(), "GET", names.CALLBACK_PATH).status == 303
+    refresh = http(gated_app(), "POST", names.REFRESH_PATH, headers=refresh_headers(cfg, None))
+    assert (refresh.status, refresh.text) == (401, "login required"), "처리기가 판정한다(302 아님)"
+
+
+def test_refresh_path_never_goes_to_the_idp() -> None:
+    """주소창에 친 GET 도 IdP 로 가지 않는다(405) — fetch 는 IdP 로 보내면 안 된다.
+
+    앱 자리의 모든 GET 경로(Streamlit 정적 마운트의 SPA 대체 자리)가 있어도 그 껍데기를 내지 않는다.
+    """
+    cfg = use_config()
+    signed_in = refresh_headers(cfg, None) | {"cookie": session_cookie(cfg)["cookie"]}
+
+    for method, headers in (("GET", NAVIGATE), ("HEAD", NAVIGATE), ("GET", signed_in)):
+        typed = http(gated_app(), method, names.REFRESH_PATH, headers=headers)
+        assert typed.status == 405, (method, typed.text)
+        assert typed.header("allow") == "POST" and typed.header("location") is None
+        assert not typed.set_cookies
+    posted = http(gated_app(), "POST", names.REFRESH_PATH, headers=refresh_headers(cfg, None))
+    assert posted.status == 401 and posted.header("location") is None
+    assert not posted.set_cookies
 
 
 @pytest.mark.parametrize("path", names.STREAMLIT_AUTH_PATHS)
@@ -623,8 +651,8 @@ def test_is_navigation_rules() -> None:
 # --- 가짜 IdP 와 끝까지 -----------------------------------------------------------------------
 
 
-def test_full_login_round_trip_with_the_mock_idp() -> None:
-    """GET / → IdP → form_post 콜백(상태 쿠키) → 303 → 세션 쿠키로 앱 · websocket 통과."""
+def test_full_login_round_trip_with_the_mock_idp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET / → IdP → form_post 콜백(상태 쿠키) → 303 → 세션 쿠키로 앱 · websocket 통과 → 갱신."""
     identity = make_signing_identity()
     options = MockOptions(port=8591, app_url=PUBLIC_URL)
     environ = environ_from_lines(env_lines(options, identity, secrets.token_urlsafe(48)))
@@ -669,3 +697,15 @@ def test_full_login_round_trip_with_the_mock_idp() -> None:
     stream = websocket_connect(app, "/_stcore/stream", headers={**ORIGIN, **signed_in})
     assert stream == "accepted"
     assert runtime.recent_events()[0].event == "login_ok"
+
+    # 쓰는 동안의 갱신 — 61초 뒤(서버 60초 규칙) 갱신 경로가 새 쿠키를 주고 그 쿠키로 앱이 열린다.
+    later = int(time.time()) + 61
+    monkeypatch.setattr(web, "_now", lambda: later)
+    monkeypatch.setattr(gate, "time", SimpleNamespace(time=lambda: float(later)))
+    renewed = http(app, "POST", names.REFRESH_PATH, headers=refresh_headers(cfg, session.value))
+    assert renewed.status == 204, renewed.text
+    fresh = renewed.cookie(cfg.session_cookie)
+    assert fresh is not None and fresh.value != session.value
+    refreshed = {"cookie": f"{fresh.name}={fresh.value}"}
+    assert passed(http(app, "GET", "/", headers={**NAVIGATE, **refreshed}))
+    assert runtime.recent_events()[0].event == "login_ok", "갱신은 사건 고리에 적지 않는다"

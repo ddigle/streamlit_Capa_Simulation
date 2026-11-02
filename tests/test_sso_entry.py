@@ -1,4 +1,4 @@
-# Purpose: 운영 진입 파일을 Streamlit 이 st.App 으로 찾고 경로 넷·문지기를 싣는지 고정한다.
+# Purpose: 운영 진입 파일을 Streamlit 이 st.App 으로 찾고 경로 다섯·문지기를 싣는지 고정한다.
 
 """진입 파일 시험.
 
@@ -68,6 +68,7 @@ def test_the_entry_is_discovered_as_an_st_app_with_routes_and_gate() -> None:
         [names.LOGIN_PATH, ["GET", "HEAD"]],
         [names.LOGOUT_PATH, ["GET", "HEAD"]],
         [names.ERROR_PATH, ["GET", "HEAD"]],
+        [names.REFRESH_PATH, ["POST"]],
     ]
     assert result["middleware"] == ["capa_simulation.auth.gate.SsoGate"]
 

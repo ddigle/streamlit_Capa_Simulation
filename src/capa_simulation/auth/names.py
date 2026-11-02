@@ -66,7 +66,7 @@ LOGOUT_PATH = "/auth/sso/logout"
 ERROR_PATH = "/auth/sso/error"
 # 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(POST · 본문 없음 · 같은 출처).
 REFRESH_PATH = "/auth/sso/refresh"
-SSO_PATHS: tuple[str, ...] = (CALLBACK_PATH, LOGIN_PATH, LOGOUT_PATH, ERROR_PATH)
+SSO_PATHS: tuple[str, ...] = (CALLBACK_PATH, LOGIN_PATH, LOGOUT_PATH, ERROR_PATH, REFRESH_PATH)
 # Streamlit 의 상태 검사. C-DEP 이 본다 — 막힘 모드에서도 열어 둔다.
 HEALTH_PATH = "/_stcore/health"
 # Streamlit 자체 `st.login` 경로. 우리 경로와 이름이 겹치지 않게 피했고, 통합인증이 켜지면 막는다.

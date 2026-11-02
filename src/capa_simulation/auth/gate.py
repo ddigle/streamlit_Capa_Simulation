@@ -14,7 +14,8 @@
    websocket 이면 닫는다.
 4. 막힘이면 상태 검사만 넘기고 `GET /` 는 설정 화면 200(상태 검사가 `/` 를 봐도 재시작 고리가
    생기지 않게), 그 밖 http 는 503(탐색이면 설정 화면), websocket 은 수락 전 닫는다.
-5. 켜짐: 공개 경로(정확 일치 — 상태 검사와 우리 경로 넷)는 넘기고, 나머지는 세션 쿠키를 검증한다.
+5. 켜짐: 공개 경로(정확 일치 — 상태 검사와 우리 경로 다섯)는 넘기고(갱신 경로는 POST 만 — 그
+   밖은 405), 나머지는 세션 쿠키를 검증한다.
    신원이 있으면(websocket 은 Origin 까지 맞으면) 넘기고, 없으면 websocket 은 수락 전 close 1008
    (→ HTTP 403), 최상위 탐색은 IdP 로 302, 그 밖(fetch · iframe · 업로드)은 401.
 6. 넘긴 websocket 은 **브라우저가 보낸 메시지마다** 핸드셰이크 때의 신원을 다시
@@ -37,7 +38,7 @@ import time
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from capa_simulation.auth import names, runtime
-from capa_simulation.auth.config import SsoConfig, SsoMode, url_origin
+from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import (
     Identity,
     IdentityProblem,
@@ -46,7 +47,14 @@ from capa_simulation.auth.identity import (
     session_end_of,
     session_problem,
 )
-from capa_simulation.auth.web import config_page, next_from_scope, start_login, text_response
+from capa_simulation.auth.web import (
+    LOGIN_REQUIRED,
+    config_page,
+    next_from_scope,
+    origin_allowed,
+    start_login,
+    text_response,
+)
 
 POLICY_VIOLATION = 1008
 _READ_METHODS = ("GET", "HEAD")
@@ -85,15 +93,6 @@ def _is_public(path: str, method: str) -> bool:
     if path == names.HEALTH_PATH:
         return method in _READ_METHODS
     return path in names.SSO_PATHS
-
-
-def origin_allowed(origin: str | None, cfg: SsoConfig) -> bool:
-    """websocket 의 Origin 이 `CAPA_PUBLIC_URL` 의 출처와 같은가.
-
-    Streamlit 자체는 localhost · 기계 IP 출처도 받는다 — 운영 출처 하나로 좁힌다.
-    """
-    expected = cfg.public_origin
-    return bool(origin) and bool(expected) and url_origin(origin or "") == expected
 
 
 class _WatchedSocket:
@@ -174,6 +173,12 @@ class SsoGate:
             await self._broken(cfg, kind, path, method, scope, receive, send)
             return
 
+        if kind == "http" and path == names.REFRESH_PATH and method != "POST":
+            # 갱신 경로는 POST 하나다. 라우터의 405 에 맡기면 Streamlit 정적 마운트가 모르는
+            # GET 경로에 index.html 을 낸다(SPA) — 주소창 GET 이 앱 껍데기 · IdP 로 가지 않게
+            # 여기서 답한다.
+            await self._method_not_allowed(scope, receive, send)
+            return
         if kind == "http" and _is_public(path, method):
             await self.app(scope, receive, send)
             return
@@ -198,7 +203,7 @@ class SsoGate:
             response = start_login(cfg, parse_cookie_header(headers.get("cookie")), next_path, now)
             await response(scope, receive, send)
             return
-        await text_response("login required", 401)(scope, receive, send)
+        await text_response(LOGIN_REQUIRED, 401)(scope, receive, send)
 
     async def _broken(
         self,
@@ -231,6 +236,12 @@ class SsoGate:
             await self._close(send)
             return
         await text_response(text, status)(scope, receive, send)
+
+    @staticmethod
+    async def _method_not_allowed(scope: Scope, receive: Receive, send: Send) -> None:
+        response = text_response("Method Not Allowed", 405)
+        response.headers["Allow"] = "POST"
+        await response(scope, receive, send)
 
     @staticmethod
     async def _close(send: Send) -> None:

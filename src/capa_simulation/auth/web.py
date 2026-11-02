@@ -1,4 +1,4 @@
-# Purpose: 통합인증 경로 넷·로그인 시작·쿠키·돌아갈 자리 정화·작은 HTML 화면.
+# Purpose: 통합인증 경로 다섯(로그인 갱신 포함)·로그인 시작·쿠키·돌아갈 자리 정화·작은 HTML 화면.
 
 """통합인증 웹 쪽.
 
@@ -12,6 +12,8 @@
   자동으로 보내지 않는다.
 - `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. 진단이 없거나 지났으면 질의 `code` 를
   싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다.
+- `POST /auth/sso/refresh` — 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(204). 같은
+  출처 · 갱신 머리 · 본문 없음 · 유효한 세션 쿠키가 있어야 하고, 사건 고리에 적지 않고 누계만 센다.
 
 모든 주소(Location · 링크)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청의 Host · `X-Forwarded-*` 는 보지
 않는다(앞단을 거치며 포트가 사라지는 일을 막는다). 화면에 싣는 값은 모두 `html.escape` 하고, 토큰 ·
@@ -38,7 +40,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from capa_simulation.auth import names, runtime
-from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
+from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, url_origin
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.auth.tokens import (
     SESSION_LEEWAY,
@@ -48,7 +50,9 @@ from capa_simulation.auth.tokens import (
     decode_session,
     issue_session,
     issue_state,
+    renew_session,
     verify_id_token,
+    verify_session,
     verify_state,
 )
 
@@ -62,6 +66,11 @@ MAX_SESSION_COOKIE_BYTES = 3584
 FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
 
 NO_STORE = {"Cache-Control": "no-store"}
+# 갱신 경로의 거절 글(짧은 text — 브라우저 스크립트는 상태만 본다).
+REFRESH_HEADER_REFUSAL = "refresh header required"
+REFRESH_ORIGIN_REFUSAL = "cross-origin refresh refused"
+REFRESH_BODY_REFUSAL = "no body expected"
+LOGIN_REQUIRED = "login required"
 HTML_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
@@ -244,6 +253,36 @@ def redirect(cfg: SsoConfig, path: str, status: int) -> RedirectResponse:
     return RedirectResponse(public_link(cfg, path), status_code=status, headers=NO_STORE)
 
 
+# --- 출처 ------------------------------------------------------------------------------------
+
+
+def origin_allowed(origin: str | None, cfg: SsoConfig) -> bool:
+    """요청의 Origin 이 `CAPA_PUBLIC_URL` 의 출처와 같은가(websocket · 갱신 경로).
+
+    Streamlit 자체는 localhost · 기계 IP 출처도 받는다 — 운영 출처 하나로 좁힌다. `null` 은 꼴이
+    아니라 늘 거절이다.
+    """
+    expected = cfg.public_origin
+    return bool(origin) and bool(expected) and url_origin(origin or "") == expected
+
+
+def refresh_request_problem(headers: Mapping[str, str], cfg: SsoConfig) -> str | None:
+    """갱신 요청의 머리 · 출처 판정 — 거절 글 또는 `None`(통과). 머리 이름은 대소문자를 가리지
+    않는다(Starlette `Headers`).
+
+    사용자 정의 머리는 같은 출처 fetch 만 실을 수 있고(폼은 못 싣고 교차 출처는 사전 요청에서
+    막힌다), Origin 은 공개 주소 출처여야 하며 `Sec-Fetch-Site` 가 있으면 `same-origin` 이어야 한다.
+    """
+    if headers.get(names.REFRESH_HEADER.lower()) != names.REFRESH_HEADER_VALUE:
+        return REFRESH_HEADER_REFUSAL
+    if not origin_allowed(headers.get("origin"), cfg):
+        return REFRESH_ORIGIN_REFUSAL
+    site = headers.get("sec-fetch-site")
+    if site is not None and site != "same-origin":
+        return REFRESH_ORIGIN_REFUSAL
+    return None
+
+
 # --- 돌아갈 자리 ------------------------------------------------------------------------------
 
 
@@ -307,12 +346,16 @@ def clear_cookie(response: Response, name: str, *, secure: bool, samesite: SameS
     response.delete_cookie(name, path="/", secure=secure, httponly=True, samesite=samesite)
 
 
-def set_session_cookie(response: Response, cfg: SsoConfig, token: str) -> None:
+def set_session_cookie(
+    response: Response, cfg: SsoConfig, token: str, *, end: int, now: int
+) -> None:
+    """세션 쿠키를 심는다. Max-Age 는 세션의 끝 − 지금 + 여유(30초)다 — 서버가 끝 + 여유까지 받는
+    동안 브라우저가 쿠키를 먼저 버리지 않게(끝 직후 여유 안의 갱신 요청에도 쿠키가 실린다)."""
     set_cookie(
         response,
         cfg.session_cookie,
         token,
-        max_age=cfg.session_seconds,
+        max_age=max(0, end - now) + SESSION_LEEWAY,
         secure=cfg.secure_cookies,
         samesite="lax",
     )
@@ -598,16 +641,17 @@ def _fail_now(cfg: SsoConfig, code: str, status: int) -> Response:
     return error_page(cfg, code, None, status=status)
 
 
-async def _read_body(request: Request) -> bytes | None:
-    """본문을 64 KiB 까지만 읽는다. 넘치면 None — uvicorn 에는 본문 크기 제한이 없다."""
+async def _read_body(request: Request, *, limit: int = MAX_BODY_BYTES) -> bytes | None:
+    """본문을 `limit` 바이트(기본 64 KiB)까지만 읽는다. 선언 길이가 넘거나 흐름이 넘치면 None —
+    uvicorn 에는 본문 크기 제한이 없다."""
     declared = request.headers.get("content-length")
     if declared is not None:
-        if not declared.isdigit() or int(declared) > MAX_BODY_BYTES:
+        if not declared.isdigit() or int(declared) > limit:
             return None
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
-        if len(body) > MAX_BODY_BYTES:
+        if len(body) > limit:
             return None
     return bytes(body)
 
@@ -683,14 +727,19 @@ async def callback(request: Request) -> Response:
         cfg, loginid=login.loginid, name=login.name, dept=login.dept, now=now
     )
     response = redirect(cfg, sanitize_next(claims.next_path), 303)
-    set_session_cookie(response, cfg, token)
+    set_session_cookie(response, cfg, token, end=session.exp, now=now)
     if len(response.raw_headers[-1][1]) > MAX_SESSION_COOKIE_BYTES:
         return _fail(cfg, "session_cookie_too_large", state=state, now=now, loginid=login.loginid)
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
     response.headers["Referrer-Policy"] = "no-referrer"
     runtime.record_event(
-        "login_ok", loginid=login.loginid, hours=str(cfg.session_hours), jti=session.jti[:8]
+        "login_ok",
+        loginid=login.loginid,
+        hours=str(cfg.session_hours),
+        max_hours=str(cfg.session_max_hours),
+        sid=session.sid[:8],
+        jti=session.jti[:8],
     )
     if login.name is None:
         runtime.record_event("username_missing", loginid=login.loginid)
@@ -698,7 +747,11 @@ async def callback(request: Request) -> Response:
 
 
 async def login(request: Request) -> Response:
-    """`GET /auth/sso/login?next=` — 이미 로그인이면 next 로, 아니면 로그인 시작."""
+    """`GET /auth/sso/login?next=` — 이미 로그인이면 next 로, 아니면 로그인 시작.
+
+    이미 로그인이면 `auth_time` 을 새로 만들지 않는다 — 새 `auth_time` 은 ADFS 콜백(nonce · state
+    검증)에서만 난다(최대 시간 우회를 막는다).
+    """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
     if guarded is not None:
@@ -758,3 +811,44 @@ async def error(request: Request) -> Response:
         if code not in allowed_reason_codes(cfg):
             code = "unknown"
     return error_page(cfg, code, record, status=400)
+
+
+async def refresh(request: Request) -> Response:
+    """`POST /auth/sso/refresh` — 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다.
+
+    판정 차례는 머리 · 출처(403) → 본문(400) → 세션 쿠키(401 — 엄격, 갱신 표를 보지 않음 · sid
+    폐기도) → 다시 발급이다. 교차 출처 시도가 세션 유효 여부를 응답 차이로 알아낼 길을 막고, 쿠키
+    검증(HMAC)보다 싼 것을 먼저 본다. 직전 발급 60초 안이거나 상한이라 늘 것이 없으면 204(쿠키
+    없음), 다시 발급하면 204 + 새 세션 쿠키와 갱신 표. 거절은 쿠키를 건드리지 않는다. 사건
+    고리에도 서버 로그에도 적지 않고 누계(`runtime.count_refresh`)만 센다 — 5분마다 사람마다 한
+    줄은 소음이다.
+    """
+    cfg = runtime.config()
+    guarded = mode_guard(cfg)
+    if guarded is not None:
+        return guarded
+    now = _now()
+    refusal = refresh_request_problem(request.headers, cfg)
+    if refusal is not None:
+        runtime.count_refresh("forbidden")
+        return text_response(refusal, 403)
+    if await _read_body(request, limit=0) is None:
+        runtime.count_refresh("bad_request")
+        return text_response(REFRESH_BODY_REFUSAL, 400)
+    try:
+        claims = verify_session(request.cookies.get(cfg.session_cookie, ""), cfg, now=now)
+    except SsoReject:
+        claims = None
+    if claims is None or runtime.session_revoked(claims.sid, now=now):
+        runtime.count_refresh("unauthorized")
+        return text_response(LOGIN_REQUIRED, 401)
+    renewed = renew_session(cfg, claims, now=now)
+    response = Response(status_code=204, headers=NO_STORE)
+    if renewed is None:
+        runtime.count_refresh("skipped")
+        return response
+    token, fresh = renewed
+    set_session_cookie(response, cfg, token, end=fresh.exp, now=now)
+    runtime.note_renewal(fresh.sid, fresh.exp, now=now)
+    runtime.count_refresh("renewed")
+    return response

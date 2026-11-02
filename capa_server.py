@@ -10,7 +10,7 @@
   **빈 화면**이 된다(실측). 이 파일에는 다른 `st.App` · `Starlette` 호출을 두지 않는다.
 - 개발 PC · 사내 WebIDE · 시험 · 화면 확인은 지금처럼 `streamlit run app.py` 다. 그때 통합인증은
   꺼짐이거나, 켜진 설정이면 `app.py` 가 「문지기 없이 시작됨」 으로 멈춘다.
-- 꺼짐 모드(`ADFS_CLIENT_ID` 없음)에서도 이 파일로 뜬다 — 경로 넷은 404, 문지기는 모두 통과.
+- 꺼짐 모드(`ADFS_CLIENT_ID` 없음)에서도 이 파일로 뜬다 — 경로 다섯은 404, 문지기는 모두 통과.
 """
 
 from pathlib import Path
