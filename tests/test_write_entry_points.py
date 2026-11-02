@@ -220,7 +220,7 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "_save_execution_capacity",
         "replace_global_execution_capacity",
     ): VERSION_CHECK,
-    (f"{_PARTS}/past_data_management.py", "_render_save", "replace_global_past_data"): (
+    (f"{_PARTS}/past_data_management.py", "save_past_tables", "replace_global_past_data"): (
         SAME_REPLACE
     ),
     (

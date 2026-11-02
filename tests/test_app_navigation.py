@@ -658,10 +658,12 @@ def test_only_a_page_that_stops_itself_counts_as_a_completed_run(
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is complete
 
 
-def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: AppTest) -> None:
+def test_the_intro_summary_sends_every_official_month_once_per_value(_app: AppTest) -> None:
     """내장 시드(공식버전 하나)에서 요약이 실제로 계산되어 나간다. 값은 회차마다 같다.
 
-    같아야 Streamlit 이 다시 보내지 않고 브라우저 JS 도 다시 불리지 않는다.
+    같아야 Streamlit 이 다시 보내지 않고 브라우저 JS 도 다시 불리지 않는다. 값은 공식버전의 모든
+    달이고 화면은 그중 여섯 달 창을 그린다 — 기본 창의 첫 달 차례(`start`)가 함께 간다(2026-11-02
+    사용자 요청(검수표) home-02 — 창은 브라우저가 −·+ 로 옮긴다).
     """
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
@@ -672,8 +674,9 @@ def test_the_intro_summary_sends_the_official_six_months_once_per_value(_app: Ap
     assert first["available"] is True, first
     assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
     count = first["count"]
-    assert 1 <= count <= 6
-    for key in ("months", "density", "wafer", "bn", "mix"):
+    assert count >= 1 and first["window"] == 6
+    assert 0 <= first["start"] <= max(0, count - first["window"])
+    for key in ("months", "density", "wafer", "bn", "mix", "past"):
         assert len(first[key]) == count, key
     assert first["products"] and all(item["color"].startswith("#") for item in first["products"])
     # 머리 줄 토글 셋의 값도 같은 회차에 함께 간다. 빈 저장소에는 선행 B/O·선행 입고 입력도 비교
