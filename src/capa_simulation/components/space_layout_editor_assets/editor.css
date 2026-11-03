@@ -3,8 +3,9 @@
   display: flex; flex-direction: column; gap: 8px;
   font-family: var(--sle-font); color: var(--sle-text);
 }
-/* 도구 줄은 한 줄·고정 높이다 — 고르거나 단추 상태가 바뀌어도 도면이 위아래로 튀지 않는다. 좁은 화면에서는
-   접지 않고 옆으로 민다(위아래 여백은 단추 초점 테가 잘리지 않을 자리). 밀려도 `적용` 은 오른쪽 끝에 붙어 남는다. */
+/* 도구 줄은 한 줄·고정 높이다 — 고르거나 단추 상태가 바뀌어도 도면이 위아래로 튀지 않는다. 넘치면 JS `fitToolbar` 가
+   창 폭으로만 정하는 접는 차례(아래 「FAB 도구 줄」·편집 ①)를 더하고 마지막에 둘째 줄로 내린다(⑥). 그 사이 잠깐은 옆으로
+   민다(위아래 여백은 단추 초점 테가 잘리지 않을 자리). 밀려도 `적용` 은 오른쪽 끝에 붙어 남는다. */
 .sle-toolbar {
   display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 35px; box-sizing: border-box;
   padding: 4px 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
@@ -26,7 +27,7 @@
 .sle-canvas:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: -2px; }
 .sle-steps button[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle button:disabled { opacity: 0.45; cursor: default; }
-/* 편집 중 고정 기준일 칩(층 편집 — 옛 「기준일 · 편집 중 고정」 줄을 도구 줄로 옮겼다, 2026-11-03). */
+/* 편집 중 고정 기준일 칩(층 편집 도구 줄 — 결정 D12, 여백 걷기). */
 .sle-pinchip {
   display: inline-flex; align-items: center; gap: 4px; height: 23px; padding: 0 8px; box-sizing: border-box; border-radius: 8px;
   border: 1px dashed var(--sle-border-strong); font-size: 0.78rem; color: var(--sle-muted); white-space: nowrap;
@@ -468,8 +469,7 @@
 .sle select:disabled { opacity: 0.45; }
 .sle select:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
 /* 선택 칸(왼쪽 칸 「선택」) — 위 이름 한 줄, 아래 X·Y·폭·높이 두 열, 그 아래 고른 것에 맞는 칸(이름·층 보내기·Main 설비명 /
-   도면 요소 속성)을 한 줄씩. 왼쪽 칸에서는 칸이 생기고 사라져도 도면이 움직이지 않아 안 쓰는 칸은 자리 없이 숨긴다(옛 자리는
-   도면 위라 자리를 남겼다). */
+   도면 요소 속성)을 한 줄씩. 왼쪽 칸에서는 칸이 생기고 사라져도 도면이 움직이지 않아 안 쓰는 칸은 자리 없이 숨긴다. */
 .sle-inspector { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .sle-inspector-title { min-width: 0; overflow-wrap: anywhere; }
 .sle-inspector-name { display: inline; }
@@ -629,7 +629,7 @@
 .sle.is-view.is-pinned .sle-pinned { display: flex !important; }
 
 /* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ----
-   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitFabBar` 가 접는
+   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitToolbar` 가 접는
    차례를 하나씩 더한다 — ① 선택 안내와 「기준일」·「미확인」 말머리(화면에서만 — 낭독기는 읽는다), ② 미확인 대수
    (「!」만 — 대수는 풍선), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 그래도 넘치면(더 좁은 창) 요약도
    말줄임(풍선에 온 글) — 화면 밖으로 밀려 안 보이는 것보다 낫다. 말줄임은 앞머리가 읽히는 폭(기준일 4em·요약
@@ -657,11 +657,18 @@
 }
 .sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }
 .sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }
-/* ⑥ 둘째 줄 — 보기에서 숨는 빈 칸(`sle-spacer`, 선택 줄 바로 뒤)이 온 폭 줄바꿈이 된다. 층 보기 도구 줄은 넘치면 곧장
-   이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px 에서 「배치 …」 로 잘렸다(E2E r1). */
+/* ⑥ 둘째 줄 — 빈 칸(`sle-spacer` — 보기에서는 숨는 칸, 선택 줄 바로 뒤 · 편집에서는 「빼기·지우기」 뒤)이 온 폭 줄바꿈이
+   된다. 층 보기 도구 줄은 넘치면 곧장 이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px
+   에서 「배치 …」 로 잘렸다(E2E r1). 편집은 「호기 정보」·「고정」·「적용」 이 둘째 줄이다(글도 다시 선다 — 자리가 넉넉하다). */
 .sle-toolbar.is-fit6 { flex-wrap: wrap; height: auto; row-gap: 2px; }
-.sle.is-view .sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
+.sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
 .sle-toolbar.is-fit6 .sle-summary { flex: 1 1 10em; min-width: 0; overflow: visible; white-space: normal; }
+/* 편집 도구 줄 ① — 「호기 정보」·「고정」 은 아이콘만, 기준일 칩은 날짜만(화면에서만 — 낭독기는 읽고 풍선은 그대로다).
+   사이드바를 연 1280px 창의 층 편집이 3px 넘쳤고, 1100px 창은 이것으로도 모자라 ⑥ 으로 간다. */
+.sle-toolbar.is-efit1:not(.is-fit6) .sle-sheet-toggle-word, .sle-toolbar.is-efit1:not(.is-fit6) .sle-lock-word,
+.sle-toolbar.is-efit1 .sle-pinchip-word {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 .sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }
 
 /* ---- 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청) ----

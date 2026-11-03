@@ -646,7 +646,7 @@ def invalid_equipment_rows(
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
 
 
-# 층 상세 「호기 정보」 창(도면 위 — 옛 아래 호기 표, 2026-11-03 사용자 요청으로 옮김)의 칸 —
+# 층 상세 「호기 정보」 창(도면 위 — 2026-11-03 사용자 요청 「하단이 아니라 편집기 안에서」)의 칸 —
 # 요청한 차례 그대로(2026-10-23 사용자 요청 3). 칸 이름은 설비 마스터 그대로다: 요청의 「Qual 실적」
 # 은 `Qual실적`, 「반입/Qual일정」 은 `반입/Qual 이력`, 「단계」 는 기준일(페이더)의 상태 글자
 # `단계`(`build_space_equipment_status` 가 `상태` 를 옮겨 적은 칸 — 도면 상자의 단계 이름과 같다)다.

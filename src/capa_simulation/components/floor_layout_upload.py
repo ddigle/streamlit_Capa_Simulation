@@ -142,12 +142,12 @@ def render_floor_layout_button(
     사이드바로). 팝업 함수를 사이드바 `with` 안에서 부르지 않으려고 단추와 팝업을 가른다. `disabled`
     면 단추를 끄고 `reason` 을 풍선으로 둔다 — 층 캔버스·배경 도면은 공용 값이라 가정 설비
     시나리오에서 잠그고(G5 와 같은 까닭 — 설계 8-4), FAB 은 설비 샘플 화면(합성 fleet 을 보는
-    중)·가정 설비 시나리오에서 잠근다.
+    중)·가정 설비 시나리오에서 잠근다. 아이콘은 없다 — 상자 제목이 같은 지도 아이콘이고, 사이드바
+    폭(245px 상자)에서 「배치 편집」 토글과 한 줄에 들어야 한다(아이콘을 달면 둘째 줄로 감겼다).
     """
     target = _DrawingTarget(floor)
     st.button(
         "도면·캔버스 편집",
-        icon=":material/map:",
         key=f"{FLOOR_LAYOUT_WIDGET_KEY}_open_{target.key}",
         on_click=_open_dialog,
         args=(target.scope,),

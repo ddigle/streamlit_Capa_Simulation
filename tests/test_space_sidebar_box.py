@@ -31,6 +31,7 @@ from test_equipment_scenario_screens import _ok, _repository, _select, _shell
 
 from capa_simulation.components.equipment_scenario_status import unscheduled_notice
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.components.space_layout_editor import space_lock_style
 from capa_simulation.navigation import SPACE_STATUS
 from capa_simulation.sidebar_status import CONDITIONS_BOX_KEY, PAGE_BOX_PREFIX, page_box_key
 
@@ -110,8 +111,11 @@ def test_the_space_box_stands_under_the_panel_and_above_the_card_on_fab_and_floo
     main = _main_keys(app)
     assert "space_floor_stage" in main and "space_fab_stage" not in main
     assert not {"space_path", "space_fab_head", "space_floor_head"} & set(main)
-    # 층 화면 머리 줄의 「… 상세 레이아웃」 제목은 걷었다 — 지금 층은 편집기 도구 줄 제목이 말한다.
+    # 층 화면에는 머리 줄 「… 상세 레이아웃」 제목이 없다 — 지금 층은 편집기 도구 줄 제목이 말한다.
     assert not any("상세 레이아웃" in str(item.value) for item in app.markdown)
+    # 「도면·캔버스 편집」 은 아이콘 없이 「배치 편집」 토글과 한 줄에 선다(리뷰 browser-2 —
+    # 아이콘을 달면 245px 상자에서 둘째 줄로 감겨 아래 견주기가 첫 화면 밖으로 밀렸다).
+    assert not _box(app).button(key="space_floor_layout_open_C1_1F").proto.icon
 
     # 배치 편집을 켜도 편집 캡션(「끌어 놓아 …」)이 본문에 서지 않는다 — 왼쪽 칸 「도움말」 과 Guide
     # 몫이다.
@@ -119,6 +123,29 @@ def test_the_space_box_stands_under_the_panel_and_above_the_card_on_fab_and_floo
     _ok(app)
     assert not any("끌어 놓아" in str(item.value) for item in app.caption)
     assert "space_floor_stage" in _main_keys(app)
+
+
+def test_the_page_draws_the_scroll_lock_style_once_on_fab_and_floor(_shell: AppTest) -> None:
+    """도구 줄 「고정」 은 `<html data-space-lock>` 만 단다 — 본문을 실제로 막는 것은 이 화면이
+    그리는 페이지 서식(`space_lock_style`)이다. 그 한 줄이 빠지면 단추는 켜져도 본문이 굴러가고,
+    다른 화면으로 가면 서식이 사라져 풀리는 규칙도 없다(리뷰 rules-7). FAB·층·편집 모두 한 번씩."""
+
+    def lock_styles(app: AppTest) -> list[str]:
+        return [
+            str(element.proto.body)
+            for element in app.get("html")
+            if 'html[data-space-lock="1"] [data-testid="stMain"]' in str(element.proto.body)
+        ]
+
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    assert lock_styles(app) == [space_lock_style()]
+    app.selectbox(key="space_status_floor_jump_fab").set_value("C1 1F").run()
+    _ok(app)
+    assert lock_styles(app) == [space_lock_style()]
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    _ok(app)
+    assert lock_styles(app) == [space_lock_style()]
 
 
 def test_the_drawing_popup_opens_from_the_body_host_not_inside_the_sidebar(

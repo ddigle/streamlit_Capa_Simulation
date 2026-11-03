@@ -231,11 +231,30 @@ def test_the_auto_bay_text_fits_the_gap_as_the_screen_sees_it() -> None:
 
 
 @pytest.mark.parametrize(
-    "raw", ["80", "B80", "b 80", " B  12A ", "B", "", "BB1", "0123456789", "B0123456789", "가B"]
+    "raw",
+    [
+        "80",
+        "B80",
+        "b 80",
+        " B  12A ",
+        "B",
+        "",
+        "BB1",
+        "bB 80",
+        "B B 80",
+        "BBB80",
+        "0123456789",
+        "B0123456789",
+        "가B",
+    ],
 )
 def test_bay_numbers_match_the_python_rule(raw: str) -> None:
+    """편집기와 파이썬이 같은 번호를 내고, 편집기 값을 다시 거쳐도 같다(입력 → 적용 → 저장에서 글이
+    바뀌지 않는다 — 리뷰 data-1)."""
     (number,) = _run({"numbers": [raw]})["numbers"]
     assert number == bay_label({"label": raw}, "B1")
+    (again,) = _run({"numbers": [number]})["numbers"]
+    assert again == number == bay_label({"label": number}, "B1")
 
 
 def test_line_patterns_are_screen_px_multiples_of_the_width() -> None:

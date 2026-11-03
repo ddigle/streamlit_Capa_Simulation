@@ -211,7 +211,7 @@ export default function (component) {
     const shown = item.kind === 'bay' ? bayCaption(item) : item.label
     return `${markKindName(item)}${shown ? ` · ${shown}` : ''}`
   }
-  // 편집 안내 첫 문단(왼쪽 칸 「도움말」 — 옛 편집기 위 캡션, 2026-11-03 사용자 요청으로 도면 위 줄을 걷고 옮겼다).
+  // 편집 안내 첫 문단(왼쪽 칸 「도움말」 — 도면 위에는 캡션을 두지 않는다, 2026-11-03 사용자 요청).
   const GUIDE = FAB
     ? '층 블록·영역·글자를 끌어 놓아 고치고 「적용」 을 누르면 이 세션에 들어갑니다(저장 전). 층 블록을 고르면 선택 칸에서 연결 층·색을 바꾸고 [열기] 로 그 층을 엽니다. S.PKG 가 아닌 자리는 블록 대신 색을 고른 영역과 글자로 그립니다.'
     : '끌어 놓아 자리·크기를 고치고 「적용」 을 누르면 이 세션의 편집본에 들어갑니다(저장 전). 조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. 층이 정해지지 않은 미배치 호기는 오른쪽 미배치 칸에 함께 뜹니다. 기준일은 편집하는 동안 고정입니다(도구 줄 칩) — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다. 도면의 호기를 오른쪽 칸에 끌어 놓으면 미배치로 돌아갑니다.'
@@ -236,7 +236,7 @@ export default function (component) {
   // 스크롤 고정이 `<html>` 에 다는 속성(그 속성을 읽는 규칙은 페이지 서식 — 파이썬 `space_lock_style`).
   const LOCK_ATTR = 'data-space-lock'
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
     : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · 호기를 두 번 누르면 「호기 정보」 창(고른 호기의 칸 · 칸 필터로 찾은 호기 도면 강조) · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
@@ -265,7 +265,7 @@ export default function (component) {
   const helpBox = q('.sle-help')
   const lockButton = q('.sle-lock')
   const pinChipDate = q('.sle-pinchip-date')
-  // 오른쪽 미배치 칸(옛 서랍 — 이름은 그대로 둔다). 접힌 띠가 `drawerTab`, 칸 상자가 `trayBox`, 그 안 굴리는 칸이 `trayScroll`.
+  // 오른쪽 미배치 칸(이름 `drawer*` 는 이 칸을 가리킨다). 접힌 띠가 `drawerTab`, 칸 상자가 `trayBox`, 그 안 굴리는 칸이 `trayScroll`.
   const drawer = q('.sle-side.is-right')
   const drawerTab = q('.sle-drawer-tab')
   const drawerCount = q('.sle-drawer-count')
@@ -370,7 +370,7 @@ export default function (component) {
   const pickHint = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
     : '호기를 누르면 정보가 여기 뜨고 「호기 정보」 창에 그 설비 칸이 보입니다(호기를 두 번 누르면 창이 열림) · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 빈 곳을 두 번 누르면 확대/전체 보기'
-  // 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청: 옛 페이지 아래 호기 표를 도면 위 창으로, 거꾸로 칸 필터 → 맞는 호기
+  // 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청: 고른 호기의 칸을 도면 위 창에, 거꾸로 칸 필터 → 맞는 호기
   // 목록 → 도면 강조). 표 재료는 data `sheet`(epoch 밖 — 파이썬 `services/space_unit_sheet`), 거르기는 `// <unit-sheet>` 구획이다.
   // 창 자리·크기·접힘은 localStorage(`SHEET_WIN_KEY`), 열림·탭·필터·강조는 sessionStorage(`SHEET_STATE_KEY` — 탭 안 기억, 층·편집을
   // 오가도 남는다)이고 파이썬으로 보내지 않는다. FAB 에는 없다.
@@ -815,8 +815,9 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 배율에 따른 글자 크기(순수 함수)
   // 도면에 붙은 글자(요소 이름표·글자 요소·층 블록 글·호기 이름표 상한·Main 설비명·베이 글)는 배율을 따라 커지고 작아진다
-  // (2026-11-03 사용자 요청 — 전체 보기에서 글자가 도면보다 커 보였다). 화면 글자 px = 기준 크기 × s, s = 화면 px 당 도면 칸
-  // (ppu)을 TEXT_REF_PPU 로 나눈 값이고 위는 TEXT_SCALE_MAX 배까지다. TEXT_MIN_PX 아래면 숨긴다(지금 글자 요소 자동의 6px).
+  // (2026-11-03 사용자 요청 — 전체 보기에서 글자가 도면보다 커 보였다). 화면 글자 px = 기준 크기 × s, s = 도면 1칸당 화면 px
+  // (ppu)을 TEXT_REF_PPU 로 나눈 값이고 위는 TEXT_SCALE_MAX 배까지다. TEXT_MIN_PX 아래면 숨긴다(지금 글자 요소 자동의 6px) — 호기
+  // 이름표·Main 설비명은 UNIT_LABEL_MIN_PX(7px) 아래에서 숨는다.
   // 표지(필요 단축 배지·견주기 꼬리표)는 s 를 CALLOUT_SCALE 범위로 묶고 크기로는 숨기지 않는다. 손잡이·초점 테·「!」 같은 UI
   // 표지와 선 굵기는 화면 px 그대로다. `tests/test_space_mark_look_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다.
   // <text-scale>
@@ -940,6 +941,16 @@ export default function (component) {
     }
     return out
   }
+  // 모양 값 고치기 — patch 의 null 은 그 키를 처음 값으로(뺌), 나머지는 덮어쓴다. 결과는 `cleanLook` 을 거친 새 객체다
+  // (도형 바꾸기 `{ shape, adj: null }` 는 프리셋만 바꾸고 모양 조절은 새 프리셋의 처음 값 — 채우기·선·뒤집기는 그대로).
+  function patchLook(look, patch, kind) {
+    const merged = { ...(look || {}) }
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (value === null) delete merged[key]
+      else merged[key] = value
+    }
+    return cleanLook(merged, kind)
+  }
   // 그릴 도형 프리셋과 모양 조절 값(고른 값, 없으면 그 프리셋의 처음 값).
   function shapeOf(look) {
     return presetOf(look ? look.shape : undefined)
@@ -1019,11 +1030,10 @@ export default function (component) {
     if ((rot || 0) % 180) return Math.min(shape.gapW * 0.75, (shape.gapH * 0.9) / width)
     return Math.min(shape.gapH * 0.75, (shape.gapW * 0.9) / width)
   }
-  // 베이 번호 — 앞의 B·b 와 그 뒤 빈칸을 떼고 BAY_NUMBER_MAX 자까지(파이썬 `bay_label` 과 같다 — 넘으면 파이썬은 거부, 편집기는 자른다).
+  // 베이 번호 — 앞의 B·b 와 그 뒤 빈칸을 모두 떼고(「BB80」 도 「80」 — 다시 거쳐도 같은 값) BAY_NUMBER_MAX 자까지(파이썬
+  // `bay_label` 과 같다 — 넘으면 파이썬은 거부, 편집기는 자른다).
   function bayNumber(text) {
-    let value = String(text ?? '').trim()
-    if (value[0] === 'B' || value[0] === 'b') value = value.slice(1).trimStart()
-    return value.slice(0, BAY_NUMBER_MAX)
+    return String(text ?? '').trim().replace(/^(?:[Bb]\s*)+/, '').slice(0, BAY_NUMBER_MAX)
   }
   // 선 모양 → 점선 무늬(화면 px 굵기 w 기준). 실선은 빈 글.
   function lineDash(style, w) {
@@ -3657,7 +3667,7 @@ export default function (component) {
     const text = hidden > 0 ? `${base} · 겹쳐 숨긴 반입 예정 ${unitCountText(hidden)}대` : base
     const node = q('.sle-summary')
     setText(node, text)
-    // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitFabBar`) — 풍선에 온 글.
+    // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitToolbar`) — 풍선에 온 글.
     setAttr(node, 'title', text)
   }
   // 보기 화면의 호기 겹침 짝(호기 → 겹치는 호기들). 격자 칸에 나눠 담아 같은 칸끼리만 견준다. 그린 호기가 바뀔 때
@@ -3977,12 +3987,7 @@ export default function (component) {
     const lined = selectedItems().filter((m) => isLined(m) && (!only || only(m)))
     const ops = []
     for (const m of lined) {
-      const merged = { ...(m.look || {}) }
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === null) delete merged[key]
-        else merged[key] = value
-      }
-      const next = cleanLook(merged, m.kind)
+      const next = patchLook(m.look, patch, m.kind)
       if (lookText(next) === lookText(m.look)) continue
       ops.push({ op: 'set', id: m.id, before: snapshot(m) })
       m.look = next
@@ -4111,12 +4116,7 @@ export default function (component) {
   function setShapes(patch, fields = {}) {
     const ops = []
     for (const m of selectedItems().filter(isShape)) {
-      const merged = { ...(m.look || {}) }
-      for (const [key, value] of Object.entries(typeof patch === 'function' ? patch(m) : patch)) {
-        if (value === null) delete merged[key]
-        else merged[key] = value
-      }
-      const next = cleanLook(merged, 'shape')
+      const next = patchLook(m.look, typeof patch === 'function' ? patch(m) : patch, 'shape')
       const moved = Object.entries(fields).some(([key, value]) => m[key] !== value)
       if (lookText(next) === lookText(m.look) && !moved) continue
       ops.push({ op: 'set', id: m.id, before: snapshot(m) })
@@ -6489,7 +6489,7 @@ export default function (component) {
       split.setAttribute('aria-valuenow', String(Math.round(S.panelWidths[side] || info[side].w)))
       sideEl(side).querySelector('.sle-side-strip').setAttribute('aria-expanded', String(info[side].open))
     }
-    // 오른쪽 미배치 칸이 펼쳐져 있는가(옛 서랍 열림 — 서랍 몫·초점 되돌림·화면 확인이 본다).
+    // 오른쪽 미배치 칸이 펼쳐져 있는가(`S.drawerOpen` — 서랍 몫·초점 되돌림·화면 확인이 본다).
     S.drawerOpen = panelOpen('right')
     trayBox.hidden = !S.drawerOpen
   }
@@ -6627,7 +6627,7 @@ export default function (component) {
     }
     legendBox.replaceChildren(...nodes)
   }
-  // 도움말 — 편집 안내 문단(옛 편집기 위 캡션)과 단축키 목록(옛 상태 줄 안내). 마운트마다 한 번 쓴다.
+  // 도움말 — 편집 안내 문단(`GUIDE`)과 단축키 목록(`HINT`). 마운트마다 한 번 쓴다.
   function buildHelp() {
     if (VIEW || helpBox.childElementCount) return
     const lead = document.createElement('p')
@@ -6784,7 +6784,7 @@ export default function (component) {
   layoutPanels()
 
   // ---------------------------------------------------------------- 「호기 정보」 창(층 보기·편집 — 브라우저 안에서만)
-  // 도면 위에 겹친 창(`.sle-sheet` — 편집기 몸 안에 묶임)이다. 「고른 호기」 는 도면에서 고른 호기의 칸(옛 페이지 아래 21칸 표 —
+  // 도면 위에 겹친 창(`.sle-sheet` — 편집기 몸 안에 묶임)이다. 「고른 호기」 는 도면에서 고른 호기의 칸(21칸 —
   // 모듈이면 같은 Main 설비 줄 전부, 편집에서 여럿 고르면 여러 줄), 「필터」 는 칸 머리 ▾ 로 거른(엑셀 자동 필터 꼴 — 칸 안 OR,
   // 칸끼리 AND, 날짜·숫자 칸은 범위도) 호기 목록이다. 필터가 걸린 동안 맞는 호기에 테(`is-filter-hit`)를 두르고 나머지를
   // 흐린다(`is-filter-out` — 필요 단축 흐림과 곱해진다). 편집에서는 오른쪽 미배치 칸 칩도 테를 두르고 칸 머리에 맞는 수를 단다.
@@ -7641,7 +7641,7 @@ export default function (component) {
     fitFaderTicks()
   }
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
-  // 층 편집 도구 줄 칩 「기준일 YYYY-MM-DD 고정」(옛 기준일 고정 줄 — 결정 D12).
+  // 층 편집 도구 줄 칩 「YYYY-MM-DD 고정」(핀 아이콘 — 결정 D12, 풍선이 「기준일은 편집하는 동안 고정」 을 말한다).
   if (!VIEW && !FAB) setText(pinChipDate, S.asOf || '—')
   if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault)
   if (VIEW && FAB) {
@@ -7664,16 +7664,21 @@ export default function (component) {
     setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
       + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 설비 마스터에서 고칩니다.')
   }
-  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit6`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
-  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 회차의 글자를 쓴 뒤와 크기가 바뀔 때
-  // (`S.onResize`) 다시 잰다. 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 둘째 줄(⑥)이다 — 390px 에서 확대
-  // 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집 도구 줄은 건드리지 않는다.
+  // 도구 줄이 넘치면 접는 차례를 하나씩 더한다. FAB 보기는 `is-fit1`~`is-fit6`(CSS 「FAB 도구 줄」) — 요약은 마지막에야
+  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 층 보기는 접을 것이 요약뿐이라 넘치면 곧장 둘째
+  // 줄(⑥)이다 — 390px 에서 확대 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집은
+  // `is-efit1`(「호기 정보」·「고정」 은 아이콘만, 기준일 칩은 날짜만 — 낭독기용 글은 남김) 다음 ⑥(빈 칸 뒤 「호기 정보」·
+  // 「고정」·「적용」 을 둘째 줄로)이다 — 사이드바를 연 1100px 창의 층 편집에서 「고정」 이 줄 밖으로 밀려 스크롤 고정을
+  // 켤 길이 없었다(도구 줄은 굴림 막대를 숨겨 옆으로 밀 수도 없다). 크기가 바뀔 때(`S.onResize` — 무대 높이를 재기 전)
+  // 다시 잰다.
   const toolbar = q('.sle-toolbar')
   const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
-  function fitFabBar() {
-    toolbar.classList.remove(...FIT_STEPS)
-    if (!VIEW || !toolbar.clientWidth) return
-    for (const step of FAB ? FIT_STEPS : FIT_STEPS.slice(-1)) {
+  const EDIT_FIT_STEPS = ['is-efit1', 'is-fit6']
+  function fitToolbar() {
+    toolbar.classList.remove(...FIT_STEPS, ...EDIT_FIT_STEPS)
+    if (!toolbar.clientWidth) return
+    const steps = !VIEW ? EDIT_FIT_STEPS : FAB ? FIT_STEPS : FIT_STEPS.slice(-1)
+    for (const step of steps) {
       if (toolbar.scrollWidth <= toolbar.clientWidth) return
       toolbar.classList.add(step)
     }
@@ -7724,6 +7729,8 @@ export default function (component) {
   // 팔레트·VIEW)을 쥐지 않는다. rAF 로 묶고, 바뀐 px 크기로 viewBox 비율과 화면 px 에 기대는 값(손잡이·글자
   // 크기)을 다시 맞춘다. 창 높이만 바뀌어도 기본 높이·상한이 바뀌므로 창 크기도 듣는다.
   S.onResize = () => {
+    // 도구 줄을 먼저 접는다 — 둘째 줄로 내리면 무대가 내려가 고정 높이(`alignLock`)가 달라진다.
+    fitToolbar()
     layoutPanels()
     layoutSheet()
     if (S.lock) alignLock()
@@ -7731,7 +7738,6 @@ export default function (component) {
       const changed = S.heightDrag ? measurePort() : fitStage()
       if (changed) applyView()
     }
-    fitFabBar()
     fitFaderTicks()
   }
   if (!S.ro && typeof ResizeObserver === 'function') {

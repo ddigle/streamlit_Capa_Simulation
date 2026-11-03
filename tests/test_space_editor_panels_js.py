@@ -16,6 +16,7 @@ from typing import Any
 from test_space_module_group import _node
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 
 ASSETS = space_layout_editor._ASSETS
 JS = (ASSETS / "editor.js").read_text(encoding="utf-8")
@@ -298,6 +299,11 @@ def test_the_scroll_lock_lives_on_the_html_attribute_and_the_page_style() -> Non
     assert style.startswith("<style>") and "/*" not in style
     assert 'html[data-space-lock="1"] [data-testid="stMain"]' in style
     assert "overflow:hidden !important" in style
+    # 고정 높이는 화면 탭 줄(sticky) 아래부터다 — 편집기가 글자로 찾는 탭 줄 key 가 앱의 key 와
+    # 같아야 한다(어긋나면 탭 줄을 못 찾아 위 72px 로 떨어지고 sticky 탭 줄이 편집기 위를 가린다 —
+    # 리뷰 rules-7).
+    cover = JS[JS.index("function coverBottom() {") :][:400]
+    assert f"document.querySelector('.st-key-{PAGE_TABS_COMPONENT_KEY}')" in cover
     button = HTML[
         HTML.index('class="sle-lock"') - 30 : HTML.index(
             "</button>", HTML.index('class="sle-lock"')

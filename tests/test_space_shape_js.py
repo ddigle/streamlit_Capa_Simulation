@@ -71,6 +71,7 @@ out.looks = list('looks').map((look) => lookText(cleanLook(look, 'shape')))
 out.adjs = list('adjs').map((look) => shapeAdj(look))
 out.presets = list('presets').map((look) => shapeOf(look))
 out.fills = list('fills').map((color) => shapeFillOf(color))
+out.patches = list('patches').map(([look, patch, kind]) => lookText(patchLook(look, patch, kind)))
 out.drags = list('drags').map(([item, index, p]) => {
   const next = adjustedLook(item, index, p)
   return next === null ? null : lookText(next)
@@ -592,10 +593,14 @@ def test_the_inspector_and_palette_offer_excel_like_shape_tools() -> None:
     ]
     assert "sle-floor-only" not in toggle and "sle-fab-only" not in toggle
     # 도형 바꾸기는 프리셋만 바꾸고 모양 조절 값을 새 프리셋의 처음 값으로(크기·채우기·선·글자는
-    # 그대로).
+    # 그대로 — 값은 `test_changing_the_preset_keeps_the_format_and_resets_the_adjust` 가 node 로
+    # 잰다).
     assert "setShapes({ shape: cell.dataset.shape, adj: null })" in JS
     setter = _between("function setShapes(", "// 브라우저가 쥔 적용 전 편집")
+    assert "patchLook(m.look, typeof patch === 'function' ? patch(m) : patch, 'shape')" in setter
     assert "pushUndo(ops)" in setter and "m.look = next" in setter
+    # 크기·자리·글자는 요소 칸이라 모양 값만 고치는 도형 바꾸기가 건드리지 않는다(`fields` 없음).
+    assert "Object.assign(m, fields)" in setter
     assert "ops.push({ op: 'set', id: m.id, before: snapshot(m) })" in setter
     # 투명도는 엑셀처럼 100 − 불투명.
     assert "setShapes({ fillAlpha: 100 - clear })" in JS
@@ -610,3 +615,35 @@ def test_the_inspector_and_palette_offer_excel_like_shape_tools() -> None:
     # 대칭 꼴은 돌리기·뒤집기가 꺼진다.
     assert "markRotate.disabled = still" in JS
     assert "for (const button of shapeFlips) button.disabled = !turns" in JS
+
+
+def test_changing_the_preset_keeps_the_format_and_resets_the_adjust() -> None:
+    """「도형 바꾸기」(`setShapes({ shape, adj: null })` → `patchLook`) — 프리셋만 바꾸고 모양 조절
+    값은 새 프리셋의 처음 값(키 없음)이 되며, 채우기 투명도·선·굵기·선 모양·뒤집기는 그대로다(리뷰
+    rules-7 — 소스 글자로만 보던 것을 값으로 잰다). 처음 값으로 돌린 키(null)는 빠진다."""
+    formatted = {
+        "shape": "lbox",
+        "adj": [0.3, 0.4],
+        "fillAlpha": 40,
+        "line": "rose",
+        "lineWidth": 3,
+        "lineStyle": "dashed",
+        "flip": True,
+    }
+    out = _run(
+        {
+            "patches": [
+                [formatted, {"shape": "ellipse", "adj": None}, "shape"],
+                [formatted, {"shape": "cross", "adj": None}, "shape"],
+                [formatted, {"fillAlpha": None}, "shape"],
+                [{"head": "LL", "line": "gray"}, {"head": None}, "arrow"],
+            ]
+        }
+    )
+    kept = {"fillAlpha": 40, "line": "rose", "lineWidth": 3, "lineStyle": "dashed", "flip": True}
+    assert [json.loads(text) if text else {} for text in out["patches"]] == [
+        {**kept, "shape": "ellipse"},
+        {**kept, "shape": "cross"},
+        {key: value for key, value in formatted.items() if key != "fillAlpha"},
+        {"line": "gray"},
+    ]

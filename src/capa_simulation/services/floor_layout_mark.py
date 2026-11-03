@@ -51,6 +51,8 @@ MARK_LABEL_MAX: Final = 40
 # 베이 화살표(U자) 가운데 글의 번호 칸 길이. 그릴 때 앞에 늘 「B」 를 붙이고 번호만
 # 저장한다(`bay_label`).
 BAY_LABEL_MAX: Final = 10
+# 베이 번호 앞에서 떼는 머리 — B·b 와 그 뒤 빈칸이 거듭된 것 전부(편집기 `bayNumber` 와 같은 규칙).
+_BAY_PREFIX: Final = re.compile(r"^(?:[Bb]\s*)+")
 # 이름표 글자의 기준 크기. 빈 값(None)은 「자동」 — 글자 요소는 상자에 맞추고 나머지는 11 이다. 기준
 # 크기는 도면 1칸이 화면 8px 일 때의 화면 px 이고, 확대·축소를 따라 0~2배로 바뀌며 화면 6px 아래면
 # 숨는다(편집기 `// <text-scale>`, 2026-11-03 사용자 요청). 층·FAB 요소가 함께 쓴다.
@@ -427,12 +429,11 @@ def zone_look(raw: Mapping[str, Any], kind: str, mark_id: str) -> dict[str, str]
 
 
 def bay_label(raw: Mapping[str, Any], mark_id: str) -> str:
-    """베이 화살표의 번호. 앞의 B·b 와 그 뒤 빈칸을 뗀다(「80」·「B80」·「b 80」 → 「80」) — 그릴 때
-    늘 「B」 를 붙이므로 저장값에 B 가 겹치지 않게 한다. `BAY_LABEL_MAX` 자를 넘으면
-    `ValueError`."""
-    label = str(raw.get("label") or "").strip()
-    if label[:1] in ("B", "b"):
-        label = label[1:].lstrip()
+    """베이 화살표의 번호. 앞의 B·b 와 그 뒤 빈칸을 **모두** 뗀다(「80」·「B80」·「b 80」·「BB80」 →
+    「80」) — 그릴 때 늘 「B」 를 붙이므로 저장값에 B 가 겹치지 않게 한다. 한 번 거친 값을 다시
+    거쳐도 같다(편집기 `bayNumber` 가 입력 때, 이 함수가 적용 때, 저장 길이 대기분을 다시 검증할 때
+    — 세 번 거쳐도 글이 바뀌지 않는다). `BAY_LABEL_MAX` 자를 넘으면 `ValueError`."""
+    label = _BAY_PREFIX.sub("", str(raw.get("label") or "").strip())
     if len(label) > BAY_LABEL_MAX:
         raise ValueError(f"베이 {mark_id} 의 번호는 {BAY_LABEL_MAX}자까지입니다: {label!r}")
     return label

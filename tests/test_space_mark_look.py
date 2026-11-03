@@ -92,9 +92,12 @@ def test_the_bay_is_a_floor_mark_that_does_not_block_units() -> None:
         ("B", ""),
         ("", ""),
         (None, ""),
-        ("BB1", "B1"),
+        ("BB1", "1"),
+        ("bB 80", "80"),
+        ("B B 80", "80"),
         ("0123456789", "0123456789"),
         ("B0123456789", "0123456789"),
+        ("BBB0123456789", "0123456789"),
     ],
 )
 def test_a_bay_keeps_only_its_number(raw: Any, number: str) -> None:
@@ -104,6 +107,18 @@ def test_a_bay_keeps_only_its_number(raw: Any, number: str) -> None:
     (bay, arrow) = prepare_floor_layout_marks([_bay(label=raw), _arrow(label=raw)], CANVAS)
     assert bay.label == number
     assert arrow.label == str(raw or "").strip()
+
+
+@pytest.mark.parametrize("raw", ["BB80", "BBB80", "b B 80", "B80", "80"])
+def test_the_bay_number_does_not_change_again_on_apply_or_save(raw: str) -> None:
+    """번호 떼기는 다시 거쳐도 같다(리뷰 data-1) — 편집기 입력(`bayNumber`) · 적용(`bay_label`) ·
+    저장 길의 대기분 재검증(`editor_payload` → `prepare_floor_layout_marks`)을 지날 때마다 B 가
+    하나씩 떨어져 「BBB80」 이 BB80 → B80 → 80 으로 말없이 바뀌었다."""
+    once = bay_label({"label": raw}, "B1")
+    assert bay_label({"label": once}, "B1") == once == "80"
+    (applied,) = prepare_floor_layout_marks([_bay(label=raw)], CANVAS)
+    (saved,) = prepare_floor_layout_marks([applied.editor_payload()], CANVAS)
+    assert applied.label == saved.label == "80"
 
 
 def test_a_bay_number_over_ten_characters_rejects_the_floor() -> None:

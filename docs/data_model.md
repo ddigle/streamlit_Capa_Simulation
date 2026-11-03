@@ -108,7 +108,7 @@ equipment_ops.equipment_schedule_revision       시나리오 일정 리비전(�
        ⋯ equipment_schedule_snapshot            호기 키마다 날짜 여섯 + 시나리오 메모(PK 리비전·키)
        ⋯ equipment_schedule_downtime_snapshot   비가동 일정 전체(F2 — UNIQUE 리비전·키·유형·시작일)
        ⋯ equipment_schedule_layout_unit   (0031) 호기 키마다 배치 일곱 칸 + 저장 당시 Main 설비 — 공식과 다른 호기만
-       ⋯ equipment_schedule_layout_mark   (0031) (층, 요소 id)마다 set/drop — 공식과 다른 요소만
+       ⋯ equipment_schedule_layout_mark   (0031·0033) (층, 요소 id)마다 set/drop — 공식과 다른 요소만
        ⋯ equipment_schedule_layout_label  (0031) (층, Main 설비)마다 위치 또는 NULL(공식 행 지움) — 다른 것만
        ⋯ legacy_revision_id  → revision         이관 리비전만: 옛 마스터 일정 칸·비가동을 읽는다
        ⋯ common_revision_id  → revision         저장 때 함께 본 공통 리비전(「그때 그대로」 보기)

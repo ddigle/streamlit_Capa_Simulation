@@ -187,6 +187,11 @@ def test_the_inspector_lives_in_the_left_panel_and_hides_unused_fields() -> None
     assert "display: none" in hidden and "visibility: hidden" not in hidden
     # 이름 줄은 칸 폭 안에서 줄을 바꾼다(긴 모듈 묶음 안내도 다 읽힌다).
     assert "overflow-wrap: anywhere" in _rule(".sle-inspector-title")
+    # 도움말·Guide 가 선택 칸을 「아래」 라고 부르지 않는다(리뷰 rules-3 — FAB 도움말이 「아래 선택
+    # 칸」 이라 했다).
+    guide = (ASSETS.parents[1] / "guides" / "space_status.md").read_text(encoding="utf-8")
+    assert "아래 선택 칸" not in JS and "아래 선택 칸" not in guide
+    assert "층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다" in JS
 
 
 def test_the_inspector_stacks_its_fields_inside_the_panel_width() -> None:
@@ -404,10 +409,10 @@ def test_a_narrow_floor_viewer_moves_its_summary_to_a_second_line() -> None:
     않았다(E2E r1). 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 ⑥(둘째 줄)이고, 둘째 줄의
     요약은 말줄임 대신 줄을 바꾼다(FAB 도 같다)."""
     fit = _between(
-        "function fitFabBar() {",
+        "function fitToolbar() {",
         "// ---------------------------------------------------------------- 높이 손잡이",
     )
-    assert "for (const step of FAB ? FIT_STEPS : FIT_STEPS.slice(-1)) {" in fit
+    assert "const steps = !VIEW ? EDIT_FIT_STEPS : FAB ? FIT_STEPS : FIT_STEPS.slice(-1)" in fit
     summary = _rule(".sle-toolbar.is-fit6 .sle-summary")
     assert "white-space: normal" in summary and "overflow: visible" in summary
     assert CSS.index(".sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }") < CSS.index(
@@ -715,9 +720,9 @@ def _between(start: str, end: str) -> str:
 
 def test_the_date_row_tops_the_floor_view_and_the_editor_pins_it_as_a_toolbar_chip() -> None:
     """층 보기 도면 상자 맨 위 한 줄(36px)이 기준일 페이더(날짜 칩·트랙·「오늘」)다. 배치 편집은 그
-    줄을 걷고 도구 줄 제목 옆 칩 「기준일 … 고정」 이다(2026-11-03 결정 D12 — 여백 걷기). FAB 에는
-    없다(`sle-floor-only`). 무대 기본 높이는 층 보기에만 그 줄과 틈만큼 덜어 낸다. 「필요 단축」
-    보기의 고정 줄(`sle-pinned`)은 같은 줄 자리다."""
+    줄 대신 도구 줄 제목 옆 칩 「YYYY-MM-DD 고정」(핀 아이콘)이다(2026-11-03 결정 D12 — 여백 걷기).
+    FAB 에는 없다(`sle-floor-only`). 무대 기본 높이는 층 보기에만 그 줄과 틈만큼 덜어 낸다. 「필요
+    단축」 보기의 고정 줄(`sle-pinned`)은 같은 줄 자리다."""
     row = HTML[HTML.index('<div class="sle-daterow') : HTML.index('<div class="sle-toolbar">')]
     assert HTML.index('class="sle-daterow') < HTML.index('class="sle-toolbar"')
     assert 'class="sle-daterow sle-floor-only sle-view-only"' in row
@@ -881,7 +886,7 @@ def test_the_fab_toolbar_shows_the_as_of_date_a_back_to_today_button_and_unconfi
 
 
 def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -> None:
-    """사이드바를 연 1024px 창처럼 FAB 도구 줄이 넘치면 `fitFabBar` 가 접는 차례를 하나씩
+    """사이드바를 연 1024px 창처럼 FAB 도구 줄이 넘치면 `fitToolbar` 가 접는 차례를 하나씩
     더한다 — ① 선택 안내·「기준일」·「미확인」 말머리(화면에서만 — 낭독기용으로 남김), ② 미확인
     대수(「!」만), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 요약 말줄임. 요약은 마지막에야
     줄고, 대수 글자는 반만 잘리지 않는다."""
@@ -889,16 +894,18 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     assert '<span class="sle-asof-label">기준일 </span>' in toolbar
     assert 'class="sle-flagnote-word">미확인 </span>' in toolbar
     fit = _between(
-        "function fitFabBar() {",
+        "function fitToolbar() {",
         "// ---------------------------------------------------------------- 높이 손잡이",
     )
     assert (
         "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']" in JS
     )
-    assert fit.index("toolbar.classList.remove(...FIT_STEPS)") < fit.index("if (!VIEW ||")
+    assert fit.index("toolbar.classList.remove(...FIT_STEPS, ...EDIT_FIT_STEPS)") < fit.index(
+        "const steps ="
+    )
     assert "if (toolbar.scrollWidth <= toolbar.clientWidth) return" in fit
     resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
-    assert "fitFabBar()" in resize
+    assert "fitToolbar()" in resize
     hidden = _rule(
         ".sle-toolbar.is-fit1 .sle-asof-label, .sle-toolbar.is-fit1 .sle-flagnote-word, "
         ".sle-toolbar.is-fit2 .sle-flagnote-text"
@@ -932,7 +939,7 @@ def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_li
     )
     wrap = _rule(".sle-toolbar.is-fit6")
     assert "flex-wrap: wrap" in wrap and "height: auto" in wrap
-    spacer = _rule(".sle.is-view .sle-toolbar.is-fit6 .sle-spacer")
+    spacer = _rule(".sle-toolbar.is-fit6 .sle-spacer")
     assert "display: block" in spacer and "flex: 0 0 100%" in spacer
     # 빈 칸은 선택 줄 바로 뒤, 기준일·미확인·요약 앞이다 — 첫 줄은 확대 묶음과 선택 줄.
     toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
@@ -944,6 +951,36 @@ def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_li
     )
     # ⑥ 은 ⑤ 뒤 마지막 차례다(읽히는 말줄임이 되면 둘째 줄로 내리지 않는다).
     assert "'is-fit5', 'is-fit6']" in JS
+
+
+def test_a_narrow_edit_toolbar_keeps_the_lock_and_the_sheet_buttons_reachable() -> None:
+    """사이드바를 연 1100px 창의 층 편집에서 도구 줄(948px)이 편집기 폭(765px)을 넘어 「고정」 이 줄
+    밖으로 밀리고 「호기 정보」 는 오른쪽 끝에 붙은 「적용」 에 덮였다 — 도구 줄은 굴림 막대를 숨겨
+    옆으로 밀 길도 없었다(리뷰 browser-1). 편집도 접는 차례를 탄다 — ① 「호기 정보」·「고정」 은
+    아이콘만·기준일 칩은 날짜만(낭독기용 글은 남김), 그래도 넘치면 ⑥ 빈 칸 뒤(「호기
+    정보」·「고정」·「적용」)를 둘째 줄로 내리고 그 줄에서는 글을 다시 세운다. 무대 높이를 재기 전에
+    접는다(둘째 줄이 무대를 내린다)."""
+    assert "const EDIT_FIT_STEPS = ['is-efit1', 'is-fit6']" in JS
+    resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
+    assert resize.index("fitToolbar()") < resize.index("alignLock()") < resize.index("fitStage()")
+    hidden = _rule(
+        ".sle-toolbar.is-efit1:not(.is-fit6) .sle-sheet-toggle-word, "
+        ".sle-toolbar.is-efit1:not(.is-fit6) .sle-lock-word,\n"
+        ".sle-toolbar.is-efit1 .sle-pinchip-word"
+    )
+    assert "display: none" not in hidden and "clip-path: inset(50%)" in hidden
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
+    for word in ("sle-sheet-toggle-word", "sle-lock-word", "sle-pinchip-word"):
+        assert f'class="{word}"' in toolbar, word
+    # 둘째 줄은 「빼기·지우기」 뒤 빈 칸에서 갈린다 — 「호기 정보」·「고정」·「적용」 이 함께
+    # 내려간다.
+    assert (
+        toolbar.index('class="sle-unplace')
+        < toolbar.index('class="sle-spacer"')
+        < toolbar.index('class="sle-sheet-toggle')
+        < toolbar.index('class="sle-lock"')
+        < toolbar.index('class="sle-apply')
+    )
 
 
 def test_the_pre_arrival_ring_is_drawn_thick() -> None:

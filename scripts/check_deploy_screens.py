@@ -188,7 +188,7 @@ INTRO_HOST_ID: Final = "capa-intro-host"
 SUMMARY_LABEL_ID: Final = "capa-brand-label"
 EQUIPMENT_PAGE: Final = "available_equipment_status"
 SPACE_PAGE: Final = "space_status"
-# `Space 현황` 사이드바 「Space 도면」 상자 자리 줄 첫 칸 `FAB 전체` 단추(옛 경로 줄)의 위젯 키. FAB
+# `Space 현황` 사이드바 「Space 도면」 상자 자리 줄 첫 칸 `FAB 전체` 단추의 위젯 키. FAB
 # 전체면 주 단추, 층을 열었으면 보조 단추이고 누르면 FAB 로 돌아간다(콜백 — 세션의 연 층을 지운다).
 SPACE_FAB_CRUMB_KEY: Final = "space_status_fab_breadcrumb"
 # 설비 마스터 표(가용설비 현황 탭 ① — 개편 B1)의 「전체 39칸」 머리 칸 — 38열 개편(설비 마이그레이션
@@ -1632,8 +1632,8 @@ class Screen:
         """`Space 현황` 을 FAB 전체(층 목록 표가 서는 화면)로 연다. 연 층은 위젯이 아니라 세션
         키라 다른 페이지를 거쳐 다시 와도 그 층 상세가 선다 — `space_drawer` 가 연 층에서
         `space_fader` 가 층 목록 표를 기다리다 첫 판 · 다시 돈 판 모두 `TimeoutError` 였다(사내
-        리뷰 202610200720 발견 1). 사이드바 「Space 도면」 상자의 `FAB 전체`(옛 경로 줄 `S.PKG FAB
-        전체`, key 그대로)가 보조 단추면(층이 열려 있다) 눌러 FAB 로 돌아간다."""
+        리뷰 202610200720 발견 1). 사이드바 「Space 도면」 상자의 `FAB 전체`(key
+        `SPACE_FAB_CRUMB_KEY`)가 보조 단추면(층이 열려 있다) 눌러 FAB 로 돌아간다."""
         self.open_page(SPACE_PAGE)
         crumb = self.page.locator(f".st-key-{SPACE_FAB_CRUMB_KEY} button").first
         crumb.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
@@ -2668,7 +2668,7 @@ _FADER_TODAY_JS = """(fader) => {
   return !!rel && rel.classList.contains("is-today");
 }"""
 _LEGEND_DATE = re.compile(r"기준 (\d{4}-\d{2}-\d{2})")
-# 층 상세 범례 칸(편집기 왼쪽 칸 「범례」 — 레이아웃 위 머리 줄을 걷고 옮겼다, 2026-11-03).
+# 층 상세 범례 칸(편집기 왼쪽 칸 「범례」, 2026-11-03).
 LEGEND_SELECTOR: Final = ".sle-legend"
 
 
