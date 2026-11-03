@@ -46,6 +46,16 @@
   화면 주소로 회차를 청했다. 회차 끝까지만 기다리면 HOME 첫 계산 중에 누른 탭이 그 계산과 브라우저
   그리기를 기다렸다(사내 리뷰 202610271800 발견 3). 새 data 로 다시 불린 함수 **안**에서는 트리거를
   보내지 않는다 — 그리기 안에서 보낸 값은 프런트가 회차 요청에 싣지 않아 누름이 사라졌다.
+- **차례 바꾸기는 묶어 보낸다**(2026-11-03 사용자 검수 — 「몇 번 연속으로 좌우로 움직이는 경우
+  불필요한 로딩이 발생하거나 멈추는 경우가 있음」). 끌기·`Ctrl+Shift+←/→` 는 JS 가 곧바로 다시
+  그리고, 서버에는 연달아 옮긴 마지막 그림만 쉼(`MOVE_SEND_MS`) 뒤 앱이 돌지 않을 때 한 번
+  보낸다(`<tabs-batch>`). 누를 때마다 보내면 누름마다 앱 전체 회차가 서서(빈 프래그먼트로 바뀌기
+  전의 틈) 회차 끝 GC 를 두 번 돌려 서버가 밀렸고(사본 50ms 간격 20번 — 회차 표지 1.4초 · 본문 흐림
+  표지), 페이지가 도는 중의 누름은 그 회차를 끊고 HOME 을 다시 돌렸다(진행 막대 2.7초). 서버가 아는
+  차례와 같으면(왼쪽 갔다 되돌아옴) 보내지 않는다. 고정·닫기·고르기는 지금 그림(`order`)과 그
+  번호(`seq`)를 함께 실어 아직 보내지 않은 차례를 데려간다 — 서버는 어느 트리거든 그 차례를 목록에
+  입힌다(`arranged` — 열린 탭과 고정은 서버, 차례는 마지막 그림). data 는 서버가 받은 마지막
+  번호(`seq`)를 싣고, JS 는 그보다 뒤에 보낸 그림을 data 가 따라올 때까지 그대로 보여 준다.
 - **더블클릭의 꼬리는 버린다.** 닫기·고정은 누르자마자 목록을 움직인다 — 그 뒤 같은 자리로 온
   둘째 누름이 밀려 온 다른 탭에 닿으면 JS 가 버린다(`<tabs-press>`). 버리지 않으면 × 더블클릭이
   누른 탭 대신 이웃 탭을 닫거나 지금 탭을 고정했다.
@@ -107,9 +117,11 @@ from capa_simulation.page_tabs_state import (
     MAX_TABS,
     PAGE_TABS_COMPONENT_KEY,
     TabStrip,
+    arranged,
     closed,
     load_strip,
-    moved,
+    note_order_seq,
+    order_seq,
     pinned_to,
     pop_fresh_notice,
     queue_switch,
@@ -281,8 +293,11 @@ def tabs_data(
     leave: str,
     epoch: int,
     notice: tuple[int, str] | None,
+    seq: int = 0,
 ) -> dict[str, Any]:
     """탭 줄 data. 같은 목록·점이면 회차마다 같은 값이다(시각·카운터를 싣지 않는다).
+
+    `seq` 는 서버가 받은 탭 줄 그림 번호다(`page_tabs_state.order_seq` — 탭 줄이 보낼 때만 오른다).
 
     `pages` 는 등록된 모든 화면의 주소(`url_path` — HOME 은 빈 글자) → 탭 이름이다. JS 가 상한에서
     화면 링크 누름을 거를 때 아는 화면인지와 알림에 쓸 이름을 여기서 읽는다(모듈 설명). `grids` 는
@@ -311,6 +326,7 @@ def tabs_data(
         "tabs": tabs,
         "active": active or "",
         "epoch": epoch,
+        "seq": seq,
         "leave": leave,
         "notice": None if notice is None else {"id": notice[0], "text": notice[1]},
         "max": MAX_TABS,
@@ -340,6 +356,20 @@ def _payload_id(name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _adopted(strip: TabStrip, payload: Mapping[str, Any]) -> TabStrip:
+    """트리거에 실린 지금 그림의 차례(`order`)를 목록에 입히고 그 번호(`seq`)를 받았다고 적는다.
+
+    차례 바꾸기는 JS 가 묶어 마지막 그림만 보내고, 고정·닫기·고르기도 그 그림을 싣는다 — 어느
+    트리거로 와도 아직 보내지 않은 차례가 서버 목록에 들어간다(`arranged` — 열린 탭과 고정은 서버
+    것 그대로). 차례가 없거나 글자 목록이 아니면 목록을 그대로 둔다.
+    """
+    note_order_seq(payload.get("seq"))
+    order = payload.get("order")
+    if not isinstance(order, list) or not all(isinstance(path, str) for path in order):
+        return strip
+    return arranged(strip, order)
+
+
 def _on_select() -> None:
     """`select` — 열린 탭이면 이동 대기 칸에 적는다. 지금 화면이면 `app.py` 가 걸러 옮기지 않는다.
 
@@ -348,9 +378,16 @@ def _on_select() -> None:
     마지막 것만 보낸다(`<tabs-queue>`) — 탭 줄이 오기 전에 보낸 트리거는 떠나는 화면 주소로 가
     서버가 그 화면으로 되돌아갔다. 옮긴 화면이 오래 도는 중에 온 트리거는 서버가 곧바로 세운 새
     회차(`runner.fastReruns` — 돌던 회차는 다음 메시지·세션 칸 자리에서 멈춘다) 맨 앞에서 이 콜백이
-    받는다. 이동은 `app.py` 의 `st.navigation()` 바로 뒤라 그 화면 본문 계산 전이다."""
+    받는다. 이동은 `app.py` 의 `st.navigation()` 바로 뒤라 그 화면 본문 계산 전이다. 아직 보내지
+    않은 차례(`order`)가 실려 오면 먼저 목록에 입힌다(`_adopted`)."""
+    payload = _payload("select")
     target = _payload_id("select")
-    if target is not None and target in load_strip().paths:
+    if payload is None or target is None:
+        return
+    # 아직 보내지 않은 차례가 있으면 실려 온다(`<tabs-batch>`) — 옮기기 전에 목록에 입힌다.
+    strip = _adopted(load_strip(), payload)
+    store_strip(strip)
+    if target in strip.paths:
         queue_switch(target)
 
 
@@ -363,11 +400,18 @@ def _on_close(active: str | None) -> None:
     target = _payload_id("close")
     if payload is None or target is None:
         return
-    strip, neighbour = closed(load_strip(), target, active)
+    # 담긴 차례를 먼저 입힌다 — 옮긴 직후 닫으면 이웃은 사용자가 본 차례의 이웃이어야
+    # 한다. 탭 줄 JS 는 닫는 탭을 숨기기 전에 그림을 담아 보내 그 탭이 제자리에 있다.
+    strip, neighbour = closed(_adopted(load_strip(), payload), target, active)
     store_strip(strip)
     if neighbour is not None:
         queue_switch(neighbour)
         return
+    # 담긴 그림에는 닫은 탭이 아직 있다 — 뺀 그림으로 맞대야 다른 탭 닫기가 페이지를 다시 돌리지
+    # 않는다(그대로 맞대면 늘 어긋나 `resync_strip` 의 앱 전체 회차로 갔다).
+    order = payload.get("order")
+    if isinstance(order, list) and target not in strip.paths:
+        payload = {**payload, "order": [path for path in order if path != target]}
     _settle_drawn(strip, payload)
 
 
@@ -378,22 +422,20 @@ def _on_pin() -> None:
     pinned = None if payload is None else payload.get("pinned")
     if payload is None or not isinstance(target, str) or not isinstance(pinned, bool):
         return
-    strip = pinned_to(load_strip(), target, pinned)
+    strip = _adopted(pinned_to(load_strip(), target, pinned), payload)
     store_strip(strip)
     _settle_drawn(strip, payload)
 
 
 def _on_move() -> None:
-    """`move` — `{id, before}` 로 고정하지 않은 탭을 `before` 탭 앞(없으면 끝)으로 옮긴다(끌기·
-    `Ctrl+Shift+←/→`, 2026-11-02 사용자 요청). 페이지는 다시 돌리지 않는다."""
+    """`move` — `{order, pins, seq}` 로 연달아 옮긴 마지막 차례를 입힌다(끌기·`Ctrl+Shift+←/→`,
+    2026-11-02 사용자 요청 · 2026-11-03 묶어 보내기). 옮긴 한 칸씩이 아니라 그림 전체라 그 사이 보낸
+    것이 빠져도 마지막 그림이 선다. 차례가 그대로면 목록 칸을 적지 않고(epoch 그대로), 어느 쪽이든
+    페이지는 다시 돌리지 않는다."""
     payload = _payload("move")
-    target = None if payload is None else payload.get("id")
-    before = None if payload is None else payload.get("before")
-    if payload is None or not isinstance(target, str):
+    if payload is None:
         return
-    if before is not None and not isinstance(before, str):
-        return
-    strip = moved(load_strip(), target, before)
+    strip = _adopted(load_strip(), payload)
     store_strip(strip)
     _settle_drawn(strip, payload)
 
@@ -409,8 +451,9 @@ def _settle_drawn(strip: TabStrip, payload: Mapping[str, Any]) -> None:
     위젯도 바뀌었으면 지금처럼 앱 전체 회차로 물러난다, AGENTS 9장 「여닫을 때 본문을 다시 돌리지
     않는다」). 탭 줄 data 는 다음 앱 전체 회차가 같은 목록으로 싣는다.
 
-    서버 목록이 JS 그림과 다르면(그 사이 목록이 바뀌어 서버가 다르게 받았다) epoch 를 올려 앱 전체
-    회차의 data 로 다시 그리게 한다(`resync_strip`).
+    차례는 콜백이 그 그림대로 입혔으므로(`_adopted`) 어긋나는 것은 열린 탭·고정뿐이다 — 그 사이
+    목록이 바뀌어(JS 가 아직 모르는 새 탭, 서버가 받지 않은 고정) 서버 목록이 JS 그림과 다르면 epoch
+    를 올려 앱 전체 회차의 data 로 다시 그리게 한다(`resync_strip`).
     """
     order = payload.get("order")
     pins = payload.get("pins")
@@ -466,6 +509,7 @@ def render_page_tabs(
             leave=leave,
             epoch=tabs_epoch(),
             notice=pop_fresh_notice(),
+            seq=order_seq(),
         ),
         on_select_change=_on_select,
         on_close_change=partial(_on_close, active),

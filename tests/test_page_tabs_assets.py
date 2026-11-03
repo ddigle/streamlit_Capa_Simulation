@@ -37,18 +37,31 @@ def test_the_strip_sends_only_one_shot_triggers() -> None:
 def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     """고정·차례·닫기는 누르자마자 서버 규칙(`<tabs-order>`)으로 그리고 그
     차례(`order`)·고정(`pins`)을 싣는다 — 서버(`page_tabs._settle_drawn`)는 같은 차례면 페이지를
-    다시 돌리지 않는다(2026-11-02 사용자 요청 — 핀 고정에 페이지 로딩)."""
-    for event in ("pin", "close", "move"):
-        call = re.search(rf"S\.send\('{event}', \{{([^}}]*)\}}\)", JS)
-        assert call is not None, event
-        assert "order:" in call.group(1) and "pins:" in call.group(1), event
+    다시 돌리지 않는다(2026-11-02 사용자 요청 — 핀 고정에 페이지 로딩). 차례 바꾸기는 묶어 보내고
+    (`flushMove`), 고정·닫기는 지금 그림과 번호(`claimDrawn` — 담긴 차례를 데려간다)를, 고르기는
+    담긴 차례가 있을 때만 그것을 싣는다(2026-11-03 사용자 검수 — 연달아 옮기면 불필요한 로딩)."""
+    move = re.search(r"S\.send\('move', \{([^}]*)\}\)", JS)
+    assert move is not None
+    assert all(f"{name}:" in move.group(1) for name in ("order", "pins")) and "seq" in move.group(1)
+    pin = re.search(r"S\.send\('pin', \{([^}]*)\}\)", JS)
+    assert pin is not None and "...claimDrawn()" in pin.group(1)
+    sent_close = re.search(r"S\.send\('close', \{([^}]*)\}\)", JS)
+    assert sent_close is not None and "...carried" in sent_close.group(1)
+    claim = JS[JS.index("const claimDrawn = () => {") :]
+    claim = claim[: claim.index("\n  }\n")]
+    assert "order: drawn.ids, pins: drawn.pinned, seq: claimOrder(" in claim
+    select = JS[JS.index("const sendSelect = (item) => {") :]
+    select = select[: select.index("\n  }\n")]
+    assert "S.moves.due !== null ? claimDrawn() : {}" in select
     click = JS[JS.index("list.onclick = (event) => {") :]
     click = click[: click.index("\n  }\n")]
     assert click.index("pinnedOrder(") < click.index("arrange(plan)") < click.index("S.send('pin'")
     close = JS[JS.index("const closeNow = (item) => {") :]
     close = close[: close.index("\n  }\n")]
+    # 닫기는 숨기기 전에 그림을 담는다 — 닫는 탭이 제자리에 있어야 서버가 보이는 이웃으로 옮긴다.
     assert (
-        close.index("item.hidden = true")
+        close.index("const carried = claimDrawn()")
+        < close.index("item.hidden = true")
         < close.index("syncControls()")
         < close.index("S.send('close'")
     )
@@ -249,6 +262,7 @@ _SECTIONS = (
     "tabs-queue",
     "tabs-press",
     "tabs-order",
+    "tabs-batch",
     "tabs-drag",
     "tabs-links",
     "tabs-edges",
@@ -645,6 +659,7 @@ const out = cases.map((c) => {
   if (c.op === 'pin') return pinnedOrder(c.ids, c.pinned, c.id, c.pin)
   if (c.op === 'move') return movedOrder(c.ids, c.pinned, c.id, c.before)
   if (c.op === 'closable') return closableIds(c.ids, c.pinned)
+  if (c.op === 'merge') return mergedOrder(c.ids, c.pinned, c.want)
   const plan = keyboardMove(c.ids, c.pinned, c.id, c.step)
   return plan === null ? null : movedOrder(c.ids, c.pinned, c.id, plan.before).ids
 })
@@ -660,7 +675,7 @@ def _order_cases() -> tuple[list[dict[str, Any]], list[Any]]:
         LOAD_CONVERSION,
         SCENARIO_MANAGEMENT,
     )
-    from capa_simulation.page_tabs_state import TabStrip, moved, pinned_to
+    from capa_simulation.page_tabs_state import TabStrip, arranged, moved, pinned_to
 
     h, a, b, c = HOME.path, LOAD_CONVERSION.path, SCENARIO_MANAGEMENT.path, CAPA_CHATBOT.path
     gone = "app_pages/gone.py"
@@ -678,6 +693,23 @@ def _order_cases() -> tuple[list[dict[str, Any]], list[Any]]:
         base = {"ids": ids, "pinned": pins}
         cases.append({**base, "op": "closable"})
         answers.append([p for p in ids if strip.closable(p)])
+        # 그린 차례 입히기(`arranged` — 2026-11-03 묶어 보내기): 뒤집은 차례 · 모르는 탭 · 빠진 탭 ·
+        # 겹침.
+        for want in (
+            list(reversed(ids)),
+            [gone, *ids[1:], ids[0]],
+            ids[1:],
+            [*ids[:1], *ids[:1], *reversed(ids)],
+            [],
+        ):
+            cases.append({**base, "op": "merge", "want": want})
+            result = arranged(strip, want)
+            answers.append(
+                {
+                    "ids": list(result.paths),
+                    "pinned": [p for p in result.paths if p in result.pinned],
+                }
+            )
         for target in [*ids, gone]:
             for pin in (True, False):
                 cases.append({**base, "op": "pin", "id": target, "pin": pin})
@@ -738,6 +770,124 @@ def test_the_script_draws_presses_with_the_same_rules_as_the_server() -> None:
     ]
     assert not wrong, wrong[:3]
     assert len(cases) > 150
+
+
+_BATCH_RUNNER = """
+const out = {}
+const H = 'h', A = 'a', B = 'b', C = 'c', D = 'd'
+const start = { ids: [H, A, B, C, D], pinned: [H] }
+// 끝 탭 D 를 80ms 간격으로 왼쪽 · 왼쪽 · 오른쪽 · 왼쪽 — 그릴 때마다 담고, 쉼(400ms) 안에는
+// 기다린다.
+const batch = createMoveBatch()
+let drawn = start
+let sends = 0
+const verdicts = []
+let t = 0
+for (const step of [-1, -1, 1, -1]) {
+  const plan = keyboardMove(drawn.ids, drawn.pinned, D, step)
+  drawn = movedOrder(drawn.ids, drawn.pinned, D, plan.before)
+  dueMove(batch, drawn, t)
+  verdicts.push(moveVerdict(batch, drawn, knownOrder(batch, start), t + 50, 400, false, 10000))
+  t += 80
+}
+out.burstWaits = verdicts
+// 마지막 누름 뒤 399ms 는 아직 쉼, 400ms 에 보낸다 — 앱이 돌면 끝날 때까지(길어야 10초) 더
+// 기다린다.
+const last = t - 80
+out.quiet = [
+  moveVerdict(batch, drawn, knownOrder(batch, start), last + 399, 400, false, 10000),
+  moveVerdict(batch, drawn, knownOrder(batch, start), last + 400, 400, true, 10000),
+  moveVerdict(batch, drawn, knownOrder(batch, start), last + 10000, 400, true, 10000),
+  moveVerdict(batch, drawn, knownOrder(batch, start), last + 400, 400, false, 10000),
+]
+const verdict = (b, d, known, now, busy) =>
+  moveVerdict(b, d, knownOrder(b, known), now, 400, busy, 10000)
+const seq = claimOrder(batch, drawn, last + 400)
+sends += 1
+const after = verdict(batch, drawn, start, last + 900, false)
+out.sent = { seq, ids: batch.sent.ids, due: batch.due, after }
+// 보낸 차례가 data 에 오기 전에 다시 처음 차례로 되돌리면 — 서버가 아는 것은 보낸 차례라 보낸다.
+dueMove(batch, start, last + 1000)
+out.backToStartAfterSend = verdict(batch, start, start, last + 1400, false)
+// 보내기 전에 되돌아오면(왼쪽 갔다 오른쪽) 서버가 이미 아는 차례 — 보내지 않는다.
+const round = createMoveBatch()
+const left = movedOrder(start.ids, start.pinned, D, C)
+dueMove(round, left, 0)
+dueMove(round, start, 80)
+out.roundTrip = moveVerdict(round, start, knownOrder(round, start), 480, 400, false, 10000)
+// 새 data — 앞 번호(낡은 data)는 보낸 그림을 놓지 않고 그 차례를 data 목록에 입힌다(새 탭 E 는
+// 뒤에).
+const fresh = createMoveBatch()
+const moved = { ids: [H, D, A, B, C], pinned: [H] }
+claimOrder(fresh, moved, 0)
+const stale = { ids: [H, A, B, C, D, 'e'], pinned: [H] }
+dataArrived(fresh, 0, 300, 2000)
+out.staleShown = shownOrder(fresh, stale)
+out.staleKept = fresh.sent !== null
+// 서버가 받은 번호가 오면 놓고 data 그대로.
+dataArrived(fresh, 1, 600, 2000)
+const confirmed = { ids: [H, D, A, B, C, 'e'], pinned: [H] }
+out.confirmed = { sent: fresh.sent, shown: shownOrder(fresh, confirmed) }
+// 받은 흔적 없이 2초가 지난 data — 곧 다시 보내게 담는다(번호는 data 의 것 아래로 붙이지 않는다).
+const lost = createMoveBatch()
+claimOrder(lost, moved, 0)
+dataArrived(lost, 0, 2500, 2000)
+const again = verdict(lost, moved, start, 2500, false)
+out.lost = { due: lost.due && lost.due.ids, sent: lost.sent, verdict: again }
+const resumed = createMoveBatch()
+dataArrived(resumed, 57, 0, 2000)
+out.resumedSeq = claimOrder(resumed, moved, 0)
+out.sends = sends
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_consecutive_tab_moves_are_drawn_at_once_and_sent_once_after_a_pause() -> None:
+    """연달아 옮긴 차례는 곧바로 그리고 서버에는 마지막 그림만 한 번 보낸다(`<tabs-batch>`,
+    2026-11-03 사용자 검수 — 「몇 번 연속으로 좌우로 움직이는 경우 불필요한 로딩이 발생하거나 멈추는
+    경우」). 쉼 안의 누름은 기다리고, 앱이 돌면 끝날 때까지(길어야 `BUSY_MS`) 더 기다린다. 서버가
+    아는 차례(data, 아직 따라오지 않은 보낸 그림이 있으면 그것)와 같으면 보내지 않는다. 새 data 가
+    앞 번호면 보낸 그림을 그 위에 입혀 보이고, 서버가 받은 번호가 오면 놓으며, 받은 흔적 없이 오래면
+    다시 담는다."""
+    out = _node(_BATCH_RUNNER)
+    assert out["burstWaits"] == ["wait"] * 4
+    assert out["quiet"] == ["wait", "wait", "send", "send"]
+    assert out["sent"] == {"seq": 1, "ids": ["h", "a", "d", "b", "c"], "due": None, "after": "idle"}
+    assert out["backToStartAfterSend"] == "send"
+    assert out["roundTrip"] == "drop"
+    assert out["staleShown"] == {"ids": ["h", "d", "a", "b", "c", "e"], "pinned": ["h"]}
+    assert out["staleKept"] is True
+    assert out["confirmed"] == {
+        "sent": None,
+        "shown": {"ids": ["h", "d", "a", "b", "c", "e"], "pinned": ["h"]},
+    }
+    assert out["lost"] == {"due": ["h", "d", "a", "b", "c"], "sent": None, "verdict": "send"}
+    assert out["resumedSeq"] == 58
+    assert out["sends"] == 1
+
+
+def test_a_move_waits_for_a_running_app_and_presses_take_the_unsent_order_along() -> None:
+    """차례 바꾸기는 누를 때 보내지 않는다 — 담고(`dueMove`) 쉼 뒤 `flushMove` 가 앱 · 옮기는 누름 ·
+    붙든 누름 · 끌기가 끝났을 때 보낸다. 새 data 가 오면 그 그림을 먼저 입혀 놓아(`shownOrder`)
+    옮기던 탭이 data 차례로 밀렸다 돌아오지 않는다. 키보드 대안은 그린 뒤 초점을 옮긴 탭에 둔다."""
+    commit = JS[JS.index("function commitMove(item, before) {") :]
+    commit = commit[: commit.index("\n  }\n")]
+    assert "S.send(" not in commit
+    assert commit.index("arrange(plan)") < commit.index("dueMove(S.moves, plan, Date.now())")
+    assert "setTimeout(() => flushMove(), MOVE_SEND_MS)" in commit
+    flush = JS[JS.index("function flushMove() {") :]
+    flush = flush[: flush.index("\n  }\n")]
+    for wait in ("appRunning()", "S.queue.flight !== null", "S.hold !== null", "S.drag.on"):
+        assert wait in flush, wait
+    assert flush.index("moveVerdict(") < flush.index("claimOrder(") < flush.index("S.send('move'")
+    head = JS[JS.index("export default function") :]
+    place = head.index("const placed = shownOrder(S.moves, dataOrder)")
+    assert head.index("dataArrived(S.moves,") < place < head.index("placed.ids.forEach(")
+    assert "const MOVE_SEND_MS = 400" in JS
+    keys = JS[JS.index("list.onkeydown = (event) => {") :]
+    keys = keys[: keys.index("\n  }\n")]
+    assert keys.index("commitMove(item, plan.before)") < keys.index("tab.focus(")
+    assert "clearTimeout(S.moveTimer)" in JS[JS.rindex("return () => {") :]
 
 
 _DRAG_RUNNER = """

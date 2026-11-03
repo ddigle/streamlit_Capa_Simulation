@@ -25,9 +25,11 @@ from capa_simulation.page_tabs_state import (
     PAGE_TABS_EPOCH_KEY,
     PAGE_TABS_NOTICE_KEY,
     PAGE_TABS_OPEN_KEY,
+    PAGE_TABS_ORDER_SEQ_KEY,
     PAGE_TABS_QUEUED_KEY,
     PAGE_TABS_REENTRY_KEY,
     TabStrip,
+    arranged,
     can_open,
     closed,
     fallback_tab,
@@ -35,7 +37,9 @@ from capa_simulation.page_tabs_state import (
     moved,
     normalized,
     note_current_page,
+    note_order_seq,
     opened,
+    order_seq,
     pinned_to,
     pop_fresh_notice,
     reentered_open_tab,
@@ -110,6 +114,34 @@ def test_pinned_tabs_never_move_and_nothing_moves_in_front_of_them() -> None:
     # 없는 탭·자기 앞은 그대로다.
     assert moved(strip, "app_pages/gone.py", A) == strip
     assert moved(strip, A, A) == strip
+
+
+def test_a_drawn_order_is_laid_over_the_open_tabs_keeping_the_pins() -> None:
+    """탭 줄 JS 가 묶어 보낸 그림(2026-11-03)은 차례만 입힌다 — 열린 탭과 고정은 서버 것이다. 그림에
+    없는 탭(JS 가 아직 모르는 새 탭)은 원래 차례로 뒤에, 그림에만 있는 탭(그 사이 닫힘)·겹침은
+    버린다. 고정 탭은 그림이 어디에 두든 왼쪽 묶음이다."""
+    strip = _strip(H, A, B, C)
+
+    assert arranged(strip, [H, C, A, B]).paths == (H, C, A, B)
+    assert arranged(strip, [H, B]).paths == (H, B, A, C)
+    assert arranged(strip, ["app_pages/gone.py", C, C, B, A, H]).paths == (H, C, B, A)
+    assert arranged(strip, []) == strip
+    assert arranged(strip, [C, B, A, H]).pinned == frozenset({H})
+    pinned = _strip(H, C, A, B, pinned=(H, C))
+    assert arranged(pinned, [A, C, B, H]).paths == (C, H, A, B)
+
+
+def test_the_order_number_only_rises(session: SimpleNamespace) -> None:
+    """서버가 받은 그림 번호는 더 큰 것만 적는다 — 늦게 닿은 앞 번호·번호가 아닌 값은 두지
+    않는다."""
+    assert order_seq() == 0
+    note_order_seq(3)
+    note_order_seq(2)
+    note_order_seq(True)
+    note_order_seq("9")
+    assert order_seq() == 3 and session.session_state[PAGE_TABS_ORDER_SEQ_KEY] == 3
+    note_order_seq(4)
+    assert order_seq() == 4
 
 
 def test_closing_a_background_tab_keeps_the_page() -> None:

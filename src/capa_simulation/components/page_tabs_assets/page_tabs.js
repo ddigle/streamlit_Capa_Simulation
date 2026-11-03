@@ -2,7 +2,9 @@
 // 트리거(`select`·`close`·`pin`·`move`) 한 번으로만 돌려준다 — 남는 상태 값은 보내지 않는다(보내면 앱 전체가 다시 돈다).
 // 화면을 옮기지 않는 누름(고정·끌어서 차례 바꾸기·다른 탭 닫기)은 누르자마자 서버와 같은 규칙으로 탭 줄을 고쳐 그리고
 // (`<tabs-order>`) 그 차례를 트리거에 싣는다 — 서버는 같은 차례면 페이지를 다시 돌리지 않는다(`page_tabs._settle_drawn`).
-// 고정하지 않은 탭은 끌어서(`<tabs-drag>`) 또는 `Ctrl+Shift+←/→` 로 차례를 바꾼다.
+// 고정하지 않은 탭은 끌어서(`<tabs-drag>`) 또는 `Ctrl+Shift+←/→` 로 차례를 바꾼다. 차례 바꾸기는 누를 때마다 보내지 않는다 —
+// 곧바로 다시 그리고, 연달아 옮긴 마지막 그림만 쉼 뒤 앱이 돌지 않을 때 한 번 보낸다(`<tabs-batch>`). 고정·닫기·고르기는 지금
+// 그림을 함께 실어 아직 보내지 않은 차례를 데려간다.
 // 이 함수는 data·테마가 바뀔 때마다 다시 불린다. 뼈대는 처음 한 번 세우고, 다시 불리면 탭 id 로 맞춰 고친다.
 // 탭은 `<nav>` 안의 목록과 단추다. 탭 패널이 없는 이동 목록이라 탭 역할(ARIA)을 쓰지 않는다 — 배포 화면 확인
 // 스크립트가 그 역할로 본문 탭을 찾는다.
@@ -67,6 +69,12 @@ const DRAG_CLICK_MS = 400
 // Esc·새 data 로 접은 끌기의 포인터를 놓을 때까지 지켜보는 창 사건(`heldRelease`).
 const RELEASE_EVENTS = ['pointerup', 'pointerdown', 'pointercancel']
 const MOVE_KEYS = 'Control+Shift+ArrowLeft Control+Shift+ArrowRight'
+// 차례 바꾸기를 서버에 보내기 전 쉼(`<tabs-batch>`) — 이 안에 또 옮기면 다시 잰다. 키를 누르고 있거나(자동 반복 약 30ms)
+// 0.1~0.2초 간격으로 거듭 누르는 동안은 보내지 않고, 손을 뗀 뒤 한 번 보낸다. 그때 앱이 돌고 있으면 끝날 때까지(길어야
+// `BUSY_MS`) 더 기다린다 — 도는 페이지 회차를 끊어 다시 돌리지 않는다.
+const MOVE_SEND_MS = 400
+// 보낸 그림의 번호가 이만큼 지나 온 data 에도 없으면 서버가 받지 못한 것이다 — 다시 담아 보낸다(`dataArrived`).
+const MOVE_LOST_MS = 2000
 // 넘친 목록 가장자리 흐림 폭(`page_tabs.css` 의 2rem). 지금 탭을 보이게 굴릴 때도 이만큼 띄워 흐림 밖에 둔다.
 const EDGE_PX = 32
 // 새로 읽으면 공식으로 돌아갈 설비 시나리오(띠 CSS 변수 둘 — 파이썬 `app_header.EQUIPMENT_RETURN_VARIABLE` 은 테마 단추
@@ -232,7 +240,9 @@ function strayPress(last, id, now, x, y, ms, px) {
 // 고정한 탭이다. 돌려주는 `{ids, pinned}` 는 고정 탭을 왼쪽에 모은 차례다(`normalized`). `pinnedOrder` 는 `pinned_to` 와 같다 —
 // 고정하면 고정 묶음의 끝, 풀면 나머지 묶음의 앞. `movedOrder` 는 `moved` 와 같다 — 고정하지 않은 탭을 `before` 앞(없거나
 // 모르면 끝)으로, 고정 탭·없는 탭은 그대로. `closableIds` 는 `TabStrip.closable` 이다(고정 탭·마지막 하나는 닫지 않는다).
-// `keyboardMove` 는 `Ctrl+Shift+←/→` 한 칸 — 고정 묶음을 넘지 않고, 옮길 수 없으면 null, 옮기면 `{before}`.
+// `keyboardMove` 는 `Ctrl+Shift+←/→` 한 칸 — 고정 묶음을 넘지 않고, 옮길 수 없으면 null, 옮기면 `{before}`. `mergedOrder` 는
+// `arranged` 와 같다 — 그린 차례(`want`)를 목록 `ids` 에 입힌다(모르는 탭은 버리고, `want` 에 없는 탭은 원래 차례로 뒤에, 고정은
+// `pinned` 그대로).
 function normalizedOrder(ids, marks) {
   const seen = []
   for (const id of ids) if (!seen.includes(id)) seen.push(id)
@@ -254,6 +264,11 @@ function movedOrder(ids, pinned, id, before) {
 function closableIds(ids, pinned) {
   return ids.length > 1 ? ids.filter((id) => !pinned.includes(id)) : []
 }
+function mergedOrder(ids, pinned, want) {
+  const head = []
+  for (const id of want) if (ids.includes(id) && !head.includes(id)) head.push(id)
+  return normalizedOrder([...head, ...ids.filter((id) => !head.includes(id))], pinned)
+}
 function keyboardMove(ids, pinned, id, step) {
   const at = ids.indexOf(id)
   if (at < 0 || pinned.includes(id)) return null
@@ -263,6 +278,61 @@ function keyboardMove(ids, pinned, id, step) {
   return { before: to < rest.length ? rest[to] : null }
 }
 // </tabs-order>
+
+// <tabs-batch>
+// 차례 바꾸기 묶음(2026-11-03 사용자 검수 — 「몇 번 연속으로 좌우로 움직이는 경우 불필요한 로딩이 발생하거나 멈추는 경우」).
+// 누를 때마다 보내면 누름마다 앱 전체 회차가 서고(콜백이 빈 프래그먼트로 바꾸기 전의 틈 — 그동안 프런트가 본문 전체를 흐림
+// 표지로 둔다) 회차 끝 GC 가 두 번 돌아 서버가 누름을 따라가지 못했다(사본 50ms 간격 20번 — 회차 표지 1.4초, 끝난 뒤에도 1.3초
+// 더 돌았다). 페이지가 도는 중의 누름은 그 회차를 끊고 앱 전체를 다시 돌렸다(HOME 진행 막대 2.7초). 그래서 그림은 곧바로 고치고
+// 서버에는 마지막 그림만 한 번 보낸다. `due` 는 그렸지만 보내지 않은 그림({ids, pinned, at}), `sent` 는 보냈지만 data 가 아직
+// 따라오지 않은 그림(`seq` — 서버가 받은 마지막 번호를 data 가 싣는다), `seq` 는 붙인 마지막 번호다. 서버가 아는 차례
+// (`knownOrder` — 따라오지 않은 `sent`, 없으면 data)와 같으면 보내지 않는다(왼쪽 갔다 되돌아옴).
+function createMoveBatch() {
+  return { due: null, sent: null, seq: 0 }
+}
+function sameOrder(a, b) {
+  return a != null && b != null && a.ids.join('\n') === b.ids.join('\n') && a.pinned.join('\n') === b.pinned.join('\n')
+}
+// 옮긴 그림을 담는다 — 쉼을 처음부터 다시 잰다.
+function dueMove(batch, plan, now) {
+  batch.due = { ids: plan.ids.slice(), pinned: plan.pinned.slice(), at: now }
+}
+function knownOrder(batch, data) {
+  return batch.sent || data
+}
+// 담긴 그림을 어떻게 할까 — 'idle'(없음) · 'wait'(쉼 안, 또는 앱이 돈다 — 길어야 `maxMs`) · 'drop'(지금 그림 `drawn` 을 서버가 이미
+// 안다) · 'send'.
+function moveVerdict(batch, drawn, known, now, quietMs, busy, maxMs) {
+  const due = batch.due
+  if (due === null) return 'idle'
+  const age = now - due.at
+  if (age < quietMs || (busy && age < maxMs)) return 'wait'
+  return sameOrder(drawn, known) ? 'drop' : 'send'
+}
+// 지금 그림을 보낸다(차례 묶음이든, 고정·닫기·고르기가 함께 싣는 그림이든) — 번호를 붙이고 담긴 그림을 비운다.
+function claimOrder(batch, plan, now) {
+  batch.seq += 1
+  batch.sent = { ids: plan.ids.slice(), pinned: plan.pinned.slice(), seq: batch.seq, at: now }
+  batch.due = null
+  return batch.seq
+}
+// 새 data 가 왔다 — 서버가 받은 번호 `seq`. 보낸 그림을 서버가 받았으면 놓고, 받은 흔적 없이 `lostMs` 가 지났으면 곧 보내게
+// 다시 담는다. 번호는 data 의 것 아래로 붙이지 않는다(같은 세션을 다시 잇는 문서).
+function dataArrived(batch, seq, now, lostMs) {
+  batch.seq = Math.max(batch.seq, seq)
+  if (batch.sent !== null && seq >= batch.sent.seq) batch.sent = null
+  if (batch.sent !== null && now - batch.sent.at >= lostMs) {
+    if (batch.due === null) batch.due = { ids: batch.sent.ids, pinned: batch.sent.pinned, at: -Infinity }
+    batch.sent = null
+  }
+}
+// 서버 차례 `data`({ids, pinned}) 대신 보일 그림 — 담긴 그림, 없으면 보낸 그림의 차례를 data 목록에 입힌 것(`mergedOrder`),
+// 둘 다 없으면 data 그대로.
+function shownOrder(batch, data) {
+  const want = batch.due || batch.sent
+  return want === null ? data : mergedOrder(data.ids, data.pinned, want.ids)
+}
+// </tabs-batch>
 
 // <tabs-drag>
 // 고정하지 않은 탭을 끌어 차례를 바꾼다(2026-11-02 사용자 요청). HTML5 끌어 놓기가 아니라 포인터 이벤트다 — 가로로 넘치는
@@ -518,6 +588,7 @@ export default function (component) {
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
     drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
+    moves: createMoveBatch(), moveTimer: 0, dataOrder: null, dataSeen: null,
   })
   // 끄는 중에 새 data 가 왔다(다른 회차가 목록을 바꿨다) — 끌기를 접고 새 data 대로 그린다. 놓은 자리를 보내지 않는다. 포인터는
   // 아직 눌려 있다 — 놓을 때의 click 도 고르기가 아니다(`heldRelease`).
@@ -613,9 +684,23 @@ export default function (component) {
       S.items.delete(id)
     }
   }
-  tabs.forEach((tab, index) => {
-    const item = S.items.get(tab.id) || build(tab.id)
-    paint(item, tab)
+  // 서버 차례(data)와, 그 위에 다시 입힐 아직 보내지 않았거나 data 가 따라오지 않은 차례 그림(`<tabs-batch>` — 그 그림이 서버에
+  // 닿으면 서버도 같은 규칙으로 입힌다). 새 data 일 때만 번호를 맞춘다 — 같은 data 로 다시 불린 때(테마)는 그림만 다시 입힌다.
+  // 처음부터 입힌 차례로 놓아 옮기던 탭의 초점이 data 차례로 한 번 밀렸다 돌아오며 빠지지 않게 한다.
+  const dataOrder = {
+    ids: tabs.map((tab) => tab.id),
+    pinned: tabs.filter((tab) => tab.pinned).map((tab) => tab.id),
+  }
+  if (S.dataSeen !== data) {
+    S.dataSeen = data
+    S.dataOrder = dataOrder
+    dataArrived(S.moves, Number.isInteger(data.seq) ? data.seq : 0, Date.now(), MOVE_LOST_MS)
+  }
+  const byId = new Map(tabs.map((tab) => [tab.id, tab]))
+  const placed = shownOrder(S.moves, dataOrder)
+  placed.ids.forEach((id, index) => {
+    const item = S.items.get(id) || build(id)
+    paint(item, { ...byId.get(id), pinned: placed.pinned.includes(id) })
     const at = list.children[index]
     if (at !== item) list.insertBefore(item, at || null)
   })
@@ -694,20 +779,46 @@ export default function (component) {
     syncControls()
     if (focused && focused.isConnected && shadow.activeElement !== focused) focused.focus({ preventScroll: true })
   }
-  // 고정하지 않은 탭을 `before` 앞(null 이면 끝)으로 옮겨 그리고 `move` 를 보낸다. 차례가 그대로면 보내지 않는다. 옮긴 탭이
-  // 목록 밖이면 보이게 굴리고, 읽기 도구에 몇 번째로 갔는지 알린다.
+  // 고정하지 않은 탭을 `before` 앞(null 이면 끝)으로 옮겨 그리고 그 그림을 묶음에 담는다(`<tabs-batch>` — 보내기는
+  // `flushMove`). 차례가 그대로면 담지 않는다. 옮긴 탭이 목록 밖이면 보이게 굴리고, 읽기 도구에 몇 번째로 갔는지 알린다.
   function commitMove(item, before) {
     const id = item.dataset.id
     const ids = visibleIds()
     const plan = movedOrder(ids, pinnedIds(), id, before)
     if (plan.ids.join('\n') === ids.join('\n')) return false
     arrange(plan)
-    S.send('move', { id, before, order: plan.ids, pins: plan.pinned, epoch: S.data.epoch })
+    dueMove(S.moves, plan, Date.now())
+    clearTimeout(S.moveTimer)
+    S.moveTimer = setTimeout(() => flushMove(), MOVE_SEND_MS)
     const left = item.offsetLeft
     const scroll = revealScroll(left, left + item.offsetWidth, list.scrollLeft, list.clientWidth, EDGE_PX)
     if (scroll !== list.scrollLeft) list.scrollLeft = scroll
     setText(announcer, fill(text.moved, { label: item.__parts.label.textContent, index: plan.ids.indexOf(id) + 1 }))
     return true
+  }
+  // 지금 그림(보이는 차례·고정).
+  const drawnOrder = () => ({ ids: visibleIds(), pinned: pinnedIds() })
+  // 쉼이 지났고 앱이 돌지 않으면 담긴 차례를 한 번 보낸다(`<tabs-batch>`). 화면을 옮기는 누름이 날아가는 중·붙든 누름·끄는
+  // 중에도 기다린다 — 옮기는 동안 보낸 트리거는 프런트가 떠나는 화면 주소로 회차를 청한다(`<tabs-queue>`).
+  function flushMove() {
+    clearTimeout(S.moveTimer)
+    const busy = appRunning() || S.queue.flight !== null || S.hold !== null || Boolean(S.drag && S.drag.on)
+    const drawn = drawnOrder()
+    const verdict = moveVerdict(S.moves, drawn, knownOrder(S.moves, S.dataOrder), Date.now(), MOVE_SEND_MS, busy, BUSY_MS)
+    if (verdict === 'wait') {
+      S.moveTimer = setTimeout(() => flushMove(), SETTLE_POLL_MS)
+      return
+    }
+    if (verdict === 'drop') S.moves.due = null
+    if (verdict !== 'send') return
+    const seq = claimOrder(S.moves, drawn, Date.now())
+    S.send('move', { order: drawn.ids, pins: drawn.pinned, seq, epoch: S.data.epoch })
+  }
+  // 고정·닫기·고르기가 싣는 지금 그림과 번호 — 담긴 차례가 있으면 그것을 데려가 따로 보내지 않는다.
+  const claimDrawn = () => {
+    clearTimeout(S.moveTimer)
+    const drawn = drawnOrder()
+    return { order: drawn.ids, pins: drawn.pinned, seq: claimOrder(S.moves, drawn, Date.now()) }
   }
   const leaveOk = () => !S.data.leave || window.confirm(fill(text.leave, { list: S.data.leave }))
   const busy = (item) => {
@@ -726,7 +837,8 @@ export default function (component) {
     if (!leaveOk()) return
     busy(item)
     moving(item.dataset.id)
-    S.send('select', { id: item.dataset.id, epoch: S.data.epoch })
+    const carried = S.moves.due !== null ? claimDrawn() : {}
+    S.send('select', { id: item.dataset.id, epoch: S.data.epoch, ...carried })
   }
   // 보낸 이동이 끝났으면(옮긴 화면의 data 가 왔고 그 회차가 다 돌았거나 잠깐 지났다, 아니면 기다림이 다 됐다) 기다리던 누름을
   // 보낸다. 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가 끝났다는 알림은 컴포넌트에 오지 않는다.
@@ -838,13 +950,16 @@ export default function (component) {
       const next = S.items.get(focusAfterClose(open, id))
       if (next) next.__parts.tab.focus({ preventScroll: true })
     }
+    // 숨기기 전에 지금 그림을 담는다 — 닫는 탭이 제자리에 있어야 서버가 담긴 차례를 먼저 입힌 뒤 보이는 이웃으로 옮긴다
+    // (`_on_close`). 숨긴 뒤에 담으면 닫는 탭이 그림에서 빠져 서버 목록 끝으로 밀리고 이웃이 엇갈린다.
+    const carried = claimDrawn()
     // 곧바로 숨긴다 — 다음 회차가 목록에서 뺄 때까지 기다림이 보이지 않게. 남은 탭의 × 도 서버 규칙대로 맞춘다(마지막
     // 하나는 닫지 않는다) — 지금 탭이 아닌 탭을 닫으면 서버는 페이지를 다시 돌리지 않아 다음 data 가 곧 오지 않는다.
     item.hidden = true
     syncControls()
     // 지금 탭을 닫으면 서버가 이웃으로 옮긴다 — 그 이동도 기록 한 칸·한 번에 하나다.
     if (leaving) moving(null)
-    S.send('close', { id, order: visibleIds(), pins: pinnedIds(), epoch: S.data.epoch })
+    S.send('close', { id, epoch: S.data.epoch, ...carried })
   }
   // 탭 줄 밖의 떠나기 — 머리 툴바의 테마 단추는 화면을 새로 읽어 세션을 바꾼다. 편집표에서 막 손을 뗀 누름이면 그 편집
   // 회차가 돌아와 저장 안 함 표지가 설 때까지 붙든 뒤(`<tabs-hold>`) 부른 쪽의 확인·새로고침(`fn`)을 잇는다. 단추가 누를
@@ -1068,7 +1183,7 @@ export default function (component) {
       const id = item.dataset.id
       const plan = pinnedOrder(visibleIds(), pinnedIds(), id, !item.classList.contains('is-pinned'))
       arrange(plan)
-      S.send('pin', { id, pinned: plan.pinned.includes(id), order: plan.ids, pins: plan.pinned, epoch: S.data.epoch })
+      S.send('pin', { id, pinned: plan.pinned.includes(id), epoch: S.data.epoch, ...claimDrawn() })
     } else {
       select(item)
     }
@@ -1225,6 +1340,11 @@ export default function (component) {
     window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)
   }
 
+  // 담긴 차례(또는 받지 못해 다시 담은 차례)가 있으면 보내기를 다시 잰다 — 이 함수 밖에서 본다(아래와 같은 까닭).
+  if (S.moves.due !== null) {
+    clearTimeout(S.moveTimer)
+    S.moveTimer = setTimeout(() => flushMove(), Math.max(0, MOVE_SEND_MS - (Date.now() - S.moves.due.at)))
+  }
   // 새 data 가 왔다 — 보낸 이동이 끝났는지 본다(지금 탭이 바뀐 data 와 그 회차의 끝이 표지다). 붙든 누름이 있으면 새
   // data 로 다시 본다. 둘 다 이 함수(부품 그리기) 밖에서 본다 — 그리기 안에서 트리거를 보내면 Streamlit 프런트가 그 값을
   // 회차 요청에 싣지 않아 누름이 사라졌다(사외 사본: 탭 줄이 온 즉시 그리기 안에서 보낸 둘째 누름 30번 중 4번이 탭 줄 칸
@@ -1247,6 +1367,7 @@ export default function (component) {
     clearTimeout(S.settleTimer)
     clearTimeout(S.holdTimer)
     clearTimeout(S.focusTimer)
+    clearTimeout(S.moveTimer)
     if (S.onEdit) {
       for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.removeEventListener(type, S.onEdit, true)
     }

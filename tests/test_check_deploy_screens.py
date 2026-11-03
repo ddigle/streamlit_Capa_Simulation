@@ -3660,15 +3660,16 @@ def test_tab_presses_pick_the_visible_tab_that_page_tabs_counted() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tops", "progress", "moved", "kept", "verdict"),
+    ("tops", "progress", "moved", "kept", "keys", "verdict"),
     [
         (
             [{"y": 0, "top": 52.5}, {"y": 60, "top": 52.5}],
             [False, False],
             True,
             True,
-            "스크롤 탭 줄 이동 0px · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 주소 그대로"
-            " — 정한 동작과 같음",
+            (1, True),
+            "스크롤 탭 줄 이동 0px · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 키보드 5번 회차 1 · "
+            "차례·초점 맞음 · 주소 그대로 — 정한 동작과 같음",
         ),
         (
             # 바탕 3aad85d — 스크롤 0 에서 56px, 내리면 52.5px. 고정마다 HOME 이 다시 돈다.
@@ -3676,16 +3677,38 @@ def test_tab_presses_pick_the_visible_tab_that_page_tabs_counted() -> None:
             [True, True],
             False,
             True,
-            "스크롤 탭 줄 이동 3.5px · 고정 진행 막대 2/2 · 끌어 옮김 안 됨 · 주소 그대로"
-            " — 정한 동작과 다름",
+            (1, True),
+            "스크롤 탭 줄 이동 3.5px · 고정 진행 막대 2/2 · 끌어 옮김 안 됨 · 키보드 5번 회차 1 · "
+            "차례·초점 맞음 · 주소 그대로 — 정한 동작과 다름",
         ),
         (
             [{"y": 0, "top": 52.5}, {"y": 0, "top": 52.5}],
             [False, None],
             True,
             False,
-            "스크롤 탭 줄 이동 스크롤 안 됨 · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 주소 바뀜"
-            " — 정한 동작과 다름",
+            (0, True),
+            "스크롤 탭 줄 이동 스크롤 안 됨 · 고정 진행 막대 0/2 · 끌어 옮김 됨 · "
+            "키보드 5번 회차 0 · 차례·초점 맞음 · 주소 바뀜 — 정한 동작과 다름",
+        ),
+        (
+            # 바탕 6aef702 — 누를 때마다 회차가 서고(사본 5번에 회차 4), 빠진 누름으로 차례가
+            # 어긋났다.
+            [{"y": 0, "top": 52.5}, {"y": 60, "top": 52.5}],
+            [False, False],
+            True,
+            True,
+            (4, False),
+            "스크롤 탭 줄 이동 0px · 고정 진행 막대 0/2 · 끌어 옮김 됨 · 키보드 5번 회차 4 · "
+            "차례·초점 틀림 · 주소 그대로 — 정한 동작과 다름",
+        ),
+        (
+            [{"y": 0, "top": 52.5}, {"y": 60, "top": 52.5}],
+            [False, False],
+            True,
+            True,
+            (None, False),
+            "스크롤 탭 줄 이동 0px · 고정 진행 막대 0/2 · 끌어 옮김 됨 · "
+            "키보드 5번 회차 세지 못함 · 차례·초점 틀림 · 주소 그대로 — 정한 동작과 다름",
         ),
     ],
 )
@@ -3694,11 +3717,36 @@ def test_the_tab_strip_frame_line_counts_only(
     progress: list[bool | None],
     moved: bool,
     kept: bool,
+    keys: tuple[int | None, bool],
     verdict: str,
 ) -> None:
     """탭 줄 틀(2026-11-02 사용자 요청) — 스크롤해도 탭 줄이 움직이지 않고(0px), 고정이 페이지를
-    다시 돌리지 않으며(HOME 진행 막대 0), 끌어 옮겨도 화면은 그대로다."""
-    assert screens.summarize_page_tabs_frame(tops, progress, moved, kept) == verdict
+    다시 돌리지 않으며(HOME 진행 막대 0), 끌어 옮겨도 화면은 그대로다. 키보드로 차례를 거듭 바꾸면
+    회차는 한 번만 서고(2026-11-03 사용자 검수 — 묶어 보내기) 차례·초점이 맞다."""
+    assert screens.summarize_page_tabs_frame(tops, progress, moved, kept, *keys) == verdict
+
+
+def test_run_episodes_merge_the_callback_runs_gap_and_count_separate_runs() -> None:
+    """회차 표지 기록에서 회차가 선 수 — 콜백 회차가 빈 프래그먼트로 바뀌는 틈(150ms 안)은 한 번으로
+    센다. 기록이 없으면 세지 못한다."""
+    one = [[0, False], [400, True], [420, False], [430, True], [460, False]]
+    two = [[0, False], [100, True], [120, False], [400, True], [420, False]]
+    busy_at_start = [[0, True], [50, False]]
+    assert screens.run_episodes(one) == 1
+    assert screens.run_episodes(two) == 2
+    assert screens.run_episodes(busy_at_start) == 1
+    assert screens.run_episodes([[0, False]]) == 0
+    assert screens.run_episodes(None) is None
+
+
+def test_keyboard_moves_follow_the_strip_rule_for_the_last_tab() -> None:
+    """끝 탭을 `Ctrl+Shift+←/→` 로 옮긴 차례 — 이웃과 자리를 바꾸고 고정 묶음 · 끝을 넘지 않는다(탭
+    줄 `keyboardMove`). 화면 확인 꼴(← → ← → ←)은 한 칸 왼쪽에서 끝난다."""
+    ids = ["h", "a", "b"]
+    assert screens.keyboard_moved_order(ids, 1, screens.TAB_KEY_PRESSES) == ["h", "b", "a"]
+    assert screens.keyboard_moved_order(ids, 1, (-1, -1, -1)) == ["h", "b", "a"]
+    assert screens.keyboard_moved_order(ids, 1, (1,)) == ids
+    assert screens.keyboard_moved_order(["h"], 1, (-1,)) == ["h"]
 
 
 # ------------------------------------------------------------------ 제약 시뮬레이션
