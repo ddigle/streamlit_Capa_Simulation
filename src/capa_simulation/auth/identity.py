@@ -98,20 +98,34 @@ def session_end_of(
     return end, end == identity.auth_time + cfg.session_max_seconds
 
 
+def session_check(
+    identity: Identity, cfg: SsoConfig, now: int, *, renewals: bool = True
+) -> tuple[IdentityProblem | None, int]:
+    """`(문제, 끝)` — `session_problem` 과 같은 판정에 그때 잰 끝(`session_end_of`)을 함께 준다.
+
+    문지기의 열린 연결이 그 끝을 기억해 둔다 — 갱신 표 칸은 끝 + 여유가 지나면 지워지므로 닫는
+    순간에는 상한으로 끝났는지 다시 알 수 없다.
+    """
+    end, _ = session_end_of(identity, cfg, now, renewals=renewals)
+    if runtime.session_revoked(identity.sid, now=now):
+        return IdentityProblem.REVOKED, end
+    if now > end + SESSION_LEEWAY:
+        return IdentityProblem.EXPIRED, end
+    return None, end
+
+
 def session_problem(
     identity: Identity, cfg: SsoConfig, now: int, *, renewals: bool = True
 ) -> IdentityProblem | None:
-    """이미 검증한 신원이 지금도 유효한가 — 끝(+ 세션 토큰 검증과 같은 여유)과 로그아웃 폐기 목록.
+    """이미 검증한 신원이 지금도 유효한가 — 로그아웃 폐기 목록과 끝(+ 세션 토큰 검증과 같은 여유).
 
     문지기가 websocket 핸드셰이크 뒤 메시지마다 부른다(서명은 핸드셰이크 때 이미 봤다 — HMAC 을 다시
-    풀지 않는다). 끝을 먼저 본다 — 갱신 표가 폐기를 되살리지 못한다. 유효하면 `None`.
+    풀지 않는다). 폐기를 먼저 본다 — 둘 다 거절이라 안전성은 같고, 로그아웃이 갱신 표 칸을 지워
+    핸드셰이크 토큰의 끝이 이미 지난 열린 탭도 `REVOKED` 로 가른다(갱신 표가 폐기를 되살리지도
+    못한다). 유효하면 `None`.
     """
-    end, _ = session_end_of(identity, cfg, now, renewals=renewals)
-    if now > end + SESSION_LEEWAY:
-        return IdentityProblem.EXPIRED
-    if runtime.session_revoked(identity.sid, now=now):
-        return IdentityProblem.REVOKED
-    return None
+    problem, _ = session_check(identity, cfg, now, renewals=renewals)
+    return problem
 
 
 def identity_from_cookies(

@@ -44,12 +44,12 @@ from capa_simulation.auth.identity import (
     IdentityProblem,
     identity_from_cookie_header,
     parse_cookie_header,
-    session_end_of,
-    session_problem,
+    session_check,
 )
 from capa_simulation.auth.web import (
     LOGIN_REQUIRED,
     config_page,
+    method_not_allowed,
     next_from_scope,
     origin_allowed,
     start_login,
@@ -112,6 +112,10 @@ class _WatchedSocket:
         self._receive = receive
         self._send = send
         self._closed = False
+        # 이 연결이 본 가장 늦은 끝. 갱신 표 칸은 끝 + 여유가 지나면 지워져(그 sid 를 읽을 때 ·
+        # 다른 sid 의 갱신 때) 닫는 순간에는 핸드셰이크 토큰의 끝만 남는다 — 상한으로 끝났는지를
+        # 그 끝으로 가르면 하루 내내 쓴 탭이 `end=idle` 로 적힌다.
+        self._end_seen = 0
 
     async def receive(self) -> Message:
         if self._closed:
@@ -120,15 +124,16 @@ class _WatchedSocket:
         if message.get("type") != "websocket.receive":
             return message
         now = int(time.time())
-        problem = session_problem(self._identity, self._cfg, now)
+        problem, end_now = session_check(self._identity, self._cfg, now)
+        self._end_seen = max(self._end_seen, end_now)
         if problem is None:
             return message
         self._closed = True
         loginid = self._identity.loginid
         if problem is IdentityProblem.EXPIRED:
             # 「쓰는 중인데 끊겼다」 문의에 하루 상한(max)인지 유휴(idle)인지 바로 보이게.
-            _, capped = session_end_of(self._identity, self._cfg, now)
-            end = "max" if capped else "idle"
+            cap = self._identity.auth_time + self._cfg.session_max_seconds
+            end = "max" if self._end_seen == cap else "idle"
             runtime.record_event("session_closed", reason=problem.value, loginid=loginid, end=end)
         else:
             runtime.record_event("session_closed", reason=problem.value, loginid=loginid)
@@ -177,7 +182,7 @@ class SsoGate:
             # 갱신 경로는 POST 하나다. 라우터의 405 에 맡기면 Streamlit 정적 마운트가 모르는
             # GET 경로에 index.html 을 낸다(SPA) — 주소창 GET 이 앱 껍데기 · IdP 로 가지 않게
             # 여기서 답한다.
-            await self._method_not_allowed(scope, receive, send)
+            await method_not_allowed()(scope, receive, send)
             return
         if kind == "http" and _is_public(path, method):
             await self.app(scope, receive, send)
@@ -236,12 +241,6 @@ class SsoGate:
             await self._close(send)
             return
         await text_response(text, status)(scope, receive, send)
-
-    @staticmethod
-    async def _method_not_allowed(scope: Scope, receive: Receive, send: Send) -> None:
-        response = text_response("Method Not Allowed", 405)
-        response.headers["Allow"] = "POST"
-        await response(scope, receive, send)
 
     @staticmethod
     async def _close(send: Send) -> None:

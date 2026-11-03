@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
-import secrets
+import random
 import subprocess
 import sys
 import time
@@ -356,6 +356,8 @@ def test_expired_or_expiring_certificate_warns_but_does_not_block() -> None:
     [
         ("x" * 31, "too_short"),
         ("ab" * 20, "low_variety"),
+        # 32자 hex 인데 서로 다른 글자가 아홉 — 무작위 `token_hex(16)` 도 값마다 약 1e-4 로 이렇다.
+        ("7b2e9a40c7e2b90a4c27b9e0a2c4e7b9", "low_variety"),
         ("ChangeMe-0123456789-ABCDEFGHIJKLMN", "placeholder"),
         ("my-jwt-SECRET-0123456789abcdefghij", "placeholder"),
         ("0123456789abcdefghijk\x01lmnopqrstuvwxyz", "control_chars"),
@@ -388,31 +390,49 @@ def test_a_32_byte_varied_secret_is_enough() -> None:
     assert cfg.mode is SsoMode.ON
 
 
+GENERATED_SECRET_SEED = 20261103
+
+
+def _urlsafe(rng: random.Random, size: int) -> str:
+    """`secrets.token_urlsafe(size)` 와 같은 꼴 — 무작위 바이트의 base64url, 끝 `=` 없음."""
+    return base64.urlsafe_b64encode(rng.randbytes(size)).rstrip(b"=").decode("ascii")
+
+
 @pytest.mark.parametrize(
     "make",
     [
-        lambda: secrets.token_urlsafe(48),
-        lambda: secrets.token_urlsafe(32),
-        lambda: secrets.token_hex(16),
-        lambda: secrets.token_hex(32),
-        lambda: secrets.token_hex(16).upper(),
-        lambda: base64.b64encode(secrets.token_bytes(24)).decode("ascii"),
+        lambda rng: _urlsafe(rng, 48),
+        lambda rng: _urlsafe(rng, 32),
+        lambda rng: rng.randbytes(16).hex(),
+        lambda rng: rng.randbytes(32).hex(),
+        lambda rng: rng.randbytes(16).hex().upper(),
+        lambda rng: base64.b64encode(rng.randbytes(24)).decode("ascii"),
     ],
 )
-def test_generated_secrets_are_not_mistaken_for_weak_ones(make: Callable[[], str]) -> None:
-    """흔한 생성 명령(`token_urlsafe` · `token_hex` · `openssl rand -base64`)의 값은 되풀이 · 차례
-    검사에 걸리지 않는다 — 무작위 값의 차례 몫은 0.16 을 넘지 않았다(표본 각 4천 개)."""
+def test_generated_secrets_are_not_mistaken_for_weak_ones(
+    make: Callable[[random.Random], str],
+) -> None:
+    """흔한 생성 명령(`token_urlsafe` · `token_hex` · `openssl rand -base64`)과 같은 꼴의 값은
+    되풀이 · 차례 검사에 걸리지 않는다 — 무작위 값의 차례 몫은 0.16 을 넘지 않았다(표본 각 4천 개).
+
+    표본은 씨앗을 고정한 300개다. 매번 새로 뽑으면 32자 hex 가 값마다 약 1e-4 로 서로 다른 글자
+    10개 미만이 되어(그 값은 `low_variety` 거절이 맞다 — `test_weak_secrets_block`) 회차의 몇 % 가
+    까닭 없이 실패한다.
+    """
+    rng = random.Random(GENERATED_SECRET_SEED)
     for _ in range(300):
-        value = make()
+        value = make(rng)
         assert not secret_repeats(value), value
         assert secret_sequence_share(value) < SECRET_SEQUENCE_SHARE, value
         assert load_config(sso_environ({names.ENV_SECRET: value})).mode is SsoMode.ON
 
 
 def test_a_very_long_secret_is_checked_quickly() -> None:
+    """4만 자 — 씨앗 고정(매번 새로 뽑으면 자리표 낱말 「dummy」 등이 회차의 약 0.1% 에 든다)."""
+    value = _urlsafe(random.Random(GENERATED_SECRET_SEED), 30_000)
     started = time.monotonic()
 
-    cfg = load_config(sso_environ({names.ENV_SECRET: secrets.token_urlsafe(30_000)}))
+    cfg = load_config(sso_environ({names.ENV_SECRET: value}))
 
     assert cfg.mode is SsoMode.ON
     assert time.monotonic() - started < 2

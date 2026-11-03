@@ -622,6 +622,15 @@ def test_development_http_loopback_uses_plain_cookie_names() -> None:
         ("/auth/callback", "/"),
         ("/authority", "/authority"),
         ("/한글", "/"),
+        ("/./auth/sso/logout", "/"),
+        ("/%2e/auth/sso/logout", "/"),
+        ("/x/../auth/callback", "/"),
+        ("/%2E%2E/8511/", "/"),
+        ("/.%2e/8511/", "/"),
+        ("/page/..", "/"),
+        ("/.well-known", "/.well-known"),
+        ("/a..b", "/a..b"),
+        ("/?q=/../x", "/?q=/../x"),
     ],
 )
 def test_sanitize_next(raw: str | None, expected: str) -> None:
@@ -694,6 +703,17 @@ def test_routes_are_404_while_off(path: str) -> None:
 
     method = "POST" if path in (names.CALLBACK_PATH, names.REFRESH_PATH) else "GET"
     response = http(routes_app(), method, path, headers=FORM, body=b"a=1")
+
+    assert response.status == 404
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_refresh_read_methods_are_404_while_off_too(method: str) -> None:
+    """갱신 경로를 POST 로만 붙이면 꺼짐(문지기가 모두 넘김)의 GET 이 Streamlit 정적 마운트로 가 앱
+    껍데기(200)가 섰다 — 「꺼짐이면 경로 다섯은 404」 를 GET · HEAD 에도 지킨다."""
+    runtime.reset()
+
+    response = http(routes_app(), method, names.REFRESH_PATH)
 
     assert response.status == 404
 
