@@ -154,7 +154,7 @@ def render_process_rename_management(
             active=bool(collisions),
             text=(
                 f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건 — 두 공정이 같은 글자로 "
-                "보임 · Proc Rename 에서 표시명 고치기"
+                "보임 · Proc Rename 에서 고치기"
             ),
             full=(
                 f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "

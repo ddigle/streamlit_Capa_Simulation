@@ -84,7 +84,7 @@ from capa_simulation.components.process_capa_view import (
     reopen_entry_section,
 )
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.state_alerts import alert_page_error
+from capa_simulation.components.state_alerts import alert_page_error, missing_handover_text
 from capa_simulation.components.upeh_assumption_controls import (
     render_inverse,
     render_upeh_assumption_controls,
@@ -148,7 +148,6 @@ from capa_simulation.services.display_order_scopes import (
 from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.korean_particle import (
-    topic_particle,
     with_object_particle,
     with_topic_particle,
 )
@@ -455,11 +454,11 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
 # Alarm, 자리에 그리지 않는다). 알림창 · 패널은 평문이라 이름을 막지 않는다. 표지는 바로 아래
 # 한 자리(`flush` — 늘 부른다)가 보낸다.
 if entry.missing_process is not None:
-    missing_label = process_labels.label(entry.missing_process)
     alerts.event(
         "PD-02",
-        text=f"넘겨받은 공정 「{missing_label}」{topic_particle(missing_label)} 시나리오·조회기간에"
-        " 없어 기본 공정을 엽니다",
+        text=missing_handover_text(
+            process_labels.label(entry.missing_process), None, fallback="기본 공정을"
+        ),
     )
 if entry.month_outside is not None and entry.month is not None:
     outside = with_topic_particle(month_label(entry.month_outside))

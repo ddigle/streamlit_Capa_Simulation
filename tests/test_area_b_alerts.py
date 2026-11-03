@@ -75,9 +75,10 @@ def _scheduler_status(database: str, tab: str | None, mode: str) -> None:
         tick_seconds=30.0,
     )
     scheduler = SimpleNamespace(status=lambda: status) if mode == "stalled" else None
-    original = (tab_module.running_scheduler, tab_module.scheduler_opted_in)
-    tab_module.running_scheduler = lambda: scheduler  # type: ignore[assignment,return-value]
-    tab_module.scheduler_opted_in = lambda: mode == "missing"
+    # 모듈이 들여온 이름을 이 회차 동안만 갈아 끼운다(내보내지 않은 이름이라 모듈 사전으로).
+    original = (vars(tab_module)["running_scheduler"], vars(tab_module)["scheduler_opted_in"])
+    vars(tab_module)["running_scheduler"] = lambda: scheduler
+    vars(tab_module)["scheduler_opted_in"] = lambda *args: mode == "missing"
     try:
         tab_module._render_status(
             repository,
@@ -86,7 +87,8 @@ def _scheduler_status(database: str, tab: str | None, mode: str) -> None:
             alert_tab=tab,
         )
     finally:
-        tab_module.running_scheduler, tab_module.scheduler_opted_in = original
+        vars(tab_module)["running_scheduler"] = original[0]
+        vars(tab_module)["scheduler_opted_in"] = original[1]
 
 
 def _status_app(tmp_path: Path, tab: str | None, mode: str) -> AppTest:
@@ -235,14 +237,15 @@ def _admin_checks(cert: bool, root_error: str) -> None:
             unknown_disabled=(),
             root_error=root_error,
         )
-    original = (sso_status._expiring_certs, module_status.module_scan)
-    sso_status._expiring_certs = lambda cfg, now: ["DEMO-X5T"] if cert else []  # type: ignore[assignment]
-    module_status.module_scan = lambda: scan  # type: ignore[assignment]
+    original = (vars(sso_status)["_expiring_certs"], vars(module_status)["module_scan"])
+    vars(sso_status)["_expiring_certs"] = lambda cfg, now: ["DEMO-X5T"] if cert else []
+    vars(module_status)["module_scan"] = lambda: scan
     try:
         sso_status.render_sso_status()
         module_status.render_module_status()
     finally:
-        sso_status._expiring_certs, module_status.module_scan = original
+        vars(sso_status)["_expiring_certs"] = original[0]
+        vars(module_status)["module_scan"] = original[1]
 
 
 def test_cert_expiry_and_an_unreadable_module_root_are_alerts() -> None:

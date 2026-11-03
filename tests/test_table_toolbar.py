@@ -122,8 +122,6 @@ EXPANDER_CLEARANCE_PENDING: dict[tuple[str, str], str] = {
     (path, function): "펼침 첫 표 — 그 영역 고침 대기(2026-10-27 그물 넓힘)"
     for path, function in (
         ("app_pages/standard_target_capa.py", "_render_standard_target_exceptions"),
-        ("app_pages/load_conversion.py", "_render_locked_yield_rows"),
-        ("app_pages/load_conversion.py", ""),
         ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"),
         ("src/capa_simulation/components/scenario_year_shift.py", "_render_shift"),
         ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"),

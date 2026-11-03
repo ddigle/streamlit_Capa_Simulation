@@ -15,6 +15,8 @@
   쪽이 그대로 그리고, 이 함수는 사건 알림 하나를 보낸다 — id 를 그 글의 지문으로 고정해 같은 글이면
   이 브라우저 탭에 **한 번만** 알림창이 뜬다(회차마다 다시 그리는 오류가 알림창을 거듭 띄우지
   않는다). 해소 줄은 없다 — 화면이 다시 서면 자리 오류가 사라진다.
+- `missing_handover_text` — 넘겨받은 공정을 열지 못한 사건 알림(`PD-02` · `CS-02`)의 글(평문 —
+  이름을 막지 않는다).
 - `tab_name` · `open_tab_name` — 탭 안 상태 알림의 `tab`(「그 화면으로」 가 그 탭까지 연다 — 탭 안
   탭은 바깥 → 안 차례로 ` › ` 로 잇는다). `open_tab_name` 은 닫힌 탭이면 None 이다 — 그 회차에는 그
   탭의 상태 알림을 내지 않는다(설계 2-3 「숨은 자리는 세지 않는다」 — 숨은 탭에서 난 알림창은 어디
@@ -36,6 +38,7 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.scenario_state import ActiveScenario, is_pristine_content_token
+from capa_simulation.services.korean_particle import object_particle, topic_particle
 from capa_simulation.services.month_columns import month_label
 
 # 범위 줄에서 기간을 보지 않는 알림(대당 Capa 의 측정률 가정 · 적용 뒤 전체 기간 셈)의 말.
@@ -174,3 +177,13 @@ def open_tab_name(tab: OpenTab | None, *labels: str) -> str | None:
     """열린 탭이면 `tab_name(*labels)`, 닫힌 탭이면 None — 닫힌 탭 안의 상태 알림은 그 회차에 내지
     않는다(부르는 쪽이 None 이면 `alerts.state` 를 건너뛴다)."""
     return None if tab_is_hidden(tab) else tab_name(*labels)
+
+
+def missing_handover_text(missing: str, opened: str | None, *, fallback: str) -> str:
+    """넘겨받은 공정(`missing` — 표시명)이 시나리오 · 조회기간에 없어 다른 공정으로 연 사건 알림의
+    글. `opened` 는 대신 연 공정 표시명이고 None 이면 `fallback`(「기본 공정을」 · 「공정
+    없이」)이다. 알림창 · 패널은 평문(`textContent`)이라 이름을 막지 않는다 — 마크다운 자리에 그리지
+    않는다."""
+    target = fallback if opened is None else f"「{opened}」{object_particle(opened)}"
+    lead = f"넘겨받은 공정 「{missing}」{topic_particle(missing)}"
+    return f"{lead} 시나리오·조회기간에 없어 {target} 엽니다"

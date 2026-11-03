@@ -98,7 +98,7 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.state_alerts import alert_page_error
+from capa_simulation.components.state_alerts import alert_page_error, missing_handover_text
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_ABSENT_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
@@ -182,7 +182,6 @@ from capa_simulation.services.constraint_simulation import (
     constraint_month_inputs,
     simulate_constraint,
 )
-from capa_simulation.services.korean_particle import object_particle, topic_particle
 from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
@@ -342,13 +341,14 @@ opened_process = prune_choice(
 # 그리지 않는다). 알림창 · 패널은 평문이라 이름을 막지 않는다. 표지는 바로 아래 한 자리(`flush` —
 # 늘 부른다)가 보낸다.
 if missing_label is not None:
-    missing = f"「{missing_label}」{topic_particle(missing_label)}"
-    if opened_process is None:
-        opened = "공정 없이"
-    else:
-        opened_label = process_labels.label(opened_process)
-        opened = f"「{opened_label}」{object_particle(opened_label)}"
-    alerts.event("CS-02", text=f"넘겨받은 공정 {missing} 시나리오·조회기간에 없어 {opened} 엽니다")
+    alerts.event(
+        "CS-02",
+        text=missing_handover_text(
+            missing_label,
+            None if opened_process is None else process_labels.label(opened_process),
+            fallback="공정 없이",
+        ),
+    )
 with notices:
     alerts.flush()
 

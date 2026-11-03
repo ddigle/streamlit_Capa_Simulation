@@ -376,8 +376,8 @@ def render_availability_gap_panel(
         text=(
             None
             if late_start is None
-            else f"Static 대비 일정 첫 달이 모자라게 세어집니다 — 조회 시작을 "
-            f"{late_start[0]:%Y-%m-%d} 로 앞당기세요"
+            else "Static 대비 일정 첫 달이 모자라게 세어집니다 — 조회기간 시작을 앞당기세요(필요한 "
+            f"첫날 {late_start[0]:%Y-%m-%d})"
         ),
         full=(
             None
