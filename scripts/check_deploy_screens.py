@@ -3533,6 +3533,78 @@ _PROGRESS_SEEN_JS = """() => {
   watch.on = false;
   return watch.seen;
 }"""
+# 회차 표지(`stApp` 의 `data-test-script-state`)가 「돈다」 로 바뀐 때와 걷힌 때를 적는다 — 키보드로
+# 차례를 거듭 바꾸는 동안 회차가 몇 번 섰는지(`run_episodes`) 센다. 바탕 6aef702 는 누를 때마다
+# 회차가 섰다.
+_RUN_WATCH_JS = """() => {
+  if (window.__capaRunWatch) window.__capaRunWatch.stop();
+  const app = document.querySelector('[data-testid="stApp"]');
+  const busy = () =>
+    ['running', 'rerunRequested'].includes(app.getAttribute('data-test-script-state'));
+  const watch = { marks: [[performance.now(), busy()]] };
+  const observer = new MutationObserver(() => watch.marks.push([performance.now(), busy()]));
+  observer.observe(app, { attributes: true, attributeFilter: ['data-test-script-state'] });
+  watch.stop = () => observer.disconnect();
+  window.__capaRunWatch = watch;
+}"""
+_RUN_MARKS_JS = """() => {
+  const watch = window.__capaRunWatch;
+  if (!watch) return null;
+  watch.stop();
+  return watch.marks;
+}"""
+# 탭 줄 그림자 안 초점이 있는 탭(화면 경로 — 판정에만 쓴다).
+_TAB_FOCUS_JS = """(key) => {
+  const host = document.querySelector('.st-key-' + key);
+  const holder = host && [...host.querySelectorAll('*')].find((e) => e.shadowRoot);
+  const root = holder && holder.shadowRoot;
+  const focused = root && root.activeElement;
+  const item = focused && focused.closest ? focused.closest('.capa-tabs-item') : null;
+  return item && focused.classList.contains('capa-tabs-tab') ? item.dataset.id : null;
+}"""
+# 키보드 차례 바꾸기를 거듭 누르는 꼴 — 끝 탭에서 ← · → 를 번갈아 다섯 번(80ms 간격, 끝은 한 칸
+# 왼쪽)이다.
+TAB_KEY_PRESSES: Final = (-1, 1, -1, 1, -1)
+TAB_KEY_GAP_MS: Final = 80
+# 회차 표지가 이만큼 안에 다시 서면 한 회차로 센다 — 콜백 회차가 빈 프래그먼트로 바뀌는 틈(한두
+# 프레임).
+RUN_EPISODE_GAP_MS: Final = 150.0
+
+
+def run_episodes(
+    marks: Sequence[Sequence[Any]] | None, gap_ms: float = RUN_EPISODE_GAP_MS
+) -> int | None:
+    """회차 표지 기록(`[[시각 ms, 돈다], …]`)에서 회차가 선 횟수. 걷힌 뒤 `gap_ms` 안에 다시 서면 한
+    번으로 센다. 기록이 없으면 None."""
+    if marks is None:
+        return None
+    episodes = 0
+    busy = False
+    ended: float | None = None
+    for at, running in marks:
+        if running and not busy:
+            if ended is None or float(at) - ended > gap_ms:
+                episodes += 1
+            busy = True
+        elif not running and busy:
+            busy = False
+            ended = float(at)
+    return episodes
+
+
+def keyboard_moved_order(ids: Sequence[str], pinned: int, steps: Sequence[int]) -> list[str]:
+    """끝 탭을 `Ctrl+Shift+←/→` 로 `steps` 만큼 옮긴 차례(고정 묶음은 넘지 않는다 — 탭 줄
+    `keyboardMove`)."""
+    order = list(ids)
+    if len(order) <= pinned:
+        return order
+    target = order[-1]
+    for step in steps:
+        at = order.index(target)
+        to = at + step
+        if pinned <= to < len(order):
+            order.insert(to, order.pop(at))
+    return order
 
 
 def summarize_page_tabs_frame(
@@ -3540,21 +3612,36 @@ def summarize_page_tabs_frame(
     progress: Sequence[bool | None],
     moved: bool,
     kept: bool,
+    key_runs: int | None,
+    key_kept: bool,
 ) -> str:
     """탭 줄 틀 한 줄 — 스크롤 0·60px 의 탭 줄 top 차이(px), HOME 에서 다른 탭을 고정했다 풀 때 진행
-    막대가 선 누름 수, 고정하지 않은 탭을 끌어 고정 묶음 바로 뒤로 옮겼는가, 주소가 그대로인가.
-    정한 동작은 「0px · 막대 0/2 · 옮김 · 그대로」 다(2026-11-02 사용자 요청)."""
+    막대가 선 누름 수, 고정하지 않은 탭을 끌어 고정 묶음 바로 뒤로 옮겼는가, 키보드로 차례를 거듭
+    바꾼 동안 회차가 선 수(`key_runs`)와 그 뒤 차례·초점이 맞는가(`key_kept`), 주소가 그대로인가.
+    정한 동작은 「0px · 막대 0/2 · 옮김 · 키보드 회차 1 · 그대로」 다(2026-11-02 사용자 요청,
+    키보드는 2026-11-03 사용자 검수 — 거듭 누르면 누를 때마다 회차가 서 불필요한 로딩 · 멈춤)."""
     scrolled = bool(tops) and len(tops or []) == 2 and float((tops or [])[1]["y"]) > 0
     shift = abs(float(tops[1]["top"]) - float(tops[0]["top"])) if tops and scrolled else None
     bars = sum(1 for seen in progress if seen)
     same = (
-        shift is not None and shift < 0.5 and bars == 0 and None not in progress and moved and kept
+        shift is not None
+        and shift < 0.5
+        and bars == 0
+        and None not in progress
+        and moved
+        and kept
+        and key_runs is not None
+        and key_runs <= 1
+        and key_kept
     )
     shift_text = "스크롤 안 됨" if shift is None else f"{shift:g}px"
+    runs_text = "세지 못함" if key_runs is None else str(key_runs)
     return (
         f"스크롤 탭 줄 이동 {shift_text} · 고정 진행 막대 {bars}/{len(progress)} · "
-        f"끌어 옮김 {'됨' if moved else '안 됨'} · 주소 {'그대로' if kept else '바뀜'} — "
-        f"정한 동작과 {'같음' if same else '다름'}"
+        f"끌어 옮김 {'됨' if moved else '안 됨'} · "
+        f"키보드 {len(TAB_KEY_PRESSES)}번 회차 {runs_text} · "
+        f"차례·초점 {'맞음' if key_kept else '틀림'} · "
+        f"주소 {'그대로' if kept else '바뀜'} — 정한 동작과 {'같음' if same else '다름'}"
     )
 
 
@@ -3575,8 +3662,9 @@ def _drag_tab(screen: Screen, source: int, target_x: float) -> None:
 def check_page_tabs_frame(screen: Screen) -> str:
     """머리 띠 아래 화면 탭 줄의 틀 — (1) 긴 화면(HOME)을 스크롤해도 탭 줄이 움직이지 않는가, (2)
     다른 탭 고정·풀기가 페이지를 다시 돌리지 않는가(HOME 진행 막대), (3) 고정하지 않은 탭을 끌어
-    차례를 바꾸면 화면은 그대로인가. 개수·px·있음/없음만 찍는다. 보는 조작이라 DB 에 쓰지 않는다 —
-    고정은 풀어 되돌리고, 탭 차례는 세션에만 산다."""
+    차례를 바꾸면 화면은 그대로인가, (4) 끝 탭에 초점을 두고 `Ctrl+Shift+←/→` 를 거듭 누르는 동안
+    회차가 한 번만 서고(탭 줄이 마지막 차례만 묶어 보낸다) 차례·초점이 맞는가. 개수·px·있음/없음만
+    찍는다. 보는 조작이라 DB 에 쓰지 않는다 — 고정은 풀어 되돌리고, 탭 차례는 세션에만 산다."""
     screen.open_home()
     for _ in range(PAGE_TABS_MAX):
         if not _close_first_closable_tab(screen):
@@ -3609,7 +3697,33 @@ def check_page_tabs_frame(screen: Screen) -> str:
             after = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
             moved = after == [*before[:pinned], before[-1], *before[pinned:-1]]
             kept = screen.path() in ("", "/")
-    return summarize_page_tabs_frame(tops, progress, moved, kept)
+    screen.step("키보드")
+    key_runs, key_kept = _press_tab_keys(screen)
+    kept = kept and screen.path() in ("", "/")
+    return summarize_page_tabs_frame(tops, progress, moved, kept, key_runs, key_kept)
+
+
+def _press_tab_keys(screen: Screen) -> tuple[int | None, bool]:
+    """끝 탭에 초점을 두고 `TAB_KEY_PRESSES` 를 80ms 간격으로 누른 뒤 앱이 쉴 때까지 회차가 선 수와,
+    그 뒤 보이는 차례가 기대와 같고 초점이 옮긴 탭에 남았는가."""
+    screen.wait_idle()
+    before = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
+    pinned = sum(1 for tab in screen.page_tabs() if tab["pinned"])
+    if len(before) < pinned + 2:
+        return None, False
+    expected = keyboard_moved_order(before, pinned, TAB_KEY_PRESSES)
+    screen.tab_item(len(before) - 1).locator(".capa-tabs-tab").focus()
+    screen.js(_RUN_WATCH_JS)
+    for step in TAB_KEY_PRESSES:
+        screen.page.keyboard.press(f"Control+Shift+{'ArrowLeft' if step < 0 else 'ArrowRight'}")
+        screen.page.wait_for_timeout(TAB_KEY_GAP_MS)
+    # 탭 줄은 쉼(0.4초) 뒤 한 번 보낸다 — 그 회차까지 본다.
+    screen.page.wait_for_timeout(1200)
+    screen.wait_idle()
+    runs = run_episodes(screen.js(_RUN_MARKS_JS))
+    after = list(screen.js(_TAB_IDS_JS, PAGE_TABS_KEY) or [])
+    focus = screen.js(_TAB_FOCUS_JS, PAGE_TABS_KEY)
+    return runs, after == expected and focus == before[-1]
 
 
 # ------------------------------------------------------------- 알림 칸(Alarm · 알림창 — 2026-11-03)
