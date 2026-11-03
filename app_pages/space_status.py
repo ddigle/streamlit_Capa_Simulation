@@ -617,7 +617,8 @@ render_equipment_scenario_row(equipment_session)
 # 사이드바 「Space 도면」 상자의 자리 — 지금 세우고(조건 카드보다 먼저 — 사이드바는 부른 차례로
 # 선다) 안은 아래 「상자 채우기」 가 채운다. 배치 줄(「가정 배치 · 공식과 다른 호기 n대」 등 — 도면
 # 위 머리 칸에 서던 것)과 일정 없는 호기 줄(가정 시나리오 계산 제외)도 그 상자 끝이다.
-space_box = st.sidebar.container(key=page_box_key(SPACE_BOX_NAME))
+# 테두리는 조회 조건 패널 · 설정 상자와 같은 1px 선이다(`border=True` — 패널과 같은 꼴).
+space_box = st.sidebar.container(border=True, key=page_box_key(SPACE_BOX_NAME))
 layout_lines = (
     [] if using_sample_equipment else space_layout_notices(equipment_session, floor_differences)
 )

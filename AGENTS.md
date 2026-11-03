@@ -2573,7 +2573,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME 「HOME 설정」 하나, 2026-11-02)는 조건 카드와 같은 면·`ACCENT` 아이콘·머리 글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸)
     표식이다. key 끝 `PENDING_SUFFIX` 면 왼쪽 주황 띠, 잠기면 표식을 걷는다(`tests/test_sidebar_stylesheet.py`).
   - **화면 조작 상자**(`sidebar_status.PAGE_BOX_PREFIX` — 안에 위젯 여럿, 지금은 Space 현황 「Space 도면」 하나, 2026-11-03)는
-    `_page_box_style` 이 조건 패널과 같은 면(`NAV_CONTROL_TINT`)·모서리 10px·안 여백, 맨 위 제목 한 줄(1rem·700), 이름 줄
+    `_page_box_style` 이 조건 패널과 같은 면(`NAV_CONTROL_TINT`)·모서리 10px·안 여백(1px 테두리는 패널처럼 페이지의
+    `container(border=True)`), 맨 위 제목 한 줄(1rem·700), 이름 줄
     (`condition_field.condition_name_row` — 0.75rem·`TEXT_MUTED`·첫 칸 600)을 건다. 상자 안 단추·토글은 Streamlit 기본 결이다.
 - `src/capa_simulation/components/column_filter.py` — 분류 컬럼별 다중선택 필터와 초기화 버튼이다. 거른
   프레임을 돌려준다.

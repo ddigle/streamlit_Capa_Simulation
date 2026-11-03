@@ -392,10 +392,11 @@ def table_card(name: str) -> DeltaGenerator:
 def page_box_key(name: str) -> str:
     """화면 조작 상자(컨테이너)의 key — `PAGE_BOX_PREFIX` + 이름(화면마다 하나).
 
-    페이지가 `st.sidebar.container(key=page_box_key(...))` 를 **조건 카드보다 먼저** 세운다 —
-    사이드바는 부른 차례로 서므로 카드 뒤에 세우면 펼친 카드 밑으로 밀린다. 안은 나중에 `with 상자:`
-    로 채워도 된다(자리는 세운 때 정해진다). 안에서는 `st.*` 를 쓴다 — `st.sidebar.*` 는 `with` 를
-    따르지 않는다 (`render_sidebar_section` 의 주의).
+    페이지가 `st.sidebar.container(border=True, key=page_box_key(...))` 를 **조건 카드보다 먼저**
+    세운다(테두리는 조회 조건 패널과 같은 1px 선) — 사이드바는 부른 차례로 서므로 카드 뒤에 세우면
+    펼친 카드 밑으로 밀린다. 안은 나중에 `with 상자:` 로 채워도 된다(자리는 세운 때 정해진다).
+    안에서는 `st.*` 를 쓴다 — `st.sidebar.*` 는 `with` 를 따르지 않는다
+    (`render_sidebar_section` 의 주의).
     """
     return f"{PAGE_BOX_PREFIX}{name}"
 

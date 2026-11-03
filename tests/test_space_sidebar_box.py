@@ -90,6 +90,8 @@ def test_the_space_box_stands_under_the_panel_and_above_the_card_on_fab_and_floo
     keys = _sidebar_keys(app)
     assert keys.index(CONDITIONS_BOX_KEY) < keys.index(BOX_KEY) == keys.index(CARD_KEY) - 1
     box = _box(app)
+    # 테두리는 조회 조건 패널(`border=True`)과 같은 1px 선이다 — 같은 사이드바 꼴(검수 2026-11-03).
+    assert box.proto.flex_container.border
     assert {"space_status_fab_breadcrumb", "space_floor_layout_open_FAB"} <= _keys_in(box, "button")
     assert "space_status_floor_jump_fab" in _keys_in(box, "selectbox")
     toggles = _keys_in(box, "toggle")

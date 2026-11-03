@@ -990,10 +990,11 @@ def _page_box_style() -> str:
     서식.
 
     조건 패널과 같은 면(`NAV_CONTROL_TINT`)·모서리 10px·안 여백으로 서서 조건 구역의 한 무리로
-    읽히고, 안의 이름 줄(`condition_field.condition_name_row`)은 패널 이름 줄과 같은 작은 글(0.75rem
-    · `TEXT_MUTED` · 첫 칸 600)이다. 맨 위 제목 한 줄(마크다운 첫 칸)은 카드 머리처럼 1rem · 700
-    이다. 상자 안 단추·토글은 Streamlit 기본 결 그대로다(값 칸 꼴을 빌리지 않는다 — 누르면 그
-    자리에서 일어나는 동작이다).
+    읽히고(1px 테두리는 패널처럼 페이지가 `st.container(border=True)` 로 세운다), 안의 이름 줄
+    (`condition_field.condition_name_row`)은 패널 이름 줄과 같은 작은 글(0.75rem · `TEXT_MUTED` ·
+    첫 칸 600)이다. 맨 위 제목 한 줄(마크다운 첫 칸)은 카드 머리처럼 1rem · 700 이다. 상자 안
+    단추·토글은 Streamlit 기본 결 그대로다(값 칸 꼴을 빌리지 않는다 — 누르면 그 자리에서 일어나는
+    동작이다).
     """
     sidebar = '[data-testid="stSidebarContent"]'
     box = f"{sidebar} {_PAGE_BOXES}"
