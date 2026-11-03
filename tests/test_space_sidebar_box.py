@@ -245,10 +245,10 @@ def test_the_box_stands_above_the_card_on_a_screen_without_units(_empty_app: App
 
 
 def test_the_runbook_space_lines_name_the_box_and_not_the_old_head() -> None:
-    """런북 7장의 Space 줄은 합친 화면 자리로 말한다 — 앞 몫(7-19 ~ 7-22)이 다음 7장에 (나) 갈래
-    몫으로 남으면 사내 에이전트가 새 ZIP 화면에서 그 글을 찾는다(2026-11-03 합친 판 재검). 배치
-    줄은 「Space 도면」 상자의 짧은 줄(온 문장은 풍선)이고, 자리 줄 첫 단추는 `FAB 전체` 다 — 옛
-    단추 `S.PKG FAB 전체` 는 「옛 경로 줄」 로만 말한다."""
+    """런북 7장의 Space 줄은 합친 화면 자리로 말한다 — 사내 에이전트는 새 ZIP 화면에서
+    7장 글을 그대로 찾는다(2026-11-03 합친 판 재검). 배치 줄은 「Space 도면」 상자의 짧은
+    줄(온 문장은 풍선)이고, 자리 줄 첫 단추는 `FAB 전체` 다 — 옛 단추 `S.PKG FAB 전체` 는
+    「옛 경로 줄」 로만 말한다."""
     runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
     chapter = " ".join(runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0].split())
     assert "머리 「가정 설비 시나리오" not in chapter
