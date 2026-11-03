@@ -975,7 +975,7 @@ class DuckDBScenarioRepository:
         release = f"공식 v{int(fallback[0])} 프리셋"
         # 레거시 프리셋은 경고 0 이나 확보 = 경고를 허용했다(옛 사이드바 칸의 하한이 0 이었다).
         # 저장 경로와 같은 규칙에 어긋나는 짝은 기본값으로 쓰지 않는다 — 0 기준은 모든 공정을
-        # 확보로 판정하고, 편집기 칸의 하한보다 낮아 HOME 설정 → Preference 가 그려지지도 않는다.
+        # 확보로 판정하고, 편집기 칸의 하한보다 낮아 HOME 설정 → 판정 기준 탭이 그려지지도 않는다.
         try:
             secure, warning, _ = validate_securement_thresholds(
                 fallback[1], fallback[2], empty_securement_threshold_rows()

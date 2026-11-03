@@ -374,7 +374,7 @@ EQUIPMENT_STATUS_BADGES: Final = (
     "미저장 변경",
     "일정 없이 엶",
 )
-THRESHOLD_POINTER: Final = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
+THRESHOLD_POINTER: Final = "판정 기준은 HOME 설정 → 판정 기준 탭에서 정합니다."
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
 # 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
@@ -4752,14 +4752,21 @@ def check_equipment_moves(screen: Screen) -> str:
 # ------------------------------------------------- 사이드바 설정 상자(`settings_boxes`)
 
 # 화면 설정 팝업을 여는 사이드바 상자(`components/settings_box.py` — 조회 조건 패널 바로 밑 · 조건
-# 카드 위, 상자 자체가 단추). HOME 「HOME 설정」(2026-11-02 — 안쪽 탭 `Preference`·`Past Data`)과
-# 가용설비 현황 「가용설비 설정」(2026-11-03 — 설정 단추는 사이드바 상자로, 안은 공정별 Cut-off 표).
-# 상자 글과 팝업 제목은 같은 글이다. 앱 모듈을 부르지 않고 값만 옮긴다(테스트가 앱과 같은지 본다).
+# 카드 위, 상자 자체가 단추). HOME 「HOME 설정」(2026-11-02 — 안쪽 탭은 2026-11-04 부터 쓰는 묶음
+# 다섯)과 가용설비 현황 「가용설비 설정」(2026-11-03 — 설정 단추는 사이드바 상자로, 안은 공정별
+# Cut-off 표). 상자 글과 팝업 제목은 같은 글이다. 앱 모듈을 부르지 않고 값만 옮긴다(테스트가 앱과
+# 같은지 본다).
 SETTINGS_BOX_PREFIX: Final = "sidebar_dialog_box_"
 HOME_SETTINGS_BOX_KEY: Final = "sidebar_dialog_box_home_settings"
 HOME_SETTINGS_BUTTON_KEY: Final = "home_settings_open"
 HOME_SETTINGS_TITLE: Final = "HOME 설정"
-HOME_SETTINGS_TABS: Final = ("Preference", "Past Data")
+HOME_SETTINGS_TABS: Final = (
+    "비교 · 주요 Case",
+    "판정 기준",
+    "선행 · 보정",
+    "공지 · 표시",
+    "Past Data",
+)
 EQUIPMENT_SETTINGS_BOX_KEY: Final = "sidebar_dialog_box_equipment_settings"
 EQUIPMENT_SETTINGS_BUTTON_KEY: Final = "equipment_settings_open_v1"
 EQUIPMENT_SETTINGS_TITLE: Final = "가용설비 설정"
@@ -4855,7 +4862,8 @@ def _main_settings_buttons(screen: Screen) -> int:
 
 
 def check_settings_boxes(screen: Screen) -> str:
-    """사이드바 설정 상자 둘 — HOME 「HOME 설정」(안쪽 탭 `Preference`·`Past Data`)과 가용설비 현황
+    """사이드바 설정 상자 둘 — HOME 「HOME 설정」(안쪽 탭 다섯 — `HOME_SETTINGS_TABS`)과 가용설비
+    현황
     「가용설비 설정」(공정별 Cut-off 표). 상자가 조회 조건 패널 바로 밑 · 조건 카드 위에 서는지,
     누르면 같은 제목의 팝업이 뜨고 안이 차는지, `Esc` 로 닫히는지, 본문에 옛 설정 단추가 남지
     않았는지 본다. 가용설비 현황은 카드가 서는 `Summary` › `Main` 탭에서 본다. 저장 · 채우기는

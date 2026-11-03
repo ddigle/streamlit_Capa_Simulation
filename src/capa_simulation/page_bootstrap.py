@@ -555,7 +555,7 @@ def process_page_inputs(database_path: str) -> ProcessPageInputs:
     은 부르는 페이지가 쥔다. 계산 함수는 **부를 때** 모듈에서 찾는다(페이지 시험이 그 속성을 바꿔
     계산을 흉내 낸다).
     """
-    # 판정 기준은 HOME 설정 → Preference 의 공용 프로필이다(기본값 + 월별 예외).
+    # 판정 기준은 HOME 설정 → 판정 기준 탭의 공용 프로필이다(기본값 + 월별 예외).
     thresholds = load_global_securement_threshold(database_path).thresholds
     context = load_page_context()
     active = context.active_scenario

@@ -1,6 +1,6 @@
 # Purpose: Static Capa 의 판정 기준 카드·Guide·소요대수 미포함 수요 알림을 사용자 결정대로 고정한다.
 
-"""Static Capa — 판정 기준은 HOME 설정 → Preference(2026-10-06), 설명은 Guide(2026-09-29 결정)."""
+"""Static Capa — 판정 기준은 HOME 설정 → 판정 기준(2026-10-06), 설명은 Guide(2026-09-29 결정)."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def test_the_threshold_card_only_points_to_the_home_preference(app_script: str) 
 def test_the_guide_carries_what_left_the_body() -> None:
     guide = load_guide("static_capa")
     for text in (
-        "HOME 설정 → Preference",
+        "HOME 설정 → 판정 기준",
         "확보 기준",
         "경고 기준",
         "ceil(max(소요대수 × 경고 판정 경계 − 가용대수, 0))",

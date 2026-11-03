@@ -8,7 +8,7 @@
 카드는 HOME 에서 처음 펼친 채 선다(`condition_card(default=True)` — 접으면 칩이 보이지 않는다).
 
 슬롯은 셋으로 고정이다 — `공식 vN`(지금 최신 공식버전) · `Case1` · `Case2`(「HOME 설정」 팝업
-`Preference` 탭의 「주요 Case」 에서 지정 — `home_main_cases`). **칩 글자는 이것뿐이다.** 어느
+`비교 · 주요 Case` 탭의 「주요 Case」 에서 지정 — `home_main_cases`). **칩 글자는 이것뿐이다.** 어느
 시나리오·리비전인지는 마우스를 올리면 뜨는 풍선(단추 `help`)이 말하고, 지금 적용된 시나리오는 머리
 띠(`app_header`)가 말하므로 칩 옆에 다시 적지 않는다.
 
@@ -40,11 +40,12 @@ HOME 토글 기본값 쓰기(`_release_stale_ui_state`)와 리비전 프리셋 �
 - 어느 슬롯과도 같지 않으면 이름 줄 오른쪽 끝에 작은 회색 「슬롯 밖」 한 마디뿐이다. 머리 띠는
   가상요소라 HOME 만의 상태를 실을 자리가 없고 모든 화면이 함께 쓴다. 이름 줄은 늘 서 있으므로 그
   글자가 나타나고 사라져도 칩 줄은 움직이지 않는다(제목 줄에 있던 때의 숨은 자리표시자는 걷었다).
-- 미지정 Case 는 점선 칩이고(풍선 「Case2 · 지정 안 함」) 누르면 「HOME 설정」 팝업을 `Preference`
-  탭으로 연다(`home_settings.open_home_settings`) — 「주요 Case」 상자는 그 탭의 둘째 상자라 위쪽에
-  보인다. 가리키던 시나리오를 보관·영구 삭제하면 저장소가 그 Case 를 비우므로 이 점선 칩이 된다.
-  계산이 멈춘 회차에는 팝업을 열 수 없어(본문이 계산 결과를 쓴다) 이 칩을 잠그고 풍선이 까닭을
-  말한다.
+- 미지정 Case 는 점선 칩이고(풍선 「Case2 · 지정 안 함」) 누르면 「HOME 설정」 팝업을 `비교 · 주요
+  Case` 탭으로 연다(`home_settings.open_home_settings`) — 「주요 Case」 상자는 그 탭 오른쪽
+  상자이고, 누른 Case 칸(시나리오 · 리비전 상자)이 한 번 강조된다(`home_main_cases.focus_main_case`
+  — 2026-11-04 사용자 검수 home-u03). 가리키던 시나리오를 보관·영구 삭제하면 저장소가 그 Case 를
+  비우므로 이 점선 칩이 된다. 계산이 멈춘 회차에는 팝업을 열 수 없어(본문이 계산 결과를 쓴다) 이
+  칩을 잠그고 풍선이 까닭을 말한다.
 - 가리키는 시나리오·리비전을 목록에서 찾지 못하면(저장소 밖에서 고친 DB 등 — 보관·삭제는 위처럼
   비운다) 누를 수 없고 풍선이 다시 지정하라고 한다. 공식버전이 없으면(내장 시드 등) 공식 칩도 누를
   수 없다.
@@ -64,7 +65,7 @@ import streamlit as st
 
 from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.home_main_cases import UNSET_CHOICE
+from capa_simulation.components.home_main_cases import UNSET_CHOICE, focus_main_case
 from capa_simulation.components.home_settings import open_home_settings
 from capa_simulation.components.intro_summary import (
     forget_intro_summary_check,
@@ -77,7 +78,7 @@ from capa_simulation.components.scenario_status import (
     open_scenario_dialog_on,
 )
 from capa_simulation.design import tokens
-from capa_simulation.home_state import HOME_PREFERENCE_TAB
+from capa_simulation.home_state import HOME_CASES_TAB
 from capa_simulation.navigation import HOME
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -108,11 +109,11 @@ CASE2_CHIP_KEY = "home_main_case_chip_case2"
 CHIP_NOTICE_KEY = "home_main_case_chip_notice"
 OFFICIAL_CHIP_TEXT = "공식"
 OUTSIDE_SLOTS_TEXT = "슬롯 밖"
-MISSING_REVISION_HELP = "리비전 없음 — HOME 설정 → Preference 에서 다시 지정"
+MISSING_REVISION_HELP = "리비전 없음 — HOME 설정 → 비교 · 주요 Case 탭에서 다시 지정"
 # 계산이 멈춘 회차의 미지정 칩 풍선 꼬리 — 그 회차에는 「HOME 설정」 팝업을 열 수 없다.
 STOPPED_UNSET_HELP = "계산이 멈춰 HOME 설정을 열 수 없습니다"
-# 올릴 리비전이 없는 칩(미지정·잠김)의 짝. 미지정 칩은 누르면 「HOME 설정」 팝업의 `Preference`
-# 탭을 연다. 잠긴 칩은
+# 올릴 리비전이 없는 칩(미지정·잠김)의 짝. 미지정 칩은 누르면 「HOME 설정」 팝업의 `비교 · 주요
+# Case` 탭을 연다. 잠긴 칩은
 # 눌리지 않는다 — 그린 뒤에 잠길 상태가 된 칩을 누르면 콜백이 다시 풀어 알림만 남긴다.
 _NO_TARGET: tuple[str | None, str | None] = (None, None)
 _CASE_CHIP_KEYS = (CASE1_CHIP_KEY, CASE2_CHIP_KEY)
@@ -126,7 +127,7 @@ HOME_PAGE_FILE = Path(HOME.path).name
 @dataclass(frozen=True)
 class SlotChip:
     """칩 하나. `target` 은 누르면 올릴 (시나리오 id, 리비전 id) — 없으면 「HOME 설정」 팝업의
-    `Preference` 탭을 연다."""
+    `비교 · 주요 Case` 탭을 연다."""
 
     key: str
     text: str
@@ -189,7 +190,7 @@ def _ready_chip(
 
 
 def _case_chip(key: str, slot: MainCaseSlot) -> SlotChip:
-    """미지정(점선, 누르면 「HOME 설정」 → `Preference`)·찾지 못함(잠금) Case 칩."""
+    """미지정(점선, 누르면 「HOME 설정」 → `비교 · 주요 Case`)·찾지 못함(잠금) Case 칩."""
     if slot.status == SLOT_UNSET:
         return SlotChip(
             key,
@@ -269,9 +270,9 @@ def render_main_case_chips(database_path: str, *, settings_ready: bool = True) -
     """「LOB 표시 조건」 카드 맨 위의 칩 필드 — 이름 줄 「주요 Case」(슬롯 밖이면 오른쪽 끝에 그
     한 마디), 같은 폭 칩 셋, 칩 알림 칸.
 
-    Case 재료를 읽지 못하면 칩 필드를 세우지 않는다 — 같은 오류는 「HOME 설정」 팝업 `Preference`
-    탭의 「주요 Case」 상자가 알린다. `settings_ready` 가 거짓이면(계산이 멈춘 회차) 미지정 칩을
-    잠근다(`stopped_chips`).
+    Case 재료를 읽지 못하면 칩 필드를 세우지 않는다 — 같은 오류는 「HOME 설정」 팝업 `비교 · 주요
+    Case` 탭의 「주요 Case」 상자가 알린다. `settings_ready` 가 거짓이면(계산이 멈춘 회차) 미지정
+    칩을 잠근다(`stopped_chips`).
     """
     active = painting_reference()
     try:
@@ -323,7 +324,8 @@ def changed_slot_notice(index: int) -> str:
 
 
 def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | None]) -> None:
-    """칩의 콜백. 그린 짝이 낡았으면 알림, 미지정이면 「HOME 설정」 팝업(`Preference` 탭), 편집이
+    """칩의 콜백. 그린 짝이 낡았으면 알림, 미지정이면 「HOME 설정」 팝업(`비교 · 주요 Case` 탭 —
+    그 Case 칸 강조), 편집이
     있으면 사이드바 팝업, 아니면 곧바로 올린다.
 
     짝은 누르는 순간 다시 푼다(모듈 설명 — 콜백 인자는 그린 회차의 값이다). 팝업 열림 칸과 안쪽 탭
@@ -343,7 +345,9 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
         return
     scenario_id, revision_id = chip.target
     if scenario_id is None or revision_id is None:
-        open_home_settings(HOME_PREFERENCE_TAB)
+        # 그 Case 칸을 강조해 어디서 고르는지 짚어 준다(2026-11-04 사용자 검수 home-u03).
+        focus_main_case(MAIN_CASE_NUMBERS[index - 1])
+        open_home_settings(HOME_CASES_TAB)
         return
     if has_unsaved_scenario_changes() or pending_edit_labels(HOME_PAGE_FILE):
         open_scenario_dialog_on(scenario_id, revision_id)

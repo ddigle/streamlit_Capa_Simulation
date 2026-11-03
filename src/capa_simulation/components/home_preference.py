@@ -6,10 +6,11 @@
 **화면을 보는 조건(선행 B/O·선행 입고·확보율 보정·GAP·상세·EDP·Past Data·제품별 비중 단위)은
 사이드바 조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에
 흩어져 있었다). 카드 맨 위는 주요 Case 칩이다(2026-11-02 — `home_main_case_chips`, 부르는 쪽이
-넘긴다). `Preference` 탭(전에는 HOME 본문 탭, 2026-11-02 부터 사이드바 「HOME 설정」 팝업 안 —
-`home_settings`) 에는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행 B/O·선행 입고
-실적·`Summary 공지`·Top5 대역·주요공정·확보율 보정 편집기가 있고, 저장은 모두 공용 프로필 교체다.
-저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
+넘긴다). Preference 편집기(전에는 HOME 본문 `Preference` 탭, 2026-11-02 부터 사이드바 「HOME 설정」
+팝업 안 — `home_settings`)는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행
+B/O·선행 입고 실적·`Summary 공지`·Top5 대역·주요공정·확보율 보정이고, 저장은 모두 공용 프로필
+교체다. 팝업 안 네 탭에 쓰는 묶음대로 나눠 선다(`render_home_preference` — 2026-11-04 사용자 검수
+home-u01). 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
 토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
@@ -81,6 +82,10 @@ from capa_simulation.home_state import (
     EXECUTION_TOGGLE_KEY as EXECUTION_TOGGLE_KEY,
 )
 from capa_simulation.home_state import (
+    HOME_CASES_TAB,
+    HOME_DISPLAY_TAB,
+    HOME_MONTHLY_TAB,
+    HOME_THRESHOLD_TAB,
     HOME_TOGGLE_DEFAULTS,
     PRODUCT_SHARE_BASIS_DEFAULT,
 )
@@ -247,10 +252,18 @@ KEY_PROCESS_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 이름·공정이 지금 프리셋 그대로라 새 버전을 만들지 않았습니다."
 )
 # 비교 시나리오를 고르지 않아 잠긴 「GAP」 토글의 풍선.
-GAP_LOCKED_HELP = "HOME 설정 → Preference 에서 비교 시나리오를 먼저 고르세요."
+GAP_LOCKED_HELP = "HOME 설정 → 비교 · 주요 Case 탭에서 비교 시나리오를 먼저 고르세요."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
-THRESHOLD_POINTER = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
+THRESHOLD_POINTER = "판정 기준은 HOME 설정 → 판정 기준 탭에서 정합니다."
+# 저장 단추 풍선 — 팝업 머리 안내 글(2026-11-04 사용자 검수 home-u01 「설명 제거」)이 하던 말 가운데
+# 꼭 남길 둘(공용 설정 · 저장하지 않고 닫으면 사라짐)을 누르는 자리에 둔다.
+SHARED_SAVE_HELP = (
+    "모든 사용자가 함께 쓰는 공용 설정으로 저장합니다. 저장하지 않고 팝업을 닫으면 이 상자에서 "
+    "고친 칸은 사라집니다(팝업 안 탭을 옮기는 것은 괜찮습니다)."
+)
+# 「비교 · 주요 Case」 탭의 두 상자 폭 — 비교 시나리오(두 상자 세로) : 주요 Case(Case 두 칸 나란히).
+CASES_COLUMN_WEIGHTS = (2, 3)
 # Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
 # 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지) key 에
 # 저장본 version(Top5)·고칠 프리셋 저장본의 지문(프리셋)이 붙어 남이 먼저 저장하면 제출 회차의 칸이
@@ -372,7 +385,7 @@ def status_legend_markup() -> str:
     색만으로 뜻을 나르지 않으려면 이름이 같이 있어야 한다.
 
     **경계 숫자는 적지 않는다**(2026-10-06 사용자 결정). 판정 기준은 달마다 다를 수 있어
-    (HOME 설정 → Preference 의 월별 기준) 숫자 한 짝으로 적으면 예외 달에서 거짓이 된다. 과거 구간
+    (HOME 설정 → 판정 기준 의 월별 기준) 숫자 한 짝으로 적으면 예외 달에서 거짓이 된다. 과거 구간
     칩도 두지 않는다 — 범례는 판정 세 색만 말한다.
     """
     chips: tuple[tuple[str, str], ...] = (
@@ -525,7 +538,7 @@ def render_lob_title_row(
         text=f"선행 B/O 반영 계획이 0 이하인 달 {labels} — 그 달은 기존 계획으로 그림",
         full=(
             f"선행 B/O 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. 해당 달은 "
-            "기존 계획 그대로 그립니다. 선행 B/O 는 「HOME 설정」 → Preference 에서 고칩니다."
+            "기존 계획 그대로 그립니다. 선행 B/O 는 「HOME 설정」 → 선행 · 보정 탭에서 고칩니다."
         ),
         scope_label=scope.label,
     )
@@ -533,6 +546,7 @@ def render_lob_title_row(
 
 def render_home_preference(
     *,
+    tabs: Mapping[str, OpenTab],
     months: Sequence[int],
     month_labels: Sequence[str],
     threshold_profile: GlobalSecurementThreshold,
@@ -546,60 +560,77 @@ def render_home_preference(
     unmatched_execution: pd.DataFrame,
     clamped_execution: pd.DataFrame,
     database_path: str,
-    owner_tab: OpenTab | None = None,
 ) -> None:
-    """비교 시나리오·주요 Case 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·
-    주요공정·실행 Capa 입력 시트.
+    """Preference 편집기 아홉을 「HOME 설정」 팝업의 네 탭(`tabs` —
+    `home_state.HOME_PREFERENCE_TABS`
+    라벨 → 탭)에 쓰는 묶음대로 세운다(2026-11-04 사용자 검수 home-u01 — 전에는 한 탭에 아홉이 세로로
+    섰다). 상자 하나하나(저장 단추·저장 단위·key·저장 길)는 그대로이고 놓는 자리만 정한다.
 
-    「HOME 설정」 팝업의 `Preference` 탭 본문이다(`home_settings` — 2026-11-02, 전에는 HOME 본문
-    탭). 보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건`
-    카드다(`render_home_view_card`). 주요공정 프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라
-    회차마다 공용 프로필을 스스로 읽는다(`_render_key_process_editor`). `owner_tab` 은 팝업 안
-    `Preference` 탭이다 — 주요 Case 상자가 숨은 회차(팝업의 `Past Data` 탭을 보는 회차)에 DB 를 읽지
-    않으려고 본다(`home_main_cases`).
+    - `비교 · 주요 Case` — 고르면 곧 저장되는 두 상자를 나란히(비교 시나리오 : 주요 Case =
+      `CASES_COLUMN_WEIGHTS`). 주요 Case 상자는 제 탭을 본다 — 숨은 회차(다른 탭을 보는 회차)에 DB
+      를 읽지 않는다(`home_main_cases`).
+    - `판정 기준` — 확보율 판정 기준(기본 두 칸 + 월별 표). 달이 많은 표라 팝업 폭을 다 쓴다.
+    - `선행 · 보정` — 사이드바 「LOB 표시 조건」 토글이 켜는 월별 입력 셋(선행 B/O · 선행 입고 실적
+      · 확보율 보정). 앞 둘은 `구분` 칸 폭이 같아 달 칸이 같은 자리에 서도록 위아래로 둔다.
+    - `공지 · 표시` — 화면에 보이는 것을 정하는 셋. 왼쪽 Summary 공지 · B/N Top5 구간, 오른쪽
+      주요공정 히트맵 프리셋.
+
+    탭 본문은 숨은 탭도 모두 그린다(`stateful_tabs`) — 탭을 옮겨도 폼의 고친 칸이 남는다. 주요공정
+    프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라 회차마다 공용 프로필을 스스로 읽는다
+    (`_render_key_process_editor`).
     """
-    _render_comparison_picker(database_path)
-    render_main_case_picker(database_path, owner_tab=owner_tab)
-    render_threshold_editor(
-        months=months,
-        month_labels=month_labels,
-        threshold_profile=threshold_profile,
-        database_path=database_path,
-    )
-    _render_advance_editor(
-        months=months,
-        month_labels=month_labels,
-        advance_profile=advance_profile,
-        database_path=database_path,
-    )
-    render_advance_shipment_editor(
-        months=months,
-        month_labels=month_labels,
-        advance_shipment_profile=advance_shipment_profile,
-        database_path=database_path,
-    )
-    _render_summary_note_editor(
-        summary_profile=summary_profile,
-        database_path=database_path,
-    )
-    _render_top5_band_editor(
-        top5_band_profile=top5_band_profile,
-        database_path=database_path,
-    )
-    _render_key_process_editor(
-        process_options=process_options,
-        process_labels=process_labels,
-        database_path=database_path,
-    )
-    _render_execution_editor(
-        months=months,
-        execution_profile=execution_profile,
-        process_options=process_options,
-        process_labels=process_labels,
-        unmatched=unmatched_execution,
-        clamped=clamped_execution,
-        database_path=database_path,
-    )
+    with tabs[HOME_CASES_TAB]:
+        comparison_column, case_column = st.columns(CASES_COLUMN_WEIGHTS, gap="medium")
+        with comparison_column:
+            _render_comparison_picker(database_path)
+        with case_column:
+            render_main_case_picker(database_path, owner_tab=tabs[HOME_CASES_TAB])
+    with tabs[HOME_THRESHOLD_TAB]:
+        render_threshold_editor(
+            months=months,
+            month_labels=month_labels,
+            threshold_profile=threshold_profile,
+            database_path=database_path,
+        )
+    with tabs[HOME_MONTHLY_TAB]:
+        _render_advance_editor(
+            months=months,
+            month_labels=month_labels,
+            advance_profile=advance_profile,
+            database_path=database_path,
+        )
+        render_advance_shipment_editor(
+            months=months,
+            month_labels=month_labels,
+            advance_shipment_profile=advance_shipment_profile,
+            database_path=database_path,
+        )
+        _render_execution_editor(
+            months=months,
+            execution_profile=execution_profile,
+            process_options=process_options,
+            process_labels=process_labels,
+            unmatched=unmatched_execution,
+            clamped=clamped_execution,
+            database_path=database_path,
+        )
+    with tabs[HOME_DISPLAY_TAB]:
+        notice_column, preset_column = st.columns(2, gap="medium")
+        with notice_column:
+            _render_summary_note_editor(
+                summary_profile=summary_profile,
+                database_path=database_path,
+            )
+            _render_top5_band_editor(
+                top5_band_profile=top5_band_profile,
+                database_path=database_path,
+            )
+        with preset_column:
+            _render_key_process_editor(
+                process_options=process_options,
+                process_labels=process_labels,
+                database_path=database_path,
+            )
 
 
 def _recheck_intro_summary() -> None:
@@ -984,6 +1015,7 @@ def render_threshold_editor(
                     "판정 기준 저장",
                     icon=":material/save:",
                     type="primary",
+                    help=SHARED_SAVE_HELP,
                 )
                 note = st.text_input(
                     "변경 메모",
@@ -1626,6 +1658,7 @@ def _render_monthly_amount_editor(
                     editor.save_label,
                     icon=":material/save:",
                     type="primary",
+                    help=SHARED_SAVE_HELP,
                 )
                 note = st.text_input(
                     "변경 메모",
@@ -1738,6 +1771,7 @@ def _render_summary_note_editor(
                 "Summary 저장",
                 icon=":material/save:",
                 type="primary",
+                help=SHARED_SAVE_HELP,
             )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
@@ -1852,6 +1886,7 @@ def _render_top5_band_editor(
                 "확보율 구간 저장",
                 icon=":material/save:",
                 type="primary",
+                help=SHARED_SAVE_HELP,
             )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
@@ -2112,7 +2147,7 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     """
     st.caption(
         "히트맵이 보여 줄 공정 묶음입니다. 고르면 바로 바뀝니다. "
-        "프리셋은 HOME 설정 → Preference 에서 고칩니다."
+        "프리셋은 HOME 설정 → 공지 · 표시 탭에서 고칩니다."
     )
     choice = st.radio(
         "프리셋",
@@ -2247,6 +2282,7 @@ def _render_key_process_editor(
                     "프리셋 저장",
                     icon=":material/save:",
                     type="primary",
+                    help=SHARED_SAVE_HELP,
                 )
                 name = st.text_input(
                     "프리셋 이름",
@@ -2567,6 +2603,7 @@ def _render_execution_editor(
                     "확보율 보정 저장",
                     icon=":material/save:",
                     type="primary",
+                    help=SHARED_SAVE_HELP,
                 )
                 note = st.text_input(
                     "변경 메모",

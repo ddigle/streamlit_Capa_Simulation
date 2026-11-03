@@ -535,8 +535,8 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     # 공용 프로필이 정한다(2026-10-06 사용자 결정) — 저장 전에는 공식버전 프리셋 값을 쓴다.
     assert app.session_state["production_month_range_v2"] == ("2026-01", "2026-12")
     assert [widget.label for widget in app.sidebar.number_input] == []
-    # 「판정 기준은 HOME 설정 → Preference 에서 정합니다」는 사이드바가 아니라 공정 필터 팝업 머리와
-    # Guide 에 있다(2026-10-10 사용자 결정 — 사이드바에 늘 한 줄을 차지하던 것을 걷었다).
+    # 「판정 기준은 HOME 설정 → 판정 기준 탭에서 정합니다」는 사이드바가 아니라 공정 필터 팝업
+    # 머리와 Guide 에 있다(2026-10-10 사용자 결정 — 사이드바에 늘 한 줄을 차지하던 것을 걷었다).
     assert THRESHOLD_POINTER not in [element.value for element in app.sidebar.caption]
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
@@ -621,7 +621,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
 def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path) -> None:
     """HOME 은 탭 없이 Main 한 화면이다(2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data
     세 탭). 탭 줄이 없어 화면 탭 줄 바로 밑에서 Summary 가 시작하고, 차트는 첫 회차부터 그린다.
-    공용 설정 팝업 안의 탭 둘(Preference·Past Data)은 팝업을 열었을 때만 선다."""
+    공용 설정 팝업 안의 탭 다섯은 팝업을 열었을 때만 선다."""
     app = _run(seeded_database)
 
     assert [tab.label for tab in app.tabs] == []
@@ -636,10 +636,25 @@ def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path
     assert not [button for button in app.main.button if "home_main_case_chip" in str(button.key)]
 
     app = _open_settings(app)
+    # 팝업 안 탭은 쓰는 묶음 다섯이다(2026-11-04 사용자 검수 home-u01 — 전에는 Preference ·
+    # Past Data).
     assert [tab.label for tab in app.tabs] == [
-        ":material/tune: Preference",
+        ":material/compare_arrows: 비교 · 주요 Case",
+        ":material/rule: 판정 기준",
+        ":material/edit_calendar: 선행 · 보정",
+        ":material/campaign: 공지 · 표시",
         ":material/history: Past Data",
     ]
+    # 머리 안내 글은 없다 — 공용 설정 · 닫으면 사라짐은 저장 단추 풍선이 말한다.
+    assert not [text for text in (c.value for c in app.caption) if "공용 설정입니다" in text]
+    saves = {
+        button.label: button.help
+        for button in app.button
+        if button.label
+        in ("판정 기준 저장", "선행 B/O 저장", "선행 입고 저장", "Summary 저장", "확보율 구간 저장")
+        + ("프리셋 저장", "확보율 보정 저장")
+    }
+    assert len(saves) == 7 and all("공용 설정" in str(text) for text in saves.values()), saves
 
 
 REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"
@@ -2085,8 +2100,8 @@ def _sidebar_keys(app: AppTest) -> list[str]:
 
 
 def _settings_tab_dot(app: AppTest) -> bool:
-    """팝업 안 `Past Data` 탭 이름 옆 점(스타일만 든 `st.html` — 둘째 탭 단추의 `::after`)."""
-    selector = '.st-key-home_settings_tab [data-testid="stTab"]:nth-child(2)'
+    """팝업 안 `Past Data` 탭 이름 옆 점(스타일만 든 `st.html` — 다섯째(끝) 탭 단추의 `::after`)."""
+    selector = '.st-key-home_settings_tab [data-testid="stTab"]:nth-child(5)'
     return any(selector in str(element.proto.body) for element in app.get("html"))
 
 

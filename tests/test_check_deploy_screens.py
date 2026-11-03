@@ -3025,7 +3025,7 @@ def test_the_settings_boxes_summary_is_fixed_words_and_counts() -> None:
     # 카드 밑으로 밀린 상자 · 다른 제목.
     below = {"box": True, "belowPanel": True, "cards": 2, "aboveCards": False}
     moved = screens.summarize_settings_box(
-        "HOME 설정", "HOME 설정", below, ("설정", "안쪽 탭 2/2", False), 0
+        "HOME 설정", "HOME 설정", below, ("설정", "안쪽 탭 5/5", False), 0
     )
     assert moved.startswith(
         "HOME 설정 — 상자 패널 밑 · 카드 위 아님 · 팝업 제목 「HOME 설정」 다름"

@@ -511,7 +511,7 @@ const DATA = /*__DATA__*/null;
     view.appendChild(info);
     if (m.color) {
       const c = el("div", "spotinfo");
-      c.innerHTML = "<h3>칸 색(확보 · 경고 · 부족)은?</h3><p>" + esc(m.color.what) + ' — HOME 설정 › Preference 의 공용 설정입니다.</p><button class="go">→ ' + esc(TASK[m.color.go].title) + "</button>";
+      c.innerHTML = "<h3>칸 색(확보 · 경고 · 부족)은?</h3><p>" + esc(m.color.what) + ' — HOME 설정 › 판정 기준 탭의 공용 설정입니다.</p><button class="go">→ ' + esc(TASK[m.color.go].title) + "</button>";
       $(".go", c).onclick = () => open(m.color.go);
       view.appendChild(c);
     }

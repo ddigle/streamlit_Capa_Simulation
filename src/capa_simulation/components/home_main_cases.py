@@ -1,7 +1,9 @@
-# Purpose: HOME Preference 「주요 Case」 상자 — Case1·Case2 의 시나리오·리비전을 공용 지정한다.
+# Purpose: HOME 설정 「주요 Case」 상자 — Case1·Case2 의 시나리오·리비전을 공용 지정한다.
 
-"""「HOME 설정」 팝업 `Preference` 탭의 「주요 Case」 상자(2026-10-23 사용자 요청 — 2026-11-02 부터
-HOME 본문 탭이 아니라 사이드바 「HOME 설정」 팝업 안이다).
+"""「HOME 설정」 팝업 `비교 · 주요 Case` 탭의 「주요 Case」 상자(2026-10-23 사용자 요청 — 2026-11-02
+부터
+HOME 본문 탭이 아니라 사이드바 「HOME 설정」 팝업 안이고, 2026-11-04 부터 Preference 한 탭이 아니라
+비교 시나리오와 나란히 선 묶음 탭이다).
 
 HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버전(따로 지정하지 않는다 — 공식 지정은
 시나리오 관리 한 곳), 슬롯 2·3 은 여기서 고르는 Case1·Case2 다. 상자 첫 줄은 슬롯 1 을 글로만
@@ -24,16 +26,25 @@ HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버�
 때 그 시나리오 첫 리비전으로 메우기(본 version 대조 — 그 사이 남이 고른 값을 덮지 않는다). 선택지
 라벨에는 활성 상태를 붙이지 않는다(`_comparison_active_note` 와 같은 까닭).
 
-**숨은 Preference 회차는 DB 를 읽지도 쓰지도 않는다.** 팝업 안 탭은 `stateful_tabs` 라 `Past Data`
-탭을 보는 동안에도 숨은 `Preference` 본문이 회차마다 돈다 — 그 조작마다 목록 읽기 넷이 실리고, 위 두
-쓰기와 그 한 번뿐인 알림이 아무도 보지 않는 탭에서 소비된다. 그래서 탭이 숨으면 마지막으로 보인
-화면(`MAIN_CASE_VIEW_KEY`)을 그대로 다시 그린다 — 탭을 누르는 순간 브라우저가 보이는 것이 그
-화면이고, 이어지는 회차(탭은 `on_change="rerun"`)가 DB 에서 새로 그린다. 팝업을 `Past Data` 탭으로
-처음 열면 그 한 번만 읽고(쓰지 않고) 화면을 만든다. 팝업이 닫힌 회차에는 상자를 그리지 않는다.
+**숨은 탭 회차는 DB 를 읽지도 쓰지도 않는다.** 팝업 안 탭은 `stateful_tabs` 라 다른 탭(판정 기준 ·
+Past Data 등)을 보는 동안에도 숨은 이 탭 본문이 회차마다 돈다 — 그 조작마다 목록 읽기 넷이 실리고,
+위 두 쓰기와 그 한 번뿐인 알림이 아무도 보지 않는 탭에서 소비된다. 그래서 탭이 숨으면 마지막으로
+보인 화면(`MAIN_CASE_VIEW_KEY`)을 그대로 다시 그린다 — 탭을 누르는 순간 브라우저가 보이는 것이 그
+화면이고, 이어지는 회차(탭은 `on_change="rerun"`)가 DB 에서 새로 그린다. 팝업을 다른 탭으로 처음
+열면 그 한 번만 읽고(쓰지 않고) 화면을 만든다. 팝업이 닫힌 회차에는 상자를 그리지 않는다.
+
+**미지정 칩으로 열면 그 Case 칸을 잠깐 강조한다**(2026-11-04 사용자 검수 home-u03 — 「클릭한 빈
+슬롯을 채우려면 어느 영역의 단추로 시나리오를 골라야 하는지」). 칩의 콜백이 Case 번호를 세션 칸
+(`MAIN_CASE_FOCUS_KEY` — `focus_main_case`)에 적고, 이 상자가 보이는 첫 회차가 꺼내 그 Case 칸(key
+`main_case_slot_key`)에 한 번 도는 강조(약 1.4초 — 테두리 빛과 옅은 면)를 건다. 서식은 그 칸 머리
+줄과 한 `st.html` 에 실어 본문 칸으로 보낸다(AGENTS 9장 「팝업 본문은 이벤트 칸에 같은 수만」 — 머리
+줄은 강조가 없는 회차에도 같은 자리 하나다). 다음 회차에는 서식이 빠져 강조가 걷힌다. 움직임
+줄이기를 켠 사용자에게는 움직이지 않는 윤곽만 그 회차 동안 둔다.
 """
 
 from __future__ import annotations
 
+import html
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +56,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
 from capa_simulation.persistence.cache import (
@@ -71,13 +83,31 @@ MAIN_CASE_SOURCE = "HOME 주요 Case 선택"
 MAIN_CASE_FILL_SOURCE = "HOME 주요 Case 리비전 메움"
 # 콜백이 저장하지 못했을 때 남기는 한 줄. 다음 보이는 회차의 상자 안 알림 칸이 꺼내 보인다.
 MAIN_CASE_NOTICE_KEY = "home_preference_main_case_notice"
-# 마지막으로 보인 상자의 재료(`_PickerView`). 숨은 Preference 회차가 DB 없이 다시 그린다.
+# 마지막으로 보인 상자의 재료(`_PickerView`). 숨은 탭 회차가 DB 없이 다시 그린다.
 MAIN_CASE_VIEW_KEY = "home_preference_main_case_view"
 OFFICIAL_POINTER = "공식 지정은 시나리오 관리"
 UNSET_CHOICE = "지정 안 함"
 # 「지정 안 함」 과 같은 이름의 시나리오가 있을 때 비우기 선택지 글자의 꼬리(`unset_choice_label`).
 UNSET_CHOICE_ESCAPE = "비움"
 IDLE_REVISION_CHOICE = "시나리오를 먼저 고르세요"
+# 미지정 칩이 연 Case 번호(`focus_main_case`). 상자가 보이는 첫 회차가 꺼내 그 칸을 한 번 강조한다.
+MAIN_CASE_FOCUS_KEY = "home_preference_main_case_focus"
+# 강조 한 번의 길이(초)와 팝업이 뜨는 움직임 뒤에 시작하도록 미루는 시간(초).
+MAIN_CASE_FOCUS_SECONDS = 1.4
+MAIN_CASE_FOCUS_DELAY_SECONDS = 0.2
+# 강조 면이 칸 밖으로 번지는 너비(px). 칸에는 안쪽 여백이 없어 글자가 면 끝에 붙지 않게 바깥으로
+# 넓힌다(두 Case 칸 사이 틈의 절반 안 — 옆 칸을 덮지 않는다). 윤곽은 그 바깥 2px 이다.
+MAIN_CASE_FOCUS_PAD_PX = 6
+
+
+def main_case_slot_key(case_no: int) -> str:
+    """Case 한 칸(머리 줄 + 두 상자)을 감싼 컨테이너 key — 강조 서식이 `st-key-<key>` 로 잡는다."""
+    return f"home_main_case_slot{case_no}"
+
+
+def focus_main_case(case_no: int) -> None:
+    """미지정 칩의 콜백이 부른다 — 이 Case 칸을 다음에 상자가 보일 때 한 번 강조한다."""
+    st.session_state[MAIN_CASE_FOCUS_KEY] = case_no
 
 
 def main_case_scenario_key(case_no: int) -> str:
@@ -117,7 +147,8 @@ class _PickerView:
 
 
 def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = None) -> None:
-    """「주요 Case」 상자. `owner_tab` 은 「HOME 설정」 팝업의 `Preference` 탭이다(모르면 `None` —
+    """「주요 Case」 상자. `owner_tab` 은 「HOME 설정」 팝업의 `비교 · 주요 Case` 탭이다(모르면
+    `None` —
     보인다고 본다).
 
     보이는 회차의 읽기는 목록 둘(최신 공식버전·시나리오)과 Case 가 가리키는 시나리오의 리비전
@@ -135,12 +166,14 @@ def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = N
             st.error(bootstrap_error_message(exc))
             return
         st.session_state[MAIN_CASE_VIEW_KEY] = view
-        # 콜백 실패 알림은 상자가 서는 회차에만 꺼낸다 — 읽기가 실패한 회차에 버리지 않는다.
-        _draw(database_path, view, notices, callback_notice=True)
+        # 콜백 실패 알림·강조할 Case 는 상자가 서는 회차에만 꺼낸다 — 읽기가 실패한 회차에 버리지
+        # 않는다.
+        focus = st.session_state.pop(MAIN_CASE_FOCUS_KEY, None)
+        _draw(database_path, view, notices, callback_notice=True, focus=focus)
 
 
 def _render_hidden(database_path: str) -> None:
-    """숨은 Preference 회차 — 마지막으로 보인 화면을 DB 없이 다시 그린다. 알림은 남겨 둔다.
+    """숨은 탭 회차 — 마지막으로 보인 화면을 DB 없이 다시 그린다. 알림·강조는 남겨 둔다.
 
     세션에 지난 화면이 없으면(첫 회차가 Main) 한 번만 읽어 만든다 — 쓰지 않으므로 사라진 시나리오는
     「지정 안 함」, 어긋난 리비전은 첫 리비전으로 보일 뿐 프로필은 그대로다(보이는 회차가 고친다).
@@ -181,12 +214,18 @@ def _read_view(database_path: str, *, notices: list[str] | None) -> _PickerView:
 
 
 def _draw(
-    database_path: str, view: _PickerView, notices: list[str], *, callback_notice: bool
+    database_path: str,
+    view: _PickerView,
+    notices: list[str],
+    *,
+    callback_notice: bool,
+    focus: object = None,
 ) -> None:
     """상자 본문 — 공식버전 줄, 알림 칸, Case 두 칸, 겹침 캡션, 버전 캡션.
 
     `callback_notice` 면 콜백이 담은 실패 알림(`MAIN_CASE_NOTICE_KEY`)을 알림 칸 맨 앞에 한 번
-    그린다. 숨은 회차는 꺼내지 않는다 — 보이는 회차가 그린다.
+    그린다. 숨은 회차는 꺼내지 않는다 — 보이는 회차가 그린다. `focus` 는 이 회차에 한 번 강조할
+    Case 번호다(미지정 칩 — `focus_main_case`).
     """
     st.markdown(_official_line(view.official))
     # 알림은 생겼다 사라진다 — 늘 서 있는 한 칸 안에 그려 아래 상자의 자리를 고정한다(AGENTS
@@ -199,8 +238,10 @@ def _draw(
     for case_no, plan, column in zip(
         MAIN_CASE_NUMBERS, view.plans, st.columns(len(MAIN_CASE_NUMBERS)), strict=True
     ):
-        with column:
-            _render_case(database_path, case_no, plan, scenario_by_id, unset_label)
+        with column, st.container(key=main_case_slot_key(case_no)):
+            _render_case(
+                database_path, case_no, plan, scenario_by_id, unset_label, focused=focus == case_no
+            )
     notes = main_case_overlap_notes(
         official_revision_id=None if view.official is None else view.official.revision_id,
         cases=[(plan.scenario_id, plan.revision_id) for plan in view.plans],
@@ -232,6 +273,43 @@ def unset_choice_label(scenario_names: Iterable[str]) -> str:
         label = f"{UNSET_CHOICE} ({suffix})"
         attempt += 1
     return label
+
+
+def case_head_markup(case_no: int, *, focused: bool = False) -> str:
+    """Case 칸 머리 줄(「슬롯 3 · Case2」) — `focused` 면 그 칸을 한 번 강조하는 서식을 함께 싣는다.
+
+    글은 앱이 지은 것뿐이라(슬롯 번호 · `case_title`) 막을 사람 글이 없다. 강조는 칸 컨테이너
+    (`main_case_slot_key`)에 옅은 면(`NAV_CONTROL_TINT` — 칸 밖 `MAIN_CASE_FOCUS_PAD_PX` 까지)과
+    그 바깥 테두리 빛(`ACCENT`)이 한 번 들었다 빠지는 움직임이고, 움직임 줄이기를 켠 사용자에게는
+    움직이지 않는 윤곽이다. 두 색은 테마 토큰이라 밝게 · 어둡게가 따로 맞는다.
+    """
+    head = (
+        f'<div class="capa-main-case-head"><strong>슬롯 {case_no + 1} · '
+        f"{html.escape(case_title(case_no))}</strong></div>"
+    )
+    if not focused:
+        return head
+    slot = f".st-key-{main_case_slot_key(case_no)}"
+    name = f"capa-main-case-focus-{case_no}"
+    style = (
+        "<style>"
+        f"@keyframes {name}{{"
+        "0%,100%{box-shadow:0 0 0 0 transparent,0 0 0 0 transparent;"
+        "background-color:transparent}"
+        f"25%,65%{{box-shadow:0 0 0 {MAIN_CASE_FOCUS_PAD_PX}px {tokens.NAV_CONTROL_TINT},"
+        f"0 0 0 {MAIN_CASE_FOCUS_PAD_PX + 2}px {tokens.ACCENT};"
+        f"background-color:{tokens.NAV_CONTROL_TINT}}}"
+        "}"
+        f"{slot}{{border-radius:8px;"
+        f"animation:{name} {MAIN_CASE_FOCUS_SECONDS}s ease-in-out "
+        f"{MAIN_CASE_FOCUS_DELAY_SECONDS}s 1 both}}"
+        "@media (prefers-reduced-motion: reduce){"
+        f"{slot}{{animation:none;outline:2px solid {tokens.ACCENT};"
+        f"outline-offset:{MAIN_CASE_FOCUS_PAD_PX}px}}"
+        "}"
+        "</style>"
+    )
+    return style + head
 
 
 def _official_line(official: OfficialReleaseSummary | None) -> str:
@@ -332,15 +410,19 @@ def _render_case(
     plan: _CasePlan,
     scenario_by_id: dict[str, ScenarioSummary],
     unset_label: str,
+    *,
+    focused: bool = False,
 ) -> None:
-    """Case 한 칸 — 머리 줄과 「시나리오」·「리비전」 두 상자.
+    """Case 한 칸 — 머리 줄과 「시나리오」·「리비전」 두 상자. `focused` 면 머리 줄이 이 칸 강조
+    서식을
+    함께 싣는다(`case_head_markup`).
 
     상자 값은 위젯 앞에서 매 회차 프로필 값으로 적는다. **비운 Case 는 자리표시 글로 보인다** —
     1.63 은 세션 API 로 적은 `None` 을 글자 없이 보내 브라우저가 첫 선택지가 아니라 자리표시를
     띄운다. 자리표시를 주지 않으면 영문 「Choose an option」 이 선다. 그래서 자리표시를 비우기
     선택지와 같은 글로 둔다.
     """
-    st.markdown(f"**슬롯 {case_no + 1} · {case_title(case_no)}**")
+    st.html(case_head_markup(case_no, focused=focused))
     scenario_key = main_case_scenario_key(case_no)
     revision_key = main_case_revision_key(case_no)
     # 적기는 `on_change` 를 부르지 않아 프로필을 다시 쓰지 않는다. 목록에 없는 값은 앞에서 비웠다.

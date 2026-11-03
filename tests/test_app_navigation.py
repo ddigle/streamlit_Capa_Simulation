@@ -865,10 +865,11 @@ def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) 
     )
     from capa_simulation.home_state import (
         EDP_TOGGLE_KEY,
+        HOME_CASES_TAB,
         HOME_DIALOG_KEY,
-        HOME_PREFERENCE_TAB,
         HOME_SETTINGS_DIALOG,
         HOME_SETTINGS_TAB_KEY,
+        HOME_SETTINGS_TAB_LABELS,
         HOME_TOGGLE_DEFAULTS,
     )
     from capa_simulation.persistence.cache import clear_global_main_cases_cache
@@ -928,12 +929,11 @@ def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) 
     app = app.button(key=CASE2_CHIP_KEY).click().run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert app.session_state[HOME_DIALOG_KEY] == HOME_SETTINGS_DIALOG
-    assert app.session_state[HOME_SETTINGS_TAB_KEY] == HOME_PREFERENCE_TAB
-    # 실제 `app.py` 에서 그 회차에 팝업이 서고, 안쪽 탭 둘 가운데 `Preference` 가 열려 있다.
-    assert [tab.label for tab in app.tabs if tab.label.endswith(("Preference", "Past Data"))] == [
-        HOME_PREFERENCE_TAB,
-        ":material/history: Past Data",
-    ]
+    assert app.session_state[HOME_SETTINGS_TAB_KEY] == HOME_CASES_TAB
+    # 실제 `app.py` 에서 그 회차에 팝업이 서고, 안쪽 탭 다섯 가운데 `비교 · 주요 Case` 가 열려 있다.
+    assert [tab.label for tab in app.tabs if tab.label in HOME_SETTINGS_TAB_LABELS] == list(
+        HOME_SETTINGS_TAB_LABELS
+    )
     assert any(element.key == "home_preference_case2_scenario" for element in app.selectbox)
 
 
