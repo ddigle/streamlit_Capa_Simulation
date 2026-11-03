@@ -17,9 +17,11 @@ import ast
 from pathlib import Path
 
 import pytest
+from alert_marks import alert_notes, flashed, successes, texts
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation import alerts
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = PROJECT_ROOT / "src" / "capa_simulation" / "components"
@@ -47,12 +49,13 @@ if st.session_state.get("go") is True:
 
 
 def _messages(script: str) -> list[str]:
+    """화면에 그린 성공 글과 알림창 표지에 실린 성공 결과 알림(D3 — 성공은 알림창으로만 낸다)."""
     app = AppTest.from_string(script)
     app.run()
     app.session_state["go"] = True
     app.run()
     assert not app.exception
-    return [element.value for element in app.success]
+    return texts(successes(app))
 
 
 def test_a_success_message_before_rerun_never_reaches_the_screen() -> None:
@@ -65,15 +68,35 @@ def test_a_queued_flash_survives_the_rerun() -> None:
 
 
 def test_a_flash_is_drawn_once_and_then_gone() -> None:
-    """비우지 않으면 그 뒤 모든 rerun 에 남아 방금 저장한 것인지 알 수 없게 된다."""
+    """비우지 않으면 그 뒤 모든 rerun 에 남아 방금 저장한 것인지 알 수 없게 된다. 다음 회차가 같은
+    id 로 한 번 더 보내는 표지(`again` — 끊긴 회차를 덮는다)는 브라우저가 다시 띄우지 않는다."""
     app = AppTest.from_string(QUEUED)
     app.run()
     app.session_state["go"] = True
     app.run()
-    assert [element.value for element in app.success] == ["저장했습니다."]
+    assert texts(successes(app)) == ["저장했습니다."]
+    (first,) = alert_notes(app)
 
     app.run()
-    assert [element.value for element in app.success] == []
+    assert texts(successes(app)) == []
+    (again,) = alert_notes(app, again=True)
+    assert again["again"] is True and again["id"] == first["id"]
+
+
+def test_a_success_is_sent_to_the_alert_popup_and_not_drawn_beside_the_button() -> None:
+    """D3 (가) — 성공 · 안내는 알림창 하나로 낸다. 버튼 곁 칸에는 그리지 않는다(같은 글이 두 번
+    보이지 않게). 표지는 종류별 기본 코드 · 화면 · 담은 칸 이름을 싣는다."""
+    app = AppTest.from_string(QUEUED)
+    app.run()
+    app.session_state["go"] = True
+    app.run()
+    assert not app.success
+    (note,) = alert_notes(app)
+    assert note["code"] == alerts.FLASH_CODES["success"] == "FL-01"
+    assert note["kind"] == "event" and note["level"] == "info"
+    assert note["flash"] == "success" and note["origin"] == "demo_flash"
+    assert note["short"] == note["full"] == "저장했습니다."
+    assert isinstance(note["id"], str) and note["id"]
 
 
 def test_no_component_announces_success_and_immediately_reruns() -> None:
@@ -141,13 +164,15 @@ def test_render_flash_stands_one_slot_with_or_without_a_message() -> None:
     app.run()
     assert not app.exception
     assert (len(app.main.children), _after_index(app)) == empty
+    # 경고는 버튼 곁에도, 안내는 알림창으로만(D3).
     assert [element.value for element in app.warning] == ["다시 넣으세요."]
     assert app.warning[0].proto.icon == ":material/warning:"
-    assert [element.value for element in app.info] == ["바뀐 것이 없습니다."]
+    assert not app.info
+    assert texts(flashed(app)) == ["다시 넣으세요.", "바뀐 것이 없습니다."]
 
     app.run()
     assert (len(app.main.children), _after_index(app)) == empty
-    assert not app.warning and not app.info
+    assert not app.warning and not app.info and not flashed(app)
 
 
 def test_the_returned_slot_takes_the_failure_of_the_same_action() -> None:
@@ -175,16 +200,53 @@ render_flash("demo_success", "demo_info", "demo_warning", "demo_error", "demo_pl
 
 
 def test_each_kind_is_drawn_with_its_icon_and_a_plain_success_keeps_the_text_shape() -> None:
-    """종류마다 그 요소로 그린다. 아이콘 없는 성공은 글만 담는다 — 그 칸을 글로 읽는 도우미가
-    있다."""
+    """경고 · 오류는 그 요소로 버튼 곁에 그리고(D3 — 오류 · 거부만), 넷 모두 알림창 표지에 종류별
+    기본 코드 · 단계로 싣는다. 아이콘 없는 성공은 글만 담는다 — 그 칸을 글로 읽는 도우미가 있다."""
     app = AppTest.from_string(KINDS).run()
     assert not app.exception
-    assert [element.value for element in app.success] == ["success 알림", "글만 담은 성공"]
-    assert [element.proto.icon for element in app.success] == [":material/info:", ""]
-    assert [element.value for element in app.info] == ["info 알림"]
+    assert not app.success and not app.info
     assert [element.value for element in app.warning] == ["warning 알림"]
+    assert [element.proto.icon for element in app.warning] == [":material/info:"]
     assert [element.value for element in app.error] == ["error 알림"]
+    assert [(item.value, item.code, item.note and item.note["level"]) for item in flashed(app)] == [
+        ("success 알림", "FL-01", "info"),
+        ("info 알림", "FL-02", "info"),
+        ("warning 알림", "FL-03", "check"),
+        ("error 알림", "FL-04", "error"),
+        ("글만 담은 성공", "FL-01", "info"),
+    ]
     assert app.session_state["plain_shape"] == "글만 담은 성공"
+
+
+def test_render_flash_writes_exactly_one_event_slot_with_or_without_alerts() -> None:
+    """표지는 부를 때마다 이벤트 칸에 정확히 한 자리다 — 알림이 없으면 빈 스타일. 프래그먼트 · 팝업
+    본문의 이벤트 칸 자리 수가 갈래와 상관없이 같아야 한다(AGENTS 9장)."""
+    app = AppTest.from_string(SLOT).run()
+    quiet = [element.proto.body for element in app.get("html")]
+    assert quiet == ["<style></style>"]
+    app.session_state["go"] = True
+    app.run()
+    loud = [element.proto.body for element in app.get("html")]
+    assert len(loud) == 1 and loud[0].startswith(f"<style {alerts.MARKER_ATTRIBUTE}=")
+
+
+def test_a_queued_alert_code_must_be_a_registered_event_code() -> None:
+    """칸마다 코드를 따로 두면 등록부의 사건 코드여야 한다 — 상태 코드 · 없는 코드는 담지 않는다."""
+    script = """
+from capa_simulation.components.flash import queue_flash, render_flash
+
+queue_flash("demo_flash", "탭은 열 개까지", kind="warning", alert="TAB-01")
+render_flash("demo_flash")
+"""
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    (item,) = flashed(app)
+    assert item.code == "TAB-01" and item.note is not None and item.note["level"] == "action"
+    refused = AppTest.from_string(
+        "from capa_simulation.components.flash import queue_flash\n"
+        'queue_flash("k", "글", alert="NO-99")'
+    ).run()
+    assert refused.exception
 
 
 def test_an_unknown_kind_is_refused() -> None:
@@ -726,13 +788,16 @@ def test_a_quick_second_press_on_a_locked_button_keeps_the_notice(
     app.button(key="demo_delete").click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert [element.value for element in app.success] == ["지웠습니다."]
+    assert texts(successes(app)) == ["지웠습니다."]
+    (first,) = alert_notes(app)
 
     app._run(widget_state=pressed)
 
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state["deleted"] == 1
-    assert [element.value for element in app.success] == (["지웠습니다."] if kept else [])
+    assert texts(successes(app)) == (["지웠습니다."] if kept else [])
+    # 다시 낸 알림은 첫 알림과 같은 id 다 — 브라우저가 알림창을 두 번 띄우지 않는다.
+    assert [note["id"] for note in alert_notes(app, again=True)] == [first["id"]]
 
 
 @pytest.mark.parametrize(("window", "kept"), [(3600.0, True), (0.0, False)])
@@ -758,4 +823,4 @@ def test_a_notice_noted_before_a_cut_callback_reaches_the_last_screen(
 
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state["deleted"] == 1
-    assert [element.value for element in app.success] == (["지웠습니다."] if kept else [])
+    assert texts(successes(app)) == (["지웠습니다."] if kept else [])

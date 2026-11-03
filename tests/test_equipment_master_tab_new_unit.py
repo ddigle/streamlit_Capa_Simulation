@@ -15,6 +15,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
@@ -275,7 +276,7 @@ def test_each_new_unit_spreads_by_its_own_choice_when_saved(tmp_path: Path, grid
 
     _save(app, spread=False)
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     # 저장 뒤에는 고름을 비운다(편집본과 함께 산다).
     assert not any("「새 호기」 칸에서 넣은" in str(item.value) for item in app.caption)
     other = _session(repository, setup)
@@ -396,7 +397,7 @@ def test_a_new_unit_saved_in_an_assumption_session_has_no_official_place(
     )
     _save(app)
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     official = _session(repository, OPERATIONS).equipment.set_index("설비명")
     mine = _session(repository, setup).equipment.set_index("설비명")
     assert pd.isna(official.loc["EQ-09", "동"]) and pd.isna(official.loc["EQ-09", "층"])
@@ -467,7 +468,7 @@ def test_an_undone_panel_unit_drops_its_choice_and_a_unit_entered_elsewhere_foll
     assert NEW_UNIT_PROPAGATE_KEY not in app.session_state
     _enter_elsewhere(app, "EQ-09")
     _save(app, spread=True)
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     other = _session(repository, setup)
     assert "EQ-09" in other.equipment["설비명"].tolist()
     assert "EQ-09" not in other.unscheduled_units
@@ -486,7 +487,7 @@ def test_the_panel_choice_wins_over_the_box_and_other_new_units_follow_the_box(
 
     _save(app, spread=True)
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     other = _session(repository, setup)
     assert other.unscheduled_units == frozenset({"EQ-09"})
     assert "EQ-08" in other.equipment["설비명"].tolist()
@@ -516,7 +517,7 @@ def test_a_module_added_in_an_assumption_session_takes_its_groups_floor_official
     _add(app, grid, values)
     _save(app)
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     official = _session(repository, OPERATIONS).equipment.set_index("설비명")
     mine = _session(repository, setup).equipment.set_index("설비명")
     group = (official.loc["MOD-1A", "동"], official.loc["MOD-1A", "층"])
@@ -583,12 +584,12 @@ def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     assert "EQ-09" in _session(repository, OPERATIONS).equipment["설비명"].tolist()
     after = repository.latest_equipment_release()
     assert after is not None
     assert after.release_no == (before.release_no + 1 if publish else before.release_no)
-    assert any(("발행했습니다" in str(item.value)) is publish for item in app.success)
+    assert any(("발행했습니다" in str(item.value)) is publish for item in successes(app))
 
 
 def test_an_assumption_tab_save_that_reaches_nothing_official_has_no_publish_box(
@@ -611,7 +612,7 @@ def test_an_assumption_tab_save_that_reaches_nothing_official_has_no_publish_box
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     # 공통에는 들지만 공식 설비 시나리오에는 일정 없음이다 — 공식에 새 일정 리비전이 없다.
     assert _session(repository, OPERATIONS).unscheduled_units == frozenset({"EQ-09"})
     after = repository.latest_equipment_release()

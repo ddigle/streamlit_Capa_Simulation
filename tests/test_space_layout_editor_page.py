@@ -13,6 +13,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -100,7 +101,7 @@ def test_an_apply_lands_in_the_draft_and_one_save_writes_master_and_marks(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    assert any("편집본에 적용했습니다" in item.value for item in successes(app))
     panel = app.markdown
     assert any("호기 배치 1건 · 도면 요소 1개 층" in item.value for item in panel)
     # 설비 리비전이 생기는 저장이라 메모 칸이 선다(FAB 만 바뀐 저장에서만 숨긴다).
@@ -116,7 +117,7 @@ def test_an_apply_lands_in_the_draft_and_one_save_writes_master_and_marks(
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("r2" in item.value for item in app.success)
+    assert any("r2" in item.value for item in successes(app))
     saved = repository.load_snapshot(str(repository.latest_revision_id()))
     assert saved.equipment.set_index("설비명").loc["EQ-01", "X좌표"] == 40.0
     assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["D1"]
@@ -144,7 +145,7 @@ def test_a_marks_only_save_writes_no_revision(
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("새 리비전 없이" in item.value for item in app.success)
+    assert any("새 리비전 없이" in item.value for item in successes(app))
     repository = DuckDBEquipmentRepository(database)
     assert len(repository.list_revisions()) == 1
     assert repository.load_floor_layout_canvases()[("C1", "1F")] == (120.0, 60.0)
@@ -220,7 +221,7 @@ def test_a_module_group_apply_is_tiled_and_carries_its_hidden_module(
 
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [item.value for item in app.error]
-    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    assert any("편집본에 적용했습니다" in item.value for item in successes(app))
     after = editor_calls[-1]
     assert {
         item["id"]: (item["x"], item["y"], item["w"], item["h"])
@@ -273,8 +274,8 @@ def test_a_group_label_apply_saves_without_a_revision_and_follows_a_rename(
     assert not app.exception, [item.message for item in app.exception]
     # 알림은 실제로 저장한 것만 말한다(위치만 바꿨으면 「Main 설비명 위치만」).
     assert any(
-        "새 리비전 없이 Main 설비명 위치만 저장했습니다" in item.value for item in app.success
-    ), [item.value for item in app.success]
+        "새 리비전 없이 Main 설비명 위치만 저장했습니다" in item.value for item in successes(app)
+    ), [item.value for item in successes(app)]
     assert len(repository.list_revisions()) == 1
     assert repository.load_floor_group_labels("C1", "1F") == {"GRP-1": "center"}
     app.toggle(key="space_layout_edit_mode").set_value(False).run()
@@ -444,7 +445,7 @@ def test_a_second_press_of_the_same_apply_keeps_the_success_and_applies_once(
     }
     app.session_state[FAKE_APPLY_KEY] = dict(payload)
     app.run()
-    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    assert any("편집본에 적용했습니다" in item.value for item in successes(app))
     generation = app.session_state[BUFFER_GENERATION_KEY]
 
     app.session_state[FAKE_APPLY_KEY] = dict(payload)
@@ -452,7 +453,7 @@ def test_a_second_press_of_the_same_apply_keeps_the_success_and_applies_once(
 
     assert not app.exception, [item.message for item in app.exception]
     assert not any("다시 서는 사이" in item.value for item in app.warning)
-    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    assert any("편집본에 적용했습니다" in item.value for item in successes(app))
     # 둘째 누름은 얹지 않았다 — 편집본 세대가 그대로다.
     assert app.session_state[BUFFER_GENERATION_KEY] == generation
     moved = next(item for item in editor_calls[-1]["items"] if item["id"] == "EQ-01")
@@ -812,7 +813,7 @@ def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_
     # 지금 층(C1 1F)은 비활성이어도 남는다(편집기가 자기 층은 뺀다). 다른 비활성 층은 빠진다.
     assert "C1 1F" in data["floors"] and "C2 3F" not in data["floors"]
     assert "C2 2F" in data["floors"]
-    assert any("이 층은 비활성(생산라인 아님)입니다" in item.value for item in app.info)
+    assert any("이 층은 비활성(생산라인 아님)입니다" in item.value for item in infos(app))
 
     # 그 사이 다른 층이 꺼졌어도 이미 단 `moveTo` 는 받는다 — 적용 검사는 30개 층이다.
     repository.save_floor_states(
@@ -830,7 +831,7 @@ def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    (flash,) = [item.value for item in app.success if "편집본에 적용했습니다" in item.value]
+    (flash,) = [item.value for item in successes(app) if "편집본에 적용했습니다" in item.value]
     assert "보낸 층 C2 2F는 비활성 층입니다" in flash
     assert "C2 2F" not in editor_calls[-1]["floors"]
     clear_equipment_repository()

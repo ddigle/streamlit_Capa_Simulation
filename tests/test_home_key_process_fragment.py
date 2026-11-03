@@ -23,6 +23,7 @@ import inspect
 from pathlib import Path
 
 import pytest
+from alert_marks import infos
 from fragment_browser import FragmentBrowser, install_fragment_browser
 from streamlit.testing.v1 import AppTest
 
@@ -289,7 +290,7 @@ def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
     _assert_clean(app)
     next(button for button in app.button if button.label == "Summary 저장").click().run()
     _assert_clean(app)
-    assert home_preference.SUMMARY_UNCHANGED_MESSAGE in [str(item.value) for item in app.info]
+    assert home_preference.SUMMARY_UNCHANGED_MESSAGE in [str(item.value) for item in infos(app)]
     full_runs = app.session_state[FULL_RUNS_KEY]
 
     editor = browser.fragment_of(TARGET_KEY)
@@ -298,8 +299,8 @@ def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
     _assert_clean(app)
     assert browser.started == [[editor], []]
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
-    infos = [str(item.value) for item in app.info]
-    assert home_preference.KEY_PROCESS_UNCHANGED_MESSAGE in infos
-    assert home_preference.SUMMARY_UNCHANGED_MESSAGE not in infos
+    informed = [str(item.value) for item in infos(app)]
+    assert home_preference.KEY_PROCESS_UNCHANGED_MESSAGE in informed
+    assert home_preference.SUMMARY_UNCHANGED_MESSAGE not in informed
     assert repository.load_global_key_process().version == 1
     clear_global_summary_note_cache()

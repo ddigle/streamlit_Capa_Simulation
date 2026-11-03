@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -134,7 +135,7 @@ def test_edit_save_and_the_table_redraws_the_saved_values(tmp_path: Path) -> Non
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert stored.rows == ((B, 202608, 0.25), (A, 202607, 1.5))
     assert (stored.version, stored.saved_by, stored.note) == (1, "홍길동", "26.07 PM")
-    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in app.success)
+    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
 
     # 다시 그린 표(새 세션 — 위젯 편집 없이)는 저장한 값이다.
     fresh = _editor_values(_app(path))
@@ -294,7 +295,7 @@ def test_the_second_press_of_a_refused_press_redraws_the_latest_so_the_next_pres
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     _edit(app, {(row_a, "202608"): 1.25}, version=_drawn_version(app))
     app = _save(app)
-    assert not any("바뀐 칸이 없어" in item.value for item in app.info)
+    assert not any("바뀐 칸이 없어" in item.value for item in infos(app))
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202608, 1.25)), 2)
 
@@ -314,20 +315,20 @@ def test_a_trailing_press_of_the_same_input_repeats_the_success(
 
     app = _save(app)
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
-    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in app.success)
-    assert not any("바뀐 칸이 없어" in item.value for item in app.info)
+    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
+    assert not any("바뀐 칸이 없어" in item.value for item in infos(app))
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _save(app)
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
-    assert any("바뀐 칸이 없어" in item.value for item in app.info)
+    assert any("바뀐 칸이 없어" in item.value for item in infos(app))
 
 
 def test_an_unchanged_save_writes_nothing(tmp_path: Path) -> None:
     path = tmp_path / "equipment.duckdb"
     app = _save(_app(path))
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 0
-    assert any("바뀐 칸이 없어" in item.value for item in app.info)
+    assert any("바뀐 칸이 없어" in item.value for item in infos(app))
 
 
 def test_a_locked_tab_shows_the_reason_and_cannot_save(tmp_path: Path) -> None:
@@ -335,7 +336,7 @@ def test_a_locked_tab_shows_the_reason_and_cannot_save(tmp_path: Path) -> None:
     script = _script(path).replace("owner_tab=None,", "owner_tab=None, locked_reason='잠금'")
     app = AppTest.from_string(script, default_timeout=60).run()
     assert not app.exception
-    assert any(item.value == "잠금" for item in app.info)
+    assert any(item.value == "잠금" for item in infos(app))
     assert next(button for button in app.button if button.label == MANUAL_SAVE_BUTTON).disabled
 
 

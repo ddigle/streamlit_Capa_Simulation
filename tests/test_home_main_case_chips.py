@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as scenario_status
@@ -274,7 +275,7 @@ def test_clicking_a_case_loads_it_exactly_like_the_sidebar(seeded: Seeded) -> No
 
     assert _active(app) == (seeded.case_scenario, seeded.newer_revision)
     assert app.button(key=SCENARIO_FIELD_KEY).label == "증설안 · r2"
-    assert [item.value for item in app.success] == ["증설안 r2를 불러왔습니다."]
+    assert [item.value for item in successes(app)] == ["증설안 r2를 불러왔습니다."]
     assert app.session_state["test_header_top"] == "증설안 · r2 증설안 확정 · 저장된 리비전"
     assert _chip(app, CASE1_CHIP_KEY)[2] == "primary"
     assert _chip(app, OFFICIAL_CHIP_KEY)[2] == "secondary"
@@ -295,7 +296,7 @@ def test_the_painted_chip_does_nothing_when_clicked_again(seeded: Seeded) -> Non
     app = _ran(app.button(key=OFFICIAL_CHIP_KEY).click().run())
 
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
-    assert [item.value for item in app.success] == []
+    assert [item.value for item in successes(app)] == []
 
 
 def test_a_second_press_on_the_chip_just_loaded_keeps_the_load_notice(
@@ -309,16 +310,16 @@ def test_a_second_press_on_the_chip_just_loaded_keeps_the_load_notice(
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     app = _app(seeded)
     app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
-    assert [item.value for item in app.success] == ["증설안 r2를 불러왔습니다."]
+    assert [item.value for item in successes(app)] == ["증설안 r2를 불러왔습니다."]
 
     app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
 
     assert _active(app) == (seeded.case_scenario, seeded.newer_revision)
-    assert [item.value for item in app.success] == ["증설안 r2를 불러왔습니다."]
+    assert [item.value for item in successes(app)] == ["증설안 r2를 불러왔습니다."]
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
-    assert [item.value for item in app.success] == []
+    assert [item.value for item in successes(app)] == []
 
 
 def test_painting_needs_the_same_revision_and_otherwise_says_outside_the_slots(
@@ -482,7 +483,7 @@ def test_a_chip_drawn_before_another_session_changed_its_case_loads_nothing(
 
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
     assert _notices(app) == [changed_slot_notice(1)]
-    assert [item.value for item in app.success] == []
+    assert [item.value for item in successes(app)] == []
     assert _chip(app, CASE1_CHIP_KEY)[:3] == (
         "Case1",
         literal_markdown("증설안 · r1 · 초기 리비전"),

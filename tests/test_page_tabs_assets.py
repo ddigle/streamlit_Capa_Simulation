@@ -166,19 +166,53 @@ def test_the_current_tab_keeps_room_for_its_name_when_the_strip_is_crowded() -> 
     assert rule is not None and "display: none" in rule.group(1)
 
 
-def test_the_limit_notice_stands_off_the_page_head_and_lets_presses_through() -> None:
-    """상한 알림(8초)은 탭 줄 오른쪽 아래에 떠 HOME 주요 Case 칩(공식 vN·Case1·Case2)을 덮었다(E2E).
-    누름을 받지 않게만 하니 칩이 안 보인 채 눌렸다 — 불투명한 알림이 칩과 같은 자리였다(1024px
-    알림 x 613~1006 · 칩 x 755~1006, 390px 은 두 줄로 칩 줄 전체, 2026-10-30 E2E). 알림은 탭 줄
-    밑이 아니라 창 오른쪽 아래 구석에 뜬다(화면 머리의 칩·하위 탭을 덮지 않는다). 글뿐이라 누름은
-    받지 않는다 — 읽기 도구는 `role="status"` 로 읽는다."""
-    rule = _rule(".capa-tabs-notice")
-    assert "pointer-events: none" in rule
-    assert "position: fixed;" in rule and "bottom:" in rule and "right:" in rule
-    assert "top:" not in rule
-    # 휴대폰 폭에서도 창 안에 선다 — 여백까지 넣어 잰다(아니면 390px 에서 왼쪽 끝을 넘었다).
-    assert "100vw" in rule and "box-sizing: border-box;" in rule
-    assert 'class="capa-tabs-notice" role="status"' in HTML
+def test_the_strip_raises_its_notices_in_the_alert_center_and_keeps_no_notice_box() -> None:
+    """상한 알림 · 공식 복귀 알림은 탭 줄 칸이 아니라 같은 문서의 알림 칸(오른쪽 아래 알림창 한 꼴 ·
+    Alarm 기록 — 2026-11-03 결정 보드 D3)에 낸다. 탭 줄의 옛 알림 칸(`.capa-tabs-notice`)은 걷었다 —
+    한 칸이라 뒤 알림이 앞 알림을 덮었다(설계 1장). 알림 칸이 아직 서지 않았으면(탭 줄이 먼저
+    그려진다) 담아 두고 칸이 설 때 꺼낸다. 코드 · 단계는 파이썬 등록부가 data 로 준다."""
+    assert "capa-tabs-notice" not in HTML and "capa-tabs-notice" not in CSS
+    assert "capa-tabs-notice" not in JS
+    raise_alert = JS[JS.index("function raiseAlert(note) {") :]
+    raise_alert = raise_alert[: raise_alert.index("\n}\n")]
+    assert "window.__capaAlerts" in raise_alert and "window.__capaAlertQueue" in raise_alert
+    assert JS.count("flash('limit',") == 2
+    from capa_simulation import alerts
+    from capa_simulation.page_tabs_state import TabStrip
+
+    data = page_tabs.tabs_data(
+        TabStrip(paths=(), pinned=frozenset()),
+        active=None,
+        hrefs={},
+        marks={},
+        leave="",
+        epoch=0,
+        notice=None,
+    )
+    assert data["alerts"] == {
+        kind: {"code": code, "level": alerts.spec(code).level}
+        for kind, code in page_tabs.ALERT_CODES.items()
+    }
+    assert [alerts.spec(code).kind for code in page_tabs.ALERT_CODES.values()] == ["event"] * 3
+    # 짧은 글(알림창)은 60자 안팎이고 전문(패널 · 로그)은 옛 글 그대로다.
+    for short in (page_tabs.RETURN_SHORT, page_tabs.THEME_RETURN_SHORT):
+        assert len(short.format(label="「셋업 가속안」 r3")) <= alerts.SHORT_LIMIT
+    assert "const SHORT_LIMIT = 60" in JS and alerts.SHORT_LIMIT == 60
+
+
+def test_an_alert_center_go_to_page_rides_the_strips_own_move() -> None:
+    """알림 칸 「그 화면으로」(`capa-open-page` — {href})는 탭 줄의 이동 길을 탄다 — 열린 탭이면 탭
+    고르기(떠나기 확인 · 한 번에 하나), 아니면 그 화면 링크를 눌러 상한 거름(`S.onLink`)이 받는다.
+    처리기는 문서에 하나이고 컴포넌트가 내려갈 때 걷는다."""
+    handler = JS[JS.index("S.onOpenPage = (event) => {") :]
+    handler = handler[: handler.index("window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)")]
+    assert "select(item)" in handler and "link.click()" in handler
+    assert "const OPEN_PAGE_EVENT = 'capa-open-page'" in JS
+    assert "window.removeEventListener(OPEN_PAGE_EVENT, S.onOpenPage)" in JS
+    from capa_simulation.components import alert_center
+
+    center = (alert_center._ASSETS / "alert_center.js").read_text(encoding="utf-8")
+    assert "const OPEN_PAGE_EVENT = 'capa-open-page'" in center
 
 
 def test_the_pin_keeps_one_name_and_tells_its_state_with_aria_pressed() -> None:
@@ -1197,7 +1231,7 @@ def test_the_return_notice_reads_the_header_variable_and_the_theme_switch_mark()
     assert "if (!window.__capaReturnWatch) {" in JS
     assert "window.addEventListener('pagehide'," in JS
     assert "if (!window.__capaReturnChecked) {" in JS
-    assert "flash(message, RETURN_NOTICE_MS)" in JS
+    assert "flash(theme ? 'themed' : 'returned', message," in JS
     # 알리기 전에 떠난 문서의 몫은 지우지 않는다 — 떠날 때 이름이 없으면 적지 않는다.
     assert "if (record !== null) storage.setItem(RETURN_KEY, record)" in JS
     # 탭 줄이 없던 문서(부트스트랩 오류)에서 누른 테마 단추의 표지는 떠날 때 읽히지 않고 남는다 —

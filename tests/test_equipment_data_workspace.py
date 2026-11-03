@@ -20,6 +20,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import shown
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
@@ -144,7 +145,7 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def _texts(app: AppTest, kind: str) -> list[str]:
-    return [str(item.value) for item in getattr(app, kind)]
+    return [str(item.value) for item in shown(app, kind)]
 
 
 def _open_import(app: AppTest) -> AppTest:

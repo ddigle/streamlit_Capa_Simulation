@@ -10,6 +10,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, Expander, Status
 from streamlit.testing.v1.errors import AppTestError
@@ -139,7 +140,7 @@ def test_list_management_acts_on_the_checked_scenario(
     assert not app.exception
     # 첫 행은 내장 시드 — 지금 최신 공식버전의 시나리오다. 체크·단추 대신 보관할 수 없다는
     # 안내만 선다.
-    assert any("보관할 수 없습니다" in item.value for item in app.info)
+    assert any("보관할 수 없습니다" in item.value for item in infos(app))
     assert "보관합니다" not in "".join(widget.label for widget in app.checkbox)
     assert "보관 실행" not in {button.label for button in app.button}
 
@@ -151,7 +152,7 @@ def test_list_management_acts_on_the_checked_scenario(
     app.button(key=f"{ACTION_KEY}_archive").click().run()
 
     assert not app.exception
-    assert not any("보관할 수 없습니다" in item.value for item in app.info)
+    assert not any("보관할 수 없습니다" in item.value for item in infos(app))
     assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
     execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled
@@ -227,7 +228,7 @@ def test_archived_box_keeps_its_identity_when_the_flash_disappears(tmp_path: Pat
     app.session_state[FLASH_KEY] = "보관 대상을 보관했습니다."
     app.run()
     assert not app.exception
-    assert any("보관했습니다" in item.value for item in app.success)
+    assert any("보관했습니다" in item.value for item in successes(app))
     box = app.main.get_by_key(ARCHIVED_EXPANDER_KEY)
     assert isinstance(box, (Expander, Status))
     assert box.label == "보관된 시나리오 1건"
@@ -236,7 +237,7 @@ def test_archived_box_keeps_its_identity_when_the_flash_disappears(tmp_path: Pat
 
     app.run()
     assert not app.exception
-    assert not any("보관했습니다" in item.value for item in app.success)
+    assert not any("보관했습니다" in item.value for item in successes(app))
     assert app.main.get_by_key(ARCHIVED_EXPANDER_KEY)._block_id == flashed
 
 
@@ -278,7 +279,7 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
     assert not app.exception
 
     _fill_clone(app, "복제 A", "CLONE-A")
-    assert any("복제 A를 저장했습니다" in item.value for item in app.success)
+    assert any("복제 A를 저장했습니다" in item.value for item in successes(app))
     assert _clone_inputs(app) == {
         "시나리오명": "",
         "원천 시뮬레이션 코드": "",
@@ -354,7 +355,7 @@ def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
             "가상 제품 복제를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
             "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
         )
-        for item in app.success
+        for item in successes(app)
     )
     repository = DuckDBScenarioRepository(database_path)
     clone = next(
@@ -541,7 +542,7 @@ def test_a_sidebar_save_with_nothing_changed_makes_no_revision(tmp_path: Path) -
 
     _save_revision(app, "그대로 저장")
 
-    notices = [str(item.value) for item in app.info if "바뀐 것이 없습니다" in str(item.value)]
+    notices = [str(item.value) for item in infos(app) if "바뀐 것이 없습니다" in str(item.value)]
     assert notices == [revision_unchanged_notice(latest_no)]
     assert [item.active_revision_no for item in repository.list_scenarios()] == [latest_no]
 
@@ -608,7 +609,9 @@ def test_clone_inherits_the_active_revisions_virtual_products_still_in_the_table
         "가상 제품 1건이 포함되어 있습니다. "
         "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
     )
-    assert f"가상 제품 상속 복제를 저장했습니다. {notice}" in [item.value for item in app.success]
+    assert f"가상 제품 상속 복제를 저장했습니다. {notice}" in [
+        item.value for item in successes(app)
+    ]
     repository = DuckDBScenarioRepository(database_path)
     clone = next(
         item for item in repository.list_scenarios() if item.scenario_name == "가상 제품 상속 복제"
@@ -665,7 +668,7 @@ def test_rename_refreshes_the_cached_snapshot_name(tmp_path: Path) -> None:
     tables.run()
     assert not app.exception
 
-    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in successes(app)]
     refreshed = load_scenario_snapshot(str(database_path), revision_id)
     assert refreshed.scenario.scenario_name == "이름 바꾼 시나리오"
     assert _list_frame(app).index.tolist() == ["이름 바꾼 시나리오"]
@@ -758,7 +761,7 @@ def test_rename_archive_and_delete_refresh_the_cached_main_cases(tmp_path: Path)
     app.button(key="scenario_list_save").click()
     tables.run()
     assert not app.exception
-    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in successes(app)]
     assert load_global_main_cases(database).version == seen.version + 1
 
     app = AppTest.from_string(script, default_timeout=120)
@@ -978,7 +981,7 @@ def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmati
     latest = repository.latest_official_release()
     assert latest is not None and latest.revision_id == revision_id
     assert latest.release_no == 2
-    assert any(item.value.startswith("공식 v2 · ") for item in app.success)
+    assert any(item.value.startswith("공식 v2 · ") for item in successes(app))
     # 지정하면 팝업이 닫힌다.
     assert OFFICIAL_DIALOG_KEY not in app.session_state
 
@@ -1017,7 +1020,7 @@ def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) 
     shown = [item.value for item in app.markdown]
     assert any(value.startswith(f"**v{release.release_no}** · ") for value in shown), shown
     assert any(value.startswith(f"**v{release.release_no + 1}** · ") for value in shown), shown
-    assert any("지금 공식과 같은 리비전입니다" in item.value for item in app.info)
+    assert any("지금 공식과 같은 리비전입니다" in item.value for item in infos(app))
     assert not any("가상 제품" in item.value for item in app.warning)
     assert VIRTUAL_CONFIRM_LABEL not in {widget.label for widget in app.checkbox}
     assert not _official_button(app).disabled
@@ -1029,7 +1032,7 @@ def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) 
     latest = repository.latest_official_release()
     assert latest is not None and latest.release_no == 2
     assert latest.revision_id == release.revision_id
-    assert any(item.value.startswith("공식 v2 · ") for item in app.success)
+    assert any(item.value.startswith("공식 v2 · ") for item in successes(app))
 
 
 def test_the_official_popup_does_not_publish_over_a_release_made_while_it_was_open(
@@ -1107,7 +1110,7 @@ def test_official_release_with_demand_left_out_of_the_requirement_warns_after_pu
 
     latest = repository.latest_official_release()
     assert latest is not None and latest.revision_id == saved.revision.revision_id
-    assert any(item.value.startswith("공식 v2 · ") for item in app.success)
+    assert any(item.value.startswith("공식 v2 · ") for item in successes(app))
     assert any("부하량에서 빠진 계획" in item.value for item in app.warning), [
         item.value for item in app.warning
     ]
@@ -1228,7 +1231,7 @@ def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
     app.button(key="scenario_list_save").click().run()
 
     assert not app.exception
-    assert "누적 순서를 저장했습니다." in [item.value for item in app.success]
+    assert "누적 순서를 저장했습니다." in [item.value for item in successes(app)]
     assert app.text_input(key=FORM_CODE_KEY).value == "DEMO-A-001"
     assert app.text_input(key=FORM_SCENARIO_NAME_KEY).value == "알파 시뮬 (DEMO-A-001)"
 
@@ -1347,8 +1350,8 @@ def test_a_revision_renamed_elsewhere_is_still_the_one_loaded_and_published(
         item.value
         == f"이름 바꿀 시나리오 r{picked.revision_no}{object_particle(str(picked.revision_no))} "
         "불러왔습니다."
-        for item in app.success
-    ), [item.value for item in app.success]
+        for item in successes(app)
+    ), [item.value for item in successes(app)]
 
     app, tables = pick_then_rename("두 번째로 바뀐 이름")
     app.button(key=f"{ACTION_KEY}_official").click()
@@ -1545,7 +1548,7 @@ def test_the_archived_box_keeps_its_place_with_or_without_notices(tmp_path: Path
     app.session_state["scenario_list_notice"] = ("error", "목록 결과 칸")
     app.run()
     assert not app.exception
-    assert any("되돌렸습니다" in item.value for item in app.success)
+    assert any("되돌렸습니다" in item.value for item in successes(app))
     assert any("목록 결과 칸" in item.value for item in app.error)
     assert _archived_box_place(app) == quiet
 
@@ -1676,7 +1679,7 @@ def test_a_place_number_inserts_the_row_and_the_buttons_move_the_picked_one(tmp_
     app.button(key="scenario_list_save").click()
     tables.run()
     assert not app.exception
-    assert "누적 순서를 저장했습니다." in [item.value for item in app.success]
+    assert "누적 순서를 저장했습니다." in [item.value for item in successes(app)]
     stored = DuckDBScenarioRepository(database_path).list_scenarios()
     assert [scenario.scenario_id for scenario in stored] == [ids[0], ids[2], ids[1]]
     # 저장하면 편집이 비고 고름은 남는다.
@@ -1710,7 +1713,7 @@ def test_a_list_save_with_one_refused_name_writes_nothing(tmp_path: Path) -> Non
     app.button(key="scenario_list_save").click()
     tables.run()
     assert not app.exception
-    assert "시나리오명 3건을 저장했습니다." in [item.value for item in app.success]
+    assert "시나리오명 3건을 저장했습니다." in [item.value for item in successes(app)]
     renamed = {
         scenario.scenario_id: scenario.scenario_name for scenario in repository.list_scenarios()
     }
@@ -1734,7 +1737,7 @@ def test_a_name_only_save_keeps_the_row_where_the_table_showed_it(tmp_path: Path
     tables.run()
 
     assert not app.exception
-    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in successes(app)]
     assert [scenario.scenario_id for scenario in repository.list_scenarios()] == ids
     frame = _list_frame(app)
     assert frame.index.tolist() == [names[0], names[1], "아래 새 이름"]
@@ -1778,7 +1781,7 @@ def test_an_order_changed_elsewhere_refuses_the_order_and_keeps_the_names(tmp_pa
 
     app.button(key="scenario_list_save").click()
     tables.run()
-    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in successes(app)]
     assert (
         next(
             scenario.scenario_name
@@ -1862,8 +1865,8 @@ def test_revision_names_are_saved_from_the_card_table(tmp_path: Path) -> None:
     tables.run()
 
     assert not app.exception
-    assert any(item.value.startswith("리비전명을 저장했습니다: ") for item in app.success), [
-        item.value for item in app.success
+    assert any(item.value.startswith("리비전명을 저장했습니다: ") for item in successes(app)), [
+        item.value for item in successes(app)
     ]
     names = {
         revision.revision_id: revision.revision_name
@@ -2010,7 +2013,7 @@ def test_a_scenario_name_changed_elsewhere_is_not_overwritten_after_more_runs(
     app.button(key="scenario_list_save").click()
     tables.run()
     assert not app.exception
-    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in successes(app)]
     stored = {
         scenario.scenario_id: scenario.scenario_name for scenario in repository.list_scenarios()
     }

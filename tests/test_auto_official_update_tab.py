@@ -15,6 +15,7 @@ from datetime import datetime, time
 from pathlib import Path
 
 import pytest
+from alert_marks import flashed, infos, successes
 from auto_update_fakes import (
     NOW,
     WAFER,
@@ -128,8 +129,11 @@ def _submit_settings(app: AppTest) -> AppTest:
 
 
 def _alerts(app: AppTest) -> list[tuple[str, str, str]]:
-    """본문의 성공·경고 알림을 그린 차례대로 (종류, 아이콘, 글)."""
-    return [
+    """성공 · 경고 알림 (종류, 아이콘, 글) — 성공 결과 알림은 알림창으로만 가므로(D3) 표지에서 읽어
+    앞에 두고, 그 뒤에 본문에 그린 성공 · 경고를 차례대로 둔다(같은 칸에 성공 → 경고 차례로
+    담긴다)."""
+    popped = [("success", item.icon, item.value) for item in flashed(app, "success")]
+    return popped + [
         (node.type, node.proto.icon, node.proto.body)
         for node in app.main
         if isinstance(node, (element_tree.Success, element_tree.Warning))
@@ -157,7 +161,7 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
 
     app = _tab(database)
 
-    assert any(ENV_VAR in str(element.value) for element in app.info)
+    assert any(ENV_VAR in str(element.value) for element in infos(app))
     text = _markdown(app)
     assert "공식 v1 W40" in text
     assert "꺼짐 · 매일 07:00 · 키워드 「PSM」 · 기준 확보율 80%" in text
@@ -327,7 +331,7 @@ def test_a_run_result_and_the_scheduler_line_keep_tildes(
     app.run()
 
     assert not app.exception, [element.message for element in app.exception]
-    assert any("「X\\~Y\\~Z」" in str(element.value) for element in app.info)
+    assert any("「X\\~Y\\~Z」" in str(element.value) for element in infos(app))
     assert any("「A\\~B\\~C」 오류" in str(element.value) for element in app.caption)
 
 
@@ -353,7 +357,7 @@ def test_saving_the_settings_records_what_changed(database: Path) -> None:
     assert saved.config == AutoUpdateConfig(
         enabled=True, check_time=time(6, 30), keyword="PSS", threshold=0.75
     )
-    assert any("자동 갱신 설정을 저장했습니다" in str(element.value) for element in app.success)
+    assert any("자동 갱신 설정을 저장했습니다" in str(element.value) for element in successes(app))
     history = app.dataframe[-1].value
     assert list(history["바꾼 사람"]) == ["운영 담당"]
     assert list(history["바꾼 내용"]) == [
@@ -423,8 +427,8 @@ def test_a_double_press_after_a_change_saved_elsewhere_keeps_the_refusal(
     if trailing:
         errors = [str(element.value) for element in app.error]
         assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-        assert not app.success
-        assert "바뀐 값이 없습니다." not in [str(element.value) for element in app.info]
+        assert not successes(app)
+        assert "바뀐 값이 없습니다." not in [str(element.value) for element in infos(app)]
         assert (stored.version, stored.config.keyword) == (1, "PSM")
     else:
         assert not app.error, [str(element.value) for element in app.error]
@@ -497,7 +501,7 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
     assert not app.exception and not app.error
-    assert any("지금 실행 회차 — 등록·발행" in str(element.value) for element in app.success)
+    assert any("지금 실행 회차 — 등록·발행" in str(element.value) for element in successes(app))
     # 소요대수에 들지 않은 수요가 없으면 성공 알림만 뜬다 — 밑에 빈 경고를 그리지 않는다.
     assert not [text for _, _, text in _alerts(app) if UNCOUNTED_DEMAND_LEAD in text]
     release = repository.latest_official_release()
@@ -585,7 +589,7 @@ def test_run_now_with_nothing_new_lists_a_skip(database: Path) -> None:
 
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
-    assert any("건너뜀" in str(element.value) for element in app.info)
+    assert any("건너뜀" in str(element.value) for element in infos(app))
     row = app.dataframe[0].value.iloc[0]
     assert (row["결과"], row["경고"]) == ("건너뜀", EMPTY)
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
@@ -805,7 +809,7 @@ def test_a_run_result_cut_off_by_a_rerun_is_found_by_its_token(database: Path) -
     app = app.run()
 
     assert not app.exception
-    assert any("지금 실행 회차 — 건너뜀" in str(element.value) for element in app.info)
+    assert any("지금 실행 회차 — 건너뜀" in str(element.value) for element in infos(app))
     assert PENDING_RUN_TOKEN_KEY not in app.session_state
 
 
@@ -855,7 +859,7 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
 def _running_notices(app: AppTest) -> list[str]:
     return [
         str(element.proto.body)
-        for element in app.info
+        for element in infos(app)
         if "아직 도는 중" in str(element.value) and element.proto.icon == ":material/hourglass_top:"
     ]
 

@@ -7,6 +7,7 @@ import duckdb
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.home_preference as home_preference
@@ -239,7 +240,9 @@ def test_the_editor_saves_the_visible_months_and_shows_them_again(database: Path
         202601: 1.25,
         202603: -2.5,
     }
-    assert any("선행 입고 실적을 공용 설정으로 저장했습니다" in item.value for item in app.success)
+    assert any(
+        "선행 입고 실적을 공용 설정으로 저장했습니다" in item.value for item in successes(app)
+    )
 
     # 다시 그리면 저장본이 칸에 돌아온다.
     reloaded = _editor_app(database)

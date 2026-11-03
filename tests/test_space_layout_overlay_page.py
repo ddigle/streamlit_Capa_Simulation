@@ -25,6 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import infos, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -153,7 +154,7 @@ def _texts(app: AppTest) -> list[str]:
     return [
         str(item.value)
         for kind in ("caption", "info", "warning", "success", "error", "markdown")
-        for item in getattr(app, kind)
+        for item in shown(app, kind)
     ]
 
 
@@ -185,7 +186,7 @@ def test_an_assumption_session_draws_its_layout_with_the_notice_and_badge(
     app = _ok(_space(tmp_path, setup).run())
 
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
-    assert any("가정 배치 · 공식과 다른 호기 1대" in str(item.value) for item in app.info)
+    assert any("가정 배치 · 공식과 다른 호기 1대" in str(item.value) for item in infos(app))
     assert any("가정 배치" in str(item.value) for item in app.sidebar.caption)
     # 층 배치 편집이 열린다(LY4 — 1단계 「공식 발행 쌍에서만」 잠금은 걷었다).
     assert not app.toggle(key="space_layout_edit_mode").disabled
@@ -480,7 +481,7 @@ def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
     assert any(
         "이 리비전은 공식과 다른 배치" in str(item.value)
         and "「셋업 실무」 시나리오가 가정이던 때의 배치안" in str(item.value)
-        for item in app.info
+        for item in infos(app)
     )
     assert any("「셋업 실무」 시나리오가 가정이던 때의 배치 차이" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
@@ -523,7 +524,7 @@ def test_an_old_official_revision_whose_difference_now_matches_says_it_once(
     assert "이 리비전에 저장된 배치 차이(호기 1대)는 지금 공식과 같습니다" in head[0], head
     assert not any("공식과 다른 배치" in text for text in texts), texts
     assert not any("정리됩니다" in text for text in texts), texts
-    assert not any("가정이던 때의 배치안" in str(item.value) for item in app.info)
+    assert not any("가정이던 때의 배치안" in str(item.value) for item in infos(app))
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
 
 
@@ -640,7 +641,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notice
     _apply_eq02(app, editor_calls)
 
     assert any(
-        f"저장하면 「{TILDE_ESCAPED}」의 가정 배치로" in str(item.value) for item in app.success
+        f"저장하면 「{TILDE_ESCAPED}」의 가정 배치로" in str(item.value) for item in successes(app)
     )
     assert any(
         f"「{TILDE_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
@@ -650,7 +651,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notice
 
     app.button(key="space_layout_save").click().run()
     _ok(app)
-    saved = next(str(item.value) for item in app.success if "저장했습니다" in str(item.value))
+    saved = next(str(item.value) for item in successes(app) if "저장했습니다" in str(item.value))
     assert saved.count(f"「{TILDE_ESCAPED}」") >= 2, saved
     _assert_tildes_escaped(app)
 
@@ -722,7 +723,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_an_old_official_revision_head
 
     assert any(
         f"「{TILDE_ESCAPED}」" in str(item.value) and "가정이던 때의 배치안" in str(item.value)
-        for item in app.info
+        for item in infos(app)
     )
     _assert_tildes_escaped(app)
 
@@ -756,7 +757,7 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_apply_box_and_notice(
     _apply_eq02(app, editor_calls)
 
     assert any(
-        f"저장하면 「{STAR_ESCAPED}」의 가정 배치로" in str(item.value) for item in app.success
+        f"저장하면 「{STAR_ESCAPED}」의 가정 배치로" in str(item.value) for item in successes(app)
     )
     assert any(
         f"「{STAR_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
@@ -1422,7 +1423,7 @@ def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
     app.session_state[ROW_FLASH_KEY] = saved
     _ok(app.run())
 
-    flashes = [str(item.value) for item in app.sidebar.success]
+    flashes = [str(item.value) for item in successes(app, sidebar=True)]
     notices = [str(item.value) for item in app.sidebar.warning]
     assert any(text.count(f"「{TILDE_ESCAPED}」") >= 2 for text in flashes), flashes
     assert any(f"「{TILDE_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices

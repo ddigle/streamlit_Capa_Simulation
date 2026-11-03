@@ -16,6 +16,7 @@ from typing import Any
 import duckdb
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Dataframe, get_widget_state
@@ -162,7 +163,7 @@ def test_turning_one_floor_off_saves_it_and_moves_it_to_the_folded_table(tmp_pat
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert _states(database) == {("C1", "3F"): "UNUSED"}
-    assert any("비활성 1개(사용 안 함 1)" in item.value for item in app.success)
+    assert any("비활성 1개(사용 안 함 1)" in item.value for item in successes(app))
     assert not app.toggle(key=EDIT_TOGGLE_KEY).value
     assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
     active, inactive = _floor_tables(app)
@@ -294,7 +295,7 @@ def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
 
     assert _states(database) == {("C1", "1F"): "UNUSED"}
     assert CONFIRM_KEY not in app.session_state
-    assert any("층 사용 설정을 저장했습니다" in item.value for item in app.success)
+    assert any("층 사용 설정을 저장했습니다" in item.value for item in successes(app))
     # 설비 마스터의 동·층은 그대로다.
     master = DuckDBEquipmentRepository(database).load_official_snapshot()
     assert master is not None
@@ -330,7 +331,7 @@ def test_a_save_after_someone_else_saved_is_refused_and_the_draft_is_rebuilt(
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert _states(database) == {("C4", "6F"): "NOT_LINE"}
-    assert not app.success
+    assert not successes(app)
     assert any("다른 사용자가 먼저 층 사용 설정을 저장해" in item.value for item in app.warning)
     assert app.toggle(key=EDIT_TOGGLE_KEY).value
     assert app.session_state[DRAFT_KEY] == {"C4 6F": "NOT_LINE"}
@@ -400,7 +401,7 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
     # 창이 지나면 새 화면을 보고 누른 저장이다 — 바뀐 것이 없어 남의 저장이 그대로다.
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     _press(app, tables, SAVE_BUTTON_KEY)
-    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
+    assert any("바뀐 층이 없습니다" in item.value for item in infos(app))
     assert _states(database) == _C1 and _version(database) == 1
 
 
@@ -434,8 +435,8 @@ def test_saving_without_changes_says_so_and_writes_nothing(tmp_path: Path) -> No
 
     _press(app, tables, SAVE_BUTTON_KEY)
 
-    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
-    assert not app.success
+    assert any("바뀐 층이 없습니다" in item.value for item in infos(app))
+    assert not successes(app)
     assert _version(database) == 1
     assert app.toggle(key=EDIT_TOGGLE_KEY).value
     clear_equipment_repository()
@@ -468,7 +469,7 @@ def test_a_hand_written_blank_reason_floor_stays_inactive_in_the_editor(
     assert any("바뀐 층 0개" in caption.value for caption in app.caption)
 
     _press(app, tables, SAVE_BUTTON_KEY)
-    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
+    assert any("바뀐 층이 없습니다" in item.value for item in infos(app))
     assert _states(database) == {("C1", "3F"): "UNUSED"}
     clear_equipment_repository()
 
@@ -533,7 +534,7 @@ def test_a_press_drawn_in_an_older_generation_does_nothing(tmp_path: Path) -> No
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert _version(database) == 0
-    assert not app.success and not app.info
+    assert not successes(app) and not infos(app)
     assert app.toggle(key=EDIT_TOGGLE_KEY).value
     clear_equipment_repository()
 
@@ -568,7 +569,7 @@ def test_a_row_of_the_inactive_table_opens_that_floor_with_a_banner(tmp_path: Pa
     assert app.session_state["space_status_selected_building"] == "C1"
     assert app.session_state["space_status_selected_floor"] == "1F"
     assert app.query_params["floor"] == ["C1-1F"]
-    assert any("이 층은 비활성(사용 안 함)입니다" in item.value for item in app.info)
+    assert any("이 층은 비활성(사용 안 함)입니다" in item.value for item in infos(app))
     jump = app.selectbox(key="space_status_floor_jump_C1-1F")
     assert jump.value == "C1 1F"
     assert "C1 1F" in jump.options and "C2 1F" not in jump.options
@@ -588,7 +589,7 @@ def test_the_active_table_still_opens_its_floor(tmp_path: Path) -> None:
         app.session_state["space_status_selected_building"],
         app.session_state["space_status_selected_floor"],
     ) == first
-    assert not any("이 층은 비활성" in item.value for item in app.info)
+    assert not any("이 층은 비활성" in item.value for item in infos(app))
     clear_equipment_repository()
 
 
@@ -598,7 +599,7 @@ def test_the_address_of_an_inactive_floor_opens_it_with_the_banner(tmp_path: Pat
     _ok(app)
 
     assert app.session_state["space_status_selected_floor"] == "3F"
-    assert any("이 층은 비활성(사용 안 함)입니다" in item.value for item in app.info)
+    assert any("이 층은 비활성(사용 안 함)입니다" in item.value for item in infos(app))
     jump = app.selectbox(key="space_status_floor_jump_C1-3F")
     assert jump.value == "C1 3F"
     assert "C1 3F" in jump.options and "C2 1F" not in jump.options
@@ -655,7 +656,7 @@ def test_a_typed_reason_is_saved_and_shown_as_written_after_reloading(
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert _states(database) == {("C2", "3F"): "설비 반입 대기"}
-    assert any("비활성 1개(설비 반입 대기 1)" in item.value for item in app.success)
+    assert any("비활성 1개(설비 반입 대기 1)" in item.value for item in successes(app))
 
     clear_equipment_repository()
     reloaded, tables = _start_editing(database)
@@ -669,7 +670,7 @@ def test_a_typed_reason_is_saved_and_shown_as_written_after_reloading(
     tables.edit(_editor_key(reloaded), _position("C2", "3F"), "사유", "설비 반입 대기 ")
     tables.run()
     _press(reloaded, tables, SAVE_BUTTON_KEY)
-    assert any("바뀐 층이 없습니다" in item.value for item in reloaded.info)
+    assert any("바뀐 층이 없습니다" in item.value for item in infos(reloaded))
     assert _version(database) == 1
     clear_equipment_repository()
 
@@ -693,7 +694,7 @@ def test_legacy_codes_keep_their_labels_and_retyping_a_label_changes_nothing(
     assert any("바뀐 층 0개" in caption.value for caption in app.caption)
 
     _press(app, tables, SAVE_BUTTON_KEY)
-    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
+    assert any("바뀐 층이 없습니다" in item.value for item in infos(app))
     assert _states(database) == {("C1", "2F"): "UNUSED", ("C4", "1F"): "NOT_LINE"}
     clear_equipment_repository()
 
@@ -807,7 +808,7 @@ def test_a_reason_with_markdown_characters_is_drawn_as_written(
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert _states(database) == {("C1", "3F"): REASON_WITH_MARKS}
-    (saved,) = [item.value for item in app.success]
+    (saved,) = [item.value for item in successes(app)]
     assert f"비활성 1개({literal_markdown(REASON_WITH_MARKS)} 1)" in saved
     assert REASON_WITH_MARKS not in saved
     _, inactive = _floor_tables(app)

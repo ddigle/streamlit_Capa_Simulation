@@ -29,6 +29,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 import streamlit as st
+from alert_marks import successes
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
@@ -549,7 +550,7 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def _successes(app: AppTest, text: str) -> int:
-    return sum(text in str(item.value) for item in app.success)
+    return sum(text in str(item.value) for item in successes(app))
 
 
 @pytest.fixture

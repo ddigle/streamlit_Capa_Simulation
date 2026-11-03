@@ -53,8 +53,13 @@
   공식으로 돌아간다. JS 가 문서를 떠날 때 떠나는 까닭에 맞는 띠 CSS 변수(테마 단추면
   `app_header.EQUIPMENT_RETURN_VARIABLE` — 공식 발행 쌍이 아닌 세션 설비 시나리오, 새로고침이면
   `EQUIPMENT_RELOAD_RETURN_VARIABLE` — 가정 설비 시나리오만의 이름)를 탭의 `sessionStorage` 에 적고,
-  새 문서에서 상한 알림 칸에 한 번 알린다(`<tabs-return>`, 글은 `RETURN_NOTICE`·
-  `THEME_RETURN_NOTICE`). 서버에는 아무것도 남기지 않는다.
+  새 문서에서 한 번 알린다(`<tabs-return>`, 글은 `RETURN_NOTICE`·`THEME_RETURN_NOTICE`). 서버에는
+  아무것도 남기지 않는다.
+- **알림은 알림 칸에 낸다**(2026-11-03 결정 보드 D3 — 알림창 한 꼴). 상한 알림 · 공식 복귀 알림은 탭
+  줄 칸이 아니라 같은 문서의 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · Alarm
+  기록)에 등록부 코드(`ALERT_CODES` — `TAB-01` · `TAB-02` · `TAB-03`)로 낸다(`page_tabs.js` 의
+  `raiseAlert`). 알림 칸 「그 화면으로」 는 `capa-open-page` 사건으로 와 탭 줄의 이동 길(열린 탭이면
+  고르기, 아니면 그 화면 링크 누름 — 상한 거름)을 탄다.
 - **문서를 떠날 때의 브라우저 확인 창.** 새로고침·브라우저 탭 닫기·주소 바꾸기는 새 세션이라 저장·
   적용하지 않은 편집이 사라진다. JS 가 문서에 `beforeunload` 처리기를 하나 걸고, 떠나는 순간 테마
   단추가 읽는 저장 안 함 표지(`theme_toggle.UNSAVED_EDITS_CSS_VARIABLE` — 탭 점과 한 벌의 판정)가
@@ -76,6 +81,7 @@ from typing import Any, Final
 
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     pending_fab_layout,
@@ -138,6 +144,11 @@ THEME_RETURN_NOTICE = (
     "테마를 바꾸며 화면을 새로 읽어 설비 시나리오가 공식으로 돌아왔습니다 — 보던 설비 시나리오: "
     "{label}. 사이드바 설비 시나리오에서 다시 고를 수 있습니다."
 )
+# 알림창 짧은 글(60자 안팎 — `alerts.SHORT_LIMIT`). 전문은 위 둘이고 Alarm 패널 · 로그에 남는다.
+RETURN_SHORT = "새로고침으로 설비 시나리오가 공식으로 돌아왔습니다 — 보던 것: {label}"
+THEME_RETURN_SHORT = "테마 전환으로 설비 시나리오가 공식으로 돌아왔습니다 — 보던 것: {label}"
+# 탭 줄 알림의 등록부 코드(`alerts.REGISTRY`) — 상한 · 새로고침 복귀 · 테마 전환 복귀.
+ALERT_CODES: Final = {"limit": "TAB-01", "returned": "TAB-02", "themed": "TAB-03"}
 
 # 탭 줄이 쓰는 글. `{label}`·`{list}`·`{max}` 는 JS 가 채운다. 핀 단추 이름은 고정 여부와 상관없이
 # 「{label} 고정」 하나다 — 상태는 `aria-pressed` 가 말한다(이름까지 바꾸면 읽기 도구가 두 번
@@ -153,6 +164,8 @@ TEXT = {
     # 시나리오(「셋업 B」 r8 — `app_header.equipment_return_mark` 의 `label`)이고 JS 가 채운다.
     "returned": RETURN_NOTICE,
     "themed": THEME_RETURN_NOTICE,
+    "returned_short": RETURN_SHORT,
+    "themed_short": THEME_RETURN_SHORT,
     # 끌거나 `Ctrl+Shift+←/→` 로 차례를 바꾼 뒤 읽기 도구에 알리는 글(`{index}` 는 보이는 차례,
     # 1부터). 조사는 고정 명사 「탭」 에 붙인다(AGENTS 8장).
     "moved": "{label} 탭을 {index}번째로 옮겼습니다",
@@ -307,6 +320,10 @@ def tabs_data(
         "palette": {"pending": tokens.PENDING_MARK},
         "text": TEXT,
         "grids": list(EDIT_HOST_KEYS),
+        "alerts": {
+            kind: {"code": code, "level": alerts.spec(code).level}
+            for kind, code in ALERT_CODES.items()
+        },
     }
 
 

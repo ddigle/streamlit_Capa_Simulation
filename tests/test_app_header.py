@@ -10,6 +10,7 @@ from streamlit.string_util import clean_text
 
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
+    _MEASURED_STATUS_SLOT_TEMPLATE,
     PAGE_TABS_SELECTOR,
     PAGE_TITLE_SELECTOR,
     SHELL_STYLE,
@@ -22,6 +23,7 @@ from capa_simulation.components.app_header import (
 )
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
+from capa_simulation.components.theme_toggle import PRINT_BUTTON_ID
 from capa_simulation.design import theme
 from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import ActiveScenarioLabel
@@ -141,9 +143,10 @@ def test_the_progress_slot_is_pinned_in_the_header_band_out_of_the_flow() -> Non
     assert 197 - 65 + 2 + 10 <= _rem(no_guide, "right") * 14 < right * 14
     # 가장 긴 단계 글자(0.72rem 에서 194px)가 다 들어간다.
     assert width * 14 >= 194
-    # 머리 띠 규칙 뒤에 붙는다 — 막대가 떠 있는 동안의 최대 폭이 같은 구체도의 규칙을 이긴다.
+    # 머리 띠 규칙 뒤에 붙는다 — 막대가 떠 있는 동안의 최대 폭이 같은 구체도의 규칙을 이긴다. 툴바
+    # 실측 몫(`_MEASURED_STATUS_SLOT_TEMPLATE`)은 그 뒤에 붙어 같은 선택자의 rem 값을 덮는다.
     header = _header_css()
-    assert header.endswith(css)
+    assert header.endswith(css + _status_slot_css(_MEASURED_STATUS_SLOT_TEMPLATE))
     assert header.index(NARROW_MEDIA) < header.index(css)
 
 
@@ -187,6 +190,41 @@ def test_the_scenario_lines_yield_to_the_bar_only_while_it_is_visible() -> None:
     assert "__" not in css.replace(f"st-key-{STATUS_SLOT_KEY}", "").replace(
         f"st-key-{GUIDE_TRIGGER_KEY}", ""
     )
+
+
+def test_the_measured_toolbar_width_takes_over_the_fixed_rem_reserves() -> None:
+    """툴바 실측 폭(2026-11-03 — 알림 칸이 Alarm · 변경 칩을 더해 툴바 폭이 화면 · 상태마다
+    달라졌다).
+
+    알림 칸 JS 가 툴바 폭을 `--capa-toolbar-width` 로 재어 `data-capa-toolbar` 를 달면 두 줄 · 진행
+    막대 자리는 rem 고정값 대신 그 값으로 오른쪽을 비운다. 표지가 서기 전에는 rem 규칙이 그대로다 —
+    앞머리 `:root[data-capa-toolbar]` 가 같은 선택자의 rem 규칙보다 구체도가 높고 뒤에 붙는다.
+    """
+    css = _header_css()
+    measured = css[css.index(':root[data-capa-toolbar] [data-testid="stHeader"]::before') :]
+    # 두 줄(펼침 · 접힘)과 막대 자리 · 막대가 떠 있는 동안의 두 줄(넓은 · 좁은 창, 펼침 · 접힘).
+    reserves = re.findall(r"max-width: calc\(100% - var\(--capa-toolbar-width\) - ([^)]+)\);", css)
+    assert reserves == [
+        "46px",
+        "81px",
+        "15rem - 62px",
+        "15rem - 97px",
+        "6.5rem - 62px",
+        "6.5rem - 97px",
+    ]
+    assert "right: calc(var(--capa-toolbar-width) + 13px);" in css
+    # rem 규칙이 먼저, 실측 규칙이 뒤다(같은 구체도라도 뒤가 이긴다).
+    assert css.index("max-width: calc(100% - 17.5rem);") < css.index(measured[:40])
+    assert css.index("right: 15rem;") < css.index("right: calc(var(--capa-toolbar-width)")
+    assert "__" not in _status_slot_css(_MEASURED_STATUS_SLOT_TEMPLATE).replace(
+        f"st-key-{STATUS_SLOT_KEY}", ""
+    )
+    # 표지 이름은 알림 칸 JS 와 같은 글이다.
+    from capa_simulation.components import alert_center
+
+    script = (alert_center._ASSETS / "alert_center.js").read_text(encoding="utf-8")
+    assert "const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'" in script
+    assert "const TOOLBAR_VARIABLE = '--capa-toolbar-width'" in script
 
 
 def test_streamlits_running_widget_steps_aside_only_while_the_bar_runs() -> None:
@@ -258,7 +296,10 @@ def test_the_streamlit_main_menu_and_deploy_are_hidden_and_nothing_else() -> Non
             "display: none !important;",
         ),
         ({HEADING_ANCHOR_SELECTOR}, "display: none !important;"),
+        # 600px 미만에서 툴바 Print 를 숨긴다(2026-11-03 결정 보드 기본값 — 변경 칩 · Alarm 몫).
+        ({f"#{PRINT_BUTTON_ID}"}, "display: none !important;"),
     ]
+    assert re.search(r"@media \(max-width: 599\.98px\) \{\s*#" + PRINT_BUTTON_ID + r" \{", screen)
     # 머리 띠는 부트스트랩 뒤에야 나가므로 거기에 두 벌 두지 않는다.
     assert "stMainMenu" not in _header_css()
     assert "stAppDeployButton" not in _header_css()
@@ -301,6 +342,7 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
         STATUS_SLOT_SELECTOR,
         PAGE_TABS_SELECTOR,
         "#capa-intro-host",
+        "#capa-alert-host",
     }
     # 본문은 종이 폭을 다 쓴다.
     assert re.search(

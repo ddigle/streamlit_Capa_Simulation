@@ -316,27 +316,3 @@
   outline-offset: -2px;
   opacity: 1;
 }
-
-/* 상한 알림(8초)은 창 오른쪽 아래 구석에 뜬다. 탭 줄 바로 밑에 띄우니 화면 머리 줄(HOME 주요 Case 칩 — 390px 에서는
-   두 줄로 칩 줄 전체)을 불투명하게 덮어 칩이 안 보인 채 눌렸다(2026-10-30 E2E). 탭 줄 위·밑은 머리 띠 단추와 화면
-   머리라 덮지 않는다. 글뿐이라 누름을 받지 않는다 — 그 밑을 누를 수 있다. */
-.capa-tabs-notice {
-  position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 1000;
-  box-sizing: border-box;
-  max-width: min(36rem, calc(100vw - 2rem));
-  margin: 0;
-  padding: 0.375rem 0.625rem;
-  border: 1px solid color-mix(in srgb, var(--capa-tabs-pending) 45%, transparent);
-  border-radius: 0.375rem;
-  background: var(--st-background-color);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--st-text-color) 14%, transparent);
-  font-size: 0.8125rem;
-  pointer-events: none;
-}
-
-.capa-tabs-notice[hidden] {
-  display: none;
-}

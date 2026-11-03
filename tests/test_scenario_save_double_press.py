@@ -25,6 +25,7 @@ from typing import Any, NamedTuple
 from uuid import uuid4
 
 import pytest
+from alert_marks import infos, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.runtime.state import session_state_proxy
@@ -164,7 +165,7 @@ def _successes(app: AppTest) -> list[tuple[str, str]]:
     """목록 결과 칸의 저장 성공 알림(글, 아이콘) — 화면의 다른 성공 상자(최신 공식 줄)는 뺀다."""
     return [
         (str(item.value), str(item.icon))
-        for item in app.success
+        for item in successes(app)
         if str(item.value).startswith("시나리오명")
     ]
 
@@ -188,7 +189,7 @@ def test_a_second_press_on_the_locked_list_save_keeps_the_success(
     _press_again(app, pressed)
 
     assert _successes(app) == ([(LIST_SAVED, SUCCESS_ICON)] if kept else [])
-    assert [str(item.value) for item in app.info if "고친 것" in str(item.value)] == []
+    assert [str(item.value) for item in infos(app) if "고친 것" in str(item.value)] == []
     assert _name_of(case) == "더블클릭 이름"
 
 
@@ -206,7 +207,7 @@ def test_a_second_press_on_the_still_open_list_save_does_not_say_nothing_changed
 
     _press_again(app, pressed)
 
-    assert [str(item.value) for item in app.info if "고친 것" in str(item.value)] == []
+    assert [str(item.value) for item in infos(app) if "고친 것" in str(item.value)] == []
     assert _successes(app) == [(LIST_SAVED, SUCCESS_ICON)]
     assert _name_of(case) == "열린 단추 이름"
 
@@ -241,7 +242,7 @@ def test_a_cut_first_list_save_is_finished_by_the_second_press_without_a_refusal
 def _revision_saved(app: AppTest) -> list[tuple[str, str]]:
     return [
         (str(item.value), str(item.icon))
-        for item in app.success
+        for item in successes(app)
         if str(item.value).startswith("리비전명을 저장했습니다: ")
     ]
 
@@ -279,6 +280,6 @@ def test_a_second_press_on_the_still_open_name_save_does_not_say_nothing_changed
 
     _press_again(app, pressed)
 
-    assert [str(item.value) for item in app.info if "고친 리비전명" in str(item.value)] == []
+    assert [str(item.value) for item in infos(app) if "고친 리비전명" in str(item.value)] == []
     assert _revision_saved(app) == [(first.message, SUCCESS_ICON)]
     assert _revision_name_of(case) == "열린 단추 리비전"

@@ -1620,9 +1620,66 @@ def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
 
 
 def test_the_toolbar_labels_cover_the_declared_order() -> None:
-    from capa_simulation.components.theme_toggle import TOOLBAR_BUTTON_ORDER
+    from capa_simulation.components.theme_toggle import CHANGES_CHIP_ID, TOOLBAR_BUTTON_ORDER
 
     assert set(screens.TOOLBAR_LABELS) == set(TOOLBAR_BUTTON_ORDER)
+    # 변경 칩은 바뀐 것이 있을 때만 서서 차례 항목이 세지 않는다.
+    assert screens.TOOLBAR_OPTIONAL == frozenset({CHANGES_CHIP_ID})
+
+
+def test_the_alert_center_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 알림 칸 호스트 id · 시험 알림 코드가 앱과
+    같다."""
+    from capa_simulation import alerts
+    from capa_simulation.components import alert_center
+
+    script = (alert_center._ASSETS / "alert_center.js").read_text(encoding="utf-8")
+    assert f"const HOST_ID = '{screens.ALERT_HOST_ID}'" in script
+    assert "window.__capaAlerts = {" in script
+    assert alerts.spec("FL-02").kind == "event"
+    assert "code: 'FL-02'" in screens._ALERT_RAISE_JS
+    assert screens.DIALOG_Z_INDEX == 1000059
+
+
+def test_the_alarm_item_says_same_only_for_the_whole_contract() -> None:
+    state = {"present": True, "label": "Alarm", "rightOfGuide": True, "aria": "Alarm — 안 읽음 0건"}
+    panel = {"open": True, "rows": 0, "levels": 5}
+    assert screens.summarize_alarm_button(state, panel, True) == (
+        "Alarm 있음 · Guide 오른쪽 · 패널 열림(거르기 5) · Esc 닫힘 — 정한 동작과 같음"
+    )
+    assert screens.summarize_alarm_button(state, panel, False).endswith(
+        "Esc 안 닫힘 — 정한 동작과 다름"
+    )
+    assert screens.summarize_alarm_button({**state, "rightOfGuide": False}, panel, True).endswith(
+        "다름"
+    )
+    assert screens.summarize_alarm_button(state, None, True) == (
+        "Alarm 있음 · Guide 오른쪽 · 패널 안 열림 · Esc 닫힘 — 정한 동작과 다름"
+    )
+    assert screens.summarize_alarm_button(None, None, False) == "Alarm 없음"
+
+
+def test_the_alert_popup_item_reads_three_slots_level_names_layer_and_repeat() -> None:
+    first = {
+        "count": 3,
+        "labels": ["확인 필요", "조치 필요", "오류"],
+        "times": ["", "", ""],
+        "pointer": "none",
+        "z": 1000200,
+    }
+    again = {**first, "times": ["", "", "×2"]}
+    assert screens.summarize_alert_popup(first, again) == (
+        "알림창 3칸(최대 3) · 단계 글 확인 필요·조치 필요·오류 · 누름 통과 · 대화상자 위"
+        " · 같은 알림 ×2 — 정한 꼴과 같음"
+    )
+    assert screens.summarize_alert_popup({**first, "z": 1000}, again).endswith(
+        "대화상자 아래 · 같은 알림 ×2 — 정한 꼴과 다름"
+    )
+    assert screens.summarize_alert_popup({**first, "count": 4}, again).endswith("다름")
+    assert screens.summarize_alert_popup(first, first).endswith(
+        "같은 알림 표지 없음 — 정한 꼴과 다름"
+    )
+    assert screens.summarize_alert_popup(None, None) == "알림창 없음"
 
 
 def test_the_app_error_screen_is_an_error_box_without_the_sidebar_menu() -> None:
@@ -1790,6 +1847,9 @@ NEW_ITEM_KEYS = [
     "equipment_preference",
     # 2026-11-02 사용자 요청 — 화면 탭 줄 틀(스크롤에 움직이지 않음)·고정(페이지 그대로)·끌기.
     "page_tabs_frame",
+    # 2026-11-03 결정 보드 D1 ~ D5 — 알림 칸(툴바 Alarm 단추 · 패널, 오른쪽 아래 알림창 한 꼴).
+    "alarm_button",
+    "alert_popup",
 ]
 
 

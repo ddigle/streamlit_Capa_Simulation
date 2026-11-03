@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from alert_marks import infos, successes
 from edit_grid_fake import (
     FAKE_EVENT_KEY,
     Calls,
@@ -266,7 +267,7 @@ def test_apply_raises_the_revision_and_drops_only_that_tables_draft(calls: Calls
     assert after["content_token"] != token
     assert _scenario_table(app, "RQ_RUN_DAY")["RUN_DAY"].tolist() == [20.0]
     assert any(
-        "RQ_RUN_DAY 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in app.success
+        "RQ_RUN_DAY 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app)
     )
     assert _draft(app) is None
     assert last(calls, FEED)["counts"]["cells"] == 0
@@ -486,7 +487,7 @@ def test_an_emptied_ratio_table_rides_the_grid_as_an_empty_table(calls: Calls) -
     app.run()
     shell = last(calls, GRID_HOST)
     assert shell["table"] == "RQ_LOT_RATIO" and shell["rows"] == 0
-    assert any("측정률 1.0 으로 계산합니다" in str(item.value) for item in app.info)
+    assert any("측정률 1.0 으로 계산합니다" in str(item.value) for item in infos(app))
     assert not any(
         str(widget.key).startswith("capa_lot_ratio_editor_filter") for widget in app.multiselect
     )
@@ -502,7 +503,7 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
     monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert _visible_keys(calls) == ["Process-A"]
-    notices = [str(item.value) for item in app.info]
+    notices = [str(item.value) for item in infos(app)]
     assert reference_grid.CAP_HEAD_NOTICE.format(rows=2, cells=2, shown=1) in notices
     app = _grid_write(app, calls, "Process-A", "202608", "20")
 
@@ -510,7 +511,7 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
     app.run()
     assert not app.exception
     assert _visible_keys(calls) == ["Process-B"]
-    notices = [str(item.value) for item in app.info]
+    notices = [str(item.value) for item in infos(app)]
     assert reference_grid.CAP_FILTERED_NOTICE.format(rows=2, cells=2, shown=1) in notices
     app = _grid_write(app, calls, "Process-B", "202608", "15")
     assert _draft(app) == {

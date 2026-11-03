@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -55,7 +56,7 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
         ":material/notifications: 알림 모음",
     ]
     # 원천 품질 탭은 닫혀 있으면 그리지 않는다(위젯이 없는 읽기 전용 탭).
-    assert not any("활성 시나리오가 없습니다" in info.value for info in app.info)
+    assert not any("활성 시나리오가 없습니다" in info.value for info in infos(app))
     # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
     assert len(app.get("download_button")) == 2
     assert len(app.get("file_uploader")) == 0
@@ -78,7 +79,7 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     app.session_state["admin_area_active_tab"] = ":material/fact_check: 원천 품질"
     app.run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("활성 시나리오가 없습니다" in info.value for info in app.info)
+    assert any("활성 시나리오가 없습니다" in info.value for info in infos(app))
 
 
 def _source_quality_script(database_path: Path) -> str:
@@ -293,7 +294,7 @@ render_process_rename_management(repository, ["SAW", {owned!r}])
     app = AppTest.from_string(script).run(timeout=60)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    notices = [str(item.value) for item in app.info] + [str(item.value) for item in app.warning]
+    notices = [str(item.value) for item in infos(app)] + [str(item.value) for item in app.warning]
     assert any(literal_markdown(unowned) in text for text in notices), notices
     assert any(literal_markdown(owned) in text for text in notices), notices
     assert not [text for text in notices if unowned in text or owned in text], notices
@@ -363,7 +364,7 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
     app.run(timeout=60)
     assert not list(app.error), [str(error.value) for error in app.error]
-    assert [str(item.value) for item in app.info] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
     assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
 
     _edit_display_name(app, 1, "몰드")
@@ -409,20 +410,20 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
     assert app.text[-1].value == "v1|SAW>절단"
 
     app = _press_rename_save(app)
-    assert [str(item.value) for item in app.info] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
-    assert not app.success and not app.error
+    assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    assert not successes(app) and not app.error
     assert app.text[-1].value == "v1|SAW>절단"
 
     app.text_input(key="admin_area_process_rename_note").set_value("메모만 적음")
     app = _press_rename_save(app)
-    assert [str(item.value) for item in app.info] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
     profile = repository.load_global_process_rename()
     assert (profile.version, profile.source) == (1, "처음 저장")
 
     _edit_display_name(app, 0, "자르기")
     app = _press_rename_save(app)
-    assert not app.info and not app.error
-    assert [str(item.value) for item in app.success] == [PROCESS_RENAME_SAVED_MESSAGE]
+    assert not infos(app) and not app.error
+    assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
     assert app.text[-1].value == "v2|SAW>자르기"
     clear_global_process_rename_cache()
 
@@ -447,8 +448,8 @@ def test_a_slow_second_press_of_the_direct_edit_save_repeats_the_success(
 
     app = _press_rename_save(app)
 
-    assert not app.info and not app.error, [str(item.value) for item in app.info]
-    assert [str(item.value) for item in app.success] == [PROCESS_RENAME_SAVED_MESSAGE]
+    assert not infos(app) and not app.error, [str(item.value) for item in infos(app)]
+    assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
     assert app.text[-1].value == "v2|SAW>자르기"
     clear_global_process_rename_cache()
 
@@ -484,7 +485,7 @@ def test_a_double_press_after_a_newer_shared_profile_keeps_the_refusal(tmp_path:
     assert not list(app.exception), [element.message for element in app.exception]
     errors = [str(error.value) for error in app.error]
     assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-    assert not app.success
+    assert not successes(app)
     assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
     assert repository.load_global_process_rename().source == "B 의 저장"
     clear_global_process_rename_cache()
@@ -609,10 +610,10 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error)
-    notes = [str(info.value) for info in app.info if "보유 공정에 없는 공정" in str(info.value)]
-    assert len(notes) == 1, [str(info.value) for info in app.info]
+    notes = [str(info.value) for info in infos(app) if "보유 공정에 없는 공정" in str(info.value)]
+    assert len(notes) == 1, [str(info.value) for info in infos(app)]
     assert "없는공정" in notes[0] and "그대로 적용됩니다" in notes[0], notes
-    assert not [str(info.value) for info in app.info if "무시합니다" in str(info.value)]
+    assert not [str(info.value) for info in infos(app) if "무시합니다" in str(info.value)]
 
 
 def _start_check_expanders(app: AppTest) -> list[str]:

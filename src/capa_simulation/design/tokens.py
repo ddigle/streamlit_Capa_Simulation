@@ -84,6 +84,15 @@ _LIGHT: Final[dict[str, Any]] = {
     # 적용하지 않은 편집이 남은 탭 옆의 점. 사이드바 `미저장 변경` 배지(`:orange-badge[]`)와
     # 같은 뜻이라 `.streamlit/config.toml` 의 `orangeColor` 와 같은 값이다.
     "PENDING_MARK": "#B45309",
+    # 알림 단계 넷의 색(알림 칸 — `components/alert_center.py`, 단계 이름은 `alerts.LEVEL_LABELS`).
+    # 알림창 테두리 · 단계 이름 글자 · Alarm 안 읽음 배지 · 안 읽은 줄 띠 · 시선 끌기 테두리가 쓴다.
+    # 값은 `.streamlit/config.toml` 의 `grayColor`(알림) · `orangeColor`(확인 필요 — 탭 줄 주황 점과
+    # 같은 값) · `blueColor`(조치 필요) · `redColor`(오류)다 — Streamlit 알림 상자와 같은 뜻 · 같은
+    # 색이다.
+    "ALERT_INFO": "#646973",
+    "ALERT_CHECK": "#B45309",
+    "ALERT_ACTION": "#1D4ED8",
+    "ALERT_ERROR": "#E11D48",
     # 메인 심볼(C 링 + 3×3 다이)의 가운데 다이. **상태색이 아니라 심볼의 고정 강조색**이고 두 테마·
     # 두 곳(입장 화면 `die-warn`, 사이드바 라벨) 모두 **같은 주황**이다(2026-10-07·08 사용자 결정 —
     # 밝은 머리 띠에서 읽히게 어둡게 내렸던 값은 갈색으로 보였다). 로고라 그림 요소 대비 기준(3:1)의
@@ -379,6 +388,11 @@ _DARK: Final[dict[str, Any]] = {
     # 밝게 올린 강조색 위에서 흰 글자는 1.9:1 이다. 페이지 바탕색으로 글자를 뒤집는다(10:1).
     "ACCENT_TEXT": "#131316",
     "PENDING_MARK": "#F0B37A",  # `[theme.dark]` 의 `orangeColor`
+    # 알림 단계 넷 — `[theme.dark]` 의 `grayColor` · `orangeColor` · `blueColor` · `redColor`.
+    "ALERT_INFO": "#9B9BA6",
+    "ALERT_CHECK": "#F0B37A",
+    "ALERT_ACTION": "#9DB8FF",
+    "ALERT_ERROR": "#FB7185",
     # 메인 심볼 가운데 다이. 밝은 테마와 같은 입장 화면 `die-warn` 이다.
     "BRAND_DIE_WARM": "#D29A3A",
     # 합계 3단도 위로 갈수록 밝다. 같은 방향을 유지하면 합계 행이 배경에 가라앉는다.
@@ -640,6 +654,10 @@ if TYPE_CHECKING:
     ACCENT: Final[str] = ""
     ACCENT_TEXT: Final[str] = ""
     ADVANCE_SHIPMENT_TEXT: Final[str] = ""
+    ALERT_ACTION: Final[str] = ""
+    ALERT_CHECK: Final[str] = ""
+    ALERT_ERROR: Final[str] = ""
+    ALERT_INFO: Final[str] = ""
     BAR_TRACK: Final[str] = ""
     BORDER: Final[str] = ""
     BORDER_STRONG: Final[str] = ""

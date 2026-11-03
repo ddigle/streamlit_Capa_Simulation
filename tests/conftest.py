@@ -1,4 +1,4 @@
-# Purpose: 시험 공용 자동 복원·권한 비트 판정과 Space 편집기·탭 줄·설비 표·편집 그리드 대역을 둔다.
+# Purpose: 시험 공용 자동 복원·권한 비트 판정과 Space 편집기·탭 줄·알림 칸·설비 표·그리드 대역.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -23,6 +23,7 @@ from capa_simulation import module_failures, module_registry
 from capa_simulation.auth import names as sso_names
 from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
+    alert_center,
     edit_grid,
     equipment_master_grid,
     page_tabs,
@@ -228,6 +229,20 @@ def _stub_page_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
         return SimpleNamespace(select=None, close=None, pin=None)
 
     monkeypatch.setattr(page_tabs, "_PAGE_TABS", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _stub_alert_center(monkeypatch: pytest.MonkeyPatch) -> None:
+    """알림 칸 컴포넌트(`alert_center._ALERT_CENTER`)를 아무것도 보내지 않는 대역으로 바꾼다.
+
+    `app.py` 가 매 회차 그린다. 탭 줄과 같은 까닭이다 — AppTest 는 JS 를 못 돌리고, 한 프로세스의 두
+    번째 AppTest 에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다. 받은 값을 보는
+    시험(`tests/test_alert_center.py`)은 제 `monkeypatch.setattr` 로 이 위에 다시 덮는다."""
+
+    def _silent(**_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(alert_center, "_ALERT_CENTER", _silent)
 
 
 @pytest.fixture(autouse=True)

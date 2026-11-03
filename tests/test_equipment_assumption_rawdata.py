@@ -25,6 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import shown
 from grid_fake import Calls, install_fake_grid, load, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -115,7 +116,7 @@ def _buffer_value(app: AppTest, name: str, column: str) -> Any:
 
 
 def _texts(app: AppTest, kind: str) -> list[str]:
-    return [str(item.value) for item in getattr(app, kind)]
+    return [str(item.value) for item in shown(app, kind)]
 
 
 def _ok(app: AppTest) -> AppTest:

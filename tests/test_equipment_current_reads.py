@@ -27,6 +27,7 @@ from typing import Any, cast
 import duckdb
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from grid_fake import install_fake_grid
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -433,7 +434,8 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     # 저장 뒤에도 팝업은 열린 채 저장 알림이 누른 단추 아래에 선다(팝업 칸이 남는다).
     assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
     assert any(
-        "Cut-off" in str(item.value) and "저장했습니다" in str(item.value) for item in app.success
+        "Cut-off" in str(item.value) and "저장했습니다" in str(item.value)
+        for item in successes(app)
     )
     saved = DuckDBEquipmentRepository(database).load_process_cutoff()
     assert sorted(saved["공정"]) == sorted(processes)
@@ -591,7 +593,7 @@ def test_a_master_tab_save_on_the_screen_rebuilds_the_draft_from_the_new_revisio
     # 바뀐 것 없는 저장은 빈 리비전을 만들지 않는다(결정 모음 「묻지 않고 하기로 한 것」).
     assert latest.revision_no == 2
     assert len(repository.load_snapshot(latest.revision_id).equipment) == kept
-    assert any("고친 것이 없습니다" in item.value for item in app.info)
+    assert any("고친 것이 없습니다" in item.value for item in infos(app))
     clear_equipment_repository()
 
 

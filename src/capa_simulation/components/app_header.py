@@ -99,6 +99,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
+from capa_simulation.components.theme_toggle import PRINT_BUTTON_ID
 from capa_simulation.design import tokens
 from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import (
@@ -159,6 +160,9 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 # 감춘다(2026-10-07 사용자 결정). 감추는 것은 이 두 요소뿐이다 — 우리 단추가 앉는 툴바
 # 슬롯(`stToolbarActions`)은 형제라 영향이 없다.
 #
+# 600px 보다 좁은 창(휴대폰)에서는 툴바 `Print` 단추를 숨긴다(2026-11-03 결정 보드 기본값 — 변경 칩
+# · Alarm 이 들어 390px 에서 띠 글자 칸이 0 이 됐다. 폰에서 인쇄는 드물다).
+#
 # 둘째 규칙은 제목 옆 링크 아이콘이다(2026-10-07 사용자 결정 — 이 앱은 제목으로 바로 가는 주소를
 # 쓰지 않는다). Streamlit 은 페이지 제목(`st.title`)·`st.subheader`·마크다운 제목(`#### …`) 모두에
 # 같은 칸(`stHeaderActionElements`)을 붙이고 그 안에 `#제목` 링크를 두어 마우스를 올리면 띄운다.
@@ -177,6 +181,7 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 #   (`STATUS_SLOT_SELECTOR`)는 본문에 있는 요소라 따로 뺀다 — 고정 배치는 인쇄의 쪽마다
 #   되풀이되어 찍힌다.
 # - 입장 화면·Summary 덮개(`#capa-intro-host`, `document.body` 에 붙은 호스트)는 열려 있어도 뺀다.
+#   알림 칸 호스트(`#capa-alert-host` — 알림창 · Alarm 패널)도 같다.
 # - 본문 폭 상한은 풀어 둔다(`layout="wide"` 가 이미 풀지만 못박는다).
 # - 색은 화면 그대로 찍는다. Streamlit 이 `html` 에 걸어 둔 것을 앱 뿌리에도 건다(물려받는 속성이라
 #   상태색·차트색·표 바탕이 함께 남는다).
@@ -218,8 +223,11 @@ SHELL_STYLE = (
 }
 [data-testid="stHeaderActionElements"] > a[href^="#"] {
   display: none !important;
-}
-@media screen {
+} @media (max-width: 599.98px) {
+  #__PRINT_BUTTON__ {
+    display: none !important;
+  }
+} @media screen {
   __PAGE_TABS__ {
     position: sticky;
     top: __TABS_TOP__;
@@ -241,12 +249,8 @@ SHELL_STYLE = (
   }
 }
 @media print {
-  @page { margin: 10mm; }
-  [data-testid="stSidebar"],
-  [data-testid="stHeader"],
-  __STATUS_SLOT__,
-  __PAGE_TABS__,
-  #capa-intro-host {
+  @page { margin: 10mm; } [data-testid="stSidebar"], [data-testid="stHeader"], __STATUS_SLOT__,
+  __PAGE_TABS__, #capa-intro-host, #capa-alert-host {
     display: none !important;
   }
   [data-testid="stMainBlockContainer"] {
@@ -264,6 +268,7 @@ SHELL_STYLE = (
   }
 }
 </style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
+    .replace("__PRINT_BUTTON__", PRINT_BUTTON_ID)
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
     .replace("__TABS_TOP__", tokens.rem(tokens.HEADER_BAND_REM))
@@ -430,6 +435,30 @@ _NARROW_HEADER_RULES = """
 }
 """
 
+# 툴바 실측 폭(2026-11-03 — 알림 칸이 Alarm · 변경 칩을 더해 툴바 폭이 화면 · 상태마다 달라졌다).
+# 알림 칸 JS(`components/alert_center.py`)가 툴바 단추 묶음이 머리 띠 오른쪽 끝에서 차지하는 폭을
+# 재어 문서 뿌리에 `--capa-toolbar-width`(px)와 `data-capa-toolbar` 를 단다. 그 표지가 선 뒤로는 위
+# rem 고정값(28rem · 17.5rem · 20rem) 대신 이 규칙이 두 줄의 오른쪽을 비운다 — 단추가 늘거나
+# 줄어도(변경 칩이 서고 지고, 가이드 없는 화면에서 Guide 가 숨어도) 다시 잴 필요가 없다. 비움 = 툴바
+# 폭 + 글자 시작 21px + 왼쪽 띠 안쪽 여백 · 선 11px + 틈 12px + `Light` 몫 2px = 툴바 폭 + 46px(옛
+# 17.5rem 의 셈과 같다). 사이드바를 접으면 글자가 2.5rem 더 오른쪽에서 시작해 + 81px 이다. 표지가
+# 서기 전(첫 프레임 · JS 를 못 쓴 브라우저)에는 위 rem 규칙 그대로다. 앞머리
+# `:root[data-capa-toolbar]` 가 같은 선택자의 rem 규칙보다 늘 구체도가 높다.
+_MEASURED_HEADER_RULES = """
+:root[data-capa-toolbar] [data-testid="stHeader"]::before,
+:root[data-capa-toolbar] [data-testid="stHeader"]::after {
+  max-width: calc(100% - var(--capa-toolbar-width) - 46px);
+}
+:root[data-capa-toolbar]
+  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
+  [data-testid="stHeader"]::before,
+:root[data-capa-toolbar]
+  [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
+  [data-testid="stHeader"]::after {
+  max-width: calc(100% - var(--capa-toolbar-width) - 81px);
+}
+"""
+
 # 진행 막대 자리 — 띠 안, 툴바 단추 바로 왼쪽(2026-10-08 사용자 결정). 치수는 1rem = 14px 실측이다.
 # - 자리: 툴바 단추 묶음(Guide·Print·테마)은 머리 띠 오른쪽 끝에서 197px(테마 글자가 `Light` 면
 #   199px) 안쪽에서 시작한다(1440·1100·768px 창 모두 같다). 막대 칸 오른쪽 끝을 창 오른쪽에서
@@ -460,6 +489,10 @@ _NARROW_HEADER_RULES = """
 #   `BORDER`, 채움 `ACCENT`. 띠 면(`HEADER_BAR`) 위에서 두 테마 모두 읽힌다.
 # - 읽는 칸이라 마우스를 받지 않는다(`pointer-events: none`) — 빈 칸이 띠의 클릭을 가로채지
 #   않는다. 인쇄에서는 껍데기 스타일이 뺀다.
+# - 툴바 실측 폭(`_MEASURED_HEADER_RULES` 와 같은 표지)이 서면 자리 오른쪽 끝은 툴바 폭 + 13px(옛
+#   15rem 과 같은 틈)이고, 막대가 떠 있는 동안 두 줄 최대 폭은 툴바 폭 + 막대 칸 폭 + 62px(옛
+#   33.5rem · 25rem 의 셈)을 비운다(접으면 + 97px). 가이드 유무로 가르던 10.5rem 갈래도 실측이
+#   대신한다.
 # 선택자는 1.63 의 `data-testid`(`stProgress`·`stMarkdownContainer`·`stProgressBarTrack`·
 # `stStatusWidget`·`stStatusWidgetRunningIcon`)와 `role="progressbar"` 다 — 판올림 뒤 HOME 을 새로
 # 읽어 막대가 띠에 서는지, 오래 도는 실행에서 달리는 사람이 막대와 겹치지 않는지 본다.
@@ -577,6 +610,41 @@ __LOADING__
 """
 
 
+# 툴바 실측 폭이 선 뒤의 진행 막대 자리(`_MEASURED_HEADER_RULES` 와 같은 표지) — 위 rem 규칙 뒤에
+# 붙어 같은 선택자의 rem 값을 덮는다.
+_MEASURED_STATUS_SLOT_TEMPLATE = """
+:root[data-capa-toolbar] __SLOT__ {
+  right: calc(var(--capa-toolbar-width) + 13px);
+}
+:root[data-capa-toolbar] __LOADING__
+  [data-testid="stHeader"]::before,
+:root[data-capa-toolbar] __LOADING__
+  [data-testid="stHeader"]::after {
+  max-width: calc(100% - var(--capa-toolbar-width) - 15rem - 62px);
+}
+:root[data-capa-toolbar] __LOADING_COLLAPSED__
+  [data-testid="stHeader"]::before,
+:root[data-capa-toolbar] __LOADING_COLLAPSED__
+  [data-testid="stHeader"]::after {
+  max-width: calc(100% - var(--capa-toolbar-width) - 15rem - 97px);
+}
+@media (max-width: 899.98px) {
+  :root[data-capa-toolbar] __LOADING__
+    [data-testid="stHeader"]::before,
+  :root[data-capa-toolbar] __LOADING__
+    [data-testid="stHeader"]::after {
+    max-width: calc(100% - var(--capa-toolbar-width) - 6.5rem - 62px);
+  }
+  :root[data-capa-toolbar] __LOADING_COLLAPSED__
+    [data-testid="stHeader"]::before,
+  :root[data-capa-toolbar] __LOADING_COLLAPSED__
+    [data-testid="stHeader"]::after {
+    max-width: calc(100% - var(--capa-toolbar-width) - 6.5rem - 97px);
+  }
+}
+"""
+
+
 def source_type_label(source_type: str) -> str:
     """원천 유형을 머리 띠에 적는 이름."""
     if source_type.startswith(_CSV_SOURCE_PREFIX):
@@ -686,13 +754,16 @@ def _header_css(
             .replace("__TOP_LINE__", css_string(top))
         )
         + _NARROW_HEADER_RULES
+        + _MEASURED_HEADER_RULES
         + _status_slot_css()
+        + _status_slot_css(_MEASURED_STATUS_SLOT_TEMPLATE)
         + narrow
     )
 
 
-def _status_slot_css() -> str:
-    """진행 막대 자리를 띠 안에 고정하는 규칙. 색은 이 실행의 팔레트다(`_header_css` 와 같은 까닭).
+def _status_slot_css(template: str = _STATUS_SLOT_TEMPLATE) -> str:
+    """진행 막대 자리를 띠 안에 고정하는 규칙(`template` — 기본은 rem 규칙, 툴바 실측 몫은
+    `_MEASURED_STATUS_SLOT_TEMPLATE`). 색은 이 실행의 팔레트다(`_header_css` 와 같은 까닭).
 
     머리 띠 규칙 **뒤에** 붙는다 — 막대가 떠 있는 동안 두 줄의 최대 폭을 줄이는 규칙이 같은 구체도의
     접힘·좁은 창 규칙을 이겨야 한다.
@@ -704,7 +775,7 @@ def _status_slot_css() -> str:
     )
     collapsed = loading + ':has([data-testid="stSidebar"][aria-expanded="false"])'
     return (
-        _STATUS_SLOT_TEMPLATE.replace("__LOADING_COLLAPSED__", collapsed)
+        template.replace("__LOADING_COLLAPSED__", collapsed)
         .replace("__LOADING__", loading)
         .replace("__SLOT__", STATUS_SLOT_SELECTOR)
         .replace("__SLOT_KEY__", STATUS_SLOT_KEY)
