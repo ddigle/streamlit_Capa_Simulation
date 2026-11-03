@@ -77,6 +77,23 @@ def test_every_opus_section_has_one_marker_where_the_table_says() -> None:
     assert copy_e2e[marker.end() :].lstrip("\n").startswith(B_PROXY)
 
 
+def test_the_first_two_sections_say_when_they_start() -> None:
+    """Sonnet 첫 읽기(2026-11-03)가 헷갈린 두 자리.
+
+    구간 1 은 2-1 앞에서 한 번이고, 4장 뒤 7장으로 돌아와 표지를 다시 만나도 청하지 않는다.
+    구간 2 는 c 의 전 화면 순회를 하면 표지보다 앞인 그 줄에서 시작한다.
+    """
+    text = _text()
+    model = _section(text, "## 0-2. ", "\n## 1. ")
+    first = next(line for line in model.splitlines() if line.startswith("| 1 | "))
+    assert "2-1 앞" in first and "다시 만나도 청하지 않는다" in first
+    assert "2-1 앞에서 한 번" in _first_paragraph_after(text, HEADED[1])
+
+    copy_e2e = _section(text, "## 6-3. ", "\n## 7. ")
+    sweep = copy_e2e.index("여기서 0-2 대로 모델을 바꿔 달라고")
+    assert sweep < copy_e2e.index("> **[Opus 구간 2]**")
+
+
 def test_every_marker_line_keeps_the_one_form() -> None:
     """표지를 손으로 고치다 꼴이 흐트러지면 Sonnet 이 표지를 놓친다 — `> **[Opus` 로 시작하는 줄은
     모두 한 꼴이다."""
