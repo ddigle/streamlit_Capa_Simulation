@@ -75,13 +75,13 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 
 ### 세 영역 — Static · 실행 관리 · Dynamic (2026-10-17 사용자 결정)
 
-사이드바 계산 그룹은 셋이고 차례도 이렇다(`navigation.SIDEBAR_GROUPS`). 2026-11-02 실행 관리와 Dynamic 사이에 「생산 진도」 상자가 섰다(2026-11-03 — 내용은 모듈이 맡는다).
+사이드바 계산 그룹은 셋이고 차례도 이렇다(`navigation.SIDEBAR_GROUPS`). 2026-11-02 실행 관리와 Dynamic 사이에 「생산 진도」 상자가 섰다(2026-11-03 — 내용은 모듈이 맡는다, 2026-11-04 — 하위 샘플 페이지 셋으로 펼침 상자).
 
 | 그룹(상자 이름) | 뜻 | 화면 |
 |---|---|---|
 | **Static Capa** | **약속.** 기술팀이 공정별 설비 셋업 시점·성능(UPEH·효율·수율)을 기준정보에 정하고, 그 기준정보와 생산계획으로 미래 Capa 를 낸다. 자원운영팀(옛 Guide 의 「GO팀」과 같은 팀)이 그 부족대수로 투자한다. | 현황 요약 · 생산 계획 · 기준 정보 · 산출 결과 · 표준 목표 |
 | **실행 관리** | **이행.** 제조팀이 약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 이행 요청하고, 지킬 수 없으면 Static 반영까지 추적한다. | 현황 요약(머리, `execution_management.py`) · 공정 Capa 상세 · 필요 단축 일정(2026-10-18 가용설비 현황 탭에서 뗀 별도 화면) · 제약 시뮬레이션(2026-10-24, 저장하지 않는 미래 가정) · 가용설비 현황 · Space 현황 · 효율·UPEH·수율 실적 |
-| **생산 진도** | 2026-11-02 사용자 요청으로 실행 관리와 Dynamic Capa 사이에 세운 상자다. 보일 내용은 모듈이 맡는다(2026-11-03 사용자 「모듈에 스크립트를 넣으면 반영될 페이지 영역만 표시」) — 머리 화면(`production_progress.py`)은 모듈 화면이 들어올 점선 자리 하나이고 데이터를 읽지 않으며 공통 조건 줄·조건 카드가 없다. 모듈이 그 자리에 그리는 길은 아직 없다(`docs/TODO.md` 2장 「생산 진도 화면 내용」). | 머리 화면 하나 — 「모듈 화면 자리」(하위 화면 없음 — 생기면 `PRODUCTION_PROGRESS_SUBPAGES`) |
+| **생산 진도** | 2026-11-02 사용자 요청으로 실행 관리와 Dynamic Capa 사이에 세운 상자다. 보일 내용은 모듈이 맡는다(2026-11-03 사용자 「모듈에 스크립트를 넣으면 반영될 페이지 영역만 표시」) — 머리 화면(`production_progress.py`)과 하위 샘플 페이지 셋(2026-11-04 검수 의견 prog-01 · prog-02 — 임시)은 모두 모듈 화면이 들어올 점선 자리 하나이고(`components/module_slot.py` 한 벌 — 이름만 다르다) 데이터를 읽지 않으며 공통 조건 줄·조건 카드가 없다. 모듈이 그 자리에 그리는 길은 아직 없다(`docs/TODO.md` 2장 「생산 진도 화면 내용」). | 현황 요약(머리, `production_progress.py`) · 샘플 페이지 1 · 2 · 3(`production_sample_1.py` ~ `_3.py`, `PRODUCTION_PROGRESS_SUBPAGES`) — 모두 「모듈 화면 자리」 |
 | **Dynamic Capa** | **실적.** 실행 관리가 모은 실적으로 Capa 를 다시 내고 그 Capa 로 단기 운영(재공·Rundown·병목)을 한다. | 현황 요약(머리, `reference_integrity.py`, 주소 `dynamic_capa`) · 표준 대비 재공 현황 |
 
 - **경계 규칙**: 약속 이행을 **재고·비교·요청·추적**하는 일은 실행 관리, 그 실적으로 **Capa 를 다시
@@ -469,9 +469,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은
   모듈이 맡아(2026-11-03 사용자) 머리말 아래에 모듈 화면이 들어올 넓은 점선 자리(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
   자리에 표시됩니다」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
-  읽지 않아 공통 조건 줄도 조건 카드도 없다). 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은
-  아직 없다 — `docs/TODO.md` 2장 「생산 진도 화면 내용」. 하위가 없어 사이드바 상자는 펼침 상자가 아니라 링크 하나 든 상자다
-  (`navigation.PRODUCTION_PROGRESS_SUBPAGES` 에 하위를 더하면 펼침 상자가 된다). 시험은 `tests/test_production_progress_page.py`.
+  읽지 않아 공통 조건 줄도 조건 카드도 없다). 그리는 것은 `components/module_slot.py` 의 `render_module_slot_page` 한 벌이고 이 파일은
+  제 이름 한 줄만 넘긴다. 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은 아직 없다 —
+  `docs/TODO.md` 2장 「생산 진도 화면 내용」. 하위 샘플 셋이 있어 사이드바 상자는 다른 계산 그룹처럼 펼침 상자이고 이 화면은 그 안
+  「현황 요약」 이다. 시험은 `tests/test_production_progress_page.py`.
+- `app_pages/production_sample_1.py` · `production_sample_2.py` · `production_sample_3.py` — 생산 진도 하위 「샘플 페이지 1 · 2 · 3」
+  (2026-11-04 검수 의견 prog-01 「생산진도 상자 내에 샘플 페이지 1,2,3 넣고 펼치는 상자로 반영」 · prog-02 「샘플페이지 1,2,3 화면에
+  이대로 임시 반영」). **임시**다 — 머리 화면과 이름만 다른 같은 꼴(`render_module_slot_page("샘플 페이지 n")` 한 줄)이고 데이터를
+  읽지 않는다(`navigation.PRODUCTION_PROGRESS_SUBPAGES` — 공통 조건 줄 · 조건 카드 · 설비 DB 핀 없음). 모듈이 그 자리에 그리는 길이
+  생기면 바꾼다(`docs/TODO.md` 2장 「생산 진도 화면 내용」). 시험은 머리와 같은 `tests/test_production_progress_page.py`.
 - `app_pages/reference_integrity.py` — `Dynamic Capa` 머리(주소 `dynamic_capa`). 실행 관리가 모은 실적으로 표준 Capa 의
   실현 Capa·손실을 다시 내는 데모 프로토타입이다(요약·공정 상세·산식 가이드 탭).
   - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
@@ -2664,6 +2670,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫)으로 점과 떠날 때 물을 것을 정한다.
 - `src/capa_simulation/components/roadmap_panel.py` — 업무 활용 목적·부서별 Action Item·로드맵을 기본 닫힌
   상자로 그린다(지금은 실행 관리 머리).
+- `src/capa_simulation/components/module_slot.py` — 모듈 화면이 들어올 점선 자리(`module_slot_html` — `st.html` 하나, 테두리
+  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 그 자리만 든 화면 한 벌
+  (`render_module_slot_page(title)` — 머리말(「화면 초안」 배지 · 설명 한 줄) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
+  같은 꼴로 그린다. 데이터를 읽지 않는다. 모듈이 이 자리에 그리는 길이 생기면 그 창구가 여기서 갈린다(`docs/TODO.md` 2장 「생산
+  진도 화면 내용」).
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
   실행(테스트)에서는 문구로 물러선다(`fallback` 으로 그 글을 줄 수 있다 — 「도면에서 보기」). `disabled`·`help` 는
   `st.page_link` 그대로다 — 꺼진 링크가 자리를 지키고 풍선이 까닭을 말한다(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」).
