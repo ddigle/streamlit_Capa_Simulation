@@ -181,7 +181,7 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "production_progress",
         "dynamic_capa",
     ]
-    # 생산 진도는 아직 빈 머리 화면 하나다 — 데이터를 읽지 않아 공통 조건 줄이 없다.
+    # 생산 진도는 모듈 화면 자리만 그리는 머리 화면 하나다 — 데이터를 읽지 않아 공통 조건 줄이 없다.
     assert PRODUCTION_PROGRESS.path == "app_pages/production_progress.py"
     assert PRODUCTION_PROGRESS.title == "생산 진도"
     assert not PRODUCTION_PROGRESS.reads_scenario and not PRODUCTION_PROGRESS.reads_period
