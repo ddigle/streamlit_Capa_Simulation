@@ -950,13 +950,16 @@ export default function (component) {
       const next = S.items.get(focusAfterClose(open, id))
       if (next) next.__parts.tab.focus({ preventScroll: true })
     }
+    // 숨기기 전에 지금 그림을 담는다 — 닫는 탭이 제자리에 있어야 서버가 담긴 차례를 먼저 입힌 뒤 보이는 이웃으로 옮긴다
+    // (`_on_close`). 숨긴 뒤에 담으면 닫는 탭이 그림에서 빠져 서버 목록 끝으로 밀리고 이웃이 엇갈린다.
+    const carried = claimDrawn()
     // 곧바로 숨긴다 — 다음 회차가 목록에서 뺄 때까지 기다림이 보이지 않게. 남은 탭의 × 도 서버 규칙대로 맞춘다(마지막
     // 하나는 닫지 않는다) — 지금 탭이 아닌 탭을 닫으면 서버는 페이지를 다시 돌리지 않아 다음 data 가 곧 오지 않는다.
     item.hidden = true
     syncControls()
     // 지금 탭을 닫으면 서버가 이웃으로 옮긴다 — 그 이동도 기록 한 칸·한 번에 하나다.
     if (leaving) moving(null)
-    S.send('close', { id, epoch: S.data.epoch, ...claimDrawn() })
+    S.send('close', { id, epoch: S.data.epoch, ...carried })
   }
   // 탭 줄 밖의 떠나기 — 머리 툴바의 테마 단추는 화면을 새로 읽어 세션을 바꾼다. 편집표에서 막 손을 뗀 누름이면 그 편집
   // 회차가 돌아와 저장 안 함 표지가 설 때까지 붙든 뒤(`<tabs-hold>`) 부른 쪽의 확인·새로고침(`fn`)을 잇는다. 단추가 누를

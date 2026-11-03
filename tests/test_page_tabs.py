@@ -714,6 +714,28 @@ def test_pin_close_and_select_take_an_unsent_order_along(
     assert state[PAGE_TABS_OPEN_KEY] == (H, B, A) and state[PAGE_TABS_QUEUED_KEY] == B
 
 
+def test_closing_the_active_tab_right_after_moving_it_goes_to_the_drawn_neighbour(
+    strip_session: tuple[SimpleNamespace, list[tuple[str, ...]]],
+) -> None:
+    """지금 탭을 옮긴 직후(쉼 안 — 차례를 아직 보내지 않음) 닫으면 이웃은 사용자가 본 그림의
+    오른쪽 이웃이다. 탭 줄 JS 는 닫는 탭을 숨기기 전에 그림을 담아 그 탭이 제자리에 있고, 서버는
+    그 차례를 먼저 입힌 뒤 닫는다(`_on_close`). 서버 목록으로 이웃을 고르면 옮기기 전 자리의
+    이웃으로 갔다."""
+    fake, _calls = strip_session
+    state = fake.session_state
+    s = SPACE_STATUS.path
+    state[PAGE_TABS_OPEN_KEY] = (H, A, B, s)
+
+    # 끝 탭 s 를 A 앞으로 옮긴 그림 [H, s, A, B] 에서 지금 탭 s 를 닫는다 — 오른쪽 이웃 A 로.
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "close": {"id": s, "order": [H, s, A, B], "pins": [H], "seq": 5, "epoch": 1}
+    }
+    page_tabs._on_close(s)
+    assert state[PAGE_TABS_OPEN_KEY] == (H, A, B)
+    assert state[PAGE_TABS_QUEUED_KEY] == A
+    assert state[PAGE_TABS_ORDER_SEQ_KEY] == 5
+
+
 def _live_strip(monkeypatch: pytest.MonkeyPatch) -> None:
     """탭 줄을 이 AppTest 회차 **안에서** 등록해 진짜 트리거 칸을 세운다. 모듈을 읽을 때 등록한 것은
     AppTest 실행 밖이라 그 실행에서 「미등록」이다(모듈 설명)."""

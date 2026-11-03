@@ -43,10 +43,10 @@ def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     move = re.search(r"S\.send\('move', \{([^}]*)\}\)", JS)
     assert move is not None
     assert all(f"{name}:" in move.group(1) for name in ("order", "pins")) and "seq" in move.group(1)
-    for event in ("pin", "close"):
-        call = re.search(rf"S\.send\('{event}', \{{([^}}]*)\}}\)", JS)
-        assert call is not None, event
-        assert "...claimDrawn()" in call.group(1), event
+    pin = re.search(r"S\.send\('pin', \{([^}]*)\}\)", JS)
+    assert pin is not None and "...claimDrawn()" in pin.group(1)
+    sent_close = re.search(r"S\.send\('close', \{([^}]*)\}\)", JS)
+    assert sent_close is not None and "...carried" in sent_close.group(1)
     claim = JS[JS.index("const claimDrawn = () => {") :]
     claim = claim[: claim.index("\n  }\n")]
     assert "order: drawn.ids, pins: drawn.pinned, seq: claimOrder(" in claim
@@ -58,8 +58,10 @@ def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     assert click.index("pinnedOrder(") < click.index("arrange(plan)") < click.index("S.send('pin'")
     close = JS[JS.index("const closeNow = (item) => {") :]
     close = close[: close.index("\n  }\n")]
+    # 닫기는 숨기기 전에 그림을 담는다 — 닫는 탭이 제자리에 있어야 서버가 보이는 이웃으로 옮긴다.
     assert (
-        close.index("item.hidden = true")
+        close.index("const carried = claimDrawn()")
+        < close.index("item.hidden = true")
         < close.index("syncControls()")
         < close.index("S.send('close'")
     )

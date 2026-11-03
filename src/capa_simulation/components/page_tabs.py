@@ -400,8 +400,9 @@ def _on_close(active: str | None) -> None:
     target = _payload_id("close")
     if payload is None or target is None:
         return
-    strip, neighbour = closed(load_strip(), target, active)
-    strip = _adopted(strip, payload)
+    # 담긴 차례를 먼저 입힌다 — 옮긴 직후 닫으면 이웃은 사용자가 본 차례의 이웃이어야
+    # 한다. 탭 줄 JS 는 닫는 탭을 숨기기 전에 그림을 담아 보내 그 탭이 제자리에 있다.
+    strip, neighbour = closed(_adopted(load_strip(), payload), target, active)
     store_strip(strip)
     if neighbour is not None:
         queue_switch(neighbour)
