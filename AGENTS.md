@@ -353,6 +353,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     등록은 세션 키 팝업이다. PKG PLAN 붙여넣기는 탭에만 올리고 전역 반영은 적용 한 곳이며, 수율 붙여넣기는 바로 적용한다.
   - 가상 제품 등록(기준정보 복제, `virtual_product.py`)은 미적용 편집을 버리므로 먼저 경고한다. 값이 비거나
     범위 밖인 수율 행은 잠가 원본 그대로 되붙이고, 0 이하·100% 초과는 계산을 멈춘다(숨기지 않는다).
+  - 상태 알림(9장 「알림 칸」): 환산에서 빠진 계획 `ST-05`(환산 탭이 열린 회차), 값을 뺀 수율 행 `ST-06`(수율 탭이 열린
+    회차), PKG PLAN 적용 뒤 소요대수에 들지 않은 수요 `ST-04`(적용 알림이 서는 회차 — 시나리오 전체 기간). 목록 펼침은
+    남고 그 안 첫 줄이 고칠 곳이다. 줄 차례가 바뀌어 편집을 버린 회차는 사건 알림 `ST-09`. 수율 붙여넣기 팝업이 이 알림
+    자리들 뒤라 셋 다 갈래와 상관없이 이벤트 칸 한 자리를 쓴다(조건이 없거나 탭이 닫히면 `alerts.flush`).
   - 편집표 원본은 `simulation_cache` 가 시나리오 키 + 표시순서 지문으로 캐시한다(`test_plan_edit_table_cache.py`).
 - `app_pages/reference_data.py` — `기준 정보` 화면. Capa 산출 입력(UPEH·설비대수·효율·여유율·일수·측정률·STEP 구성)을
   월별로 편집한다. 설명은 `guides/reference_data.md`.
@@ -399,9 +403,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 대당 Capa·소요대수 프레임을 풀지 않는다 — 요약은 `get_scenario_result_summary`, 표는 키 전용 캐시에서 그 탭이
     열린 회차에만 꺼내고 오류도 그 탭에만 띄운다(`test_calculation_result_tabs.py`). `STEP별` 은 공정을 골라야 계산한다.
   - 표 조건 카드 하나를 세 탭이 쓰고 열린 탭 것만 그린다. 대당 Capa `표시 방식` 은 카드 첫 칸이다(「하위 보기 전환은 본문」 의
-    예외 — 2026-11-02 사용자 요청(검수표), 9장). 대당 Capa 탭 본문에는 측정률 가정 알림·제외 경고·`제외 기준정보 확인`
-    목록과 표만 선다(표 위 그림은 두지 않는다 — 같은 요청).
-  - 소요대수 탭은 경로 쪽 제외 뒤에 계획 쪽 목록 둘을 그리고, 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다.
+    예외 — 2026-11-02 사용자 요청(검수표), 9장). 대당 Capa 탭 본문에는 표만 선다(표 위 그림은 두지 않는다 — 같은 요청).
+    측정률 가정(`HM-02`)과 제외(`ST-14`)는 상태 알림이고, `제외 기준정보` 목록(내보내기 프레임 `exclusion_export`)은 ST-14
+    알림에 딸린 표다 — Alarm 줄에서 펼치고 CSV 는 브라우저 안에서 만든다(같은 사용자 요청 — 「알림과 제외 기준정보는 우하단
+    팝업(통일된 양식)으로 뜨고 누적 알람에서 제외 기준정보를 확인할 수 있게」, 9장 「알림 칸」). 표가 `alerts.TABLE_ROW_LIMIT` 를
+    넘으면 본문 `제외 기준정보 확인` 펼침(기억 칸 `unit_capacity_exclusions_expander`)이 남는다.
+  - 소요대수 탭은 경로 쪽 제외(`ST-15` · PKG Buffer 밖 `ST-21`)와 계획 쪽(`ST-01` — Static Capa 와 같은 코드 · 범위)을 상태
+    알림으로 내고 목록(`소요대수 제외 기준정보` · 계획 쪽 둘)은 본문 펼침에 남긴다 — 다른 화면 · 저장 검사의 안내가 「산출 결과 →
+    소요대수 탭」 으로 가리키는 자리다. 펼침 안 첫 줄(`st.caption`)이 고칠 곳이다. 알림은 그 탭이 열린 회차에만 낸다.
 - `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
   바로 깊게 보는 목적지**다(머리말, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
   본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
@@ -441,6 +450,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 하위 화면은 사이드바로만 간다. 판정 기준은 HOME Preference 공용 프로필이고 카드는 읽기 전용이며, 판정 적용은
     캐시하지 않고 매 회차 한다. 부서별 활용과 계산식 설명은 `guides/static_capa.md` 다.
   - 확보율은 키 전용 캐시로 꺼내고 오류는 `check_scenario_capacity` 로 「계산 멈춤」과 검증 오류를 가른다.
+  - 소요대수에 들지 않은 수요(계획 쪽 · 조회기간)는 두 상자 위에 그리지 않고 상태 알림 `ST-01` 로 낸다(산출 결과 소요대수
+    탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 `st.error` + `ST-20`(`state_alerts.alert_page_error`).
 - `app_pages/execution_management.py` — `실행 관리` 머리. 그룹 정의·로드맵·하위 화면 목차를 데이터를 읽지 않고 그린다.
   - `PageSpec` 이 시나리오·조회기간을 읽지 않고 조건 카드·설비 DB 핀이 없다. 하위 화면이 늘면 `SUBPAGE_SUMMARIES` 도
     고친다. 설명은 `guides/execution_management.md`.
@@ -809,6 +820,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 표시 항목(`AVAILABILITY_BASED_METRICS` — 일 표준 가능량·가용대수)만
     입력 안내로 멈춘다. 대당 일 Capa·로직 분석은 그대로 선다 — 계산(`build_weekly_standard_target_capacity`)은 빈
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
+  - 가용대수가 없어 빈칸인 공정·주차는 상태 알림 `ST-17`(범위 = 활성 리비전 + 조회일, 내용 = (공정, 주차) 목록)이고
+    결과 상자 안 늘 서 있는 칸(`availability_notice_slot`)에는 「누락 공정·주차 확인」 펼침만 선다.
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
     가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`formula_text.consistent_places` — 「54,698.63
@@ -1062,19 +1075,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쓰기 경로는 `tests/test_capacity_gate.py` 목록에 더한다(`density_error` 는 `tests/test_gate_density_coverage.py`).
   - 자동 갱신 발행은 순수 코어 `simulation_cache.full_capacity_outcome` 로 같은 검사를 하고 경고를 실행 기록에 붙인다.
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
-  달(조회기간 밖 포함)을 HOME·`산출 결과` 에 한 줄로 알리고, `알림 모음` 도 같은 문장(`assumption_message`)을 쓴다
-  (6장 대당 Capa). 가정이 없으면 그리지 않는다.
+  달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다 — 9장 「알림 칸」).
+  두 화면이 같은 코드 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 넣지 않는다)라 한쪽에서 본 가정은
+  다른 쪽에서 다시 뜨지 않는다. 짧은 글(`assumption_short`)은 표 · 건수와 고칠 곳(기준 정보)을 말한다. `알림 모음` 도 같은
+  문장(`assumption_message`)을 쓴다(6장 대당 Capa). 가정이 없어도 부른다(해소).
 - `src/capa_simulation/components/required_exclusion_notice.py` — 소요대수에 들지 않은 수요의 건수 문장
-  (`required_exclusion_message`)과 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists`)을 낸다.
+  (`required_exclusion_message`), 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists` — 펼침 안 첫 줄이
+  고칠 곳), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
+  `alert_required_exclusions`)를 낸다.
   - 문장은 `알림 모음`·`capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
-    않게 두 자리에도 같은 문장이다 — 생산 계획 PKG PLAN 적용 알림이 서는 회차(쓰기 알림 표지 창의 다시 그리기 포함)에
-    그 알림 칸(`render_flash` 가 돌려준 칸) 맨 아래(`FULL_SCOPE`, `get_full_capacity_outcome` — HOME·산출 결과가 같은 결과를
-    쓴다. 셈은 PKG PLAN 편집표를 그린 **뒤**에 한다 — 앞에서 하면 그 계산이 끝날 때까지 편집표가 서지 않는다)와 Static Capa
-    현황 요약 맨 위의 늘 서 있는 칸(`PERIOD_SCOPE` — 산출 결과 요약 캐시 `get_scenario_result_summary`
-    의 조회기간 목록을 `count_required_exclusions` 로 센다). 둘 다 칸 안이라 아래 편집표·상자의 자리가 밀리지 않는다.
-    두 자리는 **계획 쪽 건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지
+    않게 화면 세 자리도 같은 셈의 **상태 알림**이다(2026-11-03 결정 보드 D2 (나) — 자리에 그리지 않는다): 생산 계획 PKG PLAN
+    적용 알림이 서는 회차(쓰기 알림 표지 창의 다시 그리기 포함)의 `ST-04`(`FULL_SCOPE`, `get_full_capacity_outcome` —
+    HOME·산출 결과가 같은 결과를 쓴다. 셈은 PKG PLAN 편집표를 그린 **뒤**에 하고 스피너는 그 알림 칸에 선다 — 앞에서 하면 그
+    계산이 끝날 때까지 편집표가 서지 않는다), Static Capa 현황 요약과 산출 결과 소요대수 탭의 `ST-01`(`PERIOD_SCOPE` — 산출
+    결과 요약 캐시 `get_scenario_result_summary` 의 조회기간 목록을 `count_required_exclusions` 로 센다 — 같은 코드 · 같은
+    범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다). 짧은 글은 건수와 목록 자리(「산출 결과 › 소요대수」)를 말한다.
+    셋 다 **계획 쪽 건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지
     않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 늘 서는 경고가 된다(HOME 에서 이 줄을 뺀 2026-10-19 결정과 같은 까닭).
+  - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
+    대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일), PKG 의 Buffer 밖 행 `ST-21`(알림 —
+    규칙이라 고칠 것이 없다). 두 사유를 한 알림에 섞지 않는다.
 - `src/capa_simulation/components/alert_board.py` — Admin Area `알림 모음` 탭. 활성 시나리오의 계산 알림 셋(계산 멈춤 ·
   소요대수에 들지 않은 수요 · 측정률 가정)을 시나리오 전체 기간으로 늘 같은 차례에 둔다(없는 것은 「없음」).
   - 저장·발행 검사와 같은 `get_full_capacity_outcome` 캐시와 `capacity_gate.density_error` 를 읽어 문장도 같다. 고르는
@@ -1089,8 +1110,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
 - `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
-- `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 두 제외 표를 그리는 단일 렌더러다. 화면은
-  표시명 복사본, CSV 는 원본이고, 캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다.
+- `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 표(`소요대수 제외 기준정보` · 계획 쪽 목록 둘,
+  표가 커서 알림에 싣지 못한 대당 Capa `제외 기준정보 확인`)를 그리는 단일 렌더러다. 화면은 표시명 복사본, CSV 는 원본이고,
+  캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다. 내보내기 프레임(`exclusion_export` — 분류 칸을 공용 표시순서로
+  세운 원본)은 대당 Capa 알림에 딸린 표(`state_alerts.alert_table`)도 쓴다.
 - `src/capa_simulation/components/plan_comparison_dumbbell.py` — 두 시나리오의 기간 계획 물량 차이를 분류별 덤벨로
   그린다. 한쪽에만 있는 분류는 다른 쪽을 0 으로 보고 연결선은 `DELTA_*` 다.
   - 그림은 `build_plan_comparison_dumbbell` 이 만들고 `render_plan_comparison_dumbbell` 은 받은 그림만 그린다(HOME 은
@@ -1753,7 +1776,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세션에 되쓴다(`pop` 하지 않는다). `prune_choice` 는 글자 선택지 전용이다(`str(saved) in options`) — 정수 달 상자는
     제 화면이 잡는다(`constraint_simulation_state.settle_period`). `prune_named_choice` 는 쓰기 단추의 대상을 고르는
     상자의 짝이다(9장 「글자가 바뀌는 것을 피할 수 없는 상자」). `render_schema_ahead_warning` 은 DB 가 코드보다 새
-    버전일 때 경고한다.
+    버전인지 상태 알림으로 낸다(시뮬레이션 DB `GL-02` — `app.py`, 설비 DB `GL-06` — 그 DB 를 여는 화면. 자리에는 그리지
+    않고, 새 판이 아니어도 부른다 — 해소 · 이벤트 칸 한 자리).
   - `process_page_inputs(database_path)` 는 공정 하나를 보는 두 화면(공정 Capa 상세·제약 시뮬레이션)의 공통 진입이다 —
     판정 기준 → 공통 진입 → 유효 기간(`RQ_REQB`) → 시나리오 키 → 확보율(멈추면 「계산 멈춤」) → 달·공정 선택지를 **같은
     차례**로 내 두 화면의 계획 캐시 키가 같다. 카드 캡션·`st.error`·`st.stop` 은 페이지가 쥐고, DB 경로는 페이지가 그 회차의
@@ -2404,8 +2428,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     정렬에 걸리지 않는 것을 알 길이 없었다).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
-  - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
-    한 번 알린다(`show_row_order_reset`). 앞 토큰이 없으면(첫 회차·시나리오 전환이 지운 뒤) 알리지 않는다. 줄 위치로 남지
+  - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 사건 알림 `ST-09`(조치
+    필요 — 알림창 · Alarm, 자리에 그리지 않음)로 한 번 알린다(`show_row_order_reset` — 매 회차 같은 자리에서 불러 이벤트 칸
+    한 자리를 쓴다). 앞 토큰이 없으면(첫 회차·시나리오 전환이 지운 뒤) 알리지 않는다. 줄 위치로 남지
     않는 상태(PKG PLAN 붙여넣기 대기와 그 표 위의 편집, 기준 정보 STEP 상자)는 `order_free_keys` 로 넘겨 차례만 바뀐 회차에 남긴다.
   - 화면이 스스로 적용한 편집은 `mark_own_change` 로 적어 그 적용이 건드린 편집표만 비운다. 편집 되돌리기는
     `components/scenario_status.py` 의 팝업이 맡는다.
@@ -2798,8 +2823,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 ·
   `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
   한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
-  `state(code, scope=, content=, active=, text=, full=, scope_label=)` — 이벤트 칸 한 자리, 지문(`fingerprint` = 코드 + 범위 +
-  내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
+  `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, table=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
+  코드 + 범위 + 내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)). `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그
+  탭까지 연다), `table` 은 Alarm 줄에서 펼쳐 볼 딸린 표(`AlertTable` — 칸 · 행(JSON 값) · 원래 행 수 · CSV 파일 이름 · 화면에만
+  입힐 표시명, 조건이 있을 때만 · 행 끝 `TABLE_ROW_LIMIT` 2,000), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
   `<style data-capa-alerts="JSON">`(`MARKER_ATTRIBUTE`, 스타일만 든 `st.html` — 이벤트 칸)이고 `note_page` 가 적은 이번
   화면을 단다. 분석 기록(L2)은 자리만 있다(`record_server_event` · `ALERT_LOG_SWITCH` — usage-log 1단계와 함께, D6).
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
@@ -2810,7 +2837,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `palette()` · 글 `TEXT`). 패널은 브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id 는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
   문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 시험: `tests/test_alert_center.py`(data · 자리 · 변경 목록) ·
-  `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node 순수 구획 `<alerts-rows>`).
+  `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node 순수 구획 `<alerts-rows>`). 줄의 딸린 표(`table`)는
+  「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저 안에서 파일을 만든다(원본 값 · BOM — 서버를 부르지 않는다, 표는 코드마다
+  가장 새 줄에만 남긴다). 줄의 `tab` 이 있으면 「그 화면으로」 가 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
+  누르고(`stateful_tabs` 탭), 줄 · 로그의 화면 칸은 「화면 › 탭」 이다.
+- `src/capa_simulation/components/state_alerts.py` — 화면이 상태 알림을 낼 때 쓰는 공용 조각(알림 체계 2단계 a). 시뮬레이션
+  범위 `simulation_scope(active, period | dates=)`(활성 리비전 `content_token` + 조회기간 · 조회일 — 지문 재료, 로그의 범위 줄
+  「시나리오 · rN · 26.01–26.12」, 미저장 편집이면 그 말을 붙인다 — 세션만 읽는다), 딸린 표 `alert_table`(내보내기 프레임을
+  JSON 값으로, 공정 칸 표시명은 화면에만 — 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 남긴다),
+  화면을 그리지 못한 오류 `alert_page_error(message, code=, tab=)`(자리 `st.error` 는 부르는 쪽 몫, id 가 그 글의 지문이라 같은
+  글이면 이 브라우저 탭에 한 번만 뜨는 사건 알림 — `ST-20` 계산 화면 · `HM-01` HOME). 시험: `tests/test_state_alerts.py`.
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
   세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안 · 작은 편집표 · Past Data · 시나리오 관리 표
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
@@ -3002,7 +3038,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`common_history_label`). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
     필요」·표 풍선)은 공식 일정 + 편집본 공통 칸이다(`official_confirmation_master` — 세션 칸 한 벌).
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
-  화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
+  화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 알림(`SB-19`)과 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
+  줄의 세션 알림은 줄 아래에 그리지 않는다 — 다른 리비전으로 옮겨 엶은 사건 알림 `SB-14`, 일정 없이 엶은 상태 알림 `SB-20`
+  (범위 = 설비 시나리오), 불러오기 · 저장 결과는 `queue_flash` → 줄 안 `render_flash`(성공은 알림창으로만 — D3).
   - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
     「운영 일정 · r12」(긴 이름은 `app_header.short_scenario_name` 으로 줄여 「 · rN」 이 늘 보인다 — 값 칸은 한 줄
     말줄임. 머리 띠 꼬리도 같은 이름), 배지는 `미저장 변경`(낡은 세션이면 `미저장 변경 · 최신 rM 있음` — 미저장이 낡음을
@@ -3425,7 +3463,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     여백)이고 두 캔버스 gap 은 0 이다. `Capa LOB 현황` 은 글줄 높이 줄 + 상자 gap(`DASHBOARD_PANEL_TITLE_GAP_PX` = 제목→시트
     − 스크롤바, 지금 0) + 라벨 캔버스 위 여백(스크롤바 높이)이라 제목→시트는 스크롤바보다 좁힐 수 없다. 제목 줄 문단(`p`)은
     `dashboard_title_row_style` 이 flex 로 둬 본문 글줄을 걷는다(안 걷으면 글 아래가 4.4px 더 빈다). 「적용하지 못한 달」
-    알림 칸(`LOB_UNAPPLIED_NOTICE_KEY`)은 위 · 아래로 제목→시트만큼 띄운다. 그림 여백은 그대로라
+    은 제목 줄 밑에 서지 않는다(상태 알림 `HM-04` — `home_preference.render_lob_title_row`). 그림 여백은 그대로라
     `HOME_FIGURE_SCHEMA_VERSION` 은 올리지 않았다(`tests/test_home_page.py` 의 간격 시험).
 - `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
   글자와 등호를 고르는 순수 도우미(8장 「화면 숫자는 검산되어야 한다」). 길이 둘이고 화면마다 지금 쓰는 길을 지킨다 —
@@ -3582,8 +3620,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
   - DB 가 코드보다 새 것이면(옛 배포 ZIP 으로 되돌림) 막지 않고 `MigrationOutcome.schema_ahead`(`SchemaAheadOfCode`)로
-    알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 경고(`page_bootstrap.render_schema_ahead_warning`)는
-    시뮬레이션 DB 는 `app.py`, 설비 DB 는 그 DB 를 여는 화면이 세운다.
+    알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 상태 알림(`page_bootstrap.render_schema_ahead_warning`)은
+    시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-06`)이 낸다.
 - `src/capa_simulation/persistence/migration_runner.py`, `equipment_migration_runner.py` — 각 DB 를 엔진에 묶는 진입점.
 - `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열두 종과 설비
   스냅샷·층/FAB 도면·설비 마스터 탭 이력·필요 단축 일정 조건·기준선의 Streamlit 캐시 경계.
@@ -4207,7 +4245,8 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
   두 표기를 섞어 쓰기 때문이다 — 분모라서 그대로 두면 나눌 수 없고, 예전에는 이 행을 통째로
   뺐다. **행 부재를 같은 선 안에 들인 것은 2026-09-24 이다.** 그 전에는 하드 오류였고, 빈
   UPEH 를 채우면 측정률 짝이 없어 HOME 이 통째로 서는 일이 사내에서 실제로 났다.
-  - **메운 건수는 반드시 화면에 닿아야 한다**(`components/capacity_assumption_notice.py`).
+  - **메운 건수는 반드시 화면에 닿아야 한다**(`components/capacity_assumption_notice.py` — 2026-11-03 부터 상태 알림 `HM-02`:
+    가정이 바뀔 때만 알림창에 뜨고 Alarm 에 남는다).
     측정률은 분모라 실제가 1 보다 작으면 대당 Capa 과소 → 소요대수 과대 → **확보율 과소**(보수
     쪽)이고, 1 보다 큰 경로에서만 확보율 과대다. 세지 않고 메우면 완화가 곧 조용한 오류다.
   - **중립값이 있는 표에만 적용한다.** 가동률·편중률·모듈수·가동일수의 행 부재는 그대로
@@ -4346,10 +4385,11 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
   부하 0 인 경로와 PKG 의 Buffer 외 행은 소요대수를 줄이지 않으므로 세지 않는다.
 
 건수는 `required_equipment.required_exclusion_counts` 하나가 세고(목록만 든 요약은 그 셈
-`count_required_exclusions`), HOME(조회기간 기준 한 줄)·산출
-결과 소요대수 탭(목록·CSV)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
-자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)·PKG PLAN 적용 알림(시나리오 전체 기간)·Static Capa 현황
-요약(조회기간 — 이 둘은 계획 쪽 건수만, `plan_side_counts`)이 같은 셈을 쓴다(`components/required_exclusion_notice.py`).
+`count_required_exclusions`), Admin 「알림 모음」(시나리오 전체 기간)·산출
+결과 소요대수 탭(목록·CSV, 계획 쪽 상태 알림 `ST-01`)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
+자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)·PKG PLAN 적용 뒤 상태 알림(`ST-04`, 시나리오 전체 기간)·Static Capa 현황
+요약(상태 알림 `ST-01`, 조회기간 — 화면 알림 셋은 계획 쪽 건수만, `plan_side_counts`)이 같은 셈을 쓴다
+(`components/required_exclusion_notice.py`). HOME 에는 띄우지 않는다(2026-10-19 사용자 요청).
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은
@@ -5324,8 +5364,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     「되돌리기」를 누르면 다음 회차 맨 위 알림이 key 있는 보관함 상자를 한 칸 밀어, 옛 자리에 흐린 상자 둘이 모드를
     바꿔도 남았다(2026-10-22 사본 앱 이분 탐색: 알림·상자 key·본문 `st.rerun()` 가운데 하나만 빼도 사라졌다). Components v2 컴포넌트 앞에서는 특히
     그렇다 — 순번이 밀리면 컴포넌트가 다시 마운트되어 브라우저에 둔 상태(배율·서랍)를 잃고 스크롤이 튀므로, 그 앞의
-    생겼다 사라지는 상자·경고는 늘 서 있는 `st.container()` 칸 안에 그린다. 표준 목표 결과 상자의 가용대수 누락 경고·
-    「누락 공정·주차 확인」(`availability_notice_slot`)과 공용 계층 월 표의 행 페이지 줄(`page_slot`)이 그 예다 — 없을
+    생겼다 사라지는 상자·경고는 늘 서 있는 `st.container()` 칸 안에 그린다. 표준 목표 결과 상자의
+    「누락 공정·주차 확인」(`availability_notice_slot` — 건수 경고는 2026-11-03 부터 상태 알림 `ST-17`)과 공용 계층 월 표의 행 페이지 줄(`page_slot`)이 그 예다 — 없을
     때는 표시 항목을 바꾸거나 상세를 켜면 주차·월 표의 가로 스크롤이 처음으로 돌아갔다.
   - 헤더 툴바처럼 React 밖에서 숨은 Streamlit 버튼을 JS 로 눌러 연 대화상자는 포커스가 body 에
     남아 Esc 가 닿지 않는다 — 열리면 포커스를 대화상자 안으로 옮긴다(`page_guide.py`).
@@ -5536,8 +5576,17 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   부른다 — 지문(코드 + 범위 + 내용 — 범위는 시뮬레이션이면 `content_token` + 조회기간, 설비면 (공통 대장, 일정) 리비전 쌍,
   내용은 글이 아니라 건수 · 이름 목록 같은 구조 값)이 바뀔 때만 알림창이 뜨고, 없어지면 Alarm 줄에 「해소 hh:mm」 이 선다.
   닫힌 탭 · 접힌 펼침 안의 조건은 그 탭이 열린 회차에만 부른다. `tests/test_alert_sites.py` 가 경고 상자를 직접 그리는
-  자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 1단계가 옮기지 않은 자리는 「2단계 a/b 가
-  가른다」 까닭으로 남아 있고 2단계 갈래가 줄인다.
+  자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 2단계 a(Static 계산 · HOME · 사이드바 ·
+  껍데기, 2026-11-03)가 옮긴 자리는 목록에서 빠졌고, 남은 자리는 「2단계가 가른다」 · 「2단계 b」 · 자리 글(`PLACE_FORM` 팝업 ·
+  폼 · `PLACE_BOARD` Admin 「알림 모음」 판 · `PLACE_STOP` 멈춤 화면) 까닭이다.
+- **숫자를 믿기 전에 볼 경고가 자리에서 사라지므로 짧은 글이 무엇을 · 어디서 보는지 말한다**(「소요대수에 안 든 계획 수요
+  n건(조회기간) — 목록: 산출 결과 › 소요대수」). 목록 펼침은 본문에 남기고 그 안 첫 줄(`st.caption`)이 고칠 곳을 말한다. 같은
+  조건을 두 화면이 보면 **같은 코드 · 같은 범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과
+  대당 Capa) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
+  가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`table=` — 산출 결과 대당 Capa 「제외 기준정보」, 2026-11-02 사용자
+  요청(검수표)). 화면을 그리지 못한 오류는 자리 `st.error` 를 그대로 두고 같은 글이 처음일 때만 알림창을 더한다
+  (`alert_page_error`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
+  `alerts.flush()` 로 한 자리를 채운다(생산 계획 `ST-04` · `ST-06`).
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
@@ -6319,12 +6368,13 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - 앱은 로깅을 설정하지 않아 INFO 는 어디에도 나오지 않는다. 남겨야 할 드문 사건은 WARNING 으로 남기고, 되풀이되는
   실패는 처음과 회복 때만 남긴다(주기마다 쌓지 않는다).
 - **DB 가 코드보다 새 것이면 막지 않고 알린다.** 적용된 마이그레이션 최고 번호가 코드보다 높으면(옛 배포 ZIP 으로 되돌린
-  상태) 앱은 그대로 뜨고 화면 맨 위에 경고만 선다(`MigrationOutcome.schema_ahead`) — 막으면 DB 를 복원하기 전에는 되돌릴
+  상태) 앱은 그대로 뜨고 상태 알림(`GL-02` · `GL-06` — 알림창 · Alarm)만 낸다(`MigrationOutcome.schema_ahead`) — 막으면 DB 를 복원하기 전에는 되돌릴
   수 없다.
 - **설비 `0027` 을 실은 배포부터 옛 배포 ZIP 으로 되돌리지 않는다**(사내 런북 4-2 끝) — 새 판에서 한 번이라도 저장한 뒤의
   옛 판은 설비 마스터를 빈 표로 읽는다(첫 저장이 계약 v4 공통이라). 옛 판에서 저장한 흔적(경계 뒤 계약 v3 공통)이 있으면
-  새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면 맨 위에 경고를 세운다. 빠져나가는 길은 백업 복원과
-  시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」 둘이다(설비 화면 맨 위 경고 옆 「시나리오 관리에서 이어 쓰기」 단추가 그리로 옮긴다).
+  새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면이 상태 알림 `SB-19` 를 낸다. 빠져나가는 길은 백업
+  복원과 시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」 둘이다(설비 화면 맨 위 「시나리오 관리에서 이어 쓰기」 단추가
+  그리로 옮긴다).
 - **설비 시나리오 2단계는 아직 없다**(1단계 = 구조·이관·고르기·두 쪽 저장·발행·복제·이름·화면 최소·사내 이관 확인, 그 위에
   E7 리비전명·되돌리기·여기서 새 시나리오):
   시나리오끼리 일정 비교(F7), 보관·되살리기·영구 삭제·순서·공통 대장 이력 표(E8 나머지), 남의 공통 저장 때 일정 편집 다시 얹기(rebase),

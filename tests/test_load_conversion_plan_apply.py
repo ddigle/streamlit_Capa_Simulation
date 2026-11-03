@@ -859,7 +859,8 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
     0 으로 둔다). 셈은 편집표를 그린 **뒤**다 — 시나리오 전체 기간 계산이 끝날 때까지 편집표가
     서지 않으면 적용 직후 다음 편집을 기다리게 한다(그 회차의 그리기 차례를 적어 본다). 계획 쪽
     건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지 않아도 늘 있을 수 있어
-    적용할 때마다 서는 경고가 된다."""
+    적용할 때마다 서는 경고가 된다. 적용 알림이 없는 회차도 그 자리에서 이벤트 칸 한 자리를 써(빈
+    표지) 뒤 수율 붙여넣기 팝업의 이벤트 칸 자리가 회차마다 같다."""
     import streamlit
 
     import capa_simulation.services.required_equipment as required_equipment
@@ -900,12 +901,14 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
     # 알림이 서는 회차의 셈은 그 회차 편집표 뒤다(앞이면 「셈, 편집표」 로 끝난다).
     assert order[-2:] == ["편집표", "셈"], order
     assert _plan_editor_path(app) == before
+    applied_slots = len(app.get("html"))
 
-    # 적용 알림과 함께 빠진다(이 셈은 적용 알림이 서는 회차에만 한다).
+    # 적용 알림과 함께 빠진다(이 셈은 적용 알림이 서는 회차에만 한다). 그 자리는 빈 표지로 남는다.
     app.run()
     assert not any("반영했습니다" in item.value for item in successes(app))
     assert not _st04(app)
     assert _plan_editor_path(app) == before
+    assert len(app.get("html")) == applied_slots
 
 
 def _st04(app: AppTest) -> list[dict[str, Any]]:

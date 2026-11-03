@@ -351,6 +351,9 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     그 전에 부르면 적용 직후 시나리오 전체 기간 계산(합성 표본 DB 사본의 리비전 하나에 0.5~1.4초 —
     `inspect_revision_calculations.py`, 샘플 관측)이 끝날 때까지 편집표가 서지 않아 다음 편집을
     기다리게 했다.
+
+    셈하지 못한 회차도 이벤트 칸 한 자리를 쓴다(`alerts.flush` — 부르는 쪽의 적용 알림 없는 회차와
+    같다).
     """
     scenario = context.active_scenario
     try:
@@ -361,8 +364,10 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
                 _reference_tables=context.reference_tables,
             )
     except BOOTSTRAP_ERRORS:
+        alerts.flush()
         return
     if outcome.error is not None or outcome.required_equipment is None:
+        alerts.flush()
         return
     alert_uncounted_demand(
         required_exclusion_counts(outcome.required_equipment),
@@ -382,9 +387,12 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     0 이하·100% 초과 행은 Chip·Wafer 환산과 HOME·소요대수·확보율을 멈춘다(2026-09-28 사용자
     결정). 예전 문구는 둘 다 원본대로 남는다고만 해 계산이 서는 것을 알리지 않았다(2026-09-29 리뷰).
     고칠 곳은 펼침 안 첫 줄이 말한다. 알림은 수율 탭이 열린 회차에만 낸다(`scope` 가 None 이면 닫힌
-    탭 — 설계 2-3 「숨은 자리는 세지 않는다」).
+    탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸 한 자리를 써(`alerts.flush`)
+    바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
     """
-    if scope is not None:
+    if scope is None:
+        alerts.flush()
+    else:
         alerts.state(
             "ST-06",
             scope=scope.scope,
@@ -729,9 +737,13 @@ with pkg_plan_tab:
             },
         },
     )
-    # 적용 알림 칸(위) 맨 아래의 소요대수에 들지 않은 수요 — 편집표를 다 그린 뒤에 센다.
+    # 적용 알림 칸(위)이 서는 회차의 소요대수에 들지 않은 수요 — 편집표를 다 그린 뒤에 센다. 적용
+    # 알림이 없는 회차에도 이 자리에서 이벤트 칸 한 자리를 쓴다 — 뒤 수율 붙여넣기 팝업의 이벤트 칸
+    # 자리가 회차마다 같게(AGENTS 9장 「알림 칸」 — 표지를 쓰는 함수는 늘 같은 자리에서 한 자리).
     if applied_notice_shown:
         _render_uncounted_demand_after_apply(context, plan_flash_slot)
+    else:
+        alerts.flush()
 
 simulation_plan = filtered_plan
 
