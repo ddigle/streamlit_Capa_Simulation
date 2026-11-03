@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from alert_marks import successes
+from alert_marks import alert_notes, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, ElementTree
@@ -305,7 +305,20 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
         "apply_yield_changes",
         "open_yield_paste",
     } <= _button_keys(app)
-    assert any("표에서 값을 뺐습니다" in item.value for item in app.warning)
+    # 뺀 행은 「편집 불가 수율 행」 펼침이 까닭과 함께 보인다(건수는 수율 탭이 열린 회차의 상태 알림
+    # `ST-06` — 자리에 경고 상자를 그리지 않는다). 처음 열린 탭은 환산이라 `ST-06` 은 내지 않고
+    # 환산 탭의 상태 알림 `ST-05`(환산에서 빠진 계획 — 기본 소요기준 PKG 는 수율을 쓰지 않아 없음)만
+    # 낸다.
+    assert any("표에서 값을 뺐습니다" in str(item.value) for item in app.caption)
+    assert not app.warning
+    codes = {str(note["code"]): note for note in alert_notes(app)}
+    assert "ST-06" not in codes
+    assert codes["ST-05"]["tab"] == "환산"
+    app.session_state["load_conversion_active_tab"] = ":material/percent: 수율"
+    app.run()
+    (locked,) = [note for note in alert_notes(app) if note.get("code") == "ST-06"]
+    assert locked["active"] is True and locked["level"] == "action" and locked["tab"] == "수율"
+    assert "EDS·BE" in locked["short"]
 
     # 뺀 행과 무관한 칸(첫 행의 202601)을 고쳐 적용한다. 브라우저는 회차마다 편집표의 편집을
     # 다시 보내므로(AppTest 는 편집표 상태를 되보내지 않는다) 적용을 누르는 회차에도 넣는다.
@@ -516,8 +529,8 @@ def test_an_out_of_range_yield_names_the_row_where_the_conversion_stops(
     assert "202604 · DEMO PRODUCT B" in errors[0]
     assert "EDS 0(0%)" in errors[0]
     assert "수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요" in errors[0]
-    warnings = [item.value for item in app.warning if "편집 불가" in item.value]
-    assert warnings and "HOME·소요대수·확보율 계산을 멈춥니다" in warnings[0]
+    guides = [str(item.value) for item in app.caption if "편집 불가" in str(item.value)]
+    assert guides and "HOME·소요대수·확보율 계산을 멈춥니다" in guides[0]
 
 
 def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(
@@ -838,11 +851,11 @@ def test_the_plan_notices_stand_in_one_slot_above_the_editor(
 def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """PKG PLAN 적용 알림이 서는 회차에 그 알림 칸 아래에 소요대수에 들지 않은 수요(시나리오 전체
-    기간)를 적는다 — 경로 없는 칸에 넣은 계획은 「다시 계산됩니다」 뒤에도 소요대수에 들지
+    """PKG PLAN 적용 알림이 서는 회차에 소요대수에 들지 않은 수요(시나리오 전체 기간)를 상태 알림
+    `ST-04` 로 낸다 — 경로 없는 칸에 넣은 계획은 「다시 계산됩니다」 뒤에도 소요대수에 들지
     않는다(E2E r2 static, 개선 I38). 셈은 저장·발행 검사와 같은 `required_exclusion_counts`
-    다(페이지는 exec 때 이름을 집으므로 모듈 속성을 바꾸면 그 셈이 들어간다). 경고는 알림 칸
-    안이라 편집표 자리가 밀리지 않고, 적용 알림이 빠지는 회차에 함께 빠진다(쓰기 알림 표지의 창은
+    다(페이지는 exec 때 이름을 집으므로 모듈 속성을 바꾸면 그 셈이 들어간다). 자리에 그리지 않아
+    편집표 자리가 밀리지 않고, 적용 알림이 빠지는 회차에는 내지 않는다(쓰기 알림 표지의 창은
     0 으로 둔다). 셈은 편집표를 그린 **뒤**다 — 시나리오 전체 기간 계산이 끝날 때까지 편집표가
     서지 않으면 적용 직후 다음 편집을 기다리게 한다(그 회차의 그리기 차례를 적어 본다). 계획 쪽
     건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지 않아도 늘 있을 수 있어
@@ -871,29 +884,33 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     assert not list(app.exception)
     before = _plan_editor_path(app)
-    assert not any("소요대수에 들지 않은 수요" in str(item.value) for item in app.warning)
+    assert not _st04(app)
 
     _paste(app, _clipboard_text(app, scale=0.5))
     app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
     assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in successes(app))
-    warnings = [str(item.value) for item in app.warning]
-    assert any(
-        "소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간)" in text
-        and "RQ_REQB 경로에 닿지 않은 계획 부하 3건" in text
-        for text in warnings
-    ), warnings
-    assert not any("대당 Capa 가 없어 뺀 부하 경로" in text for text in warnings), warnings
+    assert not any("소요대수에 들지 않은 수요" in str(item.value) for item in app.warning)
+    (note,) = _st04(app)
+    assert note["active"] is True and note["tab"] == "PKG PLAN"
+    assert "소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간)" in note["full"]
+    assert "RQ_REQB 경로에 닿지 않은 계획 부하 3건" in note["full"]
+    assert "대당 Capa 가 없어 뺀 부하 경로" not in note["full"]
     assert seen, "적용 뒤 소요대수 결과를 세지 않았다"
     # 알림이 서는 회차의 셈은 그 회차 편집표 뒤다(앞이면 「셈, 편집표」 로 끝난다).
     assert order[-2:] == ["편집표", "셈"], order
     assert _plan_editor_path(app) == before
 
-    # 적용 알림과 함께 빠진다.
+    # 적용 알림과 함께 빠진다(이 셈은 적용 알림이 서는 회차에만 한다).
     app.run()
     assert not any("반영했습니다" in item.value for item in successes(app))
-    assert not any("소요대수에 들지 않은 수요" in str(item.value) for item in app.warning)
+    assert not _st04(app)
     assert _plan_editor_path(app) == before
+
+
+def _st04(app: AppTest) -> list[dict[str, Any]]:
+    """PKG PLAN 적용 뒤 소요대수에 들지 않은 수요 상태 알림(`ST-04`) 표지."""
+    return [note for note in alert_notes(app) if note.get("code") == "ST-04"]
 
 
 def test_the_plan_editor_shows_the_applied_plan_right_after_apply(seeded_database: Path) -> None:

@@ -597,7 +597,7 @@ def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hi
 ) -> None:
     """세션을 다른 리비전으로 옮겼다는 알림(미저장 설비 편집을 버렸다는 말)은 그 회차 한 번뿐이다.
     세 탭을 늘 그려 다른 탭을 보는 회차에도 구획이 세션을 푼다(2026-10-25 리뷰) — 숨은 패널에 그리면
-    보지 못한 채 사라지던 것을 이제 사건 알림(`EQ-03` — 알림창 · Alarm)으로 내 어느 탭을 보든
+    보지 못한 채 사라지던 것을 이제 사건 알림(`SB-14` — 알림창 · Alarm)으로 내 어느 탭을 보든
     뜬다(2026-11-03 D3). 자리(탭 묶음 위 · 구획 안)에는 그리지 않는다."""
     from capa_simulation.components import equipment_scenario_management as section
     from capa_simulation.equipment_scenario_activation import resolve_equipment_session
@@ -617,12 +617,12 @@ def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hi
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: BigDataQuery 등록"
     _ok(app.run())
     assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
-    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
+    assert [note["full"] for note in events(app, "SB-14")] == [notice]
 
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = SCENARIO_MANAGEMENT_TAB
     _ok(app.run())
     assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
-    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
+    assert [note["full"] for note in events(app, "SB-14")] == [notice]
 
 
 def test_switching_the_managed_kind_keeps_unsaved_list_edits(_shell: AppTest) -> None:
@@ -1670,9 +1670,9 @@ def test_the_tab_starts_a_new_scenario_from_an_old_revision(
 def test_a_legacy_trace_warns_and_the_section_continues_writing(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면 맨 위에 경고와 「시나리오 관리에서
-    이어 쓰기」 단추가 서고, 그 단추는 시나리오 관리 「설비 시나리오」 구획으로 옮긴다. 그 구획의
-    「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
+    """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면이 상태 알림(`SB-19` — 자리에는
+    그리지 않는다)을 내고 맨 위에 「시나리오 관리에서 이어 쓰기」 단추가 서며, 그 단추는 시나리오
+    관리 「설비 시나리오」 구획으로 옮긴다. 그 구획의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
     import duckdb
 
     repository = _repository(tmp_path)
@@ -1688,11 +1688,11 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert repository.legacy_trace_count() == 1
     app = _ok(_shell.run())
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
-    # 맨 위 경고는 상태 알림(`EQ-01` — 알림창 · Alarm)이고 단추만 자리에 선다(2026-11-03 D2).
     assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
-    note = active_state(app, "EQ-01")
-    assert note is not None and "옛 배포로 저장한 설비 리비전 1개" in note["full"]
-    assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in note["full"]
+    (trace,) = [note for note in alert_notes(app) if note.get("code") == "SB-19"]
+    assert trace["active"] is True and trace["level"] == "action"
+    assert "옛 배포로 저장한 설비 리비전 1개" in trace["full"]
+    assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in trace["full"]
     # 단추는 탭 기억·전환 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
     # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
     app.button(key=LEGACY_TRACE_GOTO_KEY).click()
@@ -1748,7 +1748,12 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     app = _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
 
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
-    texts = _texts(app) + [str(item.value) for item in app.sidebar.warning]
+    # 흔적 · 일정 없이 엶은 상태 알림(`SB-19` · `SB-20`)이다 — 자리에는 그리지 않는다.
+    texts = (
+        _texts(app)
+        + [str(item.value) for item in app.sidebar.warning]
+        + [str(note.get("full", "")) for note in alert_notes(app) if note.get("active")]
+    )
     assert not any("준비하지 못했습니다" in text for text in texts)
     assert any("일정 없이 열었습니다" in text for text in texts)
     assert any("옛 배포로 저장한 설비 리비전 1개" in text for text in texts)

@@ -99,6 +99,7 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     )
     assert (data["toolbar"]["alarm"], data["toolbar"]["chip"]) == (ALARM_BUTTON_ID, CHANGES_CHIP_ID)
     assert data["marker"] == alerts.MARKER_ATTRIBUTE
+    assert data["here"] == ""
     assert set(data["storage"]) == {"log", "states", "seen"}
     assert [group["id"] for group in data["groups"]] == ["lose", "keep", "assume"]
 
@@ -218,3 +219,5 @@ render_flash("demo")
     assert sent and sent[-1]["data"]["events"] == []
     (note,) = alert_notes(app)
     assert (note["page"], note["href"]) == ("VOC", "voc")
+    # 「그 화면으로」 가 탭을 고를 때 견주는 이번 화면 주소도 같은 값이다.
+    assert sent[-1]["data"]["here"] == "voc"

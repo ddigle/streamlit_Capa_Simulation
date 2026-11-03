@@ -13,12 +13,12 @@
   `flash.queue_flash(…, kind= "warning")`(버튼 곁에도 남는다), 자리 글(팝업 · 폼 안 검증 · 잠금 까닭
   · 멈춤 화면)이면 이 목록에 까닭과 함께 둔다.
 - 자리가 줄면 실패한다 — 목록의 수도 줄인다(옮긴 자리가 목록에 남아 다른 새 자리를 덮지 않게).
-- 지금 남은 자리는 1단계가 옮기지 않은 것이다. **2단계 a · b 갈래가 이 목록을 줄인다** — 상태 알림은
-  `alerts.state` 로 옮기고 지우며, 자리 글로 남길 것은 까닭을 `PLACE_*` 로 바꾼다.
+- 남은 자리는 모두 자리 글이다(2단계 a · b 가 상태 경고를 `alerts.state` 로 옮긴 뒤). 까닭은 아래
+  `PLACE_*` 가운데 하나여야 한다(`REASONS`).
 
 오류(`st.error`)와 안내(`st.info`)는 이 그물 밖이다 — 오류는 버튼 곁 실패 · 화면을 못 그리는 오류라
-자리에 남고(D3 · 설계 2-2), 안내는 대개 자리 글이다. 2단계가 상태 알림 후보를 옮길 때 같은 자리의
-오류 · 안내도 함께 본다.
+자리에 남고(D3 · 설계 2-2), 안내는 대개 자리 글이다. 2단계는 상태 알림 후보를 옮길 때 같은 자리의
+오류 · 안내도 함께 보았다.
 """
 
 from __future__ import annotations
@@ -32,19 +32,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts.py")
 _LOGGERS = frozenset({"logger", "logging", "log", "LOGGER", "_LOG", "_LOGGER", "warnings"})
 
-PHASE_A = (
-    "2단계 a 가 가른다 — 계산 · HOME · Static · 실행 관리 계산 · Dynamic 화면. 상태 경고면"
-    " alerts.state 로 옮기고, 자리 글이면 까닭을 PLACE_* 로 바꾼다"
-)
-PHASE_B = (
-    "2단계 b 가 가른다 — 설비 · Space · 시나리오 · Admin · 모듈 · 껍데기(DB 새 판 GL-02 등)."
-    " 상태 경고면 alerts.state 로 옮기고, 자리 글이면 까닭을 PLACE_* 로 바꾼다"
-)
 PLACE_FORM = "자리 글 — 팝업 · 폼 안 검증. 고칠 입력이 그 자리에 있다(알림창 · 기록 없음, 설계 2-2)"
+PLACE_BOARD = (
+    "자리 글 — Admin 「알림 모음」 판. 알림을 한곳에 모아 보이는 것이 그 화면 자체다(시나리오 전체"
+    " 기간으로 다시 계산한 목록 — 쌓이는 기록이 아니다)"
+)
 PLACE_STOP = (
     "멈춤 화면 — 앱이 서지 못해 알림 칸이 없다(통합인증 두 번째 벽, 설계 2-2 GL-01 과 같은 꼴)"
 )
-# 2단계 b(설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈)가 가른 자리 글.
 PLACE_RESULT = (
     "동작 결과의 거부 · 경고 — 누른 단추 곁에 남긴다(D3 (가) — 고칠 입력이 그 자리에 있다)"
 )
@@ -59,19 +54,31 @@ PLACE_DETAIL = (
     "고른 대상(층 · 칸 · 시나리오)의 설명 — 고를 때마다 바뀌어 상태 알림이면 오갈 때마다 다시 뜬다"
 )
 PLACE_VERDICT = "화면 결론 — 성공 상자와 짝인 요약 판정(화면의 일부, 설계 2-2 상태 알림 목록 밖)"
-PLACE_REPORT = "점검 보고 — 결과 표 · 내려받기와 한 몸(Admin 「알림 모음」 · 등록 충돌 보고)"
+PLACE_REPORT = "점검 보고 — 결과 표 · 내려받기와 한 몸(BigDataQuery 등록의 기준정보 충돌 보고)"
 PLACE_KEPT = (
     "닫을 때까지 남는 사건 — 남의 저장이 내 편집을 버렸다(「알림 닫기」 와 한 몸, E2E #66 · "
     "알림창은 EQ-05)"
 )
 
+REASONS = frozenset(
+    {
+        PLACE_FORM,
+        PLACE_BOARD,
+        PLACE_STOP,
+        PLACE_RESULT,
+        PLACE_CONFIRM,
+        PLACE_EMPTY,
+        PLACE_BLOCKED,
+        PLACE_DETAIL,
+        PLACE_VERDICT,
+        PLACE_REPORT,
+        PLACE_KEPT,
+    }
+)
+
 # (파일, 맨 바깥 함수) → (경고 호출 수, 까닭).
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
-    ("app_pages/calculation_result.py", ""): (2, PHASE_A),
-    ("app_pages/load_conversion.py", ""): (1, PHASE_A),
     ("app_pages/load_conversion.py", "_plan_paste_dialog"): (1, PLACE_FORM),
-    ("app_pages/load_conversion.py", "_render_locked_yield_rows"): (1, PHASE_A),
-    ("app_pages/load_conversion.py", "_render_uncounted_demand_after_apply"): (1, PHASE_A),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (2, PLACE_FORM),
     ("app_pages/load_conversion.py", "_yield_paste_dialog"): (1, PLACE_FORM),
     ("app_pages/reference_data.py", "_step_dialog"): (1, PLACE_FORM),
@@ -79,12 +86,10 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", ""): (1, PLACE_DETAIL),
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
-    ("app_pages/standard_target_capa.py", ""): (1, PHASE_A),
     ("app_pages/standard_target_capa.py", "_clear_dialog"): (1, PLACE_FORM),
-    ("app_pages/static_capa.py", ""): (1, PHASE_A),
     ("app_pages/voc.py", ""): (1, PLACE_RESULT),
     ("app_pages/wip_status.py", ""): (3, PLACE_EMPTY),
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_REPORT),
+    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (
         1,
         PLACE_RESULT,
@@ -101,10 +106,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         "src/capa_simulation/components/bigdataquery_registration.py",
         "_render_reference_conflict_report",
     ): (1, PLACE_REPORT),
-    (
-        "src/capa_simulation/components/capacity_assumption_notice.py",
-        "render_capacity_assumption_notice",
-    ): (1, PHASE_A),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_month_steps"): (
         1,
         PLACE_VERDICT,
@@ -166,27 +167,21 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         4,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/home_main_cases.py", "_draw"): (1, PHASE_A),
+    ("src/capa_simulation/components/home_main_cases.py", "_draw"): (1, PLACE_FORM),
     ("src/capa_simulation/components/home_preference.py", "_render_execution_notices"): (
         2,
-        PHASE_A,
+        PLACE_FORM,
     ),
-    ("src/capa_simulation/components/home_preference.py", "render_lob_title_row"): (1, PHASE_A),
     ("src/capa_simulation/components/month_editor.py", "paste_dialog"): (1, PLACE_FORM),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (
         1,
         PLACE_VERDICT,
     ),
-    ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PHASE_A),
-    (
-        "src/capa_simulation/components/required_exclusion_notice.py",
-        "render_plan_exclusion_lists",
-    ): (2, PHASE_A),
+    ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PLACE_FORM),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_scenario_error"): (
         1,
         PLACE_BLOCKED,
     ),
-    ("src/capa_simulation/components/scenario_edit_bar.py", "show_row_order_reset"): (1, PHASE_A),
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PLACE_CONFIRM),
     ("src/capa_simulation/components/scenario_management.py", "_render_list_toolbar"): (
         1,
@@ -284,6 +279,7 @@ def test_every_allowed_site_is_still_there_with_its_count() -> None:
 
 
 def test_every_allowed_site_says_why() -> None:
-    reasons = {PHASE_A, PHASE_B, PLACE_FORM, PLACE_STOP}
-    assert all(reason in reasons or reason.strip() for _, reason in ALLOWED.values())
+    """남은 자리는 모두 자리 글 까닭 하나를 든다 — 「2단계가 가른다」 같은 미룬 까닭은 없다."""
+    unknown = {site: reason for site, (_, reason) in ALLOWED.items() if reason not in REASONS}
+    assert not unknown, unknown
     assert all(count > 0 for count, _ in ALLOWED.values())

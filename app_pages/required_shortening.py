@@ -27,7 +27,6 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from capa_simulation import alerts
 from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     calculation_drafts,
@@ -50,6 +49,7 @@ from capa_simulation.components.shortening_source import (
     load_shortening_demand,
     shortening_frames,
 )
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     resolve_equipment_session,
@@ -153,10 +153,9 @@ except BOOTSTRAP_ERRORS as exc:
     message = "설비 일정을 준비하지 못했습니다. " + bootstrap_error_message(
         exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
-    alerts.screen_error("RS-01", message, text="필요 단축 일정을 준비하지 못했습니다(설비 DB)")
+    alert_page_error(message, code="RS-01", text="필요 단축 일정을 준비하지 못했습니다(설비 DB)")
     st.error(message)
     st.stop()
-alerts.screen_error("RS-01", None)
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
     render_legacy_trace_warning(equipment_session)

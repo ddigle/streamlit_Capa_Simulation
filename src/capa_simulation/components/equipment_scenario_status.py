@@ -188,18 +188,19 @@ def unscheduled_notice(count: int, *, official: bool = False) -> str | None:
 
 
 def render_legacy_trace_warning(session: EquipmentSession) -> None:
-    """옛 배포로 저장한 설비 리비전이 있는지 상태 알림(`EQ-01` — 저장 거부 문구와 같은 글)으로
-    내고, 있으면 「시나리오 관리에서 이어 쓰기」 단추를 세운다 — 「이대로 이어 쓰기」 는 다른
-    화면(시나리오 관리 「설비 시나리오」 구획)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 그리지
-    않는다(D2 — 알림창 · Alarm). 없어도 부른다(해소 · 이벤트 칸 한 자리)."""
+    """옛 배포로 저장한 설비 리비전의 상태 알림(`SB-19` — 저장 거부 문구와 같은 글)과, 있으면 맨 위
+    「시나리오 관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비
+    시나리오」 구획)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 자리에 그리지 않는다(2026-11-03
+    결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 설비 DB 를 여는 회차마다
+    부른다."""
     count = session.legacy_trace_count
     alerts.state(
-        "EQ-01",
+        "SB-19",
         scope=None,
-        content=count or None,
+        content=count,
         active=bool(count),
-        text=f"옛 배포 설비 리비전 {count}개 — 설비 저장이 막힘 · 시나리오 관리에서 이어 쓰기",
-        full=legacy_trace_message(count),
+        text=f"옛 배포 설비 리비전 {count}개 — 설비 저장이 막힘. 시나리오 관리 › 설비 시나리오",
+        full=legacy_trace_message(count) if count else None,
     )
     if count:
         render_legacy_trace_goto()
@@ -329,7 +330,6 @@ def render_equipment_scenario_row(
     slot = equipment_scenario_slot()
     if slot is None:
         return
-    flash = st.session_state.pop(FLASH_KEY, None)
     unsaved = has_unsaved_equipment_edits() and locked_reason is None
     # 머리 띠 아래 줄 끝의 설비 시나리오 꼬리 — 이 회차 목록으로 정해 같은 회차에 맞춘다.
     # 「새로 읽으면 공식으로 돌아감」 표지는 그리는 쪽(잠근 꼴은 공식)이 아니라 세션 라벨로 정한다.
@@ -355,14 +355,11 @@ def render_equipment_scenario_row(
         with st.container():
             if locked_reason is not None and locked_reason != FIXED_LOCK_REASON:
                 st.caption(f":material/lock: {locked_reason}")
-            # 저장 결과 알림(`save_result_message`)·세션 이동 알림은 날 설비 시나리오 이름을 두 번
-            # 싣기도 한다(「10~12월 증설」 r2. 「10~12월 증설」의 가정 배치…) — 물결표가 지움선 짝이
-            # 되지 않게 막는다(설비 마스터 탭 결과 알림과 같다).
-            if isinstance(flash, str):
-                st.success(markdown_safe_tildes(flash))
-        # 세션 알림(다른 리비전으로 옮김 · 일정 없이 엶)은 알림 칸으로 낸다 — 줄 아래에 그리지
-        # 않는다.
-        report_session_notices(session)
+            # 불러오기 · 저장 결과(`FLASH_KEY`)는 알림창으로만 뜬다(`render_flash`). 세션 이동(다른
+            # 리비전으로 옮겨 엶 — `SB-14`)과 일정 없이 연 세션(`SB-20`)도 자리에는 그리지 않고 알림
+            # 칸으로 낸다(2026-11-03 결정 보드 D2 · D3 — `report_session_notices`).
+            render_flash(FLASH_KEY)
+            report_session_notices(session)
 
 
 def open_equipment_scenario_dialog() -> None:
@@ -552,7 +549,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
             discard_floor_state_draft()
         chosen = revision_by_id[str(st.session_state[DIALOG_REVISION_KEY])]
         name = scenario_by_id[str(st.session_state[DIALOG_SCENARIO_KEY])].scenario_name
-        st.session_state[FLASH_KEY] = loaded_revision_message(name, chosen.revision_no)
+        queue_flash(FLASH_KEY, loaded_revision_message(name, chosen.revision_no))
         close_equipment_scenario_dialog()
         st.rerun()
 
@@ -665,7 +662,7 @@ def _move_to_latest(
         queue_flash(LOAD_LATEST_ERROR_KEY, markdown_safe_tildes(failure), kind="error")
         return False
     close_equipment_scenario_dialog()
-    st.session_state[FLASH_KEY] = loaded_revision_message(scenario_name, latest_no)
+    queue_flash(FLASH_KEY, loaded_revision_message(scenario_name, latest_no))
     return True
 
 
@@ -736,7 +733,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         )
         return
     bump(SAVE_NOTE_GENERATION_KEY)
-    st.session_state[FLASH_KEY] = message
+    queue_flash(FLASH_KEY, message)
     close_equipment_scenario_dialog()
     st.rerun()
 

@@ -1,12 +1,14 @@
-# Purpose: Static Capa 의 판정 기준 카드·Guide·소요대수 미포함 수요 줄을 사용자 결정대로 고정한다.
+# Purpose: Static Capa 의 판정 기준 카드·Guide·소요대수 미포함 수요 알림을 사용자 결정대로 고정한다.
 
 """Static Capa — 판정 기준은 HOME 설정 → Preference(2026-10-06), 설명은 Guide(2026-09-29 결정)."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers  # noqa: F401
 from test_reference_data_page import TEST_SCRIPT
@@ -97,34 +99,41 @@ def _calculated_script(*, unrouted: bool) -> str:
     return script
 
 
+def _uncounted(app: AppTest) -> dict[str, Any]:
+    """현황 요약의 소요대수에 들지 않은 수요 상태 알림(`ST-01`) 표지 하나."""
+    (note,) = [note for note in alert_notes(app) if note.get("code") == "ST-01"]
+    return note
+
+
 def test_the_summary_says_how_much_demand_the_required_count_left_out() -> None:
     """경로에 닿지 않은 계획 부하는 소요대수에 들지 않아 미달 건수·필요대수가 그만큼 작다 — 산출
-    결과에만 있던 그 건수를 현황 요약 맨 위에도 조회기간으로 적는다(E2E r2 static — PKG PLAN 을
-    고쳤는데 현황 요약 수가 그대로라 헷갈렸다). 들지 않은 수요가 없으면 줄이 없다."""
+    결과에만 있던 그 건수를 현황 요약에서도 조회기간으로 알린다(E2E r2 static — PKG PLAN 을 고쳤는데
+    현황 요약 수가 그대로라 헷갈렸다). 2026-11-03(결정 보드 D2 (나))부터 자리에 그리지 않는 상태
+    알림이다 — 들지 않은 수요가 없어도 「없음」 표지를 낸다(해소)."""
     app = AppTest.from_string(_calculated_script(unrouted=True), default_timeout=120).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    warnings = [str(element.value) for element in app.main.warning]
-    assert any(
-        "소요대수에 들지 않은 수요가 있습니다(조회기간)" in text
-        and "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in text
-        and "산출 결과 → 소요대수 탭" in text
-        for text in warnings
-    ), warnings
+    assert not app.main.warning
+    note = _uncounted(app)
+    assert note["active"] is True and note["level"] == "check"
+    assert "소요대수에 들지 않은 수요가 있습니다(조회기간)" in note["full"]
+    assert "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in note["full"]
+    assert "산출 결과 → 소요대수 탭" in note["full"]
+    assert note["short"] == "소요대수에 안 든 계획 수요 1건(조회기간) — 목록: 산출 결과 › 소요대수"
 
     clean = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
     assert not list(clean.exception), [element.message for element in clean.exception]
-    assert not any(
-        "소요대수에 들지 않은 수요" in str(element.value) for element in clean.main.warning
-    )
+    quiet = _uncounted(clean)
+    assert quiet["active"] is False and quiet["fp"] == ""
+    assert quiet["scope"] != note["scope"]
 
 
 def test_the_summary_leaves_the_route_side_count_to_the_alert_board(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """현황 요약 맨 위 줄은 계획 쪽 건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을
+    """현황 요약의 알림은 계획 쪽 건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을
     고치지 않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 열 때마다 서는 경고가 된다. 경로
-    쪽만 있으면 줄이 없고, 함께 있으면 계획 쪽만 적는다(페이지는 exec 때 이름을 집으므로 모듈 속성을
-    바꾸면 그 셈이 들어간다)."""
+    쪽만 있으면 알림이 없고, 함께 있으면 계획 쪽만 적는다(페이지는 exec 때 이름을 집으므로 모듈
+    속성을 바꾸면 그 셈이 들어간다)."""
     import capa_simulation.services.required_equipment as required_equipment
 
     counts = [required_equipment.RequiredExclusionCounts(excluded_routes=7)]
@@ -135,13 +144,11 @@ def test_the_summary_leaves_the_route_side_count_to_the_alert_board(
     monkeypatch.setattr(required_equipment, "count_required_exclusions", counted)
     routes_only = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
     assert not list(routes_only.exception), [item.message for item in routes_only.exception]
-    assert not any(
-        "소요대수에 들지 않은 수요" in str(element.value) for element in routes_only.main.warning
-    )
+    assert _uncounted(routes_only)["active"] is False
 
     counts[0] = required_equipment.RequiredExclusionCounts(unrouted_loads=2, excluded_routes=7)
     both = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
     assert not list(both.exception), [item.message for item in both.exception]
-    warnings = [str(element.value) for element in both.main.warning]
-    assert any("RQ_REQB 경로에 닿지 않은 계획 부하 2건" in text for text in warnings), warnings
-    assert not any("대당 Capa 가 없어 뺀 부하 경로" in text for text in warnings), warnings
+    note = _uncounted(both)
+    assert "RQ_REQB 경로에 닿지 않은 계획 부하 2건" in note["full"]
+    assert "대당 Capa 가 없어 뺀 부하 경로" not in note["full"]

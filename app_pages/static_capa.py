@@ -2,10 +2,12 @@
 
 """Static Capa 현황 요약 — 판정 기준은 HOME 설정 → Preference, 설명은 Guide.
 
-본문에는 두 결과 상자(경고 기준 미달·확보 기준 추가 확보)만 남는다. 이 화면의 목적·담당 부서
-흐름과 추가 필요대수 계산식은 `guides/static_capa.md` 가 말한다(2026-09-29 사용자 결정).
-판정 기준은 시나리오와 무관한 공용 프로필이고 HOME 설정 → Preference 한 곳에서 정한다(2026-10-06
-사용자 결정). 사이드바 카드는 지금 쓰는 기준을 읽기 전용으로 보여 줄 뿐이다.
+본문에는 두 결과 상자(경고 기준 미달·확보 기준 추가 확보)만 남는다. 소요대수에 들지 않은 수요(계획
+쪽 · 조회기간)는 자리에 그리지 않고 상태 알림 `ST-01` 로 낸다(2026-11-03 결정 보드 D2 (나) — 바뀔
+때만 알림창, 쌓이는 곳은 머리 `Alarm`). 이 화면의 목적·담당 부서 흐름과 추가 필요대수 계산식은
+`guides/static_capa.md` 가 말한다(2026-09-29 사용자 결정). 판정 기준은 시나리오와 무관한 공용
+프로필이고 HOME 설정 → Preference 한 곳에서 정한다(2026-10-06 사용자 결정). 사이드바 카드는 지금
+쓰는 기준을 읽기 전용으로 보여 줄 뿐이다.
 """
 
 from __future__ import annotations
@@ -19,9 +21,9 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
     PERIOD_SCOPE,
-    plan_side_counts,
-    required_exclusion_message,
+    alert_uncounted_demand,
 )
+from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -160,6 +162,7 @@ try:
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
+    alert_page_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 thresholds = threshold_profile.thresholds
 secure_threshold = thresholds.default_secure
@@ -223,32 +226,31 @@ try:
         _scenario_tables=active_scenario["tables"],
         _reference_tables=reference_tables,
     )
-    uncounted_demand = required_exclusion_message(
-        plan_side_counts(
-            count_required_exclusions(
-                result_summary.load_exclusions,
-                result_summary.unrouted_loads,
-                result_summary.required_exclusions,
-            )
-        ),
-        scope=PERIOD_SCOPE,
+    uncounted_counts = count_required_exclusions(
+        result_summary.load_exclusions,
+        result_summary.unrouted_loads,
+        result_summary.required_exclusions,
     )
 except BOOTSTRAP_ERRORS as exc:
     threshold_caption_slot.caption(
         securement_threshold_caption(thresholds, start_month=0, end_month=0, with_warning=True)
     )
     st.error(bootstrap_error_message(exc))
+    alert_page_error(bootstrap_error_message(exc), code="ST-20")
 else:
     threshold_caption_slot.caption(
         securement_threshold_caption(
             thresholds, start_month=effective_start, end_month=effective_end, with_warning=True
         )
     )
-    # 경고는 늘 서 있는 한 칸 안에 그린다 — 조회기간에 따라 생기고 빠져도 아래 두 상자의 자리가
-    # 밀리지 않게(AGENTS 9장 「조건부 알림」).
-    uncounted_slot = st.container()
-    if uncounted_demand:
-        uncounted_slot.warning(uncounted_demand, icon=":material/link_off:")
+    # 자리에는 그리지 않는다 — 건수가 바뀔 때만 알림창이 뜨고 Alarm 에 남는다(산출 결과 소요대수
+    # 탭과 같은 코드 · 같은 범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다).
+    alert_uncounted_demand(
+        uncounted_counts,
+        code="ST-01",
+        scope=simulation_scope(active_scenario, (effective_start, effective_end)),
+        scope_name=PERIOD_SCOPE,
+    )
     with st.container(border=True):
         st.markdown("#### :material/priority_high: 경고 기준 미달 :red-badge[집중 관리]")
         with metric_row(key="static_capa_warning_metrics"):

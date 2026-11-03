@@ -556,7 +556,7 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
 ) -> None:
     """E2E r3 같은 꼴 — 세션을 다른 리비전으로 옮겼다는 알림은 설비 시나리오 이름을 두 번 싣는다.
     마크다운이면 물결표 하나짜리 이름(「10~12월 증설」)도 두 이름 사이가 지움선 짝이 됐다. 이제
-    사건 알림(`EQ-03` — 알림창 · Alarm)이고 알림창 · 패널은 평문(`textContent`)이라 글자 그대로
+    사건 알림(`SB-14` — 알림창 · Alarm)이고 알림창 · 패널은 평문(`textContent`)이라 글자 그대로
     싣는다(2026-11-03 D2 · D3)."""
     from dataclasses import replace
 
@@ -576,7 +576,7 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
     app = _ok(_section(tmp_path, setup).run())
 
     assert not [item for item in app.warning if "합칠 수 없어" in str(item.value)]
-    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
+    assert [note["full"] for note in events(app, "SB-14")] == [notice]
 
 
 def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_path: Path) -> None:

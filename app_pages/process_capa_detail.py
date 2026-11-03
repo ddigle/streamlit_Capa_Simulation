@@ -84,6 +84,7 @@ from capa_simulation.components.process_capa_view import (
     reopen_entry_section,
 )
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.upeh_assumption_controls import (
     render_inverse,
     render_upeh_assumption_controls,
@@ -253,7 +254,7 @@ today = date.today()
 def _stop_with_error(message: str) -> NoReturn:
     """화면을 못 그리는 오류 — 자리 오류 상자는 그대로 두고 상태 알림(`PD-01` — 같은 오류가 처음일
     때만 알림창)을 더한 뒤 멈춘다."""
-    alerts.screen_error("PD-01", message, text="공정 Capa 상세를 준비하지 못했습니다")
+    alert_page_error(message, code="PD-01", text="공정 Capa 상세를 준비하지 못했습니다")
     st.error(message)
     st.stop()
 
@@ -540,8 +541,6 @@ if upeh_token:
     except BOOTSTRAP_ERRORS as exc:
         _stop_with_error(bootstrap_error_message(exc))
 kpis = process_capa_kpis(assumed_summary) if assumed_summary is not None else official_kpis
-# 준비 · 요약 오류(`PD-01`)가 없었던 회차 — 있던 오류는 해소다. 위 오류 자리 셋보다 뒤에 둔다.
-alerts.screen_error("PD-01", None)
 
 
 # ------------------------------------------------------------------ HOME 표시 확보율

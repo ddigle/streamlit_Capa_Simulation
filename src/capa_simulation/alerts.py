@@ -120,6 +120,10 @@ SHORT_LIMIT: Final = 60
 # 번 누름) 그 표지가 덮여 알림창이 뜨지 않는다 — 같은 자리를 이 안에 다시 그리는 회차가 같은 id 로
 # 한 번 더 보낸다 (`again` — 브라우저는 id 로 한 번만 띄운다).
 RESEND_SECONDS: Final = 3.0
+# 알림에 딸린 표(`AlertTable`)에 싣는 행 수의 끝. 표지는 그 알림을 내는 회차마다 가고 기록은 이
+# 브라우저 탭 `sessionStorage`(대개 5MB)에 쌓이므로 끝을 둔다 — 넘는 표는 화면이 본문 목록을 그대로
+# 둔다(`components/state_alerts.alert_table`).
+TABLE_ROW_LIMIT: Final = 2000
 
 # 표지 속성 이름 — 알림 칸 JS 가 `style[data-capa-alerts]` 로 훑는다.
 MARKER_ATTRIBUTE: Final = "data-capa-alerts"
@@ -162,14 +166,31 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("TAB-01", "action", "event", "탭 상한 — 안 쓰는 탭을 닫아야 열린다"),
     AlertSpec("TAB-02", "check", "event", "새로고침 뒤 설비 시나리오가 공식으로 돌아옴"),
     AlertSpec("TAB-03", "check", "event", "테마 전환 뒤 설비 시나리오가 공식으로 돌아옴"),
-    # 2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기(설계 6장
-    # 2 · 3). 화면을 못 그리는 오류(`*-xx` 「… 준비 오류」)는 자리 `st.error` 를 그대로 두고
-    # `screen_error` 로 같은 지문이 처음일 때만 알림창 · 기록을 더한다(설계 2-2).
-    AlertSpec("GL-02", "check", "state", "시뮬레이션 DB 가 이 코드보다 새 판"),
-    AlertSpec("GL-03", "check", "state", "설비 DB 가 이 코드보다 새 판"),
-    AlertSpec("EQ-01", "action", "state", "옛 배포 흔적 — 설비 저장이 막힘"),
-    AlertSpec("EQ-02", "action", "state", "설비 시나리오를 일정 없이 엶(옛 배포 흔적)"),
-    AlertSpec("EQ-03", "check", "event", "설비 시나리오 세션을 다른 리비전으로 옮김"),
+    # 2단계 a — Static 계산 화면(`ST-*`) · HOME(`HM-*`) · 사이드바(`SB-*`) · 껍데기(`GL-*`). 번호는
+    # 알림 자리 목록(설계 인벤토리)의 id 를 잇고, 같은 자리를 둘로 가른 것만 새 번호다.
+    AlertSpec("ST-01", "check", "state", "소요대수에 들지 않은 수요 — 계획 쪽(조회기간)"),
+    AlertSpec("ST-04", "check", "state", "PKG PLAN 적용 뒤 소요대수에 들지 않은 수요(전체 기간)"),
+    AlertSpec("ST-05", "check", "state", "환산에서 빠진 계획 — 기준정보 없음 · 빈 생산수량"),
+    AlertSpec("ST-06", "action", "state", "수율 표에서 값을 뺀 원천 행 — 빈 값 · 범위 밖"),
+    AlertSpec("ST-09", "action", "event", "공용 표시순서가 바뀌어 적용 전 편집을 버림"),
+    AlertSpec("ST-14", "check", "state", "대당 Capa 산출에서 뺀 기준(제외 기준정보)"),
+    AlertSpec("ST-15", "check", "state", "대당 Capa 가 없어 소요대수 산출에서 뺀 경로"),
+    AlertSpec("ST-17", "check", "state", "가용대수가 없어 빈칸인 공정 · 주차(표준 목표)"),
+    AlertSpec("ST-20", "error", "event", "계산 화면을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("ST-21", "info", "state", "소요기준 PKG 의 Buffer 밖 행 — 규칙대로 세지 않음"),
+    AlertSpec("HM-01", "error", "event", "HOME 을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("HM-02", "check", "state", "측정률 행이 없어 중립값 1.0 으로 계산한 경로"),
+    AlertSpec("HM-04", "check", "state", "선행 B/O 반영 계획이 0 이하라 적용하지 못한 달"),
+    AlertSpec("SB-14", "action", "event", "설비 시나리오를 합칠 수 없어 다른 리비전으로 옮겨 엶"),
+    AlertSpec("SB-19", "action", "state", "옛 배포 설비 리비전이 있어 설비 저장이 막힘"),
+    AlertSpec("SB-20", "action", "state", "옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 엶"),
+    AlertSpec("GL-02", "check", "state", "시뮬레이션 DB 가 이 코드보다 새 버전"),
+    AlertSpec("GL-06", "check", "state", "설비 DB 가 이 코드보다 새 버전"),
+    # 2단계 b — 설비 · Space(`EQ-*`) · 실행 관리(`PD-*` · `RS-*` · `CS-*`) · Dynamic
+    # 재공(`WIP-*`) · 시나리오 관리(`SC-*`) · 자동 갱신(`AU-*`) · Admin(`AD-*`) · 모듈(`MO-*`) ·
+    # VOC(`VO-*`)(설계 6장 2 · 3). 화면을 그리지 못한 오류(「… 그리지 못함」)는 자리 `st.error` 를
+    # 그대로 두고 같은 글이면 한 번만 뜨는 사건 알림을 더한다(`state_alerts.alert_page_error` —
+    # ST-20 과 같은 꼴).
     AlertSpec("EQ-04", "check", "state", "이 설비 시나리오에 일정이 없는 호기"),
     AlertSpec("EQ-05", "check", "event", "남의 저장이 내 설비 편집을 버림"),
     AlertSpec("EQ-06", "check", "state", "Static 대비 일정 — 두 쪽 공정명이 맞지 않음"),
@@ -177,21 +198,21 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
         "EQ-07", "action", "state", "Static 대비 일정 — Cut-off 에 견줘 조회기간 시작이 늦음"
     ),
     AlertSpec("EQ-08", "error", "state", "Static 대비 일정 — Static 가용대수를 읽지 못함"),
-    AlertSpec("EQ-09", "error", "state", "가용설비 현황 준비 오류"),
-    AlertSpec("EQ-10", "error", "state", "Space 현황 준비 오류"),
+    AlertSpec("EQ-09", "error", "event", "가용설비 현황을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("EQ-10", "error", "event", "Space 현황을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("EQ-12", "action", "state", "Cut-off 를 적지 않은 공정 — 가용대수 산출에서 빠짐"),
-    AlertSpec("PD-01", "error", "state", "공정 Capa 상세 준비 오류"),
+    AlertSpec("PD-01", "error", "event", "공정 Capa 상세를 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("PD-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
     AlertSpec("PD-03", "info", "event", "넘겨받은 달이 화면 기간 밖"),
-    AlertSpec("RS-01", "error", "state", "필요 단축 일정 준비 오류"),
-    AlertSpec("CS-01", "error", "state", "제약 시뮬레이션 준비 · 계산 오류"),
+    AlertSpec("RS-01", "error", "event", "필요 단축 일정을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("CS-01", "error", "event", "제약 시뮬레이션을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("CS-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
-    AlertSpec("WIP-01", "error", "state", "재공 현황 준비 오류"),
+    AlertSpec("WIP-01", "error", "event", "재공 현황을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec(
         "WIP-04", "action", "state", "재공 현황 — 가용대수가 없어 기준선을 못 그린 공정 · 주차"
     ),
     AlertSpec("SC-01", "check", "state", "공식버전이 없음"),
-    AlertSpec("SC-02", "error", "state", "시나리오 관리 준비 오류"),
+    AlertSpec("SC-02", "error", "event", "시나리오 관리를 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("AU-01", "action", "state", "자동 갱신 예약이 멈춘 것 같음"),
     AlertSpec("AU-02", "action", "state", "자동 갱신 예약 스레드가 서 있지 않음"),
     AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음"),
@@ -200,10 +221,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · 패키지 준비 안 됨"),
     AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
     AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
-    AlertSpec("AD-07", "error", "state", "Admin Area 준비 오류"),
+    AlertSpec("AD-07", "error", "event", "Admin Area 를 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
     AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
-    AlertSpec("VO-01", "error", "state", "VOC 준비 오류"),
+    AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
 )
 
 
@@ -232,15 +253,33 @@ FLASH_CODES: Final[Mapping[str, str]] = {
 }
 
 
+class AlertTable(TypedDict):
+    """알림에 딸린 표 — Alarm 줄의 표 단추가 펼쳐 보이고 CSV 로 내려받는다(화면 본문에서 뺀 목록,
+    예: 산출 결과 대당 Capa 의 「제외 기준정보」 — 2026-11-02 사용자 요청(검수표)).
+
+    - `title` 단추 · 표 머리 글, `columns` 칸 이름, `rows` 행 값(JSON 값 — 수 · 글 · None),
+    - `total` 원래 행 수(`rows` 보다 크면 앞 `TABLE_ROW_LIMIT` 행만 실은 것), `file` CSV 파일 이름,
+    - `shown` 화면 표에서만 바꿔 보일 값(칸 → {원본: 표시명} — 공정 표시명. CSV 는 원본이다).
+    """
+
+    title: str
+    columns: list[str]
+    rows: list[list[str | int | float | None]]
+    total: int
+    file: str
+    shown: dict[str, dict[str, str]]
+
+
 class AlertNote(TypedDict, total=False):
     """표지 한 칸에 싣는 알림 하나(JSON). 알림 칸 JS 가 읽는 계약이다.
 
     - 사건: `id`(브라우저가 한 번만 띄운다) · `code` · `kind="event"` · `level` · `short` · `full`.
     - 상태: `kind="state"` · `scope`(지문 범위의 짧은 해시) · `fp`(지문) · `active` · 글.
-    - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `scope_label`(로그의 범위 줄) ·
-      `cause`(계기) · `detail`(원본 오류) · `origin`(버튼 곁 칸의 세션 key) · `flash`(버튼 곁 결과의
-      종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이 읽는다) · `again`(다시
-      보냄).
+    - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `tab`(그 화면 안 탭 이름 —
+      「그 화면으로」 가 그 탭을 연다) · `scope_label`(로그의 범위 줄) · `cause`(계기) ·
+      `detail`(원본 오류) · `table`(딸린 표 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
+      `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
+      읽는다) · `again`(다시 보냄).
     """
 
     id: str
@@ -251,12 +290,14 @@ class AlertNote(TypedDict, total=False):
     full: str
     page: str
     href: str
+    tab: str
     scope: str
     scope_label: str
     fp: str
     active: bool
     cause: str
     detail: str
+    table: AlertTable
     origin: str
     flash: str
     markdown: str
@@ -352,11 +393,16 @@ def event_note(
     detail: str = "",
     origin: str = "",
     alert_id: str | None = None,
+    tab: str = "",
 ) -> AlertNote:
-    """사건 알림 표지 한 칸(그리지 않는다). `flash.render_flash` 와 `event` 가 쓴다."""
+    """사건 알림 표지 한 칸(그리지 않는다). `flash.render_flash` 와 `event` 가 쓴다.
+
+    `alert_id` 를 고정 값(같은 글이면 같은 id — `fingerprint`)으로 주면 브라우저 탭이 그 알림을 한
+    번만 띄운다 — 회차마다 다시 그리는 자리 오류(화면을 그리지 못함)가 그 꼴이다
+    (`components/state_alerts.alert_page_error`)."""
     note = _base(code, level, text, full)
     note["id"] = alert_id or new_id()
-    for name, value in (("cause", cause), ("detail", detail), ("origin", origin)):
+    for name, value in (("cause", cause), ("detail", detail), ("origin", origin), ("tab", tab)):
         if value:
             note[name] = value  # type: ignore[literal-required]
     return note
@@ -404,12 +450,16 @@ def state(
     scope_label: str = "",
     cause: str = "",
     detail: str = "",
+    tab: str = "",
+    table: AlertTable | None = None,
 ) -> None:
     """상태 알림 — 그 조건을 보는 회차마다(없어도 `active=False`) 부른다. **이벤트 칸에 늘 한 자리를
     쓴다.**
 
     `scope` · `content` 는 지문 재료(구조 값 — 모듈 설명), `text` · `full` 은 조건이 있을 때의 짧은
-    글 · 전문, `scope_label` 은 로그의 범위 줄(「시나리오 · rN · 조회기간」)이다. 자리에는 아무것도
+    글 · 전문, `scope_label` 은 로그의 범위 줄(「시나리오 · rN · 조회기간」)이다. `tab` 은 그 화면
+    안 탭 이름(아이콘 없이 — 「그 화면으로」 가 그 탭을 열고 줄의 화면 칸이 「화면 › 탭」 이다),
+    `table` 은 Alarm 줄에서 펼쳐 볼 표(`AlertTable` — 조건이 있을 때만 싣는다)다. 자리에는 아무것도
     그리지 않는다(D2 (나)).
     """
     note = _base(code, level, text, full)
@@ -417,34 +467,22 @@ def state(
     note["scope"] = _digest([code, scope])
     note["fp"] = fingerprint(code, scope, content) if active else ""
     note["active"] = active
-    for name, value in (("scope_label", scope_label), ("cause", cause), ("detail", detail)):
+    for name, value in (
+        ("scope_label", scope_label),
+        ("cause", cause),
+        ("detail", detail),
+        ("tab", tab),
+    ):
         if value:
             note[name] = value  # type: ignore[literal-required]
+    if active and table is not None:
+        note["table"] = table
     emit([note])
 
 
 def flush() -> None:
     """담아 둔 사건 알림을 지금 보낸다 — 이벤트 칸에 늘 한 자리를 쓴다(없으면 빈 칸)."""
     emit([])
-
-
-def screen_error(code: str, message: str | None, *, text: str | None = None) -> None:
-    """화면을 못 그리는 오류의 상태 알림(설계 2-2) — 자리 `st.error` 는 부르는 쪽이 그대로 그린다.
-
-    `message` 가 오류 글이면 조건이 있는 것이고(지문 = 그 글 — 같은 오류가 처음일 때만
-    알림창), None 이면 그 화면을 끝까지 준비한 회차다(있던 오류는 「해소」). 범위는 없다(껍데기 —
-    화면 하나의 준비). `text` 는 알림창 짧은 글이고 없으면 등록부 이름이다. **이벤트 칸에 늘 한
-    자리를 쓴다**(`state`) — 오류 갈래와 정상 갈래에서 한 번씩, 같은 회차에 한 번만 부른다.
-    """
-    state(
-        code,
-        scope=None,
-        content=message,
-        active=message is not None,
-        text=text or spec(code).title,
-        full=None if message is None else plain_text(message),
-        detail="" if message is None else message,
-    )
 
 
 def emit(notes: Sequence[AlertNote], *, slot: DeltaGenerator | None = None) -> None:

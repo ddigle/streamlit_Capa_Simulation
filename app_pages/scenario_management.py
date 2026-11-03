@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from capa_simulation import alerts
 from capa_simulation.components.auto_official_update_tab import render_auto_official_update
 from capa_simulation.components.bigdataquery_registration import (
     render_bigdataquery_registration,
@@ -21,6 +20,7 @@ from capa_simulation.components.equipment_scenario_management import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -34,10 +34,9 @@ try:
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
     message = "시나리오 저장소를 준비하지 못했습니다: " + bootstrap_error_message(exc)
-    alerts.screen_error("SC-02", message, text="시나리오 저장소를 준비하지 못했습니다")
+    alert_page_error(message, code="SC-02", text="시나리오 저장소를 준비하지 못했습니다")
     st.error(message)
     st.stop()
-alerts.screen_error("SC-02", None)
 
 # 세 탭을 항상 그린다(`tab.open` 으로 본문을 건너뛰지 않는다). 예전에는 열린 탭만 그렸는데,
 # 그러면 다른 탭을 잠깐 여는 순간 그 탭의 form 위젯이 사라져 입력 중이던 값이 없어졌다.

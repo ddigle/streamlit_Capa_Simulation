@@ -98,6 +98,7 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_ABSENT_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
@@ -266,7 +267,7 @@ except BOOTSTRAP_ERRORS as exc:
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption("계산을 멈춰 공정을 고를 수 없습니다.")
     message = bootstrap_error_message(exc)
-    alerts.screen_error("CS-01", message, text="제약 시뮬레이션을 준비하지 못했습니다")
+    alert_page_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
     st.error(message)
     st.stop()
 
@@ -888,11 +889,9 @@ except (KeyError, ValueError) as exc:
     )
     render_header(process, f"**{literal_markdown(process_label)}** · {literal_markdown(product)}")
     failure = f"제약 시뮬레이션을 계산하지 못했습니다 — {message}"
-    alerts.screen_error("CS-01", failure, text="제약 시뮬레이션을 계산하지 못했습니다")
+    alert_page_error(failure, code="CS-01", text="제약 시뮬레이션을 계산하지 못했습니다")
     st.error(failure)
     st.stop()
-# 준비 · 계산 오류(`CS-01`)가 없었던 회차 — 있던 오류는 해소다. 위 오류 자리 둘보다 뒤에 둔다.
-alerts.screen_error("CS-01", None)
 
 labels = ConstraintLabels(
     process=process,

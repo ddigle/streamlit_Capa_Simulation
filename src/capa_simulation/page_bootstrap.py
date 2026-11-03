@@ -218,34 +218,38 @@ def schema_ahead_message(notice: SchemaAheadOfCode) -> str:
     )
 
 
-# DB 새 판 상태 알림 코드 — 시뮬레이션 DB 는 `app.py` 가 모든 화면에서, 설비 DB 는 그 DB 를 여는
-# 화면이 각자 낸다. 코드가 둘인 것은 한 회차에 두 DB 를 함께 알릴 수 있어서다(같은 코드에 다른
-# 내용을 번갈아 보내면 회차마다 「내용이 바뀜」 으로 다시 뜬다).
-SCHEMA_AHEAD_SIMULATION = "GL-02"
-SCHEMA_AHEAD_EQUIPMENT = "GL-03"
+# DB 새 판 상태 알림 코드 — 시뮬레이션 DB(모든 화면, `app.py`)와 설비 DB(설비 DB 를 여는 화면). 한
+# 코드에 두 DB 를 실으면 화면을 옮길 때마다 지문이 바뀌어 알림창이 거듭 뜬다.
+SCHEMA_AHEAD_SIMULATION_CODE = "GL-02"
+SCHEMA_AHEAD_EQUIPMENT_CODE = "GL-06"
 
 
 def render_schema_ahead_warning(
-    notice: SchemaAheadOfCode | None, *, code: str = SCHEMA_AHEAD_EQUIPMENT
+    notice: SchemaAheadOfCode | None, *, code: str = SCHEMA_AHEAD_EQUIPMENT_CODE
 ) -> None:
-    """DB 가 코드보다 새 것인지 상태 알림으로 낸다(`alerts.state` — 자리에는 그리지 않는다).
+    """DB 가 코드보다 새 것인지의 상태 알림 — 그 DB 를 여는 회차마다(새 것이 아니어도) 부른다.
 
-    막지 않는다(2026-10-05 사용자 결정) — 막으면 예전 배포로 되돌릴 때 DB 를 먼저 복원해야
-    한다. `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다. 새 판이
-    아니어도 부른다(해소 · 이벤트 칸 한 자리). `code` 는 시뮬레이션 DB 면 `SCHEMA_AHEAD_SIMULATION`.
+    막지 않는다(2026-10-05 사용자 결정) — 막으면 예전 배포로 되돌릴 때 DB 를 먼저 복원해야 한다.
+    `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다. 자리에는
+    그리지 않는다 — 판이 바뀔 때만 알림창에 뜨고 Alarm 에 남는다(2026-11-03 결정 보드 D2 (나)).
+    `code` 는 시뮬레이션 DB 면 `SCHEMA_AHEAD_SIMULATION_CODE`(`app.py`), 설비 DB 면 기본값이다.
     """
     alerts.state(
         code,
         scope=None,
-        content=None
-        if notice is None
-        else [notice.database_name, notice.database_version, notice.code_version],
+        content=(
+            None
+            if notice is None
+            else [notice.database_name, notice.database_version, notice.code_version]
+        ),
         active=notice is not None,
-        text=None
-        if notice is None
-        else (
-            f"{with_subject_particle(notice.database_name)} 이 코드보다 새 판입니다"
-            f"(DB {notice.database_version} · 코드 {notice.code_version}) — 최신 배포를 확인하세요"
+        text=(
+            None
+            if notice is None
+            else (
+                f"{with_subject_particle(notice.database_name)} 코드보다 새 버전(DB "
+                f"{notice.database_version} · 코드 {notice.code_version}) — 최신 배포를 다시 적용"
+            )
         ),
         full=None if notice is None else schema_ahead_message(notice),
     )

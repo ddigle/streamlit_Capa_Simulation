@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from capa_simulation import alerts
 from capa_simulation.components.alert_board import render_alert_board
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.display_order_management import (
@@ -18,6 +17,7 @@ from capa_simulation.components.process_rename_management import (
 )
 from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.components.sso_status import render_sso_status
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -52,10 +52,9 @@ try:
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
     message = bootstrap_error_message(exc)
-    alerts.screen_error("AD-07", message, text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)")
+    alert_page_error(message, code="AD-07", text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)")
     st.error(message)
     st.stop()
-alerts.screen_error("AD-07", None)
 
 # 공정 목록은 안내·편집 보조일 뿐이라 활성 시나리오가 없어도 화면을 멈추지 않는다.
 # 공용 표시명 저장 자체는 시나리오와 무관하다. 시나리오 `RQ_MODULE` 공정만 본다 — 설비 마스터의

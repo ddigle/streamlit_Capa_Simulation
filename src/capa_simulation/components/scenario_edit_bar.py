@@ -10,9 +10,9 @@
 **원본 토큰에는 줄 차례도 든다.** `st.data_editor` 의 편집은 줄 위치(`edited_rows`)로 남는다. 두
 화면은 공용 표시순서로 줄을 세우는데 표시순서는 기준정보 버전·리비전을 바꾸지 않고 바뀌므로, 토큰에
 그 지문이 없으면 적용 전 편집이 다른 공정 줄에 붙은 채 「적용」이 그대로 저장한다. 차례가 바뀌어
-편집을 버린 회차는 화면이 한 번 알린다(`show_row_order_reset`) — 틀린 저장 대신 적용 전 편집만
-잃는다(2026-10-24 사용자 결정). 줄 위치로 남지 않는 상태(붙여넣기 대기처럼 제 줄 차례를 들고 있는
-표, 키로 고르는 선택 상자)는 차례만 바뀐 회차에 버리지 않는다(`order_free_keys`).
+편집을 버린 회차는 화면이 한 번 알린다(`show_row_order_reset` — 사건 알림 `ST-09`) — 틀린 저장 대신
+적용 전 편집만 잃는다(2026-10-24 사용자 결정). 줄 위치로 남지 않는 상태(붙여넣기 대기처럼 제 줄
+차례를 들고 있는 표, 키로 고르는 선택 상자)는 차례만 바뀐 회차에 버리지 않는다(`order_free_keys`).
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.editor_state import discard_editor, editor_has_edits
 from capa_simulation.scenario_state import ActiveScenario
 
@@ -115,16 +115,24 @@ def row_order_reset_message(names: Sequence[str]) -> str:
     )
 
 
-def show_row_order_reset(slot: DeltaGenerator, reset: SourceReset) -> None:
-    """줄 차례가 바뀌어 편집을 버린 회차에만 `slot` 에 한 번 알린다. 다음 회차에는 그리지 않는다.
+def show_row_order_reset(reset: SourceReset) -> None:
+    """줄 차례가 바뀌어 편집을 버린 회차에만 한 번 알린다 — 사건 알림 `ST-09`(오른쪽 아래 알림창 ·
+    Alarm, 「조치 필요」). 화면 자리에는 그리지 않는다(2026-11-03 결정 보드 D2 · D3).
 
-    `slot` 은 화면이 탭 묶음 **위에 늘 세워 두는** 알림 칸이다 — 알림이 생기고 사라질 때 탭 묶음
-    자리가 밀리지 않게(가용설비 현황의 버림 알림과 같은 꼴·아이콘).
+    매 회차 같은 자리에서 부른다 — 알릴 것이 없어도 이벤트 칸 한 자리를 쓴다(`alerts.flush`).
     """
     if reset.row_order_dropped:
-        slot.warning(
-            row_order_reset_message(reset.row_order_dropped), icon=":material/sync_problem:"
+        message = row_order_reset_message(reset.row_order_dropped)
+        alerts.event(
+            "ST-09",
+            text=(
+                f"표시순서가 바뀌어 적용 전 편집({' · '.join(reset.row_order_dropped)})을 "
+                "버렸습니다 — 다시 입력"
+            ),
+            full=message,
+            cause="공용 표시순서가 바뀜(Admin 표시순서 관리 저장)",
         )
+    alerts.flush()
 
 
 def register_pending_edits(

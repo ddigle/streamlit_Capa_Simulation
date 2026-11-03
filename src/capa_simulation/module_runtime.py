@@ -230,23 +230,26 @@ def _report_key_warning(module_id: str, text: str | None) -> None:
     )
 
 
-def _render_pending_key_warning(module_id: str) -> None:
+def _render_pending_key_warning(module_id: str) -> bool:
     """`st.stop()` 으로 멈춘 앞 회차가 넘긴 키 알림을 화면 맨 위에서 낸다. 넘긴 것이 없어도 이벤트
-    칸 한 자리를 쓴다(빈 표지 — 뒤 화면의 팝업 자리가 회차마다 같게). 해소는 끝(`_finish`)이
-    한다."""
+    칸 한 자리를 쓴다(빈 표지 — 뒤 화면의 팝업 자리가 회차마다 같게). 넘긴 알림을 냈으면 참이다 —
+    그 회차의 끝(`_finish`)은 해소를 내지 않는다(같은 회차에 알림창 · 해소가 함께 서지 않게)."""
     text = _pop_deferred_key_warning(module_id)
     if text:
         _report_key_warning(module_id, text)
-    else:
-        alerts.flush()
+        return True
+    alerts.flush()
+    return False
 
 
-def _finish(spec: PageSpec, before: KeySnapshot, started: float, *, stopped: bool) -> None:
+def _finish(
+    spec: PageSpec, before: KeySnapshot, started: float, *, stopped: bool, deferred: bool = False
+) -> None:
     module_id = spec.module or ""
     module_failures.note_run_seconds(module_id, time.perf_counter() - started)
     changes = _key_changes(module_id, before)
     if changes is None:
-        if not stopped:
+        if not stopped and not deferred:
             _report_key_warning(module_id, None)
         return
     text, names = changes
@@ -273,7 +276,7 @@ def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:
         return
     before = key_snapshot(module_id)
     _render_pending_callback_failure(spec)
-    _render_pending_key_warning(module_id)
+    deferred = _render_pending_key_warning(module_id)
     started = time.perf_counter()
     try:
         run()
@@ -290,4 +293,4 @@ def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:
     except BaseException as error:
         _record(spec, error)
         render_failure(spec, error)
-    _finish(spec, before, started, stopped=False)
+    _finish(spec, before, started, stopped=False, deferred=deferred)

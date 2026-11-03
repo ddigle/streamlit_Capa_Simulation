@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import infos, successes
+from alert_marks import alert_notes, infos, successes
 from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
@@ -682,6 +682,24 @@ def test_the_missing_availability_notice_does_not_move_the_weekly_table() -> Non
 
     assert with_notice is not None
     assert with_notice == without_notice
+
+
+def test_missing_availability_is_a_state_alert_not_a_box() -> None:
+    """가용대수가 없어 빈칸인 공정·주차 건수는 자리에 경고 상자로 그리지 않고 상태 알림(`ST-17`)으로
+    낸다 — 목록은 결과 상자 안 펼침 그대로다. 가용대수를 곱하지 않는 지표로 바꾸면 「없음」
+    표지(해소)다. 범위는 활성 리비전 내용과 조회일이다."""
+    app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
+    assert not app.exception and not app.warning
+    (note,) = [note for note in alert_notes(app) if note.get("code") == "ST-17"]
+    assert note["active"] is True and note["level"] == "check"
+    assert (
+        note["short"].startswith("가용대수가 없는 공정·주차 1건")
+        and "가용설비 붙여넣기" in note["full"]
+    )
+
+    app = app.segmented_control(key="standard_target_output_metric").set_value("대당 일 Capa").run()
+    (quiet,) = [note for note in alert_notes(app) if note.get("code") == "ST-17"]
+    assert quiet["active"] is False and quiet["scope"] == note["scope"]
 
 
 def test_clearing_the_availability_asks_first() -> None:

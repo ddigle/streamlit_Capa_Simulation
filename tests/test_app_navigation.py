@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import alert_notes
 from fragment_browser import install_fragment_browser
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.proto.RootContainer_pb2 import RootContainer
@@ -2546,9 +2547,9 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
 ) -> None:
     """예전 배포로 되돌린 DB 도 화면은 그대로 열리고, 그 DB 를 여는 화면마다 상태 알림이 선다.
 
-    시뮬레이션 DB 알림(`GL-02`)은 `app.py` 가 모든 화면에, 설비 DB 알림(`GL-03`)은 설비 DB 를 여는
-    화면만 낸다. HOME 은 설비 DB 를 열지 않으므로 그 알림이 없다. 자리에는 경고 상자를 그리지
-    않는다(2026-11-03 D2 — 알림창 · Alarm).
+    시뮬레이션 DB 알림(`GL-02`)은 `app.py` 가 모든 화면에, 설비 DB 알림(`GL-06`)은 설비 DB 를 여는
+    화면만 낸다. HOME 은 설비 DB 를 열지 않으므로 그 알림이 없다. 자리(본문)에는 경고 상자를 그리지
+    않는다(2026-11-03 결정 보드 D2 (나) — 판이 바뀔 때만 알림창, Alarm 에 남음).
     """
     import duckdb
 
@@ -2569,29 +2570,25 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
                 [newer],
             )
 
-    from alert_marks import states
-
-    def ahead_warnings(app: AppTest) -> list[str]:
-        assert not [
-            element for element in app.warning if "이 코드보다 새" in str(element.value)
-        ]
-        return [
-            str(note["full"])
-            for note in states(app)
-            if note["code"] in ("GL-02", "GL-03") and note.get("active")
-        ]
+    def ahead_alerts(app: AppTest) -> dict[str, str]:
+        assert not any("이 코드보다 새 버전입니다" in str(element.value) for element in app.warning)
+        return {
+            str(note["code"]): str(note["full"])
+            for note in alert_notes(app)
+            if note.get("code") in ("GL-02", "GL-06") and note.get("active")
+        }
 
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
-    home_warnings = ahead_warnings(app)
-    assert len(home_warnings) == 1
-    assert home_warnings[0].startswith(
+    home_alerts = ahead_alerts(app)
+    assert list(home_alerts) == ["GL-02"]
+    assert home_alerts["GL-02"].startswith(
         f"시뮬레이션 DB가 이 코드보다 새 버전입니다(DB {newer} · 코드"
     )
 
     # 설비 DB 를 여는 일곱 화면 모두를 돈다(공정 Capa 상세·제약 시뮬레이션은 설비 시나리오를 읽으며
-    # 경고를 세운다).
-    # 페이지 소스에서 경고 호출을 찾아 대조해 두어, 호출을 지우거나 새 화면에 더하면 이 목록도 같이
+    # 알림을 낸다).
+    # 페이지 소스에서 알림 호출을 찾아 대조해 두어, 호출을 지우거나 새 화면에 더하면 이 목록도 같이
     # 고치게 한다.
     equipment_pages = (
         AVAILABLE_EQUIPMENT_STATUS.path,
@@ -2611,8 +2608,9 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     for path in equipment_pages:
         app.switch_page(path).run()
         assert not list(app.exception), [element.message for element in app.exception]
-        names = sorted(warning.split("가 이 코드보다", 1)[0] for warning in ahead_warnings(app))
-        assert names == ["설비 DB", "시뮬레이션 DB"], path
+        found = ahead_alerts(app)
+        assert sorted(found) == ["GL-02", "GL-06"], path
+        assert found["GL-06"].startswith("설비 DB가 이 코드보다 새 버전입니다"), path
 
 
 # ------------------------------------------------------------ 모듈(모델 2)

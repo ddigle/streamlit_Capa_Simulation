@@ -730,29 +730,30 @@ def render_equipment_scenario_section() -> None:
 def report_session_notices(session: EquipmentSession) -> None:
     """설비 시나리오 세션 알림 둘을 알림 칸으로 낸다(자리에는 그리지 않는다 — 2026-11-03 D2 · D3).
 
-    - 이 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 사건 알림(`EQ-03`) — 담기만 하고 아래
-      상태 알림의 표지가 함께 싣는다.
-    - 일정 없이 연 세션(`unmerged` — 옛 배포 흔적)은 회차마다 다시 나오는 조건이라 상태
-      알림(`EQ-02`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리).
+    - 이 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 사건 알림(`SB-14` — 미저장 설비
+      편집을 버렸다는 말이 든다). 담기만 하고 아래 상태 알림의 표지가 함께 싣는다.
+    - 일정 없이 연 세션(`unmerged` — 옛 배포 공통 대장)은 회차마다 다시 나오는 조건이라 상태
+      알림(`SB-20`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리).
 
     알림 글은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
     알림창 · 패널은 평문(`textContent`)이라 막지 않는다. 사이드바 설비 시나리오 줄과 시나리오 관리
-    「설비 시나리오」 구획이 같은 함수를 부른다(한 화면에는 둘 가운데 하나만 선다).
+    「설비 시나리오」 구획이 같은 함수를 부른다(한 화면에는 둘 가운데 하나만 선다 — 같은 코드 ·
+    같은 범위라 화면을 옮겨도 다시 뜨지 않는다).
     """
-    notice = session.notice
-    if notice and not session.unmerged:
+    if session.notice and not session.unmerged:
         alerts.event(
-            "EQ-03",
-            text="설비 시나리오 리비전을 합칠 수 없어 다른 리비전으로 열었습니다",
-            full=notice,
+            "SB-14",
+            text=session.notice,
+            full=session.notice,
+            cause="고른 설비 일정이 지금 공통 대장과 합쳐지지 않음",
         )
     alerts.state(
-        "EQ-02",
-        scope=session.alert_scope,
-        content=notice if session.unmerged else None,
-        active=session.unmerged,
-        text="설비 시나리오를 일정 없이 열었습니다(옛 배포 흔적) — 런북 4-2 대로 백업을 복원하세요",
-        full=notice or None,
+        "SB-20",
+        scope=session.scenario_id or "",
+        content=session.notice if session.unmerged else None,
+        active=session.unmerged and bool(session.notice),
+        text="옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 열었습니다 — 백업 복원 필요",
+        full=session.notice if session.unmerged else None,
     )
 
 

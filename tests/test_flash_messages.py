@@ -277,8 +277,9 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         " 세는 shown 칸과 짝이다"
     ),
     ("app_pages/reference_data.py", "", "'capacity_step_flash'"): (
-        "매 회차 비우고 STEP 탭을 그리는 회차에만 그린다 — 숨은 회차에 남은 알림을 나중에 띄우지"
-        " 않는다(`tests/test_reference_data_perf.py`)"
+        "매 회차 비우고 STEP 탭을 그리는 회차에만 알림창 표지로 보낸다(`alerts.emit` — 성공이라"
+        " 버튼 곁에는 그리지 않는다, D3) — 숨은 회차에 남은 알림을 나중에 띄우지 않는다"
+        "(`tests/test_reference_data_perf.py`)"
     ),
     (
         "src/capa_simulation/components/equipment_scenario_management.py",
@@ -305,14 +306,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         " id·번호 — 되돌리기 `RESTORE_AGREED_KEY` 와 같은 꼴)이다. 회차마다 꺼내 지금 최신과"
         " 견주고, 체크가 풀렸으면 그 까닭(「r2 → 지금 r3」)을 같은 회차에 체크 칸 위나 단추가"
         " 사라진 자리에 그린다"
-    ),
-    (
-        "src/capa_simulation/components/equipment_scenario_status.py",
-        "render_equipment_scenario_row",
-        "FLASH_KEY",
-    ): (
-        "사이드바 설비 시나리오 줄 슬롯 안 — 저장 대조·위젯 세대 갈래가 이 파일을 함께 고친다. 그"
-        " 고침이 들어간 뒤 옮긴다"
     ),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel", "SAVE_ERROR_KEY"): (
         "배치 저장 실패는 회차의 상자 유무로 두 자리 가운데 하나에 선다 — 저장 안 한 상자가"

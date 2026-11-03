@@ -592,7 +592,7 @@ def test_values_rebuilt_on_every_read_are_not_reported_as_changed(
     monkeypatch.setattr(
         module_runtime, "_report_key_warning", lambda _module, text: reported.append(text)
     )
-    monkeypatch.setattr(module_runtime.alerts, "flush", lambda: None)
+    monkeypatch.setattr("capa_simulation.alerts.flush", lambda: None)
     spec = PageSpec(
         "modules/demo_a/page.py", "시험 (구현중)", url_path="mod-demo_a-main", module="demo_a"
     )

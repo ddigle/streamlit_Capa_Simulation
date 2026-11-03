@@ -86,6 +86,7 @@ from capa_simulation.components.manual_downtime_tab import render_manual_downtim
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import NestedTab, stateful_tabs, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import (
@@ -205,10 +206,9 @@ except BOOTSTRAP_ERRORS as exc:
     message = "설비 현황을 준비하지 못했습니다. " + bootstrap_error_message(
         exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
-    alerts.screen_error("EQ-09", message, text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
+    alert_page_error(message, code="EQ-09", text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
     st.error(message)
     st.stop()
-alerts.screen_error("EQ-09", None)
 # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)

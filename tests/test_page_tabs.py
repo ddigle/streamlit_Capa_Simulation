@@ -350,7 +350,7 @@ def test_the_tab_strip_stands_at_a_fixed_place_before_the_page(
 
     warn: list[int] = []
 
-    def schema_warning(notice: object) -> None:
+    def schema_warning(notice: object, **_: object) -> None:
         if warn:
             st.warning("schema-ahead-probe")
 
