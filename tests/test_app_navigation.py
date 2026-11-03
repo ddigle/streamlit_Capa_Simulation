@@ -1578,6 +1578,9 @@ def test_the_period_changes_only_when_applied_in_its_dialog(
     assert not list(app.exception), [element.message for element in app.exception]
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert app.session_state[PERIOD_DIALOG_KEY] is True
+    # 팝업에는 설명 글이 없다(2026-11-04 검수 의견 home-19 — 고를 수 있는 범위 · 「적용」 을 눌러야
+    # 바뀜).
+    assert not any("고를 수 있는 범위" in item.value for item in app.caption)
     # 고르기만 해서는(「적용」 트리거가 없는 회차) 바뀌지 않는다.
     app.run()
     assert app.session_state[MONTH_RANGE_KEY] == before

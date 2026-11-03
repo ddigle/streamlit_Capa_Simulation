@@ -248,8 +248,8 @@ KEY_PROCESS_UNCHANGED_MESSAGE = (
 )
 # 비교 시나리오를 고르지 않아 잠긴 「GAP」 토글의 풍선.
 GAP_LOCKED_HELP = "HOME 설정 → Preference 에서 비교 시나리오를 먼저 고르세요."
-# 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
-# 글자를 쓴다.
+# 판정 기준 입력이 빠진 자리(Static Capa 「판정 기준」 카드)에 남기는 한 줄. HOME 공정 필터 팝업
+# 머리에도 섰다가 걷었다(2026-11-04 검수 의견 home-20 — HOME 은 Guide 가 말한다).
 THRESHOLD_POINTER = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
 # Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
 # 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지) key 에
@@ -2109,11 +2109,11 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     다르면 세션에 적고 앱 전체를 다시 돌린다 — 그 회차에는 칸이 눌리지 않아 팝업이 다시 불리지
     않는다(닫힘). 견주는 값은 **세션의 지금 값**이다 — 적은 뒤 다시 도는 회차에 같아져 되풀이되지
     않는다.
+
+    머리 설명 글은 두지 않는다(2026-11-04 검수 의견 home-21 — 「히트맵이 보여 줄 공정 묶음 · 고르면
+    바로 바뀜 · 프리셋은 HOME 설정 → Preference」 를 걷었다). 고르면 곧바로 닫히며 바뀌는 것은
+    누름이 말하고, 프리셋을 고치는 자리는 Guide 가 말한다.
     """
-    st.caption(
-        "히트맵이 보여 줄 공정 묶음입니다. 고르면 바로 바뀝니다. "
-        "프리셋은 HOME 설정 → Preference 에서 고칩니다."
-    )
     choice = st.radio(
         "프리셋",
         options=list(names),

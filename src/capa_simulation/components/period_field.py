@@ -4,11 +4,14 @@
 
 값 칸에는 지금 조회기간(「26.07 → 28.12」), 이름 줄 오른쪽에는 그 화면이 실제로 읽은 기간이 선다
 (「선택 · …」·「✓ 적용 · …」·「계산 멈춤」·「데이터 없음」·「과거 밖 · …부터」 — 페이지가 계산 뒤에
-`sidebar_status.show_*` 로 채운다). 값 칸을 누르면 작은 팝업에 월 선택과 「적용」이 뜬다.
+`sidebar_status.show_*` 로 채운다). 값 칸을 누르면 팝업에 달 고르기(연도 넘김 · 열두 달 격자 · 빠른
+선택 — `month_range_picker`)와 「적용」이 뜬다. 팝업 머리의 설명 글(고를 수 있는 범위 · 「적용」을
+눌러야 바뀜)은 걷었다(2026-11-04 검수 의견 home-19) — 고를 수 없는 달은 격자가 흐리게 잠그고,
+「적용」 전에는 단추 상태와 「지금 …」 줄이 말한다.
 
 **「적용」을 눌러야 조회기간이 바뀐다.** 전에는 사이드바의 월 선택이 고르는 즉시 조회기간을 바꿨다.
-팝업 안에서 고르는 동안은 초안이라 서버에 오지 않고(브라우저의 입력 칸에만 있다), 닫으면 버린다.
-「적용」은 월 선택 컴포넌트 안의 단추라 입력 칸 값과 누름이 한 트리거로 한 회차에 온다. 조회기간의
+팝업 안에서 고르는 동안은 초안이라 서버에 오지 않고(브라우저의 컴포넌트에만 있다), 닫으면 버린다.
+「적용」은 달 고르기 컴포넌트 안의 단추라 초안 범위와 누름이 한 트리거로 한 회차에 온다. 조회기간의
 정본은 위젯이 아닌 `MONTH_RANGE_KEY` 하나다 — 리비전 프리셋이 그 칸을 저장·복원한다.
 
 팝업은 시나리오 팝업처럼 세션 키로 열고, 여닫을 때는 `app.py` 의 호스트 프래그먼트만 다시 돈다
@@ -19,6 +22,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
@@ -172,11 +176,11 @@ def show_period_dialog(page_file: str | None) -> None:
 
 @keeps_app_run_open
 def render_period_dialog_body(*, page_file: str | None) -> None:
-    """월 선택과 「적용」(한 컴포넌트 — `month_range_picker.render_month_range_apply`).
+    """달 고르기와 「적용」(한 컴포넌트 — `month_range_picker.render_month_range_apply`).
 
-    「적용」을 누른 회차에만 컴포넌트가 입력 칸의 지금 값을 범위로 돌려준다. 값과 누름이 한 회차에
-    오므로 키보드로 고친 직후에 눌러도 그 값이 적용된다(2026-10-11 병합 전 리뷰 — 전에는 600ms 안에
-    누르면 옛 기간으로 닫혔다).
+    「적용」을 누른 회차에만 컴포넌트가 고른 범위를 돌려준다. 값과 누름이 한 회차에 오므로 고친
+    직후에 눌러도 그 값이 적용된다(2026-10-11 병합 전 리뷰 — 전에는 600ms 안에 누르면 옛 기간으로
+    닫혔다). 머리 설명 글은 두지 않는다(2026-11-04 검수 의견 home-19 — 적용 전 편집 경고만 선다).
 
     **적용 전 편집 목록을 비우지 않는다**(같은 리뷰). 고른 범위가 바뀌어도 데이터가 있는 달(화면이
     실제로 쓰는 기간)이 그대로면 편집표의 원본도 그대로라 편집이 남는다 — 목록을 비우면 그 회차에
@@ -189,16 +193,14 @@ def render_period_dialog_body(*, page_file: str | None) -> None:
     start, end = current_month_range()
     minimum_month, maximum_month = month_selection_bounds()
     _render_pending_notice(pending_edits)
-    st.caption(
-        f"고를 수 있는 범위 · {month_label(minimum_month)}–{month_label(maximum_month)} · "
-        "「적용」을 눌러야 화면이 이 기간으로 바뀝니다."
-    )
+    today = date.today()
     applied = month_range_picker.render_month_range_apply(
         start=start,
         end=end,
         min_month=format_month(minimum_month),
         max_month=format_month(maximum_month),
         key=MONTH_PICKER_KEY,
+        this_month=format_month(today.year * 100 + today.month),
     )
     if applied is None:
         return

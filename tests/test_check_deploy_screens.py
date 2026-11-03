@@ -1969,35 +1969,66 @@ def test_the_scenario_popup_summary() -> None:
 
 
 def test_the_period_popup_summary() -> None:
-    facts = {"months": 2, "apply": "적용", "inComponent": True}
+    """조회기간 팝업 — 달 고르기(2026-11-04 검수 의견 home-19)의 칸 수와 설명 글 0줄. 옛 월 입력
+    칸이 남은 화면(옛 ZIP)은 그 수를 따로 적는다."""
+    facts = {
+        "cells": 12,
+        "steps": 2,
+        "chips": 5,
+        "inputs": 0,
+        "captions": 0,
+        "apply": "적용",
+        "inComponent": True,
+    }
 
     assert screens.summarize_period_dialog("조회기간", facts, True, True) == (
-        "팝업 제목 「조회기간」 같음 · 월 칸 2개 · 「적용」 단추 컴포넌트 안 있음 · "
-        "Esc 닫힘(적용 안 함) · 값 칸 글자 같음"
+        "팝업 제목 「조회기간」 같음 · 달 칸 12개 · 해 넘김 2개 · 빠른 선택 5개 · "
+        "「적용」 단추 컴포넌트 안 있음 · 설명 글 0줄 · Esc 닫힘(적용 안 함) · 값 칸 글자 같음"
     )
     outside = screens.summarize_period_dialog(
         "조회기간", {**facts, "inComponent": False}, True, False
     )
     assert "「적용」 단추 있음(컴포넌트 밖)" in outside and outside.endswith("값 칸 글자 다름")
-    odd = screens.summarize_period_dialog(SENTINEL, {**facts, "apply": SENTINEL}, False, True)
+    old = screens.summarize_period_dialog(
+        "조회기간",
+        {**facts, "cells": 0, "steps": 0, "chips": 0, "inputs": 2, "captions": 1},
+        True,
+        True,
+    )
+    assert "달 칸 0개 · 해 넘김 0개 · 빠른 선택 0개 · 옛 월 입력 칸 2개" in old
+    assert "설명 글 1줄" in old
+    odd = screens.summarize_period_dialog(
+        SENTINEL, {**facts, "apply": SENTINEL, "cells": SENTINEL}, False, True
+    )
     assert SENTINEL not in odd
     assert "팝업 제목 「조회기간」 다름" in odd and "「적용」 단추 없음" in odd
+    assert "달 칸 0개" in odd
     assert "Esc 안 닫힘" in odd
 
 
 @pytest.mark.parametrize(
-    ("place", "expected"),
+    ("facts", "expected"),
     [
-        ("head", "판정 기준 안내 머리에 있음"),
-        ("body", "판정 기준 안내 머리에 없음(아래에 있음)"),
-        ("none", "판정 기준 안내 없음"),
-        (SENTINEL, "판정 기준 안내 없음"),
+        (
+            {"captions": 0, "selection": True, "help": True},
+            "머리 설명 0줄 · 선택 줄 있음 · 풍선 있음",
+        ),
+        (
+            {"captions": 2, "selection": True, "help": False},
+            "머리 설명 2줄 · 선택 줄 있음 · 풍선 없음",
+        ),
+        ({"captions": 0, "selection": False, "help": False}, "머리 설명 0줄 · 선택 줄 없음"),
+        ({"captions": SENTINEL, "selection": False}, "머리 설명 ?줄 · 선택 줄 없음"),
+        (None, "머리 설명 ?줄 · 선택 줄 없음"),
     ],
 )
-def test_the_process_popup_summary(place: str, expected: str) -> None:
-    result = screens.summarize_process_dialog("공정 필터", {"pointer": place}, True)
+def test_the_process_popup_summary(facts: dict[str, object] | None, expected: str) -> None:
+    """공정 필터 팝업 — 머리 설명 글 0줄(2026-11-04 검수 의견 home-20)과 「선택 n / N」 줄 · 그
+    풍선."""
+    result = screens.summarize_process_dialog("공정 필터", facts, True)
 
     assert result == f"팝업 제목 「공정 필터」 같음 · {expected} · Esc 닫힘"
+    assert SENTINEL not in result
 
 
 class _DialogScreen(Screen):
@@ -2071,10 +2102,7 @@ def test_settle_closes_a_popup_left_open_by_an_earlier_item() -> None:
 def test_the_condition_panel_contract_matches_the_app() -> None:
     from capa_simulation import sidebar_status
     from capa_simulation.components import condition_field, period_field, scenario_status
-    from capa_simulation.components.home_preference import (
-        KEY_PROCESS_FIELD_LABEL,
-        THRESHOLD_POINTER,
-    )
+    from capa_simulation.components.home_preference import KEY_PROCESS_FIELD_LABEL
     from capa_simulation.navigation import CONDITIONS_SECTION
 
     assert screens.CONDITIONS_SECTION_KEY == CONDITIONS_SECTION.key
@@ -2087,7 +2115,6 @@ def test_the_condition_panel_contract_matches_the_app() -> None:
     assert screens.SCENARIO_DIALOG_MODES == (scenario_status.LOAD_MODE, scenario_status.SAVE_MODE)
     assert screens.PERIOD_FIELD_KEY == period_field.PERIOD_FIELD_KEY
     assert screens.PERIOD_DIALOG_TITLE == period_field.PERIOD_FIELD_LABEL
-    assert screens.THRESHOLD_POINTER == THRESHOLD_POINTER
     assert screens.PANEL_ROW_NAMES == (
         scenario_status.SCENARIO_FIELD_LABEL,
         period_field.PERIOD_FIELD_LABEL,
@@ -2264,22 +2291,14 @@ def test_the_space_scenario_row_contract_matches_the_app() -> None:
         ("app_pages/home.py", 'PROCESS_FIELD_LABEL = "공정 필터"'),
         ("app_pages/home.py", 'PROCESS_FIELD_KEY = "dashboard_bottleneck_process_dialog_open"'),
         ("app_pages/home.py", "@st.dialog(\n    PROCESS_FIELD_LABEL,"),
-        ("app_pages/home.py", "st.caption(THRESHOLD_POINTER)"),
+        ("app_pages/home.py", 'f"**선택 {len(selected_set)} / {len(options)}**",'),
         (
             "src/capa_simulation/components/home_preference.py",
             'condition_card("LOB 표시 조건", name="home", default=True)',
         ),
         ("src/capa_simulation/components/scenario_status.py", '"리비전",'),
         (
-            "src/capa_simulation/components/month_range_picker.py",
-            '<input id="capa-start-month" type="month"',
-        ),
-        (
-            "src/capa_simulation/components/month_range_picker.py",
-            '<input id="capa-end-month" type="month"',
-        ),
-        (
-            "src/capa_simulation/components/month_range_picker.py",
+            "src/capa_simulation/components/month_range_picker_assets/month_range.html",
             '<button id="capa-month-apply" type="button" class="capa-month-apply">적용</button>',
         ),
         ("src/capa_simulation/components/month_range_picker.py", "isolate_styles=False,"),
@@ -2290,9 +2309,11 @@ def test_the_panel_texts_the_items_look_for_exist_in_the_app(path: str, text: st
 
 
 def test_the_month_picker_ids_are_the_ones_the_item_reads() -> None:
-    picker = _text(COMPONENTS / "month_range_picker.py")
+    picker = _text(COMPONENTS / "month_range_picker_assets" / "month_range.html")
 
-    assert all(f'id="{name}"' in picker for name in screens.MONTH_INPUT_IDS)
+    assert picker.count(f'class="{screens.MONTH_CELL_CLASS}"') == screens.MONTH_CELL_COUNT
+    assert picker.count(f'class="{screens.MONTH_STEP_CLASS}"') == 2
+    assert f'class="{screens.MONTH_CHIP_CLASS}"' in picker
     assert f'id="{screens.MONTH_APPLY_ID}"' in picker
     assert f">{screens.MONTH_APPLY_LABEL}</button>" in picker
 

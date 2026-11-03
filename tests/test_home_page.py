@@ -229,10 +229,15 @@ def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_pa
     assert {"공정 필터", "B/N 판정 대상"} <= {item.value for item in app.sidebar.caption}
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
     assert not app.exception
-    # 팝업 머리 — 무엇을 고르는지와 판정 기준을 정하는 자리(전에는 사이드바 상자에 늘 섰다).
+    # 팝업 머리에는 설명 글이 없다(2026-11-04 검수 의견 home-20) — 고른 수 줄 하나이고, 무엇을
+    # 고르는지와 기간 · 확보 기준은 그 줄의 풍선이다. 판정 기준을 정하는 자리는 Guide 가 말한다.
     captions = [item.value for item in app.caption]
-    assert any(text.startswith("B/N·확보율 판정에 넣을 공정 · ") for text in captions), captions
-    assert THRESHOLD_POINTER in captions
+    assert not any(text.startswith("B/N·확보율 판정에 넣을 공정") for text in captions), captions
+    assert THRESHOLD_POINTER not in captions
+    head = next(item for item in app.markdown if str(item.value).startswith("**선택 "))
+    assert "체크된 버튼" not in head.value
+    assert str(head.proto.help).startswith("B/N·확보율 판정에 넣을 공정 · ")
+    assert "확보 기준 " in head.proto.help
     # 여는 첫 렌더만 페이지의 호출부 인자로 그려진다(이후는 하네스가 다시 부른다). 거기서
     # 옵션이 표시명으로 바뀌면 적용된 공정이 OFF 로 보이므로, 적용값이 모두 ON 인지 본다.
     assert {
@@ -2210,6 +2215,8 @@ def test_picking_a_preset_in_the_dialog_applies_it_once() -> None:
     app.run()
     assert not app.exception
     assert app.session_state["test_body_runs"] == 1
+    # 머리 설명 글은 없다(2026-11-04 검수 의견 home-21) — 라디오와 프리셋 미리보기뿐이다.
+    assert [item.value for item in app.caption] == []
 
     app.radio(key=KEY_PROCESS_PICK_KEY).set_value("B 그룹").run()
     assert not app.exception

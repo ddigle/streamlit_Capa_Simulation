@@ -662,10 +662,22 @@ def build_sidebar_stylesheet(
         # 그만큼 떠 있다. 스크롤 칸의 `scroll-padding-bottom` 은 칸을 보이게 옮기는 스크롤(초점
         # 이동)이 바닥 카드 밑에 칸을 두지 않게 한다(`APP_CREDITS_SCROLL_ROOM`) — 끝까지 내렸을 때의
         # 자리는 그대로다(여백이 아니라 옮길 때의 기준선이다).
+        #
+        # **스크롤 칸 키에 화면 높이 상한을 건다(`max-height: 100dvh`)** — 사이드바 폭을 끌 때
+        # 스크롤이 맨 위로 가던 것을 막는다(2026-11-04 검수 의견 home-u04). Streamlit 1.63
+        # 사이드바의 끌기 부품(re-resizable)은 끄는 동안 마우스가 움직일 때마다 부모
+        # 칸(`stAppViewContainer`)에 `flex-wrap: wrap` 을 잠깐 걸고 100% 크기 칸을 넣어 레이아웃을
+        # 강제로 잰다(`getParentSize`). 그 순간 사이드바 키가 정해지지 않아 스크롤 칸(`height:
+        # 100%`)이 내용 높이만큼 늘어 스크롤할 것이 없어지고, 브라우저가 `scrollTop` 을 0 으로
+        # 깎는다 — 서버 회차는 없고(보낸 프레임 0) 맨 Streamlit 앱에서도 같다(사본 · 맨 앱 실측).
+        # 상한이 있으면 그 순간에도 칸이 화면 높이에서 멈춰 스크롤 자리가 남는다. 평소 키(사이드바 =
+        # 화면 높이)는 상한에 닿지 않아 그대로다. 본문 스크롤 칸(`stMain`)은 Streamlit 이 `100dvh`
+        # 로 두어 원래 그대로였다.
         f"""
         [data-testid="stSidebarContent"] {{
             display: flex;
             flex-direction: column;
+            max-height: 100dvh;
             scroll-padding-bottom: {app_credits_scroll_room(app_credit_lines)};
         }}"""
         """

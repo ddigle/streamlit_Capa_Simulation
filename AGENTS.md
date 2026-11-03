@@ -324,6 +324,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`components/home_settings.py`, 2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data 세 탭). 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
     바꾸면 토글을 기본값으로 적어 푼다(`scenario_activation.py`·`test_scenario_activation.py`). 공정 필터는 패널 칸이다.
+  - 패널 칸 팝업(공정 필터 · 주요공정 히트맵)의 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 · home-21).
+    공정 필터는 머리 「선택 n / N」 한 줄이고 무엇을 고르는지 · 기간 · 확보 기준은 그 줄의 풍선, 판정 기준을 정하는 자리와
+    프리셋을 고치는 자리(HOME 설정 → Preference)는 Guide 가 말한다. 화면 확인 `process_popup` 이 머리 설명 0줄을 본다.
   - 카드는 HOME 에서 늘 서고(2026-11-02 — 전에는 `Main` 탭에서만) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤
     멈춘다 — 오류문이 시키는 `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 한다(2026-10-22, `test_home_page.py` 의
     `stopped_home`). 그 회차의 「HOME 설정」 상자는 잠긴 채 같은 자리에 서고(팝업 본문이 계산 결과를 쓴다) 열려 있던
@@ -872,17 +875,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
   - `initial_offset_px` 는 처음 그릴 때 한 번만 건다 — 적용 표시를 대상 요소의 `dataset` 에 남겨 리런이 사용자가
     옮긴 위치를 되돌리지 않게 하고, 적용은 `ResizeObserver` 가 폭을 잡은 뒤로 미룬다.
-- `src/capa_simulation/components/month_range_picker.py` — 조회기간 팝업(`components/period_field.py`)의 시작·종료 월
-  칸과 「적용」을 한 Components v2 컴포넌트로 묶는다(`render_month_range_apply` 는 적용한 회차에만 범위를 준다).
-  - 칸 값은 초안이고 「적용」·Enter 때만 검사해 보낸다. 팝업 포커스 때문에 그림자 DOM 에 가두지 않는다
-    (`isolate_styles=False`). 부르는 쪽은 모듈 속성으로 부른다(테스트가 갈아끼운다).
+- `src/capa_simulation/components/month_range_picker.py` — 조회기간 팝업(`components/period_field.py`)의 달 고르기 —
+  해 넘김(`‹ 2026년 ›`) · 열두 달 격자(세 칸 네 줄, 시작 달 → 끝 달 두 번 누름이 띠를 칠함) · 빠른 선택(이번 달부터 6 · 12 ·
+  24개월 · 지난달부터 6개월 · 전체) · 「적용」을 한 Components v2 컴포넌트로 묶는다(2026-11-04 검수 의견 home-19 — 월 입력 두
+  칸을 걷었다. `render_month_range_apply` 는 적용한 회차에만 범위를 준다). 조각은 `month_range_picker_assets/` 세 파일이다.
+  - 고르는 동안은 초안이고 「적용」 때만 트리거 하나로 보낸다. 끝 달을 기다리거나 지금 기간 그대로면 「적용」 이 잠기고,
+    다르면 맨 아래 「지금 …」 줄이 선다 — 설명 글 없이 단추 상태로 「적용 전에는 그대로」 를 말한다. 고를 수 없는 달은
+    흐리게 잠긴다. 키보드는 방향키(한 달 · 세 달) · PageUp/PageDown · Home/End · Enter. 판정 구획(`// <month-range-core>`)은
+    순수 함수라 node 로 시험한다(`tests/test_month_range_picker.py`). 팝업 포커스 때문에 그림자 DOM 에 가두지 않는다
+    (`isolate_styles=False`), 색은 `--st-*` 테마 변수뿐이다. 부르는 쪽은 모듈 속성으로 부른다(테스트가 갈아끼운다).
 - `src/capa_simulation/components/condition_field.py` — 사이드바 통합 조건 패널의 한 줄(이름 줄 `condition_name_row`
   과 팝업을 여는 값 칸 `condition_field`)을 그린다.
   - 컨테이너 key 접두어(`condition_field_<slug>`·`condition_name_<slug>`)로 `sidebar_style.py` 가 서식을 건다.
     `with` 안에서는 `st.*` 로만 그린다 — `st.sidebar.*` 는 `with` 를 따르지 않아 패널 밖으로 샌다.
 - `src/capa_simulation/components/period_field.py` — 패널의 조회기간 줄과 그 팝업(`sidebar_period_open_dialog`)을 그린다.
-  - 팝업 안 월 선택은 초안이고 「적용」해 범위가 실제로 바뀔 때만 `MONTH_RANGE_KEY` 를 쓴다. 고를 수 있는 범위는
-    매 회차 `month_selection_bounds()` 로 읽고 범위 밖 조회기간은 `clamp_month_range` 로 끝에 끼워 되적는다.
+  - 팝업 안 달 고르기는 초안이고 「적용」해 범위가 실제로 바뀔 때만 `MONTH_RANGE_KEY` 를 쓴다. 고를 수 있는 범위는
+    매 회차 `month_selection_bounds()` 로 읽고 범위 밖 조회기간은 `clamp_month_range` 로 끝에 끼워 되적는다. 빠른 선택의
+    기준 달은 `date.today()` 다. 팝업 머리에 설명 글을 두지 않는다(적용 전 편집 경고만 — 2026-11-04 home-19).
 - `src/capa_simulation/components/scenario_status.py` — 사이드바 조건 패널의 시나리오 줄과 불러오기·새 리비전 저장·
   편집 되돌리기 팝업(`SCENARIO_DIALOG_KEY`)이다. 이름 변경·발행·삭제·신규 생성은 `시나리오 관리` 페이지 몫이고, 불러오기
   구획 끝 한 줄이 그리로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 링크 대신 표 자리를 적는다).
@@ -2595,6 +2604,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 화면을 옮길 때마다 소켓으로 가는 시트라 CSS 주석을 싣지 않는다(설명은 파이썬 주석, 9장 「스크립트와 컴포넌트」).
   - 사이드바 multiselect 의 입력 칸 너비를 초점 앞뒤로 같게 둔다(9장 「사이드바 multiselect 는 초점 앞뒤로 높이가 같아야
     한다」) — 화면마다 칸 key 로 따로 걸지 않는다.
+  - 스크롤 칸(`stSidebarContent`)에 `max-height: 100dvh` 를 건다 — 폭을 끌 때 스크롤이 맨 위로 가지 않게(9장 「사이드바
+    스크롤 칸은 화면 높이 상한을 갖는다」).
   - **팝업 상자**(`sidebar_status.DIALOG_BOX_PREFIX` — 조회 조건 아래 따로 선, 한 번 누르면 팝업이 뜨는 전폭 단추 상자. 지금은
     HOME 「HOME 설정」 하나, 2026-11-02)는 조건 카드와 같은 면·`ACCENT` 아이콘·머리 글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸)
     표식이다. key 끝 `PENDING_SUFFIX` 면 왼쪽 주황 띠, 잠기면 표식을 걷는다(`tests/test_sidebar_stylesheet.py`).
@@ -5339,7 +5350,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **판정 기준 표시.** 확보·경고 기준(기본 110%·100%)을 화면에 **적는** 곳은 모두
   `services/threshold_label.threshold_percent_label` 로 사사오입한 정수 퍼센트를 쓴다 — 「110%」 하나이고 소수를 함께
   적지 않는다(공정 Capa 상세의 「110% (1.095)」 꼴은 걷었다 — 2026-11-01 N1 「(가) 정수만」). 지금 적는 곳은 HOME
-  공정 필터 팝업의 기간 줄(기본값 + 「월별 예외 N개월」), Static Capa 판정 기준 카드, 입장 화면
+  공정 필터 팝업 머리 「선택 n / N」 의 풍선(기간 · 기본값 + 「월별 예외 N개월」 — 2026-11-04 머리 글에서 풍선으로), Static
+  Capa 판정 기준 카드, 입장 화면
   Summary 의 기준선 이름표(달마다 — 값이 바뀌는 구간마다 하나), HOME 설정 › Preference 캡션, 공정 Capa 상세·제약 시뮬레이션·개조
   일정의 기준·목표 글이다. 판정에 맞춰 대수를 셈한 **식 줄**만 곱한 판정 경계를 그대로 적는다(`boundary_percent_label` —
   「가용 − 소요 × 109.5%」 — 식은 검산되어야 한다). **범례에는 숫자를 적지 않는다** —
@@ -5601,10 +5613,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     때는 표시 항목을 바꾸거나 상세를 켜면 주차·월 표의 가로 스크롤이 처음으로 돌아갔다.
   - 헤더 툴바처럼 React 밖에서 숨은 Streamlit 버튼을 JS 로 눌러 연 대화상자는 포커스가 body 에
     남아 Esc 가 닿지 않는다 — 열리면 포커스를 대화상자 안으로 옮긴다(`page_guide.py`).
-  - 월 입력 컴포넌트(`components/month_range_picker.py`)는 칸 값을 초안으로 두고 「적용」·Enter 때만 칸의 지금 값과
-    누름을 한 트리거로 보낸다 — 값과 누름을 따로 보내면 키보드로 고친 직후 누른 「적용」이 옛 값으로 닫힌다. 온전하지
-    않은 월·범위 밖 월·시작 > 끝은 보내지 않고 단추 옆에 까닭을 적는다. `min`·`max` 는 값이 바뀔 때만 다시 넣는다
-    (같은 값이라도 넣으면 Chrome 이 두 자리 월 입력을 끊는다).
+  - 달 고르기 컴포넌트(`components/month_range_picker.py`)는 고른 범위를 초안으로 두고 「적용」 때만 범위와 누름을 한
+    트리거로 보낸다 — 값과 누름을 따로 보내면 고친 직후 누른 「적용」이 옛 값으로 닫힌다. 끝 달을 기다리는 동안 · 지금
+    기간 그대로 · 범위 밖이면 「적용」 을 잠근다(파이썬도 범위 밖 · 거꾸로는 받지 않는다). 컴포넌트 요소는 회차에 바뀌지
+    않으므로 초안은 뿌리 요소에 달고, 서버가 보낸 지금 기간 · 범위가 바뀐 회차에만 다시 세운다. 격자 칸 Enter · Space 는
+    단추의 기본 누름에 맡긴다(keydown 에서 또 고르면 한 번에 두 번 누른다).
 - 숨은 탭에서 위젯을 그리지 않으면 Streamlit 이 그 값을 버린다. 본문에 남은 입력 위젯은
   숨은 탭에서도 그리고 계산·표·차트만 건너뛴다. 공용 프로필을 그대로 비추는 상자(「HOME 설정」 팝업 `Preference` 의 주요 Case)는
   숨은 회차에 DB 를 읽지 않고 마지막으로 보인 화면 재료로 위젯을 그린다(`home_main_cases`). **조건 카드로 옮긴 위젯**은 열린 탭에서만
@@ -5732,6 +5745,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보인다(끝 몇 글자만 — 1500×950 사본 실측: 공정 Capa 상세 제품 거르기 2칩 21px · 6칩 12px, 제약 시뮬레이션 보유 제약 호기는
   칩마다 한 줄이라 1 ~ 6칩 모두 11px). 목록 거르기는 그대로 된다. 이 대가를 두고 밀림 막기를 앞세우는 것은 사용자 결정이다(2026-11-02 결정
   보드 1102 B6 「(가) 지금대로 7px」 — 대안 「늘 42px」 은 좁은 칸이 늘 한 줄 높아 고르지 않음, TODO 3장 「화면」 2026-11-02).
+- **사이드바 스크롤 칸은 화면 높이 상한을 갖는다**(`max-height: 100dvh` — 2026-11-04 검수 의견 home-u04). Streamlit 1.63 사이드바의
+  폭 끌기 부품(re-resizable)은 끄는 동안 마우스가 움직일 때마다 부모 칸에 `flex-wrap: wrap` 을 잠깐 걸고 레이아웃을 강제로 잰다
+  (`getParentSize`). 그 순간 사이드바 키가 정해지지 않아 스크롤 칸(`stSidebarContent`, `height: 100%`)이 내용 높이로 늘고 브라우저가
+  `scrollTop` 을 0 으로 깎았다 — 폭을 끌면 사이드바가 맨 위로 갔다(서버 회차 없음 · 맨 Streamlit 앱에서도 같음). 규칙은 사이드바 시트
+  한 곳(`sidebar_style`)이고 시험은 규칙이 실렸는지만 본다(`tests/test_sidebar_stylesheet.py`) — 행동은 브라우저로 잰다. 본문
+  스크롤 칸은 Streamlit 이 `100dvh` 로 두어 그대로다.
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다. `ConditionTabs` 는 탭 말고 **보기 값**으로도 가른다 — Space 현황은 색 기준 라디오(`space_color_basis`)가
