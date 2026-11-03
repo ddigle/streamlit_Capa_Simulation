@@ -1196,11 +1196,13 @@ def test_taking_a_moved_group_off_returns_its_hidden_modules_in_one_undo_step() 
 
 def test_an_empty_cell_inside_a_picked_group_drags_the_group() -> None:
     """모듈 다섯 묶음의 남는 칸이나 숨은 모듈 칸처럼 고른 묶음 범위 안의 빈 곳을 누르면 선택이
-    풀리지 않고 그 묶음을 끈다(사각형 고르기보다 먼저 본다)."""
+    풀리지 않고 그 묶음을 끈다(사각형 고르기보다 먼저 본다). 서식 붓을 든 동안의 사각형
+    (`paint: true`)은 그 앞의 따로 된 갈래다(`test_space_format_paint_js`)."""
     down = _between("svg.onpointerdown = (event) => {", "svg.onpointermove = (event) => {")
     held = down.index("if (!group && !additive && pickedRangeAt(picked, p)) {")
-    assert held < down.index("mode: 'marquee'")
-    assert "mode: 'move'" in down[held : down.index("mode: 'marquee'")]
+    marquee = down.index("mode: 'marquee', additive,")
+    assert held < marquee
+    assert "mode: 'move'" in down[held:marquee]
     at = _between("function pickedRangeAt(picked, p) {", "svg.onpointerdown = ")
     assert "groupRange(mods)" in at and "const y = H() - p.top" in at
 

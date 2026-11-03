@@ -158,6 +158,23 @@
               </span>
             </div>
           </section>
+          <section class="sle-sec sle-edit-only" data-sec="format">
+            <button type="button" class="sle-sec-head" aria-expanded="true">서식</button>
+            <div class="sle-sec-body sle-format" role="group" aria-label="서식 복사·붙여넣기">
+              <div class="sle-format-row">
+                <button type="button" class="sle-paint" aria-pressed="false" aria-keyshortcuts="Control+Shift+C"
+                        title="서식 복사(Ctrl+Shift+C) — 고른 것의 크기·색·선·글자를 담고 붓을 듭니다. 한 번 누르면 다음에 누른 것 하나에 붙이고, 두 번 누르면 잠가 누를 때마다 붙입니다(Esc·다시 누르면 끝). 빈 곳을 끌면 그 안 전부에 붙입니다"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.6 1.8l4.6 4.6-4.4 4.4-4.6-4.6z" class="ico-line"/><path d="M5.2 6.2l4.6 4.6M4.4 9.4c-1.8.2-2.6 1.4-2.8 2.9-.1.8-.4 1.4-.9 1.9 2.7.3 4.9-.4 5.7-2.6" class="ico-line"/></svg>서식 복사</button>
+                <button type="button" class="sle-paint-paste" aria-keyshortcuts="Control+Shift+V"
+                        title="서식 붙여넣기(Ctrl+Shift+V) — 담은 서식을 지금 고른 것 모두에 붙입니다(담은 원본은 빼고)">붙이기</button>
+              </div>
+              <div class="sle-paint-parts" role="group" aria-label="붙일 것">
+                <label class="sle-field" title="같은 종류끼리만 — 요소는 같은 요소, 호기는 호기끼리·Main 설비 묶음끼리(범위). 자리는 그대로이고 왼쪽 아래를 기준으로 자랍니다"><input class="sle-paint-part" type="checkbox" data-part="size" checked><span>크기</span></label>
+                <label class="sle-field" title="면 색·채우기 투명도·선 색·굵기·모양(영역 테두리)·화살표 머리 크기·빗금 — 받는 쪽에 있는 칸만. 호기의 면은 계산 값이라 붙지 않습니다"><input class="sle-paint-part" type="checkbox" data-part="paint" checked><span>색·선</span></label>
+                <label class="sle-field" title="이름표 글자 크기·색, 영역의 글자 정렬. 이름표 글 자체는 옮기지 않습니다"><input class="sle-paint-part" type="checkbox" data-part="text" checked><span>글자</span></label>
+              </div>
+              <p class="sle-paint-now" aria-live="polite"></p>
+            </div>
+          </section>
           <section class="sle-sec sle-edit-only" data-sec="grid">
             <button type="button" class="sle-sec-head" aria-expanded="true">격자</button>
             <div class="sle-sec-body sle-steps" role="group" aria-label="격자 간격">

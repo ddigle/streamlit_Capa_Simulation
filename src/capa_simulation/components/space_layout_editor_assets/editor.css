@@ -514,6 +514,17 @@
 .sle button.sle-head-cell { width: 100%; height: 28px; padding: 0; justify-content: center; }
 .sle button.sle-head-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
 .sle-bay-flips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 서식(왼쪽 칸 「서식」 — 엑셀 서식 붓). 붓을 든 동안 단추는 강조색 면이고 잠그면 안쪽 테가 하나 더 선다. 붓을 든 무대의 커서는
+   copy 다(손잡이·끌기 커서보다 앞 — 붓을 든 채 누르면 끌지 않고 붙인다). Space·가운데 버튼 화면 이동 중에는 이동 커서 그대로. */
+.sle-format { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.sle-format-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.sle-paint svg { width: 14px; height: 14px; flex: none; }
+.sle button.sle-paint[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle button.sle-paint.is-sticky { box-shadow: inset 0 0 0 2px var(--sle-on-accent); }
+.sle-paint-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.sle-paint-now { margin: 0; color: var(--sle-muted); font-size: 0.78rem; line-height: 1.35; overflow-wrap: anywhere; }
+.sle .sle-canvas.is-painting:not(.is-pan-ready):not(.is-panning),
+.sle .sle-canvas.is-painting:not(.is-pan-ready):not(.is-panning) * { cursor: copy !important; }
 /* 범위(층·FAB)마다 쓰는 도구만 보인다. FAB 에는 호기가 없어 미배치 칸·반입구·문·기둥·설비 금지가 없고, 층 블록은 FAB 에만
    있다. */
 .sle.is-fab .sle-floor-only, .sle:not(.is-fab) .sle-fab-only { display: none !important; }

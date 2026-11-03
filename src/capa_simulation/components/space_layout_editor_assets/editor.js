@@ -24,6 +24,8 @@ export default function (component) {
     // 두 옆 칸의 폭·접힘(보기 상태 — 범위·모드별, `capa.space.panels.v1` 에서 처음 읽음)과 좁은 화면 겹침 서랍의 열린 칸
     // (`narrowOpen` — 'left'|'right'|null, 기억하지 않는다), 마지막에 폭을 끈 칸. 스크롤 고정(`lock` — 마운트에만 둔다).
     panels: null, narrowOpen: null, panelLast: null, lock: false, lockH: null,
+    // 서식 복사·붙여넣기 — 든 붓(`paint` = {clip, sticky}), 담은 서식(`formatClip` — 회차마다 저장소에서 다시 읽음), 붙일 것 체크.
+    paint: null, formatClip: null, formatParts: null,
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -234,8 +236,8 @@ export default function (component) {
   // 스크롤 고정이 `<html>` 에 다는 속성(그 속성을 읽는 규칙은 페이지 서식 — 파이썬 `space_lock_style`).
   const LOCK_ATTR = 'data-space-lock'
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -334,6 +336,11 @@ export default function (component) {
   const shapeToggle = q('.sle-shape-toggle')
   const shapePalette = q('.sle-shape-palette')
   const zoneOnly = [...host.querySelectorAll('.sle-zone-only')]
+  // 왼쪽 칸 「서식」(서식 붓·붙이기·붙일 것 체크·담은 서식 한 줄).
+  const paintButton = q('.sle-paint')
+  const paintPaste = q('.sle-paint-paste')
+  const paintParts = [...host.querySelectorAll('.sle-paint-part')]
+  const paintNow = q('.sle-paint-now')
   const blockProps = q('.sle-block-props')
   const blockLink = q('.sle-block-link')
   const blockColor = q('.sle-block-color')
@@ -1144,6 +1151,145 @@ export default function (component) {
     return far(away) > far(near) + 1e-9 ? away : near
   }
   // </shape-geometry>
+
+  // ---------------------------------------------------------------- 서식 복사·붙여넣기(순수 함수)
+  // 엑셀 서식 붓처럼 고른 것 하나의 서식을 담아 다른 것에 붙인다(2026-11-03 사용자 요청). 서식은 세 묶음(「붙일 것」 체크)이다 —
+  // 크기(같은 종류끼리만: 요소는 같은 kind, 호기는 낱 호기끼리·Main 설비 모듈 묶음끼리 — 묶음은 범위 크기. 크기는 상자 자기 방향의
+  // 길이·두께라 돌린 요소에는 돌린 대로 붙는다), 색·선(면 색은 영역·도형·층 블록 사이 — 받는 쪽에 없는 값은 그 칸만 건너뛴다,
+  // 채우기 투명도는 도형끼리, 선 색·굵기·모양은 도형·동선·베이 사이, 영역 테두리 모양 ↔ 선 모양, 머리 크기는 동선·베이 사이,
+  // 빗금은 영역·도형 사이), 글자(크기·색은 모든 도면 요소, 이름표 정렬은 영역끼리). 자리·이름표 글·회전·뒤집기·도형 꼴·모양 조절
+  // 값·설비 금지·연결 층은 넣지 않는다(엑셀 붓도 꼴·회전은 옮기지 않는다). 호기의 면 색은 계산 값이라 호기에는 크기만 붙는다.
+  // 담는 값은 그 종류가 지금 그리는 값(처음 값 포함)이다. `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
+  // 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <format-paint>
+  const FORMAT_PARTS = ['size', 'paint', 'text']
+  // 영역 색 키(파이썬 `MARK_COLOR_KEYS` — 글자 색 키도 같다), 영역 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`).
+  const FORMAT_COLORS = ['blue', 'rose', 'green', 'violet', 'sky', 'gray']
+  const FORMAT_BORDERS = ['dashed', 'solid']
+  const FORMAT_ALIGNS = ['left', 'center', 'right']
+  const FORMAT_LINED = ['arrow', 'bay', 'shape']
+  const FORMAT_HEADED = ['arrow', 'bay']
+  const FORMAT_HATCHED = ['zone', 'shape']
+  // 그 종류가 면 색으로 받는 값 — 영역은 색 여섯, 도형은 채우기 여덟(진하게·바탕 포함), 층 블록은 빈 값(Space 기본 면) + 여섯. 그 밖의
+  // 종류는 면 색이 없다(null).
+  function formatColors(kind) {
+    if (kind === 'zone') return FORMAT_COLORS
+    if (kind === 'shape') return SHAPE_FILLS
+    if (kind === 'block') return ['', ...FORMAT_COLORS]
+    return null
+  }
+  // 90°·270° 로 돌린 상자인가(폭·높이가 자기 방향의 두께·길이와 바뀐다).
+  function formatTurned(rot) {
+    return Boolean(((((Number(rot) || 0) % 180) + 180) % 180))
+  }
+  // 서식 — item 은 {kind, module(호기만 — Main 설비 모듈 묶음인가), w, h(묶음은 범위), rot, color, hatch, fontSize, fontColor,
+  // borderStyle, labelAlign, look}. {kind, module, size: {w, h}(자기 방향, 크기가 없으면 null), paint: {color?, fillAlpha?, line?,
+  // lineWidth?(동선 자동은 null), lineStyle?(영역은 테두리 모양), head?, hatch?} | null, text: {fontSize, fontColor, labelAlign?} | null}.
+  // 호기는 paint·text 가 null 이다.
+  function formatOf(item) {
+    const kind = String(item.kind)
+    const unit = kind === 'unit'
+    const sized = Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
+    const turned = !unit && formatTurned(item.rot)
+    const fmt = {
+      kind,
+      module: unit && Boolean(item.module),
+      size: sized ? { w: turned ? item.h : item.w, h: turned ? item.w : item.h } : null,
+      paint: null,
+      text: null,
+    }
+    if (unit) return fmt
+    const paint = {}
+    if (formatColors(kind)) paint.color = String(item.color || '')
+    if (kind === 'shape') paint.fillAlpha = lookValue(item.look, kind, 'fillAlpha')
+    if (FORMAT_LINED.includes(kind)) {
+      paint.line = lookValue(item.look, kind, 'line')
+      const width = lookValue(item.look, kind, 'lineWidth')
+      paint.lineWidth = width === undefined ? null : width
+      paint.lineStyle = lookValue(item.look, kind, 'lineStyle')
+    }
+    if (kind === 'zone') paint.lineStyle = FORMAT_BORDERS.includes(item.borderStyle) ? item.borderStyle : FORMAT_BORDERS[0]
+    if (FORMAT_HEADED.includes(kind)) paint.head = lookValue(item.look, kind, 'head')
+    if (FORMAT_HATCHED.includes(kind)) paint.hatch = Boolean(item.hatch)
+    fmt.paint = paint
+    fmt.text = { fontSize: item.fontSize ?? null, fontColor: String(item.fontColor || '') }
+    if (kind === 'zone') fmt.text.labelAlign = FORMAT_ALIGNS.includes(item.labelAlign) ? item.labelAlign : FORMAT_ALIGNS[0]
+    return fmt
+  }
+  // 받는 쪽 target(formatOf 와 같은 꼴)에 서식 fmt 의 켠 묶음(parts {size, paint, text} — 없거나 거짓이 아니면 켬)을 붙일 값 —
+  // {size: {w, h}(받는 쪽 방향) | null, fields: {요소 칸}, look: {모양 값 — null 은 처음 값으로}}. 받는 쪽이 갖지 않는 칸·값은
+  // 빠진다. 붙일 것이 하나도 없으면 null.
+  function formatPatch(target, fmt, parts) {
+    const kind = String(target.kind)
+    const on = (part) => !parts || parts[part] !== false
+    const out = { size: null, fields: {}, look: {} }
+    const sameKind = fmt.kind === kind && (kind !== 'unit' || Boolean(fmt.module) === Boolean(target.module))
+    if (on('size') && fmt.size && sameKind) {
+      const turned = kind !== 'unit' && formatTurned(target.rot)
+      out.size = { w: turned ? fmt.size.h : fmt.size.w, h: turned ? fmt.size.w : fmt.size.h }
+    }
+    const p = fmt.paint
+    if (kind !== 'unit' && p && on('paint')) {
+      const colors = formatColors(kind)
+      if (colors && typeof p.color === 'string' && colors.includes(p.color)) out.fields.color = p.color
+      if (kind === 'shape' && lookAllowed('fillAlpha', p.fillAlpha, kind)) out.look.fillAlpha = p.fillAlpha
+      if (FORMAT_LINED.includes(kind)) {
+        if (lookAllowed('line', p.line, kind)) out.look.line = p.line
+        // 동선의 자동 굵기(상자 높이를 따름)는 동선에만 있다 — 도형·베이는 그 칸을 건너뛴다.
+        if (p.lineWidth === null && kind === 'arrow') out.look.lineWidth = null
+        else if (lookAllowed('lineWidth', p.lineWidth, kind)) out.look.lineWidth = p.lineWidth
+        if (lookAllowed('lineStyle', p.lineStyle, kind)) out.look.lineStyle = p.lineStyle
+      }
+      if (kind === 'zone' && FORMAT_BORDERS.includes(p.lineStyle)) out.fields.borderStyle = p.lineStyle
+      if (FORMAT_HEADED.includes(kind) && lookAllowed('head', p.head, kind)) out.look.head = p.head
+      if (FORMAT_HATCHED.includes(kind) && typeof p.hatch === 'boolean') out.fields.hatch = p.hatch
+    }
+    const t = fmt.text
+    if (kind !== 'unit' && t && on('text')) {
+      if (t.fontSize === null || (Number.isInteger(t.fontSize) && t.fontSize > 0)) out.fields.fontSize = t.fontSize
+      if (t.fontColor === '' || FORMAT_COLORS.includes(t.fontColor)) out.fields.fontColor = t.fontColor
+      if (kind === 'zone' && FORMAT_ALIGNS.includes(t.labelAlign)) out.fields.labelAlign = t.labelAlign
+    }
+    const empty = !out.size && !Object.keys(out.fields).length && !Object.keys(out.look).length
+    return empty ? null : out
+  }
+  // 모양 값 look 에 patch(값 null 은 처음 값으로)를 얹은 그 종류의 정규 꼴.
+  function patchedLook(look, patch, kind) {
+    const merged = { ...(look || {}) }
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (value === null) delete merged[key]
+      else merged[key] = value
+    }
+    return cleanLook(merged, kind)
+  }
+  // 저장소에서 읽은 서식 — 꼴이 맞으면 그 서식(모르는 칸은 버림), 아니면 null. 크기는 양수만, 글자 크기는 고를 수 있는 것
+  // (sizes)만 남긴다.
+  function formatFrom(raw, sizes) {
+    if (!raw || typeof raw !== 'object' || typeof raw.kind !== 'string' || !raw.kind) return null
+    const size = raw.size && typeof raw.size === 'object' ? { w: Number(raw.size.w), h: Number(raw.size.h) } : null
+    const fmt = {
+      kind: raw.kind,
+      module: raw.kind === 'unit' && raw.module === true,
+      size: size && [size.w, size.h].every((v) => Number.isFinite(v) && v > 0) ? size : null,
+      paint: null,
+      text: null,
+    }
+    if (raw.kind === 'unit') return fmt
+    if (raw.paint && typeof raw.paint === 'object') {
+      const keep = ['color', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'head', 'hatch']
+      fmt.paint = Object.fromEntries(keep.filter((key) => key in raw.paint).map((key) => [key, raw.paint[key]]))
+    }
+    if (raw.text && typeof raw.text === 'object') {
+      const fs = raw.text.fontSize
+      fmt.text = {
+        fontSize: fs === null || sizes.includes(fs) ? fs : undefined,
+        fontColor: raw.text.fontColor === '' || FORMAT_COLORS.includes(raw.text.fontColor) ? raw.text.fontColor : undefined,
+      }
+      if (FORMAT_ALIGNS.includes(raw.text.labelAlign)) fmt.text.labelAlign = raw.text.labelAlign
+    }
+    return fmt
+  }
+  // </format-paint>
 
   // ---------------------------------------------------------------- 「필요 단축」 배지 자리(순수 함수)
   // `tests/test_space_short_badges_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름은 화면 px 상수 넷만 쓴다.
@@ -3815,6 +3961,12 @@ export default function (component) {
     }
     // 스크롤 고정 중이면 위 「저장 안 한 배치」 상자가 화면 밖이다 — 맨 앞에 한 줄.
     if (lockNote()) add(lockNote())
+    // 든 서식 붓(한 번 · 잠금).
+    if (S.paint) {
+      add(S.paint.sticky
+        ? '서식 붓 잠금 — 누를 때마다 붙입니다(빈 곳을 끌면 그 안 전부) · Esc·붓 단추로 끝'
+        : '서식 붓 — 붙일 것을 누르세요(빈 곳을 끌면 그 안 전부) · Esc 끝')
+    }
     // 방금 한 일의 한 줄(복사·붙여넣기) — 다음 고르기·편집에서 지운다.
     if (S.flash) add(S.flash)
     if (chosen.length > 1) {
@@ -3871,6 +4023,7 @@ export default function (component) {
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
     areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
     syncInspector()
+    syncFormatPanel()
   }
 
   // 이름 칸(호기 `이름`·요소 `이름`)에 적던 글자는 그 칸에 들어갈 때 고른 대상의 것이다. 고르는 것이 바뀌기 전에 칸을
@@ -4383,6 +4536,237 @@ export default function (component) {
     markOverlaps()
   }
 
+  // ---------------------------------------------------------------- 서식 복사·붙여넣기(엑셀 서식 붓)
+  // 2026-11-03 사용자 요청 — 크기·색 같은 서식을 담아 다른 것에 붙인다. Ctrl+Shift+C 는 고른 것 가운데 기준(마지막으로 누른 것
+  // `S.selected`) 하나의 서식을 담고, Ctrl+Shift+V 는 지금 고른 것 모두(담은 원본 하나는 빼고)에 붙인다(파워포인트·워드의 서식 복사
+  // 키 — 엑셀은 붓뿐이다). 왼쪽 칸 「서식」 의 붓은 엑셀과 같다 — 한 번 누르면 담고 붓을 들어 다음에 누른 것 하나(묶음은 묶음째)에
+  // 붙이고 내린다. 두 번 누르면 잠가 누를 때마다 붙이고 Esc·붓 단추·편집기 다시 서기(새 epoch)에 내린다. 붓을 든 채 빈 곳을 끌면
+  // 사각형 안 전부에 붙는다(옮기기는 일어나지 않는다). 무엇이 어디에 붙는지는 순수 판정 `// <format-paint>` 이고, 붙일 것(크기·
+  // 색·선·글자)은 체크로 고른다(`capa.space.formatPaint.v1` 에 기억). 담은 서식은 sessionStorage(층·FAB 공용 — 같은 브라우저
+  // 탭에서 층을 바꿔도 남는다) + 페이지 안 쪽지(저장소가 막힌 창)다. 한 번 붙이기(여럿 포함)가 되돌리기 한 번이고, 붙인 것은 지금
+  // 바뀜 판정·적용값·저장으로 그대로 간다.
+  const FORMAT_CLIP_KEY = 'capa.space.formatClip.v1'
+  const FORMAT_PARTS_KEY = 'capa.space.formatPaint.v1'
+  const formatMemo = window.__capaSpaceFormat || (window.__capaSpaceFormat = {})
+  const LINE_STYLE_WORDS = { solid: '실선', dashed: '점선', dotted: '점' }
+  // 담은 원본의 표지(범위·층·id) — 붙여넣기가 그 하나를 뺀다.
+  const formatOrigin = (item) => `${SCOPE}:${FLOOR}:${item.id}`
+  // 서식으로 견줄 꼴 — 도면 요소는 그대로, 호기는 낱 호기(그 크기)와 Main 설비 모듈 묶음(범위 크기 — 도면에 없으면 크기 없음).
+  function formatShell(item) {
+    if (!isUnit(item)) return item
+    const mods = moduleMembers(item)
+    if (!mods) return { kind: 'unit', module: false, w: item.w, h: item.h }
+    const range = groupRange(mods)
+    return { kind: 'unit', module: true, w: range ? range.w : NaN, h: range ? range.h : NaN }
+  }
+  // 담은 서식 한 줄 — 「영역 · 20×12 · 파랑 · 점선 · 글자 13」.
+  function formatWords(fmt) {
+    const kind = fmt.kind === 'unit' ? (fmt.module ? 'Main 설비 묶음' : '호기')
+      : MARK_KINDS[fmt.kind] ? MARK_KINDS[fmt.kind].name : fmt.kind
+    const words = [kind]
+    if (fmt.size) words.push(`${fmt.size.w}×${fmt.size.h}`)
+    const paint = fmt.paint || {}
+    if (typeof paint.color === 'string') words.push(paint.color ? SHAPE_FILL_NAMES[paint.color] || paint.color : '기본 색')
+    if (LINE_STYLE_WORDS[paint.lineStyle]) words.push(LINE_STYLE_WORDS[paint.lineStyle])
+    if (ARROW_HEADS.includes(paint.head)) words.push(`머리 ${headShort(paint.head)}`)
+    if (fmt.text) words.push(fmt.text.fontSize ? `글자 ${fmt.text.fontSize}` : '글자 자동')
+    return words.join(' · ')
+  }
+  // 붙일 것 체크(크기·색·선·글자) — 처음엔 모두 켬, 브라우저에 기억(이 편집기 안에서만 쓰는 보기 상태).
+  function formatParts() {
+    if (!S.formatParts) {
+      let stored = null
+      try {
+        stored = JSON.parse(window.localStorage.getItem(FORMAT_PARTS_KEY) || 'null')
+      } catch {
+        stored = null
+      }
+      S.formatParts = Object.fromEntries(FORMAT_PARTS.map((part) => [part, !(stored && stored[part] === false)]))
+    }
+    return S.formatParts
+  }
+  function storeFormatParts() {
+    try {
+      window.localStorage.setItem(FORMAT_PARTS_KEY, JSON.stringify(formatParts()))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  function writeFormat(clip) {
+    formatMemo.clip = clip
+    try {
+      window.sessionStorage.setItem(FORMAT_CLIP_KEY, JSON.stringify(clip))
+    } catch {
+      // 저장소가 막힌 창 — 이 페이지 안 쪽지로 붙인다.
+    }
+  }
+  // 담은 서식 {at, fmt, origin} — 저장소와 쪽지 가운데 나중 것(꼴이 맞을 때만, `formatFrom`). 없으면 null.
+  function readFormat() {
+    let stored = null
+    try {
+      stored = JSON.parse(window.sessionStorage.getItem(FORMAT_CLIP_KEY) || 'null')
+    } catch {
+      stored = null
+    }
+    const clip = [stored, formatMemo.clip || null]
+      .filter((c) => c && typeof c === 'object')
+      .sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0))[0]
+    const fmt = clip ? formatFrom(clip.fmt, FONT_SIZES) : null
+    return fmt ? { at: Number(clip.at) || 0, fmt, origin: String(clip.origin || '') } : null
+  }
+  // 회차마다 한 번 읽어 둔다(상태 줄·서식 칸이 끌기 중에도 자주 본다) — 담을 때 바꾼다.
+  S.formatClip = readFormat()
+  // 고른 것의 기준 하나의 서식을 담는다. 고른 것이 없으면 알리고 null.
+  function copyFormat() {
+    const item = S.selected ? S.items.get(S.selected) : null
+    if (!item) {
+      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 Ctrl+Shift+C'
+      updateStatus()
+      return null
+    }
+    const clip = { at: Date.now(), fmt: formatOf(formatShell(item)), origin: formatOrigin(item) }
+    writeFormat(clip)
+    S.formatClip = readFormat() || clip
+    S.flash = `서식 복사 — ${formatWords(clip.fmt)}`
+    updateStatus()
+    return S.formatClip
+  }
+  // 서식 clip 을 targets 에 붙인다 — 받는 쪽마다 켠 묶음의 `formatPatch` 로 요소 칸·모양 값을 바꾸고 크기는 `sizeEntries`(모듈 묶음은
+  // 범위째 바둑판)로 바꾼다. 바뀐 것 모두를 되돌리기 한 번에 담고 상태 줄 한 줄(`S.flash`)을 남긴다. 붙은 대상 수를 돌려준다.
+  function applyFormat(targets, clip) {
+    const parts = formatParts()
+    const befores = new Map()
+    const keep = (id, before) => { if (!befores.has(id)) befores.set(id, before) }
+    const seen = new Set()
+    const hits = []
+    let matched = 0
+    let units = 0
+    for (const item of targets) {
+      const mods = moduleMembers(item)
+      const key = mods ? `g:${groupKeyOf(item)}` : `i:${item.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (isUnit(item)) units += 1
+      const patch = formatPatch(formatShell(item), clip.fmt, parts)
+      if (!patch) continue
+      matched += 1
+      if (Object.keys(patch.fields).length || Object.keys(patch.look).length) {
+        keep(item.id, snapshot(item))
+        Object.assign(item, patch.fields)
+        if (Object.keys(patch.look).length) item.look = patchedLook(item.look, patch.look, item.kind)
+      }
+      if (patch.size) for (const e of sizeEntries([item], () => ({ ...patch.size })).entries) keep(e.id, e.before)
+      hits.push(mods ? mods.map((m) => m.id) : [item.id])
+    }
+    const same = (before, item) => JSON.stringify({ ...before, look: lookText(before.look) })
+      === JSON.stringify({ ...snapshot(item), look: lookText(item.look) })
+    const changed = [...befores].filter(([id, before]) => !same(before, itemOf(id)))
+    const changedIds = new Set(changed.map(([id]) => id))
+    const count = hits.filter((ids) => ids.some((id) => changedIds.has(id))).length
+    if (changed.length) {
+      pushUndo(changed.map(([id, before]) => ({ op: 'set', id, before })))
+      redraw(changed.map(([id]) => itemOf(id)))
+    }
+    const unitOnly = clip.fmt.kind === 'unit' || units > 0
+    if (count) {
+      const left = seen.size - matched
+      S.flash = `서식을 ${count}개에 붙였습니다${left ? ` · 맞는 칸이 없는 ${left}개는 그대로${unitOnly ? '(호기에는 같은 호기의 크기만 붙습니다)' : ''}` : ''}`
+    } else if (!FORMAT_PARTS.some((part) => parts[part])) {
+      S.flash = '붙일 것(크기·색·선·글자)이 모두 꺼져 있습니다 — 왼쪽 칸 「서식」 체크'
+    } else if (matched) {
+      S.flash = '이미 같은 서식입니다'
+    } else if (unitOnly) {
+      S.flash = '호기에는 같은 호기의 크기만 붙습니다'
+    } else {
+      S.flash = '붙일 서식이 없습니다 — 크기는 같은 종류끼리만 붙습니다'
+    }
+    return count
+  }
+  // Ctrl+Shift+V·「붙이기」 — 담은 서식을 지금 고른 것 모두(도면에 선 것, 담은 원본 하나는 빼고)에 붙인다.
+  function pasteFormat() {
+    const clip = S.formatClip
+    if (!clip) {
+      S.flash = '담은 서식이 없습니다 — 고른 것에서 Ctrl+Shift+C 또는 「서식 복사」'
+      updateStatus()
+      return
+    }
+    const targets = selectedItems().filter((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
+    if (!targets.length) {
+      S.flash = '서식을 붙일 것을 고르세요 — 담은 원본 하나는 빼고 고른 것 모두에 붙입니다'
+      updateStatus()
+      return
+    }
+    applyFormat(targets, clip)
+    updateStatus()
+  }
+  // 서식 붓 — S.paint = {clip, sticky}(든 동안) 또는 null.
+  function setBrush(next) {
+    S.paint = next
+    updateStatus()
+  }
+  // 붓에 담을 서식 — 고른 것이 있으면 그것을 새로 담고, 없으면 앞서 담은 서식(다른 층에서 담은 것 포함). 둘 다 없으면 알리고 null.
+  function brushClip() {
+    if (S.selected && S.items.has(S.selected)) return copyFormat()
+    if (!S.formatClip) {
+      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 붓을 누릅니다'
+      updateStatus()
+    }
+    return S.formatClip
+  }
+  // 붓을 든 채 누른(또는 사각형으로 고른) 것에 붙인다. 한 번 붓이면 내린다. 붙인 것이 골라진다.
+  function paintOnto(targets) {
+    const brush = S.paint
+    if (!brush || !targets.length) return
+    applyFormat(targets, brush.clip)
+    const flash = S.flash
+    if (!brush.sticky) S.paint = null
+    const ids = targets.map((m) => m.id)
+    setSelection(ids, ids[ids.length - 1])
+    S.flash = flash
+    updateStatus()
+  }
+  // 붓을 든 채 누른 자리의 받을 것 — 호기·요소(맨 위 층에 다시 세운 손잡이는 그 요소), 고른 모듈 묶음의 범위 손잡이·범위 안 빈
+  // 칸은 그 묶음. 빈 곳이면 null.
+  function paintTargetAt(node, p) {
+    const proxyFor = node.dataset ? node.dataset.for : undefined
+    const group = proxyFor ? S.groups.get(proxyFor) || null : node.closest ? node.closest('.sle-item') : null
+    if (group) return S.items.get(group.dataset.id) || null
+    const picked = selectedItems()
+    if (node.classList && node.classList.contains('sle-range-handle')) return picked.find((m) => moduleMembers(m)) || null
+    return pickedRangeAt(picked, p)
+  }
+  // 왼쪽 칸 「서식」 — 붓 단추 눌림·잠금, 붙이기 단추, 붙일 것 체크, 담은 서식 한 줄. 상태 줄과 함께 고친다.
+  function syncFormatPanel() {
+    const clip = S.formatClip
+    setAttr(paintButton, 'aria-pressed', String(Boolean(S.paint)))
+    paintButton.classList.toggle('is-sticky', Boolean(S.paint && S.paint.sticky))
+    svg.classList.toggle('is-painting', Boolean(S.paint))
+    paintPaste.disabled = !clip || !selectedItems().some((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
+    const parts = formatParts()
+    for (const box of paintParts) box.checked = parts[box.dataset.part] !== false
+    setText(paintNow, clip ? `담은 서식 — ${formatWords(clip.fmt)}` : '담은 서식 없음 — 고른 것에서 「서식 복사」(Ctrl+Shift+C)')
+  }
+  // 붓 단추 — 한 번 누르면(키보드 Enter·Space 포함) 담고 들기 / 든 붓 내리기, 두 번 누르면 잠금(엑셀처럼). 두 번 누름의 첫 누름이
+  // 이미 붓을 들었으면 그 붓을 잠근다.
+  paintButton.onclick = (event) => {
+    if (event.detail >= 2) {
+      const clip = S.paint ? S.paint.clip : brushClip()
+      if (clip) setBrush({ clip, sticky: true })
+      return
+    }
+    if (S.paint) { setBrush(null); return }
+    const clip = brushClip()
+    if (clip) setBrush({ clip, sticky: false })
+  }
+  paintPaste.onclick = () => pasteFormat()
+  for (const box of paintParts) {
+    box.onchange = () => {
+      formatParts()[box.dataset.part] = box.checked
+      storeFormatParts()
+      updateStatus()
+    }
+  }
+
   // 방향키·숫자 칸의 X·Y 는 고른 것 전부를 함께 옮긴다. 호기·요소는 모양 그대로, 모듈 묶음은 범위를 옮겨 바둑판으로 다시
   // 놓는다(옛 묶음은 이때 바둑판이 된다 — 벽에 막혀 이동량이 0 이면 다시 놓지 않는다). 되돌리기 한 번에 모두 돌아온다.
   function moveItems(list, dx, dy) {
@@ -4405,6 +4789,15 @@ export default function (component) {
   // 크기는 고른 것 하나하나에 적용한다 — 호기·요소는 그 하나, 모듈 묶음은 범위를 바꿔 바둑판으로 다시 놓는다(범위가 그대로면
   // 다시 놓지 않는다). 폭은 오른쪽으로, 높이는 위로 자란다.
   function setSizes(list, patchOf) {
+    const { entries, touched } = sizeEntries(list, patchOf)
+    if (!entries.length) { syncInspector(); return }
+    commit(entries)
+    redraw(touched)
+    updateStatus()
+  }
+  // `setSizes` 의 크기 바꾸기 — 바꾸기만 하고 기록하지 않는다. 바뀐 것의 처음 값({id, before})과 다시 그릴 것을 돌려준다(서식
+  // 붙여넣기가 다른 칸 바꿈과 함께 한 기록으로 모은다).
+  function sizeEntries(list, patchOf) {
     const entries = []
     const touched = []
     const done = new Set()
@@ -4435,10 +4828,7 @@ export default function (component) {
         touched.push(item)
       }
     }
-    if (!entries.length) { syncInspector(); return }
-    commit(entries)
-    redraw(touched)
-    updateStatus()
+    return { entries, touched }
   }
 
   // 「범위에 맞춰 n등분」 — 바둑판이 아닌 옛 묶음을 지금 바깥 상자 안에 다시 놓는다(옮기거나 키울 때와 같다).
@@ -4814,6 +5204,8 @@ export default function (component) {
     S.note = ''
     // 복사·붙여넣기 알림은 그 도면의 것이다 — 적용 뒤·다른 층의 새 도면까지 상태 줄에 남기지 않는다.
     S.flash = ''
+    // 편집기가 다시 서면 든 서식 붓을 내린다(담은 서식은 남는다).
+    S.paint = null
     // 새 epoch(층 이동·저장본·요소·그리는 호기가 바뀜)에서는 data 의 기준일을 그대로 쓴다.
     S.asOf = AS_OF
     S.dataAsOf = AS_OF
@@ -4907,14 +5299,14 @@ export default function (component) {
 
   // ------------------------------------------------------------- 끌기(속성 대입이라 겹쳐 쌓이지 않는다)
   svg.onmousedown = (event) => { if (event.button === 1) event.preventDefault() }
-  // 고른 것 가운데 도면 점 p(화면 좌표 {x, top})를 범위 안에 품은 모듈 묶음이 있는가.
+  // 고른 것 가운데 도면 점 p(화면 좌표 {x, top})를 범위 안에 품은 모듈 묶음(그 고른 호기 — 없으면 null).
   function pickedRangeAt(picked, p) {
     const y = H() - p.top
-    return picked.some((item) => {
+    return picked.find((item) => {
       const mods = moduleMembers(item)
       const range = mods && groupRange(mods)
       return Boolean(range) && p.x >= range.x && p.x <= range.x + range.w && y >= range.y && y <= range.y + range.h
-    })
+    }) || null
   }
   svg.onpointerdown = (event) => {
     if (event.button !== 0 && event.button !== 1) return
@@ -4945,7 +5337,16 @@ export default function (component) {
       svg.setPointerCapture(event.pointerId)
       return
     }
-    const rangeDir = event.target.classList && event.target.classList.contains('sle-range-handle') ? event.target.dataset.dir : null
+    if (S.paint) {
+      // 서식 붓을 든 채 — 누른 호기·요소(손잡이·고른 묶음 범위 안 빈 칸도 그것)에 붙이고 끌지 않는다. 빈 곳은 사각형 고르기이고
+      // 놓을 때 그 안 전부에 붙인다(`paintOnto`).
+      const target = paintTargetAt(event.target, p)
+      if (target) { paintOnto([target]); return }
+      S.drag = { ...start, mode: 'marquee', paint: true, additive: false, before: new Set(S.selection), beforePrimary: S.selected, rect: null }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
+    const rangeDir =event.target.classList && event.target.classList.contains('sle-range-handle') ? event.target.dataset.dir : null
     const picked = selectedItems()
     if (rangeDir && picked.length === 1 && moduleMembers(picked[0])) {
       // 고른 모듈 묶음의 범위 테두리 손잡이 — 범위 크기를 바꾸면 안의 모듈이 바둑판으로 다시 선다.
@@ -5164,6 +5565,15 @@ export default function (component) {
       return
     }
     if (drag.mode === 'marquee') {
+      // 서식 붓의 사각형 — 그 안 전부에 붙인다. 누르기만 했거나 안에 든 것이 없으면 고른 것을 그대로 두고 붓도 든 채다.
+      if (drag.paint && drag.moved && S.selection.size) { paintOnto(selectedItems()); return }
+      if (drag.paint) {
+        S.selection = new Set(drag.before)
+        S.selected = drag.beforePrimary
+        markSelection()
+        updateStatus()
+        return
+      }
       // 끌지 않고 빈 곳을 누르기만 했으면 선택을 푼다(Shift/Ctrl 이면 그대로 둔다).
       if (!drag.moved && !drag.additive) clearSelection()
       markSelection()
@@ -5297,6 +5707,8 @@ export default function (component) {
       return
     }
     if (event.key === 'Escape' && S.drag) { event.preventDefault(); cancelDrag(); return }
+    // 든 서식 붓은 Esc 가 먼저 내린다(고른 것은 그대로).
+    if (event.key === 'Escape' && S.paint) { event.preventDefault(); setBrush(null); return }
     const typing = event.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)
     const ctrl = event.ctrlKey || event.metaKey
     if (ctrl && event.key.toLowerCase() === 'z' && !typing) { event.preventDefault(); undo(); return }
@@ -5331,9 +5743,14 @@ export default function (component) {
     if (event.key === 'Escape' && S.selection.size) { event.preventDefault(); select(null); return }
     if (S.drag) return
     // 도면 요소 복사·붙여넣기(호기는 복사하지 않는다). 한글 자판에서도 듣게 글쇠 자리(code)도 본다. 글 칸에서는 위에서 비켰다.
+    // Shift 를 더하면 서식 복사·붙여넣기다(파워포인트·워드의 서식 복사 키) — 요소 복사 갈래보다 먼저 보고, 요소 복사는 Shift 가
+    // 없을 때만이다. 글 칸의 Ctrl+Shift+V(서식 없이 붙여넣기)는 위에서 비켜 그대로 브라우저 것이다.
     const letter = event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v' : event.key.toLowerCase()
-    if (ctrl && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
-    if (ctrl && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
+    const formatKey = ctrl && event.shiftKey && !event.altKey
+    if (formatKey && letter === 'c') { event.preventDefault(); copyFormat(); return }
+    if (formatKey && letter === 'v') { event.preventDefault(); pasteFormat(); return }
+    if (ctrl && !event.shiftKey && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
+    if (ctrl && !event.shiftKey && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
     const chosen = selectedItems()
     const standing = chosen.filter(onCanvas)
     // 지우기는 도면(또는 도면의 호기·요소)에 포커스가 있을 때만 — 툴바 단추를 누른 뒤 Backspace 가 고른 것을 지우지 않게.
@@ -5877,7 +6294,7 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- 왼쪽 칸 묶음 접힘(브라우저 안에서만)
-  // 묶음(범례·도면 요소·선택·격자·편집 영역·도움말)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
+  // 묶음(범례·도면 요소·선택·서식·격자·편집 영역·도움말)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
   // 도움말 둘만 접힘. 층 보기(범례 하나)는 묶음 머리가 없어 늘 펼침이다.
   function sectionFolded(name, fallback) {
     if (!S.sections) {

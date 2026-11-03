@@ -968,7 +968,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **편집기 몸은 가로 세 칸**(2026-11-03 사용자 요청 — 좌우로 긴 화면의 여백을 두 옆 칸에): `.sle-body` grid 다섯 칸
     [왼쪽 칸 `.sle-side.is-left`][칸막이][무대][칸막이][오른쪽 칸 `.sle-side.is-right`] — 칸마다 `grid-column` 을 박아 숨은 칸이
     있어도 밀리지 않는다. 왼쪽 칸은 FAB 보기에만 없고(층 보기는 「범례」 묶음 하나, 편집은 「도구」 — 범례·도면 요소·선택·
-    격자·편집 영역·도움말 묶음, 묶음 머리를 누르면 접힘), 오른쪽 칸(옛 미배치 서랍 — `.sle-tray`·`.sle-drawer-tab`·
+    서식·격자·편집 영역·도움말 묶음, 묶음 머리를 누르면 접힘), 오른쪽 칸(옛 미배치 서랍 — `.sle-tray`·`.sle-drawer-tab`·
     `.sle-drawer-close` class 는 그대로)은 층 편집에만 있다. 칸 상자는 `position: absolute; inset: 0` 이라 내용이 줄 높이를
     늘리지 않고 머리 아래가 굴러간다. 폭 한계·저장값·칸막이 키·무대 몫·고정 높이·놓기 판정은 순수 구획 `// <side-panels>`
     (`panelBounds`·`clampPanel`·`storedPanels`·`splitKey`·`fitPanels`·`dragLimit`·`lockHeight`·`lockTop`·`insideRect` —
@@ -1114,6 +1114,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       꼴에서 꺼진다. 도형 모서리 Shift 끌기는 비율 유지다(Shift 를 누른 채 손잡이를 잡아도 더하기 고르기가 아니다).
     - 넣기는 도면 요소 칸 「도형 ▾」 갤러리 — 누르면 보이는 가운데, 끌면 놓은 자리(`ghostDrag`·`dropSpot`), 키보드 click 도.
       읽기(`readMark` — 모르는 채우기 색은 파랑)·바뀜 판정·적용값·복사(`clipOf`)·되돌리기에 모양 값·색·빗금이 함께 간다.
+  - **서식 복사·붙여넣기**(2026-11-03 사용자 요청 — 사양 (다), 층·FAB 편집). 엑셀 서식 붓이다. 순수 판정은 `// <format-paint>`
+    (`formatOf` — 서식 {kind, module, size(자기 방향), paint, text}, `formatPatch` — 받는 쪽에 붙일 {size, fields, look} 또는 null,
+    `patchedLook`, 저장소에서 읽은 서식 거르기 `formatFrom`)이고 `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
+    node 로 돌려 종류 × 종류 × 붙일 것 체크 모든 쌍을 사양 5-1 표 모형과 견주고 붙인 요소가 파이썬 검증을 지나는지 본다.
+    - 키: `Ctrl+Shift+C`(⌘ 도) = 고른 것의 기준(`S.selected`) 하나를 담기, `Ctrl+Shift+V` = 지금 고른 것 모두(도면에 선 것, 담은 원본
+      하나는 빼고 — `formatOrigin`)에 붙이기. `host.onkeydown` 에서 글 칸 가드(`typing`) 뒤·요소 복사 갈래 **앞**이고(`formatKey` —
+      Ctrl·Shift·Alt 아님, 글쇠 자리 `code` 로 한글 자판도), 요소 복사 Ctrl+C/V 는 Shift 가 없을 때만이다. Esc 는 든 붓을 먼저
+      내린다. 실제 Chrome 창에서 Ctrl+Shift+C(개발자 도구 검사)를 페이지가 먼저 받는지는 사내·서피스 Chrome 확인 거리다(사양 D3 —
+      막히면 대안 Alt+Shift+C/V).
+    - 왼쪽 칸 「서식」 묶음(`data-sec="format"`, 선택 다음): 붓 `서식 복사`(`aria-pressed`, 한 번 = 담고 들어 한 번 붙이고 내림,
+      두 번(`click` 의 `detail` 2) = 잠금 — Esc·붓 단추·새 epoch 에 내림, 고른 것이 없으면 앞서 담은 서식으로 듦), `붙이기`, 붙일 것
+      체크 셋(크기·색·선·글자 — `capa.space.formatPaint.v1`), 담은 서식 한 줄. 붓을 든 `svg.onpointerdown` 은 끌기·손잡이보다
+      먼저 누른 것(`paintTargetAt` — 맨 위 층 손잡이·묶음 범위 안 빈 칸 포함)에 붙이고(`paintOnto` — 붙인 것을 고름), 빈 곳은
+      `mode: 'marquee', paint: true` 사각형이라 놓을 때 그 안 전부에 붙인다(누르기만 하면 고른 것을 지킴). 무대 커서는 copy.
+    - 붙는 칸: 크기는 같은 종류끼리만(요소는 같은 kind, 호기는 낱 호기끼리·Main 설비 모듈 묶음끼리 — 묶음은 범위 크기, 돌린 요소는
+      자기 방향 길이·두께로), 면 색은 영역·도형·층 블록 사이(받는 쪽에 없는 값은 건너뜀), 도형 투명도, 선 색·굵기·모양은 도형·
+      동선·베이 사이(동선 자동 굵기는 동선에만), 영역 테두리 ↔ 선 모양(점은 영역에 안 감), 머리 크기는 동선·베이, 빗금은 영역·
+      도형, 글자 크기·색은 모든 요소, 정렬은 영역끼리. 자리·이름표 글·회전·뒤집기·도형 꼴·모양 조절 값·설비 금지·연결 층은 넣지
+      않고 호기에는 크기만이다.
+    - `applyFormat` 은 칸·모양 값을 바꾸고 크기는 `sizeEntries`(`setSizes` 의 기록 없는 몸 — 모듈 묶음은 범위째 바둑판)로 바꿔 바뀐
+      것 모두를 `pushUndo` 한 번에 담는다(되돌리기 한 번). 붙인 것은 지금 바뀜 판정(`isChanged`)·적용값·저장으로 그대로 간다. 담은
+      서식은 sessionStorage `capa.space.formatClip.v1`(층·FAB 공용) + 페이지 안 쪽지 `window.__capaSpaceFormat` 이고 회차마다
+      `S.formatClip` 으로 한 번 읽는다 — 파이썬으로 보내지 않는다.
   - **층 상세 보기 둘**(2026-10-23 사용자 요청 3·8, 보기 전용 층 뷰어만 — FAB·배치 편집기는 그대로).
     - 호기 누르기: 끌지 않고 누른 뒤·Esc 뒤 `notePick` 이 고른 호기(호기가 아니면 null)를 트리거 `pick`
       (`{epoch, id}`)으로 보낸다 — 같은 값은 다시 보내지 않는다. 파이썬 `_dispatch_pick` 이 epoch 를 대조해 `on_pick` 을
@@ -6090,8 +6113,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   띠·사이드바·탭 줄 밑으로 묻힌다(D2). 복사는 동기 `copy` 이벤트의 `clipboardData` 로만(비동기 `navigator.clipboard` 는 쓰지
   않는다). op 마다 그 표 이력의 `gen` 을 싣고, 초안을 버리면 이력도 지워 다음 `gen` 이 달라 그 전에 보낸 op 는 버려진다. 받은 data
   로 다시 불린 함수 안에서는 보내지 않는다(`queueMicrotask` 뒤로). 초안이 없던 표의 첫 op 는 기다리지 않고 바로 보낸다.
-- Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
-  try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
+- Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘, Space 편집기의 요소·서식 클립보드와 붙일 것 체크)는
+  컴포넌트 안이나 localStorage·sessionStorage(읽기·쓰기 모두 try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
   하면 `<html>` 의 CSS 변수·속성만 쓰고 그 변수를 읽는 규칙은 페이지 서식(`st.html`)에 둔다(설비 마스터 오른쪽 칸 칸막이 —
   `--emd-side-w`·`data-emd-side`, Space 스크롤 고정 — `data-space-lock` · `space_layout_editor.space_lock_style()` — 다른 화면으로
   가면 서식이 사라져 속성이 남아도 막지 않는다. 본문 스크롤 칸 `stMain`·탭 줄 `.st-key-page_tabs_strip` 같은 Streamlit DOM 이름은

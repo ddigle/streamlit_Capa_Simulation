@@ -881,13 +881,14 @@ def test_drags_snap_to_guides_before_the_grid_and_alt_skips_them() -> None:
 
 
 def test_copy_paste_keys_leave_text_fields_alone_and_marks_alone_are_copied() -> None:
-    """Ctrl+C·V 는 글 칸에서 입력 중이면 가로채지 않고(앞에서 비킨다) 한글 자판에서도 듣는다. 복사는
-    도면 요소(`isMark`)만이고 저장소 읽기·쓰기는 모두 try 안이다. 붙인 요소는 `readMark` 로 새 id 를
-    받고 되돌리기 한 번(`pushUndo` 한 번)이다."""
+    """Ctrl+C·V 는 글 칸에서 입력 중이면 가로채지 않고(앞에서 비킨다) 한글 자판에서도 듣는다.
+    Shift 를 더한 Ctrl+Shift+C·V 는 서식 복사 갈래다(`test_space_format_paint_js`) — 요소 복사는
+    Shift 가 없을 때만이다. 복사는 도면 요소(`isMark`)만이고 저장소 읽기·쓰기는 모두 try 안이다.
+    붙인 요소는 `readMark` 로 새 id 를 받고 되돌리기 한 번(`pushUndo` 한 번)이다."""
     keys = _between("host.onkeydown = (event) => {", "for (const input of fieldInputs) {")
     typing = keys.index("if (typing) return")
-    copy = keys.index("if (ctrl && letter === 'c')")
-    assert typing < copy < keys.index("if (ctrl && letter === 'v')")
+    copy = keys.index("if (ctrl && !event.shiftKey && letter === 'c')")
+    assert typing < copy < keys.index("if (ctrl && !event.shiftKey && letter === 'v')")
     assert "event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v'" in keys
     copy_body = _between("function copyMarks() {", "function pasteMarks(")
     assert "const marks = chosen.filter(isMark)" in copy_body
