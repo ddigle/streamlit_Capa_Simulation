@@ -10,7 +10,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import flashed, infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, Expander, Status
 from streamlit.testing.v1.errors import AppTestError
@@ -423,6 +423,38 @@ def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> No
     assert any("이번 편집이 깨뜨린" in item.value for item in app.error)
     assert len(repository.list_scenarios()) == before
     assert _clone_inputs(app)["시나리오명"] == "깨진 편집 복제"
+
+
+def test_clone_that_leaves_demand_out_warns_only_through_the_alert_popup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """복제 저장 뒤 소요대수에 들지 않은 수요(`GateVerdict.exclusion`)는 버튼 곁 경고 상자 없이
+    알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 공식 지정과 한 꼴(2026-11-04 검수 의견
+    home-18). 남은 계산 오류 경고(`exclusion` 거짓)는 곁에도 선다(아래 물결표 시험)."""
+    import capa_simulation.components.scenario_management as scenario_management
+    from capa_simulation.components.capacity_gate import GateVerdict
+
+    message = (
+        "소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — "
+        "대당 Capa 가 없어 뺀 부하 경로 2건"
+    )
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    monkeypatch.setattr(
+        scenario_management,
+        "revision_save_verdict",
+        lambda *args: GateVerdict(True, message, exclusion=True),
+    )
+    app = AppTest.from_string(script, default_timeout=120).run()
+    app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
+    _fill_clone(app, "빠진 수요 복제", "CLONE-EXCLUSION")
+
+    assert any("빠진 수요 복제를 저장했습니다" in item.value for item in successes(app))
+    assert not any("소요대수에 들지 않은 수요" in item.value for item in app.warning)
+    (warned,) = flashed(app, "warning")
+    assert warned.value == message
+    assert warned.note is not None
+    assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
 
 
 def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
@@ -1079,10 +1111,12 @@ def test_the_official_popup_does_not_publish_over_a_release_made_while_it_was_op
 def test_official_release_with_demand_left_out_of_the_requirement_warns_after_publishing(
     tmp_path: Path,
 ) -> None:
-    """P1·P3 — 소요대수에 들지 않은 수요가 있는 리비전도 지정은 되지만, 지정한 자리에서 건수를 본다.
+    """P1·P3 — 소요대수에 들지 않은 수요가 있는 리비전도 지정은 되지만, 지정한 사람이 건수를 본다.
 
     발행 검사가 경고를 돌려줘도 화면이 성공 문구만 띄우면 지정한 사람은 확보율이 높게 나온
-    리비전을 모두의 첫 화면으로 올린 줄 모른다.
+    리비전을 모두의 첫 화면으로 올린 줄 모른다. 지정은 끝났고 고칠 입력이 그 자리에 없어 버튼 곁
+    경고 상자 없이 알림창 · Alarm 에만 낸다(사이드바 리비전 저장과 한 꼴 — 2026-11-04 검수 의견
+    home-18). 단계는 확인 필요(`FL-03`)다.
     """
     database_path = tmp_path / "scenario.duckdb"
     script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
@@ -1111,9 +1145,13 @@ def test_official_release_with_demand_left_out_of_the_requirement_warns_after_pu
     latest = repository.latest_official_release()
     assert latest is not None and latest.revision_id == saved.revision.revision_id
     assert any(item.value.startswith("공식 v2 · ") for item in successes(app))
-    assert any("부하량에서 빠진 계획" in item.value for item in app.warning), [
+    assert not any("부하량에서 빠진 계획" in item.value for item in app.warning), [
         item.value for item in app.warning
     ]
+    (warned,) = flashed(app, "warning")
+    assert "부하량에서 빠진 계획" in warned.value
+    assert warned.note is not None
+    assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
 
 
 def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(tmp_path: Path) -> None:

@@ -8,6 +8,8 @@
 //
 // 키보드: 격자는 한 칸만 Tab 자리다(나머지는 -1). ←→ 한 달 · ↑↓ 한 분기(세 달) · PageUp/PageDown 한 해 ·
 // Home/End 그 해 1월/12월, Enter · Space 가 누름이다(단추의 기본 누름). 해를 넘는 이동은 격자의 해도 넘긴다.
+// 범위를 고른 그 자리(띠의 시작 · 끝 칸, 또는 그 범위를 놓은 빠른 선택 칩)에서 Enter 를 한 번 더 누르면 「적용」
+// 이다(`enterApplies` — 적용할 수 있을 때만). Space 는 그대로 누름이라 그 달에서 새 범위를 시작한다.
 //
 // 컴포넌트 요소는 회차에 바뀌지 않으므로(실측) 회차를 넘는 초안은 뿌리 요소에 단다. 서버가 보낸 지금 기간 ·
 // 고를 수 있는 범위가 바뀐 회차에만 초안을 그 값으로 다시 세운다.
@@ -121,6 +123,16 @@ function applyState(draft, applied, minMonth, maxMonth) {
   }
   if (draft.start === applied.start && draft.end === applied.end) return 'same'
   return 'ready'
+}
+
+// 키보드 Enter 가 「적용」 인가 — 초안이 적용할 수 있는 범위(`ready`)이고 초점이 그 범위를 고른 자리일 때다.
+// `target` 은 격자 칸이면 `{ month }`(띠의 시작 · 끝 칸 — 거꾸로 고르면 닫은 칸이 시작이다), 빠른 선택 칩이면
+// `{ range }`(그 칩이 놓는 범위 — 초안과 같아야 한다). 그 밖의 칸에서 Enter 는 늘 누름이다.
+function enterApplies(draft, applied, target, minMonth, maxMonth) {
+  if (applyState(draft, applied, minMonth, maxMonth) !== 'ready') return false
+  if (target && target.month) return target.month === draft.start || target.month === draft.end
+  const range = target ? target.range : null
+  return Boolean(range) && range.start === draft.start && range.end === draft.end
 }
 
 // 해 넘김 단추가 설 수 있는가 — 그 해에 고를 수 있는 달이 하나라도 있어야 한다.
@@ -258,14 +270,28 @@ export default function (component) {
       render()
       return
     }
-    if (event.target.closest('.capa-month-apply')) {
-      if (applyState(state.draft, applied, minMonth, maxMonth) !== 'ready') return
-      setTriggerValue('apply', { start: state.draft.start, end: state.draft.end })
-    }
+    if (event.target.closest('.capa-month-apply')) applyDraft()
+  }
+
+  const applyDraft = () => {
+    if (applyState(state.draft, applied, minMonth, maxMonth) !== 'ready') return
+    setTriggerValue('apply', { start: state.draft.start, end: state.draft.end })
   }
 
   root.onkeydown = (event) => {
     const cell = event.target.closest('.capa-month-cell')
+    const chip = event.target.closest('.capa-month-chip')
+    if (event.key === 'Enter' && !event.repeat && !event.isComposing && (cell || chip)) {
+      const target = cell
+        ? { month: cellMonth(cell) }
+        : { range: quickRange(chip.dataset.quick, chip.dataset.length, thisMonth, minMonth, maxMonth) }
+      if (enterApplies(state.draft, applied, target, minMonth, maxMonth)) {
+        // 고른 자리에서 한 번 더 누른 Enter — 단추의 기본 누름(그 달에서 새 범위 시작)을 막고 적용한다.
+        event.preventDefault()
+        applyDraft()
+        return
+      }
+    }
     if (!cell) return
     // Enter · Space 는 단추의 기본 누름(click)이 맡는다 — 여기서 또 고르면 한 번에 두 번 누른다.
     const next = stepMonth(cellMonth(cell), event.key, minMonth, maxMonth)

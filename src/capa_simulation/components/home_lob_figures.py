@@ -101,8 +101,9 @@ LOB_BAR_LABEL_FONT_SIZE_PX = 22
 PRODUCT_SHARE_TITLE_FONT_SIZE_PX = 20
 PRODUCT_SHARE_UNIT_FONT_SIZE_PX = 14
 PRODUCT_SHARE_LEGEND_FONT_SIZE_PX = 13
-# 조각 안 비중 글자(20% 넘는 조각만 — `product_share.share_label`). 고리 두께(약 17px) 안에 「100%」
-# 가 가로로 들도록 고른 크기다. 들지 않으면 Plotly 가 그 조각 글자만 줄인다.
+# 조각 안 비중 글자(20% 넘는 조각만 — `product_share.share_label`). 방향은 Plotly 가 고른다
+# (`insidetextorientation="auto"` — 고리 두께 약 17px 에 가로로는 들지 않아 고리를 따라 기울여 이
+# 크기를 지킨다). 그래도 들지 않으면 Plotly 가 그 조각 글자만 줄인다.
 PRODUCT_SHARE_SLICE_FONT_SIZE_PX = 11
 _PRODUCT_SHARE_TITLE_LINE_PX = 24
 _PRODUCT_SHARE_LEGEND_GAP_PX = 6
@@ -208,8 +209,9 @@ def product_share_traces(
     조각 차례는 칸 배정 차례 그대로다(`sort=False`). Plotly 기본값은 값이 큰 순으로 다시
     세워, 달마다 같은 제품이 다른 자리에 서고 색만 같은 도넛이 된다. 12시에서 시계 방향이다.
 
-    비중이 20% 를 넘는 조각은 조각 안에 사사오입 정수 % 를 가로로 적는다(2026-11-04 사용자 검수
-    home-28 — `product_share.share_label`). 글자는 Plotly 의 `percent` 가 아니라 실제
+    비중이 20% 를 넘는 조각은 조각 안에 사사오입 정수 % 를 적는다(2026-11-04 사용자 검수 home-28 —
+    `product_share.share_label`). 방향은 Plotly 가 고른다(`insidetextorientation="auto"` — 가로로는
+    고리에 들지 않아 기울여 11px 를 지킨다). 글자는 Plotly 의 `percent` 가 아니라 실제
     비중(`share`)이다 — 그리는 크기(`_drawn_values`)는 아주 작은 조각을 키운 값이라 합이 1 이
     아니다. 글자색은 조각색 위 대비가 큰 쪽이다(`_label_ink`).
     """

@@ -1407,26 +1407,39 @@ def _render_official(
         st.error(bootstrap_error_message(exc))
         return
     remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
-    _official_published(release, revision_id, warning=verdict.message or None)
+    _official_published(
+        release, revision_id, warning=verdict.message or None, popup_only=verdict.exclusion
+    )
 
 
 def _official_published(
-    release: OfficialReleaseSummary, revision_id: str, *, warning: str | None
+    release: OfficialReleaseSummary,
+    revision_id: str,
+    *,
+    warning: str | None,
+    popup_only: bool = False,
 ) -> NoReturn:
     """공식 지정 뒤 이 세션의 뒷정리 — 알림을 담고 팝업을 닫고 다음 회차가 새 공식을 싣게 한 뒤 앱을
-    다시 돌린다."""
+    다시 돌린다.
+
+    `popup_only` 는 `warning` 이 소요대수에 들지 않은 수요 경고뿐이라는
+    표지(`GateVerdict.exclusion`)다.
+    """
     queue_flash(
         FLASH_KEY,
         f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
         f"{object_particle(release.release_name)} 지정했습니다.",
     )
-    # 허락하면서 하는 경고(소요대수에 들지 않은 수요 건수)는 지정한 사람이 그 자리에서 본다.
+    # 허락하면서 하는 경고(소요대수에 들지 않은 수요 건수)는 지정한 사람이 알림창에서 본다 — 지정은
+    # 끝났고 고칠 입력이 이 자리에 없어 버튼 곁 상자 없이 알림창 · Alarm 에만 낸다(사이드바 리비전
+    # 저장과 한 꼴 — 2026-11-04 검수 의견 home-18).
     if warning:
         queue_flash(
             FLASH_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
+            popup_only=popup_only,
         )
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
@@ -1887,12 +1900,15 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             )
         if verdict.message:
             # 계산 검사 경고(`capacity_gate`)는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 알림
-            # 상자(마크다운)에서 물결표가 지움선이 되지 않게 막는다.
+            # 상자(마크다운)에서 물결표가 지움선이 되지 않게 막는다. 소요대수에 들지 않은 수요
+            # (`verdict.exclusion`)는 고칠 입력이 이 자리에 없어 알림창 · Alarm 에만 내고(사이드바
+            # 리비전 저장과 한 꼴 — 2026-11-04 검수 의견 home-18) 남은 계산 오류 경고는 곁에도 선다.
             queue_flash(
                 FLASH_WARNING_KEY,
                 markdown_safe_tildes(verdict.message),
                 kind="warning",
                 icon=":material/warning:",
+                popup_only=verdict.exclusion,
             )
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()

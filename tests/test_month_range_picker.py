@@ -180,6 +180,59 @@ process.stdout.write(JSON.stringify({
     assert out["label"] == "26.07"
 
 
+def test_enter_again_where_the_range_was_chosen_applies_it() -> None:
+    """키보드 Enter 가 「적용」 인 자리(2026-11-04 재검 b-3 — 전에는 셋째 Enter 가 범위를
+    풀었다) — 적용할 수 있는(`ready`) 범위의 띠 시작 · 끝 칸(거꾸로 고르면 닫은 칸이 시작), 또는
+    그 범위를 놓은 빠른 선택 칩. 띠 안 · 밖의 다른 칸, 다른 칩, 끝을 기다리는 중 · 지금 기간
+    그대로면 늘 누름이다."""
+    out = _node(
+        """
+const now = { start: '2026-01', end: '2028-12' }
+const closed = { start: '2026-02', end: '2026-05', anchor: null }
+const e = (draft, target) => enterApplies(draft, now, target, '2025-01', '2030-12')
+const six = quickRange('this', 6, '2026-11', '2025-01', '2030-12')
+const all = quickRange('all', null, '2026-11', '2025-01', '2030-12')
+process.stdout.write(JSON.stringify({
+  end: e(closed, { month: '2026-05' }),
+  start: e(closed, { month: '2026-02' }),
+  inside: e(closed, { month: '2026-03' }),
+  outside: e(closed, { month: '2026-09' }),
+  waiting: e({ start: '2026-02', end: '2026-02', anchor: '2026-02' }, { month: '2026-02' }),
+  same: e({ ...now, anchor: null }, { month: '2028-12' }),
+  chip: e({ ...six, anchor: null }, { range: six }),
+  otherChip: e({ ...six, anchor: null }, { range: all }),
+  lockedChip: e({ ...six, anchor: null }, { range: null }),
+  nothing: e(closed, null),
+}))
+"""
+    )
+    assert out == {
+        "end": True,
+        "start": True,
+        "inside": False,
+        "outside": False,
+        "waiting": False,
+        "same": False,
+        "chip": True,
+        "otherChip": False,
+        "lockedChip": False,
+        "nothing": False,
+    }
+
+
+def test_the_enter_apply_runs_only_from_keydown_and_keeps_the_native_press() -> None:
+    """Enter 적용은 키 누름 처리기 안에서만 돈다 — 마우스로 띠 끝 칸을 다시 누르면 그대로 새
+    범위를 시작한다(click 길은 `enterApplies` 를 보지 않는다). 적용할 때만 기본 누름을
+    막고(`preventDefault`), 누르고 있는 키의 되풀이 · 한글 조합 중 Enter 는 적용하지 않는다."""
+    keydown = MONTH_RANGE_JS.split("root.onkeydown", 1)[1].split("root.onpointerover", 1)[0]
+    click = MONTH_RANGE_JS.split("root.onclick", 1)[1].split("root.onkeydown", 1)[0]
+    assert "enterApplies(" in keydown
+    assert "enterApplies(" not in click
+    assert "!event.repeat" in keydown
+    assert "!event.isComposing" in keydown
+    assert keydown.index("event.preventDefault()") < keydown.index("applyDraft()")
+
+
 def test_the_picker_has_a_year_header_twelve_month_cells_quick_chips_and_one_apply() -> None:
     """조각 계약 — 월 입력 칸은 없고, 해 넘김 둘 · 달 칸 열둘(1 ~ 12월 차례) · 빠른 선택 다섯 ·
     「적용」 하나다. 머리 설명 글(고를 수 있는 범위 · 「적용」 을 눌러야 바뀜)은 조각에도

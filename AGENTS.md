@@ -890,7 +890,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸을 걷었다. `render_month_range_apply` 는 적용한 회차에만 범위를 준다). 조각은 `month_range_picker_assets/` 세 파일이다.
   - 고르는 동안은 초안이고 「적용」 때만 트리거 하나로 보낸다. 끝 달을 기다리거나 지금 기간 그대로면 「적용」 이 잠기고,
     다르면 맨 아래 「지금 …」 줄이 선다 — 설명 글 없이 단추 상태로 「적용 전에는 그대로」 를 말한다. 고를 수 없는 달은
-    흐리게 잠긴다. 키보드는 방향키(한 달 · 세 달) · PageUp/PageDown · Home/End · Enter. 판정 구획(`// <month-range-core>`)은
+    흐리게 잠긴다. 키보드는 방향키(한 달 · 세 달) · PageUp/PageDown · Home/End · Enter — 범위를 고른 자리(띠의 시작 · 끝
+    칸이나 그 범위를 놓은 빠른 선택 칩)에서 Enter 를 한 번 더 누르면 「적용」 이다(`enterApplies` — 키 누름에서만, Space ·
+    마우스는 그 달에서 새 범위 시작, 2026-11-04 재검 b-3). 판정 구획(`// <month-range-core>`)은
     순수 함수라 node 로 시험한다(`tests/test_month_range_picker.py`). 팝업 포커스 때문에 그림자 DOM 에 가두지 않는다
     (`isolate_styles=False`), 색은 `--st-*` 테마 변수뿐이다. 부르는 쪽은 모듈 속성으로 부른다(테스트가 갈아끼운다).
 - `src/capa_simulation/components/condition_field.py` — 사이드바 통합 조건 패널의 한 줄(이름 줄 `condition_name_row`
@@ -1253,8 +1255,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   기간 Capa 계산(대당 Capa·소요대수 + HOME Density 환산 `density_error`)이 되는지 검사한다.
   - 저장은 편집이 새로 깨뜨렸으면 막고 원래 안 되면 경고하며 허락한다(파생 저장은 원본이 「편집 전」). 발행은 막는다.
     소요대수에 들지 않은 수요는 막지 않고 건수를 경고한다 — 그 판정은 `GateVerdict.exclusion` 이 참이고(계산은 통과), 사이드바
-    리비전 저장은 그 경고를 시나리오 칸 밑에 그리지 않고 알림창 · Alarm 에만 낸다(`queue_flash(…, popup_only=True)` — 2026-11-04
-    검수 의견 home-18). 남은 계산 오류 경고(`exclusion` 거짓)는 칸 밑에도 선다.
+    리비전 저장 · 시나리오 관리 복제 · 공식 지정은 그 경고를 버튼 곁(시나리오 칸 밑)에 그리지 않고 알림창 · Alarm 에만
+    낸다(`queue_flash(…, popup_only=verdict.exclusion)` — 2026-11-04 검수 의견 home-18). 남은 계산 오류 경고(`exclusion`
+    거짓)는 곁에도 선다.
   - 계산 페이지와 같은 캐시 칸(`pristine_content_token`)을 쓰고 BigDataQuery 등록·내장 시드는 검사하지 않는다. 새
     쓰기 경로는 `tests/test_capacity_gate.py` 목록에 더한다(`density_error` 는 `tests/test_gate_density_coverage.py`).
   - 자동 갱신 발행은 순수 코어 `simulation_cache.full_capacity_outcome` 로 같은 검사를 하고 경고를 실행 기록에 붙인다.
@@ -3060,8 +3063,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
   그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
   그 칸에도 그린다(2026-11-03 결정 보드 D3 (가) — `BESIDE_KINDS`). 동작은 끝났고 그 자리에 고칠 입력이 없는 경고는
-  `popup_only=True` 로 알림창 · Alarm 에만 낸다(사이드바 리비전 저장 뒤 소요대수에 들지 않은 수요 — 2026-11-04 검수 의견
-  home-18). 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의
+  `popup_only=True` 로 알림창 · Alarm 에만 낸다(사이드바 리비전 저장 · 시나리오 관리 복제 · 공식 지정 뒤 소요대수에 들지 않은
+  수요 — 2026-11-04 검수 의견 home-18). 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의
   실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다). 표지 글은 평문(`alerts.plain_text`
   — 마크다운 꾸밈을 걷는다)이고 칸 key(`origin`) · 화면을 단다. 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
   AST 그물 둘이 막는다 — 이름에 FLASH·NOTICE 가 든 칸을 비우는(`pop`·`del`) 자리와, 이름과 상관없이 꺼낸 칸(`pop`,
@@ -5932,8 +5935,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다. 동작은 끝났고 그 자리에
-  고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 뒤 「소요대수에 들지 않은
-  수요」(`GateVerdict.exclusion`, 2026-11-04 검수 의견 home-18). 같은 칸의 남은 계산 오류 경고는 칸 밑에도 선다.
+  고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 시나리오 관리 복제 · 공식
+  지정 뒤 「소요대수에 들지 않은 수요」(`GateVerdict.exclusion`, 2026-11-04 검수 의견 home-18). 같은 칸의 남은 계산 오류 경고는
+  곁에도 선다.
 - **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11) — 보관 기한 · 판정 범위 같은
   설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 에 둔다. 「로그」 펼침마다 「복사」(평문 클립보드 — alarm-05)가 선다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
