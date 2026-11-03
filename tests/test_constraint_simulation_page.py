@@ -104,7 +104,7 @@ settings.DUCKDB_PATH = Path({str(database_path)!r})
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(equipment_path)!r})
 horizontal_scrollbar.render_horizontal_scrollbar = lambda *args, **kwargs: None
 month_range_picker.render_month_range_apply = (
-    lambda *, start, end, min_month, max_month, key: None
+    lambda *, start, end, min_month, max_month, key, this_month=None: None
 )
 
 

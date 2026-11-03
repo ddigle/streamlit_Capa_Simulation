@@ -60,7 +60,7 @@ def _isolated_custom_renderers() -> Iterator[None]:
             patch.object(
                 month_range_picker,
                 "render_month_range_apply",
-                lambda *, start, end, min_month, max_month, key: None,
+                lambda *, start, end, min_month, max_month, key, this_month=None: None,
             ),
         ):
             yield

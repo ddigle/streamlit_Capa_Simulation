@@ -1,0 +1,268 @@
+/* 조회기간 팝업의 달 고르기. 색은 Streamlit 테마 변수(--st-*)와 그 섞음뿐이라 밝게 · 어둡게 테마를 따른다.
+   그림자 DOM 으로 가두지 않으므로(month_range_picker.py) 모든 규칙을 capa-month-* 클래스 아래에 둔다. */
+.capa-month-root {
+  --capa-month-line: color-mix(in srgb, var(--st-text-color) 18%, transparent);
+  --capa-month-muted: color-mix(in srgb, var(--st-text-color) 62%, transparent);
+  --capa-month-hover: color-mix(in srgb, var(--st-text-color) 7%, transparent);
+  --capa-month-band: color-mix(in srgb, var(--st-primary-color) 16%, transparent);
+  --capa-month-band-preview: color-mix(in srgb, var(--st-primary-color) 9%, transparent);
+  --capa-month-ring: color-mix(in srgb, var(--st-primary-color) 55%, transparent);
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--st-text-color);
+  font-family: var(--st-font);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.capa-month-root button {
+  font: inherit;
+  color: inherit;
+}
+
+.capa-month-head {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.capa-month-year {
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.capa-month-step {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--capa-month-line);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.capa-month-step:hover:not(:disabled) {
+  background: var(--capa-month-hover);
+}
+
+.capa-month-step:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.capa-month-step-mark {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 세 칸 네 줄 — 한 줄이 한 분기다. 칸 사이 가로 틈은 두지 않아 고른 범위가 한 띠로 이어진다. */
+.capa-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  row-gap: 6px;
+}
+
+.capa-month-cell {
+  position: relative;
+  z-index: 0;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+/* 칸 안 둥근 면(누름 · 시작 · 끝)은 글자 밑에 깐다 — 칸이 쌓임 맥락이라 -1 이 칸 띠 위 · 글자 아래다. */
+.capa-month-cell::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 3px 4px;
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+/* 시작 · 끝 칸은 마우스를 올려도 강조색 그대로다(올림 면이 덮으면 흰 글자가 묻힌다). */
+.capa-month-cell:not(.is-start):not(.is-end):hover:not(:disabled)::before {
+  background: var(--capa-month-hover);
+}
+
+.capa-month-cell.is-band {
+  background: var(--capa-month-band);
+}
+
+.capa-month-cell.is-band.is-preview {
+  background: var(--capa-month-band-preview);
+}
+
+/* 띠는 줄 끝에서 둥글게 끊는다(다음 줄로 이어진다는 것은 다음 줄 첫 칸이 말한다). */
+.capa-month-cell.is-band:nth-child(3n + 1),
+.capa-month-cell.is-start {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.capa-month-cell.is-band:nth-child(3n),
+.capa-month-cell.is-end {
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.capa-month-cell.is-start::before,
+.capa-month-cell.is-end::before {
+  background: var(--st-primary-color);
+}
+
+.capa-month-cell.is-start,
+.capa-month-cell.is-end {
+  color: var(--st-background-color);
+  font-weight: 700;
+}
+
+/* 이번 달 — 고른 범위와 상관없이 얇은 고리. */
+.capa-month-cell.is-now::after {
+  content: "";
+  position: absolute;
+  inset: 3px 4px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1.5px var(--capa-month-ring);
+  pointer-events: none;
+}
+
+.capa-month-cell:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.capa-month-cell:focus-visible,
+.capa-month-step:focus-visible,
+.capa-month-chip:focus-visible,
+.capa-month-apply:focus-visible {
+  outline: 2px solid var(--st-primary-color);
+  outline-offset: 1px;
+}
+
+.capa-month-cell:focus-visible {
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+
+.capa-month-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.capa-month-quick-name {
+  margin-right: 2px;
+  color: var(--capa-month-muted);
+  font-size: 0.8rem;
+}
+
+.capa-month-chip {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--capa-month-line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.capa-month-chip:hover:not(:disabled) {
+  background: var(--capa-month-hover);
+}
+
+.capa-month-chip[aria-pressed="true"] {
+  border-color: var(--st-primary-color);
+  background: var(--capa-month-band);
+  font-weight: 600;
+}
+
+.capa-month-chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.capa-month-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--capa-month-line);
+}
+
+.capa-month-draft {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.capa-month-draft-range {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.capa-month-draft-count,
+.capa-month-draft-wait {
+  margin-left: 8px;
+  color: var(--capa-month-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.capa-month-draft-now {
+  color: var(--capa-month-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.capa-month-draft-now:empty {
+  display: none;
+}
+
+/* Streamlit primary 단추와 같은 결 — 면은 강조색, 글은 바탕색. 고칠 것이 없으면 잠긴 테두리 단추다. */
+.capa-month-apply {
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 22px;
+  border: 1px solid var(--st-primary-color);
+  border-radius: 8px;
+  background: var(--st-primary-color);
+  color: var(--st-background-color) !important;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.capa-month-apply:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.capa-month-apply:disabled {
+  border-color: var(--capa-month-line);
+  background: transparent;
+  color: var(--capa-month-muted) !important;
+  cursor: default;
+}

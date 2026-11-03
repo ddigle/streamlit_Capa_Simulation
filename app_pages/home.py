@@ -27,7 +27,6 @@ from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
     KEY_PROCESS_PRESET_KEY,
-    THRESHOLD_POINTER,
     forget_unlisted_comparison,
     render_home_preference,
     render_home_view_card,
@@ -659,19 +658,19 @@ def show_process_filter_dialog(
         draft_selection = []
     selected_set = {str(process) for process in draft_selection if process in options}
 
-    # 첫 줄이 이 팝업이 무엇을 고르는지 말한다 — 표의 행을 거르는 다른 화면의 「공정 필터」와 달리
-    # B/N·확보율 **판정에 넣을** 공정이다. 기간·기준은 상태다. 판정 규칙(유효한 월 중 최저 확보율)과
-    # hover 는 Guide 가 말한다. 기준은 사사오입한 정수 퍼센트로 적고(`threshold_percent_label`),
-    # 기본값과 다른 달이 기간 안에 있으면 그 수를 덧붙인다. 공정을 가르는 판정은 달마다 정확한
-    # 값이다.
-    st.caption(
-        "B/N·확보율 판정에 넣을 공정 · "
-        f"{month_label(start_month)}–{month_label(end_month)} · {threshold_caption}"
+    # 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20). 고른 수가 머리이고, 무엇을
+    # 고르는지(표의 행을 거르는 다른 화면의 「공정 필터」와 달리 판정에 넣을 공정)와 그 기간 · 확보
+    # 기준은 그 줄의 풍선이다 — 「확보 기준 미달 · 충족」 묶음을 읽는 데 기준 값이 든다. 기준은
+    # 사사오입한 정수 퍼센트(`threshold_percent_label`)이고 기본값과 다른 달이 기간 안에 있으면 그
+    # 수를 덧붙인다. 판정 규칙(유효한 월 중 최저 확보율)과 기준을 정하는 자리(HOME 설정 →
+    # Preference)는 Guide 가 말한다.
+    st.markdown(
+        f"**선택 {len(selected_set)} / {len(options)}**",
+        help=(
+            "B/N·확보율 판정에 넣을 공정 · "
+            f"{month_label(start_month)}–{month_label(end_month)} · {threshold_caption}"
+        ),
     )
-    # 판정 기준을 정하는 자리. 전에는 사이드바 B/N 상자에 늘 한 줄로 섰다(2026-10-10 — 팝업 머리와
-    # Guide 로 옮겼다).
-    st.caption(THRESHOLD_POINTER)
-    st.markdown(f"**선택 {len(selected_set)} / {len(options)}** · 체크된 버튼이 ON입니다.")
     # 적용은 타일 목록 **위** 작업 줄이다 — 공정이 많으면 목록 아래 버튼이 팝업 밖으로 밀린다.
     with st.container(horizontal=True, gap="small"):
         apply_selection = st.button(

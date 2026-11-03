@@ -1,0 +1,40 @@
+<div class="capa-month-root" lang="ko">
+  <div class="capa-month-head">
+    <button type="button" class="capa-month-step" data-step="-1" aria-label="이전 해">
+      <svg class="capa-month-step-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 6 8.5 12l6 6"/></svg>
+    </button>
+    <span class="capa-month-year" aria-live="polite"></span>
+    <button type="button" class="capa-month-step" data-step="1" aria-label="다음 해">
+      <svg class="capa-month-step-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.5 6 6 6-6 6"/></svg>
+    </button>
+  </div>
+  <div class="capa-month-grid" role="group" aria-label="달">
+    <button type="button" class="capa-month-cell" data-month="1">1월</button>
+    <button type="button" class="capa-month-cell" data-month="2">2월</button>
+    <button type="button" class="capa-month-cell" data-month="3">3월</button>
+    <button type="button" class="capa-month-cell" data-month="4">4월</button>
+    <button type="button" class="capa-month-cell" data-month="5">5월</button>
+    <button type="button" class="capa-month-cell" data-month="6">6월</button>
+    <button type="button" class="capa-month-cell" data-month="7">7월</button>
+    <button type="button" class="capa-month-cell" data-month="8">8월</button>
+    <button type="button" class="capa-month-cell" data-month="9">9월</button>
+    <button type="button" class="capa-month-cell" data-month="10">10월</button>
+    <button type="button" class="capa-month-cell" data-month="11">11월</button>
+    <button type="button" class="capa-month-cell" data-month="12">12월</button>
+  </div>
+  <div class="capa-month-quick" role="group" aria-label="빠른 선택">
+    <span class="capa-month-quick-name" aria-hidden="true">이번 달부터</span>
+    <button type="button" class="capa-month-chip" data-quick="this" data-length="6" aria-label="이번 달부터 6개월">6개월</button>
+    <button type="button" class="capa-month-chip" data-quick="this" data-length="12" aria-label="이번 달부터 12개월">12개월</button>
+    <button type="button" class="capa-month-chip" data-quick="this" data-length="24" aria-label="이번 달부터 24개월">24개월</button>
+    <button type="button" class="capa-month-chip" data-quick="last" data-length="6">지난달부터 6개월</button>
+    <button type="button" class="capa-month-chip" data-quick="all">전체</button>
+  </div>
+  <div class="capa-month-foot">
+    <div class="capa-month-draft" aria-live="polite">
+      <span class="capa-month-draft-range"></span>
+      <span class="capa-month-draft-now"></span>
+    </div>
+    <button id="capa-month-apply" type="button" class="capa-month-apply">적용</button>
+  </div>
+</div>

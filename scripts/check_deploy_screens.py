@@ -353,7 +353,12 @@ SCENARIO_DIALOG_TITLE: Final = "시나리오·리비전"
 SCENARIO_DIALOG_MODES: Final = ("불러오기", "새 리비전 저장")
 REVISION_RADIO_LABEL: Final = "리비전"
 PERIOD_DIALOG_TITLE: Final = "조회기간"
-MONTH_INPUT_IDS: Final = ("capa-start-month", "capa-end-month")
+# 조회기간 팝업의 달 고르기(해 넘김 · 열두 달 격자 · 빠른 선택 — 2026-11-04 검수 의견 home-19).
+# 클래스 · id 는 `month_range_picker_assets/month_range.html` 과 같다(시험이 대 본다).
+MONTH_CELL_CLASS: Final = "capa-month-cell"
+MONTH_STEP_CLASS: Final = "capa-month-step"
+MONTH_CHIP_CLASS: Final = "capa-month-chip"
+MONTH_CELL_COUNT: Final = 12
 MONTH_APPLY_ID: Final = "capa-month-apply"
 MONTH_APPLY_LABEL: Final = "적용"
 PROCESS_DIALOG_TITLE: Final = "공정 필터"
@@ -374,7 +379,6 @@ EQUIPMENT_STATUS_BADGES: Final = (
     "미저장 변경",
     "일정 없이 엶",
 )
-THRESHOLD_POINTER: Final = "판정 기준은 HOME 설정 → Preference 에서 정합니다."
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
 # 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
@@ -2859,28 +2863,40 @@ def revision_list_words(revisions: Any, captions: object) -> str:
     return words
 
 
-# 조회기간 팝업 — 월 입력 칸 수와 「적용」 단추(월 선택 컴포넌트 안인가). 컴포넌트는 그림자 DOM 으로
-# 가두지 않아(`isolate_styles=False`) `querySelector` 로 닿는다.
+# 조회기간 팝업 — 달 칸 · 해 넘김 · 빠른 선택 수와 「적용」 단추(달 고르기 컴포넌트 안인가), 팝업의
+# 설명 글(`stCaptionContainer`) 줄 수(0 이 정상 — 2026-11-04 검수 의견 home-19). 옛 ZIP 화면의 월
+# 입력 칸이 있으면 그 수도 센다. 컴포넌트는 그림자 DOM 으로 가두지 않아(`isolate_styles=False`)
+# `querySelector` 로 닿는다.
 _PERIOD_DIALOG_JS = """(box, ids) => {
-  const months = ids.inputs
-    .map((id) => box.querySelector(`#${id}`))
-    .filter((input) => input && input.getAttribute("type") === "month");
+  const count = (name) => box.querySelectorAll(`.${name}`).length;
   const apply = box.querySelector(`#${ids.apply}`);
   return {
-    months: months.length,
+    cells: count(ids.cell),
+    steps: count(ids.step),
+    chips: count(ids.chip),
+    inputs: box.querySelectorAll('input[type="month"]').length,
+    captions: box.querySelectorAll('[data-testid="stCaptionContainer"]').length,
     apply: apply ? apply.textContent.trim() : null,
     inComponent: !!(apply && apply.closest('[data-testid^="stBidiComponent"]')),
   };
 }"""
-# 공정 필터 팝업 — 판정 기준 안내 한 줄이 작업 줄(첫 단추)보다 위, 곧 머리에 섰는가.
-_PROCESS_DIALOG_JS = """(box, pointer) => {
-  const hit = [...box.querySelectorAll('[data-testid="stCaptionContainer"]')]
-    .find((caption) => caption.innerText.trim() === pointer);
-  if (!hit) return { pointer: "none" };
+# 공정 필터 팝업 — 작업 줄(첫 단추)보다 위, 곧 머리에 선 설명 글(`stCaptionContainer`) 줄 수(0 이
+# 정상 — 2026-11-04 검수 의견 home-20)와 머리 「선택 n / N」 줄 · 그 풍선(기간 · 확보 기준)이
+# 섰는가.
+_PROCESS_DIALOG_JS = """(box) => {
+  const tips = '[data-testid="stTooltipIcon"], [data-testid="stTooltipHoverTarget"]';
   const first = box.querySelector('[data-testid="stButton"]');
-  if (!first) return { pointer: "head" };
-  const head = hit.getBoundingClientRect().top < first.getBoundingClientRect().top;
-  return { pointer: head ? "head" : "body" };
+  const limit = first ? first.getBoundingClientRect().top : Infinity;
+  const above = (el) => el.getBoundingClientRect().top < limit;
+  const captions = [...box.querySelectorAll('[data-testid="stCaptionContainer"]')].filter(above);
+  const head = [...box.querySelectorAll('[data-testid="stMarkdown"]')]
+    .filter(above)
+    .find((el) => /^선택 [0-9]+ [/] [0-9]+/.test(el.innerText.trim()));
+  return {
+    captions: captions.length,
+    selection: !!head,
+    help: !!(head && head.querySelector(tips)),
+  };
 }"""
 
 
@@ -3097,15 +3113,22 @@ def summarize_period_dialog(
 ) -> str:
     if title is None:
         return "팝업 안 열림"
-    months = int(facts["months"]) if facts else 0
-    if not facts or facts["apply"] != MONTH_APPLY_LABEL:
+
+    def number(name: str) -> int:
+        value = facts.get(name) if facts else None
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    if not facts or facts.get("apply") != MONTH_APPLY_LABEL:
         apply = "없음"
     else:
-        apply = "컴포넌트 안 있음" if facts["inComponent"] else "있음(컴포넌트 밖)"
+        apply = "컴포넌트 안 있음" if facts.get("inComponent") else "있음(컴포넌트 밖)"
+    inputs = number("inputs")
+    old = f" · 옛 월 입력 칸 {inputs}개" if inputs else ""
     return (
-        f"{_title_text(title, PERIOD_DIALOG_TITLE)} · 월 칸 {months}개 · "
-        f"「{MONTH_APPLY_LABEL}」 단추 {apply} · {_closed_text(closed)}(적용 안 함) · "
-        f"값 칸 글자 {'같음' if same else '다름'}"
+        f"{_title_text(title, PERIOD_DIALOG_TITLE)} · 달 칸 {number('cells')}개 · "
+        f"해 넘김 {number('steps')}개 · 빠른 선택 {number('chips')}개{old} · "
+        f"「{MONTH_APPLY_LABEL}」 단추 {apply} · 설명 글 {number('captions')}줄 · "
+        f"{_closed_text(closed)}(적용 안 함) · 값 칸 글자 {'같음' if same else '다름'}"
     )
 
 
@@ -3114,10 +3137,14 @@ def summarize_process_dialog(
 ) -> str:
     if title is None:
         return "팝업 안 열림"
-    place = facts["pointer"] if facts else "none"
-    pointer = {"head": "머리에 있음", "body": "머리에 없음(아래에 있음)"}.get(place, "없음")
+    captions = facts.get("captions") if facts else None
+    count = captions if isinstance(captions, int) and not isinstance(captions, bool) else "?"
+    if not facts or not facts.get("selection"):
+        selection = "선택 줄 없음"
+    else:
+        selection = "선택 줄 있음 · 풍선 " + ("있음" if facts.get("help") else "없음")
     return (
-        f"{_title_text(title, PROCESS_DIALOG_TITLE)} · 판정 기준 안내 {pointer} · "
+        f"{_title_text(title, PROCESS_DIALOG_TITLE)} · 머리 설명 {count}줄 · {selection} · "
         f"{_closed_text(closed)}"
     )
 
@@ -3173,22 +3200,28 @@ def check_scenario_popup(screen: Screen) -> str:
 
 
 def check_period_popup(screen: Screen) -> str:
-    """HOME 조회기간 칸의 팝업 — 월 칸·컴포넌트 안 「적용」. 적용하지 않고 `Esc` 로 닫은 뒤 칸
-    글자를 견준다(글자는 기간 값이라 같음·다름만 찍는다)."""
+    """HOME 조회기간 칸의 팝업 — 달 칸 · 해 넘김 · 빠른 선택 · 컴포넌트 안 「적용」 · 설명 글 0줄.
+    적용하지 않고 `Esc` 로 닫은 뒤 칸 글자를 견준다(글자는 기간 값이라 같음·다름만 찍는다)."""
     screen.open_home()
     selector = _sidebar_button(PERIOD_FIELD_KEY)
     before = str(screen.page.locator(selector).first.inner_text())
     screen.open_dialog(selector)
     try:
         title = screen.dialog_title()
-        # 팝업이 먼저 서고 월 선택 컴포넌트는 그 뒤에 붙는다.
+        # 팝업이 먼저 서고 달 고르기 컴포넌트는 그 뒤에 붙는다.
         facts = screen.poll(
             lambda: screen.dialog_read(
-                _PERIOD_DIALOG_JS, {"inputs": list(MONTH_INPUT_IDS), "apply": MONTH_APPLY_ID}
+                _PERIOD_DIALOG_JS,
+                {
+                    "cell": MONTH_CELL_CLASS,
+                    "step": MONTH_STEP_CLASS,
+                    "chip": MONTH_CHIP_CLASS,
+                    "apply": MONTH_APPLY_ID,
+                },
             ),
             timeout=30,
             accept=lambda value: (
-                bool(value) and value["months"] >= len(MONTH_INPUT_IDS) and bool(value["apply"])
+                bool(value) and value["cells"] >= MONTH_CELL_COUNT and bool(value["apply"])
             ),
         )
     finally:
@@ -3198,8 +3231,8 @@ def check_period_popup(screen: Screen) -> str:
 
 
 def check_process_popup(screen: Screen) -> str:
-    """HOME 공정 필터 칸의 팝업 — 제목과 머리의 판정 기준 안내. 공정을 고르지 않고 `Esc` 로
-    닫는다."""
+    """HOME 공정 필터 칸의 팝업 — 제목 · 머리 설명 글 0줄 · 「선택 n / N」 줄과 그 풍선. 공정을
+    고르지 않고 `Esc` 로 닫는다."""
     screen.open_home()
     selector = _sidebar_button(PROCESS_FIELD_KEY)
     field = screen.page.locator(selector).first
@@ -3210,9 +3243,9 @@ def check_process_popup(screen: Screen) -> str:
     try:
         title = screen.dialog_title()
         facts = screen.poll(
-            lambda: screen.dialog_read(_PROCESS_DIALOG_JS, THRESHOLD_POINTER),
+            lambda: screen.dialog_read(_PROCESS_DIALOG_JS),
             timeout=30,
-            accept=lambda value: bool(value) and value["pointer"] != "none",
+            accept=lambda value: bool(value) and bool(value["selection"]),
         )
     finally:
         closed = screen.close_dialog()

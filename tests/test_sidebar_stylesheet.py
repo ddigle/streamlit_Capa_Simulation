@@ -575,3 +575,17 @@ def test_scroll_room_grows_with_the_sso_third_card_line() -> None:
     # 좁은 사이드바(200px) · 부서 39자 · 「로그인 최대 시간까지 n분」 실측 10.90rem — 위아래 여백
     # 1.05rem + 0.75rem × 줄 높이 1.45 의 줄 아홉.
     assert three >= 1.05 + 9 * 0.75 * 1.45 > two
+
+
+def test_the_sidebar_scroller_keeps_a_height_cap_while_the_width_is_dragged() -> None:
+    """사이드바 스크롤 칸 키에 화면 높이 상한(`max-height: 100dvh`)이 걸린다(2026-11-04 검수 의견
+    home-u04).
+
+    Streamlit 1.63 사이드바 끌기 부품(re-resizable)은 끄는 동안 마우스가 움직일 때마다 부모 칸에
+    `flex-wrap: wrap` 을 잠깐 걸고 레이아웃을 강제로 잰다 — 그 순간 사이드바 키가 정해지지 않아
+    스크롤 칸이 내용 높이로 늘고 `scrollTop` 이 0 으로 깎였다(폭을 바꾸면 스크롤이 맨 위로). 상한이
+    그 순간에도 스크롤 자리를 남긴다. 규칙은 모든 화면이 받는 이 시트 하나이고, 행동은 브라우저로
+    잰다(끌기 뒤 scrollTop 그대로)."""
+    block = _style_block()
+
+    assert _rules_with(block, "max-height: 100dvh;") == [['[data-testid="stSidebarContent"]']]
