@@ -28,7 +28,7 @@ PROCESS_SELECTION_KEY = "dashboard_bottleneck_process_selection"
 PROCESS_SEEN_KEY = "dashboard_bottleneck_process_seen"
 SECURE_THRESHOLD_KEY = "dashboard_secure_threshold_percent"
 WARNING_THRESHOLD_KEY = "dashboard_warning_threshold_percent"
-# 위 두 키는 **레거시**다(2026-10-06 사용자 결정). 판정 기준은 이제 HOME 설정 → Preference 의 공용
+# 위 두 키는 **레거시**다(2026-10-06 사용자 결정). 판정 기준은 이제 HOME 설정 → 판정 기준 탭의 공용
 # 프로필(`services/securement_threshold`)이 정하고, 리비전 프리셋의 `secure_threshold`·
 # `warning_threshold` 는 판정에 쓰지 않는다. 저장 구조를 바꾸지 않으려고 프리셋 값만 세션을 거쳐
 # 그대로 다음 리비전에 실어 보낸다 — 화면 위젯은 없다. 세션이 비어 있으면 아래 기본값을 싣는다.

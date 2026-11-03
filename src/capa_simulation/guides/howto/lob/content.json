@@ -156,10 +156,10 @@
         {
           "id": "pick_compare",
           "title": "HOME 설정 팝업에서 비교 대상을 고릅니다",
-          "where": ["HOME", "HOME 설정", "Preference"],
+          "where": ["HOME", "HOME 설정", "비교 · 주요 Case"],
           "state": "20_home_pref_compare",
           "focus": [{"t": "pref_compare_scenario", "n": 1}, {"t": "pref_compare_revision", "n": 2}],
-          "do": "사이드바 [[HOME 설정]] → ((Preference)) 탭 → [[비교 시나리오]] · [[비교 리비전]] 을 고릅니다.",
+          "do": "사이드바 [[HOME 설정]] → ((비교 · 주요 Case)) 탭 → [[비교 시나리오]] · [[비교 리비전]] 을 고릅니다.",
           "ok": "고르는 순간 저장됩니다(따로 저장 버튼이 없어요). 공용 값이라 모든 사람의 비교 대상이 함께 바뀝니다."
         },
         {
@@ -178,7 +178,7 @@
           "focus": [{"t": "lc_gap", "n": 1}],
           "do": "[[LOB 표시 조건]] 카드(접혀 있으면 펼칩니다)에서 [[GAP]] 을 켭니다. Density · Wafer 계획 줄 아래에 증감이 붙습니다.",
           "stuck": [
-            "GAP 이 잠겨 있다 → 툴팁 「HOME 설정 → Preference 에서 비교 시나리오를 먼저 고르세요.」 — 1단계로 돌아가세요.",
+            "GAP 이 잠겨 있다 → 툴팁 「HOME 설정 → 비교 · 주요 Case 탭에서 비교 시나리오를 먼저 고르세요.」 — 1단계로 돌아가세요.",
             "같은 리비전을 고르면 증감이 모두 0 으로 나와요. 과거 실적 달에는 증감이 붙지 않습니다."
           ]
         }
@@ -199,15 +199,15 @@
         {
           "id": "find_box",
           "title": "HOME 설정 팝업의 「확보율 판정 기준」",
-          "where": ["HOME", "HOME 설정", "Preference"],
+          "where": ["HOME", "HOME 설정", "판정 기준"],
           "state": "06_home_pref",
           "focus": [{"t": "pref_criteria_box", "n": 1, "kind": "see"}],
-          "do": "사이드바 [[HOME 설정]] 을 눌러 ((Preference)) 탭에서 「확보율 판정 기준」 상자를 찾습니다."
+          "do": "사이드바 [[HOME 설정]] 을 눌러 ((판정 기준)) 탭에서 「확보율 판정 기준」 상자를 찾습니다."
         },
         {
           "id": "edit_save",
           "title": "기준(%)을 고치고 저장합니다",
-          "where": ["HOME", "HOME 설정", "Preference", "확보율 판정 기준"],
+          "where": ["HOME", "HOME 설정", "판정 기준", "확보율 판정 기준"],
           "state": "06_home_pref",
           "focus": [{"t": "pref_criteria_inputs", "n": 1}, {"t": "pref_criteria_save", "n": 2}],
           "do": "[[기본 확보 기준(%)]] · [[기본 경고 기준(%)]] 을 고치고 위의 [[판정 기준 저장]] 을 누릅니다.",

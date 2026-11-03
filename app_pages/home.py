@@ -489,7 +489,7 @@ try:
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
     top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
     key_process_profile = load_global_key_process(str(DUCKDB_PATH.resolve()))
-    # 판정 기준은 시나리오와 무관한 공용 정책값이다. HOME 설정 → Preference 한 곳에서 정한다.
+    # 판정 기준은 시나리오와 무관한 공용 정책값이다. HOME 설정 → 판정 기준 한 곳에서 정한다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
     # 공지는 계산에 들어가지 않는 화면 문구다. 그래서 Figure 캐시 키에도 넣지 않는다 —
     # 넣으면 문구 한 줄을 고칠 때마다 여섯 Figure 를 다시 그린다.
@@ -581,8 +581,8 @@ except BOOTSTRAP_ERRORS as exc:
 # `resolve_included_processes` 를 쓰지 않는다. 그쪽의 「직전 옵션에 없던 공정은 새 공정
 # 이니 포함」 규칙은 B/N 집계용이고, 주요공정은 명시적 선택이라 자동으로 들어오면 안 된다.
 # 어느 프리셋을 그릴지는 사이드바 `주요공정 히트맵` 줄의 팝업이 정한다(세션의 보는 조건, 위젯이
-# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. 「HOME 설정」 → Preference 에서 보던 프리셋의
-# 이름을 바꾸면 그 저장이 이 칸을 곧바로 새 이름으로 적는다.
+# 아닌 세션 값). 고르면 다시 돌아 이 줄부터 새 값이다. 「HOME 설정」 → 공지 · 표시 에서 보던
+# 프리셋의 이름을 바꾸면 그 저장이 이 칸을 곧바로 새 이름으로 적는다.
 key_process_preset = resolve_preset_name(
     key_process_profile.preset_names, st.session_state.get(KEY_PROCESS_PRESET_KEY)
 )
@@ -662,8 +662,8 @@ def show_process_filter_dialog(
     # 고르는지(표의 행을 거르는 다른 화면의 「공정 필터」와 달리 판정에 넣을 공정)와 그 기간 · 확보
     # 기준은 그 줄의 풍선이다 — 「확보 기준 미달 · 충족」 묶음을 읽는 데 기준 값이 든다. 기준은
     # 사사오입한 정수 퍼센트(`threshold_percent_label`)이고 기본값과 다른 달이 기간 안에 있으면 그
-    # 수를 덧붙인다. 판정 규칙(유효한 월 중 최저 확보율)과 기준을 정하는 자리(HOME 설정 →
-    # Preference)는 Guide 가 말한다.
+    # 수를 덧붙인다. 판정 규칙(유효한 월 중 최저 확보율)과 기준을 정하는 자리(HOME 설정 → 판정
+    # 기준 탭)는 Guide 가 말한다.
     st.markdown(
         f"**선택 {len(selected_set)} / {len(options)}**",
         help=(
@@ -724,7 +724,7 @@ def show_process_filter_dialog(
 # 화면이 읽는 것은 이번 선택지 안의 포함 공정이다. 보이지 않는 공정은 세션 값에만 남아 리비전을
 # 저장할 때 프리셋에 실린다.
 included_processes = visible_processes(st.session_state[PROCESS_SELECTION_KEY], process_options)
-# 판정 기준은 사이드바 입력이 아니라 HOME 설정 → Preference 의 공용 프로필 한 곳에서 정한다
+# 판정 기준은 사이드바 입력이 아니라 HOME 설정 → 판정 기준 의 공용 프로필 한 곳에서 정한다
 # (2026-10-06 사용자 결정). 기본값과 월별 예외를 한 값으로 들고 다니며, 판정하는 모든 곳이
 # 달마다 그 달의 실효 기준을 쓴다. 거꾸로 된 짝(경고 > 확보)은 저장 단계에서 막는다.
 thresholds = threshold_profile.thresholds
@@ -1106,14 +1106,16 @@ if view_conditions.comparison_revision_id:
             )
 
 
-def _render_preference_tab(owner_tab: OpenTab | None) -> None:
-    """「HOME 설정」 팝업의 `Preference` 탭 본문. `owner_tab` 은 그 탭이다(주요 Case 상자가 본다).
+def _render_preference_tabs(tabs: Mapping[str, OpenTab]) -> None:
+    """「HOME 설정」 팝업의 Preference 네 탭 본문(`tabs` — 라벨 → 탭, 주요 Case 상자가 제 탭을
+    본다).
 
     선행 B/O·선행 입고 실적은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가
     아니다. 달은 `Capa LOB 현황` 월 축 그대로라 Past Data 를 켰으면 과거 구간 달도 든다.
     """
     advance_months = [int(value) for value in baseline_density["생산계획년월"]]
     render_home_preference(
+        tabs=tabs,
         months=advance_months,
         month_labels=[month_label(value) for value in advance_months],
         threshold_profile=threshold_profile,
@@ -1128,7 +1130,6 @@ def _render_preference_tab(owner_tab: OpenTab | None) -> None:
         unmatched_execution=unmatched_execution,
         clamped_execution=clamped_execution,
         database_path=str(DUCKDB_PATH.resolve()),
-        owner_tab=owner_tab,
     )
 
 
@@ -1136,7 +1137,7 @@ def _render_preference_tab(owner_tab: OpenTab | None) -> None:
 # 수를 회차마다 같게). Past Data 는 **저장된** 프로필을 받는다. 표시용으로 비운 것을 주면 화면이
 # 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에 되쓴다.
 render_home_dialog_host(
-    preference=_render_preference_tab,
+    preference=_render_preference_tabs,
     past_data=partial(render_past_data_management, str(DUCKDB_PATH.resolve()), stored_past_profile),
 )
 home_trace.mark("Plotly 전달")

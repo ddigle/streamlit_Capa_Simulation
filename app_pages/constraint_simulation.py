@@ -585,7 +585,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         preset_label=lambda value: "HOME 기준" if value is None else f"{value:g}%",
         help=(
             "기존 제품 판정 기준(정수 % — 소수를 치면 사사오입합니다, 109.5 → 110). "
-            "「HOME 기준」 은 HOME 설정 → Preference 공용 판정 기준(기본 + 월별 예외)을 달마다 "
+            "「HOME 기준」 은 HOME 설정 → 판정 기준 탭의 공용 판정 기준(기본 + 월별 예외)을 달마다 "
             "씁니다. 판정은 확보율을 사사오입한 정수 % 로 견줍니다 — 110% 면 109.5% 도 "
             "확보입니다."
         ),

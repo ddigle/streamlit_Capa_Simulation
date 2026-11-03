@@ -14,8 +14,8 @@
     "official_memo": {"type": "text", "default": "12월 Pre B/D 가용 +2 반영", "about": "공식 지정 폼 「공식 지정 메모」에 적을 글"},
     "compare_scenario": {
       "type": "text",
-      "default": "26년 9월 정기 Capa 검토",
-      "about": "HOME 설정 팝업 Preference 「비교 시나리오」에서 고를 시나리오 이름(앞부분만 적어도 첫 일치를 고른다)"
+      "default": "26년 10월 정기 Capa 검토",
+      "about": "HOME 설정 팝업 「비교 · 주요 Case」 탭 「비교 시나리오」에서 고를 시나리오 이름(앞부분만 적어도 첫 일치를 고른다)"
     }
   },
   "states": [
@@ -119,20 +119,18 @@
     {
       "id": "06_home_pref",
       "page": "HOME",
-      "note": "HOME 설정 팝업 · Preference 탭 — 확보율 판정 기준 · 비교 시나리오",
+      "note": "HOME 설정 팝업 · 판정 기준 탭 — 확보율 판정 기준",
       "from": "01_home_main",
       "writes": "none",
       "ops": [
         {"op": "open_popup", "target": "key:home_settings_open"},
-        {"op": "tab", "text": "Preference", "scope": "dialog"},
-        {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start"}
+        {"op": "tab", "text": "판정 기준", "scope": "dialog"},
+        {"op": "scroll", "target": "named:HEAD_BOX(확보율 판정 기준)", "block": "start"}
       ],
       "targets": {
         "pref_criteria_box": "named:HEAD_BOX(확보율 판정 기준)",
         "pref_criteria_inputs": ["named:WIDGET(기본 확보 기준(%))", "named:WIDGET(기본 경고 기준(%))"],
-        "pref_criteria_save": "button:판정 기준 저장",
-        "pref_compare_box": "named:HEAD_BOX(비교 시나리오)",
-        "pref_compare_scenario": "named:WIDGET(비교 시나리오)"
+        "pref_criteria_save": "button:판정 기준 저장"
       }
     },
     {
@@ -396,22 +394,21 @@
     {
       "id": "20_home_pref_compare",
       "page": "HOME",
-      "note": "HOME 설정 팝업 Preference · 비교 시나리오를 고른 뒤 「비교 리비전」 칸(공용 프로필에 적힌다)",
+      "note": "HOME 설정 팝업 비교 · 주요 Case 탭 · 비교 시나리오를 고른 뒤 「비교 리비전」 칸(공용 프로필에 적힌다)",
       "from": "19_scenario_popup_load",
       "writes": "shared",
       "ops": [
         {"op": "key", "key": "Escape"},
         {"op": "nav", "text": "HOME"},
         {"op": "open_popup", "target": "key:home_settings_open"},
-        {"op": "tab", "text": "Preference", "scope": "dialog"},
-        {"op": "fill", "label": "비교 시나리오", "value": {"param": "compare_scenario", "default": "26년 9월 정기 Capa 검토"}},
+        {"op": "tab", "text": "비교 · 주요 Case", "scope": "dialog"},
+        {"op": "fill", "label": "비교 시나리오", "value": {"param": "compare_scenario", "default": "26년 10월 정기 Capa 검토"}},
         {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start"}
       ],
       "targets": {
         "pref_compare_box": "named:HEAD_BOX(비교 시나리오)",
         "pref_compare_scenario": "named:WIDGET(비교 시나리오)",
-        "pref_compare_revision": "named:WIDGET(비교 리비전)",
-        "pref_criteria_box": "named:HEAD_BOX(확보율 판정 기준)"
+        "pref_compare_revision": "named:WIDGET(비교 리비전)"
       }
     }
   ]

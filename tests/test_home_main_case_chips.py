@@ -34,6 +34,7 @@ from capa_simulation.components.home_main_case_chips import (
     slot_chips,
     stopped_chips,
 )
+from capa_simulation.components.home_main_cases import MAIN_CASE_FOCUS_KEY
 from capa_simulation.components.intro_summary import _SESSION_KEY as OFFICIAL_SESSION_KEY
 from capa_simulation.components.intro_summary import OfficialIdentity
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -47,8 +48,9 @@ from capa_simulation.components.scenario_status import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
+    HOME_CASES_TAB,
     HOME_DIALOG_KEY,
-    HOME_PREFERENCE_TAB,
+    HOME_PAST_TAB,
     HOME_SETTINGS_DIALOG,
     HOME_SETTINGS_TAB_KEY,
 )
@@ -344,18 +346,21 @@ def test_painting_needs_the_same_revision_and_otherwise_says_outside_the_slots(
     assert _outside_shown(app)
 
 
-def test_an_unset_case_opens_the_settings_popup_on_preference(seeded: Seeded) -> None:
-    """미지정 칩은 불러오지 않고 「HOME 설정」 팝업을 `Preference` 탭(「주요 Case」 상자)으로 연다
-    (2026-11-02 — 전에는 HOME `Preference` 탭으로 옮겼다). 여는 콜백은 다른 팝업 칸부터 비운다."""
+def test_an_unset_case_opens_the_settings_popup_on_the_cases_tab(seeded: Seeded) -> None:
+    """미지정 칩은 불러오지 않고 「HOME 설정」 팝업을 `비교 · 주요 Case` 탭(「주요 Case」 상자)으로
+    열고 그 Case 칸을 한 번 강조하라고 적는다(2026-11-04 사용자 검수 home-u03 — 칸은 상자가 보이는
+    첫 회차가 꺼낸다, `test_home_main_cases_picker.py`). 여는 콜백은 다른 팝업 칸부터 비운다."""
     app = _app(seeded)
     assert HOME_DIALOG_KEY not in app.session_state
-    app.session_state[HOME_SETTINGS_TAB_KEY] = ":material/history: Past Data"
+    app.session_state[HOME_SETTINGS_TAB_KEY] = HOME_PAST_TAB
     app.session_state[SCENARIO_DIALOG_KEY] = True
 
     app = _ran(app.button(key=CASE2_CHIP_KEY).click().run())
 
     assert app.session_state[HOME_DIALOG_KEY] == HOME_SETTINGS_DIALOG
-    assert app.session_state[HOME_SETTINGS_TAB_KEY] == HOME_PREFERENCE_TAB
+    assert app.session_state[HOME_SETTINGS_TAB_KEY] == HOME_CASES_TAB
+    # 이 시험 화면에는 팝업 본문이 없어 아무도 꺼내지 않는다 — 칩이 적은 Case 번호 그대로다.
+    assert app.session_state[MAIN_CASE_FOCUS_KEY] == 2
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
     assert SCENARIO_DIALOG_KEY not in app.session_state
 

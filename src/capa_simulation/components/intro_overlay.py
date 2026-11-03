@@ -295,7 +295,7 @@ def _data() -> dict[str, Any]:
                     "key": "comparison",
                     "label": "GAP",
                     "short": "GAP",
-                    "title": "비교 시나리오(HOME 설정 → Preference)와의 계획 차이",
+                    "title": "비교 시나리오(HOME 설정 → 비교 · 주요 Case)와의 계획 차이",
                 },
             ],
             "toggles_group": "요약 보기 조건",

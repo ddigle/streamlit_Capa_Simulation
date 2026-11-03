@@ -64,6 +64,13 @@ PAST_REPLACE_NOTICE = (
 )
 
 
+# 저장 단추 풍선의 둘째 말 — 「HOME 설정」 팝업 머리 안내 글(2026-11-04 사용자 검수 home-u01 「설명
+# 제거」)이 하던 말 가운데 이 탭 몫(공용 설정 · 읽어 둔 표는 닫아도 남음)을 누르는 자리에 둔다.
+PAST_SHARED_HELP = (
+    "모든 사용자가 함께 쓰는 공용 설정입니다. 읽어 둔 표는 팝업을 닫아도 저장할 때까지 남습니다."
+)
+
+
 @dataclass(frozen=True)
 class PastTableSpec:
     """한 표의 화면 이름·컬럼 계약·설명. 세 표가 같은 모양의 칸을 갖게 한다."""
@@ -279,7 +286,7 @@ def _render_save(
             type="primary",
             disabled=not pending_names,
             help=(
-                PAST_REPLACE_NOTICE
+                f"{PAST_REPLACE_NOTICE} {PAST_SHARED_HELP}"
                 if pending_names
                 else "읽어 둔 표가 없습니다. 아래 표의 「Excel 붙여넣기」로 먼저 읽으세요."
             ),

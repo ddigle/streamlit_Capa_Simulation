@@ -30,7 +30,7 @@
 - **설비 일정(참고)** — 설비 DB 의 최신 저장본·Cut-off 를 **읽기만** 한다
   (`PageSpec.uses_equipment_db`). 샘플 fleet 은 쓰지 않는다 — 저장본이 없으면 「설비 일정
   없음」이다. 판정(`dynamic_readiness`)을 통과한 공정만 계획
-  (`get_required_shortening_for_target` — 단축 목표는 HOME 설정 → Preference 확보기준을 달마다,
+  (`get_required_shortening_for_target` — 단축 목표는 HOME 설정 → 판정 기준 › 확보기준을 달마다,
   사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요 단축 일정 화면의
   공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다(사용자
   결정 1) — 그 화면으로 옮길 때 적는 「강조 공정」 칸 하나만 예외다(공정 필터는 심지 않는다).
@@ -259,7 +259,7 @@ def _stop_with_error(message: str) -> NoReturn:
 
 
 try:
-    # 판정 기준(HOME 설정 → Preference 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
+    # 판정 기준(HOME 설정 → 판정 기준 탭의 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
     # 키·확보율·공정 선택지를 제약 시뮬레이션과 **같은 차례**로
     # 낸다(`page_bootstrap.process_page_inputs`) — 두 화면이 같은 계획 칸을 같은 키로 받는다. 기본
     # 공정·기본 달을 정할 때도 HOME·Static Capa 와 같은 판정 (`thresholds.status`)을 쓴다.
@@ -684,7 +684,7 @@ if (
 ):
     # 계산은 이 설비 시나리오에 일정이 없는 호기와 그 비가동을 뺀 세 표다(F4).
     baseline, equipment, downtime = snapshot.calculation_frames()
-    # 단축 목표 = HOME 설정 → Preference 확보기준을 달마다(사용자 결정 2). 계산할 달 밖의 월별
+    # 단축 목표 = HOME 설정 → 판정 기준 › 확보기준을 달마다(사용자 결정 2). 계산할 달 밖의 월별
     # 예외는 싣지 않아 키를 가르지 않는다.
     target = target_from_thresholds(thresholds, months)
     shortening_key = required_shortening_cache_key(
@@ -926,7 +926,7 @@ def assumption_effect_line() -> str:
         shortage_months=(official_kpis.shortage_months, kpis.shortage_months),
     )
     basis = (
-        "이 화면 단축 목표 = HOME 설정 → Preference 확보기준(월별) · 기간 "
+        "이 화면 단축 목표 = HOME 설정 → 판정 기준 › 확보기준(월별) · 기간 "
         f"{month_label(effective_start)}–{month_label(effective_end)}(RQ_REQB) — 필요 단축 일정은 "
         "이 가정을 걸지 않습니다(늘 공식)"
     )

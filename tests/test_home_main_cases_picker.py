@@ -19,10 +19,13 @@ from streamlit.testing.v1 import AppTest
 from capa_simulation.components.flash import FlashNote
 from capa_simulation.components.home_main_cases import (
     IDLE_REVISION_CHOICE,
+    MAIN_CASE_FOCUS_KEY,
     MAIN_CASE_NOTICE_KEY,
     UNSET_CHOICE,
+    case_head_markup,
     main_case_revision_key,
     main_case_scenario_key,
+    main_case_slot_key,
     unset_choice_label,
 )
 from capa_simulation.persistence.cache import clear_global_main_cases_cache
@@ -523,3 +526,60 @@ def test_a_save_failure_notice_waits_for_the_visible_tab(tmp_path: Path) -> None
     app.session_state["test_tabs"] = "Preference"
     _ran(app.run())
     assert any("Case1 지정을 저장하지 못했습니다 — 시험" in text for text in _texts(app))
+
+
+def _heads(app: AppTest) -> int:
+    """Case 머리 줄(`st.html`) 수 — 이벤트 칸의 알림 표지(`render_flash`)는 세지 않는다."""
+    return sum("capa-main-case-head" in str(element.proto.body) for element in app.get("html"))
+
+
+def _focus_styles(app: AppTest) -> list[str]:
+    """이 회차 Case 머리 줄(`st.html`)에 실린 강조 서식이 가리키는 칸 key."""
+    return [
+        key
+        for element in app.get("html")
+        for key in (main_case_slot_key(1), main_case_slot_key(2))
+        if f".st-key-{key}{{" in str(element.proto.body)
+    ]
+
+
+def test_an_unset_chip_focus_flashes_that_case_once_on_the_visible_tab(tmp_path: Path) -> None:
+    """미지정 칩이 적은 Case(`focus_main_case`)는 상자가 **보이는** 첫 회차에 그 칸만 한 번 강조하고
+    다음 회차에는 걷는다(2026-11-04 사용자 검수 home-u03). 숨은 회차는 꺼내지 않는다 — 탭을 연
+    회차가 강조한다. 머리 줄은 강조가 없는 회차에도 같은 `st.html` 한 자리다."""
+    database = tmp_path / "scenario.duckdb"
+    _two_scenarios(database)
+    clear_global_main_cases_cache()
+    app = AppTest.from_string(TAB_SCRIPT, default_timeout=120)
+    app.session_state["database_path"] = str(database)
+    _ran(app.run())
+    assert _heads(app) == 2
+
+    app.session_state[MAIN_CASE_FOCUS_KEY] = 2
+    _ran(app.run())
+    assert _focus_styles(app) == []
+    assert app.session_state[MAIN_CASE_FOCUS_KEY] == 2
+
+    app.session_state["test_tabs"] = "Preference"
+    _ran(app.run())
+    assert _focus_styles(app) == [main_case_slot_key(2)]
+    assert MAIN_CASE_FOCUS_KEY not in app.session_state
+    assert _heads(app) == 2
+
+    _ran(app.run())
+    assert _focus_styles(app) == []
+    assert _heads(app) == 2
+
+
+def test_the_case_head_carries_the_focus_rule_with_a_still_outline_for_reduced_motion() -> None:
+    """강조는 한 번 도는 움직임(약 1.4초)이고 움직임 줄이기에서는 움직이지 않는 윤곽이다. 글은 앱이
+    지은 머리 줄 그대로다."""
+    plain = case_head_markup(1)
+    assert "<style>" not in plain
+    assert "슬롯 2 · Case1" in plain
+    focused = case_head_markup(2, focused=True)
+    slot = f".st-key-{main_case_slot_key(2)}"
+    assert "슬롯 3 · Case2" in focused
+    assert f"{slot}{{" in focused and "1.4s" in focused and " 1 both" in focused
+    reduced = focused[focused.index("prefers-reduced-motion: reduce") :]
+    assert "animation:none" in reduced and "outline:2px solid" in reduced
