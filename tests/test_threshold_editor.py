@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -103,7 +104,7 @@ def test_saving_writes_the_defaults_and_only_the_months_that_were_filled(databas
     assert profile.thresholds.for_month(202602) == pytest.approx((1.2, 1.0))
     assert profile.thresholds.for_month(202601) == pytest.approx((1.11, 1.0))
     # 저장 뒤 화면은 새 저장본을 그리고 플래시를 띄운다.
-    assert any("저장했습니다" in element.value for element in app.success)
+    assert any("저장했습니다" in element.value for element in successes(app))
     assert app.session_state[THRESHOLD_BASE_VERSION_KEY] == 1
 
 
@@ -288,7 +289,7 @@ def test_a_double_press_of_save_reports_the_save_not_a_conflict(database: Path) 
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error), [element.value for element in app.error]
-    assert [element.value for element in app.success] == [
+    assert [element.value for element in successes(app)] == [
         "확보율 판정 기준을 공용 설정으로 저장했습니다."
     ]
     assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 1
@@ -342,11 +343,11 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
     if trailing:
         errors = [element.value for element in app.error]
         assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-        assert not app.success
+        assert not successes(app)
         assert (profile.version, profile.source) == (1, "다른 세션")
     else:
         assert not list(app.error), [element.value for element in app.error]
-        assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+        assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
         assert (profile.version, profile.source) == (1, "다른 세션")
     clear_global_securement_threshold_cache()
 
@@ -422,19 +423,19 @@ def test_a_save_without_changes_makes_no_new_version(
 
     app = _save(app)
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
-    assert not app.success and not app.error
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert not successes(app) and not app.error
 
     app.text_input(key=THRESHOLD_NOTE_KEY).set_value("메모만 적음")
     app = _save(app)
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "처음 저장")
 
     _edit(app, {0: {"26.03": 121.0}})
     app = _save(app)
-    assert not app.info and not app.error, [element.value for element in app.info]
-    assert [element.value for element in app.success] == [THRESHOLD_SAVED_MESSAGE]
+    assert not infos(app) and not app.error, [element.value for element in infos(app)]
+    assert [element.value for element in successes(app)] == [THRESHOLD_SAVED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 2
     assert profile.rows["생산계획년월"].tolist() == [202602, 202603]
@@ -445,7 +446,7 @@ def test_the_first_save_of_an_unsaved_profile_writes_the_values_it_shows(databas
     기준으로 고정한다 — 바꾼 것 없는 저장 판정(개선 I5)은 저장본이 있을 때만이다."""
     app = _save(_app(database))
 
-    assert not app.info and not app.error, [element.value for element in app.info]
+    assert not infos(app) and not app.error, [element.value for element in infos(app)]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 1
     # 보이는 값은 정수 % 110·100 이고 저장은 그 T/100 이다(2026-11-01 사용자 결정 N1).
@@ -467,8 +468,8 @@ def test_a_slow_second_press_of_save_repeats_the_success(
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert not app.info and not app.error, [element.value for element in app.info]
-    assert [element.value for element in app.success] == [THRESHOLD_SAVED_MESSAGE]
+    assert not infos(app) and not app.error, [element.value for element in infos(app)]
+    assert [element.value for element in successes(app)] == [THRESHOLD_SAVED_MESSAGE]
     assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 2
 
 
@@ -491,7 +492,7 @@ def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     assert any("조회기간 밖" in caption.value for caption in app.caption)
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "12월 예외")
@@ -620,7 +621,7 @@ def test_a_stored_half_step_threshold_opens_as_its_whole_percent_and_saves_as_it
     app = _save(app)
 
     assert not list(app.error), [element.value for element in app.error]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     unchanged = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (unchanged.version, unchanged.default_secure) == (1, 1.095)
 
@@ -686,8 +687,8 @@ def test_typed_decimals_that_round_to_the_saved_values_are_unchanged_and_the_ran
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error), [element.value for element in app.error]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
-    assert not app.success
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert not successes(app)
     assert _threshold_rows_in_db(database) == (1, 1)
 
     _edit(app, {0: {"26.02": 1095.0}})
@@ -697,14 +698,14 @@ def test_typed_decimals_that_round_to_the_saved_values_are_unchanged_and_the_ran
     assert len(errors) == 1, errors
     assert "26.02 확보 기준 1095%" in errors[0] and "50% \\~ 300%" in errors[0], errors
     assert "저장하지 않았습니다" in errors[0]
-    assert not app.info and not app.success
+    assert not infos(app) and not successes(app)
     assert _threshold_rows_in_db(database) == (1, 1)
 
     _edit(app, {0: {"26.02": 120.4}})
     app = _save(app)
 
     assert not list(app.error), [element.value for element in app.error]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "처음 저장")
 
@@ -766,7 +767,7 @@ def test_a_threshold_outside_the_range_is_refused_naming_the_cell_and_the_range(
     assert len(errors) == 1, errors
     assert named in errors[0] and "50% \\~ 300%" in errors[0], errors
     assert "저장하지 않았습니다" in errors[0]
-    assert not app.success
+    assert not successes(app)
     assert _threshold_rows_in_db(database) == before == (1, 1)
 
 
@@ -877,7 +878,7 @@ def test_an_unsent_month_edit_is_dropped_when_another_session_saves_meanwhile(
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (2, "다른 세션")
     assert profile.thresholds.for_month(202602) == pytest.approx((1.25, 1.0))
@@ -901,7 +902,7 @@ def test_a_month_edit_refused_by_another_sessions_save_does_not_come_back_on_the
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (2, "다른 세션")
     assert profile.thresholds.for_month(202603) == pytest.approx((1.26, 1.0))
@@ -948,7 +949,7 @@ def test_both_default_fields_stand_from_the_latest_save_together(
 
     assert [widget.value for widget in app.number_input] == [115, 100]
     app = _save(app)
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.default_secure, profile.default_warning) == pytest.approx(
         (2, 1.15, 1.0)
@@ -1057,7 +1058,7 @@ def test_a_press_refused_by_another_sessions_save_keeps_the_hidden_month_note_an
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error), [element.value for element in app.error]
-    assert [element.value for element in app.info] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
     assert len(_outside_notes(app)) == 1
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (2, "다른 세션")

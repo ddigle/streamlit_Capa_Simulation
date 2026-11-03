@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -117,7 +118,7 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    assert any("이 세션에 적용했습니다" in item.value for item in successes(app))
     assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
     # FAB 만 바뀐 저장은 리비전을 만들지 않아 메모가 남을 곳이 없다 — 칸을 세우지 않는다.
     assert not [item for item in app.text_input if item.label == "변경 메모"]
@@ -129,7 +130,7 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("FAB 전체 배치를 저장했습니다" in item.value for item in app.success)
+    assert any("FAB 전체 배치를 저장했습니다" in item.value for item in successes(app))
     assert len(repository.list_revisions()) == 1
     stored = repository.load_fab_layout_marks()
     assert len(stored) == len(edited)
@@ -366,7 +367,7 @@ def test_a_second_press_of_the_same_fab_apply_keeps_the_success_without_blaming_
     payload = {"epoch": data["epoch"], "changes": [], "canvas": None, "marks": _edited_marks(data)}
     app.session_state[FAKE_APPLY_KEY] = dict(payload)
     app.run()
-    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    assert any("이 세션에 적용했습니다" in item.value for item in successes(app))
     applied = _fab_calls(editor_calls, editing=True)[-1]
 
     app.session_state[FAKE_APPLY_KEY] = dict(payload)
@@ -374,7 +375,7 @@ def test_a_second_press_of_the_same_fab_apply_keeps_the_success_without_blaming_
 
     assert not app.exception, [item.message for item in app.exception]
     assert not any("FAB 도면이 바뀌어" in item.value for item in app.warning)
-    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    assert any("이 세션에 적용했습니다" in item.value for item in successes(app))
     assert _fab_calls(editor_calls, editing=True)[-1]["epoch"] == applied["epoch"]
     clear_equipment_repository()
 
@@ -697,7 +698,7 @@ def test_a_fab_save_pressed_twice_keeps_its_success(
         _race_save(app, monkeypatch, callback="_save_space_layout")
 
     assert not app.exception, [item.message for item in app.exception]
-    texts = [str(item.value) for item in (*app.error, *app.warning, *app.info, *app.success)]
+    texts = [str(item.value) for item in (*app.error, *app.warning, *infos(app), *successes(app))]
     assert any("FAB 전체 배치를 저장했습니다" in text for text in texts), texts
     assert not any("바뀐 내용이 없어" in text for text in texts), texts
     repository = DuckDBEquipmentRepository(database)

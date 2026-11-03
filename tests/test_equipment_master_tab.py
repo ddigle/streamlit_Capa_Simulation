@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
@@ -149,7 +150,7 @@ def test_the_first_data_goes_through_the_import_dialog_and_one_revision_save(
     app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, app.exception
     assert len(repository.list_revisions()) == 1
-    assert any("설비 데이터를 저장했습니다" in item.value for item in app.success)
+    assert any("설비 데이터를 저장했습니다" in item.value for item in successes(app))
     # 저장 뒤 목록은 새 저장본 id 로 옮긴다(n:X → s:X).
     assert list(app.session_state[GRID_LOADED_KEY]) == ["s:DA-01", "s:DA-02"]
 
@@ -340,7 +341,7 @@ def _save_now(app: AppTest) -> str:
     app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, app.exception
     return next(
-        str(item.value) for item in app.success if "설비 데이터를 저장했습니다" in item.value
+        str(item.value) for item in successes(app) if "설비 데이터를 저장했습니다" in item.value
     )
 
 

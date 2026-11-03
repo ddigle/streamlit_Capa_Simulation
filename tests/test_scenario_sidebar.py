@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 import streamlit as st
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as target
@@ -379,11 +380,11 @@ def test_the_dialog_selects_and_loads_another_revision(
     assert app.session_state["test_activation_path"] == "바꾸기"
     # 성공하면 팝업을 닫고 알림은 필드 아래에 다음 회차 한 번 선다.
     assert SCENARIO_DIALOG_KEY not in app.session_state
-    assert [item.value for item in app.success] == ["증산안 r1을 불러왔습니다."]
+    assert [item.value for item in successes(app)] == ["증산안 r1을 불러왔습니다."]
     # 쓰기 알림 표지의 창(빠른 두 번 누름의 꼬리 회차가 같은 알림을 다시 그린다)이 지난 회차다.
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.run()
-    assert [item.value for item in app.success] == []
+    assert [item.value for item in successes(app)] == []
 
 
 def test_reopening_the_dialog_starts_from_the_active_revision(sidebar_app: AppTest) -> None:
@@ -475,11 +476,11 @@ def test_a_save_with_nothing_changed_makes_no_revision_and_says_so(sidebar_app: 
 
     assert not app.exception
     assert app.session_state["test_skip_unchanged"] is True
-    assert [str(item.value) for item in app.info] == [revision_unchanged_notice(1)]
+    assert [str(item.value) for item in infos(app)] == [revision_unchanged_notice(1)]
     assert "바뀐 것이 없습니다" in revision_unchanged_notice(1)
     assert "test_saved_revision_name" not in app.session_state
     assert "test_activated_revision" not in app.session_state
-    assert not app.success and not app.error
+    assert not successes(app) and not app.error
     assert app.session_state[SCENARIO_DIALOG_KEY] is True
     name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
     assert name.value == "그대로 저장"
@@ -507,7 +508,7 @@ def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -
             "source_stack": "8H",
         }
     ]
-    assert [item.value for item in app.success] == [
+    assert [item.value for item in successes(app)] == [
         "신규 리비전 r2를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
         "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
     ]
@@ -542,7 +543,7 @@ def test_sidebar_save_carries_over_the_loaded_revisions_virtual_products(
     assert [
         (row["product"], row["stack"]) for row in app.session_state["test_saved_virtual_products"]
     ] == [("DEMO_PARENT", "8H"), ("DEMO_VIRTUAL", "8H"), ("DEMO_SESSION", "4H")]
-    assert [item.value for item in app.success] == [
+    assert [item.value for item in successes(app)] == [
         "신규 리비전 r2를 저장했습니다. 가상 제품 3건이 포함되어 있습니다. "
         "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
     ]
@@ -556,7 +557,7 @@ def test_sidebar_save_without_virtual_products_says_only_what_it_saved(
 
     assert not app.exception
     assert app.session_state["test_saved_virtual_products"] == []
-    assert [item.value for item in app.success] == ["신규 리비전 r2를 저장했습니다."]
+    assert [item.value for item in successes(app)] == ["신규 리비전 r2를 저장했습니다."]
 
 
 def test_discarding_edits_lives_in_the_dialog_only_when_there_are_edits(
@@ -577,7 +578,7 @@ def test_discarding_edits_lives_in_the_dialog_only_when_there_are_edits(
 
     assert not app.exception
     assert app.session_state["test_reset_to_version"] == 1
-    assert "저장하지 않은 편집을 버렸습니다." in {item.value for item in app.success}
+    assert "저장하지 않은 편집을 버렸습니다." in {item.value for item in successes(app)}
     assert SCENARIO_DIALOG_KEY not in app.session_state
 
 

@@ -161,6 +161,10 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "새로 읽은 화면의 「공식으로 돌아왔습니다」 이름 — 띠 CSS 변수(퍼센트 인코딩)로만 "
         "나가고 탭 줄 JS 가 알림 칸에 textContent 로 그린다(마크다운 자리가 아니다)"
     ),
+    ("src/capa_simulation/components/change_summary.py", "session_changes"): (
+        "머리 변경 칩 판의 줄 글(설비 가정 「이름」) — 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다)"
+    ),
     ("src/capa_simulation/components/auto_official_update_tab.py", "run_history_frame"): (
         "자동 갱신 기록 표의 칸 글(st.dataframe — 마크다운이 아니다)"
     ),

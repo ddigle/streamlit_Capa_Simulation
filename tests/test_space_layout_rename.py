@@ -16,6 +16,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -577,7 +578,7 @@ def test_a_rename_is_applied_to_the_draft_and_saved_as_a_new_revision(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("이름 바꿈 1건도 넣었습니다" in item.value for item in app.success)
+    assert any("이름 바꿈 1건도 넣었습니다" in item.value for item in successes(app))
     assert any("이름 바꿈 1건" in item.value for item in app.markdown)
     # 이름만 바꾼 호기는 배치 변경도, RawData 의 다른 편집도 아니다.
     assert not any("호기 배치" in item.value for item in app.markdown)
@@ -596,7 +597,7 @@ def test_a_rename_is_applied_to_the_draft_and_saved_as_a_new_revision(
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("r2" in item.value for item in app.success)
+    assert any("r2" in item.value for item in successes(app))
     repository = DuckDBEquipmentRepository(database)
     revisions = repository.list_revisions()
     latest = repository.load_snapshot(str(repository.latest_revision_id()))
@@ -638,7 +639,7 @@ def test_a_group_rename_is_saved_on_every_module_row(
     # 묶음 이름만 바꾸면 비가동 일정은 따라갈 것이 없다 — 알림도 그렇게 말한다.
     assert any(
         "이름 바꿈 1건도 넣었습니다." in item.value and "비가동" not in item.value
-        for item in app.success
+        for item in successes(app)
     )
     app.button(key="space_layout_save").click().run()
 

@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import successes
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 
@@ -201,7 +202,7 @@ def test_the_untouched_template_row_can_be_previewed_but_not_saved(
     assert not app.exception
     # 예시 행은 「저장하기 전에 고칠 것」 한 줄이고 「리비전 저장」 은 오류 수로 막는다.
     assert any("오류 1개를 고쳐야 저장됩니다" in element.value for element in app.error)
-    assert not any("설비 데이터를 저장했습니다" in element.value for element in app.success)
+    assert not any("설비 데이터를 저장했습니다" in element.value for element in successes(app))
     assert not DuckDBEquipmentRepository(database_path).list_revisions()
 
 
@@ -228,7 +229,7 @@ def test_an_edited_count_turns_the_template_row_into_a_saved_revision(tmp_path: 
 
     assert not app.exception
     assert not app.error
-    assert any("공통 대장 r1" in element.value for element in app.success)
+    assert any("공통 대장 r1" in element.value for element in successes(app))
     repository = DuckDBEquipmentRepository(database_path)
     revisions = repository.list_revisions()
     assert len(revisions) == 1
@@ -258,7 +259,7 @@ def test_a_paste_that_only_repeats_the_template_process_name_is_still_the_user_s
 
     assert not app.exception
     assert not app.error
-    assert any("공통 대장 r1" in element.value for element in app.success)
+    assert any("공통 대장 r1" in element.value for element in successes(app))
 
 
 @pytest.mark.xfail(
@@ -295,7 +296,7 @@ def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) ->
 
     assert not app.exception
     assert any("고쳐야 저장됩니다" in element.value for element in app.error)
-    assert not any("설비 데이터를 저장했습니다" in element.value for element in app.success)
+    assert not any("설비 데이터를 저장했습니다" in element.value for element in successes(app))
 
 
 # ---------------------------------------------------------------------------

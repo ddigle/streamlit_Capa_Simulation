@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 from test_voc_page import _script
 
@@ -129,7 +130,7 @@ def test_the_voc_page_hands_the_form_keys_and_generation_to_the_keeper(
     app.text_area(key="voc_post_body").input("내용")
     next(item for item in app.button if item.label == "글 올리기").click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
 
     assert sent[-1]["session"] == token
     assert sent[-1]["generation"] == 1

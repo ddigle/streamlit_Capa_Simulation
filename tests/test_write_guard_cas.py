@@ -37,6 +37,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import shown, successes
 from grid_fake import Calls, install_fake_grid, load, send_ops
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
@@ -646,7 +647,7 @@ def _press_twice(
 
 
 def _texts(app: AppTest, kind: str) -> list[str]:
-    return [str(item.value) for item in getattr(app, kind)]
+    return [str(item.value) for item in shown(app, kind)]
 
 
 @pytest.fixture
@@ -803,7 +804,7 @@ def test_an_old_screen_double_press_after_another_threshold_save_keeps_the_refus
 
     errors = _texts(app, "error")
     assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-    assert not app.success
+    assert not successes(app)
     profile = repository.load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "다른 세션")
     clear_global_securement_threshold_cache()
@@ -864,7 +865,7 @@ _render_execution_editor(
 
     errors = _texts(app, "error")
     assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-    assert not app.success
+    assert not successes(app)
     profile = repository.load_global_execution_capacity()
     assert (profile.version, profile.source) == (2, "B 의 저장")
     clear_global_execution_capacity_cache()
@@ -899,7 +900,7 @@ def test_an_old_screen_double_press_after_another_process_rename_keeps_the_refus
 
     errors = _texts(app, "error")
     assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-    assert not app.success
+    assert not successes(app)
     assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
     assert repository.load_global_process_rename().source == "B 의 저장"
     clear_global_process_rename_cache()

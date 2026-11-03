@@ -6,8 +6,10 @@ from pathlib import Path
 import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
+from capa_simulation import alerts
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.accent_button_style import render_accent_button_style
+from capa_simulation.components.alert_center import render_alert_center
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import (
     equipment_return_mark,
@@ -17,6 +19,7 @@ from capa_simulation.components.app_header import (
 )
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
+from capa_simulation.components.change_summary import session_changes
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
     equipment_scenario_dialog_is_open,
@@ -69,7 +72,7 @@ from capa_simulation.page_bootstrap import (
     forget_page_dialogs,
     render_schema_ahead_warning,
 )
-from capa_simulation.page_tabs_state import note_current_page
+from capa_simulation.page_tabs_state import note_current_page, tab_label
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
@@ -207,19 +210,18 @@ signed_in = require_signed_in()
 # 그려야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다 — 이미 들어간 탭이면 브라우저 쪽에서
 # 아무것도 하지 않는다.
 render_intro_overlay()
-# 헤더 오른쪽 툴바 슬롯에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를 기억하는 자리를
-# 그대로 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 테마를 바꾸는 길은 이 버튼 하나다(⋮ 메뉴는
-# 감춘다). `Guide` · `Print` 버튼도 같은 iframe 에 싣고, 툴바 차례는 `Guide · Print · 테마`다
-# (`theme_toggle.TOOLBAR_BUTTON_ORDER`). Guide 는 기본은 감춰 두고 가이드를 단 페이지만 보이게
-# 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
-# 머리칸의 앱 이름 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
-# 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 그림(HOME 두
-# 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트·제약 시뮬레이션 그래프와 계산표 —
-# `CELL_SELECT_CHART_KEYS`) 위에서 시작한
-# 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)와, 누르면 공정 Capa 상세로
-# 옮기는 HOME 세 월 그림의 둘째 누름을 옮기는 동안 거르는 거름(`cell_press_guard` —
-# 더블클릭의 둘째 누름이 떠나는 HOME 프래그먼트 회차를 청해 옮긴 화면 본문을 비웠다)도
-# 여기 싣는다.
+# 헤더 오른쪽 툴바 슬롯에 밝게/어둡게 버튼을 얹는다. Streamlit 이 테마를 기억하는 자리를 그대로
+# 쓰므로 위젯과 우리 Figure 가 함께 바뀐다. 테마를 바꾸는 길은 이 버튼 하나다(⋮ 메뉴는 감춘다).
+# `Guide` · `Print` 버튼도 같은 iframe 에 싣고, 툴바 차례는 `Guide · Print · 테마`다
+# (`theme_toggle.TOOLBAR_BUTTON_ORDER` — 알림 칸이 세우는 변경 칩 · Alarm 이 Guide 왼쪽 · 오른쪽에
+# 든다). Guide 는 기본은 감춰 두고 가이드를 단 페이지만 보이게 한다. `Print` 는 감춘 메뉴의 인쇄를
+# 대신한다. 사이드바 머리칸의 앱 이름 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전
+# 요약(Summary)으로 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠
+# 그림(HOME 두 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트·제약 시뮬레이션 그래프와 계산표
+# — `CELL_SELECT_CHART_KEYS`) 위에서 시작한 터치가 화면을 스크롤하게 하는
+# 막이(`plotly_touch_scroll`)와, 누르면 공정 Capa 상세로 옮기는 HOME 세 월 그림의 둘째 누름을 옮기는
+# 동안 거르는 거름(`cell_press_guard` — 더블클릭의 둘째 누름이 떠나는 HOME 프래그먼트 회차를 청해
+# 옮긴 화면 본문을 비웠다)도 여기 싣는다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
@@ -520,6 +522,17 @@ with pinned_connections(DUCKDB_PATH):
     # 칸이다** — 순번이 회차마다 같아야 컴포넌트가 다시 마운트되지 않는다. 생겼다 사라지는 것
     # (스키마 경고)은 뒤에 둔다.
     render_page_tabs(current_spec, pages=pages, marks=unsaved_marks, leave=leave_notice(page_file))
+    # 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩).
+    # 탭 줄처럼 늘 서는 칸이고 페이지보다 앞이다 — 페이지가 `st.stop()` 해도 섰다. 페이지가 이
+    # 회차에 내는 알림은 표지(`alerts`)로 오고 알림 칸 JS 가 회차 끝에 훑는다. 표지가 「화면」 ·
+    # 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경 칩 목록은 탭 점과 같은 세션 판정이다(DB
+    # 를 읽지 않는다).
+    alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
+    render_alert_center(
+        changes=session_changes(
+            page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}
+        )
+    )
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 
@@ -69,7 +70,7 @@ def test_the_gap_tab_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> Non
     """Cut-off 가 없으면 Dynamic 을 낼 수 없다. 조용히 0 을 보이지 않고 이유를 말한다."""
     app = _run(tmp_path / "availability.duckdb", tab="Static 대비 일정")
 
-    notices = " ".join(str(item.value) for item in app.info)
+    notices = " ".join(str(item.value) for item in infos(app))
     assert "Cut-off" in notices, notices
     clear_equipment_repository()
 
@@ -242,7 +243,7 @@ def test_reopening_settings_shows_a_cutoff_saved_by_someone_else(tmp_path: Path)
     assert not app.exception, [item.message for item in app.exception]
     warnings = [str(item.value) for item in app.warning]
     assert not any("다른 사용자가 먼저" in text for text in warnings), warnings
-    assert any("Cut-off 1건을 저장했습니다" in str(item.value) for item in app.success)
+    assert any("Cut-off 1건을 저장했습니다" in str(item.value) for item in successes(app))
     assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0]
     clear_equipment_repository()
 

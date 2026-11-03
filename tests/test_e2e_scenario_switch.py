@@ -40,6 +40,7 @@ import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.alert_center as alert_center
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.intro_overlay as intro_overlay
 import capa_simulation.components.intro_summary as intro_summary
@@ -286,6 +287,7 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         patch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
         # 모듈 범위 픽스처라 conftest 의 함수 범위 탭 줄 대역이 아직 서지 않았다 — 여기서 건다.
         patch.setattr(page_tabs, "_PAGE_TABS", lambda **kwargs: None)
+        patch.setattr(alert_center, "_ALERT_CENTER", lambda **kwargs: None)
         patch.setattr(st, "plotly_chart", _spy_plotly_chart)
 
         app = AppTest.from_file(str(APP_PATH), default_timeout=600)

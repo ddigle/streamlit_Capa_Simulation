@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -130,7 +131,7 @@ def test_display_label_warning_survives_the_rerun_after_saving(
     save[0].click().run(timeout=30)
 
     assert not app.exception
-    assert [element.value for element in app.success] == [
+    assert [element.value for element in successes(app)] == [
         "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다."
     ]
     warnings = [element for element in app.warning if "화면 표시명을 적었습니다" in element.value]
@@ -141,7 +142,7 @@ def test_display_label_warning_survives_the_rerun_after_saving(
 
     app.run(timeout=30)
     assert not app.exception
-    assert not app.success
+    assert not successes(app)
     assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
 
 
@@ -166,8 +167,8 @@ def test_a_slow_second_press_keeps_the_label_warning_of_the_save(
     app.run(timeout=30)
 
     assert not app.exception
-    assert not app.info, [element.value for element in app.info]
-    assert [element.value for element in app.success] == [
+    assert not infos(app), [element.value for element in infos(app)]
+    assert [element.value for element in successes(app)] == [
         "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다."
     ]
     warnings = [element for element in app.warning if "화면 표시명을 적었습니다" in element.value]
@@ -224,9 +225,9 @@ def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
     app.run(timeout=30)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.success, [element.value for element in app.success]
-    infos = [element.value for element in app.info]
-    assert len(infos) == 1 and infos[0].startswith(_UNCHANGED_PREFIX), infos
+    assert not successes(app), [element.value for element in successes(app)]
+    informed = [element.value for element in infos(app)]
+    assert len(informed) == 1 and informed[0].startswith(_UNCHANGED_PREFIX), informed
     warnings = [element for element in app.warning if "화면 표시명을 적었습니다" in element.value]
     assert len(warnings) == 1
     assert "`거래선` → `Customer`" in warnings[0].value
@@ -241,7 +242,7 @@ def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
 
     app.run(timeout=30)
     assert not app.exception
-    assert not app.info, [element.value for element in app.info]
+    assert not infos(app), [element.value for element in infos(app)]
     assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
 
 
@@ -269,9 +270,9 @@ def test_an_unchanged_press_warns_only_about_a_display_label_left_in_the_table(
     app.run(timeout=30)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.success, [element.value for element in app.success]
-    infos = [element.value for element in app.info]
-    assert len(infos) == 1 and infos[0].startswith(_UNCHANGED_PREFIX), infos
+    assert not successes(app), [element.value for element in successes(app)]
+    informed = [element.value for element in infos(app)]
+    assert len(informed) == 1 and informed[0].startswith(_UNCHANGED_PREFIX), informed
     warnings = [element.value for element in app.warning]
     assert len(warnings) == len(expected_warnings), warnings
     for text, expected in zip(warnings, expected_warnings, strict=True):
@@ -512,7 +513,7 @@ finally:
 
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [element.value for element in app.error]
-    assert any("공용 설정으로 저장했습니다" in element.value for element in app.success)
+    assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     # 고친 범위는 사라지고 남은 범위만 경고한다.
     warning = " ".join(element.value for element in app.warning)
     assert "부하량 › 환산" in warning and "부하량 › 계획" not in warning
@@ -605,7 +606,7 @@ finally:
 
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [element.value for element in app.error]
-    assert any("공용 설정으로 저장했습니다" in element.value for element in app.success)
+    assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     assert not any("범위마다 따로 고칠 수 있습니다" in element.value for element in app.warning)
     assert places() == before
 
@@ -711,7 +712,7 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     assert not app.exception, [item.message for item in app.exception]
     errors = [str(error.value) for error in app.error]
     assert any("다른 사용자가 먼저 표시순서를 저장해" in text for text in errors), errors
-    assert not app.success, [element.value for element in app.success]
+    assert not successes(app), [element.value for element in successes(app)]
     assert app.text[-1].value == "v2|A=1;B=2"
 
     # 새 화면을 보고 다시 누른 저장이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
@@ -750,7 +751,7 @@ def test_a_double_press_after_a_newer_shared_profile_keeps_the_refusal(tmp_path:
     assert not app.exception, [item.message for item in app.exception]
     errors = [str(error.value) for error in app.error]
     assert len(errors) == 1 and "다른 사용자가 먼저 표시순서를 저장해" in errors[0], errors
-    assert not app.success, [element.value for element in app.success]
+    assert not successes(app), [element.value for element in successes(app)]
     assert app.text[-1].value == "v2|A=1;B=2"
     stored = DuckDBScenarioRepository(database_path).load_global_display_order()
     assert stored.source == "다른 세션의 저장"
@@ -815,6 +816,6 @@ def test_a_double_press_of_the_display_order_save_reports_no_conflict(tmp_path: 
 
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [str(error.value) for error in app.error]
-    assert any("공용 설정으로 저장했습니다" in element.value for element in app.success)
+    assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     assert app.text[-1].value == "v2|A=1;C=3;B=99"
     clear_global_display_order_cache()

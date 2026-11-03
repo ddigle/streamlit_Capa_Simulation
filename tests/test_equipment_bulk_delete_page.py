@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from streamlit.testing.v1 import AppTest
 
@@ -290,7 +291,7 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert warning.endswith(tail) and "설비 데이터 저장" not in warning
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    done = next(str(item.value) for item in app.info if "지웠습니다. 대상" in str(item.value))
+    done = next(str(item.value) for item in infos(app) if "지웠습니다. 대상" in str(item.value))
     assert done == warning.replace("지웁니다", "지웠습니다", 1)
     assert len(_downtime_machines(app)) == seed.downtime_count - count
     assert _machines(app) == sorted(seed.machines)  # 비가동만 지운다
@@ -299,7 +300,7 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
 
 
 def _infos(app: AppTest, needle: str) -> list[str]:
-    return [str(item.value) for item in app.info if needle in str(item.value)]
+    return [str(item.value) for item in infos(app) if needle in str(item.value)]
 
 
 @pytest.mark.parametrize(("window", "kept"), [(3600.0, True), (0.0, False)])

@@ -1,0 +1,204 @@
+# Purpose: 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩을 맡는 알림 칸 컴포넌트를 페이지 앞에 세운다.
+
+"""알림 칸(2026-11-03 결정 보드 D1 ~ D5 — 검수표 home-06 · home-08 · home-09). 규칙은 `alerts` 모듈
+설명이다.
+
+**`app.py` 에서만 불러온다**(화면 탭 줄과 같은 까닭 — 모듈을 읽을 때 Components v2 를 등록한다).
+`app.py` 가 화면 탭 줄 바로 뒤, 페이지보다 앞에서 매 앱 전체 회차 고정 key(`ALERT_CENTER_KEY`)로
+그린다 — 페이지가 `st.stop()` 해도 이 칸은 이미 섰다.
+
+- **그리는 자리는 본문 칸이 아니다.** JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자
+  DOM)를 붙여 알림창 · 패널 · 시선 끌기 테두리를 그리고, 머리 툴바 슬롯에 Alarm 단추 · 변경 칩
+  호스트(`theme_toggle.ALARM_BUTTON_ID` · `CHANGES_CHIP_ID`)를 세운다 — 컴포넌트 칸 안에 그리면
+  머리말 · 사이드바 · 대화상자의 쌓임 맥락 밑에 깔린다. 칸 자체는 `_HIDE_STYLE` 로 접어 본문에 틈을
+  남기지 않는다(입장 화면과 같은 꼴).
+- **data 는 세션만 읽는다**(DB · 캐시 없음). 회차마다 드는 것은 이 세션의 변경 몇
+  줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`)뿐이라, 둘이
+  그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의 토큰이다(테마 전환은
+  새로고침이라 다음 data 가 새 색을 싣는다).
+- **패널은 브라우저 안에서만 열고 닫는다** — 트리거를 보내지 않아 열어도 파이썬 회차가 돌지
+  않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
+  `sessionStorage`(`STORAGE`)다(D1 (가)).
+- **알림창 층은 Streamlit 대화상자 위다**(`.stack` z-index 1000200 — 1.63 대화상자 1000059 위,
+  2026-11-03 사본 실측). 누름을 받지 않아(`pointer-events: none`) 대화상자 조작을 막지 않는다. Alarm
+  · 변경 판은 머리 띠(999990) · 진행 막대 자리(999991) 위, 모바일 사이드바(999995) · 대화상자
+  아래다.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Final
+
+import streamlit as st
+
+from capa_simulation import alerts
+from capa_simulation.components.change_summary import GROUPS, ChangeItem
+from capa_simulation.components.theme_toggle import (
+    ALARM_BUTTON_ID,
+    CHANGES_CHIP_ID,
+    TOOLBAR_BUTTON_ORDER,
+    TOOLBAR_SLOT,
+)
+from capa_simulation.design import tokens
+
+_ASSETS = Path(__file__).with_name("alert_center_assets")
+# 컴포넌트 key — 접는 스타일이 `.st-key-<key>` 로 고른다. Components v2 key 에는 `__` 를 쓰지
+# 않는다.
+ALERT_CENTER_KEY: Final = "capa_alert_center"
+HEADER_SELECTOR: Final = '[data-testid="stHeader"]'
+# 이 브라우저 탭의 `sessionStorage` 칸 — 기록 줄 · 상태 표 · 본 사건 id.
+STORAGE: Final = {
+    "log": "capa-alerts-log-v1",
+    "states": "capa-alerts-states-v1",
+    "seen": "capa-alerts-seen-v1",
+}
+
+# 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
+TEXT: Final[dict[str, str]] = {
+    "alarm": "Alarm",
+    "alarm_title": "알림 모아 보기",
+    "alarm_aria": "Alarm — 안 읽음 {n}건",
+    "panel": "알림",
+    "summary": "안 읽음 {unread} · 전체 {total}",
+    "read_all": "모두 읽음",
+    "close": "닫기",
+    "all": "전체",
+    "all_pages": "모든 화면",
+    "level_filter": "단계 거르기",
+    "page_filter": "화면 거르기",
+    "hide_resolved": "해소된 것 숨김",
+    "empty": "고른 조건의 알림이 없습니다.",
+    "none": "아직 알림이 없습니다.",
+    "footer": (
+        "이 브라우저 탭에 쌓임 · 새로고침 · 테마 전환에도 남음 · {hours}시간 또는 {rows}줄까지. "
+        "확인 필요 · 조치 필요 · 오류는 「로그」 를 연다."
+    ),
+    "go": "그 화면으로",
+    "log": "로그",
+    "open": "지금도 있음",
+    "resolved": "해소 {time}",
+    "kind_event": "사건 알림",
+    "kind_state": "상태 알림(바뀔 때만)",
+    "log_code": "코드",
+    "log_first": "처음",
+    "log_last": "마지막",
+    "log_times": "{n}번",
+    "log_page": "화면",
+    "log_cause": "계기",
+    "log_scope": "범위",
+    "log_resolved": "해소",
+    "log_detail": "원본 오류",
+    "resolved_gone": "조건이 사라짐",
+    "resolved_changed": "내용이 바뀜",
+    "resolved_scope": "범위가 바뀜",
+    "not_yet": "아직",
+    "cause_new": "조건이 처음 보임",
+    "cause_change": "내용이 바뀜",
+    "cause_event": "동작 결과",
+    "changes": "이 세션의 변경",
+    "changes_word": "변경",
+    "changes_title": "이 세션에서 바꾸고 아직 저장 · 적용하지 않은 것과 가정",
+    "changes_aria": "변경 {n}건 — {top}",
+    "changes_sum": "{n}건",
+    "changes_footer": (
+        "탭 줄 주황 점 · 사이드바 「적용 전 편집」 과 같은 판정에 시나리오 미저장 · 설비 가정 · "
+        "UPEH 가정을 더했다. 폼 안 초안은 들지 않는다."
+    ),
+}
+
+
+def _registered_js() -> str:
+    """alert_center.js 앞에 서식을 붙인다 — 서식은 컴포넌트 `css=` 로 주지 않는다(칸의 그림자 DOM
+    에만 들어가 `document.body` · 툴바에 붙인 호스트에 닿지 않는다)."""
+    css = (_ASSETS / "alert_center.css").read_text(encoding="utf-8")
+    js = (_ASSETS / "alert_center.js").read_text(encoding="utf-8")
+    return f"const ALERT_CSS = {json.dumps(css)};\n{js}"
+
+
+_ALERT_CENTER = st.components.v2.component("capa_alert_center", js=_registered_js())
+
+# 컴포넌트 칸을 접는다(스타일만 든 `st.html` — 이벤트 칸 한 자리, 매 회차 같은 글). 칸이 그려지기
+# **전**에 보낸다.
+_HIDE_STYLE: Final = (
+    "<style>"
+    f'[data-testid="stLayoutWrapper"]:has(> .st-key-{ALERT_CENTER_KEY}),'
+    f".st-key-{ALERT_CENTER_KEY}"
+    "{display:none !important;}"
+    "</style>"
+)
+
+
+def palette() -> dict[str, str]:
+    """이 회차 테마의 색. 배지 글자는 면 색이다 — 밝게는 흰 글자, 어둡게는 어두운 글자가 단계 색
+    위에 읽힌다."""
+    return {
+        "surface": tokens.SURFACE,
+        "page": tokens.SURFACE_PAGE,
+        "sub": tokens.SURFACE_CLASSIFICATION,
+        "text": tokens.TEXT,
+        "muted": tokens.TEXT_MUTED,
+        "border": tokens.BORDER,
+        "accent": tokens.ACCENT,
+        "accent_text": tokens.ACCENT_TEXT,
+        "pending": tokens.PENDING_MARK,
+        "badge_ink": tokens.SURFACE,
+        "info": tokens.ALERT_INFO,
+        "check": tokens.ALERT_CHECK,
+        "action": tokens.ALERT_ACTION,
+        "error": tokens.ALERT_ERROR,
+    }
+
+
+def alert_center_data(
+    *, changes: list[ChangeItem], events: list[alerts.AlertNote]
+) -> dict[str, Any]:
+    """알림 칸 data. 같은 변경 · 사건이면 회차마다 같은 값이다(시각 · 카운터를 싣지 않는다)."""
+    return {
+        "events": events,
+        "changes": changes,
+        "groups": [{"id": group, "label": label} for group, label in GROUPS],
+        "levels": [
+            {
+                "id": level,
+                "label": alerts.LEVEL_LABELS[level],
+                "ms": alerts.POPUP_SECONDS[level] * 1000,
+            }
+            for level in alerts.LEVELS
+        ],
+        "limits": {
+            "popups": alerts.POPUP_LIMIT,
+            "repeat_ms": alerts.REPEAT_WINDOW_SECONDS * 1000,
+            "rows": alerts.HISTORY_ROWS,
+            "hours": alerts.HISTORY_HOURS,
+            "attention_ms": alerts.ATTENTION_MS,
+            "easing": alerts.ATTENTION_EASING,
+        },
+        "toolbar": {
+            "slot": TOOLBAR_SLOT,
+            "header": HEADER_SELECTOR,
+            "order": list(TOOLBAR_BUTTON_ORDER),
+            "alarm": ALARM_BUTTON_ID,
+            "chip": CHANGES_CHIP_ID,
+        },
+        "marker": alerts.MARKER_ATTRIBUTE,
+        "storage": dict(STORAGE),
+        "palette": palette(),
+        "font": tokens.FONT_FAMILY,
+        "text": dict(TEXT),
+    }
+
+
+def render_alert_center(*, changes: list[ChangeItem]) -> None:
+    """알림 칸을 그린다 — `app.py` 가 화면 탭 줄 바로 뒤, 페이지 앞에서 매 앱 전체 회차 부른다.
+
+    콜백이 담아 둔 사건 알림(`alerts.event`)을 이 회차 data 로 꺼내 보낸다. 이벤트 칸에는 접는
+    스타일 한 자리를 쓴다.
+    """
+    st.html(_HIDE_STYLE)
+    _ALERT_CENTER(
+        key=ALERT_CENTER_KEY,
+        data=alert_center_data(changes=changes, events=alerts.drain_outbox()),
+        width="stretch",
+    )

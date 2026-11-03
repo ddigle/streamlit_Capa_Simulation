@@ -28,12 +28,19 @@
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
 // 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
 // 문서에서 한 번 알린다(`<tabs-return>`).
+// 알림(상한 · 공식 복귀)은 탭 줄 칸이 아니라 같은 문서의 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 한 꼴 ·
+// Alarm 기록)에 낸다(`raiseAlert` — `window.__capaAlerts.raise`, 칸이 아직 서지 않았으면 `window.__capaAlertQueue`). 알림 칸
+// 「그 화면으로」 는 `capa-open-page` 사건으로 오고, 탭 줄이 제 이동 길(열린 탭이면 고르기 — 떠나기 확인 · 한 번에 하나,
+// 아니면 그 화면 링크 누름 — 상한 거름)로 옮긴다.
 // 새로고침·브라우저 탭 닫기처럼 문서 자체를 떠날 때는 저장하지 않은 편집이 있으면 브라우저 확인 창을 띄운다 — 표지는 테마
 // 단추가 읽는 것과 같은 CSS 변수다(`<tabs-unload>`). 앱이 스스로 새로 읽는 것(테마 단추 — 이미 물었다)은 묻지 않는다.
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
-const NOTICE_MS = 8000
 const BUSY_MS = 10000
+// 알림 칸 「그 화면으로」 사건(`alert_center.js` 의 `OPEN_PAGE_EVENT`).
+const OPEN_PAGE_EVENT = 'capa-open-page'
+// 알림창 짧은 글의 글자 수(파이썬 `alerts.SHORT_LIMIT` — data `alerts.short_limit`).
+const SHORT_LIMIT = 60
 // 보낸 이동이 끝났는지 다시 보는 간격 — 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다.
 const SETTLE_POLL_MS = 100
 // 옮긴 화면의 탭 줄이 온 뒤 이만큼 지나면 그 회차가 아직 돌아도 기다리던 누름을 보낸다(`<tabs-queue>`). 가벼운 화면은
@@ -70,9 +77,15 @@ const RETURN_VARIABLE = '--capa-equipment-return'
 const RELOAD_RETURN_VARIABLE = '--capa-equipment-return-reload'
 const RETURN_KEY = 'capa-equipment-return'
 const THEME_SWITCH_KEY = 'capa-theme-switch'
-const RETURN_NOTICE_MS = 15000
 // 알린 칸을 지우기까지. 이 안에 문서가 떠나면(테마 키를 맞추는 새로고침) 다음 문서가 다시 알린다.
 const RETURN_KEEP_MS = 3000
+
+// 같은 문서의 알림 칸에 낸다. 칸이 아직 서지 않았으면(탭 줄이 먼저 그려진다) 담아 두고 칸이 설 때 꺼낸다.
+function raiseAlert(note) {
+  const center = window.__capaAlerts
+  if (center && typeof center.raise === 'function') center.raise(note)
+  else (window.__capaAlertQueue = window.__capaAlertQueue || []).push(note)
+}
 
 // <tabs-history>
 // 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
@@ -379,15 +392,21 @@ function returnRecord(theme, reload, themed) {
   return label ? JSON.stringify({ label, cause: themed ? 'theme' : 'reload' }) : null
 }
 function returnNotice(stored, text) {
+  const record = returnParts(stored)
+  if (record === null) return ''
+  const template = String((record.cause === 'theme' ? text.themed : text.returned) || '')
+  return template ? template.split('{label}').join(record.label) : ''
+}
+// 적어 둔 값의 {label, cause} — 못 읽으면 null. 알림 칸에 낼 때 까닭(테마 단추 · 새로고침)으로 코드와 짧은 글을 가른다.
+function returnParts(stored) {
   let record = null
   try {
     record = JSON.parse(stored || 'null')
   } catch (error) {
-    return ''
+    return null
   }
-  if (!record || typeof record.label !== 'string' || !record.label) return ''
-  const template = String((record.cause === 'theme' ? text.themed : text.returned) || '')
-  return template ? template.split('{label}').join(record.label) : ''
+  if (!record || typeof record.label !== 'string' || !record.label) return null
+  return { label: record.label, cause: record.cause === 'theme' ? 'theme' : 'reload' }
 }
 // </tabs-return>
 
@@ -446,6 +465,23 @@ function fill(template, values) {
   return String(template || '').replace(/\{(\w+)\}/g, (_, name) => (name in values ? String(values[name]) : ''))
 }
 
+// 알림창 짧은 글 — 줄바꿈을 한 칸으로 접고 넘치면 말줄임(파이썬 `alerts.short_text` 와 같다).
+function shortText(value) {
+  const flat = String(value || '').split(/\s+/).filter(Boolean).join(' ')
+  return flat.length <= SHORT_LIMIT ? flat : flat.slice(0, SHORT_LIMIT - 1).trimEnd() + '…'
+}
+
+// 화면 링크 `href` 의 주소(`url_path` — HOME 은 빈 글자). 앞 `/`·조회 인자·조각을 뗀다.
+function linkPath(href) {
+  let path = String(href || '').split(/[?#]/)[0]
+  try {
+    if (/^[a-z]+:/i.test(path)) path = new URL(path).pathname
+  } catch (error) {
+    return path
+  }
+  return path.replace(/^\/+/, '').split('/').pop() || ''
+}
+
 function setAttr(element, name, value) {
   if (value === null || value === undefined) {
     if (element.hasAttribute(name)) element.removeAttribute(name)
@@ -474,11 +510,10 @@ export default function (component) {
   const nav = parentElement.querySelector('.capa-tabs')
   if (!nav || !data) return
   const list = nav.querySelector('.capa-tabs-list')
-  const notice = nav.querySelector('.capa-tabs-notice')
   const drop = nav.querySelector('.capa-tabs-drop')
   const announcer = nav.querySelector('.capa-tabs-announce')
   const S = nav.__capaTabs || (nav.__capaTabs = {
-    items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
+    items: new Map(), noticeId: null, busyTimer: 0, lastActive: null, onFonts: null, onOpenPage: null,
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
@@ -1052,17 +1087,26 @@ export default function (component) {
     close(item)
   }
 
-  const flash = (message, ms = NOTICE_MS) => {
-    setText(notice, String(message || ''))
-    notice.hidden = false
-    clearTimeout(S.noticeTimer)
-    S.noticeTimer = setTimeout(() => { notice.hidden = true }, ms)
+  // 알림 칸에 낸다 — 코드 · 단계는 파이썬 등록부(`alerts.REGISTRY` — data `alerts`), 화면은 지금 탭이다.
+  const flash = (kind, message, short) => {
+    const codes = (S.data && S.data.alerts) || {}
+    const spec = codes[kind] || {}
+    const full = String(message || '')
+    const active = S.items.get(S.data.active)
+    raiseAlert({
+      code: spec.code || '',
+      level: spec.level || 'info',
+      full,
+      short: shortText(short || full),
+      page: active ? active.__parts.label.textContent : '',
+      href: active ? active.__href : null,
+    })
   }
-  // 서버가 남긴 상한 알림은 새 일련번호가 올 때 한 번 띄우고 잠시 뒤 걷는다.
+  // 서버가 남긴 상한 알림은 새 일련번호가 올 때 한 번 낸다.
   const message = data.notice
   if (message && typeof message.id === 'number' && message.id !== S.noticeId) {
     S.noticeId = message.id
-    flash(message.text)
+    flash('limit', message.text)
   }
 
   // 새로 읽은 문서 — 앞 문서가 적어 둔 설비 시나리오(테마 단추면 공식 발행 쌍이 아니던 것, 새로고침이면 가정이던 것)를
@@ -1080,7 +1124,11 @@ export default function (component) {
       stored = null
     }
     const message = returnNotice(stored, text)
-    if (message) flash(message, RETURN_NOTICE_MS)
+    const parts = returnParts(stored)
+    if (message && parts) {
+      const theme = parts.cause === 'theme'
+      flash(theme ? 'themed' : 'returned', message, fill(theme ? text.themed_short : text.returned_short, { label: parts.label }))
+    }
     if (stored !== null) {
       setTimeout(() => {
         try {
@@ -1153,9 +1201,28 @@ export default function (component) {
       if (!why) return
       event.preventDefault()
       event.stopPropagation()
-      flash(why)
+      flash('limit', why)
     }
     document.addEventListener('click', S.onLink, true)
+  }
+  if (!S.onOpenPage) {
+    // 알림 칸 「그 화면으로」(`capa-open-page` — {href}). 열린 탭이면 탭 고르기와 같은 길(떠나기 확인 · 한 번에 하나), 아니면
+    // 그 화면 링크를 누른다 — 상한 거름(`S.onLink`)이 같은 누름으로 받는다. 지금 화면이면 아무것도 하지 않는다.
+    S.onOpenPage = (event) => {
+      const detail = event && event.detail
+      if (!detail || typeof detail.href !== 'string') return
+      const href = detail.href
+      for (const item of S.items.values()) {
+        if (item.hidden || item.__href !== href) continue
+        if (item.dataset.id !== S.data.active) select(item)
+        return
+      }
+      const link = [...document.querySelectorAll(PAGE_LINK)].find(
+        (anchor) => linkPath(anchor.getAttribute('href') || '') === href,
+      )
+      if (link) link.click()
+    }
+    window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)
   }
 
   // 새 data 가 왔다 — 보낸 이동이 끝났는지 본다(지금 탭이 바뀐 data 와 그 회차의 끝이 표지다). 붙든 누름이 있으면 새
@@ -1176,7 +1243,6 @@ export default function (component) {
     stopRelease()
     if (S.onTouchMove) list.removeEventListener('touchmove', S.onTouchMove)
     S.onTouchMove = null
-    clearTimeout(S.noticeTimer)
     clearTimeout(S.busyTimer)
     clearTimeout(S.settleTimer)
     clearTimeout(S.holdTimer)
@@ -1191,6 +1257,8 @@ export default function (component) {
     S.onFonts = null
     if (S.onLink) document.removeEventListener('click', S.onLink, true)
     S.onLink = null
+    if (S.onOpenPage) window.removeEventListener(OPEN_PAGE_EVENT, S.onOpenPage)
+    S.onOpenPage = null
     if (S.onInput) {
       for (const type of ['keydown', 'pointerdown']) document.removeEventListener(type, S.onInput, true)
     }

@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -73,14 +74,14 @@ def test_preset_actions_pick_the_object_particle_by_the_name(
     app.button(key="home_key_process_preset_default").click().run()
 
     assert not app.exception
-    assert [str(message.value) for message in app.success] == [moved]
+    assert [str(message.value) for message in successes(app)] == [moved]
     assert repository.load_global_key_process().preset_names == (target, "맨 앞")
 
     app.checkbox[0].check().run()
     app.button(key="home_key_process_preset_delete").click().run()
 
     assert not app.exception
-    assert [str(message.value) for message in app.success] == [deleted]
+    assert [str(message.value) for message in successes(app)] == [deleted]
     assert repository.load_global_key_process().preset_names == ("맨 앞",)
     clear_global_key_process_cache()
 
@@ -125,14 +126,14 @@ def test_a_quick_second_press_of_delete_keeps_the_notice(
     pressed = app._tree.get_widget_states()
     app.run()
     deleted = "프리셋 「지울 그룹」을 지웠습니다."
-    assert [str(message.value) for message in app.success] == [deleted]
+    assert [str(message.value) for message in successes(app)] == [deleted]
     assert repository.load_global_key_process().preset_names == ("맨 앞",)
 
     app._run(widget_state=pressed)
 
     assert not app.exception, [element.message for element in app.exception]
     assert not app.error, [str(element.value) for element in app.error]
-    shown = [str(message.value) for message in app.success]
+    shown = [str(message.value) for message in successes(app)]
     assert shown == ([deleted] if trailing else [])
     assert repository.load_global_key_process().preset_names == ("맨 앞",)
     clear_global_key_process_cache()

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from alert_marks import successes
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, ElementTree
@@ -131,7 +132,7 @@ def test_paste_stages_into_the_tab_without_touching_the_global_plan(
     assert not list(app.exception)
     # 붙여넣기에 성공하면 팝업이 닫히고 완료 알림은 작업 줄 아래에 뜬다.
     assert "load_conversion_open_dialog" not in app.session_state
-    assert any("PKG PLAN 탭에 반영했습니다" in item.value for item in app.success)
+    assert any("PKG PLAN 탭에 반영했습니다" in item.value for item in successes(app))
 
     # 탭에만 반영된다: 전역 계획값과 토큰은 그대로다.
     assert _plan_total(app) == pytest.approx(before_total)
@@ -174,9 +175,9 @@ def test_virtual_product_registration_adds_the_key_to_every_clone_table(
     assert not list(app.exception)
     # 등록하면 팝업이 닫히고, 다음 할 일(계획 수량 입력)을 알림이 작업 줄 아래에서 말한다.
     assert "load_conversion_open_dialog" not in app.session_state
-    assert any(literal_markdown("DEMO_VIRTUAL_X") in item.value for item in app.success)
+    assert any(literal_markdown("DEMO_VIRTUAL_X") in item.value for item in successes(app))
     # 복제된 계획 달이 조회기간 안이면 새 제품은 표에 바로 선다 — 입력하라고 말한다.
-    assert any("아래 표에서 계획 수량을 입력하세요" in item.value for item in app.success)
+    assert any("아래 표에서 계획 수량을 입력하세요" in item.value for item in successes(app))
 
     updated = app.session_state["active_scenario"]
     assert updated["content_token"] != before_token
@@ -204,7 +205,7 @@ def test_the_registration_notices_draw_the_typed_names_literally(
     _register(app, "HBM4~시제~", "E2E~가상~*1*")
     assert not list(app.exception)
 
-    (notice,) = [item.value for item in app.success if "등록했습니다" in item.value]
+    (notice,) = [item.value for item in successes(app) if "등록했습니다" in item.value]
     assert notice.startswith(
         f"가상 제품 {literal_markdown('HBM4~시제~')} · "
         f"{with_object_particle(literal_markdown('E2E~가상~*1*'))} 등록했습니다."
@@ -314,7 +315,7 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
     app.session_state[_widget_key(app, "yield_editor")] = edit
     app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
-    assert any("활성 시나리오에 적용했습니다" in item.value for item in app.success)
+    assert any("활성 시나리오에 적용했습니다" in item.value for item in successes(app))
 
     applied = _yield_rows(app)
     assert len(applied) == len(source)
@@ -404,7 +405,7 @@ def test_blanking_a_month_in_the_yield_paste_says_the_row_was_removed(
     assert not list(app.exception)
 
     assert len(_yield_rows(app)) == before - 1
-    messages = [item.value for item in app.success]
+    messages = [item.value for item in successes(app)]
     assert any("2칸을 비워 그 달 수율 행을 지웠습니다" in message for message in messages)
     assert any("환산에서 빠집니다" in message for message in messages)
 
@@ -415,7 +416,7 @@ def test_a_yield_paste_that_blanks_nothing_adds_no_removal_note(seeded_database:
     _paste_yield(app, _yield_clipboard_text(app))
     assert not list(app.exception)
 
-    messages = [item.value for item in app.success]
+    messages = [item.value for item in successes(app)]
     assert any("활성 시나리오에 적용했습니다" in message for message in messages)
     assert not any("지웠습니다" in message for message in messages)
 
@@ -446,7 +447,7 @@ def test_blanking_a_month_in_the_yield_grid_says_the_row_was_removed(
 
     assert not list(app.exception)
     assert len(_yield_rows(app)) == before - 1
-    messages = [item.value for item in app.success]
+    messages = [item.value for item in successes(app)]
     assert any("2칸을 비워 그 달 수율 행을 지웠습니다" in message for message in messages), messages
 
 
@@ -468,7 +469,7 @@ def test_a_yield_paste_keeps_the_locked_rows_and_does_not_count_them_as_removed(
     assert len(applied) == len(source)
     eds, be = _yield_values(applied, "DEMO PRODUCT A", 202603)
     assert eds == pytest.approx(0.96) and pd.isna(be)
-    messages = [item.value for item in app.success]
+    messages = [item.value for item in successes(app)]
     assert any("활성 시나리오에 적용했습니다" in message for message in messages)
     assert not any("지웠습니다" in message for message in messages)
 
@@ -569,7 +570,7 @@ def test_a_yield_paste_can_overwrite_a_product_locked_in_every_month(
     _paste_yield(app, _yield_clipboard_text(app, fill=("DEMO PRODUCT B", 0.9, 0.95)))
 
     assert not list(app.exception)
-    assert any("활성 시나리오에 적용했습니다" in item.value for item in app.success)
+    assert any("활성 시나리오에 적용했습니다" in item.value for item in successes(app))
     applied = _yield_rows(app)
     assert len(applied) == len(source)
     fixed = applied.loc[applied["제품정보"].eq("DEMO PRODUCT B"), ["EDS_수율", "BE_수율"]]
@@ -597,7 +598,7 @@ def test_registering_a_product_planned_only_outside_the_period_says_to_widen_it(
     assert not list(app.exception)
 
     messages = [
-        item.value for item in app.success if literal_markdown("DEMO_VIRTUAL_Z") in item.value
+        item.value for item in successes(app) if literal_markdown("DEMO_VIRTUAL_Z") in item.value
     ]
     assert messages
     assert "조회기간을 넓혀야 PKG PLAN 표에 나타납니다" in messages[0]
@@ -821,16 +822,16 @@ def test_the_plan_notices_stand_in_one_slot_above_the_editor(
     before = _plan_editor_path(app)
 
     _paste(app, _clipboard_text(app, scale=0.5))
-    assert any("붙여넣기 표를 PKG PLAN 탭에 반영했습니다" in item.value for item in app.success)
+    assert any("붙여넣기 표를 PKG PLAN 탭에 반영했습니다" in item.value for item in successes(app))
     assert _plan_editor_path(app) == before
 
     app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
-    assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in app.success)
+    assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in successes(app))
     assert _plan_editor_path(app) == before
 
     app.run()
-    assert not any("반영했습니다" in item.value for item in app.success)
+    assert not any("반영했습니다" in item.value for item in successes(app))
     assert _plan_editor_path(app) == before
 
 
@@ -875,7 +876,7 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
     _paste(app, _clipboard_text(app, scale=0.5))
     app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
-    assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in app.success)
+    assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in successes(app))
     warnings = [str(item.value) for item in app.warning]
     assert any(
         "소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간)" in text
@@ -890,7 +891,7 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
 
     # 적용 알림과 함께 빠진다.
     app.run()
-    assert not any("반영했습니다" in item.value for item in app.success)
+    assert not any("반영했습니다" in item.value for item in successes(app))
     assert not any("소요대수에 들지 않은 수요" in str(item.value) for item in app.warning)
     assert _plan_editor_path(app) == before
 
@@ -914,7 +915,7 @@ APPLIED_ICON = ":material/published_with_changes:"
 
 def _applied(app: AppTest, text: str) -> list[str | None]:
     """그 글이 든 성공 알림의 아이콘들(알림이 없으면 빈 목록)."""
-    return [item.icon for item in app.success if text in str(item.value)]
+    return [item.icon for item in successes(app) if text in str(item.value)]
 
 
 def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(

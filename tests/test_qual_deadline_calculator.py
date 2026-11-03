@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from fragment_browser import install_fragment_browser
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.proto.RootContainer_pb2 import RootContainer
@@ -350,7 +351,7 @@ def test_the_paste_box_fills_months_from_january_like_the_original() -> None:
     app = _component()
     _paste(app, "19.3456\tU1\tU2")
 
-    assert [element.value for element in app.success] == ["1개월을 넣었습니다."]
+    assert [element.value for element in successes(app)] == ["1개월을 넣었습니다."]
     units = _units_table(app)
     assert units.loc[:2, ["호기", "그 달 기여", "Qual 완료 마감"]].values.tolist() == [
         ["U1", "1.00", "2026-12-21"],
@@ -364,7 +365,7 @@ def test_the_paste_box_fills_months_from_january_like_the_original() -> None:
 
     # 알림은 한 번만 — 다음 회차에는 없다.
     app.run()
-    assert not app.success
+    assert not successes(app)
 
 
 def test_pasting_more_than_twelve_lines_says_how_many_were_left_out() -> None:
@@ -373,7 +374,7 @@ def test_pasting_more_than_twelve_lines_says_how_many_were_left_out() -> None:
     app = _component()
     _paste(app, "\n".join(f"{20 + index}\tV{index}" for index in range(14)))
 
-    assert [element.value for element in app.success] == [
+    assert [element.value for element in successes(app)] == [
         "12개월을 넣었습니다. 열두 달을 넘은 2줄(빈 줄을 빼고 13번째 줄부터)은 넣지 않았습니다."
     ]
     stored = app.session_state[MONTHS_KEY]
@@ -391,7 +392,7 @@ def test_pasting_replaces_editor_edits_of_those_months() -> None:
     _paste(app, "18\tU9\n\t\n19")
 
     assert _editor_key(app) != EDITOR_KEY
-    assert [element.value for element in app.success] == ["2개월을 넣었습니다."]
+    assert [element.value for element in successes(app)] == ["2개월을 넣었습니다."]
     stored = app.session_state[MONTHS_KEY]
     # 두 칸 다 빈 줄 「\t」 은 건너뛰어 「19」 가 2월로 간다(원본대로). 2월 호기 글은 비워진다.
     assert stored.loc[:1, [TARGET_COLUMN, UNITS_COLUMN]].values.tolist() == [
@@ -405,7 +406,7 @@ def test_an_empty_paste_changes_nothing() -> None:
     app = _component()
     _paste(app, " \n\t\n")
 
-    assert [element.value for element in app.info] == [NO_PASTED_LINES_MESSAGE]
+    assert [element.value for element in infos(app)] == [NO_PASTED_LINES_MESSAGE]
     assert _editor_key(app) == EDITOR_KEY
     assert _example_badge(app)
     assert not math.isnan(app.session_state[MONTHS_KEY].loc[0, TARGET_COLUMN])
@@ -486,7 +487,7 @@ def test_the_calculator_opens_even_when_the_screen_has_no_units(tmp_path: Path) 
     app = _page(tmp_path)
     app.session_state[SAMPLE_TOGGLE_KEY] = False
     app.run()
-    assert any("등록된 호기가 없습니다" in element.value for element in app.info)
+    assert any("등록된 호기가 없습니다" in element.value for element in infos(app))
 
     _open(app)
 

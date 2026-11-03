@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import infos, successes
 from grid_fake import Calls, install_fake_grid, send_ops
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.runtime.state import session_state_proxy
@@ -99,7 +100,7 @@ def _race_save(app: AppTest, monkeypatch: pytest.MonkeyPatch, *, callback: str) 
 
 
 def _texts(app: AppTest) -> list[str]:
-    alerts = (*app.error, *app.warning, *app.info, *app.success)
+    alerts = (*app.error, *app.warning, *infos(app), *successes(app))
     return [str(item.value) for item in alerts]
 
 

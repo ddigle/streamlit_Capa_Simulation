@@ -27,6 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import infos, shown
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
     OPERATIONS,
@@ -430,7 +431,7 @@ def _texts(app: AppTest) -> list[str]:
     return [
         str(item.value)
         for kind in ("caption", "info", "warning", "success", "error", "markdown")
-        for item in getattr(app, kind)
+        for item in shown(app, kind)
     ]
 
 
@@ -664,12 +665,12 @@ def test_settings_cutoff_is_read_only_on_an_assumption_and_open_on_the_official(
     app = _ok(_shell.run())
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
     _ok(app.button(key=SETTINGS_BUTTON_KEY).click().run())
-    assert not any(item.value == PREFERENCE_LOCK_MESSAGE for item in app.info)
+    assert not any(item.value == PREFERENCE_LOCK_MESSAGE for item in infos(app))
     assert any(button.label == "Cut-off 저장" for button in app.button)
 
     _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
     _ok(app.run())
-    assert any(item.value == PREFERENCE_LOCK_MESSAGE for item in app.info)
+    assert any(item.value == PREFERENCE_LOCK_MESSAGE for item in infos(app))
     assert not any(button.label == "Cut-off 저장" for button in app.button)
 
 
@@ -693,11 +694,11 @@ def test_an_unscheduled_unit_is_announced_and_left_out_of_the_assumption(
     app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path)
     _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
     _ok(app.run())
-    assert any("일정이 없는 호기 1대" in str(item.value) for item in app.info)
+    assert any("일정이 없는 호기 1대" in str(item.value) for item in infos(app))
 
     _select(app, OPERATIONS, None)
     _ok(app.run())
-    assert not any("일정이 없는 호기" in str(item.value) for item in app.info)
+    assert not any("일정이 없는 호기" in str(item.value) for item in infos(app))
 
 
 def test_space_draws_the_assumption_and_locks_only_the_fab_there(

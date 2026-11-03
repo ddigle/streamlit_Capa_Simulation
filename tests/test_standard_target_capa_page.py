@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit as st
+from alert_marks import infos, successes
 from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
@@ -740,7 +741,7 @@ def test_exception_rows_are_shown_even_when_the_availability_is_empty() -> None:
     app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert any("가용설비 붙여넣기" in element.value for element in app.info)
+    assert any("가용설비 붙여넣기" in element.value for element in infos(app))
     notice = _frame_with_value(app, "공정", "Pre B/D")
     assert notice["현재 조회범위 제외 행"].tolist() == [0]
 
@@ -751,20 +752,20 @@ def test_an_empty_availability_stops_only_the_views_that_multiply_by_it() -> Non
     근거(가용대수 빈칸)를 보인다 — 한 줄만 넣었을 때와 같은 화면이다."""
     app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
     assert not app.exception
-    assert [element.value for element in app.info] == [
+    assert [element.value for element in infos(app)] == [
         "주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요."
     ]
 
     app = app.segmented_control(key="standard_target_output_metric").set_value("가용대수").run()
     assert not app.exception
     assert "주차별 가용대수를 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요." in [
-        element.value for element in app.info
+        element.value for element in infos(app)
     ]
 
     output_selector = app.segmented_control(key="standard_target_output_metric")
     app = output_selector.set_value("대당 일 Capa").run()
     assert not app.exception
-    assert not any("가용설비 붙여넣기" in element.value for element in app.info)
+    assert not any("가용설비 붙여넣기" in element.value for element in infos(app))
     assert "주차별 대당 일 Capa" in [element.value for element in app.subheader]
     assert app.session_state["captured_first_week_value"] == pytest.approx(100.0 / 31.0)
 
@@ -820,7 +821,7 @@ def test_a_second_press_of_the_closed_clear_dialog_does_not_rerun_its_body(
     app.run()
     assert not app.exception
     assert app.session_state["clear_calls"] == 1
-    assert "주차별 가용설비 입력을 비웠습니다." in [item.value for item in app.success]
+    assert "주차별 가용설비 입력을 비웠습니다." in [item.value for item in successes(app)]
 
     # 둘째 누름 — 브라우저는 닫히기 전 팝업의 같은 단추 누름을 그 팝업의 프래그먼트 회차로 보낸다.
     app._run(widget_state=pressed)

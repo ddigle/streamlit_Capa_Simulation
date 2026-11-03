@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import successes
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
@@ -104,7 +105,7 @@ def test_a_second_restore_press_does_not_restore_an_archive_nobody_picked(
     _ok(browser.run())
     statuses = _statuses(repository)
     assert [name for name, status in statuses.items() if status == "ACTIVE"] == [target], statuses
-    assert any(f"{target}" in text and "되돌렸습니다" in text for text in _texts(app.success))
+    assert any(f"{target}" in text and "되돌렸습니다" in text for text in _texts(successes(app)))
     assert ARCHIVED_GONE_MESSAGE not in _texts(app.warning)
 
 
@@ -125,7 +126,7 @@ def test_a_restore_press_right_after_the_pick_moved_is_not_applied(
     app.button(key=RESTORE_KEY).click()
     _ok(browser.run())
     assert _statuses(repository)[moved_to] == "ARCHIVED"
-    assert any(f"{target}" in text and "되돌렸습니다" in text for text in _texts(app.success))
+    assert any(f"{target}" in text and "되돌렸습니다" in text for text in _texts(successes(app)))
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.button(key=RESTORE_KEY).click()
@@ -153,7 +154,7 @@ def test_restoring_an_archive_restored_elsewhere_writes_nothing_and_says_so(
     statuses = _statuses(repository)
     assert [name for name, status in statuses.items() if status == "ACTIVE"] == [target], statuses
     assert ARCHIVED_GONE_MESSAGE in _texts(app.warning)
-    assert not any("되돌렸습니다" in text for text in _texts(app.success))
+    assert not any("되돌렸습니다" in text for text in _texts(successes(app)))
 
 
 def _stale_archive_reads(
@@ -205,7 +206,7 @@ def test_an_overlapping_second_press_drawn_before_the_first_write_reports_the_fi
     app._run(widget_state=pressed)
     assert not app.exception, [item.message for item in app.exception]
     assert not any("찾을 수 없습니다" in text for text in _texts(app.error)), _texts(app.error)
-    assert any(target in text and done in text for text in _texts(app.success))
+    assert any(target in text and done in text for text in _texts(successes(app)))
     statuses = _statuses(repository)
     if action == "delete":
         assert target not in statuses
@@ -241,7 +242,7 @@ def test_a_delete_cut_right_after_writing_still_leaves_its_success(
     app._run(widget_state=pressed)
     assert not app.exception, [item.message for item in app.exception]
     assert target not in _statuses(repository)
-    assert any(target in text and "영구 삭제했습니다" in text for text in _texts(app.success))
+    assert any(target in text and "영구 삭제했습니다" in text for text in _texts(successes(app)))
 
 
 def test_an_overlapping_second_archive_press_reports_the_first_archive(
@@ -292,7 +293,7 @@ def test_an_overlapping_second_archive_press_reports_the_first_archive(
     app._run(widget_state=pressed)
     assert not app.exception, [item.message for item in app.exception]
     assert not any("찾을 수 없습니다" in text for text in _texts(app.error)), _texts(app.error)
-    assert any("보관했습니다" in text for text in _texts(app.success))
+    assert any("보관했습니다" in text for text in _texts(successes(app)))
     archived = {
         item.scenario_id: item.status for item in repository.list_scenarios(include_archived=True)
     }

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import successes
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.runtime.state import session_state_proxy
@@ -110,14 +111,14 @@ def test_an_opened_post_stays_open_after_a_reply(tmp_path: Path) -> None:
     next(button for button in app.button if button.label == "답변 남기기").click().run()
 
     assert not app.exception
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
     label, expanded = _post_box(app, box_key)
     assert label.endswith("답변 1")
     assert expanded is True
 
     # 알림이 사라지는 다음 회차에도(목록 위 요소가 하나 빠진다) 편 채로다.
     app.run()
-    assert not app.success
+    assert not successes(app)
     assert _post_box(app, box_key)[1] is True
 
 
@@ -190,7 +191,7 @@ def test_a_rejected_post_keeps_what_was_typed_and_a_saved_one_clears(tmp_path: P
     _click(app, "글 올리기")
 
     assert not app.exception
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
     assert app.text_input(key="voc_post_title").value == ""
     assert app.text_area(key="voc_post_body").value == ""
 
@@ -216,7 +217,7 @@ def test_a_rejected_reply_keeps_its_text_and_a_saved_one_clears(tmp_path: Path) 
     app.text_input(key=AUTHOR_KEY).input("담당자")
     _click(app, "답변 남기기")
 
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
     assert app.text_area(key=reply_key).value == ""
 
 
@@ -266,12 +267,12 @@ def test_a_first_reply_keeps_the_post_box_and_reply_form_in_place(tmp_path: Path
     _click(app, "답변 남기기")
 
     assert not app.exception
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
     assert _post_box(app, box_key)[0].endswith("답변 1")
     assert (box_path(), reply_path()) == before
 
     app.run()  # 알림이 사라지는 다음 회차
-    assert not app.success
+    assert not successes(app)
     assert (box_path(), reply_path()) == before
 
 
@@ -334,7 +335,7 @@ def test_a_checked_delete_confirm_keeps_its_button_after_acting_on_another_post(
     _reply_button(app, upper).click().run()
 
     assert not app.exception
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
     assert app.text_area(key=f"voc_reply_body_{upper}").value == ""
     assert _delete_ready(app, lower) == (True, 1)
 
@@ -343,7 +344,7 @@ def test_a_checked_delete_confirm_keeps_its_button_after_acting_on_another_post(
     _click(app, "글 올리기")
 
     assert not app.exception
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
     assert app.text_input(key="voc_post_title").value == ""
     assert app.text_area(key="voc_post_body").value == ""
     assert [title for title, _ in _posts(database_path)] == ["새 글", "위 글", "아래 글"]
@@ -376,7 +377,7 @@ def test_a_second_submit_of_a_posted_form_neither_posts_nor_refills(tmp_path: Pa
     next(button for button in app.button if button.label == "글 올리기").click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
 
     app._run(widget_state=pressed)
 
@@ -407,7 +408,7 @@ def test_a_second_press_of_resolve_or_reply_does_not_repeat_it(tmp_path: Path) -
     _reply_button(app, post_id).click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
 
     app._run(widget_state=pressed)
 
@@ -461,13 +462,13 @@ def test_a_second_press_of_a_finished_delete_writes_nothing_and_notifies_only_it
     app.button(key=f"voc_delete_{upper}").click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "글을 지웠습니다." in [message.value for message in app.success]
+    assert "글을 지웠습니다." in [message.value for message in successes(app)]
     assert _posts(database_path) == [("아래 글", False)]
 
     app._run(widget_state=pressed)
 
     assert not app.exception
-    shown = [message.value for message in app.success]
+    shown = [message.value for message in successes(app)]
     assert shown == (["글을 지웠습니다."] if trailing else [])
     assert _posts(database_path) == [("아래 글", False)]
     assert _delete_ready(app, lower) == (False, 0)
@@ -558,7 +559,7 @@ def test_a_double_click_on_two_runs_posts_once(
 
     assert not app.exception
     assert _posts(database_path) == [("제목 A", False)]
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
     assert app.text_input(key="voc_post_title").value == ""
     assert app.text_area(key="voc_post_body").value == ""
 
@@ -579,7 +580,7 @@ def test_a_double_click_of_a_reply_on_two_runs_replies_once(
     assert not app.exception
     replies = DuckDBScenarioRepository(database_path).list_voc_replies()
     assert replies["body"].tolist() == ["확인했습니다."]
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
     assert app.text_area(key=f"voc_reply_body_{post_id}").value == ""
 
 
@@ -601,7 +602,7 @@ def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
     _reply_button(app, post_id).click().run()
 
     assert not app.exception
-    assert not app.success
+    assert not successes(app)
     assert [message.value for message in app.warning] == [
         "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
     ]
@@ -642,7 +643,7 @@ def test_a_slow_second_press_on_the_cleared_post_form_keeps_the_success(
     app.text_input(key="voc_post_title").input("제목 A")
     app.text_area(key="voc_post_body").input("내용 A")
     _click(app, "글 올리기")
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
 
     _click(app, "글 올리기")
 
@@ -650,7 +651,7 @@ def test_a_slow_second_press_on_the_cleared_post_form_keeps_the_success(
     assert _posts(database_path) == [("제목 A", False)]
     if trailing:
         assert not app.error, [message.value for message in app.error]
-        assert [message.value for message in app.success] == ["글을 올렸습니다."]
+        assert [message.value for message in successes(app)] == ["글을 올렸습니다."]
     else:
         assert [message.value for message in app.error] == ["제목을 입력하세요."]
 
@@ -668,7 +669,7 @@ def test_a_slow_second_press_on_the_cleared_reply_form_keeps_the_success(
     app.text_input(key=AUTHOR_KEY).input("담당자").run()
     app.text_area(key=f"voc_reply_body_{post_id}").input("확인했습니다.")
     _reply_button(app, post_id).click().run()
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
 
     _reply_button(app, post_id).click().run()
 
@@ -677,7 +678,7 @@ def test_a_slow_second_press_on_the_cleared_reply_form_keeps_the_success(
     errors = [message.value for message in app.error]
     if trailing:
         assert not errors, errors
-        assert [message.value for message in app.success] == ["답변을 남겼습니다."]
+        assert [message.value for message in successes(app)] == ["답변을 남겼습니다."]
     else:
         assert errors == ["답변 내용을 입력하세요."]
 
@@ -701,14 +702,14 @@ def test_a_very_fast_second_press_on_the_old_post_form_keeps_the_success(
     next(button for button in app.button if button.label == "글 올리기").click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
 
     app._run(widget_state=pressed)
 
     assert not app.exception
     assert not app.error, [message.value for message in app.error]
     assert _posts(database_path) == [("제목 A", False)]
-    shown = [message.value for message in app.success]
+    shown = [message.value for message in successes(app)]
     assert shown == (["글을 올렸습니다."] if trailing else [])
     assert app.text_input(key="voc_post_title").value == ""
 
@@ -728,13 +729,13 @@ def test_a_very_fast_second_press_on_the_old_reply_form_keeps_the_success(
     _reply_button(app, post_id).click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert "답변을 남겼습니다." in [message.value for message in successes(app)]
 
     app._run(widget_state=pressed)
 
     assert not app.exception
     assert len(DuckDBScenarioRepository(database_path).list_voc_replies()) == 1
-    shown = [message.value for message in app.success]
+    shown = [message.value for message in successes(app)]
     assert shown == (["답변을 남겼습니다."] if trailing else [])
 
 
@@ -778,7 +779,7 @@ def test_an_edited_post_after_an_interrupted_one_posts(
     assert not app.exception
     assert writes == ["제목 A", "제목 B"]
     assert sorted(_posts(database_path)) == [("제목 A", False), ("제목 B", False)]
-    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert "글을 올렸습니다." in [message.value for message in successes(app)]
 
 
 def test_deleting_a_post_deleted_by_another_session_says_it_was_already_gone(
@@ -795,7 +796,7 @@ def test_deleting_a_post_deleted_by_another_session_says_it_was_already_gone(
     app.button(key=f"voc_delete_{upper}").click().run()
 
     assert not app.exception
-    assert not app.success, [message.value for message in app.success]
+    assert not successes(app), [message.value for message in successes(app)]
     assert [message.value for message in app.warning] == [
         "그 사이 지운 글입니다. 다른 사용자가 먼저 지웠습니다."
     ]

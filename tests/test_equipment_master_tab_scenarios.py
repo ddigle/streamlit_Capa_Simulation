@@ -20,6 +20,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import infos
 from grid_fake import Calls, install_fake_grid, last, load, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
@@ -671,7 +672,7 @@ def test_a_reopen_by_someone_elses_common_save_is_told_even_without_my_edits(
     _ok(app.run())
 
     saved = f"공통 대장 r{repository.list_revisions()[0].revision_no}"
-    reopened = [item for item in app.info if "다시 열었습니다" in str(item.value)]
+    reopened = [item for item in infos(app) if "다시 열었습니다" in str(item.value)]
     assert [str(item.value) for item in reopened] == [
         f"다른 사용자가 {saved}{object_particle(saved)} 저장해 최신 저장본으로 다시 열었습니다"
         " · 이름 바뀐 호기 1대"
@@ -680,7 +681,7 @@ def test_a_reopen_by_someone_elses_common_save_is_told_even_without_my_edits(
     assert not any("다시 열었습니다" in text for text in _texts(app, "warning"))
     assert not [item for item in app.button if item.key == REOPEN_DISMISS_KEY]
     _ok(app.run())
-    assert not any("다시 열었습니다" in str(item.value) for item in app.info)
+    assert not any("다시 열었습니다" in str(item.value) for item in infos(app))
 
 
 def test_the_discarded_edits_warning_stays_until_it_is_closed(tmp_path: Path, grid: Calls) -> None:
@@ -697,7 +698,7 @@ def test_the_discarded_edits_warning_stays_until_it_is_closed(tmp_path: Path, gr
         return [text for text in _texts(app, "warning") if "버리고 최신 저장본으로" in text]
 
     assert len(discarded()) == 1
-    assert not any("다시 열었습니다" in str(item.value) for item in app.info)
+    assert not any("다시 열었습니다" in str(item.value) for item in infos(app))
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
     _ok(app.run())

@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from alert_marks import successes
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from test_write_guard_cas import _press_twice
@@ -116,7 +117,7 @@ def _second_press(app: AppTest, pressed: WidgetStates) -> None:
 
 
 def _successes(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.success]
+    return [str(item.value) for item in successes(app)]
 
 
 def test_a_slow_double_press_of_the_summary_note_saves_one_version(

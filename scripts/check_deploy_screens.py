@@ -123,6 +123,8 @@ try:
     import duckdb
 
     from capa_simulation.components.theme_toggle import (  # noqa: E402
+        ALARM_BUTTON_ID,
+        CHANGES_CHIP_ID,
         GUIDE_BUTTON_ID,
         PRINT_BUTTON_ID,
         THEME_BUTTON_ID,
@@ -229,10 +231,18 @@ EQUIPMENT_SIDE_CHANGES: Final = "저장 전 변경"
 EQUIPMENT_SIDE_KEY: Final = "equipment_master_side_v1"
 EQUIPMENT_DISCARD_KEY: Final = "equipment_master_discard_v1"
 TOOLBAR_LABELS: Final[dict[str, str]] = {
+    CHANGES_CHIP_ID: "변경 칩",
     GUIDE_BUTTON_ID: "Guide",
+    ALARM_BUTTON_ID: "Alarm",
     PRINT_BUTTON_ID: "Print",
     THEME_BUTTON_ID: "테마",
 }
+# 바뀐 것이 있을 때만 서는 단추 — 툴바 차례 항목은 늘 서는 단추만 센다.
+TOOLBAR_OPTIONAL: Final = frozenset({CHANGES_CHIP_ID})
+# 알림 칸이 `document.body` 에 붙이는 호스트(`alert_center.js` 의 `HOST_ID` — 열린 shadow root).
+ALERT_HOST_ID: Final = "capa-alert-host"
+# Streamlit 1.63 대화상자 층(`stDialog` z-index — 2026-11-03 사본 실측). 알림창이 이 위여야 한다.
+DIALOG_Z_INDEX: Final = 1000059
 SCENARIO_MANAGEMENT_PAGE: Final = "scenario_management"
 ADMIN_AREA_PAGE: Final = "admin_area"
 # 공정 Capa 상세(`app_pages/process_capa_detail.py`)와 그 화면의 컨테이너 key(`process_capa_view`·
@@ -2202,8 +2212,9 @@ def _px(size: Sequence[float]) -> str:
 
 
 def check_toolbar_order(screen: Screen) -> str:
-    """툴바 단추 차례 — 왼쪽부터 Guide · Print · 테마(`TOOLBAR_BUTTON_ORDER`)."""
-    ids = list(TOOLBAR_BUTTON_ORDER)
+    """툴바 단추 차례 — 왼쪽부터 Guide · Alarm · Print · 테마(`TOOLBAR_BUTTON_ORDER` 에서 바뀐 것이
+    있을 때만 서는 변경 칩을 뺀 것)."""
+    ids = [button for button in TOOLBAR_BUTTON_ORDER if button not in TOOLBAR_OPTIONAL]
     positions = screen.poll(
         lambda: screen.js(_TOOLBAR_POSITIONS_JS, ids),
         timeout=15,
@@ -3600,6 +3611,149 @@ def check_page_tabs_frame(screen: Screen) -> str:
             moved = after == [*before[:pinned], before[-1], *before[pinned:-1]]
             kept = screen.path() in ("", "/")
     return summarize_page_tabs_frame(tops, progress, moved, kept)
+
+
+# ------------------------------------------------------------- 알림 칸(Alarm · 알림창 — 2026-11-03)
+
+_ALARM_STATE_JS = """([alarmId, guideId]) => {
+  const host = document.getElementById(alarmId);
+  const button = host && host.shadowRoot ? host.shadowRoot.querySelector('button') : null;
+  if (!button) return { present: false };
+  const box = host.getBoundingClientRect();
+  const guide = document.getElementById(guideId);
+  const g = guide ? guide.getBoundingClientRect() : null;
+  return {
+    present: box.width > 0,
+    label: button.firstChild ? String(button.firstChild.textContent || '').trim() : '',
+    rightOfGuide: Boolean(g && g.width > 0 && box.left >= g.right - 1),
+    aria: button.getAttribute('aria-label') || '',
+  };
+}"""
+_ALARM_PANEL_JS = """(hostId) => {
+  const host = document.getElementById(hostId);
+  const panel = host && host.shadowRoot ? host.shadowRoot.querySelector('.panel.alarms') : null;
+  if (!panel) return null;
+  return {
+    open: !panel.hidden,
+    rows: panel.querySelectorAll('.item').length,
+    levels: panel.querySelectorAll('.seg button').length,
+  };
+}"""
+# 화면 확인이 띄우는 시험 알림(이 브라우저 탭의 기록에만 남는다 — DB 에 쓰지 않는다).
+_ALERT_RAISE_JS = """(levels) => {
+  if (!window.__capaAlerts || typeof window.__capaAlerts.raise !== 'function') return false;
+  for (const level of levels) {
+    const text = '화면 확인 ' + level;
+    window.__capaAlerts.raise({ code: 'FL-02', level, short: text, full: text });
+  }
+  return true;
+}"""
+_ALERT_STACK_JS = """(hostId) => {
+  const host = document.getElementById(hostId);
+  const stack = host && host.shadowRoot ? host.shadowRoot.querySelector('.stack') : null;
+  if (!stack) return null;
+  const pops = [...stack.querySelectorAll('.pop')];
+  const style = getComputedStyle(stack);
+  return {
+    count: pops.length,
+    labels: pops.map((pop) => (pop.querySelector('.lv') || {}).textContent || ''),
+    times: pops.map((pop) => (pop.querySelector('.times') || {}).textContent || ''),
+    pointer: style.pointerEvents,
+    z: Number(style.zIndex) || 0,
+  };
+}"""
+
+
+def summarize_alarm_button(
+    state: Mapping[str, Any] | None, panel: Mapping[str, Any] | None, closed: bool
+) -> str:
+    """Alarm 단추 한 줄 — 있음 · Guide 오른쪽 · 패널 열림(거르기 단추 수) · Esc 로 닫힘."""
+    if not state or not state.get("present"):
+        return "Alarm 없음"
+    parts = [
+        f"Alarm {'있음' if state.get('label') == 'Alarm' else '글 다름'}",
+        "Guide 오른쪽" if state.get("rightOfGuide") else "Guide 오른쪽 아님",
+    ]
+    if not panel or not panel.get("open"):
+        parts.append("패널 안 열림")
+    else:
+        parts.append(f"패널 열림(거르기 {panel.get('levels')})")
+    parts.append("Esc 닫힘" if closed else "Esc 안 닫힘")
+    same = (
+        state.get("label") == "Alarm"
+        and state.get("rightOfGuide")
+        and panel is not None
+        and panel.get("open")
+        and panel.get("levels") == 5
+        and closed
+    )
+    return " · ".join(parts) + f" — 정한 동작과 {'같음' if same else '다름'}"
+
+
+def check_alarm_button(screen: Screen) -> str:
+    """머리 툴바 Alarm 단추(Guide 오른쪽)와 패널 — 눌러 열리고(거르기 단추 다섯 — 전체 · 단계 넷)
+    Esc 로 닫히는가. 패널은 브라우저 안에서만 열고 닫아 DB · 파이썬 회차가 돌지 않는다."""
+    screen.open_home()
+    state = screen.poll(
+        lambda: screen.js(_ALARM_STATE_JS, [ALARM_BUTTON_ID, GUIDE_BUTTON_ID]),
+        timeout=15,
+        accept=lambda value: bool(value and value.get("present")),
+    )
+    panel = None
+    closed = False
+    if state and state.get("present"):
+        screen.page.locator(f"#{ALARM_BUTTON_ID}").click()
+        time.sleep(0.4)
+        panel = screen.js(_ALARM_PANEL_JS, ALERT_HOST_ID)
+        screen.page.keyboard.press("Escape")
+        time.sleep(0.3)
+        after = screen.js(_ALARM_PANEL_JS, ALERT_HOST_ID)
+        closed = bool(after) and not after.get("open")
+    return summarize_alarm_button(state, panel, closed)
+
+
+def summarize_alert_popup(first: Mapping[str, Any] | None, again: Mapping[str, Any] | None) -> str:
+    """알림창 한 줄 — 칸 수(최대 3) · 단계 이름 글자 · 누름 통과 · 층(대화상자 위) · 같은 알림
+    ×2."""
+    if not first:
+        return "알림창 없음"
+    labels = [str(label) for label in first.get("labels") or []]
+    parts = [
+        f"알림창 {first.get('count')}칸(최대 3)",
+        "단계 글 " + "·".join(labels),
+        "누름 통과" if first.get("pointer") == "none" else "누름 막음",
+        "대화상자 위" if int(first.get("z") or 0) > DIALOG_Z_INDEX else "대화상자 아래",
+    ]
+    repeated = bool(again) and any("×2" in str(text) for text in (again or {}).get("times") or [])
+    parts.append("같은 알림 ×2" if repeated else "같은 알림 표지 없음")
+    same = (
+        first.get("count") == 3
+        and labels == ["확인 필요", "조치 필요", "오류"]
+        and first.get("pointer") == "none"
+        and int(first.get("z") or 0) > DIALOG_Z_INDEX
+        and repeated
+    )
+    return " · ".join(parts) + f" — 정한 꼴과 {'같음' if same else '다름'}"
+
+
+def check_alert_popup(screen: Screen) -> str:
+    """오른쪽 아래 알림창 한 꼴 — 단계 넷을 띄우면 최대 3칸(가장 오래된 「알림」 이 걷힘)에 단계
+    이름 글자, 누름을 받지 않고 Streamlit 대화상자 위 층인가, 같은 알림을 또 내면 「×2」 인가. 시험
+    알림은 이 브라우저 탭의 기록에만 남는다(DB 에 쓰지 않는다)."""
+    screen.open_home()
+    raised = screen.poll(
+        lambda: screen.js(_ALERT_RAISE_JS, ["info", "check", "action", "error"]),
+        timeout=15,
+        accept=bool,
+    )
+    if not raised:
+        return "알림 칸 없음"
+    time.sleep(0.3)
+    first = screen.js(_ALERT_STACK_JS, ALERT_HOST_ID)
+    screen.js(_ALERT_RAISE_JS, ["error"])
+    time.sleep(0.3)
+    again = screen.js(_ALERT_STACK_JS, ALERT_HOST_ID)
+    return summarize_alert_popup(first, again)
 
 
 def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
@@ -5320,6 +5474,8 @@ ITEMS: tuple[Item, ...] = (
     Item("space_zone_fields", "Space 배치 편집기 영역 칸", check_space_zone_fields),
     Item("equipment_preference", "설비 Preference 입력 비가동 표", check_equipment_preference),
     Item("page_tabs_frame", "화면 탭 줄 틀·고정·끌기", check_page_tabs_frame),
+    Item("alarm_button", "툴바 Alarm 단추·패널", check_alarm_button),
+    Item("alert_popup", "오른쪽 아래 알림창 한 꼴", check_alert_popup),
 )
 
 

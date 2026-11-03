@@ -261,14 +261,18 @@ def test_toolbar_scripts_take_the_slot_and_button_id_from_one_place() -> None:
 def test_toolbar_buttons_stand_in_one_shared_order_guide_print_theme(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """툴바 차례는 `Guide · Print · 테마`다(2026-10-08 사용자 결정). 세 스크립트 중 어느 것이 먼저
-    슬롯을 찾을지 정해져 있지 않으므로 각자 「바로 옆 단추」를 기준으로 서면 늦게 선 단추가 차례를
-    뒤집는다. 차례는 한 벌(`TOOLBAR_BUTTON_ORDER`)이고 세 단추가 모두 같은 규칙(`capaToolbar.place`)
-    으로 선다 — 자기보다 뒤 차례인 단추 중 이미 선 첫 단추 앞, 없으면 끝. 여섯 가지 도착 차례 모두
-    같은 차례가 되는 것은 브라우저에서 확인했다(2026-10-08, 8551).
+    """툴바 차례는 `Guide · Print · 테마`다(2026-10-08 사용자 결정). 2026-11-03 결정 보드 기본값으로
+    알림 칸의 변경 칩(맨 왼쪽 — 바뀐 것이 있을 때만)과 Alarm(Guide 오른쪽)이 든다. 여러 스크립트 중
+    어느 것이 먼저 슬롯을 찾을지 정해져 있지 않으므로 각자 「바로 옆 단추」를 기준으로 서면 늦게 선
+    단추가 차례를 뒤집는다. 차례는 한 벌(`TOOLBAR_BUTTON_ORDER`)이고 단추가 모두 같은
+    규칙(`capaToolbar.place` · 알림 칸 JS 의 `toolbarBefore`)으로 선다 — 자기보다 뒤 차례인 단추 중
+    이미 선 첫 단추 앞, 없으면 끝. 여섯 가지 도착 차례 모두 같은 차례가 되는 것은 브라우저에서
+    확인했다(2026-10-08, 8551).
     """
     assert theme_toggle.TOOLBAR_BUTTON_ORDER == (
+        theme_toggle.CHANGES_CHIP_ID,
         theme_toggle.GUIDE_BUTTON_ID,
+        theme_toggle.ALARM_BUTTON_ID,
         theme_toggle.PRINT_BUTTON_ID,
         theme_toggle.THEME_BUTTON_ID,
     )

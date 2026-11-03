@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.persistence.cache import (
@@ -97,6 +98,6 @@ def test_the_delete_check_and_the_notices_keep_the_tildes(database: Path) -> Non
     app.selectbox(key="home_key_process_preset_edit").set_value(NAME).run()
     app.button(key="home_key_process_preset_default").click().run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [str(message.value) for message in app.success] == [
+    assert [str(message.value) for message in successes(app)] == [
         "「A\\~B 묶음\\~2」를 기본 프리셋으로 옮겼습니다."
     ]

@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -95,7 +96,7 @@ def _press(app: AppTest, label: str) -> AppTest:
 
 
 def _successes(app: AppTest) -> list[str]:
-    return [str(element.value) for element in app.success]
+    return [str(element.value) for element in successes(app)]
 
 
 def _errors(app: AppTest) -> list[str]:
@@ -103,7 +104,7 @@ def _errors(app: AppTest) -> list[str]:
 
 
 def _infos(app: AppTest) -> list[str]:
-    return [str(element.value) for element in app.info]
+    return [str(element.value) for element in infos(app)]
 
 
 def test_a_summary_save_from_a_stale_screen_is_rejected_not_reported_as_saved(

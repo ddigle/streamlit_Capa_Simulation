@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -235,7 +236,7 @@ _render_execution_editor(
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
     assert not app.exception
     assert not app.error, [str(item.value) for item in app.error]
-    assert [str(item.value) for item in app.info] == [EXECUTION_UNCHANGED_MESSAGE]
+    assert [str(item.value) for item in infos(app)] == [EXECUTION_UNCHANGED_MESSAGE]
     assert repository.load_global_execution_capacity().version == 2
 
     _edit_first_rate(app)
@@ -290,7 +291,7 @@ _render_execution_editor(
 
     assert not app.exception
     assert not app.error, [str(item.value) for item in app.error]
-    assert "확보율 보정을 저장했습니다." in [str(item.value) for item in app.success]
+    assert "확보율 보정을 저장했습니다." in [str(item.value) for item in successes(app)]
     assert repository.load_global_execution_capacity().version == 2
     clear_global_execution_capacity_cache()
 
@@ -342,7 +343,7 @@ _render_execution_editor(
     assert not app.exception
     errors = [str(item.value) for item in app.error]
     assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
-    assert not app.success
+    assert not successes(app)
     profile = repository.load_global_execution_capacity()
     assert (profile.version, profile.source) == (2, "B 의 저장")
     clear_global_execution_capacity_cache()

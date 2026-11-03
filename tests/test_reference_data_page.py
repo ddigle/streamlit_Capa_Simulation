@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import infos, successes
 from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Error
@@ -780,7 +781,7 @@ def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
     app.run()
 
     assert not app.exception
-    assert STEP_VIEW_HINT in {info.value for info in app.info}
+    assert STEP_VIEW_HINT in {info.value for info in infos(app)}
     assert "download_unit_capacity_csv" not in {button.key for button in app.download_button}
     assert CAPACITY_TABLE_KEY not in app.session_state
 
@@ -792,7 +793,7 @@ def test_step_unit_capacity_draws_only_the_selected_process() -> None:
     app.run()
 
     assert not app.exception
-    assert STEP_VIEW_HINT not in {info.value for info in app.info}
+    assert STEP_VIEW_HINT not in {info.value for info in infos(app)}
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A"]
     assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
 
@@ -803,7 +804,7 @@ def test_effective_process_capacity_still_shows_every_process_without_a_filter()
 
     assert not app.exception
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A", "Process-B"]
-    assert STEP_VIEW_HINT not in {info.value for info in app.info}
+    assert STEP_VIEW_HINT not in {info.value for info in infos(app)}
     assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
 
 
@@ -1439,7 +1440,7 @@ def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
     assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in {
         warning.value for warning in app.warning
     }
-    assert PKG_UNCOUNTED_NOTICE in {info.value for info in app.info}
+    assert PKG_UNCOUNTED_NOTICE in {info.value for info in infos(app)}
     excluded = _exclusion_frame(app, "PKG 기준은 Buffer 로만 계수")
     uncounted = excluded.loc[excluded["제외사유"].eq("PKG 기준은 Buffer 로만 계수")]
     assert uncounted["STEP_SEQ"].tolist() == ["P600"]
@@ -1451,7 +1452,7 @@ def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
         AppTest.from_string(PKG_ONLY_UNCOUNTED_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
     assert not any("대당 Capa가 없어" in warning.value for warning in app.warning)
-    assert PKG_UNCOUNTED_NOTICE in {info.value for info in app.info}
+    assert PKG_UNCOUNTED_NOTICE in {info.value for info in infos(app)}
 
 
 # ------------------------------------------ 조건 카드 · 미적용 점 · Guide (2026-09-29)
@@ -1640,7 +1641,8 @@ def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits(grid_calls: C
         "bad": {},
     }
     assert any(
-        "UPEH·Lot측정률 표의 적용하지 않은 편집은 버렸습니다" in item.value for item in app.success
+        "UPEH·Lot측정률 표의 적용하지 않은 편집은 버렸습니다" in item.value
+        for item in successes(app)
     )
 
 
@@ -1817,7 +1819,7 @@ def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:
         "capa_lot_ratio_editor",
         RATIO_PASTE_HEADER + _ratio_paste_row("Process-A", "") + _ratio_paste_row("Process-B", "1"),
     )
-    notices = [str(item.value) for item in app.success]
+    notices = [str(item.value) for item in successes(app)]
     assert any("값이 지워진 칸 1개는 측정률 1.0 으로 계산합니다" in item for item in notices), (
         notices
     )
@@ -1826,13 +1828,13 @@ def test_the_paste_notice_says_what_happened_to_the_cleared_cells() -> None:
     # 보유 2 대를 비우면 0 대로 저장한다.
     app = _equipment_sub_tab_app("보유", TWO_PROCESS_TEST_SCRIPT)
     app = _paste(app, "capa_eqp_own_editor", "공정\t202608\nProcess-A\t\nProcess-B\t2\n")
-    notices = [str(item.value) for item in app.success]
+    notices = [str(item.value) for item in successes(app)]
     assert any("빈칸 1개는 0 대로 저장했습니다" in item for item in notices), notices
 
     # 대여는 두 공정 모두 0 대다. 0 인 칸을 비운 것은 바뀐 것이 없어 세지 않는다.
     app = _equipment_sub_tab_app("대여", TWO_PROCESS_TEST_SCRIPT)
     app = _paste(app, "capa_eqp_lent_editor", "공정\t202608\nProcess-A\t\nProcess-B\t\n")
-    notices = [str(item.value) for item in app.success]
+    notices = [str(item.value) for item in successes(app)]
     assert notices and not any("빈칸" in item or "지워진 칸" in item for item in notices), notices
 
 
@@ -2081,7 +2083,7 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
     assert _scenario_table(app, "RQ_LOT_RATIO").empty
     assert any(
         "이 기간에 Lot측정률 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다" in item.value
-        for item in app.info
+        for item in infos(app)
     )
     assert not any("편집 범위" in item.value for item in app.markdown)
 
@@ -2089,7 +2091,7 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
     app.session_state[DATASET_KEY] = DATASET["WF측정률"]
     app.run()
     assert any("전체 1개 행" in item.value for item in app.markdown)
-    assert not any("행이 없어" in item.value for item in app.info)
+    assert not any("행이 없어" in item.value for item in infos(app))
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 150.0)
@@ -2112,7 +2114,7 @@ def test_a_scenario_without_ratio_rows_opens_every_tab() -> None:
 
     assert not app.exception
     assert [error.value for error in app.error] == []
-    assert any("이 기간에 WF측정률 행이 없어" in item.value for item in app.info)
+    assert any("이 기간에 WF측정률 행이 없어" in item.value for item in infos(app))
     app = _open_paste(app, "capa_wf_ratio_editor")
     assert [error.value for error in app.error] == []
 
