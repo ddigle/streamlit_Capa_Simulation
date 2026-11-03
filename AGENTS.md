@@ -411,7 +411,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비는 **방문 기준**이다 — HOME 칸으로 들어온 방문은 ◀▶ 뒤에도 그 방문 동안 공식 설비 시나리오(사이드바 줄은 잠근
     꼴, 출처 띠 끝 「설비는 공식 vN 기준」), 그 밖의 길은 세션 설비 시나리오다(`process_detail_state`). 설비 시나리오는 공정·
     달을 정한 바로 뒤에 읽는다 — 출처 띠를 자리(`st.empty`)에 다시 쓰지 않게(9장 placeholder 시험). 설비 DB 가 코드보다
-    새면 상태 알림(`render_schema_ahead_warning` — `GL-03`), 옛 배포 흔적이면 흔적 알림(`EQ-01`)을 낸다(자리에는 그리지
+    새면 상태 알림(`render_schema_ahead_warning` — `GL-06`), 옛 배포 흔적이면 흔적 알림(`SB-19`)을 낸다(자리에는 그리지
     않는다 — 9장 「알림 칸」). 팝업은 「불러오기」 만이다.
   - 필요 단축 일정 카드에서 왔으면(`from=shortening`) **주소 인자만** 읽어 그 카드의 목표·기간·단축/신규 대수로 출처
     띠(「이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다」)와 「← 필요 단축 일정」 을 낸다. 필요 단축
@@ -775,7 +775,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「시뮬레이션 시나리오」 를 심는다. 「설비 시나리오」 구획(`equipment_scenario_management.render_equipment_scenario_section`)만
     설비 DB 를 열고, 못 읽으면 그 구획 안에서만 알린다. 이 화면에는 사이드바 설비 시나리오 줄이 서지 않는다(구획 머리 「이
     세션: …」 한 줄과 세션 알림). 세 탭을 늘 그리므로 다른 탭을 보는 회차에도 구획이 세션을 푼다 — 그 회차에 세션을 다른
-    리비전으로 옮겼다는 한 번뿐인 알림(미저장 설비 편집을 버렸다는 말)은 사건 알림(`EQ-03` — 알림창 · Alarm)이라 어느 탭을
+    리비전으로 옮겼다는 한 번뿐인 알림(미저장 설비 편집을 버렸다는 말)은 사건 알림(`SB-14` — 알림창 · Alarm)이라 어느 탭을
     보든 뜬다(`equipment_scenario_management.report_session_notices`, 2026-11-03 — 탭 묶음 위 자리 `notice_slot` 은 걷었다,
     `tests/test_equipment_scenario_screens.py`).
     설비 DB 핀을 선언하지만(`uses_equipment_db`) 게으른 핀이라 시뮬레이션 구획만 그린 회차에는 열지 않는다.
@@ -1757,7 +1757,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세션에 되쓴다(`pop` 하지 않는다). `prune_choice` 는 글자 선택지 전용이다(`str(saved) in options`) — 정수 달 상자는
     제 화면이 잡는다(`constraint_simulation_state.settle_period`). `prune_named_choice` 는 쓰기 단추의 대상을 고르는
     상자의 짝이다(9장 「글자가 바뀌는 것을 피할 수 없는 상자」). `render_schema_ahead_warning` 은 DB 가 코드보다 새
-    버전인지 상태 알림으로 낸다(시뮬레이션 DB `GL-02` — `app.py`, 설비 DB `GL-03` — 그 DB 를 여는 화면. 새 판이 아니어도
+    버전인지 상태 알림으로 낸다(시뮬레이션 DB `GL-02` — `app.py`, 설비 DB `GL-06` — 그 DB 를 여는 화면. 새 판이 아니어도
     불러 해소 · 이벤트 칸 한 자리).
   - `process_page_inputs(database_path)` 는 공정 하나를 보는 두 화면(공정 Capa 상세·제약 시뮬레이션)의 공통 진입이다 —
     판정 기준 → 공통 진입 → 유효 기간(`RQ_REQB`) → 시나리오 키 → 확보율(멈추면 「계산 멈춤」) → 달·공정 선택지를 **같은
@@ -2806,8 +2806,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `state(code, scope=, content=, active=, text=, full=, scope_label=)` — 이벤트 칸 한 자리, 지문(`fingerprint` = 코드 + 범위 +
   내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
   `<style data-capa-alerts="JSON">`(`MARKER_ATTRIBUTE`, 스타일만 든 `st.html` — 이벤트 칸)이고 `note_page` 가 적은 이번
-  화면을 단다. 화면을 못 그리는 오류는 `screen_error(code, message | None)` — 자리 `st.error` 는 부르는 쪽이 그대로 두고
-  같은 오류가 처음일 때만 알림창(범위 없음), 끝까지 준비한 회차는 None(해소). 분석 기록(L2)은 자리만 있다
+  화면을 단다. 화면을 그리지 못한 오류의 알림은 `components/state_alerts.alert_page_error` 다(아래). 분석 기록(L2)은 자리만 있다
   (`record_server_event` · `ALERT_LOG_SWITCH` — usage-log 1단계와 함께, D6).
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
@@ -2816,8 +2815,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
   `palette()` · 글 `TEXT`). 패널은 브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id 는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
-  문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 시험: `tests/test_alert_center.py`(data · 자리 · 변경 목록) ·
-  `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node 순수 구획 `<alerts-rows>`).
+  문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 「그 화면으로」 는 표지의 `tab`(그 화면 안 탭 — 탭 안 탭은
+  `바깥 › 안`, `TAB_PATH`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를 바깥 칸부터 한 칸씩 누른다(`tabStep` ·
+  `settleTab`). 시험: `tests/test_alert_center.py`(data · 자리 · 변경 목록) · `tests/test_alert_center_assets.py`(층 · 누름 ·
+  저장 · 색 계약과 node 순수 구획 `<alerts-rows>`).
+- `src/capa_simulation/components/state_alerts.py` — 화면이 상태 알림 · 화면 오류 알림을 낼 때 쓰는 공용 조각(2단계).
+  `simulation_scope`(활성 리비전 `content_token` + 조회기간 · 조회일 — 범위와 로그의 범위 줄) · `equipment_scope`(세션의 (공통
+  대장, 일정) 리비전 쌍 + 「설비 「이름」 rN」) · `alert_table`(알림에 딸린 표 — Alarm 줄에서 펼침 · CSV) ·
+  `alert_page_error`(화면을 그리지 못한 오류 — 자리 `st.error` 는 부르는 쪽 몫, 같은 코드 + 같은 글이면 같은 id 라 이 브라우저
+  탭에 한 번만 알림창, 짧은 글 `text`) · `tab_name` / `open_tab_name`(표지의 `tab` — 아이콘 없는 탭 이름, 닫힌 탭이면 None
+  이라 그 회차에는 그 탭의 상태 알림을 내지 않는다). 시험: `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`.
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
   세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안 · 작은 편집표 · Past Data · 시나리오 관리 표
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
@@ -3009,8 +3016,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`common_history_label`). 「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
     필요」·표 풍선)은 공식 일정 + 편집본 공통 칸이다(`official_confirmation_master` — 세션 칸 한 벌).
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
-  화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 알림(`EQ-01`)과 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
-  세션 알림(다른 리비전으로 옮김 `EQ-03` 사건 · 일정 없이 엶 `EQ-02` 상태)은 줄 아래에 그리지 않고 알림 칸으로 낸다
+  화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 알림(`SB-19`)과 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
+  세션 알림(다른 리비전으로 옮김 `SB-14` 사건 · 일정 없이 엶 `SB-20` 상태)은 줄 아래에 그리지 않고 알림 칸으로 낸다
   (`equipment_scenario_management.report_session_notices` — 시나리오 관리 구획과 한 함수).
   - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
     「운영 일정 · r12」(긴 이름은 `app_header.short_scenario_name` 으로 줄여 「 · rN」 이 늘 보인다 — 값 칸은 한 줄
@@ -3210,8 +3217,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`forget_page_dialogs()` 부터)·호스트(이벤트 칸 늘 한 자리). 저장·채우기 뒤에도 팝업을 열어 둔다(9장 「팝업과 콜백」 예외 —
   앱 범위 `st.rerun()` 이라 바깥 화면도 새 값이고 flash 가 누른 단추 아래에 선다). 닫으면 제출하지 않은 표 편집은 사라진다.
   - 저장은 초안 지문 대조다(`process_cutoff_fingerprint` → `ProcessCutoffConflict`) — 표 전체 교체라 옛 초안이 남의
-    공정을 지운다. 원본 공정명 원장이라 편집표·「Cut-off 를 적지 않은 공정」 알림(`EQ-12` — 팝업 안에는 수 한 줄 캡션)·
-    `process_cutoff.csv` 는 원본이다.
+    공정을 지운다. 원본 공정명 원장이라 편집표·「Cut-off 를 적지 않은 공정」 경고(팝업 안 자리 글 — 이름 목록)와 같은
+    조건의 상태 알림(`EQ-12` — 가용설비 현황이 회차마다 `report_missing_cutoffs` 로 낸다)·`process_cutoff.csv` 는 원본이다.
 - `src/capa_simulation/components/availability_gap_panel.py` — `Static 대비 일정` 의 `조회 결과` 하나(`가용대수 비교`·
   `분류별 내역`·`확보율 교차검증`)를 그린다. DB 는 페이지가 읽어 넘기고 계산은 `simulation_cache` 래퍼
   (`get_availability_sheet` 등)로 받아 고르기만 한다.
@@ -3593,7 +3600,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   읽기·체크섬 대조·건별 트랜잭션).
   - DB 가 코드보다 새 것이면(옛 배포 ZIP 으로 되돌림) 막지 않고 `MigrationOutcome.schema_ahead`(`SchemaAheadOfCode`)로
     알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 상태 알림(`page_bootstrap.render_schema_ahead_warning`)은
-    시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-03`)이 낸다.
+    시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-06`)이 낸다.
 - `src/capa_simulation/persistence/migration_runner.py`, `equipment_migration_runner.py` — 각 DB 를 엔진에 묶는 진입점.
 - `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열두 종과 설비
   스냅샷·층/FAB 도면·설비 마스터 탭 이력·필요 단축 일정 조건·기준선의 Streamlit 캐시 경계.
@@ -5547,34 +5554,48 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   부른다 — 지문(코드 + 범위 + 내용 — 범위는 시뮬레이션이면 `content_token` + 조회기간, 설비면 (공통 대장, 일정) 리비전 쌍,
   내용은 글이 아니라 건수 · 이름 목록 같은 구조 값)이 바뀔 때만 알림창이 뜨고, 없어지면 Alarm 줄에 「해소 hh:mm」 이 선다.
   닫힌 탭 · 접힌 펼침 안의 조건은 그 탭이 열린 회차에만 부른다. `tests/test_alert_sites.py` 가 경고 상자를 직접 그리는
-  자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 1단계가 옮기지 않은 자리는 「2단계 a/b 가
-  가른다」 까닭으로 남아 있고 2단계 갈래가 줄인다.
+  자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 2단계(a · b)가 상태 경고를 모두 옮겨
+  남은 자리는 자리 글 까닭(`REASONS`) 하나를 든다. 새 경고 자리를 더하려면 상태 알림인지 먼저 가린다.
 - **상태 알림의 범위 · 내용 고르기**(2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기,
   2026-11-03). 알림 칸 JS 는 같은 코드의 다른 범위가 오면 앞 범위를 「범위가 바뀜」 으로 해소하고, 그 범위가 다시 오면 새
   알림으로 띄운다 — 그래서
   - **한 회차에 한 코드는 한 범위로만** 낸다. 두 DB 처럼 범위가 다른 것을 한 회차에 함께 알리면 코드를 나눈다(DB 새 판 —
-    시뮬레이션 `GL-02` · 설비 `GL-03`). 같은 코드를 고리 안에서 대상마다 부르지 않는다.
+    시뮬레이션 `GL-02` · 설비 `GL-06`). 같은 코드를 고리 안에서 대상마다 부르지 않는다. 두 화면이 같은 조건을 알리면 같은
+    코드 · 같은 범위로 낸다(설비 세션 알림 `SB-14` · `SB-20` — 사이드바 설비 시나리오 줄과 시나리오 관리 「설비 시나리오」
+    구획이 `equipment_scenario_management.report_session_notices` 하나를 부른다) — 화면을 옮겨도 다시 뜨지 않는다.
   - **지문(범위 · 내용)은 사용자가 고르는 것에 기대지 않는다** — 고른 층 · 칸 · 거르기 · 고른 시나리오가 들면 고를 때마다
     다시 뜬다. 고른 대상의 설명(Space 고른 층의 캔버스 밖 호기, 고른 칸의 근거, 고른 설비 시나리오의 리비전 표 설명)은 자리
     글이고(`PLACE_DETAIL`), 거르기에 따라 수만 바뀌는 조건은 내용에 있음/없음만 싣는다(재공 현황 `WIP-04`). 시각 · 지난 분처럼
     회차마다 바뀌는 글도 내용에 넣지 않는다(자동 갱신 멈춤 `AU-01` — 마지막 확인 시각 · 갈래).
-  - 설비 알림의 범위는 `EquipmentSession.alert_scope`(세션 쌍)이고, 공용 프로필 · DB 전체의 조건(Cut-off 누락 `EQ-12` · 옛
-    배포 흔적 `EQ-01` · Admin · 모듈 뿌리)은 범위가 없다(None).
-- **화면을 못 그리는 오류는 자리에 남기고 알림을 더한다**(설계 2-2) — `alerts.screen_error(code, message)` 를 `st.error` ·
-  `st.stop()` 앞에, 그 화면의 오류 자리를 모두 지난 뒤 `screen_error(code, None)`(해소)을 한 번 부른다(오류 자리보다 앞에
-  해소를 두면 오류가 이어지는 동안 회차마다 해소 · 새 알림이 되풀이된다). 화면마다 코드가 하나다(`EQ-09` 가용설비 · `EQ-10`
-  Space · `PD-01` · `RS-01` · `CS-01` · `WIP-01` · `SC-02` · `AD-07` · `VO-01`). 보기 하나 · 프래그먼트 안의 멈춤은 자리 글이다
-  (`PLACE_BLOCKED`).
+  - 설비 알림의 범위는 `state_alerts.equipment_scope`(세션의 (공통 대장, 일정) 리비전 쌍)이고, 공용 프로필 · DB 전체의
+    조건(Cut-off 누락 `EQ-12` · 옛 배포 흔적 `SB-19` · Admin · 모듈 뿌리)은 범위가 없다(None). 시뮬레이션 알림은
+    `state_alerts.simulation_scope`(내용 토큰 + 조회기간 · 조회일)다.
+- **탭 안 상태 알림은 그 탭이 열린 회차에만 낸다**(설계 2-3 「숨은 자리는 세지 않는다」 — 늘 그리는 `stateful_tabs` 의 닫힌
+  탭에서 난 알림창은 어디 것인지 모른다). 화면이 `state_alerts.open_tab_name(탭, 탭 단추 글)` 을 컴포넌트의 `alert_tab` 으로
+  넘기고(닫힌 탭이면 None → 그 회차에는 `alerts.state` 를 부르지 않는다 — 탭 칸은 프래그먼트 밖이라 이벤트 칸 자리 수 규칙에
+  걸리지 않는다), 열렸으면 그 이름이 표지의 `tab` 이 돼 「그 화면으로」 가 그 탭까지 연다(시나리오 관리 `SC-01` · `AD-04` ·
+  `AU-01/02`, Admin `AD-05` · `AD-06`). 고칠 자리가 다른 탭이면 그 탭 이름을 싣고(일정 없는 호기 `EQ-04` → 「설비 마스터」),
+  탭 안 탭은 `tab_name(바깥, 안)` 으로 잇는다(`EQ-06/07/08` → 「Summary › Static 대비 일정」). 세션 이동처럼 탭과 상관없이
+  알아야 하는 사건은 탭을 가리지 않는다.
+- **팝업 안 조건은 팝업이 자리 글로, 화면이 상태 알림으로** — 「설정」 팝업 「Cut-off 를 적지 않은 공정」 은 고칠 표 곁의 경고
+  (이름 목록 — `PLACE_FORM`)로 두고, 가용설비 현황이 팝업을 열지 않아도 회차마다 같은 조건을 상태 알림(`EQ-12` —
+  `cutoff_management.report_missing_cutoffs`)으로 낸다.
+- **화면을 못 그리는 오류는 자리에 남기고 알림을 더한다**(설계 2-2) — `state_alerts.alert_page_error(message, code=, text=)` 를
+  `st.error` · `st.stop()` 앞에 부른다. 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만 알림창이 뜨고(해소 줄은
+  없다 — 화면이 다시 서면 자리 오류가 사라진다), 짧은 글(`text`)은 무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20`
+  계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` · `WIP-01` · `SC-02` · `AD-07` ·
+  `VO-01`). 보기 하나 · 프래그먼트 안의 멈춤은 자리 글이다(`PLACE_BLOCKED`).
 - **상태 줄 · 점검 펼침**은 칸의 일이 상태를 보이는 것이다(시나리오 관리 「저장소 상태」 · 자동 갱신 「지금 상태」 ·
   BigDataQuery 설정 띠 · Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」) — 경고 상자 대신 상태 줄(캡션 ·
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 04` · `MO-01`).
-- **한 번 일어난 화면 사건**(세션 이동 `EQ-03` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
+- **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
   `PD-02/03` · `CS-02`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
-- 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_STOP` ·
-  `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_EMPTY`(빈 상태 · 멈춤) · `PLACE_BLOCKED` ·
-  `PLACE_DETAIL` · `PLACE_VERDICT`(성공 상자와 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) · `PLACE_KEPT` 다.
+- 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
+  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_EMPTY`(빈
+  상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(성공 상자와 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
+  `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
@@ -5979,8 +6000,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
     (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
   - **낫표 없이 늘어놓는 이름 목록은 `literal_names(이름들)`**(이름마다 `literal_markdown`, 잇는 글 `, `·` · ` 은 앱 글),
-    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명·도면 파일 이름)은 `literal_markdown(이름)` — Proc Rename 무시
-    안내, 주요공정 프리셋 「이 화면에 없음」·필요 단축 일정 공정
+    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명·도면 파일 이름)은 `literal_markdown(이름)` — 「설정」 팝업의 Cut-off 를
+    적지 않은 공정, Proc Rename 무시 안내, 주요공정 프리셋 「이 화면에 없음」·필요 단축 일정 공정
     필터 밖 공정, 호기·설비 조회 걸린 조건 줄, 근거 카드 「가용을 깎지 않은 비가동」 설비명, Space 도면 올리기의 캔버스 밖 호기,
     실적 요약·실적 정합성 결론의 공정, Capa Chatbot 질문·결론·조건(페이지가 막는 표시명 함수를 넘긴다), 저장된 도면 파일
     이름(E2E r2 #71 — `tests/test_markdown_name_lists.py`·`tests/test_capa_chatbot_page.py`). 이름마다 막은 목록을 담은 글을
@@ -5995,7 +6016,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     경고·배치 잠금 줄·「선택 행 삭제」 풍선(`tests/test_space_layout_overlay_page.py`·
     `tests/test_equipment_master_tab_scenarios.py`). **알림 칸 글은 막지 않는다** — `alerts.state` · `alerts.event` 의 `text` ·
     `full` 은 알림창 · 패널이 `textContent` 로 넣는 평문이라 날 이름을 글자 그대로 싣는다(Cut-off 를 적지 않은 공정 `EQ-12` ·
-    한쪽에만 있는 공정 `EQ-06` · Proc Rename 겹침 `AD-06` · 세션 이동 `EQ-03` · 넘겨받은 공정 `PD-02` · `CS-02` —
+    한쪽에만 있는 공정 `EQ-06` · Proc Rename 겹침 `AD-06` · 세션 이동 `SB-14` · 넘겨받은 공정 `PD-02` · `CS-02` —
     `tests/test_markdown_name_lists.py`). 마크다운 글을 실을 때는 `alerts.plain_text` 로 꾸밈을 걷는다. 붙여넣기 거절 글은 잠금
     까닭을 `literal_markdown` 으로 막아 담는다(예외 글로 가 `bootstrap_error_message` 를 지난다). 이미 막힌 조각(`quoted` 한
     이름·`bootstrap_error_message` 글)을 담는 글은 물결표만 막는다(`markdown_safe_tildes` — 막은 `\~` 는 다시 막지 않는다):
@@ -6359,11 +6380,11 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - 앱은 로깅을 설정하지 않아 INFO 는 어디에도 나오지 않는다. 남겨야 할 드문 사건은 WARNING 으로 남기고, 되풀이되는
   실패는 처음과 회복 때만 남긴다(주기마다 쌓지 않는다).
 - **DB 가 코드보다 새 것이면 막지 않고 알린다.** 적용된 마이그레이션 최고 번호가 코드보다 높으면(옛 배포 ZIP 으로 되돌린
-  상태) 앱은 그대로 뜨고 상태 알림(`GL-02` · `GL-03` — 알림창 · Alarm)만 낸다(`MigrationOutcome.schema_ahead`) — 막으면 DB 를 복원하기 전에는 되돌릴
+  상태) 앱은 그대로 뜨고 상태 알림(`GL-02` · `GL-06` — 알림창 · Alarm)만 낸다(`MigrationOutcome.schema_ahead`) — 막으면 DB 를 복원하기 전에는 되돌릴
   수 없다.
 - **설비 `0027` 을 실은 배포부터 옛 배포 ZIP 으로 되돌리지 않는다**(사내 런북 4-2 끝) — 새 판에서 한 번이라도 저장한 뒤의
   옛 판은 설비 마스터를 빈 표로 읽는다(첫 저장이 계약 v4 공통이라). 옛 판에서 저장한 흔적(경계 뒤 계약 v3 공통)이 있으면
-  새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면이 상태 알림(`EQ-01`)을 낸다. 빠져나가는 길은 백업
+  새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면이 상태 알림(`SB-19`)을 낸다. 빠져나가는 길은 백업
   복원과 시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」 둘이다(설비 화면 맨 위 「시나리오 관리에서 이어 쓰기」 단추가
   그리로 옮긴다).
 - **설비 시나리오 2단계는 아직 없다**(1단계 = 구조·이관·고르기·두 쪽 저장·발행·복제·이름·화면 최소·사내 이관 확인, 그 위에
@@ -6422,7 +6443,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
    콜백」) — 화면 링크는 `st.page_link` 로 두면 탭 줄 JS 가 막는다
 9. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
 10. **새 알림은 등록부 코드로 낸다**(9장 「알림 칸」) — 동작 결과는 `queue_flash`(성공은 알림창으로만), 조건 경고는
-    `alerts.state`(자리에 그리지 않음), 자리 글이면 `tests/test_alert_sites.py` 허용 목록에 까닭과 함께
+    `alerts.state`(자리에 그리지 않음 — 짧은 글은 무엇을 · 어디서 고치는지, 탭 안이면 `open_tab_name` 으로 열린 탭에서만 ·
+    탭 이름과 함께), 화면을 그리지 못한 오류는 자리 `st.error` + `state_alerts.alert_page_error`, 자리 글이면
+    `tests/test_alert_sites.py` 허용 목록에 `REASONS` 까닭과 함께
 
 ### 코어 공개 창구(`module_api`) 변경
 
