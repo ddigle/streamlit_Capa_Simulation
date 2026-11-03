@@ -75,7 +75,7 @@ def effective_floor_layout(
 
 def floor_layout_differences(database_path: str, session: EquipmentSession) -> tuple[int, int]:
     """세션 리비전의 도면 요소·Main 설비명 위치 차이 가운데 지금 공식 층 현행값과 실제로 다른 수
-    (실효 — 공식과 같아진 차이는 다음 저장 때 지워진다). 사이드바 배치 줄 재료(설계 8-2)."""
+    (실효 — 공식과 같아진 차이는 다음 저장 때 지워진다). 배치 알림(`EQ-13`) 재료(설계 8-2)."""
     overlay = session_layout_overlay(database_path, session)
     if not overlay:
         return 0, 0

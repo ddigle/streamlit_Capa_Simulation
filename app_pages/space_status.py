@@ -369,8 +369,8 @@ COMPARE_LABEL = "공식과 견주기"
 COMPARE_HELP = (
     "옮긴 호기의 공식 자리를 점선으로 그립니다 — 같은 층 안에서 옮겼으면 가는 선으로 잇고, 다른 "
     "층으로 보냈거나 다른 층에서 왔으면 꼬리표를 답니다. FAB 전체에서는 층 목록에 「공식과 다름」 "
-    "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 아래 배치 줄의 수만 "
-    "봅니다."
+    "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 가정 배치 알림(알림창 · "
+    "Alarm)의 수로만 봅니다."
 )
 COMPARE_COLUMN = "공식과 다름"
 COMPARE_COLUMN_HELP = (
@@ -456,7 +456,7 @@ def _jump_to_floor(widget_key: str) -> None:
 
 def _compare_lock_reason(editing: bool) -> str | None:
     """「공식과 견주기」 를 켤 수 없는 까닭(켤 수 있으면 None). 견줄 것은 그리는 스냅샷의 호기
-    차이다(상자 배치 줄과 같은 재료 — 역할이 아니라 그리는 한 벌로 정한다)."""
+    차이다(배치 알림 `EQ-13` 과 같은 재료 — 역할이 아니라 그리는 한 벌로 정한다)."""
     if using_sample_equipment:
         return "샘플 데이터에는 공식과 견줄 배치가 없습니다."
     if equipment_session.unmerged or latest_snapshot is None:
