@@ -75,9 +75,10 @@ def render_page_header(
     `title` 은 그대로 사이드바 라벨과 같게 넘긴다(두 제목이 같다는 계약은 표기 유무와 무관하다).
     Space 현황이 그렇다(2026-10-01 사용자 결정 — 본문은 배치도가 쓸 자리다).
 
-    `trailing` 을 주면 제목 줄 끝 칸에 그것을 그린다 — 가용설비 현황 「설정」·필요 단축 일정
-    「Qual 마감 계산기」 단추. 칸 나누기·폭은 `render_page_header_with_status` 의 끝 칸과 같다
-    (`_render_title_row`).
+    `trailing` 을 주면 제목 줄 끝 칸에 그것을 그린다 — 필요 단축 일정 「Qual 마감 계산기」
+    단추(도구다 — 설정 단추는 이 칸이 아니라 사이드바 설정 상자 `components/settings_box.py`,
+    2026-11-03). 칸 나누기·폭은 `render_page_header_with_status` 의 끝 칸과
+    같다(`_render_title_row`).
 
     제목은 화면에서 숨고(탭 줄이 이름을 말한다) 인쇄·읽기 도구에 남는다(모듈 설명).
     """

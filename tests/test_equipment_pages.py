@@ -14,7 +14,9 @@ from test_floor_layout_profile import _png
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
+    SETTINGS_BOX_KEY,
     SETTINGS_BUTTON_KEY,
+    SETTINGS_DIALOG_TITLE,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -49,8 +51,18 @@ def _open_tab(app: AppTest, name: str) -> AppTest:
 
 
 def _open_settings(app: AppTest) -> AppTest:
-    """머리 「설정」 단추로 공정별 Cut-off 팝업을 연다(개편 전 `Preference` 탭)."""
+    """사이드바 「가용설비 설정」 상자로 공정별 Cut-off 팝업을 연다(개편 전 `Preference` 탭)."""
     return app.button(key=SETTINGS_BUTTON_KEY).click().run()
+
+
+def _sidebar_keys(app: AppTest) -> list[str]:
+    """사이드바 **최상위** 칸의 key 를 화면 차례대로(key 를 준 컨테이너·확장 패널은 id 끝이 그
+    key 다). key 가 없는 칸은 빈 문자열이다."""
+    keys: list[str] = []
+    for node in app.sidebar.children.values():
+        identifier = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        keys.append(identifier.rsplit("-", 1)[-1] if identifier else "")
+    return keys
 
 
 def _page_script(page_path: Path, database_path: Path) -> str:
@@ -83,9 +95,9 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     assert app.title[0].value == "가용설비 현황"
     assert not any("Data확보중" in element.value for element in app.markdown)
     # 탭 셋(2026-10-24 두 탭 개편, 2026-10-27 Preference): ① 설비 마스터(처음 여는 탭) ②
-    # Summary(안쪽 Main·Static 대비 일정) ③ Preference(입력 비가동 대수). Cut-off 는 머리 「설정」
-    # 팝업, Qual 마감 계산기는 필요 단축 일정 팝업, 설비 시나리오는 시나리오 관리다. 설비 마스터
-    # 안의 입력표 탭은 최상위 목록과 별개다.
+    # Summary(안쪽 Main·Static 대비 일정) ③ Preference(입력 비가동 대수). Cut-off 는 사이드바
+    # 「가용설비 설정」 팝업, Qual 마감 계산기는 필요 단축 일정 팝업, 설비 시나리오는 시나리오
+    # 관리다. 설비 마스터 안의 입력표 탭은 최상위 목록과 별개다.
     labels = [tab.label for tab in app.tabs]
     assert [label for label in labels if label.startswith(":material/")] == [
         ":material/table_rows: 설비 마스터",
@@ -120,6 +132,64 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     app.run()
 
     assert not app.exception
+
+
+def test_the_settings_box_stands_in_the_sidebar_above_the_card_on_every_tab(
+    tmp_path: Path,
+) -> None:
+    """「가용설비 설정」 은 사이드바 상자다(2026-11-03 사용자 지시 — 설정 단추는 사이드바 상자로).
+
+    본문(제목 줄 끝)에는 설정 단추가 없고 제목 줄은 큰 제목 하나다. 상자는 탭에 매이지 않아 세 탭
+    모두 같은 자리에 서고, 카드가 서는 Summary 탭에서는 `설비 조회 조건` 카드 **위**다(사이드바는
+    부른 차례로 선다). 누르면 같은 제목의 팝업이 공정별 Cut-off 표로 열린다.
+    """
+    database_path = tmp_path / "settings_box.duckdb"
+    _seeded_equipment(database_path)
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+    assert not app.exception
+    assert SETTINGS_DIALOG_TITLE == "가용설비 설정"
+
+    for tab in ("Main", "Preference", "설비 마스터"):
+        app = _open_tab(app, tab)
+        assert not app.exception, tab
+        assert SETTINGS_BOX_KEY in _sidebar_keys(app), tab
+        assert [button.key for button in app.sidebar.button if button.key == SETTINGS_BUTTON_KEY]
+        assert SETTINGS_BUTTON_KEY not in {button.key for button in app.main.button}, tab
+
+    app = _open_tab(app, "Main")
+    keys = _sidebar_keys(app)
+    card = f"{CONDITION_CARD_PREFIX}equipment"
+    assert keys.index(SETTINGS_BOX_KEY) < keys.index(card)
+    box = next(button for button in app.sidebar.button if button.key == SETTINGS_BUTTON_KEY)
+    assert box.label == SETTINGS_DIALOG_TITLE and not box.disabled
+    assert "공정별 Cut-off" in str(box.help)
+
+    app = _open_settings(app)
+    assert not app.exception
+    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
+    assert any(button.label == "Cut-off 저장" for button in app.button)
+    clear_equipment_repository()
+
+
+def test_the_settings_box_is_locked_in_place_when_the_equipment_db_cannot_open(
+    tmp_path: Path,
+) -> None:
+    """설비 DB 를 읽지 못한 회차 — 페이지는 오류를 알리고 멈추고, 「가용설비 설정」 상자는 잠긴 채
+    같은 자리에 선다(팝업 본문의 저장소가 없다 — HOME 계산 멈춤의 「HOME 설정」 과 같은 꼴)."""
+    database_path = tmp_path / "broken.duckdb"
+    database_path.write_bytes(b"not a database file")
+    clear_equipment_repository()
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+
+    assert not app.exception
+    assert any("설비 현황을 준비하지 못했습니다" in item.value for item in app.error)
+    assert _sidebar_keys(app) == [SETTINGS_BOX_KEY]
+    box = app.button(key=SETTINGS_BUTTON_KEY)
+    assert box.disabled
+    assert "설비 DB 를 읽지 못해" in str(box.help)
+    clear_equipment_repository()
 
 
 def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -> None:
@@ -580,7 +650,7 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
     app.button("equipment_first_data_cut_v1").click().run()
 
     assert not app.exception
-    # 「설정에서 보기」 는 「설정」 팝업(공정별 Cut-off)을 연다.
+    # 「설정에서 보기」 는 「가용설비 설정」 팝업(공정별 Cut-off)을 연다.
     assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
     assert any(button.label == "Cut-off 저장" for button in app.button)
     # 「설비 마스터 탭에서 붙여넣기」 는 탭 ① 을 연다.

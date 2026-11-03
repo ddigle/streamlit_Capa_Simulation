@@ -251,14 +251,17 @@ def _header_line(app: AppTest) -> str:
 
 
 def test_a_fractional_cutoff_is_named_as_the_floored_days_it_counts(tmp_path: Path) -> None:
-    """「설정」 팝업에 7.5 를 적으면 계산은 7일 창을 쓴다(`wd_window` 내림). 조건 줄이 「Cut-off
-    7일 — 「설정」 팝업의 공정별 값」 이라 팝업의 7.5 와 어긋나 보였다(2026-10-26 E2E) — 내림을
-    함께 적는다."""
+    """「가용설비 설정」 팝업에 7.5 를 적으면 계산은 7일 창을 쓴다(`wd_window` 내림). 조건 줄이
+    「Cut-off 7일 — 「설정」 팝업의 공정별 값」 이라 팝업의 7.5 와 어긋나 보였다(2026-10-26 E2E) —
+    내림을 함께 적는다(팝업 이름은 2026-11-03 부터 사이드바 상자와 같은 「가용설비 설정」)."""
     databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
     DuckDBEquipmentRepository(databases[1]).save_process_cutoff(_cutoff(7.5, DYNAMIC_PROCESS))
     app = _opened(databases)
 
-    assert "Cut-off 7일(7.5일 내림) — 가용설비 현황 「설정」 팝업의 공정별 값" in _captions(app)
+    assert (
+        "Cut-off 7일(7.5일 내림) — 가용설비 현황 「가용설비 설정」 팝업의 공정별 값"
+        in _captions(app)
+    )
 
 
 def test_an_empty_equipment_database_stands_the_card_and_one_reason_card(

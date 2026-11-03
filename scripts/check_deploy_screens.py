@@ -403,13 +403,14 @@ LABEL_NARROW_WIDTHS_PX: Final = (280, 236, SIDEBAR_NARROW_WIDTH_PX)
 # 앱과 같은지 본다.
 GAP_TAB: Final = "Static 대비 일정"
 # 가용설비 현황 두 탭 개편(2026-10-24 사용자 결정) — 바깥 탭 둘(① 설비 마스터 ② Summary), Summary
-# 안쪽 탭 둘(라벨 글자는 개편 전 그대로), 머리 「설정」 팝업(공정별 Cut-off), 필요 단축 일정 머리
-# 「Qual 마감 계산기」 팝업, 시나리오 관리 「관리할 시나리오」 전환의 설비 시나리오 구획. 앱 모듈을
-# 부르지 않고 값만 옮긴다(테스트가 앱과 같은지 본다).
+# 안쪽 탭 둘(라벨 글자는 개편 전 그대로), 필요 단축 일정 머리 「Qual 마감 계산기」 팝업, 시나리오
+# 관리 「관리할 시나리오」 전환의 설비 시나리오 구획. 공정별 Cut-off 팝업은 2026-11-03 부터 사이드바
+# 「가용설비 설정」 상자가 연다 — `settings_boxes` 가 본다. 앱 모듈을 부르지 않고 값만
+# 옮긴다(테스트가 앱과 같은지 본다).
 EQUIPMENT_MASTER_TAB: Final = "설비 마스터"
 EQUIPMENT_SUMMARY_TAB: Final = "Summary"
 # 셋째 바깥 탭(2026-10-27 — 공정 × 생산월 입력 비가동 대수). 개편 전 「Preference」(Cut-off 표)와
-# 이름만 같다 — 그 Cut-off 는 지금도 머리 「설정」 팝업이다.
+# 이름만 같다 — 그 Cut-off 는 지금 사이드바 「가용설비 설정」 팝업이다.
 EQUIPMENT_PREFERENCE_TAB: Final = "Preference"
 EQUIPMENT_OUTER_TABS: Final = (
     EQUIPMENT_MASTER_TAB,
@@ -429,8 +430,6 @@ MANUAL_DOWNTIME_HISTORY_TITLE: Final = "저장 이력"
 # 바깥 탭 묶음·Summary 안쪽 탭 묶음의 `st.tabs` key(`st-key-<key>` 칸) — 제 탭만 센다.
 EQUIPMENT_TAB_KEY: Final = "equipment_active_tab"
 EQUIPMENT_SUMMARY_TAB_KEY: Final = "equipment_summary_tab"
-EQUIPMENT_SETTINGS_BUTTON_KEY: Final = "equipment_settings_open_v1"
-EQUIPMENT_SETTINGS_TITLE: Final = "설정"
 CUTOFF_EDITOR_ANCHOR: Final = "Cutoff일수"
 QUAL_CALCULATOR_BUTTON_KEY: Final = "required_shortening_qual_calculator_v1"
 QUAL_CALCULATOR_TITLE: Final = "Qual 마감 계산기"
@@ -4367,7 +4366,6 @@ class EquipmentTabNames:
 
 def summarize_equipment_moves(
     tabs: EquipmentTabNames,
-    settings: tuple[str | None, bool, bool] | None,
     calculator: tuple[str | None, int, bool] | None,
     section: tuple[bool, bool] | None,
 ) -> str:
@@ -4386,14 +4384,6 @@ def summarize_equipment_moves(
         f"탭 {len(outer)}/{len(EQUIPMENT_OUTER_TABS)} · Summary 안쪽 {len(inner)}/2 · "
         f"옛 탭 {len(old)}곳",
     ]
-    if settings is None:
-        parts.append("「설정」 단추 없음")
-    else:
-        title, editor, closed = settings
-        parts.append(
-            f"설정 — {_title_text(title, EQUIPMENT_SETTINGS_TITLE)} · Cut-off 표 "
-            f"{'있음' if editor else '없음'} · {_closed_text(closed)}"
-        )
     if calculator is None:
         parts.append("「Qual 마감 계산기」 단추 없음")
     else:
@@ -4423,10 +4413,11 @@ def _main_button(widget_key: str) -> str:
 
 
 def check_equipment_moves(screen: Screen) -> str:
-    """가용설비 현황 두 탭 개편의 새 자리 — 바깥 탭 둘·Summary 안쪽 둘·옛 탭 이름 0곳, 머리 「설정」
-    팝업의 Cut-off 표, 필요 단축 일정 머리 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리
-    「관리할 시나리오」 의 「설비 시나리오」 구획 표. 팝업은 `Esc` 로 닫고(저장·채우기·넣기는 누르지
-    않는다), 전환은 처음 값으로 되돌린다(세션 값 — DB 에 쓰지 않는다)."""
+    """가용설비 현황 두 탭 개편의 새 자리 — 바깥 탭 둘·Summary 안쪽 둘·옛 탭 이름 0곳, 필요 단축
+    일정 머리 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리 「관리할 시나리오」 의 「설비
+    시나리오」 구획 표. 팝업은 `Esc` 로 닫고(넣기는 누르지 않는다), 전환은 처음 값으로 되돌린다(세션
+    값 — DB 에 쓰지 않는다). 공정별 Cut-off 팝업(2026-11-03 부터 사이드바 「가용설비 설정」)은
+    `settings_boxes` 가 본다."""
     screen.open_page(EQUIPMENT_PAGE)
     open_equipment_tab(screen, EQUIPMENT_SUMMARY_TABS[0])
     outer = screen.poll(
@@ -4439,24 +4430,6 @@ def check_equipment_moves(screen: Screen) -> str:
         summary=screen.js(_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY) or [],
         anywhere=screen.js(_MAIN_TAB_NAMES_JS) or [],
     )
-    settings: tuple[str | None, bool, bool] | None = None
-    if screen.page.locator(_main_button(EQUIPMENT_SETTINGS_BUTTON_KEY)).count():
-        screen.open_dialog(_main_button(EQUIPMENT_SETTINGS_BUTTON_KEY))
-        try:
-            title = screen.dialog_title()
-            editor = bool(
-                screen.poll(
-                    lambda: screen.dialog_read(
-                        "(box, header) => [...box.querySelectorAll('[role=\"columnheader\"]')]"
-                        ".some((cell) => cell.textContent.trim() === header)",
-                        CUTOFF_EDITOR_ANCHOR,
-                    ),
-                    timeout=30,
-                )
-            )
-        finally:
-            closed = screen.close_dialog()
-        settings = (title, editor, closed)
     screen.open_page(SHORTENING_PAGE)
     calculator: tuple[str | None, int, bool] | None = None
     if screen.page.locator(_main_button(QUAL_CALCULATOR_BUTTON_KEY)).count():
@@ -4492,7 +4465,179 @@ def check_equipment_moves(screen: Screen) -> str:
             _choose_segment(screen, SCENARIO_KIND_KEY, before)
         restored = screen.js(_SEGMENT_JS, SCENARIO_KIND_KEY) == before
         section = (table, restored)
-    return summarize_equipment_moves(tabs, settings, calculator, section)
+    return summarize_equipment_moves(tabs, calculator, section)
+
+
+# ------------------------------------------------- 사이드바 설정 상자(`settings_boxes`)
+
+# 화면 설정 팝업을 여는 사이드바 상자(`components/settings_box.py` — 조회 조건 패널 바로 밑 · 조건
+# 카드 위, 상자 자체가 단추). HOME 「HOME 설정」(2026-11-02 — 안쪽 탭 `Preference`·`Past Data`)과
+# 가용설비 현황 「가용설비 설정」(2026-11-03 — 설정 단추는 사이드바 상자로, 안은 공정별 Cut-off 표).
+# 상자 글과 팝업 제목은 같은 글이다. 앱 모듈을 부르지 않고 값만 옮긴다(테스트가 앱과 같은지 본다).
+SETTINGS_BOX_PREFIX: Final = "sidebar_dialog_box_"
+HOME_SETTINGS_BOX_KEY: Final = "sidebar_dialog_box_home_settings"
+HOME_SETTINGS_BUTTON_KEY: Final = "home_settings_open"
+HOME_SETTINGS_TITLE: Final = "HOME 설정"
+HOME_SETTINGS_TABS: Final = ("Preference", "Past Data")
+EQUIPMENT_SETTINGS_BOX_KEY: Final = "sidebar_dialog_box_equipment_settings"
+EQUIPMENT_SETTINGS_BUTTON_KEY: Final = "equipment_settings_open_v1"
+EQUIPMENT_SETTINGS_TITLE: Final = "가용설비 설정"
+# 사이드바 설정 상자의 자리 — 상자(대기면 key 끝에 `_pending` 이 붙어 앞머리로 찾는다)가 조회 조건
+# 패널 바로 밑인지, 그 화면의 조건 카드가 모두 상자 아래인지(카드 수도).
+_SETTINGS_BOX_JS = """(keys) => {
+  const side = document.querySelector('[data-testid="stSidebar"]');
+  if (!side) return null;
+  const box = side.querySelector(`[class*="st-key-${keys.box}"]`);
+  if (!box) return { box: false, belowPanel: false, cards: 0, aboveCards: false };
+  const rect = box.getBoundingClientRect();
+  const panel = side.querySelector(`.st-key-${keys.panel}`);
+  const cards = [...side.querySelectorAll(`[class*="st-key-${keys.card}"]`)];
+  return {
+    box: true,
+    belowPanel: panel !== null && rect.top >= panel.getBoundingClientRect().bottom - 0.5,
+    cards: cards.length,
+    aboveCards: cards.every((card) => card.getBoundingClientRect().top >= rect.bottom - 0.5),
+  };
+}"""
+# 보이는 팝업 안 탭 이름(아이콘 글자가 앞에 붙어 온다 — 끝 글자로 가른다).
+_DIALOG_TAB_NAMES_JS = """(box) => [...box.querySelectorAll('[role="tab"]')]
+  .map((tab) => tab.innerText.replace(/\\s+/g, " ").trim())"""
+_DIALOG_HEADER_JS = (
+    "(box, header) => [...box.querySelectorAll('[role=\"columnheader\"]')]"
+    ".some((cell) => cell.textContent.trim() === header)"
+)
+
+
+def _settings_box_place(place: Mapping[str, Any] | None) -> str:
+    """상자 자리 — 패널 밑인가, 카드 위인가(카드가 없으면 「카드 없음」)."""
+    if not place or not place.get("box"):
+        return "상자 없음"
+    panel = "패널 밑" if place.get("belowPanel") else "패널 밑 아님"
+    if not place.get("cards"):
+        cards = "카드 없음"
+    else:
+        cards = "카드 위" if place.get("aboveCards") else "카드 위 아님"
+    return f"상자 {panel} · {cards}"
+
+
+def summarize_settings_box(
+    name: str,
+    expected_title: str,
+    place: Mapping[str, Any] | None,
+    opened: tuple[str | None, str, bool] | None,
+    old: int,
+) -> str:
+    """상자 하나 — 자리, (열었으면) 팝업 제목 · 안쪽 확인 · Esc 닫힘, 본문의 옛 설정 단추 수.
+
+    `opened` 는 (팝업 제목, 안쪽 확인 글 — 고정 글과 수, Esc 로 닫혔나). 제목은 판정에만 쓴다."""
+    parts = [f"{name} — {_settings_box_place(place)}"]
+    if opened is not None:
+        title, inner, closed = opened
+        parts.append(f"{_title_text(title, expected_title)} · {inner} · {_closed_text(closed)}")
+    parts.append(f"본문 설정 단추 {old}곳")
+    return " · ".join(parts)
+
+
+def _open_settings_box(
+    screen: Screen,
+    button_key: str,
+    inner: Callable[[], str],
+) -> tuple[str | None, str, bool] | None:
+    """사이드바 설정 상자를 눌러 팝업을 열고 (제목, 안쪽 확인 글, Esc 닫힘)을 낸다. 상자가 없거나
+    잠겨 있으면 None(열지 않는다). 저장 · 채우기는 누르지 않는다."""
+    selector = f'[data-testid="stSidebar"] .st-key-{button_key} button:visible'
+    button = screen.page.locator(selector)
+    if not button.count() or not screen.poll(button.first.is_enabled, timeout=60, accept=bool):
+        return None
+    screen.open_dialog(selector)
+    try:
+        title = screen.dialog_title()
+        found = inner()
+    finally:
+        closed = screen.close_dialog()
+    return (title, found, closed)
+
+
+def _main_settings_buttons(screen: Screen) -> int:
+    """본문(제목 줄 끝 등)에 남은 설정 단추 수 — 두 상자의 단추 key 가 본문에 있으면 옛 자리다."""
+    return sum(
+        int(
+            screen.js(
+                "(key) => document.querySelectorAll("
+                '`[data-testid="stMain"] .st-key-${key}`).length',
+                key,
+            )
+            or 0
+        )
+        for key in (HOME_SETTINGS_BUTTON_KEY, EQUIPMENT_SETTINGS_BUTTON_KEY)
+    )
+
+
+def check_settings_boxes(screen: Screen) -> str:
+    """사이드바 설정 상자 둘 — HOME 「HOME 설정」(안쪽 탭 `Preference`·`Past Data`)과 가용설비 현황
+    「가용설비 설정」(공정별 Cut-off 표). 상자가 조회 조건 패널 바로 밑 · 조건 카드 위에 서는지,
+    누르면 같은 제목의 팝업이 뜨고 안이 차는지, `Esc` 로 닫히는지, 본문에 옛 설정 단추가 남지
+    않았는지 본다. 가용설비 현황은 카드가 서는 `Summary` › `Main` 탭에서 본다. 저장 · 채우기는
+    누르지 않는다(DB 에 쓰지 않는다)."""
+    keys = {"panel": CONDITIONS_BOX_KEY, "card": CONDITION_CARD_PREFIX}
+    screen.open_home()
+    # HOME 상자는 계산이 끝난 회차에 풀린다 — 패널 줄이 다 설 때까지 기다린다(`sidebar_panel` 과
+    # 같다).
+    screen.poll(
+        lambda: _panel_facts(screen),
+        timeout=60,
+        accept=lambda value: (
+            bool(value) and value["rows"] is not None and len(value["rows"]) >= len(PANEL_ROW_NAMES)
+        ),
+    )
+    home_place = screen.js(_SETTINGS_BOX_JS, {**keys, "box": HOME_SETTINGS_BOX_KEY})
+
+    def home_tabs() -> str:
+        names = screen.poll(
+            lambda: screen.dialog_read(_DIALOG_TAB_NAMES_JS),
+            timeout=30,
+            accept=lambda value: bool(value) and len(value) >= len(HOME_SETTINGS_TABS),
+        )
+        found = sum(
+            1
+            for label in HOME_SETTINGS_TABS
+            if any(str(name).strip().endswith(label) for name in (names or []))
+        )
+        return f"안쪽 탭 {found}/{len(HOME_SETTINGS_TABS)}"
+
+    home_opened = _open_settings_box(screen, HOME_SETTINGS_BUTTON_KEY, home_tabs)
+    home_old = _main_settings_buttons(screen)
+    screen.open_page(EQUIPMENT_PAGE)
+    open_equipment_tab(screen, EQUIPMENT_SUMMARY_TABS[0])
+    equipment_place = screen.poll(
+        lambda: screen.js(_SETTINGS_BOX_JS, {**keys, "box": EQUIPMENT_SETTINGS_BOX_KEY}),
+        timeout=30,
+        accept=lambda value: bool(value) and bool(value["box"]) and value["cards"] > 0,
+    )
+
+    def cutoff_table() -> str:
+        found = screen.poll(
+            lambda: screen.dialog_read(_DIALOG_HEADER_JS, CUTOFF_EDITOR_ANCHOR),
+            timeout=30,
+        )
+        return f"Cut-off 표 {'있음' if found else '없음'}"
+
+    equipment_opened = _open_settings_box(screen, EQUIPMENT_SETTINGS_BUTTON_KEY, cutoff_table)
+    equipment_old = _main_settings_buttons(screen)
+    return " · ".join(
+        (
+            summarize_settings_box(
+                HOME_SETTINGS_TITLE, HOME_SETTINGS_TITLE, home_place, home_opened, home_old
+            ),
+            summarize_settings_box(
+                EQUIPMENT_SETTINGS_TITLE,
+                EQUIPMENT_SETTINGS_TITLE,
+                equipment_place,
+                equipment_opened,
+                equipment_old,
+            ),
+        )
+    )
 
 
 # ------------------------------------------------- 가용설비 현황 Preference 입력 비가동 표
@@ -5320,6 +5465,7 @@ ITEMS: tuple[Item, ...] = (
     Item("space_zone_fields", "Space 배치 편집기 영역 칸", check_space_zone_fields),
     Item("equipment_preference", "설비 Preference 입력 비가동 표", check_equipment_preference),
     Item("page_tabs_frame", "화면 탭 줄 틀·고정·끌기", check_page_tabs_frame),
+    Item("settings_boxes", "사이드바 설정 상자", check_settings_boxes),
 )
 
 

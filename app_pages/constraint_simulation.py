@@ -744,7 +744,7 @@ if readiness is not None and readiness.cutoff_days is not None:
     setting = cutoff_setting(cutoff, process)
     cutoff_line = (
         f"Cut-off {cutoff_days_words(setting if setting is not None else readiness.cutoff_days)}"
-        " — 가용설비 현황 「설정」 팝업의 공정별 값(모든 설비 시나리오 공용)"
+        " — 가용설비 현황 「가용설비 설정」 팝업의 공정별 값(모든 설비 시나리오 공용)"
     )
 with cutoff_slot:
     st.caption(cutoff_line)

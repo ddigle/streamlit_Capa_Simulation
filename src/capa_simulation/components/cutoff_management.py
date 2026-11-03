@@ -1,6 +1,6 @@
-# Purpose: 공정별 Cut-off 입력 표를 그리고 저장하는 「설정」 팝업 본문을 담당한다.
+# Purpose: 공정별 Cut-off 입력 표를 그리고 저장하는 「가용설비 설정」 팝업 본문을 담당한다.
 
-"""공정별 Cut-off 편집 — 가용설비 현황 머리 「설정」 팝업의 본문(`equipment_settings_dialog`).
+"""공정별 Cut-off 편집 — 가용설비 현황 「가용설비 설정」 팝업의 본문(`equipment_settings_dialog`).
 
 Cut-off 는 「그 공정 이후의 공정~입고까지 TAT 누적 합」이지만 저장소에 TAT 도 공정
 선후관계도 없어 **사람이 적는 원장**이다(`services/process_cutoff.py`).
@@ -79,7 +79,8 @@ _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 
 
 def forget_cutoff_draft() -> None:
-    """초안·출발점·편집표를 걷는다 — 「설정」 팝업을 새로 열 때(`open_equipment_settings`) 부른다.
+    """초안·출발점·편집표를 걷는다 — 「가용설비 설정」 팝업을 새로 열 때(`open_equipment_settings`)
+    부른다.
 
     초안은 그리는 회차마다 다시 적히므로, 걷지 않으면 한 번 열어 본 세션은 그때 저장본의 사본을
     계속 보였다 — 남이 AVI-PKG 를 12 로 저장한 뒤 다시 열어도 옛 값이었고, 고치지 않은 채 누른

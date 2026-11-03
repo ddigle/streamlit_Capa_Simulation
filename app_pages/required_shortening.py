@@ -8,8 +8,8 @@
 
 가용설비 현황의 한 탭이던 것을 별도 페이지로 뗐다. 그 탭이 페이지에서 받던 것을 이 페이지가 스스로
 모은다 — 설비 운영 DB 의 저장본 사본·미저장 편집본(`equipment_data_workspace`, 가용설비 현황·Space
-현황과 같은 세션 칸), 샘플 fleet 스위치(같은 공용 칸), 저장된 공정별 Cut-off(가용설비 현황 머리
-「설정」 팝업에서 고친다), 활성 시나리오의 소요대수 로더. 그림·조건·진척 비교는 그대로
+현황과 같은 세션 칸), 샘플 fleet 스위치(같은 공용 칸), 저장된 공정별 Cut-off(가용설비 현황 사이드바
+「가용설비 설정」 팝업에서 고친다), 활성 시나리오의 소요대수 로더. 그림·조건·진척 비교는 그대로
 `required_shortening_panel` 이다.
 
 머리 끝의 「Qual 마감 계산기」 단추는 큰 팝업을 연다(2026-10-24 사용자 결정 — 가용설비 현황의
@@ -144,7 +144,7 @@ try:
     # 세션이 든 설비 시나리오(새 세션은 공식) — 공통 최신 + 고른 일정 리비전의 합친 스냅샷.
     equipment_session = resolve_equipment_session(equipment_database_path)
     latest_snapshot = equipment_session.snapshot
-    # 저장된 Cut-off. 고치는 곳은 가용설비 현황 머리 「설정」 팝업이다.
+    # 저장된 Cut-off. 고치는 곳은 가용설비 현황 사이드바 「가용설비 설정」 팝업이다.
     stored_cutoff = load_process_cutoff(equipment_database_path)
     # 카드 「도면에서 보기」 가 열 층에서 뺄 비활성 층(Space 층 사용 0029 — 링크 대상이 아니다).
     inactive_floors = frozenset(load_floor_states(equipment_database_path).inactive)

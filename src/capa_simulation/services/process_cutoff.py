@@ -261,8 +261,8 @@ def cutoff_setting(cutoff: pd.DataFrame | None, process: str) -> float | None:
 
 def cutoff_days_words(days: float) -> str:
     """Cut-off 일수 글 — 계산이 쓰는 일 단위(소수는 내림, `wd_window`)로 적고, 내림했으면 적은
-    값을 함께 둔다(「35일(35.8일 내림)」). 화면마다 계산과 같은 수가 보이고, 「설정」 팝업의 35.8
-    과도 어긋나 보이지 않는다."""
+    값을 함께 둔다(「35일(35.8일 내림)」). 화면마다 계산과 같은 수가 보이고, 「가용설비 설정」
+    팝업의 35.8 과도 어긋나 보이지 않는다."""
     applied = int(days)
     if applied == days:
         return f"{applied}일"

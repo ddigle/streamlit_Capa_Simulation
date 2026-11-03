@@ -1790,6 +1790,8 @@ NEW_ITEM_KEYS = [
     "equipment_preference",
     # 2026-11-02 사용자 요청 — 화면 탭 줄 틀(스크롤에 움직이지 않음)·고정(페이지 그대로)·끌기.
     "page_tabs_frame",
+    # 2026-11-03 사용자 지시 — 설정 단추는 사이드바 상자로(「HOME 설정」 · 「가용설비 설정」).
+    "settings_boxes",
 ]
 
 
@@ -2828,7 +2830,6 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
     """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 탭 이름·단추 key·팝업 제목·지표·전환이 앱과
     같은지 여기서 본다."""
     from capa_simulation.components import equipment_scenario_management as section
-    from capa_simulation.components import equipment_settings_dialog as settings
     from capa_simulation.navigation import (
         EQUIPMENT_MASTER_TAB,
         EQUIPMENT_SUMMARY_TAB,
@@ -2846,8 +2847,6 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
     assert [label.split(" ", 1)[1] for label in EQUIPMENT_SUMMARY_TABS] == list(
         screens.EQUIPMENT_SUMMARY_TABS
     )
-    assert screens.EQUIPMENT_SETTINGS_BUTTON_KEY == settings.SETTINGS_BUTTON_KEY
-    assert screens.EQUIPMENT_SETTINGS_TITLE == settings.SETTINGS_DIALOG_TITLE
     shortening = _text(PROJECT_ROOT / "app_pages" / "required_shortening.py")
     assert f'QUAL_CALCULATOR_BUTTON_KEY = "{screens.QUAL_CALCULATOR_BUTTON_KEY}"' in shortening
     assert f'"{screens.QUAL_CALCULATOR_TITLE}", width="large"' in shortening
@@ -2861,32 +2860,31 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
     assert f'"{screens.EQUIPMENT_SCENARIO_TABLE_ANCHOR}":' in _text(
         COMPONENTS / "equipment_scenario_management.py"
     )
-    cutoff_source = _text(COMPONENTS / "cutoff_management.py")
-    assert f'"{screens.CUTOFF_EDITOR_ANCHOR}"' in cutoff_source
 
 
 def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
+    """공정별 Cut-off 팝업은 2026-11-03 부터 사이드바 「가용설비 설정」 상자가 연다 — 이 항목은 그
+    팝업을 보지 않고(`settings_boxes` 가 본다) 「설정 — …」 칸도 없다."""
     outer = ["table_rows 설비 마스터", "insights Summary", "tune Preference"]
     summary = ["dashboard Main", "compare_arrows Static 대비 일정"]
     anywhere = [*outer, "입력", "직접 편집", "저장 이력", "설비 마스터", "비가동 일정", *summary]
     text = screens.summarize_equipment_moves(
         screens.EquipmentTabNames(outer, summary, anywhere),
-        ("설정", True, True),
         ("Qual 마감 계산기", 4, True),
         (True, True),
     )
     assert text == (
-        "탭 3/3 · Summary 안쪽 2/2 · 옛 탭 0곳 · 설정 — 팝업 제목 「설정」 같음 · Cut-off 표 "
-        "있음 · Esc 닫힘 · 필요 단축 일정 — 팝업 제목 「Qual 마감 계산기」 같음 · 지표 4/4 · "
-        "Esc 닫힘 · 시나리오 관리 — 설비 시나리오 구획 표 있음 · 전환 되돌림"
+        "탭 3/3 · Summary 안쪽 2/2 · 옛 탭 0곳 · 필요 단축 일정 — 팝업 제목 「Qual 마감 계산기」 "
+        "같음 · 지표 4/4 · Esc 닫힘 · 시나리오 관리 — 설비 시나리오 구획 표 있음 · 전환 되돌림"
     )
     # 「Preference」 는 셋째 탭으로 다시 섰다(2026-10-27) — 옛 탭으로 세지 않고 바깥 셋에 든다.
     old_tabs = ["table_rows RawData", "tune Preference"]
     old = screens.summarize_equipment_moves(
-        screens.EquipmentTabNames(old_tabs, [], old_tabs), None, None, None
+        screens.EquipmentTabNames(old_tabs, [], old_tabs), None, None
     )
     assert old.startswith("탭 1/3 · Summary 안쪽 0/2 · 옛 탭 1곳")
-    assert "「설정」 단추 없음" in old and "「관리할 시나리오」 전환 없음" in old
+    assert "설정" not in old and "「관리할 시나리오」 전환 없음" in old
+    assert "EQUIPMENT_SETTINGS_BUTTON_KEY" not in inspect.getsource(screens.check_equipment_moves)
 
 
 def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_same_name() -> None:
@@ -2904,7 +2902,6 @@ def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_sam
         ),
         None,
         None,
-        None,
     )
     assert text.startswith("탭 1/3 · Summary 안쪽 2/2 · 옛 탭 0곳")
     # 안쪽 탭 묶음의 「Main」 만 Summary 안쪽으로 센다 — 다른 자리의 같은 이름은 들지 않는다.
@@ -2914,12 +2911,77 @@ def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_sam
         ),
         None,
         None,
-        None,
     )
     assert stray.startswith("탭 3/3 · Summary 안쪽 0/2")
     script = inspect.getsource(screens.check_equipment_moves)
     assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_TAB_KEY" in script
     assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY" in script
+
+
+# ------------------------------------------------------ 사이드바 설정 상자(`settings_boxes`)
+
+
+def test_the_settings_boxes_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 상자 key · 단추 key · 팝업 제목 · HOME 안쪽
+    탭 · Cut-off 표 머리 칸이 앱과 같은지 여기서 본다."""
+    from capa_simulation.components import equipment_settings_dialog as equipment
+    from capa_simulation.components import home_settings as home
+    from capa_simulation.home_state import HOME_SETTINGS_TAB_LABELS
+    from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, DIALOG_BOX_PREFIX
+
+    assert screens.SETTINGS_BOX_PREFIX == DIALOG_BOX_PREFIX
+    assert screens.CONDITION_CARD_PREFIX == CONDITION_CARD_PREFIX
+    assert screens.HOME_SETTINGS_BOX_KEY == home.SETTINGS_BOX_KEY
+    assert screens.HOME_SETTINGS_BUTTON_KEY == home.SETTINGS_BUTTON_KEY
+    assert screens.HOME_SETTINGS_TITLE == home.SETTINGS_TITLE
+    assert [label.split(" ", 1)[1] for label in HOME_SETTINGS_TAB_LABELS] == list(
+        screens.HOME_SETTINGS_TABS
+    )
+    assert screens.EQUIPMENT_SETTINGS_BOX_KEY == equipment.SETTINGS_BOX_KEY
+    assert screens.EQUIPMENT_SETTINGS_BUTTON_KEY == equipment.SETTINGS_BUTTON_KEY
+    assert screens.EQUIPMENT_SETTINGS_TITLE == equipment.SETTINGS_DIALOG_TITLE
+    assert f'"{screens.CUTOFF_EDITOR_ANCHOR}"' in _text(COMPONENTS / "cutoff_management.py")
+
+
+def test_the_settings_boxes_summary_is_fixed_words_and_counts() -> None:
+    """상자 자리(패널 밑 · 카드 위) · 팝업 제목 · 안쪽 확인 · Esc 닫힘 · 본문 옛 단추 수 — 화면
+    글자는 판정에만 쓰고 결과에는 정한 글과 수만 남는다."""
+    place = {"box": True, "belowPanel": True, "cards": 1, "aboveCards": True}
+    text = screens.summarize_settings_box(
+        "가용설비 설정", "가용설비 설정", place, ("가용설비 설정", "Cut-off 표 있음", True), 0
+    )
+    assert text == (
+        "가용설비 설정 — 상자 패널 밑 · 카드 위 · 팝업 제목 「가용설비 설정」 같음 · "
+        "Cut-off 표 있음 · Esc 닫힘 · 본문 설정 단추 0곳"
+    )
+    # 옛 판(제목 줄 끝 단추) — 상자가 없고 본문에 단추가 하나 남는다. 팝업은 열지 않는다.
+    old = screens.summarize_settings_box("가용설비 설정", "가용설비 설정", None, None, 1)
+    assert old == "가용설비 설정 — 상자 없음 · 본문 설정 단추 1곳"
+    # 카드 밑으로 밀린 상자 · 다른 제목.
+    below = {"box": True, "belowPanel": True, "cards": 2, "aboveCards": False}
+    moved = screens.summarize_settings_box(
+        "HOME 설정", "HOME 설정", below, ("설정", "안쪽 탭 2/2", False), 0
+    )
+    assert moved.startswith(
+        "HOME 설정 — 상자 패널 밑 · 카드 위 아님 · 팝업 제목 「HOME 설정」 다름"
+    )
+    assert "Esc 안 닫힘" in moved
+    no_card = {"box": True, "belowPanel": False, "cards": 0, "aboveCards": True}
+    assert "상자 패널 밑 아님 · 카드 없음" in screens.summarize_settings_box(
+        "HOME 설정", "HOME 설정", no_card, None, 0
+    )
+
+
+def test_the_settings_boxes_check_does_not_write() -> None:
+    """설정 팝업 안의 저장 · 채우기는 누르지 않는다(쓰지 않는 항목) — 열고 `Esc` 로만 닫는다."""
+    item = next(item for item in ITEMS if item.key == "settings_boxes")
+    assert not item.writes
+    source = inspect.getsource(screens.check_settings_boxes) + inspect.getsource(
+        screens._open_settings_box
+    )
+    assert "close_dialog()" in source
+    for label in ("저장", "채우기"):
+        assert f'"{label}' not in source
 
 
 # ------------------------------------------ 가용설비 현황 Preference(`equipment_preference`)

@@ -591,8 +591,8 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         cutoff_days = readiness.cutoff_days if readiness is not None and readiness.ready else None
         choice = _render_conditions(page_inputs, today=source.today, cutoff_days=cutoff_days)
         st.caption(
-            f"Cut-off {readiness.cutoff_days}일 — 가용설비 현황 「설정」 팝업의 공정별 "
-            "값(모든 설비 시나리오 공용)"
+            f"Cut-off {readiness.cutoff_days}일 — 가용설비 현황 「가용설비 설정」 팝업의 "
+            "공정별 값(모든 설비 시나리오 공용)"
             if readiness is not None and readiness.cutoff_days is not None
             else "Cut-off 미기재"
         )

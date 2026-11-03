@@ -1148,6 +1148,38 @@ def test_the_home_panel_rows_and_settings_box_stay_while_the_settings_popup_is_o
     assert keys.index("sidebar_dialog_box_home_settings") == keys.index("condition_card_home") - 1
 
 
+def test_the_equipment_settings_box_stands_right_under_the_panel_and_above_the_card(
+    _app: AppTest,
+) -> None:
+    """가용설비 현황 「가용설비 설정」 상자(2026-11-03 — 설정 단추는 사이드바 상자로)는 HOME
+    「HOME 설정」 과 같은 자리다 — 사이드바 최상위 칸으로 조회 조건 패널 **바로 밑**, `설비 조회
+    조건` 카드 **위**. 본문(제목 줄 끝)에는 설정 단추가 없다. 누르면 다른 팝업 열림 키(사이드바
+    시나리오 팝업)부터 비우고 연다 — 한 실행에 팝업이 둘 불리지 않는다(AGENTS 9장 「팝업과
+    콜백」)."""
+    from capa_simulation.components.equipment_settings_dialog import (
+        EQUIPMENT_DIALOG_KEY,
+        SETTINGS_BOX_KEY,
+        SETTINGS_BUTTON_KEY,
+    )
+
+    app = _app.run()
+    app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_SUMMARY_TABS[0]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    keys = _sidebar_keys(app)
+    assert keys.index(SETTINGS_BOX_KEY) == keys.index(CONDITIONS_BOX_KEY) + 1
+    assert keys.index(SETTINGS_BOX_KEY) == keys.index("condition_card_equipment") - 1
+    assert SETTINGS_BUTTON_KEY not in {str(button.key) for button in app.main.button}
+
+    app.session_state[SCENARIO_DIALOG_KEY] = True
+    app.button(key=SETTINGS_BUTTON_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_DIALOG_KEY not in app.session_state
+    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
+
+
 @pytest.mark.parametrize(
     "opener,stale_key,opened",
     [

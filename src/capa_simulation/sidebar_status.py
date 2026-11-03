@@ -48,9 +48,11 @@ CONDITION_CARD_PREFIX = "condition_card_"
 TABLE_CARD_LABEL = "표 조건"
 TABLE_CARD_ICON = ":material/filter_alt:"
 # **팝업 상자**의 key 접두어 — 조회 조건 아래 따로 서서 한 번 누르면 곧바로 팝업이 뜨는 상자(펼치는
-# 확장 패널이 아니다 — 상자 자체가 단추). 지금은 HOME 「HOME 설정」
-# 하나(`components/home_settings.py`, 2026-11-02 사용자 요청). `sidebar_style.py` 가 이 접두어
-# 하나로 조건 카드와 같은 면·글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸) 표식을 건다.
+# 확장 패널이 아니다 — 상자 자체가 단추). 화면 설정 팝업을 여는 사이드바 설정 상자다 — 한 칸은
+# `components/settings_box.py` 가 그리고, 지금은 HOME 「HOME 설정」(2026-11-02 사용자 요청)과
+# 가용설비 현황 「가용설비 설정」(2026-11-03 — 설정 단추는 사이드바 상자로) 둘이다.
+# `sidebar_style.py` 가 이 접두어 하나로 조건 카드와 같은 면·글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸)
+# 표식을 건다.
 DIALOG_BOX_PREFIX = "sidebar_dialog_box_"
 
 
