@@ -15,6 +15,11 @@
   display: none;
 }
 
+/* Alarm 단추는 Guide · Print · 테마 단추(`font:inherit`)와 같이 툴바 글꼴을 물려받는다 — 칩은 한글 글이라 앱 글꼴 그대로. */
+:host(.capa-alert-alarm) {
+  font-family: inherit;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -30,12 +35,13 @@
 
 button,
 select,
-input {
+input,
+textarea {
   font: inherit;
   color: inherit;
 }
 
-/* 툴바 단추 — Guide 와 같은 윤곽 알약(13px · 600 · 패딩 6px 12px · 둥글기 8px). */
+/* 툴바 단추 — Guide · Print 와 같은 윤곽 알약(툴바 글꼴 · 13px · 600 · 줄 높이 1 · 패딩 6px 12px · 둥글기 8px). */
 .tb {
   position: relative;
   margin: 0 6px 0 0;
@@ -55,7 +61,8 @@ input {
 .chip:focus-visible,
 .link:focus-visible,
 .x:focus-visible,
-.seg button:focus-visible {
+.seg button:focus-visible,
+.copyarea:focus-visible {
   outline: 2px solid var(--ac-accent);
   outline-offset: 2px;
 }
@@ -441,6 +448,33 @@ input {
   overflow-wrap: anywhere;
 }
 
+/* 로그 「복사」 — 결과 글은 단추 곁에 잠깐, 클립보드가 막히면 고른 글을 든 읽기 전용 칸이 선다(Ctrl+C). */
+.logacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.copystate {
+  color: var(--ac-muted);
+}
+
+.copyarea {
+  display: block;
+  width: 100%;
+  margin: 0.35rem 0 0;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--ac-border);
+  border-radius: 6px;
+  background: var(--ac-surface);
+  color: var(--ac-text);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  resize: vertical;
+}
+
 /* 알림에 딸린 표(본문에서 뺀 목록 — 예: 대당 Capa 제외 기준정보). 판 폭 안에서 가로 · 세로로 굴린다. */
 .tablebox {
   margin: 0.45rem 0 0;
@@ -501,13 +535,6 @@ input {
 .tscroll td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-
-.foot {
-  padding: 0.45rem 0.85rem;
-  border-top: 1px solid var(--ac-border);
-  color: var(--ac-muted);
-  font-size: 0.75rem;
 }
 
 .empty {

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -106,6 +107,66 @@ def test_narrow_windows_fold_the_chip_into_the_alarm_dot() -> None:
     assert ":host(.capa-alert-chip) {\n    display: none;" in narrow
     assert ":host([data-changes]) .dot {\n    display: block;" in narrow
     assert "@media (max-width: 1399.98px)" in CSS and "@media (max-width: 899.98px)" in CSS
+
+
+def test_the_alarm_button_wears_the_toolbar_font_like_guide_print_and_theme() -> None:
+    """Alarm 단추는 Guide · Print · 테마 단추와 같은 글꼴 · 크기 · 굵기 · 높이다(2026-11-04 검수
+    의견 alarm-01) — 셋은 `font:inherit` 로 툴바 글꼴을 물려받고, Alarm 은 그림자 DOM 의
+    `all: initial` 뒤 `:host(.capa-alert-alarm)` 이 같은 글꼴을 물려받는다. 변경 칩은 한글 글이라
+    앱 글꼴 그대로다."""
+    from capa_simulation.components import page_guide, print_button, theme_toggle
+
+    assert "font-family: inherit;" in _rule(":host(.capa-alert-alarm)")
+    assert "capa-alert-alarm" in JS
+    button = _rule(".tb")
+    for declaration in (
+        "font-size: 13px;",
+        "font-weight: 600;",
+        "line-height: 1;",
+        "padding: 6px 12px;",
+        "border-radius: 8px;",
+    ):
+        assert declaration in button, declaration
+    for module in (page_guide, print_button, theme_toggle):
+        assert module.__file__ is not None
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for declaration in (
+            '"font:inherit", "font-size:13px", "font-weight:600", "line-height:1"',
+            '"padding:6px 12px"',
+            '"border-radius:8px"',
+        ):
+            assert declaration in source, (module.__name__, declaration)
+
+
+def test_the_alarm_and_change_panels_carry_no_description_footer() -> None:
+    """Alarm 패널 · 변경 판 바닥 설명은 두지 않는다(2026-11-04 검수 의견 alarm-02 · alarm-11) —
+    보관 · 판정 설명은 HOME Guide 가 맡는다."""
+    assert "'foot'" not in JS and ".foot" not in CSS
+    assert "footer" not in alert_center.TEXT and "changes_footer" not in alert_center.TEXT
+    guide = (Path(alerts.__file__).parent / "guides" / "home.md").read_text(encoding="utf-8")
+    assert "12시간 · 200줄까지" in guide
+
+
+def test_the_log_copy_uses_the_clipboard_and_falls_back_to_selected_text() -> None:
+    """「로그」 펼침의 「복사」(2026-11-04 검수 의견 alarm-05) — `navigator.clipboard` 로 넣고
+    「복사했습니다」, 막히면 고른 글을 든 읽기 전용 칸 + 「Ctrl+C 로 복사하세요」. `execCommand` 는
+    막힌 클립보드에서도 참을 돌려 쓰지 않는다. 복사 글은 날짜가 붙은 시각 · 전문 · 딸린 표 이름과
+    행 수(행은 싣지 않음)다."""
+    copy = JS[JS.index("function copyLog(") :]
+    copy = copy[: copy.index("\n}\n")]
+    assert "navigator.clipboard" in copy and "writeText(content).then(done, manual)" in copy
+    assert "window.isSecureContext" in copy
+    assert "document.execCommand" not in JS
+    manual = JS[JS.index("function showManualCopy(") :]
+    manual = manual[: manual.index("\n}\n")]
+    assert "area.select()" in manual and "log_copy_manual" in manual
+    pairs = JS[JS.index("function logPairs(") :]
+    pairs = pairs[: pairs.index("\n}\n")]
+    assert "forCopy ? stamp : hms" in pairs
+    assert "t.log_full, row.full" in pairs and "t.log_table" in pairs
+    assert "readOnly = true" in JS
+    assert alert_center.TEXT["log_copied"] == "복사했습니다"
+    assert alert_center.TEXT["log_copy_manual"] == "Ctrl+C 로 복사하세요"
 
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
@@ -219,6 +280,14 @@ out.tabs = [
   tabMatches('anything', ''),
 ]
 out.steps = [tabStep('Summary › Static 대비 일정'), tabStep('소요대수'), tabStep('')]
+out.copy = copyText([
+  ['코드', 'ST-15 · 확인 필요 · 상태 알림(바뀔 때만)'],
+  ['범위', ''],
+  ['원본 오류', 'Traceback\\r\\n  line 1\\nValueError'],
+  ['', '이름 없음'],
+  ['해소', null],
+  ['전문', ' 대당 Capa 가 없어 뺀 경로 2건 '],
+])
 console.log(JSON.stringify(out))
 """
 
@@ -252,6 +321,12 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["tabs"] == [True, True, False, False]
     # 탭 안 탭은 바깥 칸부터 한 칸씩 연다(가용설비 현황 「Summary › Static 대비 일정」).
     assert out["steps"] == [["Summary", "Static 대비 일정"], ["소요대수", ""], ["", ""]]
+    # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
+    assert out["copy"] == (
+        "코드: ST-15 · 확인 필요 · 상태 알림(바뀔 때만)\n"
+        "원본 오류:\n  Traceback\n    line 1\n  ValueError\n"
+        "전문: 대당 Capa 가 없어 뺀 경로 2건"
+    )
 
 
 def test_the_js_limits_match_the_registry_constants() -> None:

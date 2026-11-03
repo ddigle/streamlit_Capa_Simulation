@@ -22,6 +22,13 @@
 - **알림에 딸린 표**(`alerts.AlertTable` — 산출 결과 대당 Capa 의 「제외 기준정보」)는 Alarm 줄의
   「… 보기」 단추가 펼치고 「CSV 내려받기」 가 브라우저 안에서 파일을 만든다(원본 값 · BOM — 서버를
   부르지 않는다). 표는 코드마다 가장 새 줄에만 남겨 탭 저장소에 옛 범위 표를 쌓지 않는다.
+- **「로그」 펼침의 「복사」 는 그 줄의 로그 전문을 평문으로 클립보드에 넣는다**(2026-11-04
+  검수 의견 alarm-05) — 막히면(보안 연결이 아님 · DRM) 고른 글을 든 읽기 전용 칸을 펼침 안에
+  세우고 Ctrl+C 를 청한다. 딸린 표는 행을 싣지 않고 이름 · 행 수만 적는다(표는 「CSV 내려받기」).
+- **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11).
+  보관 · 판정 설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 이 맡는다.
+- **Alarm 단추는 툴바 글꼴을 물려받는다**(alarm-01) — Guide · Print · 테마 단추(`font:inherit`)와
+  같은 글꼴 · 13px · 600 · 높이. 변경 칩은 한글 글이라 앱 글꼴(`tokens.FONT_FAMILY`) 그대로다.
 - **「그 화면으로」 는 그 화면 안 탭까지 연다** — 표지의 `tab` 이 있으면 그 화면에 닿은 회차가 끝난
   뒤 이름이 맞는 탭 단추를 누른다(`stateful_tabs` 탭이라 보통 누름과 같은 회차가 돈다).
 - **알림창 층은 Streamlit 대화상자 위다**(`.stack` z-index 1000200 — 1.63 대화상자 1000059 위,
@@ -76,10 +83,6 @@ TEXT: Final[dict[str, str]] = {
     "hide_resolved": "해소된 것 숨김",
     "empty": "고른 조건의 알림이 없습니다.",
     "none": "아직 알림이 없습니다.",
-    "footer": (
-        "이 브라우저 탭에 쌓임 · 새로고침 · 테마 전환에도 남음 · {hours}시간 또는 {rows}줄까지. "
-        "확인 필요 · 조치 필요 · 오류는 「로그」 를 연다."
-    ),
     "go": "그 화면으로",
     "log": "로그",
     "table_open": "{title} 보기",
@@ -98,6 +101,13 @@ TEXT: Final[dict[str, str]] = {
     "log_scope": "범위",
     "log_resolved": "해소",
     "log_detail": "원본 오류",
+    "log_full": "전문",
+    "log_table": "딸린 표",
+    "log_table_value": "{title} {n}행 — 복사에 넣지 않음(「CSV 내려받기」)",
+    "log_copy": "복사",
+    "log_copy_title": "이 줄의 로그를 글로 복사",
+    "log_copied": "복사했습니다",
+    "log_copy_manual": "Ctrl+C 로 복사하세요",
     "resolved_gone": "조건이 사라짐",
     "resolved_changed": "내용이 바뀜",
     "resolved_scope": "범위가 바뀜",
@@ -110,10 +120,6 @@ TEXT: Final[dict[str, str]] = {
     "changes_title": "이 세션에서 바꾸고 아직 저장 · 적용하지 않은 것과 가정",
     "changes_aria": "변경 {n}건 — {top}",
     "changes_sum": "{n}건",
-    "changes_footer": (
-        "탭 줄 주황 점 · 사이드바 「적용 전 편집」 과 같은 판정에 시나리오 미저장 · 설비 가정 · "
-        "UPEH 가정을 더했다. 폼 안 초안은 들지 않는다."
-    ),
 }
 
 

@@ -19,6 +19,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.capacity_gate import (
+    GateVerdict,
     derived_save_verdict,
     official_publish_verdict,
     revision_save_verdict,
@@ -296,7 +297,7 @@ def test_a_save_that_leaves_demand_out_of_the_requirement_says_how_much(
 
     verdict = revision_save_verdict(version, _edited(version, edit(tables)), tables)
 
-    assert verdict.allowed
+    assert verdict.allowed and verdict.exclusion
     assert verdict.message is not None and phrase in verdict.message
     assert "시나리오 전체 기간" in verdict.message
 
@@ -454,7 +455,7 @@ def test_a_derived_result_that_breaks_the_calculation_is_not_saved(
     healthy = _snapshot(repository, "계산되는 원본", tables)
     broken = _snapshot(repository, "계산 안 되는 원본", _broken(tables))
 
-    assert derived_save_verdict(tables, (healthy,)) == (True, None)
+    assert derived_save_verdict(tables, (healthy,)) == GateVerdict(True)
     refused = derived_save_verdict(_broken(tables), (healthy,))
     assert not refused.allowed
     assert refused.message is not None and "RQ_RUN_RATE" in refused.message

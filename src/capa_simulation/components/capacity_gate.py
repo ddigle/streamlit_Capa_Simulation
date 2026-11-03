@@ -71,10 +71,14 @@ class GateVerdict(NamedTuple):
     `message` 는 알림 상자(마크다운)로 간다 — 계산 오류 글은 걸린 칸의 예시 키(제품·공정 이름)를,
     파생 저장 경고는 원본 시나리오 이름을 날로 담으므로 끼울 때 막는다(물결표가 지움선이 되지
     않게). `density_error` 는 막지 않는다 — 자동 갱신 기록(표 칸)에도 그대로 남는다.
+
+    `exclusion` 은 계산이 통과했고 `message` 가 소요대수에 들지 않은 수요 경고뿐이라는 표지다 — 고칠
+    입력이 저장 자리에 없어 사이드바 저장은 알림창 · Alarm 에만 낸다(2026-11-04 검수 의견 home-18).
     """
 
     allowed: bool
     message: str | None = None
+    exclusion: bool = False
 
 
 def _calculated_verdict(outcome: CapacityOutcome) -> GateVerdict:
@@ -83,7 +87,7 @@ def _calculated_verdict(outcome: CapacityOutcome) -> GateVerdict:
     message = required_exclusion_message(
         required_exclusion_counts(outcome.required_equipment), scope=FULL_SCOPE
     )
-    return GateVerdict(True, message or None)
+    return GateVerdict(True, message or None, exclusion=bool(message))
 
 
 def _gate_check(

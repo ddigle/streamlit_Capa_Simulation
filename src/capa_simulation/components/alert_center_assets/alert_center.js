@@ -26,6 +26,10 @@
 //   누른다(`stateful_tabs` — 보통 누름과 같다).
 // - 알림에 딸린 표(`table` — 본문에서 뺀 목록)는 줄의 「… 보기」 단추가 펼치고 CSV 는 브라우저 안에서 만든다(서버를 부르지
 //   않는다). 표는 코드마다 가장 새 줄에만 남긴다(탭 저장소 크기).
+// - 「로그」 펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 처음 · 마지막 · 화면 · 계기 · 범위 · 해소 · 원본 오류 · 전문)을
+//   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
+//   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
+//   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
 const APP_ROOT = '[data-testid="stApp"]'
@@ -46,6 +50,8 @@ const PLACE_RETRY_MS = 200
 const PLACE_RETRIES = 40
 // 「그 화면으로」 의 탭 고르기를 이만큼 기다린다(그 화면 회차가 끝나기를).
 const PENDING_TAB_MS = 20000
+// 「복사했습니다」 가 서 있는 시간.
+const COPIED_MS = 1800
 const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
 
 // <alerts-rows>
@@ -166,6 +172,17 @@ function toolbarBefore(order, id, present) {
   }
   return null
 }
+// 로그 복사 글 — (이름, 값) 짝을 「이름: 값」 줄로. 빈 값은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
+function copyText(pairs) {
+  const lines = []
+  for (const pair of Array.isArray(pairs) ? pairs : []) {
+    const name = String((pair && pair[0]) || '')
+    const value = pair && pair[1] !== null && pair[1] !== undefined ? String(pair[1]).replace(/\r\n?/g, '\n').trim() : ''
+    if (!name || !value) continue
+    lines.push(value.includes('\n') ? `${name}:\n  ${value.split('\n').join('\n  ')}` : `${name}: ${value}`)
+  }
+  return lines.join('\n')
+}
 // </alerts-rows>
 
 function storageGet(key, fallback) {
@@ -212,6 +229,12 @@ function hms(ms) {
   return `${hm(ms)}:${two(date.getSeconds())}`
 }
 
+// 복사 글의 시각 — 다른 곳에 붙여 넣으므로 날짜까지 적는다.
+function stamp(ms) {
+  const date = new Date(ms)
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${hms(ms)}`
+}
+
 function reducedMotion() {
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -234,6 +257,8 @@ function createCenter(data) {
     open: null,
     openLogs: new Set(),
     openTables: new Set(),
+    // 클립보드가 막혀 손 복사 칸을 연 줄 id — 판을 다시 그려도 그 칸을 남긴다.
+    manualCopy: null,
     pendingTab: null,
     runRoot: null,
     runObserver: null,
@@ -779,8 +804,7 @@ function buildAlarmPanel(C) {
   hide.append(box, document.createTextNode(` ${t.hide_resolved || ''}`))
   filters.append(seg, pages, hide)
   const list = el('ul', 'list')
-  const foot = el('div', 'foot', fill(t.footer, { hours: (C.data.limits || {}).hours, rows: (C.data.limits || {}).rows }))
-  panel.append(head, here, filters, list, foot)
+  panel.append(head, here, filters, list)
   C.parts = { sum, seg, pages, box, list, here, title }
   return panel
 }
@@ -800,7 +824,7 @@ function buildChangesPanel(C) {
   close.addEventListener('click', () => closePanel(C, true))
   head.append(el('h2', '', t.changes || ''), sum, el('span', 'grow'), close)
   const body = el('div', 'cbody')
-  panel.append(head, body, el('div', 'foot', t.changes_footer || ''))
+  panel.append(head, body)
   C.changesParts = { sum, body }
   return panel
 }
@@ -951,29 +975,101 @@ function pageLabel(row) {
   return row.page && row.tab ? `${row.page} › ${row.tab}` : row.page
 }
 
-function logRows(C, row) {
+// 로그 칸 짝. 복사(`forCopy`)는 시각에 날짜를 붙이고 끝에 전문 · 딸린 표(이름 · 행 수만)를 더한다.
+function logPairs(C, row, forCopy) {
   const t = text(C)
   const why = { gone: t.resolved_gone, changed: t.resolved_changed, scope: t.resolved_scope }
-  const rows = [
+  const time = forCopy ? stamp : hms
+  const pairs = [
     [t.log_code, `${row.code} · ${levelLabel(C, row.level)} · ${row.kind === 'state' ? t.kind_state : t.kind_event}`],
-    [t.log_first, hms(row.first)],
-    [t.log_last, hms(row.last) + (row.n > 1 ? ` (${fill(t.log_times, { n: row.n })})` : '')],
+    [t.log_first, time(row.first)],
+    [t.log_last, time(row.last) + (row.n > 1 ? ` (${fill(t.log_times, { n: row.n })})` : '')],
     [t.log_page, pageLabel(row) || '—'],
     [t.log_cause, row.cause || (row.kind === 'state' ? t.cause_new : t.cause_event) || '—'],
   ]
-  if (row.scopeLabel) rows.push([t.log_scope, row.scopeLabel])
+  if (row.scopeLabel) pairs.push([t.log_scope, row.scopeLabel])
   if (row.kind === 'state') {
-    rows.push([
+    pairs.push([
       t.log_resolved,
-      row.state === 'resolved' ? `${hm(row.resolvedAt)} — ${why[row.resolvedWhy] || ''}` : t.not_yet,
+      row.state === 'resolved' ? `${(forCopy ? stamp : hm)(row.resolvedAt)} — ${why[row.resolvedWhy] || ''}` : t.not_yet,
     ])
   }
-  if (row.detail) rows.push([t.log_detail, row.detail])
+  if (row.detail) pairs.push([t.log_detail, row.detail])
+  if (forCopy) {
+    pairs.push([t.log_full, row.full])
+    if (row.table) {
+      const count = Number(row.table.total || (Array.isArray(row.table.rows) ? row.table.rows.length : 0))
+      pairs.push([t.log_table, fill(t.log_table_value, { title: row.table.title || '', n: count.toLocaleString() })])
+    }
+  }
+  return pairs
+}
+
+function logRows(C, row) {
+  const t = text(C)
   const box = el('div', 'logbox')
   const list = el('dl')
-  for (const [name, value] of rows) list.append(el('dt', '', name), el('dd', '', value))
-  box.append(list)
+  for (const [name, value] of logPairs(C, row, false)) list.append(el('dt', '', name), el('dd', '', value))
+  const acts = el('div', 'logacts')
+  const copy = el('button', 'link copy', t.log_copy || '')
+  copy.type = 'button'
+  copy.title = t.log_copy_title || ''
+  const state = el('span', 'copystate')
+  state.setAttribute('role', 'status')
+  state.setAttribute('aria-live', 'polite')
+  acts.append(copy, state)
+  const area = el('textarea', 'copyarea')
+  area.readOnly = true
+  area.rows = 6
+  area.setAttribute('aria-label', t.log_copy_title || '')
+  area.hidden = true
+  copy.addEventListener('click', () => copyLog(C, row, area, state))
+  // 판을 다시 그려도(회차 끝 훑기) 손 복사 칸은 남긴다 — 초점은 옮기지 않는다.
+  if (C.manualCopy === row.id) showManualCopy(C, row, area, state, false)
+  box.append(list, acts, area)
   return box
+}
+
+function showManualCopy(C, row, area, state, focus) {
+  C.manualCopy = row.id
+  area.value = copyText(logPairs(C, row, true))
+  area.hidden = false
+  state.textContent = text(C).log_copy_manual || ''
+  if (focus) {
+    area.focus({ preventScroll: true })
+    area.select()
+  }
+}
+
+// 「복사」 — 클립보드에 넣으면 「복사했습니다」 를 잠깐 보이고, 막히면 글을 고른 채 두고 Ctrl+C 를 청한다.
+function copyLog(C, row, area, state) {
+  const t = text(C)
+  const content = copyText(logPairs(C, row, true))
+  const done = () => {
+    if (C.manualCopy === row.id) C.manualCopy = null
+    area.hidden = true
+    state.textContent = t.log_copied || ''
+    clearTimeout(state.__capaCopied)
+    state.__capaCopied = setTimeout(() => {
+      if (state.textContent === (t.log_copied || '')) state.textContent = ''
+    }, COPIED_MS)
+  }
+  const manual = () => showManualCopy(C, row, area, state, true)
+  let clip = null
+  try {
+    clip = window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function' ? navigator.clipboard : null
+  } catch (error) {
+    clip = null
+  }
+  if (!clip) {
+    manual()
+    return
+  }
+  try {
+    clip.writeText(content).then(done, manual)
+  } catch (error) {
+    manual()
+  }
 }
 
 function paintList(C) {
