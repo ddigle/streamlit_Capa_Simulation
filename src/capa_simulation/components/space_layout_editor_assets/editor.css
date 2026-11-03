@@ -165,6 +165,21 @@
 /* 베이 화살표(U자) — 선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 머리는 선 색으로 채운다. */
 .sle-bay-line { fill: none; stroke: var(--sle-mark-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .sle-bay-head { fill: var(--sle-mark-ink); }
+/* 도형(엑셀 도형처럼) — 채우기·선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 잡기는 경로 그대로(`sle-shape-hit`):
+   채우기·빗금이 있으면 안쪽과 테두리 12px 띠, 없으면 테두리 띠만이라 빈 안쪽을 끌면 고르기 사각형이 산다(영역과 같다). 상자의 빈
+   귀는 잡히지 않는다 — 상자(`sle-mark-box`)는 고른 테만 그린다. 이름표도 잡힌다. */
+.mark-shape .sle-mark-box { pointer-events: none; }
+.sle-shape-body { vector-effect: non-scaling-stroke; stroke-linejoin: miter; }
+.sle-shape-hatch { pointer-events: none; }
+.sle-shape-hit {
+  fill: transparent; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; pointer-events: all; cursor: grab;
+}
+.sle-shape-hit.is-hollow { fill: none; pointer-events: stroke; }
+.mark-shape .sle-mark-text.is-grab { pointer-events: all; cursor: grab; }
+/* 노란 모양 조절 손잡이 — 하나만 고른 도형에서만, 편집에서만 선다(크기 손잡이 위). 테는 도면 글자색이라 밝은 캔버스에서도 보인다. */
+.sle-adjust { display: none; fill: var(--sle-adjust); stroke: var(--sle-text); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sle:not(.is-view) .sle-item.is-selected .sle-adjust { display: inline; }
+.sle-canvas.is-multi .sle-adjust { display: none !important; }
 
 /* ---- 층 블록(FAB) — 면은 고른 색 또는 Space 기본 면, 글자는 가운데 줄. 상태 색이 아니다. ---- */
 /* 면은 늘 불투명이다. 고른 색은 팔레트의 `block-tint-<키>`(캔버스 위에 미리 섞은 옅은 색)라 뒤의 도면·
@@ -209,6 +224,11 @@
 .sle-unit.is-module .sle-handle { display: none; }
 .sle-group-box.is-range { stroke-width: 2; stroke-dasharray: none; }
 .sle-range-handle { opacity: 1; pointer-events: auto; }
+/* 호기 아래 층(영역·도형)에서 고른 것 하나의 손잡이는 맨 위 층에 다시 선다(JS `proxyHandles` — 호기가 덮은 자리도 잡힌다). 제 그룹
+   안의 손잡이는 감춘다. */
+.sle-zones .sle-handle, .sle-zones .sle-adjust { display: none !important; }
+.sle-proxy-handle { opacity: 1; pointer-events: auto; }
+.sle:not(.is-view) .sle-overlay .sle-proxy-adjust { display: inline; }
 /* Main 설비명 — 모듈 묶음 범위의 가운데(기본) 또는 바깥 바로 위·아래에 알약 바탕을 깔고 모듈 이름보다 한 단 굵게 쓴다.
    눌림을 받지 않는다(가운데 이름 위를 눌러도 모듈이 골라진다). */
 .sle-group-names { pointer-events: none; }
@@ -259,6 +279,17 @@
 .ico-bold { stroke: currentColor; stroke-width: 2.6; }
 .ico-fill { fill: currentColor; opacity: 0.6; stroke: currentColor; }
 .ico-text { fill: currentColor; font-size: 12px; font-weight: 700; }
+.ico-shape { fill: currentColor; fill-opacity: 0.22; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* 도형 갤러리(도면 요소 칸의 넣기 · 선택 칸의 바꾸기) — 칸마다 그림 + 이름, 3열. */
+.sle-shape-palette, .sle-shape-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.sle-shape-palette { grid-column: 1 / -1; }
+.sle-shape-palette[hidden], .sle-shape-gallery[hidden] { display: none !important; }
+.sle button.sle-shape-cell {
+  height: auto; min-height: 42px; padding: 4px 2px; flex-direction: column; gap: 2px; justify-content: center; touch-action: none;
+  font-size: 11px; font-weight: 600; white-space: normal; text-align: center; line-height: 1.15;
+}
+.sle-shape-cell svg { width: 18px; height: 18px; flex: none; }
+.sle button.sle-shape-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
 
 /* ---- 두 옆 칸(왼쪽 도구 · 오른쪽 미배치) ---- */
 /* 칸은 무대와 같은 높이의 테두리 상자이고 머리 줄 아래가 굴러간다(바깥 페이지로 굴림이 새지 않게 `contain`). 접으면 28px 띠
@@ -461,6 +492,15 @@
   display: none !important;
 }
 .sle-lineprops[hidden], .sle-head-gallery[hidden], .sle-bay-flips[hidden], .sle-bay-prefix[hidden] { display: none !important; }
+/* 도형 서식 칸(여럿 골라도 선다) — 도면 요소 속성 칸과 같은 꼴. 「도형」 단추는 지금 도형 그림 + 이름, 모양 조절·투명도는 숫자 + %. */
+.sle-shapeprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.sle-shapeprops[hidden], .sle-shape-adj-row[hidden] { display: none !important; }
+.sle-shape-field { display: grid; grid-template-columns: 5.6em minmax(0, 1fr); align-items: center; }
+.sle button.sle-shape-swap { justify-content: flex-start; gap: 6px; min-width: 0; }
+.sle-shape-now { width: 16px; height: 16px; flex: none; }
+.sle-pct { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sle-pct input { width: 100%; min-width: 0; box-sizing: border-box; }
+.sle-shape-flips { display: flex; flex-wrap: wrap; gap: 6px; }
 /* 베이 번호 칸 앞의 고정 글 「B」 — 이름 칸 격자(이름 · 값)의 값 칸 안에서 칸과 나란히. */
 .sle-inspector-ext .sle-field.sle-mark-name:has(> .sle-bay-prefix:not([hidden])) {
   display: grid; grid-template-columns: 5.6em auto minmax(0, 1fr); align-items: center;

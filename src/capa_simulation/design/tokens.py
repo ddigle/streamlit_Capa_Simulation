@@ -323,6 +323,9 @@ _LIGHT: Final[dict[str, Any]] = {
     # 배치 편집기 정렬선(끌거나 놓는 것이 다른 호기·요소의 선에 붙을 때). 선택 테(강조색)·
     # 경고(빨강)와 갈리는 자홍이고 캔버스와 3:1 이상이다.
     "SPACE_GUIDE": "#DB2777",
+    # 도형의 노란 모양 조절 손잡이(엑셀처럼, 2026-11-03). 밝은 캔버스 위 노랑은 혼자 3:1 이 안 돼
+    # 테를 도면 글자색(SPACE_TEXT)으로 두른다 — 테가 캔버스와, 노랑이 테와 3:1 이상이다(대비 시험).
+    "SPACE_ADJUST": "#F5B800",
     # 색 기준 「필요 단축」(2026-10-24 사용자 결정)의 단축 일수 구간 면·글자 — s(1–7일)·m(8–14일)·
     # l(15일 이상)·x(기한 지남). 시안의 따뜻한 세 단(호박 → 녹 → 짙은 갈색)이고 기한 지남은 자주다.
     # 글자 4.5:1·캔버스 대비 3:1(배지)이고, 반입 전 주황 테·반출 노랑 테·지연 빨강과 갈린다(결정 D12
@@ -537,6 +540,8 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_FLAG_INK": "#111111",
     "SPACE_HATCH": "#E5E7EB",
     "SPACE_GUIDE": "#F472B6",
+    # 어두운 캔버스 위 노랑은 혼자 3:1 을 넘는다(테는 밝은 도면 글자색).
+    "SPACE_ADJUST": "#FACC15",
     # 어두운 캔버스에서는 밝은 쪽이 앞으로 나온다 — 모래 → 황갈 → 녹갈, 기한 지남은 연보라.
     "SPACE_SHORT_FILLS": {"s": "#E6D4B3", "m": "#B48364", "l": "#915846", "x": "#C4A5F5"},
     "SPACE_SHORT_INKS": {"s": "#111111", "m": "#111111", "l": "#FFFFFF", "x": "#111111"},
@@ -689,6 +694,7 @@ if TYPE_CHECKING:
     SERIES_EFFECTIVE: Final[str] = ""
     SERIES_STANDARD: Final[str] = ""
     SHORTAGE_MONTH_BAND: Final[str] = ""
+    SPACE_ADJUST: Final[str] = ""
     SPACE_BLOCK_FILL: Final[str] = ""
     SPACE_BLOCK_OFF_FILL: Final[str] = ""
     SPACE_BORDER: Final[str] = ""

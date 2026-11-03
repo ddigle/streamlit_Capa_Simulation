@@ -1254,7 +1254,7 @@ def test_one_group_edit_is_one_undo_step() -> None:
         ("function retileModules(item) {", "function setMarkProps(item, patch) {"),
         (
             "function placeFromTray(lead, list, p, name, free) {",
-            "function addMark(kind, at, free) {",
+            "function addMark(kind, at, free, preset) {",
         ),
     ):
         body = _between(name, end)

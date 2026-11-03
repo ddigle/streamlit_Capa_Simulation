@@ -74,7 +74,7 @@ def _bay(mark_id: str = "B1", **values: Any) -> dict[str, Any]:
 
 
 def test_the_bay_is_a_floor_mark_that_does_not_block_units() -> None:
-    assert MARK_KINDS[-1] == "bay" and MARK_NAMES["bay"] == "베이"
+    assert "bay" in MARK_KINDS and MARK_NAMES["bay"] == "베이"
     assert "bay" not in BLOCKING_MARK_KINDS
     (bay,) = prepare_floor_layout_marks([_bay()], CANVAS)
     assert not bay.blocks and bay.name == "베이"
@@ -116,11 +116,11 @@ def test_the_look_lists_are_the_decided_ones() -> None:
     MM·강조색·점선 (굵기는 처음 값 없이 상자 높이를 따름), 베이는 MM·진하게·2px·실선·안 뒤집음."""
     assert ARROW_HEADS == ("SS", "SM", "SL", "MS", "MM", "ML", "LS", "LM", "LL")
     assert LINE_WIDTHS == (0.75, 1, 1.5, 2, 3, 4.5, 6)
-    assert LOOK_KEYS == {
+    assert {kind: LOOK_KEYS[kind] for kind in ("arrow", "bay")} == {
         "arrow": ("head", "line", "lineWidth", "lineStyle"),
         "bay": ("head", "line", "lineWidth", "lineStyle", "flip"),
     }
-    assert LOOK_DEFAULTS == {
+    assert {kind: LOOK_DEFAULTS[kind] for kind in ("arrow", "bay")} == {
         "arrow": {"head": "MM", "line": "accent", "lineStyle": "dashed"},
         "bay": {"head": "MM", "line": "ink", "lineWidth": 2, "lineStyle": "solid", "flip": False},
     }

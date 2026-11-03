@@ -76,6 +76,10 @@
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5H10.5A3.5 3.5 0 0 1 10.5 11.5H5.5" class="ico-line"/><polyline points="6.5,9.5 3.5,11.5 6.5,13.5" class="ico-line"/></svg>베이</button>
             <button type="button" class="sle-fab-only" data-kind="block" title="층 블록 — 연결 층(필수)을 가리키고, 보기 화면에서 누르면 그 층이 열립니다">
               <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="10" height="5" rx="1" class="ico-line"/><rect x="3" y="9" width="10" height="5" rx="1" class="ico-fill"/></svg>층 블록</button>
+            <button type="button" class="sle-shape-toggle" aria-expanded="false" aria-controls="sle-shape-palette"
+                    title="도형 — 사각형·원·ㄴ자 박스 등 프리셋 아홉. 펼친 칸에서 눌러서 넣거나 도면으로 끌어 놓습니다">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2" width="7" height="6" class="ico-line"/><circle cx="10.5" cy="10.5" r="4" class="ico-fill"/></svg>도형 ▾</button>
+            <span class="sle-shape-palette" id="sle-shape-palette" role="group" aria-label="도형 넣기 — 눌러서 넣거나 끌어 놓기" hidden></span>
             </div>
           </section>
           <section class="sle-sec sle-edit-only" data-sec="inspector">
@@ -129,6 +133,26 @@
                   <span class="sle-bay-flips" hidden>
                     <button type="button" class="sle-bay-flip" data-flip="h" title="좌우 거울 — 머리가 반대쪽을 향합니다(고른 베이 모두)">좌우 뒤집기</button>
                     <button type="button" class="sle-bay-flip" data-flip="v" title="상하 거울 — 180° 돌리고 좌우로 뒤집은 것과 같습니다(고른 베이 모두)">상하 뒤집기</button>
+                  </span>
+                </span>
+                <span class="sle-shapeprops" hidden role="group" aria-label="도형 서식">
+                  <span class="sle-field sle-shape-field">
+                    <span>도형</span>
+                    <button type="button" class="sle-shape-swap" aria-expanded="false" aria-controls="sle-shape-swap-gallery"
+                            title="도형 바꾸기 — 크기·채우기·선·글자는 그대로, 모양 조절은 새 도형의 처음 값(고른 도형 모두에)"><svg class="sle-shape-now" viewBox="0 0 16 16" aria-hidden="true"></svg><span class="sle-shape-word">사각형</span> ▾</button>
+                  </span>
+                  <span class="sle-shape-gallery" id="sle-shape-swap-gallery" role="group" aria-label="도형 바꾸기" hidden></span>
+                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="0" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="1" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field" title="채우기 색 — 영역 색 여섯 · 진하게(도면 글자색) · 바탕(밝게는 흰색)"><span>채우기</span><select class="sle-shape-fill" aria-label="채우기 색"></select></label>
+                  <label class="sle-field" title="채우기 투명도(엑셀처럼) — 0% 는 불투명, 100% 는 채우기 없음(안쪽을 눌러도 잡히지 않고 테두리로 잡습니다) · 5 단위"><span>투명도</span><span class="sle-pct"><input class="sle-shape-clear" type="number" min="0" max="100" step="5" inputmode="numeric" aria-label="채우기 투명도"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field" title="선 색 — 자동은 채우기 색을 따릅니다"><span>선 색</span><select class="sle-shape-line" aria-label="도형 선 색"></select></label>
+                  <label class="sle-field" title="선 굵기(화면 px)"><span>굵기</span><select class="sle-shape-width" aria-label="도형 선 굵기"></select></label>
+                  <label class="sle-field"><span>선 모양</span><select class="sle-shape-style" aria-label="도형 선 모양"><option value="solid">실선</option><option value="dashed">점선</option><option value="dotted">점</option></select></label>
+                  <label class="sle-field"><input class="sle-shape-hatch" type="checkbox"><span>빗금</span></label>
+                  <span class="sle-shape-flips">
+                    <button type="button" class="sle-shape-flip" data-flip="h" title="좌우 거울(고른 도형 가운데 ㄴ자·ㄷ자·삼각형·블록 화살표 모두)">좌우 뒤집기</button>
+                    <button type="button" class="sle-shape-flip" data-flip="v" title="상하 거울 — 180° 돌리고 좌우로 뒤집은 것과 같습니다">상하 뒤집기</button>
                   </span>
                 </span>
               </span>

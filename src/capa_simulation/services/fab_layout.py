@@ -29,12 +29,14 @@ from datetime import datetime
 from typing import Any, Final
 
 from capa_simulation.services.floor_layout_mark import (
+    HATCH_MARK_KINDS,
     MARK_COLOR_KEYS,
     MARKS_PER_FLOOR_MAX,
     ZONE_BORDER_STYLES,
     ZONE_LABEL_ALIGNS,
     look_payload,
     mark_box,
+    mark_color,
     mark_flag,
     mark_font_color,
     mark_font_size,
@@ -43,7 +45,6 @@ from capa_simulation.services.floor_layout_mark import (
     mark_look,
     mark_rotation,
     marks_extent,
-    zone_color,
     zone_look,
 )
 from capa_simulation.services.floor_layout_profile import (
@@ -95,12 +96,14 @@ FLOOR_KEYS: Final[tuple[FloorKey, ...]] = tuple(
 )
 
 FAB_BLOCK_KIND: Final = "block"
-# FAB 편집기가 넣는 종류 — 영역·글자·동선(꾸밈)과 층 블록. 반입구·문·기둥은 층 도면 요소라 없다.
-FAB_MARK_KINDS: Final = ("zone", "text", "arrow", FAB_BLOCK_KIND)
+# FAB 편집기가 넣는 종류 — 영역·글자·동선·도형(꾸밈)과 층 블록. 반입구·문·기둥·베이는 층 도면 요소라
+# 없다.
+FAB_MARK_KINDS: Final = ("zone", "text", "arrow", "shape", FAB_BLOCK_KIND)
 FAB_MARK_NAMES: Final[Mapping[str, str]] = {
     "zone": "영역",
     "text": "글자",
     "arrow": "동선",
+    "shape": "도형",
     FAB_BLOCK_KIND: "층 블록",
 }
 # FAB 저장 행의 키(`fab_layout_profile.layout_key`). 한 행뿐이다.
@@ -141,7 +144,7 @@ class FabLayoutMark:
     # 영역의 테두리 모양·이름표 정렬. 층 요소와 같은 계약이고 영역이 아니면 처음 값(점선·왼쪽)이다.
     border_style: str = ZONE_BORDER_STYLES[0]
     label_align: str = ZONE_LABEL_ALIGNS[0]
-    # 요소 모양 값(정규 JSON 글). 층 요소와 같은 계약이고 FAB 에서는 동선만 갖는다.
+    # 요소 모양 값(정규 JSON 글). 층 요소와 같은 계약이고 FAB 에서는 동선·도형만 갖는다.
     look: str = ""
 
     def editor_payload(self) -> dict[str, Any]:
@@ -339,10 +342,12 @@ def prepare_fab_layout_marks(
 
     받는 키는 편집기 계약(층 요소와 같고 `link` 를 더한다). 종류는 `FAB_MARK_KINDS`, 개수는 층과
     같은 상한이다. **층 블록은 연결(「C1 1F」, FAB 의 30개 층)이 필수**이고 색은 기본(빈 값) 또는
-    `MARK_COLOR_KEYS` 다. 영역 색은 층 도면과 같다(비면 회색). 블록이 아닌 요소의 연결은 버린다.
-    글자 크기·색(`fontSize`·`fontColor`)은 층 요소와 같은 규칙으로 모든 종류가 갖고, 테두리 모양·
-    이름표 정렬(`borderStyle`·`labelAlign`)은 층 요소처럼 영역만 갖고, 모양 값(`look` — 머리
-    크기·선)은 동선만 갖는다(층 요소와 같은 `mark_look`). 베이 화살표는 층 도면 요소라 FAB 에 없다.
+    `MARK_COLOR_KEYS` 다. 영역 색은 층 도면과 같고(비면 회색) 도형 채우기 색도 같다(`shape_fill` —
+    비면 파랑). 빗금은 영역·도형만이다. 블록이 아닌 요소의 연결은 버린다. 글자 크기·색(`fontSize`·
+    `fontColor`)은 층 요소와 같은 규칙으로 모든 종류가 갖고, 테두리 모양·이름표 정렬(`borderStyle`·
+    `labelAlign`)은 층 요소처럼 영역만 갖고, 모양 값(`look` — 동선 머리 크기·선, 도형 프리셋·모양
+    조절·채우기·선)은 동선·도형만 갖는다(층 요소와 같은 `mark_look`). 베이 화살표는 층 도면 요소라
+    FAB 에 없다.
     두 블록이 같은 층을 가리키는 것은 막지 않는다(`duplicate_block_links` 로 경고만)."""
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"FAB 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -361,8 +366,8 @@ def prepare_fab_layout_marks(
             color = str(raw.get("color") or "")
             if color and color not in MARK_COLOR_KEYS:
                 raise ValueError(f"층 블록 {mark_id} 의 색을 알 수 없습니다: {color!r}")
-        elif kind == "zone":
-            color = zone_color(raw, mark_id)
+        else:
+            color = mark_color(raw, kind, mark_id)
         prepared.append(
             FabLayoutMark(
                 mark_id=mark_id,
@@ -375,7 +380,7 @@ def prepare_fab_layout_marks(
                 color=color,
                 link=link,
                 rotation=mark_rotation(raw, mark_id),
-                hatch=kind == "zone" and mark_flag(raw.get("hatch")),
+                hatch=kind in HATCH_MARK_KINDS and mark_flag(raw.get("hatch")),
                 font_size=mark_font_size(raw, mark_id),
                 font_color=mark_font_color(raw, mark_id),
                 **zone_look(raw, kind, mark_id),

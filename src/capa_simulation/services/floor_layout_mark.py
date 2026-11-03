@@ -2,10 +2,11 @@
 
 """Space 층 도면의 비설비 도면 요소.
 
-호기가 아닌 것 — 반입구(셔터)·여닫이문·영역·기둥·글자·동선 화살표·베이 화살표(U자) — 을 층마다 따로
-둔다. 설비 마스터의 행이 아니고 설비 리비전과도 무관한 **현행값**이다(`floor_layout_profile` 의
-캔버스와 같은 성격). 좌표 계약은 호기와 같다: 원점은 왼쪽 아래, 상자는 (x, y) → (x+w, y+h) 이고
-회전은 상자 가운데를 축으로 90° 단위다(회전한 뒤의 축 정렬 상자를 저장한다).
+호기가 아닌 것 — 반입구(셔터)·여닫이문·영역·기둥·글자·동선 화살표·베이 화살표(U자)·도형(사각형·원·
+ㄴ자 박스 등 프리셋) — 을 층마다 따로 둔다. 설비 마스터의 행이 아니고 설비 리비전과도 무관한
+**현행값**이다(`floor_layout_profile` 의 캔버스와 같은 성격). 좌표 계약은 호기와 같다: 원점은 왼쪽
+아래, 상자는 (x, y) → (x+w, y+h) 이고 회전은 상자 가운데를 축으로 90° 단위다(회전한 뒤의 축 정렬
+상자를 저장한다).
 
 저장 경로의 검증이라 **잘못된 항목을 조용히 버리지 않는다.** 층 단위 전체 교체라서 하나를
 버리면 그 요소가 지워진다 — 그래서 하나라도 어긋나면 `ValueError` 로 저장을 거부한다.
@@ -29,7 +30,7 @@ from typing import Any, Final, Protocol
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, CanvasSize
 from capa_simulation.services.korean_particle import subject_particle, with_object_particle
 
-MARK_KINDS: Final = ("zone", "shutter", "door", "column", "text", "arrow", "bay")
+MARK_KINDS: Final = ("zone", "shutter", "door", "column", "text", "arrow", "bay", "shape")
 MARK_NAMES: Final[Mapping[str, str]] = {
     "zone": "영역",
     "shutter": "반입구",
@@ -38,8 +39,10 @@ MARK_NAMES: Final[Mapping[str, str]] = {
     "text": "글자",
     "arrow": "동선",
     "bay": "베이",
+    "shape": "도형",
 }
-# 호기가 덮으면 경고하는 요소(겹침처럼 저장은 막지 않는다). 영역은 「설비 금지」를 켠 것만.
+# 호기가 덮으면 경고하는 요소(겹침처럼 저장은 막지 않는다). 영역은 「설비 금지」를 켠 것만. 도형은
+# 꾸밈이라 들지 않는다(겹침 경고·「설비 금지」 없음).
 BLOCKING_MARK_KINDS: Final = ("shutter", "door", "column")
 MARK_ROTATIONS: Final = (0, 90, 180, 270)
 # 영역 색 이름. 실제 색은 그리는 쪽이 테마 토큰(제품별 비중과 같은 검증된 범주 팔레트)에서 고른다.
@@ -76,14 +79,71 @@ ARROW_HEADS: Final = tuple(width + length for width in HEAD_SIZES for length in 
 LINE_COLOR_KEYS: Final = ("accent", "ink", *MARK_COLOR_KEYS)
 LINE_WIDTHS: Final = (0.75, 1, 1.5, 2, 3, 4.5, 6)
 LINE_STYLES: Final = ("solid", "dashed", "dotted")
-# 종류마다 받는 키와 그 처음 값. 처음 값이 없는 키(동선 굵기)는 고른 값이면 늘 남는다.
+# 도형(`shape`, 2026-11-03 사용자 요청 — 엑셀 도형처럼) — 한 종류에 프리셋 키 `look.shape` 를
+# 둔다(「도형 바꾸기」 가 키 하나 바꾸기다). 꾸밈이라 막는 요소가 아니고 호기 아래 층에 그린다.
+# 층·FAB 둘 다다.
+# - 모양 조절 값 `look.adj`: 프리셋마다 0~2개(아래 (하한, 상한, 처음 값) — 0.01 단위의 상자
+#   비율, 노란 손잡이·선택 칸 숫자로 바꾼다). 처음 값과 모두 같으면 넣지 않는다.
+# - 채우기 색은 요소의 `color`(영역 색 키 여섯 + `ink` 진하게 + `surface` 바탕 — 모두 테마
+#   토큰, 처음 `blue`), 투명도는 `look.fillAlpha`(채우기 불투명 0~100 — 5 단위, 처음 20, 0 은
+#   채우기 없음).
+# - 선 `look.line`(`auto` 채우기 색을 따름 · `none` 선 없음 · `ink` · 영역 색 키 여섯)·굵기
+#   `lineWidth`(화면 px, 처음 1.5)·모양 `lineStyle`(처음 실선), 좌우 뒤집기 `flip`. 빗금은
+#   영역처럼 `hatch` 다.
+SHAPE_PRESETS: Final = (
+    "rect",
+    "ellipse",
+    "lbox",
+    "cbox",
+    "frame",
+    "triangle",
+    "diamond",
+    "cross",
+    "arrowblock",
+)
+SHAPE_NAMES: Final[Mapping[str, str]] = {
+    "rect": "사각형",
+    "ellipse": "원",
+    "lbox": "ㄴ자 박스",
+    "cbox": "ㄷ자 박스",
+    "frame": "테",
+    "triangle": "삼각형",
+    "diamond": "마름모",
+    "cross": "십자",
+    "arrowblock": "블록 화살표",
+}
+SHAPE_ADJUST: Final[Mapping[str, tuple[tuple[float, float, float], ...]]] = {
+    "rect": ((0, 1, 0),),
+    "ellipse": (),
+    "lbox": ((0.05, 0.95, 0.35), (0.05, 0.95, 0.35)),
+    "cbox": ((0.05, 0.95, 0.3), (0.05, 0.49, 0.3)),
+    "frame": ((0.02, 0.49, 0.12),),
+    "triangle": ((0, 1, 0.5),),
+    "diamond": (),
+    "cross": ((0.05, 0.95, 0.34),),
+    "arrowblock": ((0.05, 1, 0.5), (0.05, 0.95, 0.35)),
+}
+SHAPE_FILL_KEYS: Final = (*MARK_COLOR_KEYS, "ink", "surface")
+SHAPE_LINE_KEYS: Final = ("auto", "none", "ink", *MARK_COLOR_KEYS)
+FILL_ALPHA_STEP: Final = 5
+# 종류마다 받는 키와 그 처음 값. 처음 값이 없는 키(동선 굵기)는 고른 값이면 늘 남는다. 도형의 모양
+# 조절 값(`adj`)은 처음 값이 프리셋마다 달라 `SHAPE_ADJUST` 가 맡는다.
 LOOK_KEYS: Final[Mapping[str, tuple[str, ...]]] = {
     "arrow": ("head", "line", "lineWidth", "lineStyle"),
     "bay": ("head", "line", "lineWidth", "lineStyle", "flip"),
+    "shape": ("shape", "adj", "fillAlpha", "line", "lineWidth", "lineStyle", "flip"),
 }
 LOOK_DEFAULTS: Final[Mapping[str, Mapping[str, object]]] = {
     "arrow": {"head": "MM", "line": "accent", "lineStyle": "dashed"},
     "bay": {"head": "MM", "line": "ink", "lineWidth": 2, "lineStyle": "solid", "flip": False},
+    "shape": {
+        "shape": "rect",
+        "fillAlpha": 20,
+        "line": "auto",
+        "lineWidth": 1.5,
+        "lineStyle": "solid",
+        "flip": False,
+    },
 }
 
 
@@ -287,6 +347,29 @@ def zone_color(raw: Mapping[str, Any], mark_id: str) -> str:
     return color
 
 
+def shape_fill(raw: Mapping[str, Any], mark_id: str) -> str:
+    """도형 채우기 색 키(`SHAPE_FILL_KEYS` — 영역 색 여섯 + 진하게 `ink` + 바탕 `surface`). 비면
+    파랑이고 목록 밖이면 `ValueError`."""
+    color = str(raw.get("color") or "").strip() or "blue"
+    if color not in SHAPE_FILL_KEYS:
+        raise ValueError(f"도형 {mark_id} 의 채우기 색을 알 수 없습니다: {color!r}")
+    return color
+
+
+# 빗금을 갖는 종류(영역·도형). 다른 종류는 늘 거짓이고 보낸 값을 보지 않는다.
+HATCH_MARK_KINDS: Final = ("zone", "shape")
+
+
+def mark_color(raw: Mapping[str, Any], kind: str, mark_id: str) -> str:
+    """요소 색 키 — 영역은 `zone_color`, 도형은 `shape_fill`, 그 밖은 빈 값(층 블록 색은 FAB 가
+    따로 본다)."""
+    if kind == "zone":
+        return zone_color(raw, mark_id)
+    if kind == "shape":
+        return shape_fill(raw, mark_id)
+    return ""
+
+
 def prepare_floor_layout_marks(
     marks: Sequence[Mapping[str, Any]],
     canvas: CanvasSize,
@@ -297,7 +380,9 @@ def prepare_floor_layout_marks(
     `keepOut`·`fontSize`·`fontColor`·`borderStyle`·`labelAlign`·`look`)이다. 좌표는 소수 첫째 자리로
     맞추고 상자가 캔버스 안이어야 한다. 글자 크기·색은 모든 종류가 갖는다(없으면 자동·기본). 테두리
     모양·이름표 정렬은 영역만 갖는다(없으면 점선·왼쪽, 다른 종류는 늘 처음 값이고 보낸 값을 보지
-    않는다). 모양 값(`look`)은 동선·베이만 갖는다(`mark_look`). 베이의 이름표는 번호다(`bay_label`).
+    않는다). 모양 값(`look`)은 동선·베이·도형만 갖는다(`mark_look`). 베이의 이름표는 번호다
+    (`bay_label`). 색은 영역(`zone_color`)과 도형의 채우기(`shape_fill`)만, 빗금은 영역·도형만
+    갖고 「설비 금지」는 영역만이다.
     """
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"한 층의 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -319,8 +404,8 @@ def prepare_floor_layout_marks(
                 h=h,
                 rotation=mark_rotation(raw, mark_id),
                 label=bay_label(raw, mark_id) if kind == "bay" else mark_label(raw, mark_id),
-                color=zone_color(raw, mark_id) if kind == "zone" else "",
-                hatch=kind == "zone" and mark_flag(raw.get("hatch")),
+                color=mark_color(raw, kind, mark_id),
+                hatch=kind in HATCH_MARK_KINDS and mark_flag(raw.get("hatch")),
                 keep_out=kind == "zone" and mark_flag(raw.get("keepOut")),
                 font_size=mark_font_size(raw, mark_id),
                 font_color=mark_font_color(raw, mark_id),
@@ -363,16 +448,73 @@ def _look_number(value: object) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _whole(number: float) -> float | int:
+    """정수면 정수로 — JS 의 JSON 글(`1` · `0.5`)과 같은 정규 글이 나오게."""
+    return int(number) if number.is_integer() else number
+
+
+def _shape_adjust(preset: str, value: object, mark_id: str) -> list[float | int] | None:
+    """도형 모양 조절 값(`adj`) — 프리셋의 개수·범위·0.01 단위를 본다. 처음 값과 모두 같으면 None
+    (넣지 않는다). 어긋나면 `ValueError`."""
+    spec = SHAPE_ADJUST[preset]
+    name = SHAPE_NAMES[preset]
+    if not isinstance(value, (list, tuple)) or len(value) != len(spec):
+        raise ValueError(
+            f"도형 {mark_id}({name})의 모양 조절 값은 {len(spec)}개여야 합니다: {value!r}"
+        )
+    normal: list[float | int] = []
+    for item, (low, high, _default) in zip(value, spec, strict=True):
+        number = _look_number(item)
+        if number is None or abs(number * 100 - round(number * 100)) > 1e-6:
+            raise ValueError(
+                f"도형 {mark_id}({name})의 모양 조절 값은 0.01 단위 숫자여야 합니다: {item!r}"
+            )
+        number = round(number * 100) / 100
+        if not low - 1e-9 <= number <= high + 1e-9:
+            raise ValueError(
+                f"도형 {mark_id}({name})의 모양 조절 값은 {low:g}~{high:g} 사이여야 합니다: "
+                f"{number:g}"
+            )
+        normal.append(_whole(number))
+    if all(abs(got - default) < 1e-9 for got, (_, _, default) in zip(normal, spec, strict=True)):
+        return None
+    return normal
+
+
+# 목록에서 고르는 모양 값의 화면 이름(거부 글).
+_LOOK_WORDS: Final[Mapping[str, str]] = {
+    "head": "머리 크기",
+    "line": "선 색",
+    "lineStyle": "선 모양",
+    "shape": "도형 모양",
+}
+
+
 def _look_value(kind: str, key: str, value: object, mark_id: str) -> object:
     """모양 값 하나를 검사해 정규 값으로(숫자는 정수면 정수 — JS 의 JSON 글과 같게). 어긋나면
-    `ValueError`."""
+    `ValueError`. 도형의 모양 조절 값(`adj`)은 프리셋에 달려 `mark_look` 이 따로 본다."""
     name = MARK_NAMES.get(kind, kind)
     text = value.strip() if isinstance(value, str) else value
     allowed: Sequence[object]
     if key == "head":
         allowed = ARROW_HEADS
     elif key == "line":
-        allowed = LINE_COLOR_KEYS
+        allowed = SHAPE_LINE_KEYS if kind == "shape" else LINE_COLOR_KEYS
+    elif key == "shape":
+        allowed = SHAPE_PRESETS
+    elif key == "fillAlpha":
+        number = _look_number(value)
+        if (
+            number is None
+            or not number.is_integer()
+            or not 0 <= number <= 100
+            or int(number) % FILL_ALPHA_STEP
+        ):
+            raise ValueError(
+                f"{name} {mark_id} 의 채우기 투명도는 0~100 의 {FILL_ALPHA_STEP} 단위여야 합니다: "
+                f"{value!r}"
+            )
+        return int(number)
     elif key == "lineStyle":
         allowed = LINE_STYLES
     elif key == "lineWidth":
@@ -382,7 +524,7 @@ def _look_value(kind: str, key: str, value: object, mark_id: str) -> object:
                 f"{name} {mark_id} 의 선 굵기를 알 수 없습니다: {value!r} — "
                 f"{'·'.join(f'{width:g}' for width in LINE_WIDTHS)} 중 하나입니다."
             )
-        return int(number) if number.is_integer() else number
+        return _whole(number)
     elif key == "flip":
         if not isinstance(value, bool):
             raise ValueError(f"{name} {mark_id} 의 뒤집기 값은 참·거짓이어야 합니다: {value!r}")
@@ -390,7 +532,7 @@ def _look_value(kind: str, key: str, value: object, mark_id: str) -> object:
     else:  # `mark_look` 이 `LOOK_KEYS` 밖의 키를 먼저 거부한다
         raise ValueError(f"{name} {mark_id} 에 없는 모양 값입니다: {key!r}")
     if not isinstance(text, str) or text not in allowed:
-        what = {"head": "머리 크기", "line": "선 색", "lineStyle": "선 모양"}[key]
+        what = _LOOK_WORDS[key]
         raise ValueError(
             f"{name} {mark_id} 의 {with_object_particle(what)} 알 수 없습니다: {value!r} — "
             f"{'·'.join(str(item) for item in allowed)} 중 하나입니다."
@@ -402,7 +544,9 @@ def mark_look(raw: Mapping[str, Any], kind: str, mark_id: str) -> str:
     """요소 모양 값(`look`)을 정규 JSON 글로. 받는 키는 종류마다 `LOOK_KEYS` 이고, 처음 값
     (`LOOK_DEFAULTS`)이거나 빈 값(None)인 키는 빼며, 다 빼면 빈 글이다. 모양 값이 없는 종류는 보낸
     값을 보지 않는다(빈 글 — 영역 아닌 요소의 테두리 모양과 같은 꼴). `look` 은 dict·JSON 글·빈 값을
-    받는다. 어긋나면 `ValueError`(층 단위 전체 교체라 버리지 않는다)."""
+    받는다. 도형은 프리셋(`shape` — 없으면 사각형)을 먼저 정하고 모양 조절 값(`adj`)을 그 프리셋의
+    개수·범위로 본다(`SHAPE_ADJUST` — 처음 값과 같으면 뺀다). 어긋나면 `ValueError`(층 단위 전체
+    교체라 버리지 않는다)."""
     keys = LOOK_KEYS.get(kind)
     if keys is None:
         return ""
@@ -419,12 +563,21 @@ def mark_look(raw: Mapping[str, Any], kind: str, mark_id: str) -> str:
     if not isinstance(value, Mapping):
         raise ValueError(f"도면 요소 {mark_id} 의 모양 값을 읽지 못했습니다.")
     look: dict[str, object] = {}
-    for key, item in value.items():
+    for key in value:
         if key not in keys:
             raise ValueError(
                 f"{MARK_NAMES.get(kind, kind)} {mark_id} 에 없는 모양 값입니다: {key!r}"
             )
+    preset = "rect"
+    if kind == "shape" and value.get("shape") is not None:
+        preset = str(_look_value(kind, "shape", value["shape"], mark_id))
+    for key, item in value.items():
         if item is None:
+            continue
+        if key == "adj":
+            adjust = _shape_adjust(preset, item, mark_id)
+            if adjust is not None:
+                look[key] = adjust
             continue
         normal = _look_value(kind, key, item, mark_id)
         if key not in defaults or normal != defaults[key]:

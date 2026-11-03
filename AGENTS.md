@@ -1093,6 +1093,27 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       1칸이 화면 8px 일 때의 크기」 다(저장값은 그대로). 표지(필요 단축 배지·견주기 꼬리표)는 s 를 0.75~1.25 로 묶고 크기로는 숨기지
       않는다. 손잡이·초점 테·「!」·겹침 꼭지·선 굵기는 화면 px 그대로다. 확대·이동마다 `applyView` → `position` → `drawMark`·
       `drawSelectionBox` 가 다시 잰다.
+  - **도형**(2026-11-03 사용자 요청 — 사양 (나2), 층·FAB). 한 종류 `shape` 에 프리셋 키 `look.shape` 아홉(사각형·원·ㄴ자·ㄷ자·
+    테·삼각형·마름모·십자·블록 화살표 — `SHAPE_PRESETS`, 넣는 크기·모양 조절 값 [하한, 상한, 처음 값]·이름·돌림 뜻이 프리셋마다)
+    이다. 순수 판정은 `// <mark-look>`(프리셋 표·`cleanLook` 의 `adj`·`fillAlpha`·도형 선 색, `shapeOf`·`shapeAdj`·
+    `shapeFillOf`)와 `// <shape-geometry>`(경로 `shapePath` → {d, rule, pts} — 테만 evenodd, 노란 손잡이 `shapeHandles`·값
+    되돌림 `handleValue`·`unplaceLocal`, Shift 비율 유지 `keepAspect`, 손잡이 비키기 `nudgeHandle`)이고
+    `tests/test_space_shape_js.py` 가 node 로 돌려 파이썬 `mark_look`·`SHAPE_ADJUST` 와 대조한다.
+    - 꾸밈이다 — 막는 요소(`blocks`)·겹침 경고에 들지 않고 **호기 아래 층**(`sle-zones`, 영역과 같은 층 — `onZoneLayer`)에
+      그린다. 잡기는 경로 그대로(`sle-shape-hit` — 채우기·빗금이 있으면 안쪽과 12px 테 띠, 없으면 테 띠만 — 빈 안쪽 끌기는 고르기
+      사각형)이고 상자의 빈 귀·`sle-mark-box` 는 잡히지 않는다. 이름표는 가운데 가로(돌리지 않음, 자동은 상자 맞춤 — 24 의 배율
+      크기까지)이고 잡힌다.
+    - 호기 아래 층(영역·도형)에서 하나만 고른 것의 손잡이는 맨 위 층 `sle-overlay` 에 다시 세운다(`proxyHandles` — `data-for`,
+      제 그룹 안의 것은 CSS 가 감춘다) — 호기가 덮은 귀·변에서도 잡힌다. 고른 도형 하나의 노란 손잡이(`sle-adjust`, 토큰
+      `SPACE_ADJUST` + 도면 글자색 테)는 끌기 `mode: 'adjust'` — 잡은 자리 차이(`grab`)를 지켜 포인터를 제자리 좌표로 되돌려
+      값을 내고(`adjustedLook`), 놓을 때 바뀌었으면 되돌리기 한 번이다. 크기 손잡이와 겹치면 축을 따라 비켜 그린다.
+    - 선택 칸 「도형 서식」(`syncShapeProps` — 여럿이면 모두에, `setShapes` 되돌리기 한 번): 「도형」 바꾸기 갤러리(`look.shape`
+      만 바꾸고 `adj` 를 새 프리셋 처음 값으로 — 크기·채우기·선·글자 그대로), 모양 조절 %(한 프리셋일 때만), 채우기 색(요소
+      `color` — 영역 색 여섯 · `ink` · `surface`), 투명도(엑셀처럼 100 − `fillAlpha`), 선 색(`auto` 채우기 색의 진한 쪽 ·
+      `none` · `ink` · 여섯)·굵기·모양, 빗금(`hatch`), 뒤집기(`flipMarks` — 베이와 같은 규칙, 비대칭 꼴만). `90° 돌리기` 는 대칭
+      꼴에서 꺼진다. 도형 모서리 Shift 끌기는 비율 유지다(Shift 를 누른 채 손잡이를 잡아도 더하기 고르기가 아니다).
+    - 넣기는 도면 요소 칸 「도형 ▾」 갤러리 — 누르면 보이는 가운데, 끌면 놓은 자리(`ghostDrag`·`dropSpot`), 키보드 click 도.
+      읽기(`readMark` — 모르는 채우기 색은 파랑)·바뀜 판정·적용값·복사(`clipOf`)·되돌리기에 모양 값·색·빗금이 함께 간다.
   - **층 상세 보기 둘**(2026-10-23 사용자 요청 3·8, 보기 전용 층 뷰어만 — FAB·배치 편집기는 그대로).
     - 호기 누르기: 끌지 않고 누른 뒤·Esc 뒤 `notePick` 이 고른 호기(호기가 아니면 null)를 트리거 `pick`
       (`{epoch, id}`)으로 보낸다 — 같은 값은 다시 보내지 않는다. 파이썬 `_dispatch_pick` 이 epoch 를 대조해 `on_pick` 을
@@ -1691,7 +1712,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 요소 모양 값 `look`(설비 `0033`, 정규 JSON 글 — `mark_look`)은 종류마다 받는 키(`LOOK_KEYS` — 동선 머리·선 셋, 베이는
     + 뒤집기)만 받고 처음 값(`LOOK_DEFAULTS`)인 키는 빼며 다 처음 값이면 빈 글이다. 받지 않는 키·틀린 값은 거부, 모양 값이
     없는 종류는 보낸 값을 보지 않는다. `editor_payload` 는 빈 모양 값의 `look` 키를 싣지 않는다(요소 지문이 0033 전과 같다).
-    베이(`bay`, 층만)의 이름표는 번호다(`bay_label` — 앞 B 를 떼고 10자). FAB 요소도 같은 `mark_look` 이다(동선만).
+    베이(`bay`, 층만)의 이름표는 번호다(`bay_label` — 앞 B 를 떼고 10자). FAB 요소도 같은 `mark_look` 이다(동선·도형).
+  - 도형(`shape`, 층·FAB)은 프리셋 `look.shape`(`SHAPE_PRESETS` 아홉 — 없으면 사각형)를 먼저 정하고 모양 조절 값 `adj` 를 그
+    프리셋의 개수·범위·0.01 단위로 본다(`SHAPE_ADJUST` — 처음 값과 모두 같으면 뺀다). 채우기 불투명 `fillAlpha`(0~100 의 5 단위)·
+    선 `line`(`SHAPE_LINE_KEYS` — `auto`·`none`·`ink`·영역 색, 강조색 없음)·`lineWidth`·`lineStyle`·`flip`. 채우기 색은 요소
+    `color`(`shape_fill` — `SHAPE_FILL_KEYS`, 처음 파랑, `mark_color`), 빗금은 영역·도형만(`HATCH_MARK_KINDS`), 「설비 금지」는
+    영역만이다. 막는 요소(`BLOCKING_MARK_KINDS`)가 아니다.
   - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데·위·아래 모두 행으로 받는다. 고른 적이 없거나 처음 위치로
     되돌린 묶음은 행이 없고 모양의 처음 위치 `space_layout_edit.default_group_label` 로 선다 — 한 줄 묶음(모듈 2·3)은
     위라 가운데를 고르면 가운데 행이 남는다)의 검증은 `prepare_group_labels`(Main 설비 이름은
@@ -1727,7 +1753,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     묶음 승인 — 있던 호기의 일곱 칸을 원래 칸 값 그대로), 공식 발행 막힘 글 한 곳 `layout_publish_blocked_words(PublishBlock)`(확인
     팝업·발행 쓰기 거부가 같이 쓴다).
 - `src/capa_simulation/services/fab_layout.py` — FAB 동·층 정의, 층 이름·주소 인자 변환, FAB 전체 도면의 계약·검증
-  (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다.
+  (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다. FAB 요소 종류는 영역·글자·
+  동선·도형·층 블록(`FAB_MARK_KINDS`)이고 도형·모양 값은 층 요소와 같은 규칙이다.
 - `src/capa_simulation/services/space_layout_edit.py` — Space 배치 편집기의 순수 계산(입력, 적용값 검증, 반영, 미저장
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
@@ -3775,7 +3802,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 층 Main 설비명 위치(`floor_layout_group_label`, `0025`)는 `floor_group_labels`(층마다 전체)로 같은 트랜잭션에 쓰고
     층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
     `label_align`(`0025`, 영역 아닌 요소는 NULL)이다. 요소 모양 값은 두 요소 표와 가정 차이 표의 `look_json`(`0033` — 정규 JSON
-    글, 빈 글 ↔ NULL, 동선·베이 아닌 요소는 NULL)이다.
+    글, 빈 글 ↔ NULL, 동선·베이·도형 아닌 요소는 NULL)이다. 도형의 채우기 색·빗금은 기존 `color_key`·`hatch` 칸이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 네 진입점(설비 저장의 캔버스·
     `save_floor_layout_canvas`·`save_floor_layout_image`·`delete_floor_layout_profile`)은 각 ACTIVE 설비 시나리오 최신·최신 공식
     발행의 **가정 요소**(`set`)도 본다(`_require_overlay_marks_fit` → `EquipmentLayoutOverflow`). 가정 차이 호기는 막지 않는다 —

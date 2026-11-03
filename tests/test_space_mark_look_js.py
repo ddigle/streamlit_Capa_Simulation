@@ -316,11 +316,13 @@ def test_the_look_travels_every_path_of_a_mark() -> None:
     assert "look: cleanLook(m.look, m.kind)," in _between(
         "const clipOf = ", "function writeClipboard("
     )
-    assert "borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0], look: {}," in _between(
+    add = _between(
         "function addMark(",
         "// ---------------------------------------------------------------- 도면 요소 복사",
     )
-    setter = _between("function setLooks(", "function flipBays(")
+    assert "borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0], look: shape ? " in add
+    assert "look: shape ? cleanLook({ shape }, 'shape') : {}," in add
+    setter = _between("function setLooks(", "function flipMarks(")
     assert "m.look = next" in setter and "pushUndo(ops)" in setter
     assert "ops.push({ op: 'set', id: m.id, before: snapshot(m) })" in setter
 
@@ -385,5 +387,8 @@ def test_the_inspector_offers_the_head_gallery_and_line_fields_for_arrows_and_ba
     assert head_aria + "${HEAD_LENGTH_WORDS[head[1]]}`" in JS
     assert "const HEAD_WIDTH_WORDS = { S: '좁게', M: '보통', L: '넓게' }" in JS
     assert "const HEAD_LENGTH_WORDS = { S: '짧게', M: '보통', L: '길게' }" in JS
-    flips = _between("function flipBays(", "// 브라우저가 쥔 적용 전 편집")
+    flips = _between(
+        "function flipMarks(",
+        "// ---------------------------------------------------------------- 도형 서식",
+    )
     assert "if (axis === 'v') m.rot = ((m.rot || 0) + 180) % 360" in flips

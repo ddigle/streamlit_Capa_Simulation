@@ -150,6 +150,9 @@ export default function (component) {
     // 베이 화살표(U자 — 2026-11-03 사용자 요청). 0° 는 여는 쪽이 왼쪽인 ⊃ 꼴이고 머리는 아래 팔 끝에서 왼쪽을 향한다. 가운데 글은
     // 「B<번호>」 — 이름표 칸에는 번호만 둔다(`bayNumber`). 층 도면에만 있다(FAB 에는 넣지 않는다 — 사양 D7).
     bay: { name: '베이', size: [10, 4], label: '', rotatable: true },
+    // 도형(2026-11-03 사용자 요청 — 엑셀 도형처럼). 프리셋 아홉은 look.shape(`SHAPE_PRESETS` — 넣는 크기도 프리셋마다)이고 층·FAB
+    // 둘 다다. 꾸밈이라 막는 요소가 아니고 호기 아래 층에 그린다. 돌리기는 비대칭 꼴(ㄴ·ㄷ·삼각·블록 화살표)에만 켜진다.
+    shape: { name: '도형', size: [8, 6], label: '', rotatable: true },
     // FAB 층 블록. 연결(link, 「C1 1F」)이 필수다. 색은 사용자가 고르는 자리 구분 색이고 빈 값은 Space 기본 면이다.
     block: { name: '층 블록', size: [16, 6], label: '', rotatable: false },
   }
@@ -185,12 +188,26 @@ export default function (component) {
   // 어둡게 모두 테마 토큰).
   const lineInk = (key) => (key === 'accent' ? 'var(--sle-accent)' : key === 'ink' ? 'var(--sle-mark-ink)'
     : markColors[key] ? `var(--sle-mark-text-${key})` : '')
+  // 도형 채우기 색(요소 color) → CSS 색. 영역 색 키는 영역과 같은 범주 팔레트, ink 는 도면 글자색, surface 는 바탕 면(밝게 흰색)이다
+  // — 모두 테마 토큰이라 어둡게를 따른다.
+  const shapeFillInk = (key) => (key === 'ink' ? 'var(--sle-mark-ink)' : key === 'surface' ? 'var(--sle-surface)'
+    : markColors[key] || markColors.blue || 'gray')
+  // 도형 선 색(look.line) → CSS 색('' 은 선 없음). auto 는 채우기 색을 따른다 — 영역 색 키는 글자 색과 같은 진한 쪽(mark-text-<키>),
+  // ink 는 도면 글자색, 바탕(surface)은 흰 면에 묻히지 않게 상자 테 색(frame)이다.
+  const shapeLineInk = (key, fill) => {
+    if (key === 'none') return ''
+    const base = key === 'auto' ? fill : key
+    if (key === 'auto' && base === 'surface') return 'var(--sle-frame)'
+    if (base === 'ink') return 'var(--sle-mark-ink)'
+    return markColors[base] ? `var(--sle-mark-text-${base})` : 'var(--sle-mark-ink)'
+  }
   // 베이 가운데 글 — 늘 「B」 를 앞에 붙인다(번호가 비면 「B」 만).
   const bayCaption = (item) => `B${item.label || ''}`
-  // 요소의 풍선·선택 칸 이름 — 「종류 · 이름표」(베이는 「베이 · B80」).
+  // 요소의 풍선·선택 칸 이름 — 「종류 · 이름표」(베이는 「베이 · B80」, 도형은 「도형(ㄴ자 박스) · 창고」).
+  const markKindName = (item) => (item.kind === 'shape' ? `도형(${SHAPE_PRESETS[shapeOf(item.look)].name})` : MARK_KINDS[item.kind].name)
   const markTitle = (item) => {
     const shown = item.kind === 'bay' ? bayCaption(item) : item.label
-    return `${MARK_KINDS[item.kind].name}${shown ? ` · ${shown}` : ''}`
+    return `${markKindName(item)}${shown ? ` · ${shown}` : ''}`
   }
   // 편집 안내 첫 문단(왼쪽 칸 「도움말」 — 옛 편집기 위 캡션, 2026-11-03 사용자 요청으로 도면 위 줄을 걷고 옮겼다).
   const GUIDE = FAB
@@ -217,8 +234,8 @@ export default function (component) {
   // 스크롤 고정이 `<html>` 에 다는 속성(그 속성을 읽는 규칙은 페이지 서식 — 파이썬 `space_lock_style`).
   const LOCK_ATTR = 'data-space-lock'
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -299,6 +316,23 @@ export default function (component) {
   const lineWidth = q('.sle-line-width')
   const lineStyle = q('.sle-line-style')
   const bayFlips = q('.sle-bay-flips')
+  // 도형 서식(여럿 골라도 — 고른 것 가운데 도형 모두에 건다)과 도면 요소 칸의 도형 넣기 갤러리.
+  const shapeProps = q('.sle-shapeprops')
+  const shapeSwap = q('.sle-shape-swap')
+  const shapeNow = q('.sle-shape-now')
+  const shapeWord = q('.sle-shape-word')
+  const shapeGallery = q('.sle-shape-gallery')
+  const shapeAdjRows = [...host.querySelectorAll('.sle-shape-adj-row')]
+  const shapeAdjInputs = [...host.querySelectorAll('.sle-shape-adj')]
+  const shapeFill = q('.sle-shape-fill')
+  const shapeClear = q('.sle-shape-clear')
+  const shapeLine = q('.sle-shape-line')
+  const shapeWidth = q('.sle-shape-width')
+  const shapeStyle = q('.sle-shape-style')
+  const shapeHatch = q('.sle-shape-hatch')
+  const shapeFlips = [...host.querySelectorAll('.sle-shape-flip')]
+  const shapeToggle = q('.sle-shape-toggle')
+  const shapePalette = q('.sle-shape-palette')
   const zoneOnly = [...host.querySelectorAll('.sle-zone-only')]
   const blockProps = q('.sle-block-props')
   const blockLink = q('.sle-block-link')
@@ -757,53 +791,117 @@ export default function (component) {
   }
   // </text-scale>
 
-  // ---------------------------------------------------------------- 동선·베이 화살표 모양(순수 함수)
+  // ---------------------------------------------------------------- 동선·베이 화살표·도형 모양 값(순수 함수)
   // 요소 모양 값(look — 2026-11-03 사용자 요청)의 받는 키·처음 값은 파이썬 `services/floor_layout_mark.LOOK_KEYS`·
   // `LOOK_DEFAULTS` 와 같다(처음 값인 키는 빼고, 정규 글은 키 차례 JSON — node 시험이 파이썬과 대조한다). 머리 크기는 엑셀의
-  // 3×3(「너비·길이」 두 글자, 각 S·M·L)이고 동선의 MM 이 지금 그림이다. 그리기는 돌리기 전 제자리 좌표(lw×lh, y 아래로)다.
-  // `tests/test_space_mark_look_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // 3×3(「너비·길이」 두 글자, 각 S·M·L)이고 동선의 MM 이 지금 그림이다. 도형(shape)은 프리셋 키 look.shape 하나로 아홉 꼴을
+  // 가르고 모양 조절 값 look.adj 의 처음 값은 프리셋마다 다르다(`SHAPE_PRESETS` — 파이썬 `SHAPE_ADJUST`). 그리기는 돌리기 전
+  // 제자리 좌표(lw×lh, y 아래로)다. `tests/test_space_mark_look_js.py`·`tests/test_space_shape_js.py` 가 아래 두 표시 줄 사이를
+  // 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
   // <mark-look>
   const LOOK_KEYS = {
     arrow: ['head', 'line', 'lineWidth', 'lineStyle'],
     bay: ['head', 'line', 'lineWidth', 'lineStyle', 'flip'],
+    shape: ['shape', 'adj', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'flip'],
   }
   const LOOK_DEFAULTS = {
     arrow: { head: 'MM', line: 'accent', lineStyle: 'dashed' },
     bay: { head: 'MM', line: 'ink', lineWidth: 2, lineStyle: 'solid', flip: false },
+    shape: { shape: 'rect', fillAlpha: 20, line: 'auto', lineWidth: 1.5, lineStyle: 'solid', flip: false },
   }
   const HEAD_SIZES = ['S', 'M', 'L']
   const ARROW_HEADS = HEAD_SIZES.flatMap((w) => HEAD_SIZES.map((l) => w + l))
   const LINE_COLORS = ['accent', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
   const LINE_WIDTHS = [0.75, 1, 1.5, 2, 3, 4.5, 6]
   const LINE_STYLES = ['solid', 'dashed', 'dotted']
+  // 도형 프리셋 아홉(2026-11-03 사용자 요청 — 엑셀 도형처럼). adj 는 모양 조절 값마다 [하한, 상한, 처음 값](0.01 단위 상자 비율 —
+  // 파이썬 `SHAPE_ADJUST`), words 는 그 값의 이름(선택 칸·손잡이 풍선), size 는 넣을 때의 크기, turn 은 돌리기·뒤집기에 뜻이 있는
+  // 꼴인가(대칭 꼴은 그 단추가 꺼진다).
+  const SHAPE_PRESETS = {
+    rect: { name: '사각형', size: [8, 6], adj: [[0, 1, 0]], words: ['모서리 둥글기'], turn: false },
+    ellipse: { name: '원', size: [6, 6], adj: [], words: [], turn: false },
+    lbox: { name: 'ㄴ자 박스', size: [8, 8], adj: [[0.05, 0.95, 0.35], [0.05, 0.95, 0.35]], words: ['세로 팔 두께', '가로 팔 두께'], turn: true },
+    cbox: { name: 'ㄷ자 박스', size: [8, 8], adj: [[0.05, 0.95, 0.3], [0.05, 0.49, 0.3]], words: ['등 두께', '팔 두께'], turn: true },
+    frame: { name: '테', size: [10, 8], adj: [[0.02, 0.49, 0.12]], words: ['테 두께'], turn: false },
+    triangle: { name: '삼각형', size: [8, 7], adj: [[0, 1, 0.5]], words: ['꼭짓점 자리'], turn: true },
+    diamond: { name: '마름모', size: [8, 8], adj: [], words: [], turn: false },
+    cross: { name: '십자', size: [8, 8], adj: [[0.05, 0.95, 0.34]], words: ['팔 두께'], turn: false },
+    arrowblock: { name: '블록 화살표', size: [10, 5], adj: [[0.05, 1, 0.5], [0.05, 0.95, 0.35]], words: ['몸통 두께', '머리 길이'], turn: true },
+  }
+  const SHAPE_KEYS = Object.keys(SHAPE_PRESETS)
+  // 도형 채우기 색(요소 color — 영역 색 여섯 + ink 진하게 + surface 바탕)과 선 색(auto 채우기 색을 따름 · none 선 없음 · ink · 영역 색
+  // 여섯). 파이썬 `SHAPE_FILL_KEYS`·`SHAPE_LINE_KEYS`.
+  const SHAPE_FILLS = ['blue', 'rose', 'green', 'violet', 'sky', 'gray', 'ink', 'surface']
+  const SHAPE_LINES = ['auto', 'none', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
+  const FILL_ALPHA_STEP = 5
   // 머리 너비·길이(동선 × 상자 높이 lh · 베이 × 팔 사이 lh/2)와 동선 머리 길이의 상한(× 상자 폭 lw).
   const HEAD_W = { S: 0.45, M: 0.7, L: 1.0 }
   const HEAD_L = { S: 0.7, M: 1.1, L: 1.6 }
   const HEAD_CAP = { S: 0.25, M: 0.35, L: 0.45 }
   const BAY_NUMBER_MAX = 10
-  // 모양 값 하나가 그 키의 값인가.
-  function lookAllowed(key, value) {
+  // 모양 값 하나가 그 종류(kind)의 그 키의 값인가. 도형의 선 색은 auto·none 이 있고 강조색이 없다.
+  function lookAllowed(key, value, kind) {
     if (key === 'head') return ARROW_HEADS.includes(value)
-    if (key === 'line') return LINE_COLORS.includes(value)
+    if (key === 'line') return (kind === 'shape' ? SHAPE_LINES : LINE_COLORS).includes(value)
     if (key === 'lineWidth') return typeof value === 'number' && LINE_WIDTHS.includes(value)
     if (key === 'lineStyle') return LINE_STYLES.includes(value)
     if (key === 'flip') return typeof value === 'boolean'
+    if (key === 'shape') return SHAPE_KEYS.includes(value)
+    if (key === 'fillAlpha') return Number.isInteger(value) && value >= 0 && value <= 100 && value % FILL_ALPHA_STEP === 0
     return false
   }
+  // 도형 프리셋 키 — 모르는 값이면 사각형.
+  function presetOf(value) {
+    return SHAPE_KEYS.includes(value) ? value : 'rect'
+  }
+  // 도형 모양 조절 값 — 프리셋 preset 의 개수·범위 안의 숫자 목록이면 0.01 단위로 맞춘 것, 아니면 null.
+  function adjOf(raw, preset) {
+    const spec = SHAPE_PRESETS[presetOf(preset)].adj
+    if (!Array.isArray(raw) || raw.length !== spec.length) return null
+    const out = []
+    for (let k = 0; k < spec.length; k += 1) {
+      const value = raw[k]
+      if (typeof value !== 'number' || !Number.isFinite(value)) return null
+      const rounded = Math.round(value * 100) / 100
+      if (rounded < spec[k][0] - 1e-9 || rounded > spec[k][1] + 1e-9) return null
+      out.push(rounded)
+    }
+    return out
+  }
   // 받은 모양 값을 그 종류의 정규 꼴로 — 받는 키의 맞는 값 가운데 처음 값이 아닌 것만 남긴다(모르는 키·틀린 값은 뺀다 —
-  // 파이썬은 거부하지만 편집기는 그릴 수 있는 것만 쥔다). 모양 값이 없는 종류는 빈 값이다.
+  // 파이썬은 거부하지만 편집기는 그릴 수 있는 것만 쥔다). 모양 값이 없는 종류는 빈 값이다. 도형의 모양 조절 값은 프리셋(없으면
+  // 사각형)의 개수·범위에 맞을 때만, 그 프리셋의 처음 값과 모두 같으면 뺀다.
   function cleanLook(raw, kind) {
     const keys = LOOK_KEYS[kind]
     const out = {}
     if (!keys || !raw || typeof raw !== 'object' || Array.isArray(raw)) return out
     const defaults = LOOK_DEFAULTS[kind]
+    const preset = presetOf(raw.shape)
     for (const key of keys) {
       const value = raw[key]
-      if (value === undefined || value === null || !lookAllowed(key, value)) continue
+      if (value === undefined || value === null) continue
+      if (key === 'adj') {
+        const adj = adjOf(value, preset)
+        if (adj && adj.some((v, k) => Math.abs(v - SHAPE_PRESETS[preset].adj[k][2]) > 1e-9)) out.adj = adj
+        continue
+      }
+      if (!lookAllowed(key, value, kind)) continue
       if (key in defaults && defaults[key] === value) continue
       out[key] = value
     }
     return out
+  }
+  // 그릴 도형 프리셋과 모양 조절 값(고른 값, 없으면 그 프리셋의 처음 값).
+  function shapeOf(look) {
+    return presetOf(look ? look.shape : undefined)
+  }
+  function shapeAdj(look) {
+    const preset = shapeOf(look)
+    return adjOf(look ? look.adj : undefined, preset) || SHAPE_PRESETS[preset].adj.map((spec) => spec[2])
+  }
+  // 도형 채우기 색 키 — 모르는 값이면 파랑(파이썬 `shape_fill` 의 처음 값).
+  function shapeFillOf(color) {
+    return SHAPE_FILLS.includes(color) ? color : 'blue'
   }
   // 정규 글(키 차례 JSON) — 바뀜 판정·견주기에 쓴다. 파이썬 `json.dumps(sort_keys=True, separators=(",", ":"))` 와 같다.
   function lookText(look) {
@@ -885,6 +983,167 @@ export default function (component) {
     return ''
   }
   // </mark-look>
+
+  // ---------------------------------------------------------------- 도형 경로·모양 조절 손잡이(순수 함수)
+  // 도형 아홉 프리셋의 그리기 경로(돌리기 전 제자리 lw×lh, y 아래로)와 노란 모양 조절 손잡이(엑셀처럼 — 2026-11-03 사용자 요청)의
+  // 자리·값 되돌림, Shift 모서리 끌기의 가로세로 비율 유지다. 손잡이 자리 → 값(`handleValue`)은 자리(`shapeHandles`)의 거꾸로라
+  // 손잡이를 놓은 자리에서 같은 값이 나온다(돌림·뒤집기는 `placeLocal`·`unplaceLocal` 로 오간다). `tests/test_space_shape_js.py`
+  // 가 `// <mark-look>` 과 함께 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <shape-geometry>
+  const shapeNum = (v) => Math.round(v * 1e4) / 1e4 + 0
+  const polyPath = (pts) => `M ${pts.map(([x, y]) => `${shapeNum(x)} ${shapeNum(y)}`).join(' L ')} Z`
+  // 프리셋 key 의 경로 {d, rule, pts} — rule 은 채우기 규칙(테만 evenodd — 가운데가 빈다), pts 는 꼭짓점·호 끝점(시험이 상자 안인지
+  // 본다). 두께·자리는 모양 조절 값 adj(상자 비율)에서 낸다 — 사각형 모서리 반지름 r = a·min(lw, lh)/2, ㄴ자 세로 팔 a1·lw·가로 팔
+  // a2·lh, ㄷ자 등 a1·lw·위아래 팔 a2·lh, 테 a·min, 삼각형 꼭짓점 x = a·lw, 십자 팔 a·min, 블록 화살표 몸통 a1·lh·머리 길이 a2·lw.
+  function shapePath(key, lw, lh, adj) {
+    const a = Array.isArray(adj) ? adj : []
+    const least = Math.min(lw, lh)
+    if (key === 'ellipse') {
+      const rx = lw / 2
+      const ry = lh / 2
+      return {
+        d: `M 0 ${shapeNum(ry)} A ${shapeNum(rx)} ${shapeNum(ry)} 0 1 0 ${shapeNum(lw)} ${shapeNum(ry)} A ${shapeNum(rx)} ${shapeNum(ry)} 0 1 0 0 ${shapeNum(ry)} Z`,
+        rule: 'nonzero',
+        pts: [[0, ry], [lw, ry], [rx, 0], [rx, lh]],
+      }
+    }
+    if (key === 'lbox') {
+      const t1 = a[0] * lw
+      const t2 = a[1] * lh
+      const pts = [[0, 0], [t1, 0], [t1, lh - t2], [lw, lh - t2], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'cbox') {
+      const t1 = a[0] * lw
+      const t2 = a[1] * lh
+      const pts = [[0, 0], [lw, 0], [lw, t2], [t1, t2], [t1, lh - t2], [lw, lh - t2], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'frame') {
+      const t = a[0] * least
+      const outer = [[0, 0], [lw, 0], [lw, lh], [0, lh]]
+      const inner = [[t, t], [t, lh - t], [lw - t, lh - t], [lw - t, t]]
+      return { d: `${polyPath(outer)} ${polyPath(inner)}`, rule: 'evenodd', pts: [...outer, ...inner] }
+    }
+    if (key === 'triangle') {
+      const pts = [[a[0] * lw, 0], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'diamond') {
+      const pts = [[lw / 2, 0], [lw, lh / 2], [lw / 2, lh], [0, lh / 2]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'cross') {
+      const t = a[0] * least
+      const x0 = (lw - t) / 2
+      const x1 = (lw + t) / 2
+      const y0 = (lh - t) / 2
+      const y1 = (lh + t) / 2
+      const pts = [[x0, 0], [x1, 0], [x1, y0], [lw, y0], [lw, y1], [x1, y1], [x1, lh], [x0, lh], [x0, y1], [0, y1], [0, y0], [x0, y0]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'arrowblock') {
+      const body = a[0] * lh
+      const hl = a[1] * lw
+      const pts = [[0, (lh - body) / 2], [lw - hl, (lh - body) / 2], [lw - hl, 0], [lw, lh / 2], [lw - hl, lh], [lw - hl, (lh + body) / 2], [0, (lh + body) / 2]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    // 사각형(처음 값·모르는 키) — 둥글기가 있으면 네 귀를 반지름 r 의 호로.
+    const r = Math.max(0, Math.min((a[0] || 0) * least / 2, least / 2))
+    if (r <= 1e-9) {
+      const pts = [[0, 0], [lw, 0], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    const n = shapeNum
+    const arc = (x, y) => `A ${n(r)} ${n(r)} 0 0 1 ${n(x)} ${n(y)}`
+    return {
+      d: `M ${n(r)} 0 H ${n(lw - r)} ${arc(lw, r)} V ${n(lh - r)} ${arc(lw - r, lh)} H ${n(r)} ${arc(0, lh - r)} V ${n(r)} ${arc(r, 0)} Z`,
+      rule: 'nonzero',
+      pts: [[r, 0], [lw - r, 0], [lw, r], [lw, lh - r], [lw - r, lh], [r, lh], [0, lh - r], [0, r]],
+      r,
+    }
+  }
+  // 프리셋 key 의 노란 손잡이 [{x, y, axis, index}](제자리 좌표). axis 는 손잡이가 값을 읽는 축('x' 가로 · 'y' 세로).
+  function shapeHandles(key, lw, lh, adj) {
+    const a = Array.isArray(adj) ? adj : []
+    const least = Math.min(lw, lh)
+    if (key === 'rect') return [{ x: (a[0] || 0) * least / 2, y: 0, axis: 'x', index: 0 }]
+    if (key === 'lbox') return [{ x: a[0] * lw, y: 0, axis: 'x', index: 0 }, { x: lw, y: lh - a[1] * lh, axis: 'y', index: 1 }]
+    if (key === 'cbox') return [{ x: a[0] * lw, y: lh / 2, axis: 'x', index: 0 }, { x: lw, y: a[1] * lh, axis: 'y', index: 1 }]
+    if (key === 'frame') return [{ x: a[0] * least, y: a[0] * least, axis: 'y', index: 0 }]
+    if (key === 'triangle') return [{ x: a[0] * lw, y: 0, axis: 'x', index: 0 }]
+    if (key === 'cross') {
+      const t = a[0] * least
+      return [{ x: (lw + t) / 2, y: (lh - t) / 4, axis: 'x', index: 0 }]
+    }
+    if (key === 'arrowblock') {
+      const body = a[0] * lh
+      const hl = a[1] * lw
+      return [{ x: (lw - hl) / 2, y: (lh - body) / 2, axis: 'y', index: 0 }, { x: lw - hl, y: 0, axis: 'x', index: 1 }]
+    }
+    return []
+  }
+  // 손잡이 index 를 제자리 점 (x, y) 에 놓았을 때의 모양 조절 값 — 그 축만 읽어 범위로 묶고 0.01 단위로 맞춘다. 손잡이가 없는
+  // 프리셋·번호면 null.
+  function handleValue(key, index, x, y, lw, lh) {
+    const spec = (SHAPE_PRESETS[key] || {}).adj || []
+    if (!spec[index]) return null
+    const least = Math.min(lw, lh)
+    const ratio = (num, den) => (den > 0 ? num / den : spec[index][2])
+    let v = spec[index][2]
+    if (key === 'rect') v = ratio(x, least / 2)
+    else if (key === 'lbox') v = index === 0 ? ratio(x, lw) : ratio(lh - y, lh)
+    else if (key === 'cbox') v = index === 0 ? ratio(x, lw) : ratio(y, lh)
+    else if (key === 'frame') v = ratio(y, least)
+    else if (key === 'triangle') v = ratio(x, lw)
+    else if (key === 'cross') v = ratio(2 * x - lw, least)
+    else if (key === 'arrowblock') v = index === 0 ? ratio(lh - 2 * y, lh) : ratio(lw - x, lw)
+    if (!Number.isFinite(v)) v = spec[index][2]
+    return Math.min(Math.max(Math.round(v * 100) / 100, spec[index][0]), spec[index][1])
+  }
+  // 화면(SVG — y 아래로)에서 상자 가운데로부터의 자리 (px, py) 를 제자리 좌표로 — `placeLocal` 의 거꾸로(돌림을 풀고 좌우 뒤집기를
+  // 푼다).
+  function unplaceLocal(px, py, lw, lh, rot, flip) {
+    const r = (((rot || 0) % 360) + 360) % 360
+    let dx = px
+    let dy = py
+    if (r === 90) { dx = py; dy = -px }
+    else if (r === 180) { dx = -px; dy = -py }
+    else if (r === 270) { dx = -py; dy = px }
+    if (flip) dx = -dx
+    return { x: dx + lw / 2, y: dy + lh / 2 }
+  }
+  // Shift 를 누른 채 모서리 손잡이로 키운 상자 — 처음 상자 b(데이터 좌표 {x, y, w, h}, Y 위로)의 가로세로 비율을 지키고 끈
+  // 모서리의 맞은편 귀를 붙박는다. 배율은 손이 더 많이 움직인 축(1 에서 더 먼 쪽)을 따르고, 영역(maxW×maxH)을 넘지 않게·가장 짧은
+  // 변이 minS 아래로 줄지 않게 묶은 뒤 눈금(scale)에 맞춘다. r 은 비율 없이 끈 상자(`resizedBox`), dir 은 모서리(nw·ne·sw·se).
+  function keepAspect(b, r, dir, maxW, maxH, minS, scale) {
+    const east = dir.includes('e')
+    const north = dir.includes('n')
+    const ax = east ? b.x : b.x + b.w
+    const ay = north ? b.y : b.y + b.h
+    const kw = r.w / b.w
+    const kh = r.h / b.h
+    let k = Math.abs(kw - 1) >= Math.abs(kh - 1) ? kw : kh
+    k = Math.min(k, (east ? maxW - ax : ax) / b.w, (north ? maxH - ay : ay) / b.h)
+    k = Math.max(k, minS / Math.min(b.w, b.h))
+    const tick = (v) => Math.round(v * scale) / scale + 0
+    const w = tick(b.w * k)
+    const h = tick(b.h * k)
+    return { x: tick(east ? ax : ax - w), y: tick(north ? ay : ay - h), w, h }
+  }
+  // 노란 손잡이 그릴 자리 — 크기 손잡이(centers [{x, y}])와 gap 보다 가까우면 값을 읽는 축(axis 'x'·'y')을 따라 gap 만큼 비킨다. 두
+  // 쪽 가운데 크기 손잡이에서 더 먼 쪽(같으면 상자 가운데 center 쪽)이다. 가깝지 않으면 그 자리 그대로. 끌 때는 잡은 자리에서 손이
+  // 움직인 만큼으로 값을 읽어(`drag.grab`) 비켜 그려도 값이 튀지 않는다 — 둥글기 0 인 사각형의 손잡이가 모서리 손잡이를 덮지 않게.
+  function nudgeHandle(pt, axis, centers, gap, center) {
+    const far = (q) => Math.min(...centers.map((c) => Math.hypot(c.x - q.x, c.y - q.y)))
+    if (!centers.length || far(pt) >= gap) return pt
+    const step = (sign) => (axis === 'x' ? { x: pt.x + sign * gap, y: pt.y } : { x: pt.x, y: pt.y + sign * gap })
+    const inward = (axis === 'x' ? center.x - pt.x : center.y - pt.y) >= 0 ? 1 : -1
+    const near = step(inward)
+    const away = step(-inward)
+    return far(away) > far(near) + 1e-9 ? away : near
+  }
+  // </shape-geometry>
 
   // ---------------------------------------------------------------- 「필요 단축」 배지 자리(순수 함수)
   // `tests/test_space_short_badges_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름은 화면 px 상수 넷만 쓴다.
@@ -2077,8 +2336,8 @@ export default function (component) {
     const lh = rot % 180 ? item.w : item.h
     const cx = item.x + item.w / 2
     const cy = top + item.h / 2
-    // 베이는 좌우 뒤집기(look.flip)를 돌리기 앞에 건다 — 가운데 축 거울. 글자는 뒤집지도 돌리지도 않는다.
-    const flip = item.kind === 'bay' && lookValue(item.look, 'bay', 'flip') === true
+    // 베이·도형은 좌우 뒤집기(look.flip)를 돌리기 앞에 건다 — 가운데 축 거울. 글자는 뒤집지도 돌리지도 않는다.
+    const flip = (item.kind === 'bay' || item.kind === 'shape') && lookValue(item.look, item.kind, 'flip') === true
     const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot})${flip ? ' scale(-1 1)' : ''} translate(${-lw / 2} ${-lh / 2})` })
     const upp = unitsPerPx()
     // 이름표 글자는 기준 크기(고른 크기, 없으면 LABEL_PX)에 배율 글자 배율을 곱한 화면 px 다 — 확대하면 커지고 축소하면
@@ -2187,7 +2446,39 @@ export default function (component) {
       const node = text(number, cx + spot.x, cy + spot.y, size)
       node.classList.add('is-bay')
       node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
-      group.__bayText = node
+      group.__flatText = node
+    } else if (item.kind === 'shape') {
+      // 도형(엑셀 도형처럼): 프리셋 경로(`shapePath`)를 채우기(색 · 불투명 look.fillAlpha — 0 은 채우기 없음)와 선(색 · 화면 px 굵기 ·
+      // 모양)으로 그리고, 빗금을 켜면 같은 경로에 영역 빗금을 얹는다. 잡기는 경로 그대로(`sle-shape-hit` — 채우기·빗금이 없으면 테두리
+      // 12px 띠만, 빈 안쪽을 끌면 고르기 사각형)이고 상자의 빈 귀는 잡히지 않는다. 이름표는 가운데에 돌리지 않고 가로로 — 자동이면
+      // 상자에 맞추되 고를 수 있는 가장 큰 크기(24)의 배율 크기까지, 화면 TEXT_MIN_PX 아래면 숨긴다.
+      const preset = shapeOf(item.look)
+      const adj = shapeAdj(item.look)
+      const geo = shapePath(preset, lw, lh, adj)
+      const alpha = lookValue(item.look, 'shape', 'fillAlpha')
+      const body = el('path', { class: 'sle-shape-body', d: geo.d, 'fill-rule': geo.rule })
+      body.style.fill = shapeFillInk(shapeFillOf(item.color))
+      body.style.fillOpacity = String(alpha / 100)
+      const stroke = shapeLineInk(lookValue(item.look, 'shape', 'line'), shapeFillOf(item.color))
+      if (stroke) {
+        const width = lookValue(item.look, 'shape', 'lineWidth')
+        body.style.stroke = stroke
+        body.style.strokeWidth = String(width)
+        const dash = lineDash(lookValue(item.look, 'shape', 'lineStyle'), width)
+        if (dash) body.style.strokeDasharray = dash
+      } else body.style.stroke = 'none'
+      inner.append(body)
+      if (item.hatch) inner.append(el('path', { class: 'sle-shape-hatch', d: geo.d, 'fill-rule': geo.rule, fill: 'url(#sle-hatch)' }))
+      inner.append(el('path', { class: alpha > 0 || item.hatch ? 'sle-shape-hit' : 'sle-shape-hit is-hollow', d: geo.d, 'fill-rule': geo.rule }))
+      if (item.label) {
+        const size = item.fontSize ? fs
+          : Math.min(item.h * 0.45, (item.w * 0.9) / Math.max(emWidth(item.label), 1), Math.max(...FONT_SIZES) * ts * upp)
+        const node = text(item.label, cx, cy, size)
+        node.classList.add('is-grab')
+        node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
+        group.__flatText = node
+      }
+      drawAdjusts(group, item, preset, adj, { lw, lh, rot, flip, cx, cy, upp })
     } else if (item.kind === 'block') {
       // 층 블록: 면(고른 색 또는 Space 기본 면)·테두리·가운데 글자 줄. 글자는 블록에 맞춰 줄이고 화면에서 13px 를
       // 넘지 않는다. 줄이 다 안 들어가면 이름 줄만, 그것도 6px 아래면 숨긴다(풍선·초점 이름에는 남는다).
@@ -2225,9 +2516,10 @@ export default function (component) {
       }
     }
     shape.append(inner)
-    if (group.__bayText) {
-      shape.append(group.__bayText)
-      group.__bayText = null
+    // 돌리지 않는 가운데 글(베이 「B<번호>」·도형 이름표) — 돌리는 그룹 밖에 가로로.
+    if (group.__flatText) {
+      shape.append(group.__flatText)
+      group.__flatText = null
     }
     if (item.kind === 'column' && item.label && caption.shown) shape.append(text(item.label, cx, cy, fs))
     // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
@@ -2255,6 +2547,38 @@ export default function (component) {
       return
     }
     if (tip) tip.textContent = markTitle(item)
+  }
+
+  // 도형의 노란 모양 조절 손잡이(`sle-adjust` — 화면 HANDLE_PX 동그라미, 하나만 고른 도형에서만 보인다 — CSS). 제자리 손잡이
+  // 자리(`shapeHandles`)를 뒤집기·돌림으로 화면 자리에 옮기고(`placeLocal` — 참 자리는 data-tx·ty), 크기 손잡이와 겹치면 비켜
+  // 그린다(`nudgeHandle`). 커서는 돌린 뒤 값을 읽는 축이다.
+  function drawAdjusts(group, item, preset, adj, at) {
+    const box = group.querySelector('.sle-adjusts')
+    if (!box) return
+    const radius = (HANDLE_PX / 2) * at.upp
+    const hs = HANDLE_PX * at.upp
+    const top = at.cy - item.h / 2
+    const centers = []
+    for (const [hx, hy] of [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]]) {
+      // 작은 상자에서 감춘 변 가운데 손잡이(`positionHandles`)는 비킬 까닭이 없다.
+      if ((hx === 0.5 && item.w < hs * 3) || (hy === 0.5 && item.h < hs * 3)) continue
+      centers.push({ x: item.x + item.w * hx, y: top + item.h * hy })
+    }
+    box.replaceChildren(...shapeHandles(preset, at.lw, at.lh, adj).map((handle) => {
+      const spot = placeLocal(handle.x, handle.y, at.lw, at.lh, at.rot, at.flip)
+      const across = (at.rot || 0) % 180 ? (handle.axis === 'x' ? 'y' : 'x') : handle.axis
+      const truth = { x: at.cx + spot.x, y: at.cy + spot.y }
+      const drawn = nudgeHandle(truth, across, centers, hs * 1.3, { x: at.cx, y: at.cy })
+      const node = el('circle', { class: 'sle-adjust', cx: drawn.x, cy: drawn.y, r: radius })
+      node.dataset.index = String(handle.index)
+      node.dataset.tx = String(truth.x)
+      node.dataset.ty = String(truth.y)
+      node.style.cursor = across === 'x' ? 'ew-resize' : 'ns-resize'
+      const tip = el('title')
+      tip.textContent = `모양 조절 — ${SHAPE_PRESETS[preset].words[handle.index]}`
+      node.append(tip)
+      return node
+    }))
   }
 
   function appendHandles(group) {
@@ -2359,6 +2683,8 @@ export default function (component) {
       group.setAttribute('role', 'button')
     }
     appendHandles(group)
+    // 도형의 노란 모양 조절 손잡이는 크기 손잡이 위에 깐다(겹치면 이것이 잡힌다). 편집에만 있다.
+    if (item.kind === 'shape' && !VIEW) group.append(el('g', { class: 'sle-adjusts' }))
     position(group, item)
     // 영역은 이름표로도 잡는다(안쪽은 비워 둔다) — 이름표만 눌림을 받게 한다.
     S.groups.set(item.id, group)
@@ -2539,6 +2865,8 @@ export default function (component) {
     else focus(trayBox.hidden ? svg : traySearch)
   }
 
+  // 호기 아래 층(`sle-zones`)에 그리는 요소 — 영역과 도형(방·벽을 그려도 호기를 덮지 않는다).
+  const onZoneLayer = (item) => item.kind === 'zone' || item.kind === 'shape'
   function renderItems() {
     // 서랍 목록을 비웠다 다시 채우는 동안 목록 높이가 줄어 브라우저가 서랍 스크롤을 맨 위로 잘라 낸다. 놓은 뒤에도
     // 보던 자리에서 이어 놓게 그 자리를 기억했다 되돌린다(2026-10-08 사용자 요청).
@@ -2562,7 +2890,7 @@ export default function (component) {
         const group = buildGroup(item)
         group.classList.toggle('is-module', (counts.get(groupKeyOf(item)) || 0) >= 2)
         layer.append(group)
-      } else (item.kind === 'zone' ? zonesLayer : marksLayer).append(buildMark(item))
+      } else (onZoneLayer(item) ? zonesLayer : marksLayer).append(buildMark(item))
     }
     let trayN = 0
     for (const entry of trayEntries(trayKeep())) {
@@ -2822,9 +3150,26 @@ export default function (component) {
         x: box.minX - GROUP_PAD, y: H() - box.maxT - GROUP_PAD,
         width: box.maxR - box.minX + GROUP_PAD * 2, height: box.maxT - box.minY + GROUP_PAD * 2,
       }))
+    } else if (!VIEW && chosen.length === 1 && isMark(chosen[0]) && onZoneLayer(chosen[0])) {
+      proxyHandles(chosen[0])
     }
     const rect = S.drag && S.drag.mode === 'marquee' ? S.drag.rect : null
     if (rect) overlay.append(el('rect', { class: 'sle-marquee', x: rect.x0, y: rect.t0, width: rect.x1 - rect.x0, height: rect.t1 - rect.t0 }))
+  }
+
+  // 호기 아래 층(영역·도형)에서 하나만 고른 것의 손잡이(크기 여덟 · 도형 노란 모양 조절)를 맨 위 층(`sle-overlay`)에 다시 세운다 —
+  // 호기가 덮은 귀·변의 손잡이도 잡힌다(엑셀처럼 고른 것의 손잡이는 늘 위). 제 그룹 안의 손잡이는 CSS 가 감추고, 자리·크기·풍선은
+  // 그 손잡이(`positionHandles`·`drawAdjusts`)를 그대로 옮긴다. 누르면 data-for 의 요소 손잡이를 누른 것과 같다(`onpointerdown`).
+  function proxyHandles(item) {
+    const group = S.groups.get(item.id)
+    if (!group) return
+    for (const handle of group.querySelectorAll('.sle-handle, .sle-adjust')) {
+      if (handle.style.display === 'none') continue
+      const proxy = handle.cloneNode(true)
+      proxy.classList.add(handle.classList.contains('sle-adjust') ? 'sle-proxy-adjust' : 'sle-proxy-handle')
+      proxy.dataset.for = item.id
+      overlay.append(proxy)
+    }
   }
 
   function markSelection() {
@@ -3130,6 +3475,7 @@ export default function (component) {
     }
     blockProps.hidden = !mark || mark.kind !== 'block'
     syncLineProps(chosen)
+    syncShapeProps(chosen)
     if (mark) {
       // 베이는 이름 칸이 「번호」 이고 칸 앞에 고정 글 「B」 가 선다(그릴 때 늘 붙는다 — 칸에는 번호만).
       const bay = mark.kind === 'bay'
@@ -3147,6 +3493,10 @@ export default function (component) {
       markHatch.checked = Boolean(mark.hatch)
       markKeepOut.checked = Boolean(mark.keepOut)
       markRotate.hidden = !MARK_KINDS[mark.kind].rotatable
+      // 도형은 비대칭 꼴(ㄴ자·ㄷ자·삼각형·블록 화살표)만 돌린다 — 대칭 꼴은 단추가 꺼진다.
+      const still = mark.kind === 'shape' && !SHAPE_PRESETS[shapeOf(mark.look)].turn
+      markRotate.disabled = still
+      setAttr(markRotate, 'title', still ? '대칭 도형은 돌려도 같습니다 — 폭·높이로 바꿉니다' : '가운데를 축으로 90° 돌립니다')
       if (mark.kind === 'block') {
         blockLink.value = mark.link || ''
         blockColor.value = mark.color || ''
@@ -3254,17 +3604,139 @@ export default function (component) {
     drawSelectionBox()
     updateStatus()
   }
-  // 고른 베이를 뒤집는다 — 좌우(h)는 look.flip 만, 상하(v)는 180° 돌림 + 좌우 뒤집기(같은 상자). 되돌리기 한 번.
-  function flipBays(axis) {
-    const bays = selectedItems().filter((m) => isMark(m) && m.kind === 'bay')
-    if (!bays.length) return
-    const ops = bays.map((m) => ({ op: 'set', id: m.id, before: snapshot(m) }))
-    for (const m of bays) {
-      m.look = cleanLook({ ...(m.look || {}), flip: lookValue(m.look, 'bay', 'flip') !== true }, 'bay')
+  // 고른 것 가운데 which 에 맞는 것(베이 · 비대칭 도형)을 뒤집는다 — 좌우(h)는 look.flip 만, 상하(v)는 180° 돌림 + 좌우 뒤집기(같은
+  // 상자). 되돌리기 한 번.
+  const isBay = (m) => isMark(m) && m.kind === 'bay'
+  const isShape = (m) => isMark(m) && m.kind === 'shape'
+  const turnsShape = (m) => isShape(m) && SHAPE_PRESETS[shapeOf(m.look)].turn
+  function flipMarks(axis, which) {
+    const list = selectedItems().filter(which)
+    if (!list.length) return
+    const ops = list.map((m) => ({ op: 'set', id: m.id, before: snapshot(m) }))
+    for (const m of list) {
+      m.look = cleanLook({ ...(m.look || {}), flip: lookValue(m.look, m.kind, 'flip') !== true }, m.kind)
       if (axis === 'v') m.rot = ((m.rot || 0) + 180) % 360
     }
     pushUndo(ops)
-    for (const m of bays) position(S.groups.get(m.id), m)
+    for (const m of list) position(S.groups.get(m.id), m)
+    drawSelectionBox()
+    updateStatus()
+  }
+
+  // ---------------------------------------------------------------- 도형 서식(선택 칸)
+  // 고른 것 가운데 도형이 있으면 선택 칸에 「도형」(바꾸기 갤러리)·모양 조절(한 프리셋일 때 — 숫자 %)·채우기 색·투명도(엑셀처럼 100 −
+  // 불투명)·선 색·굵기·선 모양·빗금·뒤집기가 선다(2026-11-03 사용자 요청). 여럿이면 모두에 걸고 되돌리기 한 번이다. 값이 서로
+  // 다르면 「여러 값」.
+  const SHAPE_FILL_NAMES = { ...ZONE_COLOR_NAMES, ink: '진하게', surface: '바탕' }
+  const SHAPE_LINE_NAMES = { auto: '자동', none: '없음', ink: '진하게', ...ZONE_COLOR_NAMES }
+  const sharedOf = (list, read) => {
+    const values = new Set(list.map(read))
+    return values.size === 1 ? [...values][0] : null
+  }
+  // 갤러리·단추의 작은 도형 그림(16×16, 처음 모양 조절 값).
+  function drawShapeIcon(svgNode, key) {
+    const geo = shapePath(key, 14, 12, SHAPE_PRESETS[key].adj.map((spec) => spec[2]))
+    svgNode.replaceChildren(el('path', { class: 'ico-shape', d: geo.d, 'fill-rule': geo.rule, transform: 'translate(1 2)' }))
+  }
+  function shapeCells(onCell) {
+    return SHAPE_KEYS.map((key) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'sle-shape-cell'
+      button.dataset.shape = key
+      button.title = SHAPE_PRESETS[key].name
+      const icon = el('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' })
+      drawShapeIcon(icon, key)
+      const word = document.createElement('span')
+      word.textContent = SHAPE_PRESETS[key].name
+      button.append(icon, word)
+      onCell(button, key)
+      return button
+    })
+  }
+  function fillShapeOptions() {
+    if (shapeFill.options.length) return
+    const mixed = () => {
+      const option = new Option('여러 값', MIXED)
+      option.disabled = true
+      option.hidden = true
+      return option
+    }
+    shapeFill.replaceChildren(mixed(), ...SHAPE_FILLS.map((key) => new Option(SHAPE_FILL_NAMES[key] || key, key)))
+    shapeLine.replaceChildren(mixed(), ...SHAPE_LINES.map((key) => new Option(SHAPE_LINE_NAMES[key] || key, key)))
+    shapeWidth.replaceChildren(mixed(), ...LINE_WIDTHS.map((w) => new Option(`${w}px`, String(w))))
+    shapeStyle.prepend(mixed())
+    shapeGallery.replaceChildren(...shapeCells((button, key) => {
+      button.setAttribute('aria-label', `도형 바꾸기 — ${SHAPE_PRESETS[key].name}`)
+    }))
+  }
+  function closeShapeGallery() {
+    shapeGallery.hidden = true
+    shapeSwap.setAttribute('aria-expanded', 'false')
+  }
+  function syncShapeProps(chosen) {
+    const shapes = chosen.filter(isShape)
+    shapeProps.hidden = !shapes.length
+    if (!shapes.length) { closeShapeGallery(); return }
+    fillShapeOptions()
+    const preset = sharedOf(shapes, (m) => shapeOf(m.look))
+    drawShapeIcon(shapeNow, preset || 'rect')
+    setText(shapeWord, preset ? SHAPE_PRESETS[preset].name : '여러 값')
+    setAttr(shapeSwap, 'aria-label', `도형 — ${preset ? SHAPE_PRESETS[preset].name : '여러 값'} · 눌러서 바꾸기`)
+    for (const cell of shapeGallery.children) setAttr(cell, 'aria-pressed', String(cell.dataset.shape === preset))
+    // 모양 조절 — 고른 도형이 모두 같은 프리셋일 때만(값의 뜻이 프리셋마다 다르다).
+    const specs = preset ? SHAPE_PRESETS[preset].adj : []
+    shapeAdjRows.forEach((row, k) => {
+      row.hidden = k >= specs.length
+      if (row.hidden) return
+      setText(row.querySelector('.sle-shape-adj-word'), SHAPE_PRESETS[preset].words[k])
+      const input = shapeAdjInputs[k]
+      input.min = String(Math.round(specs[k][0] * 100))
+      input.max = String(Math.round(specs[k][1] * 100))
+      if (isFocused(input)) return
+      const value = sharedOf(shapes, (m) => shapeAdj(m.look)[k])
+      input.value = value === null ? '' : String(Math.round(value * 100))
+      input.placeholder = value === null ? '여러 값' : ''
+    })
+    const fill = sharedOf(shapes, (m) => shapeFillOf(m.color))
+    shapeFill.value = fill === null ? MIXED : fill
+    if (!isFocused(shapeClear)) {
+      const alpha = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'fillAlpha'))
+      shapeClear.value = alpha === null ? '' : String(100 - alpha)
+      shapeClear.placeholder = alpha === null ? '여러 값' : ''
+    }
+    const line = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'line'))
+    shapeLine.value = line === null ? MIXED : line
+    const width = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'lineWidth'))
+    shapeWidth.value = width === null ? MIXED : String(width)
+    const style = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'lineStyle'))
+    shapeStyle.value = style === null ? MIXED : style
+    const hatch = sharedOf(shapes, (m) => Boolean(m.hatch))
+    shapeHatch.checked = hatch === true
+    shapeHatch.indeterminate = hatch === null
+    const turns = shapes.some(turnsShape)
+    for (const button of shapeFlips) button.disabled = !turns
+  }
+  // 고른 도형 모두의 모양 값(patch — 값 null 은 처음 값으로, 함수면 도형마다)과 요소 칸(fields — 채우기 색·빗금)을 바꾼다. 바뀐 것이
+  // 있으면 되돌리기 한 번.
+  function setShapes(patch, fields = {}) {
+    const ops = []
+    for (const m of selectedItems().filter(isShape)) {
+      const merged = { ...(m.look || {}) }
+      for (const [key, value] of Object.entries(typeof patch === 'function' ? patch(m) : patch)) {
+        if (value === null) delete merged[key]
+        else merged[key] = value
+      }
+      const next = cleanLook(merged, 'shape')
+      const moved = Object.entries(fields).some(([key, value]) => m[key] !== value)
+      if (lookText(next) === lookText(m.look) && !moved) continue
+      ops.push({ op: 'set', id: m.id, before: snapshot(m) })
+      m.look = next
+      Object.assign(m, fields)
+    }
+    if (!ops.length) { syncInspector(); return }
+    pushUndo(ops)
+    for (const op of ops) position(S.groups.get(op.id), S.items.get(op.id))
     drawSelectionBox()
     updateStatus()
   }
@@ -3351,7 +3823,7 @@ export default function (component) {
       const sized = sizeNote(expanded(chosen))
       if (sized) add(sized)
     } else if (item && isMark(item)) {
-      add('선택 ', `${MARK_KINDS[item.kind].name}${item.kind === 'bay' ? ` ${bayCaption(item)}` : item.label ? ` ${item.label}` : ''}`)
+      add('선택 ', `${markKindName(item)}${item.kind === 'bay' ? ` ${bayCaption(item)}` : item.label ? ` ${item.label}` : ''}`)
       add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}${item.rot ? ` · ${item.rot}°` : ''}`)
     } else if (item && moduleMembers(item)) {
       const mods = moduleMembers(item)
@@ -3759,10 +4231,12 @@ export default function (component) {
   const linkedFloors = () => [...S.items.values()].filter((m) => m.kind === 'block').map((m) => m.link)
   // 도면 요소를 넣는다. 자리를 주지 않으면(누르기) 지금 보이는 화면의 가운데, 끌어 놓았으면 놓은 점이 가운데이고 격자·정렬선에
   // 맞춘다(`dropSpot`, free 면 정렬선에 붙이지 않는다).
-  function addMark(kind, at, free) {
+  function addMark(kind, at, free, preset) {
     const spec = MARK_KINDS[kind]
     if (!spec) return
-    const [w, h] = spec.size
+    // 도형은 프리셋마다 넣는 크기가 다르다(`SHAPE_PRESETS`).
+    const shape = kind === 'shape' ? presetOf(preset) : null
+    const [w, h] = shape ? SHAPE_PRESETS[shape].size : spec.size
     S.seq += 1
     const id = `MK-${Date.now().toString(36)}-${S.seq}`
     const center = at || { x: S.view.x + viewW() / 2, top: S.view.top + viewH() / 2 }
@@ -3772,8 +4246,8 @@ export default function (component) {
     const item = {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: spot.x, y: spot.y, w, h, rot: 0,
-      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
-      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0], look: {},
+      color: kind === 'zone' || shape ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
+      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0], look: shape ? cleanLook({ shape }, 'shape') : {},
     }
     fit(item)
     S.items.set(id, item)
@@ -4179,6 +4653,22 @@ export default function (component) {
     updateStatus()
   }
 
+  // 노란 손잡이 index 를 화면 점 p({x, top})에 끌었을 때 도형 item 의 새 모양 값 — 같은 값이면 null.
+  function adjustedLook(item, index, p) {
+    const rot = item.rot || 0
+    const lw = rot % 180 ? item.h : item.w
+    const lh = rot % 180 ? item.w : item.h
+    const flip = lookValue(item.look, 'shape', 'flip') === true
+    const local = unplaceLocal(p.x - (item.x + item.w / 2), p.top - (svgTop(item) + item.h / 2), lw, lh, rot, flip)
+    const preset = shapeOf(item.look)
+    const value = handleValue(preset, index, local.x, local.y, lw, lh)
+    if (value === null) return null
+    const adj = shapeAdj(item.look).slice()
+    adj[index] = value
+    const next = cleanLook({ ...(item.look || {}), adj }, 'shape')
+    return lookText(next) === lookText(item.look) ? null : next
+  }
+
   function cancelDrag() {
     const drag = S.drag
     if (!drag) return
@@ -4244,9 +4734,11 @@ export default function (component) {
     link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
     fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || ''),
     borderStyle: pickOr(raw.borderStyle, BORDER_STYLES), labelAlign: pickOr(raw.labelAlign, LABEL_ALIGNS),
-    // 모양 값(동선·베이의 머리 크기·선·뒤집기)은 처음 값이 아닌 것만 쥔다. 베이 이름표는 번호다(앞 B 를 뗀다).
+    // 모양 값(동선·베이의 머리 크기·선·뒤집기, 도형의 프리셋·모양 조절·채우기·선)은 처음 값이 아닌 것만 쥔다. 베이 이름표는
+    // 번호다(앞 B 를 뗀다). 도형의 채우기 색은 모르는 값이면 파랑이다.
     look: cleanLook(raw.look, String(raw.kind)),
     ...(String(raw.kind) === 'bay' ? { label: bayNumber(raw.label) } : {}),
+    ...(String(raw.kind) === 'shape' ? { color: shapeFillOf(raw.color) } : {}),
   })
 
   function initFromData() {
@@ -4467,7 +4959,9 @@ export default function (component) {
       svg.setPointerCapture(event.pointerId)
       return
     }
-    const group = event.target.closest ? event.target.closest('.sle-item') : null
+    // 맨 위 층에 다시 세운 손잡이(`proxyHandles`)는 그 요소의 손잡이다.
+    const proxyFor = event.target.dataset ? event.target.dataset.for : undefined
+    const group = proxyFor ? S.groups.get(proxyFor) || null : (event.target.closest ? event.target.closest('.sle-item') : null)
     const additive = event.shiftKey || event.ctrlKey || event.metaKey
     if (!group && !additive && pickedRangeAt(picked, p)) {
       // 고른 모듈 묶음의 범위 안 빈 칸(모듈 셋·다섯 묶음의 남는 칸, 숨은 모듈 칸)도 묶음이다 — 누르면 그 묶음을 끈다.
@@ -4488,7 +4982,10 @@ export default function (component) {
     }
     const item = S.items.get(group.dataset.id)
     if (!item) return
-    if (additive) {
+    // 손잡이(크기·도형 모양 조절)는 고른 것 하나에만 서고, Shift 를 누른 채 잡아도 끈다 — 도형 모서리의 Shift 는 가로세로 비율
+    // 유지다(엑셀처럼).
+    const grip = event.target.classList && (event.target.classList.contains('sle-handle') || event.target.classList.contains('sle-adjust'))
+    if (additive && !grip) {
       // Shift/Ctrl+클릭은 고른 것에 더하거나 뺀다(끌지 않는다).
       toggleSelected(item)
       return
@@ -4496,6 +4993,19 @@ export default function (component) {
     const chosen = selectedItems()
     const inSelection = expanded(chosen).some((m) => m.id === item.id)
     const onlyThis = chosen.length === 1 && S.selected === item.id
+    if (onlyThis && item.kind === 'shape' && event.target.classList.contains('sle-adjust')) {
+      // 도형 하나를 고른 채 노란 손잡이를 잡았다 — 모양 조절 값을 끈다(놓을 때 바뀌었으면 되돌리기 한 번).
+      // 잡은 자리와 손잡이 참 자리의 차이(grab)를 지켜 끈다 — 비켜 그린 손잡이·한가운데가 아닌 곳을 잡아도 값이 튀지 않는다.
+      const tx = Number(event.target.dataset.tx)
+      const ty = Number(event.target.dataset.ty)
+      S.drag = {
+        ...start, id: item.id, mode: 'adjust', index: Number(event.target.dataset.index) || 0, ids: [item.id],
+        befores: new Map([[item.id, snapshot(item)]]), loose: [], groups: [], box: null, collapse: false,
+        grab: { x: Number.isFinite(tx) ? tx - p.x : 0, top: Number.isFinite(ty) ? ty - p.top : 0 },
+      }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
     if (!inSelection) select(item.id)
     else if (S.selection.has(item.id)) { S.selected = item.id; markSelection(); updateStatus() }
     const dir = event.target.classList.contains('sle-handle') ? event.target.dataset.dir : null
@@ -4561,6 +5071,19 @@ export default function (component) {
       updateStatus()
       return
     }
+    if (drag.mode === 'adjust') {
+      // 노란 손잡이 끌기 — 포인터를 도형 제자리 좌표로 되돌려 그 손잡이의 값을 낸다(격자·정렬선에 붙이지 않는다).
+      drag.moved = true
+      const item = S.items.get(drag.id)
+      const next = item ? adjustedLook(item, drag.index, { x: p.x + drag.grab.x, top: p.top + drag.grab.top }) : null
+      if (next) {
+        item.look = next
+        position(S.groups.get(item.id), item)
+        drawSelectionBox()
+        syncInspector()
+      }
+      return
+    }
     // 이동량은 격자에 맞추되, 정렬선에 닿는 축은 그 선에 붙인 이동량이 이긴다(Alt 를 누른 채면 붙이지 않는다).
     const aligned = alignDrag(drag, p.x - drag.startX, p.top - drag.startTop, event.altKey)
     const dx = aligned.dx ?? snapDelta(p.x - drag.startX)
@@ -4593,7 +5116,14 @@ export default function (component) {
         for (const m of g.mods) m.sizeGuessed = false
       }
     } else {
-      resizeTo(S.items.get(drag.id), drag.befores.get(drag.id), drag.dir, dx, dTop)
+      const item = S.items.get(drag.id)
+      const before = drag.befores.get(drag.id)
+      resizeTo(item, before, drag.dir, dx, dTop)
+      // 도형의 모서리 손잡이를 Shift 를 누른 채 끌면 가로세로 비율을 지킨다(원은 원으로 — 엑셀처럼).
+      if (event.shiftKey && item.kind === 'shape' && drag.dir.length === 2) {
+        Object.assign(item, keepAspect(before, item, drag.dir, W(), H(), minSize(), SCALE))
+        fit(item)
+      }
     }
     // 숨은 모듈은 그리지 않는다.
     const dragged = drag.ids.map(itemOf).filter((m) => !m.ghost)
@@ -4637,6 +5167,13 @@ export default function (component) {
       // 끌지 않고 빈 곳을 누르기만 했으면 선택을 푼다(Shift/Ctrl 이면 그대로 둔다).
       if (!drag.moved && !drag.additive) clearSelection()
       markSelection()
+      updateStatus()
+      return
+    }
+    if (drag.mode === 'adjust') {
+      const before = drag.befores.get(drag.id)
+      const item = S.items.get(drag.id)
+      if (item && lookText(before.look) !== lookText(item.look)) pushUndo([{ op: 'set', id: item.id, before }])
       updateStatus()
       return
     }
@@ -4918,7 +5455,69 @@ export default function (component) {
   lineColor.onchange = () => { if (lineColor.value !== MIXED) setLooks({ line: lineColor.value }) }
   lineWidth.onchange = () => { if (lineWidth.value !== MIXED) setLooks({ lineWidth: lineWidth.value === '' ? null : Number(lineWidth.value) }) }
   lineStyle.onchange = () => { if (lineStyle.value !== MIXED) setLooks({ lineStyle: lineStyle.value }) }
-  for (const button of host.querySelectorAll('.sle-bay-flip')) button.onclick = () => flipBays(button.dataset.flip)
+  for (const button of host.querySelectorAll('.sle-bay-flip')) button.onclick = () => flipMarks(button.dataset.flip, isBay)
+  for (const button of shapeFlips) button.onclick = () => flipMarks(button.dataset.flip, turnsShape)
+  shapeSwap.onclick = () => {
+    const open = shapeGallery.hidden
+    shapeGallery.hidden = !open
+    shapeSwap.setAttribute('aria-expanded', String(open))
+    if (open) (shapeGallery.querySelector('[aria-pressed="true"]') || shapeGallery.firstElementChild)?.focus()
+  }
+  // 바꾸기 갤러리 칸은 한 번만 만들어 두므로 누르기는 회차마다 다시 다는 위임이다(지난 회차의 닫힘을 쥐지 않게).
+  shapeGallery.onclick = (event) => {
+    const cell = event.target.closest('.sle-shape-cell')
+    if (!cell) return
+    closeShapeGallery()
+    setShapes({ shape: cell.dataset.shape, adj: null })
+    shapeSwap.focus()
+  }
+  shapeGallery.onkeydown = (event) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeShapeGallery()
+    shapeSwap.focus()
+  }
+  shapeAdjInputs.forEach((input, k) => {
+    input.onchange = () => {
+      const value = Number(input.value)
+      if (input.value === '' || !Number.isFinite(value)) { syncInspector(); return }
+      setShapes((m) => {
+        const adj = shapeAdj(m.look).slice()
+        const spec = SHAPE_PRESETS[shapeOf(m.look)].adj[k]
+        if (!spec) return {}
+        adj[k] = Math.min(Math.max(Math.round(value) / 100, spec[0]), spec[1])
+        return { adj }
+      })
+    }
+    input.onkeydown = (event) => { if (event.key === 'Enter') input.blur() }
+  })
+  shapeFill.onchange = () => { if (shapeFill.value !== MIXED) setShapes({}, { color: shapeFill.value }) }
+  // 투명도는 엑셀처럼 「0% 불투명 · 100% 채우기 없음」 이다 — 저장 값은 불투명도(look.fillAlpha = 100 − 투명도, 5 단위).
+  shapeClear.onchange = () => {
+    const value = Number(shapeClear.value)
+    if (shapeClear.value === '' || !Number.isFinite(value)) { syncInspector(); return }
+    const clear = Math.min(Math.max(Math.round(value / FILL_ALPHA_STEP) * FILL_ALPHA_STEP, 0), 100)
+    setShapes({ fillAlpha: 100 - clear })
+  }
+  shapeClear.onkeydown = (event) => { if (event.key === 'Enter') shapeClear.blur() }
+  shapeLine.onchange = () => { if (shapeLine.value !== MIXED) setShapes({ line: shapeLine.value }) }
+  shapeWidth.onchange = () => { if (shapeWidth.value !== MIXED) setShapes({ lineWidth: Number(shapeWidth.value) }) }
+  shapeStyle.onchange = () => { if (shapeStyle.value !== MIXED) setShapes({ lineStyle: shapeStyle.value }) }
+  shapeHatch.onchange = () => setShapes({}, { hatch: shapeHatch.checked })
+  // 도면 요소 칸 「도형 ▾」 — 펼친 갤러리의 칸을 누르면 보이는 화면 가운데에, 끌면 놓은 자리에 그 프리셋을 넣는다(크기는 프리셋마다).
+  // 키보드(Enter·Space 의 click)로도 넣는다.
+  shapeToggle.onclick = () => {
+    const open = shapePalette.hidden
+    shapePalette.hidden = !open
+    shapeToggle.setAttribute('aria-expanded', String(open))
+  }
+  shapePalette.replaceChildren(...shapeCells((button, key) => {
+    const [w, h] = SHAPE_PRESETS[key].size
+    button.title = `${SHAPE_PRESETS[key].name} — 눌러서 넣거나 도면으로 끌어 놓기`
+    button.onpointerdown = (event) => ghostDrag(event, `도형 · ${SHAPE_PRESETS[key].name}`, (p, free) => addMark('shape', p, free, key), () => addMark('shape', null, false, key), () => ({ w, h }))
+    button.onclick = (event) => { if (event.detail === 0) addMark('shape', null, false, key) }
+  }))
   blockLink.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block' && blockLink.value) setMarkProps(mark, { link: blockLink.value }) }
   blockColor.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block') setMarkProps(mark, { color: blockColor.value }) }
   blockOpen.onclick = () => openFloor(selectedMark(), true)

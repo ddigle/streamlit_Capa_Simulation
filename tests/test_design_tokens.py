@@ -692,6 +692,27 @@ def test_space_unit_rings_stand_out_from_the_canvas() -> None:
     assert dark["SPACE_RING_EXIT_OUTLINE"] == dark["SPACE_CANVAS"]
 
 
+def test_the_yellow_shape_adjust_handle_reads_on_the_canvas_in_both_themes() -> None:
+    """도형의 노란 모양 조절 손잡이(`SPACE_ADJUST`, 테는 도면 글자색 `SPACE_TEXT`)는 비텍스트 대비 —
+    노랑이 캔버스와 3:1 이상이거나, 아니면 테가 캔버스와·노랑이 테와 3:1 이상이다(밝은 캔버스 위
+    노랑은 혼자 모자라 테가 모양을 그린다). 크기 손잡이(강조색)·정렬선(자홍)과 색이 갈린다."""
+    weak: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        canvas, fill, ring = palette["SPACE_CANVAS"], palette["SPACE_ADJUST"], palette["SPACE_TEXT"]
+        alone = contrast_ratio(fill, canvas) >= 3
+        ringed = contrast_ratio(ring, canvas) >= 3 and contrast_ratio(fill, ring) >= 3
+        if not (alone or ringed):
+            weak.append(f"{mode}.SPACE_ADJUST {fill} ring {ring} on {canvas}")
+        for other in ("ACCENT", "SPACE_GUIDE"):
+            if _delta_e(fill, palette[other]) < 20:
+                weak.append(
+                    f"{mode}.SPACE_ADJUST vs {other}: ΔE {_delta_e(fill, palette[other]):.1f}"
+                )
+    assert not weak, "\n".join(weak)
+    light = tokens._PALETTES["light"]
+    assert contrast_ratio(light["SPACE_ADJUST"], light["SPACE_CANVAS"]) < 3
+
+
 def test_equipment_grid_marks_read_on_their_fills_in_both_themes() -> None:
     """설비 마스터 표 칸 표지 — 면 위 본문 글자(TEXT)·흐린 글자(TEXT_MUTED)는 4.5:1(배치 머리 면도),
     바뀐 칸 삼각·오류 테두리는 그 면과, 경고 밑줄은 표 면(SURFACE)과 3:1 이상이다. 시나리오 머리의

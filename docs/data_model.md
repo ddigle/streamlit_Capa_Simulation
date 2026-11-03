@@ -411,7 +411,8 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   6회 수정하면 51.7MB). 캔버스만 바꿀 때는 치수 두 컬럼만 UPDATE 하고, 같은 도면
   재업로드는 저장된 `sha256(image_payload)` 와 비교해 BLOB 쓰기를 건너뛴다.
 - `floor_layout_mark`(마이그레이션 11): 동·층별 비설비 도면 요소(반입구·문·영역·기둥·글자·
-  동선·베이 — 베이 `bay` 는 마이그레이션 없이 종류 값이 하나 는 것이고 `label` 에 번호만 둔다). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
+  동선·베이·도형 — 베이 `bay`·도형 `shape` 는 마이그레이션 없이 종류 값이 하나씩 는 것이고, 베이는 `label` 에 번호만,
+  도형은 채우기 색을 `color_key`(영역 색 여섯 + `ink`·`surface`)에, 빗금을 `hatch` 에 둔다). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
   복제되지 않는다. 저장은 그 층 요소 전체를 DELETE+INSERT 로 갈아 끼우고(BLOB 이 없어 파일
   증가는 미미하다) `source_row_no` 가 그리는 순서다. PK 는 두지 않는다 — 같은 트랜잭션에서
   같은 id 를 지웠다 다시 넣는다. 종류(`mark_kind`)·회전·영역 색 키·캔버스 범위·층 안 id
@@ -423,7 +424,9 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   NULL 은 지금 모습(점선·왼쪽)이고 영역이 아닌 요소는 늘 NULL 이다. 요소 모양 값 `look_json`(마이그레이션 33, 두 표와
   가정 차이 표 `equipment_schedule_layout_mark` 모두)은 처음 값이 아닌 키만 든 정규 JSON 글이다 — 동선은 화살표 머리 크기
   `head`(「너비·길이」 S·M·L 두 글자)·선 색 `line`·굵기 `lineWidth`(화면 px)·모양 `lineStyle`, 베이는 그 넷에 좌우 뒤집기 `flip`
-  을 더한다. NULL 은 모두 처음 값(동선은 지금 모습)이고 그 밖 종류는 늘 NULL 이다. 검사는 `services/floor_layout_mark.mark_look`.
+  을 더한다. 도형은 프리셋 `shape`(아홉 — 처음 `rect`)·모양 조절 값 `adj`(프리셋마다 0~2개의 0.01 단위 상자 비율)·채우기
+  불투명 `fillAlpha`(0~100 의 5 단위, 처음 20)·선 `line`(`auto`·`none`·`ink`·영역 색)·`lineWidth`·`lineStyle`·`flip` 이다(`fab_layout_mark`
+  도 같다). NULL 은 모두 처음 값(동선은 지금 모습)이고 그 밖 종류는 늘 NULL 이다. 검사는 `services/floor_layout_mark.mark_look`.
 - `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`center`·`top`·`bottom`).
   설비 마스터 칸이 아니라 `floor_layout_mark` 처럼 리비전 없는 층 현행값이다. 행이 없는 묶음은 모양의 처음
   위치(한 줄 묶음 — 모듈 2·3 — 은 위, 그 밖은 가운데, `space_layout_edit.default_group_label`)로 서고, 처음 위치를
