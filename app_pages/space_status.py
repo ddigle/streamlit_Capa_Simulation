@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from functools import partial
 from typing import Any
@@ -13,6 +12,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
     discard_layout_edits,
@@ -60,8 +60,8 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.floor_layout_upload import (
-    render_fab_layout_drawing_editor,
-    render_floor_layout_editor,
+    render_floor_layout_button,
+    render_floor_layout_dialog_host,
 )
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -90,6 +90,7 @@ from capa_simulation.components.space_floor_list import (
     render_space_floor_list,
 )
 from capa_simulation.components.space_layout import (
+    FLOOR_TABLE_COLUMNS,
     ColorChoice,
     apply_layer_looks,
     color_check_style,
@@ -97,15 +98,15 @@ from capa_simulation.components.space_layout import (
     equipment_unit_total,
     floor_block_stats,
     floor_placements,
-    floor_table,
     invalid_equipment_rows,
+    legend_as_of,
     occupancy_ratio,
     picked_unit_processes,
     picked_unit_rows,
     row_unit_shares,
-    shortening_legend_markup,
+    shortening_legend_entries,
     space_legend_counts,
-    space_legend_markup,
+    space_legend_entries,
     unit_appearance,
 )
 from capa_simulation.components.space_layout_editor import (
@@ -113,6 +114,7 @@ from capa_simulation.components.space_layout_editor import (
     render_fab_layout_viewer,
     render_space_layout_editor,
     render_space_layout_viewer,
+    space_lock_style,
 )
 from capa_simulation.components.space_shortening_view import (
     PINNED_NOTE,
@@ -169,7 +171,6 @@ from capa_simulation.persistence.equipment_cache import (
 )
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
-    DATE_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     INVESTMENT_CAPA_COLUMN,
     LAYOUT_EXITED_COLUMN,
@@ -272,6 +273,7 @@ from capa_simulation.services.space_shortening_layer import (
     floor_layer,
     floor_short_line,
 )
+from capa_simulation.services.space_unit_sheet import PLACE_PLACED, PLACE_UNPLACED, unit_sheet
 from capa_simulation.services.space_unit_state import (
     as_of_range,
     clamp_as_of,
@@ -279,7 +281,7 @@ from capa_simulation.services.space_unit_state import (
     unit_boundaries,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import condition_card, page_box_key
 
 # 연 층. 두 키는 한 묶음이다 — 둘 다 있고 FAB 의 층이면 층 상세, 아니면 FAB 전체.
 SELECTED_BUILDING_KEY = "space_status_selected_building"
@@ -345,20 +347,23 @@ _COLOR_KEY_PARTS = {COLOR_BASIS_LINE_TYPE: "line", COLOR_BASIS_CAPA: "capa"}
 # 사용자 결정). 세션에 든 날짜는 범위 안으로 맞춰 쓰고, 값이 없는 세션은 늘 오늘이다.
 # `space_status_stage_filter` 키는 읽지 않는다.
 SPACE_AS_OF_KEY = "space_status_as_of"
-# 층 상세 도면에서 누른 호기(동, 층, 설비명) — 아래 호기 표를 그 설비 줄만으로 좁힌다
-# (2026-10-23 사용자 결정). 뷰어의 `on_pick_change` 콜백이 쓰고 「층 전체 보기」 단추가 지운다.
-# 연 층이 바뀌면(다른 층·FAB) 풀린다.
+# 층 상세 도면에서 누른 호기(동, 층, 설비명) — 색 기준 「필요 단축」 칸의 누른 호기 상세가 쓴다.
+# 뷰어의 `on_pick_change` 콜백이 쓰고, 뷰어는 그 보기를 켠 동안만 보낸다(`pick_to_server` — 고른
+# 호기의 칸은 도면 위 「호기 정보」 창이 브라우저 안에서 보인다, 2026-11-03 사용자 요청). 그 보기가
+# 꺼진 층 보기·배치 편집 회차와 연 층이 바뀐 회차(다른 층·FAB)에 풀린다.
 SPACE_PICKED_KEY = "space_status_picked_unit"
-# 「공식과 견주기」(설계 8-3) — 경로 줄 끝에 늘 선다. 해당 없는 회차(공식 배치·호기 차이 없음·배치
-# 편집 중·샘플)에는 다른 key 의 끈 채 잠근 토글을 같은 자리에 세운다 — 조건부로 생겼다 사라지면 아래
-# 뷰어 순번이 밀려 다시 마운트되고 배율을 잃는다(검토 L11). 켠 값은 세션에 남는다(층·화면을 옮겨도).
+# 「공식과 견주기」(설계 8-3) — 사이드바 「Space 도면」 상자에 늘 선다. 해당 없는 회차(공식
+# 배치·호기 차이 없음·배치 편집 중·샘플)에는 다른 key 의 끈 채 잠근 토글을 같은 자리에 세운다 —
+# 조건부로 생겼다 사라지면 상자 줄이 흔들린다(검토 L11). 켠 값은 세션에 남는다(층·화면을
+# 옮겨도).
 COMPARE_KEY = "space_compare_official_v1"
 COMPARE_LOCKED_KEY = "space_compare_official_locked_v1"
 COMPARE_LABEL = "공식과 견주기"
 COMPARE_HELP = (
     "옮긴 호기의 공식 자리를 점선으로 그립니다 — 같은 층 안에서 옮겼으면 가는 선으로 잇고, 다른 "
     "층으로 보냈거나 다른 층에서 왔으면 꼬리표를 답니다. FAB 전체에서는 층 목록에 「공식과 다름」 "
-    "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 머리 알림의 수만 봅니다."
+    "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 아래 배치 줄의 수만 "
+    "봅니다."
 )
 COMPARE_COLUMN = "공식과 다름"
 COMPARE_COLUMN_HELP = (
@@ -374,30 +379,18 @@ def color_group_key(basis: str, group: str) -> str:
 
 def _set_space_as_of(chosen: date) -> None:
     """페이더·「오늘로」의 기준일 콜백(`on_asOf_change`). 본문보다 먼저 돌아 그 회차의 범례·
-    요약·호기 표가 새 기준일이다. 범위 밖이면 가까운 끝으로 맞춘다."""
+    요약·「호기 정보」 창이 새 기준일이다. 범위 밖이면 가까운 끝으로 맞춘다."""
     st.session_state[SPACE_AS_OF_KEY] = clamp_as_of(chosen, date.today())
 
 
 def _pick_unit(key: FloorKey, unit_id: str | None) -> None:
-    """층 상세 뷰어의 호기 누르기 콜백(`on_pick_change`). 누른 호기를 그 층과 함께 쥔다 —
-    아래 호기 표가 그 설비 줄만이다. None(도면 요소·빈 곳·Esc)이면 풀어 층 전체로 돌아간다."""
+    """층 상세 뷰어의 호기 누르기 콜백(`on_pick_change`). 누른 호기를 그 층과 함께 쥔다 — 필요
+    단축 칸이 그 호기 상세를 보인다. None(도면 요소·빈 곳·Esc)이면 푼다."""
     if unit_id is None:
         st.session_state.pop(SPACE_PICKED_KEY, None)
     else:
         st.session_state[SPACE_PICKED_KEY] = (key[0], key[1], unit_id)
         note_unit_pick()
-
-
-def _show_whole_floor() -> None:
-    """「층 전체 보기」 콜백 — 누른 호기를 풀어 아래 표가 층 전체로 돌아간다(도면의 고르기도
-    풀린다)."""
-    st.session_state.pop(SPACE_PICKED_KEY, None)
-
-
-def _markdown_text(value: str) -> str:
-    """설비명을 마크다운 글자 그대로 — ASCII 문장부호 앞에 `\\` 를 붙인다(`*`·`_`·`$` 등이 서식이
-    되지 않게)."""
-    return re.sub(r"([!-/:-@\[-`{-~])", r"\\\1", value)
 
 
 def _picked_unit(key: FloorKey) -> str | None:
@@ -456,7 +449,7 @@ def _jump_to_floor(widget_key: str) -> None:
 
 def _compare_lock_reason(editing: bool) -> str | None:
     """「공식과 견주기」 를 켤 수 없는 까닭(켤 수 있으면 None). 견줄 것은 그리는 스냅샷의 호기
-    차이다(머리 알림과 같은 재료 — 역할이 아니라 그리는 한 벌로 정한다)."""
+    차이다(상자 배치 줄과 같은 재료 — 역할이 아니라 그리는 한 벌로 정한다)."""
     if using_sample_equipment:
         return "샘플 데이터에는 공식과 견줄 배치가 없습니다."
     if equipment_session.unmerged or latest_snapshot is None:
@@ -482,6 +475,11 @@ LAYER_REST_HELP = (
     "색 기준이 「필요 단축」 이면 편집하는 동안 그 보기를 쉬고, 편집을 끄면 다시 보입니다."
 )
 SPACE_CARD_NAME = "space"
+# 사이드바 「Space 도면」 상자(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷을 사이드바 조회 조건
+# 상자 꼴로). 조회 조건 패널 바로 밑 · `Space 조건` 카드 위에 이 화면을 볼 때만
+# 선다(`sidebar_status.PAGE_BOX_PREFIX`).
+SPACE_BOX_NAME = "space"
+SPACE_BOX_TITLE = "Space 도면"
 
 
 def _render_layer_rest_caption(*, pinned_today: bool = False) -> None:
@@ -536,7 +534,7 @@ try:
         _, equipment, downtime = latest_snapshot.calculation_frames()
         unscheduled_count = len(latest_snapshot.unscheduled_units)
         using_sample_equipment = False
-    # 머리 알림의 도면 요소·Main 설비명 위치 실효 차이(가정 리비전만 질의한다).
+    # 사이드바 배치 줄의 도면 요소·Main 설비명 위치 실효 차이(가정 리비전만 질의한다).
     floor_differences = floor_layout_differences(equipment_database_path, equipment_session)
 except BOOTSTRAP_ERRORS as exc:
     message = "Space 설비 데이터를 준비하지 못했습니다: " + bootstrap_error_message(
@@ -598,18 +596,10 @@ with notices:
     # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
     render_schema_ahead_warning(get_equipment_repository(equipment_database_path).schema_ahead)
     render_legacy_trace_warning(equipment_session)
-    if not using_sample_equipment:
-        for line, kind in space_layout_notices(equipment_session, floor_differences):
-            # 줄은 설비 시나리오 이름·Main 설비명을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
-            if kind == "info":
-                st.info(markdown_safe_tildes(line), icon=":material/compare:")
-            else:
-                st.caption(f":material/layers: {markdown_safe_tildes(line)}")
-    unscheduled_line = unscheduled_notice(
-        unscheduled_count, official=equipment_session.is_official_pair
-    )
-    if unscheduled_line is not None:
-        st.caption(f":material/event_busy: {unscheduled_line}")
+    # 스크롤 고정(편집기 도구 줄 「고정」)의 페이지 서식 — `<html data-space-lock>` 을 읽는 규칙.
+    # 스타일만 든 `st.html` 이라 자리를 차지하지 않고, 다른 화면으로 가면 사라져 고정이
+    # 풀린다(AGENTS 9장).
+    st.html(space_lock_style())
 # 편집본은 실제 저장본이 있을 때만 세운다 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None
@@ -624,6 +614,16 @@ if not using_sample_equipment and latest_snapshot is not None:
 # 편집본을 세운 **뒤에** 그린다 — 남의 저장으로 편집본을 버린 회차에 배지·머리 띠 꼬리가 「미저장
 # 변경」 을 한 회차 늦게 말하지 않게(가용설비 현황·필요 단축 일정과 같은 차례).
 render_equipment_scenario_row(equipment_session)
+# 사이드바 「Space 도면」 상자의 자리 — 지금 세우고(조건 카드보다 먼저 — 사이드바는 부른 차례로
+# 선다) 안은 아래 「상자 채우기」 가 채운다. 배치 줄(「가정 배치 · 공식과 다른 호기 n대」 등 — 도면
+# 위 머리 칸에 서던 것)과 일정 없는 호기 줄(가정 시나리오 계산 제외)도 그 상자 끝이다.
+space_box = st.sidebar.container(key=page_box_key(SPACE_BOX_NAME))
+layout_lines = (
+    [] if using_sample_equipment else space_layout_notices(equipment_session, floor_differences)
+)
+unscheduled_line = unscheduled_notice(
+    unscheduled_count, official=equipment_session.is_official_pair
+)
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
 edit_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
@@ -867,6 +867,47 @@ def _floor_viewer_inputs(
     return tuple(marks), labels, items, roster
 
 
+def _exited_mask(rows: pd.DataFrame) -> pd.Series:
+    """기준일에 도면에서 빠진 행(도면 이탈일이 지남 — 판정 `도면이탈여부`)."""
+    if LAYOUT_EXITED_COLUMN not in rows.columns:
+        return pd.Series(False, index=rows.index, dtype=bool)
+    return rows[LAYOUT_EXITED_COLUMN].fillna(False).astype(bool)
+
+
+def _view_sheet(floor_status: pd.DataFrame, drawn: pd.DataFrame) -> dict[str, Any]:
+    """층 상세 보기 「호기 정보」 창의 표 — 이 층 행(공정소분류 필터 뒤) 가운데 기준일에 도면에서
+    빠지지 않은 것, 칸은 `FLOOR_TABLE_COLUMNS`(21칸) + 「도면」. 도면에 선 행(`drawn` — 레이아웃
+    반영·좌표가 다 있음)은 배치, 나머지는 레이아웃표시로 미배치·레이아웃 제외다."""
+    placed = {str(name).strip() for name in drawn[EQUIPMENT_ID_COLUMN].dropna()}
+    return unit_sheet(
+        floor_status.loc[~_exited_mask(floor_status)],
+        columns=FLOOR_TABLE_COLUMNS,
+        place_of=dict.fromkeys(placed, PLACE_PLACED),
+    )
+
+
+def _edit_sheet(
+    status: pd.DataFrame, key: FloorKey, items: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """배치 편집기 「호기 정보」 창의 표 — 편집본 상태 가운데 이 층 행(기준일에 도면에서 빠지지 않은
+    것, 공정 필터와 상관없이 — 편집기와 같다)과 편집기 호기(층 미정 미배치 포함). 「도면」 칸은
+    편집기에 보낸 자리(배치·미배치)이고 브라우저가 적용 전 편집으로 덮어 쓴다."""
+    ids = {str(item["id"]) for item in items}
+    names = status[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    on_floor = status["동"].eq(key[0]).fillna(False).astype(bool) & status["층"].eq(key[1]).fillna(
+        False
+    ).astype(bool)
+    rows = status.loc[(on_floor & ~_exited_mask(status)) | names.isin(ids).fillna(False)]
+    return unit_sheet(
+        rows,
+        columns=FLOOR_TABLE_COLUMNS,
+        place_of={
+            str(item["id"]): PLACE_PLACED if item.get("placed") else PLACE_UNPLACED
+            for item in items
+        },
+    )
+
+
 def _today_status() -> pd.DataFrame:
     """오늘 기준 상태(층 사용 끄기 확인의 호기 셈 — 공정소분류 필터 전). 세션 기준일이 오늘이면 이
     회차의 `all_status` 를 그대로 쓴다. 편집 모드 본문에서만 부른다."""
@@ -1044,7 +1085,7 @@ def _render_edit_lock_line() -> None:
         st.caption(f":material/fast_forward: {literal_markdown(edit_mode.notice)}")
 
 
-def _render_unsaved_layout_panel(frames: Frames | None) -> None:
+def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
     """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
     화면에서나 뜬다.
 
@@ -1058,7 +1099,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     편집이 잠긴 회차(`edit_mode.layout == "locked"` — 찍힌 역할이 바뀜·남이 그 시나리오에 다른
     배치를 저장·가정이던 때 리비전)에 잠기기 전에 적용한 배치 변경이 남았으면 「배치 변경만 버리기」
     가 서고 저장은 꺼진다(저장해도 저장소가 같은 까닭으로 막는다). 배치 변경이 없으면 상자는 그대로
-    저장한다.
+    저장한다. 상자를 그렸으면 참이다 — 스크롤 고정 중 편집기가 「저장 안 한 배치가 있습니다」 한
+    줄을 단다.
     """
     saved_snapshot = equipment_session.snapshot
     # 저장 오류는 상자를 그리지 않는 회차에도 한 번만 보이고 버린다(남의 저장으로 편집이 버려진
@@ -1102,7 +1144,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     ):
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"배치를 저장하지 못했습니다: {error}"))
-        return
+        return False
     # 설비 마스터의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
     others, side_tables = 0, []
     if frames is not None and not unchanged:
@@ -1173,9 +1215,9 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             "이름 바꿈은 공통 대장에 저장합니다(어느 설비 시나리오에서나 같은 호기의 이름)."
         )
         if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
-            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다. 빨리
-            # 감기 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 바로 아래 줄
-            # (`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
+            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다. 빨리 감기
+            # 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 사이드바 「Space 도면」 상자의 잠금
+            # 줄(`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
             if changes.empty and not canvases and not marks and not group_labels:
                 st.caption(f":material/badge: {renamed_to_common}")
             else:
@@ -1185,13 +1227,13 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                     + (f" {renamed_to_common}" if not names.empty else "")
                 )
         if layout_locked:
-            # 잠금 까닭은 바로 아래 잠금 줄(`_render_edit_lock_line` — 「최신 rM 불러오기」 곁)이
-            # 한 번 적는다. 상자는 저장하지 않는다는 것과 「배치 변경만 버리기」 만(한 화면에
-            # 한 번).
+            # 잠금 까닭은 사이드바 「Space 도면」 상자의 잠금 줄(`_render_edit_lock_line` — 「최신
+            # rM 불러오기」 곁)이 한 번 적는다. 상자는 저장하지 않는다는 것과 「배치 변경만 버리기」
+            # 만(한 화면에 한 번).
             st.caption(
                 ":material/lock: 배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
                 + (
-                    "까닭은 아래 잠금 줄에 있습니다."
+                    "까닭은 사이드바 「Space 도면」 상자의 잠금 줄에 있습니다."
                     if edit_mode.lock_reason
                     else "최신을 불러온 뒤 다시 고치세요."
                 )
@@ -1339,6 +1381,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                         args=(False,),
                         help="설비·층 배치 편집은 두고 S.PKG FAB 전체 배치 대기분만 버립니다.",
                     )
+    return True
 
 
 def _render_layout_warnings(
@@ -1478,7 +1521,12 @@ def _stored_marks_for(
 
 
 def _render_layout_editor(
-    frames: Frames, building: str, floor: str, profile: FloorLayoutProfile | None
+    frames: Frames,
+    building: str,
+    floor: str,
+    profile: FloorLayoutProfile | None,
+    *,
+    pending_save: bool = False,
 ) -> None:
     """한 층 배치 편집기. 편집본을 그리고, `적용` 이 오면 검증해 편집본·대기분에 얹는다.
 
@@ -1538,18 +1586,14 @@ def _render_layout_editor(
         # 필요 단축 보기는 편집 중 쉰다(결정 D7) — 편집기는 공정구분 기본 색이고 배지·흐림·고정 줄이
         # 없다. 층 상세의 쉬는 까닭 한 줄은 여기만 적는다(본문 조작 줄은 FAB 편집만).
         _render_layer_rest_caption(pinned_today=as_of != today)
-    st.caption(
-        "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
-        "조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
-        "층이 정해지지 않은 미배치 호기는 트레이에 함께 뜹니다. 기준일은 편집하는 동안 "
-        f"{with_direction_particle(as_of.isoformat())} 고정입니다 — 바꾸려면 배치 편집을 끄고 도면 "
-        "위 페이더를 씁니다."
-    )
-    # epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·Main 설비명 위치·**편집 대상 호기 목록**.
-    # 하나라도 바뀌면 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다.
-    # 호기 목록은 기준일로도 바뀐다(도면 이탈일이 지난 호기가 빠진다) — 빠뜨리면 브라우저가 옛
-    # 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다.
-    # 숨은 모듈(묶음 바둑판의 칸만 차지)도 기준일로 바뀐다 — 목록에 넣는다.
+    # 편집 안내(끌어 놓아 고치고 「적용」, 공정 필터와 상관없이 이 층 도면 대상 호기 모두, 층 미정
+    # 미배치는 오른쪽 칸, 기준일은 편집 중 고정)는 편집기 왼쪽 칸 「도움말」 과 Guide 가 말한다 —
+    # 도면 위에는 캡션을 두지 않는다(2026-11-03 사용자 요청 — 여백 걷기). 고정 기준일은 도구 줄 제목
+    # 옆 칩이다. epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·Main 설비명 위치·**편집 대상 호기
+    # 목록**. 하나라도 바뀌면 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을
+    # 지킨다. 호기 목록은 기준일로도 바뀐다(도면 이탈일이 지난 호기가 빠진다) — 빠뜨리면 브라우저가
+    # 옛 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다. 숨은 모듈(묶음 바둑판의 칸만
+    # 차지)도 기준일로 바뀐다 — 목록에 넣는다.
     roster = hashlib.sha256(
         "|".join(
             [f"{item['id']}:{int(bool(item['placed']))}" for item in inputs.items]
@@ -1587,6 +1631,12 @@ def _render_layout_editor(
         # 층 캔버스는 공용 값이라 가정 설비 시나리오에서 끈다(설계 8-4 — 서버도 아래에서 거부).
         canvas_editable=edit_mode.canvas,
         canvas_lock=None if edit_mode.canvas else CANVAS_LOCK_REASON,
+        # 왼쪽 칸 범례는 채우기 뜻만(편집 화면은 테·덧표시를 그리지 않고 편집본은 저장본과 대수가
+        # 다르다).
+        legend={"entries": space_legend_entries(None, choice=effective_choice), "asOf": ""},
+        pending_save=pending_save,
+        # 「호기 정보」 창(epoch 밖) — 편집본의 이 층 행 + 편집기 호기.
+        sheet=_edit_sheet(status, key, inputs.items),
     )
     if submission is None:
         return
@@ -1750,6 +1800,8 @@ def _render_fab_editor(
     link_stats: dict[str, dict[str, str | None]],
     background_image: str | None,
     on_open: Callable[[FloorKey], None],
+    *,
+    pending_save: bool = False,
 ) -> None:
     """FAB 전체 배치 편집기. 대기분(없으면 저장본, 그것도 없으면 기본 배치)을 그리고, `적용` 이
     오면 검증해 세션 대기분에 얹는다(저장 전). 설비 편집본과 무관하다. 비활성 층 블록은 회색으로
@@ -1762,13 +1814,10 @@ def _render_fab_editor(
     marks: tuple[FabLayoutMark, ...] = (
         pending.marks if pending is not None and pending.marks is not None else stored_marks
     )
-    st.caption(
-        "층 블록·영역·글자를 끌어 놓아 고치고 **적용**을 누르면 이 세션에 들어갑니다(저장 전). "
-        "층 블록을 고르면 선택 칸에서 연결 층·색을 바꾸고 [열기] 로 그 층을 엽니다. S.PKG 가 "
-        "아닌 자리는 블록 대신 색을 고른 영역과 글자로 그립니다."
-    )
-    # epoch: 그리는 도면(대기분 또는 저장본)과 저장본. 적용하면 대기분이, 남이 저장하면 저장본이
-    # 바뀌어 브라우저가 새 값으로 다시 선다. 블록 대수는 epoch 밖이다.
+    # 편집 안내(끌어 놓아 고치고 「적용」, 층 블록의 연결 층·색·[열기], S.PKG 아닌 자리는
+    # 영역·글자)는 편집기 왼쪽 칸 「도움말」 과 Guide 가 말한다(도면 위에는 캡션을 두지 않는다 —
+    # 2026-11-03 사용자 요청). epoch: 그리는 도면(대기분 또는 저장본)과 저장본. 적용하면 대기분이,
+    # 남이 저장하면 저장본이 바뀌어 브라우저가 새 값으로 다시 선다. 블록 대수는 epoch 밖이다.
     epoch = "|".join(
         (
             "fab-edit",
@@ -1784,6 +1833,7 @@ def _render_fab_editor(
         link_stats=link_stats,
         on_open=on_open,
         background_image=background_image,
+        pending_save=pending_save,
     )
     if submission is None:
         return
@@ -1834,41 +1884,130 @@ def _render_fab_editor(
     st.rerun()
 
 
-# 경로 줄은 두 칸이다: `S.PKG FAB 전체` › `층 바로 가기`(30개 층). FAB 에서는 둘째 칸이 비어 있고,
-# 층을 고르면 그 층이 열린다. 자리를 옮기는 것은 모두 콜백이다(재실행 한 번).
-with st.container(horizontal=True, gap="small", vertical_alignment="center", key="space_path"):
-    st.button(
-        "S.PKG FAB 전체",
-        icon=":material/domain:",
-        type="primary" if selected is None else "secondary",
-        key="space_status_fab_breadcrumb",
-        on_click=_show_fab_overview,
-    )
-    st.markdown(":material/chevron_right:", width="content")
-    # 선택지는 사용 층과 지금 연 층(비활성이어도 — 경로 줄이 「지금 어디인가」 를 말하게)이다.
-    # 글자는 「C1 3F」 그대로다 — 라벨에 상태를 넣으면 남이 그 층을 다시 켤 때 브라우저가 옛 글자를
-    # 되보낸다(AGENTS 9장). 비활성이라는 말은 층 상세의 배너가 한다. 비활성 층으로 옮기는 길은 층
-    # 목록 표 「비활성 층」 이다.
-    floor_labels = [floor_label(key) for key in selectable_floor_keys(floor_states, keep=selected)]
-    jump_key = f"{FLOOR_JUMP_KEY}_{floor_param(selected) if selected is not None else 'fab'}"
-    st.selectbox(
-        "층 바로 가기",
-        options=floor_labels,
-        index=floor_labels.index(floor_label(selected)) if selected is not None else None,
-        placeholder="층 바로 가기",
-        key=jump_key,
-        on_change=_jump_to_floor,
-        args=(jump_key,),
-        label_visibility="collapsed",
-        width=170,
-        disabled=not floor_labels,
-    )
-    st.space("stretch")
-    # 층 배치 편집 중에는 견주지 않는다(편집기에는 보내지 않는다). 편집 토글 값은 앞 회차의 것이다 —
-    # 이 줄은 층 상세 머리 줄보다 먼저 선다.
-    compare_lock = _compare_lock_reason(
-        selected is not None and editable and bool(st.session_state.get(EDIT_MODE_KEY, False))
-    )
+# 사이드바 「Space 도면」 상자 채우기(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷: `S.PKG FAB 전체`
+# › 층 · `배치 편집`· `도면·캔버스 편집` · `공식과 견주기` · 일정 없는 호기 줄 — 같은 머리 칸에 서던
+# 배치 줄 「가정 배치 · …」 도 함께). 위젯 key 는 옮기기
+# 전 그대로다(세션 값·화면 확인이 산다). 자리를 옮기는 것은 모두 콜백이다(재실행 한 번). 줄은 FAB·층
+# 모두 같은 수이고 안의 단추만 범위를 따른다. FAB 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은
+# 공식에서만 — G5).
+fab_lock = (
+    "샘플 데이터를 보는 중에는 FAB 배치를 고치지 않습니다." if showing_sample else FAB_LOCK_REASON
+)
+# 층 캔버스·배경 도면은 공용 값이라 공식 설비 시나리오에서만 고친다(설계 8-4). 설비 샘플 화면은
+# 저장할 호기가 없어 단추를 끄지 않는다(그 층 도면만 올린다).
+canvas_editable = edit_mode.canvas and not showing_sample
+drawing_locked = (
+    not fab_editable if selected is None else not canvas_editable and not using_sample_equipment
+)
+editing = False
+fab_editing = False
+with space_box:
+    st.markdown(f":material/map: {SPACE_BOX_TITLE}")
+    condition_name_row("자리", slug="space_box_place")
+    # 자리 줄 — `FAB 전체` › `층 바로 가기`(30개 층). FAB 에서는 고르기 칸이 비어 있고 층을 고르면
+    # 그 층이 열린다.
+    with st.container(
+        horizontal=True, gap="small", vertical_alignment="center", key="space_box_place_row"
+    ):
+        st.button(
+            "FAB 전체",
+            icon=":material/domain:",
+            type="primary" if selected is None else "secondary",
+            key="space_status_fab_breadcrumb",
+            on_click=_show_fab_overview,
+            help="S.PKG FAB 전체 배치로 돌아갑니다.",
+        )
+        # 선택지는 사용 층과 지금 연 층(비활성이어도 — 이 칸이 「지금 어디인가」 를 말하게)이다.
+        # 글자는 「C1 3F」 그대로다 — 라벨에 상태를 넣으면 남이 그 층을 다시 켤 때 브라우저가 옛
+        # 글자를 되보낸다(AGENTS 9장). 비활성이라는 말은 층 상세의 배너가 한다. 비활성 층으로 옮기는
+        # 길은 층 목록 표 「비활성 층」 이다.
+        floor_labels = [
+            floor_label(key) for key in selectable_floor_keys(floor_states, keep=selected)
+        ]
+        jump_key = f"{FLOOR_JUMP_KEY}_{floor_param(selected) if selected is not None else 'fab'}"
+        st.selectbox(
+            "층 바로 가기",
+            options=floor_labels,
+            index=floor_labels.index(floor_label(selected)) if selected is not None else None,
+            placeholder="층 바로 가기",
+            key=jump_key,
+            on_change=_jump_to_floor,
+            args=(jump_key,),
+            label_visibility="collapsed",
+            width="stretch",
+            disabled=not floor_labels,
+        )
+    condition_name_row("도면", slug="space_box_drawing")
+    # 도면 줄 — 「배치 편집」 토글과 「도면·캔버스 편집」 단추가 한 줄에 선다(틈 xsmall · 단추
+    # 아이콘 없음 — 245px 상자 안 폭 225px 에 들게. 줄이 감기면 상자가 35px 높아져 아래 견주기가 첫
+    # 화면 밖으로 밀린다).
+    with st.container(
+        horizontal=True, gap="xsmall", vertical_alignment="center", key="space_box_drawing_row"
+    ):
+        if selected is None:
+            # FAB 배치 편집 — 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2).
+            # 샘플 화면· 가정 설비 시나리오에서는 끈다. 잠글 때는 **값도 끈다** — 켜 둔 채 잠그면
+            # 스위치는 켜짐인데 보기 전용 도면이 그려져 화면이 서로 다른 말을 했다(2026-10-05 E2E).
+            # 적용해 둔 대기분은 그대로다(어느 세션에서나 저장된다).
+            if not fab_editable:
+                st.session_state[FAB_EDIT_MODE_KEY] = False
+            fab_editing = (
+                st.toggle(
+                    "배치 편집",
+                    key=FAB_EDIT_MODE_KEY,
+                    disabled=not fab_editable,
+                    help=(
+                        fab_lock
+                        if not fab_editable
+                        else "층 블록·영역·글자를 끌어 놓아 자리·크기를 고치고, 층 블록의 "
+                        "연결 층과 색을 고릅니다. 적용한 변경은 저장하기 전까지 이 세션에만 "
+                        "있습니다. " + LAYER_REST_HELP
+                    ),
+                )
+                and fab_editable
+            )
+        elif editable:
+            editing = st.toggle(
+                "배치 편집",
+                key=EDIT_MODE_KEY,
+                help=(
+                    "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
+                    "저장하기 전까지 이 세션에만 있습니다. " + LAYER_REST_HELP
+                ),
+            )
+        elif buffer_frames is not None:
+            # 꺼진 단추 — 까닭은 풍선과 바로 아래 잠금 줄(「최신 rM 불러오기」)이 말한다.
+            st.toggle(
+                "배치 편집",
+                value=False,
+                key=LOCKED_EDIT_TOGGLE_KEY,
+                disabled=True,
+                help=(literal_markdown(edit_mode.lock_reason) if edit_mode.lock_reason else None),
+            )
+        render_floor_layout_button(
+            floor=selected,
+            disabled=drawing_locked,
+            reason=(fab_lock if selected is None else CANVAS_LOCK_REASON)
+            if drawing_locked
+            else None,
+        )
+    if (
+        selected is None
+        and not showing_sample
+        and not edit_mode.fab
+        and not equipment_session.unmerged
+    ):
+        # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 일정 없이 연
+        # 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로 옮겨도 같은 까닭으로 합쳐지지
+        # 않는다(1단계 규칙 그대로).
+        _render_switch_to_official(SWITCH_TO_OFFICIAL_KEY)
+    if buffer_frames is not None:
+        # 층 배치 편집이 잠긴 회차의 까닭 한 줄(「최신 rM 불러오기」)·배치 빨리 감기 캡션 — `배치
+        # 편집` 바로 아래(FAB 에서도 선다 — 저장 안 한 배치 상자가 이 줄을 가리킨다).
+        _render_edit_lock_line()
+    # 견주기 — 이름 줄 없이 토글 하나(라벨이 이름이다). 층 배치 편집 중에는 견주지 않는다(편집기에는
+    # 보내지 않는다).
+    compare_lock = _compare_lock_reason(selected is not None and editable and editing)
     if compare_lock is None:
         compare_on = st.toggle(
             COMPARE_LABEL, key=COMPARE_KEY, persist_state="session", help=COMPARE_HELP
@@ -1878,25 +2017,46 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
             COMPARE_LABEL, value=False, key=COMPARE_LOCKED_KEY, disabled=True, help=compare_lock
         )
         compare_on = False
+    for notice in layout_lines:
+        # 배치 줄 — 짧은 줄 + 풍선에 온 문장(일정 없는 호기 줄과 같은 꼴). 줄은 설비 시나리오
+        # 이름·Main 설비명을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
+        st.caption(
+            (":material/compare: " if notice.kind == "info" else ":material/layers: ")
+            + markdown_safe_tildes(notice.short),
+            help=markdown_safe_tildes(notice.text),
+        )
+    if unscheduled_line is not None:
+        # 이 설비 시나리오에 일정이 없는 호기 — 그리지 않고 계산에 들지 않는다. 풍선에 온 문장.
+        st.caption(
+            ":material/event_busy: "
+            + (
+                f"공식 일정 없음 {unscheduled_count:,}대 · 그리지 않음"
+                if equipment_session.is_official_pair
+                else f"일정 없는 호기 {unscheduled_count:,}대 · 계산 제외"
+            ),
+            help=markdown_safe_tildes(unscheduled_line),
+        )
 
 # 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
 # 서거나 저장·버리기로 사라질 때 아래 층 상세·FAB 상자의 순번이 밀리면, Streamlit 은 요소를
 # key 가 아니라 순번으로 갈아 끼우므로 편집기를 새로 마운트한다. 그 사이 본문 높이가 화면
 # 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다.
 panel_drawn = buffer_frames is not None or pending_fab_layout() is not None
+# 저장 안 한 배치 상자를 그렸는가 — 스크롤 고정 중 편집기가 「저장 안 한 배치가 있습니다」 한 줄을
+# 단다(상자가 화면 밖이다).
+pending_save = False
 with st.container(key="space_unsaved_layout_slot"):
     if panel_drawn:
-        _render_unsaved_layout_panel(buffer_frames)
-# 층 배치 편집이 잠긴 회차의 까닭 한 줄(「최신 rM 불러오기」)·배치 빨리 감기 캡션. 자리는 늘
-# 선다(잠금이 생기고 풀릴 때 아래 층 상세·FAB 상자가 밀리지 않게). 시나리오 바꾸기 실패는 늘 여기서
-# 한 번 보이고, 저장 오류는 상자가 없는 회차에만 여기서 보인다.
+        pending_save = _render_unsaved_layout_panel(buffer_frames)
+# 시나리오 바꾸기 실패·저장 오류 자리. 자리는 늘 선다(알림이 생기고 사라질 때 아래 층 상세·FAB
+# 도면이 밀리지 않게). 시나리오 바꾸기 실패는 늘 여기서 한 번 보이고, 저장 오류는 상자가 없는
+# 회차에만 여기서 보인다. 층 배치 편집 잠금 줄(「최신 rM 불러오기」)은 사이드바 「Space 도면」
+# 상자의 `배치 편집` 아래다.
 with st.container(key="space_edit_lock_slot"):
     render_flash(SWITCH_ERROR_KEY)
     save_error = None if panel_drawn else st.session_state.pop(SAVE_ERROR_KEY, None)
     if isinstance(save_error, str):
         st.error(markdown_safe_tildes(save_error))
-    if buffer_frames is not None:
-        _render_edit_lock_line()
 
 # 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
 # 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
@@ -2023,53 +2183,14 @@ if selected is None:
     )
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
     open_active_floor = partial(_open_unless_inactive, frozenset(inactive_floors))
-    with st.container(border=True):
-        # 머리 줄은 층 상세와 같은 구조다(제목 · 도면·캔버스 편집 · 배치 편집 · 오른쪽 범례 자리).
-        # FAB 범례 자리는 비워 둔다 — 블록 색의 뜻은 사용자가 도면 글자로 적는다.
-        with st.container(
-            horizontal=True, gap="small", vertical_alignment="center", key="space_fab_head"
-        ):
-            st.markdown("#### :material/domain: S.PKG FAB 전체 배치", width="content")
-            # 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은 공식에서만 — G5).
-            fab_lock = (
-                "샘플 데이터를 보는 중에는 FAB 배치를 고치지 않습니다."
-                if showing_sample
-                else FAB_LOCK_REASON
-            )
-            render_fab_layout_drawing_editor(
-                database_path=equipment_database_path,
-                disabled=not fab_editable,
-                reason=None if fab_editable else fab_lock,
-            )
-            # 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2). 샘플 화면·가정
-            # 설비 시나리오에서는 끈다. 잠글 때는 **값도 끈다** — 켜 둔 채 잠그면 스위치는 켜짐인데
-            # 보기 전용 도면이 그려져 화면이 서로 다른 말을 했다(2026-10-05 E2E). 적용해 둔 대기분은
-            # 그대로다(어느 세션에서나 저장된다).
-            if not fab_editable:
-                st.session_state[FAB_EDIT_MODE_KEY] = False
-            fab_editing = (
-                st.toggle(
-                    "배치 편집",
-                    key=FAB_EDIT_MODE_KEY,
-                    disabled=not fab_editable,
-                    help=(
-                        fab_lock
-                        if not fab_editable
-                        else "층 블록·영역·글자를 끌어 놓아 자리·크기를 고치고, 층 블록의 "
-                        "연결 층과 색을 고릅니다. 적용한 변경은 저장하기 전까지 이 세션에만 "
-                        "있습니다. " + LAYER_REST_HELP
-                    ),
-                )
-                and fab_editable
-            )
-            if not showing_sample and not edit_mode.fab and not equipment_session.unmerged:
-                # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 일정 없이
-                # 연 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로 옮겨도 같은
-                # 까닭으로 합쳐지지 않는다(1단계 규칙 그대로).
-                _render_switch_to_official(SWITCH_TO_OFFICIAL_KEY)
-            st.space("stretch")
+    # FAB 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
+    # 제목은 도구 줄 제목, 도면·캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자다. 자리는 늘
+    # 서는 칸이다.
+    with st.container(key="space_fab_stage"):
         if fab_editing:
-            _render_fab_editor(block_stats, fab_background, open_active_floor)
+            _render_fab_editor(
+                block_stats, fab_background, open_active_floor, pending_save=pending_save
+            )
         else:
             render_fab_layout_viewer(
                 key=FAB_VIEWER_KEY,
@@ -2094,6 +2215,7 @@ if selected is None:
                 unconfirmed=_unconfirmed_count(),
                 on_as_of=_set_space_as_of,
                 background_image=fab_background,
+                pending_save=pending_save,
             )
     # 필요 단축 요약·추가 호기 상자 — 자리는 늘 선다(켜고 끌 때 아래 key 있는 층 목록 표가 밀리지
     # 않게).
@@ -2214,14 +2336,14 @@ else:
             " 배치 편집 트레이에"
         )
 
-    with st.container(border=True):
-        # 머리 줄 하나에 제목·도면·캔버스 편집·배치 편집·상태 범례를 세운다. 배치도 Figure 의 제목과
-        # 범례가 도면 위 한 띠를 따로 먹던 것을 걷었다 — 도면이 테두리 안을 다 쓴다.
-        editing_requested = bool(st.session_state.get(EDIT_MODE_KEY, False))
+    # 층 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
+    # 제목은 도구 줄 제목, 도면·캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자, 범례는 편집기
+    # 왼쪽 칸이다. 자리는 늘 서는 칸이다.
+    with st.container(key="space_floor_stage"):
         # 보기 회차는 이 층 행 전체(세는 행과 페이더 범위의 그리는 행을 모두 품는다)의 경계 날짜를
         # 한 번 구해 범례 대수와 도면 payload 가 나눠 쓴다. 편집 중에는 편집본으로 편집기가 따로
         # 구한다.
-        viewing = not (editable and editing_requested)
+        viewing = not (editable and editing)
         floor_status = space_equipment.loc[
             space_equipment["동"].eq(selected_building).fillna(False).astype(bool)
             & space_equipment["층"].eq(selected_floor).fillna(False).astype(bool)
@@ -2288,6 +2410,12 @@ else:
                     dim_others=layer_dim,
                     inactive=selected in inactive_floors,
                 )
+        # 누른 호기는 필요 단축 칸만 쓴다 — 그 보기가 서지 않은 회차(끈 층 보기·배치 편집)에는 풀어
+        # 둔다. 뷰어는 그 동안 누르기를 보내지 않으므로(`pick_to_server`) 남겨 두면 다시 켤 때 낡은
+        # 호기가 도면의 고르기를 덮는다. 켜는 회차에는 브라우저가 지금 고른 호기를 한 번 보낸다.
+        if shown_layer is None:
+            st.session_state.pop(SPACE_PICKED_KEY, None)
+            picked_unit = picked_rows = None
         # 뷰어 payload 는 머리 줄 앞에서 구한다 — 범례와 도면이 한 회차 안에서 붙어 나가야 페이더를
         # 놓은 뒤 브라우저가 둘을 한 번에 맞춘다(그 사이에 payload 를 만들면 범례만 먼저 바뀐다).
         viewer_inputs = (
@@ -2300,88 +2428,43 @@ else:
             if floor_boundaries is not None
             else None
         )
-        with st.container(
-            horizontal=True, gap="small", vertical_alignment="center", key="space_floor_head"
-        ):
-            st.markdown(
-                f"#### :material/map: {selected_building} {selected_floor} 상세 레이아웃",
-                width="content",
-            )
-            # 캔버스 이탈 검사는 그린 호기(`floor_equipment`, 필터·레이아웃표시를 지난 것)가 아니라
-            # 저장된 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다. 층 캔버스·배경 도면은
-            # 공용 값이라 공식 설비 시나리오에서만 고친다(설계 8-4) — 그 회차 세션 스냅샷의 마스터는
-            # 공식 배치다(가정이던 때 리비전이면 공식 스냅샷을 따로 읽는다).
-            canvas_editable = edit_mode.canvas and not showing_sample
-            render_floor_layout_editor(
-                database_path=equipment_database_path,
-                building=selected_building,
-                floor=selected_floor,
-                saved_equipment=(
-                    _official_master()
-                    if canvas_editable and not using_sample_equipment
-                    else empty_equipment_master()
-                ),
-                disabled=not canvas_editable and not using_sample_equipment,
-                reason=CANVAS_LOCK_REASON,
-            )
-            if editable:
-                editing = st.toggle(
-                    "배치 편집",
-                    key=EDIT_MODE_KEY,
-                    help=(
-                        "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
-                        "저장하기 전까지 이 세션에만 있습니다. " + LAYER_REST_HELP
-                    ),
-                )
-            else:
-                editing = False
-                if buffer_frames is not None:
-                    # 꺼진 단추 — 까닭은 풍선과 본문 위 잠금 줄(「최신 rM 불러오기」)이 말한다.
-                    st.toggle(
-                        "배치 편집",
-                        value=False,
-                        key=LOCKED_EDIT_TOGGLE_KEY,
-                        disabled=True,
-                        help=(
-                            literal_markdown(edit_mode.lock_reason)
-                            if edit_mode.lock_reason
-                            else None
-                        ),
-                    )
-            st.space("stretch")
-            # 보기는 기준일의 색·테·덧표시별 대수(미확인은 오늘 기준 설비 수)다. 편집 중에는
-            # 편집본을 그리므로 저장본의 대수를 달지 않고 채우기 뜻만 보인다(편집 화면은 테·덧표시를
-            # 그리지 않는다).
-            if floor_boundaries is None:
-                legend = space_legend_markup(None, choice=effective_choice)
-            elif shown_layer is not None:
+        # 범례(편집기 왼쪽 칸 「범례」 — epoch 밖). 보기는 기준일의 색·테·덧표시별 대수(미확인은
+        # 오늘 기준 설비 수)다. 편집 중에는 편집본을 그리므로 저장본의 대수를 달지 않고 채우기 뜻만
+        # 보인다(편집기가 그 꼴로 받는다).
+        legend: dict[str, Any] | None = None
+        if floor_boundaries is not None:
+            if shown_layer is not None:
                 # 필요 단축 — 구간 대수(목록 줄과 같은 축)·임박 테·흐림과 지금의 테·덧표시 칸.
-                legend = shortening_legend_markup(
+                legend_entries = shortening_legend_entries(
                     shown_layer.counts,
                     space_legend_counts(
                         floor_counted, floor_boundaries, choice=effective_choice, as_of=as_of
                     ),
-                    as_of=as_of,
                     dim=layer_dim,
                 )
             else:
                 # 켠 동안 계획을 못 읽은 회차는 상자가 모두 기본 회색이고 뷰어가 지연·보관 면을
                 # 끈다(고정 줄 회차 — D12) — 채우기 칸 없이 테·덧표시만(도면에 없는 빨강·검정
                 # 견본을 세우지 않는다).
-                legend = space_legend_markup(
+                legend_entries = space_legend_entries(
                     space_legend_counts(
                         floor_counted, floor_boundaries, choice=effective_choice, as_of=as_of
                     ),
                     choice=effective_choice,
-                    as_of=as_of,
                     fills=not layer_active,
                 )
-            st.markdown(legend, unsafe_allow_html=True, width="content")
+            legend = {"entries": legend_entries, "asOf": legend_as_of(as_of)}
         if editing and buffer_frames is not None:
-            _render_layout_editor(buffer_frames, selected_building, selected_floor, layout_profile)
+            _render_layout_editor(
+                buffer_frames,
+                selected_building,
+                selected_floor,
+                layout_profile,
+                pending_save=pending_save,
+            )
         else:
             if viewer_inputs is None:
-                # 머리 줄은 편집 요청을 보았는데 편집기가 서지 않은 회차(보통은 오지 않는다).
+                # 편집 토글은 켜졌는데 편집기가 서지 않은 회차(보통은 오지 않는다).
                 viewer_inputs = _floor_viewer_inputs(
                     selected,
                     floor_status,
@@ -2439,9 +2522,15 @@ else:
                 # 않는다(상자는 모두 기본 회색 — R5).
                 badges=shown_layer.badges if shown_layer is not None else None,
                 as_of_pinned=PINNED_NOTE if layer_active else None,
+                legend=legend,
+                pending_save=pending_save,
+                # 「호기 정보」 창(epoch 밖) — 이 층 행(공정 필터 뒤) 가운데 기준일에 도면에서
+                # 빠지지 않은 것. 「도면」 칸은 도면에 선 호기면 배치다.
+                sheet=_view_sheet(floor_status, floor_equipment),
+                pick_to_server=shown_layer is not None,
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
-    # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다). 아래 key 있는 호기 표의 자리가 밀리지
+    # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다). 아래 key 있는 CSV 줄의 자리가 밀리지
     # 않는다.
     with st.container(key="space_shortening_slot"):
         if space_layer is not None and shown_layer is not None:
@@ -2454,52 +2543,28 @@ else:
                 key_of=unit_keys_by_name(floor_status),
                 picked_key=SPACE_PICKED_KEY,
             )
-    # 아래 호기 표는 요청한 21칸이다(`FLOOR_TABLE_COLUMNS`). 도면에서 호기를 누르면 그 설비
-    # 줄만(모듈이면 그 Main 설비 줄 전부, 누른 모듈이 첫 줄), 「층 전체 보기」 로 층 전체로
-    # 돌아간다(2026-10-23 사용자 결정). 줄 머리와 단추는 늘 세운다 — 누를 때마다 표 위 줄이
-    # 생기고 사라지며 아래가 밀리지 않게.
-    with st.container(
-        horizontal=True, gap="small", vertical_alignment="center", key="space_floor_table_head"
-    ):
-        if picked_rows is not None:
-            st.markdown(
-                f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"
-                + (" (같은 Main 설비 모듈)" if len(picked_rows) > 1 else ""),
-                width="content",
-            )
-        else:
-            st.caption(
-                "층 전체 호기 · 도면에서 호기를 누르면 그 설비 줄만 봅니다.", width="content"
-            )
-        st.space("stretch")
-        st.button(
-            "층 전체 보기",
-            icon=":material/table_rows:",
-            key=f"space_floor_show_all_{selected_building}_{selected_floor}",
-            on_click=_show_whole_floor,
-            disabled=picked_rows is None,
-            help="도면에서 누른 설비만 보던 아래 표를 층 전체 호기로 돌립니다.",
-        )
-    # 표 도구 막대가 바로 위 줄 오른쪽 끝 「층 전체 보기」 를 덮어 표에서 옮긴 누름을 가로채지 않게
-    # 띄운다(AGENTS 9장 「표 도구 막대」).
-    toolbar_clearance()
-    st.dataframe(
-        floor_table(floor_equipment if picked_rows is None else picked_rows),
-        hide_index=True,
-        width="stretch",
-        # 아직 잡히지 않은 일정·메모 칸에 리터럴 "None" 이 찍혔다. 비워 두는 편이 맞다.
-        placeholder="",
-        column_config={
-            column: st.column_config.DateColumn(column, format="YYYY-MM-DD")
-            for column in DATE_COLUMNS
-        },
-    )
-    # 층별 호기 목록은 현장 배치 검토에 그대로 쓰인다 — 표가 좁혀져도 층 전체·모든 칸이다.
+    # 호기 칸은 도면 위 「호기 정보」 창이다(2026-11-03 사용자 요청 — 「하단이 아니라 편집기
+    # 안에서」). 도면 아래에는 층 CSV 한 줄만 둔다 — 현장 배치 검토에 그대로 쓰이는 층 전체·모든
+    # 칸이다.
     render_csv_download(
         data=floor_equipment.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"space_{selected_building}_{selected_floor}.csv",
         key=f"space_floor_download_{selected_building}_{selected_floor}",
     )
+# 도면·캔버스 팝업 호스트 — 단추는 사이드바 「Space 도면」 상자에, 팝업은 본문 끝 한 자리에서
+# 연다(사이드바 `with` 안에서 팝업을 열지 않는다). 층 캔버스 이탈 검사는 그린 호기가 아니라 저장된
+# 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다. 그 회차 세션 스냅샷의 마스터는 공식 배치다
+# (가정이던 때 리비전이면 공식 스냅샷을 따로 읽는다).
+render_floor_layout_dialog_host(
+    database_path=equipment_database_path,
+    floor=selected,
+    saved_equipment=(
+        _official_master()
+        if selected is not None and canvas_editable and not using_sample_equipment
+        else empty_equipment_master()
+    ),
+    disabled=drawing_locked,
+)
 # 호기 없는 화면에 남은 「필요 단축」 을 기본 값으로 적은 회차 — 사이드바 줄을 걷으려 한 번 더 돈다
 # (모든 위젯을 그린 뒤라 그 회차의 위젯 값을 잃지 않는다).
 if sidebar_rows_stale:

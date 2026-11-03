@@ -164,7 +164,8 @@ def test_the_fader_thins_its_labels_whenever_it_draws_or_resizes() -> None:
     """
     assert "node.dataset.day = String(n)" in JS
     assert "    showFader()\n    fitFaderTicks()\n  }" in JS
-    assert "    fitFabBar()\n    fitFaderTicks()\n  }" in JS
+    resize = JS[JS.index("S.onResize = () => {") :]
+    assert "    fitFaderTicks()\n  }" in resize[: resize.index("if (!S.ro")]
     assert ".sle-tick-label.is-crowded { visibility: hidden; }" in CSS
     assert ".sle-daterow { container: sle-daterow / inline-size; }" in CSS
     narrow = CSS[CSS.index("@container sle-daterow (width < 560px) {") :]

@@ -5,7 +5,7 @@
 
 - 호기(편집·층 보기)와 편집의 도면 요소가 Tab 자리다. Enter·Space 는 누르기와 같다 — 편집은 그것
   하나를 고르고 Ctrl·Shift 는 더하거나 빼며(이어서 방향키·Ctrl+방향키·Delete), 층 보기는 그 호기
-  정보 한 줄과 아래 표(`pick`)다.
+  정보 한 줄·「호기 정보」 창과 `pick` 이다.
 - 서랍 칩은 이름이 단추다(칩 안의 「×」 와 나란해 단추 안에 단추가 들지 않는다). Enter 는
   끌어 놓기 — 지금 보이는 도면 가운데에 놓고 초점을 놓은 호기로 옮긴다. Space 는 누르기(고르기)다.
 - 다시 그리면(`renderItems`) 같은 것의 새 노드에 초점을 돌려준다.
@@ -54,7 +54,7 @@ def test_units_and_edit_marks_are_tab_stops_and_enter_or_space_picks_them() -> N
 
     keys = _between("host.onkeydown = (event) => {", "for (const input of fieldInputs) {")
     view, edit = keys.split("if (event.key === 'Escape' && S.drag)")
-    # 층 보기: 초점이 온 호기에서 Enter·Space 는 누르기(고르기 + 아래 표)와 같다.
+    # 층 보기: 초점이 온 호기에서 Enter·Space 는 누르기(고르기 + `pick`)와 같다.
     # FAB 보기에는 호기가 없다.
     assert "const unitNode = FAB ? null : canvasItemOf(event.target)" in view
     picked = view[view.index("if (unitNode &&") :]
@@ -100,7 +100,7 @@ def test_tray_chip_names_are_buttons_where_enter_places_and_space_picks() -> Non
     assert place.index("if (!onCanvas(lead) && !list.some(onCanvas)) return") < place.index(
         "group.focus({ preventScroll: true })"
     )
-    hint = HTML[HTML.index('<p class="sle-tray-hint">') :]
+    hint = HTML[HTML.index('<p class="sle-tray-hint"') :]
     assert "<b>Enter</b>" in hint and "<b>Space</b>" in hint
 
 

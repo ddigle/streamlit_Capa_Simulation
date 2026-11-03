@@ -424,10 +424,14 @@ def test_the_fab_difference_column_follows_the_process_filter(
 
 
 @pytest.mark.parametrize("floor", [True, False])
-def test_the_compare_toggle_is_in_the_path_row_on_both_views(
+def test_the_compare_toggle_is_in_the_sidebar_box_on_both_views(
     tmp_path: Path, editor_calls: list[dict[str, Any]], floor: bool
 ) -> None:
-    """토글은 FAB·층 공통 경로 줄(`space_path`)에 선다 — 층을 오가도 같은 자리다."""
+    """토글은 FAB·층 공통 사이드바 「Space 도면」 상자에 선다(2026-11-03 — 옛 경로 줄 `space_path`
+    를 옮겼다) — 층을 오가도 같은 자리다."""
     _, setup = _overlay(tmp_path)
     app: AppTest = _ok(_space(tmp_path, setup, floor=floor).run())
     assert app.toggle(key=COMPARE_KEY).label == "공식과 견주기"
+    assert [toggle.key for toggle in app.sidebar.toggle if toggle.key == COMPARE_KEY] == [
+        COMPARE_KEY
+    ]

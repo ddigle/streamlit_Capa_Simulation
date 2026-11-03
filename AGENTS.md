@@ -620,6 +620,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     매 회차 읽는다.
 - `app_pages/space_status.py` — 실행 관리의 Space 현황으로, `S.PKG FAB 전체 → 층 상세` 2단 도면(`space_layout_editor.py`
   뷰어)에서 셋업 이행을 공간·호기로 본다. 상태별 대수·단계 전환은 가용설비 현황 몫이다(`guides/space_status.md`).
+  - **사이드바 「Space 도면」 상자**(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷을 사이드바 조회 조건 상자 꼴로, 9장
+    「사이드바·조건 카드·본문」 의 화면 조작 상자): 조회 조건 패널 바로 밑 · `Space 조건` 카드 **위**에 이 화면을 볼 때만 선다
+    (`page_box_key("space")` — `render_equipment_scenario_row` 바로 뒤, 첫 `condition_card` 보다 먼저 자리만 세우고 안은 옛 경로 줄
+    자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 이름 줄 「자리」 + `FAB 전체`
+    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 이름 줄 「도면」 +
+    `배치 편집`(층 `space_layout_edit_mode`·잠기면 `space_layout_edit_mode_locked` / FAB `space_fab_edit_mode`)·`도면·캔버스 편집`
+    (단추만 — 팝업은 본문 끝 호스트, `floor_layout_upload`) · 잠금 줄(`_render_edit_lock_line` — 「최신 rM 불러오기」·빨리 감기
+    캡션, 편집본이 있는 회차) · FAB·가정이면 `공식으로 바꾸기` · `공식과 견주기` 토글 · 배치 줄(도면 위 머리 칸에 서던
+    `space_layout_notices` — 짧은 줄 `LayoutNotice.short` 「가정 배치 · 공식과 다른 호기 n대」 등, 풍선이 온 문장, 아래 「보기」
+    문단) · 일정 없는 호기가 있으면 끝 캡션 한 줄(「일정 없는 호기 n대 · 계산 제외」 / 공식 「공식 일정 없음 n대 · 그리지
+    않음」 — 풍선이 `unscheduled_notice` 문장)이다. 두 줄은 상태 알림(`alerts.state`)이 아니라 이 화면을 보는 동안 늘 서는
+    상자 줄이다(사용자 요청 — 레이아웃 위 요소를 사이드바로. 알림창·Alarm 에는 싣지 않는다).
+    위젯 key 는 옮기기 전 그대로다(세션 값·화면 확인이 산다). 본문에서는 경로 줄(`space_path`)·테두리 상자·머리 줄
+    (`space_fab_head`·`space_floor_head`)·편집 캡션 두 줄을 걷었고 도면은 늘 서는 칸 `space_fab_stage`·`space_floor_stage` 안이다
+    (순번이 밀려 다시 마운트되지 않게). 시험은 `tests/test_space_sidebar_box.py`.
   - 연 층은 세션 키 `space_status_selected_building`·`_floor` 가 먼저이고 주소 `?floor=` 는 `floor` 만 넣고
     지운다(`st.query_params.clear()` 금지). 자리 이동은 모두 콜백이다. 브라우저 뒤로/앞으로는 층 이동이 아니다.
     **예외 하나** — 필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=…&proc=…&target=…`)는 페이지 맨 앞에서 한 번 받아
@@ -656,7 +671,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하나이고 가정이면 그 리비전의 호기 배치 차이가 얹혀 있다. 층 도면 요소·Main 설비명 위치는 **모두**
     `components/space_floor_layout.effective_floor_layout`(공식 층 현행값 ⊕ 그 리비전의 요소·이름표 차이)을 지난다 — 뷰어·
     편집기·「그대로인가」 판정·층 대조 기준 지문·저장 안 한 상자의 겹침 경고(공식 현행값 직접 읽기 0 — 시험이 소스를
-    훑는다). 머리 알림은 **그리는 스냅샷**으로 정한다(`space_layout_notices` — 「가정 배치 · 공식과 다른 호기 n대 · 도면 요소
+    훑는다). 사이드바 상자의 배치 줄은 **그리는 스냅샷**으로 정한다(`space_layout_notices` — 「가정 배치 · 공식과 다른 호기 n대 · 도면 요소
     m개 · Main 설비명 위치 k개」, 차이 없는 가정은 「배치는 공식과 같습니다」 캡션, 공식 시나리오의 가정이던 때 리비전도
     알림 — 실효 차이가 있으면 「이 리비전은 공식과 다른 배치(…)를 담고 있습니다」 info, 저장된 차이가 모두 지금 공식과 같으면
     「이 리비전에 저장된 배치 차이(…)는 지금 공식과 같습니다」 캡션 하나. 옛 리비전은 불변이고 정리는 최신에서 하므로 그 줄에는
@@ -664,11 +679,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쌍이면 「공식 일정 없음 n대」). 미확인은 가정이면 공식 일정 기준(가용설비 현황과 같은 `official_confirmation_master`),
     층 캔버스 줄이기 검사는 공식 배치 마스터다. 뷰어 epoch 는 편집 가능 여부와 떼어 늘 쌍 토큰을 담는다(샘플만 「sample」 —
     잠긴 두 쌍을 오갈 때 옛 좌표가 남지 않게, 검토 F1).
-  - **「공식과 견주기」**(설계 시나리오 2단계 S4 — 설계 8-3). 경로 줄(`space_path`) 끝에 **늘 서는** 토글
+  - **「공식과 견주기」**(설계 시나리오 2단계 S4 — 설계 8-3). 사이드바 「Space 도면」 상자에 **늘 서는** 토글
     (`space_compare_official_v1`, `persist_state="session"`)이고, 해당 없는 회차(공식 배치·호기 차이 없음·층 배치 편집 중·샘플·
     일정 없이 엶)에는 다른 key(`space_compare_official_locked_v1`)의 끈 채 잠근 토글을 같은 자리에 세운다 — 조건부로 생겼다
-    사라지면 아래 뷰어 순번이 밀려 다시 마운트되고 배율을 잃는다(검토 L11). 견줄 것은 **그리는 스냅샷**의 호기 차이
-    (`layout_official_places` — 머리 알림과 같은 재료, 공식 스냅샷을 따로 읽지 않는다). 켜면 층 상세 뷰어 payload `compare`
+    사라지면 상자 줄이 흔들린다(옛 경로 줄 자리에서는 아래 뷰어 순번이 밀려 다시 마운트되고 배율을 잃었다 — 검토 L11). 견줄 것은 **그리는 스냅샷**의 호기 차이
+    (`layout_official_places` — 배치 줄과 같은 재료, 공식 스냅샷을 따로 읽지 않는다). 켜면 층 상세 뷰어 payload `compare`
     (`components/space_floor_layout.compare_payload` ← `services/layout_overlay.layout_compare` — **epoch 밖**이라 켜고 꺼도 다시
     마운트하지 않는다)가 공식 자리가 이 층인 차이 호기의 점선 상자(같은 층으로 옮겼으면 지금 상자와 가는 선, 다른 층이면
     「→ C2 3F」 — 비활성 층이면 「→ C2 3F(비활성 층)」(`inactive`), 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면
@@ -681,7 +696,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`floor_block_stats(layout_differences=)` → `linkStats.layout`)이다. 그 줄 끝에 공식과 자리가 다른 호기가 든 겹친 쌍 수
     「· 겹침 n쌍」 이 붙는다(`space_floor_layout.floor_moved_overlaps` — `layout_overlay.moved_unit_names` 의 호기만 그 층의 다른
     호기와 견주는 `space_layout_edit.overlap_counts_touching`, 「겹친 호기」 경고와 같은 판정 — 개선 I74). FAB 셈도 층 상세와 같이 그리는 호기(공정소분류 필터를
-    지난 것 — `floor_unit_differences(session, shown=)`)만 센다 — 같은 표의 배치대수와 어긋나지 않게. 도면 요소·Main 설비명 위치 차이는 머리 알림의 수만이다.
+    지난 것 — `floor_unit_differences(session, shown=)`)만 센다 — 같은 표의 배치대수와 어긋나지 않게. 도면 요소·Main 설비명 위치 차이는 배치 줄의 수만이다.
     데이터 꼴은 기준 쪽/보는 쪽 이름이라 반대 방향(공식 세션에서 고른 가정 시나리오를 점선으로)도 받을 수 있다(구현은 범위 밖).
   - **편집 권한은 `equipment_scenario_activation.space_edit_mode(session, stamped_role=)` 한 판정**(설계 8-4 표 — 설비
     마스터 탭 배치 칸·붙여넣기도 같은 `layout`). 공식 시나리오는 공식 배치(낡아도 — 위치는 공통, 새 호기 폼만 꺼짐), 공식
@@ -711,11 +726,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가정 세션 상자는 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 않습니다」 이고(이름 바꿈이
     있으면 「이름 바꿈은 공통 대장에 저장합니다」 를 붙이고, 이름만 바꿨으면 그 한 줄만 — 이름 바꿈은 어느 시나리오에서나 같은
     호기의 이름이라 가정 배치 리비전을 만들지 않는다. 적용 알림의 「가정 배치로 들어가고」 도 배치를 바꾼 적용에만, E2E r6) 저장 칸은
-    `render_equipment_save_fields(..., assumption=True)`(함께 넣기 기본 켬 — 2026-11-01 N2, 켜 있으면 공식 가용대수 경고) 다. 층 배치 잠금 줄은 늘 서는 칸
-    (`space_edit_lock_slot`)에 그린다. 잠금 까닭(`lock_reason`)은 그 줄에만 한 번 적는다 — 상자는 「저장하지 않습니다 — 까닭은
-    아래 잠금 줄에 있습니다」 와 「배치 변경만 버리기」 만(까닭이 없을 때만 「최신을 불러온 뒤 다시 고치세요」, E2E r2). 배치
-    빨리 감기 글(`notice` — 「rM 이 더 새롭지만 배치는 같습니다 — …」)도 같은 칸의 ▸▸ 줄에만 한 번 적고 상자 캡션에 붙이지 않는다
-    (E2E r3).
+    `render_equipment_save_fields(..., assumption=True)`(함께 넣기 기본 켬 — 2026-11-01 N2, 켜 있으면 공식 가용대수 경고) 다. 층 배치 잠금 줄은 사이드바
+    「Space 도면」 상자의 `배치 편집` 바로 아래에 그린다(본문 늘 서는 칸 `space_edit_lock_slot` 에는 시나리오 바꾸기 실패·저장 오류만). 잠금 까닭(`lock_reason`)은 그 줄에만 한 번 적는다 — 상자는 「배치 편집이 잠겨 이 배치 변경은
+    저장하지 않습니다 — 까닭은 사이드바 「Space 도면」 상자의 잠금 줄에 있습니다」 와 「배치 변경만 버리기」 만(까닭이 없을 때만
+    「최신을 불러온 뒤 다시 고치세요」, E2E r2). 배치 빨리 감기 글(`notice` — 「rM 이 더 새롭지만 배치는 같습니다 — …」)도 사이드바
+    상자 잠금 줄 자리의 ▸▸ 줄에만 한 번 적고 상자 캡션에 붙이지 않는다(E2E r3).
   - 배치 편집은 설비 마스터 탭과 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer` 로 저장한다(「배치 저장」 확인
     팝오버에 저장 칸 — 공통·일정이 모두 그대로면 층 값만 쓰고 리비전을 만들지 않는다). 도면 상자 앞 칸
     (`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
@@ -726,11 +741,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 적용이 옮기거나 빼거나 보낸 모듈 묶음(이 적용의 `changes`·`hidden_moves` 에 모듈이 든 묶음)의 적용 뒤 모양
     (`module_layouts`)을 `stage_editor_module_layouts` 로 둔다 — 저장의 모듈 묶음 좌표·크기 검사가 그 모양 그대로인
     묶음을 편집기 결과로 통과시킨다(`equipment_data_workspace.saved_master_violations`).
-  - 층 상세 아래 호기 표는 21칸(`space_layout.FLOOR_TABLE_COLUMNS` — 2026-10-23 요청 차례, 칸 이름은 설비 마스터 그대로,
-    「단계」는 기준일 상태)이다. 뷰어에서 누른 호기(`on_pick` 콜백 → 세션 `space_status_picked_unit` = (동, 층, 설비명))가
-    있으면 그 설비 줄만(`picked_unit_rows` — 모듈이면 같은 Main 설비 줄 전부, 누른 것이 첫 줄)이고 「층 전체 보기」
-    (`space_floor_show_all_<동>_<층>`, 늘 세움)·빈 곳·Esc 로 풀린다. 다른 층·FAB 로 옮기거나 그 층 행에 없으면(필터·이름
-    바꿈) 푼다. 층 CSV 는 늘 층 전체의 모든 칸이다. 뷰어 호기에는 설비지분 `share`(기준일 보유 지분
+  - 층 상세 범례는 편집기 왼쪽 칸 「범례」 다 — 페이지가 `space_legend_entries`·`shortening_legend_entries` 칸 목록과
+    「기준 YYYY-MM-DD」 를 뷰어 data `legend` 로 넘긴다(epoch 밖, 편집은 채우기 뜻만). 저장 안 한 배치 상자를 그렸는지
+    (`_render_unsaved_layout_panel` 이 돌려준다)는 뷰어·편집기 data `pendingSave` 로 넘긴다(스크롤 고정 중 상태 줄 한 줄).
+  - **「호기 정보」 창**(2026-11-03 사용자 요청 — 옛 층 상세 아래 호기 표를 도면 위 창으로, 거꾸로 칸 필터 → 맞는 호기 목록 →
+    도면 강조). 표 재료는 `services/space_unit_sheet.unit_sheet`(칸 `space_layout.FLOOR_TABLE_COLUMNS` 21칸 — 2026-10-23 요청 차례,
+    칸 이름은 설비 마스터 그대로, 「단계」는 기준일 상태 — + 끝 「도면」 배치·미배치·레이아웃 제외)이고 뷰어·층 편집기 data
+    `sheet`(epoch 밖)로 싣는다. 층 보기는 `_view_sheet`(이 층 행 — 공정 필터 뒤 — 가운데 기준일에 도면에서 빠지지 않은 것, 도면에
+    선 행은 배치), 배치 편집은 `_edit_sheet`(편집본의 이 층 행 + 편집기 호기 — 층 미정 미배치 포함, 공정 필터와 상관없이)다. 새 DB
+    읽기는 없다(그리는 프레임 그대로). 창·거르기·강조는 편집기 JS 몫이다(`space_layout_editor` 항목). 페이지 아래에는 층 CSV 한
+    줄만 남는다(늘 층 전체의 모든 칸). 뷰어 호기 누르기(`on_pick` 콜백 → 세션 `space_status_picked_unit` = (동, 층, 설비명))는
+    색 기준 「필요 단축」 칸의 누른 호기 상세만 쓴다 — 뷰어는 그 보기를 켠 동안만 보내고(`pick_to_server`, 사양 D11 — 누를 때마다
+    앱 전체가 돌지 않게) 그 보기가 서지 않은 회차(끈 층 보기·배치 편집)에는 페이지가 그 세션 값을 푼다. 다른 층·FAB 로 옮기거나 그
+    층 행에 없으면(필터·이름 바꿈) 푼다. 뷰어 호기에는 설비지분 `share`(기준일 보유 지분
     `space_layout.row_unit_shares` — 범례·배치 대수와 같은 칸, 일부 모듈만 반입한 묶음의 반입 전 모듈은 0)를 싣는다.
   - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
     목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
@@ -880,10 +903,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칩은 콜백). `open_scenario_dialog_on` 은 팝업을 불러오기 구획·주어진 짝으로 연다(칩이 편집이 있을 때 같은 확인을
     거치는 길).
 - `src/capa_simulation/components/space_layout.py` — Space 배치 집계(대수·점유율·층별 배치 `floor_placements`), 호기
-  상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 호기 표(`floor_table`·
-  `picked_unit_rows`)와 영역·금지 색을 만든다. 색 기준 「필요 단축」 은 블록 셋째 줄(`floor_block_stats(short_lines=)` — 비활성
+  상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 「호기 정보」 창의 칸(`FLOOR_TABLE_COLUMNS`)·
+  누른 호기 줄(`picked_unit_rows` — 필요 단축 칸, 편집기 JS `pickedRows` 와 같은 규칙)과 영역·금지 색을 만든다. 색 기준 「필요 단축」 은 블록 셋째 줄(`floor_block_stats(short_lines=)` — 비활성
   층에는 싣지 않음)·구간 얹기(`apply_layer_looks` — 표시 호기 면을 비워 브라우저가 구간 변수로 칠함)·범례
-  (`shortening_legend_markup` — 구간 넷·임박 테·흐림 + 테·덧표시 칸, 채우기 칸 없음)다.
+  (`shortening_legend_entries` — 구간 넷·임박 테·흐림 + 테·덧표시 칸, 채우기 칸 없음)다.
+  - 층 상세 범례는 칸 목록이다(`space_legend_entries`·`shortening_legend_entries` → `[{label, css, inner}]`, 끝 줄은
+    `legend_as_of` 「기준 YYYY-MM-DD」) — 편집기 왼쪽 칸 「범례」 가 `css` 를 `style.cssText`, 글을 `textContent` 로만 단다
+    (2026-11-03 — 머리 줄 범례를 옮겼다). `css` 는 토큰으로 만든 견본 꼴이라 사용자 글이 들지 않는다. `*_markup` 은 그 목록
+    위의 얇은 HTML 감싸기로 남아 시험·읽기용이다.
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
     블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
@@ -945,12 +972,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/space_floor_layout.py` — Space 가 그리는 층 도면 요소·Main 설비명 위치의 한 곳(설비 시나리오
   2단계 S3). `effective_floor_layout(db, 층, 세션)` = 공식 층 현행값(`load_floor_layout_marks`·`load_floor_group_labels` — 쓰기
   세대 캐시) ⊕ 세션 리비전의 요소·이름표 차이(`load_schedule_layout_overlay` — 일정 id 키 불변 칸, 차이 없으면 질의 없음)를
-  회차마다 합친다(층 하나·수십 요소 — 캐시하지 않는다, 이 모듈에 캐시 데코레이터 없음). `floor_layout_differences` 는 머리
-  알림의 실효 요소·이름표 수, `space_layout_notices` 는 머리 알림 줄(그리는 스냅샷 기준 — 설계 8-2)이다. 「공식과 견주기」(S4)
+  회차마다 합친다(층 하나·수십 요소 — 캐시하지 않는다, 이 모듈에 캐시 데코레이터 없음). `floor_layout_differences` 는 배치
+  줄의 실효 요소·이름표 수, `space_layout_notices` 는 사이드바 「Space 도면」 상자의 배치 줄(`LayoutNotice` — 온 문장·꼴·짧은
+  줄, 그리는 스냅샷 기준 — 설계 8-2)이다. 「공식과 견주기」(S4)
   재료 `compare_payload`(층 상세 뷰어 `compare`)·`floor_unit_differences`(FAB 층 목록 칸·블록 풍선)도 여기다 — 둘 다 그리는 세션
   스냅샷의 합친 본문과 마스터만 읽는다.
 - `src/capa_simulation/components/floor_layout_upload.py` — Space 층·FAB 전체의 배경 도면 업로드·삭제와 캔버스 치수
   팝업(`FLOOR_LAYOUT_DIALOG_KEY`)이다. 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
+  - 단추와 팝업을 가른다(2026-11-03 — 단추가 사이드바 「Space 도면」 상자로 갔다): `render_floor_layout_button(floor=)` 은
+    단추(`space_floor_layout_open_<C1_1F|FAB>`)만 그려 열림 칸을 적고, 팝업은 본문 호스트 `render_floor_layout_dialog_host`
+    (Space 본문 끝 한 자리 — 사이드바 `with` 안에서 팝업을 열지 않는다)가 연다. 잠금(`disabled`)은 둘에 같이 넘긴다(두 겹).
   - 캔버스를 줄여 생기는 호기 이탈은 저장된 설비 마스터의 그 층 호기 전부로 잰다(저장 검증과 같은 행, 확인 체크).
     도면 요소 이탈은 저장소가 거부하므로 단추를 막는다. 저장·삭제 뒤 그 층의 미저장 캔버스를 버린다.
   - 층이면 가정 설비 시나리오 배치도 미리 본다(S4 — 설계 6-4, `equipment_cache.load_layout_overlay_extent` — 캔버스를 바꾸는
@@ -968,6 +999,58 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꼬리표와 배지가 서로 비키지는 않는다. FAB 블록 풍선은 단축 줄(`short`) 뒤에 견주기 줄(`layout`)이다.
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
+  - **편집기 몸은 가로 세 칸**(2026-11-03 사용자 요청 — 좌우로 긴 화면의 여백을 두 옆 칸에): `.sle-body` grid 다섯 칸
+    [왼쪽 칸 `.sle-side.is-left`][칸막이][무대][칸막이][오른쪽 칸 `.sle-side.is-right`] — 칸마다 `grid-column` 을 박아 숨은 칸이
+    있어도 밀리지 않는다. 왼쪽 칸은 FAB 보기에만 없고(층 보기는 「범례」 묶음 하나, 편집은 「도구」 — 범례·도면 요소·선택·
+    서식·격자·편집 영역·도움말 묶음, 묶음 머리를 누르면 접힘), 오른쪽 칸(옛 미배치 서랍 — `.sle-tray`·`.sle-drawer-tab`·
+    `.sle-drawer-close` class 는 그대로)은 층 편집에만 있다. 칸 상자는 `position: absolute; inset: 0` 이라 내용이 줄 높이를
+    늘리지 않고 머리 아래가 굴러간다. 폭 한계·저장값·칸막이 키·무대 몫·고정 높이·놓기 판정은 순수 구획 `// <side-panels>`
+    (`panelBounds`·`clampPanel`·`storedPanels`·`splitKey`·`fitPanels`·`dragLimit`·`lockHeight`·`lockTop`·`insideRect` —
+    `tests/test_space_editor_panels_js.py` 가 node 로 돌린다). 칸 폭: 편집 칸 기본 clamp(220, 편집기 폭 × 0.18, 300)·최소 200·
+    최대 min(480, × 0.4), 층 보기 범례 칸 기본 200·최소 160·최대 min(360, × 0.3), 무대 최소 360(두 칸을 다 넓히면 마지막에 끈
+    칸부터 줄인다). 칸막이(`role=separator`)는 끌기·두 번 누르기 = 기본 폭·←/→(Shift 64)·Home·End·Enter 접기이고 키는 도면
+    단축키로 새지 않는다(설비 마스터 오른쪽 칸 칸막이와 같은 꼴). 접으면 28px 띠. 폭·접힘은 `capa.space.panels.v1`(범위·모드별
+    — `floor.edit`·`floor.view`·`fab.edit`), 묶음 접힘은 `capa.space.sections.v1` 에만 둔다(파이썬·epoch 밖 — 9장 「브라우저
+    전용 보기 상태」). 편집기 폭 900px(`NARROW_PX`) 아래에서는 두 칸이 무대 위 겹침 서랍(한 번에 하나, 처음엔 띠)이고 옛 서랍
+    동작(`trayReserve`·`revealFromTray`·서랍 밖으로 끌면 비침)은 그 꼴에서만 돈다. 미배치 칸이 360px 이상이면 칩이 두 열(CSS
+    컨테이너 `sle-tray`)이고 칸 도움말은 「i」 로 펴는 접힘이다. **도면의 호기를 오른쪽 칸(접힌 띠 포함)에 끌어 놓으면
+    미배치**다(`S.drag.toTray` — 놓으면 끈 자리를 처음으로 돌린 뒤 호기만 `removeItems`, 도면 요소는 제자리, 되돌리기 한 번).
+    범례는 data `legend`(epoch 밖 — `_clean_legend`)를 `textContent`·`style.cssText` 로만 단다. 층 편집의 기준일 고정은 옛
+    「편집 중 고정」 줄 대신 도구 줄 칩(`sle-pinchip`, 결정 D12)이고 기준일 페이더 줄(`sle-daterow`)은 층 보기에만 선다. 편집
+    안내(옛 편집기 위 캡션·옛 상태 줄 단축키 글)는 왼쪽 칸 「도움말」(`GUIDE`·`HINT`)이다. 도구 줄 제목(`sle-title`)은 보기에도
+    서서 지금 층(FAB 은 `FAB_TITLE`)을 말한다. 도구 줄이 넘치면 `fitToolbar` 가 창 폭으로만 정하는 접는 차례를 더한다 — FAB 보기
+    ①~⑥, 층 보기 ⑥, 편집 `is-efit1`(「호기 정보」·「고정」 아이콘만 · 기준일 칩 날짜만 — 낭독기 글은 남김) → ⑥(빈 칸 뒤 「호기
+    정보」·「고정」·「적용」 을 둘째 줄로, 글 다시 섬). 무대 높이를 재기 전에 접는다(둘째 줄이 무대를 내린다 — 검토 browser-1:
+    사이드바를 연 1100px 창 층 편집에서 「고정」 이 줄 밖이라 스크롤 고정을 켤 수 없었다). 편집은 무대 기본 높이를 영역 비율로 줄이지 않는다(옆 칸이 무대 높이를 같이 쓴다).
+  - **스크롤 고정**(도구 줄 「고정」 `sle-lock`, `aria-pressed`): 켜면 본문 스크롤 칸을 굴려 편집기 맨 위를 화면 탭 줄 아래
+    끝 + 8px(`lockTop`)에 맞추고 무대를 창 높이에 맞춘 뒤(`lockHeight` — 고른 높이·기억은 그대로, 높이 손잡이 숨김)
+    `<html data-space-lock="1">` 을 단다. 본문 스크롤을 막는 규칙은 페이지 서식 `space_lock_style()`(Space 현황이 `st.html`
+    로 그림 — 스타일만 들어 이벤트 칸)이라 다른 화면으로 가면 정리 함수가 돌지 않아도 풀린다. 고정 중 맨 휠은 도면 이동
+    (Shift 가로)·Ctrl+휠 확대이고 늘 막는다. 위 칸이 서고 사라지면 본문 내용 상자 관찰자(`S.mainRo`)와 회차마다 다시 맞춘다.
+    고정은 마운트에만 둔다(`S.lock` — 다시 마운트되면 풀린 채, 새 마운트는 앞에서 남은 속성을 걷는다) — 층·FAB 바꾸기·배치
+    편집 켜고 끄기도 다른 key 라 풀린다. 고정 중 data `pendingSave`(위 「저장 안 한 배치」 상자를 그린 회차)면 상태 줄이
+    「저장 안 한 배치가 있습니다 — 고정을 풀고 위 상자에서 저장하세요」 다. Streamlit DOM 에 기대는 곳(1.63 — 판올림에서 다시
+    본다): `section[data-testid="stMain"]`(본문 스크롤 칸), `.st-key-page_tabs_strip`(sticky 화면 탭 줄),
+    `[data-testid="stMainBlockContainer"]`, 컴포넌트가 같은 문서라 `document` 를 본다.
+  - **「호기 정보」 창**(층 보기·편집, FAB 없음 — 2026-11-03 사용자 요청): 편집기 몸 안 겹친 창 `.sle-sheet`(`role=region`,
+    z-index 4, 몸 안으로 묶음 — 순수 `clampSheet`, 최소 360×200, 처음 무대 왼쪽 아래 720×320). 도구 줄 「호기 정보」
+    (`sle-sheet-toggle`, `aria-pressed`)나 호기 두 번 누르기(`svg.ondblclick` 의 `unitAt` — 빈 곳은 보기에서 확대 그대로)로 연다.
+    제목 줄 끌기 = 옮기기, 오른쪽 아래 손잡이 = 크기, `–`(제목 줄 두 번 누르기도) = 접기, `×`·Esc = 닫기. 탭 둘 — 「고른 호기」
+    (보기 `pickedRows` — 파이썬 `picked_unit_rows` 와 같은 규칙, 편집 `pickedRowsMany` — 고른 차례로 이음)와 「필터」(칸 머리 ▾ →
+    엑셀 자동 필터 꼴 펼침 `.sle-sheet-menu` — 값 목록 체크·개수·찾기·모두 고르기/풀기, 날짜·숫자 칸은 「부터·까지」. 칸 안 OR ·
+    칸끼리 AND, 대소문자 무시, 빈 값 「(빈칸)」, 값 목록은 다른 칸 필터만 지난 줄에서 — `sheetMatch(rows, columns, filters, skip)`·
+    `distinctValues`·`inRange`·`sheetActive`·`sheetHits`). 판정은 순수 구획 `// <unit-sheet>`(`tests/test_space_unit_sheet_js.py`
+    가 `// <module-tiling>` 의 `naturalCompare` 와 함께 node 로 돌림)이다. 필터가 걸리고 「도면에서 강조」 가 켜진 동안(창 열림 —
+    접힘 포함) 맞는 호기 `is-filter-hit`(새 부품 `.sle-filter-ring` — 보기·편집 모두 만들고 `FILTER_GAP_PX` 5 로 선택 후광 밖, 토큰
+    `SPACE_FILTER_RING`), 나머지 `is-filter-out`(`SPACE_FILTER_DIM_OPACITY` — 필요 단축 `is-dim` 과 함께면 `calc` 로 곱함)이고 편집
+    오른쪽 칸 칩도 `is-filter-hit` + 칸 머리 「필터 맞음 n」(`.sle-tray-hits`). 닫으면 강조를 끄고 필터는 남는다. 목록 줄 누르기
+    (`goToUnit`) = 고르기 + `zoomToBox`(보기는 `notePick` 도) + 창이 덮으면 덮지 않은 가장 넓은 띠로 밀기(`clearOfSheet`), 편집의
+    미배치 호기는 오른쪽 칸을 펴 그 칩으로 굴려 깜빡임, 그 밖은 창 아래 한 줄. 배치 편집의 「도면」 칸은 적용 전 편집으로 덮어
+    쓴다(`sheetRows` — 트레이 = 미배치, 보낸 호기 「→ 층」). 창 안 키는 도면 단축키로 새지 않는다(`sheetBox.onkeydown` 이 멈춤).
+    상태는 브라우저에만 — 자리·크기·접힘 localStorage `capa.space.sheet.win.v1`, 열림·탭·필터·강조 sessionStorage
+    `capa.space.sheet.state.v1`(탭 안 기억, 층·편집을 오가도 남음 — 필터는 칸 이름으로 남아 새 층의 값으로 다시 센다). 받은 표는
+    지문(`S.sheetDataKey`)이 바뀐 회차에만 다시 그리고, 상태 줄을 고칠 때마다(`updateStatus` 끝) 같은 그림이면 고른 줄 표시만
+    고친다. 끄는 동안(`S.drag`)은 쉰다.
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)·호기 누르기(`on_pick_change`)는
     버린다. 옛 epoch 의 적용이 방금 받아들인 적용과 같은 입력이면(새 epoch 를 받기 전 같은 「적용」 의 둘째 누름)
@@ -1044,13 +1127,79 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       `Main 설비명` 에서 바꾼다(되돌리기 한 번, `op: 'groupLabel'` — 처음 고른 것을 되돌리면 「고른 적 없음」으로). 적용값 `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}](다른 층으로 보낸 묶음은
       빠짐)이다. `drawSelectionBox` 가 부르므로 옮기기·크기·배율을 따라가고, 보기 화면은 기준일에 묶음의 모듈이 하나도
       보이지 않으면(`__visible`) 이름도 숨기며 일부만 보이면 보이는 모듈의 바깥 상자(`shownRange`)에 세운다. 글자는 화면
-      12px 에서 범위 폭에 맞춰 줄고 가운데는 범위 높이의 0.16 배까지이며 7px(`UNIT_LABEL_MIN_PX`) 아래면 숨는다 — 다만
+      12px × 글자 배율 s(아래 「배율 글자」)에서 범위 폭에 맞춰 줄고 가운데는 범위 높이의 0.16 배까지이며 7px(`UNIT_LABEL_MIN_PX`) 아래면 숨는다 — 다만
       모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 7px 알약이 범위 안에 들면 7px 로 선다. 위·아래 알약이
       영역 위·아래 끝을 넘으면 범위 안쪽 띠로 뒤집는다(`groupNameSpot`).
+  - **베이·머리 크기·배율 글자**(2026-11-03 사용자 요청 — 사양 (나)). 순수 판정은 `// <mark-look>`(모양 값 `cleanLook`·`lookText`·
+    `lookValue`, 그리기 `arrowShape`·`bayShape`·`placeLocal`·`bayAutoSize`, `bayNumber`·`lineDash`)와 `// <text-scale>`
+    (`textScale`·`calloutScale`·`scaledText`) 구획이고 `tests/test_space_mark_look_js.py` 가 node 로 돌려 파이썬
+    `floor_layout_mark.mark_look`·`bay_label` 과 대조한다.
+    - 베이(`bay`, 층만 — FAB 에는 없다): 0° 는 여는 쪽이 왼쪽인 ⊃ 꼴(팔 y = lh/4 · 3lh/4)이고 머리는 아래 팔 왼쪽 끝에서 왼쪽을
+      향한다. 90° 돌리기(`rotateMark`)와 좌우 뒤집기(`look.flip` — 돌리기 앞 가운데 축 거울)·상하 뒤집기(180° 돌림 + 좌우
+      뒤집기, 같은 상자)로 여덟 방향이다. 가운데 글은 「B<번호>」 — 이름표 칸에 번호만 쥐고(`bayNumber` = 파이썬 `bay_label`,
+      「B80」·「b 80」·「BB80」 → 「80」 — 앞의 B 는 모두 떼서 다시 거쳐도 같다, 10자) 그릴 때 「B」 를 붙인다. 글은 머리를 비킨 두 팔 사이 틈 가운데에 돌리지 않고 가로로 서고
+      (자동은 틈 맞춤 — 고를 수 있는 가장 큰 크기 24 의 배율 크기까지), 막는 요소가 아니며 상자 전체가 잡힌다(동선과 같다).
+    - 모양 값 `look`(동선·베이): 머리 크기 `head`(「너비·길이」 S·M·L — 동선의 MM 이 옛 그림 그대로), 선 색 `line`(강조색·진하게·
+      영역 색 키 — 테마 토큰), 굵기 `lineWidth`(화면 px, 동선은 처음 값 없이 상자 높이를 따름), 모양 `lineStyle`. 처음 값인 키는 쥐지
+      않고(`cleanLook`) 바꿀 때마다 새 객체로 갈아 끼운다 — 읽기·처음 값 기록(`snapshot`)·바뀜 판정(`lookText`)·적용값·복사·새 요소·
+      되돌리기에 모두 든다. 선택 칸 「머리 크기」(3×3 갤러리 — 행 너비 좁게·보통·넓게, 열 길이 짧게·보통·길게)·선 색·굵기·선 모양·
+      뒤집기는 고른 것 가운데 동선·베이 모두에 걸고 되돌리기 한 번이다(`setLooks`·`flipBays`).
+    - 배율 글자: 도면에 붙은 글자(요소 이름표·글자 요소·층 블록 글·베이 글·호기 이름표 상한 14·Main 설비명 상한 12)는 화면 px =
+      기준 크기 × s, s = 도면 1칸당 화면 px(ppu) ÷ 8(위 2배)이고 화면 6px 아래면 숨긴다(영역은 꼬리표 상자째) — 다만
+      호기 이름표·Main 설비명은 지금처럼 7px(`UNIT_LABEL_MIN_PX`) 아래에서 숨는다. 고른 글자 크기는 「도면
+      1칸이 화면 8px 일 때의 크기」 다(저장값은 그대로). 표지(필요 단축 배지·견주기 꼬리표)는 s 를 0.75~1.25 로 묶고 크기로는 숨기지
+      않는다. 손잡이·초점 테·「!」·겹침 꼭지·선 굵기는 화면 px 그대로다. 확대·이동마다 `applyView` → `position` → `drawMark`·
+      `drawSelectionBox` 가 다시 잰다.
+  - **도형**(2026-11-03 사용자 요청 — 사양 (나2), 층·FAB). 한 종류 `shape` 에 프리셋 키 `look.shape` 아홉(사각형·원·ㄴ자·ㄷ자·
+    테·삼각형·마름모·십자·블록 화살표 — `SHAPE_PRESETS`, 넣는 크기·모양 조절 값 [하한, 상한, 처음 값]·이름·돌림 뜻이 프리셋마다)
+    이다. 순수 판정은 `// <mark-look>`(프리셋 표·`cleanLook` 의 `adj`·`fillAlpha`·도형 선 색, `shapeOf`·`shapeAdj`·
+    `shapeFillOf`)와 `// <shape-geometry>`(경로 `shapePath` → {d, rule, pts} — 테만 evenodd, 노란 손잡이 `shapeHandles`·값
+    되돌림 `handleValue`·`unplaceLocal`, Shift 비율 유지 `keepAspect`, 손잡이 비키기 `nudgeHandle`)이고
+    `tests/test_space_shape_js.py` 가 node 로 돌려 파이썬 `mark_look`·`SHAPE_ADJUST` 와 대조한다.
+    - 꾸밈이다 — 막는 요소(`blocks`)·겹침 경고에 들지 않고 **호기 아래 층**(`sle-zones`, 영역과 같은 층 — `onZoneLayer`)에
+      그린다. 잡기는 경로 그대로(`sle-shape-hit` — 채우기·빗금이 있으면 안쪽과 12px 테 띠, 없으면 테 띠만 — 빈 안쪽 끌기는 고르기
+      사각형)이고 상자의 빈 귀·`sle-mark-box` 는 잡히지 않는다. 이름표는 가운데 가로(돌리지 않음, 자동은 상자 맞춤 — 24 의 배율
+      크기까지)이고 잡힌다.
+    - 호기 아래 층(영역·도형)에서 하나만 고른 것의 손잡이는 맨 위 층 `sle-overlay` 에 다시 세운다(`proxyHandles` — `data-for`,
+      제 그룹 안의 것은 CSS 가 감춘다) — 호기가 덮은 귀·변에서도 잡힌다. 고른 도형 하나의 노란 손잡이(`sle-adjust`, 토큰
+      `SPACE_ADJUST` + 도면 글자색 테)는 끌기 `mode: 'adjust'` — 잡은 자리 차이(`grab`)를 지켜 포인터를 제자리 좌표로 되돌려
+      값을 내고(`adjustedLook`), 놓을 때 바뀌었으면 되돌리기 한 번이다. 크기 손잡이와 겹치면 축을 따라 비켜 그린다.
+    - 선택 칸 「도형 서식」(`syncShapeProps` — 여럿이면 모두에, `setShapes` 되돌리기 한 번): 「도형」 바꾸기 갤러리(`look.shape`
+      만 바꾸고 `adj` 를 새 프리셋 처음 값으로 — 크기·채우기·선·글자 그대로), 모양 조절 %(한 프리셋일 때만), 채우기 색(요소
+      `color` — 영역 색 여섯 · `ink` · `surface`), 투명도(엑셀처럼 100 − `fillAlpha`), 선 색(`auto` 채우기 색의 진한 쪽 ·
+      `none` · `ink` · 여섯)·굵기·모양, 빗금(`hatch`), 뒤집기(`flipMarks` — 베이와 같은 규칙, 비대칭 꼴만). `90° 돌리기` 는 대칭
+      꼴에서 꺼진다. 도형 모서리 Shift 끌기는 비율 유지다(Shift 를 누른 채 손잡이를 잡아도 더하기 고르기가 아니다).
+    - 넣기는 도면 요소 칸 「도형 ▾」 갤러리 — 누르면 보이는 가운데, 끌면 놓은 자리(`ghostDrag`·`dropSpot`), 키보드 click 도.
+      읽기(`readMark` — 모르는 채우기 색은 파랑)·바뀜 판정·적용값·복사(`clipOf`)·되돌리기에 모양 값·색·빗금이 함께 간다.
+  - **서식 복사·붙여넣기**(2026-11-03 사용자 요청 — 사양 (다), 층·FAB 편집). 엑셀 서식 붓이다. 순수 판정은 `// <format-paint>`
+    (`formatOf` — 서식 {kind, module, size(자기 방향), paint, text}, `formatPatch` — 받는 쪽에 붙일 {size, fields, look} 또는 null,
+    `patchedLook`, 저장소에서 읽은 서식 거르기 `formatFrom`)이고 `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
+    node 로 돌려 종류 × 종류 × 붙일 것 체크 모든 쌍을 사양 5-1 표 모형과 견주고 붙인 요소가 파이썬 검증을 지나는지 본다.
+    - 키: `Ctrl+Shift+C`(⌘ 도) = 고른 것의 기준(`S.selected`) 하나를 담기, `Ctrl+Shift+V` = 지금 고른 것 모두(도면에 선 것, 담은 원본
+      하나는 빼고 — `formatOrigin`)에 붙이기. `host.onkeydown` 에서 글 칸 가드(`typing`) 뒤·요소 복사 갈래 **앞**이고(`formatKey` —
+      Ctrl·Shift·Alt 아님, 글쇠 자리 `code` 로 한글 자판도), 요소 복사 Ctrl+C/V 는 Shift 가 없을 때만이다. Esc 는 든 붓을 먼저
+      내린다. 실제 Chrome 창에서 Ctrl+Shift+C(개발자 도구 검사)를 페이지가 먼저 받는지는 사내·서피스 Chrome 확인 거리다(사양 D3 —
+      막히면 대안 Alt+Shift+C/V).
+    - 왼쪽 칸 「서식」 묶음(`data-sec="format"`, 선택 다음): 붓 `서식 복사`(`aria-pressed`, 한 번 = 담고 들어 한 번 붙이고 내림,
+      두 번(`click` 의 `detail` 2) = 잠금 — Esc·붓 단추·새 epoch 에 내림, 고른 것이 없으면 앞서 담은 서식으로 듦), `붙이기`, 붙일 것
+      체크 셋(크기·색·선·글자 — `capa.space.formatPaint.v1`), 담은 서식 한 줄. 붓을 든 `svg.onpointerdown` 은 끌기·손잡이보다
+      먼저 누른 것(`paintTargetAt` — 맨 위 층 손잡이·묶음 범위 안 빈 칸 포함)에 붙이고(`paintOnto` — 붙인 것을 고름), 빈 곳은
+      `mode: 'marquee', paint: true` 사각형이라 놓을 때 그 안 전부에 붙인다(누르기만 하면 고른 것을 지킴). 무대 커서는 copy.
+    - 붙는 칸: 크기는 같은 종류끼리만(요소는 같은 kind, 호기는 낱 호기끼리·Main 설비 모듈 묶음끼리 — 묶음은 범위 크기, 돌린 요소는
+      자기 방향 길이·두께로), 면 색은 영역·도형·층 블록 사이(받는 쪽에 없는 값은 건너뜀), 도형 투명도, 선 색·굵기·모양은 도형·
+      동선·베이 사이(동선 자동 굵기는 동선에만), 영역 테두리 ↔ 선 모양(점은 영역에 안 감), 머리 크기는 동선·베이, 빗금은 영역·
+      도형, 글자 크기·색은 모든 요소, 정렬은 영역끼리. 자리·이름표 글·회전·뒤집기·도형 꼴·모양 조절 값·설비 금지·연결 층은 넣지
+      않고 호기에는 크기만이다.
+    - `applyFormat` 은 칸·모양 값을 바꾸고 크기는 `sizeEntries`(`setSizes` 의 기록 없는 몸 — 모듈 묶음은 범위째 바둑판)로 바꿔 바뀐
+      것 모두를 `pushUndo` 한 번에 담는다(되돌리기 한 번). 붙인 것은 지금 바뀜 판정(`isChanged`)·적용값·저장으로 그대로 간다. 담은
+      서식은 sessionStorage `capa.space.formatClip.v1`(층·FAB 공용) + 페이지 안 쪽지 `window.__capaSpaceFormat` 이고 회차마다
+      `S.formatClip` 으로 한 번 읽는다 — 파이썬으로 보내지 않는다.
   - **층 상세 보기 둘**(2026-10-23 사용자 요청 3·8, 보기 전용 층 뷰어만 — FAB·배치 편집기는 그대로).
     - 호기 누르기: 끌지 않고 누른 뒤·Esc 뒤 `notePick` 이 고른 호기(호기가 아니면 null)를 트리거 `pick`
-      (`{epoch, id}`)으로 보낸다 — 같은 값은 다시 보내지 않는다. 파이썬 `_dispatch_pick` 이 epoch 를 대조해 `on_pick` 을
-      부른다. `data.picked`(파이썬이 쥔 값)가 바뀐 회차에 `syncPick` 이 도면의 고르기를 맞추고 새로 선 도면은 다시 고른다.
+      (`{epoch, id}`)으로 보낸다 — 같은 값은 다시 보내지 않고, data `pickToServer`(필요 단축 보기를 켠 동안만 참 — 사양 D11)가
+      거짓이면 보내지 않는다. 파이썬 `_dispatch_pick` 이 epoch 를 대조해 `on_pick` 을 부른다. `data.picked`(파이썬이 쥔 값)가
+      바뀐 회차에 `syncPick` 이 도면의 고르기를 맞추고 새로 선 도면은 다시 고른다. 보내지 않는 동안은 파이썬 값을 잊고, 다시
+      보내기 시작한 회차에 이미 고른 호기를 한 번 보낸다(`queueMicrotask` 뒤로).
       문턱(3px)을 넘은 끌기(`drag.travelled` — 전체 보기에서 화면이 움직이지 않아도)는 누르기가 아니다.
     - 겹친 반입 예정 숨기기: 기준일에 반입 전인 호기가 그날 보이는(반입했고 안 빠진) 다른 호기와 넓이가 0 보다 크게
       겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`unitCountText`,
@@ -1515,6 +1664,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `simulation_cache.get_schedule_confirmation_issues`(마스터 지문 + 오늘)로 읽는다.
 - `src/capa_simulation/services/space_unit_state.py` — Space 호기 경계 날짜(`unit_boundaries`)·기준일 판정의 한 곳이다.
   - 실적은 여기서만 쓴다(6장). 편집기 JS 가 같은 판정을 하므로 `tests/test_space_unit_state.py` 가 둘을 대조한다.
+- `src/capa_simulation/services/space_unit_sheet.py` — Space 「호기 정보」 창(도면 위 — 2026-11-03 사용자 요청)의 표 재료
+  `unit_sheet(rows, columns=, place_of=)` — 있는 칸만 그 차례 + 끝 「도면」(배치·미배치·레이아웃 제외, `place_of` 가 없으면
+  레이아웃표시로), 칸 꼴(날짜 「YYYY-MM-DD」 글 · 투자Capa 는 수 — 못 읽는 글은 글 · 그 밖은 글, 200자 넘으면 줄임, 빈 값 None),
+  행 `{id(설비명 앞뒤 공백 걷음), group(Main 설비), cells}`, 3000줄 상한(`cut`). 거르기·강조는 편집기 JS 이고 Streamlit·DB·색을
+  모른다. `tests/test_space_unit_sheet.py`.
 - `src/capa_simulation/services/space_color_basis.py` — Space 「색 기준」 그룹(공정구분·투자Capa·필요 단축 — 셋째 값은 그룹이
   없다)을 정한다. 색 값은 모른다.
 - `src/capa_simulation/services/space_shortening_layer.py` — Space 「필요 단축」 보기의 순수 규칙 — 계획의 단축 호기를 구간
@@ -1652,6 +1806,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
     `zone_look`)을 갖는다. FAB 요소(`fab_layout.prepare_fab_layout_marks`)도 같은 규칙이다.
+  - 요소 모양 값 `look`(설비 `0033`, 정규 JSON 글 — `mark_look`)은 종류마다 받는 키(`LOOK_KEYS` — 동선 머리·선 셋, 베이는
+    + 뒤집기)만 받고 처음 값(`LOOK_DEFAULTS`)인 키는 빼며 다 처음 값이면 빈 글이다. 받지 않는 키·틀린 값은 거부, 모양 값이
+    없는 종류는 보낸 값을 보지 않는다. `editor_payload` 는 빈 모양 값의 `look` 키를 싣지 않는다(요소 지문이 0033 전과 같다).
+    베이(`bay`, 층만)의 이름표는 번호다(`bay_label` — 앞 B 를 떼고 10자). FAB 요소도 같은 `mark_look` 이다(동선·도형).
+  - 도형(`shape`, 층·FAB)은 프리셋 `look.shape`(`SHAPE_PRESETS` 아홉 — 없으면 사각형)를 먼저 정하고 모양 조절 값 `adj` 를 그
+    프리셋의 개수·범위·0.01 단위로 본다(`SHAPE_ADJUST` — 처음 값과 모두 같으면 뺀다). 채우기 불투명 `fillAlpha`(0~100 의 5 단위)·
+    선 `line`(`SHAPE_LINE_KEYS` — `auto`·`none`·`ink`·영역 색, 강조색 없음)·`lineWidth`·`lineStyle`·`flip`. 채우기 색은 요소
+    `color`(`shape_fill` — `SHAPE_FILL_KEYS`, 처음 파랑, `mark_color`), 빗금은 영역·도형만(`HATCH_MARK_KINDS`), 「설비 금지」는
+    영역만이다. 막는 요소(`BLOCKING_MARK_KINDS`)가 아니다.
   - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데·위·아래 모두 행으로 받는다. 고른 적이 없거나 처음 위치로
     되돌린 묶음은 행이 없고 모양의 처음 위치 `space_layout_edit.default_group_label` 로 선다 — 한 줄 묶음(모듈 2·3)은
     위라 가운데를 고르면 가운데 행이 남는다)의 검증은 `prepare_group_labels`(Main 설비 이름은
@@ -1677,7 +1840,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`assumption_group_paste_refusal` — 설계 10장·Q1(c)).
   - 정규화 `normalize_layout_overlay(overlay, base, official_floors)` — 그 쓰기의 공통·층 값과 같아진 차이를 지운다. 요소·이름표
     합치기·차이(`effective_floor_marks`·`mark_changes` — 차이 차례는 공식 id 의 공식 차례 → 새 요소라 지문이 편집기 차례에
-    흔들리지 않는다·`effective_group_labels`·`label_changes`), 설비 단위 셈 `overlay_unit_count`(묶음은 1대)·머리 알림 재료
+    흔들리지 않는다·`effective_group_labels`·`label_changes`), 설비 단위 셈 `overlay_unit_count`(묶음은 1대)·배치 줄 재료
     `layout_difference`(실효 설비 수·레이아웃표시만 다른 수·일정 없어 뺀 수·저장된 행 수 — S3 가 그린다), 일정 리비전 출처
     허용값 `SCHEDULE_REVISION_ORIGINS`(+ `layout_clear`).
   - S4: 「공식과 견주기」 재료 `layout_compare`(층 하나 — 기준 쪽 점선 상자 `CompareGhost`·들어온 호기 `CompareArrival`, `shown` 은
@@ -1687,7 +1850,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     묶음 승인 — 있던 호기의 일곱 칸을 원래 칸 값 그대로), 공식 발행 막힘 글 한 곳 `layout_publish_blocked_words(PublishBlock)`(확인
     팝업·발행 쓰기 거부가 같이 쓴다).
 - `src/capa_simulation/services/fab_layout.py` — FAB 동·층 정의, 층 이름·주소 인자 변환, FAB 전체 도면의 계약·검증
-  (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다.
+  (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다. FAB 요소 종류는 영역·글자·
+  동선·도형·층 블록(`FAB_MARK_KINDS`)이고 도형·모양 값은 층 요소와 같은 규칙이다.
 - `src/capa_simulation/services/space_layout_edit.py` — Space 배치 편집기의 순수 계산(입력, 적용값 검증, 반영, 미저장
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
@@ -2408,6 +2572,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **팝업 상자**(`sidebar_status.DIALOG_BOX_PREFIX` — 조회 조건 아래 따로 선, 한 번 누르면 팝업이 뜨는 전폭 단추 상자. 지금은
     HOME 「HOME 설정」 하나, 2026-11-02)는 조건 카드와 같은 면·`ACCENT` 아이콘·머리 글자에 오른쪽 끝 `⇕`(팝업이 뜨는 칸)
     표식이다. key 끝 `PENDING_SUFFIX` 면 왼쪽 주황 띠, 잠기면 표식을 걷는다(`tests/test_sidebar_stylesheet.py`).
+  - **화면 조작 상자**(`sidebar_status.PAGE_BOX_PREFIX` — 안에 위젯 여럿, 지금은 Space 현황 「Space 도면」 하나, 2026-11-03)는
+    `_page_box_style` 이 조건 패널과 같은 면(`NAV_CONTROL_TINT`)·모서리 10px·안 여백, 맨 위 제목 한 줄(1rem·700), 이름 줄
+    (`condition_field.condition_name_row` — 0.75rem·`TEXT_MUTED`·첫 칸 600)을 건다. 상자 안 단추·토글은 Streamlit 기본 결이다.
 - `src/capa_simulation/components/column_filter.py` — 분류 컬럼별 다중선택 필터와 초기화 버튼이다. 거른
   프레임을 돌려준다.
   - `value_labels` 는 표시만 바꾸고 값·세션 저장값은 원본이다. 표시명 칸은 `ProcessLabels.unique_format_func` 로
@@ -3797,7 +3964,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장은 dirty 를 세우지 않는다.
   - 층 Main 설비명 위치(`floor_layout_group_label`, `0025`)는 `floor_group_labels`(층마다 전체)로 같은 트랜잭션에 쓰고
     층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
-    `label_align`(`0025`, 영역 아닌 요소는 NULL)이다.
+    `label_align`(`0025`, 영역 아닌 요소는 NULL)이다. 요소 모양 값은 두 요소 표와 가정 차이 표의 `look_json`(`0033` — 정규 JSON
+    글, 빈 글 ↔ NULL, 동선·베이·도형 아닌 요소는 NULL)이다. 도형의 채우기 색·빗금은 기존 `color_key`·`hatch` 칸이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 네 진입점(설비 저장의 캔버스·
     `save_floor_layout_canvas`·`save_floor_layout_image`·`delete_floor_layout_profile`)은 각 ACTIVE 설비 시나리오 최신·최신 공식
     발행의 **가정 요소**(`set`)도 본다(`_require_overlay_marks_fit` → `EquipmentLayoutOverflow`). 가정 차이 호기는 막지 않는다 —
@@ -4147,7 +4315,10 @@ RQ_MODULE
       `equipment_repository`) — 공식 대상은 공통·층 현행값에, 가정 대상은 그 시나리오 새 리비전의 차이로. **공식 설비 시나리오의
       최신·최신 발행에는 차이 행이 없다**(I2) — 배치 차이가 있는 시나리오는 공식으로 발행하지 않는다(Q4). E7 되돌리기·여기서 새
       시나리오는 차이도 옮긴다. 위치는 가용대수·확보율 계산 입력이 아니지만 계산 프레임은 얹은 그대로라 배치만 바꾼 가정
-      시나리오도 계산 칸을 따로 쓴다(값은 같다 — LY6, 계산 키 방침 「실제 입력 전부」 그대로).
+      시나리오도 계산 칸을 따로 쓴다(값은 같다 — LY6, 계산 키 방침 「실제 입력 전부」 그대로). 요소 차이는 요소 통째라
+      모양 값(`look`, 설비 `0033` — 화살표 머리 크기·선·뒤집기)만 바꾼 요소도 `set` 행이고 차이 표 `look_json` 에 실린다. 차이
+      지문 재료(`layout_overlay._mark_payload`)는 모양 값이 빈 요소에 그 키를 넣지 않는다 — 0033 전 리비전의 `layout_hash` 가
+      새 코드가 같은 내용으로 낸 지문과 같아야 배치 빨리 감기·되돌리기 미리 보기가 판올림 경계에서 어긋나지 않는다.
     - **Space 는 세션 설비 시나리오의 배치를 그리고 역할대로 고친다**(S3 — LY3·LY4, 1단계 E5 「Space 는 늘 공식」 을 바꿈).
       공식 배치는 공식 설비 시나리오에서만, 가정 배치는 그 시나리오에서만 고치고(`space_edit_mode` 한 판정 — 설비 마스터 탭
       배치 칸·붙여넣기도), FAB 전체·층 캔버스·배경 도면·층 사용은 공식에서만이다(G5·Q3). 배치 편집은 적용할 때 역할을 찍고
@@ -5486,7 +5657,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
   계산이 멈춘 회차에도 선다, 3장 `home.py`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
   조건 패널 바로 밑, 카드 **위**에 따로 선다 — 펼친 카드(약 370px) 밑이면 1280×800 · 1500×950 사이드바 첫 화면 밖이다(3장
-  `home_settings.py`). 쓰기
+  `home_settings.py`). **화면 조작 상자**(`PAGE_BOX_PREFIX` — `sidebar_status.page_box_key`, 서식 `sidebar_style._page_box_style`
+  — 조건 패널과 같은 면·모서리·이름 줄)는 그 화면의 자리 이동·편집 켜기 위젯 여럿을 담는 상자로, 사용자 요청(2026-11-03)에 따른
+  Space 현황 「Space 도면」 하나다(자리 · 배치 편집 · 도면·캔버스 · 공식과 견주기 · 일정 없음 줄 — 3장 `space_status.py`). 그 화면을
+  볼 때만 패널 바로 밑 · 카드 위에 서고(페이지가 카드보다 먼저 자리를 세운다), 팝업은 상자 안에서 열지 않고 본문 호스트가 연다.
+  다른 화면은 이 꼴을 늘리지 않는다. 쓰기
   작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는 결과·그에 대한 행동·상태 알림만
   남기고 설명은 Guide 로 옮긴다(8장).
 - **설정은 사이드바 상자다**(2026-11-03 사용자 지시 — 「설정 버튼이 페이지에 배치된 경우 전부 사이드바 상자로」). 화면 설정
@@ -5496,7 +5671,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   가르고, 탭에 매인 설정도 상자를 탭마다 세웠다 걷지 않고 팝업 안에서 탭 이름을 단 묶음 머리로 가른다. 설정이 아닌 것은 본문에
   남는다 — 편집 동작(저장·버리기·내려받기·붙여넣기·기준선 저장·Space 「저장 칸」)·도구(필요 단축 일정 「Qual 마감 계산기」)·편집표에
   딸린 보기 거름(설비 마스터 작은 편집표의 「… 표 보기 설정」 — 같은 줄 「보기 적용」 과 한 몸)·탭 자체(가용설비 현황
-  `Preference` 탭). 화면 확인 `settings_boxes` 가 상자의 자리와 본문 옛 단추 0 을 본다.
+  `Preference` 탭). Space 의 자리 이동·`배치 편집`·`도면·캔버스 편집`·`공식과 견주기` 는 설정이 아니라 그 화면의 조작이라 설정
+  상자가 아니라 바로 위 화면 조작 상자(「Space 도면」 — 같은 날 사용자 Space 요청)에 선다. 화면 확인 `settings_boxes` 가 상자의
+  자리와 본문 옛 단추 0 을 본다.
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라
   본문에 두고, 카드에는 거르는 조건(공정·기간·기준일·분류·호기 필터)만 둔다. 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」·「구획」(①~④ 접기, 2026-10-22 「소요대수처럼」)만 사용자 요청에 따른
@@ -5960,7 +6137,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   오른쪽 끝에 누를 것을 두면 표 앞에 띄움(`st.space`, 막대가 그 줄에 닿지 않을 만큼 — 설비 시나리오 구획은 24px)을 둔다.
   띄움은 `table_toolbar.toolbar_clearance()`(`TABLE_TOOLBAR_CLEARANCE` 24px — 숫자는 이 하나, 설비 시나리오
   `REVISION_TABLE_TOOLBAR_CLEARANCE`·Qual 계산기 `EDITOR_TOOLBAR_CLEARANCE_PX` 는 그 별칭)로 둔다 — Space 층 목록 머리의
-  `사용 편집` 토글·층 상세 표 머리의 「층 전체 보기」 가 그 자리다(2026-10-26 E2E). 날짜 칸의 지우기(✕)도 같다 — Qual
+  `사용 편집` 토글이 그 자리다(2026-10-26 E2E — 층 상세 표 머리의 「층 전체 보기」 는 2026-11-03 도면 위 「호기 정보」 창으로
+  옮기며 걷었다). 날짜 칸의 지우기(✕)도 같다 — Qual
   마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다). 오른쪽 끝까지
   늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」)과 바로 위 CSV 단추(Cut-off 잠긴 보기·제외 목록)도
   같은 띄움을 둔다. `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
@@ -6179,10 +6357,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   띠·사이드바·탭 줄 밑으로 묻힌다(D2). 복사는 동기 `copy` 이벤트의 `clipboardData` 로만(비동기 `navigator.clipboard` 는 쓰지
   않는다). op 마다 그 표 이력의 `gen` 을 싣고, 초안을 버리면 이력도 지워 다음 `gen` 이 달라 그 전에 보낸 op 는 버려진다. 받은 data
   로 다시 불린 함수 안에서는 보내지 않는다(`queueMicrotask` 뒤로). 초안이 없던 표의 첫 op 는 기다리지 않고 바로 보낸다.
-- Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
-  try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
+- Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림·칸 폭·접힘, Space 편집기의 요소·서식 클립보드와 붙일 것 체크,
+  Space 「호기 정보」 창의 자리·크기·열림·탭·필터)는
+  컴포넌트 안이나 localStorage·sessionStorage(읽기·쓰기 모두 try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
   하면 `<html>` 의 CSS 변수·속성만 쓰고 그 변수를 읽는 규칙은 페이지 서식(`st.html`)에 둔다(설비 마스터 오른쪽 칸 칸막이 —
-  `--emd-side-w`·`data-emd-side`). 브라우저 안에서 끝낼
+  `--emd-side-w`·`data-emd-side`, Space 스크롤 고정 — `data-space-lock` · `space_layout_editor.space_lock_style()` — 다른 화면으로
+  가면 서식이 사라져 속성이 남아도 막지 않는다. 본문 스크롤 칸 `stMain`·탭 줄 `.st-key-page_tabs_strip` 같은 Streamlit DOM 이름은
+  판올림에서 다시 본다). 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
   다시 그리는 시간이라 프래그먼트로 감싸도 크게 줄지 않는다.
 - **회차마다 소켓으로 다시 가는 스타일 문자열에는 CSS 주석(`/* */`)을 싣지 않는다** — 사이드바 시트·머리 띠·껍데기

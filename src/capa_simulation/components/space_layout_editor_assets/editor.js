@@ -18,9 +18,14 @@ export default function (component) {
     placedLog: [], trayAnchor: null, pasteSerial: 0, flash: '', hover: null, guideTimer: 0,
     // Main 설비 모듈 묶음 이름표 위치(묶음 열쇠 `groupKeyOf` → 'center'·'top'·'bottom', 없으면 그 모양의 처음 위치)와 처음 값.
     groupLabels: new Map(), originalGroupLabels: new Map(),
-    // 층 상세 보기: 겹쳐 숨긴 반입 예정 호기(id → 설비지분, `paintUnit`)와 아래 호기 표에 고른 호기 — 파이썬이 쥔 값
+    // 층 상세 보기: 겹쳐 숨긴 반입 예정 호기(id → 설비지분, `paintUnit`)와 필요 단축 칸에 고른 호기 — 파이썬이 쥔 값
     // (`data.picked`, 받은 그대로 `pickData`)과 브라우저가 보낸 값(`pickSent`).
     covered: new Map(), pickData: undefined, pickSent: null,
+    // 두 옆 칸의 폭·접힘(보기 상태 — 범위·모드별, `capa.space.panels.v1` 에서 처음 읽음)과 좁은 화면 겹침 서랍의 열린 칸
+    // (`narrowOpen` — 'left'|'right'|null, 기억하지 않는다), 마지막에 폭을 끈 칸. 스크롤 고정(`lock` — 마운트에만 둔다).
+    panels: null, narrowOpen: null, panelLast: null, lock: false, lockH: null,
+    // 서식 복사·붙여넣기 — 든 붓(`paint` = {clip, sticky}), 담은 서식(`formatClip` — 회차마다 저장소에서 다시 읽음), 붙일 것 체크.
+    paint: null, formatClip: null, formatParts: null,
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -113,7 +118,8 @@ export default function (component) {
   const BADGE_PX = 7
   const CORNER_PX = 11
   const GROUP_PAD = 0.6
-  // 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle-drawer` 의 8px). 놓은 호기를 서랍 왼쪽으로 이만큼 더 꺼낸다.
+  // 좁은 화면 겹침 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle.is-narrow .sle-side` 의 8px). 놓은 호기를 서랍 왼쪽으로
+  // 이만큼 더 꺼낸다.
   const DRAWER_INSET_PX = 8
   // 편집 영역 둘레의 여백(영역 긴 변의 비율). 전체 보기는 영역+여백이 다 보이는 크기다.
   const VIEW_MARGIN = 0.03
@@ -121,13 +127,15 @@ export default function (component) {
   const MIN_DEFAULT_H = 320
   const MIN_DRAG_H = 280
   const MAX_H_RATIO = 1.5
-  // 보기 화면에서 무대 위·아래에 서는 것(앱 머리·제목·경로·머리 줄·도구 줄, 아래 손잡이·여유)의 몫. 무대의 실제
-  // 위치로 재지 않는다 — 편집 화면은 위에 도구가 더 서서 같은 식이면 보기보다 낮아지는데, 보기·편집의 도면
-  // 상자 크기는 같아야 한다. 층 도면(보기·편집)은 맨 위에 기준일 줄(보기 페이더 · 편집 「편집 중 고정」, 같은 높이
-  // DATE_ROW_PX)과 그 아래 틈(8px, `.sle` gap)이 더 서고, FAB 에는 없다.
-  const VIEW_CHROME_PX = 320
+  // 무대 위·아래에 서는 것(앱 머리·화면 탭 줄·페이지 제목·알림 칸·도구 줄, 아래 손잡이·상태 줄·여유)의 몫. 무대의 실제
+  // 위치로 재지 않는다 — 위 알림 칸(저장 안 한 배치 등)이 서고 사라질 때마다 도면 높이가 바뀌면 안 된다. 레이아웃 위 경로
+  // 줄·머리 줄·테두리 상자를 사이드바로 옮겨(2026-11-03 사용자 요청) 그 몫을 줄였다. 층 보기는 맨 위에 기준일 페이더 줄
+  // (DATE_ROW_PX)과 그 아래 틈(8px, `.sle` gap)이 더 서고, 층 편집은 그 줄이 도구 줄 칩이라 없다. FAB 에도 없다.
+  const VIEW_CHROME_PX = 215
   const DATE_ROW_PX = 36
-  const CHROME_PX = VIEW_CHROME_PX + (FAB ? 0 : DATE_ROW_PX + 8)
+  // 편집 화면은 무대 아래에 상태 줄(한 줄 + 틈)이 더 선다.
+  const STATUS_ROW_PX = 26
+  const CHROME_PX = VIEW_CHROME_PX + (FAB || !VIEW ? 0 : DATE_ROW_PX + 8) + (VIEW ? 0 : STATUS_ROW_PX)
   const HEIGHT_KEY_STEP = 20
   const HEIGHT_STORE_KEY = `capa.space.viewerHeight.${SCOPE}`
   // 크기 손잡이 여덟 개. 글자는 움직이는 변 — e 오른쪽, w 왼쪽, n 위(데이터의 Y+Ysize), s 아래(데이터의 Y).
@@ -141,14 +149,21 @@ export default function (component) {
     column: { name: '기둥', size: [1.5, 1.5], label: '', rotatable: false },
     text: { name: '글자', size: [14, 3], label: '메모', rotatable: true },
     arrow: { name: '동선', size: [16, 3], label: '', rotatable: true },
+    // 베이 화살표(U자 — 2026-11-03 사용자 요청). 0° 는 여는 쪽이 왼쪽인 ⊃ 꼴이고 머리는 아래 팔 끝에서 왼쪽을 향한다. 가운데 글은
+    // 「B<번호>」 — 이름표 칸에는 번호만 둔다(`bayNumber`). 층 도면에만 있다(FAB 에는 넣지 않는다 — 사양 D7).
+    bay: { name: '베이', size: [10, 4], label: '', rotatable: true },
+    // 도형(2026-11-03 사용자 요청 — 엑셀 도형처럼). 프리셋 아홉은 look.shape(`SHAPE_PRESETS` — 넣는 크기도 프리셋마다)이고 층·FAB
+    // 둘 다다. 꾸밈이라 막는 요소가 아니고 호기 아래 층에 그린다. 돌리기는 비대칭 꼴(ㄴ·ㄷ·삼각·블록 화살표)에만 켜진다.
+    shape: { name: '도형', size: [8, 6], label: '', rotatable: true },
     // FAB 층 블록. 연결(link, 「C1 1F」)이 필수다. 색은 사용자가 고르는 자리 구분 색이고 빈 값은 Space 기본 면이다.
     block: { name: '층 블록', size: [16, 6], label: '', rotatable: false },
   }
-  // 이 범위에서 그리는 종류. 층 블록은 FAB 에만 있다 — 층 도면에 오면 그리지 않고 그대로 돌려보낸다.
-  const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB)
+  // 이 범위에서 그리는 종류. 층 블록은 FAB 에만, 베이는 층에만 있다 — 다른 범위에 오면 그리지 않고 그대로 돌려보낸다.
+  const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB) && (kind !== 'bay' || !FAB)
   const ZONE_COLOR_NAMES = { blue: '파랑', green: '초록', violet: '보라', sky: '하늘', rose: '분홍', gray: '회색' }
-  // 요소 이름표의 글자 크기(화면 px)·색. 크기 null 은 「자동」(글자 요소는 상자에 맞추고 나머지는 LABEL_PX),
-  // 색 '' 은 기본 글자색(--sle-mark-ink)이다. 색 키는 영역 색과 같고 실제 색은 팔레트의 mark-text-<키> 다.
+  // 요소 이름표의 글자 기준 크기·색. 크기 null 은 「자동」(글자 요소는 상자에 맞추고 나머지는 LABEL_PX), 색 '' 은 기본
+  // 글자색(--sle-mark-ink)이다. 색 키는 영역 색과 같고 실제 색은 팔레트의 mark-text-<키> 다. 기준 크기는 도면 1칸이 화면
+  // TEXT_REF_PPU px 일 때의 화면 px 이고 배율을 따라 커지고 작아진다(`// <text-scale>`).
   const FONT_SIZES = (Array.isArray(data.fontSizes) ? data.fontSizes : [9, 11, 13, 16, 20, 24]).map(Number)
   const LABEL_PX = 11
   const fontSizeOf = (raw) => (raw === null || raw === undefined || raw === '' || !FONT_SIZES.includes(Number(raw)) ? null : Number(raw))
@@ -171,9 +186,58 @@ export default function (component) {
   // 호기 이름표의 가장 작은 크기(화면 px) — 이보다 작으면 숨긴다(밀집 층, 확대하면 다시 보인다).
   const UNIT_LABEL_MIN_PX = 7
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
+  // 동선·베이의 선 색(look.line) → CSS 색. accent 는 강조색, ink 는 도면 글자색, 영역 색 키는 글자 색과 같은 mark-text-<키>(밝게·
+  // 어둡게 모두 테마 토큰).
+  const lineInk = (key) => (key === 'accent' ? 'var(--sle-accent)' : key === 'ink' ? 'var(--sle-mark-ink)'
+    : markColors[key] ? `var(--sle-mark-text-${key})` : '')
+  // 도형 채우기 색(요소 color) → CSS 색. 영역 색 키는 영역과 같은 범주 팔레트, ink 는 도면 글자색, surface 는 바탕 면(밝게 흰색)이다
+  // — 모두 테마 토큰이라 어둡게를 따른다.
+  const shapeFillInk = (key) => (key === 'ink' ? 'var(--sle-mark-ink)' : key === 'surface' ? 'var(--sle-surface)'
+    : markColors[key] || markColors.blue || 'gray')
+  // 도형 선 색(look.line) → CSS 색('' 은 선 없음). auto 는 채우기 색을 따른다 — 영역 색 키는 글자 색과 같은 진한 쪽(mark-text-<키>),
+  // ink 는 도면 글자색, 바탕(surface)은 흰 면에 묻히지 않게 상자 테 색(frame)이다.
+  const shapeLineInk = (key, fill) => {
+    if (key === 'none') return ''
+    const base = key === 'auto' ? fill : key
+    if (key === 'auto' && base === 'surface') return 'var(--sle-frame)'
+    if (base === 'ink') return 'var(--sle-mark-ink)'
+    return markColors[base] ? `var(--sle-mark-text-${base})` : 'var(--sle-mark-ink)'
+  }
+  // 베이 가운데 글 — 늘 「B」 를 앞에 붙인다(번호가 비면 「B」 만).
+  const bayCaption = (item) => `B${item.label || ''}`
+  // 요소의 풍선·선택 칸 이름 — 「종류 · 이름표」(베이는 「베이 · B80」, 도형은 「도형(ㄴ자 박스) · 창고」).
+  const markKindName = (item) => (item.kind === 'shape' ? `도형(${SHAPE_PRESETS[shapeOf(item.look)].name})` : MARK_KINDS[item.kind].name)
+  const markTitle = (item) => {
+    const shown = item.kind === 'bay' ? bayCaption(item) : item.label
+    return `${markKindName(item)}${shown ? ` · ${shown}` : ''}`
+  }
+  // 편집 안내 첫 문단(왼쪽 칸 「도움말」 — 도면 위에는 캡션을 두지 않는다, 2026-11-03 사용자 요청).
+  const GUIDE = FAB
+    ? '층 블록·영역·글자를 끌어 놓아 고치고 「적용」 을 누르면 이 세션에 들어갑니다(저장 전). 층 블록을 고르면 선택 칸에서 연결 층·색을 바꾸고 [열기] 로 그 층을 엽니다. S.PKG 가 아닌 자리는 블록 대신 색을 고른 영역과 글자로 그립니다.'
+    : '끌어 놓아 자리·크기를 고치고 「적용」 을 누르면 이 세션의 편집본에 들어갑니다(저장 전). 조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. 층이 정해지지 않은 미배치 호기는 오른쪽 미배치 칸에 함께 뜹니다. 기준일은 편집하는 동안 고정입니다(도구 줄 칩) — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다. 도면의 호기를 오른쪽 칸에 끌어 놓으면 미배치로 돌아갑니다.'
+  // 두 옆 칸(2026-11-03 사용자 요청 — 왼쪽 도구 칸 · 오른쪽 미배치 칸, 폭 끌기·접기·기억). 칸 폭 한계는 `panelBounds`(아래
+  // 순수 구획), 기억은 `capa.space.panels.v1`(범위·모드별 {left, right: {w, min}}). 편집기 폭이 NARROW_PX 아래면 두 칸이
+  // 무대 위 겹침 서랍이 된다. 무대는 STAGE_MIN_PX 아래로 줄지 않는다.
+  const PANELS_STORE_KEY = 'capa.space.panels.v1'
+  const SECTIONS_STORE_KEY = 'capa.space.sections.v1'
+  const PANEL_STRIP_PX = 28
+  const PANEL_SPLIT_PX = 6
+  const STAGE_MIN_PX = 360
+  const NARROW_PX = 900
+  // 칸 폭 꼴 — 기본 = clamp(defLo, 편집기 폭 × defShare, defHi), 최소 lo, 최대 min(hi, 편집기 폭 × hiShare).
+  const PANEL_SPECS = {
+    edit: { lo: 200, defLo: 220, defShare: 0.18, defHi: 300, hi: 480, hiShare: 0.4 },
+    view: { lo: 160, defLo: 200, defShare: 0, defHi: 200, hi: 360, hiShare: 0.3 },
+  }
+  const PANEL_MODE = `${SCOPE}.${VIEW ? 'view' : 'edit'}`
+  // 왼쪽 칸은 FAB 보기에만 없다(범례가 없다). 오른쪽 미배치 칸은 층 편집에만 있다.
+  const HAS_LEFT = !(VIEW && FAB)
+  const HAS_RIGHT = !VIEW && !FAB
+  // 스크롤 고정이 `<html>` 에 다는 속성(그 속성을 읽는 규칙은 페이지 서식 — 파이썬 `space_lock_style`).
+  const LOCK_ATTR = 'data-space-lock'
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · 호기를 두 번 누르면 「호기 정보」 창(고른 호기의 칸 · 칸 필터로 찾은 호기 도면 강조) · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -192,10 +256,23 @@ export default function (component) {
   const guidesLayer = svg.querySelector('.sle-guides')
   const stage = q('.sle-stage')
   const resizeHandle = q('.sle-resize')
-  const drawer = q('.sle-drawer')
+  const bodyBox = q('.sle-body')
+  const leftSide = q('.sle-side.is-left')
+  const leftSplit = q('.sle-split.is-left')
+  const rightSplit = q('.sle-split.is-right')
+  const legendSection = q('.sle-sec[data-sec="legend"]')
+  const legendBox = q('.sle-legend')
+  const helpBox = q('.sle-help')
+  const lockButton = q('.sle-lock')
+  const pinChipDate = q('.sle-pinchip-date')
+  // 오른쪽 미배치 칸(이름 `drawer*` 는 이 칸을 가리킨다). 접힌 띠가 `drawerTab`, 칸 상자가 `trayBox`, 그 안 굴리는 칸이 `trayScroll`.
+  const drawer = q('.sle-side.is-right')
   const drawerTab = q('.sle-drawer-tab')
   const drawerCount = q('.sle-drawer-count')
   const trayBox = q('.sle-tray')
+  const trayScroll = q('.sle-tray-scroll')
+  const trayInfo = q('.sle-tray-info')
+  const trayHint = q('.sle-tray-hint')
   const trayList = q('.sle-tray-list')
   const trayCount = q('.sle-tray-count')
   const traySearch = q('.sle-tray-search')
@@ -229,7 +306,41 @@ export default function (component) {
   const markHatch = q('.sle-mark-hatch')
   const markKeepOut = q('.sle-mark-keepout')
   const markRotate = q('.sle-mark-rotate')
+  const markNameWord = q('.sle-mark-name-word')
+  const bayPrefix = q('.sle-bay-prefix')
+  // 동선·베이의 선·머리(여럿 골라도 — 고른 것 가운데 동선·베이 모두에 건다).
+  const lineProps = q('.sle-lineprops')
+  const headToggle = q('.sle-head-toggle')
+  const headNow = q('.sle-head-now')
+  const headWord = q('.sle-head-word')
+  const headGallery = q('.sle-head-gallery')
+  const lineColor = q('.sle-line-color')
+  const lineWidth = q('.sle-line-width')
+  const lineStyle = q('.sle-line-style')
+  const bayFlips = q('.sle-bay-flips')
+  // 도형 서식(여럿 골라도 — 고른 것 가운데 도형 모두에 건다)과 도면 요소 칸의 도형 넣기 갤러리.
+  const shapeProps = q('.sle-shapeprops')
+  const shapeSwap = q('.sle-shape-swap')
+  const shapeNow = q('.sle-shape-now')
+  const shapeWord = q('.sle-shape-word')
+  const shapeGallery = q('.sle-shape-gallery')
+  const shapeAdjRows = [...host.querySelectorAll('.sle-shape-adj-row')]
+  const shapeAdjInputs = [...host.querySelectorAll('.sle-shape-adj')]
+  const shapeFill = q('.sle-shape-fill')
+  const shapeClear = q('.sle-shape-clear')
+  const shapeLine = q('.sle-shape-line')
+  const shapeWidth = q('.sle-shape-width')
+  const shapeStyle = q('.sle-shape-style')
+  const shapeHatch = q('.sle-shape-hatch')
+  const shapeFlips = [...host.querySelectorAll('.sle-shape-flip')]
+  const shapeToggle = q('.sle-shape-toggle')
+  const shapePalette = q('.sle-shape-palette')
   const zoneOnly = [...host.querySelectorAll('.sle-zone-only')]
+  // 왼쪽 칸 「서식」(서식 붓·붙이기·붙일 것 체크·담은 서식 한 줄).
+  const paintButton = q('.sle-paint')
+  const paintPaste = q('.sle-paint-paste')
+  const paintParts = [...host.querySelectorAll('.sle-paint-part')]
+  const paintNow = q('.sle-paint-now')
   const blockProps = q('.sle-block-props')
   const blockLink = q('.sle-block-link')
   const blockColor = q('.sle-block-color')
@@ -258,7 +369,49 @@ export default function (component) {
   const pickBox = q('.sle-pick')
   const pickHint = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
-    : '호기를 누르면 정보가 여기 뜨고 아래 표가 그 설비 줄만 보입니다 · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
+    : '호기를 누르면 정보가 여기 뜨고 「호기 정보」 창에 그 설비 칸이 보입니다(호기를 두 번 누르면 창이 열림) · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 빈 곳을 두 번 누르면 확대/전체 보기'
+  // 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청: 고른 호기의 칸을 도면 위 창에, 거꾸로 칸 필터 → 맞는 호기
+  // 목록 → 도면 강조). 표 재료는 data `sheet`(epoch 밖 — 파이썬 `services/space_unit_sheet`), 거르기는 `// <unit-sheet>` 구획이다.
+  // 창 자리·크기·접힘은 localStorage(`SHEET_WIN_KEY`), 열림·탭·필터·강조는 sessionStorage(`SHEET_STATE_KEY` — 탭 안 기억, 층·편집을
+  // 오가도 남는다)이고 파이썬으로 보내지 않는다. FAB 에는 없다.
+  const SHEET = !FAB && data.sheet && Array.isArray(data.sheet.columns) && Array.isArray(data.sheet.rows) ? data.sheet : null
+  const SHEET_WIN_KEY = 'capa.space.sheet.win.v1'
+  const SHEET_STATE_KEY = 'capa.space.sheet.state.v1'
+  // 창 최소 크기·처음 크기(px)와 접힌 창 높이. 창은 편집기 몸(`.sle-body`) 안에 묶인다.
+  const SHEET_MIN_W = 360
+  const SHEET_MIN_H = 200
+  const SHEET_DEF_W = 720
+  const SHEET_DEF_H = 320
+  const SHEET_HEAD_PX = 34
+  // 「도면」 칸 이름과 그 값(파이썬 `space_unit_sheet.PLACE_*` 와 같은 글).
+  const SHEET_PLACE = '도면'
+  // 필터에 맞는 호기 테의 띄움(화면 px) — 선택 후광(HALO_GAP_PX ± 1)보다 바깥이다.
+  const FILTER_GAP_PX = 5
+  const sheetBox = q('.sle-sheet')
+  const sheetToggle = q('.sle-sheet-toggle')
+  const sheetHead = q('.sle-sheet-head')
+  const sheetTabs = [...host.querySelectorAll('.sle-sheet-tab')]
+  const sheetMin = q('.sle-sheet-min')
+  const sheetClose = q('.sle-sheet-close')
+  const sheetChips = q('.sle-sheet-chips')
+  const sheetClear = q('.sle-sheet-clear')
+  const sheetHl = q('.sle-sheet-hl-box')
+  const sheetCount = q('.sle-sheet-count')
+  const sheetScroll = q('.sle-sheet-scroll')
+  const sheetHeadRow = q('.sle-sheet-table thead')
+  const sheetBodyRows = q('.sle-sheet-table tbody')
+  const sheetEmpty = q('.sle-sheet-empty')
+  const sheetCut = q('.sle-sheet-cut')
+  const sheetNote = q('.sle-sheet-note')
+  const sheetMenu = q('.sle-sheet-menu')
+  const sheetMenuName = q('.sle-sheet-menu-name')
+  const sheetMenuFind = q('.sle-sheet-menu-find')
+  const sheetMenuList = q('.sle-sheet-menu-list')
+  const sheetMenuRange = q('.sle-sheet-menu-range')
+  const sheetMenuFrom = q('.sle-sheet-menu-from')
+  const sheetMenuTo = q('.sle-sheet-menu-to')
+  const sheetGrip = q('.sle-sheet-grip')
+  const trayHits = q('.sle-tray-hits')
   if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
@@ -660,24 +813,556 @@ export default function (component) {
   }
   // </layout-look>
 
+  // ---------------------------------------------------------------- 배율에 따른 글자 크기(순수 함수)
+  // 도면에 붙은 글자(요소 이름표·글자 요소·층 블록 글·호기 이름표 상한·Main 설비명·베이 글)는 배율을 따라 커지고 작아진다
+  // (2026-11-03 사용자 요청 — 전체 보기에서 글자가 도면보다 커 보였다). 화면 글자 px = 기준 크기 × s, s = 도면 1칸당 화면 px
+  // (ppu)을 TEXT_REF_PPU 로 나눈 값이고 위는 TEXT_SCALE_MAX 배까지다. TEXT_MIN_PX 아래면 숨긴다(지금 글자 요소 자동의 6px) — 호기
+  // 이름표·Main 설비명은 UNIT_LABEL_MIN_PX(7px) 아래에서 숨는다.
+  // 표지(필요 단축 배지·견주기 꼬리표)는 s 를 CALLOUT_SCALE 범위로 묶고 크기로는 숨기지 않는다. 손잡이·초점 테·「!」 같은 UI
+  // 표지와 선 굵기는 화면 px 그대로다. `tests/test_space_mark_look_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다.
+  // <text-scale>
+  const TEXT_REF_PPU = 8
+  const TEXT_SCALE_MAX = 2
+  const TEXT_MIN_PX = 6
+  const CALLOUT_SCALE = [0.75, 1.25]
+  // ppu(화면 px / 도면 1칸)에서 글자 배율 s. 재지 못한 값(0·숫자 아님)이면 1 이다.
+  function textScale(ppu) {
+    if (!(ppu > 0) || !Number.isFinite(ppu)) return 1
+    return Math.min(ppu / TEXT_REF_PPU, TEXT_SCALE_MAX)
+  }
+  // 표지 배율 — s 를 CALLOUT_SCALE 안으로.
+  function calloutScale(s) {
+    return Math.min(Math.max(s, CALLOUT_SCALE[0]), CALLOUT_SCALE[1])
+  }
+  // 기준 크기 base(화면 px)의 글자가 배율 s 에서 서는가 — {px, shown}.
+  function scaledText(base, s) {
+    const px = base * s
+    return { px, shown: px >= TEXT_MIN_PX }
+  }
+  // </text-scale>
+
+  // ---------------------------------------------------------------- 동선·베이 화살표·도형 모양 값(순수 함수)
+  // 요소 모양 값(look — 2026-11-03 사용자 요청)의 받는 키·처음 값은 파이썬 `services/floor_layout_mark.LOOK_KEYS`·
+  // `LOOK_DEFAULTS` 와 같다(처음 값인 키는 빼고, 정규 글은 키 차례 JSON — node 시험이 파이썬과 대조한다). 머리 크기는 엑셀의
+  // 3×3(「너비·길이」 두 글자, 각 S·M·L)이고 동선의 MM 이 지금 그림이다. 도형(shape)은 프리셋 키 look.shape 하나로 아홉 꼴을
+  // 가르고 모양 조절 값 look.adj 의 처음 값은 프리셋마다 다르다(`SHAPE_PRESETS` — 파이썬 `SHAPE_ADJUST`). 그리기는 돌리기 전
+  // 제자리 좌표(lw×lh, y 아래로)다. `tests/test_space_mark_look_js.py`·`tests/test_space_shape_js.py` 가 아래 두 표시 줄 사이를
+  // 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <mark-look>
+  const LOOK_KEYS = {
+    arrow: ['head', 'line', 'lineWidth', 'lineStyle'],
+    bay: ['head', 'line', 'lineWidth', 'lineStyle', 'flip'],
+    shape: ['shape', 'adj', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'flip'],
+  }
+  const LOOK_DEFAULTS = {
+    arrow: { head: 'MM', line: 'accent', lineStyle: 'dashed' },
+    bay: { head: 'MM', line: 'ink', lineWidth: 2, lineStyle: 'solid', flip: false },
+    shape: { shape: 'rect', fillAlpha: 20, line: 'auto', lineWidth: 1.5, lineStyle: 'solid', flip: false },
+  }
+  const HEAD_SIZES = ['S', 'M', 'L']
+  const ARROW_HEADS = HEAD_SIZES.flatMap((w) => HEAD_SIZES.map((l) => w + l))
+  const LINE_COLORS = ['accent', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
+  const LINE_WIDTHS = [0.75, 1, 1.5, 2, 3, 4.5, 6]
+  const LINE_STYLES = ['solid', 'dashed', 'dotted']
+  // 도형 프리셋 아홉(2026-11-03 사용자 요청 — 엑셀 도형처럼). adj 는 모양 조절 값마다 [하한, 상한, 처음 값](0.01 단위 상자 비율 —
+  // 파이썬 `SHAPE_ADJUST`), words 는 그 값의 이름(선택 칸·손잡이 풍선), size 는 넣을 때의 크기, turn 은 돌리기·뒤집기에 뜻이 있는
+  // 꼴인가(대칭 꼴은 그 단추가 꺼진다).
+  const SHAPE_PRESETS = {
+    rect: { name: '사각형', size: [8, 6], adj: [[0, 1, 0]], words: ['모서리 둥글기'], turn: false },
+    ellipse: { name: '원', size: [6, 6], adj: [], words: [], turn: false },
+    lbox: { name: 'ㄴ자 박스', size: [8, 8], adj: [[0.05, 0.95, 0.35], [0.05, 0.95, 0.35]], words: ['세로 팔 두께', '가로 팔 두께'], turn: true },
+    cbox: { name: 'ㄷ자 박스', size: [8, 8], adj: [[0.05, 0.95, 0.3], [0.05, 0.49, 0.3]], words: ['등 두께', '팔 두께'], turn: true },
+    frame: { name: '테', size: [10, 8], adj: [[0.02, 0.49, 0.12]], words: ['테 두께'], turn: false },
+    triangle: { name: '삼각형', size: [8, 7], adj: [[0, 1, 0.5]], words: ['꼭짓점 자리'], turn: true },
+    diamond: { name: '마름모', size: [8, 8], adj: [], words: [], turn: false },
+    cross: { name: '십자', size: [8, 8], adj: [[0.05, 0.95, 0.34]], words: ['팔 두께'], turn: false },
+    arrowblock: { name: '블록 화살표', size: [10, 5], adj: [[0.05, 1, 0.5], [0.05, 0.95, 0.35]], words: ['몸통 두께', '머리 길이'], turn: true },
+  }
+  const SHAPE_KEYS = Object.keys(SHAPE_PRESETS)
+  // 도형 채우기 색(요소 color — 영역 색 여섯 + ink 진하게 + surface 바탕)과 선 색(auto 채우기 색을 따름 · none 선 없음 · ink · 영역 색
+  // 여섯). 파이썬 `SHAPE_FILL_KEYS`·`SHAPE_LINE_KEYS`.
+  const SHAPE_FILLS = ['blue', 'rose', 'green', 'violet', 'sky', 'gray', 'ink', 'surface']
+  const SHAPE_LINES = ['auto', 'none', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
+  const FILL_ALPHA_STEP = 5
+  // 머리 너비·길이(동선 × 상자 높이 lh · 베이 × 팔 사이 lh/2)와 동선 머리 길이의 상한(× 상자 폭 lw).
+  const HEAD_W = { S: 0.45, M: 0.7, L: 1.0 }
+  const HEAD_L = { S: 0.7, M: 1.1, L: 1.6 }
+  const HEAD_CAP = { S: 0.25, M: 0.35, L: 0.45 }
+  const BAY_NUMBER_MAX = 10
+  // 모양 값 하나가 그 종류(kind)의 그 키의 값인가. 도형의 선 색은 auto·none 이 있고 강조색이 없다.
+  function lookAllowed(key, value, kind) {
+    if (key === 'head') return ARROW_HEADS.includes(value)
+    if (key === 'line') return (kind === 'shape' ? SHAPE_LINES : LINE_COLORS).includes(value)
+    if (key === 'lineWidth') return typeof value === 'number' && LINE_WIDTHS.includes(value)
+    if (key === 'lineStyle') return LINE_STYLES.includes(value)
+    if (key === 'flip') return typeof value === 'boolean'
+    if (key === 'shape') return SHAPE_KEYS.includes(value)
+    if (key === 'fillAlpha') return Number.isInteger(value) && value >= 0 && value <= 100 && value % FILL_ALPHA_STEP === 0
+    return false
+  }
+  // 도형 프리셋 키 — 모르는 값이면 사각형.
+  function presetOf(value) {
+    return SHAPE_KEYS.includes(value) ? value : 'rect'
+  }
+  // 도형 모양 조절 값 — 프리셋 preset 의 개수·범위 안의 숫자 목록이면 0.01 단위로 맞춘 것, 아니면 null.
+  function adjOf(raw, preset) {
+    const spec = SHAPE_PRESETS[presetOf(preset)].adj
+    if (!Array.isArray(raw) || raw.length !== spec.length) return null
+    const out = []
+    for (let k = 0; k < spec.length; k += 1) {
+      const value = raw[k]
+      if (typeof value !== 'number' || !Number.isFinite(value)) return null
+      const rounded = Math.round(value * 100) / 100
+      if (rounded < spec[k][0] - 1e-9 || rounded > spec[k][1] + 1e-9) return null
+      out.push(rounded)
+    }
+    return out
+  }
+  // 받은 모양 값을 그 종류의 정규 꼴로 — 받는 키의 맞는 값 가운데 처음 값이 아닌 것만 남긴다(모르는 키·틀린 값은 뺀다 —
+  // 파이썬은 거부하지만 편집기는 그릴 수 있는 것만 쥔다). 모양 값이 없는 종류는 빈 값이다. 도형의 모양 조절 값은 프리셋(없으면
+  // 사각형)의 개수·범위에 맞을 때만, 그 프리셋의 처음 값과 모두 같으면 뺀다.
+  function cleanLook(raw, kind) {
+    const keys = LOOK_KEYS[kind]
+    const out = {}
+    if (!keys || !raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+    const defaults = LOOK_DEFAULTS[kind]
+    const preset = presetOf(raw.shape)
+    for (const key of keys) {
+      const value = raw[key]
+      if (value === undefined || value === null) continue
+      if (key === 'adj') {
+        const adj = adjOf(value, preset)
+        if (adj && adj.some((v, k) => Math.abs(v - SHAPE_PRESETS[preset].adj[k][2]) > 1e-9)) out.adj = adj
+        continue
+      }
+      if (!lookAllowed(key, value, kind)) continue
+      if (key in defaults && defaults[key] === value) continue
+      out[key] = value
+    }
+    return out
+  }
+  // 모양 값 고치기 — patch 의 null 은 그 키를 처음 값으로(뺌), 나머지는 덮어쓴다. 결과는 `cleanLook` 을 거친 새 객체다
+  // (도형 바꾸기 `{ shape, adj: null }` 는 프리셋만 바꾸고 모양 조절은 새 프리셋의 처음 값 — 채우기·선·뒤집기는 그대로).
+  function patchLook(look, patch, kind) {
+    const merged = { ...(look || {}) }
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (value === null) delete merged[key]
+      else merged[key] = value
+    }
+    return cleanLook(merged, kind)
+  }
+  // 그릴 도형 프리셋과 모양 조절 값(고른 값, 없으면 그 프리셋의 처음 값).
+  function shapeOf(look) {
+    return presetOf(look ? look.shape : undefined)
+  }
+  function shapeAdj(look) {
+    const preset = shapeOf(look)
+    return adjOf(look ? look.adj : undefined, preset) || SHAPE_PRESETS[preset].adj.map((spec) => spec[2])
+  }
+  // 도형 채우기 색 키 — 모르는 값이면 파랑(파이썬 `shape_fill` 의 처음 값).
+  function shapeFillOf(color) {
+    return SHAPE_FILLS.includes(color) ? color : 'blue'
+  }
+  // 정규 글(키 차례 JSON) — 바뀜 판정·견주기에 쓴다. 파이썬 `json.dumps(sort_keys=True, separators=(",", ":"))` 와 같다.
+  function lookText(look) {
+    const keys = Object.keys(look || {}).sort()
+    return keys.length ? JSON.stringify(Object.fromEntries(keys.map((key) => [key, look[key]]))) : ''
+  }
+  // 그릴 값 — 고른 값, 없으면 처음 값(처음 값이 없는 키는 undefined).
+  function lookValue(look, kind, key) {
+    const value = look ? look[key] : undefined
+    if (value !== undefined) return value
+    return (LOOK_DEFAULTS[kind] || {})[key]
+  }
+  // 머리 크기 두 글자 → {w, l}. 틀린 값은 MM.
+  function headParts(head) {
+    const text = ARROW_HEADS.includes(head) ? head : 'MM'
+    return { w: text[0], l: text[1] }
+  }
+  // 동선(곧은 화살표, 0° 는 왼쪽 → 오른쪽) — 몸통 선 {x1, y1, x2, y2}, 머리 세 점, 머리 길이 hl. MM 이 지금 그림이다(머리 길이
+  // min(lh × 1.1, lw × 0.35), 머리 y = lh × 0.15 … lh × 0.85, 몸통 끝 = lw − 머리 길이 × 0.9).
+  function arrowShape(lw, lh, head) {
+    const { w, l } = headParts(head)
+    const hw = HEAD_W[w] * lh
+    const hl = Math.min(HEAD_L[l] * lh, HEAD_CAP[l] * lw)
+    return {
+      shaft: { x1: lh * 0.3, y1: lh / 2, x2: lw - hl * 0.9, y2: lh / 2 },
+      head: [[lw - hl, lh / 2 - hw / 2], [lw, lh / 2], [lw - hl, lh / 2 + hw / 2]],
+      hl,
+    }
+  }
+  // 베이(U자, 0° = ⊃ — 굽은 곳 오른쪽, 두 팔이 왼쪽으로 열림). 팔은 y = lh/4 · 3lh/4, 굽은 곳 반지름 rx = min(lh/4, lw/2)·ry = lh/4,
+  // 머리는 아래 팔 왼쪽 끝에서 왼쪽을 향한다 — 너비 HEAD_W × lh/2, 길이 min(HEAD_L × lh/2, (lw − rx) × 0.45). 선 경로 d, 머리 세 점,
+  // 가운데 글 자리(두 팔 사이 — 머리를 비킨 틈의 가운데)와 틈의 폭·높이(gapW·gapH)를 낸다.
+  function bayShape(lw, lh, head) {
+    const { w, l } = headParts(head)
+    const rx = Math.min(lh / 4, lw / 2)
+    const ry = lh / 4
+    const top = lh / 4
+    const bottom = (3 * lh) / 4
+    const bend = lw - rx
+    const hw = HEAD_W[w] * (lh / 2)
+    const hl = Math.max(0, Math.min(HEAD_L[l] * (lh / 2), bend * 0.45))
+    return {
+      d: `M 0 ${top} H ${bend} A ${rx} ${ry} 0 0 1 ${bend} ${bottom} H ${hl}`,
+      head: [[hl, bottom - hw / 2], [0, bottom], [hl, bottom + hw / 2]],
+      text: { x: (hl + bend) / 2, y: lh / 2 },
+      gapW: Math.max(0, bend - hl),
+      gapH: lh / 2,
+      hl,
+    }
+  }
+  // 제자리 좌표의 점 (x, y) 가 화면(SVG — y 아래로)에서 상자 가운데로부터 어디인가 — 좌우 뒤집기(flip, 가운데 축)를 먼저, 그다음
+  // 가운데를 축으로 rot° 돌림. 그리는 쪽의 `translate(c) rotate(rot) scale(flip) translate(−l/2)` 과 같다.
+  function placeLocal(x, y, lw, lh, rot, flip) {
+    let dx = x - lw / 2
+    const dy = y - lh / 2
+    if (flip) dx = -dx
+    const r = (((rot || 0) % 360) + 360) % 360
+    if (r === 90) return { x: -dy, y: dx }
+    if (r === 180) return { x: -dx, y: -dy }
+    if (r === 270) return { x: dy, y: -dx }
+    return { x: dx, y: dy }
+  }
+  // 베이 가운데 글 자동 크기(도면 단위) — 틈에 맞춘다. 0°·180° 는 틈이 화면에서 가로, 90°·270° 는 세로로 선다(글자는 늘 가로).
+  function bayAutoSize(shape, rot, em) {
+    const width = Math.max(em, 1)
+    if ((rot || 0) % 180) return Math.min(shape.gapW * 0.75, (shape.gapH * 0.9) / width)
+    return Math.min(shape.gapH * 0.75, (shape.gapW * 0.9) / width)
+  }
+  // 베이 번호 — 앞의 B·b 와 그 뒤 빈칸을 모두 떼고(「BB80」 도 「80」 — 다시 거쳐도 같은 값) BAY_NUMBER_MAX 자까지(파이썬
+  // `bay_label` 과 같다 — 넘으면 파이썬은 거부, 편집기는 자른다).
+  function bayNumber(text) {
+    return String(text ?? '').trim().replace(/^(?:[Bb]\s*)+/, '').slice(0, BAY_NUMBER_MAX)
+  }
+  // 선 모양 → 점선 무늬(화면 px 굵기 w 기준). 실선은 빈 글.
+  function lineDash(style, w) {
+    if (style === 'dashed') return `${w * 3} ${w * 2}`
+    if (style === 'dotted') return `0.01 ${w * 2}`
+    return ''
+  }
+  // </mark-look>
+
+  // ---------------------------------------------------------------- 도형 경로·모양 조절 손잡이(순수 함수)
+  // 도형 아홉 프리셋의 그리기 경로(돌리기 전 제자리 lw×lh, y 아래로)와 노란 모양 조절 손잡이(엑셀처럼 — 2026-11-03 사용자 요청)의
+  // 자리·값 되돌림, Shift 모서리 끌기의 가로세로 비율 유지다. 손잡이 자리 → 값(`handleValue`)은 자리(`shapeHandles`)의 거꾸로라
+  // 손잡이를 놓은 자리에서 같은 값이 나온다(돌림·뒤집기는 `placeLocal`·`unplaceLocal` 로 오간다). `tests/test_space_shape_js.py`
+  // 가 `// <mark-look>` 과 함께 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <shape-geometry>
+  const shapeNum = (v) => Math.round(v * 1e4) / 1e4 + 0
+  const polyPath = (pts) => `M ${pts.map(([x, y]) => `${shapeNum(x)} ${shapeNum(y)}`).join(' L ')} Z`
+  // 프리셋 key 의 경로 {d, rule, pts} — rule 은 채우기 규칙(테만 evenodd — 가운데가 빈다), pts 는 꼭짓점·호 끝점(시험이 상자 안인지
+  // 본다). 두께·자리는 모양 조절 값 adj(상자 비율)에서 낸다 — 사각형 모서리 반지름 r = a·min(lw, lh)/2, ㄴ자 세로 팔 a1·lw·가로 팔
+  // a2·lh, ㄷ자 등 a1·lw·위아래 팔 a2·lh, 테 a·min, 삼각형 꼭짓점 x = a·lw, 십자 팔 a·min, 블록 화살표 몸통 a1·lh·머리 길이 a2·lw.
+  function shapePath(key, lw, lh, adj) {
+    const a = Array.isArray(adj) ? adj : []
+    const least = Math.min(lw, lh)
+    if (key === 'ellipse') {
+      const rx = lw / 2
+      const ry = lh / 2
+      return {
+        d: `M 0 ${shapeNum(ry)} A ${shapeNum(rx)} ${shapeNum(ry)} 0 1 0 ${shapeNum(lw)} ${shapeNum(ry)} A ${shapeNum(rx)} ${shapeNum(ry)} 0 1 0 0 ${shapeNum(ry)} Z`,
+        rule: 'nonzero',
+        pts: [[0, ry], [lw, ry], [rx, 0], [rx, lh]],
+      }
+    }
+    if (key === 'lbox') {
+      const t1 = a[0] * lw
+      const t2 = a[1] * lh
+      const pts = [[0, 0], [t1, 0], [t1, lh - t2], [lw, lh - t2], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'cbox') {
+      const t1 = a[0] * lw
+      const t2 = a[1] * lh
+      const pts = [[0, 0], [lw, 0], [lw, t2], [t1, t2], [t1, lh - t2], [lw, lh - t2], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'frame') {
+      const t = a[0] * least
+      const outer = [[0, 0], [lw, 0], [lw, lh], [0, lh]]
+      const inner = [[t, t], [t, lh - t], [lw - t, lh - t], [lw - t, t]]
+      return { d: `${polyPath(outer)} ${polyPath(inner)}`, rule: 'evenodd', pts: [...outer, ...inner] }
+    }
+    if (key === 'triangle') {
+      const pts = [[a[0] * lw, 0], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'diamond') {
+      const pts = [[lw / 2, 0], [lw, lh / 2], [lw / 2, lh], [0, lh / 2]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'cross') {
+      const t = a[0] * least
+      const x0 = (lw - t) / 2
+      const x1 = (lw + t) / 2
+      const y0 = (lh - t) / 2
+      const y1 = (lh + t) / 2
+      const pts = [[x0, 0], [x1, 0], [x1, y0], [lw, y0], [lw, y1], [x1, y1], [x1, lh], [x0, lh], [x0, y1], [0, y1], [0, y0], [x0, y0]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    if (key === 'arrowblock') {
+      const body = a[0] * lh
+      const hl = a[1] * lw
+      const pts = [[0, (lh - body) / 2], [lw - hl, (lh - body) / 2], [lw - hl, 0], [lw, lh / 2], [lw - hl, lh], [lw - hl, (lh + body) / 2], [0, (lh + body) / 2]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    // 사각형(처음 값·모르는 키) — 둥글기가 있으면 네 귀를 반지름 r 의 호로.
+    const r = Math.max(0, Math.min((a[0] || 0) * least / 2, least / 2))
+    if (r <= 1e-9) {
+      const pts = [[0, 0], [lw, 0], [lw, lh], [0, lh]]
+      return { d: polyPath(pts), rule: 'nonzero', pts }
+    }
+    const n = shapeNum
+    const arc = (x, y) => `A ${n(r)} ${n(r)} 0 0 1 ${n(x)} ${n(y)}`
+    return {
+      d: `M ${n(r)} 0 H ${n(lw - r)} ${arc(lw, r)} V ${n(lh - r)} ${arc(lw - r, lh)} H ${n(r)} ${arc(0, lh - r)} V ${n(r)} ${arc(r, 0)} Z`,
+      rule: 'nonzero',
+      pts: [[r, 0], [lw - r, 0], [lw, r], [lw, lh - r], [lw - r, lh], [r, lh], [0, lh - r], [0, r]],
+      r,
+    }
+  }
+  // 프리셋 key 의 노란 손잡이 [{x, y, axis, index}](제자리 좌표). axis 는 손잡이가 값을 읽는 축('x' 가로 · 'y' 세로).
+  function shapeHandles(key, lw, lh, adj) {
+    const a = Array.isArray(adj) ? adj : []
+    const least = Math.min(lw, lh)
+    if (key === 'rect') return [{ x: (a[0] || 0) * least / 2, y: 0, axis: 'x', index: 0 }]
+    if (key === 'lbox') return [{ x: a[0] * lw, y: 0, axis: 'x', index: 0 }, { x: lw, y: lh - a[1] * lh, axis: 'y', index: 1 }]
+    if (key === 'cbox') return [{ x: a[0] * lw, y: lh / 2, axis: 'x', index: 0 }, { x: lw, y: a[1] * lh, axis: 'y', index: 1 }]
+    if (key === 'frame') return [{ x: a[0] * least, y: a[0] * least, axis: 'y', index: 0 }]
+    if (key === 'triangle') return [{ x: a[0] * lw, y: 0, axis: 'x', index: 0 }]
+    if (key === 'cross') {
+      const t = a[0] * least
+      return [{ x: (lw + t) / 2, y: (lh - t) / 4, axis: 'x', index: 0 }]
+    }
+    if (key === 'arrowblock') {
+      const body = a[0] * lh
+      const hl = a[1] * lw
+      return [{ x: (lw - hl) / 2, y: (lh - body) / 2, axis: 'y', index: 0 }, { x: lw - hl, y: 0, axis: 'x', index: 1 }]
+    }
+    return []
+  }
+  // 손잡이 index 를 제자리 점 (x, y) 에 놓았을 때의 모양 조절 값 — 그 축만 읽어 범위로 묶고 0.01 단위로 맞춘다. 손잡이가 없는
+  // 프리셋·번호면 null.
+  function handleValue(key, index, x, y, lw, lh) {
+    const spec = (SHAPE_PRESETS[key] || {}).adj || []
+    if (!spec[index]) return null
+    const least = Math.min(lw, lh)
+    const ratio = (num, den) => (den > 0 ? num / den : spec[index][2])
+    let v = spec[index][2]
+    if (key === 'rect') v = ratio(x, least / 2)
+    else if (key === 'lbox') v = index === 0 ? ratio(x, lw) : ratio(lh - y, lh)
+    else if (key === 'cbox') v = index === 0 ? ratio(x, lw) : ratio(y, lh)
+    else if (key === 'frame') v = ratio(y, least)
+    else if (key === 'triangle') v = ratio(x, lw)
+    else if (key === 'cross') v = ratio(2 * x - lw, least)
+    else if (key === 'arrowblock') v = index === 0 ? ratio(lh - 2 * y, lh) : ratio(lw - x, lw)
+    if (!Number.isFinite(v)) v = spec[index][2]
+    return Math.min(Math.max(Math.round(v * 100) / 100, spec[index][0]), spec[index][1])
+  }
+  // 화면(SVG — y 아래로)에서 상자 가운데로부터의 자리 (px, py) 를 제자리 좌표로 — `placeLocal` 의 거꾸로(돌림을 풀고 좌우 뒤집기를
+  // 푼다).
+  function unplaceLocal(px, py, lw, lh, rot, flip) {
+    const r = (((rot || 0) % 360) + 360) % 360
+    let dx = px
+    let dy = py
+    if (r === 90) { dx = py; dy = -px }
+    else if (r === 180) { dx = -px; dy = -py }
+    else if (r === 270) { dx = -py; dy = px }
+    if (flip) dx = -dx
+    return { x: dx + lw / 2, y: dy + lh / 2 }
+  }
+  // Shift 를 누른 채 모서리 손잡이로 키운 상자 — 처음 상자 b(데이터 좌표 {x, y, w, h}, Y 위로)의 가로세로 비율을 지키고 끈
+  // 모서리의 맞은편 귀를 붙박는다. 배율은 손이 더 많이 움직인 축(1 에서 더 먼 쪽)을 따르고, 영역(maxW×maxH)을 넘지 않게·가장 짧은
+  // 변이 minS 아래로 줄지 않게 묶은 뒤 눈금(scale)에 맞춘다. r 은 비율 없이 끈 상자(`resizedBox`), dir 은 모서리(nw·ne·sw·se).
+  function keepAspect(b, r, dir, maxW, maxH, minS, scale) {
+    const east = dir.includes('e')
+    const north = dir.includes('n')
+    const ax = east ? b.x : b.x + b.w
+    const ay = north ? b.y : b.y + b.h
+    const kw = r.w / b.w
+    const kh = r.h / b.h
+    let k = Math.abs(kw - 1) >= Math.abs(kh - 1) ? kw : kh
+    k = Math.min(k, (east ? maxW - ax : ax) / b.w, (north ? maxH - ay : ay) / b.h)
+    k = Math.max(k, minS / Math.min(b.w, b.h))
+    const tick = (v) => Math.round(v * scale) / scale + 0
+    const w = tick(b.w * k)
+    const h = tick(b.h * k)
+    return { x: tick(east ? ax : ax - w), y: tick(north ? ay : ay - h), w, h }
+  }
+  // 노란 손잡이 그릴 자리 — 크기 손잡이(centers [{x, y}])와 gap 보다 가까우면 값을 읽는 축(axis 'x'·'y')을 따라 gap 만큼 비킨다. 두
+  // 쪽 가운데 크기 손잡이에서 더 먼 쪽(같으면 상자 가운데 center 쪽)이다. 가깝지 않으면 그 자리 그대로. 끌 때는 잡은 자리에서 손이
+  // 움직인 만큼으로 값을 읽어(`drag.grab`) 비켜 그려도 값이 튀지 않는다 — 둥글기 0 인 사각형의 손잡이가 모서리 손잡이를 덮지 않게.
+  function nudgeHandle(pt, axis, centers, gap, center) {
+    const far = (q) => Math.min(...centers.map((c) => Math.hypot(c.x - q.x, c.y - q.y)))
+    if (!centers.length || far(pt) >= gap) return pt
+    const step = (sign) => (axis === 'x' ? { x: pt.x + sign * gap, y: pt.y } : { x: pt.x, y: pt.y + sign * gap })
+    const inward = (axis === 'x' ? center.x - pt.x : center.y - pt.y) >= 0 ? 1 : -1
+    const near = step(inward)
+    const away = step(-inward)
+    return far(away) > far(near) + 1e-9 ? away : near
+  }
+  // </shape-geometry>
+
+  // ---------------------------------------------------------------- 서식 복사·붙여넣기(순수 함수)
+  // 엑셀 서식 붓처럼 고른 것 하나의 서식을 담아 다른 것에 붙인다(2026-11-03 사용자 요청). 서식은 세 묶음(「붙일 것」 체크)이다 —
+  // 크기(같은 종류끼리만: 요소는 같은 kind, 호기는 낱 호기끼리·Main 설비 모듈 묶음끼리 — 묶음은 범위 크기. 크기는 상자 자기 방향의
+  // 길이·두께라 돌린 요소에는 돌린 대로 붙는다), 색·선(면 색은 영역·도형·층 블록 사이 — 받는 쪽에 없는 값은 그 칸만 건너뛴다,
+  // 채우기 투명도는 도형끼리, 선 색·굵기·모양은 도형·동선·베이 사이, 영역 테두리 모양 ↔ 선 모양, 머리 크기는 동선·베이 사이,
+  // 빗금은 영역·도형 사이), 글자(크기·색은 모든 도면 요소, 이름표 정렬은 영역끼리). 자리·이름표 글·회전·뒤집기·도형 꼴·모양 조절
+  // 값·설비 금지·연결 층은 넣지 않는다(엑셀 붓도 꼴·회전은 옮기지 않는다). 호기의 면 색은 계산 값이라 호기에는 크기만 붙는다.
+  // 담는 값은 그 종류가 지금 그리는 값(처음 값 포함)이다. `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
+  // 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <format-paint>
+  const FORMAT_PARTS = ['size', 'paint', 'text']
+  // 영역 색 키(파이썬 `MARK_COLOR_KEYS` — 글자 색 키도 같다), 영역 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`).
+  const FORMAT_COLORS = ['blue', 'rose', 'green', 'violet', 'sky', 'gray']
+  const FORMAT_BORDERS = ['dashed', 'solid']
+  const FORMAT_ALIGNS = ['left', 'center', 'right']
+  const FORMAT_LINED = ['arrow', 'bay', 'shape']
+  const FORMAT_HEADED = ['arrow', 'bay']
+  const FORMAT_HATCHED = ['zone', 'shape']
+  // 그 종류가 면 색으로 받는 값 — 영역은 색 여섯, 도형은 채우기 여덟(진하게·바탕 포함), 층 블록은 빈 값(Space 기본 면) + 여섯. 그 밖의
+  // 종류는 면 색이 없다(null).
+  function formatColors(kind) {
+    if (kind === 'zone') return FORMAT_COLORS
+    if (kind === 'shape') return SHAPE_FILLS
+    if (kind === 'block') return ['', ...FORMAT_COLORS]
+    return null
+  }
+  // 90°·270° 로 돌린 상자인가(폭·높이가 자기 방향의 두께·길이와 바뀐다).
+  function formatTurned(rot) {
+    return Boolean(((((Number(rot) || 0) % 180) + 180) % 180))
+  }
+  // 서식 — item 은 {kind, module(호기만 — Main 설비 모듈 묶음인가), w, h(묶음은 범위), rot, color, hatch, fontSize, fontColor,
+  // borderStyle, labelAlign, look}. {kind, module, size: {w, h}(자기 방향, 크기가 없으면 null), paint: {color?, fillAlpha?, line?,
+  // lineWidth?(동선 자동은 null), lineStyle?(영역은 테두리 모양), head?, hatch?} | null, text: {fontSize, fontColor, labelAlign?} | null}.
+  // 호기는 paint·text 가 null 이다.
+  function formatOf(item) {
+    const kind = String(item.kind)
+    const unit = kind === 'unit'
+    const sized = Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
+    const turned = !unit && formatTurned(item.rot)
+    const fmt = {
+      kind,
+      module: unit && Boolean(item.module),
+      size: sized ? { w: turned ? item.h : item.w, h: turned ? item.w : item.h } : null,
+      paint: null,
+      text: null,
+    }
+    if (unit) return fmt
+    const paint = {}
+    if (formatColors(kind)) paint.color = String(item.color || '')
+    if (kind === 'shape') paint.fillAlpha = lookValue(item.look, kind, 'fillAlpha')
+    if (FORMAT_LINED.includes(kind)) {
+      paint.line = lookValue(item.look, kind, 'line')
+      const width = lookValue(item.look, kind, 'lineWidth')
+      paint.lineWidth = width === undefined ? null : width
+      paint.lineStyle = lookValue(item.look, kind, 'lineStyle')
+    }
+    if (kind === 'zone') paint.lineStyle = FORMAT_BORDERS.includes(item.borderStyle) ? item.borderStyle : FORMAT_BORDERS[0]
+    if (FORMAT_HEADED.includes(kind)) paint.head = lookValue(item.look, kind, 'head')
+    if (FORMAT_HATCHED.includes(kind)) paint.hatch = Boolean(item.hatch)
+    fmt.paint = paint
+    fmt.text = { fontSize: item.fontSize ?? null, fontColor: String(item.fontColor || '') }
+    if (kind === 'zone') fmt.text.labelAlign = FORMAT_ALIGNS.includes(item.labelAlign) ? item.labelAlign : FORMAT_ALIGNS[0]
+    return fmt
+  }
+  // 받는 쪽 target(formatOf 와 같은 꼴)에 서식 fmt 의 켠 묶음(parts {size, paint, text} — 없거나 거짓이 아니면 켬)을 붙일 값 —
+  // {size: {w, h}(받는 쪽 방향) | null, fields: {요소 칸}, look: {모양 값 — null 은 처음 값으로}}. 받는 쪽이 갖지 않는 칸·값은
+  // 빠진다. 붙일 것이 하나도 없으면 null.
+  function formatPatch(target, fmt, parts) {
+    const kind = String(target.kind)
+    const on = (part) => !parts || parts[part] !== false
+    const out = { size: null, fields: {}, look: {} }
+    const sameKind = fmt.kind === kind && (kind !== 'unit' || Boolean(fmt.module) === Boolean(target.module))
+    if (on('size') && fmt.size && sameKind) {
+      const turned = kind !== 'unit' && formatTurned(target.rot)
+      out.size = { w: turned ? fmt.size.h : fmt.size.w, h: turned ? fmt.size.w : fmt.size.h }
+    }
+    const p = fmt.paint
+    if (kind !== 'unit' && p && on('paint')) {
+      const colors = formatColors(kind)
+      if (colors && typeof p.color === 'string' && colors.includes(p.color)) out.fields.color = p.color
+      if (kind === 'shape' && lookAllowed('fillAlpha', p.fillAlpha, kind)) out.look.fillAlpha = p.fillAlpha
+      if (FORMAT_LINED.includes(kind)) {
+        if (lookAllowed('line', p.line, kind)) out.look.line = p.line
+        // 동선의 자동 굵기(상자 높이를 따름)는 동선에만 있다 — 도형·베이는 그 칸을 건너뛴다.
+        if (p.lineWidth === null && kind === 'arrow') out.look.lineWidth = null
+        else if (lookAllowed('lineWidth', p.lineWidth, kind)) out.look.lineWidth = p.lineWidth
+        if (lookAllowed('lineStyle', p.lineStyle, kind)) out.look.lineStyle = p.lineStyle
+      }
+      if (kind === 'zone' && FORMAT_BORDERS.includes(p.lineStyle)) out.fields.borderStyle = p.lineStyle
+      if (FORMAT_HEADED.includes(kind) && lookAllowed('head', p.head, kind)) out.look.head = p.head
+      if (FORMAT_HATCHED.includes(kind) && typeof p.hatch === 'boolean') out.fields.hatch = p.hatch
+    }
+    const t = fmt.text
+    if (kind !== 'unit' && t && on('text')) {
+      if (t.fontSize === null || (Number.isInteger(t.fontSize) && t.fontSize > 0)) out.fields.fontSize = t.fontSize
+      if (t.fontColor === '' || FORMAT_COLORS.includes(t.fontColor)) out.fields.fontColor = t.fontColor
+      if (kind === 'zone' && FORMAT_ALIGNS.includes(t.labelAlign)) out.fields.labelAlign = t.labelAlign
+    }
+    const empty = !out.size && !Object.keys(out.fields).length && !Object.keys(out.look).length
+    return empty ? null : out
+  }
+  // 모양 값 look 에 patch(값 null 은 처음 값으로)를 얹은 그 종류의 정규 꼴.
+  function patchedLook(look, patch, kind) {
+    const merged = { ...(look || {}) }
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (value === null) delete merged[key]
+      else merged[key] = value
+    }
+    return cleanLook(merged, kind)
+  }
+  // 저장소에서 읽은 서식 — 꼴이 맞으면 그 서식(모르는 칸은 버림), 아니면 null. 크기는 양수만, 글자 크기는 고를 수 있는 것
+  // (sizes)만 남긴다.
+  function formatFrom(raw, sizes) {
+    if (!raw || typeof raw !== 'object' || typeof raw.kind !== 'string' || !raw.kind) return null
+    const size = raw.size && typeof raw.size === 'object' ? { w: Number(raw.size.w), h: Number(raw.size.h) } : null
+    const fmt = {
+      kind: raw.kind,
+      module: raw.kind === 'unit' && raw.module === true,
+      size: size && [size.w, size.h].every((v) => Number.isFinite(v) && v > 0) ? size : null,
+      paint: null,
+      text: null,
+    }
+    if (raw.kind === 'unit') return fmt
+    if (raw.paint && typeof raw.paint === 'object') {
+      const keep = ['color', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'head', 'hatch']
+      fmt.paint = Object.fromEntries(keep.filter((key) => key in raw.paint).map((key) => [key, raw.paint[key]]))
+    }
+    if (raw.text && typeof raw.text === 'object') {
+      const fs = raw.text.fontSize
+      fmt.text = {
+        fontSize: fs === null || sizes.includes(fs) ? fs : undefined,
+        fontColor: raw.text.fontColor === '' || FORMAT_COLORS.includes(raw.text.fontColor) ? raw.text.fontColor : undefined,
+      }
+      if (FORMAT_ALIGNS.includes(raw.text.labelAlign)) fmt.text.labelAlign = raw.text.labelAlign
+    }
+    return fmt
+  }
+  // </format-paint>
+
   // ---------------------------------------------------------------- 「필요 단축」 배지 자리(순수 함수)
   // `tests/test_space_short_badges_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름은 화면 px 상수 넷만 쓴다.
   // <short-badge>
   // 배지 상자 {x(가운데), y(가운데, 데이터 좌표 — Y 위로), w, h, mainSize, subSize, mainY, subY}. rects 는 그 호기의 보이는 모듈
   // 상자들([{x, y, w, h}]), upp 는 화면 px 당 데이터 단위, labelAbove 면 Main 설비 이름표(위)만큼 더 비킨다. em 은 두 줄 글자
-  // 폭(em), canvasH 는 영역 높이 — 위 끝을 넘으면 묶음 안쪽 위 띠로 뒤집는다. 크기는 화면 px 로 정해 확대해도 같다.
-  function badgeSpot(rects, upp, labelAbove, em, canvasH) {
+  // 폭(em), canvasH 는 영역 높이 — 위 끝을 넘으면 묶음 안쪽 위 띠로 뒤집는다. 크기는 화면 px 에 표지 배율 k(배율을 따라
+  // 0.75~1.25 배 — `calloutScale`)를 곱한 것이고, nameK 는 Main 설비명 글자 배율(이름표 위로 비킬 높이)이다.
+  function badgeSpot(rects, upp, labelAbove, em, canvasH, k = 1, nameK = 1) {
     const x0 = Math.min(...rects.map((r) => r.x))
     const x1 = Math.max(...rects.map((r) => r.x + r.w))
     const y1 = Math.max(...rects.map((r) => r.y + r.h))
-    const mainSize = BADGE_MAIN_PX * upp
-    const subSize = BADGE_SUB_PX * upp
-    const pad = BADGE_PAD_PX * upp
+    const mainSize = BADGE_MAIN_PX * k * upp
+    const subSize = BADGE_SUB_PX * k * upp
+    const pad = BADGE_PAD_PX * k * upp
+    const gap = BADGE_GAP_PX * k * upp
     const w = Math.max((em.main || 1) * mainSize, (em.sub || 1) * subSize) + pad * 2
     const h = mainSize * 1.2 + subSize * 1.2 + pad
-    const lift = BADGE_GAP_PX * upp + (labelAbove ? (GROUP_NAME_PX * 1.6 + 2) * upp : 0)
+    const lift = gap + (labelAbove ? (GROUP_NAME_PX * nameK * 1.6 + 2) * upp : 0)
     let y = y1 + lift + h / 2
-    if (y + h / 2 > canvasH) y = y1 - BADGE_GAP_PX * upp - h / 2
+    if (y + h / 2 > canvasH) y = y1 - gap - h / 2
     return {
       x: (x0 + x1) / 2, y, w, h, mainSize, subSize,
       mainY: pad / 2 + mainSize * 0.6, subY: pad / 2 + mainSize * 1.2 + subSize * 0.6,
@@ -687,11 +1372,11 @@ export default function (component) {
   // spots 는 목록 차례(기한 지남 → 남은 날 짧은 순)라 앞 배지가 먼저 자리를 잡는다. 후보는 제자리 → 한 칸 위(배지 높이 + 틈)
   // 이고 영역 위 끝을 넘는 후보는 버린다. 둘 다 겹치면 null — 그 배지는 이 배율에서 숨고(확대하면 다시 선다) 상자 구간 색과
   // 「이 층에서 단축할 호기」 표가 남는다.
-  function settleBadges(spots, upp, canvasH) {
+  function settleBadges(spots, upp, canvasH, k = 1) {
     const placed = []
     const hits = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.y - b.y) < (a.h + b.h) / 2
     return spots.map((spot) => {
-      for (const dy of [0, spot.h + BADGE_GAP_PX * upp]) {
+      for (const dy of [0, spot.h + BADGE_GAP_PX * k * upp]) {
         const at = { ...spot, y: spot.y + dy }
         if (dy && at.y + at.h / 2 > canvasH) continue
         if (!placed.some((other) => hits(other, at))) {
@@ -709,7 +1394,8 @@ export default function (component) {
   // <block-text>
   // 층 블록 가운데 글자 줄 — [{text, size, role}] 를 위에서 아래 차례로 돌려준다(role 'head'·'sub'·'short'). main 은 이름 줄과
   // 그 아래 줄(배치·미배치 대수, 비활성 층은 사유), short 는 색 기준 「필요 단축」 의 단축 줄(없으면 빈 글), lw·lh 는 블록 크기
-  // (데이터 단위), upp 는 화면 px 당 데이터 단위, em 은 글자 폭(em) 함수다. 크기는 블록에 맞추되 화면 13px 를 넘지 않는다.
+  // (데이터 단위), upp 는 화면 px 당 데이터 단위, em 은 글자 폭(em) 함수다. 크기는 블록에 맞추되 화면 maxPx(처음 13 — 그리는
+  // 쪽이 배율 글자 배율을 곱해 넘긴다, `// <text-scale>`)를 넘지 않는다.
   // - 단축 줄은 다른 줄의 크기를 끌어내리지 않는다 — 긴 단축 줄(「단축 5대 · 최대 −197일 · 추가 28」)에 맞추느라 이름까지 반으로
   //   줄어 강조하려는 층 이름이 6~7px 이 됐다(E2E r1). 위 줄은 제 폭으로 맞추고(높이는 단축 줄 몫도 나눈다), 단축 줄만 제 폭에
   //   맞춰 더 작아진다. 한 줄로 많이 줄면(위 줄의 0.75 배 아래) 「 · 」 경계에서 두 줄로 나눠 본다 — 나눈 줄이 1.15 배 넘게
@@ -718,8 +1404,8 @@ export default function (component) {
   //   (단축 줄 몫을 나눈 크기로 판정해 대수 줄까지 빼던 것 — 2026-11-02 E2E), 그래도 7px 아래면 이름 줄만 남긴다(풍선에
   //   남는다). 비활성 층(`off`)이면 이름 앞에 「⊘」 를 달아 사유 줄이 빠진 좁은 화면에서도 사용 층과 가른다(390px — E2E r1).
   // - 단축 줄이 화면 6px 아래면 그 줄만 숨긴다. 이름 줄이 6px 아래면 부르는 쪽이 숨긴다.
-  function blockTextLayout(main, short, off, lw, lh, upp, em) {
-    const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), 13 * upp)
+  function blockTextLayout(main, short, off, lw, lh, upp, em, maxPx = 13) {
+    const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), maxPx * upp)
     const widthFit = (rows) => (lw * 0.9) / Math.max(...rows.map(em), 1)
     const splitTwo = (text) => {
       const parts = text.split(' · ')
@@ -866,6 +1552,292 @@ export default function (component) {
     return shapes
   }
   // </view-compare>
+
+  // 두 옆 칸·스크롤 고정의 판정(순수 함수). `tests/test_space_editor_panels_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로
+  // 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <side-panels>
+  // 칸 폭 한계 — 최소 lo, 최대 min(hi, 편집기 폭 × hiShare)(최소보다 작지 않게), 기본 clamp(defLo, 편집기 폭 × defShare,
+  // defHi)(한계 안으로).
+  function panelBounds(editorW, spec) {
+    const width = Math.max(0, Number(editorW) || 0)
+    const hi = Math.max(spec.lo, Math.min(spec.hi, width * spec.hiShare))
+    const def = Math.max(spec.defLo, Math.min(spec.defHi, width * spec.defShare))
+    return { lo: spec.lo, hi, def: Math.max(spec.lo, Math.min(hi, def)) }
+  }
+  // 칸 폭을 한계 안으로(정수 px). 값이 없거나(null) 수가 아니면 기본 폭 — 끄는 동안 0 아래로 간 값은 최소다.
+  function clampPanel(px, bounds) {
+    const n = Number(px)
+    const value = px !== null && px !== undefined && px !== '' && Number.isFinite(n) ? n : bounds.def
+    return Math.round(Math.max(bounds.lo, Math.min(bounds.hi, value)))
+  }
+  // 저장값 읽기 — {'<범위>.<모드>': {left|right: {w, min}}}. 꼴이 다른 칸은 버린다(폭은 0 초과 4000 이하의 수, 접힘은 참일 때만).
+  function storedPanels(raw) {
+    let value = null
+    try {
+      value = JSON.parse(raw || 'null')
+    } catch {
+      value = null
+    }
+    const out = {}
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return out
+    for (const [mode, sides] of Object.entries(value)) {
+      if (!/^(floor|fab)\.(edit|view)$/.test(mode) || !sides || typeof sides !== 'object') continue
+      const kept = {}
+      for (const side of ['left', 'right']) {
+        const state = sides[side]
+        if (!state || typeof state !== 'object') continue
+        const w = typeof state.w === 'number' && Number.isFinite(state.w) && state.w > 0 && state.w <= 4000 ? Math.round(state.w) : null
+        kept[side] = { w, min: state.min === true }
+      }
+      out[mode] = kept
+    }
+    return out
+  }
+  // 칸막이 키 — 왼쪽 칸은 → 가, 오른쪽 칸은 ← 가 넓힌다(한 걸음 16px, Shift 64px). Home 최대 · End 최소 · Enter 접기. 그 밖의
+  // 키는 null(놓아 둔다).
+  function splitKey(key, shift, side, now, bounds) {
+    const step = shift ? 64 : 16
+    const grow = side === 'left' ? 'ArrowRight' : 'ArrowLeft'
+    const shrink = side === 'left' ? 'ArrowLeft' : 'ArrowRight'
+    if (key === grow) return { width: now + step }
+    if (key === shrink) return { width: now - step }
+    if (key === 'Home') return { width: bounds.hi }
+    if (key === 'End') return { width: bounds.lo }
+    if (key === 'Enter') return { fold: true }
+    return null
+  }
+  // 두 칸을 다 넓혀 무대가 stageMin 아래로 가면 마지막에 끈 칸(last)부터, 그래도 모자라면 다른 칸을 줄인다(칸마다 그 최소
+  // `lo` 까지 — 접힌 띠는 lo = 폭이라 줄지 않는다). 칸막이는 펼친 칸에만 있다(split).
+  function fitPanels(editorW, left, right, last, stageMin, split) {
+    let l = left.w
+    let r = right.w
+    const room = () => editorW - l - r - (left.open ? split : 0) - (right.open ? split : 0)
+    let over = stageMin - room()
+    for (const side of last === 'left' ? ['left', 'right'] : ['right', 'left']) {
+      if (over <= 0) break
+      if (side === 'left') {
+        const cut = Math.min(over, Math.max(0, l - left.lo))
+        l -= cut
+        over -= cut
+      } else {
+        const cut = Math.min(over, Math.max(0, r - right.lo))
+        r -= cut
+        over -= cut
+      }
+    }
+    return { left: Math.round(l), right: Math.round(r) }
+  }
+  // 끄는 칸의 최대 폭 — 다른 칸과 칸막이 둘을 빼고 무대 stageMin 을 남긴 만큼(그 칸 최소보다 작지 않게).
+  function dragLimit(editorW, otherW, splits, stageMin, lo) {
+    return Math.max(lo, Math.floor(editorW - otherW - splits - stageMin))
+  }
+  // 스크롤 고정 무대 높이 — 창 높이에서 무대 위 끝과 아래 몫(상태 줄 높이 + 12px)을 뺀 만큼, 최소 minH.
+  function lockHeight(viewportH, stageTop, statusH, minH) {
+    const below = Math.max(0, Number(statusH) || 0) + 12
+    return Math.max(minH, Math.floor(Number(viewportH) - Number(stageTop) - below))
+  }
+  // 스크롤 고정 때 편집기 맨 위가 설 자리(창 위에서 px) — 가림 끝(화면 탭 줄 아래 끝, 없으면 머리 띠 72) + 8.
+  function lockTop(coverBottom) {
+    return Math.round(Math.max(72, Number(coverBottom) || 0)) + 8
+  }
+  // 점(x, y)이 상자 안인가(경계 포함, 넓이 없는 상자는 아님) — 도면의 호기를 오른쪽 칸에 끌어 놓으면 미배치로.
+  function insideRect(rect, x, y) {
+    return Boolean(rect) && rect.width > 0 && rect.height > 0
+      && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+  }
+  // </side-panels>
+  // 「호기 정보」 창의 표 판정(순수 함수, 2026-11-03 사용자 요청 — 고른 호기의 칸과, 칸마다 엑셀 자동 필터 꼴로 거른 호기
+  // 목록·도면 강조). 표 재료는 파이썬 `services/space_unit_sheet.unit_sheet`(칸 [{name, type}], 줄 [{id, group, cells}])다.
+  // `tests/test_space_unit_sheet_js.py` 가 아래 두 표시 줄 사이를 `// <module-tiling>` 구획(자연 정렬 `naturalCompare`)과 함께
+  // 떼어 node 로 돌린다 — 그 밖의 바깥 이름을 쓰지 않는다. 필터 꼴: {칸 이름: {values?: [열쇠], from?, to?}} — values 가 있으면
+  // 그 값 가운데 하나(칸 안 OR), from·to 는 날짜·숫자 칸의 범위(양 끝 포함, 빈 끝은 열림)이고 칸끼리는 AND 다.
+  // <unit-sheet>
+  // 칸 값의 비교 열쇠 — 빈 값(null·빈 글)은 ''(「(빈칸)」 한 항목), 글은 앞뒤 공백을 걷고 소문자(엑셀 자동 필터처럼 대소문자를
+  // 가리지 않는다), 수는 수 글이다.
+  function sheetKey(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+    return String(value).trim().toLowerCase()
+  }
+  // 칸 값의 보이는 글 — 수는 소수 둘째 자리까지, 빈 값은 ''.
+  function sheetText(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'number') return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : ''
+    return String(value).trim()
+  }
+  const rangeEnd = (value) => (value === null || value === undefined ? '' : String(value).trim())
+  // 범위가 걸렸는가(한 끝이라도 있으면).
+  function sheetRangeOn(rule) {
+    return Boolean(rule) && (rangeEnd(rule.from) !== '' || rangeEnd(rule.to) !== '')
+  }
+  // 값이 범위 안인가 — 날짜는 「YYYY-MM-DD」 글로, 숫자는 수로 견준다. 범위가 없으면 늘 참, 있으면 빈 값·꼴이 다른 값은 거짓.
+  function inRange(value, rule, type) {
+    if (!sheetRangeOn(rule)) return true
+    const from = rangeEnd(rule.from)
+    const to = rangeEnd(rule.to)
+    if (type === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return false
+      const lo = from === '' ? -Infinity : Number(from)
+      const hi = to === '' ? Infinity : Number(to)
+      if (Number.isNaN(lo) || Number.isNaN(hi)) return false
+      return value >= lo && value <= hi
+    }
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    return (from === '' || value >= from) && (to === '' || value <= to)
+  }
+  // 칸 하나의 필터가 걸렸는가 — 값 고르기(빈 목록이어도 — 아무것도 고르지 않음)나 범위.
+  const sheetRuleOn = (rule) => Boolean(rule) && (Array.isArray(rule.values) || sheetRangeOn(rule))
+  // 걸린 칸 이름(이 표에 있는 칸만, 칸 차례).
+  function sheetActive(columns, filters) {
+    return (columns || []).map((column) => column.name).filter((name) => sheetRuleOn((filters || {})[name]))
+  }
+  // 필터에 맞는 줄(받은 차례). `skip` 칸의 필터는 보지 않는다(그 칸 값 목록은 다른 칸 필터만 지난 줄에서 — 엑셀처럼).
+  function sheetMatch(rows, columns, filters, skip) {
+    const rules = []
+    for (const [index, column] of (columns || []).entries()) {
+      const rule = (filters || {})[column.name]
+      if (column.name === skip || !sheetRuleOn(rule)) continue
+      rules.push({ index, type: column.type, rule, keys: Array.isArray(rule.values) ? new Set(rule.values.map(String)) : null })
+    }
+    if (!rules.length) return [...(rows || [])]
+    return (rows || []).filter((row) => rules.every(({ index, type, rule, keys }) => {
+      const value = row.cells[index]
+      if (keys && !keys.has(sheetKey(value))) return false
+      return inRange(value, rule, type)
+    }))
+  }
+  // 칸 값 목록 — [{key, text, count}]. 대소문자만 다른 글은 한 항목(처음 만난 꼴로 보인다), 빈 값은 「(빈칸)」 으로 맨 뒤.
+  // 차례는 숫자 칸이면 수, 그 밖은 설비명 자연 정렬(`naturalCompare` — 날짜 글은 글 차례가 날짜 차례다).
+  function distinctValues(rows, index, type) {
+    const seen = new Map()
+    for (const row of rows || []) {
+      const value = row.cells[index]
+      const key = sheetKey(value)
+      const found = seen.get(key)
+      if (found) found.count += 1
+      else seen.set(key, { key, text: key === '' ? '(빈칸)' : sheetText(value), count: 1, value })
+    }
+    const list = [...seen.values()]
+    list.sort((a, b) => {
+      if ((a.key === '') !== (b.key === '')) return a.key === '' ? 1 : -1
+      const na = typeof a.value === 'number'
+      const nb = typeof b.value === 'number'
+      if (type === 'number' && na && nb) return a.value - b.value
+      if (na !== nb) return na ? -1 : 1
+      return naturalCompare(a.text, b.text)
+    })
+    return list.map(({ key, text, count }) => ({ key, text, count }))
+  }
+  // 고른 호기의 줄 — 파이썬 `space_layout.picked_unit_rows` 와 같은 규칙: 그 설비 줄, Main 설비 모듈이면 같은 Main 설비 줄
+  // 전부이고 누른 것이 첫 줄, 나머지는 설비명 자연 정렬(같으면 받은 차례). 없는 설비면 빈 목록.
+  function pickedRows(rows, id) {
+    const list = rows || []
+    const first = list.find((row) => row.id === id)
+    if (!first) return []
+    const parent = first.group
+    return list
+      .map((row, index) => [row, index])
+      .filter(([row]) => row.id === id || (parent && row.group === parent))
+      .sort((a, b) => (Number(a[0].id !== id) - Number(b[0].id !== id)) || naturalCompare(a[0].id, b[0].id) || a[1] - b[1])
+      .map(([row]) => row)
+  }
+  // 여럿 고른 호기(배치 편집)의 줄 — 고른 차례로 `pickedRows` 를 잇고 같은 줄은 한 번만.
+  function pickedRowsMany(rows, ids) {
+    const out = []
+    const seen = new Set()
+    for (const id of ids || []) {
+      for (const row of pickedRows(rows, id)) {
+        if (seen.has(row.id)) continue
+        seen.add(row.id)
+        out.push(row)
+      }
+    }
+    return out
+  }
+  // 도면에서 강조할 호기 — 필터가 하나라도 걸렸으면 맞는 줄의 id 묶음, 아니면 null(강조 없음).
+  function sheetHits(rows, columns, filters) {
+    if (!sheetActive(columns, filters).length) return null
+    return new Set(sheetMatch(rows, columns, filters).map((row) => row.id))
+  }
+  // 칸 값 글 → 줄 수(「도면」 칸 — 배치·미배치·…), 처음 만난 차례.
+  function countBy(rows, index) {
+    const out = new Map()
+    for (const row of rows || []) {
+      const text = sheetText(row.cells[index])
+      out.set(text, (out.get(text) || 0) + 1)
+    }
+    return out
+  }
+  // 창 자리·크기를 편집기 몸(bodyW × bodyH) 안으로 — 폭·높이는 최소(minW·minH, 몸보다 크면 몸)와 몸 사이, 자리는 창 전체가
+  // 몸 안에 들게(접힌 창은 제목 줄 높이 headH 만큼). 값이 수가 아니면 기본(def)이다.
+  function clampSheet(win, def, bodyW, bodyH, minW, minH, headH) {
+    const pick = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
+    const width = Math.max(0, Number(bodyW) || 0)
+    const height = Math.max(0, Number(bodyH) || 0)
+    const w = Math.round(Math.max(Math.min(minW, width), Math.min(width, pick(win && win.w, def.w))))
+    const h = Math.round(Math.max(Math.min(minH, height), Math.min(height, pick(win && win.h, def.h))))
+    const tall = win && win.min ? Math.min(h, headH) : h
+    const x = Math.round(Math.max(0, Math.min(width - w, pick(win && win.x, def.x))))
+    const y = Math.round(Math.max(0, Math.min(height - tall, pick(win && win.y, def.y))))
+    return { x, y, w, h }
+  }
+  // 창이 무대를 덮을 때 고른 호기가 창 밑에 들면 옮길 거리(화면 px, 양수면 화면을 그쪽으로 민다) — 무대에서 창이 덮지 않은
+  // 띠(위·아래·왼쪽·오른쪽) 가운데 가장 넓은 띠의 가운데로. 창이 무대와 겹치지 않거나 호기가 창과 겹치지 않으면 null. 사각형은
+  // {left, top, right, bottom}.
+  function clearOfSheet(stage, win, rect) {
+    const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    if (!stage || !win || !rect || !meet(stage, win) || !meet(win, rect)) return null
+    const bands = [
+      { left: stage.left, right: stage.right, top: stage.top, bottom: Math.max(stage.top, win.top) },
+      { left: stage.left, right: stage.right, top: Math.min(stage.bottom, win.bottom), bottom: stage.bottom },
+      { left: stage.left, right: Math.max(stage.left, win.left), top: stage.top, bottom: stage.bottom },
+      { left: Math.min(stage.right, win.right), right: stage.right, top: stage.top, bottom: stage.bottom },
+    ]
+    const area = (b) => Math.max(0, b.right - b.left) * Math.max(0, b.bottom - b.top)
+    const best = bands.reduce((a, b) => (area(b) > area(a) ? b : a))
+    if (!area(best)) return null
+    return {
+      dx: (rect.left + rect.right) / 2 - (best.left + best.right) / 2,
+      dy: (rect.top + rect.bottom) / 2 - (best.top + best.bottom) / 2,
+    }
+  }
+  // 저장값 읽기 — 창 {x, y, w, h, min}(수는 유한한 것만), 상태 {open, tab, hl, filters}(필터는 글 칸 이름 → 값 열쇠 글
+  // 목록·범위 글만). 꼴이 다르면 기본.
+  function storedSheetWin(raw) {
+    let value = null
+    try {
+      value = JSON.parse(raw || 'null')
+    } catch {
+      value = null
+    }
+    const num = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : null)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { x: null, y: null, w: null, h: null, min: false }
+    return { x: num(value.x), y: num(value.y), w: num(value.w), h: num(value.h), min: value.min === true }
+  }
+  function storedSheetState(raw) {
+    let value = null
+    try {
+      value = JSON.parse(raw || 'null')
+    } catch {
+      value = null
+    }
+    const out = { open: false, tab: 'picked', hl: true, filters: {} }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return out
+    out.open = value.open === true
+    out.tab = value.tab === 'filter' ? 'filter' : 'picked'
+    out.hl = value.hl !== false
+    const filters = value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters) ? value.filters : {}
+    for (const [name, rule] of Object.entries(filters)) {
+      if (!rule || typeof rule !== 'object') continue
+      const kept = {}
+      if (Array.isArray(rule.values)) kept.values = rule.values.filter((key) => typeof key === 'string')
+      if (typeof rule.from === 'string' && rule.from.trim()) kept.from = rule.from.trim()
+      if (typeof rule.to === 'string' && rule.to.trim()) kept.to = rule.to.trim()
+      if (sheetRuleOn(kept)) out.filters[name] = kept
+    }
+    return out
+  }
+  // </unit-sheet>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
   function unitColors(item, st) {
@@ -965,6 +1937,8 @@ export default function (component) {
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
     sizeFrom: item.sizeFrom, rot: item.rot, label: item.label, group: item.group, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
     link: item.link, fontSize: item.fontSize, fontColor: item.fontColor, borderStyle: item.borderStyle, labelAlign: item.labelAlign,
+    // 모양 값은 바꿀 때마다 새 객체로 갈아 끼운다(제자리에서 고치지 않는다) — 기록이 같은 객체를 쥐어도 된다.
+    look: item.look,
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
@@ -1228,6 +2202,7 @@ export default function (component) {
     namesLayer.replaceChildren()
     if (FAB) return
     const upp = unitsPerPx()
+    const ts = textScale(1 / upp)
     for (const [key, lead] of moduleGroups()) {
       const mods = moduleMembers(lead)
       const whole = mods ? groupRange(mods) : null
@@ -1240,7 +2215,7 @@ export default function (component) {
       const position = groupLabelOf(key, mods.length)
       // 모듈 칸 이름표가 하나도 서 있지 않으면(밀집 층·작은 묶음) 가운데 이름은 가장 작은 크기로라도 선다.
       const bare = !seen.some((m) => unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX)
-      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX, upp, UNIT_LABEL_MIN_PX, bare)
+      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare)
       if (fs === null) continue
       const spot = groupNameSpot(range, position, fs, 2 * upp, H())
       const cy = H() - spot.y
@@ -1261,8 +2236,8 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 「필요 단축」 배지(층 보기)
   // 단축 호기(모듈 묶음은 Main 설비 하나)마다 상자(묶음은 그 층에 그린 모듈 전체의 바깥 상자) 위 가운데에 말풍선 하나 —
-  // 윗줄 「−12일」, 아랫줄 「D-5」·「오늘」·「기한 지남」. 구간 색이고 임박은 굵은 테다. 화면 px 크기라 확대해도 글자 크기가
-  // 같다(Main 설비 이름표와 같은 방식). 누르면 그 호기를 누른 것과 같다(`pick`). 기준일에 숨은 모듈은 바깥 상자에서 뺀다.
+  // 윗줄 「−12일」, 아랫줄 「D-5」·「오늘」·「기한 지남」. 구간 색이고 임박은 굵은 테다. 표지라 화면 px 크기에 배율을 따른
+  // 0.75~1.25 배만 곱한다(`calloutScale`). 누르면 그 호기를 누른 것과 같다(`pick`). 기준일에 숨은 모듈은 바깥 상자에서 뺀다.
   function drawShortBadges() {
     if (!badgesLayer) return
     // 다시 그리면 배지 노드가 모두 새로 선다 — 초점을 가진 배지(키보드로 고른 것)는 같은 key 의 새 배지로 돌려준다.
@@ -1273,6 +2248,9 @@ export default function (component) {
     badgesLayer.replaceChildren()
     if (!ASOF_PINNED || !SHORT_BADGES.length) return
     const upp = unitsPerPx()
+    // 배지는 표지라 배율을 따라 0.75~1.25 배로만 바뀐다(`calloutScale`) — Main 설비명(위)만큼 비킬 높이는 글자 배율 그대로다.
+    const ts = textScale(1 / upp)
+    const k = calloutScale(ts)
     const counts = groupCounts()
     const drawn = []
     for (const badge of SHORT_BADGES) {
@@ -1288,10 +2266,10 @@ export default function (component) {
       const main = String(badge.main || '')
       const sub = String(badge.sub || '')
       const spot = badgeSpot(seen.map((m) => ({ x: m.x, y: m.y, w: m.w, h: m.h })), upp, above,
-        { main: labelEm(main), sub: labelEm(sub) }, H())
+        { main: labelEm(main), sub: labelEm(sub) }, H(), k, ts)
       drawn.push({ badge, ids, main, sub, spot })
     }
-    const settled = settleBadges(drawn.map((entry) => entry.spot), upp, H())
+    const settled = settleBadges(drawn.map((entry) => entry.spot), upp, H(), k)
     drawn.forEach((entry, index) => {
       const spot = settled[index]
       if (spot) drawBadge(entry, spot, focusKey)
@@ -1331,14 +2309,16 @@ export default function (component) {
   }
 
   // 공식과 견주기 그리기(층 상세 보기만 — 편집기·FAB 에는 그리지 않는다). 배율이 바뀌면 꼬리표 글자 크기를 다시 맞추므로
-  // Main 설비명과 같이 `drawSelectionBox` 가 부른다. 재료가 없으면 층을 비운다.
+  // Main 설비명과 같이 `drawSelectionBox` 가 부른다. 꼬리표는 표지라 배율을 따라 0.75~1.25 배로만 바뀐다(`calloutScale`).
+  // 재료가 없으면 층을 비운다.
   const COMPARE_TAG_PX = 11
   const COMPARE = VIEW && !FAB && data.compare && typeof data.compare === 'object' ? data.compare : null
   function drawCompare() {
     if (!compareLayer) return
     compareLayer.replaceChildren()
     if (!COMPARE) return
-    const fs = COMPARE_TAG_PX * unitsPerPx()
+    const upp = unitsPerPx()
+    const fs = COMPARE_TAG_PX * calloutScale(textScale(1 / upp)) * upp
     const boxOf = (id) => {
       const item = S.items.get(id)
       return item && isUnit(item) && onCanvas(item) && hasSize(item) ? item : null
@@ -1483,11 +2463,11 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 확대·축소
   // viewBox 를 캔버스의 일부로 좁혀 확대한다. 좌표 변환은 getScreenCTM 이 viewBox 를 품어 끌기·손잡이가 그대로 맞는다.
-  // 화면 옮기기는 영역+여백 안에서만. 보이는 폭이 그보다 넓은 축은 영역 가운데에 둔다. 단 편집의 트레이 서랍이 열려
-  // 있으면 그 폭(데이터 단위)만큼 오른쪽으로 더 옮길 수 있다 — 서랍 아래에 놓인 것을 꺼내 보이는 자리다. 서랍을
-  // 접으면 0 이 되어 화면이 제자리로 돌아온다.
+  // 화면 옮기기는 영역+여백 안에서만. 보이는 폭이 그보다 넓은 축은 영역 가운데에 둔다. 단 좁은 화면(겹침 서랍)에서 편집의
+  // 미배치 서랍이 열려 있으면 그 폭(데이터 단위)만큼 오른쪽으로 더 옮길 수 있다 — 서랍 아래에 놓인 것을 꺼내 보이는 자리다.
+  // 서랍을 접으면 0 이 되어 화면이 제자리로 돌아온다. 넓은 화면의 오른쪽 칸은 도면을 덮지 않아 늘 0 이다.
   function trayReserve() {
-    if (VIEW || FAB || !S.drawerOpen || trayBox.hidden || !S.port || S.port.w < 1) return 0
+    if (VIEW || FAB || !host.classList.contains('is-narrow') || !S.drawerOpen || trayBox.hidden || !S.port || S.port.w < 1) return 0
     return (trayBox.getBoundingClientRect().width + DRAWER_INSET_PX * 2) * (viewW() / S.port.w)
   }
   function clampView() {
@@ -1564,10 +2544,12 @@ export default function (component) {
   const maxHeight = () => Math.max(MIN_DEFAULT_H, Math.round(window.innerHeight * MAX_H_RATIO))
   // 기본 높이 = 화면 높이에서 보기 화면의 머리·도구 몫을 뺀 만큼(스크롤·무대 위치와 무관). 단 영역+여백이 열
   // 폭을 꽉 채우는 높이를 넘지 않는다 — 넓적한 영역 위아래에 빈 띠를 만들지 않게.
+  // 편집은 영역 비율로 줄이지 않는다 — 두 옆 칸(도구·미배치)이 무대 높이를 함께 쓰고, 옆 칸만큼 무대가 좁아져 비율
+  // 높이가 너무 낮아진다(2026-11-03).
   function defaultHeight() {
     const width = stage.clientWidth || host.clientWidth || 0
     const pad = margin()
-    const fitted = width > 0 ? (width * (H() + pad * 2)) / (W() + pad * 2) : Infinity
+    const fitted = width > 0 && VIEW ? (width * (H() + pad * 2)) / (W() + pad * 2) : Infinity
     const room = window.innerHeight - CHROME_PX
     return Math.round(clamp(Math.min(room, fitted), MIN_DEFAULT_H, maxHeight()))
   }
@@ -1590,6 +2572,11 @@ export default function (component) {
   }
   // 무대 높이를 정한다 — 고른 값(이 편집기 → 브라우저 기억 순), 없으면 기본값.
   function fitStage() {
+    // 스크롤 고정 중에는 창 높이에 맞춘 높이(`alignLock` 이 잰 값)다 — 고른 높이·기억은 건드리지 않는다.
+    if (S.lock && S.lockH) {
+      setStageHeight(S.lockH)
+      return measurePort()
+    }
     const chosen = S.chosenH ?? savedHeight()
     setStageHeight(chosen === null ? defaultHeight() : clamp(chosen, MIN_DRAG_H, maxHeight()))
     return measurePort()
@@ -1670,7 +2657,7 @@ export default function (component) {
       const label = group.querySelector('.sle-label')
       label.setAttribute('x', item.x + item.w / 2)
       label.setAttribute('y', top + item.h / 2)
-      // 글자는 사각형 폭에 맞춰 줄이고 화면에서 14px 를 넘지 않게 한다. 7px 아래면 숨긴다(밀집 층) —
+      // 글자는 사각형 폭에 맞춰 줄이고 화면에서 14px × 글자 배율(`textScale`)을 넘지 않게 한다. 7px 아래면 숨긴다(밀집 층) —
       // 확대하면 다시 보인다. 이름은 선택하면 상태줄·옆 칸에, 올려 두면 풍선에 나온다. 폭은 잰 글자 폭이라
       // 이름이 상자 밖으로 넘치지 않는다.
       const upp = unitsPerPx()
@@ -1678,16 +2665,22 @@ export default function (component) {
       label.setAttribute('font-size', fontSize)
       label.style.display = fontSize / upp < UNIT_LABEL_MIN_PX ? 'none' : ''
       positionUnitMarks(group, item, top)
+      const ring = group.querySelector('.sle-filter-ring')
+      if (ring) {
+        const gap = FILTER_GAP_PX * upp
+        setBox(ring, item.x - gap, top - gap, item.w + gap * 2, item.h + gap * 2)
+      }
     } else {
       drawMark(group, item, top)
     }
     positionHandles(group, item, top)
     group.classList.toggle('is-changed', isChanged(item) || isRenamed(item))
   }
-  // 호기 이름표 글자 크기(데이터 단위) — 상자 높이의 0.32 배·잰 글자 폭으로 상자 폭에 맞춘 크기·화면 14px 가운데 가장 작은 것.
+  // 호기 이름표 글자 크기(데이터 단위) — 상자 높이의 0.32 배·잰 글자 폭으로 상자 폭에 맞춘 크기·화면 14px × 글자 배율 가운데
+  // 가장 작은 것(배율 상한만 바뀐다 — 축소하면 상자 맞춤보다 먼저 작아져 이웃 상자를 덮지 않는다).
   function unitLabelSize(item, upp) {
     const fitFont = (item.w * 0.94) / Math.max(labelEm(item.label), 1)
-    return Math.min(item.h * 0.32, fitFont, 14 * upp)
+    return Math.min(item.h * 0.32, fitFont, 14 * textScale(1 / upp) * upp)
   }
 
   const setBox = (node, x, y, w, h) => {
@@ -1738,10 +2731,15 @@ export default function (component) {
     const lh = rot % 180 ? item.w : item.h
     const cx = item.x + item.w / 2
     const cy = top + item.h / 2
-    const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot}) translate(${-lw / 2} ${-lh / 2})` })
+    // 베이·도형은 좌우 뒤집기(look.flip)를 돌리기 앞에 건다 — 가운데 축 거울. 글자는 뒤집지도 돌리지도 않는다.
+    const flip = (item.kind === 'bay' || item.kind === 'shape') && lookValue(item.look, item.kind, 'flip') === true
+    const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot})${flip ? ' scale(-1 1)' : ''} translate(${-lw / 2} ${-lh / 2})` })
     const upp = unitsPerPx()
-    // 이름표 글자는 화면 px 로 정한다(확대해도 같은 크기). 고른 크기가 없으면 LABEL_PX.
-    const fs = (item.fontSize || LABEL_PX) * upp
+    // 이름표 글자는 기준 크기(고른 크기, 없으면 LABEL_PX)에 배율 글자 배율을 곱한 화면 px 다 — 확대하면 커지고 축소하면
+    // 작아지며(위 TEXT_SCALE_MAX 배), TEXT_MIN_PX 아래면 이름표를 숨긴다(`// <text-scale>`).
+    const ts = textScale(1 / upp)
+    const caption = scaledText(item.fontSize || LABEL_PX, ts)
+    const fs = caption.px * upp
     // 비활성 층 블록은 고른 「글자 색」을 달지 않는다 — 인라인 색이 CSS 의 흐린 글자(muted)를 이긴다.
     const ink = blockOff(item) ? '' : fontInk(item)
     const text = (value, x, y, size, anchor) => {
@@ -1763,11 +2761,14 @@ export default function (component) {
       const pad = 3 * upp
       inner.append(border, el('rect', { class: 'sle-zone-select', x: -pad, y: -pad, width: lw + pad * 2, height: lh + pad * 2, rx: 0.6 }))
       // 이름표 꼬리표는 위 변의 왼쪽(처음 값)·가운데·오른쪽이다.
-      const caption = (item.label || '영역') + (item.keepOut ? ' · 설비 금지' : '')
-      const tagW = Math.min(lw, emWidth(caption) * fs + fs * 0.9)
+      const name = (item.label || '영역') + (item.keepOut ? ' · 설비 금지' : '')
+      const tagW = Math.min(lw, emWidth(name) * fs + fs * 0.9)
       const tagX = zoneTagX(lw, tagW, item.labelAlign)
-      const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
-      inner.append(tag, text(caption, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
+      // 작아서 숨기는 배율에서는 꼬리표 상자도 걷는다(영역은 테두리로 잡힌다).
+      if (caption.shown) {
+        const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
+        inner.append(tag, text(name, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
+      }
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -1785,25 +2786,94 @@ export default function (component) {
       inner.append(el('path', { class: 'sle-mark-line is-dashed', d: `M 0 0 A ${lw} ${lh} 0 0 1 ${lw} ${lh}` }))
     } else if (item.kind === 'column') {
       // 기둥: 이름이 없으면 X 두 줄, 있으면 X 없이 이름을 기둥 가운데에 쓴다(2026-10-16 사용자 결정 — 돌리지
-      // 않는다). 글자는 자동이면 11px, 고르면 그 크기이고 기둥보다 길면 넘쳐 그린다(면색 테가 둘러 읽힌다).
+      // 않는다). 글자는 자동이면 11, 고르면 그 기준 크기(배율을 따름)이고 기둥보다 길면 넘쳐 그린다(면색 테가 둘러 읽힌다).
       inner.append(el('rect', { class: 'sle-column', x: 0, y: 0, width: lw, height: lh }))
       if (!item.label) {
         inner.append(el('line', { class: 'sle-column-cross', x1: 0, y1: 0, x2: lw, y2: lh }))
         inner.append(el('line', { class: 'sle-column-cross', x1: lw, y1: 0, x2: 0, y2: lh }))
       }
     } else if (item.kind === 'text') {
-      // 자동이면 상자에 맞추고(작아지면 숨김), 크기를 골랐으면 그 화면 px 로 쓴다(상자를 넘어도 그린다).
+      // 자동이면 상자에 맞추고, 크기를 골랐으면 그 기준 크기의 배율 크기로 쓴다(상자를 넘어도 그린다). 어느 쪽이든 화면
+      // TEXT_MIN_PX 아래면 숨긴다.
       const value = item.label || '글자'
       const size = item.fontSize ? fs : Math.min(lh * 0.7, (lw * 0.95) / Math.max(emWidth(value), 1))
       const node = text(value, lw / 2, lh / 2, size)
-      node.style.display = !item.fontSize && size / upp < 6 ? 'none' : ''
+      node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
       inner.append(node)
     } else if (item.kind === 'arrow') {
-      // 동선: 왼쪽에서 오른쪽으로(0°). 굵기는 상자 높이를 따른다.
-      const head = Math.min(lh * 1.1, lw * 0.35)
-      const shaft = el('line', { class: 'sle-flow', x1: lh * 0.3, y1: lh / 2, x2: lw - head * 0.9, y2: lh / 2 })
-      shaft.style.strokeWidth = String(Math.min(lh * 0.2, 5 * upp))
-      inner.append(shaft, el('polygon', { class: 'sle-flow-head', points: `${lw - head},${lh * 0.15} ${lw},${lh / 2} ${lw - head},${lh * 0.85}` }))
+      // 동선: 왼쪽에서 오른쪽으로(0°). 머리 크기는 look.head(처음 MM — 지금 그림). 선은 고르지 않으면 지금 모습(강조색 · 상자
+      // 높이를 따르는 굵기 · 도면 단위 점선), 굵기를 고르면 화면 px(`is-px`)이고 선 모양도 화면 px 무늬다.
+      const geo = arrowShape(lw, lh, lookValue(item.look, 'arrow', 'head'))
+      const shaft = el('line', { class: 'sle-flow', ...geo.shaft })
+      const width = lookValue(item.look, 'arrow', 'lineWidth')
+      const style = lookValue(item.look, 'arrow', 'lineStyle')
+      const color = lineInk(lookValue(item.look, 'arrow', 'line'))
+      if (width) {
+        shaft.classList.add('is-px')
+        shaft.style.strokeWidth = String(width)
+        shaft.style.strokeDasharray = lineDash(style, width) || 'none'
+      } else {
+        shaft.style.strokeWidth = String(Math.min(lh * 0.2, 5 * upp))
+        if (style !== 'dashed') shaft.style.strokeDasharray = style === 'dotted' ? `0.01 ${Math.min(lh * 0.2, 5 * upp) * 2}` : 'none'
+      }
+      const point = el('polygon', { class: 'sle-flow-head', points: geo.head.map((pt) => pt.join(',')).join(' ') })
+      if (color) { shaft.style.stroke = color; point.style.fill = color }
+      inner.append(shaft, point)
+    } else if (item.kind === 'bay') {
+      // 베이(U자): 0° 는 ⊃ — 위 팔에서 굽은 곳을 돌아 아래 팔 왼쪽 끝 머리(왼쪽을 향함). 선은 화면 px 굵기(처음 2px)·모양(처음
+      // 실선)·색(처음 도면 글자색), 머리는 선 색으로 채운다. 상자 전체가 잡힌다(동선과 같다).
+      const geo = bayShape(lw, lh, lookValue(item.look, 'bay', 'head'))
+      const width = lookValue(item.look, 'bay', 'lineWidth')
+      const line = el('path', { class: 'sle-bay-line', d: geo.d })
+      line.style.strokeWidth = String(width)
+      const dash = lineDash(lookValue(item.look, 'bay', 'lineStyle'), width)
+      if (dash) line.style.strokeDasharray = dash
+      const point = el('polygon', { class: 'sle-bay-head', points: geo.head.map((pt) => pt.join(',')).join(' ') })
+      const color = lineInk(lookValue(item.look, 'bay', 'line'))
+      if (color) { line.style.stroke = color; point.style.fill = color }
+      inner.append(line, point)
+      // 가운데 글 「B<번호>」 — 두 팔 사이(머리를 비킨 틈의 가운데)를 돌린 뒤의 화면 자리에 가로로. 자동이면 틈에 맞추되 고를 수
+      // 있는 가장 큰 크기(24)의 배율 크기를 넘지 않고(확대 끝에서 끝없이 커지지 않게), 고르면 기준 크기의 배율 크기. 화면
+      // TEXT_MIN_PX 아래면 숨긴다.
+      const number = bayCaption(item)
+      const size = item.fontSize ? fs : Math.min(bayAutoSize(geo, rot, emWidth(number)), Math.max(...FONT_SIZES) * ts * upp)
+      const spot = placeLocal(geo.text.x, geo.text.y, lw, lh, rot, flip)
+      const node = text(number, cx + spot.x, cy + spot.y, size)
+      node.classList.add('is-bay')
+      node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
+      group.__flatText = node
+    } else if (item.kind === 'shape') {
+      // 도형(엑셀 도형처럼): 프리셋 경로(`shapePath`)를 채우기(색 · 불투명 look.fillAlpha — 0 은 채우기 없음)와 선(색 · 화면 px 굵기 ·
+      // 모양)으로 그리고, 빗금을 켜면 같은 경로에 영역 빗금을 얹는다. 잡기는 경로 그대로(`sle-shape-hit` — 채우기·빗금이 없으면 테두리
+      // 12px 띠만, 빈 안쪽을 끌면 고르기 사각형)이고 상자의 빈 귀는 잡히지 않는다. 이름표는 가운데에 돌리지 않고 가로로 — 자동이면
+      // 상자에 맞추되 고를 수 있는 가장 큰 크기(24)의 배율 크기까지, 화면 TEXT_MIN_PX 아래면 숨긴다.
+      const preset = shapeOf(item.look)
+      const adj = shapeAdj(item.look)
+      const geo = shapePath(preset, lw, lh, adj)
+      const alpha = lookValue(item.look, 'shape', 'fillAlpha')
+      const body = el('path', { class: 'sle-shape-body', d: geo.d, 'fill-rule': geo.rule })
+      body.style.fill = shapeFillInk(shapeFillOf(item.color))
+      body.style.fillOpacity = String(alpha / 100)
+      const stroke = shapeLineInk(lookValue(item.look, 'shape', 'line'), shapeFillOf(item.color))
+      if (stroke) {
+        const width = lookValue(item.look, 'shape', 'lineWidth')
+        body.style.stroke = stroke
+        body.style.strokeWidth = String(width)
+        const dash = lineDash(lookValue(item.look, 'shape', 'lineStyle'), width)
+        if (dash) body.style.strokeDasharray = dash
+      } else body.style.stroke = 'none'
+      inner.append(body)
+      if (item.hatch) inner.append(el('path', { class: 'sle-shape-hatch', d: geo.d, 'fill-rule': geo.rule, fill: 'url(#sle-hatch)' }))
+      inner.append(el('path', { class: alpha > 0 || item.hatch ? 'sle-shape-hit' : 'sle-shape-hit is-hollow', d: geo.d, 'fill-rule': geo.rule }))
+      if (item.label) {
+        const size = item.fontSize ? fs
+          : Math.min(item.h * 0.45, (item.w * 0.9) / Math.max(emWidth(item.label), 1), Math.max(...FONT_SIZES) * ts * upp)
+        const node = text(item.label, cx, cy, size)
+        node.classList.add('is-grab')
+        node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
+        group.__flatText = node
+      }
+      drawAdjusts(group, item, preset, adj, { lw, lh, rot, flip, cx, cy, upp })
     } else if (item.kind === 'block') {
       // 층 블록: 면(고른 색 또는 Space 기본 면)·테두리·가운데 글자 줄. 글자는 블록에 맞춰 줄이고 화면에서 13px 를
       // 넘지 않는다. 줄이 다 안 들어가면 이름 줄만, 그것도 6px 아래면 숨긴다(풍선·초점 이름에는 남는다).
@@ -1828,7 +2898,7 @@ export default function (component) {
       const { main, short } = blockLines(item)
       const rows = item.fontSize
         ? [...main, ...(short ? [short] : [])].map((value, k) => ({ text: value, size: fs, role: k === 0 ? 'head' : (k < main.length ? 'sub' : 'short') }))
-        : blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)
+        : blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth, 13 * ts)
       const total = rows.reduce((sum, row) => sum + row.size * 1.3, 0)
       let y = lh / 2 - total / 2
       for (const row of rows) {
@@ -1836,15 +2906,20 @@ export default function (component) {
         y += row.size * 1.3
         node.classList.add(row.role === 'head' ? 'is-head' : 'is-sub')
         if (row.role === 'short') node.classList.add('is-short')
-        node.style.display = !item.fontSize && row.size / upp < 6 ? 'none' : ''
+        node.style.display = row.size / upp < TEXT_MIN_PX ? 'none' : ''
         inner.append(node)
       }
     }
     shape.append(inner)
-    if (item.kind === 'column' && item.label) shape.append(text(item.label, cx, cy, fs))
+    // 돌리지 않는 가운데 글(베이 「B<번호>」·도형 이름표) — 돌리는 그룹 밖에 가로로.
+    if (group.__flatText) {
+      shape.append(group.__flatText)
+      group.__flatText = null
+    }
+    if (item.kind === 'column' && item.label && caption.shown) shape.append(text(item.label, cx, cy, fs))
     // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
     // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
-    if (item.label && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
+    if (item.label && caption.shown && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
       const gap = fs * 0.4
       const sides = item.kind === 'arrow'
         ? (rot % 180 ? 'right' : 'up')
@@ -1866,7 +2941,39 @@ export default function (component) {
       if (group.hasAttribute('tabindex')) group.setAttribute('aria-label', words)
       return
     }
-    if (tip) tip.textContent = `${MARK_KINDS[item.kind].name}${item.label ? ` · ${item.label}` : ''}`
+    if (tip) tip.textContent = markTitle(item)
+  }
+
+  // 도형의 노란 모양 조절 손잡이(`sle-adjust` — 화면 HANDLE_PX 동그라미, 하나만 고른 도형에서만 보인다 — CSS). 제자리 손잡이
+  // 자리(`shapeHandles`)를 뒤집기·돌림으로 화면 자리에 옮기고(`placeLocal` — 참 자리는 data-tx·ty), 크기 손잡이와 겹치면 비켜
+  // 그린다(`nudgeHandle`). 커서는 돌린 뒤 값을 읽는 축이다.
+  function drawAdjusts(group, item, preset, adj, at) {
+    const box = group.querySelector('.sle-adjusts')
+    if (!box) return
+    const radius = (HANDLE_PX / 2) * at.upp
+    const hs = HANDLE_PX * at.upp
+    const top = at.cy - item.h / 2
+    const centers = []
+    for (const [hx, hy] of [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]]) {
+      // 작은 상자에서 감춘 변 가운데 손잡이(`positionHandles`)는 비킬 까닭이 없다.
+      if ((hx === 0.5 && item.w < hs * 3) || (hy === 0.5 && item.h < hs * 3)) continue
+      centers.push({ x: item.x + item.w * hx, y: top + item.h * hy })
+    }
+    box.replaceChildren(...shapeHandles(preset, at.lw, at.lh, adj).map((handle) => {
+      const spot = placeLocal(handle.x, handle.y, at.lw, at.lh, at.rot, at.flip)
+      const across = (at.rot || 0) % 180 ? (handle.axis === 'x' ? 'y' : 'x') : handle.axis
+      const truth = { x: at.cx + spot.x, y: at.cy + spot.y }
+      const drawn = nudgeHandle(truth, across, centers, hs * 1.3, { x: at.cx, y: at.cy })
+      const node = el('circle', { class: 'sle-adjust', cx: drawn.x, cy: drawn.y, r: radius })
+      node.dataset.index = String(handle.index)
+      node.dataset.tx = String(truth.x)
+      node.dataset.ty = String(truth.y)
+      node.style.cursor = across === 'x' ? 'ew-resize' : 'ns-resize'
+      const tip = el('title')
+      tip.textContent = `모양 조절 — ${SHAPE_PRESETS[preset].words[handle.index]}`
+      node.append(tip)
+      return node
+    }))
   }
 
   function appendHandles(group) {
@@ -1913,6 +3020,8 @@ export default function (component) {
     } else {
       group.append(rect, label, tip)
     }
+    // 「호기 정보」 창 필터에 맞는 호기의 테 — 보기·편집 모두(필터는 읽기만이다). 보일지는 class(`paintFilter`)와 CSS 가 정한다.
+    group.append(el('rect', { class: 'sle-filter-ring', rx: 0.8 }))
     // 호기는 키보드로도 고른다 — Tab 이 상자마다 서고 Enter·Space 가 누르기와 같다(`host.onkeydown`). 이름은 풍선 글
     // (<title>)이다. 보기에서 기준일에 숨은 상자(visibility)는 초점도 받지 않는다.
     group.setAttribute('tabindex', '0')
@@ -1922,6 +3031,7 @@ export default function (component) {
     position(group, item)
     group.__tipAt = `${S.asOf}|${S.dataAsOf}`
     S.groups.set(item.id, group)
+    paintFilter(group, item.id)
     return group
   }
 
@@ -1971,6 +3081,8 @@ export default function (component) {
       group.setAttribute('role', 'button')
     }
     appendHandles(group)
+    // 도형의 노란 모양 조절 손잡이는 크기 손잡이 위에 깐다(겹치면 이것이 잡힌다). 편집에만 있다.
+    if (item.kind === 'shape' && !VIEW) group.append(el('g', { class: 'sle-adjusts' }))
     position(group, item)
     // 영역은 이름표로도 잡는다(안쪽은 비워 둔다) — 이름표만 눌림을 받게 한다.
     S.groups.set(item.id, group)
@@ -2106,6 +3218,7 @@ export default function (component) {
       remove.onclick = () => removeItems([lead])
       chip.append(remove)
     }
+    paintChipFilter(chip)
     return chip
   }
 
@@ -2151,10 +3264,12 @@ export default function (component) {
     else focus(trayBox.hidden ? svg : traySearch)
   }
 
+  // 호기 아래 층(`sle-zones`)에 그리는 요소 — 영역과 도형(방·벽을 그려도 호기를 덮지 않는다).
+  const onZoneLayer = (item) => item.kind === 'zone' || item.kind === 'shape'
   function renderItems() {
     // 서랍 목록을 비웠다 다시 채우는 동안 목록 높이가 줄어 브라우저가 서랍 스크롤을 맨 위로 잘라 낸다. 놓은 뒤에도
     // 보던 자리에서 이어 놓게 그 자리를 기억했다 되돌린다(2026-10-08 사용자 요청).
-    const trayScroll = trayBox.scrollTop
+    const trayTop = trayScroll.scrollTop
     const focused = focusSpot()
     layer.replaceChildren()
     zonesLayer.replaceChildren()
@@ -2174,7 +3289,7 @@ export default function (component) {
         const group = buildGroup(item)
         group.classList.toggle('is-module', (counts.get(groupKeyOf(item)) || 0) >= 2)
         layer.append(group)
-      } else (item.kind === 'zone' ? zonesLayer : marksLayer).append(buildMark(item))
+      } else (onZoneLayer(item) ? zonesLayer : marksLayer).append(buildMark(item))
     }
     let trayN = 0
     for (const entry of trayEntries(trayKeep())) {
@@ -2190,7 +3305,7 @@ export default function (component) {
     leavingBox.hidden = leaving.length === 0
     applyTrayFilter()
     drawerCount.textContent = leavingN ? `${trayN} · 보냄 ${leavingN}` : String(trayN)
-    trayBox.scrollTop = trayScroll
+    trayScroll.scrollTop = trayTop
     // 보기 화면은 기준일이 바뀌어도 바뀐 호기만 칠하도록 경계 날짜 목록을 새로 만든다.
     if (VIEW && !FAB) buildEvents()
     markSelection()
@@ -2353,6 +3468,7 @@ export default function (component) {
         || (o.fontSize ?? null) !== (item.fontSize ?? null) || (o.fontColor || '') !== (item.fontColor || '')
         || pickOr(o.borderStyle, BORDER_STYLES) !== pickOr(item.borderStyle, BORDER_STYLES)
         || pickOr(o.labelAlign, LABEL_ALIGNS) !== pickOr(item.labelAlign, LABEL_ALIGNS)
+        || lookText(o.look) !== lookText(item.look)
     }
     if ((o.moveTo || null) !== (item.moveTo || null)) return true
     if (o.placed !== item.placed) return true
@@ -2433,9 +3549,26 @@ export default function (component) {
         x: box.minX - GROUP_PAD, y: H() - box.maxT - GROUP_PAD,
         width: box.maxR - box.minX + GROUP_PAD * 2, height: box.maxT - box.minY + GROUP_PAD * 2,
       }))
+    } else if (!VIEW && chosen.length === 1 && isMark(chosen[0]) && onZoneLayer(chosen[0])) {
+      proxyHandles(chosen[0])
     }
     const rect = S.drag && S.drag.mode === 'marquee' ? S.drag.rect : null
     if (rect) overlay.append(el('rect', { class: 'sle-marquee', x: rect.x0, y: rect.t0, width: rect.x1 - rect.x0, height: rect.t1 - rect.t0 }))
+  }
+
+  // 호기 아래 층(영역·도형)에서 하나만 고른 것의 손잡이(크기 여덟 · 도형 노란 모양 조절)를 맨 위 층(`sle-overlay`)에 다시 세운다 —
+  // 호기가 덮은 귀·변의 손잡이도 잡힌다(엑셀처럼 고른 것의 손잡이는 늘 위). 제 그룹 안의 손잡이는 CSS 가 감추고, 자리·크기·풍선은
+  // 그 손잡이(`positionHandles`·`drawAdjusts`)를 그대로 옮긴다. 누르면 data-for 의 요소 손잡이를 누른 것과 같다(`onpointerdown`).
+  function proxyHandles(item) {
+    const group = S.groups.get(item.id)
+    if (!group) return
+    for (const handle of group.querySelectorAll('.sle-handle, .sle-adjust')) {
+      if (handle.style.display === 'none') continue
+      const proxy = handle.cloneNode(true)
+      proxy.classList.add(handle.classList.contains('sle-adjust') ? 'sle-proxy-adjust' : 'sle-proxy-handle')
+      proxy.dataset.for = item.id
+      overlay.append(proxy)
+    }
   }
 
   function markSelection() {
@@ -2534,7 +3667,7 @@ export default function (component) {
     const text = hidden > 0 ? `${base} · 겹쳐 숨긴 반입 예정 ${unitCountText(hidden)}대` : base
     const node = q('.sle-summary')
     setText(node, text)
-    // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitFabBar`) — 풍선에 온 글.
+    // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitToolbar`) — 풍선에 온 글.
     setAttr(node, 'title', text)
   }
   // 보기 화면의 호기 겹침 짝(호기 → 겹치는 호기들). 격자 칸에 나눠 담아 같은 칸끼리만 견준다. 그린 호기가 바뀔 때
@@ -2622,6 +3755,7 @@ export default function (component) {
       label: m.label || '', color: m.color || '', hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut),
       fontSize: m.fontSize ?? null, fontColor: m.fontColor || '',
       borderStyle: pickOr(m.borderStyle, BORDER_STYLES), labelAlign: pickOr(m.labelAlign, LABEL_ALIGNS),
+      look: cleanLook(m.look, m.kind),
       ...(m.kind === 'block' ? { link: m.link || '' } : {}),
     })),
     ...S.passthrough,
@@ -2655,7 +3789,7 @@ export default function (component) {
       const together = expanded(chosen).length
       inspectorName.textContent = `${chosen.length}개${together > chosen.length ? ` (모듈 묶음까지 ${together}개)` : ''}`
     } else if (isMark(single)) {
-      inspectorName.textContent = `${MARK_KINDS[single.kind].name}${single.label ? ` · ${single.label}` : ''}`
+      inspectorName.textContent = markTitle(single)
     } else if (moduleMembers(single)) {
       inspectorName.textContent = moduleCaption(single)
     } else if (single.group) {
@@ -2724,7 +3858,7 @@ export default function (component) {
     }
     // 글자 크기·색(모든 도면 요소). 같은 까닭으로 처음부터 채운다.
     if (!markFontSize.options.length) {
-      markFontSize.replaceChildren(new Option('자동', ''), ...FONT_SIZES.map((size) => new Option(`${size}px`, String(size))))
+      markFontSize.replaceChildren(new Option('자동', ''), ...FONT_SIZES.map((size) => new Option(String(size), String(size))))
       markFontColor.replaceChildren(
         new Option('기본', ''),
         ...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)),
@@ -2739,7 +3873,15 @@ export default function (component) {
       )
     }
     blockProps.hidden = !mark || mark.kind !== 'block'
+    syncLineProps(chosen)
+    syncShapeProps(chosen)
     if (mark) {
+      // 베이는 이름 칸이 「번호」 이고 칸 앞에 고정 글 「B」 가 선다(그릴 때 늘 붙는다 — 칸에는 번호만).
+      const bay = mark.kind === 'bay'
+      setText(markNameWord, bay ? '번호' : '이름')
+      bayPrefix.hidden = !bay
+      markLabel.maxLength = bay ? 12 : 40
+      setAttr(markLabel, 'aria-label', bay ? '베이 번호 — 앞에 B 가 붙습니다' : '요소 이름')
       if (!isFocused(markLabel)) markLabel.value = mark.label || ''
       markFontSize.value = mark.fontSize ? String(mark.fontSize) : ''
       markFontColor.value = mark.fontColor || ''
@@ -2750,6 +3892,10 @@ export default function (component) {
       markHatch.checked = Boolean(mark.hatch)
       markKeepOut.checked = Boolean(mark.keepOut)
       markRotate.hidden = !MARK_KINDS[mark.kind].rotatable
+      // 도형은 비대칭 꼴(ㄴ자·ㄷ자·삼각형·블록 화살표)만 돌린다 — 대칭 꼴은 단추가 꺼진다.
+      const still = mark.kind === 'shape' && !SHAPE_PRESETS[shapeOf(mark.look)].turn
+      markRotate.disabled = still
+      setAttr(markRotate, 'title', still ? '대칭 도형은 돌려도 같습니다 — 폭·높이로 바꿉니다' : '가운데를 축으로 90° 돌립니다')
       if (mark.kind === 'block') {
         blockLink.value = mark.link || ''
         blockColor.value = mark.color || ''
@@ -2764,6 +3910,226 @@ export default function (component) {
       }
     }
   }
+  // ---------------------------------------------------------------- 동선·베이의 선·머리(선택 칸)
+  // 고른 것 가운데 동선·베이(`lined`)가 있으면 선택 칸에 「머리 크기」(3×3 갤러리)·선 색·굵기·선 모양과 베이의 좌우·상하
+  // 뒤집기가 선다(2026-11-03 사용자 요청 — 엑셀처럼). 여럿이면 모두에 걸고 되돌리기 한 번이다. 값이 서로 다르면 「여러 값」.
+  const MIXED = '__mixed'
+  const HEAD_WIDTH_WORDS = { S: '좁게', M: '보통', L: '넓게' }
+  const HEAD_LENGTH_WORDS = { S: '짧게', M: '보통', L: '길게' }
+  const LINE_COLOR_NAMES = { accent: '강조색', ink: '진하게', ...ZONE_COLOR_NAMES }
+  const isLined = (m) => isMark(m) && (m.kind === 'arrow' || m.kind === 'bay')
+  const headAria = (head) => `너비 ${HEAD_WIDTH_WORDS[head[0]]} · 길이 ${HEAD_LENGTH_WORDS[head[1]]}`
+  const headShort = (head) => (head === 'MM' ? '보통' : `${HEAD_WIDTH_WORDS[head[0]]}·${HEAD_LENGTH_WORDS[head[1]]}`)
+  // 갤러리·단추의 작은 동선 그림(24×12 — 몸통은 실선, 머리는 그 크기의 꼴).
+  function drawHeadIcon(svgNode, head) {
+    const geo = arrowShape(22, 6, head)
+    const shaft = el('line', { class: 'ico-line', x1: 1 + geo.shaft.x1, y1: 6, x2: 1 + geo.shaft.x2, y2: 6 })
+    const tip = el('polygon', { class: 'ico-fill', points: geo.head.map(([x, y]) => `${1 + x},${3 + y}`).join(' ') })
+    svgNode.replaceChildren(shaft, tip)
+  }
+  function fillLineOptions() {
+    if (lineColor.options.length) return
+    const mixed = () => {
+      const option = new Option('여러 값', MIXED)
+      option.disabled = true
+      option.hidden = true
+      return option
+    }
+    lineColor.replaceChildren(mixed(), ...LINE_COLORS.map((key) => new Option(LINE_COLOR_NAMES[key] || key, key)))
+    lineWidth.replaceChildren(mixed(), new Option('기본', ''), ...LINE_WIDTHS.map((w) => new Option(`${w}px`, String(w))))
+    lineStyle.prepend(mixed())
+    headGallery.replaceChildren(...ARROW_HEADS.map((head) => {
+      const cell = el('svg', { viewBox: '0 0 24 12', 'aria-hidden': 'true' })
+      drawHeadIcon(cell, head)
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'sle-head-cell'
+      button.dataset.head = head
+      button.setAttribute('aria-label', headAria(head))
+      button.title = headAria(head)
+      button.append(cell)
+      return button
+    }))
+  }
+  // 고른 동선·베이가 모두 같은 값이면 그 값, 다르면 null. 처음 값이 없는 키(동선 굵기 「기본」)는 ''.
+  const sharedLook = (lined, key) => {
+    const values = new Set(lined.map((m) => {
+      const value = lookValue(m.look, m.kind, key)
+      return value === undefined ? '' : value
+    }))
+    return values.size === 1 ? [...values][0] : null
+  }
+  function syncLineProps(chosen) {
+    const lined = chosen.filter(isLined)
+    lineProps.hidden = !lined.length
+    if (!lined.length) {
+      headGallery.hidden = true
+      headToggle.setAttribute('aria-expanded', 'false')
+      return
+    }
+    fillLineOptions()
+    const head = sharedLook(lined, 'head')
+    drawHeadIcon(headNow, head || 'MM')
+    setText(headWord, head ? headShort(head) : '여러 값')
+    setAttr(headToggle, 'aria-label', `머리 크기 — ${head ? headAria(head) : '여러 값'}`)
+    for (const cell of headGallery.children) setAttr(cell, 'aria-pressed', String(cell.dataset.head === head))
+    const color = sharedLook(lined, 'line')
+    lineColor.value = color === null ? MIXED : color
+    const width = sharedLook(lined, 'lineWidth')
+    lineWidth.value = width === null ? MIXED : String(width)
+    const style = sharedLook(lined, 'lineStyle')
+    lineStyle.value = style === null ? MIXED : style
+    bayFlips.hidden = !lined.some((m) => m.kind === 'bay')
+  }
+  // 고른 동선·베이 모두의 모양 값을 바꾼다(patch 의 null 은 처음 값으로). 그 종류가 받지 않는 키는 빠진다(`cleanLook`).
+  // 바뀐 것이 있으면 되돌리기 한 번.
+  function setLooks(patch, only) {
+    const lined = selectedItems().filter((m) => isLined(m) && (!only || only(m)))
+    const ops = []
+    for (const m of lined) {
+      const next = patchLook(m.look, patch, m.kind)
+      if (lookText(next) === lookText(m.look)) continue
+      ops.push({ op: 'set', id: m.id, before: snapshot(m) })
+      m.look = next
+    }
+    if (!ops.length) { syncInspector(); return }
+    pushUndo(ops)
+    for (const op of ops) position(S.groups.get(op.id), S.items.get(op.id))
+    drawSelectionBox()
+    updateStatus()
+  }
+  // 고른 것 가운데 which 에 맞는 것(베이 · 비대칭 도형)을 뒤집는다 — 좌우(h)는 look.flip 만, 상하(v)는 180° 돌림 + 좌우 뒤집기(같은
+  // 상자). 되돌리기 한 번.
+  const isBay = (m) => isMark(m) && m.kind === 'bay'
+  const isShape = (m) => isMark(m) && m.kind === 'shape'
+  const turnsShape = (m) => isShape(m) && SHAPE_PRESETS[shapeOf(m.look)].turn
+  function flipMarks(axis, which) {
+    const list = selectedItems().filter(which)
+    if (!list.length) return
+    const ops = list.map((m) => ({ op: 'set', id: m.id, before: snapshot(m) }))
+    for (const m of list) {
+      m.look = cleanLook({ ...(m.look || {}), flip: lookValue(m.look, m.kind, 'flip') !== true }, m.kind)
+      if (axis === 'v') m.rot = ((m.rot || 0) + 180) % 360
+    }
+    pushUndo(ops)
+    for (const m of list) position(S.groups.get(m.id), m)
+    drawSelectionBox()
+    updateStatus()
+  }
+
+  // ---------------------------------------------------------------- 도형 서식(선택 칸)
+  // 고른 것 가운데 도형이 있으면 선택 칸에 「도형」(바꾸기 갤러리)·모양 조절(한 프리셋일 때 — 숫자 %)·채우기 색·투명도(엑셀처럼 100 −
+  // 불투명)·선 색·굵기·선 모양·빗금·뒤집기가 선다(2026-11-03 사용자 요청). 여럿이면 모두에 걸고 되돌리기 한 번이다. 값이 서로
+  // 다르면 「여러 값」.
+  const SHAPE_FILL_NAMES = { ...ZONE_COLOR_NAMES, ink: '진하게', surface: '바탕' }
+  const SHAPE_LINE_NAMES = { auto: '자동', none: '없음', ink: '진하게', ...ZONE_COLOR_NAMES }
+  const sharedOf = (list, read) => {
+    const values = new Set(list.map(read))
+    return values.size === 1 ? [...values][0] : null
+  }
+  // 갤러리·단추의 작은 도형 그림(16×16, 처음 모양 조절 값).
+  function drawShapeIcon(svgNode, key) {
+    const geo = shapePath(key, 14, 12, SHAPE_PRESETS[key].adj.map((spec) => spec[2]))
+    svgNode.replaceChildren(el('path', { class: 'ico-shape', d: geo.d, 'fill-rule': geo.rule, transform: 'translate(1 2)' }))
+  }
+  function shapeCells(onCell) {
+    return SHAPE_KEYS.map((key) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'sle-shape-cell'
+      button.dataset.shape = key
+      button.title = SHAPE_PRESETS[key].name
+      const icon = el('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' })
+      drawShapeIcon(icon, key)
+      const word = document.createElement('span')
+      word.textContent = SHAPE_PRESETS[key].name
+      button.append(icon, word)
+      onCell(button, key)
+      return button
+    })
+  }
+  function fillShapeOptions() {
+    if (shapeFill.options.length) return
+    const mixed = () => {
+      const option = new Option('여러 값', MIXED)
+      option.disabled = true
+      option.hidden = true
+      return option
+    }
+    shapeFill.replaceChildren(mixed(), ...SHAPE_FILLS.map((key) => new Option(SHAPE_FILL_NAMES[key] || key, key)))
+    shapeLine.replaceChildren(mixed(), ...SHAPE_LINES.map((key) => new Option(SHAPE_LINE_NAMES[key] || key, key)))
+    shapeWidth.replaceChildren(mixed(), ...LINE_WIDTHS.map((w) => new Option(`${w}px`, String(w))))
+    shapeStyle.prepend(mixed())
+    shapeGallery.replaceChildren(...shapeCells((button, key) => {
+      button.setAttribute('aria-label', `도형 바꾸기 — ${SHAPE_PRESETS[key].name}`)
+    }))
+  }
+  function closeShapeGallery() {
+    shapeGallery.hidden = true
+    shapeSwap.setAttribute('aria-expanded', 'false')
+  }
+  function syncShapeProps(chosen) {
+    const shapes = chosen.filter(isShape)
+    shapeProps.hidden = !shapes.length
+    if (!shapes.length) { closeShapeGallery(); return }
+    fillShapeOptions()
+    const preset = sharedOf(shapes, (m) => shapeOf(m.look))
+    drawShapeIcon(shapeNow, preset || 'rect')
+    setText(shapeWord, preset ? SHAPE_PRESETS[preset].name : '여러 값')
+    setAttr(shapeSwap, 'aria-label', `도형 — ${preset ? SHAPE_PRESETS[preset].name : '여러 값'} · 눌러서 바꾸기`)
+    for (const cell of shapeGallery.children) setAttr(cell, 'aria-pressed', String(cell.dataset.shape === preset))
+    // 모양 조절 — 고른 도형이 모두 같은 프리셋일 때만(값의 뜻이 프리셋마다 다르다).
+    const specs = preset ? SHAPE_PRESETS[preset].adj : []
+    shapeAdjRows.forEach((row, k) => {
+      row.hidden = k >= specs.length
+      if (row.hidden) return
+      setText(row.querySelector('.sle-shape-adj-word'), SHAPE_PRESETS[preset].words[k])
+      const input = shapeAdjInputs[k]
+      input.min = String(Math.round(specs[k][0] * 100))
+      input.max = String(Math.round(specs[k][1] * 100))
+      if (isFocused(input)) return
+      const value = sharedOf(shapes, (m) => shapeAdj(m.look)[k])
+      input.value = value === null ? '' : String(Math.round(value * 100))
+      input.placeholder = value === null ? '여러 값' : ''
+    })
+    const fill = sharedOf(shapes, (m) => shapeFillOf(m.color))
+    shapeFill.value = fill === null ? MIXED : fill
+    if (!isFocused(shapeClear)) {
+      const alpha = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'fillAlpha'))
+      shapeClear.value = alpha === null ? '' : String(100 - alpha)
+      shapeClear.placeholder = alpha === null ? '여러 값' : ''
+    }
+    const line = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'line'))
+    shapeLine.value = line === null ? MIXED : line
+    const width = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'lineWidth'))
+    shapeWidth.value = width === null ? MIXED : String(width)
+    const style = sharedOf(shapes, (m) => lookValue(m.look, 'shape', 'lineStyle'))
+    shapeStyle.value = style === null ? MIXED : style
+    const hatch = sharedOf(shapes, (m) => Boolean(m.hatch))
+    shapeHatch.checked = hatch === true
+    shapeHatch.indeterminate = hatch === null
+    const turns = shapes.some(turnsShape)
+    for (const button of shapeFlips) button.disabled = !turns
+  }
+  // 고른 도형 모두의 모양 값(patch — 값 null 은 처음 값으로, 함수면 도형마다)과 요소 칸(fields — 채우기 색·빗금)을 바꾼다. 바뀐 것이
+  // 있으면 되돌리기 한 번.
+  function setShapes(patch, fields = {}) {
+    const ops = []
+    for (const m of selectedItems().filter(isShape)) {
+      const next = patchLook(m.look, typeof patch === 'function' ? patch(m) : patch, 'shape')
+      const moved = Object.entries(fields).some(([key, value]) => m[key] !== value)
+      if (lookText(next) === lookText(m.look) && !moved) continue
+      ops.push({ op: 'set', id: m.id, before: snapshot(m) })
+      m.look = next
+      Object.assign(m, fields)
+    }
+    if (!ops.length) { syncInspector(); return }
+    pushUndo(ops)
+    for (const op of ops) position(S.groups.get(op.id), S.items.get(op.id))
+    drawSelectionBox()
+    updateStatus()
+  }
+
   // 브라우저가 쥔 적용 전 편집(요소·편집 영역)이 있는가.
   function hasPendingEdits() {
     return markChangeCount() > 0 || canvasChanged()
@@ -2794,7 +4160,7 @@ export default function (component) {
   }
 
   function pickText(item) {
-    if (isMark(item)) return `선택 ${MARK_KINDS[item.kind]?.name || item.kind}${item.label ? ` · ${item.label}` : ''}`
+    if (isMark(item)) return `선택 ${MARK_KINDS[item.kind] ? markTitle(item) : item.kind}`
     const { stage, words } = unitWords(item)
     return `선택 ${item.label} · ${stage || '-'}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}`
       + `${item.group ? ` · Main 설비 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
@@ -2822,6 +4188,7 @@ export default function (component) {
       // 한 줄에서 잘리면 전체 문구는 풍선으로.
       pickBox.title = pickBox.textContent || pickBox.dataset.hint
       zoomSel.disabled = !chosen.some(onCanvas)
+      renderSheet()
       return
     }
     const chosen = selectedItems()
@@ -2836,6 +4203,14 @@ export default function (component) {
       b.textContent = strong
       statusBox.append(b)
     }
+    // 스크롤 고정 중이면 위 「저장 안 한 배치」 상자가 화면 밖이다 — 맨 앞에 한 줄.
+    if (lockNote()) add(lockNote())
+    // 든 서식 붓(한 번 · 잠금).
+    if (S.paint) {
+      add(S.paint.sticky
+        ? '서식 붓 잠금 — 누를 때마다 붙입니다(빈 곳을 끌면 그 안 전부) · Esc·붓 단추로 끝'
+        : '서식 붓 — 붙일 것을 누르세요(빈 곳을 끌면 그 안 전부) · Esc 끝')
+    }
     // 방금 한 일의 한 줄(복사·붙여넣기) — 다음 고르기·편집에서 지운다.
     if (S.flash) add(S.flash)
     if (chosen.length > 1) {
@@ -2844,7 +4219,7 @@ export default function (component) {
       const sized = sizeNote(expanded(chosen))
       if (sized) add(sized)
     } else if (item && isMark(item)) {
-      add('선택 ', `${MARK_KINDS[item.kind].name}${item.label ? ` ${item.label}` : ''}`)
+      add('선택 ', `${markKindName(item)}${item.kind === 'bay' ? ` ${bayCaption(item)}` : item.label ? ` ${item.label}` : ''}`)
       add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}${item.rot ? ` · ${item.rot}°` : ''}`)
     } else if (item && moduleMembers(item)) {
       const mods = moduleMembers(item)
@@ -2867,7 +4242,10 @@ export default function (component) {
       const sized = sizeNote([item])
       if (sized) add(sized)
     } else {
-      add(HINT)
+      // 단축키 전부는 왼쪽 칸 「도움말」 이다(상태 줄이 여러 줄로 늘어 도면이 밀리지 않게).
+      add(FAB
+        ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다 · 단축키는 왼쪽 칸 「도움말」'
+        : '호기·요소를 끌어 옮기고 손잡이로 크기를 바꿉니다 · 빈 곳을 끌면 여러 개 · 단축키는 왼쪽 칸 「도움말」')
     }
     add('적용 안 한 변경 ', `${changed}건`)
     if (FAB) {
@@ -2889,6 +4267,8 @@ export default function (component) {
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
     areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
     syncInspector()
+    syncFormatPanel()
+    renderSheet()
   }
 
   // 이름 칸(호기 `이름`·요소 `이름`)에 적던 글자는 그 칸에 들어갈 때 고른 대상의 것이다. 고르는 것이 바뀌기 전에 칸을
@@ -2938,20 +4318,17 @@ export default function (component) {
     return group && svg.contains(group) && group.hasAttribute('tabindex') ? group : null
   }
 
-  // 서랍 열림은 같은 편집기의 다음 실행에도 이어진다(S 에 둔다). 접으면 서랍 몫으로 옮긴 화면을 제자리로 돌린다.
+  // 오른쪽 미배치 칸을 펴고 접는다(`setPanelOpen` — 넓은 화면은 기억, 좁은 화면 겹침 서랍은 한 번에 하나). 좁은 화면에서
+  // 접으면 서랍 몫으로 옮긴 화면을 제자리로 돌린다.
   function setDrawer(open) {
-    const was = Boolean(S.drawerOpen)
-    S.drawerOpen = Boolean(open)
-    drawer.classList.toggle('is-open', S.drawerOpen)
-    trayBox.hidden = !S.drawerOpen
-    drawerTab.setAttribute('aria-expanded', String(S.drawerOpen))
-    if (was && !S.drawerOpen) applyView({ reposition: false })
+    setPanelOpen('right', open)
   }
 
-  // 서랍에서 놓은 호기가 서랍 아래에 들었으면 화면을 옮겨 꺼내 보인다(서랍은 열어 둔다 — 이어서 놓을 수 있게).
-  // 옮길 수 있는 만큼만 옮긴다(trayReserve). 위아래로 서랍과 겹치지 않으면 그대로 둔다.
+  // 좁은 화면 겹침 서랍에서 놓은 호기가 서랍 아래에 들었으면 화면을 옮겨 꺼내 보인다(서랍은 열어 둔다 — 이어서 놓을 수
+  // 있게). 옮길 수 있는 만큼만 옮긴다(trayReserve). 위아래로 서랍과 겹치지 않으면 그대로 둔다. 넓은 화면의 오른쪽 칸은
+  // 도면을 덮지 않아 할 일이 없다.
   function revealFromTray(list) {
-    if (!S.drawerOpen || trayBox.hidden) return
+    if (!host.classList.contains('is-narrow') || !S.drawerOpen || trayBox.hidden) return
     const tray = trayBox.getBoundingClientRect()
     let right = -Infinity
     let top = Infinity
@@ -3037,7 +4414,7 @@ export default function (component) {
     let shown = false
     // 서랍에서 끈 칩이 서랍 밖으로 나가면 서랍을 비치게 해 그 아래 도면에도 놓게 한다. 비치기 전의 서랍 위는
     // 도면이 아니다 — 거기 놓으면 서랍 아래에 숨은 채 배치된다.
-    const fromTray = Boolean(source.closest && source.closest('.sle-tray'))
+    const fromTray = Boolean(source.closest && source.closest('.sle-tray')) && host.classList.contains('is-narrow')
     let peek = false
     const overTray = (e) => {
       if (trayBox.hidden) return false
@@ -3252,10 +4629,12 @@ export default function (component) {
   const linkedFloors = () => [...S.items.values()].filter((m) => m.kind === 'block').map((m) => m.link)
   // 도면 요소를 넣는다. 자리를 주지 않으면(누르기) 지금 보이는 화면의 가운데, 끌어 놓았으면 놓은 점이 가운데이고 격자·정렬선에
   // 맞춘다(`dropSpot`, free 면 정렬선에 붙이지 않는다).
-  function addMark(kind, at, free) {
+  function addMark(kind, at, free, preset) {
     const spec = MARK_KINDS[kind]
     if (!spec) return
-    const [w, h] = spec.size
+    // 도형은 프리셋마다 넣는 크기가 다르다(`SHAPE_PRESETS`).
+    const shape = kind === 'shape' ? presetOf(preset) : null
+    const [w, h] = shape ? SHAPE_PRESETS[shape].size : spec.size
     S.seq += 1
     const id = `MK-${Date.now().toString(36)}-${S.seq}`
     const center = at || { x: S.view.x + viewW() / 2, top: S.view.top + viewH() / 2 }
@@ -3265,8 +4644,8 @@ export default function (component) {
     const item = {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: spot.x, y: spot.y, w, h, rot: 0,
-      color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
-      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0],
+      color: kind === 'zone' || shape ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
+      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0], look: shape ? cleanLook({ shape }, 'shape') : {},
     }
     fit(item)
     S.items.set(id, item)
@@ -3289,6 +4668,7 @@ export default function (component) {
     kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0, label: m.label || '', color: m.color || '',
     hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut), link: m.link || '', fontSize: m.fontSize ?? null,
     fontColor: m.fontColor || '', borderStyle: pickOr(m.borderStyle, BORDER_STYLES), labelAlign: pickOr(m.labelAlign, LABEL_ALIGNS),
+    look: cleanLook(m.look, m.kind),
   })
   function writeClipboard(marks) {
     const clip = { at: Date.now(), marks }
@@ -3401,6 +4781,237 @@ export default function (component) {
     markOverlaps()
   }
 
+  // ---------------------------------------------------------------- 서식 복사·붙여넣기(엑셀 서식 붓)
+  // 2026-11-03 사용자 요청 — 크기·색 같은 서식을 담아 다른 것에 붙인다. Ctrl+Shift+C 는 고른 것 가운데 기준(마지막으로 누른 것
+  // `S.selected`) 하나의 서식을 담고, Ctrl+Shift+V 는 지금 고른 것 모두(담은 원본 하나는 빼고)에 붙인다(파워포인트·워드의 서식 복사
+  // 키 — 엑셀은 붓뿐이다). 왼쪽 칸 「서식」 의 붓은 엑셀과 같다 — 한 번 누르면 담고 붓을 들어 다음에 누른 것 하나(묶음은 묶음째)에
+  // 붙이고 내린다. 두 번 누르면 잠가 누를 때마다 붙이고 Esc·붓 단추·편집기 다시 서기(새 epoch)에 내린다. 붓을 든 채 빈 곳을 끌면
+  // 사각형 안 전부에 붙는다(옮기기는 일어나지 않는다). 무엇이 어디에 붙는지는 순수 판정 `// <format-paint>` 이고, 붙일 것(크기·
+  // 색·선·글자)은 체크로 고른다(`capa.space.formatPaint.v1` 에 기억). 담은 서식은 sessionStorage(층·FAB 공용 — 같은 브라우저
+  // 탭에서 층을 바꿔도 남는다) + 페이지 안 쪽지(저장소가 막힌 창)다. 한 번 붙이기(여럿 포함)가 되돌리기 한 번이고, 붙인 것은 지금
+  // 바뀜 판정·적용값·저장으로 그대로 간다.
+  const FORMAT_CLIP_KEY = 'capa.space.formatClip.v1'
+  const FORMAT_PARTS_KEY = 'capa.space.formatPaint.v1'
+  const formatMemo = window.__capaSpaceFormat || (window.__capaSpaceFormat = {})
+  const LINE_STYLE_WORDS = { solid: '실선', dashed: '점선', dotted: '점' }
+  // 담은 원본의 표지(범위·층·id) — 붙여넣기가 그 하나를 뺀다.
+  const formatOrigin = (item) => `${SCOPE}:${FLOOR}:${item.id}`
+  // 서식으로 견줄 꼴 — 도면 요소는 그대로, 호기는 낱 호기(그 크기)와 Main 설비 모듈 묶음(범위 크기 — 도면에 없으면 크기 없음).
+  function formatShell(item) {
+    if (!isUnit(item)) return item
+    const mods = moduleMembers(item)
+    if (!mods) return { kind: 'unit', module: false, w: item.w, h: item.h }
+    const range = groupRange(mods)
+    return { kind: 'unit', module: true, w: range ? range.w : NaN, h: range ? range.h : NaN }
+  }
+  // 담은 서식 한 줄 — 「영역 · 20×12 · 파랑 · 점선 · 글자 13」.
+  function formatWords(fmt) {
+    const kind = fmt.kind === 'unit' ? (fmt.module ? 'Main 설비 묶음' : '호기')
+      : MARK_KINDS[fmt.kind] ? MARK_KINDS[fmt.kind].name : fmt.kind
+    const words = [kind]
+    if (fmt.size) words.push(`${fmt.size.w}×${fmt.size.h}`)
+    const paint = fmt.paint || {}
+    if (typeof paint.color === 'string') words.push(paint.color ? SHAPE_FILL_NAMES[paint.color] || paint.color : '기본 색')
+    if (LINE_STYLE_WORDS[paint.lineStyle]) words.push(LINE_STYLE_WORDS[paint.lineStyle])
+    if (ARROW_HEADS.includes(paint.head)) words.push(`머리 ${headShort(paint.head)}`)
+    if (fmt.text) words.push(fmt.text.fontSize ? `글자 ${fmt.text.fontSize}` : '글자 자동')
+    return words.join(' · ')
+  }
+  // 붙일 것 체크(크기·색·선·글자) — 처음엔 모두 켬, 브라우저에 기억(이 편집기 안에서만 쓰는 보기 상태).
+  function formatParts() {
+    if (!S.formatParts) {
+      let stored = null
+      try {
+        stored = JSON.parse(window.localStorage.getItem(FORMAT_PARTS_KEY) || 'null')
+      } catch {
+        stored = null
+      }
+      S.formatParts = Object.fromEntries(FORMAT_PARTS.map((part) => [part, !(stored && stored[part] === false)]))
+    }
+    return S.formatParts
+  }
+  function storeFormatParts() {
+    try {
+      window.localStorage.setItem(FORMAT_PARTS_KEY, JSON.stringify(formatParts()))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  function writeFormat(clip) {
+    formatMemo.clip = clip
+    try {
+      window.sessionStorage.setItem(FORMAT_CLIP_KEY, JSON.stringify(clip))
+    } catch {
+      // 저장소가 막힌 창 — 이 페이지 안 쪽지로 붙인다.
+    }
+  }
+  // 담은 서식 {at, fmt, origin} — 저장소와 쪽지 가운데 나중 것(꼴이 맞을 때만, `formatFrom`). 없으면 null.
+  function readFormat() {
+    let stored = null
+    try {
+      stored = JSON.parse(window.sessionStorage.getItem(FORMAT_CLIP_KEY) || 'null')
+    } catch {
+      stored = null
+    }
+    const clip = [stored, formatMemo.clip || null]
+      .filter((c) => c && typeof c === 'object')
+      .sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0))[0]
+    const fmt = clip ? formatFrom(clip.fmt, FONT_SIZES) : null
+    return fmt ? { at: Number(clip.at) || 0, fmt, origin: String(clip.origin || '') } : null
+  }
+  // 회차마다 한 번 읽어 둔다(상태 줄·서식 칸이 끌기 중에도 자주 본다) — 담을 때 바꾼다.
+  S.formatClip = readFormat()
+  // 고른 것의 기준 하나의 서식을 담는다. 고른 것이 없으면 알리고 null.
+  function copyFormat() {
+    const item = S.selected ? S.items.get(S.selected) : null
+    if (!item) {
+      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 Ctrl+Shift+C'
+      updateStatus()
+      return null
+    }
+    const clip = { at: Date.now(), fmt: formatOf(formatShell(item)), origin: formatOrigin(item) }
+    writeFormat(clip)
+    S.formatClip = readFormat() || clip
+    S.flash = `서식 복사 — ${formatWords(clip.fmt)}`
+    updateStatus()
+    return S.formatClip
+  }
+  // 서식 clip 을 targets 에 붙인다 — 받는 쪽마다 켠 묶음의 `formatPatch` 로 요소 칸·모양 값을 바꾸고 크기는 `sizeEntries`(모듈 묶음은
+  // 범위째 바둑판)로 바꾼다. 바뀐 것 모두를 되돌리기 한 번에 담고 상태 줄 한 줄(`S.flash`)을 남긴다. 붙은 대상 수를 돌려준다.
+  function applyFormat(targets, clip) {
+    const parts = formatParts()
+    const befores = new Map()
+    const keep = (id, before) => { if (!befores.has(id)) befores.set(id, before) }
+    const seen = new Set()
+    const hits = []
+    let matched = 0
+    let units = 0
+    for (const item of targets) {
+      const mods = moduleMembers(item)
+      const key = mods ? `g:${groupKeyOf(item)}` : `i:${item.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (isUnit(item)) units += 1
+      const patch = formatPatch(formatShell(item), clip.fmt, parts)
+      if (!patch) continue
+      matched += 1
+      if (Object.keys(patch.fields).length || Object.keys(patch.look).length) {
+        keep(item.id, snapshot(item))
+        Object.assign(item, patch.fields)
+        if (Object.keys(patch.look).length) item.look = patchedLook(item.look, patch.look, item.kind)
+      }
+      if (patch.size) for (const e of sizeEntries([item], () => ({ ...patch.size })).entries) keep(e.id, e.before)
+      hits.push(mods ? mods.map((m) => m.id) : [item.id])
+    }
+    const same = (before, item) => JSON.stringify({ ...before, look: lookText(before.look) })
+      === JSON.stringify({ ...snapshot(item), look: lookText(item.look) })
+    const changed = [...befores].filter(([id, before]) => !same(before, itemOf(id)))
+    const changedIds = new Set(changed.map(([id]) => id))
+    const count = hits.filter((ids) => ids.some((id) => changedIds.has(id))).length
+    if (changed.length) {
+      pushUndo(changed.map(([id, before]) => ({ op: 'set', id, before })))
+      redraw(changed.map(([id]) => itemOf(id)))
+    }
+    const unitOnly = clip.fmt.kind === 'unit' || units > 0
+    if (count) {
+      const left = seen.size - matched
+      S.flash = `서식을 ${count}개에 붙였습니다${left ? ` · 맞는 칸이 없는 ${left}개는 그대로${unitOnly ? '(호기에는 같은 호기의 크기만 붙습니다)' : ''}` : ''}`
+    } else if (!FORMAT_PARTS.some((part) => parts[part])) {
+      S.flash = '붙일 것(크기·색·선·글자)이 모두 꺼져 있습니다 — 왼쪽 칸 「서식」 체크'
+    } else if (matched) {
+      S.flash = '이미 같은 서식입니다'
+    } else if (unitOnly) {
+      S.flash = '호기에는 같은 호기의 크기만 붙습니다'
+    } else {
+      S.flash = '붙일 서식이 없습니다 — 크기는 같은 종류끼리만 붙습니다'
+    }
+    return count
+  }
+  // Ctrl+Shift+V·「붙이기」 — 담은 서식을 지금 고른 것 모두(도면에 선 것, 담은 원본 하나는 빼고)에 붙인다.
+  function pasteFormat() {
+    const clip = S.formatClip
+    if (!clip) {
+      S.flash = '담은 서식이 없습니다 — 고른 것에서 Ctrl+Shift+C 또는 「서식 복사」'
+      updateStatus()
+      return
+    }
+    const targets = selectedItems().filter((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
+    if (!targets.length) {
+      S.flash = '서식을 붙일 것을 고르세요 — 담은 원본 하나는 빼고 고른 것 모두에 붙입니다'
+      updateStatus()
+      return
+    }
+    applyFormat(targets, clip)
+    updateStatus()
+  }
+  // 서식 붓 — S.paint = {clip, sticky}(든 동안) 또는 null.
+  function setBrush(next) {
+    S.paint = next
+    updateStatus()
+  }
+  // 붓에 담을 서식 — 고른 것이 있으면 그것을 새로 담고, 없으면 앞서 담은 서식(다른 층에서 담은 것 포함). 둘 다 없으면 알리고 null.
+  function brushClip() {
+    if (S.selected && S.items.has(S.selected)) return copyFormat()
+    if (!S.formatClip) {
+      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 붓을 누릅니다'
+      updateStatus()
+    }
+    return S.formatClip
+  }
+  // 붓을 든 채 누른(또는 사각형으로 고른) 것에 붙인다. 한 번 붓이면 내린다. 붙인 것이 골라진다.
+  function paintOnto(targets) {
+    const brush = S.paint
+    if (!brush || !targets.length) return
+    applyFormat(targets, brush.clip)
+    const flash = S.flash
+    if (!brush.sticky) S.paint = null
+    const ids = targets.map((m) => m.id)
+    setSelection(ids, ids[ids.length - 1])
+    S.flash = flash
+    updateStatus()
+  }
+  // 붓을 든 채 누른 자리의 받을 것 — 호기·요소(맨 위 층에 다시 세운 손잡이는 그 요소), 고른 모듈 묶음의 범위 손잡이·범위 안 빈
+  // 칸은 그 묶음. 빈 곳이면 null.
+  function paintTargetAt(node, p) {
+    const proxyFor = node.dataset ? node.dataset.for : undefined
+    const group = proxyFor ? S.groups.get(proxyFor) || null : node.closest ? node.closest('.sle-item') : null
+    if (group) return S.items.get(group.dataset.id) || null
+    const picked = selectedItems()
+    if (node.classList && node.classList.contains('sle-range-handle')) return picked.find((m) => moduleMembers(m)) || null
+    return pickedRangeAt(picked, p)
+  }
+  // 왼쪽 칸 「서식」 — 붓 단추 눌림·잠금, 붙이기 단추, 붙일 것 체크, 담은 서식 한 줄. 상태 줄과 함께 고친다.
+  function syncFormatPanel() {
+    const clip = S.formatClip
+    setAttr(paintButton, 'aria-pressed', String(Boolean(S.paint)))
+    paintButton.classList.toggle('is-sticky', Boolean(S.paint && S.paint.sticky))
+    svg.classList.toggle('is-painting', Boolean(S.paint))
+    paintPaste.disabled = !clip || !selectedItems().some((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
+    const parts = formatParts()
+    for (const box of paintParts) box.checked = parts[box.dataset.part] !== false
+    setText(paintNow, clip ? `담은 서식 — ${formatWords(clip.fmt)}` : '담은 서식 없음 — 고른 것에서 「서식 복사」(Ctrl+Shift+C)')
+  }
+  // 붓 단추 — 한 번 누르면(키보드 Enter·Space 포함) 담고 들기 / 든 붓 내리기, 두 번 누르면 잠금(엑셀처럼). 두 번 누름의 첫 누름이
+  // 이미 붓을 들었으면 그 붓을 잠근다.
+  paintButton.onclick = (event) => {
+    if (event.detail >= 2) {
+      const clip = S.paint ? S.paint.clip : brushClip()
+      if (clip) setBrush({ clip, sticky: true })
+      return
+    }
+    if (S.paint) { setBrush(null); return }
+    const clip = brushClip()
+    if (clip) setBrush({ clip, sticky: false })
+  }
+  paintPaste.onclick = () => pasteFormat()
+  for (const box of paintParts) {
+    box.onchange = () => {
+      formatParts()[box.dataset.part] = box.checked
+      storeFormatParts()
+      updateStatus()
+    }
+  }
+
   // 방향키·숫자 칸의 X·Y 는 고른 것 전부를 함께 옮긴다. 호기·요소는 모양 그대로, 모듈 묶음은 범위를 옮겨 바둑판으로 다시
   // 놓는다(옛 묶음은 이때 바둑판이 된다 — 벽에 막혀 이동량이 0 이면 다시 놓지 않는다). 되돌리기 한 번에 모두 돌아온다.
   function moveItems(list, dx, dy) {
@@ -3423,6 +5034,15 @@ export default function (component) {
   // 크기는 고른 것 하나하나에 적용한다 — 호기·요소는 그 하나, 모듈 묶음은 범위를 바꿔 바둑판으로 다시 놓는다(범위가 그대로면
   // 다시 놓지 않는다). 폭은 오른쪽으로, 높이는 위로 자란다.
   function setSizes(list, patchOf) {
+    const { entries, touched } = sizeEntries(list, patchOf)
+    if (!entries.length) { syncInspector(); return }
+    commit(entries)
+    redraw(touched)
+    updateStatus()
+  }
+  // `setSizes` 의 크기 바꾸기 — 바꾸기만 하고 기록하지 않는다. 바뀐 것의 처음 값({id, before})과 다시 그릴 것을 돌려준다(서식
+  // 붙여넣기가 다른 칸 바꿈과 함께 한 기록으로 모은다).
+  function sizeEntries(list, patchOf) {
     const entries = []
     const touched = []
     const done = new Set()
@@ -3453,10 +5073,7 @@ export default function (component) {
         touched.push(item)
       }
     }
-    if (!entries.length) { syncInspector(); return }
-    commit(entries)
-    redraw(touched)
-    updateStatus()
+    return { entries, touched }
   }
 
   // 「범위에 맞춰 n등분」 — 바둑판이 아닌 옛 묶음을 지금 바깥 상자 안에 다시 놓는다(옮기거나 키울 때와 같다).
@@ -3671,6 +5288,22 @@ export default function (component) {
     updateStatus()
   }
 
+  // 노란 손잡이 index 를 화면 점 p({x, top})에 끌었을 때 도형 item 의 새 모양 값 — 같은 값이면 null.
+  function adjustedLook(item, index, p) {
+    const rot = item.rot || 0
+    const lw = rot % 180 ? item.h : item.w
+    const lh = rot % 180 ? item.w : item.h
+    const flip = lookValue(item.look, 'shape', 'flip') === true
+    const local = unplaceLocal(p.x - (item.x + item.w / 2), p.top - (svgTop(item) + item.h / 2), lw, lh, rot, flip)
+    const preset = shapeOf(item.look)
+    const value = handleValue(preset, index, local.x, local.y, lw, lh)
+    if (value === null) return null
+    const adj = shapeAdj(item.look).slice()
+    adj[index] = value
+    const next = cleanLook({ ...(item.look || {}), adj }, 'shape')
+    return lookText(next) === lookText(item.look) ? null : next
+  }
+
   function cancelDrag() {
     const drag = S.drag
     if (!drag) return
@@ -3686,6 +5319,7 @@ export default function (component) {
       return
     }
     for (const [id, before] of drag.befores) Object.assign(itemOf(id), before)
+    drawer.classList.remove('is-drop-target')
     redraw([...drag.befores.keys()].map(itemOf))
     clearDragOverlap()
     updateStatus()
@@ -3735,6 +5369,11 @@ export default function (component) {
     link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
     fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || ''),
     borderStyle: pickOr(raw.borderStyle, BORDER_STYLES), labelAlign: pickOr(raw.labelAlign, LABEL_ALIGNS),
+    // 모양 값(동선·베이의 머리 크기·선·뒤집기, 도형의 프리셋·모양 조절·채우기·선)은 처음 값이 아닌 것만 쥔다. 베이 이름표는
+    // 번호다(앞 B 를 뗀다). 도형의 채우기 색은 모르는 값이면 파랑이다.
+    look: cleanLook(raw.look, String(raw.kind)),
+    ...(String(raw.kind) === 'bay' ? { label: bayNumber(raw.label) } : {}),
+    ...(String(raw.kind) === 'shape' ? { color: shapeFillOf(raw.color) } : {}),
   })
 
   function initFromData() {
@@ -3810,6 +5449,8 @@ export default function (component) {
     S.note = ''
     // 복사·붙여넣기 알림은 그 도면의 것이다 — 적용 뒤·다른 층의 새 도면까지 상태 줄에 남기지 않는다.
     S.flash = ''
+    // 편집기가 다시 서면 든 서식 붓을 내린다(담은 서식은 남는다).
+    S.paint = null
     // 새 epoch(층 이동·저장본·요소·그리는 호기가 바뀜)에서는 data 의 기준일을 그대로 쓴다.
     S.asOf = AS_OF
     S.dataAsOf = AS_OF
@@ -3873,13 +5514,14 @@ export default function (component) {
     drawShortBadges()
   }
 
-  // ------------------------------------------------------------- 아래 호기 표에 고른 호기(층 상세 보기)
+  // ------------------------------------------------------------- 필요 단축 칸에 고른 호기(층 상세 보기)
   // 층 상세 보기에서 호기를 누르면(끌지 않고) 그 호기를 `pick` 으로 알린다(2026-10-23 사용자 요청 3). 받는 쪽 파이썬
-  // `on_pick_change` 콜백이 층 상세 아래 호기 표를 그 설비 줄만으로 좁힌다 — 블록 열기(`navigate`)와 같은 꼴이고 epoch 가 다른
-  // 옛 값은 버린다. 호기가 아닌 것(도면 요소)을 누르거나 빈 곳을 누르거나 Esc 로 풀면 고른 호기가 없다는 값(id null)을 보내
-  // 표가 층 전체로 돌아간다. 같은 값은 다시 보내지 않는다. 표 위 「층 전체 보기」 단추로 파이썬이 풀면 `data.picked` 가 비어
-  // 도면의 고르기도 풀린다. 배치 편집기와 FAB 는 보내지 않는다.
-  const PICKS = VIEW && !FAB
+  // `on_pick_change` 콜백이 필요 단축 칸의 누른 호기 상세를 세운다 — 블록 열기(`navigate`)와 같은 꼴이고 epoch 가 다른 옛 값은
+  // 버린다. 호기가 아닌 것(도면 요소)을 누르거나 빈 곳을 누르거나 Esc 로 풀면 고른 호기가 없다는 값(id null)을 보낸다. 같은 값은
+  // 다시 보내지 않는다. 필요 단축 칸의 표에서 파이썬이 고르면 `data.picked` 로 도면의 고르기도 따라간다. 보내는 것은 그 보기를 켠
+  // 동안뿐이다(`data.pickToServer` — 사양 D11, 누를 때마다 앱 전체가 돌지 않게. 고른 호기의 칸은 「호기 정보」 창이 브라우저 안에서
+  // 보인다). 배치 편집기와 FAB 는 보내지 않는다.
+  const PICKS = VIEW && !FAB && data.pickToServer !== false
   function notePick() {
     if (!PICKS) return
     const item = S.selected ? S.items.get(S.selected) : null
@@ -3888,29 +5530,39 @@ export default function (component) {
     S.pickSent = id
     setTriggerValue('pick', { epoch: S.epoch, id })
   }
-  // 파이썬이 쥔 고른 호기가 지난 회차와 다르면(누른 회차·「층 전체 보기」·새로 선 도면) 도면의 고르기를 그것에 맞춘다.
+  // 파이썬이 쥔 고른 호기가 지난 회차와 다르면(누른 회차·필요 단축 칸의 표·새로 선 도면) 도면의 고르기를 그것에 맞춘다. 보내지
+  // 않는 동안은 파이썬 값을 잊는다(파이썬도 그 동안 풀어 둔다) — 다시 보내기 시작한 회차에 브라우저가 이미 호기를 골라 두었으면
+  // 그 호기를 한 번 보낸다(그린 뒤에 — 받은 data 로 불린 함수 안에서는 보내지 않는다).
   function syncPick() {
-    if (!PICKS) return
+    if (!PICKS) {
+      S.pickData = undefined
+      S.pickSent = null
+      return
+    }
     const picked = typeof data.picked === 'string' && data.picked ? data.picked : null
     if (picked === S.pickData) return
+    const resumed = S.pickData === undefined
     S.pickData = picked
     S.pickSent = picked
     if (picked && S.items.has(picked)) {
       if (S.selected !== picked || S.selection.size !== 1) select(picked)
-    } else if (!picked && S.selected && isUnit(S.items.get(S.selected) || {})) select(null)
+    } else if (!picked && S.selected && isUnit(S.items.get(S.selected) || {})) {
+      if (resumed) (typeof queueMicrotask === 'function' ? queueMicrotask : setTimeout)(notePick)
+      else select(null)
+    }
   }
   syncPick()
 
   // ------------------------------------------------------------- 끌기(속성 대입이라 겹쳐 쌓이지 않는다)
   svg.onmousedown = (event) => { if (event.button === 1) event.preventDefault() }
-  // 고른 것 가운데 도면 점 p(화면 좌표 {x, top})를 범위 안에 품은 모듈 묶음이 있는가.
+  // 고른 것 가운데 도면 점 p(화면 좌표 {x, top})를 범위 안에 품은 모듈 묶음(그 고른 호기 — 없으면 null).
   function pickedRangeAt(picked, p) {
     const y = H() - p.top
-    return picked.some((item) => {
+    return picked.find((item) => {
       const mods = moduleMembers(item)
       const range = mods && groupRange(mods)
       return Boolean(range) && p.x >= range.x && p.x <= range.x + range.w && y >= range.y && y <= range.y + range.h
-    })
+    }) || null
   }
   svg.onpointerdown = (event) => {
     if (event.button !== 0 && event.button !== 1) return
@@ -3941,7 +5593,16 @@ export default function (component) {
       svg.setPointerCapture(event.pointerId)
       return
     }
-    const rangeDir = event.target.classList && event.target.classList.contains('sle-range-handle') ? event.target.dataset.dir : null
+    if (S.paint) {
+      // 서식 붓을 든 채 — 누른 호기·요소(손잡이·고른 묶음 범위 안 빈 칸도 그것)에 붙이고 끌지 않는다. 빈 곳은 사각형 고르기이고
+      // 놓을 때 그 안 전부에 붙인다(`paintOnto`).
+      const target = paintTargetAt(event.target, p)
+      if (target) { paintOnto([target]); return }
+      S.drag = { ...start, mode: 'marquee', paint: true, additive: false, before: new Set(S.selection), beforePrimary: S.selected, rect: null }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
+    const rangeDir =event.target.classList && event.target.classList.contains('sle-range-handle') ? event.target.dataset.dir : null
     const picked = selectedItems()
     if (rangeDir && picked.length === 1 && moduleMembers(picked[0])) {
       // 고른 모듈 묶음의 범위 테두리 손잡이 — 범위 크기를 바꾸면 안의 모듈이 바둑판으로 다시 선다.
@@ -3955,13 +5616,15 @@ export default function (component) {
       svg.setPointerCapture(event.pointerId)
       return
     }
-    const group = event.target.closest ? event.target.closest('.sle-item') : null
+    // 맨 위 층에 다시 세운 손잡이(`proxyHandles`)는 그 요소의 손잡이다.
+    const proxyFor = event.target.dataset ? event.target.dataset.for : undefined
+    const group = proxyFor ? S.groups.get(proxyFor) || null : (event.target.closest ? event.target.closest('.sle-item') : null)
     const additive = event.shiftKey || event.ctrlKey || event.metaKey
     if (!group && !additive && pickedRangeAt(picked, p)) {
       // 고른 모듈 묶음의 범위 안 빈 칸(모듈 셋·다섯 묶음의 남는 칸, 숨은 모듈 칸)도 묶음이다 — 누르면 그 묶음을 끈다.
       const plan = movePlan(picked)
       S.drag = {
-        ...start, id: S.selected, mode: 'move', dir: null, loose: plan.loose, groups: plan.groups,
+        ...start, id: S.selected, mode: 'move', dir: null, loose: plan.loose, groups: plan.groups, hasUnit: true,
         ids: plan.items.map((m) => m.id), befores: new Map(plan.items.map((m) => [m.id, snapshot(m)])), box: plan.box,
         collapse: false,
       }
@@ -3976,7 +5639,10 @@ export default function (component) {
     }
     const item = S.items.get(group.dataset.id)
     if (!item) return
-    if (additive) {
+    // 손잡이(크기·도형 모양 조절)는 고른 것 하나에만 서고, Shift 를 누른 채 잡아도 끈다 — 도형 모서리의 Shift 는 가로세로 비율
+    // 유지다(엑셀처럼).
+    const grip = event.target.classList && (event.target.classList.contains('sle-handle') || event.target.classList.contains('sle-adjust'))
+    if (additive && !grip) {
       // Shift/Ctrl+클릭은 고른 것에 더하거나 뺀다(끌지 않는다).
       toggleSelected(item)
       return
@@ -3984,6 +5650,19 @@ export default function (component) {
     const chosen = selectedItems()
     const inSelection = expanded(chosen).some((m) => m.id === item.id)
     const onlyThis = chosen.length === 1 && S.selected === item.id
+    if (onlyThis && item.kind === 'shape' && event.target.classList.contains('sle-adjust')) {
+      // 도형 하나를 고른 채 노란 손잡이를 잡았다 — 모양 조절 값을 끈다(놓을 때 바뀌었으면 되돌리기 한 번).
+      // 잡은 자리와 손잡이 참 자리의 차이(grab)를 지켜 끈다 — 비켜 그린 손잡이·한가운데가 아닌 곳을 잡아도 값이 튀지 않는다.
+      const tx = Number(event.target.dataset.tx)
+      const ty = Number(event.target.dataset.ty)
+      S.drag = {
+        ...start, id: item.id, mode: 'adjust', index: Number(event.target.dataset.index) || 0, ids: [item.id],
+        befores: new Map([[item.id, snapshot(item)]]), loose: [], groups: [], box: null, collapse: false,
+        grab: { x: Number.isFinite(tx) ? tx - p.x : 0, top: Number.isFinite(ty) ? ty - p.top : 0 },
+      }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
     if (!inSelection) select(item.id)
     else if (S.selection.has(item.id)) { S.selected = item.id; markSelection(); updateStatus() }
     const dir = event.target.classList.contains('sle-handle') ? event.target.dataset.dir : null
@@ -3999,7 +5678,7 @@ export default function (component) {
       if (g && g.parentNode) g.parentNode.append(g)
     }
     S.drag = {
-      ...start, id: item.id, mode, dir, loose: plan.loose, groups: plan.groups,
+      ...start, id: item.id, mode, dir, loose: plan.loose, groups: plan.groups, hasUnit: list.some((m) => isUnit(m) && !m.ghost),
       ids: list.map((m) => m.id), befores: new Map(list.map((m) => [m.id, snapshot(m)])), box: plan.box,
       // 여러 개를 고른 채 하나를 눌렀다 떼기만 하면 그 하나만 고른 상태로 좁힌다.
       collapse: inSelection && (S.selection.size > 1 || !S.selection.has(item.id)),
@@ -4049,11 +5728,31 @@ export default function (component) {
       updateStatus()
       return
     }
+    if (drag.mode === 'adjust') {
+      // 노란 손잡이 끌기 — 포인터를 도형 제자리 좌표로 되돌려 그 손잡이의 값을 낸다(격자·정렬선에 붙이지 않는다).
+      drag.moved = true
+      const item = S.items.get(drag.id)
+      const next = item ? adjustedLook(item, drag.index, { x: p.x + drag.grab.x, top: p.top + drag.grab.top }) : null
+      if (next) {
+        item.look = next
+        position(S.groups.get(item.id), item)
+        drawSelectionBox()
+        syncInspector()
+      }
+      return
+    }
     // 이동량은 격자에 맞추되, 정렬선에 닿는 축은 그 선에 붙인 이동량이 이긴다(Alt 를 누른 채면 붙이지 않는다).
     const aligned = alignDrag(drag, p.x - drag.startX, p.top - drag.startTop, event.altKey)
     const dx = aligned.dx ?? snapDelta(p.x - drag.startX)
     const dTop = aligned.dTop ?? snapDelta(p.top - drag.startTop)
     if (drag.mode === 'move') {
+      // 도면의 호기를 오른쪽 미배치 칸(접힌 띠 포함) 위로 끌면 놓을 때 미배치로 돌아간다(2026-11-03 사용자 요청 — 미배치
+      // 슬롯 이동성). 칸에 「여기 놓으면 미배치로」 테가 선다. 호기가 든 끌기만이다(도면 요소만이면 칸이 받지 않는다).
+      const toTray = HAS_RIGHT && drag.hasUnit && insideRect(drawer.getBoundingClientRect(), event.clientX, event.clientY)
+      if (toTray !== Boolean(drag.toTray)) {
+        drag.toTray = toTray
+        drawer.classList.toggle('is-drop-target', toTray)
+      }
       // 이동량을 격자에 맞춘다(제자리 좌표를 격자로 끌어당기지 않는다). 화면에서 아래로 끌면 Y 는 준다. 모듈 묶음은
       // 범위를 옮겨 바둑판으로 다시 놓는다.
       const shift = clampShift(drag.box, dx, -dTop)
@@ -4074,7 +5773,14 @@ export default function (component) {
         for (const m of g.mods) m.sizeGuessed = false
       }
     } else {
-      resizeTo(S.items.get(drag.id), drag.befores.get(drag.id), drag.dir, dx, dTop)
+      const item = S.items.get(drag.id)
+      const before = drag.befores.get(drag.id)
+      resizeTo(item, before, drag.dir, dx, dTop)
+      // 도형의 모서리 손잡이를 Shift 를 누른 채 끌면 가로세로 비율을 지킨다(원은 원으로 — 엑셀처럼).
+      if (event.shiftKey && item.kind === 'shape' && drag.dir.length === 2) {
+        Object.assign(item, keepAspect(before, item, drag.dir, W(), H(), minSize(), SCALE))
+        fit(item)
+      }
     }
     // 숨은 모듈은 그리지 않는다.
     const dragged = drag.ids.map(itemOf).filter((m) => !m.ghost)
@@ -4108,20 +5814,48 @@ export default function (component) {
         if (!drag.travelled) openFloor(item)
         return
       }
-      // 문턱을 넘은 끌기는 누르기가 아니다(전체 보기에서 화면이 움직이지 않아도) — 고르지도 아래 표를 좁히지도 않는다.
+      // 문턱을 넘은 끌기는 누르기가 아니다(전체 보기에서 화면이 움직이지 않아도) — 고르지도 알리지도 않는다.
       if (drag.travelled) return
       select(drag.id)
       notePick()
       return
     }
     if (drag.mode === 'marquee') {
+      // 서식 붓의 사각형 — 그 안 전부에 붙인다. 누르기만 했거나 안에 든 것이 없으면 고른 것을 그대로 두고 붓도 든 채다.
+      if (drag.paint && drag.moved && S.selection.size) { paintOnto(selectedItems()); return }
+      if (drag.paint) {
+        S.selection = new Set(drag.before)
+        S.selected = drag.beforePrimary
+        markSelection()
+        updateStatus()
+        return
+      }
       // 끌지 않고 빈 곳을 누르기만 했으면 선택을 푼다(Shift/Ctrl 이면 그대로 둔다).
       if (!drag.moved && !drag.additive) clearSelection()
       markSelection()
       updateStatus()
       return
     }
+    if (drag.mode === 'adjust') {
+      const before = drag.befores.get(drag.id)
+      const item = S.items.get(drag.id)
+      if (item && lookText(before.look) !== lookText(item.look)) pushUndo([{ op: 'set', id: item.id, before }])
+      updateStatus()
+      return
+    }
     clearDragOverlap()
+    if (drag.toTray) {
+      // 오른쪽 칸에 놓았다 — 끈 자리를 처음으로 돌린 뒤 고른 호기만 빼기·지우기와 같은 길로 미배치(도면 요소는 제자리,
+      // 모듈 묶음은 묶음째). 되돌리기 한 번에 돌아온다.
+      drawer.classList.remove('is-drop-target')
+      for (const [id, before] of drag.befores) Object.assign(itemOf(id), before)
+      const units = drag.ids.map(itemOf).filter((m) => m && isUnit(m) && !m.ghost && onCanvas(m))
+      const count = expanded(units).filter(onCanvas).length
+      removeItems(units)
+      S.flash = `미배치로 ${count}대 — 실행 취소로 되돌립니다`
+      updateStatus()
+      return
+    }
     const entries = drag.ids
       .map((id) => ({ id, before: drag.befores.get(id) }))
       .filter((e) => !sameSpot(e.before, itemOf(e.id)))
@@ -4136,8 +5870,8 @@ export default function (component) {
   }
   svg.onlostpointercapture = () => { if (S.drag) svg.onpointerup({ pointerId: S.drag.pointerId }) }
   svg.onpointerleave = () => { S.hover = null }
-  // Ctrl+휠(터치패드 오므리기 포함)은 마우스 자리를 축으로 확대·축소한다. 맨 휠은 확대 중에도 도면을
-  // 옮기지 않고 페이지로 보낸다 — 확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면, 도면
+  // Ctrl+휠(터치패드 오므리기 포함)은 마우스 자리를 축으로 확대·축소한다. 스크롤 고정 중이면 맨 휠은 도면 이동이다.
+  // 고정이 아니면 맨 휠은 확대 중에도 도면을 옮기지 않고 페이지로 보낸다 — 확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면, 도면
   // 위아래의 단추로 가려던 스크롤이 도면부터 옮겨 놓는다(2026-10-10 사용자 요청). 화면 이동은 끌기
   // (보기)·Space+끌기·가운데 버튼 끌기(편집)·방향키(보기)로 한다. 예외는 편집기에서 호기·요소를 끌어
   // 옮기거나 크기를 바꾸는 동안이다 — 단추를 누른 채라 페이지로 갈 일이 없고, 화면 밖 자리로 끌고 가려면
@@ -4148,6 +5882,14 @@ export default function (component) {
       event.preventDefault()
       zoomAt(S.view.z * Math.exp(-event.deltaY * unit * 0.002), toUser(event))
       if (!VIEW) S.hover = toUser(event)
+      return
+    }
+    if (S.lock) {
+      // 스크롤 고정 중 — 페이지는 굴러가지 않으니 맨 휠은 도면을 옮긴다(세로, Shift 는 가로, 터치패드 옆 밀기는 가로).
+      // 전체 보기(확대 1)에서는 옮길 데가 없어 아무 일도 없다.
+      event.preventDefault()
+      const upp = unitsPerPx()
+      panBy((event.shiftKey ? event.deltaY : event.deltaX) * unit * upp, (event.shiftKey ? 0 : event.deltaY) * unit * upp)
       return
     }
     const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize' || S.drag.mode === 'range')
@@ -4179,7 +5921,15 @@ export default function (component) {
   // 보기 전용 더블클릭: 확대 중이면 전체 보기, 전체 보기면 그 자리를 2.5배로.
   svg.ondblclick = (event) => {
     // 블록 위에서는 확대하지 않는다 — 첫 누름이 이미 그 층을 열었다.
-    if (!VIEW || S.lastViewDragMoved || S.lastViewOnBlock) return
+    if (VIEW && (S.lastViewDragMoved || S.lastViewOnBlock)) return
+    // 호기를 두 번 누르면 「호기 정보」 창의 「고른 호기」 를 연다(층 보기·편집). 그 밖의 곳은 보기에서 확대/전체 보기다.
+    const unit = SHEET && !S.drag ? unitAt(toUser(event)) : null
+    if (unit) {
+      event.preventDefault()
+      openSheet('picked')
+      return
+    }
+    if (!VIEW) return
     event.preventDefault()
     if (S.view.z > 1) zoomAt(1)
     else zoomAt(2.5, toUser(event))
@@ -4199,7 +5949,7 @@ export default function (component) {
         openFloor(S.items.get(block.dataset.id))
         return
       }
-      // 층 보기의 호기에 초점이 있으면 Enter·Space 가 누르기와 같다 — 그 호기 정보 한 줄과 아래 표(`pick`).
+      // 층 보기의 호기에 초점이 있으면 Enter·Space 가 누르기와 같다 — 그 호기 정보 한 줄·「호기 정보」 창과 `pick`.
       const unitNode = FAB ? null : canvasItemOf(event.target)
       if (unitNode && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault()
@@ -4221,6 +5971,8 @@ export default function (component) {
       return
     }
     if (event.key === 'Escape' && S.drag) { event.preventDefault(); cancelDrag(); return }
+    // 든 서식 붓은 Esc 가 먼저 내린다(고른 것은 그대로).
+    if (event.key === 'Escape' && S.paint) { event.preventDefault(); setBrush(null); return }
     const typing = event.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)
     const ctrl = event.ctrlKey || event.metaKey
     if (ctrl && event.key.toLowerCase() === 'z' && !typing) { event.preventDefault(); undo(); return }
@@ -4255,9 +6007,14 @@ export default function (component) {
     if (event.key === 'Escape' && S.selection.size) { event.preventDefault(); select(null); return }
     if (S.drag) return
     // 도면 요소 복사·붙여넣기(호기는 복사하지 않는다). 한글 자판에서도 듣게 글쇠 자리(code)도 본다. 글 칸에서는 위에서 비켰다.
+    // Shift 를 더하면 서식 복사·붙여넣기다(파워포인트·워드의 서식 복사 키) — 요소 복사 갈래보다 먼저 보고, 요소 복사는 Shift 가
+    // 없을 때만이다. 글 칸의 Ctrl+Shift+V(서식 없이 붙여넣기)는 위에서 비켜 그대로 브라우저 것이다.
     const letter = event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v' : event.key.toLowerCase()
-    if (ctrl && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
-    if (ctrl && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
+    const formatKey = ctrl && event.shiftKey && !event.altKey
+    if (formatKey && letter === 'c') { event.preventDefault(); copyFormat(); return }
+    if (formatKey && letter === 'v') { event.preventDefault(); pasteFormat(); return }
+    if (ctrl && !event.shiftKey && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
+    if (ctrl && !event.shiftKey && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
     const chosen = selectedItems()
     const standing = chosen.filter(onCanvas)
     // 지우기는 도면(또는 도면의 호기·요소)에 포커스가 있을 때만 — 툴바 단추를 누른 뒤 Backspace 가 고른 것을 지우지 않게.
@@ -4315,7 +6072,8 @@ export default function (component) {
   markLabel.onblur = () => { S.markLabelFor = null }
   markLabel.onchange = () => {
     const mark = S.items.get(S.markLabelFor)
-    const value = markLabel.value.trim().slice(0, 40)
+    // 베이는 번호만 쥔다 — 「80」·「B80」·「b 80」 모두 「80」(그릴 때 「B80」).
+    const value = mark && mark.kind === 'bay' ? bayNumber(markLabel.value) : markLabel.value.trim().slice(0, 40)
     if (mark && isMark(mark) && value !== (mark.label || '')) setMarkProps(mark, { label: value })
     else syncInspector()
   }
@@ -4353,6 +6111,94 @@ export default function (component) {
   markHatch.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { hatch: markHatch.checked }) }
   markKeepOut.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { keepOut: markKeepOut.checked }) }
   markRotate.onclick = () => { const mark = selectedMark(); if (mark) rotateMark(mark) }
+  headToggle.onclick = () => {
+    const open = headGallery.hidden
+    headGallery.hidden = !open
+    headToggle.setAttribute('aria-expanded', String(open))
+    if (open) (headGallery.querySelector('[aria-pressed="true"]') || headGallery.firstElementChild)?.focus()
+  }
+  headGallery.onclick = (event) => {
+    const cell = event.target.closest('.sle-head-cell')
+    if (!cell) return
+    headGallery.hidden = true
+    headToggle.setAttribute('aria-expanded', 'false')
+    setLooks({ head: cell.dataset.head })
+    headToggle.focus()
+  }
+  headGallery.onkeydown = (event) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    headGallery.hidden = true
+    headToggle.setAttribute('aria-expanded', 'false')
+    headToggle.focus()
+  }
+  lineColor.onchange = () => { if (lineColor.value !== MIXED) setLooks({ line: lineColor.value }) }
+  lineWidth.onchange = () => { if (lineWidth.value !== MIXED) setLooks({ lineWidth: lineWidth.value === '' ? null : Number(lineWidth.value) }) }
+  lineStyle.onchange = () => { if (lineStyle.value !== MIXED) setLooks({ lineStyle: lineStyle.value }) }
+  for (const button of host.querySelectorAll('.sle-bay-flip')) button.onclick = () => flipMarks(button.dataset.flip, isBay)
+  for (const button of shapeFlips) button.onclick = () => flipMarks(button.dataset.flip, turnsShape)
+  shapeSwap.onclick = () => {
+    const open = shapeGallery.hidden
+    shapeGallery.hidden = !open
+    shapeSwap.setAttribute('aria-expanded', String(open))
+    if (open) (shapeGallery.querySelector('[aria-pressed="true"]') || shapeGallery.firstElementChild)?.focus()
+  }
+  // 바꾸기 갤러리 칸은 한 번만 만들어 두므로 누르기는 회차마다 다시 다는 위임이다(지난 회차의 닫힘을 쥐지 않게).
+  shapeGallery.onclick = (event) => {
+    const cell = event.target.closest('.sle-shape-cell')
+    if (!cell) return
+    closeShapeGallery()
+    setShapes({ shape: cell.dataset.shape, adj: null })
+    shapeSwap.focus()
+  }
+  shapeGallery.onkeydown = (event) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeShapeGallery()
+    shapeSwap.focus()
+  }
+  shapeAdjInputs.forEach((input, k) => {
+    input.onchange = () => {
+      const value = Number(input.value)
+      if (input.value === '' || !Number.isFinite(value)) { syncInspector(); return }
+      setShapes((m) => {
+        const adj = shapeAdj(m.look).slice()
+        const spec = SHAPE_PRESETS[shapeOf(m.look)].adj[k]
+        if (!spec) return {}
+        adj[k] = Math.min(Math.max(Math.round(value) / 100, spec[0]), spec[1])
+        return { adj }
+      })
+    }
+    input.onkeydown = (event) => { if (event.key === 'Enter') input.blur() }
+  })
+  shapeFill.onchange = () => { if (shapeFill.value !== MIXED) setShapes({}, { color: shapeFill.value }) }
+  // 투명도는 엑셀처럼 「0% 불투명 · 100% 채우기 없음」 이다 — 저장 값은 불투명도(look.fillAlpha = 100 − 투명도, 5 단위).
+  shapeClear.onchange = () => {
+    const value = Number(shapeClear.value)
+    if (shapeClear.value === '' || !Number.isFinite(value)) { syncInspector(); return }
+    const clear = Math.min(Math.max(Math.round(value / FILL_ALPHA_STEP) * FILL_ALPHA_STEP, 0), 100)
+    setShapes({ fillAlpha: 100 - clear })
+  }
+  shapeClear.onkeydown = (event) => { if (event.key === 'Enter') shapeClear.blur() }
+  shapeLine.onchange = () => { if (shapeLine.value !== MIXED) setShapes({ line: shapeLine.value }) }
+  shapeWidth.onchange = () => { if (shapeWidth.value !== MIXED) setShapes({ lineWidth: Number(shapeWidth.value) }) }
+  shapeStyle.onchange = () => { if (shapeStyle.value !== MIXED) setShapes({ lineStyle: shapeStyle.value }) }
+  shapeHatch.onchange = () => setShapes({}, { hatch: shapeHatch.checked })
+  // 도면 요소 칸 「도형 ▾」 — 펼친 갤러리의 칸을 누르면 보이는 화면 가운데에, 끌면 놓은 자리에 그 프리셋을 넣는다(크기는 프리셋마다).
+  // 키보드(Enter·Space 의 click)로도 넣는다.
+  shapeToggle.onclick = () => {
+    const open = shapePalette.hidden
+    shapePalette.hidden = !open
+    shapeToggle.setAttribute('aria-expanded', String(open))
+  }
+  shapePalette.replaceChildren(...shapeCells((button, key) => {
+    const [w, h] = SHAPE_PRESETS[key].size
+    button.title = `${SHAPE_PRESETS[key].name} — 눌러서 넣거나 도면으로 끌어 놓기`
+    button.onpointerdown = (event) => ghostDrag(event, `도형 · ${SHAPE_PRESETS[key].name}`, (p, free) => addMark('shape', p, free, key), () => addMark('shape', null, false, key), () => ({ w, h }))
+    button.onclick = (event) => { if (event.detail === 0) addMark('shape', null, false, key) }
+  }))
   blockLink.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block' && blockLink.value) setMarkProps(mark, { link: blockLink.value }) }
   blockColor.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block') setMarkProps(mark, { color: blockColor.value }) }
   blockOpen.onclick = () => openFloor(selectedMark(), true)
@@ -4539,28 +6385,392 @@ export default function (component) {
     })
   }
 
-  // ---------------------------------------------------------------- 트레이 서랍(편집)
-  const drawerClose = q('.sle-drawer-close')
-  drawerTab.onclick = () => {
-    setDrawer(true)
-    drawerClose.focus({ preventScroll: true })
+  // ---------------------------------------------------------------- 두 옆 칸 — 폭·접힘·기억(브라우저 안에서만)
+  // 칸 폭·접힘은 파이썬으로 보내지 않고 epoch 에 넣지 않는다(무대 높이 `capa.space.viewerHeight.<범위>` 와 같은 꼴 — AGENTS 9장
+  // 「브라우저 전용 보기 상태」). 저장소가 막힌 브라우저에서는 이 마운트 안에서만 기억한다(S.panels).
+  const panelSpec = (side) => (side === 'left' && VIEW ? PANEL_SPECS.view : PANEL_SPECS.edit)
+  const sideEl = (side) => (side === 'left' ? leftSide : drawer)
+  const splitEl = (side) => (side === 'left' ? leftSplit : rightSplit)
+  const hasSide = (side) => (side === 'left' ? HAS_LEFT : HAS_RIGHT)
+  const isNarrow = () => host.classList.contains('is-narrow')
+  function readPanelStore() {
+    try {
+      return storedPanels(window.localStorage.getItem(PANELS_STORE_KEY))
+    } catch {
+      return null
+    }
   }
-  drawerClose.onclick = () => {
-    setDrawer(false)
-    drawerTab.focus({ preventScroll: true })
+  function panelState(side) {
+    if (!S.panels) S.panels = {}
+    if (!S.panels[PANEL_MODE]) {
+      const all = readPanelStore()
+      S.panels[PANEL_MODE] = { ...((all && all[PANEL_MODE]) || {}) }
+    }
+    const mode = S.panels[PANEL_MODE]
+    if (!mode[side]) mode[side] = { w: null, min: false }
+    return mode[side]
   }
-  drawer.onkeydown = (event) => {
-    if (event.key !== 'Escape' || !S.drawerOpen || S.drag) return
-    event.preventDefault()
-    event.stopPropagation()
-    setDrawer(false)
-    drawerTab.focus({ preventScroll: true })
+  function storePanel(side) {
+    const state = panelState(side)
+    const all = readPanelStore()
+    if (!all) return
+    all[PANEL_MODE] = { ...(all[PANEL_MODE] || {}), [side]: { w: state.w, min: state.min } }
+    try {
+      window.localStorage.setItem(PANELS_STORE_KEY, JSON.stringify(all))
+    } catch {
+      // 기억하지 못해도 이 마운트는 S.panels 로 그대로 쓴다.
+    }
   }
+  // 칸이 펼쳐져 있는가 — 넓은 화면은 기억한 접힘, 좁은 화면 겹침 서랍은 지금 열린 하나.
+  function panelOpen(side) {
+    if (!hasSide(side)) return false
+    return isNarrow() ? S.narrowOpen === side : !panelState(side).min
+  }
+  function setPanelOpen(side, open) {
+    if (!hasSide(side)) return
+    if (isNarrow()) {
+      if (open) S.narrowOpen = side
+      else if (S.narrowOpen === side) S.narrowOpen = null
+    } else {
+      panelState(side).min = !open
+      storePanel(side)
+    }
+    layoutPanels()
+    // 좁은 화면 서랍을 접으면 서랍 몫(`trayReserve`)으로 옮긴 화면을 제자리로.
+    if (!open) applyView({ reposition: false })
+  }
+  // 칸 폭을 정해 몸의 가로 칸(grid)에 건다. 넓은 화면은 칸마다 기억 폭(없으면 기본, 접혔으면 28px 띠)을 한계 안으로 맞추고
+  // 무대가 STAGE_MIN_PX 아래로 가면 마지막에 끈 칸부터 줄인다. 좁은 화면은 두 칸이 무대 위 겹침 서랍이라 칸 폭은 0 이고
+  // 서랍 폭(`--side-panel-w`)만 준다. 무대 폭이 바뀌면 무대 관찰자(S.ro)가 viewBox 를 다시 맞춘다.
+  function layoutPanels() {
+    const width = host.clientWidth || 0
+    leftSide.hidden = !HAS_LEFT
+    leftSplit.hidden = !HAS_LEFT
+    if (!width) return
+    const narrow = width < NARROW_PX
+    if (!narrow) S.narrowOpen = null
+    host.classList.toggle('is-narrow', narrow)
+    const info = {}
+    for (const side of ['left', 'right']) {
+      if (!hasSide(side)) continue
+      const bounds = panelBounds(width, panelSpec(side))
+      const open = panelOpen(side)
+      sideEl(side).classList.toggle('is-min', !open)
+      info[side] = { bounds, open, w: open ? clampPanel(panelState(side).w, bounds) : PANEL_STRIP_PX }
+    }
+    if (narrow) {
+      bodyBox.style.gridTemplateColumns = '0px 0px minmax(0, 1fr) 0px 0px'
+      for (const side of Object.keys(info)) {
+        const w = Math.max(160, Math.min(info[side].w, width - 48))
+        sideEl(side).style.setProperty('--side-panel-w', `${Math.round(w)}px`)
+      }
+      S.panelWidths = { left: 0, right: 0 }
+    } else {
+      const part = (side) => (info[side]
+        ? { w: info[side].w, lo: info[side].open ? info[side].bounds.lo : info[side].w, open: info[side].open }
+        : { w: 0, lo: 0, open: false })
+      const left = part('left')
+      const right = part('right')
+      const fitted = fitPanels(width, left, right, S.panelLast, STAGE_MIN_PX, PANEL_SPLIT_PX)
+      const splitL = left.open ? PANEL_SPLIT_PX : 0
+      const splitR = right.open ? PANEL_SPLIT_PX : 0
+      bodyBox.style.gridTemplateColumns = `${fitted.left}px ${splitL}px minmax(0, 1fr) ${splitR}px ${fitted.right}px`
+      for (const side of Object.keys(info)) sideEl(side).style.removeProperty('--side-panel-w')
+      S.panelWidths = { left: fitted.left, right: fitted.right }
+    }
+    for (const side of ['left', 'right']) {
+      const split = splitEl(side)
+      const on = Boolean(info[side] && info[side].open && !narrow)
+      split.classList.toggle('is-off', !on)
+      split.tabIndex = on ? 0 : -1
+      if (!info[side]) continue
+      split.setAttribute('aria-valuemin', String(Math.round(info[side].bounds.lo)))
+      split.setAttribute('aria-valuemax', String(Math.round(info[side].bounds.hi)))
+      split.setAttribute('aria-valuenow', String(Math.round(S.panelWidths[side] || info[side].w)))
+      sideEl(side).querySelector('.sle-side-strip').setAttribute('aria-expanded', String(info[side].open))
+    }
+    // 오른쪽 미배치 칸이 펼쳐져 있는가(`S.drawerOpen` — 서랍 몫·초점 되돌림·화면 확인이 본다).
+    S.drawerOpen = panelOpen('right')
+    trayBox.hidden = !S.drawerOpen
+  }
+  // 칸 폭을 바꾼다 — 한계 안, 무대 STAGE_MIN_PX 를 남기는 만큼까지. 끄는 동안은 S 에만, 놓을 때(`store`) 기억한다.
+  function resizePanel(side, px, store) {
+    const width = host.clientWidth || 0
+    const bounds = panelBounds(width, panelSpec(side))
+    const other = side === 'left' ? 'right' : 'left'
+    const otherW = hasSide(other) ? (S.panelWidths && S.panelWidths[other]) || 0 : 0
+    const splits = (panelOpen('left') ? PANEL_SPLIT_PX : 0) + (panelOpen('right') ? PANEL_SPLIT_PX : 0)
+    const limit = dragLimit(width, otherW, splits, STAGE_MIN_PX, bounds.lo)
+    panelState(side).w = Math.min(clampPanel(px, bounds), limit)
+    S.panelLast = side
+    layoutPanels()
+    if (store) storePanel(side)
+  }
+  // 칸막이 — 끌기(포인터 캡처), 두 번 누르기 = 기본 폭, 키 ←/→(Shift 크게)·Home 최대·End 최소·Enter 접기. 키는 도면
+  // 단축키(호기 옮기기)로 새지 않게 여기서 멈춘다. 설비 마스터 오른쪽 칸 칸막이와 같은 꼴이다.
+  function bindSplit(side) {
+    const split = splitEl(side)
+    if (!split) return
+    split.onpointerdown = (event) => {
+      if (event.button !== 0 || isNarrow() || !panelOpen(side)) return
+      event.preventDefault()
+      split.setPointerCapture(event.pointerId)
+      S.splitDrag = { side, pointerId: event.pointerId, startX: event.clientX, startW: sideEl(side).getBoundingClientRect().width, moved: false }
+    }
+    split.onpointermove = (event) => {
+      const drag = S.splitDrag
+      if (!drag || drag.side !== side || event.pointerId !== drag.pointerId) return
+      const dx = event.clientX - drag.startX
+      if (!drag.moved && Math.abs(dx) < DRAG_THRESHOLD_PX) return
+      drag.moved = true
+      split.classList.add('is-dragging')
+      resizePanel(side, side === 'left' ? drag.startW + dx : drag.startW - dx, false)
+    }
+    split.onpointerup = split.onpointercancel = (event) => {
+      const drag = S.splitDrag
+      if (!drag || drag.side !== side || (event && event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return
+      S.splitDrag = null
+      split.classList.remove('is-dragging')
+      if (drag.moved) storePanel(side)
+    }
+    split.onlostpointercapture = (event) => { if (S.splitDrag && S.splitDrag.side === side) split.onpointerup(event) }
+    split.ondblclick = (event) => {
+      event.preventDefault()
+      panelState(side).w = null
+      S.panelLast = side
+      storePanel(side)
+      layoutPanels()
+    }
+    split.onkeydown = (event) => {
+      const bounds = panelBounds(host.clientWidth || 0, panelSpec(side))
+      const now = (S.panelWidths && S.panelWidths[side]) || sideEl(side).getBoundingClientRect().width
+      const action = splitKey(event.key, event.shiftKey, side, now, bounds)
+      if (!action) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (action.fold) {
+        setPanelOpen(side, false)
+        sideEl(side).querySelector('.sle-side-strip').focus({ preventScroll: true })
+        return
+      }
+      resizePanel(side, action.width, true)
+    }
+  }
+
+  // ---------------------------------------------------------------- 왼쪽 칸 묶음 접힘(브라우저 안에서만)
+  // 묶음(범례·도면 요소·선택·서식·격자·편집 영역·도움말)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
+  // 도움말 둘만 접힘. 층 보기(범례 하나)는 묶음 머리가 없어 늘 펼침이다.
+  function sectionFolded(name, fallback) {
+    if (!S.sections) {
+      try {
+        const value = JSON.parse(window.localStorage.getItem(SECTIONS_STORE_KEY) || 'null')
+        S.sections = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+      } catch {
+        S.sections = {}
+      }
+    }
+    return typeof S.sections[name] === 'boolean' ? S.sections[name] : fallback
+  }
+  function storeSection(name, folded) {
+    sectionFolded(name, folded)
+    S.sections[name] = Boolean(folded)
+    try {
+      window.localStorage.setItem(SECTIONS_STORE_KEY, JSON.stringify(S.sections))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  function applySections() {
+    for (const section of host.querySelectorAll('.sle-sec')) {
+      const name = section.dataset.sec
+      const head = section.querySelector('.sle-sec-head')
+      const folded = !VIEW && sectionFolded(name, name === 'help')
+      section.classList.toggle('is-folded', folded)
+      head.setAttribute('aria-expanded', String(!folded))
+      head.onclick = () => {
+        const next = !section.classList.contains('is-folded')
+        storeSection(name, next)
+        section.classList.toggle('is-folded', next)
+        head.setAttribute('aria-expanded', String(!next))
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- 범례·도움말(왼쪽 칸)
+  // 범례 칸은 파이썬이 보낸 꼴(`data.legend` — 견본 꼴 `css`·안 글자 `inner`·글 `label`, 끝 줄 `asOf`)이다. 견본 꼴은
+  // `style.cssText`, 글은 `textContent` 로만 단다(HTML 로 읽지 않는다). epoch 밖이라 기준일·체크가 바뀐 회차마다 온다 — 같은
+  // 값이면 다시 쓰지 않는다. 범례가 없으면(FAB) 묶음째 숨긴다.
+  function drawLegend() {
+    const legend = data.legend && Array.isArray(data.legend.entries) ? data.legend : null
+    legendSection.hidden = !legend
+    const key = legend ? JSON.stringify(legend) : ''
+    if (S.legendKey === key) return
+    S.legendKey = key
+    if (!legend) { legendBox.replaceChildren(); return }
+    const nodes = legend.entries.map((entry) => {
+      const row = document.createElement('div')
+      row.className = 'sle-legend-item'
+      const swatch = document.createElement('span')
+      swatch.setAttribute('aria-hidden', 'true')
+      swatch.style.cssText = String(entry.css || '')
+      swatch.textContent = String(entry.inner || '')
+      const text = document.createElement('span')
+      text.textContent = String(entry.label || '')
+      row.append(swatch, text)
+      return row
+    })
+    if (legend.asOf) {
+      const day = document.createElement('div')
+      day.className = 'sle-legend-asof'
+      day.textContent = String(legend.asOf)
+      nodes.push(day)
+    }
+    legendBox.replaceChildren(...nodes)
+  }
+  // 도움말 — 편집 안내 문단(`GUIDE`)과 단축키 목록(`HINT`). 마운트마다 한 번 쓴다.
+  function buildHelp() {
+    if (VIEW || helpBox.childElementCount) return
+    const lead = document.createElement('p')
+    lead.textContent = GUIDE
+    const list = document.createElement('ul')
+    list.className = 'sle-help-keys'
+    for (const part of HINT.split(' · ')) {
+      const li = document.createElement('li')
+      li.textContent = part
+      list.append(li)
+    }
+    helpBox.replaceChildren(lead, list)
+  }
+
+  // ---------------------------------------------------------------- 스크롤 고정(도구 줄 「고정」)
+  // 켜면 본문 스크롤 칸을 굴려 편집기 맨 위를 가림 끝(화면 탭 줄 아래) + 8px 에 맞추고, `<html data-space-lock="1">` 을 달아
+  // 페이지 서식(파이썬 `space_lock_style`)이 본문 스크롤을 막게 한다 — 다른 화면으로 가면 그 서식이 사라져 정리 함수가 돌지
+  // 않아도 풀린다. 무대는 창 높이에 맞춘다(고른 높이·기억은 그대로). 고정은 이 마운트에만 둔다 — 다시 마운트되면(층·FAB 바꾸기,
+  // 배치 편집 켜고 끄기) 풀린 채다. Streamlit DOM 에 기대는 곳(1.63 — 판올림에서 다시 본다): 본문 스크롤 칸
+  // `section[data-testid="stMain"]`, 화면 탭 줄 `.st-key-page_tabs_strip`(sticky), 본문 내용 상자
+  // `[data-testid="stMainBlockContainer"]`, 컴포넌트가 같은 문서라 `document` 를 본다.
+  const docEl = document.documentElement
+  if (!S.lockReady) {
+    S.lockReady = true
+    if (!S.lock) docEl.removeAttribute(LOCK_ATTR)
+  }
+  const mainScroller = () => document.querySelector('[data-testid="stMain"]')
+  // 가림 끝(창 위에서 px) — 화면 탭 줄이 sticky 면 붙었을 때의 아래 끝(본문 칸 위 + 붙는 top + 높이), 아니면 지금 아래 끝.
+  function coverBottom() {
+    const strip = document.querySelector('.st-key-page_tabs_strip')
+    if (!strip) return 0
+    const rect = strip.getBoundingClientRect()
+    const style = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(strip) : null
+    const stuck = style && style.position === 'sticky' ? parseFloat(style.top) : NaN
+    if (!Number.isFinite(stuck)) return rect.bottom
+    const main = mainScroller()
+    return (main ? main.getBoundingClientRect().top : 0) + stuck + rect.height
+  }
+  function lockNote() {
+    return S.lock && data.pendingSave ? '저장 안 한 배치가 있습니다 — 고정을 풀고 위 상자에서 저장하세요' : ''
+  }
+  function showLockNote() {
+    if (VIEW) setText(statusBox, lockNote())
+    else updateStatus()
+  }
+  function alignLock() {
+    if (!S.lock) return
+    const main = mainScroller()
+    const top = lockTop(coverBottom())
+    const offset = stage.getBoundingClientRect().top - host.getBoundingClientRect().top
+    S.lockH = lockHeight(window.innerHeight, top + offset, statusBox.getBoundingClientRect().height, MIN_DRAG_H)
+    setStageHeight(S.lockH)
+    if (main) {
+      const delta = host.getBoundingClientRect().top - top
+      if (Math.abs(delta) >= 1) main.scrollTop += delta
+    }
+    if (measurePort()) applyView()
+  }
+  // 고정 중 위 칸(저장 안 한 배치 상자 등)이 서거나 사라져 편집기가 밀리면 다시 맞춘다 — 본문 내용 상자의 크기 관찰.
+  function watchMain(on) {
+    if (S.mainRo) S.mainRo.disconnect()
+    S.mainRo = null
+    if (!on || typeof ResizeObserver !== 'function') return
+    const box = document.querySelector('[data-testid="stMainBlockContainer"]')
+    if (!box) return
+    S.mainRo = new ResizeObserver(() => {
+      if (S.lockFrame) return
+      S.lockFrame = requestAnimationFrame(() => {
+        S.lockFrame = 0
+        if (S.lock && S.relock) S.relock()
+      })
+    })
+    S.mainRo.observe(box)
+  }
+  function setLock(on) {
+    S.lock = Boolean(on)
+    host.classList.toggle('is-locked', S.lock)
+    lockButton.setAttribute('aria-pressed', String(S.lock))
+    if (S.lock) {
+      docEl.setAttribute(LOCK_ATTR, '1')
+      alignLock()
+    } else {
+      docEl.removeAttribute(LOCK_ATTR)
+      S.lockH = null
+      if (fitStage()) applyView()
+    }
+    watchMain(S.lock)
+    showLockNote()
+  }
+
+  // ---------------------------------------------------------------- 두 옆 칸(왼쪽 도구 · 오른쪽 미배치)
+  // 접힌 띠를 누르면 펴고 칸 머리 끝 단추로 접는다. 초점은 짝 단추로 옮긴다. 좁은 화면 겹침 서랍은 Esc 로도 접는다(넓은 화면의
+  // 고정 칸은 Esc 가 검색어·선택 풀기다).
+  for (const [side, box] of [['left', leftSide], ['right', drawer]]) {
+    if (!box) continue
+    const strip = box.querySelector('.sle-side-strip')
+    const fold = box.querySelector('.sle-side-fold')
+    strip.onclick = () => {
+      setPanelOpen(side, true)
+      fold.focus({ preventScroll: true })
+    }
+    fold.onclick = () => {
+      setPanelOpen(side, false)
+      strip.focus({ preventScroll: true })
+    }
+    box.onkeydown = (event) => {
+      if (event.key !== 'Escape' || !isNarrow() || !panelOpen(side) || S.drag) return
+      event.preventDefault()
+      event.stopPropagation()
+      setPanelOpen(side, false)
+      strip.focus({ preventScroll: true })
+    }
+  }
+  bindSplit('left')
+  bindSplit('right')
+  // 미배치 칸 도움말(「i」) — 칩 목록 자리를 먹지 않게 처음엔 접힘, 펴고 접은 것은 기억한다(묶음 접힘과 같은 칸).
+  const trayHintOpen = sectionFolded('trayHint', true) === false
+  trayHint.hidden = !trayHintOpen
+  trayInfo.setAttribute('aria-expanded', String(trayHintOpen))
+  trayInfo.onclick = () => {
+    const open = trayHint.hidden
+    trayHint.hidden = !open
+    trayInfo.setAttribute('aria-expanded', String(open))
+    storeSection('trayHint', !open)
+  }
+  applySections()
+  drawLegend()
+  buildHelp()
+  // 왼쪽 칸 이름 — 층 보기는 범례 하나라 「범례」, 편집은 「도구」.
+  const leftName = VIEW ? '범례' : '도구'
+  setText(q('.sle-side.is-left .sle-side-title'), leftName)
+  setText(q('.sle-side.is-left .sle-side-strip-text'), leftName)
+  setAttr(leftSide, 'aria-label', VIEW ? '범례 칸' : '도구 칸')
+  setAttr(leftSplit, 'aria-label', VIEW ? '왼쪽 범례 칸 폭' : '왼쪽 도구 칸 폭')
+  lockButton.onclick = () => setLock(!S.lock)
+  host.classList.toggle('is-locked', S.lock)
+  lockButton.setAttribute('aria-pressed', String(Boolean(S.lock)))
+  S.relock = alignLock
   traySearch.value = S.trayQuery || ''
   traySearch.oninput = () => {
     S.trayQuery = traySearch.value
     applyTrayFilter()
-    trayBox.scrollTop = 0
+    trayScroll.scrollTop = 0
   }
   // 검색어가 있으면 Esc 는 서랍을 접기 전에 검색어부터 지운다.
   traySearch.onkeydown = (event) => {
@@ -4571,12 +6781,645 @@ export default function (component) {
     S.trayQuery = ''
     applyTrayFilter()
   }
-  setDrawer(S.drawerOpen)
+  layoutPanels()
+
+  // ---------------------------------------------------------------- 「호기 정보」 창(층 보기·편집 — 브라우저 안에서만)
+  // 도면 위에 겹친 창(`.sle-sheet` — 편집기 몸 안에 묶임)이다. 「고른 호기」 는 도면에서 고른 호기의 칸(21칸 —
+  // 모듈이면 같은 Main 설비 줄 전부, 편집에서 여럿 고르면 여러 줄), 「필터」 는 칸 머리 ▾ 로 거른(엑셀 자동 필터 꼴 — 칸 안 OR,
+  // 칸끼리 AND, 날짜·숫자 칸은 범위도) 호기 목록이다. 필터가 걸린 동안 맞는 호기에 테(`is-filter-hit`)를 두르고 나머지를
+  // 흐린다(`is-filter-out` — 필요 단축 흐림과 곱해진다). 편집에서는 오른쪽 미배치 칸 칩도 테를 두르고 칸 머리에 맞는 수를 단다.
+  // 창을 닫으면 강조를 끄고 필터는 남긴다(다시 열면 돌아온다), 접으면 강조는 남는다. 목록 줄을 누르면 그 호기를 고르고 화면을
+  // 그리로 옮긴다(보기는 필요 단축 칸으로도 알린다 — `notePick`). 읽기만이라 편집 권한과 상관없이 같다.
+  function sheetLoad() {
+    if (!S.sheetState) {
+      let raw = null
+      try {
+        raw = window.sessionStorage.getItem(SHEET_STATE_KEY)
+      } catch {
+        raw = null
+      }
+      S.sheetState = storedSheetState(raw)
+    }
+    if (!S.sheetWin) {
+      let raw = null
+      try {
+        raw = window.localStorage.getItem(SHEET_WIN_KEY)
+      } catch {
+        raw = null
+      }
+      S.sheetWin = storedSheetWin(raw)
+    }
+  }
+  function sheetSaveState() {
+    try {
+      window.sessionStorage.setItem(SHEET_STATE_KEY, JSON.stringify(S.sheetState))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  function sheetSaveWin() {
+    try {
+      window.localStorage.setItem(SHEET_WIN_KEY, JSON.stringify(S.sheetWin))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  // data `sheet` 를 받는다 — 같은 값이면 그대로(회차마다 오지만 기준일·필터·편집본이 바뀐 회차에만 다르다).
+  function adoptSheet() {
+    const key = SHEET ? JSON.stringify(SHEET) : ''
+    if (S.sheetDataKey === key) return
+    S.sheetDataKey = key
+    S.sheetView = ''
+    S.sheetChipKey = ''
+    S.sheet = SHEET
+      ? {
+          columns: SHEET.columns,
+          rows: SHEET.rows,
+          cut: Number(SHEET.cut) || 0,
+          placeIdx: SHEET.columns.findIndex((column) => column.name === SHEET_PLACE),
+        }
+      : null
+  }
+  // 창의 줄 — 배치 편집에서는 「도면」 칸을 브라우저가 쥔 편집으로 덮어 쓴다(트레이로 뺀 호기는 미배치, 다른 층으로 보낸 호기는
+  // 「→ 그 층」). 보기는 받은 그대로다.
+  function sheetRows() {
+    const sheet = S.sheet
+    if (!sheet) return []
+    if (VIEW || sheet.placeIdx < 0) return sheet.rows
+    return sheet.rows.map((row) => {
+      const item = S.items.get(row.id)
+      if (!item || !isUnit(item)) return row
+      const place = item.moveTo ? `→ ${item.moveTo}` : onCanvas(item) ? '배치' : '미배치'
+      if (row.cells[sheet.placeIdx] === place) return row
+      const cells = row.cells.slice()
+      cells[sheet.placeIdx] = place
+      return { ...row, cells }
+    })
+  }
+  // 고른 호기 id(고른 차례) — 보기는 하나, 편집은 여럿(모듈 묶음은 묶음에 하나 — 줄은 형제까지 `pickedRows` 가 붙인다).
+  function pickedUnitIds() {
+    const ids = [...S.selection].filter((id) => isUnit(S.items.get(id) || {}))
+    if (S.selected && ids.includes(S.selected)) return [S.selected, ...ids.filter((id) => id !== S.selected)]
+    return ids
+  }
+  // 도면 강조 — 창이 열려 있고(접힘 포함) 「도면에서 강조」 가 켜졌고 필터가 걸렸을 때 맞는 호기 id 묶음, 아니면 null.
+  function currentHits() {
+    const state = S.sheetState
+    if (!S.sheet || !state || !state.open || !state.hl) return null
+    return sheetHits(sheetRows(), S.sheet.columns, state.filters)
+  }
+  function paintFilter(group, id) {
+    const item = S.items.get(id)
+    if (!group || !item || !isUnit(item)) return
+    const hits = S.filterHits
+    const state = !hits ? '' : hits.has(id) ? 'hit' : 'out'
+    if (group.__filter === state) return
+    group.__filter = state
+    group.classList.toggle('is-filter-hit', state === 'hit')
+    group.classList.toggle('is-filter-out', state === 'out')
+  }
+  function paintChipFilter(chip) {
+    const hits = S.filterHits
+    const hit = Boolean(hits && chip.__ids && chip.__ids.some((id) => hits.has(id)))
+    chip.classList.toggle('is-filter-hit', hit)
+  }
+  function refreshHits() {
+    S.filterHits = currentHits()
+    for (const [id, group] of S.groups) paintFilter(group, id)
+    let inTray = 0
+    for (const chip of trayList.children) {
+      paintChipFilter(chip)
+      if (chip.classList.contains('is-filter-hit')) inTray += chip.__ids.filter((id) => S.filterHits.has(id)).length
+    }
+    trayHits.hidden = !S.filterHits
+    setText(trayHits, S.filterHits ? `· 필터 맞음 ${inTray}` : '')
+  }
+  // 창 처음 자리·크기 — 무대 왼쪽 아래, 720×320(무대·몸이 작으면 줄인다).
+  function sheetDefault() {
+    const bodyH = bodyBox.clientHeight || 0
+    const w = Math.min(SHEET_DEF_W, Math.max(SHEET_MIN_W, (stage.clientWidth || 0) - 16))
+    const h = Math.min(SHEET_DEF_H, Math.max(SHEET_MIN_H, bodyH - 16))
+    return { x: (stage.offsetLeft || 0) + 8, y: bodyH - h - 8, w, h }
+  }
+  function layoutSheet() {
+    if (!sheetBox || sheetBox.hidden) return
+    const head = sheetHead.offsetHeight || SHEET_HEAD_PX
+    const geom = clampSheet(S.sheetWin, sheetDefault(), bodyBox.clientWidth || 0, bodyBox.clientHeight || 0, SHEET_MIN_W, SHEET_MIN_H, head)
+    S.sheetGeom = geom
+    sheetBox.classList.toggle('is-min', Boolean(S.sheetWin.min))
+    sheetMin.setAttribute('aria-expanded', String(!S.sheetWin.min))
+    sheetMin.setAttribute('aria-label', S.sheetWin.min ? '호기 정보 창 펴기' : '호기 정보 창 접기')
+    sheetMin.textContent = S.sheetWin.min ? '□' : '–'
+    sheetBox.style.left = `${geom.x}px`
+    sheetBox.style.top = `${geom.y}px`
+    sheetBox.style.width = `${geom.w}px`
+    sheetBox.style.height = S.sheetWin.min ? '' : `${geom.h}px`
+    if (S.sheetMenu) placeMenu()
+  }
+  function setSheetNote(text) {
+    setText(sheetNote, text || '')
+  }
+  // 창을 그린다. 같은 그림(탭·줄·필터·칸 값)이면 표를 다시 만들지 않고 고른 줄 표시만 고친다. 끄는 동안은 쉰다(놓으면
+  // 상태 줄과 함께 다시 부른다).
+  function renderSheet() {
+    if (!sheetBox) return
+    sheetLoad()
+    const state = S.sheetState
+    const open = Boolean(S.sheet && state.open)
+    sheetToggle.hidden = !S.sheet
+    sheetToggle.setAttribute('aria-pressed', String(open))
+    if (sheetBox.hidden === open) {
+      sheetBox.hidden = !open
+      if (open) layoutSheet()
+    }
+    if (!open) {
+      closeMenu()
+      refreshHits()
+      return
+    }
+    if (S.drag) return
+    const rows = sheetRows()
+    const columns = S.sheet.columns
+    const ids = pickedUnitIds()
+    const picked = VIEW ? pickedRows(rows, ids[0]) : pickedRowsMany(rows, ids)
+    const active = sheetActive(columns, state.filters)
+    const matched = active.length ? sheetMatch(rows, columns, state.filters) : rows
+    const filterTab = state.tab === 'filter'
+    sheetBox.dataset.tab = state.tab
+    for (const tab of sheetTabs) {
+      const on = tab.dataset.tab === state.tab
+      tab.setAttribute('aria-selected', String(on))
+      tab.tabIndex = on ? 0 : -1
+      const n = tab.dataset.tab === 'filter' ? (active.length ? matched.length : '') : picked.length || ''
+      setText(tab.querySelector('.sle-sheet-tab-n'), String(n))
+    }
+    // 위 줄 — 필터: 걸린 칸 칩(누르면 그 칸 필터를 지움)·모두 지우기·강조 체크·맞는 수, 고른 호기: 고른 수.
+    const shown = filterTab ? matched : picked
+    if (filterTab) {
+      const counts = S.sheet.placeIdx >= 0 ? countBy(matched, S.sheet.placeIdx) : new Map()
+      const parts = [`${active.length ? '맞음' : '전체'} ${matched.length}줄`]
+      for (const [place, n] of counts) parts.push(`${place || '자리 모름'} ${n}`)
+      setText(sheetCount, parts.join(' · '))
+    } else setText(sheetCount, picked.length ? `고른 호기 ${ids.length}개 · ${picked.length}줄` : '')
+    const chipKey = JSON.stringify(active.map((name) => [name, state.filters[name]]))
+    if (S.sheetChipKey !== chipKey) {
+      S.sheetChipKey = chipKey
+      sheetChips.replaceChildren(...active.map((name) => {
+        const rule = state.filters[name]
+        const chip = document.createElement('button')
+        chip.type = 'button'
+        chip.className = 'sle-sheet-chip'
+        chip.dataset.col = name
+        // 값은 열쇠(소문자)가 아니라 이 층에서 처음 만난 꼴로 보인다(이 층에 없는 값은 열쇠 그대로).
+        const index = columns.findIndex((column) => column.name === name)
+        const shownAs = new Map(index >= 0 ? distinctValues(rows, index, columns[index].type).map((value) => [value.key, value.text]) : [])
+        const words = []
+        if (Array.isArray(rule.values)) words.push(rule.values.length ? rule.values.map((key) => shownAs.get(key) || (key === '' ? '(빈칸)' : key)).join(', ') : '없음')
+        if (sheetRangeOn(rule)) words.push(`${rule.from || ''}~${rule.to || ''}`)
+        chip.textContent = `${name}: ${words.join(' · ')} ×`
+        chip.title = `${name} 필터 지우기`
+        return chip
+      }))
+    }
+    sheetClear.disabled = !active.length
+    sheetHl.checked = Boolean(state.hl)
+    // 표 — 같은 그림이면 고른 줄 표시만 고친다(받은 표가 바뀌면 `adoptSheet` 가 그림 열쇠를 지운다).
+    const placeSig = !VIEW && S.sheet.placeIdx >= 0 ? rows.map((row) => row.cells[S.sheet.placeIdx]).join('|') : ''
+    const viewKey = JSON.stringify([state.tab, filterTab ? state.filters : ids, placeSig])
+    if (S.sheetView !== viewKey) {
+      S.sheetView = viewKey
+      drawSheetTable(columns, shown, filterTab)
+      sheetEmpty.hidden = shown.length > 0
+      setText(sheetEmpty, filterTab
+        ? (rows.length ? '맞는 호기가 없습니다 — 칸 머리 ▾ 에서 필터를 바꾸세요.' : '이 층에 호기가 없습니다.')
+        : '도면에서 호기를 누르세요(편집에서는 Shift/Ctrl+클릭으로 여럿).')
+      sheetCut.hidden = !S.sheet.cut
+      setText(sheetCut, S.sheet.cut ? `${S.sheet.cut}줄 더 있습니다 — 아래 층 CSV 로 보세요.` : '')
+    }
+    const current = new Set(ids)
+    for (const tr of sheetBodyRows.children) tr.classList.toggle('is-current', current.has(tr.dataset.id))
+    if (S.sheetMenu) renderMenu()
+    refreshHits()
+  }
+  function drawSheetTable(columns, rows, menus) {
+    const filters = S.sheetState.filters
+    const head = document.createElement('tr')
+    for (const [index, column] of columns.entries()) {
+      const th = document.createElement('th')
+      th.scope = 'col'
+      const name = document.createElement('span')
+      name.textContent = column.name
+      th.append(name)
+      if (menus) {
+        const on = sheetRuleOn(filters[column.name])
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = on ? 'sle-sheet-funnel is-on' : 'sle-sheet-funnel'
+        button.dataset.col = String(index)
+        button.setAttribute('aria-haspopup', 'dialog')
+        button.setAttribute('aria-label', `${column.name} 필터${on ? ' — 걸림' : ''}`)
+        button.title = on ? `${column.name} 필터가 걸렸습니다 — 눌러서 바꾸기` : `${column.name} 필터`
+        button.textContent = on ? '▼' : '▾'
+        th.append(button)
+        if (on) th.classList.add('is-filtered')
+      }
+      head.append(th)
+    }
+    sheetHeadRow.replaceChildren(head)
+    const body = document.createDocumentFragment()
+    for (const row of rows) {
+      const tr = document.createElement('tr')
+      tr.dataset.id = row.id
+      tr.tabIndex = 0
+      for (const value of row.cells) {
+        const td = document.createElement('td')
+        const text = sheetText(value)
+        td.textContent = text
+        if (text.length > 18) td.title = text
+        if (typeof value === 'number') td.className = 'is-num'
+        tr.append(td)
+      }
+      body.append(tr)
+    }
+    sheetBodyRows.replaceChildren(body)
+  }
+  function openSheet(tab) {
+    sheetLoad()
+    if (!S.sheet) return
+    S.sheetState.open = true
+    if (tab) S.sheetState.tab = tab
+    if (S.sheetWin.min && tab) {
+      S.sheetWin.min = false
+      sheetSaveWin()
+    }
+    sheetSaveState()
+    S.sheetView = ''
+    renderSheet()
+    layoutSheet()
+  }
+  function closeSheet() {
+    sheetLoad()
+    S.sheetState.open = false
+    sheetSaveState()
+    setSheetNote('')
+    renderSheet()
+  }
+  // 도면 점 p(화면 좌표 {x, top})에 선 호기(겹치면 위에 그린 것) — 두 번 누르기가 호기 위였는가(포인터 캡처로 dblclick 의
+  // target 은 캔버스다). 보기에서 기준일에 숨은 호기는 건너뛴다.
+  function unitAt(p) {
+    if (!p) return null
+    const y = H() - p.top
+    let found = null
+    for (const item of S.items.values()) {
+      if (!isUnit(item) || !onCanvas(item)) continue
+      const group = S.groups.get(item.id)
+      if (VIEW && group && group.__visible === false) continue
+      if (p.x >= item.x && p.x <= item.x + item.w && y >= item.y && y <= item.y + item.h) found = item
+    }
+    return found
+  }
+  // 목록 줄 → 그 호기. 도면에 선 호기는 고르고 화면을 그리로(「고른 곳 보기」 와 같은 여백), 편집의 미배치 호기는 오른쪽 칸 그
+  // 칩으로, 그 밖은 창 아래 한 줄로 알린다.
+  function goToUnit(id) {
+    const item = S.items.get(id)
+    const row = S.sheet ? sheetRows().find((one) => one.id === id) : null
+    const place = row && S.sheet.placeIdx >= 0 ? sheetText(row.cells[S.sheet.placeIdx]) : ''
+    setSheetNote('')
+    if (item && isUnit(item) && onCanvas(item)) {
+      const group = S.groups.get(id)
+      if (VIEW && group && group.__visible === false) {
+        setSheetNote(`${id} — 이 기준일에는 도면에 보이지 않습니다(반입 전 겹침·도면 이탈)`)
+        return
+      }
+      select(id)
+      if (VIEW) notePick()
+      zoomToBox(bbox(VIEW ? [item] : expanded([item])))
+      // 창이 그 호기를 덮으면 창이 덮지 않은 띠로 화면을 민다(옮길 수 있는 만큼).
+      const rect = group && group.querySelector('.sle-rect').getBoundingClientRect()
+      const shift = rect && !S.sheetWin.min ? clearOfSheet(stage.getBoundingClientRect(), sheetBox.getBoundingClientRect(), rect) : null
+      if (shift) panBy(shift.dx * unitsPerPx(), shift.dy * unitsPerPx())
+      return
+    }
+    if (item && isUnit(item) && !VIEW && !item.moveTo) {
+      select(id)
+      setPanelOpen('right', true)
+      const chip = [...trayList.children].find((one) => one.__ids && one.__ids.includes(id))
+      if (chip) {
+        if (chip.hidden && traySearch.value) {
+          traySearch.value = ''
+          S.trayQuery = ''
+          applyTrayFilter()
+        }
+        const top = chip.offsetTop - trayScroll.offsetTop
+        if (top < trayScroll.scrollTop || top + chip.offsetHeight > trayScroll.scrollTop + trayScroll.clientHeight) {
+          trayScroll.scrollTop = Math.max(0, top - trayScroll.clientHeight / 3)
+        }
+        chip.classList.remove('is-flash')
+        void chip.offsetWidth
+        chip.classList.add('is-flash')
+      }
+      setSheetNote(`${id} — 오른쪽 미배치 칸에 있습니다`)
+      return
+    }
+    setSheetNote(`${id} — 도면에 없음(${place || '미배치'})`)
+  }
+  function setRule(name, rule) {
+    const kept = {}
+    if (Array.isArray(rule.values)) kept.values = rule.values
+    if (rangeEnd(rule.from)) kept.from = rangeEnd(rule.from)
+    if (rangeEnd(rule.to)) kept.to = rangeEnd(rule.to)
+    if (sheetRuleOn(kept)) S.sheetState.filters[name] = kept
+    else delete S.sheetState.filters[name]
+    sheetSaveState()
+    renderSheet()
+  }
+  // ---- 칸 필터 펼침(엑셀 자동 필터 꼴) — 값 목록 체크(개수·찾기), 날짜·숫자 칸은 「부터·까지」 범위. 값 목록은 다른 칸 필터만 지난
+  // 줄에서 센다. 모든 값을 고르면 그 칸 값 필터는 풀린다.
+  function menuColumn() {
+    return S.sheetMenu && S.sheet ? S.sheet.columns[S.sheetMenu.index] || null : null
+  }
+  function menuValues() {
+    const column = menuColumn()
+    if (!column) return []
+    const base = sheetMatch(sheetRows(), S.sheet.columns, S.sheetState.filters, column.name)
+    return distinctValues(base, S.sheetMenu.index, column.type)
+  }
+  function openMenu(index, anchor) {
+    S.sheetMenu = { index, anchor: Number(index), find: '' }
+    sheetMenuFind.value = ''
+    sheetMenu.hidden = false
+    renderMenu()
+    placeMenu()
+    sheetMenuFind.focus({ preventScroll: true })
+  }
+  function placeMenu() {
+    if (!S.sheetMenu || sheetMenu.hidden) return
+    const button = sheetHeadRow.querySelector(`.sle-sheet-funnel[data-col="${S.sheetMenu.index}"]`)
+    const box = sheetBox.getBoundingClientRect()
+    const at = button ? button.getBoundingClientRect() : box
+    const width = Math.min(260, Math.max(200, box.width - 12))
+    const left = Math.max(6, Math.min(box.width - width - 6, at.right - box.left - width))
+    const top = Math.max(6, at.bottom - box.top + 2)
+    sheetMenu.style.left = `${Math.round(left)}px`
+    sheetMenu.style.top = `${Math.round(top)}px`
+    sheetMenu.style.width = `${Math.round(width)}px`
+    sheetMenu.style.maxHeight = `${Math.max(120, Math.round(box.height - top - 6))}px`
+  }
+  function closeMenu(focusBack) {
+    if (!S.sheetMenu) return
+    const index = S.sheetMenu.index
+    S.sheetMenu = null
+    sheetMenu.hidden = true
+    if (focusBack) {
+      const button = sheetHeadRow.querySelector(`.sle-sheet-funnel[data-col="${index}"]`)
+      if (button) button.focus({ preventScroll: true })
+    }
+  }
+  function renderMenu() {
+    const column = menuColumn()
+    if (!column) { closeMenu(); return }
+    const rule = S.sheetState.filters[column.name] || {}
+    setText(sheetMenuName, column.name)
+    const chosen = Array.isArray(rule.values) ? new Set(rule.values) : null
+    const find = S.sheetMenu.find.trim().toLowerCase()
+    const nodes = []
+    for (const value of menuValues()) {
+      if (find && !value.text.toLowerCase().includes(find)) continue
+      const label = document.createElement('label')
+      label.className = 'sle-sheet-menu-item'
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.dataset.key = value.key
+      box.checked = !chosen || chosen.has(value.key)
+      const text = document.createElement('span')
+      text.textContent = value.text
+      const count = document.createElement('span')
+      count.className = 'sle-sheet-menu-n'
+      count.textContent = String(value.count)
+      label.append(box, text, count)
+      nodes.push(label)
+    }
+    if (!nodes.length) {
+      const none = document.createElement('p')
+      none.className = 'sle-sheet-empty'
+      none.textContent = '찾는 값이 없습니다.'
+      nodes.push(none)
+    }
+    const active = host.getRootNode().activeElement
+    const focusedKey = active && sheetMenuList.contains(active) ? active.dataset.key : undefined
+    sheetMenuList.replaceChildren(...nodes)
+    if (focusedKey !== undefined) {
+      const again = [...sheetMenuList.querySelectorAll('input')].find((box) => box.dataset.key === focusedKey)
+      if (again) again.focus({ preventScroll: true })
+    }
+    const ranged = column.type === 'date' || column.type === 'number'
+    sheetMenuRange.hidden = !ranged
+    if (ranged) {
+      const kind = column.type === 'date' ? 'date' : 'number'
+      for (const [input, end] of [[sheetMenuFrom, rule.from], [sheetMenuTo, rule.to]]) {
+        if (input.type !== kind) input.type = kind
+        if (!isFocused(input)) input.value = end || ''
+      }
+    }
+  }
+  // 고른 값 묶음 → 그 칸 규칙. 지금 목록 값을 모두 고르면 값 필터를 푼다.
+  function setMenuValues(keys) {
+    const column = menuColumn()
+    if (!column) return
+    const all = menuValues().map((value) => value.key)
+    const rule = { ...(S.sheetState.filters[column.name] || {}) }
+    const every = all.every((key) => keys.has(key))
+    if (every) delete rule.values
+    else rule.values = all.filter((key) => keys.has(key))
+    setRule(column.name, rule)
+  }
+  function menuChosen() {
+    const column = menuColumn()
+    const rule = column ? S.sheetState.filters[column.name] || {} : {}
+    return Array.isArray(rule.values) ? new Set(rule.values) : new Set(menuValues().map((value) => value.key))
+  }
+  function visibleMenuKeys() {
+    return [...sheetMenuList.querySelectorAll('input')].map((box) => box.dataset.key)
+  }
+  if (sheetBox) {
+    sheetToggle.onclick = () => (S.sheetState && S.sheetState.open ? closeSheet() : openSheet())
+    sheetClose.onclick = () => {
+      closeSheet()
+      sheetToggle.focus({ preventScroll: true })
+    }
+    sheetMin.onclick = () => {
+      sheetLoad()
+      S.sheetWin.min = !S.sheetWin.min
+      sheetSaveWin()
+      closeMenu()
+      layoutSheet()
+    }
+    for (const tab of sheetTabs) {
+      tab.onclick = () => {
+        sheetLoad()
+        S.sheetState.tab = tab.dataset.tab === 'filter' ? 'filter' : 'picked'
+        sheetSaveState()
+        closeMenu()
+        if (S.sheetWin.min) {
+          S.sheetWin.min = false
+          sheetSaveWin()
+          layoutSheet()
+        }
+        renderSheet()
+      }
+    }
+    sheetClear.onclick = () => {
+      S.sheetState.filters = {}
+      sheetSaveState()
+      closeMenu()
+      renderSheet()
+    }
+    sheetHl.onchange = () => {
+      S.sheetState.hl = sheetHl.checked
+      sheetSaveState()
+      renderSheet()
+    }
+    sheetChips.onclick = (event) => {
+      const chip = event.target.closest ? event.target.closest('.sle-sheet-chip') : null
+      if (!chip) return
+      closeMenu()
+      setRule(chip.dataset.col, {})
+    }
+    sheetHeadRow.onclick = (event) => {
+      const button = event.target.closest ? event.target.closest('.sle-sheet-funnel') : null
+      if (!button) return
+      const index = Number(button.dataset.col)
+      if (S.sheetMenu && S.sheetMenu.index === index) closeMenu()
+      else openMenu(index, button)
+    }
+    sheetBodyRows.onclick = (event) => {
+      const row = event.target.closest ? event.target.closest('tr[data-id]') : null
+      if (row) goToUnit(row.dataset.id)
+    }
+    sheetBodyRows.onkeydown = (event) => {
+      const row = event.target.closest ? event.target.closest('tr[data-id]') : null
+      if (!row) return
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        goToUnit(row.dataset.id)
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const next = event.key === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling
+        if (next) next.focus({ preventScroll: false })
+      }
+    }
+    sheetMenuFind.oninput = () => {
+      if (!S.sheetMenu) return
+      S.sheetMenu.find = sheetMenuFind.value
+      renderMenu()
+    }
+    sheetMenuList.onchange = (event) => {
+      const box = event.target
+      if (!box || box.type !== 'checkbox') return
+      const keys = menuChosen()
+      if (box.checked) keys.add(box.dataset.key)
+      else keys.delete(box.dataset.key)
+      setMenuValues(keys)
+    }
+    q('.sle-sheet-menu-every').onclick = () => {
+      const keys = menuChosen()
+      for (const key of visibleMenuKeys()) keys.add(key)
+      setMenuValues(keys)
+    }
+    q('.sle-sheet-menu-none').onclick = () => {
+      const keys = menuChosen()
+      for (const key of visibleMenuKeys()) keys.delete(key)
+      setMenuValues(keys)
+    }
+    for (const [input, end] of [[sheetMenuFrom, 'from'], [sheetMenuTo, 'to']]) {
+      input.onchange = () => {
+        const column = menuColumn()
+        if (!column) return
+        setRule(column.name, { ...(S.sheetState.filters[column.name] || {}), [end]: input.value })
+      }
+    }
+    q('.sle-sheet-menu-reset').onclick = () => {
+      const column = menuColumn()
+      if (!column) return
+      setRule(column.name, {})
+      sheetMenuFind.value = ''
+      if (S.sheetMenu) S.sheetMenu.find = ''
+      renderMenu()
+    }
+    q('.sle-sheet-menu-done').onclick = () => closeMenu(true)
+    // 창 안의 키는 도면 단축키(호기 옮기기·지우기·실행 취소 …)로 새지 않는다. Esc 는 펼침을 먼저, 그다음 창을 닫는다.
+    sheetBox.onkeydown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (S.sheetMenu) closeMenu(true)
+        else {
+          closeSheet()
+          sheetToggle.focus({ preventScroll: true })
+        }
+      }
+      event.stopPropagation()
+    }
+    // 펼침 밖을 누르면 펼침을 닫는다(창 안에서).
+    sheetBox.onpointerdown = (event) => {
+      if (S.sheetMenu && !sheetMenu.contains(event.target) && !(event.target.closest && event.target.closest('.sle-sheet-funnel'))) closeMenu()
+    }
+    // 창 옮기기(제목 줄 끌기)·크기 바꾸기(오른쪽 아래 손잡이) — 편집기 몸 안으로 묶고 놓을 때 기억한다.
+    const startSheetDrag = (kind) => (event) => {
+      if (event.button !== 0) return
+      if (kind === 'move' && event.target.closest && event.target.closest('button')) return
+      event.preventDefault()
+      const handle = kind === 'move' ? sheetHead : sheetGrip
+      handle.setPointerCapture(event.pointerId)
+      const geom = S.sheetGeom || sheetDefault()
+      S.sheetDrag = { kind, pointerId: event.pointerId, x: event.clientX, y: event.clientY, geom: { ...geom } }
+      sheetBox.classList.add(kind === 'move' ? 'is-moving' : 'is-sizing')
+    }
+    const moveSheetDrag = (event) => {
+      const drag = S.sheetDrag
+      if (!drag || event.pointerId !== drag.pointerId) return
+      const dx = event.clientX - drag.x
+      const dy = event.clientY - drag.y
+      if (drag.kind === 'move') {
+        S.sheetWin.x = drag.geom.x + dx
+        S.sheetWin.y = drag.geom.y + dy
+        S.sheetWin.w = drag.geom.w
+        S.sheetWin.h = drag.geom.h
+      } else {
+        S.sheetWin.x = drag.geom.x
+        S.sheetWin.y = drag.geom.y
+        S.sheetWin.w = Math.min(drag.geom.w + dx, (bodyBox.clientWidth || 0) - drag.geom.x)
+        S.sheetWin.h = Math.min(drag.geom.h + dy, (bodyBox.clientHeight || 0) - drag.geom.y)
+      }
+      layoutSheet()
+    }
+    const endSheetDrag = (event) => {
+      const drag = S.sheetDrag
+      if (!drag || (event && event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return
+      S.sheetDrag = null
+      sheetBox.classList.remove('is-moving', 'is-sizing')
+      if (S.sheetGeom) Object.assign(S.sheetWin, S.sheetGeom)
+      sheetSaveWin()
+    }
+    sheetHead.onpointerdown = startSheetDrag('move')
+    sheetGrip.onpointerdown = startSheetDrag('size')
+    for (const handle of [sheetHead, sheetGrip]) {
+      handle.onpointermove = moveSheetDrag
+      handle.onpointerup = handle.onpointercancel = endSheetDrag
+      handle.onlostpointercapture = endSheetDrag
+    }
+    // 제목 줄을 두 번 누르면 접기·펴기(엑셀 창처럼).
+    sheetHead.ondblclick = (event) => {
+      if (event.target.closest && event.target.closest('button')) return
+      sheetMin.onclick()
+    }
+  }
+  adoptSheet()
+  renderSheet()
 
   // ---------------------------------------------------------------- 기준일 줄(층 도면)·FAB 기준일
   // 층 상세 보기의 맨 위 줄은 페이더다(오늘 ±12개월, 하루 단위, 가운데 오늘). 끄는 동안 서버 회차는 없다 — 프레임마다
   // (requestAnimationFrame) 판정 부호가 바뀐 상자만 칠하고(`paintAsOf`), 손을 떼면(키는 멈춘 뒤) `setStateValue` 로
-  // 기준일을 **한 번** 보낸다. 그 회차에 파이썬이 세션 기준일을 바꿔 범례·요약·호기 표를 맞춘다. 배치 편집(층) 중에는
+  // 기준일을 **한 번** 보낸다. 그 회차에 파이썬이 세션 기준일을 바꿔 범례·요약·「호기 정보」 창을 맞춘다. 배치 편집(층) 중에는
   // 같은 자리·같은 높이에 「기준일 … · 편집 중 고정」 줄이 선다. FAB 전체에는 페이더 없이 도구 줄에 기준일·「오늘로」·
   // 미확인 대수가 선다.
   const faderInput = q('.sle-fader-input')
@@ -4798,6 +7641,8 @@ export default function (component) {
     fitFaderTicks()
   }
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
+  // 층 편집 도구 줄 칩 「YYYY-MM-DD 고정」(핀 아이콘 — 결정 D12, 풍선이 「기준일은 편집하는 동안 고정」 을 말한다).
+  if (!VIEW && !FAB) setText(pinChipDate, S.asOf || '—')
   if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault)
   if (VIEW && FAB) {
     // 좁은 도구 줄에서는 「기준일」 말머리를 접고 날짜도 말줄임으로 줄 수 있어(CSS) 풍선에 온 글을 둔다.
@@ -4819,16 +7664,21 @@ export default function (component) {
     setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
       + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 설비 마스터에서 고칩니다.')
   }
-  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit6`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
-  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 회차의 글자를 쓴 뒤와 크기가 바뀔 때
-  // (`S.onResize`) 다시 잰다. 층 보기 도구 줄은 접을 것이 요약뿐이라 넘치면 곧장 둘째 줄(⑥)이다 — 390px 에서 확대
-  // 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집 도구 줄은 건드리지 않는다.
+  // 도구 줄이 넘치면 접는 차례를 하나씩 더한다. FAB 보기는 `is-fit1`~`is-fit6`(CSS 「FAB 도구 줄」) — 요약은 마지막에야
+  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 층 보기는 접을 것이 요약뿐이라 넘치면 곧장 둘째
+  // 줄(⑥)이다 — 390px 에서 확대 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집은
+  // `is-efit1`(「호기 정보」·「고정」 은 아이콘만, 기준일 칩은 날짜만 — 낭독기용 글은 남김) 다음 ⑥(빈 칸 뒤 「호기 정보」·
+  // 「고정」·「적용」 을 둘째 줄로)이다 — 사이드바를 연 1100px 창의 층 편집에서 「고정」 이 줄 밖으로 밀려 스크롤 고정을
+  // 켤 길이 없었다(도구 줄은 굴림 막대를 숨겨 옆으로 밀 수도 없다). 크기가 바뀔 때(`S.onResize` — 무대 높이를 재기 전)
+  // 다시 잰다.
   const toolbar = q('.sle-toolbar')
   const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
-  function fitFabBar() {
-    toolbar.classList.remove(...FIT_STEPS)
-    if (!VIEW || !toolbar.clientWidth) return
-    for (const step of FAB ? FIT_STEPS : FIT_STEPS.slice(-1)) {
+  const EDIT_FIT_STEPS = ['is-efit1', 'is-fit6']
+  function fitToolbar() {
+    toolbar.classList.remove(...FIT_STEPS, ...EDIT_FIT_STEPS)
+    if (!toolbar.clientWidth) return
+    const steps = !VIEW ? EDIT_FIT_STEPS : FAB ? FIT_STEPS : FIT_STEPS.slice(-1)
+    for (const step of steps) {
       if (toolbar.scrollWidth <= toolbar.clientWidth) return
       toolbar.classList.add(step)
     }
@@ -4879,9 +7729,15 @@ export default function (component) {
   // 팔레트·VIEW)을 쥐지 않는다. rAF 로 묶고, 바뀐 px 크기로 viewBox 비율과 화면 px 에 기대는 값(손잡이·글자
   // 크기)을 다시 맞춘다. 창 높이만 바뀌어도 기본 높이·상한이 바뀌므로 창 크기도 듣는다.
   S.onResize = () => {
-    const changed = S.heightDrag ? measurePort() : fitStage()
-    if (changed) applyView()
-    fitFabBar()
+    // 도구 줄을 먼저 접는다 — 둘째 줄로 내리면 무대가 내려가 고정 높이(`alignLock`)가 달라진다.
+    fitToolbar()
+    layoutPanels()
+    layoutSheet()
+    if (S.lock) alignLock()
+    else {
+      const changed = S.heightDrag ? measurePort() : fitStage()
+      if (changed) applyView()
+    }
     fitFaderTicks()
   }
   if (!S.ro && typeof ResizeObserver === 'function') {
@@ -4897,9 +7753,10 @@ export default function (component) {
     S.onWindowResize = schedule
     window.addEventListener('resize', schedule)
   }
-  // 이번 실행에서 무대 크기가 달라졌으면(첫 실행·열 폭 변화) 바로 맞춘다.
+  // 이번 실행에서 무대 크기가 달라졌으면(첫 실행·열 폭 변화) 바로 맞춘다. 고정 중이면 위 칸이 바뀌었을 수 있어 다시 맞춘다.
   S.onResize()
   updateStatus()
+  if (VIEW) showLockNote()
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
   return () => {
     if (S.ro) S.ro.disconnect()
@@ -4908,5 +7765,12 @@ export default function (component) {
     S.ro = null
     S.onWindowResize = null
     S.resizeFrame = 0
+    // 스크롤 고정은 이 마운트에만 — 내려가면 풀린다(속성을 걷지 못해도 페이지 서식이 사라지면 막지 않는다).
+    if (S.lock) document.documentElement.removeAttribute(LOCK_ATTR)
+    S.lock = false
+    if (S.mainRo) S.mainRo.disconnect()
+    S.mainRo = null
+    if (S.lockFrame) cancelAnimationFrame(S.lockFrame)
+    S.lockFrame = 0
   }
 }

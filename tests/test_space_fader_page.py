@@ -116,8 +116,15 @@ def _last(calls: list[dict[str, Any]], scope: str) -> dict[str, Any]:
     return found[-1]
 
 
-def _legend(app: AppTest) -> str:
-    return next(element.value for element in app.markdown if "기준 " in element.value)
+def _legend(calls: list[dict[str, Any]]) -> str:
+    """층 상세 범례 — 편집기 왼쪽 칸 「범례」 의 칸 글과 끝 줄 「기준 YYYY-MM-DD」(마지막 층 뷰어
+    data `legend`)."""
+    view = next(call for call in reversed(calls) if call.get("scope") == "floor")
+    legend = view.get("legend") or {}
+    return " · ".join(
+        [str(entry["label"]) for entry in legend.get("entries") or []]
+        + [str(legend.get("asOf") or "")]
+    )
 
 
 def test_the_sidebar_has_no_as_of_date_and_no_stage_filter(
@@ -151,7 +158,7 @@ def test_releasing_the_fader_moves_the_session_date_and_the_legend_but_not_the_e
     assert (first["asOfMin"], first["asOfMax"]) == (start.isoformat(), end.isoformat())
     assert today.isoformat() not in first["epoch"]
     assert "on_asOf_change" in first["callbacks"] and first["key"] == FLOOR_VIEWER_KEY
-    legend = _legend(app)
+    legend = _legend(calls)
     assert "PKG 1대" in legend and "MI 1대" in legend and f"기준 {today.isoformat()}" in legend
     assert "배치 2대" in first["summary"]
 
@@ -167,7 +174,7 @@ def test_releasing_the_fader_moves_the_session_date_and_the_legend_but_not_the_e
     assert moved["asOf"] == later.isoformat()
     assert moved["epoch"] == first["epoch"]
     assert [item["id"] for item in moved["items"]] == [item["id"] for item in first["items"]]
-    legend = _legend(app)
+    legend = _legend(calls)
     # EQ-02 는 반출/이설일정(60일 뒤)이 지나 도면에서 빠졌다.
     assert f"기준 {later.isoformat()}" in legend and "PKG 1대" in legend and "MI" not in legend
     assert "배치 1대" in moved["summary"]
@@ -210,7 +217,7 @@ def test_an_out_of_range_session_date_is_moved_to_the_nearest_end(
     assert not app.exception
     assert app.session_state[AS_OF_KEY] == start
     assert _last(calls, "floor")["asOf"] == start.isoformat()
-    assert f"기준 {start.isoformat()}" in _legend(app)
+    assert f"기준 {start.isoformat()}" in _legend(calls)
 
     app.session_state[RELEASE_KEY] = "2999-01-01"
     app.run()
@@ -267,5 +274,7 @@ def test_the_layout_editor_gets_the_pinned_date_and_no_fader(
     assert editor.get("mode") is None and editor["scope"] == "floor"
     assert editor["asOf"] == later.isoformat()
     assert "on_asOf_change" not in editor["callbacks"]
-    assert any(later.isoformat() in item.value for item in app.caption)
+    # 고정 기준일은 편집기 도구 줄 칩이다(data `asOf`) — 편집기 위 캡션은 걷었다(2026-11-03 결정
+    # D12).
+    assert not any(later.isoformat() in item.value for item in app.caption)
     clear_equipment_repository()

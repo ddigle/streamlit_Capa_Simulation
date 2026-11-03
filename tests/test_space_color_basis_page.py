@@ -65,8 +65,15 @@ def _fills(view: dict[str, Any]) -> dict[str, tuple[str, str]]:
     return {item["id"]: (item["fill"], item["ink"]) for item in view["items"]}
 
 
-def _legend(app: AppTest) -> str:
-    return next(element.value for element in app.markdown if "기준 " in element.value)
+def _legend(calls: list[dict[str, Any]]) -> str:
+    """층 상세 범례 — 편집기 왼쪽 칸 「범례」 의 칸 글과 끝 줄 「기준 YYYY-MM-DD」(마지막 층 뷰어
+    data `legend`)."""
+    view = next(call for call in reversed(calls) if call.get("scope") == "floor")
+    legend = view.get("legend") or {}
+    return " · ".join(
+        [str(entry["label"]) for entry in legend.get("entries") or []]
+        + [str(legend.get("asOf") or "")]
+    )
 
 
 def test_checks_and_the_colour_basis_repaint_without_a_new_epoch(
@@ -116,7 +123,7 @@ def test_the_floor_legend_counts_the_as_of_meanings(
     Qual 실적이 비고 일정이 지나 미확인이다(오늘 기준 설비 수)."""
     app = _open_floor(tmp_path)
 
-    legend = _legend(app)
+    legend = _legend(viewer_calls)
     assert "PKG 1대" in legend and "MI 1대" in legend
     assert "반출/이설 예정 1대" in legend and "미확인 2대" in legend
     assert "반입 전" not in legend and "TEST" not in legend
@@ -124,7 +131,7 @@ def test_the_floor_legend_counts_the_as_of_meanings(
     assert all(item["flag"] for item in _floor_view(viewer_calls)["items"])
 
     app.sidebar.checkbox(key="space_color_line_PKG").uncheck().run()
-    legend = _legend(app)
+    legend = _legend(viewer_calls)
     assert "PKG" not in legend and "그 밖 1대" in legend
     clear_equipment_repository()
 

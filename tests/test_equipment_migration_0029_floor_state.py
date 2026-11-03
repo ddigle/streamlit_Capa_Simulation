@@ -119,7 +119,7 @@ def test_a_database_at_0027_keeps_every_other_row_and_gets_empty_tables(tmp_path
     assert not set(NEW_TABLES) & set(before)
     assert before["equipment_scenario"] == 1 and before["revision"] == 3
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31, 32)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31, 32, 33)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == {

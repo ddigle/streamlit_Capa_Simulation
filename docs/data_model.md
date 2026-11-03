@@ -108,7 +108,7 @@ equipment_ops.equipment_schedule_revision       시나리오 일정 리비전(�
        ⋯ equipment_schedule_snapshot            호기 키마다 날짜 여섯 + 시나리오 메모(PK 리비전·키)
        ⋯ equipment_schedule_downtime_snapshot   비가동 일정 전체(F2 — UNIQUE 리비전·키·유형·시작일)
        ⋯ equipment_schedule_layout_unit   (0031) 호기 키마다 배치 일곱 칸 + 저장 당시 Main 설비 — 공식과 다른 호기만
-       ⋯ equipment_schedule_layout_mark   (0031) (층, 요소 id)마다 set/drop — 공식과 다른 요소만
+       ⋯ equipment_schedule_layout_mark   (0031·0033) (층, 요소 id)마다 set/drop — 공식과 다른 요소만
        ⋯ equipment_schedule_layout_label  (0031) (층, Main 설비)마다 위치 또는 NULL(공식 행 지움) — 다른 것만
        ⋯ legacy_revision_id  → revision         이관 리비전만: 옛 마스터 일정 칸·비가동을 읽는다
        ⋯ common_revision_id  → revision         저장 때 함께 본 공통 리비전(「그때 그대로」 보기)
@@ -120,10 +120,10 @@ equipment_ops.shortening_baseline (0021)        + 설비 쪽 출처 칸 넷(0027
 # data/equipment_availability.duckdb — 리비전 없는 공용 표(설비 리비전을 저장해도 복제되지 않음, 표끼리 FK 없음)
 equipment_ops.standard_target_weekly_availability         공정·Weeknum별 수동 가용대수(0005)
 equipment_ops.process_cutoff                              공정별 Cut-off 일수(0009, PK 공정·product_scope)
-equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017·0025)
+equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017·0025·0033)
                        (building, floor_name)
 equipment_ops.floor_layout_group_label                    층 Main 설비명 위치(0025, 키 동·층·Main 설비, PK 없음)
-equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017·0025, layout_key 'FAB')
+equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017·0025·0033, layout_key 'FAB')
 equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요 단축 일정 공용 조회 조건(0019)
 equipment_ops.floor_state_profile  1 ── N floor_state        Space 층 사용 상태(0029, 행 = 비활성 층, PK 동·층)
 equipment_ops.manual_downtime_profile 1 ── N manual_downtime  입력 비가동 대수(0032, 행 = 0 아닌 (공정, 생산월), PK 공정·달)
@@ -411,16 +411,22 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   6회 수정하면 51.7MB). 캔버스만 바꿀 때는 치수 두 컬럼만 UPDATE 하고, 같은 도면
   재업로드는 저장된 `sha256(image_payload)` 와 비교해 BLOB 쓰기를 건너뛴다.
 - `floor_layout_mark`(마이그레이션 11): 동·층별 비설비 도면 요소(반입구·문·영역·기둥·글자·
-  동선). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
+  동선·베이·도형 — 베이 `bay`·도형 `shape` 는 마이그레이션 없이 종류 값이 하나씩 는 것이고, 베이는 `label` 에 번호만,
+  도형은 채우기 색을 `color_key`(영역 색 여섯 + `ink`·`surface`)에, 빗금을 `hatch` 에 둔다). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
   복제되지 않는다. 저장은 그 층 요소 전체를 DELETE+INSERT 로 갈아 끼우고(BLOB 이 없어 파일
   증가는 미미하다) `source_row_no` 가 그리는 순서다. PK 는 두지 않는다 — 같은 트랜잭션에서
   같은 id 를 지웠다 다시 넣는다. 종류(`mark_kind`)·회전·영역 색 키·캔버스 범위·층 안 id
   유일성은 `services/floor_layout_mark.py` 가 맡는다. 리비전 저장과 같은 트랜잭션에 쓸 수 있다.
-  이름표 글자 크기 `font_size`(INTEGER, 9·11·13·16·20·24 화면 px)와 글자 색 `font_color`(영역 색 키)는
+  이름표 글자 크기 `font_size`(INTEGER, 9·11·13·16·20·24 — 도면 1칸이 화면 8px 일 때의 기준 크기, 편집기가 배율을 따라 키우고 줄인다)와 글자 색 `font_color`(영역 색 키)는
   마이그레이션 17 의 NULL 허용 컬럼이다 — NULL 은 자동 크기·기본 글자색이다. `fab_layout_mark`
   (마이그레이션 13)도 같은 두 컬럼을 갖는다. 영역의 테두리 모양 `border_style`(`dashed`·`solid`)과
   이름표 정렬 `label_align`(`left`·`center`·`right`)은 마이그레이션 25 의 NULL 허용 컬럼이다(두 표 모두) —
-  NULL 은 지금 모습(점선·왼쪽)이고 영역이 아닌 요소는 늘 NULL 이다.
+  NULL 은 지금 모습(점선·왼쪽)이고 영역이 아닌 요소는 늘 NULL 이다. 요소 모양 값 `look_json`(마이그레이션 33, 두 표와
+  가정 차이 표 `equipment_schedule_layout_mark` 모두)은 처음 값이 아닌 키만 든 정규 JSON 글이다 — 동선은 화살표 머리 크기
+  `head`(「너비·길이」 S·M·L 두 글자)·선 색 `line`·굵기 `lineWidth`(화면 px)·모양 `lineStyle`, 베이는 그 넷에 좌우 뒤집기 `flip`
+  을 더한다. 도형은 프리셋 `shape`(아홉 — 처음 `rect`)·모양 조절 값 `adj`(프리셋마다 0~2개의 0.01 단위 상자 비율)·채우기
+  불투명 `fillAlpha`(0~100 의 5 단위, 처음 20)·선 `line`(`auto`·`none`·`ink`·영역 색)·`lineWidth`·`lineStyle`·`flip` 이다(`fab_layout_mark`
+  도 같다). NULL 은 모두 처음 값(동선은 지금 모습)이고 그 밖 종류는 늘 NULL 이다. 검사는 `services/floor_layout_mark.mark_look`.
 - `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`center`·`top`·`bottom`).
   설비 마스터 칸이 아니라 `floor_layout_mark` 처럼 리비전 없는 층 현행값이다. 행이 없는 묶음은 모양의 처음
   위치(한 줄 묶음 — 모듈 2·3 — 은 위, 그 밖은 가운데, `space_layout_edit.default_group_label`)로 서고, 처음 위치를

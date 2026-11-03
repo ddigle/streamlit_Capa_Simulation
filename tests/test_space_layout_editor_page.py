@@ -15,7 +15,6 @@ import pandas as pd
 import pytest
 from alert_marks import infos, successes
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
@@ -552,26 +551,23 @@ def test_a_new_as_of_that_changes_the_roster_resets_the_editor(
     clear_equipment_repository()
 
 
-def test_the_pinned_date_caption_picks_its_particle_by_the_date(
+def test_the_pinned_date_rides_the_editor_toolbar_not_a_caption_above_it(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """배치 편집 안내의 「기준일은 편집하는 동안 … 고정입니다」 는 날짜 끝소리로 조사를 고른다
-    — 끝자리 0·3·6(영·삼·육)은 「으로」, 그 밖은 「로」. 「2026-10-26 로」 처럼 못박아 두면 그런
-    날마다 틀렸다(2026-10-26 E2E)."""
+    """배치 편집 위 두 줄 캡션(「끌어 놓아 …」·「기준일은 편집하는 동안 … 고정입니다」)은
+    걷었다(2026-11-03 사용자 요청 — 도면을 올린다). 고정 기준일은 편집기 도구 줄 칩이 data 의 `asOf`
+    로 말하고, 안내는 왼쪽 칸 「도움말」 이다 — 본문에는 날짜 글자를 싣지 않아 조사(「으로」·「로」,
+    2026-10-26 E2E)를 고를 자리가 없다."""
     app, _ = _open_editor(tmp_path)
-    today = date.today()
-    days = [today + timedelta(days=offset) for offset in range(1, 20)]
-    eu = next(day for day in days if day.isoformat()[-1] in "036")
-    ro = next(day for day in days if day.isoformat()[-1] in "1245789")
+    later = date.today() + timedelta(days=3)
+    app.session_state["space_status_as_of"] = later
+    app.run()
 
-    for day, particle in ((eu, "으로"), (ro, "로")):
-        app.session_state["space_status_as_of"] = day
-        app.run()
-
-        assert not app.exception, [item.message for item in app.exception]
-        caption = next(item.value for item in app.caption if "고정입니다" in item.value)
-        assert f"{day.isoformat()}{particle} 고정입니다" in caption, caption
-        assert f"{day.isoformat()} 로" not in caption
+    assert not app.exception, [item.message for item in app.exception]
+    editor = editor_calls[-1]
+    assert editor.get("mode") is None and editor["asOf"] == later.isoformat()
+    assert not any("고정입니다" in str(item.value) for item in app.caption)
+    assert not any("끌어 놓아 자리·크기를 고치고" in str(item.value) for item in app.caption)
     clear_equipment_repository()
 
 
@@ -592,14 +588,13 @@ def test_a_save_error_is_shown_once_even_without_pending_changes(
 
 def _top_level(app: AppTest) -> list[tuple[str, str]]:
     """본문 맨 윗단의 순서 — (요소 종류, key). Streamlit 은 요소를 key 가 아니라 이 순번으로 갈아
-    끼운다. 층 상세 상자(key 없음)는 그 안의 `배치 편집` 토글로 가린다."""
+    끼운다. 층 도면 칸은 늘 서는 `space_floor_stage` 다(`배치 편집` 토글은 사이드바 「Space 도면」
+    상자)."""
     layout: list[tuple[str, str]] = []
     for node in app.main.children.values():
         block_id = str(getattr(getattr(node, "proto", None), "id", "") or "")
         name = block_id.split("-", 2)[-1] if block_id.startswith("$$ID-") else ""
-        if isinstance(node, Block) and any(
-            toggle.key == "space_layout_edit_mode" for toggle in node.get("toggle")
-        ):
+        if name.endswith("space_floor_stage"):
             name = "층 상세"
         layout.append((type(node).__name__, name))
     return layout

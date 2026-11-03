@@ -305,6 +305,8 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     _ok(app.run())
     view = _views(editor_calls, "floor")[-1]
     assert view["asOfPinned"] == PINNED_NOTE and view["asOf"] == date.today().isoformat()
+    # 켠 동안만 호기 누르기를 보낸다(필요 단축 칸의 누른 호기 상세 — 사양 D11).
+    assert view["pickToServer"] is True
     marked = [item for item in view["items"] if item.get("layer")]
     badges = view["shortBadges"]
     assert marked and badges
@@ -333,6 +335,7 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     _ok(app.run())
     back = _views(editor_calls, "floor")[-1]
     assert back["asOf"] == other_day.isoformat() and "asOfPinned" not in back
+    assert back["pickToServer"] is False
     assert "shortBadges" not in back and not [item for item in back["items"] if "layer" in item]
     assert back["epoch"] == epoch
 
@@ -453,11 +456,15 @@ def test_a_missing_scenario_warns_once_and_keeps_space_as_it_is(
     assert not [item for item in view["items"] if "layer" in item]
 
 
-def _legend(app: AppTest) -> str:
-    """층 상세 머리 줄 범례(끝에 「기준 YYYY-MM-DD」)."""
-    found = [str(item.value) for item in app.markdown if "기준 20" in str(item.value)]
-    assert len(found) == 1, found
-    return found[0]
+def _legend(calls: list[dict[str, Any]]) -> str:
+    """층 상세 범례 — 편집기 왼쪽 칸 「범례」 의 칸 글과 끝 줄 「기준 YYYY-MM-DD」(마지막 층 뷰어
+    data `legend`)."""
+    view = next(call for call in reversed(calls) if call.get("scope") == "floor")
+    legend = view.get("legend") or {}
+    return " · ".join(
+        [str(entry["label"]) for entry in legend.get("entries") or []]
+        + [str(legend.get("asOf") or "")]
+    )
 
 
 def test_a_stopped_layer_legend_shows_no_fill_swatches_the_drawing_does_not_paint(
@@ -474,12 +481,12 @@ def test_a_stopped_layer_legend_shows_no_fill_swatches_the_drawing_does_not_pain
         app.session_state["space_status_selected_building"] = building
         app.session_state["space_status_selected_floor"] = floor
         _ok(app.run())
-        if any(f"{label} " in _legend(app) for label in ("지연", "보관")):
+        if any(f"{label} " in _legend(editor_calls) for label in ("지연", "보관")):
             delayed_floors.append((building, floor))
         app.session_state[SPACE_COLOR_BASIS_KEY] = COLOR_BASIS_SHORTENING
         _ok(app.run())
         assert _views(editor_calls, "floor")[-1].get("asOfPinned") == PINNED_NOTE
-        legend = _legend(app)
+        legend = _legend(editor_calls)
         for label in ("그 밖", "지연", "보관"):
             assert f"{label} " not in legend, (building, floor, legend)
     assert delayed_floors, "대조 — 합성 fleet 에 지연·보관 호기가 있는 층이 있어야 뜻이 있다"

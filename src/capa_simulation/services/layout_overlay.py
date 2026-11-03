@@ -205,9 +205,17 @@ class LayoutOverlay:
 
 
 def _mark_payload(mark: FloorLayoutMark | None) -> dict[str, Any] | None:
+    """요소 하나의 기본형 값(필드 이름 → 값). 모양 값(`look`, 설비 `0033`)은 처음 값(빈 글)이면 넣지
+    않는다 — 지문(`digest` → `layout_hash`)이 0033 전 코드가 같은 내용으로 낸 것과 같아야 배치 빨리
+    감기·되돌리기 미리 보기의 같음 판정이 판올림 경계에서 어긋나지 않는다. `from_payload` 는 없는
+    키를 기본값으로 다시 세운다."""
     if mark is None:
         return None
-    return {item.name: getattr(mark, item.name) for item in fields(FloorLayoutMark)}
+    return {
+        item.name: getattr(mark, item.name)
+        for item in fields(FloorLayoutMark)
+        if item.name != "look" or mark.look
+    }
 
 
 def _items(value: object) -> list[Any]:
@@ -989,7 +997,7 @@ def overlay_unit_count(overlay: LayoutOverlay, base: LayoutBase) -> int:
 
 @dataclass(frozen=True)
 class LayoutDifference:
-    """그리는 한 벌의 가정 배치가 공식과 얼마나 다른가(머리 알림·견주기 재료 — 설계 8-2).
+    """그리는 한 벌의 가정 배치가 공식과 얼마나 다른가(Space 배치 줄·견주기 재료 — 설계 8-2).
 
     - `units` — 일곱 칸이 공식과 실제로 다른 **설비 단위** 수(Main 설비 묶음은 1대). 그 시나리오에
       일정이 없는 호기(G2 — 계산·도면에서 빠짐)는 세지 않고 `unscheduled` 에 센다.

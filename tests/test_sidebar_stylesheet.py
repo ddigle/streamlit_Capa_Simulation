@@ -28,6 +28,7 @@ from capa_simulation.sidebar_status import (
     CONDITION_CARD_PREFIX,
     CONDITIONS_BOX_KEY,
     DIALOG_BOX_PREFIX,
+    PAGE_BOX_PREFIX,
 )
 
 # `<style>` 여는 태그와 닫는 태그만 허용한다. 그 밖의 `<...>` 는 살균기가 태그로 읽는다.
@@ -161,7 +162,9 @@ def test_condition_cards_wear_the_condition_box_face() -> None:
     dialog_button = f'[class*="st-key-{DIALOG_BOX_PREFIX}"] [data-testid="stButton"] button'
     assert [dialog_button] in face_rules
     assert [f"{dialog_button}:hover", f"{dialog_button}:active"] in face_rules
-    assert len(face_rules) == 4, face_rules
+    # 다섯째는 화면 조작 상자(Space 「Space 도면」 — 2026-11-03)의 면이다 — 조건 패널과 같은 면.
+    assert [f'[data-testid="stSidebarContent"] [class*="st-key-{PAGE_BOX_PREFIX}"]'] in face_rules
+    assert len(face_rules) == 5, face_rules
     (icon_rule,) = [
         rule
         for rule in _rules_with(block, f"color: {tokens.ACCENT};")

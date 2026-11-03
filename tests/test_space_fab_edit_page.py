@@ -184,12 +184,13 @@ def test_fab_edit_and_save_work_without_any_saved_equipment(
 
 
 def _fab_box_index(app: AppTest) -> int:
-    """본문 맨 윗단에서 FAB 상자(그 안의 `배치 편집` 토글로 가린다)의 순번."""
+    """본문 맨 윗단에서 FAB 도면 칸(늘 서는 `space_fab_stage` — 편집기/뷰어가 그 안이다)의 순번.
+    `배치 편집` 토글은 사이드바 「Space 도면」 상자에 있다(2026-11-03 사용자 요청)."""
     return next(
         index
         for index, node in enumerate(app.main.children.values())
         if isinstance(node, Block)
-        and any(toggle.key == FAB_EDIT_KEY for toggle in node.get("toggle"))
+        and str(getattr(getattr(node, "proto", None), "id", "") or "").endswith("space_fab_stage")
     )
 
 

@@ -82,6 +82,12 @@ CONDITION_DIALOG_FRAGMENT_KEY = "sidebar_condition_dialog_host"
 # 그 프래그먼트를 담는 본문 컨테이너. 팝업은 본문 밖(이벤트 칸)에 서므로 이 칸은 늘 비어 있고, 빈
 # 칸이 본문 간격을 먹지 않게 상자 여닫기 칸과 같이 CSS 가 숨긴다.
 CONDITION_DIALOG_SINK_KEY = "sidebar_condition_dialog_sink"
+# **화면 조작 상자**의 key 접두어 — 조회 조건 패널 바로 밑 · 그 화면의 조건 카드 **위**에 서서 그
+# 화면의 자리 이동·편집 켜기 같은 위젯 여럿을 담는 상자(팝업 상자와 달리 상자 자체가 단추가 아니다).
+# 지금은 Space 현황 「Space 도면」 하나다 (2026-11-03 사용자 요청 — 레이아웃 위 요소를 사이드바로).
+# `sidebar_style.py` 가 이 접두어 하나로 조건 패널과 같은 면· 모서리·안 여백을 건다. 그 화면을 볼
+# 때만 페이지가 세운다(`page_box_key`).
+PAGE_BOX_PREFIX = "sidebar_page_box_"
 
 
 @dataclass(frozen=True, eq=False)
@@ -381,6 +387,17 @@ def condition_card(
 def table_card(name: str) -> DeltaGenerator:
     """표 조건 카드(`표 조건`). `name` 은 화면마다 하나다."""
     return condition_card(TABLE_CARD_LABEL, name=name, icon=TABLE_CARD_ICON)
+
+
+def page_box_key(name: str) -> str:
+    """화면 조작 상자(컨테이너)의 key — `PAGE_BOX_PREFIX` + 이름(화면마다 하나).
+
+    페이지가 `st.sidebar.container(key=page_box_key(...))` 를 **조건 카드보다 먼저** 세운다 —
+    사이드바는 부른 차례로 서므로 카드 뒤에 세우면 펼친 카드 밑으로 밀린다. 안은 나중에 `with 상자:`
+    로 채워도 된다(자리는 세운 때 정해진다). 안에서는 `st.*` 를 쓴다 — `st.sidebar.*` 는 `with` 를
+    따르지 않는다 (`render_sidebar_section` 의 주의).
+    """
+    return f"{PAGE_BOX_PREFIX}{name}"
 
 
 def render_sidebar_section(section: SidebarSectionSpec) -> None:

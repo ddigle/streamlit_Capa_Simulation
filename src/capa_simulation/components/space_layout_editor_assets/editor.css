@@ -3,8 +3,9 @@
   display: flex; flex-direction: column; gap: 8px;
   font-family: var(--sle-font); color: var(--sle-text);
 }
-/* 도구 줄은 한 줄·고정 높이다 — 고르거나 단추 상태가 바뀌어도 도면이 위아래로 튀지 않는다. 좁은 화면에서는
-   접지 않고 옆으로 민다(위아래 여백은 단추 초점 테가 잘리지 않을 자리). 밀려도 `적용` 은 오른쪽 끝에 붙어 남는다. */
+/* 도구 줄은 한 줄·고정 높이다 — 고르거나 단추 상태가 바뀌어도 도면이 위아래로 튀지 않는다. 넘치면 JS `fitToolbar` 가
+   창 폭으로만 정하는 접는 차례(아래 「FAB 도구 줄」·편집 ①)를 더하고 마지막에 둘째 줄로 내린다(⑥). 그 사이 잠깐은 옆으로
+   민다(위아래 여백은 단추 초점 테가 잘리지 않을 자리). 밀려도 `적용` 은 오른쪽 끝에 붙어 남는다. */
 .sle-toolbar {
   display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 35px; box-sizing: border-box;
   padding: 4px 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
@@ -13,7 +14,6 @@
 .sle-toolbar > * { flex: none; }
 .sle-title { font-weight: 700; margin-right: 8px; flex: 0 1 auto; min-width: 3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sle-steps, .sle-zoom { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; }
-.sle-label-text { font-size: 0.8rem; color: var(--sle-muted); margin-right: 4px; }
 .sle-zoom-label { min-width: 3.4em; text-align: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--sle-muted); }
 /* 단추는 앱 단추와 같은 결이다 — 13px·600 · 모서리 8px · 테두리 BORDER · 글자 TEXT. 촘촘한 도구 줄에 맞춰 높이 27px. */
 .sle button {
@@ -27,15 +27,36 @@
 .sle-canvas:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: -2px; }
 .sle-steps button[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle button:disabled { opacity: 0.45; cursor: default; }
+/* 편집 중 고정 기준일 칩(층 편집 도구 줄 — 결정 D12, 여백 걷기). */
+.sle-pinchip {
+  display: inline-flex; align-items: center; gap: 4px; height: 23px; padding: 0 8px; box-sizing: border-box; border-radius: 8px;
+  border: 1px dashed var(--sle-border-strong); font-size: 0.78rem; color: var(--sle-muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sle-pinchip b { color: var(--sle-text); }
+.sle-pinchip svg, .sle-lock svg { width: 13px; height: 13px; flex: none; }
+/* 스크롤 고정 — 켜면 강조색 면. 고정 중에는 높이 손잡이가 없다(무대는 창 높이에 맞춘다). */
+.sle button.sle-lock[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle.is-locked .sle-resize { display: none; }
 /* 편집을 보내는 유일한 단추라 도구 줄이 옆으로 밀려도 늘 보인다(넘칠 때만 오른쪽 끝에 붙는다). */
 .sle button.sle-apply { position: sticky; right: 0; z-index: 1; }
 .sle button.sle-apply.is-pending { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle-spacer { flex: 1; }
-.sle-body { display: flex; flex-direction: column; }
+/* 편집기 몸은 가로 다섯 칸이다 — [왼쪽 도구 칸] [칸막이] [무대] [칸막이] [오른쪽 미배치 칸](2026-11-03 사용자 요청 — 좌우로 긴
+   화면의 여백을 두 옆 칸에 나눠 쓴다). 칸 폭은 JS 가 `grid-template-columns` 로 정하고(폭 끌기·접기·기억 — `layoutPanels`),
+   칸마다 자리를 박아 두어 숨긴 칸(FAB 의 오른쪽 칸 등)이 있어도 다른 칸이 밀리지 않는다. 두 옆 칸은 무대 높이를 따르고 안에서
+   굴러간다(칸 안 상자가 `position: absolute` 라 칸의 내용 높이가 줄 높이를 늘리지 않는다). */
+.sle-body {
+  position: relative; display: grid; grid-template-columns: 0px 0px minmax(0, 1fr) 0px 0px; align-items: stretch;
+}
+.sle-side.is-left { grid-column: 1; grid-row: 1; }
+.sle-split.is-left { grid-column: 2; grid-row: 1; }
+.sle-split.is-right { grid-column: 4; grid-row: 1; }
+.sle-side.is-right { grid-column: 5; grid-row: 1; }
 /* 무대는 열 폭을 채우고 높이는 JS 가 정한다(화면에 맞춘 기본값, 또는 아래 손잡이로 고른 값). SVG 는 무대를 꽉
    채우고, 편집 영역은 그 가운데에 여백을 두고 뜬다 — 남는 자리는 무대 바탕이다. 여기 높이는 JS 가 서기 전 자리값. */
 .sle-stage {
-  position: relative; height: 480px; min-width: 0; overflow: hidden;
+  grid-column: 3; grid-row: 1; position: relative; height: 480px; min-width: 0; overflow: hidden;
   border: 1px solid var(--sle-border); border-radius: 8px; background: var(--sle-stage);
 }
 .sle-canvas { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
@@ -139,7 +160,27 @@
 .sle-column { fill: var(--sle-mark-muted); stroke: var(--sle-mark-ink); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-column-cross { stroke: var(--sle-surface); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-flow { fill: none; stroke: var(--sle-accent); stroke-linecap: round; stroke-dasharray: 0.9 0.7; }
+/* 굵기를 고른 동선은 화면 px 굵기·무늬다(베이와 같다). 고르지 않으면 지금처럼 상자 높이를 따르는 도면 단위다. */
+.sle-flow.is-px { vector-effect: non-scaling-stroke; }
 .sle-flow-head { fill: var(--sle-accent); }
+/* 베이 화살표(U자) — 선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 머리는 선 색으로 채운다. */
+.sle-bay-line { fill: none; stroke: var(--sle-mark-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.sle-bay-head { fill: var(--sle-mark-ink); }
+/* 도형(엑셀 도형처럼) — 채우기·선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 잡기는 경로 그대로(`sle-shape-hit`):
+   채우기·빗금이 있으면 안쪽과 테두리 12px 띠, 없으면 테두리 띠만이라 빈 안쪽을 끌면 고르기 사각형이 산다(영역과 같다). 상자의 빈
+   귀는 잡히지 않는다 — 상자(`sle-mark-box`)는 고른 테만 그린다. 이름표도 잡힌다. */
+.mark-shape .sle-mark-box { pointer-events: none; }
+.sle-shape-body { vector-effect: non-scaling-stroke; stroke-linejoin: miter; }
+.sle-shape-hatch { pointer-events: none; }
+.sle-shape-hit {
+  fill: transparent; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; pointer-events: all; cursor: grab;
+}
+.sle-shape-hit.is-hollow { fill: none; pointer-events: stroke; }
+.mark-shape .sle-mark-text.is-grab { pointer-events: all; cursor: grab; }
+/* 노란 모양 조절 손잡이 — 하나만 고른 도형에서만, 편집에서만 선다(크기 손잡이 위). 테는 도면 글자색이라 밝은 캔버스에서도 보인다. */
+.sle-adjust { display: none; fill: var(--sle-adjust); stroke: var(--sle-text); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sle:not(.is-view) .sle-item.is-selected .sle-adjust { display: inline; }
+.sle-canvas.is-multi .sle-adjust { display: none !important; }
 
 /* ---- 층 블록(FAB) — 면은 고른 색 또는 Space 기본 면, 글자는 가운데 줄. 상태 색이 아니다. ---- */
 /* 면은 늘 불투명이다. 고른 색은 팔레트의 `block-tint-<키>`(캔버스 위에 미리 섞은 옅은 색)라 뒤의 도면·
@@ -184,6 +225,11 @@
 .sle-unit.is-module .sle-handle { display: none; }
 .sle-group-box.is-range { stroke-width: 2; stroke-dasharray: none; }
 .sle-range-handle { opacity: 1; pointer-events: auto; }
+/* 호기 아래 층(영역·도형)에서 고른 것 하나의 손잡이는 맨 위 층에 다시 선다(JS `proxyHandles` — 호기가 덮은 자리도 잡힌다). 제 그룹
+   안의 손잡이는 감춘다. */
+.sle-zones .sle-handle, .sle-zones .sle-adjust { display: none !important; }
+.sle-proxy-handle { opacity: 1; pointer-events: auto; }
+.sle:not(.is-view) .sle-overlay .sle-proxy-adjust { display: inline; }
 /* Main 설비명 — 모듈 묶음 범위의 가운데(기본) 또는 바깥 바로 위·아래에 알약 바탕을 깔고 모듈 이름보다 한 단 굵게 쓴다.
    눌림을 받지 않는다(가운데 이름 위를 눌러도 모듈이 골라진다). */
 .sle-group-names { pointer-events: none; }
@@ -234,29 +280,108 @@
 .ico-bold { stroke: currentColor; stroke-width: 2.6; }
 .ico-fill { fill: currentColor; opacity: 0.6; stroke: currentColor; }
 .ico-text { fill: currentColor; font-size: 12px; font-weight: 700; }
+.ico-shape { fill: currentColor; fill-opacity: 0.22; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* 도형 갤러리(도면 요소 칸의 넣기 · 선택 칸의 바꾸기) — 칸마다 그림 + 이름, 3열. */
+.sle-shape-palette, .sle-shape-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.sle-shape-palette { grid-column: 1 / -1; }
+.sle-shape-palette[hidden], .sle-shape-gallery[hidden] { display: none !important; }
+.sle button.sle-shape-cell {
+  height: auto; min-height: 42px; padding: 4px 2px; flex-direction: column; gap: 2px; justify-content: center; touch-action: none;
+  font-size: 11px; font-weight: 600; white-space: normal; text-align: center; line-height: 1.15;
+}
+.sle-shape-cell svg { width: 18px; height: 18px; flex: none; }
+.sle button.sle-shape-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
 
-/* ---- 트레이 서랍 — 무대 오른쪽 가장자리에 겹쳐 열린다. 보기·편집에서 도면 상자 크기가 같다. ---- */
-.sle-drawer {
-  position: absolute; top: 8px; right: 8px; bottom: 8px; left: 8px; z-index: 2;
-  display: flex; flex-direction: column; align-items: flex-end; pointer-events: none;
+/* ---- 두 옆 칸(왼쪽 도구 · 오른쪽 미배치) ---- */
+/* 칸은 무대와 같은 높이의 테두리 상자이고 머리 줄 아래가 굴러간다(바깥 페이지로 굴림이 새지 않게 `contain`). 접으면 28px 띠
+   (`.sle-side-strip` — 세로 글)만 남는다. 칸막이는 6px 이고 올리거나 끄는 동안 강조색 선이다. 접힌 칸에는 칸막이가 없다. */
+.sle-side { position: relative; min-width: 0; min-height: 0; }
+.sle-side-box {
+  position: absolute; inset: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
+  border: 1px solid var(--sle-border); border-radius: 8px; background: var(--sle-surface);
 }
-.sle-drawer > * { pointer-events: auto; }
-.sle button.sle-drawer-tab { background: var(--sle-surface); }
-.sle-drawer-tab b { font-variant-numeric: tabular-nums; }
-.sle-drawer.is-open .sle-drawer-tab { display: none; }
-.sle-tray {
-  width: 240px; max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: auto;
-  border: 1px solid var(--sle-border); border-radius: 8px; padding: 8px; background: var(--sle-surface);
-  transition: opacity 120ms ease;
+.sle-side.is-min .sle-side-box, .sle-side:not(.is-min) .sle-side-strip { display: none; }
+.sle button.sle-side-strip {
+  width: 100%; height: 100%; padding: 8px 0; box-sizing: border-box; flex-direction: column; justify-content: flex-start;
+  gap: 6px; writing-mode: vertical-rl; font-size: 12px; background: var(--sle-surface);
 }
+.sle-side-strip b { font-variant-numeric: tabular-nums; }
+.sle-side-head {
+  display: flex; align-items: center; gap: 6px; flex: none; padding: 4px 6px 4px 10px; border-bottom: 1px solid var(--sle-border);
+  font-size: 0.85rem; font-weight: 700;
+}
+.sle-side-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sle button.sle-side-fold { height: 23px; min-width: 23px; padding: 0 6px; font-size: 14px; }
+.sle-side-scroll, .sle-tray-scroll {
+  flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 4px 10px 10px;
+}
+.sle-split {
+  position: relative; cursor: col-resize; touch-action: none; user-select: none; outline: none;
+}
+.sle-split::before {
+  content: ''; position: absolute; top: 8px; bottom: 8px; left: 2px; width: 2px; border-radius: 1px; background: transparent;
+}
+.sle-split:hover::before, .sle-split.is-dragging::before { background: var(--sle-accent); }
+.sle-split:focus-visible::before { background: var(--sle-accent); box-shadow: 0 0 0 2px var(--sle-accent); }
+.sle-split.is-off { pointer-events: none; }
+/* 묶음(범례·도면 요소·선택·격자·편집 영역·도움말) — 머리를 누르면 접힌다(접힘은 묶음별로 브라우저가 기억). */
+.sle-sec { padding: 6px 0; border-bottom: 1px solid var(--sle-border); }
+.sle-sec:last-child { border-bottom: none; }
+.sle-sec[hidden] { display: none; }
+.sle button.sle-sec-head {
+  width: 100%; height: 24px; padding: 0 2px; justify-content: space-between; border: none; background: none;
+  font-size: 0.8rem; font-weight: 700; color: var(--sle-ui-text);
+}
+.sle button.sle-sec-head::after { content: '⌄'; color: var(--sle-muted); font-weight: 400; transition: transform 120ms ease; }
+.sle button.sle-sec-head[aria-expanded="false"]::after { transform: rotate(-90deg); }
+.sle-sec.is-folded > .sle-sec-body { display: none; }
+.sle-sec-body { padding-top: 6px; font-size: 0.82rem; }
+/* 칸 하나만 남는 화면(층 보기 — 범례뿐)은 묶음 머리를 숨긴다(칸 머리가 이름이다). */
+.sle.is-view .sle-sec-head { display: none; }
+.sle.is-view .sle-sec { border-bottom: none; padding-top: 2px; }
+/* 범례 — 칸마다 견본 + 글(파이썬이 보낸 견본 꼴은 `style.cssText` 로만 단다). 끝 줄은 기준일. */
+.sle-legend { display: flex; flex-direction: column; gap: 5px; color: var(--sle-muted); }
+.sle-legend-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sle-legend-item > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.sle-legend-asof { margin-top: 2px; font-variant-numeric: tabular-nums; }
+.sle-help { color: var(--sle-muted); font-size: 0.76rem; line-height: 1.45; }
+.sle-help p { margin: 0 0 6px; }
+/* 좁은 편집기(폭 900px 아래 — JS `NARROW_PX`)에서는 두 옆 칸이 무대 위 겹침 서랍이다(무대 가장자리 8px 안쪽, 처음엔 접힌
+   띠, 한 번에 하나만 열림). 열린 서랍의 폭은 JS 가 `--side-panel-w` 로 준다(기억 폭, 무대 폭 − 48 을 넘지 않음). */
+.sle.is-narrow .sle-split { display: none !important; }
+.sle.is-narrow .sle-body > .sle-side {
+  position: absolute; z-index: 2; top: 8px; bottom: 8px; width: var(--side-panel-w, 240px); pointer-events: none;
+}
+.sle.is-narrow .sle-body > .sle-side > * { pointer-events: auto; }
+.sle.is-narrow .sle-body > .sle-side.is-left { left: 8px; }
+.sle.is-narrow .sle-body > .sle-side.is-right { right: 8px; }
+.sle.is-narrow .sle-body > .sle-side.is-min { bottom: auto; width: auto; }
+.sle.is-narrow button.sle-side-strip { writing-mode: horizontal-tb; flex-direction: row; width: auto; height: 27px; padding: 0 10px; }
+/* 서랍에서 호기를 끌어 서랍 밖으로 나가면 비친다 — 그 아래 도면에도 놓을 수 있게(좁은 화면 겹침 서랍만). */
+.sle.is-narrow .sle-side.is-peek .sle-side-box { opacity: 0.25; }
+/* 도면의 호기를 오른쪽 칸(접힌 띠 포함) 위로 끄는 동안 — 「여기 놓으면 미배치로」 테. */
+.sle-drop-note { display: none; }
+.sle-side.is-drop-target .sle-side-box, .sle-side.is-drop-target .sle-side-strip {
+  outline: 2px dashed var(--sle-accent); outline-offset: -3px;
+}
+.sle-side.is-drop-target .sle-drop-note {
+  display: block; position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; border-radius: 6px; text-align: center;
+  background: var(--sle-accent); color: var(--sle-on-accent); font-size: 0.78rem; font-weight: 700; pointer-events: none;
+}
+/* ---- 미배치 칸(오른쪽) ---- */
+.sle-tray { container: sle-tray / inline-size; }
 .sle-tray[hidden] { display: none; }
-/* 서랍에서 호기를 끌어 서랍 밖으로 나가면 비친다 — 그 아래 도면에도 놓을 수 있게. */
-.sle-drawer.is-peek .sle-tray { opacity: 0.25; }
-.sle-tray-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.sle-tray-head { display: flex; align-items: center; gap: 6px; flex: none; padding: 4px 6px 4px 10px; border-bottom: 1px solid var(--sle-border); }
 .sle-tray-head .sle-tray-title { flex: 1; margin-bottom: 0; }
 .sle-tray-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
 .sle-tray-count { color: var(--sle-muted); font-weight: 400; }
 .sle-tray-list { display: flex; flex-direction: column; gap: 4px; }
+/* 칸이 넓으면(360px 이상) 칩을 두 열로 — 긴 설비명도 잘리지 않게 칸 폭을 끌어 넓힌다. */
+@container sle-tray (width >= 360px) {
+  .sle-tray-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+}
+.sle button.sle-tray-info { height: 23px; min-width: 23px; padding: 0 6px; font-style: italic; font-family: Georgia, serif; }
+.sle button.sle-tray-info[aria-expanded="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle input.sle-tray-search { width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 4px 8px; font-size: 0.8rem; border: 1px solid var(--sle-border); border-radius: 6px; background: var(--sle-surface); color: var(--sle-text); }
 .sle input.sle-tray-search:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
 .sle-chip[hidden] { display: none; }
@@ -282,7 +407,8 @@
 .sle-leaving { margin-top: 10px; }
 .sle-leaving[hidden] { display: none; }
 .sle-leaving-list { display: flex; flex-direction: column; gap: 4px; }
-.sle-tray-hint { font-size: 0.75rem; color: var(--sle-muted); margin: 8px 0 0; }
+.sle-tray-hint { font-size: 0.75rem; color: var(--sle-muted); margin: 6px 0 8px; }
+.sle-tray-hint[hidden] { display: none; }
 .sle-addunit { margin-bottom: 8px; }
 .sle button.sle-addunit-toggle { width: 100%; border-style: dashed; }
 .sle-addunit-form { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; padding: 6px; border: 1px solid var(--sle-border); border-radius: 6px; font-size: 0.78rem; }
@@ -312,15 +438,18 @@
 
 /* ---- 칸들 ---- */
 .sle-status { font-size: 0.82rem; color: var(--sle-muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+/* 보기 화면의 상태 줄은 스크롤 고정 중 알릴 것(저장 안 한 배치)이 있을 때만 선다. */
+.sle.is-view .sle-status:empty { display: none; }
 .sle-status b { color: var(--sle-text); }
-.sle-panels { display: flex; flex-wrap: wrap; gap: 8px; }
-.sle-panel {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px;
-  border: 1px solid var(--sle-border); border-radius: 8px; background: var(--sle-surface); font-size: 0.82rem;
-}
-.sle-panel-title { font-weight: 700; }
+/* 왼쪽 칸 묶음 안 칸 — 이름표 | 칸 두 열. 숫자·글 칸은 칸 폭을 채운다. */
+.sle-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 4px; }
+.sle-palette button { justify-content: flex-start; }
+.sle-steps { display: flex; flex-wrap: wrap; gap: 4px; }
+.sle-area { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.sle-area > .sle-field { display: grid; grid-template-columns: 2.6em 27px minmax(0, 1fr) 27px; gap: 4px; }
+.sle-area input[type="number"] { width: 100%; box-sizing: border-box; }
+.sle button.sle-area-fit { align-self: flex-start; }
 .sle-field { display: inline-flex; align-items: center; gap: 4px; color: var(--sle-muted); }
-.sle-fields { display: flex; flex-wrap: wrap; gap: 6px 10px; }
 .sle input[type="number"], .sle input[type="text"] {
   font: inherit; font-size: 0.82rem; width: 4.6em; padding: 3px 5px; border-radius: 8px;
   border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-text);
@@ -339,37 +468,68 @@
 }
 .sle select:disabled { opacity: 0.45; }
 .sle select:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
-/* 선택 칸은 무엇을 고르든 크기가 같다 — 고를 때 칸 줄 높이가 바뀌면 도면이 위아래로 튄다. 칸은 늘 한 줄을
-   다 쓰고, 이름은 글자 길이와 무관한 정한 폭(basis)으로 줄을 나눈 뒤 남는 폭을 채우며 말줄임한다. 번갈아
-   보이는 칸(층 보내기↔도면 요소 속성, 영역 속성↔돌리기)은 한 칸에 겹쳐 두고 안 쓰는 쪽은 자리만 남긴 채
-   숨긴다(visibility — 초점·읽기에서도 빠진다). */
-.sle-inspector { flex: 1 1 100%; min-width: 0; }
-.sle-inspector > .sle-panel-title { flex: 1 1 14em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sle-inspector-ext, .sle-markprops-kind { display: inline-grid; align-items: center; max-width: 100%; }
-.sle-inspector-ext > *, .sle-markprops-kind > * { grid-area: 1 / 1; justify-self: start; }
-/* 층 보내기 칸(이름·보낼 층·보내기·숨은 n등분·Main 설비명)이 한 줄에 다 들지 않으면 칸 안에서 줄을 바꾼다 — 한 줄로
-   고집하면 390px 창에서 선택 칸 밖 553px 까지 서서 본문이 가로로 밀렸다(2026-10-26 E2E). 숨은 칸도 바뀐 줄에서 자리를
-   남기므로 무엇을 고르든 칸 높이는 창 폭으로만 정해진다. */
-.sle-sendto { flex-wrap: wrap; row-gap: 6px; }
-.sle-markprops { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.sle-zone-props { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden], .sle-module-tile[hidden] {
-  display: inline-flex; visibility: hidden; pointer-events: none;
+/* 선택 칸(왼쪽 칸 「선택」) — 위 이름 한 줄, 아래 X·Y·폭·높이 두 열, 그 아래 고른 것에 맞는 칸(이름·층 보내기·Main 설비명 /
+   도면 요소 속성)을 한 줄씩. 왼쪽 칸에서는 칸이 생기고 사라져도 도면이 움직이지 않아 안 쓰는 칸은 자리 없이 숨긴다. */
+.sle-inspector { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sle-inspector-title { min-width: 0; overflow-wrap: anywhere; }
+.sle-inspector-name { display: inline; }
+.sle-inspector.is-empty .sle-inspector-name { font-weight: 400; color: var(--sle-muted); }
+.sle-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
+.sle-fields .sle-field { display: grid; grid-template-columns: 2.4em minmax(0, 1fr); }
+.sle-fields input[type="number"] { width: 100%; box-sizing: border-box; }
+.sle-inspector-ext, .sle-markprops, .sle-markprops-kind, .sle-zone-props, .sle-block-props, .sle-sendto {
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
 }
-/* 「Main 설비명 위치」 — 모듈 묶음 하나를 골랐을 때만 보이고, 숨길 때도 자리를 남긴다(고를 때 칸 줄이 튀지 않게). */
-.sle-group-name[hidden] { display: inline-flex; visibility: hidden; pointer-events: none; }
-/* 고른 호기 하나의 이름(설비명, 모듈 묶음이면 Main 설비). 층 보내기 칸 안이라 그 칸과 함께 숨는다. */
-.sle-unit-name { margin-right: 6px; }
-/* 층 블록(FAB 편집) 속성 — 연결 층·색·[열기]. 영역 속성·돌리기와 한 칸에 겹친다. */
-.sle-block-props { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.sle-block-props[hidden] { display: inline-flex; visibility: hidden; pointer-events: none; }
-/* 범위(층·FAB)마다 쓰는 도구만 보인다. FAB 에는 호기가 없어 트레이 서랍·반입구·문·기둥·설비 금지가 없고, 층
-   블록은 FAB 에만 있다. */
+/* 동선·베이의 선·머리 칸(여럿 골라도 선다) — 도면 요소 속성 칸과 같은 꼴. */
+.sle-lineprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.sle-inspector-ext .sle-field:not(.sle-sendto):not(:has(> input[type="checkbox"])) {
+  display: grid; grid-template-columns: 5.6em minmax(0, 1fr);
+}
+.sle-inspector-ext input[type="text"], .sle-inspector-ext select { width: 100%; min-width: 0; box-sizing: border-box; }
+.sle-inspector-ext button { align-self: flex-start; }
+.sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden], .sle-module-tile[hidden],
+.sle-group-name[hidden], .sle-block-props[hidden] {
+  display: none !important;
+}
+.sle-lineprops[hidden], .sle-head-gallery[hidden], .sle-bay-flips[hidden], .sle-bay-prefix[hidden] { display: none !important; }
+/* 도형 서식 칸(여럿 골라도 선다) — 도면 요소 속성 칸과 같은 꼴. 「도형」 단추는 지금 도형 그림 + 이름, 모양 조절·투명도는 숫자 + %. */
+.sle-shapeprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.sle-shapeprops[hidden], .sle-shape-adj-row[hidden] { display: none !important; }
+.sle-shape-field { display: grid; grid-template-columns: 5.6em minmax(0, 1fr); align-items: center; }
+.sle button.sle-shape-swap { justify-content: flex-start; gap: 6px; min-width: 0; }
+.sle-shape-now { width: 16px; height: 16px; flex: none; }
+.sle-pct { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sle-pct input { width: 100%; min-width: 0; box-sizing: border-box; }
+.sle-shape-flips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 베이 번호 칸 앞의 고정 글 「B」 — 이름 칸 격자(이름 · 값)의 값 칸 안에서 칸과 나란히. */
+.sle-inspector-ext .sle-field.sle-mark-name:has(> .sle-bay-prefix:not([hidden])) {
+  display: grid; grid-template-columns: 5.6em auto minmax(0, 1fr); align-items: center;
+}
+.sle-bay-prefix { align-self: center; padding: 0 4px 0 0; font-weight: 700; color: var(--sle-text); }
+/* 머리 크기 — 단추(지금 머리 그림 + 말)와 3×3 갤러리(행 너비 좁게·보통·넓게, 열 길이 짧게·보통·길게). */
+.sle-head-field { display: grid; grid-template-columns: 5.6em minmax(0, 1fr); align-items: center; }
+.sle button.sle-head-toggle { justify-content: flex-start; gap: 6px; min-width: 0; }
+.sle-head-now, .sle-head-cell svg { width: 24px; height: 12px; flex: none; }
+.sle-head-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 52px)); gap: 4px; }
+.sle button.sle-head-cell { width: 100%; height: 28px; padding: 0; justify-content: center; }
+.sle button.sle-head-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
+.sle-bay-flips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 서식(왼쪽 칸 「서식」 — 엑셀 서식 붓). 붓을 든 동안 단추는 강조색 면이고 잠그면 안쪽 테가 하나 더 선다. 붓을 든 무대의 커서는
+   copy 다(손잡이·끌기 커서보다 앞 — 붓을 든 채 누르면 끌지 않고 붙인다). Space·가운데 버튼 화면 이동 중에는 이동 커서 그대로. */
+.sle-format { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.sle-format-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.sle-paint svg { width: 14px; height: 14px; flex: none; }
+.sle button.sle-paint[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle button.sle-paint.is-sticky { box-shadow: inset 0 0 0 2px var(--sle-on-accent); }
+.sle-paint-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.sle-paint-now { margin: 0; color: var(--sle-muted); font-size: 0.78rem; line-height: 1.35; overflow-wrap: anywhere; }
+.sle .sle-canvas.is-painting:not(.is-pan-ready):not(.is-panning),
+.sle .sle-canvas.is-painting:not(.is-pan-ready):not(.is-panning) * { cursor: copy !important; }
+/* 범위(층·FAB)마다 쓰는 도구만 보인다. FAB 에는 호기가 없어 미배치 칸·반입구·문·기둥·설비 금지가 없고, 층 블록은 FAB 에만
+   있다. */
 .sle.is-fab .sle-floor-only, .sle:not(.is-fab) .sle-fab-only { display: none !important; }
 .sle-area-note { color: var(--sle-danger); font-size: 0.78rem; }
 .sle-area-note:empty { display: none; }
-.sle-inspector-name { display: inline; }
-.sle-inspector.is-empty .sle-inspector-name { font-weight: 400; color: var(--sle-muted); }
 
 /* ---- 보기 전용(Space 층 상세 뷰어) — 편집 도구를 숨기고 같은 도면을 보인다 ---- */
 .sle:not(.is-view) .sle-view-only, .sle.is-view .sle-edit-only { display: none !important; }
@@ -469,7 +629,7 @@
 .sle.is-view.is-pinned .sle-pinned { display: flex !important; }
 
 /* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ----
-   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitFabBar` 가 접는
+   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitToolbar` 가 접는
    차례를 하나씩 더한다 — ① 선택 안내와 「기준일」·「미확인」 말머리(화면에서만 — 낭독기는 읽는다), ② 미확인 대수
    (「!」만 — 대수는 풍선), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 그래도 넘치면(더 좁은 창) 요약도
    말줄임(풍선에 온 글) — 화면 밖으로 밀려 안 보이는 것보다 낫다. 말줄임은 앞머리가 읽히는 폭(기준일 4em·요약
@@ -497,9 +657,124 @@
 }
 .sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }
 .sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }
-/* ⑥ 둘째 줄 — 보기에서 숨는 빈 칸(`sle-spacer`, 선택 줄 바로 뒤)이 온 폭 줄바꿈이 된다. 층 보기 도구 줄은 넘치면 곧장
-   이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px 에서 「배치 …」 로 잘렸다(E2E r1). */
+/* ⑥ 둘째 줄 — 빈 칸(`sle-spacer` — 보기에서는 숨는 칸, 선택 줄 바로 뒤 · 편집에서는 「빼기·지우기」 뒤)이 온 폭 줄바꿈이
+   된다. 층 보기 도구 줄은 넘치면 곧장 이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px
+   에서 「배치 …」 로 잘렸다(E2E r1). 편집은 「호기 정보」·「고정」·「적용」 이 둘째 줄이다(글도 다시 선다 — 자리가 넉넉하다). */
 .sle-toolbar.is-fit6 { flex-wrap: wrap; height: auto; row-gap: 2px; }
-.sle.is-view .sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
+.sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
 .sle-toolbar.is-fit6 .sle-summary { flex: 1 1 10em; min-width: 0; overflow: visible; white-space: normal; }
+/* 편집 도구 줄 ① — 「호기 정보」·「고정」 은 아이콘만, 기준일 칩은 날짜만(화면에서만 — 낭독기는 읽고 풍선은 그대로다).
+   사이드바를 연 1280px 창의 층 편집이 3px 넘쳤고, 1100px 창은 이것으로도 모자라 ⑥ 으로 간다. */
+.sle-toolbar.is-efit1:not(.is-fit6) .sle-sheet-toggle-word, .sle-toolbar.is-efit1:not(.is-fit6) .sle-lock-word,
+.sle-toolbar.is-efit1 .sle-pinchip-word {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 .sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }
+
+/* ---- 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청) ----
+   도면 위에 겹친 창이다(편집기 몸 `.sle-body` 안에 묶임 — 자리·크기는 JS 가 `left`·`top`·`width`·`height` 로). 제목 줄을 끌어
+   옮기고 오른쪽 아래 손잡이로 크기를 바꾸며, 접으면 제목 줄만 남는다. 표는 머리 줄이 붙어 있고 창 안에서 굴러간다(바깥
+   페이지로 굴림이 새지 않게 `contain`). 칸 머리 ▾ 를 누르면 엑셀 자동 필터 꼴 펼침이 창 안에 뜬다. */
+.sle-sheet {
+  position: absolute; z-index: 4; display: flex; flex-direction: column; box-sizing: border-box; min-width: 0; overflow: hidden;
+  border: 1px solid var(--sle-border-strong); border-radius: 8px; background: var(--sle-surface); color: var(--sle-text);
+  box-shadow: 0 0 0 2px var(--sle-border); font-size: 0.8rem;
+}
+.sle-sheet[hidden] { display: none; }
+.sle-sheet.is-min { height: auto !important; }
+.sle-sheet.is-min .sle-sheet-main, .sle-sheet.is-min .sle-sheet-grip, .sle-sheet.is-min .sle-sheet-menu { display: none; }
+.sle-sheet-head {
+  display: flex; align-items: center; gap: 6px; flex: none; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px;
+  border-bottom: 1px solid var(--sle-border); cursor: move; touch-action: none; user-select: none;
+}
+.sle-sheet.is-min .sle-sheet-head { border-bottom: none; }
+.sle-sheet-title { font-weight: 700; white-space: nowrap; }
+.sle-sheet-tabs { display: inline-flex; gap: 2px; min-width: 0; }
+.sle button.sle-sheet-tab { height: 24px; padding: 0 8px; font-size: 12px; border-color: transparent; background: none; }
+.sle button.sle-sheet-tab[aria-selected="true"] { border-color: var(--sle-accent); color: var(--sle-accent); }
+.sle-sheet-tab b { font-variant-numeric: tabular-nums; }
+.sle-sheet-tab b:empty { display: none; }
+.sle button.sle-sheet-min, .sle button.sle-sheet-close { height: 24px; min-width: 24px; padding: 0 6px; font-size: 14px; }
+.sle-sheet-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.sle-sheet-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: none; padding: 5px 10px;
+  border-bottom: 1px solid var(--sle-border);
+}
+.sle-sheet[data-tab="picked"] .sle-sheet-chips, .sle-sheet[data-tab="picked"] .sle-sheet-clear,
+.sle-sheet[data-tab="picked"] .sle-sheet-hl { display: none; }
+.sle-sheet-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.sle-sheet-chips:empty { display: none; }
+.sle button.sle-sheet-chip {
+  height: 22px; padding: 0 8px; font-size: 11.5px; font-weight: 600; max-width: 22em; overflow: hidden; text-overflow: ellipsis;
+  border-color: var(--sle-filter-ring); color: var(--sle-text);
+}
+.sle button.sle-sheet-clear { height: 22px; padding: 0 8px; font-size: 11.5px; }
+.sle-sheet-hl { font-size: 0.78rem; }
+.sle-sheet-count { margin-left: auto; color: var(--sle-muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sle-sheet-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.sle-sheet-table { border-collapse: separate; border-spacing: 0; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.sle-sheet-table th, .sle-sheet-table td {
+  padding: 3px 8px; white-space: nowrap; text-align: left; border-bottom: 1px solid var(--sle-border);
+}
+.sle-sheet-table td { max-width: 18em; overflow: hidden; text-overflow: ellipsis; }
+.sle-sheet-table td.is-num { text-align: right; }
+.sle-sheet-table th {
+  position: sticky; top: 0; z-index: 1; background: var(--sle-surface); color: var(--sle-muted); font-weight: 700;
+  box-shadow: inset 0 -1px 0 var(--sle-border-strong);
+}
+.sle-sheet-table th.is-filtered { color: var(--sle-text); }
+.sle button.sle-sheet-funnel {
+  height: 18px; min-width: 18px; margin-left: 4px; padding: 0 3px; font-size: 10px; vertical-align: middle; border-color: transparent;
+  background: none; color: var(--sle-muted);
+}
+.sle button.sle-sheet-funnel.is-on { border-color: var(--sle-filter-ring); color: var(--sle-filter-ring); }
+.sle-sheet-table tbody tr { cursor: pointer; }
+.sle-sheet-table tbody tr:hover td { background: var(--sle-canvas); }
+.sle-sheet-table tbody tr:focus { outline: none; }
+.sle-sheet-table tbody tr:focus-visible td { box-shadow: inset 0 2px 0 var(--sle-accent), inset 0 -2px 0 var(--sle-accent); }
+.sle-sheet-table tbody tr.is-current td { background: var(--sle-canvas); font-weight: 700; }
+.sle-sheet-table tbody tr.is-current td:first-child { box-shadow: inset 3px 0 0 var(--sle-accent); }
+.sle-sheet-empty, .sle-sheet-cut { margin: 8px 10px; color: var(--sle-muted); font-size: 0.78rem; }
+.sle-sheet-empty[hidden], .sle-sheet-cut[hidden] { display: none; }
+.sle-sheet-note { flex: none; margin: 0; padding: 0 10px; color: var(--sle-muted); font-size: 0.76rem; line-height: 22px; }
+.sle-sheet-note:empty { display: none; }
+.sle-sheet-grip {
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--sle-border-strong) 50%, var(--sle-border-strong) 60%, transparent 60%,
+    transparent 72%, var(--sle-border-strong) 72%, var(--sle-border-strong) 82%, transparent 82%);
+}
+.sle-sheet.is-moving, .sle-sheet.is-sizing { user-select: none; }
+.sle-sheet-menu {
+  position: absolute; z-index: 3; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 8px;
+  overflow: auto; overscroll-behavior: contain; border: 1px solid var(--sle-border-strong); border-radius: 8px;
+  background: var(--sle-surface); box-shadow: 0 0 0 2px var(--sle-border); cursor: default;
+}
+.sle-sheet-menu[hidden] { display: none; }
+.sle-sheet-menu-head { font-size: 0.8rem; }
+.sle input.sle-sheet-menu-find { width: 100%; box-sizing: border-box; }
+.sle-sheet-menu-all, .sle-sheet-menu-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.sle-sheet-menu-all button, .sle-sheet-menu-actions button { height: 23px; padding: 0 8px; font-size: 12px; }
+.sle-sheet-menu-list { display: flex; flex-direction: column; gap: 2px; max-height: 14em; overflow: auto; overscroll-behavior: contain; }
+.sle-sheet-menu-item { display: flex; align-items: center; gap: 6px; padding: 1px 2px; cursor: pointer; }
+.sle-sheet-menu-item > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sle-sheet-menu-n { color: var(--sle-muted); font-variant-numeric: tabular-nums; }
+.sle-sheet-menu-range { display: flex; flex-direction: column; gap: 4px; }
+.sle-sheet-menu-range[hidden] { display: none; }
+.sle-sheet-menu-range .sle-field { display: grid; grid-template-columns: 2.6em minmax(0, 1fr); }
+.sle-sheet-menu-range input { width: 100%; min-width: 0; box-sizing: border-box; }
+.sle button.sle-sheet-toggle[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle-sheet-toggle svg { width: 13px; height: 13px; flex: none; }
+.sle button.sle-sheet-toggle[hidden] { display: none; }
+/* 필터에 맞는 호기 — 상자 밖 테(선택 후광보다 바깥, JS `FILTER_GAP_PX`), 맞지 않는 호기는 흐린다. 필요 단축 흐림(`is-dim`)과
+   함께면 두 흐림을 곱한다. 숨은 상자(기준일·겹침)는 테도 숨는다(visibility 를 따른다). */
+.sle-filter-ring { display: none; fill: none; pointer-events: none; }
+.sle-unit.is-filter-hit .sle-filter-ring {
+  display: inline; stroke: var(--sle-filter-ring); stroke-width: 2.5; vector-effect: non-scaling-stroke;
+}
+.sle-unit.is-filter-out { opacity: var(--sle-filter-dim-opacity); }
+.sle.is-view .sle-unit.is-dim.is-filter-out { opacity: calc(var(--sle-short-dim-opacity) * var(--sle-filter-dim-opacity)); }
+.sle-chip.is-filter-hit { box-shadow: inset 0 0 0 2px var(--sle-filter-ring); }
+.sle-tray-hits { color: var(--sle-filter-ring); font-weight: 700; white-space: nowrap; }
+.sle-tray-hits[hidden] { display: none; }
+@keyframes sle-chip-flash { 0%, 100% { background: transparent; } 30% { background: var(--sle-filter-ring); } }
+.sle-chip.is-flash { animation: sle-chip-flash 1.2s ease-out 1; }

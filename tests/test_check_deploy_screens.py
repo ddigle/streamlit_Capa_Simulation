@@ -1701,8 +1701,10 @@ def test_the_app_error_screen_is_an_error_box_without_the_sidebar_menu() -> None
     ],
 )
 def test_the_space_drawer_selectors_exist_in_the_editor(class_name: str) -> None:
+    """미배치 칸(도면 오른쪽 옆 칸 — 2026-11-03)의 접힌 띠 `sle-drawer-tab`·접기
+    `sle-drawer-close`·칸 상자 `sle-tray` 는 다른 class 와 함께 단다."""
     html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
-    assert f'class="{class_name}"' in html
+    assert re.search(rf'class="(?:[\w-]+ )*{class_name}(?: [\w-]+)*"', html), class_name
 
 
 def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
@@ -2688,11 +2690,11 @@ def _unit_classes(month: int) -> list[str]:
 
 class _FaderScreen(_FakeScreen):
     """`space_fader` 항목이 만지는 것(층 목록 표·층 고르기·페이더·「오늘」 단추·범례)만 가진 화면.
-    PageUp 한 번에 페이더가 한 달 옮겨 가되, 앞의 `lost` 번은 늦은 그림이 오늘로 되돌린다(층을
-    옮긴 회차의 새 epoch). 「오늘」 단추는 페이더가 오늘이면 꺼져 있고, 꺼진 단추를 누르면
-    Playwright 처럼 켜지기를 기다리다 `TimeoutError` 로 끝난다. `fail_at` 단계에서 범례를 읽으면
-    예외가 난다. `floor_open` 이면 앞 항목이 연 층이 세션에 남은 채 페이지가 열린다 — 층 상세에는
-    층 목록 표가 없고, 경로 줄 `S.PKG FAB 전체` 는 보조 단추이며 누르면 FAB 로 돌아간다."""
+    PageUp 한 번에 페이더가 한 달 옮겨 가되, 앞의 `lost` 번은 늦은 그림이 오늘로 되돌린다(층을 옮긴
+    회차의 새 epoch). 「오늘」 단추는 페이더가 오늘이면 꺼져 있고, 꺼진 단추를 누르면 Playwright
+    처럼 켜지기를 기다리다 `TimeoutError` 로 끝난다. `fail_at` 단계에서 범례를 읽으면 예외가 난다.
+    `floor_open` 이면 앞 항목이 연 층이 세션에 남은 채 페이지가 열린다 — 층 상세에는 층 목록 표가
+    없고, 사이드바 상자 `FAB 전체`(옛 경로 줄) 는 보조 단추이며 누르면 FAB 로 돌아간다."""
 
     def __init__(
         self, *, lost: int = 0, fail_at: str | None = None, floor_open: bool = False
@@ -2718,10 +2720,13 @@ class _FaderScreen(_FakeScreen):
             get_attribute=self._crumb_attribute,
             click=self._crumb_click,
         )
+        # 범례는 편집기 왼쪽 칸 「범례」 다(2026-11-03) — 그 글은 `main_text` 의 가짜 글을 빌린다.
+        legend = SimpleNamespace(count=lambda: 1, text_content=lambda: self.main_text())
         found = {
             ".sle-fader-input": fader,
             ".sle-fader-today": today,
             f".st-key-{screens.SPACE_FAB_CRUMB_KEY} button": crumb,
+            screens.LEGEND_SELECTOR: legend,
         }
         self.page = SimpleNamespace(locator=lambda selector: SimpleNamespace(first=found[selector]))
 
@@ -2856,7 +2861,7 @@ def test_the_space_fader_item_starts_from_the_fab_even_when_a_floor_was_left_ope
 ) -> None:
     """연 층은 세션 키라 `space_drawer` 가 연 층이 페이지를 다시 열어도 남는다 — 페이더 항목이
     층 목록 표를 기다리다 첫 판 · 다시 돈 판 모두 `TimeoutError(층 목록)` 였다(사내 리뷰
-    202610200720 발견 1 — 사외 흉내 저장소에서 재현). 항목은 경로 줄 `S.PKG FAB 전체` 가 보조
+    202610200720 발견 1 — 사외 흉내 저장소에서 재현). 항목은 사이드바 상자 `FAB 전체` 가 보조
     단추일 때만 눌러 FAB 에서 시작하고, 첫 판에 기록한다."""
     screen = _FaderScreen(floor_open=floor_open)
     item = next(item for item in ITEMS if item.key == "space_fader")
@@ -2869,9 +2874,9 @@ def test_the_space_fader_item_starts_from_the_fab_even_when_a_floor_was_left_ope
 
 
 def test_both_space_items_open_the_fab_overview_the_app_draws() -> None:
-    """두 Space 항목이 같은 길로 FAB 전체를 연다. 경로 줄 첫 칸은 그 키의 단추이고, FAB 전체면 주
-    단추 · 층을 열었으면 보조 단추이며, 누르면 세션의 연 층을 지운다(Streamlit 단추의 `data-testid`
-    는 `stBaseButton-<type>` 이다)."""
+    """두 Space 항목이 같은 길로 FAB 전체를 연다. 사이드바 「Space 도면」 상자 자리 줄 첫 칸은 그
+    키의 단추이고, FAB 전체면 주 단추 · 층을 열었으면 보조 단추이며, 누르면 세션의 연 층을
+    지운다(Streamlit 단추의 `data-testid` 는 `stBaseButton-<type>` 이다)."""
     for check in (screens.check_space_drawer, screens.check_space_fader):
         source = inspect.getsource(check)
         assert "screen.open_space_overview()" in source
@@ -3089,7 +3094,9 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
       아니다).
     - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로
       읽는다(7-18 은 하지 않지만 다른 절이 그 표를 부른다).
-    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
+    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있고, 그 줄과
+      아래 표를 도면 위 「호기 정보」 창으로 옮긴 것(2026-11-03)도 같은 줄이 말한다 — 앱에는 그
+      줄이 없다.
     - 7-23 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
       사내 이관 확인」 줄의 항목 수가 그 표의 수와 같다. 그 배포 뒤에 더한 항목은 TODO 「다음 배포 —
       화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다). 앞머리만 같아도
@@ -3111,10 +3118,11 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     headers_row = next(line for line in places.splitlines() if "| A `equipment_headers` |" in line)
     count = len(screens.EQUIPMENT_NEW_HEADERS)
     assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음 · 머리 " in headers_row
-    assert 'f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"' in _text(
-        PROJECT_ROOT / "app_pages" / "space_status.py"
-    )
+    page = _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+    assert "의 설비 마스터 {len(picked_rows)}줄" not in page and "sheet=_view_sheet(" in page
     assert "「… 의 **설비 마스터** n줄」" in places
+    row = next(line for line in places.splitlines() if "「… 의 **설비 마스터** n줄」" in line)
+    assert "「호기 정보」 창을 실은 배포부터는 아래 표와 표 위 줄이 없다" in row
 
     a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
     table_keys = re.findall(r"^\| `([a-z_]+)` \| ([^|]+) \|", a_table, re.MULTILINE)
@@ -4484,7 +4492,7 @@ def test_the_zone_count_waits_for_the_editor_of_the_chosen_floor() -> None:
     view = _text(COMPONENTS / "space_layout_editor.py")
     assert "setText(q('.sle-title'), data.title || '')" in editor
     assert "const svg = q('.sle-canvas')" in editor
-    assert '<span class="sle-title sle-edit-only"></span>' in html
+    assert '<span class="sle-title"></span>' in html
     assert '"title": floor_label(floor),' in view
     from capa_simulation.services.fab_layout import floor_label
 
