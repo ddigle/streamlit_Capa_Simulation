@@ -2059,8 +2059,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
     처리기 하나) 떠나는 까닭에 맞는 띠 CSS 변수(테마 단추면 `--capa-equipment-return` — `app_header.EQUIPMENT_RETURN_VARIABLE`,
     새로고침이면 `--capa-equipment-return-reload` — `EQUIPMENT_RELOAD_RETURN_VARIABLE`)에 이름이 있으면 탭의
-    `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,
-    글은 `TEXT["returned"]`·`TEXT["themed"]`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
+    `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸(오른쪽 아래
+    알림창 · Alarm — 코드 `TAB-02` 새로고침 · `TAB-03` 테마 전환, 단계 「확인 필요」 15초)에 낸다(전문 `TEXT["returned"]`·
+    `TEXT["themed"]`, 짧은 글 `RETURN_SHORT`·`THEME_RETURN_SHORT`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
     문서가 다시 알린다. 떠날 때 이름이 없으면 적지 않는다(알리기 전에 떠난 문서의 몫을 지우지 않는다). 테마 단추의 표지
     (`theme_toggle.THEME_SWITCH_STORAGE_KEY`)는 떠날 때 읽고 지우며, 탭 줄이 없던 문서(부트스트랩 오류)에서 눌러 남은 표지는 새
     문서의 첫 그리기가 지운다 — 남기면 그 문서의 다음 새로고침을 테마 전환 글로 알린다.
@@ -2096,9 +2097,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     것만 서버에 닿아 누른 탭은 남았다) 지금 탭을 고정했다(2026-10-26 E2E). 같은 탭의 둘째 누름(핀 두 번)과 키보드 누름
     (`detail` 0 — 좌표가 없다)은 그대로다.
   - 상한(10개) — JS 가 사이드바·본문 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 먼저 받아, 열린 탭이
-    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 알림(8초)은 창 오른쪽
-    아래 구석에 뜨고(`position: fixed`) 누름을 받지 않는다(`pointer-events: none`) — 탭 줄 바로 밑에 띄우니 화면 머리 줄
-    (HOME 주요 Case 칩)을 불투명하게 덮어 칩이 안 보인 채 눌렸다(2026-10-30 E2E). 지나 보낸 링크가 여는 탭은
+    아닌 화면이면 막고 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 알림은 탭 줄 칸이 아니라 같은 문서의
+    알림 칸에 낸다(코드 `TAB-01`, 단계 「조치 필요」 — `page_tabs.js` 의 `raiseAlert` → `window.__capaAlerts.raise`, 알림
+    칸이 아직 서지 않았으면 `window.__capaAlertQueue`). 옛 탭 줄 알림 칸(`.capa-tabs-notice`)은 걷었다 — 한 칸이라 뒤 알림이
+    앞 알림을 덮었다. 알림 칸 「그 화면으로」 는 `capa-open-page` 사건({href})으로 와 탭 줄 이동 길을 탄다(열린 탭이면
+    `select` — 떠나기 확인 · 한 번에 하나, 아니면 그 화면 링크 누름 — 상한 거름). 지나 보낸 링크가 여는 탭은
     그 탭이 data 에 올 때까지(같은 `epoch`, 길어야 `BUSY_MS`) 열린 탭으로 센다(순수 구획 `<tabs-links>`) — 세지 않으면 탭
     9개에서 링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차 data 의 탭 9개로 세어 거름을 지났고, 서버 되돌림이
     두 화면을 기록에 쌓아 뒤로가기가 갇혔다(2026-10-27 E2E). 그래도 들어온 이동(뒤로·
@@ -2159,11 +2162,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     주소에 테마만 붙이면 그 지우기가 먼저 닿은 때 새 세션이 링크 없이 열렸다(E2E 결함 — 사본 CPU 6배 느리게 9번 중 8번).
     같은 출처·경로일 때 빠진 이름만 싣고 지금 주소의 값은 그대로 둔다. 단추를 눌러 바꿀 때(`syncParam`)는 지금 주소
     그대로다. node 로 스크립트 셋을 가짜 부모 창에서 돌리는 시험이 `tests/test_theme_reopen_link.py` 다.
-  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌, 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
+  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(변경 칩 · Guide · Alarm · Print · 테마 — 2026-11-03, 변경 칩
+    `CHANGES_CHIP_ID` 와 Alarm `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
     `SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳이다. iframe 내용은 회차마다 같아야 한다(`tests/test_theme_toggle.py`).
-  - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS`)에 넣고, `app_header`
-    의 오른쪽 비움 폭(`_NARROW_HEADER_RULES` 포함)과 진행 막대 자리(`_status_slot_css`)를 다시 잰다 — 셋 다 지금 툴바를
-    잰 값이다.
+  - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS` — 바뀐 것이 있을 때만
+    서면 `TOOLBAR_OPTIONAL` 에도)에 넣는다. 머리 띠 두 줄 · 진행 막대 자리의 오른쪽 비움은 알림 칸 JS 가 잰 툴바 실제
+    폭(`--capa-toolbar-width` · `data-capa-toolbar`)을 읽어 다시 잴 것이 없다(`app_header._MEASURED_HEADER_RULES`·
+    `_MEASURED_STATUS_SLOT_TEMPLATE`). rem 고정값(`_NARROW_HEADER_RULES` · `_status_slot_css`)은 그 표지가 서기 전
+    첫 프레임 몫이다.
   - 전환은 새 세션이라 미저장 시나리오·설비 편집이 있으면 `confirm` 으로 묻는다(표지 `unsaved_edits_marker`). 새로 읽기
     직전에 부모 창에 `RELOAD_ASKED_FLAG` 를 달아 탭 줄의 새로고침 확인 창(`page_tabs.js` 의 `<tabs-unload>`)이 다시 묻지 않게
     한다. 같은 표지를 그 확인 창도 읽는다.
@@ -2317,8 +2323,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     때만」). 그리는 쪽(잠근 꼴은 공식)이
     아니라 세션 라벨(`equipment_scenario_activation.remembered_equipment_label`)로 정하고, `app.py` 와 사이드바 설비 시나리오 줄
     (같은 회차에 띠를 다시 보낸다)이 함께 넘긴다. 테마 단추·새로고침은 새 세션이라 공식으로 돌아가는데(E5), 탭 줄 JS 가 문서를
-    떠날 때(`pagehide`) 이 값을 탭의 `sessionStorage` 에 적고 새로 읽은 문서가 탭 줄 알림 칸에 한 번 알린다(`page_tabs.js`
-    `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 몫과 테마 글). 서버에 아무것도 남기지
+    떠날 때(`pagehide`) 이 값을 탭의 `sessionStorage` 에 적고 새로 읽은 문서가 알림 칸(알림창 · Alarm)에 한 번 알린다
+    (`page_tabs.js` `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 몫과 테마 글). 서버에 아무것도 남기지
     않고, 앞 세션이 공식 발행 쌍이었으면(새로고침은 가정이 아니었으면) 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
@@ -2769,18 +2775,47 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
-- `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 그리기 한 길. `queue_flash(key, 글, *, kind,
-  icon)`(kind 는 success·info·warning·error, 아이콘 없는 성공은 글만 담는다)로 세션에 담고, 다음 실행에서
-  `render_flash(*keys)` 가 알림이 있든 없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 한 번 그리고 그 칸을
-  돌려준다 — 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의 실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤
-  `st.rerun()` 이면 문구가 그려지지 않는다). 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
+- `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 보내기 한 길. `queue_flash(key, 글, *, kind,
+  icon, alert)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건 코드 —
+  없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
+  없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
+  그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
+  그 칸에도 그린다(2026-11-03 결정 보드 D3 (가) — `BESIDE_KINDS`). 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의
+  실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다). 표지 글은 평문(`alerts.plain_text`
+  — 마크다운 꾸밈을 걷는다)이고 칸 key(`origin`) · 화면을 단다. 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
   AST 그물 둘이 막는다 — 이름에 FLASH·NOTICE 가 든 칸을 비우는(`pop`·`del`) 자리와, 이름과 상관없이 꺼낸 칸(`pop`,
   같은 블록의 `get`·`[]` 뒤 `del`, 바깥에서 읽어 두고 한 갈래 안에서 비우며 그 갈래에서 그리는 꼴)의 값이 알림
   요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이 다른 칸만 (파일, 함수, 칸) 으로 까닭과
   함께 허용 목록에 둔다(9장 「조건부 알림」).
   담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
-  `write_guard.held_flash` 로 그 글을 적어 둔 아이콘·종류(`note_notice(…, icon=, kind=)` — 종류는 보통 성공)로 다시 그린다 — 아주 빠른 둘째
-  누름의 회차가 앞 회차의 알림을 지우지 않게 모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
+  `write_guard.held_flash` 로 그 글을 적어 둔 아이콘·종류(`note_notice(…, icon=, kind=)` — 종류는 보통 성공)로 다시 낸다 — 표지는
+  첫 알림과 같은 id 라 알림창이 두 번 뜨지 않는다. 아주 빠른 둘째 누름의 회차가 앞 회차의 알림을 지우지 않게 모든 칸이 이
+  길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장). 그 밖의 칸도 보낸 표지를 `alerts.RESEND_SECONDS`(3초) 안에 그 칸을
+  다시 그리는 회차가 같은 id 로 한 번 더 보낸다(`again` — 표지를 브라우저가 훑기 전에 회차가 끊겨도 알림창이 뜬다).
+- `src/capa_simulation/alerts.py` — 알림 등록부와 표지 API(2026-11-03 결정 보드 D1 ~ D6, 9장 「알림 칸」). 등록부
+  `SPECS`(→ `REGISTRY`)는 `AlertSpec(코드, 단계, 갈래, 이름, 짧은 글, 전문)` 줄이고 코드는 `AB-01` 꼴 고정 id(한 번 쓴 번호는
+  다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
+  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 ·
+  `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
+  한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
+  `state(code, scope=, content=, active=, text=, full=, scope_label=)` — 이벤트 칸 한 자리, 지문(`fingerprint` = 코드 + 범위 +
+  내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
+  `<style data-capa-alerts="JSON">`(`MARKER_ATTRIBUTE`, 스타일만 든 `st.html` — 이벤트 칸)이고 `note_page` 가 적은 이번
+  화면을 단다. 분석 기록(L2)은 자리만 있다(`record_server_event` · `ALERT_LOG_SWITCH` — usage-log 1단계와 함께, D6).
+- `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
+  에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
+  그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
+  테두리)와 머리 툴바 슬롯에 두 호스트(변경 칩 · Alarm 단추)를 세우고 칸 자체는 접는다(`_HIDE_STYLE`). data 는 세션만 읽는다
+  (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
+  `palette()` · 글 `TEXT`). 패널은 브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id 는
+  이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
+  문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 시험: `tests/test_alert_center.py`(data · 자리 · 변경 목록) ·
+  `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node 순수 구획 `<alerts-rows>`).
+- `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
+  세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안 · 작은 편집표 · Past Data · 시나리오 관리 표
+  초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
+  가정(100% 아님)을 더해 묶음 셋(떠나면 사라짐 · 저장 안 함 · 가정 사용 중) 차례로 낸다. DB · 캐시를 읽지 않는다. 폼 안 ·
+  브라우저 안 초안과 저장 개념이 없는 조건은 들지 않는다(다음 판 후보 — `docs/TODO.md`).
 - `src/capa_simulation/components/widget_generation.py` — 서버 값을 브라우저가 든 위젯에 닿게 하는 **한 길**(9장 「닫힌
   팝업 안」·「쓰기 콜백」). 세대 칸 읽기(`generation` — `write_guard.current_generation` 과 같은 읽기)·세대 key 짓기
   (`widget_key` — 꼴 `__g`·`_g`·`__`·`__p` 와 `bare_zero` 로 옛 key 글자를 바이트까지 지킨다)·세대 올리기(`bump` — 뒷정리 맨
@@ -5270,7 +5305,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     한 배치 상자의 「저장 칸」·「버리기」 팝오버가 상자 안 저장 오류 한 줄에 밀려 닫히던 자리를 이것으로 막았다
     (`tests/test_popover_keys.py` 가 소스를 훑고, 오류가 서는 회차에도 블록 id 가 같은지 본다).
   - **알림 칸은 `components/flash.py` 한 길이다.** 콜백·본문의 결과는 `queue_flash` 로 담고 그 칸은 `render_flash` 로
-    그린다 — 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
+    세운다 — 성공 · 안내는 오른쪽 아래 알림창으로만 가고 칸에는 경고 · 오류(거부 · 실패)만 그린다(D3 — 아래 「알림 칸(알림창 ·
+    Alarm)」). 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
     칸에만 가지 않는다(2026-10-26 리팩토링 — 칸 열여섯을 옮겼고, 리뷰 뒤 설비 마스터 탭 저장 결과·VOC 머리 알림과 글
     쓰기·글 상자 실패·Space 설비 시나리오 바꾸기 실패를 더 옮겼다). 실패만 내는 칸도 같다(`kind="error"`).
     `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
@@ -5482,6 +5518,38 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   잇단 알림을 내는 곳은 알림 자리를 여럿 늘 같은 수로 두고(`components/shortening_progress_panel.py`) 첫 자리 토스트가
   떠 있을 때만 다음 자리로 비키며, 그 프래그먼트를 그리지 않는 앱 전체 회차에도 같은 자리를 채운다. 콜백이 남기는 알림은
   덮어쓰지 않고 쌓는다.
+
+### 알림 칸(알림창 · Alarm · 변경 칩 — 2026-11-03 결정 보드 D1 ~ D6)
+
+- **알림은 사건 · 상태 · 자리 글 셋이다**(`alerts` 모듈 설명). 사건(한 번 일어난 일 — 동작 결과 · 남의 저장 · 세션 이동 · 탭
+  상한 · 공식 복귀)과 상태(조건이 남아 있는 동안 다시 그리던 경고)는 오른쪽 아래 알림창 한 꼴로 뜨고 머리 툴바 `Alarm` 에
+  쌓인다. 자리 글(빈 상태 · 잠금 까닭 · 팝업 · 폼 안 검증 · 확인 창 · 멈춤 화면)은 알림이 아니라 그대로 둔다. 단계는 넷(알림 ·
+  확인 필요 · 조치 필요 · 오류 — `tokens.ALERT_*`, 단계 이름 글자를 맨 앞에 붙여 색만으로 가르지 않는다).
+- **새 알림은 등록부(`alerts.SPECS`)에 한 줄을 더하고 그 코드로 낸다.** 코드는 `AB-01` 꼴, 한 번 쓴 번호는 다시 쓰지 않는다.
+  짧은 글(알림창)은 60자 안팎(`SHORT_LIMIT`), 전문은 패널 · 로그에 간다.
+- **표지를 쓰는 함수는 부를 때마다 이벤트 칸에 정확히 한 자리다**(`alerts.state` · `alerts.flush` · `flash.render_flash` —
+  알릴 것이 없으면 빈 `<style></style>`). 프래그먼트 · 팝업 본문의 이벤트 칸 자리 수 규칙(위 「프래그먼트·이벤트 칸·토스트」)
+  때문에 갈래 안에서 부르지 않고 늘 같은 자리에서 부른다. 팝업(`st.dialog`) 본문 안에서는 이벤트 칸을 쓰지 않고 그 칸
+  안에 숨은 표지(`<span hidden data-capa-alerts>`)를 그린다(`alerts.emit` · `alerts.in_dialog` — 팝업 호스트는 열렸든 닫혔든
+  이벤트 칸에 정확히 한 자리다). `alerts.event` 는 담기만 해 어느 갈래에서 불러도 된다.
+- **상태 경고는 자리에 그리지 않는다**(D2 (나)). 그 조건을 보는 회차마다 조건이 없어도 `alerts.state(..., active=False)` 로
+  부른다 — 지문(코드 + 범위 + 내용 — 범위는 시뮬레이션이면 `content_token` + 조회기간, 설비면 (공통 대장, 일정) 리비전 쌍,
+  내용은 글이 아니라 건수 · 이름 목록 같은 구조 값)이 바뀔 때만 알림창이 뜨고, 없어지면 Alarm 줄에 「해소 hh:mm」 이 선다.
+  닫힌 탭 · 접힌 펼침 안의 조건은 그 탭이 열린 회차에만 부른다. `tests/test_alert_sites.py` 가 경고 상자를 직접 그리는
+  자리(`.warning(`)를 (파일, 함수) 마다 세어 허용 목록(수 · 까닭)과 정확히 맞댄다 — 1단계가 옮기지 않은 자리는 「2단계 a/b 가
+  가른다」 까닭으로 남아 있고 2단계 갈래가 줄인다.
+- **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
+  오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다.
+- **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
+  쌓지 않고 앞 칸을 구석으로 옮겨 「×n」 을 붙이고, 창 가장자리 한 겹 테두리가 450ms easeOutQuad 로 그 칸에 모인다(한 번만 ·
+  누름을 막지 않음 · 「움직임 줄이기」 에서는 움직이지 않는 윤곽 1.6초).
+- **알림창 층은 Streamlit 대화상자 위다**(z-index 1000200 > 1.63 `stDialog` 1000059 — 사본 실측). 누름을 받지 않고 초점을
+  옮기지 않는다(`role=status` · polite). 대화상자가 열린 동안 호스트에 `inert` 가 붙지만 그리기는 그대로다.
+- **기록(L1)은 이 브라우저 탭 `sessionStorage`** 다(D1 (가) — 200줄 · 12시간, 새로고침 · 테마 전환에도 남음). 서버 분석 기록(L2)은
+  usage-log 1단계와 함께 만든다(D6 — 자리만 `alerts.record_server_event`).
+- **머리 변경 칩**(D5 (가))은 바뀐 것이 있을 때만 Guide 왼쪽에 선다 — 판정은 탭 줄 주황 점과 같은 등록부에 시나리오 미저장 ·
+  설비 가정 · UPEH 가정을 더한 것(`change_summary.session_changes` — 세션만 읽음). 600px 미만에서는 칩을 Alarm 점으로 합치고
+  툴바 `Print` 를 숨긴다(`app_header.SHELL_STYLE`).
 
 ### 팝업과 콜백
 
@@ -5710,8 +5778,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_scenario_management_page.py`·`tests/test_equipment_scenario_unchanged_names.py`·
     `tests/test_unchanged_profile_saves.py`(넓힌 일곱).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
-  `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
-  같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).
+  `components/flash.py` 로 세션에 담아 다음 회차에 낸다 — 성공은 오른쪽 아래 알림창 하나로 뜨고(버튼 곁에 같은 글을 두 번
+  두지 않는다), **버튼 곁 칸에는 오류 · 거부만 남긴다**(2026-11-03 결정 보드 D3 (가) — 고칠 입력이 그 자리에 있다. 옛 규칙
+  「그리는 자리는 버튼과 같은 상자 안」 을 바꿨다). 칸은 늘 서서 실패 문구도 같은 자리에서 답한다(`tests/test_flash_messages.py`
+  의 AST 그물이 같은 함정을 소스에서 찾는다).
 - **공용 프로필을 기본값으로 심는 조회 위젯**은 세션에 값이 없을 때만 심고(`index=`·`default=` 없이) 프로필 저장은 그
   위젯의 `on_change` 에서, 값이 실제로 바뀐 때만 한다. 심기·가지치기·조회기간 변경으로 옮긴 값을 쓰면 공용 행이라 남이
   고른 값을 되쓰고(핑퐁), 선택지 밖 글자(브라우저가 되보낸 옛 라벨)가 섞인 콜백 값은 쓰지 않는다.
@@ -6310,6 +6380,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 8. **다른 화면으로 옮기는 새 단추·도우미는 전달 칸을 적기 전에 `refused_at_tab_limit` 을 부르는가**(9장 「팝업과
    콜백」) — 화면 링크는 `st.page_link` 로 두면 탭 줄 JS 가 막는다
 9. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
+10. **새 알림은 등록부 코드로 낸다**(9장 「알림 칸」) — 동작 결과는 `queue_flash`(성공은 알림창으로만), 조건 경고는
+    `alerts.state`(자리에 그리지 않음), 자리 글이면 `tests/test_alert_sites.py` 허용 목록에 까닭과 함께
 
 ### 코어 공개 창구(`module_api`) 변경
 
