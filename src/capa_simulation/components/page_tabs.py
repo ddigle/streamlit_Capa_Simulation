@@ -407,6 +407,11 @@ def _on_close(active: str | None) -> None:
     if neighbour is not None:
         queue_switch(neighbour)
         return
+    # 담긴 그림에는 닫은 탭이 아직 있다 — 뺀 그림으로 맞대야 다른 탭 닫기가 페이지를 다시 돌리지
+    # 않는다(그대로 맞대면 늘 어긋나 `resync_strip` 의 앱 전체 회차로 갔다).
+    order = payload.get("order")
+    if isinstance(order, list) and target not in strip.paths:
+        payload = {**payload, "order": [path for path in order if path != target]}
     _settle_drawn(strip, payload)
 
 

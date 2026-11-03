@@ -736,6 +736,37 @@ def test_closing_the_active_tab_right_after_moving_it_goes_to_the_drawn_neighbou
     assert state[PAGE_TABS_ORDER_SEQ_KEY] == 5
 
 
+def test_closing_a_background_tab_with_the_drawing_that_still_holds_it_keeps_the_page(
+    strip_session: tuple[SimpleNamespace, list[tuple[str, ...]]],
+) -> None:
+    """탭 줄 JS 는 닫는 탭을 숨기기 전에 그림을 담아 그 그림에 닫는 탭이 아직 있다. 지금 탭이 아닌
+    탭을 닫으면 서버는 닫은 탭을 뺀 그림으로 맞대 같으면 빈 프래그먼트만 돌린다 — 그대로 맞대면 늘
+    어긋나 epoch 를 올리고 앱 전체 회차로 갔다(HOME 진행 막대 · 본문 흐림)."""
+    fake, calls = strip_session
+    state = fake.session_state
+    s = SPACE_STATUS.path
+    state[PAGE_TABS_OPEN_KEY] = (H, A, B, s)
+    epoch = state[PAGE_TABS_EPOCH_KEY]
+
+    # s 를 A 앞으로 옮긴 채(보내지 않음) 지금 탭(B)이 아닌 A 를 닫는다 — 그림 [H, s, A, B].
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "close": {"id": A, "order": [H, s, A, B], "pins": [H], "seq": 6, "epoch": 1}
+    }
+    page_tabs._on_close(B)
+    assert state[PAGE_TABS_OPEN_KEY] == (H, s, B)
+    assert PAGE_TABS_QUEUED_KEY not in state
+    assert state[PAGE_TABS_EPOCH_KEY] == epoch + 1 and state[PAGE_TABS_ORDER_SEQ_KEY] == 6
+    assert calls == [_SINK]
+
+    # 옮긴 것 없이 닫아도 같다. 닫을 수 없는 고정 탭(H)은 목록에 남아 그림 그대로 맞댄다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"close": {"id": s, "order": [H, s, B], "pins": [H], "seq": 7}}
+    page_tabs._on_close(B)
+    state[PAGE_TABS_COMPONENT_KEY] = {"close": {"id": H, "order": [H, B], "pins": [H], "seq": 8}}
+    page_tabs._on_close(B)
+    assert state[PAGE_TABS_OPEN_KEY] == (H, B) and PAGE_TABS_QUEUED_KEY not in state
+    assert calls == [_SINK] * 3
+
+
 def _live_strip(monkeypatch: pytest.MonkeyPatch) -> None:
     """탭 줄을 이 AppTest 회차 **안에서** 등록해 진짜 트리거 칸을 세운다. 모듈을 읽을 때 등록한 것은
     AppTest 실행 밖이라 그 실행에서 「미등록」이다(모듈 설명)."""
