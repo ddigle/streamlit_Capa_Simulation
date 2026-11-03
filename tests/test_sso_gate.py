@@ -6,6 +6,7 @@ import secrets
 import sys
 import time
 from collections.abc import MutableMapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -512,6 +513,40 @@ def test_renewal_never_carries_an_open_socket_past_the_maximum(
     assert _closed_events() == [("expired", "max")]
 
 
+def test_a_socket_used_all_day_closes_at_the_maximum_as_max(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """하루 내내 쓴 탭 — 실제 갱신(5 · 10 · 15 · 20시간)은 상한에서 멈춰 표 칸이 정확히 상한이고,
+    상한 + 여유가 지나면 그 칸은 지워진다. 닫는 순간 핸드셰이크 토큰의 끝만 남아도 `end=max` 다."""
+    cfg = use_config()
+    headers, first = _signed_in(cfg)
+    cap = first.auth_time + cfg.session_max_seconds
+    ECHO_DISCONNECTS.clear()
+
+    def step(index: int) -> None:
+        if index == 1:
+            claims = first
+            for hours in (5, 10, 15, 20):
+                at = first.iat + hours * HOUR
+                renewed = renew_session(cfg, claims, now=at)
+                assert renewed is not None
+                _, claims = renewed
+                runtime.note_renewal(claims.sid, claims.exp, now=at)
+            assert claims.exp == cap
+            _clock_at(monkeypatch, cap - 60)
+        if index == 2:
+            _clock_at(monkeypatch, cap + SESSION_LEEWAY + 1)
+
+    sent = websocket_talk(
+        gated_app(), "/_stcore/echo", headers=headers, frames=[b"a", b"b", b"c"], before_frame=step
+    )
+
+    assert _echoed(sent) == [b"echo:a", b"echo:b"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert runtime.renewed_exp(first.sid, now=cap + SESSION_LEEWAY + 1) is None
+    assert _closed_events() == [("expired", "max")]
+
+
 def test_logout_closes_sockets_opened_with_an_older_token_of_the_session() -> None:
     """핸드셰이크는 옛 토큰 A, 갱신으로 B — B 로 로그아웃하면 같은 sid 인 A 의 연결도 닫힌다."""
     cfg = use_config()
@@ -536,6 +571,54 @@ def test_logout_closes_sockets_opened_with_an_older_token_of_the_session() -> No
 
     assert _echoed(sent) == [b"echo:before"]
     assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert _closed_events() == [("revoked", "")]
+
+
+def test_logout_of_a_tab_carried_by_the_renewal_table_is_revoked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """핸드셰이크 토큰은 끝났고 갱신 표로만 사는 탭 — 다른 탭의 로그아웃(실제 경로)은 표 칸을
+    지우지만 사건은 `reason=revoked` 다(폐기를 끝보다 먼저 본다)."""
+    cfg = use_config()
+    now = int(time.time())
+    login_at = now - 8 * HOUR
+    first_token, first = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=login_at)
+    claims, latest = first, first_token
+    for at in (login_at + 5 * HOUR, login_at + 7 * HOUR + 1800):
+        renewed = renew_session(cfg, claims, now=at)
+        assert renewed is not None
+        latest, claims = renewed
+        runtime.note_renewal(claims.sid, claims.exp, now=at)
+    assert first.exp + SESSION_LEEWAY < now < claims.exp
+    # 핸드셰이크는 처음 로그인 직후(그 토큰이 아직 살아 있을 때)에 열린 탭이다.
+    _clock_at(monkeypatch, login_at + 60)
+    ECHO_DISCONNECTS.clear()
+
+    def logout_in_another_tab(index: int) -> None:
+        if index == 1:
+            # websocket 운전기의 이벤트 루프 밖(다른 스레드)에서 실제 로그아웃 경로를 부른다.
+            with ThreadPoolExecutor(1) as pool:
+                response = pool.submit(
+                    http,
+                    gated_app(),
+                    "GET",
+                    names.LOGOUT_PATH,
+                    headers={"cookie": f"{cfg.session_cookie}={latest}", **NAVIGATE},
+                ).result()
+            assert response.status == 200
+            _clock_at(monkeypatch, now)
+
+    sent = websocket_talk(
+        gated_app(),
+        "/_stcore/echo",
+        headers={"cookie": f"{cfg.session_cookie}={first_token}", **ORIGIN},
+        frames=[b"before", b"after-logout"],
+        before_frame=logout_in_another_tab,
+    )
+
+    assert _echoed(sent) == [b"echo:before"]
+    assert sent[-1]["type"] == "websocket.close" and sent[-1]["code"] == 1008
+    assert runtime.renewed_exp(first.sid, now=now) is None
     assert _closed_events() == [("revoked", "")]
 
 
@@ -607,6 +690,9 @@ def test_off_mode_lets_everything_through() -> None:
     assert passed(http(gated_app(), "GET", "/", headers=NAVIGATE))
     assert passed(http(gated_app(), "GET", "/auth/login"))
     assert http(gated_app(), "GET", names.LOGIN_PATH).status == 404
+    # 앱 자리의 모든 GET 경로(Streamlit 정적 마운트 자리)가 있어도 갱신 경로의 GET 은 우리 404 다.
+    for method in ("GET", "HEAD", "POST"):
+        assert http(gated_app(), method, names.REFRESH_PATH).status == 404, method
     assert websocket_connect(gated_app(), "/_stcore/stream") == "accepted"
 
 

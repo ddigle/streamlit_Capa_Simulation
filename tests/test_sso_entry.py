@@ -68,7 +68,9 @@ def test_the_entry_is_discovered_as_an_st_app_with_routes_and_gate() -> None:
         [names.LOGIN_PATH, ["GET", "HEAD"]],
         [names.LOGOUT_PATH, ["GET", "HEAD"]],
         [names.ERROR_PATH, ["GET", "HEAD"]],
-        [names.REFRESH_PATH, ["POST"]],
+        # 갱신은 POST 하나지만 GET 도 붙여 처리기가 답한다(꺼짐 404 · 그 밖 405) — 붙이지 않으면
+        # Streamlit 정적 마운트가 그 주소에 앱 껍데기를 낸다.
+        [names.REFRESH_PATH, ["GET", "HEAD", "POST"]],
     ]
     assert result["middleware"] == ["capa_simulation.auth.gate.SsoGate"]
 

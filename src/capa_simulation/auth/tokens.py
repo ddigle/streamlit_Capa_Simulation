@@ -15,7 +15,8 @@
   갱신(`renew_session`)은 앱 화면에서 사람이 쓰는 동안 갱신 경로가 부른다. 새 `jti` · `iat=지금` ·
   `exp=min(지금 + 세션 시간, auth_time + 최대)` 로 다시 서명하고 loginid · 이름 · 부서 · `sid` ·
   `auth_time` 은 **검증된 클레임에서만** 옮긴다(요청 값을 쓰지 않는다 — 상한 우회를 막는다). 직전
-  발급에서 `RENEW_MIN_INTERVAL` 안이거나 상한에 닿아 늘 것이 없으면 다시 서명하지 않는다.
+  발급(보낸 토큰의 `iat` 와 갱신 표에 적힌 그 sid 의 마지막 발급 가운데 늦은 것)에서
+  `RENEW_MIN_INTERVAL` 안이거나 상한에 닿아 늘 것이 없으면 다시 서명하지 않는다.
 - **상태 토큰** — 로그인 시작 때 state · nonce · 돌아갈 자리를 담아 쿠키로 둔다(10분).
 
 세션 · 상태 토큰의 키는 `JWT_SECRET_KEY` 에서 쓰임별로 파생한다 — 서로 바꿔 끼울 수 없다(aud 도
@@ -23,6 +24,8 @@
 
 실패는 모두 `SsoReject(code)` 다. 코드는 오류 화면 · 로그가 그대로 쓴다. 진단(`diagnostic`)에는
 서명이 통과한 뒤에만 받은 iss · aud · 시각을 담고, 토큰 · state · nonce · 클레임 값은 담지 않는다.
+서명 전 머리에서는 인증서 지문(x5t · kid — base64url 64자까지)과 알려진 JWS alg 이름(그 밖은
+`other`)만 담는다 — 로그인 없이 보낸 글이 오류 화면에 서지 않게.
 """
 
 from __future__ import annotations
@@ -55,8 +58,29 @@ ID_TOKEN_LEEWAY = 120
 ID_TOKEN_MAX_AGE = 600
 SESSION_LEEWAY = 30
 STATE_TTL = 600
-# 직전 발급이 이보다 가까우면(초) 갱신해도 다시 서명하지 않는다 — 탭 여럿 · 되풀이 요청을 거른다.
+# 그 sid 의 직전 발급이 이보다 가까우면(초) 갱신해도 다시 서명하지 않는다 — 탭 여럿 · 같은 옛 쿠키의
+# 되풀이 요청을 거른다(직전 발급은 보낸 토큰의 `iat` 와 갱신 표의 발급 시각 가운데 늦은 것).
 RENEW_MIN_INTERVAL = 60
+
+# 거절한 id_token 머리의 alg 를 진단에 그대로 싣는 이름(RFC 7518 · 8037) — 그 밖은 `other`.
+KNOWN_JWS_ALGS = frozenset(
+    {
+        "none",
+        "HS256",
+        "HS384",
+        "HS512",
+        "RS256",
+        "RS384",
+        "RS512",
+        "ES256",
+        "ES384",
+        "ES512",
+        "PS256",
+        "PS384",
+        "PS512",
+        "EdDSA",
+    }
+)
 
 LOGINID_PATTERN = re.compile(r"^[A-Za-z0-9._@-]{1,64}$")
 MAX_DISPLAY_LENGTH = 100
@@ -260,6 +284,17 @@ def _reject_after_signature(
     return SsoReject(code, diagnostic=diagnostic, loginid=_loginid_of(claims, cfg))
 
 
+def _alg_diagnostic(alg: object) -> str:
+    """서명 전 머리의 alg — 알려진 JWS 이름이면 그대로, 그 밖은 `other`.
+
+    콜백은 로그인 없이 누구나 보낼 수 있고 진단은 id 만 알면 쿠키 없이 오류 화면에 보인다 — 남이
+    고른 글이 앱 출처의 화면에 서지 않게 한다.
+    """
+    if alg is None or alg == "":
+        return "-"
+    return alg if isinstance(alg, str) and alg in KNOWN_JWS_ALGS else "other"
+
+
 def _signature_diagnostic(cfg: SsoConfig, x5t: str, kid: str) -> dict[str, str]:
     return {
         "token_x5t": x5t or "-",
@@ -280,7 +315,7 @@ def verify_id_token(token: str, cfg: SsoConfig, *, expected_nonce: str, now: int
         raise SsoReject("token_malformed") from exc
     alg = header.get("alg")
     if alg != "RS256":
-        raise SsoReject("alg_not_allowed", diagnostic={"alg": clean_text(alg, 20) or "-"})
+        raise SsoReject("alg_not_allowed", diagnostic={"alg": _alg_diagnostic(alg)})
     x5t = _header_id(header.get("x5t"))
     kid = _header_id(header.get("kid"))
     ordered, matched = pick_certs(cfg.signing_certs, x5t, kid)
@@ -403,14 +438,17 @@ def issue_session(
 
 
 def renew_session(
-    cfg: SsoConfig, claims: SessionClaims, *, now: int
+    cfg: SsoConfig, claims: SessionClaims, *, now: int, last_issued: int | None = None
 ) -> tuple[str, SessionClaims] | None:
     """검증된 세션을 다시 서명한다. 늘릴 것이 없으면 `None`.
 
-    직전 발급(`iat`)이 `RENEW_MIN_INTERVAL` 안이거나, 상한(`auth_time + 최대`)에 닿아 새 끝이 지금
-    끝보다 늦지 않으면 `None`. 부르는 쪽은 `verify_session`(엄격)과 폐기 확인을 먼저 마친다.
+    직전 발급(`iat` 와 `last_issued` — 갱신 표에 적힌 그 sid 의 마지막 발급 — 가운데 늦은 것)이
+    `RENEW_MIN_INTERVAL` 안이거나, 상한(`auth_time + 최대`)에 닿아 새 끝이 지금 끝보다 늦지 않으면
+    `None`. `last_issued` 를 보는 까닭 — 60초 넘은 같은 옛 쿠키를 되풀이해 보내면 그 토큰의 `iat`
+    만으로는 요청마다 다시 서명한다. 부르는 쪽은 `verify_session`(엄격)과 폐기 확인을 먼저 마친다.
     """
-    if now - claims.iat < RENEW_MIN_INTERVAL:
+    issued = claims.iat if last_issued is None else max(claims.iat, last_issued)
+    if now - issued < RENEW_MIN_INTERVAL:
         return None
     new_exp = min(now + cfg.session_seconds, claims.auth_time + cfg.session_max_seconds)
     if new_exp <= claims_end(claims, cfg):

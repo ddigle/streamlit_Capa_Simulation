@@ -186,11 +186,16 @@ def readiness_line(cfg: SsoConfig) -> str:
 
 
 def _event_code(fields: dict[str, str]) -> str:
-    """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 인증서 남은 날 차례."""
+    """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 인증서 남은 날 차례.
+
+    만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
+    로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다.
+    """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
         if value and value != "-":
-            return value
+            end = fields.get("end", "")
+            return f"{value} · {end}" if end and end != "-" else value
     days = fields.get("days", "")
     return f"남은 날 {days}" if days else "-"
 

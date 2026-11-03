@@ -9,10 +9,11 @@
 갱신된 쿠키를 싣는다. DB 에는 아무것도 쓰지 않는다. 세션 상태(`st.session_state`)도 아니다 —
 문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
 
-갱신 표(`sid → 최신 exp`)는 핸드셰이크에 묶인 신원만 본다(문지기의 열린 연결 · `app.py`) —
-websocket 은 핸드셰이크 때의 쿠키만 알아서 그 뒤 갱신 경로가 다시 발급한 쿠키를 모른다. 시각을
-받는 함수는 `now` 를 넘겨받을 수 있다 — 시험이 문지기 시계만 바꿔도 갱신 표 · 폐기 표가 같은
-시각으로 판정된다.
+갱신 표(`sid → 최신 exp · 마지막 발급 시각`)의 끝은 핸드셰이크에 묶인 신원만 본다(문지기의 열린
+연결 · `app.py`) — websocket 은 핸드셰이크 때의 쿠키만 알아서 그 뒤 갱신 경로가 다시 발급한 쿠키를
+모른다. 갱신 경로는 발급 시각만 본다(같은 sid 를 60초 안에 다시 서명하지 않게 —
+`tokens.renew_session`). 시각을 받는 함수는 `now` 를 넘겨받을 수 있다 — 시험이 문지기 시계만
+바꿔도 갱신 표 · 폐기 표가 같은 시각으로 판정된다.
 
 배경 스레드를 세우지 않는다(AGENTS 9장 「배경 스레드」 는 자동 갱신 예약 하나). 만료된 항목은 읽거나
 쓸 때 치운다. 모든 읽기 · 쓰기는 잠금 하나로 묶는다 — 문지기(이벤트 루프)와 앱 스크립트 스레드가
@@ -30,6 +31,7 @@ import time
 from collections import OrderedDict, deque
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from capa_simulation.auth import names
 from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
@@ -75,13 +77,20 @@ class SsoEvent:
         return dict(self.fields).get(key, "")
 
 
+class _Renewal(NamedTuple):
+    """갱신 표 한 칸 — 그 sid 의 가장 늦은 끝과 마지막으로 다시 발급한 시각."""
+
+    exp: int
+    issued_at: int
+
+
 @dataclass
 class _State:
     config: SsoConfig | None = None
     started: bool = False
     gate_installed: bool = False
     revoked: dict[str, int] = field(default_factory=dict)
-    renewals: dict[str, int] = field(default_factory=dict)
+    renewals: dict[str, _Renewal] = field(default_factory=dict)
     refresh_counts: dict[str, int] = field(
         default_factory=lambda: dict.fromkeys(REFRESH_OUTCOMES, 0)
     )
@@ -220,34 +229,61 @@ def session_revoked(sid: str, *, now: int | None = None) -> bool:
 
 
 def _prune_renewals(now: int) -> None:
-    ended = [sid for sid, exp in _STATE.renewals.items() if exp + SESSION_LEEWAY < now]
+    ended = [sid for sid, entry in _STATE.renewals.items() if entry.exp + SESSION_LEEWAY < now]
     for sid in ended:
         del _STATE.renewals[sid]
 
 
 def note_renewal(sid: str, exp: int, *, now: int | None = None) -> None:
-    """갱신 경로가 다시 발급한 세션의 끝을 적는다 — 그 sid 의 열린 연결이 이 끝까지 산다."""
+    """갱신 경로가 다시 발급한 세션의 끝과 발급 시각을 적는다.
+
+    그 sid 의 열린 연결이 이 끝까지 살고, 갱신 경로는 이 발급 시각에서 60초 안이면 다시 서명하지
+    않는다.
+    """
     moment = _now() if now is None else now
     with _LOCK:
         _prune_renewals(moment)
         if exp + SESSION_LEEWAY < moment:
             return
-        if sid not in _STATE.renewals and len(_STATE.renewals) >= MAX_RENEWALS:
-            _drop_earliest(_STATE.renewals)
-        _STATE.renewals[sid] = max(exp, _STATE.renewals.get(sid, exp))
+        previous = _STATE.renewals.get(sid)
+        if previous is None:
+            if len(_STATE.renewals) >= MAX_RENEWALS:
+                earliest = min(_STATE.renewals, key=lambda key: _STATE.renewals[key].exp)
+                del _STATE.renewals[earliest]
+            _STATE.renewals[sid] = _Renewal(exp, moment)
+            return
+        _STATE.renewals[sid] = _Renewal(max(exp, previous.exp), max(moment, previous.issued_at))
+
+
+def _live_renewal(sid: str, moment: int) -> _Renewal | None:
+    """잠금 안에서 부른다 — 그 sid 의 칸. 없거나 끝 + 여유가 지났으면 `None`(그 자리에서 지운다)."""
+    entry = _STATE.renewals.get(sid)
+    if entry is None:
+        return None
+    if entry.exp + SESSION_LEEWAY < moment:
+        del _STATE.renewals[sid]
+        return None
+    return entry
 
 
 def renewed_exp(sid: str, *, now: int | None = None) -> int | None:
     """이 sid 의 갱신 표 끝. 없거나 끝 + 여유가 지났으면 `None`(지난 것은 그 자리에서 지운다)."""
     moment = _now() if now is None else now
     with _LOCK:
-        exp = _STATE.renewals.get(sid)
-        if exp is None:
-            return None
-        if exp + SESSION_LEEWAY < moment:
-            del _STATE.renewals[sid]
-            return None
-        return exp
+        entry = _live_renewal(sid, moment)
+        return None if entry is None else entry.exp
+
+
+def last_renewal_at(sid: str, *, now: int | None = None) -> int | None:
+    """이 sid 를 갱신 경로가 마지막으로 다시 발급한 시각. 없거나 그 끝 + 여유가 지났으면 `None`.
+
+    갱신 경로가 60초 규칙에 쓴다 — 같은 옛 쿠키를 되풀이해 보내도 그 sid 의 직전 발급에서 60초
+    안이면 다시 서명하지 않는다.
+    """
+    moment = _now() if now is None else now
+    with _LOCK:
+        entry = _live_renewal(sid, moment)
+        return None if entry is None else entry.issued_at
 
 
 def forget_renewal(sid: str) -> None:

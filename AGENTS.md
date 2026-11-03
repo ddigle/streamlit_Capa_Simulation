@@ -4094,8 +4094,11 @@ RQ_MODULE
     `min(유휴 끝, auth_time + 최대)` + 여유 30초 하나다(`tokens.session_end` — 유휴 끝은 `exp` 를 지금 설정 `iat + 세션 시간` 으로
     한 번 더 깎은 값, 쿠키 `Max-Age` 도 끝 − 지금 + 30초). 새 요청(문지기 http · 새 핸드셰이크 · 갱신 경로 · 로그인 경로)은 브라우저가
     지금 실은 쿠키 자신의 끝만 보고, 핸드셰이크에 묶인 신원(`gate._WatchedSocket` · `app.py` 의 `require_signed_in`)만 그 끝과 갱신 표
-    (`runtime.renewed_exp` — 갱신 경로가 다시 발급할 때 적는 `sid` → 최신 `exp`) 가운데 늦은 것을 본다(갱신 전에 복사된 옛 토큰이 새
-    요청에서 살아나지 않게). 로그아웃 폐기는 `sid` 단위다(`runtime.revoke_session` — `auth_time` + 최대 + 30초까지). 갱신 표 · 폐기
+    (`runtime.renewed_exp` — 갱신 경로가 다시 발급할 때 적는 `sid` → 최신 `exp` · 발급 시각) 가운데 늦은 것을 본다(갱신 전에 복사된
+    옛 토큰이 새 요청에서 살아나지 않게). 갱신 경로의 60초 규칙은 보낸 쿠키의 `iat` 와 그 `sid` 의 표 발급 시각
+    (`runtime.last_renewal_at`) 가운데 늦은 것을 본다 — 같은 옛 쿠키를 되풀이해 보내도 다시 서명하지 않는다. 로그아웃 폐기는 `sid`
+    단위다(`runtime.revoke_session` — `auth_time` + 최대 + 30초까지). 판정은 폐기를 끝보다 먼저 본다(`identity.session_check` — 둘 다
+    거절이고, 로그아웃이 표 칸을 지운 탭도 `revoked` 로 남게). 갱신 표 · 폐기
     목록 · 갱신 누계 · 쓴 state · 진단 · 사건은 프로세스 메모리(`auth.runtime`, replica 1 전제 — 재시작하면 비워진다, 열린 연결은
     다시 붙을 때 갱신된 쿠키로 통과)이고 DB 에 쓰지 않으며 캐시 경계도 아니다(`st.cache_*` 없음). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
     사내 WebIDE · 시험의 요소 순번이 그대로다. 열린 탭은 websocket 핸드셰이크 때의 쿠키로 계속 돌고 위젯 콜백 · 프래그먼트
@@ -5234,7 +5237,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `BaseHTTPMiddleware` 는 websocket 을 그냥 넘기므로 쓰지 않는다(실측). 허용 목록은 정확 일치만(`/_stcore/health` 와 우리 경로
   다섯) — `/_stcore/` 를 접두로 열지 않는다. 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은
   처리기가 하고, 켜짐에서 POST 밖 메서드는 문지기가 405(`Allow: POST`)로 답한다 — Streamlit 의 정적 Mount 가 모르는 GET 경로에
-  `index.html` 을 내서 라우터의 405 가 서지 않는다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
+  `index.html` 을 내서 라우터의 405 가 서지 않는다. 같은 까닭으로 갱신 Route 는 GET(· HEAD)도 붙여 처리기가 답한다(꺼짐 404 ·
+  막힘 503 · 그 밖 405) — 꺼짐에서는 문지기가 모두 넘긴다. 우리 경로는 `/auth/callback`(포털 등록값) · `/auth/sso/*` 이고 Streamlit 자체
   `st.login` 경로(`/auth/login` · `/auth/logout` · `/oauth2callback`)와 예약 접두(`/_stcore/` · `/media/` · `/component/` ·
   `/static/`)는 쓰지 않는다. 모든 주소(Location · 링크 · redirect_uri)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청 Host ·
   `X-Forwarded-*` 로 짓지 않는다. `auth/` 는 Streamlit 을 import 하지 않고(문지기는 이벤트 루프에서 돈다) 배경 스레드를
@@ -5245,7 +5249,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     여유) · 폐기 목록을 보고, 어긋나면 그 메시지를 넘기지 않고 close 1008 · 앱에는 끊김을 넘긴다. 콜백 · 프래그먼트를 하나씩
     막지 않는다 — 새 콜백 · `run_every` 를 더해도 이 자리가 막는다. 만료는 핸드셰이크 토큰의 끝과 로그인 갱신 표(`sid` 의 최신
     `exp`) 가운데 늦은 것으로 본다 — 쓰는 동안 갱신 경로가 쿠키를 다시 발급하면 열린 연결도 그만큼 산다(만료로 닫으면
-    `session_closed` 에 `end=idle|max`).
+    `session_closed` 에 `end=idle|max` — 표 칸은 끝 + 여유가 지나면 지워지므로 그 연결이 본 가장 늦은 끝으로 가른다. Admin 최근
+    사건의 사유 코드는 `expired · idle|max`).
 - **DuckDB 연결 핀.** 앱은 rerun 한 번을 `pinned_connections` 로 감싼다(게으른 핀 — 첫 연결 뒤에 잡고 가장 바깥 블록이
   끝날 때 닫는다). 설비 DB 를 rerun 한 번에 **여러 번** 여는 화면만 `navigation.PageSpec.uses_equipment_db` 를 선언해 같은
   핀을 받는다. 위젯 콜백(본문 전)과 팝업 본문 프래그먼트는 실행 핀 밖에서 돌므로 DB 를 여러 번 여는 콜백·팝업은 스스로

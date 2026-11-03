@@ -104,6 +104,27 @@ def test_refresh_within_a_minute_does_not_reissue(clock: Callable[[int], None]) 
     assert runtime.refresh_counts() == _counts(skipped=1)
 
 
+def test_refresh_does_not_resign_the_same_old_cookie_over_and_over(
+    clock: Callable[[int], None],
+) -> None:
+    """60초 넘은 옛 쿠키 하나를 같은 초에 되풀이해 보내도 다시 서명은 한 번뿐이다 — 60초 규칙은 그
+    sid 의 직전 발급(갱신 표의 발급 시각)을 본다. 응답을 못 받은 옛 쿠키는 60초 뒤에 다시 받는다."""
+    cfg = use_config()
+    token = _signed_in(cfg, at=NOW - 120)
+
+    replies = [post_refresh(cfg, token) for _ in range(5)]
+
+    assert [len(reply.all_headers("set-cookie")) for reply in replies] == [1, 0, 0, 0, 0]
+    assert {reply.status for reply in replies} == {204}
+    assert runtime.refresh_counts() == _counts(renewed=1, skipped=4)
+    clock(NOW + 59)
+    assert post_refresh(cfg, token).all_headers("set-cookie") == []
+    clock(NOW + 60)
+    late = post_refresh(cfg, token)
+    assert late.status == 204 and len(late.all_headers("set-cookie")) == 1
+    assert runtime.refresh_counts() == _counts(renewed=2, skipped=5)
+
+
 def test_refresh_at_the_maximum_does_not_reissue(clock: Callable[[int], None]) -> None:
     """처음 로그인 + 24시간에 닿은 토큰은 더 늘지 않는다 — 다시 로그인(ADFS 재확인)만 남는다."""
     cfg = use_config()
@@ -245,7 +266,7 @@ def test_refresh_refuses_a_body(clock: Callable[[int], None]) -> None:
     assert runtime.refresh_counts() == _counts(bad_request=2, renewed=1)
 
 
-@pytest.mark.parametrize("method", ["GET", "OPTIONS", "PUT"])
+@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "PUT"])
 def test_refresh_is_post_only(clock: Callable[[int], None], method: str) -> None:
     cfg = use_config()
 
@@ -258,6 +279,10 @@ def test_refresh_is_post_only(clock: Callable[[int], None], method: str) -> None
 
     assert response.status == 405
     assert response.all_headers("set-cookie") == []
+    if method in ("GET", "HEAD"):
+        # GET(· HEAD)은 처리기가 받아 답한다 — 꺼짐이면 다른 경로처럼 404(test_sso_web).
+        assert response.header("allow") == "POST"
+    assert runtime.refresh_counts() == _counts()
 
 
 def test_refresh_writes_no_events(clock: Callable[[int], None]) -> None:
@@ -275,7 +300,7 @@ def test_refresh_writes_no_events(clock: Callable[[int], None]) -> None:
     assert runtime.recent_events() == before
     assert runtime.recent_events(anonymous=True) == []
     assert runtime.anonymous_failure_counts() == {}
-    assert runtime.refresh_counts() == _counts(renewed=2, unauthorized=1, forbidden=2)
+    assert runtime.refresh_counts() == _counts(renewed=1, skipped=1, unauthorized=1, forbidden=2)
 
 
 def test_refresh_after_logout_is_401(clock: Callable[[int], None]) -> None:
@@ -388,6 +413,22 @@ def test_renewal_table_keeps_the_latest_and_forgets_the_ended() -> None:
     assert runtime.renewed_exp(sid, now=1_000) is None, "지난 항목은 그 자리에서 지운다"
     runtime.note_renewal(sid, 2_000, now=5_000)
     assert runtime.renewed_exp(sid, now=1_000) is None, "이미 끝난 값은 적지 않는다"
+
+
+def test_renewal_table_keeps_the_last_issue_time() -> None:
+    use_config()
+    sid = "e" * 22
+
+    assert runtime.last_renewal_at(sid, now=1_000) is None
+    runtime.note_renewal(sid, 10_000, now=1_000)
+    runtime.note_renewal(sid, 9_000, now=1_500)
+
+    assert runtime.last_renewal_at(sid, now=1_500) == 1_500, "늦은 발급 시각을 지킨다"
+    assert runtime.renewed_exp(sid, now=1_500) == 10_000
+    assert runtime.last_renewal_at(sid, now=10_000 + SESSION_LEEWAY + 1) is None
+    runtime.note_renewal(sid, 20_000, now=12_000)
+    runtime.forget_renewal(sid)
+    assert runtime.last_renewal_at(sid, now=12_000) is None
 
 
 def test_renewal_table_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:

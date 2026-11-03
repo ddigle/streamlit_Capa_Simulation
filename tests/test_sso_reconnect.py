@@ -98,6 +98,9 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     assert 'credentials: "same-origin"' in script
     assert json.dumps(BANNER_ID) in script
     assert json.dumps(RECONNECT_NOTICE, ensure_ascii=False) in script
+    # 열린 탭이 끝나면 보이는 것은 이 띠뿐이다 — 끝난 까닭 셋을 다 적는다(하루 최대 시간 포함).
+    for reason in ("오래 쓰지 않았거나", "로그인 최대 시간이 지났거나", "로그아웃했습니다"):
+        assert reason in RECONNECT_NOTICE, reason
     assert json.dumps(LOGIN_AGAIN_LABEL, ensure_ascii=False) in script
     assert json.dumps(PUBLIC_URL) in script
     assert json.dumps(names.LOGIN_PATH) in script

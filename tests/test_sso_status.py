@@ -104,6 +104,19 @@ def test_on_shows_facts_without_any_secret() -> None:
     assert cfg.public_url == PUBLIC_URL
 
 
+def test_recent_events_tell_an_idle_end_from_the_maximum() -> None:
+    """만료로 닫은 열린 탭은 사유 코드에 끝난 까닭(idle · max)이 붙는다 — C-DEP 에는 로그 창구가
+    없어 「쓰는 중인데 끊겼다」 문의를 이 표로 가른다."""
+    use_config()
+    runtime.record_event("session_closed", reason="expired", loginid="dev.user", end="max")
+    runtime.record_event("session_closed", reason="expired", loginid="dev.user", end="idle")
+    runtime.record_event("session_closed", reason="revoked", loginid="dev.user")
+
+    codes = sso_status.recent_event_table()["사유 코드"].tolist()
+
+    assert codes[:3] == ["revoked", "expired · idle", "expired · max"]
+
+
 def _refresh_caption(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.caption if str(item.value).startswith("로그인 갱신(")]
 

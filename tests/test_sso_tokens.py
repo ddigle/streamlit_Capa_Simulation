@@ -90,6 +90,32 @@ def test_alg_none_is_refused(cfg: SsoConfig) -> None:
     assert reject_code(token, cfg) == "alg_not_allowed"
 
 
+def _alg_diagnostic_of(token: str, cfg: SsoConfig) -> str:
+    with pytest.raises(SsoReject) as caught:
+        verify_id_token(token, cfg, expected_nonce=NONCE, now=int(time.time()))
+    assert caught.value.code == "alg_not_allowed"
+    return caught.value.diagnostic["alg"]
+
+
+@pytest.mark.parametrize(
+    ("alg", "shown"),
+    [
+        ("none", "none"),
+        ("HS256", "HS256"),
+        ("ES384", "ES384"),
+        ("고객센터 02-000-0000 로", "other"),
+        ("rs256", "other"),
+        (["RS256"], "other"),
+        ("", "-"),
+    ],
+)
+def test_the_alg_diagnostic_shows_only_known_names(cfg: SsoConfig, alg: object, shown: str) -> None:
+    """서명 전 머리의 alg 는 누구나 고른다 — 알려진 JWS 이름만 진단(오류 화면)에 그대로 싣는다."""
+    token = _unsigned({"alg": alg, "typ": "JWT"}, id_token_claims(NONCE))
+
+    assert _alg_diagnostic_of(token, cfg) == shown
+
+
 def test_hs256_header_is_refused(cfg: SsoConfig) -> None:
     token = jwt.encode(id_token_claims(NONCE), "x" * 64, algorithm="HS256")
 
@@ -533,6 +559,25 @@ def test_renew_within_a_minute_returns_none(cfg: SsoConfig) -> None:
     assert renew_session(cfg, issued, now=LOGIN_AT + RENEW_MIN_INTERVAL - 1) is None
     assert renew_session(cfg, issued, now=LOGIN_AT + RENEW_MIN_INTERVAL) is not None
     assert renew_session(cfg, issued, now=LOGIN_AT - 5) is None, "시계가 뒤로 가도 다시 서명 안 함"
+
+
+def test_renew_counts_the_last_issue_of_the_session_too(cfg: SsoConfig) -> None:
+    """같은 옛 쿠키(`iat` 가 60초 넘음)를 되풀이해 보내도 그 sid 의 직전 발급에서 60초 안이면 다시
+    서명하지 않는다 — 갱신 경로가 갱신 표의 발급 시각을 `last_issued` 로 넘긴다."""
+    _, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=LOGIN_AT)
+    now = LOGIN_AT + 120
+
+    first = renew_session(cfg, issued, now=now)
+    assert first is not None
+    _, fresh = first
+    assert renew_session(cfg, issued, now=now, last_issued=fresh.iat) is None
+    later = now + RENEW_MIN_INTERVAL - 1
+    assert renew_session(cfg, issued, now=later, last_issued=fresh.iat) is None
+    again = renew_session(cfg, issued, now=now + RENEW_MIN_INTERVAL, last_issued=fresh.iat)
+    assert again is not None, "응답을 못 받은 옛 쿠키도 60초 뒤에는 다시 받는다"
+    assert renew_session(cfg, issued, now=now, last_issued=LOGIN_AT - 600) is not None, (
+        "표의 발급이 토큰보다 이르면 토큰의 iat 를 본다"
+    )
 
 
 def test_renew_stops_at_the_maximum(cfg: SsoConfig) -> None:

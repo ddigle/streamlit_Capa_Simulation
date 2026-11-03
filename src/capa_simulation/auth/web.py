@@ -244,6 +244,13 @@ def text_response(text: str, status: int) -> PlainTextResponse:
     return PlainTextResponse(text, status_code=status, headers=NO_STORE)
 
 
+def method_not_allowed() -> PlainTextResponse:
+    """갱신 경로의 POST 밖 메서드 — 405 `Allow: POST`(켜짐은 문지기, 그 밖은 처리기가 답한다)."""
+    response = text_response("Method Not Allowed", 405)
+    response.headers["Allow"] = "POST"
+    return response
+
+
 def public_link(cfg: SsoConfig, path: str) -> str:
     """앱 안 경로 → 브라우저가 여는 절대 주소. 바탕은 늘 `CAPA_PUBLIC_URL`."""
     return f"{cfg.public_url}{path}"
@@ -294,6 +301,9 @@ def _next_is_safe(text: str) -> bool:
     parts = urlsplit(text)
     if parts.scheme or parts.netloc:
         return False
+    # 점 구획(`/./` · `/../`)은 브라우저가 풀어 `/auth/…` 나 공개 주소의 경로 접두 밖으로 닿는다.
+    if any(segment in (".", "..") for segment in parts.path.split("/")):
+        return False
     return not (text == "/auth" or text.startswith("/auth/"))
 
 
@@ -301,8 +311,9 @@ def sanitize_next(raw: str | None) -> str:
     """돌아갈 자리를 앱 안 경로로만 좁힌다. 어기면 `/`.
 
     규칙: `/` 로 시작 · 둘째 글자가 `/` · `\\` 아님 · `\\` 와 제어문자 없음 · scheme · host 없음 · 2
-    KiB 이하 · `/auth/…` 아님 · ASCII 만. 퍼센트 인코딩을 한 번 푼 글에도 같은 규칙을 건다(`/%09/x`
-    · `/%2F%2Fx`). 정상 질의 인자(테마 · 공정 같은 앱 인자)는 그대로 지킨다.
+    KiB 이하 · `/auth/…` 아님 · 경로에 점 구획(`.` · `..`) 없음 · ASCII 만. 퍼센트 인코딩을 한 번 푼
+    글에도 같은 규칙을 건다(`/%09/x` · `/%2F%2Fx` · `/%2e%2e/x`). 정상 질의 인자(테마 · 공정 같은 앱
+    인자)는 그대로 지킨다.
     """
     if not raw or len(raw) > MAX_NEXT_LENGTH or not raw.isascii():
         return "/"
@@ -816,17 +827,21 @@ async def error(request: Request) -> Response:
 async def refresh(request: Request) -> Response:
     """`POST /auth/sso/refresh` — 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다.
 
-    판정 차례는 머리 · 출처(403) → 본문(400) → 세션 쿠키(401 — 엄격, 갱신 표를 보지 않음 · sid
-    폐기도) → 다시 발급이다. 교차 출처 시도가 세션 유효 여부를 응답 차이로 알아낼 길을 막고, 쿠키
-    검증(HMAC)보다 싼 것을 먼저 본다. 직전 발급 60초 안이거나 상한이라 늘 것이 없으면 204(쿠키
-    없음), 다시 발급하면 204 + 새 세션 쿠키와 갱신 표. 거절은 쿠키를 건드리지 않는다. 사건
-    고리에도 서버 로그에도 적지 않고 누계(`runtime.count_refresh`)만 센다 — 5분마다 사람마다 한
-    줄은 소음이다.
+    판정 차례는 모드(꺼짐 404 · 막힘 503) → 메서드(POST 밖은 405 — 꺼짐의 GET 도 다른 경로처럼
+    404 이게 GET 을 받아 여기서 답한다) → 머리 · 출처(403) → 본문(400) → 세션 쿠키(401 — 엄격,
+    끝은 갱신 표를 보지 않음 · sid 폐기도) → 다시 발급이다. 교차 출처 시도가 세션 유효 여부를 응답
+    차이로 알아낼 길을 막고, 쿠키 검증(HMAC)보다 싼 것을 먼저 본다. 그 sid 의 직전 발급(보낸
+    토큰의 `iat` 와 갱신 표의 발급 시각 가운데 늦은 것)에서 60초 안이거나 상한이라 늘 것이 없으면
+    204(쿠키 없음) — 같은 옛 쿠키를 되풀이해 보내도 다시 서명하지 않는다. 다시 발급하면 204 + 새
+    세션 쿠키와 갱신 표. 거절은 쿠키를 건드리지 않는다. 사건 고리에도 서버 로그에도 적지 않고
+    누계(`runtime.count_refresh`)만 센다 — 5분마다 사람마다 한 줄은 소음이다.
     """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
     if guarded is not None:
         return guarded
+    if request.method != "POST":
+        return method_not_allowed()
     now = _now()
     refusal = refresh_request_problem(request.headers, cfg)
     if refusal is not None:
@@ -842,7 +857,8 @@ async def refresh(request: Request) -> Response:
     if claims is None or runtime.session_revoked(claims.sid, now=now):
         runtime.count_refresh("unauthorized")
         return text_response(LOGIN_REQUIRED, 401)
-    renewed = renew_session(cfg, claims, now=now)
+    last_issued = runtime.last_renewal_at(claims.sid, now=now)
+    renewed = renew_session(cfg, claims, now=now, last_issued=last_issued)
     response = Response(status_code=204, headers=NO_STORE)
     if renewed is None:
         runtime.count_refresh("skipped")

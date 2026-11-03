@@ -14,9 +14,11 @@
 
 신원은 세션 상태가 아니라 `st.context.cookies` 의 HttpOnly 세션 쿠키에서 **매 회차** 다시
 검증한다(서명 · aud · iss · 끝 시각 · 폐기 목록 — 문지기와 같은 `identity_from_cookies`). 세션
-상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르려는 사본일 뿐이다. 쿠키는 websocket 핸드셰이크 때 한 번
-찍혀 그 세션 끝까지 같다 — 테마 단추의 새로고침(`location.reload`)이 만든 새 세션도 쿠키를 다시
-본다(실측). `?token=` 이나 질의 인자를 쓰지 않고 지우지도 않는다(`query_params.clear` 금지).
+상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르려는 사본일 뿐이다. 쿠키는 websocket 연결 때 찍혀 그
+연결 끝까지 같다 — 같은 Streamlit 세션이 다시 붙으면(재시작 · 망 끊김 뒤) 새 연결의 쿠키(갱신된
+쿠키)를 보고, 테마 단추의 새로고침(`location.reload`)이 만든 새 세션도 쿠키를 다시 본다(실측).
+재시작으로 갱신 표가 비어도 열린 탭이 사는 까닭이 이것이다. `?token=` 이나 질의 인자를 쓰지 않고
+지우지도 않는다(`query_params.clear` 금지).
 
 꺼짐(`ADFS_CLIENT_ID` 없음)이면 Streamlit 호출을 하나도 하지 않는다 — 개발 PC · 사내 WebIDE · 시험의
 화면과 요소 순번이 지금과 같다.
@@ -83,7 +85,7 @@ _PROBLEM_NOTICES: Mapping[IdentityProblem, str] = {
 
 
 def session_cookies() -> Mapping[str, str]:
-    """이 세션의 쿠키(websocket 핸드셰이크 때 한 번 찍힌 값). 시험이 바꿔 끼운다."""
+    """이 연결의 쿠키(websocket 연결 때 찍힌 값 — 다시 붙으면 새 연결의 값). 시험이 바꿔 끼운다."""
     return st.context.cookies
 
 
