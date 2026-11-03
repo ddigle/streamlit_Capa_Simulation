@@ -458,7 +458,8 @@ def test_a_look_only_change_in_a_hypothetical_scenario_is_one_mark_difference(
     tmp_path: Path,
 ) -> None:
     """가정 설비 시나리오에서 공식 동선의 머리 크기만 바꿔 저장하면 그 요소 하나가 차이(`set`)로
-    들고 (「Space 도면」 상자 배치 줄 「도면 요소 1개」), 차이 표의 `look_json` 에 실리며, 공식 요소는 그대로다."""
+    들고 (「Space 도면」 상자 배치 줄 「도면 요소 1개」), 차이 표의 `look_json` 에 실리며, 공식
+    요소는 그대로다."""
     repository = _seeded(tmp_path)
     official = _arrow("MK-A", label="동선")
     repository.replace_floor_layout_marks(*FLOOR, [official])

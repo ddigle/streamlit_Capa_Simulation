@@ -424,8 +424,9 @@ def test_fab_shapes_round_trip(tmp_path: Path) -> None:
 
 def test_shapes_in_a_hypothetical_scenario_are_mark_differences(tmp_path: Path) -> None:
     """가정 설비 시나리오에서 공식 도형의 모양 조절 값만 바꾸고 새 도형을 하나 넣어 저장하면 둘이
-    차이 (`set`)로 들고(「Space 도면」 상자 배치 줄 「도면 요소 2개」), 차이 표에 프리셋·모양 조절·채우기 색이 실린다.
-    공식 요소는 그대로이고, 합친 목록(`effective_floor_marks`)이 가정 쪽 모습을 그린다."""
+    차이 (`set`)로 들고(「Space 도면」 상자 배치 줄 「도면 요소 2개」), 차이 표에 프리셋·모양
+    조절·채우기 색이 실린다. 공식 요소는 그대로이고, 합친 목록(`effective_floor_marks`)이 가정 쪽
+    모습을 그린다."""
     repository = _seeded(tmp_path)
     repository.replace_floor_layout_marks(*FLOOR, [_shape("MK-S", look={"shape": "cross"})])
     (official,) = repository.load_floor_layout_marks(*FLOOR)

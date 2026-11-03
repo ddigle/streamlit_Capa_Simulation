@@ -341,19 +341,24 @@ def _chip_before_page(database: str) -> None:
     assumption = next(item for item in catalog.scenarios if item.scenario_name == "셋업 실무")
     release = catalog.latest_release
     assert release is not None
+
+    def move(scenario_id: str, schedule_revision_id: str | None) -> None:
+        assert (
+            select_equipment_scenario(database, scenario_id, schedule_revision_id, discard=True)
+            is None
+        )
+
     st.button(
         "가정으로",
         key="to_assumption",
-        on_click=select_equipment_scenario,
-        args=(database, assumption.equipment_scenario_id, assumption.latest_schedule_revision_id),
-        kwargs={"discard": True},
+        on_click=move,
+        args=(assumption.equipment_scenario_id, assumption.latest_schedule_revision_id),
     )
     st.button(
         "공식으로",
         key="to_official",
-        on_click=select_equipment_scenario,
-        args=(database, release.equipment_scenario_id, release.schedule_revision_id),
-        kwargs={"discard": True},
+        on_click=move,
+        args=(release.equipment_scenario_id, release.schedule_revision_id),
     )
     resolve_equipment_session(database)
 
