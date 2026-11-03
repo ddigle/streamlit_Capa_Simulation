@@ -192,6 +192,32 @@ out.before = [
   toolbarBefore(order, 'other', ['guide']),
 ]
 out.keys = [eventKey({ code: 'FL-01', short: '저장' }), stateKey({ code: 'ST-01', scope: 'abc' })]
+const table = {
+  columns: ['공정', 'STEP_SEQ', 'UPEH'],
+  rows: [['DEMO-P1', 'P100', 0.123456], ['DEMO "P2", B', null, 3]],
+  shown: { 공정: { 'DEMO-P1': '가공' } },
+}
+out.csv = tableCsv(table)
+out.cells = [
+  tableCell(table, '공정', 'DEMO-P1'),
+  tableCell(table, '공정', 'DEMO-P9'),
+  tableCell(table, 'UPEH', 0.123456),
+  tableCell(table, 'UPEH', 3),
+  tableCell(table, 'STEP_SEQ', null),
+]
+const tabled = [
+  { id: 'old', code: 'ST-14', last: 1, table: table },
+  { id: 'new', code: 'ST-14', last: 2, table: table },
+  { id: 'other', code: 'ST-15', last: 0, table: table },
+  { id: 'plain', code: 'ST-14', last: 3 },
+]
+out.tables = keepNewestTables(tabled).map((row) => [row.id, Boolean(row.table)])
+out.tabs = [
+  tabMatches('insights대당 Capa', '대당 Capa'),
+  tabMatches(' precision_manufacturing 소요대수 ', '소요대수'),
+  tabMatches('monitoring확보율', '대당 Capa'),
+  tabMatches('anything', ''),
+]
 console.log(JSON.stringify(out))
 """
 
@@ -217,6 +243,12 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["visible"] == [[5, 4, 3], [4], [4, 3]]
     assert out["before"] == ["print", "guide", None, None]
     assert out["keys"] == ["FL-01\u0000저장", "ST-01|abc"]
+    # 알림에 딸린 표 — CSV 는 원본 값(따옴표 · 쉼표 감쌈), 화면 칸은 표시명 · 끝자리 넷, 표는
+    # 코드마다 가장 새 줄에만, 탭 단추는 아이콘 글자 뒤 이름으로 맞댄다.
+    assert out["csv"] == '공정,STEP_SEQ,UPEH\r\nDEMO-P1,P100,0.123456\r\n"DEMO ""P2"", B",,3'
+    assert out["cells"] == ["가공", "DEMO-P9", "0.1235", "3", ""]
+    assert out["tables"] == [["old", False], ["new", True], ["other", True], ["plain", False]]
+    assert out["tabs"] == [True, True, False, False]
 
 
 def test_the_js_limits_match_the_registry_constants() -> None:
@@ -224,3 +256,20 @@ def test_the_js_limits_match_the_registry_constants() -> None:
     두 벌 두지 않는다."""
     assert ".repeat_ms" in JS and "limits.rows" in JS and "limits.hours" in JS
     assert alerts.REPEAT_WINDOW_SECONDS * 1000 == 60000
+
+
+def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_run() -> None:
+    """딸린 표의 CSV 는 브라우저 안에서 만든다(BOM · 서버를 부르지 않는다). 「그 화면으로」 의 탭
+    고르기는 그 화면 주소(`here`)에 닿고 회차가 끝난 뒤(`data-test-script-state` 가 running 이
+    아님) 이름이 맞는 탭 단추를 누른다 — 이미 열린 탭이면 누르지 않는다."""
+    download = JS[JS.index("function downloadTable(") :]
+    download = download[: download.index("\n}\n")]
+    assert "new Blob(['\\ufeff' + tableCsv(table)]" in download and "fetch(" not in download
+    settle = JS[JS.index("function settleTab(") :]
+    settle = settle[: settle.index("\n}\n")]
+    assert "C.data.here !== pending.href || running()" in settle
+    assert "aria-selected" in settle and "button.click()" in settle
+    assert "goTo(C, row.href, row.tab)" in JS
+    for name in ("table_open", "table_rows", "table_csv"):
+        assert name in alert_center.TEXT
+    assert "position: sticky;" in _rule(".tscroll th")

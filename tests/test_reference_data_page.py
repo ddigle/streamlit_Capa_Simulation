@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import alert_notes, infos, successes
 from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Error
@@ -588,15 +588,29 @@ def _exclusion_frame(app: AppTest, reason: str) -> pd.DataFrame:
     raise AssertionError(f"제외 상세 표가 없습니다: {reason}")
 
 
-def test_calculation_result_shows_the_excluded_capacity_rows_with_a_csv_download() -> None:
+def _alert(app: AppTest, code: str) -> dict[str, Any]:
+    """이 회차의 상태 알림 표지 하나(`code`)."""
+    (note,) = [note for note in alert_notes(app) if note.get("code") == code]
+    return note
+
+
+def _capacity_alarm_table(app: AppTest) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """대당 Capa 제외 알림(`ST-14`)에 딸린 표 — 원본 값 프레임과 표 머리(제목 · 파일 · 표시명)."""
+    table = _alert(app, "ST-14")["table"]
+    return pd.DataFrame(table["rows"], columns=table["columns"]), table
+
+
+def test_calculation_result_puts_the_excluded_capacity_rows_on_the_alarm_row() -> None:
+    """대당 Capa 의 제외 기준정보는 본문 펼침 · 경고 상자가 아니라 상태 알림(`ST-14`)의 표다 — Alarm
+    줄에서 펼쳐 보고 CSV 로 내려받는다(2026-11-02 사용자 요청(검수표))."""
     app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in {
-        warning.value for warning in app.warning
-    }
-    assert "제외 기준정보 확인" in {expander.label for expander in app.expander}
-    excluded = _exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)
+    assert not app.warning
+    assert "제외 기준정보 확인" not in {expander.label for expander in app.expander}
+    note = _alert(app, "ST-14")
+    assert note["active"] is True and "기준 2개" in note["short"]
+    excluded, table = _capacity_alarm_table(app)
     assert excluded["STEP_SEQ"].tolist() == ["P300", "P200"]
     assert excluded["제외사유"].tolist() == [
         WF_RATIO_EXCLUSION_REASON,
@@ -604,37 +618,30 @@ def test_calculation_result_shows_the_excluded_capacity_rows_with_a_csv_download
     ]
     assert excluded["Lot 측정률"].tolist() == [1.0, -0.5]
     assert excluded["WF측정률"].tolist() == [-0.5, 1.0]
-    assert _download(app, "download_unit_capacity_exclusions_csv") == {
-        "label": "CSV 다운로드",
-        "file_name": "Capa_Unit_Capacity_Exclusions_202608_202608.csv",
+    assert table["file"] == "Capa_Unit_Capacity_Exclusions_202608_202608.csv"
+    assert "download_unit_capacity_exclusions_csv" not in {
+        button.key for button in app.download_button
     }
 
 
-def test_calculation_result_shows_both_exclusion_expanders_with_csv_downloads() -> None:
+def test_calculation_result_alerts_both_exclusions_and_keeps_the_required_list() -> None:
     app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert "대당 Capa 산출에서 2개 기준을 제외했습니다." in {
-        warning.value for warning in app.warning
-    }
-    assert "제외 기준정보 확인" in {expander.label for expander in app.expander}
-    capacity_exclusions = _exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)
+    capacity_exclusions, _ = _capacity_alarm_table(app)
     assert capacity_exclusions["STEP_SEQ"].tolist() == ["P300", "P200"]
-    assert _download(app, "download_unit_capacity_exclusions_csv") == {
-        "label": "CSV 다운로드",
-        "file_name": "Capa_Unit_Capacity_Exclusions_202608_202608.csv",
-    }
 
-    # 소요대수 탭의 제외 알림은 그 탭을 열어야 그린다.
+    # 소요대수 탭의 제외 알림은 그 탭을 열어야 낸다. 목록은 본문 펼침에 남는다.
     app = _open_calc_tab(app, REQUIRED_TAB)
-    assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in {
-        warning.value for warning in app.warning
-    }
+    assert not app.warning
+    required_note = _alert(app, "ST-15")
+    assert required_note["active"] is True
+    assert "4건을 제외했습니다(부하량 발생 3건)" in required_note["full"]
     assert "소요대수 제외 기준정보" in {expander.label for expander in app.expander}
     required_exclusions = _exclusion_frame(app, MISSING_CAPACITY_REASON)
     assert required_exclusions["STEP_SEQ"].tolist() == ["P200", "P300", "P400", "P500"]
     # 제외된 STEP 은 대당 Capa 가 없을 뿐 부하량은 붙는다. 그 값이 화면에 남아야
-    # 사용자가 얼마나 잘리는지 안다. 계획에 없는 제품만 0 이라 경고의 괄호 안 건수와 갈린다.
+    # 사용자가 얼마나 잘리는지 안다. 계획에 없는 제품만 0 이라 알림의 괄호 안 건수와 갈린다.
     assert required_exclusions["부하량"].tolist() == [100.0, 100.0, 100.0, 0.0]
     assert _download(app, "download_required_exclusions_csv") == {
         "label": "CSV 다운로드",
@@ -1145,15 +1152,13 @@ def test_unfiltered_editor_apply_saves_the_same_rows_as_before(grid_calls: Calls
 
 
 def test_capacity_exclusion_table_shows_the_display_name_while_its_csv_keeps_the_original() -> None:
-    """제외 안내 목록은 화면 프레임과 CSV 프레임이 갈라져 있다."""
+    """제외 목록(Alarm 줄의 표)은 값이 원본이고 화면 표시명은 따로 싣는다 — CSV 는 원본이다."""
     app = AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    excluded = _exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)
-    assert set(excluded["공정"]) == {"가공"}
-
-    exported = _download_frame(app, "download_unit_capacity_exclusions_csv")
-    assert set(exported["공정"]) == {"Process-A"}
+    excluded, table = _capacity_alarm_table(app)
+    assert set(excluded["공정"]) == {"Process-A"}
+    assert table["shown"] == {"공정": {"Process-A": "가공"}}
 
 
 def test_calculation_result_exclusion_csvs_keep_the_original_process_name() -> None:
@@ -1161,26 +1166,27 @@ def test_calculation_result_exclusion_csvs_keep_the_original_process_name() -> N
     app = AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"가공"}
+    excluded, table = _capacity_alarm_table(app)
+    assert set(excluded["공정"]) == {"Process-A"} and table["shown"]["공정"] == {
+        "Process-A": "가공"
+    }
     required_app = _open_calc_tab(
         AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60),
         REQUIRED_TAB,
     )
     assert set(_exclusion_frame(required_app, MISSING_CAPACITY_REASON)["공정"]) == {"가공"}
 
-    assert set(_download_frame(app, "download_unit_capacity_exclusions_csv")["공정"]) == {
-        "Process-A"
-    }
     app = _open_calc_tab(app, REQUIRED_TAB)
     assert set(_download_frame(app, "download_required_exclusions_csv")["공정"]) == {"Process-A"}
 
 
 def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
-    """매핑이 비어 있으면 화면에도 원본 공정명이 그대로 보인다."""
+    """매핑이 비어 있으면 화면에도 원본 공정명이 그대로 보인다(표시명 칸이 없다)."""
     app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert set(_exclusion_frame(app, LOT_RATIO_EXCLUSION_REASON)["공정"]) == {"Process-A"}
+    excluded, table = _capacity_alarm_table(app)
+    assert set(excluded["공정"]) == {"Process-A"} and table["shown"] == {}
 
 
 def test_step_summary_and_route_selector_show_the_display_name() -> None:
@@ -1433,14 +1439,16 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
 
 
 def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
-    """PKG 의 Buffer 가 아닌 행은 고칠 것이 없다. 대당 Capa 경고 건수에 섞이면 안 된다."""
+    """PKG 의 Buffer 가 아닌 행은 고칠 것이 없다. 대당 Capa 알림 건수(`ST-15`)에 섞이면 안 되고,
+    규칙 안내는 알림 단계의 따로 된 알림(`ST-21`)이다."""
     app = _open_calc_tab(
         AppTest.from_string(PKG_UNCOUNTED_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
-    assert "대당 Capa가 없어 소요대수 산출에서 4건을 제외했습니다 (부하량 발생 3건)." in {
-        warning.value for warning in app.warning
-    }
-    assert PKG_UNCOUNTED_NOTICE in {info.value for info in infos(app)}
+    assert not app.warning
+    assert "4건을 제외했습니다(부하량 발생 3건)" in _alert(app, "ST-15")["full"]
+    pkg = _alert(app, "ST-21")
+    assert pkg["active"] is True and pkg["level"] == "info"
+    assert pkg["full"].startswith(PKG_UNCOUNTED_NOTICE.removesuffix("."))
     excluded = _exclusion_frame(app, "PKG 기준은 Buffer 로만 계수")
     uncounted = excluded.loc[excluded["제외사유"].eq("PKG 기준은 Buffer 로만 계수")]
     assert uncounted["STEP_SEQ"].tolist() == ["P600"]
@@ -1451,8 +1459,8 @@ def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
     app = _open_calc_tab(
         AppTest.from_string(PKG_ONLY_UNCOUNTED_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
-    assert not any("대당 Capa가 없어" in warning.value for warning in app.warning)
-    assert PKG_UNCOUNTED_NOTICE in {info.value for info in infos(app)}
+    assert _alert(app, "ST-15")["active"] is False
+    assert _alert(app, "ST-21")["active"] is True
 
 
 # ------------------------------------------ 조건 카드 · 미적용 점 · Guide (2026-09-29)

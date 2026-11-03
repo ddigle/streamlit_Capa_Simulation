@@ -200,3 +200,43 @@ def test_the_server_analysis_record_is_only_a_placeholder() -> None:
     alerts.record_server_event({"code": "FL-01"})
     assert "open" not in alerts.record_server_event.__code__.co_names
     assert alerts.ALERT_LOG_SWITCH == "CAPA_USAGE_LOG"
+
+
+TABLED = """
+import streamlit as st
+
+from capa_simulation import alerts
+
+active = bool(st.session_state.get("rows"))
+alerts.state(
+    "ZZ-02",
+    scope={"token": "t1"},
+    content=len(st.session_state.get("rows", [])),
+    active=active,
+    text="뺀 기준 2개",
+    tab="대당 Capa",
+    table=alerts.AlertTable(
+        title="제외 기준정보",
+        columns=["공정"],
+        rows=[["DEMO-P1"], ["DEMO-P2"]],
+        total=2,
+        file="x.csv",
+        shown={},
+    ),
+)
+"""
+
+
+@pytest.mark.usefixtures("state_spec")
+def test_a_state_alert_carries_its_tab_and_a_table_only_while_the_condition_holds() -> None:
+    """`tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 연다), `table` 은 Alarm 줄에서 펼칠 표 —
+    조건이 있을 때만 싣는다(없음 표지에 표를 싣지 않는다)."""
+    app = AppTest.from_string(TABLED)
+    app.session_state["rows"] = [1, 2]
+    app.run()
+    (loud,) = alert_notes(app)
+    assert loud["tab"] == "대당 Capa" and loud["table"]["rows"] == [["DEMO-P1"], ["DEMO-P2"]]
+    app.session_state["rows"] = []
+    app.run()
+    (quiet,) = alert_notes(app)
+    assert quiet["active"] is False and "table" not in quiet and quiet["tab"] == "대당 Capa"

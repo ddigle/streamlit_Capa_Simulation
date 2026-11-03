@@ -22,6 +22,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.formula_text import EQUALS, consistent_places
 from capa_simulation.components.hierarchical_monthly_table import (
@@ -35,6 +36,7 @@ from capa_simulation.components.process_labels import (
     ProcessLabels,
     get_process_labels,
 )
+from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
 from capa_simulation.components.table_toolbar import (
     CSV_TEMPLATE_LABEL,
     render_csv_download,
@@ -628,7 +630,9 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 이 `try` 는 시뮬레이션 DB 와 설비 DB 를 다 연다. 어느 쪽이 잠겼는지 예외로는 가릴 수
     # 없으므로 두 경로를 다 적는다.
-    st.error(bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)))
+    stop_message = bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH))
+    st.error(stop_message)
+    alert_page_error(stop_message, code="ST-20")
     st.stop()
 # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
 render_schema_ahead_warning(equipment_repository.schema_ahead)
@@ -731,6 +735,7 @@ try:
     standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
+    alert_page_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 
 process_options = get_display_ordered_values(
@@ -1011,6 +1016,7 @@ elif output_metric == "로직 분석":
         )[0]
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
+        alert_page_error(bootstrap_error_message(exc), code="ST-20")
         st.stop()
     if selected_processes:
         filtered_required_equipment = filtered_required_equipment.loc[
@@ -1049,6 +1055,7 @@ else:
         )
     except ValueError as exc:
         st.error(bootstrap_error_message(exc))
+        alert_page_error(bootstrap_error_message(exc), code="ST-20")
         st.stop()
 
     missing_availability = (
@@ -1057,15 +1064,36 @@ else:
         .reset_index(drop=True)
     )
     # 가용대수를 곱해 구하는 지표에서만 뜻이 있다. 대당 일 Capa 는 가용대수 이전 단계라
-    # 입력이 없어도 값이 다 나오는데, 여기서 함께 경고하면 없는 문제를 알리는 셈이 된다.
-    # 표에서 멀리 떨어져 있으면 빈칸을 보고도 이 안내를 못 찾으므로 결과 상자 안 늘 서 있는 칸에
-    # 넣는다.
-    if not missing_availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
-        with availability_notice_slot:
-            st.warning(
-                f"선택 범위의 공정·주차 중 {len(missing_availability):,}건에 가용대수가 없어 "
-                "결과를 빈칸으로 표시합니다."
+    # 입력이 없어도 값이 다 나오는데, 여기서 함께 경고하면 없는 문제를 알리는 셈이 된다. 건수는 상태
+    # 알림(`ST-17` — 바뀔 때만 알림창), 목록은 결과 상자 안 늘 서 있는 칸의 펼침이다(표에서 멀리
+    # 떨어져 있으면 빈칸을 보고도 목록을 못 찾는다).
+    missing_shown = not missing_availability.empty and output_metric in AVAILABILITY_BASED_METRICS
+    missing_scope = simulation_scope(active_scenario, dates=(start_date, end_date))
+    alerts.state(
+        "ST-17",
+        scope=missing_scope.scope,
+        content=sorted(
+            (str(process), str(week))
+            for process, week in zip(
+                missing_availability["공정"], missing_availability["Weeknum"], strict=True
             )
+        )
+        if missing_shown
+        else [],
+        active=missing_shown,
+        text=(
+            f"가용대수가 없는 공정·주차 {len(missing_availability):,}건 — 결과 빈칸. 목록: "
+            "「누락 공정·주차 확인」"
+        ),
+        full=(
+            f"선택 범위의 공정·주차 중 {len(missing_availability):,}건에 가용대수가 없어 결과를 "
+            "빈칸으로 표시합니다. 목록은 결과 상자 안 「누락 공정·주차 확인」 이고, 위 「가용설비 "
+            "붙여넣기」로 그 공정·주차의 가용설비를 넣으면 채워집니다."
+        ),
+        scope_label=missing_scope.label,
+    )
+    if missing_shown:
+        with availability_notice_slot:
             with st.expander("누락 공정·주차 확인", expanded=False):
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
@@ -1099,6 +1127,7 @@ else:
             )
         except ValueError as exc:
             st.error(bootstrap_error_message(exc))
+            alert_page_error(bootstrap_error_message(exc), code="ST-20")
             st.stop()
         output_value_column = PKG_EQUIVALENT_COLUMN
         output_title = "일 표준 가능량 (PKG Kea)"

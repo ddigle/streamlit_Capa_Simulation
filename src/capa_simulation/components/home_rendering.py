@@ -25,7 +25,6 @@ from capa_simulation.components.home_dimensions import (
     DASHBOARD_TITLE_LINE_PX,
 )
 from capa_simulation.components.home_preference import (
-    LOB_UNAPPLIED_NOTICE_KEY,
     SECTION_BAR_GAP_PX,
     SECTION_TITLE_FONT_PX,
     STATUS_LEGEND_CLASS,
@@ -591,13 +590,6 @@ def dashboard_title_row_style() -> str:
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
     .st-key-bottleneck_title_row {{ align-items: center; }}"""
-        # 「적용하지 못한 달」 알림은 제목→시트 틈(상자 gap 0)에 끼므로 제목과 알림 · 알림과 시트(월
-        # 칸은 스크롤바) 사이를 제목→시트 간격만큼 띄운다 — 알림 상자가 제목 글줄과 스크롤바에 붙지
-        # 않게.
-        f"""
-    .st-key-{LOB_UNAPPLIED_NOTICE_KEY} {{
-        padding: {tokens.SECTION_TITLE_SHEET_GAP_PX}px 0;
-    }}"""
         # 제목 글줄 상자가 줄 높이와 꼭 같아야 위 · 아래 틈이 띠 여백 그대로다. 마크다운은 한 줄
         # HTML 을 문단(`p`, 본문 14px · 줄높이 22.4px)으로 감싸고, 그 본문 글줄의 기준선에
         # 제목(줄높이 24px)이 얹혀 문단이 28.4px 로 커진다 — 제목 글은 문단 위쪽에 붙어 아래로 4.4px

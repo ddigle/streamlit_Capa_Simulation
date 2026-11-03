@@ -77,6 +77,7 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
+from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -560,6 +561,7 @@ except BOOTSTRAP_ERRORS as exc:
             disabled=True,
         )
     st.error(bootstrap_error_message(exc))
+    alert_page_error(bootstrap_error_message(exc), code="HM-01")
     # 보는 조건 카드는 멈춘 회차에도 선다. 오류가 시키는 조치(EDP 포함을 켜기·GAP 끄기)가 이 카드의
     # 토글이라 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자 결정). key 가 정상 회차와
     # 같아 바꾼 값으로 다음 회차가 다시 계산한다. 주요 Case 칩도 그대로 선다 — 다른 Case 로 옮기는
@@ -1066,7 +1068,11 @@ leading_past_months = leading_past_column_count(
 render_summary_notice(summary_profile.note)
 # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
 # 실제와 다르게 나오므로(측정률이 1 보다 작으면 낮게), 아래 결론을 읽기 전에 알아야 한다.
-render_capacity_assumption_notice(assumed_capacity_defaults)
+# 자리에는 그리지 않는다 — 가정이 바뀔 때만 알림창에 뜨고 Alarm 에 남는다(`HM-02`, 산출 결과 대당
+# Capa 와 같은 코드 · 같은 범위).
+render_capacity_assumption_notice(
+    assumed_capacity_defaults, scope=simulation_scope(active_scenario)
+)
 # 소요대수에 들지 않은 수요와 결론 두 줄(최저 확보율 공정·기준 미달 수)은 HOME 에 두지 않는다 —
 # 경고가 HOME 에 줄줄이 달려 읽히지 않았다(2026-10-19 사용자 요청). 그런 알림은 Admin Area
 # 「알림 모음」 탭이 시나리오 전체 기간으로 한곳에 모은다.
@@ -1077,6 +1083,7 @@ with home_dashboard_panel():
     # 두면 월 영역 위에 얹힌 가로 스크롤바와 겹친다.
     render_lob_title_row(
         unapplied_months=unapplied_advance_months,
+        scope=simulation_scope(active_scenario, (effective_start, effective_end)),
     )
     render_home_figures(
         cached_figures,

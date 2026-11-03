@@ -27,6 +27,7 @@ import streamlit as st
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation import alerts
 from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
@@ -217,14 +218,41 @@ def schema_ahead_message(notice: SchemaAheadOfCode) -> str:
     )
 
 
-def render_schema_ahead_warning(notice: SchemaAheadOfCode | None) -> None:
-    """DB 가 코드보다 새 것이면 경고 한 줄을 그린다. 아니면 아무것도 그리지 않는다.
+# DB 새 판 상태 알림 코드 — 시뮬레이션 DB(모든 화면, `app.py`)와 설비 DB(설비 DB 를 여는 화면). 한
+# 코드에 두 DB 를 실으면 화면을 옮길 때마다 지문이 바뀌어 알림창이 거듭 뜬다.
+SCHEMA_AHEAD_SIMULATION_CODE = "GL-02"
+SCHEMA_AHEAD_EQUIPMENT_CODE = "GL-06"
 
-    막지 않는다(2026-10-05 사용자 결정) — 막으면 예전 배포로 되돌릴 때 DB 를 먼저 복원해야
-    한다. `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다.
+
+def render_schema_ahead_warning(
+    notice: SchemaAheadOfCode | None, *, code: str = SCHEMA_AHEAD_EQUIPMENT_CODE
+) -> None:
+    """DB 가 코드보다 새 것인지의 상태 알림 — 그 DB 를 여는 회차마다(새 것이 아니어도) 부른다.
+
+    막지 않는다(2026-10-05 사용자 결정) — 막으면 예전 배포로 되돌릴 때 DB 를 먼저 복원해야 한다.
+    `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다. 자리에는
+    그리지 않는다 — 판이 바뀔 때만 알림창에 뜨고 Alarm 에 남는다(2026-11-03 결정 보드 D2 (나)).
+    `code` 는 시뮬레이션 DB 면 `SCHEMA_AHEAD_SIMULATION_CODE`(`app.py`), 설비 DB 면 기본값이다.
     """
-    if notice is not None:
-        st.warning(schema_ahead_message(notice), icon=":material/history:")
+    alerts.state(
+        code,
+        scope=None,
+        content=(
+            None
+            if notice is None
+            else [notice.database_name, notice.database_version, notice.code_version]
+        ),
+        active=notice is not None,
+        text=(
+            None
+            if notice is None
+            else (
+                f"{with_subject_particle(notice.database_name)} 코드보다 새 버전(DB "
+                f"{notice.database_version} · 코드 {notice.code_version}) — 최신 배포를 다시 적용"
+            )
+        ),
+        full=None if notice is None else schema_ahead_message(notice),
+    )
 
 
 @dataclass(frozen=True)

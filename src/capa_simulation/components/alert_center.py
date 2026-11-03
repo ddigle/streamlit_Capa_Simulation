@@ -13,12 +13,17 @@
   머리말 · 사이드바 · 대화상자의 쌓임 맥락 밑에 깔린다. 칸 자체는 `_HIDE_STYLE` 로 접어 본문에 틈을
   남기지 않는다(입장 화면과 같은 꼴).
 - **data 는 세션만 읽는다**(DB · 캐시 없음). 회차마다 드는 것은 이 세션의 변경 몇
-  줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`)뿐이라, 둘이
-  그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의 토큰이다(테마 전환은
-  새로고침이라 다음 data 가 새 색을 싣는다).
+  줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`), 이번 화면
+  주소(`here`)뿐이라, 셋이 그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의
+  토큰이다(테마 전환은 새로고침이라 다음 data 가 새 색을 싣는다).
 - **패널은 브라우저 안에서만 열고 닫는다** — 트리거를 보내지 않아 열어도 파이썬 회차가 돌지
   않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
   `sessionStorage`(`STORAGE`)다(D1 (가)).
+- **알림에 딸린 표**(`alerts.AlertTable` — 산출 결과 대당 Capa 의 「제외 기준정보」)는 Alarm 줄의
+  「… 보기」 단추가 펼치고 「CSV 내려받기」 가 브라우저 안에서 파일을 만든다(원본 값 · BOM — 서버를
+  부르지 않는다). 표는 코드마다 가장 새 줄에만 남겨 탭 저장소에 옛 범위 표를 쌓지 않는다.
+- **「그 화면으로」 는 그 화면 안 탭까지 연다** — 표지의 `tab` 이 있으면 그 화면에 닿은 회차가 끝난
+  뒤 이름이 맞는 탭 단추를 누른다(`stateful_tabs` 탭이라 보통 누름과 같은 회차가 돈다).
 - **알림창 층은 Streamlit 대화상자 위다**(`.stack` z-index 1000200 — 1.63 대화상자 1000059 위,
   2026-11-03 사본 실측). 누름을 받지 않아(`pointer-events: none`) 대화상자 조작을 막지 않는다. Alarm
   · 변경 판은 머리 띠(999990) · 진행 막대 자리(999991) 위, 모바일 사이드바(999995) · 대화상자
@@ -77,6 +82,9 @@ TEXT: Final[dict[str, str]] = {
     ),
     "go": "그 화면으로",
     "log": "로그",
+    "table_open": "{title} 보기",
+    "table_rows": "{n}행",
+    "table_csv": "CSV 내려받기",
     "open": "지금도 있음",
     "resolved": "해소 {time}",
     "kind_event": "사건 알림",
@@ -183,6 +191,8 @@ def alert_center_data(
             "chip": CHANGES_CHIP_ID,
         },
         "marker": alerts.MARKER_ATTRIBUTE,
+        # 이번 화면 주소 — 「그 화면으로」 가 탭을 고를 때 그 화면에 닿았는지 본다.
+        "here": alerts.current_page()[1],
         "storage": dict(STORAGE),
         "palette": palette(),
         "font": tokens.FONT_FAMILY,

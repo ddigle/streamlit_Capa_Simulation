@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from alert_marks import successes
 from edit_grid_fake import Calls, install_fake_edit_grid
 from streamlit.dataframe import lazy_df_source
 from streamlit.testing.v1 import AppTest
@@ -407,9 +408,10 @@ def test_the_step_flash_shows_once_in_the_step_tab() -> None:
         _probed(REAL_APPLY_TEST_SCRIPT, "test-ref-perf-step-flash"), default_timeout=60
     ).run()
     app = _add_step(app, "2A", "P200")
-    assert any("STEP을 추가했습니다" in item.value for item in app.success)
-    app.run()
+    assert any("STEP을 추가했습니다" in item.value for item in successes(app))
     assert not any("STEP을 추가했습니다" in item.value for item in app.success)
+    app.run()
+    assert not any("STEP을 추가했습니다" in item.value for item in successes(app))
 
 
 def test_an_open_step_popup_builds_the_route_tables_while_its_tab_is_hidden() -> None:
@@ -440,7 +442,7 @@ def test_a_step_flash_left_while_the_step_tab_is_hidden_is_not_shown_later() -> 
     assert "capacity_step_flash" not in app.session_state
 
     app = _open_tab(app, "STEP 구성")
-    assert not any("STEP을 추가했습니다" in item.value for item in app.success)
+    assert not any("STEP을 추가했습니다" in item.value for item in successes(app))
 
 
 # ---------------------------------------------------------------- R2 편집 기간 조각

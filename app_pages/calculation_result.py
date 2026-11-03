@@ -4,7 +4,14 @@
 
 세 탭이 **한 카드**를 쓰고 안의 내용만 열린 탭 것으로 바뀐다(대당 Capa: 표시 방식·집계
 수준·공정 필터 / 소요대수: 상세·필터 / 확보율: 필터). 카드는 열린 탭 하나의 것만 서므로 닫힌
-탭의 선택은 `persist_state` 가 지킨다. 본문에는 결과·제외 알림·표만 남는다.
+탭의 선택은 `persist_state` 가 지킨다. 본문에는 결과·표만 남는다.
+
+제외 · 가정 알림은 자리에 그리지 않고 상태 알림으로 낸다(2026-11-03 결정 보드 D2 (나)) — 바뀔 때만
+오른쪽 아래 알림창, 쌓이는 곳은 머리 `Alarm`. 대당 Capa 의 `제외 기준정보` 목록은 본문 펼침이 아니라
+그 알림 줄의 표다(2026-11-02 사용자 요청(검수표) — 「알림과 제외 기준정보는 우하단 팝업(통일된
+양식)으로 뜨고 누적 알람에서 제외 기준정보를 확인할 수 있게」). 표가 알림에 싣기에
+크면(`alerts.TABLE_ROW_LIMIT`) 본문 펼침을 남긴다. 소요대수 탭의 목록(경로 쪽 · 계획 쪽)은 다른 화면
+· 저장 검사의 안내가 「산출 결과 → 소요대수 탭」 으로 가리키는 자리라 본문에 남긴다.
 
 확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 표 조건 카드의 필터가 히트맵에도 걸린다
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
@@ -19,7 +26,7 @@ from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
 from capa_simulation.components.column_filter import render_column_filter_controls
-from capa_simulation.components.exclusion_table import render_exclusion_table
+from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
     render_hierarchical_monthly_table,
@@ -28,8 +35,17 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.required_exclusion_notice import render_plan_exclusion_lists
+from capa_simulation.components.required_exclusion_notice import (
+    CAPACITY_EXCLUSION_TITLE,
+    PERIOD_SCOPE,
+    alert_capacity_exclusions,
+    alert_required_exclusions,
+    alert_uncounted_demand,
+    plan_side_counts,
+    render_plan_exclusion_lists,
+)
 from capa_simulation.components.securement_heatmap import render_securement_heatmap
+from capa_simulation.components.state_alerts import alert_page_error, alert_table, simulation_scope
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
@@ -53,8 +69,8 @@ from capa_simulation.services.display_order_scopes import (
     TAB_UNIT_CAPACITY,
 )
 from capa_simulation.services.required_equipment import (
-    PKG_UNCOUNTED_REASON,
     RESULT_DIMENSIONS,
+    count_required_exclusions,
 )
 from capa_simulation.services.securement_rate import (
     SECUREMENT_DIMENSIONS,
@@ -101,6 +117,10 @@ TAB_NAMES = (
     ":material/precision_manufacturing: 소요대수",
     ":material/monitoring: 확보율",
 )
+# 알림이 「그 화면으로」 로 열 탭 이름(아이콘 없이 — 탭 단추 글의 끝과 맞댄다).
+UNIT_CAPACITY_TAB = "대당 Capa"
+REQUIRED_TAB = "소요대수"
+AVAILABILITY_TAB = "확보율"
 
 
 def _required_export_csv(table: pd.DataFrame, classification_columns: list[str]) -> bytes:
@@ -167,12 +187,16 @@ try:
     # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
-    # 원인 하나를 세 탭에 같이 보여 준다. 문구는 한 번만 만든다.
+    # 원인 하나를 세 탭에 같이 보여 준다. 문구는 한 번만 만든다. 알림창은 같은 글이면 한 번이다.
     bootstrap_message = bootstrap_error_message(exc)
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
             st.error(bootstrap_message)
+    alert_page_error(bootstrap_message, code="ST-20")
 else:
+    # 상태 알림의 범위 — 이 화면의 결과는 유효 조회기간 키로 계산한 것이다(측정률 가정만 시나리오
+    # 전체 기준이라 기간을 넣지 않는다 — HOME 과 같은 범위).
+    period_scope = simulation_scope(active_scenario, (effective_start, effective_end))
     # 탭마다의 몫(월별 표·제외 안내·CSV·Plotly)은 **열린 탭에서만** 만든다. 소요대수 월 표와
     # 확보율 표도 그 탭이 열린 회차에만 캐시에서 꺼낸다 — 다른 탭을 보는 동안에는 쓰지 않는다.
     # 그 표의 오류는 그 탭에만 뜬다(시나리오 계산 오류는 위 요약 캐시가 세 탭에 낸다).
@@ -239,14 +263,37 @@ else:
             level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
         )
         with unit_capacity_tab:
-            render_capacity_assumption_notice(assumptions)
-            if not capacity_exclusions.empty:
-                st.warning(
-                    f"대당 Capa 산출에서 {len(capacity_exclusions):,}개 기준을 제외했습니다."
+            render_capacity_assumption_notice(
+                assumptions, scope=simulation_scope(active_scenario), tab=UNIT_CAPACITY_TAB
+            )
+            exclusion_file = f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
+            exclusion_table = (
+                alert_table(
+                    exclusion_export(
+                        capacity_exclusions,
+                        dimensions=UNIT_CAPACITY_DIMENSIONS,
+                        display_order=display_order,
+                        page=PAGE_CALCULATION,
+                        tab=TAB_UNIT_CAPACITY,
+                    ),
+                    title=CAPACITY_EXCLUSION_TITLE,
+                    file_name=exclusion_file,
+                    labels=process_labels,
                 )
-                # 닫힌 탭에서는 그리지 않으므로 편 상태는 기억 칸이 지킨다(히트맵 상자와 같다).
+                if not capacity_exclusions.empty
+                else None
+            )
+            alert_capacity_exclusions(
+                capacity_exclusions,
+                scope=period_scope,
+                tab=UNIT_CAPACITY_TAB,
+                table=exclusion_table,
+            )
+            if exclusion_table is None and not capacity_exclusions.empty:
+                # 알림에 싣기에 큰 목록만 본문 펼침으로 남는다. 닫힌 탭에서는 그리지 않으므로 편
+                # 상태는 기억 칸이 지킨다(히트맵 상자와 같다).
                 with remembered_expander(
-                    "제외 기준정보 확인", key=CAPACITY_EXCLUSIONS_EXPANDER_KEY
+                    f"{CAPACITY_EXCLUSION_TITLE} 확인", key=CAPACITY_EXCLUSIONS_EXPANDER_KEY
                 ):
                     render_exclusion_table(
                         capacity_exclusions,
@@ -255,9 +302,7 @@ else:
                         page=PAGE_CALCULATION,
                         tab=TAB_UNIT_CAPACITY,
                         labels=process_labels,
-                        file_name=(
-                            f"Capa_Unit_Capacity_Exclusions_{effective_start}_{effective_end}.csv"
-                        ),
+                        file_name=exclusion_file,
                         key="download_unit_capacity_exclusions_csv",
                     )
             # STEP 뷰는 경로 하나하나가 행이라 전 공정을 그리면 Plotly 표가 수천 행이 된다.
@@ -352,6 +397,7 @@ else:
         except BOOTSTRAP_ERRORS as exc:
             with required_tab:
                 st.error(bootstrap_error_message(exc))
+            alert_page_error(bootstrap_error_message(exc), code="ST-20", tab=REQUIRED_TAB)
             st.stop()
         all_month_columns = [
             column for column in required_table.columns if column not in RESULT_DIMENSIONS
@@ -378,29 +424,24 @@ else:
                 value_labels=process_labels.value_labels(),
             )
         with required_tab:
-            # 대당 Capa 제외 표는 **대당 Capa 탭**이 그린다. 두 탭이 한 페이지에 있게 된
+            # 대당 Capa 제외 표는 **대당 Capa 탭**의 알림이 든다. 두 탭이 한 페이지에 있게 된
             # 뒤로는 같은 표를 같은 파일명으로 두 번 내리는 것이라 여기서는 걷어냈다.
+            # 사유가 둘이다 — 대당 Capa 가 없는 것(ST-15)은 기준정보를 고칠 일이고, PKG 의 Buffer
+            # 밖 행(ST-21)은 규칙대로 세지 않은 것이다. 계획 쪽(ST-01)은 Static Capa 와 같은 코드 ·
+            # 같은 범위다. 셋 다 이 탭이 열린 회차마다 부른다.
+            alert_required_exclusions(required_exclusions, scope=period_scope, tab=REQUIRED_TAB)
+            alert_uncounted_demand(
+                plan_side_counts(
+                    count_required_exclusions(
+                        summary.load_exclusions, summary.unrouted_loads, required_exclusions
+                    )
+                ),
+                code="ST-01",
+                scope=period_scope,
+                scope_name=PERIOD_SCOPE,
+                tab=REQUIRED_TAB,
+            )
             if not required_exclusions.empty:
-                # 사유가 둘이다. 대당 Capa 가 없는 것은 기준정보를 고칠 일이고, PKG 의 Buffer
-                # 외 행은 규칙대로 세지 않은 것이다 — 한 문장에 섞으면 고칠 것이 없는데 고치러
-                # 간다.
-                uncounted_pkg = required_exclusions["제외사유"].eq(PKG_UNCOUNTED_REASON)
-                capacity_missing = required_exclusions.loc[~uncounted_pkg]
-                if not capacity_missing.empty:
-                    positive_load_exclusions = capacity_missing.loc[
-                        capacity_missing["부하량"].gt(0)
-                    ]
-                    st.warning(
-                        "대당 Capa가 없어 소요대수 산출에서 "
-                        f"{len(capacity_missing):,}건을 제외했습니다"
-                        f" (부하량 발생 {len(positive_load_exclusions):,}건)."
-                    )
-                if uncounted_pkg.any():
-                    st.info(
-                        "소요기준 PKG 는 Buffer 로만 셉니다. Core·Top·Dummy 등 "
-                        f"{int(uncounted_pkg.sum()):,}건은 Buffer 에 쌓여 있어 소요대수에 넣지 "
-                        "않았습니다."
-                    )
                 with st.expander("소요대수 제외 기준정보", expanded=False):
                     render_exclusion_table(
                         required_exclusions,
@@ -480,6 +521,7 @@ else:
         except BOOTSTRAP_ERRORS as exc:
             with availability_tab:
                 st.error(bootstrap_error_message(exc))
+            alert_page_error(bootstrap_error_message(exc), code="ST-20", tab=AVAILABILITY_TAB)
             st.stop()
         # 히트맵은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
         thresholds = threshold_profile.thresholds

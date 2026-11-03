@@ -30,6 +30,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
@@ -42,6 +43,7 @@ from capa_simulation.components.profile_caption import (
 )
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
@@ -297,9 +299,6 @@ SECTION_BAR_HEIGHT_PX = 18
 SECTION_BAR_RADIUS_PX = 2
 SECTION_BAR_GAP_PX = 8
 STATUS_LEGEND_ROW_KEY = "home_status_legend"
-# `Capa LOB 현황` 제목 줄 밑 「적용하지 못한 달」 알림 칸. 제목→시트 틈(상자 gap 0 + 스크롤바)에
-# 끼므로 위 · 아래 여백은 `home_rendering.dashboard_title_row_style` 이 준다.
-LOB_UNAPPLIED_NOTICE_KEY = "lob_unapplied_notice"
 # 범례 안쪽 div 의 클래스. 높이를 물려주는 CSS 가 이 이름을 읽는다.
 STATUS_LEGEND_CLASS = "capa-status-legend"
 
@@ -492,13 +491,19 @@ def render_home_view_card(
 def render_lob_title_row(
     *,
     unapplied_months: Sequence[int],
+    scope: AlertScope,
 ) -> None:
-    """`Capa LOB 현황` 제목과 오른쪽 끝의 판정 색 범례.
+    """`Capa LOB 현황` 제목과 오른쪽 끝의 판정 색 범례, 선행 B/O 를 적용하지 못한 달의 상태
+    알림(`HM-04`).
 
     **범례가 이 줄 안에 있는 이유.** 제목 줄과 Figure 사이 간격은 스크롤바 높이를 뺀
     나머지(`DASHBOARD_PANEL_TITLE_GAP_PX`)뿐이라 0 이다. 범례를 두 줄 사이에 독립
     블록으로 끼우면 바로 아래 월 영역 위에 얹힌 가로 스크롤바와 겹친다. 제목 줄은 이미
     높이가 못박힌 가로 컨테이너라 여기에 넣으면 세로 자리를 새로 먹지 않는다.
+
+    적용하지 못한 달은 자리(제목 줄 밑)에 그리지 않는다 — 달이 바뀔 때만 알림창에 뜨고 Alarm 에
+    남는다(2026-11-03 결정 보드 D2 (나)). 매 회차(달이 없어도) 부른다. `scope` 는 HOME 의 활성
+    리비전 · 보는 기간이다.
     """
     with st.container(
         key="lob_title_row",
@@ -511,14 +516,19 @@ def render_lob_title_row(
         # 아래 CSS 의 `margin-left:auto` 가 이 칸만 오른쪽 끝으로 민다.
         with st.container(key=STATUS_LEGEND_ROW_KEY):
             st.markdown(status_legend_markup(), unsafe_allow_html=True)
-    if unapplied_months:
-        labels = _month_labels(unapplied_months)
-        with st.container(key=LOB_UNAPPLIED_NOTICE_KEY):
-            st.warning(
-                f"선행 B/O 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. "
-                "해당 달은 기존 계획 그대로 그립니다.",
-                icon=":material/report:",
-            )
+    labels = _month_labels(unapplied_months) if unapplied_months else ""
+    alerts.state(
+        "HM-04",
+        scope=scope.scope,
+        content=sorted(int(month) for month in unapplied_months),
+        active=bool(unapplied_months),
+        text=f"선행 B/O 반영 계획이 0 이하인 달 {labels} — 그 달은 기존 계획으로 그림",
+        full=(
+            f"선행 B/O 반영 계획이 0 이하가 되어 적용하지 못한 달이 있습니다: {labels}. 해당 달은 "
+            "기존 계획 그대로 그립니다. 선행 B/O 는 「HOME 설정」 → Preference 에서 고칩니다."
+        ),
+        scope_label=scope.label,
+    )
 
 
 def render_home_preference(

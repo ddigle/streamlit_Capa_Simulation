@@ -16,6 +16,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import alert_notes
 from streamlit.proto.Dataframe_pb2 import Dataframe
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
@@ -1110,9 +1111,10 @@ def _row_and_popup(database: str, page_file: str) -> None:
 
 
 def test_the_popup_save_result_keeps_the_tildes_of_the_scenario_name(tmp_path: Path) -> None:
-    """팝업 저장 뒤 사이드바 줄 아래 결과 알림(「…「E2E~가정~D」 r2.」)은 물결표 그대로다 —
-    설비 마스터 탭은 같은 `save_result_message` 를 감싸 그리는데 팝업 쪽은 그대로 그려
-    「E2E<del>가정</del>D」 가 됐다."""
+    """팝업 저장 뒤 결과 알림(「…「E2E~가정~D」 r2.」)은 물결표 그대로다 — 설비 마스터 탭은 같은
+    `save_result_message` 를 감싸 그리는데 팝업 쪽은 그대로 그려 「E2E<del>가정</del>D」 가 됐다.
+    2026-11-03(결정 보드 D3 (가))부터 사이드바 줄 아래가 아니라 오른쪽 아래 알림창이다 — 알림창은
+    평문(`textContent`)이라 이름의 물결표가 그대로 보인다."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
         SAVE_BUTTON_KEY,
@@ -1134,8 +1136,9 @@ def test_the_popup_save_result_keeps_the_tildes_of_the_scenario_name(tmp_path: P
     app.button(key=SAVE_BUTTON_KEY).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    successes = [str(item.value) for item in app.sidebar.success]
-    assert any("「E2E\\~가정\\~D」 r2" in text for text in successes), successes
+    assert not app.sidebar.success
+    sent = [str(note["full"]) for note in alert_notes(app) if note.get("flash") == "success"]
+    assert any("「E2E~가정~D」 r2" in text for text in sent), sent
 
 
 def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
@@ -1170,8 +1173,11 @@ def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
     unmergeable()
     row.run()
     assert not row.exception, [item.message for item in row.exception]
-    warnings = [str(item.value) for item in row.sidebar.warning]
-    assert any("「운영\\~일정\\~A」 r1" in text for text in warnings), warnings
+    # 세션 이동은 사건 알림(`SB-14` — 오른쪽 아래 알림창, 평문)이다. 사이드바 줄 아래에 그리지
+    # 않는다.
+    assert not row.sidebar.warning
+    moved = [str(note["full"]) for note in alert_notes(row) if note.get("code") == "SB-14"]
+    assert any("「운영~일정~A」 r1" in text for text in moved), moved
 
     def section() -> None:
         from capa_simulation.components.equipment_scenario_management import (
