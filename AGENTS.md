@@ -773,7 +773,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `sheet.csv`(`space_unit_sheet.floor_csv` — 그 층 도면에 선 호기(공정 필터 뒤)의 모든 칸 `to_csv(index=False)` 글 + 파일 이름
     `space_동_층.csv`, 보기 · 편집 모두 같은 저장본 글)이고 브라우저가 BOM 을 붙여 UTF-8 Blob 으로 내려받는다 — 옛 내려받기와 같은
     바이트다. 「보이는 줄」 은 지금 탭의 줄을 창의 칸으로 JS `sheetCsv`(`// <unit-sheet>` — QUOTE_MINIMAL · LF)가 짓는다. 크기는
-    표와 같은 차례(층당 수백 줄 — 검수 샘플 C1 1F 74줄 · 약 40KB)라 회차마다 실어도 된다. 뷰어 호기 누르기(`on_pick` 콜백 → 세션 `space_status_picked_unit` = (동, 층, 설비명))는
+    표와 같은 차례(층당 수백 줄 — 샘플 관측: 검수 샘플 사본 C1 1F 74줄 · 50칸 · 22KB)라 회차마다 실어도 된다. 뷰어 호기 누르기(`on_pick` 콜백 → 세션 `space_status_picked_unit` = (동, 층, 설비명))는
     색 기준 「필요 단축」 칸의 누른 호기 상세만 쓴다 — 뷰어는 그 보기를 켠 동안만 보내고(`pick_to_server`, 사양 D11 — 누를 때마다
     앱 전체가 돌지 않게) 그 보기가 서지 않은 회차(끈 층 보기·배치 편집)에는 페이지가 그 세션 값을 푼다. 다른 층·FAB 로 옮기거나 그
     층 행에 없으면(필터·이름 바꿈) 푼다. 뷰어 호기에는 설비지분 `share`(기준일 보유 지분
