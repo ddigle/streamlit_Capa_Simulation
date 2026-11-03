@@ -78,7 +78,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 (사내 실데이터의 `WF 구분`·재이관 전제를 **읽기 전용**으로 재는 것. 값은 찍지 않고
 개수만 보고한다), `scripts/audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
 **읽기 전용**으로 점검), `scripts/inspect_real_data_checks.py`(실데이터로만 답이 나오는 확인 — 기존 결과
-대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인과 가정 배치 차이·옛 코드 흔적(설비 `0031`))·BigDataQuery·「지금대로」 결정의 유병률(8-10 센서스)을 **읽기 전용**으로
+대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인과 가정 배치 차이·옛 코드 흔적(설비 `0031`))·BigDataQuery·「지금대로」 결정의 유병률(8-10 센서스)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)를 **읽기 전용**으로
 재어 집계만 찍고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다. 사내 런북 8장이 배포마다
 부르고, 사외는 받은 압축본에 `--check-summary <파일>` 을 돌려 옮겨 적은 오타를 잡는다),
 `scripts/inspect_revision_calculations.py`(사내 런북 6-3 a 사본 E2E — 저장된
@@ -93,11 +93,13 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 `--data-dir <사본 폴더>` 만 받고 같은 판정으로 저장소 안은 거절), `scripts/validate_duckdb_persistence.py`
 (영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
 `scripts/generate_sample_core_data.py`(합성 Core Data 생성),
+`scripts/generate_review_sample.py`(검수용 합성 샘플 — 시뮬레이션 DB·설비 DB·`--modules` 모듈 견본을 저장소 밖 뿌리에 만든다. 부품
+`review_sample_*.py`, 문서 `docs/review_sample.md`. 가이드 예시판 시드도 이것이다 — git 작업 트리 안은 거절),
 `scripts/sso_mock_idp.py`(개발용 가짜 통합인증 IdP — 키를 메모리에만 만들고 form_post 로 id_token 을 보내 `capa_server.py` 의 로그인을
 끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
 `scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
-HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `scripts/guide_example_seed.py`, `--internal` 은 런북 6-3 사본
-트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
+HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘플 시드 `scripts/generate_review_sample.py`, `--internal`(사내판 —
+2026-11-02 부터 쉼)은 런북 6-3 사본 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
 `page_guide_capture.py`·`page_guide_helpers.js`), `scripts/check_page_guide.py`(가이드 점검기 — 덮어쓰기·매개값·촬영 결과를
 뼈대에 대 보고 리뷰 한 줄을 낸다. 앱·브라우저 없이 돈다. `--accepted` 는 사내 검수 마친 판과 견줘 바뀐 자리만 `바뀜 n/N` 으로 —
 못 읽으면 `바뀜 na` 로 멈추지 않는다 — `--accept` 는 검수 끝 뒤 그 판을 쓴다).
@@ -138,13 +140,17 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   앞에서 그 화면 Summary 가 그릴 공식버전 요약과 `Introduce` 티저 칸(`components/intro_summary.py`)을 보낸다.
   페이지 바로 앞에는 머리 띠 아래 연 화면 탭 줄(`components/page_tabs.py`, 상태 `page_tabs_state.py`)을 그리고
   `st.navigation()` 바로 뒤에서 탭이 적어 둔 이동을 한다.
+- `src/capa_simulation/alerts.py` · `components/alert_center.py` — 알림 한 꼴(2026-11-03 D1 ~ D6). 등록부·사건/상태 표지 API 와,
+  `app.py` 가 탭 줄 바로 뒤에 그리는 알림 칸(오른쪽 아래 알림창·툴바 Alarm·변경 칩). 동작 결과는 `queue_flash`(성공은 알림창으로만),
+  조건 경고는 `alerts.state`(자리에 그리지 않음 — 화면 쪽 범위·딸린 표 조각은 `components/state_alerts.py`) — AGENTS 9장 「알림 칸」.
+  페이지 본문에 설정 단추를 두지 않고 사이드바 설정 상자(`components/settings_box.py`)로 둔다(2026-11-03).
 - `capa_server.py` — C-DEP 운영 진입점(시작 스크립트가 `streamlit run capa_server.py --server.port 8080` 으로 띄운다). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로·문지기를 같은 프로세스에 붙인다(`src/capa_simulation/auth/`). 개발·WebIDE·시험·화면 확인은
   `app.py` 로 띄운다(통합인증 꺼짐). 자세한 것은 `docs/sso_setup.md`.
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
-  Area만 배치가 달라 `app.py`가 손수 그린다. 계산 그룹은 셋이다(2026-10-17 — 2026-11-02 실행 관리와 Dynamic 사이에 아직 빈 「생산 진도」 상자가 섰다) — Static Capa(약속) →
+  Area만 배치가 달라 `app.py`가 손수 그린다. 계산 그룹은 셋이다(2026-10-17 — 2026-11-02 실행 관리와 Dynamic 사이에 「생산 진도」 상자가 섰다 — 머리 화면은 모듈 화면이 들어올 자리 하나(2026-11-03)) — Static Capa(약속) →
   실행 관리(이행: 공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·가용설비·Space·실적 셋) → Dynamic Capa(실적:
   실현 Capa·재공). 「Dynamic」 은 실적 Capa 에만 쓰고, 설비 일정으로 낸 가용대수는 화면에서 「설비 일정
   기준 가용대수」, HOME 의 확보율 % 손입력은 「확보율 보정」이다 — 코드·키·DB 이름(`dynamic_*`·`execution`)은
