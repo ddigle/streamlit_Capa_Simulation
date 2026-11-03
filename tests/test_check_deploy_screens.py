@@ -2513,18 +2513,20 @@ def test_the_equipment_header_summary_counts_and_names_only_missing_contract_nam
 
 def test_the_sidebar_group_boxes_match_the_navigation_declaration() -> None:
     """스크립트는 선언을 부르지 않고 값만 옮긴다 — 계산 그룹(Static Capa 부터 Dynamic Capa
-    까지, 하위가 없는 「생산 진도」 도)의 slug·제목·하위 수가 선언과 같은지 여기서 본다. 전에는
-    하위가 있는 그룹만 견줘 생산 진도 상자가 빠져도 몰랐다(2026-11-03 마지막 검토). 상자 key 는
-    `app.py` 가 `<slug>_box` 로 단다."""
+    까지, 「생산 진도」 도)의 slug·제목·하위 수가 선언과 같은지 여기서 본다. 전에는 하위가 있는
+    그룹만 견줘 하위가 없던 생산 진도 상자가 빠져도 몰랐다(2026-11-03 마지막 검토). 생산 진도는
+    2026-11-04 하위 샘플 셋이 들어 펼침 상자다(검수 의견 prog-01). 상자 key 는 `app.py` 가
+    `<slug>_box` 로 단다."""
     from capa_simulation.navigation import SIDEBAR_GROUPS
 
     slugs = [group.slug for group in SIDEBAR_GROUPS]
     calculation = SIDEBAR_GROUPS[slugs.index("static_capa") : slugs.index("dynamic_capa") + 1]
     declared = tuple((group.slug, group.main.title, len(group.subpages)) for group in calculation)
     assert screens.SIDEBAR_GROUP_BOXES == declared
-    assert ("production_progress", "생산 진도", 0) in declared
+    assert ("production_progress", "생산 진도", 3) in declared
     assert 'key=f"{group.slug}_box"' in (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
-    # 하위가 없는 상자는 펼침 상자가 아니다 — 제목은 그 안 링크 글에서 읽는다.
+    # 하위가 없는 상자(지금 계산 그룹에는 없다)는 펼침 상자가 아니다 — 제목은 그 안 링크 글에서
+    # 읽는다.
     assert (
         'a[data-testid="stPageLink-NavLink"] [data-testid="stMarkdownContainer"] p'
         in screens._SIDEBAR_GROUPS_JS
@@ -2556,7 +2558,7 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
 
     assert screens.summarize_sidebar_groups(every) == (
-        "Static Capa 머리 + 4 · 실행 관리 머리 + 8 · 생산 진도 머리 + 0 · Dynamic Capa 머리 + 1 — "
+        "Static Capa 머리 + 4 · 실행 관리 머리 + 8 · 생산 진도 머리 + 3 · Dynamic Capa 머리 + 1 — "
         "정한 차례·수와 같음 · 상자 제목 한 줄 · 잘림 없음"
     )
     # 차례가 바뀌거나 하나가 빠지거나 하위 수가 다르면 「다름」, 줄바꿈·말줄임은 그 상자 이름만
@@ -2565,12 +2567,12 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     swapped[0] = {**swapped[0], "lines": 2}
     line = screens.summarize_sidebar_groups(swapped)
     assert line == (
-        "실행 관리 머리 + 8 · Static Capa 머리 + 4 · 생산 진도 머리 + 0 · Dynamic Capa 머리 + 2 — "
+        "실행 관리 머리 + 8 · Static Capa 머리 + 4 · 생산 진도 머리 + 3 · Dynamic Capa 머리 + 2 — "
         "정한 차례·수와 다름 · 줄바꿈: 실행 관리"
     )
     missing = screens.summarize_sidebar_groups([every[0], every[2], {**every[3], "clipped": True}])
     assert missing.endswith("정한 차례·수와 다름(없음: 실행 관리) · 잘림: Dynamic Capa")
-    # 하위가 없는 생산 진도 상자가 빠져도 「다름」 이다.
+    # 생산 진도 상자가 빠져도 「다름」 이다.
     no_progress = screens.summarize_sidebar_groups([every[0], every[1], every[3]])
     assert no_progress.endswith(
         "정한 차례·수와 다름(없음: 생산 진도) · 상자 제목 한 줄 · 잘림 없음"

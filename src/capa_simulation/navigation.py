@@ -203,12 +203,13 @@ SCENARIO_MANAGEMENT = PageSpec(
 )
 
 # 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정 — 2026-11-02 실행 관리와 Dynamic 사이에
-# 「생산 진도」 상자가 섰다, 머리 화면은 모듈 화면 자리 하나): **Static Capa** 는 약속(기술팀이
-# 정한 Capa 기준정보와 생산계획으로 낸 미래 Capa), **실행 관리**는 그 약속의 이행(약속된
-# Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 요청하고, 지킬 수 없으면
-# Static 반영까지 추적), **Dynamic Capa** 는 실행 관리가 모은 실적으로 다시 낸 Capa 와 그것으로 하는
-# 단기 운영이다. 화면 파일 이름·제목·주소는 그룹을 옮겨도 그대로다 — 주소는 파일 이름에서 나오고
-# Static 하위 네 제목은 표시순서 DB 의 페이지 키다(`services/display_order_scopes.py`).
+# 「생산 진도」 상자가 섰다, 머리와 샘플 페이지 셋 모두 모듈 화면 자리): **Static Capa** 는
+# 약속(기술팀이 정한 Capa 기준정보와 생산계획으로 낸 미래 Capa), **실행 관리**는 그 약속의
+# 이행(약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 요청하고,
+# 지킬 수 없으면 Static 반영까지 추적), **Dynamic Capa** 는 실행 관리가 모은 실적으로 다시 낸
+# Capa 와 그것으로 하는 단기 운영이다. 화면 파일 이름·제목·주소는 그룹을 옮겨도 그대로다 — 주소는
+# 파일 이름에서 나오고 Static 하위 네 제목은 표시순서 DB 의 페이지 키다
+# (`services/display_order_scopes.py`).
 STATIC_CAPA = PageSpec(
     "app_pages/static_capa.py",
     "Static Capa",
@@ -396,8 +397,7 @@ EXECUTION_MANAGEMENT_SUBPAGES = (
 
 # 생산 진도(2026-11-02 사용자 요청)는 실행 관리와 Dynamic Capa 사이의 그룹이다.
 # 보일 내용은 모듈이 맡아(2026-11-03 사용자) 머리 화면은 모듈 화면이 들어올 점선
-# 자리 하나만 그리고 데이터를 읽지 않는다 — 공통 조건 줄도 조건 카드도 없다. 하위
-# 화면이 생기면 `PRODUCTION_PROGRESS_SUBPAGES` 에 더한다(그때 상자가 펼침 상자가 된다).
+# 자리 하나만 그리고 데이터를 읽지 않는다 — 공통 조건 줄도 조건 카드도 없다.
 PRODUCTION_PROGRESS = PageSpec(
     "app_pages/production_progress.py",
     "생산 진도",
@@ -405,7 +405,25 @@ PRODUCTION_PROGRESS = PageSpec(
     reads_scenario=False,
     reads_period=False,
 )
-PRODUCTION_PROGRESS_SUBPAGES: tuple[PageSpec, ...] = ()
+# 하위는 샘플 페이지 셋이다(2026-11-04 검수 의견 prog-01 · prog-02 — 「생산진도 상자 내에 샘플
+# 페이지 1,2,3 넣고 펼치는 상자로 반영」 · 「샘플페이지 1,2,3 화면에 이대로 임시 반영」). 하위가
+# 생겨 상자는 다른 계산 그룹처럼 펼침 상자이고 머리는 그 안 「현황 요약」 이다. 셋 모두 머리 화면과
+# 이름만 다른 같은 꼴(`components/module_slot.py`)이고 데이터를 읽지 않는다 — 임시라 모듈이 그
+# 자리에 그리는 길이 생기면 바꾼다(`docs/TODO.md` 2장 「생산 진도 화면 내용」).
+PRODUCTION_PROGRESS_SUBPAGES: tuple[PageSpec, ...] = tuple(
+    PageSpec(
+        f"app_pages/production_sample_{number}.py",
+        f"샘플 페이지 {number}",
+        icon,
+        reads_scenario=False,
+        reads_period=False,
+    )
+    for number, icon in (
+        (1, ":material/looks_one:"),
+        (2, ":material/looks_two:"),
+        (3, ":material/looks_3:"),
+    )
+)
 
 # 실현 Capa 손실 분해(표준 → 실적)다. 실행 관리가 모은 실적으로 Capa 를 다시 내는 자리라 Dynamic
 # 머리로 둔다. 주소는 `dynamic_capa` 그대로다(북마크·사이드바 CSS 가 기댄다). 라벨에 `(구현중)` 을

@@ -138,6 +138,10 @@ EXPECTED_PAGES = [
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
     ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
     ("app_pages/production_progress.py", "생산 진도", ":material/trending_up:", False),
+    # 생산 진도 하위 샘플 셋 — 임시(2026-11-04 검수 의견 prog-01 · prog-02).
+    ("app_pages/production_sample_1.py", "샘플 페이지 1", ":material/looks_one:", False),
+    ("app_pages/production_sample_2.py", "샘플 페이지 2", ":material/looks_two:", False),
+    ("app_pages/production_sample_3.py", "샘플 페이지 3", ":material/looks_3:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
     # 모듈 색인 — 늘 등록하고 사이드바에는 켜진 모듈이 있을 때만 상자 머리로 선다(2026-11-01).
@@ -182,11 +186,18 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "production_progress",
         "dynamic_capa",
     ]
-    # 생산 진도는 모듈 화면 자리만 그리는 머리 화면 하나다 — 데이터를 읽지 않아 공통 조건 줄이 없다.
+    # 생산 진도는 머리와 샘플 페이지 셋(2026-11-04 검수 의견 prog-01 — 임시)이 모두 모듈 화면 자리만
+    # 그린다 — 데이터를 읽지 않아 공통 조건 줄이 없다.
     assert PRODUCTION_PROGRESS.path == "app_pages/production_progress.py"
     assert PRODUCTION_PROGRESS.title == "생산 진도"
-    assert not PRODUCTION_PROGRESS.reads_scenario and not PRODUCTION_PROGRESS.reads_period
-    assert PRODUCTION_PROGRESS_SUBPAGES == ()
+    assert [(spec.path, spec.title) for spec in PRODUCTION_PROGRESS_SUBPAGES] == [
+        (f"app_pages/production_sample_{number}.py", f"샘플 페이지 {number}")
+        for number in (1, 2, 3)
+    ]
+    for spec in (PRODUCTION_PROGRESS, *PRODUCTION_PROGRESS_SUBPAGES):
+        assert not spec.reads_scenario and not spec.reads_period, spec.path
+        assert not spec.has_condition_cards and not spec.uses_equipment_db, spec.path
+        assert spec.equipment_scenario is None and spec.condition_tabs is None, spec.path
     assert STATIC_CAPA.path == "app_pages/static_capa.py"
     # Static 하위 넷 — 표준 목표는 약속(대당 Capa)을 일·주로 푼 표준이라 Static 에 남는다.
     assert [spec.path for spec in STATIC_CAPA_SUBPAGES] == [
@@ -389,8 +400,8 @@ def _app_constant(name: str) -> str:
 def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> None:
     """그룹 상자는 **지금 보고 있는 페이지가 든 것 하나만** 펴진다.
 
-    사이드바 링크는 열아홉 개고 그 가운데 열넷이 세 계산 그룹(머리 + 하위) 안이다. 접히지
-    않으면 조회기간·Support 가 스크롤 밖으로 밀린다.
+    사이드바 링크는 대부분 계산 그룹 넷(머리 + 하위 — 생산 진도도 2026-11-04 샘플 셋으로 펼침
+    상자가 됐다) 안이다. 접히지 않으면 조회기간·Support 가 스크롤 밖으로 밀린다.
 
     **`expanded` 는 `st.navigation()` 이 돌아야 정해진다.** `page.url_path` 가 그 전에는
     아예 없어서(`AttributeError`) 두 줄의 순서를 바꾸면 사이드바가 통째로 죽는다 —
@@ -399,13 +410,14 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    static, execution, dynamic = (
+    static, execution, progress, dynamic = (
         STATIC_CAPA.title,
         EXECUTION_MANAGEMENT.title,
+        PRODUCTION_PROGRESS.title,
         DYNAMIC_CAPA.title,
     )
-    # HOME 은 어느 그룹에도 속하지 않는다. 셋 다 접힌 채로 연다.
-    assert _expanded(app) == {static: False, execution: False, dynamic: False}
+    # HOME 은 어느 그룹에도 속하지 않는다. 넷 다 접힌 채로 연다.
+    assert _expanded(app) == {static: False, execution: False, progress: False, dynamic: False}
 
     for page_path, opened in (
         (STATIC_CAPA.path, static),
@@ -417,7 +429,7 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
         (SPACE_STATUS.path, execution),
         (WIP_STATUS.path, dynamic),
         (DYNAMIC_CAPA.path, dynamic),
-        # 어느 그룹에도 없는 페이지에서는 다시 셋 다 접힌다.
+        # 어느 그룹에도 없는 페이지에서는 다시 넷 다 접힌다.
         (CAPA_CHATBOT.path, None),
     ):
         app.switch_page(page_path).run()
@@ -425,8 +437,36 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
         assert _expanded(app) == {
             static: opened == static,
             execution: opened == execution,
+            progress: opened == progress,
             dynamic: opened == dynamic,
         }, page_path
+
+
+def test_the_production_progress_box_opens_on_its_head_and_every_sample(_app: AppTest) -> None:
+    """생산 진도 상자는 하위 샘플 셋이 들어 다른 계산 그룹처럼 펼침 상자다(2026-11-04 검수 의견
+    prog-01). 머리 · 샘플 어느 화면에서나 그 상자만 펴지고, 상자 안 링크는 머리(「현황 요약」)와
+    샘플 셋이다. 화면 탭 상한(10)에 걸리지 않게 앞 시험과 따로 연다. 데이터를 읽지 않아
+    「조회 조건」 공통 줄이 서지 않는다."""
+    app = _app.run()
+    progress = PRODUCTION_PROGRESS.title
+    others = (STATIC_CAPA.title, EXECUTION_MANAGEMENT.title, DYNAMIC_CAPA.title)
+    for spec in (PRODUCTION_PROGRESS, *PRODUCTION_PROGRESS_SUBPAGES):
+        app.switch_page(spec.path).run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert _expanded(app) == {progress: True, **dict.fromkeys(others, False)}, spec.path
+        assert _common_boxes(app) == set(), spec.path
+    (box,) = [
+        element
+        for element in app.sidebar
+        if isinstance(element, _EXPANDER_ELEMENTS) and element.label == progress
+    ]
+    labels = [link.proto.label for link in box.get("page_link")]
+    assert labels == [
+        _app_constant("GROUP_MAIN_LABEL"),
+        *(spec.title for spec in PRODUCTION_PROGRESS_SUBPAGES),
+    ]
+    app.switch_page(CAPA_CHATBOT.path).run()
+    assert _expanded(app)[progress] is False
 
 
 def test_the_execution_head_links_every_screen_of_its_group(_app: AppTest) -> None:
@@ -447,6 +487,7 @@ def test_the_execution_head_links_every_screen_of_its_group(_app: AppTest) -> No
     assert _expanded(app) == {
         STATIC_CAPA.title: False,
         EXECUTION_MANAGEMENT.title: True,
+        PRODUCTION_PROGRESS.title: False,
         DYNAMIC_CAPA.title: False,
     }
     assert _common_boxes(app) == set()
@@ -462,7 +503,12 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
     app = _app.run()
 
     expandable = set(_expanded(app))
-    assert expandable == {STATIC_CAPA.title, EXECUTION_MANAGEMENT.title, DYNAMIC_CAPA.title}
+    assert expandable == {
+        STATIC_CAPA.title,
+        EXECUTION_MANAGEMENT.title,
+        PRODUCTION_PROGRESS.title,
+        DYNAMIC_CAPA.title,
+    }
     assert CAPA_CHATBOT.title not in expandable
     assert SCENARIO_MANAGEMENT.title not in expandable
 
@@ -1697,9 +1743,10 @@ def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -
     바뀔 때만 「지금 보는 페이지가 든 그룹」으로 쓴다 — 매 회차 덮어쓰면 방금 누른 클릭을
     지우고, 한 번도 안 쓰면 옮겨도 따라오지 않는다.
     """
-    static, execution, dynamic = (
+    static, execution, progress, dynamic = (
         STATIC_CAPA.title,
         EXECUTION_MANAGEMENT.title,
+        PRODUCTION_PROGRESS.title,
         DYNAMIC_CAPA.title,
     )
     static_key = next(f"{group.slug}_box" for group in SIDEBAR_GROUPS if group.main is STATIC_CAPA)
@@ -1716,16 +1763,16 @@ def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -
 
     # 다른 그룹의 페이지로 옮기면 규칙이 다시 선다 — Static 은 접히고 Dynamic 이 펴진다.
     app.switch_page(DYNAMIC_CAPA.path).run()
-    assert _expanded(app) == {static: False, execution: False, dynamic: True}
+    assert _expanded(app) == {static: False, execution: False, progress: False, dynamic: True}
 
     # 거기서 사용자가 Static 을 펴 두면, 같은 페이지의 rerun 은 그것도 존중한다.
     app.session_state[static_key] = True
     app.run()
-    assert _expanded(app) == {static: True, execution: False, dynamic: True}
+    assert _expanded(app) == {static: True, execution: False, progress: False, dynamic: True}
 
     # 실행 관리 화면으로 옮기면 그 그룹만 편다 — 사용자가 편 Static 도 페이지가 바뀌면 접힌다.
     app.switch_page(PROCESS_CAPA_DETAIL.path).run()
-    assert _expanded(app) == {static: False, execution: True, dynamic: False}
+    assert _expanded(app) == {static: False, execution: True, progress: False, dynamic: False}
 
 
 # ------------------------------------------------------------ 사이드바 칸의 차례

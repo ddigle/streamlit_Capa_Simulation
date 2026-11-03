@@ -385,15 +385,16 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
     (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
 )
 # 사이드바 계산 그룹(2026-10-17 사용자 결정 — 약속 · 이행 · 실적, 2026-11-02 「생산 진도」 를 이행과
-# 실적 사이에 더함) — (상자 slug, 상자 제목, 하위 화면 수), 사이드바 차례 그대로. 상자는
-# `st-key-<slug>_box`, 안의 링크는 머리(「현황 요약」) 하나와 하위다. 하위가 없는 그룹(생산 진도)은
-# 펼침 상자가 아니라 링크 하나 든 상자이고 제목은 그 링크 글이다.
+# 실적 사이에 더함, 2026-11-04 그 하위에 샘플 페이지 셋 — 검수 의견 prog-01) — (상자 slug, 상자
+# 제목, 하위 화면 수), 사이드바 차례 그대로. 상자는 `st-key-<slug>_box`, 안의 링크는 머리(「현황
+# 요약」) 하나와 하위다. 하위가 없는 그룹은 펼침 상자가 아니라 링크 하나 든 상자이고 제목은 그 링크
+# 글이다(지금 계산 그룹에는 없다 — 넷 모두 펼침 상자).
 # 앱 선언(`navigation.SIDEBAR_GROUPS`)을 부르지 않고 값만 옮긴다 — 화면이 선언과 같은지 따로 보는
 # 확인이라 선언에서 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 선언과 같은지 본다.
 SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("static_capa", "Static Capa", 4),
     ("execution_management", "실행 관리", 8),
-    ("production_progress", "생산 진도", 0),
+    ("production_progress", "생산 진도", 3),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
 # 좁게 끈 사이드바 폭(px). Streamlit 1.63 이 끌어 주는 가장 좁은 폭이다(200~600px) — 이 폭에서도
@@ -2925,7 +2926,7 @@ _SIDEBAR_GROUPS_JS = (
   const boxes = [...side.querySelectorAll(slugs.map((slug) => `.st-key-${slug}_box`).join(", "))];
   return boxes.map((box) => {
     const slug = slugs.find((name) => box.classList.contains(`st-key-${name}_box`));
-    // 하위가 없는 그룹(생산 진도)은 펼침 상자가 아니다 — 제목은 상자 안 링크 하나의 글이다.
+    // 하위가 없는 그룹은 펼침 상자가 아니다 — 제목은 상자 안 링크 하나의 글이다.
     const label =
       box.querySelector('summary [data-testid="stMarkdownContainer"] p') ||
       box.querySelector(
