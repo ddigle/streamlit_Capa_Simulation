@@ -1,12 +1,12 @@
-# Purpose: Space 층 상세의 호기 누르기(아래 표 좁히기)와 겹친 반입 예정 숨기기를 검사한다.
+# Purpose: Space 층 상세의 호기 누르기(필요 단축 칸으로 보내기)와 겹친 반입 예정 숨기기를 검사한다.
 
-"""2026-10-23 사용자 요청 3·8.
+"""2026-10-23 사용자 요청 3·8 — 고른 호기의 칸은 2026-11-03 사용자 요청으로 도면 위 「호기 정보」
+창(`tests/test_space_unit_sheet.py`)으로 옮겼다.
 
 - **호기 누르기**(3): 층 상세 보기 전용 뷰어에서 호기를 누르면 브라우저가 `pick`
-  (``{"epoch", "id"}``)을 보내고 `on_pick_change` 콜백이 그 층과 함께 쥔다. 아래 호기 표는
-  처음엔 층 전체 21칸(`FLOOR_TABLE_COLUMNS`, 요청한 차례)이고, 누르면 그 설비 줄만(모듈이면
-  그 Main 설비 줄 전부, 누른 모듈이 첫 줄), 「층 전체 보기」로 돌아간다. 층을 바꾸면(다른 층·
-  FAB) 풀린다. 층 CSV 는 늘 층 전체의 모든 칸이다. 옛 epoch 값은 버린다.
+  (``{"epoch", "id"}``)을 보내고 `on_pick_change` 콜백이 그 층과 함께 쥔다 — 색 기준 「필요
+  단축」 을 켠 동안만(`pickToServer`, 사양 D11). 끈 동안은 보내지 않고 파이썬도 쥔 값을 푼다. 페이지
+  아래 21칸 표는 걷었고 층 CSV 한 줄만 남는다(늘 층 전체의 모든 칸). 옛 epoch 값은 버린다.
 - **겹친 반입 예정 숨기기**(8): 기준일에 반입 전인 호기가 그날 보이는 다른 호기(반입됐고 아직
   안 빠진)와 넓이가 0 보다 크게 겹치면 보기 화면이 그리지 않는다 — 판정은 브라우저
   (`// <view-cover>`)이고 페이더를 끄는 동안에도 바로 바뀐다. 반입 전끼리, 같은 묶음
@@ -37,13 +37,13 @@ from test_space_module_group import _js_decl, _node
 from capa_simulation.components import space_layout_editor, table_toolbar
 from capa_simulation.components.space_layout import (
     FLOOR_TABLE_COLUMNS,
-    floor_table,
     picked_unit_rows,
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_availability import build_space_equipment_status
 from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.space_unit_sheet import PLACE_COLUMN, unit_sheet
 
 ASSETS = space_layout_editor._ASSETS
 JS = (ASSETS / "editor.js").read_text(encoding="utf-8")
@@ -51,7 +51,6 @@ CSS = (ASSETS / "editor.css").read_text(encoding="utf-8")
 PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
 PICK_KEY = "test_fake_unit_pick"
 PICKED_KEY = "space_status_picked_unit"
-SHOW_ALL_KEY = "space_floor_show_all_C1_1F"
 
 _COVER = re.compile(r"// <view-cover>\n(?P<body>.*?)\n\s*// </view-cover>", re.S)
 
@@ -195,11 +194,13 @@ def test_the_summary_adds_the_hidden_count_in_the_browser() -> None:
 
 
 def test_a_plain_click_in_the_floor_viewer_sends_the_picked_unit() -> None:
-    """누르기(끌지 않음)·Esc 뒤 `notePick` — 층 상세 보기에서만(FAB·편집 아님), 호기가 아니면
-    null, 같은 값은 다시 보내지 않는다. 파이썬이 쥔 값(`data.picked`)이 바뀐 회차에 도면의 고르기를
-    맞추고, 새로 선 도면은 다시 고른다."""
+    """누르기(끌지 않음)·Esc 뒤 `notePick` — 층 상세 보기에서만(FAB·편집 아님), 필요 단축을 켠
+    동안만(`data.pickToServer`), 호기가 아니면 null, 같은 값은 다시 보내지 않는다. 파이썬이 쥔 값
+    (`data.picked`)이 바뀐 회차에 도면의 고르기를 맞추고, 새로 선 도면은 다시 고른다. 보내지 않는
+    동안은 파이썬 값을 잊고, 다시 보내기 시작한 회차에 이미 고른 호기를 한 번 보낸다(그린 뒤에)."""
     note = _between("function notePick() {", "function syncPick() {")
-    assert "if (!PICKS) return" in note and "const PICKS = VIEW && !FAB" in JS
+    assert "if (!PICKS) return" in note
+    assert "const PICKS = VIEW && !FAB && data.pickToServer !== false" in JS
     assert "const id = item && isUnit(item) ? item.id : null" in note
     assert "if (id === S.pickSent) return" in note
     assert "setTriggerValue('pick', { epoch: S.epoch, id })" in note
@@ -210,6 +211,10 @@ def test_a_plain_click_in_the_floor_viewer_sends_the_picked_unit() -> None:
     assert "else if (event.key === 'Escape') { select(null); notePick() }" in JS
     sync = _between("function syncPick() {", "syncPick()\n")
     assert "typeof data.picked === 'string'" in sync and "if (picked === S.pickData) return" in sync
+    assert sync.index("if (!PICKS) {") < sync.index("S.pickData = undefined")
+    assert "const resumed = S.pickData === undefined" in sync
+    later = "(typeof queueMicrotask === 'function' ? queueMicrotask : setTimeout)(notePick)"
+    assert f"if (resumed) {later}" in sync
     assert "S.pickData = undefined" in _between("if (S.epoch !== data.epoch) {", "} else {")
 
 
@@ -238,18 +243,20 @@ def test_the_pick_dispatcher_keeps_only_this_epochs_values(monkeypatch: pytest.M
     space_layout_editor._dispatch_pick("viewer", "view|1", None)
 
 
-def test_the_floor_table_takes_the_requested_columns_in_order() -> None:
-    """21칸 — 요청한 차례이고 이름은 설비 마스터 그대로(「Qual 실적」 = `Qual실적`,
-    「반입/Qual일정」 = `반입/Qual 이력`), 「단계」 는 기준일 상태(`단계`)다. Space 상태 표에 모두
-    있다."""
+def test_the_sheet_takes_the_requested_columns_in_order() -> None:
+    """「호기 정보」 창 21칸 — 요청한 차례이고 이름은 설비 마스터 그대로(「Qual 실적」 =
+    `Qual실적`, 「반입/Qual일정」 = `반입/Qual 이력`), 「단계」 는 기준일 상태(`단계`)다. Space 상태
+    표에 모두 있고 창은 끝에 「도면」 칸을 붙인다."""
     assert len(FLOOR_TABLE_COLUMNS) == 21
     assert FLOOR_TABLE_COLUMNS[:3] == ("Area Code", "공정소분류", "설비명")
     assert FLOOR_TABLE_COLUMNS[-3:] == ("반출/이설일정", "반입/Qual 이력", "단계")
     assert set(FLOOR_TABLE_COLUMNS) - set(EQUIPMENT_COLUMNS) == {"단계"}
     status = build_space_equipment_status(_master(), _downtime(), as_of=AS_OF)
-    table = floor_table(status)
-    assert list(table.columns) == list(FLOOR_TABLE_COLUMNS)
-    assert table["단계"].tolist() == status["상태"].tolist()
+    sheet = unit_sheet(status, columns=FLOOR_TABLE_COLUMNS, place_of={})
+    names = [column["name"] for column in sheet["columns"]]
+    assert names == [*FLOOR_TABLE_COLUMNS, PLACE_COLUMN]
+    stage = names.index("단계")
+    assert [row["cells"][stage] for row in sheet["rows"]] == status["상태"].tolist()
 
 
 def test_a_picked_module_brings_its_siblings_with_the_pressed_one_first() -> None:
@@ -346,13 +353,6 @@ def _viewer(calls: list[dict[str, Any]]) -> dict[str, Any]:
     return found[-1]
 
 
-def _table(app: AppTest) -> pd.DataFrame:
-    tables = [t.value for t in app.dataframe if "Area Code" in t.value.columns]
-    assert len(tables) == 1
-    frame: pd.DataFrame = tables[0]
-    return frame
-
-
 def _press(app: AppTest, calls: list[dict[str, Any]], unit: str | None, epoch: str = "") -> None:
     app.session_state[PICK_KEY] = {"epoch": epoch or _viewer(calls)["epoch"], "id": unit}
     app.run()
@@ -363,83 +363,34 @@ def _press(app: AppTest, calls: list[dict[str, Any]], unit: str | None, epoch: s
 _FLOOR = ["EQ-01", "EQ-02", "MOD-1A", "MOD-1B", "MOD-1C", "MOD-1D"]
 
 
-def test_pressing_a_unit_narrows_the_table_and_the_button_brings_the_floor_back(
+def test_the_floor_view_keeps_only_the_csv_row_below_the_drawing(
     tmp_path: Path, calls: list[dict[str, Any]], downloads: list[bytes]
 ) -> None:
+    """옛 아래 21칸 표·「층 전체 보기」 는 없고(도면 위 「호기 정보」 창으로 옮김) 층 CSV 한 줄만
+    남는다 — 늘 층 전체의 모든 칸. 필요 단축을 끈 층 보기는 누르기를 보내지 않는다."""
     app = _open(tmp_path)
     first = _viewer(calls)
-    table = _table(app)
-    assert list(table.columns) == list(FLOOR_TABLE_COLUMNS)
-    assert sorted(table["설비명"]) == _FLOOR
-    assert "on_pick_change" in first["callbacks"] and first["picked"] is None
-    assert app.button(key=SHOW_ALL_KEY).disabled
-
-    _press(app, calls, "EQ-01")
-    assert _table(app)["설비명"].tolist() == ["EQ-01"]
-    assert app.session_state[PICKED_KEY] == ("C1", "1F", "EQ-01")
-    view = _viewer(calls)
-    assert view["picked"] == "EQ-01" and view["epoch"] == first["epoch"]
-    assert not app.button(key=SHOW_ALL_KEY).disabled
-    # 설비명은 마크다운 글자 그대로다(`-` 앞에 `\\`).
-    assert any("**EQ\\-01** 의 설비 마스터 1줄" in element.value for element in app.markdown)
-    # 층 CSV 는 표가 좁혀져도 층 전체·모든 칸이다.
+    assert not [t for t in app.dataframe if "Area Code" in t.value.columns]
+    assert not [b for b in app.button if getattr(b, "label", "") == "층 전체 보기"]
+    assert first["pickToServer"] is False and first["picked"] is None
+    assert "on_pick_change" in first["callbacks"]
     header, *lines = downloads[-1].decode("utf-8-sig").splitlines()
     assert "X좌표" in header.split(",") and len(lines) == len(_FLOOR)
-
-    # 모듈을 누르면 그 Main 설비 줄 전부, 누른 모듈이 첫 줄이고 나머지는 자연 정렬이다.
-    _press(app, calls, "MOD-1C")
-    assert _table(app)["설비명"].tolist() == ["MOD-1C", "MOD-1A", "MOD-1B", "MOD-1D"]
-
-    app.button(key=SHOW_ALL_KEY).click().run()
-    assert not app.exception
-    assert sorted(_table(app)["설비명"]) == _FLOOR
-    assert PICKED_KEY not in app.session_state
-    assert _viewer(calls)["picked"] is None and app.button(key=SHOW_ALL_KEY).disabled
     clear_equipment_repository()
 
 
-def test_an_empty_press_or_an_old_epoch_or_another_floor_releases_or_ignores(
+def test_a_press_while_the_shortening_view_is_off_is_not_kept(
     tmp_path: Path, calls: list[dict[str, Any]], downloads: list[bytes]
 ) -> None:
+    """끈 동안 옛 브라우저가 보낸 누르기는 콜백이 받아도 그 회차 본문이 푼다 — 다시 켤 때 낡은
+    호기가 도면의 고르기를 덮지 않게. 옛 epoch 값은 콜백부터 버린다."""
     app = _open(tmp_path)
     _press(app, calls, "EQ-02", epoch="view|old")
-    assert sorted(_table(app)["설비명"]) == _FLOOR and PICKED_KEY not in app.session_state
-
-    _press(app, calls, "EQ-02")
-    assert _table(app)["설비명"].tolist() == ["EQ-02"]
-    # 도면 요소·빈 곳·Esc 는 id null 이다 — 층 전체로 돌아간다.
-    _press(app, calls, None)
-    assert sorted(_table(app)["설비명"]) == _FLOOR and PICKED_KEY not in app.session_state
-
-    _press(app, calls, "EQ-02")
-    app.session_state["space_status_selected_floor"] = "2F"
-    app.run()
-    assert not app.exception
     assert PICKED_KEY not in app.session_state
-    assert _table(app)["설비명"].tolist() == ["UP-01"]
-    app.session_state["space_status_selected_floor"] = "1F"
-    app.run()
-    assert sorted(_table(app)["설비명"]) == _FLOOR
-
-    # FAB 로 돌아가도 풀린다.
-    _press(app, calls, "EQ-02")
-    app.button(key="space_status_fab_breadcrumb").click().run()
-    assert not app.exception and PICKED_KEY not in app.session_state
-    clear_equipment_repository()
-
-
-def test_a_picked_unit_filtered_out_of_the_floor_is_released(
-    tmp_path: Path, calls: list[dict[str, Any]], downloads: list[bytes]
-) -> None:
-    """공정소분류 필터로 누른 호기가 이 층 행에서 빠지면 고른 것을 푼다(빈 표가 남지 않는다)."""
-    app = _open(tmp_path)
-    _press(app, calls, "MOD-1A")
-    assert len(_table(app)) == 4
-    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
-    assert not app.exception
+    _press(app, calls, "EQ-01")
     assert PICKED_KEY not in app.session_state
-    assert sorted(_table(app)["설비명"]) == ["EQ-01", "EQ-02"]
-    assert _viewer(calls)["picked"] is None
+    view = _viewer(calls)
+    assert view["picked"] is None and view["pickToServer"] is False
     clear_equipment_repository()
 
 

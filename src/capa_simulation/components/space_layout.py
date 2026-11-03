@@ -1,4 +1,4 @@
-# Purpose: Space 배치 집계·호기 상자 색·필요 단축 얹기·층 상세 범례·호기 표를 만든다.
+# Purpose: Space 배치 집계·호기 상자 색·필요 단축 얹기·층 상세 범례·호기 칸을 만든다.
 
 from __future__ import annotations
 
@@ -646,11 +646,12 @@ def invalid_equipment_rows(
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
 
 
-# 층 상세 아래 호기 표의 칸 — 요청한 차례 그대로(2026-10-23 사용자 요청 3). 칸 이름은 설비
-# 마스터 그대로다: 요청의 「Qual 실적」 은 `Qual실적`, 「반입/Qual일정」 은 `반입/Qual 이력`,
-# 「단계」 는 기준일(페이더)의 상태 글자 `단계`(`build_space_equipment_status` 가 `상태` 를 옮겨
-# 적은 칸 — 도면 상자의 단계 이름과 같다)다. 층 CSV 는 이 표가 아니라 모든 칸이다(현장 배치
-# 검토용).
+# 층 상세 「호기 정보」 창(도면 위 — 옛 아래 호기 표, 2026-11-03 사용자 요청으로 옮김)의 칸 —
+# 요청한 차례 그대로(2026-10-23 사용자 요청 3). 칸 이름은 설비 마스터 그대로다: 요청의 「Qual 실적」
+# 은 `Qual실적`, 「반입/Qual일정」 은 `반입/Qual 이력`, 「단계」 는 기준일(페이더)의 상태 글자
+# `단계`(`build_space_equipment_status` 가 `상태` 를 옮겨 적은 칸 — 도면 상자의 단계 이름과 같다)다.
+# 창 표 재료는 `services/space_unit_sheet.unit_sheet` 가 만들고 끝에 「도면」 칸을 붙인다. 층 CSV 는
+# 이 칸이 아니라 모든 칸이다(현장 배치 검토용).
 FLOOR_TABLE_COLUMNS: Final = (
     "Area Code",
     "공정소분류",
@@ -676,13 +677,9 @@ FLOOR_TABLE_COLUMNS: Final = (
 )
 
 
-def floor_table(rows: pd.DataFrame) -> pd.DataFrame:
-    """층 상세 아래 호기 표 — `FLOOR_TABLE_COLUMNS` 의 칸만 그 차례로(없는 칸은 건너뛴다)."""
-    return rows.loc[:, [column for column in FLOOR_TABLE_COLUMNS if column in rows.columns]]
-
-
 def picked_unit_rows(rows: pd.DataFrame, unit_id: str) -> pd.DataFrame:
-    """층 상세 도면에서 누른 호기의 줄(2026-10-23 사용자 결정 — 누른 설비 줄만).
+    """층 상세 도면에서 누른 호기의 줄(2026-10-23 사용자 결정 — 누른 설비 줄만). 「호기 정보」 창의
+    「고른 호기」 는 편집기 JS `pickedRows` 가 같은 규칙으로 고른다(시험이 같은 입력으로 대조한다).
 
     Main 설비 모듈이면 그 Main 설비의 줄 전부이고 누른 모듈이 첫 줄, 나머지는 설비명 자연 정렬이다
     (`rows` 는 그 층의 행 — 좌표 없는 형제·레이아웃표시 N 모듈도 그 설비의 설비 마스터 행이라

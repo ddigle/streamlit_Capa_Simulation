@@ -957,22 +957,14 @@ def test_the_floor_list_table_keeps_its_toolbar_off_the_edit_switch(tmp_path: Pa
     clear_equipment_repository()
 
 
-def test_the_floor_detail_table_keeps_its_toolbar_off_the_whole_floor_button(
-    tmp_path: Path,
-) -> None:
-    """층 상세 표 머리 줄 오른쪽 끝 「층 전체 보기」 도 같다 — 표에서 옮긴 누름이 막대에 먹혔다."""
+def test_the_floor_detail_has_no_table_below_the_drawing(tmp_path: Path) -> None:
+    """층 상세 아래 호기 표와 그 머리 줄 「층 전체 보기」 는 도면 위 「호기 정보」 창으로 옮겼다
+    (2026-11-03 사용자 요청) — 표 도구 막대가 가로챌 머리 줄 단추도, 본문 표도 없다."""
     app = _app(_database(tmp_path), floor="C1-1F").run()
     _ok(app)
     assert app.session_state["space_status_selected_floor"] == "1F"
-
-    between = _siblings_between(
-        app,
-        lambda node: (
-            getattr(node, "type", "") == "button" and getattr(node, "label", None) == "층 전체 보기"
-        ),
-        lambda node: isinstance(node, Dataframe),
-    )
-    _toolbar_clearance_is_last(between)
+    assert not list(app.dataframe)
+    assert not [b for b in app.button if getattr(b, "label", None) == "층 전체 보기"]
     clear_equipment_repository()
 
 

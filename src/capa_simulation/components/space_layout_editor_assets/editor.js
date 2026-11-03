@@ -18,7 +18,7 @@ export default function (component) {
     placedLog: [], trayAnchor: null, pasteSerial: 0, flash: '', hover: null, guideTimer: 0,
     // Main 설비 모듈 묶음 이름표 위치(묶음 열쇠 `groupKeyOf` → 'center'·'top'·'bottom', 없으면 그 모양의 처음 위치)와 처음 값.
     groupLabels: new Map(), originalGroupLabels: new Map(),
-    // 층 상세 보기: 겹쳐 숨긴 반입 예정 호기(id → 설비지분, `paintUnit`)와 아래 호기 표에 고른 호기 — 파이썬이 쥔 값
+    // 층 상세 보기: 겹쳐 숨긴 반입 예정 호기(id → 설비지분, `paintUnit`)와 필요 단축 칸에 고른 호기 — 파이썬이 쥔 값
     // (`data.picked`, 받은 그대로 `pickData`)과 브라우저가 보낸 값(`pickSent`).
     covered: new Map(), pickData: undefined, pickSent: null,
     // 두 옆 칸의 폭·접힘(보기 상태 — 범위·모드별, `capa.space.panels.v1` 에서 처음 읽음)과 좁은 화면 겹침 서랍의 열린 칸
@@ -237,7 +237,7 @@ export default function (component) {
   const LOCK_ATTR = 'data-space-lock'
   const HINT = FAB
     ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · 호기를 두 번 누르면 「호기 정보」 창(고른 호기의 칸 · 칸 필터로 찾은 호기 도면 강조) · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -369,7 +369,49 @@ export default function (component) {
   const pickBox = q('.sle-pick')
   const pickHint = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
-    : '호기를 누르면 정보가 여기 뜨고 아래 표가 그 설비 줄만 보입니다 · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
+    : '호기를 누르면 정보가 여기 뜨고 「호기 정보」 창에 그 설비 칸이 보입니다(호기를 두 번 누르면 창이 열림) · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 빈 곳을 두 번 누르면 확대/전체 보기'
+  // 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청: 옛 페이지 아래 호기 표를 도면 위 창으로, 거꾸로 칸 필터 → 맞는 호기
+  // 목록 → 도면 강조). 표 재료는 data `sheet`(epoch 밖 — 파이썬 `services/space_unit_sheet`), 거르기는 `// <unit-sheet>` 구획이다.
+  // 창 자리·크기·접힘은 localStorage(`SHEET_WIN_KEY`), 열림·탭·필터·강조는 sessionStorage(`SHEET_STATE_KEY` — 탭 안 기억, 층·편집을
+  // 오가도 남는다)이고 파이썬으로 보내지 않는다. FAB 에는 없다.
+  const SHEET = !FAB && data.sheet && Array.isArray(data.sheet.columns) && Array.isArray(data.sheet.rows) ? data.sheet : null
+  const SHEET_WIN_KEY = 'capa.space.sheet.win.v1'
+  const SHEET_STATE_KEY = 'capa.space.sheet.state.v1'
+  // 창 최소 크기·처음 크기(px)와 접힌 창 높이. 창은 편집기 몸(`.sle-body`) 안에 묶인다.
+  const SHEET_MIN_W = 360
+  const SHEET_MIN_H = 200
+  const SHEET_DEF_W = 720
+  const SHEET_DEF_H = 320
+  const SHEET_HEAD_PX = 34
+  // 「도면」 칸 이름과 그 값(파이썬 `space_unit_sheet.PLACE_*` 와 같은 글).
+  const SHEET_PLACE = '도면'
+  // 필터에 맞는 호기 테의 띄움(화면 px) — 선택 후광(HALO_GAP_PX ± 1)보다 바깥이다.
+  const FILTER_GAP_PX = 5
+  const sheetBox = q('.sle-sheet')
+  const sheetToggle = q('.sle-sheet-toggle')
+  const sheetHead = q('.sle-sheet-head')
+  const sheetTabs = [...host.querySelectorAll('.sle-sheet-tab')]
+  const sheetMin = q('.sle-sheet-min')
+  const sheetClose = q('.sle-sheet-close')
+  const sheetChips = q('.sle-sheet-chips')
+  const sheetClear = q('.sle-sheet-clear')
+  const sheetHl = q('.sle-sheet-hl-box')
+  const sheetCount = q('.sle-sheet-count')
+  const sheetScroll = q('.sle-sheet-scroll')
+  const sheetHeadRow = q('.sle-sheet-table thead')
+  const sheetBodyRows = q('.sle-sheet-table tbody')
+  const sheetEmpty = q('.sle-sheet-empty')
+  const sheetCut = q('.sle-sheet-cut')
+  const sheetNote = q('.sle-sheet-note')
+  const sheetMenu = q('.sle-sheet-menu')
+  const sheetMenuName = q('.sle-sheet-menu-name')
+  const sheetMenuFind = q('.sle-sheet-menu-find')
+  const sheetMenuList = q('.sle-sheet-menu-list')
+  const sheetMenuRange = q('.sle-sheet-menu-range')
+  const sheetMenuFrom = q('.sle-sheet-menu-from')
+  const sheetMenuTo = q('.sle-sheet-menu-to')
+  const sheetGrip = q('.sle-sheet-grip')
+  const trayHits = q('.sle-tray-hits')
   if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
@@ -1594,6 +1636,198 @@ export default function (component) {
       && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
   }
   // </side-panels>
+  // 「호기 정보」 창의 표 판정(순수 함수, 2026-11-03 사용자 요청 — 고른 호기의 칸과, 칸마다 엑셀 자동 필터 꼴로 거른 호기
+  // 목록·도면 강조). 표 재료는 파이썬 `services/space_unit_sheet.unit_sheet`(칸 [{name, type}], 줄 [{id, group, cells}])다.
+  // `tests/test_space_unit_sheet_js.py` 가 아래 두 표시 줄 사이를 `// <module-tiling>` 구획(자연 정렬 `naturalCompare`)과 함께
+  // 떼어 node 로 돌린다 — 그 밖의 바깥 이름을 쓰지 않는다. 필터 꼴: {칸 이름: {values?: [열쇠], from?, to?}} — values 가 있으면
+  // 그 값 가운데 하나(칸 안 OR), from·to 는 날짜·숫자 칸의 범위(양 끝 포함, 빈 끝은 열림)이고 칸끼리는 AND 다.
+  // <unit-sheet>
+  // 칸 값의 비교 열쇠 — 빈 값(null·빈 글)은 ''(「(빈칸)」 한 항목), 글은 앞뒤 공백을 걷고 소문자(엑셀 자동 필터처럼 대소문자를
+  // 가리지 않는다), 수는 수 글이다.
+  function sheetKey(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+    return String(value).trim().toLowerCase()
+  }
+  // 칸 값의 보이는 글 — 수는 소수 둘째 자리까지, 빈 값은 ''.
+  function sheetText(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'number') return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : ''
+    return String(value).trim()
+  }
+  const rangeEnd = (value) => (value === null || value === undefined ? '' : String(value).trim())
+  // 범위가 걸렸는가(한 끝이라도 있으면).
+  function sheetRangeOn(rule) {
+    return Boolean(rule) && (rangeEnd(rule.from) !== '' || rangeEnd(rule.to) !== '')
+  }
+  // 값이 범위 안인가 — 날짜는 「YYYY-MM-DD」 글로, 숫자는 수로 견준다. 범위가 없으면 늘 참, 있으면 빈 값·꼴이 다른 값은 거짓.
+  function inRange(value, rule, type) {
+    if (!sheetRangeOn(rule)) return true
+    const from = rangeEnd(rule.from)
+    const to = rangeEnd(rule.to)
+    if (type === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return false
+      const lo = from === '' ? -Infinity : Number(from)
+      const hi = to === '' ? Infinity : Number(to)
+      if (Number.isNaN(lo) || Number.isNaN(hi)) return false
+      return value >= lo && value <= hi
+    }
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    return (from === '' || value >= from) && (to === '' || value <= to)
+  }
+  // 칸 하나의 필터가 걸렸는가 — 값 고르기(빈 목록이어도 — 아무것도 고르지 않음)나 범위.
+  const sheetRuleOn = (rule) => Boolean(rule) && (Array.isArray(rule.values) || sheetRangeOn(rule))
+  // 걸린 칸 이름(이 표에 있는 칸만, 칸 차례).
+  function sheetActive(columns, filters) {
+    return (columns || []).map((column) => column.name).filter((name) => sheetRuleOn((filters || {})[name]))
+  }
+  // 필터에 맞는 줄(받은 차례). `skip` 칸의 필터는 보지 않는다(그 칸 값 목록은 다른 칸 필터만 지난 줄에서 — 엑셀처럼).
+  function sheetMatch(rows, columns, filters, skip) {
+    const rules = []
+    for (const [index, column] of (columns || []).entries()) {
+      const rule = (filters || {})[column.name]
+      if (column.name === skip || !sheetRuleOn(rule)) continue
+      rules.push({ index, type: column.type, rule, keys: Array.isArray(rule.values) ? new Set(rule.values.map(String)) : null })
+    }
+    if (!rules.length) return [...(rows || [])]
+    return (rows || []).filter((row) => rules.every(({ index, type, rule, keys }) => {
+      const value = row.cells[index]
+      if (keys && !keys.has(sheetKey(value))) return false
+      return inRange(value, rule, type)
+    }))
+  }
+  // 칸 값 목록 — [{key, text, count}]. 대소문자만 다른 글은 한 항목(처음 만난 꼴로 보인다), 빈 값은 「(빈칸)」 으로 맨 뒤.
+  // 차례는 숫자 칸이면 수, 그 밖은 설비명 자연 정렬(`naturalCompare` — 날짜 글은 글 차례가 날짜 차례다).
+  function distinctValues(rows, index, type) {
+    const seen = new Map()
+    for (const row of rows || []) {
+      const value = row.cells[index]
+      const key = sheetKey(value)
+      const found = seen.get(key)
+      if (found) found.count += 1
+      else seen.set(key, { key, text: key === '' ? '(빈칸)' : sheetText(value), count: 1, value })
+    }
+    const list = [...seen.values()]
+    list.sort((a, b) => {
+      if ((a.key === '') !== (b.key === '')) return a.key === '' ? 1 : -1
+      const na = typeof a.value === 'number'
+      const nb = typeof b.value === 'number'
+      if (type === 'number' && na && nb) return a.value - b.value
+      if (na !== nb) return na ? -1 : 1
+      return naturalCompare(a.text, b.text)
+    })
+    return list.map(({ key, text, count }) => ({ key, text, count }))
+  }
+  // 고른 호기의 줄 — 파이썬 `space_layout.picked_unit_rows` 와 같은 규칙: 그 설비 줄, Main 설비 모듈이면 같은 Main 설비 줄
+  // 전부이고 누른 것이 첫 줄, 나머지는 설비명 자연 정렬(같으면 받은 차례). 없는 설비면 빈 목록.
+  function pickedRows(rows, id) {
+    const list = rows || []
+    const first = list.find((row) => row.id === id)
+    if (!first) return []
+    const parent = first.group
+    return list
+      .map((row, index) => [row, index])
+      .filter(([row]) => row.id === id || (parent && row.group === parent))
+      .sort((a, b) => (Number(a[0].id !== id) - Number(b[0].id !== id)) || naturalCompare(a[0].id, b[0].id) || a[1] - b[1])
+      .map(([row]) => row)
+  }
+  // 여럿 고른 호기(배치 편집)의 줄 — 고른 차례로 `pickedRows` 를 잇고 같은 줄은 한 번만.
+  function pickedRowsMany(rows, ids) {
+    const out = []
+    const seen = new Set()
+    for (const id of ids || []) {
+      for (const row of pickedRows(rows, id)) {
+        if (seen.has(row.id)) continue
+        seen.add(row.id)
+        out.push(row)
+      }
+    }
+    return out
+  }
+  // 도면에서 강조할 호기 — 필터가 하나라도 걸렸으면 맞는 줄의 id 묶음, 아니면 null(강조 없음).
+  function sheetHits(rows, columns, filters) {
+    if (!sheetActive(columns, filters).length) return null
+    return new Set(sheetMatch(rows, columns, filters).map((row) => row.id))
+  }
+  // 칸 값 글 → 줄 수(「도면」 칸 — 배치·미배치·…), 처음 만난 차례.
+  function countBy(rows, index) {
+    const out = new Map()
+    for (const row of rows || []) {
+      const text = sheetText(row.cells[index])
+      out.set(text, (out.get(text) || 0) + 1)
+    }
+    return out
+  }
+  // 창 자리·크기를 편집기 몸(bodyW × bodyH) 안으로 — 폭·높이는 최소(minW·minH, 몸보다 크면 몸)와 몸 사이, 자리는 창 전체가
+  // 몸 안에 들게(접힌 창은 제목 줄 높이 headH 만큼). 값이 수가 아니면 기본(def)이다.
+  function clampSheet(win, def, bodyW, bodyH, minW, minH, headH) {
+    const pick = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
+    const width = Math.max(0, Number(bodyW) || 0)
+    const height = Math.max(0, Number(bodyH) || 0)
+    const w = Math.round(Math.max(Math.min(minW, width), Math.min(width, pick(win && win.w, def.w))))
+    const h = Math.round(Math.max(Math.min(minH, height), Math.min(height, pick(win && win.h, def.h))))
+    const tall = win && win.min ? Math.min(h, headH) : h
+    const x = Math.round(Math.max(0, Math.min(width - w, pick(win && win.x, def.x))))
+    const y = Math.round(Math.max(0, Math.min(height - tall, pick(win && win.y, def.y))))
+    return { x, y, w, h }
+  }
+  // 창이 무대를 덮을 때 고른 호기가 창 밑에 들면 옮길 거리(화면 px, 양수면 화면을 그쪽으로 민다) — 무대에서 창이 덮지 않은
+  // 띠(위·아래·왼쪽·오른쪽) 가운데 가장 넓은 띠의 가운데로. 창이 무대와 겹치지 않거나 호기가 창과 겹치지 않으면 null. 사각형은
+  // {left, top, right, bottom}.
+  function clearOfSheet(stage, win, rect) {
+    const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    if (!stage || !win || !rect || !meet(stage, win) || !meet(win, rect)) return null
+    const bands = [
+      { left: stage.left, right: stage.right, top: stage.top, bottom: Math.max(stage.top, win.top) },
+      { left: stage.left, right: stage.right, top: Math.min(stage.bottom, win.bottom), bottom: stage.bottom },
+      { left: stage.left, right: Math.max(stage.left, win.left), top: stage.top, bottom: stage.bottom },
+      { left: Math.min(stage.right, win.right), right: stage.right, top: stage.top, bottom: stage.bottom },
+    ]
+    const area = (b) => Math.max(0, b.right - b.left) * Math.max(0, b.bottom - b.top)
+    const best = bands.reduce((a, b) => (area(b) > area(a) ? b : a))
+    if (!area(best)) return null
+    return {
+      dx: (rect.left + rect.right) / 2 - (best.left + best.right) / 2,
+      dy: (rect.top + rect.bottom) / 2 - (best.top + best.bottom) / 2,
+    }
+  }
+  // 저장값 읽기 — 창 {x, y, w, h, min}(수는 유한한 것만), 상태 {open, tab, hl, filters}(필터는 글 칸 이름 → 값 열쇠 글
+  // 목록·범위 글만). 꼴이 다르면 기본.
+  function storedSheetWin(raw) {
+    let value = null
+    try {
+      value = JSON.parse(raw || 'null')
+    } catch {
+      value = null
+    }
+    const num = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : null)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { x: null, y: null, w: null, h: null, min: false }
+    return { x: num(value.x), y: num(value.y), w: num(value.w), h: num(value.h), min: value.min === true }
+  }
+  function storedSheetState(raw) {
+    let value = null
+    try {
+      value = JSON.parse(raw || 'null')
+    } catch {
+      value = null
+    }
+    const out = { open: false, tab: 'picked', hl: true, filters: {} }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return out
+    out.open = value.open === true
+    out.tab = value.tab === 'filter' ? 'filter' : 'picked'
+    out.hl = value.hl !== false
+    const filters = value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters) ? value.filters : {}
+    for (const [name, rule] of Object.entries(filters)) {
+      if (!rule || typeof rule !== 'object') continue
+      const kept = {}
+      if (Array.isArray(rule.values)) kept.values = rule.values.filter((key) => typeof key === 'string')
+      if (typeof rule.from === 'string' && rule.from.trim()) kept.from = rule.from.trim()
+      if (typeof rule.to === 'string' && rule.to.trim()) kept.to = rule.to.trim()
+      if (sheetRuleOn(kept)) out.filters[name] = kept
+    }
+    return out
+  }
+  // </unit-sheet>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
   function unitColors(item, st) {
@@ -2421,6 +2655,11 @@ export default function (component) {
       label.setAttribute('font-size', fontSize)
       label.style.display = fontSize / upp < UNIT_LABEL_MIN_PX ? 'none' : ''
       positionUnitMarks(group, item, top)
+      const ring = group.querySelector('.sle-filter-ring')
+      if (ring) {
+        const gap = FILTER_GAP_PX * upp
+        setBox(ring, item.x - gap, top - gap, item.w + gap * 2, item.h + gap * 2)
+      }
     } else {
       drawMark(group, item, top)
     }
@@ -2771,6 +3010,8 @@ export default function (component) {
     } else {
       group.append(rect, label, tip)
     }
+    // 「호기 정보」 창 필터에 맞는 호기의 테 — 보기·편집 모두(필터는 읽기만이다). 보일지는 class(`paintFilter`)와 CSS 가 정한다.
+    group.append(el('rect', { class: 'sle-filter-ring', rx: 0.8 }))
     // 호기는 키보드로도 고른다 — Tab 이 상자마다 서고 Enter·Space 가 누르기와 같다(`host.onkeydown`). 이름은 풍선 글
     // (<title>)이다. 보기에서 기준일에 숨은 상자(visibility)는 초점도 받지 않는다.
     group.setAttribute('tabindex', '0')
@@ -2780,6 +3021,7 @@ export default function (component) {
     position(group, item)
     group.__tipAt = `${S.asOf}|${S.dataAsOf}`
     S.groups.set(item.id, group)
+    paintFilter(group, item.id)
     return group
   }
 
@@ -2966,6 +3208,7 @@ export default function (component) {
       remove.onclick = () => removeItems([lead])
       chip.append(remove)
     }
+    paintChipFilter(chip)
     return chip
   }
 
@@ -3945,6 +4188,7 @@ export default function (component) {
       // 한 줄에서 잘리면 전체 문구는 풍선으로.
       pickBox.title = pickBox.textContent || pickBox.dataset.hint
       zoomSel.disabled = !chosen.some(onCanvas)
+      renderSheet()
       return
     }
     const chosen = selectedItems()
@@ -4024,6 +4268,7 @@ export default function (component) {
     areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
     syncInspector()
     syncFormatPanel()
+    renderSheet()
   }
 
   // 이름 칸(호기 `이름`·요소 `이름`)에 적던 글자는 그 칸에 들어갈 때 고른 대상의 것이다. 고르는 것이 바뀌기 전에 칸을
@@ -5269,13 +5514,14 @@ export default function (component) {
     drawShortBadges()
   }
 
-  // ------------------------------------------------------------- 아래 호기 표에 고른 호기(층 상세 보기)
+  // ------------------------------------------------------------- 필요 단축 칸에 고른 호기(층 상세 보기)
   // 층 상세 보기에서 호기를 누르면(끌지 않고) 그 호기를 `pick` 으로 알린다(2026-10-23 사용자 요청 3). 받는 쪽 파이썬
-  // `on_pick_change` 콜백이 층 상세 아래 호기 표를 그 설비 줄만으로 좁힌다 — 블록 열기(`navigate`)와 같은 꼴이고 epoch 가 다른
-  // 옛 값은 버린다. 호기가 아닌 것(도면 요소)을 누르거나 빈 곳을 누르거나 Esc 로 풀면 고른 호기가 없다는 값(id null)을 보내
-  // 표가 층 전체로 돌아간다. 같은 값은 다시 보내지 않는다. 표 위 「층 전체 보기」 단추로 파이썬이 풀면 `data.picked` 가 비어
-  // 도면의 고르기도 풀린다. 배치 편집기와 FAB 는 보내지 않는다.
-  const PICKS = VIEW && !FAB
+  // `on_pick_change` 콜백이 필요 단축 칸의 누른 호기 상세를 세운다 — 블록 열기(`navigate`)와 같은 꼴이고 epoch 가 다른 옛 값은
+  // 버린다. 호기가 아닌 것(도면 요소)을 누르거나 빈 곳을 누르거나 Esc 로 풀면 고른 호기가 없다는 값(id null)을 보낸다. 같은 값은
+  // 다시 보내지 않는다. 필요 단축 칸의 표에서 파이썬이 고르면 `data.picked` 로 도면의 고르기도 따라간다. 보내는 것은 그 보기를 켠
+  // 동안뿐이다(`data.pickToServer` — 사양 D11, 누를 때마다 앱 전체가 돌지 않게. 고른 호기의 칸은 「호기 정보」 창이 브라우저 안에서
+  // 보인다). 배치 편집기와 FAB 는 보내지 않는다.
+  const PICKS = VIEW && !FAB && data.pickToServer !== false
   function notePick() {
     if (!PICKS) return
     const item = S.selected ? S.items.get(S.selected) : null
@@ -5284,16 +5530,26 @@ export default function (component) {
     S.pickSent = id
     setTriggerValue('pick', { epoch: S.epoch, id })
   }
-  // 파이썬이 쥔 고른 호기가 지난 회차와 다르면(누른 회차·「층 전체 보기」·새로 선 도면) 도면의 고르기를 그것에 맞춘다.
+  // 파이썬이 쥔 고른 호기가 지난 회차와 다르면(누른 회차·필요 단축 칸의 표·새로 선 도면) 도면의 고르기를 그것에 맞춘다. 보내지
+  // 않는 동안은 파이썬 값을 잊는다(파이썬도 그 동안 풀어 둔다) — 다시 보내기 시작한 회차에 브라우저가 이미 호기를 골라 두었으면
+  // 그 호기를 한 번 보낸다(그린 뒤에 — 받은 data 로 불린 함수 안에서는 보내지 않는다).
   function syncPick() {
-    if (!PICKS) return
+    if (!PICKS) {
+      S.pickData = undefined
+      S.pickSent = null
+      return
+    }
     const picked = typeof data.picked === 'string' && data.picked ? data.picked : null
     if (picked === S.pickData) return
+    const resumed = S.pickData === undefined
     S.pickData = picked
     S.pickSent = picked
     if (picked && S.items.has(picked)) {
       if (S.selected !== picked || S.selection.size !== 1) select(picked)
-    } else if (!picked && S.selected && isUnit(S.items.get(S.selected) || {})) select(null)
+    } else if (!picked && S.selected && isUnit(S.items.get(S.selected) || {})) {
+      if (resumed) (typeof queueMicrotask === 'function' ? queueMicrotask : setTimeout)(notePick)
+      else select(null)
+    }
   }
   syncPick()
 
@@ -5558,7 +5814,7 @@ export default function (component) {
         if (!drag.travelled) openFloor(item)
         return
       }
-      // 문턱을 넘은 끌기는 누르기가 아니다(전체 보기에서 화면이 움직이지 않아도) — 고르지도 아래 표를 좁히지도 않는다.
+      // 문턱을 넘은 끌기는 누르기가 아니다(전체 보기에서 화면이 움직이지 않아도) — 고르지도 알리지도 않는다.
       if (drag.travelled) return
       select(drag.id)
       notePick()
@@ -5665,7 +5921,15 @@ export default function (component) {
   // 보기 전용 더블클릭: 확대 중이면 전체 보기, 전체 보기면 그 자리를 2.5배로.
   svg.ondblclick = (event) => {
     // 블록 위에서는 확대하지 않는다 — 첫 누름이 이미 그 층을 열었다.
-    if (!VIEW || S.lastViewDragMoved || S.lastViewOnBlock) return
+    if (VIEW && (S.lastViewDragMoved || S.lastViewOnBlock)) return
+    // 호기를 두 번 누르면 「호기 정보」 창의 「고른 호기」 를 연다(층 보기·편집). 그 밖의 곳은 보기에서 확대/전체 보기다.
+    const unit = SHEET && !S.drag ? unitAt(toUser(event)) : null
+    if (unit) {
+      event.preventDefault()
+      openSheet('picked')
+      return
+    }
+    if (!VIEW) return
     event.preventDefault()
     if (S.view.z > 1) zoomAt(1)
     else zoomAt(2.5, toUser(event))
@@ -5685,7 +5949,7 @@ export default function (component) {
         openFloor(S.items.get(block.dataset.id))
         return
       }
-      // 층 보기의 호기에 초점이 있으면 Enter·Space 가 누르기와 같다 — 그 호기 정보 한 줄과 아래 표(`pick`).
+      // 층 보기의 호기에 초점이 있으면 Enter·Space 가 누르기와 같다 — 그 호기 정보 한 줄·「호기 정보」 창과 `pick`.
       const unitNode = FAB ? null : canvasItemOf(event.target)
       if (unitNode && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault()
@@ -6519,10 +6783,643 @@ export default function (component) {
   }
   layoutPanels()
 
+  // ---------------------------------------------------------------- 「호기 정보」 창(층 보기·편집 — 브라우저 안에서만)
+  // 도면 위에 겹친 창(`.sle-sheet` — 편집기 몸 안에 묶임)이다. 「고른 호기」 는 도면에서 고른 호기의 칸(옛 페이지 아래 21칸 표 —
+  // 모듈이면 같은 Main 설비 줄 전부, 편집에서 여럿 고르면 여러 줄), 「필터」 는 칸 머리 ▾ 로 거른(엑셀 자동 필터 꼴 — 칸 안 OR,
+  // 칸끼리 AND, 날짜·숫자 칸은 범위도) 호기 목록이다. 필터가 걸린 동안 맞는 호기에 테(`is-filter-hit`)를 두르고 나머지를
+  // 흐린다(`is-filter-out` — 필요 단축 흐림과 곱해진다). 편집에서는 오른쪽 미배치 칸 칩도 테를 두르고 칸 머리에 맞는 수를 단다.
+  // 창을 닫으면 강조를 끄고 필터는 남긴다(다시 열면 돌아온다), 접으면 강조는 남는다. 목록 줄을 누르면 그 호기를 고르고 화면을
+  // 그리로 옮긴다(보기는 필요 단축 칸으로도 알린다 — `notePick`). 읽기만이라 편집 권한과 상관없이 같다.
+  function sheetLoad() {
+    if (!S.sheetState) {
+      let raw = null
+      try {
+        raw = window.sessionStorage.getItem(SHEET_STATE_KEY)
+      } catch {
+        raw = null
+      }
+      S.sheetState = storedSheetState(raw)
+    }
+    if (!S.sheetWin) {
+      let raw = null
+      try {
+        raw = window.localStorage.getItem(SHEET_WIN_KEY)
+      } catch {
+        raw = null
+      }
+      S.sheetWin = storedSheetWin(raw)
+    }
+  }
+  function sheetSaveState() {
+    try {
+      window.sessionStorage.setItem(SHEET_STATE_KEY, JSON.stringify(S.sheetState))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  function sheetSaveWin() {
+    try {
+      window.localStorage.setItem(SHEET_WIN_KEY, JSON.stringify(S.sheetWin))
+    } catch {
+      // 이 마운트 안에서만 기억한다.
+    }
+  }
+  // data `sheet` 를 받는다 — 같은 값이면 그대로(회차마다 오지만 기준일·필터·편집본이 바뀐 회차에만 다르다).
+  function adoptSheet() {
+    const key = SHEET ? JSON.stringify(SHEET) : ''
+    if (S.sheetDataKey === key) return
+    S.sheetDataKey = key
+    S.sheetView = ''
+    S.sheetChipKey = ''
+    S.sheet = SHEET
+      ? {
+          columns: SHEET.columns,
+          rows: SHEET.rows,
+          cut: Number(SHEET.cut) || 0,
+          placeIdx: SHEET.columns.findIndex((column) => column.name === SHEET_PLACE),
+        }
+      : null
+  }
+  // 창의 줄 — 배치 편집에서는 「도면」 칸을 브라우저가 쥔 편집으로 덮어 쓴다(트레이로 뺀 호기는 미배치, 다른 층으로 보낸 호기는
+  // 「→ 그 층」). 보기는 받은 그대로다.
+  function sheetRows() {
+    const sheet = S.sheet
+    if (!sheet) return []
+    if (VIEW || sheet.placeIdx < 0) return sheet.rows
+    return sheet.rows.map((row) => {
+      const item = S.items.get(row.id)
+      if (!item || !isUnit(item)) return row
+      const place = item.moveTo ? `→ ${item.moveTo}` : onCanvas(item) ? '배치' : '미배치'
+      if (row.cells[sheet.placeIdx] === place) return row
+      const cells = row.cells.slice()
+      cells[sheet.placeIdx] = place
+      return { ...row, cells }
+    })
+  }
+  // 고른 호기 id(고른 차례) — 보기는 하나, 편집은 여럿(모듈 묶음은 묶음에 하나 — 줄은 형제까지 `pickedRows` 가 붙인다).
+  function pickedUnitIds() {
+    const ids = [...S.selection].filter((id) => isUnit(S.items.get(id) || {}))
+    if (S.selected && ids.includes(S.selected)) return [S.selected, ...ids.filter((id) => id !== S.selected)]
+    return ids
+  }
+  // 도면 강조 — 창이 열려 있고(접힘 포함) 「도면에서 강조」 가 켜졌고 필터가 걸렸을 때 맞는 호기 id 묶음, 아니면 null.
+  function currentHits() {
+    const state = S.sheetState
+    if (!S.sheet || !state || !state.open || !state.hl) return null
+    return sheetHits(sheetRows(), S.sheet.columns, state.filters)
+  }
+  function paintFilter(group, id) {
+    const item = S.items.get(id)
+    if (!group || !item || !isUnit(item)) return
+    const hits = S.filterHits
+    const state = !hits ? '' : hits.has(id) ? 'hit' : 'out'
+    if (group.__filter === state) return
+    group.__filter = state
+    group.classList.toggle('is-filter-hit', state === 'hit')
+    group.classList.toggle('is-filter-out', state === 'out')
+  }
+  function paintChipFilter(chip) {
+    const hits = S.filterHits
+    const hit = Boolean(hits && chip.__ids && chip.__ids.some((id) => hits.has(id)))
+    chip.classList.toggle('is-filter-hit', hit)
+  }
+  function refreshHits() {
+    S.filterHits = currentHits()
+    for (const [id, group] of S.groups) paintFilter(group, id)
+    let inTray = 0
+    for (const chip of trayList.children) {
+      paintChipFilter(chip)
+      if (chip.classList.contains('is-filter-hit')) inTray += chip.__ids.filter((id) => S.filterHits.has(id)).length
+    }
+    trayHits.hidden = !S.filterHits
+    setText(trayHits, S.filterHits ? `· 필터 맞음 ${inTray}` : '')
+  }
+  // 창 처음 자리·크기 — 무대 왼쪽 아래, 720×320(무대·몸이 작으면 줄인다).
+  function sheetDefault() {
+    const bodyH = bodyBox.clientHeight || 0
+    const w = Math.min(SHEET_DEF_W, Math.max(SHEET_MIN_W, (stage.clientWidth || 0) - 16))
+    const h = Math.min(SHEET_DEF_H, Math.max(SHEET_MIN_H, bodyH - 16))
+    return { x: (stage.offsetLeft || 0) + 8, y: bodyH - h - 8, w, h }
+  }
+  function layoutSheet() {
+    if (!sheetBox || sheetBox.hidden) return
+    const head = sheetHead.offsetHeight || SHEET_HEAD_PX
+    const geom = clampSheet(S.sheetWin, sheetDefault(), bodyBox.clientWidth || 0, bodyBox.clientHeight || 0, SHEET_MIN_W, SHEET_MIN_H, head)
+    S.sheetGeom = geom
+    sheetBox.classList.toggle('is-min', Boolean(S.sheetWin.min))
+    sheetMin.setAttribute('aria-expanded', String(!S.sheetWin.min))
+    sheetMin.setAttribute('aria-label', S.sheetWin.min ? '호기 정보 창 펴기' : '호기 정보 창 접기')
+    sheetMin.textContent = S.sheetWin.min ? '□' : '–'
+    sheetBox.style.left = `${geom.x}px`
+    sheetBox.style.top = `${geom.y}px`
+    sheetBox.style.width = `${geom.w}px`
+    sheetBox.style.height = S.sheetWin.min ? '' : `${geom.h}px`
+    if (S.sheetMenu) placeMenu()
+  }
+  function setSheetNote(text) {
+    setText(sheetNote, text || '')
+  }
+  // 창을 그린다. 같은 그림(탭·줄·필터·칸 값)이면 표를 다시 만들지 않고 고른 줄 표시만 고친다. 끄는 동안은 쉰다(놓으면
+  // 상태 줄과 함께 다시 부른다).
+  function renderSheet() {
+    if (!sheetBox) return
+    sheetLoad()
+    const state = S.sheetState
+    const open = Boolean(S.sheet && state.open)
+    sheetToggle.hidden = !S.sheet
+    sheetToggle.setAttribute('aria-pressed', String(open))
+    if (sheetBox.hidden === open) {
+      sheetBox.hidden = !open
+      if (open) layoutSheet()
+    }
+    if (!open) {
+      closeMenu()
+      refreshHits()
+      return
+    }
+    if (S.drag) return
+    const rows = sheetRows()
+    const columns = S.sheet.columns
+    const ids = pickedUnitIds()
+    const picked = VIEW ? pickedRows(rows, ids[0]) : pickedRowsMany(rows, ids)
+    const active = sheetActive(columns, state.filters)
+    const matched = active.length ? sheetMatch(rows, columns, state.filters) : rows
+    const filterTab = state.tab === 'filter'
+    sheetBox.dataset.tab = state.tab
+    for (const tab of sheetTabs) {
+      const on = tab.dataset.tab === state.tab
+      tab.setAttribute('aria-selected', String(on))
+      tab.tabIndex = on ? 0 : -1
+      const n = tab.dataset.tab === 'filter' ? (active.length ? matched.length : '') : picked.length || ''
+      setText(tab.querySelector('.sle-sheet-tab-n'), String(n))
+    }
+    // 위 줄 — 필터: 걸린 칸 칩(누르면 그 칸 필터를 지움)·모두 지우기·강조 체크·맞는 수, 고른 호기: 고른 수.
+    const shown = filterTab ? matched : picked
+    if (filterTab) {
+      const counts = S.sheet.placeIdx >= 0 ? countBy(matched, S.sheet.placeIdx) : new Map()
+      const parts = [`${active.length ? '맞음' : '전체'} ${matched.length}줄`]
+      for (const [place, n] of counts) parts.push(`${place || '자리 모름'} ${n}`)
+      setText(sheetCount, parts.join(' · '))
+    } else setText(sheetCount, picked.length ? `고른 호기 ${ids.length}개 · ${picked.length}줄` : '')
+    const chipKey = JSON.stringify(active.map((name) => [name, state.filters[name]]))
+    if (S.sheetChipKey !== chipKey) {
+      S.sheetChipKey = chipKey
+      sheetChips.replaceChildren(...active.map((name) => {
+        const rule = state.filters[name]
+        const chip = document.createElement('button')
+        chip.type = 'button'
+        chip.className = 'sle-sheet-chip'
+        chip.dataset.col = name
+        // 값은 열쇠(소문자)가 아니라 이 층에서 처음 만난 꼴로 보인다(이 층에 없는 값은 열쇠 그대로).
+        const index = columns.findIndex((column) => column.name === name)
+        const shownAs = new Map(index >= 0 ? distinctValues(rows, index, columns[index].type).map((value) => [value.key, value.text]) : [])
+        const words = []
+        if (Array.isArray(rule.values)) words.push(rule.values.length ? rule.values.map((key) => shownAs.get(key) || (key === '' ? '(빈칸)' : key)).join(', ') : '없음')
+        if (sheetRangeOn(rule)) words.push(`${rule.from || ''}~${rule.to || ''}`)
+        chip.textContent = `${name}: ${words.join(' · ')} ×`
+        chip.title = `${name} 필터 지우기`
+        return chip
+      }))
+    }
+    sheetClear.disabled = !active.length
+    sheetHl.checked = Boolean(state.hl)
+    // 표 — 같은 그림이면 고른 줄 표시만 고친다(받은 표가 바뀌면 `adoptSheet` 가 그림 열쇠를 지운다).
+    const placeSig = !VIEW && S.sheet.placeIdx >= 0 ? rows.map((row) => row.cells[S.sheet.placeIdx]).join('|') : ''
+    const viewKey = JSON.stringify([state.tab, filterTab ? state.filters : ids, placeSig])
+    if (S.sheetView !== viewKey) {
+      S.sheetView = viewKey
+      drawSheetTable(columns, shown, filterTab)
+      sheetEmpty.hidden = shown.length > 0
+      setText(sheetEmpty, filterTab
+        ? (rows.length ? '맞는 호기가 없습니다 — 칸 머리 ▾ 에서 필터를 바꾸세요.' : '이 층에 호기가 없습니다.')
+        : '도면에서 호기를 누르세요(편집에서는 Shift/Ctrl+클릭으로 여럿).')
+      sheetCut.hidden = !S.sheet.cut
+      setText(sheetCut, S.sheet.cut ? `${S.sheet.cut}줄 더 있습니다 — 아래 층 CSV 로 보세요.` : '')
+    }
+    const current = new Set(ids)
+    for (const tr of sheetBodyRows.children) tr.classList.toggle('is-current', current.has(tr.dataset.id))
+    if (S.sheetMenu) renderMenu()
+    refreshHits()
+  }
+  function drawSheetTable(columns, rows, menus) {
+    const filters = S.sheetState.filters
+    const head = document.createElement('tr')
+    for (const [index, column] of columns.entries()) {
+      const th = document.createElement('th')
+      th.scope = 'col'
+      const name = document.createElement('span')
+      name.textContent = column.name
+      th.append(name)
+      if (menus) {
+        const on = sheetRuleOn(filters[column.name])
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = on ? 'sle-sheet-funnel is-on' : 'sle-sheet-funnel'
+        button.dataset.col = String(index)
+        button.setAttribute('aria-haspopup', 'dialog')
+        button.setAttribute('aria-label', `${column.name} 필터${on ? ' — 걸림' : ''}`)
+        button.title = on ? `${column.name} 필터가 걸렸습니다 — 눌러서 바꾸기` : `${column.name} 필터`
+        button.textContent = on ? '▼' : '▾'
+        th.append(button)
+        if (on) th.classList.add('is-filtered')
+      }
+      head.append(th)
+    }
+    sheetHeadRow.replaceChildren(head)
+    const body = document.createDocumentFragment()
+    for (const row of rows) {
+      const tr = document.createElement('tr')
+      tr.dataset.id = row.id
+      tr.tabIndex = 0
+      for (const value of row.cells) {
+        const td = document.createElement('td')
+        const text = sheetText(value)
+        td.textContent = text
+        if (text.length > 18) td.title = text
+        if (typeof value === 'number') td.className = 'is-num'
+        tr.append(td)
+      }
+      body.append(tr)
+    }
+    sheetBodyRows.replaceChildren(body)
+  }
+  function openSheet(tab) {
+    sheetLoad()
+    if (!S.sheet) return
+    S.sheetState.open = true
+    if (tab) S.sheetState.tab = tab
+    if (S.sheetWin.min && tab) {
+      S.sheetWin.min = false
+      sheetSaveWin()
+    }
+    sheetSaveState()
+    S.sheetView = ''
+    renderSheet()
+    layoutSheet()
+  }
+  function closeSheet() {
+    sheetLoad()
+    S.sheetState.open = false
+    sheetSaveState()
+    setSheetNote('')
+    renderSheet()
+  }
+  // 도면 점 p(화면 좌표 {x, top})에 선 호기(겹치면 위에 그린 것) — 두 번 누르기가 호기 위였는가(포인터 캡처로 dblclick 의
+  // target 은 캔버스다). 보기에서 기준일에 숨은 호기는 건너뛴다.
+  function unitAt(p) {
+    if (!p) return null
+    const y = H() - p.top
+    let found = null
+    for (const item of S.items.values()) {
+      if (!isUnit(item) || !onCanvas(item)) continue
+      const group = S.groups.get(item.id)
+      if (VIEW && group && group.__visible === false) continue
+      if (p.x >= item.x && p.x <= item.x + item.w && y >= item.y && y <= item.y + item.h) found = item
+    }
+    return found
+  }
+  // 목록 줄 → 그 호기. 도면에 선 호기는 고르고 화면을 그리로(「고른 곳 보기」 와 같은 여백), 편집의 미배치 호기는 오른쪽 칸 그
+  // 칩으로, 그 밖은 창 아래 한 줄로 알린다.
+  function goToUnit(id) {
+    const item = S.items.get(id)
+    const row = S.sheet ? sheetRows().find((one) => one.id === id) : null
+    const place = row && S.sheet.placeIdx >= 0 ? sheetText(row.cells[S.sheet.placeIdx]) : ''
+    setSheetNote('')
+    if (item && isUnit(item) && onCanvas(item)) {
+      const group = S.groups.get(id)
+      if (VIEW && group && group.__visible === false) {
+        setSheetNote(`${id} — 이 기준일에는 도면에 보이지 않습니다(반입 전 겹침·도면 이탈)`)
+        return
+      }
+      select(id)
+      if (VIEW) notePick()
+      zoomToBox(bbox(VIEW ? [item] : expanded([item])))
+      // 창이 그 호기를 덮으면 창이 덮지 않은 띠로 화면을 민다(옮길 수 있는 만큼).
+      const rect = group && group.querySelector('.sle-rect').getBoundingClientRect()
+      const shift = rect && !S.sheetWin.min ? clearOfSheet(stage.getBoundingClientRect(), sheetBox.getBoundingClientRect(), rect) : null
+      if (shift) panBy(shift.dx * unitsPerPx(), shift.dy * unitsPerPx())
+      return
+    }
+    if (item && isUnit(item) && !VIEW && !item.moveTo) {
+      select(id)
+      setPanelOpen('right', true)
+      const chip = [...trayList.children].find((one) => one.__ids && one.__ids.includes(id))
+      if (chip) {
+        if (chip.hidden && traySearch.value) {
+          traySearch.value = ''
+          S.trayQuery = ''
+          applyTrayFilter()
+        }
+        const top = chip.offsetTop - trayScroll.offsetTop
+        if (top < trayScroll.scrollTop || top + chip.offsetHeight > trayScroll.scrollTop + trayScroll.clientHeight) {
+          trayScroll.scrollTop = Math.max(0, top - trayScroll.clientHeight / 3)
+        }
+        chip.classList.remove('is-flash')
+        void chip.offsetWidth
+        chip.classList.add('is-flash')
+      }
+      setSheetNote(`${id} — 오른쪽 미배치 칸에 있습니다`)
+      return
+    }
+    setSheetNote(`${id} — 도면에 없음(${place || '미배치'})`)
+  }
+  function setRule(name, rule) {
+    const kept = {}
+    if (Array.isArray(rule.values)) kept.values = rule.values
+    if (rangeEnd(rule.from)) kept.from = rangeEnd(rule.from)
+    if (rangeEnd(rule.to)) kept.to = rangeEnd(rule.to)
+    if (sheetRuleOn(kept)) S.sheetState.filters[name] = kept
+    else delete S.sheetState.filters[name]
+    sheetSaveState()
+    renderSheet()
+  }
+  // ---- 칸 필터 펼침(엑셀 자동 필터 꼴) — 값 목록 체크(개수·찾기), 날짜·숫자 칸은 「부터·까지」 범위. 값 목록은 다른 칸 필터만 지난
+  // 줄에서 센다. 모든 값을 고르면 그 칸 값 필터는 풀린다.
+  function menuColumn() {
+    return S.sheetMenu && S.sheet ? S.sheet.columns[S.sheetMenu.index] || null : null
+  }
+  function menuValues() {
+    const column = menuColumn()
+    if (!column) return []
+    const base = sheetMatch(sheetRows(), S.sheet.columns, S.sheetState.filters, column.name)
+    return distinctValues(base, S.sheetMenu.index, column.type)
+  }
+  function openMenu(index, anchor) {
+    S.sheetMenu = { index, anchor: Number(index), find: '' }
+    sheetMenuFind.value = ''
+    sheetMenu.hidden = false
+    renderMenu()
+    placeMenu()
+    sheetMenuFind.focus({ preventScroll: true })
+  }
+  function placeMenu() {
+    if (!S.sheetMenu || sheetMenu.hidden) return
+    const button = sheetHeadRow.querySelector(`.sle-sheet-funnel[data-col="${S.sheetMenu.index}"]`)
+    const box = sheetBox.getBoundingClientRect()
+    const at = button ? button.getBoundingClientRect() : box
+    const width = Math.min(260, Math.max(200, box.width - 12))
+    const left = Math.max(6, Math.min(box.width - width - 6, at.right - box.left - width))
+    const top = Math.max(6, at.bottom - box.top + 2)
+    sheetMenu.style.left = `${Math.round(left)}px`
+    sheetMenu.style.top = `${Math.round(top)}px`
+    sheetMenu.style.width = `${Math.round(width)}px`
+    sheetMenu.style.maxHeight = `${Math.max(120, Math.round(box.height - top - 6))}px`
+  }
+  function closeMenu(focusBack) {
+    if (!S.sheetMenu) return
+    const index = S.sheetMenu.index
+    S.sheetMenu = null
+    sheetMenu.hidden = true
+    if (focusBack) {
+      const button = sheetHeadRow.querySelector(`.sle-sheet-funnel[data-col="${index}"]`)
+      if (button) button.focus({ preventScroll: true })
+    }
+  }
+  function renderMenu() {
+    const column = menuColumn()
+    if (!column) { closeMenu(); return }
+    const rule = S.sheetState.filters[column.name] || {}
+    setText(sheetMenuName, column.name)
+    const chosen = Array.isArray(rule.values) ? new Set(rule.values) : null
+    const find = S.sheetMenu.find.trim().toLowerCase()
+    const nodes = []
+    for (const value of menuValues()) {
+      if (find && !value.text.toLowerCase().includes(find)) continue
+      const label = document.createElement('label')
+      label.className = 'sle-sheet-menu-item'
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.dataset.key = value.key
+      box.checked = !chosen || chosen.has(value.key)
+      const text = document.createElement('span')
+      text.textContent = value.text
+      const count = document.createElement('span')
+      count.className = 'sle-sheet-menu-n'
+      count.textContent = String(value.count)
+      label.append(box, text, count)
+      nodes.push(label)
+    }
+    if (!nodes.length) {
+      const none = document.createElement('p')
+      none.className = 'sle-sheet-empty'
+      none.textContent = '찾는 값이 없습니다.'
+      nodes.push(none)
+    }
+    const active = host.getRootNode().activeElement
+    const focusedKey = active && sheetMenuList.contains(active) ? active.dataset.key : undefined
+    sheetMenuList.replaceChildren(...nodes)
+    if (focusedKey !== undefined) {
+      const again = [...sheetMenuList.querySelectorAll('input')].find((box) => box.dataset.key === focusedKey)
+      if (again) again.focus({ preventScroll: true })
+    }
+    const ranged = column.type === 'date' || column.type === 'number'
+    sheetMenuRange.hidden = !ranged
+    if (ranged) {
+      const kind = column.type === 'date' ? 'date' : 'number'
+      for (const [input, end] of [[sheetMenuFrom, rule.from], [sheetMenuTo, rule.to]]) {
+        if (input.type !== kind) input.type = kind
+        if (!isFocused(input)) input.value = end || ''
+      }
+    }
+  }
+  // 고른 값 묶음 → 그 칸 규칙. 지금 목록 값을 모두 고르면 값 필터를 푼다.
+  function setMenuValues(keys) {
+    const column = menuColumn()
+    if (!column) return
+    const all = menuValues().map((value) => value.key)
+    const rule = { ...(S.sheetState.filters[column.name] || {}) }
+    const every = all.every((key) => keys.has(key))
+    if (every) delete rule.values
+    else rule.values = all.filter((key) => keys.has(key))
+    setRule(column.name, rule)
+  }
+  function menuChosen() {
+    const column = menuColumn()
+    const rule = column ? S.sheetState.filters[column.name] || {} : {}
+    return Array.isArray(rule.values) ? new Set(rule.values) : new Set(menuValues().map((value) => value.key))
+  }
+  function visibleMenuKeys() {
+    return [...sheetMenuList.querySelectorAll('input')].map((box) => box.dataset.key)
+  }
+  if (sheetBox) {
+    sheetToggle.onclick = () => (S.sheetState && S.sheetState.open ? closeSheet() : openSheet())
+    sheetClose.onclick = () => {
+      closeSheet()
+      sheetToggle.focus({ preventScroll: true })
+    }
+    sheetMin.onclick = () => {
+      sheetLoad()
+      S.sheetWin.min = !S.sheetWin.min
+      sheetSaveWin()
+      closeMenu()
+      layoutSheet()
+    }
+    for (const tab of sheetTabs) {
+      tab.onclick = () => {
+        sheetLoad()
+        S.sheetState.tab = tab.dataset.tab === 'filter' ? 'filter' : 'picked'
+        sheetSaveState()
+        closeMenu()
+        if (S.sheetWin.min) {
+          S.sheetWin.min = false
+          sheetSaveWin()
+          layoutSheet()
+        }
+        renderSheet()
+      }
+    }
+    sheetClear.onclick = () => {
+      S.sheetState.filters = {}
+      sheetSaveState()
+      closeMenu()
+      renderSheet()
+    }
+    sheetHl.onchange = () => {
+      S.sheetState.hl = sheetHl.checked
+      sheetSaveState()
+      renderSheet()
+    }
+    sheetChips.onclick = (event) => {
+      const chip = event.target.closest ? event.target.closest('.sle-sheet-chip') : null
+      if (!chip) return
+      closeMenu()
+      setRule(chip.dataset.col, {})
+    }
+    sheetHeadRow.onclick = (event) => {
+      const button = event.target.closest ? event.target.closest('.sle-sheet-funnel') : null
+      if (!button) return
+      const index = Number(button.dataset.col)
+      if (S.sheetMenu && S.sheetMenu.index === index) closeMenu()
+      else openMenu(index, button)
+    }
+    sheetBodyRows.onclick = (event) => {
+      const row = event.target.closest ? event.target.closest('tr[data-id]') : null
+      if (row) goToUnit(row.dataset.id)
+    }
+    sheetBodyRows.onkeydown = (event) => {
+      const row = event.target.closest ? event.target.closest('tr[data-id]') : null
+      if (!row) return
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        goToUnit(row.dataset.id)
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const next = event.key === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling
+        if (next) next.focus({ preventScroll: false })
+      }
+    }
+    sheetMenuFind.oninput = () => {
+      if (!S.sheetMenu) return
+      S.sheetMenu.find = sheetMenuFind.value
+      renderMenu()
+    }
+    sheetMenuList.onchange = (event) => {
+      const box = event.target
+      if (!box || box.type !== 'checkbox') return
+      const keys = menuChosen()
+      if (box.checked) keys.add(box.dataset.key)
+      else keys.delete(box.dataset.key)
+      setMenuValues(keys)
+    }
+    q('.sle-sheet-menu-every').onclick = () => {
+      const keys = menuChosen()
+      for (const key of visibleMenuKeys()) keys.add(key)
+      setMenuValues(keys)
+    }
+    q('.sle-sheet-menu-none').onclick = () => {
+      const keys = menuChosen()
+      for (const key of visibleMenuKeys()) keys.delete(key)
+      setMenuValues(keys)
+    }
+    for (const [input, end] of [[sheetMenuFrom, 'from'], [sheetMenuTo, 'to']]) {
+      input.onchange = () => {
+        const column = menuColumn()
+        if (!column) return
+        setRule(column.name, { ...(S.sheetState.filters[column.name] || {}), [end]: input.value })
+      }
+    }
+    q('.sle-sheet-menu-reset').onclick = () => {
+      const column = menuColumn()
+      if (!column) return
+      setRule(column.name, {})
+      sheetMenuFind.value = ''
+      if (S.sheetMenu) S.sheetMenu.find = ''
+      renderMenu()
+    }
+    q('.sle-sheet-menu-done').onclick = () => closeMenu(true)
+    // 창 안의 키는 도면 단축키(호기 옮기기·지우기·실행 취소 …)로 새지 않는다. Esc 는 펼침을 먼저, 그다음 창을 닫는다.
+    sheetBox.onkeydown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (S.sheetMenu) closeMenu(true)
+        else {
+          closeSheet()
+          sheetToggle.focus({ preventScroll: true })
+        }
+      }
+      event.stopPropagation()
+    }
+    // 펼침 밖을 누르면 펼침을 닫는다(창 안에서).
+    sheetBox.onpointerdown = (event) => {
+      if (S.sheetMenu && !sheetMenu.contains(event.target) && !(event.target.closest && event.target.closest('.sle-sheet-funnel'))) closeMenu()
+    }
+    // 창 옮기기(제목 줄 끌기)·크기 바꾸기(오른쪽 아래 손잡이) — 편집기 몸 안으로 묶고 놓을 때 기억한다.
+    const startSheetDrag = (kind) => (event) => {
+      if (event.button !== 0) return
+      if (kind === 'move' && event.target.closest && event.target.closest('button')) return
+      event.preventDefault()
+      const handle = kind === 'move' ? sheetHead : sheetGrip
+      handle.setPointerCapture(event.pointerId)
+      const geom = S.sheetGeom || sheetDefault()
+      S.sheetDrag = { kind, pointerId: event.pointerId, x: event.clientX, y: event.clientY, geom: { ...geom } }
+      sheetBox.classList.add(kind === 'move' ? 'is-moving' : 'is-sizing')
+    }
+    const moveSheetDrag = (event) => {
+      const drag = S.sheetDrag
+      if (!drag || event.pointerId !== drag.pointerId) return
+      const dx = event.clientX - drag.x
+      const dy = event.clientY - drag.y
+      if (drag.kind === 'move') {
+        S.sheetWin.x = drag.geom.x + dx
+        S.sheetWin.y = drag.geom.y + dy
+        S.sheetWin.w = drag.geom.w
+        S.sheetWin.h = drag.geom.h
+      } else {
+        S.sheetWin.x = drag.geom.x
+        S.sheetWin.y = drag.geom.y
+        S.sheetWin.w = Math.min(drag.geom.w + dx, (bodyBox.clientWidth || 0) - drag.geom.x)
+        S.sheetWin.h = Math.min(drag.geom.h + dy, (bodyBox.clientHeight || 0) - drag.geom.y)
+      }
+      layoutSheet()
+    }
+    const endSheetDrag = (event) => {
+      const drag = S.sheetDrag
+      if (!drag || (event && event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return
+      S.sheetDrag = null
+      sheetBox.classList.remove('is-moving', 'is-sizing')
+      if (S.sheetGeom) Object.assign(S.sheetWin, S.sheetGeom)
+      sheetSaveWin()
+    }
+    sheetHead.onpointerdown = startSheetDrag('move')
+    sheetGrip.onpointerdown = startSheetDrag('size')
+    for (const handle of [sheetHead, sheetGrip]) {
+      handle.onpointermove = moveSheetDrag
+      handle.onpointerup = handle.onpointercancel = endSheetDrag
+      handle.onlostpointercapture = endSheetDrag
+    }
+    // 제목 줄을 두 번 누르면 접기·펴기(엑셀 창처럼).
+    sheetHead.ondblclick = (event) => {
+      if (event.target.closest && event.target.closest('button')) return
+      sheetMin.onclick()
+    }
+  }
+  adoptSheet()
+  renderSheet()
+
   // ---------------------------------------------------------------- 기준일 줄(층 도면)·FAB 기준일
   // 층 상세 보기의 맨 위 줄은 페이더다(오늘 ±12개월, 하루 단위, 가운데 오늘). 끄는 동안 서버 회차는 없다 — 프레임마다
   // (requestAnimationFrame) 판정 부호가 바뀐 상자만 칠하고(`paintAsOf`), 손을 떼면(키는 멈춘 뒤) `setStateValue` 로
-  // 기준일을 **한 번** 보낸다. 그 회차에 파이썬이 세션 기준일을 바꿔 범례·요약·호기 표를 맞춘다. 배치 편집(층) 중에는
+  // 기준일을 **한 번** 보낸다. 그 회차에 파이썬이 세션 기준일을 바꿔 범례·요약·「호기 정보」 창을 맞춘다. 배치 편집(층) 중에는
   // 같은 자리·같은 높이에 「기준일 … · 편집 중 고정」 줄이 선다. FAB 전체에는 페이더 없이 도구 줄에 기준일·「오늘로」·
   // 미확인 대수가 선다.
   const faderInput = q('.sle-fader-input')
@@ -6828,6 +7725,7 @@ export default function (component) {
   // 크기)을 다시 맞춘다. 창 높이만 바뀌어도 기본 높이·상한이 바뀌므로 창 크기도 듣는다.
   S.onResize = () => {
     layoutPanels()
+    layoutSheet()
     if (S.lock) alignLock()
     else {
       const changed = S.heightDrag ? measurePort() : fitStage()

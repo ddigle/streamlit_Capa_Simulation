@@ -335,6 +335,12 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_SHORT_INKS": {"s": "#111111", "m": "#FFFFFF", "l": "#FFFFFF", "x": "#FFFFFF"},
     "SPACE_SHORT_IMMINENT": "#0F172A",
     "SPACE_SHORT_DIM_OPACITY": "0.32",
+    # 「호기 정보」 창 필터에 맞는 호기의 테(상자 밖, 선택 후광보다 바깥)와 맞지 않는 호기의 흐림
+    # (2026-11-03 사용자 요청). 테는 남보라라 선택 후광(강조색)·반입 전 주황·반출 노랑·정렬선 자홍·
+    # 겹침 빨강·필요 단축 임박 남색과 갈리고 캔버스와 3:1 이상이다(대비 시험). 흐림은 필요 단축
+    # 흐림과 곱해진다.
+    "SPACE_FILTER_RING": "#4F46E5",
+    "SPACE_FILTER_DIM_OPACITY": "0.25",
     # ------------------------------------------------------------- 설비 마스터 표
     # 가용설비 현황 설비 마스터 탭 표(Components v2)의 칸 표지. 색만으로 뜻을 싣지 않는다 — 바뀐
     # 칸은 오른쪽 위 삼각(MARK), 오류는 안쪽 테(LINE), 경고는 밑줄(WARN_LINE), 잠긴 칸은 커서·풍선이
@@ -547,6 +553,9 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_SHORT_INKS": {"s": "#111111", "m": "#111111", "l": "#FFFFFF", "x": "#111111"},
     "SPACE_SHORT_IMMINENT": "#F8FAFC",
     "SPACE_SHORT_DIM_OPACITY": "0.3",
+    # 어두운 캔버스에서는 밝은 남보라가 앞으로 나온다.
+    "SPACE_FILTER_RING": "#818CF8",
+    "SPACE_FILTER_DIM_OPACITY": "0.25",
     # 설비 마스터 표 칸 표지 — 어두운 면 위에서 같은 뜻(면은 낮은 밝기, 표지 선은 밝게).
     "GRID_CHANGED_FILL": "#3A2F12",
     "GRID_CHANGED_MARK": "#F0B37A",
@@ -702,6 +711,8 @@ if TYPE_CHECKING:
     SPACE_CANVAS_OVERLAY: Final[str] = ""
     SPACE_CAPA_RAMP: Final[tuple[str, ...]] = ()
     SPACE_CAPA_RAMP_INKS: Final[tuple[str, ...]] = ()
+    SPACE_FILTER_DIM_OPACITY: Final[str] = ""
+    SPACE_FILTER_RING: Final[str] = ""
     SPACE_FLAG_FILL: Final[str] = ""
     SPACE_FLAG_INK: Final[str] = ""
     SPACE_GRID: Final[str] = ""

@@ -40,6 +40,8 @@
           class="sle-flagnote-dot" aria-hidden="true">!</span><span class="sle-flagnote-text"><span
           class="sle-flagnote-word">미확인 </span><span class="sle-flagnote-count"></span></span></span>
     <span class="sle-summary sle-view-only"></span>
+    <button type="button" class="sle-sheet-toggle sle-floor-only" aria-pressed="false" aria-controls="sle-sheet"
+            title="호기 정보 — 고른 호기의 칸과, 칸마다 걸러 찾은 호기 목록을 도면 위 창에 보입니다(필터에 맞는 호기는 도면에서 강조). 호기를 두 번 눌러도 열립니다 · 다시 누르면 닫습니다"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" class="ico-line"/><path d="M1.5 6.2h13M6 6.2v7.3" class="ico-line"/></svg><span class="sle-sheet-toggle-word">호기 정보</span></button>
     <button type="button" class="sle-lock" aria-pressed="false"
             title="스크롤 고정 — 켜면 페이지가 굴러가지 않고 도면이 창 높이에 맞춰 섭니다. 휠은 도면을 옮기고(Shift 가로) Ctrl+휠은 확대합니다. 다시 누르면 풉니다"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" class="ico-line"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" class="ico-line"/></svg><span class="sle-lock-word">고정</span></button>
     <button type="button" class="sle-apply sle-edit-only">적용</button>
@@ -242,7 +244,7 @@
               title="미배치 호기 칸 펴기 — 끌어서 도면에 놓습니다"><span aria-hidden="true">‹</span><span class="sle-side-strip-text">미배치 <b class="sle-drawer-count">0</b></span></button>
       <div class="sle-side-box sle-tray" id="sle-tray" aria-label="미배치 호기">
         <div class="sle-tray-head">
-          <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span></div>
+          <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span> <span class="sle-tray-hits" hidden></span></div>
           <button type="button" class="sle-tray-info" aria-expanded="false" aria-controls="sle-tray-hint" aria-label="미배치 칸 도움말" title="도움말">i</button>
           <button type="button" class="sle-drawer-close sle-side-fold" aria-label="오른쪽 칸 접기" title="칸 접기 (Esc)">›</button>
         </div>
@@ -281,6 +283,50 @@
         <div class="sle-drop-note" aria-hidden="true">여기 놓으면 미배치로</div>
       </div>
     </aside>
+    <section class="sle-sheet sle-floor-only" id="sle-sheet" role="region" aria-label="호기 정보" hidden>
+      <div class="sle-sheet-head" title="끌어서 창 옮기기">
+        <span class="sle-sheet-title">호기 정보</span>
+        <span class="sle-sheet-tabs" role="tablist" aria-label="호기 정보 보기">
+          <button type="button" class="sle-sheet-tab" role="tab" data-tab="picked" aria-selected="true">고른 호기 <b class="sle-sheet-tab-n"></b></button>
+          <button type="button" class="sle-sheet-tab" role="tab" data-tab="filter" aria-selected="false">필터 <b class="sle-sheet-tab-n"></b></button>
+        </span>
+        <span class="sle-spacer"></span>
+        <button type="button" class="sle-sheet-min" aria-expanded="true" aria-label="호기 정보 창 접기" title="접기 — 제목 줄만 남깁니다(강조는 그대로)">–</button>
+        <button type="button" class="sle-sheet-close" aria-label="호기 정보 창 닫기" title="닫기 (Esc) — 필터는 남고 도면 강조는 꺼집니다">×</button>
+      </div>
+      <div class="sle-sheet-main">
+        <div class="sle-sheet-bar">
+          <span class="sle-sheet-chips"></span>
+          <button type="button" class="sle-sheet-clear">필터 모두 지우기</button>
+          <label class="sle-field sle-sheet-hl" title="필터에 맞는 호기에 테를 두르고 나머지를 흐립니다"><input class="sle-sheet-hl-box" type="checkbox"><span>도면에서 강조</span></label>
+          <span class="sle-sheet-count" aria-live="polite"></span>
+        </div>
+        <div class="sle-sheet-scroll">
+          <table class="sle-sheet-table"><thead></thead><tbody></tbody></table>
+          <p class="sle-sheet-empty" hidden></p>
+          <p class="sle-sheet-cut" hidden></p>
+        </div>
+        <p class="sle-sheet-note" aria-live="polite"></p>
+      </div>
+      <div class="sle-sheet-menu" role="dialog" aria-label="칸 필터" hidden>
+        <div class="sle-sheet-menu-head"><b class="sle-sheet-menu-name"></b></div>
+        <input class="sle-sheet-menu-find" type="search" placeholder="값 찾기" aria-label="값 찾기" autocomplete="off" spellcheck="false">
+        <div class="sle-sheet-menu-all">
+          <button type="button" class="sle-sheet-menu-every">모두 고르기</button>
+          <button type="button" class="sle-sheet-menu-none">모두 풀기</button>
+        </div>
+        <div class="sle-sheet-menu-list" role="group" aria-label="값"></div>
+        <div class="sle-sheet-menu-range" hidden>
+          <label class="sle-field"><span>부터</span><input class="sle-sheet-menu-from" aria-label="범위 시작"></label>
+          <label class="sle-field"><span>까지</span><input class="sle-sheet-menu-to" aria-label="범위 끝"></label>
+        </div>
+        <div class="sle-sheet-menu-actions">
+          <button type="button" class="sle-sheet-menu-reset">이 칸 필터 지우기</button>
+          <button type="button" class="sle-sheet-menu-done">닫기</button>
+        </div>
+      </div>
+      <div class="sle-sheet-grip" title="끌어서 창 크기 바꾸기" aria-hidden="true"></div>
+    </section>
   </div>
   <div class="sle-resize" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="도면 높이"
        title="끌어서 도면 높이 조절 · 두 번 누르면 기본 높이 · ↑/↓ 조절 · Home/Enter 기본"><span class="sle-resize-grip" aria-hidden="true"></span></div>

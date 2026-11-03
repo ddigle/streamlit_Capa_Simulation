@@ -25,16 +25,22 @@ HTML·CSS·JS 는 `space_layout_editor_assets/` 의 파일이다(파이썬 문�
 FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우저가 `navigate` 를 보낸다. 받는 쪽은
 `on_navigate_change` 콜백이다 — 콜백은 본문보다 먼저 돌므로 그 자리에서 층을 바꾸면 재실행 한
 번으로 층 상세가 선다(콜백 안에서 `st.session_state[key].navigate` 로 읽힌다). 층 상세 뷰어에서
-호기를 누르면 같은 꼴로 `pick` 을 보내고 `on_pick_change` 콜백이 받는다(아래 호기 표를 그 설비
-줄만으로).
+호기를 누르면 같은 꼴로 `pick` 을 보내고 `on_pick_change` 콜백이 받는다(색 기준 「필요 단축」 을 켠
+동안만 — 그 칸의 누른 호기 상세).
+
+**「호기 정보」 창**(층 보기·편집, 2026-11-03 사용자 요청)도 브라우저 몫이다 — 도면 위에 뜨는 창에
+고른 호기의 칸(옛 페이지 아래 21칸 표)과, 칸마다 엑셀 자동 필터 꼴로 거른 호기 목록을 보이고 맞는
+호기를 도면에서 강조한다. 표 재료는 data `sheet`(epoch 밖)이고 거르기·강조는 JS(`// <unit-sheet>`)라
+필터를 고쳐도 앱이 다시 돌지 않는다. 창 자리·크기·접힘은 localStorage, 탭·필터·강조는
+sessionStorage 다.
 
 **기준일 페이더**(층 상세 보기, 도면 상자 맨 위 줄)도 브라우저 몫이다. 끄는 동안에는 파이썬으로
 아무것도 보내지 않고 브라우저가 호기마다 받은 경계 날짜를 글자로 견주어 class·면색만 바꾼다. 손을
 떼면 상태 값 `asOf`(`YYYY-MM-DD`)를 **한 번** 보내고(`setStateValue`), 받는 쪽 `on_asOf_change`
-콜백이 세션 기준일을 바꿔 그 회차에 범례·요약·호기 표가 맞춰진다. 기준일은 epoch 에 넣지 않는다 —
-data 의 `asOf` 는 새 epoch(층 이동 등)에서 쓰고, 같은 epoch 회차에 받은 값이 브라우저가 쥔 값과
-같으면 아무것도 다시 칠하지 않는다. FAB 전체 뷰어는 페이더 없이 도구 줄에 기준일과 「오늘로」를,
-배치 편집기는 도구 줄 제목 옆에 「기준일 … 고정」 칩을 둔다.
+콜백이 세션 기준일을 바꿔 그 회차에 범례·요약·「호기 정보」 창이 맞춰진다. 기준일은 epoch 에 넣지
+않는다 — data 의 `asOf` 는 새 epoch(층 이동 등)에서 쓰고, 같은 epoch 회차에 받은 값이 브라우저가 쥔
+값과 같으면 아무것도 다시 칠하지 않는다. FAB 전체 뷰어는 페이더 없이 도구 줄에 기준일과
+「오늘로」를, 배치 편집기는 도구 줄 제목 옆에 「기준일 … 고정」 칩을 둔다.
 
 **편집기 몸은 가로 세 칸**이다(2026-11-03 사용자 요청) — 왼쪽 칸(층 보기는 범례, 편집은 범례·도면
 요소·선택·격자·편집 영역·도움말) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
@@ -85,6 +91,7 @@ from capa_simulation.services.floor_layout_profile import (
 )
 from capa_simulation.services.space_layout_edit import EditorInputs, finite_or_none
 from capa_simulation.services.space_shortening_layer import BUCKETS
+from capa_simulation.services.space_unit_sheet import MAX_SHEET_ROWS, SHEET_TYPES
 
 _ASSETS = Path(__file__).with_name("space_layout_editor_assets")
 # FAB 도면의 범위 이름(편집기 `data.floor`). 층 이름과 겹치지 않으면 된다 — 뷰를 처음 크기로 돌릴지
@@ -175,6 +182,9 @@ def _palette() -> dict[str, str]:
         **{f"short-{key}-ink": ink for key, ink in tokens.SPACE_SHORT_INKS.items()},
         "short-imminent": tokens.SPACE_SHORT_IMMINENT,
         "short-dim-opacity": tokens.SPACE_SHORT_DIM_OPACITY,
+        # 「호기 정보」 창 필터에 맞는 호기의 테와 맞지 않는 호기의 흐림(필요 단축 흐림과 곱해진다).
+        "filter-ring": tokens.SPACE_FILTER_RING,
+        "filter-dim-opacity": tokens.SPACE_FILTER_DIM_OPACITY,
     }
 
 
@@ -360,6 +370,67 @@ def _clean_legend(legend: Mapping[str, Any] | None) -> dict[str, Any] | None:
     return {"entries": entries, "asOf": as_of if isinstance(as_of, str) else ""}
 
 
+def _sheet_cell(value: object) -> str | float | None:
+    """창 표의 칸 값 — 글·유한한 수·None 만(그 밖은 None). 참·거짓은 글로."""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if number == number and abs(number) != float("inf") else None
+    return value if isinstance(value, str) else None
+
+
+def _clean_sheet(sheet: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """브라우저로 보낼 「호기 정보」 창 표(`services/space_unit_sheet.unit_sheet` 꼴).
+
+    칸은 이름이 글이고 꼴이 `SHEET_TYPES` 인 것만, 행은 id 가 빈 글이 아니고 칸 수가 칸 목록과 같은
+    것만 싣는다(값은 `_sheet_cell`). 줄 수는 `MAX_SHEET_ROWS` 를 넘지 않는다(넘친 수는 `cut` 에
+    더한다). epoch 밖이다 — 기준일(「단계」 칸)·공정 필터·편집본이 바뀌어도 다시 마운트하지 않고
+    창만 다시 그린다. None 이면 창이 없다(FAB)."""
+    if sheet is None:
+        return None
+    raw_columns = list(sheet.get("columns") or ())
+    keep = [
+        isinstance(column, Mapping)
+        and isinstance(column.get("name"), str)
+        and column.get("type") in SHEET_TYPES
+        for column in raw_columns
+    ]
+    columns = [
+        {"name": str(column["name"]), "type": str(column["type"])}
+        for column, kept in zip(raw_columns, keep, strict=True)
+        if kept
+    ]
+    rows: list[dict[str, Any]] = []
+    for row in sheet.get("rows") or ():
+        if not isinstance(row, Mapping):
+            continue
+        unit_id = row.get("id")
+        cells = row.get("cells")
+        if not isinstance(unit_id, str) or not unit_id.strip():
+            continue
+        if not isinstance(cells, (list, tuple)) or len(cells) != len(raw_columns):
+            continue
+        group = row.get("group")
+        rows.append(
+            {
+                "id": unit_id.strip(),
+                "group": group.strip() if isinstance(group, str) and group.strip() else None,
+                "cells": [
+                    _sheet_cell(cell) for cell, kept in zip(cells, keep, strict=True) if kept
+                ],
+            }
+        )
+    cut = sheet.get("cut")
+    extra = max(len(rows) - MAX_SHEET_ROWS, 0)
+    return {
+        "columns": columns,
+        "rows": rows[:MAX_SHEET_ROWS],
+        "cut": (cut if isinstance(cut, int) and not isinstance(cut, bool) and cut > 0 else 0)
+        + extra,
+    }
+
+
 def space_lock_style() -> str:
     """스크롤 고정의 페이지 서식 — `<html data-space-lock="1">` 인 동안 본문 스크롤 칸(`stMain`)을
     막는다.
@@ -423,16 +494,18 @@ def render_space_layout_viewer(
     as_of_pinned: str | None = None,
     legend: Mapping[str, Any] | None = None,
     pending_save: bool = False,
+    sheet: Mapping[str, Any] | None = None,
+    pick_to_server: bool = True,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
     오른쪽의 한 줄 요약(배치·미배치·점유율)이다. 돌려받는 값이 없다.
 
     호기를 누르면(끌지 않고) 브라우저가 `pick`(``{"epoch", "id"}``)을 보내고 `on_pick(설비명)` 이
-    콜백에서 돈다 — 층 상세 아래 호기 표를 그 설비 줄만으로 좁히는 데 쓴다. 도면 요소·빈 곳을
-    누르거나 Esc 로 풀면 `on_pick(None)` 이다. 옛 epoch 값은 버린다(`_dispatch_pick`). `picked` 는
-    파이썬이 쥔 고른 호기이고, 바뀐 회차에 브라우저가 도면의 고르기를 그것에 맞춘다(「층 전체
-    보기」로 풀면 도면의 고르기도 풀린다).
+    콜백에서 돈다 — 필요 단축 칸의 누른 호기 상세가 쓴다(`pick_to_server` 가 참인 동안만 보낸다).
+    도면 요소·빈 곳을 누르거나 Esc 로 풀면 `on_pick(None)` 이다. 옛 epoch 값은 버린다
+    (`_dispatch_pick`). `picked` 는 파이썬이 쥔 고른 호기이고, 바뀐 회차에 브라우저가 도면의
+    고르기를 그것에 맞춘다(필요 단축 칸의 표에서 호기를 고르면 도면도 그 호기를 고른다).
 
     기준일에 반입 전인 호기가 그날 보이는 다른 호기(반입됐고 아직 도면에서 빠지지 않은)와 넓이가
     0 보다 크게 겹치면 브라우저가 그 호기를 그리지 않고, 요약 끝에 「겹쳐 숨긴 반입 예정 n대」를
@@ -463,7 +536,12 @@ def render_space_layout_viewer(
 
     `legend` 는 왼쪽 칸 범례(`_clean_legend`), `pending_save` 는 위 「저장 안 한 배치」 상자가 선
     회차다 — 스크롤 고정 중에는 그 상자가 화면 밖이라 편집기가 한 줄로 알린다. 둘 다 epoch
-    밖이다."""
+    밖이다.
+
+    `sheet` 는 도면 위 「호기 정보」 창의 표(`_clean_sheet` — 고른 호기의 칸·칸 필터로 맞는 호기
+    목록과 도면 강조, 2026-11-03 사용자 요청)이고 epoch 밖이다. `pick_to_server` 가 거짓이면
+    브라우저가 호기 누르기를 `pick` 으로 보내지 않는다(누를 때마다 앱 전체가 돌지 않게 — 받는 쪽이
+    필요 단축 칸뿐이라 그 보기를 켠 동안만 참이다, 사양 D11)."""
     layer_fields: dict[str, Any] = {}
     if badges is not None:
         layer_fields["shortBadges"] = _clean_badges(badges)
@@ -495,6 +573,8 @@ def render_space_layout_viewer(
             "newUnit": {},
             "legend": _clean_legend(legend),
             "pendingSave": bool(pending_save),
+            "sheet": _clean_sheet(sheet),
+            "pickToServer": bool(pick_to_server),
             **layer_fields,
         },
         on_apply_change=lambda: None,
@@ -591,6 +671,7 @@ def render_fab_layout_viewer(
             "newUnit": {},
             "legend": None,
             "pendingSave": bool(pending_save),
+            "sheet": None,
         },
         on_apply_change=lambda: None,
         on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
@@ -640,6 +721,7 @@ def render_fab_layout_editor(
             "newUnit": {},
             "legend": None,
             "pendingSave": bool(pending_save),
+            "sheet": None,
         },
         on_apply_change=lambda: None,
         on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
@@ -669,6 +751,7 @@ def render_space_layout_editor(
     canvas_lock: str | None = None,
     legend: Mapping[str, Any] | None = None,
     pending_save: bool = False,
+    sheet: Mapping[str, Any] | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
@@ -680,7 +763,8 @@ def render_space_layout_editor(
     그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다. 기준일은 편집 중 고정이다 —
     도구 줄 제목 옆 칩 「기준일 YYYY-MM-DD 고정」 이 말한다(기준일이 바뀌면 편집 대상 호기가 바뀌어
     적용하지 않은 편집이 버려진다). `legend` 는 왼쪽 칸 범례(채우기 뜻만), `pending_save` 는 뷰어와
-    같다.
+    같다. `sheet` 는 뷰어와 같은 「호기 정보」 창 표다(이 층 편집본 행 + 편집기 호기 — 「도면」 칸은
+    브라우저가 쥔 편집으로 덮어 쓴다).
 
     적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels"}``.
 
@@ -741,6 +825,7 @@ def render_space_layout_editor(
             "canvasLock": canvas_lock or "",
             "legend": _clean_legend(legend),
             "pendingSave": bool(pending_save),
+            "sheet": _clean_sheet(sheet),
         },
         on_apply_change=lambda: None,
         width="stretch",

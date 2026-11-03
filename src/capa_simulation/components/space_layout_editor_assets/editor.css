@@ -663,3 +663,111 @@
 .sle.is-view .sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
 .sle-toolbar.is-fit6 .sle-summary { flex: 1 1 10em; min-width: 0; overflow: visible; white-space: normal; }
 .sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }
+
+/* ---- 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청) ----
+   도면 위에 겹친 창이다(편집기 몸 `.sle-body` 안에 묶임 — 자리·크기는 JS 가 `left`·`top`·`width`·`height` 로). 제목 줄을 끌어
+   옮기고 오른쪽 아래 손잡이로 크기를 바꾸며, 접으면 제목 줄만 남는다. 표는 머리 줄이 붙어 있고 창 안에서 굴러간다(바깥
+   페이지로 굴림이 새지 않게 `contain`). 칸 머리 ▾ 를 누르면 엑셀 자동 필터 꼴 펼침이 창 안에 뜬다. */
+.sle-sheet {
+  position: absolute; z-index: 4; display: flex; flex-direction: column; box-sizing: border-box; min-width: 0; overflow: hidden;
+  border: 1px solid var(--sle-border-strong); border-radius: 8px; background: var(--sle-surface); color: var(--sle-text);
+  box-shadow: 0 0 0 2px var(--sle-border); font-size: 0.8rem;
+}
+.sle-sheet[hidden] { display: none; }
+.sle-sheet.is-min { height: auto !important; }
+.sle-sheet.is-min .sle-sheet-main, .sle-sheet.is-min .sle-sheet-grip, .sle-sheet.is-min .sle-sheet-menu { display: none; }
+.sle-sheet-head {
+  display: flex; align-items: center; gap: 6px; flex: none; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px;
+  border-bottom: 1px solid var(--sle-border); cursor: move; touch-action: none; user-select: none;
+}
+.sle-sheet.is-min .sle-sheet-head { border-bottom: none; }
+.sle-sheet-title { font-weight: 700; white-space: nowrap; }
+.sle-sheet-tabs { display: inline-flex; gap: 2px; min-width: 0; }
+.sle button.sle-sheet-tab { height: 24px; padding: 0 8px; font-size: 12px; border-color: transparent; background: none; }
+.sle button.sle-sheet-tab[aria-selected="true"] { border-color: var(--sle-accent); color: var(--sle-accent); }
+.sle-sheet-tab b { font-variant-numeric: tabular-nums; }
+.sle-sheet-tab b:empty { display: none; }
+.sle button.sle-sheet-min, .sle button.sle-sheet-close { height: 24px; min-width: 24px; padding: 0 6px; font-size: 14px; }
+.sle-sheet-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.sle-sheet-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: none; padding: 5px 10px;
+  border-bottom: 1px solid var(--sle-border);
+}
+.sle-sheet[data-tab="picked"] .sle-sheet-chips, .sle-sheet[data-tab="picked"] .sle-sheet-clear,
+.sle-sheet[data-tab="picked"] .sle-sheet-hl { display: none; }
+.sle-sheet-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.sle-sheet-chips:empty { display: none; }
+.sle button.sle-sheet-chip {
+  height: 22px; padding: 0 8px; font-size: 11.5px; font-weight: 600; max-width: 22em; overflow: hidden; text-overflow: ellipsis;
+  border-color: var(--sle-filter-ring); color: var(--sle-text);
+}
+.sle button.sle-sheet-clear { height: 22px; padding: 0 8px; font-size: 11.5px; }
+.sle-sheet-hl { font-size: 0.78rem; }
+.sle-sheet-count { margin-left: auto; color: var(--sle-muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sle-sheet-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.sle-sheet-table { border-collapse: separate; border-spacing: 0; font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+.sle-sheet-table th, .sle-sheet-table td {
+  padding: 3px 8px; white-space: nowrap; text-align: left; border-bottom: 1px solid var(--sle-border);
+}
+.sle-sheet-table td { max-width: 18em; overflow: hidden; text-overflow: ellipsis; }
+.sle-sheet-table td.is-num { text-align: right; }
+.sle-sheet-table th {
+  position: sticky; top: 0; z-index: 1; background: var(--sle-surface); color: var(--sle-muted); font-weight: 700;
+  box-shadow: inset 0 -1px 0 var(--sle-border-strong);
+}
+.sle-sheet-table th.is-filtered { color: var(--sle-text); }
+.sle button.sle-sheet-funnel {
+  height: 18px; min-width: 18px; margin-left: 4px; padding: 0 3px; font-size: 10px; vertical-align: middle; border-color: transparent;
+  background: none; color: var(--sle-muted);
+}
+.sle button.sle-sheet-funnel.is-on { border-color: var(--sle-filter-ring); color: var(--sle-filter-ring); }
+.sle-sheet-table tbody tr { cursor: pointer; }
+.sle-sheet-table tbody tr:hover td { background: var(--sle-canvas); }
+.sle-sheet-table tbody tr:focus { outline: none; }
+.sle-sheet-table tbody tr:focus-visible td { box-shadow: inset 0 2px 0 var(--sle-accent), inset 0 -2px 0 var(--sle-accent); }
+.sle-sheet-table tbody tr.is-current td { background: var(--sle-canvas); font-weight: 700; }
+.sle-sheet-table tbody tr.is-current td:first-child { box-shadow: inset 3px 0 0 var(--sle-accent); }
+.sle-sheet-empty, .sle-sheet-cut { margin: 8px 10px; color: var(--sle-muted); font-size: 0.78rem; }
+.sle-sheet-empty[hidden], .sle-sheet-cut[hidden] { display: none; }
+.sle-sheet-note { flex: none; margin: 0; padding: 0 10px; color: var(--sle-muted); font-size: 0.76rem; line-height: 22px; }
+.sle-sheet-note:empty { display: none; }
+.sle-sheet-grip {
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--sle-border-strong) 50%, var(--sle-border-strong) 60%, transparent 60%,
+    transparent 72%, var(--sle-border-strong) 72%, var(--sle-border-strong) 82%, transparent 82%);
+}
+.sle-sheet.is-moving, .sle-sheet.is-sizing { user-select: none; }
+.sle-sheet-menu {
+  position: absolute; z-index: 3; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 8px;
+  overflow: auto; overscroll-behavior: contain; border: 1px solid var(--sle-border-strong); border-radius: 8px;
+  background: var(--sle-surface); box-shadow: 0 0 0 2px var(--sle-border); cursor: default;
+}
+.sle-sheet-menu[hidden] { display: none; }
+.sle-sheet-menu-head { font-size: 0.8rem; }
+.sle input.sle-sheet-menu-find { width: 100%; box-sizing: border-box; }
+.sle-sheet-menu-all, .sle-sheet-menu-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.sle-sheet-menu-all button, .sle-sheet-menu-actions button { height: 23px; padding: 0 8px; font-size: 12px; }
+.sle-sheet-menu-list { display: flex; flex-direction: column; gap: 2px; max-height: 14em; overflow: auto; overscroll-behavior: contain; }
+.sle-sheet-menu-item { display: flex; align-items: center; gap: 6px; padding: 1px 2px; cursor: pointer; }
+.sle-sheet-menu-item > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sle-sheet-menu-n { color: var(--sle-muted); font-variant-numeric: tabular-nums; }
+.sle-sheet-menu-range { display: flex; flex-direction: column; gap: 4px; }
+.sle-sheet-menu-range[hidden] { display: none; }
+.sle-sheet-menu-range .sle-field { display: grid; grid-template-columns: 2.6em minmax(0, 1fr); }
+.sle-sheet-menu-range input { width: 100%; min-width: 0; box-sizing: border-box; }
+.sle button.sle-sheet-toggle[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
+.sle-sheet-toggle svg { width: 13px; height: 13px; flex: none; }
+.sle button.sle-sheet-toggle[hidden] { display: none; }
+/* 필터에 맞는 호기 — 상자 밖 테(선택 후광보다 바깥, JS `FILTER_GAP_PX`), 맞지 않는 호기는 흐린다. 필요 단축 흐림(`is-dim`)과
+   함께면 두 흐림을 곱한다. 숨은 상자(기준일·겹침)는 테도 숨는다(visibility 를 따른다). */
+.sle-filter-ring { display: none; fill: none; pointer-events: none; }
+.sle-unit.is-filter-hit .sle-filter-ring {
+  display: inline; stroke: var(--sle-filter-ring); stroke-width: 2.5; vector-effect: non-scaling-stroke;
+}
+.sle-unit.is-filter-out { opacity: var(--sle-filter-dim-opacity); }
+.sle.is-view .sle-unit.is-dim.is-filter-out { opacity: calc(var(--sle-short-dim-opacity) * var(--sle-filter-dim-opacity)); }
+.sle-chip.is-filter-hit { box-shadow: inset 0 0 0 2px var(--sle-filter-ring); }
+.sle-tray-hits { color: var(--sle-filter-ring); font-weight: 700; white-space: nowrap; }
+.sle-tray-hits[hidden] { display: none; }
+@keyframes sle-chip-flash { 0%, 100% { background: transparent; } 30% { background: var(--sle-filter-ring); } }
+.sle-chip.is-flash { animation: sle-chip-flash 1.2s ease-out 1; }

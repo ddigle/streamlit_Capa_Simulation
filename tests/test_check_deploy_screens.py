@@ -2972,7 +2972,9 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
       아니다).
     - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로
       읽는다(7-18 은 하지 않지만 다른 절이 그 표를 부른다).
-    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
+    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있고, 그 줄과
+      아래 표를 도면 위 「호기 정보」 창으로 옮긴 것(2026-11-03)도 같은 줄이 말한다 — 앱에는 그
+      줄이 없다.
     - 7-23 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
       사내 이관 확인」 줄의 항목 수가 그 표의 수와 같다. 그 배포 뒤에 더한 항목은 TODO 「다음 배포 —
       화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다). 앞머리만 같아도
@@ -2994,10 +2996,11 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     headers_row = next(line for line in places.splitlines() if "| A `equipment_headers` |" in line)
     count = len(screens.EQUIPMENT_NEW_HEADERS)
     assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음 · 머리 " in headers_row
-    assert 'f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"' in _text(
-        PROJECT_ROOT / "app_pages" / "space_status.py"
-    )
+    page = _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+    assert "의 설비 마스터 {len(picked_rows)}줄" not in page and "sheet=_view_sheet(" in page
     assert "「… 의 **설비 마스터** n줄」" in places
+    row = next(line for line in places.splitlines() if "「… 의 **설비 마스터** n줄」" in line)
+    assert "「호기 정보」 창을 실은 배포부터는 아래 표와 표 위 줄이 없다" in row
 
     a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
     table_keys = re.findall(r"^\| `([a-z_]+)` \| ([^|]+) \|", a_table, re.MULTILINE)

@@ -305,6 +305,8 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     _ok(app.run())
     view = _views(editor_calls, "floor")[-1]
     assert view["asOfPinned"] == PINNED_NOTE and view["asOf"] == date.today().isoformat()
+    # 켠 동안만 호기 누르기를 보낸다(필요 단축 칸의 누른 호기 상세 — 사양 D11).
+    assert view["pickToServer"] is True
     marked = [item for item in view["items"] if item.get("layer")]
     badges = view["shortBadges"]
     assert marked and badges
@@ -333,6 +335,7 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     _ok(app.run())
     back = _views(editor_calls, "floor")[-1]
     assert back["asOf"] == other_day.isoformat() and "asOfPinned" not in back
+    assert back["pickToServer"] is False
     assert "shortBadges" not in back and not [item for item in back["items"] if "layer" in item]
     assert back["epoch"] == epoch
 
