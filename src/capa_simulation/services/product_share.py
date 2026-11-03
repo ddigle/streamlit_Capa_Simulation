@@ -20,6 +20,8 @@ Past Data 를 켜고 꺼도 계산 구간 제품의 색이 앞뒤로 밀리지 �
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
+from decimal import ROUND_HALF_UP, Decimal
+from math import isfinite
 from typing import NamedTuple
 
 import pandas as pd
@@ -48,6 +50,11 @@ PRODUCT_VOLUME_COLUMNS = ("생산계획년월", "제품정보", "Wafer 부하량
 # 제품을 `기타` 하나로 접어 **이름 있는 칸을 하나 줄인다**(5 + 기타).
 PRODUCT_SHARE_SLOT_COUNT = 6
 OTHER_PRODUCT_LABEL = "기타"
+# 도넛 조각 안에 비중(%)을 적는 경계(2026-11-04 사용자 검수 home-28 — 「비중이 20% 가 넘는 영역은
+# 퍼센트 표기」). 적는 글자(사사오입 정수 %)가 이 값을 넘는 조각만 적는다 — 글자로 「20%」 인 조각은
+# 적지 않아 보이는 숫자가 늘 경계를 넘는다. 그보다 작은 조각은 지름 80px 도넛의 고리(약 17px)에
+# 글자가 들어가지 않고, 정확한 비중은 hover 가 적는다.
+SHARE_LABEL_MIN_PERCENT = 20
 
 
 class ProductSlots(NamedTuple):
@@ -83,6 +90,28 @@ class ProductShareCell(NamedTuple):
     total: float
     slices: tuple[ProductShareSlice, ...]
     past: bool = False
+
+
+def share_percent(share: float) -> int:
+    """비중(0.355)을 사사오입 정수 퍼센트(36)로 — 판정 기준 글자와 같은 반 올림(`threshold_label`).
+
+    파이썬 `round`·서식 `:.0%` 는 반을 짝수 쪽으로 가른다(0.125 → 12%). `Decimal(repr())` 로 사람이
+    읽는 십진 값 그대로 올린다. 값이 아니면(NaN·무한) 0 이다 — 그리는 화면이 조각 하나로 멈추지
+    않는다.
+    """
+    value = float(share)
+    if not isfinite(value):
+        return 0
+    return int((Decimal(repr(value)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def share_label(share: float) -> str:
+    """도넛 조각 안 글자 — 사사오입 정수 % 가 경계(`SHARE_LABEL_MIN_PERCENT`)를 넘으면 「36%」.
+
+    넘지 않으면 빈 글이다(그 조각에는 글자를 적지 않는다).
+    """
+    percent = share_percent(share)
+    return f"{percent}%" if percent > SHARE_LABEL_MIN_PERCENT else ""
 
 
 def empty_product_volume() -> pd.DataFrame:

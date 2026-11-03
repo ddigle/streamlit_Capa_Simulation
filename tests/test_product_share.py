@@ -30,12 +30,15 @@ from capa_simulation.services.display_order_scopes import PAGE_PLAN, TAB_PKG_PLA
 from capa_simulation.services.product_share import (
     OTHER_PRODUCT_LABEL,
     PRODUCT_SHARE_SLOT_COUNT,
+    SHARE_LABEL_MIN_PERCENT,
     ProductShareCell,
     assign_product_slots,
     build_product_share_cells,
     build_product_volume,
     combine_product_volume,
     past_product_volume,
+    share_label,
+    share_percent,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
@@ -284,7 +287,8 @@ def test_every_donut_gets_the_same_square_so_the_radius_is_constant() -> None:
         assert y1 <= LOB_PRODUCT_SHARE_TOP_Y and y0 >= 0
         # 조각은 칸 배정 차례 그대로다 — Plotly 기본값은 값 순으로 다시 세운다.
         assert pie.sort is False and pie.direction == "clockwise"
-        assert pie.textinfo == "none"
+        # 조각 안 글자는 Plotly 의 `percent` 가 아니라 실제 비중으로 지은 글자다(`share_label`).
+        assert pie.textinfo == "text" and pie.textposition == "inside"
     expected = tokens.MONTH_COLUMN_WIDTH_PX - 2 * LOB_PRODUCT_SHARE_INSET_PX
     assert sizes == {(expected, expected)}
     # 칸은 정사각형이다 — 행 높이가 월 칸 폭과 같다.
@@ -559,3 +563,68 @@ def test_past_pkg_cells_are_marked_and_never_summed_with_calculated_months() -> 
     hovers = {pie.name: pie.hovertext[0] for pie in _pies(month_figure)}
     assert "과거 입력값" in hovers["26.01"]
     assert "과거 입력값" not in hovers["26.07"]
+
+
+def test_only_slices_over_twenty_percent_carry_a_whole_percent_label() -> None:
+    """조각 안 % 글자는 사사오입 정수 % 가 20 을 넘는 조각만이다(2026-11-04 사용자 검수
+    home-28). 반은 올린다 — 파이썬 `round` 의 짝수 쪽 가르기가 아니다(0.125 → 13%, 0.205 → 21%)."""
+    assert SHARE_LABEL_MIN_PERCENT == 20
+    assert share_percent(0.125) == 13
+    assert share_percent(0.355) == 36
+    assert share_percent(float("nan")) == 0
+    assert share_label(0.2049) == ""
+    assert share_label(0.205) == "21%"
+    assert share_label(0.2) == ""
+    assert share_label(1.0) == "100%"
+
+
+def test_each_donut_labels_its_big_slices_with_the_real_share_in_a_readable_ink() -> None:
+    """도넛 글자는 그리는 크기(작은 조각을 키운 값)가 아니라 실제 비중이고, 글자색은 그 조각색
+    짝 토큰이다(`PRODUCT_SHARE_LABEL_INKS` · `기타` 는 `PRODUCT_SHARE_OTHER_INK`)."""
+    volume = _volume()
+    labels = ["26.09", "26.10"]
+    cells = build_product_share_cells(
+        volume, "PKG", assign_product_slots(volume), month_labels=labels
+    )
+    _, month_figure = _figures(cells, labels, basis="PKG")
+    pies = _pies(month_figure)
+    assert pies
+    for pie, label in zip(pies, labels, strict=True):
+        cell = cells[label]
+        assert list(pie.text) == [share_label(piece.share) for piece in cell.slices]
+        expected_inks = [
+            tokens.PRODUCT_SHARE_OTHER_INK
+            if piece.slot is None
+            else tokens.PRODUCT_SHARE_LABEL_INKS[piece.slot]
+            for piece in cell.slices
+        ]
+        assert list(pie.textfont.color) == expected_inks
+        assert any(pie.text), "큰 조각이 하나는 있어야 이 시험이 글자를 본다."
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_slice_label_inks_read_on_every_product_color(mode: str) -> None:
+    """조각 안 글자색은 제품색마다 4.5:1 이상이다(밝게 · 어둡게 두 팔레트 모두)."""
+    from capa_simulation.design.tokens import palette_value
+
+    def luminance(color: str) -> float:
+        channels = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    def contrast(one: str, other: str) -> float:
+        high, low = sorted((luminance(one), luminance(other)), reverse=True)
+        return (high + 0.05) / (low + 0.05)
+
+    colors = palette_value(mode, "PRODUCT_SHARE_COLORS")
+    inks = palette_value(mode, "PRODUCT_SHARE_LABEL_INKS")
+    assert len(inks) == len(colors)
+    pairs = [
+        *zip(colors, inks, strict=True),
+        (
+            palette_value(mode, "PRODUCT_SHARE_OTHER"),
+            palette_value(mode, "PRODUCT_SHARE_OTHER_INK"),
+        ),
+    ]
+    for color, ink in pairs:
+        assert contrast(color, ink) >= 4.5, (mode, color, ink)

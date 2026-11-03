@@ -82,6 +82,7 @@ from capa_simulation.services.plan_gap import (
 from capa_simulation.services.product_share import (
     PRODUCT_SHARE_BASIS_WAFER,
     ProductShareCell,
+    share_label,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.top5_band import (
@@ -100,6 +101,9 @@ LOB_BAR_LABEL_FONT_SIZE_PX = 22
 PRODUCT_SHARE_TITLE_FONT_SIZE_PX = 20
 PRODUCT_SHARE_UNIT_FONT_SIZE_PX = 14
 PRODUCT_SHARE_LEGEND_FONT_SIZE_PX = 13
+# 조각 안 비중 글자(20% 넘는 조각만 — `product_share.share_label`). 고리 두께(약 17px) 안에 「100%」
+# 가 가로로 들도록 고른 크기다. 들지 않으면 Plotly 가 그 조각 글자만 줄인다.
+PRODUCT_SHARE_SLICE_FONT_SIZE_PX = 11
 _PRODUCT_SHARE_TITLE_LINE_PX = 24
 _PRODUCT_SHARE_LEGEND_GAP_PX = 6
 # 줄 간격. 세 줄까지는 18px, 네 줄이면 16px 로 좁혀 100px 칸 안에 넣는다.
@@ -174,6 +178,13 @@ def _product_share_hover(cell: ProductShareCell, basis: str) -> list[str]:
     return texts
 
 
+def _label_ink(slot: int | None) -> str:
+    """조각 안 비중 글자색 — 그 조각 색 위에서 대비가 큰 쪽(`PRODUCT_SHARE_LABEL_INKS` 토큰)."""
+    if slot is None:
+        return tokens.PRODUCT_SHARE_OTHER_INK
+    return str(tokens.PRODUCT_SHARE_LABEL_INKS[slot])
+
+
 def _drawn_values(cell: ProductShareCell) -> list[float]:
     """그릴 조각 크기. 0 이 아닌 조각은 **최소 `LOB_PRODUCT_SHARE_MIN_DRAWN_SHARE`** 로 그린다.
 
@@ -196,6 +207,11 @@ def product_share_traces(
 
     조각 차례는 칸 배정 차례 그대로다(`sort=False`). Plotly 기본값은 값이 큰 순으로 다시
     세워, 달마다 같은 제품이 다른 자리에 서고 색만 같은 도넛이 된다. 12시에서 시계 방향이다.
+
+    비중이 20% 를 넘는 조각은 조각 안에 사사오입 정수 % 를 가로로 적는다(2026-11-04 사용자 검수
+    home-28 — `product_share.share_label`). 글자는 Plotly 의 `percent` 가 아니라 실제
+    비중(`share`)이다 — 그리는 크기(`_drawn_values`)는 아주 작은 조각을 키운 값이라 합이 1 이
+    아니다. 글자색은 조각색 위 대비가 큰 쪽이다(`_label_ink`).
     """
     count = max(len(month_labels), 1)
     inset_x = LOB_PRODUCT_SHARE_INSET_PX / (count * tokens.MONTH_COLUMN_WIDTH_PX)
@@ -218,7 +234,15 @@ def product_share_traces(
                 direction="clockwise",
                 rotation=0,
                 hole=LOB_PRODUCT_SHARE_HOLE,
-                textinfo="none",
+                text=[share_label(piece.share) for piece in cell.slices],
+                textinfo="text",
+                textposition="inside",
+                insidetextorientation="auto",
+                textfont={
+                    "size": PRODUCT_SHARE_SLICE_FONT_SIZE_PX,
+                    "family": tokens.FONT_FAMILY,
+                    "color": [_label_ink(piece.slot) for piece in cell.slices],
+                },
                 marker={
                     "colors": [_product_color(piece.slot) for piece in cell.slices],
                     "line": {"color": gap_color, "width": LOB_PRODUCT_SHARE_GAP_PX},
