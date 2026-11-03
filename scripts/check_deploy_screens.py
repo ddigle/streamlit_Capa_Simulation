@@ -188,8 +188,8 @@ INTRO_HOST_ID: Final = "capa-intro-host"
 SUMMARY_LABEL_ID: Final = "capa-brand-label"
 EQUIPMENT_PAGE: Final = "available_equipment_status"
 SPACE_PAGE: Final = "space_status"
-# `Space 현황` 경로 줄 첫 칸 `S.PKG FAB 전체` 단추의 위젯 키. FAB 전체면 주 단추, 층을 열었으면 보조
-# 단추이고 누르면 FAB 로 돌아간다(콜백 — 세션의 연 층을 지운다).
+# `Space 현황` 사이드바 「Space 도면」 상자 자리 줄 첫 칸 `FAB 전체` 단추(옛 경로 줄)의 위젯 키. FAB
+# 전체면 주 단추, 층을 열었으면 보조 단추이고 누르면 FAB 로 돌아간다(콜백 — 세션의 연 층을 지운다).
 SPACE_FAB_CRUMB_KEY: Final = "space_status_fab_breadcrumb"
 # 설비 마스터 표(가용설비 현황 탭 ① — 개편 B1)의 「전체 39칸」 머리 칸 — 38열 개편(설비 마이그레이션
 # 0023)의 새 이름 일곱과 설비 시나리오(0027)의 39번째 칸 「시나리오 메모」, 그리고 지운 컬럼 하나.
@@ -1632,8 +1632,8 @@ class Screen:
         """`Space 현황` 을 FAB 전체(층 목록 표가 서는 화면)로 연다. 연 층은 위젯이 아니라 세션
         키라 다른 페이지를 거쳐 다시 와도 그 층 상세가 선다 — `space_drawer` 가 연 층에서
         `space_fader` 가 층 목록 표를 기다리다 첫 판 · 다시 돈 판 모두 `TimeoutError` 였다(사내
-        리뷰 202610200720 발견 1). 경로 줄 `S.PKG FAB 전체` 가 보조 단추면(층이 열려 있다) 눌러
-        FAB 로 돌아간다."""
+        리뷰 202610200720 발견 1). 사이드바 「Space 도면」 상자의 `FAB 전체`(옛 경로 줄 `S.PKG FAB
+        전체`, key 그대로)가 보조 단추면(층이 열려 있다) 눌러 FAB 로 돌아간다."""
         self.open_page(SPACE_PAGE)
         crumb = self.page.locator(f".st-key-{SPACE_FAB_CRUMB_KEY} button").first
         crumb.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
@@ -2610,10 +2610,14 @@ def summarize_drawer_counts(
 
 
 def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
-    tab = screen.page.locator(".sle-drawer-tab").first
-    tab.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
-    tab.click()
+    # 미배치 칸은 도면 오른쪽 옆 칸이다(2026-11-03 — 펼친 채가 처음 상태). 접혀 있으면(그 브라우저가
+    # 접어 둔 기억·좁은 창의 겹침 서랍) 접힌 띠를 눌러 편다.
     box = screen.page.locator(".sle-tray").first
+    box.wait_for(state="attached", timeout=ACTION_TIMEOUT_MS)
+    if not box.is_visible():
+        tab = screen.page.locator(".sle-drawer-tab").first
+        tab.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+        tab.click()
     tray = screen.wait_for(lambda: box.evaluate(_TRAY_JS), timeout=15)
     total_match = re.fullmatch(r"(\d+)대", str(tray["count"]).strip())
     total = int(total_match.group(1)) if total_match else -1
@@ -2664,6 +2668,8 @@ _FADER_TODAY_JS = """(fader) => {
   return !!rel && rel.classList.contains("is-today");
 }"""
 _LEGEND_DATE = re.compile(r"기준 (\d{4}-\d{2}-\d{2})")
+# 층 상세 범례 칸(편집기 왼쪽 칸 「범례」 — 레이아웃 위 머리 줄을 걷고 옮겼다, 2026-11-03).
+LEGEND_SELECTOR: Final = ".sle-legend"
 
 
 def summarize_space_fader(
@@ -2686,8 +2692,9 @@ def summarize_space_fader(
 
 def check_space_fader(screen: Screen) -> str:
     """Space 기준일 페이더 — 배치가 가장 많은 층을 열어 페이더에 초점을 두고 PageUp(+1개월) 하면
-    호기 상자 class(반입 전·반출/이설 예정·숨김 …)가 바뀐 수, 키를 멈춘 뒤 머리 줄 범례의 「기준」
-    날짜가 바뀌었는가, 「오늘」 단추로 오늘에 돌아오는가. 쓰지 않는다(기준일은 세션 값이다)."""
+    호기 상자 class(반입 전·반출/이설 예정·숨김 …)가 바뀐 수, 키를 멈춘 뒤 편집기 왼쪽 칸 범례의
+    「기준」 날짜가 바뀌었는가, 「오늘」 단추로 오늘에 돌아오는가. 쓰지 않는다(기준일은 세션
+    값이다)."""
     screen.step("페이지 열기")
     screen.open_space_overview()
     screen.step("층 목록")
@@ -2714,8 +2721,14 @@ def check_space_fader(screen: Screen) -> str:
         return f"배치 최다 층 {placed:g}대 · 페이더 없음"
     today = screen.page.locator(".sle-fader-today").first
 
+    # 범례는 편집기 왼쪽 칸 「범례」 다(그림자 DOM — 로케이터가 뚫는다, 2026-11-03). 끝 줄이 「기준
+    # YYYY-MM-DD」.
+    legend_box = screen.page.locator(LEGEND_SELECTOR).first
+
     def legend() -> str | None:
-        found = _LEGEND_DATE.search(screen.main_text())
+        if not legend_box.count():
+            return None
+        found = _LEGEND_DATE.search(str(legend_box.text_content() or ""))
         return found.group(1) if found else None
 
     def at_today() -> bool:
@@ -2761,7 +2774,9 @@ def check_space_fader(screen: Screen) -> str:
 
 
 def _close_drawer(screen: Screen) -> None:
-    """검색 칸·서랍을 비우고 `배치 편집` 을 끈다. 놓은 호기가 없으니 `처음 상태로` 는 필요 없다."""
+    """검색 칸을 비우고 `배치 편집` 을 끈다. 놓은 호기가 없으니 `처음 상태로` 는 필요 없다. 미배치
+    칸은 접지 않는다 — 도면 옆 고정 칸이라 펼친 채가 처음 상태다(접으면 그 브라우저가 접힘을
+    기억한다)."""
     try:
         box = screen.page.locator(".sle-tray")
         if box.count() == 0:
@@ -2769,8 +2784,6 @@ def _close_drawer(screen: Screen) -> None:
         current = box.first.evaluate(_TRAY_STATE_JS)
         if current["query"]:
             screen.page.locator(".sle-tray-search").first.press("Escape")
-        if current["open"]:
-            screen.page.locator(".sle-drawer-close").first.click()
     finally:
         screen.switch("배치 편집", False)
 
@@ -5226,6 +5239,21 @@ def summarize_space_zone_fields(
     )
 
 
+# 편집기 왼쪽 도구 칸의 접힌 띠와 「선택」 묶음(그림자 DOM — 로케이터가 뚫는다).
+LEFT_STRIP_SELECTOR: Final = ".sle-side.is-left .sle-side-strip"
+INSPECTOR_SECTION_SELECTOR: Final = '.sle-sec[data-sec="inspector"]'
+
+
+def _open_inspector(screen: Screen) -> None:
+    """왼쪽 도구 칸이 접혔으면 펴고, 「선택」 묶음이 접혔으면 편다(값은 바꾸지 않는다)."""
+    strip = screen.page.locator(LEFT_STRIP_SELECTOR).first
+    if strip.count() and strip.is_visible():
+        strip.click()
+    section = screen.page.locator(INSPECTOR_SECTION_SELECTOR).first
+    if section.count() and "is-folded" in str(section.get_attribute("class") or ""):
+        section.locator(".sle-sec-head").first.click()
+
+
 def check_space_zone_fields(screen: Screen) -> str:
     """Space 층 상세 배치 편집기에서 영역 요소 하나를 골라 선택 칸에 `테두리` · `글자 정렬` 이
     서는지. 층 목록 표의 `배치대수` 차례로 층을 열어(상한 `ZONE_FLOOR_LIMIT`) 영역이 선 첫 층에서
@@ -5277,6 +5305,10 @@ def check_space_zone_fields(screen: Screen) -> str:
         return summarize_space_zone_fields(len(floors), found_at, None, True)
     fields: list[bool] = []
     try:
+        # 선택 칸은 편집기 왼쪽 도구 칸 「선택」 묶음이다(2026-11-03). 칸·묶음이 접혀 있으면(그
+        # 브라우저의 기억) 편다 — 펴지 않으면 칸이 보이지 않아 「없음」 으로 읽힌다.
+        screen.step("왼쪽 칸 펴기")
+        _open_inspector(screen)
         screen.step("영역 고르기")
         tag = screen.page.locator(ZONE_TAG_SELECTOR).first
         tag.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)

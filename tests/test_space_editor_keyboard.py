@@ -100,7 +100,7 @@ def test_tray_chip_names_are_buttons_where_enter_places_and_space_picks() -> Non
     assert place.index("if (!onCanvas(lead) && !list.some(onCanvas)) return") < place.index(
         "group.focus({ preventScroll: true })"
     )
-    hint = HTML[HTML.index('<p class="sle-tray-hint">') :]
+    hint = HTML[HTML.index('<p class="sle-tray-hint"') :]
     assert "<b>Enter</b>" in hint and "<b>Space</b>" in hint
 
 

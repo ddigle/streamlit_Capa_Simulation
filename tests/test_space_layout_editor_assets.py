@@ -75,31 +75,37 @@ def test_resizing_stays_in_the_browser() -> None:
     assert sorted(re.findall(r"setStateValue\('([A-Za-z]+)'", JS)) == ["asOf", "asOf"]
     assert JS.count("setStateValue(") == 2
     assert sorted(re.findall(r"setTriggerValue\('([a-z]+)'", JS)) == ["apply", "navigate", "pick"]
-    # 관찰자는 한 번만 만들고, 실행마다 새로 정의되는 S.onResize 를 부른다. 내릴 때 끊는다.
-    assert JS.count("new ResizeObserver(") == 1
+    # 무대 관찰자는 한 번만 만들고, 실행마다 새로 정의되는 S.onResize 를 부른다. 둘째 관찰자는
+    # 스크롤 고정 중 본문 내용 상자를 본다(켤 때 만들고 끌 때 끊는다). 내릴 때 둘 다 끊는다.
+    assert JS.count("new ResizeObserver(") == 2
     assert "if (!S.ro &&" in JS and "S.onResize = " in JS
     assert "S.ro.disconnect()" in JS
+    assert "S.mainRo = new ResizeObserver(" in JS and JS.count("S.mainRo.disconnect()") == 2
 
 
 def test_a_plain_wheel_scrolls_the_page_even_when_zoomed() -> None:
     """휠은 Ctrl/Cmd 와 함께일 때만 확대이고, 맨 휠은 확대 중에도 도면을 옮기지 않는다.
 
     확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면 도면 위아래 단추로 가는 스크롤이
-    꼬였다(2026-10-10 사용자 요청). 맨 휠이 도면을 옮기는 것은 편집기에서 호기·요소를 끌어
-    옮기거나 크기를 바꾸는 동안뿐이다."""
+    꼬였다(2026-10-10 사용자 요청). 맨 휠이 도면을 옮기는 것은 편집기에서 호기·요소를 끌어 옮기거나
+    크기를 바꾸는 동안뿐이다. 예외는 스크롤 고정(도구 줄 「고정」 — 2026-11-03 사용자 요청)이다 —
+    페이지가 굴러가지 않으니 맨 휠이 도면을 옮기고 늘 막는다."""
     assert JS.count("onwheel") == 1
     start = JS.index("svg.onwheel = (event) => {")
     body = JS[start : JS.index("\n  }\n", start)]
     zoom = body.index("if (event.ctrlKey || event.metaKey) {")
+    lock = body.index("if (S.lock) {")
     guard = body.index(
         "const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize' "
         "|| S.drag.mode === 'range')"
     )
-    pan = body.index("panBy(")
+    pan = body.index("panBy(", guard)
 
-    assert zoom < guard < pan
+    assert zoom < lock < guard < pan
+    locked = body[lock:guard]
+    assert "event.preventDefault()" in locked and "panBy(" in locked and "return" in locked
     assert "if (!placing || S.view.z <= 1) return" in body[guard:pan]
-    assert body.count("panBy(") == 1
+    assert body.count("panBy(") == 2
 
 
 def test_every_browser_storage_access_is_guarded() -> None:
@@ -112,16 +118,36 @@ def test_every_browser_storage_access_is_guarded() -> None:
         assert any(line.strip() == "try {" for line in lines[max(0, n - 3) : n]), lines[n]
 
 
-def test_the_tray_is_a_drawer_inside_the_stage() -> None:
-    """편집 모드의 트레이는 무대 오른쪽의 접히는 서랍이다 — 보기·편집에서 도면 상자가 같다."""
+def test_the_tray_is_a_right_panel_beside_the_stage() -> None:
+    """편집 모드의 미배치 칸은 무대 **오른쪽 옆** 칸이다(2026-11-03 사용자 요청 — 겹쳐 열린 서랍이
+    오른쪽 248px 도면을 가렸다). 왼쪽 도구 칸 · 칸막이 · 무대 · 칸막이 · 미배치 칸이 한 가로
+    칸(grid)이고 칸마다 자리를 박아 숨은 칸이 있어도 밀리지 않는다. 좁은 편집기(900px 아래)에서만 두
+    칸이 무대 위 겹침 서랍이다."""
+    body = HTML.index('<div class="sle-body">')
+    left = HTML.index('<aside class="sle-side is-left"')
+    split_left = HTML.index('class="sle-split is-left"')
     stage = HTML.index('<div class="sle-stage">')
-    drawer = HTML.index('class="sle-drawer')
-    tray = HTML.index('class="sle-tray"')
+    split_right = HTML.index('class="sle-split is-right')
+    right = HTML.index('<aside class="sle-side is-right')
+    tray = HTML.index('class="sle-side-box sle-tray"')
     handle = HTML.index('class="sle-resize"')
 
-    assert stage < drawer < tray < handle
-    assert 'aria-expanded="false"' in HTML[drawer:tray]
-    assert "position: absolute" in _rule(".sle-drawer")
+    assert body < left < split_left < stage < split_right < right < tray < handle
+    assert 'aria-expanded="false"' in HTML[right:tray]
+    assert "display: grid" in _rule(".sle-body")
+    for selector, column in (
+        (".sle-side.is-left", 1),
+        (".sle-split.is-left", 2),
+        (".sle-split.is-right", 4),
+        (".sle-side.is-right", 5),
+    ):
+        assert f"grid-column: {column}" in _rule(selector), selector
+    assert "grid-column: 3" in _rule(".sle-stage")
+    # 칸 상자는 칸을 채우고(내용 높이가 줄 높이를 늘리지 않게) 머리 아래가 굴러간다.
+    assert "position: absolute" in _rule(".sle-side-box") and "inset: 0" in _rule(".sle-side-box")
+    assert "overscroll-behavior: contain" in _rule(".sle-side-scroll, .sle-tray-scroll")
+    narrow = _rule(".sle.is-narrow .sle-body > .sle-side")
+    assert "position: absolute" in narrow and "var(--side-panel-w" in narrow
 
 
 def test_buttons_follow_the_app_button_grain() -> None:
@@ -141,37 +167,40 @@ def test_buttons_follow_the_app_button_grain() -> None:
     assert "position: sticky" in apply and "right: 0" in apply
 
 
-def test_the_inspector_keeps_its_size_whatever_is_selected() -> None:
-    """고를 때 선택 칸 크기가 바뀌면 칸 줄 높이가 달라져 도면이 위아래로 튄다.
-
-    번갈아 보이는 칸은 한 칸(`.sle-inspector-ext`)에 겹쳐 두고, 숨길 때도 자리를 남긴다."""
+def test_the_inspector_lives_in_the_left_panel_and_hides_unused_fields() -> None:
+    """선택 칸은 왼쪽 도구 칸 「선택」 묶음이다(2026-11-03 사용자 요청). 옛 자리는 도면 **위**라
+    칸이 생기고 사라질 때 도면이 튀어 숨긴 칸도 자리를 남겼다(visibility) — 옆 칸에서는 도면이
+    움직이지 않으므로 자리 없이 숨긴다(display none). 번갈아 보이는 칸은 한 칸(`.sle-inspector-ext`)
+    안 차례다."""
+    left = HTML.index('<aside class="sle-side is-left"')
+    stage = HTML.index('<div class="sle-stage">')
     ext = HTML.index('class="sle-inspector-ext"')
+    assert left < HTML.index('data-sec="inspector"') < ext < stage
     assert ext < HTML.index('class="sle-field sle-sendto"') < HTML.index('class="sle-markprops"')
     hidden = _rule(
-        ".sle-markprops[hidden], .sle-sendto[hidden], "
-        ".sle-zone-only[hidden], .sle-mark-rotate[hidden], .sle-module-tile[hidden]"
+        ".sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], "
+        ".sle-mark-rotate[hidden], .sle-module-tile[hidden],\n.sle-group-name[hidden], "
+        ".sle-block-props[hidden]"
     )
-    # 모듈 묶음의 「범위에 맞춰 n등분」 단추도 층 보내기 칸 안에서 자리를 남긴 채 숨는다.
     sendto = HTML[HTML.index('class="sle-field sle-sendto"') : HTML.index('class="sle-markprops"')]
     assert 'class="sle-module-tile" hidden' in sendto
-    assert "visibility: hidden" in hidden and "display: none" not in hidden
-    # 이름 칸은 글자 길이와 무관한 정한 폭으로 줄을 나눈다.
-    title = _rule(".sle-inspector > .sle-panel-title")
-    assert re.search(r"flex: 1 1 \d+em", title) and "text-overflow: ellipsis" in title
+    assert "display: none" in hidden and "visibility: hidden" not in hidden
+    # 이름 줄은 칸 폭 안에서 줄을 바꾼다(긴 모듈 묶음 안내도 다 읽힌다).
+    assert "overflow-wrap: anywhere" in _rule(".sle-inspector-title")
 
 
-def test_the_inspector_wraps_inside_its_panel_on_a_narrow_window() -> None:
-    """390px 창에서 층 배치 편집을 켜면 층 보내기 칸(이름·보낼 층·보내기, 숨은 「범위에 맞춰
-    n등분」·「Main 설비명」)이 한 줄로 553px 을 차지해 선택 칸 밖으로 넘치고 본문이 596px 로
-    넓어졌다(2026-10-26 E2E). 겹친 칸은 선택 칸 폭을 넘지 않고, 층 보내기 칸은 그 안에서 줄을
-    바꾼다."""
-    ext = _rule(".sle-inspector-ext, .sle-markprops-kind")
-    assert "display: inline-grid" in ext and "max-width: 100%" in ext
-    sendto = _rule(".sle-sendto")
-    assert "flex-wrap: wrap" in sendto
-    # 다른 번갈아 보이는 칸(도면 요소·영역·층 블록 속성)은 이미 줄을 바꾼다.
-    for selector in (".sle-markprops", ".sle-zone-props", ".sle-block-props"):
-        assert "flex-wrap: wrap" in _rule(selector), selector
+def test_the_inspector_stacks_its_fields_inside_the_panel_width() -> None:
+    """390px 창에서 층 보내기 칸이 한 줄로 553px 을 차지해 선택 칸 밖으로 넘치고 본문이 596px 로
+    넓어졌던 일 (2026-10-26 E2E)이 다시 없게 — 왼쪽 칸 안 칸들은 세로로 쌓이고(이름표 | 칸 두 열)
+    글·고르기 칸은 칸 폭을 채운다(넘치지 않는다)."""
+    stacked = _rule(
+        ".sle-inspector-ext, .sle-markprops, .sle-markprops-kind, .sle-zone-props, "
+        ".sle-block-props, .sle-sendto"
+    )
+    assert "flex-direction: column" in stacked and "min-width: 0" in stacked
+    fill = _rule('.sle-inspector-ext input[type="text"], .sle-inspector-ext select')
+    assert "width: 100%" in fill and "min-width: 0" in fill
+    assert "repeat(2, minmax(0, 1fr))" in _rule(".sle-fields")
 
 
 def test_only_a_floor_block_in_the_fab_viewer_opens_a_floor() -> None:
@@ -202,11 +231,10 @@ def test_the_fab_editor_shows_only_fab_tools() -> None:
     for kind in ("shutter", "door", "column"):
         assert f'class="sle-floor-only" data-kind="{kind}"' in HTML
     assert 'class="sle-fab-only" data-kind="block"' in HTML
-    assert 'class="sle-drawer sle-edit-only sle-floor-only"' in HTML
+    assert '<aside class="sle-side is-right sle-edit-only sle-floor-only"' in HTML
+    assert 'class="sle-split is-right sle-edit-only sle-floor-only"' in HTML
     props = HTML[HTML.index('class="sle-block-props') :]
     assert props.index('class="sle-block-link"') < props.index('class="sle-block-open"')
-    # 블록 속성은 영역 속성·돌리기와 한 칸에 겹쳐 숨을 때도 자리를 남긴다(고를 때 도면이 튀지 않게).
-    assert "visibility: hidden" in _rule(".sle-block-props[hidden]")
     assert HTML.index('class="sle-markprops-kind"') < HTML.index('class="sle-block-props')
 
 
@@ -387,16 +415,21 @@ def test_a_narrow_floor_viewer_moves_its_summary_to_a_second_line() -> None:
 
 
 def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:
-    """놓아도 서랍은 열어 둔다(이어서 놓는다). 놓은 호기가 서랍 아래면 화면을 옮겨 보이고, 서랍이
-    열려 있는 동안만 서랍 폭만큼 더 옮길 수 있다 — 접으면 제자리로 돌아온다."""
+    """놓아도 칸은 열어 둔다(이어서 놓는다). 넓은 화면의 오른쪽 칸은 도면을 덮지 않아 서랍
+    몫(`trayReserve`)· 꺼내 보이기(`revealFromTray`)가 없고, 좁은 화면 겹침 서랍에서만 놓은 호기가
+    서랍 아래면 화면을 옮겨 보이고 서랍이 열려 있는 동안만 서랍 폭만큼 더 옮길 수 있다 — 접으면
+    제자리로 돌아온다."""
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
     assert "setDrawer(false)" not in place
     assert "revealFromTray(shown)" in place
-    assert "function trayReserve()" in JS
+    reserve = JS[JS.index("function trayReserve()") : JS.index("function clampView(")]
+    assert "!host.classList.contains('is-narrow')" in reserve
+    reveal = JS[JS.index("function revealFromTray(") : JS.index("function clearSelection(")]
+    assert "!host.classList.contains('is-narrow')" in reveal
     clamp = JS[JS.index("function clampView(") : JS.index("function applyView(")]
     assert "trayReserve()" in clamp and "center + reserve" in clamp
-    set_drawer = JS[JS.index("function setDrawer(") : JS.index("function revealFromTray(")]
-    assert "applyView(" in set_drawer
+    opened = JS[JS.index("function setPanelOpen(") : JS.index("function layoutPanels(")]
+    assert "applyView(" in opened
     assert "서랍이 접힙니다" not in HTML
 
 
@@ -621,10 +654,11 @@ def test_dropping_from_the_tray_keeps_the_tray_scroll_position() -> None:
     되돌린다.
     """
     body = JS[JS.index("function renderItems()") : JS.index("function markSelection()")]
-    assert body.index("const trayScroll = trayBox.scrollTop") < body.index(
+    assert body.index("const trayTop = trayScroll.scrollTop") < body.index(
         "trayList.replaceChildren()"
     )
-    assert body.index("trayList.append(") < body.index("trayBox.scrollTop = trayScroll")
+    assert body.index("trayList.append(") < body.index("trayScroll.scrollTop = trayTop")
+    assert "const trayScroll = q('.sle-tray-scroll')" in JS
 
 
 def test_several_tray_chips_can_be_picked_and_dropped_together() -> None:
@@ -675,13 +709,14 @@ def _between(start: str, end: str) -> str:
     return JS[JS.index(start) : JS.index(end)]
 
 
-def test_the_date_row_tops_the_floor_drawing_with_one_height_for_view_and_edit() -> None:
-    """층 도면 상자 맨 위 한 줄(36px)이 기준일 줄이다 — 보기는 페이더(날짜 칩·트랙·「오늘」), 배치
-    편집은 같은 자리·같은 높이의 「기준일 … · 편집 중 고정」 줄. FAB 에는 없다(`sle-floor-only`).
-    무대 기본 높이는 그 줄과 틈만큼 덜어 보기·편집의 도면 상자 크기가 같다."""
+def test_the_date_row_tops_the_floor_view_and_the_editor_pins_it_as_a_toolbar_chip() -> None:
+    """층 보기 도면 상자 맨 위 한 줄(36px)이 기준일 페이더(날짜 칩·트랙·「오늘」)다. 배치 편집은 그
+    줄을 걷고 도구 줄 제목 옆 칩 「기준일 … 고정」 이다(2026-11-03 결정 D12 — 여백 걷기). FAB 에는
+    없다(`sle-floor-only`). 무대 기본 높이는 층 보기에만 그 줄과 틈만큼 덜어 낸다. 「필요 단축」
+    보기의 고정 줄(`sle-pinned`)은 같은 줄 자리다."""
     row = HTML[HTML.index('<div class="sle-daterow') : HTML.index('<div class="sle-toolbar">')]
     assert HTML.index('class="sle-daterow') < HTML.index('class="sle-toolbar"')
-    assert 'class="sle-daterow sle-floor-only"' in row
+    assert 'class="sle-daterow sle-floor-only sle-view-only"' in row
     fader = row[row.index('class="sle-fader ') : row.index('class="sle-pinned ')]
     assert "sle-view-only" in fader
     assert 'type="range"' in fader and 'step="1"' in fader
@@ -696,7 +731,16 @@ def test_the_date_row_tops_the_floor_drawing_with_one_height_for_view_and_edit()
     assert "sle-edit-only" in pinned and "편집 중 고정" in pinned
     assert "height: 36px" in _rule(".sle-daterow")
     assert "const DATE_ROW_PX = 36" in JS
-    assert "const CHROME_PX = VIEW_CHROME_PX + (FAB ? 0 : DATE_ROW_PX + 8)" in JS
+    assert (
+        "const CHROME_PX = VIEW_CHROME_PX + (FAB || !VIEW ? 0 : DATE_ROW_PX + 8)"
+        " + (VIEW ? 0 : STATUS_ROW_PX)"
+    ) in JS
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
+    chip = toolbar[toolbar.index('class="sle-pinchip ') :]
+    assert toolbar.index('class="sle-title"') < toolbar.index('class="sle-pinchip ')
+    assert 'class="sle-pinchip sle-edit-only sle-floor-only"' in toolbar
+    assert 'class="sle-pinchip-date"' in chip and "고정" in chip
+    assert "if (!VIEW && !FAB) setText(pinChipDate, S.asOf" in JS
     assert "window.innerHeight - CHROME_PX" in JS
     assert "gap: 8px" in _rule(".sle")
     assert "if (PINNED) setText(pinnedDate, `기준일 ${S.asOf" in JS
@@ -837,7 +881,7 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     더한다 — ① 선택 안내·「기준일」·「미확인」 말머리(화면에서만 — 낭독기용으로 남김), ② 미확인
     대수(「!」만), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 요약 말줄임. 요약은 마지막에야
     줄고, 대수 글자는 반만 잘리지 않는다."""
-    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-panels')]
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
     assert '<span class="sle-asof-label">기준일 </span>' in toolbar
     assert 'class="sle-flagnote-word">미확인 </span>' in toolbar
     fit = _between(
@@ -887,7 +931,7 @@ def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_li
     spacer = _rule(".sle.is-view .sle-toolbar.is-fit6 .sle-spacer")
     assert "display: block" in spacer and "flex: 0 0 100%" in spacer
     # 빈 칸은 선택 줄 바로 뒤, 기준일·미확인·요약 앞이다 — 첫 줄은 확대 묶음과 선택 줄.
-    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-panels')]
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
     assert (
         toolbar.index('class="sle-pick')
         < toolbar.index('class="sle-spacer"')

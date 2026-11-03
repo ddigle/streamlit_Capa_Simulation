@@ -2,9 +2,10 @@
 
 """Space 층·FAB 전체 도면의 배경 도면 업로드·캔버스 치수 편집·삭제 UI를 렌더링한다.
 
-가끔 하는 쓰기라 본문을 차지하지 않고 레이아웃 위 작업 줄의 `도면·캔버스 편집` **팝업**이다
-(2026-09-29 사용자 결정). 팝업은 fragment 라 저장·삭제가 성공하면 팝업 칸을 비우고 앱 전체를
-다시 돌려 레이아웃이 새 도면으로 다시 그려진다.
+가끔 하는 쓰기라 본문을 차지하지 않고 `도면·캔버스 편집` **팝업**이다(2026-09-29 사용자 결정).
+단추는 사이드바 「Space 도면」 상자에 서고(2026-11-03 사용자 요청) 팝업은 본문 호스트가 연다 — 둘을
+가른다. 팝업은 fragment 라 저장·삭제가 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌려 레이아웃이 새
+도면으로 다시 그려진다.
 
 층과 FAB 전체 도면이 **같은 팝업**을 범위(`_DrawingTarget`)만 바꿔 쓴다. 다른 것은 저장 자리(층 표 /
 FAB 표), 기본 캔버스(100 × 60 / `FAB_CANVAS`), 캔버스 밖 검사의 대상(층은 저장된 설비 마스터의
@@ -131,54 +132,19 @@ class _DrawingTarget:
 UPLOAD_LIMIT_MB = math.ceil(MAX_FLOOR_LAYOUT_BYTES / (1024 * 1024))
 
 
-def render_floor_layout_editor(
-    *,
-    database_path: str,
-    building: str,
-    floor: str,
-    saved_equipment: pd.DataFrame,
-    disabled: bool = False,
-    reason: str | None = None,
+def render_floor_layout_button(
+    *, floor: FloorKey | None, disabled: bool = False, reason: str | None = None
 ) -> None:
-    """층 상세 작업 줄의 `도면·캔버스 편집` 버튼. 누르면 그 층의 팝업이 열린다.
+    """`도면·캔버스 편집` 단추 — 누르면 그 범위(층, `floor` 가 None 이면 FAB 전체 도면)의 팝업 열림
+    칸을 적는다. 팝업은 그리지 않는다 — 본문 호스트(`render_floor_layout_dialog_host`)가 연다.
 
-    `saved_equipment` 는 **저장된 설비 마스터 전체**다(필터 전, 레이아웃표시 무관). 캔버스를
-    줄이거나 지울 때 그 층 호기가 밖으로 나가는지 저장 검증과 같은 행으로 잰다. 설비 저장본이
-    없으면(샘플 화면) 빈 표를 넘긴다 — 저장을 막을 호기가 없다. `disabled` 면 단추를 끄고 `reason`
-    을 풍선으로 둔다 — 층 캔버스·배경 도면은 공용 값이라 가정 설비 시나리오에서 잠근다(G5 와 같은
-    까닭 — 설계 8-4).
+    단추는 사이드바 「Space 도면」 상자에 선다(2026-11-03 사용자 요청 — 레이아웃 위 작업 줄을
+    사이드바로). 팝업 함수를 사이드바 `with` 안에서 부르지 않으려고 단추와 팝업을 가른다. `disabled`
+    면 단추를 끄고 `reason` 을 풍선으로 둔다 — 층 캔버스·배경 도면은 공용 값이라 가정 설비
+    시나리오에서 잠그고(G5 와 같은 까닭 — 설계 8-4), FAB 은 설비 샘플 화면(합성 fleet 을 보는
+    중)·가정 설비 시나리오에서 잠근다.
     """
-    _render_open_button(
-        database_path,
-        _DrawingTarget((building, floor)),
-        saved_equipment,
-        disabled=disabled,
-        reason=reason,
-    )
-
-
-def render_fab_layout_drawing_editor(
-    *, database_path: str, disabled: bool = False, reason: str | None = None
-) -> None:
-    """FAB 전체 머리 줄의 `도면·캔버스 편집` 버튼. 층 팝업을 FAB 범위로 연다. `disabled` 는 쓰기를
-    막고 `reason` 이 그 까닭(풍선)이다 — 설비 샘플 화면(합성 fleet 을 보는 중), 가정 설비 시나리오
-    (FAB 은 공식에서만 — G5)."""
-    _render_open_button(
-        database_path, _DrawingTarget(None), pd.DataFrame(), disabled=disabled, reason=reason
-    )
-
-
-SAMPLE_DRAWING_LOCK = "샘플 데이터를 보는 중에는 FAB 도면을 고치지 않습니다."
-
-
-def _render_open_button(
-    database_path: str,
-    target: _DrawingTarget,
-    saved_equipment: pd.DataFrame,
-    *,
-    disabled: bool = False,
-    reason: str | None = None,
-) -> None:
+    target = _DrawingTarget(floor)
     st.button(
         "도면·캔버스 편집",
         icon=":material/map:",
@@ -188,10 +154,31 @@ def _render_open_button(
         disabled=disabled,
         help=(reason or SAMPLE_DRAWING_LOCK) if disabled else None,
     )
+
+
+def render_floor_layout_dialog_host(
+    *,
+    database_path: str,
+    floor: FloorKey | None,
+    saved_equipment: pd.DataFrame,
+    disabled: bool = False,
+) -> None:
+    """도면·캔버스 팝업의 본문 호스트. 그 범위의 열림 칸이 서 있고 잠기지 않았으면 팝업을 연다.
+
+    `saved_equipment` 는 층이면 **저장된 설비 마스터 전체**다(필터 전, 레이아웃표시 무관) — 캔버스를
+    줄이거나 지울 때 그 층 호기가 밖으로 나가는지 저장 검증과 같은 행으로 잰다. 설비 저장본이
+    없으면(샘플 화면) 빈 표를 넘긴다 — 저장을 막을 호기가 없다. FAB 은 빈 표다(호기가 없다).
+    `disabled` 는 단추와 같은 잠금이다 — 잠긴 회차에 남은 열림 칸으로 팝업이 서지 않게 두 겹으로
+    막는다.
+    """
+    target = _DrawingTarget(floor)
     if not disabled and st.session_state.get(FLOOR_LAYOUT_DIALOG_KEY) == target.scope:
         _floor_layout_dialog(
             database_path=database_path, target=target, saved_equipment=saved_equipment
         )
+
+
+SAMPLE_DRAWING_LOCK = "샘플 데이터를 보는 중에는 FAB 도면을 고치지 않습니다."
 
 
 def _open_dialog(scope: str) -> None:

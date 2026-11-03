@@ -442,23 +442,26 @@ def _mark_swatches() -> dict[str, tuple[str, str]]:
     }
 
 
-def space_legend_markup(
+def space_legend_entries(
     counts: Mapping[str, float] | None,
     *,
     choice: ColorChoice,
-    as_of: date | None = None,
     fills: bool = True,
-) -> str:
-    """층 상세 머리 줄 오른쪽의 범례. 도면 안이 아니라 머리 줄에 두어 도면이 테두리 안을 다 쓴다.
+) -> list[dict[str, str]]:
+    """층 상세 범례 칸 — 칸마다 `{"label": 글, "css": 견본 꼴, "inner": 견본 안 글자}`.
 
-    `counts` 가 있으면(보기) 대수가 있는 칸만 「PKG 5대」로 — 체크한 그룹 색·그 밖·보관·지연,
-    그리고 반입 전(주황 점선)·반출/이설 예정(노랑 두 겹)·정지 중(빗금)·운영 비가동·미확인(「!」) —
-    끝에 기준일을 단다. `None`(배치 편집 중)이면 채우기 뜻만(체크한 그룹·그 밖·보관·지연) 보인다 —
-    편집 화면은 테·덧표시를 그리지 않고, 편집본은 저장본과 대수가 다르다.
+    범례는 편집기 왼쪽 칸에 선다(2026-11-03 사용자 요청 — 레이아웃 위 머리 줄을 걷고 범례·도면
+    요소를 편집 영역 왼쪽으로). 편집기 JS 는 `css` 를 `style.cssText`, 글을 `textContent` 로만 단다
+    — HTML 로 읽지 않는다. `css` 는 토큰으로 만든 견본 꼴이라 사용자 글이 들지 않는다.
+
+    `counts` 가 있으면(보기) 대수가 있는 칸만 「PKG 5대」로 — 체크한 그룹 색·그 밖·보관·지연, 그리고
+    반입 전(주황 점선)·반출/이설 예정(노랑 두 겹)·정지 중(빗금)·운영 비가동·미확인(「!」).
+    `None`(배치 편집 중)이면 채우기 뜻만(체크한 그룹·그 밖·보관·지연) 보인다 — 편집 화면은
+    테·덧표시를 그리지 않고, 편집본은 저장본과 대수가 다르다.
 
     `fills` 가 거짓이면 채우기 칸(그룹·그 밖·보관·지연)을 싣지 않는다 — 색 기준 「필요 단축」 을
-    켰는데 계획을 못 읽은 회차는 상자가 모두 기본 회색이고 도면이 지연·보관 면을 칠하지 않는다
-    (결정 D12·R5). 그 회차에 「지연 1대」 견본을 세우면 도면에서 찾을 수 없는 빨강이 된다.
+    켰는데 계획을 못 읽은 회차는 상자가 모두 기본 회색이고 도면이 지연·보관 면을 칠하지 않는다(결정
+    D12·R5). 그 회차에 「지연 1대」 견본을 세우면 도면에서 찾을 수 없는 빨강이 된다.
     """
     fill_entries = [(style.label, _fill_swatch(style.fill), "") for style in choice.checked()]
     fill_entries += [
@@ -470,16 +473,41 @@ def space_legend_markup(
     if counts is not None:
         marks = [(label, swatch, inner) for label, (swatch, inner) in _mark_swatches().items()]
         entries = [entry for entry in entries + marks if counts.get(entry[0], 0) > 0]
-    chips = []
-    for label, swatch, inner in entries:
-        text = label if counts is None else f"{label} {format_unit_count(counts[label])}대"
-        chips.append(
-            '<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap">'
-            f'<span aria-hidden="true" style="{swatch}">{html.escape(inner)}</span>'
-            f"{html.escape(text)}</span>"
-        )
+    return [
+        {
+            "label": label if counts is None else f"{label} {format_unit_count(counts[label])}대",
+            "css": swatch,
+            "inner": inner,
+        }
+        for label, swatch, inner in entries
+    ]
+
+
+def space_legend_markup(
+    counts: Mapping[str, float] | None,
+    *,
+    choice: ColorChoice,
+    as_of: date | None = None,
+    fills: bool = True,
+) -> str:
+    """`space_legend_entries` 를 한 줄 HTML 로 — 칸 끝에 기준일(보기만). 화면은 편집기 왼쪽 칸이 칸
+    목록으로 그리고 이 꼴은 시험·다른 자리의 읽기용이다."""
+    chips = [
+        _legend_chip(entry["css"], entry["inner"], entry["label"])
+        for entry in space_legend_entries(counts, choice=choice, fills=fills)
+    ]
     if counts is not None and as_of is not None:
-        chips.append(f'<span style="white-space:nowrap">기준 {as_of.isoformat()}</span>')
+        chips.append(f'<span style="white-space:nowrap">{legend_as_of(as_of)}</span>')
+    return _legend_row(chips)
+
+
+def legend_as_of(as_of: date) -> str:
+    """범례 끝 기준일 글 「기준 YYYY-MM-DD」(편집기 왼쪽 칸 범례 끝 줄 — 화면 확인이 이 꼴로
+    읽는다)."""
+    return f"기준 {as_of.isoformat()}"
+
+
+def _legend_row(chips: Sequence[str]) -> str:
     return (
         '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;'
         f'gap:4px 14px;font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'
@@ -494,6 +522,57 @@ def _legend_chip(swatch: str, inner: str, text: str) -> str:
     )
 
 
+def shortening_legend_entries(
+    counts: Mapping[str, int],
+    mark_counts: Mapping[str, float],
+    *,
+    dim: bool = True,
+) -> list[dict[str, str]]:
+    """색 기준 「필요 단축」 을 켠 층 상세 범례 칸(꼴은 `space_legend_entries` 와 같다) — 구간 넷의
+    대수(설비 대수 — 모듈 묶음 한 대, `counts` 는 「이 층에서 단축할 호기」 목록과 같은 축)·임박
+    테·「흐림 = 단축 없음」, 그리고 지금의 테·덧표시 칸(반입 전·반출/이설 예정·정지 중·운영
+    비가동·미확인 — `space_legend_counts` 의 그 칸). 「흐림」 칸은 `dim`(단축 없는 호기 흐리게)을
+    켰을 때만 선다. 채우기 칸(그룹·그 밖·보관·지연)은 싣지 않는다 — 켠 동안 도면은 지연·보관 면을
+    칠하지 않는다(결정 D12 — 풍선 글로만)."""
+    entries = [
+        {
+            "label": f"{BUCKET_LABELS[bucket]} {counts[bucket]}대",
+            "css": _fill_swatch(tokens.SPACE_SHORT_FILLS[bucket]),
+            "inner": "",
+        }
+        for bucket in BUCKETS
+        if counts.get(bucket, 0) > 0
+    ]
+    entries.append(
+        {
+            "label": "임박 테",
+            "css": f"{_SWATCH}width:14px;height:10px;border-radius:5px;"
+            f"border:2px solid {tokens.SPACE_SHORT_IMMINENT};"
+            f"background:{tokens.SPACE_SHORT_FILLS['s']}",
+            "inner": "",
+        }
+    )
+    if dim:
+        entries.append(
+            {
+                "label": "흐림 = 단축 없음",
+                "css": _fill_swatch(tokens.SPACE_UNIT_DEFAULT_FILL)
+                + f";opacity:{tokens.SPACE_SHORT_DIM_OPACITY}",
+                "inner": "",
+            }
+        )
+    for label, (swatch, inner) in _mark_swatches().items():
+        if mark_counts.get(label, 0) > 0:
+            entries.append(
+                {
+                    "label": f"{label} {format_unit_count(mark_counts[label])}대",
+                    "css": swatch,
+                    "inner": inner,
+                }
+            )
+    return entries
+
+
 def shortening_legend_markup(
     counts: Mapping[str, int],
     mark_counts: Mapping[str, float],
@@ -501,49 +580,13 @@ def shortening_legend_markup(
     as_of: date,
     dim: bool = True,
 ) -> str:
-    """색 기준 「필요 단축」 을 켠 층 상세 머리 줄 범례 — 구간 넷의 대수(설비 대수 — 모듈 묶음 한
-    대, `counts` 는 「이 층에서 단축할 호기」 목록과 같은 축)·임박 테·「흐림 = 단축 없음」, 그리고
-    지금의 테·덧표시 칸(반입 전·반출/이설 예정·정지 중·운영 비가동·미확인 — `space_legend_counts` 의
-    그 칸)과 기준일. 「흐림」 칸은 `dim`(단축 없는 호기 흐리게)을 켰을 때만 선다. 채우기 칸(그룹·그
-    밖·보관·지연)은 싣지 않는다 — 켠 동안 도면은 지연·보관 면을 칠하지 않는다 (결정 D12 — 풍선
-    글로만)."""
+    """`shortening_legend_entries` 를 한 줄 HTML 로 — 칸 끝에 기준일."""
     chips = [
-        _legend_chip(
-            _fill_swatch(tokens.SPACE_SHORT_FILLS[bucket]),
-            "",
-            f"{BUCKET_LABELS[bucket]} {counts[bucket]}대",
-        )
-        for bucket in BUCKETS
-        if counts.get(bucket, 0) > 0
+        _legend_chip(entry["css"], entry["inner"], entry["label"])
+        for entry in shortening_legend_entries(counts, mark_counts, dim=dim)
     ]
-    chips.append(
-        _legend_chip(
-            f"{_SWATCH}width:14px;height:10px;border-radius:5px;"
-            f"border:2px solid {tokens.SPACE_SHORT_IMMINENT};"
-            f"background:{tokens.SPACE_SHORT_FILLS['s']}",
-            "",
-            "임박 테",
-        )
-    )
-    if dim:
-        chips.append(
-            _legend_chip(
-                _fill_swatch(tokens.SPACE_UNIT_DEFAULT_FILL)
-                + f";opacity:{tokens.SPACE_SHORT_DIM_OPACITY}",
-                "",
-                "흐림 = 단축 없음",
-            )
-        )
-    for label, (swatch, inner) in _mark_swatches().items():
-        if mark_counts.get(label, 0) > 0:
-            chips.append(
-                _legend_chip(swatch, inner, f"{label} {format_unit_count(mark_counts[label])}대")
-            )
-    chips.append(f'<span style="white-space:nowrap">기준 {as_of.isoformat()}</span>')
-    return (
-        '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;'
-        f'gap:4px 14px;font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'
-    )
+    chips.append(f'<span style="white-space:nowrap">{legend_as_of(as_of)}</span>')
+    return _legend_row(chips)
 
 
 def widget_key_class(key: str) -> str:

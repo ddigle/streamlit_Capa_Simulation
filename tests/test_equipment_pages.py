@@ -322,7 +322,8 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     # 뷰어는 도면의 캔버스와 배경 도면을 받는다.
     assert viewer[-1]["canvas"] == {"width": 100.0, "height": 37.5}
     assert str(viewer[-1]["backgroundImage"]).startswith("data:image/png")
-    # 도면·캔버스 편집은 레이아웃 위 작업 줄의 팝업이다 — 닫혀 있는 동안 본문을 차지하지 않는다.
+    # 도면·캔버스 편집은 사이드바 「Space 도면」 상자 단추의 팝업이다 — 닫혀 있는 동안 본문을
+    # 차지하지 않는다.
     assert len(app.get("file_uploader")) == 0
     app.button(key="space_floor_layout_open_C1_1F").click().run()
     assert not app.exception

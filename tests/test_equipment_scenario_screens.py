@@ -824,8 +824,8 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     # 줄은 표(평문)에도 가는 글이라 그리는 자리에서 통째로 막는다(E2E r5).
     assert sum(literal_markdown(reason) in text for text in texts) == 1
     assert any(
-        "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — 까닭은 아래 잠금 줄에 있습니다."
-        in text
+        "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — 까닭은 사이드바 「Space 도면」 상자의 "
+        "잠금 줄에 있습니다." in text
         for text in texts
     )
     assert app.button(key="space_layout_save").disabled

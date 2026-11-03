@@ -22,6 +22,7 @@ from capa_simulation.sidebar_status import (
     CONDITION_DIALOG_SINK_KEY,
     CONDITIONS_BOX_KEY,
     DIALOG_BOX_PREFIX,
+    PAGE_BOX_PREFIX,
     SIDEBAR_TOGGLE_SINK_KEY,
 )
 
@@ -32,6 +33,9 @@ _SELECTOR_JOINER = ",\n        "
 _CONDITION_CARDS = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
 # 조회 조건 아래 따로 서서 한 번 누르면 곧바로 팝업이 뜨는 상자 전부(지금은 HOME 「HOME 설정」).
 _DIALOG_BOXES = f'[class*="st-key-{DIALOG_BOX_PREFIX}"]'
+# 조회 조건 아래 따로 서서 그 화면의 자리 이동·편집 켜기 위젯 여럿을 담는 화면 조작 상자 전부(지금은
+# Space 현황 「Space 도면」 — `sidebar_status.PAGE_BOX_PREFIX`).
+_PAGE_BOXES = f'[class*="st-key-{PAGE_BOX_PREFIX}"]'
 
 # 사이드바 세로 블록의 칸 사이.
 _SIDEBAR_BLOCK_GAP = "0.42rem"
@@ -270,6 +274,7 @@ def build_sidebar_stylesheet(
     )
     conditions_panel_style = _conditions_panel_style()
     dialog_box_style = _dialog_box_style()
+    page_box_style = _page_box_style()
     # 규칙마다 설명은 바로 위 파이썬 주석에 둔다 — 이 시트는 화면을 옮길 때마다 소켓으로 다시 가므로
     # CSS 주석을 실으면 그만큼이 매번 함께 간다.
     return (
@@ -618,6 +623,7 @@ def build_sidebar_stylesheet(
 
 {conditions_panel_style}
 {dialog_box_style}
+{page_box_style}
 """
         # `Support` 상자에 서식 예외를 두지 않는다. 테두리도 요약 줄 글자도 다른 상자와 같다 — 계산
         # 흐름 밖이라는 것은 서식이 아니라 **맨 아래라는 자리와 앞 간격**이 말한다(바로 아래 규칙).
@@ -975,3 +981,60 @@ def _dialog_box_style() -> str:
         {pending} {{
             box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};
         }}"""
+
+
+def _page_box_style() -> str:
+    """조회 조건 아래 따로 선 **화면 조작 상자**(`PAGE_BOX_PREFIX` — Space 현황 「Space 도면」)의
+    서식.
+
+    조건 패널과 같은 면(`NAV_CONTROL_TINT`)·모서리 10px·안 여백으로 서서 조건 구역의 한 무리로
+    읽히고, 안의 이름 줄(`condition_field.condition_name_row`)은 패널 이름 줄과 같은 작은 글(0.75rem
+    · `TEXT_MUTED` · 첫 칸 600)이다. 맨 위 제목 한 줄(마크다운 첫 칸)은 카드 머리처럼 1rem · 700
+    이다. 상자 안 단추·토글은 Streamlit 기본 결 그대로다(값 칸 꼴을 빌리지 않는다 — 누르면 그
+    자리에서 일어나는 동작이다).
+    """
+    sidebar = '[data-testid="stSidebarContent"]'
+    box = f"{sidebar} {_PAGE_BOXES}"
+    name_row = f"{_PAGE_BOXES} {_CONDITION_NAME_ROWS}"
+    title = (
+        f'{_PAGE_BOXES} > [data-testid="stElementContainer"]:first-child'
+        ' [data-testid="stMarkdownContainer"] p'
+    )
+    return (
+        # 상자 면과 줄 사이 — 패널과 같은 값. 사이드바 세로 블록의 촘촘한 간격보다 뒤라야 이긴다.
+        f"""
+        {box} {{
+            background-color: {tokens.NAV_CONTROL_TINT};
+            border-radius: 10px;
+            gap: 0.45rem;
+            padding: 0.6rem 0.7rem 0.7rem;
+        }}
+        {title} {{
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.4;
+            margin: 0 0 0.2rem;
+        }}"""
+        # 이름 줄 — 패널 이름 줄과 같은 꼴(이름은 왼쪽, 상태는 오른쪽 끝 말줄임, 캡션 흐림 걷음).
+        f"""
+        {name_row} {{
+            min-height: 1.1rem;
+            flex-wrap: nowrap;
+        }}
+        {name_row} [data-testid="stCaptionContainer"] {{
+            margin-bottom: 0;
+            opacity: 1;
+        }}
+        {name_row} [data-testid="stCaptionContainer"] p {{
+            margin: 0;
+            font-size: 0.75rem;
+            line-height: 1.25;
+            color: {tokens.TEXT_MUTED};
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        {name_row} > [data-testid="stElementContainer"]:first-child p {{
+            font-weight: 600;
+        }}"""
+    )

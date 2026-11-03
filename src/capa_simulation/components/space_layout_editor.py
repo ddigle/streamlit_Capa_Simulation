@@ -34,7 +34,13 @@ FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우�
 콜백이 세션 기준일을 바꿔 그 회차에 범례·요약·호기 표가 맞춰진다. 기준일은 epoch 에 넣지 않는다 —
 data 의 `asOf` 는 새 epoch(층 이동 등)에서 쓰고, 같은 epoch 회차에 받은 값이 브라우저가 쥔 값과
 같으면 아무것도 다시 칠하지 않는다. FAB 전체 뷰어는 페이더 없이 도구 줄에 기준일과 「오늘로」를,
-배치 편집기는 같은 자리에 「편집 중 고정」 줄을 둔다.
+배치 편집기는 도구 줄 제목 옆에 「기준일 … 고정」 칩을 둔다.
+
+**편집기 몸은 가로 세 칸**이다(2026-11-03 사용자 요청) — 왼쪽 칸(층 보기는 범례, 편집은 범례·도면
+요소·선택·격자·편집 영역·도움말) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
+브라우저(localStorage)에만 둔다. 범례는 data `legend` (epoch 밖)로 보낸다. 도구 줄 「고정」(스크롤
+고정)은 `<html data-space-lock>` 을 달고, 그 속성을 읽는 규칙은 페이지가 그리는 `space_lock_style()`
+이다.
 """
 
 from __future__ import annotations
@@ -77,6 +83,15 @@ _ASSETS = Path(__file__).with_name("space_layout_editor_assets")
 # FAB 도면의 범위 이름(편집기 `data.floor`). 층 이름과 겹치지 않으면 된다 — 뷰를 처음 크기로 돌릴지
 # 가르는 데 쓴다.
 FAB_VIEW_LABEL = "S.PKG FAB"
+# FAB 도면의 도구 줄 제목(편집기 `data.title`). 층은 「C1 1F」 다 — 레이아웃 위 머리 줄을
+# 걷어(2026-11-03 사용자 요청) 지금 무엇을 보는지는 도구 줄 제목이 말한다.
+FAB_TITLE = "S.PKG FAB 전체"
+# 범례 칸 수의 상한(층 상세 범례는 열 칸 남짓 — 망가진 값만 거른다).
+_LEGEND_LIMIT = 40
+# 스크롤 고정(편집기 도구 줄 「고정」)이 `<html>` 에 다는 속성. 그 속성을 읽는 규칙은 페이지 서식
+# (`space_lock_style`)에 둔다 — 다른 화면으로 가면 그 서식이 사라져 정리 함수가 돌지 않아도
+# 풀린다(AGENTS 9장 「브라우저 전용 보기 상태」).
+SPACE_LOCK_ATTRIBUTE = "data-space-lock"
 
 _EDITOR = st.components.v2.component(
     "capa_space_layout_editor",
@@ -316,6 +331,40 @@ def _clean_group_labels(labels: Mapping[str, str] | None) -> dict[str, str]:
     }
 
 
+def _clean_legend(legend: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """브라우저로 보낼 범례(편집기 왼쪽 칸 「범례」) — `{"entries": [{label, css, inner}], "asOf":
+    글}`.
+
+    칸은 `space_layout.space_legend_entries`·`shortening_legend_entries` 꼴이고 셋 다 글자일 때만
+    싣는다. 편집기는 `css` 를 `style.cssText`, 글을 `textContent` 로만 단다(HTML 로 읽지 않는다).
+    epoch 밖이다 — 기준일·체크·색 기준이 바뀌어도 다시 마운트하지 않고 범례만 다시 쓴다. None 이면
+    범례 묶음이 없다(FAB)."""
+    if legend is None:
+        return None
+    entries = [
+        {"label": entry["label"], "css": entry["css"], "inner": entry["inner"]}
+        for entry in legend.get("entries") or ()
+        if isinstance(entry, Mapping)
+        and all(isinstance(entry.get(name), str) for name in ("label", "css", "inner"))
+    ][:_LEGEND_LIMIT]
+    as_of = legend.get("asOf")
+    return {"entries": entries, "asOf": as_of if isinstance(as_of, str) else ""}
+
+
+def space_lock_style() -> str:
+    """스크롤 고정의 페이지 서식 — `<html data-space-lock="1">` 인 동안 본문 스크롤 칸(`stMain`)을
+    막는다.
+
+    편집기 도구 줄 「고정」 이 속성을 달고 뗀다(컴포넌트 밖 배치는 `<html>` 의 속성 + 페이지 서식 —
+    AGENTS 9장). 이 서식은 Space 현황이 그리므로 다른 화면으로 가면 사라져 속성이 남아도 막지
+    않는다. 사이드바는 그대로 굴러간다. 본문 스크롤 칸이 `section[data-testid="stMain"]` 인 것은
+    Streamlit 1.63 DOM 이다(판올림에서 다시 본다)."""
+    return (
+        f'<style>html[{SPACE_LOCK_ATTRIBUTE}="1"] [data-testid="stMain"]'
+        "{overflow:hidden !important;overscroll-behavior:none}</style>"
+    )
+
+
 def _dispatch_as_of(key: str, on_as_of: Callable[[date], None]) -> None:
     """`on_asOf_change` 콜백. 페이더를 놓거나 「오늘로」를 누를 때 브라우저가 보낸 기준일
     (`YYYY-MM-DD`)을 `on_as_of(date)` 로 넘긴다. 콜백은 본문보다 먼저 돌아 그 회차의 범례·요약이 새
@@ -363,6 +412,8 @@ def render_space_layout_viewer(
     compare: Mapping[str, Any] | None = None,
     badges: Sequence[Mapping[str, Any]] | None = None,
     as_of_pinned: str | None = None,
+    legend: Mapping[str, Any] | None = None,
+    pending_save: bool = False,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -399,7 +450,11 @@ def render_space_layout_viewer(
     `as_of_pinned`(기준일 고정 줄의 뒷글 — `asOfPinned`)를 싣는다. 고정 줄이 있으면 브라우저는
     페이더 대신 그 줄을 세우고 (기준일 = 오늘), 겹친 반입 예정 숨기기를 표시된 호기에는 쓰지 않으며
     모든 호기의 지연·보관 면을 칠하지 않는다(결정 D12). 둘 다 epoch 밖이고 끈 동안에는 키가
-    없다(payload 그대로)."""
+    없다(payload 그대로).
+
+    `legend` 는 왼쪽 칸 범례(`_clean_legend`), `pending_save` 는 위 「저장 안 한 배치」 상자가 선
+    회차다 — 스크롤 고정 중에는 그 상자가 화면 밖이라 편집기가 한 줄로 알린다. 둘 다 epoch
+    밖이다."""
     layer_fields: dict[str, Any] = {}
     if badges is not None:
         layer_fields["shortBadges"] = _clean_badges(badges)
@@ -429,6 +484,8 @@ def render_space_layout_viewer(
             "floor": floor_label(floor),
             "floors": [],
             "newUnit": {},
+            "legend": _clean_legend(legend),
+            "pendingSave": bool(pending_save),
             **layer_fields,
         },
         on_apply_change=lambda: None,
@@ -489,6 +546,7 @@ def render_fab_layout_viewer(
     unconfirmed: int,
     on_as_of: Callable[[date], None],
     background_image: str | None = None,
+    pending_save: bool = False,
 ) -> None:
     """FAB 전체 **뷰어**. 층 도면과 같은 편집기의 보기 전용(`scope="fab"`)이다.
 
@@ -507,7 +565,7 @@ def render_fab_layout_viewer(
             "epoch": epoch,
             **_as_of_fields(as_of, today, as_of_range),
             "unconfirmed": max(int(unconfirmed), 0),
-            "title": FAB_VIEW_LABEL,
+            "title": FAB_TITLE,
             "summary": summary,
             "items": [],
             "marks": [mark.editor_payload() for mark in marks],
@@ -522,6 +580,8 @@ def render_fab_layout_viewer(
             "floor": FAB_VIEW_LABEL,
             "floors": [],
             "newUnit": {},
+            "legend": None,
+            "pendingSave": bool(pending_save),
         },
         on_apply_change=lambda: None,
         on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
@@ -539,6 +599,7 @@ def render_fab_layout_editor(
     link_stats: Mapping[str, Mapping[str, str | None]],
     on_open: Callable[[FloorKey], None],
     background_image: str | None = None,
+    pending_save: bool = False,
 ) -> EditorSubmission | None:
     """FAB 전체 **편집기**(`scope="fab"`). 층 편집기와 같은 컴포넌트이고 범위 표시로 나눈다.
 
@@ -553,7 +614,7 @@ def render_fab_layout_editor(
         data={
             "scope": "fab",
             "epoch": epoch,
-            "title": FAB_VIEW_LABEL,
+            "title": FAB_TITLE,
             "items": [],
             "marks": [mark.editor_payload() for mark in marks],
             "linkStats": {label: dict(stats) for label, stats in link_stats.items()},
@@ -568,6 +629,8 @@ def render_fab_layout_editor(
             "floor": FAB_VIEW_LABEL,
             "floors": [],
             "newUnit": {},
+            "legend": None,
+            "pendingSave": bool(pending_save),
         },
         on_apply_change=lambda: None,
         on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
@@ -595,6 +658,8 @@ def render_space_layout_editor(
     group_labels: Mapping[str, str] | None = None,
     canvas_editable: bool = True,
     canvas_lock: str | None = None,
+    legend: Mapping[str, Any] | None = None,
+    pending_save: bool = False,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
@@ -604,8 +669,9 @@ def render_space_layout_editor(
 
     면은 보기와 같은 규칙(지연 → 보관 → 체크한 그룹 → 기본, 기준일 `as_of`)이지만 **의미 테·덧표시는
     그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다. 기준일은 편집 중 고정이다 —
-    페이더 자리에 같은 높이의 「기준일 YYYY-MM-DD · 편집 중 고정」 줄이 선다(기준일이 바뀌면 편집
-    대상 호기가 바뀌어 적용하지 않은 편집이 버려진다).
+    도구 줄 제목 옆 칩 「기준일 YYYY-MM-DD 고정」 이 말한다(기준일이 바뀌면 편집 대상 호기가 바뀌어
+    적용하지 않은 편집이 버려진다). `legend` 는 왼쪽 칸 범례(채우기 뜻만), `pending_save` 는 뷰어와
+    같다.
 
     적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels"}``.
 
@@ -664,6 +730,8 @@ def render_space_layout_editor(
             "newUnit": dict(new_unit),
             "canvasEditable": bool(canvas_editable),
             "canvasLock": canvas_lock or "",
+            "legend": _clean_legend(legend),
+            "pendingSave": bool(pending_save),
         },
         on_apply_change=lambda: None,
         width="stretch",
