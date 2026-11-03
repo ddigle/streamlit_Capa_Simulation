@@ -23,7 +23,8 @@
   `CAP_ROWS` 줄만 싣고 작업 줄 아래에 알린다(바이트 상한을 넘는 표의 전체 본문은 캐시에 두지
   않는다 — `get_edit_grid_base_within`). 초안이 업무 키라 실은 줄이 바뀌어도 편집은 제 줄에
   남고, 적용은 언제나 **전체 양식**에 덮는다(`merged_template`). 합성 표본 최대는 UPEH 2,660줄 ×
-  30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 다음 배포에 잰다.
+  30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 런북 8장 8-11
+  (`scripts/inspect_real_data_checks.py --only grid`)이 잰다.
 """
 
 from __future__ import annotations
@@ -97,6 +98,8 @@ PASTE_DROPS_DRAFT_NOTICE: Final = (
 )
 DISCARD_HELP: Final = "이 표에서 적용하지 않은 편집을 버립니다."
 # 큰 표 안전 상한(명세 1-2 의 22) — 칸 수 · 껍데기 본문 JSON 바이트 · 상한에 걸렸을 때 싣는 줄 수.
+# 실데이터 센서스(`scripts/inspect_real_data_checks.py` 8-11)가 같은 값 · `GRID_FORMATS` 를
+# 옮겨 둔다 — 바꾸면 `tests/test_inspect_real_data_checks.py` 가 잡는다.
 CAP_CELLS: Final = 300_000
 CAP_BYTES: Final = 400_000
 CAP_ROWS: Final = 1_000
