@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from alert_marks import active_state
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
@@ -53,9 +54,10 @@ def _cutoff_screen(database_path: str) -> None:
     )
 
 
-def test_the_missing_cutoff_warning_blocks_the_process_names(tmp_path: Path) -> None:
-    """물결표만 막으면(옛 `markdown_safe_tildes`) 「모델*별*B」 의 별표 짝이 기울임이 된다 —
-    이름마다 막는다."""
+def test_the_missing_cutoff_alert_keeps_the_process_names_verbatim(tmp_path: Path) -> None:
+    """물결표만 막으면(옛 `markdown_safe_tildes`) 「모델*별*B」 의 별표 짝이 기울임이 됐다. 이제
+    상태 알림(`EQ-12`)이고 알림창 · 패널은 평문이라 이름을 막지 않고 글자 그대로 싣는다 — 마크다운
+    경고는 그리지 않는다(2026-11-03 D2)."""
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 
     path = tmp_path / "equipment.duckdb"
@@ -63,11 +65,9 @@ def test_the_missing_cutoff_warning_blocks_the_process_names(tmp_path: Path) -> 
 
     app = _ok(AppTest.from_function(_cutoff_screen, args=(str(path),), default_timeout=30).run())
 
-    warnings = _texts(app, "warning")
-    assert any(
-        literal_markdown(TILDE) in text and literal_markdown(STAR) in text for text in warnings
-    ), warnings
-    assert not [text for text in warnings if TILDE in text or STAR in text]
+    assert not _texts(app, "warning")
+    note = active_state(app, "EQ-12")
+    assert note is not None and TILDE in note["full"] and STAR in note["full"], note
 
 
 def _rename_screen(database_path: str, available: list[str]) -> None:
@@ -100,26 +100,28 @@ def test_proc_rename_notices_block_the_listed_names(tmp_path: Path) -> None:
     )
 
     infos = _texts(app, "info")
-    warnings = _texts(app, "warning")
     assert any(literal_markdown("없는~공정~C") in text for text in infos), infos
-    assert any(literal_markdown(STAR) in text for text in warnings), warnings
-    assert not [text for text in [*infos, *warnings] if "없는~공정~C" in text or STAR in text]
+    assert not [text for text in infos if "없는~공정~C" in text]
+    # 겹침은 상태 알림(`AD-06`, 평문 — 이름 그대로)이다.
+    assert not _texts(app, "warning")
+    note = active_state(app, "AD-06")
+    assert note is not None and STAR in note["full"], note
 
 
 def _unmatched_screen() -> None:
-    from capa_simulation.components.availability_gap_panel import _render_unmatched
+    from capa_simulation.components.availability_gap_panel import _report_unmatched
     from capa_simulation.components.process_labels import ProcessLabels
 
-    _render_unmatched(["공정~가~A"], ["모델*별*B"], ProcessLabels())
+    _report_unmatched(["공정~가~A"], ["모델*별*B"], ProcessLabels(), None)
 
 
-def test_the_unmatched_process_warning_blocks_the_raw_names() -> None:
+def test_the_unmatched_process_alert_keeps_the_raw_names_verbatim() -> None:
+    """한쪽에만 있는 공정은 상태 알림(`EQ-06`, 평문)이다 — 이름을 막지 않고 글자 그대로 싣는다."""
     app = _ok(AppTest.from_function(_unmatched_screen).run())
 
-    warnings = _texts(app, "warning")
-    assert any(
-        literal_markdown(TILDE) in text and literal_markdown(STAR) in text for text in warnings
-    ), warnings
+    assert not _texts(app, "warning")
+    note = active_state(app, "EQ-06")
+    assert note is not None and TILDE in note["full"] and STAR in note["full"], note
 
 
 def _key_process_notice(labels: dict[str, str]) -> None:

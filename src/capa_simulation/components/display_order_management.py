@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.admin_dialog import (
     admin_dialog_is_open,
     close_admin_dialog,
@@ -141,11 +142,9 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     # 직접 편집 저장의 「바뀐 것이 없습니다」 와 그 아래 표시명 경고도 이 칸(성공 알림 자리)에 선다.
     notice = render_flash(DISPLAY_ORDER_FLASH_KEY)
     _render_label_warnings(notice)
-    # 겹침 경고도 늘 서 있는 칸이다 — 직접 편집으로 마지막 겹침을 고쳐 저장하면 다음 회차에 경고가
-    # 빠지는데, 그때 아래 직접 편집이 한 칸 당겨지면 같은 흐린 사본 꼴이다.
-    with st.container():
-        if clashes:
-            _render_clash_warning(clashes)
+    # 저장된 프로필의 겹친 분류값은 상태 알림(`AD-05` — 알림창 · Alarm, 자리에 그리지 않는다)이다.
+    # 없어도 부른다(해소).
+    _report_clashes(clashes)
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)
@@ -386,22 +385,33 @@ def _render_direct_editor(
         st.rerun()
 
 
-def _render_clash_warning(clashes: list[ValueClash]) -> None:
-    """저장된 프로필의 겹친 분류값을 알리고, 범위마다 고치는 길을 적는다.
+def _report_clashes(clashes: list[ValueClash]) -> None:
+    """저장된 프로필의 겹친 분류값을 상태 알림(`AD-05`)으로 내고, 범위마다 고치는 길을 전문에
+    적는다.
 
     적용(`apply_display_order`)은 겹침을 ValueError 로 막으므로 그 범위를 쓰는 화면은 정렬만 멈추는
     것이 아니라 그 부분에 오류를 띄운다. 직접 편집은 고르는 범위 안의 겹침만 보므로(다른 범위의
-    예전 겹침은 넘긴다) 범위 하나씩 고쳐 저장할 수 있다.
+    예전 겹침은 넘긴다) 범위 하나씩 고쳐 저장할 수 있다. 알림창 · 패널은 평문이다.
     """
     scopes = list(dict.fromkeys(f"{clash.page} › {clash.tab}" for clash in clashes))
-    st.warning(
-        "대소문자·앞뒤 공백만 다른 **활성** 사용자지정 분류값이 있습니다. 그 범위를 쓰는 화면은 "
-        "둘을 같은 값으로 보아 표시순서 중복 오류를 띄우고 그 부분을 그리지 못합니다. "
-        f"고칠 범위: {', '.join(scopes)}. **범위마다 따로 고칠 수 있습니다** — 아래 직접 편집에서 "
-        "그 페이지·탭을 골라 하나만 남기거나 활성여부를 N 으로 바꿔 저장하세요(다른 범위의 겹침은 "
-        "그 저장을 막지 않습니다). 한 번에 고치려면 CSV 를 내려받아 고친 뒤 Excel 붙여넣기로 "
-        "전체를 바꾸세요. 겹친 값: " + describe_value_clashes(clashes),
-        icon=":material/warning:",
+    alerts.state(
+        "AD-05",
+        scope=None,
+        content=sorted(str(clash.identity) for clash in clashes) or None,
+        active=bool(clashes),
+        text=(
+            f"표시순서 분류값 {len(clashes)}건이 대소문자 · 공백만 달라 겹칩니다 — 표시순서 "
+            "관리에서 하나만 남기세요"
+        ),
+        full=alerts.plain_text(
+            "대소문자·앞뒤 공백만 다른 활성 사용자지정 분류값이 있습니다. 그 범위를 쓰는 화면은 "
+            "둘을 같은 값으로 보아 표시순서 중복 오류를 띄우고 그 부분을 그리지 못합니다. "
+            f"고칠 범위: {', '.join(scopes)}. 범위마다 따로 고칠 수 있습니다 — Admin 「표시순서 "
+            "관리」 직접 편집에서 그 페이지·탭을 골라 하나만 남기거나 활성여부를 N 으로 바꿔 "
+            "저장하세요(다른 범위의 겹침은 그 저장을 막지 않습니다). 한 번에 고치려면 CSV 를 "
+            "내려받아 고친 뒤 Excel 붙여넣기로 전체를 바꾸세요. 겹친 값: "
+            + describe_value_clashes(clashes)
+        ),
     )
 
 

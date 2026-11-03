@@ -42,6 +42,7 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.auto_official_update_runner import (
     AutoUpdateSources,
     Clock,
@@ -214,6 +215,36 @@ def _render_status(
 ) -> None:
     config = settings.config
     scheduler = running_scheduler()
+    # 예약이 멈춘 것 같음(`AU-01`) · 허락했는데 스레드가 없음(`AU-02`)은 상태 알림이다 — 자리에
+    # 그리지 않고 알림창 · Alarm 으로 낸다(없어도 부른다 — 해소). 「지금 상태」 칸의 켜짐 · 꺼짐
+    # 줄은 상태 줄이라 그대로 그린다.
+    ticked = scheduler.status() if scheduler is not None else None
+    stall = scheduler_stall_message(ticked, now) if ticked is not None else None
+    missing_thread = scheduler is None and scheduler_opted_in()
+    alerts.state(
+        "AU-01",
+        scope=None,
+        # 글에는 지난 분이 들어 회차마다 바뀐다 — 지문은 멈춘 회차(마지막 확인 시각 · 갈래)로.
+        content=(
+            None
+            if stall is None or ticked is None or ticked.last_outcome is None
+            else [str(ticked.last_tick_at), ticked.last_outcome.kind]
+        ),
+        active=stall is not None,
+        text="자동 갱신 예약이 멈춘 것 같습니다 — 앱 로그 확인 · 앱 다시 띄우기",
+        full=stall,
+    )
+    alerts.state(
+        "AU-02",
+        scope=None,
+        content=ENV_VAR if missing_thread else None,
+        active=missing_thread,
+        text="자동 갱신 예약 스레드가 서 있지 않습니다 — 앱 로그 확인 · 앱 다시 띄우기",
+        full=(
+            f"실행 줄은 예약을 허락했지만({ENV_VAR}=1) 예약 스레드가 서 있지 않습니다. 앱 로그를 "
+            "확인하고 앱을 다시 띄우세요."
+        ),
+    )
     with st.container(border=True):
         st.markdown("#### :material/schedule: 지금 상태")
         if scheduler is not None:
@@ -233,15 +264,9 @@ def _render_status(
             if status.pending_day is not None:
                 parts.append(f"{status.pending_day.isoformat()} 회차를 다시 시도하는 중")
             st.caption(" · ".join(parts))
-            stall = scheduler_stall_message(status, now)
-            if stall is not None:
-                st.warning(stall, icon=":material/hourglass_top:")
-        elif scheduler_opted_in():
-            st.warning(
-                f"실행 줄은 예약을 허락했지만(`{ENV_VAR}=1`) 예약 스레드가 서 있지 않습니다. 앱 "
-                "로그를 확인하고 앱을 다시 띄우세요.",
-                icon=":material/warning:",
-            )
+        elif missing_thread:
+            # 허락했는데 스레드가 없다 — 까닭 · 할 일은 알림(`AU-02`)에 있다. 상태 줄만 남긴다.
+            st.markdown(f"**예약** · :red[스레드 없음] — 실행 줄은 허락했습니다(`{ENV_VAR}=1`).")
         else:
             st.info(
                 f"이 실행에서는 예약이 꺼져 있습니다 — 실행 줄에 `{ENV_VAR}=1` 을 더해 앱을 띄워야 "

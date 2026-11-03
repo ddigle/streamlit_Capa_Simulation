@@ -55,10 +55,12 @@
 
 from datetime import date
 from functools import partial
+from typing import NoReturn
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.equipment_scenario_status import (
     HOME_VISIT_LOCK_REASON,
     equipment_basis_label,
@@ -247,6 +249,15 @@ equipment_notices = st.container()
 process_labels = get_process_labels()
 today = date.today()
 
+
+def _stop_with_error(message: str) -> NoReturn:
+    """화면을 못 그리는 오류 — 자리 오류 상자는 그대로 두고 상태 알림(`PD-01` — 같은 오류가 처음일
+    때만 알림창)을 더한 뒤 멈춘다."""
+    alerts.screen_error("PD-01", message, text="공정 Capa 상세를 준비하지 못했습니다")
+    st.error(message)
+    st.stop()
+
+
 try:
     # 판정 기준(HOME 설정 → Preference 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
     # 키·확보율·공정 선택지를 제약 시뮬레이션과 **같은 차례**로
@@ -257,8 +268,7 @@ except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption("계산을 멈춰 공정을 고를 수 없습니다.")
-    st.error(bootstrap_error_message(exc))
-    st.stop()
+    _stop_with_error(bootstrap_error_message(exc))
 
 thresholds = page_inputs.thresholds
 context = page_inputs.context
@@ -440,19 +450,25 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
     )
     inverse_slot = st.container()
 
+# 넘겨받은 공정 · 달을 열지 못한 것은 이 방문 한 번의 사건 알림이다(`PD-02` · `PD-03` — 알림창 ·
+# Alarm, 자리에 그리지 않는다). 알림창 · 패널은 평문이라 이름을 막지 않는다. 표지는 바로 아래
+# 한 자리(`flush` — 늘 부른다)가 보낸다.
 if entry.missing_process is not None:
-    # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
     missing_label = process_labels.label(entry.missing_process)
-    missing = f"「{literal_markdown(missing_label)}」{topic_particle(missing_label)}"
-    st.warning(f"넘겨받은 공정 {missing} 이 시나리오·조회기간에 없어 기본 공정을 엽니다.")
+    alerts.event(
+        "PD-02",
+        text=f"넘겨받은 공정 「{missing_label}」{topic_particle(missing_label)} 시나리오·조회기간에"
+        " 없어 기본 공정을 엽니다",
+    )
 if entry.month_outside is not None and entry.month is not None:
     outside = with_topic_particle(month_label(entry.month_outside))
     opened = with_object_particle(month_label(entry.month))
-    st.info(
-        f"넘겨받은 {outside} 이 화면 기간({month_label(effective_start)}–"
-        f"{month_label(effective_end)}) 밖이라 {opened} 엽니다.",
-        icon=":material/event_busy:",
+    alerts.event(
+        "PD-03",
+        text=f"넘겨받은 {outside} 이 화면 기간({month_label(effective_start)}–"
+        f"{month_label(effective_end)}) 밖이라 {opened} 엽니다",
     )
+alerts.flush()
 if entry.origin is not None:
     origin_month = entry.origin.month
     band = origin_band_text(
@@ -502,8 +518,7 @@ try:
         thresholds=thresholds,
     )
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
-    st.stop()
+    _stop_with_error(bootstrap_error_message(exc))
 official_kpis = process_capa_kpis(summary)
 # UPEH 가정 — 구간 달의 소요 ÷f 를 이 공정의 확보율 행에 사후로 걸고 같은 함수로 요약을 다시 낸다.
 # 캐시하지 않는다(작은 프레임). 이 프레임은 시나리오 키 전용 칸(HOME 과 같은 칸)에 넘기지 않는다.
@@ -523,9 +538,10 @@ if upeh_token:
             thresholds=thresholds,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
-        st.stop()
+        _stop_with_error(bootstrap_error_message(exc))
 kpis = process_capa_kpis(assumed_summary) if assumed_summary is not None else official_kpis
+# 준비 · 요약 오류(`PD-01`)가 없었던 회차 — 있던 오류는 해소다. 위 오류 자리 셋보다 뒤에 둔다.
+alerts.screen_error("PD-01", None)
 
 
 # ------------------------------------------------------------------ HOME 표시 확보율

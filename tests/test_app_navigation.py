@@ -2544,10 +2544,11 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
 def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     _app: AppTest,
 ) -> None:
-    """예전 배포로 되돌린 DB 도 화면은 그대로 열리고, 그 DB 를 여는 화면마다 경고 한 줄이 선다.
+    """예전 배포로 되돌린 DB 도 화면은 그대로 열리고, 그 DB 를 여는 화면마다 상태 알림이 선다.
 
-    시뮬레이션 DB 경고는 `app.py` 가 모든 화면에, 설비 DB 경고는 설비 DB 를 여는 화면만 세운다.
-    HOME 은 설비 DB 를 열지 않으므로 그 경고가 없다.
+    시뮬레이션 DB 알림(`GL-02`)은 `app.py` 가 모든 화면에, 설비 DB 알림(`GL-03`)은 설비 DB 를 여는
+    화면만 낸다. HOME 은 설비 DB 를 열지 않으므로 그 알림이 없다. 자리에는 경고 상자를 그리지
+    않는다(2026-11-03 D2 — 알림창 · Alarm).
     """
     import duckdb
 
@@ -2568,11 +2569,16 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
                 [newer],
             )
 
+    from alert_marks import states
+
     def ahead_warnings(app: AppTest) -> list[str]:
+        assert not [
+            element for element in app.warning if "이 코드보다 새" in str(element.value)
+        ]
         return [
-            str(element.value)
-            for element in app.warning
-            if "이 코드보다 새 버전입니다" in str(element.value)
+            str(note["full"])
+            for note in states(app)
+            if note["code"] in ("GL-02", "GL-03") and note.get("active")
         ]
 
     app = _app.run()

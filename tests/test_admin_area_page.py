@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import active_state, infos, states, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -294,10 +294,14 @@ render_process_rename_management(repository, ["SAW", {owned!r}])
     app = AppTest.from_string(script).run(timeout=60)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    notices = [str(item.value) for item in infos(app)] + [str(item.value) for item in app.warning]
+    notices = [str(item.value) for item in infos(app)]
     assert any(literal_markdown(unowned) in text for text in notices), notices
-    assert any(literal_markdown(owned) in text for text in notices), notices
-    assert not [text for text in notices if unowned in text or owned in text], notices
+    assert not [text for text in notices if unowned in text], notices
+    # 「원본명과 같은 표시명」 은 상태 알림(`AD-06`)이다 — 알림창 · 패널은 평문(`textContent`)이라
+    # 이름을 글자 그대로 싣고, 자리에는 경고 상자를 그리지 않는다(2026-11-03 D2).
+    assert not list(app.warning)
+    collision = active_state(app, "AD-06")
+    assert collision is not None and owned in collision["full"], states(app, "AD-06")
     clear_global_process_rename_cache()
 
 
@@ -317,11 +321,11 @@ def test_display_name_equal_to_another_owned_process_warns_but_still_saves(
 
     assert not list(app.error)
     assert app.text[-1].value == "v1|SAW>MOLD"
-    collision = next(
-        warning.value
-        for warning in app.warning
-        if "보유 공정의 원본명과 같은 표시명 1건" in warning.value
-    )
+    # 경고 상자가 아니라 상태 알림(`AD-06` — 알림창 · Alarm, 2026-11-03 D2)이다.
+    assert not list(app.warning)
+    note = active_state(app, "AD-06")
+    assert note is not None and "보유 공정의 원본명과 같은 표시명 1건" in note["short"], note
+    collision = note["full"]
     # 선택 상자·표에서 어떻게 보이는지와 검사 범위(설비 마스터는 보지 않는다)를 사실대로 적는다.
     assert "「표시명 (원본)」" in collision and "표·그림·버튼에서는 같은 글자" in collision
     # 모든 화면의 공정 상자가 글자를 가른다 — 「다른 공정이 잡힐 수 있다」 는 이제 사실이 아니다.
@@ -702,8 +706,14 @@ def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
     assert not list(app.exception), [element.message for element in app.exception]
     [expander] = _start_check_expanders(app)
     assert "결과 없음" in expander
-    assert any("돌지 않은 것으로" in warning.value for warning in app.warning)
-    assert not any("FAKE-bdq-login-token-0000" in warning.value for warning in app.warning)
+    # 까닭은 펼침 안 캡션이고 알릴 조건은 상태 알림(`AD-01`)이다(2026-11-03 D2).
+    assert not list(app.warning)
+    captions = [caption.value for caption in app.caption]
+    assert any("돌지 않은 것으로" in text for text in captions), captions
+    note = active_state(app, "AD-01")
+    assert note is not None and "돌지 않은 것으로" in note["full"], states(app, "AD-01")
+    assert "FAKE-bdq-login-token-0000" not in str(note)
+    assert not any("FAKE-bdq-login-token-0000" in text for text in captions)
 
 
 @pytest.mark.parametrize(
@@ -724,8 +734,11 @@ def test_a_broken_start_report_is_told_apart_from_a_missing_one(
     assert not list(app.exception), [element.message for element in app.exception]
     [expander] = _start_check_expanders(app)
     assert expander.endswith("결과 파일을 읽지 못함")
-    assert any("읽지 못했습니다(꼴이 다름)" in warning.value for warning in app.warning)
-    assert not any("결과 파일이 없습니다" in warning.value for warning in app.warning)
+    captions = [caption.value for caption in app.caption]
+    assert any("읽지 못했습니다(꼴이 다름)" in text for text in captions), captions
+    assert not any("결과 파일이 없습니다" in text for text in captions)
+    note = active_state(app, "AD-01")
+    assert note is not None and "결과 파일을 읽지 못함" in note["short"], states(app, "AD-01")
 
 
 def test_an_opened_server_start_check_stays_open_after_a_trip_to_another_screen(

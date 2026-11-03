@@ -162,6 +162,48 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("TAB-01", "action", "event", "탭 상한 — 안 쓰는 탭을 닫아야 열린다"),
     AlertSpec("TAB-02", "check", "event", "새로고침 뒤 설비 시나리오가 공식으로 돌아옴"),
     AlertSpec("TAB-03", "check", "event", "테마 전환 뒤 설비 시나리오가 공식으로 돌아옴"),
+    # 2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기(설계 6장
+    # 2 · 3). 화면을 못 그리는 오류(`*-xx` 「… 준비 오류」)는 자리 `st.error` 를 그대로 두고
+    # `screen_error` 로 같은 지문이 처음일 때만 알림창 · 기록을 더한다(설계 2-2).
+    AlertSpec("GL-02", "check", "state", "시뮬레이션 DB 가 이 코드보다 새 판"),
+    AlertSpec("GL-03", "check", "state", "설비 DB 가 이 코드보다 새 판"),
+    AlertSpec("EQ-01", "action", "state", "옛 배포 흔적 — 설비 저장이 막힘"),
+    AlertSpec("EQ-02", "action", "state", "설비 시나리오를 일정 없이 엶(옛 배포 흔적)"),
+    AlertSpec("EQ-03", "check", "event", "설비 시나리오 세션을 다른 리비전으로 옮김"),
+    AlertSpec("EQ-04", "check", "state", "이 설비 시나리오에 일정이 없는 호기"),
+    AlertSpec("EQ-05", "check", "event", "남의 저장이 내 설비 편집을 버림"),
+    AlertSpec("EQ-06", "check", "state", "Static 대비 일정 — 두 쪽 공정명이 맞지 않음"),
+    AlertSpec(
+        "EQ-07", "action", "state", "Static 대비 일정 — Cut-off 에 견줘 조회기간 시작이 늦음"
+    ),
+    AlertSpec("EQ-08", "error", "state", "Static 대비 일정 — Static 가용대수를 읽지 못함"),
+    AlertSpec("EQ-09", "error", "state", "가용설비 현황 준비 오류"),
+    AlertSpec("EQ-10", "error", "state", "Space 현황 준비 오류"),
+    AlertSpec("EQ-12", "action", "state", "Cut-off 를 적지 않은 공정 — 가용대수 산출에서 빠짐"),
+    AlertSpec("PD-01", "error", "state", "공정 Capa 상세 준비 오류"),
+    AlertSpec("PD-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
+    AlertSpec("PD-03", "info", "event", "넘겨받은 달이 화면 기간 밖"),
+    AlertSpec("RS-01", "error", "state", "필요 단축 일정 준비 오류"),
+    AlertSpec("CS-01", "error", "state", "제약 시뮬레이션 준비 · 계산 오류"),
+    AlertSpec("CS-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
+    AlertSpec("WIP-01", "error", "state", "재공 현황 준비 오류"),
+    AlertSpec(
+        "WIP-04", "action", "state", "재공 현황 — 가용대수가 없어 기준선을 못 그린 공정 · 주차"
+    ),
+    AlertSpec("SC-01", "check", "state", "공식버전이 없음"),
+    AlertSpec("SC-02", "error", "state", "시나리오 관리 준비 오류"),
+    AlertSpec("AU-01", "action", "state", "자동 갱신 예약이 멈춘 것 같음"),
+    AlertSpec("AU-02", "action", "state", "자동 갱신 예약 스레드가 서 있지 않음"),
+    AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음"),
+    AlertSpec("AD-02", "action", "state", "운영인데 통합인증이 꺼짐"),
+    AlertSpec("AD-03", "action", "state", "통합인증 서명 인증서 만료 임박"),
+    AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · 패키지 준비 안 됨"),
+    AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
+    AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
+    AlertSpec("AD-07", "error", "state", "Admin Area 준비 오류"),
+    AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
+    AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
+    AlertSpec("VO-01", "error", "state", "VOC 준비 오류"),
 )
 
 
@@ -384,6 +426,25 @@ def state(
 def flush() -> None:
     """담아 둔 사건 알림을 지금 보낸다 — 이벤트 칸에 늘 한 자리를 쓴다(없으면 빈 칸)."""
     emit([])
+
+
+def screen_error(code: str, message: str | None, *, text: str | None = None) -> None:
+    """화면을 못 그리는 오류의 상태 알림(설계 2-2) — 자리 `st.error` 는 부르는 쪽이 그대로 그린다.
+
+    `message` 가 오류 글이면 조건이 있는 것이고(지문 = 그 글 — 같은 오류가 처음일 때만
+    알림창), None 이면 그 화면을 끝까지 준비한 회차다(있던 오류는 「해소」). 범위는 없다(껍데기 —
+    화면 하나의 준비). `text` 는 알림창 짧은 글이고 없으면 등록부 이름이다. **이벤트 칸에 늘 한
+    자리를 쓴다**(`state`) — 오류 갈래와 정상 갈래에서 한 번씩, 같은 회차에 한 번만 부른다.
+    """
+    state(
+        code,
+        scope=None,
+        content=message,
+        active=message is not None,
+        text=text or spec(code).title,
+        full=None if message is None else plain_text(message),
+        detail="" if message is None else message,
+    )
 
 
 def emit(notes: Sequence[AlertNote], *, slot: DeltaGenerator | None = None) -> None:

@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.elements.lib.column_types import ColumnConfig
 
-from capa_simulation import module_failures
+from capa_simulation import alerts, module_failures
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.module_registry import (
     DISABLED_ENV_VAR,
@@ -129,13 +129,22 @@ def environment_caption(scan: ModuleScan) -> str:
 
 
 def render_module_status() -> None:
-    """모듈 기록이 있거나 뿌리를 못 읽었을 때만 펼침을 그린다."""
+    """모듈 기록이 있거나 뿌리를 못 읽었을 때만 펼침을 그린다. 뿌리를 못 읽은 것은 상태
+    알림(`MO-01` — 알림창 · Alarm)으로도 낸다(그리지 않는 회차에도 부른다 — 해소)."""
     scan = module_scan()
+    alerts.state(
+        "MO-01",
+        scope=None,
+        content=scan.root_error or None,
+        active=bool(scan.root_error),
+        text="모듈 폴더를 읽지 못해 모듈 화면이 서지 않습니다 — Admin 「모듈 상태」 확인",
+        full=scan.root_error or None,
+    )
     if not scan.records and not scan.root_error:
         return
     with remembered_expander(status_title(scan), icon=":material/extension:", key=EXPANDER_KEY):
         if scan.root_error:
-            st.warning(literal_markdown(scan.root_error))
+            st.caption(f":material/folder_off: {literal_markdown(scan.root_error)}")
         if scan.records:
             st.dataframe(
                 build_status_table(scan),

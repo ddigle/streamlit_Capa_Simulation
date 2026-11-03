@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import active_state, infos, states, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 
@@ -97,11 +97,14 @@ def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
 
 
 def test_a_process_without_a_cutoff_is_surfaced_not_silently_dropped(tmp_path: Path) -> None:
-    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 옆 탭 합이 이유 없이 작아진다."""
+    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 옆 탭 합이 이유 없이 작아진다. 상태
+    알림(`EQ-12` — 알림창 · Alarm)이고 팝업 안 자리에는 수 한 줄 캡션만 선다(2026-11-03 D2)."""
     app = _run(tmp_path / "availability.duckdb")
 
-    warnings = " ".join(str(item.value) for item in app.warning)
-    assert "Cut-off 를 적지 않은 공정" in warnings, warnings
+    assert not [item for item in app.warning if "Cut-off 를 적지" in str(item.value)]
+    note = active_state(app, "EQ-12")
+    assert note is not None and "Cut-off 를 적지 않은 공정" in note["full"], states(app, "EQ-12")
+    assert any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.caption)
     clear_equipment_repository()
 
 
@@ -117,19 +120,21 @@ def _cutoff_body(database_path: str) -> None:
     render_cutoff_management(repository, equipment_processes=["E2E~공정~X", "SAMPLE1"])
 
 
-def test_the_missing_cutoff_warning_blocks_the_tildes_of_the_process_names(
+def test_the_missing_cutoff_alert_keeps_the_process_names_verbatim(
     tmp_path: Path,
 ) -> None:
-    """「Cut-off 를 적지 않은 공정」 경고는 그 이름을 그대로 새 행에 옮겨 적으라는 글인데, 원본
-    공정명 「E2E~공정~X」 의 물결표가 지움선이 되어 「E2E공정X」 로 보였다(2026-10-26 E2E r5).
-    이름의 물결표만 막고 「빠집니다」 굵게는 둔다."""
+    """「Cut-off 를 적지 않은 공정」 은 그 이름을 그대로 새 행에 옮겨 적으라는 글인데, 마크다운
+    경고에서 원본 공정명 「E2E~공정~X」 의 물결표가 지움선이 되어 「E2E공정X」 로 보였다(2026-10-26
+    E2E r5). 이제 상태 알림(`EQ-12`)이고 알림창 · 패널은 평문(`textContent`)이라 이름을 막지 않고
+    글자 그대로 싣는다."""
     app = AppTest.from_function(
         _cutoff_body, args=(str(tmp_path / "availability.duckdb"),), default_timeout=60
     ).run()
 
     assert not app.exception, [item.message for item in app.exception]
-    (warning,) = [str(item.value) for item in app.warning if "Cut-off 를 적지" in str(item.value)]
-    assert warning.endswith("**빠집니다** — E2E\\~공정\\~X, SAMPLE1"), warning
+    note = active_state(app, "EQ-12")
+    assert note is not None
+    assert str(note["full"]).endswith("빠집니다 — E2E~공정~X, SAMPLE1"), note
     clear_equipment_repository()
 
 

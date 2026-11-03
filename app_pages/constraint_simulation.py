@@ -55,6 +55,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.constraint_equipment_plan import (
     CONVERTED_UNITS_NOTE,
     SESSION_ONLY_CAPTION,
@@ -264,7 +265,9 @@ except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption("계산을 멈춰 공정을 고를 수 없습니다.")
-    st.error(bootstrap_error_message(exc))
+    message = bootstrap_error_message(exc)
+    alerts.screen_error("CS-01", message, text="제약 시뮬레이션을 준비하지 못했습니다")
+    st.error(message)
     st.stop()
 
 thresholds = page_inputs.thresholds
@@ -334,18 +337,19 @@ opened_process = prune_choice(
         else first_ready_process(plan_source, process_options)
     ),
 )
+# 넘겨받은 공정을 열지 못한 것은 이 방문 한 번의 사건 알림이다(`CS-02` — 알림창 · Alarm, 자리에
+# 그리지 않는다). 알림창 · 패널은 평문이라 이름을 막지 않는다. 표지는 바로 아래 한 자리(`flush` —
+# 늘 부른다)가 보낸다.
 if missing_label is not None:
-    # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
-    missing = f"「{literal_markdown(missing_label)}」{topic_particle(missing_label)}"
+    missing = f"「{missing_label}」{topic_particle(missing_label)}"
     if opened_process is None:
         opened = "공정 없이"
     else:
         opened_label = process_labels.label(opened_process)
-        opened = f"「{literal_markdown(opened_label)}」{object_particle(opened_label)}"
-    notices.warning(
-        f"넘겨받은 공정 {missing} 시나리오·조회기간에 없어 {opened} 엽니다.",
-        icon=":material/help:",
-    )
+        opened = f"「{opened_label}」{object_particle(opened_label)}"
+    alerts.event("CS-02", text=f"넘겨받은 공정 {missing} 시나리오·조회기간에 없어 {opened} 엽니다")
+with notices:
+    alerts.flush()
 
 
 def render_locked_arrival_note(process: str | None) -> None:
@@ -883,8 +887,12 @@ except (KeyError, ValueError) as exc:
         else bootstrap_error_message(exc)
     )
     render_header(process, f"**{literal_markdown(process_label)}** · {literal_markdown(product)}")
-    st.error(f"제약 시뮬레이션을 계산하지 못했습니다 — {message}")
+    failure = f"제약 시뮬레이션을 계산하지 못했습니다 — {message}"
+    alerts.screen_error("CS-01", failure, text="제약 시뮬레이션을 계산하지 못했습니다")
+    st.error(failure)
     st.stop()
+# 준비 · 계산 오류(`CS-01`)가 없었던 회차 — 있던 오류는 해소다. 위 오류 자리 둘보다 뒤에 둔다.
+alerts.screen_error("CS-01", None)
 
 labels = ConstraintLabels(
     process=process,

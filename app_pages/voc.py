@@ -20,6 +20,7 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
@@ -103,8 +104,11 @@ try:
     posts = repository.list_voc_posts()
     replies = repository.list_voc_replies()
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
+    message = bootstrap_error_message(exc)
+    alerts.screen_error("VO-01", message, text="VOC 글을 읽지 못했습니다(시뮬레이션 DB)")
+    st.error(message)
     st.stop()
+alerts.screen_error("VO-01", None)
 
 replies_by_post: dict[str, pd.DataFrame] = (
     {str(key): frame for key, frame in replies.groupby("post_id", sort=False)}

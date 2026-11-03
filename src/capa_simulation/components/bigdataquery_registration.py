@@ -26,6 +26,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
@@ -263,17 +264,32 @@ def _render_configuration_banner(
     detail_ready: bool,
     package_ready: bool,
 ) -> None:
+    """설정 상태 줄 — 준비가 안 됐으면 상태 알림(`AD-04` — 알림창 · Alarm)으로도 낸다. 자리에는
+    경고 상자 대신 상태 캡션을 둔다(준비됐으면 성공 줄). 회차마다 한 번 부른다(해소 · 이벤트 칸 한
+    자리)."""
     notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
-    if notice is not None:
-        st.warning(notice)
-        return
-    if not package_ready:
+    hint = None
+    if notice is None and not package_ready:
         # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
         hint = start_check_hint(STEP_INSTALL)
-        st.warning(
+        notice = (
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
-            "실제 조회는 패키지를 깐 PC 에서만 성공합니다." + (f"\n\n{hint}" if hint else "")
+            "실제 조회는 패키지를 깐 PC 에서만 성공합니다."
         )
+    alerts.state(
+        "AD-04",
+        scope=None,
+        content=notice,
+        active=notice is not None,
+        text=(
+            "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — 조회 · 등록이 막힘"
+            if notice is not None and not (catalog_ready and detail_ready)
+            else "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
+        ),
+        full=notice,
+    )
+    if notice is not None:
+        st.caption(f":material/settings_alert: {notice}" + (f"\n\n{hint}" if hint else ""))
         return
     st.success("BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.")
 

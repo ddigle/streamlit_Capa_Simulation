@@ -22,6 +22,7 @@ from typing import Any
 
 import duckdb
 import pytest
+from alert_marks import events
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_publish_guard import stale_press
 from test_equipment_scenario_repository import (
@@ -58,7 +59,6 @@ from capa_simulation.components.equipment_scenario_management import (
     stored_layout_cell,
     stored_layout_words,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import (
@@ -555,7 +555,9 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """E2E r3 같은 꼴 — 세션을 다른 리비전으로 옮겼다는 알림은 설비 시나리오 이름을 두 번 싣는다.
-    막지 않으면 물결표 하나짜리 이름(「10~12월 증설」)도 두 이름 사이가 지움선 짝이 된다."""
+    마크다운이면 물결표 하나짜리 이름(「10~12월 증설」)도 두 이름 사이가 지움선 짝이 됐다. 이제
+    사건 알림(`EQ-03` — 알림창 · Alarm)이고 알림창 · 패널은 평문(`textContent`)이라 글자 그대로
+    싣는다(2026-11-03 D2 · D3)."""
     from dataclasses import replace
 
     from capa_simulation.components import equipment_scenario_management as section
@@ -573,10 +575,8 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
     )
     app = _ok(_section(tmp_path, setup).run())
 
-    warnings = [str(item.value) for item in app.warning]
-    # 세션 알림은 표(평문)에도 가는 글이라 그리는 자리에서 글 통째로 막는다(E2E r5 — `*` 까지).
-    assert literal_markdown(notice) in warnings, warnings
-    assert notice not in warnings
+    assert not [item for item in app.warning if "합칠 수 없어" in str(item.value)]
+    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
 
 
 def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_path: Path) -> None:

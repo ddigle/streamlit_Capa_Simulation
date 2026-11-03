@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -232,6 +233,13 @@ def anonymous_failure_line(limit: int = ANONYMOUS_COUNT_LIMIT) -> str | None:
     )
 
 
+def _cert_warning() -> str:
+    return (
+        f"서명 인증서 만료가 {CERT_WARNING_DAYS}일 안입니다 — 새 인증서를 "
+        f"`{names.ENV_SIGNING_CERT}` 에 쉼표로 더해 두세요(`{names.SETUP_DOC}`)."
+    )
+
+
 def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
     return [
         cert.x5t
@@ -241,32 +249,48 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
 
 
 def render_sso_status() -> None:
-    """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다."""
+    """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
+
+    알릴 조건 둘(운영인데 꺼짐 `AD-02` · 서명 인증서 만료 임박 `AD-03`)은 상태 알림이다(알림창 ·
+    Alarm — 그리지 않는 회차에도 부른다, 해소). 펼침 안은 판정 줄 · 까닭 캡션이다."""
     cfg = runtime.config()
+    now = datetime.now(timezone.utc)
+    expiring = _expiring_certs(cfg, now)
+    off_in_production = cfg.mode is SsoMode.OFF and cfg.prod
+    alerts.state(
+        "AD-02",
+        scope=None,
+        content=off_in_production or None,
+        active=off_in_production,
+        text="운영 서버인데 통합인증이 꺼져 있습니다 — Client ID 환경변수를 넣으세요",
+        full=alerts.plain_text(OFF_IN_PRODUCTION_WARNING),
+    )
+    alerts.state(
+        "AD-03",
+        scope=None,
+        content=sorted(expiring) or None,
+        active=bool(expiring),
+        text=f"통합인증 서명 인증서 만료가 {CERT_WARNING_DAYS}일 안입니다 — 새 인증서를 더하세요",
+        full=alerts.plain_text(_cert_warning()),
+    )
     if cfg.mode is SsoMode.OFF and not cfg.prod:
         return
     verdict = sso_verdict(cfg)
-    now = datetime.now(timezone.utc)
     with remembered_expander(
         f"통합인증 점검 · {verdict}", icon=":material/verified_user:", key=EXPANDER_KEY
     ):
         if cfg.mode is SsoMode.ON:
             st.caption("통합인증이 켜져 있습니다 — 로그인한 사람만 앱에 들어옵니다.")
         elif cfg.mode is SsoMode.OFF:
-            st.warning(OFF_IN_PRODUCTION_WARNING, icon=":material/lock_open:")
+            st.caption(f":material/lock_open: {OFF_IN_PRODUCTION_WARNING}")
             st.caption(readiness_line(cfg))
         else:
             st.error(
                 "통합인증 설정을 마치지 못했습니다 — 아래 까닭을 고친 뒤 CI/CD 를 다시 돌리세요.",
                 icon=":material/gpp_bad:",
             )
-        expiring = _expiring_certs(cfg, now)
         if expiring:
-            st.warning(
-                f"서명 인증서 만료가 {CERT_WARNING_DAYS}일 안입니다 — 새 인증서를 "
-                f"`{names.ENV_SIGNING_CERT}` 에 쉼표로 더해 두세요(`{names.SETUP_DOC}`).",
-                icon=":material/event_busy:",
-            )
+            st.caption(f":material/event_busy: {_cert_warning()}")
         st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
         st.caption("  \n".join(fact_lines(cfg, now=now)))
         if cfg.mode is SsoMode.ON:

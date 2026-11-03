@@ -27,6 +27,7 @@ import streamlit as st
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation import alerts
 from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
@@ -217,14 +218,37 @@ def schema_ahead_message(notice: SchemaAheadOfCode) -> str:
     )
 
 
-def render_schema_ahead_warning(notice: SchemaAheadOfCode | None) -> None:
-    """DB 가 코드보다 새 것이면 경고 한 줄을 그린다. 아니면 아무것도 그리지 않는다.
+# DB 새 판 상태 알림 코드 — 시뮬레이션 DB 는 `app.py` 가 모든 화면에서, 설비 DB 는 그 DB 를 여는
+# 화면이 각자 낸다. 코드가 둘인 것은 한 회차에 두 DB 를 함께 알릴 수 있어서다(같은 코드에 다른
+# 내용을 번갈아 보내면 회차마다 「내용이 바뀜」 으로 다시 뜬다).
+SCHEMA_AHEAD_SIMULATION = "GL-02"
+SCHEMA_AHEAD_EQUIPMENT = "GL-03"
+
+
+def render_schema_ahead_warning(
+    notice: SchemaAheadOfCode | None, *, code: str = SCHEMA_AHEAD_EQUIPMENT
+) -> None:
+    """DB 가 코드보다 새 것인지 상태 알림으로 낸다(`alerts.state` — 자리에는 그리지 않는다).
 
     막지 않는다(2026-10-05 사용자 결정) — 막으면 예전 배포로 되돌릴 때 DB 를 먼저 복원해야
-    한다. `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다.
+    한다. `notice` 는 캐시된 저장소의 `schema_ahead` 속성이라 rerun 마다 DB 를 열지 않는다. 새 판이
+    아니어도 부른다(해소 · 이벤트 칸 한 자리). `code` 는 시뮬레이션 DB 면 `SCHEMA_AHEAD_SIMULATION`.
     """
-    if notice is not None:
-        st.warning(schema_ahead_message(notice), icon=":material/history:")
+    alerts.state(
+        code,
+        scope=None,
+        content=None
+        if notice is None
+        else [notice.database_name, notice.database_version, notice.code_version],
+        active=notice is not None,
+        text=None
+        if notice is None
+        else (
+            f"{with_subject_particle(notice.database_name)} 이 코드보다 새 판입니다"
+            f"(DB {notice.database_version} · 코드 {notice.code_version}) — 최신 배포를 확인하세요"
+        ),
+        full=None if notice is None else schema_ahead_message(notice),
+    )
 
 
 @dataclass(frozen=True)

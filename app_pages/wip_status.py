@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -153,9 +154,11 @@ try:
     equipment_repository = get_equipment_repository(equipment_database)
     availability = load_standard_target_availability(equipment_database)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+    message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    alerts.screen_error("WIP-01", message, text="재공 현황을 준비하지 못했습니다")
+    st.error(message)
     st.stop()
-# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.
 render_schema_ahead_warning(equipment_repository.schema_ahead)
 
 if route_scope.empty:
@@ -281,8 +284,11 @@ try:
         process_labels=process_labels,
     )
 except ValueError as exc:
-    st.error(bootstrap_error_message(exc))
+    message = bootstrap_error_message(exc)
+    alerts.screen_error("WIP-01", message, text="재공 현황을 그리지 못했습니다")
+    st.error(message)
     st.stop()
+alerts.screen_error("WIP-01", None)
 
 today_rows = wip_history.loc[wip_history["일자"].eq(today)]
 today_met = int(today_rows["상태"].eq("충족").sum())
@@ -317,14 +323,31 @@ with st.container(border=True):
         "Capa`와 같은 산식(공정별 대당 Capa ÷ RUN_DAY × 주차별 가용대수)의 제품별 가능 "
         "수준입니다. 공정 소요기준에 따라 단위는 Kea 또는 매이며 서로 합산하지 않습니다."
     )
-    if today_unset:
-        st.warning(
+    # 기준선을 못 그린 공정·주차는 상태 알림(`WIP-04` — 자리에 그리지 않는다). 고칠 곳(표준
+    # 목표)으로 가는 링크는 남긴다. 없어도 부른다(해소). 수는 고른 공정·제품에 따라 바뀌므로 지문에
+    # 넣지 않는다 — 거르기를 바꿀 때마다 다시 뜨지 않게.
+    alerts.state(
+        "WIP-04",
+        scope={
+            "token": active_scenario["content_token"],
+            "period": [start_date.isoformat(), end_date.isoformat()],
+        },
+        content=bool(today_unset),
+        active=bool(today_unset),
+        text=(
+            f"재공 기준선을 못 그린 경로 {today_unset:,}개(가용대수 없음) — 표준 목표에서 주차별 "
+            "가용설비 입력"
+        ),
+        full=(
             "일부 공정·주차에 가용대수가 없어 표준 가능량 기준선을 표시하지 못했습니다. "
-            "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
-        )
+            "「표준 목표」 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
+        ),
+        scope_label=f"재공 현황 {start_date:%Y-%m-%d} ~ {end_date:%Y-%m-%d}",
+    )
+    if today_unset:
         render_page_link(
             "app_pages/standard_target_capa.py",
-            label="표준 목표 열기",
+            label="표준 목표에서 주차별 가용설비 입력",
             icon=":material/track_changes:",
         )
 

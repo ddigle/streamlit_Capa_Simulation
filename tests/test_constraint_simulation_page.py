@@ -26,6 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import events
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
@@ -321,14 +322,16 @@ def test_an_unknown_process_param_warns_and_opens_the_first_ready_process(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """넘겨받은 공정이 선택지에 없으면 처음 열 때와 같은 기본 공정(설비 일정이 서는 첫 공정)을 열고
-    알림이 연 공정을 말한다."""
+    알림이 연 공정을 말한다 — 이 방문 한 번의 사건 알림(`CS-02` — 알림창 · Alarm, 평문)이다."""
     app = _app(dynamic_databases)
     app.query_params["process"] = "없는_공정"
     _ok(app.run())
-    warnings = " ".join(str(item.value) for item in app.warning)
-    assert "넘겨받은 공정" in warnings and "없는\\_공정" in warnings
+    assert not [item for item in app.warning if "넘겨받은 공정" in str(item.value)]
+    (note,) = events(app, "CS-02")
+    warnings = str(note["full"])
+    assert "넘겨받은 공정" in warnings and "「없는_공정」" in warnings
     assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
-    assert "엽니다" in warnings and DYNAMIC_PROCESS.replace("_", "\\_") in warnings
+    assert "엽니다" in warnings and f"「{DYNAMIC_PROCESS}」" in warnings
 
 
 def test_the_sidebar_first_open_picks_the_first_process_with_an_equipment_schedule(

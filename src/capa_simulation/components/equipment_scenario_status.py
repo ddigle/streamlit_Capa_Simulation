@@ -25,6 +25,7 @@ import streamlit as st
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation import alerts
 from capa_simulation.components.app_header import (
     STATUS_NEWER,
     STATUS_UNSAVED,
@@ -51,7 +52,10 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
 )
-from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
+from capa_simulation.components.equipment_scenario_management import (
+    render_legacy_trace_goto,
+    report_session_notices,
+)
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -184,11 +188,20 @@ def unscheduled_notice(count: int, *, official: bool = False) -> str | None:
 
 
 def render_legacy_trace_warning(session: EquipmentSession) -> None:
-    """옛 배포로 저장한 설비 리비전이 있으면 맨 위 경고 한 줄(저장 거부 문구와 같은 글)과 「시나리오
-    관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비 시나리오」
-    구획)에 있어 그리로 옮기는 길을 둔다."""
-    if session.legacy_trace_count:
-        st.warning(legacy_trace_message(session.legacy_trace_count), icon=":material/history:")
+    """옛 배포로 저장한 설비 리비전이 있는지 상태 알림(`EQ-01` — 저장 거부 문구와 같은 글)으로
+    내고, 있으면 「시나리오 관리에서 이어 쓰기」 단추를 세운다 — 「이대로 이어 쓰기」 는 다른
+    화면(시나리오 관리 「설비 시나리오」 구획)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 그리지
+    않는다(D2 — 알림창 · Alarm). 없어도 부른다(해소 · 이벤트 칸 한 자리)."""
+    count = session.legacy_trace_count
+    alerts.state(
+        "EQ-01",
+        scope=None,
+        content=count or None,
+        active=bool(count),
+        text=f"옛 배포 설비 리비전 {count}개 — 설비 저장이 막힘 · 시나리오 관리에서 이어 쓰기",
+        full=legacy_trace_message(count),
+    )
+    if count:
         render_legacy_trace_goto()
 
 
@@ -347,10 +360,9 @@ def render_equipment_scenario_row(
             # 되지 않게 막는다(설비 마스터 탭 결과 알림과 같다).
             if isinstance(flash, str):
                 st.success(markdown_safe_tildes(flash))
-            if session.notice:
-                # 세션 알림은 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 막는다 —
-                # 앱 꾸밈이 없는 글이라 구두점 전부를(이름의 `*` 가 기울임이 되지 않게 — E2E r5).
-                st.warning(literal_markdown(session.notice), icon=":material/sync_problem:")
+        # 세션 알림(다른 리비전으로 옮김 · 일정 없이 엶)은 알림 칸으로 낸다 — 줄 아래에 그리지
+        # 않는다.
+        report_session_notices(session)
 
 
 def open_equipment_scenario_dialog() -> None:

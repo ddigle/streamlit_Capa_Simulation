@@ -27,6 +27,7 @@ from typing import NoReturn, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
@@ -313,8 +314,20 @@ def _render_store_status(
                 st.caption(f"리비전 ID `{active_revision_id}`")
         else:
             st.write("지금 올라와 있는 저장 리비전이 없습니다.")
+        # 공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 이 칸은 저장소 상태 줄이라
+        # 「공식버전 없음」 줄은 남긴다. 있어도 부른다(해소).
+        alerts.state(
+            "SC-01",
+            scope=None,
+            content=official is None or None,
+            active=official is None,
+            text="공식버전이 없습니다 — 새 웹 세션이 불러올 기준이 없음 · 리비전을 공식으로 지정",
+            full="공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다.",
+        )
         if official is None:
-            st.warning("공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다.")
+            st.markdown(
+                "**공식버전** · :orange[없음] — 새 웹 세션에서 자동으로 불러올 기준이 없습니다."
+            )
         else:
             st.success(
                 f"최신 공식 v{official.release_no} · {literal_markdown(official.scenario_name)} "

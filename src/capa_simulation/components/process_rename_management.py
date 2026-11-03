@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.admin_dialog import (
     admin_dialog_is_open,
     close_admin_dialog,
@@ -136,17 +137,28 @@ def render_process_rename_management(
             "Dynamic Capa·Capa Chatbot 등)에서는 그대로 적용됩니다."
         )
     collisions = labels.owned_name_collisions(available_processes)
-    if collisions:
-        # 표시명을 쓰는 화면의 공정 선택 상자는 겹친 글자를 가른다(`unique_format_func`).
-        # 표·그림·버튼은 가르지 않아 같은 글자로 보인다. 검사 범위는 시나리오 `RQ_MODULE` 공정
-        # 뿐이다 — 설비 마스터까지 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다.
-        st.warning(
+    # 표시명을 쓰는 화면의 공정 선택 상자는 겹친 글자를 가른다(`unique_format_func`). 표·그림·버튼은
+    # 가르지 않아 같은 글자로 보인다. 검사 범위는 시나리오 `RQ_MODULE` 공정뿐이다 — 설비 마스터까지
+    # 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다. 상태 알림(`AD-06` — 알림창 ·
+    # Alarm, 자리에 그리지 않는다)이고 없어도 부른다(해소). 알림창 · 패널은 평문이라 이름을 막지
+    # 않는다.
+    alerts.state(
+        "AD-06",
+        scope=None,
+        content=sorted(collisions) or None,
+        active=bool(collisions),
+        text=(
+            f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건 — 두 공정이 같은 글자로 "
+            "보입니다 · Proc Rename 에서 고치기"
+        ),
+        full=(
             f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
-            f"{_listed(collisions)}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
+            f"{', '.join(collisions[:10])}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
             "공정을 고르는 상자에서는 「표시명 (원본)」 으로 갈라 보이지만 표·그림·버튼에서는 "
             "같은 글자로 보입니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. "
             "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다."
-        )
+        ),
+    )
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)

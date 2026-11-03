@@ -27,6 +27,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     calculation_drafts,
@@ -149,11 +150,13 @@ try:
     # 카드 「도면에서 보기」 가 열 층에서 뺄 비활성 층(Space 층 사용 0029 — 링크 대상이 아니다).
     inactive_floors = frozenset(load_floor_states(equipment_database_path).inactive)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(
-        "설비 일정을 준비하지 못했습니다. "
-        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    message = "설비 일정을 준비하지 못했습니다. " + bootstrap_error_message(
+        exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
+    alerts.screen_error("RS-01", message, text="필요 단축 일정을 준비하지 못했습니다(설비 DB)")
+    st.error(message)
     st.stop()
+alerts.screen_error("RS-01", None)
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
     render_legacy_trace_warning(equipment_session)

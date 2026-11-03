@@ -21,6 +21,7 @@ from collections.abc import Sequence
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sso_status import sso_start_step, started_environment_caption
 from capa_simulation.io.container_start_report import (
@@ -103,6 +104,7 @@ def render_container_start_check() -> None:
     if report is None:
         _render_missing_report()
         return
+    _report_missing(None)
     with remembered_expander(
         f"서버 시작 점검 · {report_verdict(report)}",
         icon=":material/rocket_launch:",
@@ -131,17 +133,33 @@ def render_container_start_check() -> None:
 
 def _render_missing_report() -> None:
     """결과를 못 읽은 회차 — 파일이 있으면 「결과 파일을 읽지 못함」(꼴이 다름), 없으면 CD 서버로
-    보일 때만 「결과 없음」."""
+    보일 때만 「결과 없음」. 펼침 제목이 판정이고 본문은 까닭 캡션이다 — 알릴 조건은 상태
+    알림(`AD-01`)으로도 낸다(알림창 · Alarm)."""
     if report_file_exists():
         title, notice = "서버 시작 점검 · 결과 파일을 읽지 못함", UNREADABLE_REPORT_NOTICE
     else:
         missing = missing_report_notice()
         if missing is None:
+            _report_missing(None)
             return
         title, notice = "서버 시작 점검 · 결과 없음", missing
+    _report_missing(title, notice)
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
-        st.warning(notice)
+        st.caption(notice)
         st.caption(
             f"넣을 환경변수와 이때 볼 것은 `{GUIDE_DOCUMENT}` 의 「C-DEP CD(배포 서버)」 절에 "
             "있습니다."
         )
+
+
+def _report_missing(title: str | None, notice: str = "") -> None:
+    """서버 시작 점검 결과를 못 읽었는지 상태 알림(`AD-01`). 읽었거나 CD 서버가 아니면 해소다 —
+    Admin 회차마다 한 번 부른다(이벤트 칸 한 자리)."""
+    alerts.state(
+        "AD-01",
+        scope=None,
+        content=title,
+        active=title is not None,
+        text=(None if title is None else f"{title} — 배포 서버 환경변수를 확인하세요"),
+        full=notice or None,
+    )

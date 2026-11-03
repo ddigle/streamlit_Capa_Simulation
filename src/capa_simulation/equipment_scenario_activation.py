@@ -221,6 +221,13 @@ class EquipmentSession:
             official_scenario=self.is_official_scenario,
         )
 
+    @property
+    def alert_scope(self) -> dict[str, str | None]:
+        """설비 상태 알림의 범위(`alerts.state` 의 `scope`) — 세션이 든 (공통 대장 리비전, 일정
+        리비전) 쌍. 설비 시나리오나 리비전을 바꾸면 같은 조건이라도 새 알림이다. 스냅샷이 없으면
+        None 쌍이다."""
+        return {"equipment": self.snapshot.token if self.snapshot is not None else None}
+
     def label(self) -> dict[str, Any]:
         """머리 띠·사이드바 줄 재료(기본형만)."""
         return {

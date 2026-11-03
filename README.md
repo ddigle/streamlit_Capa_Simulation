@@ -429,8 +429,9 @@ typed raw 로 그대로 보존합니다.
 - 시나리오를 지워도 DuckDB 파일은 줄지 않습니다. 앱을 내린 뒤 `scripts/compact_duckdb.py` 로 재구축합니다.
 - 사내에서 오브젝트 스토리지 동기화(`managed` 모드)를 켜면 DB 옆에 `<db파일명>.sync.json` 사이드카가 생깁니다 —
   [`docs/objectstore_setup.md`](docs/objectstore_setup.md).
-- 예전 배포로 되돌려 DB 에 코드가 모르는 더 높은 마이그레이션이 적용돼 있으면 앱은 막지 않고 돌며, 화면 맨 위에
-  「시뮬레이션 DB(또는 설비 DB)가 이 코드보다 새 버전입니다(DB n · 코드 m)」 경고를 띄웁니다.
+- 예전 배포로 되돌려 DB 에 코드가 모르는 더 높은 마이그레이션이 적용돼 있으면 앱은 막지 않고 돌며,
+  「시뮬레이션 DB(또는 설비 DB)가 이 코드보다 새 버전입니다(DB n · 코드 m)」 를 오른쪽 아래 알림창 · 머리 `Alarm` 으로
+  알립니다(같은 내용이면 알림창은 처음 한 번).
 - 스키마는 SQL 마이그레이션으로만 바뀝니다. 적용된 파일은 체크섬을 대조하므로 고치지 않고 후속 번호를 더합니다
   ([`docs/migration_catalog.md`](docs/migration_catalog.md)).
 

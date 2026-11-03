@@ -19,9 +19,9 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.literal_markdown import literal_names
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.table_view_controls import (
@@ -124,13 +124,28 @@ def render_cutoff_management(
     st.markdown("#### :material/schedule: 공정별 Cut-off")
 
     missing = missing_cutoff_processes(equipment_processes, stored)
+    # 빠진 공정은 상태 알림(`EQ-12` — 알림창 · Alarm, 자리에 그리지 않는다)이다. 원본 공정명 그대로
+    # 싣는다 — 그 이름을 새 행에 옮겨 적는다(알림창 · 패널은 평문이라 막지 않는다). 없어도 부른다.
+    shown = ", ".join(missing[:10]) + (" …" if len(missing) > 10 else "")
+    alerts.state(
+        "EQ-12",
+        scope=None,
+        content=sorted(missing) or None,
+        active=bool(missing),
+        text=(
+            f"Cut-off 를 적지 않은 공정 {len(missing)}개 — 가용대수 산출에서 빠짐 · 설정 Cut-off "
+            "표에 행을 더하세요"
+        ),
+        full=(
+            f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 월별 가용대수 산출에서 "
+            f"빠집니다 — {shown}"
+        ),
+    )
     if missing:
-        # 원본 공정명을 그대로 새 행에 옮겨 적는 글이다 — 물결표가 지움선·별표가 기울임이 되면 옮긴
-        # 이름이 맞지 않는다. 「빠집니다」 굵게는 살리고 이름마다 막는다.
-        st.warning(
-            f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 "
-            f"월별 가용대수 산출에서 **빠집니다** — {literal_names(missing[:10])}"
-            + (" …" if len(missing) > 10 else "")
+        # 고칠 표가 바로 아래라 자리에는 수만 한 줄(빈 상태 캡션과 짝) — 이름 목록은 알림에 있다.
+        st.caption(
+            f":material/playlist_add: Cut-off 를 적지 않은 공정 {len(missing)}개"
+            + (" — 「설비 공정으로 채우기」 로 행을 더합니다." if locked_reason is None else "")
         )
     elif equipment_processes:
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")

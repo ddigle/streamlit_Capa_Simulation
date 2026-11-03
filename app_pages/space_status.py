@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
     discard_layout_edits,
@@ -538,11 +539,13 @@ try:
     # 머리 알림의 도면 요소·Main 설비명 위치 실효 차이(가정 리비전만 질의한다).
     floor_differences = floor_layout_differences(equipment_database_path, equipment_session)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(
-        "Space 설비 데이터를 준비하지 못했습니다: "
-        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    message = "Space 설비 데이터를 준비하지 못했습니다: " + bootstrap_error_message(
+        exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
+    alerts.screen_error("EQ-10", message, text="Space 설비 데이터를 준비하지 못했습니다(설비 DB)")
+    st.error(message)
     st.stop()
+alerts.screen_error("EQ-10", None)
 
 # 필요 단축 일정 「도면에서 보기」 로 온 회차 — 색 기준·목표·공정 칩·층을 한 번 받고 주소 인자를
 # 거둔다. 그 층은 세션 층을 덮는다(링크만 예외). 받았으면 회차를 한 번 더 돈다 —

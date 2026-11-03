@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import states
 from sheet_reader import has_sheet, sheet_cells, sheet_value
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab
@@ -233,7 +234,11 @@ def _view(app: AppTest, value: str) -> AppTest:
 
 
 def _warnings(app: AppTest) -> list[str]:
-    return [str(element.value) for element in app.warning]
+    """경고 상자 글과 조건이 있는 상태 알림 전문 — Static 대비 일정 머리의 「Static 을 읽지
+    못함」 은 상태 알림(`EQ-08`)이다(2026-11-03 D2)."""
+    return [str(element.value) for element in app.warning] + [
+        str(note["full"]) for note in states(app) if note.get("active")
+    ]
 
 
 def _infos(app: AppTest) -> list[str]:
@@ -334,6 +339,7 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
     stopped = f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {VALUE_ERROR}"
 
     assert stopped in _warnings(app)
+    assert stopped not in [str(element.value) for element in app.warning], "자리에는 그리지 않는다"
     _view(app, "분류별 내역")
     assert stopped in _warnings(app)
     assert has_sheet(app), "분류별 내역 시트가 서야 한다"

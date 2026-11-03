@@ -25,7 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import infos, shown, successes
+from alert_marks import events, infos, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -1424,18 +1424,19 @@ def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
     _ok(app.run())
 
     flashes = [str(item.value) for item in successes(app, sidebar=True)]
-    notices = [str(item.value) for item in app.sidebar.warning]
     assert any(text.count(f"「{TILDE_ESCAPED}」") >= 2 for text in flashes), flashes
-    assert any(f"「{TILDE_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
-    bare = [text for text in [*flashes, *notices] if re.search(r"(?<!\\)~", text)]
+    bare = [text for text in flashes if re.search(r"(?<!\\)~", text)]
     assert not bare, bare
+    # 세션 이동 알림은 사건 알림(`EQ-03` — 알림창 · Alarm, 평문)이라 글자 그대로 싣는다.
+    assert not list(app.sidebar.warning)
+    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
 
 
 def test_the_sidebar_session_notice_keeps_the_asterisks_of_the_scenario_name(
     tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """세션 이동 알림(평문 표 잠금 글에도 가는 글)이 이름의 별표를 막는다 — 물결표만 막아
-    「가정<em>R6</em>B」 로 기울었다(E2E r5)."""
+    """세션 이동 알림(평문 표 잠금 글에도 가는 글)은 마크다운이면 물결표만 막아 「가정<em>R6</em>B」
+    로 기울었다(E2E r5). 이제 사건 알림(`EQ-03`, 평문)이라 이름의 별표를 글자 그대로 싣는다."""
     from dataclasses import replace
 
     import capa_simulation.equipment_scenario_activation as activation
@@ -1453,10 +1454,9 @@ def test_the_sidebar_session_notice_keeps_the_asterisks_of_the_scenario_name(
     )
     app = _ok(_space(tmp_path, setup).run())
 
-    notices = [str(item.value) for item in app.sidebar.warning]
-    assert any(f"「{STAR_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
-    bare = [text for text in notices if re.search(r"(?<!\\)\*", text)]
-    assert not bare, bare
+    assert not list(app.sidebar.warning)
+    notices = [str(note["full"]) for note in events(app, "EQ-03")]
+    assert any(f"「{STAR_NAME}」 r2 로 열었습니다" in text for text in notices), notices
 
 
 def test_an_assumption_save_of_marks_only_names_what_it_saved() -> None:

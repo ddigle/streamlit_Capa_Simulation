@@ -27,7 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import infos, shown
+from alert_marks import active_state, alert_notes, events, infos, shown
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
     OPERATIONS,
@@ -428,11 +428,19 @@ def _select(app: AppTest, scenario_id: str, schedule_revision_id: str | None) ->
 
 
 def _texts(app: AppTest) -> list[str]:
-    return [
+    """그린 글 + 알림 칸 글(조건이 있는 상태 알림 · 사건 알림의 전문 — 2026-11-03 D2 · D3 부터
+    자리에 그리지 않는다)."""
+    drawn = [
         str(item.value)
         for kind in ("caption", "info", "warning", "success", "error", "markdown")
         for item in shown(app, kind)
     ]
+    alerted = [
+        str(note.get("full", ""))
+        for note in alert_notes(app)
+        if "flash" not in note and (note.get("kind") == "event" or note.get("active"))
+    ]
+    return drawn + alerted
 
 
 def _heading(app: AppTest) -> str:
@@ -588,8 +596,9 @@ def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hi
     _shell: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """세션을 다른 리비전으로 옮겼다는 알림(미저장 설비 편집을 버렸다는 말)은 그 회차 한 번뿐이다.
-    세 탭을 늘 그려 다른 탭을 보는 회차에도 구획이 세션을 풀므로, 그때는 숨은 패널이 아니라 탭 묶음
-    위에 선다(2026-10-25 리뷰). 「시나리오 관리」 탭이 보이면 구획 안 그대로다."""
+    세 탭을 늘 그려 다른 탭을 보는 회차에도 구획이 세션을 푼다(2026-10-25 리뷰) — 숨은 패널에 그리면
+    보지 못한 채 사라지던 것을 이제 사건 알림(`EQ-03` — 알림창 · Alarm)으로 내 어느 탭을 보든
+    뜬다(2026-11-03 D3). 자리(탭 묶음 위 · 구획 안)에는 그리지 않는다."""
     from capa_simulation.components import equipment_scenario_management as section
     from capa_simulation.equipment_scenario_activation import resolve_equipment_session
 
@@ -607,15 +616,13 @@ def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hi
     app.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: BigDataQuery 등록"
     _ok(app.run())
-    # 세션 알림은 표(평문)에도 가는 글이라 그리는 자리에서 통째로 막는다(E2E r5).
-    shown = literal_markdown(notice)
-    assert shown in [str(item.value) for item in app.main.warning]
-    assert shown not in [str(item.value) for tab in app.main.tabs for item in tab.warning]
+    assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
+    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
 
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = SCENARIO_MANAGEMENT_TAB
     _ok(app.run())
-    assert [str(item.value) for item in app.main.warning].count(shown) == 1
-    assert shown in [str(item.value) for item in app.main.tabs[0].warning]
+    assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
+    assert [note["full"] for note in events(app, "EQ-03")] == [notice]
 
 
 def test_switching_the_managed_kind_keeps_unsaved_list_edits(_shell: AppTest) -> None:
@@ -694,11 +701,14 @@ def test_an_unscheduled_unit_is_announced_and_left_out_of_the_assumption(
     app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path)
     _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
     _ok(app.run())
-    assert any("일정이 없는 호기 1대" in str(item.value) for item in infos(app))
+    # 상태 알림(`EQ-04` — 알림창 · Alarm, 자리에 그리지 않는다)이다.
+    assert not any("일정이 없는 호기" in str(item.value) for item in infos(app))
+    note = active_state(app, "EQ-04")
+    assert note is not None and "일정이 없는 호기 1대" in note["full"]
 
     _select(app, OPERATIONS, None)
     _ok(app.run())
-    assert not any("일정이 없는 호기" in str(item.value) for item in infos(app))
+    assert active_state(app, "EQ-04") is None
 
 
 def test_space_draws_the_assumption_and_locks_only_the_fab_there(
@@ -1678,10 +1688,11 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert repository.legacy_trace_count() == 1
     app = _ok(_shell.run())
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
-    warning = next(
-        str(item.value) for item in app.warning if "옛 배포로 저장한 설비 리비전 1개" in item.value
-    )
-    assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in warning
+    # 맨 위 경고는 상태 알림(`EQ-01` — 알림창 · Alarm)이고 단추만 자리에 선다(2026-11-03 D2).
+    assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
+    note = active_state(app, "EQ-01")
+    assert note is not None and "옛 배포로 저장한 설비 리비전 1개" in note["full"]
+    assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in note["full"]
     # 단추는 탭 기억·전환 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
     # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
     app.button(key=LEGACY_TRACE_GOTO_KEY).click()

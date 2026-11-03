@@ -38,6 +38,7 @@ import streamlit as st
 
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation import alerts
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
@@ -201,12 +202,14 @@ try:
     )
     stored_floor_canvases = load_floor_layout_canvases(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(
-        "설비 현황을 준비하지 못했습니다. "
-        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    message = "설비 현황을 준비하지 못했습니다. " + bootstrap_error_message(
+        exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
+    alerts.screen_error("EQ-09", message, text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
+    st.error(message)
     st.stop()
-# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+alerts.screen_error("EQ-09", None)
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
     # 옛 배포로 저장한 설비 리비전이 있으면 설비 저장이 막힌다 — 맨 위에 까닭과 빠져나갈 길.
@@ -231,10 +234,20 @@ saved_equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 saved_downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 _, equipment, downtime = calculation_drafts()
 using_dashboard_sample = saved_equipment.empty
-# 이 설비 시나리오에 일정이 없는 호기(함께 넣기를 끄고 넣은 호기) — 계산에 들지 않는다는 한 줄.
-unscheduled_line = unscheduled_notice(len(draft_unscheduled_units()))
-if unscheduled_line is not None:
-    notices.info(unscheduled_line, icon=":material/event_busy:")
+# 이 설비 시나리오에 일정이 없는 호기(함께 넣기를 끄고 넣은 호기) — 계산에 들지 않는다는 상태
+# 알림(`EQ-04` — 자리에는 그리지 않는다). 없어도 부른다(해소).
+unscheduled_count = len(draft_unscheduled_units())
+alerts.state(
+    "EQ-04",
+    scope=equipment_session.alert_scope,
+    content=unscheduled_count or None,
+    active=bool(unscheduled_count),
+    text=(
+        f"이 설비 시나리오에 일정이 없는 호기 {unscheduled_count:,}대 — 계산에서 빠짐 · "
+        "설비 마스터 일정 칸에 적어 저장"
+    ),
+    full=unscheduled_notice(unscheduled_count),
+)
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
 # Static 대비 일정·설정 팝업의 표 보기 필터). 선택값·저장값·CSV·설비 마스터 입력은 원본이다.
 # 표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔
@@ -526,6 +539,7 @@ with gap_tab:
                 downtime=dashboard_downtime,
                 counterfactual_spans=gap_counterfactual_spans,
                 manual_downtime=gap_manual_downtime,
+                alert_scope=equipment_session.alert_scope,
             )
 
 
