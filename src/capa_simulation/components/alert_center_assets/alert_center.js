@@ -147,6 +147,15 @@ function tabMatches(text, label) {
   const want = String(label || '').replace(/\s+/g, ' ').trim()
   return want !== '' && plain.endsWith(want)
 }
+
+// 탭 안 탭(가용설비 현황 「Summary › Static 대비 일정」)은 `tab` 에 바깥 → 안 차례로 이 글로 잇는다.
+const TAB_PATH = ' › '
+
+// 탭 길(`바깥 › 안`)을 첫 칸과 나머지로 가른다. 나머지가 없으면 빈 글이다.
+function tabStep(path) {
+  const parts = String(path || '').split(TAB_PATH).map((part) => part.trim()).filter(Boolean)
+  return [parts[0] || '', parts.slice(1).join(TAB_PATH)]
+}
 // 툴바 자리 — `order` 에서 자기보다 뒤 차례인 단추 중 이미 선 첫 단추 앞, 없으면 끝(`theme_toggle.capaToolbar` 와 같다).
 // 돌려주는 것은 앞에 설 형제 id(끝이면 null).
 function toolbarBefore(order, id, present) {
@@ -809,18 +818,28 @@ function running() {
 }
 
 // 「그 화면으로」 가 맡긴 탭 고르기 — 그 화면(`here`)에 닿고 회차가 끝났으면 이름이 맞는 탭 단추를 누른다. 이미 열린 탭이면
-// 누르지 않는다. 기다리는 시간이 지나면 버린다.
+// 누르지 않는다. 탭 안 탭이면 바깥 탭부터 한 칸씩 연다 — 누른 칸은 그 회차가 끝난 뒤 다음 칸을, 이미 열린 칸은 곧바로 다음 칸을
+// 본다. 기다리는 시간이 지나면 버린다.
 function settleTab(C) {
-  const pending = C.pendingTab
-  if (!pending) return
-  if (Date.now() > pending.until) {
-    C.pendingTab = null
-    return
+  while (C.pendingTab) {
+    const pending = C.pendingTab
+    if (Date.now() > pending.until) {
+      C.pendingTab = null
+      return
+    }
+    if (C.data.here !== pending.href || running()) return
+    const [first, rest] = tabStep(pending.tab)
+    C.pendingTab = rest ? { ...pending, tab: rest } : null
+    const button = [...document.querySelectorAll(TAB_BUTTON)].find((item) => tabMatches(item.textContent, first))
+    if (button && button.getAttribute('aria-selected') !== 'true') {
+      button.click()
+      return
+    }
+    if (!button) {
+      C.pendingTab = null
+      return
+    }
   }
-  if (C.data.here !== pending.href || running()) return
-  C.pendingTab = null
-  const button = [...document.querySelectorAll(TAB_BUTTON)].find((item) => tabMatches(item.textContent, pending.tab))
-  if (button && button.getAttribute('aria-selected') !== 'true') button.click()
 }
 
 function downloadTable(table) {

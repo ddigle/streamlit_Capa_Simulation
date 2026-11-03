@@ -218,6 +218,7 @@ out.tabs = [
   tabMatches('monitoring확보율', '대당 Capa'),
   tabMatches('anything', ''),
 ]
+out.steps = [tabStep('Summary › Static 대비 일정'), tabStep('소요대수'), tabStep('')]
 console.log(JSON.stringify(out))
 """
 
@@ -249,6 +250,8 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["cells"] == ["가공", "DEMO-P9", "0.1235", "3", ""]
     assert out["tables"] == [["old", False], ["new", True], ["other", True], ["plain", False]]
     assert out["tabs"] == [True, True, False, False]
+    # 탭 안 탭은 바깥 칸부터 한 칸씩 연다(가용설비 현황 「Summary › Static 대비 일정」).
+    assert out["steps"] == [["Summary", "Static 대비 일정"], ["소요대수", ""], ["", ""]]
 
 
 def test_the_js_limits_match_the_registry_constants() -> None:

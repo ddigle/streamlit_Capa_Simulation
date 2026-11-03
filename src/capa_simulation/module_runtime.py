@@ -46,7 +46,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import (
     StopException,
 )
 
-from capa_simulation import module_failures, module_registry, settings
+from capa_simulation import alerts, module_failures, module_registry, settings
 from capa_simulation.components.literal_markdown import literal_names
 from capa_simulation.components.module_failure_card import (
     FailureParts,
@@ -60,7 +60,6 @@ if TYPE_CHECKING:
 
 # 모듈 회차에 코어가 만드는 세션 키(지금 없음). 생기면 여기에 적어 거짓 알림을 막는다.
 CORE_KEYS_DURING_MODULE_RUN: Final[frozenset[str]] = frozenset()
-KEY_WARNING_ICON: Final = ":material/key:"
 _LOGGER = logging.getLogger("capa_simulation.modules")
 _IMPLEMENTING_TAIL: Final = f" {module_registry.IMPLEMENTING_MARK}"
 # `st.stop()` 으로 멈춘 회차의 키 알림 — (세션 id, 모듈 id) → 글. 그 세션의 다음 그 모듈 회차가
@@ -218,18 +217,40 @@ def _key_changes(module_id: str, before: KeySnapshot) -> tuple[str, list[str]] |
     return key_warning_text(len(new), len(changed), len(removed), names), names
 
 
-def _render_pending_key_warning(module_id: str) -> None:
-    """`st.stop()` 으로 멈춘 앞 회차가 넘긴 키 알림을 화면 맨 위에 그린다."""
+def _report_key_warning(module_id: str, text: str | None) -> None:
+    """접두 없는 키 알림 — 상태 알림(`MO-02`, 범위는 모듈 id). 같은 키를 회차마다 건드려도 지문이
+    같으면 알림창은 처음 한 번이다. `text` 가 None 이면 이 회차는 건드리지 않았다(해소)."""
+    alerts.state(
+        "MO-02",
+        scope=module_id,
+        content=text,
+        active=text is not None,
+        text="이 모듈이 접두 없는 세션 키를 건드렸습니다 — ctx.key(...) 로 바꿔 주세요",
+        full=None if text is None else alerts.plain_text(text),
+    )
+
+
+def _render_pending_key_warning(module_id: str) -> bool:
+    """`st.stop()` 으로 멈춘 앞 회차가 넘긴 키 알림을 화면 맨 위에서 낸다. 넘긴 것이 없어도 이벤트
+    칸 한 자리를 쓴다(빈 표지 — 뒤 화면의 팝업 자리가 회차마다 같게). 넘긴 알림을 냈으면 참이다 —
+    그 회차의 끝(`_finish`)은 해소를 내지 않는다(같은 회차에 알림창 · 해소가 함께 서지 않게)."""
     text = _pop_deferred_key_warning(module_id)
     if text:
-        st.warning(text, icon=KEY_WARNING_ICON)
+        _report_key_warning(module_id, text)
+        return True
+    alerts.flush()
+    return False
 
 
-def _finish(spec: PageSpec, before: KeySnapshot, started: float, *, stopped: bool) -> None:
+def _finish(
+    spec: PageSpec, before: KeySnapshot, started: float, *, stopped: bool, deferred: bool = False
+) -> None:
     module_id = spec.module or ""
     module_failures.note_run_seconds(module_id, time.perf_counter() - started)
     changes = _key_changes(module_id, before)
     if changes is None:
+        if not stopped and not deferred:
+            _report_key_warning(module_id, None)
         return
     text, names = changes
     module_failures.note_key_warnings(module_id, names)
@@ -237,7 +258,7 @@ def _finish(spec: PageSpec, before: KeySnapshot, started: float, *, stopped: boo
         # 멈춘 회차에는 그리지도 세션 칸에 쓰지도 못한다 — 다음 회차 맨 위로 넘긴다.
         _defer_key_warning(module_id, text)
         return
-    st.warning(text, icon=KEY_WARNING_ICON)
+    _report_key_warning(module_id, text)
 
 
 def _record(spec: PageSpec, exc: BaseException) -> None:
@@ -255,7 +276,7 @@ def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:
         return
     before = key_snapshot(module_id)
     _render_pending_callback_failure(spec)
-    _render_pending_key_warning(module_id)
+    deferred = _render_pending_key_warning(module_id)
     started = time.perf_counter()
     try:
         run()
@@ -272,4 +293,4 @@ def run_module_page(run: Callable[[], None], spec: PageSpec) -> None:
     except BaseException as error:
         _record(spec, error)
         render_failure(spec, error)
-    _finish(spec, before, started, stopped=False)
+    _finish(spec, before, started, stopped=False, deferred=deferred)

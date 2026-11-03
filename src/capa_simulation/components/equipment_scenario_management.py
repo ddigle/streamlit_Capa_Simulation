@@ -47,11 +47,11 @@ from dataclasses import dataclass, replace
 
 import pandas as pd
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 from streamlit.errors import StreamlitPageNotFoundError
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation import alerts
 from capa_simulation.components import write_guard
 from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.equipment_data_workspace import (
@@ -697,17 +697,13 @@ def session_heading(session: EquipmentSession) -> str:
     return "이 세션: " + " · ".join(parts)
 
 
-def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = None) -> None:
+def render_equipment_scenario_section() -> None:
     """시나리오 관리 「설비 시나리오」 구획 — 설비 DB 를 이 구획 안에서만 연다.
 
     설비 DB 를 읽지 못하면 그 까닭을 이 구획 안에서만 알린다(「시뮬레이션 시나리오」 쪽은 막지
     않는다). 옛 배포 흔적 경고는 구획 본문이 「이대로 이어 쓰기」 와 함께 그린다 — 머리에 따로
-    세우지 않는다.
-
-    `notice_slot` 은 이 구획이 든 탭이 숨은 회차에 화면이 넘기는 늘 보이는 자리(탭 묶음 위
-    `st.empty`)다. 세션을 다른 리비전으로 옮겼다는 알림은 그 회차 한 번뿐이라(미저장 설비 편집을
-    버렸다는 말이 든다) 숨은 패널에 그리면 보지 못한 채 사라진다 — 그 알림만 그 자리에 그린다. 일정
-    없이 연 회차(`unmerged`)의 알림은 회차마다 다시 나오므로 구획 안 그대로다.
+    세우지 않는다. 세션 알림(다른 리비전으로 옮김 · 일정 없이 엶)은 알림 칸으로
+    낸다(`report_session_notices`).
     """
     try:
         database_path = str(settings.EQUIPMENT_DUCKDB_PATH.resolve())
@@ -725,19 +721,40 @@ def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = No
         "설비 시나리오 불러오기·저장은 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세) "
         "사이드바 설비 시나리오 줄에서도 합니다. 이 세션이 든 쌍은 그 화면들과 같습니다."
     )
-    # 세션 이동 알림은 한 회차뿐이다 — 늘 서 있는 칸 안에 그려 빠지는 회차에 구획 본문(팝오버 줄)이
-    # 한 칸 당겨지지 않게 한다(`POPOVER_GENERATION_KEY`).
-    with st.container():
-        if session.notice:
-            # 알림은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다).
-            # 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 막는다 — 앱 꾸밈이 없는
-            # 글이라 구두점 전부를 막는다(물결표만 막으면 이름의 `*` 가 기울임이 된다 — E2E r5).
-            notice = literal_markdown(session.notice)
-            if notice_slot is not None and not session.unmerged:
-                notice_slot.warning(notice, icon=":material/sync_problem:")
-            else:
-                st.warning(notice, icon=":material/sync_problem:")
+    # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
+    # 칸으로 낸다 — 이 구획이 든 탭이 숨은 회차에도 알림창에 뜬다.
+    report_session_notices(session)
     render_equipment_scenario_management(database_path, session)
+
+
+def report_session_notices(session: EquipmentSession) -> None:
+    """설비 시나리오 세션 알림 둘을 알림 칸으로 낸다(자리에는 그리지 않는다 — 2026-11-03 D2 · D3).
+
+    - 이 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 사건 알림(`SB-14` — 미저장 설비
+      편집을 버렸다는 말이 든다). 담기만 하고 아래 상태 알림의 표지가 함께 싣는다.
+    - 일정 없이 연 세션(`unmerged` — 옛 배포 공통 대장)은 회차마다 다시 나오는 조건이라 상태
+      알림(`SB-20`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리).
+
+    알림 글은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
+    알림창 · 패널은 평문(`textContent`)이라 막지 않는다. 사이드바 설비 시나리오 줄과 시나리오 관리
+    「설비 시나리오」 구획이 같은 함수를 부른다(한 화면에는 둘 가운데 하나만 선다 — 같은 코드 ·
+    같은 범위라 화면을 옮겨도 다시 뜨지 않는다).
+    """
+    if session.notice and not session.unmerged:
+        alerts.event(
+            "SB-14",
+            text=session.notice,
+            full=session.notice,
+            cause="고른 설비 일정이 지금 공통 대장과 합쳐지지 않음",
+        )
+    alerts.state(
+        "SB-20",
+        scope=session.scenario_id or "",
+        content=session.notice if session.unmerged else None,
+        active=session.unmerged and bool(session.notice),
+        text="옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 열었습니다 — 백업 복원 필요",
+        full=session.notice if session.unmerged else None,
+    )
 
 
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:

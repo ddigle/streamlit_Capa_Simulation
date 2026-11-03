@@ -19,6 +19,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_names
@@ -125,13 +126,7 @@ def render_cutoff_management(
 
     missing = missing_cutoff_processes(equipment_processes, stored)
     if missing:
-        # 원본 공정명을 그대로 새 행에 옮겨 적는 글이다 — 물결표가 지움선·별표가 기울임이 되면 옮긴
-        # 이름이 맞지 않는다. 「빠집니다」 굵게는 살리고 이름마다 막는다.
-        st.warning(
-            f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 "
-            f"월별 가용대수 산출에서 **빠집니다** — {literal_names(missing[:10])}"
-            + (" …" if len(missing) > 10 else "")
-        )
+        _render_missing_cutoffs(missing)
     elif equipment_processes:
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")
 
@@ -307,3 +302,43 @@ def _reset_draft(stored: pd.DataFrame) -> None:
     )
     remember_seen(CUTOFF_BASE_KEY, process_cutoff_fingerprint(stored))
     discard_editor(_EDITOR_KEY)
+
+
+def _render_missing_cutoffs(missing: list[str]) -> None:
+    """팝업 안 「Cut-off 를 적지 않은 공정」 — 고칠 표가 바로 아래라 자리 글(이름 목록)이다. 화면
+    밖에서도 알도록 같은 조건을 상태 알림(`report_missing_cutoffs` — `EQ-12`)이 따로 낸다.
+
+    원본 공정명을 그대로 새 행에 옮겨 적는 글이다 — 물결표가 지움선·별표가 기울임이 되면 옮긴 이름이
+    맞지 않는다. 「빠집니다」 굵게는 살리고 이름마다 막는다."""
+    st.warning(
+        f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 "
+        f"월별 가용대수 산출에서 **빠집니다** — {literal_names(missing[:10])}"
+        + (" …" if len(missing) > 10 else "")
+    )
+
+
+def report_missing_cutoffs(equipment_processes: list[str], stored: pd.DataFrame) -> None:
+    """설비는 있는데 Cut-off 를 적지 않은 공정의 상태 알림(`EQ-12` — 2026-11-03 결정 보드 D2).
+
+    가용설비 현황이 회차마다(빠진 공정이 없어도 — 해소 · 이벤트 칸 한 자리) 부른다 — 「설정」 팝업을
+    열지 않아도 Static 대비 일정 합이 왜 작은지 알게 한다. 팝업 안 경고(`_render_missing_cutoffs`)는
+    고칠 표 곁의 자리 글로 그대로다. Cut-off 는 모든 설비 시나리오 공용이라 범위가 없고, 내용은 빠진
+    공정 이름 목록이다(알림창 · 패널은 평문이라 이름을 막지 않는다).
+    """
+    missing = missing_cutoff_processes(equipment_processes, stored)
+    shown = ", ".join(missing[:10]) + (" …" if len(missing) > 10 else "")
+    alerts.state(
+        "EQ-12",
+        scope=None,
+        content=missing or None,
+        active=bool(missing),
+        text=(
+            f"Cut-off 를 적지 않은 공정 {len(missing)}개 — 가용대수에서 빠짐 · 머리 「설정」 에서 "
+            "행을 더하세요"
+        ),
+        full=(
+            f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 월별 가용대수 산출에서 "
+            f"빠집니다 — {shown}. 가용설비 현황 머리 「설정」 › 공정별 Cut-off 에서 「설비 공정으로"
+            " 채우기」 로 행을 더해 저장하세요."
+        ),
+    )

@@ -134,6 +134,7 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.write_guard import (
     NoticeMark,
@@ -538,10 +539,11 @@ try:
     # 머리 알림의 도면 요소·Main 설비명 위치 실효 차이(가정 리비전만 질의한다).
     floor_differences = floor_layout_differences(equipment_database_path, equipment_session)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(
-        "Space 설비 데이터를 준비하지 못했습니다: "
-        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    message = "Space 설비 데이터를 준비하지 못했습니다: " + bootstrap_error_message(
+        exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
+    alert_page_error(message, code="EQ-10", text="Space 설비 데이터를 준비하지 못했습니다(설비 DB)")
+    st.error(message)
     st.stop()
 
 # 필요 단축 일정 「도면에서 보기」 로 온 회차 — 색 기준·목표·공정 칩·층을 한 번 받고 주소 인자를

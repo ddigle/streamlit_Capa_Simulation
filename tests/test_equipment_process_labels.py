@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from alert_marks import active_state
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 from widget_browser import BrowserChoice
@@ -112,6 +113,9 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     # 공정명 목록은 이름마다 막는다(`literal_names` — 「Burn-In」 은 「Burn\-In」 으로 실린다).
     assert literal_markdown(first) in warnings
     assert literal_markdown("표시-첫공정") not in warnings
+    # 화면의 상태 알림(`EQ-12` — 평문)도 원본 이름 그대로다.
+    note = active_state(app, "EQ-12")
+    assert note is not None and first in note["full"] and "표시-첫공정" not in note["full"]
     cutoff_filter = app.multiselect(key=CUTOFF_FILTER_KEY)
     assert "표시-둘째공정" in cutoff_filter.options and second not in cutoff_filter.options
     editors = [

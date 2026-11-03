@@ -12,9 +12,11 @@ from __future__ import annotations
 import logging
 
 import pytest
+from alert_marks import active_state
 from sso_support import CLIENT_ID, PUBLIC_URL, signing, sso_secret, use_config
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation import alerts
 from capa_simulation.auth import names, runtime
 from capa_simulation.components import sso_status
 
@@ -48,14 +50,21 @@ def test_off_in_development_draws_nothing() -> None:
 
 
 def test_off_in_production_warns_and_lists_what_would_block() -> None:
-    """운영인데 client id 가 없으면 「누구나 들어온다」 경고 — 나머지 값의 문제를 미리 보인다."""
+    """운영인데 client id 가 없으면 「누구나 들어온다」 — 상태 알림(`AD-02` — 알림창 · Alarm)이고
+    펼침 안에는 까닭 캡션이 선다(2026-11-03 D2). 나머지 값의 문제를 미리 보인다."""
     runtime.start({names.ENV_APP_ENV: "prod", names.ENV_PUBLIC_URL: "http://capa.example.invalid"})
 
     app = AppTest.from_string(SCRIPT).run()
 
     assert not list(app.exception)
     assert _labels(app) == ["통합인증 점검 · 꺼짐(운영)"]
-    assert [warning.value for warning in app.warning] == [sso_status.OFF_IN_PRODUCTION_WARNING]
+    assert not list(app.warning)
+    note = active_state(app, "AD-02")
+    assert note is not None
+    assert note["full"] == alerts.plain_text(sso_status.OFF_IN_PRODUCTION_WARNING)
+    assert any(
+        sso_status.OFF_IN_PRODUCTION_WARNING in str(caption.value) for caption in app.caption
+    )
     text = _all_text(app)
     assert "켜면 막힐 문제: " in text and f"`{names.ENV_ISSUER}` — 값이 없음" in text
     assert f"`{names.ENV_PUBLIC_URL}` — https 가 아님" in text

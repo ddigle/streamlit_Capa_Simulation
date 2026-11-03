@@ -24,6 +24,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.voc_draft_keeper import render_voc_draft_keeper
 from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import (
@@ -103,7 +104,9 @@ try:
     posts = repository.list_voc_posts()
     replies = repository.list_voc_replies()
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
+    message = bootstrap_error_message(exc)
+    alert_page_error(message, code="VO-01", text="VOC 글을 읽지 못했습니다(시뮬레이션 DB)")
+    st.error(message)
     st.stop()
 
 replies_by_post: dict[str, pd.DataFrame] = (

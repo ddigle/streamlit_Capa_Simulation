@@ -24,6 +24,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import events
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
@@ -452,10 +453,10 @@ def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) 
     [
         (
             "![x](http://h/p.png) [링크](http://h/q) A~B~C",
-            f"「{literal_markdown('![x](http://h/p.png) [링크](http://h/q) A~B~C')}」는 ",
+            "「![x](http://h/p.png) [링크](http://h/q) A~B~C」는 ",
         ),
-        # 끝이 `\)` 로 escape 된 이름도 조사 도우미가 `\` 를 건너뛰어 「2」의 끝소리로 고른다.
-        ("WB(2)", "「WB\\(2\\)」는 "),
+        # 조사는 날 이름의 끝소리로 고른다(「2」 → 「는」).
+        ("WB(2)", "「WB(2)」는 "),
     ],
     ids=["markdown", "particle"],
 )
@@ -463,7 +464,9 @@ def test_an_address_process_outside_the_list_is_shown_as_literal_text(
     databases: tuple[Path, Path], wanted: str, shown: str
 ) -> None:
     """주소 인자 `?process=` 는 누구나 적어 보낼 수 있다 — 경고 상자에 마크다운으로 그리면
-    링크 하나로 남의 화면에 외부 이미지·임의 링크를 띄운다."""
+    링크 하나로 남의 화면에 외부 이미지·임의 링크를 띄운다. 이제 그 알림은 사건 알림(`PD-02` —
+    알림창 · Alarm)이고 알림창 · 패널은 글을 `textContent` 로 넣어 마크다운이 그려지지 않는다 —
+    이름은 글자 그대로 싣고 경고 상자(마크다운)는 그리지 않는다."""
     app = _ok(_app(databases).run())
     options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
     assert wanted not in options
@@ -471,13 +474,10 @@ def test_an_address_process_outside_the_list_is_shown_as_literal_text(
     app.query_params["process"] = wanted
     _ok(app.run())
 
-    bodies = [
-        str(element.value) for element in app.warning if "넘겨받은 공정" in str(element.value)
-    ]
+    assert not [element for element in app.warning if "넘겨받은 공정" in str(element.value)]
+    bodies = [str(note["full"]) for note in events(app, "PD-02")]
     assert len(bodies) == 1, bodies
     assert shown in bodies[0]
-    assert "![x](" not in bodies[0]
-    assert "](http://h/q)" not in bodies[0]
     # 목록에 없는 공정이므로 기본 공정으로 열린다.
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value in options
 
@@ -532,8 +532,11 @@ def test_a_month_outside_the_page_axis_opens_the_default_month_with_a_notice(
     _ok(app.run())
 
     assert isinstance(app.session_state[PROCESS_DETAIL_MONTH_KEY], int)
+    # 넘겨받은 달이 밖이라는 것은 사건 알림(`PD-03` — 알림창 · Alarm)이다.
+    assert not [element for element in app.info if "밖이라" in str(element.value)]
     assert any(
-        "90.01" in str(element.value) and "밖이라" in str(element.value) for element in app.info
+        "90.01" in str(note["full"]) and "밖이라" in str(note["full"])
+        for note in events(app, "PD-03")
     )
 
 

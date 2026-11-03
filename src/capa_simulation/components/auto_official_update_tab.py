@@ -42,6 +42,7 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.auto_official_update_runner import (
     AutoUpdateSources,
     Clock,
@@ -176,15 +177,18 @@ def render_auto_official_update(
     *,
     sources: AutoUpdateSources | None = None,
     clock: Clock = datetime.now,
+    alert_tab: str | None = "",
 ) -> None:
-    """탭 본문. `sources`·`clock` 은 시험이 가짜 원천·시계를 넣는 자리다(화면은 넘기지 않는다)."""
+    """탭 본문. `sources`·`clock` 은 시험이 가짜 원천·시계를 넣는 자리다(화면은 넘기지 않는다).
+    `alert_tab` 은 이 탭 이름(상태 알림 `AU-01` · `AU-02` 의 「그 화면으로」 —
+    `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
     st.subheader("공식버전 자동 갱신")
     try:
         settings = repository.load_auto_official_update_settings()
     except BOOTSTRAP_ERRORS as exc:
         st.error("자동 갱신 설정을 읽지 못했습니다: " + bootstrap_error_message(exc))
         return
-    _render_status(repository, settings, now=clock())
+    _render_status(repository, settings, now=clock(), alert_tab=alert_tab)
     _render_settings_form(repository, settings)
     _render_run_now(repository, sources=sources, clock=clock)
     try:
@@ -211,14 +215,26 @@ def _render_status(
     settings: AutoOfficialUpdateSettings,
     *,
     now: datetime,
+    alert_tab: str | None = "",
 ) -> None:
     config = settings.config
     scheduler = running_scheduler()
+    ticked = scheduler.status() if scheduler is not None else None
+    stall = scheduler_stall_message(ticked, now) if ticked is not None else None
+    missing_thread = scheduler is None and scheduler_opted_in()
+    if alert_tab is not None:
+        _report_scheduler(ticked, stall, missing_thread=missing_thread, tab=alert_tab)
     with st.container(border=True):
         st.markdown("#### :material/schedule: 지금 상태")
         if scheduler is not None:
             status = scheduler.status()
-            st.success("이 실행에서 예약이 켜져 있습니다.", icon=":material/schedule:")
+            if stall is None:
+                st.success("이 실행에서 예약이 켜져 있습니다.", icon=":material/schedule:")
+            else:
+                # 멈춘 것 같다 — 까닭 · 할 일은 알림(`AU-01`)에 있다. 상태 줄만 남긴다.
+                st.markdown(
+                    "**예약** · :orange[켜짐 · 멈춘 것 같음] — 마지막 확인은 아래 줄입니다."
+                )
             parts = [
                 f"배경 확인 {status.tick_seconds:.0f}초마다",
                 f"시작 {format(status.started_at, DATETIME_FORMAT)}",
@@ -233,15 +249,9 @@ def _render_status(
             if status.pending_day is not None:
                 parts.append(f"{status.pending_day.isoformat()} 회차를 다시 시도하는 중")
             st.caption(" · ".join(parts))
-            stall = scheduler_stall_message(status, now)
-            if stall is not None:
-                st.warning(stall, icon=":material/hourglass_top:")
-        elif scheduler_opted_in():
-            st.warning(
-                f"실행 줄은 예약을 허락했지만(`{ENV_VAR}=1`) 예약 스레드가 서 있지 않습니다. 앱 "
-                "로그를 확인하고 앱을 다시 띄우세요.",
-                icon=":material/warning:",
-            )
+        elif missing_thread:
+            # 허락했는데 스레드가 없다 — 까닭 · 할 일은 알림(`AU-02`)에 있다. 상태 줄만 남긴다.
+            st.markdown(f"**예약** · :red[스레드 없음] — 실행 줄은 허락했습니다(`{ENV_VAR}=1`).")
         else:
             st.info(
                 f"이 실행에서는 예약이 꺼져 있습니다 — 실행 줄에 `{ENV_VAR}=1` 을 더해 앱을 띄워야 "
@@ -302,6 +312,41 @@ def next_run_line(
         upcoming += timedelta(days=1)
         return f"{format(upcoming, DATETIME_FORMAT)} (오늘 회차는 이미 돌았습니다)"
     return format(upcoming, DATETIME_FORMAT)
+
+
+def _report_scheduler(
+    ticked: SchedulerStatus | None, stall: str | None, *, missing_thread: bool, tab: str
+) -> None:
+    """예약이 멈춘 것 같음(`AU-01`) · 허락했는데 스레드가 없음(`AU-02`)의 상태 알림 — 자리에 경고
+    상자를 그리지 않고 알림창 · Alarm 으로 낸다(없어도 부른다 — 해소). 「지금 상태」 칸의 켜짐 ·
+    꺼짐 줄은 상태 줄이라 그대로 그린다. 멈춤 글에는 지난 분이 들어 회차마다 바뀐다 — 지문은 멈춘
+    회차(마지막 확인 시각 · 갈래)로 짓는다."""
+    last = ticked.last_outcome if ticked is not None else None
+    alerts.state(
+        "AU-01",
+        scope=None,
+        content=(
+            None
+            if stall is None or ticked is None or last is None
+            else [str(ticked.last_tick_at), last.kind]
+        ),
+        active=stall is not None,
+        text="자동 갱신 예약이 멈춘 것 같습니다 — 앱 로그를 확인하고 앱을 다시 띄우세요",
+        full=stall,
+        tab=tab,
+    )
+    alerts.state(
+        "AU-02",
+        scope=None,
+        content=ENV_VAR if missing_thread else None,
+        active=missing_thread,
+        text="자동 갱신 예약 스레드가 서 있지 않습니다 — 앱 로그를 확인하고 앱을 다시 띄우세요",
+        full=(
+            f"실행 줄은 예약을 허락했지만({ENV_VAR}=1) 예약 스레드가 서 있지 않습니다. 앱 로그를 "
+            "확인하고 앱을 다시 띄우세요."
+        ),
+        tab=tab,
+    )
 
 
 def scheduler_stall_message(status: SchedulerStatus, now: datetime) -> str | None:

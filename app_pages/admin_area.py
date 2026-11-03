@@ -17,6 +17,7 @@ from capa_simulation.components.process_rename_management import (
 )
 from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.components.sso_status import render_sso_status
+from capa_simulation.components.state_alerts import alert_page_error, open_tab_name
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -50,7 +51,9 @@ try:
     database_path = str(DUCKDB_PATH.resolve())
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
+    message = bootstrap_error_message(exc)
+    alert_page_error(message, code="AD-07", text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)")
+    st.error(message)
     st.stop()
 
 # 공정 목록은 안내·편집 보조일 뿐이라 활성 시나리오가 없어도 화면을 멈추지 않는다.
@@ -73,10 +76,18 @@ process_rename_tab, display_order_tab, source_quality_tab, alert_tab = stateful_
     TAB_NAMES, key="admin_area_active_tab"
 )
 
+# 탭 안 상태 알림(Proc Rename 표시명 겹침 `AD-06` · 표시순서 분류값 겹침 `AD-05`)은 그 탭이 열린
+# 회차에만 낸다(닫힌 탭이면 None — `open_tab_name`). 「그 화면으로」 가 그 탭을 연다.
 with process_rename_tab:
-    render_process_rename_management(repository, available_processes)
+    render_process_rename_management(
+        repository,
+        available_processes,
+        alert_tab=open_tab_name(process_rename_tab, TAB_NAMES[0]),
+    )
 with display_order_tab:
-    render_display_order_management(repository)
+    render_display_order_management(
+        repository, alert_tab=open_tab_name(display_order_tab, TAB_NAMES[1])
+    )
 with source_quality_tab:
     # 위젯 없는 읽기 전용 표라 닫혀 있으면 건너뛴다. 원천 읽기는 캐시가 없고 다른 두 탭은 캐시만
     # 읽어서, 이 탭이 Admin 회차의 유일한 DB 읽기다 — 닫힌 탭이 회차마다 DuckDB 인스턴스를 열고

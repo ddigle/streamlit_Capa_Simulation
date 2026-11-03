@@ -115,3 +115,28 @@ def shown(app: AppTest, kind: str) -> list[Shown]:
 
 def texts(shown: list[Shown]) -> list[str]:
     return [item.value for item in shown]
+
+
+def states(app: AppTest | ElementTree, code: str | None = None) -> list[dict[str, Any]]:
+    """표지의 상태 알림(`alerts.state`) — `code` 를 주면 그 코드만(문서 차례). 조건이 없는 회차의
+    해소 표지(`active` 거짓)도 든다."""
+    return [
+        note
+        for note in alert_notes(app)
+        if note.get("kind") == "state" and (code is None or note.get("code") == code)
+    ]
+
+
+def active_state(app: AppTest | ElementTree, code: str) -> dict[str, Any] | None:
+    """`code` 상태 알림 가운데 조건이 있는(`active`) 마지막 표지. 없으면 None."""
+    found = [note for note in states(app, code) if note.get("active")]
+    return found[-1] if found else None
+
+
+def events(app: AppTest | ElementTree, code: str) -> list[dict[str, Any]]:
+    """표지의 사건 알림 가운데 `code` 인 것(버튼 곁 결과 알림이 아닌 `alerts.event`)."""
+    return [
+        note
+        for note in alert_notes(app)
+        if note.get("kind") == "event" and note.get("code") == code
+    ]

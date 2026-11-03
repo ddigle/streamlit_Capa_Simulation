@@ -52,7 +52,10 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
 )
-from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
+from capa_simulation.components.equipment_scenario_management import (
+    render_legacy_trace_goto,
+    report_session_notices,
+)
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -352,30 +355,11 @@ def render_equipment_scenario_row(
         with st.container():
             if locked_reason is not None and locked_reason != FIXED_LOCK_REASON:
                 st.caption(f":material/lock: {locked_reason}")
-            # 세션 이동(다른 리비전으로 옮겨 엶)은 그 회차 한 번의 사건 알림(`SB-14`), 일정 없이 연
-            # 세션은 남아 있는 동안의 상태 알림(`SB-20`)이다 — 둘 다 자리에는 그리지
-            # 않는다(2026-11-03 결정 보드 D2 · D3). 알림창 · 패널은 글을 평문으로 넣어 이름의
-            # `~`·`*` 가 꾸밈이 되지 않는다. 불러오기 · 저장 결과(`FLASH_KEY`)는 알림창으로만
-            # 뜬다(`render_flash`).
-            if session.notice and not session.unmerged:
-                alerts.event(
-                    "SB-14",
-                    text=session.notice,
-                    full=session.notice,
-                    cause="고른 설비 일정이 지금 공통 대장과 합쳐지지 않음",
-                )
+            # 불러오기 · 저장 결과(`FLASH_KEY`)는 알림창으로만 뜬다(`render_flash`). 세션 이동(다른
+            # 리비전으로 옮겨 엶 — `SB-14`)과 일정 없이 연 세션(`SB-20`)도 자리에는 그리지 않고 알림
+            # 칸으로 낸다(2026-11-03 결정 보드 D2 · D3 — `report_session_notices`).
             render_flash(FLASH_KEY)
-            scenario_key = session.scenario_id or ""
-            alerts.state(
-                "SB-20",
-                scope=scenario_key,
-                content=session.notice if session.unmerged else None,
-                active=session.unmerged and bool(session.notice),
-                text=(
-                    "옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 열었습니다 — 백업 복원 필요"
-                ),
-                full=session.notice if session.unmerged else None,
-            )
+            report_session_notices(session)
 
 
 def open_equipment_scenario_dialog() -> None:

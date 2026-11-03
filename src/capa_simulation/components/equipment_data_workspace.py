@@ -12,6 +12,7 @@ from typing import Any, Literal
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.editor_state import (
     discard_editor,
     editor_has_edits,
@@ -711,12 +712,21 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         if replaced:
             number = _replaced_by_words(previous, latest_snapshot)
             if has_unsaved_equipment_edits():
-                # 닫을 때까지 남긴다(`render_reopen_notices`) — 다음 버림 알림이 덮는다.
-                st.session_state[DISCARDED_NOTICE_KEY] = discarded_notice(
+                # 닫을 때까지 남긴다(`render_reopen_notices`) — 다음 버림 알림이 덮는다. 알림창 ·
+                # Alarm 에도 사건 알림(`EQ-05`)으로 한 번 낸다 — 담기만 하고 페이지 머리 알림
+                # 칸(`render_reopen_notices` 의 `render_flash`)이 보낸다.
+                discarded = discarded_notice(
                     number,
                     overlay_dropped=overlay_dropped,
                     reapplied=reapplied,
                     renames_dropped=renames_dropped,
+                )
+                st.session_state[DISCARDED_NOTICE_KEY] = discarded
+                alerts.event(
+                    "EQ-05",
+                    text=f"다른 사용자가 {number}{object_particle(number)} 저장해 내 설비 편집을 "
+                    "버렸습니다",
+                    full=alerts.plain_text(discarded),
                 )
             else:
                 queue_flash(

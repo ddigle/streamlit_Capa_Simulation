@@ -16,7 +16,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes
+from alert_marks import alert_notes, events
 from streamlit.proto.Dataframe_pb2 import Dataframe
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
@@ -1145,7 +1145,8 @@ def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """고정 쌍이 합쳐지지 않아 그 시나리오 최신으로 옮긴 알림(「「…」 r1을 … 합칠 수 없어」)은 날
-    설비 시나리오 이름을 담는다 — 사이드바 줄과 시나리오 관리 구획 모두 물결표 그대로 그린다."""
+    설비 시나리오 이름을 담는다 — 사이드바 줄과 시나리오 관리 구획 모두 사건 알림(`SB-14` —
+    알림창 · Alarm, 평문)으로 물결표 그대로 낸다(자리에는 그리지 않는다)."""
     import capa_simulation.settings as settings
 
     repository = _seeded(tmp_path)
@@ -1191,8 +1192,9 @@ def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
     _select(app, OPERATIONS, pinned.schedule_revision_id)
     app.run()
     assert not app.exception, [item.message for item in app.exception]
-    warnings = [str(item.value) for item in app.warning]
-    assert any(f"「운영\\~일정\\~A」 r{pinned.revision_no}" in text for text in warnings), warnings
+    assert not [item for item in app.warning if "합칠 수 없어" in str(item.value)]
+    warnings = [str(note["full"]) for note in events(app, "SB-14")]
+    assert any(f"「운영~일정~A」 r{pinned.revision_no}" in text for text in warnings), warnings
 
 
 def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path) -> None:

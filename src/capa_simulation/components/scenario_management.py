@@ -27,6 +27,7 @@ from typing import NoReturn, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
@@ -254,7 +255,12 @@ REVISION_COLUMNS = TableColumns(pick=REVISION_PICK_COLUMN, name=REVISION_NAME_CO
 def render_scenario_management(
     repository: DuckDBScenarioRepository,
     database_path: str,
+    *,
+    alert_tab: str | None = "",
 ) -> None:
+    """「시뮬레이션 시나리오」 구획. `alert_tab` 은 이 구획이 든 탭 이름(상태 알림 `SC-01` 의 「그
+    화면으로」 — `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지
+    않는다."""
     # 저장소 생성자는 프로세스 캐시라 따뜻한 프로세스에서는 페이지 준비 단계가 DB 를 열지 않는다.
     # 이 읽기가 그 회차의 첫 DB 열기이므로 다른 프로그램의 파일 잠금도 여기서 안내로 받는다.
     try:
@@ -262,7 +268,7 @@ def render_scenario_management(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
-    _render_store_status(repository, scenarios)
+    _render_store_status(repository, scenarios, alert_tab=alert_tab)
     # 작업 이름이 바뀌었으므로 예전 세션에 남은 값은 위젯이 만들어지기 전에 버린다.
     # 옵션에 없는 값이 그대로 오면 Streamlit 이 선택을 잃고 필수 선택에서 막힌다.
     if st.session_state.get(MODE_KEY) not in MODES:
@@ -292,6 +298,8 @@ def render_scenario_management(
 def _render_store_status(
     repository: DuckDBScenarioRepository,
     scenarios: list[ScenarioSummary],
+    *,
+    alert_tab: str | None = "",
 ) -> None:
     # 알림은 늘 서 있는 한 칸 안에 그린다(AGENTS 9장 「key 가 있어도 자리는 고정한다」). 형제
     # 자리에 바로 그리면 알림이 생기는 회차에 그 아래가 한 칸 밀린다 — 보관함의 「되돌리기」·
@@ -313,8 +321,26 @@ def _render_store_status(
                 st.caption(f"리비전 ID `{active_revision_id}`")
         else:
             st.write("지금 올라와 있는 저장 리비전이 없습니다.")
+        # 공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 이 칸은 저장소 상태 줄이라
+        # 「공식버전 없음」 줄은 남긴다. 있어도 부른다(해소) — 닫힌 탭이면 알리지 않는다.
+        if alert_tab is not None:
+            alerts.state(
+                "SC-01",
+                scope=None,
+                content=official is None or None,
+                active=official is None,
+                text="공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 아래 「공식버전 지정」",
+                full=(
+                    "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — "
+                    "시나리오 관리 「시나리오 작업」 의 「공식버전 지정」 으로 리비전 하나를 "
+                    "공식으로 정하세요."
+                ),
+                tab=alert_tab,
+            )
         if official is None:
-            st.warning("공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다.")
+            st.markdown(
+                "**공식버전** · :orange[없음] — 새 웹 세션에서 자동으로 불러올 기준이 없습니다."
+            )
         else:
             st.success(
                 f"최신 공식 v{official.release_no} · {literal_markdown(official.scenario_name)} "

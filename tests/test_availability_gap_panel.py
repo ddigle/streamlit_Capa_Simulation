@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import states
 from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
@@ -526,13 +527,14 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
     assert _value(app, ROW_SCHEDULE_AVAILABLE) == 10.5
     assert _value(app, ROW_STATIC_AVAILABLE) == 14.0
     assert _value(app, ROW_GAP_AVAILABLE) == -3.5
-    assert "Probe" in " ".join(item.value for item in app.warning)
+    assert not app.warning
+    assert "Probe" in _alerts(app)
     assert "한쪽에만 있는 공정 1개" in " ".join(item.value for item in app.caption)
 
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
     assert "Static 값으로 채운 공정 1개" in " ".join(item.value for item in app.caption)
-    assert "Probe" in " ".join(item.value for item in app.warning)
+    assert "Probe" in _alerts(app)
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
     assert not app.exception
@@ -565,7 +567,8 @@ def test_missing_static_keeps_dynamic_detail_and_explains_cross_check_limit() ->
     """Static 을 아예 못 읽으면 시트의 Static·GAP 은 「—」 이고 까닭은 「기준정보에 없는 공정」이
     아니라 「Static 을 읽지 못함」이다."""
     app = _run(missing_static=True)
-    assert "테스트 조회 실패" in " ".join(item.value for item in app.warning)
+    assert not app.warning
+    assert "테스트 조회 실패" in _alerts(app)
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     _select_view(app, "분류별 내역")
     assert _value(app, ROW_SCHEDULE_AVAILABLE) == 4.5
@@ -582,7 +585,7 @@ def test_missing_static_keeps_dynamic_detail_and_explains_cross_check_limit() ->
     assert not app.dataframe
     assert not app.get("plotly_chart")
     assert "Static 가용대수가 없어" in " ".join(item.value for item in app.info)
-    assert "테스트 조회 실패" in " ".join(item.value for item in app.warning)
+    assert "테스트 조회 실패" in _alerts(app)
 
 
 def test_missing_demand_only_blocks_the_cross_check() -> None:
@@ -607,9 +610,9 @@ def test_missing_input_is_explained_before_any_result(state_key: str, notice: st
 
 def test_period_notices_do_not_direct_users_to_the_old_preference_tab() -> None:
     app = _run(short_span=True)
-    assert "Cut-off 때문에" in " ".join(item.value for item in app.warning)
+    assert "Cut-off 때문에" in _alerts(app)
     _select_view(app, "확보율 교차검증")
-    notices = " ".join(item.value for item in [*app.caption, *app.warning])
+    notices = " ".join(item.value for item in [*app.caption, *app.warning]) + _alerts(app)
     assert "조회기간을 넓히면" in notices
     assert "Preference" not in notices
 
@@ -762,7 +765,7 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     시트는 9행 그대로이고 Static·GAP 칸이 「—」 다(풍선이 까닭).
     """
     app = _run(wire_bond_units=True)
-    assert "Wire Bond" in " ".join(item.value for item in app.warning)
+    assert "Wire Bond" in _alerts(app)
     app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
     assert not app.exception
     # 그림은 Static 과 설비 일정 기준을 맞대는 자리라 그리지 않고 까닭을 말한다.
@@ -963,7 +966,7 @@ def test_name_mismatch_notices_keep_the_original_process_names() -> None:
     필요 단축 일정의 「맞대지 못한 공정」 과 같은 갈래다(AGENTS 8장 ③).
     """
     app = _run(wire_bond_units=True, labels=True)
-    warnings = " ".join(item.value for item in app.warning)
+    warnings = _alerts(app)
     assert "Wire Bond" in warnings and "표시-WB" not in warnings
     assert "표시-WB" in app.selectbox(key=PROCESS_FILTER_KEY).options
 
@@ -975,28 +978,30 @@ def test_name_mismatch_notices_keep_the_original_process_names() -> None:
     assert "아래 이름은 공정 표시명이 아니라 원본 공정명입니다" in warnings
 
 
-def test_name_mismatch_notices_block_the_tildes_of_the_original_names() -> None:
+def test_name_mismatch_notices_keep_the_original_names_as_plain_text() -> None:
     """한쪽에만 있는 공정 경고(마크다운)는 원본 공정명을 날로 실어 「E2E~공정~X」 를
-    「E2E<del>공정</del>X」 로 그렸다(2026-10-26 E2E r5). 이름의 물결표만 막고 목록 표시는 둔다."""
+    「E2E<del>공정</del>X」 로 그렸다(2026-10-26 E2E r5). 이제 상태 알림(`EQ-06`)이고 알림창 ·
+    패널은 평문(`textContent`)이라 이름을 막지 않고 글자 그대로 싣는다(2026-11-03 D2)."""
     app = _run(wire_bond_units=True, renames={"Wire Bond": "E2E~공정~X"})
 
-    (warning,) = [str(item.value) for item in app.warning if "맞지 않는" in str(item.value)]
-    assert "\n- 설비에는 있는데 기준정보에 없는 공정 1개: E2E\\~공정\\~X" in warning, warning
-    assert "E2E~공정~X" not in warning
+    assert not [item for item in app.warning if "맞지 않는" in str(item.value)]
+    warning = _alerts(app)
+    assert "설비에는 있는데 기준정보에 없는 공정 1개: E2E~공정~X" in warning, warning
+    assert "\\~" not in warning
 
 
 def test_the_original_name_notes_appear_only_when_a_listed_name_is_relabelled() -> None:
     """표시명이 하나도 없으면 경고·캡션이 예전 문장 그대로다 — 「상자에는 표시명으로 보입니다」 를
     적을 까닭이 없다(2026-10-10 재검증)."""
     plain = _run(wire_bond_units=True)
-    warnings = " ".join(item.value for item in plain.warning)
+    warnings = _alerts(plain)
     captions = " ".join(item.value for item in plain.caption)
     assert "Wire Bond" in warnings and "표시명" not in warnings
     assert "한쪽에만 있는 공정 2개를 뺐습니다" in captions and "표시명" not in captions
 
     # 나열된 이름(Wire Bond·Probe)에 표시명이 없으면 다른 공정에 표시명이 있어도 적지 않는다.
     app = _run(wire_bond_units=True, label_map={"Die Attach": "표시-DA"})
-    assert "표시명" not in " ".join(item.value for item in app.warning)
+    assert "표시명" not in _alerts(app)
     assert "표시명" not in " ".join(item.value for item in app.caption)
 
     labelled = _run(wire_bond_units=True, labels=True)
@@ -1182,3 +1187,9 @@ def test_the_detail_link_opens_that_month_with_the_downtime_section() -> None:
         "from": "gap",
         "theme": "dark",
     }
+
+
+def _alerts(app: AppTest) -> str:
+    """머리 상태 알림(`EQ-06` 두 쪽 공정명 · `EQ-07` 조회 시작 · `EQ-08` Static 못 읽음)의 전문 —
+    자리에는 경고 상자를 그리지 않는다(2026-11-03 D2)."""
+    return " ".join(str(note["full"]) for note in states(app) if note.get("active"))

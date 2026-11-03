@@ -54,6 +54,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+from capa_simulation import alerts
 from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.availability_sheet_canvas import (
     GROUP_TITLES,
@@ -90,6 +91,7 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
+from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import theme, tokens
@@ -291,6 +293,8 @@ def render_availability_gap_panel(
     downtime: pd.DataFrame | None = None,
     counterfactual_spans: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     manual_downtime: ManualDowntime,
+    alert_scope: AlertScope | None = None,
+    alert_tab: str = "",
 ) -> None:
     """비교 탭 본문.
 
@@ -334,6 +338,12 @@ def render_availability_gap_panel(
     `equipment_cache.load_manual_downtime`)다. 조회 달로 좁힌 칸(`manual_downtime_key`)이 시트·
     교차검증 캐시 키의 끝 칸이고, 그 칸을 설비 일정 기준 가용에서 뺀다(모듈 docstring). **필수
     인자**다 — 빠뜨리면 이 탭만 뺀 가용이 다른 실행 화면과 갈린다.
+
+    머리의 세 조건(Cut-off 에 견줘 조회기간 시작이 늦음 `EQ-07` · Static 을 읽지 못함 `EQ-08` ·
+    두 쪽 공정명이 맞지 않음 `EQ-06`)은 상태 알림이다 — 자리에 그리지 않고 탭이 보이는
+    회차마다(없어도) 낸다. `alert_scope` 는 그 범위(페이지가 설비 쌍을 넘긴다 —
+    `state_alerts.equipment_scope`), `alert_tab` 은 「그 화면으로」 가 열 탭
+    길(`state_alerts.tab_name` — 「Summary › Static 대비 일정」)이다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -349,13 +359,34 @@ def render_availability_gap_panel(
         st.info("조회기간에 월이 없습니다.")
         return
 
+    alert_key, alert_label = alert_scope if alert_scope is not None else (None, "")
     required = span_date_range(months, cutoff)
-    if required is not None and span_bounds is not None and required[0] < span_bounds[0]:
-        st.warning(
-            f"Cut-off 때문에 {required[0]:%Y-%m-%d} 부터의 설비 상태가 필요한데 "
-            f"조회기간이 {span_bounds[0]:%Y-%m-%d} 부터입니다. 첫 달이 모자라게 세어집니다 — "
+    late_start = (
+        (required[0], span_bounds[0])
+        if required is not None and span_bounds is not None and required[0] < span_bounds[0]
+        else None
+    )
+    alerts.state(
+        "EQ-07",
+        scope=alert_key,
+        scope_label=alert_label,
+        tab=alert_tab,
+        content=None if late_start is None else [str(late_start[0]), str(late_start[1])],
+        active=late_start is not None,
+        text=(
+            None
+            if late_start is None
+            else "Static 대비 일정 첫 달이 모자라게 세어집니다 — 조회기간 시작을 앞당기세요(필요한 "
+            f"첫날 {late_start[0]:%Y-%m-%d})"
+        ),
+        full=(
+            None
+            if late_start is None
+            else f"Cut-off 때문에 {late_start[0]:%Y-%m-%d} 부터의 설비 상태가 필요한데 "
+            f"조회기간이 {late_start[1]:%Y-%m-%d} 부터입니다. 첫 달이 모자라게 세어집니다 — "
             "조회기간의 시작일을 앞당기세요."
-        )
+        ),
+    )
 
     # **`or` 를 쓰지 않는다.** 프레임에 `or` 를 걸면 `__bool__` 이 불려
     # 「truth value of a DataFrame is ambiguous」로 죽는다. 빈 프레임도 거짓이라
@@ -382,12 +413,23 @@ def render_availability_gap_panel(
         _conversion_ratios=conversion_ratios,
     )
 
-    if static_error:
-        st.warning(f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {static_error}")
+    alerts.state(
+        "EQ-08",
+        scope=alert_key,
+        scope_label=alert_label,
+        tab=alert_tab,
+        content=static_error or None,
+        active=bool(static_error),
+        text="Static 가용대수를 읽지 못해 설비 일정 기준만 보입니다 — 기준 정보 · 시나리오 확인",
+        full=f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {static_error}",
+        detail=static_error or "",
+    )
     # 조회 달로 좁힌 입력 비가동 칸 — 시트·교차검증이 뺀다(캐시 키의 끝 칸과 같은 값).
     manual_cells = manual_downtime_key(manual_downtime.rows, months)
 
-    _render_unmatched(comparison.dynamic_only, comparison.static_only, labels)
+    _report_unmatched(
+        comparison.dynamic_only, comparison.static_only, labels, alert_scope, tab=alert_tab
+    )
 
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
     # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다.
@@ -1588,37 +1630,55 @@ def _frame_loader(frame: pd.DataFrame) -> Callable[[], pd.DataFrame]:
     return lambda: frame
 
 
-def _render_unmatched(
-    dynamic_only: list[str], static_only: list[str], labels: ProcessLabels
+def _report_unmatched(
+    dynamic_only: list[str],
+    static_only: list[str],
+    labels: ProcessLabels,
+    alert_scope: AlertScope | None,
+    *,
+    tab: str = "",
 ) -> None:
-    """한쪽에만 있는 공정. **조용히 떨어지면 GAP 이 이유 없이 커 보인다.**
+    """한쪽에만 있는 공정 — 상태 알림(`EQ-06`). **조용히 떨어지면 GAP 이 이유 없이 커 보인다.**
 
     이름은 원본 공정명이다(설비 마스터·기준정보에서 고칠 이름). 나열한 이름 가운데 표시명이 붙은
-    것이 있을 때만 그렇다고 한 문장 더 적는다 — 상자에는 표시명만 보이기 때문이다.
+    것이 있을 때만 그렇다고 한 문장 더 적는다 — 상자에는 표시명만 보이기 때문이다. 알림창 · 패널은
+    평문이라 이름을 막지 않는다. 없어도 부른다(해소 · 이벤트 칸 한 자리).
     """
-    if not dynamic_only and not static_only:
-        return
     listed = [*dynamic_only[:8], *static_only[:8]]
     note = (
-        " 아래 이름은 공정 표시명이 아니라 원본 공정명입니다 — 조회 조건의 `공정` 상자에는 "
+        " 아래 이름은 공정 표시명이 아니라 원본 공정명입니다 — 조회 조건의 「공정」 상자에는 "
         "표시명으로 보입니다."
         if any(labels.label(name) != name for name in listed)
         else ""
     )
-    # 원본 공정명은 사람이 적은 이름이다 — 상자(마크다운)에서 「E2E~공정~X」 가 지움선이 되지 않게
-    # 물결표를 막는다(목록 표시 `- ` 와 앞 문장의 코드 칸은 살린다).
     lines = []
     if dynamic_only:
         lines.append(
-            f"- 설비에는 있는데 기준정보에 없는 공정 {len(dynamic_only)}개: "
-            f"{literal_names(dynamic_only[:8])}{' …' if len(dynamic_only) > 8 else ''}"
+            f"설비에는 있는데 기준정보에 없는 공정 {len(dynamic_only)}개: "
+            f"{', '.join(dynamic_only[:8])}{' …' if len(dynamic_only) > 8 else ''}"
         )
     if static_only:
         lines.append(
-            f"- 기준정보에는 있는데 설비 일정 기준이 안 나온 공정 {len(static_only)}개: "
-            f"{literal_names(static_only[:8])}{' …' if len(static_only) > 8 else ''}"
+            f"기준정보에는 있는데 설비 일정 기준이 안 나온 공정 {len(static_only)}개: "
+            f"{', '.join(static_only[:8])}{' …' if len(static_only) > 8 else ''}"
         )
-    st.warning(
-        "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 설비 마스터의 `공정소분류` 와 "
-        "기준정보의 `공정` 이 같은 값이어야 맞댈 수 있습니다." + note + "\n" + "\n".join(lines)
+    count = len(dynamic_only) + len(static_only)
+    alerts.state(
+        "EQ-06",
+        scope=alert_scope.scope if alert_scope is not None else None,
+        scope_label=alert_scope.label if alert_scope is not None else "",
+        tab=tab,
+        content=[sorted(dynamic_only), sorted(static_only)] if count else None,
+        active=bool(count),
+        text=(
+            f"두 쪽 공정명이 맞지 않는 공정 {count}개 — 설비 마스터 「공정소분류」 · 기준정보 "
+            "「공정」 을 같게"
+        ),
+        full=(
+            "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 설비 마스터의 「공정소분류」 와 "
+            "기준정보의 「공정」 이 같은 값이어야 맞댈 수 있습니다."
+            + note
+            + " "
+            + " · ".join(lines)
+        ),
     )

@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from alert_marks import page_html, successes
+from alert_marks import active_state, page_html, successes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import bigdataquery_registration as registration
@@ -149,8 +149,8 @@ def test_the_dropped_row_warning_stands_under_the_saved_notice(
 ) -> None:
     """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 같은 알림 칸에 차례로 서고, 한 번만 그린다.
 
-    알림 칸 밑의 설정 띠는 사내 패키지가 깔렸으면 성공, 없으면 경고다 — 이 PC 에 깔렸는지에 기대지
-    않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
+    알림 칸 밑의 설정 띠는 사내 패키지가 깔렸으면 성공, 없으면 상태 캡션 + 상태 알림(`AD-04`)이다 —
+    이 PC 에 깔렸는지에 기대지 않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
     from capa_simulation.components.flash import FlashNote
 
     monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
@@ -174,9 +174,13 @@ def test_the_dropped_row_warning_stands_under_the_saved_notice(
     banner = "BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다."
     # 알림 칸은 저장 단추 바로 아래라 맨 위 설정 띠보다 뒤에 선다.
     assert succeeded == ([banner, saved] if package_ready else [saved])
-    assert warned[-1] == notice and warned.count(notice) == 1
+    assert warned == [notice]
+    banner_note = active_state(app, "AD-04")
     if not package_ready:
-        assert "bigdataquery 패키지가 없어" in warned[0]
+        assert banner_note is not None and "bigdataquery 패키지가 없어" in banner_note["full"]
+        assert any("bigdataquery 패키지가 없어" in caption.value for caption in app.caption)
+    else:
+        assert banner_note is None
     assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
 
 
@@ -1051,7 +1055,13 @@ def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
     assert not app.exception
     [error] = app.error
     assert error.value.startswith("현재 환경에 bigdataquery 패키지가 없습니다.")
-    banner = " ".join(warning.value for warning in app.warning)
+    # 머리 설정 띠는 상태 캡션이고(경고 상자 아님) 알릴 조건은 상태 알림 `AD-04` 다.
+    assert not app.warning
+    note = active_state(app, "AD-04")
+    assert note is not None and "bigdataquery 패키지가 없어" in note["full"]
+    banner = " ".join(
+        caption.value for caption in app.caption if "bigdataquery 패키지가 없어" in caption.value
+    )
     assert "bigdataquery 패키지가 없어" in banner
     for text in (error.value, banner):
         assert ("서버 시작 점검" in text) is with_report

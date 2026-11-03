@@ -186,6 +186,45 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("SB-20", "action", "state", "옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 엶"),
     AlertSpec("GL-02", "check", "state", "시뮬레이션 DB 가 이 코드보다 새 버전"),
     AlertSpec("GL-06", "check", "state", "설비 DB 가 이 코드보다 새 버전"),
+    # 2단계 b — 설비 · Space(`EQ-*`) · 실행 관리(`PD-*` · `RS-*` · `CS-*`) · Dynamic
+    # 재공(`WIP-*`) · 시나리오 관리(`SC-*`) · 자동 갱신(`AU-*`) · Admin(`AD-*`) · 모듈(`MO-*`) ·
+    # VOC(`VO-*`)(설계 6장 2 · 3). 화면을 그리지 못한 오류(「… 그리지 못함」)는 자리 `st.error` 를
+    # 그대로 두고 같은 글이면 한 번만 뜨는 사건 알림을 더한다(`state_alerts.alert_page_error` —
+    # ST-20 과 같은 꼴).
+    AlertSpec("EQ-04", "check", "state", "이 설비 시나리오에 일정이 없는 호기"),
+    AlertSpec("EQ-05", "check", "event", "남의 저장이 내 설비 편집을 버림"),
+    AlertSpec("EQ-06", "check", "state", "Static 대비 일정 — 두 쪽 공정명이 맞지 않음"),
+    AlertSpec(
+        "EQ-07", "action", "state", "Static 대비 일정 — Cut-off 에 견줘 조회기간 시작이 늦음"
+    ),
+    AlertSpec("EQ-08", "error", "state", "Static 대비 일정 — Static 가용대수를 읽지 못함"),
+    AlertSpec("EQ-09", "error", "event", "가용설비 현황을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("EQ-10", "error", "event", "Space 현황을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("EQ-12", "action", "state", "Cut-off 를 적지 않은 공정 — 가용대수 산출에서 빠짐"),
+    AlertSpec("PD-01", "error", "event", "공정 Capa 상세를 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("PD-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
+    AlertSpec("PD-03", "info", "event", "넘겨받은 달이 화면 기간 밖"),
+    AlertSpec("RS-01", "error", "event", "필요 단축 일정을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("CS-01", "error", "event", "제약 시뮬레이션을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("CS-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
+    AlertSpec("WIP-01", "error", "event", "재공 현황을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec(
+        "WIP-04", "action", "state", "재공 현황 — 가용대수가 없어 기준선을 못 그린 공정 · 주차"
+    ),
+    AlertSpec("SC-01", "check", "state", "공식버전이 없음"),
+    AlertSpec("SC-02", "error", "event", "시나리오 관리를 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("AU-01", "action", "state", "자동 갱신 예약이 멈춘 것 같음"),
+    AlertSpec("AU-02", "action", "state", "자동 갱신 예약 스레드가 서 있지 않음"),
+    AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음"),
+    AlertSpec("AD-02", "action", "state", "운영인데 통합인증이 꺼짐"),
+    AlertSpec("AD-03", "action", "state", "통합인증 서명 인증서 만료 임박"),
+    AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · 패키지 준비 안 됨"),
+    AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
+    AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
+    AlertSpec("AD-07", "error", "event", "Admin Area 를 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
+    AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
+    AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
 )
 
 
@@ -360,7 +399,7 @@ def event_note(
 
     `alert_id` 를 고정 값(같은 글이면 같은 id — `fingerprint`)으로 주면 브라우저 탭이 그 알림을 한
     번만 띄운다 — 회차마다 다시 그리는 자리 오류(화면을 그리지 못함)가 그 꼴이다
-    (`components/state_alerts.show_page_error`)."""
+    (`components/state_alerts.alert_page_error`)."""
     note = _base(code, level, text, full)
     note["id"] = alert_id or new_id()
     for name, value in (("cause", cause), ("detail", detail), ("origin", origin), ("tab", tab)):

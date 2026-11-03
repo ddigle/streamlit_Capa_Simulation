@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import infos, successes
+from alert_marks import active_state, infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -387,7 +387,8 @@ finally:
 
 
 def test_a_stored_case_clash_opens_the_tab_with_a_warning(tmp_path: Path) -> None:
-    """검사 전에 저장된 `Top`·`TOP` 이 있어도 탭이 열리고, 겹친 값을 경고한다.
+    """검사 전에 저장된 `Top`·`TOP` 이 있어도 탭이 열리고, 겹친 값을 상태 알림(`AD-05` — 알림창 ·
+    Alarm, 자리에 그리지 않는다)으로 알린다.
 
     탭이 저장 검증으로 열리지 않으면 그 값을 고칠 화면이 없다. 내려받기도 그대로 선다.
     """
@@ -431,8 +432,8 @@ render_display_order_management(repository)
 
     assert not app.exception, [item.message for item in app.exception]
     assert len(app.get("download_button")) == 1
-    warnings = [element.value for element in app.warning]
-    assert any("부하량 › 환산 › WF 구분: `Top` · `TOP`" in value for value in warnings), warnings
+    assert not app.warning
+    assert "부하량 › 환산 › WF 구분: Top · TOP" in _clash(app)
 
     # 그대로 저장하면 막히고 겹친 값을 알린다.
     next(button for button in app.button if button.label == "공용 표시순서 저장").click().run(
@@ -502,7 +503,7 @@ finally:
 '''
     app = AppTest.from_string(script).run(timeout=30)
     assert not app.exception, [item.message for item in app.exception]
-    warning = " ".join(element.value for element in app.warning)
+    warning = _clash(app)
     assert "부하량 › 계획" in warning and "부하량 › 환산" in warning
     assert "범위마다 따로 고칠 수 있습니다" in warning
     assert app.selectbox(key="display_order_tab").value == "계획"
@@ -514,14 +515,14 @@ finally:
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [element.value for element in app.error]
     assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
-    # 고친 범위는 사라지고 남은 범위만 경고한다.
-    warning = " ".join(element.value for element in app.warning)
+    # 고친 범위는 사라지고 남은 범위만 알린다.
+    warning = _clash(app)
     assert "부하량 › 환산" in warning and "부하량 › 계획" not in warning
 
 
 def test_fixing_the_last_clash_moves_no_editor(tmp_path: Path) -> None:
-    """겹침 경고는 늘 서 있는 칸에 선다 — 직접 편집으로 마지막 겹침을 고쳐 저장하면 다음 회차에
-    경고가 빠져도 아래 저장 단추·편집표의 자리가 그대로다.
+    """겹침은 상태 알림(`AD-05`)이라 본문에 칸을 두지 않는다 — 직접 편집으로 마지막 겹침을 고쳐
+    저장하면 다음 회차에 알림이 해소돼도 아래 저장 단추·편집표의 자리가 그대로다.
 
     저장 회차는 `st.rerun()` 으로 끊기고 다음 회차에 경고가 빠진다. 그 사이 key 있는 편집표가 한 칸
     당겨지면 브라우저에 옛 자리의 흐린 사본이 남는다(AGENTS 9장 「조건부 알림」). 편집표 칸은
@@ -581,7 +582,7 @@ finally:
     app = AppTest.from_string(script).run(timeout=30)
     assert not app.exception, [item.message for item in app.exception]
     assert app.selectbox(key="display_order_tab").value == "계획"
-    assert any("범위마다 따로 고칠 수 있습니다" in element.value for element in app.warning)
+    assert "범위마다 따로 고칠 수 있습니다" in _clash(app)
 
     def places() -> tuple[tuple[int, ...], tuple[int, ...]]:
         return (
@@ -607,7 +608,7 @@ finally:
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [element.value for element in app.error]
     assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
-    assert not any("범위마다 따로 고칠 수 있습니다" in element.value for element in app.warning)
+    assert active_state(app, "AD-05") is None
     assert places() == before
 
 
@@ -819,3 +820,9 @@ def test_a_double_press_of_the_display_order_save_reports_no_conflict(tmp_path: 
     assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     assert app.text[-1].value == "v2|A=1;C=3;B=99"
     clear_global_display_order_cache()
+
+
+def _clash(app: AppTest) -> str:
+    """겹친 분류값 상태 알림(`AD-05`)의 전문 — 없으면 빈 글."""
+    note = active_state(app, "AD-05")
+    return "" if note is None else str(note["full"])

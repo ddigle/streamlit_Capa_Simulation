@@ -26,6 +26,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
@@ -184,7 +185,12 @@ class PickedFields:
 def render_bigdataquery_registration(
     repository: DuckDBScenarioRepository,
     database_path: str,
+    *,
+    alert_tab: str | None = "",
 ) -> None:
+    """「BigDataQuery 등록」 탭 본문. `alert_tab` 은 이 탭 이름(상태 알림 `AD-04` 의 「그
+    화면으로」 — `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지
+    않는다."""
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.
     _consume_reset_request()
     # 같은 까닭으로 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은 되살리지 않는다.
@@ -198,6 +204,7 @@ def render_bigdataquery_registration(
         catalog_ready=catalog_ready,
         detail_ready=detail_ready,
         package_ready=is_bigdataquery_package_available(),
+        alert_tab=alert_tab,
     )
     registered_codes, existing_names = _registered_scenarios(repository)
     _render_catalog_form(configured=catalog_ready)
@@ -262,18 +269,36 @@ def _render_configuration_banner(
     catalog_ready: bool,
     detail_ready: bool,
     package_ready: bool,
+    alert_tab: str | None = "",
 ) -> None:
+    """설정 상태 줄 — 준비가 안 됐으면 상태 알림(`AD-04` — 알림창 · Alarm)으로도 낸다. 자리에는
+    경고 상자 대신 상태 캡션을 둔다(준비됐으면 성공 줄). 회차마다 한 번 부른다(해소 · 이벤트 칸 한
+    자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
     notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
-    if notice is not None:
-        st.warning(notice)
-        return
-    if not package_ready:
+    hint = None
+    if notice is None and not package_ready:
         # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
         hint = start_check_hint(STEP_INSTALL)
-        st.warning(
+        notice = (
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
-            "실제 조회는 패키지를 깐 PC 에서만 성공합니다." + (f"\n\n{hint}" if hint else "")
+            "실제 조회는 패키지를 깐 PC 에서만 성공합니다."
         )
+    if alert_tab is not None:
+        alerts.state(
+            "AD-04",
+            scope=None,
+            content=notice,
+            active=notice is not None,
+            text=(
+                "BigDataQuery 조회 SQL 이 설정되지 않았습니다 — 조회 · 등록이 막힘"
+                if notice is not None and not (catalog_ready and detail_ready)
+                else "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
+            ),
+            full=notice,
+            tab=alert_tab,
+        )
+    if notice is not None:
+        st.caption(f":material/settings_alert: {notice}" + (f"\n\n{hint}" if hint else ""))
         return
     st.success("BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.")
 

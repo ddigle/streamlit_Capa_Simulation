@@ -38,7 +38,9 @@ import streamlit as st
 
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation import alerts
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
+from capa_simulation.components.cutoff_management import report_missing_cutoffs
 from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
     DOWNTIME_DRAFT_KEY,
@@ -85,6 +87,7 @@ from capa_simulation.components.manual_downtime_tab import render_manual_downtim
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
+from capa_simulation.components.state_alerts import alert_page_error, equipment_scope, tab_name
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import NestedTab, stateful_tabs, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import (
@@ -93,7 +96,9 @@ from capa_simulation.equipment_scenario_activation import (
     space_edit_mode,
 )
 from capa_simulation.navigation import (
+    EQUIPMENT_GAP_TAB,
     EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_SUMMARY_TAB,
     EQUIPMENT_SUMMARY_TAB_KEY,
     EQUIPMENT_SUMMARY_TABS,
     EQUIPMENT_TAB_KEY,
@@ -201,12 +206,13 @@ try:
     )
     stored_floor_canvases = load_floor_layout_canvases(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
-    st.error(
-        "설비 현황을 준비하지 못했습니다. "
-        + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    message = "설비 현황을 준비하지 못했습니다. " + bootstrap_error_message(
+        exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
+    alert_page_error(message, code="EQ-09", text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
+    st.error(message)
     st.stop()
-# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
     # 옛 배포로 저장한 설비 리비전이 있으면 설비 저장이 막힌다 — 맨 위에 까닭과 빠져나갈 길.
@@ -231,10 +237,24 @@ saved_equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 saved_downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 _, equipment, downtime = calculation_drafts()
 using_dashboard_sample = saved_equipment.empty
-# 이 설비 시나리오에 일정이 없는 호기(함께 넣기를 끄고 넣은 호기) — 계산에 들지 않는다는 한 줄.
-unscheduled_line = unscheduled_notice(len(draft_unscheduled_units()))
-if unscheduled_line is not None:
-    notices.info(unscheduled_line, icon=":material/event_busy:")
+# 이 설비 시나리오에 일정이 없는 호기(함께 넣기를 끄고 넣은 호기) — 계산에 들지 않는다는 상태
+# 알림(`EQ-04` — 자리에는 그리지 않는다). 없어도 부른다(해소). 「그 화면으로」 는 고칠 자리인 설비
+# 마스터 탭을 연다.
+equipment_alert_scope = equipment_scope(equipment_session)
+unscheduled_units = draft_unscheduled_units()
+alerts.state(
+    "EQ-04",
+    scope=equipment_alert_scope.scope,
+    content=sorted(unscheduled_units) or None,
+    active=bool(unscheduled_units),
+    text=(
+        f"이 설비 시나리오에 일정이 없는 호기 {len(unscheduled_units):,}대 — 계산에서 빠짐 · "
+        "설비 마스터 일정 칸에 적어 저장"
+    ),
+    full=unscheduled_notice(len(unscheduled_units)),
+    scope_label=equipment_alert_scope.label,
+    tab=tab_name(EQUIPMENT_MASTER_TAB),
+)
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
 # Static 대비 일정·설정 팝업의 표 보기 필터). 선택값·저장값·CSV·설비 마스터 입력은 원본이다.
 # 표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔
@@ -313,9 +333,13 @@ dashboard_baseline = (
 # 「엑셀·CSV로 한꺼번에」 팝업도 같은 열림 칸·같은 호스트다(한 실행에 팝업 하나). 새 방문 회차에는
 # 미리보기를 거둔다(입력 칸은 비어 돌아온다).
 withdraw_preview_on_new_visit()
+cutoff_processes = processes_in(dashboard_equipment, dashboard_baseline)
+# 「Cut-off 를 적지 않은 공정」 은 팝업을 열지 않아도 아는 상태 알림이다(`EQ-12` — 팝업 안 경고는
+# 고칠 표 곁 자리 글로 그대로). 저장된 Cut-off 는 캐시 경계에서 읽는다(회차마다 DB 를 열지 않는다).
+report_missing_cutoffs(cutoff_processes, load_process_cutoff(equipment_database_path))
 render_equipment_dialog_host(
     repository,
-    equipment_processes=processes_in(dashboard_equipment, dashboard_baseline),
+    equipment_processes=cutoff_processes,
     process_labels=process_labels,
     locked_reason=PREFERENCE_LOCK_MESSAGE if equipment_session.is_assumption else None,
     import_dialog=partial(
@@ -526,6 +550,8 @@ with gap_tab:
                 downtime=dashboard_downtime,
                 counterfactual_spans=gap_counterfactual_spans,
                 manual_downtime=gap_manual_downtime,
+                alert_scope=equipment_alert_scope,
+                alert_tab=tab_name(EQUIPMENT_SUMMARY_TAB, EQUIPMENT_GAP_TAB),
             )
 
 

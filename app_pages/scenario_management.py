@@ -20,7 +20,8 @@ from capa_simulation.components.equipment_scenario_management import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
-from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.components.state_alerts import alert_page_error, open_tab_name
+from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
@@ -32,7 +33,9 @@ try:
     database_path = str(DUCKDB_PATH.resolve())
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
-    st.error("시나리오 저장소를 준비하지 못했습니다: " + bootstrap_error_message(exc))
+    message = "시나리오 저장소를 준비하지 못했습니다: " + bootstrap_error_message(exc)
+    alert_page_error(message, code="SC-02", text="시나리오 저장소를 준비하지 못했습니다")
+    st.error(message)
     st.stop()
 
 # 세 탭을 항상 그린다(`tab.open` 으로 본문을 건너뛰지 않는다). 예전에는 열린 탭만 그렸는데,
@@ -46,21 +49,18 @@ except BOOTSTRAP_ERRORS as exc:
 # 열린 탭은 기억한다(`stateful_tabs`, 2026-10-24 사용자 결정) — 화면 탭 줄로 다른 화면에 갔다
 # 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다. 세 탭을 다 그리므로 그
 # rerun 에도 폼 위젯은 같은 자리에 남는다.
-# 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B).
-#
-# 탭 묶음 위 자리 하나 — 설비 시나리오 세션을 다른 리비전으로 옮겼다는 한 번뿐인 알림(미저장
-# 설비 편집을 버렸다는 말이 든다)을 「시나리오 관리」 탭이 숨은 회차에 여기 그린다. 세 탭을 늘
-# 다 그리므로 다른 탭을 보는 회차에도 설비 시나리오 구획이 세션을 풀고, 숨은 패널에 그린 알림은
-# 보지 못한 채 다음 회차에 사라진다(이 화면에는 사이드바 설비 시나리오 줄이 없다).
-equipment_notice_slot = st.empty()
+# 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B). 설비 시나리오 세션을 다른 리비전으로
+# 옮겼다는 한 번뿐인 알림은 알림 칸(오른쪽 아래 알림창 · Alarm)으로 가 「시나리오 관리」 탭이 숨은
+# 회차에도 보인다(`equipment_scenario_management.report_session_notices`).
+QUERY_TAB = ":material/cloud_download: BigDataQuery 등록"
+AUTO_UPDATE_TAB = ":material/autorenew: 자동 갱신"
 management_tab, query_tab, auto_update_tab = stateful_tabs(
-    [
-        SCENARIO_MANAGEMENT_TAB,
-        ":material/cloud_download: BigDataQuery 등록",
-        ":material/autorenew: 자동 갱신",
-    ],
+    [SCENARIO_MANAGEMENT_TAB, QUERY_TAB, AUTO_UPDATE_TAB],
     key=SCENARIO_MANAGEMENT_TABS_KEY,
 )
+# 탭 안 상태 알림(공식버전 없음 `SC-01` · BigDataQuery 설정 `AD-04` · 자동 갱신 예약
+# `AU-01/02`)은 그 탭이 열린 회차에만 낸다 — 닫힌 탭이면 None(`open_tab_name`). 「그 화면으로」 가
+# 그 탭을 연다.
 
 with management_tab:
     # 「관리할 시나리오」 전환 — 시뮬레이션 시나리오(지금까지의 저장소 상태·시나리오 작업)와 설비
@@ -79,12 +79,18 @@ with management_tab:
         required=True,
     )
     if kind == EQUIPMENT_KIND:
-        render_equipment_scenario_section(
-            notice_slot=equipment_notice_slot if tab_is_hidden(management_tab) else None
-        )
+        render_equipment_scenario_section()
     else:
-        render_scenario_management(repository, database_path)
+        render_scenario_management(
+            repository,
+            database_path,
+            alert_tab=open_tab_name(management_tab, SCENARIO_MANAGEMENT_TAB),
+        )
 with query_tab:
-    render_bigdataquery_registration(repository, database_path)
+    render_bigdataquery_registration(
+        repository, database_path, alert_tab=open_tab_name(query_tab, QUERY_TAB)
+    )
 with auto_update_tab:
-    render_auto_official_update(repository)
+    render_auto_official_update(
+        repository, alert_tab=open_tab_name(auto_update_tab, AUTO_UPDATE_TAB)
+    )

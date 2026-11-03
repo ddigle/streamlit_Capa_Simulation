@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from alert_marks import states
 from streamlit.errors import StreamlitPageNotFoundError
 from streamlit.testing.v1 import AppTest
 
@@ -113,6 +114,11 @@ def _texts(app: AppTest, kind: str) -> list[str]:
     return [str(element.value) for element in getattr(app, kind)]
 
 
+def _key_alerts(app: AppTest) -> list[str]:
+    """접두 없는 세션 키 상태 알림(`MO-02` — 알림창 · Alarm, 자리에 그리지 않는다)의 전문."""
+    return [str(note["full"]) for note in states(app, "MO-02") if note.get("active")]
+
+
 # ------------------------------------------------------------------ 상자
 
 
@@ -182,6 +188,7 @@ def test_a_module_page_opens_at_its_address_without_the_condition_panel(
     assert CONDITIONS_BOX_KEY not in _sidebar_keys(app)
     # 거짓 키 알림이 없다 — 코어 사이드바 위젯 값을 읽어도 `id` 가 같다.
     assert not any("접두 없는 세션 키" in text for text in _texts(app, "warning"))
+    assert not _key_alerts(app)
     assert module_failures.key_warnings() == {}
     assert "demo_ok" in module_failures.last_run_seconds()
     # 모듈 화면 회차도 끝까지 돈 회차다 — 입장 화면을 걸고 Summary 를 데운다.
@@ -228,7 +235,8 @@ def test_an_unprefixed_key_is_reported_and_recorded(_app: AppTest, _fixtures: No
     app.switch_page(DEMO_KEYS_PAGE).run()
     _ok(app)
 
-    (warning,) = [text for text in _texts(app, "warning") if "접두 없는 세션 키" in text]
+    assert not any("접두 없는 세션 키" in text for text in _texts(app, "warning"))
+    (warning,) = [text for text in _key_alerts(app) if "접두 없는 세션 키" in text]
     assert "새로 1 · 바꿈 0 · 지움 0" in warning and "plain" in warning
     assert module_failures.key_warnings() == {"demo_keys": ("plain_key",)}
 
@@ -412,10 +420,10 @@ def test_a_stopping_page_reports_its_unprefixed_key_on_the_next_run(
     assert not _texts(app, "error")
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
     assert module_failures.key_warnings() == {"demo_lab": ("plain_stop",)}
-    # 멈춘 회차에는 그릴 수 없어 다음 회차 맨 위에 선다.
+    # 멈춘 회차에는 그릴 수 없어 다음 회차 맨 위에서 상태 알림(`MO-02`)으로 낸다.
     app.run()
     _ok(app)
-    assert any("접두 없는 세션 키" in text for text in _texts(app, "warning"))
+    assert any("접두 없는 세션 키" in text for text in _key_alerts(app))
 
 
 def test_a_rerun_button_reruns_without_a_card(_app: AppTest, _lab: Path) -> None:
@@ -437,7 +445,7 @@ def test_deleting_or_replacing_an_unprefixed_key_is_reported(
     app.switch_page(str(_lab / page)).run()
     _ok(app)
 
-    (warning,) = [text for text in _texts(app, "warning") if "접두 없는 세션 키" in text]
+    (warning,) = [text for text in _key_alerts(app) if "접두 없는 세션 키" in text]
     assert expected in warning and "plain" in warning
 
 
@@ -578,22 +586,49 @@ def test_values_rebuilt_on_every_read_are_not_reported_as_changed(
 
     state = _FakeState(page_tabs_strip={}, plain=object())
     state.fresh = frozenset({"page_tabs_strip"})
-    warned: list[str] = []
+    reported: list[str | None] = []
+    monkeypatch.setattr(module_runtime, "st", SimpleNamespace(session_state=state))
+    # 알림 칸 표지는 실행 문맥이 있어야 그린다 — 낸 글만 받는다.
     monkeypatch.setattr(
-        module_runtime,
-        "st",
-        SimpleNamespace(session_state=state, warning=lambda text, icon=None: warned.append(text)),
+        module_runtime, "_report_key_warning", lambda _module, text: reported.append(text)
     )
+    monkeypatch.setattr("capa_simulation.alerts.flush", lambda: None)
     spec = PageSpec(
         "modules/demo_a/page.py", "시험 (구현중)", url_path="mod-demo_a-main", module="demo_a"
     )
 
     module_runtime.run_module_page(lambda: None, spec)
-    assert warned == []
+    assert reported == [None]
 
     def replace_plain() -> None:
         state["plain"] = object()
 
     module_runtime.run_module_page(replace_plain, spec)
-    (warning,) = warned
+    warning = reported[-1]
+    assert warning is not None
     assert "새로 0 · 바꿈 1 · 지움 0" in warning and "plain" in warning
+
+
+def test_a_deferred_key_warning_is_not_resolved_in_the_run_that_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """멈춘 앞 회차가 넘긴 키 알림(`MO-02`)을 맨 위에서 낸 회차는 끝에서 해소를 내지 않는다 — 같은
+    회차에 알림창과 「해소」 가 함께 서지 않게. 그 다음 회차(건드리지 않음)가 해소한다."""
+    from capa_simulation import module_runtime
+
+    state = _FakeState()
+    reported: list[str | None] = []
+    monkeypatch.setattr(module_runtime, "st", SimpleNamespace(session_state=state))
+    monkeypatch.setattr(
+        module_runtime, "_report_key_warning", lambda _module, text: reported.append(text)
+    )
+    monkeypatch.setattr("capa_simulation.alerts.flush", lambda: None)
+    spec = PageSpec(
+        "modules/demo_b/page.py", "시험 (구현중)", url_path="mod-demo_b-main", module="demo_b"
+    )
+
+    module_runtime._defer_key_warning("demo_b", "DEMO 넘긴 키 알림")
+    module_runtime.run_module_page(lambda: None, spec)
+    assert reported == ["DEMO 넘긴 키 알림"]
+    module_runtime.run_module_page(lambda: None, spec)
+    assert reported == ["DEMO 넘긴 키 알림", None]
