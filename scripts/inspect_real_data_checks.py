@@ -6,7 +6,7 @@
 스크립트는 그 질문을 사내에서 한 번에 재고, 결과를 리뷰 문서에 **그대로 붙일 수 있는 Markdown
 블록**으로 찍는다.
 
-    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 여섯
+    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 일곱
     uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq  # BigDataQuery
 
 | 블록 | `--only` | 무엇을 |
@@ -18,6 +18,7 @@
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·전 코드 적재일·표본 적재일·사본 여부 |
 | 8-9 | `home` | HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수 — EDP 포함·뺌 |
 | 8-10 | `census` | 「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(센서스) |
+| 8-11 | `grid` | 기준 정보 편집 표 아홉의 줄 · 칸 수와 본문 바이트 — 큰 표 상한 대비 |
 
 8-6 ~ 8-8 은 런북의 다른 절(리뷰에 옮기는 법 등)이 쓰는 번호라 블록 번호로 쓰지 않는다.
 
@@ -124,17 +125,24 @@ from capa_simulation.persistence.repository import (  # noqa: E402
     DATASET_TABLES,
     REVISION_TABLES,
 )
+from capa_simulation.reference_grid_keys import DATASETS  # noqa: E402
 from capa_simulation.services.bigdataquery_catalog_view import (  # noqa: E402
     code_registration_span,
     first_registration_dates,
     format_registered_at,
     normalize_catalog,
 )
+from capa_simulation.services.capacity_reference_editor import (  # noqa: E402
+    PERFORMANCE_EDITOR_DIMENSIONS,
+    build_reference_edit_table,
+)
 from capa_simulation.services.core_data_derivation import derive_q_core_data  # noqa: E402
 from capa_simulation.services.dashboard import (  # noqa: E402
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
 )
+from capa_simulation.services.edit_grid import GridSpec, ValueFormat  # noqa: E402
+from capa_simulation.services.edit_grid_payload import build_base  # noqa: E402
 from capa_simulation.services.equipment_contract import (  # noqa: E402
     AREA_CODES,
     COUNTED_USAGE_BASIS,
@@ -146,6 +154,10 @@ from capa_simulation.services.equipment_contract import (  # noqa: E402
     USAGE_BASIS_COLUMN,
     counts_for_capacity,
     usage_basis_key,
+)
+from capa_simulation.services.equipment_count import (  # noqa: E402
+    EQUIPMENT_DIMENSIONS,
+    equipment_count_to_edit_table,
 )
 from capa_simulation.services.equipment_units import (  # noqa: E402
     format_unit_count,
@@ -217,6 +229,10 @@ from capa_simulation.services.load_calculator import (  # noqa: E402
     filter_edp_plan,
 )
 from capa_simulation.services.month_columns import complete_years  # noqa: E402
+from capa_simulation.services.month_filter import (  # noqa: E402
+    available_month_range,
+    filter_month_range,
+)
 from capa_simulation.services.product_type import WF_DIVISIONS_BY_PRODUCT_TYPE  # noqa: E402
 from capa_simulation.services.required_equipment import (  # noqa: E402
     REQB_COLUMNS,
@@ -261,6 +277,7 @@ CHECKS: Final[tuple[str, ...]] = (
     "bdq",
     "home",
     "census",
+    "grid",
 )
 # BigDataQuery 는 사내 DB 를 길게 훑는다. 따로 부를 때만 돈다.
 DEFAULT_CHECKS: Final[tuple[str, ...]] = (
@@ -270,6 +287,7 @@ DEFAULT_CHECKS: Final[tuple[str, ...]] = (
     "equipment",
     "home",
     "census",
+    "grid",
 )
 
 # 기존 결과가 실려 오는 원천 컬럼. 채움 상태는 늘 찍는다.
@@ -3744,6 +3762,310 @@ def iter_census(session: Session, *, all_revisions: bool = False) -> Iterator[li
         session.notes.extend(_census_notes(scope, rows, all_revisions=all_revisions))
 
 
+# ---------------------------------------------------------------------------------- 8-11 grid
+
+# 기준 정보 편집 그리드의 큰 표 안전 상한 — `components/reference_grid.CAP_CELLS`·`CAP_BYTES`·
+# `CAP_ROWS` 와 같은 값이다. 화면 모듈(streamlit)이라 부르지 않고 시험이 맞대 본다.
+GRID_CAP_CELLS: Final = 300_000
+GRID_CAP_BYTES: Final = 400_000
+GRID_CAP_ROWS: Final = 1_000
+
+
+@dataclass(frozen=True)
+class GridTableSpec:
+    """편집 표 하나의 양식 규격 — 화면(`app_pages/reference_data.py`)과 같은 분류 칸 · 값 칸.
+
+    `value_column` 이 None 이면 UPEH(Main 은 UPEH, MI 는 ST 를 한 칸에), `equipment` 가 있으면
+    설비대수 셋(원천 `구분` · 값 칸 — `equipment_count_to_edit_table`)이다. `fmt` 는
+    `reference_grid.GRID_FORMATS` 와 같은 값 형식(본문에 실리는 몇 바이트 몫)이다.
+    """
+
+    table: str
+    dimensions: tuple[str, ...]
+    value_column: str | None
+    fmt: ValueFormat
+    equipment: tuple[str, str] | None = None
+
+
+_RATIO_DIMENSIONS: Final = (
+    "공정",
+    "Area_Name",
+    "양산구분",
+    "제품정보",
+    "Stack",
+    "WF 구분",
+    "STEP_SEQ",
+    "MCP_SEQ",
+)
+_PERCENT_TOP: Final = ValueFormat("percent", 2, max_value=1.0)
+_COUNT: Final = ValueFormat("fixed", 2, blank_zero=True)
+# 차례는 편집 표 아홉의 종류 단추 차례(`reference_grid_keys.EDIT_TABLES`)다.
+GRID_TABLES: Final[tuple[GridTableSpec, ...]] = (
+    GridTableSpec("RQ_UPEH", tuple(PERFORMANCE_EDITOR_DIMENSIONS), None, ValueFormat("sig", 6)),
+    GridTableSpec(
+        "RQ_EQP_OWN", tuple(EQUIPMENT_DIMENSIONS), "설비보유", _COUNT, ("보유", "설비보유")
+    ),
+    GridTableSpec(
+        "RQ_EQP_LENT", tuple(EQUIPMENT_DIMENSIONS), "설비대여평가", _COUNT, ("대여", "설비대여평가")
+    ),
+    GridTableSpec(
+        "RQ_EQP_AVBL", tuple(EQUIPMENT_DIMENSIONS), "가용대수", _COUNT, ("가용", "가용대수")
+    ),
+    GridTableSpec("RQ_RUN_RATE", ("공정", "양산구분"), "CAPA_RUN_RATE", _PERCENT_TOP),
+    GridTableSpec("RQ_VITAL", ("공정", "양산구분"), "편중률", ValueFormat("percent", 2)),
+    GridTableSpec("RQ_RUN_DAY", ("공정",), "RUN_DAY", ValueFormat("fixed", 0, integer=True)),
+    GridTableSpec("RQ_LOT_RATIO", _RATIO_DIMENSIONS, "Lot 측정률", _PERCENT_TOP),
+    GridTableSpec("RQ_WF_RATIO", _RATIO_DIMENSIONS, "WF측정률", _PERCENT_TOP),
+)
+# 측정률 두 표는 통째로 비어도 화면이 선다(행이 없으면 1.0 으로 가정 — `_ratio_month_table`).
+_EMPTY_OK_TABLES: Final = frozenset({"RQ_LOT_RATIO", "RQ_WF_RATIO"})
+
+
+@dataclass(frozen=True)
+class GridSize:
+    """양식 하나의 크기 — 본문 바이트는 칸이 상한 안일 때만 잰다(앱과 같다 — 넘으면 None)."""
+
+    rows: int
+    months: int
+    body_bytes: int | None
+
+    @property
+    def cells(self) -> int:
+        return self.rows * self.months
+
+    @property
+    def over_cells(self) -> bool:
+        return self.cells > GRID_CAP_CELLS
+
+    @property
+    def over_bytes(self) -> bool:
+        return self.body_bytes is not None and self.body_bytes > GRID_CAP_BYTES
+
+
+@dataclass
+class GridTally:
+    """표 하나를 리비전마다 잰 것의 모음 — 최대와 상한에 걸린 리비전 수, 실패 종류."""
+
+    spec: GridTableSpec
+    sizes: list[GridSize] = field(default_factory=list)
+    failures: Counter[str] = field(default_factory=Counter)
+
+    @property
+    def label(self) -> str:
+        return f"{DATASETS[self.spec.table]} (`{self.spec.table}`)"
+
+    def most(self, pick: Callable[[GridSize], int | None]) -> int | None:
+        values = [value for value in map(pick, self.sizes) if value is not None]
+        return max(values) if values else None
+
+    def row(self) -> list[str]:
+        cells = self.most(lambda size: size.cells)
+        body = self.most(lambda size: size.body_bytes)
+        failed = ", ".join(f"{count} {kind}" for kind, count in sorted(self.failures.items()))
+        return [
+            self.label,
+            _count(len(self.sizes)),
+            _count(self.most(lambda size: size.rows)),
+            _count(self.most(lambda size: size.months)),
+            _count(cells),
+            _grid_ratio(cells, GRID_CAP_CELLS),
+            _grid_kb(body),
+            _grid_ratio(body, GRID_CAP_BYTES),
+            _count(sum(size.over_cells for size in self.sizes)),
+            _count(sum(size.over_bytes for size in self.sizes)),
+            failed or "0",
+        ]
+
+
+def _grid_ratio(value: int | None, cap: int) -> str:
+    return "-" if value is None else f"{value / cap:.1%}"
+
+
+def _grid_kb(value: int | None) -> str:
+    return "-" if value is None else f"{value / 1000:,.1f}"
+
+
+def grid_template(spec: GridTableSpec, frame: pd.DataFrame) -> pd.DataFrame:
+    """편집 표 양식(분류 칸 + 월 칸) — 화면과 같은 함수로 펴되 줄 차례(표시순서)는 입히지 않는다.
+
+    본문 바이트는 줄 차례와 상관없다 — 분류 칸은 줄마다 고정 폭 코드, 값은 줄마다 RLE 다
+    (`edit_grid_payload.encode_table`).
+    """
+    if spec.equipment is not None:
+        category, count_column = spec.equipment
+        return equipment_count_to_edit_table(frame, category, count_column)
+    return build_reference_edit_table(
+        frame,
+        table_name=spec.table,
+        dimensions=list(spec.dimensions),
+        value_column=spec.value_column,
+        display_order=None,
+        page="",
+        tab="",
+    )
+
+
+def grid_size(spec: GridTableSpec, template: pd.DataFrame) -> GridSize:
+    """양식의 줄 · 달 수와 껍데기 본문 JSON 바이트(`build_base` — 앱이 상한에 견주는 그 수).
+
+    공정 표시명 사전(`labels`)과 UPEH 월 머리 도움말은 빼고 잰다 — 앱 본문은 그만큼(공정 수 ×
+    이름 길이, 도움말 한 줄) 더 크다. 칸이 상한을 넘으면 앱처럼 본문을 짓지 않는다.
+    """
+    months = tuple(str(column) for column in template.columns if column not in spec.dimensions)
+    size = GridSize(rows=len(template), months=len(months), body_bytes=None)
+    if size.over_cells:
+        return size
+    grid = GridSpec(spec.table, DATASETS[spec.table], spec.dimensions, months, spec.fmt)
+    return replace(size, body_bytes=build_base(template, grid, None).size)
+
+
+def _grid_slice(spec: GridTableSpec, frame: pd.DataFrame, start: int, end: int) -> pd.DataFrame:
+    """화면의 편집 기간 조각 — 측정률 두 표는 통째로 비면 빈 표 그대로(`_ratio_month_table`)."""
+    if spec.table in _EMPTY_OK_TABLES and frame.empty and "생산계획년월" in frame.columns:
+        return frame.head(0).copy()
+    return filter_month_range(frame, start, end, spec.table)
+
+
+def _measure_grid_revision(
+    connection: duckdb.DuckDBPyConnection, revision_id: str, tallies: Sequence[GridTally]
+) -> str | None:
+    """리비전 하나의 아홉 표를 잰다. 기간을 정하지 못하면(UPEH 가 비거나 달 꼴이 틀림) 그 종류."""
+    frames = {
+        tally.spec.table: load_frame(
+            connection,
+            schema="rev_data",
+            table_name=REVISION_TABLES[tally.spec.table],
+            owner_column="revision_id",
+            owner_id=revision_id,
+        )
+        for tally in tallies
+    }
+    try:
+        start, end = available_month_range(frames["RQ_UPEH"], "RQ_UPEH")
+    except Exception as exc:  # 화면도 이 리비전에서는 편집 표를 세우지 않는다 — 종류만 적는다
+        return failure_kind(exc)
+    for tally in tallies:
+        try:
+            template = grid_template(
+                tally.spec, _grid_slice(tally.spec, frames[tally.spec.table], start, end)
+            )
+            tally.sizes.append(grid_size(tally.spec, template))
+        except Exception as exc:  # 한 표가 멈춰도 다음 표는 잰다. 문구는 찍지 않는다
+            tally.failures[failure_kind(exc)] += 1
+    return None
+
+
+_GRID_HEADERS: Final = (
+    "표",
+    "잰 리비전",
+    "줄 최대",
+    "달 최대",
+    "칸 최대",
+    f"칸 / {GRID_CAP_CELLS:,}",
+    "본문 최대(KB)",
+    f"본문 / {GRID_CAP_BYTES // 1000:,} KB",
+    "칸 넘음",
+    "본문 넘음",
+    "실패",
+)
+
+
+def _grid_note(revisions: int, tallies: Sequence[GridTally], skipped: Counter[str]) -> str:
+    """요약 8-11 — `활성 N · 걸림 = 칸 + 본문 · 칸 최대 · 본문 최대`(+ 실패 · 건너뜀).
+
+    `걸림` 은 상한에 걸린 (리비전 · 표) 수다 — 칸이 넘는 것과, 칸은 안인데 본문이 넘는 것은
+    겹치지 않는다(앱과 같이 본문은 칸이 상한 안인 표만 잰다).
+    """
+    sized = [(tally.spec.table, size) for tally in tallies for size in tally.sizes]
+    over_cells = sum(size.over_cells for _, size in sized)
+    over_bytes = sum(size.over_bytes for _, size in sized)
+    parts = [
+        f"활성 {revisions:,}",
+        f"걸림 {over_cells + over_bytes:,} = 칸 {over_cells:,} + 본문 {over_bytes:,}",
+    ]
+    widest = max(sized, key=lambda item: item[1].cells, default=None)
+    parts.append(
+        "칸 -"
+        if widest is None
+        else f"칸 {widest[1].cells:,} {widest[0].removeprefix('RQ_')} "
+        f"{_grid_ratio(widest[1].cells, GRID_CAP_CELLS)}"
+    )
+    weighed = [(table, size) for table, size in sized if size.body_bytes is not None]
+    heaviest = max(weighed, key=lambda item: item[1].body_bytes or 0, default=None)
+    parts.append(
+        "본문 -"
+        if heaviest is None
+        else f"본문 {_grid_kb(heaviest[1].body_bytes)}KB {heaviest[0].removeprefix('RQ_')} "
+        f"{_grid_ratio(heaviest[1].body_bytes, GRID_CAP_BYTES)}"
+    )
+    failed = sum(sum(tally.failures.values()) for tally in tallies)
+    if failed:
+        parts.append(f"실패 {failed:,}")
+    if skipped:
+        parts.append(f"건너뜀 {sum(skipped.values()):,}")
+    return _note("8-11", *parts)
+
+
+def check_grid_sizes(session: Session) -> list[str]:
+    """기준 정보 편집 표 아홉의 실데이터 크기를 큰 표 상한(칸 300,000 · 본문 400 KB)에 견준다.
+
+    2026-11-03 사용자 결정(편집 그리드 후속 「권장대로」 — 런북 8장에 센서스 줄). 리비전은 8-10
+    기본과 같은 묶음(시나리오마다 활성 리비전과 공식버전 대상)이고, 기간은 리비전마다 UPEH
+    기준정보의 첫 달 ~ 끝 달이다(앱은 조회기간 ∩ 이 범위만 싣는다 — 조회기간을 가장 넓게 고른
+    때의 크기다).
+    값 · 이름 · 리비전 번호는 찍지 않고 표마다 줄 · 달 · 칸 수의 최대, 본문 바이트의 최대, 상한에
+    걸린 리비전 수만 찍는다. 수는 판정이 아니다 — 상한에 걸리면 앱은 표 조건 필터로 고른 줄이나 앞
+    `GRID_CAP_ROWS` 줄만 싣고 알린다(적용은 표 전체).
+    """
+    started = time.perf_counter()
+    lines = _heading("8-11", "기준 정보 편집 표 크기 — 큰 표 상한 대비", "grid")
+    connection = session.simulation
+    if connection is None:
+        session.notes.append(_note("8-11", f"시뮬레이션 DB {session.simulation_failure}"))
+        return [*lines, f"- 시뮬레이션 DB — {session.simulation_failure}", ""]
+    try:
+        scope = _census_scope(connection, all_revisions=False)
+        revisions = _picked_revisions(connection, scope)
+    except duckdb.Error as exc:
+        session.notes.append(_note("8-11", f"리비전 목록 {_failure(exc)}"))
+        return [*lines, f"- 리비전 목록을 읽지 못함 — {_failure(exc)}", ""]
+    tallies = [GridTally(spec) for spec in GRID_TABLES]
+    skipped: Counter[str] = Counter()
+    try:
+        for revision_id in revisions:
+            kind = _measure_grid_revision(connection, revision_id, tallies)
+            if kind is not None:
+                skipped[kind] += 1
+    finally:
+        session.notes.append(_grid_note(len(revisions), tallies, skipped))
+    lines.extend(
+        [
+            f"- 본 리비전 {len(revisions):,} — {scope.label}",
+            "- 기간 — 리비전마다 `RQ_UPEH` 의 첫 달 ~ 끝 달(조회기간을 가장 넓게 고른 때 — 앱은 "
+            "조회기간 ∩ 이 범위만 싣는다)",
+        ]
+    )
+    if skipped:
+        kinds = ", ".join(f"{count} {kind}" for kind, count in sorted(skipped.items()))
+        lines.append(f"- 기간을 정하지 못해 건너뛴 리비전 {sum(skipped.values()):,} — {kinds}")
+    lines.extend(
+        [
+            "",
+            *_table(_GRID_HEADERS, (tally.row() for tally in tallies)),
+            "",
+            f"- 읽는 법 — 상한은 칸 {GRID_CAP_CELLS:,} · 껍데기 본문 "
+            f"{GRID_CAP_BYTES // 1000:,} KB 다. 넘는 표는 앱이 사이드바 「표 조건」 으로 고른 "
+            f"줄이나 앞 {GRID_CAP_ROWS:,}줄만 싣고 알린다(「변경사항 적용」 은 표 전체). "
+            "`칸 넘음` · `본문 넘음` 은 그 상한에 걸린 리비전 수이고 본문은 칸이 상한 안인 표만 "
+            "잰다(앱과 같다). 본문은 공정 표시명 사전 · UPEH 월 머리 도움말을 빼고 잰 바이트라 "
+            "앱보다 그만큼 작다. 에이전트는 판정하지 않고 수만 옮긴다.",
+            f"- 걸린 시간 {time.perf_counter() - started:.1f}초",
+            "",
+        ]
+    )
+    return lines
+
+
 # ---------------------------------------------------------------------------------- 8-5 bdq
 
 
@@ -5141,7 +5463,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--only",
         default=",".join(DEFAULT_CHECKS),
-        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 여섯",
+        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 일곱",
     )
     parser.add_argument("--database", type=Path, default=DUCKDB_PATH, help="시뮬레이션 DuckDB")
     parser.add_argument(
@@ -5246,6 +5568,7 @@ _BLOCK_TITLES: Final[dict[str, str]] = {
     "bdq": "8-5",
     "home": "8-9",
     "census": "8-10",
+    "grid": "8-11",
 }
 
 
@@ -5270,6 +5593,8 @@ def _block_parts(
         yield check_home_months(session)
     elif name == "census":
         yield from iter_census(session, all_revisions=args.census_all_revisions)
+    elif name == "grid":
+        yield check_grid_sizes(session)
     else:
         yield from iter_bigdataquery(
             today=today,
@@ -5548,7 +5873,9 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         equipment_path=Path(args.equipment_database),
         dataset_id=args.dataset_id,
     )
-    needs_simulation = any(name in selected for name in ("env", "legacy", "reqb", "home", "census"))
+    needs_simulation = any(
+        name in selected for name in ("env", "legacy", "reqb", "home", "census", "grid")
+    )
     needs_equipment = any(name in selected for name in ("env", "equipment", "census"))
     if _opens_app_database(session, simulation=needs_simulation, equipment=needs_equipment):
         # 앱은 rerun 동안만 DB 를 쥔다(`pinned_connections`) — 쉬는 앱은 아래 잠금 확인을 지나치고,

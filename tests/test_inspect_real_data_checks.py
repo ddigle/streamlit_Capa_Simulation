@@ -314,7 +314,7 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     _assert_no_leak(output)
     # 읽기만 했다 — 파일이 한 바이트도 바뀌지 않는다.
     assert (_md5(simulation_db), _md5(equipment_db)) == before
-    for heading in ("### 8-1.", "### 8-2.", "### 8-3.", "### 8-4.", "### 8-9."):
+    for heading in ("### 8-1.", "### 8-2.", "### 8-3.", "### 8-4.", "### 8-9.", "### 8-11."):
         assert heading in output
     assert "### 8-5." not in output  # BigDataQuery 는 따로 부를 때만
     # HOME 월 축 — 내장 시드는 달마다 양산이 있어 빠지는 달이 없다.
@@ -2933,6 +2933,11 @@ def test_the_census_division_tables_are_every_revision_table_with_a_wf_division(
     assert {REVISION_TABLES[name] for name in checks.CENSUS_DIVISION_TABLES} == tables
 
 
+# 상한 안의 8-11 요약 줄 — 칸 · 본문 최대의 표 꼬리표와 비율은 표본에 달려 꼴만 본다.
+GRID_SUMMARY_IN_RANGE = (
+    r"- 8-11 활성 1 · 걸림 0 = 칸 0 \+ 본문 0 · 칸 [\d,]+ \w+ [\d.]+%"
+    r" · 본문 [\d.,]+KB \w+ [\d.]+%"
+)
 RUNBOOK = PROJECT_ROOT / "docs" / "internal_update_runbook.md"
 DUAL_ENV = PROJECT_ROOT / "docs" / "dual_env_workflow.md"
 
@@ -3016,7 +3021,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
 
     assert code == 0
     _assert_no_leak(output)
-    assert output.index("### 8-10.") < output.index(checks.SUMMARY_HEADING)
+    assert output.index("### 8-11.") < output.index(checks.SUMMARY_HEADING)
     lines = _summary(output)
     keys = [line.split(" ", 2)[1] for line in lines]
     assert keys == [
@@ -3032,6 +3037,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-4s",
         "8-9",
         "8-10",
+        "8-11",
     ]
     # 런북 8-6 「늘 옮기는 줄」 의 키는 스크립트가 실제로 찍는 키다(8-5 는 BigDataQuery
     # 시험이 본다).
@@ -3049,10 +3055,14 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
     assert bare[10] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
     assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert re.fullmatch(
+        GRID_SUMMARY_IN_RANGE,
+        bare[12],
+    ), bare[12]
     assert checks.check_transcript(lines) == []
     assert (
-        sum(1 for line in lines if " = " in line) == 3
-    )  # 8-3 · 8-4 · 8-9 (경로 갈래 0 이라 8-2B 는 식 없음)
+        sum(1 for line in lines if " = " in line) == 4
+    )  # 8-3 · 8-4 · 8-9 · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
 
 
 def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:
@@ -3632,3 +3642,264 @@ def test_an_old_summary_line_without_the_layout_cell_still_checks() -> None:
     body = "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0"
     line = f"{body} #{checks.summary_code(body)}"
     assert checks.check_transcript([line]) == []
+
+
+# ---------------------------------------------------------------------------------- 8-11 grid
+
+
+def _grid_rows(output: str) -> dict[str, list[str]]:
+    """8-11 표의 줄 — 표 이름(RQ) → 나머지 칸."""
+    section = output[output.index("### 8-11.") : output.index(checks.SUMMARY_HEADING)]
+    rows: dict[str, list[str]] = {}
+    for line in section.splitlines():
+        found = re.match(r"^\| [^|]*\(`(RQ_\w+)`\) \|(.*)\|$", line)
+        if found is not None:
+            rows[found.group(1)] = [cell.strip() for cell in found.group(2).split("|")]
+    return rows
+
+
+def _page_grid_sources() -> dict[str, tuple[tuple[str, ...], str | None, tuple[str, str] | None]]:
+    """기준 정보 화면이 편집 표 아홉에 쓰는 (분류 칸, 값 칸, 설비대수 구분) — 화면 스크립트
+    (streamlit)를 돌리지 않고 소스의 리터럴에서 읽는다."""
+    from capa_simulation.services.capacity_reference_editor import PERFORMANCE_EDITOR_DIMENSIONS
+    from capa_simulation.services.equipment_count import EQUIPMENT_DIMENSIONS
+
+    source = (PROJECT_ROOT / "app_pages" / "reference_data.py").read_text(encoding="utf-8")
+    lists: dict[str, list[str]] = {
+        "PERFORMANCE_EDITOR_DIMENSIONS": list(PERFORMANCE_EDITOR_DIMENSIONS),
+        "EQUIPMENT_DIMENSIONS": list(EQUIPMENT_DIMENSIONS),
+    }
+    sources: dict[str, tuple[str, str | None]] = {}
+    equipment: dict[str, tuple[str, str]] = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+            if name.endswith("_DIMENSIONS") and isinstance(node.value, ast.List):
+                lists[name] = ast.literal_eval(node.value)
+            elif name == "EQUIPMENT_EDITORS":
+                equipment = {row[0]: (row[1], row[2]) for row in ast.literal_eval(node.value)}
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "TABLE_SOURCES"
+            and isinstance(node.value, ast.Dict)
+        ):
+            for key, value in zip(node.value.keys, node.value.values, strict=True):
+                assert key is not None and isinstance(value, ast.Tuple)
+                dims_node, column_node, _tab_node = value.elts
+                assert isinstance(dims_node, ast.Name)
+                sources[ast.literal_eval(key)] = (dims_node.id, ast.literal_eval(column_node))
+    found: dict[str, tuple[tuple[str, ...], str | None, tuple[str, str] | None]] = {
+        table: (tuple(lists[dims]), column, None) for table, (dims, column) in sources.items()
+    }
+    for table, (category, count_column) in equipment.items():
+        found[table] = (
+            tuple(lists["EQUIPMENT_DIMENSIONS"]),
+            count_column,
+            (category, count_column),
+        )
+    return found
+
+
+def test_the_grid_tables_mirror_the_reference_screen() -> None:
+    """8-11 은 화면 모듈(streamlit)을 부르지 않고 규격을 옮겨 둔다 — 표 차례 · 상한 · 값 형식은
+    `reference_grid` 와, 분류 칸 · 값 칸 · 설비대수 구분은 기준 정보 화면과 같아야 한다."""
+    from capa_simulation.components import reference_grid
+    from capa_simulation.reference_grid_keys import EDIT_TABLES
+
+    assert [spec.table for spec in checks.GRID_TABLES] == list(EDIT_TABLES)
+    assert (checks.GRID_CAP_CELLS, checks.GRID_CAP_BYTES, checks.GRID_CAP_ROWS) == (
+        reference_grid.CAP_CELLS,
+        reference_grid.CAP_BYTES,
+        reference_grid.CAP_ROWS,
+    )
+    assert {spec.table: spec.fmt for spec in checks.GRID_TABLES} == dict(
+        reference_grid.GRID_FORMATS
+    )
+    assert {
+        spec.table: (spec.dimensions, spec.value_column, spec.equipment)
+        for spec in checks.GRID_TABLES
+    } == _page_grid_sources()
+
+
+def test_the_grid_sizes_match_the_screen_path_whatever_the_row_order(
+    simulation_db: Path, tmp_path: Path
+) -> None:
+    """스크립트는 원천 그대로의 프레임을 표시순서 없이 펴지만, 줄 · 달 수와 본문 바이트는 화면
+    길(저장소가 읽은 활성 리비전 · 공용 표시순서를 입힌 양식 · `reference_grid.grid_spec`)과 같다 —
+    본문은 줄마다 고정 폭 코드와 RLE 라 줄 차례와 상관없다."""
+    from capa_simulation.components import reference_grid
+    from capa_simulation.reference_grid_keys import DATASETS
+    from capa_simulation.services.capacity_reference_editor import build_reference_edit_table
+    from capa_simulation.services.display_order import apply_display_order
+    from capa_simulation.services.display_order_scopes import (
+        PAGE_REFERENCE,
+        TAB_EQUIPMENT_COUNT,
+        TAB_LOT_RATIO,
+        TAB_RUN_DAY,
+        TAB_RUN_RATE,
+        TAB_UPEH,
+        TAB_VITAL,
+        TAB_WF_RATIO,
+    )
+    from capa_simulation.services.edit_grid_payload import build_base
+    from capa_simulation.services.equipment_count import equipment_count_to_edit_table
+    from capa_simulation.services.month_filter import available_month_range, filter_month_range
+
+    tabs = {
+        "RQ_UPEH": TAB_UPEH,
+        "RQ_RUN_RATE": TAB_RUN_RATE,
+        "RQ_VITAL": TAB_VITAL,
+        "RQ_RUN_DAY": TAB_RUN_DAY,
+        "RQ_LOT_RATIO": TAB_LOT_RATIO,
+        "RQ_WF_RATIO": TAB_WF_RATIO,
+    }
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path), read_only=True) as connection:
+        (revision_id,) = connection.execute(
+            "SELECT active_revision_id FROM app_meta.scenario"
+        ).fetchone() or ("",)
+        tallies = [checks.GridTally(spec) for spec in checks.GRID_TABLES]
+        assert checks._measure_grid_revision(connection, str(revision_id), tallies) is None
+    tables = DuckDBScenarioRepository(path).load_revision(str(revision_id)).tables
+    order = tables["RQ_DISPLAY_ORDER"]
+    start, end = available_month_range(tables["RQ_UPEH"], "RQ_UPEH")
+    for tally in tallies:
+        spec = tally.spec
+        sliced = filter_month_range(tables[spec.table], start, end, spec.table)
+        if spec.equipment is not None:
+            screen = apply_display_order(
+                equipment_count_to_edit_table(sliced, *spec.equipment),
+                order,
+                PAGE_REFERENCE,
+                TAB_EQUIPMENT_COUNT,
+            )
+        else:
+            screen = build_reference_edit_table(
+                sliced,
+                table_name=spec.table,
+                dimensions=list(spec.dimensions),
+                value_column=spec.value_column,
+                display_order=order,
+                page=PAGE_REFERENCE,
+                tab=tabs[spec.table],
+            )
+        grid = reference_grid.grid_spec(spec.table, DATASETS[spec.table], screen, spec.dimensions)
+        (size,) = tally.sizes
+        assert (size.rows, size.months, size.body_bytes) == (
+            len(screen),
+            len(grid.value_columns),
+            build_base(screen, grid, None).size,
+        ), spec.table
+        assert size.rows and size.months, spec.table
+
+
+def test_the_grid_block_sizes_each_edit_table_without_names(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """8-11 — 편집 표 아홉의 줄 · 달 · 칸 수와 본문 바이트를 큰 표 상한에 견준다. 읽기만 하고 이름 ·
+    값은 찍지 않는다. 내장 시드는 상한에 한참 못 미친다."""
+    before = _md5(simulation_db)
+
+    code, output = _run(capsys, "--only", "grid", "--database", str(simulation_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert _md5(simulation_db) == before
+    assert "### 8-11. 기준 정보 편집 표 크기 — 큰 표 상한 대비 (`grid`)" in output
+    assert "- 본 리비전 1 — 시나리오마다 활성 리비전과 공식버전 대상" in output
+    rows = _grid_rows(output)
+    assert list(rows) == [spec.table for spec in checks.GRID_TABLES]
+    for table, cells in rows.items():
+        measured, row_count, months, cell_count, *_rest, over_cells, over_bytes, failed = cells
+        assert measured == "1", table
+        assert int(cell_count.replace(",", "")) == int(row_count) * int(months), table
+        assert (over_cells, over_bytes, failed) == ("0", "0", "0"), table
+    summary = _uncoded(_summary(output))
+    assert len(summary) == 1
+    assert re.fullmatch(
+        GRID_SUMMARY_IN_RANGE,
+        summary[0],
+    ), summary[0]
+    assert checks.check_transcript(_summary(output)) == []
+
+
+def test_the_grid_summary_counts_tables_over_either_cap(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칸이 상한을 넘는 표는 본문을 짓지 않고(앱과 같다) `칸 넘음`, 칸은 안인데 본문이 넘는 표는
+    `본문 넘음` 이다 — 둘은 겹치지 않아 요약의 `걸림 = 칸 + 본문` 이 선다. 내장 시드의 편집 표는
+    UPEH · 효율 · 여유율 · 측정률 둘이 72칸, 설비대수 셋 · 일수가 36칸이다(샘플 관측)."""
+    monkeypatch.setattr(checks, "GRID_CAP_CELLS", 50)
+    monkeypatch.setattr(checks, "GRID_CAP_BYTES", 1)
+
+    code, output = _run(capsys, "--only", "grid", "--database", str(simulation_db))
+
+    assert code == 0
+    rows = _grid_rows(output)
+    wide = {"RQ_UPEH", "RQ_RUN_RATE", "RQ_VITAL", "RQ_LOT_RATIO", "RQ_WF_RATIO"}
+    for table, cells in rows.items():
+        body, over_cells, over_bytes = cells[5], cells[7], cells[8]
+        if table in wide:
+            assert (body, over_cells, over_bytes) == ("-", "1", "0"), table
+        else:
+            assert body != "-" and (over_cells, over_bytes) == ("0", "1"), table
+    (line,) = _uncoded(_summary(output))
+    assert line.startswith("- 8-11 활성 1 · 걸림 9 = 칸 5 + 본문 4 · 칸 72 UPEH 144.0% · 본문 ")
+    assert checks.check_transcript(_summary(output)) == []
+    typed = _summary(output)[0].replace("칸 5", "칸 6")
+    assert checks.check_transcript([typed]) != []
+
+
+def test_a_grid_table_that_stops_or_a_revision_without_upeh_is_counted_by_kind(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """양식을 펴다 멈춘 표는 그 표의 `실패` 칸에 종류만, 기간(UPEH 첫 달 ~ 끝 달)을 정하지 못한
+    리비전은 건너뛴 수와 종류만 적는다 — 오류 문구(식별값이 실린다)는 찍지 않는다."""
+
+    def broken(*_args: object, **_kwargs: object) -> pd.DataFrame:
+        raise ValueError(f"{SENTINEL} 문구")
+
+    monkeypatch.setattr(checks, "build_reference_edit_table", broken)
+    code, output = _run(capsys, "--only", "grid", "--database", str(simulation_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    rows = _grid_rows(output)
+    for table, cells in rows.items():
+        expected = "0" if table.startswith("RQ_EQP_") else "1 ValueError"
+        assert cells[-1] == expected, table
+    (line,) = _uncoded(_summary(output))
+    assert line.endswith(" · 실패 6"), line
+    monkeypatch.undo()
+
+    empty = tmp_path / "capa_simulation.duckdb"
+    empty.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(empty)) as connection:
+        connection.execute("DELETE FROM rev_data.rq_upeh")
+    code, output = _run(capsys, "--only", "grid", "--database", str(empty))
+
+    assert code == 0
+    assert "- 기간을 정하지 못해 건너뛴 리비전 1 — 1 ValueError" in output
+    assert _uncoded(_summary(output)) == [
+        "- 8-11 활성 1 · 걸림 0 = 칸 0 + 본문 0 · 칸 - · 본문 - · 건너뜀 1"
+    ]
+    assert checks.check_transcript(_summary(output)) == []
+
+
+def test_the_runbook_lists_every_block_and_its_summary_key() -> None:
+    """런북 8장 머리 표 · 블록 절 · 8-6 범례가 스크립트의 블록과 같다 — 블록을 더하면 셋을 함께
+    고친다(AGENTS 10-1)."""
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    head = runbook[runbook.index("## 8. 실데이터 확인") : runbook.index("### 8-0.")]
+    listed = dict(re.findall(r"^\| (8-\d+) \| `(\w+)` \|", head, re.MULTILINE))
+    assert listed == {title: name for name, title in checks._BLOCK_TITLES.items()}
+    for name, title in checks._BLOCK_TITLES.items():
+        assert f"### {title}. `{name}` — " in runbook, name
+    legend = runbook[runbook.index("**전송용 요약 범례**") : runbook.index("**확인 코드와")]
+    keys = re.findall(r"^\| `([^`]+)` \|", legend, re.MULTILINE)
+    assert "8-11" in keys and "8-10" in keys
