@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -241,3 +242,18 @@ def test_the_box_stands_above_the_card_on_a_screen_without_units(_empty_app: App
     keys = _sidebar_keys(app)
     assert keys.index(CONDITIONS_BOX_KEY) < keys.index(BOX_KEY) == keys.index(CARD_KEY) - 1
     assert "space_status_fab_breadcrumb" in _keys_in(_box(app), "button")
+
+
+def test_the_runbook_space_lines_name_the_box_and_not_the_old_head() -> None:
+    """런북 7장의 Space 줄은 합친 화면 자리로 말한다 — 앞 몫(7-19 ~ 7-22)이 다음 7장에 (나) 갈래
+    몫으로 남으면 사내 에이전트가 새 ZIP 화면에서 그 글을 찾는다(2026-11-03 합친 판 재검). 배치
+    줄은 「Space 도면」 상자의 짧은 줄(온 문장은 풍선)이고, 자리 줄 첫 단추는 `FAB 전체` 다 — 옛
+    단추 `S.PKG FAB 전체` 는 「옛 경로 줄」 로만 말한다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    chapter = " ".join(runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0].split())
+    assert "머리 「가정 설비 시나리오" not in chapter
+    assert "「Space 도면」 상자 배치 줄 「가정 배치 · 공식과 같음」" in chapter
+    page = (PROJECT_ROOT / "app_pages" / "space_status.py").read_text(encoding="utf-8")
+    assert '"FAB 전체",' in page and '"S.PKG FAB 전체"' not in page
+    old_names = [found.start() for found in re.finditer(r"`S\.PKG FAB 전체`", chapter)]
+    assert all(chapter[:start].endswith("옛 경로 줄 ") for start in old_names), old_names
