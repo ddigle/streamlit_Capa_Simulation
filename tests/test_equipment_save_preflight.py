@@ -272,7 +272,10 @@ def test_a_stale_space_layout_save_still_writes_the_pending_fab_layout(tmp_path:
 
 def test_only_the_workspace_calls_the_repository_equipment_save() -> None:
     """설비 리비전 쓰기(`repository.save_equipment`)는 `save_equipment_buffer` 한 곳만 부른다 — 다른
-    자리가 부르면 저장 전 검사(칸 초안·예시 행·낡은 세션)와 제 저장 판정을 건너뛴다."""
+    자리가 부르면 저장 전 검사(칸 초안·예시 행·낡은 세션)와 제 저장 판정을 건너뛴다.
+
+    앱 밖은 검수용 합성 샘플의 설비 생성기(`scripts/review_sample_equip.py`) 하나만 받는다 —
+    저장소 밖 새 DB 에 세션 없이 쓰는 오프라인 시드라 저장 전 검사가 지킬 세션 · 초안이 없다."""
     callers: list[str] = []
     for path in sorted(
         [
@@ -297,9 +300,12 @@ def test_only_the_workspace_calls_the_repository_equipment_save() -> None:
             ):
                 # 기대 경로는 `/` 꼴이다 — Windows 의 `str()` 은 `\` 로 잇는다.
                 callers.append(f"{path.relative_to(PROJECT_ROOT).as_posix()}:{node.lineno}")
-    assert [caller.split(":")[0] for caller in callers] == [
-        "src/capa_simulation/components/equipment_data_workspace.py"
+    assert sorted({caller.split(":")[0] for caller in callers}) == [
+        "scripts/review_sample_equip.py",
+        "src/capa_simulation/components/equipment_data_workspace.py",
     ], callers
+    app_callers = [caller for caller in callers if not caller.startswith("scripts/")]
+    assert len(app_callers) == 1, app_callers
 
 
 def test_the_stale_refusal_names_the_cells_and_units_it_would_drop() -> None:
