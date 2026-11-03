@@ -112,9 +112,9 @@ OUTSIDE_SLOTS_TEXT = "슬롯 밖"
 MISSING_REVISION_HELP = "리비전 없음 — HOME 설정 → 비교 · 주요 Case 탭에서 다시 지정"
 # 계산이 멈춘 회차의 미지정 칩 풍선 꼬리 — 그 회차에는 「HOME 설정」 팝업을 열 수 없다.
 STOPPED_UNSET_HELP = "계산이 멈춰 HOME 설정을 열 수 없습니다"
-# 올릴 리비전이 없는 칩(미지정·잠김)의 짝. 미지정 칩은 누르면 「HOME 설정」 팝업의 `비교 · 주요
-# Case` 탭을 연다. 잠긴 칩은
-# 눌리지 않는다 — 그린 뒤에 잠길 상태가 된 칩을 누르면 콜백이 다시 풀어 알림만 남긴다.
+# 올릴 리비전이 없는 칩(미지정·잠김)의 짝. 미지정 칩은 누르면 「HOME 설정」 팝업의
+# `비교 · 주요 Case` 탭을 연다. 잠긴 칩은 눌리지 않는다 — 그린 뒤에 잠길 상태가 된 칩을 누르면
+# 콜백이 다시 풀어 알림만 남긴다.
 _NO_TARGET: tuple[str | None, str | None] = (None, None)
 _CASE_CHIP_KEYS = (CASE1_CHIP_KEY, CASE2_CHIP_KEY)
 # 칩 셋에서 공식 칩의 차례.

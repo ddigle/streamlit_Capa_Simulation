@@ -15,8 +15,8 @@
   home-u01 — 전에는 옮겨 온 `Preference`·`Past Data` 두 탭이라 상자 아홉이 한 탭에 세로로 섰다).
   `비교 · 주요 Case` · `판정 기준` · `선행 · 보정` · `공지 · 표시` 는 Preference 편집기, `Past Data`
   는 과거 구간 편집기다(라벨은 `home_state`). 머리 안내 글은 두지 않는다 — 「모든 사용자가 함께 쓰는
-  공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추
-  풍선(`home_preference.SHARED_SAVE_HELP` · Past Data 저장 단추)이 말한다. 본문은
+  공용 설정 · 저장하지 않고 닫으면 고친 칸은 사라짐」 은 저장 단추 풍선이 말한다
+  (`home_preference.SHARED_SAVE_HELP` · `past_data_management.PAST_SHARED_HELP`). 본문은
   `app_pages/home.py` 가 넘긴 함수 둘이다 — 앞 넷의 탭을 라벨로 받는 Preference 함수와 `Past Data`
   탭 본문 함수. 이 모듈은 편집기를 들이지 않는다(주요 Case 칩이 이 모듈의 여는 콜백을 쓰고, 편집기
   쪽이 칩을 그리므로 들이면 순환한다).
@@ -25,7 +25,8 @@
   의 미지정 칩도 이 콜백으로 `비교 · 주요 Case` 탭을 연다(그 Case 칸을 잠깐 강조 —
   `home_main_cases`).
 - **호스트**: 이벤트 칸에 늘 한 자리 — 열렸으면 팝업, 아니면 빈 스타일 자리표시자. 팝업 본문은
-  이벤트 칸에 쓰지 않는다(Preference·Past Data 는 스타일만 든 `st.html`·토스트를 쓰지 않는다).
+  이벤트 칸에 쓰지 않는다(편집기는 스타일만 든 `st.html`·토스트를 쓰지 않는다 — 주요 Case 칸 강조
+  서식은 그 칸 머리 줄과 한 `st.html` 에 실려 본문 칸이다).
 - **저장 뒤에도 팝업을 열어 둔다** — 가용설비 현황 「가용설비 설정」(`equipment_settings_dialog`)과
   같은 AGENTS 9장 「팝업 안 저장이 성공하면 열림 키를 지우고 `st.rerun()`」 의 예외다. 폼 저장(판정
   기준·프리셋·Past Data 등)은 앱 범위 `st.rerun()` 이라 사이드바(주요공정 히트맵 칸·대기 띠)도 그

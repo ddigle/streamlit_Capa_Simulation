@@ -4862,12 +4862,11 @@ def _main_settings_buttons(screen: Screen) -> int:
 
 
 def check_settings_boxes(screen: Screen) -> str:
-    """사이드바 설정 상자 둘 — HOME 「HOME 설정」(안쪽 탭 다섯 — `HOME_SETTINGS_TABS`)과 가용설비
-    현황
-    「가용설비 설정」(공정별 Cut-off 표). 상자가 조회 조건 패널 바로 밑 · 조건 카드 위에 서는지,
-    누르면 같은 제목의 팝업이 뜨고 안이 차는지, `Esc` 로 닫히는지, 본문에 옛 설정 단추가 남지
-    않았는지 본다. 가용설비 현황은 카드가 서는 `Summary` › `Main` 탭에서 본다. 저장 · 채우기는
-    누르지 않는다(DB 에 쓰지 않는다)."""
+    """사이드바 설정 상자 둘 — HOME 「HOME 설정」(안쪽 탭 다섯 — `HOME_SETTINGS_TABS`)과
+    가용설비 현황 「가용설비 설정」(공정별 Cut-off 표). 상자가 조회 조건 패널 바로 밑 · 조건 카드
+    위에 서는지, 누르면 같은 제목의 팝업이 뜨고 안이 차는지, `Esc` 로 닫히는지, 본문에 옛 설정
+    단추가 남지 않았는지 본다. 가용설비 현황은 카드가 서는 `Summary` › `Main` 탭에서 본다. 저장 ·
+    채우기는 누르지 않는다(DB 에 쓰지 않는다)."""
     keys = {"panel": CONDITIONS_BOX_KEY, "card": CONDITION_CARD_PREFIX}
     screen.open_home()
     # HOME 상자는 계산이 끝난 회차에 풀린다 — 패널 줄이 다 설 때까지 기다린다(`sidebar_panel` 과

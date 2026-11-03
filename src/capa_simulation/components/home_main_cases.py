@@ -1,9 +1,8 @@
 # Purpose: HOME 설정 「주요 Case」 상자 — Case1·Case2 의 시나리오·리비전을 공용 지정한다.
 
-"""「HOME 설정」 팝업 `비교 · 주요 Case` 탭의 「주요 Case」 상자(2026-10-23 사용자 요청 — 2026-11-02
-부터
-HOME 본문 탭이 아니라 사이드바 「HOME 설정」 팝업 안이고, 2026-11-04 부터 Preference 한 탭이 아니라
-비교 시나리오와 나란히 선 묶음 탭이다).
+"""「HOME 설정」 팝업 `비교 · 주요 Case` 탭의 「주요 Case」 상자(2026-10-23 사용자 요청 —
+2026-11-02 부터 HOME 본문 탭이 아니라 사이드바 「HOME 설정」 팝업 안이고, 2026-11-04 부터 Preference
+한 탭이 아니라 비교 시나리오와 나란히 선 묶음 탭이다).
 
 HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버전(따로 지정하지 않는다 — 공식 지정은
 시나리오 관리 한 곳), 슬롯 2·3 은 여기서 고르는 Case1·Case2 다. 상자 첫 줄은 슬롯 1 을 글로만
@@ -148,8 +147,7 @@ class _PickerView:
 
 def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = None) -> None:
     """「주요 Case」 상자. `owner_tab` 은 「HOME 설정」 팝업의 `비교 · 주요 Case` 탭이다(모르면
-    `None` —
-    보인다고 본다).
+    `None` — 보인다고 본다).
 
     보이는 회차의 읽기는 목록 둘(최신 공식버전·시나리오)과 Case 가 가리키는 시나리오의 리비전
     목록뿐이고, 쓰기는 위 모듈 설명의 두 메우기뿐이다. 숨은 회차는 지난 화면을 다시 그린다.
@@ -166,8 +164,7 @@ def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = N
             st.error(bootstrap_error_message(exc))
             return
         st.session_state[MAIN_CASE_VIEW_KEY] = view
-        # 콜백 실패 알림·강조할 Case 는 상자가 서는 회차에만 꺼낸다 — 읽기가 실패한 회차에 버리지
-        # 않는다.
+        # 콜백 실패 알림·강조할 Case 는 상자가 서는 회차에만 꺼낸다(읽기 실패 회차에 버리지 않는다).
         focus = st.session_state.pop(MAIN_CASE_FOCUS_KEY, None)
         _draw(database_path, view, notices, callback_notice=True, focus=focus)
 
@@ -414,8 +411,7 @@ def _render_case(
     focused: bool = False,
 ) -> None:
     """Case 한 칸 — 머리 줄과 「시나리오」·「리비전」 두 상자. `focused` 면 머리 줄이 이 칸 강조
-    서식을
-    함께 싣는다(`case_head_markup`).
+    서식을 함께 싣는다(`case_head_markup`).
 
     상자 값은 위젯 앞에서 매 회차 프로필 값으로 적는다. **비운 Case 는 자리표시 글로 보인다** —
     1.63 은 세션 API 로 적은 `None` 을 글자 없이 보내 브라우저가 첫 선택지가 아니라 자리표시를

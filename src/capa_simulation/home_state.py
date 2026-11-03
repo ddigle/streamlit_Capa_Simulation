@@ -53,12 +53,12 @@ def home_toggle(state: Mapping[Any, Any], key: str) -> bool:
 # 표시 조건」 카드의 주요 Case 칩(`components/home_main_case_chips.py`)은 「지정 안 함」 칩을 누르면
 # 이 팝업을 `비교 · 주요 Case` 탭으로 연다.
 #
-# 안쪽 탭은 쓰는 묶음 다섯이다(2026-11-04 사용자 검수 home-u01 — 전에는 옮겨 온 `Preference`·`Past
-# Data` 둘이라 Preference 한 탭에 상자 아홉이 세로로 섰다): 고르면 곧 저장되는 비교 대상 둘, 판정
-# 기준, 「LOB 표시 조건」 토글이 켜는 월별 입력 셋(선행 B/O · 선행 입고 실적 · 확보율 보정), 화면에
-# 보이는 것을 정하는 공지 · 표시 셋(Summary 공지 · B/N Top5 구간 · 주요공정 프리셋), 과거 구간. 앞
-# 넷은 Preference 편집기(`home_preference`)가, 마지막은 Past Data 편집기(`past_data_management`)가
-# 그린다 (`HOME_PREFERENCE_TABS`).
+# 안쪽 탭은 쓰는 묶음 다섯이다(2026-11-04 사용자 검수 home-u01 — 전에는 옮겨 온 Preference ·
+# Past Data 둘이라 Preference 한 탭에 상자 아홉이 세로로 섰다): 고르면 곧 저장되는 비교 대상 둘,
+# 판정 기준, 「LOB 표시 조건」 토글이 켜는 월별 입력 셋(선행 B/O · 선행 입고 실적 · 확보율 보정),
+# 화면에 보이는 것을 정하는 공지 · 표시 셋(Summary 공지 · B/N Top5 구간 · 주요공정 프리셋), 과거
+# 구간. 앞 넷(`HOME_PREFERENCE_TABS`)은 Preference 편집기(`home_preference`)가, 마지막은 Past Data
+# 편집기(`past_data_management`)가 그린다.
 #
 # 열림 칸은 HOME 한 화면에 하나(`<페이지>_open_dialog` — `page_bootstrap.PAGE_DIALOG_SUFFIX`, AGENTS
 # 9장 「팝업과 콜백」)이고 값이 팝업을 가른다. 안쪽 탭 라벨은 탭의 위젯 값이라 바꾸면 세션에 남은

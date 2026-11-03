@@ -239,8 +239,8 @@ _LIGHT: Final[dict[str, Any]] = {
     # (STATUS_SECURE)과는 ΔE 36 으로 떨어져 판정색으로 읽히지 않는다.
     "PRODUCT_SHARE_OTHER": "#656565",
     # 도넛 조각 안 비중 글자(20% 넘는 조각 — `product_share.share_label`)의 색. 제품색과 같은
-    # 차례이고 조각마다 흰 글자 · 검은 글자 가운데 대비가 큰 쪽이다 — 모두 4.5:1
-    # 이상(`tests/test_product_share.py`).
+    # 차례이고 조각마다 흰 글자 · 검은 글자 가운데 대비가 큰 쪽이다(모두 4.5:1 이상 —
+    # `tests/test_product_share.py`).
     "PRODUCT_SHARE_LABEL_INKS": (
         "#FFFFFF",
         "#111111",
@@ -498,7 +498,7 @@ _DARK: Final[dict[str, Any]] = {
     ),
     # 다크의 `확보` 막대(STATUS_SECURE #69696B)도 회색이라 밝은 쪽으로 옮겨 ΔE 22 로 벌린다.
     "PRODUCT_SHARE_OTHER": "#ACACAC",
-    # 조각 안 비중 글자색 — 라이트와 같은 규칙(대비가 큰 쪽, 모두 4.5:1 이상). `기타` 가 밝은
+    # 조각 안 비중 글자색 — 라이트와 같은 규칙(대비가 큰 쪽, 모두 4.5:1 이상). `기타` 는 밝은
     # 회색이라 검은 글자다.
     "PRODUCT_SHARE_LABEL_INKS": (
         "#FFFFFF",

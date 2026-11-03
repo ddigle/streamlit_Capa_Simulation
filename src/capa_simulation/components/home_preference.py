@@ -1,7 +1,7 @@
 # Purpose: HOME LOB 표시 조건 카드·제목 줄과 설정 팝업 Preference 편집기를 그려 저장한다.
 
-"""HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, 「HOME 설정」 팝업의 `Preference`
-탭.
+"""HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, 「HOME 설정」 팝업의 Preference
+편집기(앞 네 탭).
 
 **화면을 보는 조건(선행 B/O·선행 입고·확보율 보정·GAP·상세·EDP·Past Data·제품별 비중 단위)은
 사이드바 조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에
@@ -561,10 +561,10 @@ def render_home_preference(
     clamped_execution: pd.DataFrame,
     database_path: str,
 ) -> None:
-    """Preference 편집기 아홉을 「HOME 설정」 팝업의 네 탭(`tabs` —
-    `home_state.HOME_PREFERENCE_TABS`
-    라벨 → 탭)에 쓰는 묶음대로 세운다(2026-11-04 사용자 검수 home-u01 — 전에는 한 탭에 아홉이 세로로
-    섰다). 상자 하나하나(저장 단추·저장 단위·key·저장 길)는 그대로이고 놓는 자리만 정한다.
+    """Preference 편집기 아홉을 「HOME 설정」 팝업의 네 탭(`tabs` — 라벨 → 탭,
+    `home_state.HOME_PREFERENCE_TABS`)에 쓰는 묶음대로 세운다(2026-11-04 사용자 검수 home-u01 —
+    전에는 한 탭에 아홉이 세로로 섰다). 상자 하나하나(저장 단추·저장 단위·key·저장 길)는 그대로이고
+    놓는 자리만 정한다.
 
     - `비교 · 주요 Case` — 고르면 곧 저장되는 두 상자를 나란히(비교 시나리오 : 주요 Case =
       `CASES_COLUMN_WEIGHTS`). 주요 Case 상자는 제 탭을 본다 — 숨은 회차(다른 탭을 보는 회차)에 DB
