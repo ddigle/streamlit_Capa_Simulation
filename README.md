@@ -148,9 +148,10 @@ B/N       = 그 달 확보율이 가장 낮은 공정
   사이에 공용 설정(Preference·Past Data)을 여는 「HOME 설정」 상자(오른쪽 끝 `⇕` — 누르면 팝업)가 따로 섭니다.
 - 화면 설명은 헤더 툴바 맨 왼쪽 `Guide` 버튼에 있습니다(원문 `src/capa_simulation/guides/`). 툴바 차례는
   `Guide` · `Print` · 테마입니다.
-- HOME 의 `Guide` 는 번호대로 따라 하는 **따라하기 가이드**를 앱 옆의 작은 창으로 엽니다. 사내판
-  (`static/guides/local/lob.html` — 사내 실화면, git 무시)이 있으면 그것을, 없으면 합성 예시판
-  (`static/guides/howto/lob.html` — 숫자 · 이름은 모두 합성)을 열고, 둘 다 없으면 지금의 설명 대화상자를 엽니다.
+- HOME 의 `Guide` 는 번호대로 따라 하는 **따라하기 가이드**를 앱 옆의 작은 창으로 엽니다. 가이드는 사외에서 검수용 합성
+  샘플로 찍은 예시판(`static/guides/howto/lob.html` — 숫자 · 이름은 모두 합성)을 배포에 싣습니다(2026-11-02). 사내판
+  (`static/guides/local/lob.html` — git 무시, 지금은 만들지 않음)이 있으면 그것을 먼저 열고, 둘 다 없으면 지금의 설명 대화상자를
+  엽니다.
   설명 대화상자는 창 머리의 `설정 사전` 단추로 앱 창에 뜹니다. 팝업이 막히면 대화상자로 물러섭니다.
 - 입장 화면은 한 탭에 한 번 뜹니다(새로고침·테마 바꾸기에도 다시 뜨지 않음). Summary 머리 줄의 `선행 B/O`·`선행 입고`·
   `GAP` 토글은 브라우저 안에서만 켜고 끄며 앱 계산을 바꾸지 않습니다. `Esc`·`Detail` 이 앱으로 돌아갑니다.
@@ -431,7 +432,8 @@ typed raw 로 그대로 보존합니다.
 > 내장 시드와 설비·Dynamic 화면의 샘플은 실제 운영 데이터가 아니라 `scripts/generate_sample_core_data.py` 등의
 > 리터럴에서 나온 데모입니다. 로컬 쿼리 결과로 업무 구조를 판단하지 말고, 데이터를 집계한 수치는 「샘플 관측」
 > 이라고 출처와 함께 적습니다(`AGENTS.md` 10-1). `config/bootstrap_display_order.json` 과 내장 시드에는 합성
-> `DEMO_*` 값만 둡니다.
+> `DEMO_*` 값만 둡니다. 화면 검수 · 가이드 촬영용으로 이야기가 든 큰 합성 샘플(시나리오 9 · 공식 v4 · 설비 DB · 모듈 견본)은
+> `scripts/generate_review_sample.py` 가 저장소 밖에 만듭니다(`docs/review_sample.md`).
 
 ### 설비 시나리오
 
@@ -541,6 +543,8 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `bootstrap_builtin_seed.py` | 빈 저장소에 내장 합성 시나리오·공식버전을 만든다 |
 | `bootstrap_initial_duckdb_scenario.py` | 개발용 Core Data 초기 시나리오를 만들거나 안전하게 바꿔 끼운다 |
 | `generate_sample_core_data.py` | 합성 Core Data CSV 를 다시 만든다(이미 연장한 파일에 다시 돌려도 결과가 같다) |
+| `generate_review_sample.py` | 검수용 합성 샘플(시뮬레이션 DB · 설비 DB · `--modules` 면 모듈 견본)을 저장소 밖 뿌리에 만든다 — 사용자 화면 검수와 가이드 예시판 시드가 같이 쓴다(`docs/review_sample.md`). `--count` 는 개수만 |
+| `review_sample_sim.py` · `review_sample_equip.py` · `review_sample_modules.py` · `review_sample_story.py` · `review_sample_core_frame.py` | 그 부품 — 시뮬레이션 DB(앱 저장 API · 끝 점검 52) · 설비 DB(공식 소요 · 가용에서) · 모듈 견본 복사 · 이야기 상수와 산출 자리 지킴 · 78컬럼 원천 |
 | **DB 운영** | |
 | `compact_duckdb.py` | DuckDB 빈 공간을 재구축으로 걷어낸다(인자 없으면 두 DB, `--dry-run`·`--keep-backup`). 앱을 내린 뒤 |
 | `sync_object_storage.py` | 오브젝트 스토리지 스냅샷 진단·초기화와 수동 pull·push |
@@ -556,9 +560,8 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `audit_top_remigration.py` | `0026` 적용 뒤 이관 결과의 오염·누락을 점검한다 |
 | `check_deploy_screens.py` | 런북 7장 화면 확인을 별도 포트 앱과 저장소 밖 Playwright 로 돌린다 |
 | **따라하기 가이드** | |
-| `build_page_guide.py` | 앱 사본을 띄워 가이드를 찍고 원고 · 덮어쓰기와 한 파일 HTML 로 묶는다(`--example` 합성 예시판 · `--internal` 사내판, 결과는 저장소 밖) |
+| `build_page_guide.py` | 앱 사본을 띄워 가이드를 찍고 원고 · 덮어쓰기와 한 파일 HTML 로 묶는다(`--example` 합성 예시판 — 시드는 `generate_review_sample.py` · `--internal` 사내판(쉼), 결과는 저장소 밖) |
 | `check_page_guide.py` | 덮어쓰기 · 매개값 · 촬영 결과를 뼈대에 대 보고 리뷰 한 줄을 낸다(`--accepted` 로 검수 마친 판과 견줘 바뀐 자리만 `바뀜 n/N`, `--accept` 로 그 판을 쓴다) |
-| `guide_example_seed.py` | 예시판이 띄울 합성 시나리오 DB 를 만든다(생성기 `--example` 의 시드 단계) |
 | `page_guide_core.py` · `page_guide_capture.py` · `page_guide_helpers.js` | 생성기 부품 — 조립 · 덮어쓰기(순수), Playwright 촬영, 페이지 도우미 |
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
@@ -585,8 +588,9 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/design_system.md` | 색·서체·표 밀도와 화면 구성 규칙 |
 | `docs/migration_catalog.md` | SQL 마이그레이션마다의 목적·출처 카탈로그 |
 | `docs/wsl_dev_environment.md` | 사외 개발 자리(데스크탑 WSL) 준비·명령·앱 띄우기·배포 |
-| `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(사외 뼈대 · 사내 완성), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
-| `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장)·따라하기 가이드 사내판 만들기(10장) 포함 |
+| `docs/review_sample.md` | 검수용 합성 샘플 — 만드는 법 · 만드는 것(시나리오 · 공식버전 · 설비 DB · 모듈 견본) · 이야기 칸 · 끝 점검 · 앱 띄우기 |
+| `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(가이드는 사외 완성 — 사외 뼈대 · 사내 완성은 쉼), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
+| `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장) 포함. 따라하기 가이드 사내판 만들기(10장)는 쉼 |
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
 | `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
