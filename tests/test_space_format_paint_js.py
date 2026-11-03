@@ -9,7 +9,8 @@
 붙일 것 체크의 모든 쌍을 사양 5-1 표를 옮긴 파이썬 모형과 견주고, 붙인 뒤의 요소가 파이썬
 검증(`prepare_floor_layout_marks`·`prepare_fab_layout_marks`)을 지나는지 본다. 붙이기 한 번이
 되돌리기 한 번인지는 실제 함수 `applyFormat`·`sizeEntries`(모듈 묶음은 바둑판 순수 함수까지)를 떼어
-돌린다. 키 갈래 차례·붓·저장소는 자산 글자로 붙잡고 실제 모습은 브라우저로 본다.
+돌린다. 서식 키 판정(`// <format-key>` — Alt+Shift 기본 · Ctrl+Shift 도 · IME 조합 비킴)도 node 로
+돌리고, 키 갈래 차례·붓·저장소는 자산 글자로 붙잡고 실제 모습은 브라우저로 본다.
 """
 
 from __future__ import annotations
@@ -658,27 +659,156 @@ def test_nothing_to_paste_says_why_and_records_nothing() -> None:
     assert (size_only["after"]["Z2"]["w"], size_only["after"]["Z2"]["h"]) == (20, 12)
 
 
+_KEY = re.compile(r"// <format-key>\n(?P<body>.*?)\n\s*// </format-key>", re.S)
+_KEY_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+%s
+process.stdout.write(JSON.stringify({ out: input.events.map((event) => formatKeyOf(event)) }))
+"""
+
+
+def _key(
+    key: str,
+    code: str,
+    *,
+    ctrl: bool = False,
+    meta: bool = False,
+    alt: bool = False,
+    shift: bool = True,
+    composing: bool = False,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "code": code,
+        "ctrlKey": ctrl,
+        "metaKey": meta,
+        "altKey": alt,
+        "shiftKey": shift,
+        "isComposing": composing,
+    }
+
+
+def _run_keys(events: list[dict[str, Any]]) -> list[str | None]:
+    out: list[str | None] = _node(_KEY_RUNNER % _block(_KEY), {"events": events})["out"]
+    return out
+
+
+# (이름, 이벤트, 기대) — 기본 키 Alt+Shift(글쇠 자리 code), 옛 Ctrl(⌘)+Shift 도 받음, 비키는 것.
+_KEY_CASES: list[tuple[str, dict[str, Any], str | None]] = [
+    ("Alt+Shift+C", _key("C", "KeyC", alt=True), "c"),
+    ("Alt+Shift+V", _key("V", "KeyV", alt=True), "v"),
+    # macOS ⌥+⇧ 은 key 가 다른 글자다 — 글쇠 자리로 잡는다.
+    ("macOS ⌥+⇧+C(Ç)", _key("Ç", "KeyC", alt=True), "c"),
+    ("macOS ⌥+⇧+V(◊)", _key("◊", "KeyV", alt=True), "v"),
+    # 한글 자판(조합 아님)은 key 가 자모다 — 글쇠 자리로 잡는다.
+    ("한글 자판 Alt+Shift+ㅊ", _key("ㅊ", "KeyC", alt=True), "c"),
+    ("한글 자판 Ctrl+Shift+ㅍ", _key("ㅍ", "KeyV", ctrl=True), "v"),
+    # 옛 키도 브라우저가 넘겨주면 그대로(둘 다).
+    ("Ctrl+Shift+C", _key("C", "KeyC", ctrl=True), "c"),
+    ("Ctrl+Shift+V", _key("V", "KeyV", ctrl=True), "v"),
+    ("⌘+Shift+C", _key("c", "KeyC", meta=True), "c"),
+    # 글쇠 자리가 C·V 가 아닌 자판(드보락 등)은 key 로.
+    ("드보락 Alt+Shift+C", _key("C", "KeyI", alt=True), "c"),
+    ("code 없음 Ctrl+Shift+V", _key("V", "", ctrl=True), "v"),
+    # IME 조합 중은 비킨다.
+    ("조합 중 Alt+Shift+C", _key("Process", "KeyC", alt=True, composing=True), None),
+    ("조합 중 Ctrl+Shift+V", _key("Process", "KeyV", ctrl=True, composing=True), None),
+    # Shift 가 없으면 서식 키가 아니다(요소 복사 Ctrl+C/V · Alt 혼자).
+    ("Ctrl+C", _key("c", "KeyC", ctrl=True, shift=False), None),
+    ("Ctrl+V", _key("v", "KeyV", ctrl=True, shift=False), None),
+    ("Alt+C", _key("c", "KeyC", alt=True, shift=False), None),
+    # Ctrl 과 Alt 를 함께(Windows AltGr 포함) · 수정 키 없이 Shift 만은 아니다.
+    ("Ctrl+Alt+Shift+C", _key("C", "KeyC", ctrl=True, alt=True), None),
+    ("⌘+⌥+Shift+V", _key("V", "KeyV", meta=True, alt=True), None),
+    ("Shift+C", _key("C", "KeyC"), None),
+    # 다른 글쇠.
+    ("Alt+Shift+X", _key("X", "KeyX", alt=True), None),
+    ("Alt+Shift+Z", _key("Z", "KeyZ", alt=True), None),
+    ("Ctrl+Shift+ArrowLeft", _key("ArrowLeft", "ArrowLeft", ctrl=True), None),
+]
+
+
+def test_format_key_takes_alt_shift_by_key_position_and_ctrl_shift_too() -> None:
+    """서식 키 판정(`// <format-key>` `formatKeyOf`, 2026-11-04 사용자 「권장대로」 — 사양 D3)을
+    node 로 돌린다. 기본 키는 Alt+Shift+C/V(macOS ⌥+⇧ — key 가 「Ç」 처럼 바뀌어도 글쇠 자리
+    code 로)이고 Ctrl(⌘)+Shift+C/V 도 받는다(둘 다). IME 조합 중 · Shift 없음 · Ctrl 과 Alt
+    함께(AltGr)는 비킨다."""
+    got = _run_keys([event for _, event, _ in _KEY_CASES])
+    assert {name: value for (name, _, _), value in zip(_KEY_CASES, got, strict=True)} == {
+        name: want for name, _, want in _KEY_CASES
+    }
+
+
+def test_format_key_matches_the_rule_over_every_modifier_and_never_overlaps_element_copy() -> None:
+    """수정 키(Ctrl · ⌘ · Alt · Shift · 조합 중) 모든 짝 × 글쇠 셋(C · V · X)을 규칙과 견준다 —
+    Shift 가 있고 조합 중이 아니며 Ctrl(⌘)과 Alt 가운데 하나만일 때 그 글쇠. 서식 키는 늘 Shift 를
+    품으므로 요소 복사 갈래(`ctrl && !event.shiftKey`)와 겹치지 않는다."""
+    events: list[dict[str, Any]] = []
+    want: list[str | None] = []
+    for ctrl, meta, alt, shift, composing in itertools.product((False, True), repeat=5):
+        for letter in ("c", "v", "x"):
+            events.append(
+                _key(
+                    letter.upper(),
+                    f"Key{letter.upper()}",
+                    ctrl=ctrl,
+                    meta=meta,
+                    alt=alt,
+                    shift=shift,
+                    composing=composing,
+                )
+            )
+            one = (ctrl or meta) != alt
+            want.append(letter if letter in "cv" and shift and not composing and one else None)
+    got = _run_keys(events)
+    assert got == want
+    for event, value in zip(events, got, strict=True):
+        if value is not None:
+            element_copy = (event["ctrlKey"] or event["metaKey"]) and not event["shiftKey"]
+            assert not element_copy
+
+
+def _hint_parts() -> list[list[str]]:
+    """편집 도움말 단축키 목록(`HINT` — FAB · 층 두 글). `buildHelp` 가 「 · 」 로 나눠 줄마다
+    쓴다."""
+    block = _between("const HINT = FAB", "const q = (selector)")
+    texts = re.findall(r"'([^']*)'", block)
+    assert len(texts) == 2
+    return [text.split(" · ") for text in texts]
+
+
 def test_format_keys_come_before_element_copy_and_leave_text_fields_alone() -> None:
-    """Ctrl+Shift+C/V 는 서식 갈래로 가고 요소 복사(Ctrl+C/V)로 새지 않는다 — 서식 갈래가 먼저이고
-    요소 복사는 Shift 가 없을 때만이다. 둘 다 글 칸 입력 중이면 비키고(글 칸의 Ctrl+Shift+V 는
-    브라우저 것) 한글 자판에서도 글쇠 자리로 듣는다. Esc 는 든 붓을 먼저 내린다."""
+    """서식 키(Alt+Shift+C/V · Ctrl+Shift+C/V — `formatKeyOf`)는 요소 복사(Ctrl+C/V)보다 먼저 보고
+    요소 복사는 Shift 가 없을 때만이다. 둘 다 글 칸 입력 중이면 비키고(글 칸의 Ctrl+Shift+V · macOS
+    ⌥+⇧ 글자는 브라우저 것) 한글 자판에서도 글쇠 자리로 듣는다. Esc 는 든 붓을 먼저 내린다. 도움말
+    단축키 목록은 기본 키 Alt+Shift 와 옛 키, 입력 언어가 바뀔 때의 대안을 한 줄에 말한다."""
     keys = _between("host.onkeydown = (event) => {", "for (const input of fieldInputs) {")
     typing = keys.index("if (typing) return")
-    fmt_copy = keys.index("if (formatKey && letter === 'c')")
-    fmt_paste = keys.index("if (formatKey && letter === 'v')")
+    judged = keys.index("const formatKey = formatKeyOf(event)")
+    fmt_copy = keys.index("if (formatKey === 'c') { event.preventDefault(); copyFormat(); return }")
+    fmt_paste = keys.index(
+        "if (formatKey === 'v') { event.preventDefault(); pasteFormat(); return }"
+    )
     copy = keys.index("if (ctrl && !event.shiftKey && letter === 'c')")
     paste = keys.index("if (ctrl && !event.shiftKey && letter === 'v')")
-    assert typing < fmt_copy < fmt_paste < copy < paste
-    assert "const formatKey = ctrl && event.shiftKey && !event.altKey" in keys
+    assert typing < judged < fmt_copy < fmt_paste < copy < paste
     assert "event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v'" in keys
     assert "if (ctrl && letter === 'c')" not in keys and "if (ctrl && letter === 'v')" not in keys
+    assert "formatKey &&" not in keys
     esc = keys.index(
         "if (event.key === 'Escape' && S.paint) { event.preventDefault(); setBrush(null); return }"
     )
     assert esc < typing and esc < keys.index("if (event.key === 'Escape' && S.selection.size)")
-    assert "Ctrl+Shift+C/V 서식 복사·붙여넣기" in _between(
-        "const HINT = FAB", "const q = (selector)"
-    )
+    for parts in _hint_parts():
+        line = next(part for part in parts if "서식 복사·붙여넣기" in part)
+        assert line.startswith("Alt+Shift+C/V 서식 복사·붙여넣기(Ctrl+Shift+C/V 도 됨")
+        assert "입력 언어가 바뀌면 Ctrl+Shift+C/V 나 붓 단추를 쓰세요" in line
+    for text in (
+        "누른 뒤 Alt+Shift+C'",
+        "고른 것에서 Alt+Shift+C 또는 「서식 복사」'",
+        "「서식 복사」(Alt+Shift+C)'",
+    ):
+        assert text in JS, text
 
 
 def test_the_brush_paints_on_press_and_by_rectangle_without_moving() -> None:
@@ -731,14 +861,19 @@ def test_the_format_clipboard_and_checks_live_in_browser_storage_only() -> None:
 
 
 def test_the_left_panel_has_a_format_section_with_the_brush() -> None:
-    """왼쪽 칸 「서식」 묶음(선택 다음) — 붓(aria-pressed · Ctrl+Shift+C), 붙이기(Ctrl+Shift+V),
-    붙일 것 체크 셋(크기 · 색·선 · 글자 — 처음 켬), 담은 서식 한 줄. 편집에서만 선다."""
+    """왼쪽 칸 「서식」 묶음(선택 다음) — 붓(aria-pressed · Alt+Shift+C 와 Ctrl+Shift+C), 붙이기
+    (Alt+Shift+V 와 Ctrl+Shift+V), 붙일 것 체크 셋(크기 · 색·선 · 글자 — 처음 켬), 담은 서식 한 줄.
+    편집에서만 선다."""
     start = HTML.index('data-sec="format"')
     assert HTML.index('data-sec="inspector"') < start < HTML.index('data-sec="grid"')
     section = HTML[HTML.rindex("<section", 0, start) : HTML.index("</section>", start)]
     assert 'class="sle-sec sle-edit-only"' in section
-    assert 'class="sle-paint" aria-pressed="false" aria-keyshortcuts="Control+Shift+C"' in section
-    assert 'class="sle-paint-paste" aria-keyshortcuts="Control+Shift+V"' in section
+    assert (
+        'class="sle-paint" aria-pressed="false" aria-keyshortcuts="Alt+Shift+C Control+Shift+C"'
+        in section
+    )
+    assert 'class="sle-paint-paste" aria-keyshortcuts="Alt+Shift+V Control+Shift+V"' in section
+    assert "서식 복사(Alt+Shift+C" in section and "서식 붙여넣기(Alt+Shift+V" in section
     parts = re.findall(r'class="sle-paint-part" type="checkbox" data-part="(\w+)" checked', section)
     assert parts == ["size", "paint", "text"]
     assert 'class="sle-paint-now" aria-live="polite"' in section
