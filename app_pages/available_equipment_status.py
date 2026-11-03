@@ -19,10 +19,10 @@
   칸을 지킨다) — 코드 차례는 Summary 뒤·설비 마스터
   앞이다(설비 마스터의 작은 편집표 `st.rerun()` 이 이 폼을 건너뛰지 않게). 가정 설비 시나리오에서는
   잠근다(Cut-off 와 같은 E3).
-- 머리 끝 「설정」 단추 → 공정별 Cut-off 팝업(`equipment_settings_dialog`), 탭 ① 「엑셀·CSV로
-  한꺼번에」 → 붙여넣기·CSV 팝업(`equipment_import_dialog` — 「편집본에 넣기」 까지). 두 팝업은 한
-  열림 칸·한 호스트다. Static 대비 일정은 Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접
-  읽는다.
+- 사이드바 「가용설비 설정」 상자(조회 조건 패널 바로 밑 · 카드 위 — 2026-11-03, 전에는 머리 끝
+  「설정」 단추) → 공정별 Cut-off 팝업(`equipment_settings_dialog`), 탭 ① 「엑셀·CSV로 한꺼번에」 →
+  붙여넣기·CSV 팝업(`equipment_import_dialog` — 「편집본에 넣기」 까지). 두 팝업은 한 열림 칸·한
+  호스트다. Static 대비 일정은 Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접 읽는다.
 - Qual 마감 계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·발행은 시나리오 관리 › 설비
   시나리오다.
 """
@@ -79,7 +79,7 @@ from capa_simulation.components.equipment_scenario_status import (
 from capa_simulation.components.equipment_settings_dialog import (
     open_equipment_settings,
     render_equipment_dialog_host,
-    render_equipment_settings_button,
+    render_equipment_settings_box,
 )
 from capa_simulation.components.flash import render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
@@ -182,7 +182,7 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
             st.button(action, icon=":material/arrow_forward:", key=key, on_click=callback)
 
 
-render_page_header("가용설비 현황", trailing=render_equipment_settings_button)
+render_page_header("가용설비 현황")
 render_page_guide("available_equipment_status", title="가용설비 현황")
 # 저장 알림·버림 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 탭
 # 묶음의 자리가 한 칸 밀리면, `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 가
@@ -206,13 +206,19 @@ try:
     )
     stored_floor_canvases = load_floor_layout_canvases(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
+    # 「가용설비 설정」 상자는 잠긴 채 같은 자리에 선다 — 팝업 본문이 쓰는 저장소가 없다.
+    render_equipment_settings_box(disabled=True)
     message = "설비 현황을 준비하지 못했습니다. " + bootstrap_error_message(
         exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
     alert_page_error(message, code="EQ-09", text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
     st.error(message)
     st.stop()
-# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.
+# 공용 설정(공정별 Cut-off)을 여는 사이드바 「가용설비 설정」 상자(2026-11-03 — 설정 단추는 사이드바
+# 상자로). 조회 조건 패널 바로 밑 · `설비 조회 조건` 카드 **위**다 — 사이드바는 부른 차례로 서므로
+# 카드 (`condition_card`)보다 먼저 부른다. 탭에 매이지 않은 설정이라 세 탭 모두 같은 자리에 선다.
+render_equipment_settings_box()
+# 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-06`). 막지 않는다.
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
     # 옛 배포로 저장한 설비 리비전이 있으면 설비 저장이 막힌다 — 맨 위에 까닭과 빠져나갈 길.
@@ -256,11 +262,11 @@ alerts.state(
     tab=tab_name(EQUIPMENT_MASTER_TAB),
 )
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
-# Static 대비 일정·설정 팝업의 표 보기 필터). 선택값·저장값·CSV·설비 마스터 입력은 원본이다.
-# 표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔
-# 캐시다). 못 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을 표시명
-# 때문에 막지 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서 고치면
-# 프로필 캐시가 비워져 다음 회차에 그대로 보인다.
+# Static 대비 일정·「가용설비 설정」 팝업의 표 보기 필터). 선택값·저장값·CSV·설비 마스터 입력은
+# 원본이다. 표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어
+# 둔 캐시다). 못 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을
+# 표시명 때문에 막지 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서
+# 고치면 프로필 캐시가 비워져 다음 회차에 그대로 보인다.
 process_labels = process_labels_module.get_process_labels()
 
 first_action = st.empty()
@@ -327,11 +333,11 @@ dashboard_baseline = (
     if latest_snapshot is None and baseline.empty and using_dashboard_sample and show_sample_fleet
     else baseline
 )
-# 「설정」 팝업(공정별 Cut-off — Preference 탭이던 것). 이벤트 칸에 늘 한 자리를 쓴다. 「Cut-off 를
-# 적지 않은 공정」 경고는 지금처럼 화면 호기의 공정으로 낸다. Cut-off 는 모든 설비 시나리오 공용이라
-# 가정 설비 시나리오에서는 읽기 전용(E3)이고, 공식 시나리오의 발행 안 한 리비전에서는 열린다.
-# 「엑셀·CSV로 한꺼번에」 팝업도 같은 열림 칸·같은 호스트다(한 실행에 팝업 하나). 새 방문 회차에는
-# 미리보기를 거둔다(입력 칸은 비어 돌아온다).
+# 「가용설비 설정」 팝업(공정별 Cut-off — Preference 탭이던 것). 이벤트 칸에 늘 한 자리를 쓴다.
+# 「Cut-off 를 적지 않은 공정」 경고는 지금처럼 화면 호기의 공정으로 낸다. Cut-off 는 모든 설비
+# 시나리오 공용이라 가정 설비 시나리오에서는 읽기 전용(E3)이고, 공식 시나리오의 발행 안 한
+# 리비전에서는 열린다. 「엑셀·CSV로 한꺼번에」 팝업도 같은 열림 칸·같은 호스트다(한 실행에 팝업
+# 하나). 새 방문 회차에는 미리보기를 거둔다(입력 칸은 비어 돌아온다).
 withdraw_preview_on_new_visit()
 cutoff_processes = processes_in(dashboard_equipment, dashboard_baseline)
 # 「Cut-off 를 적지 않은 공정」 은 팝업을 열지 않아도 아는 상태 알림이다(`EQ-12` — 팝업 안 경고는
@@ -359,7 +365,8 @@ render_equipment_dialog_host(
 # 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Summary 의 Main·
 # Static 대비 일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
 # 탭을 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
-# 설비 마스터의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
+# 설비 마스터의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다(보이는 열·행 거름을 고른 뒤
+# 같은 줄의 「보기 적용」 으로 편집표에 건다 — 사이드바로 떼면 고르는 칸과 그 단추가 갈린다).
 conditions_card = condition_card("설비 조회 조건", name="equipment") if viewing_tab_open else None
 # 호기가 없고 샘플도 끈 Main 에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다 — 카드를
 # 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
@@ -404,9 +411,9 @@ with gap_tab:
         assert conditions_card is not None
         with conditions_card:
             start_date, end_date = render_equipment_period(today=today, width="stretch")
-        # 저장된 Cut-off 는 캐시 경계에서 직접 읽는다(필요 단축 일정과 같다 — 「설정」 팝업이
-        # 저장하면 그 캐시를 비우고 앱 전체를 다시 돌린다). 저장되지 않은 팝업 표 편집으로 숫자를
-        # 내지 않는다.
+        # 저장된 Cut-off 는 캐시 경계에서 직접 읽는다(필요 단축 일정과 같다 — 「가용설비 설정」
+        # 팝업이 저장하면 그 캐시를 비우고 앱 전체를 다시 돌린다). 저장되지 않은 팝업 표 편집으로
+        # 숫자를 내지 않는다.
         stored_cutoff = load_process_cutoff(equipment_database_path)
         # 입력 비가동 대수(③ Preference — 공용 프로필)도 캐시 경계에서 읽는다. 설비 일정 기준
         # 가용에서 빼므로(필요 단축 일정·공정 Capa 상세와 같은 가용) 못 읽으면 빈 값으로 물러서지

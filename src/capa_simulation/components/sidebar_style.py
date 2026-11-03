@@ -901,7 +901,8 @@ def _conditions_panel_style() -> str:
 
 
 def _dialog_box_style() -> str:
-    """조회 조건 아래 따로 선 **팝업 상자**(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)의 서식.
+    """조회 조건 아래 따로 선 **팝업 상자**(`DIALOG_BOX_PREFIX` — 사이드바 설정 상자: HOME 「HOME
+    설정」 · 가용설비 현황 「가용설비 설정」, `components/settings_box.py`)의 서식.
 
     조건 카드(접히는 확장 패널)와 같은 면(`NAV_CONTROL_TINT`)·테두리·머리 글자(1rem·700)로 서서 조건
     구역의 한 무리로 읽히고, 오른쪽 끝 표식만 `⇕`(팝업이 뜨는 칸 — 조건 패널 값 칸과 같은 기호)다 —

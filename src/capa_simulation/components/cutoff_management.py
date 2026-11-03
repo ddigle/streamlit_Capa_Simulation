@@ -1,6 +1,6 @@
-# Purpose: 공정별 Cut-off 입력 표를 그리고 저장하는 「설정」 팝업 본문을 담당한다.
+# Purpose: 공정별 Cut-off 입력 표를 그리고 저장하는 「가용설비 설정」 팝업 본문을 담당한다.
 
-"""공정별 Cut-off 편집 — 가용설비 현황 머리 「설정」 팝업의 본문(`equipment_settings_dialog`).
+"""공정별 Cut-off 편집 — 가용설비 현황 「가용설비 설정」 팝업의 본문(`equipment_settings_dialog`).
 
 Cut-off 는 「그 공정 이후의 공정~입고까지 TAT 누적 합」이지만 저장소에 TAT 도 공정
 선후관계도 없어 **사람이 적는 원장**이다(`services/process_cutoff.py`).
@@ -80,7 +80,8 @@ _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 
 
 def forget_cutoff_draft() -> None:
-    """초안·출발점·편집표를 걷는다 — 「설정」 팝업을 새로 열 때(`open_equipment_settings`) 부른다.
+    """초안·출발점·편집표를 걷는다 — 「가용설비 설정」 팝업을 새로 열 때(`open_equipment_settings`)
+    부른다.
 
     초안은 그리는 회차마다 다시 적히므로, 걷지 않으면 한 번 열어 본 세션은 그때 저장본의 사본을
     계속 보였다 — 남이 AVI-PKG 를 12 로 저장한 뒤 다시 열어도 옛 값이었고, 고치지 않은 채 누른
@@ -320,10 +321,11 @@ def _render_missing_cutoffs(missing: list[str]) -> None:
 def report_missing_cutoffs(equipment_processes: list[str], stored: pd.DataFrame) -> None:
     """설비는 있는데 Cut-off 를 적지 않은 공정의 상태 알림(`EQ-12` — 2026-11-03 결정 보드 D2).
 
-    가용설비 현황이 회차마다(빠진 공정이 없어도 — 해소 · 이벤트 칸 한 자리) 부른다 — 「설정」 팝업을
-    열지 않아도 Static 대비 일정 합이 왜 작은지 알게 한다. 팝업 안 경고(`_render_missing_cutoffs`)는
-    고칠 표 곁의 자리 글로 그대로다. Cut-off 는 모든 설비 시나리오 공용이라 범위가 없고, 내용은 빠진
-    공정 이름 목록이다(알림창 · 패널은 평문이라 이름을 막지 않는다).
+    가용설비 현황이 회차마다(빠진 공정이 없어도 — 해소 · 이벤트 칸 한 자리) 부른다 —
+    「가용설비 설정」 팝업을 열지 않아도 Static 대비 일정 합이 왜 작은지 알게 한다. 팝업 안
+    경고(`_render_missing_cutoffs`)는 고칠 표 곁의 자리 글로 그대로다. Cut-off 는 모든 설비 시나리오
+    공용이라 범위가 없고, 내용은 빠진 공정 이름 목록이다(알림창 · 패널은 평문이라 이름을 막지
+    않는다).
     """
     missing = missing_cutoff_processes(equipment_processes, stored)
     shown = ", ".join(missing[:10]) + (" …" if len(missing) > 10 else "")
@@ -333,12 +335,12 @@ def report_missing_cutoffs(equipment_processes: list[str], stored: pd.DataFrame)
         content=missing or None,
         active=bool(missing),
         text=(
-            f"Cut-off 를 적지 않은 공정 {len(missing)}개 — 가용대수에서 빠짐 · 머리 「설정」 에서 "
-            "행을 더하세요"
+            f"Cut-off 를 적지 않은 공정 {len(missing)}개 — 가용대수에서 빠짐 · "
+            "「가용설비 설정」 에서 행을 더하세요"
         ),
         full=(
             f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 월별 가용대수 산출에서 "
-            f"빠집니다 — {shown}. 가용설비 현황 머리 「설정」 › 공정별 Cut-off 에서 「설비 공정으로"
-            " 채우기」 로 행을 더해 저장하세요."
+            f"빠집니다 — {shown}. 가용설비 현황 사이드바 「가용설비 설정」 › 공정별 Cut-off "
+            "에서 「설비 공정으로 채우기」 로 행을 더해 저장하세요."
         ),
     )

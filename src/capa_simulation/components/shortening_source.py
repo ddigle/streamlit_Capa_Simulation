@@ -66,7 +66,7 @@ SHORTENING_END_KEY: Final = "equipment_shortening_end_month_v1"
 
 CUTOFF_FIRST_MESSAGE: Final = (
     "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 있습니다 "
-    "(가용설비 현황 › 설정 › Cut-off)."
+    "(가용설비 현황 › 사이드바 「가용설비 설정」 › Cut-off)."
 )
 
 # (기존 보유대수, 설비 마스터, 비가동 일정).

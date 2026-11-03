@@ -483,7 +483,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     인자, 샘플 fleet 이면 둘 다 숨김). 수요·달·계획 꺼내기는 Space 보기와 같은 `components/shortening_source.py` 다. 카드 차례·기한 임박 날수·강조 공정은 세션 값이고 DB 에 쓰지
     않는다.
   - 저장본·미저장 편집은 `equipment_data_workspace.py` 세션 칸(가용설비·Space 와 같은 토큰)에서, Cut-off 는 저장된
-    값만 읽는다(고치는 곳은 가용설비 현황 「설정」 팝업). 조건 카드는 `shortening` 이다.
+    값만 읽는다(고치는 곳은 가용설비 현황 사이드바 「가용설비 설정」 팝업). 조건 카드는 `shortening` 이다.
   - 소요대수 프레임은 넘기지 않고 시나리오 키와 로더를 넘긴다. 계산은 DB 에 쓰지 않고 패널이 공용 조회 조건(`0019`)과
     진척 비교 기준선(`0021`)만 쓴다. 알림 자리는 토스트 규칙을 따른다(`test_shortening_baseline_notice.py`).
   - UPEH 가정은 이 화면에 걸지 않는다 — 조건 카드에 공정 Capa 상세와 같은 세션 칸을 그릴 뿐 가정 계획을 세우지 않고,
@@ -558,10 +558,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (2026-10-24 사용자 결정 — 두 탭 개편, 2026-10-27 셋째 탭): ① `설비 마스터`(처음 여는 탭 — 설비 마스터 표·작은 편집표 둘·오른쪽 칸 호기 상세/
   새 호기/저장 전 변경/저장 이력, 개편 B1·C — `components/equipment_master_tab.py`, 개편 전 `RawData`) ②
   `Summary`(안쪽 탭 `Main`·`Static 대비 일정` — 라벨 글자는 개편 전 그대로) ③ `Preference`(공정 × 생산월 **입력 비가동 대수** —
-  `components/manual_downtime_tab.py`, 설비 `0032` 공용 프로필. 개편 전 같은 이름 탭은 Cut-off 표였다 — 그것은 지금도 「설정」
-  팝업이다). 공정별 Cut-off 는 제목 줄 끝 「설정」 팝업
-  (`equipment_settings_dialog.py`, 개편 전 `Preference` 탭), Qual 마감 계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·
-  리비전·발행은 시나리오 관리 › 설비 시나리오다. 설명은 `guides/available_equipment_status.md`.
+  `components/manual_downtime_tab.py`, 설비 `0032` 공용 프로필. 개편 전 같은 이름 탭은 Cut-off 표였다 — 그것은 지금 「가용설비
+  설정」 팝업이다). 공정별 Cut-off 는 사이드바 「가용설비 설정」 상자의 팝업(`equipment_settings_dialog.py` — 2026-11-03 부터
+  사이드바 설정 상자 `components/settings_box.py`, 그 전에는 제목 줄 끝 「설정」 단추, 개편 전 `Preference` 탭), Qual 마감
+  계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·리비전·발행은 시나리오 관리 › 설비 시나리오다. 설명은
+  `guides/available_equipment_status.md`.
   - 탭 선언은 `navigation`(`EQUIPMENT_TABS`·`EQUIPMENT_SUMMARY_TABS`, 안쪽 탭은 `ConditionTabs.sub` = `SubTabs`)이고 페이지는
     그 목록 그대로 `stateful_tabs` 를 세운다. 안쪽 탭은 바깥 Summary 블록 안에서 **늘** 부른다(위젯 값이 남아 사이드바가
     읽는다). 바깥이 숨으면 안쪽 고른 탭의 `open` 도 참이라, 본문 갈래와 두 부품(`render_equipment_explorer`·
@@ -581,8 +582,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`MANUAL_DOWNTIME_LOCK_MESSAGE` — Cut-off 와 같은 E3).
   - 진입은 `resolve_equipment_session` 이고 계산은 `calculation_drafts()` 다(일정 없음 호기를 뺌 — 「일정 없음 n대」 한 줄).
     가정 설비 시나리오면 Main 미확인은 **공식 스냅샷의 미확인**을 화면 호기로 좁혀 쓰고(꼬리표 「공식 일정 기준」),
-    「설정」 팝업의 Cut-off 는 읽기 전용(「설비 공정으로 채우기」 꺼짐)이다. 설비 시나리오 줄은 두 탭 모두 선다.
-  - 「설정」·「엑셀·CSV로 한꺼번에」 팝업: 열림 칸은 페이지 한 칸(`available_equipment_open_dialog`, 값 `settings`·`import`)이고
+    「가용설비 설정」 팝업의 Cut-off 는 읽기 전용(「설비 공정으로 채우기」 꺼짐)이다. 설비 시나리오 줄은 두 탭 모두 선다.
+  - 「가용설비 설정」 상자는 조회 조건 패널 바로 밑 · `설비 조회 조건` 카드 **위**다(페이지가 카드보다 먼저 부른다 — 9장
+    「사이드바·조건 카드·본문」 의 설정 상자 규칙). 탭에 매이지 않은 화면 설정이라 세 탭 모두 같은 자리에 서고, 설비 DB 를 읽지
+    못한 회차(오류를 알리고 멈춤)에는 잠긴 채 같은 자리에 선다. 제목 줄은 큰 제목 하나다(끝 칸 없음).
+  - 「가용설비 설정」·「엑셀·CSV로 한꺼번에」 팝업: 열림 칸은 페이지 한 칸(`available_equipment_open_dialog`, 값 `settings`·`import`)이고
     호스트(`render_equipment_dialog_host(import_dialog=)`)는 이벤트 칸에 늘 한 자리다(열렸으면 팝업, 아니면 빈 스타일). 새 방문
     회차에는 붙여넣기 미리보기를 거둔다(`withdraw_preview_on_new_visit` — 페이지가 매 회차 부른다). Cut-off 저장·「설비 공정으로 채우기」 뒤에도 팝업은 열려 있다(9장 「팝업과
     콜백」 의 예외). 첫 데이터 안내의 「설정에서 보기」 도 이 팝업을 연다. Static 대비 일정은 저장된 Cut-off 를 캐시 경계
@@ -1060,7 +1064,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭에서도 조건 위젯은 그리며 Plotly 만 건너뛴다. 상세
     분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②).
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
-  원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「설정」 팝업 Cut-off 표).
+  원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표).
   - 행 필터 중에는 `num_rows="fixed"` 다 — 이 표들은 편집 결과가 곧 다음 리비전 전부다. 거른 편집인지는 호출자가
     `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`). 모든 행이 남는 거름(「Select
     all」·한 호기뿐인 표의 「표에서 고치기」)은 원본(RangeIndex)을 그대로 돌려준다 — `.loc` 의 일반 정수 Index 를
@@ -1815,8 +1819,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지·설명 줄은 그대로다. `render_page_header_with_status` 는 진행
   표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. 두 함수 모두 `trailing` 을 주면 제목 줄 끝 칸에
-  그것을 그린다(HOME 주요 Case 칩, 가용설비 현황 「설정」·필요 단축 일정 「Qual 마감 계산기」 단추 — `_render_title_row` 한
-  벌) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
+  그것을 그린다(지금은 필요 단축 일정 「Qual 마감 계산기」 단추 하나 — 도구다. 설정 단추는 이 칸에 두지 않고 사이드바 설정
+  상자다(`settings_box.py`, 9장). HOME 주요 Case 칩은 2026-11-02, 가용설비 현황 「설정」 은 2026-11-03 에 사이드바로 옮겼다 —
+  `_render_title_row` 한 벌) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
   비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS). 화면에서는 제목이 숨어(흐름에서 빠진다) 끝
   칸만 오른쪽 끝에 선다. 제목이 보이는 인쇄에서는 한 줄에 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려가고 제목은 접히지
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
@@ -1904,7 +1909,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세션 등) 견줄 꼴을 적는다. 공식 층이 다른 호기를 한 묶음으로 묶는 고침의 「저장하기 전에 고칠 것」 줄은 `official_places` 가
     비어도(배치 차이가 없는 가정 시나리오) 판정한다. 「내려받기」 팝오버는 양식 셋 + 현재 데이터 셋(`_render_current_data_downloads`).
 - `src/capa_simulation/components/equipment_import_dialog.py` — 가용설비 현황 「엑셀·CSV로 한꺼번에」 팝업(옛 입력 탭을 옮김, 개편
-  명세 4-8). 열림 값 `import`(「설정」 과 한 열림 칸·한 호스트 — `render_equipment_dialog_host(import_dialog=)`), 여는 콜백은
+  명세 4-8). 열림 값 `import`(「가용설비 설정」 과 한 열림 칸·한 호스트 — `render_equipment_dialog_host(import_dialog=)`), 여는 콜백은
   `forget_page_dialogs()` 부터. 미리보기는 옛 입력 탭 그대로(`build_import_review` + 낡은 세션 거절 + 배치 잠금·가정 묶음 거절 +
   CSV 시나리오 주의, 가정 세션 「배치 칸도 붙여넣기」 기본 끔 — Q2) — 머리 「바뀔 행」·「기존 대체」 와 넣기 토스트의 행 수는 넣으면
   실제로 바뀌는 줄만 센다(`equipment_csv.import_preview_changed_rows` — 같은 값 그대로인 대체 줄은 「변경 없음」). 끝 단추는
@@ -2641,9 +2646,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 회차마다 DB 를 보지 않는다 — 공식은 `intro_summary.latest_official_identity`(머리 띠와 같은 세션 값), Case 는 주요
     Case 쓰기 세대를 키로 한 캐시 `persistence/cache.load_main_case_targets` 다. `tests/test_home_main_case_chips.py`,
     실제 `app.py` 배선과 둘째 회차 읽기 0 은 `tests/test_app_navigation.py`.
+- `src/capa_simulation/components/settings_box.py` — 화면 설정 팝업을 여는 사이드바 「… 설정」 상자 한 칸(2026-11-03 사용자
+  지시 — 설정 단추는 사이드바 상자로, 9장 「사이드바·조건 카드·본문」). 조회 조건 패널 바로 밑 · 조건 카드 위(페이지가 카드보다
+  먼저 부른다), 상자 자체가 전폭 단추(key 접두 `sidebar_status.DIALOG_BOX_PREFIX` — 서식 `sidebar_style._dialog_box_style`),
+  잠금(`disabled`)·대기(key 끝 `_pending`)를 받는다. 열림 칸·여는 콜백·호스트는 화면 모듈 몫이다 — 지금 HOME `home_settings`
+  · 가용설비 현황 `equipment_settings_dialog` 둘. 화면 확인 `settings_boxes`(`scripts/check_deploy_screens.py`)가 두 상자의
+  자리 · 팝업 제목 · 안쪽 · Esc 닫힘 · 본문 옛 단추 0 을 본다.
 - `src/capa_simulation/components/home_settings.py` — HOME 사이드바 「HOME 설정」 상자와 그 큰 팝업(안쪽 탭 `Preference`·
-  `Past Data`, 2026-11-02 사용자 요청 — 시안 (가) 조회 조건 패널 바로 밑 · `LOB 표시 조건` 카드 위에 따로 선 상자). 가용설비 현황 「설정」
-  (`equipment_settings_dialog`)과 같은 꼴이다 — 열림 칸 하나(`home_state.HOME_DIALOG_KEY`, 값 `settings`), 여는 콜백은
+  `Past Data`, 2026-11-02 사용자 요청 — 시안 (가) 조회 조건 패널 바로 밑 · `LOB 표시 조건` 카드 위에 따로 선 상자 — 한 칸은
+  사이드바 설정 상자 `settings_box.py`). 가용설비 현황 「가용설비 설정」(`equipment_settings_dialog`)과 같은 꼴이다 — 열림 칸 하나(`home_state.HOME_DIALOG_KEY`, 값 `settings`), 여는 콜백은
   `forget_page_dialogs()` 부터(`open_home_settings` — 지난번 편 Past Data 붙여넣기 칸도 걷는다), 호스트는 본문 끝 이벤트
   칸 한 자리(열렸으면 팝업, 아니면 빈 스타일), 저장 뒤에도 열어 둔다(9장 「팝업과 콜백」 의 둘째 예외). 팝업 본문은
   `app_pages/home.py` 가 넘긴 함수 둘이다 — 이 모듈은 편집기를 들이지 않는다(주요 Case 칩이 여는 콜백을 쓰고 편집기 쪽이 칩을
@@ -2688,8 +2699,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/process_cutoff.py` — 공정별 Cut-off 입력 표의 계약·검증과 조회 사전(`cutoff_lookup`).
   없는 공정과 0 은 다르다 — 0 은 달력 월 그대로, 없으면 산출에서 빠지므로 화면이 `missing_cutoff_processes` 로 드러낸다.
   화면 글은 계산(`wd_window`)이 쓰는 내림 일수로 적고, 적은 값(`cutoff_setting`)에 소수가 있으면 내림을 함께 적는다
-  (`cutoff_days_words` — 「35일(35.8일 내림)」, Static 대비 일정 머리·제약 시뮬레이션 조건 줄·공정 Capa 상세 머리). 「설정」
-  팝업만 적은 값 그대로다(2026-10-26 E2E — 같은 공정이 화면마다 35일·35.8일로 갈렸다).
+  (`cutoff_days_words` — 「35일(35.8일 내림)」, Static 대비 일정 머리·제약 시뮬레이션 조건 줄·공정 Capa 상세 머리). 「가용설비
+  설정」 팝업만 적은 값 그대로다(2026-10-26 E2E — 같은 공정이 화면마다 35일·35.8일로 갈렸다).
 - `src/capa_simulation/services/qual_deadline.py` — Qual 마감 계산기(2026-10-22, 10-07 계산기 한 장을 옮김)의 계산과
   화면·복사 글자. Cut-off·연도·직전 달 가용대수·월별 목표·신규 호기로 호기마다 Qual 완료 마감을 낸다. 어느 DB 도 열지 않는다.
   - 구간은 `wd_window` 그대로, 몫은 완료 다음 날부터다. 모자람 ≥ 1 이면 마감 = 구간 앞 경계(몫 1), < 1 이면 모자란 날 수만큼
@@ -3241,11 +3252,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `equipment_preference` 가 그 칸으로 찾는다.
   - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
     잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
-- `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
+- `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
   경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문).
-- `src/capa_simulation/components/equipment_settings_dialog.py` — 가용설비 현황 제목 줄 끝 「설정」 단추와 그 팝업(묶음 머리
-  「공정별 Cut-off」 하나 — 나중 설정 자리, D14)의 열림 칸(`available_equipment_open_dialog`, 값 `settings`)·여는 콜백
+- `src/capa_simulation/components/equipment_settings_dialog.py` — 가용설비 현황 사이드바 「가용설비 설정」 상자(2026-11-03 —
+  전에는 제목 줄 끝 「설정」 단추, 상자 글 = 팝업 제목, `render_equipment_settings_box` — 설비 DB 를 못 읽은 회차에는 잠김)와 그
+  팝업(묶음 머리 「공정별 Cut-off」 하나 — 나중 설정 자리, D14)의 열림 칸(`available_equipment_open_dialog`, 값 `settings`)·여는 콜백
   (`forget_page_dialogs()` 부터)·호스트(이벤트 칸 늘 한 자리). 저장·채우기 뒤에도 팝업을 열어 둔다(9장 「팝업과 콜백」 예외 —
   앱 범위 `st.rerun()` 이라 바깥 화면도 새 값이고 flash 가 누른 단추 아래에 선다). 닫으면 제출하지 않은 표 편집은 사라진다.
   - 저장은 초안 지문 대조다(`process_cutoff_fingerprint` → `ProcessCutoffConflict`) — 표 전체 교체라 옛 초안이 남의
@@ -3935,7 +3947,7 @@ RQ_MODULE
    색 기준 `필요 단축` 을 켠 동안**만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
-   공용 공정 표시명 하나다(2026-10-10 사용자 결정 — 설비 마스터 탭을 뺀 탭과 「설정」 팝업 표 보기 필터의 보이는 글자).
+   공용 공정 표시명 하나다(2026-10-10 사용자 결정 — 설비 마스터 탭을 뺀 탭과 「가용설비 설정」 팝업 표 보기 필터의 보이는 글자).
    페이지가 회차마다
    시뮬레이션 DB 의 그 프로필을 읽고(앱에서는 부트스트랩이 연 캐시), 못 읽으면 원본 공정명으로 그려
    설비 화면을 막지 않는다. 두 탭의
@@ -4995,7 +5007,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   선택 상자는 모두(Space 현황·가용설비 현황 설비 마스터 탭은 원본 이름이라 해당 없음) `ProcessLabels.
   unique_format_func` 로 보이는 글자가 겹치지 않게 하고 위젯 앞에서 매 회차 잡은 값을 다시 적는다 — 같은
   글자면 다른 값이 돌아오고, 글자가 바뀌면 브라우저가 옛 글자로 다른 값을 되살린다(9장).
-  자리: 가용설비 현황 Main `공정소분류`·Static 대비 일정 `공정`·필요 단축 일정 `공정`·「설정」 팝업 `표 보기 설정`
+  자리: 가용설비 현황 Main `공정소분류`·Static 대비 일정 `공정`·필요 단축 일정 `공정`·「가용설비 설정」 팝업 `표 보기 설정`
   공정 필터, 산출 결과 대당 Capa 공정 필터, `column_filter` 의 공정 칸(산출 결과 소요대수·확보율, 기준
   정보 설비대수, 월별 편집기 필터), 표준 목표 공정 필터·로직 분석 `공정`, 표준 대비 재공 `공정`, Dynamic
   Capa 상위 `공정`, 실적 세 화면(효율·UPEH·수율) `공정`, HOME Preference 주요공정 프리셋 `공정`(저장본
@@ -5040,8 +5052,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   전부(월별 표 CSV, 제외 목록 CSV, Static Capa 부족 현황 CSV, 필요 단축 일정 CSV 세 벌, Static 대비 일정
   호기 목록 CSV, Cut-off CSV) — 그대로 옮겨 쓰는 파일이다, ③ 원본 키를 편집·확인하는 화면(표시순서
   관리의 `분류값`, Proc Rename 탭의 `보유 공정` 목록, 필요 단축 일정 「맞대지 못한 공정」, Static 대비 일정 의
-  「두 쪽의 공정명이 맞지 않는 자리」 알림(`EQ-06`)과 한쪽에만 있는 공정의 까닭 문구, 「설정」 팝업 Cut-off 편집표의
-  `공정` 칸과 「Cut-off 를 적지 않은 공정」 알림(`EQ-12`), 설비 마스터 탭 입력 전부), ④ `services/` 의 예외 메시지(원본을
+  「두 쪽의 공정명이 맞지 않는 자리」 알림(`EQ-06`)과 한쪽에만 있는 공정의 까닭 문구, 「가용설비 설정」 팝업 Cut-off 편집표의
+  `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고 · 알림(`EQ-12`), 설비 마스터 탭 입력 전부), ④ `services/` 의 예외 메시지(원본을
   고치라는 안내다)와 프리셋·세션 저장값, ⑤ 설비 DB 의 `공정대분류`·`공정소분류`(필요 단축 일정 공용 조회
   조건의 공정 목록도 원본이다).
   경계는 `services/` 가
@@ -5467,6 +5479,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `home_settings.py`). 쓰기
   작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는 결과·그에 대한 행동·상태 알림만
   남기고 설명은 Guide 로 옮긴다(8장).
+- **설정은 사이드바 상자다**(2026-11-03 사용자 지시 — 「설정 버튼이 페이지에 배치된 경우 전부 사이드바 상자로」). 화면 설정
+  팝업을 여는 단추를 본문(제목 줄 끝·탭 안·표 위)에 두지 않고 사이드바 설정 상자(`components/settings_box.py` — HOME 「HOME
+  설정」·가용설비 현황 「가용설비 설정」)로 둔다. 자리는 조회 조건 패널 바로 밑 · 카드 위(페이지가 카드보다 먼저 부른다), 상자
+  글 = 팝업 제목, 팝업 재료를 못 만든 회차에는 잠긴 채 같은 자리. 한 화면에 설정이 여럿이면 상자 하나의 팝업 안에서 묶음 머리로
+  가르고, 탭에 매인 설정도 상자를 탭마다 세웠다 걷지 않고 팝업 안에서 탭 이름을 단 묶음 머리로 가른다. 설정이 아닌 것은 본문에
+  남는다 — 편집 동작(저장·버리기·내려받기·붙여넣기·기준선 저장·Space 「저장 칸」)·도구(필요 단축 일정 「Qual 마감 계산기」)·편집표에
+  딸린 보기 거름(설비 마스터 작은 편집표의 「… 표 보기 설정」 — 같은 줄 「보기 적용」 과 한 몸)·탭 자체(가용설비 현황
+  `Preference` 탭). 화면 확인 `settings_boxes` 가 상자의 자리와 본문 옛 단추 0 을 본다.
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라
   본문에 두고, 카드에는 거르는 조건(공정·기간·기준일·분류·호기 필터)만 둔다. 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」·「구획」(①~④ 접기, 2026-10-22 「소요대수처럼」)만 사용자 요청에 따른
@@ -5618,7 +5638,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `AU-01/02`, Admin `AD-05` · `AD-06`). 고칠 자리가 다른 탭이면 그 탭 이름을 싣고(일정 없는 호기 `EQ-04` → 「설비 마스터」),
   탭 안 탭은 `tab_name(바깥, 안)` 으로 잇는다(`EQ-06/07/08` → 「Summary › Static 대비 일정」). 세션 이동처럼 탭과 상관없이
   알아야 하는 사건은 탭을 가리지 않는다.
-- **팝업 안 조건은 팝업이 자리 글로, 화면이 상태 알림으로** — 「설정」 팝업 「Cut-off 를 적지 않은 공정」 은 고칠 표 곁의 경고
+- **팝업 안 조건은 팝업이 자리 글로, 화면이 상태 알림으로** — 「가용설비 설정」 팝업 「Cut-off 를 적지 않은 공정」 은 고칠 표 곁의 경고
   (이름 목록 — `PLACE_FORM`)로 두고, 가용설비 현황이 팝업을 열지 않아도 회차마다 같은 조건을 상태 알림(`EQ-12` —
   `cutoff_management.report_missing_cutoffs`)으로 낸다.
 - **화면을 못 그리는 오류는 자리에 남기고 알림을 더한다**(설계 2-2) — `state_alerts.alert_page_error(message, code=, text=)` 를
@@ -5668,10 +5688,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   갈래는 그대로다. 시험은 진짜 프래그먼트 회차로 두 누름을 돌려 둘째 회차가 닫힌 팝업의 델타를 보내지 않는지 본다
   (`tests/fragment_browser.py` 의 `emitted`, `tests/test_standard_target_capa_page.py`).
   예외 둘 — HOME 「HOME 설정」 팝업(Preference·Past Data, `home_settings`)도 아래와 같은 까닭으로 저장 뒤에도 열림 키를 남기고
-  (그 회차의 Main 그림은 팝업을 열기 전 그림을 그대로 쓰고 닫는 회차에 만든다 — 3장 `home.py`), 가용설비 현황 「설정」
-  팝업(공정별 Cut-off, `equipment_settings_dialog`)은 저장·「설비 공정으로 채우기」 뒤에도
+  (그 회차의 Main 그림은 팝업을 열기 전 그림을 그대로 쓰고 닫는 회차에 만든다 — 3장 `home.py`), 가용설비 현황 「가용설비
+  설정」 팝업(공정별 Cut-off, `equipment_settings_dialog`)은 저장·「설비 공정으로 채우기」 뒤에도
   열림 키를 남긴다. 앱 범위 `st.rerun()` 이라 바깥 화면(Static 대비 일정)도 그 회차에 새 Cut-off 로 다시 그려지고, 저장 결과
-  (flash)가 누른 단추 바로 아래에 선다 — 닫으면 그 결과를 볼 자리가 「설정」 단추 옆밖에 없다. 그 팝업 안 편집표의 제출 전
+  (flash)가 누른 단추 바로 아래에 선다 — 닫으면 그 결과를 볼 자리가 사이드바 상자 옆밖에 없다. 그 팝업 안 편집표의 제출 전
   편집은 닫으면 사라진다(Guide 「닫기 전에 저장합니다」). 초안은 그리는 회차마다 다시 적히므로 여는 콜백이 초안·출발점·편집표를
   걷는다(`cutoff_management.forget_cutoff_draft`) — 걷지 않으면 한 번 열어 본 세션은 남의 저장 뒤 다시 열어도 옛 값을 보이고
   고치지 않은 저장이 충돌로 거부됐다(2026-10-27 E2E).
@@ -6487,6 +6507,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
     `alerts.state`(자리에 그리지 않음 — 짧은 글은 무엇을 · 어디서 고치는지, 탭 안이면 `open_tab_name` 으로 열린 탭에서만 ·
     탭 이름과 함께), 화면을 그리지 못한 오류는 자리 `st.error` + `state_alerts.alert_page_error`, 자리 글이면
     `tests/test_alert_sites.py` 허용 목록에 `REASONS` 까닭과 함께
+11. **화면 설정을 여는 새 단추는 본문이 아니라 사이드바 설정 상자인가**(`components/settings_box.py`, 9장 「사이드바·조건
+    카드·본문」) — 상자를 더하면 화면 확인 `settings_boxes` 와 그 시험도 함께 고친다
 
 ### 코어 공개 창구(`module_api`) 변경
 

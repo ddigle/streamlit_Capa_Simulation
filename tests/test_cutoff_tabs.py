@@ -1,4 +1,4 @@
-# Purpose: 「설정」 팝업의 Cut-off 입력과 Static 대비 일정 비교가 독립적으로 동작하는지 검사한다.
+# Purpose: 「가용설비 설정」 팝업의 Cut-off 입력과 Static 대비 일정 비교가 따로 도는지 검사한다.
 
 """탭을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
 
@@ -7,8 +7,8 @@
 `pd.Series([pd.NA] * n, dtype="float64")` 가 `TypeError` 로 죽는 것을 잡았다.
 
 이 페이지는 **활성 시나리오가 없어도 열리는 유일한 계산 계열 화면**이다. Static 을 읽는
-탭이 생겼으므로, 그 탭이 못 읽어도 나머지가 살아 있어야 한다. Cut-off 는 머리 「설정」 팝업이다
-(2026-10-24 — 개편 전 `Preference` 탭).
+탭이 생겼으므로, 그 탭이 못 읽어도 나머지가 살아 있어야 한다. Cut-off 는 사이드바 「가용설비 설정」
+상자의 팝업이다(2026-11-03 — 전에는 머리 「설정」 단추, 개편 전 `Preference` 탭).
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def test_a_process_without_a_cutoff_is_surfaced_not_silently_dropped(tmp_path: P
     assert "Cut-off 를 적지 않은 공정" in warnings, warnings
     note = active_state(app, "EQ-12")
     assert note is not None and "Cut-off 를 적지 않은 공정" in note["full"], states(app, "EQ-12")
-    assert "「설정」" in note["short"] and "설비 공정으로 채우기" in note["full"], note
+    assert "「가용설비 설정」" in note["short"] and "설비 공정으로 채우기" in note["full"], note
     clear_equipment_repository()
 
 

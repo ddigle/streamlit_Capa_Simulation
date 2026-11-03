@@ -4,11 +4,13 @@
 
 - **자리**: 사이드바 조회 조건 패널 바로 밑, 「LOB 표시 조건」 카드 **위**에 따로 선 상자
   「HOME 설정」. 카드는 주요 Case 칩 때문에 처음 펼친 채 서서(약 370px) 그 밑에 두면 1280×800 ·
-  1500×950 에서 상자가 사이드바 첫 화면 밖으로 밀린다 — 팝업에 닿는 길이 이 상자 하나뿐이다.
-  펼치는 확장 패널이 아니라 상자 자체가 단추라 한 번 누르면 팝업이 뜬다 — 오른쪽 끝 `⇕` 는 「이
-  자리에서 팝업이 뜨는 칸」 표식이다(`sidebar_style` — 조건 패널 값 칸과 같은 기호). 공용 설정(모든
-  사용자가 DB 로 함께 쓰는 값)이 세션 조회 조건(패널·카드)과 상자 단위로 갈려 읽힌다. HOME 본문에는
-  탭 줄도 설정 단추도 남지 않아 화면 탭 줄 바로 밑에서 Summary 가 시작한다.
+  1500×950 에서 상자가 사이드바 첫 화면 밖으로 밀린다 — 팝업에 닿는 길이 이 상자 하나뿐이다. 펼치는
+  확장 패널이 아니라 상자 자체가 단추라 한 번 누르면 팝업이 뜬다 — 오른쪽 끝 `⇕` 는 「이 자리에서
+  팝업이 뜨는 칸」 표식이다(`sidebar_style` — 조건 패널 값 칸과 같은 기호). 공용 설정(모든 사용자가
+  DB 로 함께 쓰는 값)이 세션 조회 조건(패널·카드)과 상자 단위로 갈려 읽힌다. HOME 본문에는 탭 줄도
+  설정 단추도 남지 않아 화면 탭 줄 바로 밑에서 Summary 가 시작한다. 상자 한 칸은 사이드바 설정 상자
+  공용 꼴(`components/settings_box.py` — 2026-11-03 가용설비 현황 「가용설비 설정」 도 같은 꼴)로
+  그린다.
 - **팝업 안**: 안쪽 탭 둘 `Preference`·`Past Data`(`stateful_tabs` — 닫았다 다시 열면 그 탭). 본문은
   `app_pages/home.py` 가 넘긴 함수 둘이다 — 이 모듈은 Preference·Past Data 편집기를 들이지
   않는다(주요 Case 칩이 이 모듈의 여는 콜백을 쓰고, 편집기 쪽이 칩을 그리므로 들이면 순환한다).
@@ -17,8 +19,8 @@
   의 미지정 칩도 이 콜백으로 `Preference` 탭을 연다.
 - **호스트**: 이벤트 칸에 늘 한 자리 — 열렸으면 팝업, 아니면 빈 스타일 자리표시자. 팝업 본문은
   이벤트 칸에 쓰지 않는다(Preference·Past Data 는 스타일만 든 `st.html`·토스트를 쓰지 않는다).
-- **저장 뒤에도 팝업을 열어 둔다** — 가용설비 현황 「설정」(`equipment_settings_dialog`)과 같은
-  AGENTS 9장 「팝업 안 저장이 성공하면 열림 키를 지우고 `st.rerun()`」 의 예외다. 폼 저장(판정
+- **저장 뒤에도 팝업을 열어 둔다** — 가용설비 현황 「가용설비 설정」(`equipment_settings_dialog`)과
+  같은 AGENTS 9장 「팝업 안 저장이 성공하면 열림 키를 지우고 `st.rerun()`」 의 예외다. 폼 저장(판정
   기준·프리셋·Past Data 등)은 앱 범위 `st.rerun()` 이라 사이드바(주요공정 히트맵 칸·대기 띠)도 그
   회차에 새 값으로 서고, 저장 결과(flash)가 누른 단추 바로 아래에 선다. 고르면 곧 저장되는 두 선택
   상자(비교 시나리오·주요 Case)는 `on_change` 콜백뿐이라 팝업(프래그먼트)만 다시 돌고,
@@ -43,8 +45,14 @@ from collections.abc import Callable
 
 import streamlit as st
 
-from capa_simulation.components.condition_field import PENDING_SUFFIX
 from capa_simulation.components.past_data_management import forget_past_paste
+from capa_simulation.components.settings_box import (
+    SETTINGS_ICON,
+    render_settings_box,
+)
+from capa_simulation.components.settings_box import (
+    settings_box_key as _settings_box_key,
+)
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import OpenTab, remember_open_tab, stateful_tabs
 from capa_simulation.home_state import (
@@ -55,7 +63,6 @@ from capa_simulation.home_state import (
     HOME_SETTINGS_TAB_LABELS,
 )
 from capa_simulation.page_bootstrap import forget_page_dialogs
-from capa_simulation.sidebar_status import DIALOG_BOX_PREFIX
 
 __all__ = [
     "SETTINGS_BOX_KEY",
@@ -70,10 +77,11 @@ __all__ = [
 ]
 
 SETTINGS_TITLE = "HOME 설정"
-SETTINGS_ICON = ":material/settings:"
-# 상자(컨테이너)의 key — 사이드바 팝업 상자 서식이 접두어(`DIALOG_BOX_PREFIX`)로 고르고, 읽어 두고
-# 저장하지 않은 Past Data 가 있으면 끝에 `PENDING_SUFFIX` 를 단다(왼쪽 주황 띠 — 조건 칸과 같은 꼴).
-SETTINGS_BOX_KEY = f"{DIALOG_BOX_PREFIX}home_settings"
+# 상자 이름 — 상자(컨테이너) key 는 사이드바 설정 상자 공용 꼴(`settings_box.settings_box_key` —
+# 서식이 접두어로 고른다)이고, 읽어 두고 저장하지 않은 Past Data 가 있으면 끝에 `PENDING_SUFFIX` 를
+# 단다(왼쪽 주황 띠 — 조건 칸과 같은 꼴).
+SETTINGS_BOX_NAME = "home_settings"
+SETTINGS_BOX_KEY = _settings_box_key(SETTINGS_BOX_NAME)
 SETTINGS_BUTTON_KEY = "home_settings_open"
 SETTINGS_HELP = (
     "HOME 공용 설정(모든 사용자가 함께 씀) — Preference: 비교 시나리오 · 주요 Case · 판정 기준 · "
@@ -90,7 +98,7 @@ SETTINGS_CAPTION = (
 
 def settings_box_key(*, pending: bool) -> str:
     """상자 key — 대기가 있으면 끝에 `PENDING_SUFFIX`."""
-    return f"{SETTINGS_BOX_KEY}{PENDING_SUFFIX if pending else ''}"
+    return _settings_box_key(SETTINGS_BOX_NAME, pending=pending)
 
 
 def home_settings_open() -> bool:
@@ -126,16 +134,15 @@ def render_home_settings_box(*, pending: bool, stopped: bool = False) -> None:
     Data` 탭 점(스타일만 든 `st.html` 하나 — 찍을 것이 없어도 매 회차 그려 앞 회차의 점을 덮는다).
     `stopped` 는 계산이 멈춘 회차다 — 상자는 잠긴 채 같은 자리에 선다.
     """
-    with st.sidebar.container(key=settings_box_key(pending=pending)):
-        st.button(
-            SETTINGS_TITLE,
-            icon=SETTINGS_ICON,
-            key=SETTINGS_BUTTON_KEY,
-            on_click=open_home_settings,
-            width="stretch",
-            disabled=stopped,
-            help=STOPPED_HELP if stopped else (PENDING_HELP if pending else SETTINGS_HELP),
-        )
+    render_settings_box(
+        SETTINGS_TITLE,
+        name=SETTINGS_BOX_NAME,
+        button_key=SETTINGS_BUTTON_KEY,
+        on_click=open_home_settings,
+        tooltip=STOPPED_HELP if stopped else (PENDING_HELP if pending else SETTINGS_HELP),
+        disabled=stopped,
+        pending=pending,
+    )
     mark_pending_tabs(
         HOME_SETTINGS_TAB_KEY, HOME_SETTINGS_TAB_LABELS, {HOME_PAST_TAB} if pending else set()
     )
