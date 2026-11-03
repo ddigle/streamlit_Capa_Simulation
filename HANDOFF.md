@@ -33,7 +33,7 @@
   시나리오 리비전 한도, 직전 리뷰가 남긴 사용자 칸 둘.
 - **7-8** 끝에 `mark_look`(설비 `0033`), 둘째 줄 끝에 `more sizes`(다섯 모듈 이상 묶음의 모듈 수). 8장 첫 줄은 `--census-all-revisions`.
 - 걷은 것 — 옛 7-19 ~ 7-23(모두 사내 적용 · 리뷰 끝)과 7-23 C2(사용자가 고르지 않은 선택). 시험 둘(`test_check_deploy_screens` 의 7장 시험 ·
-  `test_space_sidebar_box` 의 Space 줄 시험)을 새 꼴에 맞췄고, 「%p」 가드(`test_percent_unit_text`)는 7장도 함께 본다(새 7장에 그 기호가 없다).
+  `test_space_sidebar_box` 의 Space 줄 시험)을 새 꼴에 맞췄고, 퍼센트 포인트 기호 가드(`test_percent_unit_text`)는 7장도 함께 본다(새 7장에 그 기호가 없다).
 - TODO 2장의 「다음 배포 7장에 적을 것」 항목들은 「`202611041000` 런북 7장에 옮김, 발송 대기」 로 닫았다 — 발송 뒤 지운다.
 
 ## 3. 사용자가 할 일
