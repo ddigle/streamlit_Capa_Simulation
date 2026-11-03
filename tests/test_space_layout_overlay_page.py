@@ -25,7 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, infos, shown, successes
+from alert_marks import active_state, alert_notes, infos, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -150,24 +150,29 @@ def _ok(app: AppTest) -> AppTest:
     return app
 
 
-def _texts(app: AppTest) -> list[str]:
-    """그린 글 전부 + 사이드바 「Space 도면」 상자 배치 줄의 풍선(온 문장 — `_layout_lines`)."""
+def _drawn_texts(app: AppTest) -> list[str]:
+    """그린 글 전부(마크다운 — 이름의 꾸밈 글자를 막는 자리)."""
     return [
-        *(
-            str(item.value)
-            for kind in ("caption", "info", "warning", "success", "error", "markdown")
-            for item in shown(app, kind)
-        ),
-        *(full for _, full in _layout_lines(app)),
+        str(item.value)
+        for kind in ("caption", "info", "warning", "success", "error", "markdown")
+        for item in shown(app, kind)
     ]
+
+
+def _texts(app: AppTest) -> list[str]:
+    """그린 글 전부 + 배치 · 일정 없는 호기 상태 알림의 전문(`_layout_lines`)."""
+    return [*_drawn_texts(app), *(full for _, full in _layout_lines(app))]
+
+
+# Space 의 배치 알림(배치 차이 · 모듈 구성이 바뀐 묶음 · 지운 호기의 차이)과 일정 없는 호기 알림 —
+# 옛 사이드바 「Space 도면」 상자 끝 줄(2026-11-04 Space 결정 보드 답으로 상태 알림이 됐다).
+SPACE_STATE_CODES = ("EQ-13", "EQ-14", "EQ-15", "EQ-04")
 
 
 def _layout_lines(app: AppTest) -> list[tuple[str, str]]:
-    """사이드바 「Space 도면」 상자의 풍선 달린 캡션 줄 — (보이는 짧은 줄, 풍선의 온 문장). 배치 줄
-    (`space_layout_notices`)과 일정 없는 호기 줄이 이 꼴이다(도면 위 머리 칸에 서던 줄)."""
-    return [
-        (str(item.value), str(item.proto.help)) for item in app.sidebar.caption if item.proto.help
-    ]
+    """조건이 있는 Space 상태 알림 — (알림창 짧은 글, 전문). 사이드바에는 그 줄이 없다."""
+    found = [active_state(app, code) for code in SPACE_STATE_CODES]
+    return [(str(note["short"]), str(note["full"])) for note in found if note is not None]
 
 
 def _viewer(calls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -198,15 +203,15 @@ def test_an_assumption_session_draws_its_layout_with_the_notice_and_badge(
     app = _ok(_space(tmp_path, setup).run())
 
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
-    # 배치 줄은 사이드바 「Space 도면」 상자 끝 짧은 줄(풍선에 온 문장)이다 — 본문 머리에는
-    # 서지 않는다.
+    # 배치 줄은 상태 알림이다(`EQ-13` — 알림창 · Alarm, 2026-11-04 Space 결정 보드 답) — 본문
+    # 머리에도 사이드바 상자에도 서지 않는다.
     assert any(
-        short.startswith(":material/compare: 가정 배치 · 공식과 다른 호기 1대")
+        short == "가정 배치 · 공식과 다른 호기 1대"
         and full.startswith("가정 배치 · 공식과 다른 호기 1대")
         for short, full in _layout_lines(app)
     ), _layout_lines(app)
     assert not any("가정 배치" in str(item.value) for item in infos(app))
-    assert any("가정 배치" in str(item.value) for item in app.sidebar.caption)
+    assert not any("가정 배치 ·" in str(item.value) for item in app.sidebar.caption)
     # 층 배치 편집이 열린다(LY4 — 1단계 「공식 발행 쌍에서만」 잠금은 걷었다).
     assert not app.toggle(key="space_layout_edit_mode").disabled
 
@@ -546,7 +551,7 @@ def test_an_old_official_revision_whose_difference_now_matches_says_it_once(
     assert not any("정리됩니다" in text for text in texts), texts
     # 「공식과 다른 배치」 표지(:material/compare:)가 아니라 같다는 줄(:material/layers:)이다.
     assert [short for short, full in _layout_lines(app) if "가정이던 때의 배치안" in full] == [
-        ":material/layers: 가정이던 때 배치 · 지금 공식과 같음"
+        "가정이던 때 배치 · 지금 공식과 같음"
     ], _layout_lines(app)
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
 
@@ -570,10 +575,17 @@ def test_an_old_official_revision_tail_does_not_promise_a_cleanup(tmp_path: Path
     assert not session.is_assumption
 
     (notice, *_) = space_layout_notices(session, (1, 0))
-    line, kind = notice.text, notice.kind
+    line = notice.text
 
-    assert kind == "info"
+    assert notice.code == "EQ-13"
     assert notice.short == "가정이던 때 배치 · 도면 요소 1개"
+    assert notice.content == {
+        "past": True,
+        "units": 0,
+        "marks": 1,
+        "labels": 0,
+        "stored": [1, 2, 0],
+    }
     assert line.startswith("이 리비전은 공식과 다른 배치(도면 요소 1개)를 담고 있습니다"), line
     assert line.endswith("(저장된 차이 호기 1대·요소 2개 가운데 나머지는 지금 공식과 같습니다)"), (
         line
@@ -625,9 +637,10 @@ TILDE_ESCAPED = "가정\\~R3\\~X"
 
 
 def _assert_tildes_escaped(app: AppTest) -> None:
-    """이름이 실린 마크다운 글(본문·사이드바 글·풍선) 모두가 물결표를 막았다."""
+    """이름이 실린 마크다운 글(본문·사이드바 글·풍선) 모두가 물결표를 막았다(평문 알림 글은
+    뺀다)."""
     texts = [
-        *_texts(app),
+        *_drawn_texts(app),
         *(str(item.help) for item in app.toggle if item.help),
         *(str(item.help) for item in app.button if item.help),
     ]
@@ -735,8 +748,9 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_lock_line_and_its_popover
 def test_a_tilde_scenario_name_keeps_its_tildes_in_an_old_official_revision_head(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 배치 줄(「「…」 시나리오가 가정이던 때의
-    배치안입니다」)과 잠금 줄이 이름의 물결표를 막는다."""
+    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 잠금 줄(마크다운)이 이름의 물결표를 막는다.
+    배치 알림(「「…」 시나리오가 가정이던 때의 배치안입니다」 — `EQ-13`)은 평문이라 이름을 글자
+    그대로 싣는다(알림창 · 패널이 글자 그대로 넣는다)."""
     repository, setup = _overlay(tmp_path, TILDE_NAME)
     overlaid = _scenario(repository, setup).latest_schedule_revision_id
     cleared = repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=overlaid)
@@ -747,7 +761,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_an_old_official_revision_head
     app = _ok(_space(tmp_path, setup, overlaid).run())
 
     assert any(
-        f"「{TILDE_ESCAPED}」" in full and "가정이던 때의 배치안" in full
+        f"「{TILDE_NAME}」" in full and "가정이던 때의 배치안" in full
         for _, full in _layout_lines(app)
     ), _layout_lines(app)
     _assert_tildes_escaped(app)
@@ -760,9 +774,9 @@ STAR_ESCAPED = "가정\\*R6\\*B"
 
 
 def _assert_stars_escaped(app: AppTest) -> None:
-    """이름이 실린 마크다운 글(본문·풍선) 모두가 별표를 막았다."""
+    """이름이 실린 마크다운 글(본문·풍선) 모두가 별표를 막았다(평문 알림 글은 뺀다)."""
     texts = [
-        *_texts(app),
+        *_drawn_texts(app),
         *(str(item.help) for item in app.toggle if item.help),
         *(str(item.help) for item in app.button if item.help),
     ]

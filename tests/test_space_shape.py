@@ -84,7 +84,9 @@ def test_the_shape_is_a_decorative_floor_and_fab_mark() -> None:
 
 
 def test_the_presets_and_their_adjust_ranges_are_the_decided_ones() -> None:
-    """사양 4b-1 의 아홉 — (하한, 상한, 처음 값). 원·마름모는 모양 조절 값이 없다."""
+    """사양 4b-1 의 아홉 — (하한, 상한, 처음 값). 원·마름모는 모양 조절 값이 없다. 블록 화살표 머리
+    길이는 짧은 변 기준이라(2026-11-04 Space 결정 보드 답) 처음 값 0.7 이 넣는 크기 10×5 에서 옛
+    폭 기준 0.35 와 같은 머리(3.5)다."""
     assert SHAPE_PRESETS == (
         "rect",
         "ellipse",
@@ -106,7 +108,7 @@ def test_the_presets_and_their_adjust_ranges_are_the_decided_ones() -> None:
         "triangle": ((0, 1, 0.5),),
         "diamond": (),
         "cross": ((0.05, 0.95, 0.34),),
-        "arrowblock": ((0.05, 1, 0.5), (0.05, 0.95, 0.35)),
+        "arrowblock": ((0.05, 1, 0.5), (0.05, 0.95, 0.7)),
     }
     assert SHAPE_FILL_KEYS == (*MARK_COLOR_KEYS, "ink", "surface")
     assert SHAPE_LINE_KEYS == ("auto", "none", "ink", *MARK_COLOR_KEYS)

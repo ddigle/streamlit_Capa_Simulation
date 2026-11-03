@@ -491,7 +491,12 @@
 .sle-group-name[hidden], .sle-block-props[hidden] {
   display: none !important;
 }
-.sle-lineprops[hidden], .sle-head-gallery[hidden], .sle-bay-flips[hidden], .sle-bay-prefix[hidden] { display: none !important; }
+.sle-lineprops[hidden], .sle-head-gallery[hidden], .sle-bay-prefix[hidden] { display: none !important; }
+/* 돌리기·뒤집기 한 줄(2026-11-04 Space 결정 보드 답 — 뒤집기를 찾기 쉽게 이름표 칸 바로 밑, 90° 돌리기 곁). 돌리기는 요소 하나일
+   때만, 뒤집기는 고른 것 가운데 베이·비대칭 도형이 있을 때만 선다(대칭 꼴만이면 숨김). */
+.sle-turns { display: flex; flex-wrap: wrap; gap: 6px; }
+.sle-turns[hidden], .sle-flip[hidden] { display: none !important; }
+.sle-flip svg { width: 14px; height: 14px; flex: none; }
 /* 도형 서식 칸(여럿 골라도 선다) — 도면 요소 속성 칸과 같은 꼴. 「도형」 단추는 지금 도형 그림 + 이름, 모양 조절·투명도는 숫자 + %. */
 .sle-shapeprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
 .sle-shapeprops[hidden], .sle-shape-adj-row[hidden] { display: none !important; }
@@ -500,7 +505,6 @@
 .sle-shape-now { width: 16px; height: 16px; flex: none; }
 .sle-pct { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .sle-pct input { width: 100%; min-width: 0; box-sizing: border-box; }
-.sle-shape-flips { display: flex; flex-wrap: wrap; gap: 6px; }
 /* 베이 번호 칸 앞의 고정 글 「B」 — 이름 칸 격자(이름 · 값)의 값 칸 안에서 칸과 나란히. */
 .sle-inspector-ext .sle-field.sle-mark-name:has(> .sle-bay-prefix:not([hidden])) {
   display: grid; grid-template-columns: 5.6em auto minmax(0, 1fr); align-items: center;
@@ -513,7 +517,6 @@
 .sle-head-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 52px)); gap: 4px; }
 .sle button.sle-head-cell { width: 100%; height: 28px; padding: 0; justify-content: center; }
 .sle button.sle-head-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
-.sle-bay-flips { display: flex; flex-wrap: wrap; gap: 6px; }
 /* 서식(왼쪽 칸 「서식」 — 엑셀 서식 붓). 붓을 든 동안 단추는 강조색 면이고 잠그면 안쪽 테가 하나 더 선다. 붓을 든 무대의 커서는
    copy 다(손잡이·끌기 커서보다 앞 — 붓을 든 채 누르면 끌지 않고 붙인다). Space·가운데 버튼 화면 이동 중에는 이동 커서 그대로. */
 .sle-format { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
@@ -682,7 +685,8 @@
 }
 .sle-sheet[hidden] { display: none; }
 .sle-sheet.is-min { height: auto !important; }
-.sle-sheet.is-min .sle-sheet-main, .sle-sheet.is-min .sle-sheet-grip, .sle-sheet.is-min .sle-sheet-menu { display: none; }
+.sle-sheet.is-min .sle-sheet-main, .sle-sheet.is-min .sle-sheet-grip, .sle-sheet.is-min .sle-sheet-menu,
+.sle-sheet.is-min .sle-sheet-csvmenu { display: none; }
 .sle-sheet-head {
   display: flex; align-items: center; gap: 6px; flex: none; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px;
   border-bottom: 1px solid var(--sle-border); cursor: move; touch-action: none; user-select: none;
@@ -695,6 +699,17 @@
 .sle-sheet-tab b { font-variant-numeric: tabular-nums; }
 .sle-sheet-tab b:empty { display: none; }
 .sle button.sle-sheet-min, .sle button.sle-sheet-close { height: 24px; min-width: 24px; padding: 0 6px; font-size: 14px; }
+/* 「CSV」(2026-11-04 Space 결정 보드 답 — 옛 도면 아래 내려받기를 창 안으로) — 제목 줄 단추와 그 밑 두 줄 펼침(층 전체 · 보이는
+   줄). 펼침은 제목 줄 바로 밑 오른쪽에 선다 — 접힌 창에서 누르면 창을 먼저 편다(JS). */
+.sle button.sle-sheet-csv { height: 24px; padding: 0 8px; font-size: 12px; }
+.sle button.sle-sheet-csv[aria-expanded="true"] { border-color: var(--sle-accent); color: var(--sle-accent); }
+.sle-sheet-csvmenu {
+  position: absolute; z-index: 3; top: 32px; right: 34px; display: flex; flex-direction: column; gap: 4px; padding: 6px;
+  border: 1px solid var(--sle-border-strong); border-radius: 8px; background: var(--sle-surface); box-shadow: 0 0 0 2px var(--sle-border);
+  cursor: default;
+}
+.sle-sheet-csvmenu[hidden] { display: none; }
+.sle-sheet-csvmenu button { justify-content: flex-start; height: 26px; font-size: 12px; }
 .sle-sheet-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .sle-sheet-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: none; padding: 5px 10px;

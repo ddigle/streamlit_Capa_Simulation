@@ -12,6 +12,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
@@ -76,6 +77,7 @@ from capa_simulation.components.sample_data import (
 )
 from capa_simulation.components.shortening_source import ShorteningStop
 from capa_simulation.components.space_floor_layout import (
+    LAYOUT_ALERT_CODES,
     compare_payload,
     effective_floor_layout,
     floor_layout_differences,
@@ -136,8 +138,8 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
-from capa_simulation.components.state_alerts import alert_page_error
-from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.state_alerts import alert_page_error, equipment_scope
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     NoticeMark,
     just_submitted,
@@ -273,7 +275,12 @@ from capa_simulation.services.space_shortening_layer import (
     floor_layer,
     floor_short_line,
 )
-from capa_simulation.services.space_unit_sheet import PLACE_PLACED, PLACE_UNPLACED, unit_sheet
+from capa_simulation.services.space_unit_sheet import (
+    PLACE_PLACED,
+    PLACE_UNPLACED,
+    floor_csv,
+    unit_sheet,
+)
 from capa_simulation.services.space_unit_state import (
     as_of_range,
     clamp_as_of,
@@ -517,8 +524,6 @@ try:
     # 보내기」)에서 빠진다. 샘플 fleet 화면에서도 저장된 상태를 그대로 그린다.
     floor_states = load_floor_states(equipment_database_path)
     inactive_floors = floor_states.inactive
-    # 이 설비 시나리오에 일정이 없는 호기는 그리지 않는다(G2 — 계산 프레임).
-    unscheduled_count = 0
     # 필요 단축 보기가 계획에 넘길 계산 세 표 — 샘플로 덮기 **전**의 것이다(필요 단축 일정과 같은
     # 길로 `shortening_frames` 가 샘플 세 표를 다시 낸다 — 같은 계획 키).
     shortening_saved: Frames = (
@@ -531,10 +536,10 @@ try:
         downtime = sample_downtime_schedule(anchor_date=today)
         using_sample_equipment = True
     else:
+        # 이 설비 시나리오에 일정이 없는 호기는 그리지 않는다(G2 — 계산 프레임 — 상태 알림 `EQ-04`).
         _, equipment, downtime = latest_snapshot.calculation_frames()
-        unscheduled_count = len(latest_snapshot.unscheduled_units)
         using_sample_equipment = False
-    # 사이드바 배치 줄의 도면 요소·Main 설비명 위치 실효 차이(가정 리비전만 질의한다).
+    # 배치 알림(`EQ-13`)의 도면 요소·Main 설비명 위치 실효 차이(가정 리비전만 질의한다).
     floor_differences = floor_layout_differences(equipment_database_path, equipment_session)
 except BOOTSTRAP_ERRORS as exc:
     message = "Space 설비 데이터를 준비하지 못했습니다: " + bootstrap_error_message(
@@ -615,16 +620,56 @@ if not using_sample_equipment and latest_snapshot is not None:
 # 변경」 을 한 회차 늦게 말하지 않게(가용설비 현황·필요 단축 일정과 같은 차례).
 render_equipment_scenario_row(equipment_session)
 # 사이드바 「Space 도면」 상자의 자리 — 지금 세우고(조건 카드보다 먼저 — 사이드바는 부른 차례로
-# 선다) 안은 아래 「상자 채우기」 가 채운다. 배치 줄(「가정 배치 · 공식과 다른 호기 n대」 등 — 도면
-# 위 머리 칸에 서던 것)과 일정 없는 호기 줄(가정 시나리오 계산 제외)도 그 상자 끝이다.
+# 선다) 안은 아래 「상자 채우기」 가 채운다. 상자에는 조작(자리 · 도면 · 견주기)만 둔다.
 # 테두리는 조회 조건 패널 · 설정 상자와 같은 1px 선이다(`border=True` — 패널과 같은 꼴).
 space_box = st.sidebar.container(border=True, key=page_box_key(SPACE_BOX_NAME))
-layout_lines = (
-    [] if using_sample_equipment else space_layout_notices(equipment_session, floor_differences)
+# 상자 끝에 서던 상태 문장(배치 줄 「가정 배치 · 공식과 다른 호기 n대 · …」 · 모듈 구성이
+# 바뀐 묶음 · 지운 호기의 차이 · 일정 없는 호기)은 상태 알림이다(2026-11-04 Space 결정 보드
+# 답 — 화면에 상태 문장을 달지 않는다). 내용이 바뀔 때만 알림창이 뜨고 Alarm 에 쌓이며, 없어지면
+# 해소 줄이 선다 — 그래서 조건이 없는 회차에도 넷 모두 늘 같은 자리에서 부른다(표지 자리 수가
+# 회차마다 같다). 범위는 세션의 (공통 대장, 일정) 리비전 쌍이다. 일정 없는 호기는 가용설비
+# 현황과 같은 조건이라 같은 코드 · 범위 · 내용(`EQ-04` — 설비명 목록)으로 낸다 — 화면을 옮겨도
+# 다시 뜨지 않는다.
+space_alert_scope = equipment_scope(equipment_session)
+layout_alerts = {
+    notice.code: notice
+    for notice in (
+        [] if using_sample_equipment else space_layout_notices(equipment_session, floor_differences)
+    )
+}
+unscheduled_units = (
+    sorted(latest_snapshot.unscheduled_units)
+    if latest_snapshot is not None and not using_sample_equipment
+    else []
 )
-unscheduled_line = unscheduled_notice(
-    unscheduled_count, official=equipment_session.is_official_pair
-)
+with notices:
+    for layout_code in LAYOUT_ALERT_CODES:
+        layout_alert = layout_alerts.get(layout_code)
+        alerts.state(
+            layout_code,
+            scope=space_alert_scope.scope,
+            content=layout_alert.content if layout_alert is not None else None,
+            active=layout_alert is not None,
+            text=layout_alert.short if layout_alert is not None else None,
+            full=layout_alert.text if layout_alert is not None else None,
+            scope_label=space_alert_scope.label,
+        )
+    alerts.state(
+        "EQ-04",
+        scope=space_alert_scope.scope,
+        content=unscheduled_units or None,
+        active=bool(unscheduled_units),
+        text=(
+            f"공식 일정 없음 {len(unscheduled_units):,}대 — 도면에 그리지 않음"
+            if equipment_session.is_official_pair
+            else f"이 설비 시나리오에 일정이 없는 호기 {len(unscheduled_units):,}대 — 도면 · "
+            "계산에서 빠짐 · 설비 마스터 일정 칸에 적어 저장"
+        ),
+        full=unscheduled_notice(
+            len(unscheduled_units), official=equipment_session.is_official_pair
+        ),
+        scope_label=space_alert_scope.label,
+    )
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
 edit_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
@@ -875,31 +920,39 @@ def _exited_mask(rows: pd.DataFrame) -> pd.Series:
     return rows[LAYOUT_EXITED_COLUMN].fillna(False).astype(bool)
 
 
-def _view_sheet(floor_status: pd.DataFrame, drawn: pd.DataFrame) -> dict[str, Any]:
+def _view_sheet(
+    floor_status: pd.DataFrame, drawn: pd.DataFrame, csv: Mapping[str, str]
+) -> dict[str, Any]:
     """층 상세 보기 「호기 정보」 창의 표 — 이 층 행(공정소분류 필터 뒤) 가운데 기준일에 도면에서
     빠지지 않은 것, 칸은 `FLOOR_TABLE_COLUMNS`(21칸) + 「도면」. 도면에 선 행(`drawn` — 레이아웃
-    반영·좌표가 다 있음)은 배치, 나머지는 레이아웃표시로 미배치·레이아웃 제외다."""
+    반영·좌표가 다 있음)은 배치, 나머지는 레이아웃표시로 미배치·레이아웃 제외다. `csv` 는 창
+    「CSV」 의 층 전체(`floor_csv`)다."""
     placed = {str(name).strip() for name in drawn[EQUIPMENT_ID_COLUMN].dropna()}
-    return unit_sheet(
+    sheet = unit_sheet(
         floor_status.loc[~_exited_mask(floor_status)],
         columns=FLOOR_TABLE_COLUMNS,
         place_of=dict.fromkeys(placed, PLACE_PLACED),
     )
+    return {**sheet, "csv": dict(csv)}
 
 
 def _edit_sheet(
-    status: pd.DataFrame, key: FloorKey, items: Sequence[Mapping[str, Any]]
+    status: pd.DataFrame,
+    key: FloorKey,
+    items: Sequence[Mapping[str, Any]],
+    csv: Mapping[str, str] | None,
 ) -> dict[str, Any]:
     """배치 편집기 「호기 정보」 창의 표 — 편집본 상태 가운데 이 층 행(기준일에 도면에서 빠지지 않은
     것, 공정 필터와 상관없이 — 편집기와 같다)과 편집기 호기(층 미정 미배치 포함). 「도면」 칸은
-    편집기에 보낸 자리(배치·미배치)이고 브라우저가 적용 전 편집으로 덮어 쓴다."""
+    편집기에 보낸 자리(배치·미배치)이고 브라우저가 적용 전 편집으로 덮어 쓴다. `csv` 는 창 「CSV」
+    의 층 전체(보기와 같은 저장본 글 — `floor_csv`)다."""
     ids = {str(item["id"]) for item in items}
     names = status[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     on_floor = status["동"].eq(key[0]).fillna(False).astype(bool) & status["층"].eq(key[1]).fillna(
         False
     ).astype(bool)
     rows = status.loc[(on_floor & ~_exited_mask(status)) | names.isin(ids).fillna(False)]
-    return unit_sheet(
+    sheet = unit_sheet(
         rows,
         columns=FLOOR_TABLE_COLUMNS,
         place_of={
@@ -907,6 +960,7 @@ def _edit_sheet(
             for item in items
         },
     )
+    return sheet if csv is None else {**sheet, "csv": dict(csv)}
 
 
 def _today_status() -> pd.DataFrame:
@@ -1528,6 +1582,7 @@ def _render_layout_editor(
     profile: FloorLayoutProfile | None,
     *,
     pending_save: bool = False,
+    sheet_csv: Mapping[str, str] | None = None,
 ) -> None:
     """한 층 배치 편집기. 편집본을 그리고, `적용` 이 오면 검증해 편집본·대기분에 얹는다.
 
@@ -1637,7 +1692,7 @@ def _render_layout_editor(
         legend={"entries": space_legend_entries(None, choice=effective_choice), "asOf": ""},
         pending_save=pending_save,
         # 「호기 정보」 창(epoch 밖) — 편집본의 이 층 행 + 편집기 호기.
-        sheet=_edit_sheet(status, key, inputs.items),
+        sheet=_edit_sheet(status, key, inputs.items, sheet_csv),
     )
     if submission is None:
         return
@@ -1885,9 +1940,9 @@ def _render_fab_editor(
     st.rerun()
 
 
-# 사이드바 「Space 도면」 상자 채우기(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷: `S.PKG FAB 전체`
-# › 층 · `배치 편집`· `도면·캔버스 편집` · `공식과 견주기` · 일정 없는 호기 줄 — 같은 머리 칸에 서던
-# 배치 줄 「가정 배치 · …」 도 함께). 위젯 key 는 옮기기
+# 사이드바 「Space 도면」 상자 채우기(2026-11-03 사용자 요청 — 레이아웃 위 요소: `S.PKG FAB 전체`
+# › 층 · `배치 편집`· `도면·캔버스 편집` · `공식과 견주기` — 배치 줄 · 일정 없는 호기 줄은
+# 2026-11-04 결정 보드 답으로 상태 알림이 됐다, 위 「상자의 자리」). 위젯 key 는 옮기기
 # 전 그대로다(세션 값·화면 확인이 산다). 자리를 옮기는 것은 모두 콜백이다(재실행 한 번). 줄은 FAB·층
 # 모두 같은 수이고 안의 단추만 범위를 따른다. FAB 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은
 # 공식에서만 — G5).
@@ -2018,25 +2073,6 @@ with space_box:
             COMPARE_LABEL, value=False, key=COMPARE_LOCKED_KEY, disabled=True, help=compare_lock
         )
         compare_on = False
-    for notice in layout_lines:
-        # 배치 줄 — 짧은 줄 + 풍선에 온 문장(일정 없는 호기 줄과 같은 꼴). 줄은 설비 시나리오
-        # 이름·Main 설비명을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
-        st.caption(
-            (":material/compare: " if notice.kind == "info" else ":material/layers: ")
-            + markdown_safe_tildes(notice.short),
-            help=markdown_safe_tildes(notice.text),
-        )
-    if unscheduled_line is not None:
-        # 이 설비 시나리오에 일정이 없는 호기 — 그리지 않고 계산에 들지 않는다. 풍선에 온 문장.
-        st.caption(
-            ":material/event_busy: "
-            + (
-                f"공식 일정 없음 {unscheduled_count:,}대 · 그리지 않음"
-                if equipment_session.is_official_pair
-                else f"일정 없는 호기 {unscheduled_count:,}대 · 계산 제외"
-            ),
-            help=markdown_safe_tildes(unscheduled_line),
-        )
 
 # 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
 # 서거나 저장·버리기로 사라질 때 아래 층 상세·FAB 상자의 순번이 밀리면, Streamlit 은 요소를
@@ -2282,6 +2318,8 @@ else:
         .copy()
         .reset_index(drop=True)
     )
+    # 「호기 정보」 창 「CSV」 의 층 전체(옛 도면 아래 내려받기와 같은 칸 · 줄 — 보기 · 편집 모두).
+    floor_sheet_csv = floor_csv(floor_equipment, building=selected_building, floor=selected_floor)
     layout_profile = load_floor_layout_profile(
         equipment_database_path, selected_building, selected_floor
     )
@@ -2462,6 +2500,7 @@ else:
                 selected_floor,
                 layout_profile,
                 pending_save=pending_save,
+                sheet_csv=floor_sheet_csv,
             )
         else:
             if viewer_inputs is None:
@@ -2527,12 +2566,11 @@ else:
                 pending_save=pending_save,
                 # 「호기 정보」 창(epoch 밖) — 이 층 행(공정 필터 뒤) 가운데 기준일에 도면에서
                 # 빠지지 않은 것. 「도면」 칸은 도면에 선 호기면 배치다.
-                sheet=_view_sheet(floor_status, floor_equipment),
+                sheet=_view_sheet(floor_status, floor_equipment, floor_sheet_csv),
                 pick_to_server=shown_layer is not None,
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
-    # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다). 아래 key 있는 CSV 줄의 자리가 밀리지
-    # 않는다.
+    # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다).
     with st.container(key="space_shortening_slot"):
         if space_layer is not None and shown_layer is not None:
             render_floor_layer_panel(
@@ -2544,14 +2582,9 @@ else:
                 key_of=unit_keys_by_name(floor_status),
                 picked_key=SPACE_PICKED_KEY,
             )
-    # 호기 칸은 도면 위 「호기 정보」 창이다(2026-11-03 사용자 요청 — 「하단이 아니라 편집기
-    # 안에서」). 도면 아래에는 층 CSV 한 줄만 둔다 — 현장 배치 검토에 그대로 쓰이는 층 전체·모든
-    # 칸이다.
-    render_csv_download(
-        data=floor_equipment.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"space_{selected_building}_{selected_floor}.csv",
-        key=f"space_floor_download_{selected_building}_{selected_floor}",
-    )
+    # 호기 칸과 층 CSV 는 도면 위 「호기 정보」 창 안이다(2026-11-03 사용자 요청 — 「하단이 아니라
+    # 편집기 안에서」, 2026-11-04 Space 결정 보드 답 — CSV 단추도 창 안으로). 도면 아래에는 아무것도
+    # 두지 않는다.
 # 도면·캔버스 팝업 호스트 — 단추는 사이드바 「Space 도면」 상자에, 팝업은 본문 끝 한 자리에서
 # 연다(사이드바 `with` 안에서 팝업을 열지 않는다). 층 캔버스 이탈 검사는 그린 호기가 아니라 저장된
 # 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다. 그 회차 세션 스냅샷의 마스터는 공식 배치다

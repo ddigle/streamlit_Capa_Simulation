@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 from typing import Any
 
@@ -47,6 +49,7 @@ process.stdout.write(JSON.stringify({
   wins: (input.wins || []).map((raw) => storedSheetWin(raw)),
   states: (input.states || []).map((raw) => storedSheetState(raw)),
   clears: (input.clears || []).map((c) => clearOfSheet(c.stage, c.win, c.rect)),
+  csvs: (input.csvs || []).map((c) => sheetCsv(c.columns, c.rows)),
 }))
 """
 
@@ -437,3 +440,77 @@ def test_a_unit_under_the_window_moves_to_the_widest_free_band() -> None:
         None,
         None,
     ]
+
+
+def test_the_shown_rows_csv_quotes_like_python_and_keeps_the_window_values() -> None:
+    """「CSV」 의 「보이는 줄」(`sheetCsv` — 2026-11-04 Space 결정 보드 답) — 창의 칸 이름이 머리,
+    값은 창이 받은 그대로(날짜 글 · 수 글 · 빈 값은 빈칸)이고 쉼표 · 큰따옴표 · 줄바꿈이 든 칸만
+    큰따옴표로 싼다(파이썬 `csv` QUOTE_MINIMAL · LF 와 같은 글). 엑셀이 다시 읽으면 같은 칸이다."""
+    rows = [
+        *ROWS,
+        _row("EQ-06", 'Saw, "B"', 12.5, "2026-01-02", "줄\n바꿈"),
+    ]
+    (got,) = _run({"csvs": [{"columns": COLUMNS, "rows": rows}]})["csvs"]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow([column["name"] for column in COLUMNS])
+    for row in rows:
+        writer.writerow(
+            [
+                "" if cell is None else (f"{cell:g}" if isinstance(cell, float) else cell)
+                for cell in row["cells"]
+            ]
+        )
+    assert got == buffer.getvalue()
+    back = list(csv.reader(io.StringIO(got)))
+    assert back[-1] == ['Saw, "B"', "EQ-06", "12.5", "2026-01-02", "줄\n바꿈"]
+    assert back[4][0] == "" and back[3][2] == ""
+
+
+def test_the_csv_button_lives_in_the_window_and_downloads_in_the_browser() -> None:
+    """「CSV」 는 창 제목 줄 단추와 두 줄 펼침(층 전체 · 보이는 줄)이다 — 옛 도면 아래 내려받기 줄을
+    걷었다(같은 일을 두 자리에 두지 않는다). 층 전체는 파이썬이 지은 글(data `sheet.csv`)을, 보이는
+    줄은 지금 탭의 줄(`S.sheetShown`)을 창의 칸으로 지어 BOM + UTF-8 Blob 으로 내려받는다.
+    파이썬으로 아무것도 보내지 않는다. 접힌 창에서 누르면 창을 편다. Esc 는 펼침을 먼저 닫는다."""
+    head = HTML[
+        HTML.index('<div class="sle-sheet-head"') : HTML.index('<div class="sle-sheet-main">')
+    ]
+    assert head.index('class="sle-sheet-csv"') < head.index('class="sle-sheet-min"')
+    assert 'aria-haspopup="menu"' in head and 'aria-controls="sle-sheet-csvmenu"' in head
+    menu = HTML[HTML.index('class="sle-sheet-csvmenu"') : HTML.index('<div class="sle-sheet-menu"')]
+    assert 'data-csv="all"' in menu and 'data-csv="shown"' in menu and 'role="menu"' in menu
+    adopt = JS[JS.index("  function adoptSheet() {") : JS.index("  function sheetRows() {")]
+    assert "typeof SHEET.csv.text === 'string' && typeof SHEET.csv.file === 'string'" in adopt
+    render = JS[JS.index("  function renderSheet() {") : JS.index("  function drawSheetTable(")]
+    assert "S.sheetShown = shown" in render
+    assert "「CSV」 의 층 전체로 보세요" in render and "아래 층 CSV" not in JS
+    csv_part = JS[JS.index("  function closeCsvMenu(") : JS.index("  if (sheetBox) {")]
+    assert "new Blob([`\\ufeff${text}`], { type: 'text/csv;charset=utf-8' })" in csv_part
+    assert "saveCsv(sheet.csv.text, sheet.csv.file)" in csv_part
+    assert "saveCsv(sheetCsv(sheet.columns, S.sheetShown), `${base}_보이는줄.csv`)" in csv_part
+    assert "if (S.sheetWin.min) {" in csv_part
+    assert "setStateValue" not in csv_part and "setTriggerValue" not in csv_part
+    keys = JS[
+        JS.index("    sheetBox.onkeydown = (event) => {") : JS.index("    // 펼침 밖을 누르면")
+    ]
+    assert keys.index("if (!sheetCsvMenu.hidden) closeCsvMenu(true)") < keys.index(
+        "else if (S.sheetMenu) closeMenu(true)"
+    )
+    assert ".sle-sheet.is-min .sle-sheet-csvmenu { display: none; }" in CSS.replace(
+        ".sle-sheet.is-min .sle-sheet-menu,\n", ""
+    )
+
+
+def test_a_list_row_zooms_to_three_hundred_percent_and_the_pick_view_stays_at_most() -> None:
+    """목록 줄 누르기(`goToUnit`)는 그 호기로 옮기며 300% 까지만 확대한다(2026-11-04 Space 결정
+    보드 답 — 800% 는 둘레 호기가 거의 안 보였다). 「고른 곳 보기」 는 그대로 최대(800%)다."""
+    assert "  const MAX_ZOOM = 8\n" in JS and "  const LIST_ROW_ZOOM = 3\n" in JS
+    fit = JS[JS.index("  function zoomToBox(") : JS.index("  function panBy(")]
+    assert "function zoomToBox(box, cap = MAX_ZOOM) {" in fit
+    assert "1, Math.min(cap, MAX_ZOOM))" in fit
+    go = JS[
+        JS.index("  function goToUnit(id) {") : JS.index("    if (item && isUnit(item) && !VIEW")
+    ]
+    assert "zoomToBox(bbox(VIEW ? [item] : expanded([item])), LIST_ROW_ZOOM)" in go
+    assert JS.count("zoomToBox(") == 3
+    assert "if (list.length) zoomToBox(bbox(list))\n" in JS

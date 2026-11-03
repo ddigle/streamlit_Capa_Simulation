@@ -173,15 +173,16 @@ def test_every_preset_path_stays_inside_its_box_at_the_ends_of_its_adjust_range(
 
 def test_the_default_drawings_are_the_spec_paths() -> None:
     """사양 4b-1 의 그리기 경로(8×6 · 처음 값). 사각형 둥글기 0 은 네 귀 다각형, 둥글기가 있으면 호
-    넷이다."""
+    넷이다. ㄴ자·ㄷ자 두께와 블록 화살표 머리 길이는 짧은 변(6) 기준이다(2026-11-04 Space 결정 보드
+    답)."""
     keys = list(SHAPE_PRESETS)
     paths = _run({"paths": [[key, 8, 6, _defaults(key)] for key in keys]})["paths"]
     drawn = dict(zip(keys, (path["d"] for path in paths), strict=True))
 
     assert drawn["rect"] == "M 0 0 L 8 0 L 8 6 L 0 6 Z"
     assert drawn["ellipse"] == "M 0 3 A 4 3 0 1 0 8 3 A 4 3 0 1 0 0 3 Z"
-    assert drawn["lbox"] == "M 0 0 L 2.8 0 L 2.8 3.9 L 8 3.9 L 8 6 L 0 6 Z"
-    assert drawn["cbox"] == "M 0 0 L 8 0 L 8 1.8 L 2.4 1.8 L 2.4 4.2 L 8 4.2 L 8 6 L 0 6 Z"
+    assert drawn["lbox"] == "M 0 0 L 2.1 0 L 2.1 3.9 L 8 3.9 L 8 6 L 0 6 Z"
+    assert drawn["cbox"] == "M 0 0 L 8 0 L 8 1.8 L 1.8 1.8 L 1.8 4.2 L 8 4.2 L 8 6 L 0 6 Z"
     assert (
         drawn["frame"]
         == "M 0 0 L 8 0 L 8 6 L 0 6 Z M 0.72 0.72 L 0.72 5.28 L 7.28 5.28 L 7.28 0.72 Z"
@@ -189,7 +190,7 @@ def test_the_default_drawings_are_the_spec_paths() -> None:
     assert drawn["triangle"] == "M 4 0 L 8 6 L 0 6 Z"
     assert drawn["diamond"] == "M 4 0 L 8 3 L 4 6 L 0 3 Z"
     assert drawn["cross"].startswith("M 2.98 0 L 5.02 0 L 5.02 1.98 L 8 1.98")
-    assert drawn["arrowblock"] == "M 0 1.5 L 5.2 1.5 L 5.2 0 L 8 3 L 5.2 6 L 5.2 4.5 L 0 4.5 Z"
+    assert drawn["arrowblock"] == "M 0 1.5 L 3.8 1.5 L 3.8 0 L 8 3 L 3.8 6 L 3.8 4.5 L 0 4.5 Z"
     (rounded,) = _run({"paths": [["rect", 8, 6, [0.5]]]})["paths"]
     assert rounded["d"] == (
         "M 1.5 0 H 6.5 A 1.5 1.5 0 0 1 8 1.5 V 4.5 A 1.5 1.5 0 0 1 6.5 6 H 1.5 "
@@ -216,9 +217,59 @@ def test_a_flipped_lbox_opens_to_the_other_side() -> None:
     (plain, mirrored) = _run(
         {"placed": [["lbox", 8, 6, [0.25, 0.25], 0, False], ["lbox", 8, 6, [0.25, 0.25], 0, True]]}
     )["placed"]
-    # 둘째 꼭짓점 = 세로 팔 위 오른쪽 귀(x = t1). 뒤집으면 거울 자리.
-    assert plain[1] == pytest.approx({"x": -2, "y": -3})
-    assert mirrored[1] == pytest.approx({"x": 2, "y": -3})
+    # 둘째 꼭짓점 = 세로 팔 위 오른쪽 귀(x = t1 = 0.25 × 짧은 변 6). 뒤집으면 거울 자리.
+    assert plain[1] == pytest.approx({"x": -2.5, "y": -3})
+    assert mirrored[1] == pytest.approx({"x": 2.5, "y": -3})
+
+
+def _arm_widths(path: dict[str, Any], key: str) -> dict[str, float]:
+    """ㄴ자(세로 팔 두께 t1 · 가로 팔 두께 t2 · 가로 팔 길이) · ㄷ자(등 t1 · 팔 t2) · 블록
+    화살표(머리 길이 · 몸통 길이)의 잰 값 — 꼭짓점에서 읽는다."""
+    pts = path["pts"]
+    if key == "lbox":
+        (_, _), (t1, _), (_, inner_y), (right, _), (_, bottom), _ = pts
+        return {"t1": t1, "t2": bottom - inner_y, "reach": right - t1}
+    if key == "cbox":
+        return {"t1": pts[3][0], "t2": pts[2][1]}
+    head_start = pts[1][0]
+    return {"head": pts[3][0] - head_start, "body": head_start}
+
+
+@pytest.mark.parametrize("rot", _ROTATIONS)
+def test_stretching_the_long_side_keeps_every_thickness(rot: int) -> None:
+    """2026-11-04 Space 결정 보드 답 — ㄴ자를 오른쪽 손잡이로 넓히면 **오른쪽으로 뻗은 가로 팔
+    길이만** 늘고 두 팔 두께는 그대로다(두께가 짧은 변 기준 — 엑셀처럼). ㄷ자 등 · 팔 두께, 블록
+    화살표 머리 길이도 같다(몸통만 길어진다). 돌린 도형은 제자리 상자(lw × lh)가 같으면 같은
+    그림이라 돌림과 상관없다 — 화면에서 늘인 축이 제자리 긴 변이면 된다. 짧은 변이 바뀌면 두께도 그
+    비율이다."""
+    cases: list[tuple[str, float, float, list[float]]] = [
+        ("lbox", 8, 8, _defaults("lbox")),
+        ("lbox", 16, 8, _defaults("lbox")),
+        ("lbox", 40, 8, _defaults("lbox")),
+        ("cbox", 8, 8, _defaults("cbox")),
+        ("cbox", 24, 8, _defaults("cbox")),
+        ("arrowblock", 10, 5, _defaults("arrowblock")),
+        ("arrowblock", 30, 5, _defaults("arrowblock")),
+        ("lbox", 16, 16, _defaults("lbox")),
+    ]
+    paths = _run({"paths": cases})["paths"]
+    widths = [_arm_widths(path, case[0]) for case, path in zip(cases, paths, strict=True)]
+    square, wide, wider, cbox, cwide, arrow, longer, grown = widths
+    assert wide["t1"] == pytest.approx(square["t1"]) == pytest.approx(wider["t1"]) == 2.8
+    assert wide["t2"] == pytest.approx(square["t2"]) == pytest.approx(wider["t2"]) == 2.8
+    assert wide["reach"] - square["reach"] == pytest.approx(8)
+    assert wider["reach"] - square["reach"] == pytest.approx(32)
+    assert (cwide["t1"], cwide["t2"]) == pytest.approx((cbox["t1"], cbox["t2"]))
+    # 넣는 크기(10×5)의 블록 화살표 머리는 옛 폭 기준 0.35 × 10 과 같은 3.5 다 — 처음 모습은 그대로.
+    assert arrow["head"] == pytest.approx(3.5) == pytest.approx(longer["head"])
+    assert longer["body"] - arrow["body"] == pytest.approx(20)
+    # 짧은 변이 8 → 16 이면 두께도 두 배(엑셀과 같다 — 비율 유지 키우기도 이 꼴).
+    assert grown["t1"] == pytest.approx(2 * square["t1"])
+    # 돌림 넷 모두 같은 제자리 그림 — 화면 자리는 돌린 상자 안이다.
+    placed = _run({"placed": [["lbox", 16, 8, _defaults("lbox"), rot, False]]})["placed"][0]
+    half_w, half_h = (4, 8) if rot % 180 else (8, 4)
+    for spot in placed:
+        assert abs(spot["x"]) <= half_w + 1e-9 and abs(spot["y"]) <= half_h + 1e-9
 
 
 # ------------------------------------------------------------------------------- 노란 손잡이
@@ -271,12 +322,12 @@ def test_handles_follow_the_spec_spots_and_presets_without_values_have_none() ->
     ]
     assert spots == [
         [(1.5, 0, "x", 0)],
-        [(2.8, 0, "x", 0), (8, 3, "y", 1)],
-        [(2.4, 3, "x", 0), (8, 1.8, "y", 1)],
+        [(2.1, 0, "x", 0), (8, 3, "y", 1)],
+        [(1.8, 3, "x", 0), (8, 1.8, "y", 1)],
         [(0.96, 0.96, "y", 0)],
         [(2, 0, "x", 0)],
         [(6, 1, "x", 0)],
-        [(3.25, 1.25, "y", 0), (6.5, 0, "x", 1)],
+        [(4.125, 1.25, "y", 0), (8.25, 0, "x", 1)],
         [],
         [],
     ]
@@ -309,21 +360,21 @@ def _shape_item(**values: Any) -> dict[str, Any]:
 
 def test_dragging_a_yellow_handle_changes_only_that_value() -> None:
     """실제 `adjustedLook` — 상자 (10, 10, 8×6), 캔버스 높이 60(화면 위 = 60 − (y+h) = 44). ㄴ자
-    세로 팔 손잡이를 화면 x 14 로 끌면 a1 = 4/8 = 0.5(가로 팔은 그대로), 90° 돌린 ㄴ자(6×8 상자 —
-    화면 위 42, 제자리 8×6)는 화면 세로가 그 축이다(세로 팔이 위로 간다). 처음 값으로 돌아오면 그
-    키가 빠지고, 같은 값이면 null 이다."""
+    세로 팔 손잡이를 화면 x 13 으로 끌면 a1 = 3/6 = 0.5(짧은 변 기준 — 가로 팔은 그대로), 90° 돌린
+    ㄴ자(6×8 상자 — 화면 위 42, 제자리 8×6)는 화면 세로가 그 축이다(세로 팔이 위로 간다). 처음
+    값으로 돌아오면 그 키가 빠지고, 같은 값이면 null 이다."""
     lbox = _shape_item(look={"shape": "lbox"})
     turned = _shape_item(w=6, h=8, rot=90, look={"shape": "lbox"})
     flipped = _shape_item(look={"shape": "triangle", "flip": True})
     out = _run(
         {
             "drags": [
-                [lbox, 0, {"x": 14, "top": 44}],
+                [lbox, 0, {"x": 13, "top": 44}],
                 [lbox, 1, {"x": 18, "top": 44 + 3}],
-                [_shape_item(look={"shape": "lbox", "adj": [0.5, 0.35]}), 0, {"x": 12.8, "top": 0}],
-                [lbox, 0, {"x": 12.8, "top": 30}],
-                # 90°: 제자리 x 축이 화면 y 축(아래로). 화면 위 끝(top 42)에서 4 아래 = 제자리 x 4.
-                [turned, 0, {"x": 99, "top": 42 + 4}],
+                [_shape_item(look={"shape": "lbox", "adj": [0.5, 0.35]}), 0, {"x": 12.1, "top": 0}],
+                [lbox, 0, {"x": 12.1, "top": 30}],
+                # 90°: 제자리 x 축이 화면 y 축(아래로). 화면 위 끝(top 42)에서 3 아래 = 제자리 x 3.
+                [turned, 0, {"x": 99, "top": 42 + 3}],
                 # 좌우 뒤집은 삼각형: 꼭짓점을 화면 왼쪽 1/4 로 끌면 제자리 3/4.
                 [flipped, 0, {"x": 12, "top": 44}],
             ]
@@ -583,8 +634,8 @@ def test_the_inspector_and_palette_offer_excel_like_shape_tools() -> None:
         'class="sle-shape-width"',
         'class="sle-shape-style"',
         'class="sle-shape-hatch"',
-        'class="sle-shape-flip" data-flip="h"',
-        'class="sle-shape-flip" data-flip="v"',
+        'class="sle-flip" data-flip="h"',
+        'class="sle-flip" data-flip="v"',
     ):
         assert selector in HTML, selector
     # 도형 넣기는 층·FAB 둘 다다(층 전용·FAB 전용 꼬리표가 없다).
@@ -612,9 +663,14 @@ def test_the_inspector_and_palette_offer_excel_like_shape_tools() -> None:
     )
     assert "(p, free) => addMark('shape', p, free, key)" in palette
     assert "if (event.detail === 0) addMark('shape', null, false, key)" in palette
-    # 대칭 꼴은 돌리기·뒤집기가 꺼진다.
-    assert "markRotate.disabled = still" in JS
-    assert "for (const button of shapeFlips) button.disabled = !turns" in JS
+    # 대칭 꼴은 돌리기·뒤집기가 숨는다(돌리기·뒤집기 한 줄 — `syncTurns`, 2026-11-04 Space 결정 보드
+    # 답).
+    turns = _between(
+        "function syncTurns(",
+        "// ---------------------------------------------------------------- 도형 서식",
+    )
+    assert "(!isShape(mark) || turnsShape(mark))" in turns
+    assert "for (const button of flipButtons) button.hidden = !flips" in turns
 
 
 def test_changing_the_preset_keeps_the_format_and_resets_the_adjust() -> None:

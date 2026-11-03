@@ -225,6 +225,14 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
     AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
     AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
+    # 2026-11-04 Space 결정 보드 답 — 사이드바 「Space 도면」 상자 끝에 서던 배치 줄을 상태
+    # 알림으로(화면에 상태 문장을 달지 않는다). 같은 상자의 일정 없는 호기 줄은 가용설비 현황과
+    # 같은 `EQ-04` 다.
+    AlertSpec(
+        "EQ-13", "info", "state", "Space — 가정 배치가 공식과 다름(호기 · 도면 요소 · Main 설비명)"
+    ),
+    AlertSpec("EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 트레이에 있음"),
+    AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
 )
 
 
