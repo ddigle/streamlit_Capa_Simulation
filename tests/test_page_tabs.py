@@ -34,6 +34,7 @@ from capa_simulation.page_tabs_state import (
     PAGE_TABS_EPOCH_KEY,
     PAGE_TABS_NOTICE_KEY,
     PAGE_TABS_OPEN_KEY,
+    PAGE_TABS_ORDER_SEQ_KEY,
     PAGE_TABS_PINNED_KEY,
     PAGE_TABS_QUEUED_KEY,
     PAGE_TABS_REENTRY_KEY,
@@ -485,7 +486,13 @@ def _press(
 ) -> None:
     """탭 줄 콜백 하나를 AppTest 세션의 탭 칸으로 돌리고 그 결과를 세션에 옮겨 적는다 — AppTest 는
     컴포넌트 트리거를 보내지 못한다. 다음 `run()` 이 `app.py` 로 그 결과를 그린다."""
-    keys = (PAGE_TABS_OPEN_KEY, PAGE_TABS_PINNED_KEY, PAGE_TABS_EPOCH_KEY, PAGE_TABS_QUEUED_KEY)
+    keys = (
+        PAGE_TABS_OPEN_KEY,
+        PAGE_TABS_PINNED_KEY,
+        PAGE_TABS_EPOCH_KEY,
+        PAGE_TABS_QUEUED_KEY,
+        PAGE_TABS_ORDER_SEQ_KEY,
+    )
     fake = SimpleNamespace(
         session_state={key: app.session_state[key] for key in keys if key in app.session_state}
     )
@@ -538,21 +545,25 @@ def test_pinning_and_unpinning_through_the_app_keep_pinned_tabs_left(
 def test_moving_a_tab_through_the_app_keeps_the_new_order_and_the_page(
     _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """끌어서 차례 바꾸기(2026-11-02 사용자 요청) — 고정하지 않은 탭을 다른 탭 앞으로 옮기면 다음
-    회차의 data 가 그 차례를 싣고, 지금 화면은 그대로다. 고정 탭(HOME)은 옮기지 않는다."""
+    """끌어서 차례 바꾸기(2026-11-02 사용자 요청) — 고정하지 않은 탭을 옮긴 그림(`order`)이 오면
+    다음 회차의 data 가 그 차례와 받은 번호(`seq`)를 싣고, 지금 화면은 그대로다. 고정 탭(HOME)은
+    그림이 어디에 두든 고정 묶음에 남는다."""
     app = _ok(_app.run())
     _ok(app.switch_page(A).run())
     _ok(app.switch_page(B).run())
-    assert _ids(sent) == [H, A, B]
+    assert _ids(sent) == [H, A, B] and _data(sent)["seq"] == 0
 
-    _press(app, monkeypatch, page_tabs._on_move, {"move": {"id": B, "before": A, "epoch": 2}})
+    _press(
+        app, monkeypatch, page_tabs._on_move, {"move": {"order": [H, B, A], "pins": [H], "seq": 1}}
+    )
     _ok(app.switch_page(B).run())
-    assert _ids(sent) == [H, B, A] and _data(sent)["active"] == B
+    assert _ids(sent) == [H, B, A] and _data(sent)["active"] == B and _data(sent)["seq"] == 1
 
-    _press(app, monkeypatch, page_tabs._on_move, {"move": {"id": H, "before": None, "epoch": 3}})
-    _press(app, monkeypatch, page_tabs._on_move, {"move": {"id": A, "before": H, "epoch": 3}})
+    _press(
+        app, monkeypatch, page_tabs._on_move, {"move": {"order": [A, B, H], "pins": [H], "seq": 2}}
+    )
     _ok(app.switch_page(B).run())
-    assert _ids(sent) == [H, A, B]
+    assert _ids(sent) == [H, A, B] and _data(sent)["seq"] == 2
 
 
 @pytest.fixture
@@ -591,7 +602,7 @@ def test_strip_only_presses_rerun_only_the_empty_fragment(
     }
     page_tabs._on_pin()
     state[PAGE_TABS_COMPONENT_KEY] = {
-        "move": {"id": A, "before": B, "order": [H, A, B], "pins": [H], "epoch": 1}
+        "move": {"order": [H, A, B], "pins": [H], "seq": 1, "epoch": 1}
     }
     page_tabs._on_move()
     assert state[PAGE_TABS_OPEN_KEY] == (H, A, B)
@@ -616,13 +627,7 @@ def test_a_drawing_the_server_did_not_take_resyncs_through_a_full_run(
     epoch = state[PAGE_TABS_EPOCH_KEY]
 
     state[PAGE_TABS_COMPONENT_KEY] = {
-        "move": {
-            "id": "app_pages/gone.py",
-            "before": A,
-            "order": ["app_pages/gone.py", H, A, B],
-            "pins": [H],
-            "epoch": 1,
-        }
+        "move": {"order": ["app_pages/gone.py", H, A, B], "pins": [H], "seq": 1, "epoch": 1}
     }
     page_tabs._on_move()
     assert state[PAGE_TABS_OPEN_KEY] == (H, A, B)
@@ -638,6 +643,75 @@ def test_a_drawing_the_server_did_not_take_resyncs_through_a_full_run(
     page_tabs._on_close(B)
     assert state[PAGE_TABS_QUEUED_KEY] == A
     assert calls == []
+
+
+def test_a_batched_order_is_adopted_whole_and_the_same_order_writes_nothing(
+    strip_session: tuple[SimpleNamespace, list[tuple[str, ...]]],
+) -> None:
+    """연달아 옮긴 차례는 JS 가 묶어 마지막 그림 하나로 보낸다(2026-11-03 사용자 검수 — 연달아
+    옮기면 불필요한 로딩). 서버는 한 칸씩을 다시 밟지 않고 그림 전체를 입힌다 — 그 사이 빠진 누름이
+    있어도 마지막 그림이 선다. 같은 차례면 목록 칸·epoch 를 건드리지 않고, 어느 쪽이든 빈
+    프래그먼트만 돈다. 받은 번호는 더 큰 것만 적는다."""
+    fake, calls = strip_session
+    state = fake.session_state
+    state[PAGE_TABS_OPEN_KEY] = (H, A, B, SPACE_STATUS.path, WIP_STATUS.path)
+    epoch = state[PAGE_TABS_EPOCH_KEY]
+    s, w = SPACE_STATUS.path, WIP_STATUS.path
+
+    # 끝 탭(w)을 다섯 칸 왼쪽으로 옮긴 마지막 그림 — 한 번에 선다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"move": {"order": [H, w, A, B, s], "pins": [H], "seq": 7}}
+    page_tabs._on_move()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, w, A, B, s)
+    assert state[PAGE_TABS_EPOCH_KEY] == epoch + 1 and state[PAGE_TABS_ORDER_SEQ_KEY] == 7
+    assert calls == [_SINK]
+
+    # 같은 그림이 다시 오면 아무것도 적지 않는다. 늦게 닿은 앞 번호는 번호를 되돌리지 않는다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"move": {"order": [H, w, A, B, s], "pins": [H], "seq": 3}}
+    page_tabs._on_move()
+    assert state[PAGE_TABS_EPOCH_KEY] == epoch + 1 and state[PAGE_TABS_ORDER_SEQ_KEY] == 7
+    assert calls == [_SINK] * 2
+
+    # HOME 을 고정 묶음 뒤로 둔 그림이어도 고정은 서버 것 — HOME 은 왼쪽에 남는다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"move": {"order": [A, H, w, B, s], "pins": [H], "seq": 8}}
+    page_tabs._on_move()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, A, w, B, s)
+
+
+def test_pin_close_and_select_take_an_unsent_order_along(
+    strip_session: tuple[SimpleNamespace, list[tuple[str, ...]]],
+) -> None:
+    """쉼이 끝나기 전에 고정·닫기·고르기를 누르면 그 트리거가 지금 그림(`order`)과 번호를 싣는다 —
+    서버는 그 차례를 먼저 입힌 뒤 고정·닫기·옮기기를 한다(`_adopted`). 차례를 따로 보내지 않아도 그
+    그림이 목록에 들어가고, 그림과 같으면 페이지를 다시 돌리지 않는다."""
+    fake, calls = strip_session
+    state = fake.session_state
+    s = SPACE_STATUS.path
+    state[PAGE_TABS_OPEN_KEY] = (H, A, B, s)
+
+    # B 를 A 앞으로 옮긴 채(보내지 않음) s 를 고정 — 그림 [H, s, B, A].
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "pin": {"id": s, "pinned": True, "order": [H, s, B, A], "pins": [H, s], "seq": 1}
+    }
+    page_tabs._on_pin()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, s, B, A) and calls == [_SINK]
+
+    # A 를 B 앞으로 되돌린 채(보내지 않음) 지금 탭이 아닌 s 의 고정을 풀고 닫기 — 그림 [H, A, B].
+    state[PAGE_TABS_PINNED_KEY] = (H,)
+    state[PAGE_TABS_COMPONENT_KEY] = {"close": {"id": s, "order": [H, A, B], "pins": [H], "seq": 2}}
+    page_tabs._on_close(B)
+    assert state[PAGE_TABS_OPEN_KEY] == (H, A, B) and calls == [_SINK] * 2
+
+    # B 를 앞으로 옮긴 채 A 를 고르면 — 옮기기 전에 그 차례가 들어간다.
+    state[PAGE_TABS_COMPONENT_KEY] = {
+        "select": {"id": A, "order": [H, B, A], "pins": [H], "seq": 3}
+    }
+    page_tabs._on_select()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, B, A) and state[PAGE_TABS_QUEUED_KEY] == A
+    assert state[PAGE_TABS_ORDER_SEQ_KEY] == 3
+    # 차례를 싣지 않은 고르기(담긴 차례 없음)는 목록을 그대로 둔다.
+    state[PAGE_TABS_COMPONENT_KEY] = {"select": {"id": B, "epoch": 4}}
+    page_tabs._on_select()
+    assert state[PAGE_TABS_OPEN_KEY] == (H, B, A) and state[PAGE_TABS_QUEUED_KEY] == B
 
 
 def _live_strip(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -716,9 +790,16 @@ def test_pinning_on_a_finished_home_reruns_only_the_empty_fragment(
     _press_strip(app, "pin", {"id": A, "pinned": False, "order": [H, A], "pins": [H], "epoch": 3})
     assert browser.started == [[], [sink]]
     _ok(app.switch_page(B).run())
-    _press_strip(app, "move", {"id": B, "before": A, "order": [H, B, A], "pins": [H], "epoch": 4})
+    _press_strip(app, "move", {"order": [H, B, A], "pins": [H], "seq": 1, "epoch": 4})
     assert browser.started == [[], [sink]]
     assert app.session_state[PAGE_TABS_OPEN_KEY] == (H, B, A)
+    assert app.session_state[PAGE_TABS_ORDER_SEQ_KEY] == 1
+    # 같은 차례가 다시 와도(서버가 이미 아는 그림) 목록 칸·epoch 는 그대로이고 빈 프래그먼트만 돈다.
+    _ok(app.switch_page(B).run())
+    epoch = app.session_state[PAGE_TABS_EPOCH_KEY]
+    _press_strip(app, "move", {"order": [H, B, A], "pins": [H], "seq": 2, "epoch": 4})
+    assert browser.started == [[], [sink]]
+    assert app.session_state[PAGE_TABS_EPOCH_KEY] == epoch
 
 
 # ------------------------------------------------------------------ 점·떠나기 확인

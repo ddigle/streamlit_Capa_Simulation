@@ -16,6 +16,9 @@
   모이며 닫기가 없다. 고정을 풀면 닫을 수 있다. 마지막 남은 탭 하나는 닫지 않는다.
 - **차례.** 고정하지 않은 탭은 끌어서(키보드는 `Ctrl+Shift+←/→`) 차례를 바꾼다(`moved`,
   2026-11-02 사용자 요청). 고정 탭은 움직이지 않고, 고정하지 않은 탭은 고정 묶음 앞으로 가지 못한다.
+  탭 줄 JS 는 옮길 때마다 보내지 않고 연달아 옮긴 마지막 그림을 한 번 보낸다 — 서버는 그 그림의
+  차례를 목록에 입힌다(`arranged`, 2026-11-03 사용자 검수 — 연달아 옮기면 불필요한 로딩·멈춤).
+  어떤 탭이 열렸나·고정은 서버가, 차례는 사용자가 마지막으로 본 그림이 정한다.
 - **상한 10개.** 열린 탭이 10개일 때 목록에 없는 화면은 열지 않고 탭 줄에 「안 쓰는 탭을 닫아
   주세요」를 띄운다. 막는 자리는 옮기기 **전**이다 — 사이드바·본문 화면 링크는 탭 줄 JS 가,
   화면을 옮기는 파이썬 도우미(HOME 칸·공정 Capa 상세의 다음 화면 단추)는 `refused_at_tab_limit`
@@ -60,6 +63,10 @@ PAGE_TABS_REENTRY_KEY = "page_tabs_reentry"
 # 상한에 걸려 열지 못한 화면의 알림 (일련번호, 글, 아직 탭 줄에 싣지 않았나). 탭 줄은 새 일련번호를
 # 한 번 띄운다.
 PAGE_TABS_NOTICE_KEY = "page_tabs_notice"
+# 탭 줄이 보낸 그림(차례)에 붙인 번호 가운데 서버가 받은 가장 큰 것. 탭 줄 data 가 싣는다 — JS 는 이
+# 번호로 「보냈지만 아직 data 에 오지 않은 그림」 을 가린다(`arranged`, `page_tabs.js` 의
+# `<tabs-batch>`).
+PAGE_TABS_ORDER_SEQ_KEY = "page_tabs_order_seq"
 # 탭 줄 컴포넌트의 key. `st-key-page_tabs_strip` 클래스가 되어 껍데기 CSS
 # (`app_header.SHELL_STYLE`)가 고른다 — CSS 로 고르는 컨테이너 key 는 계약이다(AGENTS 9장). 탭 줄
 # 모듈이 아니라 여기 두는 것은 `app_header` 가 이 key 를 읽기 때문이다(탭 줄 모듈은 `app.py` 에서만
@@ -198,6 +205,24 @@ def moved(strip: TabStrip, path: str, before: str | None) -> TabStrip:
     return normalized(TabStrip(tuple(rest), strip.pinned))
 
 
+def arranged(strip: TabStrip, order: Sequence[str]) -> TabStrip:
+    """탭 줄 JS 가 그린 차례(`order`)를 목록에 입힌다(2026-11-03 — 연달아 옮긴 차례를 한 번에).
+
+    목록에 있는 탭은 `order` 의 차례로 앞에 서고, `order` 에 없는 탭(JS 가 아직 모르는 새 탭)은 원래
+    차례로 그 뒤에 선다. `order` 에만 있는 탭(그 사이 닫혔다)·겹침은 버린다. 고정은 서버 것 그대로라
+    `normalized` 가 고정 묶음을 다시 왼쪽에 모은다 — 열린 탭과 고정은 서버가, 차례는 사용자가
+    마지막으로 본 그림이 정한다. 옮긴 한 칸씩을 다시 밟지 않으므로 그 사이 보낸 차례 하나가 빠져도
+    마지막 그림이 그대로 선다. 탭 줄 JS 의 `mergedOrder`(`<tabs-order>`)와 같은 규칙이다
+    (`tests/test_page_tabs_assets.py` 가 맞댄다).
+    """
+    head: list[str] = []
+    for path in order:
+        if path in strip.paths and path not in head:
+            head.append(path)
+    rest = [path for path in strip.paths if path not in head]
+    return normalized(TabStrip((*head, *rest), strip.pinned))
+
+
 def fallback_tab(strip: TabStrip, previous: str | None) -> str:
     """상한에 걸린 이동을 되돌릴 탭 — 직전 화면이 목록에 있으면 그것, 아니면 맨 앞 탭."""
     if previous is not None and previous in strip.paths:
@@ -238,6 +263,18 @@ def store_strip(strip: TabStrip) -> None:
         path for path in strip.paths if path in strip.pinned
     )
     st.session_state[PAGE_TABS_EPOCH_KEY] = tabs_epoch() + 1
+
+
+def order_seq() -> int:
+    """서버가 받은 탭 줄 그림 번호(`PAGE_TABS_ORDER_SEQ_KEY`). 아직 없으면 0."""
+    value = st.session_state.get(PAGE_TABS_ORDER_SEQ_KEY)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def note_order_seq(seq: object) -> None:
+    """트리거에 실린 그림 번호를 받았다고 적는다 — 더 큰 번호만(늦게 닿은 앞 번호는 두지 않는다)."""
+    if isinstance(seq, int) and not isinstance(seq, bool) and seq > order_seq():
+        st.session_state[PAGE_TABS_ORDER_SEQ_KEY] = seq
 
 
 def resync_strip() -> None:
