@@ -18,7 +18,9 @@
 **알림창으로만** 내고 버튼 곁 칸에는 그리지 않는다 — 같은 글이 두 번 보이지 않게. 경고 ·
 오류(`warning`·`error` — 거부 · 실패)는 고칠 입력이 그 자리에 있으므로 **버튼 곁에도** 그린다.
 코드는 종류별 기본(`alerts.FLASH_CODES`)이고 칸마다 따로 두려면 `queue_flash(…, alert=…)` 로 등록부
-코드를 준다.
+코드를 준다. 동작은 끝났고 그 자리에 고칠 입력이 없는 경고(사이드바 리비전 저장 뒤 「소요대수에
+들지 않은 수요」 — 2026-11-04 검수 의견 home-18)는 `queue_flash(…, popup_only=True)` 로 알림창 ·
+Alarm 에만 낸다.
 
 **그리는 칸은 늘 선다.** `render_flash` 는 알림이 있든 없든 `st.container()` 한 칸을 세우고 그 칸을
 돌려준다. 알림이 생기고 사라질 때 뒤 형제의 순번이 밀리면 key 없는 팝오버·탭·확장 패널이 새로 서며
@@ -59,17 +61,19 @@ BESIDE_KINDS: frozenset[str] = frozenset({"warning", "error"})
 
 
 class FlashNote(NamedTuple):
-    """담아 둔 알림 하나 — 종류(`st.success`·`info`·`warning`·`error`), 글, 아이콘, 알림 코드.
+    """담아 둔 알림 하나 — 종류(`st.success`·`info`·`warning`·`error`), 글, 아이콘, 알림 코드,
+    알림창으로만 낼지.
 
     세션에는 튜플로 남는다 — 코드를 다시 읽은 서버에서도 그대로 읽힌다. 아이콘 · 코드 없는 성공
     알림은 글만 담는다(`queue_flash`). `alert` 는 등록부의 사건 코드이고 None 이면 종류별
-    기본(`alerts.FLASH_CODES`)이다.
+    기본(`alerts.FLASH_CODES`)이다. `popup_only` 면 경고 · 오류도 버튼 곁에 그리지 않는다.
     """
 
     kind: FlashKind
     message: str
     icon: str | None = None
     alert: str | None = None
+    popup_only: bool = False
 
 
 def queue_flash(
@@ -79,11 +83,14 @@ def queue_flash(
     kind: FlashKind = "success",
     icon: str | None = None,
     alert: str | None = None,
+    popup_only: bool = False,
 ) -> None:
     """동작 직후(콜백·본문)에 부른다. 곧바로 `st.rerun()` 을 불러도 알림이 살아남는다.
 
     같은 칸에 다시 담으면 앞 알림을 바꾼다. 아이콘 · 코드 없는 성공 알림은 글만 담는다 — 그 칸을
     글로 읽는 시험·도우미가 그대로 읽는다. `alert` 는 등록부의 사건 코드(없으면 종류별 기본)다.
+    `popup_only` 는 경고 · 오류도 버튼 곁에 그리지 않고 알림창 · Alarm 에만 낸다 — 동작은 끝났고 그
+    자리에 고칠 입력이 없는 경고에 쓴다.
     """
     if kind not in _KINDS:
         raise ValueError(f"알 수 없는 알림 종류입니다: {kind}")
@@ -91,17 +98,17 @@ def queue_flash(
         raise ValueError(f"버튼 곁 결과 알림은 사건 알림 코드여야 합니다: {alert}")
     st.session_state[key] = (
         message
-        if kind == "success" and icon is None and alert is None
-        else FlashNote(kind, message, icon, alert)
+        if kind == "success" and icon is None and alert is None and not popup_only
+        else FlashNote(kind, message, icon, alert, popup_only)
     )
 
 
 def render_flash(*keys: str) -> DeltaGenerator:
     """늘 서 있는 한 칸을 세우고, `keys` 에 담아 둔 알림을 그 차례대로 알림창 표지로 보내고 비운다.
 
-    경고 · 오류는 그 칸 안에도 그린다(성공 · 안내는 알림창으로만 — D3). 칸은 알림이 없어도 선다 — 뒤
-    형제의 순번이 알림 유무로 밀리지 않는다. 돌려받은 칸에 같은 동작의 실패 문구나 그 자리에 함께 설
-    알림을 더 쓸 수 있다. 담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔
+    경고 · 오류는 그 칸 안에도 그린다(성공 · 안내와 `popup_only` 는 알림창으로만 — D3). 칸은 알림이
+    없어도 선다 — 뒤 형제의 순번이 알림 유무로 밀리지 않는다. 돌려받은 칸에 같은 동작의 실패 문구나
+    그 자리에 함께 설 알림을 더 쓸 수 있다. 담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔
     알림(`write_guard.held_flash`)이 창 안이면 그 알림을 첫 알림과 같은 id 로 다시 낸다. 표지는 부를
     때마다 이벤트 칸에 정확히 한 자리다.
     """
@@ -124,7 +131,7 @@ def render_flash(*keys: str) -> DeltaGenerator:
         alert = _alert(key, note, held=held)
         alerts.remember_sent(key, alert)
         sending.append(alert)
-        if note.kind in BESIDE_KINDS:
+        if note.kind in BESIDE_KINDS and not note.popup_only:
             _draw(slot, note)
     alerts.emit(sending, slot=slot)
     return slot
@@ -162,23 +169,24 @@ def pending_flash(key: str) -> FlashNote | None:
 
 
 def _note(value: object) -> FlashNote | None:
-    """세션 값을 알림으로 읽는다. 글이면 성공, (종류, 글[, 아이콘[, 코드]]) 튜플이면 그 종류다.
-    등록부에 없는 코드는 종류별 기본으로 읽는다(코드를 다시 읽은 서버가 옛 칸을 읽어도 멈추지
-    않게)."""
+    """세션 값을 알림으로 읽는다. 글이면 성공, (종류, 글[, 아이콘[, 코드[, 알림창으로만]]]) 튜플이면
+    그 종류다. 등록부에 없는 코드는 종류별 기본으로 읽는다(코드를 다시 읽은 서버가 옛 칸을 읽어도
+    멈추지 않게)."""
     if isinstance(value, str):
         return FlashNote("success", value) if value else None
-    if not (isinstance(value, tuple) and len(value) in (2, 3, 4)):
+    if not (isinstance(value, tuple) and len(value) in (2, 3, 4, 5)):
         return None
     kind, message, *rest = value
     icon = rest[0] if rest else None
     code = rest[1] if len(rest) > 1 else None
+    popup_only = rest[2] if len(rest) > 2 else False
     if kind not in _KINDS or not isinstance(message, str) or not message:
         return None
     if icon is not None and not isinstance(icon, str):
         return None
     if not (isinstance(code, str) and code in alerts.REGISTRY):
         code = None
-    return FlashNote(kind, message, icon, code)
+    return FlashNote(kind, message, icon, code, popup_only is True)
 
 
 def _draw(slot: DeltaGenerator, note: FlashNote) -> None:

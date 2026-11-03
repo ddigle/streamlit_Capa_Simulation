@@ -1234,7 +1234,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/capacity_gate.py` — 리비전 저장·복제·파생 저장·공식 발행 **전에** 시나리오 전체
   기간 Capa 계산(대당 Capa·소요대수 + HOME Density 환산 `density_error`)이 되는지 검사한다.
   - 저장은 편집이 새로 깨뜨렸으면 막고 원래 안 되면 경고하며 허락한다(파생 저장은 원본이 「편집 전」). 발행은 막는다.
-    소요대수에 들지 않은 수요는 막지 않고 건수를 경고한다.
+    소요대수에 들지 않은 수요는 막지 않고 건수를 경고한다 — 그 판정은 `GateVerdict.exclusion` 이 참이고(계산은 통과), 사이드바
+    리비전 저장은 그 경고를 시나리오 칸 밑에 그리지 않고 알림창 · Alarm 에만 낸다(`queue_flash(…, popup_only=True)` — 2026-11-04
+    검수 의견 home-18). 남은 계산 오류 경고(`exclusion` 거짓)는 칸 밑에도 선다.
   - 계산 페이지와 같은 캐시 칸(`pristine_content_token`)을 쓰고 BigDataQuery 등록·내장 시드는 검사하지 않는다. 새
     쓰기 경로는 `tests/test_capacity_gate.py` 목록에 더한다(`density_error` 는 `tests/test_gate_density_coverage.py`).
   - 자동 갱신 발행은 순수 코어 `simulation_cache.full_capacity_outcome` 로 같은 검사를 하고 경고를 실행 기록에 붙인다.
@@ -3015,11 +3017,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 보내기 한 길. `queue_flash(key, 글, *, kind,
-  icon, alert)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건 코드 —
-  없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
+  icon, alert, popup_only)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
+  코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
   없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
   그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
-  그 칸에도 그린다(2026-11-03 결정 보드 D3 (가) — `BESIDE_KINDS`). 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의
+  그 칸에도 그린다(2026-11-03 결정 보드 D3 (가) — `BESIDE_KINDS`). 동작은 끝났고 그 자리에 고칠 입력이 없는 경고는
+  `popup_only=True` 로 알림창 · Alarm 에만 낸다(사이드바 리비전 저장 뒤 소요대수에 들지 않은 수요 — 2026-11-04 검수 의견
+  home-18). 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의
   실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다). 표지 글은 평문(`alerts.plain_text`
   — 마크다운 꾸밈을 걷는다)이고 칸 key(`origin`) · 화면을 단다. 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
   AST 그물 둘이 막는다 — 이름에 FLASH·NOTICE 가 든 칸을 비우는(`pop`·`del`) 자리와, 이름과 상관없이 꺼낸 칸(`pop`,
@@ -3054,7 +3058,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`table`)는 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
   안에서 파일을 만든다(원본 값 · BOM — 서버를 부르지 않는다, 표는 코드마다 가장 새 줄에만 남긴다). 줄의 「그 화면으로」 는
   표지의 `tab`(그 화면 안 탭 — 탭 안 탭은 `바깥 › 안`, `TAB_PATH`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
-  바깥 칸부터 한 칸씩 누르고(`tabStep` · `settleTab` — `stateful_tabs` 탭), 줄 · 로그의 화면 칸은 「화면 › 탭」 이다. 시험:
+  바깥 칸부터 한 칸씩 누르고(`tabStep` · `settleTab` — `stateful_tabs` 탭), 줄 · 로그의 화면 칸은 「화면 › 탭」 이다. 「로그」
+  펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 날짜까지 붙은 처음 · 마지막 · 화면 · 계기 · 범위 · 해소 · 원본 오류 · 전문 —
+  `logPairs` · 순수 `copyText`)을 `navigator.clipboard` 로 넣고, 막히면(보안 연결이 아님 · DRM) 고른 글을 든 읽기 전용 칸을
+  세워 Ctrl+C 를 청한다(`execCommand` 는 막힌 클립보드에서도 참을 돌려 쓰지 않는다 · 딸린 표는 이름 · 행 수만 — 2026-11-04 검수
+  의견 alarm-05). Alarm 패널 · 변경 판에는 바닥 설명을 두지 않는다(alarm-02 · alarm-11 — 설명은 HOME Guide). Alarm 단추는
+  Guide · Print · 테마 단추와 같이 툴바 글꼴을 물려받는다(`:host(.capa-alert-alarm)` 의 `font-family: inherit` — alarm-01, 변경
+  칩은 한글 글이라 앱 글꼴). 시험:
   `tests/test_alert_center.py`(data · 자리 · 변경 목록) · `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node
   순수 구획 `<alerts-rows>`).
 - `src/capa_simulation/components/state_alerts.py` — 화면이 상태 알림 · 화면 오류 알림을 낼 때 쓰는 공용 조각(알림 체계 2단계).
@@ -5578,7 +5588,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (`tests/test_popover_keys.py` 가 소스를 훑고, 오류가 서는 회차에도 블록 id 가 같은지 본다).
   - **알림 칸은 `components/flash.py` 한 길이다.** 콜백·본문의 결과는 `queue_flash` 로 담고 그 칸은 `render_flash` 로
     세운다 — 성공 · 안내는 오른쪽 아래 알림창으로만 가고 칸에는 경고 · 오류(거부 · 실패)만 그린다(D3 — 아래 「알림 칸(알림창 ·
-    Alarm)」). 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
+    Alarm)」, 그 자리에 고칠 입력이 없는 경고는 `popup_only=True` 로 알림창에만). 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
     칸에만 가지 않는다(2026-10-26 리팩토링 — 칸 열여섯을 옮겼고, 리뷰 뒤 설비 마스터 탭 저장 결과·VOC 머리 알림과 글
     쓰기·글 상자 실패·Space 설비 시나리오 바꾸기 실패를 더 옮겼다). 실패만 내는 칸도 같다(`kind="error"`).
     `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
@@ -5873,7 +5883,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(성공 상자와 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
   `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
-  오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다.
+  오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다. 동작은 끝났고 그 자리에
+  고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 뒤 「소요대수에 들지 않은
+  수요」(`GateVerdict.exclusion`, 2026-11-04 검수 의견 home-18). 같은 칸의 남은 계산 오류 경고는 칸 밑에도 선다.
+- **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11) — 보관 기한 · 판정 범위 같은
+  설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 에 둔다. 「로그」 펼침마다 「복사」(평문 클립보드 — alarm-05)가 선다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
   쌓지 않고 앞 칸을 구석으로 옮겨 「×n」 을 붙이고, 창 가장자리 한 겹 테두리가 450ms easeOutQuad 로 그 칸에 모인다(한 번만 ·
   누름을 막지 않음 · 「움직임 줄이기」 에서는 움직이지 않는 윤곽 1.6초).
@@ -6736,7 +6750,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 8. **다른 화면으로 옮기는 새 단추·도우미는 전달 칸을 적기 전에 `refused_at_tab_limit` 을 부르는가**(9장 「팝업과
    콜백」) — 화면 링크는 `st.page_link` 로 두면 탭 줄 JS 가 막는다
 9. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
-10. **새 알림은 등록부 코드로 낸다**(9장 「알림 칸」) — 동작 결과는 `queue_flash`(성공은 알림창으로만), 조건 경고는
+10. **새 알림은 등록부 코드로 낸다**(9장 「알림 칸」) — 동작 결과는 `queue_flash`(성공은 알림창으로만, 그 자리에 고칠 입력이
+    없는 경고는 `popup_only=True`), 조건 경고는
     `alerts.state`(자리에 그리지 않음 — 짧은 글은 무엇을 · 어디서 고치는지, 탭 안이면 `open_tab_name` 으로 열린 탭에서만 ·
     탭 이름과 함께), 화면을 그리지 못한 오류는 자리 `st.error` + `state_alerts.alert_page_error`, 자리 글이면
     `tests/test_alert_sites.py` 허용 목록에 `REASONS` 까닭과 함께

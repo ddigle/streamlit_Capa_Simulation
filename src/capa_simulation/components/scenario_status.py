@@ -767,11 +767,15 @@ def _render_revision_save(
         return
     if verdict.message:
         # 계산 검사 경고는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 물결표를 막는다.
+        # 소요대수에 들지 않은 수요(계산은 통과 — `verdict.exclusion`)는 고칠 입력이 이 자리에
+        # 없어 시나리오 칸 밑 상자 없이 알림창 · Alarm 에만 낸다(2026-11-04 검수 의견 home-18).
+        # 남은 계산 오류 경고는 칸 밑에도 선다.
         queue_flash(
             SIDEBAR_FLASH_WARNING_KEY,
             markdown_safe_tildes(verdict.message),
             kind="warning",
             icon=":material/warning:",
+            popup_only=verdict.exclusion,
         )
     _settle(
         "신규 리비전을 저장했습니다."

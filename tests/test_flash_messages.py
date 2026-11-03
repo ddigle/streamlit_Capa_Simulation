@@ -218,6 +218,26 @@ def test_each_kind_is_drawn_with_its_icon_and_a_plain_success_keeps_the_text_sha
     assert app.session_state["plain_shape"] == "글만 담은 성공"
 
 
+def test_a_popup_only_warning_goes_to_the_alert_popup_and_not_beside_the_button() -> None:
+    """`popup_only` 경고는 버튼 곁에 그리지 않고 알림창 표지로만 보낸다 — 동작은 끝났고 그 자리에
+    고칠 입력이 없는 경고(사이드바 리비전 저장 뒤 소요대수에 들지 않은 수요 — 2026-11-04 검수 의견
+    home-18). 단계는 경고 기본(`FL-03` 확인 필요)이다."""
+    script = """
+from capa_simulation.components.flash import queue_flash, render_flash
+
+queue_flash(
+    "demo_flash", "빠진 수요 2건", kind="warning", icon=":material/warning:", popup_only=True
+)
+render_flash("demo_flash")
+"""
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert not app.warning
+    assert [(item.value, item.code, item.note and item.note["level"]) for item in flashed(app)] == [
+        ("빠진 수요 2건", "FL-03", "check")
+    ]
+
+
 def test_render_flash_writes_exactly_one_event_slot_with_or_without_alerts() -> None:
     """표지는 부를 때마다 이벤트 칸에 정확히 한 자리다 — 알림이 없으면 빈 스타일. 프래그먼트 · 팝업
     본문의 이벤트 칸 자리 수가 갈래와 상관없이 같아야 한다(AGENTS 9장)."""

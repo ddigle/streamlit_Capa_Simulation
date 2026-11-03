@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import infos, successes
+from alert_marks import flashed, infos, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as target
@@ -610,6 +610,29 @@ def test_a_save_with_an_old_error_is_kept_and_warned(sidebar_app: AppTest) -> No
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "고치는 중"
     assert any("공식버전으로 지정할 수 없습니다" in warning.value for warning in app.warning)
+
+
+def test_a_save_that_leaves_demand_out_warns_only_through_the_alert_popup(
+    sidebar_app: AppTest,
+) -> None:
+    """소요대수에 들지 않은 수요(계산은 통과 — `GateVerdict.exclusion`)는 저장 뒤 시나리오 칸 밑
+    경고 상자 없이 오른쪽 아래 알림창 · Alarm 에만 낸다(2026-11-04 검수 의견 home-18). 단계는 확인
+    필요(`FL-03`)다."""
+    message = (
+        "소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — "
+        "대당 Capa 가 없어 뺀 부하 경로 2건"
+    )
+    app = sidebar_app
+    app.session_state["test_save_verdict"] = GateVerdict(True, message, exclusion=True)
+    app = _save(_open_save(app.run()), "빠진 수요 저장안")
+
+    assert not app.exception
+    assert app.session_state["test_saved_revision_name"] == "빠진 수요 저장안"
+    assert not any("소요대수에 들지 않은 수요" in warning.value for warning in app.warning)
+    (warned,) = flashed(app, "warning")
+    assert warned.value == message
+    assert warned.note is not None
+    assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
 
 
 @pytest.mark.parametrize("allowed", [False, True])
