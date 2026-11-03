@@ -97,14 +97,16 @@ def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
 
 
 def test_a_process_without_a_cutoff_is_surfaced_not_silently_dropped(tmp_path: Path) -> None:
-    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 옆 탭 합이 이유 없이 작아진다. 상태
-    알림(`EQ-12` — 알림창 · Alarm)이고 팝업 안 자리에는 수 한 줄 캡션만 선다(2026-11-03 D2)."""
+    """빠진 공정을 화면이 말해야 한다 — 조용히 빠지면 옆 탭 합이 이유 없이 작아진다. 팝업 안에는
+    고칠 표 곁 경고(이름 목록 — 자리 글)가 서고, 화면은 팝업을 열지 않아도 상태 알림(`EQ-12` —
+    알림창 · Alarm)을 낸다(2026-11-03 D2)."""
     app = _run(tmp_path / "availability.duckdb")
 
-    assert not [item for item in app.warning if "Cut-off 를 적지" in str(item.value)]
+    warnings = " ".join(str(item.value) for item in app.warning)
+    assert "Cut-off 를 적지 않은 공정" in warnings, warnings
     note = active_state(app, "EQ-12")
     assert note is not None and "Cut-off 를 적지 않은 공정" in note["full"], states(app, "EQ-12")
-    assert any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.caption)
+    assert "「설정」" in note["short"] and "설비 공정으로 채우기" in note["full"], note
     clear_equipment_repository()
 
 
@@ -120,22 +122,44 @@ def _cutoff_body(database_path: str) -> None:
     render_cutoff_management(repository, equipment_processes=["E2E~공정~X", "SAMPLE1"])
 
 
-def test_the_missing_cutoff_alert_keeps_the_process_names_verbatim(
+def test_the_missing_cutoff_warning_blocks_the_tildes_of_the_process_names(
     tmp_path: Path,
 ) -> None:
-    """「Cut-off 를 적지 않은 공정」 은 그 이름을 그대로 새 행에 옮겨 적으라는 글인데, 마크다운
-    경고에서 원본 공정명 「E2E~공정~X」 의 물결표가 지움선이 되어 「E2E공정X」 로 보였다(2026-10-26
-    E2E r5). 이제 상태 알림(`EQ-12`)이고 알림창 · 패널은 평문(`textContent`)이라 이름을 막지 않고
-    글자 그대로 싣는다."""
+    """팝업 안 「Cut-off 를 적지 않은 공정」 경고는 그 이름을 그대로 새 행에 옮겨 적으라는 글인데,
+    원본 공정명 「E2E~공정~X」 의 물결표가 지움선이 되어 「E2E공정X」 로 보였다(2026-10-26 E2E r5).
+    이름의 물결표만 막고 「빠집니다」 굵게는 둔다. 팝업 본문은 상태 알림을 내지 않는다(화면이
+    낸다)."""
     app = AppTest.from_function(
         _cutoff_body, args=(str(tmp_path / "availability.duckdb"),), default_timeout=60
     ).run()
 
     assert not app.exception, [item.message for item in app.exception]
+    (warning,) = [str(item.value) for item in app.warning if "Cut-off 를 적지" in str(item.value)]
+    assert warning.endswith("**빠집니다** — E2E\\~공정\\~X, SAMPLE1"), warning
+    assert not states(app, "EQ-12")
+    clear_equipment_repository()
+
+
+def _missing_report(names: list[str]) -> None:
+    import pandas as pd
+
+    from capa_simulation.components.cutoff_management import report_missing_cutoffs
+
+    report_missing_cutoffs(names, pd.DataFrame(columns=["공정", "Cutoff일수"]))
+
+
+def test_the_missing_cutoff_alert_keeps_the_process_names_verbatim() -> None:
+    """상태 알림(`EQ-12`)의 알림창 · 패널은 평문(`textContent`)이라 이름을 막지 않고 글자 그대로
+    싣는다. 빠진 공정이 없으면 해소 표지(`active` 거짓)를 낸다."""
+    app = AppTest.from_function(_missing_report, args=(["E2E~공정~X", "SAMPLE1"],)).run()
+
+    assert not app.exception, [item.message for item in app.exception]
     note = active_state(app, "EQ-12")
     assert note is not None
-    assert str(note["full"]).endswith("빠집니다 — E2E~공정~X, SAMPLE1"), note
-    clear_equipment_repository()
+    assert "빠집니다 — E2E~공정~X, SAMPLE1." in str(note["full"]), note
+    assert not app.warning
+    quiet = AppTest.from_function(_missing_report, args=([],)).run()
+    assert [item["active"] for item in states(quiet, "EQ-12")] == [False]
 
 
 def test_the_cutoff_editor_has_its_own_view_controls(tmp_path: Path) -> None:

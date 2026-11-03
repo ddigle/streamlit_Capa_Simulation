@@ -420,7 +420,8 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     app = AppTest.from_string(_page_script(PAGE, database), default_timeout=120).run()
     app = _open_settings(app)
     assert not app.exception
-    # 빠진 공정은 상태 알림(`EQ-12`)이다 — 자리에는 경고 상자를 그리지 않는다(2026-11-03 D2).
+    assert any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.warning)
+    # 화면은 같은 조건을 상태 알림(`EQ-12`)으로도 낸다 — 팝업을 열지 않아도 안다(2026-11-03 D2).
     note = active_state(app, "EQ-12")
     assert note is not None and "Cut-off 를 적지 않은 공정" in note["full"]
 
@@ -431,6 +432,7 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     next(button for button in app.button if button.label == "Cut-off 저장").click().run()
 
     assert not app.exception
+    assert not any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.warning)
     assert active_state(app, "EQ-12") is None
     assert any("모두 채워졌습니다" in str(item.value) for item in app.caption)
     # 저장 뒤에도 팝업은 열린 채 저장 알림이 누른 단추 아래에 선다(팝업 칸이 남는다).

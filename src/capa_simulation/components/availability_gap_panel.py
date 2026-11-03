@@ -91,6 +91,7 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
+from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import theme, tokens
@@ -292,7 +293,8 @@ def render_availability_gap_panel(
     downtime: pd.DataFrame | None = None,
     counterfactual_spans: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     manual_downtime: ManualDowntime,
-    alert_scope: object = None,
+    alert_scope: AlertScope | None = None,
+    alert_tab: str = "",
 ) -> None:
     """비교 탭 본문.
 
@@ -339,7 +341,9 @@ def render_availability_gap_panel(
 
     머리의 세 조건(Cut-off 에 견줘 조회기간 시작이 늦음 `EQ-07` · Static 을 읽지 못함 `EQ-08` ·
     두 쪽 공정명이 맞지 않음 `EQ-06`)은 상태 알림이다 — 자리에 그리지 않고 탭이 보이는
-    회차마다(없어도) 낸다. `alert_scope` 는 그 범위(페이지가 설비 쌍을 넘긴다)다.
+    회차마다(없어도) 낸다. `alert_scope` 는 그 범위(페이지가 설비 쌍을 넘긴다 —
+    `state_alerts.equipment_scope`), `alert_tab` 은 「그 화면으로」 가 열 탭
+    길(`state_alerts.tab_name` — 「Summary › Static 대비 일정」)이다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -355,6 +359,7 @@ def render_availability_gap_panel(
         st.info("조회기간에 월이 없습니다.")
         return
 
+    alert_key, alert_label = alert_scope if alert_scope is not None else (None, "")
     required = span_date_range(months, cutoff)
     late_start = (
         (required[0], span_bounds[0])
@@ -363,7 +368,9 @@ def render_availability_gap_panel(
     )
     alerts.state(
         "EQ-07",
-        scope=alert_scope,
+        scope=alert_key,
+        scope_label=alert_label,
+        tab=alert_tab,
         content=None if late_start is None else [str(late_start[0]), str(late_start[1])],
         active=late_start is not None,
         text=(
@@ -408,7 +415,9 @@ def render_availability_gap_panel(
 
     alerts.state(
         "EQ-08",
-        scope=alert_scope,
+        scope=alert_key,
+        scope_label=alert_label,
+        tab=alert_tab,
         content=static_error or None,
         active=bool(static_error),
         text="Static 가용대수를 읽지 못해 설비 일정 기준만 보입니다 — 기준 정보 · 시나리오 확인",
@@ -418,7 +427,9 @@ def render_availability_gap_panel(
     # 조회 달로 좁힌 입력 비가동 칸 — 시트·교차검증이 뺀다(캐시 키의 끝 칸과 같은 값).
     manual_cells = manual_downtime_key(manual_downtime.rows, months)
 
-    _report_unmatched(comparison.dynamic_only, comparison.static_only, labels, alert_scope)
+    _report_unmatched(
+        comparison.dynamic_only, comparison.static_only, labels, alert_scope, tab=alert_tab
+    )
 
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
     # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다.
@@ -1620,7 +1631,12 @@ def _frame_loader(frame: pd.DataFrame) -> Callable[[], pd.DataFrame]:
 
 
 def _report_unmatched(
-    dynamic_only: list[str], static_only: list[str], labels: ProcessLabels, scope: object
+    dynamic_only: list[str],
+    static_only: list[str],
+    labels: ProcessLabels,
+    alert_scope: AlertScope | None,
+    *,
+    tab: str = "",
 ) -> None:
     """한쪽에만 있는 공정 — 상태 알림(`EQ-06`). **조용히 떨어지면 GAP 이 이유 없이 커 보인다.**
 
@@ -1649,7 +1665,9 @@ def _report_unmatched(
     count = len(dynamic_only) + len(static_only)
     alerts.state(
         "EQ-06",
-        scope=scope,
+        scope=alert_scope.scope if alert_scope is not None else None,
+        scope_label=alert_scope.label if alert_scope is not None else "",
+        tab=tab,
         content=[sorted(dynamic_only), sorted(static_only)] if count else None,
         active=bool(count),
         text=(

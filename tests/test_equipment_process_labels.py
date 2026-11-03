@@ -21,6 +21,7 @@ from widget_browser import BrowserChoice
 from capa_simulation.components.availability_gap_panel import PROCESS_FILTER_KEY
 from capa_simulation.components.equipment_explorer import SMALL_PROCESS_KEY
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -108,12 +109,13 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     # 이름을 적어야 맞댄다), `표 보기 설정` 의 공정 필터 선택지만 표시명이다.
     app = _open_settings(app)
     assert not app.exception
-    # 빠진 공정은 상태 알림(`EQ-12` — 평문이라 이름을 글자 그대로 싣는다)이다.
+    warnings = " ".join(str(item.value) for item in app.warning)
+    # 공정명 목록은 이름마다 막는다(`literal_names` — 「Burn-In」 은 「Burn\-In」 으로 실린다).
+    assert literal_markdown(first) in warnings
+    assert literal_markdown("표시-첫공정") not in warnings
+    # 화면의 상태 알림(`EQ-12` — 평문)도 원본 이름 그대로다.
     note = active_state(app, "EQ-12")
-    assert note is not None
-    warnings = str(note["full"])
-    assert first in warnings
-    assert "표시-첫공정" not in warnings
+    assert note is not None and first in note["full"] and "표시-첫공정" not in note["full"]
     cutoff_filter = app.multiselect(key=CUTOFF_FILTER_KEY)
     assert "표시-둘째공정" in cutoff_filter.options and second not in cutoff_filter.options
     editors = [

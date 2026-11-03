@@ -93,8 +93,12 @@ def _process_rename_csv(database_path: str, version: int, _rules: pd.DataFrame) 
 def render_process_rename_management(
     repository: DuckDBScenarioRepository,
     available_processes: list[str],
+    *,
+    alert_tab: str | None = "",
 ) -> None:
-    """Proc Rename 탭 한 장. `available_processes` 는 안내용이며 비어 있어도 편집·저장한다."""
+    """Proc Rename 탭 한 장. `available_processes` 는 안내용이며 비어 있어도 편집·저장한다.
+    `alert_tab` 은 이 탭 이름(상태 알림 `AD-06` 의 「그 화면으로」 —
+    `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
     st.subheader("Proc Rename")
     database_path = str(repository.database_path)
     try:
@@ -142,23 +146,26 @@ def render_process_rename_management(
     # 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다. 상태 알림(`AD-06` — 알림창 ·
     # Alarm, 자리에 그리지 않는다)이고 없어도 부른다(해소). 알림창 · 패널은 평문이라 이름을 막지
     # 않는다.
-    alerts.state(
-        "AD-06",
-        scope=None,
-        content=sorted(collisions) or None,
-        active=bool(collisions),
-        text=(
-            f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건 — 두 공정이 같은 글자로 "
-            "보입니다 · Proc Rename 에서 고치기"
-        ),
-        full=(
-            f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
-            f"{', '.join(collisions[:10])}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
-            "공정을 고르는 상자에서는 「표시명 (원본)」 으로 갈라 보이지만 표·그림·버튼에서는 "
-            "같은 글자로 보입니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. "
-            "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다."
-        ),
-    )
+    if alert_tab is not None:
+        alerts.state(
+            "AD-06",
+            scope=None,
+            content=sorted(collisions) or None,
+            active=bool(collisions),
+            text=(
+                f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건 — 두 공정이 같은 글자로 "
+                "보임 · Proc Rename 에서 표시명 고치기"
+            ),
+            full=(
+                f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
+                f"{', '.join(collisions[:10])}{' …' if len(collisions) > 10 else ''}. "
+                "서로 다른 두 공정이 같은 글자로 보입니다 — 공정을 고르는 상자에서는 "
+                "「표시명 (원본)」 으로 갈라 보이지만 표·그림·버튼에서는 같은 글자로 보입니다. "
+                "값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. 설비 마스터에만 있는 "
+                "공정은 여기서 검사하지 않습니다."
+            ),
+            tab=alert_tab,
+        )
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)

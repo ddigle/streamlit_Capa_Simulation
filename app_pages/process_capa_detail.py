@@ -252,8 +252,8 @@ today = date.today()
 
 
 def _stop_with_error(message: str) -> NoReturn:
-    """화면을 못 그리는 오류 — 자리 오류 상자는 그대로 두고 상태 알림(`PD-01` — 같은 오류가 처음일
-    때만 알림창)을 더한 뒤 멈춘다."""
+    """화면을 못 그리는 오류 — 자리 오류 상자는 그대로 두고 알림(`PD-01` — 같은 글이면 이 브라우저
+    탭에 한 번만 알림창)을 더한 뒤 멈춘다."""
     alert_page_error(message, code="PD-01", text="공정 Capa 상세를 준비하지 못했습니다")
     st.error(message)
     st.stop()

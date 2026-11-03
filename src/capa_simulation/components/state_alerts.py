@@ -5,6 +5,8 @@
 - `simulation_scope` — 시뮬레이션 상태 알림의 범위(지문 재료 — 활성 리비전 `content_token` 과,
   조회기간을 보는 알림이면 그 기간)와 로그의 범위 줄(「시나리오 · rN · 26.01–26.12」). **세션만
   읽는다** — 시나리오나 조회기간을 바꾸면 수가 같아도 새 알림이다.
+- `equipment_scope` — 설비 상태 알림의 범위(세션이 든 (공통 대장, 일정) 리비전 쌍 — 설비 시나리오나
+  리비전을 바꾸면 같은 조건이라도 새 알림이다)와 로그의 범위 줄(「설비 「이름」 rN」).
 - `alert_table` — 본문에서 뺀 목록을 알림에 싣는 표(`alerts.AlertTable` — Alarm 줄에서 펼쳐 보고
   CSV 로 내려받는다). 값은 JSON 값으로 바꾸고(NaN → 빈칸) 공정 칸은 표시명을 화면에만 입힌다(CSV
   는 원본 — `exclusion_table` 과 같은 규칙). `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이
@@ -13,11 +15,16 @@
   쪽이 그대로 그리고, 이 함수는 사건 알림 하나를 보낸다 — id 를 그 글의 지문으로 고정해 같은 글이면
   이 브라우저 탭에 **한 번만** 알림창이 뜬다(회차마다 다시 그리는 오류가 알림창을 거듭 띄우지
   않는다). 해소 줄은 없다 — 화면이 다시 서면 자리 오류가 사라진다.
+- `tab_name` · `open_tab_name` — 탭 안 상태 알림의 `tab`(「그 화면으로」 가 그 탭까지 연다 — 탭 안
+  탭은 바깥 → 안 차례로 ` › ` 로 잇는다). `open_tab_name` 은 닫힌 탭이면 None 이다 — 그 회차에는 그
+  탭의 상태 알림을 내지 않는다(설계 2-3 「숨은 자리는 세지 않는다」 — 숨은 탭에서 난 알림창은 어디
+  것인지 모른다).
 """
 
 from __future__ import annotations
 
 import math
+import re
 from datetime import date
 from typing import NamedTuple
 
@@ -25,6 +32,8 @@ import pandas as pd
 
 from capa_simulation import alerts
 from capa_simulation.components.process_labels import PROCESS_COLUMN, ProcessLabels
+from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.scenario_state import ActiveScenario, is_pristine_content_token
 from capa_simulation.services.month_columns import month_label
@@ -33,6 +42,10 @@ from capa_simulation.services.month_columns import month_label
 FULL_PERIOD_LABEL = "시나리오 전체 기간"
 # 활성 리비전에 저장하지 않은 편집이 든 회차의 범위 줄 꼬리.
 UNSAVED_LABEL = "미저장 편집"
+# 탭 안 탭의 `tab` 이음 — 알림 칸 JS 의 `TAB_PATH` 와 같은 글이다(바깥 칸부터 한 칸씩 연다).
+TAB_PATH = " › "
+# 탭 단추 글 앞 아이콘(`:material/…:`) — 알림의 탭 이름은 아이콘 없이 단추 글의 끝과 맞댄다.
+_ICON_PATTERN = re.compile(r"^:material/[a-z0-9_]+:\s*")
 
 
 class AlertScope(NamedTuple):
@@ -69,6 +82,17 @@ def simulation_scope(
     else:
         parts.append(FULL_PERIOD_LABEL)
     return AlertScope(scope, " · ".join(parts))
+
+
+def equipment_scope(session: EquipmentSession) -> AlertScope:
+    """설비 세션의 (공통 대장 리비전, 일정 리비전) 쌍 토큰으로 범위를 짓는다. 스냅샷이 없으면(설비
+    데이터 없음) 토큰이 None 이다."""
+    token = session.snapshot.token if session.snapshot is not None else None
+    label = ""
+    if session.scenario_name is not None:
+        revision = f" r{session.revision_no}" if session.revision_no is not None else ""
+        label = f"설비 「{session.scenario_name}」{revision}"
+    return AlertScope({"equipment": token}, label)
 
 
 def _json_value(value: object) -> str | int | float | None:
@@ -138,3 +162,15 @@ def alert_page_error(message: str, *, code: str, tab: str = "", text: str | None
             )
         ]
     )
+
+
+def tab_name(*labels: str) -> str:
+    """탭 단추 글(아이콘 포함 그대로 — 바깥 → 안)을 알림의 `tab` 으로 — 아이콘을 떼고 ` › ` 로
+    잇는다."""
+    return TAB_PATH.join(_ICON_PATTERN.sub("", label).strip() for label in labels)
+
+
+def open_tab_name(tab: OpenTab | None, *labels: str) -> str | None:
+    """열린 탭이면 `tab_name(*labels)`, 닫힌 탭이면 None — 닫힌 탭 안의 상태 알림은 그 회차에 내지
+    않는다(부르는 쪽이 None 이면 `alerts.state` 를 건너뛴다)."""
+    return None if tab_is_hidden(tab) else tab_name(*labels)

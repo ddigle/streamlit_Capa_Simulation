@@ -108,7 +108,11 @@ def _validated_display_order(
     )
 
 
-def render_display_order_management(repository: DuckDBScenarioRepository) -> None:
+def render_display_order_management(
+    repository: DuckDBScenarioRepository, *, alert_tab: str | None = ""
+) -> None:
+    """표시순서 관리 탭 한 장. `alert_tab` 은 이 탭 이름(상태 알림 `AD-05` 의 「그 화면으로」 —
+    `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
     st.subheader("표시순서 관리")
     database_path = str(repository.database_path)
     try:
@@ -144,7 +148,8 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     _render_label_warnings(notice)
     # 저장된 프로필의 겹친 분류값은 상태 알림(`AD-05` — 알림창 · Alarm, 자리에 그리지 않는다)이다.
     # 없어도 부른다(해소).
-    _report_clashes(clashes)
+    if alert_tab is not None:
+        _report_clashes(clashes, tab=alert_tab)
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)
@@ -385,7 +390,7 @@ def _render_direct_editor(
         st.rerun()
 
 
-def _report_clashes(clashes: list[ValueClash]) -> None:
+def _report_clashes(clashes: list[ValueClash], *, tab: str = "") -> None:
     """저장된 프로필의 겹친 분류값을 상태 알림(`AD-05`)으로 내고, 범위마다 고치는 길을 전문에
     적는다.
 
@@ -412,6 +417,7 @@ def _report_clashes(clashes: list[ValueClash]) -> None:
             "내려받아 고친 뒤 Excel 붙여넣기로 전체를 바꾸세요. 겹친 값: "
             + describe_value_clashes(clashes)
         ),
+        tab=tab,
     )
 
 

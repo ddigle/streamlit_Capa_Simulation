@@ -21,7 +21,7 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
-from capa_simulation.components.state_alerts import alert_page_error
+from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -326,12 +326,10 @@ with st.container(border=True):
     # 기준선을 못 그린 공정·주차는 상태 알림(`WIP-04` — 자리에 그리지 않는다). 고칠 곳(표준
     # 목표)으로 가는 링크는 남긴다. 없어도 부른다(해소). 수는 고른 공정·제품에 따라 바뀌므로 지문에
     # 넣지 않는다 — 거르기를 바꿀 때마다 다시 뜨지 않게.
+    wip_scope = simulation_scope(active_scenario, dates=(start_date, end_date))
     alerts.state(
         "WIP-04",
-        scope={
-            "token": active_scenario["content_token"],
-            "period": [start_date.isoformat(), end_date.isoformat()],
-        },
+        scope=wip_scope.scope,
         content=bool(today_unset),
         active=bool(today_unset),
         text=(
@@ -342,7 +340,7 @@ with st.container(border=True):
             "일부 공정·주차에 가용대수가 없어 표준 가능량 기준선을 표시하지 못했습니다. "
             "「표준 목표」 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
         ),
-        scope_label=f"재공 현황 {start_date:%Y-%m-%d} ~ {end_date:%Y-%m-%d}",
+        scope_label=wip_scope.label,
     )
     if today_unset:
         render_page_link(

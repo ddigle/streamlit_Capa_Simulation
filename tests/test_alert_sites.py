@@ -110,6 +110,10 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_VERDICT,
     ),
+    ("src/capa_simulation/components/cutoff_management.py", "_render_missing_cutoffs"): (
+        1,
+        PLACE_FORM,
+    ),
     ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (
         2,
         PLACE_RESULT,
