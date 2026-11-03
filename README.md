@@ -282,7 +282,9 @@ Copy-Item docs\internal_claude_settings.json .claude\settings.json
 New-Item -ItemType Directory review -Force
 ```
 
-- `.claude/settings.json` 은 사내 에이전트가 `review/` 밖을 고치지 못하게 막고, `review/` 는 리뷰 문서 자리입니다.
+- `.claude/settings.json` 은 사내 에이전트가 `review/` 밖을 고치지 못하게 막고, 실화면 그림 파일(png · jpg 등)을 `Read` 로 열지
+  못하게 막습니다. `review/` 는 리뷰 문서 자리입니다.
+- 사내 적용 세션은 기본 Sonnet 으로 띄웁니다. Opus 가 필요한 여섯 구간에서는 에이전트가 멈추고 `/model opus` 를 청합니다(런북 0-2).
 - 둘 다 배포가 **보존**하므로 다음 ZIP 이 덮지 않습니다. 템플릿이 바뀌면 그때 다시 복사합니다.
 - 사내 에이전트 세션은 auto·bypass(권한 건너뛰기) 모드로 띄우지 않습니다 — 템플릿의 방어선은 사람이 승인 프롬프트를 읽는
   것입니다. 배포마다 런북 1-2 가 설정이 템플릿과 같은지와 함께 봅니다.
@@ -604,7 +606,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/wsl_dev_environment.md` | 사외 개발 자리(데스크탑 WSL) 준비·명령·앱 띄우기·배포 |
 | `docs/review_sample.md` | 검수용 합성 샘플 — 만드는 법 · 만드는 것(시나리오 · 공식버전 · 설비 DB · 모듈 견본) · 이야기 칸 · 끝 점검 · 앱 띄우기 |
 | `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(가이드는 사외 완성 — 사외 뼈대 · 사내 완성은 쉼), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
-| `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장) 포함. 따라하기 가이드 사내판 만들기(10장)는 쉼 |
+| `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 기본 Sonnet · Opus 구간 여섯(0-2)·실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장) 포함. 따라하기 가이드 사내판 만들기(10장)는 쉼 |
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
 | `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
@@ -613,7 +615,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |
 | `docs/module_guide.md` | 모듈 지침서 — 동료(담당자)의 에이전트가 받는 것. 자리·`module.json`·`module_api` v1·점검 규칙·Git 운영 |
 | `docs/module_colleague_guide.md` | 모듈 담당자(사람)용 안내서 — 비전문 동료가 읽는 쉬운 말 판. 할 수 있는 것·첫 지시·하루 흐름(가지 → PR)·에이전트에게 말하는 법·막힐 때. 규칙의 정본은 지침서 |
-| `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용) |
+| `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용, 그림 파일 읽기도 막는다) |
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
 | `static/guides/howto/` | 따라하기 가이드 합성 예시판(한 파일 HTML — 뼈대는 `src/capa_simulation/guides/howto/`, 만들기는 `scripts/build_page_guide.py --example`) |
 | `config/data_contract.json` | Core Data 78컬럼 계약 |

@@ -3087,9 +3087,10 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
 
     - 7-19 B 손 확인의 공정 Capa 상세 다음 화면 단추는 앱 글 그대로다(없는 「… 에서 보기」 가
       아니다).
-    - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로
-      읽는다(7-18 은 하지 않지만 다른 절이 그 표를 부른다).
-    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
+    - 7-23 A 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로 읽는다.
+    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 7-0 바로 앞 「옛 자리 → 새
+      자리」 표에 있다(앞앞 배포 몫 7-18 을 걷으며 「세 가지」 가 부르던 옛 탭 자리를 그 표로
+      옮겼다).
     - 7-23 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
       사내 이관 확인」 줄의 항목 수가 그 표의 수와 같다. 그 배포 뒤에 더한 항목은 TODO 「다음 배포 —
       화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다). 앞머리만 같아도
@@ -3107,8 +3108,9 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     assert "`이 달 가용 불일치 — 가용설비 현황`" in previous
     assert "에서 보기」 다음 화면 단추" not in previous
 
-    places = chapter.split("**7-18 항목의 새 자리**", 1)[1].split("**DB 에 쓰지 않는다**", 1)[0]
-    headers_row = next(line for line in places.splitlines() if "| A `equipment_headers` |" in line)
+    a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
+    places = chapter.split("**옛 자리 → 새 자리**", 1)[1].split("### 7-0. ", 1)[0]
+    headers_row = next(line for line in a_table.splitlines() if "| `equipment_headers` |" in line)
     count = len(screens.EQUIPMENT_NEW_HEADERS)
     assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음 · 머리 " in headers_row
     assert 'f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"' in _text(
@@ -3116,7 +3118,6 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     )
     assert "「… 의 **설비 마스터** n줄」" in places
 
-    a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
     table_keys = re.findall(r"^\| `([a-z_]+)` \| ([^|]+) \|", a_table, re.MULTILINE)
     # 7장은 그 배포의 기록이다 — 표는 `ITEMS` 의 앞머리와 같고, 그 뒤에 더한 항목은 다음 배포
     # 7장이 싣기 전까지 TODO 「다음 배포」 줄이 키와 전체 수를 적는다.

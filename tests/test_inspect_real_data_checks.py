@@ -3343,6 +3343,7 @@ def _sample_compressed_review() -> list[str]:
         "202610300900 (가); 적용 ok; 관문 ok; 권한 ng 복사함; 발견 1; 사외요청 1; 식별값 없음 확인",
         "권한 템플릿 복사함; 모드 기본",
         "적용먼저 확인 1030",
+        "모델 sonnet 1,5",
         "wf TOP 0",
         "B 6 = 기록 4 + 미기록 2; u3 a3; na칸 4; 빈칸 0",
         "B 1)ok@u 2)ok,a3,b0@ua 3)na 시간 없음 4)ng 칸2 다름@u 5)12초@a 6)na 인쇄 못 함@a",
@@ -3404,6 +3405,16 @@ def test_a_compressed_review_in_the_template_form_checks_clean() -> None:
     assert checks.check_transcript(uncoded) == [
         f"줄 {census + 1} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다"
     ]
+
+
+@pytest.mark.parametrize("line", ["모델 sonnet 1,5", "모델 sonnet 1, 5", "모델 sonnet 5"])
+def test_the_model_line_passes_the_transcript_check_as_it_is(line: str) -> None:
+    """런북 0-2 · 5장 차례 3 — Opus 구간을 Sonnet 으로 했을 때 압축본에 적는
+    `모델 sonnet <구간 번호>` 는 식도 확인 코드도 없는 줄이라 `--check-summary` 가 맞지 않는
+    것으로도 꼴로도 세지 않는다."""
+    checked = checks.review_transcript(["202611030900 (가); 적용 ok; 관문 ok", line])
+    assert checked.problems == []
+    assert checked.forms == []
 
 
 @pytest.mark.parametrize("separator", [" · ", "; ", ";", ", "])
