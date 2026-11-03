@@ -1445,6 +1445,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하고, 합친 스냅샷을 먼저 읽어 검증한 뒤에야 편집본을 비우고(FAB 대기분은 남김) 선택을 적는다. 자기 저장이 일정 리비전을
     만들었으면 다음 회차 선택이 그 리비전으로 옮긴다(작업 공간 표지 칸 — 거꾸로 import 하면 순환이다).
   - 머리 띠·사이드바 줄 글자 재료는 라벨 칸(`equipment_scenario_label_v1`)에 페이지가 그 회차 목록을 읽은 뒤 적는다(5장 23).
+    `select_equipment_scenario` 도 옮긴 쌍으로 라벨을 바로 적는다 — `app.py` 가 페이지보다 먼저 그리는 변경 칩 「설비 가정」
+    (`change_summary.session_changes`)이 옮긴 회차에 맞는다(한 회차 늦지 않게, 시험 `test_equipment_scenario_session.py`).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
 - `src/capa_simulation/constraint_simulation_state.py` — 제약 시뮬레이션의 세션 키(모두 `constraint_sim_` 접두)·버튼 값·기본값
   (D8 — 제약 120% · 기준 HOME · 개조 켬 30일 · 비중대로 켬, 2판 — 보유 0 · 신규 끔 · 기준일 오늘)·주소 인자 계약(`constraint_query_params`·

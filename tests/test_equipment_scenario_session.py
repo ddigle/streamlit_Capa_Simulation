@@ -322,6 +322,60 @@ def test_switching_with_unsaved_edits_needs_the_discard_check_and_keeps_the_fab(
     assert app.session_state["now"] == ("셋업 실무", 1)
 
 
+def _chip_before_page(database: str) -> None:
+    """`app.py` 차례 그대로 — 변경 칩 목록을 페이지(`resolve_equipment_session`)보다 먼저 정한다.
+    단추 둘은 Space 「공식으로 바꾸기」·팝업 「불러오기」 처럼 `select_equipment_scenario` 로
+    옮긴다."""
+    import streamlit as st
+
+    from capa_simulation.components.change_summary import session_changes
+    from capa_simulation.equipment_scenario_activation import (
+        resolve_equipment_session,
+        select_equipment_scenario,
+    )
+    from capa_simulation.persistence.equipment_cache import load_equipment_scenario_catalog
+
+    chips = [(item["top"], item["text"]) for item in session_changes(None, hrefs={})]
+    st.session_state.setdefault("chips", []).append(chips)
+    catalog = load_equipment_scenario_catalog(database)
+    assumption = next(item for item in catalog.scenarios if item.scenario_name == "셋업 실무")
+    release = catalog.latest_release
+    assert release is not None
+    st.button(
+        "가정으로",
+        key="to_assumption",
+        on_click=select_equipment_scenario,
+        args=(database, assumption.equipment_scenario_id, assumption.latest_schedule_revision_id),
+        kwargs={"discard": True},
+    )
+    st.button(
+        "공식으로",
+        key="to_official",
+        on_click=select_equipment_scenario,
+        args=(database, release.equipment_scenario_id, release.schedule_revision_id),
+        kwargs={"discard": True},
+    )
+    resolve_equipment_session(database)
+
+
+def test_the_change_chip_follows_a_scenario_switch_in_the_same_run(tmp_path: Path) -> None:
+    """설비 시나리오를 옮긴 회차의 변경 칩 「설비 가정」 — 칩은 페이지보다 먼저 서지만 옮기는 콜백이
+    라벨을 바로 적어 한 회차 늦지 않는다(가정으로 옮기면 그 회차에 서고, 공식으로 돌아오면 그
+    회차에 사라진다)."""
+    repository = _seeded(tmp_path)
+    _clone(repository)
+    app = AppTest.from_function(
+        _chip_before_page, args=(str(repository.database_path),), default_timeout=60
+    )
+    app.run()
+    app.button(key="to_assumption").click().run()
+    app.button(key="to_official").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assumed = [("설비 가정", "가정 「셋업 실무」 r1")]
+    assert app.session_state["chips"] == [[], assumed, []]
+
+
 def _own_save(database: str, change: str) -> None:
     """0 = 세움, 1 = 이 세션이 저장(일정 또는 공통), 2 = 다음 회차."""
     import pandas as pd

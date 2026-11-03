@@ -664,6 +664,10 @@ def select_equipment_scenario(
     먼저 합친 스냅샷을 읽어 검증하고, 통과해야 편집본을 비우고 선택을 적는다 — 비운 뒤라 다음
     `ensure_equipment_drafts` 는 「처음 세움」 이고 「다른 사용자가 저장」 알림이 뜨지 않는다.
     미저장 FAB 전체 배치는 시나리오와 무관해 남긴다.
+
+    라벨(`LABEL_KEY`)도 옮긴 쌍으로 바로 적는다 — `app.py` 가 페이지(`resolve_equipment_session`)
+    보다 먼저 그리는 변경 칩 「설비 가정」(`change_summary.session_changes`)이 옮긴 회차에 맞는다
+    (한 회차 늦지 않게). 페이지가 그 회차에 다시 적는다.
     """
     if has_unsaved_equipment_edits() and not discard:
         return (
@@ -675,13 +679,22 @@ def select_equipment_scenario(
     if target is None:
         return "그 설비 시나리오를 찾을 수 없습니다 — 목록을 다시 보세요."
     common_id = latest_equipment_revision_id(database_path)
+    snapshot: EquipmentSnapshot | None = None
     if common_id is not None:
         try:
-            load_merged_equipment_snapshot(database_path, common_id, schedule_revision_id)
+            snapshot = load_merged_equipment_snapshot(
+                database_path, common_id, schedule_revision_id
+            )
         except EquipmentScenarioIncompatible as error:
             return bootstrap_error_message(error)
         except KeyError:
             return "그 리비전을 찾을 수 없습니다 — 목록을 다시 보세요."
     reset_equipment_drafts(keep_fab=True)
     _write_selection(scenario_id, schedule_revision_id)
+    st.session_state[LABEL_KEY] = EquipmentSession(
+        catalog=catalog,
+        scenario=target,
+        schedule_revision_id=schedule_revision_id,
+        snapshot=snapshot,
+    ).label()
     return None
