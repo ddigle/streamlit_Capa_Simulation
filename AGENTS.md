@@ -1074,6 +1074,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       12px 에서 범위 폭에 맞춰 줄고 가운데는 범위 높이의 0.16 배까지이며 7px(`UNIT_LABEL_MIN_PX`) 아래면 숨는다 — 다만
       모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 7px 알약이 범위 안에 들면 7px 로 선다. 위·아래 알약이
       영역 위·아래 끝을 넘으면 범위 안쪽 띠로 뒤집는다(`groupNameSpot`).
+  - **베이·머리 크기·배율 글자**(2026-11-03 사용자 요청 — 사양 (나)). 순수 판정은 `// <mark-look>`(모양 값 `cleanLook`·`lookText`·
+    `lookValue`, 그리기 `arrowShape`·`bayShape`·`placeLocal`·`bayAutoSize`, `bayNumber`·`lineDash`)와 `// <text-scale>`
+    (`textScale`·`calloutScale`·`scaledText`) 구획이고 `tests/test_space_mark_look_js.py` 가 node 로 돌려 파이썬
+    `floor_layout_mark.mark_look`·`bay_label` 과 대조한다.
+    - 베이(`bay`, 층만 — FAB 에는 없다): 0° 는 여는 쪽이 왼쪽인 ⊃ 꼴(팔 y = lh/4 · 3lh/4)이고 머리는 아래 팔 왼쪽 끝에서 왼쪽을
+      향한다. 90° 돌리기(`rotateMark`)와 좌우 뒤집기(`look.flip` — 돌리기 앞 가운데 축 거울)·상하 뒤집기(180° 돌림 + 좌우
+      뒤집기, 같은 상자)로 여덟 방향이다. 가운데 글은 「B<번호>」 — 이름표 칸에 번호만 쥐고(`bayNumber` = 파이썬 `bay_label`,
+      「B80」·「b 80」 → 「80」, 10자) 그릴 때 「B」 를 붙인다. 글은 머리를 비킨 두 팔 사이 틈 가운데에 돌리지 않고 가로로 서고
+      (자동은 틈 맞춤 — 고를 수 있는 가장 큰 크기 24 의 배율 크기까지), 막는 요소가 아니며 상자 전체가 잡힌다(동선과 같다).
+    - 모양 값 `look`(동선·베이): 머리 크기 `head`(「너비·길이」 S·M·L — 동선의 MM 이 옛 그림 그대로), 선 색 `line`(강조색·진하게·
+      영역 색 키 — 테마 토큰), 굵기 `lineWidth`(화면 px, 동선은 처음 값 없이 상자 높이를 따름), 모양 `lineStyle`. 처음 값인 키는 쥐지
+      않고(`cleanLook`) 바꿀 때마다 새 객체로 갈아 끼운다 — 읽기·처음 값 기록(`snapshot`)·바뀜 판정(`lookText`)·적용값·복사·새 요소·
+      되돌리기에 모두 든다. 선택 칸 「머리 크기」(3×3 갤러리 — 행 너비 좁게·보통·넓게, 열 길이 짧게·보통·길게)·선 색·굵기·선 모양·
+      뒤집기는 고른 것 가운데 동선·베이 모두에 걸고 되돌리기 한 번이다(`setLooks`·`flipBays`).
+    - 배율 글자: 도면에 붙은 글자(요소 이름표·글자 요소·층 블록 글·베이 글·호기 이름표 상한 14·Main 설비명 상한 12)는 화면 px =
+      기준 크기 × s, s = 화면 px 당 도면 칸 ÷ 8(위 2배)이고 화면 6px 아래면 숨긴다(영역은 꼬리표 상자째). 고른 글자 크기는 「도면
+      1칸이 화면 8px 일 때의 크기」 다(저장값은 그대로). 표지(필요 단축 배지·견주기 꼬리표)는 s 를 0.75~1.25 로 묶고 크기로는 숨기지
+      않는다. 손잡이·초점 테·「!」·겹침 꼭지·선 굵기는 화면 px 그대로다. 확대·이동마다 `applyView` → `position` → `drawMark`·
+      `drawSelectionBox` 가 다시 잰다.
   - **층 상세 보기 둘**(2026-10-23 사용자 요청 3·8, 보기 전용 층 뷰어만 — FAB·배치 편집기는 그대로).
     - 호기 누르기: 끌지 않고 누른 뒤·Esc 뒤 `notePick` 이 고른 호기(호기가 아니면 null)를 트리거 `pick`
       (`{epoch, id}`)으로 보낸다 — 같은 값은 다시 보내지 않는다. 파이썬 `_dispatch_pick` 이 epoch 를 대조해 `on_pick` 을
@@ -1669,6 +1688,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
     `zone_look`)을 갖는다. FAB 요소(`fab_layout.prepare_fab_layout_marks`)도 같은 규칙이다.
+  - 요소 모양 값 `look`(설비 `0033`, 정규 JSON 글 — `mark_look`)은 종류마다 받는 키(`LOOK_KEYS` — 동선 머리·선 셋, 베이는
+    + 뒤집기)만 받고 처음 값(`LOOK_DEFAULTS`)인 키는 빼며 다 처음 값이면 빈 글이다. 받지 않는 키·틀린 값은 거부, 모양 값이
+    없는 종류는 보낸 값을 보지 않는다. `editor_payload` 는 빈 모양 값의 `look` 키를 싣지 않는다(요소 지문이 0033 전과 같다).
+    베이(`bay`, 층만)의 이름표는 번호다(`bay_label` — 앞 B 를 떼고 10자). FAB 요소도 같은 `mark_look` 이다(동선만).
   - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데·위·아래 모두 행으로 받는다. 고른 적이 없거나 처음 위치로
     되돌린 묶음은 행이 없고 모양의 처음 위치 `space_layout_edit.default_group_label` 로 선다 — 한 줄 묶음(모듈 2·3)은
     위라 가운데를 고르면 가운데 행이 남는다)의 검증은 `prepare_group_labels`(Main 설비 이름은
@@ -3751,7 +3774,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장은 dirty 를 세우지 않는다.
   - 층 Main 설비명 위치(`floor_layout_group_label`, `0025`)는 `floor_group_labels`(층마다 전체)로 같은 트랜잭션에 쓰고
     층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
-    `label_align`(`0025`, 영역 아닌 요소는 NULL)이다.
+    `label_align`(`0025`, 영역 아닌 요소는 NULL)이다. 요소 모양 값은 두 요소 표와 가정 차이 표의 `look_json`(`0033` — 정규 JSON
+    글, 빈 글 ↔ NULL, 동선·베이 아닌 요소는 NULL)이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 네 진입점(설비 저장의 캔버스·
     `save_floor_layout_canvas`·`save_floor_layout_image`·`delete_floor_layout_profile`)은 각 ACTIVE 설비 시나리오 최신·최신 공식
     발행의 **가정 요소**(`set`)도 본다(`_require_overlay_marks_fit` → `EquipmentLayoutOverflow`). 가정 차이 호기는 막지 않는다 —
@@ -4101,7 +4125,10 @@ RQ_MODULE
       `equipment_repository`) — 공식 대상은 공통·층 현행값에, 가정 대상은 그 시나리오 새 리비전의 차이로. **공식 설비 시나리오의
       최신·최신 발행에는 차이 행이 없다**(I2) — 배치 차이가 있는 시나리오는 공식으로 발행하지 않는다(Q4). E7 되돌리기·여기서 새
       시나리오는 차이도 옮긴다. 위치는 가용대수·확보율 계산 입력이 아니지만 계산 프레임은 얹은 그대로라 배치만 바꾼 가정
-      시나리오도 계산 칸을 따로 쓴다(값은 같다 — LY6, 계산 키 방침 「실제 입력 전부」 그대로).
+      시나리오도 계산 칸을 따로 쓴다(값은 같다 — LY6, 계산 키 방침 「실제 입력 전부」 그대로). 요소 차이는 요소 통째라
+      모양 값(`look`, 설비 `0033` — 화살표 머리 크기·선·뒤집기)만 바꾼 요소도 `set` 행이고 차이 표 `look_json` 에 실린다. 차이
+      지문 재료(`layout_overlay._mark_payload`)는 모양 값이 빈 요소에 그 키를 넣지 않는다 — 0033 전 리비전의 `layout_hash` 가
+      새 코드가 같은 내용으로 낸 지문과 같아야 배치 빨리 감기·되돌리기 미리 보기가 판올림 경계에서 어긋나지 않는다.
     - **Space 는 세션 설비 시나리오의 배치를 그리고 역할대로 고친다**(S3 — LY3·LY4, 1단계 E5 「Space 는 늘 공식」 을 바꿈).
       공식 배치는 공식 설비 시나리오에서만, 가정 배치는 그 시나리오에서만 고치고(`space_edit_mode` 한 판정 — 설비 마스터 탭
       배치 칸·붙여넣기도), FAB 전체·층 캔버스·배경 도면·층 사용은 공식에서만이다(G5·Q3). 배치 편집은 적용할 때 역할을 찍고

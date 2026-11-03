@@ -147,14 +147,18 @@ export default function (component) {
     column: { name: '기둥', size: [1.5, 1.5], label: '', rotatable: false },
     text: { name: '글자', size: [14, 3], label: '메모', rotatable: true },
     arrow: { name: '동선', size: [16, 3], label: '', rotatable: true },
+    // 베이 화살표(U자 — 2026-11-03 사용자 요청). 0° 는 여는 쪽이 왼쪽인 ⊃ 꼴이고 머리는 아래 팔 끝에서 왼쪽을 향한다. 가운데 글은
+    // 「B<번호>」 — 이름표 칸에는 번호만 둔다(`bayNumber`). 층 도면에만 있다(FAB 에는 넣지 않는다 — 사양 D7).
+    bay: { name: '베이', size: [10, 4], label: '', rotatable: true },
     // FAB 층 블록. 연결(link, 「C1 1F」)이 필수다. 색은 사용자가 고르는 자리 구분 색이고 빈 값은 Space 기본 면이다.
     block: { name: '층 블록', size: [16, 6], label: '', rotatable: false },
   }
-  // 이 범위에서 그리는 종류. 층 블록은 FAB 에만 있다 — 층 도면에 오면 그리지 않고 그대로 돌려보낸다.
-  const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB)
+  // 이 범위에서 그리는 종류. 층 블록은 FAB 에만, 베이는 층에만 있다 — 다른 범위에 오면 그리지 않고 그대로 돌려보낸다.
+  const drawable = (kind) => Boolean(MARK_KINDS[kind]) && (kind !== 'block' || FAB) && (kind !== 'bay' || !FAB)
   const ZONE_COLOR_NAMES = { blue: '파랑', green: '초록', violet: '보라', sky: '하늘', rose: '분홍', gray: '회색' }
-  // 요소 이름표의 글자 크기(화면 px)·색. 크기 null 은 「자동」(글자 요소는 상자에 맞추고 나머지는 LABEL_PX),
-  // 색 '' 은 기본 글자색(--sle-mark-ink)이다. 색 키는 영역 색과 같고 실제 색은 팔레트의 mark-text-<키> 다.
+  // 요소 이름표의 글자 기준 크기·색. 크기 null 은 「자동」(글자 요소는 상자에 맞추고 나머지는 LABEL_PX), 색 '' 은 기본
+  // 글자색(--sle-mark-ink)이다. 색 키는 영역 색과 같고 실제 색은 팔레트의 mark-text-<키> 다. 기준 크기는 도면 1칸이 화면
+  // TEXT_REF_PPU px 일 때의 화면 px 이고 배율을 따라 커지고 작아진다(`// <text-scale>`).
   const FONT_SIZES = (Array.isArray(data.fontSizes) ? data.fontSizes : [9, 11, 13, 16, 20, 24]).map(Number)
   const LABEL_PX = 11
   const fontSizeOf = (raw) => (raw === null || raw === undefined || raw === '' || !FONT_SIZES.includes(Number(raw)) ? null : Number(raw))
@@ -177,6 +181,17 @@ export default function (component) {
   // 호기 이름표의 가장 작은 크기(화면 px) — 이보다 작으면 숨긴다(밀집 층, 확대하면 다시 보인다).
   const UNIT_LABEL_MIN_PX = 7
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
+  // 동선·베이의 선 색(look.line) → CSS 색. accent 는 강조색, ink 는 도면 글자색, 영역 색 키는 글자 색과 같은 mark-text-<키>(밝게·
+  // 어둡게 모두 테마 토큰).
+  const lineInk = (key) => (key === 'accent' ? 'var(--sle-accent)' : key === 'ink' ? 'var(--sle-mark-ink)'
+    : markColors[key] ? `var(--sle-mark-text-${key})` : '')
+  // 베이 가운데 글 — 늘 「B」 를 앞에 붙인다(번호가 비면 「B」 만).
+  const bayCaption = (item) => `B${item.label || ''}`
+  // 요소의 풍선·선택 칸 이름 — 「종류 · 이름표」(베이는 「베이 · B80」).
+  const markTitle = (item) => {
+    const shown = item.kind === 'bay' ? bayCaption(item) : item.label
+    return `${MARK_KINDS[item.kind].name}${shown ? ` · ${shown}` : ''}`
+  }
   // 편집 안내 첫 문단(왼쪽 칸 「도움말」 — 옛 편집기 위 캡션, 2026-11-03 사용자 요청으로 도면 위 줄을 걷고 옮겼다).
   const GUIDE = FAB
     ? '층 블록·영역·글자를 끌어 놓아 고치고 「적용」 을 누르면 이 세션에 들어갑니다(저장 전). 층 블록을 고르면 선택 칸에서 연결 층·색을 바꾸고 [열기] 로 그 층을 엽니다. S.PKG 가 아닌 자리는 블록 대신 색을 고른 영역과 글자로 그립니다.'
@@ -272,6 +287,18 @@ export default function (component) {
   const markHatch = q('.sle-mark-hatch')
   const markKeepOut = q('.sle-mark-keepout')
   const markRotate = q('.sle-mark-rotate')
+  const markNameWord = q('.sle-mark-name-word')
+  const bayPrefix = q('.sle-bay-prefix')
+  // 동선·베이의 선·머리(여럿 골라도 — 고른 것 가운데 동선·베이 모두에 건다).
+  const lineProps = q('.sle-lineprops')
+  const headToggle = q('.sle-head-toggle')
+  const headNow = q('.sle-head-now')
+  const headWord = q('.sle-head-word')
+  const headGallery = q('.sle-head-gallery')
+  const lineColor = q('.sle-line-color')
+  const lineWidth = q('.sle-line-width')
+  const lineStyle = q('.sle-line-style')
+  const bayFlips = q('.sle-bay-flips')
   const zoneOnly = [...host.querySelectorAll('.sle-zone-only')]
   const blockProps = q('.sle-block-props')
   const blockLink = q('.sle-block-link')
@@ -703,24 +730,182 @@ export default function (component) {
   }
   // </layout-look>
 
+  // ---------------------------------------------------------------- 배율에 따른 글자 크기(순수 함수)
+  // 도면에 붙은 글자(요소 이름표·글자 요소·층 블록 글·호기 이름표 상한·Main 설비명·베이 글)는 배율을 따라 커지고 작아진다
+  // (2026-11-03 사용자 요청 — 전체 보기에서 글자가 도면보다 커 보였다). 화면 글자 px = 기준 크기 × s, s = 화면 px 당 도면 칸
+  // (ppu)을 TEXT_REF_PPU 로 나눈 값이고 위는 TEXT_SCALE_MAX 배까지다. TEXT_MIN_PX 아래면 숨긴다(지금 글자 요소 자동의 6px).
+  // 표지(필요 단축 배지·견주기 꼬리표)는 s 를 CALLOUT_SCALE 범위로 묶고 크기로는 숨기지 않는다. 손잡이·초점 테·「!」 같은 UI
+  // 표지와 선 굵기는 화면 px 그대로다. `tests/test_space_mark_look_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다.
+  // <text-scale>
+  const TEXT_REF_PPU = 8
+  const TEXT_SCALE_MAX = 2
+  const TEXT_MIN_PX = 6
+  const CALLOUT_SCALE = [0.75, 1.25]
+  // ppu(화면 px / 도면 1칸)에서 글자 배율 s. 재지 못한 값(0·숫자 아님)이면 1 이다.
+  function textScale(ppu) {
+    if (!(ppu > 0) || !Number.isFinite(ppu)) return 1
+    return Math.min(ppu / TEXT_REF_PPU, TEXT_SCALE_MAX)
+  }
+  // 표지 배율 — s 를 CALLOUT_SCALE 안으로.
+  function calloutScale(s) {
+    return Math.min(Math.max(s, CALLOUT_SCALE[0]), CALLOUT_SCALE[1])
+  }
+  // 기준 크기 base(화면 px)의 글자가 배율 s 에서 서는가 — {px, shown}.
+  function scaledText(base, s) {
+    const px = base * s
+    return { px, shown: px >= TEXT_MIN_PX }
+  }
+  // </text-scale>
+
+  // ---------------------------------------------------------------- 동선·베이 화살표 모양(순수 함수)
+  // 요소 모양 값(look — 2026-11-03 사용자 요청)의 받는 키·처음 값은 파이썬 `services/floor_layout_mark.LOOK_KEYS`·
+  // `LOOK_DEFAULTS` 와 같다(처음 값인 키는 빼고, 정규 글은 키 차례 JSON — node 시험이 파이썬과 대조한다). 머리 크기는 엑셀의
+  // 3×3(「너비·길이」 두 글자, 각 S·M·L)이고 동선의 MM 이 지금 그림이다. 그리기는 돌리기 전 제자리 좌표(lw×lh, y 아래로)다.
+  // `tests/test_space_mark_look_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <mark-look>
+  const LOOK_KEYS = {
+    arrow: ['head', 'line', 'lineWidth', 'lineStyle'],
+    bay: ['head', 'line', 'lineWidth', 'lineStyle', 'flip'],
+  }
+  const LOOK_DEFAULTS = {
+    arrow: { head: 'MM', line: 'accent', lineStyle: 'dashed' },
+    bay: { head: 'MM', line: 'ink', lineWidth: 2, lineStyle: 'solid', flip: false },
+  }
+  const HEAD_SIZES = ['S', 'M', 'L']
+  const ARROW_HEADS = HEAD_SIZES.flatMap((w) => HEAD_SIZES.map((l) => w + l))
+  const LINE_COLORS = ['accent', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
+  const LINE_WIDTHS = [0.75, 1, 1.5, 2, 3, 4.5, 6]
+  const LINE_STYLES = ['solid', 'dashed', 'dotted']
+  // 머리 너비·길이(동선 × 상자 높이 lh · 베이 × 팔 사이 lh/2)와 동선 머리 길이의 상한(× 상자 폭 lw).
+  const HEAD_W = { S: 0.45, M: 0.7, L: 1.0 }
+  const HEAD_L = { S: 0.7, M: 1.1, L: 1.6 }
+  const HEAD_CAP = { S: 0.25, M: 0.35, L: 0.45 }
+  const BAY_NUMBER_MAX = 10
+  // 모양 값 하나가 그 키의 값인가.
+  function lookAllowed(key, value) {
+    if (key === 'head') return ARROW_HEADS.includes(value)
+    if (key === 'line') return LINE_COLORS.includes(value)
+    if (key === 'lineWidth') return typeof value === 'number' && LINE_WIDTHS.includes(value)
+    if (key === 'lineStyle') return LINE_STYLES.includes(value)
+    if (key === 'flip') return typeof value === 'boolean'
+    return false
+  }
+  // 받은 모양 값을 그 종류의 정규 꼴로 — 받는 키의 맞는 값 가운데 처음 값이 아닌 것만 남긴다(모르는 키·틀린 값은 뺀다 —
+  // 파이썬은 거부하지만 편집기는 그릴 수 있는 것만 쥔다). 모양 값이 없는 종류는 빈 값이다.
+  function cleanLook(raw, kind) {
+    const keys = LOOK_KEYS[kind]
+    const out = {}
+    if (!keys || !raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+    const defaults = LOOK_DEFAULTS[kind]
+    for (const key of keys) {
+      const value = raw[key]
+      if (value === undefined || value === null || !lookAllowed(key, value)) continue
+      if (key in defaults && defaults[key] === value) continue
+      out[key] = value
+    }
+    return out
+  }
+  // 정규 글(키 차례 JSON) — 바뀜 판정·견주기에 쓴다. 파이썬 `json.dumps(sort_keys=True, separators=(",", ":"))` 와 같다.
+  function lookText(look) {
+    const keys = Object.keys(look || {}).sort()
+    return keys.length ? JSON.stringify(Object.fromEntries(keys.map((key) => [key, look[key]]))) : ''
+  }
+  // 그릴 값 — 고른 값, 없으면 처음 값(처음 값이 없는 키는 undefined).
+  function lookValue(look, kind, key) {
+    const value = look ? look[key] : undefined
+    if (value !== undefined) return value
+    return (LOOK_DEFAULTS[kind] || {})[key]
+  }
+  // 머리 크기 두 글자 → {w, l}. 틀린 값은 MM.
+  function headParts(head) {
+    const text = ARROW_HEADS.includes(head) ? head : 'MM'
+    return { w: text[0], l: text[1] }
+  }
+  // 동선(곧은 화살표, 0° 는 왼쪽 → 오른쪽) — 몸통 선 {x1, y1, x2, y2}, 머리 세 점, 머리 길이 hl. MM 이 지금 그림이다(머리 길이
+  // min(lh × 1.1, lw × 0.35), 머리 y = lh × 0.15 … lh × 0.85, 몸통 끝 = lw − 머리 길이 × 0.9).
+  function arrowShape(lw, lh, head) {
+    const { w, l } = headParts(head)
+    const hw = HEAD_W[w] * lh
+    const hl = Math.min(HEAD_L[l] * lh, HEAD_CAP[l] * lw)
+    return {
+      shaft: { x1: lh * 0.3, y1: lh / 2, x2: lw - hl * 0.9, y2: lh / 2 },
+      head: [[lw - hl, lh / 2 - hw / 2], [lw, lh / 2], [lw - hl, lh / 2 + hw / 2]],
+      hl,
+    }
+  }
+  // 베이(U자, 0° = ⊃ — 굽은 곳 오른쪽, 두 팔이 왼쪽으로 열림). 팔은 y = lh/4 · 3lh/4, 굽은 곳 반지름 rx = min(lh/4, lw/2)·ry = lh/4,
+  // 머리는 아래 팔 왼쪽 끝에서 왼쪽을 향한다 — 너비 HEAD_W × lh/2, 길이 min(HEAD_L × lh/2, (lw − rx) × 0.45). 선 경로 d, 머리 세 점,
+  // 가운데 글 자리(두 팔 사이 — 머리를 비킨 틈의 가운데)와 틈의 폭·높이(gapW·gapH)를 낸다.
+  function bayShape(lw, lh, head) {
+    const { w, l } = headParts(head)
+    const rx = Math.min(lh / 4, lw / 2)
+    const ry = lh / 4
+    const top = lh / 4
+    const bottom = (3 * lh) / 4
+    const bend = lw - rx
+    const hw = HEAD_W[w] * (lh / 2)
+    const hl = Math.max(0, Math.min(HEAD_L[l] * (lh / 2), bend * 0.45))
+    return {
+      d: `M 0 ${top} H ${bend} A ${rx} ${ry} 0 0 1 ${bend} ${bottom} H ${hl}`,
+      head: [[hl, bottom - hw / 2], [0, bottom], [hl, bottom + hw / 2]],
+      text: { x: (hl + bend) / 2, y: lh / 2 },
+      gapW: Math.max(0, bend - hl),
+      gapH: lh / 2,
+      hl,
+    }
+  }
+  // 제자리 좌표의 점 (x, y) 가 화면(SVG — y 아래로)에서 상자 가운데로부터 어디인가 — 좌우 뒤집기(flip, 가운데 축)를 먼저, 그다음
+  // 가운데를 축으로 rot° 돌림. 그리는 쪽의 `translate(c) rotate(rot) scale(flip) translate(−l/2)` 과 같다.
+  function placeLocal(x, y, lw, lh, rot, flip) {
+    let dx = x - lw / 2
+    const dy = y - lh / 2
+    if (flip) dx = -dx
+    const r = (((rot || 0) % 360) + 360) % 360
+    if (r === 90) return { x: -dy, y: dx }
+    if (r === 180) return { x: -dx, y: -dy }
+    if (r === 270) return { x: dy, y: -dx }
+    return { x: dx, y: dy }
+  }
+  // 베이 가운데 글 자동 크기(도면 단위) — 틈에 맞춘다. 0°·180° 는 틈이 화면에서 가로, 90°·270° 는 세로로 선다(글자는 늘 가로).
+  function bayAutoSize(shape, rot, em) {
+    const width = Math.max(em, 1)
+    if ((rot || 0) % 180) return Math.min(shape.gapW * 0.75, (shape.gapH * 0.9) / width)
+    return Math.min(shape.gapH * 0.75, (shape.gapW * 0.9) / width)
+  }
+  // 베이 번호 — 앞의 B·b 와 그 뒤 빈칸을 떼고 BAY_NUMBER_MAX 자까지(파이썬 `bay_label` 과 같다 — 넘으면 파이썬은 거부, 편집기는 자른다).
+  function bayNumber(text) {
+    let value = String(text ?? '').trim()
+    if (value[0] === 'B' || value[0] === 'b') value = value.slice(1).trimStart()
+    return value.slice(0, BAY_NUMBER_MAX)
+  }
+  // 선 모양 → 점선 무늬(화면 px 굵기 w 기준). 실선은 빈 글.
+  function lineDash(style, w) {
+    if (style === 'dashed') return `${w * 3} ${w * 2}`
+    if (style === 'dotted') return `0.01 ${w * 2}`
+    return ''
+  }
+  // </mark-look>
+
   // ---------------------------------------------------------------- 「필요 단축」 배지 자리(순수 함수)
   // `tests/test_space_short_badges_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름은 화면 px 상수 넷만 쓴다.
   // <short-badge>
   // 배지 상자 {x(가운데), y(가운데, 데이터 좌표 — Y 위로), w, h, mainSize, subSize, mainY, subY}. rects 는 그 호기의 보이는 모듈
   // 상자들([{x, y, w, h}]), upp 는 화면 px 당 데이터 단위, labelAbove 면 Main 설비 이름표(위)만큼 더 비킨다. em 은 두 줄 글자
-  // 폭(em), canvasH 는 영역 높이 — 위 끝을 넘으면 묶음 안쪽 위 띠로 뒤집는다. 크기는 화면 px 로 정해 확대해도 같다.
-  function badgeSpot(rects, upp, labelAbove, em, canvasH) {
+  // 폭(em), canvasH 는 영역 높이 — 위 끝을 넘으면 묶음 안쪽 위 띠로 뒤집는다. 크기는 화면 px 에 표지 배율 k(배율을 따라
+  // 0.75~1.25 배 — `calloutScale`)를 곱한 것이고, nameK 는 Main 설비명 글자 배율(이름표 위로 비킬 높이)이다.
+  function badgeSpot(rects, upp, labelAbove, em, canvasH, k = 1, nameK = 1) {
     const x0 = Math.min(...rects.map((r) => r.x))
     const x1 = Math.max(...rects.map((r) => r.x + r.w))
     const y1 = Math.max(...rects.map((r) => r.y + r.h))
-    const mainSize = BADGE_MAIN_PX * upp
-    const subSize = BADGE_SUB_PX * upp
-    const pad = BADGE_PAD_PX * upp
+    const mainSize = BADGE_MAIN_PX * k * upp
+    const subSize = BADGE_SUB_PX * k * upp
+    const pad = BADGE_PAD_PX * k * upp
+    const gap = BADGE_GAP_PX * k * upp
     const w = Math.max((em.main || 1) * mainSize, (em.sub || 1) * subSize) + pad * 2
     const h = mainSize * 1.2 + subSize * 1.2 + pad
-    const lift = BADGE_GAP_PX * upp + (labelAbove ? (GROUP_NAME_PX * 1.6 + 2) * upp : 0)
+    const lift = gap + (labelAbove ? (GROUP_NAME_PX * nameK * 1.6 + 2) * upp : 0)
     let y = y1 + lift + h / 2
-    if (y + h / 2 > canvasH) y = y1 - BADGE_GAP_PX * upp - h / 2
+    if (y + h / 2 > canvasH) y = y1 - gap - h / 2
     return {
       x: (x0 + x1) / 2, y, w, h, mainSize, subSize,
       mainY: pad / 2 + mainSize * 0.6, subY: pad / 2 + mainSize * 1.2 + subSize * 0.6,
@@ -730,11 +915,11 @@ export default function (component) {
   // spots 는 목록 차례(기한 지남 → 남은 날 짧은 순)라 앞 배지가 먼저 자리를 잡는다. 후보는 제자리 → 한 칸 위(배지 높이 + 틈)
   // 이고 영역 위 끝을 넘는 후보는 버린다. 둘 다 겹치면 null — 그 배지는 이 배율에서 숨고(확대하면 다시 선다) 상자 구간 색과
   // 「이 층에서 단축할 호기」 표가 남는다.
-  function settleBadges(spots, upp, canvasH) {
+  function settleBadges(spots, upp, canvasH, k = 1) {
     const placed = []
     const hits = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.y - b.y) < (a.h + b.h) / 2
     return spots.map((spot) => {
-      for (const dy of [0, spot.h + BADGE_GAP_PX * upp]) {
+      for (const dy of [0, spot.h + BADGE_GAP_PX * k * upp]) {
         const at = { ...spot, y: spot.y + dy }
         if (dy && at.y + at.h / 2 > canvasH) continue
         if (!placed.some((other) => hits(other, at))) {
@@ -752,7 +937,8 @@ export default function (component) {
   // <block-text>
   // 층 블록 가운데 글자 줄 — [{text, size, role}] 를 위에서 아래 차례로 돌려준다(role 'head'·'sub'·'short'). main 은 이름 줄과
   // 그 아래 줄(배치·미배치 대수, 비활성 층은 사유), short 는 색 기준 「필요 단축」 의 단축 줄(없으면 빈 글), lw·lh 는 블록 크기
-  // (데이터 단위), upp 는 화면 px 당 데이터 단위, em 은 글자 폭(em) 함수다. 크기는 블록에 맞추되 화면 13px 를 넘지 않는다.
+  // (데이터 단위), upp 는 화면 px 당 데이터 단위, em 은 글자 폭(em) 함수다. 크기는 블록에 맞추되 화면 maxPx(처음 13 — 그리는
+  // 쪽이 배율 글자 배율을 곱해 넘긴다, `// <text-scale>`)를 넘지 않는다.
   // - 단축 줄은 다른 줄의 크기를 끌어내리지 않는다 — 긴 단축 줄(「단축 5대 · 최대 −197일 · 추가 28」)에 맞추느라 이름까지 반으로
   //   줄어 강조하려는 층 이름이 6~7px 이 됐다(E2E r1). 위 줄은 제 폭으로 맞추고(높이는 단축 줄 몫도 나눈다), 단축 줄만 제 폭에
   //   맞춰 더 작아진다. 한 줄로 많이 줄면(위 줄의 0.75 배 아래) 「 · 」 경계에서 두 줄로 나눠 본다 — 나눈 줄이 1.15 배 넘게
@@ -761,8 +947,8 @@ export default function (component) {
   //   (단축 줄 몫을 나눈 크기로 판정해 대수 줄까지 빼던 것 — 2026-11-02 E2E), 그래도 7px 아래면 이름 줄만 남긴다(풍선에
   //   남는다). 비활성 층(`off`)이면 이름 앞에 「⊘」 를 달아 사유 줄이 빠진 좁은 화면에서도 사용 층과 가른다(390px — E2E r1).
   // - 단축 줄이 화면 6px 아래면 그 줄만 숨긴다. 이름 줄이 6px 아래면 부르는 쪽이 숨긴다.
-  function blockTextLayout(main, short, off, lw, lh, upp, em) {
-    const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), 13 * upp)
+  function blockTextLayout(main, short, off, lw, lh, upp, em, maxPx = 13) {
+    const fit = (rows, count) => Math.min((lh * 0.8) / (count * 1.3), (lw * 0.9) / Math.max(...rows.map(em), 1), maxPx * upp)
     const widthFit = (rows) => (lw * 0.9) / Math.max(...rows.map(em), 1)
     const splitTwo = (text) => {
       const parts = text.split(' · ')
@@ -1102,6 +1288,8 @@ export default function (component) {
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
     sizeFrom: item.sizeFrom, rot: item.rot, label: item.label, group: item.group, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
     link: item.link, fontSize: item.fontSize, fontColor: item.fontColor, borderStyle: item.borderStyle, labelAlign: item.labelAlign,
+    // 모양 값은 바꿀 때마다 새 객체로 갈아 끼운다(제자리에서 고치지 않는다) — 기록이 같은 객체를 쥐어도 된다.
+    look: item.look,
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
@@ -1365,6 +1553,7 @@ export default function (component) {
     namesLayer.replaceChildren()
     if (FAB) return
     const upp = unitsPerPx()
+    const ts = textScale(1 / upp)
     for (const [key, lead] of moduleGroups()) {
       const mods = moduleMembers(lead)
       const whole = mods ? groupRange(mods) : null
@@ -1377,7 +1566,7 @@ export default function (component) {
       const position = groupLabelOf(key, mods.length)
       // 모듈 칸 이름표가 하나도 서 있지 않으면(밀집 층·작은 묶음) 가운데 이름은 가장 작은 크기로라도 선다.
       const bare = !seen.some((m) => unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX)
-      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX, upp, UNIT_LABEL_MIN_PX, bare)
+      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare)
       if (fs === null) continue
       const spot = groupNameSpot(range, position, fs, 2 * upp, H())
       const cy = H() - spot.y
@@ -1398,8 +1587,8 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 「필요 단축」 배지(층 보기)
   // 단축 호기(모듈 묶음은 Main 설비 하나)마다 상자(묶음은 그 층에 그린 모듈 전체의 바깥 상자) 위 가운데에 말풍선 하나 —
-  // 윗줄 「−12일」, 아랫줄 「D-5」·「오늘」·「기한 지남」. 구간 색이고 임박은 굵은 테다. 화면 px 크기라 확대해도 글자 크기가
-  // 같다(Main 설비 이름표와 같은 방식). 누르면 그 호기를 누른 것과 같다(`pick`). 기준일에 숨은 모듈은 바깥 상자에서 뺀다.
+  // 윗줄 「−12일」, 아랫줄 「D-5」·「오늘」·「기한 지남」. 구간 색이고 임박은 굵은 테다. 표지라 화면 px 크기에 배율을 따른
+  // 0.75~1.25 배만 곱한다(`calloutScale`). 누르면 그 호기를 누른 것과 같다(`pick`). 기준일에 숨은 모듈은 바깥 상자에서 뺀다.
   function drawShortBadges() {
     if (!badgesLayer) return
     // 다시 그리면 배지 노드가 모두 새로 선다 — 초점을 가진 배지(키보드로 고른 것)는 같은 key 의 새 배지로 돌려준다.
@@ -1410,6 +1599,9 @@ export default function (component) {
     badgesLayer.replaceChildren()
     if (!ASOF_PINNED || !SHORT_BADGES.length) return
     const upp = unitsPerPx()
+    // 배지는 표지라 배율을 따라 0.75~1.25 배로만 바뀐다(`calloutScale`) — Main 설비명(위)만큼 비킬 높이는 글자 배율 그대로다.
+    const ts = textScale(1 / upp)
+    const k = calloutScale(ts)
     const counts = groupCounts()
     const drawn = []
     for (const badge of SHORT_BADGES) {
@@ -1425,10 +1617,10 @@ export default function (component) {
       const main = String(badge.main || '')
       const sub = String(badge.sub || '')
       const spot = badgeSpot(seen.map((m) => ({ x: m.x, y: m.y, w: m.w, h: m.h })), upp, above,
-        { main: labelEm(main), sub: labelEm(sub) }, H())
+        { main: labelEm(main), sub: labelEm(sub) }, H(), k, ts)
       drawn.push({ badge, ids, main, sub, spot })
     }
-    const settled = settleBadges(drawn.map((entry) => entry.spot), upp, H())
+    const settled = settleBadges(drawn.map((entry) => entry.spot), upp, H(), k)
     drawn.forEach((entry, index) => {
       const spot = settled[index]
       if (spot) drawBadge(entry, spot, focusKey)
@@ -1468,14 +1660,16 @@ export default function (component) {
   }
 
   // 공식과 견주기 그리기(층 상세 보기만 — 편집기·FAB 에는 그리지 않는다). 배율이 바뀌면 꼬리표 글자 크기를 다시 맞추므로
-  // Main 설비명과 같이 `drawSelectionBox` 가 부른다. 재료가 없으면 층을 비운다.
+  // Main 설비명과 같이 `drawSelectionBox` 가 부른다. 꼬리표는 표지라 배율을 따라 0.75~1.25 배로만 바뀐다(`calloutScale`).
+  // 재료가 없으면 층을 비운다.
   const COMPARE_TAG_PX = 11
   const COMPARE = VIEW && !FAB && data.compare && typeof data.compare === 'object' ? data.compare : null
   function drawCompare() {
     if (!compareLayer) return
     compareLayer.replaceChildren()
     if (!COMPARE) return
-    const fs = COMPARE_TAG_PX * unitsPerPx()
+    const upp = unitsPerPx()
+    const fs = COMPARE_TAG_PX * calloutScale(textScale(1 / upp)) * upp
     const boxOf = (id) => {
       const item = S.items.get(id)
       return item && isUnit(item) && onCanvas(item) && hasSize(item) ? item : null
@@ -1814,7 +2008,7 @@ export default function (component) {
       const label = group.querySelector('.sle-label')
       label.setAttribute('x', item.x + item.w / 2)
       label.setAttribute('y', top + item.h / 2)
-      // 글자는 사각형 폭에 맞춰 줄이고 화면에서 14px 를 넘지 않게 한다. 7px 아래면 숨긴다(밀집 층) —
+      // 글자는 사각형 폭에 맞춰 줄이고 화면에서 14px × 글자 배율(`textScale`)을 넘지 않게 한다. 7px 아래면 숨긴다(밀집 층) —
       // 확대하면 다시 보인다. 이름은 선택하면 상태줄·옆 칸에, 올려 두면 풍선에 나온다. 폭은 잰 글자 폭이라
       // 이름이 상자 밖으로 넘치지 않는다.
       const upp = unitsPerPx()
@@ -1828,10 +2022,11 @@ export default function (component) {
     positionHandles(group, item, top)
     group.classList.toggle('is-changed', isChanged(item) || isRenamed(item))
   }
-  // 호기 이름표 글자 크기(데이터 단위) — 상자 높이의 0.32 배·잰 글자 폭으로 상자 폭에 맞춘 크기·화면 14px 가운데 가장 작은 것.
+  // 호기 이름표 글자 크기(데이터 단위) — 상자 높이의 0.32 배·잰 글자 폭으로 상자 폭에 맞춘 크기·화면 14px × 글자 배율 가운데
+  // 가장 작은 것(배율 상한만 바뀐다 — 축소하면 상자 맞춤보다 먼저 작아져 이웃 상자를 덮지 않는다).
   function unitLabelSize(item, upp) {
     const fitFont = (item.w * 0.94) / Math.max(labelEm(item.label), 1)
-    return Math.min(item.h * 0.32, fitFont, 14 * upp)
+    return Math.min(item.h * 0.32, fitFont, 14 * textScale(1 / upp) * upp)
   }
 
   const setBox = (node, x, y, w, h) => {
@@ -1882,10 +2077,15 @@ export default function (component) {
     const lh = rot % 180 ? item.w : item.h
     const cx = item.x + item.w / 2
     const cy = top + item.h / 2
-    const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot}) translate(${-lw / 2} ${-lh / 2})` })
+    // 베이는 좌우 뒤집기(look.flip)를 돌리기 앞에 건다 — 가운데 축 거울. 글자는 뒤집지도 돌리지도 않는다.
+    const flip = item.kind === 'bay' && lookValue(item.look, 'bay', 'flip') === true
+    const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot})${flip ? ' scale(-1 1)' : ''} translate(${-lw / 2} ${-lh / 2})` })
     const upp = unitsPerPx()
-    // 이름표 글자는 화면 px 로 정한다(확대해도 같은 크기). 고른 크기가 없으면 LABEL_PX.
-    const fs = (item.fontSize || LABEL_PX) * upp
+    // 이름표 글자는 기준 크기(고른 크기, 없으면 LABEL_PX)에 배율 글자 배율을 곱한 화면 px 다 — 확대하면 커지고 축소하면
+    // 작아지며(위 TEXT_SCALE_MAX 배), TEXT_MIN_PX 아래면 이름표를 숨긴다(`// <text-scale>`).
+    const ts = textScale(1 / upp)
+    const caption = scaledText(item.fontSize || LABEL_PX, ts)
+    const fs = caption.px * upp
     // 비활성 층 블록은 고른 「글자 색」을 달지 않는다 — 인라인 색이 CSS 의 흐린 글자(muted)를 이긴다.
     const ink = blockOff(item) ? '' : fontInk(item)
     const text = (value, x, y, size, anchor) => {
@@ -1907,11 +2107,14 @@ export default function (component) {
       const pad = 3 * upp
       inner.append(border, el('rect', { class: 'sle-zone-select', x: -pad, y: -pad, width: lw + pad * 2, height: lh + pad * 2, rx: 0.6 }))
       // 이름표 꼬리표는 위 변의 왼쪽(처음 값)·가운데·오른쪽이다.
-      const caption = (item.label || '영역') + (item.keepOut ? ' · 설비 금지' : '')
-      const tagW = Math.min(lw, emWidth(caption) * fs + fs * 0.9)
+      const name = (item.label || '영역') + (item.keepOut ? ' · 설비 금지' : '')
+      const tagW = Math.min(lw, emWidth(name) * fs + fs * 0.9)
       const tagX = zoneTagX(lw, tagW, item.labelAlign)
-      const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
-      inner.append(tag, text(caption, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
+      // 작아서 숨기는 배율에서는 꼬리표 상자도 걷는다(영역은 테두리로 잡힌다).
+      if (caption.shown) {
+        const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
+        inner.append(tag, text(name, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
+      }
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -1929,25 +2132,62 @@ export default function (component) {
       inner.append(el('path', { class: 'sle-mark-line is-dashed', d: `M 0 0 A ${lw} ${lh} 0 0 1 ${lw} ${lh}` }))
     } else if (item.kind === 'column') {
       // 기둥: 이름이 없으면 X 두 줄, 있으면 X 없이 이름을 기둥 가운데에 쓴다(2026-10-16 사용자 결정 — 돌리지
-      // 않는다). 글자는 자동이면 11px, 고르면 그 크기이고 기둥보다 길면 넘쳐 그린다(면색 테가 둘러 읽힌다).
+      // 않는다). 글자는 자동이면 11, 고르면 그 기준 크기(배율을 따름)이고 기둥보다 길면 넘쳐 그린다(면색 테가 둘러 읽힌다).
       inner.append(el('rect', { class: 'sle-column', x: 0, y: 0, width: lw, height: lh }))
       if (!item.label) {
         inner.append(el('line', { class: 'sle-column-cross', x1: 0, y1: 0, x2: lw, y2: lh }))
         inner.append(el('line', { class: 'sle-column-cross', x1: lw, y1: 0, x2: 0, y2: lh }))
       }
     } else if (item.kind === 'text') {
-      // 자동이면 상자에 맞추고(작아지면 숨김), 크기를 골랐으면 그 화면 px 로 쓴다(상자를 넘어도 그린다).
+      // 자동이면 상자에 맞추고, 크기를 골랐으면 그 기준 크기의 배율 크기로 쓴다(상자를 넘어도 그린다). 어느 쪽이든 화면
+      // TEXT_MIN_PX 아래면 숨긴다.
       const value = item.label || '글자'
       const size = item.fontSize ? fs : Math.min(lh * 0.7, (lw * 0.95) / Math.max(emWidth(value), 1))
       const node = text(value, lw / 2, lh / 2, size)
-      node.style.display = !item.fontSize && size / upp < 6 ? 'none' : ''
+      node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
       inner.append(node)
     } else if (item.kind === 'arrow') {
-      // 동선: 왼쪽에서 오른쪽으로(0°). 굵기는 상자 높이를 따른다.
-      const head = Math.min(lh * 1.1, lw * 0.35)
-      const shaft = el('line', { class: 'sle-flow', x1: lh * 0.3, y1: lh / 2, x2: lw - head * 0.9, y2: lh / 2 })
-      shaft.style.strokeWidth = String(Math.min(lh * 0.2, 5 * upp))
-      inner.append(shaft, el('polygon', { class: 'sle-flow-head', points: `${lw - head},${lh * 0.15} ${lw},${lh / 2} ${lw - head},${lh * 0.85}` }))
+      // 동선: 왼쪽에서 오른쪽으로(0°). 머리 크기는 look.head(처음 MM — 지금 그림). 선은 고르지 않으면 지금 모습(강조색 · 상자
+      // 높이를 따르는 굵기 · 도면 단위 점선), 굵기를 고르면 화면 px(`is-px`)이고 선 모양도 화면 px 무늬다.
+      const geo = arrowShape(lw, lh, lookValue(item.look, 'arrow', 'head'))
+      const shaft = el('line', { class: 'sle-flow', ...geo.shaft })
+      const width = lookValue(item.look, 'arrow', 'lineWidth')
+      const style = lookValue(item.look, 'arrow', 'lineStyle')
+      const color = lineInk(lookValue(item.look, 'arrow', 'line'))
+      if (width) {
+        shaft.classList.add('is-px')
+        shaft.style.strokeWidth = String(width)
+        shaft.style.strokeDasharray = lineDash(style, width) || 'none'
+      } else {
+        shaft.style.strokeWidth = String(Math.min(lh * 0.2, 5 * upp))
+        if (style !== 'dashed') shaft.style.strokeDasharray = style === 'dotted' ? `0.01 ${Math.min(lh * 0.2, 5 * upp) * 2}` : 'none'
+      }
+      const point = el('polygon', { class: 'sle-flow-head', points: geo.head.map((pt) => pt.join(',')).join(' ') })
+      if (color) { shaft.style.stroke = color; point.style.fill = color }
+      inner.append(shaft, point)
+    } else if (item.kind === 'bay') {
+      // 베이(U자): 0° 는 ⊃ — 위 팔에서 굽은 곳을 돌아 아래 팔 왼쪽 끝 머리(왼쪽을 향함). 선은 화면 px 굵기(처음 2px)·모양(처음
+      // 실선)·색(처음 도면 글자색), 머리는 선 색으로 채운다. 상자 전체가 잡힌다(동선과 같다).
+      const geo = bayShape(lw, lh, lookValue(item.look, 'bay', 'head'))
+      const width = lookValue(item.look, 'bay', 'lineWidth')
+      const line = el('path', { class: 'sle-bay-line', d: geo.d })
+      line.style.strokeWidth = String(width)
+      const dash = lineDash(lookValue(item.look, 'bay', 'lineStyle'), width)
+      if (dash) line.style.strokeDasharray = dash
+      const point = el('polygon', { class: 'sle-bay-head', points: geo.head.map((pt) => pt.join(',')).join(' ') })
+      const color = lineInk(lookValue(item.look, 'bay', 'line'))
+      if (color) { line.style.stroke = color; point.style.fill = color }
+      inner.append(line, point)
+      // 가운데 글 「B<번호>」 — 두 팔 사이(머리를 비킨 틈의 가운데)를 돌린 뒤의 화면 자리에 가로로. 자동이면 틈에 맞추되 고를 수
+      // 있는 가장 큰 크기(24)의 배율 크기를 넘지 않고(확대 끝에서 끝없이 커지지 않게), 고르면 기준 크기의 배율 크기. 화면
+      // TEXT_MIN_PX 아래면 숨긴다.
+      const number = bayCaption(item)
+      const size = item.fontSize ? fs : Math.min(bayAutoSize(geo, rot, emWidth(number)), Math.max(...FONT_SIZES) * ts * upp)
+      const spot = placeLocal(geo.text.x, geo.text.y, lw, lh, rot, flip)
+      const node = text(number, cx + spot.x, cy + spot.y, size)
+      node.classList.add('is-bay')
+      node.style.display = size / upp < TEXT_MIN_PX ? 'none' : ''
+      group.__bayText = node
     } else if (item.kind === 'block') {
       // 층 블록: 면(고른 색 또는 Space 기본 면)·테두리·가운데 글자 줄. 글자는 블록에 맞춰 줄이고 화면에서 13px 를
       // 넘지 않는다. 줄이 다 안 들어가면 이름 줄만, 그것도 6px 아래면 숨긴다(풍선·초점 이름에는 남는다).
@@ -1972,7 +2212,7 @@ export default function (component) {
       const { main, short } = blockLines(item)
       const rows = item.fontSize
         ? [...main, ...(short ? [short] : [])].map((value, k) => ({ text: value, size: fs, role: k === 0 ? 'head' : (k < main.length ? 'sub' : 'short') }))
-        : blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)
+        : blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth, 13 * ts)
       const total = rows.reduce((sum, row) => sum + row.size * 1.3, 0)
       let y = lh / 2 - total / 2
       for (const row of rows) {
@@ -1980,15 +2220,19 @@ export default function (component) {
         y += row.size * 1.3
         node.classList.add(row.role === 'head' ? 'is-head' : 'is-sub')
         if (row.role === 'short') node.classList.add('is-short')
-        node.style.display = !item.fontSize && row.size / upp < 6 ? 'none' : ''
+        node.style.display = row.size / upp < TEXT_MIN_PX ? 'none' : ''
         inner.append(node)
       }
     }
     shape.append(inner)
-    if (item.kind === 'column' && item.label) shape.append(text(item.label, cx, cy, fs))
+    if (group.__bayText) {
+      shape.append(group.__bayText)
+      group.__bayText = null
+    }
+    if (item.kind === 'column' && item.label && caption.shown) shape.append(text(item.label, cx, cy, fs))
     // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
     // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
-    if (item.label && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
+    if (item.label && caption.shown && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
       const gap = fs * 0.4
       const sides = item.kind === 'arrow'
         ? (rot % 180 ? 'right' : 'up')
@@ -2010,7 +2254,7 @@ export default function (component) {
       if (group.hasAttribute('tabindex')) group.setAttribute('aria-label', words)
       return
     }
-    if (tip) tip.textContent = `${MARK_KINDS[item.kind].name}${item.label ? ` · ${item.label}` : ''}`
+    if (tip) tip.textContent = markTitle(item)
   }
 
   function appendHandles(group) {
@@ -2497,6 +2741,7 @@ export default function (component) {
         || (o.fontSize ?? null) !== (item.fontSize ?? null) || (o.fontColor || '') !== (item.fontColor || '')
         || pickOr(o.borderStyle, BORDER_STYLES) !== pickOr(item.borderStyle, BORDER_STYLES)
         || pickOr(o.labelAlign, LABEL_ALIGNS) !== pickOr(item.labelAlign, LABEL_ALIGNS)
+        || lookText(o.look) !== lookText(item.look)
     }
     if ((o.moveTo || null) !== (item.moveTo || null)) return true
     if (o.placed !== item.placed) return true
@@ -2766,6 +3011,7 @@ export default function (component) {
       label: m.label || '', color: m.color || '', hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut),
       fontSize: m.fontSize ?? null, fontColor: m.fontColor || '',
       borderStyle: pickOr(m.borderStyle, BORDER_STYLES), labelAlign: pickOr(m.labelAlign, LABEL_ALIGNS),
+      look: cleanLook(m.look, m.kind),
       ...(m.kind === 'block' ? { link: m.link || '' } : {}),
     })),
     ...S.passthrough,
@@ -2799,7 +3045,7 @@ export default function (component) {
       const together = expanded(chosen).length
       inspectorName.textContent = `${chosen.length}개${together > chosen.length ? ` (모듈 묶음까지 ${together}개)` : ''}`
     } else if (isMark(single)) {
-      inspectorName.textContent = `${MARK_KINDS[single.kind].name}${single.label ? ` · ${single.label}` : ''}`
+      inspectorName.textContent = markTitle(single)
     } else if (moduleMembers(single)) {
       inspectorName.textContent = moduleCaption(single)
     } else if (single.group) {
@@ -2868,7 +3114,7 @@ export default function (component) {
     }
     // 글자 크기·색(모든 도면 요소). 같은 까닭으로 처음부터 채운다.
     if (!markFontSize.options.length) {
-      markFontSize.replaceChildren(new Option('자동', ''), ...FONT_SIZES.map((size) => new Option(`${size}px`, String(size))))
+      markFontSize.replaceChildren(new Option('자동', ''), ...FONT_SIZES.map((size) => new Option(String(size), String(size))))
       markFontColor.replaceChildren(
         new Option('기본', ''),
         ...Object.keys(markColors).map((key) => new Option(ZONE_COLOR_NAMES[key] || key, key)),
@@ -2883,7 +3129,14 @@ export default function (component) {
       )
     }
     blockProps.hidden = !mark || mark.kind !== 'block'
+    syncLineProps(chosen)
     if (mark) {
+      // 베이는 이름 칸이 「번호」 이고 칸 앞에 고정 글 「B」 가 선다(그릴 때 늘 붙는다 — 칸에는 번호만).
+      const bay = mark.kind === 'bay'
+      setText(markNameWord, bay ? '번호' : '이름')
+      bayPrefix.hidden = !bay
+      markLabel.maxLength = bay ? 12 : 40
+      setAttr(markLabel, 'aria-label', bay ? '베이 번호 — 앞에 B 가 붙습니다' : '요소 이름')
       if (!isFocused(markLabel)) markLabel.value = mark.label || ''
       markFontSize.value = mark.fontSize ? String(mark.fontSize) : ''
       markFontColor.value = mark.fontColor || ''
@@ -2908,6 +3161,114 @@ export default function (component) {
       }
     }
   }
+  // ---------------------------------------------------------------- 동선·베이의 선·머리(선택 칸)
+  // 고른 것 가운데 동선·베이(`lined`)가 있으면 선택 칸에 「머리 크기」(3×3 갤러리)·선 색·굵기·선 모양과 베이의 좌우·상하
+  // 뒤집기가 선다(2026-11-03 사용자 요청 — 엑셀처럼). 여럿이면 모두에 걸고 되돌리기 한 번이다. 값이 서로 다르면 「여러 값」.
+  const MIXED = '__mixed'
+  const HEAD_WIDTH_WORDS = { S: '좁게', M: '보통', L: '넓게' }
+  const HEAD_LENGTH_WORDS = { S: '짧게', M: '보통', L: '길게' }
+  const LINE_COLOR_NAMES = { accent: '강조색', ink: '진하게', ...ZONE_COLOR_NAMES }
+  const isLined = (m) => isMark(m) && (m.kind === 'arrow' || m.kind === 'bay')
+  const headAria = (head) => `너비 ${HEAD_WIDTH_WORDS[head[0]]} · 길이 ${HEAD_LENGTH_WORDS[head[1]]}`
+  const headShort = (head) => (head === 'MM' ? '보통' : `${HEAD_WIDTH_WORDS[head[0]]}·${HEAD_LENGTH_WORDS[head[1]]}`)
+  // 갤러리·단추의 작은 동선 그림(24×12 — 몸통은 실선, 머리는 그 크기의 꼴).
+  function drawHeadIcon(svgNode, head) {
+    const geo = arrowShape(22, 6, head)
+    const shaft = el('line', { class: 'ico-line', x1: 1 + geo.shaft.x1, y1: 6, x2: 1 + geo.shaft.x2, y2: 6 })
+    const tip = el('polygon', { class: 'ico-fill', points: geo.head.map(([x, y]) => `${1 + x},${3 + y}`).join(' ') })
+    svgNode.replaceChildren(shaft, tip)
+  }
+  function fillLineOptions() {
+    if (lineColor.options.length) return
+    const mixed = () => {
+      const option = new Option('여러 값', MIXED)
+      option.disabled = true
+      option.hidden = true
+      return option
+    }
+    lineColor.replaceChildren(mixed(), ...LINE_COLORS.map((key) => new Option(LINE_COLOR_NAMES[key] || key, key)))
+    lineWidth.replaceChildren(mixed(), new Option('기본', ''), ...LINE_WIDTHS.map((w) => new Option(`${w}px`, String(w))))
+    lineStyle.prepend(mixed())
+    headGallery.replaceChildren(...ARROW_HEADS.map((head) => {
+      const cell = el('svg', { viewBox: '0 0 24 12', 'aria-hidden': 'true' })
+      drawHeadIcon(cell, head)
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'sle-head-cell'
+      button.dataset.head = head
+      button.setAttribute('aria-label', headAria(head))
+      button.title = headAria(head)
+      button.append(cell)
+      return button
+    }))
+  }
+  // 고른 동선·베이가 모두 같은 값이면 그 값, 다르면 null. 처음 값이 없는 키(동선 굵기 「기본」)는 ''.
+  const sharedLook = (lined, key) => {
+    const values = new Set(lined.map((m) => {
+      const value = lookValue(m.look, m.kind, key)
+      return value === undefined ? '' : value
+    }))
+    return values.size === 1 ? [...values][0] : null
+  }
+  function syncLineProps(chosen) {
+    const lined = chosen.filter(isLined)
+    lineProps.hidden = !lined.length
+    if (!lined.length) {
+      headGallery.hidden = true
+      headToggle.setAttribute('aria-expanded', 'false')
+      return
+    }
+    fillLineOptions()
+    const head = sharedLook(lined, 'head')
+    drawHeadIcon(headNow, head || 'MM')
+    setText(headWord, head ? headShort(head) : '여러 값')
+    setAttr(headToggle, 'aria-label', `머리 크기 — ${head ? headAria(head) : '여러 값'}`)
+    for (const cell of headGallery.children) setAttr(cell, 'aria-pressed', String(cell.dataset.head === head))
+    const color = sharedLook(lined, 'line')
+    lineColor.value = color === null ? MIXED : color
+    const width = sharedLook(lined, 'lineWidth')
+    lineWidth.value = width === null ? MIXED : String(width)
+    const style = sharedLook(lined, 'lineStyle')
+    lineStyle.value = style === null ? MIXED : style
+    bayFlips.hidden = !lined.some((m) => m.kind === 'bay')
+  }
+  // 고른 동선·베이 모두의 모양 값을 바꾼다(patch 의 null 은 처음 값으로). 그 종류가 받지 않는 키는 빠진다(`cleanLook`).
+  // 바뀐 것이 있으면 되돌리기 한 번.
+  function setLooks(patch, only) {
+    const lined = selectedItems().filter((m) => isLined(m) && (!only || only(m)))
+    const ops = []
+    for (const m of lined) {
+      const merged = { ...(m.look || {}) }
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete merged[key]
+        else merged[key] = value
+      }
+      const next = cleanLook(merged, m.kind)
+      if (lookText(next) === lookText(m.look)) continue
+      ops.push({ op: 'set', id: m.id, before: snapshot(m) })
+      m.look = next
+    }
+    if (!ops.length) { syncInspector(); return }
+    pushUndo(ops)
+    for (const op of ops) position(S.groups.get(op.id), S.items.get(op.id))
+    drawSelectionBox()
+    updateStatus()
+  }
+  // 고른 베이를 뒤집는다 — 좌우(h)는 look.flip 만, 상하(v)는 180° 돌림 + 좌우 뒤집기(같은 상자). 되돌리기 한 번.
+  function flipBays(axis) {
+    const bays = selectedItems().filter((m) => isMark(m) && m.kind === 'bay')
+    if (!bays.length) return
+    const ops = bays.map((m) => ({ op: 'set', id: m.id, before: snapshot(m) }))
+    for (const m of bays) {
+      m.look = cleanLook({ ...(m.look || {}), flip: lookValue(m.look, 'bay', 'flip') !== true }, 'bay')
+      if (axis === 'v') m.rot = ((m.rot || 0) + 180) % 360
+    }
+    pushUndo(ops)
+    for (const m of bays) position(S.groups.get(m.id), m)
+    drawSelectionBox()
+    updateStatus()
+  }
+
   // 브라우저가 쥔 적용 전 편집(요소·편집 영역)이 있는가.
   function hasPendingEdits() {
     return markChangeCount() > 0 || canvasChanged()
@@ -2938,7 +3299,7 @@ export default function (component) {
   }
 
   function pickText(item) {
-    if (isMark(item)) return `선택 ${MARK_KINDS[item.kind]?.name || item.kind}${item.label ? ` · ${item.label}` : ''}`
+    if (isMark(item)) return `선택 ${MARK_KINDS[item.kind] ? markTitle(item) : item.kind}`
     const { stage, words } = unitWords(item)
     return `선택 ${item.label} · ${stage || '-'}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}`
       + `${item.group ? ` · Main 설비 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
@@ -2990,7 +3351,7 @@ export default function (component) {
       const sized = sizeNote(expanded(chosen))
       if (sized) add(sized)
     } else if (item && isMark(item)) {
-      add('선택 ', `${MARK_KINDS[item.kind].name}${item.label ? ` ${item.label}` : ''}`)
+      add('선택 ', `${MARK_KINDS[item.kind].name}${item.kind === 'bay' ? ` ${bayCaption(item)}` : item.label ? ` ${item.label}` : ''}`)
       add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}${item.rot ? ` · ${item.rot}°` : ''}`)
     } else if (item && moduleMembers(item)) {
       const mods = moduleMembers(item)
@@ -3412,7 +3773,7 @@ export default function (component) {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: spot.x, y: spot.y, w, h, rot: 0,
       color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
-      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0],
+      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0], look: {},
     }
     fit(item)
     S.items.set(id, item)
@@ -3435,6 +3796,7 @@ export default function (component) {
     kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0, label: m.label || '', color: m.color || '',
     hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut), link: m.link || '', fontSize: m.fontSize ?? null,
     fontColor: m.fontColor || '', borderStyle: pickOr(m.borderStyle, BORDER_STYLES), labelAlign: pickOr(m.labelAlign, LABEL_ALIGNS),
+    look: cleanLook(m.look, m.kind),
   })
   function writeClipboard(marks) {
     const clip = { at: Date.now(), marks }
@@ -3882,6 +4244,9 @@ export default function (component) {
     link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
     fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || ''),
     borderStyle: pickOr(raw.borderStyle, BORDER_STYLES), labelAlign: pickOr(raw.labelAlign, LABEL_ALIGNS),
+    // 모양 값(동선·베이의 머리 크기·선·뒤집기)은 처음 값이 아닌 것만 쥔다. 베이 이름표는 번호다(앞 B 를 뗀다).
+    look: cleanLook(raw.look, String(raw.kind)),
+    ...(String(raw.kind) === 'bay' ? { label: bayNumber(raw.label) } : {}),
   })
 
   function initFromData() {
@@ -4489,7 +4854,8 @@ export default function (component) {
   markLabel.onblur = () => { S.markLabelFor = null }
   markLabel.onchange = () => {
     const mark = S.items.get(S.markLabelFor)
-    const value = markLabel.value.trim().slice(0, 40)
+    // 베이는 번호만 쥔다 — 「80」·「B80」·「b 80」 모두 「80」(그릴 때 「B80」).
+    const value = mark && mark.kind === 'bay' ? bayNumber(markLabel.value) : markLabel.value.trim().slice(0, 40)
     if (mark && isMark(mark) && value !== (mark.label || '')) setMarkProps(mark, { label: value })
     else syncInspector()
   }
@@ -4527,6 +4893,32 @@ export default function (component) {
   markHatch.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { hatch: markHatch.checked }) }
   markKeepOut.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { keepOut: markKeepOut.checked }) }
   markRotate.onclick = () => { const mark = selectedMark(); if (mark) rotateMark(mark) }
+  headToggle.onclick = () => {
+    const open = headGallery.hidden
+    headGallery.hidden = !open
+    headToggle.setAttribute('aria-expanded', String(open))
+    if (open) (headGallery.querySelector('[aria-pressed="true"]') || headGallery.firstElementChild)?.focus()
+  }
+  headGallery.onclick = (event) => {
+    const cell = event.target.closest('.sle-head-cell')
+    if (!cell) return
+    headGallery.hidden = true
+    headToggle.setAttribute('aria-expanded', 'false')
+    setLooks({ head: cell.dataset.head })
+    headToggle.focus()
+  }
+  headGallery.onkeydown = (event) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    headGallery.hidden = true
+    headToggle.setAttribute('aria-expanded', 'false')
+    headToggle.focus()
+  }
+  lineColor.onchange = () => { if (lineColor.value !== MIXED) setLooks({ line: lineColor.value }) }
+  lineWidth.onchange = () => { if (lineWidth.value !== MIXED) setLooks({ lineWidth: lineWidth.value === '' ? null : Number(lineWidth.value) }) }
+  lineStyle.onchange = () => { if (lineStyle.value !== MIXED) setLooks({ lineStyle: lineStyle.value }) }
+  for (const button of host.querySelectorAll('.sle-bay-flip')) button.onclick = () => flipBays(button.dataset.flip)
   blockLink.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block' && blockLink.value) setMarkProps(mark, { link: blockLink.value }) }
   blockColor.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'block') setMarkProps(mark, { color: blockColor.value }) }
   blockOpen.onclick = () => openFloor(selectedMark(), true)

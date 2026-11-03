@@ -2,10 +2,10 @@
 
 """Space 층 도면의 비설비 도면 요소.
 
-호기가 아닌 것 — 반입구(셔터)·여닫이문·영역·기둥·글자·동선 화살표 — 을 층마다 따로 둔다.
-설비 마스터의 행이 아니고 설비 리비전과도 무관한 **현행값**이다(`floor_layout_profile` 의
-캔버스와 같은 성격). 좌표 계약은 호기와 같다: 원점은 왼쪽 아래, 상자는 (x, y) → (x+w, y+h)
-이고 회전은 상자 가운데를 축으로 90° 단위다(회전한 뒤의 축 정렬 상자를 저장한다).
+호기가 아닌 것 — 반입구(셔터)·여닫이문·영역·기둥·글자·동선 화살표·베이 화살표(U자) — 을 층마다 따로
+둔다. 설비 마스터의 행이 아니고 설비 리비전과도 무관한 **현행값**이다(`floor_layout_profile` 의
+캔버스와 같은 성격). 좌표 계약은 호기와 같다: 원점은 왼쪽 아래, 상자는 (x, y) → (x+w, y+h) 이고
+회전은 상자 가운데를 축으로 90° 단위다(회전한 뒤의 축 정렬 상자를 저장한다).
 
 저장 경로의 검증이라 **잘못된 항목을 조용히 버리지 않는다.** 층 단위 전체 교체라서 하나를
 버리면 그 요소가 지워진다 — 그래서 하나라도 어긋나면 `ValueError` 로 저장을 거부한다.
@@ -29,7 +29,7 @@ from typing import Any, Final, Protocol
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, CanvasSize
 from capa_simulation.services.korean_particle import subject_particle, with_object_particle
 
-MARK_KINDS: Final = ("zone", "shutter", "door", "column", "text", "arrow")
+MARK_KINDS: Final = ("zone", "shutter", "door", "column", "text", "arrow", "bay")
 MARK_NAMES: Final[Mapping[str, str]] = {
     "zone": "영역",
     "shutter": "반입구",
@@ -37,6 +37,7 @@ MARK_NAMES: Final[Mapping[str, str]] = {
     "column": "기둥",
     "text": "글자",
     "arrow": "동선",
+    "bay": "베이",
 }
 # 호기가 덮으면 경고하는 요소(겹침처럼 저장은 막지 않는다). 영역은 「설비 금지」를 켠 것만.
 BLOCKING_MARK_KINDS: Final = ("shutter", "door", "column")
@@ -44,8 +45,12 @@ MARK_ROTATIONS: Final = (0, 90, 180, 270)
 # 영역 색 이름. 실제 색은 그리는 쪽이 테마 토큰(제품별 비중과 같은 검증된 범주 팔레트)에서 고른다.
 MARK_COLOR_KEYS: Final = ("blue", "rose", "green", "violet", "sky", "gray")
 MARK_LABEL_MAX: Final = 40
-# 이름표 글자 크기(화면 px). 빈 값(None)은 「자동」 — 글자 요소는 상자에 맞추고 나머지는 11px 다.
-# 화면 px 라 확대해도 글자 크기는 그대로다(이름표가 도면을 덮지 않게). 층·FAB 요소가 함께 쓴다.
+# 베이 화살표(U자) 가운데 글의 번호 칸 길이. 그릴 때 앞에 늘 「B」 를 붙이고 번호만
+# 저장한다(`bay_label`).
+BAY_LABEL_MAX: Final = 10
+# 이름표 글자의 기준 크기. 빈 값(None)은 「자동」 — 글자 요소는 상자에 맞추고 나머지는 11 이다. 기준
+# 크기는 도면 1칸이 화면 8px 일 때의 화면 px 이고, 확대·축소를 따라 0~2배로 바뀌며 화면 6px 아래면
+# 숨는다(편집기 `// <text-scale>`, 2026-11-03 사용자 요청). 층·FAB 요소가 함께 쓴다.
 MARK_FONT_SIZES: Final = (9, 11, 13, 16, 20, 24)
 # 영역 테두리 모양(점선·실선)과 이름표 정렬(왼쪽·가운데·오른쪽). 첫 값이 처음 값이자 옛 행(빈
 # 칸)의 값이다 — 지금 모습(점선 테두리, 왼쪽 위 꼬리표). 영역이 아닌 요소는 늘 처음 값이다.
@@ -57,6 +62,29 @@ MARKS_PER_FLOOR_MAX: Final = 500
 # 묶음은 모양에 따라 가운데(두 줄 이상) 또는 위(한 줄 — 모듈 2·3)다(`default_group_label`).
 GROUP_LABEL_POSITIONS: Final = ("center", "top", "bottom")
 _MARK_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,40}")
+
+# 요소 모양 값(`look` — 정규 JSON 글 한 칸, 설비 `0033` `look_json`, 2026-11-03 사용자 요청).
+# 종류마다 받는 키가 다르고 처음 값인 키는 넣지 않는다(다 처음 값이면 빈 글 — 옛 행과 같다).
+# - 화살표 머리 크기 `head`: 「너비·길이」 두 글자, 각 S·M·L(엑셀 머리 크기 3×3). MM 이 지금
+#   동선 그림이다.
+# - 선 색 `line`: accent(강조색)·ink(도면 글자색)·영역 색 키 여섯. 굵기 `lineWidth`(화면 px),
+#   모양 `lineStyle`. 동선의 처음 값은 지금 모습(강조색 · 상자 높이를 따르는 굵기 · 점선)이라
+#   굵기 처음 값이 없다(「자동」).
+# - 뒤집기 `flip`: 좌우 거울(베이) — 상하 뒤집기는 180° 돌림 + 좌우 뒤집기와 같은 값이다.
+HEAD_SIZES: Final = ("S", "M", "L")
+ARROW_HEADS: Final = tuple(width + length for width in HEAD_SIZES for length in HEAD_SIZES)
+LINE_COLOR_KEYS: Final = ("accent", "ink", *MARK_COLOR_KEYS)
+LINE_WIDTHS: Final = (0.75, 1, 1.5, 2, 3, 4.5, 6)
+LINE_STYLES: Final = ("solid", "dashed", "dotted")
+# 종류마다 받는 키와 그 처음 값. 처음 값이 없는 키(동선 굵기)는 고른 값이면 늘 남는다.
+LOOK_KEYS: Final[Mapping[str, tuple[str, ...]]] = {
+    "arrow": ("head", "line", "lineWidth", "lineStyle"),
+    "bay": ("head", "line", "lineWidth", "lineStyle", "flip"),
+}
+LOOK_DEFAULTS: Final[Mapping[str, Mapping[str, object]]] = {
+    "arrow": {"head": "MM", "line": "accent", "lineStyle": "dashed"},
+    "bay": {"head": "MM", "line": "ink", "lineWidth": 2, "lineStyle": "solid", "flip": False},
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +110,9 @@ class FloorLayoutMark:
     # 처음 값이다.
     border_style: str = ZONE_BORDER_STYLES[0]
     label_align: str = ZONE_LABEL_ALIGNS[0]
+    # 요소 모양 값(정규 JSON 글 — `mark_look`). 빈 글은 모두 처음 값이다(옛 행). 글이라 얼린
+    # dataclass 의 해시·같음이 그대로 산다.
+    look: str = ""
 
     @property
     def blocks(self) -> bool:
@@ -94,7 +125,8 @@ class FloorLayoutMark:
         return self.label or MARK_NAMES[self.kind]
 
     def editor_payload(self) -> dict[str, Any]:
-        """편집기(브라우저)에 보내는 모양. 키 이름은 편집기 JS 계약이다."""
+        """편집기(브라우저)에 보내는 모양. 키 이름은 편집기 JS 계약이다. 모양 값(`look`)은 처음 값이
+        아닌 것이 있을 때만 싣는다 — 없는 요소의 모양·지문(`marks_fingerprint`)이 0033 전과 같다."""
         return {
             "id": self.mark_id,
             "kind": self.kind,
@@ -111,6 +143,7 @@ class FloorLayoutMark:
             "fontColor": self.font_color,
             "borderStyle": self.border_style,
             "labelAlign": self.label_align,
+            **look_payload(self.look),
         }
 
 
@@ -261,9 +294,10 @@ def prepare_floor_layout_marks(
     """한 층의 요소 목록을 검증·정규화한다. 하나라도 어긋나면 `ValueError`.
 
     받는 키는 편집기 계약(`id`·`kind`·`x`·`y`·`w`·`h`·`rot`·`label`·`color`·`hatch`·
-    `keepOut`·`fontSize`·`fontColor`·`borderStyle`·`labelAlign`)이다. 좌표는 소수 첫째 자리로 맞추고
-    상자가 캔버스 안이어야 한다. 글자 크기·색은 모든 종류가 갖는다(없으면 자동·기본). 테두리 모양·
-    이름표 정렬은 영역만 갖는다(없으면 점선·왼쪽, 다른 종류는 늘 처음 값이고 보낸 값을 보지 않는다).
+    `keepOut`·`fontSize`·`fontColor`·`borderStyle`·`labelAlign`·`look`)이다. 좌표는 소수 첫째 자리로
+    맞추고 상자가 캔버스 안이어야 한다. 글자 크기·색은 모든 종류가 갖는다(없으면 자동·기본). 테두리
+    모양·이름표 정렬은 영역만 갖는다(없으면 점선·왼쪽, 다른 종류는 늘 처음 값이고 보낸 값을 보지
+    않는다). 모양 값(`look`)은 동선·베이만 갖는다(`mark_look`). 베이의 이름표는 번호다(`bay_label`).
     """
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"한 층의 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -284,13 +318,14 @@ def prepare_floor_layout_marks(
                 w=w,
                 h=h,
                 rotation=mark_rotation(raw, mark_id),
-                label=mark_label(raw, mark_id),
+                label=bay_label(raw, mark_id) if kind == "bay" else mark_label(raw, mark_id),
                 color=zone_color(raw, mark_id) if kind == "zone" else "",
                 hatch=kind == "zone" and mark_flag(raw.get("hatch")),
                 keep_out=kind == "zone" and mark_flag(raw.get("keepOut")),
                 font_size=mark_font_size(raw, mark_id),
                 font_color=mark_font_color(raw, mark_id),
                 **zone_look(raw, kind, mark_id),
+                look=mark_look(raw, kind, mark_id),
             )
         )
     return tuple(prepared)
@@ -304,6 +339,102 @@ def zone_look(raw: Mapping[str, Any], kind: str, mark_id: str) -> dict[str, str]
         "border_style": zone_border_style(raw, mark_id),
         "label_align": zone_label_align(raw, mark_id),
     }
+
+
+def bay_label(raw: Mapping[str, Any], mark_id: str) -> str:
+    """베이 화살표의 번호. 앞의 B·b 와 그 뒤 빈칸을 뗀다(「80」·「B80」·「b 80」 → 「80」) — 그릴 때
+    늘 「B」 를 붙이므로 저장값에 B 가 겹치지 않게 한다. `BAY_LABEL_MAX` 자를 넘으면
+    `ValueError`."""
+    label = str(raw.get("label") or "").strip()
+    if label[:1] in ("B", "b"):
+        label = label[1:].lstrip()
+    if len(label) > BAY_LABEL_MAX:
+        raise ValueError(f"베이 {mark_id} 의 번호는 {BAY_LABEL_MAX}자까지입니다: {label!r}")
+    return label
+
+
+def _look_number(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _look_value(kind: str, key: str, value: object, mark_id: str) -> object:
+    """모양 값 하나를 검사해 정규 값으로(숫자는 정수면 정수 — JS 의 JSON 글과 같게). 어긋나면
+    `ValueError`."""
+    name = MARK_NAMES.get(kind, kind)
+    text = value.strip() if isinstance(value, str) else value
+    allowed: Sequence[object]
+    if key == "head":
+        allowed = ARROW_HEADS
+    elif key == "line":
+        allowed = LINE_COLOR_KEYS
+    elif key == "lineStyle":
+        allowed = LINE_STYLES
+    elif key == "lineWidth":
+        number = _look_number(value)
+        if number is None or number not in LINE_WIDTHS:
+            raise ValueError(
+                f"{name} {mark_id} 의 선 굵기를 알 수 없습니다: {value!r} — "
+                f"{'·'.join(f'{width:g}' for width in LINE_WIDTHS)} 중 하나입니다."
+            )
+        return int(number) if number.is_integer() else number
+    elif key == "flip":
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} {mark_id} 의 뒤집기 값은 참·거짓이어야 합니다: {value!r}")
+        return value
+    else:  # `mark_look` 이 `LOOK_KEYS` 밖의 키를 먼저 거부한다
+        raise ValueError(f"{name} {mark_id} 에 없는 모양 값입니다: {key!r}")
+    if not isinstance(text, str) or text not in allowed:
+        what = {"head": "머리 크기", "line": "선 색", "lineStyle": "선 모양"}[key]
+        raise ValueError(
+            f"{name} {mark_id} 의 {with_object_particle(what)} 알 수 없습니다: {value!r} — "
+            f"{'·'.join(str(item) for item in allowed)} 중 하나입니다."
+        )
+    return text
+
+
+def mark_look(raw: Mapping[str, Any], kind: str, mark_id: str) -> str:
+    """요소 모양 값(`look`)을 정규 JSON 글로. 받는 키는 종류마다 `LOOK_KEYS` 이고, 처음 값
+    (`LOOK_DEFAULTS`)이거나 빈 값(None)인 키는 빼며, 다 빼면 빈 글이다. 모양 값이 없는 종류는 보낸
+    값을 보지 않는다(빈 글 — 영역 아닌 요소의 테두리 모양과 같은 꼴). `look` 은 dict·JSON 글·빈 값을
+    받는다. 어긋나면 `ValueError`(층 단위 전체 교체라 버리지 않는다)."""
+    keys = LOOK_KEYS.get(kind)
+    if keys is None:
+        return ""
+    defaults = LOOK_DEFAULTS[kind]
+    value = raw.get("look")
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            value = json.loads(text) if text else None
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"도면 요소 {mark_id} 의 모양 값을 읽지 못했습니다.") from exc
+    if value is None:
+        return ""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"도면 요소 {mark_id} 의 모양 값을 읽지 못했습니다.")
+    look: dict[str, object] = {}
+    for key, item in value.items():
+        if key not in keys:
+            raise ValueError(
+                f"{MARK_NAMES.get(kind, kind)} {mark_id} 에 없는 모양 값입니다: {key!r}"
+            )
+        if item is None:
+            continue
+        normal = _look_value(kind, key, item, mark_id)
+        if key not in defaults or normal != defaults[key]:
+            look[key] = normal
+    return json.dumps(look, sort_keys=True, separators=(",", ":")) if look else ""
+
+
+def look_payload(look: str) -> dict[str, Any]:
+    """편집기로 보낼 모양 값 칸 — 처음 값이 아닌 것이 있으면 `{"look": {...}}`, 없으면 빈 dict."""
+    return {"look": json.loads(look)} if look else {}
 
 
 def marks_extent(marks: Sequence[MarkBox]) -> CanvasSize:

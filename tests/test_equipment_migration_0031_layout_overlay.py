@@ -166,7 +166,7 @@ def test_a_database_at_0029_moves_nothing_and_reads_the_same(tmp_path: Path) -> 
     assert not set(NEW_TABLES) & set(before)
 
     # 뒤 번호 0032(입력 비가동 빈 표 셋)도 함께 걸린다 — 이 번호의 표가 아니라 셈에서 뺀다.
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 32)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 32, 33)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == dict.fromkeys(NEW_TABLES, 0)

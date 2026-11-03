@@ -44,6 +44,8 @@ HTML = (ASSETS / "editor.html").read_text(encoding="utf-8")
 
 _TOOLS = re.compile(r"// <edit-tools>\n(?P<body>.*?)\n\s*// </edit-tools>", re.S)
 _TILING = re.compile(r"// <module-tiling>\n(?P<body>.*?)\n\s*// </module-tiling>", re.S)
+# 요소 모양 값(look) 정규화 — 복사·붙여넣기가 읽기(`readMark`)·복사(`clipOf`)에서 쓴다.
+_MARK_LOOK = re.compile(r"// <mark-look>\n(?P<body>.*?)\n\s*// </mark-look>", re.S)
 
 
 def _block(pattern: re.Pattern[str]) -> str:
@@ -603,6 +605,8 @@ const first = ids().filter((id) => !before.has(id))
 steps.paste1.items = first.map(view)
 steps.paste1.selected = [...S.selection]
 steps.paste1.looks = first.map((id) => [S.items.get(id).borderStyle, S.items.get(id).labelAlign])
+steps.paste1.marks = first.map((id) => S.items.get(id))
+  .map((m) => [m.kind, lookText(m.look), m.label])
 steps.paste1.undo = undo.map((ops) => ops.map((op) => op.op))
 const before2 = new Set(ids())
 pasteMarks(false)
@@ -620,7 +624,7 @@ process.stdout.write(JSON.stringify(steps))
 
 def _run_clipboard(**payload: Any) -> dict[str, Any]:
     source = _CLIP_RUNNER % (
-        _block(_TOOLS),
+        _block(_TOOLS) + "\n" + _block(_MARK_LOOK),
         "\n".join(_js_decl(head) for head in _CLIP_DECLS),
     )
     return _node(source, payload)
@@ -755,6 +759,25 @@ process.stdout.write(JSON.stringify(out))
 """
 
 
+def test_a_copied_arrow_and_bay_keep_their_look_and_number() -> None:
+    """동선·베이의 모양 값(머리 크기·선·뒤집기)은 복사·붙여넣기에 따라간다(`clipOf` →
+    `readMark`). 베이 이름표는 번호만 쥔다(앞 B 를 뗀다)."""
+    out = _run_clipboard(
+        fab=False,
+        blocked=False,
+        marks=[
+            ["A1", "arrow", 10, 20, 16, 3, {"look": {"head": "LS", "lineWidth": 3}}],
+            ["B1", "bay", 40, 20, 10, 4, {"label": "80", "look": {"flip": True, "head": "MM"}}],
+        ],
+        copy=["A1", "B1"],
+    )
+
+    assert out["paste1"]["marks"] == [
+        ["arrow", '{"head":"LS","lineWidth":3}', ""],
+        ["bay", '{"flip":true}', "80"],
+    ]
+
+
 def test_a_paste_never_stacks_exactly_on_the_same_mark() -> None:
     """사본이 같은 종류 요소와 자리·크기까지 똑같이 겹치지 않는다(겹친 사본은 보이지 않은 채
     두 겹으로 저장된다).
@@ -764,7 +787,7 @@ def test_a_paste_never_stacks_exactly_on_the_same_mark() -> None:
     - 영역 오른쪽 아래 끝의 기둥 — 비켜 붙일 때 막힌 두 축이 반대쪽(왼쪽·위)으로 비킨다.
     - 영역을 가득 채운 영역 — 비킬 자리가 없어 붙이지 않고 알린다."""
     source = _STACK_RUNNER % (
-        _block(_TOOLS),
+        _block(_TOOLS) + "\n" + _block(_MARK_LOOK),
         "\n".join(_js_decl(head) for head in _CLIP_DECLS),
     )
     out = _node(source, {})
@@ -1044,7 +1067,9 @@ def test_the_group_name_follows_the_label_rule_and_the_shown_modules() -> None:
     assert "const seen = mods.filter(seenModule)" in draw
     assert "VIEW && seen.length < mods.filter(onCanvas).length ? shownRange(seen) : whole" in draw
     assert "unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX" in draw
-    assert "GROUP_NAME_PX, upp, UNIT_LABEL_MIN_PX, bare)" in draw
+    # 가장 큰 크기는 배율 글자 배율을 따른다(`// <text-scale>` — 숨김 7px 규칙은 그대로).
+    assert "GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare)" in draw
+    assert "const ts = textScale(1 / upp)" in draw
     assert "if (fs === null) continue" in draw
     assert "groupNameSpot(range, position, fs, 2 * upp, H())" in draw
     seen = _js_decl("const seenModule = ")

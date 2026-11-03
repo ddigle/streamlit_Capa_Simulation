@@ -381,7 +381,8 @@ def test_an_inactive_floor_block_keeps_a_dark_dashed_frame_and_a_mark_when_narro
     border = _rule(".mark-block.is-inactive .sle-block-border")
     assert "stroke: var(--sle-muted)" in border
     assert "stroke-dasharray" in border and "stroke-width: 2" in border
-    assert "blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth)" in JS
+    # 자동 글자의 화면 상한(13px)은 배율 글자 배율을 따른다(`// <text-scale>`).
+    assert "blockTextLayout(main, short, Boolean(off), lw, lh, upp, emWidth, 13 * ts)" in JS
 
 
 def test_a_selected_inactive_block_keeps_the_accent_frame_in_the_fab_editor() -> None:
@@ -480,10 +481,13 @@ def test_a_named_column_writes_its_name_in_the_middle_without_the_cross() -> Non
     assert "if (!item.label) {" in column and column.count("sle-column-cross") == 2
     # 이름은 돌리는 `inner` 밖, 상자 가운데(cx, cy)에 이름표 크기(fs)로 쓴다.
     assert (
-        "if (item.kind === 'column' && item.label) shape.append(text(item.label, cx, cy, fs))"
-        in draw
+        "if (item.kind === 'column' && item.label && caption.shown) "
+        "shape.append(text(item.label, cx, cy, fs))" in draw
     )
-    assert "const fs = (item.fontSize || LABEL_PX) * upp" in draw and "const LABEL_PX = 11" in JS
+    # 이름표 크기는 기준 크기(고른 크기, 없으면 LABEL_PX)에 배율 글자 배율을 곱한 것이다
+    # (`// <text-scale>`).
+    assert "const caption = scaledText(item.fontSize || LABEL_PX, ts)" in draw
+    assert "const fs = caption.px * upp" in draw and "const LABEL_PX = 11" in JS
     outside = draw[
         draw.index("// 반입구·문·동선의 이름표는") : draw.index("const tip = group.querySelector")
     ]

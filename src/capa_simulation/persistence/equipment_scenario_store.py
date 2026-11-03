@@ -595,6 +595,7 @@ _LAYOUT_MARK_DB_COLUMNS = (
     "font_color",
     "border_style",
     "label_align",
+    "look_json",
 )
 
 
@@ -617,6 +618,7 @@ def _mark_row(mark: FloorLayoutMark | None) -> list[object]:
         mark.font_color or None,
         mark.border_style if zone else None,
         mark.label_align if zone else None,
+        mark.look or None,
     ]
 
 
@@ -732,6 +734,7 @@ def layout_overlay(
                 font_color=str(row[15]) if row[15] is not None else "",
                 border_style=str(row[16]) if row[16] is not None else ZONE_BORDER_STYLES[0],
                 label_align=str(row[17]) if row[17] is not None else ZONE_LABEL_ALIGNS[0],
+                look=str(row[18]) if row[18] is not None else "",
             )
             if kind == "set"
             else None

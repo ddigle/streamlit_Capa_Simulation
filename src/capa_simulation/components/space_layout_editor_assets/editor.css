@@ -159,7 +159,12 @@
 .sle-column { fill: var(--sle-mark-muted); stroke: var(--sle-mark-ink); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-column-cross { stroke: var(--sle-surface); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-flow { fill: none; stroke: var(--sle-accent); stroke-linecap: round; stroke-dasharray: 0.9 0.7; }
+/* 굵기를 고른 동선은 화면 px 굵기·무늬다(베이와 같다). 고르지 않으면 지금처럼 상자 높이를 따르는 도면 단위다. */
+.sle-flow.is-px { vector-effect: non-scaling-stroke; }
 .sle-flow-head { fill: var(--sle-accent); }
+/* 베이 화살표(U자) — 선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 머리는 선 색으로 채운다. */
+.sle-bay-line { fill: none; stroke: var(--sle-mark-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.sle-bay-head { fill: var(--sle-mark-ink); }
 
 /* ---- 층 블록(FAB) — 면은 고른 색 또는 Space 기본 면, 글자는 가운데 줄. 상태 색이 아니다. ---- */
 /* 면은 늘 불투명이다. 고른 색은 팔레트의 `block-tint-<키>`(캔버스 위에 미리 섞은 옅은 색)라 뒤의 도면·
@@ -444,6 +449,8 @@
 .sle-inspector-ext, .sle-markprops, .sle-markprops-kind, .sle-zone-props, .sle-block-props, .sle-sendto {
   display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
 }
+/* 동선·베이의 선·머리 칸(여럿 골라도 선다) — 도면 요소 속성 칸과 같은 꼴. */
+.sle-lineprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
 .sle-inspector-ext .sle-field:not(.sle-sendto):not(:has(> input[type="checkbox"])) {
   display: grid; grid-template-columns: 5.6em minmax(0, 1fr);
 }
@@ -453,6 +460,20 @@
 .sle-group-name[hidden], .sle-block-props[hidden] {
   display: none !important;
 }
+.sle-lineprops[hidden], .sle-head-gallery[hidden], .sle-bay-flips[hidden], .sle-bay-prefix[hidden] { display: none !important; }
+/* 베이 번호 칸 앞의 고정 글 「B」 — 이름 칸 격자(이름 · 값)의 값 칸 안에서 칸과 나란히. */
+.sle-inspector-ext .sle-field.sle-mark-name:has(> .sle-bay-prefix:not([hidden])) {
+  display: grid; grid-template-columns: 5.6em auto minmax(0, 1fr); align-items: center;
+}
+.sle-bay-prefix { align-self: center; padding: 0 4px 0 0; font-weight: 700; color: var(--sle-text); }
+/* 머리 크기 — 단추(지금 머리 그림 + 말)와 3×3 갤러리(행 너비 좁게·보통·넓게, 열 길이 짧게·보통·길게). */
+.sle-head-field { display: grid; grid-template-columns: 5.6em minmax(0, 1fr); align-items: center; }
+.sle button.sle-head-toggle { justify-content: flex-start; gap: 6px; min-width: 0; }
+.sle-head-now, .sle-head-cell svg { width: 24px; height: 12px; flex: none; }
+.sle-head-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 52px)); gap: 4px; }
+.sle button.sle-head-cell { width: 100%; height: 28px; padding: 0; justify-content: center; }
+.sle button.sle-head-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
+.sle-bay-flips { display: flex; flex-wrap: wrap; gap: 6px; }
 /* 범위(층·FAB)마다 쓰는 도구만 보인다. FAB 에는 호기가 없어 미배치 칸·반입구·문·기둥·설비 금지가 없고, 층 블록은 FAB 에만
    있다. */
 .sle.is-fab .sle-floor-only, .sle:not(.is-fab) .sle-fab-only { display: none !important; }

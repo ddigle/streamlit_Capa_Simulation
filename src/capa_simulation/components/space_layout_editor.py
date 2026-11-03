@@ -41,6 +41,12 @@ data 의 `asOf` 는 새 epoch(층 이동 등)에서 쓰고, 같은 epoch 회차�
 브라우저(localStorage)에만 둔다. 범례는 data `legend` (epoch 밖)로 보낸다. 도구 줄 「고정」(스크롤
 고정)은 `<html data-space-lock>` 을 달고, 그 속성을 읽는 규칙은 페이지가 그리는 `space_lock_style()`
 이다.
+
+도면 요소의 **모양 값**(`marks[].look` — 동선·베이의 화살표 머리 크기·선·뒤집기, 설비 `0033`)은 처음
+값이 아닌 것이 있을 때만 실려 오고 적용값에도 같은 키로 돌아간다(검증은
+`floor_layout_mark.mark_look`). 도면에 붙은 글자는 배율을 따라 커지고 작아진다(편집기
+`// <text-scale>` — 고른 글자 크기 `fontSizes` 는 도면 1칸이 화면 8px 일 때의 크기). 둘 다
+브라우저 몫이라 data 에 새 칸은 없다.
 """
 
 from __future__ import annotations

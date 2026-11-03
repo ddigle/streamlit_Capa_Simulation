@@ -4655,7 +4655,8 @@ def _stored_floor_marks(
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, keep_out, font_size, font_color, border_style, label_align
+               label, color_key, hatch, keep_out, font_size, font_color, border_style, label_align,
+               look_json
         FROM equipment_ops.floor_layout_mark
         WHERE building = ? AND floor_name = ?
         ORDER BY source_row_no
@@ -4679,6 +4680,7 @@ def _stored_floor_marks(
             font_color=str(row[12]) if row[12] is not None else "",
             border_style=str(row[13]) if row[13] is not None else ZONE_BORDER_STYLES[0],
             label_align=str(row[14]) if row[14] is not None else ZONE_LABEL_ALIGNS[0],
+            look=str(row[15]) if row[15] is not None else "",
         )
         for row in rows
     )
@@ -4717,6 +4719,7 @@ def _replace_floor_marks(
                 "font_size": mark.font_size,
                 "font_color": mark.font_color or None,
                 **_zone_look_columns(mark.kind, mark.border_style, mark.label_align),
+                "look_json": mark.look or None,
             }
             for index, mark in enumerate(marks, start=1)
         ]
@@ -4826,7 +4829,7 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
                label, color_key, hatch, link_building, link_floor, font_size, font_color,
-               border_style, label_align
+               border_style, label_align, look_json
         FROM equipment_ops.fab_layout_mark
         ORDER BY source_row_no
         """
@@ -4850,6 +4853,7 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
             font_color=str(row[13]) if row[13] is not None else "",
             border_style=str(row[14]) if row[14] is not None else ZONE_BORDER_STYLES[0],
             label_align=str(row[15]) if row[15] is not None else ZONE_LABEL_ALIGNS[0],
+            look=str(row[16]) if row[16] is not None else "",
         )
         for row in rows
     )
@@ -4926,6 +4930,7 @@ def _replace_fab_marks(
                 "font_size": mark.font_size,
                 "font_color": mark.font_color or None,
                 **_zone_look_columns(mark.kind, mark.border_style, mark.label_align),
+                "look_json": mark.look or None,
             }
             for index, mark in enumerate(marks, start=1)
         ]
