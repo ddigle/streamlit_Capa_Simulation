@@ -607,3 +607,28 @@ def test_values_rebuilt_on_every_read_are_not_reported_as_changed(
     warning = reported[-1]
     assert warning is not None
     assert "새로 0 · 바꿈 1 · 지움 0" in warning and "plain" in warning
+
+
+def test_a_deferred_key_warning_is_not_resolved_in_the_run_that_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """멈춘 앞 회차가 넘긴 키 알림(`MO-02`)을 맨 위에서 낸 회차는 끝에서 해소를 내지 않는다 — 같은
+    회차에 알림창과 「해소」 가 함께 서지 않게. 그 다음 회차(건드리지 않음)가 해소한다."""
+    from capa_simulation import module_runtime
+
+    state = _FakeState()
+    reported: list[str | None] = []
+    monkeypatch.setattr(module_runtime, "st", SimpleNamespace(session_state=state))
+    monkeypatch.setattr(
+        module_runtime, "_report_key_warning", lambda _module, text: reported.append(text)
+    )
+    monkeypatch.setattr("capa_simulation.alerts.flush", lambda: None)
+    spec = PageSpec(
+        "modules/demo_b/page.py", "시험 (구현중)", url_path="mod-demo_b-main", module="demo_b"
+    )
+
+    module_runtime._defer_key_warning("demo_b", "DEMO 넘긴 키 알림")
+    module_runtime.run_module_page(lambda: None, spec)
+    assert reported == ["DEMO 넘긴 키 알림"]
+    module_runtime.run_module_page(lambda: None, spec)
+    assert reported == ["DEMO 넘긴 키 알림", None]

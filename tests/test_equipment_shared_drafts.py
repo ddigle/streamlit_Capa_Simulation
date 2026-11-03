@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alert_marks import events
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 
@@ -181,6 +182,9 @@ def test_someone_elses_save_discards_pending_layouts_and_says_so(tmp_path: Path)
     (notice,) = [element for element in app.warning if "버리고" in str(element.value)]
     assert "다른 사용자가 공통 대장 r2" in str(notice.value)
     assert notice.proto.icon == ":material/sync_problem:"
+    # 「알림 닫기」 까지 남는 자리 경고와 함께 사건 알림(`EQ-05`)이 알림창 · Alarm 에 한 번 간다.
+    (event,) = events(app, "EQ-05")
+    assert "다른 사용자가 공통 대장 r2" in str(event["short"]), event
     assert app.session_state["pending"] == {}
     # 대기분이 버려진 뒤의 저장은 쓴 것이 없다고 말한다(「저장했습니다」가 아니다).
     assert app.session_state["message"] == "바뀐 내용이 없어 저장하지 않았습니다."
