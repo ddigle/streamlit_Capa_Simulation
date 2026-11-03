@@ -353,9 +353,8 @@ SCENARIO_DIALOG_TITLE: Final = "시나리오·리비전"
 SCENARIO_DIALOG_MODES: Final = ("불러오기", "새 리비전 저장")
 REVISION_RADIO_LABEL: Final = "리비전"
 PERIOD_DIALOG_TITLE: Final = "조회기간"
-# 조회기간 팝업의 달 고르기(2026-11-04 검수 의견 home-19 — 월 입력 두 칸을 해 넘김 · 열두 달 격자 ·
-# 빠른 선택으로 바꿨다). 클래스 · id 는 `month_range_picker_assets/month_range.html` 과 같다(시험이
-# 대 본다).
+# 조회기간 팝업의 달 고르기(해 넘김 · 열두 달 격자 · 빠른 선택 — 2026-11-04 검수 의견 home-19).
+# 클래스 · id 는 `month_range_picker_assets/month_range.html` 과 같다(시험이 대 본다).
 MONTH_CELL_CLASS: Final = "capa-month-cell"
 MONTH_STEP_CLASS: Final = "capa-month-step"
 MONTH_CHIP_CLASS: Final = "capa-month-chip"
@@ -2865,9 +2864,9 @@ def revision_list_words(revisions: Any, captions: object) -> str:
 
 
 # 조회기간 팝업 — 달 칸 · 해 넘김 · 빠른 선택 수와 「적용」 단추(달 고르기 컴포넌트 안인가), 팝업의
-# 설명 글 줄 수 (`stCaptionContainer` — 2026-11-04 걷었다, 0 이 정상). 옛 월 입력 칸이 남았으면 그
-# 수도 센다. 컴포넌트는 그림자 DOM 으로 가두지 않아(`isolate_styles=False`) `querySelector` 로
-# 닿는다.
+# 설명 글(`stCaptionContainer`) 줄 수(0 이 정상 — 2026-11-04 검수 의견 home-19). 옛 ZIP 화면의 월
+# 입력 칸이 있으면 그 수도 센다. 컴포넌트는 그림자 DOM 으로 가두지 않아(`isolate_styles=False`)
+# `querySelector` 로 닿는다.
 _PERIOD_DIALOG_JS = """(box, ids) => {
   const count = (name) => box.querySelectorAll(`.${name}`).length;
   const apply = box.querySelector(`#${ids.apply}`);
@@ -2881,9 +2880,8 @@ _PERIOD_DIALOG_JS = """(box, ids) => {
     inComponent: !!(apply && apply.closest('[data-testid^="stBidiComponent"]')),
   };
 }"""
-# 공정 필터 팝업 — 작업 줄(첫 단추)보다 위, 곧 머리에 선 설명 글(`stCaptionContainer`) 줄
-# 수(2026-11-04 검수 의견 home-20 — 「B/N·확보율 판정에 넣을 공정 · …」 · 「판정 기준은 HOME 설정 →
-# Preference 에서」 를 걷었다, 0 이 정상)와 머리 「선택 n / N」 줄 · 그 풍선(기간 · 확보 기준)이
+# 공정 필터 팝업 — 작업 줄(첫 단추)보다 위, 곧 머리에 선 설명 글(`stCaptionContainer`) 줄 수(0 이
+# 정상 — 2026-11-04 검수 의견 home-20)와 머리 「선택 n / N」 줄 · 그 풍선(기간 · 확보 기준)이
 # 섰는가.
 _PROCESS_DIALOG_JS = """(box) => {
   const tips = '[data-testid="stTooltipIcon"], [data-testid="stTooltipHoverTarget"]';

@@ -658,13 +658,12 @@ def show_process_filter_dialog(
         draft_selection = []
     selected_set = {str(process) for process in draft_selection if process in options}
 
-    # 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20 — 「B/N·확보율 판정에 넣을 공정 ·
-    # 기간 · 확보 기준」 · 「판정 기준은 HOME 설정 → Preference 에서」 · 「체크된 버튼이 ON」 을
-    # 걷었다). 고른 수가 머리이고, 무엇을 고르는지(표의 행을 거르는 다른 화면의 「공정 필터」와 달리
-    # 판정에 넣을 공정)와 그 기간 · 확보 기준은 그 줄의 풍선이다 — 「확보 기준 미달 · 충족」 묶음을
-    # 읽는 데 기준 값이 든다. 기준은 사사오입한 정수 퍼센트(`threshold_percent_label`)이고 기본값과
-    # 다른 달이 기간 안에 있으면 그 수를 덧붙인다. 판정 규칙(유효한 월 중 최저 확보율)과 기준을
-    # 정하는 자리(HOME 설정 → Preference)는 Guide 가 말한다.
+    # 머리에는 설명 글을 두지 않는다(2026-11-04 검수 의견 home-20). 고른 수가 머리이고, 무엇을
+    # 고르는지(표의 행을 거르는 다른 화면의 「공정 필터」와 달리 판정에 넣을 공정)와 그 기간 · 확보
+    # 기준은 그 줄의 풍선이다 — 「확보 기준 미달 · 충족」 묶음을 읽는 데 기준 값이 든다. 기준은
+    # 사사오입한 정수 퍼센트(`threshold_percent_label`)이고 기본값과 다른 달이 기간 안에 있으면 그
+    # 수를 덧붙인다. 판정 규칙(유효한 월 중 최저 확보율)과 기준을 정하는 자리(HOME 설정 →
+    # Preference)는 Guide 가 말한다.
     st.markdown(
         f"**선택 {len(selected_set)} / {len(options)}**",
         help=(
