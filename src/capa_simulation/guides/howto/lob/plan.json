@@ -14,7 +14,7 @@
     "official_memo": {"type": "text", "default": "12월 Pre B/D 가용 +2 반영", "about": "공식 지정 폼 「공식 지정 메모」에 적을 글"},
     "compare_scenario": {
       "type": "text",
-      "default": "26년 9월 정기 Capa 검토",
+      "default": "26년 10월 정기 Capa 검토",
       "about": "HOME 설정 팝업 「비교 · 주요 Case」 탭 「비교 시나리오」에서 고를 시나리오 이름(앞부분만 적어도 첫 일치를 고른다)"
     }
   },
@@ -402,7 +402,7 @@
         {"op": "nav", "text": "HOME"},
         {"op": "open_popup", "target": "key:home_settings_open"},
         {"op": "tab", "text": "비교 · 주요 Case", "scope": "dialog"},
-        {"op": "fill", "label": "비교 시나리오", "value": {"param": "compare_scenario", "default": "26년 9월 정기 Capa 검토"}},
+        {"op": "fill", "label": "비교 시나리오", "value": {"param": "compare_scenario", "default": "26년 10월 정기 Capa 검토"}},
         {"op": "scroll", "target": "named:HEAD_BOX(비교 시나리오)", "block": "start"}
       ],
       "targets": {
