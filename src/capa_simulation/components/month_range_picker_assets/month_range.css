@@ -96,7 +96,8 @@
   pointer-events: none;
 }
 
-.capa-month-cell:hover:not(:disabled)::before {
+/* 시작 · 끝 칸은 마우스를 올려도 강조색 그대로다(올림 면이 덮으면 흰 글자가 묻힌다). */
+.capa-month-cell:not(.is-start):not(.is-end):hover:not(:disabled)::before {
   background: var(--capa-month-hover);
 }
 

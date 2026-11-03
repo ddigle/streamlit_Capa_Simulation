@@ -126,7 +126,7 @@ settings.DUCKDB_PATH = Path({str(database_path)!r})
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(equipment_path)!r})
 horizontal_scrollbar.render_horizontal_scrollbar = lambda *args, **kwargs: None
 month_range_picker.render_month_range_apply = (
-    lambda *, start, end, min_month, max_month, key: None
+    lambda *, start, end, min_month, max_month, key, this_month=None: None
 )
 # UPEH 적용 구간의 선택지는 「이번 달 이후」 다 — 시드(2026년) 달이 날짜에 따라 빠지지 않게
 # 오늘을 박는다.

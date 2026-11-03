@@ -37,7 +37,7 @@ settings.EQUIPMENT_DUCKDB_PATH = Path({str(equipment_path)!r})
 # Components v2 위젯은 모듈 import 시점에 등록되어 AppTest 인스턴스마다 살아 있지 않다.
 horizontal_scrollbar.render_horizontal_scrollbar = lambda *args, **kwargs: None
 month_range_picker.render_month_range_apply = (
-    lambda *, start, end, min_month, max_month, key: None
+    lambda *, start, end, min_month, max_month, key, this_month=None: None
 )
 
 try:

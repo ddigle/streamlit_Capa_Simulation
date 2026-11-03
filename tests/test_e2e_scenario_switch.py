@@ -136,7 +136,13 @@ def _figure_fingerprint(figure: object) -> str:
 
 
 def _month_range_stub(
-    *, start: str, end: str, min_month: str, max_month: str, key: str
+    *,
+    start: str,
+    end: str,
+    min_month: str,
+    max_month: str,
+    key: str,
+    this_month: str | None = None,
 ) -> tuple[str, str] | None:
     """조회기간 팝업의 월 선택은 Components v2 라 AppTest 인스턴스에 등록되어 있지 않다.
 
