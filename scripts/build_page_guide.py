@@ -2,13 +2,13 @@
 
 """따라하기 가이드 생성기 — 촬영 → 조립.
 
-    # 사외 예시판(합성 시드). 결과는 --dist 에 나오고, 사람이 저장소 자리로 복사해 커밋한다
+    # 사외 예시판(검수용 합성 샘플 시드). 결과는 --dist 에 — 사람이 저장소 자리로 복사해 커밋한다
     .venv/bin/python scripts/build_page_guide.py --example --playwright-dir <저장소 밖>/pw \\
         --work <저장소 밖>/guide_work --dist <저장소 밖>/guide_out --output <저장소 밖>/guide.md
     cp <guide_out>/lob.html static/guides/howto/lob.html
     cp <guide_out>/example/* src/capa_simulation/guides/howto/lob/example/
 
-    # 사내판(런북 10장). 사본 트리의 스크립트로, 사본에서만 돈다
+    # 사내판(런북 10장 — 2026-11-02 부터 쉼, 다시 열 때를 위해 둔다). 사본 트리에서만 돈다
     & $py "$e2e\\scripts\\build_page_guide.py" --internal --copy-root $e2e \\
         --playwright-dir $HOME/pw --params review/guide/params.json \\
         --overrides review/guide/overrides.json --work $HOME/guide_work \\
@@ -20,7 +20,8 @@
 **두 모드.**
 
 - `--example`: 이 저장소의 `git archive HEAD` 를 `--work` 아래 새 폴더에 풀고, 그 `data/` 에
-  가이드 합성 시드 DB(`scripts/guide_example_seed.py`)를 만든 뒤 띄워 모든 상태를 찍는다.
+  검수용 합성 샘플의 두 DB(`scripts/generate_review_sample.py` — 사본 뿌리를 `--out` 으로,
+  CSV · 사본 점검 없이)를 만든 뒤 띄워 모든 상태를 찍는다. 모듈은 끈다(자식 앱 환경).
   결과는 `--dist/<가이드>.html`(예시판)과 `--dist/example/`(사내가 찍지 않는 상태의 합성 그림 ·
   좌표)이다. **저장소 트리에는 쓰지 않는다** — 사외 정본 자리(`static/guides/howto/` ·
   `src/capa_simulation/guides/howto/<가이드>/example/`)로는 사람이 복사해 `git diff` 로 보고
@@ -111,7 +112,9 @@ DB_CHANGED_MESSAGE: Final = (
 )
 # 찍기 전마다 감추고, 감춘 뒤에도 남으면 찍지 않는 글 — 담당 조직 · 문의처(settings 정본).
 MASK_NEEDLES: Final = (APP_OWNER_TEAM, APP_CONTACT_EMAIL)
-SEED_SCRIPT: Final = Path("scripts") / "guide_example_seed.py"
+# 예시판 시드 — 검수용 합성 샘플 생성기(사본의 것). 사본 뿌리에 data/ 두 DB 를 만든다.
+SEED_SCRIPT: Final = Path("scripts") / "generate_review_sample.py"
+SEED_ARGUMENTS: Final = ("--no-csv", "--skip-inspect")
 SEED_TIMEOUT_SECONDS: Final = 600
 # 예시판 사본이 HEAD 와 견줄 앱 자리 — 여기에 커밋하지 않은 변경이 있으면 알린다.
 APP_PATHS: Final = ("app.py", "app_pages", "src", ".streamlit", "static", "config")
@@ -346,12 +349,12 @@ def make_example_copy(work: Path, root: Path = PROJECT_ROOT) -> Path:
 
 
 def seed_example(copy_root: Path) -> None:
-    """사본의 시드 스크립트로 사본 `data/` 에 합성 시드 DB 를 만든다(사본 코드 · 사본 경로)."""
+    """사본의 샘플 생성기로 사본 `data/` 에 두 DB 를 만든다(사본 코드 · 사본 경로)."""
     script = copy_root / SEED_SCRIPT
     if not script.is_file():
         raise PrepareError("사본에 예시판 시드 스크립트가 없습니다")
     completed = subprocess.run(
-        [sys.executable, str(script), "--out", str(copy_root / "data" / DUCKDB_PATH.name)],
+        [sys.executable, str(script), "--out", str(copy_root), *SEED_ARGUMENTS],
         cwd=str(copy_root),
         env=screens.app_environment(copy_root),
         capture_output=True,
