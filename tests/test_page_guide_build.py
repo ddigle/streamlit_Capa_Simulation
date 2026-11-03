@@ -1026,6 +1026,56 @@ def test_example_run_shoots_every_state_on_its_own_copy_without_a_baseline(
     assert (rig.root / "out" / core.EXAMPLE_DIR / core.SHOTS_FILE).exists()
 
 
+def _seed_copy(tmp_path: Path) -> Path:
+    copy_root = tmp_path / "app-x"
+    (copy_root / builder.SEED_SCRIPT).parent.mkdir(parents=True)
+    (copy_root / builder.SEED_SCRIPT).write_text("", encoding="utf-8")
+    return copy_root
+
+
+def test_example_seed_is_the_review_sample_generator_on_the_copy_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """예시판 시드는 사본의 검수용 샘플 생성기다 — 사본 뿌리를 `--out` 으로, 사본 코드 · 모듈 끔."""
+    assert (PROJECT_ROOT / builder.SEED_SCRIPT).is_file()
+    copy_root = _seed_copy(tmp_path)
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_run(command: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append((list(command), kwargs))
+        return subprocess.CompletedProcess(list(command), 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    builder.seed_example(copy_root)
+
+    (command, kwargs), *rest = calls
+    assert not rest
+    assert command[1:] == [
+        str(copy_root / builder.SEED_SCRIPT),
+        "--out",
+        str(copy_root),
+        "--no-csv",
+        "--skip-inspect",
+    ]
+    assert kwargs["cwd"] == str(copy_root)
+    assert kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == str(copy_root / "src")
+    assert kwargs["env"][screens.MODULES_ROOT_ENV_VAR] == "off"
+
+
+def test_example_seed_stops_when_the_generator_fails_or_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(builder.PrepareError):
+        builder.seed_example(tmp_path / "empty-copy")
+
+    def failing_run(command: Sequence[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(list(command), 1, "", "")
+
+    monkeypatch.setattr(subprocess, "run", failing_run)
+    with pytest.raises(builder.PrepareError, match="종료 코드 1"):
+        builder.seed_example(_seed_copy(tmp_path))
+
+
 # ------------------------------------------------------------------ 점검기 CLI
 
 
