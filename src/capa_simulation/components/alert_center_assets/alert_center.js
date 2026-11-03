@@ -22,7 +22,10 @@
 //   자리 규칙이 그 값으로 오른쪽을 비운다(`app_header`). 단추가 늘거나 줄어도 다시 잴 필요가 없다.
 // - 화면 탭 줄 JS(`page_tabs.js`)는 같은 문서의 `window.__capaAlerts.raise(...)` 로 알린다(알림 칸이 아직 서지 않았으면
 //   `window.__capaAlertQueue` 에 담아 두고 칸이 설 때 꺼낸다). 「그 화면으로」 는 탭 줄의 화면 이동(상한 · 떠나기 확인)에
-//   `capa-open-page` 사건으로 맡긴다.
+//   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
+//   누른다(`stateful_tabs` — 보통 누름과 같다).
+// - 알림에 딸린 표(`table` — 본문에서 뺀 목록)는 줄의 「… 보기」 단추가 펼치고 CSV 는 브라우저 안에서 만든다(서버를 부르지
+//   않는다). 표는 코드마다 가장 새 줄에만 남긴다(탭 저장소 크기).
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
 const APP_ROOT = '[data-testid="stApp"]'
@@ -41,6 +44,9 @@ const FADE_MS = 160
 // 툴바 슬롯이 늦게 그려지면 이 간격으로 이 횟수까지 다시 본다.
 const PLACE_RETRY_MS = 200
 const PLACE_RETRIES = 40
+// 「그 화면으로」 의 탭 고르기를 이만큼 기다린다(그 화면 회차가 끝나기를).
+const PENDING_TAB_MS = 20000
+const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
 
 // <alerts-rows>
 // 사건 알림의 「같은 알림」 열쇠 — 코드 + 짧은 글.
@@ -105,6 +111,41 @@ function visibleRows(rows, filter) {
         !(filter.hideResolved && row.state === 'resolved'),
     )
     .sort((a, b) => b.last - a.last)
+}
+// 알림에 딸린 표의 CSV — 머리 줄 + 행(원본 값). 쉼표 · 따옴표 · 줄바꿈이 든 칸은 따옴표로 감싼다(BOM 은 내려받을 때 붙인다).
+function tableCsv(table) {
+  const cell = (value) => {
+    if (value === null || value === undefined) return ''
+    const text = String(value)
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  }
+  const columns = table && Array.isArray(table.columns) ? table.columns : []
+  const rows = table && Array.isArray(table.rows) ? table.rows : []
+  return [columns, ...rows].map((row) => (Array.isArray(row) ? row : []).map(cell).join(',')).join('\r\n')
+}
+// 표 칸에 보일 글 — 화면 표시명(`shown`)이 있으면 그것, 수는 끝자리를 넷까지만.
+function tableCell(table, column, value) {
+  if (value === null || value === undefined) return ''
+  const shown = table && table.shown && table.shown[column]
+  if (shown && Object.prototype.hasOwnProperty.call(shown, String(value))) return String(shown[String(value)])
+  if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(4)))
+  return String(value)
+}
+// 표는 코드마다 가장 새 줄(마지막 시각)에만 둔다 — 옛 범위 줄의 표까지 이 탭 저장소에 쌓지 않는다.
+function keepNewestTables(rows) {
+  const kept = new Set()
+  for (const row of [...rows].sort((a, b) => b.last - a.last)) {
+    if (!row || !row.table) continue
+    if (kept.has(row.code)) delete row.table
+    else kept.add(row.code)
+  }
+  return rows
+}
+// 탭 단추 글이 고른 탭인가 — 단추 글 앞에는 아이콘 이름 글자가 붙어 있어 끝으로 견준다.
+function tabMatches(text, label) {
+  const plain = String(text || '').replace(/\s+/g, ' ').trim()
+  const want = String(label || '').replace(/\s+/g, ' ').trim()
+  return want !== '' && plain.endsWith(want)
 }
 // 툴바 자리 — `order` 에서 자기보다 뒤 차례인 단추 중 이미 선 첫 단추 앞, 없으면 끝(`theme_toggle.capaToolbar` 와 같다).
 // 돌려주는 것은 앞에 설 형제 id(끝이면 null).
@@ -183,6 +224,8 @@ function createCenter(data) {
     filter: { level: 'all', page: '', hideResolved: false },
     open: null,
     openLogs: new Set(),
+    openTables: new Set(),
+    pendingTab: null,
     runRoot: null,
     runObserver: null,
     scanTimer: 0,
@@ -293,7 +336,7 @@ function levelMs(C, level) {
 function persist(C) {
   const storage = C.data.storage || {}
   const limits = C.data.limits || {}
-  C.rows = pruneRows(C.rows, Date.now(), limits.rows || 200, (limits.hours || 12) * 3600000)
+  C.rows = keepNewestTables(pruneRows(C.rows, Date.now(), limits.rows || 200, (limits.hours || 12) * 3600000))
   const alive = new Set(C.rows.map((row) => row.id))
   const keys = Object.keys(C.states)
   if (keys.length > STATE_LIMIT) {
@@ -318,6 +361,8 @@ function rowFor(note, now) {
     full: String(note.full || note.short || ''),
     page: String(note.page || ''),
     href: typeof note.href === 'string' ? note.href : null,
+    tab: String(note.tab || ''),
+    table: note.table && typeof note.table === 'object' && Array.isArray(note.table.rows) ? note.table : null,
     scopeLabel: String(note.scope_label || ''),
     cause: String(note.cause || ''),
     detail: String(note.detail || ''),
@@ -357,7 +402,7 @@ function handleEvent(C, note) {
     row.last = now
     row.unread = true
     const fresh = rowFor(note, now)
-    for (const name of ['full', 'page', 'href', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
+    for (const name of ['full', 'page', 'href', 'tab', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
   } else {
     row = rowFor(note, now)
     C.rows.unshift(row)
@@ -402,6 +447,14 @@ function handleState(C, note) {
     entry.active = false
     return true
   }
+  if (verdict === 'same' && note.table && typeof note.table === 'object') {
+    // 같은 지문인데 줄에 표가 없으면(더 새 같은 코드 줄이 표를 가져갔다가 걷힘) 다시 붙인다.
+    const row = C.rows.find((item) => item.id === entry.row)
+    if (row && !row.table && Array.isArray(note.table.rows)) {
+      row.table = note.table
+      return true
+    }
+  }
   return changed
 }
 
@@ -433,6 +486,7 @@ function scan(C) {
   ensureToolbar(C)
   paintAll(C)
   measureToolbar(C)
+  settleTab(C)
 }
 
 function scanSoon(C) {
@@ -742,9 +796,80 @@ function buildChangesPanel(C) {
   return panel
 }
 
-function goTo(C, href) {
+function goTo(C, href, tab) {
   closePanel(C, false)
+  C.pendingTab = tab ? { href, tab, until: Date.now() + PENDING_TAB_MS } : null
   window.dispatchEvent(new CustomEvent(OPEN_PAGE_EVENT, { detail: { href } }))
+  settleTab(C)
+}
+
+function running() {
+  const root = document.querySelector(APP_ROOT)
+  return Boolean(root) && root.getAttribute(RUN_STATE) === 'running'
+}
+
+// 「그 화면으로」 가 맡긴 탭 고르기 — 그 화면(`here`)에 닿고 회차가 끝났으면 이름이 맞는 탭 단추를 누른다. 이미 열린 탭이면
+// 누르지 않는다. 기다리는 시간이 지나면 버린다.
+function settleTab(C) {
+  const pending = C.pendingTab
+  if (!pending) return
+  if (Date.now() > pending.until) {
+    C.pendingTab = null
+    return
+  }
+  if (C.data.here !== pending.href || running()) return
+  C.pendingTab = null
+  const button = [...document.querySelectorAll(TAB_BUTTON)].find((item) => tabMatches(item.textContent, pending.tab))
+  if (button && button.getAttribute('aria-selected') !== 'true') button.click()
+}
+
+function downloadTable(table) {
+  const blob = new Blob(['\ufeff' + tableCsv(table)], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = String(table.file || 'table.csv')
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+function tableBox(C, row) {
+  const t = text(C)
+  const table = row.table
+  const columns = Array.isArray(table.columns) ? table.columns : []
+  const box = el('div', 'tablebox')
+  const head = el('div', 'thead')
+  const csv = el('button', 'link', t.table_csv || '')
+  csv.type = 'button'
+  csv.addEventListener('click', () => downloadTable(table))
+  head.append(
+    el('b', '', table.title || ''),
+    el('span', 'count', fill(t.table_rows, { n: Number(table.total || table.rows.length).toLocaleString() })),
+    el('span', 'grow'),
+    csv,
+  )
+  const scroller = el('div', 'tscroll')
+  scroller.tabIndex = 0
+  const grid = el('table')
+  const header = el('tr')
+  for (const column of columns) header.append(el('th', '', column))
+  const thead = el('thead')
+  thead.append(header)
+  const tbody = el('tbody')
+  for (const values of table.rows) {
+    const line = el('tr')
+    columns.forEach((column, index) => {
+      const value = Array.isArray(values) ? values[index] : null
+      line.append(el('td', typeof value === 'number' ? 'num' : '', tableCell(table, column, value)))
+    })
+    tbody.append(line)
+  }
+  grid.append(thead, tbody)
+  scroller.append(grid)
+  box.append(head, scroller)
+  return box
 }
 
 function changeLines(C, target) {
@@ -802,6 +927,11 @@ function paintBadge(C) {
   C.alarmButton.setAttribute('aria-label', fill(t.alarm_aria, { n: badge.count }))
 }
 
+// 줄의 화면 칸 — 화면 안 탭이 있으면 「화면 › 탭」.
+function pageLabel(row) {
+  return row.page && row.tab ? `${row.page} › ${row.tab}` : row.page
+}
+
 function logRows(C, row) {
   const t = text(C)
   const why = { gone: t.resolved_gone, changed: t.resolved_changed, scope: t.resolved_scope }
@@ -809,7 +939,7 @@ function logRows(C, row) {
     [t.log_code, `${row.code} · ${levelLabel(C, row.level)} · ${row.kind === 'state' ? t.kind_state : t.kind_event}`],
     [t.log_first, hms(row.first)],
     [t.log_last, hms(row.last) + (row.n > 1 ? ` (${fill(t.log_times, { n: row.n })})` : '')],
-    [t.log_page, row.page || '—'],
+    [t.log_page, pageLabel(row) || '—'],
     [t.log_cause, row.cause || (row.kind === 'state' ? t.cause_new : t.cause_event) || '—'],
   ]
   if (row.scopeLabel) rows.push([t.log_scope, row.scopeLabel])
@@ -859,7 +989,7 @@ function paintList(C) {
     body.title = row.full
     line.append(el('span', 'lv', levelLabel(C, row.level)), body)
     const meta = el('div', 'meta')
-    if (row.page) meta.append(el('span', '', row.page))
+    if (row.page) meta.append(el('span', '', pageLabel(row)))
     meta.append(el('span', '', hm(row.last) + (row.n > 1 ? ` · ×${row.n}` : '')))
     if (row.kind === 'state') {
       meta.append(
@@ -870,8 +1000,25 @@ function paintList(C) {
     if (typeof row.href === 'string') {
       const go = el('button', 'link', t.go || '')
       go.type = 'button'
-      go.addEventListener('click', () => goTo(C, row.href))
+      go.addEventListener('click', () => goTo(C, row.href, row.tab))
       acts.append(go)
+    }
+    let tableHolder = null
+    if (row.table) {
+      const toggle = el('button', 'link', fill(t.table_open, { title: row.table.title || '' }))
+      toggle.type = 'button'
+      const shownTable = C.openTables.has(row.id)
+      toggle.setAttribute('aria-expanded', String(shownTable))
+      tableHolder = el('div', 'tableholder')
+      if (shownTable) tableHolder.append(tableBox(C, row))
+      toggle.addEventListener('click', () => {
+        const now = !C.openTables.has(row.id)
+        if (now) C.openTables.add(row.id)
+        else C.openTables.delete(row.id)
+        toggle.setAttribute('aria-expanded', String(now))
+        tableHolder.replaceChildren(...(now ? [tableBox(C, row)] : []))
+      })
+      acts.append(toggle)
     }
     let box = null
     if (row.level !== 'info') {
@@ -893,6 +1040,7 @@ function paintList(C) {
     meta.append(acts)
     item.append(line, meta)
     if (box) item.append(box)
+    if (tableHolder) item.append(tableHolder)
     parts.list.append(item)
   }
   return shown

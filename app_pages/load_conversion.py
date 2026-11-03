@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.editor_state import (
     discard_editor,
     editor_has_edits,
@@ -39,17 +40,18 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
-from capa_simulation.components.required_exclusion_notice import (
-    FULL_SCOPE,
-    plan_side_counts,
-    required_exclusion_message,
-)
+from capa_simulation.components.required_exclusion_notice import FULL_SCOPE, alert_uncounted_demand
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
     reset_editors_on_source_change,
     show_row_order_reset,
     source_token,
+)
+from capa_simulation.components.state_alerts import (
+    AlertScope,
+    alert_page_error,
+    simulation_scope,
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
@@ -125,6 +127,9 @@ try:
     selected_end_month = context.selected_end_month
 except BOOTSTRAP_ERRORS as exc:
     st.error(f"기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}")
+    alert_page_error(
+        f"기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}", code="ST-20"
+    )
     st.stop()
 
 try:
@@ -160,6 +165,7 @@ try:
     )
 except ValueError as exc:
     st.error(bootstrap_error_message(exc))
+    alert_page_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 
 # 수율 표는 따로 세운다. 예전에는 위 `try` 에 함께 있어 RQ_YLD 한 행의 값이 비었거나 0 이면
@@ -211,9 +217,6 @@ OWN_CHANGE_KEY = "load_conversion_own_change"
 # 편집표·붙여넣기 대기 이름 — 사이드바 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
 EDITOR_NAMES = {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"}
 STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
-# 줄 차례가 바뀌어 적용 전 편집을 버린 회차의 알림 자리. 탭 묶음 바로 위에 **늘 서 있는 한
-# 칸**이다 — 알림이 생기고 사라질 때 탭 묶음 자리가 밀리지 않게 한다(가용설비 현황의 알림 칸).
-notices = st.container()
 # 줄 차례 지문은 두 편집표 캐시 키와 같은 표시순서 지문이다 — PKG PLAN·수율 모두 이 표시순서로 줄을
 # 세운다. 바뀌면 적용 전 편집이 다른 제품 줄에 붙으므로 비운다. **붙여넣기 대기 표는 남긴다** —
 # 붙여넣은 차례 그대로 PKG PLAN 편집표의 원본이 되고(아래 `plan_editor_source`) 적용도 업무 키로
@@ -241,7 +244,8 @@ source_reset = reset_editors_on_source_change(
     names={**EDITOR_NAMES, **STAGED_NAMES},
     order_free_keys=plan_order_free,
 )
-show_row_order_reset(notices, source_reset)
+# 줄 차례가 바뀌어 적용 전 편집을 버린 회차는 오른쪽 아래 알림창에 한 번 알린다(사건 알림 `ST-09`).
+show_row_order_reset(source_reset)
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
 # 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(
@@ -263,6 +267,22 @@ TAB_CONVERSION = ":material/calculate: 환산"
 TAB_PKG_PLAN = ":material/edit_calendar: PKG PLAN"
 TAB_YIELD = ":material/percent: 수율"
 TAB_LABELS = (TAB_CONVERSION, TAB_PKG_PLAN, TAB_YIELD)
+# 알림이 「그 화면으로」 로 열 탭 이름(아이콘 없이 — 탭 단추 글의 끝과 맞댄다).
+CONVERSION_TAB_NAME = "환산"
+PKG_PLAN_TAB_NAME = "PKG PLAN"
+YIELD_TAB_NAME = "수율"
+# 목록 펼침 안 첫 줄 — 고칠 곳. 건수는 알림(`ST-05` · `ST-06`)이 말한다(자리에 경고 상자를 그리지
+# 않는다 — 2026-11-03 결정 보드 D2 (나)).
+EXCLUDED_PLAN_GUIDE = (
+    "기준정보(수율·Chip 구성 등)가 없어 계산에서 제외한 계획은 그 기준정보를 채우면 환산과 "
+    "소요대수에 반영됩니다. 생산수량이 빈 계획은 계획 없음(0)으로 봤습니다."
+)
+LOCKED_YIELD_GUIDE = (
+    "원천 수율 값이 비었거나 0 이하·100% 초과인 행은 표에서 값을 뺐습니다(편집 불가 — 그 달 칸이 "
+    "빈칸으로 보입니다). 값이 빈 행은 환산에서 빠지고, 0 이하·100% 초과 행은 Chip·Wafer 환산과 "
+    "HOME·소요대수·확보율 계산을 멈춥니다. 그 달 칸에 EDS·BE 를 모두 넣어 적용하면 고쳐집니다 — "
+    "비워 두면 원본 그대로 남습니다."
+)
 conversion_tab, pkg_plan_tab, yield_tab = stateful_tabs(TAB_LABELS, key=TAB_KEY)
 # 적용하지 않은 편집이나 붙여넣고 아직 적용하지 않은 표가 남은 탭에 점을 찍는다(개선안 C). 다른
 # 탭으로 옮겨도 「저 탭에 아직 적용할 것이 있다」가 보인다.
@@ -316,8 +336,8 @@ def _queue_done(key: str, message: str) -> None:
 
 
 def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenerator) -> None:
-    """PKG PLAN 적용 알림이 서는 회차 — 그 알림 칸(`slot`) 아래에 소요대수에 들지 않은 수요 한
-    문장(있을 때만).
+    """PKG PLAN 적용 알림이 서는 회차 — 소요대수에 들지 않은 수요의 상태 알림(`ST-04` — 자리에는
+    그리지 않고 건수가 바뀔 때만 알림창에 뜬다). 셈 동안의 스피너는 그 알림 칸(`slot`)에 선다.
 
     그 달 `RQ_REQB` 경로가 없는 칸에 넣은 계획은 소요대수에 들지 않아 「다시 계산됩니다」 뒤에도
     현황 요약 수가 그대로라 「고쳤는데 안 바뀐다」 고 헷갈렸다(E2E r2 static #57, 개선 I38). 셈은
@@ -331,6 +351,9 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     그 전에 부르면 적용 직후 시나리오 전체 기간 계산(합성 표본 DB 사본의 리비전 하나에 0.5~1.4초 —
     `inspect_revision_calculations.py`, 샘플 관측)이 끝날 때까지 편집표가 서지 않아 다음 편집을
     기다리게 했다.
+
+    셈하지 못한 회차도 이벤트 칸 한 자리를 쓴다(`alerts.flush` — 부르는 쪽의 적용 알림 없는 회차와
+    같다).
     """
     scenario = context.active_scenario
     try:
@@ -341,34 +364,52 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
                 _reference_tables=context.reference_tables,
             )
     except BOOTSTRAP_ERRORS:
+        alerts.flush()
         return
     if outcome.error is not None or outcome.required_equipment is None:
+        alerts.flush()
         return
-    message = required_exclusion_message(
-        plan_side_counts(required_exclusion_counts(outcome.required_equipment)), scope=FULL_SCOPE
+    alert_uncounted_demand(
+        required_exclusion_counts(outcome.required_equipment),
+        code="ST-04",
+        scope=simulation_scope(scenario),
+        scope_name=FULL_SCOPE,
+        tab=PKG_PLAN_TAB_NAME,
     )
-    if message:
-        slot.warning(message, icon=":material/link_off:")
 
 
-def _render_locked_yield_rows(locked: pd.DataFrame) -> None:
-    """원천 값이 비었거나 범위 밖이라 수율 표에서 값을 뺀 행을 알린다.
+def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None) -> None:
+    """원천 값이 비었거나 범위 밖이라 수율 표에서 값을 뺀 행 — 목록 펼침(까닭 `사유` 칸)과 상태
+    알림(`ST-06`).
 
     말없이 빼면 그 달 칸이 원천에 행이 없는 달과 똑같이 빈칸으로 보인다. 목록에는 까닭(`사유`)을
     함께 싣는다. 계산에서 두 경우는 다르다 — 값 없는 행은 환산의 「제외한 계획」으로 내려가고,
     0 이하·100% 초과 행은 Chip·Wafer 환산과 HOME·소요대수·확보율을 멈춘다(2026-09-28 사용자
     결정). 예전 문구는 둘 다 원본대로 남는다고만 해 계산이 서는 것을 알리지 않았다(2026-09-29 리뷰).
+    고칠 곳은 펼침 안 첫 줄이 말한다. 알림은 수율 탭이 열린 회차에만 낸다(`scope` 가 None 이면 닫힌
+    탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸 한 자리를 써(`alerts.flush`)
+    바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
     """
+    if scope is None:
+        alerts.flush()
+    else:
+        alerts.state(
+            "ST-06",
+            scope=scope.scope,
+            content=len(locked),
+            active=not locked.empty,
+            text=(
+                f"수율 표에서 값을 뺀 원천 행 {len(locked):,}개 — 그 달 EDS·BE 를 넣어 적용하면 "
+                "고쳐짐"
+            ),
+            full=f"원천 수율 행 {len(locked):,}개 — {LOCKED_YIELD_GUIDE}",
+            scope_label=scope.label,
+            tab=YIELD_TAB_NAME,
+        )
     if locked.empty:
         return
-    st.warning(
-        f"원천 수율 값이 비었거나 0 이하·100% 초과인 {len(locked):,}행은 표에서 값을 뺐습니다"
-        "(편집 불가 — 그 달 칸이 빈칸으로 보입니다). 값이 빈 행은 환산에서 빠지고, 0 이하·100% "
-        "초과 행은 Chip·Wafer 환산과 HOME·소요대수·확보율 계산을 멈춥니다. 그 달 칸에 EDS·BE 를 "
-        "모두 넣어 적용하면 고쳐집니다 — 비워 두면 원본 그대로 남습니다.",
-        icon=":material/lock:",
-    )
     with st.expander("편집 불가 수율 행", icon=":material/rule:"):
+        st.caption(LOCKED_YIELD_GUIDE)
         st.dataframe(
             locked[[*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]],
             hide_index=True,
@@ -696,9 +737,13 @@ with pkg_plan_tab:
             },
         },
     )
-    # 적용 알림 칸(위) 맨 아래의 소요대수에 들지 않은 수요 — 편집표를 다 그린 뒤에 센다.
+    # 적용 알림 칸(위)이 서는 회차의 소요대수에 들지 않은 수요 — 편집표를 다 그린 뒤에 센다. 적용
+    # 알림이 없는 회차에도 이 자리에서 이벤트 칸 한 자리를 쓴다 — 뒤 수율 붙여넣기 팝업의 이벤트 칸
+    # 자리가 회차마다 같게(AGENTS 9장 「알림 칸」 — 표지를 쓰는 함수는 늘 같은 자리에서 한 자리).
     if applied_notice_shown:
         _render_uncounted_demand_after_apply(context, plan_flash_slot)
+    else:
+        alerts.flush()
 
 simulation_plan = filtered_plan
 
@@ -708,11 +753,12 @@ with yield_tab:
         # 표라 팝업을 열 수 없다 — 열려 있던 기억은 지워 원천을 고친 뒤 저절로 뜨지 않게 한다.
         if _dialog_is_open(YIELD_PASTE_DIALOG):
             _close_dialog()
-        st.error(
+        yield_stop_message = (
             f"수율 표를 만들지 못했습니다: {yield_build_error} 원천 RQ_YLD 를 고치기 전까지 이 "
-            "탭만 멈춥니다 — PKG PLAN 편집과 가상 제품 등록은 그대로 쓸 수 있습니다.",
-            icon=":material/error:",
+            "탭만 멈춥니다 — PKG PLAN 편집과 가상 제품 등록은 그대로 쓸 수 있습니다."
         )
+        st.error(yield_stop_message, icon=":material/error:")
+        alert_page_error(yield_stop_message, code="ST-20", tab=YIELD_TAB_NAME)
     else:
         yield_pending = editor_has_edits(YIELD_EDITOR_KEY)
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -742,7 +788,14 @@ with yield_tab:
                 )
         yield_notice = st.empty()
         render_flash(YIELD_FLASH_KEY)
-        _render_locked_yield_rows(locked_yield_rows)
+        _render_locked_yield_rows(
+            locked_yield_rows,
+            scope=(
+                None
+                if tab_is_hidden(yield_tab)
+                else simulation_scope(active_scenario, (effective_start_month, effective_end_month))
+            ),
+        )
         if _dialog_is_open(YIELD_PASTE_DIALOG):
             _yield_paste_dialog(
                 default_yield_table,
@@ -877,30 +930,48 @@ if not tab_is_hidden(conversion_tab):
             )
         except ValueError as exc:
             st.error(bootstrap_error_message(exc))
+            alert_page_error(bootstrap_error_message(exc), code="ST-20", tab=CONVERSION_TAB_NAME)
             st.stop()
 
         # 기준정보가 없어 계산에서 빠진 계획 행은 조용히 사라지면 안 된다. 예전에는 여기서
-        # 예외를 던져 페이지 전체가 멈췄고, 지금은 해당 제품만 빼고 목록으로 알린다.
+        # 예외를 던져 페이지 전체가 멈췄고, 지금은 해당 제품만 빼고 목록으로 알린다 — 건수는 상태
+        # 알림(`ST-05`, 이 탭이 열린 회차마다), 목록은 펼침이다.
         excluded_load_rows = load_exclusions(monthly_volume)
-        if not excluded_load_rows.empty:
-            # 생산수량이 빈 행은 기준정보 문제가 아니라 계획 없음(0)으로 본 것이다. 한 문장에 섞으면
-            # 채울 기준정보가 없는데 찾으러 간다.
-            blank_plans = int(
-                excluded_load_rows["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON).sum()
+        # 생산수량이 빈 행은 기준정보 문제가 아니라 계획 없음(0)으로 본 것이다. 한 문장에 섞으면
+        # 채울 기준정보가 없는데 찾으러 간다.
+        blank_plans = (
+            int(excluded_load_rows["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON).sum())
+            if not excluded_load_rows.empty
+            else 0
+        )
+        missing_plans = len(excluded_load_rows) - blank_plans
+        sentences = []
+        if missing_plans:
+            sentences.append(
+                f"기준정보가 없어 계산에서 제외한 계획이 {missing_plans:,}건 있습니다. "
+                "목록(이 탭 「제외한 계획 확인」)의 기준정보를 채우면 환산과 소요대수에 반영됩니다."
             )
-            missing_plans = len(excluded_load_rows) - blank_plans
-            sentences = []
-            if missing_plans:
-                sentences.append(
-                    f"기준정보가 없어 계산에서 제외한 계획이 {missing_plans:,}건 있습니다. "
-                    "아래 목록의 기준정보를 채우면 환산과 소요대수에 반영됩니다."
-                )
-            if blank_plans:
-                sentences.append(
-                    f"생산수량이 빈 계획 {blank_plans:,}건은 계획 없음(0)으로 봤습니다."
-                )
-            st.warning(" ".join(sentences), icon=":material/link_off:")
+        if blank_plans:
+            sentences.append(f"생산수량이 빈 계획 {blank_plans:,}건은 계획 없음(0)으로 봤습니다.")
+        conversion_scope = simulation_scope(
+            active_scenario, (effective_start_month, effective_end_month)
+        )
+        alerts.state(
+            "ST-05",
+            scope=conversion_scope.scope,
+            content=[missing_plans, blank_plans],
+            active=not excluded_load_rows.empty,
+            text=(
+                f"환산에서 빠진 계획 {len(excluded_load_rows):,}건 — 목록: 이 탭 「제외한 계획 "
+                "확인」"
+            ),
+            full=" ".join(sentences),
+            scope_label=conversion_scope.label,
+            tab=CONVERSION_TAB_NAME,
+        )
+        if not excluded_load_rows.empty:
             with st.expander("제외한 계획 확인", icon=":material/rule:"):
+                st.caption(EXCLUDED_PLAN_GUIDE)
                 st.dataframe(excluded_load_rows, hide_index=True, width="stretch")
 
         unit = {

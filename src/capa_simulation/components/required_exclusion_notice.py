@@ -1,4 +1,4 @@
-# Purpose: 소요대수에 들지 않은 수요의 건수 경고와 계획 쪽 제외 목록을 그린다.
+# Purpose: 소요대수에 들지 않은 수요·제외 기준정보의 상태 알림과 계획 쪽 제외 목록을 낸다.
 
 """**0 으로 접은 것을 말하지 않으면 확보율이 조용히 낙관 쪽으로 틀어진다.**
 
@@ -22,6 +22,15 @@ PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림�
 몫이라 계획을 고치지 않아도 늘 있을 수 있고(사내 리뷰 `202610271800` 보충 8-2X 에서 0 이 아니었다),
 그대로 실으면 적용할 때마다·현황 요약을 열 때마다 서는 경고가 된다(HOME 에서 이 줄을 뺀 2026-10-19
 결정과 같은 까닭). 경로 쪽은 위 자리들(알림 모음·저장·발행 검사)이 그대로 말한다.
+
+**화면 자리는 상태 알림이다**(2026-11-03 결정 보드 D2 (나)). Static Capa · 산출 결과 · 생산 계획은
+이 경고를 자리에 그리지 않고 `alerts.state` 로 낸다 — 내용(건수)이 바뀔 때만 오른쪽 아래 알림창에
+뜨고 Alarm 에 남으며 조건이 사라지면 「해소」 가 선다. 짧은 글은 무엇이(건수) 어디에(목록 자리)
+있는지를 말한다. 코드는 `ST-01`(계획 쪽 · 조회기간 — Static Capa 와 산출 결과 소요대수 탭이 같은
+코드 · 같은 범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다), `ST-04`(PKG PLAN 적용 뒤 ·
+시나리오 전체 기간), `ST-14`(대당 Capa 제외 기준정보 — 목록은 Alarm 줄의 표), `ST-15`(대당 Capa 가
+없어 소요대수에서 뺀 경로), `ST-21`(PKG 의 Buffer 밖 행 — 규칙이라 알림 단계)다. 목록 펼침 안 첫
+줄이 고칠 곳을 말한다.
 """
 
 from __future__ import annotations
@@ -29,11 +38,13 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.exclusion_table import render_exclusion_table
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.services.display_order import DisplayOrderInput
-from capa_simulation.services.load_calculator import PLAN_QUANTITY_BLANK_REASON
 from capa_simulation.services.required_equipment import (
+    PKG_UNCOUNTED_REASON,
     UNROUTED_KEY_MISMATCH_REASON,
     UNROUTED_UNKNOWN_PRODUCT_REASON,
     RequiredExclusionCounts,
@@ -47,6 +58,23 @@ PERIOD_SCOPE = "조회기간"
 # 문장의 머리. 자동 갱신의 발행 줄 뒤에 이어 적힌 이 경고를 실행 기록 사유에서 다시 가를 때도 쓴다
 # (`auto_official_update_runner.split_published_reason`).
 UNCOUNTED_DEMAND_LEAD = "소요대수에 들지 않은 수요가 있습니다"
+# 계획 쪽 목록이 서는 자리 — 알림 짧은 글이 「어디서 보는지」 로 적는다.
+REQUIRED_LIST_PLACE = "산출 결과 › 소요대수"
+# 대당 Capa 제외 목록(Alarm 줄의 표) 이름. 2026-11-02 사용자 요청(검수표) 전에는 대당 Capa 탭 본문의
+# 「제외 기준정보 확인」 펼침이었다.
+CAPACITY_EXCLUSION_TITLE = "제외 기준정보"
+# 계획 쪽 목록 펼침 안 첫 줄 — 고칠 곳(경고 상자를 알림으로 옮긴 뒤 목록 곁에 남기는 자리 글).
+LOAD_EXCLUSION_GUIDE = (
+    "기준정보가 없어 부하량에서 빠진 계획은 소요대수에 들지 않습니다 — 「누락 기준정보」 칸의 "
+    "표를 채우면 반영됩니다(수율은 생산 계획 → 수율 탭). 생산수량이 빈 계획은 계획 없음(0)으로 "
+    "봤습니다 — 원천에서 수량이 빠진 것이면 다시 조회해야 합니다."
+)
+UNROUTED_GUIDE = (
+    "이 부하는 어느 공정의 소요대수에도 들지 않습니다. 제외사유가 "
+    f"「{UNROUTED_KEY_MISMATCH_REASON}」이면 같은 제품·Stack·소요기준의 경로가 다른 달·양산구분·"
+    "Capa Code·Customer·CS 에는 있으니 계획 키를, "
+    f"「{UNROUTED_UNKNOWN_PRODUCT_REASON}」이면 그 제품·Stack 의 경로를 RQ_REQB 에서 보세요."
+)
 # 목록 표의 분류 컬럼(표시순서가 거는 차례). 월은 표 앞에 그대로 둔다.
 _LOAD_EXCLUSION_DIMENSIONS = ("제품정보", "Stack", "WF 구분")
 _UNROUTED_DIMENSIONS = (
@@ -98,6 +126,8 @@ def render_plan_exclusion_lists(
     file_suffix: str,
 ) -> None:
     """산출 결과 소요대수 탭의 계획 쪽 목록 둘 — 부하량에서 빠진 계획, 경로에 닿지 않은 계획 부하.
+    건수 경고는 자리에 그리지 않고 상태 알림 `ST-01` 이 말한다(`alert_uncounted_demand`) — 펼침 안
+    첫 줄이 고칠 곳이다.
 
     경로 쪽 제외(`소요대수 제외 기준정보`)와 따로 둔다. 고칠 곳이 다르다 — 이쪽은 계획에 맞는
     수율·Chip 구성·경로가 없는 것이라 계획이나 그 기준정보를, 경로 쪽은 대당 Capa 기준정보를 본다.
@@ -108,23 +138,8 @@ def render_plan_exclusion_lists(
     """
     unrouted_loads = counted_unrouted_loads(unrouted_loads)
     if not load_exclusions.empty:
-        reasons = load_exclusions["누락 기준정보"]
-        blank = int(reasons.eq(PLAN_QUANTITY_BLANK_REASON).sum())
-        missing = len(load_exclusions) - blank
-        sentences = []
-        if missing:
-            sentences.append(
-                f"기준정보가 없어 부하량에서 빠진 계획이 {missing:,}건 있습니다 — 그 계획은 "
-                "소요대수에 들지 않습니다. 「누락 기준정보」 칸의 표를 채우면 반영됩니다"
-                "(수율은 생산 계획 → 수율 탭)."
-            )
-        if blank:
-            sentences.append(
-                f"생산수량이 빈 계획 {blank:,}건은 계획 없음(0)으로 봤습니다 — 원천에서 수량이 "
-                "빠진 것이면 다시 조회해야 합니다."
-            )
-        st.warning(" ".join(sentences), icon=":material/link_off:")
         with st.expander("부하량에서 빠진 계획", expanded=False):
+            st.caption(LOAD_EXCLUSION_GUIDE)
             render_exclusion_table(
                 load_exclusions,
                 dimensions=_LOAD_EXCLUSION_DIMENSIONS,
@@ -136,16 +151,8 @@ def render_plan_exclusion_lists(
                 key="download_load_exclusions_csv",
             )
     if not unrouted_loads.empty:
-        st.warning(
-            f"RQ_REQB 경로에 닿지 않은 계획 부하가 {len(unrouted_loads):,}건 있습니다 — 그 부하는 "
-            "어느 공정의 소요대수에도 들지 않습니다. 제외사유가 "
-            f"「{UNROUTED_KEY_MISMATCH_REASON}」이면 같은 제품·Stack·소요기준의 경로가 다른 달·"
-            "양산구분·Capa Code·Customer·CS 에는 있으니 계획 키를, "
-            f"「{UNROUTED_UNKNOWN_PRODUCT_REASON}」이면 그 제품·Stack 의 경로를 RQ_REQB 에서 "
-            "보세요.",
-            icon=":material/link_off:",
-        )
         with st.expander("경로에 닿지 않은 계획 부하", expanded=False):
+            st.caption(UNROUTED_GUIDE)
             render_exclusion_table(
                 unrouted_loads,
                 dimensions=_UNROUTED_DIMENSIONS,
@@ -156,3 +163,129 @@ def render_plan_exclusion_lists(
                 file_name=f"Capa_Unrouted_Loads_{file_suffix}.csv",
                 key="download_unrouted_loads_csv",
             )
+
+
+def alert_uncounted_demand(
+    counts: RequiredExclusionCounts,
+    *,
+    code: str,
+    scope: AlertScope,
+    scope_name: str,
+    tab: str = "",
+) -> None:
+    """소요대수에 들지 않은 수요(계획 쪽 건수만 — `plan_side_counts`) 상태 알림. 그 조건을 보는
+    회차마다(없어도) 부른다 — `ST-01`(`scope_name` 은 `PERIOD_SCOPE`) · `ST-04`(`FULL_SCOPE`)."""
+    plan = plan_side_counts(counts)
+    message = required_exclusion_message(plan, scope=scope_name)
+    total = plan.excluded_plans + plan.blank_plans + plan.unrouted_loads
+    alerts.state(
+        code,
+        scope=scope.scope,
+        content=list(plan),
+        active=bool(message),
+        text=(
+            f"소요대수에 안 든 계획 수요 {total:,}건({scope_name}) — 목록: {REQUIRED_LIST_PLACE}"
+            if message
+            else None
+        ),
+        full=alerts.plain_text(message) if message else None,
+        scope_label=scope.label,
+        tab=tab,
+    )
+
+
+def capacity_exclusion_content(exclusions: pd.DataFrame) -> list[object]:
+    """대당 Capa 제외의 지문 내용 — 건수와 제외사유별 건수(글이 아니라 구조 값)."""
+    if exclusions.empty or "제외사유" not in exclusions.columns:
+        return [len(exclusions)]
+    reasons = exclusions["제외사유"].astype("string").fillna("").value_counts()
+    return [len(exclusions), sorted((str(reason), int(count)) for reason, count in reasons.items())]
+
+
+def alert_capacity_exclusions(
+    exclusions: pd.DataFrame,
+    *,
+    scope: AlertScope,
+    tab: str,
+    table: alerts.AlertTable | None,
+) -> None:
+    """대당 Capa 산출에서 뺀 기준(`ST-14`) — 대당 Capa 탭이 열린 회차마다 부른다. 목록은 `table`
+    (Alarm 줄의 「제외 기준정보」 표 · CSV)이다. 표가 알림에 싣기에 크면(None) 화면이 본문 목록을
+    남기고 짧은 글이 그 자리를 말한다."""
+    count = len(exclusions)
+    reasons = ""
+    if count and "제외사유" in exclusions.columns:
+        reasons = " · ".join(
+            f"{reason} {number:,}"
+            for reason, number in exclusions["제외사유"].astype("string").value_counts().items()
+        )
+    place = (
+        f"Alarm › 이 줄 「{CAPACITY_EXCLUSION_TITLE}」"
+        if table is not None
+        else f"이 탭 「{CAPACITY_EXCLUSION_TITLE} 확인」"
+    )
+    alerts.state(
+        "ST-14",
+        scope=scope.scope,
+        content=capacity_exclusion_content(exclusions),
+        active=count > 0,
+        text=f"대당 Capa 산출에서 기준 {count:,}개를 뺐습니다 — 목록: {place}",
+        full=(
+            f"대당 Capa 산출에서 {count:,}개 기준을 제외했습니다"
+            + (f"({reasons})" if reasons else "")
+            + f". 무엇이 왜 빠졌는지는 {place} 표의 제외사유 칸과 CSV 가 말합니다 — 기준 정보 "
+            "화면에서 그 경로의 값을 고치면 다시 듭니다."
+        ),
+        scope_label=scope.label,
+        tab=tab,
+        table=table,
+    )
+
+
+def alert_required_exclusions(
+    required_exclusions: pd.DataFrame, *, scope: AlertScope, tab: str
+) -> None:
+    """소요대수 산출에서 뺀 경로 — 대당 Capa 가 없는 것(`ST-15`, 기준정보를 고칠 일)과 PKG 의 Buffer
+    밖 행(`ST-21`, 규칙대로 세지 않은 것 — 고칠 것이 없다). 두 사유를 한 문장에 섞으면 고칠 것이
+    없는데 고치러 간다. 소요대수 탭이 열린 회차마다 둘 다 부른다."""
+    if required_exclusions.empty or "제외사유" not in required_exclusions.columns:
+        uncounted_pkg = pd.Series(False, index=required_exclusions.index)
+    else:
+        uncounted_pkg = required_exclusions["제외사유"].eq(PKG_UNCOUNTED_REASON)
+    capacity_missing = required_exclusions.loc[~uncounted_pkg]
+    positive = (
+        int(capacity_missing["부하량"].gt(0).sum()) if "부하량" in capacity_missing.columns else 0
+    )
+    alerts.state(
+        "ST-15",
+        scope=scope.scope,
+        content=[len(capacity_missing), positive],
+        active=not capacity_missing.empty,
+        text=(
+            f"대당 Capa 가 없어 소요대수에서 뺀 경로 {len(capacity_missing):,}건 — 목록: 이 탭 "
+            "「소요대수 제외 기준정보」"
+        ),
+        full=(
+            f"대당 Capa가 없어 소요대수 산출에서 {len(capacity_missing):,}건을 제외했습니다(부하량 "
+            f"발생 {positive:,}건). 목록은 산출 결과 → 소요대수 탭의 「소요대수 제외 기준정보」 "
+            "이고 제외사유 칸이 까닭입니다 — 그 경로의 대당 Capa 기준정보를 채우면 소요대수에 "
+            "듭니다."
+        ),
+        scope_label=scope.label,
+        tab=tab,
+    )
+    pkg_count = int(uncounted_pkg.sum())
+    alerts.state(
+        "ST-21",
+        scope=scope.scope,
+        content=pkg_count,
+        active=pkg_count > 0,
+        text=f"소요기준 PKG 는 Buffer 로만 셉니다 — Core·Top·Dummy 등 {pkg_count:,}건 뺌",
+        full=(
+            f"소요기준 PKG 는 Buffer 로만 셉니다. Core·Top·Dummy 등 {pkg_count:,}건은 Buffer 에 "
+            "쌓여 있어 소요대수에 넣지 않았습니다(규칙 — 고칠 것이 없습니다). 목록은 「소요대수 "
+            "제외 기준정보」 의 제외사유 칸입니다."
+        ),
+        scope_label=scope.label,
+        tab=tab,
+    )

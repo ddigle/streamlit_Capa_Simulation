@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
@@ -1704,24 +1705,34 @@ def test_section_titles_drop_the_paragraph_line_box_under_the_title() -> None:
 
 
 def _lob_title_row_with_unapplied_month() -> None:
+    import streamlit as st
+
     from capa_simulation.components.home_preference import render_lob_title_row
+    from capa_simulation.components.state_alerts import AlertScope
 
-    render_lob_title_row(unapplied_months=[202607])
+    months = st.session_state.get("unapplied", [202607])
+    render_lob_title_row(
+        unapplied_months=months,
+        scope=AlertScope({"token": "t1", "period": [202601, 202612]}, "DEMO · r1 · 26.01–26.12"),
+    )
 
 
-def test_the_unapplied_month_notice_keeps_the_title_gap_on_both_sides() -> None:
-    """「적용하지 못한 달」 알림은 제목→시트 틈에 낀다. 상자 gap 이 0 이라 알림이 제목 글줄과 월 칸
-    스크롤바에 붙지 않도록 알림 칸이 위 · 아래로 제목→시트 간격만큼 띄운다."""
-    from capa_simulation.components.home_preference import LOB_UNAPPLIED_NOTICE_KEY
-    from capa_simulation.components.home_rendering import dashboard_title_row_style
-
+def test_the_unapplied_month_notice_is_a_state_alert_not_a_box() -> None:
+    """선행 B/O 를 적용하지 못한 달은 제목 줄 밑에 상자를 세우지 않고 상태 알림(`HM-04`)으로 낸다 —
+    달이 바뀔 때만 알림창에 뜨고 Alarm 에 남는다(2026-11-03 결정 보드 D2 (나)). 달이 없어진 회차는
+    「없음」 표지(해소)다."""
     app = AppTest.from_function(_lob_title_row_with_unapplied_month).run()
     assert not list(app.exception)
-    notice = app.get_by_key(LOB_UNAPPLIED_NOTICE_KEY)
-    (warning,) = notice.warning
-    assert "적용하지 못한 달" in warning.value
-    rule = _css_rule(dashboard_title_row_style(), f".st-key-{LOB_UNAPPLIED_NOTICE_KEY}")
-    assert rule == f"padding: {tokens.SECTION_TITLE_SHEET_GAP_PX}px 0;"
+    assert not app.warning
+    (note,) = [note for note in alert_notes(app) if note.get("code") == "HM-04"]
+    assert note["active"] is True and note["level"] == "check"
+    assert "26.07" in note["short"] and "적용하지 못한 달" in note["full"]
+    assert note["scope_label"] == "DEMO · r1 · 26.01–26.12"
+
+    app.session_state["unapplied"] = []
+    app.run()
+    (quiet,) = [note for note in alert_notes(app) if note.get("code") == "HM-04"]
+    assert quiet["active"] is False and quiet["scope"] == note["scope"]
 
 
 def test_the_lob_panel_border_closes_on_the_bottom_edge(seeded_database: Path) -> None:

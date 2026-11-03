@@ -24,6 +24,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -40,6 +41,7 @@ from capa_simulation.components.scenario_edit_bar import (
     reset_editors_on_source_change,
     source_token,
 )
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_marks import mark_pending_segments
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -267,6 +269,7 @@ class _EditSlices:
             return self.get(table_name)
         except BOOTSTRAP_ERRORS as exc:
             st.error(bootstrap_error_message(exc))
+            alert_page_error(bootstrap_error_message(exc), code="ST-20")
             st.stop()
 
 
@@ -336,6 +339,7 @@ try:
         )
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
+    alert_page_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 
 
@@ -372,6 +376,7 @@ def _template_or_stop(table_name: str) -> pd.DataFrame:
         return _source_template(table_name)
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
+        alert_page_error(bootstrap_error_message(exc), code="ST-20")
         st.stop()
 
 
@@ -783,8 +788,16 @@ def _render_step_view(
                 on_click=_open_dialog,
                 args=(STEP_DIALOG,),
             )
+    # 추가·삭제 결과는 오른쪽 아래 알림창으로만 낸다(2026-11-03 결정 보드 D3 (가) — 버튼 곁에는 오류
+    # · 거부만). 이 보기를 그리는 회차마다 표지 한 자리다(알릴 것이 없으면 빈 스타일).
+    sending: list[alerts.AlertNote] = []
     if isinstance(flash_message, str):
-        st.success(flash_message)
+        note = alerts.event_note("FL-01", text=flash_message, full=flash_message)
+        # 버튼 곁 결과 알림과 같은 꼴(`flash.render_flash`)이라 종류 · 원문을 함께 싣는다.
+        note["flash"] = "success"
+        note["markdown"] = flash_message
+        sending.append(note)
+    alerts.emit(sending)
     # `step_summary` 는 캐시된 프레임이다. 제자리에서 고치면 다음 rerun 이 표시명 프레임을 계산
     # 입력으로 받으므로 화면 복사본에만 표시명을 입힌다.
     displayed_step_summary = step_summary.rename(

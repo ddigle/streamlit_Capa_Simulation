@@ -33,26 +33,26 @@ OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts
 _LOGGERS = frozenset({"logger", "logging", "log", "LOGGER", "_LOG", "_LOGGER", "warnings"})
 
 PHASE_A = (
-    "2단계 a 가 가른다 — 계산 · HOME · Static · 실행 관리 계산 · Dynamic 화면. 상태 경고면"
-    " alerts.state 로 옮기고, 자리 글이면 까닭을 PLACE_* 로 바꾼다"
+    "2단계가 가른다 — 실행 관리 계산 · Dynamic 화면(Static 계산 · HOME · 사이드바 · 껍데기는 a"
+    " 갈래가 옮겼다). 상태 경고면 alerts.state 로 옮기고, 자리 글이면 까닭을 PLACE_* 로 바꾼다"
 )
 PHASE_B = (
     "2단계 b 가 가른다 — 설비 · Space · 시나리오 · Admin · 모듈 · 껍데기(DB 새 판 GL-02 등)."
     " 상태 경고면 alerts.state 로 옮기고, 자리 글이면 까닭을 PLACE_* 로 바꾼다"
 )
 PLACE_FORM = "자리 글 — 팝업 · 폼 안 검증. 고칠 입력이 그 자리에 있다(알림창 · 기록 없음, 설계 2-2)"
+PLACE_BOARD = (
+    "자리 글 — Admin 「알림 모음」 판. 알림을 한곳에 모아 보이는 것이 그 화면 자체다(시나리오 전체"
+    " 기간으로 다시 계산한 목록 — 쌓이는 기록이 아니다)"
+)
 PLACE_STOP = (
     "멈춤 화면 — 앱이 서지 못해 알림 칸이 없다(통합인증 두 번째 벽, 설계 2-2 GL-01 과 같은 꼴)"
 )
 
 # (파일, 맨 바깥 함수) → (경고 호출 수, 까닭).
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
-    ("app_pages/calculation_result.py", ""): (2, PHASE_A),
     ("app_pages/constraint_simulation.py", ""): (1, PHASE_A),
-    ("app_pages/load_conversion.py", ""): (1, PHASE_A),
     ("app_pages/load_conversion.py", "_plan_paste_dialog"): (1, PLACE_FORM),
-    ("app_pages/load_conversion.py", "_render_locked_yield_rows"): (1, PHASE_A),
-    ("app_pages/load_conversion.py", "_render_uncounted_demand_after_apply"): (1, PHASE_A),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (2, PLACE_FORM),
     ("app_pages/load_conversion.py", "_yield_paste_dialog"): (1, PLACE_FORM),
     ("app_pages/process_capa_detail.py", ""): (1, PHASE_A),
@@ -61,12 +61,10 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", ""): (1, PHASE_B),
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PHASE_B),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PHASE_B),
-    ("app_pages/standard_target_capa.py", ""): (1, PHASE_A),
     ("app_pages/standard_target_capa.py", "_clear_dialog"): (1, PLACE_FORM),
-    ("app_pages/static_capa.py", ""): (1, PHASE_A),
     ("app_pages/voc.py", ""): (1, PHASE_B),
     ("app_pages/wip_status.py", ""): (4, PHASE_A),
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PHASE_A),
+    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (1, PHASE_B),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_status"): (2, PHASE_B),
     (
@@ -90,10 +88,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         "src/capa_simulation/components/bigdataquery_registration.py",
         "_render_reference_conflict_report",
     ): (1, PHASE_B),
-    (
-        "src/capa_simulation/components/capacity_assumption_notice.py",
-        "render_capacity_assumption_notice",
-    ): (1, PHASE_A),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_month_steps"): (
         1,
         PHASE_A,
@@ -156,45 +150,34 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         "src/capa_simulation/components/equipment_scenario_management.py",
         "render_equipment_scenario_section",
     ): (2, PHASE_B),
-    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (2, PHASE_B),
-    (
-        "src/capa_simulation/components/equipment_scenario_status.py",
-        "render_equipment_scenario_row",
-    ): (1, PHASE_B),
-    (
-        "src/capa_simulation/components/equipment_scenario_status.py",
-        "render_legacy_trace_warning",
-    ): (1, PHASE_B),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
+        2,
+        PLACE_FORM,
+    ),
     ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"): (
         4,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/home_main_cases.py", "_draw"): (1, PHASE_A),
+    ("src/capa_simulation/components/home_main_cases.py", "_draw"): (1, PLACE_FORM),
     ("src/capa_simulation/components/home_preference.py", "_render_execution_notices"): (
         2,
-        PHASE_A,
+        PLACE_FORM,
     ),
-    ("src/capa_simulation/components/home_preference.py", "render_lob_title_row"): (1, PHASE_A),
     ("src/capa_simulation/components/module_status.py", "render_module_status"): (1, PHASE_B),
     ("src/capa_simulation/components/month_editor.py", "paste_dialog"): (1, PLACE_FORM),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (
         1,
         PHASE_A,
     ),
-    ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PHASE_A),
+    ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PLACE_FORM),
     (
         "src/capa_simulation/components/process_rename_management.py",
         "render_process_rename_management",
     ): (1, PHASE_B),
-    (
-        "src/capa_simulation/components/required_exclusion_notice.py",
-        "render_plan_exclusion_lists",
-    ): (2, PHASE_A),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_scenario_error"): (
         1,
         PHASE_B,
     ),
-    ("src/capa_simulation/components/scenario_edit_bar.py", "show_row_order_reset"): (1, PHASE_A),
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PHASE_B),
     ("src/capa_simulation/components/scenario_management.py", "_render_list_toolbar"): (1, PHASE_B),
     ("src/capa_simulation/components/scenario_management.py", "_render_official"): (1, PHASE_B),
@@ -204,7 +187,7 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/scenario_management.py", "_render_store_status"): (1, PHASE_B),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (6, PHASE_B),
-    ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PHASE_B),
+    ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
     ("src/capa_simulation/components/scenario_transform.py", "render_derived_save"): (1, PHASE_B),
     ("src/capa_simulation/components/shortening_progress_panel.py", "load_selected_baseline"): (
         1,
@@ -219,7 +202,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (2, PHASE_B),
     ("src/capa_simulation/module_runtime.py", "_finish"): (1, PHASE_B),
     ("src/capa_simulation/module_runtime.py", "_render_pending_key_warning"): (1, PHASE_B),
-    ("src/capa_simulation/page_bootstrap.py", "render_schema_ahead_warning"): (1, PHASE_B),
 }
 
 
@@ -282,6 +264,6 @@ def test_every_allowed_site_is_still_there_with_its_count() -> None:
 
 
 def test_every_allowed_site_says_why() -> None:
-    reasons = {PHASE_A, PHASE_B, PLACE_FORM, PLACE_STOP}
+    reasons = {PHASE_A, PHASE_B, PLACE_FORM, PLACE_STOP, PLACE_BOARD}
     assert all(reason in reasons or reason.strip() for _, reason in ALLOWED.values())
     assert all(count > 0 for count, _ in ALLOWED.values())

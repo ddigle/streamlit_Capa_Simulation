@@ -25,7 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import infos, shown, successes
+from alert_marks import alert_notes, infos, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -1392,7 +1392,9 @@ def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
     tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """E2E r3 같은 꼴 — Space 사이드바 설비 시나리오 줄의 팝업 저장 알림(가정 배치 저장은 이름이
-    두 번 나와 물결표 하나짜리 이름도 짝이 맞는다)과 세션 이동 알림이 이름의 물결표를 막는다."""
+    두 번 나와 물결표 하나짜리 이름도 짝이 맞는다)과 세션 이동 알림이 이름의 물결표를 꾸밈으로
+    바꾸지 않는다. 2026-11-03(결정 보드 D2 · D3)부터 둘 다 오른쪽 아래 알림창(평문 —
+    `textContent`)이라 이름이 그대로 실리고, 사이드바 줄 아래에는 그리지 않는다."""
     from dataclasses import replace
     from datetime import datetime
 
@@ -1423,19 +1425,20 @@ def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
     app.session_state[ROW_FLASH_KEY] = saved
     _ok(app.run())
 
-    flashes = [str(item.value) for item in successes(app, sidebar=True)]
-    notices = [str(item.value) for item in app.sidebar.warning]
-    assert any(text.count(f"「{TILDE_ESCAPED}」") >= 2 for text in flashes), flashes
-    assert any(f"「{TILDE_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
-    bare = [text for text in [*flashes, *notices] if re.search(r"(?<!\\)~", text)]
-    assert not bare, bare
+    assert not app.sidebar.success and not app.sidebar.warning
+    flashes = [str(item.note["full"]) for item in successes(app, sidebar=True) if item.note]
+    notices = [str(note["full"]) for note in alert_notes(app) if note.get("code") == "SB-14"]
+    assert any(text.count(f"「{TILDE_NAME}」") >= 2 for text in flashes), flashes
+    assert any(f"「{TILDE_NAME}」 r2 로 열었습니다" in text for text in notices), notices
+    escaped = [text for text in [*flashes, *notices] if "\\~" in text]
+    assert not escaped, escaped
 
 
 def test_the_sidebar_session_notice_keeps_the_asterisks_of_the_scenario_name(
     tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """세션 이동 알림(평문 표 잠금 글에도 가는 글)이 이름의 별표를 막는다 — 물결표만 막아
-    「가정<em>R6</em>B」 로 기울었다(E2E r5)."""
+    """세션 이동 알림(평문 표 잠금 글에도 가는 글)이 이름의 별표를 꾸밈으로 바꾸지 않는다 — 물결표만
+    막아 「가정<em>R6</em>B」 로 기울었다(E2E r5). 지금은 알림창 평문이라 이름이 그대로다."""
     from dataclasses import replace
 
     import capa_simulation.equipment_scenario_activation as activation
@@ -1453,10 +1456,9 @@ def test_the_sidebar_session_notice_keeps_the_asterisks_of_the_scenario_name(
     )
     app = _ok(_space(tmp_path, setup).run())
 
-    notices = [str(item.value) for item in app.sidebar.warning]
-    assert any(f"「{STAR_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
-    bare = [text for text in notices if re.search(r"(?<!\\)\*", text)]
-    assert not bare, bare
+    assert not app.sidebar.warning
+    notices = [str(note["full"]) for note in alert_notes(app) if note.get("code") == "SB-14"]
+    assert any(f"「{STAR_NAME}」 r2 로 열었습니다" in text for text in notices), notices
 
 
 def test_an_assumption_save_of_marks_only_names_what_it_saved() -> None:

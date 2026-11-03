@@ -67,6 +67,7 @@ from capa_simulation.equipment_scenario_activation import remembered_equipment_l
 from capa_simulation.module_runtime import run_module_page
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
+    SCHEMA_AHEAD_SIMULATION_CODE,
     bootstrap_error_message,
     count_page_visit,
     forget_page_dialogs,
@@ -542,11 +543,14 @@ with pinned_connections(DUCKDB_PATH):
         if current_spec is not None and current_spec.uses_equipment_db
         else nullcontext()
     )
-    # 시뮬레이션 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 모든 화면 본문 맨 위에
-    # 경고 한 줄을 세운다. 막지는 않는다. 값은 위 부트스트랩이 만든 캐시 저장소의 속성이라
-    # rerun 마다 DB 를 열지 않는다. 설비 DB 는 그 DB 를 여는 화면이 각자 세운다 — 여기서 열면
-    # 설비 DB 를 안 보는 화면(HOME 등)까지 그 DB 의 마이그레이션·잠금에 묶인다.
-    render_schema_ahead_warning(get_scenario_repository(str(DUCKDB_PATH.resolve())).schema_ahead)
+    # 시뮬레이션 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-02` — 판이
+    # 바뀔 때만 알림창, 자리에는 그리지 않음)을 낸다. 막지는 않는다. 값은 위 부트스트랩이 만든 캐시
+    # 저장소의 속성이라 rerun 마다 DB 를 열지 않는다. 설비 DB 는 그 DB 를 여는 화면이 각자 세운다 —
+    # 여기서 열면 설비 DB 를 안 보는 화면(HOME 등)까지 그 DB 의 마이그레이션·잠금에 묶인다.
+    render_schema_ahead_warning(
+        get_scenario_repository(str(DUCKDB_PATH.resolve())).schema_ahead,
+        code=SCHEMA_AHEAD_SIMULATION_CODE,
+    )
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
     # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).

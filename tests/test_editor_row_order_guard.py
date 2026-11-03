@@ -24,6 +24,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import alert_notes
 from edit_grid_fake import Calls, install_fake_edit_grid, last
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
@@ -322,7 +323,10 @@ def grid_calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
 
 
 def _notices(app: AppTest) -> list[str]:
-    return [str(warning.value) for warning in app.warning if NOTICE_HEAD in str(warning.value)]
+    """줄 차례가 바뀌어 편집을 버린 알림 — 사건 알림 `ST-09`(오른쪽 아래 알림창)의 전문. 자리에 경고
+    상자로 그리지 않는다(2026-11-03 결정 보드 D2 · D3)."""
+    assert not any(NOTICE_HEAD in str(warning.value) for warning in app.warning)
+    return [str(note["full"]) for note in alert_notes(app) if note.get("code") == "ST-09"]
 
 
 def _generation_in(app: AppTest, key: str) -> int:

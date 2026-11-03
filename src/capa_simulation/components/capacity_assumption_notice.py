@@ -1,4 +1,4 @@
-# Purpose: 측정률 행이 없어 중립값으로 이어 간 건수를 화면에 알리는 한 줄을 그린다.
+# Purpose: 측정률 행이 없어 중립값으로 이어 간 건수를 한 문장으로 짓고 상태 알림으로 낸다.
 
 """**메운 것을 말하지 않으면 완화가 곧 조용한 오류다.**
 
@@ -12,16 +12,19 @@
 1 보다 큰 경로에서만 확보율 과대(낙관 쪽)다. 어느 쪽이든 보는 사람이 모르면 숫자를 그대로
 믿는다.
 
-그래서 이 한 줄은 장식이 아니라 완화의 **조건**이다. 계산이 계속되는 대신 무엇을 가정했는지
-같은 화면에서 말한다.
+그래서 이 한 줄은 장식이 아니라 완화의 **조건**이다. 계산이 계속되는 대신 무엇을 가정했는지 같은
+화면에서 말한다 — 2026-11-03(결정 보드 D2 (나))부터 자리에 그리지 않고 상태 알림 `HM-02` 로 낸다.
+가정이 바뀔 때만 오른쪽 아래 알림창에 뜨고 Alarm 에 남는다. HOME 과 산출 결과 대당 Capa 가 같은 코드
+· 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 범위에 넣지 않는다)라 한 화면에서
+본 가정은 다른 화면에서 다시 뜨지 않는다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-import streamlit as st
-
+from capa_simulation import alerts
+from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.unit_capacity import CapacityAssumptions
 
@@ -71,8 +74,34 @@ def _month_list(months: Sequence[int], limit: int = MONTH_LIST_LIMIT) -> str:
     return f"{shown} 외 {rest}개월" if rest > 0 else shown
 
 
-def render_capacity_assumption_notice(assumptions: CapacityAssumptions) -> None:
-    """가정이 있을 때만 그린다. 없는 날에 자리를 차지하면 다음에는 아무도 안 읽는다."""
+def assumption_short(assumed: Mapping[str, int]) -> str:
+    """알림창 짧은 글 — 무엇을(표 · 건수) 어디서(기준 정보) 고치는지."""
+    parts = [
+        f"{_TABLE_LABELS.get(table, table)} {count:,}건"
+        for table, count in assumed.items()
+        if count
+    ]
+    return f"측정률 빈 경로를 1.0 으로 계산({' · '.join(parts)}) — 기준 정보 그 표에서 채움"
+
+
+def render_capacity_assumption_notice(
+    assumptions: CapacityAssumptions, *, scope: AlertScope, tab: str = ""
+) -> None:
+    """측정률 가정 상태 알림(`HM-02`) — 이 조건을 보는 회차마다(가정이 없어도) 부른다. 자리에는
+    그리지 않는다. `scope` 는 시나리오 전체 기간 범위(`state_alerts.simulation_scope(활성)`), `tab`
+    은 그 화면 안 탭 이름이다."""
     message = assumption_message(assumptions.counts, assumptions.months)
-    if message:
-        st.warning(message, icon=":material/rule:")
+    alerts.state(
+        "HM-02",
+        scope=scope.scope,
+        content={
+            table: [count, list(assumptions.months.get(table, ()))]
+            for table, count in sorted(assumptions.counts.items())
+            if count
+        },
+        active=bool(message),
+        text=assumption_short(assumptions.counts) if message else None,
+        full=alerts.plain_text(message) if message else None,
+        scope_label=scope.label,
+        tab=tab,
+    )
