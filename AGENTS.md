@@ -1178,11 +1178,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`formatOf` — 서식 {kind, module, size(자기 방향), paint, text}, `formatPatch` — 받는 쪽에 붙일 {size, fields, look} 또는 null,
     `patchedLook`, 저장소에서 읽은 서식 거르기 `formatFrom`)이고 `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
     node 로 돌려 종류 × 종류 × 붙일 것 체크 모든 쌍을 사양 5-1 표 모형과 견주고 붙인 요소가 파이썬 검증을 지나는지 본다.
-    - 키: `Ctrl+Shift+C`(⌘ 도) = 고른 것의 기준(`S.selected`) 하나를 담기, `Ctrl+Shift+V` = 지금 고른 것 모두(도면에 선 것, 담은 원본
-      하나는 빼고 — `formatOrigin`)에 붙이기. `host.onkeydown` 에서 글 칸 가드(`typing`) 뒤·요소 복사 갈래 **앞**이고(`formatKey` —
-      Ctrl·Shift·Alt 아님, 글쇠 자리 `code` 로 한글 자판도), 요소 복사 Ctrl+C/V 는 Shift 가 없을 때만이다. Esc 는 든 붓을 먼저
-      내린다. 실제 Chrome 창에서 Ctrl+Shift+C(개발자 도구 검사)를 페이지가 먼저 받는지는 사내·서피스 Chrome 확인 거리다(사양 D3 —
-      막히면 대안 Alt+Shift+C/V).
+    - 키: `Alt+Shift+C`(macOS ⌥+⇧) = 고른 것의 기준(`S.selected`) 하나를 담기, `Alt+Shift+V` = 지금 고른 것 모두(도면에 선 것, 담은
+      원본 하나는 빼고 — `formatOrigin`)에 붙이기. `Ctrl(⌘)+Shift+C/V` 도 브라우저가 넘겨주면 같은 갈래다(둘 다 — 사양 D3, 2026-11-04
+      사용자 「권장대로」: 실제 Chrome 에서 Ctrl+Shift+C 는 개발자 도구 검사가 먼저 가져갈 수 있어 기본 키를 Alt+Shift 로 옮겼다).
+      판정은 순수 `// <format-key>` 의 `formatKeyOf`(Shift 필수 · Ctrl(⌘)과 Alt 가운데 **하나만**(AltGr = Ctrl+Alt 는 아님) · 글쇠
+      자리 `code` KeyC·KeyV — Alt 조합의 `key` 는 macOS 「Ç」 처럼 바뀐다, 다른 자리일 때만 `key` · IME 조합 중 `isComposing` 은
+      비킴)이고 `tests/test_space_format_paint_js.py` 가 node 로 돌린다. `host.onkeydown` 에서 글 칸 가드(`typing`) 뒤·요소 복사 갈래
+      **앞**이고, 요소 복사 Ctrl+C/V 는 Shift 가 없을 때만이라 겹치지 않는다. Esc 는 든 붓을 먼저 내린다. Windows 의 Alt+Shift(입력
+      언어 바꾸기)와 부딪치면 Ctrl+Shift+C/V 나 붓 단추를 쓰라고 도움말 단축키 목록·Guide 에 적는다.
     - 왼쪽 칸 「서식」 묶음(`data-sec="format"`, 선택 다음): 붓 `서식 복사`(`aria-pressed`, 한 번 = 담고 들어 한 번 붙이고 내림,
       두 번(`click` 의 `detail` 2) = 잠금 — Esc·붓 단추·새 epoch 에 내림, 고른 것이 없으면 앞서 담은 서식으로 듦), `붙이기`, 붙일 것
       체크 셋(크기·색·선·글자 — `capa.space.formatPaint.v1`), 담은 서식 한 줄. 붓을 든 `svg.onpointerdown` 은 끌기·손잡이보다

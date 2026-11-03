@@ -236,8 +236,8 @@ export default function (component) {
   // 스크롤 고정이 `<html>` 에 다는 속성(그 속성을 읽는 규칙은 페이지 서식 — 파이썬 `space_lock_style`).
   const LOCK_ATTR = 'data-space-lock'
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · 호기를 두 번 누르면 「호기 정보」 창(고른 호기의 칸 · 칸 필터로 찾은 호기 도면 강조) · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+Shift+C/V 서식 복사·붙여넣기(크기·색·선·글자 — 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Alt+Shift+C/V 서식 복사·붙여넣기(Ctrl+Shift+C/V 도 됨 — 크기·색·선·글자, 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝. 입력 언어가 바뀌면 Ctrl+Shift+C/V 나 붓 단추를 쓰세요) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · 호기를 두 번 누르면 「호기 정보」 창(고른 호기의 칸 · 칸 필터로 찾은 호기 도면 강조) · Ctrl+C/V 도면 요소 복사·붙여넣기 · Alt+Shift+C/V 서식 복사·붙여넣기(Ctrl+Shift+C/V 도 됨 — 크기·색·선·글자, 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝. 입력 언어가 바뀌면 Ctrl+Shift+C/V 나 붓 단추를 쓰세요) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -1342,6 +1342,23 @@ export default function (component) {
     return fmt
   }
   // </format-paint>
+
+  // ---------------------------------------------------------------- 서식 복사·붙여넣기 키(순수 함수)
+  // 기본 키는 Alt+Shift+C/V(macOS ⌥+⇧)다 — Ctrl(⌘)+Shift+C 는 실제 Chrome·Firefox 에서 개발자 도구 「검사」 가 먼저 가져갈 수
+  // 있다(사양 D3 — 2026-11-04 사용자 「권장대로」). Ctrl(⌘)+Shift+C/V 도 브라우저가 페이지에 넘겨주면 그대로 받는다(둘 다). Alt 조합의
+  // `key` 는 자판·OS 따라 다른 글자(macOS ⌥+⇧+C 는 「Ç」)라 글쇠 자리 `code`(KeyC·KeyV)로 보고, 다른 글쇠 자리일 때만 `key` 를 본다
+  // (요소 복사 Ctrl+C/V 와 같은 꼴 — 한글 자판의 「ㅊ」 도 자리로 잡힌다). Shift 가 없는 것, Ctrl(⌘)과 Alt 를 함께 누른 것(Windows
+  // AltGr 포함), IME 조합 중(`isComposing`)인 것은 서식 키가 아니다. `tests/test_space_format_paint_js.py` 가 아래 두 표시 줄
+  // 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <format-key>
+  // 키보드 이벤트({key, code, ctrlKey, metaKey, altKey, shiftKey, isComposing})가 서식 키면 'c'(담기)·'v'(붙이기), 아니면 null.
+  function formatKeyOf(event) {
+    if (event.isComposing || !event.shiftKey) return null
+    if (Boolean(event.ctrlKey || event.metaKey) === Boolean(event.altKey)) return null
+    const letter = event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v' : String(event.key || '').toLowerCase()
+    return letter === 'c' || letter === 'v' ? letter : null
+  }
+  // </format-key>
 
   // ---------------------------------------------------------------- 「필요 단축」 배지 자리(순수 함수)
   // `tests/test_space_short_badges_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름은 화면 px 상수 넷만 쓴다.
@@ -4782,9 +4799,9 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- 서식 복사·붙여넣기(엑셀 서식 붓)
-  // 2026-11-03 사용자 요청 — 크기·색 같은 서식을 담아 다른 것에 붙인다. Ctrl+Shift+C 는 고른 것 가운데 기준(마지막으로 누른 것
-  // `S.selected`) 하나의 서식을 담고, Ctrl+Shift+V 는 지금 고른 것 모두(담은 원본 하나는 빼고)에 붙인다(파워포인트·워드의 서식 복사
-  // 키 — 엑셀은 붓뿐이다). 왼쪽 칸 「서식」 의 붓은 엑셀과 같다 — 한 번 누르면 담고 붓을 들어 다음에 누른 것 하나(묶음은 묶음째)에
+  // 2026-11-03 사용자 요청 — 크기·색 같은 서식을 담아 다른 것에 붙인다. Alt+Shift+C 는 고른 것 가운데 기준(마지막으로 누른 것
+  // `S.selected`) 하나의 서식을 담고, Alt+Shift+V 는 지금 고른 것 모두(담은 원본 하나는 빼고)에 붙인다(Ctrl+Shift+C/V 도 — 키는
+  // `// <format-key>`, 엑셀은 붓뿐이다). 왼쪽 칸 「서식」 의 붓은 엑셀과 같다 — 한 번 누르면 담고 붓을 들어 다음에 누른 것 하나(묶음은 묶음째)에
   // 붙이고 내린다. 두 번 누르면 잠가 누를 때마다 붙이고 Esc·붓 단추·편집기 다시 서기(새 epoch)에 내린다. 붓을 든 채 빈 곳을 끌면
   // 사각형 안 전부에 붙는다(옮기기는 일어나지 않는다). 무엇이 어디에 붙는지는 순수 판정 `// <format-paint>` 이고, 붙일 것(크기·
   // 색·선·글자)은 체크로 고른다(`capa.space.formatPaint.v1` 에 기억). 담은 서식은 sessionStorage(층·FAB 공용 — 같은 브라우저
@@ -4865,7 +4882,7 @@ export default function (component) {
   function copyFormat() {
     const item = S.selected ? S.items.get(S.selected) : null
     if (!item) {
-      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 Ctrl+Shift+C'
+      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 Alt+Shift+C'
       updateStatus()
       return null
     }
@@ -4927,11 +4944,11 @@ export default function (component) {
     }
     return count
   }
-  // Ctrl+Shift+V·「붙이기」 — 담은 서식을 지금 고른 것 모두(도면에 선 것, 담은 원본 하나는 빼고)에 붙인다.
+  // Alt+Shift+V(Ctrl+Shift+V)·「붙이기」 — 담은 서식을 지금 고른 것 모두(도면에 선 것, 담은 원본 하나는 빼고)에 붙인다.
   function pasteFormat() {
     const clip = S.formatClip
     if (!clip) {
-      S.flash = '담은 서식이 없습니다 — 고른 것에서 Ctrl+Shift+C 또는 「서식 복사」'
+      S.flash = '담은 서식이 없습니다 — 고른 것에서 Alt+Shift+C 또는 「서식 복사」'
       updateStatus()
       return
     }
@@ -4989,7 +5006,7 @@ export default function (component) {
     paintPaste.disabled = !clip || !selectedItems().some((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
     const parts = formatParts()
     for (const box of paintParts) box.checked = parts[box.dataset.part] !== false
-    setText(paintNow, clip ? `담은 서식 — ${formatWords(clip.fmt)}` : '담은 서식 없음 — 고른 것에서 「서식 복사」(Ctrl+Shift+C)')
+    setText(paintNow, clip ? `담은 서식 — ${formatWords(clip.fmt)}` : '담은 서식 없음 — 고른 것에서 「서식 복사」(Alt+Shift+C)')
   }
   // 붓 단추 — 한 번 누르면(키보드 Enter·Space 포함) 담고 들기 / 든 붓 내리기, 두 번 누르면 잠금(엑셀처럼). 두 번 누름의 첫 누름이
   // 이미 붓을 들었으면 그 붓을 잠근다.
@@ -6006,13 +6023,14 @@ export default function (component) {
     if (!ctrl && event.key === '0') { event.preventDefault(); zoomAt(1); return }
     if (event.key === 'Escape' && S.selection.size) { event.preventDefault(); select(null); return }
     if (S.drag) return
+    // 서식 복사·붙여넣기 — Alt+Shift+C/V(macOS ⌥+⇧, 기본)와 Ctrl(⌘)+Shift+C/V(브라우저가 넘겨주면) 둘 다(`formatKeyOf` — 글쇠
+    // 자리 code, IME 조합 중은 비킴). 요소 복사 갈래보다 먼저 보고, 요소 복사는 Shift 가 없을 때만이라 서로 겹치지 않는다. 글 칸의
+    // 키(Ctrl+Shift+V 서식 없이 붙여넣기, macOS ⌥+⇧ 글자)는 위에서 비켜 그대로 브라우저 것이다.
+    const formatKey = formatKeyOf(event)
+    if (formatKey === 'c') { event.preventDefault(); copyFormat(); return }
+    if (formatKey === 'v') { event.preventDefault(); pasteFormat(); return }
     // 도면 요소 복사·붙여넣기(호기는 복사하지 않는다). 한글 자판에서도 듣게 글쇠 자리(code)도 본다. 글 칸에서는 위에서 비켰다.
-    // Shift 를 더하면 서식 복사·붙여넣기다(파워포인트·워드의 서식 복사 키) — 요소 복사 갈래보다 먼저 보고, 요소 복사는 Shift 가
-    // 없을 때만이다. 글 칸의 Ctrl+Shift+V(서식 없이 붙여넣기)는 위에서 비켜 그대로 브라우저 것이다.
     const letter = event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v' : event.key.toLowerCase()
-    const formatKey = ctrl && event.shiftKey && !event.altKey
-    if (formatKey && letter === 'c') { event.preventDefault(); copyFormat(); return }
-    if (formatKey && letter === 'v') { event.preventDefault(); pasteFormat(); return }
     if (ctrl && !event.shiftKey && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
     if (ctrl && !event.shiftKey && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
     const chosen = selectedItems()
