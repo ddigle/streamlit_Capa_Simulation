@@ -765,6 +765,10 @@ def test_the_yellow_handle_drag_is_one_undo_step_and_shift_keeps_the_ratio() -> 
     assert "item.look = aspect ? before.look : sizedLook(before, item)" in move
     sizes = _between("function sizeEntries(", "function sizedLook(")
     assert "if (item.kind === 'shape') item.look = sizedLook(before, item)" in sizes
+    # 선택 칸 % 는 그 도형 상자의 상한(`adjTop`)으로 묶고, 묶였으면 칸에도 그린 값을 보인다.
+    field = _between("shapeAdjInputs.forEach((input, k) => {", "shapeFill.onchange = ")
+    assert "adjTop(preset, k, lw, lh)" in field
+    assert "if (shown !== null) input.value = String(Math.round(shown * 100))" in field
     up = _between("svg.onpointerup = ", "svg.onlostpointercapture = ")
     assert "if (item && lookText(before.look) !== lookText(item.look)) " in up
     assert "pushUndo([{ op: 'set', id: item.id, before }])" in up

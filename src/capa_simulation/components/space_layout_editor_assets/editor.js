@@ -6314,6 +6314,9 @@ export default function (component) {
         adj[k] = Math.min(Math.max(Math.round(value) / 100, spec[0]), adjTop(preset, k, lw, lh))
         return { adj }
       })
+      // 상자 상한으로 묶였으면 칸에도 그린 값을 보인다(칸에 초점이 남아 `syncInspector` 가 이 칸을 건너뛴다).
+      const shown = sharedOf(selectedItems().filter(isShape), (m) => fitAdj(shapeOf(m.look), shapeAdj(m.look), ...shapeBox(m))[k])
+      if (shown !== null) input.value = String(Math.round(shown * 100))
     }
     input.onkeydown = (event) => { if (event.key === 'Enter') input.blur() }
   })
