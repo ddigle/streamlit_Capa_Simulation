@@ -148,9 +148,10 @@ FLASH_KEY = "scenario_management_flash"
 FLASH_WARNING_KEY = "scenario_management_flash_warning"
 MODE_KEY = "scenario_page_mode"
 CLONE_MODE = "지금 편집본 복제"
-# 복제 폼 위 둘째 줄 — 원천 코드·원천명 칸이 빈 채로 서는 까닭과 새로 적어야 한다는 것. 원본
+# 복제 폼 원천 코드·원천명 칸의 풍선 — 두 칸이 빈 채로 서는 까닭과 새로 적어야 한다는 것. 원본
 # 값으로 미리 채우지 않는 것은 결정이다(TODO 3장 화면 2026-10-22 — 원천명은 자동 갱신 주차 판정
-# 근거). 이 줄이 없으면 채워질 줄 알고 눌러 「필수 칸이 비어 있습니다」 로 한 번 막혔다(E2E).
+# 근거). 늘 띄워 두지 않고 그 두 칸 곁 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가)) — 빈 칸을
+# 남기고 누른 저장은 「필수 칸이 비어 있습니다」 가 그 자리에서 한 번에 알린다.
 CLONE_SOURCE_NOTE = (
     "원천 시뮬레이션 코드·원천 시뮬레이션명은 새로 적는 필수 칸입니다 — 원천 시뮬레이션명은 "
     "공식버전 자동 갱신이 주차(W##)를 읽는 근거라 올라와 있는 시나리오의 값을 물려받지 않습니다."
@@ -160,11 +161,6 @@ MODES = (
     CLONE_MODE,
     "월 머지",
     "연도 Shift",
-)
-# 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다(2026-10-22 사용자 결정 S8). 모드 줄 바로 아래에
-# 그 길을 늘 적는다.
-REVISION_SAVE_GUIDE = (
-    "새 리비전 저장은 사이드바 「시나리오」 칸을 눌러 여는 팝업의 「새 리비전 저장」에서 합니다."
 )
 # 원본 리비전을 메모해 두는 모드와 그 역할(`scenario_transform.SOURCE_MEMO_KEY`).
 DERIVED_SOURCE_ROLES: dict[str, tuple[str, ...]] = {
@@ -249,6 +245,15 @@ NAME_COLUMN = "시나리오명"
 LIST_COLUMNS = TableColumns(pick=SELECT_COLUMN, name=NAME_COLUMN, order=ORDER_COLUMN)
 REVISION_PICK_COLUMN = "고름"
 REVISION_NAME_COLUMN = "리비전명"
+# 리비전 편집표 두 칸의 머리 풍선 — 무엇을 고치고 무엇이 그대로인지. 표 아래에 늘 띄워 두지 않고
+# 칸 머리 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가)).
+REVISION_NAME_HELP = (
+    "두 번 눌러 바로 고칩니다. 이름표라 표·계산·공식 이력은 바뀌지 않습니다. 「이름 저장」을 "
+    "눌러야 저장됩니다."
+)
+REVISION_NOTE_HELP = "조회기간·출처 같은 시스템 기록이 있어 고치지 않습니다."
+# 저장소 상태 칸 공식버전 줄의 표지 — 공식버전이 내장 합성 시드일 때만 선다(예외 상태에만 단다).
+DEMO_BADGE = ":blue-badge[합성 DEMO]"
 REVISION_COLUMNS = TableColumns(pick=REVISION_PICK_COLUMN, name=REVISION_NAME_COLUMN)
 
 
@@ -282,7 +287,8 @@ def render_scenario_management(
         # 선택 해제를 허용하면 mode 가 None 이 되어 아무 작업도 그리지 않는다.
         required=True,
     )
-    st.caption(REVISION_SAVE_GUIDE)
+    # 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다(2026-10-22 사용자 결정 S8). 그리로 가는 길
+    # 안내 글은 늘 띄워 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.
     forget_derived_sources(keep=DERIVED_SOURCE_ROLES.get(str(mode), ()))
     if mode == "목록 관리":
@@ -322,7 +328,7 @@ def _render_store_status(
         else:
             st.write("지금 올라와 있는 저장 리비전이 없습니다.")
         # 공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 이 칸은 저장소 상태 줄이라
-        # 「공식버전 없음」 줄은 남긴다. 있어도 부른다(해소) — 닫힌 탭이면 알리지 않는다.
+        # 「공식버전 · 없음」 값은 남긴다. 있어도 부른다(해소) — 닫힌 탭이면 알리지 않는다.
         if alert_tab is not None:
             alerts.state(
                 "SC-01",
@@ -337,21 +343,27 @@ def _render_store_status(
                 ),
                 tab=alert_tab,
             )
-        if official is None:
-            st.markdown(
-                "**공식버전** · :orange[없음] — 새 웹 세션에서 자동으로 불러올 기준이 없습니다."
-            )
-        else:
-            st.success(
-                f"최신 공식 v{official.release_no} · {literal_markdown(official.scenario_name)} "
-                f"r{official.revision_no} · {literal_markdown(official.release_name)}"
-            )
-            if official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE:
-                st.info(
-                    "현재 공식버전은 GitHub 독립 실행용 합성 DEMO 데이터입니다. "
-                    "운영 전 BigDataQuery 등록으로 실제 시나리오를 만들어 새 공식버전으로 "
-                    "지정하세요."
-                )
+        st.markdown(official_status_line(official))
+
+
+def official_status_line(official: OfficialReleaseSummary | None) -> str:
+    """저장소 상태 칸의 공식버전 값 줄 — 「**공식버전** · 최신 v3 · 이름 r2 · 공식버전명」.
+
+    값과 표지만 둔다(설계 규칙 UI-TXT-04). 공식버전이 내장 합성 시드면 끝에 표지
+    배지(`DEMO_BADGE`) 하나를 단다 — 운영 전에 할 일 같은 설명 문장은 자리에 두지 않는다
+    (UI-TXT-01). 없으면 「없음」 이고, 새 세션이 불러올 기준이 없다는 내역은 상태 알림
+    `SC-01`(알림창 · Alarm)이 낸다. 사람이 적은 이름은 글자 그대로 싣는다(`literal_markdown`).
+    """
+    if official is None:
+        return "**공식버전** · :orange[없음]"
+    line = (
+        f"**공식버전** · 최신 v{official.release_no} · "
+        f"{literal_markdown(official.scenario_name)} r{official.revision_no} · "
+        f"{literal_markdown(official.release_name)}"
+    )
+    if official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE:
+        line += f" {DEMO_BADGE}"
+    return line
 
 
 def _active_scenario_line(
@@ -407,17 +419,13 @@ def _render_list_management(
     if scenarios:
         _render_scenario_list_editor(scenarios, releases, draft, widget_key)
     else:
-        st.info("저장된 시나리오가 없습니다. 초기 이관 또는 신규 등록이 필요합니다.")
+        # 빈 결과는 값이다 — 평문 한 줄만 두고 하는 법은 붙이지 않는다(설계 규칙 AMB-02 (가)).
+        st.caption("저장된 시나리오가 없습니다.")
     dialog_shown = False
     with st.container():
         if draft.picked is not None:
             summary = next(item for item in scenarios if item.scenario_id == draft.picked)
             dialog_shown = _render_scenario_actions(repository, database_path, summary, releases)
-        elif scenarios:
-            st.caption(
-                "표에서 시나리오 한 건을 고르면 그 리비전 표와 불러오기·공식으로 지정·이름 저장·"
-                "보관이 나옵니다."
-            )
     if not dialog_shown:
         st.session_state.pop(OFFICIAL_DIALOG_KEY, None)
     _render_official_history(releases)
@@ -534,12 +542,9 @@ def moved_names_warning(lines: Sequence[tuple[str, str]]) -> str:
 
 
 def list_edit_caption(rename_count: int, moved: int) -> str:
-    """작업 줄 아래 한 줄 — 무엇을 바로 고칠 수 있는지와 지금 고친 수."""
-    return (
-        "시나리오명·순서 칸을 바로 고칩니다(순서 칸에 자리 번호를 넣으면 그 자리로 끼워 "
-        "넣습니다) · "
-        f"고친 것: 이름 {rename_count} · 순서 {moved}"
-    )
+    """작업 줄 아래 한 줄 — 지금 고친 수(값). 무엇을 어떻게 고치는지는 두 칸의 머리 풍선이
+    말한다(설계 규칙 UI-TXT-01)."""
+    return f"고친 것: 이름 {rename_count} · 순서 {moved}"
 
 
 def _move_picked_scenario(
@@ -810,7 +815,7 @@ def _render_scenario_actions(
             )
         archive_slot = st.container()
         if not revisions:
-            st.info("이 시나리오에 저장된 리비전이 없습니다.")
+            st.caption("이 시나리오에 저장된 리비전이 없습니다.")
             with archive_slot:
                 if st.session_state.get(ACTION_KEY) == "archive":
                     _render_archive(repository, summary)
@@ -875,10 +880,6 @@ def _render_scenario_actions(
         render_flash(CARD_NOTICE_KEY)
         _render_revision_editor(repository, revisions, releases, draft, widget_key)
         with st.container():
-            st.caption(
-                "리비전명 칸을 바로 고칩니다 — 이름표라 표·계산·공식 이력은 바뀌지 않습니다. "
-                "메모는 조회기간·출처 같은 시스템 기록이 있어 고치지 않습니다."
-            )
             official_names = _official_rename_notes(renames, revision_by_id, releases)
             if official_names:
                 st.caption(official_names)
@@ -1020,9 +1021,9 @@ def _render_revision_editor(
                 f"{REVISION_NAME_COLUMN} ✎",
                 width=220,
                 required=True,
-                help="두 번 눌러 바로 고칩니다. 「이름 저장」을 눌러야 저장됩니다.",
+                help=REVISION_NAME_HELP,
             ),
-            "메모": st.column_config.TextColumn("메모", width=232),
+            "메모": st.column_config.TextColumn("메모", width=232, help=REVISION_NOTE_HELP),
             "저장일": st.column_config.DatetimeColumn("저장일", format="YY.MM.DD HH:mm", width=110),
             "부모": st.column_config.TextColumn("부모", width=50),
             "상태": st.column_config.TextColumn("상태", width=180),
@@ -1407,9 +1408,7 @@ def _render_official(
         st.error(bootstrap_error_message(exc))
         return
     remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
-    _official_published(
-        release, revision_id, warning=verdict.message or None, popup_only=verdict.exclusion
-    )
+    _official_published(release, revision_id, warning=verdict.message or None)
 
 
 def _official_published(
@@ -1417,14 +1416,9 @@ def _official_published(
     revision_id: str,
     *,
     warning: str | None,
-    popup_only: bool = False,
 ) -> NoReturn:
     """공식 지정 뒤 이 세션의 뒷정리 — 알림을 담고 팝업을 닫고 다음 회차가 새 공식을 싣게 한 뒤 앱을
-    다시 돌린다.
-
-    `popup_only` 는 `warning` 이 소요대수에 들지 않은 수요 경고뿐이라는
-    표지(`GateVerdict.exclusion`)다.
-    """
+    다시 돌린다."""
     queue_flash(
         FLASH_KEY,
         f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
@@ -1439,7 +1433,7 @@ def _official_published(
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
-            popup_only=popup_only,
+            popup_only=True,
         )
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
@@ -1602,7 +1596,7 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
         key=ARCHIVED_EXPANDER_KEY,
     ):
         if not archived:
-            st.caption("보관된 시나리오가 없습니다. 고른 시나리오 카드의 「보관…」으로 보관합니다.")
+            st.caption("보관된 시나리오가 없습니다.")
             return
         by_id = {scenario.scenario_id: scenario for scenario in archived}
         # 되돌리거나 지운 보관본은 선택지에서 빠진다. 그 선택을 지우기만 하면 서버는 첫 보관본을
@@ -1789,18 +1783,21 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}"
         )
         return
-    # 무엇을 복제하는지 폼 위에 적는다. 원천 코드·이름 칸의 기본값은 비워 둔다 — 원천 시뮬레이션명은
-    # 공식버전 자동 갱신이 주차(W##)를 읽는 두 번째 근거라, 복제본이 원본의 이름을 물려받으면 그
-    # 복제를 공식으로 지정했을 때 기준 주차가 달라진다. 비워 둔다는 것과 그 까닭도 폼 위에 적는다.
+    # 무엇을 복제하는지 폼 위에 값 줄로 적는다. 원천 코드·이름 칸의 기본값은 비워 둔다 — 원천
+    # 시뮬레이션명은 공식버전 자동 갱신이 주차(W##)를 읽는 두 번째 근거라, 복제본이 원본의 이름을
+    # 물려받으면 그 복제를 공식으로 지정했을 때 기준 주차가 달라진다. 그 까닭은 두 칸 풍선이다.
     st.caption(clone_target_caption())
-    st.caption(CLONE_SOURCE_NOTE)
     # 칸 key 의 세대가 저장 쓰기의 세대이기도 하다(`write_once_value`).
     create_generation = generation(CLONE_FORM_GENERATION_KEY)
     with st.form("scenario_create_form"):
         # 이름은 보관본을 포함해 겹칠 수 없다 — 검사는 저장소가 한다(`create_scenario`).
         scenario_name = st.text_input("시나리오명", key=clone_field_key("name"))
-        source_code = st.text_input("원천 시뮬레이션 코드", key=clone_field_key("source_code"))
-        source_name = st.text_input("원천 시뮬레이션명", key=clone_field_key("source_name"))
+        source_code = st.text_input(
+            "원천 시뮬레이션 코드", key=clone_field_key("source_code"), help=CLONE_SOURCE_NOTE
+        )
+        source_name = st.text_input(
+            "원천 시뮬레이션명", key=clone_field_key("source_name"), help=CLONE_SOURCE_NOTE
+        )
         revision_name = st.text_input(
             "초기 리비전명", value="초기 리비전", key=clone_field_key("revision_name")
         )
@@ -1900,15 +1897,16 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             )
         if verdict.message:
             # 계산 검사 경고(`capacity_gate`)는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 알림
-            # 상자(마크다운)에서 물결표가 지움선이 되지 않게 막는다. 소요대수에 들지 않은 수요
-            # (`verdict.exclusion`)는 고칠 입력이 이 자리에 없어 알림창 · Alarm 에만 내고(사이드바
-            # 리비전 저장과 한 꼴 — 2026-11-04 검수 의견 home-18) 남은 계산 오류 경고는 곁에도 선다.
+            # 글(마크다운 원문)에서 물결표가 지움선이 되지 않게 막는다. 복제는 끝났고 고칠 입력이
+            # 이 자리에 없어 알림창 · Alarm 에만 낸다 — 소요대수에 들지 않은 수요(2026-11-04 검수
+            # 의견 home-18)도, 남은 계산 오류(설계 규칙 AMB-05 (나))도 사이드바 리비전 저장과 한
+            # 꼴이다.
             queue_flash(
                 FLASH_WARNING_KEY,
                 markdown_safe_tildes(verdict.message),
                 kind="warning",
                 icon=":material/warning:",
-                popup_only=verdict.exclusion,
+                popup_only=True,
             )
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()
@@ -1916,19 +1914,16 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
 
 
 def clone_target_caption() -> str:
-    """복제 폼 위 한 줄 — 지금 올라와 있는 리비전과 저장하지 않은 편집이 함께 들어가는지."""
-    edits = (
-        "저장하지 않은 편집도 함께 들어갑니다"
-        if has_unsaved_scenario_changes()
-        else "저장하지 않은 편집은 없습니다"
-    )
+    """복제 폼 위 값 줄 — 「복제 대상 · 「이름」 rN」, 저장하지 않은 편집이 함께 들어가면 그 표지
+    배지(「미저장 편집 포함」)를 붙인다(설계 규칙 UI-TXT-04 — 값 · 표지만)."""
     label = active_scenario_label()
-    if label is None:
-        return f"지금 올라와 있는 편집본을 새 시나리오로 복제합니다 — {edits}."
-    return (
-        f"지금 올라와 있는 「{literal_markdown(label.scenario_name)}」 r{label.revision_no}"
-        f"{object_particle(str(label.revision_no))} 새 시나리오로 복제합니다 — {edits}."
+    target = (
+        "올라와 있는 편집본"
+        if label is None
+        else f"「{literal_markdown(label.scenario_name)}」 r{label.revision_no}"
     )
+    unsaved = " · :orange-badge[미저장 편집 포함]" if has_unsaved_scenario_changes() else ""
+    return f"복제 대상 · {target}{unsaved}"
 
 
 def revision_virtual_product_rows(

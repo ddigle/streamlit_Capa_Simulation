@@ -19,6 +19,7 @@ import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.capacity_gate import GateVerdict
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
+    SAVE_BUTTON_HELP,
     SAVE_MODE,
     SCENARIO_DIALOG_KEY,
     SCENARIO_DIALOG_MODE_KEY,
@@ -282,9 +283,10 @@ def test_the_field_reads_only_the_session_until_the_dialog_opens(sidebar_app: Ap
 def test_the_field_and_the_save_line_show_a_markdown_like_name_as_typed(
     sidebar_app: AppTest,
 ) -> None:
-    """시나리오명은 사람이 적은 글이다 — 값 칸(버튼 라벨)과 저장 구획 caption 은 마크다운으로
-    그려지므로 「*별* _밑_ `코드`」 가 기울임·코드로 바뀌어 글자가 빠졌다. 구두점을 escape 해 싣는다
-    (`literal_markdown`)."""
+    """시나리오명은 사람이 적은 글이다 — 값 칸(버튼 라벨)과 팝업 머리 「올라와 있음」 caption 은
+    마크다운으로 그려지므로 「*별* _밑_ `코드`」 가 기울임·코드로 바뀌어 글자가 빠졌다. 구두점을
+    escape 해 싣는다(`literal_markdown`). 저장 구획은 저장 대상을 따로 적지 않는다 — 머리 줄이
+    말한다(설계 규칙 UI-TXT-01)."""
     from capa_simulation.components.literal_markdown import literal_markdown
 
     name = "*별* _밑_ `코드`"
@@ -298,9 +300,9 @@ def test_the_field_and_the_save_line_show_a_markdown_like_name_as_typed(
 
     assert not app.exception, [item.message for item in app.exception]
     assert app.button(key=SCENARIO_FIELD_KEY).label == f"{literal_markdown(name)} · r1"
-    assert f"「{literal_markdown(name)}」에 새 리비전으로 저장합니다." in " ".join(
-        str(item.value) for item in app.caption
-    )
+    captions = [str(item.value) for item in app.caption]
+    assert any(text.startswith(f"올라와 있음 · {literal_markdown(name)} · r1") for text in captions)
+    assert not any("새 리비전으로 저장합니다" in text for text in captions), captions
 
 
 def test_the_badge_says_official_saved_or_unsaved_in_that_order() -> None:
@@ -450,8 +452,12 @@ def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
 
 def test_the_dialog_saves_current_state_as_a_new_revision(sidebar_app: AppTest) -> None:
     app = _open_save(sidebar_app.run())
-    # 공정 필터·조회기간도 리비전 프리셋에 담긴다 — 편집이 없어도 저장할 것이 있다.
-    assert any("조회기간·공정 필터도 담깁니다" in item.value for item in app.caption)
+    # 공정 필터·조회기간도 리비전 프리셋에 담긴다 — 편집이 없어도 저장할 것이 있다. 그 말은 늘
+    # 띄워 두지 않고 저장 단추 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가)).
+    assert not any("조회기간·공정 필터도 담깁니다" in item.value for item in app.caption)
+    save = next(button for button in app.button if button.label == "신규 리비전 저장")
+    assert str(save.help) == SAVE_BUTTON_HELP
+    assert "조회기간·공정 필터도" in SAVE_BUTTON_HELP
 
     revision_name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
     app = revision_name.set_value("사이드바 저장안").run()
@@ -478,6 +484,8 @@ def test_a_save_with_nothing_changed_makes_no_revision_and_says_so(sidebar_app: 
     assert app.session_state["test_skip_unchanged"] is True
     assert [str(item.value) for item in infos(app)] == [revision_unchanged_notice(1)]
     assert "바뀐 것이 없습니다" in revision_unchanged_notice(1)
+    # 이름표만 바꾸는 곳으로 가는 길 안내 꼬리는 붙이지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
+    assert "시나리오 관리" not in revision_unchanged_notice(1)
     assert "test_saved_revision_name" not in app.session_state
     assert "test_activated_revision" not in app.session_state
     assert not successes(app) and not app.error
@@ -602,14 +610,23 @@ def test_a_save_the_gate_refuses_writes_nothing(sidebar_app: AppTest) -> None:
 
 
 def test_a_save_with_an_old_error_is_kept_and_warned(sidebar_app: AppTest) -> None:
-    """편집 전부터 있던 오류는 저장을 막지 않는다. 대신 발행이 막힌다고 저장 뒤에 알린다."""
+    """편집 전부터 있던 오류는 저장을 막지 않는다. 대신 발행이 막힌다고 저장 뒤에 알린다 — 저장은
+    끝났고 고칠 입력이 이 자리에 없어 시나리오 칸 밑 상자 없이 알림창 · Alarm 에만 낸다(설계 규칙
+    AMB-05 (나)). 단계는 확인 필요(`FL-03`)다."""
     app = sidebar_app
     app.session_state["test_save_verdict"] = GateVerdict(True, "공식버전으로 지정할 수 없습니다")
     app = _save(_open_save(app.run()), "고치는 중")
 
     assert not app.exception
     assert app.session_state["test_saved_revision_name"] == "고치는 중"
-    assert any("공식버전으로 지정할 수 없습니다" in warning.value for warning in app.warning)
+    assert not app.warning and not app.sidebar.warning, [item.value for item in app.warning]
+    (warned,) = flashed(app, "warning")
+    assert warned.value == "공식버전으로 지정할 수 없습니다"
+    assert warned.note is not None
+    assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 다음 회차에는 다시 내지 않는다(한 번뿐인 결과 알림).
+    app.run()
+    assert not flashed(app, "warning")
 
 
 def test_a_save_that_leaves_demand_out_warns_only_through_the_alert_popup(
@@ -647,8 +664,10 @@ def test_the_gate_refusal_and_warning_keep_tildes_in_example_keys(
     app = _save(_open_save(app.run()), "물결표 저장안")
 
     assert not app.exception
-    shown = app.warning if allowed else app.error
+    # 허락한 경고는 알림창 표지로만 간다(마크다운 원문은 표지의 `markdown`) — 자리에는 없다.
+    shown = flashed(app, "warning") if allowed else app.error
     assert message.replace("~", "\\~") in [item.value for item in shown]
+    assert not app.warning
 
 
 def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
@@ -945,12 +964,42 @@ def test_the_load_section_points_to_where_names_are_changed(sidebar_app: AppTest
     assert "사이드바에서 시나리오 관리에서 이름 바꾸기" not in [item.value for item in app.caption]
 
 
-def test_the_popup_opened_on_the_management_page_names_the_table_instead() -> None:
-    """시나리오 관리 페이지에서 연 팝업은 링크 대신 「목록 관리」 표를 가리킨다."""
+def test_the_popup_opened_on_the_management_page_draws_no_route_line() -> None:
+    """시나리오 관리 페이지에서 연 팝업은 같은 화면이라 링크가 팝업을 닫지 못한다 — 「어디서
+    고친다」 는 길 안내 글도, 그 자리의 바로 가기 단추도 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06
+    (나))."""
     app = AppTest.from_string(
         "from capa_simulation.components.scenario_status import _render_rename_route\n"
         "_render_rename_route(on_management_page=True)\n"
     ).run()
-    assert [item.value for item in app.caption] == [
-        "이름은 이 화면 「목록 관리」의 표에서 바로 고칩니다."
+    assert not app.exception
+    assert [item.value for item in app.caption] == []
+    assert [item.value for item in app.markdown] == []
+    assert list(app.button) == []
+
+
+def test_an_empty_store_says_so_in_one_plain_line(sidebar_app: AppTest) -> None:
+    """저장된 시나리오가 없으면 팝업은 그 값 한 줄만 평문으로 둔다 — 「어디서 등록하세요」 같은 하는
+    법 · 길 안내 꼬리와 안내 상자를 붙이지 않는다(설계 규칙 AMB-02 (가) · UI-TXT-03)."""
+    app = sidebar_app
+    app.session_state["test_scenarios"] = []
+    app = _open(app.run())
+
+    captions = [str(item.value) for item in app.caption]
+    assert "저장된 시나리오가 없습니다." in captions, captions
+    assert not any("등록하세요" in text or "시나리오 관리" in text for text in captions), captions
+    assert not app.info and not app.warning and not app.success
+
+
+def test_a_scenario_without_revisions_says_so_in_one_plain_line(sidebar_app: AppTest) -> None:
+    """고른 시나리오에 저장된 리비전이 없으면 불러오기 구획은 그 값 한 줄을 평문으로 둔다(안내
+    상자 없이 — 설계 규칙 AMB-02 (가))."""
+    app = sidebar_app
+    app.session_state["test_scenarios"] = [scenario("scenario-9", "빈 시나리오", "SIM-9", "", 0)]
+    with patch.dict(REVISIONS, {"scenario-9": []}):
+        app = _open(app.run())
+
+    assert "선택한 시나리오에 저장된 리비전이 없습니다." in [
+        str(item.value) for item in app.caption
     ]
+    assert not app.info

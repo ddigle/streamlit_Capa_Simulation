@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
     OPERATIONS,
@@ -564,7 +565,7 @@ def test_a_press_that_reaches_the_turned_off_publish_button_writes_nothing(
     _ok(stale_press(app, PUBLISH_BUTTON_KEY))
 
     assert calls == []
-    assert [str(item.value) for item in app.success] == []
+    assert [str(item.value) for item in successes(app)] == []
     assert app.button(key=PUBLISH_BUTTON_KEY).disabled
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 1
@@ -585,7 +586,7 @@ def test_a_press_that_gets_past_the_turned_off_button_still_says_nothing_was_pub
 
     _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
 
-    written = [str(item.value) for item in app.success]
+    written = [str(item.value) for item in successes(app)]
     assert written == ["「운영 일정」 r1은 이미 공식 v1입니다 — 새로 발행하지 않았습니다."], written
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 1
@@ -607,10 +608,10 @@ def test_a_slow_double_press_of_a_fresh_publish_keeps_the_published_notice(
 
     _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
     for _ in range(2):
-        written = [str(item.value) for item in app.success]
+        written = [str(item.value) for item in successes(app)]
         assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
         _ok(stale_press(app, PUBLISH_BUTTON_KEY))
-    written = [str(item.value) for item in app.success]
+    written = [str(item.value) for item in successes(app)]
     assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2

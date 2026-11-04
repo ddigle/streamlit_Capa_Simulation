@@ -4,6 +4,7 @@ import json
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, NoReturn
 from uuid import uuid4
 
@@ -42,9 +43,11 @@ from capa_simulation.components.scenario_management import (
     MODE_KEY,
     OFFICIAL_DIALOG_KEY,
     REVISION_EDITOR_KEY,
-    REVISION_SAVE_GUIDE,
+    REVISION_NAME_HELP,
+    REVISION_NOTE_HELP,
     _official_rename_notes,
     official_confirm_key,
+    official_status_line,
     official_virtual_product_warning,
 )
 from capa_simulation.persistence.cache import (
@@ -303,14 +306,25 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
 def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> None:
     """빈 필수 칸은 **한 번에** 모두 알린다. 한 칸씩 알리면 세 번 눌러야 했다(2026-10-05 E2E).
 
-    원천 코드·원천명 칸은 원본 값을 물려받지 않고 빈 채로 선다(2026-10-22 결정) — 폼 위 한 줄이 그
-    두 칸을 새로 적어야 한다고 미리 말한다(E2E r3 static — 채워질 줄 알고 눌러 한 번 막혔다)."""
+    원천 코드·원천명 칸은 원본 값을 물려받지 않고 빈 채로 선다(2026-10-22 결정) — 그 두 칸의 풍선이
+    새로 적어야 한다고 말한다(E2E r3 static — 채워질 줄 알고 눌러 한 번 막혔다). 늘 띄워 두는 설명
+    글은 두지 않는다(설계 규칙 UI-TXT-01 · AMB-01 (가))."""
     database_path = tmp_path / "scenario.duckdb"
     script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
     app = AppTest.from_string(script, default_timeout=120).run()
     app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
-    assert CLONE_SOURCE_NOTE in [str(item.value) for item in app.caption]
+    assert CLONE_SOURCE_NOTE not in [str(item.value) for item in app.caption]
     assert "새로 적는 필수 칸" in CLONE_SOURCE_NOTE
+    helps = {
+        widget.label: str(widget.help)
+        for widget in app.text_input
+        if str(widget.key or "").startswith("scenario_create_")
+    }
+    assert helps["원천 시뮬레이션 코드"] == CLONE_SOURCE_NOTE
+    assert helps["원천 시뮬레이션명"] == CLONE_SOURCE_NOTE
+    # 폼 위 한 줄은 값(복제 대상)과 표지만이다.
+    (target,) = [str(item.value) for item in app.caption if str(item.value).startswith("복제 대상")]
+    assert "복제합니다" not in target, target
     assert _clone_inputs(app)["원천 시뮬레이션 코드"] == ""
     assert _clone_inputs(app)["원천 시뮬레이션명"] == ""
     for widget in app.text_input:
@@ -377,8 +391,9 @@ def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
 def test_the_page_has_no_revision_save_mode_and_points_to_the_sidebar(tmp_path: Path) -> None:
     """새 리비전 저장은 사이드바 팝업 한 곳이다(2026-10-22 사용자 결정 S8).
 
-    작업 선택에 「리비전 저장」이 없고, 그 자리 바로 아래 한 줄이 사이드바 팝업으로 안내한다. 예전
-    세션에 남은 옛 모드 값은 위젯 앞에서 버려 첫 모드로 선다.
+    작업 선택에 「리비전 저장」이 없다. 그리로 가는 길 안내 글은 늘 띄워 두지 않는다(설계 규칙
+    UI-TXT-03 · AMB-06 (나) — Guide 가 말한다). 예전 세션에 남은 옛 모드 값은 위젯 앞에서 버려 첫
+    모드로 선다.
     """
     database_path = tmp_path / "scenario.duckdb"
     script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
@@ -390,7 +405,14 @@ def test_the_page_has_no_revision_save_mode_and_points_to_the_sidebar(tmp_path: 
     mode = app.segmented_control(key=MODE_KEY)
     assert list(mode.options) == ["목록 관리", "지금 편집본 복제", "월 머지", "연도 Shift"]
     assert mode.value == "목록 관리"
-    assert REVISION_SAVE_GUIDE in [item.value for item in app.caption]
+    assert not any("새 리비전 저장은" in item.value for item in app.caption)
+    # 목록 표에서 아무것도 고르지 않은 회차에 하는 법 글을 두지 않는다(설계 규칙 UI-TXT-01).
+    assert not any("한 건을 고르면" in item.value for item in app.caption)
+    # 저장소 상태의 공식버전 줄은 초록 상자가 아니라 값 줄이다 — 내장 합성 시드면 표지 배지 하나.
+    assert not app.success
+    assert not any("DEMO 데이터" in item.value for item in app.info)
+    (official,) = [item.value for item in app.markdown if item.value.startswith("**공식버전**")]
+    assert official.endswith(":blue-badge[합성 DEMO]"), official
 
 
 def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> None:
@@ -486,7 +508,9 @@ def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
         scenario_management, "revision_save_verdict", lambda *args: GateVerdict(True, message)
     )
     _fill_clone(app, "물결표 경고 복제", "CLONE-TILDE-WARNED")
-    assert shown in [item.value for item in app.warning]
+    # 복제 뒤 남은 계산 오류 경고는 알림창 표지로만 간다(설계 규칙 AMB-05 (나)).
+    assert shown in [item.value for item in flashed(app, "warning")]
+    assert not app.warning
 
     monkeypatch.setattr(
         scenario_management, "official_publish_verdict", lambda *args: GateVerdict(False, message)
@@ -1503,9 +1527,12 @@ def test_permanent_delete_says_what_goes_with_it_right_above_an_empty_box(
     assert execute.proto.icon == ":material/delete_forever:"
 
 
-def test_the_clone_form_names_what_it_copies(tmp_path: Path) -> None:
-    """복제 폼 위에 지금 올라와 있는 시나리오·리비전과 저장하지 않은 편집이 들어가는지를 적는다."""
-    from capa_simulation.services.korean_particle import object_particle
+def test_the_clone_form_names_what_it_copies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """복제 폼 위 값 줄이 지금 올라와 있는 시나리오·리비전을 적고, 저장하지 않은 편집이 함께
+    들어가면 그 표지 배지를 붙인다(설계 규칙 UI-TXT-04 — 값 · 표지만, 문장으로 풀지 않는다)."""
+    import capa_simulation.components.scenario_management as scenario_management
 
     database_path = tmp_path / "scenario.duckdb"
     script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
@@ -1516,13 +1543,14 @@ def test_the_clone_form_names_what_it_copies(tmp_path: Path) -> None:
     app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
     assert not app.exception
 
-    expected = (
-        f"지금 올라와 있는 「{release.scenario_name}」 r{release.revision_no}"
-        f"{object_particle(str(release.revision_no))} 새 시나리오로 복제합니다 — "
-        "저장하지 않은 편집은 없습니다."
-    )
-    shown = expected.replace(release.scenario_name, literal_markdown(release.scenario_name))
+    shown = f"복제 대상 · 「{literal_markdown(release.scenario_name)}」 r{release.revision_no}"
     assert shown in [item.value for item in app.caption], [item.value for item in app.caption]
+    label = SimpleNamespace(scenario_name=release.scenario_name, revision_no=release.revision_no)
+    monkeypatch.setattr(scenario_management, "active_scenario_label", lambda: label)
+    monkeypatch.setattr(scenario_management, "has_unsaved_scenario_changes", lambda: True)
+    assert scenario_management.clone_target_caption() == (
+        f"{shown} · :orange-badge[미저장 편집 포함]"
+    )
     # 원천 코드·원천명은 비워 둔다 — 원천명은 자동 갱신 주차 판정의 근거다.
     assert _clone_inputs(app)["원천 시뮬레이션 코드"] == ""
     assert _clone_inputs(app)["원천 시뮬레이션명"] == ""
@@ -1889,6 +1917,13 @@ def test_revision_names_are_saved_from_the_card_table(tmp_path: Path) -> None:
     assert frame["메모"].tolist()[0] == "첫 줄 둘째 줄"
     assert frame["상태"].tolist() == ["", f"공식 v{release.release_no} · 올라와 있음"]
     assert app.button(key="scenario_card_save_names").disabled
+    # 무엇을 고치고 무엇이 그대로인지는 표 아래 글이 아니라 두 칸의 머리 풍선이다(설계 규칙
+    # UI-TXT-01 · AMB-01 (가)).
+    assert not any("리비전명 칸을 바로" in item.value for item in app.caption)
+    (editor,) = [item for item in app.dataframe if "고름" in item.value.columns]
+    columns = json.loads(editor.proto.columns)
+    assert columns["리비전명"]["help"] == REVISION_NAME_HELP
+    assert columns["메모"]["help"] == REVISION_NOTE_HELP
 
     tables.edit(_shown_key(app, REVISION_EDITOR_KEY), 1, "리비전명", "공식 리비전 새 이름")
     tables.edit(_shown_key(app, REVISION_EDITOR_KEY), 0, "리비전명", "필터 저장")
@@ -2166,3 +2201,36 @@ def test_list_and_revision_table_headers_fit_their_columns(tmp_path: Path) -> No
         "선택": [],
         "고름": [],
     }
+
+
+def test_the_official_line_is_a_value_line_with_a_demo_badge_only_for_the_seed() -> None:
+    """저장소 상태의 공식버전 줄은 값 줄이다 — 초록 상자 · 운영 전에 할 일 설명 없이, 내장 합성
+    시드일 때만 표지 배지 하나(설계 규칙 UI-TXT-04 · UI-TXT-05 · V-17). 없으면 「없음」 값 하나다
+    (새 세션이 불러올 기준이 없다는 내역은 상태 알림 `SC-01`). 사람이 적은 이름은 글자 그대로다."""
+    from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
+
+    assert official_status_line(None) == "**공식버전** · :orange[없음]"
+    release = OfficialReleaseSummary(
+        official_release_id="release-1",
+        release_no=3,
+        scenario_id="scenario-1",
+        revision_id="revision-1",
+        release_name="*공식* 안",
+        note=None,
+        scenario_name="기준~안",
+        source_simulation_code="SIM-001",
+        revision_no=2,
+        revision_name="초기",
+        published_at=datetime(2026, 11, 4, 9, 0),
+    )
+    line = official_status_line(release)
+    assert line == (
+        f"**공식버전** · 최신 v3 · {literal_markdown('기준~안')} r2 · "
+        f"{literal_markdown('*공식* 안')}"
+    )
+    seeded = official_status_line(
+        OfficialReleaseSummary(
+            **{**release.__dict__, "source_simulation_code": BUILTIN_SEED_SOURCE_CODE}
+        )
+    )
+    assert seeded == f"{line} :blue-badge[합성 DEMO]"

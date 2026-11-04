@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.widget_generation import bump, generation, write_once_value
@@ -51,6 +52,13 @@ from capa_simulation.services.virtual_product import VirtualProductRecord, recor
 # 한 번 다시 읽는다). 모드를 바꾸거나 시나리오를 지우·보관·되살리·이름 바꿀 때, 상자를 비울
 # 때도 버린다(`forget_derived_sources`).
 SOURCE_MEMO_KEY = f"scenario_transform_sources{PAGE_DIALOG_SUFFIX}"
+
+# 저장 단추 풍선 — 무엇이 그대로이고 새 시나리오가 무엇을 따르는지(늘 띄워 두지 않는다 — 설계 규칙
+# UI-TXT-01 · AMB-01 (가)).
+DERIVED_SAVE_HELP = (
+    "지금 올라와 있는 편집본과 원본 시나리오는 그대로입니다. 새 시나리오의 조회기간·포함공정은 "
+    "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
+)
 
 
 # 메모 한 칸: (DB 경로, 그 회차 목록의 시나리오 요약, 리비전 요약, 돌려줄 스냅샷).
@@ -162,7 +170,7 @@ def render_source_selector(
     )
     if revision_id is None:
         forget_derived_sources(keep=set(_source_memo()) - {key})
-        st.info("선택할 저장 리비전이 없습니다.")
+        st.caption("선택할 저장 리비전이 없습니다.")
         return None
     return _source_snapshot(database_path, key, scenarios[selected], revisions[revision_id])
 
@@ -206,6 +214,10 @@ def render_derived_save(
 
     제출하면 결과의 Capa 계산을 먼저 검사한다(`derived_save_verdict`). 「편집 전」은 결과를 만든
     원본 리비전 전부다 — `gate_sources` 가 비면 `source` 하나다(머지는 베이스·덧붙일 쪽 둘).
+
+    저장 결과와 저장 뒤 계산 검사 경고는 다음 회차에 한 번 알림창 · Alarm 으로 낸다(`flash` — 저장
+    칸 위 늘 서 있는 칸이 보낸다). 같은 요청으로 이미 저장했으면 저장 단추를 끄고 그 까닭을
+    단추 풍선에 둔다(설계 규칙 AMB-05 (나) — 막힌 단추의 풍선).
     """
     blocked = revision_block_reason(tables)
     if blocked:
@@ -215,22 +227,11 @@ def render_derived_save(
     if not months:
         st.error("저장할 월 데이터가 없습니다.")
         return
+    flash_key, warning_key = derived_flash_keys(key)
+    render_flash(flash_key, warning_key)
     saved_key = f"{key}_saved"
     saved = st.session_state.get(saved_key)
     already_saved = isinstance(saved, dict) and saved.get("request") == request
-    if already_saved and isinstance(saved, dict):
-        # 알림 상자는 마크다운이다 — 사람이 적은 이름은 글자 그대로(「26~27 Shift~1」 의 물결표가
-        # 지움선이 되지 않게), 계산 검사 경고는 원본 이름을 품으므로 물결표만 막는다. 조사는 막기
-        # 전의 이름으로 고른다.
-        saved_name = str(saved["name"])
-        shown = f"‘{literal_markdown(saved_name)}’{object_particle(saved_name)}"
-        st.success(f"새 시나리오 {shown} 저장했습니다. 목록 관리에서 불러올 수 있습니다.")
-        if isinstance(saved.get("warning"), str):
-            st.warning(markdown_safe_tildes(saved["warning"]), icon=":material/warning:")
-    st.caption(
-        "지금 올라와 있는 편집본과 원본 시나리오는 그대로입니다. 새 시나리오의 조회기간·포함공정은 "
-        "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
-    )
     if virtual_products:
         with st.expander(
             f"함께 저장할 가상제품 복제 이력 · {len(virtual_products)}건",
@@ -259,7 +260,14 @@ def render_derived_save(
         name = st.text_input("새 시나리오 이름", key=name_key)
         note = st.text_area("추가 메모", key=f"{key}_note", height=80)
         submitted = st.form_submit_button(
-            "새 시나리오로 저장", type="primary", disabled=already_saved
+            "새 시나리오로 저장",
+            type="primary",
+            disabled=already_saved,
+            help=(
+                saved_button_help(str(saved["name"]))
+                if already_saved and isinstance(saved, dict)
+                else DERIVED_SAVE_HELP
+            ),
         )
     if not submitted or already_saved:
         return
@@ -311,11 +319,39 @@ def render_derived_save(
     if written is None:
         return
     snapshot = written.value
-    st.session_state[saved_key] = {
-        "request": request,
-        "name": name if snapshot is None else snapshot.scenario.scenario_name,
-        "warning": verdict.message,
-    }
+    saved_name = name if snapshot is None else snapshot.scenario.scenario_name
+    st.session_state[saved_key] = {"request": request, "name": saved_name}
+    queue_flash(flash_key, derived_saved_message(saved_name))
+    if verdict.message:
+        # 원본부터 있던 계산 오류는 저장을 막지 않는다. 저장은 끝났고 고칠 입력이 이 자리에 없어
+        # 알림창 · Alarm 에만 낸다(사이드바 리비전 저장 · 복제와 한 꼴 — 설계 규칙 AMB-05 (나)).
+        # 글(마크다운 원문)은 원본 이름을 품어 물결표를 막는다(이미 막힌 것은 그대로).
+        queue_flash(
+            warning_key,
+            markdown_safe_tildes(verdict.message),
+            kind="warning",
+            icon=":material/warning:",
+            popup_only=True,
+        )
     bump(generation_key)
     written.release()
     st.rerun()
+
+
+def derived_flash_keys(key: str) -> tuple[str, str]:
+    """구획(`key` — 월 머지·연도 Shift)의 저장 결과 · 저장 뒤 경고 알림 칸 이름."""
+    return f"{key}_flash", f"{key}_flash_warning"
+
+
+def derived_saved_message(name: str) -> str:
+    """저장 결과 알림. 알림 글은 마크다운 원문이다 — 사람이 적은 이름은 글자 그대로(「26~27
+    Shift~1」 의 물결표가 지움선이 되지 않게) 싣고 조사는 막기 전의 이름으로 고른다."""
+    return f"새 시나리오 ‘{literal_markdown(name)}’{object_particle(name)} 저장했습니다."
+
+
+def saved_button_help(name: str) -> str:
+    """같은 요청으로 이미 저장해 꺼 둔 저장 단추의 풍선 — 막힌 까닭 한 줄."""
+    return (
+        f"이 결과는 새 시나리오 ‘{literal_markdown(name)}’{object_particle(name)} 저장했습니다 — "
+        "원본·범위를 바꾸면 다시 저장할 수 있습니다."
+    )

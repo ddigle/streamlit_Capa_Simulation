@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import flashed, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.scenario_transform import DERIVED_SAVE_HELP, saved_button_help
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -210,9 +212,11 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
     _save_button(app).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    # 목적격 조사는 이름 끝소리로 고른다 — 「2028」 은 「팔」 로 끝나 「을」.
-    assert [item.value for item in app.success] == [
-        "새 시나리오 ‘이동 결과 2028’을 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+    # 목적격 조사는 이름 끝소리로 고른다 — 「2028」 은 「팔」 로 끝나 「을」. 저장 결과는 알림창
+    # 표지로만 간다(초록 상자 · 길 안내 꼬리 없이 — 설계 규칙 UI-NTF-03 · V-07).
+    assert not app.success
+    assert [item.value for item in successes(app)] == [
+        "새 시나리오 ‘이동 결과 2028’을 저장했습니다."
     ]
     assert app.session_state[ACTIVE_SCENARIO_KEY] == sentinel
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == "별개 활성 리비전"
@@ -245,26 +249,32 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
         pd.testing.assert_frame_equal(reloaded.tables[name], frame)
     assert repository.load_global_display_order().rules["분류값"].tolist() == ["현재 공용값"]
     assert _save_button(app).disabled
+    # 꺼 둔 저장 단추는 풍선이 막힌 까닭을 말한다(설계 규칙 AMB-05 (나) — 막힌 단추의 풍선).
+    assert str(_save_button(app).help) == saved_button_help("이동 결과 2028")
 
     app.run()
     assert not app.exception
     assert _save_button(app).disabled
     assert len(repository.list_scenarios()) == 2
+    # 결과 알림은 한 번뿐이다 — 다음 회차에는 다시 내지 않는다.
+    assert not successes(app)
 
     app.number_input(key="scenario_shift_years").set_value(2).run()
     assert not app.exception
     assert _ranges(app)["이동 후 월 범위"] == "2029-01 ~ 2029-12"
     assert set(app.dataframe[0].value["이동 후 월 범위"]) == {"2029-01 ~ 2029-12"}
     assert not _save_button(app).disabled
+    assert str(_save_button(app).help) == DERIVED_SAVE_HELP
     assert len(repository.list_scenarios()) == 2
 
     app.text_input(key="scenario_shift_name").set_value("이동 결과 2029")
     _save_button(app).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert [item.value for item in app.success] == [
-        "새 시나리오 ‘이동 결과 2029’를 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+    assert [item.value for item in successes(app)] == [
+        "새 시나리오 ‘이동 결과 2029’를 저장했습니다."
     ]
+    assert not flashed(app, "warning")
     assert len(repository.list_scenarios()) == 3
     changed = next(
         item for item in repository.list_scenarios() if item.scenario_name == "이동 결과 2029"
@@ -306,9 +316,8 @@ def test_a_saved_name_with_tildes_is_shown_as_typed(source: Source) -> None:
     _save_button(app).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert [item.value for item in app.success] == [
-        f"새 시나리오 ‘{literal_markdown('26~27 Shift~1')}’을 저장했습니다. 목록 관리에서 "
-        "불러올 수 있습니다."
+    assert [item.value for item in successes(app)] == [
+        f"새 시나리오 ‘{literal_markdown('26~27 Shift~1')}’을 저장했습니다."
     ]
     assert "26~27 Shift~1" in {item.scenario_name for item in repository.list_scenarios()}
 

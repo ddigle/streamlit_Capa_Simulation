@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import flashed, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
@@ -551,7 +552,11 @@ def test_a_refused_derived_save_writes_nothing(
 
     assert not app.exception, [item.message for item in app.exception]
     assert len(repository.list_scenarios()) == 3
-    assert any("원본부터 있던 오류" in item.value for item in app.warning)
+    # 저장은 끝났고 고칠 입력이 이 자리에 없어 알림창 · Alarm 에만 낸다(설계 규칙 AMB-05 (나)).
+    assert not any("원본부터 있던 오류" in item.value for item in app.warning)
+    (warned,) = [item for item in flashed(app, "warning") if "원본부터 있던 오류" in item.value]
+    assert warned.note is not None
+    assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
 
 
 def test_the_save_notices_keep_tildes_in_names_as_typed(
@@ -580,10 +585,12 @@ def test_the_save_notices_keep_tildes_in_names_as_typed(
     _save_button(app).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert [item.value for item in app.success if "새 시나리오" in item.value] == [
-        "새 시나리오 ‘머지\\~결과\\~본’을 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+    assert not any("새 시나리오" in item.value for item in app.success)
+    assert [item.value for item in successes(app) if "새 시나리오" in item.value] == [
+        "새 시나리오 ‘머지\\~결과\\~본’을 저장했습니다."
     ]
-    assert [item.value for item in app.warning if "원본(" in item.value] == [
+    assert not any("원본(" in item.value for item in app.warning)
+    assert [item.value for item in flashed(app, "warning") if "원본(" in item.value] == [
         warning.replace("~", "\\~")
     ]
     assert "머지~결과~본" in {item.scenario_name for item in repository.list_scenarios()}

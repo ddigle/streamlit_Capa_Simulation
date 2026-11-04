@@ -201,10 +201,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (6, PLACE_FORM),
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
-    ("src/capa_simulation/components/scenario_transform.py", "render_derived_save"): (
-        1,
-        PLACE_RESULT,
-    ),
     ("src/capa_simulation/components/shortening_progress_panel.py", "load_selected_baseline"): (
         1,
         PLACE_BLOCKED,

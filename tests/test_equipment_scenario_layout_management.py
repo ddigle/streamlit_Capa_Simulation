@@ -22,7 +22,7 @@ from typing import Any
 
 import duckdb
 import pytest
-from alert_marks import events
+from alert_marks import events, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_publish_guard import stale_press
 from test_equipment_scenario_repository import (
@@ -457,10 +457,11 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def _texts(app: AppTest) -> list[str]:
+    """그린 글 + 표지에 실린 버튼 곁 결과 알림(성공 · 안내는 알림창으로만 간다 — `shown`)."""
     return [
         str(item.value)
         for kind in ("caption", "info", "warning", "success", "error", "markdown")
-        for item in getattr(app, kind)
+        for item in shown(app, kind)
     ]
 
 
@@ -530,25 +531,20 @@ def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
     assert "따로 발행할 것이 없습니다" in blocked, blocked
 
 
-def test_the_section_caption_names_the_assumption_layout_as_held_per_scenario(
+def test_the_section_draws_no_standing_description_of_what_each_scenario_holds(
     tmp_path: Path,
 ) -> None:
-    """E2E r3 — 구획 캡션이 설비 시나리오가 따로 드는 것에 가정 배치를 넣는다(같은 구획에 「저장된
-    배치 차이」·「배치 차이 모두 지우기」 가 있다). 「일정 여섯·시나리오 메모·비가동만」 이라 하지
-    않는다."""
+    """공통 칸과 설비 시나리오가 따로 드는 것(일정 · 메모 · 비가동 · 가정 배치)의 설명은 구획에 늘
+    띄워 두지 않는다 — Guide 「설비 시나리오 구획」 몫이다(설계 규칙 UI-TXT-01 · V-05). 머리 줄도
+    값(이 세션이 든 쌍)만이고 「사이드바 줄에서도 합니다」 같은 길 안내를 달지 않는다(UI-TXT-03 ·
+    AMB-06 (나))."""
     _, setup, _ = _moved_setup(tmp_path)
     app = _ok(_section(tmp_path, setup).run())
 
-    caption = next(
-        str(item.value)
-        for item in app.caption
-        if "모든 설비 시나리오가 함께 씁니다" in str(item.value)
-    )
-    assert "비가동만" not in caption
-    assert (
-        "일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 요소·Main 설비명 "
-        "위치)를 따로 듭니다" in caption
-    ), caption
+    captions = [str(item.value) for item in app.caption]
+    assert not any("모든 설비 시나리오가 함께 씁니다" in text for text in captions), captions
+    assert not any("따로 듭니다" in text for text in captions), captions
+    assert not any("사이드바 설비 시나리오 줄에서도" in text for text in captions), captions
 
 
 def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
@@ -762,14 +758,16 @@ def test_a_quick_second_press_of_a_cleaning_publish_keeps_its_notice(
     assert app.selectbox(key=REVISION_KEY).value == latest
 
     _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
-    first = [str(item.value) for item in app.success]
+    # 결과는 알림창 표지로만 간다 — 구획 맨 위에 초록 상자를 그리지 않는다(설계 규칙 UI-NTF-03).
+    assert not app.success
+    first = [str(item.value) for item in successes(app)]
     assert len(first) == 1, first
     assert "공식 v2로 발행했습니다" in first[0], first
     assert "이 세션을 r3으로 옮겼습니다." in first[0], first
 
     _ok(stale_press(app, PUBLISH_BUTTON_KEY))
 
-    assert [str(item.value) for item in app.success] == first
+    assert [str(item.value) for item in successes(app)] == first
 
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2

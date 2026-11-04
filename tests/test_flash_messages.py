@@ -304,22 +304,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
     (
         "src/capa_simulation/components/equipment_scenario_management.py",
         "render_equipment_scenario_management",
-        "FLASH_KEY",
-    ): (
-        "알림을 그리는 회차에 팝오버 세대를 함께 올린다(`POPOVER_GENERATION_KEY`) — 그린 줄 알아야"
-        " 하는 칸이다"
-    ),
-    (
-        "src/capa_simulation/components/equipment_scenario_management.py",
-        "render_equipment_scenario_management",
-        "REFUSED_KEY",
-    ): (
-        "거절 알림 — 작업 알림(`FLASH_KEY`)과 같은 회차에 팝오버 세대를 올리고 같은 늘 서 있는 칸에"
-        " 그린다. 두 칸을 함께 옮긴다"
-    ),
-    (
-        "src/capa_simulation/components/equipment_scenario_management.py",
-        "render_equipment_scenario_management",
         "CLEAR_LAYOUT_AGREED_KEY",
     ): (
         "알림 칸이 아니라 앞 회차에 켠 「배치 차이 모두 지우기」 확인 체크의 값(시나리오·최신"
