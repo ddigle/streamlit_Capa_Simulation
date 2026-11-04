@@ -1103,7 +1103,9 @@ def _render_month_steps(view: ConstraintView, month: int, *, show_proportional: 
         with st.container():
             if steps.verdict:
                 if steps.verdict_secure:
-                    st.success(steps.verdict, icon=":material/check_circle:")
+                    # 문제 없음 결론은 평문 한 줄, 문제 있음은 경고 상자(설계 규칙 UI-TXT-04 ·
+                    # design_system 2-3 — 초록 상자는 새로 쓰지 않는다).
+                    st.caption(f":material/check_circle: {steps.verdict}")
                 else:
                     st.warning(steps.verdict, icon=":material/warning:")
             if steps.proportional:

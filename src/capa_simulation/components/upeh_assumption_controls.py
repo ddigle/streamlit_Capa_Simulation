@@ -73,6 +73,13 @@ PERCENT_HELP = (
     "둘을 함께 켜면 같은 개선이 두 번 들어갈 수 있습니다. "
     f"{PERCENT_MIN}~{PERCENT_MAX}% 밖의 값은 가까운 끝으로, 빈 칸은 100% 로 읽습니다."
 )
+# 가정을 걸지 않는 화면(필요 단축 일정)의 % 칸 · 표지 풍선 — 칸은 두 화면이 같은 세션 값을 나눠
+# 쓰려고 서지만 그 화면의 숫자는 늘 공식이다(설계 규칙 UI-NTF-05 · UI-TXT-04 — 표지 + 풍선).
+NOT_APPLIED_MARK = ":material/science: 이 화면 미반영"
+NOT_APPLIED_HELP = (
+    "이 화면(보기·CSV·기준선·진척 비교)은 UPEH 가정을 걸지 않고 늘 공식 계획을 봅니다 — 가정의 "
+    "효과는 공정 Capa 상세에서 봅니다."
+)
 
 
 def assumption_month_options(start_month: int, end_month: int, *, today: date) -> list[int]:
@@ -91,13 +98,15 @@ def assumption_month_options(start_month: int, end_month: int, *, today: date) -
 
 
 def render_upeh_assumption_controls(
-    *, owner: str, start_month: int, end_month: int, today: date
+    *, owner: str, start_month: int, end_month: int, today: date, applied_here: bool = True
 ) -> UpehAssumption | None:
     """% 칸·적용 구간·「100% 로」 를 지금 컨테이너(조건 카드)에 그리고 고른 값을 돌려준다.
 
     `owner` 는 그리는 화면의 이름이다(`carry_shared_widget_value`). 선택지가 비면(조회기간이 모두
     지난 달) 구간을 그리지 않고 None 이다 — 걸 달이 없다. 100% 여도 구간이 있으면 값을
-    돌려준다(역산이 그 구간을 본다, `UpehAssumption.active` 가 거짓).
+    돌려준다(역산이 그 구간을 본다, `UpehAssumption.active` 가 거짓). `applied_here` 가 거짓인
+    화면(필요 단축 일정 — 늘 공식)은 % 칸 풍선 끝에 그 말을 붙이고, 가정이 켜진 동안 「100% 로」
+    앞에 표지(`NOT_APPLIED_MARK` + 풍선)를 세운다 — %를 바꾸면 이 화면 숫자도 바뀐다고 읽지 않게.
     """
     options = assumption_month_options(start_month, end_month, today=today)
     carry_shared_widget_value(UPEH_ASSUMPTION_PERCENT_KEY, default=PERCENT_DEFAULT, owner=owner)
@@ -128,7 +137,7 @@ def render_upeh_assumption_controls(
         key=UPEH_ASSUMPTION_PERCENT_KEY,
         persist_state="session",
         on_change=_settle_percent,
-        help=PERCENT_HELP,
+        help=PERCENT_HELP if applied_here else f"{PERCENT_HELP} {NOT_APPLIED_HELP}",
     )
     value = int(percent) if percent is not None else PERCENT_DEFAULT
     if not options:
@@ -158,6 +167,8 @@ def render_upeh_assumption_controls(
     if first > last:
         st.caption("UPEH 적용 시작이 끝보다 늦어 바꿔 읽었습니다.")
     if value != PERCENT_DEFAULT:
+        if not applied_here:
+            st.caption(NOT_APPLIED_MARK, help=NOT_APPLIED_HELP)
         st.button(
             "100% 로",
             key=UPEH_RESET_BUTTON_KEY,

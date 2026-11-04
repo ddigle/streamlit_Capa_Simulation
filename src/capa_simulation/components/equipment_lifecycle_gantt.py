@@ -134,7 +134,7 @@ def render_equipment_lifecycle_gantt(
         return
     figure, hidden_units = build_equipment_lifecycle_gantt(spans, max_units=max_units, today=today)
     if figure is None:
-        st.info("조회 기간에 그릴 호기 일정이 없습니다.")
+        st.caption("조회 기간에 그릴 호기 일정이 없습니다.")
         return
     st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
     if hidden_units:

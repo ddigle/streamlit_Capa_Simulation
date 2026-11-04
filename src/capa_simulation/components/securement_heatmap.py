@@ -241,6 +241,6 @@ def render_securement_heatmap(
         labels=labels,
     )
     if figure is None:
-        st.info("히트맵으로 그릴 확보율이 없습니다.")
+        st.caption("히트맵으로 그릴 확보율이 없습니다.")
         return
     st.plotly_chart(figure, width="stretch", key=key, config=hover_chart_config())

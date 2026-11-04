@@ -322,7 +322,7 @@ def _availability(
         end_date=end,
     )
     if weekly.empty:
-        st.info("조건에 맞는 설비가 없습니다.")
+        st.caption("조건에 맞는 설비가 없습니다.")
         _usage_caption(usage_notice)
         return
     latest = weekly.loc[weekly["주차시작일"].eq(weekly["주차시작일"].max())]
@@ -428,7 +428,7 @@ def _transitions(
         ]
     st.markdown(f"#### 단계 전환 · {start:%Y-%m-%d} ~ {end:%Y-%m-%d} · 기준일 {as_of:%Y-%m-%d}")
     if events.empty:
-        st.info("조건에 맞는 설비 단계 전환 일정이 없습니다.")
+        st.caption("조건에 맞는 설비 단계 전환 일정이 없습니다.")
         return
     if view == "전환 일정 목록":
         # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.

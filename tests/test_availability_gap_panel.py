@@ -519,8 +519,15 @@ def test_the_cross_check_explains_what_is_missing_in_the_same_order(
     app = _run(**state, **lazy)
     _select_view(app, "확보율 교차검증")
 
-    infos = [str(item.value) for item in app.info]
-    assert len(infos) == 1 and infos[0].startswith(notice), infos
+    # 비었다는 결론(소요대수 · Static 없음)은 평문 한 줄, 읽지 못한 것은 상자다 — 셋 가운데 하나만.
+    reasons = (
+        "선택 범위에 소요대수 산출 기준이 없습니다",
+        "Static 가용대수가 없어",
+        "소요대수를 읽지 못해",
+    )
+    lines = [str(item.value) for item in (*app.info, *app.caption)]
+    notices = [line for line in lines if line.startswith(reasons)]
+    assert len(notices) == 1 and notices[0].startswith(notice), notices
     assert not app.dataframe
 
 
@@ -537,6 +544,9 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
     unmatched = active_state(app, "EQ-06")
     assert unmatched is not None
     assert "「전체 합계」 에서 빠집니다" in str(unmatched["full"])
+    # 알림창만 본 사람도 지금 보는 합계에서 그 공정이 빠졌다는 것을 안다(짧은 글이 그 사실 먼저).
+    assert str(unmatched["short"]).startswith("전체 합계에서 뺀 한쪽 공정 ")
+    assert "…" not in str(unmatched["short"])
     assert not any("한쪽에만 있는 공정" in item.value for item in app.caption)
 
     _select_view(app, "확보율 교차검증")
@@ -550,7 +560,7 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
     assert not app.exception
     assert not app.dataframe
-    assert "아직 맞대어 볼 수 있는 공정이 없습니다" in " ".join(item.value for item in app.info)
+    assert "아직 맞대어 볼 수 있는 공정이 없습니다" in " ".join(item.value for item in app.caption)
 
 
 def test_hidden_tab_skips_output_and_preserves_both_selections() -> None:
@@ -595,7 +605,7 @@ def test_missing_static_keeps_dynamic_detail_and_explains_cross_check_limit() ->
     _select_view(app, "확보율 교차검증")
     assert not app.dataframe
     assert not app.get("plotly_chart")
-    assert "Static 가용대수가 없어" in " ".join(item.value for item in app.info)
+    assert "Static 가용대수가 없어" in " ".join(item.value for item in app.caption)
     assert "테스트 조회 실패" in _alerts(app)
 
 
@@ -616,7 +626,7 @@ def test_missing_input_is_explained_before_any_result(state_key: str, notice: st
     app = _run(**{state_key: True})
     assert not app.dataframe
     assert not app.get("plotly_chart")
-    assert notice in " ".join(item.value for item in app.info)
+    assert notice in " ".join(item.value for item in [*app.info, *app.caption])
 
 
 def test_period_notices_do_not_direct_users_to_the_old_preference_tab() -> None:
@@ -789,7 +799,8 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     assert not app.exception
     # 그림은 Static 과 설비 일정 기준을 맞대는 자리라 그리지 않고 까닭을 말한다.
     assert not app.get("plotly_chart")
-    infos = " ".join(item.value for item in app.info)
+    infos = " ".join(item.value for item in app.caption)
+    assert not app.info
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다" in infos
     # 까닭(값)만 적고 「있는 쪽 값은 분류별 내역에서」 길 안내는 붙이지 않는다(Guide 가 말한다).
     assert "분류별 내역" not in infos
@@ -814,7 +825,7 @@ def test_a_process_only_in_the_reference_side_shows_its_static_without_gap() -> 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
     assert not app.get("plotly_chart")
     assert "「Probe」 공정은 설비 일정 기준이 나오지 않아" in " ".join(
-        item.value for item in app.info
+        item.value for item in app.caption
     )
 
     _select_view(app, "분류별 내역")
@@ -838,13 +849,14 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
     assert not app.exception
     assert not app.dataframe
-    infos = " ".join(item.value for item in app.info)
+    infos = " ".join(item.value for item in app.caption)
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다" in infos
 
     # 맞댈 공정이 없으면 빈 결과 한 줄만 적는다 — 무엇을 채우면 나오는지(하는 법)는 붙이지 않고,
     # 이름이 어긋난 까닭은 상태 알림(`EQ-06`)이 말한다.
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
-    assert [item.value for item in app.info] == ["아직 맞대어 볼 수 있는 공정이 없습니다."]
+    assert not app.info
+    assert "아직 맞대어 볼 수 있는 공정이 없습니다." in [item.value for item in app.caption]
     assert "Probe" in _alerts(app)
 
 
@@ -996,7 +1008,7 @@ def test_name_mismatch_notices_keep_the_original_process_names() -> None:
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
     assert not app.exception
-    infos = " ".join(item.value for item in app.info)
+    infos = " ".join(item.value for item in app.caption)
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어" in infos and "표시-WB" not in infos
     # 경고는 그 이름이 원본이라고 밝힌다 — 상자에는 표시명만 보이므로.
     assert "아래 이름은 공정 표시명이 아니라 원본 공정명입니다" in warnings

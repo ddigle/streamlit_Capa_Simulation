@@ -134,6 +134,12 @@ SAVE_FIELDS_PREFIX = "sidebar_equipment_save"
 UNAPPLIED_SMALL_EDITS_NOTE = (
     "기존 보유대수·비가동 일정 표에서 아직 「편집본에 적용」 하지 않은 편집은 저장되지 않습니다."
 )
+# 팝업 「설비 데이터 저장」 단추 풍선 — 무엇이 어디로 저장되나(저장 규칙 — 자리에 적지 않는다, 설계
+# 규칙 UI-TXT-01). 저장 대상 이름은 머리 「올라와 있음」 줄이 말한다.
+SAVE_BUTTON_HELP = (
+    "올라와 있는 설비 시나리오에 저장합니다 — 공통 칸은 공통 대장, 일정·시나리오 메모·비가동은 이 "
+    "설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다."
+)
 # 불러오기·저장 알림 — 다음 회차에 한 번, 줄 바로 아래.
 FLASH_KEY = "sidebar_equipment_scenario_flash"
 # 「저장」 구획을 세우는 화면(편집본을 세우는 화면)의 파일 이름.
@@ -427,7 +433,7 @@ def _render_dialog_body(database_path: str, session: EquipmentSession, *, can_sa
     unsaved = has_unsaved_equipment_edits()
     badge = equipment_status_badge(session, unsaved=unsaved)
     if session.scenario is None:
-        st.info("설비 시나리오가 없습니다.")
+        st.caption("설비 시나리오가 없습니다.")
         return
     st.caption(f"올라와 있음 · {equipment_value_label(session)}" + (f" {badge}" if badge else ""))
     modes = [LOAD_MODE, SAVE_MODE] if can_save else [LOAD_MODE]
@@ -500,7 +506,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
         key=DIALOG_SCENARIO_KEY,
     )
     if not revision_by_id:
-        st.info("이 설비 시나리오에 저장된 리비전이 없습니다.")
+        st.caption("이 설비 시나리오에 저장된 리비전이 없습니다.")
     else:
         options = list(revision_by_id)
         release = session.catalog.latest_release
@@ -672,14 +678,12 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
     buffer = st.session_state.get(BUFFER_KEY)
     basis = session.save_basis()
     if not isinstance(buffer, tuple) or basis is None:
-        st.info("저장할 설비 편집본이 없습니다.")
+        st.caption("저장할 설비 편집본이 없습니다.")
         return
     has_changes = has_unsaved_equipment_edits() or pending_fab_layout() is not None
-    st.caption(
-        f"「{literal_markdown(basis.scenario_name)}」 에 저장합니다 — 공통 칸은 공통 대장, 일정·"
-        "시나리오 메모·비가동은 이 설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다. "
-        f"{UNAPPLIED_SMALL_EDITS_NOTE}"
-    )
+    # 저장하면 사라지는 편집(누르기 전에 알아야 하는 것 — UI-NTF-09)만 곁 한 줄로 두고, 무엇이
+    # 어디로 저장되나는 저장 단추 풍선(`SAVE_BUTTON_HELP`)이 말한다.
+    st.caption(UNAPPLIED_SMALL_EDITS_NOTE)
     if basis.stale:
         st.warning(
             stale_save_warning(basis.revision_no, basis.latest_revision_no),
@@ -715,6 +719,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         type="primary",
         disabled=not has_changes,
         key=SAVE_BUTTON_KEY,
+        help=SAVE_BUTTON_HELP,
     )
     if not clicked:
         return

@@ -192,7 +192,7 @@ def render_plan_comparison_dumbbell(
     if tab_is_hidden(owner_tab):
         return
     if figure is None:
-        st.info("두 시나리오의 계획 물량이 같습니다.")
+        st.caption("두 시나리오의 계획 물량이 같습니다.")
         return
     st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
     # 그림의 틀(무엇을 몇 개)만 적는다. 읽는 법(한쪽에만 있는 분류는 0, 월별 모양은 표)은

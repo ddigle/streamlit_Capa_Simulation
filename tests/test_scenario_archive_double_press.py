@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import successes
+from alert_marks import flashed, successes
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
@@ -106,7 +106,7 @@ def test_a_second_restore_press_does_not_restore_an_archive_nobody_picked(
     statuses = _statuses(repository)
     assert [name for name, status in statuses.items() if status == "ACTIVE"] == [target], statuses
     assert any(f"{target}" in text and "되돌렸습니다" in text for text in _texts(successes(app)))
-    assert ARCHIVED_GONE_MESSAGE not in _texts(app.warning)
+    assert ARCHIVED_GONE_MESSAGE not in _texts([*app.warning, *flashed(app, "warning")])
 
 
 def test_a_restore_press_right_after_the_pick_moved_is_not_applied(
@@ -153,7 +153,12 @@ def test_restoring_an_archive_restored_elsewhere_writes_nothing_and_says_so(
     _ok(browser.run())
     statuses = _statuses(repository)
     assert [name for name, status in statuses.items() if status == "ACTIVE"] == [target], statuses
-    assert ARCHIVED_GONE_MESSAGE in _texts(app.warning)
+    # 아무것도 쓰지 않은 거부는 알림창 · Alarm 에만 간다(`FL-03` — 보관함 단추 곁이 아니라 맨 위
+    # 칸이 그리던 경고, 설계 규칙 UI-NTF-03).
+    assert ARCHIVED_GONE_MESSAGE not in _texts(app.warning)
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
+        (ARCHIVED_GONE_MESSAGE, "FL-03")
+    ]
     assert not any("되돌렸습니다" in text for text in _texts(successes(app)))
 
 

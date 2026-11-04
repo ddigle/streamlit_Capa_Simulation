@@ -72,9 +72,10 @@ class GateVerdict(NamedTuple):
     파생 저장 경고는 원본 시나리오 이름을 날로 담으므로 끼울 때 막는다(물결표가 지움선이 되지
     않게). `density_error` 는 막지 않는다 — 자동 갱신 기록(표 칸)에도 그대로 남는다.
 
-    `exclusion` 은 계산이 통과했고 `message` 가 소요대수에 들지 않은 수요 경고뿐이라는 표지다 — 고칠
-    입력이 저장 자리에 없어 사이드바 리비전 저장 · 시나리오 관리 복제 · 공식 지정은 알림창 ·
-    Alarm 에만 낸다(2026-11-04 검수 의견 home-18).
+    `exclusion` 은 계산이 통과했고 `message` 가 소요대수에 들지 않은 수요 경고뿐이라는 표지다 —
+    판정 시험이 두 경고(소요대수 제외 · 남은 계산 오류)를 가르는 데 쓴다. 화면은 두 경고를 가르지
+    않고 모두 알림창 · Alarm 에만 낸다(사이드바 리비전 저장 · 시나리오 관리 복제 · 공식 지정 · 월
+    머지 · 연도 Shift — 2026-11-04 검수 의견 home-18 · 설계 규칙 확인 보드 AMB-05 (나)).
     """
 
     allowed: bool
@@ -157,29 +158,30 @@ def revision_save_verdict(
             "이 편집으로 Capa 계산이 실패해 저장하지 않았습니다. 편집 전 리비전은 계산되므로 "
             f"이번 편집이 깨뜨린 것입니다 — 고친 뒤 다시 저장하세요. 오류: {shown}",
         )
+    # 세 경고 모두 결과(공식 지정 불가)를 앞에 둔다 — 알림창 · Alarm 에만 가고 알림창 짧은 글이
+    # 앞 60자 안팎이다(설계 규칙 UI-NTF-06). 까닭 · 고칠 곳은 그 뒤 전문(Alarm)이 말한다.
     if base != edited and _error_kind(base) == _error_kind(edited):
         return GateVerdict(
             True,
-            "편집 전과 같은 종류의 Capa 계산 오류가 걸린 칸의 건수·예시만 달라진 채 남아 "
-            "있습니다 — 일부를 고쳤거나 이번 편집이 같은 오류를 더 만든 것입니다. 이 리비전은 "
-            "공식버전으로 지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. "
+            "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전과 같은 "
+            "종류의 오류가 걸린 칸의 건수·예시만 달라진 채 남았습니다(일부를 고쳤거나 이번 편집이 "
+            "같은 오류를 더 만든 것입니다). 남은 오류를 고쳐 다시 저장하세요. "
             f"편집 뒤 오류: {shown} / 편집 전 오류: {markdown_safe_tildes(base)}"
             + module_fix_hint(edited),
         )
     if base != edited:
         return GateVerdict(
             True,
-            "편집 전과 다른 Capa 계산 오류가 납니다 — 이번 편집이 새로 깨뜨렸거나, 편집 전 오류를 "
-            "고쳐 그 뒤에 가려져 있던 오류가 드러난 것입니다(계산은 첫 오류에서 멈춥니다). 이 "
-            "리비전은 공식버전으로 지정할 수 없습니다 — 오류를 고쳐 다시 저장하세요. "
+            "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전과 다른 "
+            "오류입니다(이번 편집이 새로 깨뜨렸거나, 편집 전 오류를 고쳐 그 뒤에 가려져 있던 "
+            "오류가 드러난 것 — 계산은 첫 오류에서 멈춥니다). 오류를 고쳐 다시 저장하세요. "
             f"편집 뒤 오류: {shown} / 편집 전 오류: {markdown_safe_tildes(base)}"
             + module_fix_hint(edited),
         )
     return GateVerdict(
         True,
-        "편집 전부터 있던 Capa 계산 오류가 아직 남아 있습니다. 이 리비전은 공식버전으로 "
-        f"지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. 오류: {shown}"
-        + module_fix_hint(edited),
+        "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전부터 있던 "
+        f"오류입니다. 남은 오류를 고쳐 다시 저장하세요. 오류: {shown}" + module_fix_hint(edited),
     )
 
 
@@ -235,11 +237,13 @@ def derived_save_verdict(
             f"오류: {markdown_safe_tildes(error)}",
         )
     names = ", ".join(literal_markdown(source.scenario.scenario_name) for source in broken)
+    # 결과(공식 지정 불가)를 앞에 둔다 — 이 경고는 알림창 · Alarm 에만 가고 알림창 짧은 글이 앞
+    # 60자 안팎이라, 원본 이름이 길어도 무엇이 막혔는지가 잘리지 않는다(설계 규칙 UI-NTF-06).
     return GateVerdict(
         True,
-        f"원본({names})부터 있던 Capa 계산 오류가 결과에도 남아 있습니다. 이 시나리오는 "
-        "공식버전으로 지정할 수 없습니다 — 남은 오류를 고쳐 새 리비전으로 저장하세요. "
-        f"오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
+        "Capa 계산 오류가 남아 이 시나리오는 공식버전으로 지정할 수 없습니다 — "
+        f"원본({names})부터 있던 오류가 결과에도 남았습니다. 남은 오류를 고쳐 새 리비전으로 "
+        f"저장하세요. 오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
     )
 
 

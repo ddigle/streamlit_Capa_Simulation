@@ -487,7 +487,7 @@ def test_the_calculator_opens_even_when_the_screen_has_no_units(tmp_path: Path) 
     app = _page(tmp_path)
     app.session_state[SAMPLE_TOGGLE_KEY] = False
     app.run()
-    assert any("등록된 호기가 없습니다" in element.value for element in infos(app))
+    assert any("등록된 호기가 없습니다" in element.value for element in app.caption)
 
     _open(app)
 

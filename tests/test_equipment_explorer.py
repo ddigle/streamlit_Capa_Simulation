@@ -348,7 +348,8 @@ def test_stage_transitions_read_the_period_and_split_done_from_planned_by_the_da
     app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
     assert not app.exception
     assert not app.dataframe
-    assert any("단계 전환 일정이 없습니다" in item.value for item in app.info)
+    assert any("단계 전환 일정이 없습니다" in item.value for item in app.caption)
+    assert not app.info
 
     app.selectbox(TRANSITION_SCHEDULE_KEY).set_value("전체").run()
     app.multiselect(TRANSITION_CONFIRMATION_KEY).set_value(["계획"]).run()

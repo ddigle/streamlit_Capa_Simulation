@@ -19,7 +19,8 @@ def test_without_modules_the_index_says_so_in_one_line() -> None:
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [title.value for title in app.title] == ["모듈"]
-    assert [info.value for info in app.info] == ["켜진 모듈이 없습니다."]
+    assert not app.info
+    assert "켜진 모듈이 없습니다." in [caption.value for caption in app.caption]
     assert not any("꺼짐" in caption.value for caption in app.caption)
 
 

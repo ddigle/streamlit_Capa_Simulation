@@ -79,7 +79,9 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     app.session_state["admin_area_active_tab"] = ":material/fact_check: 원천 품질"
     app.run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("활성 시나리오가 없습니다" in info.value for info in infos(app))
+    # 빈 결과는 평문 한 줄이다(설계 규칙 UI-TXT-04 — 상자 · 하는 법 꼬리 없음).
+    assert "활성 시나리오가 없습니다." in [caption.value for caption in app.caption]
+    assert not any("활성 시나리오가 없습니다" in info.value for info in infos(app))
 
 
 def _source_quality_script(database_path: Path) -> str:

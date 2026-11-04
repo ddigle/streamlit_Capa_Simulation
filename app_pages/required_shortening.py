@@ -43,7 +43,12 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
-from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
+from capa_simulation.components.sample_data import (
+    NO_UNITS_HELP,
+    NO_UNITS_MARK,
+    SAMPLE_TOGGLE_KEY,
+    render_sample_switch,
+)
 from capa_simulation.components.shortening_source import (
     load_shortening_demand,
     shortening_frames,
@@ -185,14 +190,11 @@ dashboard_baseline, dashboard_equipment, dashboard_downtime = shortening_frames(
 # 거르는 조건(기간·공정)은 사이드바 조건 카드다. 목표 확보율·진척 비교는 본문 맨 위다.
 conditions_card = condition_card("필요 단축 일정 조건", name="shortening")
 if using_dashboard_sample and not show_sample_fleet:
+    # 카드에는 값 한 마디와 풍선(하는 법), 본문에는 빈 결과 한 줄만 둔다 — 같은 말을 두 번 그리지
+    # 않는다(설계 규칙 UI-TXT-04 · UI-TXT-07).
     with conditions_card:
-        st.caption(
-            "조회할 호기가 없습니다. 가용설비 현황 설비 마스터에서 입력하거나 샘플 데이터를 켜세요."
-        )
-    st.info(
-        "등록된 호기가 없습니다. 가용설비 현황 설비 마스터 탭에서 설비 마스터를 입력하거나 샘플 "
-        "데이터를 켜서 화면을 살펴보세요."
-    )
+        st.caption(NO_UNITS_MARK, help=NO_UNITS_HELP)
+    st.caption("등록된 호기가 없습니다.")
     st.stop()
 
 # 소요대수는 활성 시나리오에 있다. 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다 —

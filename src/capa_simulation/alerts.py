@@ -225,6 +225,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
     AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
     AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec(
+        "SC-03", "check", "state", "옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오"
+    ),
 )
 
 

@@ -71,6 +71,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.shortening_baseline import (
     BASELINE_NAME_MAX_LENGTH,
     BASELINE_SAVED_BY_MAX_LENGTH,
+    BaselineNameInvalidError,
     BaselineNameTakenError,
     BaselineProvenance,
     ShorteningBaseline,
@@ -138,6 +139,10 @@ _NOTICE_KEYS = tuple(f"equipment_shortening_baseline_flash_{index}" for index in
 """기준선 저장 · 지우기 결과 알림 칸(`flash.queue_flash`). 그리기 전에 콜백이 여럿 돌아도 앞 알림을
 덮지 않게 빈 칸부터 차례로 담는다 — 셋이 다 차면 마지막 칸을 바꾼다. `render_flash` 는 칸 수와
 상관없이 이벤트 칸에 한 자리만 쓴다."""
+# 「기준선 저장」 의 이름 거절(같은 이름 · 빈 이름) 칸 — 고칠 입력(「기준선 이름」)이 든 팝오버 폼
+# 위에 그리고 알림창 · Alarm 에도 낸다(설계 규칙 UI-NTF-03 — 그 자리에서 고칠 입력이 있는 거부는
+# 곁).
+_NAME_REFUSAL_KEY = "equipment_shortening_baseline_name_refusal"
 _BASELINE_DELETE_HANDLED_KEY = "equipment_shortening_baseline_delete_handled"
 _BASELINE_WRITTEN_KEY = "equipment_shortening_baseline_written"
 _PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
@@ -249,8 +254,10 @@ def render_baseline_notice() -> None:
     """저장·지우기 콜백이 남긴 결과 알림을 알림창 · Alarm 으로 보낸다(`flash.render_flash`).
 
     늘 서 있는 한 칸을 세우고 이벤트 칸에는 부를 때마다 정확히 한 자리를 쓴다 — 머리 · 본문
-    프래그먼트가 갈래(일반 보기 · 진척 비교 · 알림 있음/없음)와 상관없이 같은 자리 수를 쓴다. 거절 ·
-    실패도 알림창으로만 낸다(`popup_only`) — 이 칸은 머리 밑이라 단추가 든 팝오버 곁이 아니다.
+    프래그먼트가 갈래(일반 보기 · 진척 비교 · 알림 있음/없음)와 상관없이 같은 자리 수를 쓴다. 고칠
+    입력이 없는 거절 · 실패(가정 켜짐 · 확인 체크 · 저장소 오류)도 알림창으로만 낸다(`popup_only`) —
+    이 칸은 머리 밑이라 단추가 든 팝오버 곁이 아니다. 이름이 까닭인 거절은 팝오버 폼 위 칸
+    (`_NAME_REFUSAL_KEY`)이 그린다.
     """
     render_flash(*_NOTICE_KEYS)
 
@@ -273,6 +280,9 @@ def render_baseline_controls(
 
 
 def _render_save_form(save: BaselineSaveContext) -> None:
+    # 이름 거절 칸 — 갈래(거절할 계획 · 폼)와 상관없이 늘 같은 자리에서 부른다(이벤트 칸 한 자리 —
+    # 프래그먼트 본문의 자리 수 규칙, AGENTS 9장). 거절은 이름 칸 바로 위에 서고 알림창에도 뜬다.
+    render_flash(_NAME_REFUSAL_KEY)
     # 무엇을 남기고 고칠 수 없다는 말은 팝오버 머리 글이 아니라 저장 단추 풍선이다(누르기 전에
     # 보인다).
     if save.refusal is not None:
@@ -409,7 +419,12 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
             fingerprint=fingerprint,
         )
     except BOOTSTRAP_ERRORS as exc:
-        _notice("warning", f"기준선을 저장하지 않았습니다 — {_save_error_message(exc)}")
+        message = f"기준선을 저장하지 않았습니다 — {_save_error_message(exc)}"
+        if isinstance(exc, BaselineNameTakenError | BaselineNameInvalidError):
+            # 이름 칸이 까닭이다 — 그 칸이 든 팝오버 폼 위에 그리고 알림창 · Alarm 에도 낸다.
+            queue_flash(_NAME_REFUSAL_KEY, message, kind="error")
+        else:
+            _notice("warning", message)
         return
     if written is None:
         return

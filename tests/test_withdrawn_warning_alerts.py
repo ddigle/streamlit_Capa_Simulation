@@ -103,6 +103,54 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         test="tests/test_scenario_merge_ui.py::test_a_refused_derived_save_writes_nothing",
     ),
     Withdrawn(
+        what="Admin 공식버전 자동 갱신 「지금 실행」 — 발행 뒤 소요대수에 들지 않은 수요 경고",
+        why="UI-NTF-03 · AMB-05 (나) · home-18",
+        file="src/capa_simulation/components/auto_official_update_tab.py",
+        function="_hold_run_result",
+        code="FL-03",
+        route="flash",
+        test=(
+            "tests/test_auto_official_update_tab.py"
+            "::test_run_now_shows_uncounted_demand_as_a_warning_after_the_success"
+        ),
+    ),
+    Withdrawn(
+        what="BigDataQuery 등록 저장 단추 밑 — 저장 뒤 CS 빈 행 뺌 · 대당 Capa 계산 멈춤 경고",
+        why="UI-NTF-03 · AMB-05 (나)",
+        file="src/capa_simulation/components/bigdataquery_registration.py",
+        function="_save_scenario",
+        code="FL-03",
+        route="flash",
+        test=(
+            "tests/test_bigdataquery_registration.py"
+            "::test_the_saved_notices_go_to_the_alert_popup_not_under_the_save_button"
+        ),
+    ),
+    Withdrawn(
+        what="시나리오 관리 보관함 · 카드 보관 — 고른 시나리오가 그 사이 빠져 아무것도 하지 않음",
+        why="UI-NTF-03",
+        file="src/capa_simulation/components/scenario_management.py",
+        function="_refuse_gone_press",
+        code="FL-03",
+        route="flash",
+        test=(
+            "tests/test_scenario_archive_double_press.py"
+            "::test_restoring_an_archive_restored_elsewhere_writes_nothing_and_says_so"
+        ),
+    ),
+    Withdrawn(
+        what="시나리오 관리 설비 시나리오 구획 — 옛 판 흔적이 있는 설비 시나리오 이름 · 개수 줄",
+        why="UI-TXT-04 · UI-NTF-02",
+        file="src/capa_simulation/components/equipment_scenario_management.py",
+        function="report_layout_traces",
+        code="SC-03",
+        route="state",
+        test=(
+            "tests/test_equipment_scenario_layout_management.py"
+            "::test_the_old_code_traces_list_is_a_state_alert_not_a_place_line"
+        ),
+    ),
+    Withdrawn(
         what="가용설비 Summary › Static 대비 일정 — 「한쪽에만 있는 공정 n개를 뺐습니다」 캡션",
         why="V-12 · UI-TXT-04",
         file="src/capa_simulation/components/availability_gap_panel.py",

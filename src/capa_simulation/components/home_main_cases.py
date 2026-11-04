@@ -449,7 +449,7 @@ def _render_case(
         return
     if not plan.revisions:
         st.session_state.pop(revision_key, None)
-        st.info("고른 시나리오에 저장된 리비전이 없습니다.")
+        st.caption("고른 시나리오에 저장된 리비전이 없습니다.")
         return
     revision_by_id = {revision.revision_id: revision for revision in plan.revisions}
     st.session_state[revision_key] = plan.revision_id

@@ -86,7 +86,12 @@ from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.manual_downtime_tab import render_manual_downtime_tab
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
+from capa_simulation.components.sample_data import (
+    NO_UNITS_HELP,
+    NO_UNITS_MARK,
+    SAMPLE_TOGGLE_KEY,
+    render_sample_switch,
+)
 from capa_simulation.components.state_alerts import alert_page_error, equipment_scope, tab_name
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import NestedTab, stateful_tabs, tab_is_hidden
@@ -376,16 +381,15 @@ if (
     and using_dashboard_sample
     and not show_sample_fleet
 ):
+    # 값 한 마디 + 풍선(하는 법) — 본문 빈 결과 줄과 같은 말을 두 번 그리지 않는다(설계 규칙
+    # UI-TXT-04 · UI-TXT-07).
     with conditions_card:
-        st.caption("조회할 호기가 없습니다. 설비 마스터 탭에서 입력하거나 샘플 데이터를 켜세요.")
+        st.caption(NO_UNITS_MARK, help=NO_UNITS_HELP)
 
 with main_tab:
     if not tab_is_hidden(main_view):
         if using_dashboard_sample and not show_sample_fleet:
-            st.info(
-                "등록된 호기가 없습니다. 설비 마스터 탭에서 설비 마스터를 입력하거나 "
-                "샘플 데이터를 켜서 화면을 살펴보세요."
-            )
+            st.caption("등록된 호기가 없습니다.")
         else:
             # 가정 설비 시나리오면 미확인은 공식 일정 기준(공식 스냅샷 그대로를 화면 호기로 좁힘).
             render_equipment_explorer(

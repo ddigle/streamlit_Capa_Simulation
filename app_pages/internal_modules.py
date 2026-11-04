@@ -28,7 +28,7 @@ for spec in module_page_specs():
     pages_by_module.setdefault(spec.module or "", []).append((spec.path, spec.title, spec.icon))
 
 if not scan.active:
-    st.info("켜진 모듈이 없습니다.")
+    st.caption("켜진 모듈이 없습니다.")
 for record in scan.active:
     manifest = record.manifest
     if manifest is None:

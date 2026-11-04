@@ -474,7 +474,7 @@ def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in warning
     # 실행 기록 표의 칸에도 실린다 — Markdown 굵게 표시를 떼고 남긴다.
     assert "확보율이 실제보다 높게" in warning and "**" not in warning
-    # 「지금 실행」 결과가 성공 알림 밑의 경고로 따로 띄우도록 사유를 그대로 다시 가른다.
+    # 「지금 실행」 결과가 성공 알림 뒤 경고로 따로 내도록 사유를 그대로 다시 가른다.
     assert runner.split_published_reason(run.reason) == (memo, warning)
     release = repository.latest_official_release()
     assert release is not None

@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from alert_marks import active_state, page_html, successes
+from alert_marks import active_state, flashed, page_html, successes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import bigdataquery_registration as registration
@@ -144,10 +144,12 @@ def test_both_steps_render_in_one_run() -> None:
 
 
 @pytest.mark.parametrize("package_ready", [False, True], ids=["패키지 없음", "패키지 있음"])
-def test_the_dropped_row_warning_stands_under_the_saved_notice(
+def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     monkeypatch: pytest.MonkeyPatch, package_ready: bool
 ) -> None:
-    """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 같은 알림 칸에 차례로 서고, 한 번만 그린다.
+    """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 알림창에 차례로 뜨고(경고는 `FL-03` — 저장은
+    끝났고 고칠 입력이 없어 단추 밑에 그리지 않는다, 설계 규칙 UI-NTF-03 · AMB-05 (나)), 한 번만
+    보낸다.
 
     알림 칸 밑의 설정 띠는 사내 패키지가 깔렸으면 성공, 없으면 상태 캡션 + 상태 알림(`AD-04`)이다 —
     이 PC 에 깔렸는지에 기대지 않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
@@ -164,17 +166,20 @@ def test_the_dropped_row_warning_stands_under_the_saved_notice(
         **{
             registration.REGISTRATION_FLASH_KEY: saved,
             registration.REGISTRATION_DROP_FLASH_KEY: FlashNote(
-                "warning", notice, ":material/warning:"
+                "warning", notice, ":material/warning:", popup_only=True
             ),
         }
     )
 
-    succeeded = [item.value for item in successes(app)]
-    warned = [item.value for item in app.warning]
-    banner = "BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다."
-    # 알림 칸은 저장 단추 바로 아래라 맨 위 설정 띠보다 뒤에 선다.
-    assert succeeded == ([banner, saved] if package_ready else [saved])
-    assert warned == [notice]
+    # 설정 띠의 점검 결론은 초록 상자가 아니라 값 줄(평문)이다 — 성공은 저장 알림 하나뿐.
+    assert [item.value for item in successes(app)] == [saved]
+    banner_lines = [
+        item.value for item in app.caption if item.value == registration.BANNER_READY_LINE
+    ]
+    assert banner_lines == ([registration.BANNER_READY_LINE] if package_ready else [])
+    assert not app.warning
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [(notice, "FL-03")]
+    assert not page_html(app)
     banner_note = active_state(app, "AD-04")
     if not package_ready:
         assert banner_note is not None and "bigdataquery 패키지가 없어" in banner_note["full"]
@@ -196,12 +201,12 @@ def _drawn_in_order(node: object) -> list[tuple[str, str]]:
     return drawn
 
 
-def test_the_saved_notices_stand_right_under_the_save_button(
+def test_the_saved_notices_go_to_the_alert_popup_not_under_the_save_button(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """저장 결과(성공·대당 Capa 경고 띠)는 누른 「DB 조회 후 시나리오 저장」 바로 아래 칸에 선다
-    (2026-11-01 E2E). 단추가 폼 맨 아래라 탭 맨 위 칸에 그리면 스크롤한 화면(1500×950)에서 두 알림이
-    화면 위 밖이라 저장됐는지도 경고도 보이지 않았다."""
+    """저장 결과(성공 · 대당 Capa 계산 멈춤 경고)는 알림창 · Alarm 으로만 간다 — 경고는 `FL-03` 이고
+    저장 단추 밑 칸에는 그리지 않는다(설계 규칙 UI-NTF-03 · AMB-05 (나)). 그 칸에 그린 글이 없으니
+    칸을 화면 안으로 옮기는 스크립트도 서지 않는다."""
     from capa_simulation.components.flash import FlashNote
 
     monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
@@ -213,25 +218,21 @@ def test_the_saved_notices_stand_right_under_the_save_button(
         **{
             registration.REGISTRATION_FLASH_KEY: saved,
             registration.REGISTRATION_CAPACITY_FLASH_KEY: FlashNote(
-                "warning", stopped, ":material/warning:"
+                "warning", stopped, ":material/warning:", popup_only=True
             ),
         }
     )
 
     drawn = _drawn_in_order(app.main)
-    button = drawn.index(("Button", "DB 조회 후 시나리오 저장"))
-    # 성공은 오른쪽 아래 알림창으로만 가고(D3), 경고는 단추 바로 아래 칸에 선다.
-    assert drawn[button + 1 :][:1] == [("Warning", stopped)]
+    assert ("Warning", stopped) not in drawn
     assert saved in [item.value for item in successes(app)]
-    # 알림 뒤 칸 끝에 칸이 화면 밖일 때만 본문을 옮기는 스크립트가 선다(알림 회차에만).
-    (reveal,) = page_html(app)
-    assert reveal.proto.unsafe_allow_javascript
-    assert "scrollIntoView" in reveal.proto.body and 'block: "nearest"' in reveal.proto.body
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [(stopped, "FL-03")]
+    assert not page_html(app)
 
     app.run()
 
-    assert not page_html(app)
     assert saved not in [item.value for item in successes(app)]
+    assert not flashed(app, "warning")
 
 
 def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
@@ -902,7 +903,8 @@ def test_rows_with_a_blank_cs_are_dropped_and_the_registration_still_saves(
     assert not app.error
     assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
     note = FlashNote(*app.session_state[registration.REGISTRATION_DROP_FLASH_KEY])
-    assert note.kind == "warning"
+    # 저장은 끝났고 고칠 입력이 없다 — 알림창 · Alarm 에만(설계 규칙 UI-NTF-03).
+    assert note.kind == "warning" and note.popup_only
     assert note.message.startswith(
         "CS 가 빈 행 3개(계획 1행 · 경로 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
     )
@@ -952,7 +954,7 @@ def test_a_registration_whose_capacity_stops_still_saves_and_says_how_to_fix_it(
     assert not app.error
     assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
     warning = FlashNote(*app.session_state[registration.REGISTRATION_CAPACITY_FLASH_KEY])
-    assert warning.kind == "warning"
+    assert warning.kind == "warning" and warning.popup_only
     assert warning.message.startswith(
         "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — RQ_RUN_RATE의 "
     )

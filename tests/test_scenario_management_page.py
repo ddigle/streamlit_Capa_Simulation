@@ -36,6 +36,7 @@ from capa_simulation.components.scenario_management import (
     DELETE_BUTTON_KEY,
     DELETE_BUTTON_LABEL,
     DELETE_CONFIRM_KEY,
+    DEMO_OFFICIAL_HELP,
     DISCARD_UNSAVED_KEY,
     FLASH_KEY,
     HISTORY_EXPANDER_KEY,
@@ -411,8 +412,11 @@ def test_the_page_has_no_revision_save_mode_and_points_to_the_sidebar(tmp_path: 
     # 저장소 상태의 공식버전 줄은 초록 상자가 아니라 값 줄이다 — 내장 합성 시드면 표지 배지 하나.
     assert not app.success
     assert not any("DEMO 데이터" in item.value for item in app.info)
-    (official,) = [item.value for item in app.markdown if item.value.startswith("**공식버전**")]
-    assert official.endswith(":blue-badge[합성 DEMO]"), official
+    (official,) = [item for item in app.markdown if item.value.startswith("**공식버전**")]
+    assert official.value.endswith(":blue-badge[합성 DEMO]"), official.value
+    # 운영 전에 할 일은 그 줄의 풍선이다(자리에는 표지만).
+    assert official.proto.help == DEMO_OFFICIAL_HELP
+    assert "BigDataQuery 등록" in DEMO_OFFICIAL_HELP
 
 
 def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> None:

@@ -33,6 +33,9 @@ from test_equipment_pages import _open_tab, _page_script
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.availability_gap_panel import (
+    DETAIL_MODE_KEY,
+    MANUAL_LIST_HELP,
+    MANUAL_LIST_MARK,
     PROCESS_FILTER_KEY,
     RESULT_VIEW_KEY,
     UNIT_FILTER_COLUMNS_KEY,
@@ -334,6 +337,23 @@ def test_the_unit_filter_sheet_leaves_the_input_out() -> None:
         for caption in app.caption
     )
     assert "기존보유 · 입력 비가동은" in UNIT_FILTER_HELP
+
+
+def test_the_unit_list_says_the_input_is_not_in_the_list_with_a_one_way_marker() -> None:
+    """호기 목록 보기의 입력 비가동 표지는 「이 목록에 없음」 한 뜻이다 — 「입력 비가동
+    반영」(이 값에 들었다는 꼬리)을 쓰지 않아 표지와 풍선이 거꾸로 읽히지 않는다(설계 규칙
+    UI-CON-02)."""
+    app = AppTest.from_function(_filter_app, default_timeout=30)
+    app.session_state["manual_rows"] = [("Die Attach", MONTH, 1.0)]
+    app.run()
+    app.segmented_control(key=RESULT_VIEW_KEY).set_value("분류별 내역").run()
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+
+    (marker,) = [item for item in app.caption if str(item.value) == MANUAL_LIST_MARK]
+    assert marker.proto.help == MANUAL_LIST_HELP
+    assert "반영" not in MANUAL_LIST_MARK and "이 목록에 없음" in MANUAL_LIST_MARK
+    assert "이 목록에 없습니다" in MANUAL_LIST_HELP
 
 
 def test_the_real_page_takes_the_saved_input_out_of_the_static_comparison(tmp_path: Path) -> None:

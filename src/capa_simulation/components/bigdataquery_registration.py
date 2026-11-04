@@ -27,7 +27,13 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
-from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
+from capa_simulation.components.flash import (
+    BESIDE_KINDS,
+    FlashNote,
+    pending_flash,
+    queue_flash,
+    render_flash,
+)
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -76,10 +82,10 @@ from capa_simulation.services.korean_particle import with_object_particle
 
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
 REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
-# 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고. 성공 알림 바로 밑, 같은 칸에 선다.
+# 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고 — 알림창 · Alarm 에만(성공 알림 뒤).
 REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
-# 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고 띠(`RegistrationCapacityCheck`). 같은 칸
-# 맨 밑.
+# 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고(`RegistrationCapacityCheck`) — 알림창 ·
+# Alarm 에만(맨 뒤). 푸는 길은 그 전문(Alarm)이 말한다.
 REGISTRATION_CAPACITY_FLASH_KEY = "bigdataquery_registration_capacity_flash"
 REGISTRATION_FLASH_KEYS: Final = (
     REGISTRATION_FLASH_KEY,
@@ -88,10 +94,9 @@ REGISTRATION_FLASH_KEYS: Final = (
 )
 # 저장 결과 칸(저장 단추 바로 아래)이 화면 밖이면 마지막 알림이 화면 아래에 닿게 본문을 옮기는
 # 스크립트 — 이미 보이면 움직이지 않는다(`block: "nearest"`). 단추를 화면 맨 아래에 두고 누르면 그
-# 아래 칸이 화면 밖이라 저장됐는지도 대당 Capa 경고 띠도 보이지 않았다(2026-11-01 E2E —
-# 1920×1080). 글은 알림(저장 결과 · 저장하지 못한 까닭)을 그린 회차에만 그 칸 끝에 서고, 앞머리의
-# 일회 표지가 회차마다 달라 같은 자리에서도 다시 돈다(Streamlit 은 같은 글의 스크립트를 다시 돌리지
-# 않는다).
+# 아래 칸이 화면 밖이라 칸의 글이 보이지 않았다(2026-11-01 E2E — 1920×1080). 글은 칸에 알림(저장하지
+# 못한 까닭)을 그린 회차에만 그 칸 끝에 서고, 앞머리의 일회 표지가 회차마다 달라 같은 자리에서도
+# 다시 돈다(Streamlit 은 같은 글의 스크립트를 다시 돌리지 않는다).
 REVEAL_NOTICE_SCRIPT: Final = """<script>/* {nonce} */
 (() => {{
   const me = document.currentScript;
@@ -101,6 +106,9 @@ REVEAL_NOTICE_SCRIPT: Final = """<script>/* {nonce} */
   if (last) requestAnimationFrame(() => last.scrollIntoView({{block: "nearest"}}));
 }})();
 </script>"""
+
+# 설정 띠 — 목록 · 상세 조회 SQL 과 패키지가 모두 준비됐을 때의 값 줄.
+BANNER_READY_LINE: Final = "**BigDataQuery 설정** · 목록 · 상세 조회 SQL · 패키지 확인됨"
 
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
@@ -272,8 +280,8 @@ def _render_configuration_banner(
     alert_tab: str | None = "",
 ) -> None:
     """설정 상태 줄 — 준비가 안 됐으면 상태 알림(`AD-04` — 알림창 · Alarm)으로도 낸다. 자리에는
-    경고 상자 대신 상태 캡션을 둔다(준비됐으면 성공 줄). 회차마다 한 번 부른다(해소 · 이벤트 칸 한
-    자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
+    경고 상자 대신 상태 캡션을 둔다(준비됐으면 값 줄 `BANNER_READY_LINE`). 회차마다 한 번
+    부른다(해소 · 이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
     notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
     hint = None
     if notice is None and not package_ready:
@@ -300,7 +308,8 @@ def _render_configuration_banner(
     if notice is not None:
         st.caption(f":material/settings_alert: {notice}" + (f"\n\n{hint}" if hint else ""))
         return
-    st.success("BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.")
+    # 점검 결론은 값 — 「**라벨** · 값」 평문 줄(설계 규칙 UI-TXT-04, 초록 상자 아님).
+    st.caption(BANNER_READY_LINE)
 
 
 def _registered_scenarios(
@@ -384,14 +393,14 @@ def _run_catalog_query(window: QueryWindow) -> None:
 def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     result = _stored_result()
     if result is None:
-        st.info("기간을 지정하고 조회하면 시뮬레이션 코드 목록이 여기 표시됩니다.")
+        st.caption("조회한 시뮬레이션 코드 목록이 없습니다.")
         return
     st.caption(
         f"{result.window.label()} · {result.queried_at:%H:%M:%S} 조회 · "
         f"코드·PLAN 기준 {len(result.frame):,}건"
     )
     if result.frame.empty:
-        st.info("이 기간에는 시뮬레이션 코드가 없습니다. 기간을 넓혀 다시 조회하세요.")
+        st.caption("이 기간에는 시뮬레이션 코드가 없습니다.")
         return
 
     with st.container(horizontal=True, gap="small"):
@@ -422,7 +431,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         registered_codes=registered_codes,
     )
     if visible.empty:
-        st.info("검색 조건에 맞는 코드가 없습니다.")
+        st.caption("검색 조건에 맞는 코드가 없습니다.")
         return
     if len(visible) > CATALOG_BUSY_ROWS:
         st.caption("행이 많아 표 조작이 느릴 수 있습니다. 검색어로 좁히세요.")
@@ -638,12 +647,13 @@ def _render_registration_form(
             width="stretch",
             disabled=not configured or unsavable,
         )
-    # 저장 결과(성공 · CS 빈 행 경고 · 대당 Capa 경고 띠 · 실패)는 누른 단추 바로 아래 늘 서 있는
-    # 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글 올리기와 같은 꼴). 탭 맨 위에 두면 단추가 폼 맨
-    # 아래라 스크롤한 화면에서 결과가 보이지 않았다(2026-11-01 E2E — 1500×950 에서 알림이 화면 위
-    # 밖). 칸은 알림이 없어도 서서 아래 충돌 보고서의 자리가 밀리지 않는다. 알림을 그린 회차에는 칸
-    # 끝의 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
-    queued = any(pending_flash(key) is not None for key in REGISTRATION_FLASH_KEYS)
+    # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
+    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만
+    # 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가 폼 맨 아래라
+    # 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도 서서 아래
+    # 충돌 보고서의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
+    # 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
+    queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
     notice = render_flash(*REGISTRATION_FLASH_KEYS)
     if queued:
         _reveal_notice(notice)
@@ -652,6 +662,11 @@ def _render_registration_form(
             _save_scenario(repository, database_path, existing_names=existing_names)
         # 저장하면 다음 회차로 넘어가므로(`st.rerun`) 여기까지 오면 칸에 저장하지 못한 까닭이 섰다.
         _reveal_notice(notice)
+
+
+def _drawn_beside(note: FlashNote | None) -> bool:
+    """담아 둔 알림이 칸 안에도 그려지나(경고 · 오류이고 알림창으로만이 아님 — `flash`)."""
+    return note is not None and note.kind in BESIDE_KINDS and not note.popup_only
 
 
 def _reveal_notice(slot: DeltaGenerator) -> None:
@@ -724,6 +739,8 @@ def _save_scenario(
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
         "올렸습니다.",
     )
+    # 아래 두 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
+    # UI-NTF-03 · AMB-05 (나) — 저장 단추 밑에는 그리지 않는다).
     if prepared.blank_cs.dropped:
         # 저장은 됐다 — 막지 않고 알린다. 같은 수가 리비전 메모에도 남는다.
         queue_flash(
@@ -731,15 +748,17 @@ def _save_scenario(
             prepared.blank_cs.notice(),
             kind="warning",
             icon=":material/warning:",
+            popup_only=True,
         )
     if registration.capacity.stopped:
-        # 저장은 됐다 — 막지 않고 무엇이 멈췄는지와 푸는 길을 알린다(2026-11-01 사용자 결정).
-        # 꼴·개수는 리비전 메모에도 남는다.
+        # 저장은 됐다 — 막지 않고 무엇이 멈췄는지와 푸는 길을 알린다(2026-11-01 사용자 결정 —
+        # 알림창 짧은 글이 무엇이 멈췄는지, Alarm 전문이 푸는 길). 꼴·개수는 리비전 메모에도 남는다.
         queue_flash(
             REGISTRATION_CAPACITY_FLASH_KEY,
             markdown_safe_tildes(registration.capacity.notice(snapshot.revision.revision_no)),
             kind="warning",
             icon=":material/warning:",
+            popup_only=True,
         )
     st.rerun()
 

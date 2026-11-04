@@ -94,7 +94,7 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
     """78컬럼 품질 표. 막대는 셀 안에 넣어 표 하나로 끝낸다."""
     table = build_source_quality_table(profile, source_rows)
     if table.empty:
-        st.info("이 시나리오에는 원천 컬럼 프로필이 없습니다.")
+        st.caption("이 시나리오에는 원천 컬럼 프로필이 없습니다.")
         return
 
     warning = source_quality_warning(table)

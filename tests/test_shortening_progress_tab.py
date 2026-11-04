@@ -13,6 +13,7 @@ import io
 import re
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -84,6 +85,21 @@ def _progress_cards(app: AppTest) -> list[str]:
 def _notices(app: AppTest) -> str:
     """기준선 저장 · 지우기 결과 알림(알림창 표지 — 버튼 곁 원문 마크다운)을 한 글로."""
     return " ".join(item.value for item in flashed(app))
+
+
+def _in_order(app: AppTest) -> list[Any]:
+    """본문 요소를 화면 차례대로(블록은 그 안을 깊이 우선으로)."""
+    found: list[Any] = []
+
+    def walk(node: Any) -> None:
+        for child in getattr(node, "children", {}).values():
+            if hasattr(child, "children") and not hasattr(child, "value"):
+                walk(child)
+            else:
+                found.append(child)
+
+    walk(app.main)
+    return found
 
 
 def _progress_csv(app: AppTest) -> pd.DataFrame:
@@ -216,8 +232,14 @@ def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirm
 
     assert not app.exception
     assert "같은 이름의 기준선이 이미 있습니다" in _notices(app)
-    # 거절은 알림창 · Alarm 으로만 — 머리 밑 자리에 경고 상자를 세우지 않는다.
+    # 이름이 까닭인 거절은 고칠 입력(「기준선 이름」)이 든 팝오버 폼 위에도 선다(설계 규칙 UI-NTF-03
+    # — 그 자리에서 고칠 입력이 있는 거부는 곁). 머리 밑 자리에 경고 상자를 세우지 않는다.
     assert not any("같은 이름" in str(item.value) for item in app.warning)
+    (refusal,) = [item for item in app.error if "같은 이름의 기준선이 이미 있습니다" in item.value]
+    drawn = [
+        str(getattr(item, "label", "") or getattr(item, "value", "")) for item in _in_order(app)
+    ]
+    assert drawn.index(refusal.value) < drawn.index("기준선 이름")
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
 
     app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
@@ -235,6 +257,24 @@ def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirm
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     assert "shk-prog" not in _html(app)
+    clear_equipment_repository()
+
+
+def test_an_empty_name_is_refused_beside_the_name_field_and_in_the_alert_popup(
+    tmp_path: Path,
+) -> None:
+    """빈 이름도 이름 칸이 까닭인 거절이다 — 팝오버 폼 위 오류 + 알림창(`FL-04`)이고, 고칠 입력이
+    없는 거절(머리 밑 칸 · 경고 상자)로 가지 않는다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run(database_path)
+    app = _name_input(app).set_value("   ").run()
+    app = _save_button(app).click().run()
+
+    assert not app.exception
+    assert any("기준선 이름을 적어 주세요" in item.value for item in app.error)
+    assert [item.code for item in flashed(app) if "기준선 이름을 적어" in item.value] == ["FL-04"]
+    assert not app.warning
+    assert DuckDBEquipmentRepository(database_path).list_shortening_baselines() == ()
     clear_equipment_repository()
 
 

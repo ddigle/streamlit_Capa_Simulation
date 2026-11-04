@@ -745,7 +745,7 @@ def _render_comparison_picker(database_path: str) -> None:
             st.error(bootstrap_error_message(exc))
             return
         if not scenarios:
-            st.info("저장된 시나리오가 없습니다.")
+            st.caption("저장된 시나리오가 없습니다.")
             st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
             return
@@ -780,7 +780,7 @@ def _render_comparison_picker(database_path: str) -> None:
         revision_by_id = {revision.revision_id: revision for revision in revisions}
         if not revision_by_id:
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
-            st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
+            st.caption("선택한 시나리오에 저장된 리비전이 없습니다.")
             return
         # 시나리오를 바꾸면 앞서 고른 리비전은 남의 것이 된다. 위젯을 만들기 전에 그 시나리오의
         # 첫 리비전(선택 상자의 기본값)으로 **적는다.** 칸을 지우기만 하면 서버는 기본값을 쓰지만
@@ -1631,7 +1631,7 @@ def _render_monthly_amount_editor(
         st.markdown(editor.title)
         st.caption(profile_version_caption(profile, empty=editor.empty))
         if not months:
-            st.info("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
+            st.caption("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
         _render_hidden_months_marker(months, stored)
         table = pd.DataFrame(
@@ -2564,7 +2564,7 @@ def _render_execution_editor(
             profile_version_caption(execution_profile, empty="아직 넣은 확보율 보정이 없습니다")
         )
         if not months or not process_options:
-            st.info("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
+            st.caption("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
             return
         table = _execution_editor_frame(execution_profile)
         with st.form("home_execution_capacity_form"):

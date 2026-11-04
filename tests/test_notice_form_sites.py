@@ -39,25 +39,11 @@ OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts
 ALLOWED_TOASTS: dict[tuple[str, str], tuple[str, ...]] = {}
 # (파일, 맨 바깥 함수) → 초록 상자 부름마다 까닭(문서 차례).
 ALLOWED_SUCCESS: dict[tuple[str, str], tuple[str, ...]] = {
-    # 「알림이 없습니다.」 — Admin 알림 모음의 빈 결과.
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (UNSETTLED,),
-    # 「이 실행에서 예약이 켜져 있습니다.」 — 자동 갱신 「지금 상태」 값.
-    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_status"): (UNSETTLED,),
-    # 「BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.」 — 설정 띠의 점검 결론.
-    (
-        "src/capa_simulation/components/bigdataquery_registration.py",
-        "_render_configuration_banner",
-    ): (UNSETTLED,),
-    # 제약 시뮬레이션 달 단계 카드의 확보 판정 — 미확보 경고 상자와 한 쌍(`PLACE_VERDICT`).
-    ("src/capa_simulation/components/constraint_simulation_view.py", "_render_month_steps"): (
-        UNSETTLED,
-    ),
-    # 「저장된 도면: … · 캔버스 …」 — 도면 팝업의 지금 값.
+    # 「저장된 도면: … · 캔버스 …」 — Space 도면 팝업의 지금 값(Space 화면 갈래가 맡아 다음 판에 값
+    # 줄로 옮긴다).
     ("src/capa_simulation/components/floor_layout_upload.py", "_render_current_state"): (
         UNSETTLED,
     ),
-    # 「12개 표의 월 축 일치 · …」 — 월 머지 미리보기의 점검 결론.
-    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (UNSETTLED,),
 }
 
 

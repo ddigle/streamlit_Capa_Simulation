@@ -129,6 +129,8 @@ def test_the_performance_screen_says_no_process_in_one_plain_line(
     opened = next(item for item in app.tabs if item.label == tab)
     assert not opened.get("success") and not opened.get("warning")
     assert line in _lines(opened.get("caption"))
+    # 과제가 붙는 규칙(설명)은 구획 제목 풍선이다 — 빈 결과 줄과 같은 회색 평문으로 붙지 않는다.
+    assert not [text for text in _lines(opened.get("caption")) if "과제가 붙습니다" in text]
 
 
 # ------------------------------------------------------------------------------ 원천 품질

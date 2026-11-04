@@ -194,18 +194,25 @@ class BaselineNameTakenError(ValueError):
         super().__init__(baseline_name_taken_message(name))
 
 
+class BaselineNameInvalidError(ValueError):
+    """기준선 이름이 비었거나 너무 길다(`normalize_baseline_name`) — 이름 칸이 까닭인 거절이라
+    화면이 같은 이름 거절(`BaselineNameTakenError`)과 함께 이름 칸 곁에 그린다."""
+
+
 def default_baseline_name(day: date) -> str:
     """`기준선 저장` 의 기본 이름."""
     return f"{day:%Y-%m-%d} 기준선"
 
 
 def normalize_baseline_name(value: object) -> str:
-    """앞뒤 공백을 걷은 이름. 비었거나 너무 길면 `ValueError` 다."""
+    """앞뒤 공백을 걷은 이름. 비었거나 너무 길면 `BaselineNameInvalidError`(`ValueError`)다."""
     text = "" if value is None else str(value).strip()
     if not text:
-        raise ValueError("기준선 이름을 적어 주세요.")
+        raise BaselineNameInvalidError("기준선 이름을 적어 주세요.")
     if len(text) > BASELINE_NAME_MAX_LENGTH:
-        raise ValueError(f"기준선 이름은 {BASELINE_NAME_MAX_LENGTH}자 이하여야 합니다.")
+        raise BaselineNameInvalidError(
+            f"기준선 이름은 {BASELINE_NAME_MAX_LENGTH}자 이하여야 합니다."
+        )
     return text
 
 

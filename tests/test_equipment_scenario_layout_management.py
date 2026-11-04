@@ -22,7 +22,7 @@ from typing import Any
 
 import duckdb
 import pytest
-from alert_marks import events, shown, successes
+from alert_marks import active_state, events, shown, states, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_publish_guard import stale_press
 from test_equipment_scenario_repository import (
@@ -128,6 +128,43 @@ def test_the_tables_name_the_stored_layout_rows_and_the_old_code_traces() -> Non
     assert "r4로 되돌리기" in sentence
     assert "모두 2개" in sentence
     assert layout_trace_sentence(_scenario(), [_revision(1), _revision(2, "d2")]) is None
+
+
+def _trace_report() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.equipment_scenario_management import report_layout_traces
+    from capa_simulation.equipment_scenario_activation import EquipmentSession
+    from capa_simulation.persistence.equipment_repository import EquipmentScenarioCatalog
+
+    report_layout_traces(
+        EquipmentSession(EquipmentScenarioCatalog(scenarios=st.session_state["s"]))
+    )
+
+
+def test_the_old_code_traces_list_is_a_state_alert_not_a_place_line() -> None:
+    """옛 판 흔적이 있는 설비 시나리오 목록(이름 · 개수 — 내역)은 자리 줄이 아니라 상태 알림
+    `SC-03` 이다 — 짧은 글은 건수 · 고칠 곳, 전문은 이름 · 개수 · 되살리는 길(설계 규칙 UI-TXT-04 ·
+    UI-NTF-02). 흔적이 없으면 「해소」(조건 없음)로 부른다."""
+    app = AppTest.from_function(_trace_report, default_timeout=60)
+    app.session_state["s"] = (
+        _scenario(layout_trace_count=2),
+        _scenario(equipment_scenario_id="ops", scenario_name="운영 일정"),
+    )
+    _ok(app.run())
+
+    note = active_state(app, "SC-03")
+    assert note is not None
+    assert note["short"].startswith(
+        "옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 1개"
+    )
+    assert "「셋업 실무」 2개" in note["full"] and "운영 일정" not in note["full"]
+    assert not app.caption and not app.warning
+
+    app.session_state["s"] = (_scenario(),)
+    _ok(app.run())
+    assert active_state(app, "SC-03") is None
+    assert [item["active"] for item in states(app, "SC-03")] == [False]
 
 
 def test_the_stored_rows_carry_their_effect_against_the_official() -> None:

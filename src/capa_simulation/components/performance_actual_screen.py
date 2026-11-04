@@ -247,7 +247,7 @@ def _render_detail(
     if product != _ALL:
         view = view.loc[view["제품정보"].astype(str).eq(product)]
     if view.empty:
-        st.info("선택한 조건에 해당하는 실적이 없습니다.")
+        st.caption("선택한 조건에 해당하는 실적이 없습니다.")
         return
     # 위젯까지 그린 뒤에 나간다. 앞에서 나가면 탭을 오갈 때 조회 조건이 초기화된다.
     if tab_is_hidden(owner_tab):
@@ -330,8 +330,12 @@ def _render_actions(
         )
 
     with st.container(border=True):
-        st.markdown("#### :material/assignment: 개선과제")
-        st.caption("정상이 아닌 공정에만 과제가 붙습니다. 순위와 과제가 따로 놀지 않게 합니다.")
+        # 과제가 붙는 규칙(설명)은 구획 제목 풍선이 말한다 — 자리에는 빈 결과 · 표만 둔다(설계 규칙
+        # UI-TXT-01 · UI-TXT-04).
+        st.markdown(
+            "#### :material/assignment: 개선과제",
+            help="정상이 아닌 공정에만 과제가 붙습니다 — 순위와 과제가 따로 놀지 않게 합니다.",
+        )
         if actions.empty:
             st.caption("지금 기준으로는 개선과제가 필요한 공정이 없습니다.")
         else:

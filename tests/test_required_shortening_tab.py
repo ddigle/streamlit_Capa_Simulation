@@ -390,13 +390,18 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
 
 
 def test_an_empty_fleet_explains_the_empty_card(tmp_path: Path) -> None:
-    """호기가 없고 샘플도 끄면 고를 조건이 없다 — 카드를 비워 두지 않고 까닭을 한 줄 적는다."""
+    """호기가 없고 샘플도 끄면 고를 조건이 없다 — 카드를 비워 두지 않고 값 한 마디(하는 법은 풍선)를
+    두고, 본문에는 빈 결과 평문 한 줄만 둔다(같은 말을 두 번 그리지 않는다 — UI-TXT-04 · 07)."""
+    from capa_simulation.components.sample_data import NO_UNITS_HELP, NO_UNITS_MARK
+
     app = _run(_database(tmp_path))
     app = app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
 
     assert not app.exception
-    assert any("조회할 호기가 없습니다" in str(item.value) for item in app.sidebar.caption)
-    assert any("등록된 호기가 없습니다" in str(item.value) for item in app.info)
+    (mark,) = [item for item in app.sidebar.caption if str(item.value) == NO_UNITS_MARK]
+    assert mark.proto.help == NO_UNITS_HELP
+    assert not app.info
+    assert "등록된 호기가 없습니다." in [str(item.value) for item in app.main.caption]
     assert not _cards(app)
     clear_equipment_repository()
 
@@ -906,11 +911,22 @@ def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_screen_off
     tmp_path: Path,
 ) -> None:
     """가정을 켜도 이 화면(보기·CSV 세 벌·기준선·진척 비교)은 공식 계획이다 — 가정이 켜졌음은 머리
-    변경 칩이 알리고 이 화면 본문에는 적지 않는다. 공식 대 가정 비교 보기(토글)는 없다. 입력은 조건
-    카드(사이드바) 끝 「이 세션만」 묶음이다(공정 Capa 상세와 같은 세션 칸)."""
+    변경 칩이 알리고 이 화면 본문에는 적지 않는다. 이 화면에 걸리지 않음은 조건 카드 UPEH 칸의 표지
+    「이 화면 미반영」 + 풍선과 % 칸 풍선 끝이 말한다(가정이 꺼지면 표지도 없다). 공식 대 가정 비교
+    보기(토글)는 없다. 입력은 조건 카드(사이드바) 끝 「이 세션만」 묶음이다(공정 Capa 상세와 같은
+    세션 칸)."""
+    from capa_simulation.components.upeh_assumption_controls import (
+        NOT_APPLIED_HELP,
+        NOT_APPLIED_MARK,
+    )
+
     app = _assumed(tmp_path)
     assert {"UPEH 적용 시작", "UPEH 적용 끝"} <= {box.label for box in app.sidebar.selectbox}
-    assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == 150
+    percent = app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY)
+    assert percent.value == 150
+    assert str(percent.help).endswith(NOT_APPLIED_HELP)
+    marks = [item for item in app.sidebar.caption if str(item.value) == NOT_APPLIED_MARK]
+    assert len(marks) == 1 and marks[0].proto.help == NOT_APPLIED_HELP
     assert not _assumption_lines(app), _assumption_lines(app)
     assert not any("UPEH 가정 비교" in str(toggle.label) for toggle in app.toggle)
     assert "UPEH 가정 비교" not in _html(app)
@@ -918,6 +934,11 @@ def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_screen_off
     assert "UPEH 가정" not in units.columns
     captured = app.session_state["captured_downloads"]["equipment_shortening_units_csv"]
     assert "upeh" not in str(captured["file_name"])
+
+    app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = 100
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert not [item for item in app.sidebar.caption if str(item.value) == NOT_APPLIED_MARK]
     clear_equipment_repository()
 
 

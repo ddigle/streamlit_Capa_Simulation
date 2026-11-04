@@ -1262,6 +1262,8 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
     가리키지 않는다(E2E — 칸을 고친 뒤 팝업 「저장」 을 연 꼴)."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_BUTTON_HELP,
+        SAVE_BUTTON_KEY,
         SAVE_MODE,
         UNAPPLIED_SMALL_EDITS_NOTE,
     )
@@ -1278,12 +1280,11 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
 
     assert not app.exception, [item.message for item in app.exception]
     captions = [str(item.value) for item in app.caption]
-    note = next(caption for caption in captions if "에 저장합니다 — 공통 칸은 공통 대장" in caption)
-    assert note.endswith(
-        "바뀐 쪽만 새 리비전이 됩니다. 기존 보유대수·비가동 일정 표에서 아직 「편집본에 "
-        "적용」 하지 않은 편집은 저장되지 않습니다."
-    )
-    assert note.endswith(UNAPPLIED_SMALL_EDITS_NOTE)
+    # 저장하면 사라지는 편집만 곁 한 줄이고, 무엇이 어디로 저장되나(저장 규칙)는 저장 단추 풍선이다.
+    assert UNAPPLIED_SMALL_EDITS_NOTE in captions
+    assert not any("공통 칸은 공통 대장" in caption for caption in captions)
+    assert app.button(key=SAVE_BUTTON_KEY).help == SAVE_BUTTON_HELP
+    assert "바뀐 쪽만 새 리비전이 됩니다" in SAVE_BUTTON_HELP
     assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
 
 

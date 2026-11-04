@@ -3819,7 +3819,7 @@ def _render_history(
     chosen = by_id[selected_id]
     common_id = chosen.common_revision_id or latest_common
     if common_id is None:
-        st.info("공통 대장 리비전이 없어 조회할 수 없습니다.")
+        st.caption("공통 대장 리비전이 없어 조회할 수 없습니다.")
         return
     historical = load_merged_equipment_snapshot(database_path, common_id, selected_id)
     equipment = historical.equipment

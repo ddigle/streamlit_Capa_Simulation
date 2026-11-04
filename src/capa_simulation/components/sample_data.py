@@ -1,4 +1,4 @@
-# Purpose: 아직 원천이 붙지 않은 화면에서 샘플 데이터 표시를 켜고 끄는 공통 스위치를 제공한다.
+# Purpose: 원천이 붙지 않은 화면의 샘플 데이터 공통 스위치와 호기 없음 표지 글을 둔다.
 
 """샘플 데이터 스위치.
 
@@ -32,6 +32,13 @@ from capa_simulation.shared_widget_state import carry_shared_widget_value
 
 SAMPLE_TOGGLE_KEY = "dynamic_capa_sample_data"
 SAMPLE_TOGGLE_LABEL = "샘플 데이터"
+# 호기가 없고 샘플도 끈 설비 화면(가용설비 현황 · 필요 단축 일정)의 조건 카드 값 한 마디
+# (`NO_UNITS_MARK`)에 다는 풍선 — 하는 법은 자리에 적지 않는다(설계 규칙 UI-TXT-04).
+NO_UNITS_MARK = "조회할 호기 없음"
+NO_UNITS_HELP = (
+    "가용설비 현황 「설비 마스터」 탭에서 호기를 입력하거나 「샘플 데이터」 스위치를 켜면 "
+    "화면을 살펴볼 수 있습니다."
+)
 
 
 def render_sample_switch(*, key: str, source: str) -> bool:

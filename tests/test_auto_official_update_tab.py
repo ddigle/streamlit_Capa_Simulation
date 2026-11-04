@@ -129,10 +129,14 @@ def _submit_settings(app: AppTest) -> AppTest:
 
 
 def _alerts(app: AppTest) -> list[tuple[str, str, str]]:
-    """성공 · 경고 알림 (종류, 아이콘, 글) — 성공 결과 알림은 알림창으로만 가므로(D3) 표지에서 읽어
-    앞에 두고, 그 뒤에 본문에 그린 성공 · 경고를 차례대로 둔다(같은 칸에 성공 → 경고 차례로
-    담긴다)."""
-    popped = [("success", item.icon, item.value) for item in flashed(app, "success")]
+    """성공 · 경고 알림 (종류, 아이콘, 글) — 성공과 발행 뒤 경고(`popup_only`)는 알림창으로만 가므로
+    표지에서 읽어 앞에 두고(같은 칸에 성공 → 경고 차례로 담긴다), 그 뒤에 본문에 그린 성공 · 경고를
+    차례대로 둔다."""
+    popped = [
+        (str(item.note["flash"]), item.icon, item.value)
+        for item in flashed(app)
+        if item.note is not None and item.note["flash"] in ("success", "warning")
+    ]
     return popped + [
         (node.type, node.proto.icon, node.proto.body)
         for node in app.main
@@ -538,8 +542,9 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
     assert "공식 v2 W41" in _markdown(app)
 
 
-def test_run_now_shows_uncounted_demand_as_a_warning_under_the_success(database: Path) -> None:
-    """발행한 회차의 소요대수에 들지 않은 수요 경고는 화면 발행처럼 성공 알림 밑에 따로 뜬다.
+def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database: Path) -> None:
+    """발행한 회차의 소요대수에 들지 않은 수요 경고는 화면 발행처럼 성공 알림 뒤 따로 뜬다 —
+    알림창 · Alarm 에만(`FL-03`, 버튼 곁에는 그리지 않음 — 설계 규칙 UI-NTF-03 · AMB-05 (나)).
 
     실행 기록의 사유(기록 표의 칸)에는 발행 줄 뒤에 이어 적힌 그대로 남고, 「경고」 칸에 표지가
     선다.
@@ -561,6 +566,8 @@ def test_run_now_shows_uncounted_demand_as_a_warning_under_the_success(database:
     kind, icon, text = warning
     assert (kind, icon) == ("warning", ":material/warning:")
     assert text.startswith(f"{UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — ")
+    assert [item.code for item in flashed(app, "warning")] == ["FL-03"]
+    assert not app.warning
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in text
     run = repository.list_auto_official_update_runs()[0]
     assert run.reason == f"{head}. {text}"
@@ -814,7 +821,8 @@ def test_a_run_result_cut_off_by_a_rerun_is_found_by_its_token(database: Path) -
 
 
 def test_a_cut_off_published_round_still_shows_its_warning_apart(database: Path) -> None:
-    """기록에서 찾은 발행 회차도 기록 한 칸의 사유를 갈라 경고를 성공 알림 밑에 따로 띄운다."""
+    """기록에서 찾은 발행 회차도 기록 한 칸의 사유를 갈라 경고를 성공 알림 뒤 따로 낸다(알림창 ·
+    Alarm)."""
     from capa_simulation.components.auto_official_update_tab import PENDING_RUN_TOKEN_KEY
 
     repository = _with_w40(database)

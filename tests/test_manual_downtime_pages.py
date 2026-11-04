@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from shortening_script import months_from_today
+from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import _captions as constraint_captions
 from test_constraint_simulation_page import _equipment_database
 from test_constraint_simulation_page import _opened as constraint_opened
@@ -137,9 +138,9 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     assert f"{MANUAL_DOWNTIME_BAND}(" in captions
     # 출처 설명은 그 줄의 풍선이다 — 자리에는 「입력 비가동 반영(n칸 · 합 x대)」 값만.
     band = next(element for element in app.caption if f"{MANUAL_DOWNTIME_BAND}(" in element.value)
-    assert band.proto.help == MANUAL_NOTICE_HELP
     assert "가용설비 현황 › Preference 의 공정 × 달 비가동" in MANUAL_NOTICE_HELP
     assert "가용설비 현황 › Preference 의 공정 × 달 비가동" not in captions
+    assert band.proto.help == MANUAL_NOTICE_HELP
 
     _, entered = _csv(app, "equipment_shortening_months_csv")
 
@@ -175,3 +176,38 @@ def test_constraint_simulation_names_the_entered_downtime_in_its_band(tmp_path: 
     # 모든 달 가용 12 라 넘친 칸은 없다.
     assert "가용 넘침" not in band
     clear_equipment_repository()
+
+
+def _overdrawn_notice() -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    import pandas as pd
+
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.components.required_shortening_panel import _render_manual_notice
+    from capa_simulation.services.manual_downtime import apply_manual_downtime
+
+    available = pd.DataFrame(
+        [(202607, "DEMO-A", 3.0), (202608, "DEMO-A", 0.8)],
+        columns=["생산계획년월", "공정", "가용대수"],
+    )
+    _, effect = apply_manual_downtime(
+        available, (("DEMO-A", 202607, 1.25), ("DEMO-A", 202608, 1.5))
+    )
+    plan = cast(Any, SimpleNamespace(manual_downtime=effect))
+    _render_manual_notice(plan, scope=["DEMO-A"], labels=ProcessLabels())
+
+
+def test_the_overdrawn_places_sit_in_the_band_tooltip_not_on_the_line() -> None:
+    """0 에서 멈춘 칸은 띠 꼬리 표지 「· 가용 넘침 k칸」 하나로 말하고, 그 자리(공정 · 달 —
+    내역)는 그 줄 풍선에 둔다 — 줄 끝에 ⚠ 자리 목록을 늘어놓지 않는다(설계 규칙 UI-TXT-04 ·
+    UI-TXT-07)."""
+    app = AppTest.from_function(_overdrawn_notice, default_timeout=60).run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    (band,) = app.caption
+    assert band.value.endswith("· 가용 넘침 1칸)"), band.value
+    assert "⚠" not in band.value and "0 에서 멈춤" not in band.value
+    assert str(band.proto.help).startswith(MANUAL_NOTICE_HELP)
+    assert "가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): DEMO\\-A 26.08." in str(band.proto.help)

@@ -6,7 +6,8 @@
 (`help=`) · Guide · 알림창으로 옮긴다(UI-TXT-01 · 02 · 03, UI-NTF-02 — 2026-11-04 설계 규칙 확인
 보드 AMB-01 · AMB-02 (가) · AMB-06 (나)). 이 그물은 화면 코드(`app.py` · `app_pages/` ·
 `src/capa_simulation/`)에서 `st.caption` · `st.info` · `st.markdown`(칸 · 사이드바 · 팝업의 같은
-이름 부름 포함, 로거 밖)에 넣는 글이 **서술형으로 끝나는**(「…니다」 · 「…세요」 · 「…다」 등)
+이름 부름 포함, 로거 밖)과 `st.write` · `st.text` · `st.html`(문자열 인자)에 넣는 글이 **서술형으로
+끝나는**(「…니다」 · 「…세요」 · 「…다」 등)
 부름을 (파일, 맨 바깥 함수 — 모듈 본문은 "") 마다 세어 허용 목록과 **정확히** 맞댄다
 (`tests/test_alert_sites.py` 의 꼴). 글은 상수 · f-string · 이은 글 · 같은 함수의 지역 이름 · 모듈
 상수 · 들여온 상수 · 글을 돌려주는 함수까지 푼다(`tests/source_sites.py`).
@@ -20,14 +21,21 @@
   줄인다).
 - 문장으로 끝나지 않는 값 줄(「**라벨** · 값」), 매개변수로 받은 글, 풍선(`help=`)은 그물 밖이다.
 
-까닭 칸은 부름 하나에 하나이고 함수 안 문서 차례다 — 한 함수에 갈래가 섞일 수 있다.
+까닭 칸은 부름 하나에 하나이고 함수 안 문서 차례다 — 한 함수에 갈래가 섞일 수 있다. 차례로 짝지은
+부름과 까닭은 꼴도 맞댄다 — 값 · 표지 · 빈 결과 자리는 평문(`st.caption` · `st.markdown` ·
+`st.write` · `st.text`)이고 파란 상자(`st.info`)가 아니다(UI-TXT-04 — 빈 결과는 평문 한 줄), 빈 결과
+자리의 끝 글은 결론 꼴(「…없습니다」 · 「…같습니다」 등 — `EMPTY_ENDING`)이며, 세 갈래 모두 하는
+법 · 길 안내 꼬리(「…세요」 · 「…에서 정합니다」 — `GUIDANCE_ENDING`)로 끝나지 않는다. 그래서 허용된
+자리의 글을 설명 · 길 안내 문장으로 바꿔 넣으면 수가 같아도 실패한다.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
+from typing import NamedTuple
 
 from source_sites import (
     BESIDE_INPUT,
@@ -40,6 +48,7 @@ from source_sites import (
     UNSETTLED,
     VALUE,
     TextResolver,
+    bare_tail,
     ends_as_sentence,
     first_text_argument,
     method,
@@ -48,16 +57,25 @@ from source_sites import (
     screen_files,
 )
 
-# 자리 글을 그리는 부름 — 상자(`st.info`)와 평문(`st.caption` · `st.markdown`).
-TEXT_METHODS = frozenset({"caption", "info", "markdown"})
+# 자리 글을 그리는 부름 — 상자(`st.info`)와 평문(`st.caption` · `st.markdown` · `st.write` ·
+# `st.text` · `st.html`).
+TEXT_METHODS = frozenset({"caption", "info", "markdown", "write", "text", "html"})
+# 값 · 표지 · 빈 결과가 설 수 있는 꼴 — 평문 부름(상자 `st.info` 는 아니다).
+PLAIN_METHODS = frozenset({"caption", "markdown", "write", "text"})
+# 빈 결과 · 점검 결론의 끝 — 「…없습니다」 · 「…않습니다」 · 「…같습니다」 · 「…마쳤습니다」 ·
+# 「…채워졌습니다」 · 「… 0 입니다」(끝 꾸밈은 걷고 본다).
+EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습니다|채워졌습니다|0 입니다)[.!…]*$")
+# 하는 법 · 길 안내 꼬리 — 값 · 표지 · 빈 결과 자리 글은 이렇게 끝나지 않는다(UI-TXT-03 · AMB-02
+# (가)).
+GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 149
+UNSETTLED_SITES = 137
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app.py", ""): (MARKER,),
-    ("app_pages/admin_area.py", ""): (UNSETTLED, CANNOT_DRAW),
-    ("app_pages/available_equipment_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
+    ("app_pages/admin_area.py", ""): (EMPTY, CANNOT_DRAW),
+    ("app_pages/available_equipment_status.py", ""): (UNSETTLED, EMPTY),
     ("app_pages/calculation_result.py", ""): (UNSETTLED,),
     ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
     ("app_pages/constraint_simulation.py", ""): (
@@ -78,8 +96,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
     ("app_pages/load_conversion.py", ""): (UNSETTLED,),
     ("app_pages/load_conversion.py", "_render_locked_yield_rows"): (UNSETTLED,),
-    ("app_pages/load_conversion.py", "_virtual_product_dialog"): (UNSETTLED,),
-    ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY, UNSETTLED, UNSETTLED),
+    ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
+    ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY, UNSETTLED),
     ("app_pages/reference_data.py", ""): (UNSETTLED,),
     ("app_pages/reference_data.py", "_render_step_view"): (UNSETTLED,),
     ("app_pages/reference_integrity.py", ""): (UNSETTLED,),
@@ -99,7 +117,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
         UNSETTLED,
     ),
-    ("app_pages/required_shortening.py", ""): (UNSETTLED, UNSETTLED),
+    ("app_pages/required_shortening.py", ""): (EMPTY,),
     ("app_pages/space_status.py", ""): (
         UNSETTLED,
         UNSETTLED,
@@ -119,11 +137,12 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/standard_target_capa.py", "_paste_dialog"): (UNSETTLED,),
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (UNSETTLED,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
-    ("app_pages/voc.py", ""): (UNSETTLED, EMPTY),
+    ("app_pages/voc.py", ""): (EMPTY, EMPTY),
     ("app_pages/wip_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (
         UNSETTLED,
         CANNOT_DRAW,
+        EMPTY,
     ),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_poll_running_round"): (
         UNSETTLED,
@@ -182,8 +201,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
     ),
     ("src/capa_simulation/components/bigdataquery_registration.py", "_render_catalog_list"): (
-        UNSETTLED,
-        UNSETTLED,
+        EMPTY,
+        EMPTY,
         EMPTY,
         UNSETTLED,
         UNSETTLED,
@@ -301,7 +320,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
         EMPTY,
-        UNSETTLED,
+        BESIDE_INPUT,
         EMPTY,
         BESIDE_INPUT,
     ),
@@ -379,7 +398,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/past_data_management.py", "_render_save"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_actions"): (
-        UNSETTLED,
         UNSETTLED,
         EMPTY,
     ),
@@ -467,6 +485,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         VALUE,
     ),
     ("src/capa_simulation/components/scenario_management.py", "_render_scenario_actions"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_management.py", "_render_store_status"): (EMPTY,),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (
         UNSETTLED,
         UNSETTLED,
@@ -536,12 +555,20 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
 }
 
 
-def place_sentences(
+class SentenceCall(NamedTuple):
+    """서술형 문장으로 끝나는 자리 글 부름 하나 — 줄 번호, 부른 이름, 끝 글(들)."""
+
+    line: int
+    method: str
+    tails: tuple[str, ...]
+
+
+def place_sentence_calls(
     paths: list[Path] | None = None, root: Path = PROJECT_ROOT
-) -> dict[tuple[str, str], list[int]]:
-    """(파일, 맨 바깥 함수) 마다 서술형 문장으로 끝나는 자리 글 부름의 줄 번호(문서 차례)."""
+) -> dict[tuple[str, str], list[SentenceCall]]:
+    """(파일, 맨 바깥 함수) 마다 서술형 문장으로 끝나는 자리 글 부름(문서 차례)."""
     resolver = TextResolver()
-    found: dict[tuple[str, str], list[int]] = {}
+    found: dict[tuple[str, str], list[SentenceCall]] = {}
     for relative, outer, path, scope, call in screen_calls(paths or screen_files(), root):
         if method(call) not in TEXT_METHODS or receiver(call) in LOGGERS:
             continue
@@ -549,9 +576,22 @@ def place_sentences(
         if argument is None:
             continue
         tails = resolver.tails(argument, path, scope)
-        if any(tail is not None and ends_as_sentence(tail) for tail in tails):
-            found.setdefault((relative, outer), []).append(call.lineno)
+        known = tuple(tail for tail in tails if tail is not None)
+        if any(ends_as_sentence(tail) for tail in known):
+            found.setdefault((relative, outer), []).append(
+                SentenceCall(call.lineno, method(call), known)
+            )
     return found
+
+
+def place_sentences(
+    paths: list[Path] | None = None, root: Path = PROJECT_ROOT
+) -> dict[tuple[str, str], list[int]]:
+    """(파일, 맨 바깥 함수) 마다 서술형 문장으로 끝나는 자리 글 부름의 줄 번호(문서 차례)."""
+    return {
+        site: [call.line for call in calls]
+        for site, calls in place_sentence_calls(paths, root).items()
+    }
 
 
 def _listing(sites: Mapping[tuple[str, str], object]) -> str:
@@ -588,6 +628,34 @@ def test_every_allowed_site_says_why() -> None:
         if not reasons or not set(reasons) <= PLACE_REASONS
     }
     assert not unknown, unknown
+
+
+def _shape_problems(
+    found: Mapping[tuple[str, str], list[SentenceCall]],
+    allowed: Mapping[tuple[str, str], tuple[str, ...]],
+) -> list[str]:
+    """차례로 짝지은 (부름, 까닭)이 그 까닭의 꼴을 어기는 자리(모듈 설명)."""
+    problems: list[str] = []
+    for site, reasons in allowed.items():
+        for call, reason in zip(found.get(site, []), reasons, strict=False):
+            where = f"{site[0]}:{call.line} {site[1] or '(본문)'}"
+            ending = [bare_tail(tail) for tail in call.tails if ends_as_sentence(tail)]
+            if reason in (VALUE, MARKER, EMPTY) and call.method not in PLAIN_METHODS:
+                problems.append(f"{where} — {call.method} 상자(평문 한 줄로)")
+            if reason == EMPTY and not all(EMPTY_ENDING.search(tail) for tail in ending):
+                problems.append(f"{where} — 빈 결과 · 결론 꼴이 아님: {ending}")
+            if reason in (VALUE, MARKER, EMPTY) and any(
+                GUIDANCE_ENDING.search(tail) for tail in ending
+            ):
+                problems.append(f"{where} — 하는 법 · 길 안내 꼬리: {ending}")
+    return problems
+
+
+def test_value_marker_and_empty_sites_are_plain_lines_without_guidance() -> None:
+    """값 · 표지 · 빈 결과 자리는 평문 한 줄이고(상자 아님), 빈 결과는 결론 꼴로 끝나며, 하는 법 ·
+    길 안내 꼬리를 달지 않는다 — 허용된 자리 글을 설명 문장으로 바꿔 넣으면 수가 같아도 걸린다."""
+    problems = _shape_problems(place_sentence_calls(), ALLOWED)
+    assert not problems, "자리 글 까닭과 꼴이 맞지 않습니다:\n" + "\n".join(problems)
 
 
 def test_unsettled_sites_do_not_grow() -> None:
@@ -640,3 +708,45 @@ def test_the_net_reads_sentences_through_names_helpers_and_markup(tmp_path: Path
     found = place_sentences([page], tmp_path)
 
     assert {site: len(lines) for site, lines in found.items()} == {("page.py", "render"): 7}
+
+
+SHAPE_PAGE = """
+import streamlit as st
+
+
+def render(count: int) -> None:
+    st.caption("저장된 시나리오가 없습니다.")
+    st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
+    st.caption("판정 기준은 HOME 설정 → 판정 기준 탭에서 정합니다.")
+    st.write("지금 올라와 있는 저장 리비전이 없습니다.")
+    st.text("저장하지 않고 닫으면 고친 칸은 사라집니다.")
+    st.caption("등록된 호기가 없습니다. 샘플 데이터를 켜세요.")
+"""
+
+
+def test_the_shape_check_catches_boxes_guidance_and_non_conclusions(tmp_path: Path) -> None:
+    """빈 결과 까닭을 든 자리가 상자(`st.info`)이거나, 결론 꼴이 아니거나, 길 안내 꼬리를 달면
+    걸리고, `st.write` · `st.text` 의 문장도 센다."""
+    page = tmp_path / "page.py"
+    page.write_text(SHAPE_PAGE, encoding="utf-8")
+
+    found = place_sentence_calls([page], tmp_path)
+    site = ("page.py", "render")
+    assert [call.method for call in found[site]] == [
+        "caption",
+        "info",
+        "caption",
+        "write",
+        "text",
+        "caption",
+    ]
+
+    problems = _shape_problems(found, {site: (EMPTY, EMPTY, EMPTY, EMPTY, UNSETTLED, EMPTY)})
+
+    assert [problem.split(" — ")[0] for problem in problems] == [
+        "page.py:7 render",
+        "page.py:8 render",
+        "page.py:8 render",
+        "page.py:11 render",
+        "page.py:11 render",
+    ]

@@ -19,6 +19,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as scenario_status
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation import alerts
 from capa_simulation.components.home_main_case_chips import (
     CASE1_CHIP_KEY,
     CASE2_CHIP_KEY,
@@ -495,6 +496,11 @@ def test_a_chip_drawn_before_another_session_changed_its_case_loads_nothing(
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
     assert _notices(app) == [changed_slot_notice(1)]
     assert [item.value for item in successes(app)] == []
+    # 알림창에만 가는 글이라 짧은 글 한도 안에 끝까지 든다(말줄임 없음 — UI-NTF-06).
+    assert all(
+        alerts.short_text(changed_slot_notice(index)) == changed_slot_notice(index)
+        for index in range(3)
+    )
     assert _chip(app, CASE1_CHIP_KEY)[:3] == (
         "Case1",
         literal_markdown("증설안 · r1 · 초기 리비전"),

@@ -598,7 +598,7 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         )
 
     if selected is None or not months:
-        st.info("조회기간에 확보율을 낼 공정이 없습니다.", icon=":material/info:")
+        st.caption("조회기간에 확보율을 낼 공정이 없습니다.")
         return
     process = str(selected)
     process_label = process_labels.label(process)

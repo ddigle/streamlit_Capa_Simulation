@@ -107,7 +107,8 @@ def render_alert_board() -> None:
     if open_count:
         st.markdown(f"**알림 {open_count}건**")
     else:
-        st.success("알림이 없습니다.", icon=":material/check_circle:")
+        # 빈 결과는 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
+        st.caption("알림이 없습니다.")
     for alert in alerts:
         with st.container(border=True):
             st.markdown(f"**{alert.title}**")

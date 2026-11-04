@@ -420,6 +420,7 @@ def _prepare(
             start_month=context.selected_start_month,
             end_month=context.selected_end_month,
             today=today,
+            applied_here=False,
         )
     return _Plan(
         official=official,
@@ -501,7 +502,8 @@ def _render_body(
     inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교. 둘 다 공식
-    계획이다 — UPEH 가정이 켜졌음은 머리 변경 칩이 알린다(자리에 적지 않는다).
+    계획이다 — UPEH 가정이 켜졌음은 머리 변경 칩이, 이 화면에 걸리지 않음은 조건 카드 UPEH 칸의
+    표지 「이 화면 미반영」 과 그 풍선이 말한다(본문에 설명 줄을 두지 않는다).
 
     강조 공정(`shortening_board.current_highlight` — 공정 Capa 상세에서 옮겨 왔거나 보드 줄을
     골랐다)은 두 보기 모두 카드 맨 앞이다. 공정 필터(조건 카드)는 건드리지 않는다.
@@ -870,13 +872,14 @@ def _render_manual_notice(
     """입력 비가동(가용설비 현황 › Preference)을 뺀 계획이면 출처 한 줄.
 
     「입력 비가동 반영(n칸 · 합 x대)」 이다. 보이는 범위(`scope`) 공정에 칸이 없으면 그리지 않는다.
-    그 달 가용보다 커 0 에서 멈춘 칸이 있으면 앞 몇 자리를 공정 표시명·달로 적는다."""
+    그 달 가용보다 커 0 에서 멈춘 칸이 있으면 줄의 표지는 띠 꼬리 「· 가용 넘침 k칸」 하나이고, 앞
+    몇 자리(공정 표시명·달 — 내역)는 그 줄의 풍선에 둔다(설계 규칙 UI-TXT-04 · UI-TXT-07)."""
     note = manual_effect_band(plan.manual_downtime, scope)
     if not note:
         return
     over = overdrawn_rows(plan.manual_downtime)
     over = over.loc[over["공정"].astype("string").isin(list(scope)).fillna(False).to_numpy()]
-    tail = ""
+    help_text = MANUAL_NOTICE_HELP
     if not over.empty:
         places = ", ".join(
             f"{literal_markdown(labels.label(str(process)))} {month_label(int(month))}"
@@ -887,8 +890,11 @@ def _render_manual_notice(
             )
         )
         more = f" 외 {len(over) - _MANUAL_OVER_LIMIT}칸" if len(over) > _MANUAL_OVER_LIMIT else ""
-        tail = f" ⚠ 그 달 가용보다 커 0 에서 멈춤: {places}{more}"
-    st.caption(f":material/event_busy: {note}{tail}", help=MANUAL_NOTICE_HELP)
+        # 풍선은 마크다운으로 그려진다 — 공정 표시명은 글자 그대로 싣는다(`literal_markdown`).
+        help_text = (
+            f"{MANUAL_NOTICE_HELP} 가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): {places}{more}."
+        )
+    st.caption(f":material/event_busy: {note}", help=help_text)
 
 
 def _render_unmatched(plan: ShorteningPlan) -> None:

@@ -242,7 +242,8 @@ def _warnings(app: AppTest) -> list[str]:
 
 
 def _infos(app: AppTest) -> list[str]:
-    return [str(element.value) for element in app.info]
+    """상자(`st.info`)와 평문 한 줄(`st.caption` — 빈 결과, 설계 규칙 UI-TXT-04)의 글."""
+    return [str(element.value) for element in (*app.info, *app.caption)]
 
 
 def _cross_check(app: AppTest) -> pd.DataFrame | None:

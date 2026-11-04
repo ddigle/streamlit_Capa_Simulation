@@ -195,13 +195,13 @@ ARCHIVED_DELETE_SAVE_NAME = "scenario_archived_delete"
 ARCHIVE_SAVE_NAME = "scenario_archive"
 # 고른 보관본이 그 사이 보관함에서 빠진 회차의 누름에 내는 알림 — 아무것도 쓰지 않는다.
 ARCHIVED_GONE_MESSAGE = (
-    "고른 보관본이 그 사이 보관함에서 빠졌습니다(목록으로 되돌렸거나 영구 삭제했습니다) — 아무것도 "
-    "바꾸지 않았습니다. 지금 고른 보관본을 확인한 뒤 다시 누르세요."
+    "고른 보관본이 그 사이 보관함에서 빠져 아무것도 바꾸지 않았습니다 — 목록으로 되돌렸거나 영구 "
+    "삭제했습니다. 지금 고른 보관본을 확인한 뒤 다시 누르세요."
 )
 # 고른 시나리오가 그 사이 목록에서 빠진 회차의 「보관 실행」 에 내는 알림 — 아무것도 쓰지 않는다.
 ARCHIVE_GONE_MESSAGE = (
-    "고른 시나리오가 그 사이 목록에서 빠졌습니다(보관했거나 영구 삭제했습니다) — 아무것도 바꾸지 "
-    "않았습니다."
+    "고른 시나리오가 그 사이 목록에서 빠져 아무것도 바꾸지 않았습니다 — 보관했거나 영구 "
+    "삭제했습니다."
 )
 # 접힘 칸의 key. 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다(`_render_archived_scenarios`).
 ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
@@ -254,6 +254,11 @@ REVISION_NAME_HELP = (
 REVISION_NOTE_HELP = "조회기간·출처 같은 시스템 기록이 있어 고치지 않습니다."
 # 저장소 상태 칸 공식버전 줄의 표지 — 공식버전이 내장 합성 시드일 때만 선다(예외 상태에만 단다).
 DEMO_BADGE = ":blue-badge[합성 DEMO]"
+# 그 줄의 풍선(DEMO 일 때만) — 운영 전에 할 일은 자리에 적지 않고 여기 둔다(설계 규칙 UI-TXT-02).
+DEMO_OFFICIAL_HELP = (
+    "공식버전이 내장 합성 시드(DEMO)입니다 — 운영 전 BigDataQuery 등록으로 실제 시나리오를 "
+    "만들어 새 공식버전으로 지정합니다."
+)
 REVISION_COLUMNS = TableColumns(pick=REVISION_PICK_COLUMN, name=REVISION_NAME_COLUMN)
 
 
@@ -326,7 +331,7 @@ def _render_store_status(
                 st.caption(f"시나리오 ID `{active_id}`")
                 st.caption(f"리비전 ID `{active_revision_id}`")
         else:
-            st.write("지금 올라와 있는 저장 리비전이 없습니다.")
+            st.caption("지금 올라와 있는 저장 리비전이 없습니다.")
         # 공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 이 칸은 저장소 상태 줄이라
         # 「공식버전 · 없음」 값은 남긴다. 있어도 부른다(해소) — 닫힌 탭이면 알리지 않는다.
         if alert_tab is not None:
@@ -343,7 +348,15 @@ def _render_store_status(
                 ),
                 tab=alert_tab,
             )
-        st.markdown(official_status_line(official))
+        st.markdown(
+            official_status_line(official),
+            help=DEMO_OFFICIAL_HELP if _is_demo_official(official) else None,
+        )
+
+
+def _is_demo_official(official: OfficialReleaseSummary | None) -> bool:
+    """공식버전이 내장 합성 시드인가(`DEMO_BADGE` 와 그 풍선이 서는 때)."""
+    return official is not None and official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE
 
 
 def official_status_line(official: OfficialReleaseSummary | None) -> str:
@@ -361,7 +374,7 @@ def official_status_line(official: OfficialReleaseSummary | None) -> str:
         f"{literal_markdown(official.scenario_name)} r{official.revision_no} · "
         f"{literal_markdown(official.release_name)}"
     )
-    if official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE:
+    if _is_demo_official(official):
         line += f" {DEMO_BADGE}"
     return line
 
@@ -1642,7 +1655,11 @@ def _refuse_gone_press(message: str = ARCHIVED_GONE_MESSAGE) -> NoReturn:
     if held is not None:
         queue_flash(FLASH_KEY, held[0], icon=held[1])
     else:
-        queue_flash(FLASH_WARNING_KEY, message, kind="warning", icon=":material/warning:")
+        # 아무것도 쓰지 않았고 그 자리에 고칠 입력이 없다 — 알림창 · Alarm 에만 낸다(그리는 칸은
+        # 누른 단추가 아니라 맨 위 「저장소 상태」 앞이다, 설계 규칙 UI-NTF-03).
+        queue_flash(
+            FLASH_WARNING_KEY, message, kind="warning", icon=":material/warning:", popup_only=True
+        )
     st.rerun()
 
 

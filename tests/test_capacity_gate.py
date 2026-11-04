@@ -83,6 +83,13 @@ def test_an_edit_that_breaks_the_calculation_is_not_saved(
     assert verdict.message is not None and "이번 편집이 깨뜨린" in verdict.message
 
 
+def _popup_short(message: str) -> str:
+    """알림창 짧은 글 — 화면이 `queue_flash(…, popup_only=True)` 로 보낼 때와 같은 접기."""
+    from capa_simulation.alerts import plain_text, short_text
+
+    return short_text(plain_text(message))
+
+
 def test_an_error_that_was_already_there_does_not_block_the_save(
     tables: dict[str, pd.DataFrame],
 ) -> None:
@@ -99,7 +106,9 @@ def test_an_error_that_was_already_there_does_not_block_the_save(
 
     for verdict in (edited, untouched):
         assert verdict.allowed
-        assert verdict.message is not None and "공식버전으로 지정할 수 없습니다" in verdict.message
+        assert verdict.message is not None
+        # 알림창에만 가는 경고라 짧은 글(앞 60자 안팎)이 결과를 싣는다(설계 규칙 UI-NTF-06).
+        assert "공식버전으로 지정할 수 없습니다" in _popup_short(verdict.message)
 
 
 def test_the_uncached_core_judges_like_the_cached_check(tables: dict[str, pd.DataFrame]) -> None:
@@ -170,7 +179,7 @@ def test_a_different_error_after_the_edit_is_not_called_the_old_one(
     assert "편집 전부터 있던" not in verdict.message
     assert "편집 전과 다른" in verdict.message
     assert "RQ_VITAL" in verdict.message and "RQ_RUN_RATE" in verdict.message
-    assert "공식버전으로 지정할 수 없습니다" in verdict.message
+    assert "공식버전으로 지정할 수 없습니다" in _popup_short(verdict.message)
 
 
 def _vital_blank(tables: dict[str, pd.DataFrame], count: int) -> dict[str, pd.DataFrame]:
@@ -200,7 +209,7 @@ def test_the_same_error_with_another_count_is_not_called_a_different_one(
     assert "편집 전과 다른" not in verdict.message
     assert "같은 종류" in verdict.message
     assert "1건" in verdict.message and "2건" in verdict.message
-    assert "공식버전으로 지정할 수 없습니다" in verdict.message
+    assert "공식버전으로 지정할 수 없습니다" in _popup_short(verdict.message)
 
 
 def _density_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
@@ -462,6 +471,32 @@ def test_a_derived_result_that_breaks_the_calculation_is_not_saved(
     inherited = derived_save_verdict(_broken(tables), (healthy, broken))
     assert inherited.allowed
     assert inherited.message is not None and "공식버전으로 지정할 수 없습니다" in inherited.message
+
+
+def test_the_derived_save_warning_says_the_result_first_within_the_popup_length(
+    tmp_path: Path, tables: dict[str, pd.DataFrame]
+) -> None:
+    """남은 계산 오류 경고는 알림창에만 간다 — 짧은 글(앞 `SHORT_LIMIT` 자)이 원본 이름이 길어도
+    「Capa 계산 오류」 와 「공식버전으로 지정할 수 없습니다」 를 싣는다(설계 규칙 UI-NTF-06)."""
+    from capa_simulation.alerts import plain_text, short_text
+
+    repository = DuckDBScenarioRepository(tmp_path / "derived.duckdb")
+    repository.initialize()
+    healthy = _snapshot(repository, "계산되는 원본", tables)
+    long_names = [
+        _snapshot(
+            repository,
+            f"DEMO PSM W43 정기 아주 긴 원본 이름 (DEMO-SIM-264{index})",
+            _broken(tables),
+        )
+        for index in range(2)
+    ]
+
+    verdict = derived_save_verdict(_broken(tables), (healthy, *long_names))
+
+    assert verdict.message is not None
+    short = short_text(plain_text(verdict.message))
+    assert "Capa 계산 오류" in short and "공식버전으로 지정할 수 없습니다" in short, short
 
 
 def test_a_merge_left_without_a_module_points_to_a_new_merge(tmp_path: Path) -> None:

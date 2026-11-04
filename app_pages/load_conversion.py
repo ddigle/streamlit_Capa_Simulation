@@ -519,7 +519,10 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     """기존 제품의 기준정보를 새 제품 키로 복제한다. 계획은 0 으로 시작한다."""
     source_candidates = available_source_products(scenario["tables"])
     if source_candidates.empty:
-        st.info("복제할 수 있는 제품이 없습니다. 기준정보가 완결된 제품이 하나는 있어야 합니다.")
+        st.caption(
+            "복제할 수 있는 제품이 없습니다.",
+            help="기준정보가 완결된 제품이 하나는 있어야 복제할 수 있습니다.",
+        )
         return
     source_labels = [
         f"{row['제품정보']} · {row['Stack']}" for _, row in source_candidates.iterrows()

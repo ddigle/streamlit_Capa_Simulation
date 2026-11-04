@@ -360,7 +360,7 @@ def _render_detail(
         wafer_type=None if wafer_type == _ALL else wafer_type,
     )
     if filtered.empty:
-        st.info("선택한 조건에 해당하는 Dynamic Capa 데이터가 없습니다.")
+        st.caption("선택한 조건에 해당하는 Dynamic Capa 데이터가 없습니다.")
         return
 
     detail_summary = aggregate_dynamic_capacity(filtered, ["공정"]).iloc[0]

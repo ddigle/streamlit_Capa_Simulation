@@ -737,7 +737,7 @@ def _unit_modules(modules: tuple[ModuleStart, ...]) -> tuple[UnitModule, ...]:
 
 if selected_process is None or not months or period is None:
     render_idle_held_picker()
-    st.info("조회기간에 확보율을 낼 공정이 없습니다.", icon=":material/info:")
+    st.caption("조회기간에 확보율을 낼 공정이 없습니다.")
     st.stop()
 
 process = str(selected_process)
@@ -764,10 +764,7 @@ def product_ready() -> bool:
         return False
     if selected_product is None:
         render_header(process, f"**{literal_markdown(process_label)}**")
-        st.info(
-            "이 공정은 조회기간에 소요가 있는 제품이 없어 제약 제품을 고를 수 없습니다.",
-            icon=":material/info:",
-        )
+        st.caption("이 공정은 조회기간에 소요가 있는 제품이 없어 제약 제품을 고를 수 없습니다.")
         return False
     return True
 
@@ -952,10 +949,9 @@ st.caption(band)
 if period.moved:
     st.info("조회기간이 바뀌어 제약 기간을 보이는 달로 옮겼습니다.", icon=":material/event_busy:")
 if result.kpis.constrained_months == 0:
-    st.info(
+    st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "
-        "없습니다.",
-        icon=":material/info:",
+        "없습니다."
     )
 
 render_constraint_kpis(result, labels)

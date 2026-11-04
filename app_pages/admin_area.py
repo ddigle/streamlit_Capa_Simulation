@@ -96,7 +96,7 @@ with source_quality_tab:
         # 원천이 없는 시나리오(복제본 등)가 정상이다. 그때 화면을 멈추지 않는다.
         scenario_id = active_persisted_scenario_id()
         if scenario_id is None:
-            st.info("활성 시나리오가 없습니다. 시나리오를 먼저 불러오세요.")
+            st.caption("활성 시나리오가 없습니다.")
         else:
             try:
                 source_profile = repository.load_source_profile(scenario_id)

@@ -323,10 +323,13 @@ def _notify(text: str) -> None:
 
 
 def changed_slot_notice(index: int) -> str:
-    """누른 칩의 짝이 그린 뒤 바뀌었을 때의 알림(슬롯 차례 `index` — 공식·Case1·Case2)."""
+    """누른 칩의 짝이 그린 뒤 바뀌었을 때의 알림(슬롯 차례 `index` — 공식·Case1·Case2).
+
+    알림창에만 가는 글이라 짧은 글 한도(`alerts.SHORT_LIMIT`) 안에 끝까지 든다(설계 규칙
+    UI-NTF-06 — 무엇을 · 어디서)."""
     return (
-        f"{_SLOT_NAMES[index]} 칩의 지정이 그사이 바뀌어 아무것도 하지 않았습니다 — 칩을 새로 "
-        "그렸으니 풍선을 보고 다시 눌러 주세요."
+        f"{_SLOT_NAMES[index]} 칩 지정이 그사이 바뀌어 불러오지 않았습니다 — 새로 그린 칩의 "
+        "풍선을 보고 다시 누르세요."
     )
 
 

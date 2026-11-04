@@ -21,9 +21,9 @@
   프로세스에서 다른 회차가 도는 중이면 돌지 않고 알린다. 현재 공식버전에 주차가 없으면 아무것도
   하지 않고 오류로 알린다(기록도 남기지 않는다). 회차 전에 세션에 표를 적어 두므로, 도는 사이
   다른 칸을 눌러 결과 알림이 끊겨도 새 실행이 실행 기록에서 찾는다 — 아직 돌면 끝날 때까지 기록을
-  다시 보다가 결과를 보인다. 발행한 회차에 소요대수에
-  들지 않은 수요가 있었으면 화면 발행과 같이 성공 알림 밑에 그 건수를 경고로 따로 띄운다(실행 기록의
-  사유에는 이어 적힌 그대로다).
+  다시 보다가 결과를 보인다. 발행한 회차에 소요대수에 들지 않은 수요가 있었으면 화면 발행과 같이
+  성공 알림 뒤 그 건수를 경고로 따로 낸다 — 알림창 · Alarm 에만(실행 기록의 사유에는 이어 적힌
+  그대로다).
 - **실행 기록·off 공정·설정 변경 기록** 표. 실행 기록은 그 경고가 사유 끝에 이어 적혀 칸이 좁으면
   잘려 안 보이므로 「결과」 바로 뒤 「경고」 칸에 짧은 표지를 따로 둔다.
 
@@ -135,7 +135,8 @@ SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
 # 설정 저장의 제 저장·충돌·거부 표지 이름(`write_guard`).
 SETTINGS_SAVE_NAME = "auto_official_update_settings"
 SETTINGS_SAVED_PREFIX: Final = "자동 갱신 설정을 저장했습니다"
-# 「지금 실행」 결과 알림과, 발행한 회차의 소요대수에 들지 않은 수요 경고(성공 알림 밑에 따로).
+# 「지금 실행」 결과 알림과, 발행한 회차의 소요대수에 들지 않은 수요 경고(성공 알림 뒤 따로 —
+# 알림창 · Alarm 에만).
 # rerun 을 건너 그 자리에 한 번 그린다(`flash`).
 RUN_RESULT_KEY = "auto_official_update_run_result"
 RUN_WARNING_KEY = "auto_official_update_run_warning"
@@ -229,7 +230,9 @@ def _render_status(
         if scheduler is not None:
             status = scheduler.status()
             if stall is None:
-                st.success("이 실행에서 예약이 켜져 있습니다.", icon=":material/schedule:")
+                # 상태 값 줄 — 멈춘 갈래(아래)와 같은 「**예약** · 값」 꼴(초록 상자 아님,
+                # UI-TXT-04).
+                st.markdown("**예약** · 켜짐")
             else:
                 # 멈춘 것 같다 — 까닭 · 할 일은 알림(`AU-01`)에 있다. 상태 줄만 남긴다.
                 st.markdown(
@@ -629,7 +632,7 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
     """끝난 「지금 실행」 회차의 결과를 다음 회차 알림 자리에 맡긴다.
 
     발행한 회차는 사유 끝에 이어 적힌 소요대수에 들지 않은 수요 경고를 갈라 `warning` 에 따로 둔다
-    — 화면 발행처럼 성공 알림 밑의 경고로 띄운다(`_render_run_result`).
+    — 화면 발행처럼 성공 알림 뒤 경고로 알림창 · Alarm 에만 낸다(`_render_run_result`).
     """
     reason, warning = run.reason or "", ""
     if run.status == STATUS_PUBLISHED:
@@ -646,12 +649,15 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
         icon=icon,
     )
     if warning:
-        # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
+        # 허락하면서 하는 경고는 화면 발행(`scenario_management._official_published`)과 같이 성공
+        # 알림 뒤 따로 낸다 — 발행은 끝났고 그 자리에 고칠 입력이 없으니 알림창 · Alarm 에만
+        # 낸다(설계 규칙 UI-NTF-03 · AMB-05 (나)).
         queue_flash(
             RUN_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
+            popup_only=True,
         )
 
 

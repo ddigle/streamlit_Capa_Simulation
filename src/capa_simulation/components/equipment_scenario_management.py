@@ -225,9 +225,12 @@ PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
 RESTORE_SAVE_NAME = "equipment_scenario_restore"
 CLEAR_LAYOUT_SAVE_NAME = "equipment_scenario_clear_layout"
 PUBLISH_SAVE_NAME = "equipment_scenario_publish"
-# 이미 지금 공식인 리비전의 발행 팝오버 — 「공식으로 발행」 을 끈 까닭(개선 거리 I26, 2026-11-01
-# 사용자 결정). 켜 둔 단추 위에 「발행해도 바뀌지 않습니다」 가 서 서로 어긋났다(E2E #37·#97).
-ALREADY_OFFICIAL_LINE = (
+# 이미 지금 공식인 리비전의 발행 팝오버 — 확인 글 끝 값 표지와, 꺼진 「공식으로 발행」 의 풍선(끈
+# 까닭은 그 단추 풍선이 말한다 — 설계 규칙 UI-INP-07 · UI-NTF-05). 단추를 끄는 것은 개선 거리 I26
+# (2026-11-01 사용자 결정) — 켜 둔 단추 위에 「발행해도 바뀌지 않습니다」 가 서 서로 어긋났다(E2E
+# #37·#97).
+ALREADY_OFFICIAL_LINE = ":material/verified: 이미 공식 발행 리비전"
+ALREADY_OFFICIAL_HELP = (
     "이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로 발행」 을 껐습니다."
 )
 REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
@@ -742,7 +745,36 @@ def render_equipment_scenario_section() -> None:
     # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
     # 칸으로 낸다 — 이 구획이 든 탭이 숨은 회차에도 알림창에 뜬다.
     report_session_notices(session)
+    report_layout_traces(session)
     render_equipment_scenario_management(database_path, session)
+
+
+def report_layout_traces(session: EquipmentSession) -> None:
+    """옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오를 상태
+    알림(`SC-03`)으로 낸다 — 시나리오 이름 · 개수 목록은 내역이라 자리에 늘어놓지 않는다(설계 규칙
+    UI-TXT-04 · UI-NTF-02). 없어도 부른다(해소 · 이벤트 칸 한 자리). 고른 시나리오의 흔적과 되살리는
+    길은 리비전 칸 글(`layout_trace_sentence`)이 말한다. DB 전체의 조건이라 범위가 없다(None)."""
+    traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
+    listing = ", ".join(
+        f"{quoted(item.scenario_name)} {item.layout_trace_count:,}개" for item in traced
+    )
+    alerts.state(
+        "SC-03",
+        scope=None,
+        content=[(item.equipment_scenario_id, item.layout_trace_count) for item in traced],
+        active=bool(traced),
+        text=(
+            f"옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 {len(traced)}개 — "
+            "시나리오 관리 › 설비 시나리오"
+        ),
+        full=(
+            "옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 "
+            f"시나리오 — {listing}. 시나리오 관리 「설비 시나리오」 에서 그 시나리오를 고르면 "
+            "리비전 칸이 빠지기 전 리비전과 되살리는 길(이 리비전으로 되돌리기)을 말합니다."
+        )
+        if traced
+        else None,
+    )
 
 
 def report_session_notices(session: EquipmentSession) -> None:
@@ -779,8 +811,9 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     """구획 본문. 「설비 시나리오」 쪽을 고른 회차에만 부른다 — 입력은 위젯이 세션에 지킨다.
 
     한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는 회차에 팝오버 세대를 올려 팝오버를
-    닫힌 채 세우고, 알림·옛 배포 흔적·옛 판 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게
-    늘 서 있는 칸 안에 그린다(`POPOVER_GENERATION_KEY`).
+    닫힌 채 세우고, 알림·옛 배포 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는
+    칸 안에 그린다(`POPOVER_GENERATION_KEY`). 옛 판 흔적이 있는 시나리오 목록은 자리에 그리지 않고
+    구획 머리가 상태 알림으로 낸다(`report_layout_traces`).
     """
     # 앞 회차(더블클릭의 첫 누름)가 새 리비전을 쓰고 뒷정리 전에 끊겼으면 여기서 잇는다 — 리비전
     # 상자를 그리기 전이어야 한다(`PENDING_REVISION_KEY`).
@@ -820,17 +853,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         width="stretch",
         placeholder="",
     )
-    traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
-    with st.container():
-        if traced:
-            st.caption(
-                ":material/history: 옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 "
-                "리비전이 있는 설비 시나리오 — "
-                + ", ".join(
-                    f"「{literal_markdown(item.scenario_name)}」 {item.layout_trace_count:,}개"
-                    for item in traced
-                )
-            )
+    # 옛 판 흔적이 있는 시나리오 목록은 상태 알림(`SC-03` — `report_layout_traces`)이 낸다.
     default_scenario = (
         session.scenario_id if session.scenario_id in scenarios else next(iter(scenarios))
     )
@@ -1366,7 +1389,7 @@ def _render_restore(
     # 버리므로 일정·비가동만 본다(확인 글과 실제 쓰기가 갈리지 않게, 설계 6-6).
     if restore_writes_nothing(preview, official_scenario=official_scenario):
         same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
-        st.info(f"최신 r{scenario.latest_revision_no}의 {same} 모두 같아 되돌릴 것이 없습니다.")
+        st.caption(f"최신 r{scenario.latest_revision_no}의 {same} 모두 같아 되돌릴 것이 없습니다.")
         return
     chosen = revision.schedule_revision_id
     revision_name = st.text_input(
@@ -1988,9 +2011,10 @@ def publish_preview(
     지금 공식의 리비전 번호는 발행 줄이 들고 온 번호다(`official_release_revision_no` — 공식이 그
     시나리오 최신이 아니고 리비전 목록 한도 밖에 있어도 나온다). 모르면 번호를 적지 않는다. 고른
     리비전이 이미 지금 공식이면(`already_official`) 발행해도 쓰지 않으므로(저장소가 그 발행을
-    돌려준다) 「→ 새 공식」 을 적지 않고 지금 공식과, 단추를 끈 까닭(`ALREADY_OFFICIAL_LINE`)만
-    적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도 바뀌지 않습니다」 가 섰다, 단추를 끄는
-    것은 2026-11-01 사용자 결정 — 개선 거리 I26).
+    돌려준다) 「→ 새 공식」 을 적지 않고 지금 공식과 값 표지(`ALREADY_OFFICIAL_LINE`)만 적는다 —
+    단추를 끈 까닭은 그 단추 풍선(`ALREADY_OFFICIAL_HELP`)이다(2026-10-27 E2E — 「→ 새 공식
+    v3」 아래 「발행해도 바뀌지 않습니다」 가 섰다, 단추를 끄는 것은 2026-11-01 사용자 결정 — 개선
+    거리 I26).
     """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
@@ -2167,17 +2191,25 @@ def _render_publish(
     token = tuple(publish_seen_token(scenario, revision, release_no).items())
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
-    # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 위 확인 글 끝 줄이 적는다
-    # (`ALREADY_OFFICIAL_LINE`). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 꺼진다 — 그 단추에
-    # 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은 구획 맨 위 칸이 같은 id 로 다시 낸다
-    # (`flash.render_flash` — 아래 `note_notice`).
+    # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 그 단추 풍선이 말한다
+    # (`ALREADY_OFFICIAL_HELP` — 배치 차이로 막혔으면 위 막힘 줄과 같은 글). 첫 발행 뒤 다시 그린
+    # 화면은 그 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고,
+    # 첫 발행 알림은 구획 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래
+    # `note_notice`).
+    released = already_official(session, revision)
     if not st.button(
         "공식으로 발행",
         type="primary",
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
-        disabled=blocked or already_official(session, revision),
-        help=PUBLISH_BUTTON_HELP,
+        disabled=blocked or released,
+        help=(
+            ALREADY_OFFICIAL_HELP
+            if released
+            else " ".join(layout_lines)
+            if blocked
+            else PUBLISH_BUTTON_HELP
+        ),
     ):
         # 이 회차가 그린 확인 글이 다음 누름이 본 글이다 — 누른 회차에는 적지 않는다.
         remember_seen(PUBLISH_SEEN_KEY, token)

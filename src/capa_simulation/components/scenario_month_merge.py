@@ -140,7 +140,8 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     if overlap:
         st.caption("원본 리비전이나 월 범위를 바꾸면 겹침 처리를 다시 선택합니다.")
     result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
-    st.success(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
+    # 점검 결론은 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
+    st.caption(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
     empty_months = missing_calendar_months(scenario_months(result))
     if empty_months:
         st.warning(

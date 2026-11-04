@@ -29,7 +29,14 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_shortening_progress_tab import _name_input, _save_button, _saved_database
-from test_shortening_view_fragment import _fragment_of, _install, _open, _run, _runner
+from test_shortening_view_fragment import (
+    _fragment_of,
+    _install,
+    _open,
+    _run,
+    _run_refused,
+    _runner,
+)
 
 from capa_simulation.alerts import MARKER_ATTRIBUTE, marker_notes
 from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
@@ -102,18 +109,19 @@ def test_the_view_writes_the_same_event_slots_in_every_branch(
     assert first["flash"] == "success" and "기준선을 저장했습니다" in first["markdown"]
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
 
-    # 곧바로 같은 이름 — 거절 알림은 프래그먼트 회차의 같은 자리에 새 id 로 실린다(알림창이 앞
-    # 알림과 따로 띄운다). 머리 밑 자리에 경고 상자를 세우지 않는다.
+    # 곧바로 같은 이름 — 거절 알림은 프래그먼트 회차의 같은 자리 수 안에 새 id 로 실린다(알림창이
+    # 앞 알림과 따로 띄운다). 이름이 까닭이라 팝오버 폼 위에 오류로도 서고(UI-NTF-03), 머리 밑
+    # 자리에 경고 상자를 세우지 않는다.
     view = _view(runner)
     runner.fragment_queue = [view]
     _run(app, world, lambda app: _name_input(app).set_value(stored.name))
     runner.fragment_queue = [view]
-    _run(app, world, lambda app: _save_button(app).click())
+    _run_refused(app, world, lambda app: _save_button(app).click(), "같은 이름")
     assert runner.started == [[view]]
     rejected = _event_slots(runner.messages, view)
     assert set(rejected) == set(full)
     (second,) = _sent(rejected)
-    assert second["flash"] == "warning" and "같은 이름" in second["markdown"]
+    assert second["flash"] == "error" and "같은 이름" in second["markdown"]
     assert second["id"] != first["id"]
     assert not any("같은 이름" in str(item.value) for item in app.warning)
 

@@ -502,7 +502,7 @@ if entry.shortening_origin is not None:
         )
 
 if selected_process is None or entry.month is None:
-    st.info("조회기간에 확보율을 낼 공정이 없습니다.", icon=":material/info:")
+    st.caption("조회기간에 확보율을 낼 공정이 없습니다.")
     st.stop()
 
 process = str(selected_process)
@@ -901,13 +901,15 @@ with header_marks.container(horizontal=True, vertical_alignment="center", gap="s
     render_page_link(HOME.path, label="HOME", icon=":material/arrow_back:")
 
 
-def assumption_effect_line() -> str:
-    """머리 아래 효과 한 줄 — 공식 → 가정(이 화면의 목표·기간을 함께 적는다). 가정이 꺼졌으면 빈
-    글자."""
+def assumption_effect_line() -> tuple[str, str]:
+    """머리 아래 효과 한 줄(값 — 공식 → 가정)과 그 풍선(이 화면의 단축 목표 · 기간, 필요 단축 일정은
+    가정을 걸지 않음 — 설명은 자리에 두지 않는다, 설계 규칙 UI-TXT-04). 가정이 꺼졌으면 빈 글자
+    둘."""
     if assumption is None or not assumption.active:
-        return ""
+        return "", ""
+    elsewhere = "필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)."
     if not upeh_token or assumed_summary is None:
-        return effect_text(AssumptionEffect(percent=assumption.percent, applied=False))
+        return effect_text(AssumptionEffect(percent=assumption.percent, applied=False)), elsewhere
     official_counts = assumed_counts = None
     if dynamic is not None and dynamic.official_units is not None:
         assumed_counts = plan_counts(dynamic.units, dynamic.canvas.process_months)
@@ -926,17 +928,16 @@ def assumption_effect_line() -> str:
         shortage_months=(official_kpis.shortage_months, kpis.shortage_months),
     )
     basis = (
-        "이 화면 단축 목표 = HOME 설정 → 판정 기준 › 확보기준(월별) · 기간 "
-        f"{month_label(effective_start)}–{month_label(effective_end)}(RQ_REQB) — 필요 단축 일정은 "
-        "이 가정을 걸지 않습니다(늘 공식)"
+        "이 화면 단축 목표는 판정 기준의 확보기준(월별)이고 기간은 "
+        f"{month_label(effective_start)}–{month_label(effective_end)}(RQ_REQB)입니다. {elsewhere}"
     )
-    return f"{effect_text(effect)} · {basis}"
+    return effect_text(effect), basis
 
 
-effect_line = assumption_effect_line()
+effect_line, effect_help = assumption_effect_line()
 if effect_line:
     with header_marks:
-        st.caption(f":material/science: {effect_line}")
+        st.caption(f":material/science: {effect_line}", help=effect_help)
 
 render_process_kpis(
     kpis,

@@ -381,11 +381,11 @@ def render_grouped_monthly_table(
     `render_split_scroll_table` 의 설명을 보라.
     """
     if data.empty:
-        st.info("표시할 환산 데이터가 없습니다.")
+        st.caption("표시할 환산 데이터가 없습니다.")
         return
     month_columns = [column for column in data.columns if column not in classification_columns]
     if not month_columns:
-        st.info("표시할 월별 환산 데이터가 없습니다.")
+        st.caption("표시할 월별 환산 데이터가 없습니다.")
         return
 
     # 닫힌 탭이면 그림 준비는 여기서 접는다. 아래 `render_split_scroll_table` 도 막지만 그 전에

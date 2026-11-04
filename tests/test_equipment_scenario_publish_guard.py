@@ -35,8 +35,10 @@ from test_equipment_scenario_repository import (
 import capa_simulation.components.equipment_scenario_management as management
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
+    ALREADY_OFFICIAL_HELP,
     ALREADY_OFFICIAL_LINE,
     CONTINUE_BUTTON_KEY,
+    PUBLISH_BUTTON_HELP,
     PUBLISH_BUTTON_KEY,
     SCENARIO_KEY,
     continue_confirm_key,
@@ -530,15 +532,19 @@ def test_an_already_official_revision_turns_the_publish_button_off_with_the_reas
     setup = _clone(repository)
     app = _ok(_tab(repository.database_path).run())
 
-    assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    # 꺼진 까닭은 그 단추 풍선이 말한다(UI-INP-07) — 확인 글 끝에는 값 표지만.
+    button = app.button(key=PUBLISH_BUTTON_KEY)
+    assert button.disabled and button.help == ALREADY_OFFICIAL_HELP
     captions = [str(item.value) for item in app.caption]
     assert ALREADY_OFFICIAL_LINE in captions, captions
-    assert "「공식으로 발행」 을 껐습니다" in ALREADY_OFFICIAL_LINE
+    assert "「공식으로 발행」 을 껐습니다" in ALREADY_OFFICIAL_HELP
+    assert not any("을 껐습니다" in text for text in captions), captions
 
     app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
     _ok(app.run())
 
-    assert not app.button(key=PUBLISH_BUTTON_KEY).disabled
+    button = app.button(key=PUBLISH_BUTTON_KEY)
+    assert not button.disabled and button.help == PUBLISH_BUTTON_HELP
     captions = [str(item.value) for item in app.caption]
     assert ALREADY_OFFICIAL_LINE not in captions, captions
     assert any("→ 새 공식 v2" in text for text in captions), captions

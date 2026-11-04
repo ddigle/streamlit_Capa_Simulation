@@ -221,6 +221,16 @@ def _run(app: AppTest, world: _World, step: Callable[[AppTest], Any] | None = No
     _assert_clean(app)
 
 
+def _run_refused(app: AppTest, world: _World, step: Callable[[AppTest], Any], refusal: str) -> None:
+    """이름이 까닭인 거절을 내는 한 회차 — 그 거절만 오류로 선다(팝오버 폼 위, 설계 규칙 UI-NTF-03 —
+    그 자리에서 고칠 입력이 있는 거부는 곁). 다른 오류 · 예외는 없다."""
+    world.downloads.clear()
+    step(app).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [str(element.value) for element in app.error]
+    assert len(errors) == 1 and refusal in errors[0], errors
+
+
 def _choose_level(app: AppTest, world: _World, level: float) -> None:
     _run(app, world, lambda app: app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(level))
 
@@ -387,7 +397,7 @@ def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_
     runner.fragment_queue = [view]
     _run(app, world, lambda app: _name_input(app).set_value(stored.name))
     runner.fragment_queue = [view]
-    _run(app, world, lambda app: _save_button(app).click())
+    _run_refused(app, world, lambda app: _save_button(app).click(), "같은 이름")
     assert runner.started == [[view]]
     assert app.session_state[FULL_RUNS_KEY] == full_runs
     assert "같은 이름" in _notices(app)

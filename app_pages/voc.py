@@ -371,10 +371,10 @@ open_count = 0 if posts.empty else int((~posts["resolved"].astype(bool)).sum())
 st.caption(f"전체 {len(posts):,}건 · 미답변 {open_count:,}건 · 지금 보는 글 {len(visible):,}건")
 
 if posts.empty:
-    st.info("아직 올라온 글이 없습니다. 위에서 첫 글을 남겨 보세요.")
+    st.caption("아직 올라온 글이 없습니다.")
     st.stop()
 if visible.empty:
-    st.info("조건에 맞는 글이 없습니다.")
+    st.caption("조건에 맞는 글이 없습니다.")
     st.stop()
 
 
