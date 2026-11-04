@@ -108,7 +108,8 @@ from capa_simulation.sidebar_status import (
 SIDEBAR_SCENARIO_KEY = "sidebar_scenario_id"
 SIDEBAR_REVISION_KEY = "sidebar_revision_id"
 SIDEBAR_FLASH_KEY = "sidebar_scenario_flash"
-# 성공 알림과 함께 띄울 경고. 저장은 됐지만 남은 계산 오류가 있을 때 쓴다.
+# 성공 알림과 함께 낼 경고 — 저장은 됐지만 남은 계산 오류 · 소요대수에 들지 않은 수요가 있을 때.
+# 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(`queue_flash(…, popup_only=True)`).
 SIDEBAR_FLASH_WARNING_KEY = "sidebar_scenario_flash_warning"
 # 저장 구획의 리비전명·메모 칸의 key 와 그 세대. 세대는 **저장에 성공한 회차**에만 올라 다음
 # 회차에 두 칸이 새 빈 위젯으로 선다(`save_field_key`). 거절된 저장(적용 전 편집 미확인·계산
@@ -132,6 +133,8 @@ SAVE_MODE = "새 리비전 저장"
 SCENARIO_FIELD_ICON = ":material/layers:"
 # 리비전 메모를 선택지 캡션에 붙일 때 자르는 길이. 캡션은 한 줄 정보다.
 _NOTE_PREVIEW_LIMIT = 40
+# 「신규 리비전 저장」 풍선 — 새 리비전에 무엇이 담기는지.
+SAVE_BUTTON_HELP = "지금 화면의 편집과 함께 조회기간·공정 필터도 새 리비전에 담깁니다."
 
 
 def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
@@ -140,7 +143,8 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
     이름 줄 오른쪽에 상태 배지 하나(미저장 변경 / 공식 vN / 최신 rN 있음 / 저장된 리비전 — 낡음은
     `app.py` 가 30초에 한 번 확인해 둔 세션 값 `newer_active_revision_no`), 값 칸에
     「시나리오명 · rN」. 저장하지 않은 편집이 있으면 값 칸 왼쪽에 주황 띠가 서고 팝업이 저장
-    구획으로 열린다. 불러오기·저장 알림은 다음 회차에 한 번, 값 칸 바로 아래에 선다.
+    구획으로 열린다. 불러오기·저장 결과와 저장 뒤 경고는 다음 회차에 한 번 알림창 · Alarm 으로
+    낸다 — 값 칸 밑 칸에는 그리지 않는다.
 
     `pending_edits` 는 이 화면에 적용하지 않은 편집이다. 패널 맨 위 주황 한 줄이 이미 말하므로
     여기서는 읽지 않는다 — 팝업이 누른 회차에 다시 센다(`render_scenario_dialog_body`).
@@ -170,9 +174,9 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
         pending=unsaved,
         on_click=open_scenario_dialog,
     )
-    # 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기고 사라질 때 아래 줄(조회기간·페이지
-    # 칸)의 자리가 밀려 새 요소로 다시 서지 않게 한다(AGENTS 9장 — 수가 바뀌는 알림). 빈 칸은
-    # 높이가 없다(`flash.render_flash`).
+    # 알림 표지는 **늘 서 있는 한 칸**이 보낸다 — 담아 둔 결과 · 경고는 모두 알림창으로만 가서 칸은
+    # 비어 있지만, 칸이 있고 없음으로 아래 줄(조회기간·페이지 칸)의 자리가 밀리지 않게 늘 세운다
+    # (AGENTS 9장 — 수가 바뀌는 알림). 빈 칸은 높이가 없다(`flash.render_flash`).
     render_flash(SIDEBAR_FLASH_KEY, SIDEBAR_FLASH_WARNING_KEY)
 
 
@@ -384,8 +388,8 @@ def _render_dialog_body(
         newer_revision_no=newer_active_revision_no(),
     )
     if not scenarios:
-        st.info("저장된 시나리오가 없습니다.")
-        st.caption("시나리오 관리 페이지에서 신규 시나리오를 등록하세요.")
+        # 빈 결과는 값이다 — 평문 한 줄만 두고 하는 법 · 길 안내는 붙이지 않는다.
+        st.caption("저장된 시나리오가 없습니다.")
         return
     if st.session_state.get(SCENARIO_DIALOG_MODE_KEY) not in (LOAD_MODE, SAVE_MODE):
         st.session_state[SCENARIO_DIALOG_MODE_KEY] = LOAD_MODE
@@ -422,13 +426,13 @@ def _render_dialog_body(
 
 
 def _render_rename_route(*, on_management_page: bool) -> None:
-    """이름 바꾸는 곳으로 가는 한 줄(2026-10-22 결정 S7). 이름 변경은 시나리오 관리 페이지 몫이다.
+    """이름 바꾸는 곳으로 가는 링크(2026-10-22 결정 S7). 이름 변경은 시나리오 관리 페이지 몫이다.
 
-    그 페이지에서 연 팝업이면 링크 대신 그 화면의 어디서 고치는지만 적는다 — 같은 페이지로 가는
-    링크는 팝업을 닫지 않는다.
+    그 페이지에서 연 팝업이면 아무것도 그리지 않는다 — 같은 페이지로 가는 링크는 팝업을 닫지 못하고,
+    「어디서 고친다」 는 길 안내 글은 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나) — 글 대신 바로
+    가기 단추도 두지 않는다).
     """
     if on_management_page:
-        st.caption("이름은 이 화면 「목록 관리」의 표에서 바로 고칩니다.")
         return
     render_page_link(
         SCENARIO_MANAGEMENT.path, label="시나리오 관리에서 이름 바꾸기", icon=":material/edit:"
@@ -451,7 +455,7 @@ def _render_dialog_header(
         newer_revision_no=newer_revision_no,
     )
     if label is None:
-        st.caption("올라와 있는 리비전이 없습니다. 아래에서 불러오세요.")
+        st.caption("올라와 있는 리비전이 없습니다.")
         return
     st.caption(
         f"올라와 있음 · {literal_markdown(label.scenario_name)} · r{label.revision_no} "
@@ -535,7 +539,7 @@ def _render_load(
         key=SIDEBAR_SCENARIO_KEY,
     )
     if not revision_by_id:
-        st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
+        st.caption("선택한 시나리오에 저장된 리비전이 없습니다.")
     else:
         options = list(revision_by_id)
         # 공식·올라와 있음처럼 회차마다 바뀌는 상태는 라벨이 아니라 캡션에 둔다 — 라벨이 바뀌면
@@ -659,11 +663,6 @@ def _render_revision_save(
                 icon=":material/arrow_forward:",
             )
         return
-    # 공정 필터·조회기간은 리비전 프리셋이 담는다. 편집이 없어도 저장할 것이 있다는 사실을 남긴다.
-    st.caption(
-        f"「{literal_markdown(active_summary.scenario_name)}」에 새 리비전으로 저장합니다. "
-        "지금 화면의 편집과 함께 조회기간·공정 필터도 담깁니다."
-    )
     # 적용하지 않은 편집은 저장에 실리지 않고 저장하는 순간 사라진다. 그래서 그 편집을 버린다는
     # 확인 칸을 체크해야 저장한다. 확인 칸은 폼 **밖**이라 체크가 곧바로 세션에 남는다.
     dropping_confirmed = True
@@ -691,10 +690,14 @@ def _render_revision_save(
         # **저장 버튼은 잠그지 않는다**(2026-10-01 브라우저 E2E). 잠긴 버튼으로 온 제출은
         # Streamlit 이 서버에서 버려 `submitted` 가 그냥 False 가 된다. 누른 회차의 목록으로
         # 판정해 막고 알린다.
+        # 저장 대상은 팝업 머리 「올라와 있음」 줄이 말한다. 리비전 프리셋에 무엇이 담기는지는 늘
+        # 띄워 두지 않고 단추 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가)) — 편집이 없어도 저장할
+        # 것(조회기간 · 공정 필터)이 있다.
         submitted = st.form_submit_button(
             "신규 리비전 저장",
             icon=":material/save_as:",
             type="primary",
+            help=SAVE_BUTTON_HELP,
         )
     if not submitted:
         return
@@ -766,16 +769,16 @@ def _render_revision_save(
         st.error(_revision_save_failure(written, bootstrap_error_message(exc)))
         return
     if verdict.message:
-        # 계산 검사 경고는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 물결표를 막는다.
-        # 소요대수에 들지 않은 수요(계산은 통과 — `verdict.exclusion`)는 고칠 입력이 이 자리에
-        # 없어 시나리오 칸 밑 상자 없이 알림창 · Alarm 에만 낸다(2026-11-04 검수 의견 home-18).
-        # 남은 계산 오류 경고는 칸 밑에도 선다.
+        # 계산 검사 경고는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 물결표를 막는다. 저장은
+        # 끝났고 고칠 입력이 이 자리에 없어 시나리오 칸 밑 상자 없이 알림창 · Alarm 에만 낸다 —
+        # 소요대수에 들지 않은 수요(2026-11-04 검수 의견 home-18)도, 남은 계산 오류(공식 지정이
+        # 막힘 — 설계 규칙 AMB-05 (나))도 같다.
         queue_flash(
             SIDEBAR_FLASH_WARNING_KEY,
             markdown_safe_tildes(verdict.message),
             kind="warning",
             icon=":material/warning:",
-            popup_only=verdict.exclusion,
+            popup_only=True,
         )
     _settle(
         "신규 리비전을 저장했습니다."
@@ -790,12 +793,9 @@ def _render_revision_save(
 
 
 def revision_unchanged_notice(revision_no: int) -> str:
-    """바꾼 것 없는 「신규 리비전 저장」 의 알림(개선 I5) — 저장소 글에 이름표만 바꾸는 길을
-    덧붙인다."""
-    return (
-        f"{revision_unchanged_message(revision_no)} 이름표만 바꾸려면 시나리오 관리의 리비전 "
-        "표에서 리비전명을 고칩니다."
-    )
+    """바꾼 것 없는 「신규 리비전 저장」 의 알림(개선 I5) — 저장소 글 그대로다. 이름표만 바꾸는
+    곳으로 가는 길 안내는 붙이지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나) — Guide 가 말한다)."""
+    return revision_unchanged_message(revision_no)
 
 
 def _revision_save_failure(written: Written[ScenarioSnapshot] | None, reason: str) -> str:
