@@ -83,7 +83,7 @@ IMPORT_DIALOG = "import"
 
 
 def open_equipment_settings() -> None:
-    """「가용설비 설정」 상자·「설정에서 보기」 의 콜백 — 다른 팝업 칸(사이드바 조건 팝업 등)부터
+    """「가용설비 설정」 상자의 콜백 — 다른 팝업 칸(사이드바 조건 팝업 등)부터
     비우고, 지난번 열었을 때의 Cut-off 초안을 걷어 최신 저장본에서 연다(`forget_cutoff_draft`)."""
     forget_page_dialogs()
     forget_cutoff_draft()

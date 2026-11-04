@@ -607,7 +607,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 「가용설비 설정」·「엑셀·CSV로 한꺼번에」 팝업: 열림 칸은 페이지 한 칸(`available_equipment_open_dialog`, 값 `settings`·`import`)이고
     호스트(`render_equipment_dialog_host(import_dialog=)`)는 이벤트 칸에 늘 한 자리다(열렸으면 팝업, 아니면 빈 스타일). 새 방문
     회차에는 붙여넣기 미리보기를 거둔다(`withdraw_preview_on_new_visit` — 페이지가 매 회차 부른다). Cut-off 저장·「설비 공정으로 채우기」 뒤에도 팝업은 열려 있다(9장 「팝업과
-    콜백」 의 예외). 첫 데이터 안내의 「설정에서 보기」 도 이 팝업을 연다. Static 대비 일정은 저장된 Cut-off 를 캐시 경계
+    콜백」 의 예외). 첫 데이터 안내의 Cut-off 줄은 건수만이다(본문 설정 단추 없음 — 설계 규칙 UI-LAY-01). Static 대비 일정은 저장된 Cut-off 를 캐시 경계
     (`load_process_cutoff`)에서 직접 읽는다 — 팝업이 돌려준 값을 받지 않는다.
   - 첫 데이터 안내(「처음 사용하시나요?」)·샘플 스위치·`설비 조회 조건` 카드는 Summary 의 안쪽 탭이 보일 때만 선다
     (`viewing_tab_open`). 「설비 마스터 탭에서 붙여넣기」·「설비 데이터 입력」 은 ① 을 기억하고 「엑셀·CSV로 한꺼번에」 팝업을

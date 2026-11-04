@@ -76,7 +76,6 @@ from capa_simulation.components.equipment_scenario_status import (
     report_unscheduled_units,
 )
 from capa_simulation.components.equipment_settings_dialog import (
-    open_equipment_settings,
     render_equipment_dialog_host,
     render_equipment_settings_box,
 )
@@ -166,24 +165,29 @@ def _open_master_import() -> None:
 
 
 def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
-    """저장된 것이 무엇인지 건수로 짚고 각각 갈 곳을 준다. **대수는 적지 않는다** — Main 의
-    총대수는 데모 fleet 을 섞은 다른 산식이라, 두 수가 첫 화면에 나란히 서면 어느 쪽이
-    맞는지부터 따져야 한다. Cut-off 는 저장본이 없는 이 자리에서만 한 번 더 읽는다.
+    """저장된 것이 무엇인지 건수로 짚는다. **대수는 적지 않는다** — Main 의 총대수는 데모 fleet 을
+    섞은 다른 산식이라, 두 수가 첫 화면에 나란히 서면 어느 쪽이 맞는지부터 따져야 한다. Cut-off 는
+    저장본이 없는 이 자리에서만 한 번 더 읽는다.
+
+    설비 마스터 · 운영 비가동 일정 줄에는 넣는 팝업(붙여넣기 — 편집 동작)을 여는 단추를 단다.
+    Cut-off 는 공용 설정이라 이 줄에 단추를 두지 않는다 — 사이드바 「가용설비 설정」 상자가 그
+    팝업을 연다(설계 규칙 UI-LAY-01 · AMB-07 (가), `tests/test_settings_button_sites.py`).
     """
-    steps = (
-        ("설비 마스터", "설비 마스터 탭에서 붙여넣기", _open_master_import),
-        ("운영 비가동 일정", "설비 마스터 탭에서 붙여넣기", _open_master_import),
-        ("공정별 Cut-off", "설정에서 보기", open_equipment_settings),
+    rows = (
+        ("설비 마스터", "equipment_first_data_master_v1"),
+        ("운영 비가동 일정", "equipment_first_data_down_v1"),
+        ("공정별 Cut-off", None),
     )
-    keys = (
-        "equipment_first_data_master_v1",
-        "equipment_first_data_down_v1",
-        "equipment_first_data_cut_v1",
-    )
-    for (title, action, callback), key, count in zip(steps, keys, counts, strict=True):
+    for (title, key), count in zip(rows, counts, strict=True):
         with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
             st.markdown(f"{'✓' if count else '✗'} **{title}** {count:,}건")
-            st.button(action, icon=":material/arrow_forward:", key=key, on_click=callback)
+            if key is not None:
+                st.button(
+                    "설비 마스터 탭에서 붙여넣기",
+                    icon=":material/arrow_forward:",
+                    key=key,
+                    on_click=_open_master_import,
+                )
 
 
 render_page_header("가용설비 현황")

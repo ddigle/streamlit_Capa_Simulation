@@ -643,7 +643,9 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
 
 
 def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: Path) -> None:
-    """저장본이 없으면 첫 화면이 세 데이터를 건수와 함께 짚고 각각 갈 곳을 준다.
+    """저장본이 없으면 첫 화면이 세 데이터를 건수와 함께 짚는다 — 설비 마스터 · 운영 비가동 줄은
+    넣는 팝업으로 가는 단추를 달고, Cut-off 줄은 건수만이다(공용 설정이라 사이드바 「가용설비
+    설정」 상자가 연다 — 설계 규칙 UI-LAY-01 · AMB-07 (가)).
 
     한 줄 + 버튼 하나로는 **무엇이 없어서 비어 있는지**를 알 수 없다. 데모 fleet 이 가득
     차 보이는 화면이라 더 그렇다. 대수는 적지 않는다 — Main 총대수는 다른 산식이다.
@@ -665,15 +667,11 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
     assert "✗ **운영 비가동 일정** 0건" in rendered
     # 저장된 것은 ✓ 로 구분한다. 세 줄 중 이 줄만 tmp DB 에 따라 값이 달라진다.
     assert "✓ **공정별 Cut-off** 1건" in rendered
-    app.button("equipment_first_data_cut_v1").click().run()
-
-    assert not app.exception
-    # 「설정에서 보기」 는 「가용설비 설정」 팝업(공정별 Cut-off)을 연다.
-    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
-    assert any(button.label == "Cut-off 저장" for button in app.button)
+    # Cut-off 줄에는 본문 설정 단추가 없다 — 「가용설비 설정」 팝업은 사이드바 상자만 연다.
+    keys = {button.key for button in app.button}
+    assert "equipment_first_data_cut_v1" not in keys
+    assert "설정에서 보기" not in [button.label for button in app.button]
     # 「설비 마스터 탭에서 붙여넣기」 는 탭 ① 을 연다.
-    del app.session_state[EQUIPMENT_DIALOG_KEY]
-    _open_tab(app, "Main")
     app.button("equipment_first_data_master_v1").click().run()
     assert not app.exception
     assert app.session_state[EQUIPMENT_TAB_KEY] == ":material/table_rows: 설비 마스터"
