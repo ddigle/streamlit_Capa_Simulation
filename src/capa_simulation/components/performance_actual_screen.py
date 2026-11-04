@@ -134,7 +134,9 @@ def _render_summary(
     needs_action = priority.loc[priority["상태"].eq("개선 필요")]
 
     if needs_action.empty:
-        st.success(f"{metric.name} 기준을 석 달 넘게 못 맞춘 공정이 없습니다.")
+        # 결론이 「없음」 이면 그 값을 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이다(설계 규칙
+        # UI-NTF-01 · AMB-02 (가)).
+        st.markdown(f"{metric.name} 기준을 석 달 넘게 못 맞춘 공정이 없습니다.")
     else:
         worst = needs_action.iloc[0]
         # 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름(「TC Bonding」)은 끝소리를 몰라
@@ -331,7 +333,7 @@ def _render_actions(
         st.markdown("#### :material/assignment: 개선과제")
         st.caption("정상이 아닌 공정에만 과제가 붙습니다. 순위와 과제가 따로 놀지 않게 합니다.")
         if actions.empty:
-            st.success("지금 기준으로는 개선과제가 필요한 공정이 없습니다.")
+            st.markdown("지금 기준으로는 개선과제가 필요한 공정이 없습니다.")
         else:
             shown_actions = actions.copy()
             shown_actions["공정"] = labels.series(shown_actions["공정"])

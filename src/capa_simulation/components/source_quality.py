@@ -101,7 +101,9 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
     if warning is not None:
         st.warning(warning)
     else:
-        st.success(f"{len(table):,}개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다.")
+        # 점검 결론 「문제 없음」 은 값이라 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이다(설계
+        # 규칙 UI-NTF-01 · AMB-02 (가)).
+        st.markdown(f"{len(table):,}개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다.")
 
     st.dataframe(
         table,

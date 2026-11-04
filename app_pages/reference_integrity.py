@@ -128,7 +128,9 @@ def _render_summary(
 ) -> None:
     needs_action = process_summary.loc[process_summary["상태"].eq("개선 필요")]
     if needs_action.empty:
-        st.success("Capa 실현률이 판정 기준을 밑도는 공정이 없습니다.")
+        # 결론이 「없음」 이면 그 값을 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이다(설계 규칙
+        # UI-NTF-01 · AMB-02 (가)).
+        st.markdown("Capa 실현률이 판정 기준을 밑도는 공정이 없습니다.")
     else:
         worst = needs_action.iloc[0]
         worst_rate = f"{float(worst['Capa 실현률']):.0%}"
