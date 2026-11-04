@@ -25,6 +25,9 @@
   걷어(`forget_cutoff_draft`) 최신 저장본에서 연다 — 걷지 않으면 남의 저장 뒤 다시 열어도 옛 값이
   보였다(2026-10-27 E2E). Guide 가 「닫기 전에 저장합니다」 라고 적는다. 화면 탭 줄의 점·떠나기
   확인 대상이 아니다(Cut-off 초안은 판정 함수가 없다).
+- **머리 안내 글은 두지 않는다** — 「모든 설비 시나리오가 함께 쓰는 공용 설정 · 저장하지 않고 닫으면
+  고친 칸은 사라짐」 은 상자 풍선(`SETTINGS_HELP`)과 「Cut-off 저장」 단추 풍선
+  (`cutoff_management.CUTOFF_SAVE_HELP`)이 말한다(HOME 설정 팝업과 같은 꼴).
 - 가정 설비 시나리오면 표가 읽기 전용이다(`PREFERENCE_LOCK_MESSAGE` — Cut-off 는 모든 설비 시나리오
   공용, E3).
 """
@@ -115,10 +118,6 @@ def _settings_dialog(
     process_labels: ProcessLabels | None,
     locked_reason: str | None,
 ) -> None:
-    st.caption(
-        "가용설비 현황 계산에 쓰는 공용 설정입니다 — 모든 설비 시나리오가 함께 씁니다. 표를 "
-        "고친 뒤 닫기 전에 저장합니다(저장하지 않고 닫으면 고친 칸은 사라집니다)."
-    )
     render_cutoff_management(
         repository,
         equipment_processes=equipment_processes,

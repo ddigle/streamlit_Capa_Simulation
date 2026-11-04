@@ -23,7 +23,7 @@ from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 
 import capa_simulation.components.write_guard as write_guard
-from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
+from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY, CUTOFF_SAVE_HELP
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_process_cutoff_cache,
@@ -63,6 +63,22 @@ def test_settings_offers_cutoff_input_on_an_empty_database(tmp_path: Path) -> No
     assert "Cut-off 저장" in labels, labels
     assert "설비 공정으로 채우기" in labels, labels
     assert not any(tab.label.endswith(" Cut-off") for tab in app.tabs)
+    clear_equipment_repository()
+
+
+def test_the_settings_popup_has_no_header_note_and_the_save_button_says_it(
+    tmp_path: Path,
+) -> None:
+    """팝업 머리에 안내 글(공용 설정 · 닫기 전에 저장)을 두지 않는다 — 그 말은 「Cut-off 저장」
+    단추 풍선이 한다."""
+    app = _run(tmp_path / "availability.duckdb")
+
+    assert not app.exception, [item.message for item in app.exception]
+    captions = [str(item.value) for item in app.caption]
+    assert not any("공용 설정입니다" in text or "닫기 전에" in text for text in captions), captions
+    save = next(button for button in app.button if button.label == "Cut-off 저장")
+    assert save.help == CUTOFF_SAVE_HELP
+    assert "공용" in CUTOFF_SAVE_HELP and "닫으면" in CUTOFF_SAVE_HELP
     clear_equipment_repository()
 
 

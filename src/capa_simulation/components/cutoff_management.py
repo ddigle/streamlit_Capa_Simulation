@@ -62,6 +62,7 @@ from capa_simulation.services.process_cutoff import (
 __all__ = [
     "CUTOFF_BASE_KEY",
     "CUTOFF_DRAFT_KEY",
+    "CUTOFF_SAVE_HELP",
     "forget_cutoff_draft",
     "render_cutoff_management",
 ]
@@ -77,6 +78,12 @@ _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
 _FLASH_KEY = "equipment_cutoff_flash_v1"
 _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
+# 「Cut-off 저장」 단추 풍선 — 팝업 머리에 안내 글을 두지 않으므로 꼭 남길 둘(공용 설정 · 저장하지
+# 않고 닫으면 사라짐)을 누르는 자리에 둔다(HOME `home_preference.SHARED_SAVE_HELP` 와 같은 꼴).
+CUTOFF_SAVE_HELP = (
+    "모든 설비 시나리오가 함께 쓰는 공용 Cut-off 로 저장합니다. 저장하지 않고 팝업을 닫으면 고친 "
+    "칸은 사라집니다."
+)
 
 
 def forget_cutoff_draft() -> None:
@@ -197,7 +204,11 @@ def render_cutoff_management(
 
     with st.form(_FORM_KEY, border=True):
         submitted = st.form_submit_button(
-            "Cut-off 저장", icon=":material/save:", type="primary", width="content"
+            "Cut-off 저장",
+            help=CUTOFF_SAVE_HELP,
+            icon=":material/save:",
+            type="primary",
+            width="content",
         )
         # 저장 결과는 누른 버튼 바로 아래 한 자리다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다
         # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 충돌 거부도 거부
