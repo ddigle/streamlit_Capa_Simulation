@@ -2,10 +2,10 @@
 
 """시나리오 관리 「설비 시나리오」 구획의 화면 자리와 글(브라우저 E2E 결함 셋).
 
-- 작업 알림(맨 위 `st.success`)은 한 회차뿐이다. 알림이 빠지는 다음 회차에 팝오버 줄이 한 칸
-  당겨지면 팝오버가 다시 서며 닫혀, 알림 뒤 처음 누른 확인 체크·Enter 가 열린 팝오버를 닫았다.
-  알림은 늘 서 있는 칸 안에 서고 팝오버 key 는 알림을 그리는 회차에만 바뀐다(작업을 마친 팝오버는
-  그대로 닫힌다).
+- 작업 알림(알림창 표지 — 구획 맨 위 늘 서 있는 칸이 보낸다)은 한 회차뿐이다. 알림이 빠지는 다음
+  회차에 팝오버 줄이 한 칸 당겨지면 팝오버가 다시 서며 닫혀, 알림 뒤 처음 누른 확인 체크·Enter 가
+  열린 팝오버를 닫았다. 알림 칸은 늘 서 있고 팝오버 key 는 알림을 꺼내는 회차에만 바뀐다(작업을
+  마친 팝오버는 그대로 닫힌다).
 - 리비전 표의 도구 막대는 표 오른쪽 위로 솟아, 표가 바로 위 줄에 붙어 있으면 그 줄 맨 오른쪽
   팝오버 단추(「시나리오 이름 바꾸기」·「배치 차이 모두 지우기」)의 누름을 가로챘다 — 표 앞에
   띄움(`st.space`)이 선다.
@@ -19,12 +19,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Dataframe
 from test_equipment_scenario_repository import OPERATIONS, _request, _seeded, _session, _set
 
 from capa_simulation.components.equipment_scenario_management import (
     LOAD_BUTTON_KEY,
+    PUBLISH_BUTTON_HELP,
+    PUBLISH_BUTTON_KEY,
     RENAME_BUTTON_KEY,
     RENAME_KEY,
     RESTORE_BUTTON_KEY,
@@ -34,6 +37,7 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_NAME_KEY,
     REVISION_TABLE_TOOLBAR_CLEARANCE,
     publish_preview,
+    revision_name_help,
 )
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -105,7 +109,9 @@ def _popovers(app: AppTest) -> dict[str, tuple[tuple[int, ...], str]]:
 
 
 def _successes(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.success]
+    """작업 알림 — 성공은 구획 맨 위에 그리지 않고 알림창 표지로만 낸다(설계 규칙 UI-NTF-03)."""
+    assert not app.success, [str(item.value) for item in app.success]
+    return [str(item.value) for item in successes(app)]
 
 
 def test_a_popover_keeps_its_place_and_key_when_the_alert_goes_away(tmp_path: Path) -> None:
@@ -228,3 +234,44 @@ def test_the_publish_preview_picks_the_particle_by_the_revision_number(
     lines = publish_preview(session, scenario, revision)
 
     assert lines[1] == f"r{chosen}{particle} 「셋업 실무」 의 최신(r6)이 아닙니다."
+
+
+def test_an_empty_store_says_so_in_one_plain_line(tmp_path: Path) -> None:
+    """설비 시나리오가 하나도 없으면 구획은 그 값 한 줄만 평문으로 둔다 — 「어느 탭에서 무엇을
+    저장하면 섭니다」 같은 하는 법 꼬리와 안내 상자를 붙이지 않는다(설계 규칙 AMB-02 (가) ·
+    UI-TXT-03 · V-16)."""
+    path = tmp_path / "equipment.duckdb"
+    DuckDBEquipmentRepository(path)
+    app = _ok(
+        AppTest.from_string(
+            f"""
+from capa_simulation.components.equipment_scenario_management import (
+    render_equipment_scenario_management,
+)
+from capa_simulation.equipment_scenario_activation import EquipmentSession
+from capa_simulation.persistence.equipment_repository import EquipmentScenarioCatalog
+session = EquipmentSession(EquipmentScenarioCatalog(scenarios=()))
+render_equipment_scenario_management({str(path)!r}, session)
+""",
+            default_timeout=60,
+        ).run()
+    )
+
+    captions = [str(item.value) for item in app.caption]
+    assert captions == ["설비 시나리오가 없습니다."], captions
+    assert not app.info and not app.success and not app.warning
+
+
+def test_popover_explanations_sit_in_balloons_not_standing_captions(tmp_path: Path) -> None:
+    """「리비전명」 · 「공식으로 발행」 팝오버의 설명 글(이름표의 뜻 · 공식이 무엇에 쓰이는지)은 늘
+    띄워 두지 않고 그 칸 · 단추의 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가))."""
+    path, numbers = _two_revisions(tmp_path)
+    app = _ok(_section(path).run())
+    assert app.selectbox(key=REVISION_KEY).value == numbers[2]
+
+    captions = [str(item.value) for item in app.caption]
+    assert not any("이름표입니다" in text for text in captions), captions
+    assert not any("append-only" in text for text in captions), captions
+    name = app.text_input(key=f"{REVISION_NAME_KEY}__{numbers[2]}")
+    assert str(name.help) == revision_name_help(2)
+    assert str(app.button(key=PUBLISH_BUTTON_KEY).help) == PUBLISH_BUTTON_HELP

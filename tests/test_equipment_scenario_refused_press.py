@@ -20,6 +20,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from alert_marks import flashed, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_layout_management import _section
 from test_equipment_scenario_repository import OPERATIONS, _clone, _seeded
@@ -57,7 +58,7 @@ def _opened(tmp_path: Path, scenario_id: str) -> AppTest:
 
 def _notices(app: AppTest) -> tuple[list[str], list[str]]:
     """(성공 알림, 거절 알림) — 구획 맨 위 두 칸."""
-    return [str(item.value) for item in app.success], [str(item.value) for item in app.error]
+    return [str(item.value) for item in successes(app)], [str(item.value) for item in app.error]
 
 
 def test_a_second_press_after_someone_elses_rename_repeats_the_refusal(
@@ -75,6 +76,10 @@ def test_a_second_press_after_someone_elses_rename_repeats_the_refusal(
     app.button(key=RENAME_BUTTON_KEY).click()
     written, refused = _notices(_ok(app.run()))
     assert written == [] and any("이름을 바꾸지 않았습니다" in text for text in refused), refused
+    # 거절은 구획 맨 위 칸에 그리고 알림창 · Alarm 에도 한 꼴로 낸다(설계 규칙 UI-NTF-01).
+    (alerted,) = flashed(app, "error")
+    assert alerted.value == refused[0]
+    assert alerted.code == "FL-04"
 
     app.button(key=RENAME_BUTTON_KEY).click()
     written, refused = _notices(_ok(app.run()))

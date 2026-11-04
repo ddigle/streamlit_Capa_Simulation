@@ -67,6 +67,7 @@ from capa_simulation.components.equipment_save_fields import (
     PUBLISH_OFFICIAL_LABEL,
     SAVED_BY_LABEL,
 )
+from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -245,13 +246,16 @@ CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
 # 번호·빠지는 호기 수)을 붙인다 — 그 값이 바뀌면 체크가 풀린 새 칸으로 서서 본 적 없는 글로 이어
 # 쓰지 않는다.
 CONTINUE_CONFIRM_KEY = "equipment_scenario_manage_continue_confirm_v1"
-# 이 구획 작업 알림 — 다음 회차에 한 번, 구획 맨 위.
+# 이 구획 작업 알림 — 다음 회차에 한 번 알림창 · Alarm 으로(구획 맨 위 늘 서 있는 칸이 보낸다 —
+# `flash.render_flash`, 성공은 그 칸에 그리지 않는다). 공식 발행의 빠른 둘째 누름이 다시 낼 알림도
+# 이 칸 이름으로 적는다(`write_guard.note_notice` — `render_flash` 가 첫 알림과 같은 id 로
+# 다시 낸다).
 FLASH_KEY = "equipment_scenario_manage_flash_v1"
 # 같은 이름이라 쓰지 않은 「리비전명 저장」·「이름 바꾸기」 의 단추 아래 알림(개선 I5).
 REVISION_NAME_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 리비전명 그대로라 저장하지 않았습니다."
 SCENARIO_NAME_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 이름 그대로라 바꾸지 않았습니다."
-# 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 구획 맨 위(확인
-# 체크·입력 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
+# 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 구획 맨 위 칸에 오류로
+# 그리고 알림창 · Alarm 에도 낸다(확인 체크·입력 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
 REFUSED_KEY = "equipment_scenario_manage_refused_v1"
 # 되돌리기가 만든 리비전 — 다음 회차 리비전 상자를 그리기 전에 그 리비전으로 옮긴다(위젯을 그린
 # 뒤에는 그 칸을 고칠 수 없다).
@@ -283,6 +287,20 @@ REVISION_TABLE_TOOLBAR_CLEARANCE = TABLE_TOOLBAR_CLEARANCE
 
 # 리비전명 칸 글자 수 한도 — 저장소도 같은 한도로 거절한다.
 REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS
+# 「공식으로 발행」 단추 풍선 — 공식이 무엇에 쓰이는지(팝오버에 늘 띄워 두지 않는다 — 설계 규칙
+# UI-TXT-01 · AMB-01 (가)).
+PUBLISH_BUTTON_HELP = (
+    "공식은 새 세션(Space 포함 — 처음 연 화면)·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 "
+    "설비 시나리오입니다. 발행은 append-only 입니다."
+)
+
+
+def revision_name_help(revision_no: int) -> str:
+    """「리비전명」 칸 풍선 — 이름표만 고치고 무엇이 그대로인지, 비우면 지워진다는 것."""
+    return (
+        f"r{revision_no}의 이름표입니다 — 일정·번호·메모는 그대로이고 나중에 다시 고칠 수 "
+        "있습니다. 비우고 저장하면 이름이 지워집니다."
+    )
 
 
 def _generation() -> int:
@@ -305,7 +323,7 @@ def _written(message: str, *, release: Callable[[], None] | None = None) -> None
     (`write_once_value`). `release` 는 그 쓰기가 든 결과를 놓는 것으로, 세대를 올린 뒤에 부른다.
     """
     clear_equipment_scenario_cache()
-    st.session_state[FLASH_KEY] = message
+    queue_flash(FLASH_KEY, message)
     st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.session_state.pop(CLEAR_LAYOUT_AGREED_KEY, None)
     bump(GENERATION_KEY)
@@ -373,9 +391,10 @@ def _follow_and_announce(
     """쓰기가 그 시나리오의 새 리비전(`schedule_revision_id`)을 만든 뒤 — 뒷정리 표지를 먼저
     적고(dict 칸이라 끊기지 않는다) 리비전 상자·세션을 옮긴 뒤 표지를 지우고 알린다
     (`message(옮김, 편집 때문에 남김)`). 옮기다 끊기면 다음 회차가 표지를 보고 잇는다
-    (`_resume_follows`). `notices`(쓰기 전에 받아 둔 `notice_marks()`)를 주면 그 알림을 `name`
-    칸에 적는다 — 다시 그린 화면의 단추가 꺼져 빠른 둘째 누름이 버려지는 쓰기(공식 발행)는 구획
-    맨 위 칸이 창 안에서 그 알림을 다시 그린다(`held_notice`)."""
+    (`_resume_follows`). `notices`(쓰기 전에 받아 둔 `notice_marks()`)를 주면 그 알림을 작업 알림
+    칸(`FLASH_KEY`)에 적는다 — 다시 그린 화면의 단추가 꺼져 빠른 둘째 누름이 버려지는 쓰기(공식
+    발행)는 구획 맨 위 칸이 창 안에서 그 알림을 첫 알림과 같은 id 로 다시 낸다
+    (`flash.render_flash`)."""
     follows[name] = _PendingFollow(
         scenario.equipment_scenario_id, schedule_revision_id, message, time.monotonic()
     )
@@ -385,7 +404,7 @@ def _follow_and_announce(
     follows.pop(name, None)
     text = message(moved, kept_unsaved)
     if notices is not None:
-        note_notice(notices, name, text)
+        note_notice(notices, FLASH_KEY, text)
     _written(text)
 
 
@@ -419,7 +438,8 @@ def _refused(message: str) -> None:
     """그 사이 남의 쓰기로 거절했을 때 — 공통 최신·목록을 다시 읽게 비우고, 확인 체크·입력 칸을 새로
     세운 뒤(옛 확인으로 다시 누르지 않게) 다음 회차 맨 위에 까닭을 알린다."""
     clear_equipment_snapshot_cache()
-    st.session_state[REFUSED_KEY] = message
+    # 거부 글은 남의 이름(물결표만 막힌 날 이름)을 품는다 — 마크다운 원문으로 담아 그린다.
+    queue_flash(REFUSED_KEY, markdown_safe_tildes(message), kind="error")
     bump(GENERATION_KEY)
     st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.session_state.pop(CLEAR_LAYOUT_AGREED_KEY, None)
@@ -716,11 +736,9 @@ def render_equipment_scenario_section() -> None:
         )
         return
     render_schema_ahead_warning(repository.schema_ahead)
+    # 머리 줄은 값(이 세션이 든 쌍)만 둔다 — 설비 화면 사이드바 줄에서도 불러오기 · 저장한다는 길
+    # 안내는 Guide 몫이다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     st.markdown(f"**{session_heading(session)}**")
-    st.caption(
-        "설비 시나리오 불러오기·저장은 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세) "
-        "사이드바 설비 시나리오 줄에서도 합니다. 이 세션이 든 쌍은 그 화면들과 같습니다."
-    )
     # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
     # 칸으로 낸다 — 이 구획이 든 탭이 숨은 회차에도 알림창에 뜬다.
     report_session_notices(session)
@@ -767,44 +785,30 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 앞 회차(더블클릭의 첫 누름)가 새 리비전을 쓰고 뒷정리 전에 끊겼으면 여기서 잇는다 — 리비전
     # 상자를 그리기 전이어야 한다(`PENDING_REVISION_KEY`).
     _resume_follows(database_path, session)
-    flash = st.session_state.pop(FLASH_KEY, None)
-    refused = st.session_state.pop(REFUSED_KEY, None)
-    # 첫 발행 뒤 다시 그린 화면의 「공식으로 발행」 은 그 리비전이 이제 공식이라 꺼진다 — 그 단추에
-    # 닿은 빠른 둘째 누름은 Streamlit 이 버려 그 회차가 첫 발행 알림(앞 회차가 꺼내 그렸다)을
-    # 지웠다. 창(`TRAILING_PRESS_SECONDS`) 안이면 적어 둔 알림을 같은 칸에 다시 그린다. 팝오버
-    # 세대는 올리지 않는다 — 첫 알림 회차가 이미 올려 팝오버는 닫힌 채 섰다.
-    held = held_notice(PUBLISH_SAVE_NAME) if flash is None and refused is None else None
+    # 작업 알림(성공)은 알림창 · Alarm 으로만, 거절 알림(오류)은 이 칸에도 그린다(`flash` —
+    # 설계 규칙 UI-NTF-01 · UI-NTF-03). 첫 발행 뒤 다시 그린 화면의 「공식으로 발행」 은 그 리비전이
+    # 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 창
+    # (`TRAILING_PRESS_SECONDS`) 안이면 이 칸이 적어 둔 알림을 첫 알림과 같은 id 로 다시 낸다
+    # (알림창은 두 번 뜨지 않는다). 팝오버 세대는 알림을 꺼내는 회차에만 올린다 — 다시 내는
+    # 회차에는 첫 알림 회차가 이미 올려 팝오버는 닫힌 채 섰다.
     if (
-        isinstance(flash, str)
-        or isinstance(refused, str)
+        pending_flash(FLASH_KEY) is not None
+        or pending_flash(REFUSED_KEY) is not None
         or (bool(session.notice) and not session.unmerged)
     ):
         bump(POPOVER_GENERATION_KEY)
     with st.container():
-        if isinstance(flash, str):
-            st.success(flash)
-        elif held is not None:
-            st.success(held)
-        if isinstance(refused, str):
-            st.error(markdown_safe_tildes(refused))
+        render_flash(FLASH_KEY, REFUSED_KEY)
     with st.container():
         if session.legacy_trace_count:
             _render_legacy_trace(database_path, session.legacy_trace_count)
     scenarios = {item.equipment_scenario_id: item for item in session.catalog.scenarios}
     if not scenarios:
-        st.info(
-            "설비 시나리오가 없습니다. 가용설비 현황 「설비 마스터」 탭에서 첫 설비 데이터를 "
-            "저장하면 「운영 일정」이 섭니다."
-        )
+        # 빈 결과는 값이다 — 평문 한 줄만 두고 하는 법은 붙이지 않는다(설계 규칙 AMB-02 (가)).
+        st.caption("설비 시나리오가 없습니다.")
         return
-    # 설비 시나리오가 따로 드는 것 — 일정·메모·비가동과 가정 배치(설비 0031 — 공식과 다른 호기
-    # 위치·층 도면 요소·Main 설비명 위치). 아래 「저장된 배치 차이」 칸·「배치 차이 모두 지우기」 가
-    # 그 가정 배치다.
-    st.caption(
-        "공통 칸(호기 정보·실적·상태·Space 실물)은 모든 설비 시나리오가 함께 씁니다. 설비 "
-        "시나리오는 일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 "
-        "요소·Main 설비명 위치)를 따로 듭니다 — 만들기는 복제로만 합니다."
-    )
+    # 공통 칸과 설비 시나리오가 따로 드는 것(일정 · 메모 · 비가동 · 가정 배치)의 설명은 늘 띄워 두지
+    # 않는다 — Guide 「설비 시나리오 구획」 몫이다(설계 규칙 UI-TXT-01).
     layout_previews = _latest_layout_previews(database_path, session)
     st.dataframe(
         scenario_rows(
@@ -826,7 +830,6 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
                     f"「{literal_markdown(item.scenario_name)}」 {item.layout_trace_count:,}개"
                     for item in traced
                 )
-                + ". 그 시나리오를 고르면 리비전 표 「배치」 칸이 빠진 자리를 가리킵니다."
             )
     default_scenario = (
         session.scenario_id if session.scenario_id in scenarios else next(iter(scenarios))
@@ -890,7 +893,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     official_id = release.schedule_revision_id if release is not None else None
     official_no = release.release_no if release is not None else None
     if not revisions:
-        st.info("이 설비 시나리오에 저장된 리비전이 없습니다.")
+        st.caption("이 설비 시나리오에 저장된 리비전이 없습니다.")
         return
     trace = layout_trace_sentence(scenario, revisions)
     with st.container():
@@ -1008,9 +1011,7 @@ def _render_load(
         if failure is not None:
             st.error(markdown_safe_tildes(failure))
             return
-        st.session_state[FLASH_KEY] = (
-            f"설비 시나리오 {name} {with_object_particle(title)} 불러왔습니다."
-        )
+        queue_flash(FLASH_KEY, f"설비 시나리오 {name} {with_object_particle(title)} 불러왔습니다.")
         st.rerun()
 
 
@@ -1589,11 +1590,14 @@ def _render_revision_name(
         revision.revision_name or "",
         suffix=f"__{revision.schedule_revision_id}",
     )
-    st.caption(
-        f"r{revision.revision_no}의 이름표입니다 — 일정·번호·메모는 그대로이고 나중에 다시 "
-        "고칠 수 있습니다. 비우고 저장하면 이름이 지워집니다."
+    # 이름표의 뜻(무엇이 그대로이고 비우면 어떻게 되는지)은 늘 띄워 두지 않고 칸 풍선에 둔다(설계
+    # 규칙 UI-TXT-01 · AMB-01 (가)).
+    label = st.text_input(
+        "리비전명",
+        key=field.key,
+        max_chars=REVISION_NAME_MAX_CHARS,
+        help=revision_name_help(revision.revision_no),
     )
-    label = st.text_input("리비전명", key=field.key, max_chars=REVISION_NAME_MAX_CHARS)
     if st.button(
         "리비전명 저장",
         type="primary",
@@ -2161,22 +2165,19 @@ def _render_publish(
         else:
             st.caption(f":material/layers: {line}")
     token = tuple(publish_seen_token(scenario, revision, release_no).items())
-    st.caption(
-        "공식은 새 세션(Space 포함 — 처음 연 화면)·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 "
-        "설비 시나리오입니다. 발행은 append-only 입니다."
-    )
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
     # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 위 확인 글 끝 줄이 적는다
     # (`ALREADY_OFFICIAL_LINE`). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 꺼진다 — 그 단추에
-    # 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은 구획 맨 위 칸이 다시 그린다
-    # (`held_notice` — 아래 `note_notice`).
+    # 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은 구획 맨 위 칸이 같은 id 로 다시 낸다
+    # (`flash.render_flash` — 아래 `note_notice`).
     if not st.button(
         "공식으로 발행",
         type="primary",
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
         disabled=blocked or already_official(session, revision),
+        help=PUBLISH_BUTTON_HELP,
     ):
         # 이 회차가 그린 확인 글이 다음 누름이 본 글이다 — 누른 회차에는 적지 않는다.
         remember_seen(PUBLISH_SEEN_KEY, token)
@@ -2258,7 +2259,7 @@ def _render_publish(
         # 방금 이 세션이 발행한 그 리비전에 닿은 빠른 둘째 누름이면(첫 회차가 다시 그린 화면의
         # 단추) 첫 발행의 알림을 다시 낸다(write_guard.held_notice).
         _written(
-            held_notice(PUBLISH_SAVE_NAME)
+            held_notice(FLASH_KEY)
             or already_released_message(scenario.scenario_name, revision, published.release_no)
         )
     cleaned = published.schedule_revision_id != revision.schedule_revision_id
@@ -2289,10 +2290,10 @@ def _render_publish(
             notices=messages,
         )
     # 첫 회차가 다시 그린 화면의 단추는 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른
-    # 둘째 누름은 Streamlit 이 버리고, 구획 맨 위 칸이 창 안에서 이 알림을 다시 그린다. 둘째 누름이
+    # 둘째 누름은 Streamlit 이 버리고, 구획 맨 위 칸이 창 안에서 이 알림을 다시 낸다. 둘째 누름이
     # 아직 켜진 단추로 들어오면 저장소가 쓰지 않고(위 「이미 공식」 갈래) 이 알림을 다시 낸다. dict
     # 칸이라 끊기지 않는다.
-    note_notice(messages, PUBLISH_SAVE_NAME, published_message(False, False))
+    note_notice(messages, FLASH_KEY, published_message(False, False))
     _written(published_message(False, False))
 
 

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import pytest
+from alert_marks import successes
 from streamlit.runtime import Runtime
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_layout_management import _moved_setup, _section
@@ -256,7 +257,8 @@ def test_a_double_press_of_the_restore_never_says_someone_else_saved(
 
 
 def _successes(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.success]
+    """그린 성공 + 알림창 표지의 성공 결과 알림(구획 작업 알림은 표지로만 간다)."""
+    return [str(item.value) for item in successes(app)]
 
 
 def test_a_second_rename_press_with_the_old_name_keeps_the_renamed_scenario(
