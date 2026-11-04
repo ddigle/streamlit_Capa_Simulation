@@ -56,12 +56,17 @@ class _Recorder:
     def __init__(self) -> None:
         self.headers: list[tuple[str, str]] = []
         self.cards: list[tuple[str, str, bool]] = []
+        # 까닭 줄 풍선(규칙) — 카드마다 같은 차례.
+        self.helps: list[str | None] = []
 
     def header(self, process: str, line: str) -> None:
         self.headers.append((process, line))
 
-    def card(self, title: str, detail: str, *, equipment_link: bool) -> None:
+    def card(
+        self, title: str, detail: str, *, equipment_link: bool, help: str | None = None
+    ) -> None:
         self.cards.append((title, detail, equipment_link))
+        self.helps.append(help)
 
 
 class _BrokenSnapshot:
@@ -175,7 +180,10 @@ def test_a_process_whose_schedule_cannot_stand_names_the_mode_and_skips_the_mode
     assert stopped is None and not asked
     ((title, detail, link),) = recorder.cards
     assert title == "설비 일정 없음: 설비 없음" and link
-    assert phrase in detail
+    # 까닭 줄은 까닭만, 어느 공정에 서는지의 규칙(주어가 모드 이름)은 그 풍선이다(설계 규칙
+    # UI-TXT-01).
+    (help_text,) = recorder.helps
+    assert help_text is not None and phrase in help_text and phrase not in detail
 
 
 @pytest.mark.usefixtures("no_plan_loading")

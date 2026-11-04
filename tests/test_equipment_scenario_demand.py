@@ -354,8 +354,8 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
     _show(app, SHORTENING)
     assert not app.exception, [element.message for element in app.exception]
     assert (
-        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
-        f"다른 탭은 그대로 쓸 수 있습니다.\n\n{VALUE_ERROR}"
+        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다."
+        f"\n\n{VALUE_ERROR}"
     ) in _warnings(app)
     assert _table_mismatches(app) == 0
     clear_equipment_repository()
@@ -529,8 +529,8 @@ def test_a_demand_that_stops_after_a_cached_check_is_told_not_raised(tmp_path: P
     _show(app, SHORTENING)
     assert not app.exception, [element.message for element in app.exception]
     assert (
-        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
-        f"다른 탭은 그대로 쓸 수 있습니다.\n\n{VALUE_ERROR}"
+        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다."
+        f"\n\n{VALUE_ERROR}"
     ) in _warnings(app)
     app.session_state["test_failure"] = None
     app.run()
