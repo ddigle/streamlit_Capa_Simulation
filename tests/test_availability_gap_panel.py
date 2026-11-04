@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import states
+from alert_marks import active_state, states
 from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
@@ -534,7 +534,9 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
     assert "Probe" in _alerts(app)
     # 전체 합계에서 뺀 공정의 수 · 이름은 상태 알림(`EQ-06`)이 말한다 — 자리 캡션으로 다시 적지
     # 않고(내역은 알림, 따로 보는 법은 Guide), 알림 전문이 「전체 합계」 에서 빠진다고 적는다.
-    assert "「전체 합계」 에서 빠집니다" in _alerts(app)
+    unmatched = active_state(app, "EQ-06")
+    assert unmatched is not None
+    assert "「전체 합계」 에서 빠집니다" in str(unmatched["full"])
     assert not any("한쪽에만 있는 공정" in item.value for item in app.caption)
 
     _select_view(app, "확보율 교차검증")

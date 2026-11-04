@@ -452,7 +452,8 @@ def test_clone_that_leaves_demand_out_warns_only_through_the_alert_popup(
 ) -> None:
     """복제 저장 뒤 소요대수에 들지 않은 수요(`GateVerdict.exclusion`)는 버튼 곁 경고 상자 없이
     알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 공식 지정과 한 꼴(2026-11-04 검수 의견
-    home-18). 남은 계산 오류 경고(`exclusion` 거짓)는 곁에도 선다(아래 물결표 시험)."""
+    home-18). 남은 계산 오류 경고(`exclusion` 거짓)도 같은 길이다(아래 물결표 시험 — 설계 규칙
+    AMB-05 (나))."""
     import capa_simulation.components.scenario_management as scenario_management
     from capa_simulation.components.capacity_gate import GateVerdict
 
@@ -508,8 +509,11 @@ def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
         scenario_management, "revision_save_verdict", lambda *args: GateVerdict(True, message)
     )
     _fill_clone(app, "물결표 경고 복제", "CLONE-TILDE-WARNED")
-    # 복제 뒤 남은 계산 오류 경고는 알림창 표지로만 간다(설계 규칙 AMB-05 (나)).
-    assert shown in [item.value for item in flashed(app, "warning")]
+    # 복제 뒤 남은 계산 오류 경고는 알림창 표지로만 간다(설계 규칙 AMB-05 (나)). 단계는 확인
+    # 필요(`FL-03`)다.
+    (warned,) = [item for item in flashed(app, "warning") if item.value == shown]
+    assert warned.note is not None
+    assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
     assert not app.warning
 
     monkeypatch.setattr(
