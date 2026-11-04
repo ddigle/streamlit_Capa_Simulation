@@ -12,6 +12,7 @@ from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_transform import DERIVED_SAVE_HELP, saved_button_help
+from capa_simulation.components.scenario_year_shift import ZERO_SHIFT_HELP
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -130,8 +131,13 @@ def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: S
         "이동 전 월 범위": "2027-01 ~ 2027-12",
         "이동 후 월 범위": "2027-01 ~ 2027-12",
     }
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
-    assert any("월 없는 RQ_CHIP_EQ" in item.value for item in app.info)
+    # 0 이면 저장 칸(이름 · 메모)은 서지 않고 저장 단추만 잠긴 채 까닭을 풍선에 둔다(설계 규칙
+    # UI-INP-07). 무엇을 그대로 복사하는지는 자리 글이 아니라 연수 칸 풍선이 말한다(UI-TXT-01).
+    locked = _save_button(app)
+    assert locked.disabled and locked.help == ZERO_SHIFT_HELP
+    assert not any(item.key == "scenario_shift_name" for item in app.text_input)
+    assert not app.info and not app.caption
+    assert "월 없는 RQ_CHIP_EQ" in app.number_input(key="scenario_shift_years").help
     assert len(repository.list_scenarios()) == 1
 
     app.number_input(key="scenario_shift_years").set_value(9998).run()

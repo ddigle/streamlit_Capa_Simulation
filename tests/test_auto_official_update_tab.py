@@ -41,6 +41,8 @@ from capa_simulation.auto_update_scheduler import ENV_VAR, SchedulerStatus, Tick
 from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
+    RUN_NOW_HELP,
+    RUNNING_MESSAGE,
     UNCOUNTED_DEMAND_MARK,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -165,7 +167,15 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
 
     app = _tab(database)
 
-    assert any(ENV_VAR in str(element.value) for element in infos(app))
+    # 예약이 꺼진 실행은 상태 값 줄 하나이고 켜는 법(실행 줄의 `ENV_VAR`)은 그 줄 풍선이 말한다 —
+    # 파란 안내 상자를 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+    assert not infos(app)
+    (switch,) = [element for element in app.markdown if element.value.startswith("**예약**")]
+    assert switch.value == "**예약** · 이 실행에서는 꺼짐"
+    assert ENV_VAR in str(switch.proto.help)
+    # 「지금 실행」 이 공식버전을 바꿀 수 있다는 것은 누르기 전에 그 단추 풍선이 말한다(UI-NTF-09).
+    run_now = next(button for button in app.button if button.key == RUN_NOW_BUTTON_KEY)
+    assert run_now.help == RUN_NOW_HELP and "공식버전을 발행합니다" in RUN_NOW_HELP
     text = _markdown(app)
     assert "공식 v1 W40" in text
     assert "꺼짐 · 매일 07:00 · 키워드 「PSM」 · 기준 확보율 80%" in text
@@ -865,11 +875,9 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
 
 
 def _running_notices(app: AppTest) -> list[str]:
-    return [
-        str(element.proto.body)
-        for element in infos(app)
-        if "아직 도는 중" in str(element.value) and element.proto.icon == ":material/hourglass_top:"
-    ]
+    """「도는 중」 표지 줄 — 상자가 아니라 값 · 표지 평문 한 줄이다(설계 규칙 UI-TXT-04)."""
+    assert not any("아직 도는 중" in str(element.value) for element in infos(app))
+    return [str(element.value) for element in app.caption if element.value == RUNNING_MESSAGE]
 
 
 def test_a_cut_off_round_still_running_keeps_its_token_and_shows_the_result_once_done(

@@ -1526,17 +1526,16 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     # 눌러 본 뒤에야 알게 하지 않고 그린 회차의 최신 공식으로 미리 말한다. 저장소 검사는 그대로
     # 마지막 방어선이다(그 사이 다른 사용자가 공식을 바꾼 경우).
     official = repository.latest_official_release()
+    # 잠금 까닭 · 확인 글은 결과만 적는다 — 먼저 할 일(다른 리비전을 공식으로 지정)과 되돌리는
+    # 자리(「보관된 시나리오」)는 Guide 가 말한다(설계 규칙 UI-TXT-03 — 같은 화면 안 길 안내도
+    # 걷는다).
     if official is not None and official.scenario_id == summary.scenario_id:
         st.info(
-            f"지금 최신 공식버전(v{official.release_no})의 시나리오라 보관할 수 없습니다 — "
-            "다른 리비전을 먼저 공식으로 지정하세요.",
+            f"지금 최신 공식버전(v{official.release_no})의 시나리오라 보관할 수 없습니다.",
             icon=":material/block:",
         )
         return
-    st.info(
-        "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다. 데이터는 "
-        "그대로 남아 아래 「보관된 시나리오」에서 되돌릴 수 있습니다."
-    )
+    st.info("보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다.")
     # 보관이 파일 크기를 줄이지 않는다는 것(용량 목적이면 영구 삭제 + compact)은 Guide 가 말한다.
     confirmed = st.checkbox(
         f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "

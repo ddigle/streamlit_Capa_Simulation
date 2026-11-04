@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 130
+UNSETTLED_SITES = 111
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -141,14 +141,10 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         CANNOT_DRAW,
         EMPTY,
     ),
-    ("src/capa_simulation/components/auto_official_update_tab.py", "_poll_running_round"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"): (
         EMPTY,
         EMPTY,
     ),
-    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (UNSETTLED,),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_setting_history"): (
         EMPTY,
     ),
@@ -156,8 +152,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_status"): (
-        UNSETTLED,
-        UNSETTLED,
         VALUE,
         CANNOT_DRAW,
     ),
@@ -200,15 +194,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         EMPTY,
         EMPTY,
-        UNSETTLED,
-        UNSETTLED,
-    ),
-    (
-        "src/capa_simulation/components/bigdataquery_registration.py",
-        "_render_configuration_banner",
-    ): (UNSETTLED,),
-    ("src/capa_simulation/components/bigdataquery_registration.py", "_render_registration_form"): (
-        UNSETTLED,
     ),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_schedule"): (
         UNSETTLED,
@@ -289,8 +274,10 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
         BESIDE_INPUT,
     ),
+    # 옛 배포 흔적으로 막힌 쓰기 팝오버의 잠금 까닭 한 줄(`legacy_trace_lock_line`) — 푸는 길은 구획
+    # 맨 위 옛 배포 흔적 칸 · 알림 · Guide 가 말한다(UI-TXT-03).
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
-        UNSETTLED,
+        BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_legacy_trace"): (
         BESIDE_INPUT,
@@ -299,8 +286,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
-        UNSETTLED,
-        UNSETTLED,
+        EMPTY,
+        BESIDE_INPUT,
         EMPTY,
     ),
     (
@@ -475,14 +462,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/scenario_management.py", "_render_scenario_actions"): (EMPTY,),
     ("src/capa_simulation/components/scenario_management.py", "_render_store_status"): (EMPTY,),
-    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/scenario_month_merge.py", "render_scenario_month_merge"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_body"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_header"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_load"): (BESIDE_INPUT, EMPTY),
@@ -491,14 +470,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/scenario_transform.py", "render_source_selector"): (EMPTY,),
-    ("src/capa_simulation/components/scenario_year_shift.py", "_render_shift"): (
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/scenario_year_shift.py", "render_scenario_year_shift"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/securement_heatmap.py", "render_securement_heatmap"): (EMPTY,),
     ("src/capa_simulation/components/shortening_board.py", "_render_controls"): (UNSETTLED,),
     ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (UNSETTLED, EMPTY),

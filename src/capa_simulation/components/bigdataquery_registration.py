@@ -107,8 +107,25 @@ REVEAL_NOTICE_SCRIPT: Final = """<script>/* {nonce} */
 }})();
 </script>"""
 
-# 설정 띠 — 목록 · 상세 조회 SQL 과 패키지가 모두 준비됐을 때의 값 줄.
-BANNER_READY_LINE: Final = "**BigDataQuery 설정** · 목록 · 상세 조회 SQL · 패키지 확인됨"
+# 설정 띠 — 값 줄의 라벨과, 목록 · 상세 조회 SQL 과 패키지가 모두 준비됐을 때의 값 줄.
+BANNER_LABEL: Final = "**BigDataQuery 설정**"
+BANNER_READY_LINE: Final = f"{BANNER_LABEL} · 목록 · 상세 조회 SQL · 패키지 확인됨"
+# 목록 검색 칸 풍선 — 행이 많을 때 좁히는 법(자리에는 행 수 표지만 선다).
+CATALOG_KEYWORD_HELP: Final = (
+    "시뮬레이션명 · 코드 · PLAN 의 부분 일치로 목록을 좁힙니다(공백은 AND). 행이 많으면 표 조작이 "
+    "느릴 수 있어 검색어로 좁힙니다."
+)
+# 상세 조회 시작일 · 종료일 칸 풍선 — 채우는 규칙과 넓히는 때.
+DETAIL_WINDOW_HELP: Final = (
+    f"목록에서 코드를 고르면 원천 등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ "
+    f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 두 칸을 비우면 「원천 DB 등록시점」으로 같은 "
+    "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 종료일을 늘립니다 — 기간이 길수록 "
+    "조회가 오래 걸립니다."
+)
+# 고른 행이 검색에 가려졌을 때의 표지 풍선.
+PICK_HIDDEN_HELP: Final = (
+    "고른 행이 지금 검색 결과에 없습니다 — 아래 등록 폼의 값은 그대로 유지됩니다."
+)
 
 CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
@@ -272,6 +289,22 @@ def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | No
     return "조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
 
 
+def banner_line(*, catalog_ready: bool, detail_ready: bool, package_ready: bool) -> str:
+    """설정 띠 값 줄 — 「**BigDataQuery 설정** · …」. 준비 안 된 칸은 주황 표지 한 마디다(설계 규칙
+    UI-TXT-04 — 값 · 표지만). 무엇이 빠졌고 어디를 채우는지(SQL 자리 · 패키지 · CD 서버 시작 점검)는
+    상태 알림 `AD-04` 의 전문이 말한다(UI-NTF-02 — 상태 경고는 자리에 세우지 않는다)."""
+    if catalog_ready and detail_ready:
+        if package_ready:
+            return BANNER_READY_LINE
+        return f"{BANNER_LABEL} · 목록 · 상세 조회 SQL 확인됨 · :orange[패키지 없음]"
+    missing = [
+        f":orange[{name} 미설정]"
+        for name, ready in (("목록 조회 SQL", catalog_ready), ("상세 조회 SQL", detail_ready))
+        if not ready
+    ]
+    return f"{BANNER_LABEL} · " + " · ".join(missing)
+
+
 def _render_configuration_banner(
     *,
     catalog_ready: bool,
@@ -279,18 +312,20 @@ def _render_configuration_banner(
     package_ready: bool,
     alert_tab: str | None = "",
 ) -> None:
-    """설정 상태 줄 — 준비가 안 됐으면 상태 알림(`AD-04` — 알림창 · Alarm)으로도 낸다. 자리에는
-    경고 상자 대신 상태 캡션을 둔다(준비됐으면 값 줄 `BANNER_READY_LINE`). 회차마다 한 번
-    부른다(해소 · 이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
+    """설정 값 줄(`banner_line`) — 준비가 안 됐으면 그 내역을 상태 알림(`AD-04` — 알림창 ·
+    Alarm)으로 낸다. 자리에는 값 줄만 둔다(점검 결론 — 「**라벨** · 값」 평문, 경고 · 초록 상자
+    아님). 회차마다 한 번 부른다(해소 · 이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지
+    않는다."""
     notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
-    hint = None
     if notice is None and not package_ready:
-        # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
-        hint = start_check_hint(STEP_INSTALL)
         notice = (
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
             "실제 조회는 패키지를 깐 PC 에서만 성공합니다."
         )
+        # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
+        hint = start_check_hint(STEP_INSTALL)
+        if hint:
+            notice = f"{notice}\n\n{hint}"
     if alert_tab is not None:
         alerts.state(
             "AD-04",
@@ -305,11 +340,10 @@ def _render_configuration_banner(
             full=notice,
             tab=alert_tab,
         )
-    if notice is not None:
-        st.caption(f":material/settings_alert: {notice}" + (f"\n\n{hint}" if hint else ""))
-        return
-    # 점검 결론은 값 — 「**라벨** · 값」 평문 줄(설계 규칙 UI-TXT-04, 초록 상자 아님).
-    st.caption(BANNER_READY_LINE)
+    line = banner_line(
+        catalog_ready=catalog_ready, detail_ready=detail_ready, package_ready=package_ready
+    )
+    st.caption(line if notice is None else f":material/settings_alert: {line}")
 
 
 def _registered_scenarios(
@@ -413,6 +447,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
             type="search",
             width=360,
             placeholder="시뮬레이션명·코드·PLAN 부분 일치(공백은 AND)",
+            help=CATALOG_KEYWORD_HELP,
         )
         scope = st.segmented_control(
             "표시 범위",
@@ -433,8 +468,10 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     if visible.empty:
         st.caption("검색 조건에 맞는 코드가 없습니다.")
         return
+    # 행이 많아 표 조작이 느릴 수 있다는 말과 좁히는 법은 검색 칸 풍선(`CATALOG_KEYWORD_HELP`)이
+    # 말한다 — 자리에는 행 수 표지만(설계 규칙 UI-TXT-01 · UI-TXT-04).
     if len(visible) > CATALOG_BUSY_ROWS:
-        st.caption("행이 많아 표 조작이 느릴 수 있습니다. 검색어로 좁히세요.")
+        st.caption(f"**표시 행** · :orange[{len(visible):,}행 — 많음]")
 
     pick = _stored_pick()
     position = row_position(visible, pick.row.signature) if pick is not None else None
@@ -442,7 +479,8 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
     if position is not None:
         selection_default = {"selection": {"rows": [position], "columns": []}}
     elif pick is not None:
-        st.caption("선택한 행이 현재 검색 결과에 없습니다. 아래 등록 폼의 값은 그대로 유지됩니다.")
+        # 숨은 선택 안내는 표지 + 풍선이다(설계 규칙 UI-TXT-04).
+        st.caption("**선택한 행** · 검색 결과 밖", help=PICK_HIDDEN_HELP)
 
     list_key = catalog_list_key(
         result.token,
@@ -600,7 +638,13 @@ def _render_registration_form(
     unsavable = pick is not None and not pick.row.savable
     if unsavable:
         st.error(UNSAVABLE_REASON)
-    st.caption(_detail_window_caption())
+    # 상세 조회 기간을 채우는 규칙은 두 날짜 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른
+    # 코드의 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값
+    # 줄이 생기고 빠져도 아래 폼의 자리가 밀리지 않는다.
+    with st.container():
+        registered_line = _registered_span_line()
+        if registered_line is not None:
+            st.caption(registered_line)
     with st.form("bigdataquery_registration_form"):
         st.text_input("조회할 시뮬레이션 코드", key=FORM_CODE_KEY)
         st.text_input("원천 시뮬레이션명", key=FORM_SOURCE_NAME_KEY)
@@ -630,6 +674,7 @@ def _render_registration_form(
                 max_value=today,
                 persist_state="session",
                 width=180,
+                help=DETAIL_WINDOW_HELP,
             )
             st.date_input(
                 "상세 조회 종료일",
@@ -638,6 +683,7 @@ def _render_registration_form(
                 max_value=today,
                 persist_state="session",
                 width=180,
+                help=DETAIL_WINDOW_HELP,
             )
         st.text_area("등록 메모", key=FORM_NOTE_KEY, height=90)
         submitted = st.form_submit_button(
@@ -796,23 +842,16 @@ def _picked_for_another_code(simulation_code: str) -> PickedFields | None:
     return picked if typed and typed != picked.code else None
 
 
-def _detail_window_caption() -> str:
-    """상세 조회 기간 두 칸 위의 안내.
-
-    폼 안 날짜는 저장 전까지 rerun 하지 않으므로 고른 값이 아니라 규칙과 근거를 적는다.
-    """
-    rule = (
-        f"상세 조회 기간 — 목록에서 코드를 고르면 원천 등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ "
-        f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 두 칸을 비우면 「원천 DB 등록시점」으로 같은 "
-        "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 종료일을 늘리세요 — 기간이 "
-        "길수록 조회가 오래 걸립니다."
-    )
+def _registered_span_line() -> str | None:
+    """상세 조회 기간 두 칸 위의 값 줄 — 「**고른 코드의 원천 등록일** · 2026-09-02」(목록에서 고른
+    코드가 없으면 None). 폼 안 날짜는 저장 전까지 rerun 하지 않으므로 고른 값이 아니라 채운 근거를
+    적는다 — 채우는 규칙은 두 날짜 칸 풍선(`DETAIL_WINDOW_HELP`)이 말한다."""
     span = st.session_state.get(CATALOG_FORM_REGISTERED_SPAN_KEY)
     if not isinstance(span, tuple) or len(span) != 2:
-        return rule
+        return None
     first, last = span
     seen = f"{first:%Y-%m-%d}" if first == last else f"{first:%Y-%m-%d} ~ {last:%Y-%m-%d}"
-    return f"{rule} 고른 코드의 원천 등록일: {seen}."
+    return f"**고른 코드의 원천 등록일** · {seen}"
 
 
 def _submitted_detail_window(
