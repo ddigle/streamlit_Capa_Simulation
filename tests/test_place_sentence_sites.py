@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 120
+UNSETTLED_SITES = 111
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -85,16 +85,14 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/constraint_simulation.py", ""): (
         CANNOT_DRAW,
         CANNOT_DRAW,
+        BESIDE_INPUT,
         MARKER,
         EMPTY,
         EMPTY,
-        UNSETTLED,
-        BESIDE_INPUT,
         EMPTY,
     ),
     ("app_pages/constraint_simulation.py", "product_ready"): (EMPTY,),
     ("app_pages/constraint_simulation.py", "render_held_picker"): (BESIDE_INPUT,),
-    ("app_pages/constraint_simulation.py", "render_locked_arrival_note"): (UNSETTLED,),
     ("app_pages/execution_management.py", ""): (UNSETTLED,),
     ("app_pages/execution_management.py", "_render_subpages"): (UNSETTLED,),
     ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
@@ -211,14 +209,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_schedule"): (
-        UNSETTLED,
         EMPTY,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/constraint_simulation_view.py", "render_constraint_view"): (
-        UNSETTLED,
+        EMPTY,
     ),
     ("src/capa_simulation/components/container_start_check.py", "_render_missing_report"): (
         UNSETTLED,
@@ -368,15 +360,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/manual_downtime_tab.py", "render_manual_downtime_tab"): (
         UNSETTLED,
     ),
-    ("src/capa_simulation/components/modification_schedule_view.py", "_render_body"): (
-        UNSETTLED,
-        EMPTY,
-    ),
+    ("src/capa_simulation/components/modification_schedule_view.py", "_render_body"): (EMPTY,),
     ("src/capa_simulation/components/modification_schedule_view.py", "_render_conditions"): (
         MARKER,
-    ),
-    ("src/capa_simulation/components/modification_schedule_view.py", "_render_source_band"): (
-        UNSETTLED,
     ),
     ("src/capa_simulation/components/modification_schedule_view.py", "render_schedule_mode"): (
         EMPTY,

@@ -58,7 +58,9 @@ import streamlit as st
 from capa_simulation import alerts
 from capa_simulation.components.constraint_equipment_plan import (
     CONVERTED_UNITS_NOTE,
+    CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
+    SESSION_ONLY_HELP,
     EquipmentPlanSource,
     equipment_readiness,
     first_ready_process,
@@ -86,7 +88,6 @@ from capa_simulation.components.equipment_scenario_status import (
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
-    quoted,
 )
 from capa_simulation.components.modification_schedule_view import (
     ScheduleModeContext,
@@ -98,7 +99,11 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.state_alerts import alert_page_error, missing_handover_text
+from capa_simulation.components.state_alerts import (
+    alert_page_error,
+    equipment_scope,
+    missing_handover_text,
+)
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_ABSENT_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
@@ -210,10 +215,6 @@ PAGE_DESCRIPTION = (
     "확보율이 언제부터 얼마나 떨어지는가. 「개조 일정」 은 N대 × D일 개조를 기준 확보율을 지키며 "
     "언제 할지 찾습니다. 저장하지 않는 그때그때 보기입니다."
 )
-SESSION_NOTE = (
-    "저장하지 않는 시뮬레이션입니다 — 조건은 이 세션에만 남고 다른 사람에게 보이지 않습니다. 공식 "
-    "확보율·HOME·필요 단축 일정은 그대로입니다."
-)
 AVAILABLE_EQUIPMENT_PAGE = AVAILABLE_EQUIPMENT_STATUS.path
 HELD_LABEL = "보유 제약 호기"
 HELD_HELP = (
@@ -254,7 +255,7 @@ render_page_header("제약 시뮬레이션", description=PAGE_DESCRIPTION)
 # 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로 border·height 를 주지 않는다).
 header_marks = st.container()
 render_page_guide("constraint_simulation", title=PAGE_TITLE)
-# 설비 DB 경고(이 코드보다 새 스키마·옛 배포 흔적)와 넘겨받은 공정 알림 자리 — 맨 위에 선다.
+# 설비 DB 경고(이 코드보다 새 스키마·옛 배포 흔적)와 알림 표지 자리 — 맨 위에 선다.
 notices = st.container()
 process_labels = get_process_labels()
 today = date.today()
@@ -353,37 +354,58 @@ with notices:
     alerts.flush()
 
 
-def render_locked_arrival_note(process: str | None) -> None:
+def locked_arrival_label(process: str | None) -> str | None:
     """HOME 칸으로 연 공정 Capa 상세(설비 공식 고정)에서 넘어온 그 공정·그 방문이고 세션이 공식 발행
-    쌍이 아니면 맨 위에 한 줄 — 이 화면의 설비는 두 모드 모두 세션 설비 시나리오다(D6). 다른
-    공정·다른 방문이면 그 칸을 걷는다."""
+    쌍이 아니면 세션 설비 시나리오 이름표 — 이 화면의 설비는 두 모드 모두 세션 설비 시나리오다(D6).
+    다른 공정·다른 방문이면 그 칸을 걷고 None 이다."""
     arrival = st.session_state.get(CONSTRAINT_LOCKED_ARRIVAL_KEY)
     if arrival is None:
-        return
+        return None
     if process is None or arrival != (process, page_visit()):
         st.session_state.pop(CONSTRAINT_LOCKED_ARRIVAL_KEY, None)
-        return
+        return None
     if equipment_session is None or equipment_session.is_official_pair:
-        return
-    label = equipment_basis_label(equipment_session)
-    if label is None:
-        return
-    notices.info(
-        f"설비는 세션의 {quoted(label)} 기준입니다 — 공정 Capa 상세는 HOME 칸에서 열어 설비가 "
-        "공식 고정이었습니다.",
-        icon=":material/swap_horiz:",
+        return None
+    return equipment_basis_label(equipment_session)
+
+
+def report_locked_arrival(process: str | None) -> None:
+    """설비 기준이 바뀐 도착은 상태 알림(`CS-03`)이다 — 그 공정 · 그 방문인 동안 참이고, 자리에는
+    그리지 않는다(설계 규칙 UI-NTF-02). 지문이 바뀔 때만 알림창에 뜨고 다른 공정 · 다른 방문이면
+    「해소」 로 닫힌다. 알림창 · 패널은 평문이라 이름을 막지 않는다. 늘 부른다(이벤트 칸 한
+    자리)."""
+    label = locked_arrival_label(process)
+    scope = equipment_scope(equipment_session) if equipment_session is not None else None
+    alerts.state(
+        "CS-03",
+        scope=None if scope is None else {**scope.scope, "process": process},
+        scope_label="" if scope is None else scope.label,
+        content=None if label is None else [process, page_visit()],
+        active=label is not None,
+        text=None
+        if label is None
+        else f"설비는 세션의 「{label}」 기준 — 공정 Capa 상세는 공식 고정",
+        full=(
+            None
+            if label is None
+            else f"설비는 세션의 「{label}」 기준입니다 — 공정 Capa 상세는 HOME 칸에서 열어 설비가 "
+            "공식 고정이었습니다. 이 화면은 늘 사이드바 설비 시나리오로 계산합니다."
+        ),
     )
 
 
 # 모드 분기 앞 — 「개조 일정」 모드도 같은 세션 설비로 계산한다.
-render_locked_arrival_note(opened_process)
+with notices:
+    report_locked_arrival(opened_process)
 
 
-def render_reason_card(title: str, detail: str, *, equipment_link: bool) -> None:
-    """설비 일정이 서지 않는 까닭 카드 한 장(+ 다음 화면 링크)."""
+def render_reason_card(
+    title: str, detail: str, *, equipment_link: bool, help: str | None = None
+) -> None:
+    """설비 일정이 서지 않는 까닭 카드 한 장(+ 다음 화면 링크). `help` 는 까닭 줄의 풍선(규칙)."""
     with st.container(border=True, key=CONSTRAINT_ABSENT_KEY):
         st.markdown(f":material/event_busy: **{title}**")
-        st.caption(detail)
+        st.caption(detail, help=help)
         if equipment_link:
             render_page_link(
                 AVAILABLE_EQUIPMENT_PAGE,
@@ -420,8 +442,6 @@ if schedule_mode:
             card_label=CARD_LABEL,
             card_name=CARD_NAME,
             card_icon=CARD_ICON,
-            header_slot=header_marks,
-            session_note=SESSION_NOTE,
             render_header=render_header,
             render_reason_card=render_reason_card,
         )
@@ -539,8 +559,11 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
             on_change=follow_period_end,
             disabled=not months,
         )
+    if period is not None and period.moved:
+        # 고쳐 읽은 입력 곁 한 줄(설계 규칙 UI-NTF-03 — 그 자리 입력과 짝인 고쳐 읽음).
+        st.caption("조회기간이 바뀌어 제약 기간을 보이는 달로 옮겼습니다.")
 
-    st.caption(SESSION_ONLY_CAPTION)
+    st.caption(SESSION_ONLY_CAPTION, help=SESSION_ONLY_HELP)
     st.caption("**확보율**")
     target_value = render_preset_number_field(
         "제약 확보율",
@@ -688,17 +711,9 @@ def held_choice_label(choice: HeldUnitChoice) -> str:
 def render_held_picker(
     process: str, choices: tuple[HeldUnitChoice, ...], *, disabled: bool
 ) -> list[str]:
-    """보유 「호기 고르기」 — 위젯 앞에서 그 공정의 고름을 잡고(없는 호기는 빼고 한 줄 알림 — 결정
-    B3-2) 카드 자리에 그린다. 고른 설비키(고른 차례)를 돌려준다."""
+    """보유 「호기 고르기」 — 위젯 앞에서 그 공정의 고름을 잡고(없는 호기는 빼고 그 칸 바로 밑 한 줄
+    — 결정 B3-2) 카드 자리에 그린다. 고른 설비키(고른 차례)를 돌려준다."""
     settled = settle_held_units(process, [choice.unit for choice in choices])
-    if settled.dropped:
-        names = ", ".join(literal_markdown(name) for name in settled.dropped[:4])
-        more = f" 외 {len(settled.dropped) - 4}대" if len(settled.dropped) > 4 else ""
-        notices.info(
-            f"고른 보유 제약 호기 가운데 지금 설비 시나리오 · 조회기간의 이 공정 목록에 없는 "
-            f"{len(settled.dropped)}대({names}{more})를 뺐습니다.",
-            icon=":material/playlist_remove:",
-        )
     labels = {choice.unit: held_choice_label(choice) for choice in choices}
     with held_slot:
         # 초점 앞뒤로 키가 같다 — 사이드바 multiselect 공용 규칙(`sidebar_style`, AGENTS 9장).
@@ -717,6 +732,15 @@ def render_held_picker(
             weights = {choice.unit: choice.units for choice in choices}
             total = sum(weights.get(str(name), 0.0) for name in picked)
             st.caption(f"고른 호기 {len(picked)}대 · 환산 합 {units_text(total)}대")
+        if settled.dropped:
+            # 고쳐 읽은 고름 — 그 칸 바로 밑 한 줄(설계 규칙 UI-NTF-03 — 입력 곁 고쳐 읽음).
+            names = ", ".join(literal_markdown(name) for name in settled.dropped[:4])
+            more = f" 외 {len(settled.dropped) - 4}대" if len(settled.dropped) > 4 else ""
+            st.caption(
+                f":material/playlist_remove: 고른 보유 제약 호기 가운데 지금 설비 시나리오 · "
+                f"조회기간의 이 공정 목록에 없는 {len(settled.dropped)}대({names}{more})를 "
+                "뺐습니다."
+            )
     return [str(name) for name in picked]
 
 
@@ -749,10 +773,10 @@ if readiness is not None and readiness.cutoff_days is not None:
     setting = cutoff_setting(cutoff, process)
     cutoff_line = (
         f"Cut-off {cutoff_days_words(setting if setting is not None else readiness.cutoff_days)}"
-        " — 가용설비 현황 「가용설비 설정」 팝업의 공정별 값(모든 설비 시나리오 공용)"
     )
 with cutoff_slot:
-    st.caption(cutoff_line)
+    # 값만 자리에 — 어디서 고치는지는 풍선(설계 규칙 UI-TXT-03).
+    st.caption(cutoff_line, help=CUTOFF_SOURCE_HELP)
 
 
 def product_ready() -> bool:
@@ -916,8 +940,6 @@ render_header(
     f"제약 {target_percent}% · 기준 {literal_markdown(general_label(labels, result))} · "
     f"{modification_text}",
 )
-with header_marks:
-    st.caption(SESSION_NOTE)
 
 # 출처 띠 — 소요는 활성 시나리오(세션만 읽음), 가용은 세션 설비 시나리오. 두 모드가 같은 조각은
 # `constraint_equipment_plan` 에서 받는다.
@@ -946,8 +968,6 @@ if new_shares is not None:
         "(공정 Capa 상세 ③ 의 Qual 다음 날 — 묶음은 첫 모듈)"
     )
 st.caption(band)
-if period.moved:
-    st.info("조회기간이 바뀌어 제약 기간을 보이는 달로 옮겼습니다.", icon=":material/event_busy:")
 if result.kpis.constrained_months == 0:
     st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "

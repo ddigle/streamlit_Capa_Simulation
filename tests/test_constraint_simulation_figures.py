@@ -928,7 +928,8 @@ def test_the_short_line_names_the_dedicated_units_and_folds_many_months() -> Non
     assert (july.need, july.dedicated, july.short) == (0, 6, True)
     assert len(result.short_months) == 5 > SHORT_INLINE_LIMIT
     line = short_lines(result)
-    assert line.startswith("전용 대수를 다 배정하지 못한 달 5개월(27.06–27.10 사이) — ")
+    # 까닭(`SHORT_REASON_TEXT`)은 구획 제목 풍선이다 — 줄은 값만(설계 규칙 UI-TXT-04).
+    assert line == "전용 대수를 다 배정하지 못한 달 5개월(27.06–27.10 사이)"
     assert "필요" not in line
     details = short_month_lines(result)
     assert len(details) == 5

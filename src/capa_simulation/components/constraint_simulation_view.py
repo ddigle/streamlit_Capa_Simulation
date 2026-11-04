@@ -131,8 +131,16 @@ from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.sidebar_status import rerun_app_unless_alone
 
 __all__ = [
+    "BEFORE_RANGE_MARK",
+    "CHART_HELP",
     "KPI_ROW_KEY",
+    "MODIFY_OFF_TEXT",
     "NEW_SKIPPED_TEXT",
+    "SCHEDULE_DEFINITION",
+    "SHEET_HELP",
+    "SHORT_REASON_TEXT",
+    "WAITING_DEFINITION",
+    "WAIT_BEFORE_RANGE_MARK",
     "SCHEDULE_CARD_KEY",
     "SHORT_INLINE_LIMIT",
     "SHORT_MONTHS_EXPANDER_KEY",
@@ -145,6 +153,7 @@ __all__ = [
     "holdings_text",
     "month_steps",
     "new_stopped_line",
+    "new_stopped_mark",
     "ordinary_line",
     "overdrawn_lines",
     "pick_chart_month",
@@ -186,6 +195,9 @@ SCHEDULE_DEFINITION: Final = (
     "개조 비가동은 그 달 W/D 첫날(그 달 1일 − Cut-off)을 끝으로, 개조 기간만큼 앞서 "
     "잡습니다. 그동안 그 대수는 공정 전체 가용대수에서 빠집니다(달마다 W/D 일수 비율)."
 )
+# 그래프 · 계산표를 누르는 법은 제목 풍선이다 — 범례만 자리에 둔다(설계 규칙 UI-TXT-01).
+CHART_HELP: Final = "달 칸을 누르면 그 달의 계산이 옆 카드에 나옵니다."
+SHEET_HELP: Final = "칸을 누르면 그 달을 고릅니다."
 NO_WINDOWS_TEXT: Final = "개조가 필요한 달이 없습니다."
 FREE_ONLY_TEXT: Final = "늘어난 전용 대수를 모두 보유·신규 설비로 채워 개조가 없습니다."
 NEW_SKIPPED_TEXT: Final = (
@@ -194,10 +206,14 @@ NEW_SKIPPED_TEXT: Final = (
 )
 # 일반 설비가 된 신규 한 줄에 까닭마다 적는 이름 수 — 넘으면 「외 n호기」.
 ORDINARY_NAME_LIMIT: Final = 4
-MODIFY_OFF_TEXT: Final = "개조를 켜면 제약 제품에 떼어 줄 대수만큼 개조 비가동이 잡힙니다."
+# 개조를 끈 회차의 개조 일정 칸 — 빈 결과 한 줄(켜면 무엇이 잡히는지는 「개조 필요」 풍선).
+MODIFY_OFF_TEXT: Final = "개조를 꺼 개조 일정이 없습니다."
+# 표 앞에서 시작하는 개조 · 대기 — 숨은 데이터라 표지 + 풍선이다(설계 규칙 UI-TXT-04).
+BEFORE_RANGE_MARK: Final = ":material/info: 첫 개조 비가동 — 표 첫 달 앞에서 시작"
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
 )
+WAIT_BEFORE_RANGE_MARK: Final = ":material/info: 첫 신규 대기 — 표 첫 달 앞에서 시작"
 WAIT_BEFORE_RANGE_TEXT: Final = (
     "첫 신규 대기가 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
 )
@@ -750,6 +766,18 @@ def new_stopped_line(result: ConstraintResult) -> str:
     )
 
 
+def new_stopped_mark(result: ConstraintResult) -> str:
+    """개조 일정 카드의 「신규를 붙이지 않음」 표지 — 붙이지 않은 증가 달만 적는다. 까닭 · 뒤 신규의
+    몫(`new_stopped_line`)은 그 표지의 풍선이다(설계 규칙 UI-TXT-04). `new_stopped_line` 이 빈
+    글자면 빈 글자."""
+    if not new_stopped_line(result):
+        return ""
+    stopped = result.new_units_stopped_month
+    if result.new_units_skipped or stopped is None:
+        return ":material/block: 신규 설비 붙이지 않음 — 보유로 다 덮음"
+    return f":material/block: {month_name(stopped)} 증가부터 신규 설비 붙이지 않음 — 보유로 다 덮음"
+
+
 def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> list[str]:
     """개조 일정 줄 — 「27년 6월 몫 · 2027-04-25 ~ 2027-05-24 비가동 · **6대**」. 첫날이 오늘보다
     앞이면 꼬리."""
@@ -772,7 +800,7 @@ def _short_month_text(row: ConstraintMonth) -> str:
 
 
 def short_lines(result: ConstraintResult) -> str:
-    """가용이 모자란 달 한 줄. 없으면 빈 글자.
+    """가용이 모자란 달 한 줄(값). 없으면 빈 글자. 까닭(`SHORT_REASON_TEXT`)은 구획 제목 풍선이다.
 
     달이 `SHORT_INLINE_LIMIT` 개 이하면 달마다 값을 한 줄에 적고, 그보다 많으면 달 수와 첫·끝 달만
     적는다 — 달마다 값은 접힌 「달마다 보기」(`short_month_lines`)가 든다(30개월이 한 줄로 늘어지지
@@ -787,7 +815,7 @@ def short_lines(result: ConstraintResult) -> str:
             f"전용 대수를 다 배정하지 못한 달 {len(rows)}개월"
             f"({month_label(rows[0].month)}–{month_label(rows[-1].month)} 사이)"
         )
-    return f"{head} — {SHORT_REASON_TEXT}"
+    return head
 
 
 def short_month_lines(result: ConstraintResult) -> list[str]:
@@ -955,12 +983,12 @@ def render_constraint_view(view: ConstraintView) -> None:
     st.html(top_row_style(len(months)))
     with st.container(horizontal=True, gap="medium", key=TOP_ROW_KEY):
         with st.container(border=True, key=CHART_CARD_KEY):
-            st.markdown("**월별 확보율**")
+            st.markdown("**월별 확보율**", help=CHART_HELP)
             above = rate_axis(
                 result, view.labels, show_proportional=bool(show_proportional)
             ).above_months
             st.caption(
-                "달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간"
+                "옅은 칠 = 제약 기간"
                 + (
                     f" · {ABOVE_MARK} = 그래프 위로 넘친 제약 제품 확보율(값은 풍선)"
                     if above
@@ -980,10 +1008,10 @@ def render_constraint_view(view: ConstraintView) -> None:
                 )
         _render_month_steps(view, month, show_proportional=bool(show_proportional))
     with st.container(border=True):
-        st.markdown("**월별 계산표**")
+        st.markdown("**월별 계산표**", help=SHEET_HELP)
         st.caption(
-            "칸을 누르면 그 달을 고릅니다 · 머리 옅은 칠 = 제약 기간 · 부족색 칸 = 기준(제약 칸은 "
-            "제약 목표)에 못 미침 · 파란 글자 = 줄어든 값 · 대수는 환산 대수"
+            "머리 옅은 칠 = 제약 기간 · 부족색 칸 = 기준(제약 칸은 제약 목표)에 못 미침 · "
+            "파란 글자 = 줄어든 값 · 대수는 환산 대수"
         )
         _render_sheet(sheet, months)
     schedule_column, shortage_column = st.columns(2, gap="medium")
@@ -997,7 +1025,7 @@ def render_constraint_view(view: ConstraintView) -> None:
             overdrawn = overdrawn_lines(result)
             if shortage or overdrawn:
                 with st.container(border=True):
-                    st.markdown("**가용이 모자란 달**")
+                    st.markdown("**가용이 모자란 달**", help=SHORT_REASON_TEXT)
                     if shortage:
                         st.caption(shortage)
                     if shortage_months:
@@ -1115,7 +1143,8 @@ def _render_month_steps(view: ConstraintView, month: int, *, show_proportional: 
 def _render_schedule(view: ConstraintView) -> None:
     result = view.result
     with st.container(border=True, key=SCHEDULE_CARD_KEY):
-        st.markdown("**개조 일정**")
+        # 개조 비가동을 잡는 규칙은 제목 풍선이다 — 카드 밑에 늘 두지 않는다(설계 규칙 UI-TXT-01).
+        st.markdown("**개조 일정**", help=SCHEDULE_DEFINITION)
         with st.container():
             free_line = free_units_line(result)
             if free_line:
@@ -1125,22 +1154,21 @@ def _render_schedule(view: ConstraintView) -> None:
             elif not result.windows:
                 freed = result.kpis.owned_used + result.kpis.new_used
                 st.caption(FREE_ONLY_TEXT if free_line and freed > 0 else NO_WINDOWS_TEXT)
-            stopped_line = new_stopped_line(result)
-            if stopped_line:
-                st.caption(stopped_line)
+            stopped_mark = new_stopped_mark(result)
+            if stopped_mark:
+                st.caption(stopped_mark, help=new_stopped_line(result))
             for line in schedule_lines(result.windows, today=view.today):
                 st.markdown(line)
             if result.starts_before_range:
-                st.caption(f":material/info: {BEFORE_RANGE_TEXT}")
+                st.caption(BEFORE_RANGE_MARK, help=BEFORE_RANGE_TEXT)
             if result.assignments:
-                st.caption("**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비")
+                st.caption(
+                    "**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비", help=WAITING_DEFINITION
+                )
                 for line in waiting_lines(result.assignments, today=view.today):
                     st.markdown(line)
                 if result.waits_before_range:
-                    st.caption(f":material/info: {WAIT_BEFORE_RANGE_TEXT}")
+                    st.caption(WAIT_BEFORE_RANGE_MARK, help=WAIT_BEFORE_RANGE_TEXT)
             ordinary = ordinary_line(result)
             if ordinary:
                 st.caption(ordinary)
-        st.caption(SCHEDULE_DEFINITION)
-        if result.conditions.uses_new_units:
-            st.caption(WAITING_DEFINITION)

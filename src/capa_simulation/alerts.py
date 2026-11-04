@@ -235,6 +235,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     ),
     AlertSpec("EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 트레이에 있음"),
     AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
+    # 제약 시뮬레이션 맨 위에 서던 「설비는 세션의 「…」 기준입니다」 줄을 상태 알림으로(화면에 상태
+    # 문장을 달지 않는다 — 설계 규칙 UI-NTF-02).
+    AlertSpec(
+        "CS-03", "check", "state", "제약 시뮬레이션 — 공식 고정 상세에서 왔는데 설비가 세션 기준"
+    ),
 )
 
 

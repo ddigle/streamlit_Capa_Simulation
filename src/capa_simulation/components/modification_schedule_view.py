@@ -33,11 +33,12 @@ from typing import Final, NamedTuple
 
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.constraint_equipment_plan import (
     CONVERTED_UNITS_NOTE,
+    CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
+    SESSION_ONLY_HELP,
     EquipmentPlanSource,
     ReasonCard,
     equipment_readiness,
@@ -138,6 +139,7 @@ from capa_simulation.services.modification_schedule import (
     schedule_month_inputs,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
 from capa_simulation.services.securement_threshold import (
     judgment_boundary,
     securement_threshold_caption,
@@ -148,6 +150,7 @@ from capa_simulation.sidebar_status import condition_card
 
 __all__ = [
     "CHART_CARD_KEY",
+    "CHART_HELP",
     "DEADLINE_HELP",
     "DOUBLE_COUNT_NOTE",
     "KPI_ROW_KEY",
@@ -180,15 +183,20 @@ _MEMO_LIMIT: Final = 4
 _RESULT_SCHEMA_VERSION: Final = 4
 _EMPTY: Final = "—"
 
+# 넣는 법(아직 일정에 넣지 않은 개조만)은 「개조 대수」 칸 풍선이다 — 출처 띠 밑에 늘 두지 않는다
+# (설계 규칙 UI-TXT-01).
 DOUBLE_COUNT_NOTE: Final = (
-    ":material/info: **아직 일정에 넣지 않은 개조만** 넣으세요 — 설비 시나리오 비가동에 이미 든 "
-    "개조는 가용에서 이미 빠져 있어 두 번 빠집니다."
+    "**아직 일정에 넣지 않은 개조만** 넣습니다 — 설비 시나리오 비가동에 이미 든 개조는 가용에서 "
+    "이미 빠져 있어 두 번 빠집니다."
 )
+# 그래프 범례(값)는 자리에, 막대 좌표의 읽는 법은 제목 풍선이다.
 CHART_NOTE: Final = (
     "아래 띠 = 차수별 개조 비가동(글 = 대수 — 글이 들지 않는 막대는 풍선에) · 옅은 빨강 칠 = 개조 "
     "없이도 기준(+ 안전 여유) 미달이라 넣지 않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · "
-    "기한 뒤) · 막대는 W/D 구간 좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 "
-    "있습니다"
+    "기한 뒤)"
+)
+CHART_HELP: Final = (
+    "막대는 W/D 구간 좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다."
 )
 LIST_NOTE: Final = (
     "차수 = 같은 날 시작하는 묶음 · 날짜는 비가동 첫날 ~ 마지막 날(다음 날부터 일반 "
@@ -198,7 +206,7 @@ NO_BATCH_TEXT: Final = "넣을 수 있는 차수가 없습니다."
 UNITS_HELP: Final = (
     "개조할 설비 대수(환산 대수) — 지금 있는 설비 가운데 **아직 개조하지 않은** 대수입니다. 이미 "
     "개조를 마쳤거나 제약 제품 전용으로 들고 있는 설비, 개조된 채 들어오는 신규 설비는 빼고 "
-    "넣으세요. 어느 호기인지는 고르지 않습니다."
+    "넣으세요. 어느 호기인지는 고르지 않습니다. " + DOUBLE_COUNT_NOTE
 )
 FELL_BACK_LABEL: Final = "가장 고르게 → 가장 빨리로 배치"
 # 요약 넷째 칸 「기한」 풍선 — 칸이 실제로 적는 것만 말한다. 「못 맞춤」 은 기한을 골랐을 때만
@@ -227,11 +235,6 @@ class ScheduleModeContext(NamedTuple):
     card_label: str
     card_name: str
     card_icon: str
-    header_slot: DeltaGenerator
-    """머리 한 줄 자리(페이지의 `header_marks`) — 「저장하지 않음」 캡션을 제약 모드와 같은 자리에.
-    """
-
-    session_note: str
     render_header: Callable[[str, str], None]
     render_reason_card: ReasonCard
 
@@ -351,7 +354,7 @@ def _render_conditions(
     """카드의 「이 세션만」 · 개조 · 일정 · 기준 묶음(지금 컨테이너 — 조건 카드 안)."""
     months = list(page_inputs.months)
     thresholds = page_inputs.thresholds
-    st.caption(SESSION_ONLY_CAPTION)
+    st.caption(SESSION_ONLY_CAPTION, help=SESSION_ONLY_HELP)
     st.caption("**개조**")
     settle_units(*UNITS_RANGE)
     units = st.number_input(
@@ -590,12 +593,14 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         readiness = equipment_readiness(source, None if selected is None else str(selected))
         cutoff_days = readiness.cutoff_days if readiness is not None and readiness.ready else None
         choice = _render_conditions(page_inputs, today=source.today, cutoff_days=cutoff_days)
-        st.caption(
-            f"Cut-off {readiness.cutoff_days}일 — 가용설비 현황 「가용설비 설정」 팝업의 "
-            "공정별 값(모든 설비 시나리오 공용)"
-            if readiness is not None and readiness.cutoff_days is not None
-            else "Cut-off 미기재"
-        )
+        # 값만 자리에(제약 영향 모드와 같은 글 — 소수는 내림을 함께), 어디서 고치는지는
+        # 풍선(설계 규칙 UI-TXT-03).
+        if readiness is not None and readiness.cutoff_days is not None:
+            setting = None if selected is None else cutoff_setting(source.cutoff, str(selected))
+            days = setting if setting is not None else readiness.cutoff_days
+            st.caption(f"Cut-off {cutoff_days_words(days)}", help=CUTOFF_SOURCE_HELP)
+        else:
+            st.caption("Cut-off 미기재")
 
     if selected is None or not months:
         st.caption("조회기간에 확보율을 낼 공정이 없습니다.")
@@ -686,11 +691,10 @@ def _header_line(bold: str, result: ScheduleResult, labels: ScheduleLabels) -> s
 def _render_source_band(
     context: ScheduleModeContext, process_label: str, *, manual_note: str = ""
 ) -> None:
-    """「저장하지 않음」(머리 자리) · 출처 띠 · 「아직 일정에 넣지 않은 개조만」.
+    """출처 띠 — 「저장하지 않음」 은 조건 카드 「이 세션만」 표지 풍선, 「아직 일정에 넣지 않은
+    개조만」 은 「개조 대수」 칸 풍선이 말한다(설계 규칙 UI-TXT-01).
 
     `manual_note` 는 계획이 건 입력 비가동(`manual_effect_band` — 없으면 빈 글자)이다."""
-    with context.header_slot:
-        st.caption(context.session_note)
     scenario_text = source_scenario_text()
     session = context.equipment_session
     equipment_text = equipment_basis_label(session) if session is not None else None
@@ -704,7 +708,6 @@ def _render_source_band(
         band += f" · {manual_note}"
     band += upeh_assumption_note()
     st.caption(band)
-    st.caption(DOUBLE_COUNT_NOTE)
 
 
 # ================================================================== 요약 넷
@@ -838,7 +841,7 @@ def _render_body(result: ScheduleResult, labels: ScheduleLabels) -> None:
         + "</style>"
     )
     with st.container(border=True, key=CHART_CARD_KEY):
-        st.markdown("**월별 확보율 — 개조 전 · 뒤**")
+        st.markdown("**월별 확보율 — 개조 전 · 뒤**", help=CHART_HELP)
         st.caption(CHART_NOTE)
         with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):
             st.plotly_chart(
