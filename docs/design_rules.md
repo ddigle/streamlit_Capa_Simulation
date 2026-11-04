@@ -110,8 +110,8 @@
 - 범위: 모든 화면 · 팝업 · 사이드바 · 떠 있는 판 · 모듈 화면
 - 예외: 입력 곁 오류 · 거부(폼 검증, UI-NTF-03) / 값 · 표지 — 목록 구획의 빈 결과 · 점검 화면의 결론 포함(UI-TXT-04) / 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-09) / 화면을 그리지 못하는 오류(UI-NTF-08).
 - 판단: 이 글을 지우면 사용자가 무엇을 못 하게 되나? 답이 없으면 지우고, 있으면 UI-TXT-02 의 갈 곳 넷 가운데 어디로 갈지 먼저 본다.
-- 그물: `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때)
-- 그물 후보: 화면 글 문장 그물 · 설정 팝업 「설명 글 0줄」
+- 그물: `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — `st.caption` · `st.info` · `st.markdown` 의 서술형 문장 자리를 (파일, 함수)별 까닭 허용 목록과 맞댐, 미정리 수는 늘지 않음) · `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때)
+- 그물 후보: 설정 팝업 「설명 글 0줄」
 - 근거: 검수 alarm-02 · alarm-11 · home-19 · home-21 · home-u01(2026-11-03), Space 결정 보드 메모(2026-11-04), 조건 카드 · Guide 결정(2026-09-28), 확인 보드 AMB-01 (가) · AMB-02 (가)(2026-11-04) — 「저런식으로 인터페이스에 설명문구를 다는걸 지양하도록해」
 - 지금 값: 없음
 
@@ -136,8 +136,8 @@
 - 범위: 모든 팝업 · 조건 칸 · 설정 화면 · 읽기 전용 값 카드
 - 예외: 그 칸이 보이는 값 자체(「라벨 · 값」 줄 · 「선택 n / N」 — UI-TXT-04)는 요약 문장이 아니다.
 - 판단: 이 글은 값을 보이나, 길을 말하나? 길이면 지우고 바로 가기도 세우지 않는다 — 고치는 곳은 Guide · 풍선이 말한다.
-- 그물: `tests/test_home_settings_pointers.py`(없어진 HOME 「Preference」 탭을 가리키는 한 꼴)
-- 그물 후보: 화면 글 문장 그물
+- 그물: `tests/test_home_settings_pointers.py`(없어진 HOME 「Preference」 탭을 가리키는 한 꼴) · `tests/test_place_sentence_sites.py`(「… 에서 정합니다」 꼴 길 안내 문장 — 화면 글 문장 그물)
+- 그물 후보: 없음
 - 근거: 검수 home-20 · home-21(2026-11-03), 확인 보드 AMB-06 (나)(2026-11-04) — 「[… 판정 기준은 HOME 설정 → Preference 에서 정합니다.] 이런 설명들 제거」
 - 지금 값: 없음
 
@@ -149,8 +149,8 @@
 - 범위: 사이드바 · 머리 띠 · 탭 줄 · 칩 줄 · 팝업 머리 · 본문 캡션 · 목록 구획 · 점검 화면
 - 예외: 입력 곁 거부 · 오류(UI-NTF-03), 화면을 못 그리는 오류(UI-NTF-08).
 - 판단: 이 글은 값 · 표지 · 내역 · 설명 가운데 무엇인가? 값 · 표지가 아니면 자리에서 뺀다 — 서술어가 없어도 건수 · 목록을 늘어놓으면 내역이다.
-- 그물: `tests/test_place_text_lines.py`(빈 결과 · 점검 결론 네 화면 — 성공 상자 없음 · 평문 한 줄, 숨은 공정 칸 머리 풍선 — 부분) · 그 밖은 판단 질문으로 본다
-- 그물 후보: 화면 글 문장 그물 — 까닭 사전을 이 갈래(값 · 표지 · 빈 결과 · 입력 곁 · 못 그리는 오류)로, 표지 까닭에는 글자 수 상한
+- 그물: `tests/test_place_text_lines.py`(빈 결과 · 점검 결론 네 화면 — 성공 상자 없음 · 평문 한 줄, 숨은 공정 칸 머리 풍선) · `tests/test_place_sentence_sites.py`(자리 글 까닭 사전 — 값 · 표지 · 빈 결과 · 입력 곁 거부 · 못 그리는 오류 · 미정리, `tests/source_sites.py`) · 문장으로 끝나지 않는 내역 줄은 판단 질문으로 본다
+- 그물 후보: 표지 글자 수 상한
 - 근거: 검수 「괜찮음」 home-15 · 16 · 23(2026-11-03), 알림 결정 보드 D5(2026-11-03), Space 결정 보드 메모(2026-11-04), 귀납, 확인 보드 AMB-02 (가)(2026-11-04)
 - 지금 값: 없음
 
@@ -201,8 +201,8 @@
 - 범위: 조건부 안내 · 경고 · 캡션 · 칩(목록을 보이는 구획 · 점검 화면 자체는 밖)
 - 예외: 목록 구획의 빈 결과 한 줄(「…이 없습니다」)과 점검 화면의 결론은 조건부 안내가 아니라 값이다 — 자리에 평문 한 줄로 둔다(UI-TXT-04).
 - 판단: 문제가 없는 날 이 자리는 비는가?
-- 그물: `tests/test_alert_sites.py`(경고 갈래 — 간접) · `tests/test_flash_messages.py::render_flash_stands_one_slot_with_or_without_a_message`
-- 그물 후보: 화면 글 문장 그물 · 문제 없는 날 기준선
+- 그물: `tests/test_alert_sites.py`(경고 갈래 — 간접) · `tests/test_flash_messages.py::render_flash_stands_one_slot_with_or_without_a_message` · `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — 조건부 안내 문장 자리)
+- 그물 후보: 문제 없는 날 기준선
 - 근거: 알림 결정 보드 D5(2026-11-03), AGENTS 8장, 확인 보드 AMB-02 (가)(2026-11-04)
 - 지금 값: 없음
 
@@ -218,8 +218,8 @@
 - 범위: 모든 화면 · 팝업 · 모듈 화면의 알림
 - 예외: 입력 곁 오류 · 거부(UI-NTF-03), 화면을 못 그리는 오류(UI-NTF-08), 목록 구획의 빈 결과 · 점검 결론의 평문 한 줄(UI-TXT-04). 모듈 화면은 공개 창구(`module_api` v1)에 알림 길이 없어 결과 · 경고를 화면 안 Streamlit 기본 위젯으로 둔다 — 창구에 알림 길이 생기면 이 예외를 걷는다. 자리에 남는 상자의 색은 `docs/design_system.md` 2-3.
 - 판단: 이 알림은 등록부 코드가 있나? 알림창 말고 다른 꼴로 서는 까닭이 있나?
-- 그물: `tests/test_flash_messages.py`(한 길 · 알림창 허용 자리) · `tests/test_alert_sites.py`(경고 상자 허용 목록) · `tests/test_alerts.py`(등록부) · `tests/test_alert_center_assets.py` · `scripts/check_deploy_screens.py` alert_popup · alarm_button
-- 그물 후보: 알림 꼴 그물
+- 그물: `tests/test_flash_messages.py`(한 길 · 알림창 허용 자리) · `tests/test_alert_sites.py`(경고 상자 허용 목록) · `tests/test_notice_form_sites.py`(알림 꼴 그물 — `st.toast` 0 · `st.success` 남은 자리는 모두 미정리) · `tests/test_alerts.py`(등록부) · `tests/test_alert_center_assets.py` · `scripts/check_deploy_screens.py` alert_popup · alarm_button
+- 그물 후보: 없음
 - 근거: 검수 home-08 · home-09(2026-11-02), 검수 home-18(2026-11-03), 검수 「괜찮음」 alarm-03 · 04 · 06 ~ 10 · 12 · 13(2026-11-03), AGENTS 9장 「알림 칸」, 확인 보드 AMB-21 (가)(2026-11-04) — 「여기서 띄운 알람창처럼 뜨게 형식을 통일하자」
 - 지금 값: 알림창 단계 넷 · 머무는 시간 8초(알림) · 15초(확인 필요 이상) · 한 번에 최대 3칸 — 출처 4장
 
@@ -231,8 +231,8 @@
 - 범위: 모든 화면 · 사이드바 · 팝업의 상태 경고(사이드바 저장 칸 밑 계산 오류 경고 포함)
 - 예외: 폼 · 팝업 안 입력 경고(UI-NTF-03), 화면을 못 그리는 오류(UI-NTF-08). 탭 안 경고는 그 탭이 열린 동안만 센다.
 - 판단: 이 글은 조건이 사라지면 같이 사라지나? 그렇다면 상태다 — 알림으로.
-- 그물: `tests/test_alert_sites.py` · `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`
-- 그물 후보: 화면 글 문장 그물
+- 그물: `tests/test_alert_sites.py` · `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py` · `tests/test_place_sentence_sites.py`(상태 문장 자리 — 화면 글 문장 그물) · `tests/test_withdrawn_warning_alerts.py`(걷은 경고 ↔ 알림 코드)
+- 그물 후보: 없음
 - 근거: 검수 home-08(2026-11-02), 검수 home-18(2026-11-03), 알림 결정 보드 D2(2026-11-03), Space 결정 보드 메모(2026-11-04), 확인 보드 AMB-02 (가) · AMB-05 (나)(2026-11-04) — 「이 내용도 사이드바에 띄우지 않고 우하단 알람으로 띄우고 Alarm에 누적시키게끔 통일해」
 - 지금 값: 없음
 
@@ -244,8 +244,8 @@
 - 범위: 모든 쓰기 단추 · 팝업 · 편집표
 - 예외: 「바뀐 것이 없습니다」 여섯 곳은 버튼 곁 그대로(빠른 둘째 누름 안내와 얽힘 — 2026-11-03 답).
 - 판단: 사용자가 그 자리에서 고쳐야 할 것이 있나? 없으면 알림창.
-- 그물: `tests/test_flash_messages.py::success_is_sent_to_the_alert_popup_and_not_drawn_beside_the_button` 외
-- 그물 후보: 알림 꼴 그물
+- 그물: `tests/test_flash_messages.py::success_is_sent_to_the_alert_popup_and_not_drawn_beside_the_button` 외 · `tests/test_notice_form_sites.py`(초록 결과 상자 · 토스트 직접 부름 허용 목록)
+- 그물 후보: 없음
 - 근거: 검수 「괜찮음」 home-u02(2026-11-03), 알림 결정 보드 D3(2026-11-03)
 - 지금 값: 없음
 
@@ -270,8 +270,8 @@
 - 범위: UI-TXT-01 · UI-NTF-02 의 하한선 — 계산 · 저장 · 발행 결과에 영향을 주는 경고
 - 예외: 없음
 - 판단: 이 경고를 걷은 뒤에도 사용자가 이 문제를 알 길이 있나?
-- 그물: 없음 — 판단 질문으로 본다
-- 그물 후보: 걷은 경고 ↔ 알림 코드
+- 그물: `tests/test_withdrawn_warning_alerts.py`(걷은 경고마다 등록부 코드 · 보내는 길 · 그 코드를 단언하는 화면 시험)
+- 그물 후보: 없음
 - 근거: 검수 home-18(2026-11-03), 사용자 결정의 까닭(2026-09-28), 확인 보드 AMB-05 (나)(2026-11-04)
 - 지금 값: 없음
 
@@ -352,8 +352,8 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 화면 단위 설정 묶음
 - 예외: 설정 상자는 여럿이 함께 쓰는 공용 값을 저장하는 묶음만이다 — 편집표에 딸린 보기 거름(「표 보기 설정」), 데이터와 잇지 않는 도구(Qual 마감 계산기), 탭 자체가 설정인 화면, 편집 동작(저장 · 버리기 · 내려받기 · 붙여넣기)은 본문에 남는다. 화면 하나의 조작 상자는 Space 「Space 도면」 하나이고 다른 화면은 늘리지 않는다(AGENTS 9장).
 - 판단: 이 단추는 공용 값을 고치는 팝업을 여나? 그렇다면 사이드바 설정 상자다.
-- 그물: `scripts/check_deploy_screens.py` settings_boxes(자리 · 같은 제목 팝업 · 본문 옛 단추 0) · `tests/test_app_navigation.py`(설비 설정 상자 자리) · `tests/test_home_page.py` · `tests/test_equipment_pages.py`
-- 그물 후보: 본문 설정 단추 그물
+- 그물: `scripts/check_deploy_screens.py` settings_boxes(자리 · 같은 제목 팝업 · 본문 옛 단추 0) · `tests/test_app_navigation.py`(설비 설정 상자 자리) · `tests/test_home_page.py` · `tests/test_equipment_pages.py` · `tests/test_settings_button_sites.py`(본문 설정 단추 그물 — 빈 허용 목록, 설정 팝업마다 같은 제목의 사이드바 상자)
+- 그물 후보: 없음
 - 근거: 사용자 지시(2026-11-03), 사용자 UI 요청 ⑤(2026-11-02), AGENTS 9장 「사이드바·조건 카드·본문」, 확인 보드 AMB-07 (가)(2026-11-04) — 「설정버튼이 페이지에 배치된경우 전부 동일하게 사이드바 상자로 이동 배치해」
 - 지금 값: 없음
 
@@ -1169,13 +1169,11 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 ## 5. 그물 후보
 
-규칙마다 「그물 후보」 줄이 가리키는 자동 검사의 꼴이다. 새 화면 · 새 꼴을 만들 때 걸린 규칙의 후보를 같은 변경에서 세우면(PRC-01) 그 규칙은 판단 질문 대신 시험이 지킨다. 세운 그물은 규칙의 「그물」 줄로 옮긴다.
+규칙마다 「그물 후보」 줄이 가리키는 자동 검사의 꼴이다. 새 화면 · 새 꼴을 만들 때 걸린 규칙의 후보를 같은 변경에서 세우면(PRC-01) 그 규칙은 판단 질문 대신 시험이 지킨다. 세운 그물은 규칙의 「그물」 줄로 옮긴다. 2026-11-04 에 화면 글 문장 그물(`tests/test_place_sentence_sites.py`) · 알림 꼴 그물(`tests/test_notice_form_sites.py`) · 본문 설정 단추 그물(`tests/test_settings_button_sites.py`) · 걷은 경고 ↔ 알림 코드(`tests/test_withdrawn_warning_alerts.py`)를 세워 그 규칙의 「그물」 줄로 옮겼다 — 소스 훑기 도우미는 `tests/source_sites.py` 다.
 
 ### 5-1. 정적 시험(소스 훑기 · 허용 목록과 정확히 맞댐)
 
-- **화면 글 문장 그물**(UI-TXT-01 · 03 · 04 · 08, UI-NTF-02) — `st.caption` · `st.info` · `st.markdown` 의 서술형 문장 · 「→ … 에서 …니다」 꼴을 (파일, 함수)별로 세고 까닭 사전(값 · 표지 · 빈 결과 · 입력 곁 · 못 그리는 오류)과 맞댄다 — `tests/test_alert_sites.py` 의 꼴
-- **알림 꼴 그물**(UI-NTF-01 · 03) — `st.toast` · `st.success` · `st.info` 직접 호출 수를 허용 목록과 맞댄다
-- **본문 설정 단추 그물**(UI-LAY-01) — 라벨에 「설정」 이 든 팝업 여는 단추 — 빈 허용 목록 유지
+- **표지 글자 수 상한**(UI-TXT-04) — 화면 글 문장 그물(`tests/test_place_sentence_sites.py`)의 표지 까닭 자리에 글자 수 상한을 건다(상한 값은 아직 없다 — 제안 값으로 묻는다, PRC-03)
 - **이름 바꿈 사전 그물**(UI-CON-02) — `RENAMED` 사전으로 화면 글 · Guide · 런북을 훑는다(`test_home_settings_pointers` 일반화)
 - **사본 꼴 그물**(UI-CON-04, UI-DAT-02) — 달 표기 · 기준 % 를 손 서식으로 짓는 f-string 찾기
 - **「사내」 낱말 그물 넓히기**(UI-TXT-05) — `test_app_text_wording` 을 전체 문자열 상수로
@@ -1188,7 +1186,6 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 ### 5-2. 장부 · 짝 시험(선언 ↔ 실제)
 
 - **쓰기 장부 칸 더하기**(UI-STA-01, UI-NTF-09) — `test_write_entry_points` `LEDGER` 에 「바뀐 것 없음 거름」 · 「되돌릴 수 없음」 칸
-- **걷은 경고 ↔ 알림 코드**(UI-NTF-05) — 자리에서 걷은 경고마다 등록부 코드와 화면 시험 한 줄
 - **PageSpec reads_* ↔ 실제 읽는 키**(UI-LAY-02) — 과소 · 과대 선언 잡기
 - **미저장 · 가정 상태 ↔ `pending_edit_registry`**(UI-LAY-04, UI-STA-02) — 새 편집 · 가정 칸이 등록됐는지
 - **보관 자리 표**(UI-STA-04) — 상태 이름 → 세션 · 탭 · 브라우저 · 공용
@@ -1303,3 +1300,8 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
     셋(하위 보기 전환을 뒤집힌 결정으로 적음 · Space 편집을 본문이라 적음 · 결과를 단추 곁에 둠)은 v1 규칙 글에서 고쳤다.
   - 그물: `tests/test_design_rules_doc.py` 가 이 문서의 꼴(id · 수준 · 판단 질문 · 상태 · 결정 기록 18줄 · 진입 문서 연결)을
     지킨다.
+  - 같은 날 세운 그물 넷(5장 후보에서 규칙의 「그물」 줄로): 화면 글 문장(`tests/test_place_sentence_sites.py` — UI-TXT-01 ·
+    03 · 04 · 08 · UI-NTF-02), 알림 꼴(`tests/test_notice_form_sites.py` — UI-NTF-01 · 03), 본문 설정 단추
+    (`tests/test_settings_button_sites.py` — UI-LAY-01), 걷은 경고 ↔ 알림 코드(`tests/test_withdrawn_warning_alerts.py` —
+    UI-NTF-05). 앞의 둘은 지금 자리를 허용 목록으로 맞대고 남은 설명 · 길 안내 자리를 「미정리」 로 센다 — 미정리 수는 늘지
+    않고 다음 판에 줄인다.

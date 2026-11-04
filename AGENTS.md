@@ -5952,6 +5952,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_EMPTY`(빈
   상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
   `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
+- **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
+  `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` 에 넣는 글이 서술형 문장(「…니다」 · 「…세요」 ·
+  「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력 곁 거부 · 못 그리는 오류 ·
+  미정리)과 맞댄다 — 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라 수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을
+  든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(남은 자리는 모두 미정리)를, `tests/test_settings_button_sites.py`
+  는 본문의 「설정」 팝업 단추(0곳)와 설정 팝업마다 같은 제목의 사이드바 상자(`render_settings_box`)를,
+  `tests/test_withdrawn_warning_alerts.py` 는 자리에서 걷은 경고마다 등록부 코드 · 보내는 길(`queue_flash(…, popup_only=True)` ·
+  `alerts.state`) · 그 코드를 단언하는 화면 시험을 맞댄다 — 경고를 자리에서 걷으면 같은 변경에서 그 표(`WITHDRAWN`)에 한 줄을
+  더한다.
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다. 동작은 끝났고 그 자리에
   고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 시나리오 관리 복제 · 공식
