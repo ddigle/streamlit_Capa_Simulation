@@ -647,6 +647,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/TODO.md` | 확정된 업무 결정의 이력과 작업 목록 |
 | `docs/data_model.md` | DuckDB 두 개의 스키마·저장 규칙·공간 회수 |
 | `docs/design_system.md` | 색·서체·표 밀도와 화면 구성 규칙 |
+| `docs/design_rules.md` | 화면 설계 · 검수 규칙 — 규칙 id · 수준 · 판단 질문 · 그물 · 결정 기록. 화면을 만들거나 바꿀 때 걸린 규칙 id 로 자체 검토 |
 | `docs/migration_catalog.md` | SQL 마이그레이션마다의 목적·출처 카탈로그 |
 | `docs/wsl_dev_environment.md` | 사외 개발 자리(데스크탑 WSL) 준비·명령·앱 띄우기·배포 |
 | `docs/review_sample.md` | 검수용 합성 샘플 — 만드는 법 · 만드는 것(시나리오 · 공식버전 · 설비 DB · 모듈 견본) · 이야기 칸 · 끝 점검 · 앱 띄우기 |

@@ -11,7 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 이 저장소의 상세 개발 규칙 문서**이며(파일별 책임, 기준정보 테이블 계약, 핵심 계산 규칙,
 Streamlit 구현 규칙, 변경 체크리스트) 이 파일은 그 요약과 진입점이다. 계산식·테이블·화면을
 바꾸기 전에는 `AGENTS.md`의 해당 절을 반드시 읽는다. 구조나 계산 규칙을 바꾸면 같은 변경에서
-`AGENTS.md`·`README.md`·`docs/TODO.md`도 갱신한다.
+`AGENTS.md`·`README.md`·`docs/TODO.md`도 갱신한다. 화면 설계 · 검수 규칙(무엇을 어디에 어떤 꼴로 두나 — 규칙 id · 판단 질문 ·
+결정 기록)의 정본은 `docs/design_rules.md` 다 — 화면을 만들거나 바꾸면 걸린 규칙 id 를 적고 규칙마다 자체 검토한다(구현
+규칙은 `AGENTS.md` 8 · 9장).
 
 직전 세션의 현재 상태와 다음 할 일은 `HANDOFF.md`에 있다. 정본이 아니라 그 시점의 세션
 스냅샷이므로 위 세 문서·코드와 어긋나면 위를 따른다.
