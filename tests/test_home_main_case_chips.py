@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from alert_marks import successes
+from alert_marks import flashed, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as scenario_status
@@ -223,7 +223,12 @@ def _outside_shown(app: AppTest) -> bool:
 
 
 def _notices(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.warning]
+    """칩 경고 — 칩 줄 밑 자리에는 그리지 않고 알림창 · Alarm 표지로만 낸다(설계 규칙 AMB-05
+    (나)). 단계는 확인 필요(`FL-03`)다."""
+    assert not app.warning, [str(item.value) for item in app.warning]
+    sent = flashed(app, "warning")
+    assert all(item.code == "FL-03" for item in sent), [item.code for item in sent]
+    return [item.value for item in sent]
 
 
 def test_three_chips_carry_only_their_short_names_and_tell_the_rest_on_hover(
@@ -462,15 +467,16 @@ def test_edits_go_through_the_same_confirmation_as_the_sidebar(seeded: Seeded, e
 
 
 def test_a_revision_the_load_refuses_leaves_the_scenario_and_says_why(seeded: Seeded) -> None:
-    """사이드바가 막는 리비전(옛 리비전 호환)은 칩도 막고, 제목 줄 밑에 까닭을 한 번 적는다."""
+    """사이드바가 막는 리비전(옛 리비전 호환)은 칩도 막고, 그 까닭을 알림창 · Alarm 에 한 번
+    낸다(칩 줄 밑 자리에는 그리지 않는다 — 설계 규칙 AMB-05 (나))."""
     app = _app(seeded)
     with patch.object(scenario_status, "revision_block_reason", lambda _tables: "옛 리비전입니다"):
         app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
 
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
-    assert [item.value for item in app.warning] == ["옛 리비전입니다"]
+    assert _notices(app) == ["옛 리비전입니다"]
     app = _ran(app.run())
-    assert [item.value for item in app.warning] == []
+    assert _notices(app) == []
 
 
 def test_a_chip_drawn_before_another_session_changed_its_case_loads_nothing(

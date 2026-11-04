@@ -3,9 +3,10 @@
 """HOME 주요 Case 칩(2026-10-23 사용자 결정 — 시안 C · 동작 (가)).
 
 **자리는 사이드바 「LOB 표시 조건」 카드의 첫 항목이다**(2026-11-02 사용자 요청 — 전에는 본문 제목
-줄 끝). 이름 줄 「주요 Case」 밑에 칩 셋이 카드 폭을 같은 폭으로 나눠 서고, 그 밑에 칩 알림 칸, 얇은
-선 뒤로 토글들이 온다. 본문 맨 위에는 칩 줄이 남지 않아 화면 탭 줄 바로 밑에서 Summary 가 시작한다.
-카드는 HOME 에서 처음 펼친 채 선다(`condition_card(default=True)` — 접으면 칩이 보이지 않는다).
+줄 끝). 이름 줄 「주요 Case」 밑에 칩 셋이 카드 폭을 같은 폭으로 나눠 서고, 그 밑에 칩 알림
+칸(늘 서 있는 빈 칸 — 알림은 알림창 · Alarm 으로만 간다), 얇은 선 뒤로 토글들이 온다. 본문 맨
+위에는 칩 줄이 남지 않아 화면 탭 줄 바로 밑에서 Summary 가 시작한다. 카드는 HOME 에서 처음 펼친
+채 선다(`condition_card(default=True)` — 접으면 칩이 보이지 않는다).
 
 슬롯은 셋으로 고정이다 — `공식 vN`(지금 최신 공식버전) · `Case1` · `Case2`(「HOME 설정」 팝업
 `비교 · 주요 Case` 탭의 「주요 Case」 에서 지정 — `home_main_cases`). **칩 글자는 이것뿐이다.** 어느
@@ -27,9 +28,12 @@ HOME 토글 기본값 쓰기(`_release_stale_ui_state`)와 리비전 프리셋 �
 **콜백은 누르는 순간 슬롯을 다시 푼다.** Streamlit 은 콜백 인자를 그린 회차의 값 그대로 넘긴다 — 그
 사이 다른 세션이 Case 를 다시 지정했거나 가리키던 시나리오를 보관했으면 그린 짝은 낡았다. 그래서
 칩은 (슬롯 차례, 그린 짝)만 넘기고, 콜백이 같은 재료(`_slot_chips_now`)로 지금 짝을 풀어 그린 것과
-다르면 아무것도 올리지 않고 칩 밑 한 칸에 알린다 — 사이드바가 고를 수 없는 보관 시나리오를 칩이
-올리는 일이 없다. 뒤이은 회차가 새 칩을 그린다. 공식 칩은 세션 값이 그린 짝과 함께 낡을 수 있어
-저장소의 지금 공식버전과 한 번 더 대조한다(`_official_still_current`).
+다르면 아무것도 올리지 않고 알림창 · Alarm 에 알린다 — 사이드바가 고를 수 없는 보관 시나리오를
+칩이 올리는 일이 없다. 칩 경고(그린 짝이 낡음 · 주요 Case 나 공식버전을 읽지 못함 · 불러오지 못함)는
+칩 줄 밑 자리에 그리지 않는다 — 누른 동작은 끝났고 그 자리에 고칠 입력이 없다(설계 규칙 UI-NTF-02 ·
+AMB-05 (나)). 누를 수 없는 칩의 까닭은 그 칩 풍선이 말한다. 뒤이은 회차가 새 칩을 그린다. 공식
+칩은 세션 값이 그린 짝과 함께 낡을 수 있어 저장소의 지금 공식버전과 한 번 더
+대조한다(`_official_still_current`).
 
 상태마다(2026-10-23 사용자 결정 — 제안대로):
 
@@ -105,7 +109,8 @@ CHIP_ROW_KEY = "home_main_case_chips"
 OFFICIAL_CHIP_KEY = "home_main_case_chip_official"
 CASE1_CHIP_KEY = "home_main_case_chip_case1"
 CASE2_CHIP_KEY = "home_main_case_chip_case2"
-# 칩으로 불러오지 못했을 때의 한 줄. 다음 회차의 칩 줄 밑 칸이 꺼내 보인다.
+# 칩으로 불러오지 못했을 때의 알림 칸. 다음 회차의 칩 줄 밑 늘 서 있는 칸이 알림창 · Alarm 으로
+# 보낸다(그 칸에는 그리지 않는다 — `popup_only`).
 CHIP_NOTICE_KEY = "home_main_case_chip_notice"
 OFFICIAL_CHIP_TEXT = "공식"
 OUTSIDE_SLOTS_TEXT = "슬롯 밖"
@@ -305,14 +310,16 @@ def render_main_case_chips(database_path: str, *, settings_ready: bool = True) -
                     args=(database_path, index, chip.target),
                     width="stretch",
                 )
-        # 칩으로 불러오지 못한 까닭 한 줄. 늘 서 있는 칸 안에 그린다(AGENTS 9장) — 알림이 생기고
-        # 사라질 때 아래 토글이 밀리지 않게 한다(빈 칸은 높이가 없다).
+        # 칩으로 불러오지 못한 까닭은 알림창 · Alarm 으로만 낸다. 표지를 보내는 칸은 늘 세운다
+        # (AGENTS 9장) — 칸이 있고 없음으로 아래 토글이 밀리지 않게 한다(빈 칸은 높이가 없다).
         render_flash(CHIP_NOTICE_KEY)
 
 
 def _notify(text: str) -> None:
-    """칩 콜백의 알림을 담는다 — 다음 회차 칩 줄 밑 칸이 한 번 그린다(`flash`)."""
-    queue_flash(CHIP_NOTICE_KEY, text, kind="warning", icon=":material/info:")
+    """칩 콜백의 경고를 담는다 — 다음 회차에 한 번 알림창 · Alarm 으로만 낸다(`flash` 의
+    `popup_only` — 칩 줄 밑 자리에는 그리지 않는다, 설계 규칙 AMB-05 (나)). 단계는 확인
+    필요(`FL-03`)다."""
+    queue_flash(CHIP_NOTICE_KEY, text, kind="warning", icon=":material/info:", popup_only=True)
 
 
 def changed_slot_notice(index: int) -> str:
