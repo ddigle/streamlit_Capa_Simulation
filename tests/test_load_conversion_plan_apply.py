@@ -305,11 +305,16 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
         "apply_yield_changes",
         "open_yield_paste",
     } <= _button_keys(app)
-    # 뺀 행은 「편집 불가 수율 행」 펼침이 까닭과 함께 보인다(건수는 수율 탭이 열린 회차의 상태 알림
-    # `ST-06` — 자리에 경고 상자를 그리지 않는다). 처음 열린 탭은 환산이라 `ST-06` 은 내지 않고
-    # 환산 탭의 상태 알림 `ST-05`(환산에서 빠진 계획 — 기본 소요기준 PKG 는 수율을 쓰지 않아 없음)만
-    # 낸다.
-    assert any("표에서 값을 뺐습니다" in str(item.value) for item in app.caption)
+    # 뺀 행은 「편집 불가 수율 행」 펼침 표가 까닭(`사유`)과 함께 보인다(건수는 수율 탭이 열린
+    # 회차의 상태 알림 `ST-06` — 자리에 경고 상자를 그리지 않는다). 계산에서 어떻게 되고 어떻게
+    # 고치는지는 펼침 안 문장이 아니라 `사유` 칸 머리 풍선이다(설계 규칙 UI-TXT-01 · 02). 처음
+    # 열린 탭은 환산이라 `ST-06` 은 내지 않고 환산 탭의 상태 알림 `ST-05`(환산에서 빠진 계획 —
+    # 기본 소요기준 PKG 는 수율을 쓰지 않아 없음)만 낸다.
+    assert not any("표에서 값을 뺐습니다" in str(item.value) for item in app.caption)
+    assert any(
+        "표에서 값을 뺐습니다" in str(json.loads(frame.proto.columns).get("사유", {}).get("help"))
+        for frame in app.dataframe
+    )
     assert not app.warning
     codes = {str(note["code"]): note for note in alert_notes(app)}
     assert "ST-06" not in codes
@@ -339,6 +344,29 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
         applied, "DEMO PRODUCT B", 202601
     )
     assert january.count(0.5) == 1
+
+
+def test_the_excluded_plan_list_says_what_happened_in_its_column_tooltip(
+    seeded_database: Path,
+) -> None:
+    """환산에서 빠진 계획의 「제외한 계획 확인」 펼침은 표만 둔다 — 고칠 곳과 빈 생산수량의 뜻은
+    `누락 기준정보` 칸 머리 풍선이고, 펼침 안에 설명 문장을 늘 띄우지 않는다(설계 규칙 UI-TXT-01 ·
+    02). 건수는 상태 알림 `ST-05` 다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"]).copy()
+    plan["생산수량"] = plan["생산수량"].astype(float)
+    plan.loc[plan.index[0], "생산수량"] = None
+    _inject(app, "RQ_PKG_PLAN", plan, "blank-plan-quantity")
+
+    assert not list(app.exception)
+    (excluded,) = [note for note in alert_notes(app) if note.get("code") == "ST-05"]
+    assert excluded["active"] is True
+    assert not any("계획 없음(0)으로 봤습니다" in str(item.value) for item in app.caption)
+    helps = [
+        str(json.loads(frame.proto.columns).get("누락 기준정보", {}).get("help"))
+        for frame in app.dataframe
+    ]
+    assert any("기준정보를 채우면" in text and "계획 없음(0)" in text for text in helps)
 
 
 def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(
@@ -529,8 +557,13 @@ def test_an_out_of_range_yield_names_the_row_where_the_conversion_stops(
     assert "202604 · DEMO PRODUCT B" in errors[0]
     assert "EDS 0(0%)" in errors[0]
     assert "수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요" in errors[0]
-    guides = [str(item.value) for item in app.caption if "편집 불가" in str(item.value)]
-    assert guides and "HOME·소요대수·확보율 계산을 멈춥니다" in guides[0]
+    # 그 행이 계산을 멈춘다는 뜻은 「편집 불가 수율 행」 목록 `사유` 칸 머리 풍선이 말한다.
+    guides = [
+        str(json.loads(frame.proto.columns).get("사유", {}).get("help")) for frame in app.dataframe
+    ]
+    assert any(
+        "편집 불가" in text and "HOME·소요대수·확보율 계산을 멈춥니다" in text for text in guides
+    )
 
 
 def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(

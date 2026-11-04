@@ -781,6 +781,27 @@ def test_step_changes_open_in_a_popup_from_the_action_row() -> None:
     assert app.selectbox(key="capacity_step_route").options
 
 
+def test_an_empty_step_list_is_one_plain_line_and_the_fix_is_its_tooltip() -> None:
+    """조회기간에 편집할 경로 STEP 이 없으면 빈 결과 한 줄(평문 — 파란 상자 아님)이고, 조회기간을
+    넓히라는 길 안내는 그 줄의 풍선이다(설계 규칙 UI-TXT-03 · 04). 추가·삭제 단추는 서지 않는다."""
+    script = _with_tables(
+        TEST_SCRIPT,
+        'tables["RQ_REQB"] = tables["RQ_REQB"].assign(STEP_SEQ="P900")\n',
+        "test-capacity-standards-page",
+        "test-capacity-no-step-page",
+    )
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
+    app.run()
+
+    assert not app.exception
+    lines = [item for item in app.caption if "STEP이 없습니다" in item.value]
+    assert [item.value for item in lines] == ["선택한 조회기간에 편집할 공정 경로 STEP이 없습니다."]
+    assert "조회기간" in lines[0].proto.help
+    assert not any("STEP" in item.value for item in infos(app))
+    assert "open_capacity_step_dialog" not in {button.key for button in app.button}
+
+
 def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
     """전 공정 STEP 을 그리면 Plotly 데이터가 폭증한다. 미선택이면 표를 만들지도 않는다."""
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
@@ -1436,6 +1457,19 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
     app = _open_paste(app, "capa_run_day_editor")
     exported = _download_frame(app, "capa_run_day_editor_csv_download")
     assert exported["공정"].tolist() == ["Process-A", "Process-B"]
+    # 표시명이 있는 표의 「양식은 원본 공정명」 은 붙여넣기 칸 풍선이다 — 팝업에 설명 문장을 늘
+    # 띄우지 않는다(설계 규칙 UI-TXT-01 · 02).
+    assert "원본 공정명" in str(app.text_area(key="capa_run_day_editor_csv_clipboard").help)
+    assert not any("원본 공정명" in str(item.value) for item in app.caption)
+
+
+def test_the_paste_field_has_no_rename_tooltip_without_display_names() -> None:
+    """표시명 프로필이 없는 표는 양식 이름과 화면 이름이 같아 그 풍선을 달지 않는다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["일수"]
+    app.run()
+    app = _open_paste(app, "capa_run_day_editor")
+    assert not app.text_area(key="capa_run_day_editor_csv_clipboard").help
 
 
 def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
@@ -2089,17 +2123,17 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
     assert not app.exception
     assert [error.value for error in app.error] == []
     assert _scenario_table(app, "RQ_LOT_RATIO").empty
-    assert any(
-        "이 기간에 Lot측정률 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다" in item.value
-        for item in infos(app)
-    )
+    assert [item.value for item in app.caption if "행이 없습니다" in item.value] == [
+        "이 기간에 Lot측정률 행이 없습니다."
+    ]
+    assert not any("측정률" in item.value for item in infos(app))
     assert not any("편집 범위" in item.value for item in app.markdown)
 
     # 다른 탭은 그대로 동작한다 — WF 표는 행이 있고, UPEH 의 있던 칸은 고칠 수 있다.
     app.session_state[DATASET_KEY] = DATASET["WF측정률"]
     app.run()
     assert any("전체 1개 행" in item.value for item in app.markdown)
-    assert not any("행이 없어" in item.value for item in infos(app))
+    assert not any("행이 없습니다" in item.value for item in app.caption)
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 150.0)
@@ -2122,7 +2156,7 @@ def test_a_scenario_without_ratio_rows_opens_every_tab() -> None:
 
     assert not app.exception
     assert [error.value for error in app.error] == []
-    assert any("이 기간에 WF측정률 행이 없어" in item.value for item in infos(app))
+    assert any("이 기간에 WF측정률 행이 없습니다." == item.value for item in app.caption)
     app = _open_paste(app, "capa_wf_ratio_editor")
     assert [error.value for error in app.error] == []
 

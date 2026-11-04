@@ -20,10 +20,10 @@
   (`reference_consistency`)는 적용할 때 문장으로(오늘과 같다 — 화면이 쓴다).
 - **큰 표 안전 상한**(명세 1-2 의 22). 칸 수가 `CAP_CELLS` 를 넘거나 껍데기 본문이 `CAP_BYTES` 를
   넘으면 사이드바 「표 조건」 필터를 서버에서 걸어 그 줄만 싣고, 필터가 없거나 걸러도 넘치면 앞
-  `CAP_ROWS` 줄만 싣고 작업 줄 아래에 알린다(바이트 상한을 넘는 표의 전체 본문은 캐시에 두지
-  않는다 — `get_edit_grid_base_within`). 초안이 업무 키라 실은 줄이 바뀌어도 편집은 제 줄에
-  남고, 적용은 언제나 **전체 양식**에 덮는다(`merged_template`). 합성 표본 최대는 UPEH 2,660줄 ×
-  30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 런북 8장 8-11
+  `CAP_ROWS` 줄만 싣고 작업 줄 아래에 표지 한 줄 + 풍선을 둔다(바이트 상한을 넘는 표의 전체 본문은
+  캐시에 두지 않는다 — `get_edit_grid_base_within`). 초안이 업무 키라 실은 줄이 바뀌어도 편집은
+  제 줄에 남고, 적용은 언제나 **전체 양식**에 덮는다(`merged_template`). 합성 표본 최대는 UPEH
+  2,660줄 × 30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 런북 8장 8-11
   (`scripts/inspect_real_data_checks.py --only grid`)이 잰다.
 """
 
@@ -103,13 +103,18 @@ DISCARD_HELP: Final = "이 표에서 적용하지 않은 편집을 버립니다.
 CAP_CELLS: Final = 300_000
 CAP_BYTES: Final = 400_000
 CAP_ROWS: Final = 1_000
+# 상한에 걸린 표의 표지(작업 줄 아래 한 줄 — 값)와 그 풍선. 숨은 줄이 있다는 것은 표지가, 고르는
+# 법과 적용 범위는 풍선이 말한다(설계 규칙 UI-TXT-01 · 04 — 숨은 데이터 안내는 표지 + 풍선).
 CAP_FILTERED_NOTICE: Final = (
-    "표가 커서(전체 {rows:,}줄 · {cells:,}칸) 사이드바 「표 조건」 으로 고른 {shown:,}줄만"
-    " 실었습니다 — 「변경사항 적용」 은 표 전체에 덮습니다."
+    ":material/filter_alt: 큰 표 · 표 조건으로 고른 {shown:,}줄만 실음"
+    "(전체 {rows:,}줄 · {cells:,}칸)"
 )
 CAP_HEAD_NOTICE: Final = (
-    "표가 커서(전체 {rows:,}줄 · {cells:,}칸) 앞 {shown:,}줄만 실었습니다 — 사이드바 「표 조건」"
-    " 으로 좁히면 고른 줄을 싣습니다. 「변경사항 적용」 은 표 전체에 덮습니다."
+    ":material/filter_alt: 큰 표 · 앞 {shown:,}줄만 실음(전체 {rows:,}줄 · {cells:,}칸)"
+)
+CAP_HELP: Final = (
+    "칸이 아주 많은 표는 사이드바 「표 조건」 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
+    "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
 )
 Labels = Mapping[str, Mapping[str, str]]
 
@@ -125,7 +130,7 @@ class GridTable:
     base: EditGridBase
     base_key: str
     labels: Labels | None
-    # 큰 표 상한에 걸려 일부 줄만 실었으면 그 알림(아니면 None — 본문 색인이 곧 전체 양식이다).
+    # 큰 표 상한에 걸려 일부 줄만 실었으면 그 표지(아니면 None — 본문 색인이 곧 전체 양식이다).
     cap_notice: str | None = None
 
     @property
@@ -433,7 +438,7 @@ def render_actions(
             st.markdown(f"**변경사항 확인** &nbsp;{cells:,}개 값 · {rows:,}개 행{fix}")
     render_scope(table.template, visible, table.months)
     if table.cap_notice is not None:
-        st.info(table.cap_notice, icon=":material/filter_alt:")
+        st.caption(table.cap_notice, help=CAP_HELP)
     # 적용·붙여넣기 결과는 누른 자리 바로 아래 한 칸이다(`queue_reference_import_flash` 가 담은 것 —
     # 옛 편집표와 같은 칸 이름). 적용 오류·고칠 칸 알림도 같은 칸에 더 쓴다.
     return Actions(submitted, render_flash(f"{table.editor_key}_apply_flash"))

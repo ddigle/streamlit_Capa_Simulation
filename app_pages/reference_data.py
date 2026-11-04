@@ -602,6 +602,9 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
 STEP_SUMMARY_EAGER_MAX_ROWS = 150_000
 # 요약에서 수인 열(화면 이름). 나머지는 경로 글자 열이다.
 STEP_SUMMARY_NUMBER_COLUMNS = ("월", "STEP 수", "수요 변형 수")
+# 조회기간에 편집할 경로 STEP 이 없을 때의 빈 결과 한 줄과 그 풍선.
+STEP_EMPTY_TEXT = "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다."
+STEP_EMPTY_HELP = "사이드바 조회기간을 넓히면 그 기간의 경로 STEP 이 나옵니다."
 
 
 def _compact_step_summary(summary: pd.DataFrame) -> pd.DataFrame:
@@ -773,10 +776,8 @@ def _render_step_view(
 ) -> None:
     """「STEP 구성」 보기 — 작업 줄(STEP 추가·삭제 팝업 열기)·알림·요약 표."""
     if step_catalog.empty:
-        st.info(
-            "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다. "
-            "사이드바에서 조회기간을 넓혀 보세요."
-        )
+        # 빈 결과 한 줄(값) — 고칠 곳은 풍선이 말한다(설계 규칙 UI-TXT-03 · 04).
+        st.caption(STEP_EMPTY_TEXT, help=STEP_EMPTY_HELP)
     else:
         # 작업 줄은 표 위다. 추가·삭제는 가끔 하는 쓰기라 팝업으로 연다.
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -1134,12 +1135,11 @@ def _equipment_rows(category: str, value_column: str) -> Callable[[pd.DataFrame]
 
 
 # 측정률 표에 이 기간 행이 없으면 편집 표가 0 행이다(모든 칸을 비워 적용했거나 원천에 행이 없다).
-# 계산은 1.0 으로 이어 가므로 오류가 아니지만, 빈 표만 보이면 무엇으로 계산되는지 알 수 없다.
-# 이 표는 행을 더할 수 없다(원래 한계) — 무엇이 계산되는지만 알린다(2026-09-29 2차 리뷰).
-RATIO_EMPTY_NOTICE = (
-    "이 기간에 {label} 행이 없어 모든 경로를 측정률 1.0 으로 계산합니다. 이 표에서는 행을 더할 수 "
-    "없습니다."
-)
+# 계산은 1.0 으로 이어 가므로 오류가 아니다 — 자리에는 빈 결과 한 줄(값)만 두고, 무엇으로
+# 계산되는지와 이 표에서 행을 더할 수 없다는 것(원래 한계)은 그 줄의 풍선이 말한다(설계 규칙
+# UI-TXT-01 · 04).
+RATIO_EMPTY_TEXT = "이 기간에 {label} 행이 없습니다."
+RATIO_EMPTY_HELP = "모든 경로를 측정률 1.0 으로 계산합니다. 이 표에서는 행을 더할 수 없습니다."
 
 
 def _open_grid_paste(editor_key: str) -> None:
@@ -1168,7 +1168,9 @@ if current_grid is not None:
     with actions_box:
         # 그 종류를 골랐을 때만 조각을 본다 — 고르지 않은 표 때문에 자르지 않는다.
         if current_dataset in RATIO_TABLES and edit_slices.get_or_stop(current_dataset).empty:
-            st.info(RATIO_EMPTY_NOTICE.format(label=TABLE_NAMES[current_dataset]))
+            st.caption(
+                RATIO_EMPTY_TEXT.format(label=TABLE_NAMES[current_dataset]), help=RATIO_EMPTY_HELP
+            )
         grid_actions = reference_grid.render_actions(
             current_grid,
             grid_visible,

@@ -29,10 +29,11 @@ from capa_simulation.components.reference_csv_tools import render_reference_clip
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import bootstrap_error_message
 
-# 화면은 표시명이지만 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 붙여넣기 팝업에만 적는다.
-RENAME_NOTICE = (
-    "분류 컬럼은 화면 표시명으로 보입니다. CSV 양식과 붙여넣기는 원본 공정명 계약이므로 "
-    "양식을 내려받아 그 이름 그대로 수정하세요."
+# 화면은 표시명이지만 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 표시명이 있는 표의 붙여넣기
+# 칸 풍선에만 싣는다 — 팝업에 늘 띄우는 설명 문장이 아니다(설계 규칙 UI-TXT-01 · 02).
+RENAME_HELP = (
+    "분류 컬럼은 화면에서 표시명으로 보이지만 CSV 양식과 붙여넣기는 원본 공정명입니다 — 양식을 "
+    "내려받아 그 이름 그대로 고쳐 붙여넣습니다."
 )
 PASTE_DROPS_EDITS_NOTICE = (
     "이 표에 적용하지 않은 편집이 있습니다. 붙여넣기를 적용하면 그 편집은 버려집니다 — 먼저 "
@@ -124,8 +125,6 @@ def paste_dialog(
     def _body() -> None:
         if pending_notice:
             st.warning(pending_notice)
-        if rename_notice:
-            st.caption(RENAME_NOTICE)
         imported = render_reference_clipboard_form(
             data,
             table_name=table_name,
@@ -135,6 +134,7 @@ def paste_dialog(
             min_value=min_value,
             max_value=max_value,
             integer=integer,
+            field_help=RENAME_HELP if rename_notice else None,
         )
         if imported is None:
             return
