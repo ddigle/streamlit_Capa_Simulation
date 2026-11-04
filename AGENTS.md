@@ -6016,13 +6016,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
   서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력
   곁 거부 · 못 그리는 오류 · 미정리)과 맞대고, 차례로 짝지은 부름의 꼴도 본다 — 값 · 표지 · 빈 결과는 평문(`st.info` 상자
-  아님), 빈 결과는 결론 꼴(「…없습니다」 등), 하는 법 · 길 안내 꼬리 없음. 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라
+  아님), 빈 결과는 결론 꼴(「…없습니다」 등), 하는 법 · 길 안내 꼬리 없음(값 · 표지 자리 글을 다른 설명 문장으로 바꾼 것은
+  잡지 않는다 — 판단 질문이 본다). 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라
   수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(0곳 —
   Space 도면 팝업의 지금 값이 마지막이었다, 값 줄 「**저장된 도면** · …」)를, `tests/test_settings_button_sites.py`
-  는 본문의 「설정」 팝업 단추(0곳)와 설정 팝업마다 같은 제목의 사이드바 상자(`render_settings_box`)를,
-  `tests/test_withdrawn_warning_alerts.py` 는 자리에서 걷은 경고마다 등록부 코드 · 보내는 길(`queue_flash(…, popup_only=True)` ·
-  `alerts.state` — 코드는 글 상수 · 모듈 상수 이름 · 모듈 코드 묶음을 도는 `for` 이름까지 푼다) · 그 코드를 단언하는 화면 시험을
-  맞댄다 — 경고를 자리에서 걷으면 같은 변경에서 그 표(`WITHDRAWN`)에 한 줄을 더한다. Space 「Space 도면」 상자 끝 줄 넷(배치
+  는 설정 상자 밖에서 설정 팝업을 여는 단추(라벨의 「설정」 · 설정 상자의 여는 함수를 부르는 `on_click` · `if st.button(…):` 본문 ·
+  `for` 묶음 라벨 · 콜백 — 허용은 미지정 주요 Case 칩 하나, 설계 규칙 UI-NAV-01)와 설정 팝업마다 같은 제목의 사이드바
+  상자(`render_settings_box`)를, `tests/test_withdrawn_warning_alerts.py` 는 자리에서 걷은 경고마다 등록부 코드 · 보내는
+  길(`queue_flash(…, popup_only=True)` · `alerts.state` — 코드는 글 상수 · 모듈 상수 이름 · 모듈 코드 묶음을 도는 `for` 이름까지
+  푼다) · 그 코드가 **선다고** 단언하는 화면 시험(같음 · 포함 비교의 값이나 `is None` 밖의 `active_state` — 해소만 보는 단언은
+  세지 않는다)을 맞댄다 — 경고를 자리에서 걷으면 같은 변경에서 그 표(`WITHDRAWN`)에 한 줄을 더한다. Space 「Space 도면」 상자 끝 줄 넷(배치
   `EQ-13` · 모듈 구성 `EQ-14` · 지운 호기 `EQ-15` — `space_floor_layout.report_layout_notices`, 일정 없는 호기 `EQ-04` —
   `equipment_scenario_status.report_unscheduled_units`)도 그 표에 있다.
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·

@@ -668,6 +668,45 @@ def test_a_deleted_units_difference_is_named_once_in_the_space_head(
     assert any("가정 설비 시나리오 · 배치는 공식과 같습니다" in text for text in texts), texts
     assert any("지운 호기의 배치 차이 1행은 버렸습니다" in text for text in texts), texts
     assert not any("공식과 같아진 것은" in text for text in texts), texts
+    # 그 줄은 사이드바 「Space 도면」 상자 끝에서 옮긴 상태 알림이다(걷은 경고 짝 — UI-NTF-05).
+    orphans = active_state(app, "EQ-15")
+    assert orphans is not None and orphans["short"] == "지운 호기의 배치 차이 1행 버림"
+    assert (
+        orphans["full"]
+        == "공통 대장에서 지운 호기의 배치 차이 1행은 버렸습니다 — 다음 저장 때 빠집니다."
+    )
+
+
+def test_an_official_regroup_raises_the_module_alert_until_the_official_is_drawn(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정 「셋업 실무」 가 단독 EQ-01 을 옮겨 둔 뒤 공식에서 EQ-01 · EQ-02 를 한 Main 설비
+    묶음으로 묶으면, 그 가정 배치에서 EQ-01 은 자리 없이 트레이에 놓이고(`layout_regrouped`)
+    Space 는 모듈 구성이 바뀐 묶음 상태 알림을 낸다 — 사이드바 「Space 도면」 상자 끝 줄에서
+    옮긴 경고라 조건이 있으면 알림창 · Alarm 에 선다(설계 규칙 UI-NTF-05). 공식을 그리면
+    해소된다."""
+    repository, setup = _overlay(tmp_path)
+    theirs = _session(repository)
+    grouped = _set(theirs.equipment, "EQ-01", "Main 설비", "DEMO-G")
+    grouped = _set(grouped, "EQ-02", "Main 설비", "DEMO-G")
+    repository.save_equipment(_request(theirs, equipment=grouped))
+    assert _session(repository, setup).layout_regrouped == ("DEMO-G",)
+
+    app = _ok(_space(tmp_path, setup).run())
+
+    regrouped = active_state(app, "EQ-14")
+    assert regrouped is not None
+    assert regrouped["short"] == (
+        "모듈 구성이 바뀐 묶음 1개 — 트레이에 있음 · 배치 편집에서 다시 놓기"
+    )
+    assert regrouped["full"].startswith("공식에서 모듈 구성이 바뀐 묶음 1개(DEMO-G) — ")
+    assert regrouped["level"] == "action"
+    # 사이드바 · 본문 어디에도 그 줄을 그리지 않는다.
+    assert not any("모듈 구성이 바뀐 묶음" in text for text in _drawn_texts(app))
+
+    app.session_state[SELECTION_KEY] = {"scenario_id": OPERATIONS, "schedule_revision_id": None}
+    _ok(app.run())
+    assert active_state(app, "EQ-14") is None
 
 
 def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notices(

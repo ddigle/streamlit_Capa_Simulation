@@ -10,8 +10,11 @@
    조건이 남은 동안의 경고는 상태(`alerts.state`)다.
 2. 걷은 자리(파일 · 맨 바깥 함수)가 지금도 그 코드로 보낸다 — `queue_flash` 는 `popup_only=True` 와
    종류(`kind=`)의 기본 코드(`alerts.FLASH_CODES`) 또는 `alert=` 코드, 상태는 `state("코드", …)`.
-3. 그 화면 시험이 있고 그 코드를 단언한다 — 시험 함수(와 그 시험이 부르는 같은 파일 도우미 한 겹)의
-   본문 글 상수에 코드가 있다(설명 글 밖).
+3. 그 화면 시험이 있고 그 코드가 **선다고** 단언한다 — 시험 함수(와 그 시험이 부르는 같은 파일
+   도우미 한 겹)에서 코드가 같음 · 포함 비교(`==` · `in`)의 값이거나(부름 인자 밖 —
+   `note["code"] == "FL-03"`), `active_state(app, "코드")` 의 결과를 `is None` 밖에서 쓴다. 해소만
+   보는 단언(`states(app, code)` 의 `active` 가 모두 거짓 · `active_state(…) is None`)이나 설명 글의
+   코드는 세지 않는다.
 
 새 경고를 자리에서 걷으면 같은 변경에서 이 표에 한 줄을 더한다(PRC-01). 2026-11-04 설계 규칙 확인
 보드 AMB-05 (나)(사이드바 저장 칸 밑 남은 Capa 계산 오류 · HOME 주요 Case 칩 경고 — 둘 다 알림창
@@ -47,12 +50,14 @@ class Withdrawn:
     test: str
 
 
-# Space 「Space 도면」 상자 끝 줄 넷(V-09)을 함께 단언하는 화면 시험 — 가정 설비 시나리오에서 넷
-# 모두를 회차마다 부르고(없는 것은 해소) 상자 · 본문에 그 줄이 없음을 본다.
+# Space 「Space 도면」 상자 끝 줄 넷(V-09) 가운데 배치 차이 · 일정 없는 호기를 함께 단언하는 화면
+# 시험 — 가정 설비 시나리오에서 둘이 서고 상자 · 본문에 그 줄이 없음을 본다. 모듈 구성 · 지운 호기
+# 줄은 그 조건을 만드는 Space 배치 시험이 단언한다.
 _SPACE_BOX_TEST = (
     "tests/test_space_sidebar_box.py"
     "::test_an_assumption_raises_the_unscheduled_and_layout_alerts_and_keeps_the_box_to_controls"
 )
+_SPACE_OVERLAY_TESTS = "tests/test_space_layout_overlay_page.py"
 
 WITHDRAWN: tuple[Withdrawn, ...] = (
     Withdrawn(
@@ -176,7 +181,10 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         function="report_layout_notices",
         code="EQ-14",
         route="state",
-        test=_SPACE_BOX_TEST,
+        test=(
+            f"{_SPACE_OVERLAY_TESTS}"
+            "::test_an_official_regroup_raises_the_module_alert_until_the_official_is_drawn"
+        ),
     ),
     Withdrawn(
         what="Space 사이드바 「Space 도면」 상자 끝 — 공통 대장에서 지운 호기의 배치 차이 줄",
@@ -185,7 +193,10 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         function="report_layout_notices",
         code="EQ-15",
         route="state",
-        test=_SPACE_BOX_TEST,
+        test=(
+            f"{_SPACE_OVERLAY_TESTS}"
+            "::test_a_deleted_units_difference_is_named_once_in_the_space_head"
+        ),
     ),
     Withdrawn(
         what=(
@@ -327,32 +338,67 @@ def codes_sent_by(
     return codes
 
 
-def _body_strings(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    """함수 본문의 글 상수 — 맨 앞 설명 글은 뺀다."""
-    body = function.body
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-        body = body[1:]
-    return {
-        node.value
-        for statement in body
-        for node in ast.walk(statement)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    }
+# 선다고 보는 비교 — 같음 · 포함(`!=` · `not in` · `is not` 은 없음을 보는 단언이다).
+_PRESENT_COMPARISONS = (ast.Eq, ast.In, ast.Is)
 
 
-def asserted_strings(test: str) -> set[str] | None:
-    """시험 함수와 그 시험이 부르는 같은 파일 도우미(한 겹)의 본문 글 상수. 시험이 없으면 None."""
+def _strings_outside_calls(node: ast.AST) -> set[str]:
+    """식 안 글 상수 — 부름(`flashed(app, "warning")` · `states(app, "EQ-14")`)의 인자는 뺀다."""
+    if isinstance(node, ast.Call):
+        return set()
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    found: set[str] = set()
+    for child in ast.iter_child_nodes(node):
+        found |= _strings_outside_calls(child)
+    return found
+
+
+def _is_none_check(node: ast.AST | None) -> bool:
+    return (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Is)
+        and isinstance(node.comparators[0], ast.Constant)
+        and node.comparators[0].value is None
+    )
+
+
+def _present_codes(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """함수가 선다고 단언하는 글 — 같음 · 포함 비교의 값(부름 인자 밖)과 `is None` 밖에서 쓴
+    `active_state(…, "코드")` 의 코드(모듈 설명 3)."""
+    parents = {child: node for node in ast.walk(function) for child in ast.iter_child_nodes(node)}
+    found: set[str] = set()
+    for node in ast.walk(function):
+        if isinstance(node, ast.Compare):
+            if all(isinstance(op, _PRESENT_COMPARISONS) for op in node.ops):
+                for operand in (node.left, *node.comparators):
+                    found |= _strings_outside_calls(operand)
+        elif isinstance(node, ast.Call) and _called(node) == "active_state" and len(node.args) > 1:
+            code = node.args[1]
+            if (
+                isinstance(code, ast.Constant)
+                and isinstance(code.value, str)
+                and not _is_none_check(parents.get(node))
+            ):
+                found.add(code.value)
+    return found
+
+
+def asserted_codes(test: str) -> set[str] | None:
+    """시험 함수와 그 시험이 부르는 같은 파일 도우미(한 겹)가 선다고 단언하는 글. 시험이 없으면
+    None."""
     relative, _, name = test.partition("::")
     function = _top_function(relative, name)
     if function is None:
         return None
-    strings = _body_strings(function)
+    codes = _present_codes(function)
     for node in ast.walk(function):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             helper = _top_function(relative, node.func.id)
             if helper is not None:
-                strings |= _body_strings(helper)
-    return strings
+                codes |= _present_codes(helper)
+    return codes
 
 
 def test_each_withdrawn_warning_is_listed_once() -> None:
@@ -386,9 +432,14 @@ def test_the_withdrawn_place_still_sends_that_code(item: Withdrawn) -> None:
 
 @pytest.mark.parametrize("item", WITHDRAWN, ids=_IDS)
 def test_the_screen_test_asserts_that_code(item: Withdrawn) -> None:
-    strings = asserted_strings(item.test)
-    assert strings is not None, f"화면 시험이 없습니다: {item.test}"
-    assert item.code in strings, f"{item.test} 이 {item.code} 를 단언하지 않습니다."
+    """화면 시험이 그 코드가 **선다고** 단언한다 — 해소로 불린다는 것만 보면 걷은 경고가 사라져도
+    모른다(UI-NTF-05)."""
+    codes = asserted_codes(item.test)
+    assert codes is not None, f"화면 시험이 없습니다: {item.test}"
+    assert item.code in codes, (
+        f"{item.test} 이 {item.code} 가 선다고 단언하지 않습니다 — 조건을 만들고"
+        f' active_state(app, "{item.code}") 나 note["code"] == "{item.code}" 로 봅니다.'
+    )
 
 
 def test_the_route_reader_tells_flash_and_state_codes_apart() -> None:
@@ -427,3 +478,28 @@ def test_the_group_reader_resolves_named_codes_in_a_module_tuple() -> None:
     )
 
     assert _text_groups_of(module) == {"CODES": ("EQ-13", "EQ-14", "EQ-15")}
+
+
+def test_the_assertion_reader_counts_only_codes_that_must_stand() -> None:
+    """선다는 단언(같음 · 포함 비교의 값, `is None` 밖에서 쓴 `active_state`)만 세고, 해소만 보는
+    단언(`states` 의 `active` 가 거짓 · `active_state(…) is None` · `not in`) · 부름 인자 · 설명
+    글의 코드는 세지 않는다."""
+    (function,) = ast.parse(
+        "def t(app, codes):\n"
+        "    '''EQ-01 을 본다.'''\n"
+        "    note = active_state(app, 'EQ-02')\n"
+        "    assert note['code'] == 'FL-03'\n"
+        "    assert all(item.code == 'EQ-05' for item in flashed(app, 'warning'))\n"
+        "    assert active_state(app, 'EQ-06') is None\n"
+        "    assert [n['active'] for n in states(app, 'EQ-07')] == [False]\n"
+        "    for code in ('EQ-08',):\n"
+        "        assert not any(n['active'] for n in states(app, code))\n"
+        "    assert 'EQ-09' not in codes\n"
+    ).body
+    assert isinstance(function, ast.FunctionDef)
+
+    assert {code for code in _present_codes(function) if "-" in code} == {
+        "EQ-02",
+        "FL-03",
+        "EQ-05",
+    }

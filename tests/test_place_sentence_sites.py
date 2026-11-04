@@ -26,7 +26,9 @@
 `st.write` · `st.text`)이고 파란 상자(`st.info`)가 아니다(UI-TXT-04 — 빈 결과는 평문 한 줄), 빈 결과
 자리의 끝 글은 결론 꼴(「…없습니다」 · 「…같습니다」 등 — `EMPTY_ENDING`)이며, 세 갈래 모두 하는
 법 · 길 안내 꼬리(「…세요」 · 「…에서 정합니다」 — `GUIDANCE_ENDING`)로 끝나지 않는다. 그래서 허용된
-자리의 글을 설명 · 길 안내 문장으로 바꿔 넣으면 수가 같아도 실패한다.
+자리의 글을 상자 · 비결론 꼴(빈 결과 자리) · 길 안내 꼬리로 바꿔 넣으면 수가 같아도 실패한다. 그
+밖의 설명 문장으로 바꾸는 것(값 · 표지 자리에 「…쌓이며 지울 수 없습니다」 처럼)은 이 그물이 잡지
+않는다 — 수와 꼴만 맞대므로 글 뜻은 판단 질문(UI-TXT-04 「이 글은 값인가, 설명인가?」)이 본다.
 """
 
 from __future__ import annotations
@@ -68,12 +70,15 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # 하는 법 · 길 안내 꼬리 — 값 · 표지 · 빈 결과 자리 글은 이렇게 끝나지 않는다(UI-TXT-03 · AMB-02
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
-# 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 131
+# 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다. 132 = 131 + 값으로
+# 잘못 든 부호 설명 줄 하나를 다시 판정한 것(가용설비 GAP 근거 — 새 자리가 아니다).
+UNSETTLED_SITES = 132
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
-    ("app.py", ""): (MARKER,),
+    # 사이드바 조건 패널 맨 위 「적용 전 편집 … — 시나리오·기간을 바꾸면 사라집니다」 — 바로 밑
+    # 시나리오 · 기간 칸을 바꾸기 전에 알아야 하는 되돌릴 수 없는 결과다(UI-NTF-09).
+    ("app.py", ""): (BESIDE_INPUT,),
     ("app_pages/admin_area.py", ""): (EMPTY, CANNOT_DRAW),
     ("app_pages/available_equipment_status.py", ""): (UNSETTLED, EMPTY),
     ("app_pages/calculation_result.py", ""): (UNSETTLED,),
@@ -164,9 +169,11 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
         UNSETTLED,
     ),
+    # GAP 식 줄은 값, 그 밑 부호 줄(「음수: 기준정보(약속)가 설비 일정보다 많습니다」)은 부호의 뜻을
+    # 푼 설명이라 미정리다(2026-11-04 검토로 다시 판정 — 새 자리가 아니다).
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_gap_evidence"): (
         VALUE,
-        VALUE,
+        UNSETTLED,
     ),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_schedule_evidence"): (
         EMPTY,
@@ -641,7 +648,8 @@ def _shape_problems(
 
 def test_value_marker_and_empty_sites_are_plain_lines_without_guidance() -> None:
     """값 · 표지 · 빈 결과 자리는 평문 한 줄이고(상자 아님), 빈 결과는 결론 꼴로 끝나며, 하는 법 ·
-    길 안내 꼬리를 달지 않는다 — 허용된 자리 글을 설명 문장으로 바꿔 넣으면 수가 같아도 걸린다."""
+    길 안내 꼬리를 달지 않는다 — 허용된 자리 글을 상자 · 비결론 꼴 · 길 안내 꼬리로 바꿔 넣으면 수가
+    같아도 걸린다(다른 설명 문장으로 바꾸는 것은 판단 질문이 본다 — 모듈 설명)."""
     problems = _shape_problems(place_sentence_calls(), ALLOWED)
     assert not problems, "자리 글 까닭과 꼴이 맞지 않습니다:\n" + "\n".join(problems)
 
