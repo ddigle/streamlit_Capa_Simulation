@@ -184,7 +184,7 @@ class EquipmentSession:
     def live_layout_rows(self) -> tuple[int, int, int]:
         """`stored_layout_rows` 에서 공통 대장에서 지운 호기의 행(`layout_orphans` — 합칠 때 버린
         행)을 뺀 수. 그 행은 「공식과 같아진」 차이도 「공식과 다른」 차이도 아니라 버린 것이다 —
-        배치 줄(`space_floor_layout.space_layout_notices`)과 잠금 줄(`space_edit_mode`)이 같은
+        배치 알림(`space_floor_layout.space_layout_notices`)과 잠금 줄(`space_edit_mode`)이 같은
         셈으로 말한다(E2E r3·r6)."""
         units, marks, labels = self.stored_layout_rows
         orphans = self.snapshot.layout_orphans if self.snapshot is not None else 0

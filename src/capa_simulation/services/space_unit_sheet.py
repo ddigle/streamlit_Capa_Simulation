@@ -8,6 +8,11 @@
 읽히면 수, 그 밖은 글(길면 줄임), 빈 값은 None 이다. 칸 끝에 「도면」(배치·미배치·레이아웃 제외)을
 붙인다. 행 차례는 받은 그대로이고 `MAX_SHEET_ROWS` 를 넘으면 앞에서 자르고 잘린 줄 수를 `cut` 에
 적는다.
+
+창의 「CSV」(2026-11-04 Space 결정 보드 답 — 옛 도면 아래 내려받기를 창 안으로)의 「도면에 선
+호기 · 모든 칸」 은 파이썬이 지은 글을 표에 함께 싣는다(`floor_csv` — 옛 내려받기와 같은 칸 ·
+줄이라 창의 미배치 · 레이아웃 제외 줄은 없다). 브라우저가 BOM 을 붙여 UTF-8 로 내려받는다.
+「보이는 줄」 은 창의 칸으로 브라우저가 짓는다.
 """
 
 from __future__ import annotations
@@ -33,12 +38,14 @@ PLACE_PLACED: Final = "배치"
 PLACE_UNPLACED: Final = "미배치"
 PLACE_EXCLUDED: Final = "레이아웃 제외"
 # 창에 싣는 줄의 상한 — 층당 많아야 수백 줄이다(샘플 관측 222줄). 넘으면 앞에서 자르고 창이 「n줄
-# 더 — CSV 로」 를 단다(CSV 는 늘 층 전체).
+# 더 — CSV 로」 를 단다(CSV 의 도면에 선 호기는 자르지 않는다).
 MAX_SHEET_ROWS: Final = 3000
 # 글 칸 하나의 길이 상한(메모처럼 긴 칸이 창을 늘리지 않게). 넘으면 잘라 「…」 를 붙인다.
 MAX_TEXT_LENGTH: Final = 200
 # 칸 꼴. 날짜·숫자 칸은 창의 필터에 「~부터 ~까지」 범위 칸이 선다.
 SHEET_TYPES: Final = ("text", "date", "number")
+# 도면에 선 호기 CSV 파일 이름 — 옛 도면 아래 내려받기와 같다.
+FLOOR_CSV_NAME: Final = "space_{building}_{floor}.csv"
 
 
 def _blank(value: object) -> bool:
@@ -113,6 +120,19 @@ def default_place(row: Mapping[Any, Any]) -> str:
     아니면 레이아웃 제외."""
     shown = row.get("레이아웃표시")
     return PLACE_UNPLACED if isinstance(shown, str) and shown.strip() == "Y" else PLACE_EXCLUDED
+
+
+def floor_csv(frame: pd.DataFrame, *, building: str, floor: str) -> dict[str, str]:
+    """「호기 정보」 창 「CSV」 의 도면에 선 호기 — ``{"text": CSV 글, "file": 파일 이름}``.
+
+    글은 `frame.to_csv(index=False)` 그대로(BOM 없음 — 브라우저가 내려받을 때 붙인다)라, 옛
+    도면 아래 내려받기(`.encode("utf-8-sig")`)와 BOM 을 붙인 바이트가 같다. `frame` 은 그 층
+    도면에 선 호기(공정소분류 필터 뒤)의 모든 칸이다.
+    """
+    return {
+        "text": frame.to_csv(index=False),
+        "file": FLOOR_CSV_NAME.format(building=building, floor=floor),
+    }
 
 
 def unit_sheet(

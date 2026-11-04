@@ -38,7 +38,6 @@ import streamlit as st
 
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
-from capa_simulation import alerts
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import report_missing_cutoffs
 from capa_simulation.components.equipment_data_workspace import (
@@ -74,7 +73,7 @@ from capa_simulation.components.equipment_scenario_status import (
     PREFERENCE_LOCK_MESSAGE,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
-    unscheduled_notice,
+    report_unscheduled_units,
 )
 from capa_simulation.components.equipment_settings_dialog import (
     open_equipment_settings,
@@ -249,23 +248,10 @@ saved_downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 _, equipment, downtime = calculation_drafts()
 using_dashboard_sample = saved_equipment.empty
 # 이 설비 시나리오에 일정이 없는 호기(함께 넣기를 끄고 넣은 호기) — 계산에 들지 않는다는 상태
-# 알림(`EQ-04` — 자리에는 그리지 않는다). 없어도 부른다(해소). 「그 화면으로」 는 고칠 자리인 설비
-# 마스터 탭을 연다.
+# 알림(`EQ-04` — 자리에는 그리지 않는다, Space 현황과 같은 함수). 없어도 부른다(해소). 「그
+# 화면으로」 는 고칠 자리인 설비 마스터 탭을 연다.
 equipment_alert_scope = equipment_scope(equipment_session)
-unscheduled_units = draft_unscheduled_units()
-alerts.state(
-    "EQ-04",
-    scope=equipment_alert_scope.scope,
-    content=sorted(unscheduled_units) or None,
-    active=bool(unscheduled_units),
-    text=(
-        f"이 설비 시나리오에 일정이 없는 호기 {len(unscheduled_units):,}대 — 계산에서 빠짐 · "
-        "설비 마스터 일정 칸에 적어 저장"
-    ),
-    full=unscheduled_notice(len(unscheduled_units)),
-    scope_label=equipment_alert_scope.label,
-    tab=tab_name(EQUIPMENT_MASTER_TAB),
-)
+report_unscheduled_units(equipment_session, draft_unscheduled_units())
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
 # Static 대비 일정·「가용설비 설정」 팝업의 표 보기 필터). 선택값·저장값·CSV·설비 마스터 입력은
 # 원본이다. 표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어

@@ -44,6 +44,7 @@ from capa_simulation.services.floor_layout_mark import (
     MARK_KINDS,
     MARK_NAMES,
     SHAPE_ADJUST,
+    SHAPE_ADJUST_BASE,
     SHAPE_FILL_KEYS,
     SHAPE_LINE_KEYS,
     SHAPE_NAMES,
@@ -84,7 +85,9 @@ def test_the_shape_is_a_decorative_floor_and_fab_mark() -> None:
 
 
 def test_the_presets_and_their_adjust_ranges_are_the_decided_ones() -> None:
-    """사양 4b-1 의 아홉 — (하한, 상한, 처음 값). 원·마름모는 모양 조절 값이 없다."""
+    """사양 4b-1 의 아홉 — (하한, 상한, 처음 값). 원·마름모는 모양 조절 값이 없다. 블록 화살표 머리
+    길이는 짧은 변 기준이라(2026-11-04 Space 결정 보드 답) 처음 값 0.7 이 넣는 크기 10×5 에서 옛
+    폭 기준 0.35 와 같은 머리(3.5)다."""
     assert SHAPE_PRESETS == (
         "rect",
         "ellipse",
@@ -106,7 +109,20 @@ def test_the_presets_and_their_adjust_ranges_are_the_decided_ones() -> None:
         "triangle": ((0, 1, 0.5),),
         "diamond": (),
         "cross": ((0.05, 0.95, 0.34),),
-        "arrowblock": ((0.05, 1, 0.5), (0.05, 0.95, 0.35)),
+        "arrowblock": ((0.05, 1, 0.5), (0.05, 0.95, 0.7)),
+    }
+    # 무엇의 비율인가 — 두께 · 둥글기 · 머리 길이는 짧은 변(ㄴ자 · ㄷ자 팔 · 블록 화살표 머리는
+    # 상한이 그 축 길이까지), 삼각형 꼭짓점은 폭, 블록 화살표 몸통은 높이.
+    assert SHAPE_ADJUST_BASE == {
+        "rect": ("min",),
+        "ellipse": (),
+        "lbox": ("min-w", "min-h"),
+        "cbox": ("min-w", "min-h"),
+        "frame": ("min",),
+        "triangle": ("w",),
+        "diamond": (),
+        "cross": ("min",),
+        "arrowblock": ("h", "min-w"),
     }
     assert SHAPE_FILL_KEYS == (*MARK_COLOR_KEYS, "ink", "surface")
     assert SHAPE_LINE_KEYS == ("auto", "none", "ink", *MARK_COLOR_KEYS)
@@ -159,6 +175,9 @@ def test_the_presets_and_their_adjust_ranges_are_the_decided_ones() -> None:
         ({"adj": [1.0]}, '{"adj":[1]}'),
         ({"adj": [0.30000000000000004]}, '{"adj":[0.3]}'),
         ({"shape": "arrowblock", "adj": [1, 0.05]}, '{"adj":[1,0.05],"shape":"arrowblock"}'),
+        # 넓은 ㄴ자의 굵은 세로 팔 · 긴 블록 화살표의 긴 머리(짧은 변의 1 배 넘게 — 저장 상한 안).
+        ({"shape": "lbox", "adj": [1.9, 0.35]}, '{"adj":[1.9,0.35],"shape":"lbox"}'),
+        ({"shape": "arrowblock", "adj": [0.5, 95]}, '{"adj":[0.5,95],"shape":"arrowblock"}'),
         ({"fillAlpha": 0, "line": "none"}, '{"fillAlpha":0,"line":"none"}'),
         ({"fillAlpha": 100.0, "lineWidth": 3.0}, '{"fillAlpha":100,"lineWidth":3}'),
         (
@@ -180,8 +199,11 @@ def test_a_shape_look_is_canonical_json_off_its_preset_defaults(look: Any, expec
         ({"adj": [0.5, 0.5]}, r"모양 조절 값은 1개여야"),
         ({"shape": "ellipse", "adj": [0.5]}, r"모양 조절 값은 0개여야"),
         ({"shape": "lbox", "adj": 0.5}, r"모양 조절 값은 2개여야"),
-        ({"shape": "lbox", "adj": [0.04, 0.5]}, r"0\.05~0\.95 사이여야"),
-        ({"shape": "cbox", "adj": [0.3, 0.5]}, r"0\.05~0\.49 사이여야"),
+        # 'min-w'·'min-h' 값의 저장 상한은 상한 × 100 이다(그 축 길이까지 — 그릴 때 상자로 묶는다).
+        ({"shape": "lbox", "adj": [0.04, 0.5]}, r"0\.05~95 사이여야"),
+        ({"shape": "cbox", "adj": [0.3, 49.5]}, r"0\.05~49 사이여야"),
+        ({"shape": "cross", "adj": [1.2]}, r"0\.05~0\.95 사이여야"),
+        ({"shape": "arrowblock", "adj": [1.2, 0.7]}, r"0\.05~1 사이여야"),
         ({"adj": [0.333]}, "0.01 단위 숫자여야"),
         ({"adj": [True]}, "0.01 단위 숫자여야"),
         ({"adj": ["가"]}, "0.01 단위 숫자여야"),
@@ -424,7 +446,7 @@ def test_fab_shapes_round_trip(tmp_path: Path) -> None:
 
 def test_shapes_in_a_hypothetical_scenario_are_mark_differences(tmp_path: Path) -> None:
     """가정 설비 시나리오에서 공식 도형의 모양 조절 값만 바꾸고 새 도형을 하나 넣어 저장하면 둘이
-    차이 (`set`)로 들고(「Space 도면」 상자 배치 줄 「도면 요소 2개」), 차이 표에 프리셋·모양
+    차이 (`set`)로 들고(배치 알림 `EQ-13` 「도면 요소 2개」), 차이 표에 프리셋·모양
     조절·채우기 색이 실린다. 공식 요소는 그대로이고, 합친 목록(`effective_floor_marks`)이 가정 쪽
     모습을 그린다."""
     repository = _seeded(tmp_path)

@@ -24,7 +24,6 @@ from typing import Any, NamedTuple
 
 import pandas as pd
 
-from capa_simulation.components.literal_markdown import quoted
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
     load_floor_group_labels,
@@ -76,7 +75,7 @@ def effective_floor_layout(
 
 def floor_layout_differences(database_path: str, session: EquipmentSession) -> tuple[int, int]:
     """세션 리비전의 도면 요소·Main 설비명 위치 차이 가운데 지금 공식 층 현행값과 실제로 다른 수
-    (실효 — 공식과 같아진 차이는 다음 저장 때 지워진다). 사이드바 배치 줄 재료(설계 8-2)."""
+    (실효 — 공식과 같아진 차이는 다음 저장 때 지워진다). 배치 알림(`EQ-13`) 재료(설계 8-2)."""
     overlay = session_layout_overlay(database_path, session)
     if not overlay:
         return 0, 0
@@ -100,25 +99,40 @@ def floor_layout_differences(database_path: str, session: EquipmentSession) -> t
     return marks, labels
 
 
-class LayoutNotice(NamedTuple):
-    """Space 배치 줄 하나 — `text` 는 온 문장(사이드바 줄의 풍선), `kind` 는 "info"(공식과 다른
-    배치가 있다) | "caption"(같다 · 정리 안내), `short` 는 사이드바 「Space 도면」 상자에 서는 짧은
-    줄이다(상자 폭 225px 에 한두 줄 — 일정 없는 호기 줄과 같은 꼴)."""
+# 배치 알림의 등록부 코드(`alerts.SPECS`) — 배치 차이(가정 배치 · 가정이던 때 배치) · 공식에서
+# 모듈 구성이 바뀐 묶음 · 공통 대장에서 지운 호기의 차이. Space 현황이 회차마다 셋 모두를
+# 부른다(없으면 해소).
+LAYOUT_DIFFERENCE_ALERT = "EQ-13"
+LAYOUT_REGROUPED_ALERT = "EQ-14"
+LAYOUT_ORPHANS_ALERT = "EQ-15"
+LAYOUT_ALERT_CODES = (LAYOUT_DIFFERENCE_ALERT, LAYOUT_REGROUPED_ALERT, LAYOUT_ORPHANS_ALERT)
 
+
+class LayoutNotice(NamedTuple):
+    """Space 배치 알림 하나(상태 알림 — 2026-11-04 Space 결정 보드 답 「배치 줄은 팝업 알림으로」).
+
+    `code` 는 등록부 코드(`LAYOUT_ALERT_CODES`), `text` 는 온 문장(알림 패널 · 로그의 전문),
+    `short` 는 알림창 짧은 글(「가정 배치 · 공식과 다른 호기 n대 · 도면 요소 m개」), `content` 는
+    지문 재료(글이 아니라 구조 값 — 건수 · 이름 목록. 문구만 고친 배포가 같은 조건을 다시 띄우지
+    않게)다."""
+
+    code: str
     text: str
-    kind: str
     short: str
+    content: object
 
 
 def space_layout_notices(
     session: EquipmentSession, floor_differences: tuple[int, int]
 ) -> list[LayoutNotice]:
-    """Space 사이드바 「Space 도면」 상자의 배치 줄 차례(설계 8-2 — 도면 위 머리 칸에 서던 줄을
-    2026-11-03 Space 레이아웃 개편과 함께 상자 끝 줄로 옮겼다). 역할이 아니라 **그리는 스냅샷**으로
-    정한다 — 합친 본문 캐시는 역할을 키에 못 담아, 공식 시나리오의 가정이던 때 리비전도 그 차이가
-    그대로 그려진다(검토 M8). `floor_differences` 는 도면 요소·Main 설비명 위치 실효 수
-    (`floor_layout_differences`)다. 공식 시나리오의 그 옛 리비전은 실효 차이가 있으면 「공식과 다른
-    배치」 info, 저장된 차이가 모두 지금 공식과 같으면 그 사실 하나만 캡션으로 적는다."""
+    """Space 의 배치 알림 차례(설계 8-2 — 도면 위 머리 칸에 서던 줄을 2026-11-03 사이드바
+    「Space 도면」 상자 끝 줄로 옮겼다가, 2026-11-04 Space 결정 보드 답으로 상태 알림이 됐다 —
+    화면에는 상태 문장을 달지 않는다). 역할이 아니라 **그리는 스냅샷**으로 정한다 — 합친 본문
+    캐시는 역할을 키에 못 담아, 공식 시나리오의 가정이던 때 리비전도 그 차이가 그대로
+    그려진다(검토 M8). `floor_differences` 는 도면 요소·Main 설비명 위치 실효 수
+    (`floor_layout_differences`)다. 공식 시나리오의 그 옛 리비전은 실효 차이가 있으면 「공식과
+    다른 배치」, 저장된 차이가 모두 지금 공식과 같으면 그 사실 하나만 적는다. 코드마다 많아야
+    하나다."""
     snapshot = session.snapshot
     if snapshot is None or session.unmerged:
         return []
@@ -154,12 +168,20 @@ def space_layout_notices(
         tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)"
     lines: list[LayoutNotice] = []
     counted = " · ".join(parts)
+    # 배치 차이 알림의 지문 — 옛 리비전인가, 실효 차이 셋, 저장된 행 셋(정리 꼬리가 바뀌면 다시
+    # 뜬다).
+    content = {
+        "past": not session.is_assumption,
+        "units": difference.units,
+        "marks": marks,
+        "labels": labels,
+        "stored": [live_units, stored_marks, stored_labels],
+    }
     # 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 글자로 끝나는 이름(「가정 P」)은 「이(가)」 가
-    # 된다. 고정 낱말 「시나리오」 뒤에 붙인다.
+    # 된다. 고정 낱말 「시나리오」 뒤에 붙인다. 알림 글은 평문이라(알림창 · 패널이 글자 그대로
+    # 넣는다) 이름의 마크다운 글자를 막지 않는다.
     owner = (
-        f"{quoted(session.scenario_name)} 시나리오가"
-        if session.scenario_name
-        else "이 설비 시나리오가"
+        f"「{session.scenario_name}」 시나리오가" if session.scenario_name else "이 설비 시나리오가"
     )
     if not session.is_assumption:
         # 공식 설비 시나리오의 옛 리비전 — 그 시나리오가 가정이던 때 저장한 배치안이다. 리비전은
@@ -171,9 +193,10 @@ def space_layout_notices(
             rest = f"(저장된 차이 {stored} 가운데 나머지는 지금 공식과 같습니다)" if settled else ""
             lines.append(
                 LayoutNotice(
+                    LAYOUT_DIFFERENCE_ALERT,
                     f"이 리비전은 공식과 다른 배치({counted})를 담고 있습니다 — {origin}{rest}",
-                    "info",
                     f"가정이던 때 배치 · {counted}",
+                    content,
                 )
             )
         else:
@@ -183,28 +206,42 @@ def space_layout_notices(
                 else "이 리비전의 배치는 공식과 같습니다"
             )
             lines.append(
-                LayoutNotice(f"{same} — {origin}", "caption", "가정이던 때 배치 · 지금 공식과 같음")
+                LayoutNotice(
+                    LAYOUT_DIFFERENCE_ALERT,
+                    f"{same} — {origin}",
+                    "가정이던 때 배치 · 지금 공식과 같음",
+                    content,
+                )
             )
     elif parts:
-        lines.append(LayoutNotice(f"가정 배치 · {counted}{tail}", "info", f"가정 배치 · {counted}"))
+        lines.append(
+            LayoutNotice(
+                LAYOUT_DIFFERENCE_ALERT,
+                f"가정 배치 · {counted}{tail}",
+                f"가정 배치 · {counted}",
+                content,
+            )
+        )
     else:
         lines.append(
             LayoutNotice(
+                LAYOUT_DIFFERENCE_ALERT,
                 f"가정 설비 시나리오 · 배치는 공식과 같습니다{tail}",
-                "caption",
                 "가정 배치 · 공식과 같음",
+                content,
             )
         )
     if snapshot.layout_regrouped:
         regrouped = len(snapshot.layout_regrouped)
         lines.append(
             LayoutNotice(
+                LAYOUT_REGROUPED_ALERT,
                 f"공식에서 모듈 구성이 바뀐 묶음 {regrouped:,}개"
                 f"({', '.join(snapshot.layout_regrouped[:3])}"
                 f"{' 외' if regrouped > 3 else ''}) — 가정 배치에서 그 "
                 "모듈은 자리 없이 트레이에 있습니다. 배치 편집에서 다시 놓으세요.",
-                "caption",
-                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 · 트레이",
+                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 트레이에 있음 · 배치 편집에서 다시 놓기",
+                sorted(snapshot.layout_regrouped),
             )
         )
     if snapshot.layout_orphans:
@@ -214,10 +251,11 @@ def space_layout_notices(
         later = " — 다음 저장 때 빠집니다." if session.is_assumption else "."
         lines.append(
             LayoutNotice(
+                LAYOUT_ORPHANS_ALERT,
                 f"공통 대장에서 지운 호기의 배치 차이 {snapshot.layout_orphans:,}행은 "
                 f"버렸습니다{later}",
-                "caption",
                 f"지운 호기의 배치 차이 {snapshot.layout_orphans:,}행 버림",
+                snapshot.layout_orphans,
             )
         )
     return lines
