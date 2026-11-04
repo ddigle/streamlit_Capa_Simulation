@@ -470,8 +470,8 @@ GAP_SHEET_KEYS: Final[dict[str, str]] = {
     "scroll": "equipment_gap_sheet_canvas_scroll",
     "evidence": "equipment_gap_sheet_evidence",
 }
-# 닫힌 근거 카드의 안내 글(같은 칸을 다시 누르면 이 글로 돌아온다).
-GAP_SHEET_CLOSED_TEXT: Final = "칸을 누르면 근거가 여기에 뜹니다"
+# 닫힌 근거 카드의 빈 결과 줄(같은 칸을 다시 누르면 이 줄로 돌아온다 — 읽는 법은 「근거」 풍선).
+GAP_SHEET_CLOSED_TEXT: Final = "고른 칸이 없습니다"
 # 위에서 아래로 그린 값 행 아홉 — (구획 제목, 행 라벨).
 _GAP_STATIC_TITLE: Final = "Static · 기준정보"
 _GAP_SCHEDULE_TITLE: Final = "설비 일정 기준"

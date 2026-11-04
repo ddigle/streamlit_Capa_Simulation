@@ -55,6 +55,7 @@ from capa_simulation.components.shortening_source import (
     Frames,
     ShorteningStop,
 )
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.navigation import REQUIRED_SHORTENING
@@ -559,6 +560,8 @@ def render_fab_layer_summary(
         expanded=False,
         key="space_shortening_unplaced_expander",
     ):
+        # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+        toolbar_clearance()
         st.dataframe(
             _virtual_frame(virtuals),
             hide_index=True,

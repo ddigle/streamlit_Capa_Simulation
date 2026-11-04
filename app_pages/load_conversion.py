@@ -55,7 +55,7 @@ from capa_simulation.components.state_alerts import (
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_table_heading
+from capa_simulation.components.table_toolbar import render_table_heading, toolbar_clearance
 from capa_simulation.components.write_guard import held_flash, note_notice, notice_marks
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -410,6 +410,8 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     if locked.empty:
         return
     with st.expander("편집 불가 수율 행", icon=":material/rule:"):
+        # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+        toolbar_clearance()
         st.dataframe(
             locked[[*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]],
             hide_index=True,
@@ -977,6 +979,8 @@ if not tab_is_hidden(conversion_tab):
         )
         if not excluded_load_rows.empty:
             with st.expander("제외한 계획 확인", icon=":material/rule:"):
+                # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+                toolbar_clearance()
                 st.dataframe(
                     excluded_load_rows,
                     hide_index=True,

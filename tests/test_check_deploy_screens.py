@@ -3192,7 +3192,7 @@ def test_the_gap_sheet_contract_matches_the_app() -> None:
     assert screens.GAP_DETAIL_MODE_KEY == panel.DETAIL_MODE_KEY
     assert screens.GAP_SHEET_MODE == panel._DETAIL_MODES[0]
     source = _text(COMPONENTS / "availability_gap_panel.py")
-    assert f'st.markdown("**{screens.GAP_SHEET_CLOSED_TEXT}**")' in source
+    assert f'st.caption("{screens.GAP_SHEET_CLOSED_TEXT}.")' in source
     # 월 칸 스크롤 상자는 `horizontal_scroll_canvas(key=…)` 의 `<key>_scroll` 이다.
     assert 'target_selector=f".st-key-{GAP_SHEET_SCROLL_KEY}_scroll"' in source
     assert screens.GAP_SHEET_ROWS == tuple(
