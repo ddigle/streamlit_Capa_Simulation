@@ -22,8 +22,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from capa_simulation.services.korean_particle import topic_particle
-
 MAIN_CASE_NUMBERS: tuple[int, int] = (1, 2)
 OFFICIAL_SLOT_TITLE = "공식버전"
 
@@ -185,10 +183,11 @@ def main_case_overlap_notes(
     official_revision_id: str | None,
     cases: Sequence[tuple[str | None, str | None]],
 ) -> list[str]:
-    """같은 리비전을 가리키는 슬롯을 알리는 줄. 막지 않는다 — 저장은 하고 알리기만 한다.
+    """같은 리비전을 가리키는 슬롯 짝 — 짝마다 「Case1 · Case2」 · 「Case1 · 공식버전」 한 줄.
 
-    Case1·Case2 가 같은 시나리오·리비전이면 한 줄, Case 가 지금 최신 공식버전과 같은 리비전이면 Case
-    마다 한 줄이다. 리비전을 고르지 않은 Case 는 견주지 않는다.
+    막지 않는다 — 저장은 하고 알리기만 한다. Case1·Case2 가 같은 시나리오·리비전이면 한 줄, Case 가
+    지금 최신 공식버전과 같은 리비전이면 Case 마다 한 줄이다. 리비전을 고르지 않은 Case 는 견주지
+    않는다. 줄은 짝의 이름뿐이다 — 「같은 리비전」 이라는 라벨과 그 뜻은 그리는 쪽이 단다.
     """
     if len(cases) != len(MAIN_CASE_NUMBERS):
         raise ValueError(
@@ -197,15 +196,8 @@ def main_case_overlap_notes(
     notes: list[str] = []
     first, second = cases
     if first[1] is not None and first == second:
-        notes.append(
-            "Case1 과 Case2 는 같은 시나리오·리비전입니다 — 저장은 했고, 두 슬롯이 같은 "
-            "내용을 보입니다."
-        )
+        notes.append(f"{case_title(1)} · {case_title(2)}")
     for case_no, (_, revision_id) in zip(MAIN_CASE_NUMBERS, cases, strict=True):
         if revision_id is not None and revision_id == official_revision_id:
-            title = case_title(case_no)
-            notes.append(
-                f"{title} {topic_particle(title)} 지금 공식버전과 같은 리비전입니다 — "
-                "슬롯 1(공식버전)과 같은 내용을 보입니다."
-            )
+            notes.append(f"{case_title(case_no)} · {OFFICIAL_SLOT_TITLE}")
     return notes

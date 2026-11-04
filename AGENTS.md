@@ -2895,7 +2895,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
 - `src/capa_simulation/components/home_main_cases.py` — 「HOME 설정」 팝업 `비교 · 주요 Case` 탭의 「주요 Case」 상자(2026-10-23
   사용자 요청).
-  HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
+  HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리 — 줄에는 값만,
+  그 자리는 줄 풍선 `OFFICIAL_SLOT_HELP`). Case1·
   Case2 마다 「시나리오」·「리비전」 상자를 두고(넓으면 두 칸, 좁으면 위아래) 고르는 것이 곧 저장이다(공용 프로필 `0036`).
   - **공용 프로필이 정본이고 상자는 거울이다.** 비교 시나리오(세션 우선)와 달리 회차마다 프로필 값을 위젯 앞에서 상자에
     적는다 — 남의 지정·이름 바꾸기가 다음 회차에 보이고 브라우저가 옛 글자를 되보내도 지정이 바뀌지 않는다(9장).
@@ -2918,7 +2919,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 비운 Case 는 세션 API 로 `None` 을 적어 브라우저가 자리표시를 띄우므로 `placeholder` 를 비우기 선택지 글자로 준다
     (주지 않으면 영문 「Choose an option」). 그 글자는 같은 이름의 시나리오가 있으면 「지정 안 함 (비움)」 으로
     비켜 선다(`unset_choice_label` — 1.63 은 같은 글자를 첫 선택지로 읽어 그 Case 를 비울 수 없었다).
-  - Case1·Case2 가 같은 짝, Case 가 공식버전과 같은 리비전이면 저장하고 캡션으로 알린다(`main_case_overlap_notes`).
+  - Case1·Case2 가 같은 짝, Case 가 공식버전과 같은 리비전이면 저장하고 상자 아래 값 줄 「**같은 리비전** · Case1 · Case2」
+    로 알린다(`main_case_overlap_notes` 는 짝 이름만 — 뜻은 줄 풍선 `MAIN_CASE_OVERLAP_HELP`).
     HOME 에서 슬롯을 올리는 칩은 `home_main_case_chips` 다(같은 `services/main_cases.main_case_slots` 를 쓴다).
 - `src/capa_simulation/components/home_main_case_chips.py` — HOME `LOB 표시 조건` 카드 맨 위의 주요 Case 칩 셋(2026-10-23
   사용자 결정 — 시안 C · 동작 (가), 2026-11-02 부터 본문 제목 줄 끝이 아니라 카드 맨 위 — 이름 줄 「주요 Case」 밑에

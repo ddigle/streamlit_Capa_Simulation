@@ -84,7 +84,17 @@ MAIN_CASE_FILL_SOURCE = "HOME 주요 Case 리비전 메움"
 MAIN_CASE_NOTICE_KEY = "home_preference_main_case_notice"
 # 마지막으로 보인 상자의 재료(`_PickerView`). 숨은 탭 회차가 DB 없이 다시 그린다.
 MAIN_CASE_VIEW_KEY = "home_preference_main_case_view"
-OFFICIAL_POINTER = "공식 지정은 시나리오 관리"
+# 슬롯 1 줄의 풍선 — 슬롯 1 을 여기서 고르지 않는 까닭과 공식 지정의 자리. 줄에는 값만 둔다(설계
+# 규칙 UI-TXT-03 — 길 안내는 그 칸의 풍선).
+OFFICIAL_SLOT_HELP = (
+    "슬롯 1 은 지금 최신 공식버전이라 여기서 고르지 않습니다 — 공식 지정은 시나리오 관리에서 "
+    "합니다."
+)
+# 두 슬롯이 같은 리비전을 가리킬 때 상자 아래 서는 값 줄의 라벨과 풍선(`main_case_overlap_notes`).
+MAIN_CASE_OVERLAP_LABEL = "같은 리비전"
+MAIN_CASE_OVERLAP_HELP = (
+    "같은 리비전을 가리키는 슬롯은 같은 내용을 보입니다 — 막지 않고 지정은 그대로 저장했습니다."
+)
 UNSET_CHOICE = "지정 안 함"
 # 「지정 안 함」 과 같은 이름의 시나리오가 있을 때 비우기 선택지 글자의 꼬리(`unset_choice_label`).
 UNSET_CHOICE_ESCAPE = "비움"
@@ -218,13 +228,14 @@ def _draw(
     callback_notice: bool,
     focus: object = None,
 ) -> None:
-    """상자 본문 — 공식버전 줄, 알림 칸, Case 두 칸, 겹침 캡션, 버전 캡션.
+    """상자 본문 — 공식버전 줄, 알림 칸, Case 두 칸, 겹침 값 줄, 버전 캡션.
 
     `callback_notice` 면 콜백이 담은 실패 알림(`MAIN_CASE_NOTICE_KEY`)을 알림 칸 맨 앞에 한 번
     그린다. 숨은 회차는 꺼내지 않는다 — 보이는 회차가 그린다. `focus` 는 이 회차에 한 번 강조할
-    Case 번호다(미지정 칩 — `focus_main_case`).
+    Case 번호다(미지정 칩 — `focus_main_case`). 겹침은 「**같은 리비전** · Case1 · Case2」 값 줄이고
+    그 뜻은 풍선이다.
     """
-    st.markdown(_official_line(view.official))
+    st.markdown(_official_line(view.official), help=OFFICIAL_SLOT_HELP)
     # 알림은 생겼다 사라진다 — 늘 서 있는 한 칸 안에 그려 아래 상자의 자리를 고정한다(AGENTS
     # 9장).
     with render_flash(MAIN_CASE_NOTICE_KEY) if callback_notice else st.container():
@@ -245,7 +256,7 @@ def _draw(
     )
     with st.container():
         for note in notes:
-            st.caption(note)
+            st.caption(f"**{MAIN_CASE_OVERLAP_LABEL}** · {note}", help=MAIN_CASE_OVERLAP_HELP)
     st.caption(profile_version_caption(view.profile, empty="아직 지정한 주요 Case 가 없습니다."))
 
 
@@ -310,9 +321,10 @@ def case_head_markup(case_no: int, *, focused: bool = False) -> str:
 
 
 def _official_line(official: OfficialReleaseSummary | None) -> str:
-    """상자 첫 줄 — 슬롯 1 은 지정하지 않고 지금 최신 공식버전을 글로만 보인다."""
+    """상자 첫 줄 — 슬롯 1 은 지정하지 않고 지금 최신 공식버전을 글로만 보인다(공식 지정의 자리는
+    줄 풍선 `OFFICIAL_SLOT_HELP`)."""
     label = "아직 없음" if official is None else literal_markdown(official_slot_label(official))
-    return f":material/verified: 슬롯 1 · 공식버전: **{label}** ({OFFICIAL_POINTER})"
+    return f":material/verified: 슬롯 1 · 공식버전: **{label}**"
 
 
 def _drop_vanished_scenarios(
