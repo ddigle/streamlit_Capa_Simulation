@@ -1,0 +1,642 @@
+# Purpose: 화면 글(st.caption · st.info · st.markdown)의 서술형 문장 자리를 세어 허용 목록과 맞댄다.
+
+"""화면 글 문장 그물(설계 규칙 UI-TXT-01 · 03 · 04 · 08, UI-NTF-02 — `docs/design_rules.md` 5-1).
+
+화면 자리에 늘 두는 글은 값 · 표지뿐이고(UI-TXT-04), 설명 · 내역 · 길 안내 문장은 풍선
+(`help=`) · Guide · 알림창으로 옮긴다(UI-TXT-01 · 02 · 03, UI-NTF-02 — 2026-11-04 설계 규칙 확인
+보드 AMB-01 · AMB-02 (가) · AMB-06 (나)). 이 그물은 화면 코드(`app.py` · `app_pages/` ·
+`src/capa_simulation/`)에서 `st.caption` · `st.info` · `st.markdown`(칸 · 사이드바 · 팝업의 같은
+이름 부름 포함, 로거 밖)에 넣는 글이 **서술형으로 끝나는**(「…니다」 · 「…세요」 · 「…다」 등)
+부름을 (파일, 맨 바깥 함수 — 모듈 본문은 "") 마다 세어 허용 목록과 **정확히** 맞댄다
+(`tests/test_alert_sites.py` 의 꼴). 글은 상수 · f-string · 이은 글 · 같은 함수의 지역 이름 · 모듈
+상수 · 들여온 상수 · 글을 돌려주는 함수까지 푼다(`tests/source_sites.py`).
+
+- 새 자리가 생기면 실패한다 — 설명 · 내역 · 길 안내면 옮기고(풍선 · Guide · `alerts.state` ·
+  `flash.queue_flash`), 자리에 남을 글이면 `ALLOWED` 에 까닭과 함께 둔다. 까닭은 값 · 표지 · 빈
+  결과 · 입력 곁 거부 · 못 그리는 오류 · 미정리 가운데 하나다(`source_sites.PLACE_REASONS`).
+- 자리가 줄면 실패한다 — 목록의 그 칸도 줄인다(옮긴 자리가 남아 다른 새 자리를 덮지 않게).
+- 미정리(`UNSETTLED`)는 이 그물을 세울 때(2026-11-04) 이미 있던 설명 · 내역 · 길 안내 자리다 —
+  새 자리에 쓰지 않는다. 미정리 수가 `UNSETTLED_SITES` 와 다르면 실패한다(늘면 옮기고, 줄면 수도
+  줄인다).
+- 문장으로 끝나지 않는 값 줄(「**라벨** · 값」), 매개변수로 받은 글, 풍선(`help=`)은 그물 밖이다.
+
+까닭 칸은 부름 하나에 하나이고 함수 안 문서 차례다 — 한 함수에 갈래가 섞일 수 있다.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Mapping
+from pathlib import Path
+
+from source_sites import (
+    BESIDE_INPUT,
+    CANNOT_DRAW,
+    EMPTY,
+    LOGGERS,
+    MARKER,
+    PLACE_REASONS,
+    PROJECT_ROOT,
+    UNSETTLED,
+    VALUE,
+    TextResolver,
+    ends_as_sentence,
+    first_text_argument,
+    method,
+    receiver,
+    screen_calls,
+    screen_files,
+)
+
+# 자리 글을 그리는 부름 — 상자(`st.info`)와 평문(`st.caption` · `st.markdown`).
+TEXT_METHODS = frozenset({"caption", "info", "markdown"})
+# 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다.
+UNSETTLED_SITES = 149
+
+# (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
+ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
+    ("app.py", ""): (MARKER,),
+    ("app_pages/admin_area.py", ""): (UNSETTLED, CANNOT_DRAW),
+    ("app_pages/available_equipment_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
+    ("app_pages/calculation_result.py", ""): (UNSETTLED,),
+    ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
+    ("app_pages/constraint_simulation.py", ""): (
+        CANNOT_DRAW,
+        CANNOT_DRAW,
+        MARKER,
+        EMPTY,
+        EMPTY,
+        UNSETTLED,
+        BESIDE_INPUT,
+        EMPTY,
+    ),
+    ("app_pages/constraint_simulation.py", "product_ready"): (EMPTY,),
+    ("app_pages/constraint_simulation.py", "render_held_picker"): (BESIDE_INPUT,),
+    ("app_pages/constraint_simulation.py", "render_locked_arrival_note"): (UNSETTLED,),
+    ("app_pages/execution_management.py", ""): (UNSETTLED,),
+    ("app_pages/execution_management.py", "_render_subpages"): (UNSETTLED,),
+    ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
+    ("app_pages/load_conversion.py", ""): (UNSETTLED,),
+    ("app_pages/load_conversion.py", "_render_locked_yield_rows"): (UNSETTLED,),
+    ("app_pages/load_conversion.py", "_virtual_product_dialog"): (UNSETTLED,),
+    ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY, UNSETTLED, UNSETTLED),
+    ("app_pages/reference_data.py", ""): (UNSETTLED,),
+    ("app_pages/reference_data.py", "_render_step_view"): (UNSETTLED,),
+    ("app_pages/reference_integrity.py", ""): (UNSETTLED,),
+    ("app_pages/reference_integrity.py", "_render_detail"): (EMPTY, UNSETTLED, UNSETTLED),
+    ("app_pages/reference_integrity.py", "_render_guide"): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("app_pages/reference_integrity.py", "_render_loss_routes"): (UNSETTLED,),
+    ("app_pages/reference_integrity.py", "_render_pending_screen"): (UNSETTLED,),
+    ("app_pages/reference_integrity.py", "_render_summary"): (
+        EMPTY,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("app_pages/required_shortening.py", ""): (UNSETTLED, UNSETTLED),
+    ("app_pages/space_status.py", ""): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("app_pages/space_status.py", "_render_layout_warnings"): (CANNOT_DRAW,),
+    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (
+        UNSETTLED,
+        UNSETTLED,
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+    ),
+    ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, UNSETTLED, UNSETTLED),
+    ("app_pages/standard_target_capa.py", "_paste_dialog"): (UNSETTLED,),
+    ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (UNSETTLED,),
+    ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
+    ("app_pages/voc.py", ""): (UNSETTLED, EMPTY),
+    ("app_pages/wip_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
+    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (
+        UNSETTLED,
+        CANNOT_DRAW,
+    ),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_poll_running_round"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"): (
+        EMPTY,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (UNSETTLED,),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_setting_history"): (
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_settings_form"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_status"): (
+        UNSETTLED,
+        UNSETTLED,
+        VALUE,
+        CANNOT_DRAW,
+    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_detail_link"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_evidence"): (
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_gap_evidence"): (
+        VALUE,
+        VALUE,
+    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_schedule_evidence"): (
+        EMPTY,
+    ),
+    (
+        "src/capa_simulation/components/availability_gap_panel.py",
+        "_render_securement_cross_check",
+    ): (CANNOT_DRAW, EMPTY, EMPTY, EMPTY, EMPTY),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_static_evidence"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_undated_notice"): (
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_unit_list"): (EMPTY,),
+    ("src/capa_simulation/components/availability_gap_panel.py", "render_availability_gap_panel"): (
+        UNSETTLED,
+        EMPTY,
+        EMPTY,
+        EMPTY,
+        EMPTY,
+        MARKER,
+        MARKER,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_render_catalog_list"): (
+        UNSETTLED,
+        UNSETTLED,
+        EMPTY,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    (
+        "src/capa_simulation/components/bigdataquery_registration.py",
+        "_render_configuration_banner",
+    ): (UNSETTLED,),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_render_registration_form"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/constraint_simulation_view.py", "_render_schedule"): (
+        UNSETTLED,
+        EMPTY,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/constraint_simulation_view.py", "render_constraint_view"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/container_start_check.py", "_render_missing_report"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/container_start_check.py", "render_container_start_check"): (
+        UNSETTLED,
+        VALUE,
+    ),
+    ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (EMPTY,),
+    ("src/capa_simulation/components/display_order_management.py", "_clipboard_dialog"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_bulk_delete_status"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_common_history"): (
+        UNSETTLED,
+    ),
+    (
+        "src/capa_simulation/components/equipment_data_workspace.py",
+        "_render_current_data_downloads",
+    ): (UNSETTLED,),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        EMPTY,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "render_name_changes"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "render_small_editor"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/equipment_explorer.py", "_availability"): (EMPTY,),
+    ("src/capa_simulation/components/equipment_explorer.py", "_render_result"): (EMPTY, EMPTY),
+    ("src/capa_simulation/components/equipment_explorer.py", "_transitions"): (EMPTY,),
+    ("src/capa_simulation/components/equipment_import_dialog.py", "_render_body"): (UNSETTLED,),
+    ("src/capa_simulation/components/equipment_import_dialog.py", "_render_review"): (
+        BESIDE_INPUT,
+    ),
+    (
+        "src/capa_simulation/components/equipment_lifecycle_gantt.py",
+        "render_equipment_lifecycle_gantt",
+    ): (EMPTY, UNSETTLED),
+    ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (
+        BESIDE_INPUT,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_save_fields.py", "_reach_publish"): (BESIDE_INPUT,),
+    ("src/capa_simulation/components/equipment_save_fields.py", "_render_assumption_warning"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_save_fields.py", "render_equipment_save_fields"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_branch"): (
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_legacy_trace"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_load"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
+        UNSETTLED,
+        UNSETTLED,
+        EMPTY,
+    ),
+    (
+        "src/capa_simulation/components/equipment_scenario_management.py",
+        "render_equipment_scenario_management",
+    ): (EMPTY, EMPTY),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_dialog_body"): (
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_load"): (
+        BESIDE_INPUT,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
+        EMPTY,
+        UNSETTLED,
+        EMPTY,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"): (
+        UNSETTLED,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/floor_layout_upload.py", "_render_current_state"): (
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/grouped_monthly_table.py", "render_grouped_monthly_table"): (
+        EMPTY,
+        EMPTY,
+    ),
+    (
+        "src/capa_simulation/components/hierarchical_monthly_table.py",
+        "render_hierarchical_monthly_table",
+    ): (EMPTY, EMPTY),
+    ("src/capa_simulation/components/home_main_cases.py", "_render_case"): (EMPTY,),
+    ("src/capa_simulation/components/home_preference.py", "_render_comparison_picker"): (
+        EMPTY,
+        EMPTY,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_execution_editor"): (
+        EMPTY,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_key_process_editor"): (VALUE,),
+    ("src/capa_simulation/components/home_preference.py", "_render_monthly_amount_editor"): (
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_summary_note_editor"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_top5_band_editor"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "render_threshold_editor"): (
+        EMPTY,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_editor"): (BESIDE_INPUT,),
+    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_history"): (
+        CANNOT_DRAW,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_intro"): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/manual_downtime_tab.py", "render_manual_downtime_tab"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/modification_schedule_view.py", "_render_body"): (
+        UNSETTLED,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/modification_schedule_view.py", "_render_conditions"): (
+        MARKER,
+    ),
+    ("src/capa_simulation/components/modification_schedule_view.py", "_render_source_band"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/modification_schedule_view.py", "render_schedule_mode"): (
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/module_failure_card.py", "render_failure_parts"): (UNSETTLED,),
+    ("src/capa_simulation/components/module_status.py", "render_module_status"): (UNSETTLED,),
+    ("src/capa_simulation/components/month_editor.py", "paste_dialog"): (UNSETTLED,),
+    ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/past_data_management.py", "_render_save"): (BESIDE_INPUT,),
+    ("src/capa_simulation/components/performance_actual_screen.py", "_render_actions"): (
+        UNSETTLED,
+        UNSETTLED,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/performance_actual_screen.py", "_render_detail"): (
+        EMPTY,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (
+        EMPTY,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    (
+        "src/capa_simulation/components/plan_comparison_dumbbell.py",
+        "render_plan_comparison_dumbbell",
+    ): (EMPTY,),
+    ("src/capa_simulation/components/process_capa_view.py", "_render_dynamic_absent"): (
+        CANNOT_DRAW,
+        CANNOT_DRAW,
+        CANNOT_DRAW,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/process_capa_view.py", "_render_evidence_panel"): (UNSETTLED,),
+    ("src/capa_simulation/components/process_capa_view.py", "_render_route_factors"): (
+        CANNOT_DRAW,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/process_picker.py", "render_process_picker"): (EMPTY,),
+    ("src/capa_simulation/components/process_rename_management.py", "_clipboard_dialog"): (
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
+        BESIDE_INPUT,
+    ),
+    (
+        "src/capa_simulation/components/process_rename_management.py",
+        "render_process_rename_management",
+    ): (UNSETTLED,),
+    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_inputs"): (MARKER,),
+    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_paste_box"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (UNSETTLED,),
+    (
+        "src/capa_simulation/components/required_exclusion_notice.py",
+        "render_plan_exclusion_lists",
+    ): (UNSETTLED, UNSETTLED),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (
+        UNSETTLED,
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_month_range"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_process_filter"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_progress"): (EMPTY,),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_undated_notice"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_unmatched"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_usage_notice"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/sample_data.py", "render_pending_source"): (UNSETTLED,),
+    ("src/capa_simulation/components/sample_data.py", "render_sample_switch"): (
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_archive"): (
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_archived_scenarios"): (
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_list_management"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_management.py", "_render_official"): (BESIDE_INPUT,),
+    ("src/capa_simulation/components/scenario_management.py", "_render_official_history"): (
+        EMPTY,
+        VALUE,
+    ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_scenario_actions"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/scenario_month_merge.py", "render_scenario_month_merge"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/scenario_status.py", "_render_dialog_body"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_status.py", "_render_dialog_header"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_status.py", "_render_load"): (BESIDE_INPUT, EMPTY),
+    ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (
+        BESIDE_INPUT,
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/scenario_transform.py", "render_source_selector"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_year_shift.py", "_render_shift"): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/scenario_year_shift.py", "render_scenario_year_shift"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/securement_heatmap.py", "render_securement_heatmap"): (EMPTY,),
+    ("src/capa_simulation/components/shortening_board.py", "_render_controls"): (UNSETTLED,),
+    ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (UNSETTLED, EMPTY),
+    ("src/capa_simulation/components/shortening_board.py", "_render_imminent"): (EMPTY, UNSETTLED),
+    ("src/capa_simulation/components/shortening_board.py", "render_highlight_notice"): (EMPTY,),
+    ("src/capa_simulation/components/shortening_board.py", "render_progress_board"): (UNSETTLED,),
+    ("src/capa_simulation/components/shortening_progress_panel.py", "_render_delete"): (
+        BESIDE_INPUT,
+    ),
+    ("src/capa_simulation/components/source_quality.py", "render_source_quality"): (
+        EMPTY,
+        EMPTY,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/space_floor_list.py", "_render_confirm"): (BESIDE_INPUT,),
+    ("src/capa_simulation/components/space_floor_list.py", "_render_edit"): (UNSETTLED,),
+    ("src/capa_simulation/components/space_floor_list.py", "_render_tables"): (UNSETTLED,),
+    ("src/capa_simulation/components/space_floor_list.py", "render_space_floor_list"): (UNSETTLED,),
+    ("src/capa_simulation/components/space_shortening_view.py", "render_arrival_filter_note"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/space_shortening_view.py", "render_fab_layer_summary"): (
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"): (
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+        UNSETTLED,
+    ),
+    ("src/capa_simulation/components/table_view_controls.py", "render_table_view_controls"): (
+        BESIDE_INPUT,
+    ),
+    (
+        "src/capa_simulation/components/upeh_assumption_controls.py",
+        "render_upeh_assumption_controls",
+    ): (UNSETTLED, EMPTY, BESIDE_INPUT),
+}
+
+
+def place_sentences(
+    paths: list[Path] | None = None, root: Path = PROJECT_ROOT
+) -> dict[tuple[str, str], list[int]]:
+    """(파일, 맨 바깥 함수) 마다 서술형 문장으로 끝나는 자리 글 부름의 줄 번호(문서 차례)."""
+    resolver = TextResolver()
+    found: dict[tuple[str, str], list[int]] = {}
+    for relative, outer, path, scope, call in screen_calls(paths or screen_files(), root):
+        if method(call) not in TEXT_METHODS or receiver(call) in LOGGERS:
+            continue
+        argument = first_text_argument(call)
+        if argument is None:
+            continue
+        tails = resolver.tails(argument, path, scope)
+        if any(tail is not None and ends_as_sentence(tail) for tail in tails):
+            found.setdefault((relative, outer), []).append(call.lineno)
+    return found
+
+
+def _listing(sites: Mapping[tuple[str, str], object]) -> str:
+    return "\n".join(f"{file} {func or '(본문)'}: {value}" for (file, func), value in sites.items())
+
+
+def test_no_new_place_draws_a_sentence() -> None:
+    """새 문장 자리는 옮기거나(풍선 · Guide · 알림), 자리에 남을 글이면 까닭과 함께 목록에 둔다."""
+    found = place_sentences()
+    new = {site: lines for site, lines in found.items() if len(lines) > len(ALLOWED.get(site, ()))}
+    assert not new, (
+        "자리에 서술형 문장을 늘 두는 새 자리입니다(줄 번호) — 설명 · 내역 · 길 안내면"
+        " 풍선(help=) · Guide · 알림(alerts.state · flash.queue_flash)으로 옮기고, 값 · 표지 ·"
+        " 빈 결과 · 입력 곁 거부 · 못 그리는 오류면 tests/test_place_sentence_sites.py ALLOWED 에"
+        " 까닭과 함께 두세요(미정리는 새로 쓰지 않습니다):\n" + _listing(new)
+    )
+
+
+def test_every_allowed_site_is_still_there_with_its_count() -> None:
+    """옮긴 자리는 목록에서도 지운다 — 남은 칸이 다른 새 자리를 덮지 않게."""
+    found = place_sentences()
+    stale = {
+        site: (len(reasons), len(found.get(site, [])))
+        for site, reasons in ALLOWED.items()
+        if len(found.get(site, [])) != len(reasons)
+    }
+    assert not stale, "허용 목록 수가 코드와 다릅니다(목록 수, 지금 수):\n" + _listing(stale)
+
+
+def test_every_allowed_site_says_why() -> None:
+    unknown = {
+        site: reasons
+        for site, reasons in ALLOWED.items()
+        if not reasons or not set(reasons) <= PLACE_REASONS
+    }
+    assert not unknown, unknown
+
+
+def test_unsettled_sites_do_not_grow() -> None:
+    """미정리는 줄기만 한다 — 새 자리를 미정리로 들이지 않는다."""
+    counted = Counter(reason for reasons in ALLOWED.values() for reason in reasons)
+    assert counted[UNSETTLED] == UNSETTLED_SITES, (
+        f"미정리 자리가 {counted[UNSETTLED]}곳입니다(기록 {UNSETTLED_SITES}) — 늘었으면 그 자리"
+        " 글을 옮기고, 줄었으면 UNSETTLED_SITES 도 줄이세요."
+    )
+
+
+SAMPLE_PAGE = """
+import logging
+
+import streamlit as st
+
+from capa_simulation.page_bootstrap import NO_DEMAND_MESSAGE
+
+logger = logging.getLogger(__name__)
+HOW_TO = "표를 고르면 근거가 여기에 뜹니다."
+
+
+def _dropped_line(count: int) -> str:
+    return f"호기 {count}대를 뺐습니다."
+
+
+def render(count: int, label: str) -> None:
+    st.caption("판정 기준은 HOME 설정에서 정합니다.")
+    st.info(f"{count}건을 저장했습니다.")
+    st.markdown(HOW_TO)
+    st.sidebar.caption(NO_DEMAND_MESSAGE)
+    note = _dropped_line(count)
+    st.caption(note)
+    st.markdown("<div>표가 <b>비었습니다.</b></div>", unsafe_allow_html=True)
+    st.caption("저장 뒤 확인하세요" if count else "없음")
+    st.caption(f"**공정** · {label}")
+    st.caption(label)
+    st.info("확인 필요")
+    st.caption("필요 단축 일정", help="고칠 곳은 Guide 가 말합니다.")
+    logger.info("저장했습니다.")
+"""
+
+
+def test_the_net_reads_sentences_through_names_helpers_and_markup(tmp_path: Path) -> None:
+    """상수 · f-string · 모듈 상수 · 들여온 상수 · 지역 이름 → 글을 돌려주는 함수 · HTML 꼬리표 ·
+    갈래 글의 문장은 세고, 값 줄 · 매개변수 · 낱말 표지 · 풍선 · 로거는 세지 않는다."""
+    page = tmp_path / "page.py"
+    page.write_text(SAMPLE_PAGE, encoding="utf-8")
+
+    found = place_sentences([page], tmp_path)
+
+    assert {site: len(lines) for site, lines in found.items()} == {("page.py", "render"): 7}
