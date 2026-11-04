@@ -120,7 +120,9 @@ def test_the_dynamic_summary_and_detail_caption_show_the_display_name_literally(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    carrying = _assert_literal(_markdown_texts(app), labels)
+    # 손실 구조 그림의 설명은 구획 제목 풍선이다 — 풍선도 마크다운으로 그려진다.
+    helps = [str(item.proto.help) for item in app.markdown if item.proto.help]
+    carrying = _assert_literal(_markdown_texts(app) + helps, labels)
     caption = f"선택한 {literal_markdown(labels.label(processes[0]))} 공정의"
     assert any(caption in text for text in carrying), carrying
 

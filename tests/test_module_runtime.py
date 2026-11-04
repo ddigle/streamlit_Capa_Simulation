@@ -24,6 +24,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_failures, module_registry, navigation
+from capa_simulation.components.module_failure_card import STOPPED_PAGE
 from capa_simulation.navigation import DYNAMIC_CAPA, HOME, PageSpec
 from capa_simulation.page_tabs_state import valid_tabs
 from capa_simulation.sidebar_status import APP_RUN_STATE_KEY, CONDITIONS_BOX_KEY
@@ -206,7 +207,9 @@ def test_a_crashing_page_shows_only_its_card_and_the_app_goes_on(
     (card,) = _texts(app, "error")
     assert "「데모 고장」 모듈의 「고장 데모」 화면에서 오류가 났습니다" in card
     assert "RuntimeError" in card and "데모 오류" in card
-    assert any("이 화면만 멈췄습니다" in text for text in _texts(app, "caption"))
+    # 멈춘 범위는 표지 한 마디, 끄는 법은 그 줄 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02).
+    (stopped,) = [item for item in app.caption if str(item.value).startswith(STOPPED_PAGE)]
+    assert "`enabled`" in str(stopped.proto.help) and "demo_crash" in str(stopped.proto.help)
     assert "오류 앞까지 그린 줄입니다." in _texts(app, "markdown")
     assert module_failures.last_failures()["demo_crash"].where == "page"
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True

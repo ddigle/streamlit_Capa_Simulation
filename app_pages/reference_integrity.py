@@ -8,7 +8,7 @@ Dynamic 은 실행 관리가 모은 실적(효율·UPEH·생산실적)으로 Cap
 
 분해된 칸마다 그 칸을 파고드는 화면으로 링크를 건다. 효율·UPEH·수율·설비 가용은 실행 관리 그룹의
 화면이고 재공부족은 Dynamic 의 재공 현황이다 — 링크는 그룹과 상관없이 동작한다. 손실을 부서별
-Gap·A/Item 으로 넘기는 일은 실행 관리 머리가 말하고, 여기서는 그쪽을 가리키는 한 줄만 둔다.
+Gap·A/Item 으로 넘기는 일은 실행 관리 머리가 말하고, 여기서는 그 화면 링크 하나만 둔다.
 
 요약과 상세를 탭으로 가른다. 보고 자리에서 볼 것(결론 한 문장·순위·다음 화면)과
 분석하며 뒤질 것(조회 조건·워터폴·일별 추이)이 다르다.
@@ -61,6 +61,25 @@ _CAPACITY_UNIT_LABELS = {"WF": "매", "CHIP": "Kea", "PKG": "Kea"}
 _SOURCE = "실적 DB"
 # 샘플 데모 행과 공정 요약(세션 칸). `_demo_frames`.
 DEMO_MEMO_KEY = "dynamic_capacity_demo_memo"
+
+# 설명은 자리에 늘 두지 않고 그 칸 · 구획 제목의 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 ·
+# UI-TXT-03 — 구현중 화면이라 Guide 는 화면을 완성할 때 붙인다).
+EXECUTION_LINK_HELP = "손실을 부서별 Gap · A/Item 으로 넘기는 일은 실행 관리에서 합니다."
+NEEDS_ACTION_HELP = (
+    "Capa 실현률이 80% 미만인 공정 수입니다 — 프로토타입 판정 기준은 90% 이상 정상, 80% 이상 "
+    "관찰, 80% 미만 개선 필요입니다."
+)
+PROCESS_OVERVIEW_HELP = (
+    "`Capa 실현률` 막대의 색이 판정입니다 — 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요"
+    "(프로토타입 기준)이며 정상 · 관찰 · 개선 필요 순으로 짙어집니다. 단위가 다른 공정은 수량을 "
+    "합산하지 않고 각 공정의 비율로 비교합니다."
+)
+PRIORITY_HELP = "실현률이 낮은 공정부터 놓습니다. 제품 Mix 는 「공정 상세」 탭에서 나눠 봅니다."
+LOSS_ROUTES_HELP = (
+    "워터폴에서 손실이 차감되는 차례입니다 — 칸이 큰 쪽부터 들어갑니다. 설비 성능(효율 · UPEH)과 "
+    "가용 Capa 활용(Rundown · 재공부족) 가운데 더 깎아먹는 쪽이 먼저 볼 화면입니다."
+)
+TREND_HELP = "표준 Capa, 설비 성능 기준 실효 Capa와 실제 생산실적을 일별로 비교합니다."
 
 # 손실 한 칸과 그 칸을 파고드는 화면. **워터폴에 서는 차례 그대로** 둔다 — 화면 목록이
 # 손실 순서와 다르면 목차 구실을 못 한다.
@@ -140,8 +159,7 @@ def _render_summary(
             f"**{literal_markdown(labels.label(worst['공정']))}** 의 Capa 실현률이 "
             f"{with_direction_particle(worst_rate)} 가장 낮습니다. 설비 성능 실현률은 "
             f"{float(worst['설비 성능 실현률']):.0%}, 가용 Capa 활용률은 "
-            f"{float(worst['가용 Capa 활용률']):.0%} 입니다 — 성능과 활용 중 어느 쪽이 "
-            f"더 깎아먹는지가 다음 화면을 정합니다. 개선 필요 공정은 모두 "
+            f"{float(worst['가용 Capa 활용률']):.0%} 입니다. 개선 필요 공정은 모두 "
             f"{len(needs_action):,}개입니다."
         )
 
@@ -152,6 +170,7 @@ def _render_summary(
             f"{len(needs_action):,}개",
             key="reference_integrity_needs_action",
             tone=shortage_tone(len(needs_action)),
+            help=NEEDS_ACTION_HELP,
         )
         st.metric(
             "중앙 Capa 실현률",
@@ -168,15 +187,10 @@ def _render_summary(
             f"{process_summary['Rundown 시간'].sum():,.1f}h",
             border=True,
         )
-    st.caption(
-        "프로토타입 판정 기준: Capa 실현률 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요. "
-        "아래 `Capa 실현률` 막대의 색이 이 판정이며 정상·관찰·개선 필요 순으로 짙어집니다."
-    )
 
     overview_chart, overview_table = st.columns([1.35, 1.0], gap="medium")
     with overview_chart.container(border=True):
-        st.markdown("#### :material/bar_chart: 공정별 Capa 실현 수준")
-        st.caption("단위가 다른 공정은 수량을 합산하지 않고 각 공정의 비율로 비교합니다.")
+        st.markdown("#### :material/bar_chart: 공정별 Capa 실현 수준", help=PROCESS_OVERVIEW_HELP)
         if not tab_is_hidden(owner_tab):
             st.plotly_chart(
                 build_process_comparison_figure(process_summary, process_labels=labels),
@@ -186,8 +200,7 @@ def _render_summary(
             )
 
     with overview_table.container(border=True):
-        st.markdown("#### :material/priority_high: 관리 우선순위")
-        st.caption("실현률이 낮은 공정부터 배치하며 제품 Mix는 상세 조회에서 분리합니다.")
+        st.markdown("#### :material/priority_high: 관리 우선순위", help=PRIORITY_HELP)
         priority = process_summary[
             [
                 "공정",
@@ -225,11 +238,7 @@ def _render_loss_routes() -> None:
     """손실 칸마다 그 칸을 파고드는 화면으로 잇는다. 효율·UPEH·수율·설비 가용은 실행 관리 그룹,
     재공부족은 Dynamic 하위(재공 현황)다 — 링크는 그룹을 건너도 그대로 동작한다."""
     with st.container(border=True):
-        st.markdown("#### :material/alt_route: 손실을 파고드는 화면")
-        st.caption(
-            "아래 순서는 워터폴에서 손실이 차감되는 차례와 같습니다. 칸이 큰 쪽부터 "
-            "들어가면 됩니다."
-        )
+        st.markdown("#### :material/alt_route: 손실을 파고드는 화면", help=LOSS_ROUTES_HELP)
         columns = st.columns(len(_LOSS_ROUTES), gap="small")
         for column, (title, subtitle, page_path, icon) in zip(columns, _LOSS_ROUTES, strict=True):
             with column.container(border=True):
@@ -401,10 +410,12 @@ def _render_detail(
 
     waterfall_column, trend_column = st.columns(2, gap="medium")
     with waterfall_column.container(border=True):
-        st.markdown("#### :material/waterfall_chart: Capa 손실 구조")
-        st.caption(
-            f"선택한 {literal_markdown(labels.label(process))} 공정의 표준 Capa부터 실제 "
-            f"실적까지를 {with_direction_particle(unit_label)} 연결합니다."
+        st.markdown(
+            "#### :material/waterfall_chart: Capa 손실 구조",
+            help=(
+                f"선택한 {literal_markdown(labels.label(process))} 공정의 표준 Capa부터 실제 "
+                f"실적까지를 {with_direction_particle(unit_label)} 연결합니다."
+            ),
         )
         st.plotly_chart(
             build_capacity_waterfall_figure(detail_summary),
@@ -414,8 +425,7 @@ def _render_detail(
         )
 
     with trend_column.container(border=True):
-        st.markdown("#### :material/show_chart: 일별 Capa 추이")
-        st.caption("표준 Capa, 설비 성능 기준 실효 Capa와 실제 생산실적을 일별로 비교합니다.")
+        st.markdown("#### :material/show_chart: 일별 Capa 추이", help=TREND_HELP)
         st.plotly_chart(
             build_capacity_trend_figure(filtered),
             width="stretch",
@@ -579,18 +589,14 @@ render_page_header(
     ),
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(_SOURCE)),
 )
-# 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그쪽을
-# 가리키는 한 줄만 둔다.
-with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-    st.caption(
-        ":material/assignment_ind: 손실을 부서별 Gap · A/Item 으로 넘기는 일은 "
-        "실행 관리에서 합니다."
-    )
-    render_page_link(
-        EXECUTION_MANAGEMENT.path,
-        label=EXECUTION_MANAGEMENT.title,
-        icon=EXECUTION_MANAGEMENT.icon,
-    )
+# 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그 화면
+# 링크 하나만 두고, 무엇을 하러 가는지는 링크 풍선이 말한다(설계 규칙 UI-TXT-03 · UI-LAY-08).
+render_page_link(
+    EXECUTION_MANAGEMENT.path,
+    label=EXECUTION_MANAGEMENT.title,
+    icon=EXECUTION_MANAGEMENT.icon,
+    help=EXECUTION_LINK_HELP,
+)
 
 if not render_sample_switch(key="dynamic_capa_sample_switch", source=_SOURCE):
     _render_pending_screen()

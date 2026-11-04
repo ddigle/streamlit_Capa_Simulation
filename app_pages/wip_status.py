@@ -74,6 +74,14 @@ DEFAULT_PROCESS_COUNT = 5
 DEFAULT_PRODUCT_COUNT = 4
 # 시나리오 소요대수에서만 나오는 준비물(경로·선택지) 한 벌과 그 키(세션 칸).
 ROUTE_CHOICES_MEMO_KEY = "wip_status_route_choices_memo"
+# 격자를 읽는 법은 자리에 늘 두지 않고 구획 제목 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 —
+# 구현중 화면이라 Guide 는 화면을 완성할 때 붙인다).
+GRID_HELP = (
+    "가로는 STEP 순서, 세로는 제품 표시순서이며 각 칸은 같은 11일 구간입니다. Flow 막대는 표준 "
+    "이상이면 초록색, 미달이면 빨간색입니다. 점선은 현재 `표준 목표 Capa`와 같은 산식(공정별 대당 "
+    "Capa ÷ RUN_DAY × 주차별 가용대수)의 제품별 가능 수준입니다. 공정 소요기준에 따라 단위는 Kea "
+    "또는 매이며 서로 합산하지 않습니다."
+)
 
 
 def _route_choices(
@@ -107,10 +115,7 @@ def _route_choices(
 
 render_page_header(
     "표준 대비 재공 현황 (구현중)",
-    description=(
-        "공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다. "
-        "가로는 STEP 순서, 세로는 제품 표시순서이며 각 셀은 동일한 11일 구간을 표시합니다."
-    ),
+    description="공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다.",
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
 )
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
@@ -232,7 +237,9 @@ with st.container(border=True):
             )
 
 if not selected_processes or not selected_products:
-    st.info("차트를 표시하려면 공정과 제품을 각각 하나 이상 선택하세요.")
+    # 고른 것이 없어 그릴 것이 없는 멈춤도 회색 평문 한 줄이다 — 하는 법은 붙이지 않는다(설계 규칙
+    # UI-TXT-04).
+    st.caption("고른 공정 또는 제품이 없습니다.")
     st.stop()
 
 selected_product_order = [
@@ -319,12 +326,7 @@ with metric_row(key="wip_status_metric_row"):
     )
 
 with st.container(border=True):
-    st.markdown("#### :material/insights: 일별 재공·Flow와 표준 가능 수준")
-    st.caption(
-        "Flow 막대는 표준 이상이면 초록색, 미달이면 빨간색입니다. 점선은 현재 `표준 목표 "
-        "Capa`와 같은 산식(공정별 대당 Capa ÷ RUN_DAY × 주차별 가용대수)의 제품별 가능 "
-        "수준입니다. 공정 소요기준에 따라 단위는 Kea 또는 매이며 서로 합산하지 않습니다."
-    )
+    st.markdown("#### :material/insights: 일별 재공·Flow와 표준 가능 수준", help=GRID_HELP)
     # 기준선을 못 그린 공정·주차는 상태 알림(`WIP-04` — 자리에 그리지 않는다). 고칠 곳(표준
     # 목표)으로 가는 링크는 남긴다. 없어도 부른다(해소). 수는 고른 공정·제품에 따라 바뀌므로 지문에
     # 넣지 않는다 — 거르기를 바꿀 때마다 다시 뜨지 않게.

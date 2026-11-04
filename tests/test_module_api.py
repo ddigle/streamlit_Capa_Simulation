@@ -14,6 +14,7 @@ from streamlit.runtime.scriptrunner_utils.script_requests import RerunData
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_api, module_failures, module_registry
+from capa_simulation.components.module_failure_card import STOPPED_SPOT
 from capa_simulation.module_api import ModuleContextError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -229,7 +230,9 @@ st.write("뒤 줄")
     assert [str(element.value) for element in app.markdown] == ["앞 줄", "뒤 줄"]
     (card,) = app.error
     assert "「시험 모듈」 모듈에서 오류가 났습니다" in card.value and "KeyError" in card.value
-    assert any("이 자리만 멈췄습니다" in caption.value for caption in app.caption)
+    # 멈춘 범위는 표지 한 마디, 그대로 쓰는 범위 · 끄는 법은 그 줄 풍선이다.
+    (stopped,) = [caption for caption in app.caption if caption.value.startswith(STOPPED_SPOT)]
+    assert "화면의 나머지와 다른 화면은 그대로" in str(stopped.proto.help)
     assert module_failures.last_failures()["demo_a"].where == "guard"
 
 

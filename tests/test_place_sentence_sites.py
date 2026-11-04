@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 31
+UNSETTLED_SITES = 20
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -93,13 +93,12 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("app_pages/constraint_simulation.py", "product_ready"): (EMPTY,),
     ("app_pages/constraint_simulation.py", "render_held_picker"): (BESIDE_INPUT,),
-    ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
+    ("app_pages/internal_modules.py", ""): (EMPTY,),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
     ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY),
     ("app_pages/reference_data.py", ""): (EMPTY,),
     ("app_pages/reference_data.py", "_render_step_view"): (EMPTY,),
-    ("app_pages/reference_integrity.py", ""): (UNSETTLED,),
-    ("app_pages/reference_integrity.py", "_render_detail"): (EMPTY, UNSETTLED, UNSETTLED),
+    ("app_pages/reference_integrity.py", "_render_detail"): (EMPTY,),
     ("app_pages/reference_integrity.py", "_render_guide"): (
         UNSETTLED,
         UNSETTLED,
@@ -107,14 +106,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
         UNSETTLED,
     ),
-    ("app_pages/reference_integrity.py", "_render_loss_routes"): (UNSETTLED,),
     ("app_pages/reference_integrity.py", "_render_pending_screen"): (UNSETTLED,),
-    ("app_pages/reference_integrity.py", "_render_summary"): (
-        EMPTY,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
+    ("app_pages/reference_integrity.py", "_render_summary"): (EMPTY,),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
     ("app_pages/space_status.py", "_render_layout_warnings"): (CANNOT_DRAW,),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (BESIDE_INPUT, BESIDE_INPUT),
@@ -122,7 +115,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (EMPTY,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
-    ("app_pages/wip_status.py", ""): (EMPTY, UNSETTLED, EMPTY, UNSETTLED, UNSETTLED),
+    ("app_pages/wip_status.py", ""): (EMPTY, EMPTY, EMPTY, UNSETTLED),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (
         UNSETTLED,
         CANNOT_DRAW,
@@ -304,7 +297,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/modification_schedule_view.py", "render_schedule_mode"): (
         EMPTY,
     ),
-    ("src/capa_simulation/components/module_failure_card.py", "render_failure_parts"): (UNSETTLED,),
     ("src/capa_simulation/components/module_status.py", "render_module_status"): (UNSETTLED,),
     ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"): (
         BESIDE_INPUT,
