@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -134,9 +135,29 @@ def _top_function(relative: str, name: str) -> ast.FunctionDef | ast.AsyncFuncti
     )
 
 
-def _keyword(call: ast.Call, name: str) -> object:
-    value = next((item.value for item in call.keywords if item.arg == name), None)
-    return value.value if isinstance(value, ast.Constant) else None
+def _module_texts(relative: str) -> dict[str, str]:
+    """모듈 맨 위 글 상수(이름 → 글) — `state(LAYOUT_ALERT, …)` 처럼 코드를 이름으로 줄 때 푼다."""
+    return {
+        node.targets[0].id: node.value.value
+        for node in _tree(relative).body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    }
+
+
+def _text(node: ast.expr | None, constants: Mapping[str, str]) -> object:
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    return None
+
+
+def _keyword(call: ast.Call, name: str, constants: Mapping[str, str]) -> object:
+    return _text(next((item.value for item in call.keywords if item.arg == name), None), constants)
 
 
 def _called(call: ast.Call) -> str:
@@ -147,23 +168,26 @@ def _called(call: ast.Call) -> str:
 
 
 def codes_sent_by(
-    function: ast.FunctionDef | ast.AsyncFunctionDef, route: Literal["flash", "state"]
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    route: Literal["flash", "state"],
+    constants: Mapping[str, str] | None = None,
 ) -> set[str]:
-    """함수가 그 길로 보내는 알림 코드."""
+    """함수가 그 길로 보내는 알림 코드 — 코드 · 종류는 글 상수나 모듈 상수 이름(`constants`)이다."""
+    known = constants or {}
     codes: set[str] = set()
     for node in ast.walk(function):
         if not isinstance(node, ast.Call):
             continue
         if route == "flash" and _called(node) == "queue_flash":
-            if _keyword(node, "popup_only") is not True:
+            if _keyword(node, "popup_only", known) is not True:
                 continue
-            alert = _keyword(node, "alert")
-            kind = _keyword(node, "kind") or "success"
+            alert = _keyword(node, "alert", known)
+            kind = _keyword(node, "kind", known) or "success"
             codes.add(str(alert) if alert else alerts.FLASH_CODES[str(kind)])
         elif route == "state" and _called(node) == "state" and node.args:
-            first = node.args[0]
-            if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                codes.add(first.value)
+            first = _text(node.args[0], known)
+            if isinstance(first, str):
+                codes.add(first)
     return codes
 
 
@@ -214,7 +238,7 @@ def test_the_withdrawn_place_still_sends_that_code(item: Withdrawn) -> None:
     """걷은 자리가 그 코드를 알림창 · Alarm 길로 보낸다 — 경고가 사라지지 않고 옮겨 갔다."""
     function = _top_function(item.file, item.function)
     assert function is not None, f"{item.file} 에 {item.function} 이 없습니다 — 표를 고치세요."
-    assert item.code in codes_sent_by(function, item.route), (
+    assert item.code in codes_sent_by(function, item.route, _module_texts(item.file)), (
         f"{item.file} {item.function} 이 {item.code} 를 "
         + ("queue_flash(…, popup_only=True)" if item.route == "flash" else "alerts.state")
         + " 로 보내지 않습니다."
@@ -229,15 +253,18 @@ def test_the_screen_test_asserts_that_code(item: Withdrawn) -> None:
 
 
 def test_the_route_reader_tells_flash_and_state_codes_apart() -> None:
-    """`codes_sent_by` 는 `popup_only` 없는 결과 알림(버튼 곁에도 그림)을 세지 않는다."""
+    """`codes_sent_by` 는 `popup_only` 없는 결과 알림(버튼 곁에도 그림)을 세지 않고, 코드를 모듈
+    상수 이름으로 준 상태 알림은 그 상수를 푼다."""
     (function,) = ast.parse(
         "def f():\n"
         "    queue_flash(KEY, text, kind='warning')\n"
         "    queue_flash(KEY, text, kind='warning', popup_only=True)\n"
         "    queue_flash(KEY, text, kind='warning', alert='EQ-05', popup_only=True)\n"
         "    alerts.state('EQ-06', scope=None, content=None, active=False)\n"
+        "    alerts.state(LAYOUT_ALERT, scope=None, content=None, active=False)\n"
     ).body
     assert isinstance(function, ast.FunctionDef)
 
     assert codes_sent_by(function, "flash") == {"FL-03", "EQ-05"}
     assert codes_sent_by(function, "state") == {"EQ-06"}
+    assert codes_sent_by(function, "state", {"LAYOUT_ALERT": "EQ-13"}) == {"EQ-06", "EQ-13"}
