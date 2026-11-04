@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import successes
+from alert_marks import flashed, successes
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.runtime.state import session_state_proxy
@@ -589,8 +589,9 @@ def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
 ) -> None:
     """다른 세션이 그 사이 지운 글에 답변을 남기면 거짓 성공 대신 거절을 알린다(2026-10-26 E2E).
 
-    「답변을 남겼습니다.」가 뜨고 답변은 주인 없는 행으로 DB 에 남아 아무도 볼 수 없었다. 지운 글의
-    상자는 다시 그리지 않으므로 거절과 적어 둔 답변은 머리 알림 칸에 선다.
+    「답변을 남겼습니다.」가 뜨고 답변은 주인 없는 행으로 DB 에 남아 아무도 볼 수 없었다. 아무것도
+    쓰지 않았고 그 자리에 고칠 입력이 없어(지운 글의 상자는 다시 그리지 않는다) 거절은 알림창 ·
+    Alarm 에만 가고(`FL-03` — 설계 규칙 UI-NTF-03), 적어 둔 답변은 머리 알림 칸에 남는다.
     """
     database_path = tmp_path / "scenario.duckdb"
     post_id = _post(database_path)
@@ -603,8 +604,9 @@ def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
 
     assert not app.exception
     assert not successes(app)
-    assert [message.value for message in app.warning] == [
-        "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
+    assert not app.warning, [message.value for message in app.warning]
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
+        ("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.", "FL-03")
     ]
     assert [block.value for block in app.code] == ["지워진 글에 적은 답변"]
     assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
@@ -620,8 +622,9 @@ def test_resolving_a_post_deleted_by_another_session_is_refused(tmp_path: Path) 
     app.button(key=f"voc_resolve_{post_id}").click().run()
 
     assert not app.exception
-    assert [message.value for message in app.warning] == [
-        "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
+    assert not app.warning, [message.value for message in app.warning]
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
+        ("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.", "FL-03")
     ]
     assert not app.code
     assert DuckDBScenarioRepository(database_path).list_voc_posts().empty
@@ -786,7 +789,7 @@ def test_deleting_a_post_deleted_by_another_session_says_it_was_already_gone(
     tmp_path: Path,
 ) -> None:
     """다른 세션이 이미 지운 글을 옛 화면에서 「글 삭제」 하면 「글을 지웠습니다.」 가 떴다(E2E r3).
-    답변·답변 완료 표시와 같은 「그 사이 지운 글입니다」 를 머리 알림 칸에 그린다."""
+    답변·답변 완료 표시와 같은 「그 사이 지운 글입니다」 를 알림창 · Alarm 에 낸다(`FL-03`)."""
     database_path = tmp_path / "scenario.duckdb"
     upper, lower = _two_posts(database_path)
     app = _app(database_path)
@@ -797,7 +800,8 @@ def test_deleting_a_post_deleted_by_another_session_says_it_was_already_gone(
 
     assert not app.exception
     assert not successes(app), [message.value for message in successes(app)]
-    assert [message.value for message in app.warning] == [
-        "그 사이 지운 글입니다. 다른 사용자가 먼저 지웠습니다."
+    assert not app.warning, [message.value for message in app.warning]
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
+        ("그 사이 지운 글입니다. 다른 사용자가 먼저 지웠습니다.", "FL-03")
     ]
     assert _posts(database_path) == [("아래 글", False)]

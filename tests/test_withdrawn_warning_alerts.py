@@ -157,6 +157,18 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
+        what="VOC 머리 알림 칸 — 그 사이 지운 글에 한 답변 · 답변 완료 표시 · 글 삭제의 거절",
+        why="UI-NTF-03",
+        file="app_pages/voc.py",
+        function="_refuse_gone_press",
+        code="FL-03",
+        route="flash",
+        test=(
+            "tests/test_voc_page.py"
+            "::test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept"
+        ),
+    ),
+    Withdrawn(
         what="시나리오 관리 설비 시나리오 구획 — 옛 판 흔적이 있는 설비 시나리오 이름 · 개수 줄",
         why="UI-TXT-04 · UI-NTF-02",
         file="src/capa_simulation/components/equipment_scenario_management.py",

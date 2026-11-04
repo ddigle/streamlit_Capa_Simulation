@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 from typing import Any
 
@@ -171,6 +172,14 @@ def test_the_source_quality_verdict_is_one_plain_line() -> None:
 
     assert not app.success and not app.warning
     assert "2개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다." in _lines(app.caption)
+    # 등급 기준은 「등급」 칸 풍선이고 표 밑에는 기준 행 수 값 줄만 선다(설명 문장 없음 —
+    # UI-TXT-01).
+    assert "**기준 행 수** · 원천 10행" in _lines(app.caption)
+    assert not [
+        text for text in _lines(app.caption) if "색만으로" in text or "`상수` 입니다" in text
+    ]
+    grade = json.loads(app.dataframe[0].proto.columns)["등급"]
+    assert "`비어 있음`" in grade["help"] and "`상수`" in grade["help"], grade
 
 
 # ---------------------------------------------------------------- 주요공정 프리셋 숨은 공정

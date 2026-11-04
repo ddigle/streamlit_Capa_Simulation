@@ -828,7 +828,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 새 글 폼의 제목·내용은 올리기 전에는 서버가 몰라 화면 이동·테마 전환(새로고침)에 사라졌다 — 폼 알림 칸 안의
     `components/voc_draft_keeper.py`(Components v2, 그림자 DOM 없음)가 두 칸(`st-key-voc_post_title`·`_body`)의 글을
     브라우저 탭(`sessionStorage` — 서버·다른 사람에게 가지 않음)에 적고, 두 칸이 모두 빈 회차에 되살려(원래 setter +
-    `input` 사건 — 폼 안이라 올릴 때 간다) 한 줄 알린다. 같은 세션 표지(세션마다 새로 뽑음)에서 폼 세대가 오르면(글을
+    `input` 사건 — 폼 안이라 올릴 때 간다) 알림 칸에 사건 알림 `VO-02` 를 낸다(`window.__capaAlerts.raise` — 화면
+    탭 줄 JS 와 같은 길, 폼 아래 제 꼴의 줄 없음 — 설계 규칙 UI-NTF-01). 같은 세션 표지(세션마다 새로 뽑음)에서 폼 세대가 오르면(글을
     올렸다) 버린다. 판정은 순수 구획 `// <voc-draft>`(node 시험 `tests/test_voc_draft_keeper.py`), AppTest 는 conftest
     대역(개선 I84).
   - 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 콜백이고 본문 `st.rerun()` 이 없다 — 끊긴 회차가 아래 글의
@@ -840,9 +841,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     누름이 옛 화면의 단추에 닿은 회차(지나간 세대·이미 지운 글)도 쓰기 직후면 성공을 다시 알린다(9장).
   - 그 사이 다른 세션이 지운 글의 답변·답변 완료 표시는 저장소가 같은 쓰기 잠금 안에서 글을 확인해
     `VocPostGoneError` 로 거절한다(`voc_reply.post_id` 에 외래 키가 없어 막지 않으면 주인 없는 답글이 남는다).
-    화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`). 옛 화면의 「글
+    아무것도 쓰지 않았고 그 자리에 고칠 입력이 없어(지운 글 상자는 다시 그리지 않는다) 거절은 알림창 · Alarm 에만
+    낸다(`voc._refuse_gone_press` — `queue_flash(…, popup_only=True)`, `FL-03`, 설계 규칙 UI-NTF-03). 적어 둔 답변은
+    알림이 아니라 사용자의 글이라 머리 알림 칸에 남겨 복사해 가게 한다(`tests/test_voc_page.py`). 옛 화면의 「글
     삭제」 도 같다 — 저장소 `remove_voc_post` 가 지울 것이 없었으면 거짓을 돌려주고 화면은 「글을 지웠습니다.」 대신
-    같은 칸에 「그 사이 지운 글입니다」(`VOC_POST_GONE_ON_DELETE`)를 그린다. 쓰기 직후 창 안이면(`held_notice` —
+    「그 사이 지운 글입니다」(`VOC_POST_GONE_ON_DELETE`)를 알림창 · Alarm 에 낸다. 쓰기 직후 창 안이면(`held_notice` —
     겹쳐 온 제 누름이 먼저 지웠다) 그 알림 그대로다.
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
@@ -5422,7 +5425,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 매핑에 없는 공정은 원본 공정명을 그대로 표시하고, 보유하지 않은 원본에 지정된
   표시명은 오류가 아니다 — 이 시나리오의 계산 화면에는 나오지 않지만 표시명은 원본이 보유 공정인지
   보지 않고 입혀, 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는
-  나온다. Proc Rename 탭은 그 건수를 「무시」 가 아니라 그렇게 안내한다(2026-10-26 E2E). 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
+  나온다. Proc Rename 탭은 그 건수를 「무시」 가 아니라 직접 편집 머리 표지 「보유 공정 밖 표시명 n건」 + 풍선(이름 · 입혀지는
+  곳)으로 둔다(2026-10-26 E2E, 설계 규칙 UI-TXT-04 — 숨은 데이터 안내). 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
   자연히 걸리지 않는다 — 축소 로직을 새로 넣지 않는다.
 - 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간 칸·시나리오 월 `YYYY-MM` 은
   `settings.format_month`, 글 속 달 `YYYY-MM`(조회기간 밖 오류문·측정률 중립값 안내·Space 「필요 단축」 보기의 「2026-11」)은

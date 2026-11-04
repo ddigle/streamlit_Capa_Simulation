@@ -284,10 +284,6 @@ queue_flash("demo_flash", "글", kind="notice")
 # 꺼내는 새 자리가 다른 함수에서 허용을 빌리지 못하게 한다. 자리가 사라지면 여기서도 지운다
 # (`test_every_allowed_pop_is_still_there`).
 FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
-    ("app_pages/voc.py", "", "GONE_NOTICE_KEY"): (
-        "다음 동작까지 남는 꼴 — 지운 글의 거절과 함께 적어 둔 답변을 되살릴 입력으로 든다(그리는"
-        " 칸은 머리 알림 칸 `render_flash(FLASH_KEY)` 가 돌려준 칸이다)"
-    ),
     ("app_pages/reference_data.py", "", "'capacity_step_flash'"): (
         "매 회차 비우고 STEP 탭을 그리는 회차에만 알림창 표지로 보낸다(`alerts.emit` — 성공이라"
         " 버튼 곁에는 그리지 않는다, D3) — 숨은 회차에 남은 알림을 나중에 띄우지 않는다"

@@ -97,8 +97,8 @@ def test_the_warning_leaves_out_grades_with_no_columns_and_is_none_when_all_norm
     )
     all_normal = build_source_quality_table(_profile([("정상", 0, 40)]), source_rows=100)
 
+    # 결론에 설명 문장을 붙이지 않는다 — 계산에 쓰는 컬럼이면 어디에 나타나는지는 Guide 몫이다.
     assert source_quality_warning(only_constant) == (
-        "2개 컬럼 중 1개가 정상이 아닙니다 — 상수 1개. 계산에 쓰는 컬럼이면 제외 목록으로 "
-        "나타납니다."
+        "2개 컬럼 중 1개가 정상이 아닙니다 — 상수 1개."
     )
     assert source_quality_warning(all_normal) is None

@@ -85,11 +85,10 @@ def collect_alerts(outcome: CapacityOutcome, density: str | None) -> list[Alert]
 
 
 def render_alert_board() -> None:
-    """활성 시나리오의 알림 셋. 준비 단계에서 멈추면(활성 시나리오 없음 등) 그 까닭만 남긴다."""
-    st.caption(
-        "활성 시나리오의 계산 알림을 시나리오 전체 기간으로 모읍니다 — HOME 에는 띄우지 "
-        "않습니다. 리비전 저장·공식 발행 검사와 같은 셈입니다."
-    )
+    """활성 시나리오의 알림 셋. 준비 단계에서 멈추면(활성 시나리오 없음 등) 그 까닭만 남긴다.
+
+    무엇을 어느 범위로 모으는지(시나리오 전체 기간 · 리비전 저장 · 공식 발행 검사와 같은 셈)는 Guide
+    「알림 모음」 이 말한다 — 탭 머리에 설명 문장을 늘 띄우지 않는다(설계 규칙 UI-TXT-01)."""
     try:
         context = load_page_context()
         scenario = context.active_scenario

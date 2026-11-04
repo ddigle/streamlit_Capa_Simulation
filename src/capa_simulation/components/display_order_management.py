@@ -82,6 +82,10 @@ DISPLAY_ORDER_UNCHANGED_MESSAGE = (
 )
 # 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
+# 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
+DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
+)
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -191,7 +195,7 @@ def _clipboard_dialog(
     try:
         imported = display_order_from_clipboard(clipboard_text)
         if imported.equals(current):
-            st.info("붙여넣은 표시순서가 현재 공용 설정과 동일합니다.")
+            st.info(DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE, icon=":material/info:")
             return
         _save_global_display_order(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:

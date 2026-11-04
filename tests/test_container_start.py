@@ -1128,18 +1128,21 @@ def _report(written_at: str) -> report_contract.ContainerStartReport:
 @pytest.mark.parametrize(
     ("written_at", "started"),
     [
-        ("2026-10-24T09:00:00+09:00", "2026\\-10\\-24T09\\:00\\:00\\+09\\:00에 시작하며"),
-        ("", "알 수 없는 때에 시작하며"),
+        ("2026-10-24T09:00:00+09:00", "2026\\-10\\-24T09\\:00\\:00\\+09\\:00"),
+        ("", "알 수 없음"),
     ],
 )
-def test_the_start_check_caption_attaches_the_time_particle(written_at: str, started: str) -> None:
-    """「에」 는 받침과 상관없이 붙는다 — 시각이 없으면 「알 수 없는 때 에」 로 띄어 나왔다(E2E)."""
+def test_the_start_check_caption_is_a_value_line_without_a_pointer(
+    written_at: str, started: str
+) -> None:
+    """펼침 맨 위는 언제 남긴 결과인지의 값 줄이다 — 안내 문서 절을 가리키는 길 안내 문장은 Guide
+    「서버 시작 점검」 몫이다(설계 규칙 UI-TXT-03)."""
     from capa_simulation.components.container_start_check import report_origin_caption
 
     caption = report_origin_caption(_report(written_at))
 
-    assert caption.startswith(f"C-DEP CD 컨테이너가 {started} ")
-    assert " 에 " not in caption
+    assert caption == f"**시작 기록** · {started} · `scripts/container_start.py`"
+    assert "절에" not in caption
 
 
 def test_the_withheld_environment_notice_names_the_keys_without_a_dual_particle() -> None:

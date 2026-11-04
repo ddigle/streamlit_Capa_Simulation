@@ -31,6 +31,8 @@ from capa_simulation.sidebar_status import remembered_expander
 # 펼침 key — 탭 묶음 위에 서므로 자리를 key 로 고정하고, 편 상태는 기억 칸에 둔다(「서버 시작 점검」
 # 과 같은 꼴).
 EXPANDER_KEY = "admin_area_module_status"
+# 환경변수 줄의 풍선 — 바꾼 것이 언제 보이는지는 칸 하나의 뜻이라 늘 띄우지 않는다(설계 규칙
+# UI-TXT-01 · 02).
 RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄운 뒤 보입니다."
 # 회차 시간 칸 — 단위를 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 모두
 # 0.00 이라 서로 갈리지 않는다). 숫자 칸(`Int64`, 기록이 없으면 빈칸)이라 머리글로 정렬하면 값
@@ -152,5 +154,4 @@ def render_module_status() -> None:
                 hide_index=True,
                 width="stretch",
             )
-        st.caption(environment_caption(scan))
-        st.caption(RESTART_NOTICE)
+        st.caption(environment_caption(scan), help=RESTART_NOTICE)

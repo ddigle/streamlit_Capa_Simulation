@@ -88,8 +88,8 @@ def test_proc_rename_notices_block_the_listed_names(tmp_path: Path) -> None:
     path = tmp_path / "scenario.duckdb"
     repository = DuckDBScenarioRepository(path)
     repository.initialize()
-    # 보유하지 않은 공정의 표시명 하나(무시 알림)와, 다른 보유 공정의 원본과 같은 표시명 하나(겹침
-    # 경고).
+    # 보유하지 않은 공정의 표시명 하나(보유 공정 밖 표지의 풍선)와, 다른 보유 공정의 원본과 같은
+    # 표시명 하나(겹침 경고).
     repository.replace_global_process_rename(
         pd.DataFrame({"공정": ["없는~공정~C", "보유"], "표시명": ["무엇", STAR]}), source="시험"
     )
@@ -100,9 +100,10 @@ def test_proc_rename_notices_block_the_listed_names(tmp_path: Path) -> None:
         ).run()
     )
 
-    infos = _texts(app, "info")
-    assert any(literal_markdown("없는~공정~C") in text for text in infos), infos
-    assert not [text for text in infos if "없는~공정~C" in text]
+    # 보유 공정 밖 이름은 표 머리 표지의 풍선(마크다운)에 막아 싣는다.
+    helps = [str(item.proto.help) for item in app.caption if "보유 공정 밖" in str(item.value)]
+    assert any(literal_markdown("없는~공정~C") in text for text in helps), helps
+    assert not [text for text in helps if "없는~공정~C" in text]
     # 겹침은 상태 알림(`AD-06`, 평문 — 이름 그대로)이다.
     assert not _texts(app, "warning")
     note = active_state(app, "AD-06")

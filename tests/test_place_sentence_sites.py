@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 20
+UNSETTLED_SITES = 14
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -117,7 +117,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
     ("app_pages/wip_status.py", ""): (EMPTY, EMPTY, EMPTY, UNSETTLED),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (
-        UNSETTLED,
         CANNOT_DRAW,
         EMPTY,
     ),
@@ -166,11 +165,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         EMPTY,
     ),
-    ("src/capa_simulation/components/container_start_check.py", "_render_missing_report"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/container_start_check.py", "render_container_start_check"): (
-        UNSETTLED,
         VALUE,
     ),
     ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (EMPTY,),
@@ -297,7 +292,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/modification_schedule_view.py", "render_schedule_mode"): (
         EMPTY,
     ),
-    ("src/capa_simulation/components/module_status.py", "render_module_status"): (UNSETTLED,),
     ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"): (
         BESIDE_INPUT,
     ),
@@ -326,10 +320,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
         BESIDE_INPUT,
     ),
-    (
-        "src/capa_simulation/components/process_rename_management.py",
-        "render_process_rename_management",
-    ): (UNSETTLED,),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_inputs"): (MARKER,),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (EMPTY,),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (
@@ -373,7 +363,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/source_quality.py", "render_source_quality"): (
         EMPTY,
         EMPTY,
-        UNSETTLED,
     ),
     ("src/capa_simulation/components/space_floor_list.py", "_render_confirm"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"): (

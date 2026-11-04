@@ -42,7 +42,6 @@ from capa_simulation.sidebar_status import remembered_expander
 # 편 상태는 기억 칸(`remembered_expander`)에 둔다 — 진단을 읽다 다른 화면(VOC 등)에 다녀와도
 # 접히지 않는다(VOC 글 상자와 같은 꼴, E2E r1). 제목 끝(판정)이 바뀌어도 편 상태는 그대로다.
 EXPANDER_KEY = "admin_area_container_start_check"
-GUIDE_DOCUMENT = "docs/bigdataquery_webide_setup.md"
 
 
 def build_step_table(
@@ -87,16 +86,14 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
 
 
 def report_origin_caption(report: ContainerStartReport) -> str:
-    """펼침 맨 위 캡션 — 언제 남긴 결과인지와 안내 문서 자리.
+    """펼침 맨 위 값 줄 — 언제 남긴 결과인지(「라벨 · 값」).
 
-    「에」 는 받침과 상관없이 붙으므로 시각 뒤에 띄우지 않는다(「알 수 없는 때 에」 로 떨어졌다).
+    넣을 환경변수와 토큰 값 얻는 법(`docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」)은
+    Guide 「서버 시작 점검」 이 말한다 — 펼침에 길 안내 문장을 늘 띄우지 않는다(설계 규칙
+    UI-TXT-03).
     """
-    started = f"{literal_markdown(report.written_at)}에" if report.written_at else "알 수 없는 때에"
-    return (
-        f"C-DEP CD 컨테이너가 {started} 시작하며 `scripts/container_start.py` 로 남긴 결과입니다. "
-        f"넣을 환경변수와 토큰 값 얻는 법은 `{GUIDE_DOCUMENT}` 의 「C-DEP CD(배포 서버)」 절에 "
-        "있습니다."
-    )
+    started = literal_markdown(report.written_at) if report.written_at else "알 수 없음"
+    return f"**시작 기록** · {started} · `scripts/container_start.py`"
 
 
 def render_container_start_check() -> None:
@@ -144,12 +141,9 @@ def _render_missing_report() -> None:
             return
         title, notice = "서버 시작 점검 · 결과 없음", missing
     _report_missing(title, notice)
+    # 넣을 환경변수와 이때 볼 것은 Guide 「서버 시작 점검」 이 안내 문서 절을 가리킨다(UI-TXT-03).
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
         st.caption(notice)
-        st.caption(
-            f"넣을 환경변수와 이때 볼 것은 `{GUIDE_DOCUMENT}` 의 「C-DEP CD(배포 서버)」 절에 "
-            "있습니다."
-        )
 
 
 def _report_missing(title: str | None, notice: str = "") -> None:

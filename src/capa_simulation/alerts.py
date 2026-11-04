@@ -245,6 +245,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "CS-03", "check", "state", "제약 시뮬레이션 — 공식 고정 상세에서 왔는데 설비가 세션 기준"
     ),
+    # VOC 새 글 초안 보관 JS(`components/voc_draft_keeper.py`)가 빈 폼에 되살린 회차에 낸다 —
+    # 폼 아래 제 꼴의 줄 대신(설계 규칙 UI-NTF-01).
+    AlertSpec("VO-02", "info", "event", "VOC 새 글 — 이 브라우저 탭에 보관한 초안을 되살림"),
 )
 
 
