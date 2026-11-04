@@ -262,11 +262,11 @@ def test_a_fab_edit_applied_before_the_sample_is_turned_on_cannot_be_saved_but_c
 
     assert not app.exception, [item.message for item in app.exception]
     assert app.toggle(key=FAB_EDIT_KEY).disabled
-    # 대기분은 남고 저장만 꺼진다. 까닭은 상자 안내와 단추 풍선에 있다.
+    # 대기분은 남고 저장만 꺼진다. 까닭은 꺼진 단추의 풍선이다(설계 규칙 UI-INP-07 — 자리 글 없음).
     assert any("S.PKG FAB 전체 배치" in item.value for item in app.markdown)
     save = app.button(key="space_layout_save")
-    assert save.disabled and "샘플 스위치를 끄면" in save.help
-    assert any("샘플 스위치를 끄면 저장할 수 있습니다" in item.value for item in app.caption)
+    assert save.disabled and "샘플 스위치를 끄면 저장할 수 있습니다" in save.help
+    assert not any("샘플 스위치를 끄면" in item.value for item in app.caption)
     repository = DuckDBEquipmentRepository(database)
     assert repository.load_fab_layout_profile() is None
 
@@ -308,7 +308,13 @@ def test_a_fab_save_with_an_unsaved_baseline_or_downtime_edit_keeps_the_memo(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any(f"{label} 표 편집도 함께 저장됩니다" in item.value for item in app.caption)
+    # 함께 저장되는 곁표 편집은 상자 머리 줄의 값이고, 저장 범위는 `배치 저장` 풍선이다.
+    assert any(
+        f"{label} 표 편집" in item.value
+        for item in app.markdown
+        if "저장 안 한 배치 변경" in item.value
+    )
+    assert f"{label} 표 편집도 함께 저장됩니다" in (app.button(key="space_layout_save").help or "")
     memo = [item for item in app.text_input if item.label == "변경 메모"]
     assert len(memo) == 1
     memo[0].set_value("FAB 와 함께")

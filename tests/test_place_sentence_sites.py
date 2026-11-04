@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 124
+UNSETTLED_SITES = 112
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -122,14 +122,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
-    ("app_pages/space_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
     ("app_pages/space_status.py", "_render_layout_warnings"): (CANNOT_DRAW,),
-    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (
-        UNSETTLED,
-        UNSETTLED,
-        BESIDE_INPUT,
-        BESIDE_INPUT,
-    ),
+    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (BESIDE_INPUT, BESIDE_INPUT),
     ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, UNSETTLED, UNSETTLED),
     ("app_pages/standard_target_capa.py", "_paste_dialog"): (UNSETTLED,),
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (UNSETTLED,),
@@ -501,18 +495,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("src/capa_simulation/components/space_floor_list.py", "_render_confirm"): (BESIDE_INPUT,),
-    ("src/capa_simulation/components/space_floor_list.py", "_render_edit"): (UNSETTLED,),
-    ("src/capa_simulation/components/space_floor_list.py", "_render_tables"): (UNSETTLED,),
-    ("src/capa_simulation/components/space_floor_list.py", "render_space_floor_list"): (UNSETTLED,),
-    ("src/capa_simulation/components/space_shortening_view.py", "render_arrival_filter_note"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/space_shortening_view.py", "render_fab_layer_summary"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"): (
-        UNSETTLED,
-        UNSETTLED,
+        EMPTY,
     ),
     ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (
         UNSETTLED,

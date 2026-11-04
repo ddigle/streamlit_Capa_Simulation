@@ -373,6 +373,11 @@ COMPARE_HELP = (
     "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 가정 배치 알림(알림창 · "
     "Alarm)의 수로만 봅니다."
 )
+# 비활성 층을 연 회차의 표지(「비활성 층 · 사유」) 풍선 — 빠지는 곳과 다시 켜는 곳.
+INACTIVE_FLOOR_HELP = (
+    "FAB 도면·층 바로 가기·「다른 층으로 보내기」에서 빠집니다. 호기는 그대로이고 FAB 전체 층 목록 "
+    "표의 「사용 편집」에서 다시 켭니다."
+)
 COMPARE_COLUMN = "공식과 다름"
 COMPARE_COLUMN_HELP = (
     "이 층에서 나갔거나 들어왔거나 이 층 안에서 옮긴, 공식과 자리가 다른 설비 수입니다(Main 설비로 "
@@ -500,9 +505,13 @@ def _render_layer_rest_caption(*, pinned_today: bool = False) -> None:
     """필요 단축 보기가 배치 편집 중 쉰다는 한 줄(결정 D7·명세 4-4). 한 화면에 한 번만 적는다 — 층
     상세는 편집기 위(`_render_layout_editor`), FAB 편집은 편집기 캡션이 없어 본문 조작 줄이 적는다.
     `pinned_today` 면 보기는 오늘 기준이었다고 덧붙인다(편집기는 세션 기준일이다)."""
+    # 자리에는 표지 한 마디, 동작 원리는 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
     st.caption(
-        ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
-        "보입니다" + (" (필요 단축 보기는 오늘 기준이었습니다)." if pinned_today else "."),
+        ":material/pause_circle: 필요 단축 보기 쉼",
+        help=(
+            "배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 보입니다"
+            + (" (필요 단축 보기는 오늘 기준이었습니다)." if pinned_today else ".")
+        ),
         width="stretch",
     )
 
@@ -766,7 +775,11 @@ else:
         basis_groups = color_basis_groups(basis, capa)
         enabled: set[str] = set()
         if basis == COLOR_BASIS_CAPA and not basis_groups:
-            st.caption("숫자로 읽히는 투자Capa 값이 없어 모든 상자가 회색입니다.")
+            # 값 한 마디 + 풍선(설계 규칙 UI-TXT-04 — 숨은 데이터 안내는 표지 + 풍선).
+            st.caption(
+                "투자Capa 값 없음",
+                help="숫자로 읽히는 투자Capa 값이 없어 모든 상자가 회색입니다.",
+            )
         with st.container(horizontal=True, gap="small", key="space_color_groups"):
             for group in basis_groups:
                 if st.checkbox(
@@ -1211,36 +1224,40 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
         parts.append(f"Main 설비명 위치 {len(group_labels)}개 층")
     if fab_pending is not None:
         parts.append("S.PKG FAB 전체 배치")
+    # 함께 저장되는 다른 편집은 누르기 전에 보이게 값으로 머리 줄에 잇는다(설계 규칙 UI-NTF-09).
+    if others:
+        parts.append(f"설비 마스터 다른 편집 {others}건")
+    if side_tables:
+        parts.append(f"{'·'.join(side_tables)} 표 편집")
+    # 저장의 범위(세션에만 있음 · 함께 저장되는 것 · FAB 은 따로)는 자리 글이 아니라 `배치 저장`
+    # 풍선이다(설계 규칙 UI-TXT-01 · UI-NTF-09).
+    save_help = (
+        "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 도면·요약과 다른 사람 화면에 "
+        "반영됩니다."
+        + (
+            f" 가용설비 현황 설비 마스터 탭의 저장 안 한 다른 편집 {others}건도 함께 저장됩니다."
+            if others
+            else ""
+        )
+        + (
+            f" 가용설비 현황 설비 마스터 탭의 {'·'.join(side_tables)} 표 편집도 함께 저장됩니다."
+            if side_tables
+            else ""
+        )
+        + (
+            " FAB 전체 배치는 설비 리비전을 만들지 않고 따로 저장합니다."
+            if fab_pending is not None
+            else ""
+        )
+        + (
+            " S.PKG FAB 전체 배치(공식 세션에서 고친 것)도 함께 저장합니다 — 건물은 설비 "
+            "시나리오가 없는 공용 값입니다."
+            if fab_pending is not None and equipment_session.is_assumption
+            else ""
+        )
+    )
     with st.container(border=True, key="space_unsaved_layout_panel"):
         st.markdown(f"**:material/edit_note: 저장 안 한 배치 변경** — {' · '.join(parts)}")
-        st.caption(
-            "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 도면·요약과 다른 사람 화면에 "
-            "반영됩니다."
-            + (
-                f" 가용설비 현황 설비 마스터 탭의 저장 안 한 다른 편집 {others}건도 함께 "
-                "저장됩니다."
-                if others
-                else ""
-            )
-            + (
-                f" 가용설비 현황 설비 마스터 탭의 {'·'.join(side_tables)} 표 편집도 함께 "
-                "저장됩니다."
-                if side_tables
-                else ""
-            )
-            + (
-                " FAB 전체 배치는 설비 리비전을 만들지 않고 따로 저장합니다."
-                if fab_pending is not None
-                else ""
-            )
-            + (
-                " S.PKG FAB 전체 배치(공식 세션에서 고친 것)도 함께 저장합니다 — 건물은 설비 "
-                "시나리오가 없는 공용 값입니다."
-                if fab_pending is not None and equipment_session.is_assumption
-                else ""
-            )
-            + (f" {SAMPLE_SAVE_BLOCKED}" if fab_save_blocked else "")
-        )
         # 이름 바꿈은 어느 설비 시나리오에서나 같은 호기의 이름이라 공통 대장으로 간다 — 이름만
         # 바꿨으면 가정 배치 리비전을 만들지 않는다(E2E r6 — 「새 리비전(가정 배치)으로 저장합니다」
         # 라 했지만 공통 대장에만 저장됐다).
@@ -1263,13 +1280,17 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
             # 잠금 까닭은 사이드바 「Space 도면」 상자의 잠금 줄(`_render_edit_lock_line` — 「최신
             # rM 불러오기」 곁)이 한 번 적는다. 상자는 저장하지 않는다는 것과 「배치 변경만 버리기」
             # 만(한 화면에 한 번).
+            # 자리에는 표지 한 마디, 까닭이 있는 곳은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04).
             st.caption(
-                ":material/lock: 배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
-                + (
-                    "까닭은 사이드바 「Space 도면」 상자의 잠금 줄에 있습니다."
-                    if edit_mode.lock_reason
-                    else "최신을 불러온 뒤 다시 고치세요."
-                )
+                ":material/lock: 배치 저장 잠김",
+                help=(
+                    "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
+                    + (
+                        "까닭은 사이드바 「Space 도면」 상자의 잠금 줄에 있습니다."
+                        if edit_mode.lock_reason
+                        else "최신을 불러온 뒤 다시 고칩니다."
+                    )
+                ),
             )
             with st.container(horizontal=True, gap="small", vertical_alignment="center"):
                 st.button(
@@ -1386,7 +1407,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                     else (
                         "배치 편집이 잠겨 저장하지 않습니다 — 「배치 변경만 버리기」 를 쓰세요."
                         if layout_locked
-                        else None
+                        else save_help
                     )
                 ),
             )
@@ -2246,9 +2267,13 @@ if selected is None:
                 ],
             )
     if exited_count > 0:
+        # 값 한 마디 + 풍선 — 왜 세지 않는지는 풍선이 말한다(설계 규칙 UI-TXT-04).
         st.caption(
-            f"기준일 {as_of.isoformat()}에 반출/이설(없으면 정지)을 마친 "
-            f"{with_topic_particle(_units(exited_count))} 공간에 없어 세지 않습니다."
+            f":material/logout: 반출/이설 마침 {_units(exited_count)} 제외",
+            help=(
+                f"기준일 {as_of.isoformat()}에 반출/이설(없으면 정지)을 마친 호기는 공간에 없어 "
+                "배치·미배치·레이아웃 제외 어디에도 세지 않습니다."
+            ),
         )
 
     # 층 목록 표. 층마다 배치·미배치·점유율을 견주는 자리이고, 층 바로 가기와 함께 키보드로 층을
@@ -2324,11 +2349,9 @@ else:
         selected_reason = floor_states.reason_of(selected)
         if selected_reason is not None:
             reason_text = literal_markdown(inactive_label(selected_reason))
-            st.info(
-                f":material/block: 이 층은 비활성({reason_text})입니다 — FAB "
-                "도면·층 바로 가기·「다른 층으로 보내기」에서 빠집니다. 호기는 그대로이고 FAB 전체 "
-                "층 목록 표의 「사용 편집」에서 다시 켭니다."
-            )
+            # 자리에는 표지와 사유(값)만, 빠지는 곳과 다시 켜는 곳은 풍선이다(설계 규칙 UI-TXT-01 ·
+            # UI-TXT-04).
+            st.caption(f":material/block: **비활성 층** · {reason_text}", help=INACTIVE_FLOOR_HELP)
 
     floor_counted = counted_equipment.loc[
         counted_equipment["동"].eq(selected_building) & counted_equipment["층"].eq(selected_floor)

@@ -834,10 +834,13 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     # 까닭은 잠금 줄에 한 번만 — 저장 안 한 배치 상자는 저장하지 않는다는 것만 적는다(E2E r2). 잠금
     # 줄은 표(평문)에도 가는 글이라 그리는 자리에서 통째로 막는다(E2E r5).
     assert sum(literal_markdown(reason) in text for text in texts) == 1
-    assert any(
+    # 저장 안 한 배치 상자에는 표지 한 마디, 까닭이 있는 곳은 그 풍선이다(설계 규칙 UI-TXT-03).
+    (locked,) = [
+        item for item in app.main.caption if item.value == ":material/lock: 배치 저장 잠김"
+    ]
+    assert locked.proto.help == (
         "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — 까닭은 사이드바 「Space 도면」 상자의 "
-        "잠금 줄에 있습니다." in text
-        for text in texts
+        "잠금 줄에 있습니다."
     )
     assert app.button(key="space_layout_save").disabled
     before = [len(repository.list_revisions())] + [

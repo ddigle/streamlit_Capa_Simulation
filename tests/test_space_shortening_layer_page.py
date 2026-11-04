@@ -172,8 +172,11 @@ def _texts(app: AppTest) -> list[str]:
 
 
 def _rest_notes(app: AppTest) -> int:
-    """「배치 편집 중에는 필요 단축 보기를 쉽니다」 줄의 수(결정 D7 — 한 화면에 한 줄)."""
-    return sum("배치 편집 중에는 필요 단축 보기를 쉽니다" in text for text in _texts(app))
+    """「필요 단축 보기 쉼」 표지의 수(결정 D7 — 한 화면에 한 줄). 까닭(「배치 편집 중에는 필요 단축
+    보기를 쉽니다」)은 그 표지의 풍선이다."""
+    marks = [item for item in app.caption if "필요 단축 보기 쉼" in str(item.value)]
+    assert all("배치 편집 중에는 필요 단축 보기를 쉽니다" in item.proto.help for item in marks)
+    return len(marks)
 
 
 def _views(calls: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
@@ -753,7 +756,7 @@ def test_an_inactive_floor_detail_keeps_the_view_but_carries_no_virtual_units(
         badge["key"] for badge in active["shortBadges"]
     ]
     texts = _texts(off)
-    assert any("이 층은 비활성" in text for text in texts)
+    assert any(text.startswith(":material/block: **비활성 층** ·") for text in texts)
     assert not any("비활성 층에는 필요 단축 보기를 싣지 않습니다" in text for text in texts)
     assert "추가" not in _loose_kinds(off)
     assert any(text.startswith("**:material/event_upcoming: 이 층 ·") for text in texts)
@@ -803,7 +806,9 @@ def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     probe = _app(database)
     _turn_on(_ok(probe.run()))
     building, floor = _busiest_floor(_views(editor_calls, "fab")[-1])
-    note = "공정소분류 필터에 「Final Test」이(가) 없어"
+    # 걸린 조건은 표지 한 마디(「필터 밖 「공정」」)이고 하는 법은 그 풍선이다(설계 규칙 UI-STA-03 ·
+    # UI-TXT-04).
+    note = ":material/filter_alt_off: 필터 밖 「Final Test」"
 
     app = _app(database)
     app.session_state["space_status_process_filter"] = ["Mold"]

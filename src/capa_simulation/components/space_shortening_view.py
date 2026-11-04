@@ -71,7 +71,6 @@ from capa_simulation.services.fab_layout import (
     floor_param,
 )
 from capa_simulation.services.floor_layout_profile import FloorKey
-from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.required_shortening import (
     DEFAULT_TARGET_LEVEL,
@@ -148,6 +147,11 @@ PROCESS_PARAM: Final = "proc"
 TARGET_PARAM: Final = "target"
 # 층 상세 뷰어 기준일 고정 줄의 뒷글(앞 칸은 「기준일 …」).
 PINNED_NOTE: Final = "필요 단축은 오늘 기준 — 색 기준을 바꾸면 페이더로 돌아갑니다"
+# 추가N 의 뜻 — FAB 요약 줄 · 층 칸 「도면에 자리가 없는 호기」 의 풍선(설계 규칙 UI-TXT-01).
+_VIRTUAL_HELP: Final = (
+    "추가N 은 기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 편집기에서 자리를 "
+    "잡으면 도면에 나타납니다."
+)
 UNMERGED_MESSAGE: Final = (
     "설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 필요 단축을 낼 수 없습니다 — 런북 4-2"
 )
@@ -452,16 +456,18 @@ def render_layer_basis(
         f"오늘 {space_layer.plan.today.isoformat()} — 필요 단축 일정과 같은 계산",
         width="stretch",
     )
-    notes = []
+    # 빠진 것의 수는 표지로 남기고(설계 규칙 UI-NTF-05 — 숨기지 않는다) 뜻과 확인할 곳은 풍선이다
+    # (UI-TXT-03 · UI-TXT-04).
+    notes: list[str] = []
+    tips: list[str] = []
     if space_layer.layer.unmatched:
-        notes.append(
-            f"맞대지 못한 공정 {space_layer.layer.unmatched}개는 이 보기에 없습니다 — 필요 단축 "
-            "일정에서 확인"
-        )
+        notes.append(f"맞대지 못한 공정 {space_layer.layer.unmatched}개")
+        tips.append("맞대지 못한 공정은 이 보기에 없습니다 — 필요 단축 일정에서 확인합니다.")
     if summary is not None and summary.filtered_out:
-        notes.append(f"공정소분류 필터 밖 단축 {summary.filtered_out}대는 세지 않습니다")
+        notes.append(f"공정소분류 필터 밖 단축 {summary.filtered_out}대")
+        tips.append("공정소분류 필터 밖 단축 호기는 세지 않습니다.")
     if notes:
-        st.caption(":material/info: " + " · ".join(notes), width="stretch")
+        st.caption(":material/info: " + " · ".join(notes), width="stretch", help=" ".join(tips))
 
 
 def render_layer_stop(stop: ShorteningStop) -> None:
@@ -506,12 +512,14 @@ def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKe
         return
     if not process or not selected_processes or process in set(selected_processes):
         return
+    # 걸린 조건은 표지로 보이고(설계 규칙 UI-STA-03) 하는 법은 풍선이다(UI-TXT-04).
     st.caption(
-        ":material/filter_alt_off: 공정소분류 필터에 "
-        f"{with_subject_particle(f'「{literal_markdown(process)}」')} 없어 이 "
-        "공정의 단축 "
-        "호기가 보이지 않습니다 — 필터를 비우거나 더하세요",
+        f":material/filter_alt_off: 필터 밖 「{literal_markdown(process)}」",
         width="stretch",
+        help=(
+            "공정소분류 필터에 이 공정이 없어 그 단축 호기가 보이지 않습니다 — 필터를 비우거나 "
+            "더하면 보입니다."
+        ),
     )
 
 
@@ -541,7 +549,9 @@ def render_fab_layer_summary(
     if summary.expired_months:
         parts.append(f"기한 지남 달 {summary.expired_months}")
     parts.append(f"추가 호기 {summary.virtual}대")
-    st.caption(":material/event_upcoming: " + " · ".join(parts), width="stretch")
+    st.caption(
+        ":material/event_upcoming: " + " · ".join(parts), width="stretch", help=_VIRTUAL_HELP
+    )
     if not virtuals:
         return
     with st.expander(
@@ -549,11 +559,6 @@ def render_fab_layer_summary(
         expanded=False,
         key="space_shortening_unplaced_expander",
     ):
-        st.caption(
-            "추가N 은 기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 편집기에서 "
-            "자리를 "
-            "잡으면 도면에 나타납니다."
-        )
         st.dataframe(
             _virtual_frame(virtuals),
             hide_index=True,
@@ -794,11 +799,12 @@ def render_floor_layer_panel(
         if picked_unit is not None and picked_rows is not None:
             _render_picked(floor, picked_unit, picked_rows, space_layer, key_of)
         if not rows and not loose and not virtuals:
+            # 빈 결과 한 줄 — 칩을 비우는 법은 칩 풍선이 말한다(설계 규칙 UI-TXT-04).
             st.caption(
                 f"이 층에는 목표 {_percent(level)} 에서 단축할 호기가 없습니다."
                 if focus is None
                 else f"이 층 {literal_markdown(focus)} 공정에는 목표 {_percent(level)} 에서 단축할 "
-                "호기가 없습니다 — 칩을 비우면 이 층 모든 공정을 봅니다."
+                "호기가 없습니다."
             )
             return
         managers = {mark.unit: mark.manager for mark in (*rows, *loose)}
@@ -817,12 +823,12 @@ def render_floor_layer_panel(
                 selection_mode="single-row",
             )
         if loose or virtuals:
-            st.markdown("**도면에 자리가 없는 호기**")
-            st.caption(
-                "좌표가 없어 그리지 못한 단축 호기와, 이 층에 호기가 그려진 공정의 추가N 입니다. "
-                "추가N 은 기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 "
-                "편집기에서 "
-                "자리를 잡으면 도면에 나타납니다."
+            st.markdown(
+                "**도면에 자리가 없는 호기**",
+                help=(
+                    "좌표가 없어 그리지 못한 단축 호기와, 이 층에 호기가 그려진 공정의 추가N "
+                    f"입니다. {_VIRTUAL_HELP}"
+                ),
             )
             frame = pd.concat(
                 [
