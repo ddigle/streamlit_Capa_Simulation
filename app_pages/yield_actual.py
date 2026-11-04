@@ -7,8 +7,6 @@
 문구뿐이다.
 """
 
-import streamlit as st
-
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -29,7 +27,6 @@ render_page_header(
     ),
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge("수율 실적 DB")),
 )
-st.caption(YIELD_METRIC.description)
 
 render_performance_actual_screen(
     YIELD_METRIC,

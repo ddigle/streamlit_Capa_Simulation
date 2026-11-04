@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 131
+UNSETTLED_SITES = 124
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -388,19 +388,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/past_data_management.py", "_render_save"): (BESIDE_INPUT,),
-    ("src/capa_simulation/components/performance_actual_screen.py", "_render_actions"): (
-        UNSETTLED,
-        EMPTY,
-    ),
-    ("src/capa_simulation/components/performance_actual_screen.py", "_render_detail"): (
-        EMPTY,
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (
-        EMPTY,
-        UNSETTLED,
-        UNSETTLED,
-    ),
+    ("src/capa_simulation/components/performance_actual_screen.py", "_render_actions"): (EMPTY,),
+    ("src/capa_simulation/components/performance_actual_screen.py", "_render_detail"): (EMPTY,),
+    ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (EMPTY,),
     (
         "src/capa_simulation/components/plan_comparison_dumbbell.py",
         "render_plan_comparison_dumbbell",
@@ -455,11 +445,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_usage_notice"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/sample_data.py", "render_pending_source"): (UNSETTLED,),
-    ("src/capa_simulation/components/sample_data.py", "render_sample_switch"): (
-        UNSETTLED,
         UNSETTLED,
     ),
     ("src/capa_simulation/components/scenario_management.py", "_render_archive"): (

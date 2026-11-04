@@ -129,3 +129,47 @@ def test_the_summary_warning_puts_no_particle_right_after_the_process_name() -> 
         for text in warnings
     ), warnings
     assert not [text for text in warnings if "이(가)" in text]
+
+
+@pytest.mark.parametrize("label", ["요약", "상세 분석", "개선과제"])
+def test_reading_notes_are_tooltips_not_lines_in_the_open_tab(label: str) -> None:
+    """구획을 읽는 법(Gap · 순위 · 점수 셈)은 구획 제목 풍선이다 — 열린 탭 자리에는 설명 캡션이 없다
+    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다)."""
+    app = _open(label)
+    tab = _tab(app, label)
+
+    assert not [item.value for item in tab.get("caption")]
+    titled = [item for item in tab.get("markdown") if str(item.value).startswith("#### ")]
+    assert titled
+    explained = [item for item in titled if item.proto.help]
+    assert explained, [item.value for item in titled]
+
+
+def test_the_metric_meaning_is_the_tooltip_of_the_actual_card() -> None:
+    """지표의 뜻(무엇을 재는가 · 기준이 어디서 오는가)은 머리 캡션이 아니라 실적 칸 풍선이다."""
+    app = _open("요약")
+
+    (actual,) = [
+        item
+        for item in _tab(app, "요약").get("metric")
+        if item.label == f"실적 {EFFICIENCY_METRIC.name}"
+    ]
+    assert actual.proto.help == EFFICIENCY_METRIC.description
+
+
+def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> None:
+    """켜진 샘플 스위치 곁은 「합성 샘플」 배지 하나이고 뜻은 그 풍선이다 — 끄면 「… 미연결」 배지와
+    들어올 값의 이름만 서고, 자리 글에 설명 문장이 없다(설계 규칙 UI-TXT-04)."""
+    app = _open("요약")
+    (badge,) = [item for item in app.markdown if "합성 샘플" in str(item.value)]
+    assert badge.value == ":orange-badge[:material/science: 합성 샘플]"
+    assert "실적이 아닙니다" in badge.proto.help
+
+    app.toggle(key="dynamic_capa_sample_data").set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+    (pending,) = [item for item in app.markdown if "미연결]" in str(item.value)]
+    assert pending.value.endswith("미연결]")
+    assert "스위치를 켜면" in pending.proto.help
+    assert not [item.value for item in app.caption]
+    (title,) = [item for item in app.markdown if ":material/pending:" in str(item.value)]
+    assert "이 자리에 들어옵니다" in title.proto.help
