@@ -378,7 +378,7 @@ def test_undated_new_unit_is_named_under_availability_and_status_summary() -> No
 
 
 def _usage(app: AppTest) -> list[str]:
-    return [caption.value for caption in app.caption if "사용기준이 HBM" in caption.value]
+    return [caption.value for caption in app.caption if "사용기준 HBM" in caption.value]
 
 
 def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status() -> None:
@@ -392,11 +392,14 @@ def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status(
     assert not app.exception
 
     assert _usage(plain) == []
-    assert _usage(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대(설비 마스터 기준)는 "
-        "총대수·가용대수·비가동대수 모두에서 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
-    ]
-    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다 — 줄이 「총대수 … 모두에서」 라고
+    # 자리에는 표지만, 뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+    assert _usage(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 1대 제외"]
+    (line,) = [item for item in app.caption if "사용기준 HBM" in item.value]
+    assert str(line.proto.help) == (
+        "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 총대수·가용대수·비가동대수 모두에서 "
+        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+    )
+    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다 — 풍선이 「총대수 … 모두에서」 라고
     # 적는 까닭.
     summary = [item.value for item in app.caption if item.value.startswith("마지막 주")]
     assert summary == [item.value for item in plain.caption if item.value.startswith("마지막 주")]

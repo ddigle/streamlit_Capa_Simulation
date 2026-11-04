@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 131
+UNSETTLED_SITES = 106
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -79,7 +79,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     # 시나리오 · 기간 칸을 바꾸기 전에 알아야 하는 되돌릴 수 없는 결과다(UI-NTF-09).
     ("app.py", ""): (BESIDE_INPUT,),
     ("app_pages/admin_area.py", ""): (EMPTY, CANNOT_DRAW),
-    ("app_pages/available_equipment_status.py", ""): (UNSETTLED, EMPTY),
+    ("app_pages/available_equipment_status.py", ""): (EMPTY,),
     ("app_pages/calculation_result.py", ""): (UNSETTLED,),
     ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
     ("app_pages/constraint_simulation.py", ""): (
@@ -161,13 +161,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         VALUE,
         CANNOT_DRAW,
     ),
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_detail_link"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_evidence"): (
-        UNSETTLED,
-        UNSETTLED,
-    ),
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_evidence"): (EMPTY,),
     # 짝 칸 이름 줄(「아래는 짝 칸 「…」의 호기입니다」 — 밑 표가 무엇인지)은 값이다. 부호의 뜻은
     # GAP 식 줄의 풍선(`GAP_SIGN_HELP`)이라 자리 글이 아니다(UI-TXT-01 · UI-TXT-02).
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_gap_evidence"): (VALUE,),
@@ -178,16 +172,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "src/capa_simulation/components/availability_gap_panel.py",
         "_render_securement_cross_check",
     ): (CANNOT_DRAW, EMPTY, EMPTY, EMPTY, EMPTY),
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_static_evidence"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_undated_notice"): (
-        UNSETTLED,
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_unit_list"): (EMPTY,),
     ("src/capa_simulation/components/availability_gap_panel.py", "render_availability_gap_panel"): (
-        UNSETTLED,
+        EMPTY,
         EMPTY,
         EMPTY,
         EMPTY,
@@ -237,41 +224,22 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/equipment_data_workspace.py", "_render_bulk_delete_status"): (
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_common_history"): (
-        UNSETTLED,
-    ),
-    (
-        "src/capa_simulation/components/equipment_data_workspace.py",
-        "_render_current_data_downloads",
-    ): (UNSETTLED,),
     ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"): (
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
         EMPTY,
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/equipment_data_workspace.py", "render_name_changes"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/equipment_data_workspace.py", "render_small_editor"): (
-        UNSETTLED,
+        EMPTY,
+        EMPTY,
     ),
     ("src/capa_simulation/components/equipment_explorer.py", "_availability"): (EMPTY,),
     ("src/capa_simulation/components/equipment_explorer.py", "_render_result"): (EMPTY, EMPTY),
     ("src/capa_simulation/components/equipment_explorer.py", "_transitions"): (EMPTY,),
-    ("src/capa_simulation/components/equipment_import_dialog.py", "_render_body"): (UNSETTLED,),
     ("src/capa_simulation/components/equipment_import_dialog.py", "_render_review"): (
         BESIDE_INPUT,
     ),
     (
         "src/capa_simulation/components/equipment_lifecycle_gantt.py",
         "render_equipment_lifecycle_gantt",
-    ): (EMPTY, UNSETTLED),
-    ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (
-        BESIDE_INPUT,
-        UNSETTLED,
-    ),
+    ): (EMPTY,),
+    ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
         BESIDE_INPUT,
         BESIDE_INPUT,
@@ -360,13 +328,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         CANNOT_DRAW,
         EMPTY,
     ),
-    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_intro"): (
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/manual_downtime_tab.py", "render_manual_downtime_tab"): (
-        UNSETTLED,
+        EMPTY,
     ),
     ("src/capa_simulation/components/modification_schedule_view.py", "_render_body"): (
         UNSETTLED,
@@ -458,10 +421,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("src/capa_simulation/components/sample_data.py", "render_pending_source"): (UNSETTLED,),
-    ("src/capa_simulation/components/sample_data.py", "render_sample_switch"): (
-        UNSETTLED,
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/scenario_management.py", "_render_archive"): (
         BESIDE_INPUT,
         BESIDE_INPUT,

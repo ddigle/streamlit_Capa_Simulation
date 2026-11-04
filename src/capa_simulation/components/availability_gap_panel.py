@@ -171,8 +171,8 @@ from capa_simulation.services.simulation_cache import (
     securement_cross_check_cache_key,
     securement_cross_check_result,
 )
-from capa_simulation.services.undated_equipment import undated_equipment_notice
-from capa_simulation.services.usage_basis import usage_exclusion_notice
+from capa_simulation.services.undated_equipment import UNDATED_HELP, undated_equipment_mark
+from capa_simulation.services.usage_basis import usage_exclusion_help, usage_exclusion_mark
 from capa_simulation.sidebar_status import rerun_app_unless_alone
 
 __all__ = [
@@ -264,6 +264,35 @@ MANUAL_LIST_HELP = (
 # UI-TXT-01 · UI-TXT-02).
 GAP_SIGN_HELP = (
     "음수: 기준정보(약속)가 설비 일정보다 많습니다.  \n양수: 설비 일정이 기준정보보다 많습니다."
+)
+# Cut-off 가 하나도 없어 멈춘 빈 상태 · 근거 카드의 빈 자리 · Static 근거 출처 줄의 풍선(자리에는
+# 값만 — 설계 규칙 UI-TXT-01 · UI-TXT-03 · UI-TXT-04).
+NO_CUTOFF_HELP = (
+    "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수를 낼 수 있습니다 — 사이드바 「가용설비 "
+    "설정」 상자의 팝업에서 적습니다."
+)
+EVIDENCE_EMPTY_HELP = (
+    "시트의 칸을 누르면 근거가 여기에 뜹니다 — 설비 일정 기준 칸은 호기별로 보유 → 대여(비가동) → "
+    "가용이 어떻게 나왔는지, Static 칸은 기준정보 출처를, GAP 칸은 두 값의 차이와 짝 호기를 보여 "
+    "줍니다."
+)
+STATIC_SOURCE_HELP = (
+    "Static 은 기준정보라 호기 목록이 없습니다. RQ_EQP_OWN 은 설비보유, RQ_EQP_LENT 는 "
+    "설비대여평가, RQ_EQP_AVBL 은 가용대수 표이고 「기준 정보」 화면의 설비대수 표에서 고칩니다. "
+    "대여는 DB 의 양수 값에 − 를 붙여 보입니다."
+)
+# 설비 일정 기준 근거 카드의 읽는 법 · 가용을 깎지 않은 비가동 표지의 풍선(자리에는 값만).
+SCHEDULE_READING_HELP = (
+    "정지·반출/이설은 대여가 아니라 보유 자체를 줄입니다(그날부터 뺌). `손실 기여일수` 는 "
+    "정지·반출/이설일에 닿는 비가동을 그날부터 세어 `비가동 내역` 보다 하루 길 수 있습니다."
+)
+MANUAL_READING_HELP = (
+    "「입력 비가동」 줄은 가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동입니다 — 호기별 "
+    "비가동과 별도 손실이라 대여(비가동)·가용에서 더 뺍니다(보유는 그대로)."
+)
+IDLE_DOWNTIME_HELP = (
+    "셋업 중·보관처럼 원래 가용이 아니던 날의 비가동입니다 — 대여(비가동)에 넣지 않고 `호기 목록` "
+    "의 `운영 비가동` 에는 듭니다."
 )
 _CATEGORY_NAMES = tuple(category.name for category in CATEGORIES)
 # 목록의 대수 표시 자릿수. **값은 반올림하지 않는다** — 1/3 지분 셋을 0.333 으로 잘라 더하면
@@ -398,7 +427,9 @@ def render_availability_gap_panel(
     st.markdown("#### :material/compare_arrows: Static · 설비 일정 기준 가용대수 비교")
 
     if cutoff.empty:
-        st.info("공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수를 낼 수 있습니다.")
+        # 그릴 것이 없어 멈추는 빈 상태 — 회색 평문 한 줄(설계 규칙 UI-TXT-04 · UI-NTF-08), 고칠
+        # 길은 풍선과 「Cut-off 를 적지 않은 공정」 알림(`EQ-12`)이 말한다.
+        st.caption("공정별 Cut-off 가 없습니다.", help=NO_CUTOFF_HELP)
         return
     if not months:
         st.caption("조회기간에 월이 없습니다.")
@@ -939,11 +970,10 @@ def _sheet_csv(bundle: GapSheetBundle) -> str:
 def _render_evidence(bundle: GapSheetBundle, cell: tuple[int, str] | None) -> None:
     with st.container(border=True, key=GAP_SHEET_EVIDENCE_KEY):
         if cell is None:
-            st.markdown("**칸을 누르면 근거가 여기에 뜹니다**")
-            st.caption(
-                "설비 일정 기준 칸은 호기별로 보유 → 대여(비가동) → 가용이 어떻게 나왔는지, Static "
-                "칸은 기준정보 출처를, GAP 칸은 두 값의 차이와 짝 호기를 보여 줍니다."
-            )
+            # 빈 자리 — 무엇이 들어올 자리인지 이름과 값만, 읽는 법은 풍선이다(UI-LAY-10 ·
+            # UI-TXT-01).
+            st.markdown("**근거**", help=EVIDENCE_EMPTY_HELP)
+            st.caption("고른 칸이 없습니다.")
             return
         month, row = cell
         group = ROW_GROUPS[row]
@@ -953,7 +983,8 @@ def _render_evidence(bundle: GapSheetBundle, cell: tuple[int, str] | None) -> No
         )
         if bundle.view.value(row, month) is None:
             reason = reason_text(bundle.view.reason(row, month)) or "맞댈 값이 없습니다"
-            st.info(f"{reason}.")
+            # 빈 결과는 상자가 아니라 평문 한 줄이다(설계 규칙 UI-TXT-04).
+            st.caption(f"{reason}.")
             return
         if row in STATIC_ROWS:
             _render_static_evidence(bundle, month, row)
@@ -983,10 +1014,10 @@ def _render_static_evidence(bundle: GapSheetBundle, month: int, row: str) -> Non
             "달입니다.",
             icon=":material/warning:",
         )
+    # 출처는 값 한 줄, 호기 목록이 없는 까닭 · 고치는 곳 · 부호는 풍선이다(UI-TXT-01 · UI-TXT-03).
     st.caption(
-        "Static 은 기준정보라 호기 목록이 없습니다. 출처: RQ_EQP_OWN(설비보유) · RQ_EQP_LENT"
-        "(설비대여평가) · RQ_EQP_AVBL(가용대수), 세션 활성 시나리오의 저장 리비전. 고치는 곳: "
-        "「기준 정보」 화면의 설비대수 표. 대여는 DB 의 양수 값에 − 를 붙여 보입니다."
+        "출처 · RQ_EQP_OWN · RQ_EQP_LENT · RQ_EQP_AVBL — 세션 활성 시나리오의 저장 리비전",
+        help=STATIC_SOURCE_HELP,
     )
     if bundle.process is None:
         _card_table(bundle, _per_process(bundle, month, [*STATIC_ROWS], sort_by=row))
@@ -1057,6 +1088,21 @@ def _render_schedule_evidence(
         else lines.iloc[0:0]
     )
     removed, entered = view.manual_at(month) if not bundle.unit_filtered else (0.0, 0.0)
+    # 읽는 법(정지 · 반출/이설은 보유를 줄임 · 입력 비가동 · 호기 필터)은 풍선이다 — 카드 밑에 늘
+    # 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02). 식 줄이 있으면 그 줄, 없으면 표지 한 줄에
+    # 단다.
+    reading = [SCHEDULE_READING_HELP]
+    if round(entered, 9) > 0 and row != ROW_SCHEDULE_OWNED:
+        over = (
+            f" 넣은 {manual_units_text(entered)}대 가운데 그 달 가용만큼만 뺐습니다(가용은 0 에서 "
+            "멈춤)."
+            if round(entered - removed, 9) > 0
+            else ""
+        )
+        reading.append(MANUAL_READING_HELP + over)
+    if bundle.unit_filtered:
+        reading.append("호기 필터 중이라 기존보유·입력 비가동은 들지 않습니다.")
+    reading_help = "  \n".join(reading)
     if with_formula:
         available, owned, lent = (
             _text(row_id, view.value(row_id, month))
@@ -1069,7 +1115,8 @@ def _render_schedule_evidence(
         )
         st.markdown(
             f"설비 일정 기준 가용 {available} = 보유 {owned} + 대여(비가동) {lent}{manual_text} · "
-            f"호기 {units:,} · 기존보유 {baseline_lines}줄"
+            f"호기 {units:,} · 기존보유 {baseline_lines}줄",
+            help=reading_help,
         )
     shown = _schedule_lines(
         pd.concat([lines, manual_lines], ignore_index=True) if not manual_lines.empty else lines,
@@ -1083,36 +1130,18 @@ def _render_schedule_evidence(
         )
     else:
         _card_table(bundle, shown, column_config=_UNIT_NUMBER_FORMAT)
-    notes: list[str] = []
     idle = downtime_without_loss(actual, lines)
     if not idle.empty:
-        # 캡션(마크다운)이라 설비명을 이름마다 막는다(「DA*31*R」 의 별표 짝이 기울임이 되지 않게).
+        # 값(몇 호기 · 누구)은 자리에, 왜 대여에 들지 않나는 풍선이다. 캡션(마크다운)이라 설비명을
+        # 이름마다 막는다(「DA*31*R」 의 별표 짝이 기울임이 되지 않게).
         names = literal_names(str(name) for name in idle["설비명"].head(6))
         more = " …" if len(idle) > 6 else ""
-        notes.append(
-            f"참고: 가용을 깎지 않은 비가동 {len(idle)}호기({names}{more} — 셋업 중·보관처럼 "
-            "원래 가용이 아니던 날). 대여(비가동)에 넣지 않습니다 — `호기 목록` 의 "
-            "`운영 비가동` 에는 듭니다."
+        st.caption(
+            f"참고 · 가용을 깎지 않은 비가동 {len(idle)}호기({names}{more})",
+            help=IDLE_DOWNTIME_HELP,
         )
-    notes.append(
-        "정지·반출/이설은 대여가 아니라 보유 자체를 줄입니다(그날부터 뺌). `손실 기여일수` 는 "
-        "정지·반출/이설일에 닿는 비가동을 그날부터 세어 `비가동 내역` 보다 하루 길 수 있습니다."
-    )
-    if round(entered, 9) > 0 and row != ROW_SCHEDULE_OWNED:
-        over = (
-            f" 넣은 {manual_units_text(entered)}대 가운데 그 달 가용만큼만 뺐습니다(가용은 0 에서 "
-            "멈춤)."
-            if round(entered - removed, 9) > 0
-            else ""
-        )
-        notes.append(
-            "「입력 비가동」 줄은 가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동입니다 — "
-            "호기별 비가동과 별도 손실이라 대여(비가동)·가용에서 더 뺍니다(보유는 그대로)." + over
-        )
-    if bundle.unit_filtered:
-        notes.append("호기 필터 중이라 기존보유·입력 비가동은 들지 않습니다.")
-    for note in notes:
-        st.caption(note)
+    if not with_formula:
+        st.caption(":material/info: 읽는 법", help=reading_help)
     if bundle.process is not None:
         _render_detail_link(bundle.process, month)
 
@@ -1217,7 +1246,9 @@ def _render_detail_link(process: str, month: int) -> None:
             query_params=params,
         )
     except StreamlitPageNotFoundError:
-        st.caption("사이드바의 공정 Capa 상세 ④ 에서 비가동 화살표로 봅니다.")
+        # 그 화면을 등록하지 않은 실행(화면 하나만 띄운 시험) — 갈 곳의 이름만 값으로 둔다(길 안내
+        # 문장은 두지 않는다 — 설계 규칙 UI-TXT-03).
+        st.caption(":material/troubleshoot: 공정 Capa 상세 ④ · 비가동 화살표")
 
 
 # ================================================================== 둘레
@@ -1250,18 +1281,19 @@ def _render_undated_notice(
     scope: Collection[str],
     chosen_units: Collection[str] | None = None,
 ) -> None:
-    """둘러싼 대수와 같은 범위(공정, 호기 필터)의 일정 미정·사용기준 제외 설비 한 줄씩.
+    """둘러싼 대수와 같은 범위(공정, 호기 필터)의 일정 미정·사용기준 제외 설비 표지 한 줄씩 —
+    뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04, Main 과 같은 꼴).
 
     0대인 줄은 그리지 않는다.
     """
     if undated is not None:
-        notice = undated_equipment_notice(undated, processes=scope, unit_ids=chosen_units)
+        notice = undated_equipment_mark(undated, processes=scope, unit_ids=chosen_units)
         if notice is not None:
-            st.caption(f":material/event_busy: {notice}")
+            st.caption(f":material/event_busy: {notice}", help=UNDATED_HELP)
     if excluded is not None:
-        usage = usage_exclusion_notice(excluded, processes=scope, unit_ids=chosen_units)
+        usage = usage_exclusion_mark(excluded, processes=scope, unit_ids=chosen_units)
         if usage is not None:
-            st.caption(f":material/filter_alt_off: {usage}")
+            st.caption(f":material/filter_alt_off: {usage}", help=usage_exclusion_help())
 
 
 def _scoped_contributions(
@@ -1495,7 +1527,12 @@ def _render_unit_list(
     rows = contributions.loc[contributions["분류"].isin(chosen)] if chosen else contributions
     table = _unit_table(rows, with_month=True)
     st.dataframe(
-        labels.frame(table), hide_index=True, width="stretch", column_config=_UNIT_NUMBER_FORMAT
+        labels.frame(table),
+        hide_index=True,
+        width="stretch",
+        column_config=_UNIT_NUMBER_FORMAT,
+        # 빈 칸은 「None」 글자가 아니라 빈칸이다(설계 규칙 UI-DAT-06).
+        placeholder="",
     )
     months = sorted(int(month) for month in rows["생산계획년월"].unique())
     stamp = f"{months[0]}_{months[-1]}" if months else "empty"
@@ -1630,6 +1667,7 @@ def _render_securement_cross_check(
         hide_index=True,
         width="stretch",
         column_config=_CROSS_CHECK_FORMAT,
+        placeholder="",
     )
 
 

@@ -37,8 +37,8 @@
   (E3 와 같은 규칙. 시나리오별 값은 다음 몫).
 - 폼은 **숨은 탭에서도 그린다**(AGENTS 9장 — 적은 칸이 버려지지 않게). 저장 이력 표만 열린 회차에
   읽어 그린다. 다만 폼 안 편집은 제출 전까지 서버에 오지 않아 화면 탭 점·떠나기 확인
-  (`page_tabs`)이 보지 못한다 — 저장 전에 다른 화면으로 옮기면 적은 칸이 사라진다(탭 안내 글과
-  Guide 가 그렇게 적는다).
+  (`page_tabs`)이 보지 못한다 — 저장 전에 다른 화면으로 옮기면 적은 칸이 사라진다(저장 단추 풍선과
+  Guide 가 그렇게 적는다 — 설계 규칙 UI-NTF-09).
 """
 
 from __future__ import annotations
@@ -122,6 +122,26 @@ MANUAL_UNCHANGED_MESSAGE: Final = "바뀐 칸이 없어 저장하지 않았습�
 # 「설비 마스터에 없음」 공정 꼬리(저장된 값만 남은 공정).
 _ABSENT_SUFFIX: Final = " (설비 마스터에 없음)"
 _HISTORY_LIMIT: Final = 20
+# 자리에 늘 두던 설명을 옮긴 풍선(설계 규칙 UI-TXT-01 · UI-TXT-02 — 자리에는 값만). 무엇인가 ·
+# 어디에 드나는 구획 제목, 달 · 빈칸은 값 줄, 저장해야 남는다는 것은 저장 단추(UI-NTF-09)다.
+MANUAL_INTRO_HELP: Final = (
+    "호기에 잇지 않고 공정 × 달로 넣는 비가동 대수(환산 대수, 소수 가능)입니다. 호기별 비가동과 "
+    "별도 손실로 설비 일정 기준 가용대수에서 더 뺍니다 — 공정 Capa 상세 ②·④, 필요 단축 일정, 제약 "
+    "시뮬레이션, Space 필요 단축 보기, 이 화면 Summary › Static 대비 일정이 같이 바뀝니다. 그 달 "
+    "가용보다 크면 가용은 0 에서 멈춥니다. HOME·Static(기준정보 가용)·표준 목표·표준 대비 "
+    "재공(주차별 가용)은 그대로입니다."
+)
+MANUAL_COLUMNS_HELP: Final = (
+    "열은 사이드바 조회기간의 생산월 — 공정별 Cut-off 의 W/D 월(공정 Capa 상세와 같은 달)입니다. "
+    "빈칸은 0 이고, 조회기간 밖에 저장된 칸은 그대로 둡니다."
+)
+MANUAL_SAVE_HELP: Final = (
+    "적은 칸은 이 단추를 눌러야 남습니다 — 저장 전에 다른 화면으로 옮기거나 그 사이 다른 사람이 "
+    "저장하면 적은 칸은 버려지고 최신 저장본이 섭니다."
+)
+MANUAL_NO_CELLS_HELP: Final = (
+    "설비 마스터를 저장하면 그 공정이 행으로 서고, 열은 사이드바 조회기간의 달입니다."
+)
 
 
 def manual_editor_key(version: int) -> str:
@@ -216,10 +236,8 @@ def render_manual_downtime_tab(
     if locked_reason is not None:
         st.info(locked_reason, icon=":material/lock:")
     if not processes or not ordered_months:
-        st.info(
-            "넣을 칸이 없습니다 — 설비 마스터를 저장하면 그 공정이 행으로 서고, 열은 사이드바 "
-            "조회기간의 달입니다."
-        )
+        # 빈 결과는 평문 한 줄, 칸이 서는 법은 풍선이다(설계 규칙 UI-TXT-04).
+        st.caption("넣을 칸이 없습니다.", help=MANUAL_NO_CELLS_HELP)
         return
     _render_editor(
         database_path=database_path,
@@ -235,24 +253,13 @@ def render_manual_downtime_tab(
 
 
 def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
-    st.markdown("#### :material/event_busy: 월별 비가동 대수(입력)")
-    st.caption(
-        "호기에 잇지 않고 **공정 × 달로 넣는 비가동 대수**(환산 대수, 소수 가능)입니다. "
-        "호기별 비가동과 별도 손실로 **설비 일정 기준 가용대수**에서 더 뺍니다 — 공정 Capa "
-        "상세 ②·④, 필요 단축 일정, 제약 시뮬레이션, Space 필요 단축 보기, 이 화면 Summary › "
-        "Static 대비 일정이 같이 바뀝니다. 그 달 가용보다 크면 가용은 0 에서 멈춥니다. "
-        "HOME·Static(기준정보 가용)·표준 목표·표준 대비 재공(주차별 가용)은 그대로입니다."
-    )
+    st.markdown("#### :material/event_busy: 월별 비가동 대수(입력)", help=MANUAL_INTRO_HELP)
     period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
     outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
     st.caption(
-        f"열은 조회기간({period})의 생산월 — 공정별 Cut-off 의 W/D 월(공정 Capa 상세와 같은 달). "
-        "빈칸 = 0. 모든 설비 시나리오 공용입니다."
-        + (f" 조회기간 밖에 저장된 {outside}칸은 그대로 둡니다." if outside else "")
-    )
-    st.caption(
-        ":material/warning: 적은 칸은 「입력 비가동 저장」 을 눌러야 남습니다 — 저장 전에 다른 "
-        "화면으로 옮기거나 그 사이 다른 사람이 저장하면 적은 칸은 버려지고 최신 저장본이 섭니다."
+        f"열 · 생산월 {period} · 빈칸 = 0 · 모든 설비 시나리오 공용"
+        + (f" · 조회기간 밖 저장 {outside}칸" if outside else ""),
+        help=MANUAL_COLUMNS_HELP,
     )
     st.caption(profile_version_caption(profile, empty="아직 넣은 입력 비가동이 없습니다"))
 
@@ -278,6 +285,7 @@ def _render_editor(
                 icon=":material/save:",
                 type="primary",
                 disabled=locked,
+                help=MANUAL_SAVE_HELP,
             )
             saved_by = st.text_input("저장자(선택)", key=MANUAL_SAVED_BY_KEY, disabled=locked)
             note = st.text_input(
@@ -433,7 +441,7 @@ def _render_history(database_path: str) -> None:
         if not saves:
             st.caption("아직 저장한 적이 없습니다.")
             return
-        st.dataframe(_history_frame(saves), hide_index=True, width="stretch")
+        st.dataframe(_history_frame(saves), hide_index=True, width="stretch", placeholder="")
 
 
 def _history_frame(saves: Sequence[ManualDowntimeSave]) -> pd.DataFrame:

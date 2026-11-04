@@ -144,6 +144,11 @@ from capa_simulation.sidebar_status import condition_card
 
 # 가정 설비 시나리오의 미확인 알림 꼬리표 — 미확인은 공식 시나리오 일정 기준이다(결정).
 OFFICIAL_CONFIRMATION_BASIS = "공식 일정 기준"
+# 첫 데이터 안내 단추의 풍선 — 처음 쓰는 법(자리에는 두지 않는다).
+FIRST_DATA_HELP = (
+    "처음 쓰는 화면입니다 — 설비 마스터를 「엑셀·CSV로 한꺼번에」 팝업에 붙여넣어 편집본에 "
+    "넣고, 설비 마스터 탭 「저장 전 변경」 에서 리비전을 저장하면 첫 데이터가 섭니다."
+)
 
 
 def _months_between(start: date, end: date) -> list[int]:
@@ -294,14 +299,15 @@ mark_pending_tabs(
 viewing_tab_open = not tab_is_hidden(main_view) or not tab_is_hidden(gap_view)
 if latest_snapshot is None and not tab_is_hidden(main_view):
     with first_action.container():
-        with st.container(horizontal=True, vertical_alignment="center"):
-            st.markdown("**처음 사용하시나요?** 설비 마스터를 붙여넣어 첫 데이터를 저장하세요.")
-            st.button(
-                "설비 데이터 입력",
-                icon=":material/add:",
-                type="primary",
-                on_click=_open_master_import,
-            )
+        # 첫 데이터 안내 — 하는 법은 단추 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02). 저장된
+        # 것이 없다는 값은 아래 건수 줄이 이미 말한다(UI-TXT-07).
+        st.button(
+            "설비 데이터 입력",
+            icon=":material/add:",
+            type="primary",
+            on_click=_open_master_import,
+            help=FIRST_DATA_HELP,
+        )
         cutoff = load_process_cutoff(equipment_database_path)
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
         _render_first_data_checklist((0, 0, len(cutoff)))

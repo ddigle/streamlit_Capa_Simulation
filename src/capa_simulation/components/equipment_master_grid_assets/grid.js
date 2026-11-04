@@ -365,6 +365,8 @@ function popoverShift(left, width, viewport, margin) {
 // </grid-place>
 
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
+// 표 밑 「⌨ 키보드 조작」 표지의 풍선.
+const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기'
 const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
@@ -699,9 +701,10 @@ function clearSearch(S) {
 function emptyState(S, data, alertIds, total) {
   const box = el('div', 'emg-empty')
   const buttons = el('div', 'emg-row-buttons')
+  // 빈 표는 값 한 줄(「…없습니다」)만 — 하는 법은 그 줄의 풍선(title)이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
   if (data.firstData) {
-    box.appendChild(el('b', null, '첫 데이터는 엑셀·CSV로 한꺼번에 붙여 넣습니다'))
-    box.appendChild(el('span', 'emg-muted', '저장된 설비 데이터가 아직 없습니다. 붙여 넣은 뒤 「저장 전 변경」 에서 리비전을 저장합니다.'))
+    box.appendChild(el('b', null, '저장된 설비 데이터가 없습니다'))
+    box.title = '첫 데이터는 「엑셀·CSV로 한꺼번에」 로 붙여 넣고, 「저장 전 변경」 에서 리비전을 저장합니다'
     buttons.appendChild(importButton(S, 'emg-btn is-primary', 'import-first'))
     if (data.newEnabled) {
       const fresh = button('emg-btn', '+ 새 호기', () => S.setTrigger('new', {}))
@@ -709,8 +712,8 @@ function emptyState(S, data, alertIds, total) {
       buttons.appendChild(fresh)
     }
   } else {
-    box.appendChild(el('b', null, '고칠 호기를 먼저 불러옵니다'))
-    box.appendChild(el('span', 'emg-muted', '위 칸에 설비명을 치거나, 메일·엑셀의 설비명 목록을 붙여 넣거나, 공정으로 불러옵니다.'))
+    box.appendChild(el('b', null, '불러온 호기가 없습니다'))
+    box.title = '고칠 호기를 먼저 불러옵니다 — 위 칸에 설비명을 치거나, 메일·엑셀의 설비명 목록을 붙여 넣거나, 공정으로 불러옵니다'
     const alerts = button('emg-btn', '일정 확인 필요 ' + alertIds.length.toLocaleString() + '대 불러오기', () => load(S, 'alerts', alertIds, [], '일정 확인 필요'))
     alerts.disabled = !alertIds.length
     buttons.appendChild(alerts)
@@ -988,8 +991,8 @@ function processPopover(S, model) {
 function conditionPopover(S, model) {
   const columns = model.conds.columns || []
   const values = model.conds.values || []
-  return popover(S, 'conditions', '조건으로 불러오기', (panel, repaint, done) => {
-    panel.appendChild(el('span', 'emg-muted', '칸과 값을 골라 모두 맞는 호기를 불러옵니다.'))
+  // 팝업 머리에 하는 법을 늘 두지 않는다 — 여는 단추의 풍선이다(설계 규칙 UI-TXT-01).
+  const wrap = popover(S, 'conditions', '조건으로 불러오기', (panel, repaint, done) => {
     S.conds = S.conds.filter((pick) => pick.col >= 0 && pick.col < columns.length)
     if (!S.conds.length) S.conds = [{ col: Math.max(columns.indexOf('동'), 0), text: null }]
     // 값은 글로 기억한다 — 목록에서 사라진 값은 비운다(번호로 기억하면 다른 값을 가리킨다).
@@ -1067,6 +1070,10 @@ function conditionPopover(S, model) {
     actions.appendChild(go)
     panel.appendChild(actions)
   }, true)
+  // 감싸개의 첫 칸이 여는 단추다(`popover` — 둘째 칸이 패널).
+  const toggle = wrap.children[0]
+  if (toggle) toggle.title = '칸과 값을 골라 모두 맞는 호기를 불러옵니다'
+  return wrap
 }
 
 // ---------------------------------------------------------------- grid
@@ -1155,7 +1162,9 @@ function buildGridSkeleton(host, S) {
   table.appendChild(body)
   box.appendChild(table)
   const foot = el('div', 'emg-foot')
-  const keys = el('span', 'emg-muted', '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기')
+  // 키보드 조작은 표지 하나와 그 풍선이다 — 표 밑에 늘 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02).
+  const keys = el('span', 'emg-muted emg-keys', '⌨ 키보드 조작')
+  keys.title = KEYS_HELP
   const legend = el('span', 'emg-legend')
   for (const [kind, label] of [['is-changed', '고친 칸'], ['is-error', '오류'], ['is-locked', '잠긴 칸(모듈 좌표 등)']]) {
     const item = el('span')
@@ -2011,7 +2020,9 @@ function drawDetail(S, root, data) {
   if (!unit) {
     S.unitId = null
     S.drafts.clear()
-    root.appendChild(el('p', 'emg-side-empty', '표에서 설비명을 누르면 그 호기의 모든 칸이 여기 한 장에 펼쳐집니다.'))
+    const empty = el('p', 'emg-side-empty', '고른 호기가 없습니다')
+    empty.title = '표에서 설비명을 누르면 그 호기의 모든 칸이 여기 한 장에 펼쳐집니다'
+    root.appendChild(empty)
     return
   }
   if (S.unitId !== unit.id) {
@@ -2035,7 +2046,8 @@ function drawDetail(S, root, data) {
     const title = el('h4')
     title.appendChild(el('span', null, group[1]))
     title.appendChild(el('span', 'emg-scope' + (SCOPE_LABELS[group[2]] ? ' is-' + group[2] : ''), SCOPE_LABELS[group[2]] || '공통'))
-    if (group[3]) title.appendChild(el('span', null, group[3]))
+    // 묶음의 뜻(「어떤 설비인가」 · 좌표를 고치는 곳)은 머리의 풍선이다 — 머리에 늘 적지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-03).
+    if (group[3]) title.title = group[3]
     box.appendChild(title)
     const fields = el('div', 'emg-fields')
     for (const k of group[4] || []) if (columns[k]) fields.appendChild(detailField(S, unit, columns[k], k, sets, reasons))
@@ -2133,8 +2145,10 @@ function drawNew(S, root, data) {
   for (const [k, ok] of tiers.flags || []) tierOf.set(Number(k), ['required', ok])
   const done = (item) => tierDone(item[1], values[Number(item[0])], fresh && !S.ndDirty.has(Number(item[0])))
   const head = el('div', 'emg-side-head')
-  head.appendChild(el('div', 'emg-side-name', '새 호기 추가'))
-  head.appendChild(el('div', 'emg-muted', '한 장에 채우고 「호기 추가」를 누르면 표 맨 위에 들어가고, 리비전 저장 때 함께 저장됩니다.'))
+  // 넣는 차례는 칸 이름의 풍선이다 — 칸 머리에 늘 두지 않는다(설계 규칙 UI-TXT-01).
+  const heading = el('div', 'emg-side-name', '새 호기 추가')
+  heading.title = '한 장에 채우고 「호기 추가」를 누르면 표 맨 위에 들어가고, 리비전 저장 때 함께 저장됩니다'
+  head.appendChild(heading)
   root.appendChild(head)
   if (locked) {
     root.appendChild(el('p', 'emg-side-empty', locked))
@@ -2171,26 +2185,45 @@ function drawNew(S, root, data) {
       check.appendChild(line)
       const note = el('div', 'emg-check-row')
       note.appendChild(el('span', 'emg-check-head'))
-      note.appendChild(el('span', 'emg-muted', '보관유무 N · 기존설비여부 N · 레이아웃표시 Y 는 기본값으로 채워 두었습니다(필수 Y/N 칸).'))
+      const defaults = el('span', 'emg-muted', '기본값 · 보관유무 N · 기존설비여부 N · 레이아웃표시 Y')
+      defaults.title = '필수 Y/N 칸을 기본값으로 채워 두었습니다'
+      note.appendChild(defaults)
       check.appendChild(note)
       continue
     }
-    if (name === 'map') line.appendChild(el('span', 'emg-muted', (tiers.map || []).length ? '좌표·크기는 Space 배치 편집기에서' : '레이아웃표시 N — 도면에 그리지 않습니다'))
+    if (name === 'map') {
+      // 좌표 · 크기를 정하는 곳은 줄의 풍선이다 — 길 안내를 자리에 두지 않는다(설계 규칙 UI-TXT-03).
+      if ((tiers.map || []).length) line.title = '좌표·크기는 Space 배치 편집기에서 정합니다'
+      else {
+        const off = el('span', 'emg-muted', '레이아웃표시 N')
+        off.title = '도면에 그리지 않습니다'
+        line.appendChild(off)
+      }
+    }
     check.appendChild(line)
   }
   const rest = el('div', 'emg-check-row')
   rest.appendChild(el('span', 'emg-check-head'))
-  rest.appendChild(el('span', 'emg-muted', '나머지 칸은 비워도 됩니다. 넣은 값끼리 맞지 않으면(일정 차례 등) 칸 아래에 바로 알려 줍니다.'))
+  const optional = el('span', 'emg-muted', '나머지 칸 · 선택')
+  optional.title = '나머지 칸은 비워도 됩니다. 넣은 값끼리 맞지 않으면(일정 차례 등) 칸 아래에 바로 알려 줍니다'
+  rest.appendChild(optional)
   check.appendChild(rest)
   root.appendChild(check)
-  for (const note of Array.isArray(data.notes) ? data.notes : []) root.appendChild(el('div', 'emg-sec emg-muted', note))
+  // 안내는 글 하나이거나 [표지, 풍선] 짝이다(가정 배치 — 설계 규칙 UI-TXT-01).
+  for (const note of Array.isArray(data.notes) ? data.notes : []) {
+    const [text, tip] = Array.isArray(note) ? note : [note, '']
+    const line = el('div', 'emg-sec emg-muted', String(text || ''))
+    if (tip) line.title = String(tip)
+    root.appendChild(line)
+  }
   root.appendChild(copyRow(S))
   for (const group of data.groups || []) {
     const box = el('div', 'emg-side-group')
     const title = el('h4')
     title.appendChild(el('span', null, group[1]))
     title.appendChild(el('span', 'emg-scope' + (SCOPE_LABELS[group[2]] ? ' is-' + group[2] : ''), SCOPE_LABELS[group[2]] || '공통'))
-    if (group[3]) title.appendChild(el('span', null, group[3]))
+    // 묶음의 뜻(「어떤 설비인가」 · 좌표를 고치는 곳)은 머리의 풍선이다 — 머리에 늘 적지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-03).
+    if (group[3]) title.title = group[3]
     box.appendChild(title)
     const fields = el('div', 'emg-fields')
     for (const k of group[4] || []) {
@@ -2264,6 +2297,8 @@ function commitDraft(S) {
 
 function copyRow(S) {
   const row = el('div', 'emg-sec emg-copy')
+  // 무엇을 가져오나는 줄의 풍선이다(설계 규칙 UI-TXT-01).
+  row.title = '호기 정보·위치(동·층)만 가져옵니다 — 설비명·일정·실적·좌표는 가져오지 않습니다'
   row.appendChild(el('span', null, '비슷한 호기에서 값 가져오기'))
   const input = el('input', 'emg-input')
   input.type = 'text'
@@ -2291,7 +2326,6 @@ function copyRow(S) {
   go.addEventListener('click', fire)
   row.appendChild(input)
   row.appendChild(go)
-  row.appendChild(el('span', 'emg-muted', '호기 정보·위치(동·층)만 가져옵니다 — 설비명·일정·실적·좌표는 가져오지 않습니다'))
   return row
 }
 

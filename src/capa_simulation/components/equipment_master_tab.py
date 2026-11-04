@@ -285,7 +285,9 @@ _MOUNT_KEYS: Final = {
     "new": grid_component.side_key("new"),
     "changes": grid_component.side_key("changes"),
 }
-# 「새 호기」 칸 안내(가정 설비 시나리오·배치 잠금 — 설계 Q1).
+# 「새 호기」 칸 안내(가정 설비 시나리오·배치 잠금 — 설계 Q1). 가정은 표지 + 풍선(설계 규칙
+# UI-TXT-01 — 새 호기 자리의 뜻은 늘 세우지 않는다), 잠금은 그 칸의 잠금 까닭 한 줄이다.
+NEW_UNIT_OVERLAY_MARK: Final = "가정 배치 · 공식에는 자리 없이"
 NEW_UNIT_OVERLAY_NOTE: Final = (
     "가정 설비 시나리오 — 새 호기의 동·층은 이 시나리오의 배치로만 저장되고, 공식 배치에는 자리 "
     "없이 들어갑니다(있는 묶음에 드는 모듈은 그 묶음의 동·층)."
@@ -1024,7 +1026,8 @@ def _render_head(
         official = basis is None or basis.official_scenario
         tail = "(공식)" if official else "(가정)"
         layout_help = (
-            " 배치 칸은 이 시나리오에만(공식과 다른 것만) 저장됩니다."
+            " 배치 칸은 이 시나리오에만(공식과 다른 것만) 저장되고 공식 배치는 바뀌지 않습니다 — "
+            "호기 상세 「위치」 에서 공식 자리로 되돌릴 수 있습니다."
             if layout == "overlay"
             else " 배치 칸은 공식 배치(공통 대장)에 저장됩니다."
             if layout == "official"
@@ -1081,20 +1084,10 @@ def _render_notices(
         if basis is not None and basis.stale:
             st.warning(literal_markdown(_stale_lock_message(basis)), icon=":material/lock_clock:")
         layout = layout_mode.layout
-        scenario_name = basis.scenario_name if basis is not None else None
         if layout == "locked":
             st.caption(layout_lock_caption(layout_mode.master_tab_lock_reason))
-        elif layout == "overlay":
-            where = (
-                f"「{literal_markdown(scenario_name)}」" if scenario_name else "이 설비 시나리오"
-            )
-            st.caption(
-                f":material/layers: 가정 설비 시나리오 — 배치 칸 고침은 {where}에만(공식과 다른 "
-                "것만) "
-                "저장되고 공식 배치는 바뀌지 않습니다. 호기 상세 「위치」 에서 공식 자리로 되돌릴 "
-                "수 "
-                "있습니다."
-            )
+        # 가정 배치가 어디에 저장되나는 맨 위 줄 설비 시나리오 알약의 풍선이 말한다 — 자리에 같은
+        # 설명 줄을 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-07).
         frames: Frames = st.session_state[BUFFER_KEY]
         renames = pending_unit_renames()
         if renames:
@@ -1341,9 +1334,9 @@ def _render_new_unit(
         renames=pending_unit_renames(),
         context=context,
     )
-    notes: list[str] = []
+    notes: list[str | tuple[str, str]] = []
     if layout_mode.layout == "overlay":
-        notes.append(NEW_UNIT_OVERLAY_NOTE)
+        notes.append((NEW_UNIT_OVERLAY_MARK, NEW_UNIT_OVERLAY_NOTE))
     elif layout_mode.layout == "locked" and context.layout_lock:
         notes.append(f"{NEW_UNIT_LOCKED_NOTE} — {context.layout_lock}")
     official = basis is None or basis.official_scenario

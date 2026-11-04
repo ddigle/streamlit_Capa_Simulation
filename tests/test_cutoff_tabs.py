@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, infos, states, successes
+from alert_marks import active_state, states, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 
@@ -86,8 +86,9 @@ def test_the_gap_tab_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> Non
     """Cut-off 가 없으면 Dynamic 을 낼 수 없다. 조용히 0 을 보이지 않고 이유를 말한다."""
     app = _run(tmp_path / "availability.duckdb", tab="Static 대비 일정")
 
-    notices = " ".join(str(item.value) for item in infos(app))
-    assert "Cut-off" in notices, notices
+    # 빈 상태는 회색 평문 한 줄(값)이고 하는 법은 그 줄의 풍선이다(설계 규칙 UI-TXT-04).
+    (line,) = [item for item in app.caption if item.value == "공정별 Cut-off 가 없습니다."]
+    assert "먼저 적어야" in str(line.proto.help)
     clear_equipment_repository()
 
 

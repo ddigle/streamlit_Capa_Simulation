@@ -315,6 +315,7 @@ DOWNTIME_VIEW_PREFIX = "equipment_downtime_view"
 NAME_CHANGES_EXPANDER_KEY = "equipment_workspace_name_changes_v1"
 # 이름 바꿈 목록 아래 한 줄 — Space 편집기 상자와 설비 마스터 탭이 같이 쓴다(G4·R2 — 이름
 # 바꾸기는 같은 호기다).
+NAME_CHANGES_MARK = ":material/badge: 같은 호기 · 저장하면 새 이름"
 NAME_CHANGES_CAPTION = (
     "이름 바꾸기는 같은 호기입니다 — 저장하면 새 리비전부터 새 이름이고, 모든 설비 시나리오의 "
     "일정·비가동이 새 이름을 따라갑니다. 지난 리비전과 필요 단축 일정 진척 비교 기준선은 옛 이름 "
@@ -1808,8 +1809,9 @@ def render_name_changes(names: pd.DataFrame, *, key: str | None = None) -> None:
     with st.expander(f"이름 바꿈 {len(names)}건", key=key):
         # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
         toolbar_clearance()
-        st.dataframe(names, hide_index=True, width="stretch")
-        st.caption(NAME_CHANGES_CAPTION)
+        st.dataframe(names, hide_index=True, width="stretch", placeholder="")
+        # 이름 바꿈의 뜻 · 저장 뒤 남는 옛 이름은 풍선이다 — 자리에는 값만(설계 규칙 UI-TXT-01).
+        st.caption(NAME_CHANGES_MARK, help=NAME_CHANGES_CAPTION)
 
 
 def pending_floor_canvases() -> dict[FloorKey, CanvasSize]:
@@ -2605,8 +2607,10 @@ def _render_current_data_downloads(
         st.session_state[GRID_MEMO_KEY] = stored_memo
     basis = _saved_basis_words(latest_snapshot, scenario_name) if latest_snapshot else "저장본 없음"
     state = "저장하지 않은 변경 포함" if edited else "저장본과 같음"
+    # 값 한 줄(무엇을 내려받나), 편집본이 언제 드는지 · 되붙이는 법은 풍선이다(UI-TXT-01).
     st.caption(
-        f"현재 데이터 · {basis} · {state}. {edit_note} 고치지 않고 그대로 붙여넣어도 통과합니다."
+        f"현재 데이터 · {basis} · {state}",
+        help=f"{edit_note} 고치지 않고 그대로 붙여넣어도 통과합니다.",
     )
     today = date.today()
     for column, label, payload, slug, key, frame in zip(
@@ -3205,8 +3209,9 @@ REMOVAL_CONFIRM_KEY = "equipment_workspace_removal_confirm_v1"
 PASTE_LAYOUT_KEY = "equipment_import_paste_layout_v1"
 PASTE_LAYOUT_LABEL = "배치 칸도 붙여넣기"
 PASTE_LAYOUT_HELP = (
-    "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 이 시나리오에만 "
-    "저장됩니다. 끄면 있던 호기의 배치 칸은 지금 값 그대로 두고 새 호기의 배치 칸만 받습니다."
+    "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 이 시나리오의 배치 "
+    "차이로만(공식과 다른 것만) 저장됩니다. 끄면 있던 호기의 배치 칸은 지금 값 그대로 두고 새 "
+    "호기의 배치 칸만 받습니다."
 )
 
 
@@ -3574,11 +3579,14 @@ def render_small_editor(
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
     with st.container(key=f"equipment_small_{slug}_editor_v1"):
         with st.container(horizontal=True, gap="small"):
+            # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
+            # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
             apply_clicked = st.button(
                 "편집본에 적용",
                 key=f"equipment_{slug}_apply_v1",
                 type="primary",
                 icon=":material/check:",
+                help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
             )
             view_clicked = st.button("보기 적용", key=f"equipment_{slug}_view_apply_v1")
         confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
@@ -3638,7 +3646,6 @@ def render_small_editor(
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
             )
-        st.caption(f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}")
     if not any(
         (
             apply_clicked,
@@ -3763,21 +3770,26 @@ def _render_history(
     """
     database_path = str(repository.database_path)
     if scenario_id is None:
-        st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
+        # 빈 결과는 평문 한 줄, 하는 법은 풍선이다(설계 규칙 UI-TXT-04).
+        st.caption(NO_HISTORY_TEXT, help=NO_HISTORY_HELP)
         return
     # 표와 「조회 리비전」 상자는 리비전을 전부 싣는다(2026-11-01 사용자 결정 A4 — 표는 스크롤·찾기,
     # 상자는 글로 찾음).
     revisions = load_equipment_schedule_revisions(database_path, scenario_id)
     if not revisions:
-        st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
+        st.caption(NO_HISTORY_TEXT, help=NO_HISTORY_HELP)
         return
     latest_common = latest_equipment_revision_id(database_path)
     commons = load_equipment_revision_summaries(database_path, latest_common)
     common_numbers = {item.revision_id: item.revision_no for item in commons}
     if scenario_name:
+        # 값 한 줄(무슨 목록인가) — 「공통」 칸의 뜻과 이 목록에 없는 저장은 풍선이다(UI-TXT-01).
         st.caption(
-            f"「{literal_markdown(scenario_name)}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 "
-            "리비전입니다."
+            f"「{literal_markdown(scenario_name)}」 의 일정 리비전",
+            help=(
+                f"「공통」 칸은 그 저장이 함께 본 공통 대장 리비전입니다. "
+                f"{COMMON_ONLY_HISTORY_NOTE}"
+            ),
         )
     st.dataframe(
         pd.DataFrame(
@@ -3872,9 +3884,6 @@ def _render_history(
             downtime["시작일"].le(pd.Timestamp(end))
             & (downtime["종료일"].isna() | downtime["종료일"].ge(pd.Timestamp(start)))
         ]
-    st.caption(
-        "조회 조건을 바꾸면 바로 다시 그립니다. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
-    )
     for index, (label, frame) in enumerate(
         (
             ("기존 보유대수", historical.baseline),
@@ -3883,9 +3892,12 @@ def _render_history(
         )
     ):
         with st.expander(label, expanded=True, key=f"equipment_history_view_{index}"):
-            st.dataframe(frame, hide_index=True, width="stretch")
+            st.dataframe(frame, hide_index=True, width="stretch", placeholder="")
 
 
+# 저장 이력이 빈 자리 — 값 한 줄과 하는 법 풍선(설계 규칙 UI-TXT-04).
+NO_HISTORY_TEXT = "저장된 리비전이 없습니다."
+NO_HISTORY_HELP = "첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다."
 # 저장 이력 「공통 대장 저장 이력」 펼침의 key — 머리에 건수가 들어 바뀌어도 펼침이 남게.
 COMMON_HISTORY_EXPANDER_KEY = "equipment_common_history_v1"
 COMMON_ONLY_HISTORY_NOTE = (
@@ -3916,7 +3928,6 @@ def _render_common_history(
     바꾼 저장이거나 다른 설비 시나리오의 저장)."""
     if not commons:
         return
-    st.caption(COMMON_ONLY_HISTORY_NOTE)
     paired: dict[str, list[str]] = {}
     for item in sorted(revisions, key=lambda revision: revision.revision_no):
         if item.common_revision_id is not None:

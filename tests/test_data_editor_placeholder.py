@@ -1,4 +1,4 @@
-# Purpose: 편집표가 결측 칸을 `None` 글자가 아니라 빈칸으로 그리는지 고정한다.
+# Purpose: 편집표·읽기 표가 결측 칸을 `None` 글자가 아니라 빈칸으로 그리는지 고정한다.
 
 """편집표의 빈칸은 빈칸으로 보여야 한다(2026-10-01 브라우저 점검).
 
@@ -24,15 +24,55 @@ def _source_files() -> list[Path]:
     return files
 
 
-def _data_editor_calls(path: Path) -> list[ast.Call]:
+# 읽기 표(`st.dataframe`)도 같다 — 설계 규칙 UI-DAT-06(「None」 글자를 쓰지 않음, 2026-11-04 검수표
+# 판정: 가용설비 현황 Main 「비가동 호기」 의 정지 · 반출/이설 일정 칸이 「None」 으로 보였다). 아직
+# 인자를 들이지 않은 화면 파일이다 — 화면 묶음마다 고치며 줄인다(늘리지 않는다, 아래 낡음 시험).
+DATAFRAME_PENDING: frozenset[str] = frozenset(
+    {
+        "app_pages/capa_chatbot.py",
+        "app_pages/load_conversion.py",
+        "app_pages/reference_data.py",
+        "app_pages/reference_integrity.py",
+        "app_pages/space_status.py",
+        "app_pages/standard_target_capa.py",
+        "app_pages/static_capa.py",
+        "src/capa_simulation/components/auto_official_update_tab.py",
+        "src/capa_simulation/components/bigdataquery_registration.py",
+        "src/capa_simulation/components/container_start_check.py",
+        "src/capa_simulation/components/exclusion_table.py",
+        "src/capa_simulation/components/home_rendering.py",
+        "src/capa_simulation/components/module_status.py",
+        "src/capa_simulation/components/past_data_management.py",
+        "src/capa_simulation/components/performance_actual_screen.py",
+        "src/capa_simulation/components/process_capa_view.py",
+        "src/capa_simulation/components/process_rename_management.py",
+        "src/capa_simulation/components/qual_deadline_calculator.py",
+        "src/capa_simulation/components/scenario_management.py",
+        "src/capa_simulation/components/scenario_month_merge.py",
+        "src/capa_simulation/components/scenario_transform.py",
+        "src/capa_simulation/components/scenario_year_shift.py",
+        "src/capa_simulation/components/shortening_board.py",
+        "src/capa_simulation/components/source_quality.py",
+        "src/capa_simulation/components/space_floor_list.py",
+        "src/capa_simulation/components/space_shortening_view.py",
+        "src/capa_simulation/components/sso_status.py",
+    }
+)
+
+
+def _calls(path: Path, name: str) -> list[ast.Call]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     return [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "data_editor"
+        and node.func.attr == name
     ]
+
+
+def _data_editor_calls(path: Path) -> list[ast.Call]:
+    return _calls(path, "data_editor")
 
 
 def _passes_blank_placeholder(call: ast.Call) -> bool:
@@ -68,5 +108,35 @@ def test_the_list_of_editors_fixed_elsewhere_is_not_stale() -> None:
     missing = _missing_by_file()
     stale = sorted(
         name for name in FIXED_ELSEWHERE if (ROOT / name).exists() and name not in missing
+    )
+    assert not stale, stale
+
+
+def _dataframes_missing_by_file() -> dict[str, list[int]]:
+    missing: dict[str, list[int]] = {}
+    for path in _source_files():
+        lines = [
+            call.lineno for call in _calls(path, "dataframe") if not _passes_blank_placeholder(call)
+        ]
+        if lines:
+            missing[path.relative_to(ROOT).as_posix()] = lines
+    return missing
+
+
+def test_every_read_only_table_draws_a_missing_value_as_a_blank_cell() -> None:
+    """`st.dataframe` 호출마다 `placeholder=""` 가 있어야 한다 — 아직 남은 파일만 목록으로 둔다."""
+    missing = {
+        name: lines
+        for name, lines in _dataframes_missing_by_file().items()
+        if name not in DATAFRAME_PENDING
+    }
+    assert not missing, missing
+
+
+def test_the_pending_read_only_table_list_is_not_stale() -> None:
+    """남은 목록의 파일이 이미 규칙을 따르면 목록에서 지운다 — 남겨 두면 퇴행을 못 잡는다."""
+    missing = _dataframes_missing_by_file()
+    stale = sorted(
+        name for name in DATAFRAME_PENDING if (ROOT / name).exists() and name not in missing
     )
     assert not stale, stale

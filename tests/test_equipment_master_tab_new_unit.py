@@ -34,6 +34,7 @@ from capa_simulation.components.equipment_data_workspace import (
     SAVE_FIELDS_PREFIX,
 )
 from capa_simulation.components.equipment_master_tab import (
+    NEW_UNIT_OVERLAY_NOTE,
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
     SIDE_DETAIL,
@@ -377,7 +378,9 @@ def test_an_assumption_session_warns_that_spreading_counts_in_the_official_scena
     panel = _panel(grid)
 
     assert panel["propagateWarning"] and "공식 가용대수" in panel["propagateWarning"]
-    assert any("가정 설비 시나리오" in note for note in panel["notes"])
+    # 가정 배치 안내는 표지 + 풍선 짝이다(설계 규칙 UI-TXT-01 — 브라우저는 표지만 그린다).
+    assert ["가정 배치 · 공식에는 자리 없이", NEW_UNIT_OVERLAY_NOTE] in panel["notes"]
+    assert "가정 설비 시나리오" in NEW_UNIT_OVERLAY_NOTE
     # 가정 세션도 「새 호기」 칸 함께 넣기 기본 켬(N2 — 저장 칸 넷과 같은 값).
     assert panel["propagateDefault"] is True and panel["draft"]["propagate"] is True
 

@@ -352,7 +352,8 @@ def test_the_save_history_holds_every_revision(tmp_path: Path) -> None:
     app = _ok(AppTest.from_function(_history, args=(str(path),), default_timeout=60).run())
 
     (head,) = [text for text in _captions(app) if "의 일정 리비전" in text]
-    assert head.endswith("공통 대장은 저장 때 함께 본 리비전입니다.")
+    # 머리 한 줄은 값(무슨 목록인가)만이다 — 한도 글도, 「공통」 칸의 뜻(풍선)도 붙지 않는다.
+    assert head == "「운영 일정」 의 일정 리비전"
     (table,) = [
         frame for frame in app.dataframe if {"리비전", "변경메모"} <= set(frame.value.columns)
     ]

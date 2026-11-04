@@ -122,6 +122,25 @@ def schedule_confirmation_notice(
     앞의 대수와 괄호 안은 설비 수(설비키 기준)이고 0 인 단계는 적지 않는다. 반입·Qual 이 함께 걸린
     설비는 양쪽에 한 번씩 들어 괄호 안의 합이 앞의 대수보다 클 수 있다.
     """
+    mark = schedule_confirmation_mark(issues, processes=processes, unit_ids=unit_ids)
+    return None if mark is None else f"{mark} — {UNCONFIRMED_HELP}"
+
+
+# 미확인 표지의 뜻 — 표지(`schedule_confirmation_mark`)를 자리에 두는 화면은 이 글을 풍선에 둔다.
+UNCONFIRMED_HELP: Final = (
+    f"일정이 지났는데 실적이 비고 상태가 {'·'.join(OPEN_STAGE_STATUSES)}입니다. 실적을 적거나 "
+    "상태를 고치세요."
+)
+
+
+def schedule_confirmation_mark(
+    issues: pd.DataFrame,
+    *,
+    processes: Collection[str] | None = None,
+    unit_ids: Collection[str] | None = None,
+) -> str | None:
+    """「미확인 N대 (반입 a · Qual b)」 표지. 미확인이 없으면 `None`(그리지 않는다). 뜻은
+    `UNCONFIRMED_HELP` 다 — 세는 법은 `schedule_confirmation_notice` 와 같다."""
     rows = _scoped(issues, processes, unit_ids)
     unconfirmed = rows.loc[rows[CONFIRMATION_KIND_COLUMN].eq(UNCONFIRMED)]
     total = int(unconfirmed[UNIT_KEY_COLUMN].nunique())
@@ -133,10 +152,7 @@ def schedule_confirmation_notice(
         for group in (unconfirmed.loc[unconfirmed[STAGE_COLUMN].eq(stage.label)],)
     ]
     parts = " · ".join(f"{label} {count:,}" for label, count in per_stage if count > 0)
-    return (
-        f"{UNCONFIRMED} {total:,}대 ({parts}) — 일정이 지났는데 실적이 비고 상태가 "
-        f"{'·'.join(OPEN_STAGE_STATUSES)}입니다. 실적을 적거나 상태를 고치세요."
-    )
+    return f"{UNCONFIRMED} {total:,}대 ({parts})"
 
 
 def schedule_confirmation_summary(issues: pd.DataFrame) -> str | None:

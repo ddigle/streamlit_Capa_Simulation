@@ -49,7 +49,10 @@ from capa_simulation.services.equipment_units import (
     static_unit_shares,
     unit_transitions,
 )
-from capa_simulation.services.schedule_confirmation import schedule_confirmation_notice
+from capa_simulation.services.schedule_confirmation import (
+    UNCONFIRMED_HELP,
+    schedule_confirmation_mark,
+)
 from capa_simulation.services.simulation_cache import (
     get_equipment_status_as_of,
     get_inactive_equipment,
@@ -61,8 +64,8 @@ from capa_simulation.services.simulation_cache import (
     get_usage_excluded_equipment,
     get_weekly_equipment_availability,
 )
-from capa_simulation.services.undated_equipment import undated_equipment_notice
-from capa_simulation.services.usage_basis import usage_exclusion_notice
+from capa_simulation.services.undated_equipment import UNDATED_HELP, undated_equipment_mark
+from capa_simulation.services.usage_basis import usage_exclusion_help, usage_exclusion_mark
 
 QUESTION_KEY = "equipment_explorer_question"
 # 「볼 내용」 다섯 단추는 한 줄(flex-wrap nowrap)이라 좁은 창(390px)에서 「단계 전환」 이 화면
@@ -206,6 +209,8 @@ def _table(
         (labels or ProcessLabels()).frame(frame, PROCESS_COLUMN),
         hide_index=True,
         width="stretch",
+        # 빈 날짜(정지 · 반출/이설 일정 등)는 「None」 글자가 아니라 빈칸이다(설계 규칙 UI-DAT-06).
+        placeholder="",
         column_order=columns,
         column_config={
             column: st.column_config.DateColumn(format="YYYY-MM-DD")
@@ -235,7 +240,7 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
 
 
 def _undated_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
-    """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 `None`.
+    """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 표지. 0대면 `None`.
 
     몫은 거르기 전 설비 마스터(`equipment`)로 매기고(캐시 — 같은 편집본이면 다시 검증하지 않는다)
     이 화면의 조건으로 거른 호기(`filtered`)만 센다. 설비 마스터가 검증을 못 넘으면 알리지 않는다 —
@@ -246,12 +251,14 @@ def _undated_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | No
     except ValueError:
         return None
     unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    return undated_equipment_notice(undated, unit_ids=unit_ids)
+    return undated_equipment_mark(undated, unit_ids=unit_ids)
 
 
+# 아래 세 표지는 숫자 바로 밑에서 그 숫자에서 빠진 몫을 짚는다 — 자리에는 표지만, 뜻 · 고칠
+# 길은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04 · UI-NTF-05).
 def _undated_caption(notice: str | None) -> None:
     if notice is not None:
-        st.caption(f":material/event_busy: {notice}")
+        st.caption(f":material/event_busy: {notice}", help=UNDATED_HELP)
 
 
 def _confirmation_notice(
@@ -261,7 +268,7 @@ def _confirmation_notice(
     today: date,
     basis: str | None = None,
 ) -> str | None:
-    """반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인 설비(미확인) 한 줄. 없으면 `None`.
+    """반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인 설비(미확인) 표지. 없으면 `None`.
 
     오늘 기준으로 고정이다(Main 의 기준일과 상관없다 — 2026-10-16 사용자 결정). 고르기는 거르기
     전 설비 마스터로 하고(캐시 — 같은 저장본이면 다시 고르지 않는다) 이 화면의 조건으로 거른
@@ -270,7 +277,7 @@ def _confirmation_notice(
     """
     issues = get_schedule_confirmation_issues(equipment, today=today)
     unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    notice = schedule_confirmation_notice(issues, unit_ids=unit_ids)
+    notice = schedule_confirmation_mark(issues, unit_ids=unit_ids)
     if notice is None or basis is None:
         return notice
     return f"{notice} ({basis})"
@@ -278,27 +285,27 @@ def _confirmation_notice(
 
 def _confirmation_caption(notice: str | None) -> None:
     if notice is not None:
-        st.caption(f":material/assignment_late: {notice}")
+        st.caption(f":material/assignment_late: {notice}", help=UNCONFIRMED_HELP)
 
 
 def _usage_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
-    """사용기준이 HBM·EDP 가 아니어서 가용대수에서 뺀 설비 한 줄. 0대면 `None`.
+    """사용기준이 HBM·EDP 가 아니어서 가용대수에서 뺀 설비 표지. 0대면 `None`.
 
     일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 바로 위 줄이 「총 · 가용 ·
-    비가동」 대수라 그 셋 모두에서 뺐다고 적는다(`totals`). 설비 마스터가 검증을 못 넘으면 알리지
-    않는다 — 그 오류는 결과 자리가 이미 알린다.
+    비가동」 대수라 풍선이 그 셋 모두에서 뺐다고 적는다(`totals`). 설비 마스터가 검증을 못 넘으면
+    알리지 않는다 — 그 오류는 결과 자리가 이미 알린다.
     """
     try:
         excluded = get_usage_excluded_equipment(equipment)
     except ValueError:
         return None
     unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    return usage_exclusion_notice(excluded, unit_ids=unit_ids, totals=True)
+    return usage_exclusion_mark(excluded, unit_ids=unit_ids)
 
 
 def _usage_caption(notice: str | None) -> None:
     if notice is not None:
-        st.caption(f":material/filter_alt_off: {notice}")
+        st.caption(f":material/filter_alt_off: {notice}", help=usage_exclusion_help(totals=True))
 
 
 def _availability(
@@ -437,6 +444,7 @@ def _transitions(
             (labels or ProcessLabels()).frame(events, PROCESS_COLUMN),
             hide_index=True,
             width="stretch",
+            placeholder="",
             column_config={
                 EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(pinned=True),
                 "전환일": st.column_config.DateColumn(format="YYYY-MM-DD"),

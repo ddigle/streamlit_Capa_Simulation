@@ -180,7 +180,7 @@ def _render_review(review: ImportReview) -> None:
         st.metric("기존 대체", f"{count - new_rows:,}건")
         if unchanged:
             st.metric("변경 없음", f"{unchanged:,}건")
-    st.dataframe(review.changes, hide_index=True, width="stretch")
+    st.dataframe(review.changes, hide_index=True, width="stretch", placeholder="")
     st.caption(
         f"넣은 뒤 편집본: 기존 보유대수 {len(review.candidate[0]):,}행 · "
         f"호기 {len(review.candidate[1]):,}행 · 비가동 {len(review.candidate[2]):,}행"
@@ -298,37 +298,38 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     return text
 
 
+# 「엑셀·CSV로 한꺼번에」 넣는 차례 · 저장 때 · 맞대는 열(붙여넣기 칸 풍선).
+IMPORT_HOW_HELP = (
+    "엑셀에서 복사한 표(머리 줄 포함)를 붙이거나 CSV 를 올린 뒤 「변경 미리보기」 → 「편집본에 "
+    "넣기」. 넣은 것은 「저장 전 변경」 에서 확인하고 리비전을 저장할 때 저장됩니다. 설비명으로 "
+    "맞대므로 설비명을 바꿔 붙이면 새 호기가 됩니다 — 이름만 바꾸려면 호기 상세의 설비명 칸을 "
+    "씁니다."
+)
+
+
 def _render_body(context: ImportContext) -> None:
     frames: Frames = st.session_state[BUFFER_KEY]
     pending = st.session_state.get(PREVIEW_KEY)
     # 알림은 늘 서 있는 한 칸 안에 그린다(아래 폼의 자리를 고정한다).
     render_flash(IMPORT_ERROR_KEY, IMPORT_NOTICE_KEY)
-    st.caption(
-        "엑셀에서 복사한 표(머리 줄 포함)를 붙이거나 CSV 를 올린 뒤 「변경 미리보기」 → 「편집본에 "
-        "넣기」. "
-        "넣은 것은 「저장 전 변경」 에서 확인하고 리비전을 저장할 때 저장됩니다. 설비명으로 "
-        "맞대므로 "
-        "설비명을 바꿔 붙이면 새 호기가 됩니다 — 이름만 바꾸려면 호기 상세의 설비명 칸을 씁니다."
-    )
     with st.form(IMPORT_FORM_KEY, border=False, enter_to_submit=False):
         target = st.selectbox("등록할 표", _TARGETS, key=TARGET_KEY)
         paste_layout = False
         if context.layout_mode == "overlay":
             # 가정 세션만 — 기본 끔(Q2). 폼 안이라 늘 세운다(등록할 표가 설비 마스터일 때만 쓴다).
+            # 배치 칸이 어디로 드는지는 이 체크의 풍선이 말한다(설계 규칙 UI-TXT-01).
             paste_layout = st.checkbox(
                 PASTE_LAYOUT_LABEL, value=False, key=PASTE_LAYOUT_KEY, help=PASTE_LAYOUT_HELP
             )
-            st.caption(
-                ":material/layers: 가정 설비 시나리오 — 배치 칸은 이 시나리오의 배치 차이로 "
-                "들어갑니다"
-                "(공식과 다른 것만)."
-            )
         paste_column, upload_column = st.columns([3, 2])
         with paste_column:
+            # 넣는 차례 · 저장 때 · 설비명으로 맞댐은 이 칸의 풍선이다 — 팝업 머리에 늘 두지
+            # 않는다(설계 규칙 UI-TXT-01 · UI-NTF-09).
             clipboard = st.text_area(
                 "Excel 표 붙여넣기",
                 key=CLIPBOARD_KEY,
                 height=200,
+                help=IMPORT_HOW_HELP,
                 placeholder=(
                     "헤더를 포함해 Ctrl+V로 붙여넣으세요. 설비 마스터는 설비명과 바꿀 열만 넣어도 "
                     "됩니다."

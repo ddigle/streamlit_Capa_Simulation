@@ -1159,7 +1159,7 @@ process.stdout.write(JSON.stringify(results))
 
 
 def test_a_press_on_the_text_or_margin_of_a_loader_popover_keeps_it_open() -> None:
-    """팝오버 안 안내 글·여백을 누르면 초점이 초점 받는 가장 가까운 조상(본문 stMain)으로 가
+    """팝오버 안 글 줄·여백을 누르면 초점이 초점 받는 가장 가까운 조상(본문 stMain)으로 가
     relatedTarget 이 감싸개 밖이 되고, 위의 「나감 닫기」 가 패널을 닫았다(2026-10-26 E2E r5 회귀 —
     f03490a 에서는 열린 채였다). 패널 안 누름에서 온 나감은 닫지 않는다(공정·조건 두 팝오버).
     누름이 지나간 뒤의 Tab 나감과 패널 밖 누름은 그대로 닫는다."""
@@ -1180,7 +1180,7 @@ const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTa
 ;(async () => {
   mount(input.data)
   const outside = buttonOf('일정 확인 필요')
-  const spots = [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]
+  const spots = [['조건으로 불러오기', '.emg-cond'], ['공정으로 불러오기', '.emg-pop-list']]
   for (const [label, spot] of spots) {
     let { toggle, panel } = openPanel(label)
     const row = {}
@@ -1241,7 +1241,7 @@ const press = (node) => {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 ;(async () => {
   mount(input.data)
-  const spots = [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]
+  const spots = [['조건으로 불러오기', '.emg-cond'], ['공정으로 불러오기', '.emg-pop-list']]
   for (const [label, spot] of spots) {
     const toggle = buttonOf(label)
     const panel = toggle.parentNode.children[1]

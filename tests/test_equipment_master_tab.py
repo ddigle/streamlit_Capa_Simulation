@@ -420,7 +420,9 @@ def test_the_history_and_downloads_render_in_the_tab(tmp_path: Path, grid: Calls
     app.run()
     assert not app.exception, app.exception
     assert app.selectbox(key="equipment_history_revision_id_v4").value is not None
-    assert any("바로 다시 그립니다" in item.value for item in app.caption)
+    # 조회의 동작 설명(바로 다시 그림 · 편집본을 바꾸지 않음)은 자리에 늘 두지 않는다 — Guide 가
+    # 말한다(설계 규칙 UI-TXT-01).
+    assert not any("바로 다시 그립니다" in item.value for item in app.caption)
 
 
 def test_a_cell_draft_blocks_every_save_path(tmp_path: Path, grid: Calls) -> None:
