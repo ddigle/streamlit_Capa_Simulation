@@ -274,4 +274,5 @@ def test_popover_explanations_sit_in_balloons_not_standing_captions(tmp_path: Pa
     assert not any("append-only" in text for text in captions), captions
     name = app.text_input(key=f"{REVISION_NAME_KEY}__{numbers[2]}")
     assert str(name.help) == revision_name_help(2)
-    assert str(app.button(key=PUBLISH_BUTTON_KEY).help) == PUBLISH_BUTTON_HELP
+    # 꺼진 회차에는 꺼진 까닭이 앞에 붙는다(설계 규칙 UI-INP-07) — 공식의 뜻은 늘 풍선 끝이다.
+    assert str(app.button(key=PUBLISH_BUTTON_KEY).help).endswith(PUBLISH_BUTTON_HELP)

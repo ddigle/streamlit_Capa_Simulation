@@ -3415,7 +3415,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     없으면 번호를 뺀다.
     고른 리비전이 이미 지금 공식이면(`already_official`) 저장소가 쓰지 않고 그 발행을 돌려주므로 확인 글은 「→ 새 공식」 없이
     지금 공식과 값 표지(`ALREADY_OFFICIAL_LINE` — 「이미 공식 발행 리비전」)만 적고 「공식으로 발행」 을 끈다 — 끈 까닭은 그
-    단추 풍선(`ALREADY_OFFICIAL_HELP`, 배치 차이로 막혔으면 막힘 줄과 같은 글 — 설계 규칙 UI-INP-07)이 말한다(개선 거리 I26, 2026-11-01 사용자 결정 — 「발행해도 바뀌지 않습니다」
+    단추 풍선 앞머리(`ALREADY_OFFICIAL_HELP`, 배치 차이로 막혔으면 막힘 줄과 같은 글 — 설계 규칙 UI-INP-07, 뒤는 늘
+    `PUBLISH_BUTTON_HELP`)가 말한다(개선 거리 I26, 2026-11-01 사용자 결정 — 「발행해도 바뀌지 않습니다」
     위에 켜진 단추가 서로 어긋났다, E2E #37·#97). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 단추가 꺼지고, 그 단추에 닿은
     빠른 둘째 누름은 Streamlit 이 버려(1.63 `SessionState` 가 꺼진 위젯의 값을 버린다) 그 회차가 첫 발행 알림을 지웠다. 발행은
     알림을 `note_notice`(칸 `FLASH_KEY` — 작업 알림 칸과 같은 이름)로 적고 — 정리 발행은 `_follow_and_announce(notices=…)` 가
@@ -5957,10 +5958,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
   `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
-  `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` 에 넣는 글이 서술형 문장(「…니다」 · 「…세요」 ·
-  「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력 곁 거부 · 못 그리는 오류 ·
-  미정리)과 맞댄다 — 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라 수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을
-  든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(남은 자리는 모두 미정리)를, `tests/test_settings_button_sites.py`
+  `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
+  서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력
+  곁 거부 · 못 그리는 오류 · 미정리)과 맞대고, 차례로 짝지은 부름의 꼴도 본다 — 값 · 표지 · 빈 결과는 평문(`st.info` 상자
+  아님), 빈 결과는 결론 꼴(「…없습니다」 등), 하는 법 · 길 안내 꼬리 없음. 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라
+  수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(남은 자리는 모두 미정리)를, `tests/test_settings_button_sites.py`
   는 본문의 「설정」 팝업 단추(0곳)와 설정 팝업마다 같은 제목의 사이드바 상자(`render_settings_box`)를,
   `tests/test_withdrawn_warning_alerts.py` 는 자리에서 걷은 경고마다 등록부 코드 · 보내는 길(`queue_flash(…, popup_only=True)` ·
   `alerts.state`) · 그 코드를 단언하는 화면 시험을 맞댄다 — 경고를 자리에서 걷으면 같은 변경에서 그 표(`WITHDRAWN`)에 한 줄을

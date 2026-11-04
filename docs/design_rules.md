@@ -110,7 +110,7 @@
 - 범위: 모든 화면 · 팝업 · 사이드바 · 떠 있는 판 · 모듈 화면
 - 예외: 입력 곁 오류 · 거부(폼 검증, UI-NTF-03) / 값 · 표지 — 목록 구획의 빈 결과 · 점검 화면의 결론 포함(UI-TXT-04) / 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-09) / 화면을 그리지 못하는 오류(UI-NTF-08).
 - 판단: 이 글을 지우면 사용자가 무엇을 못 하게 되나? 답이 없으면 지우고, 있으면 UI-TXT-02 의 갈 곳 넷 가운데 어디로 갈지 먼저 본다.
-- 그물: `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — `st.caption` · `st.info` · `st.markdown` 의 서술형 문장 자리를 (파일, 함수)별 까닭 허용 목록과 맞댐, 미정리 수는 늘지 않음) · `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때)
+- 그물: `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 의 서술형 문장 자리를 (파일, 함수)별 까닭 허용 목록과 맞대고 빈 결과 · 값 · 표지 자리의 꼴도 봄, 미정리 수는 늘지 않음) · `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때)
 - 그물 후보: 설정 팝업 「설명 글 0줄」
 - 근거: 검수 alarm-02 · alarm-11 · home-19 · home-21 · home-u01(2026-11-03), Space 결정 보드 메모(2026-11-04), 조건 카드 · Guide 결정(2026-09-28), 확인 보드 AMB-01 (가) · AMB-02 (가)(2026-11-04) — 「저런식으로 인터페이스에 설명문구를 다는걸 지양하도록해」
 - 지금 값: 없음

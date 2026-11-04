@@ -534,7 +534,8 @@ def test_an_already_official_revision_turns_the_publish_button_off_with_the_reas
 
     # 꺼진 까닭은 그 단추 풍선이 말한다(UI-INP-07) — 확인 글 끝에는 값 표지만.
     button = app.button(key=PUBLISH_BUTTON_KEY)
-    assert button.disabled and button.help == ALREADY_OFFICIAL_HELP
+    assert button.disabled
+    assert button.help == f"{ALREADY_OFFICIAL_HELP} {PUBLISH_BUTTON_HELP}"
     captions = [str(item.value) for item in app.caption]
     assert ALREADY_OFFICIAL_LINE in captions, captions
     assert "「공식으로 발행」 을 껐습니다" in ALREADY_OFFICIAL_HELP

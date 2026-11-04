@@ -2203,12 +2203,13 @@ def _render_publish(
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
         disabled=blocked or released,
-        help=(
-            ALREADY_OFFICIAL_HELP
-            if released
-            else " ".join(layout_lines)
-            if blocked
-            else PUBLISH_BUTTON_HELP
+        # 꺼졌으면 까닭을 앞에, 공식이 무엇에 쓰이는지(늘 그 단추 풍선이 말하는 뜻)를 뒤에 둔다.
+        help=" ".join(
+            [
+                *([ALREADY_OFFICIAL_HELP] if released else []),
+                *(layout_lines if blocked and not released else []),
+                PUBLISH_BUTTON_HELP,
+            ]
         ),
     ):
         # 이 회차가 그린 확인 글이 다음 누름이 본 글이다 — 누른 회차에는 적지 않는다.
