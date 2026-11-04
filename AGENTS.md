@@ -491,8 +491,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     것). 열림 칸은 페이지 한 칸(`required_shortening_open_dialog`, 값 `qual_calculator`)이고 여는 콜백은
     `forget_page_dialogs()` 부터다. 호스트는 머리 바로 뒤·데이터를 읽기 전이라 호기가 없어 화면이 `st.stop()` 해도 열리고,
     이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일)를 쓴다 — 계산기 본문은 이벤트 칸에 쓰지 않는다
-    (`qual_deadline_calculator.calculator_style_markup`). 그 뒤 기준선 알림 토스트 자리가 팝업을 여닫을 때 밀리지 않는다
-    (`test_qual_deadline_calculator.py` 가 연 회차·닫은 회차의 이벤트 칸 자리 수를 견준다).
+    (`qual_deadline_calculator.calculator_style_markup`). 그 뒤 기준선 결과 알림 표지 자리(머리 · 본문 프래그먼트 안)가 팝업을
+    여닫을 때 밀리지 않는다(`test_qual_deadline_calculator.py` 가 연 회차·닫은 회차의 이벤트 칸 자리 수를 견준다).
   - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py`)이 서고 카드마다 「공정 Capa
     상세에서 근거 보기」 와 그 옆 「도면에서 보기」(Space 현황 필요 단축 보기 — 그 공정의 층·같은 목표, 층은 본문이 공정 전부를
     한 번에 고른다 `shortening_space_floors`, 비활성 층 뺌 — 그래서 페이지가 층 사용 상태 `load_floor_states` 를 읽는다)다(주소
@@ -501,10 +501,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장본·미저장 편집은 `equipment_data_workspace.py` 세션 칸(가용설비·Space 와 같은 토큰)에서, Cut-off 는 저장된
     값만 읽는다(고치는 곳은 가용설비 현황 사이드바 「가용설비 설정」 팝업). 조건 카드는 `shortening` 이다.
   - 소요대수 프레임은 넘기지 않고 시나리오 키와 로더를 넘긴다. 계산은 DB 에 쓰지 않고 패널이 공용 조회 조건(`0019`)과
-    진척 비교 기준선(`0021`)만 쓴다. 알림 자리는 토스트 규칙을 따른다(`test_shortening_baseline_notice.py`).
+    진척 비교 기준선(`0021`)만 쓴다. 기준선 저장 · 지우기 결과는 알림창 · Alarm 한 꼴이다(`flash.queue_flash` · `render_flash`
+    — 이벤트 칸 한 자리, 성공은 알림창으로만, 거절 · 실패는 `popup_only` — 알림 칸이 머리 밑이라 단추 곁이 아니다, 칸 셋에 빈
+    칸부터 담아 앞 알림을 덮지 않는다 — `test_shortening_baseline_notice.py`).
   - UPEH 가정은 이 화면에 걸지 않는다 — 조건 카드에 공정 Capa 상세와 같은 세션 칸을 그릴 뿐 가정 계획을 세우지 않고,
-    공식 대 가정 비교 보기도 없다(효과는 공정 Capa 상세). 가정이 켜지면 머리 아래 한 줄로 알리고, 그동안 기준선 저장은
-    거절한다. 보기·CSV·진척 비교는 늘 공식 계획이다.
+    공식 대 가정 비교 보기도 없다(효과는 공정 Capa 상세). 가정이 켜졌음은 머리 변경 칩이 알리고(자리에 적지 않는다 —
+    2026-11-04 설계 규칙 UI-TXT-01), 그동안 기준선 저장은 거절한다. 보기·CSV·진척 비교는 늘 공식 계획이다(Guide 가 말한다).
   - 설비는 **세션 설비 시나리오**다(`resolve_equipment_session`). 기준선 저장은 세션이 공식 발행 쌍일 때만이고(거부 까닭은
     「가정 설비 시나리오」·「발행하지 않은 리비전」 둘), 기준선에는 공통 rN + 설비 시나리오·rN·공식 vN 출처가 실린다. 진척
     비교는 늘 보이고, 세션이 공식 발행 쌍이 아니면 머리에 「지금 = 셋업 실무 r4 · 기준선 = 공식」 을 적는다. 카드 링크는
@@ -2867,7 +2869,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME 에서 슬롯을 올리는 칩은 `home_main_case_chips` 다(같은 `services/main_cases.main_case_slots` 를 쓴다).
 - `src/capa_simulation/components/home_main_case_chips.py` — HOME `LOB 표시 조건` 카드 맨 위의 주요 Case 칩 셋(2026-10-23
   사용자 결정 — 시안 C · 동작 (가), 2026-11-02 부터 본문 제목 줄 끝이 아니라 카드 맨 위 — 이름 줄 「주요 Case」 밑에
-  카드 폭을 같은 폭으로 나눈 칩 줄, 그 밑 칩 알림 칸, 얇은 선 뒤 토글). 칩 글자는 `공식 vN`·`Case1`·`Case2` 뿐이고 시나리오·리비전은 단추 `help` 풍선이 말한다(사람 글은
+  카드 폭을 같은 폭으로 나눈 칩 줄, 그 밑 칩 알림 칸 — 늘 서 있는 빈 칸이고 알림은 알림창 · Alarm 으로만 간다, 얇은 선 뒤 토글). 칩 글자는 `공식 vN`·`Case1`·`Case2` 뿐이고 시나리오·리비전은 단추 `help` 풍선이 말한다(사람 글은
   `literal_markdown`). 지금 적용된 시나리오는 머리 띠가 말하므로 칩 옆에 적지 않는다.
   - **누르면 사이드바에서 그 리비전을 불러온 것과 똑같다** — `scenario_status.load_saved_revision` 을 **콜백**에서
     부른다(본문 `st.rerun()` 은 그 회차에 안 그린 위젯 값을 버린다 — 9장). 저장하지 않은 편집·적용 전 편집이 있으면
@@ -2875,7 +2877,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **콜백은 누르는 순간 슬롯을 다시 푼다** — 콜백 인자는 그린 회차의 값이라, 그사이 다른 세션이 Case 를 다시
     지정하거나 가리키던 시나리오를 보관하면 낡은 칩이 예전 Case·사이드바가 고를 수 없는 보관 시나리오를 올렸다. 칩은
     (슬롯 차례, 그린 짝)만 넘기고 콜백이 그리기와 같은 `_slot_chips_now` 로 지금 짝을 풀어 다르면 아무것도 올리지 않고
-    칩 줄 밑 칸에 알린다(`changed_slot_notice`).
+    알림창 · Alarm 에만 알린다(`changed_slot_notice` — `popup_only` 경고 `FL-03`, 칩 줄 밑 자리에는 그리지 않는다, 2026-11-04
+    설계 규칙 확인 보드 AMB-05 (나)). 주요 Case 나 공식버전을 읽지 못함 · 불러오지 못함도 같다.
   - 칠하기(primary)는 세션 활성 시나리오·**리비전까지** 같은 칩만이고, 저장하지 않은 편집이 있으면 칠하지 않는다(머리
     띠·사이드바 배지처럼 「미저장」이 먼저 — `painting_reference`). 칠한 칩을 편집 없이 다시 누르면 아무것도 하지
     않는다. 칠한 칩 글자색은 `tokens.ACCENT_TEXT` 다(어두운 테마 강조색 위 흰 글자는 1.9:1). 어느 칩도 칠하지 않으면
@@ -3198,8 +3201,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     으로 옮긴다. 남의 저장으로 다시 세운 알림은 `render_reopen_notices` 한 곳이다(가용설비 현황·Space 현황·필요 단축 일정의
     머리 알림 칸 안) — 버린 편집이 있으면 경고(`DISCARDED_NOTICE_KEY`)를 「알림 닫기」 까지 남기고(한 회차만 서면 늦게 본 사람이
     까닭을 모른다 — `flash` 를 지나지 않는 수명이라 `tests/test_flash_messages.py` 허용 목록에 있다), 없으면 `flash` 안내 한
-    번(`REOPENED_NOTICE_KEY` — 그 저장과 이름 바뀐 저장본 호기 수. `st.toast` 가 아니다 — 필요 단축 일정의 이벤트 칸 토스트
-    자리를 밀지 않게). `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
+    번(`REOPENED_NOTICE_KEY` — 그 저장과 이름 바뀐 저장본 호기 수, 알림창 한 꼴이고 `st.toast` 가 아니다). `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
     버리고(오른쪽 칸 출납이 작은 편집표의 적용 전 편집을 지우지 않게) 되돌리기 목록은 결과의 것을 쓴다. 표 밖 길
     (`_remember_edits` — Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본 내용을 바꾸면 표 되돌리기를 비우고 토스트로 알린다
     (역 patch 는 그 위에서 맞지 않는다). `follow_unit_renames` 는 행 조각 단계(와 그 앞 단계)를 버린다(`after_row_steps`).
@@ -3413,9 +3415,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     발행」 을 껐습니다.」)만 적고 「공식으로 발행」 을 끈다(개선 거리 I26, 2026-11-01 사용자 결정 — 「발행해도 바뀌지 않습니다」
     위에 켜진 단추가 서로 어긋났다, E2E #37·#97). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 단추가 꺼지고, 그 단추에 닿은
     빠른 둘째 누름은 Streamlit 이 버려(1.63 `SessionState` 가 꺼진 위젯의 값을 버린다) 그 회차가 첫 발행 알림을 지웠다. 발행은
-    알림을 `note_notice`(칸 `PUBLISH_SAVE_NAME`)로 적고 — 정리 발행은 `_follow_and_announce(notices=…)` 가 옮김까지 든 글을 —
-    구획 맨 위 알림 칸이 담아 둔 알림·거절이 없는 회차에 창(`TRAILING_PRESS_SECONDS`) 안이면 그 글을 다시 그린다(`held_notice`,
-    팝오버 세대는 올리지 않는다 — 첫 알림 회차가 올렸다). 둘째 누름이 아직 켜진 단추로 들어오면(목록 캐시가 늦은 회차) 저장소가
+    알림을 `note_notice`(칸 `FLASH_KEY` — 작업 알림 칸과 같은 이름)로 적고 — 정리 발행은 `_follow_and_announce(notices=…)` 가
+    옮김까지 든 글을 — 구획 맨 위 알림 칸(`flash.render_flash(FLASH_KEY, REFUSED_KEY)`)이 담아 둔 알림이 없는 회차에 창
+    (`TRAILING_PRESS_SECONDS`) 안이면 그 글을 첫 알림과 같은 id 로 다시 낸다(알림창은 두 번 뜨지 않는다, 팝오버 세대는 올리지
+    않는다 — 첫 알림 회차가 올렸다). 작업 알림(성공)은 알림창 · Alarm 으로만, 거절(`REFUSED_KEY` — 오류)은 그 칸에도 그린다
+    (2026-11-04 설계 규칙 UI-NTF-01 · 03). 둘째 누름이 아직 켜진 단추로 들어오면(목록 캐시가 늦은 회차) 저장소가
     쓰지 않고 「「…」 rK은 이미 공식 vN입니다 — 새로 발행하지 않았습니다」 다(`already_released_message` — 「공식 vN로
     발행했습니다」 로 새 발행처럼 알렸다, 2026-10-27 E2E). 창 안이면 첫 발행 알림을 다시 낸다. 쓰지 않은 발행은 제 저장 짝을 적지
     않는다. 꺼진 단추에 닿은 누름은 AppTest 가 `click()` 으로 보내지 못해 시험은 누름 값을 바로 싣는다
@@ -5431,7 +5435,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   숫자는 정의하는 화면 한 곳에만 둔다.
 - 조건부 안내·경고는 건수가 0 이면 아무것도 그리지 않는다 — 없는 날 자리를 차지하면 있는 날에도 읽히지 않는다(자리
   고정이 필요하면 늘 서 있는 빈 `st.container()` 칸만 둔다, 9장). 목록 구획의 빈 결과(「…이 없습니다」)와 점검 화면의 결론은
-  조건부 안내가 아니라 값이다 — 자리에 평문 한 줄로 두고 초록 `st.success` 상자를 쓰지 않으며 하는 법 · 길 안내를 붙이지 않는다.
+  조건부 안내가 아니라 값이다 — 자리에 평문 한 줄(`st.caption`)로 두고 초록 `st.success` 상자를 쓰지 않으며 하는 법 · 길 안내를
+  붙이지 않는다.
   숨은 데이터 안내(표에 보이지 않는 저장분 · 그리지 않는 항목)는 칸 머리 표지 + 풍선이다(2026-11-04 설계 규칙 확인 보드 AMB-02
   (가) — `docs/design_rules.md` UI-TXT-04 · 08).
 - **값 뒤 조사는 `services/korean_particle.py` 만 — 앱 코드는 시험이 지킨다.** f-string·`str.format`·`%s` 틀에 끼운 값(시나리오명·
@@ -5874,11 +5879,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리만 갈아 끼우므로 더 쓰면 뒤 페이지 요소를 덮고 덜 쓰면 낡은 요소가 남는다. 서식은 표시 HTML 과 한 `st.html` 에
   실어 본문 칸으로 보내고, 꼭 이벤트 칸에 써야 하면 빈 `st.html("<style></style>")` 로 수를 맞춘다(조건 팝업 호스트는
   어느 갈래든 정확히 한 자리).
-- **토스트는 자리가 곧 이름이다.** Streamlit 1.63 은 토스트를 쓴 자리(`delta_path`)로 가려 같은 자리의 토스트가 떠
-  있으면 새 토스트를 띄우지 않고, 이벤트 칸 요소를 지울 때 토스트만 남겨 앞 자리가 비면 뒤 토스트가 당겨져 다시 뜬다.
-  잇단 알림을 내는 곳은 알림 자리를 여럿 늘 같은 수로 두고(`components/shortening_progress_panel.py`) 첫 자리 토스트가
-  떠 있을 때만 다음 자리로 비키며, 그 프래그먼트를 그리지 않는 앱 전체 회차에도 같은 자리를 채운다. 콜백이 남기는 알림은
-  덮어쓰지 않고 쌓는다.
+- **`st.toast` 는 쓰지 않는다** — 동작 결과는 알림창 한 꼴(`flash.queue_flash` · `render_flash`, 아래 「알림 칸」)이다.
+  Streamlit 1.63 은 토스트를 쓴 자리(`delta_path`)로 가려 같은 자리의 토스트가 떠 있으면 새 토스트를 띄우지 않고, 이벤트 칸
+  요소를 지울 때 토스트만 남겨 앞 자리가 비면 뒤 토스트가 당겨져 다시 떴다 — 마지막으로 토스트를 쓰던 필요 단축 일정 기준선
+  알림(자리 셋을 늘 채우던 꼴)도 2026-11-04 에 `flash` 로 옮겼다(설계 규칙 UI-NTF-01). 콜백이 여럿 돌아 알림이 잇따르면 칸을
+  여럿 두고 빈 칸부터 담아 덮어쓰지 않는다(`shortening_progress_panel._NOTICE_KEYS` — `render_flash` 는 칸 수와 상관없이
+  이벤트 칸에 한 자리다).
 
 ### 알림 칸(알림창 · Alarm · 변경 칩 — 2026-11-03 결정 보드 D1 ~ D6)
 
@@ -5949,8 +5955,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다. 동작은 끝났고 그 자리에
   고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 시나리오 관리 복제 · 공식
-  지정 뒤 「소요대수에 들지 않은 수요」(`GateVerdict.exclusion`, 2026-11-04 검수 의견 home-18). 같은 칸의 남은 계산 오류 경고는
-  곁에도 선다.
+  지정 · 월 머지 · 연도 Shift 저장 뒤 경고(「소요대수에 들지 않은 수요」 `GateVerdict.exclusion` — 2026-11-04 검수 의견 home-18 —
+  와 남은 Capa 계산 오류 경고 둘 다)와 HOME 주요 Case 칩 콜백 경고(`home_main_case_chips._notify`)다(2026-11-04 설계 규칙 확인
+  보드 AMB-05 (나) — 저장 칸 · 칩 줄 밑 자리에는 그리지 않는다, `docs/design_rules.md` UI-NTF-02 · 03). 막힌 단추의 까닭은 그
+  단추 풍선(`help=`)이 말한다(UI-NTF-05).
 - **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11) — 보관 기한 · 판정 범위 같은
   설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 에 둔다. 「로그」 펼침마다 「복사」(평문 클립보드 — alarm-05)가 선다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
@@ -6179,12 +6187,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     않는다(`tests/test_display_order_management.py`). 창이 지난 뒤의 「바뀐 것이 없습니다」 회차도 표에 남은 표시명 경고를
     그 알림 아래에 그린다(2026-11-02 결정 A3). 사이드바 저장은
     성공하면 팝업을 닫고 칸 세대를 올려 둘째 누름이 닿을 폼이 없다. 「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않으므로
-    누르지 않은 회차가 그리던 안내 줄도 그대로 그린다 — 판정 기준의 조회기간 밖 월별 기준 줄
-    (`_render_threshold_out_of_range_notice`), 선행 B/O·선행 입고의 조회기간 밖 저장분 줄(`_render_out_of_range_notice`), 확보율
-    보정의 짝 없는 행·0 에서 자른 행 안내(`_render_execution_notices`). 누르지 않은 회차와 같은 화면에 알림만 더한다. 판정
+    누르지 않은 회차가 그리던 표지 · 안내 줄도 그대로 선다 — 판정 기준의 「조회기간 밖 월별 기준 n개월 지우기」 칸(남는 뜻은
+    그 풍선 `THRESHOLD_CLEAR_OUTSIDE_HELP`), 선행 B/O·선행 입고의 표 위 「조회기간 밖 n개월」 표지(`_render_hidden_months_marker` —
+    폼 밖 · 표 위라 저장 갈래와 상관없이 선다, 달 목록은 풍선 — 2026-11-04 설계 규칙 UI-TXT-04), 확보율 보정의 짝 없는 행·0 에서
+    자른 행 안내(`_render_execution_notices`). 누르지 않은 회차와 같은 화면에 알림만 더한다. 판정
     기준은 검증 오류(50 ~ 300% 밖 · 거꾸로 짝)로 거부한 회차와 남의 저장에 거부된 누름의 둘째 누름 회차도 같다 — 둘 다 쓰지 않아
     다시 돌지 않고, 원인이 보이는 칸이면 오류 글이 숨은 달을 말하지 않는다. 선행 B/O·선행 입고도 저장이 오류
-    (`BOOTSTRAP_ERRORS` — DB 잠김 등)로 끝난 회차에 조회기간 밖 저장분 줄을 그대로 그린다(버전 대조가 없어 둘째 누름
+    (`BOOTSTRAP_ERRORS` — DB 잠김 등)로 끝난 회차에 조회기간 밖 표지가 그대로 선다(버전 대조가 없어 둘째 누름
     거부 갈래는 없다). 붙여넣기
     길(표시순서·Proc Rename)은 전부터 「현재 공용 설정과 동일합니다」 로 거절한다. 시험: `tests/test_admin_area_page.py`·
     `tests/test_threshold_editor.py`·`tests/test_revision_save_unchanged.py`·`tests/test_scenario_sidebar.py`·
@@ -6352,7 +6361,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
     없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 `korean_particle` 로 고른다 — 끝의
     `」` 와 escape 의 `\` 를 건너뛰므로 막기 전의 이름·「이름」·막은 글 어느 것으로 골라도 같은 조사다(「WB\(2\)」→「는」,
-    `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다. 필요 단축 일정 기준선 이름(저장·지우기 알림 토스트·
+    `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다. 필요 단축 일정 기준선 이름(저장·지우기 결과 알림 원문·
     「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
     (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
   - **낫표 없이 늘어놓는 이름 목록은 `literal_names(이름들)`**(이름마다 `literal_markdown`, 잇는 글 `, `·` · ` 은 앱 글),
