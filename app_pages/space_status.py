@@ -57,7 +57,7 @@ from capa_simulation.components.equipment_scenario_status import (
     render_equipment_scenario_row,
     render_legacy_trace_warning,
     render_load_latest_button,
-    unscheduled_notice,
+    report_unscheduled_units,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.floor_layout_upload import (
@@ -628,8 +628,8 @@ space_box = st.sidebar.container(border=True, key=page_box_key(SPACE_BOX_NAME))
 # 답 — 화면에 상태 문장을 달지 않는다). 내용이 바뀔 때만 알림창이 뜨고 Alarm 에 쌓이며, 없어지면
 # 해소 줄이 선다 — 그래서 조건이 없는 회차에도 넷 모두 늘 같은 자리에서 부른다(표지 자리 수가
 # 회차마다 같다). 범위는 세션의 (공통 대장, 일정) 리비전 쌍이다. 일정 없는 호기는 가용설비
-# 현황과 같은 조건이라 같은 코드 · 범위 · 내용(`EQ-04` — 설비명 목록)으로 낸다 — 화면을 옮겨도
-# 다시 뜨지 않는다.
+# 현황과 같은 조건이라 같은 함수(`report_unscheduled_units` — `EQ-04`, 설비명 목록, 「그 화면으로」
+# 는 고칠 자리인 가용설비 현황 › 설비 마스터)로 낸다 — 화면을 옮겨도 다시 뜨지 않는다.
 space_alert_scope = equipment_scope(equipment_session)
 layout_alerts = {
     notice.code: notice
@@ -654,22 +654,7 @@ with notices:
             full=layout_alert.text if layout_alert is not None else None,
             scope_label=space_alert_scope.label,
         )
-    alerts.state(
-        "EQ-04",
-        scope=space_alert_scope.scope,
-        content=unscheduled_units or None,
-        active=bool(unscheduled_units),
-        text=(
-            f"공식 일정 없음 {len(unscheduled_units):,}대 — 도면에 그리지 않음"
-            if equipment_session.is_official_pair
-            else f"이 설비 시나리오에 일정이 없는 호기 {len(unscheduled_units):,}대 — 도면 · "
-            "계산에서 빠짐 · 설비 마스터 일정 칸에 적어 저장"
-        ),
-        full=unscheduled_notice(
-            len(unscheduled_units), official=equipment_session.is_official_pair
-        ),
-        scope_label=space_alert_scope.label,
-    )
+    report_unscheduled_units(equipment_session, unscheduled_units)
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
 edit_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
@@ -926,7 +911,7 @@ def _view_sheet(
     """층 상세 보기 「호기 정보」 창의 표 — 이 층 행(공정소분류 필터 뒤) 가운데 기준일에 도면에서
     빠지지 않은 것, 칸은 `FLOOR_TABLE_COLUMNS`(21칸) + 「도면」. 도면에 선 행(`drawn` — 레이아웃
     반영·좌표가 다 있음)은 배치, 나머지는 레이아웃표시로 미배치·레이아웃 제외다. `csv` 는 창
-    「CSV」 의 층 전체(`floor_csv`)다."""
+    「CSV」 의 도면에 선 호기(`floor_csv`)다."""
     placed = {str(name).strip() for name in drawn[EQUIPMENT_ID_COLUMN].dropna()}
     sheet = unit_sheet(
         floor_status.loc[~_exited_mask(floor_status)],
@@ -945,7 +930,7 @@ def _edit_sheet(
     """배치 편집기 「호기 정보」 창의 표 — 편집본 상태 가운데 이 층 행(기준일에 도면에서 빠지지 않은
     것, 공정 필터와 상관없이 — 편집기와 같다)과 편집기 호기(층 미정 미배치 포함). 「도면」 칸은
     편집기에 보낸 자리(배치·미배치)이고 브라우저가 적용 전 편집으로 덮어 쓴다. `csv` 는 창 「CSV」
-    의 층 전체(보기와 같은 저장본 글 — `floor_csv`)다."""
+    의 도면에 선 호기(보기와 같은 저장본 글 — `floor_csv`)다."""
     ids = {str(item["id"]) for item in items}
     names = status[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     on_floor = status["동"].eq(key[0]).fillna(False).astype(bool) & status["층"].eq(key[1]).fillna(
@@ -2318,7 +2303,8 @@ else:
         .copy()
         .reset_index(drop=True)
     )
-    # 「호기 정보」 창 「CSV」 의 층 전체(옛 도면 아래 내려받기와 같은 칸 · 줄 — 보기 · 편집 모두).
+    # 「호기 정보」 창 「CSV」 의 도면에 선 호기(옛 도면 아래 내려받기와 같은 칸 · 줄 — 보기 · 편집
+    # 모두).
     floor_sheet_csv = floor_csv(floor_equipment, building=selected_building, floor=selected_floor)
     layout_profile = load_floor_layout_profile(
         equipment_database_path, selected_building, selected_floor

@@ -468,23 +468,35 @@ def test_the_shown_rows_csv_quotes_like_python_and_keeps_the_window_values() -> 
 
 
 def test_the_csv_button_lives_in_the_window_and_downloads_in_the_browser() -> None:
-    """「CSV」 는 창 제목 줄 단추와 두 줄 펼침(층 전체 · 보이는 줄)이다 — 옛 도면 아래 내려받기 줄을
-    걷었다(같은 일을 두 자리에 두지 않는다). 층 전체는 파이썬이 지은 글(data `sheet.csv`)을, 보이는
-    줄은 지금 탭의 줄(`S.sheetShown`)을 창의 칸으로 지어 BOM + UTF-8 Blob 으로 내려받는다.
-    파이썬으로 아무것도 보내지 않는다. 접힌 창에서 누르면 창을 편다. Esc 는 펼침을 먼저 닫는다."""
+    """「CSV」 는 창 제목 줄 단추와 두 줄 펼침(도면에 선 호기 · 보이는 줄)이다 — 옛 도면 아래
+    내려받기 줄을 걷었다(같은 일을 두 자리에 두지 않는다). 도면에 선 호기는 파이썬이 지은 글(data
+    `sheet.csv` — 옛 내려받기와 같은 줄 · 칸이라 창의 미배치 · 레이아웃 제외 줄은 없다 — 재검 c-5
+    로 이름을 맞춤)을, 보이는 줄은 지금 탭의 줄(`S.sheetShown`)을 창의 칸으로 지어 BOM + UTF-8 Blob
+    으로 내려받는다. 파이썬으로 아무것도 보내지 않는다. 접힌 창에서 누르면 창을 편다. Esc 는 펼침을
+    먼저 닫는다. 제목 줄 빈 칸은 도구 줄 빈 칸(보기에서 숨음)과 따로라 보기에서도 CSV · 접기 ·
+    닫기가 오른쪽 끝이고, 펼침은 단추 오른쪽 끝에 맞춰 선다(재검 b-2 — 보기에서 펼침이 단추와 300px
+    떨어졌다)."""
     head = HTML[
         HTML.index('<div class="sle-sheet-head"') : HTML.index('<div class="sle-sheet-main">')
     ]
+    assert head.index('class="sle-sheet-gap"') < head.index('class="sle-sheet-csv"')
     assert head.index('class="sle-sheet-csv"') < head.index('class="sle-sheet-min"')
+    assert 'class="sle-spacer"' not in head
+    assert ".sle-sheet-gap { flex: 1 1 auto; min-width: 0; }" in CSS
     assert 'aria-haspopup="menu"' in head and 'aria-controls="sle-sheet-csvmenu"' in head
     menu = HTML[HTML.index('class="sle-sheet-csvmenu"') : HTML.index('<div class="sle-sheet-menu"')]
     assert 'data-csv="all"' in menu and 'data-csv="shown"' in menu and 'role="menu"' in menu
+    assert ">도면에 선 호기 · 모든 칸</button>" in menu and "층 전체" not in menu
     adopt = JS[JS.index("  function adoptSheet() {") : JS.index("  function sheetRows() {")]
     assert "typeof SHEET.csv.text === 'string' && typeof SHEET.csv.file === 'string'" in adopt
     render = JS[JS.index("  function renderSheet() {") : JS.index("  function drawSheetTable(")]
     assert "S.sheetShown = shown" in render
-    assert "「CSV」 의 층 전체로 보세요" in render and "아래 층 CSV" not in JS
+    assert "「CSV」 의 도면에 선 호기로 보세요" in render and "아래 층 CSV" not in JS
     csv_part = JS[JS.index("  function closeCsvMenu(") : JS.index("  if (sheetBox) {")]
+    assert (
+        "sheetCsvMenu.style.right = `${Math.max(0, Math.round(inner - anchor.right))}px`"
+        in csv_part
+    )
     assert "new Blob([`\\ufeff${text}`], { type: 'text/csv;charset=utf-8' })" in csv_part
     assert "saveCsv(sheet.csv.text, sheet.csv.file)" in csv_part
     assert "saveCsv(sheetCsv(sheet.columns, S.sheetShown), `${base}_보이는줄.csv`)" in csv_part

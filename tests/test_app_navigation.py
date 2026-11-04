@@ -168,6 +168,17 @@ def test_every_declared_page_file_exists() -> None:
     assert not missing, f"선언된 페이지 파일이 없습니다: {missing}"
 
 
+def test_every_declared_page_href_is_the_streamlit_url_path() -> None:
+    """`PageSpec.href` 는 `st.navigation()` 밖에서 다른 화면을 가리킬 때 쓰는 주소다(일정
+    없는 호기 알림 `EQ-04` 의 「그 화면으로」) — Streamlit 이 파일명에서 짓는 `url_path` 와
+    같아야 한다."""
+    from streamlit.source_util import page_icon_and_name
+
+    for spec in ALL_SPECS:
+        inferred = spec.url_path or page_icon_and_name(Path(spec.path))[1]
+        assert spec.href == inferred, spec.path
+
+
 def test_exactly_one_page_is_the_default_entry_point() -> None:
     defaults = [spec.path for spec in ALL_SPECS if spec.default]
 

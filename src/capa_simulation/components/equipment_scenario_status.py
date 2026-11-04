@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from pathlib import Path
 
 import streamlit as st
@@ -66,6 +67,7 @@ from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
 )
+from capa_simulation.components.state_alerts import equipment_scope, tab_name
 from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
@@ -74,7 +76,11 @@ from capa_simulation.equipment_scenario_activation import (
     resolve_equipment_session,
     select_equipment_scenario,
 )
-from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, REQUIRED_SHORTENING
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    EQUIPMENT_MASTER_TAB,
+    REQUIRED_SHORTENING,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -82,6 +88,7 @@ from capa_simulation.page_bootstrap import (
     forget_page_dialogs,
     prune_choice,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
@@ -178,12 +185,41 @@ def unscheduled_notice(count: int, *, official: bool = False) -> str | None:
         return None
     if official:
         return (
-            f"공식 일정 없음 {count:,}대 — 공식 설비 시나리오에 일정이 없는 호기는 이 화면에 "
-            "그리지 않습니다(가정 설비 시나리오에만 든 호기)."
+            f"공식 일정 없음 {count:,}대 — 공식 설비 시나리오에 일정이 없는 호기(가정 설비 "
+            "시나리오에만 든 호기)는 도면에 그리지 않고 계산에 들지 않습니다. 넣으려면 그 호기의 "
+            "일정 칸에 값을 적어 저장하세요."
         )
     return (
         f"이 설비 시나리오에 일정이 없는 호기 {count:,}대 — 이 시나리오 계산에 들지 않습니다. "
         "넣으려면 그 호기의 일정 칸이나 시나리오 메모에 값을 적어 저장하세요."
+    )
+
+
+def report_unscheduled_units(session: EquipmentSession, units: Collection[str]) -> None:
+    """이 설비 시나리오에 일정이 없는 호기의 상태 알림(`EQ-04` — 자리에는 그리지 않는다). 가용설비
+    현황과 Space 현황이 이 함수 하나로 낸다 — 같은 코드 · 범위(세션의 리비전 쌍) · 내용(설비명
+    목록) · 글이고 「그 화면으로」 는 늘 고칠 자리인 가용설비 현황 › 설비 마스터 탭이라, 어느
+    화면이 먼저 내도 Alarm 줄이 같고 화면을 옮겨도 다시 뜨지 않는다(재검 b-3 · c-3 — Space 가 먼저
+    내면 줄이 Space 로 굳었다). 없어도 부른다(해소). 공식 발행 쌍이면 「공식 일정 없음 n대」 다."""
+    names = sorted(units)
+    count = len(names)
+    official = session.is_official_pair
+    head = (
+        f"공식 일정 없음 {count:,}대"
+        if official
+        else f"이 설비 시나리오에 일정이 없는 호기 {count:,}대"
+    )
+    scope = equipment_scope(session)
+    alerts.state(
+        "EQ-04",
+        scope=scope.scope,
+        content=names or None,
+        active=bool(names),
+        text=f"{head} — 도면 · 계산에서 빠짐 · 설비 마스터 일정 칸에 적어 저장",
+        full=unscheduled_notice(count, official=official),
+        scope_label=scope.label,
+        tab=tab_name(EQUIPMENT_MASTER_TAB),
+        goto=(tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href),
     )
 
 

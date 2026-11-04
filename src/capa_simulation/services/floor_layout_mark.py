@@ -85,9 +85,12 @@ LINE_STYLES: Final = ("solid", "dashed", "dotted")
 # 둔다(「도형 바꾸기」 가 키 하나 바꾸기다). 꾸밈이라 막는 요소가 아니고 호기 아래 층에 그린다.
 # 층·FAB 둘 다다.
 # - 모양 조절 값 `look.adj`: 프리셋마다 0~2개(아래 (하한, 상한, 처음 값) — 0.01 단위의 비율,
-#   노란 손잡이·선택 칸 숫자로 바꾼다). 처음 값과 모두 같으면 넣지 않는다. 두께·둥글기·머리 길이는
-#   엑셀처럼 짧은 변(min(폭, 높이)) 기준이다(2026-11-04 Space 결정 보드 답 — 한쪽 팔만 늘이면 두께는
-#   그대로) — 삼각형 꼭짓점 자리만 폭, 블록 화살표 몸통 두께만 높이 기준이다.
+#   노란 손잡이·선택 칸 숫자로 바꾼다). 처음 값과 모두 같으면 넣지 않는다. 무엇의 비율인가는
+#   `SHAPE_ADJUST_BASE` 다 — 두께·둥글기·머리 길이는 엑셀처럼 짧은 변(min(폭, 높이)) 기준이고
+#   (2026-11-04 Space 결정 보드 답 — 한쪽 팔만 늘이면 두께는 그대로, 손잡이·칸으로 크기를 바꾸면
+#   편집기가 그린 두께를 지키게 값을 다시 셈한다), 삼각형 꼭짓점 자리만 폭, 블록 화살표 몸통
+#   두께만 높이 기준이다. `min-w`·`min-h` 값은 상한이 그 축 길이까지라(엑셀처럼 — 넓은 ㄴ자의
+#   굵은 세로 팔) 저장 상한이 상한 × `SHAPE_STRETCH_MAX` 이고, 편집기가 그릴 때 상자로 묶는다.
 # - 채우기 색은 요소의 `color`(영역 색 키 여섯 + `ink` 진하게 + `surface` 바탕 — 모두 테마
 #   토큰, 처음 `blue`), 투명도는 `look.fillAlpha`(채우기 불투명 0~100 — 5 단위, 처음 20, 0 은
 #   채우기 없음).
@@ -127,6 +130,21 @@ SHAPE_ADJUST: Final[Mapping[str, tuple[tuple[float, float, float], ...]]] = {
     "cross": ((0.05, 0.95, 0.34),),
     "arrowblock": ((0.05, 1, 0.5), (0.05, 0.95, 0.7)),
 }
+# 모양 조절 값마다 무엇의 비율인가(편집기 `SHAPE_PRESETS[…].base`). `min` 짧은 변(상한 그대로) ·
+# `min-w`·`min-h` 짧은 변이되 상한은 그 축(폭·높이) 길이까지 · `w` 폭 · `h` 높이.
+SHAPE_ADJUST_BASE: Final[Mapping[str, tuple[str, ...]]] = {
+    "rect": ("min",),
+    "ellipse": (),
+    "lbox": ("min-w", "min-h"),
+    "cbox": ("min-w", "min-h"),
+    "frame": ("min",),
+    "triangle": ("w",),
+    "diamond": (),
+    "cross": ("min",),
+    "arrowblock": ("h", "min-w"),
+}
+# `min-w`·`min-h` 값의 저장 상한 배수 — 긴 변이 짧은 변의 100배인 상자의 축 길이까지 받는다.
+SHAPE_STRETCH_MAX: Final = 100
 SHAPE_FILL_KEYS: Final = (*MARK_COLOR_KEYS, "ink", "surface")
 SHAPE_LINE_KEYS: Final = ("auto", "none", "ink", *MARK_COLOR_KEYS)
 FILL_ALPHA_STEP: Final = 5
@@ -457,16 +475,19 @@ def _whole(number: float) -> float | int:
 
 
 def _shape_adjust(preset: str, value: object, mark_id: str) -> list[float | int] | None:
-    """도형 모양 조절 값(`adj`) — 프리셋의 개수·범위·0.01 단위를 본다. 처음 값과 모두 같으면 None
-    (넣지 않는다). 어긋나면 `ValueError`."""
+    """도형 모양 조절 값(`adj`) — 프리셋의 개수·저장 범위(하한 ~ 상한, `min-w`·`min-h` 는 상한 ×
+    `SHAPE_STRETCH_MAX`)·0.01 단위를 본다. 처음 값과 모두 같으면 None(넣지 않는다). 어긋나면
+    `ValueError`."""
     spec = SHAPE_ADJUST[preset]
+    bases = SHAPE_ADJUST_BASE[preset]
     name = SHAPE_NAMES[preset]
     if not isinstance(value, (list, tuple)) or len(value) != len(spec):
         raise ValueError(
             f"도형 {mark_id}({name})의 모양 조절 값은 {len(spec)}개여야 합니다: {value!r}"
         )
     normal: list[float | int] = []
-    for item, (low, high, _default) in zip(value, spec, strict=True):
+    for item, (low, top, _default), base in zip(value, spec, bases, strict=True):
+        high = top * SHAPE_STRETCH_MAX if base in ("min-w", "min-h") else top
         number = _look_number(item)
         if number is None or abs(number * 100 - round(number * 100)) > 1e-6:
             raise ValueError(

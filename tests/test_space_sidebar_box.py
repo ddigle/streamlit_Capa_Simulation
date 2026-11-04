@@ -200,6 +200,13 @@ def test_an_assumption_raises_the_unscheduled_and_layout_alerts_and_keeps_the_bo
         "적어 저장"
     )
     assert unscheduled["full"] == unscheduled_notice(1)
+    # 「그 화면으로」 는 고칠 자리인 가용설비 현황 › 설비 마스터다 — 가용설비 현황이 내는 줄과 같아
+    # Space 가 먼저 내도 줄이 Space 로 굳지 않는다(재검 b-3 · c-3).
+    assert (unscheduled["page"], unscheduled["href"], unscheduled["tab"]) == (
+        "가용설비 현황",
+        "available_equipment_status",
+        "설비 마스터",
+    )
     layout = active_state(app, "EQ-13")
     assert layout is not None and layout["short"] == "가정 배치 · 공식과 같음"
     assert layout["full"].startswith("가정 설비 시나리오 · 배치는 공식과 같습니다")

@@ -3,8 +3,9 @@
 
 """설비 시나리오 2단계 S3 — Space 현황(LY3·LY4·G5·Q1·Q3).
 
-- 그리는 한 벌은 세션 설비 시나리오다 — 가정이면 그 리비전의 배치 차이가 얹히고 「Space 도면」 상자
-  배치 줄·사이드바 「가정 배치」 배지가 선다. 뷰어 epoch 는 잠긴 회차에도 쌍 토큰을 담는다(검토 F1).
+- 그리는 한 벌은 세션 설비 시나리오다 — 가정이면 그 리비전의 배치 차이가 얹히고 배치 알림
+  (`EQ-13` — 알림창 · Alarm)이 뜨며 사이드바 「가정 배치」 배지가 선다. 뷰어 epoch 는 잠긴
+  회차에도 쌍 토큰을 담는다(검토 F1).
 - 편집 권한은 `space_edit_mode` 한 판정 — 가정 최신은 그 시나리오의 배치 차이를, 가정·낡음은 배치
   지문이 같으면 빨리 감기로, 다르면 잠금(「최신 rM 불러오기」), 공식 시나리오의 가정이던 때 리비전은
   잠금. FAB 전체·층 캔버스·층 사용은 공식 시나리오에서만.
@@ -537,9 +538,9 @@ def test_an_old_official_revision_whose_difference_now_matches_says_it_once(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
     """E2E r5 — 가정이던 때의 차이가 지금 공식과 같아졌고 정리는 최신 r3 에서 끝났다. 옛 r2 를 연
-    배치 줄(풍선)은 「공식과 다른 배치(저장된 차이)를 담고 있습니다」 와 「공식과 같아진 것은 다음
-    저장·발행 때 정리됩니다」 를 한 줄에 붙여 서로 어긋나게 말하지 않고, 저장된 차이가 지금 공식과
-    같다는 것 하나만 말한다(그리는 배치도 공식과 같다)."""
+    배치 알림(`EQ-13` 전문)은 「공식과 다른 배치(저장된 차이)를 담고 있습니다」 와 「공식과
+    같아진 것은 다음 저장·발행 때 정리됩니다」 를 한 줄에 붙여 서로 어긋나게 말하지 않고, 저장된
+    차이가 지금 공식과 같다는 것 하나만 말한다(그리는 배치도 공식과 같다)."""
     _, setup, overlaid = _settled_old_official(tmp_path)
     app = _ok(_space(tmp_path, setup, overlaid).run())
 
@@ -653,9 +654,9 @@ def _assert_tildes_escaped(app: AppTest) -> None:
 def test_a_deleted_units_difference_is_named_once_in_the_space_head(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """E2E r3 — 가정 배치 차이가 공통 대장에서 지운 호기의 것뿐이면 배치 줄 첫 줄은 「배치는 공식과
-    같습니다」 뿐이고(「공식과 같아진 것은 … 정리됩니다」 꼬리 없음), 그 행은 둘째 줄 「지운 호기의
-    배치 차이 1행은 버렸습니다」 가 한 번 말한다."""
+    """E2E r3 — 가정 배치 차이가 공통 대장에서 지운 호기의 것뿐이면 배치 알림(`EQ-13`)은 「배치는
+    공식과 같습니다」 뿐이고(「공식과 같아진 것은 … 정리됩니다」 꼬리 없음), 그 행은 `EQ-15`
+    「지운 호기의 배치 차이 1행은 버렸습니다」 가 한 번 말한다."""
     repository, setup = _overlay(tmp_path)
     theirs = _session(repository)
     kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
@@ -859,8 +860,8 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_lock_line_and_its_popove
 def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_lock(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 배치 줄과 잠금 줄(「이 리비전에는
-    「…」이(가) 가정이던 때의 …」)이 이름의 별표를 막는다(E2E r5)."""
+    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 잠금 줄(「이 리비전에는 「…」이(가) 가정이던
+    때의 …」)이 이름의 별표를 막는다(E2E r5 — 배치 알림 `EQ-13` 은 평문이라 막지 않는다)."""
     repository, setup = _overlay(tmp_path, STAR_NAME)
     overlaid = _scenario(repository, setup).latest_schedule_revision_id
     cleared = repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=overlaid)

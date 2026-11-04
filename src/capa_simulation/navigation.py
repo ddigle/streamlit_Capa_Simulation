@@ -167,6 +167,12 @@ class PageSpec:
         tabs = self.condition_tabs
         return tabs is None or tabs.card_labels is None or active_tab in tabs.card_labels
 
+    @property
+    def href(self) -> str:
+        """이 화면의 주소(`st.Page.url_path` 와 같다 — 주지 않았으면 파일명). `st.navigation()`
+        밖에서도 쓴다(다른 화면을 가리키는 알림의 「그 화면으로」)."""
+        return self.url_path or Path(self.path).stem
+
     def to_page(self) -> st.Page:
         return st.Page(
             self.path,

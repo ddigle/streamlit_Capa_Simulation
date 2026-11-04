@@ -385,9 +385,9 @@ def _clean_sheet(sheet: Mapping[str, Any] | None) -> dict[str, Any] | None:
 
     칸은 이름이 글이고 꼴이 `SHEET_TYPES` 인 것만, 행은 id 가 빈 글이 아니고 칸 수가 칸 목록과 같은
     것만 싣는다(값은 `_sheet_cell`). 줄 수는 `MAX_SHEET_ROWS` 를 넘지 않는다(넘친 수는 `cut` 에
-    더한다). 창 「CSV」 의 층 전체 글(`csv` — `space_unit_sheet.floor_csv` 꼴 {text, file})은 둘 다
-    글일 때만 싣는다. epoch 밖이다 — 기준일(「단계」 칸)·공정 필터·편집본이 바뀌어도 다시 마운트하지
-    않고 창만 다시 그린다. None 이면 창이 없다(FAB)."""
+    더한다). 창 「CSV」 의 도면에 선 호기 글(`csv` — `space_unit_sheet.floor_csv` 꼴 {text,
+    file})은 둘 다 글일 때만 싣는다. epoch 밖이다 — 기준일(「단계」 칸)·공정 필터·편집본이 바뀌어도
+    다시 마운트하지 않고 창만 다시 그린다. None 이면 창이 없다(FAB)."""
     if sheet is None:
         return None
     raw_columns = list(sheet.get("columns") or ())

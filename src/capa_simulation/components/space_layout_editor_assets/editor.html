@@ -146,8 +146,8 @@
                             title="도형 바꾸기 — 크기·채우기·선·글자는 그대로, 모양 조절은 새 도형의 처음 값(고른 도형 모두에)"><svg class="sle-shape-now" viewBox="0 0 16 16" aria-hidden="true"></svg><span class="sle-shape-word">사각형</span> ▾</button>
                   </span>
                   <span class="sle-shape-gallery" id="sle-shape-swap-gallery" role="group" aria-label="도형 바꾸기" hidden></span>
-                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 두께·둥글기·머리 길이는 짧은 변의 %(긴 쪽으로 늘여도 두께 그대로). 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="0" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
-                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 두께·둥글기·머리 길이는 짧은 변의 %(긴 쪽으로 늘여도 두께 그대로). 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="1" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 두께·둥글기·머리 길이는 짧은 변의 %(손잡이·칸으로 크기를 바꿔도 그 두께 그대로 · Shift 비율 유지는 함께 커짐). 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="0" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 두께·둥글기·머리 길이는 짧은 변의 %(손잡이·칸으로 크기를 바꿔도 그 두께 그대로 · Shift 비율 유지는 함께 커짐). 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="1" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
                   <label class="sle-field" title="채우기 색 — 영역 색 여섯 · 진하게(도면 글자색) · 바탕(밝게는 흰색)"><span>채우기</span><select class="sle-shape-fill" aria-label="채우기 색"></select></label>
                   <label class="sle-field" title="채우기 투명도(엑셀처럼) — 0% 는 불투명, 100% 는 채우기 없음(안쪽을 눌러도 잡히지 않고 테두리로 잡습니다) · 5 단위"><span>투명도</span><span class="sle-pct"><input class="sle-shape-clear" type="number" min="0" max="100" step="5" inputmode="numeric" aria-label="채우기 투명도"><span aria-hidden="true">%</span></span></label>
                   <label class="sle-field" title="선 색 — 자동은 채우기 색을 따릅니다"><span>선 색</span><select class="sle-shape-line" aria-label="도형 선 색"></select></label>
@@ -288,9 +288,9 @@
           <button type="button" class="sle-sheet-tab" role="tab" data-tab="picked" aria-selected="true">고른 호기 <b class="sle-sheet-tab-n"></b></button>
           <button type="button" class="sle-sheet-tab" role="tab" data-tab="filter" aria-selected="false">필터 <b class="sle-sheet-tab-n"></b></button>
         </span>
-        <span class="sle-spacer"></span>
+        <span class="sle-sheet-gap"></span>
         <button type="button" class="sle-sheet-csv" aria-haspopup="menu" aria-expanded="false" aria-controls="sle-sheet-csvmenu"
-                title="CSV 내려받기 — 층 전체(모든 칸) 또는 지금 보이는 줄(창의 칸)">CSV</button>
+                title="CSV 내려받기 — 도면에 선 호기(모든 칸) 또는 지금 보이는 줄(창의 칸)">CSV</button>
         <button type="button" class="sle-sheet-min" aria-expanded="true" aria-label="호기 정보 창 접기" title="접기 — 제목 줄만 남깁니다(강조는 그대로)">–</button>
         <button type="button" class="sle-sheet-close" aria-label="호기 정보 창 닫기" title="닫기 (Esc) — 필터는 남고 도면 강조는 꺼집니다">×</button>
       </div>
@@ -310,7 +310,7 @@
       </div>
       <div class="sle-sheet-csvmenu" id="sle-sheet-csvmenu" role="menu" aria-label="CSV 내려받기" hidden>
         <button type="button" role="menuitem" class="sle-sheet-csv-all" data-csv="all"
-                title="층 전체 — 이 층 도면에 선 호기(공정소분류 필터 뒤)의 모든 칸. 옛 도면 아래 「CSV 내려받기」 와 같은 파일입니다">층 전체 · 모든 칸</button>
+                title="이 층 도면에 선 호기(공정소분류 필터 뒤 · 저장된 배치)의 모든 칸 — 미배치 · 레이아웃 제외 줄은 「보이는 줄」 로">도면에 선 호기 · 모든 칸</button>
         <button type="button" role="menuitem" class="sle-sheet-csv-shown" data-csv="shown"
                 title="지금 탭에 보이는 줄(필터에 맞는 줄 · 고른 호기 줄)만, 창의 칸으로">보이는 줄</button>
       </div>

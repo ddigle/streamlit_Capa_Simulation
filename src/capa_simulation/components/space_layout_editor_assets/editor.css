@@ -699,8 +699,10 @@
 .sle-sheet-tab b { font-variant-numeric: tabular-nums; }
 .sle-sheet-tab b:empty { display: none; }
 .sle button.sle-sheet-min, .sle button.sle-sheet-close { height: 24px; min-width: 24px; padding: 0 6px; font-size: 14px; }
-/* 「CSV」(2026-11-04 Space 결정 보드 답 — 옛 도면 아래 내려받기를 창 안으로) — 제목 줄 단추와 그 밑 두 줄 펼침(층 전체 · 보이는
-   줄). 펼침은 제목 줄 바로 밑 오른쪽에 선다 — 접힌 창에서 누르면 창을 먼저 편다(JS). */
+/* 제목 줄 빈 칸 — CSV · 접기 · 닫기를 오른쪽 끝에 민다. 도구 줄 빈 칸(`sle-spacer` — 보기에서는 숨는다)과 따로라 보기에서도 선다. */
+.sle-sheet-gap { flex: 1 1 auto; min-width: 0; }
+/* 「CSV」(2026-11-04 Space 결정 보드 답 — 옛 도면 아래 내려받기를 창 안으로) — 제목 줄 단추와 그 밑 두 줄 펼침(도면에 선 호기 ·
+   보이는 줄). 펼침은 제목 줄 바로 밑, CSV 단추 오른쪽 끝에 맞춰 선다 — 접힌 창에서 누르면 창을 먼저 편다(JS). */
 .sle button.sle-sheet-csv { height: 24px; padding: 0 8px; font-size: 12px; }
 .sle button.sle-sheet-csv[aria-expanded="true"] { border-color: var(--sle-accent); color: var(--sle-accent); }
 .sle-sheet-csvmenu {
