@@ -93,7 +93,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
     ("app_pages/standard_target_capa.py", "_clear_dialog"): (1, PLACE_FORM),
-    ("app_pages/voc.py", ""): (1, PLACE_RESULT),
     ("app_pages/wip_status.py", ""): (1, PLACE_NO_INPUT),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (

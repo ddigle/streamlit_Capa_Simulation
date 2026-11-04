@@ -23,6 +23,7 @@ from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 from test_voc_page import _script
 
+from capa_simulation import alerts
 from capa_simulation.components import voc_draft_keeper
 from capa_simulation.components.voc_draft_keeper import _JS, DRAFT_STORAGE_KEY
 
@@ -103,6 +104,16 @@ def test_the_script_keeps_one_input_listener_and_sets_values_react_can_see() -> 
     assert "innerHTML" not in _JS
 
 
+def test_a_restored_draft_is_told_through_the_alert_center_not_a_line_under_the_form() -> None:
+    """되살렸으면 같은 문서의 알림 칸(`window.__capaAlerts.raise` — 칸이 아직 없으면 줄)에 사건
+    알림을 낸다 — 폼 아래에 제 꼴의 줄을 두지 않는다(설계 규칙 UI-NTF-01, 화면 탭 줄 JS 와 같은
+    길)."""
+    assert "center.raise(note)" in _JS and "__capaAlertQueue" in _JS
+    assert "raiseAlert(data.alert)" in _JS
+    assert "textContent" not in _JS and "hidden = false" not in _JS
+    assert voc_draft_keeper._HTML == "<span hidden></span>"
+
+
 def test_the_voc_page_hands_the_form_keys_and_generation_to_the_keeper(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -119,6 +130,11 @@ def test_the_voc_page_hands_the_form_keys_and_generation_to_the_keeper(
 
     first = sent[-1]
     assert first["storageKey"] == DRAFT_STORAGE_KEY
+    # 되살림 알림은 등록부의 사건 코드다 — 짧은 글 · 전문(보관 범위)을 싣는다.
+    alert = first["alert"]
+    assert alert["code"] == "VO-02" and alert["level"] == "info", alert
+    assert alerts.spec(alert["code"]).kind == "event"
+    assert "되살렸습니다" in alert["short"] and "탭을 닫으면 사라집니다" in alert["full"], alert
     assert first["titleSelector"] == ".st-key-voc_post_title input"
     assert first["bodySelector"] == ".st-key-voc_post_body textarea"
     assert first["generation"] == 0

@@ -235,6 +235,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     ),
     AlertSpec("EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 트레이에 있음"),
     AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
+    # VOC 새 글 초안 보관 JS(`components/voc_draft_keeper.py`)가 빈 폼에 되살린 회차에 낸다 —
+    # 폼 아래 제 꼴의 줄 대신(설계 규칙 UI-NTF-01).
+    AlertSpec("VO-02", "info", "event", "VOC 새 글 — 이 브라우저 탭에 보관한 초안을 되살림"),
 )
 
 

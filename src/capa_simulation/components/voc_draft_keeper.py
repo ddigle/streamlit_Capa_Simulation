@@ -12,8 +12,10 @@
   (`DRAFT_STORAGE_KEY`)에 (세션 표지, 폼 세대, 제목, 내용)을 적는다. 듣개는 문서에 하나다 — 회차마다
   옛 것을 떼고 새로 단다(그 회차의 세대를 쓴다).
 - **되살리기** — 두 칸이 모두 비어 있고 탭 칸에 글이 있으면 그 글을 칸에 넣는다(React 가 받는 꼴 —
-  값 설정 뒤 `input` 사건). 폼 안이라 서버에는 「글 올리기」 때 간다. 되살렸으면 폼 아래에 한 줄
-  알린다.
+  값 설정 뒤 `input` 사건). 폼 안이라 서버에는 「글 올리기」 때 간다. 되살렸으면 같은 문서의 알림
+  칸(`window.__capaAlerts.raise` — 칸이 아직 서지 않았으면 `window.__capaAlertQueue`)에 사건 알림
+  `VO-02` 를 낸다 — 폼 아래에 제 꼴의 줄을 두지 않는다(설계 규칙 UI-NTF-01 · 03, 화면 탭 줄 JS 와
+  같은 길).
 - **버리기** — 같은 세션에서 폼 세대가 올랐으면(글을 올렸다 — `voc._submit_post`) 탭 칸을 비운다.
   올린 뒤 새 폼이 선 사이 옛 값으로 한 번 더 돈 회차가 그 초안을 빈 새 폼에 되살릴 수 있어(브라우저
   실측 — 서버는 비웠는데 칸에 올린 글이 남았다), 두 칸이 올린 초안 그대로면 칸도 비운다.
@@ -32,32 +34,28 @@ from typing import Final
 
 import streamlit as st
 
-from capa_simulation.design import tokens
+from capa_simulation import alerts
 
 # 브라우저 탭(`sessionStorage`)의 초안 칸 이름.
 DRAFT_STORAGE_KEY: Final = "capa-voc-post-draft"
 # 이 세션의 표지(세션마다 새로 뽑는다).
 _SESSION_TOKEN_KEY: Final = "voc_draft_session_token"
+# 되살림 알림(`VO-02`)의 짧은 글과 전문 — 보관 범위(이 탭 · 올리기 전에는 탭을 닫으면 사라짐)는
+# 전문(Alarm 패널 · 로그)과 Guide 가 말한다.
+RESTORED_ALERT_CODE: Final = "VO-02"
+RESTORED_SHORT: Final = "VOC 새 글 — 쓰다 만 제목·내용을 되살렸습니다"
 RESTORED_NOTE: Final = (
     "이 브라우저 탭에 임시 보관한 제목·내용을 되살렸습니다 — 올리기 전에는 탭을 닫으면 사라집니다."
 )
 
-_HTML = '<div class="capa-voc-draft-note" role="status" hidden></div>'
-
-_CSS = """
-.capa-voc-draft-note {
-  font-size: 0.875rem;
-  line-height: 1.4;
-}
-.capa-voc-draft-note[hidden] { display: none; }
-"""
+# 그릴 것이 없는 컴포넌트다 — 폼 칸은 문서에 있고 알림은 알림 칸이 띄운다.
+_HTML = "<span hidden></span>"
 
 _JS = """
 export default function (component) {
   const { data, parentElement } = component
   const doc = parentElement.ownerDocument || document
   const win = doc.defaultView || window
-  const note = parentElement.querySelector('.capa-voc-draft-note')
 
 // <voc-draft>
 // 탭 칸의 초안(`stored`)으로 이 회차에 할 일. 'forget' — 같은 세션에서 폼 세대가 올랐다(글을
@@ -104,6 +102,13 @@ function draftAction(stored, session, generation, current) {
     else element.value = value
     element.dispatchEvent(new Event('input', { bubbles: true }))
   }
+  // 같은 문서의 알림 칸에 낸다. 칸이 아직 서지 않았으면 담아 두고 칸이 설 때 꺼낸다.
+  function raiseAlert(note) {
+    if (!note) return
+    const center = win.__capaAlerts
+    if (center && typeof center.raise === 'function') center.raise(note)
+    else (win.__capaAlertQueue = win.__capaAlertQueue || []).push(note)
+  }
   function snapshot(found) {
     return {
       session: data.session,
@@ -113,10 +118,6 @@ function draftAction(stored, session, generation, current) {
     }
   }
 
-  if (note) {
-    note.style.color = data.noteColor
-    note.textContent = data.restoredNote
-  }
   const previous = win.__capaVocDraftInput
   if (previous) doc.removeEventListener('input', previous, true)
   const onInput = (event) => {
@@ -147,12 +148,11 @@ function draftAction(stored, session, generation, current) {
         setValue(found.title, '')
         setValue(found.body, '')
       }
-      if (note) note.hidden = true
     } else if (action === 'restore') {
       setValue(found.title, stored.title || '')
       setValue(found.body, stored.body || '')
       write(snapshot(found))
-      if (note) note.hidden = false
+      raiseAlert(data.alert)
     }
   }
   settle()
@@ -167,10 +167,9 @@ function draftAction(stored, session, generation, current) {
 }
 """
 
-# 그림자 DOM 으로 가두지 않는다 — 폼 칸은 문서에 있고, 알림 한 줄은 `capa-voc-draft-note` 클래스로만
-# 서식을 건다(앱의 다른 요소에 새지 않는다).
+# 그림자 DOM 으로 가두지 않는다 — 폼 칸이 문서에 있다.
 _DRAFT_KEEPER = st.components.v2.component(
-    "capa_voc_draft_keeper", html=_HTML, css=_CSS, js=_JS, isolate_styles=False
+    "capa_voc_draft_keeper", html=_HTML, js=_JS, isolate_styles=False
 )
 
 
@@ -180,6 +179,20 @@ def _session_token() -> str:
         token = secrets.token_hex(8)
         st.session_state[_SESSION_TOKEN_KEY] = token
     return token
+
+
+def restored_alert() -> dict[str, str]:
+    """되살림 사건 알림(`VO-02`)의 표지 — JS 가 되살린 회차에만 알림 칸에 낸다(id 는 알림 칸이
+    붙인다). 화면 이름 · 주소는 이 회차의 화면이다(`alerts.current_page`)."""
+    page, href = alerts.current_page()
+    return {
+        "code": RESTORED_ALERT_CODE,
+        "level": alerts.spec(RESTORED_ALERT_CODE).level,
+        "short": alerts.short_text(RESTORED_SHORT),
+        "full": RESTORED_NOTE,
+        "page": page,
+        "href": href,
+    }
 
 
 def render_voc_draft_keeper(*, title_key: str, body_key: str, generation: int) -> None:
@@ -193,9 +206,7 @@ def render_voc_draft_keeper(*, title_key: str, body_key: str, generation: int) -
             "generation": int(generation),
             "titleSelector": f".st-key-{title_key} input",
             "bodySelector": f".st-key-{body_key} textarea",
-            "restoredNote": RESTORED_NOTE,
-            # 색은 회차마다 읽는다 — 등록 때 CSS 에 적으면 처음 읽은 테마가 굳는다.
-            "noteColor": tokens.TEXT_MUTED,
+            "alert": restored_alert(),
         },
         width="stretch",
     )

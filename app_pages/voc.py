@@ -67,9 +67,12 @@ POST_CATEGORY_KEY = "voc_post_category"
 POST_TITLE_KEY = "voc_post_title"
 POST_BODY_KEY = "voc_post_body"
 POST_FORM_ERROR_KEY = "voc_post_form_error"
-# 그 사이 다른 세션이 지운 글에 답변·답변 완료 표시를 하려던 거절 `(문구, 적어 둔 답변)`. 지운 글의
-# 상자는 다시 그리지 않으므로 글 상자가 아니라 머리 알림 칸에 그린다.
-GONE_NOTICE_KEY = "voc_gone_notice"
+# 그 사이 다른 세션이 지운 글에 답변·답변 완료 표시·글 삭제를 하려던 거절. 아무것도 하지 않았고 그
+# 자리에 고칠 입력이 없어(지운 글의 상자는 다시 그리지 않는다) 알림창 · Alarm 에만 낸다(설계 규칙
+# UI-NTF-03 — `queue_flash(…, popup_only=True)`). 적어 둔 답변(`KEPT_REPLY_KEY`)은 알림이 아니라
+# 사용자의 글이라 머리 알림 칸에 남겨 복사해 가게 한다.
+GONE_FLASH_KEY = "voc_gone_flash"
+KEPT_REPLY_KEY = "voc_kept_reply"
 # 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
 # 답변 폼과 답변 완료 단추는 글마다 하나다. 비교와 쓰기는 `write_guard.write_once` 가
 # 한다 — 더블클릭은 두 회차의 콜백이 겹쳐 와 세션 칸 비교만으로는 둘 다 지났다. 지운 글은
@@ -87,16 +90,14 @@ render_page_guide("voc", title="VOC")
 # 알림은 **늘 서 있는 한 칸** 안에 그린다(`render_flash` 가 세운다). 알림이 생기거나 사라질 때 아래
 # 형제가 한 칸 밀리면, 알림 없는 회차와 알림 있는 회차 사이에서 key 있는 글 상자가 옛 자리에 회색
 # 사본으로 남아 — 적은 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도 따라왔다(2026-10-05 E2E,
-# 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다. 지운 글 칸도 같은 칸에 그린다.
-notices = render_flash(FLASH_KEY)
-gone = st.session_state.pop(GONE_NOTICE_KEY, None)
-if isinstance(gone, tuple) and len(gone) == 2:
-    gone_message, kept_reply = gone
-    notices.warning(str(gone_message), icon=":material/delete_forever:")
-    # 적어 둔 답변은 버리지 않는다 — 답변 칸은 글과 함께 사라지므로 여기서 복사해 갈 수 있게 둔다.
-    if str(kept_reply).strip():
-        notices.caption("적어 둔 답변")
-        notices.code(str(kept_reply), language=None, wrap_lines=True)
+# 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다. 지운 글에 적어 둔 답변도 같은
+# 칸에 그린다.
+notices = render_flash(FLASH_KEY, GONE_FLASH_KEY)
+kept_reply = st.session_state.pop(KEPT_REPLY_KEY, None)
+# 적어 둔 답변은 버리지 않는다 — 답변 칸은 글과 함께 사라지므로 여기서 복사해 갈 수 있게 둔다.
+if isinstance(kept_reply, str) and kept_reply.strip():
+    notices.caption("적어 둔 답변")
+    notices.code(kept_reply, language=None, wrap_lines=True)
 
 database_path = str(DUCKDB_PATH.resolve())
 try:
@@ -114,6 +115,20 @@ replies_by_post: dict[str, pd.DataFrame] = (
     if not replies.empty
     else {}
 )
+
+
+def _refuse_gone_press(message: str, kept_reply: str = "") -> None:
+    """그 사이 지운 글에 한 누름 — 아무것도 쓰지 않았다고 알림창 · Alarm 에만 알리고(`FL-03`), 적어
+    둔 답변은 머리 알림 칸에 남긴다."""
+    queue_flash(
+        GONE_FLASH_KEY,
+        message,
+        kind="warning",
+        icon=":material/delete_forever:",
+        popup_only=True,
+    )
+    if kept_reply.strip():
+        st.session_state[KEPT_REPLY_KEY] = kept_reply
 
 
 def _timestamp(value: object) -> str:
@@ -207,7 +222,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
             fingerprint=(body, author),
         )
     except VocPostGoneError as exc:
-        st.session_state[GONE_NOTICE_KEY] = (bootstrap_error_message(exc), body)
+        _refuse_gone_press(bootstrap_error_message(exc), body)
         return
     except BOOTSTRAP_ERRORS as exc:
         queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
@@ -239,7 +254,7 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
             fingerprint=resolved,
         )
     except VocPostGoneError as exc:
-        st.session_state[GONE_NOTICE_KEY] = (bootstrap_error_message(exc), "")
+        _refuse_gone_press(bootstrap_error_message(exc))
         return
     except BOOTSTRAP_ERRORS as exc:
         queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
@@ -257,8 +272,8 @@ def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     `write_guard.note_notice`) — 앞 회차가 꺼내 그린 알림을 이 회차가 지우지 않는다.
 
     그 사이 다른 세션이 이미 지운 글이면(저장소가 지울 것이 없었다고 알린다) 「글을
-    지웠습니다.」 대신 답변·답변 완료 표시와 같은 「그 사이 지운 글입니다」 를 머리 알림 칸에
-    그린다. 다만 쓰기 직후 적어 둔 알림이 창 안이면(`held_notice` — 겹쳐 온 같은 누름이 먼저
+    지웠습니다.」 대신 답변·답변 완료 표시와 같은 「그 사이 지운 글입니다」 를 알림창 · Alarm 에
+    낸다. 다만 쓰기 직후 적어 둔 알림이 창 안이면(`held_notice` — 겹쳐 온 같은 누름이 먼저
     지웠다) 제 삭제라 그 알림 그대로다.
     """
     if st.session_state.get(DELETE_HANDLED_KEY) == post_id:
@@ -275,7 +290,7 @@ def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
         return
     if not removed:
         if held_notice(FLASH_KEY) is None:
-            st.session_state[GONE_NOTICE_KEY] = (VOC_POST_GONE_ON_DELETE, "")
+            _refuse_gone_press(VOC_POST_GONE_ON_DELETE)
         st.session_state[DELETE_HANDLED_KEY] = post_id
         return
     note_notice(marks, FLASH_KEY, message)
