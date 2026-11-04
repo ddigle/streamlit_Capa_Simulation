@@ -208,9 +208,15 @@ def _open_floor(tmp_path: Path, *, edit_mode: bool = False) -> AppTest:
     return app
 
 
+def _save_help(app: AppTest) -> str:
+    """`배치 저장` 풍선 — 저장 범위(세션에만 있음 · 함께 저장되는 것)를 말하는 자리다."""
+    return app.button(key="space_layout_save").help or ""
+
+
 def _panel_text(app: AppTest) -> list[str]:
     texts = [item.value for item in app.markdown if "저장 안 한 배치 변경" in item.value]
-    texts += [item.value for item in app.caption if "함께 저장됩니다" in item.value]
+    if texts:
+        texts.append(_save_help(app))
     return texts
 
 
@@ -296,11 +302,19 @@ def _shown_panel(app: AppTest) -> Any:
     if not heads:
         return None
     assert len(heads) == 1, heads
-    caption = next(item.value for item in app.caption if "적용한 변경은 이 화면" in item.value)
+    caption = _save_help(app)
+    assert caption.startswith("적용한 변경은 이 화면(세션)에만 있습니다."), caption
     others = re.search(r"다른 편집 (\d+)건", caption)
     side = re.search(r"설비 마스터 탭의 ([^.]+?) 표 편집도", caption)
+    # 함께 저장되는 다른 편집 · 곁표는 머리 줄 끝에도 값으로 선다(누르기 전에 보이게).
+    head_parts = heads[0].split(" — ", 1)[1].split(" · ")
+    tail = [
+        *([f"설비 마스터 다른 편집 {others.group(1)}건"] if others else []),
+        *([f"{side.group(1)} 표 편집"] if side else []),
+    ]
+    assert head_parts[len(head_parts) - len(tail) :] == tail, head_parts
     return (
-        heads[0].split(" — ", 1)[1].split(" · "),
+        head_parts[: len(head_parts) - len(tail)],
         int(others.group(1)) if others else 0,
         side.group(1).split("·") if side else [],
     )

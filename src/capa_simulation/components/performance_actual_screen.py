@@ -152,12 +152,15 @@ def _render_summary(
         )
 
     with metric_row(key=f"{key_prefix}_summary_metrics"):
+        # 지표의 뜻(무엇을 재는가 · 기준이 어디서 오는가)은 화면 머리 캡션이 아니라 이 칸의 풍선이다
+        # (설계 규칙 UI-TXT-01 · UI-TXT-02 — 칸 하나의 뜻은 그 칸 곁 풍선).
         st.metric(
             f"실적 {metric.name}",
             metric.value_text(float(overall[metric.actual_column])),
             delta=metric.gap_text(float(overall["Gap"])),
             delta_description="기준 대비",
             border=True,
+            help=metric.description,
         )
         st.metric(
             f"기준 {metric.name}",
@@ -174,8 +177,11 @@ def _render_summary(
 
     trend_column, rank_column = st.columns([1.25, 1.0], gap="medium")
     with trend_column.container(border=True):
-        st.markdown(f"#### :material/show_chart: 월별 {metric.name} 추이")
-        st.caption("기준선과 실적선의 간격이 그 달의 Gap 입니다. 생산수량 가중 평균입니다.")
+        # 읽는 법은 구획 제목 풍선이 말한다(설계 규칙 UI-TXT-01).
+        st.markdown(
+            f"#### :material/show_chart: 월별 {metric.name} 추이",
+            help="기준선과 실적선의 간격이 그 달의 Gap 입니다. 생산수량 가중 평균입니다.",
+        )
         st.plotly_chart(
             _trend_figure(trend, metric),
             width="stretch",
@@ -183,8 +189,10 @@ def _render_summary(
             key=f"{key_prefix}_trend_chart",
         )
     with rank_column.container(border=True):
-        st.markdown("#### :material/priority_high: 공정 우선순위")
-        st.caption("미달폭에 영향 물량과 연속 미달 개월을 곱한 순서입니다.")
+        st.markdown(
+            "#### :material/priority_high: 공정 우선순위",
+            help="미달폭에 영향 물량과 연속 미달 개월을 곱한 순서입니다.",
+        )
         st.plotly_chart(
             _priority_figure(priority, metric, labels),
             width="stretch",
@@ -254,10 +262,12 @@ def _render_detail(
         return
 
     with st.container(border=True):
-        st.markdown(f"#### :material/grid_on: 월 × 공정 {metric.name} Gap")
-        st.caption(
-            f"음수는 기준 미달입니다. Gap = {metric.gap_formula}({metric.gap_unit})이고 "
-            "색이 짙을수록 큽니다."
+        st.markdown(
+            f"#### :material/grid_on: 월 × 공정 {metric.name} Gap",
+            help=(
+                f"음수는 기준 미달입니다. Gap = {metric.gap_formula}({metric.gap_unit})이고 "
+                "색이 짙을수록 큽니다."
+            ),
         )
         st.plotly_chart(
             _gap_matrix_figure(view, metric, labels),
@@ -295,10 +305,12 @@ def _render_actions(
     actions = build_improvement_actions(metric, priority)
 
     with st.container(border=True):
-        st.markdown("#### :material/format_list_numbered: 우선순위 산출 결과")
-        st.caption(
-            "점수는 `미달폭 × 영향 비중 × 연속 미달 가중`입니다. 가중치는 실제 데이터 "
-            "분포를 보고 확정합니다."
+        st.markdown(
+            "#### :material/format_list_numbered: 우선순위 산출 결과",
+            help=(
+                "점수는 `미달폭 × 영향 비중 × 연속 미달 가중`입니다. 가중치는 실제 데이터 "
+                "분포를 보고 확정합니다."
+            ),
         )
         shown = priority.copy()
         shown["공정"] = labels.series(shown["공정"])

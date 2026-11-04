@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -808,7 +808,9 @@ def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_
     # 지금 층(C1 1F)은 비활성이어도 남는다(편집기가 자기 층은 뺀다). 다른 비활성 층은 빠진다.
     assert "C1 1F" in data["floors"] and "C2 3F" not in data["floors"]
     assert "C2 2F" in data["floors"]
-    assert any("이 층은 비활성(생산라인 아님)입니다" in item.value for item in infos(app))
+    assert any(
+        item.value == ":material/block: **비활성 층** · 생산라인 아님" for item in app.main.caption
+    )
 
     # 그 사이 다른 층이 꺼졌어도 이미 단 `moveTo` 는 받는다 — 적용 검사는 30개 층이다.
     repository.save_floor_states(

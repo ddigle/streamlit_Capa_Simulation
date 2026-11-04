@@ -142,6 +142,19 @@ _BULK_LABELS = {ACTIVE_STATE: "사용", **FLOOR_REASON_LABELS}
 _SAVED_REASON_LIMIT = 5
 
 SAMPLE_LOCKED = "샘플 데이터를 보는 중에는 층 사용 설정을 바꾸지 않습니다."
+# 층 목록 머리의 이름 풍선 — 하는 법은 자리 글이 아니라 여기다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+_LIST_HELP = "행을 고르면 그 층이 열립니다(키보드는 행에 초점을 두고 Shift+Space)."
+# 접힌 「비활성 층 n개」 앞 표지의 풍선 — FAB 도면에서의 모습과 여는 곳(Guide 「비활성 층」).
+_INACTIVE_HELP = (
+    "FAB 도면에서는 회색 빗금으로 흐리고 눌러도 열리지 않습니다. 호기는 그대로이고 아래 펼침에서 "
+    "행을 고르면 열어 볼 수 있습니다."
+)
+# 사용 편집 `저장` 의 풍선 — 저장 범위와 저장 없이 떠날 때 잃는 것(설계 규칙 UI-NTF-09). 자리에는
+# 바뀐 층 수만 둔다.
+_SAVE_HELP = (
+    "저장하면 모두의 Space 화면에 반영됩니다(설비 리비전은 만들지 않습니다). 도면은 저장하면 "
+    "바뀝니다. 저장하지 않고 층을 열면 고친 것은 버려집니다."
+)
 _TOGGLE_HELP = (
     "층마다 사용·비활성과 그 사유(직접 적는 글)를 고칩니다. 모두에게 같은 공용 설정이고 설비 "
     "시나리오와 상관없습니다. 끈 층은 FAB 도면에서 회색 빗금으로 흐려지고 층 목록 맨 아래 「비활성 "
@@ -770,10 +783,8 @@ def _render_tables(
         inactive = [placement for placement in placements if not states.is_active(placement.key)]
         if not inactive:
             return
-        st.caption(
-            ":material/block: FAB 도면에서는 회색 빗금으로 흐리고 눌러도 열리지 않습니다. 호기는 "
-            "그대로이고 여기서 열어 볼 수 있습니다."
-        )
+        # 자리에는 표지만, 뜻은 풍선(설계 규칙 UI-TXT-01 · UI-TXT-04).
+        st.caption(":material/block: 비활성 층", help=_INACTIVE_HELP)
         with st.expander(f"비활성 층 {len(inactive)}개", expanded=False, key=INACTIVE_EXPANDER_KEY):
             # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
             toolbar_clearance()
@@ -985,6 +996,7 @@ def _render_edit(
             key=SAVE_BUTTON_KEY,
             on_click=_save,
             args=(database_path, _generation(), count_labels),
+            help=_SAVE_HELP,
         )
         st.button(
             "되돌리기",
@@ -993,11 +1005,7 @@ def _render_edit(
             on_click=_revert,
             args=(_generation(),),
         )
-        st.caption(
-            f"바뀐 층 {changed}개 · 저장하면 모두의 Space 화면에 반영됩니다(설비 리비전은 만들지 "
-            "않습니다). 도면은 저장하면 바뀝니다. 저장하지 않고 층을 열면 고친 것은 버려집니다.",
-            width="content",
-        )
+        st.caption(f"바뀐 층 {changed}개", width="content")
     with st.container(key="space_floor_state_confirm_slot"):
         _render_confirm(database_path, count_labels)
     # 알림 칸은 늘 선다(성공·충돌·오류가 생기고 사라질 때 아래 묶음이 밀리지 않게).
@@ -1030,7 +1038,7 @@ def render_space_floor_list(
     with st.container(
         horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
     ):
-        st.caption("층 목록 · 행을 고르면 그 층이 열립니다.", width="content")
+        st.caption("층 목록", width="content", help=_LIST_HELP)
         st.space("stretch")
         if not editable:
             # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).

@@ -558,6 +558,18 @@ def _select_row(app: AppTest, table_key: str, row: int) -> None:
     app._run(states)
 
 
+# 비활성 층을 연 회차의 표지 앞머리(「… **비활성 층** · 사유」). 빠지는 곳 · 다시 켜는 곳은 그
+# 풍선이다.
+INACTIVE_MARK = ":material/block: **비활성 층** · "
+
+
+def _inactive_marks(app: AppTest) -> list[str]:
+    """층 상세 위 비활성 층 표지(본문 캡션)의 글 — 풍선이 다시 켜는 곳을 말하는지도 본다."""
+    marks = [item for item in app.main.caption if item.value.startswith(INACTIVE_MARK)]
+    assert all("「사용 편집」에서 다시 켭니다" in item.proto.help for item in marks)
+    return [item.value for item in marks]
+
+
 def test_a_row_of_the_inactive_table_opens_that_floor_with_a_banner(tmp_path: Path) -> None:
     database = _database(tmp_path, {("C1", "1F"): "UNUSED", ("C2", "1F"): "NOT_LINE"})
     app = _app(database).run()
@@ -569,7 +581,7 @@ def test_a_row_of_the_inactive_table_opens_that_floor_with_a_banner(tmp_path: Pa
     assert app.session_state["space_status_selected_building"] == "C1"
     assert app.session_state["space_status_selected_floor"] == "1F"
     assert app.query_params["floor"] == ["C1-1F"]
-    assert any("이 층은 비활성(사용 안 함)입니다" in item.value for item in infos(app))
+    assert _inactive_marks(app) == [f"{INACTIVE_MARK}사용 안 함"]
     jump = app.selectbox(key="space_status_floor_jump_C1-1F")
     assert jump.value == "C1 1F"
     assert "C1 1F" in jump.options and "C2 1F" not in jump.options
@@ -589,7 +601,7 @@ def test_the_active_table_still_opens_its_floor(tmp_path: Path) -> None:
         app.session_state["space_status_selected_building"],
         app.session_state["space_status_selected_floor"],
     ) == first
-    assert not any("이 층은 비활성" in item.value for item in infos(app))
+    assert not _inactive_marks(app)
     clear_equipment_repository()
 
 
@@ -599,7 +611,7 @@ def test_the_address_of_an_inactive_floor_opens_it_with_the_banner(tmp_path: Pat
     _ok(app)
 
     assert app.session_state["space_status_selected_floor"] == "3F"
-    assert any("이 층은 비활성(사용 안 함)입니다" in item.value for item in infos(app))
+    assert _inactive_marks(app) == [f"{INACTIVE_MARK}사용 안 함"]
     jump = app.selectbox(key="space_status_floor_jump_C1-3F")
     assert jump.value == "C1 3F"
     assert "C1 3F" in jump.options and "C2 1F" not in jump.options
@@ -819,8 +831,8 @@ def test_a_reason_with_markdown_characters_is_drawn_as_written(
     clear_equipment_repository()
     opened = _app(database, floor="C1-3F").run()
     _ok(opened)
-    (banner,) = [item.value for item in opened.info if "이 층은 비활성" in item.value]
-    assert f"이 층은 비활성({literal_markdown(REASON_WITH_MARKS)})입니다" in banner
+    (banner,) = _inactive_marks(opened)
+    assert banner == f"{INACTIVE_MARK}{literal_markdown(REASON_WITH_MARKS)}"
     assert REASON_WITH_MARKS not in banner
     clear_equipment_repository()
 

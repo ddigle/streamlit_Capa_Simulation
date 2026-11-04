@@ -65,10 +65,11 @@ def test_a_stopped_unit_stays_on_the_floor_until_its_exit_date(
     detail.run()
 
     assert not overview.exception and not detail.exception
-    # FAB 전체는 공간에 없는 호기를 따로 한 줄로 말한다 — 반출/이설일정 없이 정지한 EQ-02 하나다.
-    captions = [element.value for element in overview.caption]
-    gone = "반출/이설(없으면 정지)을 마친 1대는 공간에 없어 세지 않습니다"
-    assert any(gone in text for text in captions)
+    # FAB 전체는 공간에 없는 호기를 값 한 마디로 따로 말하고 까닭은 풍선이다 — 반출/이설일정 없이
+    # 정지한 EQ-02 하나다.
+    (gone,) = [element for element in overview.caption if "반출/이설 마침" in element.value]
+    assert gone.value.endswith("반출/이설 마침 1대 제외")
+    assert "반출/이설(없으면 정지)을 마친 호기는 공간에 없어" in gone.proto.help
     floor = viewer_calls[-1]
     assert floor["scope"] == "floor" and floor["floor"] == "C1 1F"
     # 도면이 그리는 목록은 페이더 범위(오늘 ±12개월)의 합집합이라 열흘 전에 정지한 EQ-02 도 든다 —

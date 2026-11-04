@@ -94,6 +94,9 @@ def render_pending_source(
     없다. 들어올 값의 이름을 적어 두면 연결 협의에서 그대로 요구사항이 된다.
     """
     with st.container(border=True):
-        st.markdown(f"#### :material/pending: {subject}")
-        st.caption(f"{with_subject_particle(source)} 붙으면 아래 값이 이 자리에 들어옵니다.")
+        # 이 자리의 뜻은 제목 곁 풍선, 자리에는 들어올 값의 이름만(설계 규칙 UI-TXT-01 · UI-LAY-10).
+        st.markdown(
+            f"#### :material/pending: {subject}",
+            help=f"{with_subject_particle(source)} 붙으면 아래 값이 이 자리에 들어옵니다.",
+        )
         st.markdown("\n".join(f"- {item}" for item in expects))
