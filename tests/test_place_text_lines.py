@@ -10,6 +10,11 @@
   「· 이 화면에 없음」 이 표지이고 남는 까닭은 「공정」 칸 풍선이다(칸 밑 안내 문장 없음).
   선행 B/O · 선행 입고의 조회기간 밖 저장분은 `test_unchanged_profile_saves.py`, 판정 기준의
   조회기간 밖 월별 기준은 `test_threshold_editor.py` 가 본다.
+- HOME 설정 팝업의 값 줄 · 입력 곁 경고에는 설명 꼬리를 두지 않는다(UI-TXT-01 · UI-TXT-02) —
+  기본 프리셋은 「**기본 프리셋** · 이름」 값 줄 + 풍선, 확보율 보정의 짝 없는 행 · 0 에서 자른
+  행은 건수 · 행만(남는 까닭 · 자르는 까닭은 Guide), Past Data 붙여넣기 칸의 표 설명은 글 칸
+  풍선. 비교 시나리오 · 주요 Case 의 값 줄은 `test_comparison_profile_writeback.py` ·
+  `test_home_main_cases_picker.py` 가 본다.
 """
 
 from __future__ import annotations
@@ -24,7 +29,12 @@ from streamlit.testing.v1 import AppTest
 from test_reference_integrity_page import TEST_SCRIPT as REFERENCE_INTEGRITY_SCRIPT
 
 from capa_simulation.components import performance_actual_screen as screen
-from capa_simulation.components.home_preference import ABSENT_KEY_PROCESS_HELP
+from capa_simulation.components.home_preference import (
+    ABSENT_KEY_PROCESS_HELP,
+    DEFAULT_PRESET_HELP,
+    DEFAULT_PRESET_LABEL,
+)
+from capa_simulation.components.past_data_management import PAST_TABLE_SPECS
 from capa_simulation.persistence.cache import (
     clear_global_key_process_cache,
     clear_scenario_repository,
@@ -212,3 +222,76 @@ def test_a_preset_process_absent_here_is_a_chip_marker_with_a_field_tooltip(
     (field,) = app.multiselect
     assert not field.help
     assert not [option for option in field.options if "이 화면에 없음" in option]
+
+
+def test_the_default_preset_is_a_value_line_with_its_meaning_in_a_tooltip(
+    key_process_database: Path,
+) -> None:
+    """「고칠 프리셋」 밑 기본 프리셋은 「**기본 프리셋** · 「이름」」 값 줄이다 — 「기본」 의
+    뜻(새로 연 HOME 이 처음 보는 것)은 풍선이고 줄에 괄호 설명을 붙이지 않는다."""
+    app = AppTest.from_string(_key_process_script(key_process_database), default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    head = f"**{DEFAULT_PRESET_LABEL}**"
+    lines = [item for item in app.caption if str(item.value).startswith(head)]
+    assert [str(item.value) for item in lines] == [f"{head} · 「다른 라인 포함」"]
+    assert lines[0].help == DEFAULT_PRESET_HELP
+    assert "처음 보는" in DEFAULT_PRESET_HELP
+    assert not [text for text in _lines(app.caption) if "처음 보는" in text]
+
+
+# ------------------------------------------------------------ HOME 설정 확보율 보정 경고
+
+
+def _execution_notices() -> None:
+    import pandas as pd
+
+    from capa_simulation.components.home_preference import _render_execution_notices
+    from capa_simulation.components.process_labels import ProcessLabels
+
+    _render_execution_notices(
+        pd.DataFrame({"생산계획년월": [202703], "공정": ["HBOND"]}),
+        pd.DataFrame({"생산계획년월": [202702, 202705], "공정": ["DEMO-A", "DEMO-B"]}),
+        ProcessLabels(),
+    )
+
+
+def test_the_execution_notices_name_rows_and_the_guide_says_why() -> None:
+    """확보율 보정의 짝 없는 행 · 0 에서 자른 행 경고는 팝업 안 입력 곁 자리 글이고(2026-11-03
+    결정) 건수 · 행만 적는다 — 저장이 남아 다른 시나리오에서 쓰인다는 것과 0 에서 자르는 까닭은
+    Guide 가 말한다."""
+    app = AppTest.from_function(_execution_notices, default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    assert _lines(app.warning) == [
+        "이번 시나리오·조회기간에 짝이 없어 반영되지 않은 행 1건: 27.03·HBOND",
+        "조정 결과가 0% 아래로 내려가 0 에서 자른 행 2건",
+    ]
+    guide = (ROOT / "src/capa_simulation/guides/home.md").read_text(encoding="utf-8")
+    assert "그 공정이 있는 시나리오에서는 그대로 적용됩니다" in guide
+    assert "0 에서 자르고" in guide
+
+
+# ---------------------------------------------------------- HOME 설정 Past Data 붙여넣기 칸
+
+
+def _past_paste_form() -> None:
+    from capa_simulation.components.past_data_management import (
+        PAST_TABLE_SPECS,
+        _render_paste_form,
+    )
+
+    _render_paste_form(PAST_TABLE_SPECS[0], {})
+
+
+def test_the_past_data_paste_box_describes_its_table_in_the_box_tooltip() -> None:
+    """붙여넣기 칸 위에는 되돌릴 수 없는 덮어쓰기 한 줄만 서고(UI-NTF-09), 그 표에 넣을 것(단위 ·
+    받지 않는 글자)은 글 칸 풍선이다."""
+    app = AppTest.from_function(_past_paste_form, default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    spec = PAST_TABLE_SPECS[0]
+    (area,) = app.text_area
+    assert area.help == spec.caption
+    assert not [text for text in _lines(app.caption) if text == spec.caption]
+    assert [text for text in _lines(app.caption) if "통째로 바뀝니다" in text]

@@ -107,23 +107,17 @@ def test_overlap_notes_name_the_same_pairs_but_do_not_block() -> None:
     same = main_case_overlap_notes(
         official_revision_id="S0-R2", cases=[("S1", "S1-R1"), ("S1", "S1-R1")]
     )
-    assert same == [
-        "Case1 과 Case2 는 같은 시나리오·리비전입니다 — 저장은 했고, "
-        "두 슬롯이 같은 내용을 보입니다."
-    ]
+    assert same == ["Case1 · Case2"]
 
     official = main_case_overlap_notes(
         official_revision_id="S0-R2", cases=[("S0", "S0-R2"), ("S1", "S1-R1")]
     )
-    assert official == [
-        "Case1 은 지금 공식버전과 같은 리비전입니다 — 슬롯 1(공식버전)과 같은 내용을 보입니다."
-    ]
+    assert official == ["Case1 · 공식버전"]
 
     both = main_case_overlap_notes(
         official_revision_id="S0-R2", cases=[("S0", "S0-R2"), ("S0", "S0-R2")]
     )
-    assert len(both) == 3
-    assert both[2].startswith("Case2 는 지금 공식버전과")
+    assert both == ["Case1 · Case2", "Case1 · 공식버전", "Case2 · 공식버전"]
 
 
 def test_blank_or_different_cases_make_no_notes() -> None:

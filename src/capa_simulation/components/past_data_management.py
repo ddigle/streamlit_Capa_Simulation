@@ -79,7 +79,9 @@ class PastTableSpec:
     title: str
     icon: str
     columns: tuple[str, ...]
-    # 무엇을 넣는 표인지. 상자 본문이 아니라 붙여넣기 칸에 적는다 — 넣을 때 읽는 글이다.
+    # 무엇을 넣는 표인지 — 붙여넣기 글 칸의 풍선(`help=`)이다. 넣을 때 읽는 글이라 그 칸에 두되 칸
+    # 위에 늘 띄워 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02 — 같은 말이 Guide 「Past Data」 에도
+    # 있다).
     caption: str
 
 
@@ -237,7 +239,6 @@ def _render_paste_form(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> N
     회차에 선다(팝업 안 위젯의 회차는 팝업만 돈다). 열림 칸이 남아 「설정」 팝업은 그대로 열려 있다.
     """
     with st.container(border=True):
-        st.caption(spec.caption)
         # 되돌릴 수 없는 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다.
         st.caption(PAST_REPLACE_NOTICE)
         with st.form(f"{HOME_PAST_FORM_KEY}_{spec.name}", border=False):
@@ -246,6 +247,7 @@ def _render_paste_form(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> N
                 key=f"{PAST_CLIPBOARD_KEY}_{spec.name}",
                 height=180,
                 placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+                help=spec.caption,
             )
             submitted = st.form_submit_button(
                 "붙여넣기 읽기",

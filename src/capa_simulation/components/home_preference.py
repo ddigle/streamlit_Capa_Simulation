@@ -276,6 +276,15 @@ ABSENT_KEY_PROCESS_HELP = (
     "설정이라 저장해도 프리셋에 그대로 남고 그 공정이 있는 화면에서는 그려집니다. 빼려면 칩을 "
     "지웁니다."
 )
+# 비교 시나리오 상자 아래 값 줄(`_comparison_active_note`) — 지금 화면에 올라온 리비전이 이 비교
+# 시나리오에 들어 있을 때만 선다. 고른 비교 리비전이 바로 그 리비전이면 「같은 리비전」 표지이고 그
+# 뜻(증감이 모두 0)은 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+COMPARISON_ACTIVE_LABEL = "지금 화면 리비전"
+COMPARISON_SAME_LABEL = "같은 리비전"
+COMPARISON_SAME_HELP = (
+    "고른 비교 리비전이 지금 화면이 쓰는 리비전입니다 — 자기와 견주는 셈이라 GAP 증감이 모두 "
+    "0 으로 나옵니다."
+)
 # 「비교 · 주요 Case」 탭의 두 상자 폭 — 비교 시나리오(두 상자 세로) : 주요 Case(Case 두 칸 나란히).
 CASES_COLUMN_WEIGHTS = (2, 3)
 # Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
@@ -316,6 +325,12 @@ KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
 KEY_PROCESS_ICON = ":material/dataset:"
 KEY_PROCESS_EDIT_TARGET_KEY = "home_key_process_preset_edit"
 NEW_KEY_PROCESS_PRESET = "＋ 새 프리셋"
+# 「고칠 프리셋」 밑 값 줄 — 지금 기본(맨 앞) 프리셋 이름. 「기본」 의 뜻은 풍선이다.
+DEFAULT_PRESET_LABEL = "기본 프리셋"
+DEFAULT_PRESET_HELP = (
+    "새로 연 HOME 이 처음 보는 프리셋(맨 앞)입니다. 「기본으로」 가 고른 프리셋을 맨 앞으로 "
+    "옮깁니다."
+)
 DIMENSION_COLUMN = "구분"
 # 구획 제목의 글자 크기와 앞 강조 막대의 치수. `home_rendering` 의 `Summary` 상자가 같은
 # 값을 CSS 가상요소로 다시 그리므로 상수로 내보낸다 — 두 곳에 숫자를 따로 적으면 한쪽만
@@ -727,7 +742,7 @@ def _render_comparison_picker(database_path: str) -> None:
     **지금 활성인 시나리오도 고를 수 있다.** 리비전이 달라지며 계획이 얼마나 바뀌었는지가
     비교의 중요한 쓰임이고, 시나리오가 하나뿐이면 그것을 빼는 순간 고를 것이 없어진다.
     지금 활성인 리비전을 그대로 고르면 자기와 견주는 셈이라 증감이 전부 0 이므로, 상자
-    아래 캡션으로 알린다(`_comparison_active_note`).
+    아래 값 줄의 「같은 리비전」 표지와 그 풍선으로 알린다(`_comparison_active_note`).
 
     **선택지 라벨에는 활성 상태를 붙이지 않는다.** Streamlit 1.63 선택 상자는 고른 항목의 라벨
     글자를 주고받는다. 라벨이 활성 리비전에 따라 바뀌면(전에는 「· 현재 활성」·「· 현재
@@ -814,29 +829,28 @@ def _render_comparison_picker(database_path: str) -> None:
             ),
         )
         if note is not None:
-            st.caption(note)
+            line, line_help = note
+            st.caption(line, help=line_help)
 
 
 def _comparison_active_note(
     *,
     selected_revision_id: object,
     active_revision: RevisionSummary | None,
-) -> str | None:
-    """고른 비교 대상과 지금 화면에 올라온 리비전의 관계를 상자 아래 한 줄로 적는다.
+) -> tuple[str, str | None] | None:
+    """고른 비교 대상과 지금 화면에 올라온 리비전의 관계 — 상자 아래 값 줄 하나와 그 풍선.
 
     선택지 라벨에 붙이던 활성 표시를 여기로 옮겼다. `active_revision` 은 비교 시나리오의 리비전
-    가운데 지금 활성인 것이다 — 비교 시나리오가 활성 시나리오가 아니면 없다.
+    가운데 지금 활성인 것이다 — 비교 시나리오가 활성 시나리오가 아니면 없다. 줄은 「**라벨** ·
+    값」 이고 설명 문장을 두지 않는다 — 고른 리비전이 바로 그것이면 「같은 리비전」 표지이고 그 뜻은
+    풍선(`COMPARISON_SAME_HELP`)이다.
     """
     if active_revision is None:
         return None
     if selected_revision_id == active_revision.revision_id:
-        return (
-            "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 0 으로 나옵니다."
-        )
-    return (
-        f"지금 화면에는 이 시나리오의 {literal_markdown(revision_label(active_revision))} "
-        "리비전이 올라와 있습니다."
-    )
+        return f"**{COMPARISON_SAME_LABEL}** · {COMPARISON_ACTIVE_LABEL}", COMPARISON_SAME_HELP
+    label = literal_markdown(revision_label(active_revision))
+    return f"**{COMPARISON_ACTIVE_LABEL}** · {label}", None
 
 
 def _persist_comparison_choice(database_path: str, revision_ids: Collection[str]) -> None:
@@ -2223,7 +2237,7 @@ def _render_key_process_editor(
             st.session_state[KEY_PROCESS_EDIT_TARGET_KEY] = targets[0]
         # 선택지 라벨에 「· 기본」을 붙이지 않는다. 기본(맨 앞)은 `기본으로`·삭제로 바뀌는데, 라벨이
         # 따라 바뀌면 브라우저가 옛 라벨을 되보내 바뀐 값으로 읽힌다(AGENTS 9장 — 선택 상자 라벨에
-        # 회차마다 바뀌는 상태를 넣지 않는다). 무엇이 기본인지는 아래 캡션이 말한다.
+        # 회차마다 바뀌는 상태를 넣지 않는다). 무엇이 기본인지는 아래 값 줄이 말한다.
         target = st.selectbox(
             "고칠 프리셋",
             options=targets,
@@ -2233,7 +2247,8 @@ def _render_key_process_editor(
             persist_state="session",
         )
         if names:
-            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 {quoted(names[0])}입니다.")
+            # 「**라벨** · 값」 줄이고 「기본」 의 뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+            st.caption(f"**{DEFAULT_PRESET_LABEL}** · {quoted(names[0])}", help=DEFAULT_PRESET_HELP)
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         stale = _stale_key_process_target(seen_target, profile, target, current)
@@ -2742,7 +2757,12 @@ def _render_execution_notices(
     clamped: pd.DataFrame,
     process_labels: ProcessLabels,
 ) -> None:
-    """넣었는데 화면이 그대로인 이유와, 0 에서 잘린 행을 알린다."""
+    """넣었는데 화면이 그대로인 행과, 0 에서 잘린 행을 표 밑 입력 곁 경고로 알린다.
+
+    경고는 건수 · 어느 행인지만 적는다 — 짝 없는 행이 공용 저장에 남아 그 공정이 있는 시나리오에서
+    쓰인다는 것과 0 에서 자르는 까닭은 Guide(「확보율 보정」)가 말한다(설계 규칙 UI-TXT-01 ·
+    UI-TXT-02).
+    """
     if not unmatched.empty:
         examples = ", ".join(
             f"{month_label(int(month))}·{literal_markdown(process_labels.label(process))}"
@@ -2753,14 +2773,11 @@ def _render_execution_notices(
             )
         )
         st.warning(
-            f"이번 시나리오·조회기간에 짝이 없어 반영되지 않은 행 {len(unmatched)}건: "
-            f"{examples}. 공용 설정이라 저장은 남아 있고, 해당 공정이 있는 시나리오에서는 "
-            "그대로 적용됩니다.",
+            f"이번 시나리오·조회기간에 짝이 없어 반영되지 않은 행 {len(unmatched)}건: {examples}",
             icon=":material/link_off:",
         )
     if not clamped.empty:
         st.warning(
-            f"조정 결과가 0% 아래로 내려가 0 에서 자른 행이 {len(clamped)}건 있습니다. "
-            "막대 길이와 순위가 의미를 잃지 않도록 자릅니다.",
+            f"조정 결과가 0% 아래로 내려가 0 에서 자른 행 {len(clamped)}건",
             icon=":material/vertical_align_bottom:",
         )

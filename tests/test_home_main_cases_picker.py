@@ -21,6 +21,9 @@ from capa_simulation.components.home_main_cases import (
     IDLE_REVISION_CHOICE,
     MAIN_CASE_FOCUS_KEY,
     MAIN_CASE_NOTICE_KEY,
+    MAIN_CASE_OVERLAP_HELP,
+    MAIN_CASE_OVERLAP_LABEL,
+    OFFICIAL_SLOT_HELP,
     UNSET_CHOICE,
     case_head_markup,
     main_case_revision_key,
@@ -148,6 +151,11 @@ def test_choosing_saves_the_pair_and_a_new_session_reopens_it(tmp_path: Path) ->
     app = _ran(_app(database).run())
     assert app.selectbox(key=CASE1_SCENARIO).value is None
     assert any("슬롯 1 · 공식버전" in text and "공식 v1" in text for text in _texts(app))
+    # 슬롯 1 줄은 값만이고 공식 지정의 자리(길 안내)는 그 줄의 풍선이다(설계 규칙 UI-TXT-03).
+    [official_line] = [line for line in app.markdown if "슬롯 1 · 공식버전" in str(line.value)]
+    assert "시나리오 관리" not in str(official_line.value)
+    assert official_line.help == OFFICIAL_SLOT_HELP
+    assert "시나리오 관리" in OFFICIAL_SLOT_HELP
     assert _version(database) == 0
 
     _ran(app.selectbox(key=CASE1_SCENARIO).set_value(s2).run())
@@ -344,12 +352,23 @@ def test_overlaps_are_saved_and_named_under_the_boxes(tmp_path: Path) -> None:
 
     _ran(app.selectbox(key=CASE2_SCENARIO).set_value(s2).run())
     assert _profile(database) == ((s2, s2_newer), (s2, s2_newer))
-    assert any("Case1 과 Case2 는 같은 시나리오·리비전입니다" in text for text in _texts(app))
+    assert _overlap_lines(app) == ["**같은 리비전** · Case1 · Case2"]
 
     _ran(app.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
     assert _profile(database) == ((s1, s1_revision), (s2, s2_newer))
-    assert any("Case1 은 지금 공식버전과 같은 리비전입니다" in text for text in _texts(app))
-    assert not any("Case1 과 Case2 는" in text for text in _texts(app))
+    assert _overlap_lines(app) == ["**같은 리비전** · Case1 · 공식버전"]
+
+
+def _overlap_lines(app: AppTest) -> list[str]:
+    """상자 아래 겹침 값 줄 — 「**같은 리비전** · …」 이고 그 뜻(같은 내용 · 저장은 됨)은
+    풍선이다."""
+    lines = [
+        caption
+        for caption in app.caption
+        if str(caption.value).startswith(f"**{MAIN_CASE_OVERLAP_LABEL}** · ")
+    ]
+    assert all(caption.help == MAIN_CASE_OVERLAP_HELP for caption in lines)
+    return [str(caption.value) for caption in lines]
 
 
 def test_an_unset_case_shows_the_unset_words_not_the_english_placeholder(tmp_path: Path) -> None:

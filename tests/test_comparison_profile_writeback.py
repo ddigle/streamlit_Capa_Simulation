@@ -214,7 +214,7 @@ def test_the_comparison_labels_do_not_follow_the_active_revision(
     app = AppTest.from_string(PICKER_SCRIPT, default_timeout=120)
     app.session_state["database_path"] = str(database)
 
-    seen: list[tuple[tuple[str, ...], tuple[str, ...], list[str]]] = []
+    seen: list[tuple[tuple[str, ...], tuple[str, ...], list[tuple[str, str | None]]]] = []
     for active in ("다른-시나리오의-리비전", other_id, official_id):
         app.session_state["active_revision"] = active
         app.run()
@@ -223,7 +223,7 @@ def test_the_comparison_labels_do_not_follow_the_active_revision(
             (
                 tuple(app.selectbox(key=COMPARISON_SCENARIO_KEY).options),
                 tuple(app.selectbox(key=COMPARISON_REVISION_KEY).options),
-                [str(caption.value) for caption in app.caption],
+                [(str(caption.value), caption.help or None) for caption in app.caption],
             )
         )
 
@@ -232,8 +232,19 @@ def test_the_comparison_labels_do_not_follow_the_active_revision(
     scenarios, revisions = next(iter(labels))
     assert not [label for label in (*scenarios, *revisions) if "현재" in label]
     assert seen[0][2] == []
-    assert any("지금 화면이 쓰고 있는 리비전" in caption for caption in seen[1][2])
-    assert any("리비전이 올라와 있습니다" in caption for caption in seen[2][2])
+    # 고른 비교 리비전이 지금 화면 리비전이면 「같은 리비전」 값 줄이고 그 뜻(증감 0)은 풍선이다.
+    assert seen[1][2] == [
+        (
+            f"**{home_preference.COMPARISON_SAME_LABEL}** · "
+            f"{home_preference.COMPARISON_ACTIVE_LABEL}",
+            home_preference.COMPARISON_SAME_HELP,
+        )
+    ]
+    assert "증감이 모두 0" in home_preference.COMPARISON_SAME_HELP
+    # 다른 리비전을 골랐으면 지금 화면에 올라온 리비전을 값 줄로 적는다(설명 문장 없이).
+    [(other_line, other_help)] = seen[2][2]
+    assert other_line.startswith(f"**{home_preference.COMPARISON_ACTIVE_LABEL}** · ")
+    assert other_help is None
     assert app.selectbox(key=COMPARISON_REVISION_KEY).value == other_id
     assert _profile_version(database) == version, "고르지 않았는데 공용 프로필을 다시 썼습니다."
 
