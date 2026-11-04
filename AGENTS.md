@@ -5950,7 +5950,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리에도 그대로다(`PLACE_KEPT`).
 - 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
   「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_EMPTY`(빈
-  상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(성공 상자와 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
+  상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
   `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다. 동작은 끝났고 그 자리에
