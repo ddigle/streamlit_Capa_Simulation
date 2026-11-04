@@ -411,7 +411,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/calculation_result.py` — `산출 결과` 화면. `대당 Capa`·`소요대수`·`확보율` 탭(언패킹 순서 = `TAB_NAMES`)과
   제외 목록을 보인다. 설명은 `guides/calculation_result.md`.
   - 대당 Capa·소요대수 프레임을 풀지 않는다 — 요약은 `get_scenario_result_summary`, 표는 키 전용 캐시에서 그 탭이
-    열린 회차에만 꺼내고 오류도 그 탭에만 띄운다(`test_calculation_result_tabs.py`). `STEP별` 은 공정을 골라야 계산한다.
+    열린 회차에만 꺼내고 오류도 그 탭에만 띄운다(`test_calculation_result_tabs.py`). `STEP별` 은 공정을 골라야 계산한다 —
+    고르지 않으면 표 자리에 빈 결과 평문 한 줄(`STEP_VIEW_EMPTY`)만 서고, 고르는 법은 `표시 방식` 풍선 · 공정 필터 자리 글 ·
+    Guide, STEP별에서 잠긴 `집계 수준` 은 까닭 풍선이다(설계 규칙 UI-TXT-01 · 04 · UI-INP-07).
   - 표 조건 카드 하나를 세 탭이 쓰고 열린 탭 것만 그린다. 대당 Capa `표시 방식` 은 카드 첫 칸이다(「하위 보기 전환은 본문」 의
     예외 — 2026-11-02 사용자 요청(검수표), 9장). 대당 Capa 탭 본문에는 표만 선다(표 위 그림은 두지 않는다 — 같은 요청).
     측정률 가정(`HM-02`)과 제외(`ST-14`)는 상태 알림이고, `제외 기준정보` 목록(내보내기 프레임 `exclusion_export`)은 ST-14
@@ -420,7 +422,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     넘으면 본문 `제외 기준정보 확인` 펼침(기억 칸 `unit_capacity_exclusions_expander`)이 남는다.
   - 소요대수 탭은 경로 쪽 제외(`ST-15` · PKG Buffer 밖 `ST-21`)와 계획 쪽(`ST-01` — Static Capa 와 같은 코드 · 범위)을 상태
     알림으로 내고 목록(`소요대수 제외 기준정보` · 계획 쪽 둘)은 본문 펼침에 남긴다 — 다른 화면 · 저장 검사의 안내가 「산출 결과 →
-    소요대수 탭」 으로 가리키는 자리다. 펼침 안 첫 줄(`st.caption`)이 고칠 곳이다. 알림은 그 탭이 열린 회차에만 낸다.
+    소요대수 탭」 으로 가리키는 자리다. 계획 쪽 두 목록의 고칠 곳은 펼침 안 자리 글이 아니라 까닭 칸(`누락 기준정보` ·
+    `제외사유`) 머리 풍선이다(`render_exclusion_table(column_help=…)` — 설계 규칙 UI-TXT-01 · 02 · 03). 알림은 그 탭이 열린
+    회차에만 낸다.
 - `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
   바로 깊게 보는 목적지**다(머리말, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
   본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
@@ -884,10 +888,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     때만 고른 공정만 계산한다. 결과와 무관한 조작은 소요대수를 다시 풀지 않는다(`get_standard_target_split`).
   - 이 캐시들은 프로세스 전역이라 화면 테스트가 테스트마다 비운다(`tests/test_standard_target_capa_page.py`).
   - 저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 표시 항목(`AVAILABILITY_BASED_METRICS` — 일 표준 가능량·가용대수)만
-    입력 안내로 멈춘다. 대당 일 Capa·로직 분석은 그대로 선다 — 계산(`build_weekly_standard_target_capacity`)은 빈
+    빈 결과 평문 한 줄(`AVAILABILITY_EMPTY` — 넣는 곳은 Guide)로 멈추고, 지울 것이 없는 `입력 초기화` 는 잠긴 채 까닭 풍선이다. 대당 일 Capa·로직 분석은 그대로 선다 — 계산(`build_weekly_standard_target_capacity`)은 빈
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
   - 가용대수가 없어 빈칸인 공정·주차는 상태 알림 `ST-17`(범위 = 활성 리비전 + 조회일, 내용 = (공정, 주차) 목록)이고
-    결과 상자 안 늘 서 있는 칸(`availability_notice_slot`)에는 「누락 공정·주차 확인」 펼침만 선다.
+    결과 상자 안 늘 서 있는 칸(`availability_notice_slot`)에는 「누락 공정·주차 확인」 펼침만 선다. 표시명이 입혀진 동안
+    그 표의 공정 칸 머리 풍선이 붙여넣기에는 원본 공정명(CSV 양식)을 쓴다고 말한다.
+  - 붙여넣기 팝업에는 늘 서는 설명 글이 없다 — 덮어쓰는 규칙은 붙여넣는 칸 풍선, 되돌릴 수 없다는 것은 `붙여넣기 적용`
+    단추 풍선이다(설계 규칙 UI-TXT-01 · UI-NTF-09). 로직 분석의 일곱 칸은 앞 칸이 빌 때 잠기고 까닭 풍선을 달며, 다 고르기
+    전에는 빈 결과 한 줄(`LOGIC_EMPTY`)이다.
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
     가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`formula_text.consistent_places` — 「54,698.63
@@ -1303,7 +1311,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 보이는 행이 바뀌면 `discard_editor` 로 새 위젯을 세운다. 보기 설정 위젯은 `st.form` 밖이고 `value_labels` 는
     보이는 글자만 바꾼다.
 - `src/capa_simulation/components/securement_heatmap.py` — `산출 결과` 의 공정 × 월 확보율 상태 3색 격자다(범례 없이
-  hover·칸 안 숫자가 값을 말한다).
+  hover·칸 안 숫자가 값을 말한다). 칸 안 숫자는 정수 % 이고 정수로 0 이 되는 0 아닌 값은 유효 숫자 둘로 적는다(`cell_text`).
   - 경계는 공용 판정 기준 프로필(`load_global_securement_threshold`)이고 두 축 모두 범주, 모든 행에 공정 이름이다.
   - HOME `주요공정 확보율`(`home_figures.build_key_process_heatmap_figures`)과는 다른 그림이고 판정 경계의 뜻만 같다.
 - `src/capa_simulation/components/capacity_gate.py` — 리비전 저장·복제·파생 저장·공식 발행 **전에** 시나리오 전체
@@ -1324,8 +1332,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   다른 쪽에서 다시 뜨지 않는다. 짧은 글(`assumption_short`)은 표 · 건수와 고칠 곳(기준 정보)을 말한다. `알림 모음` 도 같은
   문장(`assumption_message`)을 쓴다(6장 대당 Capa). 가정이 없어도 부른다(해소).
 - `src/capa_simulation/components/required_exclusion_notice.py` — 소요대수에 들지 않은 수요의 건수 문장
-  (`required_exclusion_message`), 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists` — 펼침 안 첫 줄이
-  고칠 곳), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
+  (`required_exclusion_message`), 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists` — 고칠 곳은 까닭
+  칸 머리 풍선 `LOAD_EXCLUSION_HELP` · `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
   `alert_required_exclusions`)를 낸다.
   - 문장은 `알림 모음`·`capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
@@ -1355,7 +1363,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 표(`소요대수 제외 기준정보` · 계획 쪽 목록 둘,
-  표가 커서 알림에 싣지 못한 대당 Capa `제외 기준정보 확인`)를 그리는 단일 렌더러다. 화면은 표시명 복사본, CSV 는 원본이고,
+  표가 커서 알림에 싣지 못한 대당 Capa `제외 기준정보 확인`)를 그리는 단일 렌더러다(`column_help` — 칸 머리 풍선). 화면은
+  표시명 복사본, CSV 는 원본이고,
   캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다. 내보내기 프레임(`exclusion_export` — 분류 칸을 공용 표시순서로
   세운 원본)은 대당 Capa 알림에 딸린 표(`state_alerts.alert_table`)도 쓴다.
 - `src/capa_simulation/components/plan_comparison_dumbbell.py` — 두 시나리오의 기간 계획 물량 차이를 분류별 덤벨로

@@ -75,6 +75,15 @@ def _tier(rate: float, *, thresholds: SecurementThresholds, month: int | None) -
     }[thresholds.status(rate, month)]
 
 
+def cell_text(percent: float) -> str:
+    """칸 안 숫자(정수 %). 정수로 0 이 되는 0 아닌 확보율은 유효 숫자 둘로 적는다 — 「0」 은
+    확보율이 정말 0 인 칸에만 선다(설계 규칙 UI-DAT-06)."""
+    text = f"{percent:,.0f}"
+    if percent != 0 and float(text.replace(",", "")) == 0:
+        return f"{percent:.2g}"
+    return text
+
+
 def _column_month(column: object) -> int | None:
     """월 컬럼 `"202601"` 의 `YYYYMM`. 월이 아닌 컬럼이면 `None` 이다."""
     try:
@@ -155,7 +164,7 @@ def build_securement_heatmap(
         for row in rates.to_numpy()
     ]
     show_text = len(row_names) * len(month_columns) <= MAX_LABELLED_CELLS
-    text = [["" if value is None else f"{value:,.0f}" for value in row] for row in percents]
+    text = [["" if value is None else cell_text(value) for value in row] for row in percents]
 
     figure = go.Figure(
         go.Heatmap(

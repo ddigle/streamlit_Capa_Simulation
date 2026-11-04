@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pandas as pd
 import streamlit as st
 
@@ -54,8 +56,11 @@ def render_exclusion_table(
     labels: ProcessLabels,
     file_name: str,
     key: str,
+    column_help: Mapping[str, str] | None = None,
 ) -> None:
-    """제외 목록 하나를 표시명 표와 원본 CSV 로 그린다."""
+    """제외 목록 하나를 표시명 표와 원본 CSV 로 그린다. `column_help` 는 칸 머리 풍선(칸 이름 →
+    글)이다 — 그 칸의 값을 어디서 고치는지는 목록 곁 자리 글이 아니라 칸 머리 풍선이 말한다(설계
+    규칙 UI-TXT-02 · 03)."""
     exported = exclusion_export(
         exclusions, dimensions=dimensions, display_order=display_order, page=page, tab=tab
     )
@@ -69,4 +74,13 @@ def render_exclusion_table(
     )
     # 표 도구 막대가 바로 위 CSV 단추에 닿지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
     toolbar_clearance()
-    st.dataframe(displayed, hide_index=True, width="stretch")
+    st.dataframe(
+        displayed,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            column: st.column_config.Column(help=text)
+            for column, text in (column_help or {}).items()
+            if column in displayed.columns
+        },
+    )

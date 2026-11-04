@@ -41,6 +41,7 @@ from capa_simulation.components.table_toolbar import (
     CSV_TEMPLATE_LABEL,
     render_csv_download,
     render_table_heading,
+    toolbar_clearance,
 )
 from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
@@ -82,7 +83,6 @@ from capa_simulation.services.display_order_scopes import (
 )
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
-from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.simulation_cache import (
     csv_export_key,
     display_order_digest,
@@ -142,6 +142,25 @@ OUTPUT_METRICS = {
 OUTPUT_OPTIONS = [*OUTPUT_METRICS, "로직 분석"]
 # 주차별 가용대수를 곱해 구하는 지표. 가용대수 입력이 없으면 이 둘만 빈칸이 된다.
 AVAILABILITY_BASED_METRICS = frozenset({"일 표준 가능량", "가용대수"})
+# 로직 분석에서 일곱 칸을 다 고르지 않은 회차의 빈 결과 한 줄.
+LOGIC_EMPTY = "산출 근거를 그릴 한 건이 아직 없습니다."
+# 주차별 가용설비가 한 건도 저장되지 않아 가용대수를 곱하는 표를 그릴 수 없을 때의 빈 결과 한 줄 —
+# 넣는 곳(작업 줄 「가용설비 붙여넣기」)은 Guide 가 말한다(UI-TXT-01 · 02 · 04).
+AVAILABILITY_EMPTY = "저장된 주차별 가용대수가 없습니다."
+# 「누락 공정·주차 확인」 표의 공정 칸 머리 풍선 — 표시명이 입혀진 동안만 단다(숨은 데이터
+# 안내는 칸 머리 풍선 — UI-TXT-04).
+MISSING_PROCESS_HELP = (
+    "화면 표시명입니다 — 붙여넣기에는 작업 줄 「CSV 양식 다운로드」 양식의 원본 공정명을 씁니다."
+)
+# 붙여넣기 팝업의 두 풍선. 덮어쓰는 규칙은 붙여넣는 칸에, 되돌릴 수 없다는 것은 누르는 단추에 둔다 —
+# 누르기 전에 알아야 하므로 Guide 로만 보내지 않는다(UI-NTF-09 — 단추 풍선, 2026-09-29 2차 리뷰).
+PASTE_RULE_HELP = (
+    "양식에는 지금 저장된 가용대수가 채워져 있습니다. 값을 적은 공정·Weeknum 만 붙여넣은 "
+    "값으로 덮어쓰고, 가용대수를 비운 칸은 저장된 값(없으면 미설정)을 그대로 둡니다 — 0 을 "
+    "적으면 「0 대」로 저장됩니다."
+)
+PASTE_APPLY_HELP = "설비 DB 에 최신본 하나만 남아 이전 값으로 되돌릴 수 없습니다."
+CLEAR_LOCKED_HELP = "지울 저장값이 없습니다."
 LOGIC_FILTER_KEYS = {
     "Weeknum": "standard_target_logic_weeknum",
     "공정": "standard_target_logic_process",
@@ -188,13 +207,16 @@ def _required_selectbox(
     options: list[str],
     key: str,
     *,
-    disabled: bool = False,
+    waits_for: str | None = None,
     format_func: Callable[[object], str] = str,
 ) -> str | None:
     # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없으면 빈 선택). 적은 값만 브라우저에 가므로
     # 보이는 글자가 바뀌는 회차(공정 표시명의 「표시명 (원본)」 가르기)에도 브라우저가 새 글자를
     # 받는다 — 적지 않으면 옛 글자를 되보내 다른 공정으로 바뀌었다. `index=None` 이라 기본값
     # 경고는 없다.
+    # `waits_for` 는 바로 앞 칸 이름이고 그 칸이 비면 이 칸은 잠긴다 — 잠근 칸에만 까닭 풍선을
+    # 단다(설계 규칙 UI-INP-07). 칸 정체성은 key 라(Streamlit 1.63) 풍선이 바뀌어도 고른 값은
+    # 그대로다.
     prune_choice(key, options, default=None)
     selected = st.selectbox(
         label,
@@ -202,7 +224,8 @@ def _required_selectbox(
         index=None,
         placeholder=f"{label} 선택",
         key=key,
-        disabled=disabled,
+        disabled=waits_for is not None,
+        help=f"{waits_for} 칸을 먼저 고릅니다." if waits_for is not None else None,
         # 표시만 바꾼다. 아래 필터가 원본 컬럼과 문자열로 대조하므로 값은 원본이어야 한다.
         format_func=format_func,
         # 로직 분석은 표시 항목을 바꾸면 그려지지 않는다. 그 회차를 건너 7단계 선택이 남게 한다.
@@ -346,7 +369,7 @@ def _render_logic_analysis(
             "공정",
             process_options,
             LOGIC_FILTER_KEYS["공정"],
-            disabled=weeknum is None,
+            waits_for="Weeknum" if weeknum is None else None,
             # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func` — 같은 글자면
             # selectbox 는 마지막 선택지로 돌아온다). 겹침은 주차와 상관없는 공정 전체로 가른다 —
             # Weeknum 을 바꿔 선택지가 줄어도 글자가 덜 흔들린다.
@@ -364,7 +387,7 @@ def _render_logic_analysis(
             "소요기준",
             basis_options,
             LOGIC_FILTER_KEYS["소요기준"],
-            disabled=process is None,
+            waits_for="공정" if process is None else None,
         )
 
         basis_source = process_source.iloc[0:0].copy()
@@ -375,7 +398,7 @@ def _render_logic_analysis(
             "양산",
             production_options,
             LOGIC_FILTER_KEYS["양산구분"],
-            disabled=demand_basis is None,
+            waits_for="소요기준" if demand_basis is None else None,
         )
 
         production_source = basis_source.iloc[0:0].copy()
@@ -388,7 +411,7 @@ def _render_logic_analysis(
             "제품",
             product_options,
             LOGIC_FILTER_KEYS["제품정보"],
-            disabled=production_type is None,
+            waits_for="양산" if production_type is None else None,
         )
 
         product_source = production_source.iloc[0:0].copy()
@@ -401,7 +424,7 @@ def _render_logic_analysis(
             "Stack",
             stack_options,
             LOGIC_FILTER_KEYS["Stack"],
-            disabled=product is None,
+            waits_for="제품" if product is None else None,
         )
 
         stack_source = product_source.iloc[0:0].copy()
@@ -414,7 +437,7 @@ def _render_logic_analysis(
             "WF 속성",
             wf_type_options,
             LOGIC_FILTER_KEYS["WF 구분"],
-            disabled=stack is None,
+            waits_for="Stack" if stack is None else None,
         )
 
     selected_values = [
@@ -427,7 +450,9 @@ def _render_logic_analysis(
         wf_type,
     ]
     if any(value is None for value in selected_values):
-        st.info("Weeknum부터 WF 속성까지 모든 필터를 선택하면 단일 결과의 산출 근거가 표시됩니다.")
+        # 빈 결과 한 줄(값 — 설계 규칙 UI-TXT-04). 일곱 칸을 차례로 고르는 법은 잠긴 칸 풍선과
+        # Guide 가 말한다(UI-TXT-01 · 02).
+        st.caption(LOGIC_EMPTY)
         return
 
     selected_weeknum = cast(str, weeknum)
@@ -865,14 +890,6 @@ def _paste_dialog() -> None:
         key="dialog_standard_target_availability_template",
         label=CSV_TEMPLATE_LABEL,
     )
-    # 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다(2026-09-29 2차 리뷰).
-    # 빈칸이 「그대로 둠」이라는 것도 여기서 말한다. 0 은 「0 대」로 저장되어 뜻이 다르다.
-    st.caption(
-        "양식에는 지금 저장된 가용대수가 채워져 있습니다. 값을 적은 공정·Weeknum 만 붙여넣은 "
-        "값으로 덮어쓰고, 가용대수를 비운 칸은 저장된 값(없으면 미설정)을 그대로 둡니다 — "
-        "0 을 적으면 「0 대」로 저장됩니다. 설비 DB 에 최신본 하나만 남아 이전 값으로 되돌릴 수 "
-        "없습니다."
-    )
     paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
     with st.form("standard_target_availability_clipboard", border=False):
         clipboard_text = st.text_area(
@@ -880,11 +897,13 @@ def _paste_dialog() -> None:
             key="standard_target_availability_clipboard_text",
             height=180,
             placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+            help=PASTE_RULE_HELP,
         )
         import_submitted = st.form_submit_button(
             "붙여넣기 적용",
             icon=":material/content_paste:",
             type="primary",
+            help=PASTE_APPLY_HELP,
         )
     if not import_submitted:
         return
@@ -981,6 +1000,8 @@ with action_row:
             on_click=_open_dialog,
             args=(CLEAR_DIALOG,),
             disabled=availability.empty,
+            # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
+            help=CLEAR_LOCKED_HELP if availability.empty else None,
         )
     render_flash(AVAILABILITY_FLASH_KEY)
 if st.session_state.get(DIALOG_KEY) == PASTE_DIALOG:
@@ -1001,10 +1022,7 @@ _render_standard_target_exceptions(standard_target_exception_rows, process_label
 if availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
     with weekly_output_container:
         st.subheader(f"주차별 {output_metric}")
-        st.info(
-            f"주차별 {with_object_particle(output_metric)} 보려면 위 「가용설비 붙여넣기」로 "
-            "가용설비를 입력하세요."
-        )
+        st.caption(AVAILABILITY_EMPTY)
 elif output_metric == "로직 분석":
     # 로직 분석만 소요대수 행이 필요하다. 표준 목표 제외를 거친 프레임(시나리오 키 캐시 — 칸을
     # 고를 때마다 소요대수 언피클·분리를 다시 하지 않는다)을 공정 필터로 거른다.
@@ -1097,15 +1115,21 @@ else:
             with st.expander("누락 공정·주차 확인", expanded=False):
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
-                if process_labels:
-                    # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과
-                    # 붙여넣기 파서는 원본 공정명을 요구한다. 화면 이름을 그대로 적어
-                    # 붙여넣지 않도록 여기서 알린다.
-                    st.caption(
-                        "공정은 화면 표시명입니다. 붙여넣기에 쓸 원본 공정명은 작업 줄의 "
-                        "「CSV 양식 다운로드」에서 확인하세요."
-                    )
-                st.dataframe(displayed_missing, hide_index=True, width="stretch")
+                # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과
+                # 붙여넣기 파서는 원본 공정명을 요구한다. 표시명이 입혀진 동안은 공정 칸 머리
+                # 풍선이 그것을 말한다 — 화면 이름을 그대로 적어 붙여넣지 않게. 표가 펼침의 첫
+                # 요소라 도구 막대가 펼침 머리를 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+                toolbar_clearance()
+                st.dataframe(
+                    displayed_missing,
+                    hide_index=True,
+                    width="stretch",
+                    column_config=(
+                        {"공정": st.column_config.Column(help=MISSING_PROCESS_HELP)}
+                        if process_labels
+                        else None
+                    ),
+                )
 
     classification_columns = [
         "공정",

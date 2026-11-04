@@ -10,6 +10,7 @@
 지킨다 — key 없는 상자는 돌아올 때 새로 만들어져 접힌다.
 """
 
+import json
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
@@ -199,8 +200,8 @@ def test_the_required_csv_follows_the_table_filter() -> None:
 def test_the_required_tab_lists_plan_load_that_reaches_no_route() -> None:
     """P2 — 경로에 닿지 않은 계획 부하는 소요대수 탭이 건수(상태 알림 `ST-01`)·목록·CSV 로 알린다.
 
-    알리지 않으면 그 부하는 어느 공정의 소요대수에도 들지 않은 채 사라진다. 고칠 곳은 펼침 안 첫
-    줄이 말한다.
+    알리지 않으면 그 부하는 어느 공정의 소요대수에도 들지 않은 채 사라진다. 고칠 곳은 펼침 안 자리
+    글이 아니라 `제외사유` 칸 머리 풍선이 말한다(설계 규칙 UI-TXT-01 · 02 · 03 — 펼침 안 문장 0줄).
     """
     app = _open_calc_tab(
         AppTest.from_string(UNROUTED_PLAN_RESULT_SCRIPT, default_timeout=60), REQUIRED_TAB
@@ -211,8 +212,14 @@ def test_the_required_tab_lists_plan_load_that_reaches_no_route() -> None:
     assert note["active"] is True
     assert "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in note["full"]
     assert "산출 결과 › 소요대수" in note["short"]
-    captions = [str(element.value) for element in app.caption]
-    assert any("제외사유가" in text and "RQ_REQB" in text for text in captions), captions
+    assert not [str(element.value) for element in app.caption if "제외사유" in str(element.value)]
+    reason_helps = [
+        json.loads(frame.proto.columns).get("제외사유", {}).get("help", "")
+        for frame in app.dataframe
+    ]
+    assert any("경로 키 어긋남" in text and "RQ_REQB" in text for text in reason_helps), (
+        reason_helps
+    )
     downloads = app.session_state["captured_downloads"]
     exported = pd.read_csv(
         BytesIO(bytes(downloads["download_unrouted_loads_csv"]["data"])),

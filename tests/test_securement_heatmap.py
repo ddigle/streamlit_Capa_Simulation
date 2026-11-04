@@ -7,6 +7,7 @@ from capa_simulation.components.securement_heatmap import (
     SHORTAGE_TIER,
     WARNING_TIER,
     build_securement_heatmap,
+    cell_text,
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -41,6 +42,22 @@ def test_hover_keeps_the_uncut_rate() -> None:
 
     assert figure is not None
     assert figure.data[0].customdata[0][0] == 120.0
+
+
+def test_a_nonzero_rate_is_never_written_as_zero_in_its_cell() -> None:
+    """칸 안 숫자는 정수 % 지만, 정수로 0 이 되는 0 아닌 확보율은 「0」 으로 적지 않는다 — 「0」
+    은 확보율이 정말 0 인 칸에만 선다(설계 규칙 UI-DAT-06)."""
+    table = pd.DataFrame({"공정": ["SAW"], "202601": [0.0033], "202602": [0.0], "202603": [1.2]})
+    figure = build_securement_heatmap(table, dimension_columns=["공정"], thresholds=THRESHOLDS)
+
+    assert figure is not None
+    assert list(figure.data[0].text[0]) == ["0.33", "0", "120"]
+    assert [cell_text(value) for value in (0.004, 0.5, 0.51, 1234.5)] == [
+        "0.004",
+        "0.5",
+        "1",
+        "1,234",
+    ]
 
 
 def test_colorscale_has_no_blend_between_the_three_steps() -> None:

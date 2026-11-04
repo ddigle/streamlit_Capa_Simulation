@@ -97,11 +97,16 @@ HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"
 CAPACITY_EXCLUSIONS_EXPANDER_KEY = "unit_capacity_exclusions_expander"
 # 사이드바 `표 조건` 카드 이름. 세 탭이 한 카드를 쓴다.
 CARD_NAME = "calculation_result"
-# STEP 뷰에서 공정을 고르지 않았을 때. 필터가 사이드바 카드에 있으므로 자리를 말한다.
-STEP_VIEW_HINT = (
-    "STEP별 대당 Capa는 선택한 공정만 그립니다. 사이드바 「표 조건」의 공정 필터에서 공정을 "
-    "선택하세요. 전체 공정을 한 번에 보려면 공정별을 사용하세요."
+# STEP 뷰에서 공정을 고르지 않았을 때의 빈 결과 한 줄(값 — 설계 규칙 UI-TXT-04). 고르는 법은
+# 공정 필터의 자리 글(placeholder) · `표시 방식` 풍선 · Guide 가 말한다(UI-TXT-01 · 02).
+STEP_VIEW_EMPTY = "STEP별로 그릴 공정이 없습니다."
+# `표시 방식` 풍선 — 두 값의 뜻과 STEP별이 공정을 골라야 하는 까닭.
+VIEW_MODE_HELP = (
+    "공정별은 공정 단위 대당 Capa(집계 수준으로 나눠 봄), STEP별은 MCP_SEQ · STEP_SEQ 경로마다 "
+    "한 줄이라 공정 필터에서 고른 공정만 그립니다."
 )
+# STEP별에서 잠긴 `집계 수준` 의 까닭 풍선(UI-INP-07 — 잠근 칸에만 단다).
+LEVEL_LOCKED_HELP = "STEP별은 경로마다 한 줄이라 집계 수준을 쓰지 않습니다."
 
 CAPACITY_LEVEL_LABELS = {
     "공정": "공정",
@@ -237,21 +242,23 @@ else:
                 default="공정별",
                 key="unit_capacity_view_mode",
                 persist_state="session",
+                help=VIEW_MODE_HELP,
             )
+            step_view = capacity_view == "STEP별"
             selected_level_label = st.selectbox(
                 "집계 수준",
                 options=list(CAPACITY_LEVEL_LABELS.values()),
                 index=0,
                 key="unit_capacity_detail_level",
                 persist_state="session",
-                disabled=capacity_view == "STEP별",
+                disabled=step_view,
+                # 칸 정체성은 key 라(Streamlit 1.63) 풍선이 바뀌어도 고른 값은 그대로다.
+                help=LEVEL_LOCKED_HELP if step_view else None,
             )
             selected_processes = st.multiselect(
                 "공정 필터",
                 options=process_options,
-                placeholder=(
-                    "공정을 선택하세요" if capacity_view == "STEP별" else "미선택 시 전체 공정"
-                ),
+                placeholder=("공정을 선택하세요" if step_view else "미선택 시 전체 공정"),
                 key=process_filter_key,
                 persist_state="session",
                 # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다. 보이는
@@ -306,12 +313,12 @@ else:
                         key="download_unit_capacity_exclusions_csv",
                     )
             # STEP 뷰는 경로 하나하나가 행이라 전 공정을 그리면 Plotly 표가 수천 행이 된다.
-            # 미선택이면 표를 만들지도 CSV 로 인코딩하지도 않고 안내만 남긴다. 선택 해제를
+            # 미선택이면 표를 만들지도 CSV 로 인코딩하지도 않고 빈 결과 한 줄만 남긴다. 선택 해제를
             # 허용하는 컨트롤이라 `capacity_view` 는 None 일 수 있으므로 명시 비교로 판단한다.
-            if capacity_view == "STEP별" and not selected_processes:
-                st.info(STEP_VIEW_HINT)
+            if step_view and not selected_processes:
+                st.caption(STEP_VIEW_EMPTY)
             else:
-                if capacity_view == "STEP별":
+                if step_view:
                     # 전 공정 STEP 월표(피벗·정렬·재배치)는 키 캐시다 — 공정 필터만 아래에서 건다.
                     unit_capacity_table, classification_columns = get_step_unit_capacity_table(
                         capacity_cache_key,
