@@ -238,24 +238,26 @@ def _floor_layout_dialog(
     key = target.key
     default_width, default_height = target.default_canvas
     st.markdown(f"**{target.title}**")
-    owner = "FAB 전체 도면의" if target.floor is None else "동·층별"
-    st.caption(
-        f"도면은 설비 리비전이 아니라 {owner} 단일 저장값입니다. 새로 저장하면 이전 도면을 "
-        f"덮어씁니다. {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))} 파일만 받고 도면당 "
-        f"{format_bytes(MAX_FLOOR_LAYOUT_BYTES)}, 전 층·FAB 합계 "
-        f"{format_bytes(MAX_TOTAL_LAYOUT_BYTES)}까지 저장합니다. 도면 없이 캔버스 치수만 "
-        "저장할 수도 있습니다."
-    )
     _render_current_state(profile, target.default_canvas)
 
+    owner = "FAB 전체 도면의" if target.floor is None else "동·층별"
     nonce = int(st.session_state.get(UPLOAD_NONCE_KEY, 0))
     uploaded = st.file_uploader(
         "배치 도면 이미지",
         type=sorted(ALLOWED_IMAGE_EXTENSIONS),
         key=f"{FLOOR_LAYOUT_WIDGET_KEY}_uploader_{key}_{nonce}",
         # 올리기 칸의 안내(「…MB per file」)와 막는 크기를 도면당 상한에 맞춘다. 빼면 서버 전체
-        # 상한(1GB)이 적혀 바로 위 「도면당 2.0MB」 문장과 어긋났다(2026-10-05 E2E).
+        # 상한(1GB)이 적혀 풍선의 「도면당 2.0MB」 와 어긋났다(2026-10-05 E2E).
         max_upload_size=UPLOAD_LIMIT_MB,
+        # 저장 규칙 설명은 자리 글이 아니라 풍선이다(설계 규칙 UI-TXT-01 — Guide 「도면·캔버스
+        # 편집」 에도 있다).
+        help=(
+            f"도면은 설비 리비전이 아니라 {owner} 단일 저장값입니다. 새로 저장하면 이전 도면을 "
+            f"덮어씁니다. {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))} 파일만 받고 도면당 "
+            f"{format_bytes(MAX_FLOOR_LAYOUT_BYTES)}, 전 층·FAB 합계 "
+            f"{format_bytes(MAX_TOTAL_LAYOUT_BYTES)}까지 저장합니다. 도면 없이 캔버스 치수만 "
+            "저장할 수도 있습니다."
+        ),
     )
     payload = uploaded.getvalue() if uploaded is not None else None
     pixel_size = image_pixel_size(payload) if payload else None
@@ -500,28 +502,21 @@ def _save(
 
 
 def _render_current_state(profile: _DrawingProfile | None, default_canvas: CanvasSize) -> None:
+    """지금 저장된 도면 · 캔버스의 값 줄 하나(설계 규칙 UI-TXT-04 — 값만, 초록 · 파란 상자 없이).
+    「**저장된 도면** · 이름 · 크기 · **캔버스** · 폭 × 높이 · 저장 시각」 이고, 도면이 없으면
+    「없음」, 캔버스도 저장되지 않았으면 「기본값 폭 × 높이」 다."""
     if profile is None:
-        st.info(
-            "저장된 도면도 캔버스도 없습니다. 캔버스는 기본값 "
-            f"{default_canvas[0]:g} × {with_direction_particle(f'{default_canvas[1]:g}')} "
-            "그립니다.",
-            icon=":material/image_not_supported:",
+        drawing = "없음"
+        canvas = f"기본값 {default_canvas[0]:g} × {default_canvas[1]:g}"
+        saved_at = ""
+    else:
+        # 파일 이름은 사람이 붙인 글이다 — 마크다운 글자 그대로 막는다.
+        name = literal_markdown(profile.image_name) if profile.image_name else "이름 없음"
+        drawing = (
+            "없음"
+            if profile.image_data_uri is None
+            else f"{name} · {format_bytes(profile.image_byte_count)}"
         )
-        return
-    if profile.image_data_uri is None:
-        st.info(
-            "배경 도면이 없고 캔버스 치수만 저장되어 있습니다. 배치도는 저장된 "
-            f"{profile.canvas_width:g} × "
-            f"{with_direction_particle(f'{profile.canvas_height:g}')} 그립니다.",
-            icon=":material/grid_on:",
-        )
-        return
-    # 파일 이름은 사람이 붙인 글이다 — 마크다운 글자 그대로 막는다.
-    image_name = literal_markdown(profile.image_name) if profile.image_name else "이름 없음"
-    st.success(
-        f"저장된 도면: {image_name} · "
-        f"{format_bytes(profile.image_byte_count)} · 캔버스 "
-        f"{profile.canvas_width:g} × {profile.canvas_height:g} · "
-        f"{profile.updated_at:%Y-%m-%d %H:%M}",
-        icon=":material/map:",
-    )
+        canvas = f"{profile.canvas_width:g} × {profile.canvas_height:g}"
+        saved_at = f" · {profile.updated_at:%Y-%m-%d %H:%M}"
+    st.markdown(f":material/map: **저장된 도면** · {drawing} · **캔버스** · {canvas}{saved_at}")

@@ -19,7 +19,7 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 
 from capa_simulation.components import space_layout_editor, write_guard
 from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
-from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.fab_layout import (
@@ -155,7 +155,7 @@ def test_fab_edit_and_save_work_without_any_saved_equipment(
     app = _app(database, saved_fleet=False, sample=False).run()
 
     assert not app.exception
-    assert any("조회할 호기가 없습니다" in item.value for item in app.sidebar.caption)
+    assert any(str(item.value) == NO_UNITS_MARK for item in app.sidebar.caption)
     assert not app.sidebar.date_input
     assert _fab_calls(editor_calls, editing=False)
     app.toggle(key=FAB_EDIT_KEY).set_value(True).run()

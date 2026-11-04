@@ -34,7 +34,7 @@ from test_equipment_scenario_repository import (
 from test_equipment_scenario_screens import _ok, _repository, _select, _shell
 
 from capa_simulation.components.equipment_scenario_status import unscheduled_notice
-from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_layout_editor import space_lock_style
 from capa_simulation.navigation import SPACE_STATUS
 from capa_simulation.sidebar_status import CONDITIONS_BOX_KEY, PAGE_BOX_PREFIX, page_box_key
@@ -251,7 +251,7 @@ def test_the_box_stands_above_the_card_on_a_screen_without_units(_empty_app: App
     if app.toggle(key=SAMPLE_TOGGLE_KEY).value:
         app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
         _ok(app)
-    assert any("조회할 호기가 없습니다" in text for text in _texts(app.sidebar, "caption"))
+    assert NO_UNITS_MARK in _texts(app.sidebar, "caption")
 
     keys = _sidebar_keys(app)
     assert keys.index(CONDITIONS_BOX_KEY) < keys.index(BOX_KEY) == keys.index(CARD_KEY) - 1

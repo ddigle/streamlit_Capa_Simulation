@@ -911,7 +911,11 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
         ".sle-toolbar.is-fit2 .sle-flagnote-text"
     )
     assert "display: none" not in hidden and "clip-path: inset(50%)" in hidden
-    assert "content: none" in _rule(".sle-toolbar.is-fit1 .sle-pick:empty::before")
+    # 비어 있는 선택 줄은 안내 글을 늘 세우지 않는다 — 그 말은 풍선(`pickTip`)이다(설계 규칙
+    # UI-TXT-01).
+    assert "attr(data-hint)" not in CSS and ".sle-pick:empty::before" not in CSS
+    assert "pickBox.title = pickBox.textContent || pickTip" in JS
+    assert "dataset.hint" not in JS
     assert "display: none" in _rule(".sle-toolbar.is-fit3 .sle-totoday-tail")
     # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.
     last = _rule(".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary")

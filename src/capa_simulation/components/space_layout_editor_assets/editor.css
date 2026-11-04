@@ -547,7 +547,6 @@
   font-size: 0.82rem; color: var(--sle-text); margin-left: 6px; font-variant-numeric: tabular-nums;
 }
 .sle.is-view .sle-spacer { display: none; }
-.sle-pick:empty::before { content: attr(data-hint); color: var(--sle-muted); }
 .sle-summary { font-size: 0.82rem; color: var(--sle-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---- 기준일 줄(층 도면 맨 위) — 보기는 페이더, 배치 편집은 「편집 중 고정」 줄. 높이가 같아(JS DATE_ROW_PX)
@@ -649,7 +648,6 @@
   background: var(--sle-flag); color: var(--sle-flag-ink); font-size: 10px; font-weight: 700;
 }
 .sle-toolbar.is-fit1 .sle-pick:empty { margin-left: 0; }
-.sle-toolbar.is-fit1 .sle-pick:empty::before { content: none; }
 .sle-toolbar.is-fit2 .sle-flagnote { margin-right: 0; }
 .sle-toolbar.is-fit1 .sle-asof-label, .sle-toolbar.is-fit1 .sle-flagnote-word, .sle-toolbar.is-fit2 .sle-flagnote-text {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;

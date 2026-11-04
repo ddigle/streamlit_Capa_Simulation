@@ -12,7 +12,6 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
@@ -72,17 +71,19 @@ from capa_simulation.components.literal_markdown import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
+    NO_UNITS_HELP,
+    NO_UNITS_MARK,
     render_pending_source,
     render_sample_switch,
 )
 from capa_simulation.components.shortening_source import ShorteningStop
 from capa_simulation.components.space_floor_layout import (
-    LAYOUT_ALERT_CODES,
     compare_payload,
     effective_floor_layout,
     floor_layout_differences,
     floor_moved_overlaps,
     floor_unit_differences,
+    report_layout_notices,
     space_layout_notices,
 )
 from capa_simulation.components.space_floor_list import (
@@ -138,7 +139,7 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
-from capa_simulation.components.state_alerts import alert_page_error, equipment_scope
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     NoticeMark,
@@ -482,6 +483,12 @@ LAYER_REST_HELP = (
     "색 기준이 「필요 단축」 이면 편집하는 동안 그 보기를 쉬고, 편집을 끄면 다시 보입니다."
 )
 SPACE_CARD_NAME = "space"
+# 호기가 없고 샘플도 끈 화면의 `Space 조건` 카드 값 한 마디(`NO_UNITS_MARK`) 풍선 — 하는 법과 호기
+# 없이도 FAB 전체 배치는 고친다는 것을 자리 글 대신 여기에 둔다(설계 규칙 UI-TXT-03 · UI-TXT-04).
+SPACE_NO_UNITS_HELP = (
+    f"{NO_UNITS_HELP} 호기가 없어도 본문의 S.PKG FAB 전체 배치(층 블록·영역·글자)는 고치고 "
+    "저장할 수 있습니다."
+)
 # 사이드바 「Space 도면」 상자(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷을 사이드바 조회 조건
 # 상자 꼴로). 조회 조건 패널 바로 밑 · `Space 조건` 카드 위에 이 화면을 볼 때만
 # 선다(`sidebar_status.PAGE_BOX_PREFIX`).
@@ -624,36 +631,25 @@ render_equipment_scenario_row(equipment_session)
 # 테두리는 조회 조건 패널 · 설정 상자와 같은 1px 선이다(`border=True` — 패널과 같은 꼴).
 space_box = st.sidebar.container(border=True, key=page_box_key(SPACE_BOX_NAME))
 # 상자 끝에 서던 상태 문장(배치 줄 「가정 배치 · 공식과 다른 호기 n대 · …」 · 모듈 구성이
-# 바뀐 묶음 · 지운 호기의 차이 · 일정 없는 호기)은 상태 알림이다(2026-11-04 Space 결정 보드
-# 답 — 화면에 상태 문장을 달지 않는다). 내용이 바뀔 때만 알림창이 뜨고 Alarm 에 쌓이며, 없어지면
-# 해소 줄이 선다 — 그래서 조건이 없는 회차에도 넷 모두 늘 같은 자리에서 부른다(표지 자리 수가
-# 회차마다 같다). 범위는 세션의 (공통 대장, 일정) 리비전 쌍이다. 일정 없는 호기는 가용설비
-# 현황과 같은 조건이라 같은 함수(`report_unscheduled_units` — `EQ-04`, 설비명 목록, 「그 화면으로」
-# 는 고칠 자리인 가용설비 현황 › 설비 마스터)로 낸다 — 화면을 옮겨도 다시 뜨지 않는다.
-space_alert_scope = equipment_scope(equipment_session)
-layout_alerts = {
-    notice.code: notice
-    for notice in (
-        [] if using_sample_equipment else space_layout_notices(equipment_session, floor_differences)
-    )
-}
+# 바뀐 묶음 · 지운 호기의 차이 · 일정 없는 호기)은 상태 알림이다(화면에 상태 문장을 달지 않는다 —
+# 설계 규칙 UI-TXT-01 · UI-NTF-02). 내용이 바뀔 때만 알림창이 뜨고 Alarm 에 쌓이며, 없어지면 해소
+# 줄이 선다 — 그래서 조건이 없는 회차에도 넷 모두 늘 같은 자리에서 부른다(표지 자리 수가 회차마다
+# 같다). 배치 알림 셋은 `report_layout_notices`(범위는 세션의 (공통 대장, 일정) 리비전 쌍)다. 일정
+# 없는 호기는 가용설비 현황과 같은 조건이라 같은 함수(`report_unscheduled_units` — `EQ-04`, 설비명
+# 목록, 「그 화면으로」 는 고칠 자리인 가용설비 현황 › 설비 마스터)로 낸다 — 화면을 옮겨도 다시
+# 뜨지 않는다.
 unscheduled_units = (
     sorted(latest_snapshot.unscheduled_units)
     if latest_snapshot is not None and not using_sample_equipment
     else []
 )
 with notices:
-    for layout_code in LAYOUT_ALERT_CODES:
-        layout_alert = layout_alerts.get(layout_code)
-        alerts.state(
-            layout_code,
-            scope=space_alert_scope.scope,
-            content=layout_alert.content if layout_alert is not None else None,
-            active=layout_alert is not None,
-            text=layout_alert.short if layout_alert is not None else None,
-            full=layout_alert.text if layout_alert is not None else None,
-            scope_label=space_alert_scope.label,
-        )
+    report_layout_notices(
+        equipment_session,
+        []
+        if using_sample_equipment
+        else space_layout_notices(equipment_session, floor_differences),
+    )
     report_unscheduled_units(equipment_session, unscheduled_units)
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
@@ -664,21 +660,21 @@ editable = buffer_frames is not None and edit_mode.layout_editable
 # 설비 샘플 화면(설비 마스터가 비어 샘플 스위치를 켠 상태)인가. 이때는 FAB 편집도 끈다 — 합성 fleet
 # 위에서 고친 FAB 가 실제 저장소에 들어간다(2026-10-03 사용자 결정 2).
 showing_sample = False
-# 호기가 없고 샘플을 끈 상태. 조건 카드에 까닭 한 줄만 두고, 빈 fleet 으로 FAB·층 목록을 그린다 —
+# 호기가 없고 샘플을 끈 상태. 조건 카드에 값 한 마디만 두고, 빈 fleet 으로 FAB·층 목록을 그린다 —
 # FAB 배치는 설비 리비전과 무관한 현행값이라 설비 저장본이 없어도 고치고 저장한다(결정 2).
 no_fleet = False
 if using_sample_equipment:
-    # 스위치는 설비 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다.
+    # 스위치는 설비 마스터가 비었을 때만 뜻이 있다. 실데이터가 있으면 끌 것이 없다. 켜면 스위치의
+    # 「합성 샘플」 배지가 데모 fleet 임을 말한다 — 같은 말을 자리에 한 줄 더 적지 않는다.
     if render_sample_switch(key="space_sample_switch", source="설비 운영 DB"):
         showing_sample = True
-        st.caption("설비 마스터가 비어 있어 데모 fleet 을 표시합니다.")
     else:
         no_fleet = True
-        # 카드를 세우고 까닭을 적는다. 카드 없이 지나가면 사이드바 CSS 가 홀로 남은 「조회 조건」
-        # 제목까지 감춰 이 화면의 조건 자리가 통째로 사라지고, 왜 고를 것이 없는지 알 길이 없다.
-        # 가용설비 현황의 같은 자리와 같은 모양이다.
+        # 카드를 세우고 값 한 마디(「조회할 호기 없음」)와 풍선을 둔다. 카드 없이 지나가면 사이드바
+        # CSS 가 홀로 남은 「조회 조건」 제목까지 감춰 이 화면의 조건 자리가 통째로 사라진다.
+        # 가용설비 현황 · 필요 단축 일정의 같은 자리와 같은 모양이다.
         with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
-            st.caption("조회할 호기가 없습니다. 가용설비 현황에서 입력하거나 샘플 데이터를 켜세요.")
+            st.caption(NO_UNITS_MARK, help=SPACE_NO_UNITS_HELP)
         render_pending_source(
             subject="Space 현황",
             source="설비 운영 DB",
@@ -689,9 +685,6 @@ if using_sample_equipment:
                 "동·층별 배경 도면 이미지와 캔버스 치수",
                 "생애주기 상태를 만드는 일정 여섯 개와 운영 비가동 일정",
             ),
-        )
-        st.caption(
-            "호기가 없어도 아래 S.PKG FAB 전체 배치(층 블록·영역·글자)는 고치고 저장할 수 있습니다."
         )
         equipment = empty_equipment_master()
         downtime = empty_downtime_schedule()

@@ -19,7 +19,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     SETTINGS_DIALOG_TITLE,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import (
     EQUIPMENT_SUMMARY_TAB,
     EQUIPMENT_SUMMARY_TAB_KEY,
@@ -280,10 +280,12 @@ def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
 def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_title(
     tmp_path: Path,
 ) -> None:
-    """호기가 없고 샘플을 끄면 카드 안에 까닭 한 줄을 둔다.
+    """호기가 없고 샘플을 끄면 카드 안에 값 한 마디(「조회할 호기 없음」)와 풍선을 둔다.
 
     카드 없이 멈추면 사이드바에 「조회 조건 · 이 화면에 적용」 제목만 덩그러니 남았다
-    (2026-10-01 브라우저 실측). 가용설비 현황의 같은 자리와 같은 모양이다.
+    (2026-10-01 브라우저 실측). 가용설비 현황의 같은 자리와 같은 모양이다. 하는 법 · 호기 없이도
+    FAB 배치를 고친다는 말은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04) — 카드 · 본문 어디에도 그
+    문장이 서지 않는다.
     """
     page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
     app = AppTest.from_string(
@@ -296,7 +298,13 @@ def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_ti
     card = app.sidebar.get_by_key(f"{CONDITION_CARD_PREFIX}space")
     assert isinstance(card, (Status, Expander))
     assert card.label.endswith("Space 조건")
-    assert any("조회할 호기가 없습니다" in item.value for item in app.sidebar.caption)
+    (mark,) = [item for item in app.sidebar.caption if str(item.value) == NO_UNITS_MARK]
+    assert "샘플 데이터" in mark.proto.help and "FAB 전체 배치" in mark.proto.help
+    captions = [str(item.value) for item in (*app.sidebar.caption, *app.main.caption)]
+    assert not any(
+        "켜세요" in text or "고치고 저장할 수 있습니다" in text or "데모 fleet" in text
+        for text in captions
+    )
     # 조건 위젯은 서지 않는다 — 고를 호기가 없다.
     assert not app.sidebar.date_input
     assert not app.sidebar.multiselect
@@ -399,8 +407,17 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     assert not app.exception
     assert len(app.get("file_uploader")) == 1
     assert any("적용될 캔버스: 100 × 37.5" == element.value for element in app.caption)
-    # 저장된 도면 파일 이름은 사람이 적은 글이라 막는다(`literal_markdown` — 화면 글은 같다).
-    assert any(literal_markdown("c1_1f.png") in element.value for element in app.success)
+    # 지금 저장된 도면은 값 줄 하나다(초록 상자 없이 — 설계 규칙 UI-TXT-04). 파일 이름은 사람이
+    # 적은 글이라 막는다(`literal_markdown` — 화면 글은 같다).
+    assert not app.success
+    (state_line,) = [
+        element for element in app.markdown if "**저장된 도면** · " in str(element.value)
+    ]
+    assert literal_markdown("c1_1f.png") in state_line.value
+    assert "**캔버스** · 100 × 37.5" in state_line.value
+    # 저장 규칙 설명은 올리기 칸 풍선이다 — 팝업 자리 글에는 없다.
+    assert "단일 저장값" in app.get("file_uploader")[0].proto.help
+    assert not any("단일 저장값" in str(element.value) for element in app.caption)
     clear_equipment_repository()
 
 

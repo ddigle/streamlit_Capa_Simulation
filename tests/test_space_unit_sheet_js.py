@@ -491,7 +491,13 @@ def test_the_csv_button_lives_in_the_window_and_downloads_in_the_browser() -> No
     assert "typeof SHEET.csv.text === 'string' && typeof SHEET.csv.file === 'string'" in adopt
     render = JS[JS.index("  function renderSheet() {") : JS.index("  function drawSheetTable(")]
     assert "S.sheetShown = shown" in render
-    assert "「CSV」 의 도면에 선 호기로 보세요" in render and "아래 층 CSV" not in JS
+    # 잘린 줄 수는 값 「n줄 더 있음」 이고 모든 줄을 받는 자리는 풍선이다 — 빈 결과 · 잘림 줄에
+    # 하는 법 꼬리를 달지 않는다(설계 규칙 UI-TXT-03 · UI-TXT-04).
+    assert "`${S.sheet.cut}줄 더 있음`" in render and "아래 층 CSV" not in JS
+    assert "「CSV」 → 「도면에 선 호기 · 모든 칸」" in render
+    for tail in ("로 보세요", "필터를 바꾸세요", "호기를 누르세요"):
+        assert tail not in render, tail
+    assert "'맞는 호기가 없습니다.'" in render and "'고른 호기가 없습니다.'" in render
     csv_part = JS[JS.index("  function closeCsvMenu(") : JS.index("  if (sheetBox) {")]
     assert (
         "sheetCsvMenu.style.right = `${Math.max(0, Math.round(inner - anchor.right))}px`"

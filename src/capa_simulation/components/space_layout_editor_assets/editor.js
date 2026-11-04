@@ -371,7 +371,9 @@ export default function (component) {
   const newConfirmRow = newConfirm.closest('.sle-form-row')
   setText(q('.sle-title'), data.title || '')
   const pickBox = q('.sle-pick')
-  const pickHint = FAB
+  // 비어 있는 선택 줄(층 보기·FAB 보기 도구 줄의 남는 폭)의 풍선 — 누르기·키보드·확대 안내는 자리에 늘 세우지 않는다
+  // (설계 규칙 UI-TXT-01 — 같은 말은 Guide 「층 열기」·「확대」·「호기 정보」 에 있다).
+  const pickTip = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
     : '호기를 누르면 정보가 여기 뜨고 「호기 정보」 창에 그 설비 칸이 보입니다(호기를 두 번 누르면 창이 열림) · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 빈 곳을 두 번 누르면 확대/전체 보기'
   // 「호기 정보」 창(층 보기·편집 — 2026-11-03 사용자 요청: 고른 호기의 칸을 도면 위 창에, 거꾸로 칸 필터 → 맞는 호기
@@ -421,7 +423,6 @@ export default function (component) {
   const sheetMenuTo = q('.sle-sheet-menu-to')
   const sheetGrip = q('.sle-sheet-grip')
   const trayHits = q('.sle-tray-hits')
-  if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
   const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
@@ -4300,8 +4301,8 @@ export default function (component) {
     if (VIEW) {
       const chosen = selectedItems()
       pickBox.textContent = chosen.length === 1 ? pickText(chosen[0]) : ''
-      // 한 줄에서 잘리면 전체 문구는 풍선으로.
-      pickBox.title = pickBox.textContent || pickBox.dataset.hint
+      // 한 줄에서 잘리면 전체 문구는 풍선으로, 비었으면 안내 풍선(`pickTip`).
+      pickBox.title = pickBox.textContent || pickTip
       zoomSel.disabled = !chosen.some(onCanvas)
       renderSheet()
       return
@@ -7142,11 +7143,15 @@ export default function (component) {
       S.sheetView = viewKey
       drawSheetTable(columns, shown, filterTab)
       sheetEmpty.hidden = shown.length > 0
+      // 빈 결과는 결론 한 줄이다 — 하는 법(필터 바꾸기·호기 누르기)은 Guide 「호기 정보」 창이 말한다(설계 규칙
+      // UI-TXT-03 · UI-TXT-04).
       setText(sheetEmpty, filterTab
-        ? (rows.length ? '맞는 호기가 없습니다 — 칸 머리 ▾ 에서 필터를 바꾸세요.' : '이 층에 호기가 없습니다.')
-        : '도면에서 호기를 누르세요(편집에서는 Shift/Ctrl+클릭으로 여럿).')
+        ? (rows.length ? '맞는 호기가 없습니다.' : '이 층에 호기가 없습니다.')
+        : '고른 호기가 없습니다.')
+      // 잘린 줄 수는 값이고, 모든 줄을 받는 자리(「CSV」 펼침)는 풍선이다.
       sheetCut.hidden = !S.sheet.cut
-      setText(sheetCut, S.sheet.cut ? `${S.sheet.cut}줄 더 있습니다 — 「CSV」 의 도면에 선 호기로 보세요.` : '')
+      setText(sheetCut, S.sheet.cut ? `${S.sheet.cut}줄 더 있음` : '')
+      setAttr(sheetCut, 'title', S.sheet.cut ? '모든 줄은 제목 줄 「CSV」 → 「도면에 선 호기 · 모든 칸」' : '')
     }
     const current = new Set(ids)
     for (const tr of sheetBodyRows.children) tr.classList.toggle('is-current', current.has(tr.dataset.id))

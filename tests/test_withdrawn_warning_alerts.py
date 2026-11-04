@@ -47,6 +47,13 @@ class Withdrawn:
     test: str
 
 
+# Space 「Space 도면」 상자 끝 줄 넷(V-09)을 함께 단언하는 화면 시험 — 가정 설비 시나리오에서 넷
+# 모두를 회차마다 부르고(없는 것은 해소) 상자 · 본문에 그 줄이 없음을 본다.
+_SPACE_BOX_TEST = (
+    "tests/test_space_sidebar_box.py"
+    "::test_an_assumption_raises_the_unscheduled_and_layout_alerts_and_keeps_the_box_to_controls"
+)
+
 WITHDRAWN: tuple[Withdrawn, ...] = (
     Withdrawn(
         what="사이드바 시나리오 팝업 저장 칸 밑 — 저장 뒤 남은 Capa 계산 오류(공식 지정이 막힘)",
@@ -151,6 +158,48 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
+        what=(
+            "Space 사이드바 「Space 도면」 상자 끝 — 배치 줄(「가정 배치 · 공식과 다른 호기 n대 ·"
+            " 도면 요소 m개」 · 「가정이던 때 배치 · …」)"
+        ),
+        why="V-09 · UI-TXT-01 · UI-NTF-02",
+        file="src/capa_simulation/components/space_floor_layout.py",
+        function="report_layout_notices",
+        code="EQ-13",
+        route="state",
+        test=_SPACE_BOX_TEST,
+    ),
+    Withdrawn(
+        what="Space 사이드바 「Space 도면」 상자 끝 — 공식에서 모듈 구성이 바뀐 묶음 줄",
+        why="V-09 · UI-TXT-01 · UI-NTF-02",
+        file="src/capa_simulation/components/space_floor_layout.py",
+        function="report_layout_notices",
+        code="EQ-14",
+        route="state",
+        test=_SPACE_BOX_TEST,
+    ),
+    Withdrawn(
+        what="Space 사이드바 「Space 도면」 상자 끝 — 공통 대장에서 지운 호기의 배치 차이 줄",
+        why="V-09 · UI-TXT-01 · UI-NTF-02",
+        file="src/capa_simulation/components/space_floor_layout.py",
+        function="report_layout_notices",
+        code="EQ-15",
+        route="state",
+        test=_SPACE_BOX_TEST,
+    ),
+    Withdrawn(
+        what=(
+            "Space 사이드바 「Space 도면」 상자 끝 — 「일정 없는 호기 n대 · 계산 제외」"
+            " · 「공식 일정 없음 n대 · 그리지 않음」 줄(가용설비 현황과 같은 알림)"
+        ),
+        why="V-09 · UI-TXT-01 · UI-NTF-02",
+        file="src/capa_simulation/components/equipment_scenario_status.py",
+        function="report_unscheduled_units",
+        code="EQ-04",
+        route="state",
+        test=_SPACE_BOX_TEST,
+    ),
+    Withdrawn(
         what="가용설비 Summary › Static 대비 일정 — 「한쪽에만 있는 공정 n개를 뺐습니다」 캡션",
         why="V-12 · UI-TXT-04",
         file="src/capa_simulation/components/availability_gap_panel.py",
@@ -183,17 +232,44 @@ def _top_function(relative: str, name: str) -> ast.FunctionDef | ast.AsyncFuncti
     )
 
 
-def _module_texts(relative: str) -> dict[str, str]:
+def _texts_of(module: ast.Module) -> dict[str, str]:
     """모듈 맨 위 글 상수(이름 → 글) — `state(LAYOUT_ALERT, …)` 처럼 코드를 이름으로 줄 때 푼다."""
     return {
         node.targets[0].id: node.value.value
-        for node in _tree(relative).body
+        for node in module.body
         if isinstance(node, ast.Assign)
         and len(node.targets) == 1
         and isinstance(node.targets[0], ast.Name)
         and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     }
+
+
+def _module_texts(relative: str) -> dict[str, str]:
+    return _texts_of(_tree(relative))
+
+
+def _text_groups_of(module: ast.Module) -> dict[str, tuple[str, ...]]:
+    """모듈 맨 위 글 묶음 상수(이름 → 글들) — `for code in LAYOUT_ALERT_CODES: state(code, …)` 처럼
+    코드 묶음을 돌며 보낼 때 푼다. 묶음의 칸은 글 상수이거나 글 상수 이름이다."""
+    texts = _texts_of(module)
+    groups: dict[str, tuple[str, ...]] = {}
+    for node in module.body:
+        if not (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Tuple | ast.List)
+        ):
+            continue
+        values = [_text(item, texts) for item in node.value.elts]
+        if values and all(isinstance(value, str) for value in values):
+            groups[node.targets[0].id] = tuple(str(value) for value in values)
+    return groups
+
+
+def _module_text_groups(relative: str) -> dict[str, tuple[str, ...]]:
+    return _text_groups_of(_tree(relative))
 
 
 def _text(node: ast.expr | None, constants: Mapping[str, str]) -> object:
@@ -219,9 +295,19 @@ def codes_sent_by(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     route: Literal["flash", "state"],
     constants: Mapping[str, str] | None = None,
+    groups: Mapping[str, tuple[str, ...]] | None = None,
 ) -> set[str]:
-    """함수가 그 길로 보내는 알림 코드 — 코드 · 종류는 글 상수나 모듈 상수 이름(`constants`)이다."""
+    """함수가 그 길로 보내는 알림 코드 — 코드 · 종류는 글 상수나 모듈 상수 이름(`constants`)이고,
+    상태 코드는 모듈 글 묶음(`groups`)을 도는 `for` 의 이름이어도 된다(묶음 코드를 모두 보낸다)."""
     known = constants or {}
+    looped = {
+        node.target.id: (groups or {})[node.iter.id]
+        for node in ast.walk(function)
+        if isinstance(node, ast.For)
+        and isinstance(node.target, ast.Name)
+        and isinstance(node.iter, ast.Name)
+        and node.iter.id in (groups or {})
+    }
     codes: set[str] = set()
     for node in ast.walk(function):
         if not isinstance(node, ast.Call):
@@ -236,6 +322,8 @@ def codes_sent_by(
             first = _text(node.args[0], known)
             if isinstance(first, str):
                 codes.add(first)
+            elif isinstance(node.args[0], ast.Name) and node.args[0].id in looped:
+                codes.update(looped[node.args[0].id])
     return codes
 
 
@@ -286,7 +374,10 @@ def test_the_withdrawn_place_still_sends_that_code(item: Withdrawn) -> None:
     """걷은 자리가 그 코드를 알림창 · Alarm 길로 보낸다 — 경고가 사라지지 않고 옮겨 갔다."""
     function = _top_function(item.file, item.function)
     assert function is not None, f"{item.file} 에 {item.function} 이 없습니다 — 표를 고치세요."
-    assert item.code in codes_sent_by(function, item.route, _module_texts(item.file)), (
+    sent = codes_sent_by(
+        function, item.route, _module_texts(item.file), _module_text_groups(item.file)
+    )
+    assert item.code in sent, (
         f"{item.file} {item.function} 이 {item.code} 를 "
         + ("queue_flash(…, popup_only=True)" if item.route == "flash" else "alerts.state")
         + " 로 보내지 않습니다."
@@ -302,7 +393,7 @@ def test_the_screen_test_asserts_that_code(item: Withdrawn) -> None:
 
 def test_the_route_reader_tells_flash_and_state_codes_apart() -> None:
     """`codes_sent_by` 는 `popup_only` 없는 결과 알림(버튼 곁에도 그림)을 세지 않고, 코드를 모듈
-    상수 이름으로 준 상태 알림은 그 상수를 푼다."""
+    상수 이름으로 준 상태 알림은 그 상수를, 모듈 코드 묶음을 도는 `for` 이름은 그 묶음을 푼다."""
     (function,) = ast.parse(
         "def f():\n"
         "    queue_flash(KEY, text, kind='warning')\n"
@@ -310,9 +401,29 @@ def test_the_route_reader_tells_flash_and_state_codes_apart() -> None:
         "    queue_flash(KEY, text, kind='warning', alert='EQ-05', popup_only=True)\n"
         "    alerts.state('EQ-06', scope=None, content=None, active=False)\n"
         "    alerts.state(LAYOUT_ALERT, scope=None, content=None, active=False)\n"
+        "    for code in LAYOUT_CODES:\n"
+        "        alerts.state(code, scope=None, content=None, active=False)\n"
     ).body
     assert isinstance(function, ast.FunctionDef)
 
     assert codes_sent_by(function, "flash") == {"FL-03", "EQ-05"}
     assert codes_sent_by(function, "state") == {"EQ-06"}
     assert codes_sent_by(function, "state", {"LAYOUT_ALERT": "EQ-13"}) == {"EQ-06", "EQ-13"}
+    assert codes_sent_by(function, "state", {}, {"LAYOUT_CODES": ("EQ-14", "EQ-15")}) == {
+        "EQ-06",
+        "EQ-14",
+        "EQ-15",
+    }
+
+
+def test_the_group_reader_resolves_named_codes_in_a_module_tuple() -> None:
+    """코드 묶음 상수의 칸은 글 상수 이름이어도 풀고, 못 푸는 칸이 하나라도 있으면 묶음으로 보지
+    않는다(모르는 코드를 보낸다고 읽지 않게)."""
+    module = ast.parse(
+        "FIRST = 'EQ-13'\n"
+        "SECOND = 'EQ-14'\n"
+        "CODES = (FIRST, SECOND, 'EQ-15')\n"
+        "MIXED = (FIRST, unknown)\n"
+    )
+
+    assert _text_groups_of(module) == {"CODES": ("EQ-13", "EQ-14", "EQ-15")}

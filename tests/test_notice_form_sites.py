@@ -10,9 +10,8 @@
 직접 부르는 자리를 (파일, 맨 바깥 함수) 마다 세어 허용 목록과 **정확히** 맞댄다.
 
 - 토스트 자리는 없다(`ALLOWED_TOASTS` 는 비어 있다 — 필요 단축 일정 기준선 결과가 마지막이었다).
-- 초록 상자 자리는 모두 미정리다 — 값 줄 · 점검 결론 · 빈 결과를 초록 상자로 그린 기존 자리라
-  다음 판에 평문 한 줄(`st.caption`)이나 값 줄로 바꿔 이 목록을 줄인다. 새 자리는 들이지 않는다
-  (`ALLOWED_SUCCESS` 의 까닭은 미정리 하나뿐이다).
+- 초록 상자 자리도 없다(`ALLOWED_SUCCESS` 는 비어 있다 — Space 도면 팝업의 지금 값이 마지막이었다,
+  값 줄 「**저장된 도면** · …」 로 옮김). 새 자리는 들이지 않는다.
 - 새 자리가 생기면 실패한다 — 동작 결과면 `queue_flash`, 빈 결과 · 점검 결론이면 `st.caption`,
   값이면 「**라벨** · 값」 줄로 그린다.
 - 자리가 줄면 실패한다 — 목록의 그 칸도 줄인다.
@@ -26,7 +25,6 @@ from pathlib import Path
 from source_sites import (
     LOGGERS,
     PROJECT_ROOT,
-    UNSETTLED,
     method,
     receiver,
     screen_calls,
@@ -37,14 +35,8 @@ from source_sites import (
 OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts.py")
 
 ALLOWED_TOASTS: dict[tuple[str, str], tuple[str, ...]] = {}
-# (파일, 맨 바깥 함수) → 초록 상자 부름마다 까닭(문서 차례).
-ALLOWED_SUCCESS: dict[tuple[str, str], tuple[str, ...]] = {
-    # 「저장된 도면: … · 캔버스 …」 — Space 도면 팝업의 지금 값(Space 화면 갈래가 맡아 다음 판에 값
-    # 줄로 옮긴다).
-    ("src/capa_simulation/components/floor_layout_upload.py", "_render_current_state"): (
-        UNSETTLED,
-    ),
-}
+# (파일, 맨 바깥 함수) → 초록 상자 부름마다 까닭(문서 차례). 비어 있다 — 새 자리는 들이지 않는다.
+ALLOWED_SUCCESS: dict[tuple[str, str], tuple[str, ...]] = {}
 
 
 def direct_calls(
@@ -93,9 +85,9 @@ def test_success_boxes_match_the_list() -> None:
     )
 
 
-def test_remaining_success_boxes_are_all_unsettled() -> None:
-    """초록 상자로 자리에 남을 까닭은 없다 — 남은 자리는 모두 다음 판에 줄일 미정리다."""
-    assert all(reasons and set(reasons) == {UNSETTLED} for reasons in ALLOWED_SUCCESS.values())
+def test_no_success_box_or_toast_is_left() -> None:
+    """초록 상자 · 토스트로 자리에 남을 까닭은 없다 — 두 목록 모두 비었고 미정리도 남지 않았다."""
+    assert not ALLOWED_SUCCESS
     assert not ALLOWED_TOASTS
 
 

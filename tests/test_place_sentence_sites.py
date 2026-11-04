@@ -69,7 +69,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 137
+UNSETTLED_SITES = 131
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -118,14 +118,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
-    ("app_pages/space_status.py", ""): (
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
+    ("app_pages/space_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
     ("app_pages/space_status.py", "_render_layout_warnings"): (CANNOT_DRAW,),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (
         UNSETTLED,
@@ -325,12 +318,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"): (
-        UNSETTLED,
         BESIDE_INPUT,
-    ),
-    ("src/capa_simulation/components/floor_layout_upload.py", "_render_current_state"): (
-        UNSETTLED,
-        UNSETTLED,
     ),
     ("src/capa_simulation/components/grouped_monthly_table.py", "render_grouped_monthly_table"): (
         EMPTY,

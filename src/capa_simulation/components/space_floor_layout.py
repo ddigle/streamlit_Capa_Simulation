@@ -19,11 +19,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import Any, NamedTuple
 
 import pandas as pd
 
+from capa_simulation import alerts
+from capa_simulation.components.state_alerts import equipment_scope
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
     load_floor_group_labels,
@@ -259,6 +261,28 @@ def space_layout_notices(
             )
         )
     return lines
+
+
+def report_layout_notices(session: EquipmentSession, notices: Sequence[LayoutNotice]) -> None:
+    """Space 배치 알림 셋(`LAYOUT_ALERT_CODES`)을 상태 알림으로 낸다 — 사이드바 「Space 도면」
+    상자 끝에 서던 줄이다(설계 규칙 UI-TXT-01 · UI-NTF-02 — 화면에는 상태 문장을 달지 않는다).
+    조건이 없는 코드도 회차마다 같은 차례로 부른다(`active=False` — 해소 줄이 서고 표지 자리 수가
+    회차마다 같다). 범위는 세션의 (공통 대장, 일정) 리비전 쌍(`state_alerts.equipment_scope`)이고
+    「그 화면으로」 는 Space 다. `notices` 는 `space_layout_notices` 의 차례(설비 샘플 화면이면
+    빈 목록)다."""
+    scope = equipment_scope(session)
+    by_code = {notice.code: notice for notice in notices}
+    for code in LAYOUT_ALERT_CODES:
+        notice = by_code.get(code)
+        alerts.state(
+            code,
+            scope=scope.scope,
+            content=notice.content if notice is not None else None,
+            active=notice is not None,
+            text=notice.short if notice is not None else None,
+            full=notice.text if notice is not None else None,
+            scope_label=scope.label,
+        )
 
 
 def compare_payload(
