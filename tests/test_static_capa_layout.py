@@ -179,7 +179,7 @@ def test_an_empty_result_box_says_so_in_one_plain_line(monkeypatch: pytest.Monke
     assert not list(app.exception), [element.message for element in app.exception]
 
     assert not app.main.success
-    lines = [str(element.value) for element in app.main.markdown]
+    lines = [str(element.value) for element in app.main.caption]
     assert "선택 기간에 경고 기준 미달 공정이 없습니다." in lines, lines
     assert "선택 기간에 경고 이상·확보 기준 미달 공정이 없습니다." in lines, lines
     assert not [frame for frame in app.main.dataframe if "확보율" in frame.value.columns]

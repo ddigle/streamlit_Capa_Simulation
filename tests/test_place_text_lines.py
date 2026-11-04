@@ -84,7 +84,7 @@ def test_the_dynamic_capa_summary_says_no_process_in_one_plain_line() -> None:
 
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     assert not summary_tab.get("success") and not summary_tab.get("warning")
-    lines = _lines(summary_tab.get("markdown"))
+    lines = _lines(summary_tab.get("caption"))
     assert "Capa 실현률이 판정 기준을 밑도는 공정이 없습니다." in lines, lines
 
 
@@ -128,7 +128,7 @@ def test_the_performance_screen_says_no_process_in_one_plain_line(
 
     opened = next(item for item in app.tabs if item.label == tab)
     assert not opened.get("success") and not opened.get("warning")
-    assert line in _lines(opened.get("markdown"))
+    assert line in _lines(opened.get("caption"))
 
 
 # ------------------------------------------------------------------------------ 원천 품질
@@ -158,7 +158,7 @@ def test_the_source_quality_verdict_is_one_plain_line() -> None:
     assert not app.exception, [item.message for item in app.exception]
 
     assert not app.success and not app.warning
-    assert "2개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다." in _lines(app.markdown)
+    assert "2개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다." in _lines(app.caption)
 
 
 # ---------------------------------------------------------------- 주요공정 프리셋 숨은 공정

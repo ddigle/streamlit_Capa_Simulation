@@ -281,7 +281,7 @@ else:
                 border=True,
             )
         if warning_shortfalls.empty:
-            st.markdown(WARNING_EMPTY_TEXT)
+            st.caption(WARNING_EMPTY_TEXT)
         else:
             _render_shortfall_table(
                 warning_shortfalls,
@@ -312,7 +312,7 @@ else:
                 border=True,
             )
         if secure_shortfalls.empty:
-            st.markdown(SECURE_EMPTY_TEXT)
+            st.caption(SECURE_EMPTY_TEXT)
         else:
             _render_shortfall_table(
                 secure_shortfalls,
