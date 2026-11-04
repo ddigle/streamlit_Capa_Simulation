@@ -425,11 +425,12 @@ def test_a_missing_cutoff_stops_with_a_fill_in_warning_not_an_info_box(tmp_path:
     clear_equipment_repository()
 
 
-def test_units_outside_the_usage_basis_are_a_value_line_with_the_rule_in_its_tooltip(
+def test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_tooltip(
     tmp_path: Path,
 ) -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 값 한 줄, 뺀 곳 ·
-    후보 아님은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04)."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 가용설비 현황과
+    같은 표지 한 줄(「사용기준 HBM·EDP 밖 N대 제외」), 뺀 곳 · 후보 아님은 풍선이다(설계 규칙
+    UI-TXT-01 · UI-TXT-04)."""
     from capa_simulation.components.required_shortening_panel import USAGE_NOTICE_HELP
 
     database_path = _database(tmp_path)
@@ -442,9 +443,9 @@ def test_units_outside_the_usage_basis_are_a_value_line_with_the_rule_in_its_too
     app = _run(database_path)
 
     assert not app.exception, [element.message for element in app.exception]
-    (line,) = [item for item in app.main.caption if "사용기준이" in str(item.value)]
-    assert str(line.value).startswith(":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 ")
-    assert str(line.value).endswith("대")
+    (line,) = [item for item in app.main.caption if "사용기준" in str(item.value)]
+    assert str(line.value).startswith(":material/filter_alt_off: 사용기준 HBM·EDP 밖 ")
+    assert str(line.value).endswith("대 제외")
     assert line.proto.help == USAGE_NOTICE_HELP
     clear_equipment_repository()
 

@@ -138,8 +138,12 @@ def render_equipment_lifecycle_gantt(
         return
     st.plotly_chart(figure, width="stretch", key=key, config={"staticPlot": False})
     if hidden_units:
-        # 자른 것을 적지 않으면 「이게 전부」로 읽힌다.
+        # 자른 것을 적지 않으면 「이게 전부」로 읽힌다 — 자리에는 값(「n행 더 있음」)만, 자른 차례와
+        # 보는 법은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
         st.caption(
-            f"호기 이름 순으로 {max_units:,}행만 그렸습니다. 나머지 {hidden_units:,}행은 "
-            "조회 조건을 좁혀서 보세요."
+            f"{max_units:,}행까지 · {hidden_units:,}행 더 있음",
+            help=(
+                f"호기 이름 순으로 {max_units:,}행만 그렸습니다 — 나머지는 조회 조건을 좁혀서 "
+                "봅니다."
+            ),
         )

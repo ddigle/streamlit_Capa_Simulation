@@ -150,7 +150,11 @@ def test_an_assumption_grid_layout_edit_stays_its_own_and_stamps_the_role(
     저장하면 그 시나리오 새 리비전의 배치 차이가 되고 공식은 그대로다."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, setup)
-    assert any("가정 설비 시나리오 — 배치 칸 고침은" in text for text in _texts(app, "caption"))
+    # 가정 배치가 어디에 저장되나는 맨 위 줄 설비 시나리오 알약의 풍선이다 — 자리에 같은 설명 줄을
+    # 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-07).
+    assert not any("배치 칸 고침은" in text for text in _texts(app, "caption"))
+    pill_helps = [str(item.proto.help) for item in app.markdown if "설비 시나리오 ·" in item.value]
+    assert any("공식 자리로 되돌릴 수 있습니다" in text for text in pill_helps), pill_helps
     load(app, [], kind="all")
     send_ops(
         app,

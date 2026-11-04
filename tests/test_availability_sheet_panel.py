@@ -395,4 +395,4 @@ def test_a_unit_filter_is_a_full_run_and_writes_the_same_event_slots(
     open_cell(app, MONTH, ROW_STATIC_AVAILABLE)
     app.run()
     assert set(_event_slots(browser.messages)) == full_slots
-    assert "호기 필터 중에는" in " ".join(str(item.value) for item in app.info)
+    assert "호기 필터 중에는" in " ".join(str(item.value) for item in app.caption)

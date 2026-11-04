@@ -42,6 +42,8 @@ from capa_simulation.services.undated_equipment import undated_equipment
 from capa_simulation.services.usage_basis import (
     usage_excluded_count,
     usage_excluded_equipment,
+    usage_exclusion_help,
+    usage_exclusion_mark,
     usage_exclusion_notice,
 )
 
@@ -380,7 +382,13 @@ def test_the_main_notice_says_the_excluded_units_are_out_of_the_total_too() -> N
     assert (row["총대수"], row["가용대수"], row["비가동대수"]) == (1.0, 1.0, 0.0)
     explorer = Path(__file__).parents[1] / "src/capa_simulation/components/equipment_explorer.py"
     source = explorer.read_text(encoding="utf-8")
-    assert "usage_exclusion_notice(excluded, unit_ids=unit_ids, totals=True)" in source
+    # Main 은 표지(`usage_exclusion_mark`)를 자리에 두고 그 뜻을 `totals=True` 풍선에 단다.
+    assert "usage_exclusion_help(totals=True)" in source
+    assert usage_exclusion_help(totals=True) == (
+        "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 총대수·가용대수·비가동대수 모두에서 "
+        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+    )
+    assert usage_exclusion_mark(excluded) == "사용기준 HBM·EDP 밖 1대 제외"
 
 
 def test_the_sample_fleet_is_mostly_hbm_with_a_few_exclusions() -> None:

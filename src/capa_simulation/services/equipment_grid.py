@@ -1660,7 +1660,7 @@ def new_unit_data(
     ack: Mapping[str, Any] | None = None,
     toast: Mapping[str, Any] | None = None,
     undo_top: str | None = None,
-    notes: Sequence[str] = (),
+    notes: Sequence[str | tuple[str, str]] = (),
     propagate_warning: str | None = None,
 ) -> dict[str, Any]:
     """오른쪽 「새 호기」 마운트의 data(개편 명세 6-3 `panel: "new"`).
@@ -1674,7 +1674,8 @@ def new_unit_data(
       `required` 는 늘 필수인 칸(설비명·공정소분류·Y/N 셋)의 자리 — 브라우저가 「호기 추가」 를
       켜고 누를 때 만진 표지를 준다. 다른 칸 값 때문에 필수가 된 칸(`tiers.required` 에만 있는 칸)의
       오류는 만지지 않아도 보인다.
-    - `notes` — 칸 위 안내(가정 설비 시나리오·배치 잠금 — 새 호기의 자리), `propagateWarning` 은
+    - `notes` — 칸 위 안내(가정 설비 시나리오·배치 잠금 — 새 호기의 자리) — 글 하나이거나 (표지,
+      풍선) 짝(브라우저가 표지만 그리고 풍선은 `title`), `propagateWarning` 은
       함께 넣기를 켰을 때 그 아래 한 줄(가정 세션 — 공식 가용대수에 셈).
     - `locked` — 이 세션이 새 호기를 막으면 그 까닭(칸 전체를 끈다).
     - `blank`·`propagateDefault` — 「양식 비우기」 가 브라우저에서 바로 세우는 빈 초안과 함께 넣기
@@ -1707,7 +1708,7 @@ def new_unit_data(
         "required": [COLUMN_INDEX[column] for column in (*NEW_UNIT_REQUIRED, *NEW_UNIT_FLAGS)],
         "blocked": check.blocked,
         "hint": check.hint,
-        "notes": list(notes),
+        "notes": [list(note) if isinstance(note, tuple) else note for note in notes],
         "propagateWarning": propagate_warning,
         "blank": blank_draft(),
         "propagateDefault": propagate_default,

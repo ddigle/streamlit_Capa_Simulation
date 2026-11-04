@@ -544,7 +544,9 @@ def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     captions = " ".join(_texts(app, "caption"))
     assert f"저장본 r{saved.revision.revision_no}" in captions
     assert "저장본과 같음" in captions
-    assert "표에서 고친 값은" in captions
+    # 편집본이 언제 이 파일에 드는지는 값 줄의 풍선이다(설계 규칙 UI-TXT-01).
+    (basis_line,) = [item for item in app.caption if item.value.startswith("현재 데이터 ·")]
+    assert "표에서 고친 값은" in str(basis_line.proto.help)
 
     name = current_data_file_name(
         "equipment_master", latest_snapshot=saved, edited=False, today=date(2026, 9, 24)
@@ -826,7 +828,10 @@ def test_the_history_also_lists_a_common_only_save_with_its_memo(
 
     schedules = app.dataframe[0].value
     assert "담당만 바꿈" not in schedules["변경메모"].tolist()
-    assert COMMON_ONLY_HISTORY_NOTE in _texts(app, "caption")
+    # 공통만 바꾼 저장이 그 목록에 없다는 것은 목록 이름 줄의 풍선이다(설계 규칙 UI-TXT-01).
+    (listing,) = [item for item in app.caption if item.value.endswith("의 일정 리비전")]
+    assert COMMON_ONLY_HISTORY_NOTE in str(listing.proto.help)
+    assert COMMON_ONLY_HISTORY_NOTE not in _texts(app, "caption")
     assert "공통 대장 저장 이력 2건" in [item.label for item in app.expander]
     commons = app.dataframe[1].value
     assert commons[["공통", "변경메모", "이 시나리오 일정"]].values.tolist() == [
@@ -908,7 +913,12 @@ def test_each_small_editor_says_a_new_row_needs_its_required_cells_before_applyi
             f"새 줄은 필수 칸({columns})을 모두 채워야 들어갑니다 — 하나라도 비운 새 줄은 "
             "「편집본에 적용」 때 버려집니다."
         )
-        assert any(text.startswith(expected) for text in _texts(app, "caption")), table
+        # 누르기 전에 알아야 하는 것이라 「편집본에 적용」 단추의 풍선이다(설계 규칙 UI-NTF-09 —
+        # 표 밑에 늘 세우지 않는다).
+        slug = "baseline" if key == BASELINE_EDITOR_KEY else "downtime"
+        apply = app.button(key=f"equipment_{slug}_apply_v1")
+        assert str(apply.help).startswith(expected), table
+        assert not any(text.startswith(expected) for text in _texts(app, "caption")), table
         # 안내가 적는 칸은 그 편집표가 실제로 `required=True` 로 건 칸의 화면 이름과 같다(한쪽만
         # 고치면 어긋난다 — 「기존보유대수」 칸은 「기존 보유대수」 로 보인다).
         widget = _small_editor_key(app, key)

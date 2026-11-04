@@ -106,26 +106,37 @@ def usage_exclusion_notice(
     가용 19대」 바로 밑에 「가용대수에서 뺐습니다」 만 붙으면 총대수에는 드는 것처럼 읽혀 두 수가
     어긋나 보였다(E2E).
     """
-    label = usage_exclusion_label(excluded, processes=processes, unit_ids=unit_ids)
-    if label is None:
+    count = usage_excluded_count(excluded, processes=processes, unit_ids=unit_ids)
+    if count <= 0:
         return None
     where = "총대수·가용대수·비가동대수 모두에서" if totals else "가용대수에서"
     return (
-        f"{label}(설비 마스터 기준)는 " + where + " 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+        f"사용기준이 {_COUNTED_BASIS_TEXT} 가 아닌 {format_unit_count(count)}대"
+        "(설비 마스터 기준)는 " + where + " 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     )
 
 
-def usage_exclusion_label(
+def usage_exclusion_mark(
     excluded: pd.DataFrame,
     *,
     processes: Collection[str] | None = None,
     unit_ids: Collection[str] | None = None,
 ) -> str | None:
-    """「사용기준이 HBM·EDP 가 아닌 N대」 값 글. 0대면 `None`(그리지 않는다)."""
+    """「사용기준 HBM·EDP 밖 N대 제외」 표지. 0대면 `None`(그리지 않는다). 뜻은
+    `usage_exclusion_help` 다 — 범위는 `usage_exclusion_notice` 와 같다."""
     count = usage_excluded_count(excluded, processes=processes, unit_ids=unit_ids)
     if count <= 0:
         return None
-    return f"사용기준이 {_COUNTED_BASIS_TEXT} 가 아닌 {format_unit_count(count)}대"
+    return f"사용기준 {_COUNTED_BASIS_TEXT} 밖 {format_unit_count(count)}대 제외"
+
+
+def usage_exclusion_help(*, totals: bool = False) -> str:
+    """사용기준 제외 표지의 풍선 — `usage_exclusion_notice` 의 뜻 그대로(`totals` 도 같다)."""
+    where = "총대수·가용대수·비가동대수 모두에서" if totals else "가용대수에서"
+    return (
+        f"사용기준이 {_COUNTED_BASIS_TEXT} 가 아닌 호기(설비 마스터 기준)는 {where} 뺐습니다 — "
+        "배치·호기 목록에는 그대로 있습니다."
+    )
 
 
 def _empty() -> pd.DataFrame:

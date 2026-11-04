@@ -163,12 +163,12 @@ from capa_simulation.services.shortening_watch import (
 )
 from capa_simulation.services.space_shortening_layer import shortening_space_floors
 from capa_simulation.services.undated_equipment import (
-    UNDATED_RULE_TEXT,
+    UNDATED_HELP,
     undated_candidate_note,
-    undated_equipment_label,
+    undated_equipment_mark,
 )
 from capa_simulation.services.upeh_assumption import UpehAssumption
-from capa_simulation.services.usage_basis import usage_exclusion_label
+from capa_simulation.services.usage_basis import usage_exclusion_mark
 from capa_simulation.settings import DUCKDB_PATH
 
 __all__ = [
@@ -870,7 +870,7 @@ def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
 def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
     """반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 그리지 않는다.
 
-    자리에는 값(「일정 미정 N대 (…)」 — Main·Static 대비 일정과 같은 함수)만 두고, 규칙 글과
+    자리에는 표지(「일정 미정 N대 (…)」 — Main·Static 대비 일정과 같은 함수)만 두고, 규칙 글과
     **Qual 일정이 없는 몫**은 단축 후보도 아니라는 말(`undated_candidate_note`)은 그 줄의 풍선에
     둔다(설계 규칙 UI-TXT-01 · UI-TXT-04) — 이 탭은 Qual 일정이 있는 호기만 당기므로, 알리지 않으면
     「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다. 반입만 빈 호기는 Qual 일정이 있어
@@ -882,13 +882,13 @@ def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] |
         undated = simulation_cache.get_undated_equipment(equipment)
     except ValueError:
         return
-    label = undated_equipment_label(undated, processes=selected)
-    if label is None:
+    mark = undated_equipment_mark(undated, processes=selected)
+    if mark is None:
         return
     note = undated_candidate_note(undated, processes=selected)
     st.caption(
-        f":material/event_busy: {label}",
-        help=UNDATED_RULE_TEXT + (f" {note}" if note else ""),
+        f":material/event_busy: {mark}",
+        help=UNDATED_HELP + (f" {note}" if note else ""),
     )
 
 
@@ -903,10 +903,10 @@ def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | N
         excluded = simulation_cache.get_usage_excluded_equipment(equipment)
     except ValueError:
         return
-    label = usage_exclusion_label(excluded, processes=selected)
-    if label is not None:
-        # 값만 자리에 — 뺀 곳 · 후보 아님은 풍선(설계 규칙 UI-TXT-01 · UI-TXT-04).
-        st.caption(f":material/filter_alt_off: {label}", help=USAGE_NOTICE_HELP)
+    mark = usage_exclusion_mark(excluded, processes=selected)
+    if mark is not None:
+        # 표지만 자리에 — 뺀 곳 · 후보 아님은 풍선(설계 규칙 UI-TXT-01 · UI-TXT-04).
+        st.caption(f":material/filter_alt_off: {mark}", help=USAGE_NOTICE_HELP)
 
 
 def _render_manual_notice(

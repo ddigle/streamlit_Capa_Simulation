@@ -36,6 +36,7 @@ from capa_simulation.services.availability_sheet import (
     SCHEDULE_ROWS,
     STATIC_ROWS,
 )
+from capa_simulation.services.undated_equipment import UNDATED_HELP
 
 MONTH = 202610
 
@@ -621,13 +622,18 @@ def test_missing_demand_only_blocks_the_cross_check() -> None:
 
 @pytest.mark.parametrize(
     ("state_key", "notice"),
-    [("empty_cutoff", "공정별 Cut-off 를 먼저"), ("empty_months", "조회기간에 월이 없습니다")],
+    [("empty_cutoff", "공정별 Cut-off 가 없습니다"), ("empty_months", "조회기간에 월이 없습니다")],
 )
 def test_missing_input_is_explained_before_any_result(state_key: str, notice: str) -> None:
     app = _run(**{state_key: True})
     assert not app.dataframe
     assert not app.get("plotly_chart")
-    assert notice in " ".join(item.value for item in [*app.info, *app.caption])
+    # 빈 상태는 회색 평문 한 줄(상자 아님)이고 하는 법은 그 줄의 풍선이다(설계 규칙 UI-TXT-04).
+    assert notice in " ".join(item.value for item in app.caption)
+    assert not app.info
+    if state_key == "empty_cutoff":
+        (line,) = [item for item in app.caption if notice in item.value]
+        assert "먼저 적어야" in str(line.proto.help)
 
 
 def test_period_notices_do_not_direct_users_to_the_old_preference_tab() -> None:
@@ -758,7 +764,10 @@ def test_a_click_does_not_follow_the_table_into_another_scope() -> None:
     app.selectbox(key=PROCESS_FILTER_KEY).select("Etch").run()
     assert not app.exception
     assert not _evidence(app)
-    assert "칸을 누르면 근거가 여기에 뜹니다" in " ".join(item.value for item in app.markdown)
+    # 빈 근거 칸은 이름과 값 한 줄 — 읽는 법은 이름의 풍선이다(설계 규칙 UI-TXT-01 · UI-LAY-10).
+    (heading,) = [item for item in app.markdown if item.value == "**근거**"]
+    assert "칸을 누르면 근거가 여기에 뜹니다" in str(heading.proto.help)
+    assert "고른 칸이 없습니다." in [item.value for item in app.caption]
 
 
 def test_the_unit_list_keeps_full_precision_so_thirds_add_up_to_one() -> None:
@@ -823,7 +832,7 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     open_cell(app, MONTH, ROW_GAP_AVAILABLE)
     app.run()
     assert "기준정보(Static)에 없는 공정이라 맞대지 않습니다" in " ".join(
-        item.value for item in app.info
+        item.value for item in app.caption
     )
 
 
@@ -875,10 +884,12 @@ def test_undated_units_are_named_in_the_scope_the_counts_use() -> None:
     """날짜가 빈 신규 호기는 Dynamic 에 들지 않는다 — 둘러싼 대수와 같은 범위로 한 줄 알린다."""
     app = _run(undated_units=True)
 
+    # 자리에는 표지만, 뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
     assert _undated_captions(app) == [
-        ":material/event_busy: 일정 미정 2대 (반입 미정 1 · Qual 미정 1) — 날짜가 들어올 때까지 "
-        "가용대수에 세지 않습니다."
+        ":material/event_busy: 일정 미정 2대 (반입 미정 1 · Qual 미정 1)"
     ]
+    (line,) = [item for item in app.caption if "일정 미정" in item.value]
+    assert line.proto.help == UNDATED_HELP
 
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
     assert [text.split(" — ")[0] for text in _undated_captions(app)] == [
@@ -891,7 +902,7 @@ def test_undated_units_are_named_in_the_scope_the_counts_use() -> None:
 
 
 def _usage_captions(app: AppTest) -> list[str]:
-    return [caption.value for caption in app.caption if "사용기준이 HBM" in caption.value]
+    return [caption.value for caption in app.caption if "사용기준 HBM" in caption.value]
 
 
 def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> None:
@@ -900,14 +911,14 @@ def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> 
     assert _usage_captions(_run(undated_units=True)) == []
     app = _run(undated_units=True, non_hbm_units=True)
 
-    assert _usage_captions(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 2대(설비 마스터 기준)는 가용대수에서 "
-        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
-    ]
+    assert _usage_captions(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 2대 제외"]
+    (line,) = [item for item in app.caption if "사용기준 HBM" in item.value]
+    assert line.proto.help == (
+        "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 가용대수에서 뺐습니다 — 배치·호기 "
+        "목록에는 그대로 있습니다."
+    )
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
-    assert [text.split("(")[0] for text in _usage_captions(app)] == [
-        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대"
-    ]
+    assert _usage_captions(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 1대 제외"]
     for view in ("분류별 내역", "확보율 교차검증"):
         _select_view(app, view)
         assert len(_usage_captions(app)) == 1, view
@@ -1182,7 +1193,7 @@ def test_the_idle_downtime_note_blocks_the_tildes_of_the_unit_names() -> None:
     assert not app.exception
 
     notes = [str(item.value) for item in app.caption if "가용을 깎지 않은 비가동" in item.value]
-    assert notes and all("1호기(EQ\\~S\\~R —" in note for note in notes), notes
+    assert notes and all("1호기(EQ\\~S\\~R)" in note for note in notes), notes
 
 
 def test_the_idle_downtime_note_keeps_the_stars_of_the_unit_names() -> None:
@@ -1196,7 +1207,7 @@ def test_the_idle_downtime_note_keeps_the_stars_of_the_unit_names() -> None:
     assert not app.exception
 
     notes = [str(item.value) for item in app.caption if "가용을 깎지 않은 비가동" in item.value]
-    assert notes and all("1호기(EQ\\*S\\*R —" in note for note in notes), notes
+    assert notes and all("1호기(EQ\\*S\\*R)" in note for note in notes), notes
 
 
 def _detail_link_app() -> None:

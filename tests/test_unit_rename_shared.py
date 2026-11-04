@@ -26,6 +26,7 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_VIEW_PREFIX,
     LAST_REMOVED_KEY,
     NAME_CHANGES_CAPTION,
+    NAME_CHANGES_MARK,
     PENDING_DELETE_KEY,
     PENDING_RENAMES_KEY,
     RENAME_INSTEAD_HINT,
@@ -406,7 +407,11 @@ def test_the_master_tab_lists_the_unsaved_renames_made_in_space(tmp_path: Path) 
     assert table.to_dict(orient="records") == [
         {"구분": "설비명", "이전 이름": "EQ-01", "새 이름": "EQ-101"}
     ]
-    assert any(NAME_CHANGES_CAPTION in str(item.value) for item in app.caption)
+    # 이름 바꿈의 뜻은 값 줄의 풍선이다(설계 규칙 UI-TXT-01).
+    assert any(
+        item.value == NAME_CHANGES_MARK and item.proto.help == NAME_CHANGES_CAPTION
+        for item in app.caption
+    )
 
 
 def test_a_save_that_removes_and_adds_pasted_units_points_at_the_rename_tool() -> None:

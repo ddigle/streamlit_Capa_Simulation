@@ -785,7 +785,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 확보율 · 판정 · 숫자 칸을 그리는 모든 표 · 그림
 - 예외: 없음
 - 판단: 이 칸이 비었을 때와 0 일 때 화면이 다르게 보이나?
-- 그물: 화면별 일부(`test_bar_ratio_treats_a_missing_rate_as_no_bar` · `test_a_nonzero_impact_is_never_written_as_zero`) · `tests/test_data_editor_placeholder.py`(편집표 빈칸 — 소스 전체)
+- 그물: 화면별 일부(`test_bar_ratio_treats_a_missing_rate_as_no_bar` · `test_a_nonzero_impact_is_never_written_as_zero`) · `tests/test_data_editor_placeholder.py`(편집표 빈칸 — 소스 전체, 읽기 표 `st.dataframe` 빈칸 — 아직 남은 화면 파일 목록 `DATAFRAME_PENDING` 은 줄기만 한다)
 - 그물 후보: 숫자 서식 도우미 하나의 「0 아닌데 0」 검사 + 화면이 그 도우미를 쓰는지
 - 근거: AGENTS 8장, AGENTS 9장
 - 지금 값: 없음

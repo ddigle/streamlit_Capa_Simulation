@@ -283,8 +283,12 @@ def test_the_panel_sheet_figure_and_evidence_take_the_input_out() -> None:
     assert lines["가용"].iloc[-1] == pytest.approx(3.5)  # 합계 줄 = 칸
     markdown = " ".join(item.value for item in app.markdown)
     assert "(그 가운데 입력 비가동 −1.00)" in markdown
-    captions = " ".join(item.value for item in app.caption)
-    assert "Preference 에서 공정 × 달로 넣은 비가동" in captions
+    # 입력 비가동 줄의 뜻은 식 줄의 풍선이다 — 카드 밑에 늘 세우지 않는다(설계 규칙 UI-TXT-01).
+    helps = " ".join(str(item.proto.help) for item in app.markdown)
+    assert "Preference 에서 공정 × 달로 넣은 비가동" in helps
+    assert "Preference 에서 공정 × 달로 넣은 비가동" not in " ".join(
+        item.value for item in app.caption
+    )
 
     open_cell(app, MONTH, ROW_SCHEDULE_LENT)
     app.run()
@@ -303,8 +307,8 @@ def test_an_input_above_the_month_stops_at_zero_and_says_so() -> None:
     assert sheet_value(app, MONTH, ROW_SCHEDULE_LENT) == -4.5
     open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
-    captions = " ".join(item.value for item in app.caption)
-    assert "넣은 10대 가운데 그 달 가용만큼만 뺐습니다" in captions
+    helps = " ".join(str(item.proto.help) for item in app.markdown)
+    assert "넣은 10대 가운데 그 달 가용만큼만 뺐습니다" in helps
 
 
 @pytest.mark.parametrize("keyed", [False, True])
