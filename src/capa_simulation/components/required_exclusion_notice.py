@@ -29,8 +29,9 @@ PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림�
 있는지를 말한다. 코드는 `ST-01`(계획 쪽 · 조회기간 — Static Capa 와 산출 결과 소요대수 탭이 같은
 코드 · 같은 범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다), `ST-04`(PKG PLAN 적용 뒤 ·
 시나리오 전체 기간), `ST-14`(대당 Capa 제외 기준정보 — 목록은 Alarm 줄의 표), `ST-15`(대당 Capa 가
-없어 소요대수에서 뺀 경로), `ST-21`(PKG 의 Buffer 밖 행 — 규칙이라 알림 단계)다. 목록 펼침 안 첫
-줄이 고칠 곳을 말한다.
+없어 소요대수에서 뺀 경로), `ST-21`(PKG 의 Buffer 밖 행 — 규칙이라 알림 단계)다. 계획 쪽
+목록에서 고칠 곳은 펼침 안 자리 글이 아니라 까닭 칸(`누락 기준정보` · `제외사유`) 머리 풍선과
+Guide 가 말한다(설계 규칙 UI-TXT-01 · 02 · 03).
 """
 
 from __future__ import annotations
@@ -43,9 +44,11 @@ from capa_simulation.components.exclusion_table import render_exclusion_table
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.services.display_order import DisplayOrderInput
+from capa_simulation.services.load_calculator import PLAN_QUANTITY_BLANK_REASON
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
     UNROUTED_KEY_MISMATCH_REASON,
+    UNROUTED_REASON_COLUMN,
     UNROUTED_UNKNOWN_PRODUCT_REASON,
     RequiredExclusionCounts,
     counted_unrouted_loads,
@@ -63,17 +66,18 @@ REQUIRED_LIST_PLACE = "산출 결과 › 소요대수"
 # 대당 Capa 제외 목록(Alarm 줄의 표) 이름. 2026-11-02 사용자 요청(검수표) 전에는 대당 Capa 탭 본문의
 # 「제외 기준정보 확인」 펼침이었다.
 CAPACITY_EXCLUSION_TITLE = "제외 기준정보"
-# 계획 쪽 목록 펼침 안 첫 줄 — 고칠 곳(경고 상자를 알림으로 옮긴 뒤 목록 곁에 남기는 자리 글).
-LOAD_EXCLUSION_GUIDE = (
-    "기준정보가 없어 부하량에서 빠진 계획은 소요대수에 들지 않습니다 — 「누락 기준정보」 칸의 "
-    "표를 채우면 반영됩니다(수율은 생산 계획 → 수율 탭). 생산수량이 빈 계획은 계획 없음(0)으로 "
-    "봤습니다 — 원천에서 수량이 빠진 것이면 다시 조회해야 합니다."
+# 계획 쪽 목록의 까닭 칸과 그 칸 머리 풍선 — 그 행을 어디서 고치는지(칸 하나의 뜻은 그 칸 곁 풍선 —
+# 설계 규칙 UI-TXT-02).
+LOAD_EXCLUSION_REASON_COLUMN = "누락 기준정보"
+LOAD_EXCLUSION_HELP = (
+    "이 칸의 기준정보 표를 채우면 그 계획이 부하량 · 소요대수에 듭니다(수율은 생산 계획 › "
+    f"수율 탭). 「{PLAN_QUANTITY_BLANK_REASON}」 은 생산수량이 비어 계획 없음(0)으로 본 "
+    "계획입니다 — 원천에서 수량이 빠진 것이면 다시 조회합니다."
 )
-UNROUTED_GUIDE = (
-    "이 부하는 어느 공정의 소요대수에도 들지 않습니다. 제외사유가 "
-    f"「{UNROUTED_KEY_MISMATCH_REASON}」이면 같은 제품·Stack·소요기준의 경로가 다른 달·양산구분·"
-    "Capa Code·Customer·CS 에는 있으니 계획 키를, "
-    f"「{UNROUTED_UNKNOWN_PRODUCT_REASON}」이면 그 제품·Stack 의 경로를 RQ_REQB 에서 보세요."
+UNROUTED_HELP = (
+    f"「{UNROUTED_KEY_MISMATCH_REASON}」 — 같은 제품·Stack·소요기준의 경로가 다른 달·양산구분·"
+    "Capa Code·Customer·CS 에는 있으니 계획 키를 봅니다. "
+    f"「{UNROUTED_UNKNOWN_PRODUCT_REASON}」 — 그 제품·Stack 의 경로를 RQ_REQB 에서 봅니다."
 )
 # 목록 표의 분류 컬럼(표시순서가 거는 차례). 월은 표 앞에 그대로 둔다.
 _LOAD_EXCLUSION_DIMENSIONS = ("제품정보", "Stack", "WF 구분")
@@ -126,8 +130,8 @@ def render_plan_exclusion_lists(
     file_suffix: str,
 ) -> None:
     """산출 결과 소요대수 탭의 계획 쪽 목록 둘 — 부하량에서 빠진 계획, 경로에 닿지 않은 계획 부하.
-    건수 경고는 자리에 그리지 않고 상태 알림 `ST-01` 이 말한다(`alert_uncounted_demand`) — 펼침 안
-    첫 줄이 고칠 곳이다.
+    건수 경고는 자리에 그리지 않고 상태 알림 `ST-01` 이 말한다(`alert_uncounted_demand`) — 고칠 곳은
+    까닭 칸 머리 풍선(`LOAD_EXCLUSION_HELP` · `UNROUTED_HELP`)이다.
 
     경로 쪽 제외(`소요대수 제외 기준정보`)와 따로 둔다. 고칠 곳이 다르다 — 이쪽은 계획에 맞는
     수율·Chip 구성·경로가 없는 것이라 계획이나 그 기준정보를, 경로 쪽은 대당 Capa 기준정보를 본다.
@@ -139,7 +143,6 @@ def render_plan_exclusion_lists(
     unrouted_loads = counted_unrouted_loads(unrouted_loads)
     if not load_exclusions.empty:
         with st.expander("부하량에서 빠진 계획", expanded=False):
-            st.caption(LOAD_EXCLUSION_GUIDE)
             render_exclusion_table(
                 load_exclusions,
                 dimensions=_LOAD_EXCLUSION_DIMENSIONS,
@@ -149,10 +152,10 @@ def render_plan_exclusion_lists(
                 labels=labels,
                 file_name=f"Capa_Load_Exclusions_{file_suffix}.csv",
                 key="download_load_exclusions_csv",
+                column_help={LOAD_EXCLUSION_REASON_COLUMN: LOAD_EXCLUSION_HELP},
             )
     if not unrouted_loads.empty:
         with st.expander("경로에 닿지 않은 계획 부하", expanded=False):
-            st.caption(UNROUTED_GUIDE)
             render_exclusion_table(
                 unrouted_loads,
                 dimensions=_UNROUTED_DIMENSIONS,
@@ -162,6 +165,7 @@ def render_plan_exclusion_lists(
                 labels=labels,
                 file_name=f"Capa_Unrouted_Loads_{file_suffix}.csv",
                 key="download_unrouted_loads_csv",
+                column_help={UNROUTED_REASON_COLUMN: UNROUTED_HELP},
             )
 
 

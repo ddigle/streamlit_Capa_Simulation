@@ -1,5 +1,6 @@
 # Purpose: standard target capa page 관련 정상·예외·회귀 동작을 검증한다.
 
+import json
 import re
 from collections.abc import Iterator
 from datetime import date
@@ -249,6 +250,7 @@ finally:
 """
 
 RENAMED_TEST_SCRIPT = TEST_SCRIPT.replace("APPLY_RENAME = False", "APPLY_RENAME = True")
+MISSING_WEEK_SCRIPT = TEST_SCRIPT.replace("DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True")
 RENAMED_MISSING_WEEK_SCRIPT = RENAMED_TEST_SCRIPT.replace(
     "DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True"
 )
@@ -336,7 +338,19 @@ def test_standard_target_page_analyzes_one_selected_process_week() -> None:
         "Stack",
         "WF 속성",
     ]
+    # 다 고르기 전에는 빈 결과 한 줄(평문)이고, 앞 칸이 빈 뒤 칸은 잠긴 채 까닭 풍선을 단다(설계
+    # 규칙 UI-TXT-01 · 04 · UI-INP-07).
+    assert not infos(app)
+    assert "산출 근거를 그릴 한 건이 아직 없습니다." in [element.value for element in app.caption]
+    first, second = (
+        app.selectbox(key="standard_target_logic_weeknum"),
+        app.selectbox(key="standard_target_logic_process"),
+    )
+    assert not first.disabled and not first.help
+    assert second.disabled and "Weeknum" in second.help
     app = app.selectbox(key="standard_target_logic_weeknum").set_value("26-W32").run()
+    second = app.selectbox(key="standard_target_logic_process")
+    assert not second.disabled and not second.help
     app = app.selectbox(key="standard_target_logic_process").set_value("Process-A").run()
     app = app.selectbox(key="standard_target_logic_basis").set_value("WF").run()
     app = app.selectbox(key="standard_target_logic_production_type").set_value("양산").run()
@@ -628,12 +642,18 @@ def test_weekly_availability_template_carries_saved_counts_and_blanks_the_rest()
 
 
 def test_availability_paste_keeps_blank_cells_and_says_so_before_applying() -> None:
-    """팝업은 빈칸이 「그대로 둠」이라고 먼저 알리고, 빈칸 행은 저장소로 넘기지 않는다."""
+    """팝업은 빈칸이 「그대로 둠」이라는 것(붙여넣는 칸 풍선)과 되돌릴 수 없다는 것(적용 단추
+    풍선)을 누르기 전에 알리고(설계 규칙 UI-NTF-09 — 늘 서는 설명 글은 없다, UI-TXT-01), 빈칸
+    행은 저장소로 넘기지 않는다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
     app.button(key="open_standard_target_availability_paste").click().run()
 
     assert not app.exception
-    assert any("비운 칸은 저장된 값" in caption.value for caption in app.caption)
+    assert not [caption.value for caption in app.caption if "저장된 값" in caption.value]
+    paste_box = app.text_area(key="standard_target_availability_clipboard_text")
+    assert "비운 칸은 저장된 값" in paste_box.help and "「0 대」" in paste_box.help
+    apply_button = next(button for button in app.button if button.label == "붙여넣기 적용")
+    assert "되돌릴 수 없습니다" in apply_button.help
     app.text_area(key="standard_target_availability_clipboard_text").set_value(
         "공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t\nProcess-B\t26-W32\t3\n"
     )
@@ -645,15 +665,33 @@ def test_availability_paste_keeps_blank_cells_and_says_so_before_applying() -> N
     assert saved.to_dict("records") == [{"공정": "Process-B", "Weeknum": "26-W32", "가용대수": 3.0}]
 
 
+def _process_column_helps(app: AppTest) -> list[str]:
+    return [
+        json.loads(frame.proto.columns).get("공정", {}).get("help", "") for frame in app.dataframe
+    ]
+
+
 def test_missing_availability_table_shows_the_display_name_with_a_source_notice() -> None:
-    """누락 안내 표는 화면이라 표시명이고, 붙여넣을 원본이 어디 있는지 함께 알린다."""
+    """누락 안내 표는 화면이라 표시명이고, 붙여넣을 원본이 어디 있는지는 공정 칸 머리 풍선이
+    알린다 — 펼침 안 길 안내 글은 없다(설계 규칙 UI-TXT-03 · 04 「숨은 데이터 안내는 칸 머리
+    표지 + 풍선」)."""
     app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
     missing = _frame_with_value(app, "공정", "가공")
     assert missing["Weeknum"].tolist() == ["26-W33"]
-    assert any("CSV 양식 다운로드" in caption.value for caption in app.caption)
+    assert not [caption.value for caption in app.caption if "CSV 양식" in caption.value]
+    assert any("CSV 양식 다운로드" in text for text in _process_column_helps(app))
+
+
+def test_missing_availability_table_without_display_names_has_no_source_notice() -> None:
+    """표시명이 없으면 표의 공정이 곧 원본이라 공정 칸 풍선을 달지 않는다."""
+    app = AppTest.from_string(MISSING_WEEK_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
+    assert not any(_process_column_helps(app))
 
 
 def _subheader_path(node: Block | Node, text: str) -> tuple[int, ...] | None:
@@ -737,12 +775,20 @@ def test_standard_target_guide_carries_what_left_the_body() -> None:
         "모든 공정·모든 주차",
         "양식 밖 값은 되살릴 수",
         "미설정으로 되돌리는 방법은 아직 없습니다",
+        # 자리에서 걷어 풍선 · Guide 로 옮긴 말(설계 규칙 UI-TXT-01 · 02).
+        "붙여넣기 적용** 단추의 풍선",
+        "저장된 주차별 가용대수가 없습니다",
+        "**가용설비 붙여넣기** 로 넣습니다",
+        "원본 공정명을 씁니다",
+        "산출 근거를 그릴 한 건이 아직 없습니다",
     ):
         assert text in guide, text
     # 예전 권고 — 따라 하면 필터·기간 밖 저장값이 되돌릴 수 없게 사라졌다.
     assert "입력 초기화** 뒤 다시 붙여넣" not in guide
 
 
+# 저장된 주차별 가용설비가 없을 때 표 자리의 빈 결과 한 줄.
+AVAILABILITY_EMPTY = "저장된 주차별 가용대수가 없습니다."
 EMPTY_AVAILABILITY_SCRIPT = TEST_SCRIPT.replace(
     "        return availability.copy()\n",
     '        return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])\n',
@@ -759,31 +805,32 @@ def test_exception_rows_are_shown_even_when_the_availability_is_empty() -> None:
     app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert any("가용설비 붙여넣기" in element.value for element in infos(app))
+    assert AVAILABILITY_EMPTY in [element.value for element in app.caption]
     notice = _frame_with_value(app, "공정", "Pre B/D")
     assert notice["현재 조회범위 제외 행"].tolist() == [0]
 
 
 def test_an_empty_availability_stops_only_the_views_that_multiply_by_it() -> None:
-    """저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 「일 표준 가능량」·「가용대수」만 입력
-    안내로 멈춘다. 「대당 일 Capa」 는 가용대수 이전 단계라 표가 서고, 「로직 분석」 은 고르는 칸과
-    근거(가용대수 빈칸)를 보인다 — 한 줄만 넣었을 때와 같은 화면이다."""
+    """저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 「일 표준 가능량」·「가용대수」만 빈
+    결과 한 줄로 멈춘다(평문 — 넣는 곳은 Guide, 설계 규칙 UI-TXT-01 · 04). 「대당 일 Capa」 는
+    가용대수 이전 단계라 표가 서고, 「로직 분석」 은 고르는 칸과 근거(가용대수 빈칸)를 보인다 —
+    한 줄만 넣었을 때와 같은 화면이다. 지울 저장값이 없어 잠긴 「입력 초기화」 는 까닭 풍선을
+    단다(UI-INP-07)."""
     app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
     assert not app.exception
-    assert [element.value for element in infos(app)] == [
-        "주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요."
-    ]
+    assert not infos(app)
+    assert AVAILABILITY_EMPTY in [element.value for element in app.caption]
+    clear_button = app.button(key="open_standard_target_availability_clear")
+    assert clear_button.disabled and clear_button.help
 
     app = app.segmented_control(key="standard_target_output_metric").set_value("가용대수").run()
     assert not app.exception
-    assert "주차별 가용대수를 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요." in [
-        element.value for element in infos(app)
-    ]
+    assert AVAILABILITY_EMPTY in [element.value for element in app.caption]
 
     output_selector = app.segmented_control(key="standard_target_output_metric")
     app = output_selector.set_value("대당 일 Capa").run()
     assert not app.exception
-    assert not any("가용설비 붙여넣기" in element.value for element in infos(app))
+    assert AVAILABILITY_EMPTY not in [element.value for element in app.caption]
     assert "주차별 대당 일 Capa" in [element.value for element in app.subheader]
     assert app.session_state["captured_first_week_value"] == pytest.approx(100.0 / 31.0)
 

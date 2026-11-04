@@ -489,10 +489,8 @@ COLLIDING_TWO_PROCESS_TEST_SCRIPT = RENAMED_TWO_PROCESS_TEST_SCRIPT.replace(
 assert COLLIDING_TWO_PROCESS_TEST_SCRIPT != RENAMED_TWO_PROCESS_TEST_SCRIPT
 
 STEP_VIEW = "STEP별"
-STEP_VIEW_HINT = (
-    "STEP별 대당 Capa는 선택한 공정만 그립니다. 사이드바 「표 조건」의 공정 필터에서 공정을 "
-    "선택하세요. 전체 공정을 한 번에 보려면 공정별을 사용하세요."
-)
+# STEP별에서 공정을 고르지 않았을 때 표 자리의 빈 결과 한 줄(평문 — 설계 규칙 UI-TXT-04).
+STEP_VIEW_EMPTY = "STEP별로 그릴 공정이 없습니다."
 CALC_TAB_KEY = "calculation_result_active_tab"
 REQUIRED_TAB = ":material/precision_manufacturing: 소요대수"
 SECUREMENT_TAB = ":material/monitoring: 확보율"
@@ -781,16 +779,28 @@ def test_step_changes_open_in_a_popup_from_the_action_row() -> None:
     assert app.selectbox(key="capacity_step_route").options
 
 
+def _captions(app: AppTest) -> set[str]:
+    return {str(element.value) for element in app.caption}
+
+
 def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
-    """전 공정 STEP 을 그리면 Plotly 데이터가 폭증한다. 미선택이면 표를 만들지도 않는다."""
+    """전 공정 STEP 을 그리면 Plotly 데이터가 폭증한다. 미선택이면 표를 만들지도 않는다.
+
+    표 자리에는 빈 결과 평문 한 줄만 서고 고르는 법 · 길 안내 상자는 없다 — 고르는 법은
+    `표시 방식` 풍선 · 공정 필터 자리 글 · Guide, 잠긴 `집계 수준` 은 까닭 풍선이다(설계 규칙
+    UI-TXT-01 · 03 · 04 · UI-INP-07)."""
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
     app.session_state["unit_capacity_view_mode"] = STEP_VIEW
     app.run()
 
     assert not app.exception
-    assert STEP_VIEW_HINT in {info.value for info in infos(app)}
+    assert STEP_VIEW_EMPTY in _captions(app)
+    assert not infos(app)
     assert "download_unit_capacity_csv" not in {button.key for button in app.download_button}
     assert CAPACITY_TABLE_KEY not in app.session_state
+    level = app.selectbox(key="unit_capacity_detail_level")
+    assert level.disabled and "집계 수준" in level.help
+    assert "고른 공정만" in app.segmented_control(key="unit_capacity_view_mode").help
 
 
 def test_step_unit_capacity_draws_only_the_selected_process() -> None:
@@ -800,7 +810,7 @@ def test_step_unit_capacity_draws_only_the_selected_process() -> None:
     app.run()
 
     assert not app.exception
-    assert STEP_VIEW_HINT not in {info.value for info in infos(app)}
+    assert STEP_VIEW_EMPTY not in _captions(app)
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A"]
     assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
 
@@ -811,7 +821,9 @@ def test_effective_process_capacity_still_shows_every_process_without_a_filter()
 
     assert not app.exception
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-A", "Process-B"]
-    assert STEP_VIEW_HINT not in {info.value for info in infos(app)}
+    assert STEP_VIEW_EMPTY not in _captions(app)
+    level = app.selectbox(key="unit_capacity_detail_level")
+    assert not level.disabled and not level.help
     assert "download_unit_capacity_csv" in {button.key for button in app.download_button}
 
 
@@ -1565,7 +1577,13 @@ def test_calculation_result_guide_carries_what_left_the_body() -> None:
         "`부하량 ÷ 대당 Capa`",
         "`가용대수 ÷ 소요대수`",
         "`표시 방식`(공정별·STEP별)",
+        "STEP별로 그릴 공정이 없습니다",
         "표 조건 카드의 필터가 히트맵에도",
+        # 계획 쪽 목록의 고칠 곳은 펼침 안 자리 글이 아니라 까닭 칸 머리 풍선이다.
+        "까닭 칸(`누락 기준정보` · `제외사유`) 머리",
+        "수율은 `생산 계획` → 수율 탭",
+        "원천에서 수량이 빠진 것이면 다시 조회",
+        "`경로 키 어긋남`",
         "칸 안 숫자와 hover 는 자르지 않은 확보율",
     ):
         assert text in guide, text

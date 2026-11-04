@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 131
+UNSETTLED_SITES = 124
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -80,7 +80,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app.py", ""): (BESIDE_INPUT,),
     ("app_pages/admin_area.py", ""): (EMPTY, CANNOT_DRAW),
     ("app_pages/available_equipment_status.py", ""): (UNSETTLED, EMPTY),
-    ("app_pages/calculation_result.py", ""): (UNSETTLED,),
+    ("app_pages/calculation_result.py", ""): (EMPTY,),
     ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
     ("app_pages/constraint_simulation.py", ""): (
         CANNOT_DRAW,
@@ -130,9 +130,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
         BESIDE_INPUT,
     ),
-    ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, UNSETTLED, UNSETTLED),
-    ("app_pages/standard_target_capa.py", "_paste_dialog"): (UNSETTLED,),
-    ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (UNSETTLED,),
+    ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, EMPTY),
+    ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (EMPTY,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
     ("app_pages/wip_status.py", ""): (EMPTY, UNSETTLED, EMPTY, UNSETTLED, UNSETTLED),
@@ -433,10 +432,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (UNSETTLED,),
-    (
-        "src/capa_simulation/components/required_exclusion_notice.py",
-        "render_plan_exclusion_lists",
-    ): (UNSETTLED, UNSETTLED),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (
         UNSETTLED,
         EMPTY,
