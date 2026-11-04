@@ -30,8 +30,9 @@
 `upeh_assumption_controls`)은 **이 화면에 걸지 않는다** — KPI·LOB·공정 카드·CSV 세 벌·기준선·
 진척 비교는 늘 공식 계획이다(모두가 보는 진척 화면이라 가정 숫자가 공식 진척으로 돌지 않게). 공식
 대 가정 비교 보기는 두지 않는다 — 가정의 효과는 공정 Capa 상세에서 본다(TODO 3장 결정 기록
-「화면」). 칸이 여기에도 서는 것은 두 화면이 같은 세션 값을 나눠 쓰기 때문이다. 가정이 켜지면 머리
-아래 한 줄로 알리고, 그동안 기준선 저장은 거절한다.
+「화면」). 칸이 여기에도 서는 것은 두 화면이 같은 세션 값을 나눠 쓰기 때문이다. 가정이 켜졌음은
+머리 변경 칩이 알리고(이 화면 자리에는 적지 않는다 — 「늘 공식 계획」 은 Guide 가 말한다), 그동안
+기준선 저장은 거절한다.
 
 **진척 관리**(2026-10-22 「단축이 필요한 공정 전부의 진척 관리 한 페이지」)는 `shortening_board` 다
 — KPI 아래·카드 위의 공정 진척 보드(줄을 고르면 그 카드 강조)·카드 차례·기한 임박·이행 지연,
@@ -84,7 +85,6 @@ from capa_simulation.components.shortening_progress_panel import (
     render_baseline_notice,
     render_compare_select,
     render_progress_csv,
-    reserve_baseline_notice_slots,
     scope_note,
 )
 from capa_simulation.components.shortening_source import (
@@ -125,7 +125,6 @@ from capa_simulation.scenario_activation import (
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.floor_layout_profile import FloorKey
-from capa_simulation.services.korean_particle import subject_particle, with_topic_particle
 from capa_simulation.services.manual_downtime import manual_effect_band, overdrawn_rows
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
@@ -166,11 +165,13 @@ from capa_simulation.services.undated_equipment import (
     undated_candidate_note,
     undated_equipment_notice,
 )
-from capa_simulation.services.upeh_assumption import UpehAssumption, assumption_label
+from capa_simulation.services.upeh_assumption import UpehAssumption
 from capa_simulation.services.usage_basis import usage_exclusion_notice
 from capa_simulation.settings import DUCKDB_PATH
 
 __all__ = [
+    "MANUAL_NOTICE_HELP",
+    "SHARED_FILTER_HELP",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
     "SHORTENING_PROCESS_KEY",
@@ -190,6 +191,12 @@ _MONTHS_SOURCE = "필요 단축 일정 조회 기간"
 _PROCESSES_SOURCE = "필요 단축 일정 공정 선택"
 # 입력 비가동 출처 줄에 이름을 적는 넘친 칸 수.
 _MANUAL_OVER_LIMIT = 5
+# 자리에는 값 · 표지만 두고 저장 규칙 · 출처 설명은 풍선으로 둔다.
+SHARED_FILTER_HELP = "기간 · 공정을 바꾸면 모든 사용자의 기본 조회 조건이 됩니다."
+MANUAL_NOTICE_HELP = (
+    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 설비 일정 기준 가용에서 뺐습니다(호기별 "
+    "비가동과 별도)."
+)
 
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
 _LABEL_COLUMN_PX = 170
@@ -240,16 +247,12 @@ class _Plan:
     labels: ProcessLabels
     assumption: UpehAssumption | None = None
     """조건 카드의 UPEH 가정(100% 여도 구간이 있으면 든다 — `active` 가 거짓). 계획에는 걸지 않고
-    머리 아래 알림과 기준선 저장 거절에만 쓴다."""
+    기준선 저장 거절에만 쓴다(가정이 켜졌음은 머리 변경 칩이 알린다 — 자리에 적지 않는다)."""
 
     @property
     def plan(self) -> ShorteningPlan:
         """공식 계획."""
         return self.official.plan
-
-    @property
-    def assumption_active(self) -> bool:
-        return self.assumption is not None and self.assumption.active
 
 
 def render_required_shortening_tab(
@@ -273,7 +276,8 @@ def render_required_shortening_tab(
     equipment_basis: ShorteningEquipmentBasis | None = None,
     inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
-    """필요 단축 일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
+    """필요 단축 일정 화면 본문. 숨은 탭이면 아무것도 그리지 않는다(담아 둔 기준선 결과 알림은 탭을
+    다시 열 때 보낸다).
 
     `equipment_basis` 는 세션 설비 시나리오 쪽 출처·표시(`ShorteningEquipmentBasis`)다. 없으면
     (컴포넌트만 띄운 자리) 기준선 머리에 공통 리비전만 남기고 카드 링크에 `eq` 를 싣지 않는다.
@@ -304,7 +308,6 @@ def render_required_shortening_tab(
     이 탭의 머리·본문만 다시 그린다. 계획은 다섯 목표를 한 번에 세우므로 목표는 계산 입력이 아니다.
     """
     if tab_is_hidden(owner_tab):
-        reserve_baseline_notice_slots()
         return
     # 기준선을 쓴 뒤 앱 전체를 다시 돌리라는 표지는 앱 전체 회차가 거둔다 — 이 회차가 곧 그것이다.
     consume_baseline_write()
@@ -377,10 +380,8 @@ def _prepare(
     profile = shortening_filter_profile_or_default(database_path)
     with controls:
         if database_path is not None:
-            st.caption(
-                ":material/groups: 공용 설정 — 기간·공정을 바꾸면 모든 사용자의 기본 조회 조건이 "
-                "됩니다."
-            )
+            # 표지만 자리에 둔다 — 저장 규칙(바꾸면 모두의 기본값)은 풍선이 말한다.
+            st.caption(":material/groups: 공용 설정", help=SHARED_FILTER_HELP)
         months = _render_month_range(month_options, profile=profile, database_path=database_path)
 
     try:
@@ -500,7 +501,7 @@ def _render_body(
     inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교. 둘 다 공식
-    계획이다 — UPEH 가정이 켜져 있으면 머리 아래 한 줄로 그것을 알린다.
+    계획이다 — UPEH 가정이 켜졌음은 머리 변경 칩이 알린다(자리에 적지 않는다).
 
     강조 공정(`shortening_board.current_highlight` — 공정 Capa 상세에서 옮겨 왔거나 보드 줄을
     골랐다)은 두 보기 모두 카드 맨 앞이다. 공정 필터(조건 카드)는 건드리지 않는다.
@@ -540,11 +541,6 @@ def _render_body(
     if compared is not None:
         if equipment_basis is not None and equipment_basis.compare_note is not None:
             st.caption(f":material/account_tree: {equipment_basis.compare_note}")
-        if prepared.assumption_active and prepared.assumption is not None:
-            st.caption(
-                f":material/info: 진척 비교는 늘 공식 계획입니다 — "
-                f"{with_topic_particle(assumption_label(prepared.assumption))} 반영하지 않습니다."
-            )
         _render_progress(
             prepared.official,
             compared,
@@ -564,13 +560,6 @@ def _render_body(
         return
 
     thresholds = _thresholds()
-    if prepared.assumption_active and prepared.assumption is not None:
-        label = assumption_label(prepared.assumption)
-        st.caption(
-            f":material/science: {label}{subject_particle(label)} 켜져 있습니다 — 이 "
-            "화면(보기·CSV·기준선·진척 비교)은 늘 공식 계획입니다. 가정의 효과는 공정 Capa "
-            "상세에서 봅니다."
-        )
     # 서식은 KPI 와 한 `st.html` 에 싣는다. 스타일만 든 `st.html` 은 이벤트 칸(본문 밖 최상위
     # 칸)으로 가는데, 이 본문은 프래그먼트라 갈래(일반·진척 비교)마다 그 칸에 쓰는 수가 달라진다.
     st.html(_style() + _kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
@@ -608,17 +597,11 @@ def _render_body(
             labels,
         )
     )
-    st.caption(
-        ":material/info: Density·Wafer 는 HOME 과 같은 계산(EDP 포함)입니다. B/N 확보율은 보이는 "
-        "범위 공정 가운데 **일정 기준 가용(환산) ÷ 소요** 가 가장 낮은 값이라 HOME 의 "
-        "Static B/N 과 다릅니다."
-    )
+    # LOB 요약의 읽는 법(Density·Wafer 는 HOME 과 같은 계산, B/N 확보율이 HOME 과 다른 까닭)은
+    # Guide 가 말한다 — 자리에 늘 두지 않는다.
     if not shown:
-        st.success(
-            f"목표 {_percent(level)} 에서 모자란 달이 있는 공정이 없습니다. "
-            "다른 목표를 고르거나 조건 카드에서 공정을 골라 보세요.",
-            icon=":material/check_circle:",
-        )
+        # 목록 구획의 빈 결과는 값(「없음」)이라 평문 한 줄이다(성공 상자 · 하는 법 없음).
+        st.caption(f"목표 {_percent(level)} 에서 모자란 달이 있는 공정이 없습니다.")
     for process in _card_order(order, highlight, plan=plan, scope=scope, labels=labels):
         focus = highlight if highlight is not None and highlight.process == process else None
         with st.container(gap="xsmall"):
@@ -905,10 +888,7 @@ def _render_manual_notice(
         )
         more = f" 외 {len(over) - _MANUAL_OVER_LIMIT}칸" if len(over) > _MANUAL_OVER_LIMIT else ""
         tail = f" ⚠ 그 달 가용보다 커 0 에서 멈춤: {places}{more}"
-    st.caption(
-        f":material/event_busy: {note} — 가용설비 현황 › Preference 의 공정 × 달 비가동 "
-        f"대수를 설비 일정 기준 가용에서 뺐습니다(호기별 비가동과 별도).{tail}"
-    )
+    st.caption(f":material/event_busy: {note}{tail}", help=MANUAL_NOTICE_HELP)
 
 
 def _render_unmatched(plan: ShorteningPlan) -> None:
@@ -1123,10 +1103,7 @@ def _render_progress(
         delayed=delayed,
     )
     if not view.cards and not view.outside:
-        st.success(
-            f"목표 {_percent(level)} 에서 기준선과 지금 모두 단축할 호기가 없습니다.",
-            icon=":material/check_circle:",
-        )
+        st.caption(f"목표 {_percent(level)} 에서 기준선과 지금 모두 단축할 호기가 없습니다.")
     late = {
         str(process): frozenset(str(unit) for unit in units)
         for process, units in (delayed.groupby("공정")["호기"] if not delayed.empty else ())

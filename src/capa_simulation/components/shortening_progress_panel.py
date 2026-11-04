@@ -29,7 +29,6 @@
 from __future__ import annotations
 
 import html
-import time
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -38,6 +37,7 @@ import pandas as pd
 import streamlit as st
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_timeline import (
@@ -98,6 +98,7 @@ from capa_simulation.services.shortening_progress import (
 )
 
 __all__ = [
+    "BASELINE_SAVE_HELP",
     "NO_COMPARISON",
     "SHORTENING_COMPARE_KEY",
     "BaselineSaveContext",
@@ -129,16 +130,14 @@ _BASELINE_DELETE_CONFIRM_KEY = "equipment_shortening_baseline_delete_confirm"
 _BASELINE_DELETE_KEY = "equipment_shortening_baseline_delete"
 # 「기준선 지우기」 팝오버. 위 알림이 생기고 사라져도 같은 팝오버로 남게 고정한다(AGENTS 9장).
 _BASELINE_DELETE_POPOVER_KEY = "equipment_shortening_baseline_delete_popover"
-_BASELINE_NOTICE_KEY = "equipment_shortening_baseline_notice"
-_BASELINE_NOTICE_SHOWN_KEY = "equipment_shortening_baseline_notice_shown"
-_NOTICE_SLOTS = 3
-"""기준선 알림이 이벤트 칸(본문 밖 최상위 칸)에 쓰는 자리 수 — 알림이 있든 없든 늘 이만큼 쓴다.
-
-브라우저는 같은 자리의 토스트가 떠 있는 동안 그 자리에 새 토스트를 띄우지 않으므로, 잇단 알림
-셋까지 보인다."""
-_TOAST_VISIBLE_SECONDS = 6.0
-"""토스트가 아직 떠 있다고 보는 시간 — Streamlit 기본 4초에 망 지연 여유를 더했다."""
-_clock = time.monotonic
+BASELINE_SAVE_HELP = (
+    "지금 계획의 다섯 목표 결과(호기별 필요 · 확보 시점과 단축일수)를 그대로 얼려 모든 사용자의 "
+    "「진척 비교」 목록에 남깁니다. 저장한 기준선은 고칠 수 없습니다."
+)
+_NOTICE_KEYS = tuple(f"equipment_shortening_baseline_flash_{index}" for index in range(3))
+"""기준선 저장 · 지우기 결과 알림 칸(`flash.queue_flash`). 그리기 전에 콜백이 여럿 돌아도 앞 알림을
+덮지 않게 빈 칸부터 차례로 담는다 — 셋이 다 차면 마지막 칸을 바꾼다. `render_flash` 는 칸 수와
+상관없이 이벤트 칸에 한 자리만 쓴다."""
 _BASELINE_DELETE_HANDLED_KEY = "equipment_shortening_baseline_delete_handled"
 _BASELINE_WRITTEN_KEY = "equipment_shortening_baseline_written"
 _PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
@@ -247,62 +246,13 @@ def load_selected_baseline(
 
 
 def render_baseline_notice() -> None:
-    """저장·지우기 콜백이 남긴 알림. 이벤트 칸에 늘 `_NOTICE_SLOTS` 자리를 쓴다.
+    """저장·지우기 콜백이 남긴 결과 알림을 알림창 · Alarm 으로 보낸다(`flash.render_flash`).
 
-    알림은 첫 자리에 세우고, 그 자리 토스트가 아직 떠 있을 때만 다음 자리로 비킨다 — 첫 자리
-    뒤에 남은 토스트는 앞 자리표시자가 지워지는 회차에 앞으로 당겨져 다시 뜰 수 있어 드물게만 쓴다.
+    늘 서 있는 한 칸을 세우고 이벤트 칸에는 부를 때마다 정확히 한 자리를 쓴다 — 머리 · 본문
+    프래그먼트가 갈래(일반 보기 · 진척 비교 · 알림 있음/없음)와 상관없이 같은 자리 수를 쓴다. 거절 ·
+    실패도 알림창으로만 낸다(`popup_only`) — 이 칸은 머리 밑이라 단추가 든 팝오버 곁이 아니다.
     """
-    notices = _pop_notices()
-    slot = _free_slot() if notices else None
-    for index in range(_NOTICE_SLOTS):
-        if index == slot:
-            st.toast(
-                "\n\n".join(message for _, message in notices),
-                icon=(
-                    ":material/check_circle:"
-                    if all(kind == "success" for kind, _ in notices)
-                    else ":material/block:"
-                ),
-            )
-        else:
-            st.html("<style></style>")
-
-
-def reserve_baseline_notice_slots() -> None:
-    """알림 자리를 빈 자리표시자로 채운다 — 필요 단축 일정 머리·본문을 그리지 않는 앱 전체 회차용.
-
-    Streamlit 1.63 프런트는 회차가 쓰지 않은 이벤트 칸 요소를 지울 때 토스트만 남긴다. 그 회차가
-    알림 자리를 비워 두면 둘째·셋째 자리에 남은 토스트가 지워진 자리표시자만큼 앞으로 당겨져
-    다시 뜬다(사라진 「저장했습니다」 가 다른 탭에서 또 보인다).
-    """
-    for _ in range(_NOTICE_SLOTS):
-        st.html("<style></style>")
-
-
-def _free_slot() -> int:
-    """이번 알림을 세울 자리 — 토스트가 떠 있지 않은 첫 자리, 모두 떠 있으면 가장 오래된 자리."""
-    now = _clock()
-    shown = st.session_state.get(_BASELINE_NOTICE_SHOWN_KEY)
-    times = (
-        [float(value) for value in shown]
-        if isinstance(shown, tuple) and len(shown) == _NOTICE_SLOTS
-        else [float("-inf")] * _NOTICE_SLOTS
-    )
-    free = [index for index, at in enumerate(times) if now - at >= _TOAST_VISIBLE_SECONDS]
-    slot = free[0] if free else min(range(_NOTICE_SLOTS), key=lambda index: times[index])
-    times[slot] = now
-    st.session_state[_BASELINE_NOTICE_SHOWN_KEY] = tuple(times)
-    return slot
-
-
-def _pop_notices() -> list[tuple[str, str]]:
-    """쌓인 알림을 꺼내 비운다(쌓인 차례대로)."""
-    queued = st.session_state.pop(_BASELINE_NOTICE_KEY, None)
-    return [
-        (str(item[0]), str(item[1]))
-        for item in (queued if isinstance(queued, list) else [])
-        if isinstance(item, tuple) and len(item) == 2
-    ]
+    render_flash(*_NOTICE_KEYS)
 
 
 def render_baseline_controls(
@@ -323,10 +273,8 @@ def render_baseline_controls(
 
 
 def _render_save_form(save: BaselineSaveContext) -> None:
-    st.caption(
-        "지금 계획의 다섯 목표 결과(호기별 필요·확보 시점과 단축일수)를 그대로 얼려 모든 사용자의 "
-        "「진척 비교」 목록에 남깁니다. 저장한 기준선은 고칠 수 없습니다."
-    )
+    # 무엇을 남기고 고칠 수 없다는 말은 팝오버 머리 글이 아니라 저장 단추 풍선이다(누르기 전에
+    # 보인다).
     if save.refusal is not None:
         st.info(save.refusal, icon=":material/block:")
         return
@@ -355,6 +303,7 @@ def _render_save_form(save: BaselineSaveContext) -> None:
         # 단추는 잠그지 않는다 — 누른 회차에 콜백이 판정해 알린다(AGENTS 9장).
         st.form_submit_button(
             "기준선 저장",
+            help=BASELINE_SAVE_HELP,
             icon=":material/bookmark_add:",
             width="stretch",
             on_click=_save_baseline,
@@ -363,7 +312,7 @@ def _render_save_form(save: BaselineSaveContext) -> None:
 
 
 def _render_delete(database_path: str, selected: ShorteningBaselineSummary) -> None:
-    # 기준선 이름은 사람이 적은 글이다 — 캡션·알림(토스트)은 마크다운이라 글자 그대로 막는다.
+    # 기준선 이름은 사람이 적은 글이다 — 캡션·결과 알림 원문은 마크다운이라 글자 그대로 막는다.
     st.caption(
         f"{quoted(selected.name)} 기준선을 지웁니다. 모든 사용자의 목록에서 사라지고 되돌릴 수 "
         "없습니다."
@@ -402,13 +351,11 @@ def _confirm_key(baseline_id: str) -> str:
     return f"{_BASELINE_DELETE_CONFIRM_KEY}__{baseline_id}"
 
 
-def _notice(kind: str, message: str) -> None:
-    """알림을 쌓는다."""
-    queued = st.session_state.get(_BASELINE_NOTICE_KEY)
-    st.session_state[_BASELINE_NOTICE_KEY] = [
-        *(queued if isinstance(queued, list) else []),
-        (kind, message),
-    ]
+def _notice(kind: FlashKind, message: str) -> None:
+    """결과 알림을 담는다 — 아직 그리지 않은 알림을 덮지 않게 빈 칸부터 쓴다(셋이 다 차면 마지막
+    칸을 바꾼다). 거절 · 실패는 알림창 · Alarm 으로만 낸다(`render_baseline_notice`)."""
+    key = next((key for key in _NOTICE_KEYS if pending_flash(key) is None), _NOTICE_KEYS[-1])
+    queue_flash(key, message, kind=kind, popup_only=kind != "success")
 
 
 def consume_baseline_write() -> bool:
@@ -484,7 +431,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
 
 def _save_error_message(exc: BaseException) -> str:
     """「기준선 저장」 거절 글. 같은 이름 거절(`BaselineNameTakenError`)은 적은 이름을 싣는데,
-    토스트는 마크다운이라 그 이름을 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다 —
+    결과 알림 원문은 마크다운이라 그 이름을 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다 —
     `bootstrap_error_message` 는 물결표만 막아 「R6B *중요* 안」 의 별표가 기울임,
     `[안내](http://…)` 가 링크가 됐다(2026-10-27 E2E). 나머지는 `bootstrap_error_message` 다."""
     if isinstance(exc, BaselineNameTakenError):

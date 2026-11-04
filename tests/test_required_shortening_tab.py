@@ -24,6 +24,7 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
 from capa_simulation.components.required_shortening_panel import (
+    SHARED_FILTER_HELP,
     SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
@@ -631,6 +632,10 @@ def test_a_new_session_opens_with_the_shared_filter_profile(tmp_path: Path) -> N
     assert _cards(app) == [first]
     captions = " ".join(str(item.value) for item in app.sidebar.caption)
     assert "공용 설정" in captions
+    # 저장 규칙(바꾸면 모두의 기본값)은 표지의 풍선이다 — 자리 글로 늘 띄우지 않는다.
+    shared = next(item for item in app.sidebar.caption if str(item.value).endswith("공용 설정"))
+    assert shared.proto.help == SHARED_FILTER_HELP
+    assert "모든 사용자의 기본 조회 조건" not in captions
     # 공정 표시명은 사람 글이라 마크다운 글자 그대로 막혀 실린다(`literal_names`).
     assert r"ABSENT\-PROC" in captions and "공용 설정에는 남습니다" in captions
     stored = _profile(database_path)
@@ -886,42 +891,33 @@ def _assumed(tmp_path: Path, percent: int = 150) -> AppTest:
     return app
 
 
-_ASSUMPTION_HINT = "켜져 있습니다 — 이 화면"
+def _assumption_lines(app: AppTest) -> list[str]:
+    """가정이 켜졌음 · 「늘 공식 계획」 을 본문 자리에 적은 줄 — 없어야 한다(머리 변경 칩이 알리고
+    규칙은 Guide 가 말한다). 조건 카드(사이드바)의 「이 세션만」 묶음 머리는 입력 칸의 이름표라
+    세지 않는다."""
+    return [
+        str(item.value)
+        for item in app.main.caption
+        if "UPEH 가정" in str(item.value) or "공식 계획" in str(item.value)
+    ]
 
 
 def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_screen_official(
     tmp_path: Path,
 ) -> None:
-    """가정을 켜도 이 화면(보기·CSV 세 벌·기준선·진척 비교)은 공식 계획이다 — 머리 아래 한 줄이
-    알리고 가정의 효과는 공정 Capa 상세로 보낸다. 공식 대 가정 비교 보기(토글)는 없다. 입력은 조건
+    """가정을 켜도 이 화면(보기·CSV 세 벌·기준선·진척 비교)은 공식 계획이다 — 가정이 켜졌음은 머리
+    변경 칩이 알리고 이 화면 본문에는 적지 않는다. 공식 대 가정 비교 보기(토글)는 없다. 입력은 조건
     카드(사이드바) 끝 「이 세션만」 묶음이다(공정 Capa 상세와 같은 세션 칸)."""
     app = _assumed(tmp_path)
     assert {"UPEH 적용 시작", "UPEH 적용 끝"} <= {box.label for box in app.sidebar.selectbox}
     assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == 150
-    hint = [str(item.value) for item in app.caption if _ASSUMPTION_HINT in str(item.value)]
-    assert hint and "UPEH 가정 150%" in hint[0] and "공식 계획" in hint[0]
-    assert "공정 Capa 상세" in hint[0]
+    assert not _assumption_lines(app), _assumption_lines(app)
     assert not any("UPEH 가정 비교" in str(toggle.label) for toggle in app.toggle)
     assert "UPEH 가정 비교" not in _html(app)
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert "UPEH 가정" not in units.columns
     captured = app.session_state["captured_downloads"]["equipment_shortening_units_csv"]
     assert "upeh" not in str(captured["file_name"])
-    clear_equipment_repository()
-
-
-def test_the_upeh_assumption_notice_picks_the_particle_by_the_end_month(tmp_path: Path) -> None:
-    """알림의 주격 조사는 구간 끝 달의 끝소리로 고른다 — 「27.06 가」 가 아니라 「27.06이」(달은
-    화면의 `YY.MM` — 개선 거리 I13).
-
-    끝 두 자리를 읽은 끝 글자(영·일·삼·육·칠·팔)에 받침이 있으면 「이」, 없으면 「가」 다.
-    """
-    app = _assumed(tmp_path)
-    end = _months()[-1]
-    span_end = f"{end // 100 % 100:02d}.{end % 100:02d}"
-    particle = "이" if span_end[-1] in "013678" else "가"
-    hint = [str(item.value) for item in app.caption if _ASSUMPTION_HINT in str(item.value)]
-    assert hint and f"–{span_end}{particle} 켜져 있습니다" in hint[0]
     clear_equipment_repository()
 
 
@@ -960,9 +956,9 @@ def test_a_baseline_is_not_saved_while_an_assumption_is_on() -> None:
     assert refusal(100) is None
 
 
-def test_an_assumption_outside_the_card_months_reads_the_same_one_line(tmp_path: Path) -> None:
-    """적용 구간이 카드 기간(공용 설정)과 겹치지 않아도 같은 한 줄이다 — 이 화면은 어느 쪽이든
-    가정을 걸지 않는다."""
+def test_an_assumption_outside_the_card_months_adds_no_line_either(tmp_path: Path) -> None:
+    """적용 구간이 카드 기간(공용 설정)과 겹치지 않아도 본문에 줄을 더하지 않는다 — 이 화면은 어느
+    쪽이든 가정을 걸지 않는다."""
     database_path = _database(tmp_path)
     months = _months()
     DuckDBEquipmentRepository(database_path).save_shortening_filter_months(
@@ -975,14 +971,14 @@ def test_an_assumption_outside_the_card_months_reads_the_same_one_line(tmp_path:
     app.run()
     assert not app.exception, [element.message for element in app.exception]
     captions = [str(item.value) for item in app.caption]
-    assert any(_ASSUMPTION_HINT in caption and "UPEH 가정 120%" in caption for caption in captions)
+    assert not _assumption_lines(app), _assumption_lines(app)
     assert not any("적용된 달 없음" in caption for caption in captions)
     clear_equipment_repository()
 
 
 def test_at_100_percent_there_is_no_assumption_line(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
-    assert not any(_ASSUMPTION_HINT in str(item.value) for item in app.caption)
+    assert not _assumption_lines(app), _assumption_lines(app)
     assert not any("UPEH 가정 비교" in str(toggle.label) for toggle in app.toggle)
     clear_equipment_repository()
 

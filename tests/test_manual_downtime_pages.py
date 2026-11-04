@@ -26,6 +26,7 @@ from test_required_shortening_tab import _csv
 from test_required_shortening_tab import _database as shortening_database
 from test_required_shortening_tab import _run as shortening_run
 
+from capa_simulation.components.required_shortening_panel import MANUAL_NOTICE_HELP
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_manual_downtime_cache,
@@ -134,7 +135,11 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     assert not app.exception, [element.message for element in app.exception]
     captions = " ".join(str(element.value) for element in app.caption)
     assert f"{MANUAL_DOWNTIME_BAND}(" in captions
-    assert "가용설비 현황 › Preference 의 공정 × 달 비가동" in captions
+    # 출처 설명은 그 줄의 풍선이다 — 자리에는 「입력 비가동 반영(n칸 · 합 x대)」 값만.
+    band = next(element for element in app.caption if f"{MANUAL_DOWNTIME_BAND}(" in element.value)
+    assert band.proto.help == MANUAL_NOTICE_HELP
+    assert "가용설비 현황 › Preference 의 공정 × 달 비가동" in MANUAL_NOTICE_HELP
+    assert "가용설비 현황 › Preference 의 공정 × 달 비가동" not in captions
 
     _, entered = _csv(app, "equipment_shortening_months_csv")
 

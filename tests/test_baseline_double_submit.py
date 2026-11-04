@@ -5,12 +5,12 @@
 - 저장에 쓰인 폼의 제출이 한 번 더 들어오면(빠른 두 번 누름) 쓰지도 알리지도 않는다.
   AppTest 는 같은 순간의 두 요청을 합칠 수 없어, 저장 단추를 누른 화면의 위젯 값을 붙잡아
   두었다가 저장 뒤에 한 번 더 보낸다(`AppTest._run(widget_state=...)` — 브라우저에 남은 옛
-  화면의 누름과 같다). 잇단 알림이 이벤트 칸의 다른 자리에 서는 것은
+  화면의 누름과 같다). 알림 표지가 이벤트 칸에 늘 한 자리인 것은
   `tests/test_shortening_baseline_notice.py` 가 본다.
 - 저장에 성공하면 「기준선 저장」 팝오버가 새 블록(key 세대)으로 선다 — 브라우저가 닫힌 채
   그린다.
 - 지우기를 끝낸 기준선의 누름이 한 번 더 들어와도 쓰지도 알리지도 않는다.
-- 다른 세션이 먼저 지운 기준선을 지우면 경고 아이콘으로 알리고 프래그먼트 회차만 돈다.
+- 다른 세션이 먼저 지운 기준선을 지우면 경고 단계 알림으로 알리고 프래그먼트 회차만 돈다.
 """
 
 from __future__ import annotations
@@ -18,9 +18,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from alert_marks import flashed
 from streamlit.testing.v1 import AppTest
 from test_required_shortening_tab import _run as _run_page
-from test_shortening_progress_tab import _name_input, _save_button, _saved_database, _toasts
+from test_shortening_progress_tab import _name_input, _notices, _save_button, _saved_database
 from test_shortening_view_fragment import (
     FULL_RUNS_KEY,
     _fragment_of,
@@ -63,14 +64,14 @@ def test_a_second_submit_of_the_saved_form_neither_saves_nor_overrides_the_notic
     _save_button(app).click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "기준선을 저장했습니다 — 「첫 저장」" in _toasts(app)
+    assert "기준선을 저장했습니다 — 「첫 저장」" in _notices(app)
 
     app._run(widget_state=pressed)
 
     assert not app.exception
     assert _names(database_path) == ["첫 저장"]
     # 거절 알림(같은 이름·빈 이름)도 내지 않는다 — 내면 앞 저장의 성공 알림을 덮는다.
-    assert not list(app.toast), _toasts(app)
+    assert not flashed(app), _notices(app)
     clear_equipment_repository()
 
 
@@ -86,7 +87,7 @@ def test_a_saved_form_comes_back_as_a_new_popover_and_a_refused_one_does_not(
     assert saved != before
     app = _name_input(app).set_value("첫 저장").run()
     app = _save_button(app).click().run()
-    assert "같은 이름" in _toasts(app)
+    assert "같은 이름" in _notices(app)
     assert _save_popover_id(app) == saved
     clear_equipment_repository()
 
@@ -104,13 +105,13 @@ def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(tmp_pat
     app.button(key="equipment_shortening_baseline_delete").click()
     pressed = app._tree.get_widget_states()
     app.run()
-    assert "기준선을 지웠습니다 — 「지울 것」" in _toasts(app)
+    assert "기준선을 지웠습니다 — 「지울 것」" in _notices(app)
 
     app._run(widget_state=pressed)
 
     assert not app.exception
     assert _names(database_path) == []
-    assert not list(app.toast), _toasts(app)
+    assert not flashed(app), _notices(app)
     clear_equipment_repository()
 
 
@@ -144,9 +145,11 @@ def test_deleting_a_baseline_another_session_deleted_warns_and_reruns_only_the_v
 
     assert runner.started == [[view]]
     assert app.session_state[FULL_RUNS_KEY] == full_runs
-    (toast,) = app.toast
-    assert "이미 지워진 기준선입니다" in toast.value
-    assert toast.proto.icon == ":material/block:"
+    (notice,) = flashed(app)
+    assert "이미 지워진 기준선입니다" in notice.value
+    # 거절은 경고 단계로 알림창 · Alarm 에만 낸다 — 머리 밑 자리에 상자로 그리지 않는다.
+    assert notice.note is not None and notice.note["flash"] == "warning"
+    assert not any("이미 지워진" in str(item.value) for item in app.warning)
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     clear_equipment_repository()
