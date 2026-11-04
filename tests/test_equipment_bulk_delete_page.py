@@ -282,7 +282,7 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert {key[0] for key in app.session_state[SELECTION_KEY][DOWNTIME_TARGET]} == {machine}
     app.button(key=DOWNTIME_DELETE_SELECTED_KEY).click().run()
     # 확인 글 끝은 지금 저장 단추를 가리킨다 — 옛 「설비 데이터 저장」(옛 폼 단추)이 아니라 「저장
-    # 전 변경」 의 「리비전 저장」 이다(개편 D — 런북 7-21·Guide 의 글과 같다).
+    # 전 변경」 의 「리비전 저장」 이다(개편 D — Guide 의 글과 같다).
     tail = "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
     warning = next(str(item.value) for item in app.warning if "지웁니다" in str(item.value))
     assert warning.startswith(
