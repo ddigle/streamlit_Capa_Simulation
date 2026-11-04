@@ -173,29 +173,25 @@ def test_the_key_process_preview_caption_shows_the_display_name_literally() -> N
 def _preference_notices() -> None:
     import pandas as pd
 
-    from capa_simulation.components.home_preference import (
-        _render_execution_notices,
-        _render_key_process_notice,
-    )
+    from capa_simulation.components.home_preference import _render_execution_notices
     from capa_simulation.components.process_labels import ProcessLabels
 
     labels = ProcessLabels(labels={"DEMO_A": "TC~B~1 *z*"})
-    _render_key_process_notice(["DEMO_A"], labels)
     _render_execution_notices(
         pd.DataFrame({"생산계획년월": [202607], "공정": ["DEMO_A"]}), pd.DataFrame(), labels
     )
 
 
 def test_the_preference_notices_show_the_display_name_literally() -> None:
-    """같은 화면(HOME Preference)의 이웃 자리 — 프리셋에 있으나 그리지 않는 공정 캡션과 확보율
-    보정의 짝 없는 행 경고."""
+    """같은 화면(HOME Preference)의 이웃 자리 — 확보율 보정의 짝 없는 행 경고. 프리셋에 있으나
+    그리지 않는 공정은 2026-11-04(설계 규칙 UI-TXT-01 · AMB-02)부터 이름을 늘어놓는 캡션 없이
+    「공정」 칸 칩의 「· 이 화면에 없음」 과 칸 풍선이다 — 칩 글자는 마크다운이 아니다."""
     app = AppTest.from_function(_preference_notices, default_timeout=60).run()
 
     assert not app.exception, [item.message for item in app.exception]
     texts = [str(item.value) for item in app.caption] + [str(item.value) for item in app.warning]
     assert not [text for text in texts if "TC~B~1 *z*" in text], texts
     escaped = literal_markdown("TC~B~1 *z*")
-    assert any("그리지 않는 공정: " + escaped in text for text in texts), texts
     assert any("26.07·" + escaped in text for text in texts), texts
 
 

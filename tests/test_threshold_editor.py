@@ -10,6 +10,7 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
     THRESHOLD_BASE_VERSION_KEY,
+    THRESHOLD_CLEAR_OUTSIDE_HELP,
     THRESHOLD_NOTE_KEY,
     THRESHOLD_SAVED_MESSAGE,
     THRESHOLD_UNCHANGED_MESSAGE,
@@ -144,7 +145,7 @@ def test_months_outside_the_view_survive_a_save(database: Path) -> None:
         expected_version=0,
     )
     app = _app(database)
-    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    assert _outside_notes(app) == ["조회기간 밖 월별 기준 1개월 지우기(26.12)"]
 
     _edit(app, {0: {"26.01": 120.0}})
     app = _save(app)
@@ -477,7 +478,7 @@ def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """「바뀐 것이 없습니다」 회차는 쓰지 않아 다시 돌지 않는다 — 누르지 않은 회차와 같은 화면이게
-    조회기간 밖 월별 기준 줄도 그대로 선다(개선 I5)."""
+    조회기간 밖 월별 기준 표지(지우기 칸)도 그대로 선다(개선 I5)."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     DuckDBScenarioRepository(database).replace_global_securement_threshold(
         1.095,
@@ -487,26 +488,31 @@ def test_a_save_without_changes_keeps_the_note_on_months_outside_the_view(
         expected_version=0,
     )
     app = _app(database)
-    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    assert _outside_notes(app)
 
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
-    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    assert _outside_notes(app)
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "12월 예외")
 
 
 def _outside_notes(app: AppTest) -> list[str]:
-    return [caption.value for caption in app.caption if "조회기간 밖에 월별 기준" in caption.value]
+    """조회기간 밖 월별 기준의 표지 — 그런 달이 있을 때만 서는 「지우기」 칸의 라벨이다. 남는 동안의
+    뜻은 그 칸의 풍선이고, 표 밑 안내 글은 없다(설계 규칙 UI-TXT-01 · AMB-02 — 2026-11-04)."""
+    assert not [caption.value for caption in app.caption if "조회기간 밖" in caption.value]
+    boxes = [box for box in app.checkbox if "조회기간 밖 월별 기준" in box.label]
+    assert all(box.help == THRESHOLD_CLEAR_OUTSIDE_HELP for box in boxes)
+    return [box.label for box in boxes]
 
 
 def test_a_refused_save_keeps_the_note_on_months_outside_the_view(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """검증 오류(범위 밖 · 거꾸로 짝)로 거부한 회차도 쓰지 않아 다시 돌지 않는다 — 누르지 않은
-    회차와 같은 화면이게 조회기간 밖 월별 기준 줄이 오류 옆에 그대로 선다. 원인이 보이는 칸(기본
+    회차와 같은 화면이게 조회기간 밖 월별 기준 표지가 오류와 함께 그대로 선다. 원인이 보이는 칸(기본
     1095 · 26.02 경고 130)이라 오류 글은 숨은 달을 말하지 않는다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     DuckDBScenarioRepository(database).replace_global_securement_threshold(
@@ -544,7 +550,7 @@ def test_a_held_second_press_keeps_the_note_on_months_outside_the_view(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """남의 저장에 거부된 누름의 둘째 누름(거부를 다시 알리고 쓰지 않는다 — write_guard)도 다시 돌지
-    않는 회차다 — 그 남의 저장이 든 조회기간 밖 월별 기준 줄이 거부 옆에 그대로 선다."""
+    않는 회차다 — 그 남의 저장이 든 조회기간 밖 월별 기준 표지가 거부와 함께 그대로 선다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     app = _app(database)
     assert not _outside_notes(app)

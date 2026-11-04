@@ -7,7 +7,9 @@
 때만 알림창, 쌓이는 곳은 머리 `Alarm`). 이 화면의 목적·담당 부서 흐름과 추가 필요대수 계산식은
 `guides/static_capa.md` 가 말한다(2026-09-29 사용자 결정). 판정 기준은 시나리오와 무관한 공용
 프로필이고 HOME 설정 → 판정 기준 탭 한 곳에서 정한다(2026-10-06 사용자 결정). 사이드바 카드는 지금
-쓰는 기준을 읽기 전용으로 보여 줄 뿐이다.
+쓰는 기준 값 한 줄만 읽기 전용으로 보인다 — 정하는 자리를 가리키는 글은 두지 않고 Guide 가 말한다
+(2026-11-04 설계 규칙 UI-TXT-03 · AMB-06 (나) — 바로 가기도 두지 않는다). 결과 상자가 비면 「…이
+없습니다」 평문 한 줄이 값으로 선다(AMB-02 (가) — 초록 성공 상자는 알림창 몫이다).
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
@@ -54,6 +55,10 @@ from capa_simulation.services.simulation_cache import (
 )
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
+
+# 결과 상자가 빈 날의 평문 한 줄 — 「없음」 이라는 값이다(하는 법 · 길 안내는 붙이지 않는다).
+WARNING_EMPTY_TEXT = "선택 기간에 경고 기준 미달 공정이 없습니다."
+SECURE_EMPTY_TEXT = "선택 기간에 경고 이상·확보 기준 미달 공정이 없습니다."
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:
@@ -170,7 +175,6 @@ secure_threshold = thresholds.default_secure
 # 계산 뒤에 채운다 — 자리만 먼저 잡아 사이드바 차례를 그대로 둔다.
 with condition_card("판정 기준", name="static_capa", icon=":material/rule:"):
     threshold_caption_slot = st.container()
-    st.caption(THRESHOLD_POINTER)
 
 try:
     context = load_page_context()
@@ -277,7 +281,7 @@ else:
                 border=True,
             )
         if warning_shortfalls.empty:
-            st.success("선택 기간에 경고 기준 미달 공정이 없습니다.")
+            st.markdown(WARNING_EMPTY_TEXT)
         else:
             _render_shortfall_table(
                 warning_shortfalls,
@@ -308,7 +312,7 @@ else:
                 border=True,
             )
         if secure_shortfalls.empty:
-            st.success("선택 기간에 경고 이상·확보 기준 미달 공정이 없습니다.")
+            st.markdown(SECURE_EMPTY_TEXT)
         else:
             _render_shortfall_table(
                 secure_shortfalls,
