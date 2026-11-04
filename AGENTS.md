@@ -853,8 +853,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다시 읽은 이름과 대조하면 남이 먼저 바꾼 뒤 회차가 한 번만 돌아도 대조가 통과해 남의 이름을 덮었다(2026-10-22 리뷰).
     먼저 바뀐 이름은 저장 전에 경고(`moved_names`)하고, 거부되면 그 행의 이름 편집만 버려(`drop_names`,
     `BatchEditRefused.moved_names`) 지금 이름을 다시 보인다.
-  - 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다 — 이 페이지에는 「리비전 저장」 모드가 없고 모드 줄 아래 한 줄이
-    그 길을 적는다(`REVISION_SAVE_GUIDE`).
+  - 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다 — 이 페이지에는 「리비전 저장」 모드가 없고 그 길은 Guide 가
+    말한다(모드 줄 아래 길 안내 줄은 두지 않는다 — 설계 규칙 UI-TXT-03).
   - `자동 갱신`(`components/auto_official_update_tab.py`)과 BigDataQuery 사내 조회는 버튼을 누른 회차에만 돈다.
     보관은 숨길 뿐 파일을 줄이지 않는다(회수는 영구 삭제 뒤 `scripts/compact_duckdb.py`).
   - 월 머지·연도 Shift 는 원본을 바꾸지 않고 새 시나리오로 저장하며 `capacity_gate` 파생 검사를 먼저 돈다. 무월 표
@@ -1259,10 +1259,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/capacity_gate.py` — 리비전 저장·복제·파생 저장·공식 발행 **전에** 시나리오 전체
   기간 Capa 계산(대당 Capa·소요대수 + HOME Density 환산 `density_error`)이 되는지 검사한다.
   - 저장은 편집이 새로 깨뜨렸으면 막고 원래 안 되면 경고하며 허락한다(파생 저장은 원본이 「편집 전」). 발행은 막는다.
-    소요대수에 들지 않은 수요는 막지 않고 건수를 경고한다 — 그 판정은 `GateVerdict.exclusion` 이 참이고(계산은 통과), 사이드바
-    리비전 저장 · 시나리오 관리 복제 · 공식 지정은 그 경고를 버튼 곁(시나리오 칸 밑)에 그리지 않고 알림창 · Alarm 에만
-    낸다(`queue_flash(…, popup_only=verdict.exclusion)` — 2026-11-04 검수 의견 home-18). 남은 계산 오류 경고(`exclusion`
-    거짓)는 곁에도 선다.
+    소요대수에 들지 않은 수요는 막지 않고 건수를 경고한다(그 판정은 `GateVerdict.exclusion` 이 참 — 계산은 통과). 사이드바
+    리비전 저장 · 시나리오 관리 복제 · 공식 지정 · 월 머지 · 연도 Shift 저장 뒤 경고는 소요대수 제외 · 남은 계산 오류 모두
+    버튼 곁(시나리오 칸 · 저장 단추 밑)에 그리지 않고 `queue_flash(…, popup_only=True)` 로 알림창 · Alarm 에만 낸다
+    (2026-11-04 검수 의견 home-18 · 설계 규칙 확인 보드 AMB-05 (나)). 화면은 `exclusion` 으로 갈래를 가르지 않는다 —
+    판정 시험(`tests/test_capacity_gate.py`)만 두 경고를 가른다. 파생 저장 경고는 결과(공식버전으로 지정할 수 없음)를
+    앞에 둔다 — 알림창 짧은 글이 앞 60자 안팎이다(UI-NTF-06).
   - 계산 페이지와 같은 캐시 칸(`pristine_content_token`)을 쓰고 BigDataQuery 등록·내장 시드는 검사하지 않는다. 새
     쓰기 경로는 `tests/test_capacity_gate.py` 목록에 더한다(`density_error` 는 `tests/test_gate_density_coverage.py`).
   - 자동 갱신 발행은 순수 코어 `simulation_cache.full_capacity_outcome` 로 같은 검사를 하고 경고를 실행 기록에 붙인다.
@@ -1341,10 +1343,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
     부르는 쪽 몫이다.
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
-    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 밑 경고 띠, 자동 갱신은 판정 실패 사유 끝에 무엇이
+    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 판정 실패 사유 끝에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록)를 적는다.
-  - 화면의 저장 결과 칸(저장 알림 · CS 빈 행 경고 · 대당 Capa 경고 띠 · 저장하지 못한 까닭)은 폼 맨 아래 `DB 조회 후 시나리오
-    저장` 단추 **바로 아래** 늘 서 있는 한 칸이고(탭 맨 위 칸은 스크롤한 화면에서 보이지 않았다 — 2026-11-01 E2E), 알림을 그린
+  - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
+    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
+    (`popup_only` — 설계 규칙 UI-NTF-03 · AMB-05 (나)) 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다. 칸에 글을 그린
     회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
     화면 밖일 때만 본문을 옮긴다(`scrollIntoView({block: "nearest"})`).
 - `src/capa_simulation/auto_official_update_runner.py` — 공식버전 자동 갱신 한 회차를 세션 없이 돌리고 실행 기록에 남긴다.
@@ -3411,8 +3414,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     빠졌다(개선 I25 — 지금 구획 목록은 전부지만 발행 줄 번호를 그대로 쓴다). 발행 줄에 번호가 없는 옛 캐시 값이면 최신·세션 스냅샷에서만 찾고,
     없으면 번호를 뺀다.
     고른 리비전이 이미 지금 공식이면(`already_official`) 저장소가 쓰지 않고 그 발행을 돌려주므로 확인 글은 「→ 새 공식」 없이
-    지금 공식과 단추를 끈 까닭(`ALREADY_OFFICIAL_LINE` — 「이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로
-    발행」 을 껐습니다.」)만 적고 「공식으로 발행」 을 끈다(개선 거리 I26, 2026-11-01 사용자 결정 — 「발행해도 바뀌지 않습니다」
+    지금 공식과 값 표지(`ALREADY_OFFICIAL_LINE` — 「이미 공식 발행 리비전」)만 적고 「공식으로 발행」 을 끈다 — 끈 까닭은 그
+    단추 풍선(`ALREADY_OFFICIAL_HELP`, 배치 차이로 막혔으면 막힘 줄과 같은 글 — 설계 규칙 UI-INP-07)이 말한다(개선 거리 I26, 2026-11-01 사용자 결정 — 「발행해도 바뀌지 않습니다」
     위에 켜진 단추가 서로 어긋났다, E2E #37·#97). 첫 발행 뒤 다시 그린 화면은 그 리비전이 공식이라 단추가 꺼지고, 그 단추에 닿은
     빠른 둘째 누름은 Streamlit 이 버려(1.63 `SessionState` 가 꺼진 위젯의 값을 버린다) 그 회차가 첫 발행 알림을 지웠다. 발행은
     알림을 `note_notice`(칸 `FLASH_KEY` — 작업 알림 칸과 같은 이름)로 적고 — 정리 발행은 `_follow_and_announce(notices=…)` 가
@@ -3424,7 +3427,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     발행했습니다」 로 새 발행처럼 알렸다, 2026-10-27 E2E). 창 안이면 첫 발행 알림을 다시 낸다. 쓰지 않은 발행은 제 저장 짝을 적지
     않는다. 꺼진 단추에 닿은 누름은 AppTest 가 `click()` 으로 보내지 못해 시험은 누름 값을 바로 싣는다
     (`tests/test_equipment_scenario_publish_guard.stale_press`).
-  - **팝오버·알림 자리**(2026-10-25 E2E). 맨 위 작업 알림·거절 알림, 옛 배포 흔적 구획, 옛 판 흔적 줄·경고, 구획 머리의
+  - **팝오버·알림 자리**(2026-10-25 E2E). 맨 위 작업 알림·거절 알림, 옛 배포 흔적 구획, 옛 판 흔적 경고, 구획 머리의
     (세션 이동 알림은 2026-11-03 부터 알림 칸 — `report_session_notices`) 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는 `st.container()` 칸 안에 그린다(9장 「key 가
     있어도 자리는 고정한다」 — 알림이 빠지는 회차에 key 없던 팝오버 줄이 한 칸 당겨져 다시 서며, 알림 뒤 처음 누른 확인
     체크·Tab·Enter 가 열린 팝오버를 닫았다). 팝오버 일곱의 key 꼬리는 팝오버 세대(`POPOVER_GENERATION_KEY`)다 — 한 번뿐인
@@ -3440,7 +3443,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오의 **최신**만 센다(시나리오 표 전부와 리비전 표 최신 줄 — 옛 리비전 줄은 원시, 판정을 읽지 못한 시나리오도 원시). 칸이
     시나리오 수보다 적으면 회차마다 합친 본문을 다시 지어 판정 캐시 칸을 32 로 둔다(`LAYOUT_PUBLISH_PREVIEW_CACHE_ENTRIES`, E2E #11·#82). 옛 판(0031 을 모르는 배포)이 차이 있는 리비전 뒤에 저장한 리비전(옛 코드 흔적 — 목록 셈 `layout_trace_count` 와
     같은 규칙 `layout_trace_sources`)은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 「rT 은 옛 판이 저장해 rN 의 가정 배치가
-    빠졌습니다 — rN 으로 되돌리기」 경고, 시나리오 표 아래에 흔적이 있는 시나리오 한 줄. 저장은 막지 않는다(설계 14장).
+    빠졌습니다 — rN 으로 되돌리기」 경고. 흔적이 있는 시나리오 목록(이름 · 개수)은 자리에 늘어놓지 않고 상태 알림 `SC-03`
+    (`report_layout_traces` — 구획 머리, DB 전체 조건이라 범위 없음)으로 낸다. 저장은 막지 않는다(설계 14장).
     「배치 차이 모두 지우기」(`clearable_layout` — 가정 시나리오 최신에 차이가 있을 때만)는 확인 체크 key 꼬리가 (시나리오, 최신
     id)라 남의 저장 뒤 체크가 풀리고 — 켠 회차의 값(`CLEAR_LAYOUT_AGREED_KEY`)과 다음 회차 최신을 견줘 「확인한 뒤 … 의 최신이
     바뀌어(r2 → 지금 r3) … 확인 체크를 풀었습니다」 를 한 번 알린다(팝오버 안 체크 칸 위, 지울 것이 없어 단추째 사라졌으면 시나리오 줄
@@ -5966,8 +5970,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 시나리오 관리 복제 · 공식
   지정 · 월 머지 · 연도 Shift 저장 뒤 경고(「소요대수에 들지 않은 수요」 `GateVerdict.exclusion` — 2026-11-04 검수 의견 home-18 —
   와 남은 Capa 계산 오류 경고 둘 다)와 HOME 주요 Case 칩 콜백 경고(`home_main_case_chips._notify`)다(2026-11-04 설계 규칙 확인
-  보드 AMB-05 (나) — 저장 칸 · 칩 줄 밑 자리에는 그리지 않는다, `docs/design_rules.md` UI-NTF-02 · 03). 막힌 단추의 까닭은 그
-  단추 풍선(`help=`)이 말한다(UI-NTF-05).
+  보드 AMB-05 (나) — 저장 칸 · 칩 줄 밑 자리에는 그리지 않는다, `docs/design_rules.md` UI-NTF-03). 자동 갱신 「지금 실행」
+  발행 뒤 경고 · BigDataQuery 등록 저장 뒤 경고(CS 빈 행 · 대당 Capa 멈춤) · 시나리오 관리의 그 사이 빠진 대상 누름도 같다.
+  이 경고들은 사건이다(해소 줄 없음 — 상태 알림 `alerts.state` 가 아니다). 알림창에만 가므로 글은 결과를 앞에 두어 짧은 글
+  60자 안에 무엇이 막혔는지가 들게 한다(UI-NTF-06). 제출 단추는 잠그지 않고 누른 회차에 거부하며(공식 지정의 계산 검사 —
+  `st.error`), 실제로 잠근 단추의 까닭은 그 단추 풍선(`help=`)이 말한다(UI-INP-07 · UI-NTF-05).
 - **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11) — 보관 기한 · 판정 범위 같은
   설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 에 둔다. 「로그」 펼침마다 「복사」(평문 클립보드 — alarm-05)가 선다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을

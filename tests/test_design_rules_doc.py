@@ -171,6 +171,17 @@ def test_the_header_counts_are_the_rules() -> None:
     ]
 
 
+def test_chapters_are_parted_by_a_blank_line() -> None:
+    """`## n.` 머리 앞에는 빈 줄이 있다 — 붙으면 앞 목록의 마지막 줄에 이어진다."""
+    lines = RULES_PATH.read_text(encoding="utf-8").splitlines()
+    glued = [
+        lines[index]
+        for index in range(1, len(lines))
+        if lines[index].startswith("## ") and lines[index - 1].strip()
+    ]
+    assert glued == []
+
+
 def test_the_decision_record_holds_the_eighteen_answers() -> None:
     """6장은 물음 하나에 한 줄 — 고른 답 · 날짜 · 걸린 규칙을 적고, 사용자 답
     (05 · 06 만 (나))과 같다."""
@@ -201,10 +212,34 @@ def test_ids_cited_in_and_around_the_rules_exist() -> None:
 
 
 def test_the_nets_named_by_the_rules_exist() -> None:
-    paths = set(re.findall(r"(?:tests|scripts)/[\w/]+\.py", _text()))
+    """그물 경로는 있는 파일이고, `경로::이름` 꼴로 부른 시험은 그 파일에 그 이름의 함수가 있다."""
+    text = _text()
+    paths = set(re.findall(r"(?:tests|scripts)/[\w/]+\.py", text))
+    nodes = set(re.findall(r"((?:tests|scripts)/[\w/]+\.py)::(\w+)", text))
 
-    assert paths
+    assert paths and nodes
     assert sorted(path for path in paths if not (PROJECT_ROOT / path).is_file()) == []
+    missing = [
+        f"{path}::{name}"
+        for path, name in sorted(nodes)
+        if not re.search(rf"^def {name}\(", (PROJECT_ROOT / path).read_text(encoding="utf-8"), re.M)
+    ]
+    assert missing == []
+
+
+def test_the_two_other_answers_are_written_into_the_rules() -> None:
+    """(나) 로 답한 둘은 권장안과 반대라 규칙 글이 그 답을 말한다 — 꼴만 보는 시험이 지나쳐도
+    권장안 글로 되돌아가지 않게 핵심 문구를 본다. AMB-06 (나): 길 안내 글을 걷은 자리에 바로 가기도
+    두지 않는다(UI-TXT-03). AMB-05 (나): 남은 Capa 계산 오류 · HOME 주요 Case 칩 경고는 자리에서
+    걷고 알림창 · Alarm 에만(UI-NTF-03)."""
+    rules = {rule.id: rule for rule in _rules()}
+
+    txt03 = f"{rules['UI-TXT-03'].title} {rules['UI-TXT-03'].text}"
+    assert "바로 가기" in txt03 and "두지 않는다" in txt03, txt03
+    ntf03 = rules["UI-NTF-03"].text
+    assert "남은 Capa 계산 오류" in ntf03 and "주요 Case 칩" in ntf03, ntf03
+    assert "알림창 · Alarm 에만" in ntf03, ntf03
+    assert "UI-NTF-03" in rules["UI-NTF-02"].text
 
 
 def test_entry_documents_point_at_the_rules() -> None:
