@@ -381,7 +381,7 @@ with st.expander("새 메모", expanded=True):
 
 memos = cache.load(str(ctx.data_dir), store.version(ctx.data_dir))
 if memos.empty:
-    st.info("아직 저장한 메모가 없습니다.")
+    st.caption("아직 저장한 메모가 없습니다.")
 else:
     st.dataframe(memos, width="stretch", hide_index=True)
 
@@ -422,7 +422,7 @@ def test_the_page_opens_on_an_empty_data_place(
 
     assert not app.exception
     assert app.title[0].value == "데모 메모"
-    assert app.info[0].value == "아직 저장한 메모가 없습니다."
+    assert "아직 저장한 메모가 없습니다." in [line.value for line in app.caption]
 
 
 def test_saving_a_memo_adds_one_row(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -636,7 +636,12 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 - 조건 위젯(지역 · 기간 · 보기 방식)에는 `persist_state="session"` 을 달아 화면을 오가도 남게 한다(4장). 달지 않으면 화면을 옮겼다
   돌아올 때 처음 값으로 돌아간다 — 피할 수 없는 일이 아니다.
 - **모듈의 저장하지 않은 편집은 탭의 점 · 테마 단추 확인에 잡히지 않는다.** 코어만 센다. 그래서 저장 단추를 분명히 두고, 저장 전에
-  화면을 옮기면 사라진다는 것을 안내 글로 적는다.
+  화면을 옮기면 사라진다는 것은 저장 단추 풍선(`help=`)에 적는다.
+- **화면에 설명 문장을 늘 띄워 두지 않는다.** 사용법 · 저장 규칙 · 범위를 풀어 쓴 캡션 · 안내 상자를 두지 않고, 꼭 필요한 말은 그 칸 ·
+  단추의 풍선(`help=`)에 둔다(머리말 `description` 한 줄 — 3-7 — 은 그대로 둔다). 화면에 늘 두는 글은 값(지금 보고 있는 것)과 조건이
+  있을 때만 서는 짧은 표지뿐이다. 「…이 없습니다」 같은
+  빈 결과는 평문 한 줄로 두고 초록 성공 상자(`st.success`)를 쓰지 않는다. 화면 밖 자리를 가리키는 길 안내 글(「… 에서 고칩니다」)도
+  두지 않는다.
 
 ---
 
