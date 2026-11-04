@@ -86,7 +86,8 @@ class ShorteningDemand:
 class ShorteningStop:
     """계획을 세우지 못한 까닭 — 두 화면이 같은 글로 알리고 멈춘다.
 
-    `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `info`, `error` 다.
+    `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `input`(다른 화면에서 채울
+    입력이 빠짐 — Cut-off), `info`(그릴 것이 없는 빈 상태), `error` 다.
     """
 
     kind: str
@@ -146,7 +147,7 @@ def shortening_month_options(
     """고를 수 있는 달, 또는 멈출 까닭(Cut-off 빔·달 범위를 못 꺼냄·조회기간에 소요대수 없음·달
     없음)."""
     if cutoff.empty:
-        return ShorteningStop("info", CUTOFF_FIRST_MESSAGE)
+        return ShorteningStop("input", CUTOFF_FIRST_MESSAGE)
     try:
         demand_months = simulation_cache.get_required_month_span(
             demand.key, _required_equipment=demand.loader

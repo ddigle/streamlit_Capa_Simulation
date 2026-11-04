@@ -26,7 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import events
+from alert_marks import active_state, events, states
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
@@ -37,6 +37,12 @@ from widget_browser import BrowserChoice
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.constraint_equipment_plan import (
+    CUTOFF_SOURCE_HELP,
+    SESSION_ONLY_CAPTION,
+    SESSION_ONLY_HELP,
+)
+from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
@@ -259,10 +265,10 @@ def test_a_fractional_cutoff_is_named_as_the_floored_days_it_counts(tmp_path: Pa
     DuckDBEquipmentRepository(databases[1]).save_process_cutoff(_cutoff(7.5, DYNAMIC_PROCESS))
     app = _opened(databases)
 
-    assert (
-        "Cut-off 7일(7.5일 내림) — 가용설비 현황 「가용설비 설정」 팝업의 공정별 값"
-        in _captions(app)
-    )
+    # 값만 자리에, 어디서 고치는지는 풍선이다(설계 규칙 UI-TXT-03).
+    (line,) = [item for item in app.caption if str(item.value).startswith("Cut-off ")]
+    assert str(line.value) == "Cut-off 7일(7.5일 내림)"
+    assert line.proto.help == CUTOFF_SOURCE_HELP
 
 
 def test_an_empty_equipment_database_stands_the_card_and_one_reason_card(
@@ -297,7 +303,11 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     # 머리 한 줄 — 기본값(D8): 제약 120% · 기준 HOME · 개조 30일.
     header = _header_line(app)
     assert "제약 120%" in header and "기준 HOME" in header and "개조 30일" in header
-    assert "저장하지 않는 시뮬레이션입니다" in _captions(app)
+    # 「저장하지 않음」 은 카드 「이 세션만」 표지와 그 풍선이 말한다 — 머리 밑에 늘 서는 설명 줄이
+    # 아니다(설계 규칙 UI-TXT-01 · UI-TXT-07).
+    assert "저장하지 않는 시뮬레이션입니다" not in _captions(app)
+    (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
+    assert session.proto.help == SESSION_ONLY_HELP
     assert "가용 = 설비 일정 기준" in _captions(app)
     # 머리 「← 공정 Capa 상세」 는 그 공정으로 돌아간다(테마 인자 없음).
     links = app.session_state["captured_page_links"]
@@ -376,17 +386,20 @@ def _assumed_scenario_databases(tmp_path: Path) -> tuple[tuple[Path, Path], dict
     return databases, selection
 
 
-def _infos(app: AppTest) -> str:
-    return " ".join(str(item.value) for item in app.info)
+def _arrival(app: AppTest) -> str:
+    """설비 기준이 바뀐 도착 상태 알림(`CS-03`)의 전문 — 조건이 없으면 빈 글자."""
+    note = active_state(app, "CS-03")
+    return "" if note is None else str(note["full"])
 
 
 def test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_one(
     tmp_path: Path,
 ) -> None:
     """HOME 칸으로 연 공정 Capa 상세(설비 「공식 고정」)의 머리 링크로 넘어오면 이 화면은 세션의
-    가정 시나리오로 계산한다(D6) — 기준이 말없이 바뀌지 않게 그 공정·그 방문 동안 맨 위에 한 줄을
-    세운다(2026-10-25 E2E #39). 다른 공정을 고르거나 다른 화면에 다녀오면 걷히고, 사이드바로 온
-    방문·공식 세션에는 서지 않는다."""
+    가정 시나리오로 계산한다(D6) — 기준이 말없이 바뀌지 않게 그 공정·그 방문 동안 상태 알림
+    (`CS-03`)이 선다(2026-10-25 E2E #39 — 자리에 그리지 않는다, 설계 규칙 UI-NTF-02). 다른
+    공정을 고르거나 다른 화면에 다녀오면 「해소」 로 닫히고, 사이드바로 온 방문·공식 세션에는 서지
+    않는다."""
     databases, selection = _assumed_scenario_databases(tmp_path)
     note = "설비는 세션의 「셋업 실무 r1」 기준입니다 — 공정 Capa 상세는 HOME 칸에서 열어 설비가"
     app = _app(databases)
@@ -394,40 +407,41 @@ def test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_on
     app.session_state[PROCESS_DETAIL_EQUIPMENT_BASIS_KEY] = EQUIPMENT_BASIS_OFFICIAL
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
-    assert note in _infos(app)
+    assert note in _arrival(app) and not app.info
     # 같은 방문의 다른 회차에도 남는다.
     app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(False)
     _ok(app.run())
-    assert note in _infos(app)
+    assert note in _arrival(app) and not app.info
     # 「개조 일정」 모드도 같은 세션 설비로 계산한다 — 모드를 바꿔도 남는다.
     app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
     _ok(app.run())
-    assert note in _infos(app)
+    assert note in _arrival(app) and not app.info
     app.button_group(key=CONSTRAINT_MODE_KEY).set_value("constraint")
     _ok(app.run())
     # 다른 공정을 고르면 걷힌다 — 돌아와도 다시 서지 않는다.
     app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(OTHER_PROCESS)
     _ok(app.run())
-    assert note not in _infos(app)
+    assert note not in _arrival(app)
     app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(DYNAMIC_PROCESS)
     _ok(app.run())
-    assert note not in _infos(app)
+    assert note not in _arrival(app)
 
     # 다른 화면에 다녀오면(페이지 방문 차례가 오름) 걷힌다.
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
-    assert note in _infos(app)
+    assert note in _arrival(app) and not app.info
     # 하네스는 `app.py` 를 돌리지 않아 방문 차례가 없다(0) — 페이지가 바뀐 회차처럼 올린다.
     app.session_state[PAGE_VISIT_KEY] = 1
     _ok(app.run())
-    assert note not in _infos(app)
+    assert note not in _arrival(app)
 
     # 사이드바 설비 기준 그대로 연 상세(방문 기준 칸 없음)에서 넘어오면 서지 않는다.
     plain = _app(databases)
     plain.session_state[SELECTION_KEY] = selection
     plain.query_params["process"] = DYNAMIC_PROCESS
     _ok(plain.run())
-    assert "공정 Capa 상세는 HOME 칸에서" not in _infos(plain)
+    assert "공정 Capa 상세는 HOME 칸에서" not in _arrival(plain)
+    assert [note["active"] for note in states(plain, "CS-03")] == [False]
 
 
 def test_a_process_without_equipment_stops_with_its_reason(
@@ -902,7 +916,7 @@ def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     assert app.button_group(key=CONSTRAINT_MOD_DAYS_PILLS_KEY).disabled
     assert _metric(app, "개조 대수") == "—"
     assert "개조 없음" in _header_line(app)
-    assert "개조를 켜면 제약 제품에 떼어 줄 대수만큼" in _captions(app)
+    assert MODIFY_OFF_TEXT in _captions(app)
     app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(True)
     _ok(app.run())
 
@@ -1022,7 +1036,11 @@ def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(
     _ok(app.run())
     assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202603
     assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202606
-    assert any("제약 기간을 보이는 달로 옮겼습니다" in str(item.value) for item in app.info)
+    # 고쳐 읽은 입력 곁 한 줄 — 카드의 제약 기간 칸 밑이다(본문 안내 상자가 아니다).
+    assert any(
+        "제약 기간을 보이는 달로 옮겼습니다" in str(item.value) for item in app.sidebar.caption
+    )
+    assert not app.info
     app.session_state[MONTH_RANGE_KEY] = ("2026-01", "2026-12")
     _ok(app.run())
 

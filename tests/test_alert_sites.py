@@ -192,6 +192,10 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_BLOCKED,
     ),
+    ("src/capa_simulation/components/required_shortening_panel.py", "_render_stop"): (
+        1,
+        PLACE_NO_INPUT,
+    ),
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PLACE_CONFIRM),
     ("src/capa_simulation/components/scenario_management.py", "_render_list_toolbar"): (
         1,

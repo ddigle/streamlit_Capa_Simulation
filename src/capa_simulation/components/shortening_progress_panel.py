@@ -560,26 +560,37 @@ def scope_note(
     *,
     lapsed: int = 0,
     renamed: Sequence[str] = (),
-) -> str | None:
+) -> tuple[str, str] | None:
     """기준선과 지금의 조회 달·맞댄 공정이 다르거나, 필요 시점이 지난 호기(`lapsed` 대)가 있거나,
-    `해소`·`신규 필요` 가 한 공정에 함께 있으면(`renamed` — 이름을 바꾼 호기일 수 있다) 그 알림.
-    셋 다 없으면 None."""
+    `해소`·`신규 필요` 가 한 공정에 함께 있으면(`renamed` — 이름을 바꾼 호기일 수 있다) 그 표지와
+    풍선 글. 셋 다 없으면 None.
+
+    자리에는 표지(「조회 달 다름 · 필요 시점 지난 3대 뺌」 — 낱말과 수)만 두고, 이름 · 까닭은 그
+    줄의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04)."""
     difference = scope_difference(
         baseline_months=(baseline.summary.start_month, baseline.summary.end_month),
         baseline_processes=baseline.processes,
         months=months,
         processes=plan.processes,
     )
+    marks: list[str] = []
     parts = []
     if difference.differs:
+        if difference.months_differ:
+            marks.append("조회 달 다름")
+        changed = len(difference.added) + len(difference.removed)
+        if changed:
+            marks.append(f"공정 {changed}개 다름")
         parts.append(_scope_text(difference, labels))
     if lapsed:
+        marks.append(f"필요 시점 지난 {lapsed}대 뺌")
         parts.append(
             f"기준선의 그날 오늘({baseline.summary.plan_today:%Y-%m-%d}) 뒤로 오늘"
             f"({plan.today:%Y-%m-%d})이 지나, 필요 시점이 이미 지난 호기 {lapsed}대는 견주지 "
             "않습니다(지금 계획은 오늘보다 앞으로 당길 수 없어 줄어든 날수가 진척이 아닙니다)."
         )
     if renamed:
+        marks.append(f"이름 바꿈 의심 공정 {len(renamed)}개")
         parts.append(
             f"「해소」와 「신규 필요」 호기가 함께 있는 공정 {_names(list(renamed), labels)} — "
             "기준선을 저장한 뒤 호기 이름을 바꿨다면 같은 설비가 옛 이름 「해소」·새 이름 「신규 "
@@ -587,7 +598,7 @@ def scope_note(
         )
     if not parts:
         return None
-    return ":material/info: " + "  \n:material/info: ".join(parts)
+    return ":material/info: 기준선과 견줌 · " + " · ".join(marks), "  \n".join(parts)
 
 
 def _scope_text(difference: ScopeDifference, labels: ProcessLabels) -> str:

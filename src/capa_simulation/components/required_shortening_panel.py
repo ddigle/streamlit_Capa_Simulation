@@ -102,6 +102,7 @@ from capa_simulation.components.shortening_timeline import month_day as _month_d
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
 from capa_simulation.components.shortening_timeline import timeline_position as _position
+from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
@@ -162,20 +163,23 @@ from capa_simulation.services.shortening_watch import (
 )
 from capa_simulation.services.space_shortening_layer import shortening_space_floors
 from capa_simulation.services.undated_equipment import (
+    UNDATED_RULE_TEXT,
     undated_candidate_note,
-    undated_equipment_notice,
+    undated_equipment_label,
 )
 from capa_simulation.services.upeh_assumption import UpehAssumption
-from capa_simulation.services.usage_basis import usage_exclusion_notice
+from capa_simulation.services.usage_basis import usage_exclusion_label
 from capa_simulation.settings import DUCKDB_PATH
 
 __all__ = [
     "MANUAL_NOTICE_HELP",
+    "MATCH_RULE_HELP",
     "SHARED_FILTER_HELP",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
     "SHORTENING_PROCESS_KEY",
     "SHORTENING_START_KEY",
+    "USAGE_NOTICE_HELP",
     "render_required_shortening_tab",
 ]
 
@@ -196,6 +200,16 @@ SHARED_FILTER_HELP = "기간 · 공정을 바꾸면 모든 사용자의 기본 �
 MANUAL_NOTICE_HELP = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 설비 일정 기준 가용에서 뺐습니다(호기별 "
     "비가동과 별도)."
+)
+# 맞대는 규칙 — 맞대지 못한 공정 펼침의 「원본 공정명」 표지 풍선, 맞댄 공정이 하나도 없는 빈 결과
+# 줄의 풍선이 같은 글을 쓴다.
+MATCH_RULE_HELP = (
+    "설비 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. Cut-off 를 "
+    "적지 않은 공정은 일정 기준 가용을 낼 수 없어 시나리오 쪽에만 남습니다."
+)
+USAGE_NOTICE_HELP = (
+    "설비 마스터 기준 — 가용대수에서 뺐고 단축 후보에도 들지 않습니다. 배치·호기 목록에는 그대로 "
+    "있습니다."
 )
 
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
@@ -330,6 +344,13 @@ def render_required_shortening_tab(
         controls=controls,
         database_path=equipment_database_path,
     )
+    if isinstance(prepared, ShorteningStop) and prepared.kind in ("scenario", "error"):
+        # 화면을 그리지 못한 멈춤 — 자리 글(머리 아래)과 같은 글을 알림창에 한 번(UI-NTF-08). 본문
+        # 프래그먼트 밖(앱 전체 회차)에서 보낸다 — 프래그먼트의 이벤트 칸 자리 수는 갈래마다 같아야
+        # 한다(AGENTS 9장).
+        alert_page_error(
+            _stop_text(prepared), code="RS-01", text="필요 단축 일정을 계산하지 못했습니다"
+        )
     with view:
         _render_view(
             prepared,
@@ -479,12 +500,22 @@ def _render_view(
 
 
 def _render_stop(stop: ShorteningStop) -> None:
+    """멈춘 까닭 한 자리 — 소요를 못 읽음(경고) · 계산 오류(오류) · 다른 화면에서 채울 입력이
+    빠짐(`input` — Cut-off, 경고) · 그릴 것이 없는 빈 상태(`info` — 회색 평문 한 줄, 설계 규칙
+    UI-TXT-04 · 반영 검수표 D4)."""
     if stop.kind == "scenario":
         _render_scenario_error(stop.message)
     elif stop.kind == "error":
         st.error(stop.message or "")
+    elif stop.kind == "input":
+        st.warning(stop.message or "", icon=":material/edit_calendar:")
     else:
-        st.info(stop.message or "")
+        st.caption(stop.message or "")
+
+
+def _stop_text(stop: ShorteningStop) -> str:
+    """멈춘 까닭의 알림창 전문 — 자리에 그린 글과 같다."""
+    return _scenario_error_text(stop.message) if stop.kind == "scenario" else stop.message or ""
 
 
 def _render_body(
@@ -520,10 +551,11 @@ def _render_body(
     _render_usage_notice(equipment, selected=scope if selected else None)
     _render_manual_notice(plan, scope=scope, labels=labels)
     if not plan.processes:
-        st.info(
+        # 그릴 것이 없는 빈 상태 — 회색 평문 한 줄, 맞대는 규칙은 풍선(설계 규칙 UI-TXT-04 · D4).
+        st.caption(
             "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
-            "없습니다. "
-            "Cut-off·설비 마스터의 공정소분류가 시나리오 공정명과 같은지 확인하세요."
+            "없습니다.",
+            help=MATCH_RULE_HELP,
         )
         return
 
@@ -653,10 +685,12 @@ def _card_order(
 
 def _render_scenario_error(reason: str | None) -> None:
     """활성 시나리오의 소요대수를 못 읽어 계산하지 않았다는 경고. 까닭이 있으면 아래에 붙인다."""
-    st.warning(
-        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
-        "다른 탭은 그대로 쓸 수 있습니다." + (f"\n\n{reason}" if reason else ""),
-        icon=":material/sync_problem:",
+    st.warning(_scenario_error_text(reason), icon=":material/sync_problem:")
+
+
+def _scenario_error_text(reason: str | None) -> str:
+    return "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다." + (
+        f"\n\n{reason}" if reason else ""
     )
 
 
@@ -667,10 +701,11 @@ def _render_header(
     today: date,
     baselines: Sequence[ShorteningBaselineSummary] | None,
 ) -> tuple[float, str]:
-    """설명 한 줄과 오른쪽 `진척 비교`·`목표 확보율`. 설명 옆에 두므로 가로 컨테이너가 아니라
-    컬럼이다(AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는 조건(기간·공정)만 조건 카드에
-    둔다. `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를 세우지 않는다. 제목은 따로 달지
-    않는다 — 별도 화면이 되어(2026-10-18) 페이지 제목 「필요 단축 일정」 과 겹쳤다."""
+    """값 한 줄(가용 기준 · 오늘)과 오른쪽 `진척 비교`·`목표 확보율`. 값 줄 옆에 두므로 가로
+    컨테이너가 아니라 컬럼이다(AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는
+    조건(기간·공정)만 조건 카드에 둔다. `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를
+    세우지 않는다. 제목은 따로 달지 않는다 — 별도 화면이 되어(2026-10-18) 페이지 제목 「필요 단축
+    일정」 과 겹쳤다."""
     if SHORTENING_LEVEL_KEY not in st.session_state:
         st.session_state[SHORTENING_LEVEL_KEY] = DEFAULT_TARGET_LEVEL
     compare_column: DeltaGenerator | None = None
@@ -679,10 +714,9 @@ def _render_header(
     else:
         title, compare_column, picker = st.columns([3, 1.5, 1], vertical_alignment="bottom")
     with title:
-        st.caption(
-            "목표 확보율에 모자란 달을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지 — "
-            f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
-        )
+        # 값만 둔다 — 이 화면이 무엇을 내는지는 머리말 · Guide 가 말한다(설계 규칙 UI-TXT-01 ·
+        # UI-TXT-07).
+        st.caption(f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}")
     with picker:
         level = st.selectbox(
             "목표 확보율",
@@ -778,11 +812,15 @@ def _render_process_filter(
     absent = absent_filter_processes(profile.processes, set(ordered))
     if absent:
         # 공용 설정이라 다른 시나리오·설비 마스터에는 그 공정이 있다. 말없이 빠지면 왜 덜 골라졌는지
-        # 알 수 없다(HOME 주요공정 프리셋의 「이 화면에 없음」과 같은 까닭).
+        # 알 수 없다(HOME 주요공정 프리셋의 「이 화면에 없음」과 같은 까닭). 숨은 저장분이라 칸 밑
+        # 표지 + 풍선(이름 · 남는다는 말)이다(설계 규칙 UI-TXT-04).
         st.caption(
-            "공용 설정의 공정 가운데 지금 맞댄 공정에 없어 고를 수 없는 것: "
-            + literal_names(labels.label(process) for process in absent)
-            + " — 공용 설정에는 남습니다."
+            f":material/visibility_off: 고를 수 없는 공용 설정 공정 {len(absent)}개",
+            help=(
+                "공용 설정의 공정 가운데 지금 맞댄 공정에 없어 고를 수 없는 것: "
+                + literal_names(labels.label(process) for process in absent)
+                + " — 공용 설정에는 남습니다."
+            ),
         )
     return [str(process) for process in selected]
 
@@ -832,22 +870,26 @@ def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
 def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
     """반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 그리지 않는다.
 
-    Main·Static 대비 일정과 같은 함수·같은 문구 뒤에, **Qual 일정이 없는 몫**이 있으면 그 몫은 단축
-    후보도 아니라고 덧붙인다(`undated_candidate_note`) — 이 탭은 Qual 일정이 있는 호기만 당기므로,
-    알리지 않으면 「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다. 반입만 빈 호기는 Qual
-    일정이 있어 후보이므로 그 말을 하지 않는다. 범위는 옆 줄(사용기준 제외)과 같다: 공정을 고르면
-    그 공정, 고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 일정 기준 가용이 없어
+    자리에는 값(「일정 미정 N대 (…)」 — Main·Static 대비 일정과 같은 함수)만 두고, 규칙 글과
+    **Qual 일정이 없는 몫**은 단축 후보도 아니라는 말(`undated_candidate_note`)은 그 줄의 풍선에
+    둔다(설계 규칙 UI-TXT-01 · UI-TXT-04) — 이 탭은 Qual 일정이 있는 호기만 당기므로, 알리지 않으면
+    「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다. 반입만 빈 호기는 Qual 일정이 있어
+    후보이므로 그 말을 하지 않는다. 범위는 옆 줄(사용기준 제외)과 같다: 공정을 고르면 그 공정,
+    고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 일정 기준 가용이 없어
     「맞대지 못한 공정」에만 남기 때문이다.
     """
     try:
         undated = simulation_cache.get_undated_equipment(equipment)
     except ValueError:
         return
-    notice = undated_equipment_notice(undated, processes=selected)
-    if notice is None:
+    label = undated_equipment_label(undated, processes=selected)
+    if label is None:
         return
     note = undated_candidate_note(undated, processes=selected)
-    st.caption(f":material/event_busy: {notice}" + (f" {note}" if note else ""))
+    st.caption(
+        f":material/event_busy: {label}",
+        help=UNDATED_RULE_TEXT + (f" {note}" if note else ""),
+    )
 
 
 def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
@@ -861,9 +903,10 @@ def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | N
         excluded = simulation_cache.get_usage_excluded_equipment(equipment)
     except ValueError:
         return
-    notice = usage_exclusion_notice(excluded, processes=selected)
-    if notice is not None:
-        st.caption(f":material/filter_alt_off: {notice} 단축 후보에도 들지 않습니다.")
+    label = usage_exclusion_label(excluded, processes=selected)
+    if label is not None:
+        # 값만 자리에 — 뺀 곳 · 후보 아님은 풍선(설계 규칙 UI-TXT-01 · UI-TXT-04).
+        st.caption(f":material/filter_alt_off: {label}", help=USAGE_NOTICE_HELP)
 
 
 def _render_manual_notice(
@@ -902,7 +945,8 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
 
     조용히 빠지면 부족이 이유 없이 작아 보인다. 이름은 **원본**이다 — 설비 마스터·Cut-off 의
     이름을 맞추라는 안내라 표시명을 적으면 마스터에 없는 이름을 찾게 된다(AGENTS 8장, 원본 키를
-    확인하는 화면).
+    확인하는 화면). 펼침 안 맨 위는 「원본 공정명」 표지이고, 맞대는 규칙은 그 풍선이다(설계 규칙
+    UI-TXT-01 — 늘 서는 설명 줄을 두지 않는다).
     """
     groups = [
         ("시나리오에만 있는 공정", plan.required_only),
@@ -918,9 +962,8 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
         key="equipment_shortening_unmatched_expander",
     ):
         st.caption(
-            "설비 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. "
-            "Cut-off 를 적지 않은 공정은 일정 기준 가용을 낼 수 없어 시나리오 쪽에만 남습니다. "
-            "아래 이름은 공정 표시명이 아니라 원본 공정명입니다."
+            ":material/badge: 원본 공정명",
+            help=MATCH_RULE_HELP + " 아래 이름은 공정 표시명이 아니라 원본 공정명입니다.",
         )
         for label, names in (*groups, ("Cut-off 미기재", plan.missing_cutoff)):
             if names:
@@ -1078,7 +1121,9 @@ def _render_progress(
         baseline, plan, months, labels, lapsed=view.summary.lapsed, renamed=view.renamed
     )
     if note is not None:
-        st.caption(note)
+        # 표지만 자리에 — 이름 · 까닭은 풍선(설계 규칙 UI-TXT-01 · UI-TXT-04).
+        mark, detail = note
+        st.caption(mark, help=detail)
     level_plan = plan.at(level)
     status = (
         simulation_cache.get_unit_qual_status(equipment)

@@ -240,6 +240,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "PD-04", "info", "state", "공정 Capa 상세 — 사용기준이 HBM·EDP 가 아니어서 뺀 이 공정 호기"
     ),
+    # 제약 시뮬레이션 맨 위에 서던 「설비는 세션의 「…」 기준입니다」 줄을 상태 알림으로(화면에 상태
+    # 문장을 달지 않는다 — 설계 규칙 UI-NTF-02).
+    AlertSpec(
+        "CS-03", "check", "state", "제약 시뮬레이션 — 공식 고정 상세에서 왔는데 설비가 세션 기준"
+    ),
 )
 
 

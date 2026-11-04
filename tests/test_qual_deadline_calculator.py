@@ -50,6 +50,7 @@ from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.services.qual_deadline import (
     EMPTY_UNITS_MESSAGE,
     NO_PASTED_LINES_MESSAGE,
+    PASTE_HINT,
     UNIT_TABLE_COLUMNS,
 )
 
@@ -343,6 +344,15 @@ def _paste(app: AppTest, text: str) -> None:
     app.text_area(key=PASTE_TEXT_KEY).set_value(text)
     app.button(key=PASTE_APPLY_KEY).click().run()
     assert not app.exception, [element.message for element in app.exception]
+
+
+def test_the_paste_format_is_the_text_area_tooltip_not_a_line_above_it() -> None:
+    """붙여넣는 꼴(「한 줄에 한 달 …」)은 글 칸 풍선이 말한다 — 칸 위에 늘 서는 캡션이 아니다
+    (설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    app = _component()
+
+    assert app.text_area(key=PASTE_TEXT_KEY).help == PASTE_HINT
+    assert PASTE_HINT not in [element.value for element in app.caption]
 
 
 def test_the_paste_box_fills_months_from_january_like_the_original() -> None:

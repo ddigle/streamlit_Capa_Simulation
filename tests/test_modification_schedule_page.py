@@ -35,6 +35,11 @@ from test_constraint_simulation_page import (
 )
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.constraint_equipment_plan import (
+    CUTOFF_SOURCE_HELP,
+    SESSION_ONLY_CAPTION,
+    SESSION_ONLY_HELP,
+)
 from capa_simulation.components.modification_schedule_figures import (
     ScheduleLabels,
     batch_line,
@@ -42,6 +47,7 @@ from capa_simulation.components.modification_schedule_figures import (
     shortfall_lines,
 )
 from capa_simulation.components.modification_schedule_view import (
+    CHART_HELP,
     DEADLINE_HELP,
     DOUBLE_COUNT_NOTE,
     FELL_BACK_LABEL,
@@ -256,10 +262,19 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     header = _header(app)
     assert "개조 4대 × 30일" in header and "가장 빨리" in header and "동시 상한 없음" in header
     captions = _captions(app)
-    assert DOUBLE_COUNT_NOTE in captions
-    assert "저장하지 않는 시뮬레이션입니다" in captions
+    # 넣는 법(두 번 빠짐)은 「개조 대수」 칸 풍선, 저장하지 않음은 「이 세션만」 표지 풍선이다 —
+    # 출처 띠 · 머리 밑에 늘 서는 설명 줄이 아니다(설계 규칙 UI-TXT-01).
+    assert DOUBLE_COUNT_NOTE not in captions and "두 번 빠집니다" not in captions
+    assert DOUBLE_COUNT_NOTE in str(app.number_input(key=SCHEDULE_UNITS_KEY).help)
+    assert "저장하지 않는 시뮬레이션입니다" not in captions
+    (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
+    assert session.proto.help == SESSION_ONLY_HELP
     assert "공정 소요 · 가용 = 설비 일정 기준" in captions
-    assert "Cut-off 7일" in captions
+    (cutoff,) = [item for item in app.caption if str(item.value).startswith("Cut-off ")]
+    assert str(cutoff.value) == "Cut-off 7일" and cutoff.proto.help == CUTOFF_SOURCE_HELP
+    # 그래프 막대 좌표의 읽는 법은 제목 풍선이다.
+    (title,) = [item for item in app.markdown if "개조 전 · 뒤" in str(item.value)]
+    assert title.proto.help == CHART_HELP and "W/D 구간 좌표라" not in captions
     assert "**다 넣지 못했습니다 — 대안**" not in _markdown(app)
 
 
@@ -548,7 +563,11 @@ def test_a_process_without_equipment_stops_with_its_reason(databases: tuple[Path
 
     assert "설비 일정 없음: 설비 없음" in " ".join(_markdown(app))
     # 까닭 카드 풀이의 주어는 이 모드 이름이다(제약 모드와 같은 함수 — `render_equipment_plan`).
-    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in _captions(app)
+    # 어느 공정에 서는지의 규칙은 까닭 줄 풍선이다 — 카드에 늘 서는 설명 문장이 아니다(설계 규칙
+    # UI-TXT-01).
+    helps = " ".join(str(item.proto.help) for item in app.caption)
+    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in helps
+    assert "공정 Capa 상세 ② 와 같은 값" not in _captions(app)
     assert not app.metric
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4
 

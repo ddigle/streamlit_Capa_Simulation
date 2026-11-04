@@ -131,13 +131,17 @@ def undated_counts(
     }
 
 
-def undated_equipment_notice(
+UNDATED_RULE_TEXT: Final = "날짜가 들어올 때까지 가용대수에 세지 않습니다."
+"""일정 미정 줄의 규칙 글 — 값 줄(`undated_equipment_label`) 뒤에 잇거나 그 줄의 풍선에 둔다."""
+
+
+def undated_equipment_label(
     undated: pd.DataFrame,
     *,
     processes: Collection[str] | None = None,
     unit_ids: Collection[str] | None = None,
 ) -> str | None:
-    """「일정 미정 N대 (반입 미정 a · Qual 미정 b) — …」 한 줄. 0대면 `None`(그리지 않는다).
+    """「일정 미정 N대 (반입 미정 a · Qual 미정 b)」 값 글. 0대면 `None`(그리지 않는다).
 
     괄호 안에는 0 이 아닌 쪽만 적는다.
     """
@@ -148,10 +152,18 @@ def undated_equipment_notice(
     parts = " · ".join(
         f"{kind} {format_unit_count(count)}" for kind, count in counts.items() if count > 0
     )
-    return (
-        f"일정 미정 {format_unit_count(total)}대 ({parts}) — 날짜가 들어올 때까지 가용대수에 "
-        "세지 않습니다."
-    )
+    return f"일정 미정 {format_unit_count(total)}대 ({parts})"
+
+
+def undated_equipment_notice(
+    undated: pd.DataFrame,
+    *,
+    processes: Collection[str] | None = None,
+    unit_ids: Collection[str] | None = None,
+) -> str | None:
+    """「일정 미정 N대 (반입 미정 a · Qual 미정 b) — …」 한 줄. 0대면 `None`(그리지 않는다)."""
+    label = undated_equipment_label(undated, processes=processes, unit_ids=unit_ids)
+    return None if label is None else f"{label} — {UNDATED_RULE_TEXT}"
 
 
 def undated_candidate_note(

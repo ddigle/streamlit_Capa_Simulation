@@ -71,7 +71,9 @@ from capa_simulation.upeh_assumption_state import (
 
 __all__ = [
     "CONVERTED_UNITS_NOTE",
+    "CUTOFF_SOURCE_HELP",
     "SESSION_ONLY_CAPTION",
+    "SESSION_ONLY_HELP",
     "UPEH_NOT_APPLIED_NOTE",
     "EquipmentPlan",
     "EquipmentPlanSource",
@@ -85,7 +87,19 @@ __all__ = [
 ]
 
 SESSION_ONLY_CAPTION: Final = ":material/person: **이 세션만** — 저장하지 않습니다"
-"""조건 카드 「이 세션만」 묶음의 머리 캡션."""
+"""조건 카드 「이 세션만」 묶음의 머리 캡션(표지)."""
+
+SESSION_ONLY_HELP: Final = (
+    "저장하지 않는 시뮬레이션입니다 — 조건은 이 세션에만 남고 다른 사람에게 보이지 않습니다. 공식 "
+    "확보율·HOME·필요 단축 일정은 그대로입니다."
+)
+"""「이 세션만」 표지의 풍선 — 보관 범위 설명은 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01)."""
+
+CUTOFF_SOURCE_HELP: Final = (
+    "가용설비 현황 사이드바 「가용설비 설정」 팝업의 공정별 값입니다(모든 설비 시나리오 공용)."
+)
+"""조건 카드 Cut-off 값 줄의 풍선 — 값이 어디서 오는지(고치는 곳)는 자리에 적지
+않는다(UI-TXT-03)."""
 
 CONVERTED_UNITS_NOTE: Final = (
     " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
@@ -99,7 +113,9 @@ UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않�
 class ReasonCard(Protocol):
     """페이지의 까닭 카드 그리기(제목 · 풀이 · 가용설비 현황 링크)."""
 
-    def __call__(self, title: str, detail: str, *, equipment_link: bool) -> None: ...
+    def __call__(
+        self, title: str, detail: str, *, equipment_link: bool, help: str | None = None
+    ) -> None: ...
 
 
 class EquipmentPlanSource(NamedTuple):
@@ -199,12 +215,16 @@ def render_equipment_plan(
     snapshot = source.snapshot
     if not readiness.ready or readiness.cutoff_days is None or snapshot is None:
         render_header(process, f"{bold} :blue-badge[{readiness.badge}]")
+        # 자리에는 까닭(값)만, 어느 공정에 서는지의 규칙은 풍선이다(설계 규칙 UI-TXT-01).
         render_reason_card(
             readiness.badge,
-            f"{readiness.detail} {subject}{topic_particle(subject)} 설비 일정 기준 가용(공정 Capa "
-            "상세 ② 와 같은 값)으로 계산하므로 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
-            "적힌 공정에만 섭니다.",
+            readiness.detail,
             equipment_link=True,
+            help=(
+                f"{subject}{topic_particle(subject)} 설비 일정 기준 가용(공정 Capa 상세 ② 와 "
+                "같은 값)으로 계산하므로 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 적힌 "
+                "공정에만 섭니다."
+            ),
         )
         return None
     if before_plan is not None and not before_plan():
@@ -236,10 +256,15 @@ def render_equipment_plan(
             (
                 "가용설비 현황의 공정별 Cut-off 에 이 공정이 없습니다."
                 if missing_cutoff
-                else "설비 일정 기준 가용에 이 공정이 없습니다 — 설비 마스터 공정소분류·기존보유 "
-                "공정 이름이 시나리오 공정과 완전히 같아야 맞댑니다."
+                else "설비 일정 기준 가용에 이 공정이 없습니다."
             ),
             equipment_link=True,
+            help=(
+                None
+                if missing_cutoff
+                else "설비 마스터 공정소분류·기존보유 공정 이름이 시나리오 공정과 완전히 같아야 "
+                "맞댑니다."
+            ),
         )
         return None
     return EquipmentPlan(

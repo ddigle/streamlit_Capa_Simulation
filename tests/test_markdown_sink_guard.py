@@ -199,6 +199,10 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/state_alerts.py", "equipment_scope"): (
         "상태 알림 로그의 범위 줄(설비 「이름」 rN) — 알림 칸 JS 가 textContent 로 그린다"
     ),
+    ("app_pages/constraint_simulation.py", "report_locked_arrival"): (
+        "설비 기준이 세션 설비 시나리오로 바뀐 도착의 상태 알림(CS-03) — 알림 칸 JS 가 "
+        "textContent 로 그린다(마크다운 자리가 아니다)"
+    ),
     ("src/capa_simulation/equipment_scenario_activation.py", "_move_after_incompatible"): (
         "세션 알림 — 설비 마스터 표(JS) 잠금 글에도 간다. 알림 상자는 그리는 자리에서 글 통째로 "
         "literal_markdown"

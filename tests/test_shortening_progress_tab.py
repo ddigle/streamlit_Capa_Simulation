@@ -388,9 +388,10 @@ def test_a_unit_renamed_after_the_baseline_is_flagged_as_a_possible_rename(
     rows = _progress_csv(app).set_index("호기")
     assert rows.at[old_name, "상태"] == PROGRESS_RESOLVED
     assert rows.at[f"{old_name}-NEW", "상태"] == PROGRESS_NEW
-    captions = [str(item.value) for item in app.caption]
-    flagged = [text for text in captions if "이름을 바꿨다면" in text]
-    assert flagged and process in flagged[0], captions
+    # 자리에는 표지(이름 바꿈 의심 공정 수)만, 이름 · 까닭은 그 줄의 풍선이다(설계 규칙 UI-TXT-01).
+    (flagged,) = [item for item in app.caption if "이름 바꿈 의심 공정 1개" in str(item.value)]
+    assert "이름을 바꿨다면" in flagged.proto.help and process in flagged.proto.help
+    assert not any("이름을 바꿨다면" in str(item.value) for item in app.caption)
     clear_equipment_repository()
 
 

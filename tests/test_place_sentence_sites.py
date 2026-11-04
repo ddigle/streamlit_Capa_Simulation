@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 93
+UNSETTLED_SITES = 73
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -85,16 +85,14 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/constraint_simulation.py", ""): (
         CANNOT_DRAW,
         CANNOT_DRAW,
+        BESIDE_INPUT,
         MARKER,
         EMPTY,
         EMPTY,
-        UNSETTLED,
-        BESIDE_INPUT,
         EMPTY,
     ),
     ("app_pages/constraint_simulation.py", "product_ready"): (EMPTY,),
     ("app_pages/constraint_simulation.py", "render_held_picker"): (BESIDE_INPUT,),
-    ("app_pages/constraint_simulation.py", "render_locked_arrival_note"): (UNSETTLED,),
     ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
     ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY),
@@ -191,14 +189,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
     ),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_schedule"): (
-        UNSETTLED,
         EMPTY,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/constraint_simulation_view.py", "render_constraint_view"): (
-        UNSETTLED,
+        EMPTY,
     ),
     ("src/capa_simulation/components/container_start_check.py", "_render_missing_report"): (
         UNSETTLED,
@@ -348,15 +340,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/manual_downtime_tab.py", "render_manual_downtime_tab"): (
         UNSETTLED,
     ),
-    ("src/capa_simulation/components/modification_schedule_view.py", "_render_body"): (
-        UNSETTLED,
-        EMPTY,
-    ),
+    ("src/capa_simulation/components/modification_schedule_view.py", "_render_body"): (EMPTY,),
     ("src/capa_simulation/components/modification_schedule_view.py", "_render_conditions"): (
         MARKER,
-    ),
-    ("src/capa_simulation/components/modification_schedule_view.py", "_render_source_band"): (
-        UNSETTLED,
     ),
     ("src/capa_simulation/components/modification_schedule_view.py", "render_schedule_mode"): (
         EMPTY,
@@ -406,30 +392,15 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "render_process_rename_management",
     ): (UNSETTLED,),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_inputs"): (MARKER,),
-    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_paste_box"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (UNSETTLED,),
+    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (EMPTY,),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (
-        UNSETTLED,
+        EMPTY,
         EMPTY,
     ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_month_range"): (
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_process_filter"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_progress"): (EMPTY,),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_undated_notice"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_unmatched"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_usage_notice"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/sample_data.py", "render_pending_source"): (UNSETTLED,),
     ("src/capa_simulation/components/sample_data.py", "render_sample_switch"): (
         UNSETTLED,
@@ -459,11 +430,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/scenario_transform.py", "render_source_selector"): (EMPTY,),
     ("src/capa_simulation/components/securement_heatmap.py", "render_securement_heatmap"): (EMPTY,),
-    ("src/capa_simulation/components/shortening_board.py", "_render_controls"): (UNSETTLED,),
-    ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (UNSETTLED, EMPTY),
-    ("src/capa_simulation/components/shortening_board.py", "_render_imminent"): (EMPTY, UNSETTLED),
+    ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (EMPTY,),
+    ("src/capa_simulation/components/shortening_board.py", "_render_imminent"): (EMPTY,),
     ("src/capa_simulation/components/shortening_board.py", "render_highlight_notice"): (EMPTY,),
-    ("src/capa_simulation/components/shortening_board.py", "render_progress_board"): (UNSETTLED,),
     ("src/capa_simulation/components/shortening_progress_panel.py", "_render_delete"): (
         BESIDE_INPUT,
     ),

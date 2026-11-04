@@ -147,8 +147,16 @@ def _pick(app: AppTest, *names: str) -> AppTest:
     return _ok(app.run())
 
 
-def _infos(app: AppTest) -> str:
-    return " ".join(str(element.value) for element in app.info)
+def _helps(app: AppTest) -> str:
+    """캡션 풍선 글 — 개조 일정 카드의 「신규 설비 붙이지 않음」 표지가 까닭을 여기에 싣는다."""
+    return " ".join(str(element.proto.help) for element in app.caption)
+
+
+def _dropped(app: AppTest) -> str:
+    """카드 「보유 제약 호기」 칸 밑 「…를 뺐습니다」 줄."""
+    return " ".join(
+        str(element.value) for element in app.sidebar.caption if "뺐습니다" in str(element.value)
+    )
 
 
 # ------------------------------------------------------------------ 선택지·기본값
@@ -247,7 +255,9 @@ def test_holdings_covering_the_period_skip_the_new_unit(
     assert "**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비" in _captions(app)
     app = _pick(app, "CA-01")
     captions = _plain(_captions(app))
-    assert NEW_SKIPPED_TEXT in captions
+    # 카드에는 표지(값)만, 까닭 문장은 그 풍선이다(설계 규칙 UI-TXT-04).
+    assert ":material/block: 신규 설비 붙이지 않음 — 보유로 다 덮음" in captions
+    assert NEW_SKIPPED_TEXT in _helps(app) and NEW_SKIPPED_TEXT not in captions
     assert "**신규 대기**" not in captions
     assert (
         f"일반 설비가 된 신규 1대 — {EARLY_UNIT} · 보유 제약 설비로 제약 기간을 다 덮어 기존 "
@@ -269,11 +279,12 @@ def test_a_later_cover_names_its_month_on_the_schedule_card(
     app = _with_new_units(_opened(later_cover_databases), date(2026, 1, 1))
     app = _pick(app, ARRIVING_HELD)
     captions = _plain(_captions(app))
+    assert "26년 6월 증가부터 신규 설비 붙이지 않음" in captions
     assert (
         "26년 6월 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 "
-        "설비를 더 붙이지 않았습니다" in captions
+        "설비를 더 붙이지 않았습니다" in _helps(app)
     )
-    assert NEW_SKIPPED_TEXT not in captions
+    assert NEW_SKIPPED_TEXT not in _helps(app)
     assert (
         f"일반 설비가 된 신규 1대 — {LATE_NEW} · 26년 6월 증가부터 보유 제약 설비로 다 덮어 기존 "
         "제품 몫" in captions
@@ -289,8 +300,9 @@ def test_a_first_cover_holding_back_no_unit_says_nothing_on_the_card(
     app = _with_new_units(_opened(far_databases), date(2025, 11, 1))
     app = _pick(app, "CA-01")
     captions = _plain(_captions(app))
-    assert NEW_SKIPPED_TEXT not in captions
-    assert "신규 설비를 더 붙이지 않았습니다" not in captions
+    assert NEW_SKIPPED_TEXT not in _helps(app)
+    assert "신규 설비를 더 붙이지 않았습니다" not in _helps(app)
+    assert "신규 설비 붙이지 않음" not in captions
     assert (
         f"일반 설비가 된 신규 1대 — {FAR_UNIT} · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫"
         in captions
@@ -304,8 +316,9 @@ def test_units_missing_from_the_scenario_are_dropped_with_one_notice(
     early_databases: tuple[Path, Path],
 ) -> None:
     """지금 설비 시나리오 · 조회기간의 이 공정 목록에 없는 호기는 고름에서 빼고 한 줄로 알린다(결정
-    B3-2 — 선택지가 조회기간에 하루라도 있는 호기라 조회기간을 좁혀 빠진 호기도 같다).
-    알림은 같은 화면에 남고, 고름을 바꾸면 걷힌다. 다른 공정의 고름은 그대로다."""
+    B3-2 — 선택지가 조회기간에 하루라도 있는 호기라 조회기간을 좁혀 빠진 호기도 같다). 줄은 고쳐
+    읽은 「보유 제약 호기」 칸 바로 밑이다(입력 곁 — 본문 맨 위 안내 상자가 아니다, 설계 규칙
+    UI-NTF-03). 같은 화면에 남고, 고름을 바꾸면 걷힌다. 다른 공정의 고름은 그대로다."""
     app = _app(early_databases)
     app.session_state[CONSTRAINT_HELD_KEY] = {
         DYNAMIC_PROCESS: ["CA-02", "CA-GONE"],
@@ -313,8 +326,9 @@ def test_units_missing_from_the_scenario_are_dropped_with_one_notice(
     }
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
-    notice = _plain(_infos(app))
+    notice = _plain(_dropped(app))
     assert "지금 설비 시나리오 · 조회기간의 이 공정 목록에 없는 1대(CA-GONE)를 뺐습니다" in notice
+    assert not app.info
     assert app.multiselect(key=CONSTRAINT_HELD_INPUT_KEY).value == ["CA-02"]
     assert app.session_state[CONSTRAINT_HELD_KEY] == {
         DYNAMIC_PROCESS: ["CA-02"],
@@ -323,10 +337,10 @@ def test_units_missing_from_the_scenario_are_dropped_with_one_notice(
     assert "보유 제약 호기 1대" in _header_line(app)
 
     _ok(app.run())
-    assert "CA-GONE" in _plain(_infos(app))
+    assert "CA-GONE" in _plain(_dropped(app))
 
     app = _pick(app, "CA-02", "CA-04")
-    assert "CA-GONE" not in _plain(_infos(app))
+    assert "CA-GONE" not in _plain(_dropped(app))
     assert CONSTRAINT_HELD_DROPPED_KEY not in app.session_state
     assert "보유 제약 호기 2대" in _header_line(app)
 

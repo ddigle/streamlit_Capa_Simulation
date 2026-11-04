@@ -240,6 +240,21 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
             "::test_unmatched_processes_stay_out_of_totals_and_fallback_rows"
         ),
     ),
+    Withdrawn(
+        what=(
+            "제약 시뮬레이션 맨 위 — 「설비는 세션의 「…」 기준입니다 — 공정 Capa 상세는 HOME"
+            " 칸에서 열어 설비가 공식 고정이었습니다」 안내 상자"
+        ),
+        why="UI-NTF-02 · 검수표 exec-41",
+        file="app_pages/constraint_simulation.py",
+        function="report_locked_arrival",
+        code="CS-03",
+        route="state",
+        test=(
+            "tests/test_constraint_simulation_page.py"
+            "::test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_one"
+        ),
+    ),
 )
 
 _IDS = [f"{item.code} {item.file.rsplit('/', 1)[-1]}::{item.function}" for item in WITHDRAWN]
