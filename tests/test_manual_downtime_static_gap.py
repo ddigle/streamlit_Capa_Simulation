@@ -36,6 +36,7 @@ from capa_simulation.components.availability_gap_panel import (
     PROCESS_FILTER_KEY,
     RESULT_VIEW_KEY,
     UNIT_FILTER_COLUMNS_KEY,
+    UNIT_FILTER_HELP,
     unit_filter_key,
 )
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_LABEL_CHART_KEY
@@ -327,7 +328,12 @@ def test_the_unit_filter_sheet_leaves_the_input_out() -> None:
     app.multiselect(key=unit_filter_key("공정구분")).set_value(["Line-A"]).run()
     assert not app.exception
     assert sheet_value(app, MONTH, ROW_SCHEDULE_AVAILABLE) == 2.0
-    assert any("기존보유·입력 비가동은" in caption.value for caption in app.caption)
+    # 무엇이 빠지는지는 호기 필터 줄의 풍선이다 — 자리에는 「호기 n개만 더합니다」 값만.
+    assert any(
+        "호기 필터" in caption.value and caption.proto.help == UNIT_FILTER_HELP
+        for caption in app.caption
+    )
+    assert "기존보유 · 입력 비가동은" in UNIT_FILTER_HELP
 
 
 def test_the_real_page_takes_the_saved_input_out_of_the_static_comparison(tmp_path: Path) -> None:

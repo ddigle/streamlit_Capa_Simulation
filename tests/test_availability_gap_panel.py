@@ -842,8 +842,7 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     # 맞댈 공정이 없으면 빈 결과 한 줄만 적는다 — 무엇을 채우면 나오는지(하는 법)는 붙이지 않고,
     # 이름이 어긋난 까닭은 상태 알림(`EQ-06`)이 말한다.
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
-    infos = [item.value for item in app.info]
-    assert infos == ["아직 맞대어 볼 수 있는 공정이 없습니다."]
+    assert [item.value for item in app.info] == ["아직 맞대어 볼 수 있는 공정이 없습니다."]
     assert "Probe" in _alerts(app)
 
 
