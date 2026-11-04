@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 131
+UNSETTLED_SITES = 120
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -429,34 +429,19 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "render_process_rename_management",
     ): (UNSETTLED,),
     ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_inputs"): (MARKER,),
-    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_paste_box"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (UNSETTLED,),
+    ("src/capa_simulation/components/qual_deadline_calculator.py", "_render_results"): (EMPTY,),
     (
         "src/capa_simulation/components/required_exclusion_notice.py",
         "render_plan_exclusion_lists",
     ): (UNSETTLED, UNSETTLED),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_body"): (
-        UNSETTLED,
+        EMPTY,
         EMPTY,
     ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_month_range"): (
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_process_filter"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_progress"): (EMPTY,),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_undated_notice"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_unmatched"): (
-        UNSETTLED,
-    ),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_usage_notice"): (
-        UNSETTLED,
-    ),
     ("src/capa_simulation/components/sample_data.py", "render_pending_source"): (UNSETTLED,),
     ("src/capa_simulation/components/sample_data.py", "render_sample_switch"): (
         UNSETTLED,
@@ -502,11 +487,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
     ),
     ("src/capa_simulation/components/securement_heatmap.py", "render_securement_heatmap"): (EMPTY,),
-    ("src/capa_simulation/components/shortening_board.py", "_render_controls"): (UNSETTLED,),
-    ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (UNSETTLED, EMPTY),
-    ("src/capa_simulation/components/shortening_board.py", "_render_imminent"): (EMPTY, UNSETTLED),
+    ("src/capa_simulation/components/shortening_board.py", "_render_delayed"): (EMPTY,),
+    ("src/capa_simulation/components/shortening_board.py", "_render_imminent"): (EMPTY,),
     ("src/capa_simulation/components/shortening_board.py", "render_highlight_notice"): (EMPTY,),
-    ("src/capa_simulation/components/shortening_board.py", "render_progress_board"): (UNSETTLED,),
     ("src/capa_simulation/components/shortening_progress_panel.py", "_render_delete"): (
         BESIDE_INPUT,
     ),

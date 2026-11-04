@@ -505,9 +505,11 @@ def test_copy_texts_match_the_original_calculator(case: str) -> None:
 
 
 def test_an_empty_unit_table_is_left_to_the_screen_message() -> None:
-    """호기가 하나도 없으면 표 대신 원본의 안내 한 줄이다 — 행을 만들지 않는다."""
+    """호기가 하나도 없으면 표 대신 빈 결과 한 줄이다 — 행을 만들지 않는다. 원본의 「적으면
+    여기에 나옵니다」 하는 법 꼬리는 자리에 두지 않는다(설계 규칙 UI-TXT-04 — 적는 법은 칸 풍선 ·
+    Guide)."""
     assert unit_table_rows(compute_qual_deadlines(CASES["empty"])) == []
-    assert EMPTY_UNITS_MESSAGE == "신규 호기를 적으면 여기에 호기별 Qual 마감이 나옵니다."
+    assert EMPTY_UNITS_MESSAGE == "적은 신규 호기가 없습니다."
 
 
 @pytest.mark.parametrize("case", list(CASES))

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import codecs
 import io
+import json
 import re
 from datetime import date
 from pathlib import Path
@@ -19,11 +20,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit.elements.lib.policies as policies
+from alert_marks import events
 from shortening_script import shortening_script
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
 from capa_simulation.components.required_shortening_panel import (
+    MATCH_RULE_HELP,
     SHARED_FILTER_HELP,
     SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
@@ -35,9 +38,13 @@ from capa_simulation.components.required_shortening_panel import (
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.shortening_board import (
+    BOARD_HELP,
     BOARD_ORDER_KEY,
+    DELAYED_HELP,
     HIGHLIGHT_FROM_DETAIL,
     HIGHLIGHT_OFF_KEY,
+    IMMINENT_KIND_HELP,
+    ORDER_FALLBACK_HELP,
     SHORTENING_HIGHLIGHT_KEY,
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -60,7 +67,7 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
-from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP
+from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP, ORDER_WORSENED_FIRST
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
     UPEH_ASSUMPTION_PERCENT_KEY,
@@ -291,6 +298,11 @@ def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     warnings = " ".join(str(item.value) for item in app.warning)
     assert "소요대수를 읽지 못해" in warnings, warnings
     assert "활성 시나리오가 없습니다" in warnings
+    # 별도 화면이라 「다른 탭」 이 없다 — 옛 탭 시절 말을 남기지 않는다.
+    assert "다른 탭" not in warnings
+    # 그리지 못한 멈춤은 같은 글을 알림창에도 한 번 낸다(설계 규칙 UI-NTF-08).
+    (note,) = events(app, "RS-01")
+    assert "소요대수를 읽지 못해" in note["full"] and "활성 시나리오가 없습니다" in note["full"]
     assert not _cards(app)
     clear_equipment_repository()
 
@@ -313,8 +325,10 @@ def test_a_period_outside_the_scenario_data_stops_with_the_data_range(tmp_path: 
     errors = " ".join(str(item.value) for item in app.error)
     assert "선택 범위에 소요대수 산출 기준이 없습니다." in errors, errors
     assert f"(데이터 범위 {month_label(months[0])}–{month_label(months[-1])})" in errors, errors
-    infos = " ".join(str(item.value) for item in app.info)
-    assert "같은 이름으로 함께 있는 공정" not in infos, infos
+    (note,) = events(app, "RS-01")
+    assert note["full"].startswith("선택 범위에 소요대수 산출 기준이 없습니다."), note
+    captions = " ".join(str(item.value) for item in app.caption)
+    assert "같은 이름으로 함께 있는 공정" not in captions, captions
     assert not [expander.label for expander in app.expander if "맞대지 못한 공정" in expander.label]
     assert not {"시작 월", "끝 월"} & {widget.label for widget in app.sidebar.selectbox}
     assert not _cards(app)
@@ -373,12 +387,16 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     app = _run(database_path)
 
     assert not app.exception, [element.message for element in app.exception]
-    captions = [str(item.value) for item in app.main.caption]
-    expected = (
-        ":material/event_busy: 일정 미정 1대 (반입 미정 1) — 날짜가 들어올 때까지 가용대수에 "
-        "세지 않습니다. 단축 후보에도 들지 않습니다."
+    # 자리에는 값만, 규칙 · 후보 아님은 그 줄의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+    (line,) = [
+        item
+        for item in app.main.caption
+        if str(item.value).startswith(":material/event_busy: 일정")
+    ]
+    assert str(line.value) == ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
+    assert line.proto.help == (
+        "날짜가 들어올 때까지 가용대수에 세지 않습니다. 단축 후보에도 들지 않습니다."
     )
-    assert expected in captions, captions
     # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 줄이 사라진다.
     others = [
         name for name in app.multiselect(key=SHORTENING_PROCESS_KEY).options if name != process
@@ -386,6 +404,48 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     narrowed = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value(others[:1]).run()
     assert not narrowed.exception
     assert not any("일정 미정" in str(item.value) for item in narrowed.main.caption)
+    clear_equipment_repository()
+
+
+def test_a_missing_cutoff_stops_with_a_fill_in_warning_not_an_info_box(tmp_path: Path) -> None:
+    """Cut-off 가 하나도 없으면 다른 화면(가용설비 현황)에서 채울 입력이 빠진 멈춤이다 — 파란 안내
+    상자가 아니라 경고 상자이고(design_system 2-3 · `PLACE_NO_INPUT`), 그리지 못한 오류가 아니라
+    알림창 오류는 내지 않는다."""
+    database_path = tmp_path / "availability.duckdb"
+    DuckDBEquipmentRepository(database_path).initialize()
+
+    app = _run(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    warnings = " ".join(str(item.value) for item in app.warning)
+    assert "공정별 Cut-off 를 먼저 적어야" in warnings, warnings
+    assert not app.info
+    assert not events(app, "RS-01")
+    assert not _cards(app)
+    clear_equipment_repository()
+
+
+def test_units_outside_the_usage_basis_are_a_value_line_with_the_rule_in_its_tooltip(
+    tmp_path: Path,
+) -> None:
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 값 한 줄, 뺀 곳 ·
+    후보 아님은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04)."""
+    from capa_simulation.components.required_shortening_panel import USAGE_NOTICE_HELP
+
+    database_path = _database(tmp_path)
+    master = sample_equipment_master()
+    master.loc[master.index[0], "사용기준"] = "DEMO"
+    DuckDBEquipmentRepository(database_path).save_snapshot(
+        empty_equipment_baseline(), master, empty_downtime_schedule(), note="사용기준 제외"
+    )
+
+    app = _run(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    (line,) = [item for item in app.main.caption if "사용기준이" in str(item.value)]
+    assert str(line.value).startswith(":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 ")
+    assert str(line.value).endswith("대")
+    assert line.proto.help == USAGE_NOTICE_HELP
     clear_equipment_repository()
 
 
@@ -641,8 +701,12 @@ def test_a_new_session_opens_with_the_shared_filter_profile(tmp_path: Path) -> N
     shared = next(item for item in app.sidebar.caption if str(item.value).endswith("공용 설정"))
     assert shared.proto.help == SHARED_FILTER_HELP
     assert "모든 사용자의 기본 조회 조건" not in captions
-    # 공정 표시명은 사람 글이라 마크다운 글자 그대로 막혀 실린다(`literal_names`).
-    assert r"ABSENT\-PROC" in captions and "공용 설정에는 남습니다" in captions
+    # 고를 수 없는 저장분은 칸 밑 표지 + 풍선이다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내). 공정
+    # 표시명은 사람 글이라 마크다운 글자 그대로 막혀 풍선에 실린다(`literal_names`).
+    (absent,) = [item for item in app.sidebar.caption if "고를 수 없는" in str(item.value)]
+    assert str(absent.value) == ":material/visibility_off: 고를 수 없는 공용 설정 공정 1개"
+    assert r"ABSENT\-PROC" in absent.proto.help and "공용 설정에는 남습니다" in absent.proto.help
+    assert "ABSENT" not in captions
     stored = _profile(database_path)
     assert stored.version == 2
     assert stored.processes == (first, "ABSENT-PROC")
@@ -878,6 +942,11 @@ def test_the_unmatched_list_keeps_the_original_names(tmp_path: Path) -> None:
     assert not app.exception
     texts = " ".join(str(item.value) for item in app.text)
     assert processes[0] in texts and "표시-빠진공정" not in texts
+    # 펼침 안 맨 위는 「원본 공정명」 표지이고 맞대는 규칙은 그 풍선이다 — 늘 서는 설명 줄이
+    # 아니다(설계 규칙 UI-TXT-01).
+    (mark,) = [item for item in app.caption if str(item.value).endswith("원본 공정명")]
+    assert mark.proto.help.startswith(MATCH_RULE_HELP)
+    assert not any("같은 이름일 때만 맞댑니다" in str(item.value) for item in app.caption)
     clear_equipment_repository()
 
 
@@ -1039,7 +1108,10 @@ def test_the_page_states_its_identity_and_draws_the_progress_board(tmp_path: Pat
     assert not app.exception, [element.message for element in app.exception]
     captions = _captions(app)
     assert any("단축이 필요한 공정 전부의 진척 관리 한 페이지" in text for text in captions)
-    assert "**공정 진척 보드**" in [str(item.value) for item in app.markdown]
+    # 보드 읽는 법은 제목 풍선이다 — 자리에 늘 서는 설명 줄이 아니다(설계 규칙 UI-TXT-01).
+    (title,) = [item for item in app.markdown if str(item.value) == "**공정 진척 보드**"]
+    assert title.proto.help == BOARD_HELP
+    assert not any("공정마다 한 줄입니다" in text for text in captions)
     board = _board(app)
     cards = _cards(app)
     assert list(board["공정"]) == cards and cards
@@ -1049,8 +1121,32 @@ def test_the_page_states_its_identity_and_draws_the_progress_board(tmp_path: Pat
     assert any(widget.label == "기한 임박(일)" for widget in app.number_input)
     # 아이콘을 단 접는 상자는 AppTest 에서 `status` 로 잡힌다.
     assert any(str(box.label).startswith("기한 임박 ") for box in app.status)
-    assert any("이행 지연은 「진척 비교」 에서 기준선을 고르면" in text for text in captions)
+    # 기준선이 없으면 이행 지연은 값이 없다(「—」) — 무엇을 모으는지는 풍선이다.
+    (delayed,) = [item for item in app.caption if str(item.value).startswith(":material/history:")]
+    assert str(delayed.value) == ":material/history: 이행 지연 —"
+    assert delayed.proto.help == DELAYED_HELP
     assert DETAIL_LINK_FALLBACK not in captions
+    clear_equipment_repository()
+
+
+def test_a_worsened_first_order_without_a_baseline_says_the_order_it_used(tmp_path: Path) -> None:
+    """기준선 없이 「기준선 대비 악화 먼저」 를 고르면 실제로 쓴 차례(표시순서)를 값 한 마디로
+    적고 까닭은 풍선이다. 기한 임박 표의 「신규」 뜻은 `구분` 칸 머리 풍선이다 — 표 밑 설명 줄이
+    아니다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    app = _run(_database(tmp_path))
+    app = app.selectbox(key=BOARD_ORDER_KEY).set_value(ORDER_WORSENED_FIRST).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    (used,) = [item for item in app.caption if str(item.value).startswith(":material/sort:")]
+    assert str(used.value) == ":material/sort: 지금 표시순서"
+    assert used.proto.help == ORDER_FALLBACK_HELP
+    helps = [
+        str(column.get("help", ""))
+        for table in app.dataframe
+        for column in json.loads(str(table.proto.columns) or "{}").values()
+    ]
+    assert IMMINENT_KIND_HELP in helps
+    assert not any("추가 호기입니다" in text for text in _captions(app))
     clear_equipment_repository()
 
 

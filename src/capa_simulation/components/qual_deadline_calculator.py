@@ -322,12 +322,12 @@ def _render_paste_box() -> None:
         "엑셀에서 한 번에 붙여넣기", key=_PASTE_BOX_KEY, icon=":material/content_paste:"
     ):
         with st.form(_PASTE_FORM_KEY, border=False):
-            st.caption(PASTE_HINT)
+            # 적는 꼴은 글 칸 풍선이 말한다 — 칸 위에 늘 두지 않는다(설계 규칙 UI-TXT-01).
             st.text_area(
                 "엑셀 붙여넣기 칸",
                 key=PASTE_TEXT_KEY,
                 height=150,
-                label_visibility="collapsed",
+                help=PASTE_HINT,
             )
             st.form_submit_button(
                 "표에 넣기",

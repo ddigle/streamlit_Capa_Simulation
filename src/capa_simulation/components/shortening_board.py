@@ -62,13 +62,17 @@ from capa_simulation.services.shortening_watch import (
 from capa_simulation.sidebar_status import remembered_expander
 
 __all__ = [
+    "BOARD_HELP",
     "BOARD_ORDER_KEY",
     "DEFAULT_DUE_DAYS",
+    "DELAYED_HELP",
     "DUE_DAYS_KEY",
     "HIGHLIGHT_FROM_BOARD",
     "HIGHLIGHT_FROM_DETAIL",
     "HIGHLIGHT_FROM_SPACE",
     "HIGHLIGHT_OFF_KEY",
+    "IMMINENT_KIND_HELP",
+    "ORDER_FALLBACK_HELP",
     "SHORTENING_HIGHLIGHT_KEY",
     "ShorteningHighlight",
     "clear_highlight",
@@ -110,6 +114,17 @@ _DELAYED_EXPANDER_KEY = "equipment_shortening_delayed"
 _IMMINENT_TABLE_KEY = "equipment_shortening_imminent_table"
 _DELAYED_TABLE_KEY = "equipment_shortening_delayed_table"
 _EMPTY = "—"
+# 보드 · 목록의 읽는 법은 그 제목 · 칸 풍선이다 — 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01 · 02).
+BOARD_HELP = (
+    "단축이 필요한 공정마다 한 줄입니다 — 줄을 고르면 그 공정 카드를 맨 위로 올려 강조합니다. "
+    "깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."
+)
+ORDER_FALLBACK_HELP = "「기준선 대비 악화 먼저」 는 「진척 비교」 에서 기준선을 골랐을 때 씁니다."
+IMMINENT_KIND_HELP = f"{KIND_NEW} = 단축이 아니라 그날까지 Qual 을 마쳐야 하는 추가 호기입니다."
+DELAYED_HELP = (
+    "「진척 비교」 에서 기준선을 고르면 기준선의 목표 Qual 이 지났는데 설비 마스터 Qual실적이 "
+    "비었거나 Qual상태가 완료가 아닌 호기를 모읍니다."
+)
 
 
 @dataclass(frozen=True)
@@ -337,9 +352,8 @@ def _render_controls(*, compared: bool) -> tuple[str, int]:
             ),
         )
     if order == ORDER_WORSENED_FIRST and not compared:
-        st.caption(
-            "「기준선 대비 악화 먼저」 는 진척 비교를 고르면 씁니다 — 지금은 표시순서입니다."
-        )
+        # 실제로 쓴 차례(값)만 자리에 — 왜 그런지는 풍선(설계 규칙 UI-TXT-04 · UI-DAT-11).
+        st.caption(":material/sort: 지금 표시순서", help=ORDER_FALLBACK_HELP)
     return str(order), int(due)
 
 
@@ -406,11 +420,7 @@ def render_progress_board(
         delayed=delayed,
     )
     with st.container(border=True, gap="small"):
-        st.markdown("**공정 진척 보드**")
-        st.caption(
-            "단축이 필요한 공정마다 한 줄입니다 — 줄을 고르면 그 공정 카드를 맨 위로 올려 "
-            "강조합니다. 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."
-        )
+        st.markdown("**공정 진척 보드**", help=BOARD_HELP)
         order_name, due_days = _render_controls(compared=compared)
         order = board_order(board, order_name, compared=compared)
         ranked = board.set_index("공정").loc[order].reset_index()
@@ -459,27 +469,22 @@ def _render_imminent(
         view["목표 Qual"] = [f"{day:%Y-%m-%d}" for day in imminent["목표 Qual"]]
         # 빈 칸(신규 호기의 단축일수·담당자 없음)은 이행 지연 표처럼 「—」 다. 주지 않으면
         # Streamlit 이 그 칸에 「None」 글자를 그린다.
+        # 「신규」 의 뜻은 `구분` 칸 머리 풍선이다(설계 규칙 UI-TXT-02 — 칸 하나의 뜻).
         st.dataframe(
             view,
             hide_index=True,
             width="stretch",
             placeholder=_EMPTY,
             key=_IMMINENT_TABLE_KEY,
+            column_config={"구분": st.column_config.TextColumn("구분", help=IMMINENT_KIND_HELP)},
         )
-        new = int(imminent["구분"].eq(KIND_NEW).sum())
-        if new:
-            st.caption(
-                f"신규 {new}대는 단축이 아니라 그날까지 Qual 을 마쳐야 하는 추가 호기입니다."
-            )
 
 
 def _render_delayed(delayed: pd.DataFrame | None, *, labels: ProcessLabels, compared: bool) -> None:
     if not compared:
-        st.caption(
-            ":material/history: 이행 지연은 「진척 비교」 에서 기준선을 고르면 봅니다 — "
-            "기준선의 목표 Qual 이 지났는데 설비 마스터 Qual실적이 비었거나 Qual상태가 완료가 "
-            "아닌 호기입니다."
-        )
+        # 기준선이 없어 셀 값이 없다 — 0 이 아니라 「—」(설계 규칙 UI-DAT-06). 무엇을 모으는지 ·
+        # 언제 서는지는 풍선이다(UI-TXT-01).
+        st.caption(f":material/history: 이행 지연 {_EMPTY}", help=DELAYED_HELP)
         return
     frame = delayed if delayed is not None else pd.DataFrame()
     with remembered_expander(
