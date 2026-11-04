@@ -363,19 +363,28 @@ def _press(app: AppTest, calls: list[dict[str, Any]], unit: str | None, epoch: s
 _FLOOR = ["EQ-01", "EQ-02", "MOD-1A", "MOD-1B", "MOD-1C", "MOD-1D"]
 
 
-def test_the_floor_view_keeps_only_the_csv_row_below_the_drawing(
+def test_the_floor_csv_rides_in_the_unit_window_and_nothing_stays_below_the_drawing(
     tmp_path: Path, calls: list[dict[str, Any]], downloads: list[bytes]
 ) -> None:
-    """옛 아래 21칸 표·「층 전체 보기」 는 없고(도면 위 「호기 정보」 창으로 옮김) 층 CSV 한 줄만
-    남는다 — 늘 층 전체의 모든 칸. 필요 단축을 끈 층 보기는 누르기를 보내지 않는다."""
+    """옛 아래 21칸 표·「층 전체 보기」 는 없고(도면 위 「호기 정보」 창으로 옮김) 층 CSV 도 창 안
+    「CSV」 다(2026-11-04 Space 결정 보드 답) — 도면 아래 내려받기 줄이 없고, 창 표 data `sheet.csv`
+    가 늘 층 전체의 모든 칸이다. 브라우저가 BOM 을 붙여 내려받으므로 BOM 을 붙인 바이트가 옛
+    내려받기 (`to_csv(index=False).encode("utf-8-sig")`)와 같다. 필요 단축을 끈 층 보기는 누르기를
+    보내지 않는다."""
     app = _open(tmp_path)
     first = _viewer(calls)
     assert not [t for t in app.dataframe if "Area Code" in t.value.columns]
     assert not [b for b in app.button if getattr(b, "label", "") == "층 전체 보기"]
     assert first["pickToServer"] is False and first["picked"] is None
     assert "on_pick_change" in first["callbacks"]
-    header, *lines = downloads[-1].decode("utf-8-sig").splitlines()
+    assert downloads == []
+    assert not [b for b in app.get("download_button")]
+    csv = first["sheet"]["csv"]
+    assert csv["file"] == "space_C1_1F.csv"
+    raw = ("\ufeff" + csv["text"]).encode("utf-8")
+    header, *lines = raw.decode("utf-8-sig").splitlines()
     assert "X좌표" in header.split(",") and len(lines) == len(_FLOOR)
+    assert sorted(line.split(",")[header.split(",").index("설비명")] for line in lines) == _FLOOR
     clear_equipment_repository()
 
 

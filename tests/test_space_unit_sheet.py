@@ -10,6 +10,8 @@
   배치, 나머지는 레이아웃표시로 미배치·레이아웃 제외. 층 미정 호기는 들지 않는다.
 - 배치 편집: 편집본의 이 층 행 + 편집기 호기(층 미정 미배치 포함), 공정 필터와 상관없이.
 - FAB 에는 창이 없다(`sheet` None).
+- 창 「CSV」 의 도면에 선 호기(`sheet.csv` — 2026-11-04 Space 결정 보드 답, 옛 도면 아래
+  내려받기를 창 안으로): 보기 · 편집 모두 같은 글이고 BOM 을 붙이면 옛 내려받기 바이트와 같다.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from capa_simulation.services.space_unit_sheet import (
     PLACE_EXCLUDED,
     PLACE_PLACED,
     PLACE_UNPLACED,
+    floor_csv,
     unit_sheet,
 )
 
@@ -172,6 +175,25 @@ def test_the_cleaner_keeps_only_well_formed_columns_rows_and_cells() -> None:
     assert len(cleaned["rows"]) == MAX_SHEET_ROWS and cleaned["cut"] == 3
 
 
+def test_the_floor_csv_is_the_old_download_once_the_browser_adds_the_bom() -> None:
+    """창 「CSV」 의 도면에 선 호기 — 글은 `to_csv(index=False)` 그대로, 파일 이름은 옛
+    「space_동_층.csv」. 브라우저가 앞에 BOM 을 붙여 UTF-8 로 내려받으므로 옛 내려받기
+    바이트(`encode("utf-8-sig")`)와 같다 — 쉼표 · 큰따옴표 · 줄바꿈 · 한글 칸 모두. 받는
+    쪽(`_clean_sheet`)은 글 둘이 다 글일 때만 싣는다."""
+    frame = _frame(
+        {"설비명": "EQ-01", "공정소분류": "DAF, Attach", "메모": '따옴표 "안"', "X좌표": 1.5},
+        {"설비명": "EQ-02", "공정소분류": "Saw", "메모": "줄\n바꿈", "X좌표": None},
+    )
+    csv = floor_csv(frame, building="C1", floor="1F")
+    assert csv["file"] == "space_C1_1F.csv"
+    assert ("\ufeff" + csv["text"]).encode("utf-8") == frame.to_csv(index=False).encode("utf-8-sig")
+    clean = space_layout_editor._clean_sheet
+    base = {"columns": [], "rows": [], "cut": 0}
+    assert clean({**base, "csv": csv})["csv"] == csv  # type: ignore[index]
+    for broken in ({"text": 1, "file": "a.csv"}, {"text": "a", "file": " "}, "a,b", None):
+        assert "csv" not in (clean({**base, "csv": broken}) or {})
+
+
 # ---------------------------------------------------------------- 화면(AppTest)
 
 
@@ -249,10 +271,24 @@ def test_the_floor_view_sends_this_floors_rows_with_their_place(
     }
     groups = {row["id"]: row["group"] for row in view["sheet"]["rows"]}
     assert groups["MOD-1A"] == groups["MOD-1B"] == "MOD-1" and groups["EQ-01"] is None
+    # 창 「CSV」 의 「도면에 선 호기」 는 공정 필터 뒤의 모든 칸이다 — 옛 도면 아래 내려받기와
+    # 같은 줄.
+    csv = view["sheet"]["csv"]
+    header, *lines = csv["text"].splitlines()
+    assert csv["file"] == "space_C1_1F.csv" and len(header.split(",")) > len(FLOOR_TABLE_COLUMNS)
+    names = header.split(",").index("설비명")
+    assert sorted(line.split(",")[names] for line in lines) == [
+        "EQ-01",
+        "EQ-02",
+        "MOD-1A",
+        "MOD-1B",
+    ]
     # 공정 필터를 지난 행만이다(도면과 같다).
     app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
     assert not app.exception
-    assert set(_places(_floor_data(editor_data, view=True))) == {"MOD-1A", "MOD-1B"}
+    filtered = _floor_data(editor_data, view=True)
+    assert set(_places(filtered)) == {"MOD-1A", "MOD-1B"}
+    assert len(filtered["sheet"]["csv"]["text"].splitlines()) == 3
     clear_equipment_repository()
 
 
@@ -278,6 +314,10 @@ def test_the_editor_sends_the_draft_floor_and_the_tray_units(
     item_ids = {item["id"] for item in editor["items"]}
     assert {"FLOAT-1", "UNPL-1"} <= item_ids and "HIDE-1" not in item_ids
     assert "pickToServer" not in editor
+    # 편집기 창의 「CSV」 도면에 선 호기는 보기와 같은 저장본 글이다(공정 필터 뒤 — 옛 도면 아래
+    # 줄과 같다).
+    view = _floor_data(editor_data, view=True)
+    assert editor["sheet"]["csv"] == view["sheet"]["csv"]
     clear_equipment_repository()
 
 

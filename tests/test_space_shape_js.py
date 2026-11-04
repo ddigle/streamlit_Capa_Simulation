@@ -26,10 +26,12 @@ from capa_simulation.components import space_layout_editor
 from capa_simulation.services.floor_layout_mark import (
     FILL_ALPHA_STEP,
     SHAPE_ADJUST,
+    SHAPE_ADJUST_BASE,
     SHAPE_FILL_KEYS,
     SHAPE_LINE_KEYS,
     SHAPE_NAMES,
     SHAPE_PRESETS,
+    SHAPE_STRETCH_MAX,
     mark_look,
 )
 
@@ -50,7 +52,9 @@ const svgTop = (item) => H - (item.y + item.h)
 %s
 const out = {}
 const list = (key) => input[key] || []
-out.lists = { SHAPE_PRESETS, SHAPE_KEYS, SHAPE_FILLS, SHAPE_LINES, FILL_ALPHA_STEP }
+out.lists = {
+  SHAPE_PRESETS, SHAPE_KEYS, SHAPE_FILLS, SHAPE_LINES, FILL_ALPHA_STEP, SHAPE_STRETCH_MAX,
+}
 out.paths = list('paths').map(([key, lw, lh, adj]) => shapePath(key, lw, lh, adj))
 out.handles = list('handles').map(([key, lw, lh, adj]) => shapeHandles(key, lw, lh, adj))
 out.values = list('values')
@@ -76,6 +80,10 @@ out.drags = list('drags').map(([item, index, p]) => {
   const next = adjustedLook(item, index, p)
   return next === null ? null : lookText(next)
 })
+out.caps = list('caps').map(([key, k, lw, lh]) => adjTop(key, k, lw, lh))
+out.resized = list('resized')
+  .map(([key, adj, lw0, lh0, lw1, lh1]) => resizedAdj(key, adj, lw0, lh0, lw1, lh1))
+out.sized = list('sized').map(([before, item]) => lookText(sizedLook(before, item)))
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -87,7 +95,11 @@ def _block(pattern: re.Pattern[str]) -> str:
 
 
 def _run(payload: dict[str, Any]) -> dict[str, Any]:
-    source = _RUNNER % (_block(_LOOK), _block(_GEOMETRY), _js_decl("function adjustedLook("))
+    drags = "\n".join(
+        _js_decl(name)
+        for name in ("function adjustedLook(", "function shapeBox(", "function sizedLook(")
+    )
+    source = _RUNNER % (_block(_LOOK), _block(_GEOMETRY), drags)
     return _node(source, payload)
 
 
@@ -116,7 +128,9 @@ def test_the_preset_table_matches_the_python_contract() -> None:
         preset = lists["SHAPE_PRESETS"][key]
         assert preset["name"] == SHAPE_NAMES[key]
         assert [tuple(spec) for spec in preset["adj"]] == list(SHAPE_ADJUST[key])
+        assert tuple(preset["base"]) == SHAPE_ADJUST_BASE[key]
         assert len(preset["words"]) == len(SHAPE_ADJUST[key])
+    assert lists["SHAPE_STRETCH_MAX"] == SHAPE_STRETCH_MAX
     assert tuple(lists["SHAPE_FILLS"]) == SHAPE_FILL_KEYS
     assert tuple(lists["SHAPE_LINES"]) == SHAPE_LINE_KEYS
     assert lists["FILL_ALPHA_STEP"] == FILL_ALPHA_STEP
@@ -173,15 +187,16 @@ def test_every_preset_path_stays_inside_its_box_at_the_ends_of_its_adjust_range(
 
 def test_the_default_drawings_are_the_spec_paths() -> None:
     """사양 4b-1 의 그리기 경로(8×6 · 처음 값). 사각형 둥글기 0 은 네 귀 다각형, 둥글기가 있으면 호
-    넷이다."""
+    넷이다. ㄴ자·ㄷ자 두께와 블록 화살표 머리 길이는 짧은 변(6) 기준이다(2026-11-04 Space 결정 보드
+    답)."""
     keys = list(SHAPE_PRESETS)
     paths = _run({"paths": [[key, 8, 6, _defaults(key)] for key in keys]})["paths"]
     drawn = dict(zip(keys, (path["d"] for path in paths), strict=True))
 
     assert drawn["rect"] == "M 0 0 L 8 0 L 8 6 L 0 6 Z"
     assert drawn["ellipse"] == "M 0 3 A 4 3 0 1 0 8 3 A 4 3 0 1 0 0 3 Z"
-    assert drawn["lbox"] == "M 0 0 L 2.8 0 L 2.8 3.9 L 8 3.9 L 8 6 L 0 6 Z"
-    assert drawn["cbox"] == "M 0 0 L 8 0 L 8 1.8 L 2.4 1.8 L 2.4 4.2 L 8 4.2 L 8 6 L 0 6 Z"
+    assert drawn["lbox"] == "M 0 0 L 2.1 0 L 2.1 3.9 L 8 3.9 L 8 6 L 0 6 Z"
+    assert drawn["cbox"] == "M 0 0 L 8 0 L 8 1.8 L 1.8 1.8 L 1.8 4.2 L 8 4.2 L 8 6 L 0 6 Z"
     assert (
         drawn["frame"]
         == "M 0 0 L 8 0 L 8 6 L 0 6 Z M 0.72 0.72 L 0.72 5.28 L 7.28 5.28 L 7.28 0.72 Z"
@@ -189,7 +204,7 @@ def test_the_default_drawings_are_the_spec_paths() -> None:
     assert drawn["triangle"] == "M 4 0 L 8 6 L 0 6 Z"
     assert drawn["diamond"] == "M 4 0 L 8 3 L 4 6 L 0 3 Z"
     assert drawn["cross"].startswith("M 2.98 0 L 5.02 0 L 5.02 1.98 L 8 1.98")
-    assert drawn["arrowblock"] == "M 0 1.5 L 5.2 1.5 L 5.2 0 L 8 3 L 5.2 6 L 5.2 4.5 L 0 4.5 Z"
+    assert drawn["arrowblock"] == "M 0 1.5 L 3.8 1.5 L 3.8 0 L 8 3 L 3.8 6 L 3.8 4.5 L 0 4.5 Z"
     (rounded,) = _run({"paths": [["rect", 8, 6, [0.5]]]})["paths"]
     assert rounded["d"] == (
         "M 1.5 0 H 6.5 A 1.5 1.5 0 0 1 8 1.5 V 4.5 A 1.5 1.5 0 0 1 6.5 6 H 1.5 "
@@ -216,9 +231,189 @@ def test_a_flipped_lbox_opens_to_the_other_side() -> None:
     (plain, mirrored) = _run(
         {"placed": [["lbox", 8, 6, [0.25, 0.25], 0, False], ["lbox", 8, 6, [0.25, 0.25], 0, True]]}
     )["placed"]
-    # 둘째 꼭짓점 = 세로 팔 위 오른쪽 귀(x = t1). 뒤집으면 거울 자리.
-    assert plain[1] == pytest.approx({"x": -2, "y": -3})
-    assert mirrored[1] == pytest.approx({"x": 2, "y": -3})
+    # 둘째 꼭짓점 = 세로 팔 위 오른쪽 귀(x = t1 = 0.25 × 짧은 변 6). 뒤집으면 거울 자리.
+    assert plain[1] == pytest.approx({"x": -2.5, "y": -3})
+    assert mirrored[1] == pytest.approx({"x": 2.5, "y": -3})
+
+
+def _arm_widths(path: dict[str, Any], key: str) -> dict[str, float]:
+    """ㄴ자(세로 팔 두께 t1 · 가로 팔 두께 t2 · 가로 팔 길이) · ㄷ자(등 t1 · 팔 t2) · 블록
+    화살표(머리 길이 · 몸통 길이)의 잰 값 — 꼭짓점에서 읽는다."""
+    pts = path["pts"]
+    if key == "lbox":
+        (_, _), (t1, _), (_, inner_y), (right, _), (_, bottom), _ = pts
+        return {"t1": t1, "t2": bottom - inner_y, "reach": right - t1}
+    if key == "cbox":
+        return {"t1": pts[3][0], "t2": pts[2][1]}
+    head_start = pts[1][0]
+    return {"head": pts[3][0] - head_start, "body": head_start}
+
+
+@pytest.mark.parametrize("rot", _ROTATIONS)
+def test_stretching_the_long_side_keeps_every_thickness(rot: int) -> None:
+    """2026-11-04 Space 결정 보드 답 — ㄴ자를 오른쪽 손잡이로 넓히면 **오른쪽으로 뻗은 가로 팔
+    길이만** 늘고 두 팔 두께는 그대로다(두께가 짧은 변 기준 — 엑셀처럼). ㄷ자 등 · 팔 두께, 블록
+    화살표 머리 길이도 같다(몸통만 길어진다). 돌린 도형은 제자리 상자(lw × lh)가 같으면 같은
+    그림이라 돌림과 상관없다 — 화면에서 늘인 축이 제자리 긴 변이면 된다. 같은 값으로 짧은 변이
+    바뀌면 두께도 그 비율이다(Shift 비율 유지 — 짧은 쪽을 늘이는 크기 바꾸기는 편집기가 값을 다시
+    셈한다, `test_resizing_the_short_side_keeps_the_drawn_thickness`)."""
+    cases: list[tuple[str, float, float, list[float]]] = [
+        ("lbox", 8, 8, _defaults("lbox")),
+        ("lbox", 16, 8, _defaults("lbox")),
+        ("lbox", 40, 8, _defaults("lbox")),
+        ("cbox", 8, 8, _defaults("cbox")),
+        ("cbox", 24, 8, _defaults("cbox")),
+        ("arrowblock", 10, 5, _defaults("arrowblock")),
+        ("arrowblock", 30, 5, _defaults("arrowblock")),
+        ("lbox", 16, 16, _defaults("lbox")),
+    ]
+    paths = _run({"paths": cases})["paths"]
+    widths = [_arm_widths(path, case[0]) for case, path in zip(cases, paths, strict=True)]
+    square, wide, wider, cbox, cwide, arrow, longer, grown = widths
+    assert wide["t1"] == pytest.approx(square["t1"]) == pytest.approx(wider["t1"]) == 2.8
+    assert wide["t2"] == pytest.approx(square["t2"]) == pytest.approx(wider["t2"]) == 2.8
+    assert wide["reach"] - square["reach"] == pytest.approx(8)
+    assert wider["reach"] - square["reach"] == pytest.approx(32)
+    assert (cwide["t1"], cwide["t2"]) == pytest.approx((cbox["t1"], cbox["t2"]))
+    # 넣는 크기(10×5)의 블록 화살표 머리는 옛 폭 기준 0.35 × 10 과 같은 3.5 다 — 처음 모습은 그대로.
+    assert arrow["head"] == pytest.approx(3.5) == pytest.approx(longer["head"])
+    assert longer["body"] - arrow["body"] == pytest.approx(20)
+    # 같은 값에 짧은 변이 8 → 16 이면 두께도 두 배(Shift 비율 유지 키우기의 그림).
+    assert grown["t1"] == pytest.approx(2 * square["t1"])
+    # 돌림 넷 모두 같은 제자리 그림 — 화면 자리는 돌린 상자 안이다.
+    placed = _run({"placed": [["lbox", 16, 8, _defaults("lbox"), rot, False]]})["placed"][0]
+    half_w, half_h = (4, 8) if rot % 180 else (8, 4)
+    for spot in placed:
+        assert abs(spot["x"]) <= half_w + 1e-9 and abs(spot["y"]) <= half_h + 1e-9
+
+
+def test_resizing_the_short_side_keeps_the_drawn_thickness() -> None:
+    """재검 b-1 · c-1 — 넓힌 ㄴ자(16×8)에서 세로 팔을 늘이려고 아래 손잡이를 끌어 16×16 이 되면
+    짧은 변이 8 → 16 이라 같은 값이면 두 팔이 두 배로 굵어졌다. 비율 없이 크기를 바꾸면 값을 옛 짧은
+    변 ÷ 새 짧은 변 배로 다시 셈해(`resizedAdj`) 그린 두께를 지킨다 — 어느 차례로 늘여도(가로 먼저 ·
+    세로 먼저 · 모서리) 두 팔 2.8 그대로다. ㄷ자 · 십자 · 테 · 사각형 둥글기 · 블록 화살표 머리
+    길이도 같고, 폭 · 높이 기준 값(삼각형 꼭짓점 · 블록 화살표 몸통)은 비율이라 그대로다. 짧은 변이
+    그대로면 받은 값 그대로다."""
+    lbox = _defaults("lbox")
+    out = _run(
+        {
+            "resized": [
+                ["lbox", lbox, 16, 8, 16, 16],
+                ["lbox", lbox, 8, 16, 16, 16],
+                ["lbox", lbox, 16, 8, 20, 10],
+                ["lbox", lbox, 8, 8, 16, 8],
+                ["cbox", _defaults("cbox"), 8, 8, 11, 11],
+                ["cross", _defaults("cross"), 8, 8, 11, 11],
+                ["frame", _defaults("frame"), 10, 8, 12, 11],
+                ["rect", [0.5], 8, 6, 12, 12],
+                ["arrowblock", _defaults("arrowblock"), 10, 5, 10, 8],
+                ["triangle", [0.3], 8, 7, 8, 14],
+            ]
+        }
+    )["resized"]
+    (east_then_south, south_then_east, corner, long_side, cbox, cross, frame, rect, arrow, tri) = (
+        out
+    )
+    paths = _run(
+        {
+            "paths": [
+                ["lbox", 16, 16, east_then_south],
+                ["lbox", 16, 16, south_then_east],
+                ["lbox", 20, 10, corner],
+                ["arrowblock", 10, 8, arrow],
+            ]
+        }
+    )["paths"]
+    # 값은 0.01 단위라 두께는 새 짧은 변의 0.005 배 안에서 지킨다(눈금 0.1 보다 작다).
+    for path, least in zip(paths[:3], (16, 16, 10), strict=True):
+        widths = _arm_widths(path, "lbox")
+        assert widths["t1"] == pytest.approx(2.8, abs=0.005 * least + 1e-9)
+        assert widths["t2"] == pytest.approx(2.8, abs=0.005 * least + 1e-9)
+    assert long_side == lbox
+    assert cbox == [0.22, 0.22] and cross == [0.25] and frame == [0.09]
+    assert rect == [0.25]
+    # 머리 길이 3.5 그대로(0.7 × 5 = 0.44 × 8 ≈ 3.5), 몸통 두께는 높이의 비율 그대로.
+    assert arrow == [0.5, 0.44]
+    assert _arm_widths(paths[3], "arrowblock")["head"] == pytest.approx(3.52)
+    assert tri == [0.3]
+
+
+def test_a_shrunk_short_side_pins_the_thickness_to_the_box() -> None:
+    """짧은 변을 두께 아래로 줄이면 두께는 그 상자의 상한까지다(하한 0.05 · 상한은 그 축 길이까지 —
+    `adjTop`). 아주 크게 키우면 하한(짧은 변의 5%)이다."""
+    out = _run(
+        {
+            "resized": [
+                ["lbox", [0.35, 0.35], 8, 8, 8, 2],
+                ["lbox", [0.35, 0.35], 8, 8, 80, 80],
+                ["cbox", [0.3, 0.49], 8, 8, 8, 4],
+            ]
+        }
+    )["resized"]
+    thin, huge, cbox = out
+    # 8×2: 세로 팔(폭 쪽) 2.8 은 짧은 변 2 의 1.4 배 — 상한(0.95 × 8 / 2 = 3.8) 안이라 그대로, 가로
+    # 팔(높이 쪽)은 높이의 0.95 까지.
+    assert thin == [1.4, 0.95]
+    assert huge == [0.05, 0.05]
+    # ㄷ자 팔은 높이의 0.49 까지(위아래 팔이 맞닿지 않는다).
+    assert cbox == [0.6, 0.49]
+
+
+@pytest.mark.parametrize("key", ["lbox", "cbox", "arrowblock"])
+def test_the_long_axis_lets_a_thickness_grow_past_the_short_side(key: str) -> None:
+    """재검 c-4 — 짧은 변 기준으로 바꾸며 상한(0.95)을 짧은 변에 그대로 두면 넓은 ㄴ자의 굵은 세로
+    팔 · 긴 블록 화살표의 긴 머리를 더는 못 그렸다. 'min-w'·'min-h' 값은 상한이 그 축 길이까지다
+    (엑셀처럼 — 손잡이 값 · 칸 상한 `adjTop`). 저장 상한(상한 × `SHAPE_STRETCH_MAX`)까지 받고, 그릴
+    때 상자로 묶어 늘 상자 안이다."""
+    spec = SHAPE_ADJUST[key]
+    bases = SHAPE_ADJUST_BASE[key]
+    tops = [
+        high * (SHAPE_STRETCH_MAX if base in ("min-w", "min-h") else 1)
+        for (_, high, _), base in zip(spec, bases, strict=True)
+    ]
+    cases = [(key, lw, lh, tops) for lw, lh in _SIZES]
+    paths = _run({"paths": cases})["paths"]
+    for (_, lw, lh, _), path in zip(cases, paths, strict=True):
+        for x, y in path["pts"]:
+            assert -1e-9 <= x <= lw + 1e-9 and -1e-9 <= y <= lh + 1e-9, (lw, lh, x, y)
+    stretched = [k for k, base in enumerate(bases) if base in ("min-w", "min-h")]
+    caps = _run(
+        {"caps": [[key, k, 16, 8] for k in stretched] + [[key, k, 8, 16] for k in stretched]}
+    )["caps"]
+    for k, wide, tall in zip(
+        stretched, caps[: len(stretched)], caps[len(stretched) :], strict=True
+    ):
+        high = spec[k][1]
+        # 16×8 은 폭 쪽 값이 폭까지(× 2), 높이 쪽 값은 짧은 변 그대로. 8×16 은 거꾸로.
+        assert (wide, tall) == (
+            (round(high * 2, 2), high) if bases[k] == "min-w" else (high, round(high * 2, 2))
+        )
+    if key == "arrowblock":
+        # 40×5 블록 화살표 머리 — 손잡이를 몸통 끝까지 끌면 길이 0.95 × 40 = 38(옛 폭 기준과 같다).
+        (value,) = _run({"values": [["arrowblock", 1, 0, 0, 40, 5]]})["values"]
+        assert value == 7.6
+        (path,) = _run({"paths": [["arrowblock", 40, 5, [0.5, value]]]})["paths"]
+        assert _arm_widths(path, "arrowblock")["head"] == pytest.approx(38)
+
+
+def test_sized_look_follows_the_turned_box_and_leaves_ratio_values() -> None:
+    """실제 `sizedLook` — 90° 돌린 ㄴ자(화면 8×16 = 제자리 16×8)를 화면 폭 16 으로 키우면 제자리
+    짧은 변이 8 → 16 이라 값이 반이 된다. 짧은 변이 그대로이거나 다시 셀 값이 없는 도형(원)은 처음
+    모양 값 그대로다."""
+    turned = {"x": 0, "y": 0, "w": 8, "h": 16, "rot": 90, "look": {"shape": "lbox"}}
+    out = _run(
+        {
+            "sized": [
+                [turned, {**turned, "w": 16}],
+                [turned, {**turned, "h": 30}],
+                [
+                    {"w": 6, "h": 6, "rot": 0, "look": {"shape": "ellipse"}},
+                    {"w": 12, "h": 6, "rot": 0},
+                ],
+            ]
+        }
+    )["sized"]
+    assert out == ['{"adj":[0.18,0.18],"shape":"lbox"}', '{"shape":"lbox"}', '{"shape":"ellipse"}']
 
 
 # ------------------------------------------------------------------------------- 노란 손잡이
@@ -271,12 +466,12 @@ def test_handles_follow_the_spec_spots_and_presets_without_values_have_none() ->
     ]
     assert spots == [
         [(1.5, 0, "x", 0)],
-        [(2.8, 0, "x", 0), (8, 3, "y", 1)],
-        [(2.4, 3, "x", 0), (8, 1.8, "y", 1)],
+        [(2.1, 0, "x", 0), (8, 3, "y", 1)],
+        [(1.8, 3, "x", 0), (8, 1.8, "y", 1)],
         [(0.96, 0.96, "y", 0)],
         [(2, 0, "x", 0)],
         [(6, 1, "x", 0)],
-        [(3.25, 1.25, "y", 0), (6.5, 0, "x", 1)],
+        [(4.125, 1.25, "y", 0), (8.25, 0, "x", 1)],
         [],
         [],
     ]
@@ -298,7 +493,8 @@ def test_handle_values_clamp_to_the_range_and_snap_to_hundredths() -> None:
             ]
         }
     )["values"]
-    assert out == [0.05, 0.95, 0.05, 1, 0.25, 0.49, 1, None, None]
+    # ㄴ자 세로 팔(폭 쪽 — 'min-w')의 상한은 8×6 에서 0.95 × 8 / 6 = 1.266… → 1.26(0.01 내림).
+    assert out == [0.05, 1.26, 0.05, 1, 0.25, 0.49, 1, None, None]
 
 
 def _shape_item(**values: Any) -> dict[str, Any]:
@@ -309,21 +505,21 @@ def _shape_item(**values: Any) -> dict[str, Any]:
 
 def test_dragging_a_yellow_handle_changes_only_that_value() -> None:
     """실제 `adjustedLook` — 상자 (10, 10, 8×6), 캔버스 높이 60(화면 위 = 60 − (y+h) = 44). ㄴ자
-    세로 팔 손잡이를 화면 x 14 로 끌면 a1 = 4/8 = 0.5(가로 팔은 그대로), 90° 돌린 ㄴ자(6×8 상자 —
-    화면 위 42, 제자리 8×6)는 화면 세로가 그 축이다(세로 팔이 위로 간다). 처음 값으로 돌아오면 그
-    키가 빠지고, 같은 값이면 null 이다."""
+    세로 팔 손잡이를 화면 x 13 으로 끌면 a1 = 3/6 = 0.5(짧은 변 기준 — 가로 팔은 그대로), 90° 돌린
+    ㄴ자(6×8 상자 — 화면 위 42, 제자리 8×6)는 화면 세로가 그 축이다(세로 팔이 위로 간다). 처음
+    값으로 돌아오면 그 키가 빠지고, 같은 값이면 null 이다."""
     lbox = _shape_item(look={"shape": "lbox"})
     turned = _shape_item(w=6, h=8, rot=90, look={"shape": "lbox"})
     flipped = _shape_item(look={"shape": "triangle", "flip": True})
     out = _run(
         {
             "drags": [
-                [lbox, 0, {"x": 14, "top": 44}],
+                [lbox, 0, {"x": 13, "top": 44}],
                 [lbox, 1, {"x": 18, "top": 44 + 3}],
-                [_shape_item(look={"shape": "lbox", "adj": [0.5, 0.35]}), 0, {"x": 12.8, "top": 0}],
-                [lbox, 0, {"x": 12.8, "top": 30}],
-                # 90°: 제자리 x 축이 화면 y 축(아래로). 화면 위 끝(top 42)에서 4 아래 = 제자리 x 4.
-                [turned, 0, {"x": 99, "top": 42 + 4}],
+                [_shape_item(look={"shape": "lbox", "adj": [0.5, 0.35]}), 0, {"x": 12.1, "top": 0}],
+                [lbox, 0, {"x": 12.1, "top": 30}],
+                # 90°: 제자리 x 축이 화면 y 축(아래로). 화면 위 끝(top 42)에서 3 아래 = 제자리 x 3.
+                [turned, 0, {"x": 99, "top": 42 + 3}],
                 # 좌우 뒤집은 삼각형: 꼭짓점을 화면 왼쪽 1/4 로 끌면 제자리 3/4.
                 [flipped, 0, {"x": 12, "top": 44}],
             ]
@@ -417,6 +613,8 @@ _VALID = [
     {"shape": "triangle", "adj": [1]},
     {"shape": "cross", "adj": [0.07], "fillAlpha": 100},
     {"shape": "arrowblock", "adj": [1, 0.05], "line": "sky", "lineWidth": 0.75},
+    {"shape": "arrowblock", "adj": [0.5, 7.6]},
+    {"shape": "lbox", "adj": [1.9, 95]},
     {"adj": [0.3]},
     {"fillAlpha": 55, "lineStyle": "dotted"},
 ]
@@ -441,6 +639,8 @@ def test_the_editor_drops_shape_values_the_server_would_refuse() -> None:
                 {"line": "accent", "fillAlpha": 7, "head": "LL"},
                 {"adj": [0.333]},
                 {"adj": ["0.5"]},
+                {"shape": "lbox", "adj": [95.01, 0.35]},
+                {"shape": "cross", "adj": [1.2]},
             ],
             "adjs": [
                 {},
@@ -459,6 +659,8 @@ def test_the_editor_drops_shape_values_the_server_would_refuse() -> None:
         "",
         '{"adj":[0.33]}',
         "",
+        '{"shape":"lbox"}',
+        '{"shape":"cross"}',
     ]
     assert out["adjs"] == [[0], [0.35, 0.35], [0.5, 0.5], [0.34]]
     assert out["presets"] == ["rect", "diamond", "rect", "rect"]
@@ -557,8 +759,16 @@ def test_the_yellow_handle_drag_is_one_undo_step_and_shift_keeps_the_ratio() -> 
         "adjustedLook(item, drag.index, { x: p.x + drag.grab.x, top: p.top + drag.grab.top })"
         in move
     )
-    assert "if (event.shiftKey && item.kind === 'shape' && drag.dir.length === 2) {" in move
+    assert "const aspect = event.shiftKey && drag.dir.length === 2" in move
     assert "keepAspect(before, item, drag.dir, W(), H(), minSize(), SCALE)" in move
+    # 비율 없이 끌면 두께를 지키고(늘 처음 상태에서), Shift 비율 유지는 처음 모양 값 그대로다.
+    assert "item.look = aspect ? before.look : sizedLook(before, item)" in move
+    sizes = _between("function sizeEntries(", "function sizedLook(")
+    assert "if (item.kind === 'shape') item.look = sizedLook(before, item)" in sizes
+    # 선택 칸 % 는 그 도형 상자의 상한(`adjTop`)으로 묶고, 묶였으면 칸에도 그린 값을 보인다.
+    field = _between("shapeAdjInputs.forEach((input, k) => {", "shapeFill.onchange = ")
+    assert "adjTop(preset, k, lw, lh)" in field
+    assert "if (shown !== null) input.value = String(Math.round(shown * 100))" in field
     up = _between("svg.onpointerup = ", "svg.onlostpointercapture = ")
     assert "if (item && lookText(before.look) !== lookText(item.look)) " in up
     assert "pushUndo([{ op: 'set', id: item.id, before }])" in up
@@ -583,8 +793,8 @@ def test_the_inspector_and_palette_offer_excel_like_shape_tools() -> None:
         'class="sle-shape-width"',
         'class="sle-shape-style"',
         'class="sle-shape-hatch"',
-        'class="sle-shape-flip" data-flip="h"',
-        'class="sle-shape-flip" data-flip="v"',
+        'class="sle-flip" data-flip="h"',
+        'class="sle-flip" data-flip="v"',
     ):
         assert selector in HTML, selector
     # 도형 넣기는 층·FAB 둘 다다(층 전용·FAB 전용 꼬리표가 없다).
@@ -612,9 +822,14 @@ def test_the_inspector_and_palette_offer_excel_like_shape_tools() -> None:
     )
     assert "(p, free) => addMark('shape', p, free, key)" in palette
     assert "if (event.detail === 0) addMark('shape', null, false, key)" in palette
-    # 대칭 꼴은 돌리기·뒤집기가 꺼진다.
-    assert "markRotate.disabled = still" in JS
-    assert "for (const button of shapeFlips) button.disabled = !turns" in JS
+    # 대칭 꼴은 돌리기·뒤집기가 숨는다(돌리기·뒤집기 한 줄 — `syncTurns`, 2026-11-04 Space 결정 보드
+    # 답).
+    turns = _between(
+        "function syncTurns(",
+        "// ---------------------------------------------------------------- 도형 서식",
+    )
+    assert "(!isShape(mark) || turnsShape(mark))" in turns
+    assert "for (const button of flipButtons) button.hidden = !flips" in turns
 
 
 def test_changing_the_preset_keeps_the_format_and_resets_the_adjust() -> None:

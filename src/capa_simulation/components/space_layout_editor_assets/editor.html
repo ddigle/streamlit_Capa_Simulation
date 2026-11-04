@@ -114,13 +114,19 @@
                       <label class="sle-field sle-zone-only"><input class="sle-mark-hatch" type="checkbox"><span>빗금</span></label>
                       <label class="sle-field sle-zone-only sle-floor-only" title="이 영역에 호기가 서면 경고합니다"><input class="sle-mark-keepout" type="checkbox"><span>설비 금지</span></label>
                     </span>
-                    <button type="button" class="sle-mark-rotate">90° 돌리기</button>
                     <span class="sle-block-props sle-fab-only" hidden>
                       <label class="sle-field"><span>연결</span><select class="sle-block-link" aria-label="연결 층"></select></label>
                       <label class="sle-field"><span>색</span><select class="sle-block-color" aria-label="블록 색"></select></label>
                       <button type="button" class="sle-block-open">열기</button>
                     </span>
                   </span>
+                </span>
+                <span class="sle-turns" hidden role="group" aria-label="돌리기·뒤집기">
+                  <button type="button" class="sle-mark-rotate" title="가운데를 축으로 90° 돌립니다">90° 돌리기</button>
+                  <button type="button" class="sle-flip" data-flip="h" aria-keyshortcuts="Shift+H"
+                          title="좌우 뒤집기 (Shift+H) — 고른 것 가운데 베이·ㄴ자·ㄷ자·삼각형·블록 화살표 모두"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13" class="ico-dash"/><path d="M6 4.5L2 12.5h4z" class="ico-fill"/><path d="M10 4.5l4 8h-4z" class="ico-line"/></svg>좌우 뒤집기</button>
+                  <button type="button" class="sle-flip" data-flip="v" aria-keyshortcuts="Shift+V"
+                          title="상하 뒤집기 (Shift+V) — 180° 돌리고 좌우로 뒤집은 것과 같습니다(고른 베이·비대칭 도형 모두)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h13" class="ico-dash"/><path d="M4.5 6l8-4v4z" class="ico-fill"/><path d="M4.5 10l8 4v-4z" class="ico-line"/></svg>상하 뒤집기</button>
                 </span>
                 <span class="sle-lineprops" hidden role="group" aria-label="화살표 선·머리">
                   <span class="sle-field sle-head-field">
@@ -132,10 +138,6 @@
                   <label class="sle-field" title="선 색 — 처음은 동선 강조색, 베이 진하게"><span>선 색</span><select class="sle-line-color" aria-label="선 색"></select></label>
                   <label class="sle-field" title="선 굵기(화면 px) — 기본은 동선이 상자 높이를 따르고 베이는 2"><span>굵기</span><select class="sle-line-width" aria-label="선 굵기"></select></label>
                   <label class="sle-field" title="선 모양 — 처음은 동선 점선, 베이 실선"><span>선 모양</span><select class="sle-line-style" aria-label="선 모양"><option value="solid">실선</option><option value="dashed">점선</option><option value="dotted">점</option></select></label>
-                  <span class="sle-bay-flips" hidden>
-                    <button type="button" class="sle-bay-flip" data-flip="h" title="좌우 거울 — 머리가 반대쪽을 향합니다(고른 베이 모두)">좌우 뒤집기</button>
-                    <button type="button" class="sle-bay-flip" data-flip="v" title="상하 거울 — 180° 돌리고 좌우로 뒤집은 것과 같습니다(고른 베이 모두)">상하 뒤집기</button>
-                  </span>
                 </span>
                 <span class="sle-shapeprops" hidden role="group" aria-label="도형 서식">
                   <span class="sle-field sle-shape-field">
@@ -144,18 +146,14 @@
                             title="도형 바꾸기 — 크기·채우기·선·글자는 그대로, 모양 조절은 새 도형의 처음 값(고른 도형 모두에)"><svg class="sle-shape-now" viewBox="0 0 16 16" aria-hidden="true"></svg><span class="sle-shape-word">사각형</span> ▾</button>
                   </span>
                   <span class="sle-shape-gallery" id="sle-shape-swap-gallery" role="group" aria-label="도형 바꾸기" hidden></span>
-                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="0" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
-                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="1" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 두께·둥글기·머리 길이는 짧은 변의 %(손잡이·칸으로 크기를 바꿔도 그 두께 그대로 · Shift 비율 유지는 함께 커짐). 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="0" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
+                  <label class="sle-field sle-shape-adj-row" hidden title="모양 조절 — 두께·둥글기·머리 길이는 짧은 변의 %(손잡이·칸으로 크기를 바꿔도 그 두께 그대로 · Shift 비율 유지는 함께 커짐). 도형 하나를 고르면 노란 손잡이를 끌어도 됩니다"><span class="sle-shape-adj-word">모양 조절</span><span class="sle-pct"><input class="sle-shape-adj" data-index="1" type="number" min="0" max="100" step="1" inputmode="numeric"><span aria-hidden="true">%</span></span></label>
                   <label class="sle-field" title="채우기 색 — 영역 색 여섯 · 진하게(도면 글자색) · 바탕(밝게는 흰색)"><span>채우기</span><select class="sle-shape-fill" aria-label="채우기 색"></select></label>
                   <label class="sle-field" title="채우기 투명도(엑셀처럼) — 0% 는 불투명, 100% 는 채우기 없음(안쪽을 눌러도 잡히지 않고 테두리로 잡습니다) · 5 단위"><span>투명도</span><span class="sle-pct"><input class="sle-shape-clear" type="number" min="0" max="100" step="5" inputmode="numeric" aria-label="채우기 투명도"><span aria-hidden="true">%</span></span></label>
                   <label class="sle-field" title="선 색 — 자동은 채우기 색을 따릅니다"><span>선 색</span><select class="sle-shape-line" aria-label="도형 선 색"></select></label>
                   <label class="sle-field" title="선 굵기(화면 px)"><span>굵기</span><select class="sle-shape-width" aria-label="도형 선 굵기"></select></label>
                   <label class="sle-field"><span>선 모양</span><select class="sle-shape-style" aria-label="도형 선 모양"><option value="solid">실선</option><option value="dashed">점선</option><option value="dotted">점</option></select></label>
                   <label class="sle-field"><input class="sle-shape-hatch" type="checkbox"><span>빗금</span></label>
-                  <span class="sle-shape-flips">
-                    <button type="button" class="sle-shape-flip" data-flip="h" title="좌우 거울(고른 도형 가운데 ㄴ자·ㄷ자·삼각형·블록 화살표 모두)">좌우 뒤집기</button>
-                    <button type="button" class="sle-shape-flip" data-flip="v" title="상하 거울 — 180° 돌리고 좌우로 뒤집은 것과 같습니다">상하 뒤집기</button>
-                  </span>
                 </span>
               </span>
             </div>
@@ -290,7 +288,9 @@
           <button type="button" class="sle-sheet-tab" role="tab" data-tab="picked" aria-selected="true">고른 호기 <b class="sle-sheet-tab-n"></b></button>
           <button type="button" class="sle-sheet-tab" role="tab" data-tab="filter" aria-selected="false">필터 <b class="sle-sheet-tab-n"></b></button>
         </span>
-        <span class="sle-spacer"></span>
+        <span class="sle-sheet-gap"></span>
+        <button type="button" class="sle-sheet-csv" aria-haspopup="menu" aria-expanded="false" aria-controls="sle-sheet-csvmenu"
+                title="CSV 내려받기 — 도면에 선 호기(모든 칸) 또는 지금 보이는 줄(창의 칸)">CSV</button>
         <button type="button" class="sle-sheet-min" aria-expanded="true" aria-label="호기 정보 창 접기" title="접기 — 제목 줄만 남깁니다(강조는 그대로)">–</button>
         <button type="button" class="sle-sheet-close" aria-label="호기 정보 창 닫기" title="닫기 (Esc) — 필터는 남고 도면 강조는 꺼집니다">×</button>
       </div>
@@ -307,6 +307,12 @@
           <p class="sle-sheet-cut" hidden></p>
         </div>
         <p class="sle-sheet-note" aria-live="polite"></p>
+      </div>
+      <div class="sle-sheet-csvmenu" id="sle-sheet-csvmenu" role="menu" aria-label="CSV 내려받기" hidden>
+        <button type="button" role="menuitem" class="sle-sheet-csv-all" data-csv="all"
+                title="이 층 도면에 선 호기(공정소분류 필터 뒤 · 저장된 배치)의 모든 칸 — 미배치 · 레이아웃 제외 줄은 「보이는 줄」 로">도면에 선 호기 · 모든 칸</button>
+        <button type="button" role="menuitem" class="sle-sheet-csv-shown" data-csv="shown"
+                title="지금 탭에 보이는 줄(필터에 맞는 줄 · 고른 호기 줄)만, 창의 칸으로">보이는 줄</button>
       </div>
       <div class="sle-sheet-menu" role="dialog" aria-label="칸 필터" hidden>
         <div class="sle-sheet-menu-head"><b class="sle-sheet-menu-name"></b></div>

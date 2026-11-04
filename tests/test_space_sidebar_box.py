@@ -11,6 +11,8 @@
   도면은 늘 서는 칸 (`space_fab_stage`·`space_floor_stage`) 안이다.
 - 도면·캔버스 팝업은 사이드바 단추가 열림 칸만 적고 본문 호스트가 연다(사이드바 `with` 안에서 열지
   않는다).
+- 상자에는 조작(자리 · 도면 · 견주기)만 둔다 — 상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태
+  알림이다(2026-11-04 Space 결정 보드 답 — `EQ-13` ~ `EQ-15` · `EQ-04`).
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import re
 from pathlib import Path
 
 import pytest
+from alert_marks import active_state, states
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block
 from test_equipment_scenario_repository import (
@@ -167,12 +170,13 @@ def test_the_drawing_popup_opens_from_the_body_host_not_inside_the_sidebar(
     assert len(app.sidebar.get("file_uploader")) == 0
 
 
-def test_an_assumption_box_carries_the_unscheduled_line_and_the_switch_to_official(
+def test_an_assumption_raises_the_unscheduled_and_layout_alerts_and_keeps_the_box_to_controls(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """함께 넣기를 끄고 공식에 넣은 새 호기는 가정 설비 시나리오에 일정이 없다 — 상자 끝 한 줄
-    「일정 없는 호기 1대 · 계산 제외」 이고 지금 온 문장은 풍선이다. 배치 줄(「가정 배치 · 공식과
-    같음」)과 FAB 자리의 「공식으로 바꾸기」 도 상자 안이다. 공식으로 돌아오면 그 줄이 없다."""
+    """함께 넣기를 끄고 공식에 넣은 새 호기는 가정 설비 시나리오에 일정이 없다 — 상태 알림
+    `EQ-04`(가용설비 현황과 같은 코드 · 범위 · 내용 — 설비명 목록)이고 배치 차이(「가정 배치 ·
+    공식과 같음」)는 `EQ-13` 이다. 상자에는 그 줄이 없다(2026-11-04 Space 결정 보드 답 — 상자에는
+    조작만). FAB 자리의 「공식으로 바꾸기」 는 상자 안이다. 공식으로 돌아오면 두 알림이 해소된다."""
     repository = _repository(tmp_path)
     clone = _clone(repository)
     session = _session(repository)
@@ -189,29 +193,39 @@ def test_an_assumption_box_carries_the_unscheduled_line_and_the_switch_to_offici
     _ok(app.run())
 
     box = _box(app)
-    lines = [
-        item
-        for item in box.get("caption")
-        if "일정 없는 호기 1대 · 계산 제외" in str(getattr(item, "value", ""))
-    ]
-    assert len(lines) == 1
-    assert lines[0].proto.help == unscheduled_notice(1)
+    unscheduled = active_state(app, "EQ-04")
+    assert unscheduled is not None
+    assert unscheduled["short"] == (
+        "이 설비 시나리오에 일정이 없는 호기 1대 — 도면 · 계산에서 빠짐 · 설비 마스터 일정 칸에 "
+        "적어 저장"
+    )
+    assert unscheduled["full"] == unscheduled_notice(1)
+    # 「그 화면으로」 는 고칠 자리인 가용설비 현황 › 설비 마스터다 — 가용설비 현황이 내는 줄과 같아
+    # Space 가 먼저 내도 줄이 Space 로 굳지 않는다(재검 b-3 · c-3).
+    assert (unscheduled["page"], unscheduled["href"], unscheduled["tab"]) == (
+        "가용설비 현황",
+        "available_equipment_status",
+        "설비 마스터",
+    )
+    layout = active_state(app, "EQ-13")
+    assert layout is not None and layout["short"] == "가정 배치 · 공식과 같음"
+    assert layout["full"].startswith("가정 설비 시나리오 · 배치는 공식과 같습니다")
+    assert layout["level"] == "info"
+    # 모듈 구성이 바뀐 묶음 · 지운 호기의 차이는 없어도 회차마다 해소로 부른다(표지 자리 수가 같다).
+    for code in ("EQ-14", "EQ-15"):
+        notes = states(app, code)
+        assert notes and not any(note["active"] for note in notes), notes
     assert "space_switch_to_official" in _keys_in(box, "button")
-    # 본문 알림 칸에는 그 줄이 없다(옮겼다).
-    assert not any("일정 없는 호기" in text for text in _texts(app.main, "caption"))
-    # 같은 머리 칸에 서던 배치 줄(`space_layout_notices`)도 상자 안 짧은 줄이고 온 문장은 풍선이다.
-    layout = [
-        item
-        for item in box.get("caption")
-        if "가정 배치 · 공식과 같음" in str(getattr(item, "value", ""))
-    ]
-    assert len(layout) == 1
-    assert "가정 설비 시나리오 · 배치는 공식과 같습니다" in layout[0].proto.help
-    assert not any("배치는 공식과 같습니다" in text for text in _texts(app.main, "caption"))
+    # 상자 · 본문 어디에도 그 줄이 없다 — 상자 안 캡션은 조작 줄의 것뿐이다.
+    for node in (box, app.main):
+        captions = _texts(node, "caption")
+        assert not any("일정 없는 호기" in text or "가정 배치" in text for text in captions)
+        assert not any("공식 일정 없음" in text for text in captions)
 
     _select(app, OPERATIONS, None)
     _ok(app.run())
-    assert not any("계산 제외" in text for text in _texts(_box(app), "caption"))
+    assert active_state(app, "EQ-04") is None and active_state(app, "EQ-13") is None
+    assert states(app, "EQ-04") and states(app, "EQ-13")
 
 
 @pytest.fixture
@@ -246,14 +260,21 @@ def test_the_box_stands_above_the_card_on_a_screen_without_units(_empty_app: App
 
 def test_the_runbook_space_lines_name_the_box_and_not_the_old_head() -> None:
     """런북 7장의 Space 줄은 합친 화면 자리로 말한다 — 사내 에이전트는 새 ZIP 화면에서
-    7장 글을 그대로 찾는다(2026-11-03 합친 판 재검). 배치 줄은 「Space 도면」 상자의 짧은
-    줄(온 문장은 풍선)이고, 자리 줄 첫 단추는 `FAB 전체` 다 — 옛 단추 `S.PKG FAB 전체` 는
-    「옛 경로 줄」 로만 말한다."""
+    7장 글을 그대로 찾는다(2026-11-03 합친 판 재검). 배치 줄 · 일정 없는 호기 줄은 「Space 도면」
+    상자가 아니라 알림창 · Alarm(`EQ-13` · `EQ-04`)으로 갔고 층 CSV 는 「호기 정보」 창 제목 줄
+    `CSV` 다(2026-11-04 Space 결정 보드 답). 자리 줄 첫 단추는 `FAB 전체` 다 — 옛 단추
+    `S.PKG FAB 전체` 는 「옛 경로 줄」 로만 말한다."""
     runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
     chapter = " ".join(runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0].split())
     assert "머리 「가정 설비 시나리오" not in chapter
-    assert "「Space 도면」 상자 배치 줄 「가정 배치 · 공식과 같음」" in chapter
     page = (PROJECT_ROOT / "app_pages" / "space_status.py").read_text(encoding="utf-8")
     assert '"FAB 전체",' in page and '"S.PKG FAB 전체"' not in page
     old_names = [found.start() for found in re.finditer(r"`S\.PKG FAB 전체`", chapter)]
     assert all(chapter[:start].endswith("옛 경로 줄 ") for start in old_names), old_names
+    for gone in (
+        "「Space 도면」 상자의 배치 줄",
+        "상자 배치 줄 「가정 배치",
+        "층 CSV 내려받기 한 줄은 남았다",
+    ):
+        assert gone not in chapter, gone
+    assert "오른쪽 아래 알림창 「가정 배치 · 공식과 같음」" in chapter

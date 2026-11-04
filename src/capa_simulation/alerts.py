@@ -225,6 +225,14 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
     AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
     AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
+    # 2026-11-04 Space 결정 보드 답 — 사이드바 「Space 도면」 상자 끝에 서던 배치 줄을 상태
+    # 알림으로(화면에 상태 문장을 달지 않는다). 같은 상자의 일정 없는 호기 줄은 가용설비 현황과
+    # 같은 `EQ-04` 다.
+    AlertSpec(
+        "EQ-13", "info", "state", "Space — 가정 배치가 공식과 다름(호기 · 도면 요소 · Main 설비명)"
+    ),
+    AlertSpec("EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 트레이에 있음"),
+    AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
 )
 
 
@@ -452,6 +460,7 @@ def state(
     detail: str = "",
     tab: str = "",
     table: AlertTable | None = None,
+    goto: tuple[str, str] | None = None,
 ) -> None:
     """상태 알림 — 그 조건을 보는 회차마다(없어도 `active=False`) 부른다. **이벤트 칸에 늘 한 자리를
     쓴다.**
@@ -459,10 +468,14 @@ def state(
     `scope` · `content` 는 지문 재료(구조 값 — 모듈 설명), `text` · `full` 은 조건이 있을 때의 짧은
     글 · 전문, `scope_label` 은 로그의 범위 줄(「시나리오 · rN · 조회기간」)이다. `tab` 은 그 화면
     안 탭 이름(아이콘 없이 — 「그 화면으로」 가 그 탭을 열고 줄의 화면 칸이 「화면 › 탭」 이다),
-    `table` 은 Alarm 줄에서 펼쳐 볼 표(`AlertTable` — 조건이 있을 때만 싣는다)다. 자리에는 아무것도
-    그리지 않는다(D2 (나)).
+    `table` 은 Alarm 줄에서 펼쳐 볼 표(`AlertTable` — 조건이 있을 때만 싣는다)다. `goto` 는 고칠
+    자리가 **다른 화면**일 때 그 화면의 (이름, 주소)다 — 줄의 화면 칸과 「그 화면으로」 가 이번
+    화면 대신 그 화면이다(두 화면이 같은 조건을 내면 어느 화면이 먼저 내도 줄이 같다 — 일정 없는
+    호기 `EQ-04`). 자리에는 아무것도 그리지 않는다(D2 (나)).
     """
     note = _base(code, level, text, full)
+    if goto is not None:
+        note["page"], note["href"] = goto
     note["kind"] = "state"
     note["scope"] = _digest([code, scope])
     note["fp"] = fingerprint(code, scope, content) if active else ""

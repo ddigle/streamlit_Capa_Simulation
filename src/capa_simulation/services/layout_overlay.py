@@ -997,7 +997,7 @@ def overlay_unit_count(overlay: LayoutOverlay, base: LayoutBase) -> int:
 
 @dataclass(frozen=True)
 class LayoutDifference:
-    """그리는 한 벌의 가정 배치가 공식과 얼마나 다른가(Space 배치 줄·견주기 재료 — 설계 8-2).
+    """그리는 한 벌의 가정 배치가 공식과 얼마나 다른가(Space 배치 알림·견주기 재료 — 설계 8-2).
 
     - `units` — 일곱 칸이 공식과 실제로 다른 **설비 단위** 수(Main 설비 묶음은 1대). 그 시나리오에
       일정이 없는 호기(G2 — 계산·도면에서 빠짐)는 세지 않고 `unscheduled` 에 센다.
