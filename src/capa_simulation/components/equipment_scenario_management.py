@@ -1070,6 +1070,15 @@ def _preview_for(
     )
 
 
+def legacy_trace_lock_line(count: int) -> str:
+    """옛 배포 흔적으로 막힌 쓰기 팝오버(되돌리기 · 배치 차이 지우기)의 잠금 까닭 한 줄.
+
+    백업 복원 · 「이대로 이어 쓰기」 로 푸는 길은 같은 구획 맨 위 옛 배포 흔적
+    칸(`_render_legacy_trace`) · 알림 · Guide 가 말한다 — 팝오버에서 그 자리를 다시 가리키지
+    않는다(설계 규칙 UI-TXT-03)."""
+    return f"옛 배포로 저장한 설비 리비전 {count:,}개가 있어 설비 저장을 막았습니다."
+
+
 def restore_seen_token(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
@@ -1368,13 +1377,14 @@ def _render_restore(
     agreed_before = st.session_state.pop(RESTORE_AGREED_KEY, None)
     if revision.schedule_revision_id == scenario.latest_schedule_revision_id:
         title = f"r{revision.revision_no}"
+        # 결론 한 줄 — 옛 리비전을 고르는 길은 Guide 가 말한다(설계 규칙 UI-TXT-03).
         st.caption(
             f"{title}{topic_particle(title)} 「{literal_markdown(scenario.scenario_name)}」 의 "
-            "최신이라 되돌릴 것이 없습니다 — 위 리비전 상자에서 옛 리비전을 고르세요."
+            "최신이라 되돌릴 것이 없습니다."
         )
         return
     if session.legacy_trace_count:
-        st.caption(legacy_trace_message(session.legacy_trace_count))
+        st.caption(legacy_trace_lock_line(session.legacy_trace_count))
         return
     try:
         common_id = _latest_common_id(database_path)
@@ -1876,7 +1886,7 @@ def _render_clear_layout(
     없으면 세션을 새 리비전으로 옮긴다(되돌리기와 같다). `notice` 는 앞 회차에 켠 체크가 그렇게
     풀렸다는 알림이다(`clear_layout_unchecked_notice`) — 체크 칸 바로 위에 적는다."""
     if session.legacy_trace_count:
-        st.caption(legacy_trace_message(session.legacy_trace_count))
+        st.caption(legacy_trace_lock_line(session.legacy_trace_count))
         return
     for line in clear_layout_lines(scenario):
         st.caption(line)

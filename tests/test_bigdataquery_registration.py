@@ -151,8 +151,9 @@ def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     끝났고 고칠 입력이 없어 단추 밑에 그리지 않는다, 설계 규칙 UI-NTF-03 · AMB-05 (나)), 한 번만
     보낸다.
 
-    알림 칸 밑의 설정 띠는 사내 패키지가 깔렸으면 성공, 없으면 상태 캡션 + 상태 알림(`AD-04`)이다 —
-    이 PC 에 깔렸는지에 기대지 않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
+    알림 칸 밑의 설정 띠는 값 줄이다 — 사내 패키지가 깔렸으면 「확인됨」, 없으면 「패키지 없음」
+    표지와 그 내역을 든 상태 알림(`AD-04`)이다(설계 규칙 UI-NTF-02 — 자리에 상태 문장을 두지
+    않는다). 이 PC 에 깔렸는지에 기대지 않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
     from capa_simulation.components.flash import FlashNote
 
     monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
@@ -183,7 +184,8 @@ def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     banner_note = active_state(app, "AD-04")
     if not package_ready:
         assert banner_note is not None and "bigdataquery 패키지가 없어" in banner_note["full"]
-        assert any("bigdataquery 패키지가 없어" in caption.value for caption in app.caption)
+        assert any("패키지 없음" in caption.value for caption in app.caption)
+        assert not any("bigdataquery 패키지가 없어" in caption.value for caption in app.caption)
     else:
         assert banner_note is None
     assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
@@ -450,7 +452,7 @@ def test_picking_a_code_fills_the_detail_window_around_its_registration_date() -
     assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 8, 26)
     assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 5)
     captions = " ".join(item.value for item in app.caption)
-    assert "고른 코드의 원천 등록일: 2026-09-02." in captions
+    assert "**고른 코드의 원천 등록일** · 2026-09-02" in captions
 
 
 def test_a_widened_detail_window_survives_the_same_pick() -> None:
@@ -534,7 +536,7 @@ def test_an_old_code_seen_on_several_days_gets_a_window_across_all_of_them() -> 
     assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2025, 9, 24)
     assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2025, 11, 5)
     captions = " ".join(item.value for item in app.caption)
-    assert "고른 코드의 원천 등록일: 2025-10-01 ~ 2025-11-02." in captions
+    assert "**고른 코드의 원천 등록일** · 2025-10-01 ~ 2025-11-02" in captions
     # 메모의 상세 조회기간은 저장할 때 실제로 조회한 기간으로 붙는다(칸을 고칠 수 있어서).
     memo = app.text_area[0].value
     assert memo is not None and "상세 조회기간" not in memo
@@ -1057,14 +1059,15 @@ def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
     assert not app.exception
     [error] = app.error
     assert error.value.startswith("현재 환경에 bigdataquery 패키지가 없습니다.")
-    # 머리 설정 띠는 상태 캡션이고(경고 상자 아님) 알릴 조건은 상태 알림 `AD-04` 다.
+    # 머리 설정 띠는 값 줄(「패키지 없음」 표지)이고 내역 · 설치 단계 결과는 상태 알림 `AD-04` 의
+    # 전문이 든다(설계 규칙 UI-NTF-02).
     assert not app.warning
     note = active_state(app, "AD-04")
     assert note is not None and "bigdataquery 패키지가 없어" in note["full"]
-    banner = " ".join(
-        caption.value for caption in app.caption if "bigdataquery 패키지가 없어" in caption.value
-    )
-    assert "bigdataquery 패키지가 없어" in banner
+    assert any(caption.value.endswith(":orange[패키지 없음]") for caption in app.caption), [
+        caption.value for caption in app.caption
+    ]
+    banner = str(note["full"])
     for text in (error.value, banner):
         assert ("서버 시작 점검" in text) is with_report
         assert ("`CAPA_ARTIFACTORY_TOKEN`" in text) is with_report
@@ -1095,6 +1098,32 @@ def test_the_missing_query_notice_puts_the_particle_on_the_fixed_word(
 
 def test_no_missing_query_notice_once_both_queries_are_set() -> None:
     assert registration.missing_query_notice(catalog_ready=True, detail_ready=True) is None
+
+
+@pytest.mark.parametrize(
+    ("catalog_ready", "detail_ready", "package_ready", "marks"),
+    [
+        (False, False, True, ("목록 조회 SQL 미설정", "상세 조회 SQL 미설정")),
+        (False, True, False, ("목록 조회 SQL 미설정",)),
+        (True, False, True, ("상세 조회 SQL 미설정",)),
+        (True, True, False, ("패키지 없음",)),
+    ],
+)
+def test_the_configuration_line_is_a_value_line_with_markers(
+    catalog_ready: bool, detail_ready: bool, package_ready: bool, marks: tuple[str, ...]
+) -> None:
+    """설정 띠는 「**BigDataQuery 설정** · …」 값 줄이고 준비 안 된 칸은 주황 표지 한 마디다 —
+    무엇을 어디에 채우는지는 상태 알림 `AD-04` 전문이 든다(설계 규칙 UI-TXT-04 · UI-NTF-02).
+    문장으로 끝나지 않는다."""
+    line = registration.banner_line(
+        catalog_ready=catalog_ready, detail_ready=detail_ready, package_ready=package_ready
+    )
+
+    assert line.startswith(registration.BANNER_LABEL + " · ")
+    assert all(f":orange[{mark}]" in line for mark in marks)
+    assert not line.endswith(("다.", "다", "요."))
+    ready = registration.banner_line(catalog_ready=True, detail_ready=True, package_ready=True)
+    assert ready == registration.BANNER_READY_LINE
 
 
 def test_the_notice_reveal_is_the_only_script_run_through_st_html() -> None:

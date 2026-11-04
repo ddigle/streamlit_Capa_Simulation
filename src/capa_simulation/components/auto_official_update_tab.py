@@ -146,8 +146,16 @@ PENDING_RUN_TOKEN_KEY = "auto_official_update_pending_run_token"
 # 끊긴 「지금 실행」 회차가 아직 도는 동안 기록을 다시 보는 프래그먼트와 그 간격.
 RUN_POLL_FRAGMENT_KEY = "auto_official_update_run_poll"
 RUN_POLL_INTERVAL: Final = timedelta(seconds=3)
-RUNNING_MESSAGE: Final = (
-    "「지금 실행」 회차가 아직 도는 중입니다 — 끝나면 결과가 여기에 저절로 뜹니다."
+# 끊긴 「지금 실행」 회차가 도는 동안의 표지 한 줄 — 끝나면 결과 알림이 뜬다(설계 규칙 UI-TXT-04 —
+# 자리에는 값 · 표지만).
+RUNNING_MESSAGE: Final = ":material/hourglass_top: **지금 실행** · 아직 도는 중"
+# 「지금 실행」 단추 풍선 — 누르면 공식버전이 바뀔 수 있다는 것을 누르기 전에 보인다(설계 규칙
+# UI-NTF-09 — 단추 풍선, UI-TXT-01 — 늘 띄워 두지 않는다).
+RUN_NOW_HELP: Final = (
+    "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전을 발행합니다. "
+    "켜짐·실행 줄 허락과 상관없이 돌고 결과는 아래 실행 기록에 남습니다. 같은 날 예약 회차와는 "
+    "따로 셉니다(이미 받은 코드는 다시 받지 않습니다). DB 조회와 전체 기간 계산이라 몇십 초 "
+    "걸릴 수 있습니다."
 )
 # 끝난 「지금 실행」 회차의 상태별 알림 종류·아이콘. 표에 없는 상태는 아이콘 없는 안내다.
 _RUN_RESULT_STYLES: Final[dict[str, tuple[FlashKind, str | None]]] = {
@@ -235,9 +243,7 @@ def _render_status(
                 st.markdown("**예약** · 켜짐")
             else:
                 # 멈춘 것 같다 — 까닭 · 할 일은 알림(`AU-01`)에 있다. 상태 줄만 남긴다.
-                st.markdown(
-                    "**예약** · :orange[켜짐 · 멈춘 것 같음] — 마지막 확인은 아래 줄입니다."
-                )
+                st.markdown("**예약** · :orange[켜짐 · 멈춘 것 같음]")
             parts = [
                 f"배경 확인 {status.tick_seconds:.0f}초마다",
                 f"시작 {format(status.started_at, DATETIME_FORMAT)}",
@@ -256,10 +262,13 @@ def _render_status(
             # 허락했는데 스레드가 없다 — 까닭 · 할 일은 알림(`AU-02`)에 있다. 상태 줄만 남긴다.
             st.markdown(f"**예약** · :red[스레드 없음] — 실행 줄은 허락했습니다(`{ENV_VAR}=1`).")
         else:
-            st.info(
-                f"이 실행에서는 예약이 꺼져 있습니다 — 실행 줄에 `{ENV_VAR}=1` 을 더해 앱을 띄워야 "
-                "지정 시각에 돕니다. 「지금 실행」은 이 실행에서도 됩니다.",
-                icon=":material/info:",
+            # 켜는 법은 풍선 · Guide 가 말한다 — 자리에는 상태 값 줄만(설계 규칙 UI-TXT-01 · 04).
+            st.markdown(
+                "**예약** · 이 실행에서는 꺼짐",
+                help=(
+                    f"실행 줄에 `{ENV_VAR}=1` 을 더해 앱을 띄워야 지정 시각에 돕니다. 「지금 "
+                    "실행」은 이 실행에서도 됩니다."
+                ),
             )
         st.markdown(f"**설정** · {_config_line(config)}")
         try:
@@ -576,14 +585,12 @@ def _render_run_now(
 ) -> None:
     with st.container(border=True):
         st.markdown("#### :material/play_circle: 지금 실행")
-        st.caption(
-            "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전을 "
-            "발행합니다. 켜짐·실행 줄 허락과 상관없이 돌고 결과는 아래 실행 기록에 남습니다. "
-            "같은 날 예약 회차와는 따로 셉니다(이미 받은 코드는 다시 받지 않습니다). DB 조회와 "
-            "전체 기간 계산이라 몇십 초 걸릴 수 있습니다."
-        )
         clicked = st.button(
-            "지금 실행", key=RUN_NOW_BUTTON_KEY, icon=":material/play_arrow:", type="secondary"
+            "지금 실행",
+            key=RUN_NOW_BUTTON_KEY,
+            icon=":material/play_arrow:",
+            type="secondary",
+            help=RUN_NOW_HELP,
         )
         notice = st.container()
         with notice:
@@ -714,7 +721,7 @@ def _poll_running_round(repository: DuckDBScenarioRepository) -> None:
         except BOOTSTRAP_ERRORS:
             still_running = True
     if still_running:
-        st.info(RUNNING_MESSAGE, icon=":material/hourglass_top:")
+        st.caption(RUNNING_MESSAGE)
         return
     st.rerun()
 

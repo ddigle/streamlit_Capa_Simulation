@@ -47,8 +47,9 @@ OVERLAP_LABELS: dict[OverlapPolicy, str] = {
 
 
 def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
+    # 무엇을 합치고 겹침 · 무월 표 · 가상제품 이력을 어떻게 다루는지는 늘 띄워 두지 않고 Guide 와
+    # 겹침 처리 칸 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02).
     st.subheader("월 머지")
-    st.caption("베이스에 다른 시나리오의 선택한 월을 합칩니다. 겹치는 월은 사용할 쪽을 고릅니다.")
     try:
         _render_merge(repository, database_path)
     except BOOTSTRAP_ERRORS as exc:
@@ -75,13 +76,9 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     if comparison["비교"].ne("같음").any():
         st.warning(
             "두 시나리오의 월 없는 기준정보가 다릅니다. 겹치는 제품·공정은 베이스 값을 쓰고, "
-            "베이스에 없는 제품·공정만 덧붙일 쪽에서 보충합니다 — 표마다의 규칙과 보충할 행 수는 "
-            "위 표에 있습니다. 겹치는 키의 Density·Chip·모듈 기준 차이를 확인하세요."
+            "베이스에 없는 제품·공정만 덧붙일 쪽에서 보충합니다. 겹치는 키의 Density·Chip·모듈 "
+            "기준 차이를 확인하세요."
         )
-    st.caption(
-        "RQ_DISPLAY_ORDER는 각 리비전에 저장된 값을 비교·보존합니다. "
-        "앱에서 불러올 때에는 기존 공용 표시순서가 적용됩니다."
-    )
     donor_months = scenario_months(donor_tables)
     if not donor_months:
         st.error("덧붙일 시나리오에 월 데이터가 없습니다.")
@@ -125,7 +122,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
                 persist_state="session",
                 help=(
                     "선택한 쪽의 월 전체를 12개 월표에 동일하게 적용합니다. "
-                    "서로의 행을 섞지 않습니다."
+                    "서로의 행을 섞지 않습니다. 원본 리비전이나 월 범위를 바꾸면 다시 고릅니다."
                 ),
             )
             or "reject",
@@ -137,8 +134,6 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     source_display = _month_source_display(sources, base, donor)
     st.markdown("#### 저장 전 월별 출처")
     st.dataframe(source_display, hide_index=True, width="stretch")
-    if overlap:
-        st.caption("원본 리비전이나 월 범위를 바꾸면 겹침 처리를 다시 선택합니다.")
     result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
     # 점검 결론은 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
     st.caption(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
@@ -169,11 +164,6 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     donor_history = virtual_product_records(
         repository.list_virtual_products(donor.revision.revision_id)
     )
-    if base_history or donor_history:
-        st.caption(
-            "가상제품 복제 이력에는 월이 없으므로 선택한 두 리비전의 이력을 합치고, 결과 표에 그 "
-            "제품이 남은 것만 보존합니다. 같은 제품·Stack의 복제 원본이 다르면 저장할 수 없습니다."
-        )
     history = merge_result_virtual_products(
         base_history,
         donor_history,
