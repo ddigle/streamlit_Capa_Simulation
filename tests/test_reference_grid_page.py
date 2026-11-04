@@ -477,8 +477,9 @@ def test_an_equipment_blank_is_zero_units(calls: Calls, name: str, column: str) 
 
 
 def test_an_emptied_ratio_table_rides_the_grid_as_an_empty_table(calls: Calls) -> None:
-    """측정률 표가 통째로 비면 그리드는 빈 표(머리만)를 싣고, 작업 줄 칸에 1.0 계산 알림을 쓴다.
-    거를 줄이 없어 사이드바 필터는 서지 않는다."""
+    """측정률 표가 통째로 비면 그리드는 빈 표(머리만)를 싣고, 작업 줄 칸에 빈 결과 한 줄을 쓴다 —
+    1.0 으로 계산한다는 것은 그 줄의 풍선이다(파란 상자 아님). 거를 줄이 없어 사이드바 필터는 서지
+    않는다."""
     app = _open(REAL_APPLY_TEST_SCRIPT, "Lot측정률")
     key = _visible_keys(calls)[0]
     app = _grid_write(app, calls, key, "202608", "")
@@ -487,7 +488,10 @@ def test_an_emptied_ratio_table_rides_the_grid_as_an_empty_table(calls: Calls) -
     app.run()
     shell = last(calls, GRID_HOST)
     assert shell["table"] == "RQ_LOT_RATIO" and shell["rows"] == 0
-    assert any("측정률 1.0 으로 계산합니다" in str(item.value) for item in infos(app))
+    assert not any("측정률" in str(item.value) for item in infos(app))
+    empty_lines = [item for item in app.caption if "행이 없습니다" in str(item.value)]
+    assert [str(item.value) for item in empty_lines] == ["이 기간에 Lot측정률 행이 없습니다."]
+    assert "측정률 1.0 으로 계산합니다" in empty_lines[0].proto.help
     assert not any(
         str(widget.key).startswith("capa_lot_ratio_editor_filter") for widget in app.multiselect
     )
@@ -497,22 +501,28 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
     calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """큰 표 안전 상한(칸 수 · 껍데기 바이트)을 넘으면 사이드바 필터로 고른 줄이나 앞 줄만 싣고
-    알린다. 초안은 업무 키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은 언제나 전체 양식에 덮는다.
-    고칠 칸 알림도 지금 싣지 않은 줄의 오류까지 센다."""
+    작업 줄 아래 표지 한 줄(풍선 — 고르는 법 · 적용 범위)로 알린다(파란 상자 아님). 초안은 업무
+    키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은 언제나 전체 양식에 덮는다. 고칠 칸 알림도 지금
+    싣지 않은 줄의 오류까지 센다."""
     monkeypatch.setattr(reference_grid, "CAP_CELLS", 1)
     monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert _visible_keys(calls) == ["Process-A"]
-    notices = [str(item.value) for item in infos(app)]
-    assert reference_grid.CAP_HEAD_NOTICE.format(rows=2, cells=2, shown=1) in notices
+    notices = {str(item.value): item.proto.help for item in app.caption}
+    assert notices[reference_grid.CAP_HEAD_NOTICE.format(rows=2, cells=2, shown=1)] == (
+        reference_grid.CAP_HELP
+    )
+    assert not any("줄만" in str(item.value) for item in infos(app))
     app = _grid_write(app, calls, "Process-A", "202608", "20")
 
     app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
     app.run()
     assert not app.exception
     assert _visible_keys(calls) == ["Process-B"]
-    notices = [str(item.value) for item in infos(app)]
-    assert reference_grid.CAP_FILTERED_NOTICE.format(rows=2, cells=2, shown=1) in notices
+    notices = {str(item.value): item.proto.help for item in app.caption}
+    assert notices[reference_grid.CAP_FILTERED_NOTICE.format(rows=2, cells=2, shown=1)] == (
+        reference_grid.CAP_HELP
+    )
     app = _grid_write(app, calls, "Process-B", "202608", "15")
     assert _draft(app) == {
         "cells": {"Process-A": {"202608": 20.0}, "Process-B": {"202608": 15.0}},

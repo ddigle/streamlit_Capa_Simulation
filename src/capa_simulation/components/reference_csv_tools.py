@@ -26,6 +26,7 @@ def render_reference_clipboard_form(
     min_value: float | None = None,
     max_value: float | None = None,
     integer: bool = False,
+    field_help: str | None = None,
 ) -> pd.DataFrame | None:
     """양식 내려받기와 붙여넣기 칸을 그리고, 제출되면 검증한 표를 돌려준다.
 
@@ -33,7 +34,8 @@ def render_reference_clipboard_form(
     (2026-09-28·29 사용자 결정). 완료 알림은 팝업이 닫힌 뒤 본문 작업 줄 아래에 떠야 보이므로
     부르는 쪽이 정하고, 설명은 Guide 가 맡는다. `min_value`·`max_value` 는 같은 표 편집 격자의
     하한·상한이고 `integer` 는 정수 규칙(일수)이다 — 붙여넣은 값도 그 범위를 지난다
-    (`reference_csv.assert_edit_value_range`).
+    (`reference_csv.assert_edit_value_range`). `field_help` 는 붙여넣기 칸의 풍선이다(그 표에만
+    걸리는 양식 규칙 — 팝업에 설명 문장을 늘 띄우지 않는다).
     """
     render_csv_download(
         data=reference_edit_csv_bytes(data, key_columns),
@@ -47,6 +49,7 @@ def render_reference_clipboard_form(
             key=f"{key}_clipboard",
             height=180,
             placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
+            help=field_help,
         )
         submitted = st.form_submit_button(
             "붙여넣기 일괄 적용",

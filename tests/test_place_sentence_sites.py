@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 129
+UNSETTLED_SITES = 126
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -100,8 +100,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
     ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY, UNSETTLED),
-    ("app_pages/reference_data.py", ""): (UNSETTLED,),
-    ("app_pages/reference_data.py", "_render_step_view"): (UNSETTLED,),
+    ("app_pages/reference_data.py", ""): (EMPTY,),
+    ("app_pages/reference_data.py", "_render_step_view"): (EMPTY,),
     ("app_pages/reference_integrity.py", ""): (UNSETTLED,),
     ("app_pages/reference_integrity.py", "_render_detail"): (EMPTY, UNSETTLED, UNSETTLED),
     ("app_pages/reference_integrity.py", "_render_guide"): (
@@ -381,7 +381,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/module_failure_card.py", "render_failure_parts"): (UNSETTLED,),
     ("src/capa_simulation/components/module_status.py", "render_module_status"): (UNSETTLED,),
-    ("src/capa_simulation/components/month_editor.py", "paste_dialog"): (UNSETTLED,),
     ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"): (
         BESIDE_INPUT,
     ),
