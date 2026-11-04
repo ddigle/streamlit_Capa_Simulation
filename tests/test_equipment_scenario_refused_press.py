@@ -76,7 +76,8 @@ def test_a_second_press_after_someone_elses_rename_repeats_the_refusal(
     app.button(key=RENAME_BUTTON_KEY).click()
     written, refused = _notices(_ok(app.run()))
     assert written == [] and any("이름을 바꾸지 않았습니다" in text for text in refused), refused
-    # 거절은 구획 맨 위 칸에 그리고 알림창 · Alarm 에도 한 꼴로 낸다(설계 규칙 UI-NTF-01).
+    # 거절은 구획 맨 위 칸에 그리고 알림창 · Alarm 에도 한 꼴로 낸다(설계 규칙 UI-NTF-01 · UI-NTF-03
+    # 의 예외 「확인 칸을 다시 세우는 거절」 — 입력 칸을 새로 세워 다시 할 자리가 그 구획이다).
     (alerted,) = flashed(app, "error")
     assert alerted.value == refused[0]
     assert alerted.code == "FL-04"

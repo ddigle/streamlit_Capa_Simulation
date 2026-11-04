@@ -52,8 +52,9 @@ WRITE_WORDS = ("저장", "적용", "지우", "되돌", "초기화", "버리", "�
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/home_main_case_chips.py", "render_main_case_chips"): (
         1,
-        "UI-NAV-01 「칩 → 설정 팝업」 — 사이드바 「LOB 표시 조건」 카드의 미지정 주요 Case 칩은"
-        " 불러올 리비전이 없어 HOME 설정 `비교 · 주요 Case` 탭의 그 Case 칸을 열고 짚는다(검수"
+        "UI-LAY-01 의 예외 「미지정 주요 Case 칩」(2026-11-04 반영 검수표 D6 (가)) —"
+        " 사이드바 「LOB 표시 조건」 카드의 미지정 주요 Case 칩은 불러올 리비전이 없어 HOME 설정"
+        " `비교 · 주요 Case` 탭의 그 Case 칸을 열고 짚는다(UI-NAV-01 「칩 → 설정 팝업」 · 검수"
         " home-u03 · AMB-15 (가)). 칩의 일은 시나리오 불러오기다 — 설정 단추가 아니다",
     ),
 }

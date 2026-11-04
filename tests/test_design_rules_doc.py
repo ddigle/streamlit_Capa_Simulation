@@ -5,8 +5,8 @@
 규칙집은 설계 · 검수가 규칙 id 로 대 보는 정본이다(PRC-07). 꼴이 흐트러지면
 id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 기록이 빠지면 같은 것을
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
-자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 문서 안팎의
-id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
+답 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ ANSWERS = {
 }
 # 합치거나 재료에 답이 있어 묻지 않은 물음(7-2) — 결정 기록 줄은 없고 참고 절에만 선다.
 CLOSED_QUESTIONS = {"AMB-03", "AMB-04", "AMB-10"}
+# 2026-11-04 설계 규칙 반영 검수표(6-2)의 사용자 답 — D1 만 (나), 나머지 일곱은 (가) 권장이다.
+REVIEW_ANSWERS = {**{f"D{n}": "가" for n in range(2, 9)}, "D1": "나"}
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
     "AGENTS.md",
@@ -199,6 +201,34 @@ def test_the_decision_record_holds_the_eighteen_answers() -> None:
 
     assert len(lines) == 18
     assert found == ANSWERS
+
+
+def test_the_review_sheet_answers_are_recorded_and_written_into_the_rules() -> None:
+    """6-2 는 반영 검수표 한 칸에 한 줄이고 답이 사용자 답과 같다. 답이 규칙 글로 들어갔는지 핵심만
+    본다 — D1 (나): UI-TXT-04 는 SHOULD(앱 세션이 대신 올린 MUST 를 되돌림 — 다시 올리지 않는다).
+    D3 (가): UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」. D6 (가): UI-LAY-01 의 예외 「미지정
+    주요 Case 칩」."""
+    section = _chapter(_text(), 6)
+    review = section[section.index("\n### 6-2. ") :]
+    lines = [line for line in review.splitlines() if re.match(r"^- D\d+ · ", line)]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(
+            r"^- (D\d+) · .+ → \*\*\((가|나|다)\)\*\* .+\((2026-11-04) · (.+)\)$", line
+        )
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+
+    assert len(lines) == len(REVIEW_ANSWERS)
+    assert found == REVIEW_ANSWERS
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert _level_and_state(rules["UI-TXT-04"]) == ("SHOULD", "확정")
+    assert "확인 칸을 다시 세우는 거절" in rules["UI-NTF-03"].fields["예외"][0]
+    assert "미지정 주요 Case 칩" in rules["UI-LAY-01"].fields["예외"][0]
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:

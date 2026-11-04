@@ -439,7 +439,8 @@ def _resume_follows(database_path: str, session: EquipmentSession) -> None:
 
 def _refused(message: str) -> None:
     """그 사이 남의 쓰기로 거절했을 때 — 공통 최신·목록을 다시 읽게 비우고, 확인 체크·입력 칸을 새로
-    세운 뒤(옛 확인으로 다시 누르지 않게) 다음 회차 맨 위에 까닭을 알린다."""
+    세운 뒤(옛 확인으로 다시 누르지 않게) 다음 회차 맨 위에 까닭을 알린다. 구획 맨 위 칸과 알림창
+    둘에 선다(설계 규칙 UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」)."""
     clear_equipment_snapshot_cache()
     # 거부 글은 남의 이름(물결표만 막힌 날 이름)을 품는다 — 마크다운 원문으로 담아 그린다.
     queue_flash(REFUSED_KEY, markdown_safe_tildes(message), kind="error")
@@ -819,8 +820,11 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 상자를 그리기 전이어야 한다(`PENDING_REVISION_KEY`).
     _resume_follows(database_path, session)
     # 작업 알림(성공)은 알림창 · Alarm 으로만, 거절 알림(오류)은 이 칸에도 그린다(`flash` —
-    # 설계 규칙 UI-NTF-01 · UI-NTF-03). 첫 발행 뒤 다시 그린 화면의 「공식으로 발행」 은 그 리비전이
-    # 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 창
+    # 설계 규칙 UI-NTF-01 · UI-NTF-03). 거절은 확인 체크 · 입력 칸을 새로 세우므로(`_refused`)
+    # 다시 할 자리인 이 구획 맨 위에 선다 — UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」
+    # 이다(아무것도 쓰지 않은 거부라도 알림창에만 보내지 않는다). 첫 발행 뒤 다시 그린 화면의
+    # 「공식으로 발행」 은 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은
+    # Streamlit 이 버리고, 창
     # (`TRAILING_PRESS_SECONDS`) 안이면 이 칸이 적어 둔 알림을 첫 알림과 같은 id 로 다시 낸다
     # (알림창은 두 번 뜨지 않는다). 팝오버 세대는 알림을 꺼내는 회차에만 올린다 — 다시 내는
     # 회차에는 첫 알림 회차가 이미 올려 팝오버는 닫힌 채 섰다.
