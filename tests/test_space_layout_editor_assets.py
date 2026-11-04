@@ -915,6 +915,9 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     # UI-TXT-01).
     assert "attr(data-hint)" not in CSS and ".sle-pick:empty::before" not in CSS
     assert "pickBox.title = pickBox.textContent || pickTip" in JS
+    # 빈 선택 줄은 글이 없어 높이가 0 이 되지 않게 줄 높이로 늘어선다 — 그 풍선에 마우스를 올릴
+    # 자리다(2026-11-04 검토 — 높이 0 이면 풍선이 뜰 수 없었다).
+    assert "align-self: stretch" in _rule(".sle-pick:empty")
     assert "dataset.hint" not in JS
     assert "display: none" in _rule(".sle-toolbar.is-fit3 .sle-totoday-tail")
     # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.

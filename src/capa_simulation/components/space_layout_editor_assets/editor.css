@@ -546,6 +546,9 @@
   flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-size: 0.82rem; color: var(--sle-text); margin-left: 6px; font-variant-numeric: tabular-nums;
 }
+/* 비어 있어도 줄 높이만큼 선다 — 글이 없으면 높이가 0 이라 빈 선택 줄의 풍선(`pickTip` → title)에 마우스를 올릴
+   자리가 없다. 글이 있을 때는 가운데 맞춤 그대로다(도구 줄 높이는 단추가 정한다 — 바뀌지 않는다). */
+.sle-pick:empty { align-self: stretch; }
 .sle.is-view .sle-spacer { display: none; }
 .sle-summary { font-size: 0.82rem; color: var(--sle-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 

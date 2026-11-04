@@ -377,7 +377,12 @@ def _save() -> None:
 with st.expander("새 메모", expanded=True):
     st.selectbox("종류", KINDS, key=ctx.key("kind"))
     st.text_input("내용", key=ctx.key("text"))
-    st.button("저장", key=ctx.key("save"), on_click=ctx.callback(_save))
+    st.button(
+        "저장",
+        key=ctx.key("save"),
+        on_click=ctx.callback(_save),
+        help="저장하지 않고 화면을 옮기면 적은 내용은 사라집니다.",
+    )
 
 memos = cache.load(str(ctx.data_dir), store.version(ctx.data_dir))
 if memos.empty:
