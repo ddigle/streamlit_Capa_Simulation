@@ -36,7 +36,7 @@ from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
-from capa_simulation.components.literal_markdown import literal_markdown, literal_names, quoted
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
@@ -253,14 +253,28 @@ KEY_PROCESS_UNCHANGED_MESSAGE = (
 )
 # 비교 시나리오를 고르지 않아 잠긴 「GAP」 토글의 풍선.
 GAP_LOCKED_HELP = "HOME 설정 → 비교 · 주요 Case 탭에서 비교 시나리오를 먼저 고르세요."
-# 판정 기준 입력이 빠진 자리(Static Capa 「판정 기준」 카드)에 남기는 한 줄. HOME 공정 필터 팝업
-# 머리에는 두지 않는다(2026-11-04 검수 의견 home-20 — HOME 은 Guide 가 말한다).
-THRESHOLD_POINTER = "판정 기준은 HOME 설정 → 판정 기준 탭에서 정합니다."
 # 저장 단추 풍선 — 팝업 머리 안내 글(2026-11-04 사용자 검수 home-u01 「설명 제거」)이 하던 말 가운데
 # 꼭 남길 둘(공용 설정 · 저장하지 않고 닫으면 사라짐)을 누르는 자리에 둔다.
 SHARED_SAVE_HELP = (
     "모든 사용자가 함께 쓰는 공용 설정으로 저장합니다. 저장하지 않고 팝업을 닫으면 이 상자에서 "
     "고친 칸은 사라집니다(팝업 안 탭을 옮기는 것은 괜찮습니다)."
+)
+# 판정 기준 「조회기간 밖 월별 기준 지우기」 칸의 풍선 — 그런 달이 있을 때만 서는 칸이라 숨은 달이
+# 남아 있는 동안의 뜻(판정에 그대로 쓰임 · 저장해도 남음)을 함께 든다.
+THRESHOLD_CLEAR_OUTSIDE_HELP = (
+    "표에 보이지 않는 달의 월별 기준입니다. 체크하지 않으면 그 달 판정에 그대로 쓰이고 저장해도 "
+    "지워지지 않습니다. 체크하고 저장하면 지워 기본값을 따르게 합니다."
+)
+# 선행 B/O · 선행 입고 표 위 표지와 그 풍선 — 조회기간 밖에 저장된 달이 있을 때만 선다.
+HIDDEN_MONTHS_MARKER = ":gray-badge[:material/visibility_off: 조회기간 밖 {count:,}개월]"
+HIDDEN_MONTHS_HELP = (
+    "{labels} — 표에 보이지 않지만 그대로 남고, 이 표를 저장해도 지워지지 않습니다."
+)
+# 주요공정 프리셋 「공정」 칸의 풍선 — 칩에 「· 이 화면에 없음」 이 붙은 공정이 있을 때만 단다.
+ABSENT_KEY_PROCESS_HELP = (
+    "「이 화면에 없음」 공정은 이번 시나리오 · 조회기간에 없어 히트맵에 그리지 않습니다. 공용 "
+    "설정이라 저장해도 프리셋에 그대로 남고 그 공정이 있는 화면에서는 그려집니다. 빼려면 칩을 "
+    "지웁니다."
 )
 # 「비교 · 주요 Case」 탭의 두 상자 폭 — 비교 시나리오(두 상자 세로) : 주요 Case(Case 두 칸 나란히).
 CASES_COLUMN_WEIGHTS = (2, 3)
@@ -1127,27 +1141,23 @@ def render_threshold_editor(
                     },
                 )
             else:
-                st.caption(
-                    "조회기간에 계획이 있는 달이 없어 월별 칸이 없습니다. 기본값만 저장합니다."
-                )
+                st.caption("조회기간에 계획이 있는 달이 없어 월별 칸이 없습니다.")
             # 표에 보이지 않는 달은 여기서 고칠 수 없다. 그 달이 새 기본값과 거꾸로 짝이 되어 저장을
-            # 막을 때 조회기간을 바꾸지 않고도 풀 수 있게, 기간 밖 예외를 지우는 길을 둔다.
+            # 막을 때 조회기간을 바꾸지 않고도 풀 수 있게, 기간 밖 예외를 지우는 길을 둔다. 이 칸은
+            # 그런 달이 있을 때만 서서 숨은 달의 표지를 겸한다 — 남아 있는 동안의 뜻은 풍선이
+            # 말하고 표 밑에 따로 안내 글을 두지 않는다(설계 규칙 UI-TXT-01 · AMB-02).
             clear_outside = bool(
                 outside
                 and st.checkbox(
                     f"조회기간 밖 월별 기준 {len(outside):,}개월 지우기({_month_labels(outside)})",
                     key=THRESHOLD_CLEAR_OUTSIDE_KEY,
-                    help=(
-                        "체크하고 저장하면 표에 보이지 않는 달의 월별 기준을 지워 기본값을 "
-                        "따르게 합니다."
-                    ),
+                    help=THRESHOLD_CLEAR_OUTSIDE_HELP,
                 )
             )
         if not submitted:
             # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
             # (write_guard).
             remember_seen(THRESHOLD_BASE_VERSION_KEY, threshold_profile.version)
-            _render_threshold_out_of_range_notice(months, threshold_profile)
             return
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
@@ -1162,8 +1172,6 @@ def render_threshold_editor(
             remember_seen(THRESHOLD_BASE_VERSION_KEY, threshold_profile.version)
             if refused != held:
                 notice.error(held)
-            # 쓰지 않아 다시 돌지 않는 회차다 — 아래 「바뀐 것이 없습니다」 · 검증 오류 갈래와 같다.
-            _render_threshold_out_of_range_notice(months, threshold_profile)
             return
         if not isinstance(submitted_base, int):
             # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
@@ -1190,9 +1198,6 @@ def render_threshold_editor(
                 # 않는다(write_guard.held_notice).
                 if held_notice(THRESHOLD_FLASH_KEY) is None:
                     notice.info(THRESHOLD_UNCHANGED_MESSAGE, icon=":material/info:")
-                # 쓰지 않아 다시 돌지 않는 회차다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖
-                # 월별 기준 줄도 그린다(빠지면 「그대로」 알림 옆에서 숨은 달 안내만 사라진다).
-                _render_threshold_out_of_range_notice(months, threshold_profile)
                 return
             _save_thresholds(
                 database_path,
@@ -1224,9 +1229,6 @@ def render_threshold_editor(
             # 검증 실패(어느 달인지)는 ValueError 이고 원문이 고칠 곳을 말한다(물결표만 막아
             # 그대로).
             notice.error(bootstrap_error_message(exc))
-            # 쓰지 않아 다시 돌지 않는 회차다 — 원인이 보이는 칸이면 오류 글이 숨은 달을 말하지
-            # 않으므로 누르지 않은 회차의 조회기간 밖 월별 기준 줄을 그대로 그린다.
-            _render_threshold_out_of_range_notice(months, threshold_profile)
         else:
             # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
             # 없습니다」 갈래).
@@ -1391,21 +1393,6 @@ def _reject_hidden_reversed_months(
             "기준이 확보 기준보다 큽니다. 표에 보이지 않는 달이라 조회기간을 넓혀 그 달을 "
             "고치거나, 「조회기간 밖 월별 기준 지우기」를 체크하고 저장하세요."
         )
-
-
-def _render_threshold_out_of_range_notice(
-    months: Sequence[int],
-    threshold_profile: GlobalSecurementThreshold,
-) -> None:
-    """조회기간 밖에 남아 있는 월별 기준. 보이지 않는 값이 판정에 남는 것을 알린다."""
-    outside = sorted(set(_thresholds_by_month(threshold_profile)) - set(months))
-    if not outside:
-        return
-    st.caption(
-        f"조회기간 밖에 월별 기준이 저장된 달이 {len(outside):,}개 있습니다"
-        f"({_month_labels(outside)}). 표에는 보이지 않지만 그대로 보존되며, 저장해도 지워지지 "
-        "않습니다. 지우려면 「조회기간 밖 월별 기준 지우기」를 체크하고 저장하세요."
-    )
 
 
 def _threshold_detail(threshold_profile: GlobalSecurementThreshold) -> str:
@@ -1646,6 +1633,7 @@ def _render_monthly_amount_editor(
         if not months:
             st.info("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
+        _render_hidden_months_marker(months, stored)
         table = pd.DataFrame(
             [[editor.row_label, *[stored.get(month, 0.0) for month in months]]],
             columns=[DIMENSION_COLUMN, *month_labels],
@@ -1689,7 +1677,6 @@ def _render_monthly_amount_editor(
                 },
             )
         if not submitted:
-            _render_out_of_range_notice(months, stored)
             return
         row = edited.iloc[0]
         values = [row[label] for label in month_labels]
@@ -1702,16 +1689,10 @@ def _render_monthly_amount_editor(
                 # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
                 if held_notice(editor.flash_key) is None:
                     notice.info(editor.unchanged_message, icon=":material/info:")
-                # 쓰지 않아 다시 돌지 않는 회차다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖
-                # 저장분 줄도 그린다(판정 기준과 같다).
-                _render_out_of_range_notice(months, stored)
                 return
             save(values, note.strip() or "웹 직접 편집")
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
-            # 쓰지 않아 다시 돌지 않는 회차다 — 오류 글은 숨은 달을 말하지 않으므로 누르지 않은
-            # 회차의 조회기간 밖 저장분 줄을 그대로 그린다(판정 기준과 같다).
-            _render_out_of_range_notice(months, stored)
         else:
             # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
             # 없습니다」 갈래).
@@ -1720,15 +1701,19 @@ def _render_monthly_amount_editor(
             st.rerun()
 
 
-def _render_out_of_range_notice(months: Sequence[int], stored: Mapping[int, float]) -> None:
-    """조회기간 밖에 남아 있는 입력분. 보이지 않는 값이 화면에 남는 것을 알린다."""
+def _render_hidden_months_marker(months: Sequence[int], stored: Mapping[int, float]) -> None:
+    """조회기간 밖에 저장된 달이 있을 때만 표 위에 서는 칸 머리 표지.
+
+    표지는 낱말과 수뿐이고 그 달 목록과 남는 규칙은 풍선이다 — 표 밑에 늘 서던 안내 문장을
+    걷었다(설계 규칙 UI-TXT-01 · AMB-02 — 숨은 데이터 안내는 칸 머리 표지 + 풍선). 표 위 · 폼
+    밖이라 저장 결과가 어느 갈래로 끝나도(바뀐 것 없음 · 오류) 누르지 않은 회차와 같은 자리에
+    선다."""
     outside = sorted(set(stored) - set(months))
     if not outside:
         return
-    labels = _month_labels(outside)
-    st.caption(
-        f"조회기간 밖에 저장된 달이 {len(outside):,}개 있습니다({labels}). 표에는 보이지 "
-        "않지만 그대로 보존되며, 저장해도 지워지지 않습니다."
+    st.markdown(
+        HIDDEN_MONTHS_MARKER.format(count=len(outside)),
+        help=HIDDEN_MONTHS_HELP.format(labels=_month_labels(outside)),
     )
 
 
@@ -2294,11 +2279,16 @@ def _render_key_process_editor(
             notice = st.container()
             with notice:
                 _render_key_process_flash()
+            # 이 화면에 없는 공정은 칩의 「· 이 화면에 없음」 이 표지이고, 그것이 남는 까닭은
+            # 칸 머리 풍선이다 — 칸 밑에 늘 서던 안내 문장을 걷었다(설계 규칙 UI-TXT-01 ·
+            # AMB-02). 풍선은 그런 공정이 있을 때만 단다(key 가 있는 multiselect 는 `help` 가
+            # 위젯 id 에 들지 않는다).
             selected = st.multiselect(
                 "공정",
                 options=choices,
                 default=list(current),
                 format_func=choice_label,
+                help=ABSENT_KEY_PROCESS_HELP if absent else None,
                 max_selections=KEY_PROCESS_LIMIT,
                 # 몇 개까지 되는지는 고르기 전에 알아야 해 자리 글자에 둔다. 고른 차례가 행 순서다.
                 placeholder=f"공정을 고르세요 (최대 {KEY_PROCESS_LIMIT}개 · 고른 차례가 행 순서)",
@@ -2309,7 +2299,6 @@ def _render_key_process_editor(
                 ),
             )
         if not is_new:
-            _render_key_process_notice(absent, process_labels)
             _render_key_process_preset_actions(profile, target, database_path, stale=stale)
         if not submitted:
             return
@@ -2546,23 +2535,6 @@ def _reject_key_process_write(
         return
     # 이름에 걸린 거부(「같은 이름의 프리셋이 이미 있습니다: …」)는 막은 이름으로 다시 짓는다.
     notice.error(_key_process_error_message(exc))
-
-
-def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLabels) -> None:
-    """이 프리셋에 저장돼 있으나 이번 화면에서는 그릴 수 없는 공정을 알린다.
-
-    **프리셋에서 지우지 않는다.** 공용 설정이라 다른 시나리오·조회기간에는 그 공정이
-    있고, 여기서 조용히 걷어내면 그 화면의 히트맵이 함께 비어 버린다. 선택지에 「이 화면에
-    없음」으로 남아 있어 저장해도 그대로 남고, 빼려면 목록에서 직접 지운다.
-    """
-    if not absent:
-        return
-    names = literal_names(process_labels.label(process) for process in absent)
-    st.caption(
-        f":material/info: 이번 시나리오·조회기간에 없어 그리지 않는 공정: {names}. "
-        "공용 설정이라 저장해도 프리셋에 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다. "
-        "빼려면 목록에서 지우세요."
-    )
 
 
 def _render_execution_editor(

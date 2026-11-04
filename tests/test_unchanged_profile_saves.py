@@ -528,11 +528,22 @@ preference.render_advance_shipment_editor(
 """
 
 
+def _outside_marks(app: AppTest) -> list[tuple[str, str]]:
+    """조회기간 밖 저장분의 칸 머리 표지(배지)와 그 풍선. 표 밑 안내 글은 없다(설계 규칙
+    UI-TXT-01 · AMB-02 — 숨은 데이터 안내는 칸 머리 표지 + 풍선, 2026-11-04)."""
+    assert not [caption.value for caption in app.caption if "조회기간 밖" in caption.value]
+    return [
+        (str(item.value), str(item.proto.help))
+        for item in app.markdown
+        if "조회기간 밖" in str(item.value)
+    ]
+
+
 def test_an_advance_load_save_without_changes_makes_no_new_version(
     repository: DuckDBScenarioRepository,
 ) -> None:
     """보이는 달의 값 그대로 누른 「선행 B/O 저장」 은 새 버전 없이 「바뀐 것이 없습니다」 를
-    띄우고, 조회기간 밖 저장분 줄도 누르지 않은 회차처럼 선다. 메모만 적어도 같고, 칸을 고치면
+    띄우고, 조회기간 밖 저장분 표지도 누르지 않은 회차처럼 선다. 메모만 적어도 같고, 칸을 고치면
     저장한다."""
     repository.replace_global_advance_load(
         pd.DataFrame({"생산계획년월": [202610, 202612], "선행 물량": [1.25, 3.0]}),
@@ -540,12 +551,18 @@ def test_an_advance_load_save_without_changes_makes_no_new_version(
     )
     clear_global_advance_load_cache()
     app = _app(repository, _ADVANCE_LOAD)
-    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    shown = _outside_marks(app)
+    assert shown == [
+        (
+            ":gray-badge[:material/visibility_off: 조회기간 밖 1개월]",
+            "26.12 — 표에 보이지 않지만 그대로 남고, 이 표를 저장해도 지워지지 않습니다.",
+        )
+    ], shown
 
     app = _press(app, "선행 B/O 저장")
     assert _infos(app) == [ADVANCE_LOAD_UNCHANGED]
     assert not successes(app) and not app.error, _errors(app)
-    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    assert _outside_marks(app) == shown
 
     app.text_input(key=ADVANCE_NOTE_KEY).set_value("메모만 적음")
     app = _press(app, "선행 B/O 저장")
@@ -642,7 +659,7 @@ def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
     value_column: str,
 ) -> None:
     """저장이 오류(`BOOTSTRAP_ERRORS` — DB 잠김 · 디스크 등)로 끝난 회차도 쓰지 않아 다시 돌지
-    않는다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖 저장분 줄이 오류 옆에 그대로 선다(판정
+    않는다 — 누르지 않은 회차와 같은 화면이게 조회기간 밖 저장분 표지가 오류와 함께 그대로 선다(판정
     기준과 같다). 오류 글은 숨은 달을 말하지 않는다."""
     getattr(repository, write)(
         pd.DataFrame({"생산계획년월": [202610, 202612], value_column: [1.25, 3.0]}),
@@ -650,8 +667,8 @@ def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
     )
     _clear_caches()
     app = _app(repository, body)
-    shown = [caption.value for caption in app.caption if "조회기간 밖" in caption.value]
-    assert len(shown) == 1 and "26.12" in shown[0], shown
+    shown = _outside_marks(app)
+    assert len(shown) == 1 and shown[0][1].startswith("26.12 — "), shown
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("디스크에 쓸 수 없습니다")
@@ -663,7 +680,7 @@ def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
     errors = _errors(app)
     assert len(errors) == 1 and "디스크에 쓸 수 없습니다" in errors[0], errors
     assert "26.12" not in errors[0]
-    assert [caption.value for caption in app.caption if "조회기간 밖" in caption.value] == shown
+    assert _outside_marks(app) == shown
     stored = getattr(repository, write.replace("replace_", "load_"))()
     assert (stored.version, stored.source) == (1, "처음 저장")
 

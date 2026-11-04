@@ -1,9 +1,10 @@
 # Purpose: 공정 표시명·원본 공정명의 물결표가 HOME 팝업·Admin 알림에서 지움선이 되지 않는지 본다.
 
 """공정 표시명은 Admin › Proc Rename 에서 사람이 적고 원본 공정명은 붙여넣기로 들어온다.
-「CoW~검사~A」 를 HOME 공정 필터 팝업 단추·자동 갱신 줄, 주요공정 히트맵 팝업 캡션·「그리지 않는
-공정」 캡션·확보율 보정 안내, Admin 「무시합니다」 안내·이름 중복 거부에 그대로 실으면 GFM 홑물결표
-짝이 가운데를 지움선으로 그리고 물결표를 지웠다(2026-10-26 E2E). 마크다운 자리마다 막는다.
+「CoW~검사~A」 를 HOME 공정 필터 팝업 단추·자동 갱신 줄, 주요공정 히트맵 팝업 캡션·확보율 보정
+안내, Admin 「무시합니다」 안내·이름 중복 거부에 그대로 실으면 GFM 홑물결표 짝이 가운데를 지움선으로
+그리고 물결표를 지웠다(2026-10-26 E2E). 마크다운 자리마다 막는다. 「그리지 않는 공정」 캡션은
+2026-11-04(설계 규칙 UI-TXT-01 · AMB-02)부터 없다 — 칩 표지 + 칸 풍선이고 이름을 싣지 않는다.
 """
 
 from __future__ import annotations
@@ -76,14 +77,10 @@ def test_home_preference_notices_escape_labels() -> None:
     def script() -> None:
         import pandas as pd
 
-        from capa_simulation.components.home_preference import (
-            _render_execution_notices,
-            _render_key_process_notice,
-        )
+        from capa_simulation.components.home_preference import _render_execution_notices
         from capa_simulation.components.process_labels import ProcessLabels
 
         labels = ProcessLabels(version=1, labels={"AVI-CoW": "CoW~검사~A"})
-        _render_key_process_notice(["AVI-CoW"], labels)
         _render_execution_notices(
             pd.DataFrame({"생산계획년월": [202603], "공정": ["AVI-CoW"]}),
             pd.DataFrame(),
@@ -93,7 +90,6 @@ def test_home_preference_notices_escape_labels() -> None:
     app = AppTest.from_function(script).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [_escaped(str(caption.value)) for caption in app.caption] == [True]
     assert [_escaped(str(warning.value)) for warning in app.warning] == [True]
 
 

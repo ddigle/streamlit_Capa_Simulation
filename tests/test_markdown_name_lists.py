@@ -125,22 +125,6 @@ def test_the_unmatched_process_alert_keeps_the_raw_names_verbatim() -> None:
     assert note is not None and TILDE in note["full"] and STAR in note["full"], note
 
 
-def _key_process_notice(labels: dict[str, str]) -> None:
-    from capa_simulation.components.home_preference import _render_key_process_notice
-    from capa_simulation.components.process_labels import ProcessLabels
-
-    _render_key_process_notice(["P1", "P2"], ProcessLabels(version=1, labels=labels))
-
-
-def test_the_absent_key_process_caption_blocks_the_display_names() -> None:
-    app = _ok(AppTest.from_function(_key_process_notice, args=({"P1": TILDE, "P2": STAR},)).run())
-
-    captions = _texts(app, "caption")
-    assert any(
-        f"{literal_markdown(TILDE)}, {literal_markdown(STAR)}" in text for text in captions
-    ), captions
-
-
 def _performance_screen(labels: dict[str, str]) -> None:
     from capa_simulation.components.performance_actual_screen import (
         render_performance_actual_screen,

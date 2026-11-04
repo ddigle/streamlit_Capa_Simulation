@@ -1,6 +1,11 @@
-# Purpose: Static Capa 의 판정 기준 카드·Guide·소요대수 미포함 수요 알림을 사용자 결정대로 고정한다.
+# Purpose: Static Capa 의 판정 기준 카드·Guide·미포함 수요 알림·빈 결과 줄을 결정대로 고정한다.
 
-"""Static Capa — 판정 기준은 HOME 설정 → 판정 기준(2026-10-06), 설명은 Guide(2026-09-29 결정)."""
+"""Static Capa — 판정 기준은 HOME 설정 → 판정 기준(2026-10-06), 설명은 Guide(2026-09-29 결정).
+
+판정 기준 카드는 지금 기준 값 한 줄뿐이다 — 정하는 자리를 가리키던 글은 걷었고 바로 가기도 두지
+않는다(2026-11-04 설계 규칙 UI-TXT-03 · AMB-06 (나)). 결과 상자가 비면 「…이 없습니다」 평문 한 줄이
+값으로 선다(AMB-02 (가) — 초록 성공 상자를 쓰지 않는다).
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,6 @@ from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers  # noqa: F401
 from test_reference_data_page import TEST_SCRIPT
 
-from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
@@ -48,17 +52,21 @@ def app_script(tmp_path_factory: pytest.TempPathFactory) -> str:
     return _script(tmp_path_factory.mktemp("static_capa_layout") / "scenario.duckdb")
 
 
-def test_the_threshold_card_only_points_to_the_home_preference(app_script: str) -> None:
-    """판정 기준 입력은 없앴다(2026-10-06 사용자 결정). 카드는 지금 기준과 정하는 곳만 말한다."""
+def test_the_threshold_card_only_shows_the_threshold_in_use(app_script: str) -> None:
+    """판정 기준 입력은 없앴다(2026-10-06 사용자 결정). 카드는 지금 기준 값만 보인다 — 「판정
+    기준은 HOME 설정 → 판정 기준 탭에서 정합니다」 길 안내 글은 걷었고(2026-11-04 AMB-06 (나)),
+    정하는 자리는 Guide 가 말한다(아래 시험)."""
     app = AppTest.from_string(app_script, default_timeout=300).run()
     assert not list(app.exception), [element.message for element in app.exception]
 
     assert list(app.number_input) == []
     captions = [element.value for element in app.sidebar.caption]
-    assert THRESHOLD_POINTER in captions
+    assert not [text for text in captions if "에서 정합니다" in text or "→" in text], captions
     # 저장 전에는 공식버전 프리셋 값(109.5%·99.5%)을 사사오입 정수로 적는다. 월별 예외가 없으면
     # 예외 수를 덧붙이지 않는다.
     assert "확보 기준 110% · 경고 기준 100%" in captions
+    # 바로 가기 단추도 두지 않는다(AMB-06 (나)).
+    assert not [button for button in app.sidebar.button if "HOME 설정" in button.label]
     assert app.session_state[CARD_KEY] is False
     # 본문에는 결과 두 상자만 남는다 — 목적·계산식은 Guide 로 갔다.
     assert "추가 필요대수 계산 기준" not in {expander.label for expander in app.main.expander}
@@ -152,3 +160,26 @@ def test_the_summary_leaves_the_route_side_count_to_the_alert_board(
     note = _uncounted(both)
     assert "RQ_REQB 경로에 닿지 않은 계획 부하 2건" in note["full"]
     assert "대당 Capa 가 없어 뺀 부하 경로" not in note["full"]
+
+
+def test_an_empty_result_box_says_so_in_one_plain_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """두 결과 상자가 비면 표 대신 「…이 없습니다」 평문 한 줄이 선다 — 「없음」 이라는 값이다.
+    초록 성공 상자는 알림창 몫이라 쓰지 않고(UI-NTF-01), 하는 법 · 길 안내도 붙이지 않는다
+    (2026-11-04 AMB-02 (가)). 페이지는 exec 때 이름을 집으므로 모듈 속성을 바꾸면 빈 표가 든다."""
+    import capa_simulation.services.securement_rate as securement_rate
+
+    original = securement_rate.build_securement_shortfall_tables
+
+    def emptied(*args: Any, **kwargs: Any) -> tuple[Any, Any]:
+        warning, secure = original(*args, **kwargs)
+        return warning.iloc[0:0], secure.iloc[0:0]
+
+    monkeypatch.setattr(securement_rate, "build_securement_shortfall_tables", emptied)
+    app = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert not app.main.success
+    lines = [str(element.value) for element in app.main.markdown]
+    assert "선택 기간에 경고 기준 미달 공정이 없습니다." in lines, lines
+    assert "선택 기간에 경고 이상·확보 기준 미달 공정이 없습니다." in lines, lines
+    assert not [frame for frame in app.main.dataframe if "확보율" in frame.value.columns]

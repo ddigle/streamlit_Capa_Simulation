@@ -220,8 +220,11 @@ def test_the_editor_saves_the_visible_months_and_shows_them_again(database: Path
         _rows({202512: 0.7}), source="과거 달"
     )
     app = _editor_app(database)
-    # 기간 밖 저장분은 표에 없지만 남는다고 알린다.
-    assert any("조회기간 밖" in caption.value for caption in app.caption)
+    # 기간 밖 저장분은 표에 없지만 남는다 — 표 위 칸 머리 표지가 서고 남는 뜻은 그 풍선이다(안내
+    # 글은 없다 — 2026-11-04 설계 규칙 UI-TXT-01 · AMB-02).
+    (mark,) = [item for item in app.markdown if "조회기간 밖" in str(item.value)]
+    assert str(mark.proto.help).startswith("25.12 — ")
+    assert not [caption.value for caption in app.caption if "조회기간 밖" in caption.value]
 
     app.session_state[ADVANCE_SHIPMENT_EDITOR_KEY] = {
         "edited_rows": {0: {"26.01": 1.25, "26.03": -2.5}},

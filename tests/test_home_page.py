@@ -25,7 +25,6 @@ from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
     DETAIL_VALUE_FONT_SIZE_PX,
 )
-from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
@@ -233,7 +232,7 @@ def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_pa
     # 고르는지와 기간 · 확보 기준은 그 줄의 풍선이다. 판정 기준을 정하는 자리는 Guide 가 말한다.
     captions = [item.value for item in app.caption]
     assert not any(text.startswith("B/N·확보율 판정에 넣을 공정") for text in captions), captions
-    assert THRESHOLD_POINTER not in captions
+    assert not any("에서 정합니다" in text for text in captions), captions
     head = next(item for item in app.markdown if str(item.value).startswith("**선택 "))
     assert "체크된 버튼" not in head.value
     assert str(head.proto.help).startswith("B/N·확보율 판정에 넣을 공정 · ")
@@ -540,9 +539,10 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     # 공용 프로필이 정한다(2026-10-06 사용자 결정) — 저장 전에는 공식버전 프리셋 값을 쓴다.
     assert app.session_state["production_month_range_v2"] == ("2026-01", "2026-12")
     assert [widget.label for widget in app.sidebar.number_input] == []
-    # 「판정 기준은 HOME 설정 → 판정 기준 탭에서 정합니다」는 사이드바가 아니라 공정 필터 팝업
-    # 머리와 Guide 에 있다(2026-10-10 사용자 결정 — 사이드바에 늘 한 줄을 차지하던 것을 걷었다).
-    assert THRESHOLD_POINTER not in [element.value for element in app.sidebar.caption]
+    # 판정 기준을 정하는 자리는 사이드바가 아니라 Guide 가 말한다(2026-10-10 사용자 결정 —
+    # 사이드바에 늘 한 줄을 차지하던 것을 걷었다. 2026-11-04 설계 규칙 UI-TXT-03 — 길 안내 글은
+    # 어디에도 없다).
+    assert not any("에서 정합니다" in element.value for element in app.sidebar.caption)
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
     # 글자가 전부 layout 항목이다), 계획 세부수량 라벨은 글자 trace 둘(머리글·값), 나머지 라벨
