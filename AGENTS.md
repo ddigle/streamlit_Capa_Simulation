@@ -431,7 +431,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     새면 상태 알림(`render_schema_ahead_warning` — `GL-06`), 옛 배포 흔적이면 흔적 알림(`SB-19`)을 낸다(자리에는 그리지
     않는다 — 9장 「알림 칸」). 팝업은 「불러오기」 만이다.
   - 필요 단축 일정 카드에서 왔으면(`from=shortening`) **주소 인자만** 읽어 그 카드의 목표·기간·단축/신규 대수로 출처
-    띠(「이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다」)와 「← 필요 단축 일정」 을 낸다. 필요 단축
+    띠(대수가 다를 수 있다는 말은 띠의 풍선 `SHORTENING_BAND_HELP` — 자리 글이 아니다)와 「← 필요 단축 일정」 을 낸다. 필요 단축
     일정으로 옮기는 단추는 모두 그 화면의 「강조 공정」 칸만 적는다 — 공정 필터(0019 세션 칸)는 심지 않는다.
   - HOME 표시 확보율 줄은 HOME 과 같은 함수(`home_display_rates`)·같은 캐시 키로 낸다. 「구획」·「제품별 소요대수」·
     「분류」는 「상세는 카드」의 예외로 본문 표 도구 줄이다. 출처 띠는 캡션 한 줄이다(`docs/design_system.md` 2-3).
@@ -2731,8 +2731,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫)으로 점과 떠날 때 물을 것을 정한다.
 - `src/capa_simulation/components/roadmap_panel.py` — 업무 활용 목적·부서별 Action Item·로드맵을 기본 닫힌
   상자로 그린다(지금은 실행 관리 머리).
-- `src/capa_simulation/components/module_slot.py` — 모듈 화면이 들어올 점선 자리(`module_slot_html` — `st.html` 하나, 테두리
-  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 그 자리만 든 화면 한 벌
+- `src/capa_simulation/components/module_slot.py` — 아직 없는 화면 · 칸이 들어올 점선 자리 한 벌(`slot_html` — 제목 ·
+  표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
+  `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」가
+  그것을 부른다. 그 자리만 든 화면 한 벌
   (`render_module_slot_page(title)` — 머리말(「화면 초안」 배지 · 설명 한 줄) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
   같은 꼴로 그린다. 데이터를 읽지 않는다. 모듈이 이 자리에 그리는 길이 생기면 그 창구가 여기서 갈린다(`docs/TODO.md` 2장 「생산
   진도 화면 내용」).
@@ -3379,8 +3381,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가리지 않는다, 머리 띠 꼬리도 같다) → `일정 없이 엶`(옛 배포 흔적이 공식과도 합쳐지지 않은 회차) →
     `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) → `최신 rM 있음` → `가정 배치`(그리는 리비전의 배치가 공식과 다름 —
     `EquipmentSession.layout_differs`, 라벨 dict 의 기본형이라 그리는 동안 저장소 호출 0) → `저장된 리비전` 차례. 잠근
-    꼴(팝업 없음)은 값 칸 끝 「(고정)」 — 공정 Capa 상세 HOME 방문뿐이다(그 까닭 `HOME_VISIT_LOCK_REASON` 은 줄 아래 한 줄 —
-    꺼진 단추라 풍선이 없다. 푸는 법 「이 화면 탭을 닫고 다시 여세요」 까지 적는다). Space 현황은 고를 수 있는 줄이다(S3).
+    꼴(팝업 없음)은 값 칸 끝 「(고정)」 — 공정 Capa 상세 HOME 방문뿐이다(줄 아래 표지 한 마디 `LOCK_REASON_MARK` 「HOME 칸
+    방문 · 공식 고정」 이 서고 그 까닭 `HOME_VISIT_LOCK_REASON` 은 표지의 풍선이다 — 꺼진 단추라 값 칸에는 풍선이 없다. 푸는 법
+    「이 화면 탭을 닫고 다시 여세요」 까지 적는다). Space 현황은 고를 수 있는 줄이다(S3).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
     선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23). 리비전 라디오는 최근 50개까지이고(한 줄씩 길어 — 결정

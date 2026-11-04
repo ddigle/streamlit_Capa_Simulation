@@ -24,7 +24,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import events
+from alert_marks import active_state, events
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
@@ -76,6 +76,7 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_SECTIONS_KEY,
     PROCESS_DETAIL_SPLIT_KEY,
     PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
+    SHORTENING_BAND_HELP,
     ProcessDetailRequest,
     ProcessStep,
     shortening_card_query_params,
@@ -795,18 +796,21 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
         for row_id, _ in trace["customdata"]
     )
     assert "staticPlot" not in _chart_config(app, "process_detail_summary_labels")
-    # 단축 목표는 HOME 설정 → 판정 기준 › 확보기준 표시뿐이다 — 고르는 위젯이 없다.
-    assert any(
-        "단축 목표 = HOME 설정 → 판정 기준 › 확보기준(월별)" in str(element.value)
-        for element in app.caption
-    )
+    # 단축 목표는 확보기준(월별) 표시뿐이다 — 고르는 위젯이 없다. 그 값을 고치는 곳(HOME 설정 → 판정
+    # 기준)은 풍선이다(길 안내는 자리 글이 아니다 — UI-TXT-03).
+    targets = [element for element in app.caption if "단축 목표 = " in str(element.value)]
+    assert len(targets) == 1
+    assert str(targets[0].value).startswith("단축 목표 = 확보기준(월별)")
+    assert "HOME 설정 → 판정 기준 › 확보기준(월별)" in str(targets[0].help)
     # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).
     assert {box.key for box in app.get("selectbox")[1:]} <= {
         UPEH_ASSUMPTION_START_KEY,
         UPEH_ASSUMPTION_END_KEY,
     }
     legend = next(body for body in _html(app) if "pcd-legend" in body)
-    assert "칸 = 생산월 — Cut-off 10일이면" in legend
+    # 생산월 규칙은 「칸 = 생산월」 표지의 풍선(title)이다 — 늘 보이는 글이 아니다.
+    assert "칸 = 생산월 · Cut-off 10일</span>" in legend
+    assert 'title="칸 = 생산월 — Cut-off 10일이면' in legend
     # 설비 일정 없음 카드는 서지 않는다.
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
 
@@ -822,6 +826,59 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
     assert set(frame["공정"].astype(str)) <= {DYNAMIC_PROCESS}
     assert captured["file_name"].startswith("process_capa_detail_units_")
     assert captured["data"].startswith("﻿".encode())
+
+
+@pytest.fixture(scope="module")
+def usage_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """`dynamic_databases` 의 두 호기에 사용기준이 HBM·EDP 가 아닌 호기 하나를 더한 한 벌."""
+    root = tmp_path_factory.mktemp("process_capa_detail_usage")
+    equipment_path = root / "equipment.duckdb"
+    repository = DuckDBEquipmentRepository(equipment_path)
+    repository.initialize()
+    master = _master(
+        [
+            _unit("DA-01", date(2026, 12, 10), process=DYNAMIC_PROCESS, arrival=date(2026, 11, 1)),
+            _unit("DA-02", date(2027, 1, 20), process=DYNAMIC_PROCESS, arrival=date(2026, 12, 1)),
+            _unit(
+                "DA-09",
+                date(2027, 1, 5),
+                process=DYNAMIC_PROCESS,
+                arrival=date(2026, 12, 1),
+                attributes={"사용기준": "DDR"},
+            ),
+        ]
+    )
+    baseline = pd.DataFrame(columns=["공정", "분류", "기존보유대수", "비고"])
+    repository.save_snapshot(baseline, master, _downtime([]))
+    repository.save_process_cutoff(_cutoff(10, DYNAMIC_PROCESS))
+    return root / "scenario.duckdb", equipment_path
+
+
+def test_units_left_out_by_usage_basis_raise_an_alert_and_leave_the_closing_row_quiet(
+    usage_databases: tuple[Path, Path],
+) -> None:
+    """정리 줄에 늘 서던 「사용기준 제외 n대 · 일정 미정 · 오늘이 든 달 · 단축은 공식을 바꾸지
+    않음」 글은 걷었다 — 사용기준 제외 대수는 상태 알림(`PD-04` — 알림창 · Alarm)이고, 단축이 바꾸는
+    숫자는 산출 근거 머리의 풍선이다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
+    app = _dynamic_app(usage_databases)
+
+    note = active_state(app, "PD-04")
+    assert note is not None
+    assert str(note["short"]).startswith("사용기준 제외 1대 — ")
+    assert "단축 후보에도 들지 않습니다" in str(note["full"])
+    captions = [str(item.value) for item in app.main.caption]
+    gone_texts = (
+        "사용기준 제외",
+        "남은 날만 셉니다",
+        "공식 확보율을 바꾸지 않습니다",
+        "이 세션만입니다",
+    )
+    for gone in gone_texts:
+        assert not any(gone in caption for caption in captions), gone
+    # 정리 줄은 CSV 와 필요 단축 일정 링크다.
+    assert UNITS_CSV_KEY in {str(button.key) for button in app.get("download_button")}
+    head = next(item for item in app.markdown if "산출 근거 ·" in str(item.value))
+    assert "공식 확보율" in str(head.help)
 
 
 def test_the_shortening_link_highlights_the_card_without_planting_the_filter(
@@ -871,11 +928,15 @@ def test_a_shortening_card_link_shows_its_band_from_the_address_only(
     )
     _ok(app.run())
 
-    bands = [str(item.value) for item in app.caption if "필요 단축 일정 카드" in str(item.value)]
+    band_items = [item for item in app.caption if "필요 단축 일정 카드" in str(item.value)]
+    bands = [str(item.value) for item in band_items]
     assert len(bands) == 1, [str(item.value) for item in app.caption]
     assert bands[0].startswith(ORIGIN_BAND_ICON)
     assert "카드(목표 120%(1.20) · 기간 26.01–26.06)에서 열었습니다" in bands[0]
-    assert "대수가 다를 수 있습니다" in bands[0] and "그 카드: 단축 2대 · 신규 1대" in bands[0]
+    assert "그 카드: 단축 2대 · 신규 1대" in bands[0]
+    # 대수가 갈리는 까닭은 띠의 풍선이다(자리 글이 아니다 — UI-TXT-01).
+    assert "다를 수 있습니다" not in bands[0]
+    assert band_items[0].help == SHORTENING_BAND_HELP
     assert _sections(app) == [SECTION_SUMMARY, SECTION_UNITS]
     assert dict(app.query_params) == {}
 

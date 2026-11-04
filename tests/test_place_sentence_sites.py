@@ -71,7 +71,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 131
+UNSETTLED_SITES = 125
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -95,13 +95,11 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/constraint_simulation.py", "product_ready"): (EMPTY,),
     ("app_pages/constraint_simulation.py", "render_held_picker"): (BESIDE_INPUT,),
     ("app_pages/constraint_simulation.py", "render_locked_arrival_note"): (UNSETTLED,),
-    ("app_pages/execution_management.py", ""): (UNSETTLED,),
-    ("app_pages/execution_management.py", "_render_subpages"): (UNSETTLED,),
     ("app_pages/internal_modules.py", ""): (EMPTY, UNSETTLED),
     ("app_pages/load_conversion.py", ""): (UNSETTLED,),
     ("app_pages/load_conversion.py", "_render_locked_yield_rows"): (UNSETTLED,),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
-    ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY, UNSETTLED),
+    ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY),
     ("app_pages/reference_data.py", ""): (UNSETTLED,),
     ("app_pages/reference_data.py", "_render_step_view"): (UNSETTLED,),
     ("app_pages/reference_integrity.py", ""): (UNSETTLED,),
@@ -409,9 +407,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         CANNOT_DRAW,
         CANNOT_DRAW,
         CANNOT_DRAW,
-        UNSETTLED,
     ),
-    ("src/capa_simulation/components/process_capa_view.py", "_render_evidence_panel"): (UNSETTLED,),
     ("src/capa_simulation/components/process_capa_view.py", "_render_route_factors"): (
         CANNOT_DRAW,
         EMPTY,
@@ -542,7 +538,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     (
         "src/capa_simulation/components/upeh_assumption_controls.py",
         "render_upeh_assumption_controls",
-    ): (UNSETTLED, EMPTY, BESIDE_INPUT),
+    ): (EMPTY, BESIDE_INPUT),
 }
 
 

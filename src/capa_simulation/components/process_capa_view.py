@@ -266,8 +266,30 @@ AVAILABLE_EQUIPMENT_PAGE: Final = AVAILABLE_EQUIPMENT_STATUS.path
 CALCULATION_RESULT_PAGE: Final = "app_pages/calculation_result.py"
 # 보유로도 부족 원인의 표지 — 단축으로 못 메우는 투자 검토 대상이다.
 INVESTMENT_BADGE: Final = ":red-badge[투자 검토 대상]"
-# 표 도구 줄에 적는 단축 목표의 출처.
+# 표 도구 줄에 적는 단축 목표의 이름과, 그 출처(고치는 곳)를 말하는 풍선 — 길은 자리 글이 아니라
+# 풍선이다(설계 규칙 UI-TXT-03).
 TARGET_SOURCE_TEXT: Final = "HOME 설정 → 판정 기준 › 확보기준(월별)"
+TARGET_NAME: Final = "확보기준(월별)"
+TARGET_HELP: Final = (
+    f"단축 목표는 {TARGET_SOURCE_TEXT}을 달마다 그대로 씁니다 — 필요 단축 일정의 목표 다섯 값"
+    "(90~130%)을 고르는 것이 아닙니다."
+)
+# 산출 근거 패널 머리의 풍선(설비 일정이 설 때) — 단축이 바꾸는 숫자.
+EVIDENCE_HELP: Final = (
+    "Qual 을 당기면 바뀌는 것은 설비 일정 기준 가용입니다 — 공식 확보율은 Core Data 의 보유·대여가 "
+    "갱신될 때 바뀝니다(단축 결과는 공식 확보율을 바꾸지 않습니다)."
+)
+# UPEH 가정이 켜졌을 때 경로별 인자 위 표지와 풍선 — 그 표는 기준정보 UPEH 그대로다.
+ROUTE_FACTORS_UPEH_MARK: Final = ":material/science: UPEH 가정 미반영 · 기준정보 UPEH"
+ROUTE_FACTORS_UPEH_HELP: Final = (
+    "경로별 인자는 기준정보 UPEH 그대로입니다 — UPEH 가정은 소요대수에만 사후로 "
+    "겁니다(대당 Capa ×f 와 같습니다)."
+)
+# 설비 일정 없음 카드의 까닭 줄 풍선 — ②~④ 가 서는 조건.
+DYNAMIC_ABSENT_HELP: Final = (
+    "설비 일정 기준 가용·신규 설비·비가동(②~④)은 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
+    "적힌 공정에만 섭니다. 위 공식 기준 표는 그대로입니다."
+)
 # 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 카드 제목(머리 배지와 같은 말).
 DYNAMIC_ERROR_TITLE: Final = "설비 일정 없음: 계산 오류"
 
@@ -465,6 +487,7 @@ def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]
             st.caption(
                 f"단축 목표 = {target_text(view.dynamic.canvas.target, view.months)}",
                 width="content",
+                help=TARGET_HELP,
             )
     return bool(expanded) and summary_open, split, collapsed
 
@@ -502,11 +525,12 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「HOME 설정 → 판정 기준 › 확보기준(월별)」, 달마다 같으면 그 값도."""
+    """단축 목표 표기 — 「확보기준(월별)」, 달마다 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
+    풍선(`TARGET_HELP`)이다."""
     value = single_target(target, months)
     if value is not None:
-        return f"{TARGET_SOURCE_TEXT} {target_label(value)}"
-    return f"{TARGET_SOURCE_TEXT} — 달마다 다름"
+        return f"{TARGET_NAME} {target_label(value)}"
+    return f"{TARGET_NAME} — 달마다 다름"
 
 
 def target_label(value: float) -> str:
@@ -767,7 +791,8 @@ def _render_more_toggles(
 def canvas_legend_html(
     dynamic: DynamicCanvasInput | None, months: Sequence[int], *, assumed: bool = False
 ) -> str:
-    """캔버스 아래 범례 한 줄(서식 포함). 설비 일정이 서면 ②~④ 표지와 생산월 규칙을 더한다.
+    """캔버스 아래 범례 한 줄(서식 포함). 설비 일정이 서면 ②~④ 표지와 「칸 = 생산월」 표지(규칙은 그
+    풍선)를 더한다.
     `assumed` 면 부족 띠가 UPEH 가정 판정이라고 적는다."""
     band = tokens.SHORTAGE_MONTH_BAND
     swatch = "display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px"
@@ -802,9 +827,11 @@ def canvas_legend_html(
             f'<span style="color:{tokens.EQUIPMENT_STAGE_COLORS["운영 비가동"]};font-weight:700">'
             "━▶</span>가용을 깎은 비가동",
             f'<span style="color:{tokens.TEXT_MUTED}">┄┄</span>영향 없는 비가동(셋업·보관 등)',
-            html.escape(production_month_example(dynamic.cutoff_days, months)),
-            "Qual·비가동 끝은 다음 날부터, 정지·반출/이설은 당일부터 셉니다 · "
-            "비가동유형 「이설」 ≠ 반출/이설일정",
+            # 생산월 규칙(세는 날 · 이설 이름)은 설명이라 늘 보이는 글이 아니라 이 표지의 풍선이다
+            # (설계 규칙 UI-TXT-01 · 02 — 같은 말이 Guide 「칸은 생산월입니다」 에 있다).
+            f'<span title="{html.escape(production_month_rules(dynamic.cutoff_days, months))}" '
+            'style="cursor:help;text-decoration:underline dotted">'
+            f"칸 = 생산월 · Cut-off {dynamic.cutoff_days}일</span>",
         ]
     spans = "".join(f'<span class="pcd-legend-item">{item}</span>' for item in items)
     return (
@@ -814,6 +841,14 @@ def canvas_legend_html(
         ".pcd-legend-item{display:inline-flex;align-items:center;gap:5px}"
         "</style>"
         f'<div class="pcd-legend">{spans}</div>'
+    )
+
+
+def production_month_rules(cutoff_days: int, months: Sequence[int]) -> str:
+    """범례 「칸 = 생산월」 표지의 풍선 — 예 한 줄과 세는 날 규칙."""
+    return (
+        f"{production_month_example(cutoff_days, months)}. Qual·비가동 끝은 다음 날부터, 정지·"
+        "반출/이설은 당일부터 셉니다 · 비가동유형 「이설」 ≠ 반출/이설일정"
     )
 
 
@@ -840,12 +875,7 @@ def _render_dynamic_absent(view: ProcessDetailView) -> None:
             st.caption(f"{view.dynamic_error} 위 공식 기준 표는 그대로입니다.")
         else:
             st.markdown(f":material/event_busy: **{view.readiness.badge}**")
-            detail = view.readiness.detail
-            st.caption(
-                f"{detail} 설비 일정 기준 가용·신규 설비·비가동(②~④)은 설비 DB 에 저장본이 "
-                "있고 이름이 같으며 Cut-off 가 적힌 공정에만 섭니다. 위 공식 기준 표는 "
-                "그대로입니다."
-            )
+            st.caption(view.readiness.detail, help=DYNAMIC_ABSENT_HELP)
         render_page_link(
             AVAILABLE_EQUIPMENT_PAGE,
             label="가용설비 현황에서 설비·설정(Cut-off) 보기",
@@ -885,7 +915,8 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
     with st.container(border=True, key=EVIDENCE_PANEL_KEY):
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.markdown(
-                f"**산출 근거 · {month_label(month)} · {literal_markdown(view.process_label)}**"
+                f"**산출 근거 · {month_label(month)} · {literal_markdown(view.process_label)}**",
+                help=EVIDENCE_HELP if view.dynamic is not None else None,
             )
             st.space("stretch")
             st.button(
@@ -905,23 +936,13 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
         cards = evidence_cards(view, month, trace)
         st.html(evidence_cards_html(cards))
         _render_month_next_screens(view, month)
-        st.caption(
-            "Qual 을 당기면 바뀌는 것은 설비 일정 기준 가용입니다 — 공식 확보율은 Core Data 의 "
-            "보유·대여가 갱신될 때 바뀝니다. 왜 이렇게 계산하는지는 Guide 에 있습니다."
-            if view.dynamic is not None
-            else "왜 이렇게 계산하는지는 Guide 에 있습니다."
-        )
         with remembered_expander(
             "경로별 인자 — 반영 UPEH·환산 UPEH·측정률과 공통 인자",
             key=ROUTE_FACTORS_EXPANDER_KEY,
             icon=":material/table_rows:",
         ):
             if view.upeh_token:
-                st.caption(
-                    "경로별 인자는 기준정보 UPEH 그대로입니다 — UPEH 가정은 소요대수에만 사후로 "
-                    "겁니다"
-                    "(대당 Capa ×f 와 같습니다)."
-                )
+                st.caption(ROUTE_FACTORS_UPEH_MARK, help=ROUTE_FACTORS_UPEH_HELP)
             _render_route_factors(trace)
 
 
@@ -1545,13 +1566,19 @@ def prescription_text(plan: Prescription | None) -> str:
 def render_closing_row(
     *,
     process: str,
-    notices: Sequence[str],
+    marks: Sequence[tuple[str, str]],
+    link_help: str | None,
     csv_bytes: bytes | None,
     csv_file_name: str,
 ) -> None:
-    """정리 줄 — 알림(0 이면 생략), 「이 공정 단축 일정 CSV」, 필요 단축 일정 화면 링크."""
-    for notice in notices:
-        st.caption(notice)
+    """정리 줄 — 값 표지(있을 때만), 「이 공정 단축 일정 CSV」, 필요 단축 일정 화면 링크.
+
+    `marks` 는 (값 한 마디, 그 풍선) 이다 — 지금은 입력 비가동 반영(n칸 · 합 x대) 하나. 늘 서던
+    설명 · 내역 글은 걷었다(설계 규칙 UI-TXT-01 · 04 · 07 — 같은 말이 캔버스 · Guide · 풍선 · 상태
+    알림에 있다). `link_help` 는 링크의 풍선이다(HOME 칸 방문이라 두 화면의 설비 기준이 갈릴
+    때)."""
+    for mark, mark_help in marks:
+        st.caption(f":material/event_busy: {mark}", help=mark_help)
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         if csv_bytes is not None:
             render_csv_download(
@@ -1567,6 +1594,7 @@ def render_closing_row(
             type="tertiary",
             on_click=open_shortening_page,
             args=(process,),
+            help=link_help,
         )
 
 

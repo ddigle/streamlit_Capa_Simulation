@@ -60,6 +60,13 @@ def _texts(app: object) -> str:
     return " ".join(parts)
 
 
+def _manual_mark_help(app: AppTest) -> str:
+    """공정 Capa 상세 정리 줄의 「입력 비가동 반영(…)」 값 한 마디의 풍선."""
+    marks = [item for item in app.caption if f"{MANUAL_DOWNTIME_BAND}(" in str(item.value)]
+    assert len(marks) == 1, [str(item.value) for item in app.caption]
+    return str(marks[0].help)
+
+
 @pytest.fixture()
 def detail_databases(tmp_path: Path) -> tuple[Path, Path]:
     """공정 Capa 상세 설비 일정 하네스(`dynamic_databases` 와 같은 호기)의 따로 된 한 벌."""
@@ -95,10 +102,12 @@ def test_process_capa_detail_draws_the_entered_row_and_names_it(
     # ④ 첫 줄과 ② 제목 꼬리.
     assert "월별 비가동 대수(입력)" in labels
     assert f"· {MANUAL_DOWNTIME_BAND}" in labels
-    # 닫는 알림 — 계획이 건 칸(이 공정·축의 달)이다. 호기가 있는 공정이라 ④ 첫 줄을 가리킨다.
+    # 정리 줄의 값 한 마디 — 계획이 건 칸(이 공정·축의 달)이다. 그 자리는 풍선이 말한다(설명은 자리
+    # 글이 아니다 — UI-TXT-01). 호기가 있는 공정이라 ④ 첫 줄을 가리킨다.
     texts = _texts(app)
     assert f"{MANUAL_DOWNTIME_BAND}(" in texts
-    assert "② 가용에서 뺐습니다(④ 첫 줄)" in texts
+    assert "가용에서 뺐습니다" not in texts
+    assert "② 가용에서 뺐습니다(④ 첫 줄" in _manual_mark_help(app)
     clear_equipment_repository()
 
 
@@ -117,9 +126,9 @@ def test_process_capa_detail_points_below_two_when_there_are_no_units(tmp_path: 
 
     app = _dynamic_app((tmp_path / "scenario.duckdb", equipment_path))
     assert "월별 비가동 대수(입력)" in _label_texts(app)
-    texts = _texts(app)
-    assert "② 가용에서 뺐습니다(② 아래 줄)" in texts
-    assert "(④ 첫 줄)" not in texts
+    mark_help = _manual_mark_help(app)
+    assert "② 가용에서 뺐습니다(② 아래 줄" in mark_help
+    assert "④ 첫 줄" not in mark_help
     clear_equipment_repository()
 
 

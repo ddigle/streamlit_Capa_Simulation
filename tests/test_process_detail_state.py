@@ -44,6 +44,7 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_QUEUED_KEY,
     PROCESS_DETAIL_REQUEST_KEY,
     PROCESS_DETAIL_SHORTENING_ORIGIN_KEY,
+    SHORTENING_BAND_HELP,
     HomeCellLink,
     ProcessDetailEntry,
     ProcessDetailRequest,
@@ -1157,10 +1158,7 @@ def test_unreadable_card_values_are_left_out_of_the_band() -> None:
 
     origin = _entry(app).shortening_origin
     assert origin == ShorteningOrigin(process="DEMO-C")
-    assert shortening_band_text(origin) == (
-        "필요 단축 일정 카드에서 열었습니다 · 이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 "
-        "수 있습니다"
-    )
+    assert shortening_band_text(origin) == "필요 단축 일정 카드에서 열었습니다"
     # `from` 이 다른 길이면 카드 값이 있어도 카드 띠가 아니다.
     other = AppTest.from_function(_detail_entry_app)
     other.query_params.update({**_card_params(theme=None), "from": "gap"})
@@ -1173,6 +1171,8 @@ def test_the_card_band_names_the_card_target_period_and_counts() -> None:
         process="DEMO-C", target=1.1, start_month=202601, end_month=202612, shortened=3, new=1
     )
     assert shortening_band_text(origin) == (
-        "필요 단축 일정 카드(목표 110%(1.10) · 기간 26.01–26.12)에서 열었습니다 · 이 화면은 "
-        "확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다 · 그 카드: 단축 3대 · 신규 1대"
+        "필요 단축 일정 카드(목표 110%(1.10) · 기간 26.01–26.12)에서 열었습니다 · "
+        "그 카드: 단축 3대 · 신규 1대"
     )
+    # 두 화면의 대수가 갈리는 까닭은 띠의 풍선이다(설명은 자리에 늘 두지 않는다 — UI-TXT-01).
+    assert "단축 대수가 그 카드와 다를 수 있습니다" in SHORTENING_BAND_HELP
