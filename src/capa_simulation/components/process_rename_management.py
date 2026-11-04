@@ -77,6 +77,10 @@ PROCESS_RENAME_UNCHANGED_MESSAGE = (
 )
 # 직접 편집 저장의 결과 알림 칸(`flash`·`write_guard.held_notice`).
 PROCESS_RENAME_FLASH_KEY = "process_rename_flash"
+# 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
+PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
+)
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -129,17 +133,7 @@ def render_process_rename_management(
     notice = render_flash(PROCESS_RENAME_FLASH_KEY)
 
     labels = process_labels_from_rules(profile.rules, profile.version)
-    # 안내에 늘어놓는 공정명·표시명은 사람 글이라 막아 적는다(AGENTS 9장 — 「ZZ~9~9 *q*」).
     unmatched = labels.unmatched(available_processes)
-    if unmatched:
-        # 「무시합니다」 가 아니다 — 표시명은 원본이 보유 공정인지 보지 않고 입혀, 시나리오 밖
-        # 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는 그대로 나온다
-        # (AGENTS 8장).
-        st.info(
-            f"보유 공정에 없는 공정에 지정된 표시명 {len(unmatched):,}건: {_listed(unmatched)}. "
-            "이 시나리오의 계산 화면에는 나오지 않지만, 그 공정이 나오는 화면(가용설비·실적·"
-            "Dynamic Capa·Capa Chatbot 등)에서는 그대로 적용됩니다."
-        )
     collisions = labels.owned_name_collisions(available_processes)
     # 표시명을 쓰는 화면의 공정 선택 상자는 겹친 글자를 가른다(`unique_format_func`). 표·그림·버튼은
     # 가르지 않아 같은 글자로 보인다. 검사 범위는 시나리오 `RQ_MODULE` 공정뿐이다 — 설비 마스터까지
@@ -169,12 +163,26 @@ def render_process_rename_management(
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)
-    _render_direct_editor(repository, profile, available_processes, notice)
+    _render_direct_editor(repository, profile, available_processes, notice, unmatched)
 
 
 def _listed(names: list[str], limit: int = 10) -> str:
-    """안내에 늘어놓는 이름 — 앞의 `limit` 개를 막아 쉼표로 잇는다."""
-    return literal_names(names[:limit])
+    """풍선에 늘어놓는 이름 — 앞의 `limit` 개를 막아 쉼표로 잇는다."""
+    return literal_names(names[:limit]) + (" …" if len(names) > limit else "")
+
+
+def unmatched_help(unmatched: list[str]) -> str:
+    """「보유 공정 밖 표시명」 표지의 풍선 — 그 이름들과 어디에 입혀지는지.
+
+    「무시합니다」 가 아니다 — 표시명은 원본이 보유 공정인지 보지 않고 입혀, 시나리오 밖 공정을
+    그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는 그대로 나온다(AGENTS 8장).
+    늘어놓는 공정명은 사람 글이라 막아 적는다(AGENTS 9장 — 「ZZ~9~9 *q*」).
+    """
+    return (
+        f"{_listed(unmatched)} — 이 시나리오의 보유 공정에 없는 공정입니다. 이 시나리오의 계산 "
+        "화면에는 나오지 않지만, 그 공정이 나오는 화면(가용설비·실적·Dynamic Capa·Capa Chatbot "
+        "등)에서는 그대로 적용됩니다."
+    )
 
 
 def _save_error_message(exc: BaseException) -> str:
@@ -226,7 +234,7 @@ def _clipboard_dialog(
     try:
         imported = process_rename_from_clipboard(clipboard_text)
         if imported.equals(prepare_process_rename_rules(current)):
-            st.info("붙여넣은 공정 표시명이 현재 공용 설정과 동일합니다.")
+            st.info(PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE, icon=":material/info:")
             return
         _save_process_rename(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
@@ -248,6 +256,7 @@ def _render_direct_editor(
     profile: GlobalProcessRename,
     available_processes: list[str],
     notice: DeltaGenerator,
+    unmatched: list[str],
 ) -> None:
     """직접 편집 표. 저장은 **버전 대조**다 — 판정 기준과 같은 결로 편집을 시작한 회차의 version 을
     세션(`BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가
@@ -255,10 +264,17 @@ def _render_direct_editor(
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5) — 최신 저장본을 보고 고친
     표가 그 저장본과 같으면 쓰지 않고 `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경
-    메모만 적은 저장도 같다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다."""
+    메모만 적은 저장도 같다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
+
+    보유 공정에 없는 공정에 지정된 표시명(`unmatched`)은 표에 있지만 이 시나리오의 계산 화면에는
+    그리지 않는 항목이라 표 머리 표지 + 풍선으로 둔다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내).
+    거부 · 오류는 저장 단추 바로 위 칸(`save_status`)에 선다 — 표 밑에 두면 단추에서 표 높이만큼
+    떨어진다(UI-LAY-03, 표시순서 관리와 같은 꼴)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
+    if unmatched:
+        st.caption(f"보유 공정 밖 표시명 {len(unmatched):,}건", help=unmatched_help(unmatched))
     if available_processes:
         with st.expander(
             f"보유 공정 {len(available_processes):,}개",
@@ -275,6 +291,7 @@ def _render_direct_editor(
     editable = (
         empty_process_rename_rules() if current.empty else prepare_process_rename_rules(current)
     )
+    save_status = st.container()
     with st.form("admin_area_process_rename_edit_form"):
         # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
         with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
@@ -307,7 +324,7 @@ def _render_direct_editor(
         )
     refused = take_refusal(PROCESS_RENAME_SAVE_NAME)
     if refused is not None:
-        st.error(refused)
+        save_status.error(refused)
     if not submitted:
         # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
         # (write_guard).
@@ -326,7 +343,7 @@ def _render_direct_editor(
         # E2E).
         remember_seen(BASE_VERSION_KEY, profile.version)
         if refused != held:
-            st.error(held)
+            save_status.error(held)
         return
     if not isinstance(submitted_base, int):
         # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
@@ -366,7 +383,7 @@ def _render_direct_editor(
             queue_refusal(PROCESS_RENAME_SAVE_NAME, message)
         st.rerun()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(_save_error_message(exc))
+        save_status.error(_save_error_message(exc))
     else:
         # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이 없습니다」
         # 갈래).

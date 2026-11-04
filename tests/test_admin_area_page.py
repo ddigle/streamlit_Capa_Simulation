@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -296,9 +297,10 @@ render_process_rename_management(repository, ["SAW", {owned!r}])
     app = AppTest.from_string(script).run(timeout=60)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    notices = [str(item.value) for item in infos(app)]
-    assert any(literal_markdown(unowned) in text for text in notices), notices
-    assert not [text for text in notices if unowned in text], notices
+    # 「보유 공정 밖 표시명」 은 표 머리 표지이고 이름은 그 풍선에 싣는다(설계 규칙 UI-TXT-04).
+    [marker] = [item for item in app.caption if "보유 공정 밖 표시명" in item.value]
+    assert literal_markdown(unowned) in marker.proto.help, marker.proto.help
+    assert unowned not in marker.proto.help, marker.proto.help
     # 「원본명과 같은 표시명」 은 상태 알림(`AD-06`)이다 — 알림창 · 패널은 평문(`textContent`)이라
     # 이름을 글자 그대로 싣고, 자리에는 경고 상자를 그리지 않는다(2026-11-03 D2).
     assert not list(app.warning)
@@ -362,6 +364,10 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     assert not list(app.exception), [element.message for element in app.exception]
     errors = [str(error.value) for error in app.error]
     assert any("다른 사용자가 먼저" in text for text in errors), errors
+    # 거부는 저장 단추가 든 폼 바로 위 칸에 선다 — 표 밑이면 단추에서 표 높이만큼 떨어진다(설계 규칙
+    # UI-LAY-03, 표시순서 관리와 같은 꼴).
+    kinds = _kinds_in_order(app.main)
+    assert kinds.index("error") < kinds.index("form"), kinds
     assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
 
     # 새 화면을 보고 다시 누른 저장이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
@@ -379,6 +385,17 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     assert not list(app.error), [str(error.value) for error in app.error]
     assert app.text[-1].value == "v3|SAW>절단;MOLD>몰드"
     clear_global_process_rename_cache()
+
+
+def _kinds_in_order(node: Any) -> list[str]:
+    """요소 나무를 문서 차례로 훑은 요소 종류(칸 · 폼 같은 묶음도 그 자리에 든다)."""
+    kinds: list[str] = []
+    children = getattr(node, "children", {})
+    for index in sorted(children):
+        child = children[index]
+        kinds.append(str(getattr(child, "type", "")))
+        kinds.extend(_kinds_in_order(child))
+    return kinds
 
 
 def _edit_display_name(app: AppTest, row: int, name: str) -> None:
@@ -616,10 +633,13 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error)
-    notes = [str(info.value) for info in infos(app) if "보유 공정에 없는 공정" in str(info.value)]
-    assert len(notes) == 1, [str(info.value) for info in infos(app)]
-    assert "없는공정" in notes[0] and "그대로 적용됩니다" in notes[0], notes
-    assert not [str(info.value) for info in infos(app) if "무시합니다" in str(info.value)]
+    # 표에 있지만 이 시나리오의 계산 화면에는 그리지 않는 항목이라 표 머리 표지 + 풍선이다 — 파란
+    # 안내 상자로 늘 띄우지 않는다(설계 규칙 UI-TXT-01 · 04).
+    assert not [str(info.value) for info in app.info], [str(info.value) for info in app.info]
+    [marker] = [item for item in app.caption if "보유 공정 밖 표시명" in item.value]
+    assert marker.value == "보유 공정 밖 표시명 1건"
+    assert "없는공정" in marker.proto.help and "그대로 적용됩니다" in marker.proto.help
+    assert "무시합니다" not in marker.proto.help
 
 
 def _start_check_expanders(app: AppTest) -> list[str]:
@@ -873,7 +893,12 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     # 회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표 꼴이다.
     run_time = json.loads(app.dataframe[0].proto.columns)["마지막 회차 시간(ms)"]
     assert run_time["type_config"] == {"type": "number", "format": "localized"}
-    assert any("앱을 다시 띄운 뒤" in caption.value for caption in app.caption)
+    # 재시작 안내는 환경변수 줄의 풍선이다 — 자리 캡션으로 늘 띄우지 않는다(설계 규칙 UI-TXT-01).
+    assert not any("앱을 다시 띄운 뒤" in caption.value for caption in app.caption)
+    [environment] = [
+        caption for caption in app.caption if module_registry.DISABLED_ENV_VAR in caption.value
+    ]
+    assert "앱을 다시 띄운 뒤" in environment.proto.help
     # 탭은 그대로 넷이다.
     assert len(app.main.tabs) == 4
 

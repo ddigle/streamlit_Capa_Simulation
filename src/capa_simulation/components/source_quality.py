@@ -73,20 +73,26 @@ PROBLEM_GRADES = ("비어 있음", "절반 이상 결측", "상수")
 
 
 def source_quality_warning(table: pd.DataFrame) -> str | None:
-    """정상이 아닌 컬럼이 있으면 경고 한 문장 — 수를 등급별로 적는다(없는 등급은 뺀다). 모두
+    """정상이 아닌 컬럼이 있으면 점검 결론 한 문장 — 수를 등급별로 적는다(없는 등급은 뺀다). 모두
     정상이면 None.
 
     「비어 있거나 상수」 한 덩어리로 적으면 「절반 이상 결측」 컬럼까지 그 수에 들어 수와 문구가
-    맞지 않았다(E2E r1)."""
+    맞지 않았다(E2E r1). 그 컬럼이 계산에 쓰이면 어디에 나타나는지는 Guide 「원천 품질」 이 말한다 —
+    결론에 설명 문장을 붙이지 않는다(설계 규칙 UI-TXT-01 · 04)."""
     grades = table[GRADE_COLUMN].value_counts()
     counts = [(grade, int(grades.get(grade, 0))) for grade in PROBLEM_GRADES]
     problem_count = sum(count for _, count in counts)
     if not problem_count:
         return None
     parts = " · ".join(f"{grade} {count:,}개" for grade, count in counts if count)
+    return f"{len(table):,}개 컬럼 중 {problem_count:,}개가 정상이 아닙니다 — {parts}."
+
+
+def grade_help() -> str:
+    """「등급」 칸 풍선 — 결측률 · 고유값으로 등급을 가르는 기준(늘 띄우지 않는다 — UI-TXT-01)."""
     return (
-        f"{len(table):,}개 컬럼 중 {problem_count:,}개가 정상이 아닙니다 — {parts}. "
-        "계산에 쓰는 컬럼이면 제외 목록으로 나타납니다."
+        f"결측률 {EMPTY_RATE:.0%} 는 `비어 있음`, {SPARSE_RATE:.0%} 이상은 `절반 이상 결측`, "
+        "고유값이 1 이면 `상수`, 그 밖은 `정상` 입니다."
     )
 
 
@@ -122,11 +128,8 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
                 max_value=1.0,
             ),
             DISTINCT_COLUMN: st.column_config.NumberColumn(format="%,d", width="small"),
-            GRADE_COLUMN: st.column_config.TextColumn(width="small"),
+            GRADE_COLUMN: st.column_config.TextColumn(width="small", help=grade_help()),
         },
     )
-    st.caption(
-        f"결측률 {EMPTY_RATE:.0%} 는 `비어 있음`, {SPARSE_RATE:.0%} 이상은 `절반 이상 결측`, "
-        "고유값이 1 이면 `상수` 입니다. 등급을 글자로도 적어 색만으로 읽지 않게 했습니다. "
-        f"기준 행 수는 원천 {source_rows:,}행입니다."
-    )
+    # 결측률의 기준 행 수는 값 줄이다 — 등급 기준은 「등급」 칸 풍선이 말한다(UI-TXT-04).
+    st.caption(f"**기준 행 수** · 원천 {source_rows:,}행")

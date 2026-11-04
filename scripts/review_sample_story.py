@@ -860,7 +860,7 @@ def step_seq(process: Process) -> str:
 
 
 # 공정 표시명(Proc Rename) — Shipping Inspection → AVI 는 다른 공정 원본(AVI)과 겹치는 사례다. 끝의
-# 둘은 「보유 공정에 없는 공정」 규칙이다(Admin › Proc Rename 안내): AVI-PKG 는 Dynamic Capa·실적
+# 둘은 「보유 공정에 없는 공정」 규칙이다(Admin › Proc Rename 표지): AVI-PKG 는 Dynamic Capa·실적
 # 데모의 코드 리터럴 공정이라 그 화면에서만 표시명이 입혀지고, Hybrid Bonding 은 Case(S5) 에만 있어
 # 공식 v4 를 연 동안은 안내에 들고 Case2(S5 r2)를 열면 빠진다.
 PROCESS_RENAMES: Final[tuple[tuple[str, str], ...]] = (
@@ -873,8 +873,8 @@ PROCESS_RENAMES: Final[tuple[tuple[str, str], ...]] = (
 )
 # 겹침 규칙(원본 AVI 와 같은 표시명)이 저장 검증에 막히면 이 한 줄만 뺀다.
 PROCESS_RENAME_OVERLAP: Final = ("Shipping Inspection", "AVI")
-# 공식 v4(S1 r3) 의 RQ_MODULE 에 없는 원본 — Admin 안내 「보유 공정에 없는 공정에 지정된 표시명
-# 2건」.
+# 공식 v4(S1 r3) 의 RQ_MODULE 에 없는 원본 — Admin › Proc Rename 직접 편집 머리 표지 「보유 공정 밖
+# 표시명 2건」(이름은 그 풍선).
 PROCESS_RENAME_UNOWNED: Final = ("AVI-PKG", "Hybrid Bonding")
 
 # ----------------------------------------------------------------------------- 판정 이야기 칸

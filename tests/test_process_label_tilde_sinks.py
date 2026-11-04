@@ -120,7 +120,8 @@ def test_admin_ignored_names_and_duplicate_rejection_escape_tildes(tmp_path: Pat
     app = AppTest.from_string(_admin_script(database), default_timeout=60).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    notices = [str(info.value) for info in app.info]
+    # 보유 공정 밖 이름은 표 머리 표지의 풍선(마크다운)에 막아 싣는다.
+    notices = [str(item.proto.help) for item in app.caption if "보유 공정 밖" in str(item.value)]
     assert any("없는\\~공정\\~1" in notice for notice in notices), notices
     assert all(not BARE_TILDE.search(notice) for notice in notices), notices
 
