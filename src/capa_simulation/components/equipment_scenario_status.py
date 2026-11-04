@@ -160,11 +160,14 @@ _NOTE_PREVIEW_LIMIT = 40
 FIXED_LOCK_REASON = "(고정)"
 # 이름 줄 배지 「가정 배치」 — 그리는 한 벌의 배치가 공식과 다르다(가정 설비 시나리오의 배치 차이).
 LAYOUT_BADGE = "가정 배치"
-# HOME 칸으로 들어온 공정 Capa 상세의 잠근 까닭. 값 칸에는 「(고정)」 만 붙이고 이 글은 줄 아래 한
-# 줄로 둔다 — 값 칸 끝에 붙이면 1280px 창에서도 「(HOME 칸에서 들어…」 로 잘리고, 꺼진 단추라
-# 풍선도 없어 ◀▶ 뒤(출처 띠가 걷힌 뒤) 기준을 알리는 자리가 사라진다(2026-10-24 E2E). 푸는 법도
-# 적는다 — 고정은 그 화면 탭이 열린 동안 이어지고(탭 이어 보기) 사이드바로 다시 들어와도 그대로라,
-# 탭을 닫았다 다시 여는 것이 세션 설비 시나리오로 돌아가는 길이다(`process_detail_state`).
+# HOME 칸으로 들어온 공정 Capa 상세의 잠근 까닭. 값 칸에는 「(고정)」 만 붙이고 줄 아래에 표지 한
+# 마디(`LOCK_REASON_MARK`)를 두고 이 글은 그 표지의 풍선이다 — 값 칸 끝에 붙이면 1280px 창에서도
+# 「(HOME 칸에서 들어…」 로 잘리고, 꺼진 단추라 풍선도 없어 ◀▶ 뒤(출처 띠가 걷힌 뒤) 기준을 알리는
+# 자리가 사라진다(2026-10-24 E2E). 설명 · 하는 법 문장은 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01 ·
+# 02). 푸는 법도 적는다 — 고정은 그 화면 탭이 열린 동안 이어지고(탭 이어 보기) 사이드바로 다시
+# 들어와도 그대로라, 탭을 닫았다 다시 여는 것이 세션 설비 시나리오로 돌아가는 길이다
+# (`process_detail_state`).
+LOCK_REASON_MARK = "HOME 칸 방문 · 공식 고정"
 HOME_VISIT_LOCK_REASON = (
     "HOME 칸에서 들어온 방문이라 공식 설비 시나리오로 고정했습니다 — ◀▶ 로 옮겨도 그대로입니다. "
     "사이드바에서 고른 설비 시나리오로 보려면 위 탭 줄에서 이 화면 탭을 닫고 다시 여세요."
@@ -365,9 +368,10 @@ def render_equipment_scenario_row(
     """패널의 설비 시나리오 줄을 칸에 그린다(칸이 없는 회차는 그리지 않는다). **세션만 읽는다.**
 
     `locked_reason` 을 주면 팝업 없는 잠근 꼴이다 — 값 칸이 꺼지고 값 칸 끝에 「(고정)」 이 붙는다.
-    까닭이 「(고정)」 그 자체가 아니면(공정 Capa 상세 HOME 방문 — `HOME_VISIT_LOCK_REASON`) 그 글은
-    줄 아래 한 줄로 선다(값 칸은 한 줄 말줄임이고 꺼진 단추라 풍선이 없다). 머리 띠 꼬리는 잠근
-    꼴에서도 세션 라벨 그대로다(「(고정)」 을 붙이지 않는다).
+    까닭이 「(고정)」 그 자체가 아니면(공정 Capa 상세 HOME 방문 — `HOME_VISIT_LOCK_REASON`) 줄
+    아래에 표지 한 마디(`LOCK_REASON_MARK`)가 서고 그 글은 표지의 풍선이다(값 칸은 한 줄
+    말줄임이고 꺼진 단추라 풍선이 없다). 머리 띠 꼬리는 잠근 꼴에서도 세션 라벨
+    그대로다(「(고정)」 을 붙이지 않는다).
     """
     slot = equipment_scenario_slot()
     if slot is None:
@@ -396,7 +400,7 @@ def render_equipment_scenario_row(
         )
         with st.container():
             if locked_reason is not None and locked_reason != FIXED_LOCK_REASON:
-                st.caption(f":material/lock: {locked_reason}")
+                st.caption(f":material/lock: {LOCK_REASON_MARK}", help=locked_reason)
             # 불러오기 · 저장 결과(`FLASH_KEY`)는 알림창으로만 뜬다(`render_flash`). 세션 이동(다른
             # 리비전으로 옮겨 엶 — `SB-14`)과 일정 없이 연 세션(`SB-20`)도 자리에는 그리지 않고 알림
             # 칸으로 낸다(2026-11-03 결정 보드 D2 · D3 — `report_session_notices`).

@@ -9,6 +9,7 @@ KPI 글·범례·그림 기억·콜백을 하나씩 고정한다. 재료는 결�
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from datetime import date
 
@@ -35,6 +36,7 @@ from capa_simulation.components.process_capa_canvas import (
 from capa_simulation.components.process_capa_view import (
     CANVAS_MEMO_LIMIT,
     ENTRY_SECTIONS,
+    TARGET_HELP,
     DynamicView,
     NextScreens,
     Prescription,
@@ -423,10 +425,12 @@ def test_the_schedule_cause_skips_months_before_today() -> None:
 
 def test_the_target_reads_the_preference_threshold_by_month() -> None:
     uniform = MonthlyTarget(1.095)
-    assert target_text(uniform, MONTHS) == "HOME 설정 → 판정 기준 › 확보기준(월별) 110%"
+    assert target_text(uniform, MONTHS) == "확보기준(월별) 110%"
     assert short_target_text(uniform, MONTHS) == "110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
-    assert target_text(varied, MONTHS) == "HOME 설정 → 판정 기준 › 확보기준(월별) — 달마다 다름"
+    assert target_text(varied, MONTHS) == "확보기준(월별) — 달마다 다름"
+    # 그 값을 고치는 곳은 자리 글이 아니라 풍선이다(UI-TXT-03).
+    assert "HOME 설정 → 판정 기준 › 확보기준(월별)" in TARGET_HELP
     assert short_target_text(varied, MONTHS) == "달마다 확보기준"
 
 
@@ -446,6 +450,11 @@ def test_the_legend_adds_the_schedule_marks_only_with_the_schedule() -> None:
         "≠ 반출/이설일정",
     ):
         assert item in dynamic
+    # 생산월 규칙(세는 날 · 이설 이름)은 「칸 = 생산월」 표지의 풍선(title)이고 늘 보이는 글이
+    # 아니다(UI-TXT-01).
+    visible = re.sub(r'title="[^"]*"', "", dynamic)
+    assert "당일부터 셉니다" not in visible and "≠ 반출/이설일정" not in visible
+    assert "칸 = 생산월 · Cut-off" in visible
     # 서식과 표시 글이 한 덩어리 — 본문 칸으로 간다.
     assert dynamic.startswith("<style>") and '<div class="pcd-legend">' in dynamic
 

@@ -235,6 +235,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     ),
     AlertSpec("EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 트레이에 있음"),
     AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
+    # 공정 Capa 상세 정리 줄에 늘 서던 「사용기준 제외 n대」 를 상태 알림으로(화면에 내역을 늘 두지
+    # 않는다 — 설계 규칙 UI-TXT-04 · UI-NTF-02).
+    AlertSpec(
+        "PD-04", "info", "state", "공정 Capa 상세 — 사용기준이 HBM·EDP 가 아니어서 뺀 이 공정 호기"
+    ),
 )
 
 

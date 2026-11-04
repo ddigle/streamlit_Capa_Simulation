@@ -15,7 +15,12 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
-from capa_simulation.navigation import EXECUTION_MANAGEMENT, EXECUTION_MANAGEMENT_SUBPAGES
+from capa_simulation.navigation import (
+    DYNAMIC_CAPA,
+    EXECUTION_MANAGEMENT,
+    EXECUTION_MANAGEMENT_SUBPAGES,
+    STATIC_CAPA,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / EXECUTION_MANAGEMENT.path
@@ -63,9 +68,43 @@ def test_the_table_of_contents_follows_the_sidebar_declaration(
     for spec in EXECUTION_MANAGEMENT_SUBPAGES:
         index = captions.index(f"{FALLBACK}{spec.title}")
         assert captions[index + 1].strip(), spec.path
-    # 「부서별 Gap·A/Item」(Dynamic 머리에서 옮겨 온 뜻)과 다음 판 한 줄.
+    # 「부서별 Gap·A/Item」(Dynamic 머리에서 옮겨 온 뜻).
     assert any(caption.startswith("부서별 Gap · A/Item") for caption in captions)
-    assert captions[-1].endswith("다음 판에서 이 화면에 이행 현황판 숫자가 들어옵니다.")
+
+
+def test_explanations_ride_tooltips_and_the_next_release_is_a_dashed_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """영역 뜻풀이 · 목차 차례는 자리 글이 아니라 풍선이고(설계 규칙 UI-TXT-01 · 02), 다음 판에
+    숫자가 들어올 칸은 점선 자리 하나다(UI-LAY-10 — 제목 · 표지 한 줄, 문장 없음)."""
+    app, _ = _run_without_databases(monkeypatch)
+    captions = [str(caption.value) for caption in app.caption]
+
+    # 머리말 설명 한 줄과 닫힌 로드맵 상자(눌러야 보인다) 밖의 캡션은 링크 물러섬 · 목차 「보는
+    # 것」 한 줄 · 「지금 여기」 다 — 영역 뜻풀이(「…입니다.」)와 차례 · 다음 판 문장은 자리에
+    # 없다.
+    for caption in captions[1:]:
+        if caption.startswith("부서별 Gap"):
+            continue
+        assert "합니다." not in caption and "입니다." not in caption, caption
+    assert not any("다음 판에서" in caption for caption in captions)
+    helps = {str(item.value): item.help for item in app.markdown}
+    for spec, word in (
+        (STATIC_CAPA, "약속"),
+        (EXECUTION_MANAGEMENT, "이행"),
+        (DYNAMIC_CAPA, "실적"),
+    ):
+        assert helps[f"**{spec.title}** · {word}"], spec.title
+    assert "사이드바 차례 그대로" in str(helps["#### :material/list_alt: 이 영역의 화면"])
+    slots = [
+        str(element.proto.body)
+        for element in app.get("html")
+        if "em-dashboard-slot" in str(element.proto.body)
+    ]
+    assert len(slots) == 1
+    assert "<strong>이행 현황판 자리</strong>" in slots[0]
+    assert "<span>부서별 Gap · A/Item 숫자 · 다음 판</span>" in slots[0]
+    assert "border:2px dashed" in slots[0]
 
 
 def test_the_guide_defines_the_three_areas() -> None:

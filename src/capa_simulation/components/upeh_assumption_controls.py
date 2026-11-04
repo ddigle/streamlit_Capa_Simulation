@@ -60,11 +60,10 @@ __all__ = [
 ]
 
 UPEH_RESET_BUTTON_KEY = "upeh_assumption_reset"
-GROUP_CAPTION = (
-    ":material/person: **이 세션만** · UPEH 가정 — 100% = 기준정보 그대로 · HOME·공식버전·공용 "
-    "설정은 "
-    "바뀌지 않습니다"
-)
+# 묶음 머리 — 표지 한 줄과 그 풍선(무엇이 그대로인지는 자리 글이 아니라 풍선이다, 설계 규칙
+# UI-TXT-01 · 04).
+GROUP_CAPTION = ":material/person: **이 세션만** · UPEH 가정"
+GROUP_HELP = "100% = 기준정보 그대로입니다. HOME·공식버전·공용 설정은 바뀌지 않습니다."
 PERCENT_HELP = (
     "활성 시나리오 기준정보의 계획 UPEH(Main UPEH · MI 는 ST)를 적용 구간의 달에만 이 비율로 "
     "본다면 — "
@@ -127,7 +126,7 @@ def render_upeh_assumption_controls(
     ):
         st.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = PERCENT_DEFAULT
 
-    st.caption(GROUP_CAPTION)
+    st.caption(GROUP_CAPTION, help=GROUP_HELP)
     # 기본값·범위를 주지 않는다(모듈 머리) — 빈 칸·범위 밖 값은 `_settle_percent` 가 칸에
     # 다시 적는다.
     percent = st.number_input(
@@ -210,12 +209,13 @@ def render_inverse(
     goal: str,
     key: str,
     current: int | None = None,
+    help: str | None = None,
 ) -> None:
     """역산 한 줄 — 「구간 안 단축 0 → UPEH ≥ 118%」 과 「이 값으로」 단추(그 값이 지금 값과 다를
-    때만)."""
+    때만). `help` 는 그 줄의 풍선(역산의 뜻 — 자리 글로 두지 않는다)."""
     value = inverse.button_value
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.caption(inverse_text(goal, inverse), width="content")
+        st.caption(inverse_text(goal, inverse), width="content", help=help)
         if value is not None and value != current:
             st.button(
                 "이 값으로",

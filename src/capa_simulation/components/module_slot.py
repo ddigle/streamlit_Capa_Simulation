@@ -1,4 +1,4 @@
-# Purpose: 모듈 화면이 들어올 점선 자리와 그 자리만 든 화면 한 벌을 데이터 없이 그린다.
+# Purpose: 아직 없는 화면 · 칸이 들어올 점선 자리와 모듈 자리만 든 화면 한 벌을 데이터 없이 그린다.
 
 """모듈 화면 자리.
 
@@ -12,6 +12,10 @@
 `docs/TODO.md` 2장 「생산 진도 화면 내용」. 시나리오 · 설비 DB 를 열지 않으므로 이 자리를 그리는
 화면은 사이드바 공통 조건 줄도 조건 카드도 없다(`navigation.PRODUCTION_PROGRESS` ·
 `PRODUCTION_PROGRESS_SUBPAGES`).
+
+점선 자리 꼴은 `slot_html` 한 벌이다 — 모듈 화면 자리와 실행 관리 머리의 「이행 현황판
+자리」(다음 판에 숫자가 들어올 칸)가 제목 · 표지 · 높이만 넘긴다(설계 규칙 UI-LAY-10 ·
+UI-CON-04).
 """
 
 from __future__ import annotations
@@ -34,26 +38,45 @@ MODULE_SLOT_TEXT = "모듈에 스크립트를 넣으면 이 자리에 표시됩�
 MODULE_SLOT_MIN_HEIGHT = "max(360px, calc(100vh - 340px))"
 
 
-def module_slot_html() -> str:
-    """모듈 화면 자리 — 점선 테두리 넓은 상자 하나(색은 지금 테마의 토큰).
+def slot_html(
+    title: str,
+    text: str,
+    *,
+    css_class: str,
+    min_height: str,
+    print_min_height: str = "240px",
+) -> str:
+    """빈 자리 하나 — 점선 테두리 상자에 제목 한 줄과 표지 한 줄(색은 지금 테마의 토큰).
 
+    아직 없는 화면 · 칸도 자리를 먼저 세운다(설계 규칙 UI-LAY-10 — 테마 색 점선 상자 + 한 줄
+    표지). `css_class` 는 자리마다 다른 이름이다 — 한 화면에 두 자리가 서도 높이가 섞이지 않는다.
     `st.html` 은 SVG 를 걸러 내므로 그림 없이 글 두 줄만 둔다."""
     style = (
-        ".pp-module-slot{display:flex;flex-direction:column;align-items:center;"
+        f".{css_class}{{display:flex;flex-direction:column;align-items:center;"
         "justify-content:center;gap:8px;box-sizing:border-box;width:100%;"
-        f"min-height:{MODULE_SLOT_MIN_HEIGHT};padding:24px;"
+        f"min-height:{min_height};padding:24px;"
         f"border:2px dashed {tokens.BORDER_STRONG};border-radius:10px;"
         f"background:{tokens.SURFACE_SUBTLE};color:{tokens.TEXT_MUTED};text-align:center}}"
-        f".pp-module-slot strong{{color:{tokens.TEXT};font-size:1.05rem;font-weight:600}}"
-        "@media print{.pp-module-slot{min-height:240px}}"
+        f".{css_class} strong{{color:{tokens.TEXT};font-size:1.05rem;font-weight:600}}"
+        f"@media print{{.{css_class}{{min-height:{print_min_height}}}}}"
     )
-    title = html.escape(MODULE_SLOT_TITLE)
+    label = html.escape(title)
     return (
         f"<style>{style}</style>"
-        f'<section class="pp-module-slot" role="region" aria-label="{title}">'
-        f"<strong>{title}</strong>"
-        f"<span>{html.escape(MODULE_SLOT_TEXT)}</span>"
+        f'<section class="{css_class}" role="region" aria-label="{label}">'
+        f"<strong>{label}</strong>"
+        f"<span>{html.escape(text)}</span>"
         "</section>"
+    )
+
+
+def module_slot_html() -> str:
+    """모듈 화면 자리 — 머리말 아래를 거의 채우는 넓은 점선 상자 하나(`slot_html`)."""
+    return slot_html(
+        MODULE_SLOT_TITLE,
+        MODULE_SLOT_TEXT,
+        css_class="pp-module-slot",
+        min_height=MODULE_SLOT_MIN_HEIGHT,
     )
 
 

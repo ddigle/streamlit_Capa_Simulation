@@ -75,6 +75,7 @@ from capa_simulation.components.equipment_scenario_management import (
 from capa_simulation.components.equipment_scenario_status import (
     EQUIPMENT_SCENARIO_FIELD_KEY,
     HOME_VISIT_LOCK_REASON,
+    LOCK_REASON_MARK,
     PREFERENCE_LOCK_MESSAGE,
     baseline_equipment_refusal,
     shortening_equipment_basis,
@@ -465,6 +466,13 @@ def _field(app: AppTest) -> Any:
         (button for button in app.sidebar.button if button.key == EQUIPMENT_SCENARIO_FIELD_KEY),
         None,
     )
+
+
+def _lock_marks(app: AppTest) -> list[str]:
+    """사이드바 설비 시나리오 줄 아래 잠금 표지(`LOCK_REASON_MARK`)들의 풍선."""
+    return [
+        str(item.help) for item in app.sidebar.caption if str(item.value).endswith(LOCK_REASON_MARK)
+    ]
 
 
 def _header_bodies(app: AppTest) -> list[str]:
@@ -966,17 +974,17 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     # 값 칸은 「(고정)」 만 붙여 1280px 에서도 잘리지 않고, 까닭은 줄 아래 한 줄로 선다(꺼진 단추라
     # 풍선이 없다 — ◀▶ 뒤에는 출처 띠가 걷혀 이 줄이 기준을 알리는 자리다).
     assert field.label == "운영 일정 · r1 (고정)"
-    assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
-    # 까닭 글은 푸는 법도 말한다 — 아래에서 보듯 탭을 닫고 다시 열면 세션 설비 시나리오를 따른다.
-    assert any(
-        "위 탭 줄에서 이 화면 탭을 닫고 다시 여세요." in str(item.value)
-        for item in app.sidebar.caption
-    )
+    # 까닭은 줄 아래 표지 한 마디의 풍선이다(설명 · 하는 법 문장은 자리에 늘 두지 않는다 — 설계 규칙
+    # UI-TXT-01). 풍선은 푸는 법도 말한다 — 아래에서 보듯 탭을 닫고 다시 열면 세션 설비 시나리오를
+    # 따른다.
+    assert _lock_marks(app) == [HOME_VISIT_LOCK_REASON]
+    assert "위 탭 줄에서 이 화면 탭을 닫고 다시 여세요." in HOME_VISIT_LOCK_REASON
+    assert not any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
 
     _ok(app.run())
     field = _field(app)
     assert field is not None and field.disabled and field.label.endswith("(고정)")
-    assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
+    assert _lock_marks(app) == [HOME_VISIT_LOCK_REASON]
 
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
     _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
@@ -993,7 +1001,7 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     field = _field(app)
     assert field is not None and not field.disabled and field.label == "셋업 실무 · r1"
     assert PROCESS_DETAIL_EQUIPMENT_BASIS_KEY not in app.session_state
-    assert not any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
+    assert _lock_marks(app) == []
 
 
 def test_a_home_visit_judges_the_constraint_link_by_the_session_snapshot(

@@ -42,7 +42,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
@@ -865,14 +865,22 @@ def _target_text(target: float) -> str:
     return f"{round(target * 100)}%({target:.2f})"
 
 
+# 필요 단축 일정 카드 출처 띠의 풍선 — 두 화면의 대수가 갈리는 까닭(띠에는 값만 둔다, 설계 규칙
+# UI-TXT-01 · 02).
+SHORTENING_BAND_HELP: Final = (
+    "이 화면은 확보기준(월별)·RQ_REQB 기간 기준이라 단축 대수가 그 카드와 다를 수 있습니다 — 띠의 "
+    "값은 링크 주소에 실려 온 그 카드의 값입니다."
+)
+
+
 def shortening_band_text(origin: ShorteningOrigin) -> str:
     """필요 단축 일정 카드 출처 띠 한 줄 — 주소 인자로 받은 그 카드의 값만 적는다.
 
     두 화면의 단축 정의는 다르다(이 화면은 HOME 확보기준 월별·`RQ_REQB` 기간, 필요 단축 일정은 그
     카드의 목표 스칼라·조건 카드 기간 — 2026-10-22 맞추지 않기로). 그래서 그 카드의 대수를 그대로
-    옮겨 적고 이 화면의 대수와 다를 수 있다고 먼저 밝힌다. 예: 「필요 단축 일정 카드(목표 110%(1.10)
-    · 기간 26.01–26.12)에서 열었습니다 · 이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수
-    있습니다 · 그 카드: 단축 3대 · 신규 1대」.
+    옮겨 적는다 — 이 화면의 대수와 다를 수 있다는 말은 띠의 풍선(`SHORTENING_BAND_HELP`)이다. 예:
+    「필요 단축 일정 카드(목표 110%(1.10) · 기간 26.01–26.12)에서 열었습니다 · 그 카드: 단축 3대 ·
+    신규 1대」.
     """
     card: list[str] = []
     if origin.target is not None:
@@ -880,7 +888,7 @@ def shortening_band_text(origin: ShorteningOrigin) -> str:
     if origin.start_month is not None and origin.end_month is not None:
         card.append(f"기간 {month_label(origin.start_month)}–{month_label(origin.end_month)}")
     head = "필요 단축 일정 카드" + (f"({' · '.join(card)})" if card else "") + "에서 열었습니다"
-    parts = [head, "이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다"]
+    parts = [head]
     if origin.shortened is not None and origin.new is not None:
         parts.append(f"그 카드: 단축 {origin.shortened}대 · 신규 {origin.new}대")
     return " · ".join(parts)

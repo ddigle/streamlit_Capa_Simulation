@@ -217,6 +217,18 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         test=_SPACE_BOX_TEST,
     ),
     Withdrawn(
+        what="공정 Capa 상세 정리 줄 — 「사용기준 제외 n대」(설비 일정이 설 때 늘 서던 내역)",
+        why="UI-TXT-04 · UI-NTF-02 · 검수표 11/02 exec-20",
+        file="app_pages/process_capa_detail.py",
+        function="report_usage_excluded",
+        code="PD-04",
+        route="state",
+        test=(
+            "tests/test_process_capa_detail_page.py"
+            "::test_units_left_out_by_usage_basis_raise_an_alert_and_leave_the_closing_row_quiet"
+        ),
+    ),
+    Withdrawn(
         what="가용설비 Summary › Static 대비 일정 — 「한쪽에만 있는 공정 n개를 뺐습니다」 캡션",
         why="V-12 · UI-TXT-04",
         file="src/capa_simulation/components/availability_gap_panel.py",

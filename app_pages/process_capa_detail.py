@@ -84,7 +84,11 @@ from capa_simulation.components.process_capa_view import (
     reopen_entry_section,
 )
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.state_alerts import alert_page_error, missing_handover_text
+from capa_simulation.components.state_alerts import (
+    alert_page_error,
+    equipment_scope,
+    missing_handover_text,
+)
 from capa_simulation.components.upeh_assumption_controls import (
     render_inverse,
     render_upeh_assumption_controls,
@@ -129,6 +133,7 @@ from capa_simulation.process_detail_state import (
     ORIGIN_BAND_ICON,
     PROCESS_DETAIL_PROCESS_KEY,
     PROCESS_DETAIL_PRODUCT_FILTER_KEY,
+    SHORTENING_BAND_HELP,
     ProcessSteps,
     equipment_band_tail,
     first_shortfall_month,
@@ -145,6 +150,7 @@ from capa_simulation.services.display_order_scopes import (
     PAGE_CALCULATION,
     TAB_REQUIRED,
 )
+from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
 from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.korean_particle import (
@@ -166,7 +172,6 @@ from capa_simulation.services.process_equipment_timeline import (
     DynamicReadiness,
     dynamic_readiness,
     keep_released_units,
-    production_position,
     unit_events,
 )
 from capa_simulation.services.process_picker import (
@@ -211,7 +216,7 @@ from capa_simulation.services.upeh_assumption import (
     required_drop,
     scale_securement_rate,
 )
-from capa_simulation.services.usage_basis import usage_excluded_count
+from capa_simulation.services.usage_basis import usage_excluded_count, usage_exclusion_notice
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
@@ -230,6 +235,29 @@ PAGE_DESCRIPTION = (
 )
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
 HOME_RATE_TOLERANCE = 1e-9
+# 조건 카드 기간 줄의 풍선 — 기본 공정 · 달을 고르는 규칙(자리에 늘 두지 않는다, 설계 규칙
+# UI-TXT-01).
+PERIOD_HELP = (
+    "이 화면의 기간(RQ_REQB 유효 기간 ∩ 조회기간)입니다. 기본 공정은 이 기간 최저 확보율 "
+    "공정이고, 그 공정의 첫 확보기준 미달 달을 엽니다."
+)
+# HOME 칸 방문(공식 설비 시나리오로 고정)일 때 「필요 단축 일정에서 …」 단추의 풍선 — 그 화면은 이
+# 고정을 따르지 않는다.
+SHORTENING_LINK_OFFICIAL_HELP = (
+    "필요 단축 일정은 사이드바의 설비 시나리오 기준입니다(이 화면은 HOME 칸에서 들어와 공식 설비 "
+    "시나리오)."
+)
+# UPEH 가정이 켜졌을 때 효과 줄 풍선 끝에 붙는 범위 — 무엇이 가정이고 무엇이 그대로인지.
+UPEH_SCOPE_HELP = (
+    "이 세션만입니다 — 공식 확보율·HOME·공식버전은 그대로이고, ② ~ ④·KPI·이 공정 단축 일정 CSV 는 "
+    "가정 계획입니다."
+)
+# 역산 두 줄의 풍선(보수적인 까닭)과, 적용 구간이 이 화면 기간과 겹치지 않을 때의 표지 · 풍선.
+INVERSE_HELP = (
+    "역산은 구간 안 달만 보고 앞 달 단축이 넘겨 주는 몫을 빼서 보수적입니다(실제보다 큰 %)."
+)
+INVERSE_NONE_MARK = "역산 없음"
+INVERSE_NONE_HELP = "적용 구간이 이 화면 기간과 겹치지 않아 역산하지 않습니다."
 
 # HOME 이 남긴 전달 칸은 **무엇보다 먼저** 꺼낸다. 아래 부트스트랩·계산이 오류로 멈추면 그 회차는
 # 공정·달을 정하는 자리에 닿지 못한다 — 그때 칸이 남으면 나중에 사이드바로 들어온 방문이 이 칸을
@@ -438,8 +466,8 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         ),
     )
     st.caption(
-        f"기간 {month_label(effective_start)}–{month_label(effective_end)} · 기본은 기간 최저 "
-        "확보율 공정"
+        f"기간 {month_label(effective_start)}–{month_label(effective_end)}",
+        help=PERIOD_HELP,
     )
     # 「이 세션만」 묶음 — 필요 단축 일정과 같은 세션 칸을 쓴다. 역산 줄은 계획을 세운 뒤 채운다.
     assumption: UpehAssumption | None = render_upeh_assumption_controls(
@@ -490,7 +518,7 @@ if entry.shortening_origin is not None:
         # 막아 돌려주므로 여기서 다시 감싸지 않는다(두 번 막으면 `\~` 가 글자로 보인다).
         card_band = f"{card_band} · {card_tail}"
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.caption(f"{ORIGIN_BAND_ICON} {card_band}", width="content")
+        st.caption(f"{ORIGIN_BAND_ICON} {card_band}", width="content", help=SHORTENING_BAND_HELP)
         st.button(
             "필요 단축 일정",
             key=BACK_TO_SHORTENING_KEY,
@@ -655,7 +683,15 @@ def csv_bytes(frame: pd.DataFrame) -> bytes:
 readiness: DynamicReadiness | None = None
 dynamic: DynamicView | None = None
 dynamic_error = ""
-closing_notices: list[str] = []
+# 정리 줄 「필요 단축 일정에서 …」 단추의 풍선 — HOME 칸 방문이라 이 화면과 그 화면의 설비 기준이
+# 갈릴 때만(자리 글로 두지 않는다, 설계 규칙 UI-TXT-01).
+shortening_link_help: str | None = None
+# 정리 줄의 값 표지 — (값 한 마디, 풍선).
+closing_marks: list[tuple[str, str]] = []
+# 사용기준이 HBM·EDP 가 아니어서 이 공정 가용 · 단축 후보에서 뺀 호기(`PD-04` 상태 알림 — 자리에
+# 그리지 않는다, UI-NTF-02 · UI-TXT-04).
+usage_excluded_names: list[str] = []
+usage_excluded_full = ""
 units_csv: bytes | None = None
 if equipment_error:
     dynamic_error = equipment_error
@@ -665,10 +701,7 @@ else:
         and equipment_session is not None
         and not equipment_session.is_official_pair
     ):
-        closing_notices.append(
-            "필요 단축 일정은 사이드바의 설비 시나리오 기준입니다(이 화면은 HOME 칸에서 들어와 "
-            "공식 설비 시나리오)."
-        )
+        shortening_link_help = SHORTENING_LINK_OFFICIAL_HELP
     readiness = dynamic_readiness(
         snapshot.calculation_frames()[1] if snapshot is not None else None,
         snapshot.baseline if snapshot is not None else None,
@@ -792,26 +825,34 @@ if (
                 official_process_months.reset_index(drop=True) if upeh_token else None
             ),
         )
-        # 정리 줄 — 0 인 알림은 적지 않는다.
-        excluded_count = usage_excluded_count(usage_excluded, processes=[process])
-        parts: list[str] = []
-        if excluded_count > 0:
-            parts.append(f"사용기준 제외 {format_unit_count(excluded_count)}대")
-        if undated_total > 0:
-            parts.append(f"일정 미정 {format_unit_count(undated_total)}대")
-        today_month = production_position(today, readiness.cutoff_days, months).month
-        if today_month in months:
-            parts.append(
-                f"오늘이 든 {with_topic_particle(month_label(today_month))} 남은 날만 셉니다"
-            )
-        # 입력 비가동(가용설비 현황 › Preference)을 이 공정 가용에서 뺐으면 — 계획이 건 칸으로
-        # 적는다. 줄 자리는 ④ 첫 줄이고, 호기 일정이 없는 공정(④ 가 서지 않음)은 ② 아래 줄이다.
+        # 정리 줄에 늘 서던 설명 · 내역 글은 걷었다(설계 규칙 UI-TXT-01 · 04 · 07) — 일정 미정은
+        # ③ 끝 줄, 오늘이 든 달 · 단축이 바꾸는 숫자는 Guide · 산출 근거 머리 풍선이 말하고,
+        # 사용기준 제외 대수는 상태 알림(`PD-04`)이다. 입력 비가동(가용설비 현황 › Preference)을
+        # 뺐으면 값 한 마디(「입력 비가동 반영(n칸 · 합 x대)」 — 필요 단축 일정과 같은 꼴)를 두고
+        # 그 자리(④ 첫 줄, 호기 일정이 없는 공정은 ② 아래 줄)는 풍선이 말한다.
         manual_note = manual_effect_band(plan.manual_downtime, (process,))
         if manual_note:
             manual_place = "④ 첫 줄" if readiness.has_units else "② 아래 줄"
-            parts.append(f"{manual_note} — ② 가용에서 뺐습니다({manual_place})")
-        parts.append("단축 결과는 공식 확보율을 바꾸지 않습니다(설비 일정 기준 가용만 바뀜)")
-        closing_notices.append(" · ".join(parts))
+            closing_marks.append(
+                (
+                    manual_note,
+                    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 ② 가용에서 "
+                    f"뺐습니다({manual_place} — 호기별 비가동과 별도).",
+                )
+            )
+        if usage_excluded_count(usage_excluded, processes=[process]) > 0:
+            in_process = usage_excluded["공정소분류"].astype("string").str.strip().eq(process)
+            usage_excluded_names = sorted(
+                {
+                    str(name)
+                    for name in usage_excluded.loc[
+                        in_process.fillna(False).to_numpy(), EQUIPMENT_ID_COLUMN
+                    ].tolist()
+                }
+            )
+            usage_excluded_full = (
+                usage_exclusion_notice(usage_excluded, processes=[process]) or ""
+            ) + " 단축 후보에도 들지 않습니다."
         export = unit_export_frame(plan, (target,), (process,))
         if upeh_token and assumption is not None:
             # 가정 계획의 호기 표다 — 첫 열과 파일 이름에 표지를 단다(공식 CSV 로 읽히지 않게).
@@ -929,7 +970,8 @@ def assumption_effect_line() -> tuple[str, str]:
     )
     basis = (
         "이 화면 단축 목표는 판정 기준의 확보기준(월별)이고 기간은 "
-        f"{month_label(effective_start)}–{month_label(effective_end)}(RQ_REQB)입니다. {elsewhere}"
+        f"{month_label(effective_start)}–{month_label(effective_end)}(RQ_REQB)입니다. "
+        f"{UPEH_SCOPE_HELP} {elsewhere}"
     )
     return effect_text(effect), basis
 
@@ -988,6 +1030,7 @@ if assumption is not None:
                 goal="확보기준 미달 0",
                 key="process_detail_upeh_inverse_securement",
                 current=assumption.percent,
+                help=INVERSE_HELP,
             )
             if dynamic is not None:
                 official_months = (
@@ -1000,27 +1043,40 @@ if assumption is not None:
                     goal="구간 안 단축 0",
                     key="process_detail_upeh_inverse_target",
                     current=assumption.percent,
+                    help=INVERSE_HELP,
                 )
-            st.caption(
-                "역산은 구간 안 달만 보고 앞 달 단축이 넘겨 주는 몫을 빼서 보수적입니다(실제보다 "
-                "큰 %)."
-            )
         else:
-            st.caption("적용 구간이 이 화면 기간과 겹치지 않아 역산하지 않습니다.")
+            st.caption(INVERSE_NONE_MARK, help=INVERSE_NONE_HELP)
 
-if upeh_token and assumption is not None:
-    closing_notices.append(
-        f"{assumption_label(assumption)} — 이 세션만입니다. 공식 확보율·HOME·공식버전은 "
-        "그대로이고, ② ~ ④·"
-        "KPI·이 공정 단축 일정 CSV 는 가정 계획입니다."
+
+def report_usage_excluded(names: list[str], full: str, *, active: bool) -> None:
+    """사용기준이 HBM·EDP 가 아니어서 이 공정 가용 · 단축 후보에서 뺀 호기의 상태 알림(`PD-04` —
+    알림창 · Alarm, 자리에는 그리지 않는다 — 설계 규칙 UI-NTF-02 · UI-TXT-04). 범위는 이 화면의
+    설비 기준(세션 또는 HOME 칸 방문의 공식 — 리비전 쌍)과 공정이고 내용은 설비명 목록이다. 설비
+    일정을 세우지 못한 회차에도 해소로 부른다."""
+    scope = equipment_scope(shown_session) if shown_session is not None else None
+    alerts.state(
+        "PD-04",
+        scope={**(scope.scope if scope is not None else {}), "process": process},
+        content=names or None,
+        active=active and bool(names),
+        text=f"사용기준 제외 {len(names):,}대 — {process_label} 가용 · 단축 후보에서 뺌",
+        full=full or None,
+        scope_label=" · ".join(
+            part for part in ((scope.label if scope is not None else ""), process_label) if part
+        ),
     )
+
+
+report_usage_excluded(usage_excluded_names, usage_excluded_full, active=dynamic is not None)
 if dynamic is not None:
     upeh_suffix = (
         f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
     )
     render_closing_row(
         process=process,
-        notices=closing_notices,
+        marks=closing_marks,
+        link_help=shortening_link_help,
         csv_bytes=units_csv,
         csv_file_name=f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_suffix}.csv",
     )

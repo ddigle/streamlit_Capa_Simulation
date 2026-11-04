@@ -8,13 +8,18 @@
 **첫 판은 데이터를 읽지 않는다.** 정의와 세 영역 비교, 하위 화면 목차(링크와 그 화면이 보는 것 한
 줄), 부서별 Gap·A/Item 의 뜻만 그린다. 시나리오·설비 DB 를 열지 않으므로 사이드바 공통 조건 줄도
 조건 카드도 없다(`navigation.EXECUTION_MANAGEMENT`). 이행 현황판 숫자는 다음 판에서 들어온다 —
-약속 기준선을 어느 공식버전으로 볼지 같은 질문을 그 기능 설계 때 정한다.
+약속 기준선을 어느 공식버전으로 볼지 같은 질문을 그 기능 설계 때 정한다. 그 칸은 지금 점선 자리
+하나다(설계 규칙 UI-LAY-10 — `module_slot.slot_html`).
+
+영역의 뜻풀이 · 목차 차례 같은 설명 문장은 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01 · 02) — 영역
+이름 줄과 목차 제목의 풍선(`help=`)이고, 같은 말이 Guide 에 있다.
 """
 
 from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components.module_slot import slot_html
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
@@ -48,7 +53,8 @@ SUBPAGE_SUMMARIES: dict[str, str] = {
     "app_pages/yield_actual.py": "수율 기준(`RQ_YLD`) 대비 실적 Gap 과 개선 우선순위",
 }
 
-# 세 영역 한 줄 비교 — (머리 선언, 한 낱말, 한 줄). 이 화면 자신은 링크 대신 「지금 여기」다.
+# 세 영역 한 줄 비교 — (머리 선언, 한 낱말, 뜻풀이 — 영역 이름 줄의 풍선). 이 화면 자신은 링크 대신
+# 「지금 여기」다.
 AREAS: tuple[tuple[PageSpec, str, str], ...] = (
     (
         STATIC_CAPA,
@@ -71,6 +77,13 @@ AREAS: tuple[tuple[PageSpec, str, str], ...] = (
 )
 # 목차 한 줄에 놓는 카드 수. 여덟 화면이 세 줄로 선다.
 COLUMNS_PER_ROW = 3
+# 목차 제목의 풍선 — 차례의 뜻(자리에 늘 두지 않는다).
+SUBPAGES_HELP = "사이드바 차례 그대로입니다. 약속에 가까운 설비 이행부터 성능 실적 순입니다."
+# 이행 현황판 숫자가 들어올 칸 — 점선 자리 하나(제목 · 표지 한 줄).
+DASHBOARD_SLOT_TITLE = "이행 현황판 자리"
+DASHBOARD_SLOT_TEXT = "부서별 Gap · A/Item 숫자 · 다음 판"
+DASHBOARD_SLOT_CLASS = "em-dashboard-slot"
+DASHBOARD_SLOT_MIN_HEIGHT = "140px"
 
 
 def _render_areas() -> None:
@@ -79,8 +92,7 @@ def _render_areas() -> None:
         columns = st.columns(len(AREAS), gap="small")
         for column, (spec, word, line) in zip(columns, AREAS, strict=True):
             with column.container(border=True):
-                st.markdown(f"**{spec.title}** · {word}")
-                st.caption(line)
+                st.markdown(f"**{spec.title}** · {word}", help=line)
                 if spec is EXECUTION_MANAGEMENT:
                     st.caption(":material/my_location: 지금 여기")
                 else:
@@ -89,8 +101,7 @@ def _render_areas() -> None:
 
 def _render_subpages() -> None:
     with st.container(border=True):
-        st.markdown("#### :material/list_alt: 이 영역의 화면")
-        st.caption("사이드바 차례 그대로입니다. 약속에 가까운 설비 이행부터 성능 실적 순입니다.")
+        st.markdown("#### :material/list_alt: 이 영역의 화면", help=SUBPAGES_HELP)
         specs = list(EXECUTION_MANAGEMENT_SUBPAGES)
         for start in range(0, len(specs), COLUMNS_PER_ROW):
             row = specs[start : start + COLUMNS_PER_ROW]
@@ -137,4 +148,12 @@ render_roadmap_panel(
 )
 _render_areas()
 _render_subpages()
-st.caption(":material/upcoming: 다음 판에서 이 화면에 이행 현황판 숫자가 들어옵니다.")
+st.html(
+    slot_html(
+        DASHBOARD_SLOT_TITLE,
+        DASHBOARD_SLOT_TEXT,
+        css_class=DASHBOARD_SLOT_CLASS,
+        min_height=DASHBOARD_SLOT_MIN_HEIGHT,
+        print_min_height=DASHBOARD_SLOT_MIN_HEIGHT,
+    )
+)
