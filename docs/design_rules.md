@@ -218,7 +218,7 @@
 - 범위: 모든 화면 · 팝업 · 모듈 화면의 알림
 - 예외: 입력 곁 오류 · 거부(UI-NTF-03), 화면을 못 그리는 오류(UI-NTF-08), 목록 구획의 빈 결과 · 점검 결론의 평문 한 줄(UI-TXT-04). 모듈 화면은 공개 창구(`module_api` v1)에 알림 길이 없어 결과 · 경고를 화면 안 Streamlit 기본 위젯으로 둔다 — 창구에 알림 길이 생기면 이 예외를 걷는다. 자리에 남는 상자의 색은 `docs/design_system.md` 2-3.
 - 판단: 이 알림은 등록부 코드가 있나? 알림창 말고 다른 꼴로 서는 까닭이 있나?
-- 그물: `tests/test_flash_messages.py`(한 길 · 알림창 허용 자리) · `tests/test_alert_sites.py`(경고 상자 허용 목록) · `tests/test_notice_form_sites.py`(알림 꼴 그물 — `st.toast` 0 · `st.success` 남은 자리는 모두 미정리) · `tests/test_alerts.py`(등록부) · `tests/test_alert_center_assets.py` · `scripts/check_deploy_screens.py` alert_popup · alarm_button
+- 그물: `tests/test_flash_messages.py`(한 길 · 알림창 허용 자리) · `tests/test_alert_sites.py`(경고 상자 허용 목록) · `tests/test_notice_form_sites.py`(알림 꼴 그물 — `st.toast` 0 · `st.success` 0) · `tests/test_alerts.py`(등록부) · `tests/test_alert_center_assets.py` · `scripts/check_deploy_screens.py` alert_popup · alarm_button
 - 그물 후보: 없음
 - 근거: 검수 home-08 · home-09(2026-11-02), 검수 home-18(2026-11-03), 검수 「괜찮음」 alarm-03 · 04 · 06 ~ 10 · 12 · 13(2026-11-03), AGENTS 9장 「알림 칸」, 확인 보드 AMB-21 (가)(2026-11-04) — 「여기서 띄운 알람창처럼 뜨게 형식을 통일하자」
 - 지금 값: 알림창 단계 넷 · 머무는 시간 8초(알림) · 15초(확인 필요 이상) · 한 번에 최대 3칸 — 출처 4장
@@ -1315,3 +1315,11 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
   - **대신 정한 것(사용자 확인 대기 — PRC-02)**: UI-TXT-04 SHOULD → MUST 는 사용자 답이 아니라 이 판을 쓴 앱 세션이 정했다
     (AMB-02 (가)는 기준을 답했고 수준은 묻지 않았다). MUST 면 미정리 자리(화면 글 문장 그물 `UNSETTLED_SITES`)가 모두 MUST 위반이라
     PRC-04 · AMB-17 (가)로 「바로 고칠」 대상이 된다 — 권장은 MUST 그대로 두고 미정리는 화면 묶음마다 판을 나눠 줄이는 것이다.
+  - 같은 날 Space 몫(main `fe182ea` — Space 결정 보드 답 갈래를 합친 뒤, `integ/rules-1104`): 앞 고침이 Space 범위라 남긴 같은
+    꼴을 이 규칙대로 맞췄다. 「Space 도면」 상자 끝 줄 넷(배치 `EQ-13` · 모듈 구성 `EQ-14` · 지운 호기 `EQ-15` · 일정 없는 호기
+    `EQ-04` — UI-TXT-01 · UI-NTF-02)은 Space 갈래가 상태 알림으로 옮겼고, 걷은 경고 짝 그물(UI-NTF-05)에 넷을 더했다(그물은
+    모듈 코드 묶음을 도는 `for` 이름도 푼다). 호기 없는 Space 조건 카드는 값 한 마디 「조회할 호기 없음」 + 풍선(UI-TXT-03 · 04 —
+    가용설비 현황 · 필요 단축 일정과 같은 꼴), Space 도면 팝업의 지금 상태는 값 줄 「**저장된 도면** · …」(초록 · 파란 상자
+    없이 — 알림 꼴 그물의 마지막 `st.success`)이고 저장 규칙 설명은 올리기 칸 풍선, 층 · FAB 보기 도구 줄의 늘 서던 누르기 ·
+    키보드 · 확대 안내는 빈 선택 줄의 풍선(UI-TXT-01), 「호기 정보」 창의 빈 표 · 잘린 줄은 결론 한 줄 · 값 「n줄 더 있음」
+    (하는 법 꼬리 없이 — UI-TXT-03)이다. 화면 글 문장 그물 미정리 137 → 131.

@@ -649,8 +649,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가용설비 현황과 **같은 함수** `equipment_scenario_status.report_unscheduled_units` 로 낸다 — 같은 코드 · 범위 · 내용(설비명
     목록) · 글이라 화면을 옮겨도 다시 뜨지 않고, 「그 화면으로」 는 늘 고칠 자리인 가용설비 현황 › 설비 마스터(`alerts.state(goto=)`)
     라 어느 화면이 먼저 내도 줄이 같다, 전문은 `unscheduled_notice`, 공식 발행 쌍은 「공식 일정 없음 n대 — …」). 넷 모두 회차마다
-    조건이 없어도(샘플 화면도) 본문 `notices` 칸에서 같은 차례로 부른다(표지 자리 수가 회차마다 같다). 범위는
-    `state_alerts.equipment_scope`(세션 리비전 쌍), 배치 알림 셋의 「그 화면으로」 는 Space 다.
+    조건이 없어도(샘플 화면도) 본문 `notices` 칸에서 같은 차례로 부른다(표지 자리 수가 회차마다 같다 — 배치 알림 셋은
+    `space_floor_layout.report_layout_notices`). 범위는 `state_alerts.equipment_scope`(세션 리비전 쌍), 배치 알림 셋의
+    「그 화면으로」 는 Space 다. 넷은 걷은 경고 짝 그물(`tests/test_withdrawn_warning_alerts.py` `WITHDRAWN` — 설계 규칙 V-09)에
+    있다.
     알림 글은 평문이라 시나리오 이름의 마크다운 글자를 막지 않는다(「「…」 시나리오가 가정이던 때의 배치안입니다」).
     위젯 key 는 옮기기 전 그대로다(세션 값·화면 확인이 산다). 본문에서는 경로 줄(`space_path`)·테두리 상자·머리 줄
     (`space_fab_head`·`space_floor_head`)·편집 캡션 두 줄을 걷었고 도면은 늘 서는 칸 `space_fab_stage`·`space_floor_stage` 안이다
@@ -1009,11 +1011,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   세대 캐시) ⊕ 세션 리비전의 요소·이름표 차이(`load_schedule_layout_overlay` — 일정 id 키 불변 칸, 차이 없으면 질의 없음)를
   회차마다 합친다(층 하나·수십 요소 — 캐시하지 않는다, 이 모듈에 캐시 데코레이터 없음). `floor_layout_differences` 는 배치
   알림의 실효 요소·이름표 수, `space_layout_notices` 는 Space 배치 상태 알림(`LayoutNotice` — 등록부 코드 `EQ-13`~`EQ-15` ·
-  전문 · 짧은 글 · 지문 재료, 그리는 스냅샷 기준 — 설계 8-2, 2026-11-04 Space 결정 보드 답으로 사이드바 상자 줄에서 알림으로)이다. 「공식과 견주기」(S4)
+  전문 · 짧은 글 · 지문 재료, 그리는 스냅샷 기준 — 설계 8-2, 2026-11-04 Space 결정 보드 답으로 사이드바 상자 줄에서 알림으로)이고
+  `report_layout_notices` 가 그 셋을 회차마다 같은 차례로 낸다(없는 코드는 해소). 「공식과 견주기」(S4)
   재료 `compare_payload`(층 상세 뷰어 `compare`)·`floor_unit_differences`(FAB 층 목록 칸·블록 풍선)도 여기다 — 둘 다 그리는 세션
   스냅샷의 합친 본문과 마스터만 읽는다.
 - `src/capa_simulation/components/floor_layout_upload.py` — Space 층·FAB 전체의 배경 도면 업로드·삭제와 캔버스 치수
   팝업(`FLOOR_LAYOUT_DIALOG_KEY`)이다. 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
+  - 팝업 머리의 지금 상태는 값 줄 하나(`_render_current_state` — 「**저장된 도면** · 이름 · 크기 · **캔버스** · 폭 × 높이 ·
+    저장 시각」, 없으면 「없음」 · 「기본값 …」 — 초록 · 파란 상자 없이, 설계 규칙 UI-TXT-04)이고 저장 규칙(단일 저장값 ·
+    덮어씀 · 받는 꼴 · 상한)은 올리기 칸 풍선이다(UI-TXT-01 — Guide 「도면·캔버스 편집」).
   - 단추와 팝업을 가른다(2026-11-03 — 단추가 사이드바 「Space 도면」 상자로 갔다): `render_floor_layout_button(floor=)` 은
     단추(`space_floor_layout_open_<C1_1F|FAB>`)만 그려 열림 칸을 적고, 팝업은 본문 호스트 `render_floor_layout_dialog_host`
     (Space 본문 끝 한 자리 — 사이드바 `with` 안에서 팝업을 열지 않는다)가 연다. 잠금(`disabled`)은 둘에 같이 넘긴다(두 겹).
@@ -1085,7 +1091,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     상태는 브라우저에만 — 자리·크기·접힘 localStorage `capa.space.sheet.win.v1`, 열림·탭·필터·강조 sessionStorage
     `capa.space.sheet.state.v1`(탭 안 기억, 층·편집을 오가도 남음 — 필터는 칸 이름으로 남아 새 층의 값으로 다시 센다). 받은 표는
     지문(`S.sheetDataKey`)이 바뀐 회차에만 다시 그리고, 상태 줄을 고칠 때마다(`updateStatus` 끝) 같은 그림이면 고른 줄 표시만
-    고친다. 끄는 동안(`S.drag`)은 쉰다.
+    고친다. 끄는 동안(`S.drag`)은 쉰다. 빈 표는 결론 한 줄(「맞는 호기가 없습니다」 · 「이 층에 호기가 없습니다」 · 「고른 호기가
+    없습니다」), 잘린 줄은 값 「n줄 더 있음」(모든 줄을 받는 `CSV` 펼침은 풍선)이다 — 하는 법 꼬리를 달지 않는다(설계 규칙
+    UI-TXT-03 · UI-TXT-04).
+  - 보기(층 · FAB) 도구 줄의 선택 줄(`.sle-pick`)은 고른 것이 없으면 비어 있다 — 누르기 · 키보드 · 확대 안내는 그 빈 칸의
+    풍선(`pickTip` → `title`)이고 자리에 글로 세우지 않는다(설계 규칙 UI-TXT-01, Guide 「층 열기」 · 「호기 정보」).
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)·호기 누르기(`on_pick_change`)는
     버린다. 옛 epoch 의 적용이 방금 받아들인 적용과 같은 입력이면(새 epoch 를 받기 전 같은 「적용」 의 둘째 누름)
@@ -6007,11 +6017,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력
   곁 거부 · 못 그리는 오류 · 미정리)과 맞대고, 차례로 짝지은 부름의 꼴도 본다 — 값 · 표지 · 빈 결과는 평문(`st.info` 상자
   아님), 빈 결과는 결론 꼴(「…없습니다」 등), 하는 법 · 길 안내 꼬리 없음. 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라
-  수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(남은 자리는 모두 미정리)를, `tests/test_settings_button_sites.py`
+  수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(0곳 —
+  Space 도면 팝업의 지금 값이 마지막이었다, 값 줄 「**저장된 도면** · …」)를, `tests/test_settings_button_sites.py`
   는 본문의 「설정」 팝업 단추(0곳)와 설정 팝업마다 같은 제목의 사이드바 상자(`render_settings_box`)를,
   `tests/test_withdrawn_warning_alerts.py` 는 자리에서 걷은 경고마다 등록부 코드 · 보내는 길(`queue_flash(…, popup_only=True)` ·
-  `alerts.state`) · 그 코드를 단언하는 화면 시험을 맞댄다 — 경고를 자리에서 걷으면 같은 변경에서 그 표(`WITHDRAWN`)에 한 줄을
-  더한다.
+  `alerts.state` — 코드는 글 상수 · 모듈 상수 이름 · 모듈 코드 묶음을 도는 `for` 이름까지 푼다) · 그 코드를 단언하는 화면 시험을
+  맞댄다 — 경고를 자리에서 걷으면 같은 변경에서 그 표(`WITHDRAWN`)에 한 줄을 더한다. Space 「Space 도면」 상자 끝 줄 넷(배치
+  `EQ-13` · 모듈 구성 `EQ-14` · 지운 호기 `EQ-15` — `space_floor_layout.report_layout_notices`, 일정 없는 호기 `EQ-04` —
+  `equipment_scenario_status.report_unscheduled_units`)도 그 표에 있다.
 - **동작 결과(「저장했습니다」)는 알림창 하나로**(D3 (가)) — `queue_flash` 의 성공 · 안내는 버튼 곁에 그리지 않고, 경고 ·
   오류(거부 · 실패)는 버튼 곁에도 그린다. 거부 넘김(`write_guard.queue_refusal`)은 그 자리 그대로다. 동작은 끝났고 그 자리에
   고칠 입력이 없는 경고는 `popup_only=True` 로 알림창 · Alarm 에만 낸다 — 사이드바 리비전 저장 · 시나리오 관리 복제 · 공식
