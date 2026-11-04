@@ -1,6 +1,6 @@
 # Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·상세 상자 되돌림·닫힌 탭 건너뛰기를 검증한다.
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pandas as pd
 import pytest
@@ -87,7 +87,10 @@ def test_selecting_a_renamed_process_keeps_the_original_value() -> None:
 
     assert not app.exception
     assert app.session_state["dynamic_capacity_process_filter"] == renamed_source
-    assert any("표시공정 공정의 표준 Capa부터" in caption.value for caption in app.caption)
+    # 손실 구조 그림이 무엇을 잇는지는 구획 제목 풍선이 고른 공정의 표시명으로 말한다.
+    assert any(
+        "표시공정 공정의 표준 Capa부터" in str(markdown.proto.help) for markdown in app.markdown
+    )
 
 
 def test_priority_table_stays_original_without_a_rename_profile(
@@ -103,6 +106,40 @@ def test_priority_table_stays_original_without_a_rename_profile(
 
     assert not app.exception
     assert app.session_state["renamed_source"] in set(_priority_frame(app)["공정"])
+
+
+def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
+    """요약 탭의 판정 기준 · 그림 읽는 법 · 손실 차례와 실행 관리로 가는 까닭은 늘 서는 캡션이
+    아니라 칸 · 구획 제목 · 링크의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론
+    경고는 값만 싣는다."""
+    from capa_simulation.navigation import EXECUTION_MANAGEMENT
+
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
+    tab_markdown: list[Any] = list(summary_tab.get("markdown"))
+    tab_captions: list[Any] = list(summary_tab.get("caption"))
+    captions = [str(caption.value) for caption in tab_captions]
+    assert captions, "요약 탭에는 판정 기준 줄이 없어도 링크 · 카드 글이 선다"
+    assert not any(text.endswith("니다.") for text in captions), captions
+    helps = {
+        str(markdown.value): str(markdown.proto.help)
+        for markdown in tab_markdown
+        if str(markdown.value).startswith("####")
+    }
+    assert "90% 이상 정상" in helps["#### :material/bar_chart: 공정별 Capa 실현 수준"]
+    assert "제품 Mix" in helps["#### :material/priority_high: 관리 우선순위"]
+    assert "워터폴" in helps["#### :material/alt_route: 손실을 파고드는 화면"]
+    needs_action = next(metric for metric in app.metric if metric.label == "개선 필요")
+    assert "80% 미만" in str(needs_action.proto.help)
+    warnings: list[Any] = list(summary_tab.get("warning"))
+    (verdict,) = [str(item.value) for item in warnings]
+    assert "깎아먹는지" not in verdict and verdict.endswith("개입니다.")
+    # 실행 관리 링크는 단독 실행에서 글로 물러서고, 늘 서던 길 안내 캡션은 없다.
+    page_captions = [str(caption.value) for caption in app.caption]
+    assert f"사이드바에서 {EXECUTION_MANAGEMENT.title}" in page_captions
+    assert not any("A/Item" in text for text in page_captions)
 
 
 def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:

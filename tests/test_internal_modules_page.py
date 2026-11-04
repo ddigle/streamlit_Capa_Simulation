@@ -45,4 +45,7 @@ def test_the_index_lists_switched_on_modules_and_counts_the_rest(
     captions = [caption.value for caption in app.caption]
     assert "사이드바에서 데모 화면 (구현중)" in captions
     assert "사이드바에서 키 데모 (구현중)" in captions
-    assert any(caption.startswith("꺼짐 1 · 실패 2") for caption in captions)
+    # 수만 자리에 두고 까닭을 보는 곳은 풍선이다 — 길 안내 꼬리가 없다(설계 규칙 UI-TXT-03).
+    (counts,) = [caption for caption in app.caption if caption.value.startswith("꺼짐 ")]
+    assert counts.value == "꺼짐 1 · 실패 2"
+    assert "「모듈 상태」" in str(counts.proto.help)

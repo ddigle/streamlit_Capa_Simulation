@@ -926,7 +926,8 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
 
 모듈 화면에서 오류가 나면 앱은 **그 화면 자리에만** 오류 카드를 그린다. 사이드바 · 머리 띠 · 탭 줄 · 다른 화면은 그대로 쓴다.
 
-- 카드에는 모듈 이름 · 화면 이름 · 오류 형식 · 메시지 첫 줄, 끄는 법, 「오류 위치」(모듈 폴더 안의 줄만)가 든다.
+- 카드에는 모듈 이름 · 화면 이름 · 오류 형식 · 메시지 첫 줄, 멈춘 범위 · 담당(끄는 법은 그 줄 풍선), 「오류 위치」(모듈 폴더 안의
+  줄만)가 든다.
 - import 오류면 한 줄을 더 적는다.
   - 코어 창구 이름이 없다(`from capa_simulation.module_api import x`) → `module.json` 의 `api` · `api_minor` 와 부록 C 를 본다.
   - 같은 모듈 파일을 맨이름으로 불렀다 → `from modules.<id> import <이름>` 으로 고친다(3-6).

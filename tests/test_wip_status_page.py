@@ -5,6 +5,8 @@ from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
 
+PROCESS_FILTER_KEY = "wip_status_process_filter"
+
 TEST_SCRIPT = r"""
 from datetime import date, timedelta
 from pathlib import Path
@@ -221,6 +223,27 @@ def test_wip_status_page_renders_filtered_step_product_grid(
         "오늘 Flow 부족",
         "표준 미설정",
     ]
+    # 격자를 읽는 법은 늘 서는 캡션이 아니라 구획 제목 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02).
+    (grid_heading,) = [item for item in app.markdown if "일별 재공·Flow" in str(item.value)]
+    assert "Flow 막대는 표준 이상이면 초록색" in str(grid_heading.proto.help)
+    assert "11일" in str(grid_heading.proto.help)
+    assert not any("Flow 막대" in str(caption.value) for caption in app.caption)
+
+
+def test_wip_status_page_without_a_choice_stops_on_one_plain_line() -> None:
+    """공정이나 제품을 다 비우면 그릴 것이 없어 멈춘다 — 파란 안내 상자 · 하는 법 없이 회색 평문
+    한 줄이다(설계 규칙 UI-TXT-04)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    app.multiselect(key=PROCESS_FILTER_KEY).set_value([])
+    next(button for button in app.button if button.label.endswith("조건 적용")).click()
+    app.run()
+
+    assert not app.exception
+    assert not app.info
+    assert "고른 공정 또는 제품이 없습니다." in [str(caption.value) for caption in app.caption]
+    assert not app.metric
 
 
 def test_wip_status_page_explains_an_empty_equipment_db_instead_of_erroring() -> None:

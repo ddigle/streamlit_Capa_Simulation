@@ -17,6 +17,8 @@ from capa_simulation.components.page_link import render_page_link
 from capa_simulation.module_registry import MATURITY_LABELS
 from capa_simulation.navigation import module_page_specs, module_scan
 
+OFF_FAILED_HELP = "꺼지거나 실패한 모듈의 까닭은 Admin Area 「모듈 상태」 에서 봅니다."
+
 render_page_header(
     "모듈",
     description="동료가 만든 화면입니다 — 아직 코어 계산과 이어지지 않습니다.",
@@ -45,5 +47,7 @@ for record in scan.active:
 
 off = sum(1 for record in scan.records if record.state == "off")
 failed = sum(1 for record in scan.records if record.state == "failed")
+# 수만 자리에 두고 까닭을 보는 곳은 풍선이 말한다 — 길 안내 글도 바로 가기도 두지 않는다(설계 규칙
+# UI-TXT-03 · UI-TXT-04).
 if off or failed:
-    st.caption(f"꺼짐 {off} · 실패 {failed} — Admin Area 「모듈 상태」 에서 까닭을 봅니다.")
+    st.caption(f"꺼짐 {off} · 실패 {failed}", help=OFF_FAILED_HELP)
