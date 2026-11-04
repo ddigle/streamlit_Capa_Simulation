@@ -271,8 +271,9 @@ TAB_LABELS = (TAB_CONVERSION, TAB_PKG_PLAN, TAB_YIELD)
 CONVERSION_TAB_NAME = "환산"
 PKG_PLAN_TAB_NAME = "PKG PLAN"
 YIELD_TAB_NAME = "수율"
-# 목록 펼침 안 첫 줄 — 고칠 곳. 건수는 알림(`ST-05` · `ST-06`)이 말한다(자리에 경고 상자를 그리지
-# 않는다 — 2026-11-03 결정 보드 D2 (나)).
+# 목록 펼침의 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선 — 고칠 곳과 계산에서 어떻게 되는지. 건수는
+# 알림(`ST-05` · `ST-06`)이 말하고(자리에 경고 상자를 그리지 않는다 — 2026-11-03 결정 보드 D2 (나)),
+# 펼침 안에는 설명 문장을 늘 띄우지 않는다(설계 규칙 UI-TXT-01 · 02 — 풍선 · Guide 로 옮긴 말).
 EXCLUDED_PLAN_GUIDE = (
     "기준정보(수율·Chip 구성 등)가 없어 계산에서 제외한 계획은 그 기준정보를 채우면 환산과 "
     "소요대수에 반영됩니다. 생산수량이 빈 계획은 계획 없음(0)으로 봤습니다."
@@ -386,9 +387,9 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     함께 싣는다. 계산에서 두 경우는 다르다 — 값 없는 행은 환산의 「제외한 계획」으로 내려가고,
     0 이하·100% 초과 행은 Chip·Wafer 환산과 HOME·소요대수·확보율을 멈춘다(2026-09-28 사용자
     결정). 예전 문구는 둘 다 원본대로 남는다고만 해 계산이 서는 것을 알리지 않았다(2026-09-29 리뷰).
-    고칠 곳은 펼침 안 첫 줄이 말한다. 알림은 수율 탭이 열린 회차에만 낸다(`scope` 가 None 이면 닫힌
-    탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸 한 자리를 써(`alerts.flush`)
-    바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
+    고칠 곳은 `사유` 칸 머리 풍선 · 알림 전문 · Guide 가 말한다. 알림은 수율 탭이 열린 회차에만
+    낸다(`scope` 가 None 이면 닫힌 탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸
+    한 자리를 써(`alerts.flush`) 바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
     """
     if scope is None:
         alerts.flush()
@@ -409,11 +410,13 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     if locked.empty:
         return
     with st.expander("편집 불가 수율 행", icon=":material/rule:"):
-        st.caption(LOCKED_YIELD_GUIDE)
         st.dataframe(
             locked[[*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]],
             hide_index=True,
             width="stretch",
+            column_config={
+                YIELD_LOCK_REASON_COLUMN: st.column_config.TextColumn(help=LOCKED_YIELD_GUIDE),
+            },
         )
 
 
@@ -974,8 +977,14 @@ if not tab_is_hidden(conversion_tab):
         )
         if not excluded_load_rows.empty:
             with st.expander("제외한 계획 확인", icon=":material/rule:"):
-                st.caption(EXCLUDED_PLAN_GUIDE)
-                st.dataframe(excluded_load_rows, hide_index=True, width="stretch")
+                st.dataframe(
+                    excluded_load_rows,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "누락 기준정보": st.column_config.TextColumn(help=EXCLUDED_PLAN_GUIDE),
+                    },
+                )
 
         unit = {
             "PKG": "Kea",
