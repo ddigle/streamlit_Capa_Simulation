@@ -933,6 +933,9 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
      않는다(지침서 2장 「첫 배포 주의」 — 그 전의 적용기는 `modules/` 를 「사외에서 지워짐」 으로 보고 지운다).
    - 담당자에게 사내 GitHub 저장소의 쓰기 권한(가지 푸시 · PR 열기)을 줬는가 — 사용자가 저장소 설정에서 준다.
    - 사내 `main` 보호 규칙을 걸었는가(`docs/dual_env_workflow.md` 1-2 — 강제 푸시 · 지우기 막기, PR 필수와 사용자 계정 우회).
+   - 저장소 설정 General → Pull Requests 에 「Always suggest updating pull request branches」 칸이 있으면 켠다 — 뒤처진 PR 화면에
+     「Update branch」 단추가 늘 선다(4-6 의 둘째 줄이 담당자에게 그 단추를 부탁한다). 칸이 없어 단추가 서지 않으면 담당자는 자기 클론에서
+     `git pull --no-rebase origin main` 뒤 `git push` 로 맞춘다(강제 푸시 없이).
 3. 사용자가 답장한다 — 넷이 맞으면 「승인 <YYYY-MM-DD>, 시작해도 됨」. 담당자는 그 날짜를 첫 커밋과 PR 본문의
    `승인: 앱 관리자 <날짜>` 에 적고, 4-6 의 넷째 줄이 그 줄을 본다. **승인이 끝나는 것은 4-6 에서 사용자가 그 PR 을 합칠 때다.**
    에이전트는 답장을 쓰지도 보내지도 않는다(사람 몫이다). 성숙도 `L2` 요청도 같은 길로 온다 — 실데이터로 맞는지 확인하는 차례(지침서
