@@ -39,7 +39,7 @@ from test_equipment_scenario_repository import _seeded
 from test_required_shortening_tab import _run as _run_shortening_page
 from test_scenario_sidebar import TEST_SCRIPT as SIDEBAR_SCRIPT
 from test_scenario_sidebar import FakeRepository, _open_save, sidebar_replacements
-from test_shortening_progress_tab import _name_input, _save_button, _saved_database, _toasts
+from test_shortening_progress_tab import _name_input, _notices, _save_button, _saved_database
 from test_standard_target_capa_page import TEST_SCRIPT as STANDARD_TARGET_SCRIPT
 
 import capa_simulation.components.scenario_status as scenario_status
@@ -764,8 +764,8 @@ def test_a_second_press_of_the_baseline_save_saves_once(
         item.name for item in DuckDBEquipmentRepository(database_path).list_shortening_baselines()
     ]
     assert names == ["겹친 기준선"]
-    assert "기준선을 저장했습니다 — 「겹친 기준선」" in _toasts(app)
-    assert "저장하지 않았습니다" not in _toasts(app)
+    assert "기준선을 저장했습니다 — 「겹친 기준선」" in _notices(app)
+    assert "저장하지 않았습니다" not in _notices(app)
     assert app.session_state[_BASELINE_FORM_GENERATION_KEY] == 1
 
 
@@ -987,4 +987,4 @@ def test_a_differently_named_baseline_after_an_interrupted_one_saves_it(
         item.name for item in DuckDBEquipmentRepository(database_path).list_shortening_baselines()
     }
     assert names == {"끊긴 첫 기준선", "끊긴 뒤 둘째 기준선"}
-    assert "기준선을 저장했습니다 — 「끊긴 뒤 둘째 기준선」" in _toasts(app)
+    assert "기준선을 저장했습니다 — 「끊긴 뒤 둘째 기준선」" in _notices(app)

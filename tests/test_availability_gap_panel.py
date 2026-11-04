@@ -13,10 +13,13 @@ from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.availability_gap_panel import (
+    CROSS_CHECK_FALLBACK_HELP,
     DETAIL_CATEGORY_KEY,
+    DETAIL_MODE_HELP,
     DETAIL_MODE_KEY,
     PROCESS_FILTER_KEY,
     RESULT_VIEW_KEY,
+    UNIT_LIST_HELP,
 )
 from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, render_csv_download
 from capa_simulation.services.availability_sheet import (
@@ -529,11 +532,17 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
     assert _value(app, ROW_GAP_AVAILABLE) == -3.5
     assert not app.warning
     assert "Probe" in _alerts(app)
-    assert "한쪽에만 있는 공정 1개" in " ".join(item.value for item in app.caption)
+    # 전체 합계에서 뺀 공정의 수 · 이름은 상태 알림(`EQ-06`)이 말한다 — 자리 캡션으로 다시 적지
+    # 않고(내역은 알림, 따로 보는 법은 Guide), 알림 전문이 「전체 합계」 에서 빠진다고 적는다.
+    assert "「전체 합계」 에서 빠집니다" in _alerts(app)
+    assert not any("한쪽에만 있는 공정" in item.value for item in app.caption)
 
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
-    assert "Static 값으로 채운 공정 1개" in " ".join(item.value for item in app.caption)
+    captions = [item for item in app.caption if "Static 값으로 채운 공정 1개" in item.value]
+    assert len(captions) == 1 and captions[0].proto.help == CROSS_CHECK_FALLBACK_HELP
+    # 기준정보에 없는 공정 수는 위 알림이 말한다 — 「위 경고를 봅니다」 길 안내 캡션은 없다.
+    assert not any("위 경고" in item.value for item in app.caption)
     assert "Probe" in _alerts(app)
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
@@ -612,8 +621,10 @@ def test_period_notices_do_not_direct_users_to_the_old_preference_tab() -> None:
     app = _run(short_span=True)
     assert "Cut-off 때문에" in _alerts(app)
     _select_view(app, "확보율 교차검증")
+    # 「맞대어 본 달」 의 범위 설명은 그 줄의 풍선이다(자리에는 값만).
+    helps = " ".join(str(item.proto.help) for item in app.caption)
     notices = " ".join(item.value for item in [*app.caption, *app.warning]) + _alerts(app)
-    assert "조회기간을 넓히면" in notices
+    assert "조회기간을 넓히면" in helps
     assert "Preference" not in notices
 
 
@@ -640,6 +651,11 @@ def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
     _select_view(app, "분류별 내역")
     assert app.segmented_control(key=DETAIL_MODE_KEY).value == "시트"
     available = _value(app, ROW_SCHEDULE_AVAILABLE)
+    # 사용법 글(「상태별 대수는 호기 목록으로」 · 「칸을 누르면 …」)은 자리에 늘 두지 않는다 —
+    # `표시` 풍선과 칸 풍선 · Guide 가 말한다.
+    assert app.segmented_control(key=DETAIL_MODE_KEY).help == DETAIL_MODE_HELP
+    sheet_captions = " ".join(item.value for item in app.caption)
+    assert "상태별 대수" not in sheet_captions and "칸을 누르면 그 달" not in sheet_captions
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
@@ -652,9 +668,10 @@ def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
     listed = units.loc[units["분류"].isin(["기존보유", "가용"]), "환산대수"].sum()
     assert listed == pytest.approx(available)
     assert any(button.label == "CSV 다운로드" for button in app.download_button)
-    assert "`운영 비가동` 은 시트의 대여(비가동)와 다를 수" in " ".join(
-        item.value for item in app.caption
-    )
+    # 목록 칸의 읽는 법은 「분류」 고르기 풍선이다 — 자리 캡션으로 늘 띄우지 않는다.
+    assert app.multiselect(key=DETAIL_CATEGORY_KEY).help == UNIT_LIST_HELP
+    assert "`운영 비가동` 은 시트의 대여(비가동)와 다를 수" in UNIT_LIST_HELP
+    assert not any("운영 비가동" in item.value for item in app.caption)
 
     app.multiselect(key=DETAIL_CATEGORY_KEY).set_value(["가용"]).run()
     assert set(app.dataframe[0].value["분류"]) == {"가용"}
@@ -772,6 +789,8 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     assert not app.get("plotly_chart")
     infos = " ".join(item.value for item in app.info)
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다" in infos
+    # 까닭(값)만 적고 「있는 쪽 값은 분류별 내역에서」 길 안내는 붙이지 않는다(Guide 가 말한다).
+    assert "분류별 내역" not in infos
 
     _select_view(app, "분류별 내역")
     assert _value(app, ROW_SCHEDULE_AVAILABLE) == 1.0
@@ -809,8 +828,10 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
     captions = " ".join(item.value for item in app.caption)
-    assert "실제로 비교한 공정은 2개입니다" in captions
-    assert "기준정보(Static)에 없는 공정 1개는" in captions
+    assert "실제로 비교한 공정 2개" in captions
+    # 기준정보에 없는 공정의 수 · 이름은 상태 알림(`EQ-06`)만 말한다 — 자리 캡션은 없다.
+    assert "기준정보에 없는 공정 1개" in _alerts(app)
+    assert "기준정보(Static)에 없는 공정" not in captions
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
     assert not app.exception
@@ -818,10 +839,11 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     infos = " ".join(item.value for item in app.info)
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다" in infos
 
-    # 맞댈 공정이 없을 때 이름이 어긋난 공정이 있으면 이름도 까닭으로 든다.
+    # 맞댈 공정이 없으면 빈 결과 한 줄만 적는다 — 무엇을 채우면 나오는지(하는 법)는 붙이지 않고,
+    # 이름이 어긋난 까닭은 상태 알림(`EQ-06`)이 말한다.
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
-    infos = " ".join(item.value for item in app.info)
-    assert "공정명을 기준정보와 맞추면" in infos
+    assert [item.value for item in app.info] == ["아직 맞대어 볼 수 있는 공정이 없습니다."]
+    assert "Probe" in _alerts(app)
 
 
 def _undated_captions(app: AppTest) -> list[str]:
@@ -997,15 +1019,17 @@ def test_the_original_name_notes_appear_only_when_a_listed_name_is_relabelled() 
     warnings = _alerts(plain)
     captions = " ".join(item.value for item in plain.caption)
     assert "Wire Bond" in warnings and "표시명" not in warnings
-    assert "한쪽에만 있는 공정 2개를 뺐습니다" in captions and "표시명" not in captions
+    assert "표시명" not in captions
 
     # 나열된 이름(Wire Bond·Probe)에 표시명이 없으면 다른 공정에 표시명이 있어도 적지 않는다.
     app = _run(wire_bond_units=True, label_map={"Die Attach": "표시-DA"})
     assert "표시명" not in _alerts(app)
     assert "표시명" not in " ".join(item.value for item in app.caption)
 
+    # 상자 글자가 표시명이라는 말은 알림 전문에만 있다 — 자리에 「뺐습니다」 캡션을 두지 않는다.
     labelled = _run(wire_bond_units=True, labels=True)
-    assert "상자에는 공정 표시명으로 보입니다" in " ".join(item.value for item in labelled.caption)
+    assert "상자에는 표시명으로 보입니다" in _alerts(labelled)
+    assert not any("뺐습니다" in item.value for item in labelled.caption)
 
 
 def test_a_held_process_keeps_its_value_when_its_text_changes_in_the_browser() -> None:

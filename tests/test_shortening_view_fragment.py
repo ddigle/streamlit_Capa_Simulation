@@ -30,7 +30,7 @@ import streamlit as st
 from fragment_browser import FragmentBrowser, install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from test_required_shortening_tab import _cards, _database, _months
-from test_shortening_progress_tab import _name_input, _save_button, _saved_database, _toasts
+from test_shortening_progress_tab import _name_input, _notices, _save_button, _saved_database
 
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.required_shortening_panel as panel
@@ -341,7 +341,7 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     assert runner.started == [[view], []]
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
-    assert "기준선을 저장했습니다" in _toasts(app)
+    assert "기준선을 저장했습니다" in _notices(app)
     # 앱 전체 회차가 그린 `진척 비교` 상자에 방금 저장한 기준선이 선다(선택지 글자는 이름 · 저장일).
     assert len(list(app.selectbox(key=SHORTENING_COMPARE_KEY).options)) == 2
 
@@ -390,7 +390,7 @@ def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_
     _run(app, world, lambda app: _save_button(app).click())
     assert runner.started == [[view]]
     assert app.session_state[FULL_RUNS_KEY] == full_runs
-    assert "같은 이름" in _toasts(app)
+    assert "같은 이름" in _notices(app)
 
     # 고르고 확인한 뒤 지우면 쓴 회차라 앱 전체 회차로 바뀐다 — 목록이 「비교 안 함」 하나로 선다.
     runner.fragment_queue = [view]
@@ -408,7 +408,7 @@ def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_
     assert runner.started == [[view], []]
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     assert DuckDBEquipmentRepository(database_path).list_shortening_baselines() == ()
-    assert "기준선을 지웠습니다" in _toasts(app)
+    assert "기준선을 지웠습니다" in _notices(app)
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     clear_equipment_repository()

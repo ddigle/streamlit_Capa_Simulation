@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit.elements.lib.policies as policies
+from alert_marks import flashed
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, TextInput
 from test_required_shortening_tab import _csv, _database, _html, _run
@@ -25,6 +26,7 @@ from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATIO
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import (
+    BASELINE_SAVE_HELP,
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
 )
@@ -79,8 +81,9 @@ def _progress_cards(app: AppTest) -> list[str]:
     ]
 
 
-def _toasts(app: AppTest) -> str:
-    return " ".join(str(item.value) for item in app.toast)
+def _notices(app: AppTest) -> str:
+    """기준선 저장 · 지우기 결과 알림(알림창 표지 — 버튼 곁 원문 마크다운)을 한 글로."""
+    return " ".join(item.value for item in flashed(app))
 
 
 def _progress_csv(app: AppTest) -> pd.DataFrame:
@@ -155,7 +158,7 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     app = _save_button(app).click().run()
 
     assert not app.exception, [element.message for element in app.exception]
-    assert "기준선을 저장했습니다 — 「9월 정기」" in _toasts(app)
+    assert "기준선을 저장했습니다 — 「9월 정기」" in _notices(app)
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
     assert stored.name == "9월 정기" and stored.equipment_revision_no == 1
     assert stored.scenario_content_token == "shortening-test"
@@ -212,12 +215,14 @@ def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirm
     app = _save_button(app).click().run()
 
     assert not app.exception
-    assert "같은 이름의 기준선이 이미 있습니다" in _toasts(app)
+    assert "같은 이름의 기준선이 이미 있습니다" in _notices(app)
+    # 거절은 알림창 · Alarm 으로만 — 머리 밑 자리에 경고 상자를 세우지 않는다.
+    assert not any("같은 이름" in str(item.value) for item in app.warning)
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
 
     app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
     app = app.button(key="equipment_shortening_baseline_delete").click().run()
-    assert "「정말 지웁니다」를 체크한 뒤" in _toasts(app)
+    assert "「정말 지웁니다」를 체크한 뒤" in _notices(app)
     assert DuckDBEquipmentRepository(database_path).list_shortening_baselines() == (stored,)
 
     confirm = next(box for box in app.checkbox if box.label == "정말 지웁니다")
@@ -225,11 +230,26 @@ def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirm
     app = app.button(key="equipment_shortening_baseline_delete").click().run()
 
     assert not app.exception
-    assert "기준선을 지웠습니다 — 「같은 이름」" in _toasts(app)
+    assert "기준선을 지웠습니다 — 「같은 이름」" in _notices(app)
     assert DuckDBEquipmentRepository(database_path).list_shortening_baselines() == ()
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     assert "shk-prog" not in _html(app)
+    clear_equipment_repository()
+
+
+def test_the_save_popover_has_no_head_note_and_the_button_says_what_it_freezes(
+    tmp_path: Path,
+) -> None:
+    """「기준선 저장」 팝오버 머리에 설명 글을 두지 않는다 — 무엇을 얼려 남기고 고칠 수 없다는 말은
+    저장 단추 풍선이다(누르기 전에 보인다)."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert _save_button(app).help == BASELINE_SAVE_HELP
+    assert "고칠 수 없습니다" in BASELINE_SAVE_HELP
+    assert not any("그대로 얼려" in str(item.value) for item in app.caption)
     clear_equipment_repository()
 
 
@@ -242,21 +262,21 @@ def test_a_baseline_name_with_tildes_reads_as_written_in_the_notices_and_the_del
     tmp_path: Path,
 ) -> None:
     """기준선 이름은 사람이 적은 글이다 — 저장 알림·같은 이름 거절·「기준선 지우기」 확인 글·지움
-    알림은 마크다운(토스트·캡션)이라 「10/01~10/07 기준~A」 의 물결표 짝이 지움선이 되지 않게
-    막는다(E2E 2026-10-26). 진척 비교 선택 상자 라벨은 글자 그대로라 손대지 않는다."""
+    알림은 마크다운(결과 알림 원문·캡션)이라 「10/01~10/07 기준~A」 의 물결표 짝이 지움선이 되지
+    않게 막는다(E2E 2026-10-26). 진척 비교 선택 상자 라벨은 글자 그대로라 손대지 않는다."""
     database_path, _ = _saved_database(tmp_path)
     name = "10/01~10/07 기준~A"
     app = _run(database_path)
     app = _name_input(app).set_value(name).run()
     app = _save_button(app).click().run()
-    saved = _toasts(app)
+    saved = _notices(app)
     assert not app.exception
     assert "기준선을 저장했습니다" in saved and literal_markdown(name) in saved
     assert _bare_tildes(saved) == 0
 
     app = _name_input(app).set_value(name).run()
     app = _save_button(app).click().run()
-    refused = _toasts(app)
+    refused = _notices(app)
     assert "같은 이름의 기준선이 이미 있습니다" in refused and _bare_tildes(refused) == 0
 
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
@@ -268,7 +288,7 @@ def test_a_baseline_name_with_tildes_reads_as_written_in_the_notices_and_the_del
     confirm = next(box for box in app.checkbox if box.label == "정말 지웁니다")
     app = confirm.check().run()
     app = app.button(key="equipment_shortening_baseline_delete").click().run()
-    deleted = _toasts(app)
+    deleted = _notices(app)
     assert not app.exception
     assert "기준선을 지웠습니다" in deleted and literal_markdown(name) in deleted
     assert _bare_tildes(deleted) == 0
@@ -280,7 +300,7 @@ def test_a_baseline_name_with_tildes_reads_as_written_in_the_notices_and_the_del
     ["R6B *중요* 안", "R6B **굵게** 안", "R6B [안내](http://e.com) 끝", "R6B `코드` $x$ 안"],
 )
 def test_the_same_name_refusal_shows_the_name_as_written(tmp_path: Path, name: str) -> None:
-    """같은 이름 거절 토스트는 적은 이름을 글자 그대로 싣는다 — 예외 글을
+    """같은 이름 거절 알림은 적은 이름을 글자 그대로 싣는다 — 예외 글을
     `bootstrap_error_message`(물결표만 막는다)로만 넘기면 별표가 기울임·굵게, `[안내](…)` 가 누를
     수 있는 링크가 됐다(2026-10-27 E2E). 저장소 예외는 이름을 속성으로도 싣고 화면이
     `literal_markdown` 으로 다시 짓는다."""
@@ -288,11 +308,11 @@ def test_the_same_name_refusal_shows_the_name_as_written(tmp_path: Path, name: s
     app = _run(database_path)
     app = _name_input(app).set_value(name).run()
     app = _save_button(app).click().run()
-    assert literal_markdown(name) in _toasts(app)
+    assert literal_markdown(name) in _notices(app)
 
     app = _name_input(app).set_value(name).run()
     app = _save_button(app).click().run()
-    refused = _toasts(app)
+    refused = _notices(app)
     assert not app.exception
     taken = f"같은 이름의 기준선이 이미 있습니다: {literal_markdown(name)}"
     assert f"기준선을 저장하지 않았습니다 — {taken}" in refused

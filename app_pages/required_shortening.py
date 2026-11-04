@@ -15,8 +15,8 @@
 머리 끝의 「Qual 마감 계산기」 단추는 큰 팝업을 연다(2026-10-24 사용자 결정 — 가용설비 현황의
 탭이던 것). 계산기는 설비 데이터와 잇지 않아 호기가 없어도 열리므로 팝업 호스트는 머리 바로 뒤,
 데이터를 읽기 전이다. 호스트는 이벤트 칸에 늘 한 자리를 쓴다 — 열렸으면 팝업, 아니면 빈 스타일
-자리표시자다. 그 뒤의 기준선 알림 토스트 자리(`shortening_progress_panel`)가 팝업을 여닫을 때
-밀리지 않게 한다.
+자리표시자다. 그 뒤의 기준선 결과 알림 표지 자리(`shortening_progress_panel` — 머리 · 본문
+프래그먼트 안)가 팝업을 여닫을 때 밀리지 않게 한다.
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
-from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
 from capa_simulation.components.shortening_source import (
     load_shortening_demand,
     shortening_frames,
@@ -194,7 +193,6 @@ if using_dashboard_sample and not show_sample_fleet:
         "등록된 호기가 없습니다. 가용설비 현황 설비 마스터 탭에서 설비 마스터를 입력하거나 샘플 "
         "데이터를 켜서 화면을 살펴보세요."
     )
-    reserve_baseline_notice_slots()
     st.stop()
 
 # 소요대수는 활성 시나리오에 있다. 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다 —

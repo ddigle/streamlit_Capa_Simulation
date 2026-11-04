@@ -89,6 +89,12 @@ QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정",
 QUAL_STATUS_VIEW = f"{QUAL_STATUS_COLUMN} 분포"
 EXPRESSION_VIEWS = ("주차별 추이", "상태 분포", QUAL_STATUS_VIEW, "단계별 건수")
 TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
+# 구획 제목 · 값 줄의 풍선 — 판정 범위 · 동작 원리는 자리에 늘 두지 않는다.
+INACTIVE_MONTH_HELP = (
+    "기준일이 든 달 안에서 한 번이라도 보유 중이면서 가용이 아니었던 호기입니다. 구간이 바뀌는 "
+    "날마다 다시 재어 합칩니다 — 상태 이름으로 고르지 않습니다."
+)
+STATUS_COUNT_HELP = "설비 마스터의 호기만 셉니다 — 집계형 기존 보유대수는 제외됩니다."
 # 공정 표시명(Proc Rename)을 입히는 칸. 설비 마스터의 `공정소분류` 는 시나리오 `공정` 과 같은
 # 이름으로 맞대는 원본 공정명이다(`공정대분류` 는 다른 축이라 입히지 않는다).
 PROCESS_COLUMN = "공정소분류"
@@ -316,7 +322,7 @@ def _availability(
         end_date=end,
     )
     if weekly.empty:
-        st.info("조건에 맞는 설비가 없습니다. 공정이나 조회기간을 바꿔 보세요.")
+        st.info("조건에 맞는 설비가 없습니다.")
         _usage_caption(usage_notice)
         return
     latest = weekly.loc[weekly["주차시작일"].eq(weekly["주차시작일"].max())]
@@ -422,7 +428,7 @@ def _transitions(
         ]
     st.markdown(f"#### 단계 전환 · {start:%Y-%m-%d} ~ {end:%Y-%m-%d} · 기준일 {as_of:%Y-%m-%d}")
     if events.empty:
-        st.info("조건에 맞는 설비 단계 전환 일정이 없습니다. 기간이나 조건을 바꿔 보세요.")
+        st.info("조건에 맞는 설비 단계 전환 일정이 없습니다.")
         return
     if view == "전환 일정 목록":
         # 설비키는 모듈 행이 있을 때만 보인다. 비모듈 행은 호기와 같은 값이라 칸만 는다.
@@ -840,18 +846,16 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
             elif question == "비가동 호기" and view == "그 달 전체":
                 # 기준일이 든 달을 본다. 기준 월을 따로 고르게 하면 축이 둘이 된다. 시점과 결과는
                 # 한 벌로 캐시한다(키 = 거른 두 표의 내용 지문 + 그 달).
-                moments, inactive = get_inactive_equipment_month(
-                    filtered, filtered_downtime, month=as_of
-                )
+                _, inactive = get_inactive_equipment_month(filtered, filtered_downtime, month=as_of)
                 label = _rows_label(inactive, partial=True)
-                st.markdown(f"#### 비가동 호기 · {as_of:%Y-%m} 달 전체 · {label}")
-                st.caption(
-                    "기준일이 든 달 안에서 한 번이라도 보유 중이면서 가용이 아니었던 "
-                    f"호기입니다. 구간이 바뀌는 날 {len(moments)}개 시점을 다시 재어 "
-                    "합칩니다 — 상태 이름으로 고르지 않습니다."
+                # 판정 범위 · 동작 원리는 구획 제목 풍선에 둔다 — 자리에는 값만.
+                st.markdown(
+                    f"#### 비가동 호기 · {as_of:%Y-%m} 달 전체 · {label}",
+                    help=INACTIVE_MONTH_HELP,
                 )
                 if inactive.empty:
-                    st.success("기준일이 든 달과 조건에 비가동 호기가 없습니다.")
+                    # 목록 구획의 빈 결과는 값(「없음」)이라 평문 한 줄이다(성공 상자 아님).
+                    st.caption("기준일이 든 달과 조건에 비가동 호기가 없습니다.")
                 else:
                     _table(
                         inactive,
@@ -864,7 +868,7 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                     f"#### 비가동 호기 · {as_of:%Y-%m-%d} · {_rows_label(inactive, partial=True)}"
                 )
                 if inactive.empty:
-                    st.success("선택한 기준일과 조건에 비가동 호기가 없습니다.")
+                    st.caption("선택한 기준일과 조건에 비가동 호기가 없습니다.")
                 else:
                     _table(
                         inactive, columns=_with_parent(_INACTIVE_COLUMNS, inactive), labels=labels
@@ -919,9 +923,7 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                         return
                 else:
                     st.markdown(f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}")
-                    st.caption(
-                        f"설비 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
-                    )
+                    st.caption(f"설비 마스터 {_rows_label(status)}", help=STATUS_COUNT_HELP)
                     _undated_caption(undated_notice)
                     _confirmation_caption(shown.confirmation_notice)
                     column, states, colors = (

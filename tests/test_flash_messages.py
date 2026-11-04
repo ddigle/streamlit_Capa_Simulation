@@ -288,14 +288,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         "다음 동작까지 남는 꼴 — 지운 글의 거절과 함께 적어 둔 답변을 되살릴 입력으로 든다(그리는"
         " 칸은 머리 알림 칸 `render_flash(FLASH_KEY)` 가 돌려준 칸이다)"
     ),
-    (
-        "src/capa_simulation/components/shortening_progress_panel.py",
-        "_pop_notices",
-        "_BASELINE_NOTICE_KEY",
-    ): (
-        "다음 동작까지 남는 꼴 — 기준선 알림은 이벤트 칸 자리 수를 고정하고 같은 알림을 한 번만"
-        " 세는 shown 칸과 짝이다"
-    ),
     ("app_pages/reference_data.py", "", "'capacity_step_flash'"): (
         "매 회차 비우고 STEP 탭을 그리는 회차에만 알림창 표지로 보낸다(`alerts.emit` — 성공이라"
         " 버튼 곁에는 그리지 않는다, D3) — 숨은 회차에 남은 알림을 나중에 띄우지 않는다"
