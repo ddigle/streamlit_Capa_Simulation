@@ -260,6 +260,11 @@ MANUAL_LIST_HELP = (
     "입력 비가동(가용설비 현황 › Preference)은 호기에 잇지 않은 공정 × 달 손실이라 이 목록에 "
     "없습니다 — `시트` 의 설비 일정 기준 대여(비가동) · 가용에는 듭니다."
 )
+# GAP 근거 카드 식 줄의 풍선 — 부호의 뜻은 설명이라 식 줄 밑에 늘 세우지 않는다(설계 규칙
+# UI-TXT-01 · UI-TXT-02).
+GAP_SIGN_HELP = (
+    "음수: 기준정보(약속)가 설비 일정보다 많습니다.  \n양수: 설비 일정이 기준정보보다 많습니다."
+)
 _CATEGORY_NAMES = tuple(category.name for category in CATEGORIES)
 # 목록의 대수 표시 자릿수. **값은 반올림하지 않는다** — 1/3 지분 셋을 0.333 으로 잘라 더하면
 # 0.999 가 되어 「같은 칸을 더하면 표의 값」이 깨진다. CSV 도 반올림 없이 나간다.
@@ -992,15 +997,8 @@ def _render_gap_evidence(bundle: GapSheetBundle, month: int, row: str) -> None:
     schedule, static = GAP_PAIRS[row]
     st.markdown(
         f"GAP {ROW_ITEMS[row]} = 설비 일정 {_text(schedule, view.value(schedule, month))} − "
-        f"Static {_text(static, view.value(static, month))} = {_text(row, view.value(row, month))}"
-    )
-    gap = view.value(row, month) or 0.0
-    st.caption(
-        "음수: 기준정보(약속)가 설비 일정보다 많습니다."
-        if round(gap, 9) < 0
-        else (
-            "양수: 설비 일정이 기준정보보다 많습니다." if round(gap, 9) > 0 else "두 값이 같습니다."
-        )
+        f"Static {_text(static, view.value(static, month))} = {_text(row, view.value(row, month))}",
+        help=GAP_SIGN_HELP,
     )
     if bundle.process is None:
         _card_table(bundle, _per_process(bundle, month, [schedule, static], sort_by=row, gap=row))

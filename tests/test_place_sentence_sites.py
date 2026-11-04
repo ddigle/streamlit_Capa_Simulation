@@ -70,9 +70,9 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # 하는 법 · 길 안내 꼬리 — 값 · 표지 · 빈 결과 자리 글은 이렇게 끝나지 않는다(UI-TXT-03 · AMB-02
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
-# 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다. 132 = 131 + 값으로
-# 잘못 든 부호 설명 줄 하나를 다시 판정한 것(가용설비 GAP 근거 — 새 자리가 아니다).
-UNSETTLED_SITES = 132
+# 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다. 131 = 가용설비 GAP
+# 근거의 부호 설명 줄을 식 줄 풍선으로 옮겨 하나 줄인 수.
+UNSETTLED_SITES = 131
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -169,12 +169,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
         UNSETTLED,
     ),
-    # GAP 식 줄은 값, 그 밑 부호 줄(「음수: 기준정보(약속)가 설비 일정보다 많습니다」)은 부호의 뜻을
-    # 푼 설명이라 미정리다(2026-11-04 검토로 다시 판정 — 새 자리가 아니다).
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_gap_evidence"): (
-        VALUE,
-        UNSETTLED,
-    ),
+    # 짝 칸 이름 줄(「아래는 짝 칸 「…」의 호기입니다」 — 밑 표가 무엇인지)은 값이다. 부호의 뜻은
+    # GAP 식 줄의 풍선(`GAP_SIGN_HELP`)이라 자리 글이 아니다(UI-TXT-01 · UI-TXT-02).
+    ("src/capa_simulation/components/availability_gap_panel.py", "_render_gap_evidence"): (VALUE,),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_schedule_evidence"): (
         EMPTY,
     ),

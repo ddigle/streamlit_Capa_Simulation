@@ -17,6 +17,7 @@ from capa_simulation.components.availability_gap_panel import (
     DETAIL_CATEGORY_KEY,
     DETAIL_MODE_HELP,
     DETAIL_MODE_KEY,
+    GAP_SIGN_HELP,
     PROCESS_FILTER_KEY,
     RESULT_VIEW_KEY,
     UNIT_LIST_HELP,
@@ -729,11 +730,17 @@ def test_a_clicked_cell_lists_its_units_and_adds_up_to_the_cell() -> None:
     assert "보유 7.00 + 대여 −1.00 = 6.00 · 기준정보 가용 6.00" in markdown
     assert "RQ_EQP_OWN" in " ".join(item.value for item in app.caption)
 
-    # GAP 칸은 식과 짝 칸(설비 일정 기준 가용)의 호기다.
+    # GAP 칸은 식과 짝 칸(설비 일정 기준 가용)의 호기다. 부호의 뜻은 식 줄 풍선이고 그 밑에 줄로
+    # 세우지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02).
     open_cell(app, MONTH, ROW_GAP_AVAILABLE)
     app.run()
     markdown = " ".join(item.value for item in app.markdown)
     assert "GAP 가용 = 설비 일정 4.50 − Static 6.00 = −1.50" in markdown
+    (formula,) = [item for item in app.markdown if item.value.startswith("GAP 가용 = ")]
+    assert formula.proto.help == GAP_SIGN_HELP
+    assert "음수:" in GAP_SIGN_HELP and "양수:" in GAP_SIGN_HELP
+    signs = [item.value for item in app.caption if "음수:" in item.value or "양수:" in item.value]
+    assert not signs, signs
     (lines,) = _evidence(app)
     assert _units(lines)["가용"].sum() == pytest.approx(4.5)
 
