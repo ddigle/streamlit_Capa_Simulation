@@ -11,6 +11,7 @@ from capa_simulation.components.availability_gap_panel import (
     PROCESS_FILTER_KEY,
     RESULT_VIEW_KEY,
     UNIT_FILTER_COLUMNS_KEY,
+    UNIT_FILTER_HELP,
     unit_filter_key,
 )
 from capa_simulation.services.availability_sheet import (
@@ -187,6 +188,10 @@ def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
     _filter(app, "공정구분", ["Line-A"])
     captions = " ".join(caption.value for caption in app.caption)
     assert "호기 2개만 더합니다" in captions
+    # 무엇이 빠지는지(기존보유 · 입력 비가동 · Static · GAP)는 그 줄의 풍선이다 — 자리에는 값만.
+    (band,) = [caption for caption in app.caption if "호기 2개만 더합니다" in caption.value]
+    assert band.proto.help == UNIT_FILTER_HELP
+    assert "호기 속성이 없어" not in captions
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     assert not app.exception

@@ -8,6 +8,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_explorer import (
     AS_OF_KEY,
+    INACTIVE_MONTH_HELP,
     INACTIVE_VIEW_KEY,
     QUESTION_KEY,
     QUESTION_WRAP_STYLE,
@@ -164,6 +165,12 @@ def _assert_one_result(app: AppTest) -> None:
     ) == 1
 
 
+def _assert_plain_empty(app: AppTest, text: str) -> None:
+    """목록 구획의 빈 결과는 평문 한 줄(값 「없음」)이다 — 초록 성공 상자로 그리지 않는다."""
+    assert text in [item.value for item in app.caption]
+    assert not app.success
+
+
 def test_inactive_units_follow_the_chosen_day_not_the_week_end() -> None:
     """10월 6일 고장은 7일까지이고 Qual은 10일이다. 같은 주 안에서도 답이 달라진다."""
     app = _app()
@@ -183,7 +190,7 @@ def test_inactive_units_follow_the_chosen_day_not_the_week_end() -> None:
 
     assert not app.exception
     assert not app.dataframe
-    assert any("비가동 호기가 없습니다" in item.value for item in app.success)
+    _assert_plain_empty(app, "선택한 기준일과 조건에 비가동 호기가 없습니다.")
 
 
 def test_each_question_and_representation_replaces_the_previous_result() -> None:
@@ -266,7 +273,7 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
     app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
 
     assert not app.dataframe
-    assert any("비가동 호기가 없습니다" in item.value for item in app.success)
+    _assert_plain_empty(app, "선택한 기준일과 조건에 비가동 호기가 없습니다.")
 
     app.selectbox(INACTIVE_VIEW_KEY).set_value("그 달 전체").run()
 
@@ -275,7 +282,10 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
     shown = list(app.dataframe[0].value.columns)
     at = shown.index("설비명")
     assert shown[at + 1 : at + 3] == ["비가동 시작", "비가동 종료"]
-    assert any("2026-10 달 전체" in item.value for item in app.markdown)
+    heading = next(item for item in app.markdown if "2026-10 달 전체" in item.value)
+    # 판정 범위 설명은 구획 제목 풍선이다 — 자리 캡션으로 늘 띄우지 않는다.
+    assert heading.proto.help == INACTIVE_MONTH_HELP
+    assert not any("상태 이름으로 고르지" in item.value for item in app.caption)
     assert app.date_input(AS_OF_KEY).value == date(2026, 10, 11)
 
     # 조건에 맞는 호기가 없으면 표가 아니라 안내 한 줄이다. 빈 표에도 컬럼은 그대로 있다.
@@ -283,7 +293,7 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
 
     assert not app.exception
     assert not app.dataframe
-    assert any("기준일이 든 달과 조건에" in item.value for item in app.success)
+    _assert_plain_empty(app, "기준일이 든 달과 조건에 비가동 호기가 없습니다.")
 
 
 def test_hidden_main_preserves_the_inactive_view_selection() -> None:
