@@ -425,7 +425,8 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   가정 차이 표 `equipment_schedule_layout_mark` 모두)은 처음 값이 아닌 키만 든 정규 JSON 글이다 — 동선은 화살표 머리 크기
   `head`(「너비·길이」 S·M·L 두 글자)·선 색 `line`·굵기 `lineWidth`(화면 px)·모양 `lineStyle`, 베이는 그 넷에 좌우 뒤집기 `flip`
   을 더한다. 도형은 프리셋 `shape`(아홉 — 처음 `rect`)·모양 조절 값 `adj`(프리셋마다 0~2개의 0.01 단위 비율 — 두께·둥글기·머리
-  길이는 짧은 변 기준, 삼각형 꼭짓점은 폭 · 블록 화살표 몸통은 높이 기준 — 2026-11-04)·채우기
+  길이는 짧은 변 기준, 삼각형 꼭짓점은 폭 · 블록 화살표 몸통은 높이 기준 — 2026-11-04. ㄴ자 · ㄷ자 팔과 블록 화살표 머리는
+  그 축 길이까지 굵어질 수 있어 저장 상한이 상한 × 100 이다 — `SHAPE_ADJUST_BASE` · `SHAPE_STRETCH_MAX`)·채우기
   불투명 `fillAlpha`(0~100 의 5 단위, 처음 20)·선 `line`(`auto`·`none`·`ink`·영역 색)·`lineWidth`·`lineStyle`·`flip` 이다(`fab_layout_mark`
   도 같다). NULL 은 모두 처음 값(동선은 지금 모습)이고 그 밖 종류는 늘 NULL 이다. 검사는 `services/floor_layout_mark.mark_look`.
 - `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`center`·`top`·`bottom`).
