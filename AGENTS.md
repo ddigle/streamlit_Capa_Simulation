@@ -2940,10 +2940,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     줄은 감싸 내린다(`flex-wrap: wrap`). 보통 폭(사이드바 256px 이상)은 한 줄, 끌어 줄인 240px 이하는 셋째 칩이 다음 줄로
     간다(2026-11-02 검토 — `nowrap` 이던 때 200~220px 에서 「공…」 · 「C..」 로 잘렸다).
   - 미지정 Case 는 점선 칩이고 누르면 「HOME 설정」 팝업을 `비교 · 주요 Case` 탭으로 열고 그 Case 칸을 한 번 강조한다
-    (`home_settings.open_home_settings` · `home_main_cases.focus_main_case` — 열림 칸·탭 key·강조 칸을 콜백에서 적는다). 본문에서
-    설정 팝업을 여는 자리는 이 칩 하나다 — `docs/design_rules.md` UI-LAY-01 의 예외 「미지정 주요 Case 칩」(2026-11-04 반영
-    검수표 D6 (가) · 데려가기 UI-NAV-01, 그물 `tests/test_settings_button_sites.py`). 계산이 멈춘 회차에는 팝업을 열 수 없어
-    그 칩만 잠근다(`stopped_chips`). 가리키던 시나리오를 보관·영구 삭제하면
+    (`home_settings.open_home_settings` · `home_main_cases.focus_main_case` — 열림 칸·탭 key·강조 칸을 콜백에서 적는다). 설정
+    상자 밖에서 설정 팝업을 여는 자리는 이 칩 하나다(사이드바 「LOB 표시 조건」 카드) — `docs/design_rules.md` UI-LAY-01 의
+    예외 「미지정 주요 Case 칩」(2026-11-04 반영 검수표 D6 (가) · 데려가기 UI-NAV-01, 그물 `tests/test_settings_button_sites.py`).
+    계산이 멈춘 회차에는 팝업을 열 수 없어 그 칩만 잠근다(`stopped_chips`). 가리키던 시나리오를 보관·영구 삭제하면
     저장소가 그 Case 를 비우므로 점선 칩이 된다. 잠금은 목록에서 찾지 못하는 짝(저장소 밖에서 고친 DB 등)과 공식버전
     없음뿐이다(풍선이 까닭).
   - 회차마다 DB 를 보지 않는다 — 공식은 `intro_summary.latest_official_identity`(머리 띠와 같은 세션 값), Case 는 주요
@@ -5496,8 +5496,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 조건부 안내·경고는 건수가 0 이면 아무것도 그리지 않는다 — 없는 날 자리를 차지하면 있는 날에도 읽히지 않는다(자리
   고정이 필요하면 늘 서 있는 빈 `st.container()` 칸만 둔다, 9장). 목록 구획의 빈 결과(「…이 없습니다」)와 점검 화면의 결론은
   조건부 안내가 아니라 값이다 — 자리에 평문 한 줄(`st.caption`)로 두고 초록 `st.success` 상자를 쓰지 않으며 하는 법 · 길 안내를
-  붙이지 않는다. 그릴 것이 없어 화면 전체가 멈추는 빈 상태(`st.stop()` 앞)도 같은 회색 평문 한 줄이다 — 오류 상자가 아니다
-  (2026-11-04 반영 검수표 D4 (가)).
+  붙이지 않는다. 그릴 것이 없어 화면 전체가 멈추는 빈 상태(`st.stop()` 앞)도 같은 회색 평문 한 줄이다 — 오류 · 경고 상자가
+  아니다(2026-11-04 반영 검수표 D4 (가)). 경고 상자로 멈추는 것은 다른 화면에서 채울 입력이 빠진 자리뿐이다(표준 대비 재공
+  현황의 주차별 가용대수 없음 — `tests/test_alert_sites.py` 의 `PLACE_NO_INPUT`).
   숨은 데이터 안내(표에 보이지 않는 저장분 · 그리지 않는 항목)는 칸 머리 표지 + 풍선이다(2026-11-04 설계 규칙 확인 보드 AMB-02
   (가) — `docs/design_rules.md` UI-TXT-04 · 08).
 - **값 뒤 조사는 `services/korean_particle.py` 만 — 앱 코드는 시험이 지킨다.** f-string·`str.format`·`%s` 틀에 끼운 값(시나리오명·
@@ -6015,9 +6016,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
-  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_EMPTY`(빈
-  상태 · 멈춤) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인 화면 결론) · `PLACE_REPORT`(점검 보고) ·
-  `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
+  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_NO_INPUT`(채울
+  입력 없음 · 멈춤 — 빈 상태는 상자가 아니다) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
+  화면 결론) · `PLACE_REPORT`(점검 보고) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
   서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력
@@ -6045,10 +6046,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   이 경고들은 사건이다(해소 줄 없음 — 상태 알림 `alerts.state` 가 아니다). 알림창에만 가므로 글은 결과를 앞에 두어 짧은 글
   60자 안에 무엇이 막혔는지가 들게 한다(UI-NTF-06). 제출 단추는 잠그지 않고 누른 회차에 거부하며(공식 지정의 계산 검사 —
   `st.error`), 실제로 잠근 단추의 까닭은 그 단추 풍선(`help=`)이 말한다(UI-INP-07 · UI-NTF-05). 알림창에만 보내지 않는
-  거부는 둘이다 — 고칠 입력 곁 거부(「기준선 저장」 의 빈 이름 · 같은 이름 — 오류 `FL-04` 로 이름 칸 위 · 알림창, 반영 검수표
-  D5 (가))와 확인 칸을 다시 세우는 거절(시나리오 관리 설비 시나리오 구획의 「그 사이 바뀌어 …」 —
-  `equipment_scenario_management._refused` 는 아무것도 쓰지 않았어도 확인 체크 · 입력 칸을 새로 세우므로 구획 맨 위 칸 ·
-  알림창, `docs/design_rules.md` UI-NTF-03 의 예외 — 반영 검수표 D3 (가)).
+  거부는 두 갈래다 — 고칠 입력 곁 거부(위 「경고 · 오류는 버튼 곁에도」 — 예: 「기준선 저장」 의 빈 이름 · 같은 이름은 오류
+  `FL-04` 로 이름 칸 위 · 알림창, 반영 검수표 D5 (가))와 확인 칸을 다시 세우는 거절(시나리오 관리 설비 시나리오 구획의
+  「그 사이 바뀌어 …」 — `equipment_scenario_management._refused` 는 아무것도 쓰지 않았어도 확인 체크 · 입력 칸을 새로
+  세우므로 구획 맨 위 칸 · 알림창, `docs/design_rules.md` UI-NTF-03 의 예외 — 반영 검수표 D3 (가)).
 - **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11) — 보관 기한 · 판정 범위 같은
   설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 에 둔다. 「로그」 펼침마다 「복사」(평문 클립보드 — alarm-05)가 선다.
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을

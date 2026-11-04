@@ -46,7 +46,10 @@ PLACE_RESULT = (
 PLACE_CONFIRM = (
     "확인 창 — 되돌리기 어려운 동작 앞에서 무엇이 바뀌는지 적고 체크 · 단추와 함께 선다(설계 2-2)"
 )
-PLACE_EMPTY = "빈 상태 · 멈춤 — 화면이 이 글로 끝난다(그릴 것이 없다, 설계 2-2 「빈 상태」)"
+PLACE_NO_INPUT = (
+    "채울 입력 없음 · 멈춤 — 다른 화면에서 채울 입력이 빠져 화면이 이 글로 끝난다(그릴 것이 없을"
+    " 뿐인 빈 상태는 상자가 아니라 회색 평문 한 줄 — 설계 규칙 UI-TXT-04, 반영 검수표 D4 (가))"
+)
 PLACE_BLOCKED = (
     "보기 하나를 못 그린 자리 — 그 보기의 전부라 자리에 남긴다(설계 2-2 화면을 못 그리는 오류)"
 )
@@ -70,7 +73,7 @@ REASONS = frozenset(
         PLACE_STOP,
         PLACE_RESULT,
         PLACE_CONFIRM,
-        PLACE_EMPTY,
+        PLACE_NO_INPUT,
         PLACE_BLOCKED,
         PLACE_DETAIL,
         PLACE_VERDICT,
@@ -91,7 +94,7 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
     ("app_pages/standard_target_capa.py", "_clear_dialog"): (1, PLACE_FORM),
     ("app_pages/voc.py", ""): (1, PLACE_RESULT),
-    ("app_pages/wip_status.py", ""): (3, PLACE_EMPTY),
+    ("app_pages/wip_status.py", ""): (1, PLACE_NO_INPUT),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (
         1,

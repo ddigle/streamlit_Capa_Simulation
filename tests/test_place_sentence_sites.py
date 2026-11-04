@@ -70,8 +70,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # 하는 법 · 길 안내 꼬리 — 값 · 표지 · 빈 결과 자리 글은 이렇게 끝나지 않는다(UI-TXT-03 · AMB-02
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
-# 미정리 자리 수(2026-11-04 그물을 세울 때). 늘지 않는다 — 줄면 이 수도 줄인다. 131 = 가용설비 GAP
-# 근거의 부호 설명 줄을 식 줄 풍선으로 옮겨 하나 줄인 수.
+# 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
 UNSETTLED_SITES = 131
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
@@ -136,7 +135,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (UNSETTLED,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
-    ("app_pages/wip_status.py", ""): (UNSETTLED, UNSETTLED, UNSETTLED),
+    ("app_pages/wip_status.py", ""): (EMPTY, UNSETTLED, EMPTY, UNSETTLED, UNSETTLED),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (
         UNSETTLED,
         CANNOT_DRAW,

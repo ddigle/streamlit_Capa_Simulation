@@ -163,7 +163,9 @@ except BOOTSTRAP_ERRORS as exc:
 render_schema_ahead_warning(equipment_repository.schema_ahead)
 
 if route_scope.empty:
-    st.warning("오늘 기준 조회 구간에 재공 현황을 구성할 공정·제품 경로가 없습니다.")
+    # 그릴 것이 없어 멈추는 빈 상태는 회색 평문 한 줄이다(설계 규칙 UI-TXT-04). 경고 상자는 채울
+    # 입력이 빠진 멈춤(바로 아래 주차별 가용대수)뿐이다.
+    st.caption("오늘 기준 조회 구간에 재공 현황을 구성할 공정·제품 경로가 없습니다.")
     st.stop()
 
 if availability.empty:
@@ -241,7 +243,7 @@ selected_routes = route_scope.loc[
     & route_scope["제품정보"].isin(selected_product_order)
 ].reset_index(drop=True)
 if selected_routes.empty:
-    st.warning("선택한 공정과 제품 사이에 적용 가능한 STEP 경로가 없습니다.")
+    st.caption("선택한 공정과 제품 사이에 적용 가능한 STEP 경로가 없습니다.")
     st.stop()
 
 try:
