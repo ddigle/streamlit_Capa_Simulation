@@ -1,10 +1,12 @@
 # Purpose: wip status page 관련 정상·예외·회귀 동작을 검증한다.
 
 import pytest
-from alert_marks import place_errors
+from alert_marks import data_error_marks, events
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation.navigation import STANDARD_TARGET_CAPA
+from capa_simulation.page_tabs_state import tab_label
 
 PROCESS_FILTER_KEY = "wip_status_process_filter"
 
@@ -247,15 +249,24 @@ def test_wip_status_page_without_a_choice_stops_on_one_plain_line() -> None:
     assert not app.metric
 
 
-def test_wip_status_page_explains_an_empty_equipment_db_instead_of_erroring() -> None:
-    """설비 DB 가 비면 입력 표가 없는 이 화면에 "입력 표에 행이 없습니다" 오류가 떴다."""
+def test_an_empty_equipment_db_stops_with_the_mark_and_the_alarm_opens_the_target() -> None:
+    """설비 DB 가 비면 입력 표가 없는 이 화면에 "입력 표에 행이 없습니다" 오류가 떴다. 채울 입력이
+    빠진 멈춤은 「데이터 Error」 마크다 — 자리에 노란 상자 · 「표준 목표 열기」 링크가 없고 글은
+    알림이며, 그 줄의 「그 화면으로」 가 표준 목표를 연다."""
     app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert not place_errors(app)
-    # 예외(빨간 오류)가 아니라 사용자가 채워야 할 입력이라 경고다. 같은 화면에서 「일부만
-    # 없다」를 알리는 자리(:292)와 색이 갈리면 심각도가 거꾸로 읽힌다.
-    assert any("주차별 가용대수가 없어" in element.value for element in app.warning)
-    # 안내 뒤에 멈추므로 조회 조건과 지표는 그리지 않는다.
+    assert not app.error and not app.warning
+    # 네비게이션 없는 시험에서 링크는 캡션 글로 물러선다 — 그 글도 없다.
+    assert not any("표준 목표" in str(item.value) for item in app.caption)
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "WIP-01")
+    assert note["short"] == "재공 현황을 그리지 못했습니다 — 주차별 가용대수 없음"
+    assert "주차별 가용대수가 없어" in note["full"] and "`" not in note["full"]
+    assert (note["page"], note["href"]) == (
+        tab_label(STANDARD_TARGET_CAPA),
+        STANDARD_TARGET_CAPA.href,
+    )
+    # 마크 뒤에 멈추므로 조회 조건과 지표는 그리지 않는다.
     assert not app.multiselect
     assert not app.metric

@@ -35,6 +35,8 @@ import pandas as pd
 import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
@@ -68,6 +70,8 @@ CUTOFF_FIRST_MESSAGE: Final = (
     "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 있습니다 "
     "(가용설비 현황 › 사이드바 「가용설비 설정」 › Cut-off)."
 )
+# 그 멈춤의 알림창 꼬리(앞은 화면마다 무엇을 못 했는지).
+CUTOFF_FIRST_REASON: Final = "공정별 Cut-off 없음"
 
 # (기존 보유대수, 설비 마스터, 비가동 일정).
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
@@ -87,11 +91,19 @@ class ShorteningStop:
     """계획을 세우지 못한 까닭 — 두 화면이 같은 글로 알리고 멈춘다.
 
     `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `input`(다른 화면에서 채울
-    입력이 빠짐 — Cut-off), `info`(그릴 것이 없는 빈 상태), `error` 다.
+    입력이 빠짐 — Cut-off), `info`(그릴 것이 없는 빈 상태), `error` 다. `info` 는 회색 평문 한 줄,
+    나머지는 「데이터 Error」 마크 + 알림이다. `reason` 은 알림창 짧은 글 꼬리, `goto` 는 채울
+    입력이 있는 화면(이름, 주소 — Alarm 줄의 「그 화면으로」)이다.
     """
 
     kind: str
     message: str | None = None
+    reason: str = ""
+    goto: tuple[str, str] | None = None
+
+    def brief(self, lead: str) -> str:
+        """알림창 짧은 글 — 무엇을 못 했는지(`lead`) + 있으면 까닭 꼬리."""
+        return f"{lead} — {self.reason}" if self.reason else lead
 
 
 def load_shortening_demand() -> ShorteningDemand:
@@ -147,7 +159,12 @@ def shortening_month_options(
     """고를 수 있는 달, 또는 멈출 까닭(Cut-off 빔·달 범위를 못 꺼냄·조회기간에 소요대수 없음·달
     없음)."""
     if cutoff.empty:
-        return ShorteningStop("input", CUTOFF_FIRST_MESSAGE)
+        return ShorteningStop(
+            "input",
+            CUTOFF_FIRST_MESSAGE,
+            reason=CUTOFF_FIRST_REASON,
+            goto=(tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href),
+        )
     try:
         demand_months = simulation_cache.get_required_month_span(
             demand.key, _required_equipment=demand.loader

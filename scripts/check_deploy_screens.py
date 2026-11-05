@@ -1670,6 +1670,16 @@ class Screen:
             self.js("""() => document.querySelector('[data-testid="stMain"]')?.innerText ?? "" """)
         )
 
+    def alert_marker_text(self) -> str:
+        """지금 문서의 알림 표지 글(JSON 그대로). 「데이터 Error」 마크 자리의 까닭은 본문에 없고
+        표지에만 있다 — 판정에만 쓴다."""
+        return str(
+            self.js(
+                """() => [...document.querySelectorAll('[data-capa-alerts]')]
+                  .map((item) => item.getAttribute('data-capa-alerts') || '').join(' ')"""
+            )
+        )
+
     def sidebar_text(self) -> str:
         """사이드바의 보이는 글자. 판정에만 쓴다(팝업은 사이드바 밖에 그려진다)."""
         return str(
@@ -5139,14 +5149,15 @@ def check_space_shortening(screen: Screen) -> str:
     세션의 다음 실행에서 `space_fader`·`panel_rows_other_pages` 가 고정 줄·늘어난 사이드바 줄을
     본다). 단축 층을 열지 못한 실행(Cut-off 먼저·못 읽음·단축 층 없음)은 되돌린 뒤 배치가 가장 많은
     층을 열어 본다 — 연 층이 없으면 「확인 안 함」 이다(본 것만 적는다). 쓰지 않는다(색 기준·목표는
-    세션 값이다). Cut-off 가 비면 「Cut-off 먼저」 알림이 정상이다."""
+    세션 값이다). Cut-off 가 비면 「Cut-off 먼저」 알림이 정상이다 — 조작 줄에는 「데이터 Error」
+    마크만 서므로 까닭은 그 표지에서 읽는다."""
     screen.step("페이지 열기")
     screen.open_space_overview()
     blocks, floor, stopped = 0, None, None
     try:
         screen.step("색 기준 필요 단축")
         _choose_color_basis(screen, SPACE_SHORTENING_BASIS)
-        text = screen.main_text()
+        text = screen.alert_marker_text()
         if "Cut-off 를 먼저" in text:
             stopped = "Cut-off 먼저 알림"
         elif "필요 단축을 칠하지 못했습니다" in text:

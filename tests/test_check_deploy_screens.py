@@ -4086,8 +4086,10 @@ def test_the_space_shortening_summary_carries_counts_only() -> None:
 
 def test_the_space_shortening_item_checks_the_fader_on_a_floor_it_opened() -> None:
     """단축 층을 열지 못한 실행은 되돌린 뒤 배치 최다 층을 열어 페이더를 본다 — 열지 않은 채
-    「페이더 있음」 으로 적지 않는다(옛 판은 `fader_back or floor is None` 이었다)."""
+    「페이더 있음」 으로 적지 않는다(옛 판은 `fader_back or floor is None` 이었다). 멈춘 까닭은
+    「데이터 Error」 마크의 표지에서 읽는다 — 본문에는 그 글이 없다."""
     source = inspect.getsource(screens.check_space_shortening)
+    assert "text = screen.alert_marker_text()" in source and "main_text()" not in source
     assert "or floor is None" not in source
     assert source.index("_choose_color_basis(screen, SPACE_DEFAULT_BASIS)") < source.index(
         "_open_most_placed_floor(screen)"

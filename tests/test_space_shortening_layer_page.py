@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_texts
+from alert_marks import data_error_marks, data_error_texts, events
 from shortening_script import months_from_today, shortening_script
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -51,11 +51,13 @@ from capa_simulation.components.space_shortening_view import (
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
     SPACE_COLOR_BASIS_KEY,
     SPACE_DEFAULT_BASIS,
     SPACE_SHORTENING_BASIS,
     SPACE_STATUS,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import empty_equipment_baseline
@@ -496,14 +498,39 @@ def test_a_stopped_layer_legend_shows_no_fill_swatches_the_drawing_does_not_pain
     assert delayed_floors, "대조 — 합성 fleet 에 지연·보관 호기가 있는 층이 있어야 뜻이 있다"
 
 
-def test_an_empty_cutoff_stops_with_the_cutoff_first_line(
+def test_an_empty_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_status(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
+    """조작 줄에는 마크만 서고 글은 알림이다 — 그 줄의 「그 화면으로」 가 Cut-off 를 고칠 화면을
+    연다."""
     path = tmp_path / "equipment.duckdb"
     DuckDBEquipmentRepository(path).initialize()
     app = _app(path)
     _turn_on(_ok(app.run()))
-    assert any("Cut-off 를 먼저" in str(item.value) for item in app.warning)
+    assert data_error_marks(app) == 1
+    assert not app.warning
+    (note,) = events(app, "EQ-10")
+    assert note["short"] == "필요 단축을 칠하지 못했습니다 — 공정별 Cut-off 없음"
+    assert "Cut-off 를 먼저" in note["full"]
+    assert (note["page"], note["href"]) == (
+        tab_label(AVAILABLE_EQUIPMENT_STATUS),
+        AVAILABLE_EQUIPMENT_STATUS.href,
+    )
+
+
+def test_a_layer_with_nothing_to_paint_is_one_plain_line_not_a_box_or_a_mark() -> None:
+    """칠할 것이 없는 빈 상태(`info`)는 회색 평문 한 줄이다 — 경고 상자 · 마크가 아니고 알림도 없다
+    (설계 규칙 UI-TXT-04)."""
+    script = """
+from capa_simulation.components.shortening_source import ShorteningStop
+from capa_simulation.components.space_shortening_view import render_layer_stop
+
+render_layer_stop(ShorteningStop("info", "조회기간에 월이 없습니다."))
+"""
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert [str(item.value) for item in app.caption] == ["조회기간에 월이 없습니다."]
+    assert not app.warning and not data_error_marks(app) and not events(app, "EQ-10")
 
 
 def test_an_unmerged_session_does_not_call_the_plan(monkeypatch: pytest.MonkeyPatch) -> None:

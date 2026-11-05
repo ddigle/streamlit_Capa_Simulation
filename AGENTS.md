@@ -3254,9 +3254,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tab_name` / `open_tab_name`(표지의 `tab` — 아이콘 없는 탭 이름, 닫힌 탭이면 None 이라 그 회차에는 그 탭의 상태 알림을 내지
   않는다). 시험: `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`.
 - `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
-  사용자 지시). `render_data_error(message, code=, tab=, text=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
+  사용자 지시). `render_data_error(message, code=, tab=, text=, goto=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
   좁으면 줄 바꿈)와 오류 단계 사건 알림 표지를 `st.html` 한 칸에 그린다 — 이벤트 칸을 쓰지 않아 프래그먼트 · 팝업 본문 어디서나 부른다.
-  글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `render_data_error_mark()`
+  글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `goto` 는 채울 입력이 다른 화면에 있을 때
+  그 화면의 (이름, 주소)다 — 줄의 화면 칸과 「그 화면으로」 가 그 화면이다(`alerts.state` 의 `goto` 와 같다). `render_data_error_mark()`
   는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) · `alert_marks.place_errors`(오류 없이
   그렸다).
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
@@ -5566,8 +5567,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   고정이 필요하면 늘 서 있는 빈 `st.container()` 칸만 둔다, 9장). 목록 구획의 빈 결과(「…이 없습니다」)와 점검 화면의 결론은
   조건부 안내가 아니라 값이다 — 자리에 평문 한 줄(`st.caption`)로 두고 초록 `st.success` 상자를 쓰지 않으며 하는 법 · 길 안내를
   붙이지 않는다. 그릴 것이 없어 화면 전체가 멈추는 빈 상태(`st.stop()` 앞)도 같은 회색 평문 한 줄이다 — 오류 · 경고 상자가
-  아니다(2026-11-04 반영 검수표 D4 (가)). 경고 상자로 멈추는 것은 다른 화면에서 채울 입력이 빠진 자리뿐이다(표준 대비 재공
-  현황의 주차별 가용대수 없음 — `tests/test_alert_sites.py` 의 `PLACE_NO_INPUT`).
+  아니다(2026-11-04 반영 검수표 D4 (가)). 다른 화면에서 채울 입력이 빠져 멈추는 자리(표준 대비 재공 현황의 주차별 가용대수 없음 ·
+  필요 단축 일정 · Space 「필요 단축」 의 Cut-off 없음)는 「데이터 Error」 마크이고 길 안내는 그 Alarm 줄의 「그 화면으로」 다(2026-11-05 답
+  v8 (가) — 9장 「화면을 못 그리는 오류」).
   숨은 데이터 안내(표에 보이지 않는 저장분 · 그리지 않는 항목)는 칸 머리 표지 + 풍선이다(2026-11-04 설계 규칙 확인 보드 AMB-02
   (가) — `docs/design_rules.md` UI-TXT-04 · 08).
 - **값 뒤 조사는 `services/korean_particle.py` 만 — 앱 코드는 시험이 지킨다.** f-string·`str.format`·`%s` 틀에 끼운 값(시나리오명·
@@ -6079,8 +6081,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   (이름 목록 — `PLACE_FORM`)로 두고, 가용설비 현황이 팝업을 열지 않아도 회차마다 같은 조건을 상태 알림(`EQ-12` —
   `cutoff_management.report_missing_cutoffs`)으로 낸다.
 - **화면을 못 그리는 오류는 자리에 「데이터 Error」 마크만 세우고 글은 알림으로만 보낸다**(2026-11-05 사용자 지시 —
-  `components/data_error_mark.render_data_error(message, code=, tab=, text=)`) — 자료 없는 달을 고름 · 계산 멈춤 · DB · 기준정보를 읽지 못해
-  화면 · 탭 · 구획을 그리지 못한 자리 전부다(`st.stop()` 앞이든 구획만 끝나든). 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
+  `components/data_error_mark.render_data_error(message, code=, tab=, text=, goto=)`) — 자료 없는 달을 고름 · 계산 멈춤 · DB · 기준정보를 읽지 못해
+  화면 · 탭 · 구획을 그리지 못한 자리 전부다(`st.stop()` 앞이든 구획만 끝나든). 다른 화면에서 채울 입력이 빠져 멈춘 자리도 같은 마크다(2026-11-05 답 v8 (가) —
+  재공 현황 주차별 가용대수 → 표준 목표, 필요 단축 일정 · Space 「필요 단축」 Cut-off → 가용설비 현황, `ShorteningStop.goto`) — 자리에 링크 · 글을 두지 않고 `goto` 로
+  Alarm 줄의 「그 화면으로」 가 그 화면을 연다. 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
   알림창이 뜨고(해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다), 그 Alarm 줄이 없으면(보관 끝) 알림창 없이 다시 세운다(`keep`). 짧은 글(`text`)은
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
   `WIP-01` · `SC-02` · `AD-07` · `VO-01`, 어느 화면에서나 열리는 사이드바 시나리오 팝업은 `SB-21`). 마크와 표지가 `st.html` 한 칸이라 프래그먼트 ·
@@ -6097,8 +6101,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
-  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_NO_INPUT`(채울
-  입력 없음 · 멈춤 — 빈 상태는 상자가 아니다) · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
+  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
   화면 결론) · `PLACE_REPORT`(점검 보고) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이

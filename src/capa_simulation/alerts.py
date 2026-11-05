@@ -455,17 +455,24 @@ def event_note(
 
 
 def page_error_note(
-    message: str, *, code: str, tab: str = "", text: str | None = None
+    message: str,
+    *,
+    code: str,
+    tab: str = "",
+    text: str | None = None,
+    goto: tuple[str, str] | None = None,
 ) -> AlertNote:
     """데이터 때문에 화면 · 구획을 그리지 못한 오류의 사건 알림 표지 한 칸(그리지 않는다) — 자리에는
     마크만 서고 글은 여기로만 간다(`components/data_error_mark`).
 
     같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 알림창이 한 번만 뜬다(회차마다 다시 그려도
     거듭 뜨지 않는다). 해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다. `text` 는 알림창 짧은
-    글(무엇을 그리지 못했는지 — 없으면 오류 글 첫 문단)이고 전문은 늘 오류 글 전체다."""
+    글(무엇을 그리지 못했는지 — 없으면 오류 글 첫 문단)이고 전문은 늘 오류 글 전체다. `goto` 는 채울
+    입력이 **다른 화면**에 있을 때 그 화면의 (이름, 주소)다 — 줄의 화면 칸과 「그 화면으로」 가 이번
+    화면 대신 그 화면이다(`state` 의 `goto` 와 같다)."""
     plain = plain_text(message)
     lead = text or plain_text(message.split("\n\n", 1)[0]) or plain
-    return event_note(
+    note = event_note(
         code,
         text=lead,
         full=plain,
@@ -474,6 +481,9 @@ def page_error_note(
         alert_id="page-" + fingerprint(code, None, plain),
         keep=True,
     )
+    if goto is not None:
+        note["page"], note["href"] = goto
+    return note
 
 
 def event(
