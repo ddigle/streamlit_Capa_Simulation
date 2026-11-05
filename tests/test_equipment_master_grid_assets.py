@@ -8,16 +8,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
-import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
-import pytest
+from js_runner import run_js_json
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
@@ -328,10 +323,6 @@ process.stdout.write(JSON.stringify(results))
 """
 
 
-def _runtime() -> str | None:
-    return shutil.which("node") or shutil.which("bun")
-
-
 def _sections() -> str:
     parts = []
     for name in _SECTIONS:
@@ -344,59 +335,13 @@ def _sections() -> str:
 def _node(
     payload: dict[str, Any], runner: str = _RUNNER, source: str | None = None
 ) -> dict[str, Any]:
-    """`source`(기본은 순수 구획들) 뒤에 `runner` 를 붙여 돌리고 그 출력 JSON 을 돌려준다.
-
-    스크립트는 임시 파일로 넘긴다 — `-e` 로 넘기면 `grid.js` 전체(가짜 DOM 시험)가 Windows 명령줄
-    상한(32,767자)을 넘어 node 가 뜨지도 못한다(WinError 206). 표준 입력은 `payload` 가 쓴다.
-    `.cjs` 라 가까운 `package.json` 이 무엇이든 CommonJS(`require`)로 돈다."""
-    runtime = _runtime()
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 설비 마스터 표 JS 대조를 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    with tempfile.TemporaryDirectory() as folder:
-        script = Path(folder) / "grid_case.cjs"
-        script.write_text(
-            (_sections() if source is None else source) + runner, encoding="utf-8", newline="\n"
-        )
-        completed = subprocess.run(
-            [runtime, str(script)],
-            input=json.dumps(payload),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=60,
-            check=False,
-        )
-    assert completed.returncode == 0, completed.stderr
-    result: dict[str, Any] = json.loads(completed.stdout)
+    """`source`(기본은 순수 구획들) 뒤에 `runner` 를 붙여 돌리고 그 출력 JSON 을 돌려준다."""
+    result: dict[str, Any] = run_js_json(
+        (_sections() if source is None else source) + runner,
+        what="설비 마스터 표 JS 대조",
+        stdin=json.dumps(payload),
+    )
     return result
-
-
-# Windows `CreateProcess` 의 명령줄 상한(글자 수).
-_WINDOWS_COMMAND_LINE_LIMIT = 32_767
-
-
-def test_the_js_runner_hands_the_script_over_in_a_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    """가짜 DOM 시험은 `grid.js` 전체를 돌린다. 스크립트를 명령줄에 실으면 사내 Windows 에서 상한을
-    넘어 node 가 뜨지 못한다 — 명령줄은 Windows 가 짓는 꼴(`list2cmdline`)로 재어도 짧고, 스크립트는
-    파일에 그대로(UTF-8) 있다. 이 PC 가 Linux 여도 그 꼴을 본다."""
-    source = _fake_dom_source()
-    seen: list[tuple[list[str], str]] = []
-
-    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        seen.append((list(args), Path(args[-1]).read_text(encoding="utf-8")))
-        return subprocess.CompletedProcess(args, 0, stdout='{"ok": true}', stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(sys.modules[__name__], "_runtime", lambda: "node")
-
-    assert _node({}, "", source=source) == {"ok": True}
-
-    [(args, script)] = seen
-    assert len(subprocess.list2cmdline(args)) < _WINDOWS_COMMAND_LINE_LIMIT
-    assert all(source not in arg for arg in args)
-    assert script == source
 
 
 def _python_codes(values: list[int], width: int) -> str:

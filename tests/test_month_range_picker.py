@@ -10,15 +10,12 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import shutil
-import subprocess
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from js_runner import run_js_json
 
 import capa_simulation.components.month_range_picker as month_range_picker
 from capa_simulation.components.month_range_picker import (
@@ -34,21 +31,7 @@ def _node(runner: str) -> Any:
         r"// <month-range-core>\n(?P<body>.*?)\n// </month-range-core>", MONTH_RANGE_JS, re.S
     )
     assert match, "month_range.js 에 // <month-range-core> 구획이 없습니다"
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 달 고르기 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", match.group("body") + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(match.group("body") + "\n" + runner, what="달 고르기 JS 구획 시험")
 
 
 def test_two_presses_close_a_range_in_either_order() -> None:

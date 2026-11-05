@@ -11,14 +11,13 @@ GitHub Actions 에서는 건너뛰지 않고 실패한다(`test_migration_parity
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+from js_runner import need_js_runtime
 
 from capa_simulation.components import intro_summary
 from capa_simulation.components.intro_overlay import _ASSETS
@@ -41,10 +40,6 @@ THRESHOLDS = SecurementThresholds(1.095, 0.995)
 # 와 같은 값이다(2026-10-08 대조 — bun·V8 모두). 기본 화면을 일부러 바꾸면 실패 문구의 새 지문으로
 # 고친다.
 BASE_FINGERPRINT = "798a2937ec27e46738ade5af468c728b64858dd5a25c7d269c12c2637c39a7ce"
-
-
-def _runtime() -> str | None:
-    return shutil.which("node") or shutil.which("bun")
 
 
 def _frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -132,11 +127,7 @@ def _payload() -> dict[str, Any]:
 
 @pytest.fixture(scope="module")
 def scene_results(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
-    runtime = _runtime()
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 장면 동작 검사를 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    runtime = need_js_runtime("장면 동작 검사")
     folder = tmp_path_factory.mktemp("intro-scene")
     payload_path = folder / "payload.json"
     palette_path = folder / "palette.json"

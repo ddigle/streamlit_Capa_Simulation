@@ -8,15 +8,11 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
-import pytest
+from js_runner import run_js_json
 
 from capa_simulation import alerts
 from capa_simulation.components import alert_center
@@ -184,21 +180,7 @@ def _sections() -> str:
 
 
 def _node(runner: str) -> Any:
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 알림 칸 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", _sections() + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(_sections() + "\n" + runner, what="알림 칸 JS 구획 시험")
 
 
 _RUNNER = """

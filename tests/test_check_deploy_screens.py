@@ -9,7 +9,6 @@ import io
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -21,6 +20,7 @@ from typing import Any, cast
 
 import duckdb
 import pytest
+from js_runner import run_js_json
 
 from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS, GRID_HOST
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
@@ -3952,11 +3952,6 @@ process.stdout.write(JSON.stringify({
 
 
 def _run_constraint_scripts(document: dict[str, Any]) -> dict[str, Any]:
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 화면 확인 JS 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     payload = {
         "document": document,
         "linkScript": screens._CONSTRAINT_LINK_JS,
@@ -3964,17 +3959,11 @@ def _run_constraint_scripts(document: dict[str, Any]) -> dict[str, Any]:
         "pageScript": screens._CONSTRAINT_JS,
         "pageArg": screens.CONSTRAINT_KEYS,
     }
-    completed = subprocess.run(
-        [runtime, "-e", _FAKE_DOM_RUNNER],
-        input=json.dumps(payload, ensure_ascii=False),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    result: dict[str, Any] = run_js_json(
+        _FAKE_DOM_RUNNER,
+        what="화면 확인 JS 시험",
+        stdin=json.dumps(payload, ensure_ascii=False),
     )
-    assert completed.returncode == 0, completed.stderr
-    result: dict[str, Any] = json.loads(completed.stdout)
     return result
 
 

@@ -1,4 +1,4 @@
-# Purpose: 시험 공용 자동 복원·권한 비트 판정과 Space 편집기·탭 줄·알림 칸·설비 표·그리드 대역.
+# Purpose: 시험 공용 자동 복원·권한 비트 판정·명령줄 재기와 Space·탭 줄·알림 칸·설비 표·그리드 대역.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -10,11 +10,13 @@ AppTest 는 같은 프로세스에서 스크립트를 실행하므로 스크립�
 
 import os
 import stat
+import subprocess
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from js_runner import refuse_overlong_command_line
 from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
@@ -50,6 +52,20 @@ def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
 # AppTest 가 쓰는 확인 함수를 위 판정으로 바꿔 끼운다. 모든 AppTest 가 같은 클래스를 쓰므로
 # 한 번이면 된다.
 LocalScriptRunner.script_stopped = script_stopped_with_its_data  # type: ignore[method-assign]
+
+
+_popen_init = subprocess.Popen.__init__
+
+
+def _popen_within_the_windows_limit(
+    self: subprocess.Popen[Any], args: Any, *rest: Any, **kwargs: Any
+) -> None:
+    """자식 프로세스 명령줄을 사내 Windows 상한으로 잰다 — Linux 는 넘겨도 떠 사내에서야 깨진다."""
+    refuse_overlong_command_line(args)
+    _popen_init(self, args, *rest, **kwargs)
+
+
+subprocess.Popen.__init__ = _popen_within_the_windows_limit  # type: ignore[method-assign]
 
 
 # 공식버전 자동 갱신 예약의 실행 줄 허락(`auto_update_scheduler.ENV_VAR`). 그 모듈을 여기서 읽으면
