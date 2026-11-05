@@ -396,7 +396,8 @@ def _render_list_toolbar(
     base_names: Mapping[str, str],
     draft: TableDraft,
 ) -> None:
-    """목록 표 **위** 작업 줄(2026-09-29 — 적용 버튼은 표 위). 고친 것이 있을 때만 저장이 열린다.
+    """목록 표 **위** 작업 줄(2026-09-29 — 적용 버튼은 표 위). 고친 것이 있을 때만 저장이 열리고 그
+    단추 풍선이 고친 수를 말한다(`list_edit_help`).
 
     순서 바꾸기는 두 길이다 — 순서 칸에 자리 번호를 넣어 끼워 넣기, 고른 시나리오를 위로·아래로·
     맨 위로. 둘 다 미저장 순서 편집으로 쌓이고 이름 편집과 같은 「변경 저장」 한 번으로 쓴다.
@@ -416,6 +417,7 @@ def _render_list_toolbar(
             key="scenario_list_save",
             on_click=_save_list_edits,
             args=(database_path, *args),
+            help=list_edit_help(len(renames), moved),
         )
         st.button(
             "편집 버리기",
@@ -452,7 +454,6 @@ def _render_list_toolbar(
             args=(*args, None),
             help="고른 시나리오를 맨 위로 옮깁니다. 「변경 저장」을 눌러야 저장됩니다.",
         )
-    st.caption(list_edit_caption(len(renames), moved))
     stale = moved_names(draft, base_names)
     if stale:
         st.warning(
@@ -477,9 +478,11 @@ def moved_names_warning(lines: Sequence[tuple[str, str]]) -> str:
     )
 
 
-def list_edit_caption(rename_count: int, moved: int) -> str:
-    """작업 줄 아래 한 줄 — 지금 고친 수(값). 무엇을 어떻게 고치는지는 두 칸의 머리 풍선이
-    말한다(설계 규칙 UI-TXT-01)."""
+def list_edit_help(rename_count: int, moved: int) -> str | None:
+    """「변경 저장」 단추 풍선 — 지금 고친 수. 고친 것이 없으면 풍선도 없다(설계 규칙 UI-TXT-08).
+    무엇을 어떻게 고치는지는 두 칸의 머리 풍선이 말한다(UI-TXT-01)."""
+    if not rename_count and not moved:
+        return None
     return f"고친 것: 이름 {rename_count} · 순서 {moved}"
 
 
