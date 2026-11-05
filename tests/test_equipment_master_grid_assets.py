@@ -526,6 +526,12 @@ const results = {
     tierDone(false, 'x', false),
     tierDone(true, ' ', false),
   ],
+  tip: [
+    addTip('아직 추가할 수 없습니다', true),
+    addTip('아직 추가할 수 없습니다', false),
+    addTip('', true),
+    addTip(null, true),
+  ],
   add: [
     canAdd(['A', 'B'], [0, 1], false, true, null),
     canAdd(['A', ''], [0, 1], false, true, null),
@@ -568,6 +574,8 @@ def test_the_new_unit_draft_section_adopts_newer_drafts_and_gates_the_add_button
     assert result["bump"] == [5, 10]
     assert result["tier"] == [True, False, True, False]
     assert result["add"] == [True, False, False, True, False]
+    pending = "고친 칸을 확인하는 중입니다"
+    assert result["tip"] == ["아직 추가할 수 없습니다", pending, "", ""]
 
 
 def test_new_unit_errors_on_cells_other_values_require_show_before_touching() -> None:
@@ -704,6 +712,97 @@ def test_the_new_unit_panel_has_no_spread_choice() -> None:
     결과 알림이 대수를 적는다)."""
     assert "propagate" not in JS
     assert "emg-checkline" not in JS and "emg-checkline" not in CSS
+
+
+_ADD_TIP_RUNNER = """
+const panel = (fields) => ({
+  mode: 'side', panel: 'new', base: 'b1', columns: [{ name: '설비명', kind: 'name' }],
+  groups: [[0, '호기 정보', 'common', '', [0]]], blank: [''], required: [0],
+  tiers: { required: [[0, false]] },
+  draft: { seq: 3, values: [''] }, checked: 3, errors: {}, warns: {}, locks: {},
+  ...fields,
+})
+const look = () => {
+  const add = buttonOf('호기 추가')
+  const tip = host.querySelector('.emg-tip')
+  const wrap = add.parentNode
+  return {
+    disabled: add.disabled,
+    tip: tip.textContent,
+    role: tip.getAttribute('role'),
+    sibling: wrap.children[1] === tip,
+    wrapped: wrap.className,
+    described: [add.getAttribute('aria-describedby'), wrap.getAttribute('aria-describedby')].every(
+      (id) => id === tip.id && Boolean(id)),
+    tab: wrap.tabIndex,
+    focusKeys: [wrap.dataset.fk, add.dataset.fk],
+    line: host.querySelectorAll('p').map((node) => node.textContent),
+    title: add.title || '',
+  }
+}
+mount(panel({ blocked: true, hint: '아직 추가할 수 없습니다 — 설비명 칸을 확인합니다' }))
+results.blocked = look()
+const field = host.querySelector('[data-fk="n0"]')
+field.value = 'EQ-09'
+fire(field, 'input')
+results.typed = look()
+mount(panel({
+  blocked: false, hint: '추가할 수 있습니다 — 반입일정 칸이 비거나',
+  draft: { seq: 4, values: ['EQ-09'] }, checked: 4,
+}))
+results.waiting = look()
+mount(panel({ blocked: false, hint: '', draft: { seq: 5, values: ['EQ-09'] }, checked: 5 }))
+results.ready = look()
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_the_add_button_says_why_in_a_tip_and_the_panel_keeps_no_line() -> None:
+    """「아직 추가할 수 없습니다 …」 는 칸에 늘 서지 않고 「호기 추가」 풍선이다(2026-11-05 사용자
+    답). 꺼진 단추는 마우스 · 초점을 받지 않으므로 감싼 칸이 받는다 — 꺼진 동안은 그 칸이 탭
+    자리이고(켜지면 단추가 탭 자리) 다시 그릴 때의 초점 표지도 탭 자리를 따라간다. 친 글이 판정
+    전이면 옛 판정 글을 풍선에 보이지 않고, 더 말할 것이 없으면 풍선을 세우지 않는다."""
+    runner = _FAKE_DOM + _MOUNT_LOADER + _ADD_TIP_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+
+    shape = {
+        "role": "tooltip",
+        "sibling": True,
+        "wrapped": "emg-tip-host",
+        "described": True,
+        "line": [],
+        "title": "",
+    }
+    off = {**shape, "disabled": True, "tab": 0, "focusKeys": ["add", ""]}
+    on = {**shape, "disabled": False, "tab": -1, "focusKeys": ["", "add"]}
+    assert result["blocked"] == {
+        **off,
+        "tip": "아직 추가할 수 없습니다 — 설비명 칸을 확인합니다",
+    }
+    assert result["typed"] == {**on, "tip": "고친 칸을 확인하는 중입니다"}
+    assert result["waiting"] == {**on, "tip": "추가할 수 있습니다 — 반입일정 칸이 비거나"}
+    assert result["ready"] == {**on, "tip": ""}
+
+
+def test_the_add_tip_shows_on_hover_and_keyboard_focus_and_has_the_app_tip_look() -> None:
+    """풍선은 마우스(꺼진 단추 위에서도 감싼 칸이 받는다)와 키보드 초점으로 뜨고, 눌렀을 때 초점이
+    남아 있어도 떠 있지 않도록 `:focus-within` 은 쓰지 않는다. 꼴은 편집 표 풍선(`.eg-tip`)과 같다
+    — 칸 글자색 바탕에 칸 면 색 글자, 12px. 빈 풍선은 서지 않는다."""
+    assert ".emg-hint" not in CSS and "emg-hint" not in JS
+    assert ".emg-tip-host:hover > .emg-tip" in CSS
+    assert ".emg-tip-host:focus-visible > .emg-tip" in CSS
+    assert ".emg-btn:focus-visible + .emg-tip" in CSS
+    assert "focus-within" not in CSS
+    assert ".emg-tip:empty" in CSS
+    tip = re.search(r"\.emg-tip \{(?P<body>.*?)\}", CSS, re.S)
+    assert tip is not None
+    for rule in (
+        "background: var(--emg-text)",
+        "color: var(--emg-surface)",
+        "font-size: 12px",
+        "pointer-events: none",
+    ):
+        assert rule in tip["body"]
 
 
 def test_the_delete_buttons_carry_the_tip_and_a_lock_or_a_new_unit_takes_it_away() -> None:
@@ -873,6 +972,13 @@ class FakeNode {
     ;(this.listeners[type] = this.listeners[type] || []).push(handler)
   }
   removeEventListener() {}
+  get classList() {
+    return {
+      add: (name) => {
+        this.className = (this.className + ' ' + name).trim()
+      },
+    }
+  }
   contains(node) {
     for (let at = node; at; at = at.parentNode) if (at === this) return true
     return false

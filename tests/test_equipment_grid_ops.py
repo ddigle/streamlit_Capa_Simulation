@@ -518,6 +518,42 @@ def test_a_stale_session_refuses_saved_unit_deletes_but_drops_new_ones() -> None
     assert result.state.loaded == (_id(state, 0),), "새 호기는 목록에서도 빠진다"
 
 
+def test_the_delete_toast_says_what_happened_and_every_kind_can_be_undone() -> None:
+    """저장본 호기는 지울 목록에 들고 새 호기는 바로 빠진다 — 칸 머리 글이 그대로 가르고, 고른 줄에
+    섞이면 값 그대로 둘을 잇는다. 어느 쪽이든 그 단계는 「되돌리기」 로 돌아온다."""
+    state = _state()
+    state = _with_new(state, "NEW-1", loaded=("n:NEW-1", _id(state, 0)))
+    state = _with_new(state, "NEW-2", loaded=("n:NEW-2", *state.loaded))
+    saved_ids = [_id(state, 0), _id(state, 1)]
+    cases = (
+        (["n:NEW-1"], "새 호기 1대 뺌"),
+        (["n:NEW-1", "n:NEW-1", "n:NEW-2"], "새 호기 2대 뺌"),
+        (saved_ids[:1], "1대 지울 목록에 넣음"),
+        ([saved_ids[0], "n:NEW-1"], "1대 지울 목록에 넣음 · 새 호기 1대 뺌"),
+        ([*saved_ids, "n:NEW-1", "n:NEW-2"], "2대 지울 목록에 넣음 · 새 호기 2대 뺌"),
+    )
+    for ids, toast in cases:
+        result = _apply(state, _op("delete", 1, ids=ids))
+        assert result.toast == toast
+        assert result.toast_step is not None and result.toast_step == eg.undo_top(result.state.undo)
+        back = _apply(result.state, _op("undo", 2, step=result.toast_step))
+        assert back.toast == "되돌림: 호기 지움" and not back.refused
+        assert back.state.frames[1].equals(state.frames[1]), toast
+        assert back.state.loaded == state.loaded, toast
+
+
+def test_a_stale_session_says_the_new_units_went_and_the_saved_ones_stayed() -> None:
+    state = _state()
+    state = _with_new(state, "NEW-1", loaded=("n:NEW-1", _id(state, 0)))
+    context = eg.GridContext(base=BASE, delete_lock="낡아서 못 지움")
+
+    mixed = _apply(state, _op("delete", 1, ids=[_id(state, 0), "n:NEW-1"]), context=context)
+    assert mixed.toast == "새 호기 1대 뺌 · 낡아서 못 지움" and mixed.toast_step is not None
+
+    refused = _apply(state, _op("delete", 1, ids=[_id(state, 0)]), context=context)
+    assert refused.toast == "낡아서 못 지움" and refused.toast_step is None
+
+
 def test_deleting_three_and_restoring_them_in_reverse_gives_the_saved_order_back() -> None:
     saved = _saved()
     state = _state(saved)

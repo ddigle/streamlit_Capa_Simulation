@@ -314,6 +314,11 @@ function canAdd(values, required, blocked, fresh, locked) {
   return !(fresh && blocked)
 }
 
+// 「호기 추가」 풍선 글 — 판정(파이썬)이 지금 초안의 것이면 그 글(더 말할 것이 없으면 빈 글), 아니면 확인 중이다.
+function addTip(hint, fresh) {
+  return fresh ? String(hint || '') : '고친 칸을 확인하는 중입니다'
+}
+
 // 새 호기 칸 오류를 보일까 — 판정이 지금 초안의 것이고, 값이 있거나 만졌거나, 늘 필수인 칸(설비명·공정소분류·Y/N 셋 —
 // 처음 연 빈 양식을 빨갛게 칠하지 않게 만지기 전에는 굵은 테만)이 아니면. 다른 칸 값 때문에 막는 칸(Qual일정이 있는
 // 신규 호기의 Qual상태, 좌표가 있는데 빈 크기 등)은 만지지 않아도 까닭을 보인다.
@@ -2263,17 +2268,30 @@ function drawNew(S, root, data) {
     enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice() }, [])
     send(S)
   })
+  // 막힌 까닭은 단추 풍선이다 — 칸에 늘 두지 않는다(설계 규칙 UI-TXT-01 · UI-INP-07). 꺼진 단추는 마우스 · 초점을
+  // 받지 않아 감싼 칸이 받고, 그동안은 감싼 칸이 탭 자리와 다시 그릴 때의 초점(data-fk)을 맡는다.
+  const tipHost = el('span', 'emg-tip-host')
+  const tip = el('span', 'emg-tip')
+  tip.id = 'emg-add-tip'
+  tip.setAttribute('role', 'tooltip')
+  add.setAttribute('aria-describedby', tip.id)
+  tipHost.setAttribute('aria-describedby', tip.id)
   // 친 글이 보낸 초안과 다르면(아직 확정 전) 판정은 옛 것이다 — 필수 칸이 찼는지만 보고 켠다(누르면 칸이 먼저 확정되고
   // 「호기 추가」 가 그 초안 전부를 싣는다).
   S.refreshAdd = () => {
     const typed = S.nd.values.some((value, k) => value !== S.ndSent[k])
-    add.disabled = !canAdd(S.nd.values, required, Boolean(data.blocked), fresh && !S.ndDirty.size && !typed, locked)
+    const judged = fresh && !S.ndDirty.size && !typed
+    add.disabled = !canAdd(S.nd.values, required, Boolean(data.blocked), judged, locked)
+    tip.textContent = addTip(data.hint, judged)
+    tipHost.tabIndex = add.disabled ? 0 : -1
+    tipHost.dataset.fk = add.disabled ? 'add' : ''
+    add.dataset.fk = add.disabled ? '' : 'add'
   }
   S.refreshAdd()
-  buttons.appendChild(add)
+  tipHost.appendChild(add)
+  tipHost.appendChild(tip)
+  buttons.appendChild(tipHost)
   foot.appendChild(buttons)
-  const hint = fresh && !S.ndDirty.size ? String(data.hint || '') : '고친 칸을 확인하는 중입니다'
-  foot.appendChild(el('p', 'emg-hint', hint))
   root.appendChild(foot)
 }
 

@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import successes
-from grid_fake import Calls, install_fake_grid, last, send, send_ops
+from grid_fake import Calls, install_fake_grid, last, outbox, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -232,6 +232,35 @@ def test_adding_puts_the_unit_on_top_opens_its_detail_and_keeps_process_and_floo
     draft = app.session_state[NEW_UNIT_DRAFT_KEY]
     assert draft["values"] == _draft(공정소분류="Process-A", 동="C2", 층="3F")
     assert draft["seq"] > 5 and set(draft) == {"seq", "values"}
+
+
+def test_deleting_an_unsaved_unit_from_its_detail_says_it_left_and_undo_brings_it_back(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """저장 전 새 호기는 지울 목록에 들지 않고 바로 빠진다(2026-11-05 사용자 답) — 칸 머리 글이
+    「새 호기 1대 뺌」 이고 「되돌리기」 로 돌아온다."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _open_new(app)
+    before = len(app.session_state[BUFFER_KEY][1])
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"))
+    detail_key = emg.side_key("detail")
+
+    # 브라우저처럼 마운트마다 제 이름이다 — 토스트는 그 op 를 보낸 마운트로 간다.
+    delete = outbox(grid, {"op": "delete", "ids": ["n:EQ-09"]}, mount="m-detail")
+    _ok(send(app, detail_key, "outbox", delete))
+
+    toast = last(grid, detail_key)["toast"]
+    assert toast["text"] == "새 호기 1대 뺌"
+    assert isinstance(toast["undo"], str) and toast["undo"]
+    assert len(app.session_state[BUFFER_KEY][1]) == before
+    assert "n:EQ-09" not in app.session_state[GRID_LOADED_KEY]
+
+    undo = outbox(grid, {"op": "undo", "step": toast["undo"]}, mount="m-detail")
+    _ok(send(app, detail_key, "outbox", undo))
+
+    assert len(app.session_state[BUFFER_KEY][1]) == before + 1
+    assert app.session_state[GRID_LOADED_KEY][0] == "n:EQ-09"
 
 
 def test_a_blocked_add_keeps_the_draft_and_says_why(tmp_path: Path, grid: Calls) -> None:
