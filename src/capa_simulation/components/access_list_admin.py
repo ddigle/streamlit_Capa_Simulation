@@ -38,6 +38,7 @@ from capa_simulation.components.admin_dialog import (
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.paste_form import refuse_paste, render_paste_form, tell_paste
 from capa_simulation.components.sso_status import access_problem_text
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.io.s3_small import S3Failure
 from capa_simulation.sidebar_status import remembered_expander
 
@@ -235,7 +236,8 @@ def _render_people(document: ListDocument) -> None:
             help=REMOVE_HELP,
             on_click=_remove_selected,
         )
-    st.dataframe(people_table(document), hide_index=True, width="stretch")
+    toolbar_clearance()
+    st.dataframe(people_table(document), hide_index=True, width="stretch", placeholder="")
 
 
 def render_access_list_admin() -> None:
