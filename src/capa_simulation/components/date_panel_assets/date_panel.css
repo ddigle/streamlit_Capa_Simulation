@@ -6,10 +6,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 1.25rem;
+  min-height: 1.5rem;
   margin-bottom: 0.25rem;
   font-size: 0.875rem;
-  line-height: 1.25rem;
+  line-height: 1.4;
 }
 
 .capa-date-help {
@@ -59,7 +59,7 @@
   display: block;
 }
 
-/* 값 칸 — 사이드바 조회기간 값 칸과 같은 꼴(왼쪽 달력 표식 · 값 · 오른쪽 ⇕). */
+/* 값 칸 — 사이드바 조회기간 값 칸과 같은 꼴(왼쪽 달력 표식 · 값 · 오른쪽 ⇕). 면 · 선 · 모서리는 이웃 입력 칸과 같다. */
 .capa-date-field {
   display: flex;
   align-items: center;
@@ -68,9 +68,9 @@
   width: 100%;
   min-height: 2.5rem;
   padding: 0.25rem 0.55rem 0.25rem 0.6rem;
-  border: 1px solid var(--capa-date-line);
-  border-radius: 8px;
-  background: var(--st-background-color);
+  border: 1px solid var(--st-border-color);
+  border-radius: var(--st-base-radius);
+  background: var(--st-secondary-background-color);
   text-align: left;
   cursor: pointer;
 }
@@ -140,23 +140,25 @@
   display: none;
 }
 
-/* 판 — 조회기간 팝업(st.dialog small)과 같은 폭 · 면. 맨 위 층이라 사이드바 · 펼침에 잘리지 않는다. */
+/* 판 — 조회기간 팝업(st.dialog small)과 같은 폭 · 자리 · 면 · 그늘 · 뒤 막. 면(--capa-date-sheet)은 열 때 앱 바탕을 읽어
+   넣는다 — 사이드바 안 칸의 --st-background-color 는 사이드바 면이다. 맨 위 층이라 사이드바 · 펼침에 잘리지 않는다. */
 .capa-date-dialog {
   box-sizing: border-box;
   width: min(31.25rem, calc(100vw - 2rem));
   max-width: none;
-  max-height: calc(100vh - 2rem);
+  max-height: calc(100vh - 4rem);
+  margin: 3rem auto auto;
   padding: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--capa-date-sheet, var(--st-background-color));
   color: var(--st-text-color);
-  box-shadow: 0 12px 40px color-mix(in srgb, var(--st-text-color) 24%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, black 16%, transparent);
   overflow: auto;
 }
 
 .capa-date-dialog::backdrop {
-  background: color-mix(in srgb, black 45%, transparent);
+  background: color-mix(in srgb, gray 25%, transparent);
 }
 
 .capa-date-sheet {
@@ -170,13 +172,13 @@
   gap: 0.5rem;
   margin-bottom: 1rem;
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
 }
 
 .capa-date-title-icon {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   stroke: currentColor;
 }
 
@@ -234,7 +236,6 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }

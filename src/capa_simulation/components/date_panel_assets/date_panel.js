@@ -397,6 +397,8 @@ export default function (component) {
     resetDraft()
     render()
     renderField()
+    const app = document.querySelector('.stApp')
+    if (app) dialog.style.setProperty('--capa-date-sheet', getComputedStyle(app).backgroundColor)
     dialog.showModal()
     focusCell(state.focus)
   }
