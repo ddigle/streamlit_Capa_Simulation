@@ -476,6 +476,18 @@ export default function (component) {
       dialog.close()
       return
     }
+    if (event.key === 'Tab' && dialog.open) {
+      // 판 안에서 돈다 — 맨 끝에서 판 밖(브라우저 · 그 밖 팝업의 포커스 가둠)으로 새지 않게.
+      const stops = Array.from(dialog.querySelectorAll('button')).filter(
+        (stop) => !stop.disabled && stop.tabIndex >= 0 && stop.offsetParent !== null
+      )
+      const edge = event.shiftKey ? stops[0] : stops[stops.length - 1]
+      if (edge && document.activeElement === edge) {
+        event.preventDefault()
+        ;(event.shiftKey ? stops[stops.length - 1] : stops[0]).focus()
+      }
+      return
+    }
     const cell = event.target.closest('.capa-date-day')
     const chip = event.target.closest('.capa-date-chip')
     if (event.key === 'Enter' && !event.repeat && !event.isComposing && (cell || chip)) {

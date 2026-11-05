@@ -139,6 +139,8 @@ def test_both_steps_render_in_one_run(date_panels: dict[str, dict[str, Any]]) ->
     assert date_panels[panel_key(registration.CATALOG_START_DATE_KEY)]["label"] == "조회일"
     detail = date_panels[panel_key(registration.FORM_DETAIL_START_KEY)]
     assert detail["label"] == "상세 조회 기간"
+    # 목록 조회는 폼 없이 단추 하나다 — 날짜 칸이 「적용」 때만 서버로 보낸다.
+    assert app.button(key=registration.CATALOG_QUERY_BUTTON_KEY).label == "시뮬레이션 코드 조회"
     labels = {widget.label for widget in app.button}
     assert "시뮬레이션 코드 조회" in labels
     assert "DB 조회 후 시나리오 저장" in labels

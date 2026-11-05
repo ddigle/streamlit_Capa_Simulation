@@ -600,6 +600,45 @@ def _date_input_calls() -> list[str]:
     return found
 
 
+DATE_FIELDS = frozenset(
+    {"date_field", "date_range_field", "optional_date_field", "optional_date_range_field"}
+)
+
+
+def _is_form_block(item: ast.withitem) -> bool:
+    call = item.context_expr
+    return (
+        isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "form"
+    )
+
+
+def _date_fields_inside_forms() -> list[str]:
+    found: list[str] = []
+    for path in [
+        *(PROJECT_ROOT / "app_pages").rglob("*.py"),
+        *(PROJECT_ROOT / "src").rglob("*.py"),
+    ]:
+        for block in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(block, ast.With) or not any(map(_is_form_block, block.items)):
+                continue
+            for statement in block.body:
+                for node in ast.walk(statement):
+                    if (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id in DATE_FIELDS
+                    ):
+                        found.append(f"{path.relative_to(PROJECT_ROOT).as_posix()}:{node.lineno}")
+    return found
+
+
+def test_no_date_field_sits_inside_a_form() -> None:
+    """폼 안 트리거는 제출 때까지 서버에 오지 않아 「적용」 이 먹지 않는다 — 칸은 폼 밖에 둔다."""
+    assert _date_fields_inside_forms() == []
+
+
 def test_the_app_has_no_native_date_input() -> None:
     """앱의 날짜 고르기는 값 칸 + 기간 판 한 꼴이다(UI-INP-03 · UI-CON-03) — 브라우저 기본 날짜
     칸을 다시 두면 실패한다. 편집 표 칸 안 날짜(`DateColumn`)는 표의 일이라 밖이다."""
