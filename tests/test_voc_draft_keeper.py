@@ -11,15 +11,13 @@ DOM 을 모르는 판정 구획(`// <voc-draft>`)은 node(없으면 bun)로 떼�
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from alert_marks import successes
+from js_runner import run_js_json
 from streamlit.testing.v1 import AppTest
 from test_voc_page import _script
 
@@ -31,21 +29,7 @@ from capa_simulation.components.voc_draft_keeper import _JS, DRAFT_STORAGE_KEY
 def _node(runner: str) -> Any:
     match = re.search(r"// <voc-draft>\n(?P<body>.*?)\n// </voc-draft>", _JS, re.S)
     assert match, "voc_draft_keeper 스크립트에 // <voc-draft> 구획이 없습니다"
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — VOC 초안 판정 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", match.group("body") + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(match.group("body") + "\n" + runner, what="VOC 초안 판정 구획 시험")
 
 
 def test_the_draft_is_restored_into_an_empty_form_and_forgotten_after_posting() -> None:

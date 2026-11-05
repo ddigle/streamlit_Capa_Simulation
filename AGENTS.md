@@ -221,18 +221,26 @@ Windows(PowerShell):
   합집합은 `type` 키로 좁히기, AppTest 노드는 `app.markdown` 같은 타입 있는 접근자나
   `isinstance(node, Caption)`, `.loc[r, c]` 를 숫자로 볼 때는 변환 없이 비교(숫자인지까지 본다).
 - 계약을 **일부러** 어기는 입력(검증 경로 시험)만 그 줄에 `# type: ignore[코드]` 를 단다.
-- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 넷(사내 리뷰 `202610271800` 발견 2 에서 16개가
-  깨졌다). ① 경로를 글자로 견줄 때는 `relative_to(...).as_posix()` 로 짓는다 — `str(Path)`·f-문자열은 Windows 에서 `\` 로
+- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 여섯(사내 리뷰 `202610271800` 발견 2 에서 16개,
+  `202611041000` 발견 2 에서 9개가 깨졌다). ① 경로를 글자로 견줄 때는 `relative_to(...).as_posix()` 로 짓는다 — `str(Path)`·f-문자열은 Windows 에서 `\` 로
   잇는다(실패 메시지에만 쓰는 글은 그대로 둬도 된다). 스크립트가 경로를 OS 꼴로 찍으면 기대도 같은 상수로 짓는다.
-  ② node·bun 에 넘기는 스크립트가 길어질 수 있으면(자산 파일 전체 등) `-e` 가 아니라 임시 `.cjs` 파일로 넘기고 표준
-  입력은 자료가 쓴다 — Windows 명령줄은 32,767자를 넘으면 `WinError 206` 으로 뜨지도 못한다(설비 마스터 표 `grid.js`
-  전체가 넘는다). `-e` 로 남은 자리(구획 하나·짧은 러너)는 6천 자 안쪽이다. ③ 권한 비트(0600·0700)는
+  `str(경로.relative_to(…))` 는 그물이 막는다(`tests/test_js_runner.py`).
+  ② JS 를 돌리는 시험은 모두 `tests/js_runner.py`(`run_js_json` · `run_js` · `need_js_runtime`)를 지난다 — 스크립트는 임시
+  `.cjs` 파일, 자료는 표준 입력이다. Windows 명령줄은 32,767자를 넘으면 `WinError 206` 으로 뜨지도 못한다(자산 파일 전체·
+  경우 표를 실은 인자가 넘었다). `node -e`·따로 찾는 `shutil.which("node")` 는 그물이 막고(`tests/test_js_runner.py`),
+  `tests/conftest.py` 가 모든 자식 프로세스 명령줄을 Windows 가 짓는 꼴로 재어 상한에 닿으면 Linux 에서도 실패시킨다.
+  ③ 권한 비트(0600·0700)는
   담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(공용 픽스처 `tests/conftest.py` 의
   `keeps_permission_bits` — 권한 비트를 단언하는 시험은 모두 받는다, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
-  화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. 사외 CI 의 둘째 작업
-  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 넷을 사내보다 먼저 보인다 — 작업 단위
+  화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. ⑤ 대소문자만 다른 두 뿌리
+  (`modules/`·`Modules/`)를 실제 폴더로 만들면 NTFS 는 먼저 만든 쪽 하나로 접고 git 도 그 철자로 적는다 — 철자를 글자로
+  견주지 말고 git 이 적은 철자를 읽는다(`tests/test_apply_deploy_package.py` 의 `_tracked_spelling`). 파일을 만들지 않는 순수
+  목록 시험은 그대로 둔다. ⑥ 프레임을 쌓는 동작(끌기 자동 스크롤)은 시간으로 기다리지 않고 조건으로 기다린다 — Windows
+  타이머 해상도(약 15.6ms)에서는 같은 시간에 프레임이 훨씬 적다(`tests/edit_grid_node.py` 의 `until`, 프레임 간격 16ms 를
+  매개값으로 함께 돌린다). 사외 CI 의 둘째 작업
+  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 여섯을 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux `verify` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
-  판 본 뒤 굳힐지 다시 묻는다). 그 칸이 빨가면 이 넷부터 본다. 계약은 `tests/test_ci_workflow.py`.
+  판 본 뒤 굳힐지 다시 묻는다). 그 칸이 빨가면 이 여섯부터 본다. 계약은 `tests/test_ci_workflow.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는

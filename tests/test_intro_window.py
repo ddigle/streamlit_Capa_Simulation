@@ -12,14 +12,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 from typing import Any
 
 import pandas as pd
-import pytest
+from js_runner import run_js_json
 
 from capa_simulation.components import intro_summary
 from capa_simulation.components.intro_overlay import _ASSETS
@@ -41,15 +38,6 @@ INCLUDED = ["P-A", "P-B"]
 THRESHOLDS = SecurementThresholds(1.095, 0.995)
 
 
-def _runtime() -> str:
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — Summary 창 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    return runtime
-
-
 def _block() -> str:
     js = (_ASSETS / "intro.js").read_text(encoding="utf-8")
     match = re.search(r"// <intro-window>\n(?P<body>.*?)\n// </intro-window>", js, re.S)
@@ -58,16 +46,9 @@ def _block() -> str:
 
 
 def _run(script: str, data: Any) -> Any:
-    completed = subprocess.run(
-        [_runtime(), "-e", f"{_block()}\nconst DATA = {json.dumps(data)};\n{script}"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    return run_js_json(
+        f"{_block()}\nconst DATA = {json.dumps(data)};\n{script}", what="Summary 창 구획 시험"
     )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
 
 
 def _payload() -> dict[str, Any]:

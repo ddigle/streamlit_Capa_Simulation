@@ -15,16 +15,14 @@ node·bun 이 없는 PC 에서는 그 대조만 건너뛰고, GitHub Actions 에
 from __future__ import annotations
 
 import json
-import os
 import random
 import re
-import shutil
-import subprocess
 from datetime import date
 from typing import Any
 
 import pandas as pd
 import pytest
+from js_runner import run_js_json
 from test_equipment_availability import _downtime
 from test_space_layout_edit import CANVAS, FLOOR, _master, _parse, _status
 
@@ -725,10 +723,6 @@ process.stdout.write(JSON.stringify({
 """
 
 
-def _runtime() -> str | None:
-    return shutil.which("node") or shutil.which("bun")
-
-
 def _run_js(payload: dict[str, Any]) -> dict[str, Any]:
     match = _SECTION.search(JS)
     assert match, "editor.js 에 // <module-tiling> 구획이 없습니다"
@@ -738,22 +732,9 @@ def _run_js(payload: dict[str, Any]) -> dict[str, Any]:
 def _node(source: str, payload: dict[str, Any]) -> dict[str, Any]:
     """`source` 를 node(없으면 bun)로 돌려 표준 입력에 `payload`(JSON)를 주고 표준 출력
     JSON 을 읽는다."""
-    runtime = _runtime()
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 모듈 묶음 JS 대조를 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", source],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    result: dict[str, Any] = run_js_json(
+        source, what="모듈 묶음 JS 대조", stdin=json.dumps(payload)
     )
-    assert completed.returncode == 0, completed.stderr
-    result: dict[str, Any] = json.loads(completed.stdout)
     return result
 
 

@@ -12,12 +12,15 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pytest
 from edit_grid_node import FAKE_DOM, RUNNER_HEAD, asset, mountable, run_node, sections
 
 from capa_simulation.components import edit_grid
 from capa_simulation.services import edit_grid as eg
 from capa_simulation.services.edit_grid_payload import build_base, encode_base, encode_feed
 
+# 사내 Windows 타이머 해상도(약 15.6ms)를 흉내 내는 프레임 간격.
+WINDOWS_TIMER_MS = 16
 SELECT = asset("eg_select.js")
 SELECT_CSS = asset("eg_select.css")
 REGISTERED_JS = edit_grid.registered_js()
@@ -435,12 +438,16 @@ def test_whole_table_row_and_column_selections() -> None:
     assert result["noEdit"], "Shift+Space 는 칸 편집을 열지 않는다"
 
 
-def test_click_shift_click_and_drag_with_auto_scroll() -> None:
-    body = r"""
+@pytest.mark.parametrize("frame_ms", [0, WINDOWS_TIMER_MS])
+def test_click_shift_click_and_drag_with_auto_scroll(frame_ms: int) -> None:
+    """자동 스크롤은 프레임마다 쌓인다 — 프레임 간격이 Windows 타이머 해상도만큼 길어도 끝 줄까지
+    고른다(시간으로 기다리면 사내 Windows 에서 29 줄에서 멈춘 채 읽었다, 리뷰 `202611041000`)."""
+    body = rf"""
+  globalThis.requestAnimationFrame = (run) => setTimeout(run, {frame_ms})
   point('pointerdown', 1, 3)
   point('pointerup', 1, 3)
   R.click = [range(), removed > 0, document.activeElement === scroller]
-  point('pointerdown', 4, 5, { shiftKey: true })
+  point('pointerdown', 4, 5, {{ shiftKey: true }})
   point('pointerup', 4, 5)
   R.shiftClick = range()
   // 끌기 — 손 밑 칸이 바뀔 때마다 맞은편 모서리가 따라온다.
@@ -452,12 +459,12 @@ def test_click_shift_click_and_drag_with_auto_scroll() -> None:
   R.dragged = [range(), S.sel.drag === null]
   // 아래로 창 밖 60px — 자동 스크롤로 끝 줄까지 고른다.
   point('pointerdown', 0, 2)
-  fire(scroller, 'pointermove', { clientX: xOf(2), clientY: 660, pointerId: 1 })
-  await tick(120)
-  R.auto = { scrollTop: scroller.scrollTop, focus: Object.assign({}, S.focus),
-    anchor: Object.assign({}, S.anchor) }
-  fire(scroller, 'pointerup', { clientX: xOf(2), clientY: 660, pointerId: 1 })
-  R.autoEnd = { scrolled: S.sel.lastDrag.scrolled > 3, drag: S.sel.drag }
+  fire(scroller, 'pointermove', {{ clientX: xOf(2), clientY: 660, pointerId: 1 }})
+  await until(() => S.focus.r === {ROWS - 1})
+  R.auto = {{ scrollTop: scroller.scrollTop, focus: Object.assign({{}}, S.focus),
+    anchor: Object.assign({{}}, S.anchor) }}
+  fire(scroller, 'pointerup', {{ clientX: xOf(2), clientY: 660, pointerId: 1 }})
+  R.autoEnd = {{ scrolled: S.sel.lastDrag.scrolled > 3, drag: S.sel.drag }}
   const stopped = scroller.scrollTop
   await tick(30)
   R.stopped = scroller.scrollTop === stopped
@@ -487,7 +494,7 @@ def test_dragging_left_over_frozen_columns_scrolls_before_it_selects_keys() -> N
   scroller.scrollLeft = 200
   point('pointerdown', 1, 5)
   fire(scroller, 'pointermove', { clientX: 50, clientY: yOf(1), pointerId: 1 })
-  await tick(120)
+  await until(() => scroller.scrollLeft === 0 && S.focus.c === 0)
   fire(scroller, 'pointerup', { clientX: 50, clientY: yOf(1), pointerId: 1 })
   R.log = log
   R.end = { scrollLeft: scroller.scrollLeft, range: range() }

@@ -12,13 +12,10 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 from typing import Any
 
-import pytest
+from js_runner import run_js_json
 
 from capa_simulation.components.cell_press_guard import (
     HANDLER_NAME,
@@ -36,21 +33,7 @@ SCRIPT = cell_press_guard_script(HOME_CELL_CHART_KEYS)
 def _node(runner: str) -> Any:
     match = re.search(r"// <cell-press-hold>\n(?P<body>.*?)\n// </cell-press-hold>", SCRIPT, re.S)
     assert match, "cell_press_guard 스크립트에 // <cell-press-hold> 구획이 없습니다"
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 칸 누름 거름 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", match.group("body") + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(match.group("body") + "\n" + runner, what="칸 누름 거름 JS 구획 시험")
 
 
 _HOLD_RUNNER = f"""

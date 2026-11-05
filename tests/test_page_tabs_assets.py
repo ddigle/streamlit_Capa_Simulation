@@ -7,14 +7,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
-import pytest
+from js_runner import run_js_json
 
 from capa_simulation.components import page_tabs
 
@@ -282,21 +279,9 @@ def _sections() -> str:
 
 def _node(runner: str, *, prelude: str | None = None) -> Any:
     """`prelude`(기본은 순수 구획들) 뒤에 `runner` 를 붙여 node 로 돌리고 찍은 JSON 을 읽는다."""
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 탭 줄 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", (_sections() if prelude is None else prelude) + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    return run_js_json(
+        (_sections() if prelude is None else prelude) + "\n" + runner, what="탭 줄 JS 구획 시험"
     )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
 
 
 _HISTORY_RUNNER = """
@@ -654,7 +639,7 @@ def test_every_press_on_the_strip_consults_the_double_press_guard_first() -> Non
 
 
 _ORDER_RUNNER = """
-const cases = JSON.parse(process.argv[1])
+const cases = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 const out = cases.map((c) => {
   if (c.op === 'pin') return pinnedOrder(c.ids, c.pinned, c.id, c.pin)
   if (c.op === 'move') return movedOrder(c.ids, c.pinned, c.id, c.before)
@@ -748,21 +733,9 @@ def test_the_script_draws_presses_with_the_same_rules_as_the_server() -> None:
     고정(`pinned_to`)·차례 (`moved`)·닫기 단추(`closable`)를 파이썬과 같은 표로 맞댄다. 키보드 한
     칸은 이웃과 자리를 바꾸고 고정 묶음을 넘지 않는다."""
     cases, answers = _order_cases()
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 탭 줄 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", _sections() + "\n" + _ORDER_RUNNER, json.dumps(cases)],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    got = run_js_json(
+        _sections() + "\n" + _ORDER_RUNNER, what="탭 줄 JS 구획 시험", stdin=json.dumps(cases)
     )
-    assert completed.returncode == 0, completed.stderr
-    got = json.loads(completed.stdout)
     wrong = [
         (case, want, have)
         for case, want, have in zip(cases, answers, got, strict=True)

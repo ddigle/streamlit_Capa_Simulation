@@ -5,14 +5,12 @@ from __future__ import annotations
 import base64
 import json
 import math
-import os
 import re
-import shutil
-import subprocess
 from typing import Any
 
 import pytest
 import streamlit as st
+from js_runner import run_js_json
 
 import capa_simulation.components.intro_overlay as intro_overlay
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
@@ -1431,21 +1429,9 @@ def test_a_streamlit_dialog_under_the_cover_is_closed_so_the_first_press_enters(
     닫는다(첫 누름이 하던 일 — 팝업 글은 전처럼 보이지 않는다). 글이 아니라 팝업 자리로 고르고,
     보낸 Esc 는 덮개 키 처리(Summary 의 Esc)가 지나친다."""
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 입장 화면 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", _intro_block(js, "intro-dialogs") + "\n" + _DIALOGS_RUNNER],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    out = run_js_json(
+        _intro_block(js, "intro-dialogs") + "\n" + _DIALOGS_RUNNER, what="입장 화면 JS 구획 시험"
     )
-    assert completed.returncode == 0, completed.stderr
-    out = json.loads(completed.stdout)
     assert out["count"] == 1
     assert out["keys"] == [["keydown", "Escape", True, True]]
     assert out["bare"] == [1, ["Escape"]]

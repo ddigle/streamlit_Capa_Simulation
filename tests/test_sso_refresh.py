@@ -11,14 +11,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 import time
 from typing import Any
 
-import pytest
+from js_runner import run_js_json
 from sso_support import LOGINID, use_config
 
 from capa_simulation.auth import names
@@ -53,21 +50,7 @@ def _identity(loginid: str = LOGINID, sid: str = "sid-0000-0000-0000-00") -> Ide
 def _node(script: str, runner: str) -> Any:
     match = re.search(r"// <sso-refresh-rule>\n(?P<body>.*?)\n// </sso-refresh-rule>", script, re.S)
     assert match, "갱신 스크립트에 // <sso-refresh-rule> 구획이 없습니다"
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 로그인 갱신 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", match.group("body") + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(match.group("body") + "\n" + runner, what="로그인 갱신 JS 구획 시험")
 
 
 def test_off_mode_adds_no_refresh_script() -> None:

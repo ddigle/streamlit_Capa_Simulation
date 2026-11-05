@@ -17,14 +17,12 @@ Actions 에서는 실패한다(`test_intro_scene_behavior` 와 같은 규칙).
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from js_runner import run_js_json
 
 from capa_simulation.components.theme_toggle import THEME_APP_KEY
 
@@ -79,10 +77,6 @@ CASES: list[tuple[str | None, bool, str | None, str, str]] = [
 ]
 
 
-def _runtime() -> str | None:
-    return shutil.which("node") or shutil.which("bun")
-
-
 def _theme_section(path: Path) -> str:
     match = THEME_SECTION.search(path.read_text(encoding="utf-8"))
     assert match, f"{path.name} 에 「밝기」 구획이 없습니다"
@@ -90,23 +84,12 @@ def _theme_section(path: Path) -> str:
 
 
 def _run(body: str) -> list[list[str]]:
-    runtime = _runtime()
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 가이드 밝기 동작 검사를 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     cases = [{"stored": stored, "osDark": dark, "next": nxt} for stored, dark, nxt, _, _ in CASES]
-    completed = subprocess.run(
-        [runtime, "-e", _RUNNER],
-        input=json.dumps({"key": THEME_APP_KEY, "body": body, "cases": cases}),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    result: list[list[str]] = run_js_json(
+        _RUNNER,
+        what="가이드 밝기 동작 검사",
+        stdin=json.dumps({"key": THEME_APP_KEY, "body": body, "cases": cases}),
     )
-    assert completed.returncode == 0, completed.stderr
-    result: list[list[str]] = json.loads(completed.stdout)
     return result
 
 

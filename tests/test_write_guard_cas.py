@@ -427,7 +427,7 @@ def seen_slot_writes(source: str, module: str) -> list[tuple[int, str]]:
 
 
 def _relative(path: Path) -> str:
-    return str(path.relative_to(PROJECT_ROOT))
+    return path.relative_to(PROJECT_ROOT).as_posix()
 
 
 def test_every_conflict_handler_in_the_screens_judges_an_own_save() -> None:

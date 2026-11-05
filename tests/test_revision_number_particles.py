@@ -73,7 +73,9 @@ def test_no_particle_is_spaced_after_a_revision_number() -> None:
     offenders = [
         hit
         for path in _app_files()
-        for hit in _offenders(path.read_text(encoding="utf-8"), str(path.relative_to(PROJECT_ROOT)))
+        for hit in _offenders(
+            path.read_text(encoding="utf-8"), path.relative_to(PROJECT_ROOT).as_posix()
+        )
     ]
     assert not offenders, "리비전 번호 뒤 조사는 붙입니다:\n" + "\n".join(offenders)
 
