@@ -16,7 +16,7 @@
 | 마지막 사내 배포 | **`202611041000`** — 태그 `deploy/202611041000` = `fe182ea`. 11-04 발송 · 사내 적용, **11-05 리뷰 받아 처리 끝**(아래 2장). 그 앞은 `202610271800` |
 | 마이그레이션 | 시뮬레이션 `0036`, 설비 `0033` 그대로 — 새 마이그레이션 없음 |
 | 의존성 | 락은 `pandas` 2.2.3 · `numpy<2.3`(2.2.6 그대로) — 판이 바뀐 것은 pandas 하나이고 새 패키지는 없다. 사내는 이미 2.2.3 이고, 사외 `.venv` 도 사용자 `uv sync` 로 맞췄다 |
-| 관문 | `10ef375` + 이 기록(문서만) 전체 관문 — 14,763 통과 · 실패 0 · 건너뜀 11 · xfail 1 · mypy 921 · ruff 957, pandas 2.2.3 · numpy 2.2.6 에서 잰 것이다(`test_the_installed_package_is_the_pinned_one` 통과). main 으로 합친 뒤 한 번 더 돌린다 |
+| 관문 | `71f8ced` + 이 기록(문서만) 전체 관문 — 14,783 통과 · 실패 0 · 건너뜀 11 · xfail 1 · mypy 923 · ruff 959, pandas 2.2.3 · numpy 2.2.6 에서 잰 것이다. main 으로 합친 뒤 한 번 더 돌린다 |
 | 접속 명단 | `feat/access-list-1105` 는 main 에 들었다 — 통합인증 1단계(명단 밖은 인증 뒤 거절). 이 코드를 C-DEP 에 싣기 **전에** 환경변수 표에 `CAPA_ACCESS_ADMINS` 를 넣는다 — 공개 주소가 루프백이 아닌 서버는 `APP_ENV` 와 관계없이 없으면 막힌다(`docs/TODO.md` 2장 「다음 배포 7장에 적을 것」 같은 날 항목). 사용자 결정(11-05): 그룹 클레임은 쓰지 않고 `loginid` + S3 영속 명단으로 간다 — **구현은 main 에 들었다(`feat/access-s3-1105` · 켜는 순서 `docs/sso_setup.md` 5장)**, 실제 S3 · C-DEP 확인은 아직(가짜 S3 로만). 배포 7장 몫은 `docs/TODO.md` 2장 |
 | 배포 서버(C-DEP) | 통합인증 켬 · 로그인 · 갱신 확인 · 잠금 끝(11-05, 값은 문서에 적지 않는다). DB 는 컨테이너 디스크 `/project/data` 이고 영속 볼륨이 없어 **CI/CD 때 시나리오 저장이 사라진다** — 볼륨은 요청하지 않고 **S3 Drive 로 대체하기로 했다**(11-05 사용자, 구현은 아직 · `docs/TODO.md` 1장 「C-DEP 운영 DB 영속 볼륨」 · 2장 「S3 분리(보류)」). BigDataQuery 는 첫 pip 실패로 패키지 없음(1장 「CD 서버 BDQ」) |
 | 작업 자리 | 개발·배포 빌드 모두 데스크탑 WSL(`docs/wsl_dev_environment.md`). 8501 은 사용자가 Claude 밖 tmux 에서 띄운다. 배포 ZIP 은 `~/projects/Deploy/` → 서피스 `C:\Dev\update_publishing` → 메일은 사용자가 서피스 Chrome 의 Outlook 웹 작성창에서. 열린 일을 모은 목록 · 관문 스크립트 · 세션 메모 보관본은 저장소 밖 `~/projects/Deploy/worklog/` |
