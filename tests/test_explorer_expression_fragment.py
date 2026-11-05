@@ -14,14 +14,17 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import streamlit as st
 from fragment_browser import FragmentBrowser
 from streamlit.testing.v1 import AppTest
 from test_equipment_explorer import _render_fixture
 from test_shortening_view_fragment import _fragment_of, _runner
 
+from capa_simulation.components import date_panel
 from capa_simulation.components.equipment_explorer import (
     AS_OF_KEY,
     EXPRESSION_VIEWS,
@@ -126,11 +129,48 @@ def test_a_condition_is_a_full_run_and_the_next_expression_run_uses_it(
     assert app.dataframe[0].value["설비대수"].sum() == pytest.approx(1.0)
 
 
+def _draw_date_fields_as_buttons(monkeypatch: pytest.MonkeyPatch) -> None:
+    """날짜 칸 대역은 델타를 내지 않는다 — 이 시험만 그 자리에 단추를 그려 그 델타의 프래그먼트
+    id 를 본다(`_fragment_of`)."""
+
+    def probe(*, key: str, **_: Any) -> SimpleNamespace:
+        st.button("날짜 칸", key=key)
+        return SimpleNamespace(apply=None)
+
+    monkeypatch.setattr(date_panel, "_DATE_PANEL", probe)
+
+
 def test_the_date_widgets_stay_outside_the_result_fragment(
-    request: pytest.FixtureRequest,
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """기간·기준일은 조건(본문 상자나 카드)이다 — 표현 프래그먼트에 들지 않는다."""
+    _draw_date_fields_as_buttons(monkeypatch)
     runner = _runner(request)
     _open(runner, "단계별 건수")
     for key in (START_DATE_KEY, AS_OF_KEY):
-        assert _fragment_of(runner, key) == "", key
+        assert _fragment_of(runner, date_panel.panel_key(key)) == "", key
+
+
+def test_the_probe_sees_a_date_field_drawn_inside_a_fragment(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """위 시험이 헛돌지 않는다 — 프래그먼트 안에 그린 칸이면 프래그먼트 id 가 잡힌다."""
+
+    def script() -> None:
+        from datetime import date
+
+        import streamlit as st
+
+        from capa_simulation.components.date_panel import date_field
+
+        @st.fragment
+        def inside() -> None:
+            date_field("기준일", key="inside_day", default=date(2026, 1, 1))
+
+        inside()
+
+    _draw_date_fields_as_buttons(monkeypatch)
+    runner = _runner(request)
+    app = AppTest.from_function(script).run()
+    assert not app.exception
+    assert _fragment_of(runner, date_panel.panel_key("inside_day")) != ""
