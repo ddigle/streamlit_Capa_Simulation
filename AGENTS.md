@@ -173,7 +173,7 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 
 - 운영 호환 Python: **3.10.11 64-bit**
 - UI: Streamlit 멀티페이지 앱
-- 데이터 처리: pandas
+- 데이터 처리: pandas(2.2 — 위 끝은 사내 `bigdataquery` 가 받는 범위, `pyproject.toml`)
 - 차트: Plotly
 - 초기 이관·병행 검증용 Excel 읽기: xlwings, Workbook 숨김·읽기 전용
 - 타입 검사: mypy strict

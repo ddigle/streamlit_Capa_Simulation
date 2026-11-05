@@ -44,7 +44,7 @@ git remote -v
 - **`git clean -x` 를 쓰지 않는다.** `-x` 는 무시된 파일까지 지우고, 거기에 **운영 DuckDB 와
   `data/input` 실데이터**가 들어 있다. 한 글자 차이로 사내 데이터가 날아간다.
 - **`uv sync` 를 맨 것으로 돌리지 않는다.** 락에 없는 `bigdataquery` 를 지운다.
-  항상 `uv sync --inexact` 다.
+  항상 `uv sync --inexact` 다 — 이 줄도 사용자가 친다(4-1).
 - **정체불명 파일을 스스로 지우지 않는다.** 사용자에게 묻고 고른 대로 한다.
 - **`.gitignore` 를 고치지 않는다.** 권한에서도 막혀 있다. 넣어야 할 것이 있으면 리뷰
   문서에 적어 사외가 넣게 한다.
@@ -52,7 +52,7 @@ git remote -v
   푸시가 필요한 자리에서는 사용자에게 명령을 알려 주고 사용자가 친다.
 - **사용자 앱을 끄지 않는다.** 다른 사람이 쓰고 있을 수 있다 — 꺼 달라고 요청하고 꺼진 것을 확인한다(1-1).
 - **권한 판단이 막은 명령을 되풀이하거나 다른 길로 돌아가지 않는다.** 사용자에게 `!` 로 칠 한 줄을 준다(6장). 운영 DB 를
-  복사하거나 여는 줄(1-3 · 7-8 · 8-0 · `inspect_wf_division.py`)은 막히기를 기다리지 않고 처음부터 사용자에게 준다(6장 표).
+  복사하거나 여는 줄(1-3 · 7-8 · 8-0 · `inspect_wf_division.py`)과 4-1 의 의존성 줄은 막히기를 기다리지 않고 처음부터 사용자에게 준다(6장 표).
 - **사내 Claude 메모리·세션 기록에 실데이터 식별값을 적지 않는다.** 5장 「실데이터로 취급하는 것」 은 리뷰만이 아니라
   에이전트 메모리·메모 파일·대화 요약에도 쓰지 않는다 — 남길 것은 규칙과 개수뿐이다(9-3).
   **실화면 그림도 에이전트가 열지 않는다** — 가이드 촬영 그림 · 결과 HTML(10-4) · 화면 확인 스크린샷(6-2)은 공정 · 시나리오 ·
@@ -531,11 +531,22 @@ git ls-files <지움 목록의 경로>
 
 ### 4-1. 의존성 — 변경 목록에 `pyproject.toml` 이나 `uv.lock` 이 있을 때만
 
+**이 세 줄은 에이전트가 치지 않고 처음부터 사용자에게 준다**(`! ` 를 앞에 붙여 차례로 — 6장 표). 권한 템플릿이 `uv sync` 를
+막고(deny), auto 모드의 권한 판단도 막는다(`202611041000`). 에이전트는 사용자가 친 출력을 읽는다.
+
 ```powershell
 uv sync --inexact
+uv pip check
+uv run --no-sync python -c "import pandas, numpy; print(pandas.__version__, numpy.__version__)"
 ```
 
-맨 `uv sync` 는 `bigdataquery` 를 지운다. 지웠으면 되돌린다.
+- `uv pip check` 는 `All installed packages are compatible` 이 기대다. 셋째 줄의 두 판은 `requirements.txt` 의 `pandas==` · `numpy==` 와 같다.
+- 사내 `bigdataquery` 는 pandas · numpy 판의 위 끝을 둔다. 락은 사내 패키지를 모르므로 `pyproject.toml` 이 같은 범위로 묶는다 — C-DEP 이미지도
+  같은 판을 받는다(`requirements.txt`, 3-3).
+- 충돌이 찍히면 고치지 않고 충돌한 패키지 이름과 범위를 「발견」 에 적는다 — 락은 사외가 맞춘다. 앱을 그대로 써야 하면 사용자가
+  `uv pip install "pandas==<bigdataquery 가 받는 판>"` 으로 되돌리고, 그 판을 함께 적는다(다음 `uv sync --inexact` 가 다시 락의 판으로 옮긴다).
+
+맨 `uv sync` 는 `bigdataquery` 를 지운다. 지웠으면 되돌린다(이 줄도 사용자가 친다).
 
 ```powershell
 uv pip install -r requirements-company.txt
@@ -1179,11 +1190,13 @@ git push
 모드)에서 앞의 넷 모두 권한 판단에 막혀 사용자가 `!` 로
 쳤다 — 템플릿에 allow 가 있는 줄(`inspect_*`)도 auto 판단은 막는다. 기본 모드여도 그 줄을 칠 때 앱이 꺼져 있는지 사람이 한 번 더
 보게 되므로 모드와 상관없이 이렇게 한다. 에이전트는 줄을 (인자까지 채워) 건네고, 사용자가 친 출력이나 `--output` 파일을 읽어 옮긴다.
+**4-1 의 의존성 세 줄도 같다** — DB 를 열지는 않지만 권한 템플릿이 `uv sync` 를 막고 `202611041000` 리뷰의 auto 모드 판단도 막았다.
 
 | 막힌 것 | 어떻게 |
 |---|---|
 | `apply_deploy_package.py` 적용(2-3) | ZIP 경로까지 채운 한 줄 |
 | 운영 데이터 백업(1-3) | **처음부터** 사용자에게 준다 — 1-3 의 PowerShell 블록(PowerShell 창) 또는 `!` 한 줄(`uv run --no-sync python -c …`). 출력의 폴더 이름과 크기 줄을 에이전트가 읽는다 |
+| 의존성 맞추기(4-1) | **처음부터** 사용자에게 준다 — `uv sync --inexact` · `uv pip check` · 판 확인 줄을 `!` 로 차례로. 권한 템플릿이 `uv sync` 를 막아(deny) 모드와 상관없이 에이전트는 칠 수 없다. 출력의 끝줄과 판을 에이전트가 읽는다 |
 | 7-8 개수 조회 두 줄 · 그 뒤 `inspect_wf_division.py` | **처음부터** 사용자에게 준다 — 그 배포 7-8 이 적은 줄 그대로(이미 한 줄씩이다). 두 DB 를 `read_only` 로 열고 수만 찍는다 |
 | `inspect_real_data_checks.py`(8장, 매번 막혔다) | **처음부터** `--output <저장소 밖 파일>` 을 붙인 두 줄을 사용자에게 준다(8-0). 권한 템플릿 `docs/internal_claude_settings.json` 에 이 스크립트와 1-1 의 `Get-CimInstance` allow 를 더했다(2026-10-10) — `.claude/` 는 배포가 덮지 않으니 사용자가 사내 `.claude/settings.json` 을 새 템플릿으로 바꾼 뒤부터 기본 모드에서는 막히지 않는다(1-2 · 이번 배포의 7장 「권한 템플릿」 줄). auto 모드면 템플릿이 같아도 막힌다(`202610271800`) |
 | Playwright 설치(6-2) | 설치 한 줄 |

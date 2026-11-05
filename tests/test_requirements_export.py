@@ -25,14 +25,20 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+from packaging.specifiers import SpecifierSet
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
+COMPANY_REQUIREMENTS = PROJECT_ROOT / "requirements-company.txt"
+# 사내 `bigdataquery` 의 요구 범위(사내 `uv pip check` 로 잰 값). 락은 이 패키지를 모른다.
+COMPANY_PACKAGE_PIN = "bigdataquery==2.5.0"
+COMPANY_PACKAGE_BOUNDS = {"pandas": "<=2.2.3", "numpy": "<2.3"}
 EXPORT_COMMAND = (
     "uv",
     "export",
@@ -65,6 +71,37 @@ def test_requirements_txt_matches_the_lock() -> None:
         "requirements.txt 가 uv.lock 과 어긋납니다. 사내 컨테이너만 다른 버전을 쓰게 됩니다.\n"
         "아래 한 줄로 고치세요:\n"
         "  " + " ".join(EXPORT_COMMAND) + " > requirements.txt"
+    )
+
+
+def _pins() -> dict[str, str]:
+    lines = REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+    return dict(
+        line.split("==", 1) for line in lines if "==" in line and not line.startswith(("#", " "))
+    )
+
+
+def test_the_pins_stay_inside_what_the_company_package_accepts() -> None:
+    """락이 범위를 벗어나면 사내 PC 는 `uv pip check` 충돌, 배포 서버는 시작 스크립트의 둘째 pip 가
+    제약(`requirements.txt`)과 부딪혀 설치 실패로 남는다. 사내 패키지 판을 바꾸면 범위를 다시 잰다.
+    """
+    company_lines = COMPANY_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+    assert COMPANY_PACKAGE_PIN in company_lines, "사내 패키지 판이 바뀜 — 요구 범위를 다시 재세요."
+
+    pins = _pins()
+    for name, bound in COMPANY_PACKAGE_BOUNDS.items():
+        assert SpecifierSet(bound).contains(pins[name]), f"{name} {pins[name]} 이 {bound} 밖입니다."
+
+
+@pytest.mark.parametrize("name", sorted(COMPANY_PACKAGE_BOUNDS))
+def test_the_installed_package_is_the_pinned_one(name: str) -> None:
+    """관문이 도는 환경도 락의 판이다 — 위 시험들은 파일끼리만 견준다. 락을 바꾸고 환경을 맞추지
+    않으면 관문이 배포할 판을 재지 않고, 사내와 사외가 다른 판으로 돈다. 맞추는 것은 사람이 친다."""
+    installed, pinned = importlib.metadata.version(name), _pins()[name]
+    assert installed == pinned, (
+        f"깔린 {name} {installed} 가 락 {pinned} 와 다릅니다 — 사외는 Claude 밖에서 "
+        "`uv sync --frozen --python 3.10.11`(docs/wsl_dev_environment.md 2장), "
+        "사내는 런북 4-1 로 맞춥니다."
     )
 
 

@@ -47,7 +47,8 @@ CI(`.github/workflows/ci.yml`)가 `ubuntu-latest` · Python 3.10.11 · `uv sync 
 - `.venv/bin/python` 을 쓴다. `python` 맨 명령은 WSL 에 없다(`python3` 는 3.14). uv 는 홈의 캐시(`~/.cache/uv`)에 쓰는데 샌드박스가
   막는다 — 캐시를 돌리지 않으면 `uv run` 은 물론 점검만 하는 `uv sync --check` 도 Read-only file system 으로 실패한다. 락과 `.venv` 가
   맞는지 볼 때는 `UV_CACHE_DIR=$TMPDIR/uvcache uv sync --frozen --check --offline --python 3.10.11` — 「Would make no changes」면
-  맞다. 의존성을 바꿔 `uv sync`·`uv lock` 이 필요하면 사용자가 Claude 밖에서 친다.
+  맞다. 의존성을 바꿔 `uv sync`·`uv lock` 이 필요하면 사용자가 Claude 밖에서 친다. 락이 바뀐 뒤 맞추지 않으면 pytest 가 깔린 pandas · numpy 판으로
+  알린다(`tests/test_requirements_export.py` — 사내 `bigdataquery` 가 받는 두 패키지다) — `uv sync --frozen --python 3.10.11` 로 맞춘다.
 - **pytest 는 한 번에 다 돌려도 된다** — WSL 상한이 32GB 다. 10-13 샌드박스 첫 실행은 3147 통과 · 11 건너뜀 · 1 xfail, 11분 37초였다.
   건너뛴 11 은 Windows 전용 9(`tests/test_check_deploy_screens.py` 의 `skipif(sys.platform != "win32")`, 6장), 후보 브랜치 전용 1
   (`test_migration_parity`), uv 캐시 1(`test_requirements_export` — 위의 캐시 탓이고 `UV_CACHE_DIR=$TMPDIR/uvcache` 를 붙여 돌리면
