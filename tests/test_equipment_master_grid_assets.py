@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from js_runner import run_js_json
+from test_design_tokens import SMALL_TEXT_MINIMUM, contrast_ratio
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
+from capa_simulation.design import tokens
 from capa_simulation.services import equipment_grid as eg
 
 ASSETS = emg._ASSETS
@@ -1572,3 +1574,50 @@ process.stdout.write(JSON.stringify(results))
         "conditionsLoad": {"open": False, "focus": True, "trigger": ["load", "conditions"]},
         "processLoad": {"open": False, "trigger": ["load", "process"]},
     }
+
+
+def _brightened(color: str, factor: float) -> str:
+    """CSS `filter: brightness(factor)` 를 입힌 `#RRGGBB` — 채널마다 곱하고 255 에서 자른다."""
+    channels = (int(color[start : start + 2], 16) for start in (1, 3, 5))
+    return "#" + "".join(f"{min(round(channel * factor), 255):02X}" for channel in channels)
+
+
+def _button_hover_rules() -> list[tuple[str, str]]:
+    """`.emg-btn` 호버 선택자마다 (선택자, 규칙 몸) — 묶인 선택자는 하나씩 가른다."""
+    return [
+        (selector.strip(), match["body"])
+        for match in re.finditer(r"(?P<selectors>[^{}]*)\{(?P<body>[^{}]*)\}", CSS)
+        for selector in match["selectors"].split(",")
+        if ".emg-btn" in selector and ":hover" in selector
+    ]
+
+
+def test_a_filled_button_keeps_its_fill_on_hover_and_stays_readable() -> None:
+    """켜진 「호기 추가」 에 마우스를 올리면 글이 거의 안 보였다 — `.emg-btn:hover:not(:disabled)`
+    (0,3,0)가 `.emg-btn.is-primary`(0,2,0)를 이겨 옅은 바탕에 칠한 단추의 글자색만 남았다(2026-11-06
+    사용자 답). 옅은 바탕 호버는 칠하지 않은 단추에만 걸고, 칠한 단추는 제 바탕 위에서 밝기만 바꾼다
+    (`capa-month-apply` 와 같은 꼴 — 색을 새로 쓰지 않는다)."""
+    rules = dict(_button_hover_rules())
+    assert ".emg-btn:hover:not(:disabled)" not in rules
+    for selector, body in rules.items():
+        if "background" in body:
+            assert ":not(.is-primary)" in selector, selector
+
+    primary = rules[".emg-btn.is-primary:hover:not(:disabled)"]
+    assert "background" not in primary and "color" not in primary
+    found = re.search(r"filter:\s*brightness\((?P<factor>[0-9.]+)\)", primary)
+    assert found, primary
+    factor = float(found["factor"])
+
+    for mode, palette in tokens._PALETTES.items():
+        hovered = _brightened(palette["ACCENT"], factor)
+        ratio = contrast_ratio(_brightened(palette["ACCENT_TEXT"], factor), hovered)
+        assert ratio >= SMALL_TEXT_MINIMUM, f"{mode} 칠한 단추 호버 {ratio:.2f}:1"
+
+
+def test_an_outlined_button_stays_readable_on_its_hover_fill() -> None:
+    """옅은 바탕 호버가 걸리는 단추의 글자(보통·지우기)는 그 바탕에서 읽힌다."""
+    for mode, palette in tokens._PALETTES.items():
+        for name, ink in (("보통", palette["TEXT"]), ("지우기", palette["GRID_ERROR_LINE"])):
+            ratio = contrast_ratio(ink, palette["SURFACE_SUBTLE"])
+            assert ratio >= SMALL_TEXT_MINIMUM, f"{mode} {name} 단추 호버 {ratio:.2f}:1"

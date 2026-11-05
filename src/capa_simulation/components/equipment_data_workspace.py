@@ -326,6 +326,9 @@ REOPEN_DISMISS_KEY = "equipment_reopen_dismiss_v1"
 DRAFTS_REPLACED_KEY = "equipment_workspace_drafts_replaced_v1"
 # 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
+# 편집본이 저장본으로 돌아온 세대(`_note_if_back_to_saved`). 세운 세대를 옮기지 않고 따로 둔다 —
+# 세운 세대는 표 출납의 `base`(`buffer_base`)라, 옮기면 표시가 걷히기 전에 보낸 op 가 버려진다.
+_CLEAN_GENERATION_KEY = "equipment_workspace_clean_generation_v1"
 # 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 설비 마스터 탭 편집을 놓치지 않게
 # 한다.
 BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
@@ -426,6 +429,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         LAYOUT_ROLE_KEY,
         LAYOUT_EDITS_MEMO_KEY,
         _SEEDED_GENERATION_KEY,
+        _CLEAN_GENERATION_KEY,
         *_GRID_SESSION_KEYS,
     ):
         st.session_state.pop(key, None)
@@ -457,12 +461,13 @@ def _bump_buffer_generation() -> None:
 def _store_changed_buffer(frames: Frames) -> None:
     """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정·되살리기가 이 길로만 쓴다.
 
-    세대가 「저장하지 않은 편집」의 유일한 근거다(`has_unsaved_equipment_edits`). 편집표 칸은
-    그대로이고 행만 빠진 제출에서 세대가 그대로면, 테마 단추가 묻지 않고 새로고침하고 다른 사람의
-    저장이 이 삭제를 알림 없이 버린다.
+    세대가 「저장하지 않은 편집」의 근거다(`has_unsaved_equipment_edits` — 저장본으로 돌아온 세대만
+    뺀다). 편집표 칸은 그대로이고 행만 빠진 제출에서 세대가 그대로면, 테마 단추가 묻지 않고
+    새로고침하고 다른 사람의 저장이 이 삭제를 알림 없이 버린다.
     """
     st.session_state[BUFFER_KEY] = frames
     _bump_buffer_generation()
+    _note_if_back_to_saved()
 
 
 def equipment_buffer_generation() -> int:
@@ -560,12 +565,17 @@ def pop_saved_schedule() -> tuple[str, str] | None:
 
 
 def has_unsaved_equipment_edits() -> bool:
-    """편집본을 저장본에서 세운 뒤 바뀐 것이 있는가(설비 마스터 탭 고침·Space 호기 적용·미저장 층
-    배치).
+    """편집본을 저장본에서 세운 뒤 바뀐 것이 남아 있는가(설비 마스터 탭 고침·Space 호기 적용·미저장
+    층 배치). 세대가 올랐어도 저장본으로 돌아온 세대면 저장할 것이 없다(`_note_if_back_to_saved`).
 
     Space FAB 전체 배치 대기분은 세대를 올리지 않아 여기 들지 않는다(`pending_fab_layout`)."""
     seeded = st.session_state.get(_SEEDED_GENERATION_KEY)
-    return isinstance(seeded, int) and equipment_buffer_generation() > seeded
+    generation = equipment_buffer_generation()
+    return (
+        isinstance(seeded, int)
+        and generation > seeded
+        and generation != st.session_state.get(_CLEAN_GENERATION_KEY)
+    )
 
 
 def pop_drafts_replaced() -> bool:
@@ -818,6 +828,7 @@ def _remember_edits(frames: Frames) -> None:
     if not unchanged:
         _bump_buffer_generation()
         _forget_grid_undo()
+        _note_if_back_to_saved()
 
 
 def _forget_grid_undo() -> None:
@@ -933,6 +944,8 @@ def apply_master_grid_result(applied: GridApplied) -> None:
         st.session_state[GRID_UNDO_KEY] = undo_to_state(state.undo)
     else:
         st.session_state.pop(GRID_UNDO_KEY, None)
+    if applied.changed:
+        _note_if_back_to_saved()
 
 
 def replace_equipment_buffer(frames: Frames) -> None:
@@ -965,8 +978,8 @@ def stage_unit_renames(renames: PendingRenames) -> None:
             "units": dict(renames.units),
             "groups": dict(renames.groups),
         }
-    else:
-        st.session_state.pop(PENDING_RENAMES_KEY, None)
+    elif st.session_state.pop(PENDING_RENAMES_KEY, None) is not None:
+        _note_if_back_to_saved()
 
 
 def editor_module_layouts() -> dict[str, ModuleLayout]:
@@ -1336,10 +1349,8 @@ def discard_layout_edits() -> bool:
     없이) 층 대기분(캔버스·도면 요소·Main 설비명 위치)·편집기 모듈 모양·찍힌 역할을 비운다. 공통·
     일정 칸 편집과 이름 바꿈, FAB 전체 배치 대기분은 남긴다(설계 8-6·검토 M5). 콜백에서 부른다.
 
-    버린 뒤 설비 편집이 남았는가를 돌려준다. 남은 것이 없으면(편집본이 저장본과 내용까지 같고 이름
-    바꿈·표 칸 초안이 없다) 세운 세대를 지금 세대로 옮긴다 — 버리기도 편집본을 바꿔 세대를 올리므로
-    그대로 두면 세대 판정(`has_unsaved_equipment_edits`)이 편집이 남았다고 보아 「미저장 변경」
-    배지·탭 점·불러오기의 「변경을 버리고」 체크가 남았다(2026-10-27 E2E)."""
+    버린 뒤 설비 편집이 남았는가를 돌려준다. 남은 것이 없으면 그 세대를 저장본으로 돌아온 세대로
+    적는다(`_note_if_back_to_saved`) — 버리기도 편집본을 바꿔 세대를 올린다."""
     buffer = st.session_state.get(BUFFER_KEY)
     if isinstance(buffer, tuple):
         saved = _saved_master()
@@ -1355,14 +1366,23 @@ def discard_layout_edits() -> bool:
         LAYOUT_ROLE_KEY,
     ):
         st.session_state.pop(key, None)
-    if has_unsaved_equipment_edits() and _buffer_is_saved():
-        st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
+    _note_if_back_to_saved()
     return has_unsaved_equipment_edits()
 
 
+def _note_if_back_to_saved() -> None:
+    """편집본이 저장본으로 돌아왔으면 그 세대를 적어 세대 판정(`has_unsaved_equipment_edits`)이 편집
+    없음으로 보게 한다 — 세대는 내용이 바뀌면 오를 뿐 내려오지 않아, 넣었다 지운 새 호기·되돌린 칸도
+    「미저장 변경」 배지·머리 변경 칩·탭 점·떠나기 확인을 남겼다. 다음 편집은 세대를 올리므로
+    (되돌리기로 되살림 포함) 표시가 다시 선다. 편집본 · 층 대기분을 바꾼 **뒤에** 부른다."""
+    if has_unsaved_equipment_edits() and _buffer_is_saved():
+        st.session_state[_CLEAN_GENERATION_KEY] = equipment_buffer_generation()
+
+
 def _buffer_is_saved() -> bool:
-    """편집본이 세운 저장본 사본과 내용까지 같고 저장 안 한 이름 바꿈·설비 마스터 표 칸 초안이
-    없는가(세 표 모두 — 날짜 칸 시각 단위만 다른 것은 같다고 본다, `same_frame_content`)."""
+    """편집본이 세운 저장본 사본과 내용까지 같고 저장 안 한 이름 바꿈·설비 마스터 표 칸 초안·층
+    대기분이 없는가(세 표 모두 — 날짜 칸 시각 단위만 다른 것은 같다고 본다, `same_frame_content`).
+    표 비교보다 싼 대기분부터 본다."""
     buffer = st.session_state.get(BUFFER_KEY)
     saved = tuple(
         st.session_state.get(key)
@@ -1370,7 +1390,13 @@ def _buffer_is_saved() -> bool:
     )
     if not isinstance(buffer, tuple) or len(buffer) != len(saved):
         return False
-    if pending_unit_renames() or grid_overlay():
+    if (
+        pending_unit_renames()
+        or grid_overlay()
+        or pending_floor_canvases()
+        or pending_floor_marks()
+        or pending_floor_group_labels()
+    ):
         return False
     return all(
         isinstance(left, pd.DataFrame)
@@ -1580,6 +1606,7 @@ def stage_floor_canvas(
     st.session_state[PENDING_CANVASES_KEY] = staged
     _remember_base(key, base)
     _bump_buffer_generation()
+    _note_if_back_to_saved()
 
 
 def stage_floor_marks(
@@ -1599,6 +1626,7 @@ def stage_floor_marks(
     st.session_state[PENDING_MARKS_KEY] = staged
     _remember_base(key, base)
     _bump_buffer_generation()
+    _note_if_back_to_saved()
 
 
 def stage_floor_group_labels(
@@ -1619,6 +1647,7 @@ def stage_floor_group_labels(
     st.session_state[PENDING_GROUP_LABELS_KEY] = staged
     _remember_base(key, base)
     _bump_buffer_generation()
+    _note_if_back_to_saved()
 
 
 def rebase_floor_canvas(key: FloorKey, canvas: CanvasSize | None) -> None:

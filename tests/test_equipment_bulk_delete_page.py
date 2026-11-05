@@ -228,13 +228,19 @@ def test_a_delete_op_with_nothing_chosen_changes_nothing(tmp_path: Path, grid: C
 
 
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
+_CLEAN_GENERATION_KEY = "equipment_workspace_clean_generation_v1"
 
 
 def _has_unsaved_edits(app: AppTest) -> bool:
-    """`has_unsaved_equipment_edits()` 와 같은 판정(편집본 세대 > 세운 세대)을 세션 값으로 본다."""
-    return int(app.session_state[BUFFER_GENERATION_KEY]) > int(
-        app.session_state[_SEEDED_GENERATION_KEY]
+    """`has_unsaved_equipment_edits()` 와 같은 판정(편집본 세대 > 세운 세대, 저장본으로 돌아온 세대
+    빼고)을 세션 값으로 본다."""
+    generation = int(app.session_state[BUFFER_GENERATION_KEY])
+    clean = (
+        app.session_state[_CLEAN_GENERATION_KEY]
+        if _CLEAN_GENERATION_KEY in app.session_state
+        else None
     )
+    return generation > int(app.session_state[_SEEDED_GENERATION_KEY]) and generation != clean
 
 
 def test_a_deletion_alone_counts_as_an_unsaved_edit(tmp_path: Path, grid: Calls) -> None:
@@ -277,6 +283,8 @@ def test_restoring_a_deleted_unit_raises_the_buffer_generation_again(
 
     assert _machines(app) == sorted(seed.machines)
     assert int(app.session_state[BUFFER_GENERATION_KEY]) > after_delete
+    # 다 되살리면 저장할 것이 없다 — 표시는 걷힌다(`test_equipment_unsaved_mark.py`).
+    assert not _has_unsaved_edits(app)
     # 되살린 자리는 저장본 차례다 — 차례만 다른 공통 리비전을 만들지 않는다.
     saved = DuckDBEquipmentRepository(seed.database)
     latest = saved.load_snapshot(saved.list_revisions()[0].revision_id)
