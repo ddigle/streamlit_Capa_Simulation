@@ -45,6 +45,7 @@ from capa_simulation.components.equipment_data_workspace import official_confirm
 from capa_simulation.components.equipment_scenario_management import (
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
+    CONTINUE_BLOCKED_LINE,
     CONTINUE_BUTTON_KEY,
     EQUIPMENT_KIND,
     LEGACY_TRACE_GOTO_KEY,
@@ -54,7 +55,6 @@ from capa_simulation.components.equipment_scenario_management import (
     RESTORE_BUTTON_KEY,
     RESTORE_CONFIRM_KEY,
     RESTORE_NAME_KEY,
-    RESTORE_PUBLISH_KEY,
     REVISION_KEY,
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
@@ -680,12 +680,14 @@ def test_settings_cutoff_is_read_only_on_an_assumption_and_open_on_the_official(
     app = _ok(_shell.run())
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
     _ok(app.button(key=SETTINGS_BUTTON_KEY).click().run())
-    assert not any(item.value == PREFERENCE_LOCK_MESSAGE for item in infos(app))
+    assert not any(item.proto.help == PREFERENCE_LOCK_MESSAGE for item in app.caption)
     assert any(button.label == "Cut-off 저장" for button in app.button)
 
     _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
     _ok(app.run())
-    assert any(item.value == PREFERENCE_LOCK_MESSAGE for item in infos(app))
+    # 자리에는 표지 한 마디, 까닭은 그 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
+    assert any(item.proto.help == PREFERENCE_LOCK_MESSAGE for item in app.caption)
+    assert not any(item.value == PREFERENCE_LOCK_MESSAGE for item in infos(app))
     assert not any(button.label == "Cut-off 저장" for button in app.button)
 
 
@@ -919,11 +921,11 @@ def test_discarding_the_only_locked_layout_edit_leaves_no_unsaved_edit(
     assert not any(item.label == "변경을 버리고 불러오기" for item in app.checkbox)
 
 
-def test_space_layout_save_refuses_removing_a_unit_another_scenario_schedules(
+def test_space_layout_save_removes_a_unit_another_scenario_schedules_and_says_so(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """확인 체크가 없는 Space 「배치 저장」 도 다른 설비 시나리오에 일정이 있는 호기를 지우는 저장은
-    막는다(설계 11-2 6단계) — RawData 저장 칸에서 확인하라고 알린다."""
+    """Space 「배치 저장」 도 설비 마스터 탭 · 사이드바 팝업과 같은 저장이다 — 다른 설비 시나리오에
+    일정이 있는 호기를 지워도 묻지 않고 저장하며 결과 알림이 적는다(검수표 11/02 equip-13)."""
     from capa_simulation.components.equipment_data_workspace import (
         BUFFER_GENERATION_KEY,
         BUFFER_KEY,
@@ -945,13 +947,10 @@ def test_space_layout_save_refuses_removing_a_unit_another_scenario_schedules(
     save.click()
     _ok(app.run())
 
-    assert len(repository.list_revisions()) == 1
+    assert len(repository.list_revisions()) == 2
     assert any(
-        "지우는 호기 1대(EQ\\-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다"
-        in text
-        and "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text
-        for text in _texts(app)
-    )
+        "지운 호기 1대(다른 설비 시나리오 1개 일정도 빠짐)" in text for text in _texts(app)
+    ), _texts(app)
 
 
 def _value_of(snapshot: Any, name: str, column: str) -> Any:
@@ -1410,10 +1409,8 @@ def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothin
     assert any("모두 같아 되돌릴 것이 없습니다" in text for text in texts)
     assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
     assert not [button for button in app.button if button.key == RESTORE_BUTTON_KEY]
-    # 발행 체크도 서지 않으므로 「아래 발행 체크가 켜져 있고 …」 줄도 없다(없는 체크를 가리키지
-    # 않게).
-    assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_PUBLISH_KEY)]
-    assert not any("아래 발행 체크" in text for text in texts)
+    # 단추가 서지 않으므로 발행 규칙 줄도 없다.
+    assert not any("공식으로 발행합니다" in text for text in texts)
 
 
 def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
@@ -1576,8 +1573,8 @@ def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_di
     app.selectbox(key=REVISION_KEY).set_value(first)
     _ok(app.run())
     assert any("공식 설비 시나리오입니다" in text for text in _texts(app))
-    (publish,) = [box for box in app.checkbox if str(box.key).startswith(RESTORE_PUBLISH_KEY)]
-    assert publish.value is True
+    # 발행 체크는 없다 — 저장과 같이 늘 발행 규칙을 따르고 결과 알림이 적는다(equip-13 같은 꼴).
+    assert [box.key for box in app.checkbox] == [_restore_confirm(app).key]
     _restore_confirm(app).check()
     _ok(app.run())
     app.button(key=RESTORE_BUTTON_KEY).click()
@@ -1622,10 +1619,10 @@ def test_the_restore_sentences_say_none_when_no_unit_came_after_the_revision() -
     )
 
 
-def test_the_publish_rule_line_stands_only_where_the_restore_offers_a_publish_check() -> None:
-    """공식 설비 시나리오의 되돌리기 확인 글 끝 발행 규칙 줄은 「아래 발행 체크」 를 가리킨다 —
-    되돌릴 것이 없어 체크·단추가 서지 않는 리비전에서는 싣지 않는다(E2E r3 static). 가정
-    시나리오에는 늘 없다."""
+def test_the_publish_rule_line_stands_only_where_the_restore_offers_the_button() -> None:
+    """공식 설비 시나리오의 되돌리기 확인 글 끝 발행 규칙 줄은 되돌릴 것이 없어 단추가 서지 않는
+    리비전에서는 싣지 않는다(E2E r3 static). 가정 설비 시나리오에는 늘 없다. 발행 체크는 없다 —
+    저장과 같이 늘 발행 규칙을 따른다(검수표 11/02 equip-13 같은 꼴)."""
     scenario = EquipmentScenarioSummary(
         "s", "운영 일정", "ACTIVE", latest_schedule_revision_id="s3", latest_revision_no=3
     )
@@ -1635,9 +1632,10 @@ def test_the_publish_rule_line_stands_only_where_the_restore_offers_a_publish_ch
 
     def publish_lines(preview: ScheduleRestorePreview, *, official: bool) -> list[str]:
         lines = restore_preview_lines(scenario, chosen, preview, official_scenario=official)
-        return [line for line in lines if "아래 발행 체크" in line]
+        return [line for line in lines if "공식으로 발행합니다" in line]
 
     assert len(publish_lines(changes, official=True)) == 1
+    assert "체크" not in publish_lines(changes, official=True)[0]
     assert publish_lines(nothing, official=True) == []
     assert publish_lines(changes, official=False) == []
 
@@ -1777,65 +1775,39 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     texts = _texts(app)
     assert _heading(app).startswith("이 세션: 운영 일정 · 일정 없이 엶")
     assert any("일정 없이 열었습니다" in text for text in texts)
-    assert any("이어 쓸 수 없습니다" in text and "백업을 복원하세요" in text for text in texts)
-    assert not any(button.key == CONTINUE_BUTTON_KEY for button in app.button)
+    # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
+    assert CONTINUE_BLOCKED_LINE in texts
+    assert not any("이어 쓸 수 없습니다" in text for text in texts)
+    blocked = next(button for button in app.button if button.key == CONTINUE_BUTTON_KEY)
+    assert blocked.disabled
+    assert "이어 쓸 수 없습니다" in str(blocked.help) and "백업을 복원하세요" in str(blocked.help)
 
     _ok(app.switch_page(SPACE_STATUS.path).run())
     assert not any("준비하지 못했습니다" in text for text in _texts(app))
 
 
-def _fields_app() -> None:
+def _saved_by_app() -> None:
     import streamlit as st
 
     from capa_simulation.components.equipment_save_fields import (
-        render_equipment_save_fields,
-        save_fields_from_state,
+        render_saved_by_field,
+        saved_by_from_state,
     )
 
-    st.session_state["before"] = save_fields_from_state("space_test")
-    render_equipment_save_fields("space_test")
-    st.session_state["after"] = save_fields_from_state("space_test")
+    st.session_state["before"] = saved_by_from_state("space_test")
+    render_saved_by_field("space_test")
+    st.session_state["after"] = saved_by_from_state("space_test")
 
 
-def test_the_space_layout_save_reads_its_save_fields_from_the_session() -> None:
-    """Space 「배치 저장」 은 단추 콜백이라 저장 칸 값을 세션에서 읽는다 — 칸이 없으면
-    기본값(질문 1·F6·F2 모두 켬), 칸을 바꾸면 그 값."""
-    from capa_simulation.components.equipment_save_fields import EquipmentSaveFields
-
-    app = AppTest.from_function(_fields_app).run()
-    assert app.session_state["before"] == EquipmentSaveFields()
-    app.checkbox(key="space_test_publish").uncheck()
+def test_the_space_layout_save_reads_its_saver_from_the_session() -> None:
+    """Space 「배치 저장」 은 단추 콜백이라 저장자 칸 값을 세션에서 읽는다 — 칸이 없으면 None,
+    적으면 앞뒤 공백을 뗀 값. 저장 자리에는 체크가 없다(검수표 11/02 equip-13)."""
+    app = AppTest.from_function(_saved_by_app).run()
+    assert app.session_state["before"] is None
+    assert not list(app.checkbox)
     app.text_input(key="space_test_saved_by").input(" 홍길동 ")
     app.run()
-    assert app.session_state["after"] == EquipmentSaveFields(
-        saved_by="홍길동", publish_official=False
-    )
-
-
-def _first_release_fields_app() -> None:
-    import streamlit as st
-
-    from capa_simulation.components.equipment_save_fields import render_equipment_save_fields
-
-    st.session_state["fields"] = render_equipment_save_fields("first", release_exists=False)
-
-
-def test_before_any_release_the_save_fields_say_v1_instead_of_a_publish_checkbox() -> None:
-    """발행이 하나도 없으면 저장소가 첫 일정 리비전을 늘 공식 v1 로 낸다 — 끌 수 있는 발행 체크 대신
-    그 한 줄이 선다."""
-    from capa_simulation.components.equipment_save_fields import (
-        FIRST_RELEASE_NOTE,
-        EquipmentSaveFields,
-    )
-
-    app = _ok(AppTest.from_function(_first_release_fields_app).run())
-
-    assert [box.key for box in app.checkbox] == [
-        "first_propagate_units",
-        "first_propagate_downtime",
-    ]
-    assert any(FIRST_RELEASE_NOTE in str(item.value) for item in app.caption)
-    assert app.session_state["fields"] == EquipmentSaveFields()
+    assert app.session_state["after"] == "홍길동"
 
 
 def test_the_layout_editor_turns_off_only_the_new_unit_form_when_asked() -> None:

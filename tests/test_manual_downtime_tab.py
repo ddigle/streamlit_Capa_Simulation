@@ -336,8 +336,12 @@ def test_a_locked_tab_shows_the_reason_and_cannot_save(tmp_path: Path) -> None:
     script = _script(path).replace("owner_tab=None,", "owner_tab=None, locked_reason='잠금'")
     app = AppTest.from_string(script, default_timeout=60).run()
     assert not app.exception
-    assert any(item.value == "잠금" for item in infos(app))
-    assert next(button for button in app.button if button.label == MANUAL_SAVE_BUTTON).disabled
+    # 자리에는 표지 한 마디, 까닭은 풍선이다 — 표지 풍선과 꺼진 저장 단추(검수표 11/02 equip-44 와
+    # 같은 꼴).
+    assert not any(item.value == "잠금" for item in infos(app))
+    assert any(item.proto.help == "잠금" for item in app.caption)
+    save = next(button for button in app.button if button.label == MANUAL_SAVE_BUTTON)
+    assert save.disabled and save.help == "잠금"
 
 
 # ------------------------------------------------------------------ 표 재료(순수)

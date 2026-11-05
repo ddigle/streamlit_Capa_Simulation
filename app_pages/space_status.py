@@ -22,9 +22,7 @@ from capa_simulation.components.equipment_data_workspace import (
     follow_unit_renames,
     has_unsaved_equipment_edits,
     live_layout_role,
-    new_unit_choice_line,
     official_confirmation_master,
-    official_reach,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -47,9 +45,10 @@ from capa_simulation.components.equipment_data_workspace import (
     stamp_layout_role,
 )
 from capa_simulation.components.equipment_save_fields import (
+    SAVE_ALWAYS_HELP,
     EquipmentSaveBasis,
-    render_equipment_save_fields,
-    save_fields_from_state,
+    render_saved_by_field,
+    saved_by_from_state,
 )
 from capa_simulation.components.equipment_scenario_status import (
     equipment_value_label,
@@ -320,10 +319,9 @@ SWITCH_ERROR_KEY = "space_scenario_switch_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
 DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
-# 저장 안 한 배치 상자의 팝오버 둘(저장 칸·버리기)과 「바뀐 호기 n건」 펼침. 위 Space 알림·저장
-# 오류가 생기고 사라지거나 라벨의 건수가 바뀌어도 같은 블록으로 남게 key 로 고정한다(AGENTS 9장
-# 「조건부 알림」 — 알림 다음 회차에 key 없는 팝오버가 저절로 닫혔다).
-SAVE_FIELDS_POPOVER_KEY = "space_layout_fields_popover"
+# 저장 안 한 배치 상자의 「버리기」 팝오버와 「바뀐 호기 n건」 펼침. 위 Space 알림·저장 오류가
+# 생기고 사라지거나 라벨의 건수가 바뀌어도 같은 블록으로 남게 key 로 고정한다(AGENTS 9장 「조건부
+# 알림」 — 알림 다음 회차에 key 없는 팝오버가 저절로 닫혔다).
 DISCARD_POPOVER_KEY = "space_layout_discard_popover"
 CHANGES_EXPANDER_KEY = "space_layout_changes_expander"
 # 설비 샘플 화면에서 FAB 대기분 저장을 막은 까닭(상자 안내와 단추 풍선).
@@ -331,8 +329,7 @@ SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
     "저장할 수 있습니다."
 )
-# 배치 저장의 저장 칸(저장자·함께 넣기·공식 발행 — `equipment_save_fields`). 가용설비 설비 마스터의
-# 칸과 key 를 가른다.
+# 배치 저장의 저장자 칸(`equipment_save_fields`). 가용설비 설비 마스터의 칸과 key 를 가른다.
 SPACE_SAVE_FIELDS_PREFIX = "space_layout_save_fields"
 # 가정 설비 시나리오에서 FAB 전체 배치 자리의 「공식으로 바꾸기」(G5 — FAB 은 공식에서만 고친다).
 SWITCH_TO_OFFICIAL_KEY = "space_switch_to_official"
@@ -1362,31 +1359,9 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                 st.text_input(
                     "변경 메모", key=note_key, placeholder="예: C1 1F 반입구 앞 정리", width=360
                 )
-                # 저장자·함께 넣기·공식 발행 칸(설비 마스터 저장과 같은 부품). 수는 적지 않는다 —
+                # 설비 마스터 저장과 같은 부품 — 저장 칸 체크는 없고(`equipment_save_fields`)
                 # 실제로 퍼진 목록은 저장 결과 알림이 적는다.
-                with st.popover("저장 칸", icon=":material/tune:", key=SAVE_FIELDS_POPOVER_KEY):
-                    # 가정 세션도 「새 호기를 다른 설비 시나리오에도 넣기」 기본 켬(N2 — 탭·팝업과
-                    # 같음), 켜 있으면 공식 가용대수에 센다는 경고가 선다.
-                    render_equipment_save_fields(
-                        SPACE_SAVE_FIELDS_PREFIX,
-                        release_exists=equipment_session.release_no is not None,
-                        assumption=equipment_session.is_assumption,
-                        # 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리 한 규칙).
-                        reach=(
-                            official_reach(frames)
-                            if equipment_session.is_assumption and frames is not None
-                            else None
-                        ),
-                    )
-                    # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8) — 끈
-                    # 채 저장해도 그 칸에서 켠 호기는 다른 설비 시나리오에 든다.
-                    line = (
-                        new_unit_choice_line(frames, assumption=equipment_session.is_assumption)
-                        if frames is not None
-                        else None
-                    )
-                    if line is not None:
-                        st.caption(line)
+                render_saved_by_field(SPACE_SAVE_FIELDS_PREFIX, width=200)
             # 설비 샘플 화면에서는 FAB 편집이 꺼진다(결정 2). 그 전에 적용한 FAB 대기분도 저장하지
             # 않는다 — 대기분은 두고, 스위치를 끄면 저장할 수 있다. 버리기는 그대로 된다.
             st.button(
@@ -1396,10 +1371,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                 key=SAVE_BUTTON_KEY,
                 on_click=_save_space_layout,
                 args=(frames, note_key, equipment_database_path, equipment_session.save_basis()),
-                kwargs={
-                    "assumption": equipment_session.is_assumption,
-                    "drawn": _save_generation(),
-                },
+                kwargs={"drawn": _save_generation()},
                 disabled=fab_save_blocked or layout_locked,
                 help=(
                     SAMPLE_SAVE_BLOCKED
@@ -1407,7 +1379,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                     else (
                         "배치 편집이 잠겨 저장하지 않습니다 — 「배치 변경만 버리기」 를 쓰세요."
                         if layout_locked
-                        else save_help
+                        else save_help + ("" if fab_only else f" {SAVE_ALWAYS_HELP}")
                     )
                 ),
             )
@@ -1510,17 +1482,14 @@ def _save_space_layout(
     note_key: str,
     database_path: str,
     basis: EquipmentSaveBasis | None = None,
-    fields_prefix: str = SPACE_SAVE_FIELDS_PREFIX,
     *,
-    assumption: bool = False,
     drawn: int | None = None,
 ) -> None:
     """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다. FAB 전체
     배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다. 저장은 바뀐 쪽만
     — 세 표가 그대로면 층 값만 쓴다. `basis` 는 세션의 설비 시나리오다 — 공식이면 공식 배치에,
-    가정이면 그 시나리오 새 리비전의 배치 차이에 간다(저장소가 역할로 가른다). `assumption` 이면
-    저장 칸이 가정 세션 꼴이다(key 꼬리 `_assumption` — 함께 넣기 기본 켬, N2). `drawn` 은
-    단추를 그린 회차의 저장 세대(`_save_generation`)다."""
+    가정이면 그 시나리오 새 리비전의 배치 차이에 간다(저장소가 역할로 가른다). `drawn` 은 단추를
+    그린 회차의 저장 세대(`_save_generation`)다."""
     if drawn is not None and drawn != _save_generation():
         # 그린 회차의 저장 세대(변경 메모 칸 번호)가 지금과 다르다 — 이 세션이 그 사이 이미
         # 저장한 옛 화면의 누름이다(같은 단추를 0.15~0.5초 간격으로 두 번 눌러 첫 콜백이 끝까지 돈
@@ -1537,7 +1506,7 @@ def _save_space_layout(
             frames,
             note if isinstance(note, str) else "",
             basis=basis,
-            fields=save_fields_from_state(fields_prefix, assumption=assumption),
+            saved_by=saved_by_from_state(SPACE_SAVE_FIELDS_PREFIX),
             # 콜백이라 이 회차 편집본을 세우기 전이다 — 남의 공통 저장 거부면 본문이 다시 세운다.
             reopens=True,
         )

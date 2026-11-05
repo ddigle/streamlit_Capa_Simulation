@@ -11,7 +11,6 @@ Space 편집기·설비 마스터 호기 상세(개편)가 같은 함수 넷을 
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,15 +28,9 @@ from capa_simulation.components.equipment_data_workspace import (
     NAME_CHANGES_MARK,
     PENDING_DELETE_KEY,
     PENDING_RENAMES_KEY,
-    RENAME_INSTEAD_HINT,
     SELECTION_KEY,
-    save_result_message,
 )
 from capa_simulation.components.table_view_controls import filter_widget_key
-from capa_simulation.persistence.equipment_repository import (
-    EquipmentRevisionSummary,
-    EquipmentSaveResult,
-)
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.space_layout_edit import (
     NameChange,
@@ -412,24 +405,3 @@ def test_the_master_tab_lists_the_unsaved_renames_made_in_space(tmp_path: Path) 
         item.value == NAME_CHANGES_MARK and item.proto.help == NAME_CHANGES_CAPTION
         for item in app.caption
     )
-
-
-def test_a_save_that_removes_and_adds_pasted_units_points_at_the_rename_tool() -> None:
-    """지운 호기와 엑셀·CSV 넣기로 든 새 호기가 한 저장에 함께 있을 때만 이름 바꾸기 길을 가리킨다
-    — 「새 호기」 칸·Space 로 든 새 호기와 상관없는 지우기에는 붙이지 않는다(E2E #69)."""
-    common = EquipmentRevisionSummary("c3", 3, None, 0, 2, 0, datetime(2026, 10, 25))
-    both = EquipmentSaveResult(common=common, schedule=None, new_units=("B",), removed_units=("A",))
-    pasted = save_result_message(both, scenario_name="운영 일정", pasted_units=("B",))
-    entered = save_result_message(both, scenario_name="운영 일정")
-    other_paste = save_result_message(both, scenario_name="운영 일정", pasted_units=("C",))
-    removed_only = save_result_message(
-        EquipmentSaveResult(common=common, schedule=None, removed_units=("A",)),
-        scenario_name="운영 일정",
-        pasted_units=("B",),
-    )
-
-    assert RENAME_INSTEAD_HINT in pasted
-    assert "다른 설비 시나리오의 그 호기 일정이 빠집니다" in pasted
-    assert RENAME_INSTEAD_HINT not in entered
-    assert RENAME_INSTEAD_HINT not in other_paste
-    assert RENAME_INSTEAD_HINT not in removed_only

@@ -1,33 +1,17 @@
-# Purpose: 설비 마스터 저장 칸(저장자·함께 넣기 두 체크·공식 발행)과 저장 출발점 값을 둔다.
+# Purpose: 설비 마스터 저장의 저장자 칸 · 저장 단추 풍선 · 저장 출발점 값을 둔다.
 
 """설비 마스터를 저장하는 세 자리(가용설비 현황 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」·
-사이드바 설비 시나리오 팝업 「저장」·Space 「배치 저장」)가 함께 쓰는 저장 칸(설계 6-4).
+사이드바 설비 시나리오 팝업 「저장」·Space 「배치 저장」)가 함께 쓰는 칸(설계 6-4).
 
-- **함께 넣을 후보 수(`counts` — 체크 옆 「· 후보 n대」·「n건」)는 사이드바 팝업만 적는다.** 설비
-  마스터 탭 저장 구획과 Space 「저장 칸」 은 체크만 세운다 — 실제로 퍼진 수·목록과 발행 여부는 저장
-  결과 알림이 적고, 「새 호기」 칸에서 고른 호기 수는 세 자리 모두 저장 칸 아래 한 줄
-  (`equipment_data_workspace.new_unit_choice_line`)이 적는다.
-- 기본값 셋은 아래 상수 한 곳이다(질문 1 — 공식 발행 기본 켬, F6·F2 — 함께 넣기 기본 켬). 답이
-  바뀌면 이 상수만 고친다.
-- **가정 세션도 네 자리 모두 「새 호기를 다른 설비 시나리오에도 넣기」 기본 켬이다**(N2 — 설비
-  마스터 탭 저장 칸·「새 호기」 칸·사이드바 팝업 「저장」·Space 「배치 저장」). 호기 목록은 공통
-  대장 하나이고 설비 시나리오마다 다른 것은 일정·가정 배치뿐이게 — 가정 세션에서 넣은 새 호기도
-  다른 설비 시나리오에 같은 일정으로 든다(끄면 그 시나리오에서는 「일정 없음」). 가정 세션 Space
-  저장 상자(`assumption=True`)는 짧은 라벨을 쓰고, 기본값은 `DEFAULT_PROPAGATE_NEW_UNITS` 를 그대로
-  따른다(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`). key 는 공식 자리와 가른다(라벨·경고가 다른
-  칸이라 세션 역할이 바뀌어도 한 칸의 고름을 다른 칸이 잇지 않게).
-- **가정 세션 저장 칸 셋은 함께 넣기 체크가 켜 있으면 같은 경고 한 줄을 세운다**
-  (`ASSUMPTION_PROPAGATE_WARNING` — 「켜 두면 … 공식 가용대수에 셉니다」, 2026-11-01 N2 후속).
-  Space 저장 상자(`assumption=True`)와 설비 마스터 탭 저장 칸·사이드바 팝업 「저장」(`reach` 를 준
-  자리)이 같은 글·같은 조건이고, 「새 호기」 칸도 같은 글을 쓴다(`equipment_master_tab` —
-  `propagate_warning`).
-- **가정 세션의 발행 체크는 세 자리 모두 한 규칙이다**(`reach` — `OfficialReach`): 이 저장이
-  공식 설비 시나리오에 새 일정 리비전을 만들 수 있을 때(「새 호기」 칸에서 켠 새 호기, 저장 칸
-  체크를 따르는 새 호기·새 비가동이 체크로 켜 있음)만 「함께 넣은 공식 리비전 발행」(기본 켬)이
-  선다. 만들 수 없으면 발행할 것이 없어 그리지 않는다 — 가정 세션 팝업에 뜻 없이 서던 체크(E2E
-  #135)와, Space 에서 「새 호기」 칸 고름·새 비가동이 공식에 들어가는데 발행 체크가 숨어 말없이
-  발행하지 않던 것(옛 「함께 넣기를 켤 때만」)을 함께 맞춘다. 공식 발행이 하나도 없으면 넣을 것과
-  상관없이 「공식 v1 이 됩니다」 한 줄이다(저장소가 그때 이 저장의 일정 리비전을 v1 로 낸다).
+- **저장 자리에는 체크가 없다**(2026-11-05 사용자 결정 — 검수표 11/02 equip-13). 세 자리 모두 새
+  호기를 다른 설비 시나리오에 같은 일정으로 넣고, 새 비가동을 모든 설비 시나리오에 넣고, 공식 설비
+  시나리오에 새 일정 리비전이 생기면 공식으로 발행한다 — 저장소 `EquipmentSaveRequest` 기본값
+  그대로다. 지우는 호기가 다른 설비 시나리오에 일정이 있어도 묻지 않는다. 일어난 일은 저장 결과
+  알림이 한 번에 적고(`equipment_data_workspace.save_result_message`), 저장 전 말은 저장 단추
+  풍선(`SAVE_ALWAYS_HELP`)과 Guide 다. 갈래를 고를 일이 생기면 그때 기능으로 짓는다.
+- **「새 호기」 칸의 호기마다 고름은 남는다**(D8) — 그 칸에서 끈 호기는 다른 설비 시나리오에 넣지
+  않는다. 가정 세션에서 켜 두면 그 칸이 같은 공식 가용대수 경고(`ASSUMPTION_PROPAGATE_WARNING`)를
+  세운다.
 """
 
 from __future__ import annotations
@@ -36,39 +20,19 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-# 질문 1 권장안(설계 9장) — 공식 설비 시나리오에 새 일정 리비전이 생기는 저장은 기본으로 공식 발행.
-DEFAULT_PUBLISH_OFFICIAL = True
-# F6 — 새 호기를 넣을 때 「다른 시나리오에도 같은 일정으로 넣기」 기본 켬.
+# F6 — 「새 호기」 칸의 호기마다 고름 기본값(켬). 저장 자리는 고르지 않고 늘 넣는다.
 DEFAULT_PROPAGATE_NEW_UNITS = True
-# F2 — 비가동을 넣을 때 「모든 시나리오에 넣기」 기본 켬.
-DEFAULT_PROPAGATE_NEW_DOWNTIME = True
-
-PROPAGATE_UNITS_LABEL = "새로 넣은 호기를 다른 설비 시나리오에도 같은 일정으로 넣기"
-PROPAGATE_DOWNTIME_LABEL = "새로 넣은 비가동을 모든 설비 시나리오에 넣기"
-PUBLISH_OFFICIAL_LABEL = "공식 설비 시나리오에 새 일정 리비전이 생기면 공식으로 발행"
-# 가정 세션 Space 저장 상자 — 기본값은 탭·「새 호기」 칸·팝업과 같은 F6(N2 — 네 자리 한 값).
-DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS = DEFAULT_PROPAGATE_NEW_UNITS
-ASSUMPTION_PROPAGATE_UNITS_LABEL = "새 호기를 다른 설비 시나리오에도 넣기"
-# 가정 세션 저장 칸 셋·「새 호기」 칸이 함께 넣기를 켜 두었을 때 세우는 한 줄(처음부터 켬이라
-# 「켜 두면」).
+# 가정 세션 「새 호기」 칸이 함께 넣기를 켜 두었을 때 세우는 한 줄(처음부터 켬이라 「켜 두면」).
 ASSUMPTION_PROPAGATE_WARNING = (
     "켜 두면 새 호기가 공식 설비 시나리오에 자리 없는 새 호기로 들어가 공식 가용대수에 셉니다."
 )
-ASSUMPTION_PUBLISH_LABEL = "함께 넣은 공식 리비전 발행"
-_ASSUMPTION_SUFFIX = "_assumption"
-# 발행이 하나도 없을 때 발행 체크 대신 서는 한 줄 — 저장소가 첫 일정 리비전을 늘 공식 v1 로 낸다.
-FIRST_RELEASE_NOTE = "아직 공식 발행이 없어 이 저장의 일정 리비전이 공식 v1 이 됩니다."
 SAVED_BY_LABEL = "저장자(선택)"
-
-
-@dataclass(frozen=True)
-class EquipmentSaveFields:
-    """저장 칸에서 받은 값. 기본값은 위 상수다(칸을 그리지 않는 저장 — 시험·래퍼 대신 쓰는 길)."""
-
-    saved_by: str | None = None
-    propagate_new_units: bool = DEFAULT_PROPAGATE_NEW_UNITS
-    propagate_new_downtime: bool = DEFAULT_PROPAGATE_NEW_DOWNTIME
-    publish_official: bool = DEFAULT_PUBLISH_OFFICIAL
+# 세 저장 단추 풍선의 끝 — 저장이 늘 하는 일(자리에 적지 않는다, 설계 규칙 UI-TXT-01 · UI-NTF-09).
+SAVE_ALWAYS_HELP = (
+    "새 호기는 다른 설비 시나리오에도 같은 일정으로, 새 비가동은 모든 설비 시나리오에 넣고, 공식 "
+    "설비 시나리오에 새 일정 리비전이 생기면 공식으로 발행합니다. 지운 호기는 모든 설비 시나리오"
+    "에서 일정·비가동과 함께 빠집니다."
+)
 
 
 @dataclass(frozen=True)
@@ -90,58 +54,16 @@ class EquipmentSaveBasis:
     official_scenario: bool = True
 
 
-@dataclass(frozen=True)
-class OfficialReach:
-    """가정 세션 저장이 공식 설비 시나리오에 새 일정 리비전을 만들 재료 — 저장 칸 체크를 따르는
-    새 호기 수, 「새 호기」 칸에서 켠 새 호기 수(그 칸 체크가 저장 칸 체크보다 이긴다, D8), 새
-    비가동 수. `equipment_data_workspace.official_reach` 가 편집본에서 센다."""
+def render_saved_by_field(
+    prefix: str, *, persist: bool = False, width: int | None = None
+) -> str | None:
+    """저장자 칸을 그리고 지금 값(비면 None)을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
 
-    follow_units: int = 0
-    chosen_spread: int = 0
-    new_downtime: int = 0
-
-    def reaches(self, *, units: bool, downtime: bool) -> bool:
-        """저장 칸 함께 넣기 두 체크가 이 값일 때 공식 설비 시나리오에 넣을 것이 있는가."""
-        return bool(
-            self.chosen_spread or (units and self.follow_units) or (downtime and self.new_downtime)
-        )
-
-
-@dataclass(frozen=True)
-class SaveCandidateCounts:
-    """저장 전에 셀 수 있을 때(팝업)만 적는 함께 넣기 후보 수."""
-
-    new_units: int = 0
-    new_downtime: int = 0
-
-
-def render_equipment_save_fields(
-    prefix: str,
-    *,
-    counts: SaveCandidateCounts | None = None,
-    release_exists: bool = True,
-    assumption: bool = False,
-    reach: OfficialReach | None = None,
-    persist_saved_by: bool = False,
-) -> EquipmentSaveFields:
-    """저장자 칸과 세 체크를 그리고 지금 값을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
-
-    `prefix` 로 칸 key 를 가른다 — 세 저장 자리(설비 마스터 탭·사이드바 팝업·Space 저장 칸)가 서로의
-    값을 덮지 않게. 저장자는 세션에 남아 다음 저장에 그대로 선다(같은 사람이 이어 저장한다).
-    발행 체크는 가정 설비 시나리오 세션에도 선다 — 그 저장이 공식 시나리오에 새 리비전을 만드는
-    길은 함께 넣기뿐이지만, 그때도 공식 발행을 끌 수 있어야 한다(G1 「저장 칸에서 끌 수 있음」 —
-    넣을 것이 있을 때만, 아래 `reach`).
-    `release_exists` 가 거짓이면(공식 발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을
-    둔다 — 저장소가 첫 일정 리비전을 늘 공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
-
-    `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 짧은 라벨, 기본값은 다른 자리와 같은
-    켬). `reach` 를 주면 가정 세션이다 — 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만 선다(모듈
-    설명). 둘 다 가정 세션이라 함께 넣기 체크가 켜 있으면 두 체크 아래에 같은 공식 가용대수 경고를
-    세운다(`_render_assumption_warning`).
-
-    `persist_saved_by` 면 저장자 칸에 `persist_state="session"` 을 준다 — 그 칸을 그리지 않는 회차가
-    있는 자리(가용설비 현황 탭 ① 은 숨은 회차에 그리지 않는다, 개편 명세 2-3)에서도 위 약속(세션에
-    남음)을 지킨다. 세 체크는 기본값이 늘 같아 그대로 둔다.
+    `prefix` 로 칸 key 를 가른다 — 세 저장 자리가 서로의 값을 덮지 않게. 저장자는 세션에 남아 다음
+    저장에 그대로 선다(같은 사람이 이어 저장한다). `persist` 면 칸에 `persist_state="session"` 을
+    준다 — 그 칸을 그리지 않는 회차가 있는 자리(가용설비 현황 탭 ① 은 숨은 회차에 그리지 않는다,
+    개편 명세 2-3)에서도 그 약속을 지킨다. `width` 는 한 줄에 칸을 나란히 두는 자리(Space)의 칸
+    너비다.
     """
     saved_by = (
         st.text_input(
@@ -150,124 +72,25 @@ def render_equipment_save_fields(
             placeholder="예: 홍길동",
             max_chars=40,
             persist_state="session",
+            width="stretch" if width is None else width,
         )
-        if persist_saved_by
+        if persist
         else st.text_input(
-            SAVED_BY_LABEL, key=f"{prefix}_saved_by", placeholder="예: 홍길동", max_chars=40
+            SAVED_BY_LABEL,
+            key=f"{prefix}_saved_by",
+            placeholder="예: 홍길동",
+            max_chars=40,
+            width="stretch" if width is None else width,
         )
     )
-    if assumption:
-        propagate_units = st.checkbox(
-            ASSUMPTION_PROPAGATE_UNITS_LABEL,
-            value=DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS,
-            key=f"{prefix}_propagate_units{_ASSUMPTION_SUFFIX}",
-        )
-        propagate_downtime = st.checkbox(
-            PROPAGATE_DOWNTIME_LABEL,
-            value=DEFAULT_PROPAGATE_NEW_DOWNTIME,
-            key=f"{prefix}_propagate_downtime",
-        )
-        _render_assumption_warning(bool(propagate_units))
-        publish = _reach_publish(
-            f"{prefix}_publish{_ASSUMPTION_SUFFIX}",
-            reach or OfficialReach(),
-            units=bool(propagate_units),
-            downtime=bool(propagate_downtime),
-            release_exists=release_exists,
-        )
-        return EquipmentSaveFields(
-            saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
-            propagate_new_units=bool(propagate_units),
-            propagate_new_downtime=bool(propagate_downtime),
-            publish_official=bool(publish),
-        )
-    units_label = PROPAGATE_UNITS_LABEL
-    downtime_label = PROPAGATE_DOWNTIME_LABEL
-    if counts is not None:
-        units_label = f"{PROPAGATE_UNITS_LABEL} · 후보 {counts.new_units:,}대"
-        downtime_label = f"{PROPAGATE_DOWNTIME_LABEL} · 후보 {counts.new_downtime:,}건"
-    propagate_units = st.checkbox(
-        units_label, value=DEFAULT_PROPAGATE_NEW_UNITS, key=f"{prefix}_propagate_units"
-    )
-    propagate_downtime = st.checkbox(
-        downtime_label, value=DEFAULT_PROPAGATE_NEW_DOWNTIME, key=f"{prefix}_propagate_downtime"
-    )
-    publish = DEFAULT_PUBLISH_OFFICIAL
-    if reach is not None:
-        _render_assumption_warning(bool(propagate_units))
-        publish = _reach_publish(
-            f"{prefix}_publish",
-            reach,
-            units=bool(propagate_units),
-            downtime=bool(propagate_downtime),
-            release_exists=release_exists,
-        )
-    elif not release_exists:
-        st.caption(f":material/verified: {FIRST_RELEASE_NOTE}")
-    else:
-        publish = st.checkbox(
-            PUBLISH_OFFICIAL_LABEL, value=DEFAULT_PUBLISH_OFFICIAL, key=f"{prefix}_publish"
-        )
-    return EquipmentSaveFields(
-        saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
-        propagate_new_units=bool(propagate_units),
-        propagate_new_downtime=bool(propagate_downtime),
-        publish_official=bool(publish),
-    )
+    return _cleaned(saved_by)
 
 
-def _render_assumption_warning(propagate_units: bool) -> None:
-    """가정 세션 저장 칸의 함께 넣기 체크가 켜 있으면 두 체크 아래 경고 한 줄(모듈 설명 — 세
-    저장 자리 같은 글·같은 조건). 끄면 걷는다 — 그때 새 호기는 공식에서 「일정 없음」 이라 세지
-    않는다."""
-    if propagate_units:
-        st.caption(f":material/warning: {ASSUMPTION_PROPAGATE_WARNING}")
+def saved_by_from_state(prefix: str) -> str | None:
+    """`render_saved_by_field(prefix)` 칸의 지금 값을 세션에서 읽는다 — 저장이 단추 콜백(설비 마스터
+    탭 「리비전 저장」·Space 「배치 저장」)이라 그리는 회차의 돌려준 값을 쓸 수 없을 때."""
+    return _cleaned(st.session_state.get(f"{prefix}_saved_by"))
 
 
-def _reach_publish(
-    key: str, reach: OfficialReach, *, units: bool, downtime: bool, release_exists: bool
-) -> bool:
-    """가정 세션 발행 체크(모듈 설명) — 공식에 넣을 것이 있을 때만 「함께 넣은 공식 리비전 발행」.
-    없으면 그리지 않고 거짓을 돌려준다(발행할 리비전이 생기지 않는다 — 세션에서 다시 읽는
-    `save_fields_from_state` 도 그리지 않은 칸은 거짓).
-
-    발행이 하나도 없으면 `reach` 와 상관없이 체크 대신 「공식 v1 이 됩니다」 한 줄이다 — 저장소는
-    그때 이 저장의 일정 리비전을 함께 넣기 없이도 공식 v1 로 낸다(`_plan_publish`). 넣을 것이 없다고
-    이 한 줄까지 숨기면 말없는 발행이 된다."""
-    if not release_exists:
-        st.caption(f":material/verified: {FIRST_RELEASE_NOTE}")
-        return True
-    if not reach.reaches(units=units, downtime=downtime):
-        return False
-    return bool(st.checkbox(ASSUMPTION_PUBLISH_LABEL, value=DEFAULT_PUBLISH_OFFICIAL, key=key))
-
-
-def save_fields_from_state(
-    prefix: str, *, assumption: bool = False, reach_rule: bool = False
-) -> EquipmentSaveFields:
-    """`render_equipment_save_fields(prefix)` 가 세운 칸의 지금 값을 세션에서 읽는다 — 저장이
-    단추 콜백(설비 마스터 탭 「리비전 저장」·Space 「배치 저장」)이라 그리는 회차의 돌려준 값을 쓸
-    수 없을 때. 칸이 없으면 기본값이다. 다만 가정 세션의 발행 체크(`assumption` — Space 저장 상자,
-    또는 `reach_rule` — `reach` 를 주고 그린 탭 저장 칸)는 그리지 않았으면 거짓이다 — 공식에 넣을
-    것이 없어 세우지 않은 체크다(모듈 설명). `assumption` 이면 가정 세션 Space 칸(key 꼬리
-    `_assumption` — 함께 넣기 기본값은 다른 자리와 같다)."""
-
-    def flag(suffix: str, default: bool) -> bool:
-        value = st.session_state.get(f"{prefix}_{suffix}", default)
-        return value if isinstance(value, bool) else default
-
-    saved_by = st.session_state.get(f"{prefix}_saved_by")
-    if assumption:
-        units = flag(f"propagate_units{_ASSUMPTION_SUFFIX}", DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS)
-        return EquipmentSaveFields(
-            saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
-            propagate_new_units=units,
-            propagate_new_downtime=flag("propagate_downtime", DEFAULT_PROPAGATE_NEW_DOWNTIME),
-            publish_official=flag(f"publish{_ASSUMPTION_SUFFIX}", False),
-        )
-    return EquipmentSaveFields(
-        saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
-        propagate_new_units=flag("propagate_units", DEFAULT_PROPAGATE_NEW_UNITS),
-        propagate_new_downtime=flag("propagate_downtime", DEFAULT_PROPAGATE_NEW_DOWNTIME),
-        publish_official=flag("publish", not reach_rule and DEFAULT_PUBLISH_OFFICIAL),
-    )
+def _cleaned(value: object) -> str | None:
+    return (value.strip() or None) if isinstance(value, str) else None

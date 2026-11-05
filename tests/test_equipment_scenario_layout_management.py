@@ -40,6 +40,8 @@ from capa_simulation.components.equipment_scenario_management import (
     CLEAR_LAYOUT_CONFIRM_KEY,
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
+    LAYOUT_BLOCKED_LINE,
+    PUBLISH_BUTTON_HELP,
     PUBLISH_BUTTON_KEY,
     RESTORE_BUTTON_KEY,
     REVISION_KEY,
@@ -532,7 +534,14 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
     assert app.selectbox(key=REVISION_KEY).value == latest
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
-    assert any("공식과 다른 배치(실효 호기 1대 — 저장된 차이 1행)가 있어" in t for t in _texts(app))
+    # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선 하나다(검수표 11/02 equip-44 — 빨간 상자와 풍선이
+    # 같은 글로 겹쳤다).
+    assert "공식과 다른 배치(실효 호기 1대 — 저장된 차이 1행)가 있어" in str(publish.help)
+    assert str(publish.help).endswith(PUBLISH_BUTTON_HELP)
+    texts = _texts(app)
+    assert LAYOUT_BLOCKED_LINE in texts
+    assert not any("공식과 다른 배치(실효" in t for t in texts)
+    assert not any("발행하지 않습니다" in str(item.value) for item in app.error)
 
 
 def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
@@ -562,7 +571,8 @@ def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
     assert not any(button.key == RESTORE_BUTTON_KEY for button in app.button)
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
-    (blocked,) = [str(item.value) for item in app.error if "발행하지 않습니다" in str(item.value)]
+    blocked = str(publish.help)
+    assert "발행하지 않습니다" in blocked, blocked
     assert "「이 리비전으로 되돌리기」" not in blocked, blocked
     assert "최신 r3의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in blocked, blocked
     assert "따로 발행할 것이 없습니다" in blocked, blocked

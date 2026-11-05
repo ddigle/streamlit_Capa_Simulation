@@ -883,7 +883,8 @@ class EquipmentSaveResult:
       발행은 시나리오 관리 › 설비 시나리오에서」).
     - `forced_common` 은 0027 뒤 첫 저장이라 공통이 그대로여도 v4 공통을 함께 썼다는 뜻이다.
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
-      빠진다 — 설비 마스터 탭 설비명 고침도 지운 + 새 호기다).
+      빠진다 — 설비 마스터 탭 설비명 고침도 지운 + 새 호기다). `removed_elsewhere` 는 지운 호기의
+      일정 행이나 배치 차이 행이 최신에 든 **다른** ACTIVE 설비 시나리오 이름이다(결과 알림 재료).
     - `layout_overlay_written` 은 이 저장이 가정 설비 시나리오의 배치 차이를 바꾼 새 리비전을
       만들었는가, `layout_overlay_units` 는 그 리비전의 공식과 다른 호기 수(설비 단위)이고
       `layout_overlay_marks`·`layout_overlay_labels` 는 그 리비전의 도면 요소·Main 설비명 위치
@@ -901,6 +902,7 @@ class EquipmentSaveResult:
     floor_values_written: bool = False
     new_units: tuple[str, ...] = ()
     removed_units: tuple[str, ...] = ()
+    removed_elsewhere: tuple[str, ...] = ()
     layout_overlay_written: bool = False
     layout_overlay_units: int = 0
     layout_overlay_marks: int = 0
@@ -1400,6 +1402,13 @@ class DuckDBEquipmentRepository:
                 schedule_rows = _rows_for(frames.schedule, known)
                 downtime_rows = _rows_for(frames.downtime, known)
 
+            # 함께 넣기가 다른 시나리오 최신을 옮기기 전에 센다(결과 알림 — 확인은 묻지 않는다).
+            removed_elsewhere = _scenarios_holding_units(
+                connection,
+                scenarios.values(),
+                {base.unit_keys[name] for name in edit.removed_units},
+                excluding=scenario.equipment_scenario_id,
+            )
             propagations = (
                 _plan_propagations(
                     connection,
@@ -1557,6 +1566,7 @@ class DuckDBEquipmentRepository:
                 floor_values_written=floors_written,
                 new_units=edit.new_units,
                 removed_units=edit.removed_units,
+                removed_elsewhere=removed_elsewhere,
                 layout_overlay_written=role == "overlay" and write_schedule and layout_changed,
                 layout_overlay_units=overlay_unit_count(layout, after_base),
                 layout_overlay_marks=layout.mark_count,
@@ -2060,30 +2070,6 @@ class DuckDBEquipmentRepository:
                     raise KeyError("공통 대장 리비전이 없습니다.")
                 common = latest[0]
             return read_merged(connection, common, schedule_revision_id)
-
-    def units_scheduled_elsewhere(
-        self, equipment_scenario_id: str | None
-    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
-        """다른 ACTIVE 설비 시나리오의 **최신** 리비전에 일정 행이 있는 호기 — (호기 키, 그 시나리오
-        이름들) 키 차례. 설비 마스터 탭에서 호기를 지우는 저장의 확인 재료다(지우면 공통 대장에서
-        빠져 그 시나리오들의 일정도 빠진다 — 설계 11-2 6단계). 배치 차이 행(설비 0031 — 가정
-        배치)만 있는 호기도 든다. `equipment_scenario_id` 가 None 이면 모든 ACTIVE 시나리오를 본다.
-        이관 리비전은 그 리비전의 모든 호기에 일정 행이 있다(`read_schedule`)."""
-        found: dict[str, list[str]] = {}
-        with self._connect() as connection:
-            for summary in map(_scenario_summary, scenario_store.scenario_rows(connection)):
-                if (
-                    summary.status != "ACTIVE"
-                    or summary.equipment_scenario_id == equipment_scenario_id
-                    or summary.latest_schedule_revision_id is None
-                ):
-                    continue
-                frames = read_schedule(connection, summary.latest_schedule_revision_id)
-                keys = set(frames.schedule[UNIT_KEY_COLUMN].dropna().astype(str))
-                keys |= read_layout_overlay(connection, frames.revision).unit_keys
-                for key in sorted(keys):
-                    found.setdefault(key, []).append(summary.scenario_name)
-        return tuple((key, tuple(names)) for key, names in sorted(found.items()))
 
     def layout_overlay_floor_counts(self, building: str, floor: str) -> tuple[tuple[str, int], ...]:
         """ACTIVE **가정** 설비 시나리오(공식 시나리오 밖) 최신마다 그 리비전의 호기 배치 차이에서
@@ -4058,6 +4044,36 @@ def _propagation_note(source_name: str, plan: _PropagationPlan) -> str:
     if plan.downtime_added:
         parts.append(f"비가동 {len(plan.downtime_added)}건")
     return f"「{source_name}」 저장에서 {'·'.join(parts)} 함께 넣음"
+
+
+def _scenarios_holding_units(
+    connection: duckdb.DuckDBPyConnection,
+    scenarios: Iterable[EquipmentScenarioSummary],
+    unit_keys: Collection[str],
+    *,
+    excluding: str,
+) -> tuple[str, ...]:
+    """`excluding` 가 아닌 ACTIVE 설비 시나리오 가운데 그 **최신** 리비전에 이 호기들의 일정 행이나
+    배치 차이 행(설비 0031 — 가정 배치)이 있는 시나리오 이름들 — 호기를 지우는 저장의 결과 알림
+    재료다(지우면 공통 대장에서 빠져 그 시나리오들의 일정도 빠진다 — 설계 11-2 6단계). 이관 리비전은
+    그 리비전의 모든 호기에 일정 행이 있다(`read_schedule`). 지운 호기가 없으면 읽지 않는다."""
+    wanted = set(unit_keys)
+    if not wanted:
+        return ()
+    names: list[str] = []
+    for summary in scenarios:
+        if (
+            summary.status != "ACTIVE"
+            or summary.equipment_scenario_id == excluding
+            or summary.latest_schedule_revision_id is None
+        ):
+            continue
+        frames = read_schedule(connection, summary.latest_schedule_revision_id)
+        held = set(frames.schedule[UNIT_KEY_COLUMN].dropna().astype(str))
+        held |= read_layout_overlay(connection, frames.revision).unit_keys
+        if held & wanted:
+            names.append(summary.scenario_name)
+    return tuple(names)
 
 
 def _plan_publish(
