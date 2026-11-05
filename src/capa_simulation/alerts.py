@@ -498,6 +498,7 @@ def event(
     level: Level | None = None,
     cause: str = "",
     detail: str = "",
+    tab: str = "",
 ) -> None:
     """사건 알림 하나를 담는다 — **그리지 않는다**(이벤트 칸을 쓰지 않으니 어느 갈래에서 불러도
     된다).
@@ -505,9 +506,9 @@ def event(
     같은 회차의 다음 표지 자리(`render_flash` · `state` · `flush`)가 보내고, 그런 자리가 없으면 다음
     앱 전체 회차의 알림 칸 data 가 보낸다(콜백에서 담은 것은 바로 그 회차다). `text` 는 알림창 짧은
     글(60자 안팎), `full` 은 패널 · 로그의 전문, `cause` 는 로그의 계기(「「저장」 누름」), `detail`
-    은 원본 오류 글이다.
+    은 원본 오류 글, `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그 탭을 연다)이다.
     """
-    note = event_note(code, text=text, full=full, level=level, cause=cause, detail=detail)
+    note = event_note(code, text=text, full=full, level=level, cause=cause, detail=detail, tab=tab)
     outbox = st.session_state.get(OUTBOX_KEY)
     st.session_state[OUTBOX_KEY] = [*outbox, note] if isinstance(outbox, list) else [note]
 

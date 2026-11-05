@@ -162,7 +162,7 @@ def _first_callback(
 
 
 def _successes(app: AppTest) -> list[tuple[str, str]]:
-    """목록 결과 칸의 저장 성공 알림(글, 아이콘) — 화면의 다른 성공 상자(최신 공식 줄)는 뺀다."""
+    """목록 결과 칸의 저장 성공 알림(글, 아이콘) — 화면의 다른 성공 상자는 뺀다."""
     return [
         (str(item.value), str(item.icon))
         for item in successes(app)

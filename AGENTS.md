@@ -869,8 +869,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭이 열린 회차에 숨은 Capa 본문은 24~41ms, 샘플 관측 — 그 값은 페이지 주석). 「설비 시나리오」 탭(`equipment_scenario_management.render_equipment_scenario_section`)만 그 탭이 열린 회차에 그린다
     — 설비 DB 를 여는 것은 그 회차뿐이고(`tab.open`, `tests/test_equipment_scenario_screens.py`) 못 읽으면 그 탭 안에서만 알린다. 대가로 그
     탭 입력 칸에 적던 글은 다른 탭으로 옮기면 버려진다(작업 전환과 같은 성질 — Guide 도 그렇게 적는다). 목록·리비전 편집표의 미저장
-    편집은 위젯이 아니라 행 id 초안이라 탭을 오가도 남는다. 다른 화면(옛 배포 흔적 경고의 단추)은 `remember_open_tab` 으로 기억 칸만 적어 그
-    탭을 연다(`open_equipment_scenario_management`). 옛 세션의 목록 밖 탭 값은 Streamlit 이 첫 탭으로 되돌린다. 이 화면에는 사이드바 설비
+    편집은 위젯이 아니라 행 id 초안이라 탭을 오가도 남는다. 다른 화면에서 그 탭으로 데려가는 길은 단추와 `scenario_management_tabs.open_scenario_management_tab`
+    이다 — 기억 칸만 적어 그 탭을 연다(옛 배포 흔적 경고의 단추는 설비 시나리오, 시나리오 팝업의 두 단추는 Capa 시나리오). 링크는 기억된 탭을 여니 특정 탭을 가리키는 길에 쓰지
+    않는다. 탭 이름과 알림의 `tab`(`*_TAB_NAME`)도 그 모듈 한 곳이고, 탭 본문의 오류 알림(`SC-02`)과 변경 칩 「목록 편집 저장 안 함」 은 제 탭 이름을 싣는다(`tests/test_scenario_management_tabs.py`). 옛 세션의 목록 밖 탭 값은 Streamlit 이 첫 탭으로 되돌린다. 이 화면에는 사이드바 설비
     시나리오 줄이 서지 않는다(탭 머리 「이 세션: …」 한 줄과 세션 알림). 그 탭이 닫힌 회차에는 세션을 풀지 않으므로 세션 이동 알림(`SB-14`)은
     그 탭을 여는 회차에 뜬다. 설비 DB 핀을 선언하지만(`uses_equipment_db`) 게으른 핀이라 다른 탭을 보는 회차에는 열지 않는다.
   - Capa 시나리오 탭 맨 위에 작업 전환(목록 관리 · 복제 · 월 머지 · 연도 Shift — 보이는 글 없음, 접근성 라벨 「시나리오 작업」)이
@@ -965,7 +966,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 달은 `date.today()` 다. 팝업 머리에 설명 글을 두지 않는다(적용 전 편집 경고만 — 2026-11-04 home-19).
 - `src/capa_simulation/components/scenario_status.py` — 사이드바 조건 패널의 시나리오 줄과 불러오기·새 리비전 저장·
   편집 되돌리기 팝업(`SCENARIO_DIALOG_KEY`)이다. 이름 변경·발행·삭제·신규 생성은 `시나리오 관리` 페이지 몫이고, 불러오기
-  구획 끝 한 줄이 그리로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 링크 대신 표 자리를 적는다).
+  구획 끝 단추가 그 화면 Capa 시나리오 탭으로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 서지 않는다).
   - 줄은 세션만 읽고 저장소는 팝업을 연 동안에만 읽는다(팝업 프래그먼트는 `app.py` 의 실행 핀 밖이라
     `pinned_connections` 를 스스로 잡는다). `tests/test_scenario_sidebar.py`·`test_app_navigation.py` 가 고정한다.
   - 배지는 미저장 → 공식 vN → **최신 rN 있음** → 저장된 리비전 차례다(머리 띠 `header_lines` 도 같다, E2E #102). 낡음은
@@ -3479,10 +3480,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     거짓」 과 결과가 같다. 지우는 호기도 묻지 않는다. 일어난 일은 결과 알림(`save_result_message`), 저장 전 말은 단추 풍선 · Guide 다 —
     갈래를 고를 일이 생기면 그때 기능으로 짓는다. 저장소의 `propagate_new_*` · `publish_official` 인자는 시험 · 스크립트 · 앞으로의 기능을
     위해 그대로 둔다. 「새 호기」 칸에도 호기마다의 고름 · 경고가 없다(2026-11-05 사용자 답).
+- `src/capa_simulation/components/scenario_management_tabs.py` — 시나리오 관리 탭 넷의 이름 · 탭 기억 key · 알림의 `tab` 이름(`*_TAB_NAME`)과 다른
+  화면에서 그 탭으로 옮기는 길(`open_scenario_management_tab`) 한 곳.
 - `src/capa_simulation/components/equipment_scenario_management.py` — 시나리오 관리 「설비 시나리오」 탭(1단계 몫 + E7 —
   2026-10-24 가용설비 현황의 탭에서 옮김). 탭 진입(`render_equipment_scenario_section` — 설비 DB 는 이 안에서만 연다, 머리
-  「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 구획으로 옮기는 길(`open_equipment_scenario_management` — 탭 상한을 먼저
-  보고 전환 칸·탭 기억 칸을 적은 뒤 본문에서 `st.switch_page`, 설비 화면 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어
+  「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 탭으로 옮기는 길(`open_equipment_scenario_management` — `scenario_management_tabs.open_scenario_management_tab`
+  이 탭 상한을 먼저 보고 탭 기억 칸을 적은 뒤 본문에서 `st.switch_page`, 설비 화면 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어
   쓰기」)도 둔다. 시나리오
   표(「공식 vN · rM」/활성 — rM 은 공식 발행 리비전, 발행 확인 글과 같은 `official_release_revision_no` 로 찾고 못 찾으면 「공식 vN」 만·최신 rN·
   리비전 수·저장된 배치 차이)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가

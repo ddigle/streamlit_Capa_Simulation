@@ -269,6 +269,7 @@ def test_an_unreadable_official_version_is_a_mark_not_a_red_box(
     assert data_error_marks(app) == 1
     assert any("시험 — 공식버전을 읽지 못함" in text for text in data_error_texts(app))
     assert [note["code"] for note in events(app, "SC-02")] == ["SC-02"]
+    assert [note["tab"] for note in events(app, "SC-02")] == ["자동 갱신"]
 
 
 def _republish(repository: DuckDBScenarioRepository, release_name: str) -> None:

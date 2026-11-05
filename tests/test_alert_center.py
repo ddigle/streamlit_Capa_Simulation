@@ -165,6 +165,7 @@ def test_the_change_chip_lists_an_upeh_assumption_in_the_assume_group(
         "text": "UPEH 가정 110%",
         "top": "UPEH 가정",
         "href": "process_capa_detail",
+        "tab": "",
     }
 
 

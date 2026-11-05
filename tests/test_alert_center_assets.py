@@ -388,6 +388,8 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
     assert "C.data.here !== pending.href || running()" in settle
     assert "aria-selected" in settle and "button.click()" in settle
     assert "goTo(C, row.href, row.tab)" in JS
+    # 변경 칩 줄도 같다 — 줄이 그 화면 안 탭을 들고 있으면 그 탭까지 연다.
+    assert "goTo(C, item.href, item.tab)" in JS
     for name in ("table_open", "table_rows", "table_csv"):
         assert name in alert_center.TEXT
     assert "position: sticky;" in _rule(".tscroll th")

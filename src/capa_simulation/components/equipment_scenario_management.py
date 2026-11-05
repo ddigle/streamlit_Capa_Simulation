@@ -47,7 +47,6 @@ from dataclasses import dataclass, replace
 
 import pandas as pd
 import streamlit as st
-from streamlit.errors import StreamlitPageNotFoundError
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
@@ -70,8 +69,13 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
-from capa_simulation.components.state_alerts import tab_name
-from capa_simulation.components.tab_state import remember_open_tab
+from capa_simulation.components.scenario_management_tabs import (
+    CAPA_SCENARIO_TAB,
+    EQUIPMENT_SCENARIO_TAB,
+    EQUIPMENT_SCENARIO_TAB_NAME,
+    SCENARIO_MANAGEMENT_TABS_KEY,
+    open_scenario_management_tab,
+)
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.components.widget_generation import (
     bump,
@@ -102,14 +106,12 @@ from capa_simulation.equipment_scenario_activation import (
     resolve_equipment_session,
     select_equipment_scenario,
 )
-from capa_simulation.navigation import SCENARIO_MANAGEMENT
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     prune_named_choice,
     render_schema_ahead_warning,
 )
-from capa_simulation.page_tabs_state import refused_at_tab_limit
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_scenario_cache,
     clear_equipment_snapshot_cache,
@@ -168,13 +170,6 @@ __all__ = [
     "render_equipment_scenario_section",
 ]
 
-# 시나리오 관리 화면의 탭 묶음(`stateful_tabs`) key 와 앞 두 탭 라벨 — 다른 화면에서 설비 시나리오
-# 탭으로 보낼 때 그 탭 기억 칸을 적는다. 화면(`app_pages/scenario_management.py`)도 이 이름을
-# 읽는다.
-# 설비 시나리오 아이콘은 사이드바 설비 시나리오 칸(`EQUIPMENT_SCENARIO_FIELD_ICON`)과 같다.
-SCENARIO_MANAGEMENT_TABS_KEY = "scenario_management_tabs"
-CAPA_SCENARIO_TAB = ":material/database: Capa 시나리오"
-EQUIPMENT_SCENARIO_TAB = ":material/account_tree: 설비 시나리오"
 # 「시나리오 관리에서 이어 쓰기」 단추(설비 화면 맨 위 옛 배포 흔적 경고 옆).
 LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
 
@@ -676,19 +671,8 @@ def layout_trace_sentence(
 
 
 def open_equipment_scenario_management() -> None:
-    """시나리오 관리 「설비 시나리오」 탭으로 옮긴다 — 그 화면의 탭 기억 칸만 적는다.
-
-    위젯 콜백이 아니라 회차 본문에서 부른다(AGENTS 9장 — 콜백 안 `st.switch_page` 금지). 화면 탭
-    상한에 걸리면 아무것도 적지 않는다(`refused_at_tab_limit`). 갈 곳이 없으면(내비게이션 없는 단독
-    실행) 칸만 적고 옮기지 않는다.
-    """
-    if refused_at_tab_limit(SCENARIO_MANAGEMENT.path):
-        return
-    remember_open_tab(SCENARIO_MANAGEMENT_TABS_KEY, EQUIPMENT_SCENARIO_TAB)
-    try:
-        st.switch_page(SCENARIO_MANAGEMENT.path)
-    except StreamlitPageNotFoundError:
-        return
+    """시나리오 관리 「설비 시나리오」 탭으로 옮긴다(`open_scenario_management_tab`)."""
+    open_scenario_management_tab(EQUIPMENT_SCENARIO_TAB)
 
 
 def render_legacy_trace_goto() -> None:
@@ -740,6 +724,7 @@ def render_equipment_scenario_section() -> None:
             "설비 시나리오를 준비하지 못했습니다. "
             + bootstrap_error_message(exc, database_paths=(settings.EQUIPMENT_DUCKDB_PATH,)),
             code="SC-02",
+            tab=EQUIPMENT_SCENARIO_TAB_NAME,
             text="설비 시나리오를 준비하지 못했습니다",
         )
         return
@@ -749,7 +734,7 @@ def render_equipment_scenario_section() -> None:
     st.markdown(f"**{session_heading(session)}**")
     # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
     # 칸으로 낸다.
-    report_session_notices(session)
+    report_session_notices(session, tab=EQUIPMENT_SCENARIO_TAB_NAME)
     report_layout_traces(session)
     render_equipment_scenario_management(database_path, session)
 
@@ -780,11 +765,11 @@ def report_layout_traces(session: EquipmentSession) -> None:
         )
         if traced
         else None,
-        tab=tab_name(EQUIPMENT_SCENARIO_TAB),
+        tab=EQUIPMENT_SCENARIO_TAB_NAME,
     )
 
 
-def report_session_notices(session: EquipmentSession) -> None:
+def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
     """설비 시나리오 세션 알림 둘을 알림 칸으로 낸다(자리에는 그리지 않는다 — 2026-11-03 D2 · D3).
 
     - 이 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 사건 알림(`SB-14` — 미저장 설비
@@ -795,7 +780,8 @@ def report_session_notices(session: EquipmentSession) -> None:
     알림 글은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
     알림창 · 패널은 평문(`textContent`)이라 막지 않는다. 사이드바 설비 시나리오 줄과 시나리오 관리
     「설비 시나리오」 탭이 같은 함수를 부른다(한 화면에는 둘 가운데 하나만 선다 — 같은 코드 ·
-    같은 범위라 화면을 옮겨도 다시 뜨지 않는다).
+    같은 범위라 화면을 옮겨도 다시 뜨지 않는다). `tab` 은 「그 화면으로」 가 열 탭이다 — 그 탭에서
+    부를 때만 준다(사이드바 줄이 서는 화면은 탭과 상관없다).
     """
     if session.notice and not session.unmerged:
         alerts.event(
@@ -803,6 +789,7 @@ def report_session_notices(session: EquipmentSession) -> None:
             text=session.notice,
             full=session.notice,
             cause="고른 설비 일정이 지금 공통 대장과 합쳐지지 않음",
+            tab=tab,
         )
     alerts.state(
         "SB-20",
@@ -811,6 +798,7 @@ def report_session_notices(session: EquipmentSession) -> None:
         active=session.unmerged and bool(session.notice),
         text="옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 열었습니다 — 백업 복원 필요",
         full=session.notice if session.unmerged else None,
+        tab=tab,
     )
 
 
@@ -923,6 +911,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         render_data_error(
             f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=EQUIPMENT_SCENARIO_TAB_NAME,
             text="리비전 목록을 읽지 못했습니다",
         )
         return
@@ -1468,6 +1457,7 @@ def _render_restore(
         render_data_error(
             f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=EQUIPMENT_SCENARIO_TAB_NAME,
             text="되돌릴 수 없습니다",
         )
         return
@@ -1637,6 +1627,7 @@ def _render_branch(
         render_data_error(
             f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=EQUIPMENT_SCENARIO_TAB_NAME,
             text="이 리비전에서 새 시나리오를 만들 수 없습니다",
         )
         return
@@ -2272,6 +2263,7 @@ def _render_publish(
         render_data_error(
             f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=EQUIPMENT_SCENARIO_TAB_NAME,
             text="발행 확인 글을 만들지 못했습니다",
         )
         return
@@ -2613,6 +2605,7 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
         render_data_error(
             f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=EQUIPMENT_SCENARIO_TAB_NAME,
             text="옛 배포 흔적을 읽지 못했습니다",
         )
         return

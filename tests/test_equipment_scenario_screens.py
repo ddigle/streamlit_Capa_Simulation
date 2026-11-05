@@ -90,6 +90,7 @@ from capa_simulation.components.pick_edit_table import (
     shown_session_key,
 )
 from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, MODE_KEY
+from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.navigation import (
@@ -1796,6 +1797,25 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
 
 
+def test_the_capa_route_from_the_popup_lands_on_the_capa_tab(_shell: AppTest) -> None:
+    """설비 시나리오 탭을 본 세션(탭 기억 칸이 그 탭)이 다른 화면 팝업의 「시나리오 관리에서 이름
+    바꾸기」 를 누르면 Capa 시나리오 탭이 열린다 — 기억된 탭 그대로면 설비 시나리오 이름 칸에
+    닿는다(설계 규칙 UI-NAV-01)."""
+    app = _ok(_shell.run())
+    app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] = EQUIPMENT_SCENARIO_TAB
+    app.button(key=SCENARIO_FIELD_KEY).click()
+    _ok(app.run())
+    next(item for item in app.button if item.label == "시나리오 관리에서 이름 바꾸기").click()
+    _ok(app.run())
+
+    assert app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] == (
+        CAPA_SCENARIO_TAB
+    )
+    assert not any(str(item.value).startswith("**이 세션:") for item in app.markdown)
+    assert "목록 관리" in app.segmented_control(key="scenario_page_mode").options
+    assert SCENARIO_DIALOG_KEY not in app.session_state  # 옮기면 팝업은 닫힌다
+
+
 def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_says_restore(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1831,6 +1851,7 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     )
     assert not any("준비하지 못했습니다" in text for text in texts)
     assert any("일정 없이 열었습니다" in text for text in texts)
+    assert "tab" not in (active_state(app, "SB-20") or {"tab": "없어야 한다"})
     assert any("옛 배포로 저장한 설비 리비전 1개" in text for text in texts)
     field = _field(app)
     assert field is not None and field.label == "운영 일정"
@@ -1841,6 +1862,8 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     texts = _texts(app)
     assert _heading(app).startswith("이 세션: 운영 일정 · 일정 없이 엶")
     assert any("일정 없이 열었습니다" in text for text in texts)
+    # 이 탭에서 낸 줄은 그 탭까지 연다(사이드바 줄이 낸 위 회차는 탭이 없다).
+    assert (active_state(app, "SB-20") or {}).get("tab") == "설비 시나리오"
     # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
     assert CONTINUE_BLOCKED_LINE in texts
     assert not any("이어 쓸 수 없습니다" in text for text in texts)

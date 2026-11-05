@@ -10,14 +10,18 @@ from capa_simulation.components.bigdataquery_registration import (
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_management import (
-    CAPA_SCENARIO_TAB,
-    EQUIPMENT_SCENARIO_TAB,
-    SCENARIO_MANAGEMENT_TABS_KEY,
     render_equipment_scenario_section,
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
+from capa_simulation.components.scenario_management_tabs import (
+    AUTO_UPDATE_TAB,
+    CAPA_SCENARIO_TAB,
+    EQUIPMENT_SCENARIO_TAB,
+    QUERY_TAB,
+    SCENARIO_MANAGEMENT_TABS_KEY,
+)
 from capa_simulation.components.state_alerts import open_tab_name
 from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -53,11 +57,8 @@ except BOOTSTRAP_ERRORS as exc:
 #
 # 열린 탭은 기억한다(`stateful_tabs`, 2026-10-24 사용자 결정) — 화면 탭 줄로 다른 화면에 갔다
 # 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다.
-# 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B). 옛 세션에 남은 옛 탭 이름은 목록
-# 밖이라 첫 탭이 열린다(Streamlit 이 첫 값으로 되돌리고 기억 칸은 `stateful_tabs` 가 목록 안 값만
-# 쓴다).
-QUERY_TAB = ":material/cloud_download: DB 등록"
-AUTO_UPDATE_TAB = ":material/autorenew: 자동 갱신"
+# 옛 세션에 남은 옛 탭 이름은 목록 밖이라 첫 탭이 열린다(Streamlit 이 첫 값으로 되돌리고 기억 칸은
+# `stateful_tabs` 가 목록 안 값만 쓴다).
 capa_tab, equipment_tab, query_tab, auto_update_tab = stateful_tabs(
     [CAPA_SCENARIO_TAB, EQUIPMENT_SCENARIO_TAB, QUERY_TAB, AUTO_UPDATE_TAB],
     key=SCENARIO_MANAGEMENT_TABS_KEY,

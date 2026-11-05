@@ -271,7 +271,7 @@
     {
       "id": "18_official_done",
       "page": "시나리오 관리",
-      "note": "방금 저장한 리비전을 공식으로 지정한 뒤 — 맨 위 성공 알림 · 사이드바 「공식 vN」",
+      "note": "리비전을 공식으로 지정한 뒤 — 오른쪽 아래 알림창 · 목록 표 「공식버전」 칸",
       "from": "14_scenario_saved",
       "writes": "db",
       "ops": [
@@ -299,7 +299,7 @@
         {"op": "scroll", "to": "top"}
       ],
       "targets": {
-        "off_success": "named:MAIN_ALERT(지정했습니다)",
+        "official_cell": "named:EDIT_ROW_CELL(공식버전)",
         "sidebar_scenario": "named:SIDEBAR_SCEN",
         "sidebar_badge": "named:SIDEBAR_BADGE",
         "header_band": "named:HEADER_BAND"

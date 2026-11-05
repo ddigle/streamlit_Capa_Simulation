@@ -42,6 +42,7 @@ from capa_simulation.components.past_data_management import past_data_has_pendin
 from capa_simulation.components.pick_edit_table import table_has_edits
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, REVISION_EDITOR_KEY
+from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
 from capa_simulation.navigation import (
@@ -74,13 +75,15 @@ _NAME_LIMIT = 16
 
 
 class ChangeItem(TypedDict):
-    """칩 판 한 줄 — 묶음 · 화면 이름 · 짧은 글 · 칩 맨 위 글 · 그 화면 주소(없으면 None)."""
+    """칩 판 한 줄 — 묶음 · 화면 이름 · 짧은 글 · 칩 맨 위 글 · 그 화면 주소(없으면 None) · 그 화면
+    안 탭 이름(그 탭의 표를 가리키는 줄만 — 「그 화면으로」 가 그 탭까지 연다)."""
 
     group: Group
     page: str
     text: str
     top: str
     href: str | None
+    tab: str
 
 
 def _short(name: str, limit: int = _NAME_LIMIT) -> str:
@@ -103,9 +106,11 @@ def _strip_title(title: str, label: str) -> str:
 def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[ChangeItem]:
     """이 세션의 변경 목록(차례대로). `hrefs` 는 화면 경로(`PageSpec.path`) → 주소(`url_path`)다."""
 
-    def item(group: Group, spec: PageSpec | None, page: str, text: str, top: str) -> ChangeItem:
+    def item(
+        group: Group, spec: PageSpec | None, page: str, text: str, top: str, *, tab: str = ""
+    ) -> ChangeItem:
         href = None if spec is None else hrefs.get(spec.path)
-        return ChangeItem(group=group, page=page, text=text, top=top, href=href)
+        return ChangeItem(group=group, page=page, text=text, top=top, href=href, tab=tab)
 
     lose: list[ChangeItem] = []
     pastes: list[ChangeItem] = []
@@ -168,6 +173,7 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
                 SCENARIO_MANAGEMENT.title,
                 "목록 편집 저장 안 함",
                 "목록 미저장",
+                tab=CAPA_SCENARIO_TAB_NAME,
             )
         )
 

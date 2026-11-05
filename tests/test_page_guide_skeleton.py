@@ -593,6 +593,25 @@ def test_ops_and_targets_use_only_the_fixed_words() -> None:
     assert not wrong, "\n".join(wrong)
 
 
+def test_the_official_check_step_points_at_what_the_screen_shows() -> None:
+    """공식 지정 결과는 오른쪽 아래 알림창과 목록 표 「공식버전」 칸이다. 화면 맨 위 줄은 저장소
+    상태와 함께 걷혔고, 사이드바는 고른 시나리오가 올라와 있는 리비전이 아니면 공식 배지가 서지
+    않는다."""
+    task = next(item for item in _content()["tasks"] if item["id"] == "set_official")
+    step = next(item for item in task["steps"] if item["id"] == "check")
+    assert [item["t"] for item in step["focus"]] == ["official_cell"]
+    for word in ("오른쪽 아래 알림창", "[[공식버전]]", "vN · rM · 최신"):
+        assert word in step["do"], word
+    for word in ("맨 위", "사이드바", "초록"):
+        assert word not in step["do"], word
+
+    state = next(item for item in _plan()["states"] if item["id"] == step["state"])
+    assert state["targets"]["official_cell"] == "named:EDIT_ROW_CELL(공식버전)"
+    assert "off_success" not in state["targets"]
+    assert "맨 위" not in state["note"]
+    assert "알림창" in state["note"] and "공식버전" in state["note"]
+
+
 def test_plan_schema_lists_the_same_words_as_the_generator_table() -> None:
     """계획 형식의 낱말 목록과 이 시험의 목록이 같다 — 한쪽만 늘리면 점검과 생성기가 갈라진다."""
     schema = _load(SCHEMA_DIR / "plan.schema.json")

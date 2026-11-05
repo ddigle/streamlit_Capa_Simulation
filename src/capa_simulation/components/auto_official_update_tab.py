@@ -67,6 +67,7 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -201,6 +202,7 @@ def render_auto_official_update(
         render_data_error(
             "자동 갱신 설정을 읽지 못했습니다: " + bootstrap_error_message(exc),
             code="SC-02",
+            tab=AUTO_UPDATE_TAB_NAME,
             text="자동 갱신 설정을 읽지 못했습니다",
         )
         return
@@ -217,6 +219,7 @@ def render_auto_official_update(
         render_data_error(
             "자동 갱신 기록을 읽지 못했습니다: " + bootstrap_error_message(exc),
             code="SC-02",
+            tab=AUTO_UPDATE_TAB_NAME,
             text="자동 갱신 기록을 읽지 못했습니다",
         )
         return
@@ -301,6 +304,7 @@ def _render_status(
                 render_data_error(
                     bootstrap_error_message(exc),
                     code="SC-02",
+                    tab=AUTO_UPDATE_TAB_NAME,
                     text="현재 공식버전의 주차를 읽지 못했습니다",
                 )
             else:
@@ -311,6 +315,7 @@ def _render_status(
             render_data_error(
                 "현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc),
                 code="SC-02",
+                tab=AUTO_UPDATE_TAB_NAME,
                 text="현재 공식버전을 읽지 못했습니다",
             )
         else:

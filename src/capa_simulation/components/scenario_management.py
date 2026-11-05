@@ -53,6 +53,7 @@ from capa_simulation.components.pick_edit_table import (
     with_order,
 )
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_month_merge import (
     MERGE_SOURCE_ROLES,
     render_scenario_month_merge,
@@ -273,7 +274,7 @@ def render_scenario_management(
     try:
         scenarios = repository.list_scenarios()
     except BOOTSTRAP_ERRORS as exc:
-        render_data_error(bootstrap_error_message(exc), code="SC-02")
+        render_data_error(bootstrap_error_message(exc), code="SC-02", tab=CAPA_SCENARIO_TAB_NAME)
         return
     # 알림은 늘 서 있는 한 칸 안에 그린다(AGENTS 9장 「key 가 있어도 자리는 고정한다」). 형제
     # 자리에 바로 그리면 알림이 생기는 회차에 그 아래가 한 칸 밀린다 — 보관함의 「되돌리기」·
@@ -1728,6 +1729,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         render_data_error(
             f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=CAPA_SCENARIO_TAB_NAME,
             text="신규 시나리오의 기준 표시순서를 준비하지 못했습니다",
         )
         return

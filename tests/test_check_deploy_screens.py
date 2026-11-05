@@ -2946,7 +2946,7 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
         section.CAPA_SCENARIO_TAB.split(" ", 1)[1],
         section.EQUIPMENT_SCENARIO_TAB.split(" ", 1)[1],
     )
-    page_source = _text(PROJECT_ROOT / "app_pages" / "scenario_management.py")
+    page_source = _text(COMPONENTS / "scenario_management_tabs.py")
     for label in screens.SCENARIO_TABS[2:]:
         assert f': {label}"' in page_source
     assert screens.EQUIPMENT_TAB_KEY == EQUIPMENT_TAB_KEY

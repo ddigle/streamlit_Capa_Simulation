@@ -105,7 +105,7 @@ def case_title(case_no: int) -> str:
 
 
 def official_slot_label(official: OfficialPointer) -> str:
-    """「공식 v4 · 시나리오명 r2 · 공식버전명」 — 시나리오 관리의 최신 공식 줄과 같은 차례다."""
+    """「공식 v4 · 시나리오명 r2 · 공식버전명」."""
     return (
         f"공식 v{official.release_no} · {official.scenario_name} "
         f"r{official.revision_no} · {official.release_name}"

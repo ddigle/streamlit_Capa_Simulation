@@ -112,7 +112,7 @@
     "target:off_dialog@17_official_dialog",
     "target:off_memo@17_official_dialog",
     "target:off_name@17_official_dialog",
-    "target:off_success@18_official_done",
+    "target:official_cell@18_official_done",
     "target:page_title@03_process_detail",
     "target:path_factors@03b_process_detail_lower",
     "target:pf_all_on@04_procfilter_open",
@@ -191,6 +191,7 @@
     "task:set_official"
   ],
   "retired": [
+    "target:off_success@18_official_done",
     "target:official_history@17_official_dialog",
     "target:pref_compare_box@06_home_pref",
     "target:pref_compare_scenario@06_home_pref",

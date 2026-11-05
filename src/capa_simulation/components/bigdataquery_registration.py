@@ -38,6 +38,7 @@ from capa_simulation.components.flash import (
 )
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
@@ -371,7 +372,10 @@ def _registered_scenarios(
         scenarios = repository.list_scenarios(include_archived=True)
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(
-            bootstrap_error_message(exc), code="SC-02", text="등록된 시나리오를 읽지 못했습니다"
+            bootstrap_error_message(exc),
+            code="SC-02",
+            tab=QUERY_TAB_NAME,
+            text="등록된 시나리오를 읽지 못했습니다",
         )
         return frozenset(), frozenset()
     return (

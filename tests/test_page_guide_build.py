@@ -1325,6 +1325,30 @@ def _runbook_guide_chapter() -> str:
     return " ".join(text[text.index("## 10. 코드 밖 산출물 만들기") :].split())
 
 
+def test_edit_row_cell_measures_a_named_column_on_the_edited_row() -> None:
+    """고친 행의 다른 칸(`EDIT_ROW_CELL(열 이름)`) — 고른 줄의 값 칸을 짚는다. 고친 칸이 없으면
+    표적도 없다."""
+    edit = capture.LastEdit("named:GRID", 0, 3)
+    expression = capture.target_expr("named:EDIT_ROW_CELL(공식버전)", edit)
+    assert "__g.cellRect(__g.grid(), __g.colIndex(__g.grid(), " in expression
+    assert "공식버전" in expression and expression.endswith(", 3)")
+    assert capture.target_expr("named:EDIT_ROW_CELL(공식버전)", None) == "null"
+
+
+def test_edit_row_cell_is_used_only_on_states_the_internal_run_does_not_shoot() -> None:
+    """`EDIT_ROW_CELL` 은 고친 행이 정하는 자리지만 `DATA_SHAPED` 가 아니다 — 쓰는 곳이 DB 를 쓰는
+    상태뿐이라 사내가 찍지 않고(예시 그림) 합성 시드로만 자리가 정해진다. 찍는 상태에 쓰면 런북의
+    바닥 수가 사내와 사외로 갈라지니 그때 `DATA_SHAPED` 에 넣는다."""
+    assert "EDIT_ROW_CELL" not in core.DATA_SHAPED
+    users = [
+        state
+        for state in SKELETON.plan["states"]
+        if any("EDIT_ROW_CELL" in str(word) for word in state["targets"].values())
+    ]
+    assert [state["id"] for state in users] == ["18_official_done"]
+    assert all(state["writes"] == "db" for state in users)
+
+
 def test_the_runbook_change_floor_follows_the_script_and_data_shaped(
     tmp_path: Path, example_dir: Path
 ) -> None:
