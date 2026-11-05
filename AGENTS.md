@@ -4193,15 +4193,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - 사내 GitHub Pages 는 저장소 하나에 주소 하나이고 저장소 뿌리를 그대로 내보낸다(Pages 설정은 `main` 의 뿌리 `/`). 그래서 한
   사이트 안을 폴더로 가른다(2026-11-05 사용자 요청). 프로젝트 사이트라 주소 앞에 하위 경로가 붙으므로 링크는 모두 상대 경로다.
   앱은 이 파일들을 쓰지 않는다 — `site/` 는 배포 ZIP 에 실리고 이미지에서는 빠진다(`.dockerignore`).
+  - 이 설정은 자료만이 아니라 `main` 에 추적된 트리 전부를 그 주소로 연다 — 사내에서는 `review/` · `modules/` · 런북 · `.deploy/` 까지. 그대로
+    둘지 전용 가지로 내보낼지는 사용자 결정 대기다(`docs/TODO.md` 1장 「자료실 Pages 범위 결정」).
   - `index.html`(뿌리) — 첫 화면인 자료 목록. `scripts/build_site_index.py` 가 `site/catalog.json` 으로 쓰는 생성물이라 손으로
     고치지 않는다(`--check` 는 다르면 실패). 외부 요청이 없고 두 테마 · 폭 360 에서 선다.
   - `site/catalog.json` — 목록 정본. 자료마다 한 줄에 `path`(`site/` 아래 폴더)·`title`·`summary`(한 줄)·`kind`(발표 자료 · 안내서
     등)·`updated`(YYYY-MM-DD).
   - `site/contest-deck/index.html` — 대표 발표 자료(지금은 혁신대회 덱). 외부 요청 없는 단일 파일이고 숫자는 합성 샘플이다.
   - `site/module-guide/index.html` — 모듈 담당자 안내서의 한 파일 HTML 판. `docs/module_colleague_guide.md` 를 고치면 같은 변경에서
-    이 파일과 `updated` 도 맞춘다. 첫 지시 블록은 지침서 0장과 글자까지 같고 「사내」 낱말을 쓰지 않는다.
-  - 새 자료 — `site/<폴더>/index.html`(외부 요청 없음 · CR 없음)을 두고 `site/catalog.json` 에 한 줄을 더한 뒤 생성기를 돌려 함께
-    커밋한다. `tests/test_site_index.py` 가 빠뜨림을 잡는다.
+    이 파일과 `updated` 도 맞춘다. 코드 블록은 글 원본과, 첫 지시 블록은 지침서 0장과 글자까지 같고 「사내」 낱말을 쓰지 않는다.
+  - 새 자료 — `site/<폴더>/index.html`(외부 요청 없음 · CR 없음 · `<link rel="icon" href="data:,">`)을 두고 `site/catalog.json` 에 한 줄을
+    더한 뒤 생성기를 돌려 함께 커밋한다. `tests/test_site_index.py` 가 빠뜨림을 잡는다. 공개 저장소를 거친다 — 합성 값만, 실데이터 · 사내
+    식별값이 든 HTML 은 올리지 않는다(시험이 내용을 막지 못하는 손 규칙이다). `site/` 는 코어라 사내에서 직접 더하면 다음 ZIP 이 지운다 —
+    사내 전용 자리는 아직 없다(`docs/TODO.md` 1장 「자료실 사내 전용 자료 자리」).
 - `src/capa_simulation/components/intro_overlay_assets/capa-teaser.html` — 입장 화면 `Introduce` 가 띄우는 40초 티저
   (2026-10-19 사용자 결정). 원본은 쇼케이스 `contest/dist/capa-teaser.html` 이고 덱과 같은 규칙으로 CR 을
   빼 복사한다. 외부 요청 없는 한 파일이어야 사내 오프라인에서 선다.

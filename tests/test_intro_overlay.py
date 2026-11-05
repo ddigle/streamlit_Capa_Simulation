@@ -1296,7 +1296,7 @@ def test_the_summary_payload_hands_the_deck_aside_from_the_worker_summary() -> N
     assert js.index("api.setTeaser(window.__capaTeaser)") < js.index("api.setSummary(summary)")
 
 
-def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the_cover() -> None:
+def test_introduce_opens_the_teaser_inside_the_overlay_and_closes_back_to_the_cover() -> None:
     """커버의 셋째 단추 Introduce 는 40초 티저를 오버레이 안 전체 화면 틀에 띄운다(2026-10-19
     사용자 결정 — 권장대로: 원형 펼침, 준비가 끝나면 Summary 와 함께 선다, 티저 머리 ← + Detail,
     Admin 탭 없음). 처음 누를 때만 티저를 받아 blob 주소로 띄우고, 티저가 덮은 동안 장면은 쉰다. ← ·
