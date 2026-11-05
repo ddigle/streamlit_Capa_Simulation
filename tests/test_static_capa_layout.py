@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 from alert_marks import alert_notes, note_table, table_frame
 from streamlit.testing.v1 import AppTest
@@ -86,8 +87,10 @@ def test_the_guide_carries_what_left_the_body() -> None:
         "자원운영팀",
         "기술팀",
         "실행 관리",
+        "도구 막대의 내려받기",
     ):
         assert text in guide, text
+    assert "각 표 아래" not in guide
 
 
 def _calculated_script(*, unrouted: bool) -> str:
@@ -180,6 +183,44 @@ def test_a_plan_list_too_large_for_the_alarm_is_pointed_at_on_the_result_page(
     assert note["short"].endswith("목록: 산출 결과 › 소요대수")
     assert "산출 결과 → 소요대수 탭에 있습니다" in note["full"]
     assert not list(app.expander)
+
+
+def test_the_two_result_boxes_keep_their_tables_and_carry_no_csv_button(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """경고 기준 미달 · 확보 기준 추가 확보 표에 CSV 단추를 두지 않는다 — 내려받기는 표 도구 막대 한
+    곳이다(2026-11-05 사용자 요청 — 기능 중복). 두 표는 그대로 선다."""
+    import capa_simulation.services.securement_rate as securement_rate
+
+    original = securement_rate.build_securement_shortfall_tables
+
+    def both_filled(rate: pd.DataFrame, **kwargs: Any) -> tuple[pd.DataFrame, pd.DataFrame]:
+        warning, secure = original(rate, **kwargs)
+        filled = pd.DataFrame(
+            [
+                {
+                    "생산계획년월": 202601,
+                    "공정": "DEMO-P1",
+                    "확보율": 0.5,
+                    "가용대수": 1.0,
+                    "소요대수": 2.0,
+                    "경고기준 필요대수": 2,
+                    "확보기준 추가대수": 3,
+                    "확보목표 총 필요대수": 5,
+                }
+            ]
+        )
+        return filled.reindex(columns=warning.columns), filled.reindex(columns=secure.columns)
+
+    monkeypatch.setattr(securement_rate, "build_securement_shortfall_tables", both_filled)
+    app = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    tables = [frame for frame in app.main.dataframe if "확보율" in frame.value.columns]
+    assert len(tables) == 2
+    assert "경고기준 필요대수" in tables[0].value.columns
+    assert "경고기준 필요대수" not in tables[1].value.columns
+    assert not app.get("download_button")
 
 
 def test_an_empty_result_box_says_so_in_one_plain_line(monkeypatch: pytest.MonkeyPatch) -> None:

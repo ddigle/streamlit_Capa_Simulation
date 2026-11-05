@@ -375,9 +375,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 가상 제품 등록(기준정보 복제, `virtual_product.py`)은 미적용 편집을 버리므로 먼저 경고한다. 값이 비거나
     범위 밖인 수율 행은 잠가 원본 그대로 되붙이고, 0 이하·100% 초과는 계산을 멈춘다(숨기지 않는다).
   - 상태 알림(9장 「알림 칸」): 환산에서 빠진 계획 `ST-05`(환산 탭이 열린 회차), 값을 뺀 수율 행 `ST-06`(수율 탭이 열린
-    회차), PKG PLAN 적용 뒤 소요대수에 들지 않은 수요 `ST-04`(적용 알림이 서는 회차 — 시나리오 전체 기간). 목록 펼침은
-    표만 남고 고칠 곳은 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선이다(펼침 안 설명 문장 없음 — `docs/design_rules.md`
-    UI-TXT-01 · 02). 줄 차례가 바뀌어 편집을 버린 회차는 사건 알림 `ST-09`. 수율 붙여넣기 팝업이 이 알림
+    회차), PKG PLAN 적용 뒤 소요대수에 들지 않은 수요 `ST-04`(적용 알림이 서는 회차 — 시나리오 전체 기간). `ST-05` 목록은 크기와
+    상관없이 그 Alarm 줄의 표다 — 상한을 넘으면 앞부분만 싣고(`alert_table(clip=True)`) 글이 「앞 n건 · 전체 m건」 과 전체 자리를
+    부르며, 전체는 환산 탭 맨 아래 CSV 단추 하나(`download_excluded_plans_csv`)다. `ST-06` 은 표가 크면 본문 펼침에 남는다. 고칠
+    곳은 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선이다(펼침 안 설명 문장 없음 — `docs/design_rules.md` UI-TXT-01 · 02). 줄 차례가 바뀌어 편집을 버린 회차는 사건 알림 `ST-09`. 수율 붙여넣기 팝업이 이 알림
     자리들 뒤라 셋 다 갈래와 상관없이 이벤트 칸 한 자리를 쓴다(조건이 없거나 탭이 닫히면 `alerts.flush`).
   - 편집표 원본은 `simulation_cache` 가 시나리오 키 + 표시순서 지문으로 캐시한다(`test_plan_edit_table_cache.py`).
 - `app_pages/reference_data.py` — `기준 정보` 화면. Capa 산출 입력(UPEH·설비대수·효율·여유율·일수·측정률·STEP 구성)을
@@ -478,7 +479,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 추천 질문·`대화 비우기` 는 `on_click` 콜백이다. LLM API·권한·대화 이력은 연결하지 않는다.
 - `app_pages/static_capa.py` — `Static Capa` 머리. 확보·경고 기준별 월간 설비 부족대수와 추가 필요대수(산식 6장)를 보인다.
   - 하위 화면은 사이드바로만 간다. 판정 기준은 HOME Preference 공용 프로필이고 카드는 읽기 전용이며, 판정 적용은
-    캐시하지 않고 매 회차 한다. 부서별 활용과 계산식 설명은 `guides/static_capa.md` 다.
+    캐시하지 않고 매 회차 한다. 부서별 활용과 계산식 설명은 `guides/static_capa.md` 다. 두 부족 표의 내려받기는 표 도구 막대 한
+    곳이다(별도 CSV 단추 없음 — 공정은 화면 표시명, `확보율` 은 막대 끝(`max_value`)에서 잘린 값으로 나간다).
   - 확보율은 키 전용 캐시로 꺼내고 오류는 `check_scenario_capacity` 로 「계산 멈춤」과 검증 오류를 가른다.
   - 소요대수에 들지 않은 수요(계획 쪽 · 조회기간)는 두 상자 위에 그리지 않고 상태 알림 `ST-01` 로 낸다(산출 결과 소요대수
     탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 「데이터 Error」 마크 + `ST-20`(`data_error_mark.render_data_error`).
@@ -3226,7 +3228,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
   코드 + 범위 + 내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)). `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그
   탭까지 연다), `tables` 는 Alarm 줄에서 펼쳐 볼 딸린 표들(`AlertTable` — 칸 · 행(JSON 값) · 원래 행 수 · CSV 파일 이름 · 화면에만
-  입힐 표시명 · 칸 머리 풍선, 조건이 있을 때만 · 커서 None 인 칸은 뺀다 · 행 끝 `TABLE_ROW_LIMIT` 2,000), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
+  입힐 표시명 · 칸 머리 풍선, 조건이 있을 때만 · 커서 None 인 칸은 뺀다 · 행 끝 `TABLE_ROW_LIMIT` 2,000 — `alert_table(clip=True)` 는 앞부분만 싣는다), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
   `<style data-capa-alerts="JSON">`(`MARKER_ATTRIBUTE`, 스타일만 든 `st.html` — 이벤트 칸)이고 `note_page` 가 적은 이번
   화면을 단다. 화면을 그리지 못한 오류의 알림은 `page_error_note`(같은 글이면 같은 id · `keep` — Alarm 줄을 지키라는 표지, 알림 칸 JS 의
   `keptRowMissing`)이고 자리 마크와 한 칸에 싣는 표지가 `hidden_marker` 다(`components/data_error_mark.py` — 아래). 분석 기록(L2)은 자리만 있다
@@ -3255,7 +3257,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `simulation_scope(active, period | dates=)`(활성 리비전 `content_token` + 조회기간 · 조회일 — 지문 재료, 로그의 범위 줄
   「시나리오 · rN · 26.01–26.12」, 미저장 편집이면 그 말을 붙인다 — 세션만 읽는다) · `equipment_scope`(세션의 (공통 대장, 일정)
   리비전 쌍 + 「설비 「이름」 rN」) · `alert_table`(알림에 딸린 표 — 내보내기 프레임을 JSON 값으로, 공정 칸 표시명은 화면에만, `column_help` 는 칸 머리 풍선.
-  Alarm 줄에서 펼침 · CSV, 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 남긴다) · `ALARM_ROW_PLACE` ·
+  Alarm 줄에서 펼침 · CSV, 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 남긴다. `clip=True` 면 앞부분만 싣고 `total` 은 원래 행 수 —
+  `table_clipped` · `clipped_label`, 표 머리는 「앞 n건 · 전체 m건」 이고 표 안 CSV 는 없으며 전체는 그 화면 맨 아래 CSV 단추 하나, 알림 글이 그 자리를 부른다) · `ALARM_ROW_PLACE` ·
   `alarm_table_place`(알림 글이 그 표 자리를 부르는 말) ·
   `alert_page_error(message, code=, tab=, text=)`(화면을 그리지 못한 오류의 알림만 이벤트 칸으로 — 마크가 세 탭에 서는 산출 결과 한 곳이
   쓰고, 나머지는 `data_error_mark.render_data_error`) ·
@@ -5468,7 +5471,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   결함이 없고 글자를 가르지 않는다(겹친 두 공정은 같은 글자의 바둑판 두 칸으로 보인다).
 - ④ 에서 CSV 출구가 있는 표는 **화면 프레임과 CSV 프레임을 나눈다.** 화면 복사본에만
   표시명을 입히고 내보내는 프레임은 원본 그대로다(`components/exclusion_table.py`,
-  `app_pages/static_capa.py`, 가용설비 현황 Static 대비 일정의 호기 목록이 그 모양이다 —
+  가용설비 현황 Static 대비 일정의 호기 목록이 그 모양이다 —
   복사본은 `ProcessLabels.frame`). 계산 결과의 `attrs` 유래 프레임은
   `@st.cache_data` 가 들고 있으므로 반드시 복사본에 입힌다.
 - ⑤ 에서 **분류 컬럼의 값은 언제나 원본이다.** `SelectboxColumn` 은 옵션의 `value` 와
@@ -5478,7 +5481,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   된다. 옵션에는 그 표의 값 전체를 넣는다 — 옵션에 없는 값은 셀이 빈칸으로 그려진다.
 - 표시명이 닿으면 안 되는 곳은 다섯 갈래다. ① 왕복 CSV·클립보드 양식(기준정보 월별
   편집기, 설비대수, 주차별 가용대수, 표시순서, Proc Rename 규칙 자체), ② 보고용 CSV
-  전부(월별 표 CSV, 제외 목록 CSV, Static Capa 부족 현황 CSV, 필요 단축 일정 CSV 세 벌, Static 대비 일정
+  전부(월별 표 CSV, 제외 목록 CSV, 필요 단축 일정 CSV 세 벌, Static 대비 일정
   호기 목록 CSV, Cut-off CSV) — 그대로 옮겨 쓰는 파일이다, ③ 원본 키를 편집·확인하는 화면(표시순서
   관리의 `분류값`, Proc Rename 탭의 `보유 공정` 목록, 필요 단축 일정 「맞대지 못한 공정」, Static 대비 일정 의
   「두 쪽의 공정명이 맞지 않는 자리」 알림(`EQ-06`)과 한쪽에만 있는 공정의 까닭 문구, 「가용설비 설정」 팝업 Cut-off 편집표의

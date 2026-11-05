@@ -167,6 +167,30 @@ def test_the_log_copy_uses_the_clipboard_and_falls_back_to_selected_text() -> No
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
+
+def test_a_clipped_alarm_table_says_how_much_it_carries_and_offers_no_partial_csv() -> None:
+    """앞부분만 실은 표(`alert_table(clip=True)`)의 머리는 「앞 n건 · 전체 m건」 이고, 그 표로 만든
+    CSV 는 일부뿐이라 표 안 내려받기를 두지 않는다 — 전체는 그 화면 단추(알림 글이 부른다)."""
+    out = _node(
+        """
+console.log(JSON.stringify([
+  tableClipped({ rows: [[1], [2]], total: 3 }),
+  tableClipped({ rows: [[1], [2]], total: 2 }),
+  tableClipped({ rows: [[1], [2]] }),
+]))
+"""
+    )
+    assert out == [True, False, False]
+    box = JS[JS.index("function tableBox(") :]
+    box = box[: box.index("\n}\n")]
+    assert "clipped ? fill(t.table_rows_clipped" in box
+    assert "if (!clipped) head.append(csv)" in box
+    assert alert_center.TEXT["table_rows_clipped"] == "앞 {n}건 · 전체 {total}건"
+    pairs = JS[JS.index("function logPairs(") :]
+    pairs = pairs[: pairs.index("\n}\n")]
+    assert "t.log_table_value_clipped" in pairs
+
+
 _SECTIONS = ("alerts-rows",)
 
 

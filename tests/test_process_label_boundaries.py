@@ -111,31 +111,30 @@ def test_grouped_export_never_takes_display_names() -> None:
     assert "value_labels" not in build_grouped_monthly_export.__code__.co_varnames
 
 
-def test_static_capa_shortfall_csv_never_takes_display_names() -> None:
-    """부족 현황은 화면용 프레임과 CSV 프레임이 갈라져 있다. CSV 는 원본 공정명이다."""
-    tree = ast.parse((PROJECT_ROOT / "app_pages/static_capa.py").read_text(encoding="utf-8"))
+def test_static_capa_shortfall_table_labels_only_its_screen_copy() -> None:
+    """부족 현황 표는 표시명을 화면 복사본에만 입힌다(`labels.frame` — 넘겨받은 캐시 유래 프레임을
+    고치지 않는다). 따로 내보내는 프레임은 없다 — 내려받기는 표 도구 막대 한 곳이다."""
+    source = (PROJECT_ROOT / "app_pages/static_capa.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
     function = next(
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef) and node.name == "_render_shortfall_table"
     )
     labelled = {
-        ast.unparse(node.targets[0].value)
+        (ast.unparse(node.targets[0]), ast.unparse(node.value))
         for node in ast.walk(function)
-        if isinstance(node, ast.Assign)
-        and isinstance(node.targets[0], ast.Subscript)
-        and "labels." in ast.unparse(node.value)
+        if isinstance(node, ast.Assign) and "labels." in ast.unparse(node.value)
     }
-    download = next(
-        node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call) and ast.unparse(node.func).endswith("render_csv_download")
-    )
-    data_argument = next(keyword.value for keyword in download.keywords if keyword.arg == "data")
-    exported_frames = {node.id for node in ast.walk(data_argument) if isinstance(node, ast.Name)}
 
-    assert labelled == {"displayed"}
-    assert not exported_frames & labelled
+    assert labelled == {
+        (
+            "displayed",
+            "labels.frame(_display_shortfalls(data, warning_section=warning_section))",
+        )
+    }
+    for exit_name in ("render_csv_download", "download_button", "to_csv"):
+        assert exit_name not in source, exit_name
 
 
 def test_bigdataquery_conflict_detail_labels_only_the_alert_table_screen_value() -> None:

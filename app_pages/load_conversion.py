@@ -60,11 +60,17 @@ from capa_simulation.components.state_alerts import (
     AlertScope,
     alarm_table_place,
     alert_table,
+    clipped_label,
     simulation_scope,
+    table_clipped,
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_table_heading, toolbar_clearance
+from capa_simulation.components.table_toolbar import (
+    render_csv_download,
+    render_table_heading,
+    toolbar_clearance,
+)
 from capa_simulation.components.write_guard import held_flash, note_notice, notice_marks
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -283,8 +289,11 @@ CONVERSION_TAB_NAME = "환산"
 PKG_PLAN_TAB_NAME = "PKG PLAN"
 YIELD_TAB_NAME = "수율"
 # 그 알림(`ST-05` · `ST-06`)의 Alarm 줄 표 이름 — 조건의 내역이라 본문 접힘에 두지 않는다(2026-11-05
-# 사용자 요청(검수표), 설계 규칙 UI-TXT-04). 표가 알림에 싣기에 큰 목록만 본문 펼침에 남는다.
+# 사용자 요청(검수표), 설계 규칙 UI-TXT-04). 제외한 계획은 크기와 상관없이 Alarm 에서 본다 — 상한을
+# 넘으면 앞부분만 싣고 전체는 환산 탭 맨 아래 이 CSV 단추 하나다(알림 글이 그 자리를 부른다). 편집
+# 불가 수율 행은 표가 알림에 싣기에 크면 본문 펼침에 남는다.
 EXCLUDED_PLAN_TITLE = "제외한 계획"
+EXCLUDED_PLAN_CSV_LABEL = "제외한 계획 전체 CSV 다운로드"
 LOCKED_YIELD_TITLE = "편집 불가 수율 행"
 # 그 표의 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선 — 고칠 곳과 계산에서 어떻게 되는지. 건수는
 # 알림이 말하고(자리에 경고 상자를 그리지 않는다 — 2026-11-03 결정 보드 D2 (나)), 설명 문장을 늘
@@ -406,7 +415,8 @@ def _report_excluded_plans(
     excluded: pd.DataFrame, *, scope: AlertScope, file_name: str
 ) -> alerts.AlertTable | None:
     """환산에서 빠진 계획 — 상태 알림 `ST-05` 와 그 줄의 표(까닭 `누락 기준정보` 칸). 환산 탭이 열린
-    회차마다(없어도) 부른다. 표가 커서 None 이면 화면이 본문 펼침에 남긴다."""
+    회차마다(없어도) 부른다. 표가 크면 앞부분만 싣고 전문이 그 크기와 CSV 단추 자리를 말한다 —
+    단추는 부르는 쪽이 탭 맨 아래에 세운다(`table_clipped`). 빠진 계획이 없으면 None 이다."""
     blank_plans = (
         int(excluded["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON).sum())
         if not excluded.empty
@@ -421,15 +431,21 @@ def _report_excluded_plans(
             title=EXCLUDED_PLAN_TITLE,
             file_name=file_name,
             column_help={"누락 기준정보": EXCLUDED_PLAN_GUIDE},
+            clip=True,
         )
     )
-    page_place = f"이 탭 「{EXCLUDED_PLAN_TITLE} 확인」"
     sentences = []
+    # 줄 글은 패널에서 두 줄까지만 보인다 — 앞부분만 실었다는 말과 전체 자리를 맨 앞에 둔다.
+    if table is not None and table_clipped(table):
+        sentences.append(
+            f"Alarm 표는 {clipped_label(table)} — 전체는 이 탭 맨 아래 "
+            f"「{EXCLUDED_PLAN_CSV_LABEL}」로 받습니다."
+        )
     if missing_plans:
-        place = alarm_table_place(EXCLUDED_PLAN_TITLE) if table is not None else page_place
         sentences.append(
             f"기준정보가 없어 계산에서 제외한 계획이 {missing_plans:,}건 있습니다. "
-            f"목록({place})의 기준정보를 채우면 환산과 소요대수에 반영됩니다."
+            f"목록({alarm_table_place(EXCLUDED_PLAN_TITLE)})의 기준정보를 채우면 환산과 소요대수에 "
+            "반영됩니다."
         )
     if blank_plans:
         sentences.append(f"생산수량이 빈 계획 {blank_plans:,}건은 계획 없음(0)으로 봤습니다.")
@@ -438,10 +454,7 @@ def _report_excluded_plans(
         scope=scope.scope,
         content=[missing_plans, blank_plans],
         active=not excluded.empty,
-        text=(
-            f"환산에서 빠진 계획 {len(excluded):,}건 — 목록: "
-            f"{ALARM_ROW_PLACE if table is not None else page_place}"
-        ),
+        text=f"환산에서 빠진 계획 {len(excluded):,}건 — 목록: {ALARM_ROW_PLACE}",
         full=" ".join(sentences),
         scope_label=scope.label,
         tab=CONVERSION_TAB_NAME,
@@ -1030,27 +1043,14 @@ if not tab_is_hidden(conversion_tab):
         # 문제가 아니라 계획 없음(0)으로 본 것이다 — 한 문장에 섞으면 채울 기준정보가 없는데 찾으러
         # 간다.
         excluded_load_rows = load_exclusions(monthly_volume)
+        excluded_file_name = (
+            f"Capa_Conversion_Excluded_Plans_{effective_start_month}_{effective_end_month}.csv"
+        )
         excluded_table = _report_excluded_plans(
             excluded_load_rows,
             scope=simulation_scope(active_scenario, (effective_start_month, effective_end_month)),
-            file_name=(
-                f"Capa_Conversion_Excluded_Plans_{effective_start_month}_{effective_end_month}.csv"
-            ),
+            file_name=excluded_file_name,
         )
-        if not excluded_load_rows.empty and excluded_table is None:
-            with st.expander(
-                f"{EXCLUDED_PLAN_TITLE} 확인", icon=":material/rule:", key="load_excluded_plan_list"
-            ):
-                # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
-                toolbar_clearance()
-                st.dataframe(
-                    excluded_load_rows,
-                    hide_index=True,
-                    width="stretch",
-                    column_config={
-                        "누락 기준정보": st.column_config.TextColumn(help=EXCLUDED_PLAN_GUIDE),
-                    },
-                )
 
         unit = {
             "PKG": "Kea",
@@ -1093,4 +1093,12 @@ if not tab_is_hidden(conversion_tab):
                 decimal_places=conversion_decimal_places,
                 key="conversion_volume_table",
                 owner_tab=conversion_tab,
+            )
+
+        if excluded_table is not None and table_clipped(excluded_table):
+            render_csv_download(
+                data=excluded_load_rows.to_csv(index=False).encode("utf-8-sig"),
+                file_name=excluded_file_name,
+                key="download_excluded_plans_csv",
+                label=EXCLUDED_PLAN_CSV_LABEL,
             )
