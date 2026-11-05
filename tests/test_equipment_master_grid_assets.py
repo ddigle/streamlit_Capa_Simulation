@@ -527,10 +527,12 @@ const results = {
     tierDone(true, ' ', false),
   ],
   tip: [
-    addTip('아직 추가할 수 없습니다', true),
-    addTip('아직 추가할 수 없습니다', false),
-    addTip('', true),
-    addTip(null, true),
+    addTip('아직 추가할 수 없습니다', true, false, []),
+    addTip('아직 추가할 수 없습니다', false, false, []),
+    addTip('', true, false, []),
+    addTip(null, true, false, []),
+    addTip('옛 판정', false, true, []),
+    addTip('옛 판정', false, true, ['설비명', '공정소분류']),
   ],
   add: [
     canAdd(['A', 'B'], [0, 1], false, true, null),
@@ -575,7 +577,14 @@ def test_the_new_unit_draft_section_adopts_newer_drafts_and_gates_the_add_button
     assert result["tier"] == [True, False, True, False]
     assert result["add"] == [True, False, False, True, False]
     pending = "고친 칸을 확인하는 중입니다"
-    assert result["tip"] == ["아직 추가할 수 없습니다", pending, "", ""]
+    assert result["tip"] == [
+        "아직 추가할 수 없습니다",
+        pending,
+        "",
+        "",
+        "칸을 벗어나면 확인합니다",
+        "아직 추가할 수 없습니다 — 설비명 · 공정소분류 칸을 확인합니다",
+    ]
 
 
 def test_new_unit_errors_on_cells_other_values_require_show_before_touching() -> None:
@@ -746,13 +755,19 @@ const field = host.querySelector('[data-fk="n0"]')
 field.value = 'EQ-09'
 fire(field, 'input')
 results.typed = look()
+fire(field, 'blur')
+results.sent = look()
 mount(panel({
   blocked: false, hint: '추가할 수 있습니다 — 반입일정 칸이 비거나',
-  draft: { seq: 4, values: ['EQ-09'] }, checked: 4,
+  draft: { seq: 5, values: ['EQ-09'] }, checked: 5,
 }))
 results.waiting = look()
-mount(panel({ blocked: false, hint: '', draft: { seq: 5, values: ['EQ-09'] }, checked: 5 }))
+mount(panel({ blocked: false, hint: '', draft: { seq: 6, values: ['EQ-09'] }, checked: 6 }))
 results.ready = look()
+const filled = host.querySelector('[data-fk="n0"]')
+filled.value = ''
+fire(filled, 'input')
+results.emptied = look()
 process.stdout.write(JSON.stringify(results))
 """
 
@@ -760,8 +775,10 @@ process.stdout.write(JSON.stringify(results))
 def test_the_add_button_says_why_in_a_tip_and_the_panel_keeps_no_line() -> None:
     """「아직 추가할 수 없습니다 …」 는 칸에 늘 서지 않고 「호기 추가」 풍선이다(2026-11-05 사용자
     답). 꺼진 단추는 마우스 · 초점을 받지 않으므로 감싼 칸이 받는다 — 꺼진 동안은 그 칸이 탭
-    자리이고(켜지면 단추가 탭 자리) 다시 그릴 때의 초점 표지도 탭 자리를 따라간다. 친 글이 판정
-    전이면 옛 판정 글을 풍선에 보이지 않고, 더 말할 것이 없으면 풍선을 세우지 않는다."""
+    자리이고(켜지면 단추가 탭 자리) 다시 그릴 때의 초점 표지도 탭 자리를 따라간다. 판정 전이면 옛
+    판정 글을 풍선에 보이지 않고, 더 말할 것이 없으면 풍선을 세우지 않는다. 「확인 중」 은 보낸
+    초안의 판정을 기다릴 때만이다 — 아직 보내지 않은 글에는 아무 확인도 돌지 않아, 빈 필수 칸이 있으면
+    그 칸 이름을, 없으면 칸을 벗어나면 확인한다고 말한다."""
     runner = _FAKE_DOM + _MOUNT_LOADER + _ADD_TIP_RUNNER
     result = _node({}, runner, source=_fake_dom_source())
 
@@ -779,9 +796,14 @@ def test_the_add_button_says_why_in_a_tip_and_the_panel_keeps_no_line() -> None:
         **off,
         "tip": "아직 추가할 수 없습니다 — 설비명 칸을 확인합니다",
     }
-    assert result["typed"] == {**on, "tip": "고친 칸을 확인하는 중입니다"}
+    assert result["typed"] == {**on, "tip": "칸을 벗어나면 확인합니다"}
+    assert result["sent"] == {**on, "tip": "고친 칸을 확인하는 중입니다"}
     assert result["waiting"] == {**on, "tip": "추가할 수 있습니다 — 반입일정 칸이 비거나"}
     assert result["ready"] == {**on, "tip": ""}
+    assert result["emptied"] == {
+        **off,
+        "tip": "아직 추가할 수 없습니다 — 설비명 칸을 확인합니다",
+    }
 
 
 def test_the_add_tip_shows_on_hover_and_keyboard_focus_and_has_the_app_tip_look() -> None:

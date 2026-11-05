@@ -314,9 +314,14 @@ function canAdd(values, required, blocked, fresh, locked) {
   return !(fresh && blocked)
 }
 
-// 「호기 추가」 풍선 글 — 판정(파이썬)이 지금 초안의 것이면 그 글(더 말할 것이 없으면 빈 글), 아니면 확인 중이다.
-function addTip(hint, fresh) {
-  return fresh ? String(hint || '') : '고친 칸을 확인하는 중입니다'
+// 「호기 추가」 풍선 글 — 판정(파이썬)이 지금 초안의 것이면 그 글(더 말할 것이 없으면 빈 글), 보낸 초안의 판정을
+// 기다리면 확인 중이다. 아직 보내지 않은 글(`typed`)에는 아무 확인도 돌지 않는다 — 칸을 벗어나거나 Enter 를 쳐야
+// 판정이 돈다. 그래서 빈 필수 칸(`missing`)이 있으면 판정과 같은 말로 그 칸 이름을, 없으면 언제 확인하는지를 말한다.
+function addTip(hint, judged, typed, missing) {
+  if (judged) return String(hint || '')
+  if (!typed) return '고친 칸을 확인하는 중입니다'
+  if (missing.length) return '아직 추가할 수 없습니다 — ' + missing.join(' · ') + ' 칸을 확인합니다'
+  return '칸을 벗어나면 확인합니다'
 }
 
 // 새 호기 칸 오류를 보일까 — 판정이 지금 초안의 것이고, 값이 있거나 만졌거나, 늘 필수인 칸(설비명·공정소분류·Y/N 셋 —
@@ -2282,7 +2287,8 @@ function drawNew(S, root, data) {
     const typed = S.nd.values.some((value, k) => value !== S.ndSent[k])
     const judged = fresh && !S.ndDirty.size && !typed
     add.disabled = !canAdd(S.nd.values, required, Boolean(data.blocked), judged, locked)
-    tip.textContent = addTip(data.hint, judged)
+    const missing = required.filter((k) => String(S.nd.values[k] || '').trim() === '').map((k) => (columns[k] || {}).name || '')
+    tip.textContent = addTip(data.hint, judged, typed, missing)
     tipHost.tabIndex = add.disabled ? 0 : -1
     tipHost.dataset.fk = add.disabled ? 'add' : ''
     add.dataset.fk = add.disabled ? '' : 'add'
@@ -2356,6 +2362,7 @@ function newField(S, column, k, mark) {
     if (text === S.ndSent[k]) return
     S.ndDirty.add(k)
     commitDraft(S)
+    if (S.refreshAdd) S.refreshAdd()
   }
   if (column.kind === 'choice' && !mark.lock) {
     const chips = el('div', 'emg-chips')
