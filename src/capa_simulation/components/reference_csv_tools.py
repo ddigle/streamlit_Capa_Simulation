@@ -27,7 +27,8 @@ def render_reference_clipboard_form(
     integer: bool = False,
     opening: str | None = None,
 ) -> pd.DataFrame | None:
-    """글 칸과 왼쪽 적용 · 오른쪽 양식 줄을 그리고, 적용을 누르면 검증한 표를 돌려준다.
+    """글 칸과 창 제목 옆 작업 줄(왼쪽 적용 · 오른쪽 양식)을 그리고, 적용을 누르면 검증한 표를
+    돌려준다.
 
     팝업(`st.dialog`) 안에서 쓴다 — 붙여넣기는 표 위 작업 줄의 「Excel 붙여넣기」 팝업이다
     (2026-09-28·29 사용자 결정). 창 꼴은 공통 부품(`components/paste_form`)이다. 완료 알림은 부르는

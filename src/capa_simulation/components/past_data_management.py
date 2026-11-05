@@ -193,8 +193,8 @@ def _render_table_editor(
     with st.container(border=True):
         st.markdown(f"#### {spec.icon} {spec.title}")
         # 작업 줄: 붙여넣기(이 상자 안 칸)와 저장·대기 행 수. 양식은 붙여넣기 칸의 작업 줄에 선다
-        # (왼쪽 읽기 · 오른쪽 양식 — 공통 부품). 여는 버튼은 콜백으로 연다 — 칸은 한 번에 한 표만
-        # 편다.
+        # (맨 위 줄 왼쪽 읽기 · 오른쪽 양식 — 공통 부품). 여는 버튼은 콜백으로 연다 — 칸은 한 번에
+        # 한 표만 편다.
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "Excel 붙여넣기",
@@ -266,6 +266,7 @@ def _render_paste_form(
             opening=f"{PAST_REPLACE_NOTICE} {spec.caption}",
             size_key="past",
             side_actions=lambda: _close_paste_action(spec),
+            in_box=True,
         )
         if submit is None:
             return

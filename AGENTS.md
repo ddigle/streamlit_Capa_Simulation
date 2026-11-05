@@ -926,7 +926,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `_formula_line`)가 짓고, 인수 글자 꼴(`_operand_text` — `_format_metric` 자리, 늘린 자리의 뒤 0 은 뗀다)과 적힌 글자로
     다시 셈하기(`_recomputed`, `Decimal`)는 이 화면 것이라 페이지에 둔다.
 - `src/capa_simulation/components/paste_form.py` (+ `paste_window_assets/` CSS · JS) — 붙여넣기 · 양식 창의 공통 부품(9장
-  「붙여넣기 · 양식 창」). 글 칸(`paste_text_area`) · 왼쪽 적용 · 오른쪽 양식 줄(`paste_action_row`) · 창 크기와 「적용」 잠금을 맡는 숨은
+  「붙여넣기 · 양식 창」). 글 칸(`paste_text_area`) · 창 제목 옆 작업 줄(`paste_action_row` — 왼쪽 적용 · 오른쪽 양식) · 창 크기와 「적용」 잠금을 맡는 숨은
   컴포넌트(`render_paste_window`) · 창을 연 회차의 알림(`announce_on_open`) · 거부 · 안내(`refuse_paste` · `tell_paste`)와 이를
   묶은 본문 `render_paste_form`. 판정 구획(`// <paste-window-core>`)은 node 로 떼어 시험한다(`tests/test_paste_form.py`).
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
@@ -6439,7 +6439,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   실패하고(`TEXT_AREA_OUTSIDE` — 메모 칸과 아래 계산기 칸만), 창 함수와 그 함수가 부르는 같은 파일 도움 함수에 직접 그린 캡션 · 상자가 있어도 실패한다.
 - **이 꼴 밖에 둔 자리** — Qual 마감 계산기 팝업의 「엑셀에서 한 번에 붙여넣기」 는 데이터와 잇지 않는 계산기 안 펼침이다(양식 · 저장 · 되돌릴 수 없는 결과가 없고, 글은
   「필요 단축 일정 문구」 — TODO 2장, 사용자 전달 전 손대지 않음 — 에 묶여 있다). 「엑셀·CSV로 한꺼번에」 의 미리보기 구획(머리 줄 · 수 · 바뀔 행 표)은 값이고 가정 세션 배치 칸 체크의 풍선은 켜기 전에 읽는 칸의 뜻이다(규칙 UI-INP-08 예외).
-- **작업 줄은 왼쪽 적용 · 오른쪽 양식 다운로드 한 줄**이다(`paste_action_row` — 양끝 맞춤, 좁아져 접혀도 그 차례). `st.download_button` 은
+- **작업 줄은 창 제목 바로 옆, 왼쪽 적용 · 오른쪽 양식 다운로드 한 줄**이다(`paste_action_row` — 좁아져 접혀도 그 차례, 2026-11-05 답 「타이틀 옆에 배치」).
+  `st.dialog` 머리는 위젯을 받지 않으므로 서식(`paste_window.css`)이 그 창 본문의 겹(제목 다음 `div` · `stVerticalBlock` · `stLayoutWrapper` · `stVerticalBlock`)을 `display: contents` 로 풀고
+  `[role="dialog"]` 를 `row wrap` 으로 바꿔 작업 줄을 제목 줄에 올린다 — 제목이 길거나 창이 좁아 한 줄에 들지 못하면 flex 줄바꿈이 제목 아래로 내리고, 여백이 ✕ 자리를 비운다. 이 서식은
+  그 겹 바로 밑에 작업 줄(`st-key-capa_paste_head_*`)이 든 창에만 걸린다 — 다른 팝업과 작업 줄 없는 확인 창(입력 초기화)은 그대로고, 판올림으로 겹이 바뀌면 작업 줄이 글 칸 아래에 남을 뿐 창은 그대로 쓴다.
+  회차가 그리는 차례는 글 칸 → 작업 줄 그대로다(화면 차례는 서식의 `order`) — 붙여넣고 Tab 하면 적용으로 간다. 표 상자 안에 펴지는 칸(HOME 설정 Past Data — `in_box`)은 창 제목이 없어 작업 줄이
+  그 상자 맨 위다. 까닭 풍선은 단추 아래로 선다(창 위 끝이라 위로 서면 창 상자의 `overflow: hidden` 에 잘린다).
+- **글 칸 라벨은 화면에 보이지 않는다**(`label_visibility="collapsed"` — 접근성 이름으로 남는다, 2026-11-05 답 「중복된 내용 표기」). 보이는 창은 둘이다(`label_visible`, `tests/test_paste_form.py` 가 목록으로 잡는다) —
+  「엑셀·CSV로 한꺼번에」(곁의 「또는 CSV 파일 업로드」 와 짝) · 접속 명단 추가(넣을 것이 loginid 라고 말하는 글이 라벨뿐).
+- `st.download_button` 은
   `st.form` 안에 들어가지 못하므로 이 창들은 **폼을 쓰지 않는다** — 글 칸은 일반 위젯(초점을 잃을 때 값이 오르고 팝업 프래그먼트만 돈다,
   Streamlit 의 「Press Ctrl+Enter to apply」 안내는 서식이 걷는다), 적용은 일반 단추이고 세대 · 지문 거름(`write_once_value`)은 그대로다.
 - **창 안에 글을 두지 않는다** — 캡션 · 경고 상자 · 안내 글 · 입력 곁 거부 · 글 칸 풍선 · 글 칸 안내 문장(placeholder — 2026-11-05 답 v9 (가), 붙여넣는 법은 Guide)을 그리지 않고 알림창 · Alarm 으로 낸다. 창을 연 회차의 말(덮어쓰기 · 되돌릴 수
