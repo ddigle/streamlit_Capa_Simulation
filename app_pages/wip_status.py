@@ -15,7 +15,6 @@ from capa_simulation.components.page_header import (
     pending_badge,
     render_page_header,
 )
-from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.sample_data import (
     render_pending_source,
@@ -325,9 +324,10 @@ with metric_row(key="wip_status_metric_row"):
 
 with st.container(border=True):
     st.markdown("#### :material/insights: 일별 재공·Flow와 표준 가능 수준", help=GRID_HELP)
-    # 기준선을 못 그린 공정·주차는 상태 알림(`WIP-04` — 자리에 그리지 않는다). 고칠 곳(표준
-    # 목표)으로 가는 링크는 남긴다. 없어도 부른다(해소). 수는 고른 공정·제품에 따라 바뀌므로 지문에
-    # 넣지 않는다 — 거르기를 바꿀 때마다 다시 뜨지 않게.
+    # 기준선을 못 그린 공정·주차는 상태 알림(`WIP-04` — 자리에 그리지 않는다). 채울 입력은 표준
+    # 목표에 있어 그 화면으로 가는 길은 위 멈춤(`WIP-01`)과 같이 Alarm 줄의 「그 화면으로」
+    # 다(자리에 링크를 두지 않는다). 없어도 부른다(해소). 수는 고른 공정·제품에 따라 바뀌므로
+    # 지문에 넣지 않는다 — 거르기를 바꿀 때마다 다시 뜨지 않게.
     wip_scope = simulation_scope(active_scenario, dates=(start_date, end_date))
     alerts.state(
         "WIP-04",
@@ -343,13 +343,8 @@ with st.container(border=True):
             "「표준 목표」 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
         ),
         scope_label=wip_scope.label,
+        goto=(tab_label(STANDARD_TARGET_CAPA), STANDARD_TARGET_CAPA.href),
     )
-    if today_unset:
-        render_page_link(
-            "app_pages/standard_target_capa.py",
-            label="표준 목표에서 주차별 가용설비 입력",
-            icon=":material/track_changes:",
-        )
 
     lane_count = len(selected_routes[["STEP_SEQ", "공정"]].drop_duplicates())
     grid_width = max(430, lane_count * WIP_GRID_CELL_WIDTH_PX + 90)

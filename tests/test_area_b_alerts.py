@@ -26,6 +26,8 @@ from capa_simulation.components.equipment_scenario_management import (
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
 from capa_simulation.components.state_alerts import open_tab_name, tab_name
+from capa_simulation.navigation import STANDARD_TARGET_CAPA
+from capa_simulation.page_tabs_state import tab_label
 
 NOW = datetime(2026, 10, 15, 9, 0)
 
@@ -272,10 +274,8 @@ def test_cert_expiry_and_an_unreadable_module_root_are_alerts() -> None:
 # ---------------------------------------------------------------- 재공 현황(WIP-04)
 
 
-def test_a_wip_route_without_a_baseline_is_an_alert_not_a_box() -> None:
-    """가용대수가 없어 기준선을 못 그린 경로(`WIP-04`)는 상태 알림이다 — 범위는 활성 리비전 내용
-    토큰 + 조회일, 내용은 있음/없음뿐이라 공정 · 제품 거르기를 바꿔도 다시 뜨지 않는다. 고칠
-    화면(표준 목표)으로 가는 링크는 자리에 남는다."""
+def _wip_part_unset_script() -> str:
+    """P-Process 만 가용대수 · 일 표준 가능량이 빈 재공 현황 — 일부만 빈 자리(화면은 그린다)."""
     script = WIP_SCRIPT.replace(
         '"일 표준 가능량": 200.0 / 30.0,',
         '"일 표준 가능량": float("nan") if process == "P-Process" else 200.0 / 30.0,',
@@ -283,7 +283,13 @@ def test_a_wip_route_without_a_baseline_is_an_alert_not_a_box() -> None:
         '"가용대수": 2.0,\n', '"가용대수": float("nan") if process == "P-Process" else 2.0,\n'
     )
     assert script != WIP_SCRIPT
-    app = AppTest.from_string(script, default_timeout=60).run()
+    return script
+
+
+def test_a_wip_route_without_a_baseline_is_an_alert_not_a_box() -> None:
+    """가용대수가 없어 기준선을 못 그린 경로(`WIP-04`)는 상태 알림이다 — 범위는 활성 리비전 내용
+    토큰 + 조회일, 내용은 있음/없음뿐이라 공정 · 제품 거르기를 바꿔도 다시 뜨지 않는다."""
+    app = AppTest.from_string(_wip_part_unset_script(), default_timeout=60).run()
     assert not app.exception, [item.message for item in app.exception]
 
     assert not [item for item in app.warning if "기준선" in str(item.value)]
@@ -294,6 +300,41 @@ def test_a_wip_route_without_a_baseline_is_an_alert_not_a_box() -> None:
         f"{datetime.now().date() - timedelta(days=7):%y.%m.%d}–"
         f"{datetime.now().date() + timedelta(days=3):%y.%m.%d}"
     ), note
+
+
+def test_a_part_unset_wip_keeps_no_link_and_the_alarm_opens_the_target() -> None:
+    """일부 주차만 비어 화면을 그리는 자리도 멈춘 자리(`WIP-01`)와 같은 원칙이다 — 자리에 「표준
+    목표에서 주차별 가용설비 입력」 링크가 없고(네비게이션 없는 시험에서 링크가 물러서는 캡션 글도
+    없다), 길은 그 Alarm 줄의 「그 화면으로」 다. 줄의 화면 칸 · 주소가 재공 현황이 아니라 표준
+    목표다."""
+    app = AppTest.from_string(_wip_part_unset_script(), default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    # 화면은 그대로 선다 — 지표 · 격자 구획이 있고 마크가 없다.
+    assert [metric.label for metric in app.metric][-1] == "표준 미설정"
+    assert data_error_marks(app) == 0
+    assert not app.get("page_link")
+    assert not [item for item in app.caption if "표준 목표" in str(item.value)]
+    note = active_state(app, "WIP-04")
+    assert note is not None, states(app, "WIP-04")
+    assert (note["page"], note["href"]) == (
+        tab_label(STANDARD_TARGET_CAPA),
+        STANDARD_TARGET_CAPA.href,
+    )
+
+
+def test_a_wip_baseline_alert_resolves_on_the_same_row_target() -> None:
+    """빈 칸이 없는 회차도 같은 코드로 부르고(해소) 줄의 화면 칸 · 주소는 그대로 표준 목표다 — 해소
+    표지가 줄을 재공 현황으로 돌려 놓지 않는다."""
+    app = AppTest.from_string(WIP_SCRIPT, default_timeout=60).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    (note,) = states(app, "WIP-04")
+    assert note["active"] is False
+    assert (note["page"], note["href"]) == (
+        tab_label(STANDARD_TARGET_CAPA),
+        STANDARD_TARGET_CAPA.href,
+    )
 
 
 # ---------------------------------------------------------------- 화면을 그리지 못한 오류
