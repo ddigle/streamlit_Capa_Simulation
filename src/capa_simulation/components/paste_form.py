@@ -6,8 +6,9 @@
 **꼴.** 창 안에는 글 칸과 그 입력 칸(전체 교체 확인 체크 등), 맨 아래 작업 줄만 둔다. 작업 줄은 왼쪽
 「적용」 · 오른쪽 「양식 다운로드」 한 줄이다(`paste_action_row` — 좁은 폭에서 접혀도 그 차례다).
 
-**글은 창에 두지 않는다.** 캡션 · 경고 상자 · 안내 글 · 입력 곁 거부를 창 안에 그리지 않고 알림창 ·
-Alarm 으로 낸다.
+**글은 창에 두지 않는다.** 캡션 · 경고 상자 · 안내 글 · 글 칸 안내 문장(placeholder) · 입력 곁
+거부를 창 안에 그리지 않고 알림창 · Alarm 으로 낸다. 붙여넣는 법(헤더 포함)은 그 화면 Guide 가
+말한다.
 
 - 창을 연 회차에 꼭 알릴 말(덮어쓰기 · 되돌릴 수 없음 · 버려지는 편집)은 `announce_on_open` 한
   번이다. 「연 회차」 는 입력 칸의 세션 값이 아직 없는 회차다 — Streamlit 이 닫힌 회차에 그리지 않은
@@ -44,7 +45,6 @@ from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_
 
 _ASSETS: Final = Path(__file__).with_name("paste_window_assets")
 
-PASTE_PLACEHOLDER: Final = "Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V"
 # 글 칸 높이(라벨 포함, px)와 창 크기를 기억하는 칸의 기본 이름 — 같은 꼴 창은 한 크기를 함께 쓴다.
 PASTE_TEXT_HEIGHT: Final = 220
 PASTE_SIZE_KEY: Final = "paste"
@@ -149,17 +149,11 @@ def render_paste_window(
     )
 
 
-def paste_text_area(
-    key: str,
-    *,
-    text_key: str,
-    label: str,
-    placeholder: str = PASTE_PLACEHOLDER,
-) -> str:
-    """글 칸 하나 — 칸의 풍선을 두지 않는다(말은 알림창 · Guide). 창 크기를 따라 높이가
-    늘어난다."""
+def paste_text_area(key: str, *, text_key: str, label: str) -> str:
+    """글 칸 하나 — 칸의 풍선 · 안내 문장(placeholder)을 두지 않는다(말은 알림창 · Guide). 창 크기를
+    따라 높이가 늘어난다."""
     with st.container(key=f"capa_paste_text_{key}"):
-        return st.text_area(label, key=text_key, height=PASTE_TEXT_HEIGHT, placeholder=placeholder)
+        return st.text_area(label, key=text_key, height=PASTE_TEXT_HEIGHT)
 
 
 @contextmanager

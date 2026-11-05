@@ -728,6 +728,8 @@ def render_held_picker(
             disabled=disabled,
             placeholder="호기 고르기" if choices else "이 공정에 고를 호기가 없습니다",
             help=HELD_HELP,
+            # 보유 호기는 하나씩 짚는 칸이다 — 「전체 선택」 한 번에 전부 보유로 잡히면 안 된다.
+            select_all=False,
         )
         if picked:
             weights = {choice.unit: choice.units for choice in choices}

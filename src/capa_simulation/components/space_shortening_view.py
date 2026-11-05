@@ -409,9 +409,8 @@ def load_space_layer(
     if not keyed.plan.processes:
         return ShorteningStop(
             "info",
-            "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 없습니다 "
-            "— "
-            "필요 단축 일정에서 확인",
+            "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
+            "없습니다.",
         )
     layer = build_shortening_layer(
         keyed.plan, level, today=keyed.plan.today, imminent_days=_due_days()
@@ -475,9 +474,12 @@ def render_layer_basis(
 
 
 def render_layer_stop(stop: ShorteningStop) -> None:
-    """못 칠함(R5) — 조작 줄 안 한 자리. 소요를 못 읽음 · 계산 오류는 마크(글은 알림)이고, 다른
-    화면에서 채울 입력이 빠짐(Cut-off 등)은 경고 한 줄이다. 상자는 모두 기본 회색이고 배치·편집·다른
-    색 기준은 그대로다."""
+    """못 칠함(R5) — 조작 줄 안 한 자리. 소요를 못 읽음 · 계산 오류 · 다른 화면에서 채울 입력이
+    빠짐(Cut-off — 「그 화면으로」 가 그 화면을 연다)은 마크(글은 알림)이고, 칠할 것이 없는 빈
+    상태는 회색 평문 한 줄이다. 상자는 모두 기본 회색이고 배치·편집·다른 색 기준은 그대로다."""
+    if stop.kind == "info":
+        st.caption(stop.message or "")
+        return
     if stop.kind == "scenario":
         reason = "활성 시나리오의 소요대수를 읽지 못했습니다" + (
             f" — {stop.message}" if stop.message else ""
@@ -487,10 +489,9 @@ def render_layer_stop(stop: ShorteningStop) -> None:
     message = (
         f"필요 단축을 칠하지 못했습니다: {reason} 도면·배치 편집·다른 색 기준은 그대로 씁니다."
     )
-    if stop.kind in ("scenario", "error"):
-        render_data_error(message, code="EQ-10", text="필요 단축을 칠하지 못했습니다")
-    else:
-        st.warning(message, icon=":material/sync_problem:")
+    render_data_error(
+        message, code="EQ-10", text=stop.brief("필요 단축을 칠하지 못했습니다"), goto=stop.goto
+    )
 
 
 def _filter_values(value: object) -> tuple[str, ...]:

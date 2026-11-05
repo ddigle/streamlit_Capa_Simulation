@@ -304,6 +304,30 @@ def test_a_kept_error_row_comes_back_when_the_alarm_no_longer_carries_it() -> No
     assert "classList.toggle('logopen', now)" in JS and ".item.logopen .tx" in CSS
 
 
+def test_a_merged_event_row_takes_the_new_text_and_the_new_tables() -> None:
+    """코드 + 짧은 글이 같은 사건은 한 줄에 합친다 — 글 · 자리와, 표지에 표가 들었으면 표도 새
+    것이다(같은 수의 다른 등록 충돌 `SC-04`). 표가 없는 표지는 앞 표를 지우지 않는다."""
+    out = _node(
+        """
+const table = (title) => ({ title, rows: [[1]] })
+const fresh = (tables) => ({
+  noteId: 'new', full: '새 글', page: '화면', href: 'home', tab: '', cause: '', detail: '',
+  origin: '', level: 'check', tables,
+})
+const row = () => ({ noteId: 'old', full: '옛 글', tables: [table('옛 표')] })
+const title = (item) => item.tables.map((one) => one.title)
+console.log(JSON.stringify({
+  replaced: title(freshenEventRow(row(), fresh([table('새 표')]))),
+  kept: title(freshenEventRow(row(), fresh([]))),
+  full: freshenEventRow(row(), fresh([])).full,
+}))
+"""
+    )
+    assert out == {"replaced": ["새 표"], "kept": ["옛 표"], "full": "새 글"}
+    writer = JS[JS.index("function writeEventRow") : JS.index("function handleEvent")]
+    assert "freshenEventRow(row, rowFor(note, now))" in writer
+
+
 def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -> None:
     """보관(200줄 · 12시간) · 상태 지문 판정 · 반복 창(60초) · 안 읽음 배지(99+ · 가장 무거운 단계)
     · 칩(수 · 맨 위 · 가정만이면 회색) · 패널 거르기 · 툴바 차례(파이썬 `TOOLBAR_BUTTON_ORDER`

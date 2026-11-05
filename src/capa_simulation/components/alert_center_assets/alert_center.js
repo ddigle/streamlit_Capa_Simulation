@@ -149,6 +149,13 @@ function tableCell(table, column, value) {
 function validTables(value) {
   return Array.isArray(value) ? value.filter((table) => table && typeof table === 'object' && Array.isArray(table.rows)) : []
 }
+// 같은 사건 줄에 새 표지를 합친다 — 글 · 자리 · 계기는 새 표지의 것이고, 표지에 표가 들었으면 표도 새 것이다(코드 + 짧은 글이
+// 같아도 표는 다를 수 있다 — 같은 수의 BigDataQuery 등록 충돌 `SC-04`).
+function freshenEventRow(row, fresh) {
+  for (const name of ['noteId', 'full', 'page', 'href', 'tab', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
+  if (validTables(fresh.tables).length) row.tables = fresh.tables
+  return row
+}
 // 표는 코드마다 가장 새 줄(마지막 시각)에만 둔다 — 옛 범위 줄의 표까지 이 탭 저장소에 쌓지 않는다.
 function keepNewestTables(rows) {
   const kept = new Set()
@@ -463,8 +470,7 @@ function writeEventRow(C, note, now) {
   row.n += 1
   row.last = now
   row.unread = true
-  const fresh = rowFor(note, now)
-  for (const name of ['noteId', 'full', 'page', 'href', 'tab', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
+  freshenEventRow(row, rowFor(note, now))
 }
 
 function handleEvent(C, note) {

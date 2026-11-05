@@ -55,6 +55,8 @@ from capa_simulation.components.shortening_board import (
     ORDER_FALLBACK_HELP,
     SHORTENING_HIGHLIGHT_KEY,
 )
+from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
@@ -412,20 +414,27 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     clear_equipment_repository()
 
 
-def test_a_missing_cutoff_stops_with_a_fill_in_warning_not_an_info_box(tmp_path: Path) -> None:
-    """Cut-off 가 하나도 없으면 다른 화면(가용설비 현황)에서 채울 입력이 빠진 멈춤이다 — 파란 안내
-    상자가 아니라 경고 상자이고(design_system 2-3 · `PLACE_NO_INPUT`), 그리지 못한 오류가 아니라
-    알림창 오류는 내지 않는다."""
+def test_a_missing_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_status(
+    tmp_path: Path,
+) -> None:
+    """Cut-off 가 하나도 없으면 다른 화면(가용설비 현황)에서 채울 입력이 빠진 멈춤이다 — 자리에는
+    「데이터 Error」 마크뿐이고(상자 · 글 없음) 글은 알림이며, 그 줄의 「그 화면으로」 가 고칠
+    화면을 연다."""
     database_path = tmp_path / "availability.duckdb"
     DuckDBEquipmentRepository(database_path).initialize()
 
     app = _run(database_path)
 
     assert not app.exception, [element.message for element in app.exception]
-    warnings = " ".join(str(item.value) for item in app.warning)
-    assert "공정별 Cut-off 를 먼저 적어야" in warnings, warnings
-    assert not app.info
-    assert not events(app, "RS-01")
+    assert data_error_marks(app) == 1
+    assert not app.warning and not app.info
+    (note,) = events(app, "RS-01")
+    assert note["short"] == "필요 단축 일정을 계산하지 못했습니다 — 공정별 Cut-off 없음"
+    assert "공정별 Cut-off 를 먼저 적어야" in note["full"]
+    assert (note["page"], note["href"]) == (
+        tab_label(AVAILABLE_EQUIPMENT_STATUS),
+        AVAILABLE_EQUIPMENT_STATUS.href,
+    )
     assert not _cards(app)
     clear_equipment_repository()
 

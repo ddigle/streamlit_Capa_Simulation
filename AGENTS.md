@@ -560,7 +560,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (D2). 버튼 + 직접 입력은 `preset_number_field.py`(D10 — 기준 확보율 칸은 정수 %(1% 단위, 처음은 HOME 기본의 정수 T, 직접 입력
     50 ~ 300% — `GENERAL_INPUT_RANGE` 가 HOME 판정 기준 저장 범위 `THRESHOLD_RANGE` 와 한 값, 2026-11-02 사용자 결정)다 —
     2026-11-01 사용자 결정으로 D18 의 0.5% 단위를 대신한다, Guide 도 그렇게 적는다. 기준 확보율 · 제약 확보율 칸은 소수를 받아
-    사사오입한 정수로 읽는다 — `decimal_entry`, 109.5 → 110, 같은 날 밤 결정 — 8장 「판정 기준은 정수 %」). 보유 제약 호기 고르기(multiselect,
+    사사오입한 정수로 읽는다 — `decimal_entry`, 109.5 → 110, 같은 날 밤 결정 — 8장 「판정 기준은 정수 %」). 보유 제약 호기 고르기(multiselect — 「전체 선택」 없음 `select_all=False`, 2026-11-05 답 r4 (가),
     2026-11-01 결정 B3)·목록에 없는 보유 제약 설비(환산 대수 숫자 칸, 기본 0 — B3-3 「같이 둠」)·신규 토글(기본 끔)·기준일
     (날짜 칸, 기본 오늘)은 2판 옵션이다 — 늘 서고 개조 끔이면 잠기며 그때는 서비스에 넘기지 않는다(고름·값은 세션에 남는다).
     목록에 없는 보유 대수는 사실 값이라 D10 버튼을 두지 않는다. **호기 고르기** 선택지는 그 공정 세션 설비 시나리오의 호기
@@ -1448,7 +1448,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 판정 실패 사유 끝에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록)를 적는다.
   - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
-    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
+    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` · CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
     (`popup_only` — 설계 규칙 UI-NTF-03 · AMB-05 (나)) 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다. 칸에 글을 그린
     회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
     화면 밖일 때만 본문을 옮긴다(`scrollIntoView({block: "nearest"})`).
@@ -3188,8 +3188,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 보내기 한 길. `queue_flash(key, 글, *, kind,
-  icon, alert, popup_only)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
-  코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
+  icon, alert, popup_only, tables)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
+  코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`, `tables` 는 그 Alarm 줄의 표 — 커서 None 인 칸은 뺀다)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
   없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
   그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
   그 칸에도 그린다(2026-11-03 결정 보드 D3 (가) — `BESIDE_KINDS`). 동작은 끝났고 그 자리에 고칠 입력이 없는 경고는
@@ -3251,9 +3251,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tab_name` / `open_tab_name`(표지의 `tab` — 아이콘 없는 탭 이름, 닫힌 탭이면 None 이라 그 회차에는 그 탭의 상태 알림을 내지
   않는다). 시험: `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`.
 - `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
-  사용자 지시). `render_data_error(message, code=, tab=, text=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
+  사용자 지시). `render_data_error(message, code=, tab=, text=, goto=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
   좁으면 줄 바꿈)와 오류 단계 사건 알림 표지를 `st.html` 한 칸에 그린다 — 이벤트 칸을 쓰지 않아 프래그먼트 · 팝업 본문 어디서나 부른다.
-  글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `render_data_error_mark()`
+  글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `goto` 는 채울 입력이 다른 화면에 있을 때
+  그 화면의 (이름, 주소)다 — 줄의 화면 칸과 「그 화면으로」 가 그 화면이다(`alerts.state` 의 `goto` 와 같다). `render_data_error_mark()`
   는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) · `alert_marks.place_errors`(오류 없이
   그렸다).
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
@@ -5348,7 +5349,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `reference_conflicts`). 숫자 `0` 과 빈 글자는 값 없음이라 형제 행에 실제 값이 있으면 그 값이 저장된다(모두 `0` 이면
   `0`). 효율·UPEH 는 0 행과 빈 값 행만 있으면 원천 행 차례와 상관없이 0 행이다(2026-11-01 사용자 결정 — 0 은 그 경로만
   제외, 빈 값은 계산 전체 멈춤이라 BigDataQuery 의 차례 없는 조회가 같은 원천을 서게도 멈추게도 했다). 다른 표는 0 의 뜻을
-  확인할 때까지 차례 그대로다. BigDataQuery 등록 화면은 표별 충돌 건수·임시 제외 행 수와 충돌 CSV 를 준다 — 경고 띠는
+  확인할 때까지 차례 그대로다. BigDataQuery 등록 화면은 저장 뒤 사건 알림 `SC-04` 와 그 Alarm 줄의 표 「충돌 요약」(표별 충돌 건수 · 임시 제외 행 수) · 「충돌 상세」(CSV 는 원본 공정명)로 알린다
+  (2026-11-05 답 v10 (가) — 자리에 경고 · 표 · 접힘을 두지 않는다, 상세가 2,000행을 넘으면 그 표만 탭 맨 아래 CSV 단추로 남는다, 저장하지 못한 등록에는 내지 않는다) — 글은
   고른 행을 따로 말하지 않고 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다. 원천 정합성 확인용 임시 정책이며
   실제 집계 규칙을 대신하지 않는다. `RQ_PKG_PLAN` 의 Pack Code 별 수량은 충돌이 아니라 별도 행이다(4장).
 
@@ -5561,8 +5563,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   고정이 필요하면 늘 서 있는 빈 `st.container()` 칸만 둔다, 9장). 목록 구획의 빈 결과(「…이 없습니다」)와 점검 화면의 결론은
   조건부 안내가 아니라 값이다 — 자리에 평문 한 줄(`st.caption`)로 두고 초록 `st.success` 상자를 쓰지 않으며 하는 법 · 길 안내를
   붙이지 않는다. 그릴 것이 없어 화면 전체가 멈추는 빈 상태(`st.stop()` 앞)도 같은 회색 평문 한 줄이다 — 오류 · 경고 상자가
-  아니다(2026-11-04 반영 검수표 D4 (가)). 경고 상자로 멈추는 것은 다른 화면에서 채울 입력이 빠진 자리뿐이다(표준 대비 재공
-  현황의 주차별 가용대수 없음 — `tests/test_alert_sites.py` 의 `PLACE_NO_INPUT`).
+  아니다(2026-11-04 반영 검수표 D4 (가)). 다른 화면에서 채울 입력이 빠져 멈추는 자리(표준 대비 재공 현황의 주차별 가용대수 없음 ·
+  필요 단축 일정 · Space 「필요 단축」 의 Cut-off 없음)는 「데이터 Error」 마크이고 길 안내는 그 Alarm 줄의 「그 화면으로」 다(2026-11-05 답
+  v8 (가) — 9장 「화면을 못 그리는 오류」).
   숨은 데이터 안내(표에 보이지 않는 저장분 · 그리지 않는 항목)는 칸 머리 표지 + 풍선이다(2026-11-04 설계 규칙 확인 보드 AMB-02
   (가) — `docs/design_rules.md` UI-TXT-04 · 08).
 - **값 뒤 조사는 `services/korean_particle.py` 만 — 앱 코드는 시험이 지킨다.** f-string·`str.format`·`%s` 틀에 끼운 값(시나리오명·
@@ -6043,10 +6046,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   n건(조회기간) — 목록: Alarm › 이 줄」). **조건의 내역(목록)도 본문 접힘에 두지 않고 그 알림의 Alarm 줄 표다**(2026-11-05
   사용자 요청(검수표), `docs/design_rules.md` UI-TXT-04) — 고칠 곳은 그 표의 까닭 칸 머리 풍선(`AlertTable.help` — `title`, 점선 밑줄)과
   Guide 가 말한다(UI-TXT-01 · 02). 작업 대상(기한 임박 · 이행 지연 · 저장 전 바뀐 호기), 기록(이력 · off 공정), 입력을 바꿀 때마다
-  바뀌는 결과(제약 시뮬레이션 「달마다 보기」), 점검 보고(BigDataQuery 충돌 — 결과 표 · 내려받기와 한 몸)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
+  바뀌는 결과(제약 시뮬레이션 「달마다 보기」)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
   범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과 대당 Capa) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
   가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`tables=` — 한 줄에 여럿, 커서 None 인 칸은 빠진다. 대당 Capa 제외 `ST-14` ·
-  소요대수 `ST-15` · `ST-21` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
+  소요대수 `ST-15` · `ST-21` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02` · 사건은 `queue_flash(tables=)` — BigDataQuery 등록 충돌 `SC-04`). 같은 코드 + 같은 짧은 글의 사건이 한 줄에 합쳐지면 표도 새 표지의 것이다(`freshenEventRow`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
   `alerts.flush()` 로 한 자리를 채운다(생산 계획 `ST-04` · `ST-06`).
 - **상태 알림의 범위 · 내용 고르기**(2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기,
   2026-11-03). 알림 칸 JS 는 같은 코드의 다른 범위가 오면 앞 범위를 「범위가 바뀜」 으로 해소하고, 그 범위가 다시 오면 새
@@ -6074,8 +6077,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   (이름 목록 — `PLACE_FORM`)로 두고, 가용설비 현황이 팝업을 열지 않아도 회차마다 같은 조건을 상태 알림(`EQ-12` —
   `cutoff_management.report_missing_cutoffs`)으로 낸다.
 - **화면을 못 그리는 오류는 자리에 「데이터 Error」 마크만 세우고 글은 알림으로만 보낸다**(2026-11-05 사용자 지시 —
-  `components/data_error_mark.render_data_error(message, code=, tab=, text=)`) — 자료 없는 달을 고름 · 계산 멈춤 · DB · 기준정보를 읽지 못해
-  화면 · 탭 · 구획을 그리지 못한 자리 전부다(`st.stop()` 앞이든 구획만 끝나든). 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
+  `components/data_error_mark.render_data_error(message, code=, tab=, text=, goto=)`) — 자료 없는 달을 고름 · 계산 멈춤 · DB · 기준정보를 읽지 못해
+  화면 · 탭 · 구획을 그리지 못한 자리 전부다(`st.stop()` 앞이든 구획만 끝나든). 다른 화면에서 채울 입력이 빠져 멈춘 자리도 같은 마크다(2026-11-05 답 v8 (가) —
+  재공 현황 주차별 가용대수 → 표준 목표, 필요 단축 일정 · Space 「필요 단축」 Cut-off → 가용설비 현황, `ShorteningStop.goto`) — 자리에 링크 · 글을 두지 않고 `goto` 로
+  Alarm 줄의 「그 화면으로」 가 그 화면을 연다. 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
   알림창이 뜨고(해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다), 그 Alarm 줄이 없으면(보관 끝) 알림창 없이 다시 세운다(`keep`). 짧은 글(`text`)은
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
   `WIP-01` · `SC-02` · `AD-07` · `VO-01`, 어느 화면에서나 열리는 사이드바 시나리오 팝업은 `SB-21`). 마크와 표지가 `st.html` 한 칸이라 프래그먼트 ·
@@ -6092,9 +6097,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
-  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_NO_INPUT`(채울
-  입력 없음 · 멈춤 — 빈 상태는 상자가 아니다) · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
-  화면 결론) · `PLACE_REPORT`(점검 보고) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
+  「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
+  화면 결론) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
   서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력
@@ -6409,7 +6413,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **작업 줄은 왼쪽 적용 · 오른쪽 양식 다운로드 한 줄**이다(`paste_action_row` — 양끝 맞춤, 좁아져 접혀도 그 차례). `st.download_button` 은
   `st.form` 안에 들어가지 못하므로 이 창들은 **폼을 쓰지 않는다** — 글 칸은 일반 위젯(초점을 잃을 때 값이 오르고 팝업 프래그먼트만 돈다,
   Streamlit 의 「Press Ctrl+Enter to apply」 안내는 서식이 걷는다), 적용은 일반 단추이고 세대 · 지문 거름(`write_once_value`)은 그대로다.
-- **창 안에 글을 두지 않는다** — 캡션 · 경고 상자 · 안내 글 · 입력 곁 거부 · 글 칸 풍선을 그리지 않고 알림창 · Alarm 으로 낸다. 창을 연 회차의 말(덮어쓰기 · 되돌릴 수
+- **창 안에 글을 두지 않는다** — 캡션 · 경고 상자 · 안내 글 · 입력 곁 거부 · 글 칸 풍선 · 글 칸 안내 문장(placeholder — 2026-11-05 답 v9 (가), 붙여넣는 법은 Guide)을 그리지 않고 알림창 · Alarm 으로 낸다. 창을 연 회차의 말(덮어쓰기 · 되돌릴 수
   없음 · 버려지는 편집)은 `announce_on_open`(코드 `PA-01` — 입력 칸의 세션 값이 아직 없는 회차가 「연 회차」 다, Streamlit 이 닫힌 회차에
   그리지 않은 위젯 값을 버리므로 닫는 길이 몇이든 다시 알린다), 눌린 회차의 거부 · 안내는 `refuse_paste` · `tell_paste`(`popup_only`)다.
   글은 앞 60자에 결과가 들게 쓴다. 표지 칸(`capa_paste_note_*`)은 서식이 자리에서 빼 글 칸이 밀리지 않는다.

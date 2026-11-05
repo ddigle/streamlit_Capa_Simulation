@@ -5,71 +5,162 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import active_state, flashed, page_html, place_errors, successes
+from alert_marks import (
+    active_state,
+    flashed,
+    note_table,
+    page_html,
+    place_errors,
+    successes,
+    table_frame,
+)
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation import alerts
 from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
+from capa_simulation.components.process_labels import ProcessLabels
+
+
+@pytest.fixture(autouse=True)
+def _no_process_labels_from_the_repository_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    """충돌 보고의 공정 표시명은 저장소 `data/` DB 를 읽는다 — 이 파일의 시험은 그 DB 를 열지
+    않는다."""
+    monkeypatch.setattr(registration, "get_process_labels", ProcessLabels)
+
 
 REPORT_SCRIPT = """
 import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.bigdataquery_registration import (
-    CONFLICT_REPORT_STATE_KEY,
-    _render_reference_conflict_report,
+    REGISTRATION_FLASH_KEYS,
+    _queue_reference_conflict_report,
+    _render_oversized_conflict_download,
 )
+from capa_simulation.components.flash import render_flash
 
-st.session_state.setdefault(
-    CONFLICT_REPORT_STATE_KEY,
-    {
-        "report": pd.DataFrame(
+if "__queued__" not in st.session_state:
+    st.session_state["__queued__"] = True
+    _queue_reference_conflict_report(
+        pd.DataFrame(
             {
-                "RQ테이블": ["RQ_PKG_PLAN"],
-                "충돌그룹": ["RQ_PKG_PLAN-0001"],
-                "업무키컬럼": ["생산계획년월 | 제품정보"],
-                "생산계획년월": [202608],
-                "제품정보": ["Product-A"],
-                "충돌컬럼": ["생산수량"],
-                "후보값": ['[{"생산수량":100.0},{"생산수량":200.0}]'],
-                "선택값": ['{"생산수량":100.0}'],
-                "충돌행수": [2],
-                "임시제외행수": [1],
-                "후보원천행번호": ["1 | 2"],
-                "선택원천행번호": [1],
-                "임시처리": ["원천 행 순서상 첫 번째 행 유지"],
+                "RQ테이블": ["RQ_PKG_PLAN", "RQ_YLD"],
+                "충돌그룹": ["RQ_PKG_PLAN-0001", "RQ_YLD-0001"],
+                "업무키컬럼": ["생산계획년월 | 제품정보", "공정 | 제품정보"],
+                "공정": [None, "P-Process"],
+                "생산계획년월": [202608, None],
+                "제품정보": ["Product-A", "Product-A"],
+                "충돌컬럼": ["생산수량", "EDS_수율"],
+                "후보값": ['[{"생산수량":100.0},{"생산수량":200.0}]', '[{"EDS_수율":0.8}]'],
+                "선택값": ['{"생산수량":100.0}', '{"EDS_수율":0.8}'],
+                "충돌행수": [2, 2],
+                "임시제외행수": [1, 1],
+                "후보원천행번호": ["1 | 2", "3 | 4"],
+                "선택원천행번호": [1, 3],
+                "임시처리": ["원천 행 순서상 첫 번째 행 유지", "원천 행 순서상 첫 번째 행 유지"],
             }
         ),
-        "file_name": "RQ_업무키_충돌_SIM-001.csv",
-    },
-)
-_render_reference_conflict_report()
+        "SIM-001",
+    )
+render_flash(*REGISTRATION_FLASH_KEYS)
+_render_oversized_conflict_download()
 """
 
 
-def test_conflict_report_renders_summary_and_download() -> None:
+def _conflict_note(app: AppTest) -> dict[str, Any]:
+    (shown,) = flashed(app, "warning")
+    assert shown.note is not None
+    return shown.note
+
+
+def test_the_conflict_report_is_an_alert_with_its_tables_not_a_place_report() -> None:
+    """등록 뒤 「기준정보 업무 키 충돌」 보고는 자리에 그리지 않는다(경고 · 요약 표 · CSV · 접힘
+    없음 — 답 v10 (가)). 사건 알림 `SC-04` 하나와 그 Alarm 줄의 표 둘(요약 · 상세, 표마다 CSV)이고
+    한 번만 보낸다. 알림창 짧은 글(앞 60자)이 결과를 말한다."""
     app = AppTest.from_string(REPORT_SCRIPT).run()
 
     assert not app.exception
-    assert "1개 업무 키 그룹" in app.warning[0].value
-    assert app.dataframe[0].value.loc[0, "RQ테이블"] == "RQ_PKG_PLAN"
-    assert len(app.get("download_button")) == 1
+    assert not app.warning and not app.dataframe and not app.expander
+    assert not app.get("download_button")
+    note = _conflict_note(app)
+    assert (note["code"], note["level"], note["kind"]) == ("SC-04", "check", "event")
+    assert note["short"].startswith(
+        "기준정보 업무 키 충돌 2개 그룹 — 표 「임시처리」 규칙대로 한 행씩 임시 적용하고"
+    )
+    assert "Alarm › 이 줄 「충돌 요약」" in note["full"]
+    assert "Alarm › 이 줄 「충돌 상세」" in note["full"]
+    summary = note_table(note, registration.CONFLICT_SUMMARY_TITLE)
+    assert summary["file"].startswith("RQ_업무키_충돌_요약_SIM-001_")
+    assert table_frame(summary)["RQ테이블"].tolist() == ["RQ_PKG_PLAN", "RQ_YLD"]
+    detail = note_table(note, registration.CONFLICT_DETAIL_TITLE)
+    assert detail["file"].startswith("RQ_업무키_충돌_SIM-001_")
+    assert detail["total"] == 2
+    assert table_frame(detail)["충돌컬럼"].tolist() == ["생산수량", "EDS_수율"]
+
+    app.run()
+
+    assert not flashed(app, "warning")
 
 
 @pytest.mark.parametrize("table", ["RQ_PKG_PLAN", "RQ_RUN_RATE"])
-def test_conflict_banner_points_at_the_rule_the_table_below_states(table: str) -> None:
-    """띠 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 표마다 「값이 있는 첫 행」
-    (효율 · UPEH 는 0 · 빈 값만 다르면 0 행)이라 원천 첫 행이 아닐 때가 많다(E2E 2026-11-02).
-    띠는 바로 아래 요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
+def test_the_conflict_alert_points_at_the_rule_its_summary_table_states(table: str) -> None:
+    """알림 글이 고른 행을 「원천 첫 행」 이라고 하지 않는다 — 승자는 표마다 「값이 있는 첫 행」
+    (효율 · UPEH 는 0 · 빈 값만 다르면 0 행)이라 원천 첫 행이 아닐 때가 많다(E2E 2026-11-02). 글은
+    요약 표의 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다."""
     from capa_simulation.services.reference_conflicts import conflict_resolution
 
-    app = AppTest.from_string(REPORT_SCRIPT.replace('"RQ_PKG_PLAN"]', f'"{table}"]')).run()
+    app = AppTest.from_string(REPORT_SCRIPT.replace('"RQ_PKG_PLAN", "RQ_YLD"]', f'"{table}"] * 2'))
+    app.run()
 
     assert not app.exception
-    banner = app.warning[0].value
-    assert "원천 첫 행" not in banner
-    assert "그룹마다 아래 표 「임시처리」 규칙대로 한 행을 임시 적용했습니다" in banner
-    assert app.dataframe[0].value.loc[0, "임시처리"] == conflict_resolution(table)
+    note = _conflict_note(app)
+    assert "원천 첫 행" not in note["full"]
+    assert "표 「임시처리」 규칙대로 한 행씩 임시 적용하고 등록했습니다" in note["full"]
+    summary = table_frame(note_table(note, registration.CONFLICT_SUMMARY_TITLE))
+    assert summary["임시처리"].tolist() == [conflict_resolution(table)]
+
+
+def test_the_conflict_detail_shows_process_labels_and_keeps_originals_for_the_csv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """상세 표의 공정 칸은 화면에서만 표시명이다(`shown`) — 표 값 · CSV 는 원본으로 남는다."""
+    monkeypatch.setattr(
+        registration,
+        "get_process_labels",
+        lambda: ProcessLabels(version=1, labels={"P-Process": "표시 공정"}),
+    )
+    app = AppTest.from_string(REPORT_SCRIPT).run()
+
+    assert not app.exception
+    detail = note_table(_conflict_note(app), registration.CONFLICT_DETAIL_TITLE)
+    assert detail["shown"] == {"공정": {"P-Process": "표시 공정"}}
+    assert "P-Process" in table_frame(detail)["공정"].tolist()
+    assert "표시 공정" not in table_frame(detail)["공정"].tolist()
+
+
+def test_an_oversized_conflict_detail_stays_as_one_download_and_the_alert_says_where(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """상세가 커서 Alarm 줄에 싣지 못하면(`alert_table` 이 None) 탭 맨 아래 CSV 단추 하나로 남고
+    글이 그 자리를 부른다 — 경고 · 표는 자리에 서지 않고 요약 표는 그대로 줄에 실린다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 1)
+    script = REPORT_SCRIPT.replace('"RQ_PKG_PLAN", "RQ_YLD"]', '"RQ_PKG_PLAN"] * 2')
+    assert script != REPORT_SCRIPT
+    app = AppTest.from_string(script).run()
+
+    assert not app.exception
+    assert not app.warning and not app.dataframe
+    note = _conflict_note(app)
+    assert [table["title"] for table in note["tables"]] == [registration.CONFLICT_SUMMARY_TITLE]
+    assert f"이 탭 「{registration.CONFLICT_CSV_LABEL}」" in note["full"]
+    (download,) = app.get("download_button")
+    assert download.proto.label == registration.CONFLICT_CSV_LABEL
+
+    # 알림은 한 번이고 단추는 다음 등록까지 남는다.
+    app.run()
+    assert not flashed(app, "warning")
+    assert len(app.get("download_button")) == 1
 
 
 # 목록 결과를 세션에 심고 컴포넌트를 그리는 스크립트. 사내 패키지·DuckDB 없이 돈다.
@@ -775,6 +866,7 @@ def test_the_selection_builds_the_span_from_every_plan_row_of_the_whole_catalog(
 SAVE_SCRIPT = """
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from capa_simulation.components import bigdataquery_registration as registration
@@ -797,6 +889,11 @@ class FakeProvider:
         # 시험이 고른 (행 번호, 컬럼) 칸을 비운다 — 대당 Capa 가 멈추는 원천의 꼴.
         for index, column in st.session_state.get("__blank_cells__", []):
             frame.loc[int(index), column] = None
+        # 시험이 고른 행을 생산수량만 바꿔 한 번 더 넣는다 — 업무 키 값 충돌의 꼴.
+        for index in st.session_state.get("__duplicate_rows__", []):
+            extra = frame.loc[[int(index)]].copy()
+            extra["생산수량"] = pd.to_numeric(extra["생산수량"]) + 1
+            frame = pd.concat([frame, extra], ignore_index=True)
         return CoreDataBatch(
             simulation_code=simulation_code,
             simulation_name=self._name,
@@ -992,6 +1089,75 @@ def test_a_registration_whose_capacity_stops_still_saves_and_says_how_to_fix_it(
     assert (snapshot.revision.note or "").startswith(
         "상세 조회기간 2026-10-23 ~ 2026-11-01 · 대당 Capa 계산 멈춤(RQ_RUN_RATE 빈 값 키 "
     )
+
+
+def test_a_saved_registration_with_conflicting_keys_queues_the_report_after_the_saved_notice(
+    tmp_path: Path,
+) -> None:
+    """화면 저장 길 끝까지 — 업무 키 값이 갈린 원천을 저장하면 보고가 성공 알림 바로 뒤 칸에 담기고
+    (`REGISTRATION_FLASH_KEYS` 차례) 자리에는 아무것도 그리지 않는다. 합성 시드의 계획 행 하나를
+    생산수량만 바꿔 한 번 더 넣는다."""
+    from capa_simulation.components.flash import FlashNote
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    source = build_builtin_seed_dataset().source_data
+    plan = int(source.index[source["계획기초정보여부"].eq("Y")][0])
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(_registration_database(tmp_path))
+    app.session_state["__duplicate_rows__"] = [plan]
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W45"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W45"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W45 (SIM-W45)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-05 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 10, 29)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 5)
+    app.run()
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert not app.warning and not app.dataframe
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    keys = registration.REGISTRATION_FLASH_KEYS
+    assert keys.index(registration.REGISTRATION_CONFLICT_FLASH_KEY) == 1
+    note = FlashNote(*app.session_state[registration.REGISTRATION_CONFLICT_FLASH_KEY])
+    assert (note.kind, note.alert, note.popup_only) == ("warning", "SC-04", True)
+    assert [table["title"] for table in note.tables] == [
+        registration.CONFLICT_SUMMARY_TITLE,
+        registration.CONFLICT_DETAIL_TITLE,
+    ]
+    detail = table_frame(note.tables[1])
+    assert set(detail["RQ테이블"]) == {"RQ_PKG_PLAN"}
+    assert set(detail["충돌컬럼"]) == {"생산수량"}
+
+
+def test_a_failed_save_queues_no_conflict_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장하지 못한 등록에는 「등록했습니다」 보고를 내지 않는다 — 원천을 받은 뒤 저장이 실패해도
+    곁 오류만 선다."""
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("저장을 막았습니다.")
+
+    monkeypatch.setattr(registration, "save_bigdataquery_scenario", refuse)
+    source = build_builtin_seed_dataset().source_data
+    plan = int(source.index[source["계획기초정보여부"].eq("Y")][0])
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(_registration_database(tmp_path))
+    app.session_state["__duplicate_rows__"] = [plan]
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W46"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W46"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W46 (SIM-W46)"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-05 09:00:00"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 10, 29)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 5)
+    app.run()
+
+    assert not app.exception
+    assert [str(item.value) for item in app.error] == ["저장을 막았습니다."]
+    assert registration.REGISTRATION_CONFLICT_FLASH_KEY not in app.session_state
 
 
 def test_a_source_whose_cs_is_all_blank_is_refused_instead_of_saving_an_empty_scenario(

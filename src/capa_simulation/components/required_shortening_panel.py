@@ -509,18 +509,19 @@ def _render_view(
 
 
 def _render_stop(stop: ShorteningStop) -> None:
-    """멈춘 까닭 한 자리 — 소요를 못 읽음 · 계산 오류(데이터 Error 마크, 글은 알림) · 다른
-    화면에서 채울 입력이 빠짐(`input` — Cut-off, 경고) · 그릴 것이 없는 빈 상태(`info` — 회색 평문
-    한 줄, 설계 규칙 UI-TXT-04 · 반영 검수표 D4). 마크와 표지가 한 칸이라 이벤트 칸을 쓰지
-    않는다."""
-    if stop.kind in ("scenario", "error"):
-        render_data_error(
-            _stop_text(stop), code="RS-01", text="필요 단축 일정을 계산하지 못했습니다"
-        )
-    elif stop.kind == "input":
-        st.warning(stop.message or "", icon=":material/edit_calendar:")
-    else:
+    """멈춘 까닭 한 자리 — 소요를 못 읽음 · 계산 오류 · 다른 화면에서 채울 입력이 빠짐(`input` —
+    Cut-off, 「그 화면으로」 가 그 화면을 연다)은 데이터 Error 마크(글은 알림)이고, 그릴 것이 없는
+    빈 상태(`info`)는 회색 평문 한 줄이다(설계 규칙 UI-TXT-04 · 반영 검수표 D4). 마크와 표지가 한
+    칸이라 이벤트 칸을 쓰지 않는다."""
+    if stop.kind == "info":
         st.caption(stop.message or "")
+        return
+    render_data_error(
+        _stop_text(stop),
+        code="RS-01",
+        text=stop.brief("필요 단축 일정을 계산하지 못했습니다"),
+        goto=stop.goto,
+    )
 
 
 def _stop_text(stop: ShorteningStop) -> str:

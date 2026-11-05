@@ -47,10 +47,6 @@ PLACE_RESULT = (
 PLACE_CONFIRM = (
     "확인 창 — 되돌리기 어려운 동작 앞에서 무엇이 바뀌는지 적고 체크 · 단추와 함께 선다(설계 2-2)"
 )
-PLACE_NO_INPUT = (
-    "채울 입력 없음 · 멈춤 — 다른 화면에서 채울 입력이 빠져 화면이 이 글로 끝난다(그릴 것이 없을"
-    " 뿐인 빈 상태는 상자가 아니라 회색 평문 한 줄 — 설계 규칙 UI-TXT-04, 반영 검수표 D4 (가))"
-)
 PLACE_DETAIL = (
     "고른 대상(층 · 칸 · 시나리오)의 설명 — 고를 때마다 바뀌어 상태 알림이면 오갈 때마다 다시 뜬다"
 )
@@ -58,7 +54,6 @@ PLACE_VERDICT = (
     "화면 결론 — 「없음」 평문 한 줄(남은 자리는 성공 상자)과 짝인 요약 판정(화면의 일부, 설계 2-2"
     " 상태 알림 목록 밖)"
 )
-PLACE_REPORT = "점검 보고 — 결과 표 · 내려받기와 한 몸(BigDataQuery 등록의 기준정보 충돌 보고)"
 PLACE_KEPT = (
     "닫을 때까지 남는 사건 — 남의 저장이 내 편집을 버렸다(「알림 닫기」 와 한 몸, E2E #66 · "
     "알림창은 EQ-05)"
@@ -71,10 +66,8 @@ REASONS = frozenset(
         PLACE_STOP,
         PLACE_RESULT,
         PLACE_CONFIRM,
-        PLACE_NO_INPUT,
         PLACE_DETAIL,
         PLACE_VERDICT,
-        PLACE_REPORT,
         PLACE_KEPT,
     }
 )
@@ -87,7 +80,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", ""): (1, PLACE_DETAIL),
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
-    ("app_pages/wip_status.py", ""): (1, PLACE_NO_INPUT),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (
         1,
@@ -97,10 +89,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_DETAIL,
     ),
-    (
-        "src/capa_simulation/components/bigdataquery_registration.py",
-        "_render_reference_conflict_report",
-    ): (1, PLACE_REPORT),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_month_steps"): (
         1,
         PLACE_VERDICT,
@@ -164,10 +152,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         PLACE_VERDICT,
     ),
     ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PLACE_FORM),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_stop"): (
-        1,
-        PLACE_NO_INPUT,
-    ),
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PLACE_CONFIRM),
     ("src/capa_simulation/components/scenario_management.py", "_render_list_toolbar"): (
         1,
@@ -189,10 +173,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/space_floor_list.py", "_render_confirm"): (2, PLACE_FORM),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
-    ("src/capa_simulation/components/space_shortening_view.py", "render_layer_stop"): (
-        1,
-        PLACE_NO_INPUT,
-    ),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),
 }

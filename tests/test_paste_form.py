@@ -341,15 +341,20 @@ def test_paste_text_areas_stand_only_in_the_common_part() -> None:
     assert found == Counter({path: count for path, (count, _why) in TEXT_AREA_OUTSIDE.items()})
 
 
-def test_every_paste_text_area_helper_has_no_tooltip() -> None:
-    """공통 글 칸에는 풍선이 없다 — 칸의 규칙은 연 회차의 알림과 Guide 가 말한다."""
+def test_every_paste_text_area_helper_has_no_tooltip_or_placeholder() -> None:
+    """공통 글 칸에는 풍선도 안내 문장(placeholder)도 없다 — 칸의 규칙은 연 회차의 알림과 Guide 가
+    말한다."""
     calls = [
         call
         for relative, call in _text_area_calls()
         if relative == "src/capa_simulation/components/paste_form.py"
     ]
     assert len(calls) == 1
-    assert not [keyword for keyword in calls[0].keywords if keyword.arg == "help"]
+    assert not [keyword for keyword in calls[0].keywords if keyword.arg in ("help", "placeholder")]
+    app = _window()
+    assert not app.exception
+    (text,) = app.text_area
+    assert not text.placeholder and not text.help
 
 
 def test_the_templates_of_the_import_window_follow_the_chosen_table() -> None:

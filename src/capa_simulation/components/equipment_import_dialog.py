@@ -386,10 +386,6 @@ def _render_body(context: ImportContext) -> None:
             IMPORT_FORM_KEY,
             text_key=CLIPBOARD_KEY,
             label="Excel 표 붙여넣기",
-            placeholder=(
-                "헤더를 포함해 Ctrl+V로 붙여넣으세요. 설비 마스터는 설비명과 바꿀 열만 넣어도 "
-                "됩니다."
-            ),
         )
     with upload_column:
         uploaded = st.file_uploader(

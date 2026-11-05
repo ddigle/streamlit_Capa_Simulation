@@ -235,6 +235,22 @@ def test_the_mark_stands_alone_and_the_text_goes_only_to_the_alert() -> None:
     assert alert_notes(app)[0]["id"] != first["id"]
 
 
+def test_a_mark_whose_input_lives_on_another_screen_sends_the_alarm_there() -> None:
+    """채울 입력이 다른 화면에 있는 멈춤(재공 현황 주차별 가용대수 · 필요 단축 일정 Cut-off) —
+    자리에는 같은 마크뿐이고 길 안내는 Alarm 줄의 「그 화면으로」 다. `goto` 를 안 주면 이번
+    화면이다."""
+    script = PAGE.replace(
+        'code="ST-20", tab="소요대수"', 'code="WIP-01", goto=("표준 목표", "standard_target_capa")'
+    )
+    assert script != PAGE
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert data_error_marks(app) == 1
+    (note,) = alert_notes(app)
+    assert (note["page"], note["href"]) == ("표준 목표", "standard_target_capa")
+    assert note["keep"] is True
+
+
 def test_the_mark_shows_only_its_two_words() -> None:
     """서식 · 아이콘을 걷으면 마크 글은 두 낱말뿐이다 — 오류 글이 자리에 새지 않는다. `st.html` 이
     걷는 SVG 를 쓰지 않는다."""

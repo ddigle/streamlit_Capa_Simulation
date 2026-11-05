@@ -3,7 +3,7 @@
 """기간으로 시뮬레이션 코드를 찾고, 고른 코드로 시나리오를 등록하는 화면.
 
 1단계는 기간 조회와 스크롤 목록, 2단계는 자동 입력된 등록 폼이다. 저장 경로는
-`fetch_core_data_dataset → 충돌보고 → 프리셋 → save_bigdataquery_scenario → 활성화 → flash` 다.
+`fetch_core_data_dataset → 프리셋 → save_bigdataquery_scenario → 활성화 → flash(충돌 보고 포함)` 다.
 저장 자체(원천 메타데이터·파이프라인 버전·메모의 상세 조회기간)는 세션을 모르는
 `scenario_registration` 이 맡는다 — 공식버전 자동 갱신이 같은 길로 저장한다.
 
@@ -37,7 +37,8 @@ from capa_simulation.components.flash import (
     render_flash,
 )
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
-from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
+from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.io.bigdataquery_catalog import (
@@ -82,8 +83,15 @@ from capa_simulation.services.core_data_pipeline import (
 )
 from capa_simulation.services.korean_particle import with_object_particle
 
+# Alarm 줄에 싣기에 큰 충돌 상세만 이 칸에 남아 탭 맨 아래 CSV 단추로 내려받는다.
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
 REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
+# 저장은 됐지만 업무 키 값이 갈린 그룹이 있을 때의 경고 — 알림창 · Alarm 에만(성공 알림 바로 뒤).
+# 요약 · 상세는 그 Alarm 줄의 표다(`_queue_reference_conflict_report`).
+REGISTRATION_CONFLICT_FLASH_KEY = "bigdataquery_registration_conflict_flash"
+CONFLICT_SUMMARY_TITLE: Final = "충돌 요약"
+CONFLICT_DETAIL_TITLE: Final = "충돌 상세"
+CONFLICT_CSV_LABEL: Final = "기준정보 업무 키 충돌 CSV 다운로드"
 # 저장은 됐지만 CS 가 비어 표에서 뺀 행이 있을 때의 경고 — 알림창 · Alarm 에만(성공 알림 뒤).
 REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 # 저장은 됐지만 그 리비전의 대당 Capa 계산이 멈출 때의 경고(`RegistrationCapacityCheck`) — 알림창 ·
@@ -91,6 +99,7 @@ REGISTRATION_DROP_FLASH_KEY = "bigdataquery_registration_drop_flash"
 REGISTRATION_CAPACITY_FLASH_KEY = "bigdataquery_registration_capacity_flash"
 REGISTRATION_FLASH_KEYS: Final = (
     REGISTRATION_FLASH_KEY,
+    REGISTRATION_CONFLICT_FLASH_KEY,
     REGISTRATION_DROP_FLASH_KEY,
     REGISTRATION_CAPACITY_FLASH_KEY,
 )
@@ -244,9 +253,9 @@ def render_bigdataquery_registration(
         configured=detail_ready,
         existing_names=existing_names,
     )
-    # 충돌 보고서는 한 런에 딱 한 번만 그린다. 저장 실패 분기에서 한 번 더 부르면
+    # 큰 충돌 상세의 CSV 단추는 한 런에 딱 한 번만 그린다. 저장 실패 분기에서 한 번 더 부르면
     # 같은 다운로드 key 가 두 번 나와 `StreamlitDuplicateElementKey` 로 탭이 죽는다.
-    _render_reference_conflict_report()
+    _render_oversized_conflict_download()
 
 
 def catalog_list_key(token: str, nonce: int, keyword: str, scope: str) -> str:
@@ -690,10 +699,10 @@ def _render_registration_form(
             disabled=not configured or unsavable,
         )
     # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
-    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만
-    # 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가 폼 맨 아래라
-    # 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도 서서 아래
-    # 충돌 보고서의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
+    # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·
+    # Alarm 으로만 가고, 이 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다 — 탭 맨 위에 두면 단추가
+    # 폼 맨 아래라 스크롤한 화면에서 보이지 않았다(2026-11-01 E2E — 1500×950). 칸은 알림이 없어도
+    # 서서 아래 칸의 자리가 밀리지 않는다. 칸에 글을 그린 회차에는 칸 끝의
     # 스크립트(`REVEAL_NOTICE_SCRIPT`)가 칸이 화면 밖일 때만 본문을 옮긴다.
     queued = any(_drawn_beside(pending_flash(key)) for key in REGISTRATION_FLASH_KEYS)
     notice = render_flash(*REGISTRATION_FLASH_KEYS)
@@ -755,10 +764,6 @@ def _save_scenario(
             f"({window.days}일)..."
         ):
             prepared = fetch_core_data_dataset(provider, simulation_code, display_order)
-            _store_reference_conflict_report(
-                prepared.reference_conflicts,
-                prepared.batch.simulation_code,
-            )
             preset = capture_full_data_scenario_preset(prepared.reference_tables)
             registration = save_bigdataquery_scenario(
                 repository,
@@ -781,8 +786,9 @@ def _save_scenario(
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
         "올렸습니다.",
     )
-    # 아래 두 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
+    # 아래 세 경고는 저장이 끝났고 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙
     # UI-NTF-03 · AMB-05 (나) — 저장 단추 밑에는 그리지 않는다).
+    _queue_reference_conflict_report(prepared.reference_conflicts, prepared.batch.simulation_code)
     if prepared.blank_cs.dropped:
         # 저장은 됐다 — 막지 않고 알린다. 같은 수가 리비전 메모에도 남는다.
         queue_flash(
@@ -897,18 +903,53 @@ def _submitted_detail_window(
     return registration_detail_window(registered_at.date())
 
 
-def _store_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: str) -> None:
+def _queue_reference_conflict_report(conflicts: pd.DataFrame, simulation_code: str) -> None:
+    """저장한 등록의 「기준정보 업무 키 충돌」 보고 — 자리에 그리지 않고 사건 알림 `SC-04` 와 그
+    Alarm 줄의 표(요약 · 상세, 표마다 CSV)로 낸다. 상세의 공정 칸은 화면에서만 표시명이고 CSV 는
+    원본이다.
+
+    상세가 커서 Alarm 줄에 싣지 못하면(`alert_table` 이 None) 그 표만 탭 맨 아래 CSV 단추로 남기고
+    알림 글이 그 자리를 부른다(`_render_oversized_conflict_download`)."""
     if conflicts.empty:
         return
-    safe_code = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._")
+    safe_code = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", simulation_code).strip("._") or "query"
     timestamp = datetime.now().strftime("%Y%m%d%H%M")
-    st.session_state[CONFLICT_REPORT_STATE_KEY] = {
-        "report": conflicts.copy(),
-        "file_name": f"RQ_업무키_충돌_{safe_code or 'query'}_{timestamp}.csv",
-    }
+    file_name = f"RQ_업무키_충돌_{safe_code}_{timestamp}.csv"
+    summary = alert_table(
+        summarize_reference_conflicts(conflicts),
+        title=CONFLICT_SUMMARY_TITLE,
+        file_name=f"RQ_업무키_충돌_요약_{safe_code}_{timestamp}.csv",
+    )
+    detail = alert_table(
+        conflicts,
+        title=CONFLICT_DETAIL_TITLE,
+        file_name=file_name,
+        labels=get_process_labels(),
+    )
+    detail_place = alarm_table_place(CONFLICT_DETAIL_TITLE)
+    if detail is None:
+        st.session_state[CONFLICT_REPORT_STATE_KEY] = {
+            "report": conflicts.copy(),
+            "file_name": file_name,
+        }
+        detail_place = f"이 탭 「{CONFLICT_CSV_LABEL}」"
+    # 앞 60자가 결과를 말한다(알림창 짧은 글). 승자는 표마다 「값이 있는 첫 행」 이라 원천 첫
+    # 행이라고 적지 않는다 — 규칙은 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)이 말한다.
+    queue_flash(
+        REGISTRATION_CONFLICT_FLASH_KEY,
+        f"기준정보 업무 키 충돌 {len(conflicts):,}개 그룹 — 표 「임시처리」 규칙대로 한 행씩 임시 "
+        f"적용하고 등록했습니다. 규칙: {alarm_table_place(CONFLICT_SUMMARY_TITLE)} · 행마다의 값: "
+        f"{detail_place}",
+        kind="warning",
+        icon=":material/warning:",
+        alert="SC-04",
+        popup_only=True,
+        tables=(summary, detail),
+    )
 
 
-def _render_reference_conflict_report() -> None:
+def _render_oversized_conflict_download() -> None:
+    """Alarm 줄에 싣기에 큰 충돌 상세의 CSV 단추 — 칸이 비면 아무것도 그리지 않는다."""
     payload = st.session_state.get(CONFLICT_REPORT_STATE_KEY)
     if not isinstance(payload, dict):
         return
@@ -916,25 +957,12 @@ def _render_reference_conflict_report() -> None:
     file_name = payload.get("file_name")
     if not isinstance(report, pd.DataFrame) or report.empty or not isinstance(file_name, str):
         return
-    summary = summarize_reference_conflicts(report)
-    st.warning(
-        f"{len(report):,}개 업무 키 그룹에서 값 충돌을 확인했습니다. "
-        "등록은 중단하지 않고 그룹마다 아래 표 「임시처리」 규칙대로 한 행을 임시 적용했습니다."
-    )
-    st.dataframe(summary, hide_index=True, width="stretch")
     render_csv_download(
         data=reference_conflicts_to_csv(report),
         file_name=file_name,
         key="reference_conflicts_download",
-        label="기준정보 업무 키 충돌 CSV 다운로드",
+        label=CONFLICT_CSV_LABEL,
     )
-    with st.expander("충돌 상세 미리보기"):
-        # `report` 는 세션에 담아 둔 보고서이고 바로 위 CSV 가 같은 객체를 내보낸다.
-        # 화면 복사본에만 표시명을 입혀야 파일이 원본 공정명으로 남는다.
-        displayed = report.copy()
-        if PROCESS_COLUMN in displayed.columns:
-            displayed[PROCESS_COLUMN] = get_process_labels().series(displayed[PROCESS_COLUMN])
-        st.dataframe(displayed, hide_index=True, width="stretch")
 
 
 def _optional_datetime(value: str) -> datetime | None:

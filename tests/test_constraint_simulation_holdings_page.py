@@ -173,6 +173,8 @@ def test_the_picker_lists_the_session_units_and_changes_nothing_until_picked(
     assert picker.label == HELD_LABEL
     assert picker.value == []
     assert not picker.disabled
+    # 「전체 선택」 없음(`select_all=False` 의 전송 값 0 — 기본 임계값이면 호기가 적어도 선다).
+    assert picker.proto.select_all == 0
     assert picker.options == [
         "CA-01 · 환산 1",
         f"{EARLY_UNIT} · 환산 1",

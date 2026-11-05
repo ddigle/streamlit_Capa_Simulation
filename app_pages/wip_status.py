@@ -36,12 +36,14 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
+from capa_simulation.navigation import STANDARD_TARGET_CAPA
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     prune_list_selection,
     render_schema_ahead_warning,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_standard_target_availability,
@@ -168,24 +170,21 @@ except BOOTSTRAP_ERRORS as exc:
 render_schema_ahead_warning(equipment_repository.schema_ahead)
 
 if route_scope.empty:
-    # 그릴 것이 없어 멈추는 빈 상태는 회색 평문 한 줄이다(설계 규칙 UI-TXT-04). 경고 상자는 채울
-    # 입력이 빠진 멈춤(바로 아래 주차별 가용대수)뿐이다.
+    # 그릴 것이 없어 멈추는 빈 상태는 회색 평문 한 줄이다(설계 규칙 UI-TXT-04). 채울 입력이 빠진
+    # 멈춤(바로 아래 주차별 가용대수)은 「데이터 Error」 마크다.
     st.caption("오늘 기준 조회 구간에 재공 현황을 구성할 공정·제품 경로가 없습니다.")
     st.stop()
 
 if availability.empty:
     # 빈 표를 그대로 계산에 넣으면 prepare_weekly_availability 가 "가용설비 입력 표에 행이
-    # 없습니다" 를 던진다. 예외(빨간 오류)가 아니라 **사용자가 채워야 할 입력**이므로 경고다
-    # — 아래 :292 의 "일부만 없다" 와 같은 색이어야 심각도가 거꾸로 읽히지 않는다.
-    st.warning(
+    # 없습니다" 를 던진다 — 채울 입력이 표준 목표에 있으므로 그 화면으로 가는 길은 Alarm 줄의
+    # 「그 화면으로」 다(자리에 링크 · 글을 두지 않는다).
+    render_data_error(
         "설비 DB에 주차별 가용대수가 없어 표준 가능량 기준선을 만들 수 없습니다. "
-        "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 여기에 그대로 반영됩니다."
-    )
-    # 링크는 `st.stop()` **앞**이어야 그려진다.
-    render_page_link(
-        "app_pages/standard_target_capa.py",
-        label="표준 목표 열기",
-        icon=":material/track_changes:",
+        "`표준 목표` 페이지에서 주차별 가용설비를 입력하면 여기에 그대로 반영됩니다.",
+        code="WIP-01",
+        text="재공 현황을 그리지 못했습니다 — 주차별 가용대수 없음",
+        goto=(tab_label(STANDARD_TARGET_CAPA), STANDARD_TARGET_CAPA.href),
     )
     st.stop()
 

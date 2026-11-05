@@ -5,7 +5,9 @@ Error 마크를 넣고 Alarm 확인 필요 문구까지만 배치, 나머지는 
 
 **무엇이 마크인가.** 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리다 — 자료 없는 달을
 고름(`page_bootstrap.resolve_effective_months`), 계산 멈춤(`stop_calculation_on_error`), DB ·
-기준정보를 읽지 못함. 자리에는 마크와 「Alarm 확인 필요」 만 서고, 오류 글(까닭 · 예시 행 · 고칠
+기준정보를 읽지 못함, 다른 화면에서 채울 입력이 빠져 멈춤(재공 현황 주차별 가용대수 · 필요 단축
+일정과 Space 「필요 단축」 Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면을 연다, 자리에
+길 안내를 두지 않는다). 자리에는 마크와 「Alarm 확인 필요」 만 서고, 오류 글(까닭 · 예시 행 · 고칠
 곳)은 오류 단계 사건 알림으로만 간다 — 오른쪽 아래 알림창에 한 번, 머리 `Alarm` 줄에 전문 · 로그 ·
 복사.
 
@@ -66,10 +68,17 @@ def render_data_error_mark() -> None:
     st.html(data_error_mark_html())
 
 
-def render_data_error(message: str, *, code: str, tab: str = "", text: str | None = None) -> None:
+def render_data_error(
+    message: str,
+    *,
+    code: str,
+    tab: str = "",
+    text: str | None = None,
+    goto: tuple[str, str] | None = None,
+) -> None:
     """마크를 그리고 오류 글을 사건 알림으로 보낸다(`alerts.page_error_note` — 같은 글이면 알림창
     한 번). 담아 둔 사건 알림도 같은 표지로 보낸다 — 이 뒤에 `st.stop()` 이 오면 표지 자리가 더
     없다. `code` 는 그 화면의 코드, `tab` 은 「그 화면으로」 가 열 탭, `text` 는 알림창 짧은
-    글이다."""
-    note = alerts.page_error_note(message, code=code, tab=tab, text=text)
+    글, `goto` 는 채울 입력이 다른 화면에 있을 때 「그 화면으로」 가 열 화면(이름, 주소)이다."""
+    note = alerts.page_error_note(message, code=code, tab=tab, text=text, goto=goto)
     st.html(data_error_mark_html() + alerts.hidden_marker([*alerts.drain_outbox(), note]))
