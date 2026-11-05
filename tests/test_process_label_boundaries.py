@@ -138,16 +138,18 @@ def test_static_capa_shortfall_csv_never_takes_display_names() -> None:
     assert not exported_frames & labelled
 
 
-def test_bigdataquery_conflict_preview_labels_only_the_screen_copy() -> None:
-    """충돌 보고서는 세션에 담긴 한 객체를 CSV 와 화면이 함께 쓴다. 복사본에만 입힌다."""
+def test_bigdataquery_conflict_detail_labels_only_the_alert_table_screen_value() -> None:
+    """충돌 상세는 알림에 딸린 표다 — 표시명은 화면 값(`labels=` → `shown`)에만 입히고 표 값 · CSV
+    는 원본이다. 커서 남는 CSV 단추도 세션의 원본을 그대로 내보낸다."""
     source = (
         PROJECT_ROOT / "src/capa_simulation/components/bigdataquery_registration.py"
     ).read_text(encoding="utf-8")
-    body = source.split("def _render_reference_conflict_report()")[1]
+    queued = source.split("def _queue_reference_conflict_report(")[1].split("\ndef ")[0]
+    download = source.split("def _render_oversized_conflict_download(")[1].split("\ndef ")[0]
 
-    assert "reference_conflicts_to_csv(report)" in body
-    assert "displayed = report.copy()" in body
-    assert "st.dataframe(displayed" in body
+    assert "labels=get_process_labels()" in queued
+    assert "get_process_labels" not in download
+    assert "reference_conflicts_to_csv(report)" in download
 
 
 def test_round_trip_paste_templates_keep_the_original_process_name() -> None:

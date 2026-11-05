@@ -1448,7 +1448,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 판정 실패 사유 끝에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록)를 적는다.
   - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
-    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
+    화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` · CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
     (`popup_only` — 설계 규칙 UI-NTF-03 · AMB-05 (나)) 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다. 칸에 글을 그린
     회차에만 칸 끝의 스크립트(`REVEAL_NOTICE_SCRIPT` — `st.html(unsafe_allow_javascript=True)`, 회차마다 다른 일회 표지)가 칸이
     화면 밖일 때만 본문을 옮긴다(`scrollIntoView({block: "nearest"})`).
@@ -3191,8 +3191,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 보내기 한 길. `queue_flash(key, 글, *, kind,
-  icon, alert, popup_only)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
-  코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
+  icon, alert, popup_only, tables)`(kind 는 success·info·warning·error, 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
+  코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`, `tables` 는 그 Alarm 줄의 표 — 커서 None 인 칸은 뺀다)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
   없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
   그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
   그 칸에도 그린다(2026-11-03 결정 보드 D3 (가) — `BESIDE_KINDS`). 동작은 끝났고 그 자리에 고칠 입력이 없는 경고는
@@ -5354,7 +5354,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `reference_conflicts`). 숫자 `0` 과 빈 글자는 값 없음이라 형제 행에 실제 값이 있으면 그 값이 저장된다(모두 `0` 이면
   `0`). 효율·UPEH 는 0 행과 빈 값 행만 있으면 원천 행 차례와 상관없이 0 행이다(2026-11-01 사용자 결정 — 0 은 그 경로만
   제외, 빈 값은 계산 전체 멈춤이라 BigDataQuery 의 차례 없는 조회가 같은 원천을 서게도 멈추게도 했다). 다른 표는 0 의 뜻을
-  확인할 때까지 차례 그대로다. BigDataQuery 등록 화면은 표별 충돌 건수·임시 제외 행 수와 충돌 CSV 를 준다 — 경고 띠는
+  확인할 때까지 차례 그대로다. BigDataQuery 등록 화면은 저장 뒤 사건 알림 `SC-04` 와 그 Alarm 줄의 표 「충돌 요약」(표별 충돌 건수 · 임시 제외 행 수) · 「충돌 상세」(CSV 는 원본 공정명)로 알린다
+  (2026-11-05 답 v10 (가) — 자리에 경고 · 표 · 접힘을 두지 않는다, 상세가 2,000행을 넘으면 그 표만 탭 맨 아래 CSV 단추로 남는다, 저장하지 못한 등록에는 내지 않는다) — 글은
   고른 행을 따로 말하지 않고 요약 표 「임시처리」 칸(`conflict_resolution` 한 곳)을 가리킨다. 원천 정합성 확인용 임시 정책이며
   실제 집계 규칙을 대신하지 않는다. `RQ_PKG_PLAN` 의 Pack Code 별 수량은 충돌이 아니라 별도 행이다(4장).
 
@@ -6050,10 +6051,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   n건(조회기간) — 목록: Alarm › 이 줄」). **조건의 내역(목록)도 본문 접힘에 두지 않고 그 알림의 Alarm 줄 표다**(2026-11-05
   사용자 요청(검수표), `docs/design_rules.md` UI-TXT-04) — 고칠 곳은 그 표의 까닭 칸 머리 풍선(`AlertTable.help` — `title`, 점선 밑줄)과
   Guide 가 말한다(UI-TXT-01 · 02). 작업 대상(기한 임박 · 이행 지연 · 저장 전 바뀐 호기), 기록(이력 · off 공정), 입력을 바꿀 때마다
-  바뀌는 결과(제약 시뮬레이션 「달마다 보기」), 점검 보고(BigDataQuery 충돌 — 결과 표 · 내려받기와 한 몸)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
+  바뀌는 결과(제약 시뮬레이션 「달마다 보기」)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
   범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과 대당 Capa) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
   가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`tables=` — 한 줄에 여럿, 커서 None 인 칸은 빠진다. 대당 Capa 제외 `ST-14` ·
-  소요대수 `ST-15` · `ST-21` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
+  소요대수 `ST-15` · `ST-21` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02` · 사건은 `queue_flash(tables=)` — BigDataQuery 등록 충돌 `SC-04`). 같은 코드 + 같은 짧은 글의 사건이 한 줄에 합쳐지면 표도 새 표지의 것이다(`freshenEventRow`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
   `alerts.flush()` 로 한 자리를 채운다(생산 계획 `ST-04` · `ST-06`).
 - **상태 알림의 범위 · 내용 고르기**(2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기,
   2026-11-03). 알림 칸 JS 는 같은 코드의 다른 범위가 오면 앞 범위를 「범위가 바뀜」 으로 해소하고, 그 범위가 다시 오면 새
@@ -6102,7 +6103,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리에도 그대로다(`PLACE_KEPT`).
 - 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
   「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
-  화면 결론) · `PLACE_REPORT`(점검 보고) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
+  화면 결론) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
   서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력

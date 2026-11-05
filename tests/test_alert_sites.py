@@ -54,7 +54,6 @@ PLACE_VERDICT = (
     "화면 결론 — 「없음」 평문 한 줄(남은 자리는 성공 상자)과 짝인 요약 판정(화면의 일부, 설계 2-2"
     " 상태 알림 목록 밖)"
 )
-PLACE_REPORT = "점검 보고 — 결과 표 · 내려받기와 한 몸(BigDataQuery 등록의 기준정보 충돌 보고)"
 PLACE_KEPT = (
     "닫을 때까지 남는 사건 — 남의 저장이 내 편집을 버렸다(「알림 닫기」 와 한 몸, E2E #66 · "
     "알림창은 EQ-05)"
@@ -69,7 +68,6 @@ REASONS = frozenset(
         PLACE_CONFIRM,
         PLACE_DETAIL,
         PLACE_VERDICT,
-        PLACE_REPORT,
         PLACE_KEPT,
     }
 )
@@ -91,10 +89,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_DETAIL,
     ),
-    (
-        "src/capa_simulation/components/bigdataquery_registration.py",
-        "_render_reference_conflict_report",
-    ): (1, PLACE_REPORT),
     ("src/capa_simulation/components/constraint_simulation_view.py", "_render_month_steps"): (
         1,
         PLACE_VERDICT,

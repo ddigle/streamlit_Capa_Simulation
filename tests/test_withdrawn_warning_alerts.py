@@ -199,6 +199,21 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
+        what=(
+            "BigDataQuery 등록 탭 맨 아래 — 기준정보 업무 키 충돌 보고(경고 · 요약 표 · CSV · 상세"
+            " 접힘) — 요약 · 상세는 그 Alarm 줄의 표"
+        ),
+        why="UI-NTF-03 · UI-TXT-04 · 답 v10 (가)",
+        file="src/capa_simulation/components/bigdataquery_registration.py",
+        function="_queue_reference_conflict_report",
+        code="SC-04",
+        route="flash",
+        test=(
+            "tests/test_bigdataquery_registration.py"
+            "::test_the_conflict_report_is_an_alert_with_its_tables_not_a_place_report"
+        ),
+    ),
+    Withdrawn(
         what="시나리오 관리 보관함 · 카드 보관 — 고른 시나리오가 그 사이 빠져 아무것도 하지 않음",
         why="UI-NTF-03",
         file="src/capa_simulation/components/scenario_management.py",
