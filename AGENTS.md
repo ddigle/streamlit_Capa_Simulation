@@ -6468,7 +6468,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **창 크기는 보기 상태다** — 오른쪽 아래 손잡이(변 둘 포함)를 끌면 `<html>` 의 CSS 변수(`--capa-paste-w` · `--capa-paste-text-h`)와 속성
   (`data-capa-paste-sized`)만 바꾸고, 그 변수를 읽는 규칙은 컴포넌트 서식이라 창이 닫히면 함께 사라진다. 회차가 다시 돌아도 유지되고 그 브라우저의
   `localStorage`(`capa-paste-size:<칸>` — 읽기 · 쓰기 try/catch)가 기억한다. 칸은 같은 꼴 창이 함께 쓰는 `paste` · 미리보기가 있는 `import` · HOME 설정 `past` 다. 두 번 누르면
-  기본 크기, 방향키도 된다. 글 칸의 끝은 창의 글 칸 · 입력 칸이 화면 안에 들 만큼이고 글 칸 밖 높이를 실제로 잰다(`outsideText` — 좁아져 작업 줄이 접히거나 확인 체크가 있으면 커진다. 폭을 먼저 입히고 재며, 미리보기처럼 그 아래 구획은 넣지 않는다 — 그 구획은 창 스크롤이다). 폭은 Streamlit 팝업 상자(`[role="dialog"]` 의 부모)를 고른다 — `stDialog` · `stTextArea` · `stTextAreaRootElement` · `InputInstructions` 는
+  기본 크기, 방향키도 된다. 글 칸의 끝은 창의 글 칸 · 입력 칸이 화면 안에 들 만큼이고 글 칸 밖 높이를 실제로 잰다(`outsideText` — 좁아져 작업 줄이 접히거나 확인 체크가 있으면 커진다. 폭을 먼저 입히고 재며, 미리보기처럼 그 아래 구획은 넣지 않는다 — 그 구획은 창 스크롤이다. 표 상자 안 칸은 창이 어차피 화면보다 길어 재지 않고 기본값이다). 폭은 Streamlit 팝업 상자(`[role="dialog"]` 의 부모)를 고른다 — `stDialog` · `stTextArea` · `stTextAreaRootElement` · `InputInstructions` 는
   비공식 DOM 이름이라 판올림에서 다시 본다(바뀌면 크기만 안 따르고 창은 그대로 쓴다).
 - **막 뜨는 팝업의 표지** — 알림 칸은 앱 회차가 끝날 때 문서의 표지를 훑는데 막 뜨는 팝업의 본문은 그때 아직 문서에 없을 수 있다(사본 실측 — 연 회차 알림이 3초 뒤 다시 보낸 표지에
   실려서야 떴다). 숨은 컴포넌트가 팝업에 표지가 든 순간 `window.__capaAlerts.scan()` 을 한 번 더 부른다(같은 id 는 한 번만 뜬다).

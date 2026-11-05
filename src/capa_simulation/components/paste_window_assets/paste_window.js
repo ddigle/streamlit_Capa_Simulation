@@ -70,6 +70,7 @@ function tipRoom(windowRight, buttonLeft) {
 const TEXT_SELECTOR = '[class*="st-key-capa_paste_text_"]'
 const TEXT_BOX_SELECTOR = TEXT_SELECTOR + ' [data-testid="stTextArea"]'
 const APPLY_SELECTOR = '[class*="st-key-capa_paste_apply_"]'
+const HEAD_ROW_SELECTOR = '[class*="st-key-capa_paste_head_"]'
 const CONFIRM_BOX_SELECTOR = '[class*="st-key-capa_paste_confirm_"]'
 const CONFIRM_SELECTOR = CONFIRM_BOX_SELECTOR + ' input[type="checkbox"]'
 const LOCK_ATTRIBUTE = 'data-capa-paste-locked'
@@ -94,10 +95,11 @@ function install(host, data) {
     }
   }
   // 화면 위 끝(창이 스크롤된 만큼 되돌린 자리)부터 글 칸 · 입력 칸 아래까지 글 칸 밖 높이. 미리보기처럼 그 아래 구획은 넣지
-  // 않는다 — 넣으면 값이 큰 창의 글 칸을 늘릴 수 없다(그 구획은 창 스크롤로 간다).
+  // 않는다 — 넣으면 값이 큰 창의 글 칸을 늘릴 수 없다(그 구획은 창 스크롤로 간다). 표 상자 안 칸(작업 줄이 제목 줄에 없는
+  // 창)은 창이 어차피 화면보다 길고 글 칸이 아래쪽에 있어 재면 글 칸을 거의 못 늘린다 — 기본값이다.
   const outsideText = () => {
     const text = textBox()
-    if (!text) return WINDOW_CHROME
+    if (!text || !dialog.querySelector(HEAD_ROW_SELECTOR)) return WINDOW_CHROME
     const scroller = box.closest('[data-testid="stDialog"]')
     const textRect = text.getBoundingClientRect()
     const last = dialog.querySelector(CONFIRM_BOX_SELECTOR)
@@ -107,9 +109,13 @@ function install(host, data) {
   let wanted = null
   const paint = (size) => {
     wanted = size
+    // 크기 서식이 걸리는 순간 글 칸 높이가 있어야 한다 — 없으면 재는 사이 글 칸이 접혀 창 스크롤이 튄다.
+    if (!root.hasAttribute('data-capa-paste-sized')) {
+      root.style.setProperty('--capa-paste-text-h', measured().text + 'px')
+      root.setAttribute('data-capa-paste-sized', '')
+    }
     // 폭을 먼저 입힌다 — 폭에 따라 작업 줄이 접혀 글 칸 밖 높이가 달라진다.
     root.style.setProperty('--capa-paste-w', clampSize(size, viewport()).width + 'px')
-    root.setAttribute('data-capa-paste-sized', '')
     const fitted = clampSize(size, viewport(), outsideText())
     root.style.setProperty('--capa-paste-text-h', fitted.text + 'px')
     return fitted

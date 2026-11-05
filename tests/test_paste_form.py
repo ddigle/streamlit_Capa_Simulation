@@ -455,8 +455,15 @@ const root = {
     setProperty: (name, value) => { styles[name] = value },
     removeProperty: (name) => { delete styles[name] },
   },
-  setAttribute: () => {},
-  removeAttribute: () => {},
+  sizedWithText: null,
+  sized: false,
+  hasAttribute: () => root.sized,
+  setAttribute: (name) => {
+    if (name !== 'data-capa-paste-sized') return
+    root.sized = true
+    if (root.sizedWithText === null) root.sizedWithText = '--capa-paste-text-h' in styles
+  },
+  removeAttribute: () => { root.sized = false },
 }
 // 좁으면 작업 줄이 접혀 글 칸이 아래로 내려간다 — 폭을 먼저 입혀야 이 차이가 재인다. 창이 스크롤되면
 // 화면 자리는 그만큼 올라간다.
@@ -485,6 +492,7 @@ const dialog = {
     if (selector.includes('stTextArea')) return textBox
     if (selector.includes('textarea')) return area
     if (selector.includes('capa_paste_apply_')) return holder
+    if (selector.includes('capa_paste_head_')) return input.inBox ? null : {}
     if (selector.includes('capa_paste_confirm_')) return input.confirm && !selector.includes('input') ? confirmBox : null
     return null
   },
@@ -514,15 +522,20 @@ process.stdout.write(JSON.stringify({
   width: styles['--capa-paste-w'],
   room: holderStyles['--capa-paste-tip-room'],
   locked: attrs['data-capa-paste-locked'],
+  sizedWithText: root.sizedWithText,
 }))
 """
 
 
-def _run_install(*, width: int, confirm: bool = False, scroll: int = 0) -> Any:
+def _run_install(
+    *, width: int, confirm: bool = False, scroll: int = 0, in_box: bool = False
+) -> Any:
     body = WINDOW_JS[: WINDOW_JS.index("export default function")]
     return run_js_json(
         body + _INSTALL_RUNNER,
-        stdin=json.dumps({"width": width, "confirm": confirm, "scroll": scroll}),
+        stdin=json.dumps(
+            {"width": width, "confirm": confirm, "scroll": scroll, "inBox": in_box}
+        ),
         what="창 크기 install 시험",
     )
 
@@ -548,6 +561,18 @@ def test_the_confirm_check_and_a_scrolled_window_stay_in_the_text_limit() -> Non
 
     assert int(checked["text"][:-2]) == int(plain["text"][:-2]) - 40
     assert scrolled["text"] == plain["text"]
+
+
+def test_a_form_inside_a_bigger_window_keeps_the_plain_limit() -> None:
+    """표 상자 안 칸(HOME 설정 Past Data)은 창이 어차피 화면보다 길고 글 칸이 창 아래쪽에 있다 — 재서
+    끝을 깎으면 글 칸을 거의 못 늘린다. 제목 줄 창만 재고 이 칸은 기본값이다."""
+    assert _run_install(width=360, in_box=True)["text"] == "570px"
+
+
+def test_the_text_size_is_set_before_the_sized_rules_take_hold() -> None:
+    """크기 서식이 걸리는 순간 글 칸 높이 변수가 있어야 한다 — 없으면 재는 사이 글 칸이 접혀 창
+    스크롤이 튄다(HOME 설정처럼 스크롤된 창에서 잡기 시작하자마자 자리를 잃었다)."""
+    assert _run_install(width=360)["sizedWithText"] is True
 
 
 def test_the_install_gives_the_lock_tip_its_room() -> None:
