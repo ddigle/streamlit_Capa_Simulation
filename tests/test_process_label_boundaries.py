@@ -111,9 +111,11 @@ def test_grouped_export_never_takes_display_names() -> None:
     assert "value_labels" not in build_grouped_monthly_export.__code__.co_varnames
 
 
-def test_static_capa_shortfall_table_labels_only_its_screen_copy() -> None:
-    """부족 현황 표는 표시명을 화면 복사본에만 입힌다(`labels.frame` — 넘겨받은 캐시 유래 프레임을
-    고치지 않는다). 따로 내보내는 프레임은 없다 — 내려받기는 표 도구 막대 한 곳이다."""
+def test_static_capa_shortfall_table_labels_only_the_cell_text() -> None:
+    """두 부족 표는 표 도구 막대 CSV 가 유일한 출구라 프레임을 나눌 수 없다 — 프레임은 원본 공정
+    그대로 두고 표시명은 칸 글자(`SelectboxColumn(format_func=)`)로만 입힌다(UI-DAT-10).
+    `labels.frame` 으로 프레임에 입히면 파일에 표시명이 나간다. 칸 설정의 실제 값은
+    `test_static_capa_layout.py` 가 본다."""
     source = (PROJECT_ROOT / "app_pages/static_capa.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     function = next(
@@ -121,18 +123,13 @@ def test_static_capa_shortfall_table_labels_only_its_screen_copy() -> None:
         for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef) and node.name == "_render_shortfall_table"
     )
-    labelled = {
-        (ast.unparse(node.targets[0]), ast.unparse(node.value))
+    label_uses = {
+        ast.unparse(node)
         for node in ast.walk(function)
-        if isinstance(node, ast.Assign) and "labels." in ast.unparse(node.value)
+        if isinstance(node, ast.Attribute) and ast.unparse(node.value) == "labels"
     }
 
-    assert labelled == {
-        (
-            "displayed",
-            "labels.frame(_display_shortfalls(data, warning_section=warning_section))",
-        )
-    }
+    assert label_uses == {"labels.format_func"}
     for exit_name in ("render_csv_download", "download_button", "to_csv"):
         assert exit_name not in source, exit_name
 

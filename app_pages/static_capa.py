@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -90,6 +91,18 @@ def _monthly_peak(data: pd.DataFrame, value_column: str) -> int:
     return int(monthly_sum.max())
 
 
+def _bar_top(rates: pd.Series, *, secure_threshold: float) -> float:
+    """확보율 칸의 막대 끝 — 기본 확보 기준과 이 표 확보율 최댓값 가운데 큰 쪽.
+
+    `ProgressColumn` 은 값을 `max_value` 로 잘라 도구 막대 CSV 로 내보낸다(Streamlit 1.63 — 글자는
+    원값이다). 끝이 표의 최댓값 아래로 내려가지 않아야 파일이 잘리지 않은 원값을 싣는다. 빈 값 ·
+    무한대는 끝을 정하지 않는다 — 칸 설정은 JSON 이라 무한대를 실을 수 없다.
+    """
+    values = pd.to_numeric(rates, errors="coerce").astype("float64")
+    finite = values[np.isfinite(values)]
+    return secure_threshold if finite.empty else max(secure_threshold, float(finite.max()))
+
+
 def _render_shortfall_table(
     data: pd.DataFrame,
     *,
@@ -98,8 +111,8 @@ def _render_shortfall_table(
     labels: ProcessLabels,
     secure_threshold: float,
 ) -> None:
-    """표시명은 `st.dataframe` 에 넘기는 복사본에만 입힌다 — 내려받기는 표 도구 막대 한 곳이다."""
-    displayed = labels.frame(_display_shortfalls(data, warning_section=warning_section))
+    """내려받기는 표 도구 막대 한 곳이다 — 파일에 원본이 나가도록 프레임은 원본 공정 그대로다."""
+    displayed = _display_shortfalls(data, warning_section=warning_section)
     st.dataframe(
         displayed,
         hide_index=True,
@@ -108,17 +121,25 @@ def _render_shortfall_table(
         key=key,
         column_config={
             "년월": st.column_config.TextColumn(width="small"),
-            "공정": st.column_config.TextColumn(width="large"),
+            # 화면은 표시명, 파일은 원본(UI-DAT-10) — 값은 원본으로 두고 글자만 선택지 라벨로
+            # 입힌다. 칸 값이 원본이라 칸 정렬 · 표 찾기도 원본 기준이다. `labels.format_func` 는
+            # 값을 글자로 주고받지 않는 칸의 글자 함수다(겹친 표시명은 표와 같은 갈래로 같은 글자).
+            "공정": st.column_config.SelectboxColumn(
+                width="large",
+                disabled=True,
+                options=displayed["공정"].dropna().unique().tolist(),
+                format_func=labels.format_func(),
+            ),
             # 표는 확보율 오름차순이지만 62.3% 와 71.8% 의 **거리**는 숫자만으로 안 잡힌다.
             # 칸 안 막대 하나면 위에서 몇 줄까지가 진짜 급한 구간인지 훑는 순간 보인다.
-            # 길이의 기준은 **기본** 확보 기준이다 — 기준을 바꾸면 막대도 함께 움직인다. 칸 하나의
-            # 눈금이라 달마다 바꿀 수 없다. 월별 예외로 기본값보다 높은 기준을 둔 달의 행은 막대가
-            # 끝까지 차도 그 달 기준에는 못 미친 것이다(표에 든 것 자체가 미달이라는 뜻이다).
+            # 길이의 기준은 `_bar_top` 이다 — 판정선이 아니라 그 표 안의 거리를 보이는 눈금이라
+            # 표마다 다를 수 있고, 끝까지 차도 그 달 기준에 못 미칠 수 있다(표에 든 것 자체가
+            # 미달이다).
             "확보율": st.column_config.ProgressColumn(
                 format="percent",
                 width="small",
                 min_value=0.0,
-                max_value=secure_threshold,
+                max_value=_bar_top(displayed["확보율"], secure_threshold=secure_threshold),
                 # 색을 비워 두면 Streamlit 이 primaryColor(=`ACCENT`)로 그린다. `ACCENT`
                 # 는 상호작용·현재 위치 전용이라, 판정 색을 읽는 표에서 그 색이 나오면
                 # 「여기가 좋다」로 뒤집혀 읽힌다. 두 구획의 판정색을 그대로 쓴다.

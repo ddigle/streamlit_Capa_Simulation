@@ -480,7 +480,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/static_capa.py` — `Static Capa` 머리. 확보·경고 기준별 월간 설비 부족대수와 추가 필요대수(산식 6장)를 보인다.
   - 하위 화면은 사이드바로만 간다. 판정 기준은 HOME Preference 공용 프로필이고 카드는 읽기 전용이며, 판정 적용은
     캐시하지 않고 매 회차 한다. 부서별 활용과 계산식 설명은 `guides/static_capa.md` 다. 두 부족 표의 내려받기는 표 도구 막대 한
-    곳이다(별도 CSV 단추 없음 — 공정은 화면 표시명, `확보율` 은 막대 끝(`max_value`)에서 잘린 값으로 나간다).
+    곳이고(별도 CSV 단추 없음) 파일은 공정 원본 · `확보율` 원값이다. 공정 칸은 읽기 전용 `SelectboxColumn`(값 원본 · 글자 표시명 — 8장 ④ 끝)이다.
+    `ProgressColumn` 은 값을 `max_value` 로 잘라 파일로 내보내므로(Streamlit 1.63, 글자는 원값) 막대 끝은 `max(기본 확보 기준, 그 표의 확보율 최댓값)` 이다 — 표
+    안의 거리를 보이는 눈금이라 표마다 다를 수 있고, 판정 · 필요대수 · 막대 색(구획마다 한 색)은 여기에 기대지 않는다.
   - 확보율은 키 전용 캐시로 꺼내고 오류는 `check_scenario_capacity` 로 「계산 멈춤」과 검증 오류를 가른다.
   - 소요대수에 들지 않은 수요(계획 쪽 · 조회기간)는 두 상자 위에 그리지 않고 상태 알림 `ST-01` 로 낸다(산출 결과 소요대수
     탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 「데이터 Error」 마크 + `ST-20`(`data_error_mark.render_data_error`).
@@ -5476,7 +5478,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   표시명을 입히고 내보내는 프레임은 원본 그대로다(`components/exclusion_table.py`,
   가용설비 현황 Static 대비 일정의 호기 목록이 그 모양이다 —
   복사본은 `ProcessLabels.frame`). 계산 결과의 `attrs` 유래 프레임은
-  `@st.cache_data` 가 들고 있으므로 반드시 복사본에 입힌다.
+  `@st.cache_data` 가 들고 있으므로 반드시 복사본에 입힌다. 출구가 표 도구 막대 하나라 프레임을 나눌 수 없는 표(Static Capa 두 부족 표)는
+  프레임을 원본 그대로 두고 칸을 읽기 전용 `SelectboxColumn(disabled=True, options=<원본>, format_func=labels.format_func())` 로 그린다 — 화면은 표시명, 파일은 원본이다.
+  칸 값이 원본이라 칸 정렬 · 표 찾기(도구 막대) · 칸 복사도 원본 기준이다(칸 정렬 · 표 찾기는 2026-11-06 실제 Chrome 으로 잼).
 - ⑤ 에서 **분류 컬럼의 값은 언제나 원본이다.** `SelectboxColumn` 은 옵션의 `value` 와
   `label` 을 나눠 갖고 편집 결과·복사 데이터로는 `value` 를 돌려주므로 셀에 보이는 글자만
   바뀐다. 값 자체를 표시명으로 갈면 분류 키 되머지가 어긋나 편집이
