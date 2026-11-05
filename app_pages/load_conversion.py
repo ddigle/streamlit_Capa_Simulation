@@ -31,7 +31,7 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.month_editor import (
     PASTE_DROPS_EDITS_NOTICE,
     classification_styled,
@@ -417,7 +417,7 @@ def _clipped_table_sentence(table: alerts.AlertTable, *, tab: str, csv_label: st
     보이니 전문 맨 앞에 두고, 한 Alarm 에 두 탭의 줄이 함께 서므로 탭을 이름으로 부른다."""
     return (
         f"Alarm 표는 {clipped_label(table)} — 전체는 {tab} 탭 맨 아래 "
-        f"「{csv_label}」{direction_particle(csv_label)} 받습니다."
+        f"{quoted(csv_label)}{direction_particle(csv_label)} 받습니다."
     )
 
 
