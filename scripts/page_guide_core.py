@@ -103,6 +103,7 @@ NAMED_TARGETS: Final[dict[str, bool]] = {
     "EXPANDER": True,
     "KEY_BUTTON": True,
     "GRID_COLUMN": True,
+    "EDIT_ROW_CELL": True,
     "LOB_LABEL": True,
     "LOB_ROW": True,
 }
@@ -1307,7 +1308,9 @@ MOVE_TOL_PX: Final = 2
 # 움직이지 않은 LOB_CHART · LOB_LABEL 은 뺐으며, 후보 밖에서 움직인 PF_TILES(공정 수만큼 타일) ·
 # DIALOG(그 안의 타일 · 리비전 목록)를 더했다. 같은 HEAD 두 벌은 모든 표적이 Δ0 이었다. 범용 편집
 # 그리드의 고친 칸(EGRID_CELL)은 EDIT_CELL 과 같은 까닭(고칠 칸이 놓인 행)으로 든다 — 그리드 틀
-# (EGRID)은 창 높이로 서서 데이터가 크기를 정하지 않는다.
+# (EGRID)은 창 높이로 서서 데이터가 크기를 정하지 않는다. 고친 행의 다른 칸(EDIT_ROW_CELL)은 쓰는
+# 곳이 DB 를 쓰는 상태뿐이라 사내가 찍지 않고 합성 시드로만 자리가 정해져 들지 않는다 — 찍는 상태에
+# 쓰면 그때 넣는다(시험이 본다).
 DATA_SHAPED: Final = frozenset(
     {
         "BN_CELL",

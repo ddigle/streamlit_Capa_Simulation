@@ -419,7 +419,7 @@ LABEL_NARROW_WIDTHS_PX: Final = (280, 236, SIDEBAR_NARROW_WIDTH_PX)
 GAP_TAB: Final = "Static 대비 일정"
 # 가용설비 현황 두 탭 개편(2026-10-24 사용자 결정) — 바깥 탭 둘(① 설비 마스터 ② Summary), Summary
 # 안쪽 탭 둘(라벨 글자는 개편 전 그대로), 필요 단축 일정 머리 「Qual 마감 계산기」 팝업, 시나리오
-# 관리 「관리할 시나리오」 전환의 설비 시나리오 구획. 공정별 Cut-off 팝업은 2026-11-03 부터 사이드바
+# 관리 탭 넷과 그 설비 시나리오 탭. 공정별 Cut-off 팝업은 2026-11-03 부터 사이드바
 # 「가용설비 설정」 상자가 연다 — `settings_boxes` 가 본다. 앱 모듈을 부르지 않고 값만
 # 옮긴다(테스트가 앱과 같은지 본다).
 EQUIPMENT_MASTER_TAB: Final = "설비 마스터"
@@ -454,9 +454,10 @@ QUAL_CALCULATOR_KPIS: Final = (
     "이미 지난 마감",
     "목표 대비 부족 달",
 )
-SCENARIO_KIND_KEY: Final = "scenario_management_kind_v1"
-SCENARIO_KINDS: Final = ("시뮬레이션 시나리오", "설비 시나리오")
-# 설비 시나리오 구획의 시나리오 표 머리 칸(`equipment_scenario_management.scenario_rows`).
+# 시나리오 관리 탭 묶음의 `st.tabs` key 와 탭 넷(앞 아이콘 없이 — 차례 그대로).
+SCENARIO_TABS_KEY: Final = "scenario_management_tabs"
+SCENARIO_TABS: Final = ("Capa 시나리오", "설비 시나리오", "DB 등록", "자동 갱신")
+# 설비 시나리오 탭의 시나리오 표 머리 칸(`equipment_scenario_management.scenario_rows`).
 EQUIPMENT_SCENARIO_TABLE_ANCHOR: Final = "설비 시나리오"
 # 탭 안 두 전환(`st.segmented_control`)의 위젯 key 와 시트를 여는 선택지.
 GAP_RESULT_VIEW_KEY: Final = "equipment_gap_result_view_v1"
@@ -4701,7 +4702,7 @@ class EquipmentTabNames:
 def summarize_equipment_moves(
     tabs: EquipmentTabNames,
     calculator: tuple[str | None, int, bool] | None,
-    section: tuple[bool, bool] | None,
+    scenario_tabs: tuple[int, bool, bool] | None,
 ) -> str:
     """개편 확인 결과 — 탭 이름은 정한 어휘(`EQUIPMENT_*`)만 적고, 팝업 제목·지표 라벨은 판정에만
     쓴다. 바깥 둘은 바깥 탭 묶음에서만, 안쪽 둘은 Summary 안쪽 탭 묶음에서만 센다(본문 전체에서
@@ -4726,13 +4727,13 @@ def summarize_equipment_moves(
             f"필요 단축 일정 — {_title_text(title, QUAL_CALCULATOR_TITLE)} · 지표 "
             f"{kpis}/{len(QUAL_CALCULATOR_KPIS)} · {_closed_text(closed)}"
         )
-    if section is None:
-        parts.append("「관리할 시나리오」 전환 없음")
+    if scenario_tabs is None:
+        parts.append("「설비 시나리오」 탭 없음")
     else:
-        table, restored = section
+        shown, table, restored = scenario_tabs
         parts.append(
-            f"시나리오 관리 — 설비 시나리오 구획 표 {'있음' if table else '없음'} · 전환 "
-            f"{'되돌림' if restored else '못 되돌림'}"
+            f"시나리오 관리 — 탭 {shown}/{len(SCENARIO_TABS)} · 설비 시나리오 표 "
+            f"{'있음' if table else '없음'} · 탭 {'되돌림' if restored else '못 되돌림'}"
         )
     return " · ".join(parts)
 
@@ -4748,9 +4749,9 @@ def _main_button(widget_key: str) -> str:
 
 def check_equipment_moves(screen: Screen) -> str:
     """가용설비 현황 두 탭 개편의 새 자리 — 바깥 탭 둘·Summary 안쪽 둘·옛 탭 이름 0곳, 필요 단축
-    일정 머리 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리 「관리할 시나리오」 의 「설비
-    시나리오」 구획 표. 팝업은 `Esc` 로 닫고(넣기는 누르지 않는다), 전환은 처음 값으로 되돌린다(세션
-    값 — DB 에 쓰지 않는다). 공정별 Cut-off 팝업(2026-11-03 부터 사이드바 「가용설비 설정」)은
+    일정 머리 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리 탭 넷과 「설비 시나리오」 탭의 표.
+    팝업은 `Esc` 로 닫고(넣기는 누르지 않는다), 탭은 처음 탭으로 되돌린다(세션 값 — DB 에 쓰지
+    않는다). 공정별 Cut-off 팝업(2026-11-03 부터 사이드바 「가용설비 설정」)은
     `settings_boxes` 가 본다."""
     screen.open_page(EQUIPMENT_PAGE)
     open_equipment_tab(screen, EQUIPMENT_SUMMARY_TABS[0])
@@ -4780,9 +4781,22 @@ def check_equipment_moves(screen: Screen) -> str:
             closed = screen.close_dialog()
         calculator = (title, kpis, closed)
     screen.open_page(SCENARIO_MANAGEMENT_PAGE)
-    section: tuple[bool, bool] | None = None
-    before = _choose_segment(screen, SCENARIO_KIND_KEY, SCENARIO_KINDS[1])
-    if before is not None:
+    scenario_tabs: tuple[int, bool, bool] | None = None
+    names = (
+        screen.poll(
+            lambda: screen.js(_KEYED_TAB_NAMES_JS, SCENARIO_TABS_KEY),
+            timeout=60,
+            accept=lambda value: bool(value),
+        )
+        or []
+    )
+    if any(name.strip().endswith(SCENARIO_TABS[1]) for name in names):
+        shown = sum(
+            1
+            for name, label in zip(names, SCENARIO_TABS, strict=False)
+            if name.strip().endswith(label)
+        )
+        screen.open_tab(SCENARIO_TABS[1])
         try:
             table = bool(
                 screen.poll(
@@ -4796,10 +4810,15 @@ def check_equipment_moves(screen: Screen) -> str:
                 )
             )
         finally:
-            _choose_segment(screen, SCENARIO_KIND_KEY, before)
-        restored = screen.js(_SEGMENT_JS, SCENARIO_KIND_KEY) == before
-        section = (table, restored)
-    return summarize_equipment_moves(tabs, calculator, section)
+            screen.open_tab(SCENARIO_TABS[0])
+        restored = bool(
+            screen.page.get_by_role("tab", name=SCENARIO_TABS[0]).first.get_attribute(
+                "aria-selected"
+            )
+            == "true"
+        )
+        scenario_tabs = (shown, table, restored)
+    return summarize_equipment_moves(tabs, calculator, scenario_tabs)
 
 
 # ------------------------------------------------- 사이드바 설정 상자(`settings_boxes`)

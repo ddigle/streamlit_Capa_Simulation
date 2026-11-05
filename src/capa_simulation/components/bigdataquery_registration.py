@@ -38,6 +38,7 @@ from capa_simulation.components.flash import (
 )
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
@@ -226,7 +227,7 @@ def render_bigdataquery_registration(
     *,
     alert_tab: str | None = "",
 ) -> None:
-    """「BigDataQuery 등록」 탭 본문. `alert_tab` 은 이 탭 이름(상태 알림 `AD-04` 의 「그
+    """「DB 등록」 탭 본문. `alert_tab` 은 이 탭 이름(상태 알림 `AD-04` 의 「그
     화면으로」 — `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지
     않는다."""
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.
@@ -371,7 +372,10 @@ def _registered_scenarios(
         scenarios = repository.list_scenarios(include_archived=True)
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(
-            bootstrap_error_message(exc), code="SC-02", text="등록된 시나리오를 읽지 못했습니다"
+            bootstrap_error_message(exc),
+            code="SC-02",
+            tab=QUERY_TAB_NAME,
+            text="등록된 시나리오를 읽지 못했습니다",
         )
         return frozenset(), frozenset()
     return (

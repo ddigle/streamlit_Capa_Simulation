@@ -1,7 +1,7 @@
-# Purpose: 시나리오 관리 설비 시나리오 구획의 배치 차이 칸·지우기·발행 막힘·되돌리기·옛 판 흔적 글을
+# Purpose: 시나리오 관리 설비 시나리오 탭의 배치 차이 칸·지우기·발행 막힘·되돌리기·옛 판 흔적 글을
 # 검증한다.
 
-"""설비 시나리오 2단계 S4 — 시나리오 관리 「설비 시나리오」 구획의 배치 차이 보강(설계
+"""설비 시나리오 2단계 S4 — 시나리오 관리 「설비 시나리오」 탭의 배치 차이 보강(설계
 6-5·6-6·14장).
 
 - 시나리오 표 「저장된 배치 차이」(최신의 원시 행)·리비전 표 「배치」(원시 행 — 옛 판이 저장해
@@ -165,6 +165,8 @@ def test_the_old_code_traces_list_is_a_state_alert_not_a_place_line() -> None:
         "옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 1개"
     )
     assert "「셋업 실무」 2개" in note["full"] and "운영 일정" not in note["full"]
+    # 「그 화면으로」 가 설비 시나리오 탭을 연다.
+    assert note["tab"] == "설비 시나리오"
     assert not app.caption and not app.warning
 
     app.session_state["s"] = (_scenario(),)
@@ -599,7 +601,7 @@ def test_the_section_draws_no_standing_description_of_what_each_scenario_holds(
     tmp_path: Path,
 ) -> None:
     """공통 칸과 설비 시나리오가 따로 드는 것(일정 · 메모 · 비가동 · 가정 배치)의 설명은 구획에 늘
-    띄워 두지 않는다 — Guide 「설비 시나리오 구획」 몫이다(설계 규칙 UI-TXT-01 · V-05). 머리 줄도
+    띄워 두지 않는다 — Guide 「설비 시나리오 탭」 몫이다(설계 규칙 UI-TXT-01 · V-05). 머리 줄도
     값(이 세션이 든 쌍)만이고 「사이드바 줄에서도 합니다」 같은 길 안내를 달지 않는다(UI-TXT-03 ·
     AMB-06 (나))."""
     _, setup, _ = _moved_setup(tmp_path)

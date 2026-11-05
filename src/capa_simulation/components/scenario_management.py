@@ -1,6 +1,6 @@
 # Purpose: 시나리오 목록·리비전 표를 바로 고치는 관리 화면과 복제·월 머지·연도 Shift 작업을 그린다.
 
-"""시나리오 관리 탭 — 목록 관리(C안)·지금 편집본 복제·월 머지·연도 Shift.
+"""시나리오 관리 「Capa 시나리오」 탭 — 목록 관리(C안)·복제·월 머지·연도 Shift.
 
 「목록 관리」가 시나리오를 다루는 단일 입구다(2026-10-22 사용자 결정 C안). 지금 구조(모드·목록
 편집표·고른 시나리오 카드)를 두고 **표 안에서 바로 고친다** —
@@ -53,6 +53,7 @@ from capa_simulation.components.pick_edit_table import (
     with_order,
 )
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_month_merge import (
     MERGE_SOURCE_ROLES,
     render_scenario_month_merge,
@@ -134,7 +135,6 @@ from capa_simulation.scenario_state import (
     ensure_active_scenario,
     session_virtual_products,
 )
-from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
 from capa_simulation.services.korean_particle import object_particle, with_direction_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_virtual_products import (
@@ -148,7 +148,7 @@ FLASH_KEY = "scenario_management_flash"
 # 성공 알림과 함께 띄울 경고. 저장은 됐지만 남은 계산 오류가 있을 때 쓴다.
 FLASH_WARNING_KEY = "scenario_management_flash_warning"
 MODE_KEY = "scenario_page_mode"
-CLONE_MODE = "지금 편집본 복제"
+CLONE_MODE = "복제"
 # 복제 폼 원천 코드·원천명 칸의 풍선 — 두 칸이 빈 채로 서는 까닭과 새로 적어야 한다는 것. 원본
 # 값으로 미리 채우지 않는 것은 결정이다(TODO 3장 화면 2026-10-22 — 원천명은 자동 갱신 주차 판정
 # 근거). 늘 띄워 두지 않고 그 두 칸 곁 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가)) — 빈 칸을
@@ -209,7 +209,6 @@ ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
 HISTORY_EXPANDER_KEY = "scenario_list_history_expander"
 # 공식 발행 이력 칸에 보이는 최근 건수.
 HISTORY_LIMIT = 20
-IDENTIFIER_EXPANDER_KEY = "scenario_store_identifier_expander"
 # 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
 CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
 # 고른 시나리오 카드의 리비전 편집표. 고른 리비전은 이 표 초안의 `picked` 다(행 id 라 리비전명이
@@ -259,13 +258,6 @@ REVISION_NAME_HELP = (
     "눌러야 저장됩니다."
 )
 REVISION_NOTE_HELP = "조회기간·출처 같은 시스템 기록이 있어 고치지 않습니다."
-# 저장소 상태 칸 공식버전 줄의 표지 — 공식버전이 내장 합성 시드일 때만 선다(예외 상태에만 단다).
-DEMO_BADGE = ":blue-badge[합성 DEMO]"
-# 그 줄의 풍선(DEMO 일 때만) — 운영 전에 할 일은 자리에 적지 않고 여기 둔다(설계 규칙 UI-TXT-02).
-DEMO_OFFICIAL_HELP = (
-    "공식버전이 내장 합성 시드(DEMO)입니다 — 운영 전 BigDataQuery 등록으로 실제 시나리오를 "
-    "만들어 새 공식버전으로 지정합니다."
-)
 REVISION_COLUMNS = TableColumns(pick=REVISION_PICK_COLUMN, name=REVISION_NAME_COLUMN)
 
 
@@ -275,17 +267,22 @@ def render_scenario_management(
     *,
     alert_tab: str | None = "",
 ) -> None:
-    """「시뮬레이션 시나리오」 구획. `alert_tab` 은 이 구획이 든 탭 이름(상태 알림 `SC-01` 의 「그
-    화면으로」 — `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지
-    않는다."""
+    """「Capa 시나리오」 탭 본문. `alert_tab` 은 이 탭 이름(상태 알림 `SC-01` 의 「그 화면으로」 —
+    `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
     # 저장소 생성자는 프로세스 캐시라 따뜻한 프로세스에서는 페이지 준비 단계가 DB 를 열지 않는다.
     # 이 읽기가 그 회차의 첫 DB 열기이므로 다른 프로그램의 파일 잠금도 여기서 안내로 받는다.
     try:
         scenarios = repository.list_scenarios()
     except BOOTSTRAP_ERRORS as exc:
-        render_data_error(bootstrap_error_message(exc), code="SC-02")
+        render_data_error(bootstrap_error_message(exc), code="SC-02", tab=CAPA_SCENARIO_TAB_NAME)
         return
-    _render_store_status(repository, scenarios, alert_tab=alert_tab)
+    # 알림은 늘 서 있는 한 칸 안에 그린다(AGENTS 9장 「key 가 있어도 자리는 고정한다」). 형제
+    # 자리에 바로 그리면 알림이 생기는 회차에 그 아래가 한 칸 밀린다 — 보관함의 「되돌리기」·
+    # 「영구 삭제」는 본문에서 `st.rerun()` 으로 회차를 끊으므로, 끊긴 회차의 key 있는 보관함
+    # 상자가 옛 자리에 흐린 사본으로 남아 모드를 바꿔도 새로고침 전까지 따라왔다(2026-10-22 사본
+    # 앱 이분 탐색 — 알림을 빼거나 상자 key 를 빼거나 되돌리기를 콜백으로 바꾸면 각각 사라졌다).
+    render_flash(FLASH_KEY, FLASH_WARNING_KEY)
+    _report_missing_official(repository, alert_tab)
     # 작업 이름이 바뀌었으므로 예전 세션에 남은 값은 위젯이 만들어지기 전에 버린다.
     # 옵션에 없는 값이 그대로 오면 Streamlit 이 선택을 잃고 필수 선택에서 막힌다.
     if st.session_state.get(MODE_KEY) not in MODES:
@@ -298,6 +295,8 @@ def render_scenario_management(
         persist_state="session",
         # 선택 해제를 허용하면 mode 가 None 이 되어 아무 작업도 그리지 않는다.
         required=True,
+        # 보이는 글 없이 탭 바로 아래에 선다 — 라벨은 보조 기술이 읽는 이름으로 남는다.
+        label_visibility="collapsed",
     )
     # 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다(2026-10-22 사용자 결정 S8). 그리로 가는 길
     # 안내 글은 늘 띄워 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
@@ -313,107 +312,24 @@ def render_scenario_management(
         render_scenario_year_shift(repository, database_path)
 
 
-def _render_store_status(
-    repository: DuckDBScenarioRepository,
-    scenarios: list[ScenarioSummary],
-    *,
-    alert_tab: str | None = "",
-) -> None:
-    # 알림은 늘 서 있는 한 칸 안에 그린다(AGENTS 9장 「key 가 있어도 자리는 고정한다」). 형제
-    # 자리에 바로 그리면 알림이 생기는 회차에 그 아래가 한 칸 밀린다 — 보관함의 「되돌리기」·
-    # 「영구 삭제」는 본문에서 `st.rerun()` 으로 회차를 끊으므로, 끊긴 회차의 key 있는 보관함
-    # 상자가 옛 자리에 흐린 사본으로 남아 모드를 바꿔도 새로고침 전까지 따라왔다(2026-10-22 사본
-    # 앱 이분 탐색 — 알림을 빼거나 상자 key 를 빼거나 되돌리기를 콜백으로 바꾸면 각각 사라졌다).
-    render_flash(FLASH_KEY, FLASH_WARNING_KEY)
+def _report_missing_official(repository: DuckDBScenarioRepository, alert_tab: str | None) -> None:
+    """공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 있어도 부른다(해소) — 닫힌
+    탭이면 알리지 않고 읽지도 않는다."""
+    if alert_tab is None:
+        return
     official = repository.latest_official_release()
-    with st.container(border=True):
-        st.markdown("#### :material/database: 저장소 상태")
-        active_id = active_persisted_scenario_id()
-        active_revision_id = active_persisted_revision_id()
-        if active_id and active_revision_id:
-            st.write(_active_scenario_line(repository, scenarios, active_id, active_revision_id))
-            # UUID 는 사람이 읽을 것이 아니라 장애를 신고할 때 적어 보낼 값이다. 상태 줄에
-            # 그대로 두면 정작 어느 시나리오인지가 안 읽혀 접어 둔다.
-            with st.expander("식별자", icon=":material/tag:", key=IDENTIFIER_EXPANDER_KEY):
-                st.caption(f"시나리오 ID `{active_id}`")
-                st.caption(f"리비전 ID `{active_revision_id}`")
-        else:
-            st.caption("지금 올라와 있는 저장 리비전이 없습니다.")
-        # 공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 이 칸은 저장소 상태 줄이라
-        # 「공식버전 · 없음」 값은 남긴다. 있어도 부른다(해소) — 닫힌 탭이면 알리지 않는다.
-        if alert_tab is not None:
-            alerts.state(
-                "SC-01",
-                scope=None,
-                content=official is None or None,
-                active=official is None,
-                text="공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 아래 「공식버전 지정」",
-                full=(
-                    "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — "
-                    "시나리오 관리 「시나리오 작업」 의 「공식버전 지정」 으로 리비전 하나를 "
-                    "공식으로 정하세요."
-                ),
-                tab=alert_tab,
-            )
-        st.markdown(
-            official_status_line(official),
-            help=DEMO_OFFICIAL_HELP if _is_demo_official(official) else None,
-        )
-
-
-def _is_demo_official(official: OfficialReleaseSummary | None) -> bool:
-    """공식버전이 내장 합성 시드인가(`DEMO_BADGE` 와 그 풍선이 서는 때)."""
-    return official is not None and official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE
-
-
-def official_status_line(official: OfficialReleaseSummary | None) -> str:
-    """저장소 상태 칸의 공식버전 값 줄 — 「**공식버전** · 최신 v3 · 이름 r2 · 공식버전명」.
-
-    값과 표지만 둔다(설계 규칙 UI-TXT-04). 공식버전이 내장 합성 시드면 끝에 표지
-    배지(`DEMO_BADGE`) 하나를 단다 — 운영 전에 할 일 같은 설명 문장은 자리에 두지 않는다
-    (UI-TXT-01). 없으면 「없음」 이고, 새 세션이 불러올 기준이 없다는 내역은 상태 알림
-    `SC-01`(알림창 · Alarm)이 낸다. 사람이 적은 이름은 글자 그대로 싣는다(`literal_markdown`).
-    """
-    if official is None:
-        return "**공식버전** · :orange[없음]"
-    line = (
-        f"**공식버전** · 최신 v{official.release_no} · "
-        f"{literal_markdown(official.scenario_name)} r{official.revision_no} · "
-        f"{literal_markdown(official.release_name)}"
-    )
-    if _is_demo_official(official):
-        line += f" {DEMO_BADGE}"
-    return line
-
-
-def _active_scenario_line(
-    repository: DuckDBScenarioRepository,
-    scenarios: list[ScenarioSummary],
-    active_id: str,
-    active_revision_id: str,
-) -> str:
-    """올라와 있는 시나리오·리비전을 사람이 읽는 이름으로 적는다. 이름을 못 찾으면 ID 로 적는다.
-
-    `st.write` 가 마크다운으로 그리므로 사람이 적은 이름은 `literal_markdown` 으로 싣는다.
-    """
-    scenario = next((item for item in scenarios if item.scenario_id == active_id), None)
-    scenario_text = scenario.scenario_name if scenario is not None else active_id
-    revision_text = active_revision_id
-    if scenario is not None:
-        revision = next(
-            (
-                item
-                for item in repository.list_revisions(active_id)
-                if item.revision_id == active_revision_id
-            ),
-            None,
-        )
-        if revision is not None:
-            revision_text = revision_label(revision)
-    dirty = " · :orange-badge[저장하지 않은 변경 있음]" if has_unsaved_scenario_changes() else ""
-    return (
-        f"올라와 있음 · **{literal_markdown(scenario_text)}** · "
-        f"{literal_markdown(revision_text)}{dirty}"
+    alerts.state(
+        "SC-01",
+        scope=None,
+        content=official is None or None,
+        active=official is None,
+        text="공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」",
+        full=(
+            "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — 시나리오 관리 › "
+            "Capa 시나리오 › 목록 관리에서 시나리오를 고르고 「공식으로 지정…」 으로 리비전 하나를 "
+            "공식으로 정하세요."
+        ),
+        tab=alert_tab,
     )
 
 
@@ -712,9 +628,9 @@ def _render_scenario_list_editor(
     접는다 — 이 함수는 돌려받는 프레임을 쓰지 않는다.
 
     「최신 리비전」은 그 시나리오에 마지막으로 저장한 리비전이다(`active_revision_no`). 이 세션에
-    올라와 있는 리비전은 위 저장소 상태 줄이 말한다 — 「활성 리비전」이라 부르던 때는 그 둘이 같은
-    것으로 읽혀, 「r5 | v5 · 최신」이 r5 를 공식으로 오독하게 했다. 그래서 공식 칸에 공식 리비전
-    번호를 함께 적는다(`_official_label`).
+    올라와 있는 리비전은 사이드바 시나리오 칸과 리비전 표 상태 칸이 말한다 — 「활성 리비전」이라
+    부르던 때는 그 둘이 같은 것으로 읽혀, 「r5 | v5 · 최신」이 r5 를 공식으로 오독하게 했다. 그래서
+    공식 칸에 공식 리비전 번호를 함께 적는다(`_official_label`).
     """
     # 발행 이력은 최신 번호가 먼저 온다. 시나리오마다 첫 번째가 그 시나리오의 최신 공식이다.
     official_by_scenario: dict[str, OfficialReleaseSummary] = {}
@@ -1670,7 +1586,7 @@ def _refuse_gone_press(message: str = ARCHIVED_GONE_MESSAGE) -> NoReturn:
         queue_flash(FLASH_KEY, held[0], icon=held[1])
     else:
         # 아무것도 쓰지 않았고 그 자리에 고칠 입력이 없다 — 알림창 · Alarm 에만 낸다(그리는 칸은
-        # 누른 단추가 아니라 맨 위 「저장소 상태」 앞이다, 설계 규칙 UI-NTF-03).
+        # 누른 단추가 아니라 탭 맨 위다, 설계 규칙 UI-NTF-03).
         queue_flash(
             FLASH_WARNING_KEY, message, kind="warning", icon=":material/warning:", popup_only=True
         )
@@ -1813,6 +1729,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         render_data_error(
             f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
+            tab=CAPA_SCENARIO_TAB_NAME,
             text="신규 시나리오의 기준 표시순서를 준비하지 못했습니다",
         )
         return
@@ -1972,7 +1889,7 @@ def revision_virtual_product_rows(
 
     저장한 스냅샷을 활성화하면 세션 목록이 비므로(`clear_virtual_products`) 저장 **전에**
     읽고, 알림의 건수도 이 결과에서 센다. 새 리비전을 남기는 저장 단추(사이드바 팝업의 새 리비전
-    저장, 이 페이지의 지금 편집본 복제)가 모두 이것을 넘겨야 가상 제품 출처가 DB 에 이어진다.
+    저장, 이 페이지의 복제)가 모두 이것을 넘겨야 가상 제품 출처가 DB 에 이어진다.
     """
     parent = (
         virtual_product_records(repository.list_virtual_products(parent_revision_id))

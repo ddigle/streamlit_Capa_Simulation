@@ -38,7 +38,6 @@ from capa_simulation.components.scenario_management import (
     DELETE_BUTTON_KEY,
     DELETE_BUTTON_LABEL,
     DELETE_CONFIRM_KEY,
-    DEMO_OFFICIAL_HELP,
     DISCARD_UNSAVED_KEY,
     FLASH_KEY,
     HISTORY_EXPANDER_KEY,
@@ -52,9 +51,9 @@ from capa_simulation.components.scenario_management import (
     SAME_AS_OFFICIAL_LINE,
     _official_rename_notes,
     official_confirm_key,
-    official_status_line,
     official_virtual_product_warning,
 )
+from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
     clear_global_main_cases_cache,
@@ -70,6 +69,7 @@ from capa_simulation.persistence.models import (
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY, VIRTUAL_PRODUCTS_KEY
+from capa_simulation.services.builtin_seed import BUILTIN_SEED_SCENARIO_NAME
 from capa_simulation.services.korean_particle import with_direction_particle
 from capa_simulation.services.virtual_product import (
     VirtualProductRecord,
@@ -93,7 +93,7 @@ def test_every_tab_form_is_rendered_in_one_run(
 ) -> None:
     """열린 탭만 그리면 다른 탭을 잠깐 여는 순간 그 탭의 form 입력값이 사라진다.
 
-    세 탭의 폼이 한 rerun 에 모두 있어야 탭을 오가도 입력 중이던 값이 남는다.
+    설비 시나리오 탭을 뺀 세 탭의 폼이 한 rerun 에 모두 있어야 탭을 오가도 입력 중이던 값이 남는다.
     """
     database_path, equipment_path = seeded_databases
     app = AppTest.from_string(
@@ -102,13 +102,13 @@ def test_every_tab_form_is_rendered_in_one_run(
 
     assert not app.exception
     labels = {widget.label for widget in app.text_input}
-    # BigDataQuery 등록 폼. 시나리오 관리 탭의 폼(복제 저장과 공식 지정 팝업)은 탭 안의 작업
-    # 선택(segmented control)과 고른 시나리오에 따라 그려지므로 여기 없다. 표시순서 관리는
-    # Admin Area 로 옮겼다.
+    # DB 등록 폼. Capa 시나리오 탭의 폼(복제 저장과 공식 지정 팝업)은 탭 안의 작업 선택(segmented
+    # control)과 고른 시나리오에 따라 그려지므로 여기 없다. 표시순서 관리는 Admin Area 로 옮겼다.
     assert {"조회할 시뮬레이션 코드"} <= labels
     assert [tab.label for tab in app.main.tabs] == [
-        ":material/database: 시나리오 관리",
-        ":material/cloud_download: BigDataQuery 등록",
+        ":material/database: Capa 시나리오",
+        ":material/account_tree: 설비 시나리오",
+        ":material/cloud_download: DB 등록",
         ":material/autorenew: 자동 갱신",
     ]
     # 자동 갱신 설정 폼도 같은 rerun 에 선다.
@@ -196,11 +196,12 @@ def test_a_database_held_by_another_program_shows_the_notice_instead_of_a_traceb
 
     assert not app.exception
     assert any("다른 프로그램이 파일을 열어 두었습니다" in text for text in place_errors(app))
-    # 시나리오 관리 탭은 목록을 못 읽으면 작업 선택 앞에서 멈춘다.
+    # Capa 시나리오 탭은 목록을 못 읽으면 작업 선택 앞에서 멈춘다.
     assert "시나리오 작업" not in {widget.label for widget in app.segmented_control}
     assert [tab.label for tab in app.main.tabs] == [
-        ":material/database: 시나리오 관리",
-        ":material/cloud_download: BigDataQuery 등록",
+        ":material/database: Capa 시나리오",
+        ":material/account_tree: 설비 시나리오",
+        ":material/cloud_download: DB 등록",
         ":material/autorenew: 자동 갱신",
     ]
 
@@ -350,7 +351,7 @@ def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> Non
 
 
 def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
-    """「신규 시나리오 저장」(지금 편집본 복제)도 가상 제품 이력을 초기 리비전에 남긴다.
+    """「신규 시나리오 저장」(복제)도 가상 제품 이력을 초기 리비전에 남긴다.
 
     복제는 가상 제품의 복제 행이 든 지금 편집본을 그대로 옮기면서 그 출처만 버렸다. 리비전 저장과
     같은 확인 문장을 저장 알림에 붙인다.
@@ -413,23 +414,83 @@ def test_the_page_has_no_revision_save_mode_and_points_to_the_sidebar(tmp_path: 
 
     assert not app.exception
     mode = app.segmented_control(key=MODE_KEY)
-    assert list(mode.options) == ["목록 관리", "지금 편집본 복제", "월 머지", "연도 Shift"]
+    assert list(mode.options) == ["목록 관리", "복제", "월 머지", "연도 Shift"]
     assert mode.value == "목록 관리"
     assert not any("새 리비전 저장은" in item.value for item in app.caption)
     # 목록 표에서 아무것도 고르지 않은 회차에 하는 법 글을 두지 않는다(설계 규칙 UI-TXT-01).
     assert not any("한 건을 고르면" in item.value for item in app.caption)
-    # 저장소 상태의 공식버전 줄은 초록 상자가 아니라 값 줄이다 — 내장 합성 시드면 표지 배지 하나.
     assert not app.success
     assert not any("DEMO 데이터" in item.value for item in app.info)
-    (official,) = [item for item in app.markdown if item.value.startswith("**공식버전**")]
-    assert official.value.endswith(":blue-badge[합성 DEMO]"), official.value
-    # 운영 전에 할 일은 그 줄의 풍선이다(자리에는 표지만).
-    assert official.proto.help == DEMO_OFFICIAL_HELP
-    assert "BigDataQuery 등록" in DEMO_OFFICIAL_HELP
+
+
+def test_the_tab_opens_straight_on_the_work_switch_without_a_store_status_box(
+    tmp_path: Path,
+) -> None:
+    """옛 「저장소 상태」 칸(제목 · 올라와 있음 줄 · 식별자 펼침 · 공식버전 줄)은 없다 — 지금 올라와
+    있는 리비전과 공식 표지는 사이드바 · 머리 띠, 최신 공식은 목록 표 칸이 말한다(설계 규칙
+    UI-TXT-07). 작업 전환은 보이는 글 없이 서고 라벨은 보조 기술이 읽는 이름으로 남는다."""
+    script = _page_script(PAGE_PATH, tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+
+    assert not app.exception
+    words = [str(item.value) for item in (*app.markdown, *app.caption)]
+    for gone in ("저장소 상태", "**공식버전**", "올라와 있음 ·", "시나리오 ID", "리비전 ID"):
+        assert not any(gone in word for word in words), gone
+    assert not [item for item in app.main.expander if item.label == "식별자"]
+    mode = app.segmented_control(key=MODE_KEY)
+    assert mode.label == "시나리오 작업"
+    assert mode.proto.label_visibility.value == mode.proto.label_visibility.COLLAPSED
+    assert "관리할 시나리오" not in {item.label for item in app.segmented_control}
+    # 내장 합성 시드의 표지는 그 이름이다 — 목록 표(와 사이드바 · 머리 띠)가 그대로 말한다.
+    shown = app.session_state[shown_session_key(LIST_EDITOR_KEY)]
+    assert BUILTIN_SEED_SCENARIO_NAME in shown.names.values()
+
+
+def test_an_old_session_clone_mode_name_falls_back_to_the_first_mode(tmp_path: Path) -> None:
+    """옛 작업 이름 「지금 편집본 복제」 는 목록 밖이라 위젯 앞에서 버린다 — 첫 작업으로 선다."""
+    script = _page_script(PAGE_PATH, tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[MODE_KEY] = "지금 편집본 복제"
+    app.run()
+
+    assert not app.exception
+    assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
+    app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
+    assert not app.exception
+    assert app.segmented_control(key=MODE_KEY).value == "복제"
+
+
+@pytest.mark.parametrize(
+    ("widget", "remembered"),
+    [
+        (":material/database: 시나리오 관리", None),
+        (":material/cloud_download: BigDataQuery 등록", None),
+        (None, ":material/database: 시나리오 관리"),
+        (None, ":material/cloud_download: BigDataQuery 등록"),
+    ],
+)
+def test_an_old_session_tab_value_outside_the_list_opens_the_first_tab(
+    tmp_path: Path, widget: str | None, remembered: str | None
+) -> None:
+    """옛 세션의 탭 값(위젯 칸 · 기억 칸)이 지금 탭 넷 밖이어도 멈추지 않고 첫 탭이 열린다 — 그
+    회차의 알림은 첫 탭 이름으로 나고, 기억 칸은 첫 탭으로 고쳐 적힌다."""
+    script = _page_script(PAGE_PATH, tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120)
+    key = "scenario_management_tabs"
+    if widget is not None:
+        app.session_state[key] = widget
+    if remembered is not None:
+        app.session_state[remembered_tab_key(key)] = remembered
+    app.run()
+
+    assert not app.exception
+    assert len(app.main.tabs) == 4
+    assert app.session_state[remembered_tab_key(key)] == ":material/database: Capa 시나리오"
+    assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
 
 
 def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> None:
-    """감사 D3: 리비전 저장에서 막히는 편집은 「지금 편집본 복제」로도 저장되지 않는다.
+    """감사 D3: 리비전 저장에서 막히는 편집은 「복제」로도 저장되지 않는다.
 
     복제도 지금 편집본을 새 시나리오의 초기 리비전으로 적으므로 리비전 저장과 같은 검사를 거친다.
     """
@@ -661,7 +722,7 @@ def test_new_revision_inherits_the_loaded_revisions_virtual_products(tmp_path: P
 def test_clone_inherits_the_active_revisions_virtual_products_still_in_the_tables(
     tmp_path: Path,
 ) -> None:
-    """「지금 편집본 복제」의 초기 리비전도 올라와 있는 리비전의 이력을 물려받는다.
+    """「복제」의 초기 리비전도 올라와 있는 리비전의 이력을 물려받는다.
 
     물려받은 제품이 복제하는 표 어디에도 남아 있지 않으면 그 이력은 따라가지 않는다.
     """
@@ -1257,7 +1318,7 @@ def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(tmp_path: Pat
 def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
     tmp_path: Path,
 ) -> None:
-    """첫 탭의 「변경 저장」이 BigDataQuery 등록 폼 글자를 버리지 않는다.
+    """첫 탭의 「변경 저장」이 DB 등록 폼 글자를 버리지 않는다.
 
     옛 「순서 저장」은 `st.rerun()` 으로 등록 폼보다 먼저 끊어, 그 회차에 그려지지 않은 폼 글자 칸을
     Streamlit 이 버렸다 — 목록 행은 선택된 채 코드·시나리오명이 비어 저장이 막혔다. 「변경 저장」은
@@ -2222,36 +2283,3 @@ def test_list_and_revision_table_headers_fit_their_columns(tmp_path: Path) -> No
         "선택": [],
         "고름": [],
     }
-
-
-def test_the_official_line_is_a_value_line_with_a_demo_badge_only_for_the_seed() -> None:
-    """저장소 상태의 공식버전 줄은 값 줄이다 — 초록 상자 · 운영 전에 할 일 설명 없이, 내장 합성
-    시드일 때만 표지 배지 하나(설계 규칙 UI-TXT-04 · UI-TXT-05 · V-17). 없으면 「없음」 값 하나다
-    (새 세션이 불러올 기준이 없다는 내역은 상태 알림 `SC-01`). 사람이 적은 이름은 글자 그대로다."""
-    from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
-
-    assert official_status_line(None) == "**공식버전** · :orange[없음]"
-    release = OfficialReleaseSummary(
-        official_release_id="release-1",
-        release_no=3,
-        scenario_id="scenario-1",
-        revision_id="revision-1",
-        release_name="*공식* 안",
-        note=None,
-        scenario_name="기준~안",
-        source_simulation_code="SIM-001",
-        revision_no=2,
-        revision_name="초기",
-        published_at=datetime(2026, 11, 4, 9, 0),
-    )
-    line = official_status_line(release)
-    assert line == (
-        f"**공식버전** · 최신 v3 · {literal_markdown('기준~안')} r2 · "
-        f"{literal_markdown('*공식* 안')}"
-    )
-    seeded = official_status_line(
-        OfficialReleaseSummary(
-            **{**release.__dict__, "source_simulation_code": BUILTIN_SEED_SOURCE_CODE}
-        )
-    )
-    assert seeded == f"{line} :blue-badge[합성 DEMO]"

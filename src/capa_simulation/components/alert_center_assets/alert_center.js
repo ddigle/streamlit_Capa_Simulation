@@ -989,7 +989,7 @@ function changeLines(C, target) {
       if (typeof item.href === 'string') {
         const go = el('button', 'link go', t.go || '')
         go.type = 'button'
-        go.addEventListener('click', () => goTo(C, item.href))
+        go.addEventListener('click', () => goTo(C, item.href, item.tab))
         line.append(go)
       }
       target.append(line)

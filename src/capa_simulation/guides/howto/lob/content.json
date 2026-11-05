@@ -381,7 +381,7 @@
         {
           "id": "pick_row",
           "title": "목록에서 시나리오를 한 건 고릅니다",
-          "where": ["시나리오 관리", "목록 관리"],
+          "where": ["시나리오 관리", "Capa 시나리오", "목록 관리"],
           "state": "15_scenmgmt_list",
           "focus": [{"t": "work_mode", "n": 1, "kind": "see"}, {"t": "scen_select_col", "n": 2}],
           "do": "((목록 관리)) 인지 보고, 표의 [[선택]] 칸을 체크합니다. 한 건만 골라져요 — 다른 행을 체크하면 앞 선택이 풀립니다.",
@@ -391,7 +391,7 @@
         {
           "id": "open_form",
           "title": "리비전을 확인하고 「공식으로 지정…」",
-          "where": ["시나리오 관리", "목록 관리"],
+          "where": ["시나리오 관리", "Capa 시나리오", "목록 관리"],
           "state": "16_scenmgmt_selected",
           "focus": [{"t": "rev_select", "n": 1}, {"t": "btn_official", "n": 2}],
           "do": "카드의 리비전 표에서 [[고름]] 이 방금 저장한 rN 행에 있는지 보고(지금 올라와 있는 리비전이 미리 골라져 있어요) [[공식으로 지정…]] 을 누릅니다.",
@@ -400,7 +400,7 @@
         {
           "id": "fill_confirm",
           "title": "이름 · 메모를 적고 지정합니다",
-          "where": ["시나리오 관리", "공식버전 지정 팝업"],
+          "where": ["시나리오 관리", "Capa 시나리오", "공식버전 지정 팝업"],
           "state": "17_official_dialog",
           "clip_w": 620,
           "focus": [{"t": "off_name", "n": 1}, {"t": "off_memo", "n": 2}, {"t": "off_confirm", "n": 3}],
@@ -413,10 +413,10 @@
         {
           "id": "check",
           "title": "「공식 vN」이 되었는지 봅니다",
-          "where": ["시나리오 관리"],
+          "where": ["시나리오 관리", "Capa 시나리오"],
           "state": "18_official_done",
-          "focus": [{"t": "off_success", "n": 1, "kind": "see"}, {"t": "sidebar_scenario", "n": 2, "kind": "see"}],
-          "do": "팝업 안에서 「…Capa 계산을 확인하는 중입니다...」가 몇 초 돈 뒤 팝업이 닫히면, 화면 맨 위 초록 문구와 사이드바 배지 {{공식 vN}} 을 확인합니다.",
+          "focus": [{"t": "official_cell", "n": 1, "kind": "see"}],
+          "do": "팝업 안에서 「…Capa 계산을 확인하는 중입니다...」가 몇 초 돈 뒤 팝업이 닫히면, 오른쪽 아래 알림창과 목록 표 [[공식버전]] 칸의 「vN · rM · 최신」 을 확인합니다.",
           "ok": "「공식 vN · 공식버전명을(를) 지정했습니다.」"
         }
       ],

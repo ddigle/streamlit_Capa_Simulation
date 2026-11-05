@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_marks, data_error_texts, flashed, place_errors, successes
+from alert_marks import (
+    data_error_marks,
+    data_error_texts,
+    events,
+    flashed,
+    place_errors,
+    successes,
+)
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
@@ -135,6 +142,9 @@ def test_a_section_it_cannot_read_stands_as_the_data_error_mark(
     assert not app.error
     assert data_error_marks(app) == 1
     assert any("시험 — 표를 읽지 못함" in text for text in data_error_texts(app))
+    # 「그 화면으로」 는 이 작업이 있는 탭을 연다(설계 규칙 UI-NAV-01).
+    (note,) = events(app, "SC-02")
+    assert note["tab"] == "Capa 시나리오"
 
 
 def test_merge_preserves_both_histories_and_deduplicates_same_origin(sources: Sources) -> None:

@@ -1,6 +1,6 @@
 # Purpose: 시나리오 관리 「자동 갱신」 탭(상태·설정·지금 실행·실행/설정 기록)을 그린다.
 
-"""시나리오 관리 셋째 탭 「자동 갱신」(2026-10-15 사용자 결정).
+"""시나리오 관리 넷째 탭 「자동 갱신」(2026-10-15 사용자 결정).
 
 켜 두면 매일 지정 시각에 앱 안에서 BigDataQuery 목록을 본다. 시뮬레이션명에 키워드(기본 `PSM`)와
 주차(`W##`)가 있고 현재 공식버전보다 새 코드를 받아 등록 → 확보율 판정(기준 미만 공정 off) →
@@ -67,6 +67,7 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -201,6 +202,7 @@ def render_auto_official_update(
         render_data_error(
             "자동 갱신 설정을 읽지 못했습니다: " + bootstrap_error_message(exc),
             code="SC-02",
+            tab=AUTO_UPDATE_TAB_NAME,
             text="자동 갱신 설정을 읽지 못했습니다",
         )
         return
@@ -217,6 +219,7 @@ def render_auto_official_update(
         render_data_error(
             "자동 갱신 기록을 읽지 못했습니다: " + bootstrap_error_message(exc),
             code="SC-02",
+            tab=AUTO_UPDATE_TAB_NAME,
             text="자동 갱신 기록을 읽지 못했습니다",
         )
         return
@@ -301,6 +304,7 @@ def _render_status(
                 render_data_error(
                     bootstrap_error_message(exc),
                     code="SC-02",
+                    tab=AUTO_UPDATE_TAB_NAME,
                     text="현재 공식버전의 주차를 읽지 못했습니다",
                 )
             else:
@@ -311,6 +315,7 @@ def _render_status(
             render_data_error(
                 "현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc),
                 code="SC-02",
+                tab=AUTO_UPDATE_TAB_NAME,
                 text="현재 공식버전을 읽지 못했습니다",
             )
         else:

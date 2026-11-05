@@ -229,7 +229,7 @@ def report_unscheduled_units(session: EquipmentSession, units: Collection[str]) 
 def render_legacy_trace_warning(session: EquipmentSession) -> None:
     """옛 배포로 저장한 설비 리비전의 상태 알림(`SB-19` — 저장 거부 문구와 같은 글)과, 있으면 맨 위
     「시나리오 관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비
-    시나리오」 구획)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 자리에 그리지 않는다(2026-11-03
+    시나리오」 탭)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 자리에 그리지 않는다(2026-11-03
     결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 설비 DB 를 여는 회차마다
     부른다."""
     count = session.legacy_trace_count
@@ -496,7 +496,8 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
     """불러오기 구획 — 시나리오 → 리비전 라디오(최신 기본, 공식 발행에 「공식 vN」, 최근
     `SCHEDULE_REVISION_LIST_LIMIT` 개까지 — 한도에 걸리면 라디오 아래 「최근 50개 · 전체 82개 — 더
     옛 32개는 시나리오 관리 › 설비 시나리오에서 고릅니다.」) → 버리기 확인. 라디오만 최근 50이다
-    (2026-11-01 사용자 결정 A4 — 한 줄씩 길어서). 시나리오 관리 구획 표·상자는 전부 싣는다."""
+    (2026-11-01 사용자 결정 A4 — 한 줄씩 길어서). 시나리오 관리 설비 시나리오 탭의 표·상자는 전부
+    싣는다."""
     scenario_by_id = {item.equipment_scenario_id: item for item in session.catalog.scenarios}
     selected_scenario = prune_choice(
         DIALOG_SCENARIO_KEY,

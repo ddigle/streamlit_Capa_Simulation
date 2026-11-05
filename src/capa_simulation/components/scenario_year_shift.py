@@ -3,6 +3,7 @@
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_transform import (
     month_table_summary,
     render_derived_save,
@@ -45,7 +46,10 @@ def render_scenario_year_shift(repository: DuckDBScenarioRepository, database_pa
     except BOOTSTRAP_ERRORS as exc:
         # 저장소 · 표를 못 읽어 구획을 그리지 못했다 — 글은 알림이다(설계 규칙 UI-NTF-08).
         render_data_error(
-            bootstrap_error_message(exc), code="SC-02", text="연도 Shift 를 그리지 못했습니다"
+            bootstrap_error_message(exc),
+            code="SC-02",
+            tab=CAPA_SCENARIO_TAB_NAME,
+            text="연도 Shift 를 그리지 못했습니다",
         )
 
 

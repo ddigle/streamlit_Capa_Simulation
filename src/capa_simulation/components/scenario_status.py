@@ -41,7 +41,6 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
-from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
     forget_pending_edits,
@@ -51,6 +50,10 @@ from capa_simulation.components.scenario_management import (
     revision_tables_for_save,
     revision_virtual_product_rows,
     virtual_product_save_notice,
+)
+from capa_simulation.components.scenario_management_tabs import (
+    CAPA_SCENARIO_TAB,
+    open_scenario_management_tab,
 )
 from capa_simulation.components.widget_generation import (
     Written,
@@ -120,6 +123,9 @@ SAVE_REVISION_NOTE_KEY = "sidebar_revision_note"
 SAVE_FORM_GENERATION_KEY = "sidebar_revision_save_generation"
 # 패널의 시나리오 값 칸. 누르면 팝업이 열린다.
 SCENARIO_FIELD_KEY = "sidebar_scenario_field"
+# 시나리오 관리 「Capa 시나리오」 탭으로 가는 단추 둘(`_render_capa_route`).
+RENAME_ROUTE_KEY = "sidebar_scenario_rename_route_v1"
+MANAGEMENT_ROUTE_KEY = "sidebar_scenario_management_route_v1"
 SCENARIO_FIELD_LABEL = "시나리오"
 SCENARIO_DIALOG_TITLE = "시나리오·리비전"
 # 팝업 열림 칸. `PAGE_DIALOG_SUFFIX` 로 끝나 페이지를 떠나면 비워진다.
@@ -431,17 +437,24 @@ def _render_dialog_body(
 
 
 def _render_rename_route(*, on_management_page: bool) -> None:
-    """이름 바꾸는 곳으로 가는 링크(2026-10-22 결정 S7). 이름 변경은 시나리오 관리 페이지 몫이다.
+    """이름 바꾸는 곳으로 가는 단추(2026-10-22 결정 S7). 이름 변경은 시나리오 관리 페이지 몫이다.
 
-    그 페이지에서 연 팝업이면 아무것도 그리지 않는다 — 같은 페이지로 가는 링크는 팝업을 닫지 못하고,
+    그 페이지에서 연 팝업이면 아무것도 그리지 않는다 — 같은 페이지로 가는 길은 팝업을 닫지 못하고,
     「어디서 고친다」 는 길 안내 글은 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나) — 글 대신 바로
     가기 단추도 두지 않는다).
     """
     if on_management_page:
         return
-    render_page_link(
-        SCENARIO_MANAGEMENT.path, label="시나리오 관리에서 이름 바꾸기", icon=":material/edit:"
+    _render_capa_route(
+        "시나리오 관리에서 이름 바꾸기", key=RENAME_ROUTE_KEY, icon=":material/edit:"
     )
+
+
+def _render_capa_route(label: str, *, key: str, icon: str) -> None:
+    """시나리오 관리 「Capa 시나리오」 탭으로 가는 단추. 링크는 기억된 탭을 열어, 설비 시나리오 탭을
+    보던 세션은 다른 시나리오의 이름 칸에 닿는다(설계 규칙 UI-NAV-01)."""
+    if st.button(label, key=key, icon=icon, type="tertiary"):
+        open_scenario_management_tab(CAPA_SCENARIO_TAB)
 
 
 def _render_dialog_header(
@@ -608,10 +621,10 @@ def missing_scenario_notice(name: str | None, status: str | None) -> str:
     길(E2E #55). `status` 는 보관본까지 본 그 시나리오의 상태다 — 「ARCHIVED」(그 사이 보관됨 —
     목록으로 되돌리면 저장할 수 있다), 「MISSING」(보관본에도 없음 — 영구 삭제됨), None(읽지 못함).
     이 세션이 보관하면 활성화를 풀므로(`scenario_management._render_archive`) 여기 오는 것은 다른
-    세션의 일이다. 어느 경우든 지금 편집본은 「지금 편집본 복제」 로 새 시나리오에 남길 수 있다."""
+    세션의 일이다. 어느 경우든 지금 편집본은 「복제」 로 새 시나리오에 남길 수 있다."""
     label = with_topic_particle(f"「{literal_markdown(name)}」" if name else "올라와 있는 시나리오")
     keep = (
-        "지금 편집본을 따로 남기려면 시나리오 관리 「지금 편집본 복제」 로 새 시나리오를 만들고, "
+        "지금 편집본을 따로 남기려면 시나리오 관리 「복제」 로 새 시나리오를 만들고, "
         "다른 시나리오는 이 팝업 「불러오기」 에서 불러옵니다."
     )
     if status == "ARCHIVED":
@@ -666,10 +679,8 @@ def _render_revision_save(
             icon=":material/inventory_2:",
         )
         if not on_management_page:
-            render_page_link(
-                SCENARIO_MANAGEMENT.path,
-                label="시나리오 관리로 가기",
-                icon=":material/arrow_forward:",
+            _render_capa_route(
+                "시나리오 관리로 가기", key=MANAGEMENT_ROUTE_KEY, icon=":material/arrow_forward:"
             )
         return
     # 적용하지 않은 편집은 저장에 실리지 않고 저장하는 순간 사라진다. 그래서 그 편집을 버린다는

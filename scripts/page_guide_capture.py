@@ -84,7 +84,8 @@ def _q(text: str) -> str:
 
 @dataclass(frozen=True)
 class LastEdit:
-    """가장 최근 `grid_edit` 이 고친 칸 — `EDIT_CELL` · `EDIT_ROW` 가 찍을 때 다시 잰다."""
+    """가장 최근 `grid_edit` 이 고친 칸 — `EDIT_CELL` · `EDIT_ROW` · `EDIT_ROW_CELL` 이 찍을 때
+    다시 잰다."""
 
     grid: str
     col: int
@@ -118,10 +119,13 @@ def _named(name: str, arg: str | None, last_edit: LastEdit | None) -> str:
     }
     if name in plain:
         return plain[name]
-    if name in ("EDIT_CELL", "EDIT_ROW"):
+    if name in ("EDIT_CELL", "EDIT_ROW", "EDIT_ROW_CELL"):
         if last_edit is None:
             return "null"
         grid = target_expr(last_edit.grid, None)
+        if name == "EDIT_ROW_CELL":
+            assert arg is not None
+            return f"__g.cellRect({grid}, __g.colIndex({grid}, {_q(arg)}), {last_edit.row})"
         if name == "EDIT_CELL":
             return f"__g.cellRect({grid}, {last_edit.col}, {last_edit.row})"
         return f"__g.editRow({grid}, {last_edit.row})"

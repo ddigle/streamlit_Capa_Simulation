@@ -17,6 +17,10 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.scenario_status as target
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.capacity_gate import GateVerdict
+from capa_simulation.components.equipment_scenario_management import (
+    CAPA_SCENARIO_TAB,
+    SCENARIO_MANAGEMENT_TABS_KEY,
+)
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
     SAVE_BUTTON_HELP,
@@ -29,6 +33,7 @@ from capa_simulation.components.scenario_status import (
     revision_unchanged_notice,
     scenario_status_badge,
 )
+from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.page_bootstrap import forget_page_dialogs
 from capa_simulation.persistence.repository import RevisionUnchanged
 from capa_simulation.scenario_state import VIRTUAL_PRODUCTS_KEY, pristine_content_token
@@ -420,7 +425,7 @@ def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
     sidebar_app: AppTest,
 ) -> None:
     """E2E #55 — 올라와 있는 「기준안」 을 다른 세션이 보관했다. 「새 리비전 저장」 은 「정보를 찾지
-    못했습니다」 한 줄 대신 까닭(보관됨)과 길(보관함에서 되돌리기·지금 편집본 복제·다른 시나리오
+    못했습니다」 한 줄 대신 까닭(보관됨)과 길(보관함에서 되돌리기·복제·다른 시나리오
     불러오기)을 말하고 시나리오 관리로 가는 링크를 세운다. 저장 폼은 서지 않는다. 보관본에도 없으면
     (영구 삭제) 그 말로 바뀐다."""
     archived = scenario("scenario-1", "기준안", "SIM-001", "revision-1", 1)
@@ -436,10 +441,13 @@ def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
         "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
         "저장하세요."
     ), warning
-    assert "「지금 편집본 복제」 로 새 시나리오를 만들고" in warning
+    assert "시나리오 관리 「복제」 로 새 시나리오를 만들고" in warning
     assert "올라와 있는 시나리오 정보를 찾지 못했습니다" not in warning
-    # 네비게이션이 없는 단독 실행이라 링크는 문구로 물러선다(`render_page_link`).
-    assert "사이드바에서 시나리오 관리로 가기" in [item.value for item in app.caption]
+    # 가는 길은 Capa 시나리오 탭까지 여는 단추다(설비 탭을 보던 세션도 — 단독 실행은 칸만 적는다).
+    route = next(button for button in app.button if button.label == "시나리오 관리로 가기")
+    route.click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] == CAPA_SCENARIO_TAB
     assert "신규 리비전 저장" not in [button.label for button in app.button]
 
     app.session_state["test_archived_scenarios"] = []
@@ -952,16 +960,17 @@ def test_names_in_the_dialog_are_shown_as_typed(
 
 
 def test_the_load_section_points_to_where_names_are_changed(sidebar_app: AppTest) -> None:
-    """이름 변경은 시나리오 관리 페이지 몫이라 불러오기 구획 끝에 그리로 가는 한 줄이 선다(S7).
+    """이름 변경은 시나리오 관리 페이지 몫이라 불러오기 구획 끝에 그리로 가는 단추 하나가 선다(S7).
 
-    네비게이션이 없는 단독 실행에서는 링크가 문구로 물러선다(`render_page_link`). 시나리오 관리
-    페이지에서 연 팝업이면 같은 페이지로 가는 링크 대신 그 화면에서 고치는 자리를 적는다.
+    그 탭까지 열어야 하므로 링크가 아니라 단추다 — 기억된 탭이 설비 시나리오면 링크는 다른
+    시나리오의 이름 칸에 닿는다. 시나리오 관리 페이지에서 연 팝업에는 서지 않는다(아래 시험).
     """
+    route = "시나리오 관리에서 이름 바꾸기"
     app = _open(sidebar_app.run())
-    assert "사이드바에서 시나리오 관리에서 이름 바꾸기" in [item.value for item in app.caption]
+    assert route in [button.label for button in app.button]
 
     _open_save(app)
-    assert "사이드바에서 시나리오 관리에서 이름 바꾸기" not in [item.value for item in app.caption]
+    assert route not in [button.label for button in app.button]
 
 
 def test_the_popup_opened_on_the_management_page_draws_no_route_line() -> None:
