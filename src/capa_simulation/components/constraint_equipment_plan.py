@@ -42,6 +42,7 @@ import streamlit as st
 
 # 이름이 아니라 모듈을 잡는다 — 페이지 시험이 계획 함수를 바꿔 끼운다.
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -240,9 +241,11 @@ def render_equipment_plan(
         )
     except BOOTSTRAP_ERRORS as exc:
         render_header(process, f"{bold} :blue-badge[설비 일정 없음: 계산 오류]")
-        st.error(
+        render_data_error(
             "설비 일정을 계산하지 못했습니다 — "
-            + bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH))
+            + bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)),
+            code="CS-01",
+            text="설비 일정을 계산하지 못했습니다",
         )
         return None
     if process not in plan.processes:

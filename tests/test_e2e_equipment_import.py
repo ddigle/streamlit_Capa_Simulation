@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import successes
+from alert_marks import place_errors, successes
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 
@@ -228,7 +228,7 @@ def test_an_edited_count_turns_the_template_row_into_a_saved_revision(tmp_path: 
     _save(app)
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert any("공통 대장 r1" in element.value for element in successes(app))
     repository = DuckDBEquipmentRepository(database_path)
     revisions = repository.list_revisions()
@@ -258,7 +258,7 @@ def test_a_paste_that_only_repeats_the_template_process_name_is_still_the_user_s
     _save(app)
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert any("공통 대장 r1" in element.value for element in successes(app))
 
 

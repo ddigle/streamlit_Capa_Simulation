@@ -16,6 +16,7 @@ from datetime import date
 import pandas as pd
 import pytest
 import streamlit as st
+from alert_marks import place_errors
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -199,7 +200,7 @@ def _render(
     script = SCRIPT.replace("REQUIRED_PATH", repr(str(path))).replace("CONTENT_TOKEN", repr(token))
     app = AppTest.from_string(script, default_timeout=120).run()
     assert not app.exception
-    assert [element.value for element in app.error] == []
+    assert place_errors(app) == []
     captured = app.session_state["captured_table"]
     assert isinstance(captured, pd.DataFrame)
     return captured

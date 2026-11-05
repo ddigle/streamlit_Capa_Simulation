@@ -25,7 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import shown
+from alert_marks import place_errors, shown
 from grid_fake import Calls, install_fake_grid, load, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -168,7 +168,7 @@ def test_an_assumption_grid_layout_edit_stays_its_own_and_stamps_the_role(
     assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
 
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     scenario = _scenario(repository, setup)
     assert scenario.latest_revision_no == 2 and scenario.latest_layout_unit_count == 1
     assert _official(repository, "EQ-01", "X좌표") == 10
@@ -210,7 +210,7 @@ def test_an_assumption_layout_save_never_moves_the_official_unit(tmp_path: Path)
     _store(app, (baseline, _with_unit(kept, "EQ-01", 77.0), downtime))
     _save(app)
 
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert _official(repository, "EQ-01", "X좌표") == 10
     assert _session(repository, setup).equipment.set_index("설비명").loc["EQ-01", "X좌표"] == 77.0
 
@@ -407,7 +407,7 @@ def test_removing_a_unit_scheduled_in_another_scenario_needs_the_confirm(
     assert box is not None
     box.check()
     _click_save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
     assert "EQ-02" not in set(_session(repository).equipment["설비명"])
     assert "EQ-02" not in set(_session(repository, setup).equipment["설비명"])
@@ -436,7 +436,7 @@ def test_the_removal_check_is_for_the_scenarios_its_words_named(
     assert box is not None and "2개" in str(box.label) and not box.value
     box.check()
     _click_save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
 
 
@@ -547,7 +547,7 @@ def test_removing_a_unit_only_this_scenario_schedules_needs_no_confirm(
     assert _removal_box(app) is None
 
     _click_save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
 
 

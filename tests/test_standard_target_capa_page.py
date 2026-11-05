@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import alert_notes, infos, successes
+from alert_marks import alert_notes, data_error_texts, infos, place_errors, successes
 from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
@@ -480,7 +480,7 @@ def test_calculation_block_failure_is_reported_on_the_page(error: str, message: 
     app = AppTest.from_string(script, default_timeout=60).run()
 
     assert not app.exception
-    assert message in [element.value for element in app.error]
+    assert message in data_error_texts(app)
 
 
 def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -> None:
@@ -660,7 +660,7 @@ def test_availability_paste_keeps_blank_cells_and_says_so_before_applying() -> N
     next(button for button in app.button if button.label == "붙여넣기 적용").click().run()
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     saved = app.session_state["captured_saved_availability"]
     assert saved.to_dict("records") == [{"공정": "Process-B", "Weeknum": "26-W32", "가용대수": 3.0}]
 

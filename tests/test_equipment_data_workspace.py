@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import shown
+from alert_marks import place_errors, shown
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
@@ -161,7 +161,7 @@ def _preview(app: AppTest, text: str, target: str = "설비 마스터") -> AppTe
     app.text_area(key=CLIPBOARD_KEY).set_value(text)
     app.button(key=PREVIEW_BUTTON_KEY).click()
     _ok(app.run())
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     return app
 
 
@@ -215,7 +215,7 @@ def test_thirty_rows_are_put_then_saved_once_with_other_tables_preserved(tmp_pat
     assert len(repository.list_revisions()) == 1
     assert len(app.session_state[BUFFER_KEY][1]) == 31
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     revisions = repository.list_revisions()
     assert len(revisions) == 2
     saved = repository.load_snapshot(revisions[0].revision_id)
@@ -273,7 +273,7 @@ def test_invalid_input_remains_editable_and_successful_retry_creates_one_revisio
     _preview(app, _master(["CORRECTED"]).to_csv(index=False, sep="\t"))
     _put(app)
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 1
 
 
@@ -319,7 +319,7 @@ def test_an_old_header_paste_is_renamed_and_the_dropped_column_is_announced(
     assert any("투자기준" in text for text in _texts(app, "info"))
     _put(app)
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     saved = repository.load_snapshot(repository.list_revisions()[0].revision_id)
     assert saved.equipment["설비명"].tolist() == ["OLD-HEADER"]
     assert list(saved.equipment.columns) == list(EQUIPMENT_COLUMNS)
@@ -350,7 +350,7 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     app = _app(path)
     app.session_state[SIDE_KEY] = SIDE_HISTORY
     _ok(app.run())
-    assert not app.error
+    assert not place_errors(app)
     picked = app.date_input(key="equipment_history_event_range_v3").value
     assert isinstance(picked, tuple) and len(picked) == 2
     start, end = picked
@@ -792,7 +792,7 @@ def test_the_change_memo_is_cleared_after_a_save_and_not_reused(
     _ok(app.run())
     app.text_input(key=NOTE_KEY).input("M1 메모")
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
 
     memo = app.text_input(key=NOTE_KEY)
     assert memo.value == ""
@@ -800,7 +800,7 @@ def test_the_change_memo_is_cleared_after_a_save_and_not_reused(
 
     send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당 2"})
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert repository.list_revisions()[0].note is None
 
 
@@ -821,7 +821,7 @@ def test_the_history_also_lists_a_common_only_save_with_its_memo(
     _ok(app.run())
     app.text_input(key=NOTE_KEY).input("담당만 바꿈")
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
 
     app.session_state[SIDE_KEY] = SIDE_HISTORY
     _ok(app.run())
@@ -1023,7 +1023,7 @@ def test_inactive_floors_leave_the_location_choices_but_present_values_stay(
     buildings, floors = _location_choices(grid)
     assert "C5" in buildings and "6F" in floors
     _save(app)
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
 
 

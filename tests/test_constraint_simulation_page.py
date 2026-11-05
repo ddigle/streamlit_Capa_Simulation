@@ -26,7 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, events, states
+from alert_marks import active_state, data_error_texts, events, place_errors, states
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
@@ -1135,7 +1135,7 @@ def test_a_sum_mismatch_is_a_constraint_error_not_an_equipment_error(
 
     monkeypatch.setattr(simulation_cache, "get_process_product_demand", tampered)
     app = _opened(dynamic_databases)
-    errors = " ".join(str(item.value) for item in app.error)
+    errors = " ".join(data_error_texts(app))
     assert "제약 시뮬레이션을 계산하지 못했습니다 — 제품별 소요 합이 공정 소요와 다릅니다" in errors
     assert "설비 일정을 계산하지 못했습니다" not in errors
 
@@ -1159,7 +1159,7 @@ def test_a_ready_process_missing_from_the_plan_stops_with_a_reason_card(
     monkeypatch.setattr(simulation_cache, "load_required_shortening_for_target", without_process)
     app = _opened(dynamic_databases)
     assert "설비 일정 없음: 계획에 공정 없음" in " ".join(_markdown(app))
-    assert not app.error
+    assert not place_errors(app)
     assert not app.metric
 
 
@@ -1494,7 +1494,7 @@ def test_a_product_read_error_says_so_instead_of_no_products(
 
     monkeypatch.setattr(simulation_cache, "get_process_product_demand", broken)
     app = _opened(dynamic_databases)
-    errors = " ".join(str(item.value) for item in app.error)
+    errors = " ".join(data_error_texts(app))
     assert "제품별 소요를 읽지 못했습니다 — 시험 — 제품별 소요 표를 만들지 못했습니다" in errors
     assert not any("소요가 있는 제품이 없어" in str(item.value) for item in app.info)
     assert "제품을 읽지 못했습니다." in _captions(app)

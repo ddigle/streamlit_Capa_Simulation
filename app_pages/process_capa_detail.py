@@ -61,6 +61,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import (
     HOME_VISIT_LOCK_REASON,
     equipment_basis_label,
@@ -85,7 +86,6 @@ from capa_simulation.components.process_capa_view import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
-    alert_page_error,
     equipment_scope,
     missing_handover_text,
 )
@@ -279,10 +279,9 @@ today = date.today()
 
 
 def _stop_with_error(message: str) -> NoReturn:
-    """화면을 못 그리는 오류 — 자리 오류 상자는 그대로 두고 알림(`PD-01` — 같은 글이면 이 브라우저
-    탭에 한 번만 알림창)을 더한 뒤 멈춘다."""
-    alert_page_error(message, code="PD-01", text="공정 Capa 상세를 준비하지 못했습니다")
-    st.error(message)
+    """화면을 못 그리는 오류 — 자리에는 「데이터 Error」 마크만 세우고 글은 알림(`PD-01` — 같은
+    글이면 이 브라우저 탭에 한 번만 알림창)으로 보낸 뒤 멈춘다."""
+    render_data_error(message, code="PD-01", text="공정 Capa 상세를 준비하지 못했습니다")
     st.stop()
 
 

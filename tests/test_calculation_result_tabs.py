@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes
+from alert_marks import alert_notes, data_error_marks, data_error_texts
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     EXCLUSION_PROCESS_TEST_SCRIPT,
@@ -163,15 +163,14 @@ def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatc
 
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
     assert not app.exception
-    assert [element.value for element in app.error] == []
+    assert data_error_marks(app) == 0
 
     _open_calc_tab(app, REQUIRED_TAB)
-    assert [element.value for element in app.error] == [
-        "RQ_DISPLAY_ORDER의 컬럼 정렬 규칙이 충돌합니다: ['공정']"
-    ]
+    assert data_error_marks(app) == 1 and not app.error
+    assert data_error_texts(app) == ["RQ_DISPLAY_ORDER의 컬럼 정렬 규칙이 충돌합니다: ['공정']"]
 
     _open_calc_tab(app, SECUREMENT_TAB)
-    assert [element.value for element in app.error] == []
+    assert data_error_marks(app) == 0
 
 
 def _required_csv(app: AppTest) -> pd.DataFrame:

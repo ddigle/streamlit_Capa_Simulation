@@ -18,6 +18,7 @@ from capa_simulation.components.admin_dialog import (
     close_admin_dialog,
     open_admin_dialog,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
@@ -109,7 +110,9 @@ def render_process_rename_management(
         profile = load_global_process_rename(database_path)
         csv_bytes = _process_rename_csv(database_path, profile.version, profile.rules)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        render_data_error(
+            bootstrap_error_message(exc), code="AD-07", text="공정 표시명을 읽지 못했습니다"
+        )
         return
 
     version_caption = profile_version_caption(profile, empty="아직 지정한 표시명이 없습니다")

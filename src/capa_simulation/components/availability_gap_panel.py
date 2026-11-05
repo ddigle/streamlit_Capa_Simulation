@@ -78,6 +78,7 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLL_KEY,
     GAP_SHEET_SCROLLBAR_KEY,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
@@ -1572,7 +1573,7 @@ def _render_securement_cross_check(
     """
     st.markdown("##### :material/fact_check: 확보율 교차검증")
     if required_equipment is None:
-        st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")
+        render_data_error("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.", code="EQ-09")
         return
     load = required_equipment if callable(required_equipment) else _frame_loader(required_equipment)
 
@@ -1592,7 +1593,11 @@ def _render_securement_cross_check(
     except BOOTSTRAP_ERRORS as exc:
         # 맞대기(`KeyError`·`ValueError`)뿐 아니라 로더의 실패도 받는다 — 페이지의 오류 확인이
         # 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다.
-        st.warning(f"확보율을 맞대지 못했습니다 — {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"확보율을 맞대지 못했습니다 — {bootstrap_error_message(exc)}",
+            code="EQ-09",
+            text="확보율을 맞대지 못했습니다",
+        )
         return
     if not result.has_demand:
         # 읽었지만 조회기간에 소요대수가 없다 — 읽기 실패(위 `None` 갈래)처럼 알리면 DB·시나리오가

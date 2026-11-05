@@ -78,7 +78,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     # 사이드바 조건 패널 맨 위 「적용 전 편집 … — 시나리오·기간을 바꾸면 사라집니다」 — 바로 밑
     # 시나리오 · 기간 칸을 바꾸기 전에 알아야 하는 되돌릴 수 없는 결과다(UI-NTF-09).
     ("app.py", ""): (BESIDE_INPUT,),
-    ("app_pages/admin_area.py", ""): (EMPTY, CANNOT_DRAW),
+    ("app_pages/admin_area.py", ""): (EMPTY,),
     ("app_pages/available_equipment_status.py", ""): (EMPTY,),
     ("app_pages/calculation_result.py", ""): (EMPTY,),
     ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
@@ -116,10 +116,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
     ("app_pages/wip_status.py", ""): (EMPTY, EMPTY, EMPTY, UNSETTLED),
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (
-        CANNOT_DRAW,
-        EMPTY,
-    ),
+    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (EMPTY,),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"): (
         EMPTY,
         EMPTY,
@@ -144,7 +141,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     (
         "src/capa_simulation/components/availability_gap_panel.py",
         "_render_securement_cross_check",
-    ): (CANNOT_DRAW, EMPTY, EMPTY, EMPTY, EMPTY),
+    ): (EMPTY, EMPTY, EMPTY, EMPTY),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_unit_list"): (EMPTY,),
     ("src/capa_simulation/components/availability_gap_panel.py", "render_availability_gap_panel"): (
         EMPTY,
@@ -278,10 +275,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/manual_downtime_tab.py", "_render_editor"): (BESIDE_INPUT,),
-    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_history"): (
-        CANNOT_DRAW,
-        EMPTY,
-    ),
+    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_history"): (EMPTY,),
     ("src/capa_simulation/components/manual_downtime_tab.py", "render_manual_downtime_tab"): (
         EMPTY,
     ),
@@ -303,15 +297,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "src/capa_simulation/components/plan_comparison_dumbbell.py",
         "render_plan_comparison_dumbbell",
     ): (EMPTY,),
-    ("src/capa_simulation/components/process_capa_view.py", "_render_dynamic_absent"): (
-        CANNOT_DRAW,
-        CANNOT_DRAW,
-        CANNOT_DRAW,
-    ),
-    ("src/capa_simulation/components/process_capa_view.py", "_render_route_factors"): (
-        CANNOT_DRAW,
-        EMPTY,
-    ),
+    ("src/capa_simulation/components/process_capa_view.py", "_render_route_factors"): (EMPTY,),
     ("src/capa_simulation/components/process_picker.py", "render_process_picker"): (EMPTY,),
     ("src/capa_simulation/components/process_rename_management.py", "_clipboard_dialog"): (
         BESIDE_INPUT,

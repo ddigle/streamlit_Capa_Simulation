@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from alert_marks import place_errors
 from fragment_browser import FragmentBrowser
 from streamlit.testing.v1 import AppTest
 from test_equipment_explorer import _render_fixture
@@ -83,7 +84,7 @@ def test_switching_the_expression_reruns_only_the_result_with_the_full_run_numbe
     for expression in ("표", "차트"):
         runner.fragment_queue = [result]
         app.segmented_control(_expression_key(view)).set_value(expression).run()
-        assert not app.exception and not app.error
+        assert not app.exception and not place_errors(app)
         assert runner.started == [[result]], expression
         in_fragment = _result(app)
         # 결과는 하나(표 하나 또는 차트 하나)다 — 앞 표현의 결과가 남지 않는다.

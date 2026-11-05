@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes
+from alert_marks import alert_notes, data_error_texts
 from fragment_browser import install_fragment_browser
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.proto.RootContainer_pb2 import RootContainer
@@ -1960,7 +1960,7 @@ def test_a_stopped_calculation_withdraws_applied(
         if page_path != HOME.path:
             app.switch_page(page_path).run()
         assert not list(app.exception), [element.message for element in app.exception]
-        errors = [str(element.value) for element in app.error]
+        errors = data_error_texts(app)
         assert any("밖의 달에 기준정보 오류가 있어 계산을 멈췄습니다" in e for e in errors), (
             page_path,
             errors,
@@ -1993,7 +1993,7 @@ def test_a_securement_error_on_static_capa_keeps_applied(
     app.switch_page(STATIC_CAPA.path).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    errors = [str(element.value) for element in app.error]
+    errors = data_error_texts(app)
     assert any("시험용 확보율 오류" in error for error in errors), errors
     assert _range_caption(app) == ":material/check_circle: 적용 · 26.01–26.03"
 
@@ -2072,7 +2072,7 @@ def test_a_card_only_screen_that_stops_before_its_card_leaves_the_heading_alone(
     app.switch_page(ADMIN_BOX_PAGES[0].path).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("VOC 게시판을 읽지 못함" in element.value for element in app.error)
+    assert any("VOC 게시판을 읽지 못함" in text for text in data_error_texts(app))
     assert _common_boxes(app) == {"heading"}
     assert _heading_content_keys(app) == set()
 
@@ -2144,7 +2144,7 @@ def test_the_app_credits_card_survives_a_screen_that_stops_early(
     app.switch_page(ADMIN_BOX_PAGES[0].path).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("VOC 게시판을 읽지 못함" in element.value for element in app.error)
+    assert any("VOC 게시판을 읽지 못함" in text for text in data_error_texts(app))
     _assert_two_credit_lines(_credit_card_captions(app))
     assert _heading_content_keys(app) == set()
     # CSS 는 조건 카드를 클래스 **부분 일치**(`[class*="st-key-condition_card_"]`)로 센다.
@@ -2326,9 +2326,7 @@ def test_space_shows_the_common_boxes_only_while_the_shortening_basis_is_chosen(
         for item in app.main.get("button_group")
         if getattr(item, "label", None) == "목표 확보율"
     ]
-    assert not [
-        item for item in app.main.warning if "필요 단축을 칠하지 못했습니다" in str(item.value)
-    ], [str(item.value) for item in app.main.warning]
+    assert not [text for text in data_error_texts(app) if "필요 단축을 칠하지 못했습니다" in text]
 
     app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).set_value(SPACE_DEFAULT_BASIS).run()
     assert not list(app.exception), [element.message for element in app.exception]

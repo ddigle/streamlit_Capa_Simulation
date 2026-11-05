@@ -29,6 +29,7 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.editor_state import discard_editor
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
@@ -276,7 +277,7 @@ def render_scenario_management(
     try:
         scenarios = repository.list_scenarios()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        render_data_error(bootstrap_error_message(exc), code="SC-02")
         return
     _render_store_status(repository, scenarios, alert_tab=alert_tab)
     # 작업 이름이 바뀌었으므로 예전 세션에 남은 값은 위젯이 만들어지기 전에 버린다.
@@ -1795,8 +1796,10 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     try:
         reference_tables, active_scenario = _current_reference_context()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}"
+        render_data_error(
+            f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SC-02",
+            text="신규 시나리오의 기준 표시순서를 준비하지 못했습니다",
         )
         return
     # 무엇을 복제하는지 폼 위에 값 줄로 적는다. 원천 코드·이름 칸의 기본값은 비워 둔다 — 원천

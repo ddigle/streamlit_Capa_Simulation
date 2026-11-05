@@ -551,7 +551,7 @@ def process_page_inputs(database_path: str) -> ProcessPageInputs:
 
     `database_path` 는 시뮬레이션 DB 경로 글자다(페이지가 `settings.DUCKDB_PATH` 를 그 회차에 읽어
     넘긴다 — 시험이 설정을 바꾼다). 확보율 계산이 멈추면 「계산 멈춤」 과 함께 그 오류를 먼저
-    낸다(Static Capa 와 같은 길). 예외는 모두 `BOOTSTRAP_ERRORS` 이고 카드 캡션·`st.error`·`st.stop`
+    낸다(Static Capa 와 같은 길). 예외는 모두 `BOOTSTRAP_ERRORS` 이고 카드 캡션·마크·`st.stop`
     은 부르는 페이지가 쥔다. 계산 함수는 **부를 때** 모듈에서 찾는다(페이지 시험이 그 속성을 바꿔
     계산을 흉내 낸다).
     """

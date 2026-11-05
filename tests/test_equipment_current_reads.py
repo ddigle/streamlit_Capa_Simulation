@@ -27,7 +27,7 @@ from typing import Any, cast
 import duckdb
 import pandas as pd
 import pytest
-from alert_marks import active_state, infos, successes
+from alert_marks import active_state, infos, place_errors, successes
 from grid_fake import install_fake_grid
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -475,7 +475,7 @@ def test_a_warm_run_of_the_page_does_not_reopen_the_equipment_database(
     app = AppTest.from_string(_on_equipment_database(script, Path(database)), default_timeout=120)
     app.run()
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert counted["standard_target"] == 1
 
     app.run()
@@ -535,7 +535,7 @@ def test_availability_pasted_or_cleared_on_the_screen_is_what_the_next_run_count
     next(button for button in app.button if button.label == "붙여넣기 적용").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     # 첫 열이 26-W32 다 — 일 표준 가능량은 가용대수에 비례한다(2 → 5).
     assert app.session_state["captured_first_week_value"] == pytest.approx(before * 2.5)
     assert not app.button(key="open_standard_target_availability_clear").disabled
@@ -545,7 +545,7 @@ def test_availability_pasted_or_cleared_on_the_screen_is_what_the_next_run_count
     app.button(key="clear_standard_target_availability").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert DuckDBEquipmentRepository(Path(database)).load_standard_target_availability().empty
     # 저장된 가용대수가 없으면 초기화 버튼이 잠긴다 — 다음 회차가 빈 표를 읽었다는 뜻이다.
     assert app.button(key="open_standard_target_availability_clear").disabled
@@ -580,7 +580,7 @@ def test_a_master_tab_save_on_the_screen_rebuilds_the_draft_from_the_new_revisio
     _delete_building(app, calls, seed)
     app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     second = repository.latest_revision_id()
     assert second is not None and second != first
     kept = len(seed.machines) - len(seed.building_machines)
@@ -592,7 +592,7 @@ def test_a_master_tab_save_on_the_screen_rebuilds_the_draft_from_the_new_revisio
 
     app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     latest = repository.list_revisions()[0]
     # 바뀐 것 없는 저장은 빈 리비전을 만들지 않는다(결정 모음 「묻지 않고 하기로 한 것」).
     assert latest.revision_no == 2

@@ -59,6 +59,13 @@ const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
 function eventKey(note) {
   return String(note.code || '') + '\u0000' + String(note.short || '')
 }
+// 자리에 마크만 남은 오류(`keep`)는 Alarm 줄이 전문의 유일한 자리다. 본 적 있는 글이어도 그 줄이
+// 없으면(보관 끝 · 같은 짧은 글의 다른 오류가 덮음) 다시 세운다. 알림창은 띄우지 않는다.
+function keptRowMissing(rows, note) {
+  if (!note.keep) return false
+  const key = eventKey(note)
+  return !rows.some((row) => row.kind === 'event' && eventKey(row) === key && row.noteId === note.id)
+}
 // 상태 알림의 표 열쇠 — 코드 + 범위(파이썬이 해시해 보낸다).
 function stateKey(note) {
   return String(note.code || '') + '|' + String(note.scope || '')
@@ -388,6 +395,7 @@ function persist(C) {
 function rowFor(note, now) {
   return {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    noteId: typeof note.id === 'string' ? note.id : '',
     code: String(note.code || ''),
     level: String(note.level || 'info'),
     kind: note.kind === 'state' ? 'state' : 'event',
@@ -424,23 +432,33 @@ function handle(C, note) {
   return note.kind === 'state' ? handleState(C, note) : handleEvent(C, note)
 }
 
+// 줄 하나를 쓴다 — 같은 알림(코드 + 짧은 글)의 줄이 있으면 그 줄에 합치고 없으면 새 줄이다.
+function writeEventRow(C, note, now) {
+  const key = eventKey(note)
+  const row = C.rows.find((item) => item.kind === 'event' && eventKey(item) === key)
+  if (!row) {
+    C.rows.unshift(rowFor(note, now))
+    return
+  }
+  row.n += 1
+  row.last = now
+  row.unread = true
+  const fresh = rowFor(note, now)
+  for (const name of ['noteId', 'full', 'page', 'href', 'tab', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
+}
+
 function handleEvent(C, note) {
-  if (typeof note.id !== 'string' || !note.id || C.seenSet.has(note.id)) return false
-  remember(C, note.id)
+  if (typeof note.id !== 'string' || !note.id) return false
   const now = Date.now()
+  if (C.seenSet.has(note.id)) {
+    if (!keptRowMissing(C.rows, note)) return false
+    writeEventRow(C, note, now)
+    return true
+  }
+  remember(C, note.id)
   const key = eventKey(note)
   const repeat = isRepeat(C.live.get(key), now, (C.data.limits || {}).repeat_ms || 60000)
-  let row = C.rows.find((item) => item.kind === 'event' && eventKey(item) === key)
-  if (row) {
-    row.n += 1
-    row.last = now
-    row.unread = true
-    const fresh = rowFor(note, now)
-    for (const name of ['full', 'page', 'href', 'tab', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
-  } else {
-    row = rowFor(note, now)
-    C.rows.unshift(row)
-  }
+  writeEventRow(C, note, now)
   showPopup(C, key, note, repeat)
   return true
 }
@@ -1141,11 +1159,14 @@ function paintList(C) {
       log.type = 'button'
       const opened = C.openLogs.has(row.id)
       log.setAttribute('aria-expanded', String(opened))
+      // 펼치면 그 줄 글을 끝까지 보인다 — 자리에 마크만 남은 오류는 여기가 글을 읽는 자리다.
+      item.classList.toggle('logopen', opened)
       log.addEventListener('click', () => {
         const now = !C.openLogs.has(row.id)
         if (now) C.openLogs.add(row.id)
         else C.openLogs.delete(row.id)
         log.setAttribute('aria-expanded', String(now))
+        item.classList.toggle('logopen', now)
         box.hidden = !now
       })
       acts.append(log)

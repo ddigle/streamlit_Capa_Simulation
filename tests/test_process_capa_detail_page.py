@@ -24,7 +24,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, events
+from alert_marks import active_state, data_error_marks, data_error_texts, events
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
@@ -41,6 +41,7 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_UNITS,
 )
 from capa_simulation.components.process_capa_view import (
+    DYNAMIC_DB_ERROR_TITLE,
     DYNAMIC_ERROR_TITLE,
     INVESTMENT_BADGE,
     NEXT_MONTH_KEY,
@@ -518,7 +519,7 @@ def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]
     app.run()
 
     assert not app.exception, [element.message for element in app.exception]
-    assert any("시험용 진입 오류" in str(element.value) for element in app.error)
+    assert any("시험용 진입 오류" in text for text in data_error_texts(app))
     assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
 
 
@@ -1107,10 +1108,6 @@ def test_an_assumption_does_not_leak_into_the_official_rate_cache(
     assert _percent_value(assumed) == pytest.approx(_percent_value(before) * 1.5, rel=1e-3)
 
 
-def _absent_card_titles(app: AppTest) -> list[str]:
-    return [str(element.value) for element in app.markdown if "event_busy" in str(element.value)]
-
-
 def test_a_broken_equipment_database_keeps_the_official_section(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
@@ -1122,9 +1119,8 @@ def test_a_broken_equipment_database_keeps_the_official_section(
     app = _ok(_app((root / "scenario.duckdb", broken)).run())
 
     assert "설비 일정 없음: 설비 DB 오류" in _header(app)
-    assert _absent_card_titles(app) == [
-        ":material/event_busy: **설비 일정 없음: 설비 DB 를 읽지 못했습니다**"
-    ]
+    assert [note["short"] for note in events(app, "PD-01")] == [DYNAMIC_DB_ERROR_TITLE]
+    assert data_error_marks(app) == 1
     labels = _label_texts(app)
     assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
     assert [metric.label for metric in app.metric][0] == "최저 확보율"
@@ -1145,10 +1141,11 @@ def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_sectio
     app = _dynamic_app(dynamic_databases)
 
     assert "설비 일정 없음: 계산 오류" in _header(app)
-    assert _absent_card_titles(app) == [f":material/event_busy: **{DYNAMIC_ERROR_TITLE}**"]
-    caption = next(str(item.value) for item in app.caption if "시험용 계산 오류" in str(item.value))
-    assert caption.startswith("설비 일정을 계산하지 못했습니다")
-    assert "Cut-off 가 적힌 공정에만" not in caption
+    (note,) = events(app, "PD-01")
+    assert note["short"] == DYNAMIC_ERROR_TITLE and data_error_marks(app) == 1
+    assert "시험용 계산 오류" in note["full"]
+    assert note["full"].startswith("설비 일정을 계산하지 못했습니다")
+    assert "Cut-off 가 적힌 공정에만" not in note["full"]
     labels = _label_texts(app)
     assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
     # 정리 줄(CSV·탭 링크)은 설비 일정이 설 때만이다.

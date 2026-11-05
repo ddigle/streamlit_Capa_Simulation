@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import infos, place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -235,14 +235,14 @@ _render_execution_editor(
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
     assert not app.exception
-    assert not app.error, [str(item.value) for item in app.error]
+    assert not place_errors(app), [str(item.value) for item in app.error]
     assert [str(item.value) for item in infos(app)] == [EXECUTION_UNCHANGED_MESSAGE]
     assert repository.load_global_execution_capacity().version == 2
 
     _edit_first_rate(app)
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
     assert not app.exception
-    assert not app.error, [str(item.value) for item in app.error]
+    assert not place_errors(app), [str(item.value) for item in app.error]
     assert repository.load_global_execution_capacity().version == 3
     clear_global_execution_capacity_cache()
 
@@ -290,7 +290,7 @@ _render_execution_editor(
     app._run(widget_state=pressed)
 
     assert not app.exception
-    assert not app.error, [str(item.value) for item in app.error]
+    assert not place_errors(app), [str(item.value) for item in app.error]
     assert "확보율 보정을 저장했습니다." in [str(item.value) for item in successes(app)]
     assert repository.load_global_execution_capacity().version == 2
     clear_global_execution_capacity_cache()
@@ -406,6 +406,6 @@ _render_execution_editor(
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
 
     assert not app.exception
-    assert not app.error, [str(item.value) for item in app.error]
+    assert not place_errors(app), [str(item.value) for item in app.error]
     assert repository.load_global_execution_capacity().version == 3
     clear_global_execution_capacity_cache()

@@ -16,9 +16,9 @@
 - 남은 자리는 모두 자리 글이다(2단계 a · b 가 상태 경고를 `alerts.state` 로 옮긴 뒤). 까닭은 아래
   `PLACE_*` 가운데 하나여야 한다(`REASONS`).
 
-오류(`st.error`)와 안내(`st.info`)는 이 그물 밖이다 — 오류는 버튼 곁 실패 · 화면을 못 그리는 오류라
-자리에 남고(D3 · 설계 2-2), 안내는 대개 자리 글이다. 2단계는 상태 알림 후보를 옮길 때 같은 자리의
-오류 · 안내도 함께 보았다.
+오류(`st.error`)와 안내(`st.info`)는 이 그물 밖이다 — 오류는 버튼 곁 실패라 자리에 남고(D3), 화면을
+못 그리는 오류는 「데이터 Error」 마크다(`tests/test_data_error_mark_sites.py` 가 본다). 안내는 대개
+자리 글이다. 2단계는 상태 알림 후보를 옮길 때 같은 자리의 오류 · 안내도 함께 보았다.
 """
 
 from __future__ import annotations
@@ -50,9 +50,6 @@ PLACE_NO_INPUT = (
     "채울 입력 없음 · 멈춤 — 다른 화면에서 채울 입력이 빠져 화면이 이 글로 끝난다(그릴 것이 없을"
     " 뿐인 빈 상태는 상자가 아니라 회색 평문 한 줄 — 설계 규칙 UI-TXT-04, 반영 검수표 D4 (가))"
 )
-PLACE_BLOCKED = (
-    "보기 하나를 못 그린 자리 — 그 보기의 전부라 자리에 남긴다(설계 2-2 화면을 못 그리는 오류)"
-)
 PLACE_DETAIL = (
     "고른 대상(층 · 칸 · 시나리오)의 설명 — 고를 때마다 바뀌어 상태 알림이면 오갈 때마다 다시 뜬다"
 )
@@ -74,7 +71,6 @@ REASONS = frozenset(
         PLACE_RESULT,
         PLACE_CONFIRM,
         PLACE_NO_INPUT,
-        PLACE_BLOCKED,
         PLACE_DETAIL,
         PLACE_VERDICT,
         PLACE_REPORT,
@@ -99,10 +95,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_RESULT,
     ),
-    (
-        "src/capa_simulation/components/availability_gap_panel.py",
-        "_render_securement_cross_check",
-    ): (1, PLACE_BLOCKED),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_static_evidence"): (
         1,
         PLACE_DETAIL,
@@ -187,10 +179,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         PLACE_VERDICT,
     ),
     ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PLACE_FORM),
-    ("src/capa_simulation/components/required_shortening_panel.py", "_render_scenario_error"): (
-        1,
-        PLACE_BLOCKED,
-    ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_stop"): (
         1,
         PLACE_NO_INPUT,
@@ -210,10 +198,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (6, PLACE_FORM),
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
-    ("src/capa_simulation/components/shortening_progress_panel.py", "load_selected_baseline"): (
-        1,
-        PLACE_BLOCKED,
-    ),
     ("src/capa_simulation/components/source_quality.py", "render_source_quality"): (
         1,
         PLACE_VERDICT,
@@ -222,7 +206,7 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/space_shortening_view.py", "render_layer_stop"): (
         1,
-        PLACE_BLOCKED,
+        PLACE_NO_INPUT,
     ),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),

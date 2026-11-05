@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
@@ -969,4 +970,6 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                 else:
                     _count_chart(counts, column, colors)
         except ValueError as exc:
-            st.error(markdown_safe_tildes(exc))
+            render_data_error(
+                markdown_safe_tildes(exc), code="EQ-09", text="설비 조회 결과를 그리지 못했습니다"
+            )

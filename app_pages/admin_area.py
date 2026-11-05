@@ -6,6 +6,7 @@ import streamlit as st
 
 from capa_simulation.components.alert_board import render_alert_board
 from capa_simulation.components.container_start_check import render_container_start_check
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
@@ -17,7 +18,7 @@ from capa_simulation.components.process_rename_management import (
 )
 from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.components.sso_status import render_sso_status
-from capa_simulation.components.state_alerts import alert_page_error, open_tab_name
+from capa_simulation.components.state_alerts import open_tab_name, tab_name
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -52,8 +53,9 @@ try:
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
     message = bootstrap_error_message(exc)
-    alert_page_error(message, code="AD-07", text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)")
-    st.error(message)
+    render_data_error(
+        message, code="AD-07", text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)"
+    )
     st.stop()
 
 # 공정 목록은 안내·편집 보조일 뿐이라 활성 시나리오가 없어도 화면을 멈추지 않는다.
@@ -102,7 +104,12 @@ with source_quality_tab:
                 source_profile = repository.load_source_profile(scenario_id)
                 source_rows = repository.load_source_row_count(scenario_id)
             except BOOTSTRAP_ERRORS as exc:
-                st.info(bootstrap_error_message(exc))
+                render_data_error(
+                    bootstrap_error_message(exc),
+                    code="AD-07",
+                    tab=tab_name(TAB_NAMES[2]),
+                    text="원천 품질을 읽지 못했습니다",
+                )
             else:
                 render_source_quality(source_profile, source_rows)
 with alert_tab:

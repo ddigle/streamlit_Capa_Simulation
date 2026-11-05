@@ -27,7 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, alert_notes, events, infos, shown
+from alert_marks import active_state, alert_notes, data_error_texts, events, infos, shown
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
     OPERATIONS,
@@ -594,7 +594,7 @@ def test_an_equipment_db_error_stays_inside_the_equipment_section(
     assert any("저장소 상태" in str(item.value) for item in app.markdown)
 
     _equipment_section(app)
-    assert any("설비 시나리오를 준비하지 못했습니다" in str(item.value) for item in app.error)
+    assert any("설비 시나리오를 준비하지 못했습니다" in text for text in data_error_texts(app))
     # 「관리할 시나리오」 전환과 다른 탭은 그대로다.
     assert app.segmented_control(key=SCENARIO_KIND_KEY).value == EQUIPMENT_KIND
     assert len(app.tabs) >= 3

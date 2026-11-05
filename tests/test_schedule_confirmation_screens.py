@@ -21,6 +21,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import place_errors
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
@@ -246,7 +247,7 @@ def test_the_master_tab_marks_each_unit_and_stage_to_check(tmp_path: Path, grid:
     app.run()
     assert not app.exception
     assert last(grid, emg.side_key("changes"))["counts"]["errors"] == 0
-    assert not app.error
+    assert not place_errors(app)
 
 
 def test_the_master_tab_shows_nothing_when_every_stage_is_consistent(
@@ -279,7 +280,7 @@ def test_the_master_tab_follows_unsaved_edits_and_the_put_rows(tmp_path: Path, g
         f"설비명\t반입실적\t반입상태\nEQ-LATE\t{_day(-29)}\t완료"
     )
     app.button(key=PREVIEW_BUTTON_KEY).click().run()
-    assert not app.exception and not app.error
+    assert not app.exception and not place_errors(app)
     app.button(key=IMPORT_APPLY_BUTTON_KEY).click().run()
     assert not app.exception
     assert _alert_ids(grid) == []

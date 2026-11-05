@@ -131,6 +131,9 @@ MARKER_ATTRIBUTE: Final = "data-capa-alerts"
 # 지금은 읽지 않는다.
 ALERT_LOG_SWITCH: Final = "CAPA_USAGE_LOG"
 
+# 그리지 못한 오류의 로그 「계기」 — 누른 동작의 결과가 아니라 화면을 그리다 난 일이다.
+PAGE_ERROR_CAUSE: Final = "데이터 때문에 화면을 그리지 못함"
+
 _CODE_PATTERN: Final = re.compile(r"^[A-Z]{2,4}-\d{2}$")
 # 세션 칸. 이름은 알림 칸(`components/alert_center.py`)과 시험만 읽는다.
 OUTBOX_KEY: Final = "alerts_outbox_v1"
@@ -188,9 +191,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("GL-06", "check", "state", "설비 DB 가 이 코드보다 새 버전"),
     # 2단계 b — 설비 · Space(`EQ-*`) · 실행 관리(`PD-*` · `RS-*` · `CS-*`) · Dynamic
     # 재공(`WIP-*`) · 시나리오 관리(`SC-*`) · 자동 갱신(`AU-*`) · Admin(`AD-*`) · 모듈(`MO-*`) ·
-    # VOC(`VO-*`)(설계 6장 2 · 3). 화면을 그리지 못한 오류(「… 그리지 못함」)는 자리 `st.error` 를
-    # 그대로 두고 같은 글이면 한 번만 뜨는 사건 알림을 더한다(`state_alerts.alert_page_error` —
-    # ST-20 과 같은 꼴).
+    # VOC(`VO-*`)(설계 6장 2 · 3). 화면을 그리지 못한 오류(「… 그리지 못함」)는 자리에 「데이터
+    # Error」 마크만 세우고 글은 같은 글이면 한 번만 뜨는 사건 알림으로만 낸다
+    # (`components/data_error_mark.render_data_error` — ST-20 과 같은 꼴).
     AlertSpec("EQ-04", "check", "state", "이 설비 시나리오에 일정이 없는 호기"),
     AlertSpec("EQ-05", "check", "event", "남의 저장이 내 설비 편집을 버림"),
     AlertSpec("EQ-06", "check", "state", "Static 대비 일정 — 두 쪽 공정명이 맞지 않음"),
@@ -248,6 +251,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # VOC 새 글 초안 보관 JS(`components/voc_draft_keeper.py`)가 빈 폼에 되살린 회차에 낸다 —
     # 폼 아래 제 꼴의 줄 대신(설계 규칙 UI-NTF-01).
     AlertSpec("VO-02", "info", "event", "VOC 새 글 — 이 브라우저 탭에 보관한 초안을 되살림"),
+    # 사이드바 시나리오 · 설비 시나리오 팝업은 어느 화면에서나 열려 화면 코드가 없다.
+    AlertSpec(
+        "SB-21", "error", "event", "사이드바 시나리오 팝업을 그리지 못함 — 같은 글이면 한 번"
+    ),
 )
 
 
@@ -302,7 +309,8 @@ class AlertNote(TypedDict, total=False):
       「그 화면으로」 가 그 탭을 연다) · `scope_label`(로그의 범위 줄) · `cause`(계기) ·
       `detail`(원본 오류) · `table`(딸린 표 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
       `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
-      읽는다) · `again`(다시 보냄).
+      읽는다) · `again`(다시 보냄) · `keep`(자리에 마크만 남은 오류 — Alarm 줄이 전문의 유일한
+      자리라, 같은 글이 다시 와도 알림창은 띄우지 않되 그 줄이 없으면 다시 세운다).
     """
 
     id: str
@@ -326,6 +334,7 @@ class AlertNote(TypedDict, total=False):
     markdown: str
     icon: str
     again: bool
+    keep: bool
 
 
 def spec(code: str) -> AlertSpec:
@@ -417,18 +426,43 @@ def event_note(
     origin: str = "",
     alert_id: str | None = None,
     tab: str = "",
+    keep: bool = False,
 ) -> AlertNote:
     """사건 알림 표지 한 칸(그리지 않는다). `flash.render_flash` 와 `event` 가 쓴다.
 
     `alert_id` 를 고정 값(같은 글이면 같은 id — `fingerprint`)으로 주면 브라우저 탭이 그 알림을 한
-    번만 띄운다 — 회차마다 다시 그리는 자리 오류(화면을 그리지 못함)가 그 꼴이다
-    (`components/state_alerts.alert_page_error`)."""
+    번만 띄운다 — 회차마다 다시 그리는 데이터 오류(`page_error_note`)가 그 꼴이다. `keep` 은
+    `AlertNote` 설명이다."""
     note = _base(code, level, text, full)
     note["id"] = alert_id or new_id()
     for name, value in (("cause", cause), ("detail", detail), ("origin", origin), ("tab", tab)):
         if value:
             note[name] = value  # type: ignore[literal-required]
+    if keep:
+        note["keep"] = True
     return note
+
+
+def page_error_note(
+    message: str, *, code: str, tab: str = "", text: str | None = None
+) -> AlertNote:
+    """데이터 때문에 화면 · 구획을 그리지 못한 오류의 사건 알림 표지 한 칸(그리지 않는다) — 자리에는
+    마크만 서고 글은 여기로만 간다(`components/data_error_mark`).
+
+    같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 알림창이 한 번만 뜬다(회차마다 다시 그려도
+    거듭 뜨지 않는다). 해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다. `text` 는 알림창 짧은
+    글(무엇을 그리지 못했는지 — 없으면 오류 글 첫 문단)이고 전문은 늘 오류 글 전체다."""
+    plain = plain_text(message)
+    lead = text or plain_text(message.split("\n\n", 1)[0]) or plain
+    return event_note(
+        code,
+        text=lead,
+        full=plain,
+        tab=tab,
+        cause=PAGE_ERROR_CAUSE,
+        alert_id="page-" + fingerprint(code, None, plain),
+        keep=True,
+    )
 
 
 def event(
@@ -525,16 +559,23 @@ def emit(notes: Sequence[AlertNote], *, slot: DeltaGenerator | None = None) -> N
       선다).
     """
     sending = [*drain_outbox(), *notes]
-    payload = html.escape(json.dumps(sending, ensure_ascii=False), quote=True) if sending else ""
     if in_dialog(slot):
         holder = slot if slot is not None else st.container()
         if sending:
-            holder.html(f'<span hidden {MARKER_ATTRIBUTE}="{payload}"></span>')
+            holder.html(hidden_marker(sending))
         return
     if not sending:
         st.html("<style></style>")
         return
+    payload = html.escape(json.dumps(sending, ensure_ascii=False), quote=True)
     st.html(f'<style {MARKER_ATTRIBUTE}="{payload}"></style>')
+
+
+def hidden_marker(notes: Sequence[AlertNote]) -> str:
+    """숨은 표지 — 보이는 HTML 과 한 `st.html` 에 싣거나 팝업 칸에 그린다. 그 자리 칸에 서므로
+    이벤트 칸을 쓰지 않는다(프래그먼트 · 팝업 본문에서도 갈래마다 자리 수가 그대로다)."""
+    payload = html.escape(json.dumps(list(notes), ensure_ascii=False), quote=True)
+    return f'<span hidden {MARKER_ATTRIBUTE}="{payload}"></span>'
 
 
 def in_dialog(target: DeltaGenerator | None = None) -> bool:

@@ -80,6 +80,7 @@ from capa_simulation.components.constraint_simulation_view import (
     render_constraint_view,
     settle_selected_month,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import (
     equipment_basis_label,
     render_equipment_scenario_row,
@@ -100,7 +101,6 @@ from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
-    alert_page_error,
     equipment_scope,
     missing_handover_text,
 )
@@ -267,8 +267,7 @@ except BOOTSTRAP_ERRORS as exc:
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption("계산을 멈춰 공정을 고를 수 없습니다.")
     message = bootstrap_error_message(exc)
-    alert_page_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
-    st.error(message)
+    render_data_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
     st.stop()
 
 thresholds = page_inputs.thresholds
@@ -784,7 +783,11 @@ def product_ready() -> bool:
     머리 한 줄과 까닭을 그리고 거짓."""
     if product_error:
         render_header(process, f"**{literal_markdown(process_label)}**")
-        st.error(f"제품별 소요를 읽지 못했습니다 — {product_error}")
+        render_data_error(
+            f"제품별 소요를 읽지 못했습니다 — {product_error}",
+            code="CS-01",
+            text="제품별 소요를 읽지 못했습니다",
+        )
         return False
     if selected_product is None:
         render_header(process, f"**{literal_markdown(process_label)}**")
@@ -910,8 +913,7 @@ except (KeyError, ValueError) as exc:
     )
     render_header(process, f"**{literal_markdown(process_label)}** · {literal_markdown(product)}")
     failure = f"제약 시뮬레이션을 계산하지 못했습니다 — {message}"
-    alert_page_error(failure, code="CS-01", text="제약 시뮬레이션을 계산하지 못했습니다")
-    st.error(failure)
+    render_data_error(failure, code="CS-01", text="제약 시뮬레이션을 계산하지 못했습니다")
     st.stop()
 
 labels = ConstraintLabels(

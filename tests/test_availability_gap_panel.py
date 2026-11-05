@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, states
+from alert_marks import active_state, data_error_texts, states
 from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
@@ -521,13 +521,14 @@ def test_the_cross_check_explains_what_is_missing_in_the_same_order(
     app = _run(**state, **lazy)
     _select_view(app, "확보율 교차검증")
 
-    # 비었다는 결론(소요대수 · Static 없음)은 평문 한 줄, 읽지 못한 것은 상자다 — 셋 가운데 하나만.
+    # 비었다는 결론(소요대수 · Static 없음)은 평문 한 줄, 읽지 못한 것은 마크 + 알림 글이다 — 셋
+    # 가운데 하나만.
     reasons = (
         "선택 범위에 소요대수 산출 기준이 없습니다",
         "Static 가용대수가 없어",
         "소요대수를 읽지 못해",
     )
-    lines = [str(item.value) for item in (*app.info, *app.caption)]
+    lines = [str(item.value) for item in (*app.info, *app.caption)] + data_error_texts(app)
     notices = [line for line in lines if line.startswith(reasons)]
     assert len(notices) == 1 and notices[0].startswith(notice), notices
     assert not app.dataframe
@@ -617,7 +618,7 @@ def test_missing_demand_only_blocks_the_cross_check() -> None:
     _select_view(app, "확보율 교차검증")
     assert not app.dataframe
     assert not app.get("plotly_chart")
-    assert "소요대수를 읽지 못해" in " ".join(item.value for item in app.info)
+    assert "소요대수를 읽지 못해" in " ".join(data_error_texts(app))
 
 
 @pytest.mark.parametrize(

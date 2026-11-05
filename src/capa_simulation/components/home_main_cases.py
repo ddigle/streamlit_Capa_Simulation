@@ -50,6 +50,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
@@ -171,7 +172,9 @@ def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = N
         try:
             view = _read_view(database_path, notices=notices)
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            render_data_error(
+                bootstrap_error_message(exc), code="HM-01", text="주요 Case 를 읽지 못했습니다"
+            )
             return
         st.session_state[MAIN_CASE_VIEW_KEY] = view
         # 콜백 실패 알림·강조할 Case 는 상자가 서는 회차에만 꺼낸다(읽기 실패 회차에 버리지 않는다).
@@ -457,7 +460,7 @@ def _render_case(
         )
         return
     if plan.error is not None:
-        st.error(plan.error)
+        render_data_error(plan.error, code="HM-01", text="주요 Case 리비전을 읽지 못했습니다")
         return
     if not plan.revisions:
         st.session_state.pop(revision_key, None)

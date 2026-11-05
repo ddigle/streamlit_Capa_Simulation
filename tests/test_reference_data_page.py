@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, infos, successes
+from alert_marks import alert_notes, infos, place_errors, successes
 from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Error
@@ -1794,7 +1794,7 @@ def test_upeh_apply_after_a_step_add_checks_against_the_active_scenario(grid_cal
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 120.0)
 
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert 120.0 in _scenario_table(app, "RQ_UPEH")["UPEH"].tolist()
 
 
@@ -1817,7 +1817,7 @@ def test_reference_editors_use_the_same_window_as_the_apply(grid_calls: Calls) -
     assert saved["RUN_DAY"].tolist() == [20.0]
 
     app = _add_step(AppTest.from_string(WINDOW_TEST_SCRIPT, default_timeout=60).run(), "2A", "P200")
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     # 202608 의 원본 한 행과 그 복제 한 행. 202609 수요는 적용 기간 밖이라 건드리지 않는다.
     assert app.session_state["test_step_reqb_rows"] == 2
 
@@ -2008,13 +2008,13 @@ def test_filling_an_upeh_month_without_a_run_rate_row_is_blocked_until_it_is_fil
 
     app = _open_filtered(app, "효율", "capa_run_rate_editor_filter_양산구분", ["양산"])
     app = _edit_and_apply(app, grid_calls, "capa_run_rate_editor", "202609", 0.9)
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
 
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202609", 100.0)
 
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     upeh = _scenario_table(app, "RQ_UPEH")
     assert sorted(upeh.loc[upeh["STEP_SEQ"].eq("P100"), "생산계획년월"]) == [202608, 202609]
     capacity = _scenario_unit_capacity(app)
@@ -2063,12 +2063,12 @@ def test_reviving_a_zero_upeh_route_without_a_run_rate_row_is_blocked(grid_calls
     # 안내대로 효율 탭에서 먼저 채우면 같은 편집이 적용되고 계산은 멈추지 않는다.
     app = _open_filtered(app, "효율", "capa_run_rate_editor_filter_양산구분", ["양산"])
     app = _edit_and_apply(app, grid_calls, "capa_run_rate_editor", "202609", 0.9)
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202609", 100.0)
 
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     capacity = _scenario_unit_capacity(app)
     assert set(capacity.loc[capacity["STEP_SEQ"].eq("P100"), "생산계획년월"]) == {202608, 202609}
 
@@ -2122,7 +2122,7 @@ def test_a_zero_in_a_cell_no_upeh_path_uses_is_still_allowed(grid_calls: Calls) 
     app = _open_filtered(app, "여유율", "capa_vital_editor_filter_양산구분", ["개발"])
     app = _edit_and_apply(app, grid_calls, "capa_vital_editor", "202608", 0.0)
 
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     saved = app.session_state["test_month_updates"]["RQ_VITAL"]
     assert dict(zip(saved["양산구분"], saved["편중률"], strict=True)) == {"양산": 1.0, "개발": 0.0}
 
@@ -2139,7 +2139,7 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
     app = _edit_and_apply(app, grid_calls, "capa_lot_ratio_editor", "202608", None)
 
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert _scenario_table(app, "RQ_LOT_RATIO").empty
     assert [item.value for item in app.caption if "행이 없습니다" in item.value] == [
         "이 기간에 Lot측정률 행이 없습니다."
@@ -2155,7 +2155,7 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", 150.0)
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert _scenario_table(app, "RQ_UPEH")["UPEH"].tolist() == [150.0]
 
 
@@ -2173,13 +2173,13 @@ def test_a_scenario_without_ratio_rows_opens_every_tab() -> None:
     app.run()
 
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert any("이 기간에 WF측정률 행이 없습니다." == item.value for item in app.caption)
     app = _open_paste(app, "capa_wf_ratio_editor")
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
 
     app = _add_step(AppTest.from_string(script, default_timeout=60).run(), "2A", "P200")
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert sorted(_scenario_table(app, "RQ_UPEH")["STEP_SEQ"]) == ["P100", "P200"]
     assert _scenario_table(app, "RQ_LOT_RATIO").empty
 

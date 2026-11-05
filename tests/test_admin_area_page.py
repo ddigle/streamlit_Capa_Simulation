@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, infos, states, successes
+from alert_marks import active_state, infos, place_errors, states, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -434,7 +434,7 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
 
     app = _press_rename_save(app)
     assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error
+    assert not successes(app) and not place_errors(app)
     assert app.text[-1].value == "v1|SAW>절단"
 
     app.text_input(key="admin_area_process_rename_note").set_value("메모만 적음")
@@ -445,7 +445,7 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
 
     _edit_display_name(app, 0, "자르기")
     app = _press_rename_save(app)
-    assert not infos(app) and not app.error
+    assert not infos(app) and not place_errors(app)
     assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
     assert app.text[-1].value == "v2|SAW>자르기"
     clear_global_process_rename_cache()
@@ -471,7 +471,7 @@ def test_a_slow_second_press_of_the_direct_edit_save_repeats_the_success(
 
     app = _press_rename_save(app)
 
-    assert not infos(app) and not app.error, [str(item.value) for item in infos(app)]
+    assert not infos(app) and not place_errors(app), [str(item.value) for item in infos(app)]
     assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
     assert app.text[-1].value == "v2|SAW>자르기"
     clear_global_process_rename_cache()

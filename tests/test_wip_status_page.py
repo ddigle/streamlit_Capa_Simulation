@@ -1,6 +1,7 @@
 # Purpose: wip status page 관련 정상·예외·회귀 동작을 검증한다.
 
 import pytest
+from alert_marks import place_errors
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
@@ -251,7 +252,7 @@ def test_wip_status_page_explains_an_empty_equipment_db_instead_of_erroring() ->
     app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     # 예외(빨간 오류)가 아니라 사용자가 채워야 할 입력이라 경고다. 같은 화면에서 「일부만
     # 없다」를 알리는 자리(:292)와 색이 갈리면 심각도가 거꾸로 읽힌다.
     assert any("주차별 가용대수가 없어" in element.value for element in app.warning)

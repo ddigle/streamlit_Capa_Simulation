@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from alert_marks import successes
+from alert_marks import place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -132,7 +132,7 @@ def test_a_quick_second_press_of_delete_keeps_the_notice(
     app._run(widget_state=pressed)
 
     assert not app.exception, [element.message for element in app.exception]
-    assert not app.error, [str(element.value) for element in app.error]
+    assert not place_errors(app), [str(element.value) for element in app.error]
     shown = [str(message.value) for message in successes(app)]
     assert shown == ([deleted] if trailing else [])
     assert repository.load_global_key_process().preset_names == ("맨 앞",)

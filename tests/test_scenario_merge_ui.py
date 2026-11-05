@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, successes
+from alert_marks import flashed, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
@@ -170,7 +170,7 @@ def test_history_conflict_blocks_save_and_revision_change_recovers(
         donor.revision.revision_id
     ).run()
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     app.text_input(key="scenario_merge_name").set_value("충돌 없는 리비전 머지")
     _save_button(app).click().run()
     assert not app.exception
@@ -234,7 +234,7 @@ def test_overlapping_months_block_save_until_the_source_changes(sources: Sources
 
     app.selectbox(key="merge_donor_scenario").set_value(donor.scenario.scenario_id).run()
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert set(_preview(app)["결과 월 수"]) == {3}
 
 
@@ -282,7 +282,7 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     for policy, label, quantity in (("base", "베이스", 100.0), ("donor", "덧붙일 쪽", 900.0)):
         app.segmented_control[0].set_value(policy).run()
         assert not app.exception, [item.message for item in app.exception]
-        assert not app.error
+        assert not place_errors(app)
         assert not _save_button(app).disabled
         preview = _source_rows(app)
         assert preview.loc["2027-01", "선택 출처"] == label

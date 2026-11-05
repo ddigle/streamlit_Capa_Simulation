@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import flashed, infos, successes
+from alert_marks import flashed, infos, place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as target
@@ -488,7 +488,7 @@ def test_a_save_with_nothing_changed_makes_no_revision_and_says_so(sidebar_app: 
     assert "시나리오 관리" not in revision_unchanged_notice(1)
     assert "test_saved_revision_name" not in app.session_state
     assert "test_activated_revision" not in app.session_state
-    assert not successes(app) and not app.error
+    assert not successes(app) and not place_errors(app)
     assert app.session_state[SCENARIO_DIALOG_KEY] is True
     name = next(widget for widget in app.text_input if widget.label == "새 리비전명")
     assert name.value == "그대로 저장"

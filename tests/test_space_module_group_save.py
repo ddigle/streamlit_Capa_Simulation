@@ -21,6 +21,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import place_errors
 from grid_fake import Calls, install_fake_grid, last
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime
@@ -424,7 +425,7 @@ def test_the_master_tab_refuses_a_module_edit_and_takes_a_whole_group_move(
     _save(app)
 
     assert message not in _fix_first(grid)
-    assert not app.exception and not app.error, [e.value for e in app.error]
+    assert not app.exception and not place_errors(app), [e.value for e in app.error]
     assert len(repository.list_revisions()) == 2
     saved = repository.load_snapshot(str(repository.latest_revision_id())).equipment
     assert saved.set_index("설비명").loc[G1, "X좌표"].tolist() == [55.0, 65.0, 55.0, 65.0]
@@ -456,7 +457,7 @@ def test_a_paste_that_moves_one_module_is_flagged_after_putting_and_refused_on_s
     _put(app)
     _save(app)
 
-    assert not app.exception and not app.error, [e.value for e in app.error]
+    assert not app.exception and not place_errors(app), [e.value for e in app.error]
     assert len(repository.list_revisions()) == 2
 
 
@@ -503,12 +504,12 @@ def test_the_space_save_takes_an_editor_result_even_where_the_rawdata_rule_would
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert "GRP-1" in app.session_state[EDITOR_MODULE_LAYOUTS_KEY]
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     repository = DuckDBEquipmentRepository(database)
     assert len(repository.list_revisions()) == 2
     rows = repository.load_snapshot(str(repository.latest_revision_id())).equipment
@@ -544,10 +545,10 @@ def test_the_space_save_refuses_a_rawdata_module_edit_left_in_the_draft(
         "marks": None,
     }
     app.run()
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert len(repository.list_revisions()) == 2
     clear_equipment_repository()

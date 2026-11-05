@@ -33,6 +33,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_field
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
@@ -757,7 +758,9 @@ def _render_comparison_picker(database_path: str) -> None:
         try:
             scenarios = repository.list_scenarios()
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            render_data_error(
+                bootstrap_error_message(exc), code="HM-01", text="비교 시나리오를 읽지 못했습니다"
+            )
             return
         if not scenarios:
             st.caption("저장된 시나리오가 없습니다.")
@@ -790,7 +793,9 @@ def _render_comparison_picker(database_path: str) -> None:
         try:
             revisions = repository.list_revisions(str(scenario_id))
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            render_data_error(
+                bootstrap_error_message(exc), code="HM-01", text="비교 리비전을 읽지 못했습니다"
+            )
             return
         revision_by_id = {revision.revision_id: revision for revision in revisions}
         if not revision_by_id:
@@ -2219,7 +2224,9 @@ def _render_key_process_editor(
     try:
         profile = load_global_key_process(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        render_data_error(
+            bootstrap_error_message(exc), code="HM-01", text="주요공정 프리셋을 읽지 못했습니다"
+        )
         return
     with st.container(border=True):
         st.markdown("#### :material/dataset: 주요공정 히트맵 프리셋")

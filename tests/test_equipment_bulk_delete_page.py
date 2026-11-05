@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import infos
+from alert_marks import infos, place_errors
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from streamlit.testing.v1 import AppTest
 
@@ -192,7 +192,7 @@ def test_a_deletion_saves_without_orphaned_downtime(tmp_path: Path, grid: Calls)
     app.button(key=SAVE_BUTTON_KEY).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     repository = DuckDBEquipmentRepository(seed.database)
     latest = repository.load_snapshot(repository.list_revisions()[0].revision_id)
     assert len(latest.equipment) == len(seed.machines) - len(seed.building_machines)

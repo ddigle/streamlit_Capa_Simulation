@@ -6,8 +6,8 @@
 - 탭 안 상태 알림은 그 탭이 열린 회차에만 내고(설계 2-3 「숨은 자리는 세지 않는다」), 표지에 탭
   이름을 실어 「그 화면으로」 가 그 탭까지 연다(`state_alerts.open_tab_name` · `tab_name`).
 - 자리에는 경고 상자를 그리지 않는다 — 상태 줄(캡션 · 마크다운)은 칸의 일이라 남는다.
-- 화면을 그리지 못한 오류는 자리 `st.error` 를 그대로 두고 같은 글이면 한 번 뜨는 사건 알림을
-  더한다.
+- 화면을 그리지 못한 오류는 자리에 「데이터 Error」 마크만 세우고 글은 같은 글이면 한 번 뜨는
+  사건 알림으로 보낸다.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from alert_marks import active_state, alert_notes, events, states
+from alert_marks import active_state, alert_notes, data_error_marks, events, states
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
 from test_wip_status_page import TEST_SCRIPT as WIP_SCRIPT
@@ -323,11 +323,12 @@ finally:
 """
 
 
-def test_a_screen_error_keeps_its_box_and_alerts_once_per_text() -> None:
-    """화면을 그리지 못한 오류(`AD-07`)는 자리 `st.error` 를 그대로 두고, 같은 글이면 같은 id 의
-    사건 알림을 더한다 — 이 브라우저 탭에 한 번만 알림창이 뜬다(`state_alerts.alert_page_error`)."""
+def test_a_screen_error_stands_as_a_mark_and_alerts_once_per_text() -> None:
+    """화면을 그리지 못한 오류(`AD-07`)는 자리에 「데이터 Error」 마크만 서고 글은 같은 글이면 같은
+    id 의 사건 알림으로만 간다 — 이 브라우저 탭에 한 번만 알림창이 뜬다
+    (`components/data_error_mark.render_data_error`)."""
     first = AppTest.from_string(BROKEN_ADMIN_SCRIPT, default_timeout=60).run()
-    assert first.error, "자리 오류 상자가 남아야 한다"
+    assert data_error_marks(first) == 1 and not first.error
     (note,) = events(first, "AD-07")
     assert note["level"] == "error"
     assert note["short"] == "Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)"

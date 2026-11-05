@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, successes
+from alert_marks import flashed, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
@@ -148,7 +148,7 @@ def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: S
 
     app.number_input(key="scenario_shift_years").set_value(-2).run()
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert _ranges(app)["이동 후 월 범위"] == "2025-01 ~ 2025-12"
     assert not _save_button(app).disabled
 
@@ -171,7 +171,7 @@ def test_default_name_follows_changed_years_and_keeps_a_typed_name(source: Sourc
     assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +3년 Shift"
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     created = {
         item.scenario_name: item.active_revision_id
         for item in repository.list_scenarios()

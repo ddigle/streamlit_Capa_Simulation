@@ -22,7 +22,7 @@ from typing import Any
 
 import duckdb
 import pytest
-from alert_marks import active_state, events, shown, states, successes
+from alert_marks import active_state, events, place_errors, shown, states, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_publish_guard import stale_press
 from test_equipment_scenario_repository import (
@@ -771,7 +771,7 @@ def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revisi
     ), texts
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
     assert app.selectbox(key=REVISION_KEY).value == newest.schedule_revision_id
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
 
 
 def test_a_quick_second_press_of_a_cleaning_publish_keeps_its_notice(

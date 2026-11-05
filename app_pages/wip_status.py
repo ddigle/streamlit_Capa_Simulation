@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -21,7 +22,7 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
-from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
+from capa_simulation.components.state_alerts import simulation_scope
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -161,8 +162,7 @@ try:
     availability = load_standard_target_availability(equipment_database)
 except BOOTSTRAP_ERRORS as exc:
     message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
-    alert_page_error(message, code="WIP-01", text="재공 현황을 준비하지 못했습니다")
-    st.error(message)
+    render_data_error(message, code="WIP-01", text="재공 현황을 준비하지 못했습니다")
     st.stop()
 # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.
 render_schema_ahead_warning(equipment_repository.schema_ahead)
@@ -295,8 +295,7 @@ try:
     )
 except ValueError as exc:
     message = bootstrap_error_message(exc)
-    alert_page_error(message, code="WIP-01", text="재공 현황을 그리지 못했습니다")
-    st.error(message)
+    render_data_error(message, code="WIP-01", text="재공 현황을 그리지 못했습니다")
     st.stop()
 
 today_rows = wip_history.loc[wip_history["일자"].eq(today)]

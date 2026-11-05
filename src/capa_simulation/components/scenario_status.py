@@ -37,6 +37,7 @@ import capa_simulation.settings as settings
 from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
@@ -372,7 +373,11 @@ def _render_dialog_body(
         scenarios = repository.list_scenarios()
         official = repository.latest_official_release()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"시나리오 저장소를 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"시나리오 저장소를 읽지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SB-21",
+            text="시나리오 저장소를 읽지 못했습니다",
+        )
         return
 
     active_listed = next(
@@ -495,7 +500,11 @@ def _render_load(
     try:
         revisions = repository.list_revisions(selected_scenario_id)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SB-21",
+            text="리비전 목록을 읽지 못했습니다",
+        )
         return
     revision_by_id = {revision.revision_id: revision for revision in revisions}
     _ensure_revision_selection(
