@@ -30,9 +30,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from packaging.specifiers import SpecifierSet
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
+COMPANY_REQUIREMENTS = PROJECT_ROOT / "requirements-company.txt"
+# 사내 `bigdataquery` 의 요구 범위(사내 `uv pip check` 로 잰 값). 락은 이 패키지를 모른다.
+COMPANY_PACKAGE_PIN = "bigdataquery==2.5.0"
+COMPANY_PACKAGE_BOUNDS = {"pandas": "<=2.2.3", "numpy": "<2.3"}
 EXPORT_COMMAND = (
     "uv",
     "export",
@@ -66,6 +71,22 @@ def test_requirements_txt_matches_the_lock() -> None:
         "아래 한 줄로 고치세요:\n"
         "  " + " ".join(EXPORT_COMMAND) + " > requirements.txt"
     )
+
+
+def test_the_pins_stay_inside_what_the_company_package_accepts() -> None:
+    """락이 범위를 벗어나면 사내 PC 는 `uv pip check` 충돌, 배포 서버는 시작 스크립트의 둘째 pip 가
+    제약(`requirements.txt`)과 부딪혀 설치 실패로 남는다. 사내 패키지 판을 바꾸면 범위를 다시 잰다.
+    """
+    company_lines = COMPANY_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+    assert COMPANY_PACKAGE_PIN in company_lines, "사내 패키지 판이 바뀜 — 요구 범위를 다시 재세요."
+
+    pins = dict(
+        line.split("==", 1)
+        for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+        if "==" in line and not line.startswith(("#", " "))
+    )
+    for name, bound in COMPANY_PACKAGE_BOUNDS.items():
+        assert SpecifierSet(bound).contains(pins[name]), f"{name} {pins[name]} 이 {bound} 밖입니다."
 
 
 def test_the_dockerfile_installs_that_file() -> None:

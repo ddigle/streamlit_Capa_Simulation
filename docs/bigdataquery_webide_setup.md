@@ -104,7 +104,9 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 | `CAPA_BDQ_TOKEN` | WebIDE 에서 로그인해 만든 토큰 파일의 **내용**(아래) | 1. 로그인 |
 | `CAPA_BDQ_USER_NAME` | 본인 AD 계정(`<AD 계정>`) — 토큰 파일 이름과 `getData(user_name=…)` 에 함께 쓴다 | 1·2 |
 
-- 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다. pip 를 두 번 부른다.
+- 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다. pip 를 두 번 부른다. 둘째 pip 는 앱 판 고정
+  (`requirements.txt`)을 제약으로 걸므로, 그 판이 `bigdataquery` 의 요구 범위(pandas · numpy 위 끝)를 벗어나면 설치가 「실패」 로 남는다 —
+  `pyproject.toml` 이 같은 범위로 묶어 둔 까닭이다.
   - **패키지 자신은 사내 인덱스 하나만** 보고 의존성 없이 깐다(`--no-deps`). WebIDE 처럼 공개 미러에 사내 인덱스를
     **추가**로 붙이면 pip 는 두 곳을 같이 보고 더 맞는 파일을 고른다 — 공개 쪽에 같은 이름·판이 올라오면 그것이 깔린다
     (의존성 혼동. uv 는 먼저 찾은 인덱스만 써서 WebIDE 의 uv 꼴은 괜찮다). 자격증명은 명령줄이 아니라 그 pip 의

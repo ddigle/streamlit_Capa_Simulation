@@ -15,6 +15,9 @@
 # 그 뒤로는 `uv sync --inexact` 를 쓴다 — 그냥 `uv sync` 는 락에 없는 이 패키지를 지운다.
 # 패키지가 없어도 앱은 뜬다. 사내 조회 화면만 안내 문구를 띄우고 멈춘다.
 #
+# 2.5.0 은 `pandas<=2.2.3` · `numpy<2.3` 을 요구한다. 락은 이 패키지를 모르므로 `pyproject.toml` 이 두 범위를
+# 같이 묶는다. 판을 바꾸면 새 요구 범위를 사내에서 재어 `pyproject.toml` · `tests/test_requirements_export.py` 를 맞춘다.
+#
 # **C-DEP WebIDE 에서는 위 두 줄이 그대로 안 된다.** 이 계열 이미지는 두 가지를 미리 정해
 # 두는데 둘 다 이 파일의 `--index-url` 을 무력화한다(사내에서 `uv -v` 로 원인까지 확인함).
 #

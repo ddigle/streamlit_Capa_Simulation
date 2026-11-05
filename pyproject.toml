@@ -19,8 +19,10 @@ dependencies = [
     # `src` 의 계산·설비 서비스가 직접 import 한다. pandas·streamlit 이 끌어와 지금도 깔리지만, 직접 적어야
     # 그 둘이 의존을 바꿔도 빠지지 않는다. 모듈 점검(M09)도 이 줄로 numpy 를 「직접 의존」 으로 본다.
     # 판은 락 그대로다(Python 3.10 을 받는 마지막 마이너 2.2).
-    "numpy>=2.2,<3",
-    "pandas>=2.2,<3",
+    # numpy · pandas 의 위 끝은 사내 `bigdataquery`(`requirements-company.txt`)가 받는 범위다. 락은 사내 패키지를
+    # 모르므로 여기서 묶지 않으면 `uv sync --inexact` · 이미지 설치가 그 범위 밖 판을 깔아 충돌한다.
+    "numpy>=2.2,<2.3",
+    "pandas>=2.2,<=2.2.3",
     "plotly>=5.24,<7",
     # 코드가 아직 import 하지 않는다. docs/TODO.md 의 domain/schemas.py 구현에 쓴다.
     "pydantic>=2.9,<3",

@@ -260,6 +260,8 @@ uv pip install -r requirements-company.txt
   시스템 인증서로 까는 법, 로그인·요청자 계정 설정은 `docs/bigdataquery_webide_setup.md`.
 - **이 뒤로는 `uv sync` 대신 `uv sync --inexact` 를 씁니다.** 맨 `uv sync` 는 락에 없는 패키지(`bigdataquery`)를
   지웁니다. 지웠으면 위 명령을 다시 돌립니다.
+- `bigdataquery` 가 pandas · numpy 판의 위 끝을 두므로 `pyproject.toml` 이 같은 범위로 묶습니다(`requirements-company.txt` 머리). 맞는지는
+  `uv pip check` 로 봅니다.
 - `bigdataquery` 를 `pyproject.toml` 에 적지 않는 까닭은 `requirements-company.txt` 머리에 있습니다 — 락은 모든
   extra·group 을 해석하므로 사내 인덱스에 닿지 못하는 개발 PC 에서 `uv lock` 이 죽습니다. 덕분에 배포 ZIP 에서
   빼야 할 파일이 없습니다.
@@ -303,6 +305,7 @@ New-Item -ItemType Directory review -Force
 |---|---|
 | `uv lock` 이 `dns error` 로 죽는다 | `bigdataquery` 를 `pyproject.toml` 에서 빼 `requirements-company.txt` 에 둡니다. |
 | `bigdataquery` 가 사라졌다 | 맨 `uv sync` 를 돌렸습니다. 4단계를 다시 하고 이후 `--inexact` 를 씁니다. |
+| `uv pip check` 가 `bigdataquery` 와 pandas · numpy 충돌을 찍는다 | 락이 그 패키지의 범위를 벗어났습니다. 사외가 `pyproject.toml` 범위와 락을 맞춥니다 — 사내 런북 4-1. |
 | `duckdb.IOException` | 앱이 DB 를 쥔 채 스크립트·테스트를 돌렸습니다(배타 잠금). 앱을 끄고 다시 — 고장이 아닙니다. |
 | 앱이 「Port 8501 is not available」 로 멈춘다 | 다른 것이 8501 을 쥐고 있습니다. 포트를 적었으므로 다음 번호로 말없이 옮겨 서지 않고 멈춘 것입니다. 누가 쥐었는지 보는 법은 [`docs/internal_update_runbook.md`](docs/internal_update_runbook.md) 4-2 「접속이 안 되면」. |
 | 활성화 스크립트가 차단된다 | 활성화하지 않고 `.venv\Scripts\` 의 실행 파일을 직접 씁니다. |
