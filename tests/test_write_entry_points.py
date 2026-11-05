@@ -158,16 +158,8 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "_render_legacy_trace",
         "acknowledge_legacy_trace",
     ): VERSION_CHECK,
-    (f"{_PARTS}/floor_layout_upload.py", "_floor_layout_dialog", "delete_fab_layout_profile"): (
-        STATE_CHANGE
-    ),
-    (f"{_PARTS}/floor_layout_upload.py", "_floor_layout_dialog", "delete_floor_layout_profile"): (
-        STATE_CHANGE
-    ),
-    (f"{_PARTS}/floor_layout_upload.py", "_save", "save_fab_layout_image"): SAME_REPLACE,
-    (f"{_PARTS}/floor_layout_upload.py", "_save", "save_floor_layout_image"): SAME_REPLACE,
-    (f"{_PARTS}/floor_layout_upload.py", "_save", "save_fab_layout_canvas"): SAME_REPLACE,
-    (f"{_PARTS}/floor_layout_upload.py", "_save", "save_floor_layout_canvas"): SAME_REPLACE,
+    (f"{_PARTS}/floor_canvas_dialog.py", "_save", "save_fab_layout_canvas"): SAME_REPLACE,
+    (f"{_PARTS}/floor_canvas_dialog.py", "_save", "save_floor_layout_canvas"): SAME_REPLACE,
     (
         f"{_PARTS}/home_main_cases.py",
         "_drop_vanished_scenarios",

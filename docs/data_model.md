@@ -120,7 +120,7 @@ equipment_ops.shortening_baseline (0021)        + 설비 쪽 출처 칸 넷(0027
 # data/equipment_availability.duckdb — 리비전 없는 공용 표(설비 리비전을 저장해도 복제되지 않음, 표끼리 FK 없음)
 equipment_ops.standard_target_weekly_availability         공정·Weeknum별 수동 가용대수(0005)
 equipment_ops.process_cutoff                              공정별 Cut-off 일수(0009, PK 공정·product_scope)
-equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017·0025·0033)
+equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 캔버스와 비설비 요소(0007·0011·0017·0025·0033)
                        (building, floor_name)
 equipment_ops.floor_layout_group_label                    층 Main 설비명 위치(0025, 키 동·층·Main 설비, PK 없음)
 equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017·0025·0033, layout_key 'FAB')
@@ -158,9 +158,9 @@ version 만 올린다 — HOME 슬롯 글자가 시나리오명·리비전명을
 배정 검사·합치기의 `one_to_one`·새 일정 표 PK 가 지킨다. 옛 행의 키는 NULL 이고 읽을 때 `'n' || md5(equipment_id)` 로 본다.
 
 **가정 설비 시나리오의 배치 차이(`0031`).** **공식 배치** = 공통 대장 최신의 배치 일곱 칸(동·층·X좌표·Y좌표·Xsize·
-Ysize·레이아웃표시) + 층 현행값(도면 요소·Main 설비명 위치·캔버스·배경 도면) + FAB + 층 사용(0029)이다. 가정 설비 시나리오는
+Ysize·레이아웃표시) + 층 현행값(도면 요소·Main 설비명 위치·캔버스) + FAB + 층 사용(0029)이다. 가정 설비 시나리오는
 그 위의 **공식과 다른 것만**을 일정 리비전의 차이 표 셋에 든다(2026-10-24 결정 LY1·LY2 — 손대지 않은 호기·요소는 공식을
-따라간다). 층 캔버스·배경 도면·FAB·층 사용은 시나리오마다 갈리지 않는다(공통 — 가정 시나리오에서 고칠 수 없다).
+따라간다). 층 캔버스·FAB·층 사용은 시나리오마다 갈리지 않는다(공통 — 가정 시나리오에서 고칠 수 없다).
 
 - **차이의 단위**: 호기 하나의 일곱 칸 **통째**(Q5), 모듈 묶음(Main 설비 행 둘 이상)은 **묶음 통째**(한 모듈이라도 다르면 모든
   모듈을 적는다). 요소는 id 마다 `set`(그 요소 통째)·`drop`(공식 요소를 지움), 이름표는 (층, Main 설비)마다 위치·NULL.
@@ -401,15 +401,14 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   전체 스냅샷
 - `standard_target_weekly_availability`: 표준 목표 Capa 수동 입력용 공정·Weeknum별
   가용대수 최신값. 리비전을 만들지 않고 같은 키를 갱신하며 명시적 초기화 시 전체 삭제한다.
-- `floor_layout_profile`: 동·층별 배경 도면과 캔버스 치수. `(building, floor_name)` PK 이고
+- `floor_layout_profile`: 동·층별 캔버스 치수. `(building, floor_name)` PK 이고
   `revision_id` 가 없다 — `standard_target_weekly_availability` 와 같은 리비전 무관 공용
-  프로필이라 설비 리비전을 저장해도 복제되지 않는다. 도면 원본은 `image_payload` BLOB 으로
-  두고 조회 시에만 `data:{mime};base64,...` 로 만들어 Plotly 배경으로 넘긴다.
-  이미지 없이 캔버스 치수만 저장할 수도 있다(`image_*` NULL).
+  프로필이라 설비 리비전을 저장해도 복제되지 않는다. `image_*` 칸은 옛 판이 올린 배경 도면
+  자리다 — 2026-11-05 올리기를 걷어 더 쓰지도 읽지도 그리지도 않고, 남은 행은 지우지 않는다
+  (표는 그대로 · 마이그레이션 없음).
   **저장은 append 가 아니라 UPDATE 다.** DuckDB 는 지운 페이지를 회수하지 않아
-  행을 DELETE+INSERT 로 다시 쓰면 수정마다 BLOB 한 벌씩 파일이 커진다(실측: 3.8MB 한 장을
-  6회 수정하면 51.7MB). 캔버스만 바꿀 때는 치수 두 컬럼만 UPDATE 하고, 같은 도면
-  재업로드는 저장된 `sha256(image_payload)` 와 비교해 BLOB 쓰기를 건너뛴다.
+  옛 도면이 든 행을 DELETE+INSERT 로 다시 쓰면 수정마다 BLOB 한 벌씩 파일이 커진다(실측: 3.8MB
+  한 장을 6회 수정하면 51.7MB). 캔버스를 바꿀 때는 치수 두 컬럼만 UPDATE 한다.
 - `floor_layout_mark`(마이그레이션 11): 동·층별 비설비 도면 요소(반입구·문·영역·기둥·글자·
   동선·베이·도형 — 베이 `bay`·도형 `shape` 는 마이그레이션 없이 종류 값이 하나씩 는 것이고, 베이는 `label` 에 번호만,
   도형은 채우기 색을 `color_key`(영역 색 여섯 + `ink`·`surface`)에, 빗금을 `hatch` 에 둔다). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
@@ -439,7 +438,7 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   `services/floor_layout_mark.prepare_group_labels`, 적용 합치기·이름 바꿈 따라가기는
   `services/space_layout_edit.next_group_labels`.
 - `fab_layout_profile`·`fab_layout_mark`(마이그레이션 13): Space S.PKG FAB 전체 도면. 머리는
-  `layout_key = 'FAB'` 한 행(캔버스·배경 도면 BLOB, `floor_layout_profile` 처럼 UPDATE 로 고친다)이고,
+  `layout_key = 'FAB'` 한 행(캔버스, `image_*` 는 옛 도면 자리 — `floor_layout_profile` 처럼 UPDATE 로 고친다)이고,
   요소는 `floor_layout_mark` 와 같은 열(동·층 제외)에 층 블록의 연결 대상 `link_building`·
   `link_floor` 를 더한 것이다(둘 다 있거나 둘 다 NULL, 층 블록은 필수). 층 표에 「FAB」 가짜 키를
   넣지 않으려고 표를 따로 둔다. 요소는 전체 교체(DELETE+INSERT)라 PK 가 없고, 요소 행이 없으면

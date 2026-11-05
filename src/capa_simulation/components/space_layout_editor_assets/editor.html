@@ -42,13 +42,15 @@
     <span class="sle-summary sle-view-only"></span>
     <button type="button" class="sle-sheet-toggle sle-floor-only" aria-pressed="false" aria-controls="sle-sheet"
             title="호기 정보 — 고른 호기의 칸과, 칸마다 걸러 찾은 호기 목록을 도면 위 창에 보입니다(필터에 맞는 호기는 도면에서 강조). 호기를 두 번 눌러도 열립니다 · 다시 누르면 닫습니다"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" class="ico-line"/><path d="M1.5 6.2h13M6 6.2v7.3" class="ico-line"/></svg><span class="sle-sheet-toggle-word">호기 정보</span></button>
+    <button type="button" class="sle-keys-toggle" aria-expanded="false" aria-haspopup="dialog" aria-controls="sle-keys"
+            title="이 화면에서 쓸 수 있는 단축키"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="4" width="13" height="8.5" rx="1.5" class="ico-line"/><path d="M4 6.8h.01M6.7 6.8h.01M9.3 6.8h.01M12 6.8h.01M5.2 9.8h5.6" class="ico-line"/></svg><span class="sle-keys-toggle-word">단축키</span></button>
     <button type="button" class="sle-lock" aria-pressed="false"
-            title="스크롤 고정 — 켜면 페이지가 굴러가지 않고 도면이 창 높이에 맞춰 섭니다. 휠은 도면을 옮기고(Shift 가로) Ctrl+휠은 확대합니다. 다시 누르면 풉니다"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" class="ico-line"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" class="ico-line"/></svg><span class="sle-lock-word">고정</span></button>
+            title="스크롤 고정 — 켜면 페이지가 굴러가지 않고 도면이 창 높이에 맞춰 섭니다. 휠은 도면을 옮기고(Shift 가로) Ctrl+휠은 확대합니다. 다시 누르면 풉니다"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" class="ico-line"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" class="ico-line"/></svg><span class="sle-lock-word">고정</span><span class="sle-lock-dot" aria-hidden="true" hidden></span></button>
     <button type="button" class="sle-apply sle-edit-only">적용</button>
   </div>
   <div class="sle-body">
     <aside class="sle-side is-left" aria-label="도구 칸">
-      <button type="button" class="sle-side-strip" aria-expanded="false"><span class="sle-side-strip-text">도구</span><span aria-hidden="true">›</span></button>
+      <button type="button" class="sle-side-strip" aria-expanded="false"><span class="sle-side-strip-text">도구</span></button>
       <div class="sle-side-box">
         <div class="sle-side-head">
           <span class="sle-side-title">도구</span>
@@ -203,10 +205,6 @@
             <span class="sle-area-note" aria-live="polite"></span>
             </div>
           </section>
-          <section class="sle-sec sle-edit-only" data-sec="help">
-            <button type="button" class="sle-sec-head" aria-expanded="false">도움말</button>
-            <div class="sle-sec-body sle-help"></div>
-          </section>
         </div>
       </div>
     </aside>
@@ -239,7 +237,7 @@
          aria-label="오른쪽 미배치 칸 폭" title="끌어서 칸 폭 조절 · 두 번 누르면 기본 폭 · ←/→ 조절(Shift 크게) · Home 최대 · End 최소 · Enter 접기"></div>
     <aside class="sle-side is-right sle-edit-only sle-floor-only" aria-label="미배치 호기 칸">
       <button type="button" class="sle-side-strip sle-drawer-tab" aria-expanded="false" aria-controls="sle-tray"
-              title="미배치 호기 칸 펴기 — 끌어서 도면에 놓습니다"><span aria-hidden="true">‹</span><span class="sle-side-strip-text">미배치 <b class="sle-drawer-count">0</b></span></button>
+              title="미배치 호기 칸 펴기 — 끌어서 도면에 놓습니다"><span class="sle-side-strip-text">미배치 <b class="sle-drawer-count">0</b></span></button>
       <div class="sle-side-box sle-tray" id="sle-tray" aria-label="미배치 호기">
         <div class="sle-tray-head">
           <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span> <span class="sle-tray-hits" hidden></span></div>
@@ -257,11 +255,10 @@
               <label class="sle-form-row"><span>공정구분</span><select class="sle-new-line"></select></label>
               <label class="sle-form-row"><span>투자구분</span><select class="sle-new-use"></select></label>
               <label class="sle-form-row"><span>신규/기존</span><select class="sle-new-kind"><option value="new">신규 설비</option><option value="existing">기존 설비</option></select></label>
-              <div class="sle-new-dates">
+              <div class="sle-new-dates" title="일정은 비워도 됩니다 — 반입이 비면 입고 예정, Qual 이 비면 셋업 진행중으로 남아 날짜가 들어올 때까지 가용대수에 들지 않습니다. Qual 을 넣으면 Qual상태가 필요합니다.">
                 <label class="sle-form-row"><span>반입</span><input class="sle-new-arrival" type="date"></label>
                 <label class="sle-form-row"><span>Qual</span><input class="sle-new-qual" type="date"></label>
                 <label class="sle-form-row"><span>Qual상태</span><select class="sle-new-confirm"></select></label>
-                <p class="sle-new-hint">일정은 비워도 됩니다 — 반입이 비면 입고 예정, Qual 이 비면 셋업 진행중으로 남아 날짜가 들어올 때까지 가용대수에 들지 않습니다. Qual 을 넣으면 Qual상태가 필요합니다.</p>
               </div>
               <div class="sle-form-row"><span>크기</span><input class="sle-new-w" type="number" min="0.1" step="0.1" aria-label="폭"><span class="sle-times">×</span><input class="sle-new-h" type="number" min="0.1" step="0.1" aria-label="높이"></div>
               <p class="sle-new-error" aria-live="polite"></p>
@@ -281,6 +278,10 @@
         <div class="sle-drop-note" aria-hidden="true">여기 놓으면 미배치로</div>
       </div>
     </aside>
+    <section class="sle-keys" id="sle-keys" role="dialog" aria-label="단축키" hidden>
+      <div class="sle-keys-head"><b>단축키</b><button type="button" class="sle-keys-close" aria-label="단축키 판 닫기" title="닫기 (Esc)">×</button></div>
+      <ul class="sle-keys-list"></ul>
+    </section>
     <section class="sle-sheet sle-floor-only" id="sle-sheet" role="region" aria-label="호기 정보" hidden>
       <div class="sle-sheet-head" title="끌어서 창 옮기기">
         <span class="sle-sheet-title">호기 정보</span>

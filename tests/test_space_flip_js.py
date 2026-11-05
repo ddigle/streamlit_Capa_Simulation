@@ -202,12 +202,10 @@ def test_the_keys_flip_after_the_format_keys_and_only_when_something_flips() -> 
     assert "flipKeyOf" not in view
 
 
-def test_the_help_lists_the_flip_keys_and_the_format_paint_leaves_flips_alone() -> None:
-    hint = _between("const HINT = FAB", "const q = (selector)")
-    texts = re.findall(r"'([^']*)'", hint)
-    assert len(texts) == 2
-    assert "Shift+H/V 좌우·상하 뒤집기(비대칭 도형)" in texts[0]
-    assert "Shift+H/V 좌우·상하 뒤집기(베이·비대칭 도형)" in texts[1]
+def test_the_shortcut_table_lists_the_flip_keys_and_the_format_paint_leaves_flips_alone() -> None:
+    table = _between("const SHORTCUTS = [", "function shortcutRows(")
+    assert "['Shift+H', '좌우 뒤집기', 'ef eb']" in table
+    assert "['Shift+V', '상하 뒤집기', 'ef eb']" in table
     # 서식 붓은 뒤집기를 옮기지 않는다 — 붙이는 모양 값에 flip 이 없다.
     paint = re.search(r"// <format-paint>\n(?P<body>.*?)\n\s*// </format-paint>", JS, re.S)
     assert paint and "flip" not in paint.group("body")

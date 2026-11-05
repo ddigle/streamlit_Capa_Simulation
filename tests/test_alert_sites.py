@@ -153,10 +153,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         2,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"): (
-        4,
-        PLACE_FORM,
-    ),
     ("src/capa_simulation/components/home_main_cases.py", "_draw"): (1, PLACE_FORM),
     ("src/capa_simulation/components/home_preference.py", "_render_execution_notices"): (
         2,

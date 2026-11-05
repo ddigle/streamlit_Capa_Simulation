@@ -9,9 +9,9 @@
 
 `default_fab_layout` 은 저장본이 없을 때의 기본 배치다. 그리기만 하고 어디에도 쓰지 않는다 — FAB
 편집의 시작점이고, 처음 저장할 때 편집한 전체가 저장된다. 저장된 FAB 는 설비 DB 의
-`fab_layout_profile` (캔버스·배경 도면 한 행)과 `fab_layout_mark`(요소)이고 설비 리비전과 무관한
+`fab_layout_profile` (캔버스 한 행)과 `fab_layout_mark`(요소)이고 설비 리비전과 무관한
 현행값이다. **요소 행이 하나도 없으면 기본 배치의 요소를 그린다**(캔버스는 저장된 행, 없으면
-`FAB_CANVAS`) — 배경 도면만 먼저 올려도 블록이 사라지지 않는다. 그래서 요소를 모두 지워 저장하면
+`FAB_CANVAS`) — 캔버스만 먼저 저장해도 블록이 사라지지 않는다. 그래서 요소를 모두 지워 저장하면
 기본 배치로 돌아간다.
 
 좌표 계약은 층 도면과 같다: 원점은 왼쪽 아래, 상자는 (x, y) → (x+w, y+h), 회전은 상자 가운데를
@@ -174,13 +174,10 @@ class FabLayoutMark:
 
 @dataclass(frozen=True)
 class FabLayoutProfile:
-    """저장된 FAB 캔버스와 배경 도면(data URI). 층의 `FloorLayoutProfile` 과 같은 몫이다."""
+    """저장된 FAB 캔버스. 층의 `FloorLayoutProfile` 과 같은 몫이다."""
 
     canvas_width: float
     canvas_height: float
-    image_data_uri: str | None
-    image_name: str | None
-    image_byte_count: int
     updated_at: datetime
 
     @property

@@ -187,11 +187,10 @@ def test_the_inspector_lives_in_the_left_panel_and_hides_unused_fields() -> None
     assert "display: none" in hidden and "visibility: hidden" not in hidden
     # 이름 줄은 칸 폭 안에서 줄을 바꾼다(긴 모듈 묶음 안내도 다 읽힌다).
     assert "overflow-wrap: anywhere" in _rule(".sle-inspector-title")
-    # 도움말·Guide 가 선택 칸을 「아래」 라고 부르지 않는다(리뷰 rules-3 — FAB 도움말이 「아래 선택
-    # 칸」 이라 했다).
+    # Guide 가 선택 칸을 「아래」 라고 부르지 않는다(리뷰 rules-3).
     guide = (ASSETS.parents[1] / "guides" / "space_status.md").read_text(encoding="utf-8")
     assert "아래 선택 칸" not in JS and "아래 선택 칸" not in guide
-    assert "층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다" in JS
+    assert "층 블록의 연결 층·색·`열기`" in guide or "왼쪽 칸 「선택」 에 `연결`" in guide
 
 
 def test_the_inspector_stacks_its_fields_inside_the_panel_width() -> None:
@@ -972,12 +971,18 @@ def test_a_narrow_edit_toolbar_keeps_the_lock_and_the_sheet_buttons_reachable() 
     assert resize.index("fitToolbar()") < resize.index("alignLock()") < resize.index("fitStage()")
     hidden = _rule(
         ".sle-toolbar.is-efit1:not(.is-fit6) .sle-sheet-toggle-word, "
+        ".sle-toolbar.is-efit1:not(.is-fit6) .sle-keys-toggle-word,\n"
         ".sle-toolbar.is-efit1:not(.is-fit6) .sle-lock-word,\n"
         ".sle-toolbar.is-efit1 .sle-pinchip-word"
     )
     assert "display: none" not in hidden and "clip-path: inset(50%)" in hidden
     toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
-    for word in ("sle-sheet-toggle-word", "sle-lock-word", "sle-pinchip-word"):
+    for word in (
+        "sle-sheet-toggle-word",
+        "sle-keys-toggle-word",
+        "sle-lock-word",
+        "sle-pinchip-word",
+    ):
         assert f'class="{word}"' in toolbar, word
     # 둘째 줄은 「빼기·지우기」 뒤 빈 칸에서 갈린다 — 「호기 정보」·「고정」·「적용」 이 함께
     # 내려간다.

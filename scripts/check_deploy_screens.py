@@ -2626,7 +2626,7 @@ def summarize_drawer_counts(
 
 def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
     # 미배치 칸은 도면 오른쪽 옆 칸이다(2026-11-03 — 펼친 채가 처음 상태). 접혀 있으면(그 브라우저가
-    # 접어 둔 기억·좁은 창의 겹침 서랍) 접힌 띠를 눌러 편다.
+    # 접어 둔 기억·좁은 창의 겹침 서랍) 접힌 단추를 눌러 편다.
     box = screen.page.locator(".sle-tray").first
     box.wait_for(state="attached", timeout=ACTION_TIMEOUT_MS)
     if not box.is_visible():
@@ -5693,7 +5693,7 @@ def summarize_space_zone_fields(
     )
 
 
-# 편집기 왼쪽 도구 칸의 접힌 띠와 「선택」 묶음(그림자 DOM — 로케이터가 뚫는다).
+# 편집기 왼쪽 도구 칸의 접힌 단추와 「선택」 묶음(그림자 DOM — 로케이터가 뚫는다).
 LEFT_STRIP_SELECTOR: Final = ".sle-side.is-left .sle-side-strip"
 INSPECTOR_SECTION_SELECTOR: Final = '.sle-sec[data-sec="inspector"]'
 

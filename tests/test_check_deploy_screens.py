@@ -1701,7 +1701,7 @@ def test_the_app_error_screen_is_an_error_box_without_the_sidebar_menu() -> None
     ],
 )
 def test_the_space_drawer_selectors_exist_in_the_editor(class_name: str) -> None:
-    """미배치 칸(도면 오른쪽 옆 칸 — 2026-11-03)의 접힌 띠 `sle-drawer-tab`·접기
+    """미배치 칸(도면 오른쪽 옆 칸 — 2026-11-03)의 접힌 단추 `sle-drawer-tab`·접기
     `sle-drawer-close`·칸 상자 `sle-tray` 는 다른 class 와 함께 단다."""
     html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
     assert re.search(rf'class="(?:[\w-]+ )*{class_name}(?: [\w-]+)*"', html), class_name

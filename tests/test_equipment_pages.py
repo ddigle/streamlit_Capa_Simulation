@@ -7,11 +7,10 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_texts, place_errors
+from alert_marks import active_state, data_error_texts, events, place_errors
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
 from test_equipment_availability import _baseline, _downtime, _equipment
-from test_floor_layout_profile import _png
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.equipment_settings_dialog import (
@@ -20,7 +19,6 @@ from capa_simulation.components.equipment_settings_dialog import (
     SETTINGS_BUTTON_KEY,
     SETTINGS_DIALOG_TITLE,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import (
     EQUIPMENT_SUMMARY_TAB,
@@ -358,7 +356,6 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
         "배치대수",
         "미배치대수",
         "점유율",
-        "배치 도면",
         "캔버스",
     ]
     assert len(floor_table) == len(FLOOR_KEYS)
@@ -381,13 +378,26 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
     assert not any("Space 배치도" in element.value for element in app.markdown)
 
 
-def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_canvas(
+def _canvas_checkboxes(app: AppTest) -> list[object]:
+    """캔버스 팝업의 체크 칸(이 화면 사이드바의 색 기준 체크는 뺀다)."""
+    return [box for box in app.checkbox if str(box.key).startswith("space_floor_layout")]
+
+
+def test_space_floor_detail_offers_the_canvas_dialog_and_ignores_an_old_drawing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """캔버스 편집 팝업은 폭 · 높이 · 저장 단추뿐이다(검수 equip-60 — 도면 올리기 · 자동 계산 ·
+    지우기 · 설명 글을 걷었다). 옛 판이 올린 도면 그림은 표에 남아도 뷰어에 싣지 않는다."""
     database_path = tmp_path / "space_layout.duckdb"
     repository = DuckDBEquipmentRepository(database_path)
     repository.initialize()
-    repository.save_floor_layout_image("C1", "1F", "c1_1f.png", _png(4000, 1500))
+    repository.save_floor_layout_canvas("C1", "1F", 100.0, 37.5)
+    with repository._connect() as connection:
+        connection.execute(
+            "UPDATE equipment_ops.floor_layout_profile "
+            "SET image_mime = 'image/png', image_name = 'old.png', image_payload = ?",
+            [b"old-drawing"],
+        )
     clear_equipment_repository()
 
     viewer: list[dict[str, object]] = []
@@ -401,27 +411,25 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     app.run()
 
     assert not app.exception
-    # 뷰어는 도면의 캔버스와 배경 도면을 받는다.
     assert viewer[-1]["canvas"] == {"width": 100.0, "height": 37.5}
-    assert str(viewer[-1]["backgroundImage"]).startswith("data:image/png")
-    # 도면·캔버스 편집은 사이드바 「Space 도면」 상자 단추의 팝업이다 — 닫혀 있는 동안 본문을
-    # 차지하지 않는다.
-    assert len(app.get("file_uploader")) == 0
-    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    assert "backgroundImage" not in viewer[-1]
+    # 캔버스 편집은 사이드바 「Space 도면」 상자 단추의 팝업이다 — 닫혀 있는 동안 본문을 차지하지
+    # 않는다.
+    assert not app.number_input
+    opener = app.button(key="space_floor_layout_open_C1_1F")
+    assert opener.label == "캔버스 편집"
+    opener.click().run()
     assert not app.exception
-    assert len(app.get("file_uploader")) == 1
-    assert any("적용될 캔버스: 100 × 37.5" == element.value for element in app.caption)
-    # 지금 저장된 도면은 값 줄 하나다(초록 상자 없이 — 설계 규칙 UI-TXT-04). 파일 이름은 사람이
-    # 적은 글이라 막는다(`literal_markdown` — 화면 글은 같다).
-    assert not app.success
-    (state_line,) = [
-        element for element in app.markdown if "**저장된 도면** · " in str(element.value)
-    ]
-    assert literal_markdown("c1_1f.png") in state_line.value
-    assert "**캔버스** · 100 × 37.5" in state_line.value
-    # 저장 규칙 설명은 올리기 칸 풍선이다 — 팝업 자리 글에는 없다.
-    assert "단일 저장값" in app.get("file_uploader")[0].proto.help
-    assert not any("단일 저장값" in str(element.value) for element in app.caption)
+    assert len(app.get("file_uploader")) == 0
+    assert [widget.label for widget in app.number_input] == ["캔버스 폭", "캔버스 높이"]
+    assert not _canvas_checkboxes(app) and not app.success
+    for element in (*app.caption, *app.warning):
+        for word in ("배경 도면", "종횡비", "적용될 캔버스", "이탈 호기"):
+            assert word not in str(element.value)
+    assert [element.value for element in app.markdown if "37.5" in str(element.value)]
+    assert "저장된 도면" not in "".join(str(element.value) for element in app.markdown)
+    save = app.button(key="space_floor_layout_save_C1_1F")
+    assert save.label == "캔버스 저장" and not save.disabled
     clear_equipment_repository()
 
 
@@ -455,7 +463,7 @@ def _wide_floor_with_hidden_units(database_path: Path) -> None:
 
 
 def _open_wide_floor_dialog(database_path: Path) -> AppTest:
-    """C1 1F 를 열고 공정 필터를 Process-A 로 둔 뒤 도면·캔버스 팝업을 연다."""
+    """C1 1F 를 열고 공정 필터를 Process-A 로 둔 뒤 캔버스 팝업을 연다."""
     page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
     app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
     app.session_state["space_status_selected_building"] = "C1"
@@ -467,49 +475,64 @@ def _open_wide_floor_dialog(database_path: Path) -> AppTest:
     return app
 
 
-def test_the_drawing_dialog_checks_hidden_units_before_shrinking_the_canvas(
+def test_the_canvas_dialog_checks_hidden_units_before_shrinking_the_canvas(
     tmp_path: Path,
 ) -> None:
     """캔버스 줄이기 검사는 층 화면에 그린 호기가 아니라 그 층의 저장된 호기 전부를 본다.
 
     레이아웃표시 N·공정 필터로 화면에 없는 호기도 저장 검증은 본다. 팝업이 그 호기를 빼고 재면
-    경고 없이 줄인 뒤 그 다음 설비 저장(어느 칸을 고치든)이 전부 「캔버스 밖」으로 막힌다.
-    """
+    알림 없이 줄인 뒤 그 다음 설비 저장(어느 칸을 고치든)이 전부 「캔버스 밖」으로 막힌다. 호기
+    목록은 알림창으로만 가고(`EQ-16`) 자리에는 확인 칸 하나 · 잠긴 저장 단추 + 짧은 풍선이 남는다.
+    되돌리면 「해소」 다."""
     database_path = tmp_path / "space_hidden.duckdb"
     _wide_floor_with_hidden_units(database_path)
     app = _open_wide_floor_dialog(database_path)
+    assert active_state(app, "EQ-16") is None
 
-    app.checkbox(key="space_floor_layout_auto_C1_1F").uncheck().run()
-    app.number_input(key="space_floor_layout_width_C1_1F_manual_200x100").set_value(100.0)
-    app.number_input(key="space_floor_layout_height_C1_1F_manual_200x100").set_value(60.0).run()
+    app.number_input(key="space_floor_layout_width_C1_1F").set_value(100.0)
+    app.number_input(key="space_floor_layout_height_C1_1F").set_value(60.0).run()
 
     assert not app.exception
-    warnings = [str(item.value) for item in app.warning]
-    # 호기 이름은 이름마다 막는다(`literal_names` — 「-」 도 「\-」 로 막혀 화면 글은 같다).
-    assert any(
-        literal_markdown("DEMO-EQ01") in text and literal_markdown("DEMO-EQ02") in text
-        for text in warnings
-    ), warnings
-    assert app.button(key="space_floor_layout_save_C1_1F").disabled
+    assert not app.warning
+    note = active_state(app, "EQ-16")
+    assert note is not None
+    assert note["short"] == "C1 1F 캔버스 100 × 60 밖 — 호기 2대"
+    assert "DEMO-EQ01" in note["full"] and "DEMO-EQ02" in note["full"]
+    assert "\\-" not in note["full"]
+    save = app.button(key="space_floor_layout_save_C1_1F")
+    assert save.disabled and "확인" in str(save.help)
+    confirm = app.checkbox(key="space_floor_layout_shrink_C1_1F")
+    assert confirm.label == "이탈 호기 2대 알고 저장"
+    confirm.check().run()
+    assert not app.button(key="space_floor_layout_save_C1_1F").disabled
+
+    app.number_input(key="space_floor_layout_width_C1_1F").set_value(200.0)
+    app.number_input(key="space_floor_layout_height_C1_1F").set_value(100.0).run()
+    assert active_state(app, "EQ-16") is None
+    assert not _canvas_checkboxes(app)
     clear_equipment_repository()
 
 
-def test_the_drawing_dialog_checks_hidden_units_before_deleting_the_canvas(
-    tmp_path: Path,
-) -> None:
-    """지우면 캔버스가 기본 100 × 60 으로 돌아간다 — 그 밖에 남는 호기가 있으면 줄이기와 같은
-    확인을 거쳐야 지운다."""
-    database_path = tmp_path / "space_hidden_delete.duckdb"
+def test_a_canvas_saved_over_outside_units_says_what_it_blocks(tmp_path: Path) -> None:
+    """저장 결과는 알림창이다 — 호기를 밖에 둔 채 저장했으면 설비 저장이 막힌다는 말까지. 저장하면
+    팝업이 닫히고 밖 알림은 해소된다."""
+    database_path = tmp_path / "space_hidden_saved.duckdb"
     _wide_floor_with_hidden_units(database_path)
     app = _open_wide_floor_dialog(database_path)
+    app.number_input(key="space_floor_layout_width_C1_1F").set_value(100.0).run()
+    app.checkbox(key="space_floor_layout_shrink_C1_1F").check().run()
+    app.button(key="space_floor_layout_save_C1_1F").click().run()
 
-    texts = [str(item.value) for item in app.caption]
-    assert any(literal_markdown("DEMO-EQ01") in text and "100 × 60" in text for text in texts), (
-        texts
+    assert not app.exception
+    assert not app.number_input
+    assert DuckDBEquipmentRepository(database_path).load_floor_layout_canvases()[("C1", "1F")] == (
+        100.0,
+        100.0,
     )
-    assert app.button(key="space_floor_layout_delete_C1_1F").disabled
-    app.checkbox(key="space_floor_layout_delete_confirm_C1_1F").check().run()
-    assert not app.button(key="space_floor_layout_delete_C1_1F").disabled
+    assert active_state(app, "EQ-16") is None
+    assert [str(note["short"]) for note in events(app, "FL-03")] == [
+        "C1 1F 캔버스 100 × 100 저장 — 호기 2대가 밖이라 설비 저장이 막힙니다"
+    ]
     clear_equipment_repository()
 
 

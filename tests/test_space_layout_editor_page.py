@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import place_errors, successes
+from alert_marks import active_state, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -492,14 +492,15 @@ def test_the_drawing_popup_will_not_cut_off_saved_marks(
     app.button(key="space_floor_layout_open_C1_1F").click().run()
 
     assert not app.exception
-    # 지우면 기본 100 × 60 으로 돌아가 기둥(오른쪽 122)이 밖으로 나간다.
-    assert app.button(key="space_floor_layout_delete_C1_1F").disabled
-    app.checkbox(key="space_floor_layout_auto_C1_1F").uncheck().run()
     next(widget for widget in app.number_input if widget.label == "캔버스 폭").set_value(100).run()
 
     assert not app.exception
-    assert any("도면 요소가 범위를 벗어나" in item.value for item in app.warning)
-    assert app.button(key="space_floor_layout_save_C1_1F").disabled
+    # 기둥(오른쪽 122)이 밖으로 나간다 — 잠긴 단추의 짧은 풍선과 알림창이 말한다.
+    assert not app.warning
+    note = active_state(app, "EQ-16")
+    assert note is not None and "도면 요소가 범위를 벗어나" in note["full"]
+    save = app.button(key="space_floor_layout_save_C1_1F")
+    assert save.disabled and "필요한 크기 122" in str(save.help)
     clear_equipment_repository()
 
 
@@ -556,8 +557,8 @@ def test_the_pinned_date_rides_the_editor_toolbar_not_a_caption_above_it(
 ) -> None:
     """배치 편집 위 두 줄 캡션(「끌어 놓아 …」·「기준일은 편집하는 동안 … 고정입니다」)은
     걷었다(2026-11-03 사용자 요청 — 도면을 올린다). 고정 기준일은 편집기 도구 줄 칩이 data 의 `asOf`
-    로 말하고, 안내는 왼쪽 칸 「도움말」 이다 — 본문에는 날짜 글자를 싣지 않아 조사(「으로」·「로」,
-    2026-10-26 E2E)를 고를 자리가 없다."""
+    로 말하고, 안내는 도구 줄 「단축키」 · Guide 다 — 본문에는 날짜 글자를 싣지 않아
+    조사(「으로」·「로」, 2026-10-26 E2E)를 고를 자리가 없다."""
     app, _ = _open_editor(tmp_path)
     later = date.today() + timedelta(days=3)
     app.session_state["space_status_as_of"] = later

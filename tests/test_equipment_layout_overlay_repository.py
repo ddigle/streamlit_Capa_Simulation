@@ -706,66 +706,11 @@ def test_shrinking_a_canvas_is_refused_when_a_hypothetical_mark_falls_outside(
 
     with pytest.raises(EquipmentLayoutOverflow, match="「셋업 실무」 .*요소 1개"):
         repository.save_floor_layout_canvas(*FLOOR, 80.0, 60.0)
-    with pytest.raises(EquipmentLayoutOverflow):
-        repository.save_floor_layout_image(
-            *FLOOR, "plan.png", _png(), canvas_width=80.0, canvas_height=60.0
-        )
     official = _session(repository)
     with pytest.raises(EquipmentLayoutOverflow):
         repository.save_equipment(_request(official, floor_canvases={FLOOR: (80.0, 60.0)}))
     # 요소가 안이면 줄인다 — 가정 차이 호기(EQ-01 은 x 85 + 12 = 97 로 밖)는 막지 않는다.
     assert repository.save_floor_layout_canvas(*FLOOR, 95.0, 60.0).canvas_width == 95.0
-
-
-def test_deleting_a_floor_drawing_is_refused_when_a_hypothetical_mark_needs_its_canvas(
-    tmp_path: Path,
-) -> None:
-    """캔버스 넷째 진입점 — 도면을 지우면 캔버스가 기본 크기(100 × 60)로 돌아가므로 가정 배치 요소가
-    그 밖이면 막는다(설계 6-4)."""
-    repository = _seeded(tmp_path)
-    repository.save_floor_layout_canvas(*FLOOR, 150.0, 60.0)
-    scenario_id = _hypothetical(repository)
-    session = _session(repository, scenario_id)
-    assert session.schedule is not None
-    _, fingerprint = _floor_base(repository, session.schedule.schedule_revision_id)
-    repository.save_equipment(
-        _request(
-            session,
-            scenario_id,
-            floor_marks={FLOOR: [_mark("MK-FAR", x=120.0).editor_payload()]},
-            floor_layout_bases={FLOOR: ((150.0, 60.0), fingerprint)},
-        )
-    )
-
-    with pytest.raises(EquipmentLayoutOverflow, match="「셋업 실무」 .*요소 1개"):
-        repository.delete_floor_layout_profile(*FLOOR)
-
-    assert repository.load_floor_layout_canvases()[FLOOR] == (150.0, 60.0)
-
-
-def _png() -> bytes:
-    import struct
-    import zlib
-
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        return (
-            struct.pack(">I", len(data))
-            + kind
-            + data
-            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-        )
-
-    header = struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0)
-    raw = b"".join(b"\x00" + b"\x00\x00\x00" * 2 for _ in range(2))
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(raw))
-        + chunk(b"IEND", b"")
-    )
-
-
-# ── 공식 발행 ─────────────────────────────────────────────────────────────────────────
 
 
 def test_a_scenario_with_a_layout_difference_is_not_published_until_it_is_cleared(

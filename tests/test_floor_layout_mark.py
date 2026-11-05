@@ -215,14 +215,11 @@ def test_the_drawing_popup_cannot_shrink_or_delete_the_canvas_below_the_marks(
 
     with pytest.raises(ValueError, match="밖에 도면 요소가 있습니다"):
         repository.save_floor_layout_canvas("C1", "1F", 100, 60)
-    # 지우면 캔버스가 기본 100 × 60 으로 돌아간다 — 요소를 남기므로 거부한다.
-    with pytest.raises(ValueError, match="밖에 도면 요소가 있습니다"):
-        repository.delete_floor_layout_profile("C1", "1F")
     assert repository.load_floor_layout_canvases()[("C1", "1F")] == (130.0, 60.0)
 
     repository.replace_floor_layout_marks("C1", "1F", [_mark(kind="column", x=10, w=2, h=2)])
-    repository.delete_floor_layout_profile("C1", "1F")
-    assert ("C1", "1F") not in repository.load_floor_layout_canvases()
+    repository.save_floor_layout_canvas("C1", "1F", 100, 60)
+    assert repository.load_floor_layout_canvases()[("C1", "1F")] == (100.0, 60.0)
     assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["MK-1"]
 
 
