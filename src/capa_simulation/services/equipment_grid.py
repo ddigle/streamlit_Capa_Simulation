@@ -1655,13 +1655,10 @@ def new_unit_data(
     check: NewUnitCheck,
     *,
     seq: int,
-    propagate: bool,
-    propagate_default: bool = True,
     ack: Mapping[str, Any] | None = None,
     toast: Mapping[str, Any] | None = None,
     undo_top: str | None = None,
     notes: Sequence[str | tuple[str, str]] = (),
-    propagate_warning: str | None = None,
 ) -> dict[str, Any]:
     """오른쪽 「새 호기」 마운트의 data(개편 명세 6-3 `panel: "new"`).
 
@@ -1675,11 +1672,9 @@ def new_unit_data(
       켜고 누를 때 만진 표지를 준다. 다른 칸 값 때문에 필수가 된 칸(`tiers.required` 에만 있는 칸)의
       오류는 만지지 않아도 보인다.
     - `notes` — 칸 위 안내(가정 설비 시나리오·배치 잠금 — 새 호기의 자리) — 글 하나이거나 (표지,
-      풍선) 짝(브라우저가 표지만 그리고 풍선은 `title`), `propagateWarning` 은
-      함께 넣기를 켰을 때 그 아래 한 줄(가정 세션 — 공식 가용대수에 셈).
+      풍선) 짝(브라우저가 표지만 그리고 풍선은 `title`).
     - `locked` — 이 세션이 새 호기를 막으면 그 까닭(칸 전체를 끈다).
-    - `blank`·`propagateDefault` — 「양식 비우기」 가 브라우저에서 바로 세우는 빈 초안과 함께 넣기
-      기본값.
+    - `blank` — 「양식 비우기」 가 브라우저에서 바로 세우는 빈 초안.
     """
 
     def tier(items: Sequence[tuple[str, bool]]) -> list[list[Any]]:
@@ -1694,7 +1689,7 @@ def new_unit_data(
         "scenario": _scenario_payload(view.context),
         "columns": columns_payload(view.context),
         "groups": detail_groups_payload(),
-        "draft": {"seq": seq, "values": list(check.values), "propagate": propagate},
+        "draft": {"seq": seq, "values": list(check.values)},
         "checked": seq,
         "errors": _named_marks(check.errors),
         "warns": _named_marks(check.warns),
@@ -1709,9 +1704,7 @@ def new_unit_data(
         "blocked": check.blocked,
         "hint": check.hint,
         "notes": [list(note) if isinstance(note, tuple) else note for note in notes],
-        "propagateWarning": propagate_warning,
         "blank": blank_draft(),
-        "propagateDefault": propagate_default,
         "locked": (view.context.stale_lock or NEW_ROWS_LOCK_REASON)
         if view.context.new_rows_locked
         else None,
@@ -1919,8 +1912,8 @@ class GridApplied:
       고름·필터를 따라 옮긴다.
     - `dropped` — `base` 가 달라 버린 op 수. `refused` — 잠긴 칸·없는 행·잠긴 지우기·맨 위가 아닌
       되돌리기·막힌 「호기 추가」 로 넣지 못한 수.
-    - `added` — 「새 호기」 칸에서 넣은 호기마다 (행 id, 설비명, 다른 설비 시나리오에도 넣기). 화면
-      쪽이 그 호기를 상세로 열고 함께 넣기 고름을 적는다.
+    - `added` — 「새 호기」 칸에서 넣은 호기마다 (행 id, 설비명). 화면 쪽이 마지막 호기를 상세로
+      연다.
     """
 
     state: GridState
@@ -1932,7 +1925,7 @@ class GridApplied:
     renamed: Mapping[str, str] = field(default_factory=dict)
     dropped: int = 0
     refused: int = 0
-    added: tuple[tuple[str, str, bool], ...] = ()
+    added: tuple[tuple[str, str], ...] = ()
 
     @property
     def toast_undo(self) -> bool:
@@ -1994,7 +1987,7 @@ class _Work:
     touched: set[str] = field(default_factory=set)
     dropped: int = 0
     refused: int = 0
-    added: list[tuple[str, str, bool]] = field(default_factory=list)
+    added: list[tuple[str, str]] = field(default_factory=list)
     draft_seq: int = 0
 
     def index(self) -> GridIndex:
@@ -2807,9 +2800,7 @@ def _official_values(work: _Work, name: str) -> tuple[object, ...]:
     return tuple(place)
 
 
-ADDED_TOAST: Final = "{name} 표 맨 위에 넣었습니다 — {where} (리비전 저장 때 함께 저장)"
-ADDED_SPREAD: Final = "다른 설비 시나리오에도 같은 일정으로 들어갑니다"
-ADDED_ALONE: Final = "다른 설비 시나리오에서는 일정 없음으로 들어갑니다"
+ADDED_TOAST: Final = "{name} 표 맨 위에 넣었습니다 (리비전 저장 때 함께 저장)"
 # 가정 설비 시나리오 편집 회차(설계 Q1) — 새 호기의 자리는 그 시나리오의 배치 차이로 가고 공식
 # 배치에서는 자리 없이(있는 묶음에 드는 모듈은 그 묶음의 동·층) 들어간다.
 ADDED_OVERLAY_NOTE: Final = (
@@ -2824,8 +2815,8 @@ def draft_seq_of(op: Mapping[str, Any]) -> int:
 
 
 def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
-    """「호기 추가」(`{"op": "add", "draftSeq", "draft": [39칸 글], "propagate"}` — 개편 명세 4-6
-    나). 받은 초안을 `new_unit_check` 로 다시 보고(업무 검증은 늘 파이썬) 막히면 넣지 않고 그 까닭을
+    """「호기 추가」(`{"op": "add", "draftSeq", "draft": [39칸 글]}` — 개편 명세 4-6 나). 받은
+    초안을 `new_unit_check` 로 다시 보고(업무 검증은 늘 파이썬) 막히면 넣지 않고 그 까닭을
     토스트로, 아니면 편집본 설비 마스터 **끝**에 한 줄을 잇고(행 차례는 공통 대장 내용 —
     `_common_digest`) 불러온 목록 맨 위에 둔다.
 
@@ -2856,12 +2847,9 @@ def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     work.touched.add(_ROWS)
     row_id = work.index().ids[position]
     work.loaded = [row_id, *(item for item in work.loaded if item != row_id)]
-    propagate = op.get("propagate") is True
-    work.added.append((row_id, check.name, propagate))
+    work.added.append((row_id, check.name))
     work.draft_seq = max(work.draft_seq, seq + 1)
-    text = ADDED_TOAST.format(
-        name=with_object_particle(check.name), where=ADDED_SPREAD if propagate else ADDED_ALONE
-    )
+    text = ADDED_TOAST.format(name=with_object_particle(check.name))
     if not work.context.official and not work.context.layout_lock:
         text += f" · {ADDED_OVERLAY_NOTE}"
     work.say(text, undo=True)

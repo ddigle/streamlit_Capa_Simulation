@@ -30,7 +30,6 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_marks,
     pending_unit_renames,
     pop_drafts_replaced,
-    prune_new_unit_propagation,
     render_name_changes,
     render_reopen_notices,
     replace_equipment_buffer,
@@ -1737,8 +1736,6 @@ def _render_layout_editor(
             compose_renames(pending_unit_renames(), applied, saved=latest_snapshot.equipment)
         )
         follow_unit_renames(applied.unit_renames, applied.group_renames)
-    # 이 적용이 지운 「새 호기」 칸 호기의 함께 넣기 고름을 걷는다 — 이름 바꿈을 따라간 뒤에(D8).
-    prune_new_unit_propagation()
     if applied.canvas is not None:
         unchanged = applied.canvas == (
             stored_canvas or (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)

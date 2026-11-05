@@ -291,13 +291,13 @@ function resolvePicks(picks, values) {
 function adoptDraft(local, server) {
   if (!server || !Array.isArray(server.values)) return local
   if (!local || Number(server.seq) > Number(local.seq)) {
-    return { seq: Number(server.seq) || 0, values: server.values.slice(), propagate: Boolean(server.propagate) }
+    return { seq: Number(server.seq) || 0, values: server.values.slice() }
   }
   return local
 }
 
 function bumpDraft(draft, serverSeq) {
-  return { seq: Math.max(Number(draft.seq) || 0, Number(serverSeq) || 0) + 1, values: draft.values.slice(), propagate: draft.propagate }
+  return { seq: Math.max(Number(draft.seq) || 0, Number(serverSeq) || 0) + 1, values: draft.values.slice() }
 }
 
 // 체크 상자 한 칸 — 판정(파이썬)이 이 초안 번호의 것이고 그 칸을 그 뒤에 고치지 않았으면 그 판정, 아니면 칸이
@@ -2240,30 +2240,16 @@ function drawNew(S, root, data) {
     root.appendChild(box)
   }
   const foot = el('div', 'emg-side-actions emg-new-foot')
-  const spread = el('label', 'emg-checkline')
-  const box = el('input')
-  box.type = 'checkbox'
-  box.dataset.fk = 'propagate'
-  box.checked = Boolean(S.nd.propagate)
-  box.addEventListener('change', () => {
-    S.nd.propagate = box.checked
-    commitDraft(S)
-    drawSide(S.host, S, S.data)
-  })
-  spread.appendChild(box)
-  spread.appendChild(el('span', null, '다른 설비 시나리오에도 같은 일정으로 넣기'))
-  foot.appendChild(spread)
-  if (S.nd.propagate && data.propagateWarning) foot.appendChild(el('div', 'emg-field-warn', data.propagateWarning))
   const buttons = el('div', 'emg-row-buttons')
   const reset = button('emg-btn', '양식 비우기', () => {
     const blank = Array.isArray(data.blank) ? data.blank : S.nd.values.map(() => '')
-    S.nd = { seq: S.nd.seq, values: blank.slice(), propagate: data.propagateDefault !== false }
+    S.nd = { seq: S.nd.seq, values: blank.slice() }
     S.ndTouched.clear()
     S.ndDirty.clear()
     commitDraft(S)
     drawSide(S.host, S, S.data)
   })
-  // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩·함께 넣기 체크도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
+  // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
   reset.dataset.fk = 'reset'
   buttons.appendChild(reset)
   const add = button('emg-btn is-primary', '호기 추가', () => {
@@ -2272,7 +2258,7 @@ function drawNew(S, root, data) {
       drawSide(S.host, S, S.data)
       return
     }
-    enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) }, [])
+    enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice() }, [])
     send(S)
   })
   // 친 글이 보낸 초안과 다르면(아직 확정 전) 판정은 옛 것이다 — 필수 칸이 찼는지만 보고 켠다(누르면 칸이 먼저 확정되고
@@ -2292,7 +2278,7 @@ function drawNew(S, root, data) {
 function commitDraft(S) {
   S.nd = bumpDraft(S.nd, (S.data && S.data.draft && S.data.draft.seq) || 0)
   S.ndSent = S.nd.values.slice()
-  if (S.setState) S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) })
+  if (S.setState) S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice() })
 }
 
 function copyRow(S) {
@@ -2310,7 +2296,7 @@ function copyRow(S) {
   go.disabled = !S.copyQuery.trim()
   const fire = () => {
     if (!S.copyQuery.trim()) return
-    S.setTrigger('copy', { query: S.copyQuery.trim(), draft: { seq: S.nd.seq, values: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) } })
+    S.setTrigger('copy', { query: S.copyQuery.trim(), draft: { seq: S.nd.seq, values: S.nd.values.slice() } })
   }
   input.addEventListener('input', () => {
     S.copyQuery = input.value

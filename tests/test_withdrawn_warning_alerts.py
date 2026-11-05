@@ -286,8 +286,9 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         what=(
             "설비 저장 칸 — 지울 호기가 다른 설비 시나리오에도 일정이 있다는 경고 · 확인 체크 ·"
             " 가정 세션 공식 가용대수 경고(저장 결과 알림에 지운 호기 수 · 일정이 빠진 시나리오 수)"
+            " · 「새 호기」 칸의 호기별 함께 넣기 체크와 같은 경고(저장 결과 알림에 넣은 대수)"
         ),
-        why="UI-NTF-03 · UI-NTF-05 · 검수표 11/02 equip-13",
+        why="UI-NTF-03 · UI-NTF-05 · 검수표 11/02 equip-13 · 2026-11-05 사용자 답",
         file="src/capa_simulation/components/equipment_scenario_status.py",
         function="_render_save",
         code="FL-01",

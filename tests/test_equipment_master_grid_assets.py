@@ -512,12 +512,13 @@ def test_pasting_excel_quoted_cells_keeps_line_breaks_inside_one_cell() -> None:
 
 _NEW_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
-const local = { seq: 4, values: ['a', 'b'], propagate: true }
+const local = { seq: 4, values: ['a', 'b'] }
 const results = {
-  first: adoptDraft(null, { seq: 0, values: ['', 'N'], propagate: true }),
-  keep: adoptDraft(local, { seq: 4, values: ['x', 'y'], propagate: false }) === local,
-  older: adoptDraft(local, { seq: 3, values: ['x', 'y'], propagate: false }) === local,
-  newer: adoptDraft(local, { seq: 6, values: ['c', 'd'], propagate: false }),
+  first: adoptDraft(null, { seq: 0, values: ['', 'N'] }),
+  keep: adoptDraft(local, { seq: 4, values: ['x', 'y'] }) === local,
+  older: adoptDraft(local, { seq: 3, values: ['x', 'y'] }) === local,
+  newer: adoptDraft(local, { seq: 6, values: ['c', 'd'] }),
+  oldShape: bumpDraft({ seq: 4, values: ['a', 'b'], propagate: false }, 2),
   bump: [bumpDraft(local, 2).seq, bumpDraft(local, 9).seq],
   tier: [
     tierDone(true, '', true),
@@ -560,9 +561,10 @@ def test_the_new_unit_draft_section_adopts_newer_drafts_and_gates_the_add_button
     본다)."""
     result = _node({}, _NEW_RUNNER)
 
-    assert result["first"] == {"seq": 0, "values": ["", "N"], "propagate": True}
+    assert result["first"] == {"seq": 0, "values": ["", "N"]}
     assert result["keep"] is True and result["older"] is True
-    assert result["newer"] == {"seq": 6, "values": ["c", "d"], "propagate": False}
+    assert result["newer"] == {"seq": 6, "values": ["c", "d"]}
+    assert result["oldShape"] == {"seq": 5, "values": ["a", "b"]}
     assert result["bump"] == [5, 10]
     assert result["tier"] == [True, False, True, False]
     assert result["add"] == [True, False, False, True, False]
@@ -697,13 +699,19 @@ def test_a_fresh_toast_in_the_side_scroll_box_scrolls_only_that_box() -> None:
     assert "const PAGE_SCROLLER = '[data-testid=\"stMain\"]'" in JS
 
 
+def test_the_new_unit_panel_has_no_spread_choice() -> None:
+    """「새 호기」 칸에 호기별 함께 넣기 체크 · 경고가 없고 초안 · op 도 그 값을 싣지 않는다(늘 넣고
+    결과 알림이 대수를 적는다)."""
+    assert "propagate" not in JS
+    assert "emg-checkline" not in JS and "emg-checkline" not in CSS
+
+
 def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed() -> None:
-    """칩·함께 넣기 체크·「양식 비우기」 는 칸을 다시 그려도 초점이 돌아온다(data-fk — 키보드로
+    """칩·「양식 비우기」 는 칸을 다시 그려도 초점이 돌아온다(data-fk — 키보드로
     채우다 칸 처음으로 가지 않게). 상세 칩도 회차가 돌아와 다시 그려도 같다. 오른쪽 칸 새 토스트가
     화면 위로 나갔으면 칸 머리를 보인다(「호기 추가」 뒤 상세·가져오기 뒤 새 호기 칸)."""
     assert "chip.dataset.fk = 'n' + k + '=' + option" in JS
     assert "chip.dataset.fk = 'f' + k + '=' + value" in JS
-    assert "box.dataset.fk = 'propagate'" in JS
     assert "reset.dataset.fk = 'reset'" in JS
     assert "if (fresh) revealToast(toast)" in JS
     assert "(first || Boolean(data.toast.undo))" in JS

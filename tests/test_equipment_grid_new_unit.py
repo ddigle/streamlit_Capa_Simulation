@@ -75,11 +75,9 @@ def _add(
     draft: list[str],
     *,
     context: eg.GridContext = CONTEXT,
-    propagate: bool = True,
     seq: int = 1,
 ) -> eg.GridApplied:
     op = {"seq": seq, "base": BASE, "op": "add", "draftSeq": 3, "draft": draft}
-    op["propagate"] = propagate
     return eg.apply_ops(state, [op], context)
 
 
@@ -282,7 +280,7 @@ def test_a_stale_session_locks_the_whole_draft_with_the_reason() -> None:
     assert check.blocked and not check.errors
     assert set(check.locks) == set(EQUIPMENT_COLUMNS)
     assert check.hint == "낡은 세션 — 새 호기 잠금"
-    payload = eg.new_unit_data(eg.build_grid_view(_source(), STALE), check, seq=1, propagate=True)
+    payload = eg.new_unit_data(eg.build_grid_view(_source(), STALE), check, seq=1)
     assert payload["locked"] == "낡은 세션 — 새 호기 잠금"
 
 
@@ -351,7 +349,7 @@ def test_adding_puts_the_unit_at_the_end_of_the_buffer_and_the_top_of_the_list()
     loaded = (eg.grid_index(state.frames[1], state.saved[1], {}).ids[0],)
     state = eg.GridState(frames=state.frames, saved=state.saved, loaded=loaded)
 
-    result = _add(state, _valid(반입일정="2026-11-02"), propagate=False)
+    result = _add(state, _valid(반입일정="2026-11-02"))
     master = result.state.frames[1]
 
     assert result.changed and result.frames_changed == (False, True, False)
@@ -360,12 +358,9 @@ def test_adding_puts_the_unit_at_the_end_of_the_buffer_and_the_top_of_the_list()
     assert master.iloc[-1]["반입일정"] == pd.Timestamp("2026-11-02")
     assert master.iloc[-1]["환산비"] == 1.0
     assert master.dtypes.equals(state.frames[1].dtypes)
-    assert result.added == (("n:NEW-01", "NEW-01", False),)
+    assert result.added == (("n:NEW-01", "NEW-01"),)
     assert result.state.loaded == ("n:NEW-01", *loaded)
-    assert result.toast == (
-        "NEW-01을 표 맨 위에 넣었습니다 — 다른 설비 시나리오에서는 일정 없음으로 들어갑니다 "
-        "(리비전 저장 때 함께 저장)"
-    )
+    assert result.toast == "NEW-01을 표 맨 위에 넣었습니다 (리비전 저장 때 함께 저장)"
     assert result.toast_step is not None
     # 차례만 다른 공통 리비전이 생기지 않는다 — 앞 줄은 저장본 그대로다.
     head = master.iloc[: len(state.frames[1])].reset_index(drop=True)
@@ -410,7 +405,7 @@ def test_an_add_from_an_old_base_is_dropped() -> None:
     assert result.dropped == 1 and not result.changed and result.added == ()
     # 같은 op 가 지금 base 면 들어간다 — 버린 것은 base 때문이다.
     fresh = eg.apply_ops(_state(), [{**op, "base": BASE}], CONTEXT)
-    assert fresh.dropped == 0 and fresh.added == (("n:NEW-01", "NEW-01", False),)
+    assert fresh.dropped == 0 and fresh.added == (("n:NEW-01", "NEW-01"),)
 
 
 def test_pressing_add_twice_keeps_the_first_success_toast_and_its_undo() -> None:
@@ -425,7 +420,7 @@ def test_pressing_add_twice_keeps_the_first_success_toast_and_its_undo() -> None
 
     result = eg.apply_ops(_state(), ops, CONTEXT)
 
-    assert result.added == (("n:NEW-01", "NEW-01", False),) and result.refused == 0
+    assert result.added == (("n:NEW-01", "NEW-01"),) and result.refused == 0
     assert result.toast is not None and result.toast.startswith("NEW-01을 표 맨 위에 넣었습니다")
     assert result.toast_step == "m#1"
 
@@ -442,7 +437,7 @@ def test_an_add_behind_the_session_draft_is_dropped_quietly() -> None:
     taken = eg.apply_ops(behind, [{**op, "draftSeq": 6}], CONTEXT)
 
     assert not dropped.changed and dropped.refused == 0 and dropped.toast is None
-    assert taken.added == (("n:NEW-01", "NEW-01", False),)
+    assert taken.added == (("n:NEW-01", "NEW-01"),)
 
 
 def test_adding_in_an_assumption_session_says_the_official_layout_stays_empty() -> None:
@@ -483,12 +478,10 @@ def test_the_panel_payload_carries_tiers_errors_and_locks_by_contract_position()
     view = eg.build_grid_view(_source(state), CONTEXT)
     check = _check(_valid(Qual일정="2026-11-20"), state)
 
-    payload = eg.new_unit_data(
-        view, check, seq=7, propagate=False, notes=("메모",), propagate_warning="경고"
-    )
+    payload = eg.new_unit_data(view, check, seq=7, notes=("메모",))
 
     assert payload["panel"] == "new" and payload["draft"]["seq"] == 7
-    assert payload["draft"]["propagate"] is False and payload["checked"] == 7
+    assert set(payload["draft"]) == {"seq", "values"} and payload["checked"] == 7
     assert payload["errors"] == {str(eg.COLUMN_INDEX["Qual상태"]): check.errors["Qual상태"]}
     assert payload["tiers"]["required"] == [
         [eg.COLUMN_INDEX["설비명"], True],
@@ -503,5 +496,6 @@ def test_the_panel_payload_carries_tiers_errors_and_locks_by_contract_position()
     ]
     assert [k for k, _ in payload["tiers"]["calc"]][-1] == eg.COLUMN_INDEX["사용기준"]
     assert payload["blocked"] is True and payload["locked"] is None
-    assert payload["notes"] == ["메모"] and payload["propagateWarning"] == "경고"
+    assert payload["notes"] == ["메모"]
+    assert "propagateWarning" not in payload and "propagateDefault" not in payload
     assert len(payload["draft"]["values"]) == len(EQUIPMENT_COLUMNS)

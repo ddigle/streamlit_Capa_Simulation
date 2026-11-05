@@ -32,7 +32,6 @@ from test_equipment_scenario_repository import (
 from capa_simulation.alerts import SHORT_LIMIT
 from capa_simulation.components.equipment_data_workspace import save_result_message
 from capa_simulation.components.equipment_save_fields import (
-    DEFAULT_PROPAGATE_NEW_UNITS,
     EquipmentSaveBasis,
 )
 from capa_simulation.components.equipment_scenario_status import (
@@ -670,7 +669,6 @@ def test_the_save_always_does_what_the_request_defaults_say() -> None:
     defaults = {field.name: field.default for field in fields(EquipmentSaveRequest)}
     assert defaults["publish_official"] is True
     assert defaults["propagate_new_units"] is True and defaults["propagate_new_downtime"] is True
-    assert DEFAULT_PROPAGATE_NEW_UNITS
 
 
 def test_the_save_result_names_both_sides_the_propagation_the_release_and_removed_units() -> None:
@@ -694,7 +692,7 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
         removed_elsewhere=("셋업 실무", "반입 지연"),
     )
 
-    message = save_result_message(result, scenario_name="운영 일정", unspread=1)
+    message = save_result_message(result, scenario_name="운영 일정")
 
     assert "공통 대장 r3 · 「운영 일정」 r5" in message
     assert "「셋업 실무」 r4(호기 2대 · 비가동 1건)" in message
@@ -705,7 +703,7 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
         "공식 v3 발행 · 다른 설비 시나리오 1개에 호기 2대 · 비가동 1건."
     ), message
     assert message.index(" · 다른 설비 시나리오 1개에") <= SHORT_LIMIT
-    assert "「새 호기」 칸에서 끈 1대는 다른 설비 시나리오에 넣지 않았습니다." in message
+    assert "「새 호기」 칸에서" not in message
     # 일어난 일만 — 하는 법 · 어디에 반영되는지는 적지 않는다(2026-11-05 사용자 결정).
     assert "이름 바꾸기" not in message and "Space 현황" not in message
 
