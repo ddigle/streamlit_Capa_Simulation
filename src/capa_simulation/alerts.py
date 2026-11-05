@@ -264,7 +264,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 붙여넣기 · 양식 창을 연 회차의 알림(`components/paste_form.announce_on_open`) — 덮어쓰기 ·
     # 되돌릴 수 없음을 창 안 글 대신 알린다(2026-11-05 검수 static-37).
     AlertSpec("PA-01", "check", "event", "붙여넣기 · 확인 창 — 적용하면 무엇이 바뀌는지"),
-    # BigDataQuery 등록 저장 뒤의 충돌 보고 — 요약 · 상세는 그 Alarm 줄의 표다
+    # DB 등록 저장 뒤의 충돌 보고 — 요약 · 상세는 그 Alarm 줄의 표다
     # (`bigdataquery_registration._queue_reference_conflict_report`).
     AlertSpec("SC-04", "check", "event", "DB 등록 — 기준정보 업무 키 값 충돌을 임시 처리함"),
 )

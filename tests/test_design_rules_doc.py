@@ -6,8 +6,8 @@
 id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 기록이 빠지면 같은 것을
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
-답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 문서 안팎의 id
-참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
+5줄 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -70,6 +70,14 @@ BEFORE_AFTER_ANSWERS = {
     "v9": "더 필요",
     "q-wip04": "걷는다",
     "q-newunit": "나눈다",
+}
+# 2026-11-05 사용자 기록(6-6) — 묻고 고른 답이 아니라 기록이라 칸마다 고친 꼴을 맞댄다.
+USER_RECORDS = {
+    "static-csv": "걷는다",
+    "scn-tabs": "탭 넷",
+    "scn-text": "걷는다",
+    "scn-repo": "걷는다",
+    "plan-excluded": "Alarm 으로",
 }
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
@@ -334,7 +342,7 @@ def test_the_before_after_board_answers_are_recorded_and_written_into_the_rules(
     줄이 연다(UI-NTF-02). q-newunit: 지우기 머리 글을 가른다(UI-NTF-09). 메모 원문은 근거에
     남는다."""
     section = _chapter(_text(), 6)
-    board = section[section.index("\n### 6-5. ") :]
+    board = section[section.index("\n### 6-5. ") : section.index("\n### 6-6. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -361,6 +369,44 @@ def test_the_before_after_board_answers_are_recorded_and_written_into_the_rules(
         and "q-wip04" in rules["UI-NTF-02"].fields["근거"][0]
     )
     assert "새 호기 n대 뺌" in rules["UI-NTF-09"].fields["예외"][0]
+
+
+def test_the_user_records_are_recorded_and_written_into_the_rules() -> None:
+    """6-6 은 사용자 기록 칸 하나에 한 줄이고 고친 꼴이 기록과 같다. 기록이 규칙 글로 들어갔는지
+    핵심만 본다 — plan-excluded: 큰 목록은 Alarm 표 앞부분 + 탭 맨 아래 CSV 라 UI-LAY-03 의 예외이고
+    UI-TXT-08 · 4장도 같은 말을 한다. static-csv: 도구 막대 CSV 가 UI-DAT-10 과 어긋나는 것은 답
+    대기로 규칙 글에 적는다 — 예외로 삼지 않으며, 답이 오면 이 글과 이 단언을 함께 걷는다.
+    scn-tabs: 근거가 UI-LAY-07 에 있다."""
+    section = _chapter(_text(), 6)
+    records = section[section.index("\n### 6-6. ") :]
+    lines = [line for line in records.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([a-z-]+) · .+ → \*\*([^*]+)\*\* .+\((2026-11-05) · (.+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+
+    assert len(lines) == len(USER_RECORDS)
+    assert found == USER_RECORDS
+
+    rules = {rule.id: rule for rule in _rules()}
+    exceptions = rules["UI-LAY-03"].fields["예외"][0]
+    assert "Alarm 표에 다 못 싣는 목록의 전체 CSV" in exceptions
+    assert "plan-excluded" in rules["UI-LAY-03"].fields["근거"][0]
+    assert "앞부분" in rules["UI-TXT-08"].text and "UI-LAY-03 예외" in rules["UI-TXT-08"].text
+    assert "scn-tabs" in rules["UI-LAY-07"].fields["근거"][0]
+
+    values = next(
+        line for line in _chapter(_text(), 4).splitlines() if line.startswith("| Alarm 딸린 표 |")
+    )
+    assert "탭 맨 아래 CSV" in values, values
+
+    assert "Static Capa" in rules["UI-DAT-10"].text and "답 대기" in rules["UI-DAT-10"].text
+    assert rules["UI-DAT-10"].fields["예외"] == ["없음"]
+    assert [rule.id for rule in rules.values() if "답 대기" in rule.text] == ["UI-DAT-10"]
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:
