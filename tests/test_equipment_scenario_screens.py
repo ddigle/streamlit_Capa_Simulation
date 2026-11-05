@@ -55,6 +55,7 @@ from capa_simulation.components.equipment_scenario_management import (
     RESTORE_BUTTON_KEY,
     RESTORE_CONFIRM_KEY,
     RESTORE_NAME_KEY,
+    RESTORE_PUBLISH_HELP,
     REVISION_KEY,
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
@@ -63,13 +64,14 @@ from capa_simulation.components.equipment_scenario_management import (
     SCENARIO_MANAGEMENT_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
     SIMULATION_KIND,
-    added_since_sentence,
-    branch_unscheduled_sentence,
+    branch_value_line,
     publish_preview,
+    restore_button_help,
     restore_confirm_label,
+    restore_layout_marker,
     restore_layout_sentence,
-    restore_preview_lines,
     restore_result_message,
+    restore_value_line,
     session_heading,
 )
 from capa_simulation.components.equipment_scenario_status import (
@@ -1320,8 +1322,9 @@ def test_a_name_refusal_keeps_the_asterisks_of_the_name_someone_else_wrote(
 def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """옛 r1 을 고르면 확인 글이 바뀌는 호기 수와 「r1 뒤에 공통 대장에 든 호기 n대는 일정 없음」 을
-    적고, 확인 체크를 켜야 단추가 선다. 되돌리면 r3 이 r1 의 일정으로 서고 공식으로 발행되며, 이
+    """옛 r1 을 고르면 값 줄 · 확인 체크 글이 새 번호 · 비가동 · 일정 없음 · 바뀌는 호기 수와 「r1
+    뒤에 공통 대장에 든 호기 n대」 를 적고 설명은 단추 풍선이 말하며, 확인 체크를 켜야 단추가 선다
+    (검수표 11/02 equip-41). 되돌리면 r3 이 r1 의 일정으로 서고 공식으로 발행되며, 이
     세션(저장 안 한 편집 없음)이 r3 으로 옮긴다. 공통 대장은 그대로다."""
     repository = _repository(tmp_path)
     _moved_on(repository)
@@ -1333,13 +1336,13 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     app.selectbox(key=REVISION_KEY).set_value(first)
     _ok(app.run())
     texts = _texts(app)
-    assert any("최신 r2 위에 새 리비전 r3을 저장하고 r1~r2는 그대로 남습니다" in t for t in texts)
-    assert any("일정이나 비가동이 바뀌는 호기 2대" in text for text in texts)
-    assert any(
-        "r1 뒤에 공통 대장에 든 호기(지금 1대)는 r1에 일정이 없어 이 설비 시나리오에서 「일정 "
-        "없음」 이 됩니다" in text
-        for text in texts
+    assert "새 리비전 r3 · 비가동 1행 → 1행 · 일정 없음 1대(새로 빠짐 1대) · 공식 v3 발행" in texts
+    assert not any("그대로 남습니다" in text or "「일정 없음」 이 됩니다" in text for text in texts)
+    balloon = str(app.button(key=RESTORE_BUTTON_KEY).help)
+    assert balloon.startswith(
+        "r1의 일정(날짜 여섯·시나리오 메모·비가동)을 새 리비전 r3으로 저장합니다"
     )
+    assert balloon.endswith(RESTORE_PUBLISH_HELP)
     confirm = _restore_confirm(app)
     assert str(confirm.label) == (
         "r1의 일정으로 되돌립니다 — 호기 2대의 일정이 바뀌고, r1 뒤에 공통 대장에 든 호기 1대는 "
@@ -1374,8 +1377,9 @@ def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothin
     _shell: AppTest, tmp_path: Path
 ) -> None:
     """S2 리뷰 — 공식 시나리오의 「가정이던 때」 리비전(배치 차이만 다름)을 고르면 저장소는 차이를
-    버리고 쓸 것이 없다고 본다. 확인 화면도 같은 판정이라 확인 체크·단추를 세우지 않고, 차이가
-    따라오지 않는다고 적는다(전에는 체크·단추가 서고 누르면 아무것도 쓰지 않았다)."""
+    버리고 쓸 것이 없다고 본다. 확인 화면도 같은 판정이라 확인 체크·단추를 세우지 않고(전에는
+    체크·단추가 서고 누르면 아무것도 쓰지 않았다), 단추가 없어 풍선도 없으니 결론 앞 표지가 차이가
+    따라오지 않는다고 적는다."""
     repository = _repository(tmp_path)
     clone = _clone(repository)
     mine = _session(repository, clone.equipment_scenario_id)
@@ -1402,10 +1406,7 @@ def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothin
     _ok(app.run())
 
     texts = _texts(app)
-    assert any(
-        "r2에 저장된 배치 차이(호기 1행)는 공식 설비 시나리오라 따라오지 않습니다" in text
-        for text in texts
-    )
+    assert "배치 차이 호기 1행 따라오지 않음" in texts
     assert any("모두 같아 되돌릴 것이 없습니다" in text for text in texts)
     assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
     assert not [button for button in app.button if button.key == RESTORE_BUTTON_KEY]
@@ -1428,6 +1429,14 @@ def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
     )
     assert "따라오지 않습니다" in restore_layout_sentence(chosen, preview, official_scenario=True)
     assert restore_layout_sentence(chosen, ScheduleRestorePreview(), official_scenario=False) == ""
+    # 값 줄 조각도 같은 갈래다 — 문장이 없으면 조각도 없다.
+    assert restore_layout_marker(chosen, preview, official_scenario=False) == (
+        "배치 되살림 호기 1행"
+    )
+    assert restore_layout_marker(chosen, preview, official_scenario=True) == (
+        "배치 차이 호기 1행 따라오지 않음"
+    )
+    assert restore_layout_marker(chosen, ScheduleRestorePreview(), official_scenario=False) == ""
     created = EquipmentScheduleRevisionSummary(
         "s4", OPERATIONS, 4, "restore", datetime(2026, 10, 25), layout_unit_count=1
     )
@@ -1557,8 +1566,9 @@ def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
 def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_did_not_publish(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """공식 시나리오에 발행하지 않은 더 새 리비전(r2)이 있으면 발행 체크가 켜져 있어도 되돌린 r3 을
-    발행하지 않고 알림이 그 까닭과 「공식으로 발행」 을 말한다."""
+    """공식 시나리오에 발행하지 않은 더 새 리비전(r2)이 있으면 값 줄이 「공식 발행 안 함」 이고
+    (저장소 `_plan_publish` 와 같은 판정), 되돌린 r3 을 발행하지 않고 알림이 그 까닭과 「공식으로
+    발행」 을 말한다."""
     repository = _repository(tmp_path)
     session = _session(repository)
     repository.save_equipment(
@@ -1572,7 +1582,8 @@ def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_di
     app = _scenario_tab(_shell)
     app.selectbox(key=REVISION_KEY).set_value(first)
     _ok(app.run())
-    assert any("공식 설비 시나리오입니다" in text for text in _texts(app))
+    assert any(text.endswith(" · 공식 발행 안 함") for text in _texts(app))
+    assert str(app.button(key=RESTORE_BUTTON_KEY).help).endswith(RESTORE_PUBLISH_HELP)
     # 발행 체크는 없다 — 저장과 같이 늘 발행 규칙을 따르고 결과 알림이 적는다(equip-13 같은 꼴).
     assert [box.key for box in app.checkbox] == [_restore_confirm(app).key]
     _restore_confirm(app).check()
@@ -1598,64 +1609,67 @@ def _summary(revision_no: int) -> EquipmentScheduleRevisionSummary:
 
 
 def test_the_restore_sentences_say_none_when_no_unit_came_after_the_revision() -> None:
-    """그 리비전 뒤에 공통 대장에 든 호기가 0대면 「일정 없음이 된다 — 빠진다」 대신 없다고
-    적는다(수는 늘 적는다). 「여기서 새 시나리오」 안내도 같다."""
+    """그 리비전 뒤에 공통 대장에 든 호기가 0대면 확인 체크 글이 없다고 적고(수는 늘 적는다),
+    「여기서 새 시나리오」 값 줄은 그 괄호를 붙이지 않는다 — 일정 없음 수는 늘 적는다."""
     first = _summary(1)
     none_added = ScheduleRestorePreview(changed_units=2, unscheduled_after=1, added_since=0)
-    assert added_since_sentence(first, 0) == "r1 뒤에 공통 대장에 든 호기는 없습니다(0대)."
-    assert "빠집니다" in added_since_sentence(first, 3) and "(지금 3대)" in added_since_sentence(
-        first, 3
-    )
     assert restore_confirm_label(first, none_added) == (
         "r1의 일정으로 되돌립니다 — 호기 2대의 일정이 바뀌고, r1 뒤에 공통 대장에 든 호기는 "
         "없습니다(0대)."
     )
-    assert branch_unscheduled_sentence(first, none_added) == (
-        "r1에 일정이 없는 호기 1대는 새 시나리오에서도 「일정 없음」 입니다 — r1 뒤에 공통 "
-        "대장에 든 호기는 없습니다(0대)."
+    assert branch_value_line(first, none_added) == "새 설비 시나리오 r1 · 일정 없음 1대"
+    assert branch_value_line(first, ScheduleRestorePreview()) == (
+        "새 설비 시나리오 r1 · 일정 없음 0대"
     )
-    assert branch_unscheduled_sentence(first, ScheduleRestorePreview()) == (
-        "r1에는 일정이 없는 호기가 없습니다(0대) — 새 시나리오의 모든 호기가 일정을 듭니다."
+    added = ScheduleRestorePreview(unscheduled_after=3, added_since=2)
+    assert branch_value_line(first, added) == (
+        "새 설비 시나리오 r1 · 일정 없음 3대(r1 뒤에 든 호기 2대)"
     )
 
 
-def test_the_publish_rule_line_stands_only_where_the_restore_offers_the_button() -> None:
-    """공식 설비 시나리오의 되돌리기 확인 글 끝 발행 규칙 줄은 되돌릴 것이 없어 단추가 서지 않는
-    리비전에서는 싣지 않는다(E2E r3 static). 가정 설비 시나리오에는 늘 없다. 발행 체크는 없다 —
-    저장과 같이 늘 발행 규칙을 따른다(검수표 11/02 equip-13 같은 꼴)."""
+def test_the_publish_words_belong_to_the_official_scenario_and_follow_the_save_rule() -> None:
+    """공식 설비 시나리오의 되돌리기 — 값 줄 표지가 이번 발행을(저장소 `_plan_publish` 와 같은 규칙:
+    저장 전 최신 발행이 그 시나리오 최신일 때만), 단추 풍선 끝이 그 규칙을 말한다. 가정 설비
+    시나리오에는 늘 없다. 발행 체크는 없다 — 저장과 같이 늘 발행 규칙을 따른다(검수표 11/02
+    equip-13 같은 꼴)."""
     scenario = EquipmentScenarioSummary(
         "s", "운영 일정", "ACTIVE", latest_schedule_revision_id="s3", latest_revision_no=3
     )
     chosen = _summary(2)
     changes = ScheduleRestorePreview(changed_units=2)
-    nothing = ScheduleRestorePreview()
+    newest_released = EquipmentRelease(7, "s", "s3", datetime(2026, 10, 24))
+    older_released = EquipmentRelease(7, "s", "s2", datetime(2026, 10, 24))
 
-    def publish_lines(preview: ScheduleRestorePreview, *, official: bool) -> list[str]:
-        lines = restore_preview_lines(scenario, chosen, preview, official_scenario=official)
-        return [line for line in lines if "공식으로 발행합니다" in line]
+    def line(*, official: bool, release: EquipmentRelease | None) -> str:
+        return restore_value_line(
+            scenario, chosen, changes, official_scenario=official, release=release
+        )
 
-    assert len(publish_lines(changes, official=True)) == 1
-    assert "체크" not in publish_lines(changes, official=True)[0]
-    assert publish_lines(nothing, official=True) == []
-    assert publish_lines(changes, official=False) == []
+    assert line(official=True, release=newest_released).endswith(" · 공식 v8 발행")
+    assert line(official=True, release=older_released).endswith(" · 공식 발행 안 함")
+    assert line(official=True, release=None).endswith(" · 공식 v1 발행")
+    assert "공식" not in line(official=False, release=newest_released)
+    assert restore_button_help(scenario, chosen, changes, official_scenario=True).endswith(
+        RESTORE_PUBLISH_HELP
+    )
+    assert RESTORE_PUBLISH_HELP not in restore_button_help(
+        scenario, chosen, changes, official_scenario=False
+    )
+    assert "체크" not in RESTORE_PUBLISH_HELP
 
 
 def test_the_tab_starts_a_new_scenario_from_an_old_revision(
     _shell: AppTest, tmp_path: Path
 ) -> None:
     """「여기서 새 시나리오」 는 최신이 아닌 리비전에서도 된다 — 새 시나리오 r1 은 그 리비전의
-    일정이고 그 뒤 공통 대장에 든 호기는 일정 없음이다(안내가 수를 적는다)."""
+    일정이고 그 뒤 공통 대장에 든 호기는 일정 없음이다(값 줄이 수를 적는다)."""
     repository = _repository(tmp_path)
     _moved_on(repository)
     first = _revision_id(repository, 1)
     app = _scenario_tab(_shell)
     app.selectbox(key=REVISION_KEY).set_value(first)
     _ok(app.run())
-    assert any(
-        "r1에 일정이 없는 호기 1대는 새 시나리오에서도 「일정 없음」 입니다 — 그 가운데 r1 뒤에 "
-        "공통 대장에 든 호기가 1대입니다." in text
-        for text in _texts(app)
-    )
+    assert "새 설비 시나리오 r1 · 일정 없음 1대(r1 뒤에 든 호기 1대)" in _texts(app)
 
     app.text_input(key=CLONE_NAME_KEY).input("r1 가지")
     app.button(key=CLONE_BUTTON_KEY).click()

@@ -10,8 +10,8 @@
   새 리비전을 쓰며 이 세션을 그리로 옮긴다.
 - 「공식으로 발행」 — 발행 쓰기와 같은 판정을 미리 읽어 막히면 까닭과 함께 단추를 끄고, 공식과
   같아진 차이만 남았으면 정리 리비전으로 발행한다고 적는다.
-- 「이 리비전으로 되돌리기」 확인 글 — 그때 손대지 않은 호기가 지금 공식 자리를 따라 그때와 자리가
-  다른 수.
+- 「이 리비전으로 되돌리기」 값 줄 · 풍선 — 그때 손대지 않은 호기가 지금 공식 자리를 따라 그때와
+  자리가 다른 수.
 """
 
 from __future__ import annotations
@@ -46,16 +46,20 @@ from capa_simulation.components.equipment_scenario_management import (
     RESTORE_BUTTON_KEY,
     REVISION_KEY,
     SCENARIO_KEY,
+    branch_button_help,
     branch_layout_sentence,
-    clear_layout_lines,
+    branch_value_line,
+    clear_layout_button_help,
     clear_layout_message,
     clear_layout_unchecked_notice,
+    clear_layout_value_line,
     clearable_layout,
     layout_effect_words,
     layout_trace_sentence,
     layout_trace_sources,
     publish_layout_lines,
     publish_result_message,
+    restore_layout_marker,
     restore_layout_sentence,
     revision_rows,
     stored_layout_cell,
@@ -201,9 +205,13 @@ def test_the_clear_button_belongs_to_assumption_scenarios_with_a_difference() ->
     assert not clearable_layout(session, _scenario())
     assert clearable_layout(session, _scenario(latest_layout_unit_count=1))
     assert clearable_layout(session, _scenario(latest_layout_hash="d5"))
-    lines = clear_layout_lines(_scenario(latest_layout_unit_count=3, latest_layout_mark_count=1))
-    assert "배치 차이(호기 3행·요소 1개)만 비운 새 리비전 r6을 저장합니다" in lines[0]
-    assert "r5는 그대로 남습니다" in lines[1]
+    scenario = _scenario(latest_layout_unit_count=3, latest_layout_mark_count=1)
+    assert clear_layout_value_line(scenario) == "새 리비전 r6 · 지울 배치 차이 호기 3행·요소 1개"
+    # 지문만 있고 행 수를 모르는 차이는 번호만 적는다.
+    assert clear_layout_value_line(_scenario(latest_layout_hash="d5")) == "새 리비전 r6"
+    balloon = clear_layout_button_help(scenario)
+    assert "배치 차이만 비운 새 리비전을 저장합니다" in balloon
+    assert "r5는 남아 「이 리비전으로 되돌리기」 로 되살릴 수 있고" in balloon
     created = _revision(6, EMPTY_LAYOUT_DIGEST)
     message = clear_layout_message("셋업 실무", created, moved=True, kept_unsaved=False)
     assert "배치 차이를 모두 지운 r6을 저장했습니다" in message
@@ -429,6 +437,9 @@ def test_the_restore_confirm_names_units_whose_place_changed_since_then() -> Non
     sentence = restore_layout_sentence(chosen, moved, official_scenario=False)
     assert sentence.startswith("r2의 가정 배치(저장된 차이 호기 1행)도 되살립니다.")
     assert "그때와 자리가 다른 호기 4대가 있습니다(이력 「그때 그대로」 와 다름)" in sentence
+    assert restore_layout_marker(chosen, moved, official_scenario=False) == (
+        "배치 되살림 호기 1행 · 그때와 자리 다른 호기 4대"
+    )
     same = ScheduleRestorePreview(
         layout_unit_rows=1,
         layout_digest="d",
@@ -447,6 +458,8 @@ def test_the_restore_confirm_does_not_promise_a_layout_it_will_not_write() -> No
     assert "되살립니다" not in sentence
     assert "되살릴 것이 없습니다" in sentence and "지금 최신 그대로" in sentence
     assert restore_writes_nothing(gone, official_scenario=False)
+    # 배치가 바뀌지 않으면 값 줄에는 적지 않는다.
+    assert restore_layout_marker(chosen, gone, official_scenario=False) == ""
     current = ScheduleRestorePreview(
         layout_unit_rows=1,
         layout_digest="d",
@@ -457,6 +470,9 @@ def test_the_restore_confirm_does_not_promise_a_layout_it_will_not_write() -> No
     sentence = restore_layout_sentence(chosen, current, official_scenario=False)
     assert "되살릴 것이 없습니다" in sentence and "공식 배치를 따릅니다" in sentence
     assert not restore_writes_nothing(current, official_scenario=False)
+    assert restore_layout_marker(chosen, current, official_scenario=False) == (
+        "배치 차이 호기 2행 지움"
+    )
     partly = ScheduleRestorePreview(
         layout_unit_rows=2,
         layout_digest="d",
@@ -466,6 +482,7 @@ def test_the_restore_confirm_does_not_promise_a_layout_it_will_not_write() -> No
     sentence = restore_layout_sentence(chosen, partly, official_scenario=False)
     assert sentence.startswith("r2의 가정 배치(되살릴 차이 호기 1행)도 되살립니다 — ")
     assert "그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다" in sentence
+    assert restore_layout_marker(chosen, partly, official_scenario=False) == "배치 되살림 호기 1행"
 
 
 # ---------------------------------------------------------------- 구획(AppTest)
@@ -821,11 +838,14 @@ def test_a_quick_second_press_of_a_cleaning_publish_keeps_its_notice(
 
 
 def test_the_branch_confirm_names_the_layout_it_copies() -> None:
-    """「여기서 새 시나리오」 확인 글도 함께 옮기는 가정 배치를 적는다 — 실제로 옮길
-    차이(정규화)로, 빠지는 행·그때와 자리가 다른 호기까지(되돌리기 확인 글과 같은 재료). 차이가
-    없으면 적지 않는다."""
+    """「여기서 새 시나리오」 값 줄 · 단추 풍선도 함께 옮기는 가정 배치를 적는다 — 실제로 옮길
+    차이(정규화)로, 빠지는 행·그때와 자리가 다른 호기까지(되돌리기와 같은 재료). 차이가 없으면
+    적지 않는다."""
     chosen = _revision(2, "d2", layout_unit_count=1)
     assert branch_layout_sentence(chosen, ScheduleRestorePreview()) == ""
+    assert branch_value_line(chosen, ScheduleRestorePreview()) == (
+        "새 설비 시나리오 r1 · 일정 없음 0대"
+    )
     whole = ScheduleRestorePreview(
         layout_unit_rows=1, layout_digest="d", restored_layout_unit_rows=1, layout_moved_since=3
     )
@@ -834,6 +854,10 @@ def test_the_branch_confirm_names_the_layout_it_copies() -> None:
         "지금 공식 자리를 따르므로 그때와 자리가 다른 호기 3대가 있습니다(이력 「그때 그대로」 와 "
         "다름)."
     )
+    assert branch_value_line(chosen, whole) == (
+        "새 설비 시나리오 r1 · 일정 없음 0대 · 배치 차이 호기 1행 옮김 · 그때와 자리 다른 호기 3대"
+    )
+    assert branch_button_help(chosen, whole).endswith(branch_layout_sentence(chosen, whole))
     partly = ScheduleRestorePreview(
         layout_unit_rows=2, layout_mark_rows=1, restored_layout_unit_rows=1
     )
@@ -846,20 +870,24 @@ def test_the_branch_confirm_names_the_layout_it_copies() -> None:
         "r2에 저장된 배치 차이(호기 1행)는 그 뒤 지운 호기이거나 지금 공식과 같아져 옮길 것이 "
         "없습니다 — 새 시나리오는 공식 배치를 따릅니다."
     )
+    assert branch_value_line(chosen, gone).endswith(" · 옮길 배치 차이 없음")
 
 
 def test_the_branch_popover_says_it_copies_the_layout_and_the_new_r1_has_it(
     tmp_path: Path,
 ) -> None:
-    """E2E — 배치 차이 호기 1행이 있는 r2 의 「여기서 새 시나리오」 확인 글이 「일정·시나리오 메모·
-    비가동을 … 옮깁니다」 만 말했는데 만든 r1 에는 그 차이가 들어 있었다. 확인 글이 그 차이를
-    적고, 만든 r1 의 배치 차이와 맞는다."""
+    """E2E — 배치 차이 호기 1행이 있는 r2 의 「여기서 새 시나리오」 안내가 「일정·시나리오 메모·
+    비가동을 … 옮깁니다」 만 말했는데 만든 r1 에는 그 차이가 들어 있었다. 값 줄과 단추 풍선이 그
+    차이를 적고, 만든 r1 의 배치 차이와 맞는다."""
     repository, setup, latest = _moved_setup(tmp_path)
     app = _ok(_section(tmp_path, setup).run())
     app.selectbox(key=SCENARIO_KEY).set_value(setup)
     _ok(app.run())
     assert app.selectbox(key=REVISION_KEY).value == latest
-    assert "r2의 가정 배치(저장된 차이 호기 1행)도 새 시나리오로 옮깁니다." in _texts(app)
+    assert any("배치 차이 호기 1행 옮김" in text for text in _texts(app))
+    assert str(app.button(key=CLONE_BUTTON_KEY).help).endswith(
+        "r2의 가정 배치(저장된 차이 호기 1행)도 새 시나리오로 옮깁니다."
+    )
 
     app.text_input(key=CLONE_NAME_KEY).input("배치안 복제")
     _ok(app.button(key=CLONE_BUTTON_KEY).click().run())

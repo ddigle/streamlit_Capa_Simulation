@@ -3356,7 +3356,7 @@ def _restore_preview(
     target: EquipmentScheduleRevisionSummary,
 ) -> tuple[ScheduleRestorePreview, EquipmentSnapshot, LayoutOverlay]:
     """(되돌리기 차이, 고른 리비전을 그 공통과 합친 한 벌, 가정 시나리오로 되돌릴 때 쓸 배치 차이).
-    확인 글과 되돌리기 쓰기가 같이 쓴다.
+    확인 창 값 줄 · 풍선과 되돌리기 쓰기가 같이 쓴다.
 
     「그 리비전 뒤에 공통 대장에 든 호기」 는 그 리비전을 저장할 때 함께 본 공통
     대장(`common_revision_id`)에 키가 없는 호기다. 함께 본 공통이 비어 있으면(그런 저장은 없다) 그

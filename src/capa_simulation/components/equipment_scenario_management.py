@@ -21,12 +21,14 @@
   찾기, 상자는 글로 찾음. 사이드바 팝업 라디오만 최근 50). 표 아래 한 줄이 늘 전체 수와 출처별 수를
   적는다(「전체 82줄(이관 70 · 저장 12)」).
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
-  불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 바뀌는 호기
-  수와 「일정 없음」 이 되는 호기를 보이고 확인 체크 뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을
-  r1 로 복제. 만들기는 복제로만), 「리비전명」(E7 — 이름표만 고침), 「공식으로 발행」(지금 공식 → 새
-  공식을 나란히, 최신이 아니면 그 사실도. 배치 차이가 있으면 발행 쓰기와 같은 판정을 미리 읽어 막힘
-  까닭과 함께 단추를 끄고, 공식과 같아진 차이만 남았으면 정리 리비전으로 발행한다고 적는다 — 설계
-  6-5). 되돌리기 확인 글은 되살리는 가정 배치에서 그때와 자리가 다른 손대지 않은 호기 수도 적는다.
+  불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 확인 체크
+  뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을 r1 로 복제. 만들기는 복제로만), 「리비전명」
+  (E7 — 이름표만 고침), 「공식으로 발행」(지금 공식 → 새 공식을 나란히, 최신이 아니면 그 사실도.
+  배치 차이가 있으면 발행 쓰기와 같은 판정을 미리 읽어 막힘 까닭과 함께 단추를 끄고, 공식과 같아진
+  차이만 남았으면 정리 리비전으로 발행한다고 적는다 — 설계 6-5).
+- **확인 창의 글**(되돌리기 · 여기서 새 시나리오 · 배치 차이 모두 지우기 — 검수표 11/02 equip-41):
+  결과를 가르는 값은 값 줄 하나와 확인 체크 글의 수뿐이고, 설명은 그 단추 풍선 · Guide, 일어난 일은
+  결과 알림이다(설계 규칙 UI-NTF-09 · UI-TXT-04).
 - **옛 배포 흔적**이 있을 때만 「이대로 이어 쓰기」(설비 저장 막기를 푼다 — 백업 복원 대신). 확인
   체크(빠지는 호기 수)를 켜야 단추가 서고, 옛 배포 리비전이 일정과 합쳐지지 않으면 단추 대신 백업
   복원 안내만 선다.
@@ -125,6 +127,7 @@ from capa_simulation.persistence.equipment_repository import (
     SCHEDULE_REVISION_NAME_MAX_CHARS,
     EquipmentLayoutPublishBlocked,
     EquipmentLayoutRoleChanged,
+    EquipmentRelease,
     EquipmentReleaseMoved,
     EquipmentRevisionConflict,
     EquipmentScenarioNameMoved,
@@ -228,6 +231,12 @@ PUBLISH_SAVE_NAME = "equipment_scenario_publish"
 ALREADY_OFFICIAL_LINE = ":material/verified: 이미 공식 발행 리비전"
 ALREADY_OFFICIAL_HELP = (
     "이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로 발행」 을 껐습니다."
+)
+# 「되돌리기」 풍선 끝 — 공식 시나리오의 발행 규칙(체크 없이 늘 — 검수표 11/02 equip-13). 이번에
+# 어떻게 되는지는 값 줄 표지(`_restore_publish_value`), 일어난 일은 결과 알림이 적는다.
+RESTORE_PUBLISH_HELP = (
+    "공식 설비 시나리오라 저장과 같이 새 리비전을 공식으로 발행합니다 — 발행하지 않은 더 새 "
+    "리비전이 있으면 발행하지 않습니다."
 )
 # 배치 차이로 막힌 발행 팝오버 — 같은 꼴의 값 표지. 막힌 까닭과 빠져나갈 길은 꺼진 「공식으로
 # 발행」 의 풍선이 말한다(`publish_layout_lines` — 검수표 11/02 equip-44, 설계 규칙 UI-TXT-04 ·
@@ -1094,10 +1103,12 @@ def restore_seen_token(
     common_id: str,
     release_no: int,
 ) -> str:
-    """되돌리기 확인 글을 정하는 값 다섯 — 확인 체크 key 꼬리이자 저장소에 넘기는 대조값의 짝.
+    """되돌리기 확인 글(값 줄 · 체크 글)을 정하는 값 다섯 — 확인 체크 key 꼬리이자 저장소에 넘기는
+    대조값의 짝.
 
-    확인 재료는 (공통, 그 시나리오 최신, 고른 리비전) 이 정하고 공식 시나리오의 발행 줄은 공식 발행
-    번호가 정한다. 앞 두 칸(시나리오·고른 리비전)은 「같은 리비전에서 값만 바뀌었는가」 를 가른다.
+    확인 재료는 (공통, 그 시나리오 최신, 고른 리비전) 이 정하고 공식 시나리오의 발행 표지는 공식
+    발행 번호가 정한다. 앞 두 칸(시나리오·고른 리비전)은 「같은 리비전에서 값만 바뀌었는가」 를
+    가른다.
     """
     return "__".join(
         (
@@ -1110,14 +1121,14 @@ def restore_seen_token(
     )
 
 
-def _none_added_since(title: str) -> str:
-    """그 리비전 뒤에 공통 대장에 든 호기가 없을 때(0대)의 한 문장 — 안내·확인 글 셋이 함께 쓴다."""
-    return f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+def _joined_values(*parts: str) -> str:
+    """확인 창 값 줄 — 빈 조각을 빼고 「 · 」 로 잇는다."""
+    return " · ".join(part for part in parts if part)
 
 
 def _moved_since_tail(preview: ScheduleRestorePreview) -> str:
     """「그때 손대지 않은 호기는 지금 공식 자리를 따른다」 꼬리 — 그때와 자리가 다른 호기
-    (`layout_moved_since`)가 없으면 빈 글. 새 시나리오 안내와 되돌리기 확인 글이 함께 쓴다."""
+    (`layout_moved_since`)가 없으면 빈 글. 새 시나리오와 되돌리기 단추 풍선이 함께 쓴다."""
     return (
         " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
         f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
@@ -1126,59 +1137,34 @@ def _moved_since_tail(preview: ScheduleRestorePreview) -> str:
     )
 
 
-def added_since_sentence(revision: EquipmentScheduleRevisionSummary, count: int) -> str:
-    """그 리비전 뒤에 공통 대장에 든 호기가 「일정 없음」 이 된다는 한 문장(F4 — 수는 늘 적는다).
-    0대면 빠지는 호기가 없다고 적는다."""
-    title = f"r{revision.revision_no}"
-    if not count:
-        return _none_added_since(title)
+def _moved_since_value(preview: ScheduleRestorePreview) -> str:
+    """`_moved_since_tail` 의 값 줄 조각 — 없으면 빈 글."""
     return (
-        f"{title} 뒤에 공통 대장에 든 호기(지금 {count:,}대)는 {title}에 일정이 없어 이 설비 "
-        "시나리오에서 「일정 없음」 이 됩니다 — 그 시나리오 계산·Space 에서 빠집니다."
+        f"그때와 자리 다른 호기 {preview.layout_moved_since:,}대"
+        if preview.layout_moved_since
+        else ""
     )
 
 
-def branch_unscheduled_sentence(
+def _branch_layout_effect(
     revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
-) -> str:
-    """「여기서 새 시나리오」 안내 — 새 시나리오의 일정 없음 수와 그 가운데 그 리비전 뒤에 든
-    호기 수(0대면 없다고 적는다)."""
-    title = f"r{revision.revision_no}"
-    if not preview.unscheduled_after:
-        return (
-            f"{title}에는 일정이 없는 호기가 없습니다(0대) — 새 시나리오의 모든 호기가 일정을 "
-            "듭니다."
-        )
-    added = (
-        f"그 가운데 {title} 뒤에 공통 대장에 든 호기가 {preview.added_since:,}대입니다."
-        if preview.added_since
-        else _none_added_since(title)
-    )
-    return (
-        f"{title}에 일정이 없는 호기 {preview.unscheduled_after:,}대는 새 시나리오에서도 「일정 "
-        f"없음」 입니다 — {added}"
-    )
-
-
-def branch_layout_sentence(
-    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
-) -> str:
-    """「여기서 새 시나리오」 가 배치 차이(설비 0031)에 하는 일 한 문장 — 그 리비전에 저장된 차이가
-    없으면 빈 글.
+) -> tuple[str, str]:
+    """「여기서 새 시나리오」 가 배치 차이(설비 0031)에 하는 일 — (값 줄 조각, 풍선 문장). 그
+    리비전에 저장된 차이가 없으면 빈 글 둘.
 
     새 r1 은 그 리비전의 일정과 함께 **배치 차이도** 지금 공통·층 현행값으로 정규화해 든다(저장소
-    `clone_equipment_scenario` — 설계 6-6). 글은 되돌리기 확인 글처럼 실제로 옮길 차이
+    `clone_equipment_scenario` — 설계 6-6). 글은 되돌리기처럼 실제로 옮길 차이
     (`restored_layout_*` — 같은 정규화)로 적고, 그 뒤 지운 호기·공식과 같아진 행이 빠지면 그 사실과
-    그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since`)를 적는다(`restore_layout_sentence`
-    와 같은 재료 — 확인 글과 실제 쓰기가 갈리지 않게). 2026-10-26 E2E — 확인 글이 일정·메모·비가동만
-    말해 함께 옮겨지는 가정 배치를 빠뜨렸다.
+    그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since`)를 적는다
+    (`_restore_layout_effect` 와 같은 재료 — 누르기 전 글과 실제 쓰기가 갈리지 않게). 2026-10-26
+    E2E — 안내가 일정·메모·비가동만 말해 함께 옮겨지는 가정 배치를 빠뜨렸다.
     """
     title = f"r{revision.revision_no}"
     stored = stored_layout_words(
         preview.layout_unit_rows, preview.layout_mark_rows, preview.layout_label_rows
     )
     if not stored:
-        return ""
+        return "", ""
     copied = stored_layout_words(
         preview.restored_layout_unit_rows,
         preview.restored_layout_mark_rows,
@@ -1186,84 +1172,141 @@ def branch_layout_sentence(
     )
     if not copied:
         return (
+            "옮길 배치 차이 없음",
             f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 옮길 "
-            "것이 없습니다 — 새 시나리오는 공식 배치를 따릅니다."
+            "것이 없습니다 — 새 시나리오는 공식 배치를 따릅니다.",
         )
+    marker = _joined_values(f"배치 차이 {copied} 옮김", _moved_since_value(preview))
     moved = _moved_since_tail(preview)
     if stored != copied:
         return (
+            marker,
             f"{title}의 가정 배치(옮길 차이 {copied})도 새 시나리오로 옮깁니다 — {title}에 저장된 "
-            f"차이({stored}) 가운데 그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다.{moved}"
+            f"차이({stored}) 가운데 그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다.{moved}",
         )
-    return f"{title}의 가정 배치(저장된 차이 {stored})도 새 시나리오로 옮깁니다.{moved}"
+    return marker, f"{title}의 가정 배치(저장된 차이 {stored})도 새 시나리오로 옮깁니다.{moved}"
 
 
-def restore_preview_lines(
+def branch_layout_sentence(
+    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
+) -> str:
+    """`_branch_layout_effect` 의 풍선 문장."""
+    return _branch_layout_effect(revision, preview)[1]
+
+
+def branch_value_line(
+    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
+) -> str:
+    """「여기서 새 시나리오」 값 줄 — 새 시나리오의 일정 없음 수(그 가운데 그 리비전 뒤에 든 호기)와
+    옮기는 배치 차이. 말로 풀면 `branch_button_help` · Guide 다(검수표 11/02 equip-41)."""
+    unscheduled = f"일정 없음 {preview.unscheduled_after:,}대"
+    if preview.unscheduled_after and preview.added_since:
+        unscheduled += f"(r{revision.revision_no} 뒤에 든 호기 {preview.added_since:,}대)"
+    return _joined_values(
+        "새 설비 시나리오 r1", unscheduled, _branch_layout_effect(revision, preview)[0]
+    )
+
+
+def branch_button_help(
+    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
+) -> str:
+    """「새 시나리오 만들기」 풍선 — 무엇을 어디로 옮기고 무엇이 그대로인지, 배치 차이가 있으면 그
+    한 문장을 잇는다. 그 리비전에 일정이 없던 호기의 뜻은 Guide 가 말한다."""
+    return " ".join(
+        part
+        for part in (
+            f"r{revision.revision_no}의 일정·시나리오 메모·비가동을 지금 공통 대장과 합쳐 새 설비 "
+            "시나리오 r1로 옮깁니다 — 이 시나리오는 그대로입니다.",
+            branch_layout_sentence(revision, preview),
+        )
+        if part
+    )
+
+
+def _restore_publish_value(
+    release: EquipmentRelease | None, scenario: EquipmentScenarioSummary
+) -> str:
+    """공식 설비 시나리오로 되돌렸을 때의 발행 표지 — 저장소 `_plan_publish` 와 같은 규칙이다(저장
+    전 최신 발행이 그 시나리오 최신일 때만 낸다). 값을 정한 발행 번호 · 최신은 확인 체크 key 꼬리
+    (`restore_seen_token`)에 묶여 그 사이 바뀌면 체크가 풀린다."""
+    if release is not None and release.schedule_revision_id != scenario.latest_schedule_revision_id:
+        return "공식 발행 안 함"
+    return f"공식 v{(release.release_no if release is not None else 0) + 1} 발행"
+
+
+def restore_value_line(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
     preview: ScheduleRestorePreview,
     *,
     official_scenario: bool,
-) -> list[str]:
-    """「이 리비전으로 되돌리기」 확인 글 — 무엇이 바뀌고 무엇이 그대로인지(Markdown 줄).
-
-    바뀌는 호기 수·비가동 행 수·일정 없음이 되는 호기, 그 리비전 뒤에 공통 대장에 든 호기의 「일정
-    없음」(늘 적는다), 그대로인 것(사이 리비전·공통 대장·다른 시나리오), 공식 시나리오면 발행 규칙.
-    발행 규칙 줄은 되돌릴 것이 없어(`restore_writes_nothing`) 단추가 서지 않는 회차에는 싣지 않는다.
-    """
-    name = quoted(scenario.scenario_name)
-    title = f"r{revision.revision_no}"
-    latest_no = scenario.latest_revision_no or 0
-    new_title = f"r{latest_no + 1}"
-    lines = [
-        f"{name} {title}의 일정(날짜 여섯·시나리오 메모·비가동)으로 되돌립니다 — 최신 "
-        f"r{latest_no} 위에 새 리비전 {new_title}{object_particle(new_title)} 저장하고 "
-        f"{title}~{with_topic_particle(f'r{latest_no}')} 그대로 남습니다.",
-        f"**일정이나 비가동이 바뀌는 호기 {preview.changed_units:,}대** · 비가동 "
-        f"{preview.downtime_rows_before:,}행 → {preview.downtime_rows_after:,}행 · 되돌린 뒤 "
-        f"일정 없음 {preview.unscheduled_after:,}대(지금 일정이 있다가 빠지는 호기 "
-        f"{preview.newly_unscheduled:,}대).",
-        added_since_sentence(revision, preview.added_since),
-        "공통 대장(호기 정보·실적·상태·Space 실물)과 다른 설비 시나리오는 그대로입니다.",
-    ]
-    layout = restore_layout_sentence(revision, preview, official_scenario=official_scenario)
-    if layout:
-        lines.append(layout)
-    if official_scenario and not restore_writes_nothing(preview, official_scenario=True):
-        lines.append(
-            "공식 설비 시나리오입니다 — 그 사이 발행하지 않은 더 새 리비전이 없으면 새 리비전을 "
-            "공식으로 발행합니다."
-        )
-    return lines
+    release: EquipmentRelease | None,
+) -> str:
+    """「이 리비전으로 되돌리기」 값 줄 — 결과를 가르는 값 한 줄(검수표 11/02 equip-41). 바뀌는 호기
+    수와 그 리비전 뒤에 든 호기는 확인 체크 글(`restore_confirm_label`)이 적어 여기 다시 적지
+    않는다 — 말로 풀면 `restore_button_help` · Guide 다."""
+    unscheduled = f"일정 없음 {preview.unscheduled_after:,}대"
+    if preview.newly_unscheduled:
+        unscheduled += f"(새로 빠짐 {preview.newly_unscheduled:,}대)"
+    return _joined_values(
+        f"새 리비전 r{(scenario.latest_revision_no or 0) + 1}",
+        f"비가동 {preview.downtime_rows_before:,}행 → {preview.downtime_rows_after:,}행",
+        unscheduled,
+        restore_layout_marker(revision, preview, official_scenario=official_scenario),
+        _restore_publish_value(release, scenario) if official_scenario else "",
+    )
 
 
-def restore_layout_sentence(
+def restore_button_help(
+    scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
     preview: ScheduleRestorePreview,
     *,
     official_scenario: bool,
 ) -> str:
-    """되돌리기가 배치 차이(설비 0031)에 하는 일 한 문장 — 고른 리비전과 지금 최신의 저장된 차이가
-    같으면 빈 글. 공식 설비 시나리오면 차이를 버린다(I2), 가정이면 고른 리비전의 차이를 지금 공통·층
-    현행값으로 정규화해 되살린다 — 글은 **실제로 쓸** 차이(`restored_layout_*_rows`)로 적고, 그 뒤
-    지운 호기·공식과 같아진 행이 빠지면 그 사실을 적는다. 판정은 저장소와 같은
-    `restore_writes_nothing` 의 몫과 맞는다(설계 6-6 — 확인 글과 실제 쓰기가 갈리지 않게).
+    """「되돌리기」 풍선 — 무엇을 어디로 저장하고 무엇이 그대로인지, 배치 차이가 바뀌면 그 한 문장,
+    공식 시나리오면 발행 규칙. 잠긴 동안에도 뜬다. 일어난 일은 결과 알림
+    (`restore_result_message`)이 적는다."""
+    new_title = f"r{(scenario.latest_revision_no or 0) + 1}"
+    parts = (
+        f"r{revision.revision_no}의 일정(날짜 여섯·시나리오 메모·비가동)을 새 리비전 "
+        f"{with_direction_particle(new_title)} 저장합니다 — 기존 리비전 · 공통 대장 · 다른 설비 "
+        "시나리오는 그대로입니다.",
+        restore_layout_sentence(revision, preview, official_scenario=official_scenario),
+        RESTORE_PUBLISH_HELP if official_scenario else "",
+    )
+    return " ".join(part for part in parts if part)
+
+
+def _restore_layout_effect(
+    revision: EquipmentScheduleRevisionSummary,
+    preview: ScheduleRestorePreview,
+    *,
+    official_scenario: bool,
+) -> tuple[str, str]:
+    """되돌리기가 배치 차이(설비 0031)에 하는 일 — (값 줄 조각, 풍선 문장). 고른 리비전과 지금
+    최신의 저장된 차이가 같으면 빈 글 둘. 공식 설비 시나리오면 차이를 버린다(I2), 가정이면 고른
+    리비전의 차이를 지금 공통·층 현행값으로 정규화해 되살린다 — 글은 **실제로 쓸**
+    차이(`restored_layout_*_rows`)로 적고, 그 뒤 지운 호기·공식과 같아진 행이 빠지면 그 사실을
+    적는다. 판정은 저장소와 같은 `restore_writes_nothing` 의 몫과 맞는다(설계 6-6 — 누르기 전 글과
+    실제 쓰기가 갈리지 않게). 배치가 바뀌지 않으면 값 줄에는 적지 않고 문장만 둔다.
 
     가정 배치를 되살릴 때 그때 손대지 않은 호기는 지금 공식 자리를 따른다 — 그 리비전을 저장할 때
     본 공통과 자리가 달라진 호기(`layout_moved_since`)가 있으면 그 수를 덧붙인다(이력 「그때
     그대로」 와 다르다 — 검토 F21)."""
     if preview.layout_identical:
-        return ""
+        return "", ""
     title = f"r{revision.revision_no}"
     stored = stored_layout_words(
         preview.layout_unit_rows, preview.layout_mark_rows, preview.layout_label_rows
     )
     if official_scenario:
         if not stored:
-            return ""
+            return "", ""
         return (
+            f"배치 차이 {stored} 따라오지 않음",
             f"{title}에 저장된 배치 차이({stored})는 공식 설비 시나리오라 따라오지 않습니다 — "
-            "일정·비가동만 되돌립니다."
+            "일정·비가동만 되돌립니다.",
         )
     restored = stored_layout_words(
         preview.restored_layout_unit_rows,
@@ -1277,38 +1320,69 @@ def restore_layout_sentence(
     )
     if preview.restored_layout_same:
         if not stored:
-            return ""
-        return (
+            return "", ""
+        return "", (
             f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 "
             "되살릴 것이 없습니다 — 가정 배치는 지금 최신 그대로입니다."
             if not restored
             else f"{title}의 가정 배치는 지금 최신과 같습니다 — 배치는 바뀌지 않습니다."
         )
     if restored:
+        marker = _joined_values(f"배치 되살림 {restored}", _moved_since_value(preview))
         moved = _moved_since_tail(preview)
         if dropped:
-            return f"{title}의 가정 배치(되살릴 차이 {restored})도 되살립니다 — {dropped}{moved}"
-        return f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다.{moved}"
+            return (
+                marker,
+                f"{title}의 가정 배치(되살릴 차이 {restored})도 되살립니다 — {dropped}{moved}",
+            )
+        return marker, f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다.{moved}"
+    current = stored_layout_words(
+        preview.current_layout_unit_rows,
+        preview.current_layout_mark_rows,
+        preview.current_layout_label_rows,
+    )
+    marker = f"배치 차이 {current} 지움" if current else "배치 차이 지움"
     if stored:
         return (
+            marker,
             f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 "
-            "되살릴 것이 없습니다 — 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다."
+            "되살릴 것이 없습니다 — 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다.",
         )
-    return (
+    return marker, (
         f"{title}에는 배치 차이가 없어 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다."
     )
+
+
+def restore_layout_sentence(
+    revision: EquipmentScheduleRevisionSummary,
+    preview: ScheduleRestorePreview,
+    *,
+    official_scenario: bool,
+) -> str:
+    """`_restore_layout_effect` 의 풍선 문장."""
+    return _restore_layout_effect(revision, preview, official_scenario=official_scenario)[1]
+
+
+def restore_layout_marker(
+    revision: EquipmentScheduleRevisionSummary,
+    preview: ScheduleRestorePreview,
+    *,
+    official_scenario: bool,
+) -> str:
+    """`_restore_layout_effect` 의 값 줄 조각."""
+    return _restore_layout_effect(revision, preview, official_scenario=official_scenario)[0]
 
 
 def restore_confirm_label(
     revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
 ) -> str:
     """되돌리기 확인 체크 글 — 바뀌는 호기 수와 「일정 없음」 이 되는 호기를 수로 적는다(0대면 그
-    리비전 뒤에 든 호기가 없다고)."""
+    리비전 뒤에 든 호기가 없다고 — F4, 수는 늘 적는다)."""
     title = f"r{revision.revision_no}"
     added = (
         f"{title} 뒤에 공통 대장에 든 호기 {preview.added_since:,}대는 「일정 없음」 이 됩니다."
         if preview.added_since
-        else _none_added_since(title)
+        else f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
     )
     return (
         f"{with_direction_particle(title + '의 일정')} 되돌립니다 — 호기 "
@@ -1370,7 +1444,7 @@ def _render_restore(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
 ) -> None:
-    """「이 리비전으로 되돌리기」(E7) — 확인 글을 보이고 확인 체크 뒤에 새 리비전으로 다시 저장한다.
+    """「이 리비전으로 되돌리기」(E7) — 값 줄을 보이고 확인 체크 뒤에 새 리비전으로 다시 저장한다.
 
     모든 설비 시나리오에서 된다(공식 시나리오면 저장과 같은 발행 규칙 — 저장처럼 체크 없이 늘
     발행하고, 일어난 일은 결과 알림이 적는다). 이 세션이 그 시나리오를 보고 있고 저장하지 않은 설비
@@ -1407,16 +1481,25 @@ def _render_restore(
     release_no = session.catalog.release_no or 0
     seen_token = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
     official_scenario = session.official_scenario_id == scenario.equipment_scenario_id
-    for line in restore_preview_lines(
-        scenario, revision, preview, official_scenario=official_scenario
-    ):
-        st.caption(line)
     # 단추를 세울지는 저장소의 「쓸 것 없음」 판정과 같은 함수다 — 공식 시나리오는 배치 차이를
-    # 버리므로 일정·비가동만 본다(확인 글과 실제 쓰기가 갈리지 않게, 설계 6-6).
+    # 버리므로 일정·비가동만 본다(누르기 전 글과 실제 쓰기가 갈리지 않게, 설계 6-6). 단추가 서지
+    # 않으면 풍선도 없어, 공식 시나리오에서 따라오지 않는 배치 차이는 결론 앞 표지가 말한다.
     if restore_writes_nothing(preview, official_scenario=official_scenario):
+        marker = restore_layout_marker(revision, preview, official_scenario=official_scenario)
+        if marker:
+            st.caption(marker)
         same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
         st.caption(f"최신 r{scenario.latest_revision_no}의 {same} 모두 같아 되돌릴 것이 없습니다.")
         return
+    st.caption(
+        restore_value_line(
+            scenario,
+            revision,
+            preview,
+            official_scenario=official_scenario,
+            release=session.catalog.latest_release,
+        )
+    )
     chosen = revision.schedule_revision_id
     revision_name = st.text_input(
         "새 리비전명(선택)",
@@ -1449,6 +1532,7 @@ def _render_restore(
         disabled=not agreed,
         key=RESTORE_BUTTON_KEY,
         width="stretch",
+        help=restore_button_help(scenario, revision, preview, official_scenario=official_scenario),
     )
     if not clicked or not agreed:
         return
@@ -1549,15 +1633,11 @@ def _render_branch(
 
     출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
     대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 누르기 전
-    확인 글(`branch_layout_sentence`)이 옮길 차이를, 완료 알림이 새 시나리오에 든 차이 행 수를
-    적는다.
+    값 줄(`branch_value_line`) · 단추 풍선(`branch_button_help`)이 옮길 차이를, 완료 알림이 새
+    시나리오에 든 차이 행 수를 적는다.
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
-    st.caption(
-        f"{name} {title}의 일정·시나리오 메모·비가동을 지금 공통 대장과 합쳐 새 설비 시나리오 "
-        "r1로 옮깁니다. 이 시나리오는 그대로입니다."
-    )
     try:
         preview = _preview_for(database_path, _latest_common_id(database_path), scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
@@ -1567,10 +1647,7 @@ def _render_branch(
             text="이 리비전에서 새 시나리오를 만들 수 없습니다",
         )
         return
-    st.caption(branch_unscheduled_sentence(revision, preview))
-    layout = branch_layout_sentence(revision, preview)
-    if layout:
-        st.caption(layout)
+    st.caption(branch_value_line(revision, preview))
     # 칸 key 의 세대가 만들기 쓰기의 세대이기도 하다(`write_once_value`).
     branch_generation = _generation()
     new_name = st.text_input(
@@ -1583,6 +1660,7 @@ def _render_branch(
         type="primary",
         key=CLONE_BUTTON_KEY,
         width="stretch",
+        help=branch_button_help(revision, preview),
     ):
         try:
             repository = get_equipment_repository(database_path)
@@ -1814,21 +1892,24 @@ def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSumma
     )
 
 
-def clear_layout_lines(scenario: EquipmentScenarioSummary) -> list[str]:
-    """「배치 차이 모두 지우기」 확인 글(Markdown 줄) — 무엇을 비우고 무엇이 그대로인지."""
-    name = quoted(scenario.scenario_name)
-    latest_no = scenario.latest_revision_no or 0
-    latest = f"r{latest_no}"
-    new_title = f"r{latest_no + 1}"
-    stored = stored_layout_words(*scenario.latest_layout_rows) or "저장된 차이"
-    return [
-        f"{name} 최신 {latest}의 일정·비가동은 그대로 두고 배치 차이({stored})만 비운 새 "
-        f"리비전 {new_title}{object_particle(new_title)} 저장합니다 — 이 설비 시나리오의 Space "
-        "배치가 공식 배치로 돌아갑니다(공식에서 고친 자리를 다시 따라갑니다).",
-        f"{with_topic_particle(latest)} 그대로 남습니다 — 배치안을 되살리려면 그 리비전을 고르고 "
-        "「이 리비전으로 되돌리기」, 따로 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 두세요.",
-        "공통 대장·층 도면·다른 설비 시나리오는 그대로입니다. 공식 발행은 하지 않습니다.",
-    ]
+def clear_layout_value_line(scenario: EquipmentScenarioSummary) -> str:
+    """「배치 차이 모두 지우기」 값 줄 — 새 리비전 번호와 지울 차이(검수표 11/02 equip-41). 무엇이
+    그대로인지는 `clear_layout_button_help` · Guide 다."""
+    stored = stored_layout_words(*scenario.latest_layout_rows)
+    return _joined_values(
+        f"새 리비전 r{(scenario.latest_revision_no or 0) + 1}",
+        f"지울 배치 차이 {stored}" if stored else "",
+    )
+
+
+def clear_layout_button_help(scenario: EquipmentScenarioSummary) -> str:
+    """「배치 차이 모두 지우기」 풍선 — 무엇을 비우고 무엇이 남는지. 잠긴 동안에도 뜬다."""
+    latest = f"r{scenario.latest_revision_no or 0}"
+    return (
+        f"최신 {latest}의 일정·비가동은 그대로 두고 배치 차이만 비운 새 리비전을 저장합니다 — "
+        f"{with_topic_particle(latest)} 남아 「이 리비전으로 되돌리기」 로 되살릴 수 있고, 공식 "
+        "발행은 하지 않습니다."
+    )
 
 
 def clear_layout_unchecked_notice(
@@ -1896,8 +1977,7 @@ def _render_clear_layout(
     if session.legacy_trace_count:
         st.caption(legacy_trace_lock_line(session.legacy_trace_count))
         return
-    for line in clear_layout_lines(scenario):
-        st.caption(line)
+    st.caption(clear_layout_value_line(scenario))
     latest_id = scenario.latest_schedule_revision_id or ""
     suffix = f"{scenario.equipment_scenario_id}__{latest_id}"
     note = st.text_input("변경 메모(선택)", key=f"{_keyed(CLEAR_LAYOUT_NOTE_KEY)}__{suffix}")
@@ -1921,6 +2001,7 @@ def _render_clear_layout(
         disabled=not agreed,
         key=CLEAR_LAYOUT_BUTTON_KEY,
         width="stretch",
+        help=clear_layout_button_help(scenario),
     )
     if not clicked or not agreed:
         return

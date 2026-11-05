@@ -1,6 +1,6 @@
-# Purpose: 설비 시나리오 구획의 알림 뒤 팝오버 자리·리비전 표 위 띄움·값 뒤 조사를 검사한다.
+# Purpose: 설비 시나리오 구획의 알림 뒤 팝오버 자리·표 위 띄움·값 뒤 조사·확인 창 값 줄을 검사한다.
 
-"""시나리오 관리 「설비 시나리오」 구획의 화면 자리와 글(브라우저 E2E 결함 셋).
+"""시나리오 관리 「설비 시나리오」 구획의 화면 자리와 글(브라우저 E2E 결함 셋 + 확인 창).
 
 - 작업 알림(알림창 표지 — 구획 맨 위 늘 서 있는 칸이 보낸다)은 한 회차뿐이다. 알림이 빠지는 다음
   회차에 팝오버 줄이 한 칸 당겨지면 팝오버가 다시 서며 닫혀, 알림 뒤 처음 누른 확인 체크·Enter 가
@@ -10,6 +10,8 @@
   팝오버 단추(「시나리오 이름 바꾸기」·「배치 차이 모두 지우기」)의 누름을 가로챘다 — 표 앞에
   띄움(`st.space`)이 선다.
 - 리비전 번호·시나리오 이름 뒤 조사는 끝소리로 고른다(「r2를」·「r5는」·「「셋업 시나리오」로」).
+- 되돌리기 · 배치 차이 지우기 · 새 시나리오 창의 글은 값 줄 하나와 확인 체크 글의 수뿐이고 설명은
+  단추 풍선 · Guide 다(검수표 11/02 equip-41).
 """
 
 from __future__ import annotations
@@ -20,11 +22,22 @@ from typing import Any
 
 import pytest
 from alert_marks import successes
+from source_sites import PROJECT_ROOT, ends_as_sentence
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Dataframe
-from test_equipment_scenario_repository import OPERATIONS, _request, _seeded, _session, _set
+from test_equipment_scenario_repository import (
+    OPERATIONS,
+    _clone,
+    _request,
+    _seeded,
+    _session,
+    _set,
+)
 
 from capa_simulation.components.equipment_scenario_management import (
+    CLEAR_LAYOUT_BUTTON_KEY,
+    CLEAR_LAYOUT_CONFIRM_KEY,
+    CLONE_BUTTON_KEY,
     LOAD_BUTTON_KEY,
     PUBLISH_BUTTON_HELP,
     PUBLISH_BUTTON_KEY,
@@ -36,6 +49,7 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
     REVISION_TABLE_TOOLBAR_CLEARANCE,
+    SCENARIO_KEY,
     publish_preview,
     revision_name_help,
 )
@@ -47,6 +61,8 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
 )
+
+GUIDE = PROJECT_ROOT / "src/capa_simulation/guides/scenario_management.md"
 
 
 @pytest.fixture(autouse=True)
@@ -260,6 +276,90 @@ render_equipment_scenario_management({str(path)!r}, session)
     captions = [str(item.value) for item in app.caption]
     assert captions == ["설비 시나리오가 없습니다."], captions
     assert not app.info and not app.success and not app.warning
+
+
+# 팝오버 줄 곁 값 줄의 앞머리 — 확인 창 셋이 그리는 글은 값 줄 하나뿐이다.
+_VALUE_LINE_HEADS = ("새 리비전 ", "새 설비 시나리오 r1 ")
+
+
+def _value_lines(app: AppTest) -> list[str]:
+    return [
+        str(item.value) for item in app.caption if str(item.value).startswith(_VALUE_LINE_HEADS)
+    ]
+
+
+def test_the_confirm_popovers_stand_one_value_line_and_keep_words_in_balloons(
+    tmp_path: Path,
+) -> None:
+    """검수표 11/02 equip-41 「권장대로」 — 되돌리기 · 배치 차이 지우기 · 새 시나리오 창은 안내 글만
+    걷고 확인 체크는 남긴다. 결과를 가르는 값은 값 줄 하나(문장으로 끝나지 않는다)와 체크 글의
+    수로, 설명은 단추 풍선으로 옮겼고, 이름 · 메모 · 저장자 칸과 체크 · 잠긴 단추는 그대로다."""
+    repository = _seeded(tmp_path)
+    clone = _clone(repository)
+    mine = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            mine,
+            clone.equipment_scenario_id,
+            equipment=_set(mine.equipment, "EQ-01", "X좌표", 50.0),
+        )
+    )
+    numbers = {
+        item.revision_no: item.schedule_revision_id
+        for item in repository.list_schedule_revisions(clone.equipment_scenario_id)
+    }
+    app = _ok(_section(repository.database_path).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(clone.equipment_scenario_id)
+    _ok(app.run())
+    # 최신을 고른 회차 — 되돌리기는 결론 한 줄이고, 지우기 · 새 시나리오 값 줄이 선다.
+    values = _value_lines(app)
+    assert any(text.startswith("새 리비전 r3 · 지울 배치 차이 호기 1행") for text in values), values
+    assert any(text.startswith("새 설비 시나리오 r1 · ") for text in values), values
+    clear = app.button(key=CLEAR_LAYOUT_BUTTON_KEY)
+    assert clear.disabled and "배치 차이만 비운 새 리비전을 저장합니다" in str(clear.help)
+    assert [box for box in app.checkbox if str(box.key).startswith(CLEAR_LAYOUT_CONFIRM_KEY)], (
+        "확인 체크는 남는다"
+    )
+    assert "이 시나리오는 그대로입니다" in str(app.button(key=CLONE_BUTTON_KEY).help)
+
+    # 옛 리비전을 고른 회차 — 세 창의 값 줄이 모두 서고 글 자리에 문장이 없다.
+    app.selectbox(key=REVISION_KEY).set_value(numbers[1])
+    _ok(app.run())
+    values = _value_lines(app)
+    assert any(text.startswith("새 리비전 r3 · 비가동 ") for text in values), values
+    assert all(not ends_as_sentence(text) for text in values), values
+    captions = [str(item.value) for item in app.caption]
+    for moved in (
+        "그대로 두고 배치 차이",
+        "그대로 남습니다",
+        "그대로입니다",
+        "「일정 없음」 입니다",
+        "「일정 없음」 이 됩니다",
+    ):
+        assert not any(moved in text for text in captions), (moved, captions)
+    restore = app.button(key=RESTORE_BUTTON_KEY)
+    assert (
+        restore.disabled
+        and "기존 리비전 · 공통 대장 · 다른 설비 시나리오는 그대로입니다" in str(restore.help)
+    )
+    assert [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
+    labels = {str(item.label) for item in app.text_input}
+    assert {"새 리비전명(선택)", "변경 메모(선택)", "새 설비 시나리오 이름"} <= labels
+
+
+def test_the_scenario_guide_carries_what_left_the_confirm_popovers() -> None:
+    """걷은 말은 Guide 에 남는다(설계 규칙 UI-TXT-02) — 세 창의 그대로인 것 · 일정 없음의 뜻 ·
+    발행."""
+    guide = GUIDE.read_text(encoding="utf-8")
+    for words in (
+        "공통 대장 · 층 도면 · 다른 설비 시나리오는 그대로이고 공식 발행은 하지 않습니다",
+        "공식에서 고친 자리를 다시 따라갑니다",
+        "그 시나리오 계산 · Space 에서 빠짐",
+        "「공식 발행 안 함」",
+        "「그때와 자리 다른 호기 n대」",
+        "지금 공통 대장과 합칩니다 — 이 시나리오는 그대로입니다",
+    ):
+        assert words in guide, words
 
 
 def test_popover_explanations_sit_in_balloons_not_standing_captions(tmp_path: Path) -> None:

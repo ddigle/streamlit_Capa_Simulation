@@ -237,6 +237,12 @@ OFFICIAL_SEEN_KEY = "scenario_official_seen_release_no"
 # `REVISION_NAME_SAVE_NAME:<리비전 id>` 다.
 OFFICIAL_SAVE_NAME = "scenario_official_release"
 REVISION_NAME_SAVE_NAME = "scenario_revision_name"
+# 「공식버전 지정」 팝업에서 고른 리비전이 지금 공식일 때의 값 표지와, 그래도 지정되는 뜻을 말하는
+# 지정 단추 풍선(설계 규칙 UI-TXT-04 — 검수표 11/02 equip-41 과 같은 기준).
+SAME_AS_OFFICIAL_LINE = ":material/verified: 지금 공식과 같은 리비전"
+SAME_AS_OFFICIAL_HELP = (
+    "지금 공식과 같은 리비전입니다 — 지정하면 같은 리비전에 새 공식 번호가 섭니다."
+)
 # 목록 「변경 저장」 의 출발점 대조 저장 이름(`write_guard.save_once` — 출발점은 그 저장의 이름·순서
 # 편집과 순서의 본 차례).
 LIST_SAVE_NAME = "scenario_list_edits"
@@ -1347,8 +1353,10 @@ def _render_official(
             f"**v{next_no}** · {literal_markdown(summary.scenario_name)} "
             f"{literal_markdown(revision_label(revision))}"
         )
-    if latest is not None and latest.revision_id == revision_id:
-        st.info("지금 공식과 같은 리비전입니다 — 지정하면 같은 리비전에 새 공식 번호가 섭니다.")
+    # 지금 공식과 같은 리비전이면 값 표지 한 마디 — 그래도 지정되는 뜻은 지정 단추 풍선이 말한다.
+    same_as_official = latest is not None and latest.revision_id == revision_id
+    if same_as_official:
+        st.caption(SAME_AS_OFFICIAL_LINE)
     # 가상 제품은 실적과 대조할 수 없는 값이다. 그런 리비전이 모두의 첫 화면이 되기 전에
     # 지정하는 사람이 그 사실을 보고 확인하게 한다(2026-10-06 사용자 결정). 확인 체크는 폼
     # **밖**에 둔다 — 폼 안의 체크는 누를 때 다시 그리지 않아 지정 버튼을 풀 수 없다.
@@ -1369,6 +1377,7 @@ def _render_official(
             type="primary",
             disabled=not confirmed,
             width="stretch",
+            help=SAME_AS_OFFICIAL_HELP if same_as_official else None,
         )
     refused = take_refusal(OFFICIAL_SAVE_NAME)
     if refused is not None:
@@ -1541,7 +1550,6 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
             help=f"지금 최신 공식버전(v{official.release_no})의 시나리오라 보관할 수 없습니다.",
         )
         return
-    st.info("보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다.")
     # 보관이 파일 크기를 줄이지 않는다는 것(용량 목적이면 영구 삭제 + compact)은 Guide 가 말한다.
     confirmed = st.checkbox(
         f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
@@ -1554,6 +1562,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         type="primary",
         disabled=not confirmed,
         width="stretch",
+        help="보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다.",
     ):
         return
     message = (

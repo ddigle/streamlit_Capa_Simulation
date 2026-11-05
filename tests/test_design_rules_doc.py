@@ -55,6 +55,7 @@ PICTURE_MEMOS = {
     "static-35",
     "static-37",
     "equip-13",
+    "equip-41",
     "equip-44",
     "equip-60",
     "equip-61",

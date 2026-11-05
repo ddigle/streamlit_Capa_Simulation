@@ -48,6 +48,8 @@ from capa_simulation.components.scenario_management import (
     REVISION_EDITOR_KEY,
     REVISION_NAME_HELP,
     REVISION_NOTE_HELP,
+    SAME_AS_OFFICIAL_HELP,
+    SAME_AS_OFFICIAL_LINE,
     _official_rename_notes,
     official_confirm_key,
     official_status_line,
@@ -164,6 +166,9 @@ def test_list_management_acts_on_the_checked_scenario(
     assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
     execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled
+    # 보관의 뜻은 파란 안내 상자가 아니라 단추 풍선이다(검수표 11/02 equip-41 같은 기준).
+    assert "새 리비전 저장·공식버전 지정이 막힙니다" in str(execute.help)
+    assert not any("보관하면" in item.value for item in infos(app))
 
 
 def test_a_database_held_by_another_program_shows_the_notice_instead_of_a_traceback(
@@ -1088,7 +1093,11 @@ def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) 
     shown = [item.value for item in app.markdown]
     assert any(value.startswith(f"**v{release.release_no}** · ") for value in shown), shown
     assert any(value.startswith(f"**v{release.release_no + 1}** · ") for value in shown), shown
-    assert any("지금 공식과 같은 리비전입니다" in item.value for item in infos(app))
+    # 값 표지 한 마디와 지정 단추 풍선 — 파란 안내 상자는 서지 않는다(검수표 11/02 equip-41 같은
+    # 기준).
+    assert any(item.value == SAME_AS_OFFICIAL_LINE for item in app.caption)
+    assert not any("지금 공식과 같은 리비전" in item.value for item in infos(app))
+    assert _official_button(app).help == SAME_AS_OFFICIAL_HELP
     assert not any("가상 제품" in item.value for item in app.warning)
     assert VIRTUAL_CONFIRM_LABEL not in {widget.label for widget in app.checkbox}
     assert not _official_button(app).disabled
