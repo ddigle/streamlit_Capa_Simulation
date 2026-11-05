@@ -526,6 +526,11 @@ def test_optional_fields_stay_empty_and_offer_the_clear_chip(
     assert _last_call(calls)["data"]["emptyText"] == "없음"
 
 
+def test_the_widget_key_avoids_the_component_delimiter() -> None:
+    """Components v2 는 키에 `__` 가 들면 그리지 못하고 죽는다(1.63 — 사본 앱에서 잡았다)."""
+    assert "__" not in panel_key("standard_target_start_date")
+
+
 def _press_apply(
     session: _FakeSession, calls: list[dict[str, Any]], payload: dict[str, object]
 ) -> None:
