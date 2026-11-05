@@ -11,17 +11,14 @@
 from __future__ import annotations
 
 import ast
-import json
-import os
 import re
-import shutil
-import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import pytest
 from alert_marks import alert_notes, flashed, place_errors
+from js_runner import run_js_json
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import paste_form
@@ -203,21 +200,7 @@ def _node(runner: str) -> Any:
         r"// <paste-window-core>\n(?P<body>.*?)\n// </paste-window-core>", WINDOW_JS, re.S
     )
     assert match, "paste_window.js 에 // <paste-window-core> 구획이 없습니다"
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 창 크기 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", match.group("body") + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(match.group("body") + "\n" + runner, what="창 크기 JS 구획 시험")
 
 
 def test_the_size_stays_inside_the_viewport() -> None:

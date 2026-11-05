@@ -10,11 +10,7 @@
 from __future__ import annotations
 
 import ast
-import json
-import os
 import re
-import shutil
-import subprocess
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +18,7 @@ from typing import Any
 
 import pytest
 import streamlit as st
+from js_runner import run_js, run_js_json
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.date_panel as date_panel
@@ -44,21 +41,7 @@ def _node(runner: str) -> Any:
         r"// <date-panel-core>\n(?P<body>.*?)\n// </date-panel-core>", DATE_PANEL_JS, re.S
     )
     assert match, "date_panel.js 에 // <date-panel-core> 구획이 없습니다"
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다 — 기간 판 JS 구획 시험을 건너뛸 수 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", match.group("body") + "\n" + runner],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return run_js_json(match.group("body") + "\n" + runner, what="기간 판 JS 구획 시험")
 
 
 def test_two_presses_close_a_range_in_either_order() -> None:
@@ -679,17 +662,7 @@ def test_the_space_editor_mounts_the_same_panel_in_its_form() -> None:
     assert ".sle button:where(:not(.capa-date-root button)) {" in css
     head = date_panel.DATE_PANEL_MOUNT_JS
     assert "export default" not in head
-    runtime = shutil.which("node") or shutil.which("bun")
-    if runtime is None:
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            pytest.fail("CI 러너에 node 가 없다")
-        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    completed = subprocess.run(
-        [runtime, "-e", head + "\nprocess.stdout.write(typeof mountDatePanel)"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        check=False,
+    completed = run_js(
+        head + "\nprocess.stdout.write(typeof mountDatePanel)", what="기간 판 머리 조각 시험"
     )
     assert completed.stdout == "function", completed.stderr
