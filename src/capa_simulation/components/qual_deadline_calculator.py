@@ -53,6 +53,7 @@ import streamlit as st
 from pandas.io.formats.style import Styler
 from streamlit.elements.lib.column_types import ColumnConfig
 
+from capa_simulation.components.date_panel import optional_date_field
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.status_metric import (
@@ -385,14 +386,11 @@ def _render_inputs(today: date) -> QualDeadlineInput:
             help="1월 앞까지 이미 있는 가용대수입니다. 비우면 0 입니다.",
         )
     with fourth:
-        st.date_input(
+        optional_date_field(
             "오늘(지난 마감 표시용)",
-            value=None,
-            min_value=_MIN_TODAY,
-            max_value=_MAX_TODAY,
-            format="YYYY-MM-DD",
             key=TODAY_KEY,
-            persist_state="session",
+            min_date=_MIN_TODAY,
+            max_date=_MAX_TODAY,
         )
     toolbar_clearance()
     widget_key = editor_widget_key(EDITOR_KEY)

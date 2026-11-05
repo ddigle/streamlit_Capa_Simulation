@@ -16,12 +16,12 @@ Gap·A/Item 으로 넘기는 일은 실행 관리 머리가 말하고, 여기서
 
 from __future__ import annotations
 
-from datetime import date
 from typing import cast
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.dynamic_capacity_dashboard import (
     build_capacity_trend_figure,
     build_capacity_waterfall_figure,
@@ -268,23 +268,14 @@ def _render_detail(
         prune_choice(PROCESS_FILTER_KEY, process_options, default=worst_process)
 
         with st.container(horizontal=True, gap="small"):
-            start_date: date = st.date_input(
-                "시작일",
-                value=minimum_date,
-                min_value=minimum_date,
-                max_value=maximum_date,
-                key="dynamic_capacity_start_date",
-                persist_state="session",
-                width=165,
-            )
-            end_date: date = st.date_input(
-                "종료일",
-                value=maximum_date,
-                min_value=minimum_date,
-                max_value=maximum_date,
-                key="dynamic_capacity_end_date",
-                persist_state="session",
-                width=165,
+            start_date, end_date = date_range_field(
+                "조회일",
+                start_key="dynamic_capacity_start_date",
+                end_key="dynamic_capacity_end_date",
+                default=(minimum_date, maximum_date),
+                min_date=minimum_date,
+                max_date=maximum_date,
+                width=240,
             )
             process = cast(
                 str,

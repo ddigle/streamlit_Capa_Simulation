@@ -246,25 +246,6 @@ def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(
     assert page_bootstrap.selected_month_range() == (202603, 202608)
 
 
-def test_date_range_value_reads_every_shape_the_range_picker_returns() -> None:
-    """범위 날짜 입력은 두 날짜·한 날짜·`date` 하나 중 무엇이든 돌려준다."""
-    from datetime import date
-
-    from capa_simulation.page_bootstrap import date_range_value
-
-    default = (date(2026, 1, 1), date(2026, 1, 31))
-
-    assert date_range_value((date(2026, 3, 2), date(2026, 3, 9)), default) == (
-        date(2026, 3, 2),
-        date(2026, 3, 9),
-    )
-    # 사용자가 시작일만 누른 중간 상태다. 한쪽만 잡고 계산하면 기간이 엉뚱해진다.
-    assert date_range_value((date(2026, 3, 2),), default) == default
-    assert date_range_value(date(2026, 3, 2), default) == (date(2026, 3, 2), date(2026, 3, 2))
-    assert date_range_value(None, default) == default
-    assert date_range_value("2026-03-02", default) == default
-
-
 def test_prune_list_selection_drops_values_the_current_options_no_longer_have(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

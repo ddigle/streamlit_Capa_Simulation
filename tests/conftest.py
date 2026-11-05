@@ -24,6 +24,7 @@ from capa_simulation.auth import names as sso_names
 from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
     alert_center,
+    date_panel,
     edit_grid,
     equipment_master_grid,
     page_tabs,
@@ -215,6 +216,24 @@ def _stub_space_layout_editor(monkeypatch: pytest.MonkeyPatch) -> None:
         return SimpleNamespace(apply=None, navigate=None)
 
     monkeypatch.setattr(space_layout_editor, "_EDITOR", _silent)
+
+
+@pytest.fixture(autouse=True)
+def date_panels(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, Any]]:
+    """날짜 칸 컴포넌트(`date_panel._DATE_PANEL`)를 아무것도 보내지 않는 대역으로 바꾼다.
+
+    Space 편집기와 같은 까닭이다 — AppTest 는 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest 에서
+    진짜 컴포넌트를 부르면 「not registered」로 죽는다. 값의 정본은 세션 칸이라 시험은 그 칸을 읽고
+    쓴다. 돌려주는 사전은 위젯 키(`date_panel.panel_key`)마다 마지막에 보낸 `data` 다 — 칸이
+    섰는지 · 잠겼는지 · 지금 값을 본다."""
+    sent: dict[str, dict[str, Any]] = {}
+
+    def _silent(*, key: str, data: dict[str, Any], **_: Any) -> SimpleNamespace:
+        sent[key] = data
+        return SimpleNamespace(apply=None)
+
+    monkeypatch.setattr(date_panel, "_DATE_PANEL", _silent)
+    return sent
 
 
 @pytest.fixture(autouse=True)

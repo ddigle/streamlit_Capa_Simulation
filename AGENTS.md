@@ -925,6 +925,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     마우스는 그 달에서 새 범위 시작, 2026-11-04 재검 b-3). 판정 구획(`// <month-range-core>`)은
     순수 함수라 node 로 시험한다(`tests/test_month_range_picker.py`). 팝업 포커스 때문에 그림자 DOM 에 가두지 않는다
     (`isolate_styles=False`), 색은 `--st-*` 테마 변수뿐이다. 부르는 쪽은 모듈 속성으로 부른다(테스트가 갈아끼운다).
+- `src/capa_simulation/components/date_panel.py` — 앱의 날짜 고르기 한 꼴(2026-11-05 검수 static-35). 값 칸(달력 표식 · 값 · `⇕`) +
+  누르면 뜨는 기간 판(`‹‹ ‹ 2026년 11월 › ››` · 일 격자 · 빠른 선택 · 「적용」)을 한 Components v2 컴포넌트로 묶는다. 범위 칸
+  `date_range_field` · `optional_date_range_field`, 한 날 칸 `date_field` · `optional_date_field`(`optional_*` 는 판에 `비움`).
+  조각은 `date_panel_assets/` 세 파일이고 해 넘김 · 칩 · 바닥 줄 서식은 `month_range.css` 를 이름만 옮겨 쓴다(`DATE_PANEL_CSS`).
+  - 값의 정본은 세션 칸(`date` · 비면 `None`)이고 「적용」 콜백이 쓴다 — 위젯이 아니라 언제든 쓸 수 있고 리비전 프리셋 키도
+    그대로다. 범위 밖 · 거꾸로인 칸은 그리기 전에 맞춰 되적고, 끝을 주지 않은 칸은 오늘 앞뒤 십 년(값이 그 밖이면 값까지)이다.
+  - 판은 HTML `<dialog>` 라 여닫기 · 고르기가 회차 0 이다 — 서버로 가는 길은 `apply` 트리거 하나다. `st.dialog` 안 칸도 되고
+    Esc 는 판만 닫는다. **`st.form` 안에는 두지 않는다**(폼 안 트리거는 제출 때까지 서버에 오지 않는다). 위젯 키는
+    `panel_key`(Components v2 키는 `__` 를 받지 않는다). 판정 구획(`// <date-panel-core>`)은 node 로 시험하고
+    (`tests/test_date_panel.py`), 그 시험이 화면 코드의 `st.date_input` 0 곳도 지킨다. AppTest 대역은 `conftest.date_panels` 다.
 - `src/capa_simulation/components/condition_field.py` — 사이드바 통합 조건 패널의 한 줄(이름 줄 `condition_name_row`
   과 팝업을 여는 값 칸 `condition_field`)을 그린다.
   - 컨테이너 key 접두어(`condition_field_<slug>`·`condition_name_<slug>`)로 `sidebar_style.py` 가 서식을 건다.
@@ -2054,7 +2064,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `no_demand_message` 는 `resolve_effective_months` 를 거치지 않고 소요대수가 빈 것으로 「조회기간에 소요대수가
     없다」를 아는 자리(필요 단축 일정, Static 대비 일정의 확보율 교차검증)의 안내다 — 다른 계산 화면과 같은 문구에
     활성 시나리오 `RQ_REQB` 의 데이터 범위를 붙인다. 소요대수를 읽지 못한 갈래의 문구와 섞지 않는다.
-  - `date_range_value`·`prune_list_selection`·`prune_choice` 가 위젯 값 정리다. 뒤의 둘은 위젯 앞에서 매 회차
+  - `prune_list_selection`·`prune_choice` 가 위젯 값 정리다. 둘은 위젯 앞에서 매 회차
     세션에 되쓴다(`pop` 하지 않는다). `prune_choice` 는 글자 선택지 전용이다(`str(saved) in options`) — 정수 달 상자는
     제 화면이 잡는다(`constraint_simulation_state.settle_period`). `prune_named_choice` 는 쓰기 단추의 대상을 고르는
     상자의 짝이다(9장 「글자가 바뀌는 것을 피할 수 없는 상자」). `render_schema_ahead_warning` 은 DB 가 코드보다 새
@@ -3915,7 +3925,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `auto_official_update_tab.py` 설정은 버전 대조(칸에 key 없음), `bigdataquery_registration.py` 목록은 `st.form`
     밖·등록 폼 위의 `st.dataframe(on_select="rerun")` 이다. 등록 폼 글자 칸은 입력 초안이라 `persist_state` 가 없어
     그리지 않은 회차에 버려진다 — 목록 선택(위젯 아닌 칸)만 남았으면 위젯 앞 `_restore_dropped_prefill` 이 그 선택의
-    값으로 다시 채운다(날짜 두 칸은 세션에 남으므로 건드리지 않는다).
+    값으로 다시 채운다(상세 조회 기간은 세션에 남으므로 건드리지 않는다). 날짜 칸 둘(목록 `조회일`, 폼 위 `상세 조회 기간`)은
+    「적용」 트리거를 바로 받아야 해 `st.form` 밖이고(`components/date_panel.py`), 목록 조회는 폼 없이 단추 하나다.
 
 ### 영속성 모듈
 
@@ -4343,7 +4354,7 @@ RQ_MODULE
     부트스트랩이 새 시나리오를 만들거나 기존 상태를 변경하지 않는다. 내장 시드는 합성
     데모이며 운영 시나리오로 간주하지 않는다.
 12. **공용 필터 기본값과 개인 조회를 분리한다.** 표준 목표 Capa 공정 기본값과
-    「조회·집계 설정」(시작일·종료일·상세 토글·제품 분류 수준·출력 지표)은 불변
+    「조회·집계 설정」(조회일의 시작일·종료일 두 키·상세 토글·제품 분류 수준·출력 지표)은 불변
     리비전 프리셋에 저장하고, 페이지에서 바꾼 값은 현재 세션에만 둔다. 신규 리비전 저장
     시점에만 현재 세션 선택을 다음 공용 기본값으로 캡처한다. 조회 설정은 편집 14표의
     내용이 아니므로 `content_token` 을 재발급하지 않는다. 저장된 조회일이 현재 조회기간
@@ -4984,7 +4995,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   규칙을 본다. Space 배치·호기 현황·비가동 호기·설비 마스터 탭은 보지 않는다. 기존 보유대수는 사용기준이 없어
   모두 센다. 뺀 대수는 가용대수를 보이는 자리마다 한 줄로 알린다(`services/usage_basis.py`).
 - 주차는 월요일 시작·일요일 종료의 ISO Weeknum(`YY-W##`) 기준이며, 조회기간은
-  Main의 기간 조회와 Static 대비 일정이 공유하는 시작일·종료일로 시뮬레이션과 독립적으로
+  Main의 기간 조회와 Static 대비 일정이 공유하는 `조회일` 칸(시작일·종료일)으로 시뮬레이션과 독립적으로
   설정한다. 비가동 호기·호기 상태·Qual 조회는 별도로 고른 기준일의 스냅샷이다.
 - Space는 입고 예정·셋업 진행중·가용·정지 예정·반출/이설 예정·보관 설비·운영 비가동·정지
   상태를 색으로 구분하며 레이아웃표시 Y이고 도면 이탈일(반출/이설일정, 없으면 정지일정) 전인 호기만
@@ -5843,6 +5854,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 ### 사이드바·조건 카드·본문
 
+- **날짜를 고르는 칸은 `components/date_panel.py` 하나다.** `st.date_input` 을 쓰지 않는다(`tests/test_date_panel.py`) — 시작 · 끝은 범위
+  칸 하나, 날짜 하나는 한 날 칸이다. 편집 표 칸 안 날짜(`DateColumn`)는 표의 일이라 밖이다.
 - **사이드바 = 보는 조건.** 사이드바 「조회 조건」은 지금 화면이 실제로 읽는 조건만 모으는 한 곳이다. 화면 고유의 거르는
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
@@ -6382,7 +6395,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `REVISION_TABLE_TOOLBAR_CLEARANCE`·Qual 계산기 `EDITOR_TOOLBAR_CLEARANCE_PX` 는 그 별칭)로 둔다 — Space 층 목록 머리의
   `사용 편집` 토글이 그 자리다(2026-10-26 E2E — 층 상세 표 머리의 「층 전체 보기」 는 2026-11-03 도면 위 「호기 정보」 창으로
   옮기며 걷었다). 날짜 칸의 지우기(✕)도 같다 — Qual
-  마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다). 오른쪽 끝까지
+  마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 누를 수 없다). 오른쪽 끝까지
   늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」)과 바로 위 CSV 단추(Cut-off 잠긴 보기·제외 목록)도
   같은 띄움을 둔다. `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
   대입은 건너뛰고, 표가 `if` 의 첫 문장이면 그 `if` 앞 문장)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고,

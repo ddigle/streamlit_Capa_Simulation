@@ -42,6 +42,8 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_EDITOR_KEY,
     DROP_EXAMPLE_ROWS_KEY,
     EXAMPLE_DROP_BUTTON_KEY,
+    HISTORY_EVENT_END_KEY,
+    HISTORY_EVENT_START_KEY,
     NOTHING_SAVED_MESSAGE,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
@@ -351,9 +353,8 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     app.session_state[SIDE_KEY] = SIDE_HISTORY
     _ok(app.run())
     assert not place_errors(app)
-    picked = app.date_input(key="equipment_history_event_range_v3").value
-    assert isinstance(picked, tuple) and len(picked) == 2
-    start, end = picked
+    start = app.session_state[HISTORY_EVENT_START_KEY]
+    end = app.session_state[HISTORY_EVENT_END_KEY]
     assert start == future
     assert end >= start
 
@@ -1189,9 +1190,8 @@ def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:
     _ok(app.run())
     app.multiselect(key="equipment_history_process_filter_v3").set_value(["Die Attach"])
     app.multiselect(key="equipment_history_downtime_type_filter_v3").set_value(["고장"])
-    app.date_input(key="equipment_history_event_range_v3").set_value(
-        (date(2026, 3, 1), date(2026, 3, 31))
-    )
+    app.session_state[HISTORY_EVENT_START_KEY] = date(2026, 3, 1)
+    app.session_state[HISTORY_EVENT_END_KEY] = date(2026, 3, 31)
     _ok(app.run())
     revision = app.selectbox(key="equipment_history_revision_id_v4").value
 
@@ -1202,8 +1202,6 @@ def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:
 
     assert app.multiselect(key="equipment_history_process_filter_v3").value == ["Die Attach"]
     assert app.multiselect(key="equipment_history_downtime_type_filter_v3").value == ["고장"]
-    assert app.date_input(key="equipment_history_event_range_v3").value == (
-        date(2026, 3, 1),
-        date(2026, 3, 31),
-    )
+    assert app.session_state[HISTORY_EVENT_START_KEY] == date(2026, 3, 1)
+    assert app.session_state[HISTORY_EVENT_END_KEY] == date(2026, 3, 31)
     assert app.selectbox(key="equipment_history_revision_id_v4").value == revision

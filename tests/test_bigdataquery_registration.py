@@ -2,12 +2,14 @@
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alert_marks import active_state, flashed, page_html, place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.components.date_panel import panel_key
 
 REPORT_SCRIPT = """
 import pandas as pd
@@ -130,11 +132,15 @@ def _run(**session: object) -> AppTest:
     return app
 
 
-def test_both_steps_render_in_one_run() -> None:
+def test_both_steps_render_in_one_run(date_panels: dict[str, dict[str, Any]]) -> None:
     """탭을 오갈 때 값이 사라지지 않도록 두 폼을 항상 그린다."""
     app = _run()
 
-    assert {"시작일", "종료일"} <= {widget.label for widget in app.date_input}
+    assert date_panels[panel_key(registration.CATALOG_START_DATE_KEY)]["label"] == "조회일"
+    detail = date_panels[panel_key(registration.FORM_DETAIL_START_KEY)]
+    assert detail["label"] == "상세 조회 기간"
+    # 목록 조회는 폼 없이 단추 하나다 — 날짜 칸이 「적용」 때만 서버로 보낸다.
+    assert app.button(key=registration.CATALOG_QUERY_BUTTON_KEY).label == "시뮬레이션 코드 조회"
     labels = {widget.label for widget in app.button}
     assert "시뮬레이션 코드 조회" in labels
     assert "DB 조회 후 시나리오 저장" in labels
@@ -395,8 +401,8 @@ def test_reset_clears_the_pick_and_the_form_on_the_next_run() -> None:
     assert not app.exception
     assert app.session_state[registration.FORM_CODE_KEY] == ""
     assert registration.CATALOG_PICK_KEY not in app.session_state
-    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value is None
-    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value is None
+    assert app.session_state[registration.FORM_DETAIL_START_KEY] is None
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] is None
 
 
 @pytest.mark.parametrize("interruption", ["__skip__", "__rerun__"])
@@ -410,7 +416,8 @@ def test_a_picked_form_survives_a_run_that_did_not_draw_it(interruption: str) ->
     app = _run(__pick_row__=0)
     # 이제부터 폼을 다시 채울 길은 목록 표가 같은 행을 다시 고르는 `selection_default` 하나다.
     app.session_state["__pick_row__"] = None
-    app.date_input(key=registration.FORM_DETAIL_END_KEY).set_value(date(2026, 9, 20)).run()
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 9, 20)
+    app.run()
     app.session_state[interruption] = True
     app.run()
     app.session_state[interruption] = False
@@ -424,8 +431,8 @@ def test_a_picked_form_survives_a_run_that_did_not_draw_it(interruption: str) ->
     assert values["원천 DB 등록시점 (선택)"] == "2026-09-02 03:04:05"
     memo = app.text_area[0].value
     assert memo is not None and "PLAN 알파(DEMO-PLAN-1)" in memo
-    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 8, 26)
-    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 20)
+    assert app.session_state[registration.FORM_DETAIL_START_KEY] == date(2026, 8, 26)
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2026, 9, 20)
 
 
 def test_a_reset_form_stays_empty_after_a_run_that_did_not_draw_it() -> None:
@@ -449,8 +456,8 @@ def test_picking_a_code_fills_the_detail_window_around_its_registration_date() -
     """고른 코드의 원천 등록일 7일 전 ~ 3일 뒤로 두 칸을 채운다(2026-09-29 사용자 결정 A+B)."""
     app = _run(__pick_row__=0)
 
-    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 8, 26)
-    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 5)
+    assert app.session_state[registration.FORM_DETAIL_START_KEY] == date(2026, 8, 26)
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2026, 9, 5)
     captions = " ".join(item.value for item in app.caption)
     assert "**고른 코드의 원천 등록일** · 2026-09-02" in captions
 
@@ -461,7 +468,8 @@ def test_a_widened_detail_window_survives_the_same_pick() -> None:
     같은 행이 선택된 채 도는 다음 런이 넓힌 기간을 기본값으로 되돌리지 않는다.
     """
     app = _run(__pick_row__=0)
-    app.date_input(key=registration.FORM_DETAIL_END_KEY).set_value(date(2026, 9, 20)).run()
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 9, 20)
+    app.run()
 
     assert not app.exception
     assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2026, 9, 20)
@@ -533,8 +541,8 @@ def test_an_old_code_seen_on_several_days_gets_a_window_across_all_of_them() -> 
     assert not app.exception
 
     assert app.session_state[registration.FORM_CODE_KEY] == "DEMO-A-001"
-    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2025, 9, 24)
-    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2025, 11, 5)
+    assert app.session_state[registration.FORM_DETAIL_START_KEY] == date(2025, 9, 24)
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2025, 11, 5)
     captions = " ".join(item.value for item in app.caption)
     assert "**고른 코드의 원천 등록일** · 2025-10-01 ~ 2025-11-02" in captions
     # 메모의 상세 조회기간은 저장할 때 실제로 조회한 기간으로 붙는다(칸을 고칠 수 있어서).
@@ -669,8 +677,8 @@ def test_a_pick_covers_every_plan_row_of_the_same_code() -> None:
     app.run()
 
     assert not app.exception
-    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 6, 24)
-    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 13)
+    assert app.session_state[registration.FORM_DETAIL_START_KEY] == date(2026, 6, 24)
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2026, 9, 13)
     assert app.session_state[registration.CATALOG_FORM_PICKED_WINDOW_KEY] == (
         registration.PickedFields(
             code="DEMO-A-001",
@@ -681,21 +689,19 @@ def test_a_pick_covers_every_plan_row_of_the_same_code() -> None:
     )
 
 
-def test_the_detail_dates_stay_clearable_after_a_pick() -> None:
-    """고른 뒤에도 두 칸을 비울 수 있어야 등록시점 규칙으로 돌아간다.
-
-    Streamlit 은 처음 값(`value`)이 None 인 날짜 칸에만 지우기 단추를 준다 — `proto.default` 가
-    비어 있어야 한다. `value=None` 을 빼면 값은 같아 보여도 칸을 비울 수 없게 된다.
-    """
+def test_the_detail_dates_stay_clearable_after_a_pick(
+    date_panels: dict[str, dict[str, Any]],
+) -> None:
+    """고른 뒤에도 기간을 비울 수 있어야 등록시점 규칙으로 돌아간다 — 칸이 「비움」 을 받고 오늘
+    뒤는 고르지 못한다."""
     app = _run(__pick_row__=0)
 
-    for key, expected in (
-        (registration.FORM_DETAIL_START_KEY, date(2026, 8, 26)),
-        (registration.FORM_DETAIL_END_KEY, date(2026, 9, 5)),
-    ):
-        widget = app.date_input(key=key)
-        assert widget.value == expected
-        assert list(widget.proto.default) == []
+    assert app.session_state[registration.FORM_DETAIL_START_KEY] == date(2026, 8, 26)
+    assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2026, 9, 5)
+    sent = date_panels[panel_key(registration.FORM_DETAIL_START_KEY)]
+    assert (sent["start"], sent["end"]) == ("2026-08-26", "2026-09-05")
+    assert sent["clearable"] is True
+    assert sent["maxDay"] == date.today().isoformat()
 
 
 def test_the_selection_builds_the_span_from_every_plan_row_of_the_whole_catalog() -> None:

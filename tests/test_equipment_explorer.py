@@ -182,12 +182,16 @@ def test_inactive_units_follow_the_chosen_day_not_the_week_end() -> None:
     assert set(app.dataframe[0].value["설비명"]) == {"EQ-REPAIR", "EQ-QUAL"}
     assert any("2026-10-06" in item.value for item in app.markdown)
 
-    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 8)).run()
+    app.session_state[AS_OF_KEY] = date(2026, 10, 8)
+
+    app.run()
 
     _assert_one_result(app)
     assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
 
-    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
+    app.session_state[AS_OF_KEY] = date(2026, 10, 11)
+
+    app.run()
 
     assert not app.exception
     assert not app.dataframe
@@ -241,7 +245,8 @@ def test_hidden_main_preserves_the_question_date_and_process_selection() -> None
     app = _app()
     app.segmented_control(QUESTION_KEY).set_value("비가동 호기").run()
     app.multiselect(SMALL_PROCESS_KEY).set_value(["Die Attach"]).run()
-    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 8)).run()
+    app.session_state[AS_OF_KEY] = date(2026, 10, 8)
+    app.run()
     app.session_state["equipment_explorer_test_tab"] = "Settings"
     app.run()
 
@@ -256,7 +261,7 @@ def test_hidden_main_preserves_the_question_date_and_process_selection() -> None
     _assert_one_result(app)
     assert app.segmented_control(QUESTION_KEY).value == "비가동 호기"
     assert app.multiselect(SMALL_PROCESS_KEY).value == ["Die Attach"]
-    assert app.date_input(AS_OF_KEY).value == date(2026, 10, 8)
+    assert app.session_state[AS_OF_KEY] == date(2026, 10, 8)
     assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
 
 
@@ -271,7 +276,9 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
 
     assert app.selectbox(INACTIVE_VIEW_KEY).value == "기준일 시점"
 
-    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
+    app.session_state[AS_OF_KEY] = date(2026, 10, 11)
+
+    app.run()
 
     assert not app.dataframe
     _assert_plain_empty(app, "선택한 기준일과 조건에 비가동 호기가 없습니다.")
@@ -287,7 +294,7 @@ def test_the_month_view_catches_what_the_chosen_day_misses() -> None:
     # 판정 범위 설명은 구획 제목 풍선이다 — 자리 캡션으로 늘 띄우지 않는다.
     assert heading.proto.help == INACTIVE_MONTH_HELP
     assert not any("상태 이름으로 고르지" in item.value for item in app.caption)
-    assert app.date_input(AS_OF_KEY).value == date(2026, 10, 11)
+    assert app.session_state[AS_OF_KEY] == date(2026, 10, 11)
 
     # 조건에 맞는 호기가 없으면 표가 아니라 안내 한 줄이다. 빈 표에도 컬럼은 그대로 있다.
     app.multiselect(SMALL_PROCESS_KEY).set_value(["Other"]).run()
@@ -322,8 +329,8 @@ def test_stage_transitions_read_the_period_and_split_done_from_planned_by_the_da
 
     _assert_one_result(app)
     # 기간과 기준일이 둘 다 선다 — 기준일은 다른 질문과 같은 위젯이다.
-    assert app.date_input(START_DATE_KEY).value == date(2026, 10, 1)
-    assert app.date_input(AS_OF_KEY).value == date(2026, 10, 6)
+    assert app.session_state[START_DATE_KEY] == date(2026, 10, 1)
+    assert app.session_state[AS_OF_KEY] == date(2026, 10, 6)
     metrics = {metric.label: metric.value for metric in app.metric}
     assert metrics["전환 일정"] == "2건"
     assert metrics["완료"] == "1건"
@@ -346,7 +353,8 @@ def test_stage_transitions_read_the_period_and_split_done_from_planned_by_the_da
     assert any("일정상태: 예정" in item.value for item in app.caption)
 
     # 기준일을 Qual 뒤로 옮기면 Qual 도 완료다 — 예정만 고른 표가 빈다.
-    app.date_input(AS_OF_KEY).set_value(date(2026, 10, 11)).run()
+    app.session_state[AS_OF_KEY] = date(2026, 10, 11)
+    app.run()
     assert not app.exception
     assert not app.dataframe
     assert any("단계 전환 일정이 없습니다" in item.value for item in app.caption)
@@ -441,7 +449,8 @@ def test_an_unconfirmed_unit_is_named_under_the_unit_status() -> None:
     app.selectbox(key="equipment_explorer_unit_view").set_value("호기 목록").run()
     assert len(_unconfirmed(app)) == 1
     # 기준일을 옮겨도 오늘 기준이다 — 미확인은 Main 기준일과 상관없다.
-    app.date_input(key=AS_OF_KEY).set_value(date(2026, 9, 2)).run()
+    app.session_state[AS_OF_KEY] = date(2026, 9, 2)
+    app.run()
     assert len(_unconfirmed(app)) == 1
     # 공정 조건 밖이면 세지 않는다.
     app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()

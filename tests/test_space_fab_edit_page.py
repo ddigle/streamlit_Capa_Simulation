@@ -147,7 +147,7 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
 
 
 def test_fab_edit_and_save_work_without_any_saved_equipment(
-    tmp_path: Path, editor_calls: list[dict[str, Any]]
+    tmp_path: Path, editor_calls: list[dict[str, Any]], date_panels: dict[str, dict[str, Any]]
 ) -> None:
     """결정 2: FAB 는 설비 리비전과 무관한 현행값이라 설비 저장본이 없어도 고치고 저장한다(샘플을
     끈 빈 화면)."""
@@ -156,7 +156,7 @@ def test_fab_edit_and_save_work_without_any_saved_equipment(
 
     assert not app.exception
     assert any(str(item.value) == NO_UNITS_MARK for item in app.sidebar.caption)
-    assert not app.sidebar.date_input
+    assert not date_panels
     assert _fab_calls(editor_calls, editing=False)
     app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
     data = _fab_calls(editor_calls, editing=True)[-1]

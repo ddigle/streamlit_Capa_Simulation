@@ -41,6 +41,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
 )
+from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.modification_schedule_figures import (
     ScheduleLabels,
     batch_line,
@@ -212,7 +213,7 @@ def _header(app: AppTest) -> str:
 
 
 def test_the_constraint_mode_is_the_default_and_the_switch_stands_on_top(
-    databases: tuple[Path, Path],
+    databases: tuple[Path, Path], date_panels: dict[str, dict[str, Any]]
 ) -> None:
     app = _app(databases)
     app.query_params["process"] = DYNAMIC_PROCESS
@@ -227,13 +228,15 @@ def test_the_constraint_mode_is_the_default_and_the_switch_stands_on_top(
     assert _has_widget(app, "multiselect", CONSTRAINT_HELD_INPUT_KEY)
     assert _has_widget(app, "number_input", CONSTRAINT_OWNED_KEY)
     assert _has_widget(app, "toggle", CONSTRAINT_NEW_UNITS_KEY)
-    assert _has_widget(app, "date_input", CONSTRAINT_NEW_SINCE_KEY)
+    assert panel_key(CONSTRAINT_NEW_SINCE_KEY) in date_panels
 
 
 def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
-    databases: tuple[Path, Path],
+    databases: tuple[Path, Path], date_panels: dict[str, dict[str, Any]]
 ) -> None:
     app = _schedule(databases)
+    date_panels.clear()
+    _ok(app.run())
 
     # 카드 — 제약 제품·제약 기간 칸은 서지 않고 개조 일정 칸이 선다(공정 칸은 같은 칸).
     assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
@@ -242,7 +245,7 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     assert not app.multiselect
     assert not _has_widget(app, "number_input", CONSTRAINT_OWNED_KEY)
     assert not _has_widget(app, "toggle", CONSTRAINT_NEW_UNITS_KEY)
-    assert not _has_widget(app, "date_input", CONSTRAINT_NEW_SINCE_KEY)
+    assert panel_key(CONSTRAINT_NEW_SINCE_KEY) not in date_panels
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4
     assert app.session_state[SCHEDULE_DAYS_KEY] == 30
     assert app.button_group(key=SCHEDULE_CONCURRENT_PILLS_KEY).value == "__none__"

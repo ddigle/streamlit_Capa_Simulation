@@ -81,6 +81,7 @@ from capa_simulation.components.constraint_simulation_view import (
     settle_selected_month,
 )
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.date_panel import date_field
 from capa_simulation.components.equipment_scenario_status import (
     equipment_basis_label,
     render_equipment_scenario_row,
@@ -668,11 +669,10 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         help=NEW_UNITS_HELP,
     )
     seed_new_since(today)
-    new_since = st.date_input(
+    new_since = date_field(
         "신규 기준일",
         key=CONSTRAINT_NEW_SINCE_KEY,
-        persist_state="session",
-        format="YYYY-MM-DD",
+        default=today,
         disabled=not (modify and new_units_on),
         help="기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다.",
     )

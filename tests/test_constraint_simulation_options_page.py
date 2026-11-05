@@ -43,6 +43,7 @@ from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_simulation_view import FREE_ONLY_TEXT, WAIT_LATE_SUFFIX
+from capa_simulation.components.date_panel import panel_key
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MODIFY_KEY,
     CONSTRAINT_NEW_SINCE_KEY,
@@ -128,7 +129,7 @@ def _with_new_units(app: AppTest, since: date) -> AppTest:
     """브라우저처럼 — 토글을 켠 회차 뒤에야 기준일 칸이 풀린다."""
     app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).set_value(True)
     _ok(app.run())
-    app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).set_value(since)
+    app.session_state[CONSTRAINT_NEW_SINCE_KEY] = since
     return _ok(app.run())
 
 
@@ -136,16 +137,18 @@ def _with_new_units(app: AppTest, since: date) -> AppTest:
 
 
 def test_the_defaults_keep_the_first_version_and_skip_the_timeline(
-    option_databases: tuple[Path, Path], timeline_builds: list[str]
+    option_databases: tuple[Path, Path],
+    timeline_builds: list[str],
+    date_panels: dict[str, dict[str, Any]],
 ) -> None:
     """보유 0 · 신규 끔이 기본 — 1판과 같은 요약이고 설비 일정 칸은 받지 않는다(끈 세션 비용 0)."""
     app = _opened(option_databases)
     assert app.number_input(key=CONSTRAINT_OWNED_KEY).value == 0
     assert app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).value is False
-    assert isinstance(app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).value, date)
+    assert isinstance(app.session_state[CONSTRAINT_NEW_SINCE_KEY], date)
     assert not app.number_input(key=CONSTRAINT_OWNED_KEY).disabled
     assert not app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).disabled
-    assert app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).disabled
+    assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
     assert _metric(app, "개조 대수") == "1대"
     assert _metric_caption(app, "개조 대수").startswith("1번에 나눠 개조 · 첫 비가동 ")
     assert "보유" not in _header_line(app) and "신규" not in _header_line(app)
@@ -154,7 +157,7 @@ def test_the_defaults_keep_the_first_version_and_skip_the_timeline(
 
 
 def test_turning_modification_off_locks_both_options(
-    option_databases: tuple[Path, Path],
+    option_databases: tuple[Path, Path], date_panels: dict[str, dict[str, Any]]
 ) -> None:
     app = _opened(option_databases)
     app.number_input(key=CONSTRAINT_OWNED_KEY).set_value(3)
@@ -163,7 +166,7 @@ def test_turning_modification_off_locks_both_options(
     _ok(app.run())
     assert app.number_input(key=CONSTRAINT_OWNED_KEY).disabled
     assert app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).disabled
-    assert app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).disabled
+    assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
     # 걸리지 않은 조건은 머리·결과에 남지 않는다 — 위젯 값은 세션에 그대로다.
     header = _header_line(app)
     assert "개조 없음" in header and "보유" not in header and "신규" not in header
@@ -194,13 +197,15 @@ def test_owned_units_replace_the_modification_and_say_so(
 
 
 def test_new_units_follow_the_reference_day_through_one_shared_timeline(
-    arriving_databases: tuple[Path, Path], timeline_builds: list[str]
+    arriving_databases: tuple[Path, Path],
+    timeline_builds: list[str],
+    date_panels: dict[str, dict[str, Any]],
 ) -> None:
     """기준일 12/1 이면 CA-N2(기여 시작 12/25 = 1월 W/D 첫날)가 신규라 1월 몫 1대를 개조 없이
     덮는다. 기준일만 바꾸면 같은 설비 일정 칸을 다시 쓴다(기준일은 캐시 키 밖) — 2/1 이면 신규가
     없어 1판과 같다."""
     app = _with_new_units(_opened(arriving_databases), BEFORE_NEW_UNIT)
-    assert not app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).disabled
+    assert not date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
     captions = _plain(_captions(app))
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {NEW_UNIT}" in captions
     assert (
@@ -219,7 +224,7 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert f"26년 1월 몫 · 신규 {NEW_UNIT} · 대기 없음(W/D 첫날 기여 시작) · **1대**" in lines
     assert timeline_builds == [DYNAMIC_PROCESS]
 
-    app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).set_value(AFTER_NEW_UNIT)
+    app.session_state[CONSTRAINT_NEW_SINCE_KEY] = AFTER_NEW_UNIT
     _ok(app.run())
     assert "기준일 이후 기여를 시작하는 신규 설비가 없습니다." in _captions(app)
     assert _metric(app, "개조 대수") == "1대"
@@ -292,7 +297,7 @@ def test_the_options_survive_a_round_trip(option_databases: tuple[Path, Path]) -
     _ok(app.run())
     assert app.number_input(key=CONSTRAINT_OWNED_KEY).value == 2
     assert app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).value is True
-    assert app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).value == BEFORE_NEW_UNIT
+    assert app.session_state[CONSTRAINT_NEW_SINCE_KEY] == BEFORE_NEW_UNIT
 
 
 def test_a_broken_session_value_is_reseeded(option_databases: tuple[Path, Path]) -> None:
@@ -303,7 +308,7 @@ def test_a_broken_session_value_is_reseeded(option_databases: tuple[Path, Path])
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
     assert app.number_input(key=CONSTRAINT_OWNED_KEY).value == 0
-    assert isinstance(app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).value, date)
+    assert isinstance(app.session_state[CONSTRAINT_NEW_SINCE_KEY], date)
 
 
 def test_a_timeline_failure_is_an_equipment_error(

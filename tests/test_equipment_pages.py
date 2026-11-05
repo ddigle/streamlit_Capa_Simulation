@@ -280,7 +280,7 @@ def test_space_page_opens_with_empty_database(tmp_path: Path) -> None:
 
 
 def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_title(
-    tmp_path: Path,
+    tmp_path: Path, date_panels: dict[str, dict[str, Any]]
 ) -> None:
     """호기가 없고 샘플을 끄면 카드 안에 값 한 마디(「조회할 호기 없음」)와 풍선을 둔다.
 
@@ -308,12 +308,14 @@ def test_space_page_with_the_sample_switch_off_keeps_a_card_under_the_sidebar_ti
         for text in captions
     )
     # 조건 위젯은 서지 않는다 — 고를 호기가 없다.
-    assert not app.sidebar.date_input
+    assert not date_panels
     assert not app.sidebar.multiselect
 
 
 def test_space_page_counts_placement_and_leaves_stage_transitions_to_availability(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    date_panels: dict[str, dict[str, Any]],
 ) -> None:
     """Space 는 배치·공간만 본다. 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다.
 
@@ -344,7 +346,7 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
     assert not any("가용" in str(value) for floor in stats.values() for value in floor.values())
     # 사이드바 카드의 고르기는 공정소분류뿐이다 — 전환 조회기간·전환단계 폼이 없고, 기준일 칸과
     # 「단계」 필터도 없다(기준일은 층 상세 도면 위 페이더, 2026-10-16 사용자 결정).
-    assert not app.sidebar.date_input
+    assert not date_panels
     assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류"]
     assert not any("단계 전환" in element.value for element in app.markdown)
     # FAB 아래는 30개 층 목록 표다(행을 고르면 그 층이 열린다).

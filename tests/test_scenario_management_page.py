@@ -19,6 +19,8 @@ from test_all_pages_render import _page_script
 from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.bigdataquery_registration import CATALOG_START_DATE_KEY
+from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.pick_edit_table import (
     ShownTable,
@@ -84,7 +86,9 @@ def seeded_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pa
     return root / "scenario.duckdb", root / "equipment.duckdb"
 
 
-def test_every_tab_form_is_rendered_in_one_run(seeded_databases: tuple[Path, Path]) -> None:
+def test_every_tab_form_is_rendered_in_one_run(
+    seeded_databases: tuple[Path, Path], date_panels: dict[str, dict[str, Any]]
+) -> None:
     """열린 탭만 그리면 다른 탭을 잠깐 여는 순간 그 탭의 form 입력값이 사라진다.
 
     세 탭의 폼이 한 rerun 에 모두 있어야 탭을 오가도 입력 중이던 값이 남는다.
@@ -109,7 +113,7 @@ def test_every_tab_form_is_rendered_in_one_run(seeded_databases: tuple[Path, Pat
     assert "시뮬레이션명 키워드" in labels
     assert "설정 저장" in {button.label for button in app.button}
     # 1단계 조회 폼과 2단계 등록 폼이 한 rerun 에 함께 있어야 탭을 오갈 때 값이 남는다.
-    assert {"시작일", "종료일"} <= {widget.label for widget in app.date_input}
+    assert date_panels[panel_key(CATALOG_START_DATE_KEY)]["label"] == "조회일"
     assert "시뮬레이션 코드 조회" in {button.label for button in app.button}
 
 

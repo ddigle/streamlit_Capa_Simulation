@@ -28,6 +28,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.date_panel import date_range_field, optional_date_range_field
 from capa_simulation.components.flash import (
     BESIDE_KINDS,
     FlashNote,
@@ -116,11 +117,11 @@ CATALOG_KEYWORD_HELP: Final = (
     "시뮬레이션명 · 코드 · PLAN 의 부분 일치로 목록을 좁힙니다(공백은 AND). 행이 많으면 표 조작이 "
     "느릴 수 있어 검색어로 좁힙니다."
 )
-# 상세 조회 시작일 · 종료일 칸 풍선 — 채우는 규칙과 넓히는 때.
+# 상세 조회 기간 칸 풍선 — 채우는 규칙과 넓히는 때.
 DETAIL_WINDOW_HELP: Final = (
     f"목록에서 코드를 고르면 원천 등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ "
-    f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 두 칸을 비우면 「원천 DB 등록시점」으로 같은 "
-    "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 종료일을 늘립니다 — 기간이 길수록 "
+    f"{DETAIL_WINDOW_DAYS_AFTER}일 뒤로 채웁니다. 칸을 비우면 「원천 DB 등록시점」으로 같은 "
+    "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 끝 날을 늘립니다 — 기간이 길수록 "
     "조회가 오래 걸립니다."
 )
 # 고른 행이 검색에 가려졌을 때의 표지 풍선.
@@ -132,7 +133,7 @@ CATALOG_RESULT_KEY = "bigdataquery_catalog_result"
 CATALOG_PICK_KEY = "bigdataquery_catalog_pick"
 CATALOG_APPLIED_KEY = "bigdataquery_catalog_applied_signature"
 # 폼의 코드를 목록에서 골랐을 때 그 코드가 목록에 보인 (가장 이른, 가장 늦은) 원천 등록일.
-# 상세 조회 기간 두 칸의 기본값을 정한 근거로 안내에 적는다.
+# 상세 조회 기간 칸의 기본값을 정한 근거로 안내에 적는다.
 CATALOG_FORM_REGISTERED_SPAN_KEY = "bigdataquery_catalog_form_registered_span"
 # 목록에서 골라 폼에 채운 코드·상세 조회 기간·원천 등록시점(`PickedFields`). 코드만 바꿔 적은 채
 # 앞 코드의 값으로 조회·저장하는 것을 막는다.
@@ -142,6 +143,8 @@ CATALOG_LAST_LIST_KEY = "bigdataquery_catalog_last_list_key"
 CATALOG_RESET_REQUEST_KEY = "bigdataquery_catalog_reset_request"
 CATALOG_START_DATE_KEY = "bigdataquery_catalog_start_date"
 CATALOG_END_DATE_KEY = "bigdataquery_catalog_end_date"
+CATALOG_QUERY_BUTTON_KEY = "bigdataquery_catalog_query"
+DATE_FIELD_WIDTH_PX: Final = 300
 CATALOG_KEYWORD_KEY = "bigdataquery_catalog_keyword"
 CATALOG_SCOPE_KEY = "bigdataquery_catalog_scope"
 CATALOG_LIST_KEY_PREFIX = "bigdataquery_catalog_rows_"
@@ -374,17 +377,21 @@ def _render_catalog_form(*, configured: bool) -> None:
         CATALOG_START_DATE_KEY, today - timedelta(days=DEFAULT_CATALOG_DAYS)
     )
     st.session_state.setdefault(CATALOG_END_DATE_KEY, today)
-    with st.form("bigdataquery_catalog_form"):
-        with st.container(horizontal=True, gap="small"):
-            st.date_input("시작일", key=CATALOG_START_DATE_KEY, persist_state="session", width=180)
-            st.date_input("종료일", key=CATALOG_END_DATE_KEY, persist_state="session", width=180)
-        submitted = st.form_submit_button(
-            "시뮬레이션 코드 조회",
-            icon=":material/search:",
-            type="primary",
-            disabled=not configured,
-        )
-    if not submitted:
+    # 칸이 「적용」 때만 서버로 보내므로 폼이 없어도 고르는 동안 회차가 돌지 않는다.
+    date_range_field(
+        "조회일",
+        start_key=CATALOG_START_DATE_KEY,
+        end_key=CATALOG_END_DATE_KEY,
+        default=(today - timedelta(days=DEFAULT_CATALOG_DAYS), today),
+        width=DATE_FIELD_WIDTH_PX,
+    )
+    if not st.button(
+        "시뮬레이션 코드 조회",
+        key=CATALOG_QUERY_BUTTON_KEY,
+        icon=":material/search:",
+        type="primary",
+        disabled=not configured,
+    ):
         return
     window = _submitted_window()
     if window is not None:
@@ -565,7 +572,7 @@ def _apply_pick(pick: CatalogPick) -> None:
 
 
 def _write_form_prefill(pick: CatalogPick) -> None:
-    """고른 행의 값으로 등록 폼 글자 칸 여섯(`FORM_DEFAULTS`)을 채운다. 날짜 두 칸은 맡지 않는다."""
+    """고른 행의 값으로 등록 폼 글자 칸 여섯(`FORM_DEFAULTS`)을 채운다. 상세 조회 기간은 뺀다."""
     prefill = registration_prefill(pick.row, catalog_window_label=pick.window.label())
     st.session_state[FORM_CODE_KEY] = prefill.simulation_code
     st.session_state[FORM_SOURCE_NAME_KEY] = prefill.source_name
@@ -581,7 +588,7 @@ def _restore_dropped_prefill() -> None:
     선택·적용 서명은 위젯이 아닌 칸이라 남지만, 글자 칸은 입력 초안이라 `persist_state` 가 없어
     등록 폼을 그리지 않은 회차(다른 화면을 다녀옴, 다른 탭의 `st.rerun()`)에 Streamlit 이 버린다.
     목록 표는 같은 행을 다시 고를 뿐이라 `_apply_pick` 이 같은 서명을 보고 채우지 않으므로, 행은
-    선택된 채 코드·이름이 비어 저장이 막힌다. 날짜 두 칸은 세션에 남아 사용자가 넓힌 값이므로
+    선택된 채 코드·이름이 비어 저장이 막힌다. 상세 조회 기간은 세션에 남아 사용자가 넓힌 값이므로
     건드리지 않는다. 위젯을 만들기 전에 불러야 한다.
     """
     pick = _stored_pick()
@@ -641,13 +648,22 @@ def _render_registration_form(
     unsavable = pick is not None and not pick.row.savable
     if unsavable:
         st.error(UNSAVABLE_REASON)
-    # 상세 조회 기간을 채우는 규칙은 두 날짜 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른
-    # 코드의 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값
-    # 줄이 생기고 빠져도 아래 폼의 자리가 밀리지 않는다.
+    # 상세 조회 기간을 채우는 규칙은 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른 코드의
+    # 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값 줄이 생기고
+    # 빠져도 아래 폼의 자리가 밀리지 않는다. 날짜 칸은 「적용」 트리거를 바로 받아야 해 폼 밖이다 —
+    # 폼 안 트리거는 제출 때까지 서버에 오지 않는다(`components/date_panel.py`).
     with st.container():
         registered_line = _registered_span_line()
         if registered_line is not None:
             st.caption(registered_line)
+    optional_date_range_field(
+        "상세 조회 기간",
+        start_key=FORM_DETAIL_START_KEY,
+        end_key=FORM_DETAIL_END_KEY,
+        max_date=datetime.now().date(),
+        help=DETAIL_WINDOW_HELP,
+        width=DATE_FIELD_WIDTH_PX,
+    )
     with st.form("bigdataquery_registration_form"):
         st.text_input("조회할 시뮬레이션 코드", key=FORM_CODE_KEY)
         st.text_input("원천 시뮬레이션명", key=FORM_SOURCE_NAME_KEY)
@@ -665,29 +681,6 @@ def _render_registration_form(
                 "등록시점은 YYYY-MM-DD HH:MM:SS 형식으로 입력하세요.",
             ),
         )
-        today = datetime.now().date()
-        with st.container(horizontal=True, gap="small"):
-            # `value=None` 이라야 칸을 비울 수 있다(Streamlit 은 처음 값이 None 인 날짜 칸에만
-            # 지우기 단추를 준다). 목록에서 한 번 고른 뒤에도 비워 등록시점 규칙으로 돌아갈 수
-            # 있어야 한다 — 값은 세션이 들고 있으므로 이 인자는 처음 값으로 쓰이지 않는다.
-            st.date_input(
-                "상세 조회 시작일",
-                value=None,
-                key=FORM_DETAIL_START_KEY,
-                max_value=today,
-                persist_state="session",
-                width=180,
-                help=DETAIL_WINDOW_HELP,
-            )
-            st.date_input(
-                "상세 조회 종료일",
-                value=None,
-                key=FORM_DETAIL_END_KEY,
-                max_value=today,
-                persist_state="session",
-                width=180,
-                help=DETAIL_WINDOW_HELP,
-            )
         st.text_area("등록 메모", key=FORM_NOTE_KEY, height=90)
         submitted = st.form_submit_button(
             "DB 조회 후 시나리오 저장",
@@ -846,9 +839,9 @@ def _picked_for_another_code(simulation_code: str) -> PickedFields | None:
 
 
 def _registered_span_line() -> str | None:
-    """상세 조회 기간 두 칸 위의 값 줄 — 「**고른 코드의 원천 등록일** · 2026-09-02」(목록에서 고른
-    코드가 없으면 None). 폼 안 날짜는 저장 전까지 rerun 하지 않으므로 고른 값이 아니라 채운 근거를
-    적는다 — 채우는 규칙은 두 날짜 칸 풍선(`DETAIL_WINDOW_HELP`)이 말한다."""
+    """상세 조회 기간 칸 위의 값 줄 — 「**고른 코드의 원천 등록일** · 2026-09-02」(목록에서 고른
+    코드가 없으면 None). 고른 값은 그 칸이 말하므로 이 줄은 채운 근거를 적는다 — 채우는 규칙은 칸
+    풍선(`DETAIL_WINDOW_HELP`)이 말한다."""
     span = st.session_state.get(CATALOG_FORM_REGISTERED_SPAN_KEY)
     if not isinstance(span, tuple) or len(span) != 2:
         return None
@@ -860,7 +853,7 @@ def _registered_span_line() -> str | None:
 def _submitted_detail_window(
     registered_at: datetime | None, *, simulation_code: str = ""
 ) -> QueryWindow | None:
-    """저장 때 조회할 상세 기간. 두 칸이 우선이고, 둘 다 비었으면 원천 DB 등록시점으로 정한다.
+    """저장 때 조회할 상세 기간. 칸의 값이 우선이고, 비었으면 원천 DB 등록시점으로 정한다.
 
     예전에는 기본 90일 ∪ 목록 기간 ∪ 등록일 7일 전~오늘을 모두 덮어, 옛 코드일수록 창이 길어져
     조회가 오래 걸렸다(2026-09-29 사용자 결정 A+B — 기본은 등록일 앞뒤로 좁게, 필요하면 넓힌다).
@@ -872,7 +865,7 @@ def _submitted_detail_window(
     if other is not None:
         typed_at = str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")).strip()
         if other.registered_at.strip() and typed_at == other.registered_at.strip():
-            # 등록시점은 저장 메타데이터(`source_registered_at`)이기도 하다. 날짜 두 칸을 고쳤어도
+            # 등록시점은 저장 메타데이터(`source_registered_at`)이기도 하다. 기간을 고쳤어도
             # 남의 등록시점이 이 코드의 원천 등록시점으로 저장되면 안 된다.
             st.error(
                 "「원천 DB 등록시점」이 목록에서 고른 **다른 코드**의 값 그대로입니다. 코드를 "
@@ -886,7 +879,7 @@ def _submitted_detail_window(
         if other is not None and (start, end) == (other.start, other.end):
             st.error(
                 "상세 조회 기간이 목록에서 고른 **다른 코드**의 원천 등록일로 채워진 그대로입니다. "
-                "코드를 바꿨으면 두 칸을 이 코드에 맞는 날짜로 고치거나, 두 칸을 비우고 「원천 DB "
+                "코드를 바꿨으면 기간을 이 코드에 맞는 날짜로 고치거나, 기간을 비우고 「원천 DB "
                 "등록시점」을 이 코드의 값으로 적으세요."
             )
             return None
@@ -896,7 +889,7 @@ def _submitted_detail_window(
         return None
     if registered_at is None:
         st.error(
-            "상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요 — 두 칸을 비워 두면 그 "
+            "상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요 — 기간을 비워 두면 그 "
             f"등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ {DETAIL_WINDOW_DAYS_AFTER}일 뒤로 "
             "조회합니다."
         )
