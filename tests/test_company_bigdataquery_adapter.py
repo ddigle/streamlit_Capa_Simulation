@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -132,7 +134,11 @@ def test_a_failure_is_sorted_by_its_chain_names_and_words(error: BaseException, 
     [
         (TimeoutError(), adapter.QUERY_FAILURE_TIMEOUT, ""),
         (Error("Read timed out"), adapter.QUERY_FAILURE_TIMEOUT, "timed out"),
-        (Error("Error executing SQL statement"), adapter.QUERY_FAILURE_SQL, "sql"),
+        (Error("Error executing SQL statement"), adapter.QUERY_FAILURE_OTHER, "sql"),
+        (Error("Query cancelled (SQLFetch)"), adapter.QUERY_FAILURE_OTHER, "cancel"),
+        (Error("Memory limit exceeded (SQLFetch)"), adapter.QUERY_FAILURE_OTHER, "memory"),
+        (Error("Syntax error in SQL statement"), adapter.QUERY_FAILURE_SQL, "syntax"),
+        (Error("expired due to execution time limit"), adapter.QUERY_FAILURE_TIMEOUT, "time limit"),
         (Error("File does not exist: part-0001"), adapter.QUERY_FAILURE_SQL, "does not exist"),
         (
             Error("AnalysisException: Could not resolve table"),
@@ -153,6 +159,283 @@ def test_a_failure_clue_is_the_vocabulary_word_that_sorted_it(
     )
     wrapped = adapter.BigDataQueryCallError(error)
     assert (wrapped.kind, wrapped.clue) == (kind, clue)
+
+
+@pytest.mark.parametrize(
+    ("error", "seconds", "kind", "clue"),
+    [
+        (Error("Error executing SQL"), 907.4, adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 sql"),
+        (Error(""), 907.4, adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림"),
+        (Error("Error executing SQL"), 14.1, adapter.QUERY_FAILURE_OTHER, "sql"),
+        (Error("Error executing SQL"), None, adapter.QUERY_FAILURE_OTHER, "sql"),
+        (Error("Syntax error"), 907.4, adapter.QUERY_FAILURE_SQL, "syntax"),
+        (Error("Parse failure"), 907.4, adapter.QUERY_FAILURE_SQL, "parse"),
+        (Error("AnalysisException"), 907.4, adapter.QUERY_FAILURE_SQL, "analysis"),
+        (Error("Semantic error"), 907.4, adapter.QUERY_FAILURE_SQL, "semantic"),
+        (Error("Connection reset"), 907.4, adapter.QUERY_FAILURE_CONNECTION, "connect"),
+        (
+            Error("SQL error: File does not exist"),
+            907.4,
+            adapter.QUERY_FAILURE_TIMEOUT,
+            "오래 걸림 does not exist",
+        ),
+        (Error("table not found"), 907.4, adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 not found"),
+        (
+            Error("could not resolve"),
+            907.4,
+            adapter.QUERY_FAILURE_TIMEOUT,
+            "오래 걸림 could not resolve",
+        ),
+        (Error("unknown column"), 907.4, adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 unknown column"),
+        (Error("File does not exist"), 14.1, adapter.QUERY_FAILURE_SQL, "does not exist"),
+        (Error("table not found"), None, adapter.QUERY_FAILURE_SQL, "not found"),
+    ],
+)
+def test_only_a_failure_that_does_not_blame_the_query_text_becomes_a_timeout_after_a_long_wait(
+    error: BaseException, seconds: float | None, kind: str, clue: str
+) -> None:
+    """같은 조회문이 짧은 창에서 선 뒤 907초 만에 실패한 꼴 — 조회문 거절이 아니다. `File does not
+    exist` 는 긴 조회 중 다시 적재한 표에서도 나므로 함께 올린다. 문법 낱말과 연결은 그대로 둔다."""
+    wrapped = adapter.BigDataQueryCallError(error, seconds=seconds)
+
+    assert (wrapped.kind, wrapped.clue) == (kind, clue)
+    if wrapped.kind == adapter.QUERY_FAILURE_TIMEOUT:
+        assert "다시 해도 같으니" not in str(wrapped) and "기간을 줄여" in str(wrapped)
+
+
+def test_the_advice_of_a_long_failure_is_to_wait_or_narrow_not_to_report_the_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`call_get_data` 가 잰 시간으로 갈린다 — 화면 안내가 「다시 해도 같으니」 로 끝나지 않는다."""
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise Error("Error executing SQL")
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as quick:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+    assert (quick.value.kind, quick.value.clue) == (adapter.QUERY_FAILURE_OTHER, "sql")
+    assert "다시 해도 같으니" not in str(quick.value)
+
+    monkeypatch.setattr(adapter, "LONG_FAILURE_SECONDS", 0.0)
+    with pytest.raises(adapter.BigDataQueryCallError) as slow:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+    assert (slow.value.kind, slow.value.clue) == (adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 sql")
+    assert "기간을 줄여" in str(slow.value) and "다시 해도 같으니" not in str(slow.value)
+
+
+class _SeenJoin(Future[object]):
+    """기다리기 시작한 때를 알리는 결과 자리 — 시험이 잠으로 때맞추지 않게 한다."""
+
+    joined = threading.Event()
+
+    def result(self, timeout: float | None = None) -> object:
+        type(self).joined.set()
+        return super().result(timeout)
+
+
+@pytest.fixture
+def _seen_join(monkeypatch: pytest.MonkeyPatch) -> threading.Event:
+    joined = threading.Event()
+    monkeypatch.setattr(_SeenJoin, "joined", joined)
+    monkeypatch.setattr(adapter, "Future", _SeenJoin)
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    return joined
+
+
+def test_the_same_query_pressed_again_while_it_runs_joins_it(
+    _seen_join: threading.Event,
+) -> None:
+    """조회 중에 단추를 다시 눌러도 서버에 같은 조회가 겹치지 않는다. 기다린 쪽은 사본을 받고, 끝난
+    뒤의 조회는 새로 묻는다 — 캐시가 아니다."""
+    started = threading.Event()
+    release = threading.Event()
+    asked: list[object] = []
+    answer = pd.DataFrame({"a": [1, 2]})
+
+    def slow(**keywords: object) -> pd.DataFrame:
+        asked.append(keywords["param"])
+        started.set()
+        assert release.wait(30)
+        return answer
+
+    module = _module(slow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert started.wait(30)
+        second = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert _seen_join.wait(30)
+        release.set()
+        owner, joined = first.result(30), second.result(30)
+
+    assert asked == ["SELECT 1"]
+    assert owner is answer
+    assert isinstance(joined, pd.DataFrame) and joined is not answer
+    pd.testing.assert_frame_equal(joined, answer)
+    assert adapter._IN_FLIGHT == {}
+
+    adapter.call_get_data(module, "SELECT 1")
+    assert asked == ["SELECT 1", "SELECT 1"]
+
+
+def test_a_failure_reaches_everyone_who_joined_and_the_next_press_asks_again(
+    _seen_join: threading.Event,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    asked: list[object] = []
+
+    def slow(**keywords: object) -> pd.DataFrame:
+        asked.append(keywords["param"])
+        started.set()
+        assert release.wait(30)
+        raise Error("Error executing SQL")
+
+    module = _module(slow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert started.wait(30)
+        second = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert _seen_join.wait(30)
+        release.set()
+        for waited in (first, second):
+            with pytest.raises(adapter.BigDataQueryCallError):
+                waited.result(30)
+
+    assert asked == ["SELECT 1"]
+    assert adapter._IN_FLIGHT == {}
+
+    with pytest.raises(adapter.BigDataQueryCallError):
+        adapter.call_get_data(module, "SELECT 1")
+    assert asked == ["SELECT 1", "SELECT 1"]
+
+
+def _hung_then_answering(
+    asked: list[object], started: threading.Event, release: threading.Event
+) -> SimpleNamespace:
+    """첫 부름은 `release` 까지 돌아오지 않고, 그 뒤 부름은 곧바로 답하는 패키지."""
+
+    def getter(**keywords: object) -> pd.DataFrame:
+        asked.append(keywords["param"])
+        if len(asked) == 1:
+            started.set()
+            assert release.wait(30)
+        return pd.DataFrame({"차례": [len(asked)]})
+
+    return _module(getter)
+
+
+def test_a_query_past_the_join_limit_is_not_joined_and_the_press_asks_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """돌아오지 않는 첫 조회가 그 조회문의 부름을 다 멈춰 세우지 않는다 — 다시 누르면 묻는다."""
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(adapter, "IN_FLIGHT_JOIN_SECONDS", 0.0)
+    asked: list[object] = []
+    started = threading.Event()
+    release = threading.Event()
+    module = _hung_then_answering(asked, started, release)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        hung = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert started.wait(30)
+        again = adapter.call_get_data(module, "SELECT 1")
+        assert isinstance(again, pd.DataFrame) and again["차례"].tolist() == [2]
+        assert not hung.done()
+        release.set()
+        hung.result(30)
+
+    assert asked == ["SELECT 1", "SELECT 1"]
+    assert adapter._IN_FLIGHT == {}
+
+
+def test_a_press_waiting_on_a_query_that_never_comes_back_asks_again_at_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """이미 기다리던 부름도 상한에서 풀려 새로 묻는다 — 조회문 하나의 기다림에 끝이 있다."""
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(adapter, "IN_FLIGHT_JOIN_SECONDS", 0.2)
+    asked: list[object] = []
+    started = threading.Event()
+    release = threading.Event()
+    module = _hung_then_answering(asked, started, release)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        hung = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert started.wait(30)
+        waiting = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        answer = waiting.result(30)
+        assert isinstance(answer, pd.DataFrame) and answer["차례"].tolist() == [2]
+        assert not hung.done()
+        release.set()
+        hung.result(30)
+
+    assert asked == ["SELECT 1", "SELECT 1"]
+
+
+def test_an_old_query_coming_back_late_leaves_the_slot_of_the_one_that_took_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """넘겨준 뒤에 돌아온 옛 조회가 새 자리를 지우면 그다음 부름이 다시 겹친다."""
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(adapter, "IN_FLIGHT_JOIN_SECONDS", 0.0)
+    asked: list[object] = []
+    first_in, second_in = threading.Event(), threading.Event()
+    release_first, release_second = threading.Event(), threading.Event()
+
+    def getter(**keywords: object) -> pd.DataFrame:
+        asked.append(keywords["param"])
+        entered, release = (
+            (first_in, release_first) if len(asked) == 1 else (second_in, release_second)
+        )
+        entered.set()
+        assert release.wait(30)
+        return pd.DataFrame({"차례": [len(asked)]})
+
+    module = _module(getter)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert first_in.wait(30)
+        second = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert second_in.wait(30)
+        holder = adapter._IN_FLIGHT["SELECT 1"]
+
+        release_first.set()
+        first.result(30)
+        assert adapter._IN_FLIGHT["SELECT 1"] is holder
+
+        release_second.set()
+        second.result(30)
+
+    assert adapter._IN_FLIGHT == {}
+
+
+def test_a_different_window_is_not_held_back_by_a_long_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """넓은 창이 도는 동안 사용자가 기간을 줄여 다시 물으면 바로 답을 받는다 — 앞 조회를 취소할 길은
+    없다."""
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    started = threading.Event()
+    release = threading.Event()
+
+    def getter(**keywords: object) -> pd.DataFrame:
+        if keywords["param"] == "WIDE":
+            started.set()
+            assert release.wait(30)
+        return pd.DataFrame({"a": [str(keywords["param"])]})
+
+    module = _module(getter)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        wide = pool.submit(adapter.call_get_data, module, "WIDE")
+        assert started.wait(30)
+        narrow = adapter.call_get_data(module, "NARROW")
+        assert isinstance(narrow, pd.DataFrame) and narrow["a"].tolist() == ["NARROW"]
+        assert not wide.done()
+        release.set()
+        wide.result(30)
 
 
 def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(

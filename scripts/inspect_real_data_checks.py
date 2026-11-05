@@ -4131,7 +4131,8 @@ def _bdq_failure(exc: BaseException) -> str:
     # SQL, 문구 낱말로 가른 추정)를 적는다. 「Error」 하나로는 시간 초과인지 가를 수 없었다
     # (사내 리뷰 202610200720).
     # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다(문구 원문이 아니다) — 같은 「SQL」 이
-    # 문법 낱말로 섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800).
+    # 문법 낱말로 섰는지 `not found` 같은 넓은 낱말로 섰는지, 「그 밖」 이 `sql` 같은 어떤 단서를
+    # 달고 왔는지 가른다.
     if isinstance(exc, BigDataQueryCallError):
         names, kind, clue = exc.type_names, exc.kind, exc.clue
     else:
@@ -4628,15 +4629,17 @@ def _code_load_day_rows(loads: CodeLoadDays) -> list[list[str]]:
     ]
 
 
-def _code_load_day_notes(loads: CodeLoadDays) -> list[str]:
-    """전송용 요약의 전 코드 적재일 줄 — 「8-5D 코드 = 1일 + 2–5일 + 6일 이상」(줄 안 검산)."""
+def _code_load_day_notes(loads: CodeLoadDays, *, basis: str = "") -> list[str]:
+    """전송용 요약의 전 코드 적재일 줄 — 「8-5D 코드 = 1일 + 2–5일 + 6일 이상」(줄 안 검산).
+
+    `basis` 는 넓은 창이 실패해 좁은 창으로 이어 갔을 때만 붙는 칸이다(`iter_bigdataquery`)."""
     if loads.failure is not None:
-        return [_note("8-5D", loads.failure)]
+        return [_note("8-5D", loads.failure, basis)]
     spans = list(loads.spans.values())
     one = sum(1 for span in spans if span.days == 1)
     few = sum(1 for span in spans if 2 <= span.days <= 5)
     many = sum(1 for span in spans if span.days >= 6)
-    return [_note("8-5D", f"{len(spans):,} = {one:,} + {few:,} + {many:,}")]
+    return [_note("8-5D", f"{len(spans):,} = {one:,} + {few:,} + {many:,}", basis)]
 
 
 def _day_rows(frame: pd.DataFrame | None) -> dict[date, int]:
@@ -5154,7 +5157,7 @@ def _summed(values: Iterable[int | None]) -> str:
     return f"{sum(value for value in numbers if value is not None):,}"
 
 
-def copy_note(index: int, check: CopyCheck) -> str:
+def copy_note(index: int, check: CopyCheck, *, basis: str = "") -> str:
     """전송용 요약의 사본 줄 — 「8-5C1 표본 적재일 · 견준 날 · 그날에만 · 기준 날에만 ·
     행이 다른 키 · 그 밖 칸만 · 하루 안 충돌」.
 
@@ -5162,12 +5165,13 @@ def copy_note(index: int, check: CopyCheck) -> str:
     포함)를 더한 합이다 — 날마다 같은 꼴로 충돌하면 하루 값의 날 수 배다. 판정은 없다.
 
     조회가 흔들린 때만 끝에 칸이 붙는다 — 다시 물어도 못 받은 날이 있으면 「못 받음 n <첫 실패
-    꼴>」(견준 날 · 합은 받은 날만), 첫 번이 실패해 다시 물어 받은 조회가 있으면 「다시 n」.
+    꼴>」(견준 날 · 합은 받은 날만), 첫 번이 실패해 다시 물어 받은 조회가 있으면 「다시 n」. `basis`
+    는 넓은 창이 실패해 좁은 창으로 이어 갔을 때만 맨 끝에 붙는다(`iter_bigdataquery`).
     """
     key = f"8-5C{index}"
     kind = "더함" if check.extra else "표본"
     if check.failure is not None:
-        return _note(key, f"{kind} {check.failure}")
+        return _note(key, f"{kind} {check.failure}", basis)
     compared = [facts for facts in check.days if facts.compared]
     shaky = [
         *(
@@ -5178,7 +5182,7 @@ def copy_note(index: int, check: CopyCheck) -> str:
         *([f"다시 {check.retried:,}"] if check.retried else []),
     ]
     if not compared and not check.failed_days:
-        return _note(key, f"{kind} {check.load_days:,}일", "여러 날 아님", *shaky)
+        return _note(key, f"{kind} {check.load_days:,}일", "여러 날 아님", *shaky, basis)
     return _note(
         key,
         f"{kind} {check.load_days:,}일",
@@ -5189,6 +5193,7 @@ def copy_note(index: int, check: CopyCheck) -> str:
         _summed(facts.other_only for facts in compared),
         _summed(facts.conflicts for facts in check.days),
         *shaky,
+        basis,
     )
 
 
@@ -5202,6 +5207,7 @@ def _copy_parts(
     max_codes: int,
     max_days: int,
     notes: list[str] | None = None,
+    basis: str = "",
 ) -> Iterator[list[str]]:
     """사본 확인을 머리와 코드마다 한 조각으로 내준다 — 끝난 코드는 바로 찍힌다."""
     notes = [] if notes is None else notes
@@ -5243,7 +5249,7 @@ def _copy_parts(
             bounded=target.bounded,
             max_days=days,
         )
-        notes.append(copy_note(index, check))
+        notes.append(copy_note(index, check, basis=basis))
         yield copy_lines(index, check)
 
 
@@ -5253,6 +5259,7 @@ def iter_bigdataquery(
     sample: int = DEFAULT_SAMPLE,
     margin_days: int = DEFAULT_MARGIN_DAYS,
     max_window: bool = True,
+    wide_days: int = CATALOG_MAX_DAYS,
     code_days: bool = True,
     copy_codes: int = DEFAULT_COPY_CODES,
     copy_days: int = DEFAULT_COPY_DAYS,
@@ -5315,10 +5322,10 @@ def iter_bigdataquery(
     if max_window:
         windows.append(
             (
-                f"상한 {CATALOG_MAX_DAYS}일",
-                QueryWindow(
-                    start_date=today - timedelta(days=CATALOG_MAX_DAYS - 1), end_date=today
-                ),
+                f"상한 {wide_days}일"
+                if wide_days == CATALOG_MAX_DAYS
+                else f"넓은 창 {wide_days}일",
+                QueryWindow(start_date=today - timedelta(days=wide_days - 1), end_date=today),
             )
         )
     runs: list[CatalogRun] = []
@@ -5332,15 +5339,26 @@ def iter_bigdataquery(
         return
     frame = widest.frame
     distinct, invalid = _code_rule_split(frame["simulation_code"])
+    # 넓은 창이 실패해 좁은 창으로 이어 가면 아래 수는 모두 좁은 창의 것이다 — 줄이 따로 옮겨져도
+    # 직전 리뷰의 넓은 창 값과 견주지 않게 요약 줄마다 그 창을 적는다.
+    narrowed = runs[-1] is not widest
+    basis = f"기준 {widest.window.days:,}일" if narrowed else ""
     # 요약 — 「8-5L 창마다 일·행·초 · 위반 규칙 위반 코드/코드」.
     notes.append(
         _note(
             "8-5L",
             *(_catalog_note(run) for run in runs),
             f"위반 {len(invalid):,}/{len(distinct):,}",
+            basis,
         )
     )
     lines = ["", f"- 아래는 `{widest.label}` 목록 기준"]
+    if narrowed:
+        lines.append(
+            f"- `{runs[-1].label}` 목록이 실패해 전 코드 적재일 · 표본 · 사본도 "
+            f"{widest.window.days:,}일 창에서 잰다 — 직전 리뷰의 넓은 창 값과 견주지 않는다"
+            "(읽는 법은 런북 8-5)"
+        )
     lines.extend(describe_registered_at(frame["regist_data"]))
     per_pair = (
         frame.assign(
@@ -5364,7 +5382,7 @@ def iter_bigdataquery(
     loads: CodeLoadDays | None = None
     if code_days:
         loads = _run_code_load_days(probe, widest.window)
-        notes.extend(_code_load_day_notes(loads))
+        notes.extend(_code_load_day_notes(loads, basis=basis))
         yield [*_table(["전 코드 적재일", "값"], _code_load_day_rows(loads)), ""]
     else:
         notes.append(_note("8-5D", "건너뜀"))
@@ -5438,6 +5456,7 @@ def iter_bigdataquery(
             "8-5S",
             f"{same:,}/{len(measured):,}",
             _percent(total_missing / total_wide if total_wide else None, 2),
+            basis,
         )
     )
     yield [*_table(["표본 적재일", "값"], rows), ""]
@@ -5450,6 +5469,7 @@ def iter_bigdataquery(
         max_codes=copy_codes,
         max_days=copy_days,
         notes=notes,
+        basis=basis,
     )
 
 
@@ -5497,6 +5517,13 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=f"{CATALOG_MAX_DAYS}일 목록 조회를 건너뛴다(너무 오래 걸릴 때)",
     )
     parser.add_argument(
+        "--bdq-wide-days",
+        type=int,
+        default=CATALOG_MAX_DAYS,
+        help=f"넓은 목록 창의 일수(기본 {CATALOG_MAX_DAYS} — 그 창이 서버에서 실패할 때 줄인다, "
+        f"{CATALOG_DEFAULT_DAYS + 2} ~ {CATALOG_MAX_DAYS})",
+    )
+    parser.add_argument(
         "--bdq-no-code-days",
         action="store_true",
         help="전 코드 적재일 조회(GROUP BY 한 번)를 건너뛴다",
@@ -5528,7 +5555,13 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "다시 셈한다(사외가 받은 리뷰 압축본에 돌린다 — 런북 8-6)",
     )
     parser.add_argument("--today", type=date.fromisoformat, default=None, help=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not CATALOG_DEFAULT_DAYS + 2 <= args.bdq_wide_days <= CATALOG_MAX_DAYS:
+        parser.error(
+            f"--bdq-wide-days 는 {CATALOG_DEFAULT_DAYS + 2} ~ {CATALOG_MAX_DAYS} 다 — "
+            "넓은 창을 빼려면 --bdq-no-max-window"
+        )
+    return args
 
 
 def _use_utf8_stdout() -> None:
@@ -5601,6 +5634,7 @@ def _block_parts(
             sample=args.bdq_sample,
             margin_days=args.bdq_margin_days,
             max_window=not args.bdq_no_max_window,
+            wide_days=args.bdq_wide_days,
             code_days=not args.bdq_no_code_days,
             copy_codes=args.bdq_copy_codes,
             copy_days=args.bdq_copy_days,

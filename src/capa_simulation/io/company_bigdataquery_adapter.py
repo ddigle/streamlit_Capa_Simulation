@@ -14,7 +14,11 @@ import importlib.util
 import logging
 import os
 import re
+import threading
+import time
 from collections.abc import Mapping
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from types import ModuleType
@@ -433,13 +437,71 @@ def get_data_keywords(query: str) -> dict[str, object]:
     return keywords
 
 
+@dataclass(frozen=True)
+class _Flight:
+    """지금 도는 조회 하나 — 결과 자리와 시작 시각(`time.monotonic`)."""
+
+    answer: Future[object]
+    started: float
+
+
+# 지금 도는 조회문마다 그 조회. 결과를 남겨 두는 캐시가 아니라 겹침만 막는다(`call_get_data`).
+_IN_FLIGHT: Final[dict[str, _Flight]] = {}
+_IN_FLIGHT_LOCK: Final = threading.Lock()
+# 같은 조회문에 합류하는 상한 — 잰 가장 긴 실패(907초, 서버 쪽 15분 제한과 맞다)를 넘겨 이만큼
+# 돌아오지 않은 조회는 끝나기를 기대하지 않는다. 앱은 조회를 취소할 길이 없어 이 뒤로는 겹침을
+# 감수하고 새로 묻는다.
+IN_FLIGHT_JOIN_SECONDS: Final = 1200.0
+
+
 def call_get_data(module: BigDataQueryModule, query: str) -> object:
-    """조회 한 번. 요청자 계정을 안 넘긴 채 거부당하면 **무엇을 채워야 하는지**로 바꾼다.
+    """조회 한 번. 같은 조회문이 이미 도는 중이면 새로 묻지 않고 그 결과(또는 실패)를 같이 기다린다.
+
+    화면은 조회 중에도 단추가 눌리고, 누를 때마다 Streamlit 이 앞 회차를 멈추지 못한 채(`getData`
+    안에 있다) 새 회차를 곧바로 세운다 — 그대로 두면 서버에 같은 조회가 누른 만큼 겹쳐 쌓인다. 긴
+    조회일수록 다시 누르기 쉽고 서버에는 그때가 가장 나쁘다. 기다리는 쪽은 사본을 받는다.
+
+    합류는 조회 시작부터 `IN_FLIGHT_JOIN_SECONDS` 까지다 — `getData` 가 돌아오지 않아도 프로세스의
+    그 조회문 부름이 다 함께 멈추지 않게, 그 뒤의 첫 부름이 자리를 넘겨받아 새로 묻고 나머지는
+    거기에 합류한다. 겹침은 조회문마다 그 시간에 하나로 그친다.
+    """
+    while True:
+        with _IN_FLIGHT_LOCK:
+            running = _IN_FLIGHT.get(query)
+            now = time.monotonic()
+            if running is None or now - running.started >= IN_FLIGHT_JOIN_SECONDS:
+                mine = _Flight(Future(), now)
+                _IN_FLIGHT[query] = mine
+                break
+            remaining = IN_FLIGHT_JOIN_SECONDS - (now - running.started)
+        try:
+            joined = running.answer.result(timeout=remaining)
+        except FutureTimeoutError:
+            continue
+        return joined.copy() if isinstance(joined, pd.DataFrame) else joined
+    if running is not None:
+        _log_failure("같은 조회문이 돌아오지 않아 새로 묻는다")
+    try:
+        result = _get_data_once(module, query)
+    except BaseException as error:
+        mine.answer.set_exception(error)
+        raise
+    finally:
+        with _IN_FLIGHT_LOCK:
+            if _IN_FLIGHT.get(query) is mine:
+                del _IN_FLIGHT[query]
+    mine.answer.set_result(result)
+    return result
+
+
+def _get_data_once(module: BigDataQueryModule, query: str) -> object:
+    """`getData` 한 번. 요청자 계정을 안 넘긴 채 거부당하면 **무엇을 채워야 하는지**로 바꾼다.
 
     패키지가 내는 `parameter user_name is necessary.` 만으로는 어느 환경변수를 넣어야
     하는지 알 수 없다. 사내 WebIDE 에서 로그인·토큰이 모두 정상인데도 조회가 100% 막혀
     있었고, 원인을 찾는 데 두 세션이 걸렸다.
     """
+    started = time.monotonic()
     try:
         return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
@@ -454,7 +516,7 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
                 f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
             ) from error
         hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
-        failure = BigDataQueryCallError(error, hint=hint)
+        failure = BigDataQueryCallError(error, hint=hint, seconds=time.monotonic() - started)
         _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
         raise failure from error
 
@@ -481,9 +543,26 @@ QUERY_FAILURE_TIMEOUT: Final = "시간 초과"
 QUERY_FAILURE_CONNECTION: Final = "연결"
 QUERY_FAILURE_SQL: Final = "SQL"
 QUERY_FAILURE_OTHER: Final = "그 밖"
+# 조회문 자체를 탓하는 낱말 — 기다린 시간과 상관없이 조회문 거절이다. 같은 SQL 갈래의 나머지
+# (`not found` · `does not exist` 등)는 긴 조회 중 다시 적재한 표에서도 난다
+# (`LONG_FAILURE_SECONDS`).
+_QUERY_TEXT_WORDS: Final[tuple[str, ...]] = ("syntax", "parse", "analysis", "semantic")
 # 차례대로 본다 — 「connect timeout」 은 시간 초과, 「host not found」 는 연결이다.
 _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
-    (QUERY_FAILURE_TIMEOUT, ("timeout", "timed out", "time out", "deadline", "시간 초과")),
+    (
+        QUERY_FAILURE_TIMEOUT,
+        (
+            "timeout",
+            "timed out",
+            "time out",
+            "deadline",
+            "time limit",
+            "time_limit",
+            "timelimit",
+            "시간 초과",
+            "시간 제한",
+        ),
+    ),
     (
         QUERY_FAILURE_CONNECTION,
         (
@@ -506,11 +585,7 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     (
         QUERY_FAILURE_SQL,
         (
-            "syntax",
-            "parse",
-            "analysis",
-            "semantic",
-            "sql",
+            *_QUERY_TEXT_WORDS,
             "programmingerror",
             "could not resolve",
             "not found",
@@ -519,7 +594,19 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "invalid column",
         ),
     ),
+    # 까닭을 말하지 않는 낱말 — 갈래는 그 밖이고 점검 줄에 단서로만 적는다. `sql` 은 맨 뒤다.
+    # 드라이버 문구는 함수 이름(`SQLFetch` 등)으로도 이 낱말을 실을 수 있어 조회문 거절의 근거가
+    # 되지 못한다.
+    (
+        QUERY_FAILURE_OTHER,
+        ("memory", "exceeded", "cancel", "expired", "killed", "aborted", "rejected", "sql"),
+    ),
 )
+# 조회문 거절은 초 단위로 돌아온다 — 이만큼 기다린 뒤의 실패는 문법 낱말(`_QUERY_TEXT_WORDS`)이
+# 없으면 DB 가 끝내지 못한 것으로 읽고 시간 초과의 길(다시 묻지 않음 · 기간을 줄임)로 보낸다.
+# `not found` · `does not exist` 도 여기 든다. 잰 가장 긴 성공(366일 목록 157초)의 두 배쯤이다.
+LONG_FAILURE_SECONDS: Final = 300.0
+LONG_FAILURE_CLUE: Final = "오래 걸림"
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
     QUERY_FAILURE_TIMEOUT: "DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
     "기간을 줄여 다시 하세요.",
@@ -581,8 +668,7 @@ def classify_query_failure(error: BaseException) -> str:
 def query_failure_clue(error: BaseException) -> str:
     """갈래를 정한 낱말(`_FAILURE_WORDS` 의 것 — 문구 원문이 아니다). 종류로 가렸거나 맞은 낱말이
     없으면 빈 글이다. 점검 스크립트가 갈래 옆에 적어 같은 「SQL」 이 문법 낱말(`syntax` 등)로
-    섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800 — 판마다
-    다른 코드에서 간헐로 난 「SQL」 실패)."""
+    섰는지 `not found` 같은 넓은 낱말로 섰는지, 「그 밖」 이 무엇을 달고 왔는지 가른다."""
     return _sorted_failure(error)[1]
 
 
@@ -599,14 +685,30 @@ def _log_failure(message: str, *, kind: str = "", type_names: tuple[str, ...] = 
     _LOGGER.warning("BigDataQuery 실패: %s%s", message.split(". ")[0].splitlines()[0], detail)
 
 
+def _is_long_wait_failure(kind: str, clue: str, seconds: float | None) -> bool:
+    """오래 기다린 끝의 실패를 시간 초과로 올릴지. 시간 초과 · 연결은 그 갈래가 맞고, SQL 은 문법
+    낱말일 때만 그대로 둔다."""
+    if seconds is None or seconds < LONG_FAILURE_SECONDS:
+        return False
+    return kind == QUERY_FAILURE_OTHER or (
+        kind == QUERY_FAILURE_SQL and clue not in _QUERY_TEXT_WORDS
+    )
+
+
 class BigDataQueryCallError(RuntimeError):
     """`getData` 가 낸 패키지 예외. 화면들이 잡는 `RuntimeError` 로 올려 갈래와 다시 할 길을
     알린다 — 패키지의 `Error` 같은 종류는 화면이 잡는 예외 튜플(`BOOTSTRAP_ERRORS`) 밖이라 그대로
     두면 화면이 traceback 으로 멈춘다(사내 리뷰 202610200720, 목록 조회 첫 판 실패). 원래 예외는
-    `__cause__` 에 있다."""
+    `__cause__` 에 있다. `seconds` 는 실패까지 걸린 초다 — `LONG_FAILURE_SECONDS` 를 넘겨 그 밖이나
+    넓은 SQL 낱말로 갈린 실패는 시간 초과로 올린다(`_is_long_wait_failure`)."""
 
-    def __init__(self, error: BaseException, *, hint: str = "") -> None:
+    def __init__(
+        self, error: BaseException, *, hint: str = "", seconds: float | None = None
+    ) -> None:
         self.kind, self.clue = _sorted_failure(error)
+        if _is_long_wait_failure(self.kind, self.clue, seconds):
+            self.kind = QUERY_FAILURE_TIMEOUT
+            self.clue = f"{LONG_FAILURE_CLUE} {self.clue}".strip()
         self.type_names = failure_type_names(error)
         super().__init__(
             f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"
