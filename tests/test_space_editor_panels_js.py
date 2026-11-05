@@ -295,8 +295,8 @@ def test_the_splitters_are_keyboard_separators_that_do_not_leak_into_the_drawing
 
 
 def test_dragging_a_unit_onto_the_right_panel_unplaces_it_with_one_undo() -> None:
-    """도면의 호기를 오른쪽 칸(접힌 띠 포함) 위로 끌면 「여기 놓으면 미배치로」 테가 서고, 놓으면 끈
-    자리를 처음으로 돌린 뒤 호기만 빼기·지우기와 같은 길(`removeItems` — 되돌리기 한 번)로 미배치다.
+    """도면의 호기를 오른쪽 칸(접힌 단추 포함) 위로 끌면 「여기 놓으면 미배치로」 테가 서고, 놓으면
+    끈 자리를 처음으로 돌린 뒤 호기만 빼기·지우기와 같은 길(`removeItems` — 되돌리기 한 번)로 미배치다.
     도면 요소는 제자리다."""
     move = JS[JS.index("    if (drag.mode === 'move') {\n      // 도면의 호기를") :]
     assert "insideRect(drawer.getBoundingClientRect(), event.clientX, event.clientY)" in move

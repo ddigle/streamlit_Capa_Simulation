@@ -262,7 +262,7 @@ export default function (component) {
   // 단추 풍선은 HTML 이 처음 값이다 — 고정 중 저장 안 한 배치 표지가 앞에 한 마디를 더한다(`showLockMark`).
   if (S.lockTip === undefined) S.lockTip = lockButton.title
   const pinChipDate = q('.sle-pinchip-date')
-  // 오른쪽 미배치 칸(이름 `drawer*` 는 이 칸을 가리킨다). 접힌 띠가 `drawerTab`, 칸 상자가 `trayBox`, 그 안 굴리는 칸이 `trayScroll`.
+  // 오른쪽 미배치 칸(이름 `drawer*` 는 이 칸을 가리킨다). 접힌 단추가 `drawerTab`, 칸 상자가 `trayBox`, 그 안 굴리는 칸이 `trayScroll`.
   const drawer = q('.sle-side.is-right')
   const drawerTab = q('.sle-drawer-tab')
   const drawerCount = q('.sle-drawer-count')
@@ -1744,7 +1744,7 @@ export default function (component) {
     return null
   }
   // 두 칸을 다 넓혀 무대가 stageMin 아래로 가면 마지막에 끈 칸(last)부터, 그래도 모자라면 다른 칸을 줄인다(칸마다 그 최소
-  // `lo` 까지 — 접힌 띠는 lo = 폭이라 줄지 않는다). 칸막이는 펼친 칸에만 있다(split).
+  // `lo` 까지 — 접힌 칸은 폭 · lo 가 0 이다). 칸막이는 펼친 칸에만 있다(split).
   function fitPanels(editorW, left, right, last, stageMin, split) {
     let l = left.w
     let r = right.w
@@ -3930,7 +3930,7 @@ export default function (component) {
     const single = chosen.length === 1 ? chosen[0] : null
     inspector.classList.toggle('is-empty', chosen.length === 0)
     if (!chosen.length) {
-      inspectorName.textContent = FAB ? '— 도면에서 고르세요(빈 곳을 끌면 여러 개)' : '— 도면이나 트레이에서 고르세요(빈 곳을 끌면 여러 개)'
+      inspectorName.textContent = '— 고른 것 없음'
     } else if (multi) {
       const together = expanded(chosen).length
       inspectorName.textContent = `${chosen.length}개${together > chosen.length ? ` (모듈 묶음까지 ${together}개)` : ''}`
@@ -5901,7 +5901,7 @@ export default function (component) {
     const dx = aligned.dx ?? snapDelta(p.x - drag.startX)
     const dTop = aligned.dTop ?? snapDelta(p.top - drag.startTop)
     if (drag.mode === 'move') {
-      // 도면의 호기를 오른쪽 미배치 칸(접힌 띠 포함) 위로 끌면 놓을 때 미배치로 돌아간다(2026-11-03 사용자 요청 — 미배치
+      // 도면의 호기를 오른쪽 미배치 칸(접힌 단추 포함) 위로 끌면 놓을 때 미배치로 돌아간다(2026-11-03 사용자 요청 — 미배치
       // 슬롯 이동성). 칸에 「여기 놓으면 미배치로」 테가 선다. 호기가 든 끌기만이다(도면 요소만이면 칸이 받지 않는다).
       const toTray = HAS_RIGHT && drag.hasUnit && insideRect(drawer.getBoundingClientRect(), event.clientX, event.clientY)
       if (toTray !== Boolean(drag.toTray)) {

@@ -145,6 +145,8 @@ def test_the_status_line_keeps_values_and_drops_how_to_text() -> None:
         assert value in status, value
     assert "서식 붓 잠금" in status and "`모듈 ${mods.length}대 · ${cols}×${rows}`" in status
     assert 'data-sec="help"' not in HTML and "sle-help" not in CSS
+    # 왼쪽 칸 「선택」 의 빈 줄도 값이다(하는 법 글 없음).
+    assert "inspectorName.textContent = '— 고른 것 없음'" in JS and "고르세요(빈 곳을" not in JS
     assert "const GUIDE =" not in JS and "const HINT =" not in JS and "buildHelp" not in JS
 
 
