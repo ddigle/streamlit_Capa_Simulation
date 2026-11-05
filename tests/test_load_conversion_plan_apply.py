@@ -9,7 +9,15 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, data_error_texts, place_errors, successes
+from alert_marks import (
+    active_state,
+    alert_notes,
+    data_error_texts,
+    note_table,
+    place_errors,
+    successes,
+    table_frame,
+)
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, ElementTree
@@ -17,6 +25,7 @@ from streamlit.testing.v1.element_tree import Dataframe, ElementTree
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation import alerts
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.services.korean_particle import with_object_particle
 
@@ -255,6 +264,11 @@ def _inject(app: AppTest, name: str, frame: pd.DataFrame, token: str) -> None:
     app.run()
 
 
+def _folds(app: AppTest) -> set[str]:
+    """본문 펼침 이름 — 아이콘을 단 `st.expander` 는 AppTest 가 `status` 로 읽는다."""
+    return {str(item.label) for item in app.expander} | {str(item.label) for item in app.status}
+
+
 def _yield_rows(app: AppTest) -> pd.DataFrame:
     return pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_YLD"]).reset_index(
         drop=True
@@ -305,16 +319,13 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
         "apply_yield_changes",
         "open_yield_paste",
     } <= _button_keys(app)
-    # 뺀 행은 「편집 불가 수율 행」 펼침 표가 까닭(`사유`)과 함께 보인다(건수는 수율 탭이 열린
-    # 회차의 상태 알림 `ST-06` — 자리에 경고 상자를 그리지 않는다). 계산에서 어떻게 되고 어떻게
-    # 고치는지는 펼침 안 문장이 아니라 `사유` 칸 머리 풍선이다(설계 규칙 UI-TXT-01 · 02). 처음
-    # 열린 탭은 환산이라 `ST-06` 은 내지 않고 환산 탭의 상태 알림 `ST-05`(환산에서 빠진 계획 —
-    # 기본 소요기준 PKG 는 수율을 쓰지 않아 없음)만 낸다.
+    # 뺀 행은 수율 탭이 열린 회차의 상태 알림 `ST-06` 과 그 줄의 「편집 불가 수율 행」 표가
+    # 까닭(`사유`)과 함께 보인다(자리에 경고 상자 · 접힌 목록을 그리지 않는다 — 2026-11-05 사용자
+    # 요청(검수표)). 계산에서 어떻게 되고 어떻게 고치는지는 `사유` 칸 머리 풍선이다(설계 규칙
+    # UI-TXT-01 · 02). 처음 열린 탭은 환산이라 `ST-06` 은 내지 않고 환산 탭의 상태 알림
+    # `ST-05`(환산에서 빠진 계획 — 기본 소요기준 PKG 는 수율을 쓰지 않아 없음)만 낸다.
     assert not any("표에서 값을 뺐습니다" in str(item.value) for item in app.caption)
-    assert any(
-        "표에서 값을 뺐습니다" in str(json.loads(frame.proto.columns).get("사유", {}).get("help"))
-        for frame in app.dataframe
-    )
+    assert "편집 불가 수율 행" not in _folds(app)
     assert not app.warning
     codes = {str(note["code"]): note for note in alert_notes(app)}
     assert "ST-06" not in codes
@@ -324,6 +335,9 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
     (locked,) = [note for note in alert_notes(app) if note.get("code") == "ST-06"]
     assert locked["active"] is True and locked["level"] == "action" and locked["tab"] == "수율"
     assert "EDS·BE" in locked["short"]
+    locked_table = note_table(locked, "편집 불가 수율 행")
+    assert locked_table["total"] == 2 and "표에서 값을 뺐습니다" in locked_table["help"]["사유"]
+    assert set(table_frame(locked_table)["제품정보"]) == {"DEMO PRODUCT A", "DEMO PRODUCT B"}
 
     # 뺀 행과 무관한 칸(첫 행의 202601)을 고쳐 적용한다. 브라우저는 회차마다 편집표의 편집을
     # 다시 보내므로(AppTest 는 편집표 상태를 되보내지 않는다) 적용을 누르는 회차에도 넣는다.
@@ -349,9 +363,9 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
 def test_the_excluded_plan_list_says_what_happened_in_its_column_tooltip(
     seeded_database: Path,
 ) -> None:
-    """환산에서 빠진 계획의 「제외한 계획 확인」 펼침은 표만 둔다 — 고칠 곳과 빈 생산수량의 뜻은
-    `누락 기준정보` 칸 머리 풍선이고, 펼침 안에 설명 문장을 늘 띄우지 않는다(설계 규칙 UI-TXT-01 ·
-    02). 건수는 상태 알림 `ST-05` 다."""
+    """환산에서 빠진 계획의 목록은 상태 알림 `ST-05` 줄의 표다(2026-11-05 사용자 요청(검수표)) —
+    고칠 곳과 빈 생산수량의 뜻은 `누락 기준정보` 칸 머리 풍선이고, 본문에 접힘 · 설명 문장을 두지
+    않는다(설계 규칙 UI-TXT-01 · 02 · 04)."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"]).copy()
     plan["생산수량"] = plan["생산수량"].astype(float)
@@ -359,14 +373,33 @@ def test_the_excluded_plan_list_says_what_happened_in_its_column_tooltip(
     _inject(app, "RQ_PKG_PLAN", plan, "blank-plan-quantity")
 
     assert not list(app.exception)
-    (excluded,) = [note for note in alert_notes(app) if note.get("code") == "ST-05"]
-    assert excluded["active"] is True
+    excluded = active_state(app, "ST-05")
+    assert excluded is not None and excluded["code"] == "ST-05"
     assert not any("계획 없음(0)으로 봤습니다" in str(item.value) for item in app.caption)
-    helps = [
-        str(json.loads(frame.proto.columns).get("누락 기준정보", {}).get("help"))
-        for frame in app.dataframe
-    ]
-    assert any("기준정보를 채우면" in text and "계획 없음(0)" in text for text in helps)
+    assert "제외한 계획 확인" not in _folds(app)
+    table = note_table(excluded, "제외한 계획")
+    assert "기준정보를 채우면" in table["help"]["누락 기준정보"]
+    assert "계획 없음(0)" in table["help"]["누락 기준정보"]
+    assert table["file"].startswith("Capa_Conversion_Excluded_Plans_")
+    assert "Alarm › 이 줄" in excluded["short"]
+
+
+def test_lists_too_large_for_the_alarm_stay_on_the_conversion_page(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 본문 펼침이 남고 글이 그 자리를 가리킨다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 0)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"]).copy()
+    plan["생산수량"] = plan["생산수량"].astype(float)
+    plan.loc[plan.index[0], "생산수량"] = None
+    _inject(app, "RQ_PKG_PLAN", plan, "blank-plan-quantity")
+
+    assert not list(app.exception)
+    excluded = active_state(app, "ST-05")
+    assert excluded is not None and "tables" not in excluded
+    assert "이 탭 「제외한 계획 확인」" in excluded["short"]
+    assert "제외한 계획 확인" in _folds(app)
 
 
 def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(
@@ -557,13 +590,14 @@ def test_an_out_of_range_yield_names_the_row_where_the_conversion_stops(
     assert "202604 · DEMO PRODUCT B" in errors[0]
     assert "EDS 0(0%)" in errors[0]
     assert "수율 탭에서 그 달의 EDS·BE 를 둘 다 고쳐 적용하세요" in errors[0]
-    # 그 행이 계산을 멈춘다는 뜻은 「편집 불가 수율 행」 목록 `사유` 칸 머리 풍선이 말한다.
-    guides = [
-        str(json.loads(frame.proto.columns).get("사유", {}).get("help")) for frame in app.dataframe
-    ]
-    assert any(
-        "편집 불가" in text and "HOME·소요대수·확보율 계산을 멈춥니다" in text for text in guides
-    )
+    # 그 행이 계산을 멈춘다는 뜻은 「편집 불가 수율 행」 표(수율 탭의 `ST-06`) `사유` 칸 머리 풍선이
+    # 말한다.
+    app.session_state["load_conversion_active_tab"] = ":material/percent: 수율"
+    app.run()
+    locked = active_state(app, "ST-06")
+    assert locked is not None
+    guide = note_table(locked, "편집 불가 수율 행")["help"]["사유"]
+    assert "편집 불가" in guide and "HOME·소요대수·확보율 계산을 멈춥니다" in guide
 
 
 def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(

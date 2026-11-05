@@ -6,7 +6,15 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, flashed, infos, place_errors, successes
+from alert_marks import (
+    alert_notes,
+    flashed,
+    infos,
+    note_table,
+    place_errors,
+    successes,
+    table_frame,
+)
 from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Error
@@ -577,15 +585,6 @@ def _frame_with_column(app: AppTest, column: str) -> pd.DataFrame:
     raise AssertionError(f"`{column}` 컬럼이 있는 표가 없습니다.")
 
 
-def _exclusion_frame(app: AppTest, reason: str) -> pd.DataFrame:
-    """제외사유 컬럼에 해당 문자열이 든 상세 표를 찾는다."""
-    for frame in app.dataframe:
-        value = frame.value
-        if "제외사유" in getattr(value, "columns", []) and reason in set(value["제외사유"]):
-            return value
-    raise AssertionError(f"제외 상세 표가 없습니다: {reason}")
-
-
 def _alert(app: AppTest, code: str) -> dict[str, Any]:
     """이 회차의 상태 알림 표지 하나(`code`)."""
     (note,) = [note for note in alert_notes(app) if note.get("code") == code]
@@ -594,8 +593,8 @@ def _alert(app: AppTest, code: str) -> dict[str, Any]:
 
 def _capacity_alarm_table(app: AppTest) -> tuple[pd.DataFrame, dict[str, Any]]:
     """대당 Capa 제외 알림(`ST-14`)에 딸린 표 — 원본 값 프레임과 표 머리(제목 · 파일 · 표시명)."""
-    table = _alert(app, "ST-14")["table"]
-    return pd.DataFrame(table["rows"], columns=table["columns"]), table
+    table = note_table(_alert(app, "ST-14"), "제외 기준정보")
+    return table_frame(table), table
 
 
 def test_calculation_result_puts_the_excluded_capacity_rows_on_the_alarm_row() -> None:
@@ -622,29 +621,34 @@ def test_calculation_result_puts_the_excluded_capacity_rows_on_the_alarm_row() -
     }
 
 
-def test_calculation_result_alerts_both_exclusions_and_keeps_the_required_list() -> None:
+def test_calculation_result_alerts_both_exclusions_and_carries_the_required_list() -> None:
+    """소요대수 제외 목록도 본문 펼침이 아니라 그 알림(`ST-15`)의 표다 — 표 행 수가 그 알림 건수다
+    (2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」)."""
     app = AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     capacity_exclusions, _ = _capacity_alarm_table(app)
     assert capacity_exclusions["STEP_SEQ"].tolist() == ["P300", "P200"]
 
-    # 소요대수 탭의 제외 알림은 그 탭을 열어야 낸다. 목록은 본문 펼침에 남는다.
+    # 소요대수 탭의 제외 알림은 그 탭을 열어야 낸다. 목록은 그 줄의 표다.
     app = _open_calc_tab(app, REQUIRED_TAB)
     assert not app.warning
     required_note = _alert(app, "ST-15")
-    assert required_note["active"] is True
+    assert required_note["code"] == "ST-15" and required_note["active"] is True
     assert "4건을 제외했습니다(부하량 발생 3건)" in required_note["full"]
-    assert "소요대수 제외 기준정보" in {expander.label for expander in app.expander}
-    required_exclusions = _exclusion_frame(app, MISSING_CAPACITY_REASON)
+    assert "Alarm › 이 줄 「소요대수 제외 기준정보」" in required_note["full"]
+    assert "소요대수 제외 기준정보" not in {expander.label for expander in app.expander}
+    required_table = note_table(required_note, "소요대수 제외 기준정보")
+    required_exclusions = table_frame(required_table)
+    assert required_table["total"] == 4 and set(required_exclusions["제외사유"]) == {
+        MISSING_CAPACITY_REASON
+    }
     assert required_exclusions["STEP_SEQ"].tolist() == ["P200", "P300", "P400", "P500"]
     # 제외된 STEP 은 대당 Capa 가 없을 뿐 부하량은 붙는다. 그 값이 화면에 남아야
     # 사용자가 얼마나 잘리는지 안다. 계획에 없는 제품만 0 이라 알림의 괄호 안 건수와 갈린다.
     assert required_exclusions["부하량"].tolist() == [100.0, 100.0, 100.0, 0.0]
-    assert _download(app, "download_required_exclusions_csv") == {
-        "label": "CSV 다운로드",
-        "file_name": "Capa_Required_Equipment_Exclusions_202608_202608.csv",
-    }
+    assert required_table["file"] == "Capa_Required_Equipment_Exclusions_202608_202608.csv"
+    assert "download_required_exclusions_csv" not in {button.key for button in app.download_button}
 
 
 def test_capacity_editors_show_route_keys_without_exceptions(grid_calls: Calls) -> None:
@@ -1203,14 +1207,10 @@ def test_calculation_result_exclusion_csvs_keep_the_original_process_name() -> N
     assert set(excluded["공정"]) == {"Process-A"} and table["shown"]["공정"] == {
         "Process-A": "가공"
     }
-    required_app = _open_calc_tab(
-        AppTest.from_string(RENAMED_EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60),
-        REQUIRED_TAB,
-    )
-    assert set(_exclusion_frame(required_app, MISSING_CAPACITY_REASON)["공정"]) == {"가공"}
-
     app = _open_calc_tab(app, REQUIRED_TAB)
-    assert set(_download_frame(app, "download_required_exclusions_csv")["공정"]) == {"Process-A"}
+    required_table = note_table(_alert(app, "ST-15"), "소요대수 제외 기준정보")
+    assert set(table_frame(required_table)["공정"]) == {"Process-A"}
+    assert required_table["shown"] == {"공정": {"Process-A": "가공"}}
 
 
 def test_exclusion_tables_stay_original_without_a_rename_profile() -> None:
@@ -1495,12 +1495,15 @@ def test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning() -> None:
     assert not app.warning
     assert "4건을 제외했습니다(부하량 발생 3건)" in _alert(app, "ST-15")["full"]
     pkg = _alert(app, "ST-21")
-    assert pkg["active"] is True and pkg["level"] == "info"
+    assert pkg["code"] == "ST-21" and pkg["active"] is True and pkg["level"] == "info"
     assert pkg["full"].startswith(PKG_UNCOUNTED_NOTICE.removesuffix("."))
-    excluded = _exclusion_frame(app, "PKG 기준은 Buffer 로만 계수")
-    uncounted = excluded.loc[excluded["제외사유"].eq("PKG 기준은 Buffer 로만 계수")]
+    # 목록도 사유로 갈려 그 줄의 표다 — 대당 Capa 표에 섞이지 않는다.
+    uncounted = table_frame(note_table(pkg, "PKG Buffer 밖 행"))
+    assert set(uncounted["제외사유"]) == {"PKG 기준은 Buffer 로만 계수"}
     assert uncounted["STEP_SEQ"].tolist() == ["P600"]
     assert uncounted["부하량"].tolist() == [0.0]
+    capacity = table_frame(note_table(_alert(app, "ST-15"), "소요대수 제외 기준정보"))
+    assert "P600" not in set(capacity["STEP_SEQ"])
 
 
 def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
@@ -1508,6 +1511,7 @@ def test_only_uncounted_pkg_rows_raise_no_capacity_warning() -> None:
         AppTest.from_string(PKG_ONLY_UNCOUNTED_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
     assert _alert(app, "ST-15")["active"] is False
+    assert "tables" not in _alert(app, "ST-15")
     assert _alert(app, "ST-21")["active"] is True
 
 

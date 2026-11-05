@@ -20,7 +20,15 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit.elements.lib.policies as policies
-from alert_marks import data_error_marks, events, place_errors
+from alert_marks import (
+    active_state,
+    data_error_marks,
+    events,
+    note_table,
+    place_errors,
+    states,
+    table_frame,
+)
 from shortening_script import shortening_script
 from streamlit.testing.v1 import AppTest
 
@@ -938,13 +946,33 @@ def test_the_unmatched_list_keeps_the_original_names(tmp_path: Path) -> None:
     app = _run(database_path, labels={processes[0]: "표시-빠진공정"})
 
     assert not app.exception
-    texts = " ".join(str(item.value) for item in app.text)
-    assert processes[0] in texts and "표시-빠진공정" not in texts
-    # 펼침 안 맨 위는 「원본 공정명」 표지이고 맞대는 규칙은 그 풍선이다 — 늘 서는 설명 줄이
-    # 아니다(설계 규칙 UI-TXT-01).
-    (mark,) = [item for item in app.caption if str(item.value).endswith("원본 공정명")]
-    assert mark.proto.help.startswith(MATCH_RULE_HELP)
+    # 목록은 상태 알림 `RS-02` 줄의 표다 — 본문 접힘이 아니다(2026-11-05 사용자 요청(검수표)).
+    assert not [item.label for item in app.expander if "맞대지 못한 공정" in item.label]
+    assert not [str(item.value) for item in app.text if processes[0] in str(item.value)]
+    note = active_state(app, "RS-02")
+    assert note is not None and note["code"] == "RS-02" and note["level"] == "check"
+    assert "맞대지 못한 공정 1개" in note["short"] and "Alarm › 이 줄" in note["short"]
+    assert "Cut-off 미기재 1개" in note["full"]
+    table = note_table(note, "맞대지 못한 공정")
+    frame = table_frame(table)
+    assert frame["원본 공정명"].tolist() == [processes[0]]
+    assert frame["구분"].tolist() == ["시나리오에만 있는 공정"]
+    assert frame["Cut-off"].tolist() == ["미기재"]
+    assert table["shown"] == {} and "표시-빠진공정" not in note["full"]
+    # 맞대는 규칙은 그 칸 머리 풍선이다 — 늘 서는 설명 줄이 아니다(설계 규칙 UI-TXT-01).
+    assert table["help"]["원본 공정명"].startswith(MATCH_RULE_HELP)
     assert not any("같은 이름일 때만 맞댑니다" in str(item.value) for item in app.caption)
+    clear_equipment_repository()
+
+
+def test_a_screen_with_every_process_matched_has_no_unmatched_alert(tmp_path: Path) -> None:
+    """맞대지 못한 공정이 없어도 부른다(해소) — 표를 싣지 않는다."""
+    app = _run(_database(tmp_path))
+
+    assert not app.exception
+    assert active_state(app, "RS-02") is None
+    (quiet,) = states(app, "RS-02")
+    assert quiet["active"] is False and "tables" not in quiet
     clear_equipment_repository()
 
 

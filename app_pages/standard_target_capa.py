@@ -45,7 +45,13 @@ from capa_simulation.components.process_labels import (
     ProcessLabels,
     get_process_labels,
 )
-from capa_simulation.components.state_alerts import simulation_scope
+from capa_simulation.components.state_alerts import (
+    ALARM_ROW_PLACE,
+    AlertScope,
+    alarm_table_place,
+    alert_table,
+    simulation_scope,
+)
 from capa_simulation.components.table_toolbar import (
     CSV_TEMPLATE_LABEL,
     render_csv_download,
@@ -159,8 +165,12 @@ LOGIC_EMPTY = "산출 근거를 그릴 한 건이 아직 없습니다."
 # 주차별 가용설비가 한 건도 저장되지 않아 가용대수를 곱하는 표를 그릴 수 없을 때의 빈 결과 한 줄 —
 # 넣는 곳(작업 줄 「가용설비 붙여넣기」)은 Guide 가 말한다(UI-TXT-01 · 02 · 04).
 AVAILABILITY_EMPTY = "저장된 주차별 가용대수가 없습니다."
-# 「누락 공정·주차 확인」 표의 공정 칸 머리 풍선 — 표시명이 입혀진 동안만 단다(숨은 데이터
-# 안내는 칸 머리 풍선 — UI-TXT-04).
+# 가용대수가 없어 빈칸인 공정·주차 목록의 이름 — 그 알림(`ST-17`)의 Alarm 줄 표다(조건의 내역이라
+# 본문 접힘에 두지 않는다 — 2026-11-05 사용자 요청(검수표), UI-TXT-04). 알림에 싣기에 큰 목록만
+# 결과 상자 안 펼침(「… 확인」)에 남는다.
+MISSING_LIST_TITLE = "누락 공정·주차"
+# 그 표의 공정 칸 머리 풍선 — 표시명이 입혀진 동안만 단다(숨은 데이터 안내는 칸 머리 풍선 —
+# UI-TXT-04).
 MISSING_PROCESS_HELP = (
     "화면 표시명입니다 — 붙여넣기에는 작업 줄 「CSV 양식 다운로드」 양식의 원본 공정명을 씁니다."
 )
@@ -627,6 +637,55 @@ def _export_csv(
     return export.to_csv(index=False).encode("utf-8-sig")
 
 
+def report_missing_availability(
+    missing: pd.DataFrame,
+    *,
+    shown: bool,
+    scope: AlertScope,
+    file_name: str,
+    labels: ProcessLabels,
+) -> alerts.AlertTable | None:
+    """가용대수가 없어 빈칸인 공정·주차(가용대수를 곱하는 지표에서만) — 건수는 상태 알림
+    `ST-17`(바뀔 때만 알림창), 목록은 그 줄의 표다(화면은 표시명, CSV 는 양식에 그대로 쓸 원본
+    공정명). 싣지 못하면(크면 None) 화면이 결과 상자 안 늘 서 있는 칸의 펼침에 남긴다."""
+    table = (
+        alert_table(
+            missing,
+            title=MISSING_LIST_TITLE,
+            file_name=file_name,
+            labels=labels,
+            column_help={"공정": MISSING_PROCESS_HELP} if labels else None,
+        )
+        if shown
+        else None
+    )
+    page_place = f"결과 상자 안 「{MISSING_LIST_TITLE} 확인」"
+    alerts.state(
+        "ST-17",
+        scope=scope.scope,
+        content=sorted(
+            (str(process), str(week))
+            for process, week in zip(missing["공정"], missing["Weeknum"], strict=True)
+        )
+        if shown
+        else [],
+        active=shown,
+        text=(
+            f"가용대수가 없는 공정·주차 {len(missing):,}건 — 결과 빈칸. 목록: "
+            f"{ALARM_ROW_PLACE if table is not None else page_place}"
+        ),
+        full=(
+            f"선택 범위의 공정·주차 중 {len(missing):,}건에 가용대수가 없어 결과를 빈칸으로 "
+            "표시합니다. 목록은 "
+            + (alarm_table_place(MISSING_LIST_TITLE) if table is not None else page_place)
+            + " 이고, 작업 줄 「가용설비 붙여넣기」로 그 공정·주차의 가용설비를 넣으면 채워집니다."
+        ),
+        scope_label=scope.label,
+        tables=[table],
+    )
+    return table
+
+
 def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
@@ -806,8 +865,8 @@ with weekly_output_container:
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
     st.session_state[OUTPUT_METRIC_SHOWN_KEY] = output_metric
-    # 가용대수 누락 경고·「누락 공정·주차 확인」은 표시 항목·조건에 따라 생겼다 사라진다. 늘 서 있는
-    # 이 한 칸 안에 그려 아래 주차 표의 자리를 고정한다 — 밀리면 표 앞의 가로 스크롤 컴포넌트가 다시
+    # 알림에 싣기에 큰 누락 목록의 펼침은 표시 항목·조건에 따라 생겼다 사라진다. 늘 서 있는 이 한 칸
+    # 안에 그려 아래 주차 표의 자리를 고정한다 — 밀리면 표 앞의 가로 스크롤 컴포넌트가 다시
     # 마운트되어 스크롤 위치를 잃는다. 비어 있으면 화면에 아무것도 남지 않는다(테두리·높이 없음).
     availability_notice_slot = st.container()
 
@@ -1087,37 +1146,18 @@ else:
         .reset_index(drop=True)
     )
     # 가용대수를 곱해 구하는 지표에서만 뜻이 있다. 대당 일 Capa 는 가용대수 이전 단계라
-    # 입력이 없어도 값이 다 나오는데, 여기서 함께 경고하면 없는 문제를 알리는 셈이 된다. 건수는 상태
-    # 알림(`ST-17` — 바뀔 때만 알림창), 목록은 결과 상자 안 늘 서 있는 칸의 펼침이다(표에서 멀리
-    # 떨어져 있으면 빈칸을 보고도 목록을 못 찾는다).
+    # 입력이 없어도 값이 다 나오는데, 여기서 함께 경고하면 없는 문제를 알리는 셈이 된다.
     missing_shown = not missing_availability.empty and output_metric in AVAILABILITY_BASED_METRICS
-    missing_scope = simulation_scope(active_scenario, dates=(start_date, end_date))
-    alerts.state(
-        "ST-17",
-        scope=missing_scope.scope,
-        content=sorted(
-            (str(process), str(week))
-            for process, week in zip(
-                missing_availability["공정"], missing_availability["Weeknum"], strict=True
-            )
-        )
-        if missing_shown
-        else [],
-        active=missing_shown,
-        text=(
-            f"가용대수가 없는 공정·주차 {len(missing_availability):,}건 — 결과 빈칸. 목록: "
-            "「누락 공정·주차 확인」"
-        ),
-        full=(
-            f"선택 범위의 공정·주차 중 {len(missing_availability):,}건에 가용대수가 없어 결과를 "
-            "빈칸으로 표시합니다. 목록은 결과 상자 안 「누락 공정·주차 확인」 이고, 위 「가용설비 "
-            "붙여넣기」로 그 공정·주차의 가용설비를 넣으면 채워집니다."
-        ),
-        scope_label=missing_scope.label,
+    missing_table = report_missing_availability(
+        missing_availability,
+        shown=missing_shown,
+        scope=simulation_scope(active_scenario, dates=(start_date, end_date)),
+        file_name=f"Capa_Standard_Target_Missing_Availability_{start_date}_{end_date}.csv",
+        labels=process_labels,
     )
-    if missing_shown:
+    if missing_shown and missing_table is None:
         with availability_notice_slot:
-            with st.expander("누락 공정·주차 확인", expanded=False):
+            with st.expander(f"{MISSING_LIST_TITLE} 확인", expanded=False):
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
                 # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과

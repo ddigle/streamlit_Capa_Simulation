@@ -421,10 +421,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     팝업(통일된 양식)으로 뜨고 누적 알람에서 제외 기준정보를 확인할 수 있게」, 9장 「알림 칸」). 표가 `alerts.TABLE_ROW_LIMIT` 를
     넘으면 본문 `제외 기준정보 확인` 펼침(기억 칸 `unit_capacity_exclusions_expander`)이 남는다.
   - 소요대수 탭은 경로 쪽 제외(`ST-15` · PKG Buffer 밖 `ST-21`)와 계획 쪽(`ST-01` — Static Capa 와 같은 코드 · 범위)을 상태
-    알림으로 내고 목록(`소요대수 제외 기준정보` · 계획 쪽 둘)은 본문 펼침에 남긴다 — 다른 화면 · 저장 검사의 안내가 「산출 결과 →
-    소요대수 탭」 으로 가리키는 자리다. 계획 쪽 두 목록의 고칠 곳은 펼침 안 자리 글이 아니라 까닭 칸(`누락 기준정보` ·
-    `제외사유`) 머리 풍선이다(`render_exclusion_table(column_help=…)` — 설계 규칙 UI-TXT-01 · 02 · 03). 알림은 그 탭이 열린
-    회차에만 낸다.
+    알림으로 내고 목록은 그 알림에 딸린 표다(2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」) — `ST-15` 「소요대수 제외
+    기준정보」 · `ST-21` 「PKG Buffer 밖 행」(사유로 갈라 표 행 수가 그 알림 건수다), `ST-01` 「부하량에서 빠진 계획」 · 「경로에
+    닿지 않은 계획 부하」 둘. 고칠 곳은 까닭 칸(`누락 기준정보` · `제외사유`) 머리 풍선(`alert_table(column_help=…)`)이다(설계 규칙
+    UI-TXT-01 · 02 · 03). 표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 그 목록만 표 위 같은 이름 펼침에 남는다
+    (`render_oversized_lists`). 알림은 그 탭이 열린 회차에만 낸다. 다른 화면 · 저장 검사의 안내(`REQUIRED_LIST_NOTE`)는 「산출 결과
+    → 소요대수 탭을 열면 서는 Alarm 줄의 표」 라고 말한다.
 - `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
   바로 깊게 보는 목적지**다(머리말, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
   본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
@@ -896,8 +898,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     빈 결과 평문 한 줄(`AVAILABILITY_EMPTY` — 넣는 곳은 Guide)로 멈추고, 지울 것이 없는 `입력 초기화` 는 잠긴 채 까닭 풍선이다. 대당 일 Capa·로직 분석은 그대로 선다 — 계산(`build_weekly_standard_target_capacity`)은 빈
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
   - 가용대수가 없어 빈칸인 공정·주차는 상태 알림 `ST-17`(범위 = 활성 리비전 + 조회일, 내용 = (공정, 주차) 목록)이고
-    결과 상자 안 늘 서 있는 칸(`availability_notice_slot`)에는 「누락 공정·주차 확인」 펼침만 선다. 표시명이 입혀진 동안
-    그 표의 공정 칸 머리 풍선이 붙여넣기에는 원본 공정명(CSV 양식)을 쓴다고 말한다.
+    목록은 그 알림에 딸린 표 「누락 공정·주차」(2026-11-05 사용자 요청(검수표) — 화면은 표시명, CSV 는 원본)다. 표시명이 입혀진
+    동안 그 표의 공정 칸 머리 풍선이 붙여넣기에는 원본 공정명(CSV 양식)을 쓴다고 말한다. 표가 `alerts.TABLE_ROW_LIMIT` 를
+    넘을 때만 결과 상자 안 늘 서 있는 칸(`availability_notice_slot`)에 「누락 공정·주차 확인」 펼침이 선다.
   - 붙여넣기 · 입력 초기화 팝업은 공통 부품(`components/paste_form` — 9장 「붙여넣기 · 양식 창」)이다 — 덮어쓰는 규칙과
     되돌릴 수 없다는 것은 창을 연 회차의 알림 `PA-01`(`PASTE_OPENING` · `CLEAR_OPENING`)이고 창 안에는 글 · 칸 풍선이 없다
     (설계 규칙 UI-TXT-01 · UI-NTF-09, 2026-11-05 검수 static-37). 로직 분석의 일곱 칸은 앞 칸이 빌 때 잠기고 까닭 풍선을 달며,
@@ -1359,8 +1362,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   다른 쪽에서 다시 뜨지 않는다. 짧은 글(`assumption_short`)은 표 · 건수와 고칠 곳(기준 정보)을 말한다. `알림 모음` 도 같은
   문장(`assumption_message`)을 쓴다(6장 대당 Capa). 가정이 없어도 부른다(해소).
 - `src/capa_simulation/components/required_exclusion_notice.py` — 소요대수에 들지 않은 수요의 건수 문장
-  (`required_exclusion_message`), 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists` — 고칠 곳은 까닭
-  칸 머리 풍선 `LOAD_EXCLUSION_HELP` · `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
+  (`required_exclusion_message`), 소요대수 쪽 제외 목록(`ExclusionList` — 알림에 딸린 표와, 표가 커서 None 일 때의 본문 펼침
+  `render_oversized_lists`. 계획 쪽 둘은 `plan_exclusion_lists` — 고칠 곳은 까닭 칸 머리 풍선 `LOAD_EXCLUSION_HELP` ·
+  `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
   `alert_required_exclusions`)를 낸다.
   - 문장은 `알림 모음`·`capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
@@ -1369,12 +1373,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME·산출 결과가 같은 결과를 쓴다. 셈은 PKG PLAN 편집표를 그린 **뒤**에 하고 스피너는 그 알림 칸에 선다 — 앞에서 하면 그
     계산이 끝날 때까지 편집표가 서지 않는다), Static Capa 현황 요약과 산출 결과 소요대수 탭의 `ST-01`(`PERIOD_SCOPE` — 산출
     결과 요약 캐시 `get_scenario_result_summary` 의 조회기간 목록을 `count_required_exclusions` 로 센다 — 같은 코드 · 같은
-    범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다). 짧은 글은 건수와 목록 자리(「산출 결과 › 소요대수」)를 말한다.
+    범위라 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다). 짧은 글은 건수와 목록 자리(「Alarm › 이 줄」 — 세 자리 모두 계획 쪽
+    목록 둘을 그 줄의 표로 싣는다, 커서 못 실으면 「산출 결과 › 소요대수」)를 말한다.
     셋 다 **계획 쪽 건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을 고치지
     않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 늘 서는 경고가 된다(HOME 에서 이 줄을 뺀 2026-10-19 결정과 같은 까닭).
   - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
-    대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일), PKG 의 Buffer 밖 행 `ST-21`(알림 —
-    규칙이라 고칠 것이 없다). 두 사유를 한 알림에 섞지 않는다.
+    대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
+    Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
 - `src/capa_simulation/components/alert_board.py` — Admin Area `알림 모음` 탭. 활성 시나리오의 계산 알림 셋(계산 멈춤 ·
   소요대수에 들지 않은 수요 · 측정률 가정)을 시나리오 전체 기간으로 늘 같은 차례에 둔다(없는 것은 「없음」).
   - 저장·발행 검사와 같은 `get_full_capacity_outcome` 캐시와 `capacity_gate.density_error` 를 읽어 문장도 같다. 고르는
@@ -1389,11 +1394,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
 - `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
-- `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 표(`소요대수 제외 기준정보` · 계획 쪽 목록 둘,
-  표가 커서 알림에 싣지 못한 대당 Capa `제외 기준정보 확인`)를 그리는 단일 렌더러다(`column_help` — 칸 머리 풍선). 화면은
+- `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 목록 가운데 표가 커서 알림에 싣지 못한 것(대당
+  Capa `제외 기준정보 확인` · 소요대수 탭 목록)을 본문에 그리는 단일 렌더러다(`column_help` — 칸 머리 풍선). 화면은
   표시명 복사본, CSV 는 원본이고,
   캐시된 `attrs` 유래 입력을 제자리에서 고치지 않는다. 내보내기 프레임(`exclusion_export` — 분류 칸을 공용 표시순서로
-  세운 원본)은 대당 Capa 알림에 딸린 표(`state_alerts.alert_table`)도 쓴다.
+  세운 원본)은 제외 알림에 딸린 표(`state_alerts.alert_table`)도 쓴다.
 - `src/capa_simulation/components/plan_comparison_dumbbell.py` — 두 시나리오의 기간 계획 물량 차이를 분류별 덤벨로
   그린다. 한쪽에만 있는 분류는 다른 쪽을 0 으로 보고 연결선은 `DELTA_*` 다.
   - 그림은 `build_plan_comparison_dumbbell` 이 만들고 `render_plan_comparison_dumbbell` 은 받은 그림만 그린다(HOME 은
@@ -3192,10 +3197,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 ·
   `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
   한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
-  `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, table=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
+  `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
   코드 + 범위 + 내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)). `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그
-  탭까지 연다), `table` 은 Alarm 줄에서 펼쳐 볼 딸린 표(`AlertTable` — 칸 · 행(JSON 값) · 원래 행 수 · CSV 파일 이름 · 화면에만
-  입힐 표시명, 조건이 있을 때만 · 행 끝 `TABLE_ROW_LIMIT` 2,000), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
+  탭까지 연다), `tables` 는 Alarm 줄에서 펼쳐 볼 딸린 표들(`AlertTable` — 칸 · 행(JSON 값) · 원래 행 수 · CSV 파일 이름 · 화면에만
+  입힐 표시명 · 칸 머리 풍선, 조건이 있을 때만 · 커서 None 인 칸은 뺀다 · 행 끝 `TABLE_ROW_LIMIT` 2,000), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
   `<style data-capa-alerts="JSON">`(`MARKER_ATTRIBUTE`, 스타일만 든 `st.html` — 이벤트 칸)이고 `note_page` 가 적은 이번
   화면을 단다. 화면을 그리지 못한 오류의 알림은 `page_error_note`(같은 글이면 같은 id · `keep` — Alarm 줄을 지키라는 표지, 알림 칸 JS 의
   `keptRowMissing`)이고 자리 마크와 한 칸에 싣는 표지가 `hidden_marker` 다(`components/data_error_mark.py` — 아래). 분석 기록(L2)은 자리만 있다
@@ -3207,8 +3212,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
   `palette()` · 글 `TEXT`). 패널은 브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id 는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
-  문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`table`)는 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
-  안에서 파일을 만든다(원본 값 · BOM — 서버를 부르지 않는다, 표는 코드마다 가장 새 줄에만 남긴다). 줄의 「그 화면으로」 는
+  문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`tables`)는 표마다 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
+  안에서 파일을 만든다(원본 값 · BOM — 서버를 부르지 않는다, 표는 코드마다 가장 새 줄에만 남기고 탭 저장소가 넘치면 저장본에서 오래된
+  줄의 표부터 뺀다 — 그 화면이 다시 보내면 다시 붙는다). 칸 머리 풍선(`help`)은 `title` · 점선 밑줄이다. 줄의 「그 화면으로」 는
   표지의 `tab`(그 화면 안 탭 — 탭 안 탭은 `바깥 › 안`, `TAB_PATH`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
   바깥 칸부터 한 칸씩 누르고(`tabStep` · `settleTab` — `stateful_tabs` 탭), 줄 · 로그의 화면 칸은 「화면 › 탭」 이다. 「로그」
   펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 날짜까지 붙은 처음 · 마지막 · 화면 · 계기 · 범위 · 해소 · 원본 오류 · 전문 —
@@ -3222,8 +3228,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/state_alerts.py` — 화면이 상태 알림 · 화면 오류 알림을 낼 때 쓰는 공용 조각(알림 체계 2단계).
   `simulation_scope(active, period | dates=)`(활성 리비전 `content_token` + 조회기간 · 조회일 — 지문 재료, 로그의 범위 줄
   「시나리오 · rN · 26.01–26.12」, 미저장 편집이면 그 말을 붙인다 — 세션만 읽는다) · `equipment_scope`(세션의 (공통 대장, 일정)
-  리비전 쌍 + 「설비 「이름」 rN」) · `alert_table`(알림에 딸린 표 — 내보내기 프레임을 JSON 값으로, 공정 칸 표시명은 화면에만.
-  Alarm 줄에서 펼침 · CSV, 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 남긴다) ·
+  리비전 쌍 + 「설비 「이름」 rN」) · `alert_table`(알림에 딸린 표 — 내보내기 프레임을 JSON 값으로, 공정 칸 표시명은 화면에만, `column_help` 는 칸 머리 풍선.
+  Alarm 줄에서 펼침 · CSV, 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 남긴다) · `ALARM_ROW_PLACE` ·
+  `alarm_table_place`(알림 글이 그 표 자리를 부르는 말) ·
   `alert_page_error(message, code=, tab=, text=)`(화면을 그리지 못한 오류의 알림만 이벤트 칸으로 — 마크가 세 탭에 서는 산출 결과 한 곳이
   쓰고, 나머지는 `data_error_mark.render_data_error`) ·
   `tab_name` / `open_tab_name`(표지의 `tab` — 아이콘 없는 탭 이름, 닫힌 탭이면 None 이라 그 회차에는 그 탭의 상태 알림을 내지
@@ -4770,7 +4777,7 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 
 건수는 `required_equipment.required_exclusion_counts` 하나가 세고(목록만 든 요약은 그 셈
 `count_required_exclusions`), Admin 「알림 모음」(시나리오 전체 기간)·산출
-결과 소요대수 탭(목록·CSV, 계획 쪽 상태 알림 `ST-01`)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
+결과 소요대수 탭(계획 쪽 상태 알림 `ST-01` — 목록·CSV 는 그 Alarm 줄의 표)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
 자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)·PKG PLAN 적용 뒤 상태 알림(`ST-04`, 시나리오 전체 기간)·Static Capa 현황
 요약(상태 알림 `ST-01`, 조회기간 — 화면 알림 셋은 계획 쪽 건수만, `plan_side_counts`)이 같은 셈을 쓴다
 (`components/required_exclusion_notice.py`). HOME 에는 띄우지 않는다(2026-10-19 사용자 요청).
@@ -5767,7 +5774,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     바꿔도 남았다(2026-10-22 사본 앱 이분 탐색: 알림·상자 key·본문 `st.rerun()` 가운데 하나만 빼도 사라졌다). Components v2 컴포넌트 앞에서는 특히
     그렇다 — 순번이 밀리면 컴포넌트가 다시 마운트되어 브라우저에 둔 상태(배율·서랍)를 잃고 스크롤이 튀므로, 그 앞의
     생겼다 사라지는 상자·경고는 늘 서 있는 `st.container()` 칸 안에 그린다. 표준 목표 결과 상자의
-    「누락 공정·주차 확인」(`availability_notice_slot` — 건수 경고는 2026-11-03 부터 상태 알림 `ST-17`)과 공용 계층 월 표의 행 페이지 줄(`page_slot`)이 그 예다 — 없을
+    「누락 공정·주차 확인」(`availability_notice_slot` — 건수 경고는 상태 알림 `ST-17`, 목록은 그 Alarm 줄의 표이고 표가 알림에 싣기에 클 때만 이 펼침이 선다)과 공용 계층 월 표의 행 페이지 줄(`page_slot`)이 그 예다 — 없을
     때는 표시 항목을 바꾸거나 상세를 켜면 주차·월 표의 가로 스크롤이 처음으로 돌아갔다.
   - 헤더 툴바처럼 React 밖에서 숨은 Streamlit 버튼을 JS 로 눌러 연 대화상자는 포커스가 body 에
     남아 Esc 가 닿지 않는다 — 열리면 포커스를 대화상자 안으로 옮긴다(`page_guide.py`).
@@ -6012,12 +6019,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   m개」 같은)도 상태 알림으로 내고 그 자리에는 조작만 둔다 — 꼭 필요한 설명은 풍선 · Guide 다. 예: Space 「Space 도면」 상자
   끝에 서던 배치 줄은 배치 알림 `EQ-13` ~ `EQ-15`, 일정 없는 호기 줄은 `EQ-04`(3장 `space_status.py`)다.
 - **숫자를 믿기 전에 볼 경고가 자리에서 사라지므로 짧은 글이 무엇을 · 어디서 보는지 말한다**(「소요대수에 안 든 계획 수요
-  n건(조회기간) — 목록: 산출 결과 › 소요대수」). 목록 펼침은 본문에 남기고 고칠 곳은 그 표의 까닭 칸 머리 풍선
-  (`column_config` 의 `help`)과 Guide 가 말한다 — 펼침 안 첫 줄에 설명 문장을 늘 띄우지 않는다(`docs/design_rules.md`
-  UI-TXT-01 · 02 — 남은 옛 첫 줄은 화면 글 문장 그물의 미정리다). 같은 조건을 두 화면이 보면 **같은 코드 · 같은
+  n건(조회기간) — 목록: Alarm › 이 줄」). **조건의 내역(목록)도 본문 접힘에 두지 않고 그 알림의 Alarm 줄 표다**(2026-11-05
+  사용자 요청(검수표), `docs/design_rules.md` UI-TXT-04) — 고칠 곳은 그 표의 까닭 칸 머리 풍선(`AlertTable.help` — `title`, 점선 밑줄)과
+  Guide 가 말한다(UI-TXT-01 · 02). 작업 대상(기한 임박 · 이행 지연 · 저장 전 바뀐 호기), 기록(이력 · off 공정), 입력을 바꿀 때마다
+  바뀌는 결과(제약 시뮬레이션 「달마다 보기」), 점검 보고(BigDataQuery 충돌 — 결과 표 · 내려받기와 한 몸)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
   범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과 대당 Capa) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
-  가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`table=` — 산출 결과 대당 Capa 「제외 기준정보」, 2026-11-02 사용자
-  요청(검수표)). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
+  가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`tables=` — 한 줄에 여럿, 커서 None 인 칸은 빠진다. 대당 Capa 제외 `ST-14` ·
+  소요대수 `ST-15` · `ST-21` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
   `alerts.flush()` 로 한 자리를 채운다(생산 계획 `ST-04` · `ST-06`).
 - **상태 알림의 범위 · 내용 고르기**(2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기,
   2026-11-03). 알림 칸 JS 는 같은 코드의 다른 범위가 오면 앞 범위를 「범위가 바뀜」 으로 해소하고, 그 범위가 다시 오면 새

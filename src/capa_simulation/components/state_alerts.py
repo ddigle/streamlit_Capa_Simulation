@@ -9,8 +9,9 @@
   리비전을 바꾸면 같은 조건이라도 새 알림이다)와 로그의 범위 줄(「설비 「이름」 rN」).
 - `alert_table` — 본문에서 뺀 목록을 알림에 싣는 표(`alerts.AlertTable` — Alarm 줄에서 펼쳐 보고
   CSV 로 내려받는다). 값은 JSON 값으로 바꾸고(NaN → 빈칸) 공정 칸은 표시명을 화면에만 입힌다(CSV
-  는 원본 — `exclusion_table` 과 같은 규칙). `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이
-  본문 목록을 그대로 둔다.
+  는 원본 — `exclusion_table` 과 같은 규칙), 칸 머리 풍선(`column_help`)은 있는 칸에만 싣는다.
+  `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 그대로 둔다.
+- `ALARM_ROW_PLACE` · `alarm_table_place` — 목록이 딸린 표일 때 알림 글이 그 자리를 부르는 말.
 - `alert_page_error` — 화면을 그리지 못한 오류의 알림만 이벤트 칸으로 보낸다. 보통은 마크와 알림을
   한 칸에 싣는 `components/data_error_mark.render_data_error` 를 쓰고, 이 함수는 한 오류의 마크가 탭
   여럿에 서서(`render_data_error_mark`) 알림을 그 밖에서 한 번 보내는 자리(산출 결과)만 쓴다.
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from datetime import date
 from typing import NamedTuple
 
@@ -48,6 +50,9 @@ UNSAVED_LABEL = "미저장 편집"
 TAB_PATH = " › "
 # 탭 단추 글 앞 아이콘(`:material/…:`) — 알림의 탭 이름은 아이콘 없이 단추 글의 끝과 맞댄다.
 _ICON_PATTERN = re.compile(r"^:material/[a-z0-9_]+:\s*")
+# 목록이 알림에 딸린 표일 때 그 자리를 부르는 말 — 짧은 글은 이것만, 전문은 표 이름까지 적는다
+# (`alarm_table_place`). 표가 커서 본문에 남으면 부르는 쪽이 그 펼침 자리를 적는다.
+ALARM_ROW_PLACE = "Alarm › 이 줄"
 
 
 class AlertScope(NamedTuple):
@@ -112,15 +117,22 @@ def _json_value(value: object) -> str | int | float | None:
     return str(native)
 
 
+def alarm_table_place(title: str) -> str:
+    """전문이 목록 자리로 쓰는 말 — 이 줄에 딸린 표 「이름」."""
+    return f"{ALARM_ROW_PLACE} 「{title}」"
+
+
 def alert_table(
     frame: pd.DataFrame,
     *,
     title: str,
     file_name: str,
     labels: ProcessLabels | None = None,
+    column_help: Mapping[str, str] | None = None,
 ) -> alerts.AlertTable | None:
     """알림에 딸린 표. 칸 차례는 `frame` 그대로다(부르는 쪽이 표시순서로 칸을 세운 내보내기 프레임을
-    준다). 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None — 본문 목록을 남기라는 뜻이다."""
+    준다). `column_help` 는 칸 머리 풍선(칸 이름 → 글 — 없는 칸은 뺀다)이다. 행이
+    `alerts.TABLE_ROW_LIMIT` 를 넘으면 None — 본문 목록을 남기라는 뜻이다."""
     if len(frame) > alerts.TABLE_ROW_LIMIT:
         return None
     columns = [str(column) for column in frame.columns]
@@ -144,6 +156,7 @@ def alert_table(
         total=len(frame),
         file=file_name,
         shown=shown,
+        help={column: text for column, text in (column_help or {}).items() if column in columns},
     )
 
 

@@ -423,7 +423,9 @@ textarea {
 
 .item .acts {
   display: inline-flex;
-  gap: 0.7rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.15rem 0.7rem;
   margin-left: auto;
 }
 
@@ -534,6 +536,12 @@ textarea {
   background: var(--ac-surface);
   color: var(--ac-muted);
   font-weight: 600;
+}
+
+.tscroll th.hint {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
 }
 
 .tscroll td.num {

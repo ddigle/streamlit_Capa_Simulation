@@ -7,11 +7,11 @@
 탭의 선택은 `persist_state` 가 지킨다. 본문에는 결과·표만 남는다.
 
 제외 · 가정 알림은 자리에 그리지 않고 상태 알림으로 낸다(2026-11-03 결정 보드 D2 (나)) — 바뀔 때만
-오른쪽 아래 알림창, 쌓이는 곳은 머리 `Alarm`. 대당 Capa 의 `제외 기준정보` 목록은 본문 펼침이 아니라
-그 알림 줄의 표다(2026-11-02 사용자 요청(검수표) — 「알림과 제외 기준정보는 우하단 팝업(통일된
-양식)으로 뜨고 누적 알람에서 제외 기준정보를 확인할 수 있게」). 표가 알림에 싣기에
-크면(`alerts.TABLE_ROW_LIMIT`) 본문 펼침을 남긴다. 소요대수 탭의 목록(경로 쪽 · 계획 쪽)은 다른 화면
-· 저장 검사의 안내가 「산출 결과 → 소요대수 탭」 으로 가리키는 자리라 본문에 남긴다.
+오른쪽 아래 알림창, 쌓이는 곳은 머리 `Alarm`. 제외 목록(대당 Capa `제외 기준정보` · 소요대수 탭의
+경로 쪽 둘 · 계획 쪽 둘)은 본문 펼침이 아니라 그 알림 줄의 표다(2026-11-02 사용자 요청(검수표) —
+「알림과 제외 기준정보는 우하단 팝업(통일된 양식)으로 뜨고 누적 알람에서 제외 기준정보를 확인할 수
+있게」, 2026-11-05 같은 검수표 — 「Alarm 안 표로 이동」). 표가 알림에 싣기에 크면
+(`alerts.TABLE_ROW_LIMIT`) 그 목록만 본문 펼침으로 남긴다.
 
 확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 표 조건 카드의 필터가 히트맵에도 걸린다
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
@@ -42,8 +42,9 @@ from capa_simulation.components.required_exclusion_notice import (
     alert_capacity_exclusions,
     alert_required_exclusions,
     alert_uncounted_demand,
+    plan_exclusion_lists,
     plan_side_counts,
-    render_plan_exclusion_lists,
+    render_oversized_lists,
 )
 from capa_simulation.components.securement_heatmap import render_securement_heatmap
 from capa_simulation.components.state_alerts import alert_page_error, alert_table, simulation_scope
@@ -434,8 +435,24 @@ else:
             # 뒤로는 같은 표를 같은 파일명으로 두 번 내리는 것이라 여기서는 걷어냈다.
             # 사유가 둘이다 — 대당 Capa 가 없는 것(ST-15)은 기준정보를 고칠 일이고, PKG 의 Buffer
             # 밖 행(ST-21)은 규칙대로 세지 않은 것이다. 계획 쪽(ST-01)은 Static Capa 와 같은 코드 ·
-            # 같은 범위다. 셋 다 이 탭이 열린 회차마다 부른다.
-            alert_required_exclusions(required_exclusions, scope=period_scope, tab=REQUIRED_TAB)
+            # 같은 범위다 — 어느 경로에도 붙지 못해 경로 쪽 목록에 없다. 셋 다 이 탭이 열린 회차마다
+            # 부르고 목록은 각 줄의 표다. 싣기에 큰 목록만 본문 펼침으로 남는다.
+            period_suffix = f"{effective_start}_{effective_end}"
+            route_lists = alert_required_exclusions(
+                required_exclusions,
+                scope=period_scope,
+                tab=REQUIRED_TAB,
+                display_order=display_order,
+                labels=process_labels,
+                file_suffix=period_suffix,
+            )
+            plan_lists = plan_exclusion_lists(
+                summary.load_exclusions,
+                summary.unrouted_loads,
+                display_order=display_order,
+                labels=process_labels,
+                file_suffix=period_suffix,
+            )
             alert_uncounted_demand(
                 plan_side_counts(
                     count_required_exclusions(
@@ -445,32 +462,11 @@ else:
                 code="ST-01",
                 scope=period_scope,
                 scope_name=PERIOD_SCOPE,
+                lists=plan_lists,
                 tab=REQUIRED_TAB,
             )
-            if not required_exclusions.empty:
-                with st.expander("소요대수 제외 기준정보", expanded=False):
-                    render_exclusion_table(
-                        required_exclusions,
-                        dimensions=RESULT_DIMENSIONS,
-                        display_order=display_order,
-                        page=PAGE_CALCULATION,
-                        tab=TAB_REQUIRED,
-                        labels=process_labels,
-                        file_name=(
-                            "Capa_Required_Equipment_Exclusions_"
-                            f"{effective_start}_{effective_end}.csv"
-                        ),
-                        key="download_required_exclusions_csv",
-                    )
-            # 위는 경로 쪽 제외, 이것은 계획 쪽이다 — 어느 경로에도 붙지 못해 위 목록에 없다.
-            render_plan_exclusion_lists(
-                summary.load_exclusions,
-                summary.unrouted_loads,
-                display_order=display_order,
-                page=PAGE_CALCULATION,
-                tab=TAB_REQUIRED,
-                labels=process_labels,
-                file_suffix=f"{effective_start}_{effective_end}",
+            render_oversized_lists(
+                (*route_lists, *plan_lists), display_order=display_order, labels=process_labels
             )
             # 내보내기 표 조립·직렬화(합성 표본 상세 2,660행에서 약 70ms, 샘플 관측)는 표 내용
             # 지문 키 캐시다 — 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가

@@ -11,11 +11,22 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import alert_notes, data_error_texts, flashed, infos, place_errors, successes
+from alert_marks import (
+    active_state,
+    alert_notes,
+    data_error_texts,
+    flashed,
+    infos,
+    note_table,
+    place_errors,
+    successes,
+    table_frame,
+)
 from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
 
+from capa_simulation import alerts
 from capa_simulation.scenario_preset_state import (
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
     STANDARD_TARGET_SHOW_DETAIL_KEY,
@@ -676,17 +687,24 @@ def _process_column_helps(app: AppTest) -> list[str]:
 
 
 def test_missing_availability_table_shows_the_display_name_with_a_source_notice() -> None:
-    """누락 안내 표는 화면이라 표시명이고, 붙여넣을 원본이 어디 있는지는 공정 칸 머리 풍선이
-    알린다 — 펼침 안 길 안내 글은 없다(설계 규칙 UI-TXT-03 · 04 「숨은 데이터 안내는 칸 머리
-    표지 + 풍선」)."""
+    """누락 목록은 상태 알림 `ST-17` 줄의 표다(2026-11-05 사용자 요청(검수표)) — 화면은 표시명, CSV
+    는 양식에 그대로 쓸 원본이고, 붙여넣을 원본이 어디 있는지는 공정 칸 머리 풍선이 알린다 — 본문
+    접힘 · 길 안내 글은 없다(설계 규칙 UI-TXT-03 · 04 「숨은 데이터 안내는 칸 머리 표지 +
+    풍선」)."""
     app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
-    missing = _frame_with_value(app, "공정", "가공")
+    assert "누락 공정·주차 확인" not in {expander.label for expander in app.expander}
+    note = active_state(app, "ST-17")
+    assert note is not None
+    table = note_table(note, "누락 공정·주차")
+    missing = table_frame(table)
     assert missing["Weeknum"].tolist() == ["26-W33"]
+    assert set(missing["공정"]) == set(table["shown"]["공정"])
+    assert set(table["shown"]["공정"].values()) == {"가공"}
     assert not [caption.value for caption in app.caption if "CSV 양식" in caption.value]
-    assert any("CSV 양식 다운로드" in text for text in _process_column_helps(app))
+    assert "CSV 양식 다운로드" in table["help"]["공정"]
+    assert table["file"].startswith("Capa_Standard_Target_Missing_Availability_")
 
 
 def test_missing_availability_table_without_display_names_has_no_source_notice() -> None:
@@ -694,8 +712,9 @@ def test_missing_availability_table_without_display_names_has_no_source_notice()
     app = AppTest.from_string(MISSING_WEEK_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
-    assert not any(_process_column_helps(app))
+    note = active_state(app, "ST-17")
+    assert note is not None
+    assert note_table(note, "누락 공정·주차")["help"] == {}
 
 
 def _subheader_path(node: Block | Node, text: str) -> tuple[int, ...] | None:
@@ -708,13 +727,21 @@ def _subheader_path(node: Block | Node, text: str) -> tuple[int, ...] | None:
     return None
 
 
-def test_the_missing_availability_notice_does_not_move_the_weekly_table() -> None:
-    """누락 경고와 「누락 공정·주차 확인」은 가용대수를 곱하는 지표에서만 생긴다. 생겼다 사라져도
-    결과 상자의 주차 표 머리(바로 뒤가 표)는 같은 자리다 — 밀리면 표의 가로 스크롤 컴포넌트가 다시
-    마운트되어 스크롤 위치를 잃는다."""
+def test_the_missing_availability_notice_does_not_move_the_weekly_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """누락 목록이 알림에 싣기에 크면(`alerts.TABLE_ROW_LIMIT`) 본문 「누락 공정·주차 확인」 펼침이
+    남는다 — 가용대수를 곱하는 지표에서만 생긴다. 생겼다 사라져도 결과 상자의 주차 표 머리(바로
+    뒤가 표)는 같은 자리다 — 밀리면 표의 가로 스크롤 컴포넌트가 다시 마운트되어 스크롤 위치를
+    잃는다. 그때 표의 공정 칸 머리 풍선이 원본 공정명을 말한다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 0)
     app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
     assert not app.exception
     assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
+    assert any("CSV 양식 다운로드" in text for text in _process_column_helps(app))
+    note = active_state(app, "ST-17")
+    assert note is not None and "tables" not in note
+    assert "결과 상자 안 「누락 공정·주차 확인」" in note["short"]
     with_notice = _subheader_path(app.main, "주차별 일 표준 가능량")
 
     app = app.segmented_control(key="standard_target_output_metric").set_value("대당 일 Capa").run()
@@ -728,8 +755,8 @@ def test_the_missing_availability_notice_does_not_move_the_weekly_table() -> Non
 
 def test_missing_availability_is_a_state_alert_not_a_box() -> None:
     """가용대수가 없어 빈칸인 공정·주차 건수는 자리에 경고 상자로 그리지 않고 상태 알림(`ST-17`)으로
-    낸다 — 목록은 결과 상자 안 펼침 그대로다. 가용대수를 곱하지 않는 지표로 바꾸면 「없음」
-    표지(해소)다. 범위는 활성 리비전 내용과 조회일이다."""
+    낸다 — 목록은 그 줄의 표다. 가용대수를 곱하지 않는 지표로 바꾸면 「없음」 표지(해소)다. 범위는
+    활성 리비전 내용과 조회일이다."""
     app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
     assert not app.exception and not app.warning
     (note,) = [note for note in alert_notes(app) if note.get("code") == "ST-17"]
@@ -742,6 +769,7 @@ def test_missing_availability_is_a_state_alert_not_a_box() -> None:
     app = app.segmented_control(key="standard_target_output_metric").set_value("대당 일 Capa").run()
     (quiet,) = [note for note in alert_notes(app) if note.get("code") == "ST-17"]
     assert quiet["active"] is False and quiet["scope"] == note["scope"]
+    assert "tables" not in quiet
 
 
 def test_clearing_the_availability_asks_first() -> None:

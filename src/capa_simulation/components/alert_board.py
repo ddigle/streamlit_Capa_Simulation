@@ -9,7 +9,8 @@ HOME 위에 줄줄이 달리던 경고를 HOME 에서 걷고 여기 모은다(20
 
 - **계산 멈춤** — 어느 달이든 기준정보 오류가 있으면 조회기간과 상관없이 계산 화면이 멈춘다. Capa
   계산이 지나면 HOME 의 Density 환산도 본다(`capacity_gate.density_error`).
-- **소요대수에 들지 않은 수요** — `required_exclusion_message`. 목록은 산출 결과 → 소요대수 탭이다.
+- **소요대수에 들지 않은 수요** — `required_exclusion_message`. 목록은 산출 결과 → 소요대수 탭을
+  열면 서는 Alarm 줄의 표다.
 - **측정률 가정** — 측정률 행이 없어 중립값 1.0 으로 계산한 경로(`assumption_message`).
 
 계산이 멈추면 뒤의 둘은 셀 수 없다고 적는다. 탭이 열린 회차에만 그린다(`app_pages/admin_area.py`) —

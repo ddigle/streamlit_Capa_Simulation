@@ -159,6 +159,10 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "새로 읽은 화면의 「공식으로 돌아왔습니다」 이름 — 띠 CSS 변수(퍼센트 인코딩)로만 "
         "나가고 탭 줄 JS 가 알림 칸에 textContent 로 그린다(마크다운 자리가 아니다)"
     ),
+    ("src/capa_simulation/components/state_alerts.py", "alarm_table_place"): (
+        "딸린 표가 있는 알림 전문의 목록 자리 — 알림 칸 JS 가 textContent 로 그린다(마크다운 "
+        "자리가 아니다). 이름은 코드의 표 이름 상수다"
+    ),
     ("src/capa_simulation/components/space_floor_layout.py", "space_layout_notices"): (
         "Space 배치 상태 알림(EQ-13 ~ EQ-15)의 짧은 글 · 전문 — 알림 칸 JS 가 textContent 로 "
         "그린다(마크다운 자리가 아니다 — 2026-11-04 Space 결정 보드 답으로 상자 캡션에서 알림으로)"

@@ -41,8 +41,13 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.paste_form import refuse_paste
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
-from capa_simulation.components.required_exclusion_notice import FULL_SCOPE, alert_uncounted_demand
+from capa_simulation.components.required_exclusion_notice import (
+    FULL_SCOPE,
+    alert_uncounted_demand,
+    plan_exclusion_lists,
+)
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
@@ -51,7 +56,10 @@ from capa_simulation.components.scenario_edit_bar import (
     source_token,
 )
 from capa_simulation.components.state_alerts import (
+    ALARM_ROW_PLACE,
     AlertScope,
+    alarm_table_place,
+    alert_table,
     simulation_scope,
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
@@ -93,7 +101,11 @@ from capa_simulation.services.load_calculator import (
     yield_from_edit_table,
 )
 from capa_simulation.services.reference_csv import count_removed_values
-from capa_simulation.services.required_equipment import required_exclusion_counts
+from capa_simulation.services.required_equipment import (
+    REQUIRED_LOAD_EXCLUSIONS_ATTR,
+    UNROUTED_LOADS_ATTR,
+    required_exclusion_counts,
+)
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
     get_full_capacity_outcome,
@@ -270,9 +282,13 @@ TAB_LABELS = (TAB_CONVERSION, TAB_PKG_PLAN, TAB_YIELD)
 CONVERSION_TAB_NAME = "환산"
 PKG_PLAN_TAB_NAME = "PKG PLAN"
 YIELD_TAB_NAME = "수율"
-# 목록 펼침의 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선 — 고칠 곳과 계산에서 어떻게 되는지. 건수는
-# 알림(`ST-05` · `ST-06`)이 말하고(자리에 경고 상자를 그리지 않는다 — 2026-11-03 결정 보드 D2 (나)),
-# 펼침 안에는 설명 문장을 늘 띄우지 않는다(설계 규칙 UI-TXT-01 · 02 — 풍선 · Guide 로 옮긴 말).
+# 그 알림(`ST-05` · `ST-06`)의 Alarm 줄 표 이름 — 조건의 내역이라 본문 접힘에 두지 않는다(2026-11-05
+# 사용자 요청(검수표), 설계 규칙 UI-TXT-04). 표가 알림에 싣기에 큰 목록만 본문 펼침에 남는다.
+EXCLUDED_PLAN_TITLE = "제외한 계획"
+LOCKED_YIELD_TITLE = "편집 불가 수율 행"
+# 그 표의 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선 — 고칠 곳과 계산에서 어떻게 되는지. 건수는
+# 알림이 말하고(자리에 경고 상자를 그리지 않는다 — 2026-11-03 결정 보드 D2 (나)), 설명 문장을 늘
+# 띄우지 않는다(설계 규칙 UI-TXT-01 · 02 — 풍선 · Guide 로 옮긴 말).
 EXCLUDED_PLAN_GUIDE = (
     "기준정보(수율·Chip 구성 등)가 없어 계산에서 제외한 계획은 그 기준정보를 채우면 환산과 "
     "소요대수에 반영됩니다. 생산수량이 빈 계획은 계획 없음(0)으로 봤습니다."
@@ -369,18 +385,74 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     if outcome.error is not None or outcome.required_equipment is None:
         alerts.flush()
         return
+    required = outcome.required_equipment
     alert_uncounted_demand(
-        required_exclusion_counts(outcome.required_equipment),
+        required_exclusion_counts(required),
         code="ST-04",
         scope=simulation_scope(scenario),
         scope_name=FULL_SCOPE,
+        lists=plan_exclusion_lists(
+            required.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR),
+            required.attrs.get(UNROUTED_LOADS_ATTR),
+            display_order=context.display_order,
+            labels=get_process_labels(),
+            file_suffix="Full_Period",
+        ),
         tab=PKG_PLAN_TAB_NAME,
     )
 
 
+def _report_excluded_plans(
+    excluded: pd.DataFrame, *, scope: AlertScope, file_name: str
+) -> alerts.AlertTable | None:
+    """환산에서 빠진 계획 — 상태 알림 `ST-05` 와 그 줄의 표(까닭 `누락 기준정보` 칸). 환산 탭이 열린
+    회차마다(없어도) 부른다. 표가 커서 None 이면 화면이 본문 펼침에 남긴다."""
+    blank_plans = (
+        int(excluded["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON).sum())
+        if not excluded.empty
+        else 0
+    )
+    missing_plans = len(excluded) - blank_plans
+    table = (
+        None
+        if excluded.empty
+        else alert_table(
+            excluded,
+            title=EXCLUDED_PLAN_TITLE,
+            file_name=file_name,
+            column_help={"누락 기준정보": EXCLUDED_PLAN_GUIDE},
+        )
+    )
+    page_place = f"이 탭 「{EXCLUDED_PLAN_TITLE} 확인」"
+    sentences = []
+    if missing_plans:
+        place = alarm_table_place(EXCLUDED_PLAN_TITLE) if table is not None else page_place
+        sentences.append(
+            f"기준정보가 없어 계산에서 제외한 계획이 {missing_plans:,}건 있습니다. "
+            f"목록({place})의 기준정보를 채우면 환산과 소요대수에 반영됩니다."
+        )
+    if blank_plans:
+        sentences.append(f"생산수량이 빈 계획 {blank_plans:,}건은 계획 없음(0)으로 봤습니다.")
+    alerts.state(
+        "ST-05",
+        scope=scope.scope,
+        content=[missing_plans, blank_plans],
+        active=not excluded.empty,
+        text=(
+            f"환산에서 빠진 계획 {len(excluded):,}건 — 목록: "
+            f"{ALARM_ROW_PLACE if table is not None else page_place}"
+        ),
+        full=" ".join(sentences),
+        scope_label=scope.label,
+        tab=CONVERSION_TAB_NAME,
+        tables=[table],
+    )
+    return table
+
+
 def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None) -> None:
-    """원천 값이 비었거나 범위 밖이라 수율 표에서 값을 뺀 행 — 목록 펼침(까닭 `사유` 칸)과 상태
-    알림(`ST-06`).
+    """원천 값이 비었거나 범위 밖이라 수율 표에서 값을 뺀 행 — 상태 알림(`ST-06`)과 그 줄의 표(까닭
+    `사유` 칸. 알림에 싣기에 크면 본문 펼침에 남는다).
 
     말없이 빼면 그 달 칸이 원천에 행이 없는 달과 똑같이 빈칸으로 보인다. 목록에는 까닭(`사유`)을
     함께 싣는다. 계산에서 두 경우는 다르다 — 값 없는 행은 환산의 「제외한 계획」으로 내려가고,
@@ -390,9 +462,21 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     낸다(`scope` 가 None 이면 닫힌 탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸
     한 자리를 써(`alerts.flush`) 바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
     """
+    locked_columns = [*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]
+    table = (
+        None
+        if locked.empty
+        else alert_table(
+            locked[locked_columns],
+            title=LOCKED_YIELD_TITLE,
+            file_name="Capa_Locked_Yield_Rows.csv",
+            column_help={YIELD_LOCK_REASON_COLUMN: LOCKED_YIELD_GUIDE},
+        )
+    )
     if scope is None:
         alerts.flush()
     else:
+        place = alarm_table_place(LOCKED_YIELD_TITLE) if table is not None else "이 탭 표 위"
         alerts.state(
             "ST-06",
             scope=scope.scope,
@@ -402,17 +486,18 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
                 f"수율 표에서 값을 뺀 원천 행 {len(locked):,}개 — 그 달 EDS·BE 를 넣어 적용하면 "
                 "고쳐짐"
             ),
-            full=f"원천 수율 행 {len(locked):,}개 — {LOCKED_YIELD_GUIDE}",
+            full=f"원천 수율 행 {len(locked):,}개(목록: {place}) — {LOCKED_YIELD_GUIDE}",
             scope_label=scope.label,
             tab=YIELD_TAB_NAME,
+            tables=[table],
         )
-    if locked.empty:
+    if locked.empty or table is not None:
         return
-    with st.expander("편집 불가 수율 행", icon=":material/rule:"):
+    with st.expander(LOCKED_YIELD_TITLE, icon=":material/rule:"):
         # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
         toolbar_clearance()
         st.dataframe(
-            locked[[*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]],
+            locked[locked_columns],
             hide_index=True,
             width="stretch",
             column_config={
@@ -492,7 +577,7 @@ def _removed_yield_note(source: pd.DataFrame, applied: pd.DataFrame) -> str:
         return ""
     return (
         f" {removed:,}칸을 비워 그 달 수율 행을 지웠습니다 — 해당 계획은 환산에서 빠집니다"
-        "(소요대수에서도 빠져 산출 결과 → 소요대수 탭과 HOME 이 건수를 알립니다)."
+        "(소요대수에서도 빠져 산출 결과 → 소요대수 탭을 열면 Alarm 이 건수와 목록을 알립니다)."
     )
 
 
@@ -941,42 +1026,19 @@ if not tab_is_hidden(conversion_tab):
 
         # 기준정보가 없어 계산에서 빠진 계획 행은 조용히 사라지면 안 된다. 예전에는 여기서
         # 예외를 던져 페이지 전체가 멈췄고, 지금은 해당 제품만 빼고 목록으로 알린다 — 건수는 상태
-        # 알림(`ST-05`, 이 탭이 열린 회차마다), 목록은 펼침이다.
+        # 알림(`ST-05`, 이 탭이 열린 회차마다), 목록은 그 줄의 표다. 생산수량이 빈 행은 기준정보
+        # 문제가 아니라 계획 없음(0)으로 본 것이다 — 한 문장에 섞으면 채울 기준정보가 없는데 찾으러
+        # 간다.
         excluded_load_rows = load_exclusions(monthly_volume)
-        # 생산수량이 빈 행은 기준정보 문제가 아니라 계획 없음(0)으로 본 것이다. 한 문장에 섞으면
-        # 채울 기준정보가 없는데 찾으러 간다.
-        blank_plans = (
-            int(excluded_load_rows["누락 기준정보"].eq(PLAN_QUANTITY_BLANK_REASON).sum())
-            if not excluded_load_rows.empty
-            else 0
-        )
-        missing_plans = len(excluded_load_rows) - blank_plans
-        sentences = []
-        if missing_plans:
-            sentences.append(
-                f"기준정보가 없어 계산에서 제외한 계획이 {missing_plans:,}건 있습니다. "
-                "목록(이 탭 「제외한 계획 확인」)의 기준정보를 채우면 환산과 소요대수에 반영됩니다."
-            )
-        if blank_plans:
-            sentences.append(f"생산수량이 빈 계획 {blank_plans:,}건은 계획 없음(0)으로 봤습니다.")
-        conversion_scope = simulation_scope(
-            active_scenario, (effective_start_month, effective_end_month)
-        )
-        alerts.state(
-            "ST-05",
-            scope=conversion_scope.scope,
-            content=[missing_plans, blank_plans],
-            active=not excluded_load_rows.empty,
-            text=(
-                f"환산에서 빠진 계획 {len(excluded_load_rows):,}건 — 목록: 이 탭 「제외한 계획 "
-                "확인」"
+        excluded_table = _report_excluded_plans(
+            excluded_load_rows,
+            scope=simulation_scope(active_scenario, (effective_start_month, effective_end_month)),
+            file_name=(
+                f"Capa_Conversion_Excluded_Plans_{effective_start_month}_{effective_end_month}.csv"
             ),
-            full=" ".join(sentences),
-            scope_label=conversion_scope.label,
-            tab=CONVERSION_TAB_NAME,
         )
-        if not excluded_load_rows.empty:
-            with st.expander("제외한 계획 확인", icon=":material/rule:"):
+        if not excluded_load_rows.empty and excluded_table is None:
+            with st.expander(f"{EXCLUDED_PLAN_TITLE} 확인", icon=":material/rule:"):
                 # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
                 toolbar_clearance()
                 st.dataframe(

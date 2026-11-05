@@ -10,14 +10,20 @@
 지킨다 — key 없는 상자는 돌아올 때 새로 만들어져 접힌다.
 """
 
-import json
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, data_error_marks, data_error_texts
+from alert_marks import (
+    active_state,
+    alert_notes,
+    data_error_marks,
+    data_error_texts,
+    note_table,
+    table_frame,
+)
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     EXCLUSION_PROCESS_TEST_SCRIPT,
@@ -98,7 +104,7 @@ def test_an_opened_large_exclusion_box_stays_open_after_a_trip_to_another_tab(
     assert not app.exception
     assert _exclusion_boxes(app) == [False]
     (note,) = _notes(app, "ST-14")
-    assert "table" not in note and "「제외 기준정보 확인」" in note["short"]
+    assert "tables" not in note and "「제외 기준정보 확인」" in note["short"]
 
     app.session_state[EXCLUSIONS_EXPANDER_KEY] = True  # 사용자가 상자를 편다
     app.run()
@@ -132,16 +138,16 @@ def test_the_unit_capacity_exclusions_ride_on_the_alarm_row_not_the_page() -> No
     assert note["tab"] == "대당 Capa"
     assert note["short"].startswith("대당 Capa 산출에서 기준 2개를 뺐습니다")
     assert "Alarm" in note["short"] and "제외사유" in note["full"]
-    table = note["table"]
-    assert table["title"] == "제외 기준정보" and table["total"] == len(table["rows"]) == 2
+    table = note_table(note, "제외 기준정보")
+    assert table["total"] == len(table["rows"]) == 2
     assert table["file"].startswith("Capa_Unit_Capacity_Exclusions_")
     assert "제외사유" in table["columns"] and table["columns"][0] == "공정"
 
 
-def test_the_required_tab_alerts_and_keeps_its_lists() -> None:
+def test_the_required_tab_alerts_and_carries_its_lists_on_the_alarm_rows() -> None:
     """소요대수 탭은 열린 회차마다 경로 쪽(`ST-15` · PKG 규칙 `ST-21`)과 계획 쪽(`ST-01` — Static
-    Capa 와 같은 코드 · 같은 범위) 상태 알림을 낸다. 다른 화면이 「산출 결과 → 소요대수 탭」 으로
-    가리키는 목록은 본문 펼침에 남는다."""
+    Capa 와 같은 코드 · 같은 범위) 상태 알림을 내고, 목록은 본문 펼침이 아니라 그 알림 줄의 표다
+    (2026-11-05 사용자 요청(검수표) — 「Alarm 안 표로 이동」)."""
     app = _open_calc_tab(
         AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
@@ -151,6 +157,7 @@ def test_the_required_tab_alerts_and_keeps_its_lists() -> None:
     assert {"ST-15", "ST-21", "ST-01"} <= set(codes)
     assert all(note["tab"] == "소요대수" for note in alert_notes(app) if note.get("tab"))
     assert "ST-14" not in codes and "HM-02" not in codes
+    assert not list(app.expander)
 
 
 def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -199,32 +206,43 @@ def test_the_required_csv_follows_the_table_filter() -> None:
 def test_the_required_tab_lists_plan_load_that_reaches_no_route() -> None:
     """P2 — 경로에 닿지 않은 계획 부하는 소요대수 탭이 건수(상태 알림 `ST-01`)·목록·CSV 로 알린다.
 
-    알리지 않으면 그 부하는 어느 공정의 소요대수에도 들지 않은 채 사라진다. 고칠 곳은 펼침 안 자리
-    글이 아니라 `제외사유` 칸 머리 풍선이 말한다(설계 규칙 UI-TXT-01 · 02 · 03 — 펼침 안 문장 0줄).
+    알리지 않으면 그 부하는 어느 공정의 소요대수에도 들지 않은 채 사라진다. 목록은 그 줄의 표이고
+    고칠 곳은 `제외사유` 칸 머리 풍선이 말한다(설계 규칙 UI-TXT-01 · 02 · 03 · 04 — 본문 0줄).
     """
     app = _open_calc_tab(
         AppTest.from_string(UNROUTED_PLAN_RESULT_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
 
     assert not app.warning
-    (note,) = _notes(app, "ST-01")
-    assert note["active"] is True
+    note = active_state(app, "ST-01")
+    assert note is not None and note["code"] == "ST-01"
     assert "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in note["full"]
-    assert "산출 결과 › 소요대수" in note["short"]
+    assert "Alarm › 이 줄" in note["short"]
     assert not [str(element.value) for element in app.caption if "제외사유" in str(element.value)]
-    reason_helps = [
-        json.loads(frame.proto.columns).get("제외사유", {}).get("help", "")
-        for frame in app.dataframe
+    assert "경로에 닿지 않은 계획 부하" not in {expander.label for expander in app.expander}
+    table = note_table(note, "경로에 닿지 않은 계획 부하")
+    assert "경로 키 어긋남" in table["help"]["제외사유"] and "RQ_REQB" in table["help"]["제외사유"]
+    assert table["file"].startswith("Capa_Unrouted_Loads_")
+    assert table_frame(table)[["Capa Code", "부하량", "제외사유"]].values.tolist() == [
+        ["CAPA-NO-ROUTE", 40.0, "경로 키 어긋남"]
     ]
-    assert any("경로 키 어긋남" in text and "RQ_REQB" in text for text in reason_helps), (
-        reason_helps
+
+
+def test_a_required_list_too_large_for_the_alarm_stays_on_the_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표가 `alerts.TABLE_ROW_LIMIT` 를 넘는 목록만 본문 펼침으로 남는다 — 표시명 표 · 원본 CSV
+    그대로이고 글이 그 자리를 가리킨다. 닫힌 탭에는 그리지 않는다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 0)
+    app = _open_calc_tab(
+        AppTest.from_string(EXCLUSION_PROCESS_TEST_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
-    downloads = app.session_state["captured_downloads"]
-    exported = pd.read_csv(
-        BytesIO(bytes(downloads["download_unrouted_loads_csv"]["data"])),
-        encoding="utf-8-sig",
-        dtype="object",
-    )
-    assert exported[["Capa Code", "부하량", "제외사유"]].values.tolist() == [
-        ["CAPA-NO-ROUTE", "40.0", "경로 키 어긋남"]
-    ]
+    assert not app.exception
+    note = active_state(app, "ST-15")
+    assert note is not None and "tables" not in note
+    assert "이 탭 「소요대수 제외 기준정보」" in note["short"]
+    assert "소요대수 제외 기준정보" in {expander.label for expander in app.expander}
+    assert "download_required_exclusions_csv" in {button.key for button in app.download_button}
+
+    app = _open_calc_tab(app, UNIT_CAPACITY_TAB)
+    assert "소요대수 제외 기준정보" not in {expander.label for expander in app.expander}
