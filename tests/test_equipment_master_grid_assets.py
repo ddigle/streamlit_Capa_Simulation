@@ -706,6 +706,14 @@ def test_the_new_unit_panel_has_no_spread_choice() -> None:
     assert "emg-checkline" not in JS and "emg-checkline" not in CSS
 
 
+def test_the_delete_buttons_carry_the_tip_and_a_lock_or_a_new_unit_takes_it_away() -> None:
+    """저장본 호기를 지우면 어떻게 되나는 지우기 단추 두 곳의 풍선이다(토스트는 값 한 줄 —
+    UI-NTF-09). 잠긴 까닭이 먼저이고, 바로 빠지는 새 호기에는 달지 않는다."""
+    assert "const DELETE_TIP = '리비전을 저장하면 모든 설비 시나리오에서 지워집니다" in JS
+    assert "remove.title = unit.deleteLock || (unit.tag === 'new' ? '' : DELETE_TIP)" in JS
+    assert "remove.title = lock || (rows.some((row) => row.tag !== 'new') ? DELETE_TIP : '')" in JS
+
+
 def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed() -> None:
     """칩·「양식 비우기」 는 칸을 다시 그려도 초점이 돌아온다(data-fk — 키보드로
     채우다 칸 처음으로 가지 않게). 상세 칩도 회차가 돌아와 다시 그려도 같다. 오른쪽 칸 새 토스트가

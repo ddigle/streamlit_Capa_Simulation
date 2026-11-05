@@ -2586,10 +2586,7 @@ def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
     return replace(step, master=step.master + extra)
 
 
-DELETE_TOAST: Final = (
-    "{count}대를 지울 목록에 넣었습니다 — 리비전을 저장해야 실제로 지워집니다. 호기를 지우면 모든 "
-    "설비 시나리오에서 사라집니다(이 시나리오에서만 빼려면 정지·반출/이설일정을 적으세요)"
-)
+DELETE_TOAST: Final = "{count:,}대 지울 목록에 넣음"
 # base 가 바뀌는 때는 여럿이다(내 리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) —
 # 서비스는 그 까닭을 모르므로 가르지 않고 적는다.
 DROPPED_TOAST: Final = (

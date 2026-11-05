@@ -367,6 +367,8 @@ function popoverShift(left, width, viewport, margin) {
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
 // 표 밑 「⌨ 키보드 조작」 표지의 풍선.
 const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기'
+// 지우기 단추 풍선 — 저장본 호기를 지우면 어떻게 되나(누르기 전에 보이게, 설계 규칙 UI-NTF-09). 지운 뒤 칸 머리 글은 값 한 줄이다.
+const DELETE_TIP = '리비전을 저장하면 모든 설비 시나리오에서 지워집니다 — 이 시나리오에서만 빼려면 정지·반출/이설일정을 적습니다'
 const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
@@ -1412,7 +1414,7 @@ function buildSelection(S, bar) {
     refocusTable(S, rows[0].id)
   })
   remove.disabled = deletable.length === 0
-  if (lock) remove.title = lock
+  remove.title = lock || (rows.some((row) => row.tag !== 'new') ? DELETE_TIP : '')
   bar.appendChild(remove)
   bar.appendChild(button('emg-btn is-small is-ghost', '선택 풀기', () => {
     const first = rows[0].id
@@ -2096,7 +2098,7 @@ function drawDetail(S, root, data) {
   } else {
     const remove = button('emg-btn is-danger', '이 호기 지우기', () => sendOnce(S, { op: 'delete', ids: [unit.id] }, []))
     remove.disabled = !unit.deletable
-    if (unit.deleteLock) remove.title = unit.deleteLock
+    remove.title = unit.deleteLock || (unit.tag === 'new' ? '' : DELETE_TIP)
     actions.appendChild(remove)
     const copy = button('emg-btn', '이 호기로 새 호기 만들기', () => S.setTrigger('copy', { id: unit.id }))
     copy.disabled = Boolean(data.newRowsLocked)
