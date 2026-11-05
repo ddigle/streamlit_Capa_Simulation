@@ -861,7 +861,10 @@ def _stamped_zip(
 
 
 def _repo_with_modules(tmp_path: Path) -> Path:
-    """사내 흉내 저장소에 담당자가 커밋한 모듈 둘(소문자·대문자 뿌리)을 더한다."""
+    """사내 흉내 저장소에 담당자가 커밋한 모듈 둘(소문자·대문자 뿌리)을 더한다.
+
+    대소문자를 접는 파일 체계(NTFS)에서는 대문자 뿌리가 먼저 만든 `modules/` 로 들어가 git 도 그
+    철자로 적는다 — 철자를 글자로 견주는 자리는 `_tracked_spelling` 으로 읽는다."""
     root = _internal_repo(tmp_path, None)
     for path, data in (
         ("modules/demo_x/module.json", b'{"id": "demo_x"}\n'),
@@ -874,6 +877,12 @@ def _repo_with_modules(tmp_path: Path) -> Path:
     _repo_git(root, "add", "modules", "Modules")
     _repo_git(root, "commit", "-q", "-m", "module(demo_x): 새 모듈 뼈대")
     return root
+
+
+def _tracked_spelling(root: Path, path: str) -> str:
+    """git 이 적어 둔 `path` 의 철자(대소문자를 접는 파일 체계에서는 `path` 와 다를 수 있다)."""
+    tracked = _repo_git(root, "ls-files").splitlines()
+    return next(name for name in tracked if name.lower() == path.lower())
 
 
 def test_two_applies_keep_committed_and_untracked_module_files(
@@ -892,11 +901,8 @@ def test_two_applies_keep_committed_and_untracked_module_files(
     # 모듈 밖의 추적 안 된 파일은 지금처럼 「정체불명」 으로 묻는다 — 보존은 `modules/` 아래만이다.
     (root / "stray.py").write_bytes(b"stray\n")
     monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
-    module_files = [
-        "Modules/demo_y/page.py",
-        "modules/demo_x/module.json",
-        "modules/demo_x/page.py",
-    ]
+    module_files = sorted(_repo_git(root, "ls-files", "modules", "Modules").splitlines())
+    assert len(module_files) == 3
 
     first = _stamped_zip(tmp_path, "202611010900", {"app.py": b"x = 2\n"})
     assert apply_deploy_package.main([str(first)]) == 0
@@ -963,7 +969,7 @@ def test_uncommitted_module_edits_stop_the_apply_with_the_module_message(
     assert "배포 체크아웃에서는 모듈을 고치지 않습니다" in stderr
     assert "런북 1-7" in stderr
     assert "되돌리지 않고" in stderr
-    assert path in stderr
+    assert _tracked_spelling(root, path) in stderr
     assert "먼저 커밋하거나 되돌리세요" not in stderr
     assert (root / path).read_bytes() == edited
     assert (root / "app.py").read_bytes() == b"x = 1\n"
