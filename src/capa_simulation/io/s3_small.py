@@ -189,19 +189,19 @@ def _exchange(
         moment=time.time() if moment is None else moment,
         extra=extra,
     )
-    connection: http.client.HTTPConnection
-    if parts.scheme == "https":
-        connection = http.client.HTTPSConnection(
-            parts.hostname or "",
-            parts.port,
-            timeout=CONNECT_TIMEOUT_SECONDS,
-            context=ssl.create_default_context(),
-        )
-    else:
-        connection = http.client.HTTPConnection(
-            parts.hostname or "", parts.port, timeout=CONNECT_TIMEOUT_SECONDS
-        )
+    connection: http.client.HTTPConnection | None = None
     try:
+        if parts.scheme == "https":
+            connection = http.client.HTTPSConnection(
+                parts.hostname or "",
+                parts.port,
+                timeout=CONNECT_TIMEOUT_SECONDS,
+                context=ssl.create_default_context(),
+            )
+        else:
+            connection = http.client.HTTPConnection(
+                parts.hostname or "", parts.port, timeout=CONNECT_TIMEOUT_SECONDS
+            )
         connection.connect()
         connection.sock.settimeout(READ_TIMEOUT_SECONDS)
         connection.request(method, path, body=body or None, headers=headers)
@@ -212,10 +212,12 @@ def _exchange(
         raise S3Failure(KIND_TLS) from exc
     except TimeoutError as exc:
         raise S3Failure(KIND_TIMEOUT) from exc
-    except (OSError, http.client.HTTPException) as exc:
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        # `ValueError` — 소켓이 주소 이름을 풀지 못한 경우(IDNA 인코딩)와 머리 값 꼴.
         raise S3Failure(KIND_UNREACHABLE) from exc
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
 
 
 def _rejected(status: int, data: bytes, *, bucket_missing: bool = False) -> S3Failure:

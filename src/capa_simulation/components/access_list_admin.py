@@ -185,11 +185,12 @@ def _render_people(document: ListDocument) -> None:
         return
     options = [entry.loginid for entry in document.entries]
     # 다시 읽기로 빠진 사람이 고른 칸에 남으면 위젯이 옵션 밖 값을 받는다.
-    selected = st.session_state.get(ACCESS_LIST_REMOVE_KEY)
-    if selected:
-        st.session_state[ACCESS_LIST_REMOVE_KEY] = [item for item in selected if item in options]
+    selected = st.session_state.get(ACCESS_LIST_REMOVE_KEY) or []
+    kept = [item for item in selected if item in options]
+    if len(kept) != len(selected):
+        st.session_state[ACCESS_LIST_REMOVE_KEY] = kept
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        st.multiselect("지울 사람", options, key=ACCESS_LIST_REMOVE_KEY)
+        st.multiselect("지울 사람", options, key=ACCESS_LIST_REMOVE_KEY, placeholder="고르기")
         st.button(
             "지우기",
             icon=":material/person_remove:",

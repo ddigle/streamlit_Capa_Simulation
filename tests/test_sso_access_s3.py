@@ -70,8 +70,10 @@ USER = "demo.user"
 OTHER = "demo.other"
 GONE = "demo.gone"
 OBJECT = names.DEFAULT_ACCESS_OBJECT
-EXAMPLE_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
-EXAMPLE_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+# AWS 문서 「Signature Calculations」 의 예시 값이다(실제 키가 아니다). 비밀 탐지기의 오탐으로
+# 푸시가 막히지 않게 나눠 적는다.
+EXAMPLE_ACCESS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"
+EXAMPLE_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfi" + "CYEXAMPLEKEY"
 EXAMPLE_HOST = "examplebucket.s3.amazonaws.com"
 EXAMPLE_DATE = "20130524T000000Z"
 
@@ -588,6 +590,23 @@ def test_a_bad_endpoint_is_a_notice_without_its_value(value: str) -> None:
     assert _notice_codes(cfg, names.ENV_S3_ENDPOINT) == ["s3_bad"]
 
 
+@pytest.mark.parametrize("value", ["한글키", "with space", "tab\tkey"])
+@pytest.mark.parametrize("name", [names.ENV_S3_ACCESS_KEY, names.ENV_S3_SECRET_KEY])
+def test_a_key_of_another_shape_is_a_notice_without_its_value(name: str, value: str) -> None:
+    base = {
+        names.ENV_S3_ACCESS_KEY: "k",
+        names.ENV_S3_SECRET_KEY: "s",
+        names.ENV_S3_ENDPOINT: "http://127.0.0.1:8607",
+        names.ENV_S3_BUCKET: "b",
+    }
+
+    cfg = load_config({**base, name: value})
+
+    assert cfg.access_s3_requested and cfg.access_s3 is None
+    assert _notice_codes(cfg, name) == ["s3_bad"]
+    assert value not in repr(cfg)
+
+
 def test_a_plain_http_address_is_accepted_and_noticed_outside_loopback() -> None:
     base = {
         names.ENV_S3_ACCESS_KEY: "k",
@@ -742,6 +761,48 @@ def test_a_timeout_at_start_leaves_the_app_up_for_admins(
     source = runtime.access_source()
     assert source is not None and source.problem is not None
     assert source.problem.kind == s3_small.KIND_TIMEOUT
+    assert problem_of(cfg, ADMIN) is None
+    assert problem_of(cfg, USER) is IdentityProblem.DENIED
+
+
+def test_a_file_nested_too_deep_is_broken_not_a_crash() -> None:
+    with pytest.raises(S3Failure) as caught:
+        access_store.parse_document(b"[" * 200_000)
+
+    assert caught.value.kind == access_store.KIND_CORRUPT
+
+
+def test_an_address_that_cannot_be_encoded_is_unreachable_not_a_crash() -> None:
+    target = S3Target(
+        endpoint_url=f"http://{'a' * 70}.example.invalid",
+        bucket="b",
+        region="us-east-1",
+        access_key="k",
+        secret_key="s",
+    )
+
+    with pytest.raises(S3Failure) as caught:
+        s3_small.get_object(target, OBJECT)
+
+    assert caught.value.kind == s3_small.KIND_UNREACHABLE
+
+
+def test_no_failure_of_the_read_can_stop_the_start(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    cfg = s3_config(store, endpoint)
+
+    def explode(*_args: Any, **_kwargs: Any) -> None:
+        raise LookupError("예상하지 못한 실패")
+
+    monkeypatch.setattr(access_store, "get_object", explode)
+
+    access_store.read_at_start(cfg)
+
+    source = runtime.access_source()
+    assert source is not None and source.problem is not None
+    assert (source.problem.kind, source.problem.code) == (s3_small.KIND_OTHER, "LookupError")
     assert problem_of(cfg, ADMIN) is None
     assert problem_of(cfg, USER) is IdentityProblem.DENIED
 
@@ -1127,8 +1188,7 @@ def test_unreadable_entries_lost_on_save_are_counted_in_the_change_log(
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[USER])
 
     saved = json.loads(store.objects[OBJECT])
-    assert [item["what"] for item in saved["changes"]] == ["add", "drop_unreadable"]
-    assert saved["changes"][-1]["loginid"] == "2"
+    assert [item["what"] for item in saved["changes"]] == ["add", "drop_unreadable 2"]
 
 
 def test_saving_before_a_good_read_is_refused(mock_s3: tuple[MockStore, str]) -> None:

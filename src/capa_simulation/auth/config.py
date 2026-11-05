@@ -540,6 +540,15 @@ def _check_s3_name(name: str, raw: str, *, default: str = "") -> tuple[str, SsoP
     return text, None
 
 
+def _check_s3_key(name: str, text: str) -> SsoProblem | None:
+    """키 한 값 — 서명과 머리에 그대로 들어가므로 빈칸 없는 ASCII 만 받는다."""
+    if not text:
+        return SsoProblem(name, "s3_needed")
+    if not text.isascii() or _CONTROL.search(text) or any(ch.isspace() for ch in text):
+        return SsoProblem(name, "s3_bad")
+    return None
+
+
 def _check_access_s3(
     value: Callable[[str], str],
 ) -> tuple[bool, str, S3Target | None, list[SsoProblem]]:
@@ -559,8 +568,8 @@ def _check_access_s3(
     problems = [
         problem
         for problem in (
-            None if access_key else SsoProblem(names.ENV_S3_ACCESS_KEY, "s3_needed"),
-            None if secret_key else SsoProblem(names.ENV_S3_SECRET_KEY, "s3_needed"),
+            _check_s3_key(names.ENV_S3_ACCESS_KEY, access_key),
+            _check_s3_key(names.ENV_S3_SECRET_KEY, secret_key),
             endpoint_problem,
             bucket_problem,
             region_problem,

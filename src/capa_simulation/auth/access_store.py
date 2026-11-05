@@ -56,6 +56,7 @@ from capa_simulation.auth.access import (
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import Identity, session_problem
 from capa_simulation.io.s3_small import (
+    KIND_OTHER,
     S3Failure,
     S3Target,
     get_object,
@@ -149,7 +150,7 @@ def parse_document(body: bytes) -> ListDocument:
     """파일 바이트 → 한 벌. 깨졌거나 형식 판을 모르면 `S3Failure`(값을 담지 않는다)."""
     try:
         payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise S3Failure(KIND_CORRUPT) from exc
     if not isinstance(payload, dict):
         raise S3Failure(KIND_CORRUPT)
@@ -212,38 +213,41 @@ def problem_of(failure: S3Failure) -> SourceProblem:
     return SourceProblem(failure.kind, failure.status, failure.code)
 
 
-def _record_read_failure(problem: SourceProblem) -> None:
-    runtime.record_event(
-        "access_read",
-        level=logging.WARNING,
-        reason=problem.kind,
-        status=str(problem.status or "-"),
-    )
+def _fetch(cfg: SsoConfig, moment: int) -> tuple[ListDocument, str]:
+    """받아 읽는다 — `(한 벌, ETag)`. 어떤 실패든 `S3Failure` 하나다(기동 · 콜백을 막지 못한다)."""
+    target = cfg.access_s3
+    if target is None:
+        raise S3Failure(KIND_CONFIG)
+    try:
+        found = get_object(target, cfg.access_object_key, moment=moment)
+        return (ListDocument(), "") if found is None else (parse_document(found.body), found.etag)
+    except S3Failure:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 예상 못 한 실패도 「못 읽음」 이다
+        raise S3Failure(KIND_OTHER, code=type(exc).__name__) from exc
 
 
 def _read_locked(cfg: SsoConfig, moment: int) -> SourceProblem | None:
     """입출력 잠금 안에서 받아 한 벌을 바꾼다. 실패면 전의 명단을 그대로 두고 까닭만 적는다."""
     base = _base_source(cfg)
-    target = cfg.access_s3
-    if target is None:
-        problem = SourceProblem(KIND_CONFIG)
-        runtime.publish_access_source(replace(base, attempted_at=moment, problem=problem))
-        _record_read_failure(problem)
-        return problem
     try:
-        found = get_object(target, cfg.access_object_key, moment=moment)
-        document = ListDocument() if found is None else parse_document(found.body)
+        document, etag = _fetch(cfg, moment)
     except S3Failure as failure:
         problem = problem_of(failure)
         runtime.publish_access_source(replace(base, attempted_at=moment, problem=problem))
-        _record_read_failure(problem)
+        runtime.record_event(
+            "access_read",
+            level=logging.WARNING,
+            reason=problem.kind,
+            status=str(problem.status or "-"),
+        )
         return problem
     runtime.publish_access_source(
         replace(
             base,
             access=compose_access(cfg.access, document),
             document=document,
-            etag="" if found is None else found.etag,
+            etag=etag,
             read_at=moment,
             attempted_at=moment,
             problem=None,
@@ -339,7 +343,7 @@ def _changed_document(
         return document, SaveResult(already=already, absent=absent, revision=document.revision)
     if document.unreadable:
         # 다시 쓰면 읽지 못한 항목은 파일에서 사라진다 — 무엇을 잃었는지 기록에 수로 남긴다.
-        changes.append(ListChange(actor, stamp, CHANGE_DROP, str(document.unreadable)))
+        changes.append(ListChange(actor, stamp, f"{CHANGE_DROP} {document.unreadable}"))
     revision = document.revision + 1
     fresh = ListDocument(
         revision=revision,

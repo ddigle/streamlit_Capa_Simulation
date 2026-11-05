@@ -135,7 +135,7 @@ class ListEntry:
 
 @dataclass(frozen=True)
 class ListChange:
-    """고친 기록 한 줄 — 누가 · 언제 · 무엇(`add` · `remove` · `drop_unreadable`)을 누구에게."""
+    """고친 기록 한 줄 — 누가 · 언제 · 무엇(`add` · `remove` · `drop_unreadable n`)을 누구에게."""
 
     by: str
     at: str
