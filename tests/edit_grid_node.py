@@ -266,6 +266,15 @@ globalThis.document = {
 globalThis.requestAnimationFrame = (run) => setTimeout(run, 0)
 globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle)
 const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms || 0))
+// 조건이 설 때까지 기다린다. 정해 둔 시간 안의 프레임 수는 타이머 해상도에 달려, 끌기 자동
+// 스크롤처럼 프레임을 쌓는 동작은 시간으로 기다리지 않는다(Windows 약 15.6ms — 120ms 에 여덟 번쯤).
+const until = async (ready) => {
+  const began = Date.now()
+  while (!ready()) {
+    if (Date.now() - began > 30000) throw new Error('until: 30초 안에 서지 않았다')
+    await tick(1)
+  }
+}
 """
 
 
