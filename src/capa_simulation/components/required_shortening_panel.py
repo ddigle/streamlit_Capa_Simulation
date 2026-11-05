@@ -59,6 +59,7 @@ from streamlit.delta_generator import DeltaGenerator
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_board import (
@@ -102,7 +103,6 @@ from capa_simulation.components.shortening_timeline import month_day as _month_d
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
 from capa_simulation.components.shortening_timeline import timeline_position as _position
-from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
@@ -344,13 +344,6 @@ def render_required_shortening_tab(
         controls=controls,
         database_path=equipment_database_path,
     )
-    if isinstance(prepared, ShorteningStop) and prepared.kind in ("scenario", "error"):
-        # 화면을 그리지 못한 멈춤 — 자리 글(머리 아래)과 같은 글을 알림창에 한 번(UI-NTF-08). 본문
-        # 프래그먼트 밖(앱 전체 회차)에서 보낸다 — 프래그먼트의 이벤트 칸 자리 수는 갈래마다 같아야
-        # 한다(AGENTS 9장).
-        alert_page_error(
-            _stop_text(prepared), code="RS-01", text="필요 단축 일정을 계산하지 못했습니다"
-        )
     with view:
         _render_view(
             prepared,
@@ -500,13 +493,14 @@ def _render_view(
 
 
 def _render_stop(stop: ShorteningStop) -> None:
-    """멈춘 까닭 한 자리 — 소요를 못 읽음(경고) · 계산 오류(오류) · 다른 화면에서 채울 입력이
-    빠짐(`input` — Cut-off, 경고) · 그릴 것이 없는 빈 상태(`info` — 회색 평문 한 줄, 설계 규칙
-    UI-TXT-04 · 반영 검수표 D4)."""
-    if stop.kind == "scenario":
-        _render_scenario_error(stop.message)
-    elif stop.kind == "error":
-        st.error(stop.message or "")
+    """멈춘 까닭 한 자리 — 소요를 못 읽음 · 계산 오류(데이터 Error 마크, 글은 알림) · 다른
+    화면에서 채울 입력이 빠짐(`input` — Cut-off, 경고) · 그릴 것이 없는 빈 상태(`info` — 회색 평문
+    한 줄, 설계 규칙 UI-TXT-04 · 반영 검수표 D4). 마크와 표지가 한 칸이라 이벤트 칸을 쓰지
+    않는다."""
+    if stop.kind in ("scenario", "error"):
+        render_data_error(
+            _stop_text(stop), code="RS-01", text="필요 단축 일정을 계산하지 못했습니다"
+        )
     elif stop.kind == "input":
         st.warning(stop.message or "", icon=":material/edit_calendar:")
     else:
@@ -514,7 +508,7 @@ def _render_stop(stop: ShorteningStop) -> None:
 
 
 def _stop_text(stop: ShorteningStop) -> str:
-    """멈춘 까닭의 알림창 전문 — 자리에 그린 글과 같다."""
+    """멈춘 까닭의 알림 전문."""
     return _scenario_error_text(stop.message) if stop.kind == "scenario" else stop.message or ""
 
 
@@ -681,11 +675,6 @@ def _card_order(
     )
     ranked = highlight_first(order, highlight)
     return ranked if matched else ranked[1:]
-
-
-def _render_scenario_error(reason: str | None) -> None:
-    """활성 시나리오의 소요대수를 못 읽어 계산하지 않았다는 경고. 까닭이 있으면 아래에 붙인다."""
-    st.warning(_scenario_error_text(reason), icon=":material/sync_problem:")
 
 
 def _scenario_error_text(reason: str | None) -> str:

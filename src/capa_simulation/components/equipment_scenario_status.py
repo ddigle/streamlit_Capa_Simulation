@@ -37,6 +37,7 @@ from capa_simulation.components.app_header import (
     short_scenario_name,
 )
 from capa_simulation.components.condition_field import condition_field
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
     EQUIPMENT_DRAFT_KEY,
@@ -461,9 +462,11 @@ def render_equipment_scenario_dialog_body(
         try:
             session = resolve_equipment_session(str(resolved))
         except BOOTSTRAP_ERRORS as exc:
-            st.error(
+            render_data_error(
                 "설비 시나리오를 읽지 못했습니다: "
-                + bootstrap_error_message(exc, database_paths=(resolved,))
+                + bootstrap_error_message(exc, database_paths=(resolved,)),
+                code="SB-21",
+                text="설비 시나리오를 읽지 못했습니다",
             )
             return
         _render_dialog_body(str(resolved), session, can_save=page_file in SAVE_PAGES)
@@ -511,7 +514,11 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
         revisions = load_recent_equipment_schedule_revisions(database_path, selected_scenario)
         origins = load_equipment_schedule_revision_counts(database_path, selected_scenario)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SB-21",
+            text="설비 리비전 목록을 읽지 못했습니다",
+        )
         return
     revision_by_id = {item.schedule_revision_id: item for item in revisions}
     if revision_by_id:

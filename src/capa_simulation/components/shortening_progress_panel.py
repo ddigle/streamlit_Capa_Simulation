@@ -37,6 +37,7 @@ import pandas as pd
 import streamlit as st
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.process_labels import ProcessLabels
@@ -244,8 +245,10 @@ def load_selected_baseline(
     try:
         return load_shortening_baseline(database_path, baseline_id)
     except BOOTSTRAP_ERRORS as exc:
-        st.warning(
-            f"기준선을 읽지 못해 진척 비교를 하지 않았습니다 — {bootstrap_error_message(exc)}"
+        render_data_error(
+            f"기준선을 읽지 못해 진척 비교를 하지 않았습니다 — {bootstrap_error_message(exc)}",
+            code="RS-01",
+            text="기준선을 읽지 못해 진척 비교를 하지 않았습니다",
         )
         return None
 

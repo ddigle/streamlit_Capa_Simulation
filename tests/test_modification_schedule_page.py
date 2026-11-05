@@ -27,6 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import data_error_texts
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
     DYNAMIC_PROCESS,
@@ -582,7 +583,7 @@ def test_a_service_error_is_a_schedule_error_not_an_equipment_error(
 
     monkeypatch.setattr(view, "schedule_month_inputs", broken)
     app = _schedule(databases)
-    errors = " ".join(str(item.value) for item in app.error)
+    errors = " ".join(data_error_texts(app))
     assert "개조 일정을 찾지 못했습니다 — 설비 일정 기준 계획에 202601" in errors
     assert "설비 일정을 계산하지 못했습니다" not in errors
     assert not app.metric

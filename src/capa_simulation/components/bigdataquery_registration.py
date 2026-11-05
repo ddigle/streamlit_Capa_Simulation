@@ -27,6 +27,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import (
     BESIDE_KINDS,
     FlashNote,
@@ -357,7 +358,9 @@ def _registered_scenarios(
         # 보관본까지 본다. 숨은 시나리오를 못 보면 같은 원천 코드로 하나가 더 생긴다.
         scenarios = repository.list_scenarios(include_archived=True)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        render_data_error(
+            bootstrap_error_message(exc), code="SC-02", text="등록된 시나리오를 읽지 못했습니다"
+        )
         return frozenset(), frozenset()
     return (
         frozenset(str(scenario.source_simulation_code) for scenario in scenarios),

@@ -40,6 +40,7 @@ import streamlit as st
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import report_missing_cutoffs
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
     DOWNTIME_DRAFT_KEY,
@@ -90,7 +91,7 @@ from capa_simulation.components.sample_data import (
     SAMPLE_TOGGLE_KEY,
     render_sample_switch,
 )
-from capa_simulation.components.state_alerts import alert_page_error, equipment_scope, tab_name
+from capa_simulation.components.state_alerts import equipment_scope, tab_name
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import NestedTab, stateful_tabs, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import (
@@ -224,8 +225,7 @@ except BOOTSTRAP_ERRORS as exc:
     message = "설비 현황을 준비하지 못했습니다. " + bootstrap_error_message(
         exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
-    alert_page_error(message, code="EQ-09", text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
-    st.error(message)
+    render_data_error(message, code="EQ-09", text="가용설비 현황을 준비하지 못했습니다(설비 DB)")
     st.stop()
 # 공용 설정(공정별 Cut-off)을 여는 사이드바 「가용설비 설정」 상자(2026-11-03 — 설정 단추는 사이드바
 # 상자로). 조회 조건 패널 바로 밑 · `설비 조회 조건` 카드 **위**다 — 사이드바는 부른 차례로 서므로
@@ -506,7 +506,12 @@ with gap_tab:
                 _downtime=dashboard_downtime,
             )
         except ValueError as exc:
-            st.error(markdown_safe_tildes(exc))
+            render_data_error(
+                markdown_safe_tildes(exc),
+                code="EQ-09",
+                tab=tab_name(EQUIPMENT_SUMMARY_TAB, EQUIPMENT_GAP_TAB),
+                text="GAP 을 그리지 못했습니다",
+            )
         else:
             # 비교 시트의 반사실 — 같은 마스터·같은 범위에서 비가동만 비운 구간. 같은 구간 캐시에
             # 빈 비가동으로 받는다(새 캐시 경계 없음). 시트를 그리는 회차에만 패널이 부른다.

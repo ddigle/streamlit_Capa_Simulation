@@ -51,6 +51,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components import equipment_master_grid as grid_component
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_CLEAR_KEY,
     _NOTE_KEY,
@@ -1459,9 +1460,11 @@ def render_equipment_master_tab(
                     scenario_name=basis.scenario_name if basis is not None else None,
                 )
             except BOOTSTRAP_ERRORS as exc:
-                st.error(
+                render_data_error(
                     "저장 이력을 읽지 못했습니다: "
-                    + bootstrap_error_message(exc, database_paths=(repository.database_path,))
+                    + bootstrap_error_message(exc, database_paths=(repository.database_path,)),
+                    code="EQ-09",
+                    text="설비 저장 이력을 읽지 못했습니다",
                 )
         elif side == SIDE_CHANGES:
             grid_component.render_grid_side(

@@ -25,7 +25,7 @@ from typing import Any, NamedTuple
 from uuid import uuid4
 
 import pytest
-from alert_marks import infos, successes
+from alert_marks import infos, place_errors, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.runtime.state import session_state_proxy
@@ -230,7 +230,7 @@ def test_a_cut_first_list_save_is_finished_by_the_second_press_without_a_refusal
 
     _press_again(app, pressed)
 
-    assert [str(item.value) for item in app.error] == []
+    assert place_errors(app) == []
     assert _successes(app) == [(LIST_SAVED, SUCCESS_ICON)]
     assert app.button(key="scenario_list_save").disabled
     assert _name_of(case) == "끊긴 저장 이름"

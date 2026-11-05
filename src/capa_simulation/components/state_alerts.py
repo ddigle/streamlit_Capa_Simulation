@@ -11,10 +11,9 @@
   CSV 로 내려받는다). 값은 JSON 값으로 바꾸고(NaN → 빈칸) 공정 칸은 표시명을 화면에만 입힌다(CSV
   는 원본 — `exclusion_table` 과 같은 규칙). `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이
   본문 목록을 그대로 둔다.
-- `alert_page_error` — 화면을 그리지 못한 오류(설계 2-2 「오류는 두 길」). 자리 `st.error` 는 부르는
-  쪽이 그대로 그리고, 이 함수는 사건 알림 하나를 보낸다 — id 를 그 글의 지문으로 고정해 같은 글이면
-  이 브라우저 탭에 **한 번만** 알림창이 뜬다(회차마다 다시 그리는 오류가 알림창을 거듭 띄우지
-  않는다). 해소 줄은 없다 — 화면이 다시 서면 자리 오류가 사라진다.
+- `alert_page_error` — 화면을 그리지 못한 오류의 알림만 이벤트 칸으로 보낸다. 보통은 마크와 알림을
+  한 칸에 싣는 `components/data_error_mark.render_data_error` 를 쓰고, 이 함수는 한 오류의 마크가 탭
+  여럿에 서서(`render_data_error_mark`) 알림을 그 밖에서 한 번 보내는 자리(산출 결과)만 쓴다.
 - `missing_handover_text` — 넘겨받은 공정을 열지 못한 사건 알림(`PD-02` · `CS-02`)의 글(평문 —
   이름을 막지 않는다).
 - `tab_name` · `open_tab_name` — 탭 안 상태 알림의 `tab`(「그 화면으로」 가 그 탭까지 연다 — 탭 안
@@ -149,22 +148,9 @@ def alert_table(
 
 
 def alert_page_error(message: str, *, code: str, tab: str = "", text: str | None = None) -> None:
-    """화면을 그리지 못한 오류의 알림(자리 `st.error` 는 부르는 쪽 몫). 같은 코드 + 같은 글이면 같은
-    id 라 이 브라우저 탭에 한 번만 뜬다. 이벤트 칸에 한 자리를 쓴다. `text` 는 알림창 짧은 글(무엇을
-    그리지 못했는지 — 없으면 오류 글 첫 문단)이고 전문은 늘 오류 글 전체다."""
-    plain = alerts.plain_text(message)
-    lead = text or alerts.plain_text(message.split("\n\n", 1)[0]) or plain
-    alerts.emit(
-        [
-            alerts.event_note(
-                code,
-                text=lead,
-                full=plain,
-                tab=tab,
-                alert_id="page-" + alerts.fingerprint(code, None, plain),
-            )
-        ]
-    )
+    """화면을 그리지 못한 오류의 알림(글 · 같은 글 한 번은 `alerts.page_error_note`). 자리 마크는
+    부르는 쪽 몫이고 이벤트 칸에 한 자리를 쓴다."""
+    alerts.emit([alerts.page_error_note(message, code=code, tab=tab, text=text)])
 
 
 def tab_name(*labels: str) -> str:

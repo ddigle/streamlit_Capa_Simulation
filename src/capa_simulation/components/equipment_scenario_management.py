@@ -54,6 +54,7 @@ import capa_simulation.settings as settings
 from capa_simulation import alerts
 from capa_simulation.components import write_guard
 from capa_simulation.components.app_header import STATUS_NEWER
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
     common_revision_words,
@@ -734,9 +735,11 @@ def render_equipment_scenario_section() -> None:
         repository = get_equipment_repository(database_path)
         session = resolve_equipment_session(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
+        render_data_error(
             "설비 시나리오를 준비하지 못했습니다. "
-            + bootstrap_error_message(exc, database_paths=(settings.EQUIPMENT_DUCKDB_PATH,))
+            + bootstrap_error_message(exc, database_paths=(settings.EQUIPMENT_DUCKDB_PATH,)),
+            code="SC-02",
+            text="설비 시나리오를 준비하지 못했습니다",
         )
         return
     render_schema_ahead_warning(repository.schema_ahead)
@@ -914,7 +917,11 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             for item in load_equipment_revision_summaries(database_path, latest_common)
         }
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SC-02",
+            text="리비전 목록을 읽지 못했습니다",
+        )
         return
     release = session.catalog.latest_release
     official_id = release.schedule_revision_id if release is not None else None
@@ -1390,7 +1397,11 @@ def _render_restore(
         common_id = _latest_common_id(database_path)
         preview = _preview_for(database_path, common_id, scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}",
+            code="SC-02",
+            text="되돌릴 수 없습니다",
+        )
         return
     release_no = session.catalog.release_no or 0
     seen_token = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
@@ -1557,7 +1568,11 @@ def _render_branch(
     try:
         preview = _preview_for(database_path, _latest_common_id(database_path), scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}",
+            code="SC-02",
+            text="이 리비전에서 새 시나리오를 만들 수 없습니다",
+        )
         return
     st.caption(branch_unscheduled_sentence(revision, preview))
     layout = branch_layout_sentence(revision, preview)
@@ -2186,7 +2201,11 @@ def _render_publish(
             scenario.latest_schedule_revision_id,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SC-02",
+            text="발행 확인 글을 만들지 못했습니다",
+        )
         return
     release = session.catalog.latest_release
     layout_lines, blocked = publish_layout_lines(
@@ -2522,7 +2541,11 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
     try:
         review = load_legacy_trace_review(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        render_data_error(
+            f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}",
+            code="SC-02",
+            text="옛 배포 흔적을 읽지 못했습니다",
+        )
         return
     if review.refusal is not None:
         st.error(

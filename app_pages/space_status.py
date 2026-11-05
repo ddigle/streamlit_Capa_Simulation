@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.condition_field import condition_name_row
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
     discard_layout_edits,
@@ -139,7 +140,6 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
-from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     NoticeMark,
@@ -561,8 +561,9 @@ except BOOTSTRAP_ERRORS as exc:
     message = "Space 설비 데이터를 준비하지 못했습니다: " + bootstrap_error_message(
         exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
     )
-    alert_page_error(message, code="EQ-10", text="Space 설비 데이터를 준비하지 못했습니다(설비 DB)")
-    st.error(message)
+    render_data_error(
+        message, code="EQ-10", text="Space 설비 데이터를 준비하지 못했습니다(설비 DB)"
+    )
     st.stop()
 
 # 필요 단축 일정 「도면에서 보기」 로 온 회차 — 색 기준·목표·공정 칩·층을 한 번 받고 주소 인자를

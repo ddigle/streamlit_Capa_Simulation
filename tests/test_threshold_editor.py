@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import infos, place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -425,7 +425,7 @@ def test_a_save_without_changes_makes_no_new_version(
     app = _save(app)
     assert not list(app.exception), [element.message for element in app.exception]
     assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error
+    assert not successes(app) and not place_errors(app)
 
     app.text_input(key=THRESHOLD_NOTE_KEY).set_value("메모만 적음")
     app = _save(app)
@@ -435,7 +435,7 @@ def test_a_save_without_changes_makes_no_new_version(
 
     _edit(app, {0: {"26.03": 121.0}})
     app = _save(app)
-    assert not infos(app) and not app.error, [element.value for element in infos(app)]
+    assert not infos(app) and not place_errors(app), [element.value for element in infos(app)]
     assert [element.value for element in successes(app)] == [THRESHOLD_SAVED_MESSAGE]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 2
@@ -447,7 +447,7 @@ def test_the_first_save_of_an_unsaved_profile_writes_the_values_it_shows(databas
     기준으로 고정한다 — 바꾼 것 없는 저장 판정(개선 I5)은 저장본이 있을 때만이다."""
     app = _save(_app(database))
 
-    assert not infos(app) and not app.error, [element.value for element in infos(app)]
+    assert not infos(app) and not place_errors(app), [element.value for element in infos(app)]
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 1
     # 보이는 값은 정수 % 110·100 이고 저장은 그 T/100 이다(2026-11-01 사용자 결정 N1).
@@ -469,7 +469,7 @@ def test_a_slow_second_press_of_save_repeats_the_success(
     app = _save(app)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert not infos(app) and not app.error, [element.value for element in infos(app)]
+    assert not infos(app) and not place_errors(app), [element.value for element in infos(app)]
     assert [element.value for element in successes(app)] == [THRESHOLD_SAVED_MESSAGE]
     assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 2
 

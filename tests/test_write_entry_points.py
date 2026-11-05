@@ -29,7 +29,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import successes
+from alert_marks import place_errors, successes
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
@@ -610,7 +610,7 @@ def test_a_second_press_of_create_scenario_creates_once(
         for item in DuckDBScenarioRepository(database_path).list_scenarios(include_archived=True)
     ]
     assert names.count("겹친 복제") == 1
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert _successes(app, "겹친 복제") == 1
     assert _successes(app, "저장했습니다") == 1
     assert app.session_state[CLONE_FORM_GENERATION_KEY] == 1
@@ -664,7 +664,7 @@ render_scenario_year_shift(get_scenario_repository({str(database)!r}), {str(data
     assert press.tries == 1
     names = [item.scenario_name for item in DuckDBScenarioRepository(database).list_scenarios()]
     assert names.count("겹친 Shift") == 1
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert _successes(app, "‘겹친 Shift’") == 1
 
 
@@ -705,7 +705,7 @@ render_equipment_scenario_management({path!r}, resolve_equipment_session({path!r
     assert press.tries == 1
     names = [item.scenario_name for item in repository.list_equipment_scenarios()]
     assert names.count("겹친 가지") == 1
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert _successes(app, "「겹친 가지」 r1을 만들었습니다") == 1
     assert app.session_state[GENERATION_KEY] == 1
 

@@ -27,6 +27,7 @@ import streamlit as st
 from capa_simulation import alerts
 from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.month_editor import classification_styled, paste_dialog
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
@@ -41,7 +42,6 @@ from capa_simulation.components.scenario_edit_bar import (
     reset_editors_on_source_change,
     source_token,
 )
-from capa_simulation.components.state_alerts import alert_page_error
 from capa_simulation.components.tab_marks import mark_pending_segments
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
@@ -268,8 +268,7 @@ class _EditSlices:
         try:
             return self.get(table_name)
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
-            alert_page_error(bootstrap_error_message(exc), code="ST-20")
+            render_data_error(bootstrap_error_message(exc), code="ST-20")
             st.stop()
 
 
@@ -338,8 +337,7 @@ try:
             _reqb=edit_slices.loader("RQ_REQB"),
         )
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
-    alert_page_error(bootstrap_error_message(exc), code="ST-20")
+    render_data_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 
 
@@ -375,8 +373,7 @@ def _template_or_stop(table_name: str) -> pd.DataFrame:
     try:
         return _source_template(table_name)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
-        alert_page_error(bootstrap_error_message(exc), code="ST-20")
+        render_data_error(bootstrap_error_message(exc), code="ST-20")
         st.stop()
 
 

@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from alert_marks import successes
+from alert_marks import data_error_texts, place_errors, successes
 from edit_grid_fake import Calls, install_fake_edit_grid
 from streamlit.dataframe import lazy_df_source
 from streamlit.testing.v1 import AppTest
@@ -388,7 +388,7 @@ def test_an_apply_on_another_tab_is_seen_when_the_step_tab_opens(grid_calls: Cal
     app = _open_tab(app, "UPEH")
     app = _edit_and_apply(app, grid_calls, "capa_upeh_editor", "202608", None)
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     # 닫힌 STEP 탭의 경로표는 적용 회차에도 만들지 않는다.
     assert _route_calls(app) == calls_before
 
@@ -527,7 +527,7 @@ def test_an_unapplied_edit_left_in_a_closed_tab_applies_the_edited_row_only(
     app.button(key="capa_run_rate_editor_apply").click().run()
 
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     saved = app.session_state["test_month_updates"]["RQ_RUN_RATE"]
     assert dict(zip(saved["공정"], saved["CAPA_RUN_RATE"], strict=True)) == {
         "Process-A": 0.5,
@@ -546,12 +546,12 @@ def test_a_bad_month_shows_the_message_where_that_table_is_used() -> None:
     app = AppTest.from_string(_probed(script, "test-ref-perf-bad-month"), default_timeout=60)
     app = _open_tab(app, "효율")
     assert any(
-        "RQ_RUN_RATE의 생산계획년월은 YYYYMM 형식이어야 합니다" in error.value
-        for error in app.error
+        "RQ_RUN_RATE의 생산계획년월은 YYYYMM 형식이어야 합니다" in text
+        for text in data_error_texts(app)
     )
     # 그 표를 쓰지 않는 탭은 연다.
     app = _open_tab(app, "UPEH")
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert "capa_upeh_editor_apply" in {button.key for button in app.button}
 
 
@@ -563,7 +563,7 @@ def _with_bad_month(table_name: str) -> str:
 
 def _shows_bad_month(app: AppTest, table_name: str) -> bool:
     message = f"{table_name}의 생산계획년월은 YYYYMM 형식이어야 합니다"
-    return any(message in error.value for error in app.error)
+    return any(message in text for text in data_error_texts(app))
 
 
 def test_a_bad_equipment_month_shows_the_message_in_the_equipment_tabs() -> None:
@@ -576,7 +576,7 @@ def test_a_bad_equipment_month_shows_the_message_in_the_equipment_tabs() -> None
         assert _shows_bad_month(app, "RQ_EQP_OWN"), sub_tab
     # 그 표를 쓰지 않는 탭은 연다.
     app = _open_tab(app, "UPEH")
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     assert "capa_upeh_editor_apply" in {button.key for button in app.button}
 
 
@@ -587,7 +587,7 @@ def test_a_bad_ratio_month_stops_the_step_submit_with_the_message() -> None:
         default_timeout=60,
     )
     app = _open_tab(app, "STEP 구성")
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     app = _add_step(app, "2A", "P200")
     assert _shows_bad_month(app, "RQ_LOT_RATIO")
     assert "test_month_updates" not in app.session_state
@@ -776,7 +776,7 @@ def test_an_equipment_edit_in_display_order_lands_on_its_process(grid_calls: Cal
     app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
 
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
     assert dict(zip(saved["공정"], saved["설비보유"], strict=True)) == {
         "Process-A": 2.0,
@@ -803,7 +803,7 @@ def test_a_pending_equipment_edit_keeps_its_draft_and_lands_on_its_row(grid_call
     app.button(key="capa_eqp_own_editor_apply").click().run()
 
     assert not app.exception
-    assert [error.value for error in app.error] == []
+    assert place_errors(app) == []
     saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
     assert dict(zip(saved["공정"], saved["설비보유"], strict=True)) == {
         "Process-A": 2.0,

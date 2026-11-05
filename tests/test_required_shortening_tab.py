@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit.elements.lib.policies as policies
-from alert_marks import events
+from alert_marks import data_error_marks, events, place_errors
 from shortening_script import shortening_script
 from streamlit.testing.v1 import AppTest
 
@@ -295,14 +295,12 @@ def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     app = _run(database_path, fail_scenario=True)
 
     assert not app.exception
-    warnings = " ".join(str(item.value) for item in app.warning)
-    assert "소요대수를 읽지 못해" in warnings, warnings
-    assert "활성 시나리오가 없습니다" in warnings
-    # 별도 화면이라 「다른 탭」 이 없다 — 옛 탭 시절 말을 남기지 않는다.
-    assert "다른 탭" not in warnings
-    # 그리지 못한 멈춤은 같은 글을 알림창에도 한 번 낸다(설계 규칙 UI-NTF-08).
+    # 자리에는 마크만 서고 글은 알림으로만 간다.
+    assert data_error_marks(app) == 1 and not app.warning
     (note,) = events(app, "RS-01")
     assert "소요대수를 읽지 못해" in note["full"] and "활성 시나리오가 없습니다" in note["full"]
+    # 별도 화면이라 「다른 탭」 이 없다 — 옛 탭 시절 말을 남기지 않는다.
+    assert "다른 탭" not in note["full"]
     assert not _cards(app)
     clear_equipment_repository()
 
@@ -322,11 +320,10 @@ def test_a_period_outside_the_scenario_data_stops_with_the_data_range(tmp_path: 
     )
 
     assert not app.exception, [element.message for element in app.exception]
-    errors = " ".join(str(item.value) for item in app.error)
-    assert "선택 범위에 소요대수 산출 기준이 없습니다." in errors, errors
-    assert f"(데이터 범위 {month_label(months[0])}–{month_label(months[-1])})" in errors, errors
+    assert data_error_marks(app) == 1 and not app.error
     (note,) = events(app, "RS-01")
     assert note["full"].startswith("선택 범위에 소요대수 산출 기준이 없습니다."), note
+    assert f"(데이터 범위 {month_label(months[0])}–{month_label(months[-1])})" in note["full"], note
     captions = " ".join(str(item.value) for item in app.caption)
     assert "같은 이름으로 함께 있는 공정" not in captions, captions
     assert not [expander.label for expander in app.expander if "맞대지 못한 공정" in expander.label]
@@ -341,7 +338,7 @@ def test_a_period_partly_before_the_scenario_data_still_plans(tmp_path: Path) ->
     app = _run(_database(tmp_path), sidebar_first=_shift(months[0], -6))
 
     assert not app.exception, [element.message for element in app.exception]
-    assert not app.error, [str(item.value) for item in app.error]
+    assert not place_errors(app), [str(item.value) for item in app.error]
     assert list(app.selectbox(key=SHORTENING_START_KEY).options) == [
         month_label(month) for month in months
     ]

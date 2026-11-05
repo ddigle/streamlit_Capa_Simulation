@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, successes
+from alert_marks import alert_notes, data_error_texts, place_errors, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, ElementTree
@@ -297,7 +297,7 @@ def test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page(
     _inject(app, "RQ_YLD", broken, "broken-yield")
 
     assert not list(app.exception)
-    assert not [item.value for item in app.error if "RQ_YLD" in item.value]
+    assert not [text for text in place_errors(app) if "RQ_YLD" in text]
     assert {
         "apply_pkg_plan_changes",
         "open_plan_paste",
@@ -378,7 +378,7 @@ def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(
     _inject(app, "RQ_YLD", pd.concat([source, source.iloc[[0]]]), "duplicated-yield")
 
     assert not list(app.exception)
-    assert any("수율 표를 만들지 못했습니다" in item.value for item in app.error)
+    assert any("수율 표를 만들지 못했습니다" in text for text in data_error_texts(app))
     keys = _button_keys(app)
     assert {"apply_pkg_plan_changes", "open_plan_paste", "open_virtual_product"} <= keys
     assert not {"apply_yield_changes", "open_yield_paste"} & keys
@@ -552,7 +552,7 @@ def test_an_out_of_range_yield_names_the_row_where_the_conversion_stops(
     _inject(app, "RQ_YLD", broken, "out-of-range-yield")
 
     assert not list(app.exception)
-    errors = [item.value for item in app.error if "RQ_YLD" in item.value]
+    errors = [text for text in data_error_texts(app) if "RQ_YLD" in text]
     assert len(errors) == 1, errors
     assert "202604 · DEMO PRODUCT B" in errors[0]
     assert "EDS 0(0%)" in errors[0]
@@ -577,7 +577,7 @@ def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(
     app.session_state["monthly_volume_basis"] = "Wafer"
     app.run()
     source = _break_every_month(app, "DEMO PRODUCT B", "locked-every-month")
-    assert any("RQ_YLD" in item.value for item in app.error)
+    assert any("RQ_YLD" in text for text in data_error_texts(app))
 
     grid = _yield_grid(app)
     b_rows = grid.loc[grid["제품정보"].eq("DEMO PRODUCT B")]
@@ -599,7 +599,7 @@ def test_a_product_locked_in_every_month_can_be_fixed_from_the_yield_grid(
     app.button(key="apply_yield_changes").click().run()
 
     assert not list(app.exception)
-    assert not [item.value for item in app.error if "RQ_YLD" in item.value]
+    assert not [text for text in place_errors(app) if "RQ_YLD" in text]
     applied = _yield_rows(app)
     assert len(applied) == len(source)
     fixed = applied.loc[applied["제품정보"].eq("DEMO PRODUCT B"), ["EDS_수율", "BE_수율"]]

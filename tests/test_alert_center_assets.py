@@ -280,6 +280,14 @@ out.tabs = [
   tabMatches('anything', ''),
 ]
 out.steps = [tabStep('Summary › Static 대비 일정'), tabStep('소요대수'), tabStep('')]
+const kept = { code: 'ST-20', short: '읽지 못함', id: 'page-a', keep: true }
+out.kept = [
+  keptRowMissing([], kept),
+  keptRowMissing([{ kind: 'event', code: 'ST-20', short: '읽지 못함', noteId: 'page-a' }], kept),
+  keptRowMissing([{ kind: 'event', code: 'ST-20', short: '읽지 못함', noteId: 'page-b' }], kept),
+  keptRowMissing([{ kind: 'event', code: 'ST-20', short: '다른 글', noteId: 'page-a' }], kept),
+  keptRowMissing([], { code: 'ST-20', short: '읽지 못함', id: 'page-a' }),
+]
 out.copy = copyText([
   ['코드', 'ST-15 · 확인 필요 · 상태 알림(바뀔 때만)'],
   ['범위', ''],
@@ -290,6 +298,18 @@ out.copy = copyText([
 ])
 console.log(JSON.stringify(out))
 """
+
+
+def test_a_kept_error_row_comes_back_when_the_alarm_no_longer_carries_it() -> None:
+    """자리에 마크만 남은 오류(`keep`)는 Alarm 줄이 글의 유일한 자리다 — 줄이 없거나(보관 끝) 같은
+    짧은 글의 다른 오류가 덮었으면 다시 세운다. 그 밖의 알림은 한 번 본 id 면 끝이다."""
+    assert _node(_RUNNER)["kept"] == [True, False, True, True, False]
+    # 다시 세울 때는 알림창을 띄우지 않는다 — 같은 글이면 알림창은 이 탭에 한 번이다.
+    handler = JS[JS.index("function handleEvent") : JS.index("function resolveRow")]
+    restored = handler[handler.index("C.seenSet.has") : handler.index("remember(C")]
+    assert "keptRowMissing" in restored and "showPopup" not in restored
+    # 글을 읽는 자리다 — 로그를 펴면 두 줄 말줄임이 풀린다.
+    assert "classList.toggle('logopen', now)" in JS and ".item.logopen .tx" in CSS
 
 
 def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -> None:

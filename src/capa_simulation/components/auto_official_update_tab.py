@@ -57,6 +57,7 @@ from capa_simulation.auto_update_scheduler import (
     running_scheduler,
     scheduler_opted_in,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import (
@@ -195,7 +196,11 @@ def render_auto_official_update(
     try:
         settings = repository.load_auto_official_update_settings()
     except BOOTSTRAP_ERRORS as exc:
-        st.error("자동 갱신 설정을 읽지 못했습니다: " + bootstrap_error_message(exc))
+        render_data_error(
+            "자동 갱신 설정을 읽지 못했습니다: " + bootstrap_error_message(exc),
+            code="SC-02",
+            text="자동 갱신 설정을 읽지 못했습니다",
+        )
         return
     _render_status(repository, settings, now=clock(), alert_tab=alert_tab)
     _render_settings_form(repository, settings)
@@ -207,7 +212,11 @@ def render_auto_official_update(
         )
         changes = repository.list_auto_official_update_setting_changes(limit=SETTING_HISTORY_LIMIT)
     except BOOTSTRAP_ERRORS as exc:
-        st.error("자동 갱신 기록을 읽지 못했습니다: " + bootstrap_error_message(exc))
+        render_data_error(
+            "자동 갱신 기록을 읽지 못했습니다: " + bootstrap_error_message(exc),
+            code="SC-02",
+            text="자동 갱신 기록을 읽지 못했습니다",
+        )
         return
     labels = get_process_labels()
     _render_run_history(runs, exclusions, labels)

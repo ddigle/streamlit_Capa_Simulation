@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes
+from alert_marks import alert_notes, data_error_texts, place_errors
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
@@ -528,7 +528,7 @@ def test_a_broken_securement_display_order_shows_an_error_instead_of_a_traceback
     ).run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("중복" in item.value for item in app.error)
+    assert any("중복" in text for text in data_error_texts(app))
 
 
 def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: Path) -> None:
@@ -856,7 +856,7 @@ def test_home_reports_a_missing_active_revision_instead_of_a_traceback(tmp_path:
     app = AppTest.from_string(_home_script(database), default_timeout=300).run()
 
     assert not list(app.exception)
-    assert len(app.error) == 1
+    assert len(data_error_texts(app)) == 1
 
 
 def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_database: Path) -> None:
@@ -867,8 +867,8 @@ def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_datab
     app.run()
 
     assert not list(app.exception)
-    assert len(app.error) == 1
-    assert "데이터 범위" in app.error[0].value
+    (error,) = data_error_texts(app)
+    assert "데이터 범위" in error
 
 
 HOME_VIEW_TOGGLES = [
@@ -936,9 +936,9 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert len(app.error) == 1
-    assert "제품타입이 비어" in app.error[0].value
-    assert "EDP 를 포함해" in app.error[0].value
+    (error,) = data_error_texts(app)
+    assert "제품타입이 비어" in error
+    assert "EDP 를 포함해" in error
     assert [widget.label for widget in app.sidebar.toggle] == HOME_VIEW_TOGGLES
     assert app.sidebar.toggle(key=EDP_TOGGLE_KEY).value is False
     # 「HOME 설정」 상자는 잠긴 채 같은 자리(카드 바로 위)에 선다 — 팝업 본문이 계산 결과를 쓴다.
@@ -951,7 +951,7 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [element.value for element in app.error] == []
+    assert place_errors(app) == []
     assert not app.button(key=SETTINGS_BUTTON_KEY).disabled
     # 정상 회차도 같은 차례다(상자 바로 밑이 카드).
     keys = _sidebar_keys(app)
@@ -971,8 +971,8 @@ def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert len(app.error) == 1
-    assert "제품타입이 비어" in app.error[0].value
+    (error,) = data_error_texts(app)
+    assert "제품타입이 비어" in error
     assert app.button(key=SETTINGS_BUTTON_KEY).disabled
     gap = app.sidebar.toggle(key=COMPARISON_TOGGLE_KEY)
     assert gap.value is True
@@ -982,7 +982,7 @@ def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [element.value for element in app.error] == []
+    assert place_errors(app) == []
     assert not app.button(key=SETTINGS_BUTTON_KEY).disabled
 
 

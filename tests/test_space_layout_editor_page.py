@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import successes
+from alert_marks import place_errors, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -219,7 +219,7 @@ def test_a_module_group_apply_is_tiled_and_carries_its_hidden_module(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert any("편집본에 적용했습니다" in item.value for item in successes(app))
     after = editor_calls[-1]
     assert {
@@ -262,7 +262,7 @@ def test_a_group_label_apply_saves_without_a_revision_and_follows_a_rename(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert any("Main 설비명 위치 1개 층" in item.value for item in app.markdown)
     assert editor_calls[-1]["groupLabels"] == {"GRP-1": "center"}
     repository = DuckDBEquipmentRepository(database)
@@ -293,7 +293,7 @@ def test_a_group_label_apply_saves_without_a_revision_and_follows_a_rename(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert editor_calls[-1]["groupLabels"] == {"GRP-X": "bottom"}
     app.button(key="space_layout_save").click().run()
     assert repository.load_floor_group_labels("C1", "1F") == {"GRP-X": "bottom"}
@@ -318,7 +318,7 @@ def _apply_label(app: AppTest, calls: list[dict[str, Any]], position: str) -> No
     }
     app.run()
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
 
 
 def _save_labels_elsewhere(database: Path, master: pd.DataFrame, labels: dict[str, str]) -> None:

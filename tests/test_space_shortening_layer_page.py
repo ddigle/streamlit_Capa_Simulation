@@ -18,6 +18,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import data_error_texts
 from shortening_script import months_from_today, shortening_script
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -444,7 +445,7 @@ def test_a_missing_scenario_warns_once_and_keeps_space_as_it_is(
 ) -> None:
     app = _app(_empty_database(tmp_path), fail_scenario=True)
     _turn_on(_ok(app.run()))
-    warnings = [str(item.value) for item in app.warning]
+    warnings = data_error_texts(app)
     assert any("필요 단축을 칠하지 못했습니다" in text for text in warnings), warnings
     assert any("도면·배치 편집·다른 색 기준은 그대로" in text for text in warnings)
     fab = _views(editor_calls, "fab")[-1]
@@ -891,7 +892,7 @@ def test_a_screen_without_units_drops_a_left_over_shortening_basis(tmp_path: Pat
         )
     )
     assert not app.get("button_group")
-    assert not any("필요 단축을 칠하지 못했습니다" in str(item.value) for item in app.warning)
+    assert not any("필요 단축을 칠하지 못했습니다" in text for text in data_error_texts(app))
 
 
 # ------------------------------------------------------------------ 명세 10-2 빠졌던 시험
@@ -944,9 +945,7 @@ def test_an_unreadable_shared_profile_falls_back_to_the_code_months_on_both_scre
     space = _app(database)
     _turn_on(_ok(space.run()))
     assert plan_keys["keys"][-1] == board_key
-    assert not [
-        item for item in space.warning if "필요 단축을 칠하지 못했습니다" in str(item.value)
-    ]
+    assert not [text for text in data_error_texts(space) if "필요 단축을 칠하지 못했습니다" in text]
     assert board.session_state is not None
 
 
@@ -958,16 +957,11 @@ def test_a_period_without_demand_stops_with_the_board_reason(
     database = _empty_database(tmp_path)
     past: dict[str, Any] = {"sidebar_first": 202001, "sidebar_last": 202003}
     board = _ok(_app(database, SHORTENING_PAGE, **past).run())
-    reasons = [
-        str(item.value)
-        for kind in ("error", "warning", "info")
-        for item in getattr(board, kind)
-        if "소요대수 산출 기준이 없습니다" in str(item.value)
-    ]
+    reasons = [text for text in data_error_texts(board) if "소요대수 산출 기준이 없습니다" in text]
     assert reasons, _texts(board)
     space = _app(database, **past)
     _turn_on(_ok(space.run()))
-    warnings = [str(item.value) for item in space.warning]
+    warnings = data_error_texts(space)
     assert any(
         "필요 단축을 칠하지 못했습니다" in text and "소요대수 산출 기준이 없습니다" in text
         for text in warnings
@@ -990,9 +984,10 @@ def test_a_failing_plan_stops_with_the_calculation_line(
     monkeypatch.setattr(simulation_cache, "plan_required_shortening", failing)
     app = _app(_empty_database(tmp_path))
     _turn_on(_ok(app.run()))
-    warnings = [str(item.value) for item in app.warning]
+    warnings = data_error_texts(app)
+    # 알림 글은 평문이라 물결표 막음이 벗겨진다.
     assert any(
-        "필요 단축 일정을 계산하지 못했습니다 — 계산 실패 흉내 「NEW\\~01\\~C」" in text
+        "필요 단축 일정을 계산하지 못했습니다 — 계산 실패 흉내 「NEW~01~C」" in text
         for text in warnings
     ), warnings
     assert app.dataframe, "층 목록 표는 그대로 선다"

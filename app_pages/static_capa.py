@@ -17,6 +17,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
@@ -24,7 +25,7 @@ from capa_simulation.components.required_exclusion_notice import (
     PERIOD_SCOPE,
     alert_uncounted_demand,
 )
-from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
+from capa_simulation.components.state_alerts import simulation_scope
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -166,8 +167,7 @@ render_page_guide("static_capa", title="Static Capa")
 try:
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
-    alert_page_error(bootstrap_error_message(exc), code="ST-20")
+    render_data_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 thresholds = threshold_profile.thresholds
 secure_threshold = thresholds.default_secure
@@ -239,8 +239,7 @@ except BOOTSTRAP_ERRORS as exc:
     threshold_caption_slot.caption(
         securement_threshold_caption(thresholds, start_month=0, end_month=0, with_warning=True)
     )
-    st.error(bootstrap_error_message(exc))
-    alert_page_error(bootstrap_error_message(exc), code="ST-20")
+    render_data_error(bootstrap_error_message(exc), code="ST-20")
 else:
     threshold_caption_slot.caption(
         securement_threshold_caption(

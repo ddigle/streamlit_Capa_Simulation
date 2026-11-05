@@ -20,6 +20,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.editor_state import (
     discard_editor,
     editor_has_edits,
@@ -50,7 +51,6 @@ from capa_simulation.components.scenario_edit_bar import (
 )
 from capa_simulation.components.state_alerts import (
     AlertScope,
-    alert_page_error,
     simulation_scope,
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
@@ -126,8 +126,7 @@ try:
     selected_start_month = context.selected_start_month
     selected_end_month = context.selected_end_month
 except BOOTSTRAP_ERRORS as exc:
-    st.error(f"기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}")
-    alert_page_error(
+    render_data_error(
         f"기준정보를 불러오지 못했습니다: {bootstrap_error_message(exc)}", code="ST-20"
     )
     st.stop()
@@ -164,8 +163,7 @@ try:
         _display_order=prepared_display_order,
     )
 except ValueError as exc:
-    st.error(bootstrap_error_message(exc))
-    alert_page_error(bootstrap_error_message(exc), code="ST-20")
+    render_data_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 
 # 수율 표는 따로 세운다. 예전에는 위 `try` 에 함께 있어 RQ_YLD 한 행의 값이 비었거나 0 이면
@@ -765,8 +763,7 @@ with yield_tab:
             f"수율 표를 만들지 못했습니다: {yield_build_error} 원천 RQ_YLD 를 고치기 전까지 이 "
             "탭만 멈춥니다 — PKG PLAN 편집과 가상 제품 등록은 그대로 쓸 수 있습니다."
         )
-        st.error(yield_stop_message, icon=":material/error:")
-        alert_page_error(yield_stop_message, code="ST-20", tab=YIELD_TAB_NAME)
+        render_data_error(yield_stop_message, code="ST-20", tab=YIELD_TAB_NAME)
     else:
         yield_pending = editor_has_edits(YIELD_EDITOR_KEY)
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -937,8 +934,7 @@ if not tab_is_hidden(conversion_tab):
                 display_order=reference_tables["RQ_DISPLAY_ORDER"],
             )
         except ValueError as exc:
-            st.error(bootstrap_error_message(exc))
-            alert_page_error(bootstrap_error_message(exc), code="ST-20", tab=CONVERSION_TAB_NAME)
+            render_data_error(bootstrap_error_message(exc), code="ST-20", tab=CONVERSION_TAB_NAME)
             st.stop()
 
         # 기준정보가 없어 계산에서 빠진 계획 행은 조용히 사라지면 안 된다. 예전에는 여기서

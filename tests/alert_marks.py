@@ -22,6 +22,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import ElementTree
 
 from capa_simulation.alerts import MARKER_ATTRIBUTE, marker_notes
+from capa_simulation.components.data_error_mark import MARK_CLASS
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,23 @@ def alert_notes(app: AppTest | ElementTree, *, again: bool = False) -> list[dict
         if isinstance(body, str):
             notes.extend(marker_notes(body))
     return [note for note in notes if again or not note.get("again")]
+
+
+def data_error_marks(app: AppTest | ElementTree) -> int:
+    """자리에 선 「데이터 Error」 마크 수(`components/data_error_mark`)."""
+    tree = app._tree if isinstance(app, AppTest) else app
+    return sum(MARK_CLASS in str(element.proto.body) for element in tree.get("html"))
+
+
+def data_error_texts(app: AppTest | ElementTree) -> list[str]:
+    """「데이터 Error」 마크 자리의 오류 글(알림 전문 — 자리에는 서지 않는다)."""
+    return [str(note["full"]) for note in alert_notes(app) if note.get("keep")]
+
+
+def place_errors(app: AppTest) -> list[str]:
+    """자리에 선 오류 전부 — `st.error` 상자 글 + 「데이터 Error」 마크의 글. 「오류 없이
+    그렸다」 를 볼 때 쓴다."""
+    return [*(str(element.value) for element in app.error), *data_error_texts(app)]
 
 
 def flashed(app: AppTest, kind: str | None = None) -> list[Shown]:

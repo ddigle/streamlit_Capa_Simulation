@@ -25,6 +25,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import data_error_texts
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
     DYNAMIC_PROCESS,
@@ -317,7 +318,7 @@ def test_a_timeline_failure_is_an_equipment_error(
     monkeypatch.setattr(simulation_cache, "build_process_equipment_timeline", broken)
     simulation_cache.get_process_equipment_timeline.clear()
     app = _with_new_units(_opened(option_databases), BEFORE_NEW_UNIT)
-    errors = " ".join(str(item.value) for item in app.error)
+    errors = " ".join(data_error_texts(app))
     assert "설비 일정을 계산하지 못했습니다" in errors
     assert "제약 시뮬레이션을 계산하지 못했습니다" not in errors
     assert not app.metric

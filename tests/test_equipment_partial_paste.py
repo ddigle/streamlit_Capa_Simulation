@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import place_errors
 from pandas.testing import assert_frame_equal, assert_series_equal
 from test_equipment_availability import _downtime, _equipment
 from test_equipment_data_workspace import _app, _preview, _put, _repository, _save
@@ -639,7 +640,7 @@ def test_a_partial_paste_is_previewed_and_saved_leaving_the_other_columns_alone(
     _save(app)
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     latest_id = repository.latest_revision_id()
     assert latest_id is not None and latest_id != original.revision.revision_id
     saved = repository.load_snapshot(latest_id).equipment.set_index("설비명").sort_index()

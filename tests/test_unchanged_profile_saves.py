@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import infos, successes
+from alert_marks import infos, place_errors, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 
@@ -187,7 +187,7 @@ def test_a_display_order_save_without_changes_makes_no_new_version(
 
     app = _press(app, "공용 표시순서 저장")
     assert _infos(app) == [DISPLAY_ORDER_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     assert repository.load_global_display_order().version == 1
 
     app.text_input(key="display_order_note").set_value("메모만 적음")
@@ -197,7 +197,7 @@ def test_a_display_order_save_without_changes_makes_no_new_version(
 
     _edit_cells(app, f"{DISPLAY_ORDER_EDITOR_KEY}::생산 계획::수율", {1: {"값표시순서": 9}})
     app = _press(app, "공용 표시순서 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [DISPLAY_ORDER_SAVED_MESSAGE]
     stored = repository.load_global_display_order()
     assert stored.version == 2
@@ -218,7 +218,7 @@ def test_a_slow_second_press_of_the_display_order_save_repeats_the_success(
 
     app = _press(app, "공용 표시순서 저장")
 
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [DISPLAY_ORDER_SAVED_MESSAGE]
     assert repository.load_global_display_order().version == 2
 
@@ -257,7 +257,7 @@ def test_an_execution_capacity_save_without_changes_makes_no_new_version(
 
     app = _press(app, "확보율 보정 저장")
     assert _infos(app) == [EXECUTION_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     assert any("짝이 없어" in str(item.value) for item in app.warning)
 
     app.text_input(key=EXECUTION_NOTE_KEY).set_value("메모만 적음")
@@ -268,7 +268,7 @@ def test_an_execution_capacity_save_without_changes_makes_no_new_version(
 
     _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -12.5}})
     app = _press(app, "확보율 보정 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [EXECUTION_SAVED_MESSAGE]
     profile = repository.load_global_execution_capacity()
     assert profile.version == 2
@@ -292,7 +292,7 @@ def test_a_slow_second_press_of_the_execution_save_repeats_the_success(
 
     app = _press(app, "확보율 보정 저장")
 
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [EXECUTION_SAVED_MESSAGE]
     assert repository.load_global_execution_capacity().version == 2
 
@@ -317,13 +317,13 @@ def test_a_summary_note_save_without_changes_makes_no_new_version(
 
     app = _press(app, "Summary 저장")
     assert _infos(app) == [SUMMARY_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     stored = repository.load_global_summary_note()
     assert (stored.version, stored.source) == (1, "처음 저장")
 
     app.text_area[0].set_value("DEMO 확정 계획")
     app = _press(app, "Summary 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == ["Summary 공지를 저장했습니다."]
     stored = repository.load_global_summary_note()
     assert (stored.version, stored.note) == (2, "DEMO 확정 계획")
@@ -346,7 +346,7 @@ def test_a_slow_second_press_of_the_summary_note_repeats_the_success(
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == ["Summary 공지를 저장했습니다."]
     assert repository.load_global_summary_note().version == 2
 
@@ -372,13 +372,13 @@ def test_a_top5_band_save_without_changes_makes_no_new_version(
 
     app = _press(app, "확보율 구간 저장")
     assert _infos(app) == [TOP5_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     stored = repository.load_global_top5_band()
     assert (stored.version, stored.source) == (1, "처음 저장")
 
     app.number_input[0].set_value(60.0)
     app = _press(app, "확보율 구간 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [TOP5_SAVED_MESSAGE]
     stored = repository.load_global_top5_band()
     assert stored.version == 2
@@ -403,7 +403,7 @@ def test_a_slow_second_press_of_the_top5_band_repeats_the_success(
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [TOP5_SAVED_MESSAGE]
     assert repository.load_global_top5_band().version == 2
 
@@ -432,13 +432,13 @@ def test_a_key_process_preset_save_without_changes_makes_no_new_version(
 
     app = _press(app, "프리셋 저장")
     assert _infos(app) == [KEY_PROCESS_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     stored = repository.load_global_key_process()
     assert (stored.version, stored.source) == (1, "처음 저장")
 
     app.multiselect[0].set_value(["DEMO-B", "DEMO-A"])
     app = _press(app, "프리셋 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == ["프리셋 「A 그룹」을 저장했습니다."]
     stored = repository.load_global_key_process()
     assert stored.version == 2
@@ -462,7 +462,7 @@ def test_a_slow_second_press_of_a_preset_save_repeats_the_success(
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == ["프리셋 「A 그룹」을 저장했습니다."]
     assert repository.load_global_key_process().version == 2
 
@@ -489,7 +489,7 @@ def test_an_unchanged_preset_save_right_after_a_promotion_still_says_so(
     app = _press(app, "프리셋 저장")
 
     assert _infos(app) == [KEY_PROCESS_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error, _successes(app) + _errors(app)
+    assert not successes(app) and not place_errors(app), _successes(app) + _errors(app)
     stored = repository.load_global_key_process()
     assert (stored.version, stored.preset_names) == (2, ("B 그룹", "A 그룹"))
 
@@ -503,7 +503,7 @@ def test_a_new_preset_is_never_an_unchanged_save(repository: DuckDBScenarioRepos
 
     app = _press(app, "프리셋 저장")
 
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     stored = repository.load_global_key_process()
     assert (stored.version, stored.preset_names) == (1, ("B 그룹",))
 
@@ -561,7 +561,7 @@ def test_an_advance_load_save_without_changes_makes_no_new_version(
 
     app = _press(app, "선행 B/O 저장")
     assert _infos(app) == [ADVANCE_LOAD_UNCHANGED]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     assert _outside_marks(app) == shown
 
     app.text_input(key=ADVANCE_NOTE_KEY).set_value("메모만 적음")
@@ -572,7 +572,7 @@ def test_an_advance_load_save_without_changes_makes_no_new_version(
 
     _edit_cells(app, ADVANCE_EDITOR_KEY, {0: {"26.11": 2.0}})
     app = _press(app, "선행 B/O 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [ADVANCE_LOAD_SAVED]
     stored = repository.load_global_advance_load()
     assert stored.version == 2
@@ -592,13 +592,13 @@ def test_an_advance_shipment_save_without_changes_makes_no_new_version(
 
     app = _press(app, "선행 입고 저장")
     assert _infos(app) == [ADVANCE_SHIPMENT_UNCHANGED]
-    assert not successes(app) and not app.error, _errors(app)
+    assert not successes(app) and not place_errors(app), _errors(app)
     stored = repository.load_global_advance_shipment()
     assert (stored.version, stored.source) == (1, "처음 저장")
 
     _edit_cells(app, ADVANCE_SHIPMENT_EDITOR_KEY, {0: {"26.10": 1.5}})
     app = _press(app, "선행 입고 저장")
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [ADVANCE_SHIPMENT_SAVED]
     stored = repository.load_global_advance_shipment()
     assert stored.version == 2
@@ -624,7 +624,7 @@ def test_a_slow_second_press_of_the_advance_load_repeats_the_success(
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert _successes(app) == [ADVANCE_LOAD_SAVED]
     assert repository.load_global_advance_load().version == 2
 
@@ -708,7 +708,7 @@ def test_the_first_save_of_an_unsaved_profile_still_writes(
 
     app = _press(app, label)
 
-    assert not infos(app) and not app.error, _infos(app) + _errors(app)
+    assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
     assert getattr(repository, load)().version == 1
 
 

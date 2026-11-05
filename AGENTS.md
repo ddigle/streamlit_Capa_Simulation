@@ -466,7 +466,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     캐시하지 않고 매 회차 한다. 부서별 활용과 계산식 설명은 `guides/static_capa.md` 다.
   - 확보율은 키 전용 캐시로 꺼내고 오류는 `check_scenario_capacity` 로 「계산 멈춤」과 검증 오류를 가른다.
   - 소요대수에 들지 않은 수요(계획 쪽 · 조회기간)는 두 상자 위에 그리지 않고 상태 알림 `ST-01` 로 낸다(산출 결과 소요대수
-    탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 `st.error` + `ST-20`(`state_alerts.alert_page_error`).
+    탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 「데이터 Error」 마크 + `ST-20`(`data_error_mark.render_data_error`).
 - `app_pages/execution_management.py` — `실행 관리` 머리. 그룹 정의·로드맵·하위 화면 목차를 데이터를 읽지 않고 그린다.
   - `PageSpec` 이 시나리오·조회기간을 읽지 않고 조건 카드·설비 DB 핀이 없다. 하위 화면이 늘면 `SUBPAGE_SUMMARIES` 도
     고친다. 설명은 `guides/execution_management.md`.
@@ -2062,7 +2062,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않고, 새 판이 아니어도 부른다 — 해소 · 이벤트 칸 한 자리).
   - `process_page_inputs(database_path)` 는 공정 하나를 보는 두 화면(공정 Capa 상세·제약 시뮬레이션)의 공통 진입이다 —
     판정 기준 → 공통 진입 → 유효 기간(`RQ_REQB`) → 시나리오 키 → 확보율(멈추면 「계산 멈춤」) → 달·공정 선택지를 **같은
-    차례**로 내 두 화면의 계획 캐시 키가 같다. 카드 캡션·`st.error`·`st.stop` 은 페이지가 쥐고, DB 경로는 페이지가 그 회차의
+    차례**로 내 두 화면의 계획 캐시 키가 같다. 카드 캡션·마크·`st.stop` 은 페이지가 쥐고, DB 경로는 페이지가 그 회차의
     `settings` 에서 읽어 넘긴다(시험이 설정을 바꾼다).
   - `forget_page_dialogs`·`count_page_visit` 은 `app.py` 가 페이지가 바뀐 회차에 부른다(팝업 열림 칸 버림·방문
     차례 올림). 앞의 것은 팝업 여는 콜백도 부르지만 뒤의 것은 그 회차에만 부른다 — `page_visit` 으로 「다시
@@ -3171,7 +3171,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   탭까지 연다), `table` 은 Alarm 줄에서 펼쳐 볼 딸린 표(`AlertTable` — 칸 · 행(JSON 값) · 원래 행 수 · CSV 파일 이름 · 화면에만
   입힐 표시명, 조건이 있을 때만 · 행 끝 `TABLE_ROW_LIMIT` 2,000), `flush()` — 담아 둔 사건을 지금 보냄. 표지는
   `<style data-capa-alerts="JSON">`(`MARKER_ATTRIBUTE`, 스타일만 든 `st.html` — 이벤트 칸)이고 `note_page` 가 적은 이번
-  화면을 단다. 화면을 그리지 못한 오류의 알림은 `components/state_alerts.alert_page_error` 다(아래). 분석 기록(L2)은 자리만 있다
+  화면을 단다. 화면을 그리지 못한 오류의 알림은 `page_error_note`(같은 글이면 같은 id · `keep` — Alarm 줄을 지키라는 표지, 알림 칸 JS 의
+  `keptRowMissing`)이고 자리 마크와 한 칸에 싣는 표지가 `hidden_marker` 다(`components/data_error_mark.py` — 아래). 분석 기록(L2)은 자리만 있다
   (`record_server_event` · `ALERT_LOG_SWITCH` — usage-log 1단계와 함께, D6).
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
@@ -3197,10 +3198,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「시나리오 · rN · 26.01–26.12」, 미저장 편집이면 그 말을 붙인다 — 세션만 읽는다) · `equipment_scope`(세션의 (공통 대장, 일정)
   리비전 쌍 + 「설비 「이름」 rN」) · `alert_table`(알림에 딸린 표 — 내보내기 프레임을 JSON 값으로, 공정 칸 표시명은 화면에만.
   Alarm 줄에서 펼침 · CSV, 행이 `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 남긴다) ·
-  `alert_page_error(message, code=, tab=, text=)`(화면을 그리지 못한 오류 — 자리 `st.error` 는 부르는 쪽 몫, 같은 코드 + 같은
-  글이면 같은 id 라 이 브라우저 탭에 한 번만 뜨는 사건 알림, 짧은 글 `text` — `ST-20` 계산 화면 · `HM-01` HOME 등) ·
+  `alert_page_error(message, code=, tab=, text=)`(화면을 그리지 못한 오류의 알림만 이벤트 칸으로 — 마크가 세 탭에 서는 산출 결과 한 곳이
+  쓰고, 나머지는 `data_error_mark.render_data_error`) ·
   `tab_name` / `open_tab_name`(표지의 `tab` — 아이콘 없는 탭 이름, 닫힌 탭이면 None 이라 그 회차에는 그 탭의 상태 알림을 내지
   않는다). 시험: `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`.
+- `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
+  사용자 지시). `render_data_error(message, code=, tab=, text=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
+  좁으면 줄 바꿈)와 오류 단계 사건 알림 표지를 `st.html` 한 칸에 그린다 — 이벤트 칸을 쓰지 않아 프래그먼트 · 팝업 본문 어디서나 부른다.
+  글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `render_data_error_mark()`
+  는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) · `alert_marks.place_errors`(오류 없이
+  그렸다).
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
   세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안 · 작은 편집표 · Past Data · 시나리오 관리 표
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
@@ -6028,13 +6035,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **팝업 안 조건은 팝업이 자리 글로, 화면이 상태 알림으로** — 「가용설비 설정」 팝업 「Cut-off 를 적지 않은 공정」 은 고칠 표 곁의 경고
   (이름 목록 — `PLACE_FORM`)로 두고, 가용설비 현황이 팝업을 열지 않아도 회차마다 같은 조건을 상태 알림(`EQ-12` —
   `cutoff_management.report_missing_cutoffs`)으로 낸다.
-- **화면을 못 그리는 오류는 자리에 남기고 알림을 더한다**(설계 2-2) — `state_alerts.alert_page_error(message, code=, text=)` 를
-  `st.error` · `st.stop()` 앞에 부른다. 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만 알림창이 뜨고(해소 줄은
-  없다 — 화면이 다시 서면 자리 오류가 사라진다), 짧은 글(`text`)은 무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20`
-  계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` · `WIP-01` · `SC-02` · `AD-07` ·
-  `VO-01`). 보기 하나 · 프래그먼트 안의 멈춤은 자리 글이다(`PLACE_BLOCKED`) — 다만 그 프래그먼트가 화면 본문 전체면(필요
-  단축 일정 머리 · 본문) 프래그먼트 밖 앱 전체 회차에서 같은 글을 그 화면 코드(`RS-01`)로 한 번 낸다(프래그먼트의 이벤트 칸
-  자리 수는 갈래마다 같아야 한다).
+- **화면을 못 그리는 오류는 자리에 「데이터 Error」 마크만 세우고 글은 알림으로만 보낸다**(2026-11-05 사용자 지시 —
+  `components/data_error_mark.render_data_error(message, code=, tab=, text=)`) — 자료 없는 달을 고름 · 계산 멈춤 · DB · 기준정보를 읽지 못해
+  화면 · 탭 · 구획을 그리지 못한 자리 전부다(`st.stop()` 앞이든 구획만 끝나든). 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
+  알림창이 뜨고(해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다), 그 Alarm 줄이 없으면(보관 끝) 알림창 없이 다시 세운다(`keep`). 짧은 글(`text`)은
+  무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
+  `WIP-01` · `SC-02` · `AD-07` · `VO-01`, 어느 화면에서나 열리는 사이드바 시나리오 팝업은 `SB-21`). 마크와 표지가 `st.html` 한 칸이라 프래그먼트 ·
+  팝업 본문에서도 이벤트 칸 자리 수가 그대로다. **마크가 아닌 것** — 볼 것이 없는 빈 상태(회색 평문 한 줄), 그 자리 입력으로 고치는 거부 · 누른 동작의
+  실패(곁 `st.error`, 조회일 거꾸로 · 월 머지 · 연도 Shift 의 입력 거부 포함), 모듈 오류 카드, 알림 칸이 없는 앱 부트스트랩 실패(`app.py`).
+  `tests/test_data_error_mark.py` 가 `st.error` + `st.stop()` 자리와 코드를 본다.
 - **상태 줄 · 점검 펼침**은 칸의 일이 상태를 보이는 것이다(시나리오 관리 「저장소 상태」 · 자동 갱신 「지금 상태」 ·
   BigDataQuery 설정 띠 · Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」) — 경고 상자 대신 상태 줄(캡션 ·
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 04` · `MO-01`).
@@ -6044,7 +6053,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   자리에도 그대로다(`PLACE_KEPT`).
 - 허용 목록(`tests/test_alert_sites.py`)의 자리 글 까닭은 `PLACE_FORM`(팝업 · 폼 · 저장 미리보기) · `PLACE_BOARD`(Admin
   「알림 모음」 판) · `PLACE_STOP` · `PLACE_RESULT`(거부 · 경고 결과 — 버튼 곁) · `PLACE_CONFIRM`(확인 창) · `PLACE_NO_INPUT`(채울
-  입력 없음 · 멈춤 — 빈 상태는 상자가 아니다) · `PLACE_BLOCKED` · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
+  입력 없음 · 멈춤 — 빈 상태는 상자가 아니다) · `PLACE_DETAIL` · `PLACE_VERDICT`(「없음」 평문 한 줄과 짝인
   화면 결론) · `PLACE_REPORT`(점검 보고) · `PLACE_KEPT` 다(`REASONS` — 이 밖의 까닭은 시험이 막는다).
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
@@ -6951,7 +6960,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 10. **새 알림은 등록부 코드로 낸다**(9장 「알림 칸」) — 동작 결과는 `queue_flash`(성공은 알림창으로만, 그 자리에 고칠 입력이
     없는 경고는 `popup_only=True`), 조건 경고는
     `alerts.state`(자리에 그리지 않음 — 짧은 글은 무엇을 · 어디서 고치는지, 탭 안이면 `open_tab_name` 으로 열린 탭에서만 ·
-    탭 이름과 함께), 화면을 그리지 못한 오류는 자리 `st.error` + `state_alerts.alert_page_error`, 자리 글이면
+    탭 이름과 함께), 데이터 때문에 화면을 그리지 못한 오류는 `data_error_mark.render_data_error`(자리에는 마크만), 자리 글이면
     `tests/test_alert_sites.py` 허용 목록에 `REASONS` 까닭과 함께
 11. **화면 설정을 여는 새 단추는 본문이 아니라 사이드바 설정 상자인가**(`components/settings_box.py`, 9장 「사이드바·조건
     카드·본문」) — 상자를 더하면 화면 확인 `settings_boxes` 와 그 시험도 함께 고친다

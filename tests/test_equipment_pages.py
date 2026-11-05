@@ -1,11 +1,13 @@
 # Purpose: 설비·Space 페이지의 초기 진입과 입력·보기 설정·저장 동작을 검증한다.
 
+
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import data_error_texts, place_errors
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -184,7 +186,7 @@ def test_the_settings_box_is_locked_in_place_when_the_equipment_db_cannot_open(
     app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
 
     assert not app.exception
-    assert any("설비 현황을 준비하지 못했습니다" in item.value for item in app.error)
+    assert any("설비 현황을 준비하지 못했습니다" in text for text in data_error_texts(app))
     assert _sidebar_keys(app) == [SETTINGS_BOX_KEY]
     box = app.button(key=SETTINGS_BUTTON_KEY)
     assert box.disabled
@@ -227,7 +229,7 @@ def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -
     app.button("equipment_master_save_v1").click().run()
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     revisions = repository.list_revisions()
     assert len(revisions) == 1
     saved = repository.load_snapshot(revisions[0].revision_id)
@@ -628,7 +630,7 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
     app.button("equipment_master_save_v1").click().run()
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     buffer = app.session_state["equipment_workspace_buffers_v1"]
     assert buffer[0]["비고"].tolist() == ["숨겨도 유지할 값"]
     repository = DuckDBEquipmentRepository(database_path)

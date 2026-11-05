@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import states
+from alert_marks import data_error_texts, states
 from sheet_reader import has_sheet, sheet_cells, sheet_value
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab
@@ -234,11 +234,13 @@ def _view(app: AppTest, value: str) -> AppTest:
 
 
 def _warnings(app: AppTest) -> list[str]:
-    """경고 상자 글과 조건이 있는 상태 알림 전문 — Static 대비 일정 머리의 「Static 을 읽지
-    못함」 은 상태 알림(`EQ-08`)이다(2026-11-03 D2)."""
-    return [str(element.value) for element in app.warning] + [
-        str(note["full"]) for note in states(app) if note.get("active")
-    ]
+    """경고 상자 글, 「데이터 Error」 마크의 글(알림 전문)과 조건이 있는 상태 알림 전문 — Static
+    대비 일정 머리의 「Static 을 읽지 못함」 은 상태 알림(`EQ-08`)이다(2026-11-03 D2)."""
+    return (
+        [str(element.value) for element in app.warning]
+        + data_error_texts(app)
+        + [str(note["full"]) for note in states(app) if note.get("active")]
+    )
 
 
 def _infos(app: AppTest) -> list[str]:
@@ -348,14 +350,13 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
     assert static is not None and static > 0, "이미 읽은 Static 을 시트에 쓴다(지금 동작)"
     _view(app, "확보율 교차검증")
     assert stopped in _warnings(app)
-    assert "소요대수를 읽지 못해 확보율을 맞댈 수 없습니다." in _infos(app)
+    assert "소요대수를 읽지 못해 확보율을 맞댈 수 없습니다." in _warnings(app)
     assert _cross_check(app) is None
 
     _show(app, SHORTENING)
     assert not app.exception, [element.message for element in app.exception]
     assert (
-        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다."
-        f"\n\n{VALUE_ERROR}"
+        f"활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. {VALUE_ERROR}"
     ) in _warnings(app)
     assert _table_mismatches(app) == 0
     clear_equipment_repository()
@@ -508,10 +509,10 @@ def test_an_edit_or_another_revision_reads_the_new_demand(tmp_path: Path) -> Non
 
 
 def test_a_demand_that_stops_after_a_cached_check_is_told_not_raised(tmp_path: Path) -> None:
-    """오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춰도 예외가 아니라 그 보기의 경고다.
+    """오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춰도 예외가 아니라 그 보기의 마크다.
 
     대역에는 캐시가 없어 「오류 확인은 적중, 소요대수는 다시 계산」을 그대로 흉내 낸다. 교차검증은
-    「확보율을 맞대지 못했습니다」, 필요 단축 일정은 페이지가 잡은 것과 같은 경고로 멈춘다. 오류는
+    「확보율을 맞대지 못했습니다」, 필요 단축 일정은 페이지가 잡은 것과 같은 글로 멈춘다. 오류는
     캐시에 남지 않아 다음 회차에 풀린다.
     """
     app = _show(_app(tmp_path).run(), GAP)
@@ -529,8 +530,7 @@ def test_a_demand_that_stops_after_a_cached_check_is_told_not_raised(tmp_path: P
     _show(app, SHORTENING)
     assert not app.exception, [element.message for element in app.exception]
     assert (
-        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다."
-        f"\n\n{VALUE_ERROR}"
+        f"활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. {VALUE_ERROR}"
     ) in _warnings(app)
     app.session_state["test_failure"] = None
     app.run()

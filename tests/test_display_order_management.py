@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import active_state, infos, successes
+from alert_marks import active_state, infos, place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -513,7 +513,7 @@ finally:
     )
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [element.value for element in app.error]
+    assert not place_errors(app), [element.value for element in app.error]
     assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     # 고친 범위는 사라지고 남은 범위만 알린다.
     warning = _clash(app)
@@ -606,7 +606,7 @@ finally:
     app.run(timeout=30)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [element.value for element in app.error]
+    assert not place_errors(app), [element.value for element in app.error]
     assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     assert active_state(app, "AD-05") is None
     assert places() == before
@@ -722,7 +722,7 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
     next(button for button in app.button if button.label == "공용 표시순서 저장").click()
     app.run(timeout=60)
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [str(error.value) for error in app.error]
+    assert not place_errors(app), [str(error.value) for error in app.error]
     assert app.text[-1].value == "v3|A=1;B=99"
     clear_global_display_order_cache()
 
@@ -792,7 +792,7 @@ def test_a_single_press_after_a_held_double_press_saves_the_display_order(
     app.run(timeout=60)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [str(error.value) for error in app.error]
+    assert not place_errors(app), [str(error.value) for error in app.error]
     assert app.text[-1].value == "v3|A=1;B=99"
     clear_global_display_order_cache()
 
@@ -816,7 +816,7 @@ def test_a_double_press_of_the_display_order_save_reports_no_conflict(tmp_path: 
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not app.error, [str(error.value) for error in app.error]
+    assert not place_errors(app), [str(error.value) for error in app.error]
     assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
     assert app.text[-1].value == "v2|A=1;C=3;B=99"
     clear_global_display_order_cache()

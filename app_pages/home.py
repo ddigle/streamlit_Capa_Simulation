@@ -13,6 +13,7 @@ from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
 from capa_simulation.components.condition_field import condition_field
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
     KEY_PROCESS_ABSENT_NOTICE,
@@ -76,7 +77,7 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
-from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
+from capa_simulation.components.state_alerts import simulation_scope
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -559,8 +560,7 @@ except BOOTSTRAP_ERRORS as exc:
             status=PROCESS_FIELD_HINT,
             disabled=True,
         )
-    st.error(bootstrap_error_message(exc))
-    alert_page_error(bootstrap_error_message(exc), code="HM-01")
+    render_data_error(bootstrap_error_message(exc), code="HM-01")
     # 보는 조건 카드는 멈춘 회차에도 선다. 오류가 시키는 조치(EDP 포함을 켜기·GAP 끄기)가 이 카드의
     # 토글이라 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자 결정). key 가 정상 회차와
     # 같아 바꾼 값으로 다음 회차가 다시 계산한다. 주요 Case 칩도 그대로 선다 — 다른 Case 로 옮기는

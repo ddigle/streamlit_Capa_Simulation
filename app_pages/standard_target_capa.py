@@ -23,6 +23,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.formula_text import EQUALS, consistent_places
 from capa_simulation.components.hierarchical_monthly_table import (
@@ -36,7 +37,7 @@ from capa_simulation.components.process_labels import (
     ProcessLabels,
     get_process_labels,
 )
-from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
+from capa_simulation.components.state_alerts import simulation_scope
 from capa_simulation.components.table_toolbar import (
     CSV_TEMPLATE_LABEL,
     render_csv_download,
@@ -472,7 +473,7 @@ def _render_logic_analysis(
             demand_basis=selected_basis,
         )
     except ValueError as exc:
-        st.error(bootstrap_error_message(exc))
+        render_data_error(bootstrap_error_message(exc), code="ST-20")
         return
 
     selected_mask = (
@@ -483,7 +484,9 @@ def _render_logic_analysis(
     )
     selected_contribution = contributions.loc[selected_mask].reset_index(drop=True)
     if len(selected_contribution) != 1:
-        st.error("선택한 제품·Stack·WF 속성의 Mix 기여 행을 하나로 확정할 수 없습니다.")
+        render_data_error(
+            "선택한 제품·Stack·WF 속성의 Mix 기여 행을 하나로 확정할 수 없습니다.", code="ST-20"
+        )
         return
 
     target_row = target.iloc[0]
@@ -656,8 +659,7 @@ except BOOTSTRAP_ERRORS as exc:
     # 이 `try` 는 시뮬레이션 DB 와 설비 DB 를 다 연다. 어느 쪽이 잠겼는지 예외로는 가릴 수
     # 없으므로 두 경로를 다 적는다.
     stop_message = bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH))
-    st.error(stop_message)
-    alert_page_error(stop_message, code="ST-20")
+    render_data_error(stop_message, code="ST-20")
     st.stop()
 # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
 render_schema_ahead_warning(equipment_repository.schema_ahead)
@@ -759,8 +761,7 @@ try:
     )
     standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
-    st.error(bootstrap_error_message(exc))
-    alert_page_error(bootstrap_error_message(exc), code="ST-20")
+    render_data_error(bootstrap_error_message(exc), code="ST-20")
     st.stop()
 
 process_options = get_display_ordered_values(
@@ -1033,8 +1034,7 @@ elif output_metric == "로직 분석":
             _reference_tables=reference_tables,
         )[0]
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
-        alert_page_error(bootstrap_error_message(exc), code="ST-20")
+        render_data_error(bootstrap_error_message(exc), code="ST-20")
         st.stop()
     if selected_processes:
         filtered_required_equipment = filtered_required_equipment.loc[
@@ -1072,8 +1072,7 @@ else:
             _weekly_availability=availability,
         )
     except ValueError as exc:
-        st.error(bootstrap_error_message(exc))
-        alert_page_error(bootstrap_error_message(exc), code="ST-20")
+        render_data_error(bootstrap_error_message(exc), code="ST-20")
         st.stop()
 
     missing_availability = (
@@ -1150,8 +1149,7 @@ else:
                 _weekly_availability=availability,
             )
         except ValueError as exc:
-            st.error(bootstrap_error_message(exc))
-            alert_page_error(bootstrap_error_message(exc), code="ST-20")
+            render_data_error(bootstrap_error_message(exc), code="ST-20")
             st.stop()
         output_value_column = PKG_EQUIVALENT_COLUMN
         output_title = "일 표준 가능량 (PKG Kea)"

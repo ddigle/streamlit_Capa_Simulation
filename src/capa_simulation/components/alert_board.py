@@ -24,6 +24,7 @@ import streamlit as st
 
 from capa_simulation.components.capacity_assumption_notice import assumption_message
 from capa_simulation.components.capacity_gate import density_error
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.required_exclusion_notice import (
@@ -98,7 +99,9 @@ def render_alert_board() -> None:
             _reference_tables=context.reference_tables,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.info(bootstrap_error_message(exc))
+        render_data_error(
+            bootstrap_error_message(exc), code="AD-07", text="알림 모음을 계산하지 못했습니다"
+        )
         return
     density = density_error(scenario["tables"]) if outcome.error is None else None
     alerts = collect_alerts(outcome, density)

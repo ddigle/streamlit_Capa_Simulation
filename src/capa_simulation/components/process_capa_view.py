@@ -69,6 +69,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.formula_text import APPROX, equals_mark, written_value
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
@@ -292,6 +293,7 @@ DYNAMIC_ABSENT_HELP: Final = (
 )
 # 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 카드 제목(머리 배지와 같은 말).
 DYNAMIC_ERROR_TITLE: Final = "설비 일정 없음: 계산 오류"
+DYNAMIC_DB_ERROR_TITLE: Final = "설비 일정 없음: 설비 DB 를 읽지 못했습니다"
 
 _MINUS: Final = "−"
 _EMPTY: Final = "—"
@@ -867,12 +869,18 @@ def _render_dynamic_absent(view: ProcessDetailView) -> None:
     """설비 일정(②~④) 대신 서는 카드 한 장 — 까닭과 가용설비 현황 링크."""
     with st.container(border=True, key=DYNAMIC_ABSENT_KEY):
         if view.readiness is None:
-            st.markdown(":material/event_busy: **설비 일정 없음: 설비 DB 를 읽지 못했습니다**")
-            st.caption(view.dynamic_error or "설비 DB 를 열지 못했습니다.")
+            render_data_error(
+                view.dynamic_error or "설비 DB 를 열지 못했습니다.",
+                code="PD-01",
+                text=DYNAMIC_DB_ERROR_TITLE,
+            )
         elif view.dynamic_error:
             # 판정은 통과했는데 계획·설비 일정 계산이 멈춘 갈래 — 조건은 이미 맞아 안내하지 않는다.
-            st.markdown(f":material/event_busy: **{DYNAMIC_ERROR_TITLE}**")
-            st.caption(f"{view.dynamic_error} 위 공식 기준 표는 그대로입니다.")
+            render_data_error(
+                f"{view.dynamic_error} 위 공식 기준 표는 그대로입니다.",
+                code="PD-01",
+                text=DYNAMIC_ERROR_TITLE,
+            )
         else:
             st.markdown(f":material/event_busy: **{view.readiness.badge}**")
             st.caption(view.readiness.detail, help=DYNAMIC_ABSENT_HELP)
@@ -1339,7 +1347,7 @@ def evidence_cards_html(cards: Sequence[EvidenceCard]) -> str:
 def _render_route_factors(trace: ProcessMonthTrace | None) -> None:
     """경로마다 인자·근거 칸, 공통 인자(양산구분별 효율·여유율, 일수·모듈수), 제외 경로."""
     if trace is None:
-        st.caption("경로 인자를 읽지 못했습니다.")
+        render_data_error("경로 인자를 읽지 못했습니다.", code="PD-01")
         return
     routes = trace.routes.reindex(columns=ROUTE_COLUMNS)
     if routes.empty:

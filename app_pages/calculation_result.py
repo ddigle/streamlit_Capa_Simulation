@@ -26,6 +26,7 @@ from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
 from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.data_error_mark import render_data_error, render_data_error_mark
 from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.hierarchical_monthly_table import (
     build_hierarchical_monthly_export,
@@ -192,12 +193,11 @@ try:
     # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
-    # 원인 하나를 세 탭에 같이 보여 준다. 문구는 한 번만 만든다. 알림창은 같은 글이면 한 번이다.
-    bootstrap_message = bootstrap_error_message(exc)
+    # 원인 하나의 마크를 세 탭에 같이 세우고, 글은 탭 밖에서 알림으로 한 번 보낸다.
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
-            st.error(bootstrap_message)
-    alert_page_error(bootstrap_message, code="ST-20")
+            render_data_error_mark()
+    alert_page_error(bootstrap_error_message(exc), code="ST-20")
 else:
     # 상태 알림의 범위 — 이 화면의 결과는 유효 조회기간 키로 계산한 것이다(측정률 가정만 시나리오
     # 전체 기준이라 기간을 넣지 않는다 — HOME 과 같은 범위).
@@ -403,8 +403,7 @@ else:
             )
         except BOOTSTRAP_ERRORS as exc:
             with required_tab:
-                st.error(bootstrap_error_message(exc))
-            alert_page_error(bootstrap_error_message(exc), code="ST-20", tab=REQUIRED_TAB)
+                render_data_error(bootstrap_error_message(exc), code="ST-20", tab=REQUIRED_TAB)
             st.stop()
         all_month_columns = [
             column for column in required_table.columns if column not in RESULT_DIMENSIONS
@@ -527,8 +526,7 @@ else:
             )
         except BOOTSTRAP_ERRORS as exc:
             with availability_tab:
-                st.error(bootstrap_error_message(exc))
-            alert_page_error(bootstrap_error_message(exc), code="ST-20", tab=AVAILABILITY_TAB)
+                render_data_error(bootstrap_error_message(exc), code="ST-20", tab=AVAILABILITY_TAB)
             st.stop()
         # 히트맵은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
         thresholds = threshold_profile.thresholds

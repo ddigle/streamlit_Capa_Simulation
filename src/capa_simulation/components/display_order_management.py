@@ -16,6 +16,7 @@ from capa_simulation.components.admin_dialog import (
     close_admin_dialog,
     open_admin_dialog,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
@@ -125,7 +126,9 @@ def render_display_order_management(
             database_path, profile.version, profile.rules
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        render_data_error(
+            bootstrap_error_message(exc), code="AD-07", text="표시순서를 읽지 못했습니다"
+        )
         return
 
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):

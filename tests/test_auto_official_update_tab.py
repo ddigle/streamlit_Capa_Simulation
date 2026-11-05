@@ -15,7 +15,7 @@ from datetime import datetime, time
 from pathlib import Path
 
 import pytest
-from alert_marks import flashed, infos, successes
+from alert_marks import flashed, infos, place_errors, successes
 from auto_update_fakes import (
     NOW,
     WAFER,
@@ -185,7 +185,7 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
     assert _field(app.text_input, "시뮬레이션명 키워드").value == "PSM"  # type: ignore[attr-defined]
     assert _field(app.number_input, "기준 확보율(%)").value == 80.0  # type: ignore[attr-defined]
     assert "아직 돈 회차가 없습니다." in {str(element.value) for element in app.caption}
-    assert not app.error
+    assert not place_errors(app)
 
 
 def test_the_status_line_blocks_the_tildes_of_the_official_release_name(database: Path) -> None:
@@ -237,7 +237,7 @@ def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:
 
     app = _tab(database)
 
-    assert not app.error
+    assert not place_errors(app)
     assert "주차 없음" in _markdown(app)
     assert MISSING_WEEK_MESSAGE in _markdown(app)
 
@@ -265,7 +265,7 @@ def test_the_status_lines_keep_tildes_in_the_release_name_and_keyword(database: 
 
     assert f"공식 v2 W40 · {literal_markdown('PSM W40 확정~본~')} (" in text
     assert f"키워드 「{literal_markdown('P~S~M')}」" in text
-    assert not app.error
+    assert not place_errors(app)
 
 
 def test_a_release_name_with_two_weeks_keeps_its_tildes_in_the_status_and_refusals(
@@ -365,7 +365,7 @@ def test_saving_the_settings_records_what_changed(database: Path) -> None:
     _field(app.text_input, "바꾼 사람(선택)").set_value("운영 담당")  # type: ignore[attr-defined]
     app = _submit_settings(app)
 
-    assert not app.exception and not app.error
+    assert not app.exception and not place_errors(app)
     saved = repository.load_auto_official_update_settings()
     assert saved.version == 1
     assert saved.config == AutoUpdateConfig(
@@ -445,7 +445,7 @@ def test_a_double_press_after_a_change_saved_elsewhere_keeps_the_refusal(
         assert "바뀐 값이 없습니다." not in [str(element.value) for element in infos(app)]
         assert (stored.version, stored.config.keyword) == (1, "PSM")
     else:
-        assert not app.error, [str(element.value) for element in app.error]
+        assert not place_errors(app), [str(element.value) for element in app.error]
         assert (stored.version, stored.config.keyword) == (2, "PSS")
 
 
@@ -483,7 +483,7 @@ def test_a_single_press_after_a_held_double_press_saves_the_settings(
     app = _submit_settings(app)
 
     assert not app.exception, [element.message for element in app.exception]
-    assert not app.error, [str(element.value) for element in app.error]
+    assert not place_errors(app), [str(element.value) for element in app.error]
     stored = repository.load_auto_official_update_settings()
     assert (stored.version, stored.config.keyword) == (2, "PSX")
 
@@ -514,7 +514,7 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
 
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
-    assert not app.exception and not app.error
+    assert not app.exception and not place_errors(app)
     assert any("지금 실행 회차 — 등록·발행" in str(element.value) for element in successes(app))
     # 소요대수에 들지 않은 수요가 없으면 성공 알림만 뜬다 — 밑에 빈 경고를 그리지 않는다.
     assert not [text for _, _, text in _alerts(app) if UNCOUNTED_DEMAND_LEAD in text]
@@ -566,7 +566,7 @@ def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database:
 
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
-    assert not app.exception and not app.error
+    assert not app.exception and not place_errors(app)
     head = (
         "공식 v2 발행 · W41 SIM-W41 · "
         "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"

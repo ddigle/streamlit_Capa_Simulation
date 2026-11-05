@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from alert_marks import active_state, flashed, page_html, successes
+from alert_marks import active_state, flashed, page_html, place_errors, successes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import bigdataquery_registration as registration
@@ -830,7 +830,7 @@ def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Pat
     app.run()
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert app.session_state["__window__"] == "2026-10-05 ~ 2026-10-15"
     assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
     [scenario] = repository.list_scenarios()
@@ -902,7 +902,7 @@ def test_rows_with_a_blank_cs_are_dropped_and_the_registration_still_saves(
     app = _registration_app(database, blank)
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
     note = FlashNote(*app.session_state[registration.REGISTRATION_DROP_FLASH_KEY])
     # 저장은 끝났고 고칠 입력이 없다 — 알림창 · Alarm 에만(설계 규칙 UI-NTF-03).
@@ -953,7 +953,7 @@ def test_a_registration_whose_capacity_stops_still_saves_and_says_how_to_fix_it(
     app.run()
 
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
     warning = FlashNote(*app.session_state[registration.REGISTRATION_CAPACITY_FLASH_KEY])
     assert warning.kind == "warning" and warning.popup_only

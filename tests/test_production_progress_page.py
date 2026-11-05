@@ -15,6 +15,7 @@ from typing import Any
 
 import duckdb
 import pytest
+from alert_marks import place_errors
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import module_slot
@@ -75,7 +76,7 @@ def test_each_page_draws_one_module_slot_without_opening_any_database(
     assert [title.value for title in app.title] == [spec.title]
     # 데이터를 읽지 않는 화면이다 — 위젯도 알림도 없고 자리 하나만 선다.
     assert not app.button and not app.selectbox and not app.toggle
-    assert not app.info and not app.warning and not app.error
+    assert not app.info and not app.warning and not place_errors(app)
     bodies = _slot_bodies(app)
     assert len(bodies) == 1
     body = bodies[0]

@@ -49,6 +49,7 @@ from typing import Final
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import profile_version_caption
@@ -225,9 +226,11 @@ def render_manual_downtime_tab(
     try:
         profile = load_manual_downtime(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
+        render_data_error(
             "입력 비가동 대수를 읽지 못했습니다 — "
-            + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)),
+            code="EQ-09",
+            text="입력 비가동 대수를 읽지 못했습니다",
         )
         return
     processes, absent = manual_tab_processes(snapshot_processes, profile)
@@ -431,7 +434,11 @@ def _render_history(database_path: str) -> None:
         saves = load_manual_downtime_saves(database_path, limit=_HISTORY_LIMIT)
     except BOOTSTRAP_ERRORS as exc:
         message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
-        st.caption(f"저장 이력을 읽지 못했습니다 — {message}")
+        render_data_error(
+            f"저장 이력을 읽지 못했습니다 — {message}",
+            code="EQ-09",
+            text="입력 비가동 저장 이력을 읽지 못했습니다",
+        )
         return
     with st.expander(
         f":material/history: 저장 이력 {len(saves)}건"

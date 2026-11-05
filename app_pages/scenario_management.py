@@ -8,6 +8,7 @@ from capa_simulation.components.auto_official_update_tab import render_auto_offi
 from capa_simulation.components.bigdataquery_registration import (
     render_bigdataquery_registration,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_management import (
     EQUIPMENT_KIND,
     SCENARIO_KIND_KEY,
@@ -20,7 +21,7 @@ from capa_simulation.components.equipment_scenario_management import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
-from capa_simulation.components.state_alerts import alert_page_error, open_tab_name
+from capa_simulation.components.state_alerts import open_tab_name
 from capa_simulation.components.tab_state import stateful_tabs
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -34,8 +35,7 @@ try:
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
     message = "시나리오 저장소를 준비하지 못했습니다: " + bootstrap_error_message(exc)
-    alert_page_error(message, code="SC-02", text="시나리오 저장소를 준비하지 못했습니다")
-    st.error(message)
+    render_data_error(message, code="SC-02", text="시나리오 저장소를 준비하지 못했습니다")
     st.stop()
 
 # 세 탭을 항상 그린다(`tab.open` 으로 본문을 건너뛰지 않는다). 예전에는 열린 탭만 그렸는데,

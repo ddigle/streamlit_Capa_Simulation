@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import shown, successes
+from alert_marks import place_errors, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_name_fields import _named_revisions, _section
 from test_equipment_scenario_repository import OPERATIONS, _seeded
@@ -61,7 +61,7 @@ def test_renaming_a_scenario_to_its_current_name_says_nothing_changed(
     _ok(app.run())
 
     assert _texts(app, "info") == [SCENARIO_NAME_UNCHANGED_MESSAGE]
-    assert not successes(app) and not app.error
+    assert not successes(app) and not place_errors(app)
     assert [item.scenario_name for item in repository.list_equipment_scenarios()] == ["운영 일정"]
 
 
@@ -79,7 +79,7 @@ def test_saving_a_revision_name_unchanged_says_nothing_changed(
         _ok(app.run())
 
         assert _texts(app, "info") == [REVISION_NAME_UNCHANGED_MESSAGE], number
-        assert not successes(app) and not app.error
+        assert not successes(app) and not place_errors(app)
     names = {
         item.revision_no: item.revision_name
         for item in repository.list_schedule_revisions(OPERATIONS)

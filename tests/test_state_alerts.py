@@ -86,17 +86,15 @@ from capa_simulation.components.state_alerts import alert_page_error
 
 alerts.note_page("산출 결과", "calculation_result")
 message = st.session_state.get("message", "데이터베이스를 열지 못했습니다.\\n\\n- 원문: lock")
-st.error(message)
 alert_page_error(message, code="ST-20", tab="소요대수")
 """
 
 
-def test_a_page_error_alerts_once_per_message_and_stays_in_place() -> None:
-    """화면을 그리지 못한 오류는 자리 `st.error` 그대로 + 사건 알림 하나(오류 단계). id 가 글의
-    지문이라 회차마다 다시 그려도 같은 글이면 브라우저가 한 번만 띄운다. 알림창 짧은 글은 첫
-    문단이다."""
+def test_a_separately_sent_page_error_alerts_once_per_message() -> None:
+    """마크와 따로 보내는 오류 알림도 사건 알림 하나(오류 단계)다. id 가 글의 지문이라 회차마다
+    다시 그려도 같은 글이면 브라우저가 한 번만 띄운다. 알림창 짧은 글은 첫 문단이다."""
     app = AppTest.from_string(PAGE_ERROR).run()
-    assert not app.exception and len(app.error) == 1
+    assert not app.exception
     (first,) = alert_notes(app)
     assert (first["code"], first["kind"], first["level"]) == ("ST-20", "event", "error")
     assert first["short"] == "데이터베이스를 열지 못했습니다."

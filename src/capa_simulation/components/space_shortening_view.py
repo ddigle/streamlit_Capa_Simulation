@@ -40,6 +40,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.shortening_board import (
@@ -472,18 +473,22 @@ def render_layer_basis(
 
 
 def render_layer_stop(stop: ShorteningStop) -> None:
-    """못 읽음(R5) — 조작 줄 안 한 줄. 상자는 모두 기본 회색이고 배치·편집·다른 색 기준은
-    그대로다."""
+    """못 칠함(R5) — 조작 줄 안 한 자리. 소요를 못 읽음 · 계산 오류는 마크(글은 알림)이고, 다른
+    화면에서 채울 입력이 빠짐(Cut-off 등)은 경고 한 줄이다. 상자는 모두 기본 회색이고 배치·편집·다른
+    색 기준은 그대로다."""
     if stop.kind == "scenario":
         reason = "활성 시나리오의 소요대수를 읽지 못했습니다" + (
             f" — {stop.message}" if stop.message else ""
         )
     else:
         reason = stop.message or "계획을 세우지 못했습니다"
-    st.warning(
-        f"필요 단축을 칠하지 못했습니다: {reason} 도면·배치 편집·다른 색 기준은 그대로 씁니다.",
-        icon=":material/sync_problem:",
+    message = (
+        f"필요 단축을 칠하지 못했습니다: {reason} 도면·배치 편집·다른 색 기준은 그대로 씁니다."
     )
+    if stop.kind in ("scenario", "error"):
+        render_data_error(message, code="EQ-10", text="필요 단축을 칠하지 못했습니다")
+    else:
+        st.warning(message, icon=":material/sync_problem:")
 
 
 def _filter_values(value: object) -> tuple[str, ...]:

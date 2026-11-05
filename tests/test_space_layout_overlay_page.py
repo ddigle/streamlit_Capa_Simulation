@@ -26,7 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, alert_notes, infos, shown, successes
+from alert_marks import active_state, alert_notes, infos, place_errors, shown, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -298,7 +298,7 @@ def _apply_rename(app: AppTest, editor_calls: list[dict[str, Any]], *, move: boo
         "renames": [{"kind": "unit", "from": "EQ-02", "to": "EQ-02R"}],
     }
     _ok(app.run())
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
 
 
 def test_a_rename_only_apply_in_an_assumption_names_the_common_ledger(
@@ -1183,7 +1183,7 @@ def test_a_save_pressed_right_after_someone_elses_common_save_says_the_reopen_pa
 
     app.button(key="space_layout_save").click().run()
     _ok(app)
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert _scenario(repository, setup).latest_layout_unit_count == 2
 
 
@@ -1264,7 +1264,7 @@ def test_a_rename_dropped_with_a_reapplied_move_is_told(
         "renames": [{"kind": "unit", "from": "EQ-02", "to": "EQ-02T"}],
     }
     _ok(app.run())
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert any("이름 바꿈 1건" in text for text in _texts(app)), _texts(app)
     theirs = _session(repository)
     repository.save_equipment(
@@ -1322,7 +1322,7 @@ def test_a_reapplied_editor_group_keeps_its_approval_and_saves(
     app.button(key="space_layout_save").click().run()
 
     _ok(app)
-    assert not app.error, [item.value for item in app.error]
+    assert not place_errors(app), [item.value for item in app.error]
     assert repository.latest_revision_id() == common_before
     newest = _scenario(repository, setup)
     assert newest.latest_layout_unit_count == 4

@@ -52,6 +52,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     rate_text,
     signed_points,
 )
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import equipment_basis_label
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.modification_schedule_figures import (
@@ -659,7 +660,11 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
             else bootstrap_error_message(exc)
         )
         context.render_header(process, bold)
-        st.error(f"개조 일정을 찾지 못했습니다 — {message}")
+        render_data_error(
+            f"개조 일정을 찾지 못했습니다 — {message}",
+            code="CS-01",
+            text="개조 일정을 찾지 못했습니다",
+        )
         return
 
     labels = ScheduleLabels(process_label=process_label, general_percent=choice.general_percent)

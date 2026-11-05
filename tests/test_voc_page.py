@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import flashed, successes
+from alert_marks import flashed, place_errors, successes
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.runtime.state import session_state_proxy
@@ -383,7 +383,7 @@ def test_a_second_submit_of_a_posted_form_neither_posts_nor_refills(tmp_path: Pa
 
     assert not app.exception
     assert _posts(database_path) == [("제목 A", False)]
-    assert not app.error
+    assert not place_errors(app)
     assert app.text_input(key="voc_post_title").value == ""
     assert app.text_area(key="voc_post_body").value == ""
 
@@ -653,7 +653,7 @@ def test_a_slow_second_press_on_the_cleared_post_form_keeps_the_success(
     assert not app.exception
     assert _posts(database_path) == [("제목 A", False)]
     if trailing:
-        assert not app.error, [message.value for message in app.error]
+        assert not place_errors(app), [message.value for message in app.error]
         assert [message.value for message in successes(app)] == ["글을 올렸습니다."]
     else:
         assert [message.value for message in app.error] == ["제목을 입력하세요."]
@@ -710,7 +710,7 @@ def test_a_very_fast_second_press_on_the_old_post_form_keeps_the_success(
     app._run(widget_state=pressed)
 
     assert not app.exception
-    assert not app.error, [message.value for message in app.error]
+    assert not place_errors(app), [message.value for message in app.error]
     assert _posts(database_path) == [("제목 A", False)]
     shown = [message.value for message in successes(app)]
     assert shown == (["글을 올렸습니다."] if trailing else [])

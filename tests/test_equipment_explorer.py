@@ -4,6 +4,7 @@ import json
 import re
 from datetime import date
 
+from alert_marks import place_errors
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_explorer import (
@@ -159,7 +160,7 @@ def _app() -> AppTest:
 
 def _assert_one_result(app: AppTest) -> None:
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     assert (
         len(app.dataframe) + len(app.get("vega_lite_chart")) + len(app.get("plotly_chart"))
     ) == 1
