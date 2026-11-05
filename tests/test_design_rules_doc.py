@@ -7,7 +7,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
 답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
-5줄 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+5줄 · 이번 배포 전후 보드 7줄과 답 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS ·
+CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -78,6 +79,17 @@ USER_RECORDS = {
     "scn-text": "걷는다",
     "scn-repo": "걷는다",
     "plan-excluded": "Alarm 으로",
+}
+# 2026-11-06 이번 배포 전후 보드(6-7)에서 고친 칸의 사용자 답 — 물음 여섯은 고른 답, list-caption 은
+# 메모라 고친 꼴을 맞댄다.
+DEPLOY_BOARD_ANSWERS = {
+    "q-csv": "단추 없이 파일 값을 바로잡는다",
+    "q-hover": "고친다",
+    "q-unit-change": "원인을 보고 고친다",
+    "q-locked": "수율 행도 같은 꼴로 옮긴다",
+    "q-id": "지금대로",
+    "q-labels": "둘 다 라벨을 둔다",
+    "list-caption": "걷는다",
 }
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
@@ -374,11 +386,9 @@ def test_the_before_after_board_answers_are_recorded_and_written_into_the_rules(
 def test_the_user_records_are_recorded_and_written_into_the_rules() -> None:
     """6-6 은 사용자 기록 칸 하나에 한 줄이고 고친 꼴이 기록과 같다. 기록이 규칙 글로 들어갔는지
     핵심만 본다 — plan-excluded: 큰 목록은 Alarm 표 앞부분 + 탭 맨 아래 CSV 라 UI-LAY-03 의 예외이고
-    UI-TXT-08 · 4장도 같은 말을 한다. static-csv: 도구 막대 CSV 가 UI-DAT-10 과 어긋나는 것은 답
-    대기로 규칙 글에 적는다 — 예외로 삼지 않으며, 답이 오면 이 글과 이 단언을 함께 걷는다.
-    scn-tabs: 근거가 UI-LAY-07 에 있다."""
+    UI-TXT-08 · 4장도 같은 말을 한다. scn-tabs: 근거가 UI-LAY-07 에 있다."""
     section = _chapter(_text(), 6)
-    records = section[section.index("\n### 6-6. ") :]
+    records = section[section.index("\n### 6-6. ") : section.index("\n### 6-7. ")]
     lines = [line for line in records.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -404,9 +414,53 @@ def test_the_user_records_are_recorded_and_written_into_the_rules() -> None:
     )
     assert "탭 맨 아래 CSV" in values, values
 
-    assert "Static Capa" in rules["UI-DAT-10"].text and "답 대기" in rules["UI-DAT-10"].text
+
+def test_the_deploy_board_answers_are_recorded_and_written_into_the_rules() -> None:
+    """6-7 은 이번 배포 전후 보드에서 고친 칸 하나에 한 줄이고 답이 사용자 답과 같다. 답이 규칙 글로
+    들어갔는지 핵심만 본다 — q-csv: 도구 막대 CSV 도 원본이고 UI-DAT-10 은 예외 없이 답 대기를
+    닫는다. q-unit-change: 저장할 것이 없으면 표지도 없다(UI-DAT-11). q-hover: 칠한 단추
+    호버(UI-ACC-01). q-locked: 수율 행도 앞부분 + 탭 맨 아래 CSV 다(UI-TXT-08 · UI-LAY-03 · 4장).
+    q-labels: 라벨을 보이는 창 둘은 예외로 확정(UI-INP-08). 답이 왔으므로 규칙 글에 「답 대기」 가
+    남지 않는다."""
+    section = _chapter(_text(), 6)
+    board = section[section.index("\n### 6-7. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([a-z-]+) · .+ → \*\*([^*]+)\*\* .+\((2026-11-06) · (.+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+
+    assert len(lines) == len(DEPLOY_BOARD_ANSWERS)
+    assert found == DEPLOY_BOARD_ANSWERS
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert "도구 막대 CSV" in rules["UI-DAT-10"].text and "Static Capa" in rules["UI-DAT-10"].text
     assert rules["UI-DAT-10"].fields["예외"] == ["없음"]
-    assert [rule.id for rule in rules.values() if "답 대기" in rule.text] == ["UI-DAT-10"]
+    assert "tests/test_static_capa_layout.py" in rules["UI-DAT-10"].fields["그물"][0]
+    assert "q-csv" in rules["UI-DAT-10"].fields["근거"][0]
+    assert [rule.id for rule in rules.values() if "답 대기" in rule.text] == []
+
+    assert "미저장 표지" in rules["UI-DAT-11"].text
+    for rule_id in ("UI-DAT-11", "UI-STA-02"):
+        assert "tests/test_equipment_unsaved_mark.py" in rules[rule_id].fields["그물"][0]
+    assert "q-unit-change" in rules["UI-LAY-04"].fields["근거"][0]
+
+    assert "호버" in rules["UI-ACC-01"].text
+    assert "tests/test_equipment_master_grid_assets.py" in rules["UI-ACC-01"].fields["그물"][0]
+
+    assert "편집 불가 수율 행" in rules["UI-TXT-08"].text
+    assert "편집 불가 수율 행" in rules["UI-LAY-03"].fields["예외"][0]
+    values = next(
+        line for line in _chapter(_text(), 4).splitlines() if line.startswith("| Alarm 딸린 표 |")
+    )
+    assert "편집 불가 수율 행" in values, values
+
+    assert "q-labels" in rules["UI-INP-08"].fields["예외"][0]
+    assert "고친것 이름0 순서0" in rules["UI-TXT-01"].fields["근거"][0]
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:
