@@ -6,7 +6,7 @@
 스크립트는 그 질문을 사내에서 한 번에 재고, 결과를 리뷰 문서에 **그대로 붙일 수 있는 Markdown
 블록**으로 찍는다.
 
-    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 일곱
+    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 여덟
     uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq  # BigDataQuery
 
 | 블록 | `--only` | 무엇을 |
@@ -19,6 +19,7 @@
 | 8-9 | `home` | HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수 — EDP 포함·뺌 |
 | 8-10 | `census` | 「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(센서스) |
 | 8-11 | `grid` | 기준 정보 편집 표 아홉의 줄 · 칸 수와 본문 바이트 — 큰 표 상한 대비 |
+| 8-12 | `blank` | 남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전 — 칸 분포 · 원천 형제 · 부하 |
 
 8-6 ~ 8-8 은 런북의 다른 절(리뷰에 옮기는 법 등)이 쓰는 번호라 블록 번호로 쓰지 않는다.
 
@@ -28,7 +29,8 @@
 수만으로** 한 줄에 싣는다(예: `8-2W 0/12 · 0.00% · -` — 키의 뜻은 런북 8-6 범례 한 곳). 합이
 서는 수 묶음은 같은 줄 안에 `합 = 항 + 항` 식으로 두고, 줄 끝에 그 줄의 수로 만든 확인 코드
 `#NN` 을 단다 — 사외가 받은 압축본에 `--check-summary <파일>` 을 돌려 한 자리 오타 · 자리바꿈 ·
-빠진 8-10 줄을 잡는다(DB 를 열지 않는다. 압축본의 손으로 쓴 줄도 `합 = 항 + 항` 식은 다시 셈한다).
+빠진 8-10 · 8-12 줄을 잡는다(DB 를 열지 않는다. 압축본의 손으로 쓴 줄도 `합 = 항 + 항` 식은 다시
+셈한다).
 블록 출력은 그대로 두고 요약은 그 뒤에 따로
 찍으며, 멈춘 실행(`Ctrl+C`)도 잰 데까지의 요약을 남긴다. 요약도 판정은 내리지 않는다 — 기대
 꼴은 런북 8장이 적는다.
@@ -136,7 +138,10 @@ from capa_simulation.services.capacity_reference_editor import (  # noqa: E402
     PERFORMANCE_EDITOR_DIMENSIONS,
     build_reference_edit_table,
 )
-from capa_simulation.services.core_data_derivation import derive_q_core_data  # noqa: E402
+from capa_simulation.services.core_data_derivation import (  # noqa: E402
+    CS_PRODUCTION_CLASSES,
+    derive_q_core_data,
+)
 from capa_simulation.services.dashboard import (  # noqa: E402
     build_monthly_wafer_load_from_load,
     build_production_dashboard,
@@ -256,6 +261,13 @@ from capa_simulation.services.undated_equipment import (  # noqa: E402
     undated_equipment,
 )
 from capa_simulation.services.unit_capacity import (  # noqa: E402
+    JOIN_BLANK_VALUE,
+    MODULE_KEYS,
+    RUN_DAY_KEYS,
+    RUN_RATE_KEYS,
+    VITAL_KEYS,
+    ReferenceJoinError,
+    ReferenceJoinProblem,
     calculate_unit_capacity,
     failure_kind,
 )
@@ -278,6 +290,7 @@ CHECKS: Final[tuple[str, ...]] = (
     "home",
     "census",
     "grid",
+    "blank",
 )
 # BigDataQuery 는 사내 DB 를 길게 훑는다. 따로 부를 때만 돈다.
 DEFAULT_CHECKS: Final[tuple[str, ...]] = (
@@ -288,6 +301,7 @@ DEFAULT_CHECKS: Final[tuple[str, ...]] = (
     "home",
     "census",
     "grid",
+    "blank",
 )
 
 # 기존 결과가 실려 오는 원천 컬럼. 채움 상태는 늘 찍는다.
@@ -1013,6 +1027,13 @@ def _revision_one(
     if revision is None:
         return None
     revision_id = str(revision[0])
+    return revision_id, _revision_tables(connection, revision_id, dataset_id)
+
+
+def _revision_tables(
+    connection: duckdb.DuckDBPyConnection, revision_id: str, dataset_id: str
+) -> dict[str, pd.DataFrame]:
+    """리비전 하나의 표 — 리비전 표 + 데이터셋 표. 앱이 리비전을 읽는 길과 같은 자리다."""
     tables: dict[str, pd.DataFrame] = {}
     for logical, physical in REVISION_TABLES.items():
         tables[logical] = load_frame(
@@ -1030,7 +1051,16 @@ def _revision_one(
             owner_column="dataset_id",
             owner_id=dataset_id,
         )
-    return revision_id, tables
+    return tables
+
+
+def _raw_core_data(connection: duckdb.DuckDBPyConnection, dataset_id: str) -> pd.DataFrame:
+    """그 데이터셋의 원천 행(typed raw) — 등록 때 받은 차례. 복제 · 월 병합은 행이 없다."""
+    return connection.execute(
+        "SELECT * EXCLUDE (dataset_id, source_row_no, row_hash) "
+        "FROM raw_data.core_data WHERE dataset_id = ? ORDER BY source_row_no",
+        [dataset_id],
+    ).fetch_df()
 
 
 @dataclass(frozen=True)
@@ -1120,11 +1150,7 @@ def load_source(session: Session) -> SourceData | None:
                 else f"원천에서 온 최근 데이터셋 {len(rows):,}개 모두 리비전 1 이 없다"
             )
             return None
-        raw = connection.execute(
-            "SELECT * EXCLUDE (dataset_id, source_row_no, row_hash) "
-            "FROM raw_data.core_data WHERE dataset_id = ? ORDER BY source_row_no",
-            [picked.dataset_id],
-        ).fetch_df()
+        raw = _raw_core_data(connection, picked.dataset_id)
     except (duckdb.Error, RuntimeError) as exc:
         session._source_failure = _failure(exc)
         return None
@@ -3219,7 +3245,8 @@ CENSUS_DIVISION_TABLES: Final[tuple[str, ...]] = (
 # 정하기 전에 막아, 붙은 경로가 모두 뒤에서 빠질 경로(Main UPEH 0 이하 · 효율 0 이하 · 측정률
 # 음수)인 칸 하나에도 그 리비전 계산이 멈췄다. 이 SQL 은 그런 칸을 리비전마다 센다 — 고침이 살린
 # 칸의 규모다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다(`Area_Name` 은 대소문자도
-# 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다.
+# 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다. `only_dropped` 가 거짓인 칸은 남는 경로가
+# 붙은 칸이다 — 계산이 그 칸으로 멈춘다(8-12).
 _PERFORMANCE_JOIN: Final = (
     '{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
     'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
@@ -3227,7 +3254,7 @@ _PERFORMANCE_JOIN: Final = (
     'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
     'AND trim({alias}."Stack") = perf.k AND trim({alias}."WF 구분") = perf.w'
 )
-_BLANK_ONLY_ON_DROPPED_ROUTES: Final = """
+_BLANK_CAPACITY_CELLS: Final = """
 WITH {picked},
 perf AS MATERIALIZED (
     SELECT u.revision_id, u."생산계획년월" AS m, trim(u."공정") AS p, trim(u."양산구분") AS q,
@@ -3283,7 +3310,7 @@ cells AS (
     WHERE b."모듈수" IS NULL
     GROUP BY datasets.revision_id, b.source_row_no
 )
-SELECT revision_id, count(*) FROM cells WHERE only_dropped GROUP BY 1
+SELECT revision_id, count(*) FROM cells WHERE {condition} GROUP BY 1
 """
 
 
@@ -3426,17 +3453,24 @@ def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScop
     return found
 
 
-def _census_blank_capacity(
-    connection: duckdb.DuckDBPyConnection, scope: CensusScope
+def _blank_capacity_cells(
+    connection: duckdb.DuckDBPyConnection, scope: CensusScope, condition: str
 ) -> Counter[str]:
     return _by_owner(
         connection,
-        _BLANK_ONLY_ON_DROPPED_ROUTES.format(
+        _BLANK_CAPACITY_CELLS.format(
             picked=scope.picked,
             lot_join=_PERFORMANCE_JOIN.format(alias="lr"),
             wf_join=_PERFORMANCE_JOIN.format(alias="wr"),
+            condition=condition,
         ),
     )
+
+
+def _census_blank_capacity(
+    connection: duckdb.DuckDBPyConnection, scope: CensusScope
+) -> Counter[str]:
+    return _blank_capacity_cells(connection, scope, "only_dropped")
 
 
 def _census_merge_gaps(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusCount:
@@ -4059,6 +4093,556 @@ def check_grid_sizes(session: Session) -> list[str]:
             "`칸 넘음` · `본문 넘음` 은 그 상한에 걸린 리비전 수이고 본문은 칸이 상한 안인 표만 "
             "잰다(앱과 같다). 본문은 공정 표시명 사전 · UPEH 월 머리 도움말을 빼고 잰 바이트라 "
             "앱보다 그만큼 작다. 에이전트는 판정하지 않고 수만 옮긴다.",
+            f"- 걸린 시간 {time.perf_counter() - started:.1f}초",
+            "",
+        ]
+    )
+    return lines
+
+
+# ---------------------------------------------------------------------------------- 8-12 blank
+
+# 대당 Capa 가 남는 경로의 `빈 값` 으로 멈추는 표 — 값 칸과 연결 키는 계산(`unit_capacity`)과 같다.
+# 측정률 둘은 빈 값을 1.0 으로 이어 가 멈추지 않는다.
+BLANK_STOP_TABLES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
+    "RQ_RUN_RATE": ("CAPA_RUN_RATE", tuple(RUN_RATE_KEYS)),
+    "RQ_VITAL": ("편중률", tuple(VITAL_KEYS)),
+    "RQ_MODULE": ("모듈수", tuple(MODULE_KEYS)),
+    "RQ_RUN_DAY": ("RUN_DAY", tuple(RUN_DAY_KEYS)),
+}
+# 자세히 재는 리비전 수 — 요약이 손으로 옮기는 줄이라 묶는다. 리비전 하나에 다섯 줄이다.
+BLANK_STOP_LIMIT: Final = 3
+# 남은 경로 · 부하를 세려고 계산을 끝까지 돌릴 때 메모리의 사본 칸에만 넣는 자리값. 대당 Capa 의
+# 크기는 보지 않고 찍지도 않는다 — 어느 경로가 남고 어느 경로에 부하가 닿는지는 이 값과 상관없다.
+_BLANK_PLACEHOLDER: Final = 1.0
+_MONTH_KEY: Final = "생산계획년월"
+_CLASS_KEY: Final = "양산구분"
+_PROCESS_KEY: Final = "공정"
+_BLANK_FLAG: Final = "_빈칸"
+_MARK: Final = "_표"
+
+
+@dataclass(frozen=True)
+class BlankStopPlace:
+    """남는 경로에 빈 칸이 붙은 리비전의 자리 — 이름 대신 6-3 a 와 같은 차례 번호."""
+
+    scenario_no: int
+    revision_no: int
+    revision_id: str
+    dataset_id: str | None
+
+    @property
+    def label(self) -> str:
+        return f"S{self.scenario_no} r{self.revision_no}"
+
+
+@dataclass(frozen=True)
+class BlankSpread:
+    """한 칸(달 · 공정)의 값 가운데 빈 키가 있는 것 / 쓰는 값 전부 · 모든 키가 빈 것."""
+
+    hit: int
+    total: int
+    full: int
+
+    def cell(self, name: str) -> str:
+        return f"{name} {self.hit:,}/{self.total:,} 온 {self.full:,}"
+
+
+@dataclass(frozen=True)
+class SourceSiblings:
+    """빈 키마다 원천에서 같은 키의 형제 행이 무엇을 들었나 — 넷으로 갈라 합이 빈 키 수다.
+
+    `only_blank` 모두 빈 값 · `zero_blank` 0 과 빈 값뿐(지금 등록은 0 을 고른다 — 그 전에 저장한
+    리비전은 원천 행 차례대로 빈 값일 수 있다) · `valued` 실값이나 0 만 있음(저장 표가 원천과
+    다르다) · `absent` 같은 키의 원천 행 없음. `raw_blank`/`raw_rows` 는 공정이 있는 원천 행의 그 칸
+    빈 행 수와 행 수다.
+    """
+
+    only_blank: int = 0
+    zero_blank: int = 0
+    valued: int = 0
+    absent: int = 0
+    raw_blank: int = 0
+    raw_rows: int = 0
+
+    @property
+    def keys(self) -> int:
+        return self.only_blank + self.zero_blank + self.valued + self.absent
+
+
+@dataclass(frozen=True)
+class BlankStop:
+    """멈춘 리비전 하나를 잰 수. `note` 가 있으면 자세히 재지 못한 까닭이고 다른 칸은 비어 있다."""
+
+    place: BlankStopPlace
+    note: str | None = None
+    table: str = ""
+    blank_cells: int = 0
+    live_keys: int = 0
+    dropped_keys: int = 0
+    unused_keys: int = 0
+    used_keys: int = 0
+    blank_routes: int = 0
+    routes: int = 0
+    months: BlankSpread | None = None
+    processes: BlankSpread | None = None
+    classes: tuple[tuple[str, int, int], ...] = ()
+    areas: tuple[tuple[str, int, int], ...] = ()
+    bases: tuple[tuple[str, int, int], ...] = ()
+    month_shape: str = ""
+    other_class: int | None = None
+    other_month: int | None = None
+    later: tuple[ReferenceJoinProblem, ...] = ()
+    source: SourceSiblings | str = "-"
+    loaded: int | None = None
+    unloaded: int | None = None
+    load_failure: str | None = None
+
+    @property
+    def leading_months(self) -> int:
+        """앞에서부터 빈 키가 하나도 없는 달의 수 — 빈 칸이 뒤쪽 달에서 시작하는지 본다."""
+        return len(self.month_shape) - len(self.month_shape.lstrip("."))
+
+
+def _blank_stop_places(
+    connection: duckdb.DuckDBPyConnection, scope: CensusScope
+) -> list[BlankStopPlace]:
+    """남는 경로에 빈 칸이 붙은 리비전. 번호는 6-3 a(`inspect_revision_calculations`)와 같다."""
+    found = _blank_capacity_cells(connection, scope, "NOT only_dropped")
+    if not found:
+        return []
+    numbers: dict[str, int] = {}
+    places: list[BlankStopPlace] = []
+    for scenario_id, dataset_id, revision_id, revision_no in connection.execute(
+        """
+        SELECT s.scenario_id, d.dataset_id, r.revision_id, r.revision_no
+        FROM app_meta.scenario AS s
+        JOIN app_meta.scenario_revision AS r ON r.scenario_id = s.scenario_id
+        LEFT JOIN app_meta.dataset AS d ON d.scenario_id = s.scenario_id
+        ORDER BY s.created_at, s.scenario_id, r.revision_no
+        """
+    ).fetchall():
+        scenario_no = numbers.setdefault(str(scenario_id), len(numbers) + 1)
+        if str(revision_id) in found:
+            places.append(
+                BlankStopPlace(
+                    scenario_no=scenario_no,
+                    revision_no=int(revision_no),
+                    revision_id=str(revision_id),
+                    dataset_id=None if dataset_id is None else str(dataset_id),
+                )
+            )
+    return places
+
+
+def _normal_keys(frame: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
+    """계산이 붙이는 꼴의 키 — 달은 정수, 글자는 앞뒤 공백을 뗀다."""
+    normal = pd.DataFrame(index=frame.index)
+    for key in keys:
+        normal[key] = (
+            pd.to_numeric(frame[key], errors="coerce").astype("Int64")
+            if key == _MONTH_KEY
+            else frame[key].astype("string").str.strip()
+        )
+    return normal
+
+
+def _in_keys(frame: pd.DataFrame, known: pd.DataFrame, keys: Sequence[str]) -> pd.Series:
+    """`frame` 의 행마다 — 그 키(`keys`)가 `known` 에 있는가."""
+    columns = list(keys)
+    marked = known[columns].drop_duplicates().assign(**{_MARK: True})
+    merged = frame[columns].merge(marked, how="left", on=columns)
+    return pd.Series(merged[_MARK].notna().to_numpy(), index=frame.index)
+
+
+def _blank_values(values: pd.Series) -> pd.Series:
+    """계산(`unit_capacity._join_reference`)이 빈 값으로 보는 칸 — 결측과 빈 글자."""
+    blank = values.isna()
+    if not pd.api.types.is_numeric_dtype(values):
+        blank |= values.astype("string").str.strip().eq("").fillna(False)
+    return blank
+
+
+def _capacity_with_blanks_held(
+    tables: dict[str, pd.DataFrame],
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame, tuple[ReferenceJoinProblem, ...]]:
+    """빈 칸에 자리값을 넣은 **사본**으로 대당 Capa 를 끝까지 돌린다 — 남는 경로 전부를 얻으려는 것.
+
+    첫 표의 빈 칸만 메우면 다음 표에서 또 멈출 수 있어 표마다 차례로 메우고, 걸린 꼴을 차례대로
+    돌려준다(첫 것이 리비전이 실제로 멈춘 꼴이다). 빈 값이 아닌 꼴로 멈추면 그 예외를 그대로 올린다.
+    """
+    held = dict(tables)
+    problems: list[ReferenceJoinProblem] = []
+    for _ in range(len(BLANK_STOP_TABLES) + 1):
+        try:
+            return held, _unit_capacity(held), tuple(problems)
+        except ReferenceJoinError as exc:
+            problem = exc.problem
+            if problem.shape != JOIN_BLANK_VALUE or problem.table not in BLANK_STOP_TABLES:
+                raise
+            value, _keys = BLANK_STOP_TABLES[problem.table]
+            frame = held[problem.table]
+            held[problem.table] = frame.assign(
+                **{value: frame[value].mask(_blank_values(frame[value]), _BLANK_PLACEHOLDER)}
+            )
+            problems.append(problem)
+    raise RuntimeError("빈 칸을 메워도 계산이 멈춘다")
+
+
+def _blank_spread(used: pd.DataFrame, column: str) -> BlankSpread | None:
+    if column not in used.columns:
+        return None
+    grouped = used.groupby(column, dropna=False)[_BLANK_FLAG]
+    return BlankSpread(
+        hit=int(grouped.any().sum()), total=int(grouped.ngroups), full=int(grouped.all().sum())
+    )
+
+
+def _month_shape(used: pd.DataFrame) -> str:
+    """쓰는 달마다 한 글자 — `X` 모든 키가 빔 · `x` 일부 빔 · `.` 빈 키 없음."""
+    if _MONTH_KEY not in used.columns:
+        return ""
+    months = used.groupby(_MONTH_KEY)[_BLANK_FLAG].agg(["any", "all"]).sort_index()
+    return "".join(
+        "X" if every else "x" if some else "."
+        for some, every in zip(months["any"], months["all"], strict=True)
+    )
+
+
+def _named_counts(
+    frame: pd.DataFrame, column: str, known: Sequence[str]
+) -> tuple[tuple[str, int, int], ...]:
+    """그 칸의 값마다 (이름, 빈 칸에 걸린 행, 행). 이름은 계약 어휘만 찍고 그 밖은 묶는다."""
+    if column not in frame.columns:
+        return ()
+    counts: list[tuple[str, int, int]] = []
+    names = frame[column].astype("string").fillna("")
+    for name in known:
+        mask = names.eq(name)
+        if bool(mask.any()):
+            counts.append((name, int(frame.loc[mask, _BLANK_FLAG].sum()), int(mask.sum())))
+    other = ~names.isin(list(known))
+    if bool(other.any()):
+        counts.append(("그 밖", int(frame.loc[other, _BLANK_FLAG].sum()), int(other.sum())))
+    return tuple(counts)
+
+
+def _neighbor_counts(
+    cells: pd.DataFrame, valued: pd.Series, blank_live: pd.DataFrame, keys: Sequence[str]
+) -> tuple[int | None, int | None]:
+    """빈 키 가운데 같은 달 · 공정의 다른 양산구분, 같은 공정 · 양산구분의 다른 달에 0 보다 큰 값이
+    있는 키 수. 그 표의 키에 그 칸이 없으면 None."""
+
+    def count(dropped: str) -> int | None:
+        rest = [key for key in keys if key != dropped]
+        if dropped not in keys or not rest:
+            return None
+        return int(_in_keys(blank_live, cells.loc[valued], rest).sum())
+
+    return count(_CLASS_KEY), count(_MONTH_KEY)
+
+
+def _source_siblings(
+    raw: pd.DataFrame, value: str, keys: Sequence[str], blank_live: pd.DataFrame
+) -> SourceSiblings:
+    """빈 키의 원천 형제 행을 등록과 같은 정규화(`derive_q_core_data`)로 모아 넷으로 가른다."""
+    core = derive_q_core_data(raw, load_core_data_contract()).frame
+    core = core.loc[core[_PROCESS_KEY].astype("string").str.strip().fillna("").ne("")]
+    numbers = pd.to_numeric(core[value], errors="coerce").astype("Float64")
+    columns = list(keys)
+    siblings = (
+        _normal_keys(core, columns)
+        .assign(
+            _빈=numbers.isna(),
+            _영=numbers.eq(0).fillna(False).astype(bool),
+            _값=numbers.ne(0).fillna(False).astype(bool),
+        )
+        .groupby(columns, as_index=False, dropna=False)[["_빈", "_영", "_값"]]
+        .any()
+        .assign(_형제=True)
+    )
+    merged = blank_live[columns].merge(siblings, how="left", on=columns)
+    present = merged["_형제"].notna()
+    blank = merged["_빈"].where(present, False).astype(bool)
+    zero = merged["_영"].where(present, False).astype(bool)
+    real = merged["_값"].where(present, False).astype(bool)
+    return SourceSiblings(
+        only_blank=int((blank & ~zero & ~real).sum()),
+        zero_blank=int((blank & zero & ~real).sum()),
+        valued=int((real | (zero & ~blank)).sum()),
+        absent=int((~present).sum()),
+        raw_blank=int(numbers.isna().sum()),
+        raw_rows=len(core),
+    )
+
+
+def _attached_keys(upeh: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
+    """제외를 정하기 전에 그 표의 키가 붙는 자리 — 계산 대상 소요기준의 `RQ_UPEH` 행."""
+    basis = upeh["소요기준"].astype("string").str.strip().str.upper()
+    return _normal_keys(upeh.loc[~basis.isin(UNIMPLEMENTED_BASES)], keys)
+
+
+def measure_blank_stop(
+    place: BlankStopPlace, tables: dict[str, pd.DataFrame], raw: pd.DataFrame | None
+) -> BlankStop:
+    """리비전 하나 — 멈춘 표의 빈 칸을 남은 경로 · 빠질 경로 · 안 붙음으로 가르고 분포를 센다."""
+    try:
+        held, capacity, problems = _capacity_with_blanks_held(tables)
+    except ReferenceJoinError as exc:
+        return BlankStop(
+            place, note=f"{exc.problem.table.removeprefix('RQ_')} {exc.problem.summary()}"
+        )
+    if not problems:
+        return BlankStop(place, note="됨")
+    problem = problems[0]
+    value, keys = BLANK_STOP_TABLES[problem.table]
+    reference = tables[problem.table]
+    cells = _normal_keys(reference, keys)
+    cells[_BLANK_FLAG] = _blank_values(reference[value])
+    numbers = pd.to_numeric(reference[value], errors="coerce")
+    routes = _normal_keys(capacity, keys)
+    live = _in_keys(cells, routes, keys)
+    attached = _in_keys(cells, _attached_keys(tables["RQ_UPEH"], keys), keys)
+    blank = cells[_BLANK_FLAG]
+    used = cells.loc[live]
+    blank_live = cells.loc[blank & live, list(keys)]
+    route_flags = capacity[["Area_Name", "소요기준"]].assign(
+        **{_BLANK_FLAG: _in_keys(routes, blank_live, keys)}
+    )
+    source: SourceSiblings | str = "-"
+    if raw is not None and not raw.empty:
+        try:
+            source = _source_siblings(raw, value, keys, blank_live)
+        except Exception as exc:  # 원천이 계약을 어겨도 앞의 수는 남긴다. 문구는 찍지 않는다
+            source = _failure(exc)
+    other_class, other_month = _neighbor_counts(cells, numbers.gt(0), blank_live, keys)
+    loaded: int | None = None
+    load_failure: str | None = None
+    try:
+        required = _required_from(held, capacity)
+    except Exception as exc:  # 소요대수가 멈춰도 앞의 수는 남긴다. 문구는 찍지 않는다
+        load_failure = _failure(exc)
+    else:
+        carried = _normal_keys(required, keys).assign(
+            _부하=pd.to_numeric(required["부하량"], errors="coerce").fillna(0.0)
+        )
+        totals = carried.groupby(list(keys), as_index=False, dropna=False)["_부하"].sum()
+        loaded = int(_in_keys(blank_live, totals.loc[totals["_부하"].gt(0)], keys).sum())
+    return BlankStop(
+        place,
+        table=problem.table,
+        blank_cells=int(blank.sum()),
+        live_keys=len(blank_live),
+        dropped_keys=int((blank & attached & ~live).sum()),
+        unused_keys=int((blank & ~attached).sum()),
+        used_keys=len(used),
+        blank_routes=int(route_flags[_BLANK_FLAG].sum()),
+        routes=len(routes),
+        months=_blank_spread(used, _MONTH_KEY),
+        processes=_blank_spread(used, _PROCESS_KEY),
+        classes=_named_counts(
+            used, _CLASS_KEY, list(dict.fromkeys(CS_PRODUCTION_CLASSES.values()))
+        ),
+        areas=_named_counts(route_flags, "Area_Name", AREA_NAMES),
+        bases=_named_counts(route_flags, "소요기준", DEMAND_BASES),
+        month_shape=_month_shape(used),
+        other_class=other_class,
+        other_month=other_month,
+        later=problems[1:],
+        source=source,
+        loaded=loaded,
+        unloaded=None if loaded is None else len(blank_live) - loaded,
+        load_failure=load_failure,
+    )
+
+
+def _load_blank_stop(connection: duckdb.DuckDBPyConnection, place: BlankStopPlace) -> BlankStop:
+    """리비전 표와 원천 행을 읽어 잰다. 멈추지 않는 것은 까닭 한 마디로 남긴다."""
+    if place.dataset_id is None:
+        return BlankStop(place, note="데이터셋 없음")
+    try:
+        tables = _revision_tables(connection, place.revision_id, place.dataset_id)
+        return measure_blank_stop(place, tables, _raw_core_data(connection, place.dataset_id))
+    except Exception as exc:  # 한 리비전이 멈춰도 다음 리비전은 잰다. 문구는 찍지 않는다
+        return BlankStop(place, note=_failure(exc))
+
+
+def _source_cell(source: SourceSiblings | str) -> str:
+    if isinstance(source, str):
+        return source
+    return (
+        f"{source.keys:,} = 빈만 {source.only_blank:,} + 영빈 {source.zero_blank:,} + "
+        f"값 {source.valued:,} + 없음 {source.absent:,}"
+    )
+
+
+def _raw_cell(source: SourceSiblings | str) -> str:
+    return "-" if isinstance(source, str) else f"{source.raw_blank:,}/{source.raw_rows:,}"
+
+
+def _load_cell(stop: BlankStop) -> str:
+    if stop.load_failure is not None:
+        return stop.load_failure
+    return f"{stop.live_keys:,} = 있음 {_count(stop.loaded)} + 없음 {_count(stop.unloaded)}"
+
+
+def _cells_cell(stop: BlankStop) -> str:
+    return (
+        f"{stop.blank_cells:,} = 남음 {stop.live_keys:,} + 빠짐 {stop.dropped_keys:,} + "
+        f"안붙음 {stop.unused_keys:,}"
+    )
+
+
+def _spread_text(spread: BlankSpread | None, name: str) -> str:
+    return f"{name} -" if spread is None else spread.cell(name)
+
+
+def _named_text(counts: Sequence[tuple[str, int, int]]) -> list[str]:
+    return [f"{name} {hit:,}/{total:,}" for name, hit, total in counts]
+
+
+def _blank_stop_notes(stop: BlankStop) -> list[str]:
+    """요약 — 리비전 하나에 다섯 줄. `8-12K` 칸 · `8-12D` 키 분포 · `8-12R` 경로 분포 · `8-12S` 원천
+    · `8-12L` 부하."""
+    label = stop.place.label
+    if stop.note is not None:
+        return [_note("8-12K", label, stop.note)]
+    table = stop.table.removeprefix("RQ_")
+    later = [f"이어서 {item.table.removeprefix('RQ_')} {item.summary()}" for item in stop.later]
+    months = _spread_text(stop.months, "달")
+    if stop.months is not None:
+        months += f" 앞 {stop.leading_months:,}"
+    return [
+        _note(
+            "8-12K",
+            f"{label} {table}",
+            f"칸 {_cells_cell(stop)}",
+            f"쓰는키 {stop.used_keys:,}",
+            f"경로 {stop.blank_routes:,}/{stop.routes:,}",
+            *later,
+        ),
+        _note(
+            "8-12D",
+            label,
+            months,
+            _spread_text(stop.processes, "공정"),
+            *(_named_text(stop.classes) or ["양산 -"]),
+        ),
+        _note("8-12R", label, *_named_text(stop.areas), *_named_text(stop.bases)),
+        _note(
+            "8-12S",
+            label,
+            f"원천 {_source_cell(stop.source)}",
+            f"원천행 빈 {_raw_cell(stop.source)}",
+        ),
+        _note(
+            "8-12L",
+            label,
+            f"부하 {_load_cell(stop)}",
+            f"다른양산 {_count(stop.other_class)}",
+            f"다른달 {_count(stop.other_month)}",
+        ),
+    ]
+
+
+_BLANK_CELL_HEADERS: Final = (
+    "리비전",
+    "표",
+    "빈 칸 = 남는 경로 + 빠질 경로만 + 안 붙음",
+    "쓰는 키",
+    "빈 키의 경로 / 전체 경로",
+    "달 빈/전체 · 온통 빔",
+    "달 꼴",
+    "공정 빈/전체 · 온통 빔",
+    "양산구분 빈/쓰는 키",
+    "Area · 소요기준 빈 경로/경로",
+    "그다음 멈춤",
+)
+_BLANK_CAUSE_HEADERS: Final = (
+    "리비전",
+    "원천 형제 — 빈 키 = 모두 빈 값 + 0·빈 값 + 값 있음 + 행 없음",
+    "원천 행 그 칸 빈 행 / 행",
+    "부하 — 빈 키 = 닿음 + 안 닿음",
+    "같은 달·공정의 다른 양산구분에 값",
+    "같은 공정·양산구분의 다른 달에 값",
+)
+
+
+def _blank_cell_row(stop: BlankStop) -> list[str]:
+    later = " · ".join(f"{item.table.removeprefix('RQ_')} {item.summary()}" for item in stop.later)
+    return [
+        stop.place.label,
+        stop.table.removeprefix("RQ_"),
+        _cells_cell(stop),
+        f"{stop.used_keys:,}",
+        f"{stop.blank_routes:,} / {stop.routes:,}",
+        _spread_text(stop.months, "달"),
+        f"`{stop.month_shape}`" if stop.month_shape else "-",
+        _spread_text(stop.processes, "공정"),
+        " · ".join(_named_text(stop.classes)) or "-",
+        " · ".join([*_named_text(stop.areas), *_named_text(stop.bases)]) or "-",
+        later or "-",
+    ]
+
+
+def _blank_cause_row(stop: BlankStop) -> list[str]:
+    return [
+        stop.place.label,
+        _source_cell(stop.source),
+        _raw_cell(stop.source),
+        _load_cell(stop),
+        _count(stop.other_class),
+        _count(stop.other_month),
+    ]
+
+
+def check_blank_stops(session: Session) -> list[str]:
+    """남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전을 값 없이 꼴로 가른다.
+
+    6-3 a 는 그 리비전을 `빈 값 키 n · 경로 m` 으로만 적어, 원천이 그 칸을 안 채운 것인지(업무 결정
+    거리) 저장 표가 원천과 달라진 것인지(코드 결함) 사외가 가르지 못한다(사내 리뷰 202611041000 발견
+    1 — S27 r1). 리비전은 6-3 a 와 같이 저장된 모든 리비전이다 — 활성만 보면 6-3 a 가 멈춤으로 적은
+    옛 리비전이 `걸림 0` 으로 비어 보인다. 찾는 것은 SQL 이라 빠르고, 재는 것은 걸린 리비전 앞 몇
+    개뿐이다. 수는 판정이 아니다 — 읽는 길은 런북 8-12 다.
+    """
+    started = time.perf_counter()
+    lines = _heading("8-12", "대당 Capa 빈 값 멈춤의 꼴", "blank")
+    connection = session.simulation
+    if connection is None:
+        session.notes.append(_note("8-12", f"시뮬레이션 DB {session.simulation_failure}"))
+        return [*lines, f"- 시뮬레이션 DB — {session.simulation_failure}", ""]
+    try:
+        scope = _census_scope(connection, all_revisions=True)
+        places = _blank_stop_places(connection, scope)
+    except duckdb.Error as exc:
+        session.notes.append(_note("8-12", f"리비전 목록 {_failure(exc)}"))
+        return [*lines, f"- 리비전 목록을 읽지 못함 — {_failure(exc)}", ""]
+    measured = places[:BLANK_STOP_LIMIT]
+    picked = f"잰 {len(measured):,}" if len(places) > len(measured) else ""
+    session.notes.append(
+        _note("8-12", f"전부 {scope.revisions:,}", f"걸림 {len(places):,}", picked)
+    )
+    lines.extend(
+        [
+            f"- 본 리비전 {scope.revisions:,} — 저장된 모든 리비전(6-3 a 와 같은 묶음)",
+            f"- 남는 경로에 빈 칸이 붙은 리비전 {len(places):,}"
+            + (f" — 앞 {len(measured):,}개만 잰다" if picked else ""),
+            "",
+        ]
+    )
+    stops = [_load_blank_stop(connection, place) for place in measured]
+    for stop in stops:
+        session.notes.extend(_blank_stop_notes(stop))
+    full = [stop for stop in stops if stop.note is None]
+    if full:
+        lines.extend([*_table(_BLANK_CELL_HEADERS, map(_blank_cell_row, full)), ""])
+        lines.extend([*_table(_BLANK_CAUSE_HEADERS, map(_blank_cause_row, full)), ""])
+    lines.extend(f"- {stop.place.label} — {stop.note}" for stop in stops if stop.note is not None)
+    lines.extend(
+        [
+            "- 읽는 법 — 수만 옮긴다(에이전트는 판정하지 않는다). `남음` · 그 경로는 6-3 a 의 "
+            "`빈 값 키` · `경로` 와 같고, `빠짐` 은 8-10 `C9` 와 같은 칸(이제 멈추지 않는다)이다. "
+            "`달 꼴` 은 쓰는 달마다 `X` 모든 키가 빔 · `x` 일부 빔 · `.` 빈 키 없음이다.",
             f"- 걸린 시간 {time.perf_counter() - started:.1f}초",
             "",
         ]
@@ -5483,7 +6067,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--only",
         default=",".join(DEFAULT_CHECKS),
-        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 일곱",
+        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 여덟",
     )
     parser.add_argument("--database", type=Path, default=DUCKDB_PATH, help="시뮬레이션 DuckDB")
     parser.add_argument(
@@ -5497,7 +6081,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--census-all-revisions",
         action="store_true",
-        help="8-10 센서스를 저장된 모든 리비전으로 센다(기본은 활성·공식버전 대상 리비전)",
+        help="8-10 센서스를 저장된 모든 리비전으로 본다(기본은 활성·공식버전 대상 리비전 — "
+        "8-12 는 이 옵션과 상관없이 늘 모든 리비전이다)",
     )
     parser.add_argument(
         "--bdq-sample",
@@ -5551,8 +6136,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=None,
         metavar="파일",
-        help="DB 를 열지 않고, 손으로 옮겨 적은 전송용 요약 줄의 확인 코드·줄 안 검산·8-10 줄 수만 "
-        "다시 셈한다(사외가 받은 리뷰 압축본에 돌린다 — 런북 8-6)",
+        help="DB 를 열지 않고, 손으로 옮겨 적은 전송용 요약 줄의 확인 코드·줄 안 검산·"
+        "8-10 · 8-12 줄 수만 다시 셈한다(사외가 받은 리뷰 압축본에 돌린다 — 런북 8-6)",
     )
     parser.add_argument("--today", type=date.fromisoformat, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -5602,6 +6187,7 @@ _BLOCK_TITLES: Final[dict[str, str]] = {
     "home": "8-9",
     "census": "8-10",
     "grid": "8-11",
+    "blank": "8-12",
 }
 
 
@@ -5628,6 +6214,8 @@ def _block_parts(
         yield from iter_census(session, all_revisions=args.census_all_revisions)
     elif name == "grid":
         yield check_grid_sizes(session)
+    elif name == "blank":
+        yield check_blank_stops(session)
     else:
         yield from iter_bigdataquery(
             today=today,
@@ -5668,6 +6256,54 @@ _CENSUS_HEAD: Final = re.compile(
 )
 _CENSUS_ALL_ZERO: Final = re.compile(rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}모두\s*0\b")
 _CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*$")
+# 옮겨 적은 8-12 — 머리의 `걸림 m`(걸림이 재는 상한을 넘으면 `잰 k`)만큼 `8-12K` 줄이 있고, 자세히
+# 잰 리비전(`8-12K` 에 `쓰는키` 칸이 있다)은 다섯 키가 다 있어야 한다. 까닭만 적은 `8-12K`(`됨` ·
+# 다른 꼴 · `실패`)는 그 줄뿐이다.
+_BLANK_HEAD: Final = re.compile(
+    rf"^8-12\s+\S+\s+[\d,]+{_CELL_SEP}걸림\s*(?P<found>[\d,]+)"
+    rf"(?:{_CELL_SEP}잰\s*(?P<measured>[\d,]+))?\s*$"
+)
+_BLANK_ITEM: Final = re.compile(
+    r"^8-12(?P<key>[KDRSL])\s+S\s*(?P<scenario>\d+)\s*r\s*(?P<revision>\d+)(?P<rest>.*)$"
+)
+_BLANK_MEASURED_CELL: Final = re.compile(r"쓰는\s*키")
+_BLANK_LINE_KEYS: Final = "KDRSL"
+
+
+@dataclass
+class _BlankGroup:
+    """옮겨 적은 8-12 머리 하나와 그 아래 줄."""
+
+    number: int
+    expected: int
+    stops: int = 0
+    measured: set[str] = field(default_factory=set)
+    keys: dict[str, set[str]] = field(default_factory=dict)
+
+    def add(self, item: re.Match[str]) -> None:
+        label = f"S{item.group('scenario')} r{item.group('revision')}"
+        self.keys.setdefault(label, set()).add(item.group("key"))
+        if item.group("key") == "K":
+            self.stops += 1
+            if _BLANK_MEASURED_CELL.search(item.group("rest")):
+                self.measured.add(label)
+
+    def problems(self) -> list[str]:
+        found = []
+        if self.stops != self.expected:
+            found.append(
+                f"줄 {self.number} — 8-12 머리(잰 리비전 {self.expected:,})와 아래 8-12K 줄"
+                f"({self.stops:,}줄)이 다르다 — 줄이 빠졌거나 겹쳤다"
+            )
+        for label, keys in self.keys.items():
+            wanted = _BLANK_LINE_KEYS if label in self.measured or "K" not in keys else "K"
+            missing = [f"8-12{key}" for key in wanted if key not in keys]
+            if missing:
+                found.append(
+                    f"줄 {self.number} — 8-12 {label} 아래 {' · '.join(missing)} 줄이 없다 "
+                    "— 줄이 빠졌다"
+                )
+        return found
 
 
 def _numbers(text: str) -> list[float]:
@@ -5771,12 +6407,14 @@ class TranscriptCheck:
 def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
     """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다.
 
-    넷을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
+    다섯을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
     시작하는 줄에 확인 코드가 있는지, 줄 안 `합 = 항 + 항` 식이 서는지(손으로 쓴 줄 — 판정 · B ·
     A · 7장요청 같은 것 — 도 항이 둘 이상인 식은 본다), 8-10 머리의 `0 아님 k` · `합 S` 가 그
-    아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지. 8-10 은 머리마다 따로 센다 — 요약이
-    둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 줄 앞의 목록 표지는
-    떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
+    아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지, 8-12 머리의 `걸림`(또는 `잰`)이 그 아래
+    `8-12K` 줄 수와 같고 자세히 잰 리비전마다 다섯 키가 있는지. 8-10 · 8-12 는 머리마다 따로
+    센다 — 요약이 둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 멈춘
+    실행(`_INTERRUPTED`)은 8-12 머리까지만 찍고 끝날 수 있어 8-12 줄 수를 보지 않는다. 줄 앞의
+    목록 표지는 떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
 
     손 전사 꼴은 맞지 않는 것으로 세지 않고 `forms` 에 둔다 — 띄어쓰기 빠진 `3+ x` 는 그대로 읽고,
     마지막 항 뒤 괄호 덧말(`안함 0 (다른 칸 2)`)은 떼고 읽는다. 항 사이 ` + ` 가 빠진 식(`확정 52
@@ -5786,7 +6424,10 @@ def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
     problems: list[str] = []
     forms: list[str] = []
     groups: list[tuple[int, int, int, list[int]]] = []
+    blank_groups: list[_BlankGroup] = []
+    interrupted = False
     for number, raw in enumerate(lines, start=1):
+        interrupted = interrupted or _INTERRUPTED in raw
         text = _summary_body(raw)
         coded = _SUMMARY_CODE.match(text)
         body = text if coded is None else coded.group("body")
@@ -5815,6 +6456,16 @@ def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
             )
         elif _CENSUS_ALL_ZERO.match(body):
             groups.append((number, 0, 0, []))
+        blank_head = _BLANK_HEAD.match(body)
+        if blank_head is not None:
+            expected = blank_head.group("measured") or blank_head.group("found")
+            blank_groups.append(_BlankGroup(number, int(expected.replace(",", ""))))
+        blank_item = _BLANK_ITEM.match(body)
+        if blank_item is not None:
+            if blank_groups:
+                blank_groups[-1].add(blank_item)
+            else:
+                problems.append(f"줄 {number} — 8-12 줄인데 위에 8-12 머리 줄이 없다")
         item = _CENSUS_ITEM.match(body)
         if item is not None:
             if not groups:
@@ -5827,6 +6478,9 @@ def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
                 f"줄 {number} — 8-10 머리(0 아님 {listed} · 합 {total:,})와 아래 수 줄"
                 f"({len(items)}줄 · 합 {sum(items):,})이 다르다 — 줄이 빠졌거나 겹쳤다"
             )
+    if not interrupted:
+        for group in blank_groups:
+            problems.extend(group.problems())
     return TranscriptCheck(problems=problems, forms=forms)
 
 
@@ -5908,7 +6562,7 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         dataset_id=args.dataset_id,
     )
     needs_simulation = any(
-        name in selected for name in ("env", "legacy", "reqb", "home", "census", "grid")
+        name in selected for name in ("env", "legacy", "reqb", "home", "census", "grid", "blank")
     )
     needs_equipment = any(name in selected for name in ("env", "equipment", "census"))
     if _opens_app_database(session, simulation=needs_simulation, equipment=needs_equipment):

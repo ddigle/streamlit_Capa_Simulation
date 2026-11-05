@@ -300,7 +300,7 @@ def _spaced_run_rate(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
 
 def test_a_blank_run_rate_only_on_routes_dropped_anyway_now_calculates(simulation_db: Path) -> None:
     """빈 효율 칸이 붙은 경로가 모두 Main UPEH 0 이하면 그 리비전은 이제 선다(2026-11-01 사용자
-    결정 — 0655 결정 7). 사내 S27 r1 이 이 꼴이면 다음 배포 6-3 a 에서 `멈춤` 이 `됨` 이 된다."""
+    결정 — 0655 결정 7). 사내 8-10 `C9` 가 이 꼴이다."""
     _, tables = _seed_tables(simulation_db)
 
     outcome = script.calculate(_blank_run_rate(tables, drop_routes=True))

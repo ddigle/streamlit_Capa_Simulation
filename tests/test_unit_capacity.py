@@ -777,7 +777,7 @@ def _check_columns(frame: pd.DataFrame) -> list[str]:
 def test_a_blank_run_rate_on_routes_that_are_dropped_anyway_does_not_stop() -> None:
     """빈 효율 칸이 붙은 경로가 모두 Main UPEH 0 이하면 그 경로는 UPEH 사유로 빠지고 계산은 선다.
 
-    사내 리뷰 202610271800 발견 1(S27 r1)의 꼴이다 — 고치기 전에는 효율 표를 붙일 때 멈췄다.
+    사내 리뷰 202610271800 8-10 `C9` 의 꼴이다 — 고치기 전에는 효율 표를 붙일 때 멈췄다.
     """
     inputs = _capacity_inputs(["Process-A", "Process-B"])
     inputs["upeh"] = inputs["upeh"].assign(UPEH=[100.0, 0.0])
@@ -791,6 +791,27 @@ def test_a_blank_run_rate_on_routes_that_are_dropped_anyway_does_not_stop() -> N
     excluded = result.attrs[CAPACITY_EXCLUSIONS_ATTR]
     assert excluded["CAPA_RUN_RATE"].isna().tolist() == [True]
     assert _check_columns(result) == [] and _check_columns(excluded) == []
+
+
+def test_blank_run_rates_on_live_routes_count_apart_from_those_on_routes_dropped_anyway() -> None:
+    """남는 경로의 빈 칸은 그대로 멈추고, 키 · 경로에는 빠질 경로만 붙은 칸을 세지 않는다.
+
+    사내 리뷰 202611041000 발견 1 의 꼴이다 — S27 r1 은 8-10 `C9` 가 칸 2 인데 6-3 a 는 `빈 값
+    키 1,757 · 경로 15,303` 이었다. 두 수는 서로 다른 칸을 센다. 빠질 경로만 붙은 칸을 살린
+    2026-11-01 고침이 남는 경로의 칸까지 풀지는 않는다 — 그 칸을 어떻게 볼지는 업무 규칙이다.
+    """
+    inputs = _capacity_inputs(["Process-A", "Process-B", "Process-C"])
+    inputs["upeh"] = pd.concat(
+        [inputs["upeh"], inputs["upeh"].iloc[[0]].assign(STEP_SEQ="P900")], ignore_index=True
+    ).assign(UPEH=[100.0, 100.0, 0.0, 100.0])
+    inputs["run_rate"] = inputs["run_rate"].assign(CAPA_RUN_RATE=[float("nan"), 0.8, float("nan")])
+    inputs["lot_ratio"] = inputs["upeh"][DETAIL_KEYS].assign(**{"Lot 측정률": 1.0})
+    inputs["wf_ratio"] = inputs["upeh"][DETAIL_KEYS].assign(WF측정률=1.0)
+
+    problem = _join_error(inputs).problem
+
+    assert (problem.table, problem.shape) == ("RQ_RUN_RATE", JOIN_BLANK_VALUE)
+    assert problem.summary() == "빈 값 키 1 · 경로 2"
 
 
 @pytest.mark.parametrize(("argument", "column"), [item[:2] for item in REQUIRED_REFERENCES[1:]])

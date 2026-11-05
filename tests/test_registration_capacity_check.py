@@ -102,6 +102,32 @@ def test_a_blank_run_rate_only_on_routes_dropped_anyway_does_not_warn() -> None:
     assert not check_registration_capacity(_prepared(frame).reference_tables).stopped
 
 
+def test_zero_and_blank_siblings_stand_today_but_a_revision_saved_earlier_stays_stopped() -> None:
+    """형제 행이 0 과 빈 값뿐인 키 — 지금 등록은 0 을 골라 그 경로만 빠지고 계산이 선다. 0 을 먼저
+    고르기 전(2026-11-01 사용자 결정 전)에 저장한 리비전은 원천 행 차례대로 빈 값일 수 있고 내용을
+    고칠 수 없어 그대로 멈춘다 — 같은 원천을 다시 등록해야 풀린다(사내 리뷰 202611041000 발견 1 이
+    재는 갈래 가운데 하나, 런북 8-12 `영빈`).
+    """
+    frame = SEED.source_data.copy()
+    month = int(frame.loc[frame["공정"].eq(PROCESS), "생산계획년월"].min())
+    mask = frame["공정"].eq(PROCESS) & frame["생산계획년월"].eq(month)
+    siblings = frame.loc[mask].assign(**{"Capa Code": "DEMO_SIBLING"})
+    frame.loc[mask, "CAPA_RUN_RATE"] = pd.NA
+    siblings["CAPA_RUN_RATE"] = 0.0
+
+    tables = _prepared(pd.concat([frame, siblings], ignore_index=True)).reference_tables
+
+    assert not check_registration_capacity(tables).stopped
+    saved = tables["RQ_RUN_RATE"].copy()
+    cell = saved["공정"].eq(PROCESS) & saved["생산계획년월"].eq(month)
+    assert saved.loc[cell, "CAPA_RUN_RATE"].eq(0.0).all()
+    saved["CAPA_RUN_RATE"] = saved["CAPA_RUN_RATE"].astype("float64")
+    saved.loc[cell, "CAPA_RUN_RATE"] = float("nan")
+    earlier = check_registration_capacity({**tables, "RQ_RUN_RATE": saved})
+    assert earlier.problem is not None
+    assert (earlier.problem.table, earlier.problem.shape) == ("RQ_RUN_RATE", JOIN_BLANK_VALUE)
+
+
 def test_a_stopping_source_is_still_saved_with_its_shape_in_the_memo(tmp_path: Path) -> None:
     repository = DuckDBScenarioRepository(tmp_path / "registration.duckdb")
     repository.initialize()

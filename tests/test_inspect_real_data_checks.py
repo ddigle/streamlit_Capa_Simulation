@@ -28,7 +28,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import duckdb
 import pandas as pd
@@ -67,6 +67,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import check_deploy_screens  # noqa: E402
 import inspect_real_data_checks as checks  # noqa: E402
+import inspect_revision_calculations as revisions_script  # noqa: E402
 from test_equipment_migration_0027_scenarios import _database_before  # noqa: E402
 
 SENTINEL = "ZZSENTINEL"
@@ -3119,6 +3120,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-9",
         "8-10",
         "8-11",
+        "8-12",
     ]
     # 런북 8-6 「늘 옮기는 줄」 의 키는 스크립트가 실제로 찍는 키다(8-5 는 BigDataQuery
     # 시험이 본다).
@@ -3140,6 +3142,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         GRID_SUMMARY_IN_RANGE,
         bare[12],
     ), bare[12]
+    assert bare[13] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
         sum(1 for line in lines if " = " in line) == 4
@@ -3995,3 +3998,514 @@ def test_the_runbook_lists_every_block_and_its_summary_key() -> None:
     legend = runbook[runbook.index("**전송용 요약 범례**") : runbook.index("**확인 코드와")]
     keys = re.findall(r"^\| `([^`]+)` \|", legend, re.MULTILINE)
     assert "8-11" in keys and "8-10" in keys
+    assert {"8-12", "8-12K", "8-12D", "8-12R", "8-12S", "8-12L"} <= set(keys)
+
+
+# ---------------------------------------------------------------------------------- 8-12 blank
+#
+# 사내 리뷰 202611041000 발견 1 — S27 r1 이 2026-11-01 고침(빠질 경로의 빈 칸) 뒤에도 `RQ_RUN_RATE
+# 빈 값 키 1,757 · 경로 15,303` 으로 멈췄고 8-10 `C9` 는 칸 2 였다. 두 수는 다른 칸을 센다 — `C9` 는
+# 붙은 경로가 모두 빠지는 칸(이제 멈추지 않는다), 키 · 경로는 남는 경로에 붙은 칸이다. 그 칸이 왜
+# 비었는지는 값 없이 꼴로 재야 사외가 가른다.
+
+
+def _rate_cells(path: Path) -> pd.DataFrame:
+    """합성 표본 `RQ_RUN_RATE` 의 키 — 달 · 공정 차례. 찍지 않고 심는 자리를 고르는 데만 쓴다."""
+    with duckdb.connect(str(path), read_only=True) as connection:
+        return connection.execute(
+            'SELECT "생산계획년월", "공정", "양산구분" FROM rev_data.rq_run_rate '
+            'ORDER BY "생산계획년월", "공정", "양산구분"'
+        ).fetch_df()
+
+
+def _blank_rate(connection: duckdb.DuckDBPyConnection, month: int, process: str) -> None:
+    connection.execute(
+        'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL '
+        'WHERE "생산계획년월" = ? AND "공정" = ? AND "양산구분" = \'양산\'',
+        [month, process],
+    )
+
+
+def _raw_filter(month: int, process: str) -> str:
+    return (
+        f'"생산계획년월" = {month} AND "공정" = \'{process}\' AND upper(trim("CS")) <> \'ER\' '
+        'AND "CAPA_RUN_RATE" IS NOT NULL'
+    )
+
+
+def _plant_blank_stop(path: Path) -> None:
+    """빈 효율 네 꼴(원천 형제)과 빠질 경로만 붙은 칸 · 안 붙은 칸을 심는다.
+
+    달 M0 의 세 공정과 달 M1 의 첫 공정이 남는 경로의 빈 칸이다 — 원천 형제가 모두 빈 값 · 0 과 빈
+    값 · 실값 그대로 · 행 없음. 달 M2 의 첫 공정은 Main UPEH 0 으로 경로가 빠진다(`C9`). 안 붙는
+    칸은 그 공정 이름이 경로에 없다. 첫 공정의 달 M0 은 경로 행(`RQ_REQB`)까지 지워 부하가 닿지
+    않는다.
+    """
+    keys = _rate_cells(path)
+    months = sorted(keys["생산계획년월"].unique().tolist())
+    processes = sorted(keys["공정"].unique().tolist())
+    first, second, third = processes
+    with duckdb.connect(str(path)) as connection:
+        for month, process in (
+            (months[0], first),
+            (months[0], second),
+            (months[0], third),
+            (months[1], first),
+            (months[2], first),
+        ):
+            _blank_rate(connection, int(month), process)
+        connection.execute(
+            'UPDATE rev_data.rq_upeh SET "UPEH" = 0, "Area_Name" = \'Main\' '
+            'WHERE "생산계획년월" = ? AND "공정" = ? AND "양산구분" = \'양산\'',
+            [int(months[2]), first],
+        )
+        connection.execute(
+            'DELETE FROM rev_data.rq_reqb WHERE "생산계획년월" = ? AND "공정" = ? '
+            "AND \"양산구분\" = '양산'",
+            [int(months[0]), first],
+        )
+        connection.execute(
+            "INSERT INTO rev_data.rq_run_rate SELECT * REPLACE ("
+            '"공정" || \'-NOROUTE\' AS "공정", NULL AS "CAPA_RUN_RATE", '
+            "source_row_no + 100000 AS source_row_no) FROM rev_data.rq_run_rate "
+            'WHERE "생산계획년월" = ? AND "공정" = ? AND "양산구분" = \'ER\'',
+            [int(months[0]), first],
+        )
+        # 원천 — 첫 공정은 모두 빈 값, 둘째는 빈 값 행 + 0 형제, 셋째는 그대로, 달 M1 은 행 없음.
+        connection.execute(
+            f'UPDATE raw_data.core_data SET "CAPA_RUN_RATE" = NULL '
+            f"WHERE {_raw_filter(int(months[0]), first)}"
+        )
+        connection.execute(
+            'INSERT INTO raw_data.core_data SELECT * REPLACE (0.0 AS "CAPA_RUN_RATE", '
+            "source_row_no + 100000 AS source_row_no, row_hash || '-Z' AS row_hash) "
+            f"FROM raw_data.core_data WHERE {_raw_filter(int(months[0]), second)}"
+        )
+        connection.execute(
+            'UPDATE raw_data.core_data SET "CAPA_RUN_RATE" = NULL '
+            f'WHERE {_raw_filter(int(months[0]), second)} AND "CAPA_RUN_RATE" <> 0'
+        )
+        connection.execute(
+            f"DELETE FROM raw_data.core_data WHERE {_raw_filter(int(months[1]), first)}"
+        )
+
+
+@pytest.fixture
+def blank_stop_db(simulation_db: Path, tmp_path: Path) -> Path:
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _plant_blank_stop(path)
+    return path
+
+
+def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """남는 경로의 빈 칸을 원천 형제 넷 · 부하 · 이웃 값으로 가르고, 값 · 이름은 찍지 않는다. `남음`
+    은 6-3 a 의 `빈 값 키`, `빠짐` 은 8-10 `C9` 와 같은 수다 — 두 수가 다른 칸을 센다."""
+    code, output = _run(capsys, "--only", "census,blank", "--database", str(blank_stop_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = _uncoded(_summary(output))
+    blank_lines = [line for line in lines if line.startswith("- 8-12")]
+    assert blank_lines == [
+        "- 8-12 전부 1 · 걸림 1",
+        "- 8-12K S1 r1 RUN_RATE · 칸 6 = 남음 4 + 빠짐 1 + 안붙음 1 · 쓰는키 71 · 경로 4/71",
+        "- 8-12D S1 r1 · 달 2/12 온 0 앞 0 · 공정 3/3 온 0 · 양산 4/35 · ER 0/36",
+        "- 8-12R S1 r1 · Main 3/47 · MI 1/24 · CHIP 3/47 · WF 1/24",
+        "- 8-12S S1 r1 · 원천 4 = 빈만 1 + 영빈 1 + 값 1 + 없음 1 · 원천행 빈 2/72",
+        "- 8-12L S1 r1 · 부하 4 = 있음 3 + 없음 1 · 다른양산 4 · 다른달 4",
+    ]
+    assert checks.check_transcript(_summary(output)) == []
+    section = output[output.index("### 8-12.") : output.index(checks.SUMMARY_HEADING)]
+    assert "`xx..........`" in section
+    assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
+    # 6-3 a 가 적는 수와 같다.
+    with duckdb.connect(str(blank_stop_db), read_only=True) as connection:
+        [revision] = revisions_script.list_revisions(connection, active_only=False)
+        outcome = revisions_script.inspect_revision(connection, revision)
+        places = checks._blank_stop_places(
+            connection, checks._census_scope(connection, all_revisions=False)
+        )
+    assert outcome.problem is not None
+    assert outcome.problem.summary() == "빈 값 키 4 · 경로 4"
+    assert [place.label for place in places] == [f"S{revision.scenario_no} r{revision.revision_no}"]
+
+
+def test_a_slipped_figure_on_the_blank_lines_is_caught(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """옮겨 적은 수를 다시 셈한다 — 줄 안 식과 확인 코드."""
+    _code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+    lines = _summary(output)
+    assert checks.check_transcript(lines) == []
+    assert checks.check_transcript([line.replace("빈만 1", "빈만 2") for line in lines]) != []
+
+
+def _coded(*bodies: str) -> list[str]:
+    """스크립트가 찍는 꼴 — 줄 끝에 그 줄의 확인 코드."""
+    return [f"{body} #{checks.summary_code(body)}" for body in bodies]
+
+
+_BLANK_REVISION_LINES: Final = (
+    "8-12K S1 r1 RUN_RATE · 칸 6 = 남음 4 + 빠짐 1 + 안붙음 1 · 쓰는키 71 · 경로 4/71",
+    "8-12D S1 r1 · 달 2/12 온 0 앞 0 · 공정 3/3 온 0",
+    "8-12R S1 r1 · Main 3/47 · MI 1/24",
+    "8-12S S1 r1 · 원천 4 = 빈만 1 + 영빈 1 + 값 1 + 없음 1 · 원천행 빈 2/72",
+    "8-12L S1 r1 · 부하 4 = 있음 3 + 없음 1 · 다른양산 4 · 다른달 4",
+)
+
+
+def test_a_transcript_of_the_blank_lines_with_all_its_lines_passes() -> None:
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", *_BLANK_REVISION_LINES)) == []
+    # 손으로 칸 가름을 바꿔 써도 같다.
+    assert (
+        checks.check_transcript(
+            _coded(
+                "8-12 전부 77; 걸림 1",
+                *(text.replace(" · ", "; ") for text in _BLANK_REVISION_LINES),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("dropped", "expected"),
+    [
+        ((3, 4), "8-12S · 8-12L 줄이 없다"),
+        ((1,), "8-12D 줄이 없다"),
+        ((0, 1, 2, 3, 4), "8-12K 줄(0줄)이 다르다"),
+        ((0,), "8-12K 줄(0줄)이 다르다"),
+    ],
+)
+def test_a_missing_blank_line_is_caught_by_its_head(
+    dropped: tuple[int, ...], expected: str
+) -> None:
+    """머리 · 다섯 줄이 결정 근거라 하나도 빠지면 안 된다 — 빠져도 남은 줄의 확인 코드는 맞는다."""
+    kept = [line for k, line in enumerate(_BLANK_REVISION_LINES) if k not in dropped]
+
+    [problem] = checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", *kept))[:1]
+
+    assert expected in problem
+
+
+def test_a_doubled_blank_stop_line_is_caught() -> None:
+    lines = _coded("8-12 전부 77 · 걸림 1", *_BLANK_REVISION_LINES, _BLANK_REVISION_LINES[0])
+
+    [problem] = checks.check_transcript(lines)
+
+    assert "8-12K 줄(2줄)이 다르다" in problem
+
+
+def test_a_blank_line_above_its_head_is_caught() -> None:
+    [problem] = checks.check_transcript(_coded(_BLANK_REVISION_LINES[3]))
+
+    assert "위에 8-12 머리 줄이 없다" in problem
+
+
+@pytest.mark.parametrize("reason", ["됨", "VITAL 연결값 없음 키 71 · 경로 71", "실패(ValueError)"])
+def test_a_stop_measured_only_by_its_reason_has_a_single_line(reason: str) -> None:
+    """꼴을 재지 못한 리비전은 `8-12K` 한 줄뿐이다(런북 8-6 범례)."""
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", f"8-12K S1 r1 · {reason}")) == []
+
+
+def test_the_head_counts_the_measured_revisions_when_more_were_found() -> None:
+    """걸림이 재는 상한을 넘으면 `잰 k` 가 아래 줄 수다. 머리는 요약마다 따로 센다."""
+    revisions = [
+        line.replace("S1 r1", f"S1 r{number}")
+        for number in (1, 2, 3)
+        for line in _BLANK_REVISION_LINES
+    ]
+
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 5 · 잰 3", *revisions)) == []
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 5 · 잰 3", *revisions[:10])) != []
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 0", "8-12 전부 77 · 걸림 0")) == []
+    assert (
+        checks.check_transcript(
+            _coded("8-12 전부 77 · 걸림 1", "8-12 전부 77 · 걸림 1", *_BLANK_REVISION_LINES)
+        )
+        != []
+    )
+
+
+def test_a_transcript_of_an_interrupted_run_does_not_count_the_blank_lines() -> None:
+    """멈춘 실행은 머리까지만 찍고 끝날 수 있다 — 줄이 빠진 것이 아니다."""
+    lines = _coded("8-12 전부 77 · 걸림 2")
+
+    assert checks.check_transcript(lines) != []
+    assert checks.check_transcript([checks._INTERRUPTED, *lines]) == []
+
+
+def test_the_blank_block_sees_a_stopped_revision_that_is_not_active(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """6-3 a 는 모든 리비전을 본다 — 활성이 아닌 리비전이 멈춰 있어도 8-12 가 `걸림 0` 으로 비지
+    않는다. 옵션을 붙이지 않아도 같고, 8-10 묶음은 그대로다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    keys = _rate_cells(path)
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision (revision_id, scenario_id, revision_no, "
+            "revision_name, parent_revision_id, note, reference_hash, created_at) "
+            "SELECT 'old-revision', scenario_id, 2, revision_name, NULL, note, reference_hash, "
+            "created_at FROM app_meta.scenario_revision"
+        )
+        tables = connection.execute(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema = 'rev_data' AND column_name = 'revision_id'"
+        ).fetchall()
+        for (table,) in tables:
+            connection.execute(
+                f"INSERT INTO rev_data.{table} SELECT * REPLACE ('old-revision' AS revision_id) "
+                f"FROM rev_data.{table} WHERE revision_id <> 'old-revision'"
+            )
+        connection.execute(
+            'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL '
+            'WHERE revision_id = \'old-revision\' AND "생산계획년월" = ? AND "공정" = ?',
+            [int(keys["생산계획년월"].iloc[0]), str(keys["공정"].iloc[0])],
+        )
+
+    code, output = _run(capsys, "--only", "census,blank", "--database", str(path))
+
+    assert code == 0
+    lines = _uncoded(_summary(output))
+    assert "- 8-12 전부 2 · 걸림 1" in lines
+    assert any(line.startswith("- 8-10 활성 1") for line in lines)
+    assert any(line.startswith("- 8-12K S1 r2 RUN_RATE") for line in lines)
+    with duckdb.connect(str(path), read_only=True) as connection:
+        outcomes = [
+            revisions_script.inspect_revision(connection, revision)
+            for revision in revisions_script.list_revisions(connection, active_only=False)
+        ]
+    assert [outcome.problem is not None for outcome in outcomes] == [False, True]
+
+
+@pytest.mark.parametrize(
+    ("months_blank", "classes", "shape", "summary"),
+    [
+        (
+            12,
+            ("양산", "ER"),
+            "XXXXXXXXXXXX",
+            "달 12/12 온 12 앞 0 · 공정 3/3 온 3 · 양산 36/36 · ER 36/36",
+        ),
+        (
+            12,
+            ("ER",),
+            "xxxxxxxxxxxx",
+            "달 12/12 온 0 앞 0 · 공정 3/3 온 0 · 양산 0/36 · ER 36/36",
+        ),
+        (
+            4,
+            ("양산", "ER"),
+            "........XXXX",
+            "달 4/12 온 4 앞 8 · 공정 3/3 온 0 · 양산 12/36 · ER 12/36",
+        ),
+    ],
+)
+def test_the_spread_tells_a_whole_table_from_one_class_and_from_late_months(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    months_blank: int,
+    classes: tuple[str, ...],
+    shape: str,
+    summary: str,
+) -> None:
+    """표 전체가 빈 꼴 · 한 양산구분만 빈 꼴 · 뒤쪽 달만 빈 꼴(먼 달을 안 채운 꼴)이 갈린다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    months = sorted(_rate_cells(path)["생산계획년월"].unique().tolist())[-months_blank:]
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL '
+            'WHERE list_contains(?, "생산계획년월") AND list_contains(?, "양산구분")',
+            [[int(month) for month in months], list(classes)],
+        )
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(path))
+
+    assert code == 0
+    assert f"`{shape}`" in output
+    assert next(line for line in _uncoded(_summary(output)) if line.startswith("- 8-12D ")) == (
+        f"- 8-12D S1 r1 · {summary}"
+    )
+
+
+def test_a_healthy_revision_has_only_the_head_line(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, output = _run(capsys, "--only", "blank", "--database", str(simulation_db))
+
+    assert code == 0
+    assert _uncoded(_summary(output)) == ["- 8-12 전부 1 · 걸림 0"]
+    assert "- 남는 경로에 빈 칸이 붙은 리비전 0" in output
+    assert "원천 형제" not in output
+
+
+def test_blank_cells_only_on_dropped_routes_are_not_a_stop(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """붙은 경로가 모두 빠지는 칸은 멈추지 않으니(`C9`) 이 블록에 오지 않는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    keys = _rate_cells(path)
+    month, process = int(keys["생산계획년월"].iloc[0]), str(keys["공정"].iloc[0])
+    with duckdb.connect(str(path)) as connection:
+        _blank_rate(connection, month, process)
+        connection.execute(
+            'UPDATE rev_data.rq_upeh SET "UPEH" = 0, "Area_Name" = \'Main\' '
+            'WHERE "생산계획년월" = ? AND "공정" = ? AND "양산구분" = \'양산\'',
+            [month, process],
+        )
+
+    _code, output = _run(capsys, "--only", "census,blank", "--database", str(path))
+
+    assert "- 8-12 전부 1 · 걸림 0" in _uncoded(_summary(output))
+    assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
+
+
+def test_a_revision_without_source_rows_leaves_the_source_cell_empty(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """복제 · 월 병합처럼 원천 행이 없는 데이터셋은 원천 칸만 비운다."""
+    with duckdb.connect(str(blank_stop_db)) as connection:
+        connection.execute("DELETE FROM raw_data.core_data")
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    assert code == 0
+    assert "- 8-12S S1 r1 · 원천 - · 원천행 빈 -" in _uncoded(_summary(output))
+
+
+def test_a_stop_of_another_shape_after_the_blanks_is_named_by_shape_only(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """빈 칸을 메워도 다른 꼴로 멈추면 그 꼴과 개수만 적는다 — 칸 분포는 못 잰다."""
+    with duckdb.connect(str(blank_stop_db)) as connection:
+        connection.execute("DELETE FROM rev_data.rq_vital")
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "- 8-12K S1 r1 · VITAL 연결값 없음 키 71 · 경로 71" in _uncoded(_summary(output))
+    assert "원천 형제" not in output
+
+
+def test_a_blank_in_a_later_table_is_carried_on_the_first_line(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """효율을 메운 뒤 다음 표의 빈 칸으로도 멈추면 그 꼴 · 개수를 잇는다 — 고칠 칸이 더 있다."""
+    keys = _rate_cells(blank_stop_db)
+    last_month, process = int(keys["생산계획년월"].iloc[-1]), str(keys["공정"].iloc[-1])
+    with duckdb.connect(str(blank_stop_db)) as connection:
+        connection.execute(
+            'UPDATE rev_data.rq_vital SET "편중률" = NULL '
+            'WHERE "생산계획년월" = ? AND "공정" = ? AND "양산구분" = \'양산\'',
+            [last_month, process],
+        )
+
+    _code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    first = next(line for line in _uncoded(_summary(output)) if line.startswith("- 8-12K "))
+    assert first.endswith(" · 이어서 VITAL 빈 값 키 1 · 경로 1"), first
+
+
+def test_a_stop_that_raises_a_plain_error_after_the_blanks_is_named_by_kind_only(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """메운 뒤 0 이하 검사(문구에 공정 이름이 실린다)로 멈춰도 종류만 적고 블록은 끝까지 간다."""
+    with duckdb.connect(str(blank_stop_db)) as connection:
+        connection.execute('UPDATE rev_data.rq_vital SET "편중률" = 0')
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "- 8-12K S1 r1 · 실패(ValueError)" in _uncoded(_summary(output))
+
+
+@pytest.mark.parametrize(
+    ("sql", "first", "spread", "load"),
+    [
+        (
+            'UPDATE rev_data.rq_run_day SET "RUN_DAY" = NULL WHERE "공정" = ? '
+            'AND "생산계획년월" = (SELECT min("생산계획년월") FROM rev_data.rq_run_day)',
+            "- 8-12K S1 r1 RUN_DAY · 칸 1 = 남음 1 + 빠짐 0 + 안붙음 0 · 쓰는키 36 · 경로 2/72",
+            "- 8-12D S1 r1 · 달 1/12 온 0 앞 0 · 공정 1/3 온 0 · 양산 -",
+            "- 8-12L S1 r1 · 부하 1 = 있음 1 + 없음 0 · 다른양산 - · 다른달 1",
+        ),
+        (
+            'UPDATE ref_data.rq_module SET "모듈수" = NULL WHERE "공정" = ?',
+            "- 8-12K S1 r1 MODULE · 칸 1 = 남음 1 + 빠짐 0 + 안붙음 0 · 쓰는키 3 · 경로 24/72",
+            "- 8-12D S1 r1 · 달 - · 공정 1/3 온 1 · 양산 -",
+            "- 8-12L S1 r1 · 부하 1 = 있음 1 + 없음 0 · 다른양산 - · 다른달 -",
+        ),
+    ],
+)
+def test_tables_without_a_month_or_class_key_leave_those_cells_empty(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    sql: str,
+    first: str,
+    spread: str,
+    load: str,
+) -> None:
+    """일수 표 키에는 양산구분이, 모듈수 표 키에는 달 · 양산구분도 없다 — 그 칸은 `-` 다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    process = str(_rate_cells(path)["공정"].iloc[0])
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(sql, [process])
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = _uncoded(_summary(output))
+    assert first in lines and spread in lines and load in lines, lines
+    assert checks.check_transcript(_summary(output)) == []
+
+
+def test_only_a_few_stopped_revisions_are_measured(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """손으로 옮기는 줄이라 리비전 수를 묶고 머리에 걸린 수와 잰 수를 함께 적는다."""
+    _add_source_dataset(blank_stop_db, f"{SENTINEL}DS-NEW", days_later=1, stop=False)
+    monkeypatch.setattr(checks, "BLANK_STOP_LIMIT", 1)
+
+    code, output = _run(
+        capsys, "--only", "blank", "--database", str(blank_stop_db), "--census-all-revisions"
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = _uncoded(_summary(output))
+    assert lines[0] == "- 8-12 전부 2 · 걸림 2 · 잰 1"
+    assert sum(line.startswith("- 8-12K ") for line in lines) == 1
+
+
+def test_the_blank_block_stays_clear_of_the_review_self_check(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pattern = _self_check_pattern()
+
+    _code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    assert not [line for line in output.splitlines() if pattern.search(line)]
+
+
+def test_the_blank_stop_tables_are_the_tables_calculation_stops_on() -> None:
+    """값 칸 · 연결 키는 계산이 붙이는 것과 같다 — 측정률 둘은 빈 값을 1.0 으로 잇는다."""
+    inputs = {
+        "RQ_RUN_RATE": ("CAPA_RUN_RATE", ("생산계획년월", "공정", "양산구분")),
+        "RQ_VITAL": ("편중률", ("생산계획년월", "공정", "양산구분")),
+        "RQ_MODULE": ("모듈수", ("공정",)),
+        "RQ_RUN_DAY": ("RUN_DAY", ("생산계획년월", "공정")),
+    }
+    assert checks.BLANK_STOP_TABLES == inputs
