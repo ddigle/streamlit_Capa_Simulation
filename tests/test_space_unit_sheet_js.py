@@ -508,15 +508,113 @@ def test_the_csv_button_lives_in_the_window_and_downloads_in_the_browser() -> No
     assert "saveCsv(sheetCsv(sheet.columns, S.sheetShown), `${base}_보이는줄.csv`)" in csv_part
     assert "if (S.sheetWin.min) {" in csv_part
     assert "setStateValue" not in csv_part and "setTriggerValue" not in csv_part
-    keys = JS[
-        JS.index("    sheetBox.onkeydown = (event) => {") : JS.index("    // 펼침 밖을 누르면")
-    ]
+    keys = _escape_sheet_source()
     assert keys.index("if (!sheetCsvMenu.hidden) closeCsvMenu(true)") < keys.index(
         "else if (S.sheetMenu) closeMenu(true)"
     )
     assert ".sle-sheet.is-min .sle-sheet-csvmenu { display: none; }" in CSS.replace(
         ".sle-sheet.is-min .sle-sheet-menu,\n", ""
     )
+
+
+def _escape_sheet_source() -> str:
+    begin = JS.index("  function escapeSheet(focusToggle) {")
+    return JS[begin : JS.index("\n  }\n", begin) + len("\n  }\n")]
+
+
+_ESCAPE_SHEET_RUNNER = """
+const log = []
+let sheetBox, sheetCsvMenu, S
+const sheetToggle = { focus: () => log.push('toggle') }
+const closeCsvMenu = (back) => log.push(`csv:${back}`)
+const closeMenu = (back) => log.push(`menu:${back}`)
+const closeSheet = () => log.push('sheet')
+%s
+const cases = JSON.parse(require('fs').readFileSync(0, 'utf8')).cases
+const out = cases.map((c) => {
+  log.length = 0
+  sheetBox = c.box === null ? null : { hidden: c.box === 'hidden' }
+  sheetCsvMenu = { hidden: !c.csv }
+  S = { sheetMenu: c.menu ? { index: 0 } : null }
+  const done = escapeSheet(c.focusToggle)
+  return { done, log: [...log] }
+})
+process.stdout.write(JSON.stringify({ out }))
+"""
+
+
+def test_escape_takes_the_csv_menu_then_the_filter_menu_then_the_window() -> None:
+    """사내 리뷰 202611041000 발견 5 — 창 안 · 창 밖 Esc 가 같은 차례를 쓴다. 창 안의 초점만 곁
+    단추로 옮기고(창과 함께 사라진다) 창 밖 초점은 제자리에 둔다. 창이 닫혀 있으면 키를 쓰지
+    않는다."""
+    cases: list[dict[str, Any]] = [
+        {"box": None},
+        {"box": "hidden", "csv": True, "menu": True},
+        {"box": "open", "csv": True, "menu": True},
+        {"box": "open", "menu": True},
+        {"box": "open"},
+        {"box": "open", "focusToggle": True},
+    ]
+    result = _node(_ESCAPE_SHEET_RUNNER % _escape_sheet_source(), {"cases": cases})["out"]
+    assert result == [
+        {"done": False, "log": []},
+        {"done": False, "log": []},
+        {"done": True, "log": ["csv:true"]},
+        {"done": True, "log": ["menu:true"]},
+        {"done": True, "log": ["sheet"]},
+        {"done": True, "log": ["sheet", "toggle"]},
+    ]
+
+
+def test_escape_closes_the_window_from_anywhere_in_the_editor() -> None:
+    """창 밖 초점(도구 줄 단추 · 도면 · 페이더 · 체크박스 · 숫자 칸 · 글자 칸)에서도 Esc 가 창을
+    닫는다. 끌기 취소 · 서식 붓은 지금 차례대로 먼저이고, 고른 것 풀기는 창 다음이다. 입력 칸에서
+    비키는 것은 도면 단축키뿐이다."""
+    begin = JS.index("host.onkeydown = (event) => {")
+    keys = JS[begin : JS.index("for (const input of fieldInputs) {", begin)]
+    line = "if (event.key === 'Escape' && escapeSheet()) { event.preventDefault(); return }"
+    assert keys.count(line) == 2
+    view, edit = keys.split("if (event.key === 'Escape' && S.drag)")
+    assert view.index("if (event.ctrlKey || event.metaKey || event.altKey) return") < view.index(
+        line
+    )
+    assert view.index(line) < view.index(
+        "else if (event.key === 'Escape') { select(null); notePick() }"
+    )
+    assert edit.index("if (event.key === 'Escape' && S.paint)") < edit.index(line)
+    assert edit.index(line) < edit.index("const typing = ")
+    assert edit.index("if (typing) return") < edit.index(
+        "if (event.key === 'Escape' && S.selection.size)"
+    )
+    # 창 안은 차례 한 곳을 쓰고 키는 여전히 도면으로 새지 않는다.
+    inside = JS[
+        JS.index("    sheetBox.onkeydown = (event) => {") : JS.index("    // 펼침 밖을 누르면")
+    ]
+    assert "escapeSheet(true)" in inside
+    assert "closeSheet()" not in inside
+    assert inside.index("escapeSheet(true)") < inside.index("event.stopPropagation()")
+    # 단축키 판은 창 안 초점에서도 창보다 먼저다.
+    assert "if (keysOpen()) setKeysOpen(false, true)\n        else escapeSheet(true)" in inside
+
+
+def test_a_press_on_a_spot_that_takes_no_focus_keeps_the_keys_in_the_editor() -> None:
+    """창의 빈 곳은 창이 초점을 받고, 창이 열린 동안 편집기의 초점 못 받는 자리를 누르거나 칸의
+    Enter · 이름 칸의 Esc 가 초점을 빼면 초점이 밖으로 나가지 않게 창에 둔다 — 창이 닫혀 있으면
+    초점을 건드리지 않는다. 컴포넌트는 회차마다 다시 불리므로 덧쌓이지 않는 `onclick` 이다."""
+    assert "sheetBox.tabIndex = -1" in JS
+    assert ".sle-sheet:focus { outline: none; }" in CSS
+    assert "    host.onclick = keepKeysInSheet\n" in JS
+    begin = JS.index("  function keepKeysInSheet() {")
+    assert (
+        "if (sheetBox && !sheetBox.hidden && !host.contains(host.getRootNode().activeElement)) "
+        "sheetBox.focus({ preventScroll: true })"
+    ) in JS[begin : JS.index("\n  }\n", begin)]
+    assert "host.addEventListener" not in JS
+    keys = JS[JS.index("host.onkeydown = (event) => {") :]
+    assert keys.index("if (event.key === 'Enter') keepKeysInSheet()") < keys.index("if (VIEW) {")
+    name = JS[JS.index("  unitLabel.onkeydown = (event) => {") :]
+    name = name[: name.index("\n  }\n")]
+    assert name.index("unitLabel.blur()\n    keepKeysInSheet()") > name.index("'Escape'")
 
 
 def test_a_list_row_zooms_to_three_hundred_percent_and_the_pick_view_stays_at_most() -> None:
