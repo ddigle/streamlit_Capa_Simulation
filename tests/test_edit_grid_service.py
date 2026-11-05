@@ -547,7 +547,9 @@ def _code_texts() -> dict[str, str]:
     paths = [project / "app.py"]
     for folder in ("app_pages", "src", "scripts", "tests"):
         paths.extend((project / folder).rglob("*.py"))
-    return {str(path.relative_to(project)): path.read_text(encoding="utf-8") for path in paths}
+    return {
+        path.relative_to(project).as_posix(): path.read_text(encoding="utf-8") for path in paths
+    }
 
 
 def test_every_module_constant_is_used_and_no_comment_points_to_the_old_formats() -> None:

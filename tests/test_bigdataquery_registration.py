@@ -1134,7 +1134,7 @@ def test_the_notice_reveal_is_the_only_script_run_through_st_html() -> None:
     root = Path(__file__).resolve().parents[1]
     sources = [root / "app.py", *(root / "app_pages").rglob("*.py"), *(root / "src").rglob("*.py")]
     users = sorted(
-        str(path.relative_to(root))
+        path.relative_to(root).as_posix()
         for path in sources
         if "unsafe_allow_javascript" in path.read_text(encoding="utf-8")
     )
