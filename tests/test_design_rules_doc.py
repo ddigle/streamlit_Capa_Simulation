@@ -6,7 +6,8 @@
 id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 기록이 빠지면 같은 것을
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
-답 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+답 · 그림 검수표 메모 9줄 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md ·
+README)의 연결.
 """
 
 from __future__ import annotations
@@ -47,6 +48,18 @@ ANSWERS = {
 CLOSED_QUESTIONS = {"AMB-03", "AMB-04", "AMB-10"}
 # 2026-11-04 설계 규칙 반영 검수표(6-2)의 사용자 답 — D1 만 (나), 나머지 일곱은 (가) 권장이다.
 REVIEW_ANSWERS = {**{f"D{n}": "가" for n in range(2, 9)}, "D1": "나"}
+# 2026-11-05 그림 검수표(6-3)의 메모 칸 — 고른 답이 아니라 메모라 칸 이름만 맞댄다.
+PICTURE_MEMOS = {
+    "static-12",
+    "static-32",
+    "static-35",
+    "static-37",
+    "equip-13",
+    "equip-44",
+    "equip-60",
+    "equip-61",
+    "eqp-side-01",
+}
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
     "AGENTS.md",
@@ -229,6 +242,37 @@ def test_the_review_sheet_answers_are_recorded_and_written_into_the_rules() -> N
     assert _level_and_state(rules["UI-TXT-04"]) == ("SHOULD", "확정")
     assert "확인 칸을 다시 세우는 거절" in rules["UI-NTF-03"].fields["예외"][0]
     assert "미지정 주요 Case 칩" in rules["UI-LAY-01"].fields["예외"][0]
+
+
+def test_the_picture_review_memos_are_recorded_and_written_into_the_rules() -> None:
+    """6-3 은 메모 칸 하나에 한 줄이고 걸린 규칙이 있는 id 다. 메모가 규칙 글로 들어갔는지 핵심만
+    본다 — 수준은 따로 묻기 전에는 올리지 않으므로(7-1) UI-INP-03 은 SHOULD 그대로다."""
+    section = _chapter(_text(), 6)
+    memos = section[section.index("\n### 6-3. ") :]
+    lines = [line for line in memos.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found = set()
+    for line in lines:
+        match = re.match(r"^- ([a-z-]+-\d+) · .+ → .+\((2026-11-05) · (.+)\)$", line)
+        assert match, line
+        found.add(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(3))
+        assert cited and set(cited) <= known, line
+
+    assert len(lines) == len(PICTURE_MEMOS)
+    assert found == PICTURE_MEMOS
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert "데이터 Error" in rules["UI-NTF-08"].title
+    assert "Alarm 확인 필요" in rules["UI-NTF-08"].text
+    assert "확인 체크" in rules["UI-NTF-09"].fields["예외"][0]
+    assert "st.date_input" in rules["UI-INP-03"].text
+    assert _level_and_state(rules["UI-INP-03"]) == ("SHOULD", "확정")
+    assert "왼쪽 「적용」 · 오른쪽 「양식 다운로드」" in rules["UI-INP-08"].text
+    assert _level_and_state(rules["UI-INP-08"]) == ("MUST", "확정")
+    assert "떠 있으며" in rules["UI-LAY-09"].text
+    assert "판 한 곳" in rules["UI-INP-02"].text
+    assert "Alarm 줄" in rules["UI-TXT-08"].text
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:

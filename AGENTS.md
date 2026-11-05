@@ -1087,7 +1087,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     최대 min(480, × 0.4), 층 보기 범례 칸 기본 200·최소 160·최대 min(360, × 0.3), 무대 최소 360(두 칸을 다 넓히면 마지막에 끈
     칸부터 줄인다). 칸막이(`role=separator`)는 끌기·두 번 누르기 = 기본 폭·←/→(Shift 64)·Home·End·Enter 접기이고 키는 도면
     단축키로 새지 않는다(설비 마스터 오른쪽 칸 칸막이와 같은 꼴). 접으면 칸 자리가 0 이 되어 도면이 넓어지고 접힌 단추
-    (`.sle-side-strip`)가 무대 가장자리 8px 안쪽 위에 뜬다(왼쪽 칸은 왼쪽, 오른쪽 칸은 오른쪽 — 검수 eqp-side-01, 옛 미배치 서랍 단추 꼴: `.sle button` 27px · 13px 600 · 모서리 8px · 테두리 BORDER · 면 SURFACE · 그림자 없음, 화살표 없음). 폭·접힘은 `capa.space.panels.v1`(범위·모드별
+    (`.sle-side-strip`)가 무대 가장자리 8px 안쪽 위에 뜬다(왼쪽 칸은 왼쪽, 오른쪽 칸은 오른쪽 — 검수 eqp-side-01, 옛 미배치 서랍 단추 꼴: `.sle button` 27px · 13px 600 · 모서리 8px · 테두리 BORDER · 면 SURFACE · 그림자 없음, 화살표 없음 — 설비 마스터 `.ess-rail` 과 같은 생김이고 `tests/test_fold_button_look.py` 가 맞댄다). 폭·접힘은 `capa.space.panels.v1`(범위·모드별
     — `floor.edit`·`floor.view`·`fab.edit`), 묶음 접힘은 `capa.space.sections.v1` 에만 둔다(파이썬·epoch 밖 — 9장 「브라우저
     전용 보기 상태」). 편집기 폭 900px(`NARROW_PX`) 아래에서는 두 칸이 무대 위 겹침 서랍(한 번에 하나, 처음엔 접힌 단추)이고 옛 서랍
     동작(`trayReserve`·`revealFromTray`·서랍 밖으로 끌면 비침)은 그 꼴에서만 돈다. 미배치 칸이 360px 이상이면 칩이 두 열(CSS
@@ -6825,7 +6825,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   (`settings.is_operational_database_place` — 같은 파일 · 운영 `data/` 아래 · git 저장소 안)는 열기 전에 거절하고(종료 2), 런북 6-3 a 는 저장소에서
   `uv run --no-sync python scripts/inspect_revision_calculations.py --database <사본>` 꼴로 부른다 — 이 거절과 고정한 꼴이 권한
   템플릿에 allow 를 줄 전제다(`docs/TODO.md` 결정 12). HOME 시간은
-  `scripts/benchmark_home.py --data-dir <사본 폴더> --output <파일>`(같은 판정으로 저장소 안은 거절, 입력 없는 토글은 `skipped`)로
+  `scripts/benchmark_home.py --data-dir <사본 폴더> --output <파일>`(같은 판정으로 저장소 안은 거절, 입력 없는 토글은 `skipped`, 멈춘 HOME 은 `st.error` · `데이터 Error` 마크 모두 그 단계 실패)로
   잰다. UPEH 가정 계획 1회 시간(`scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더> --output <파일>`)도 같은 판정으로
   저장소 안을 거절한다. 사본 모드는 실패해도 HOME 의 문구를 찍지 않고 같은 규칙(단계·예외 종류·계약 표 이름)의 한 줄만 찍으며, 재는
   동안 Streamlit 로그를 끈다(잡히지 않은 예외는 그 로그가 문구째 찍는다). 두 스크립트의 출력은 UTF-8 이다 — 사내 Windows 파이프는
