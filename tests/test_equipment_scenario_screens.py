@@ -972,8 +972,9 @@ def test_discarding_the_only_locked_layout_edit_leaves_no_unsaved_edit(
     assert not any("남아 있습니다" in text for text in texts), texts
     assert any("배치 변경만 버렸습니다" in text for text in texts), texts
     state: Any = app.session_state
-    seeded = state["equipment_workspace_seeded_generation_v1"]
-    assert int(state[BUFFER_GENERATION_KEY]) <= int(seeded)
+    assert int(state[BUFFER_GENERATION_KEY]) == int(
+        state["equipment_workspace_clean_generation_v1"]
+    )
     assert not any(item.label == "변경을 버리고 불러오기" for item in app.checkbox)
 
 

@@ -767,7 +767,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 배치를 바꾸는 적용(호기·숨은 모듈·새 호기·캔버스·요소·Main 설비명 위치)은 그때의 역할을 찍는다(`stamp_layout_role` —
     설계 6-2). 층 배치가 잠긴 회차에 남은 배치 변경은 상자의 「배치 저장」 을 끄고 「배치 변경만 버리기」(`discard_layout_edits`
     — 배치 일곱 칸·층 대기분·편집기 모듈 모양·찍힌 역할만 버리고 공통·일정 편집·이름 바꿈·FAB 대기분은 남김)를 세운다.
-    버린 뒤 편집본이 저장본 사본과 내용까지 같고 이름 바꿈·표 칸 초안이 없으면 세운 세대를 지금 세대로 옮겨 「미저장 변경」
+    버린 뒤 편집본이 저장본 사본과 내용까지 같고 이름 바꿈·표 칸 초안이 없으면 저장본으로 돌아온 세대로 적어(`_note_if_back_to_saved`) 「미저장 변경」
     배지·탭 점·불러오기의 「변경을 버리고」 체크가 꺼지고, 알림도 「저장 안 한 설비 편집은 이제 없습니다」 다(버리기도 세대를
     올려 세대 판정이 편집이 남았다고 봤다 — 2026-10-27 E2E). 잠금이 「최신 rM 불러오기」(`lock_action == "latest"`)이고
     상자에 이름 바꿈·설비 마스터의 다른 편집·곁표 편집이 없으면 곁에 「배치 변경 버리고 최신 rM 불러오기」
@@ -2194,7 +2194,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     열쇠 → `GridSource.texts`)와 「내려받기」 현재 데이터 바이트(`_render_current_data_downloads(memo_key=)`)도 같은 메모 칸이다 —
     고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
-    그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
+    그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 미저장 표시(머리 변경 칩·사이드바 「미저장 변경」·머리 띠·탭 점·떠나기 확인 — 모두 `has_unsaved_equipment_edits`)는
+    「편집본 세대 > 세운 세대」 이되 저장본으로 돌아온 세대(`_CLEAN_GENERATION_KEY`)는 뺀다 — 넣었다 지운 새 호기·되돌린 칸·다 되살린 호기는 세대만 올랐지 저장할 것이 없다(2026-11-06).
+    편집본·층 대기분을 바꾼 길(표 출납·`_remember_edits`·`_store_changed_buffer`·`stage_floor_*`·`discard_layout_edits`)이 끝에 `_note_if_back_to_saved` 를 부르고, 세 표가 저장본 사본과 내용까지 같고
+    이름 바꿈·칸 초안·층 대기분이 없을 때만 그 세대를 적는다. 세운 세대를 옮기지 않는다 — `buffer_base` 라 옮기면 표시가 걷히기 전에 보낸 op(「새 호기 뺌」 바로 뒤 「되돌리기」)가 버려진다.
+    `tests/test_equipment_unsaved_mark.py`. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
     낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edit_spots`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
     고칠 것」 줄이다. 낡은 세션의 두 줄은 버려질 호기·칸 이름을 앞 셋까지 적고(「버려질 칸: EQ-01 반입일정·Qual일정, … 외 n대」),
     세 저장 자리(탭 저장 구획·팝업 「저장」·Space 저장 오류 곁)에 「최신 rN 불러오기(변경 버림)」 단추가 선다
@@ -2313,7 +2317,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸 맨 위에 선다. 가린 높이는 sticky 화면 탭 줄 `PAGE_TABS_STRIP` 의 아래 끝 + 8px, 없으면 머리 띠 72px + 8px). 표지 색은 새 토큰 없이 팔레트(오류 선·강조·배치 머리 면·머리
     면)이고 글자(필수·가용대수·도면)가 함께 간다.
     자리표시 글은 `--emg-muted`(TEXT_MUTED)로 그린다 — 브라우저 기본 #757575 는 테마를 몰라 어두운 바탕에서 4.5:1 에 못 미친다(Space
-    배치 편집기 입력도 `--sle-muted`). 빈 날짜 칸 자리표시는 꼴(`DATE_PLACEHOLDER` — `YYYY-MM-DD`)이다(실제 날짜는 값처럼 읽힌다).
+    배치 편집기 입력도 `--sle-muted`). 옅은 바탕 호버는 칠하지 않은 단추(`.emg-btn:not(.is-primary)`)에만 걸고 칠한 단추는 제 바탕에 `filter: brightness(1.08)` 만 건다 — 대비는 `docs/design_system.md` 2-2. 빈 날짜 칸 자리표시는 꼴(`DATE_PLACEHOLDER` — `YYYY-MM-DD`)이다(실제 날짜는 값처럼 읽힌다).
     새 호기 칸 막힘 힌트의 칸 이름은 체크 상자 차례(에러 없이 → Y/N → 가용대수 → 도면) 다음 표 차례다. 고른 줄 띠의 「반입·Qual
     일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
