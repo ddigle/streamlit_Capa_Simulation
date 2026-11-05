@@ -267,6 +267,9 @@ def test_an_empty_equipment_db_stops_with_the_mark_and_the_alarm_opens_the_targe
         tab_label(STANDARD_TARGET_CAPA),
         STANDARD_TARGET_CAPA.href,
     )
+    # 줄의 화면 칸이 표준 목표다 — 어느 화면이 멈췄는지는 전문이 말하고, 「여기」 라고 쓰지 않는다.
+    assert note["full"].startswith("재공 현황 — "), note["full"]
+    assert "여기" not in note["full"], note["full"]
     # 마크 뒤에 멈추므로 조회 조건과 지표는 그리지 않는다.
     assert not app.multiselect
     assert not app.metric

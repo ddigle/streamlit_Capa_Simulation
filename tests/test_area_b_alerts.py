@@ -321,6 +321,9 @@ def test_a_part_unset_wip_keeps_no_link_and_the_alarm_opens_the_target() -> None
         tab_label(STANDARD_TARGET_CAPA),
         STANDARD_TARGET_CAPA.href,
     )
+    # 줄의 화면 칸이 표준 목표라 어느 화면의 기준선인지는 전문이 말한다 — 표준 목표에서 이 줄을 봐도
+    # 표준 목표 자신의 문제로 읽히지 않게.
+    assert note["full"].startswith("재공 현황 — "), note["full"]
 
 
 def test_a_wip_baseline_alert_resolves_on_the_same_row_target() -> None:
