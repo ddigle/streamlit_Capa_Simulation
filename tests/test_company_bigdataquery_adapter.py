@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -201,6 +203,118 @@ def test_the_advice_of_a_long_failure_is_to_wait_or_narrow_not_to_report_the_que
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
     assert (slow.value.kind, slow.value.clue) == (adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 sql")
     assert "기간을 줄여" in str(slow.value) and "다시 해도 같으니" not in str(slow.value)
+
+
+class _SeenJoin(Future[object]):
+    """기다리기 시작한 때를 알리는 결과 자리 — 시험이 잠으로 때맞추지 않게 한다."""
+
+    joined = threading.Event()
+
+    def result(self, timeout: float | None = None) -> object:
+        type(self).joined.set()
+        return super().result(timeout)
+
+
+@pytest.fixture
+def _seen_join(monkeypatch: pytest.MonkeyPatch) -> threading.Event:
+    joined = threading.Event()
+    monkeypatch.setattr(_SeenJoin, "joined", joined)
+    monkeypatch.setattr(adapter, "Future", _SeenJoin)
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    return joined
+
+
+def test_the_same_query_pressed_again_while_it_runs_joins_it(
+    _seen_join: threading.Event,
+) -> None:
+    """조회 중에 단추를 다시 눌러도 서버에 같은 조회가 겹치지 않는다. 기다린 쪽은 사본을 받고, 끝난
+    뒤의 조회는 새로 묻는다 — 캐시가 아니다."""
+    started = threading.Event()
+    release = threading.Event()
+    asked: list[object] = []
+    answer = pd.DataFrame({"a": [1, 2]})
+
+    def slow(**keywords: object) -> pd.DataFrame:
+        asked.append(keywords["param"])
+        started.set()
+        assert release.wait(30)
+        return answer
+
+    module = _module(slow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert started.wait(30)
+        second = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert _seen_join.wait(30)
+        release.set()
+        owner, joined = first.result(30), second.result(30)
+
+    assert asked == ["SELECT 1"]
+    assert owner is answer
+    assert isinstance(joined, pd.DataFrame) and joined is not answer
+    pd.testing.assert_frame_equal(joined, answer)
+    assert adapter._IN_FLIGHT == {}
+
+    adapter.call_get_data(module, "SELECT 1")
+    assert asked == ["SELECT 1", "SELECT 1"]
+
+
+def test_a_failure_reaches_everyone_who_joined_and_the_next_press_asks_again(
+    _seen_join: threading.Event,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    asked: list[object] = []
+
+    def slow(**keywords: object) -> pd.DataFrame:
+        asked.append(keywords["param"])
+        started.set()
+        assert release.wait(30)
+        raise Error("Error executing SQL")
+
+    module = _module(slow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert started.wait(30)
+        second = pool.submit(adapter.call_get_data, module, "SELECT 1")
+        assert _seen_join.wait(30)
+        release.set()
+        for waited in (first, second):
+            with pytest.raises(adapter.BigDataQueryCallError):
+                waited.result(30)
+
+    assert asked == ["SELECT 1"]
+    assert adapter._IN_FLIGHT == {}
+
+    with pytest.raises(adapter.BigDataQueryCallError):
+        adapter.call_get_data(module, "SELECT 1")
+    assert asked == ["SELECT 1", "SELECT 1"]
+
+
+def test_a_different_window_is_not_held_back_by_a_long_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """넓은 창이 도는 동안 사용자가 기간을 줄여 다시 물으면 바로 답을 받는다 — 앞 조회를 취소할 길은
+    없다."""
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    started = threading.Event()
+    release = threading.Event()
+
+    def getter(**keywords: object) -> pd.DataFrame:
+        if keywords["param"] == "WIDE":
+            started.set()
+            assert release.wait(30)
+        return pd.DataFrame({"a": [str(keywords["param"])]})
+
+    module = _module(getter)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        wide = pool.submit(adapter.call_get_data, module, "WIDE")
+        assert started.wait(30)
+        narrow = adapter.call_get_data(module, "NARROW")
+        assert isinstance(narrow, pd.DataFrame) and narrow["a"].tolist() == ["NARROW"]
+        assert not wide.done()
+        release.set()
+        wide.result(30)
 
 
 def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(

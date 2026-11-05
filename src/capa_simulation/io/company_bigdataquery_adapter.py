@@ -14,8 +14,10 @@ import importlib.util
 import logging
 import os
 import re
+import threading
 import time
 from collections.abc import Mapping
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from types import ModuleType
@@ -434,8 +436,38 @@ def get_data_keywords(query: str) -> dict[str, object]:
     return keywords
 
 
+# 지금 도는 조회문마다 그 결과 자리. 결과를 남겨 두는 캐시가 아니라 겹침만 막는다(`call_get_data`).
+_IN_FLIGHT: Final[dict[str, Future[object]]] = {}
+_IN_FLIGHT_LOCK: Final = threading.Lock()
+
+
 def call_get_data(module: BigDataQueryModule, query: str) -> object:
-    """조회 한 번. 요청자 계정을 안 넘긴 채 거부당하면 **무엇을 채워야 하는지**로 바꾼다.
+    """조회 한 번. 같은 조회문이 이미 도는 중이면 새로 묻지 않고 그 결과(또는 실패)를 같이 기다린다.
+
+    화면은 조회 중에도 단추가 눌리고, 누를 때마다 Streamlit 이 앞 회차를 멈추지 못한 채(`getData`
+    안에 있다) 새 회차를 곧바로 세운다 — 그대로 두면 서버에 같은 조회가 누른 만큼 겹쳐 쌓인다. 긴
+    조회일수록 다시 누르기 쉽고 서버에는 그때가 가장 나쁘다. 기다리는 쪽은 사본을 받는다.
+    """
+    mine: Future[object] = Future()
+    with _IN_FLIGHT_LOCK:
+        running = _IN_FLIGHT.setdefault(query, mine)
+    if running is not mine:
+        joined = running.result()
+        return joined.copy() if isinstance(joined, pd.DataFrame) else joined
+    try:
+        result = _get_data_once(module, query)
+    except BaseException as error:
+        mine.set_exception(error)
+        raise
+    finally:
+        with _IN_FLIGHT_LOCK:
+            del _IN_FLIGHT[query]
+    mine.set_result(result)
+    return result
+
+
+def _get_data_once(module: BigDataQueryModule, query: str) -> object:
+    """`getData` 한 번. 요청자 계정을 안 넘긴 채 거부당하면 **무엇을 채워야 하는지**로 바꾼다.
 
     패키지가 내는 `parameter user_name is necessary.` 만으로는 어느 환경변수를 넣어야
     하는지 알 수 없다. 사내 WebIDE 에서 로그인·토큰이 모두 정상인데도 조회가 100% 막혀
