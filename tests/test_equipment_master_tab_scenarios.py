@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import infos
+from alert_marks import flashed, infos, texts
 from grid_fake import Calls, install_fake_grid, last, load, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
@@ -391,7 +391,7 @@ def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     assert PREVIEW_KEY not in app.session_state
     assert any(
         "일정·시나리오 메모 칸이 바뀌는 호기 1대가 있어 낡은 리비전에 넣지 않습니다" in text
-        for text in _texts(app, "error")
+        for text in texts(flashed(app, "error"))
     )
 
     app.text_area(key=CLIPBOARD_KEY).set_value("설비명\tX좌표\nEQ-01\t55")
@@ -400,7 +400,7 @@ def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     assert PREVIEW_KEY not in app.session_state
     assert any(
         "붙여넣기가 있던 호기 1대(EQ\\-01)의 배치 칸을 바꿉니다" in text
-        for text in _texts(app, "error")
+        for text in texts(flashed(app, "error"))
     )
 
     app.text_area(key=CLIPBOARD_KEY).set_value("설비명\t설비이력\nEQ-01\t붙여넣은 이력")
@@ -446,7 +446,45 @@ def test_an_assumption_import_grouping_across_official_floors_is_refused_before_
     app.button(key=PREVIEW_BUTTON_KEY).click()
     _ok(app.run())
     assert PREVIEW_KEY not in app.session_state
-    assert any(GROUP_REFUSAL in text for text in _texts(app, "error"))
+    assert any(GROUP_REFUSAL in text for text in texts(flashed(app, "error")))
+
+
+def test_the_import_review_cautions_go_to_the_alert_popup(tmp_path: Path, grid: Calls) -> None:
+    """미리보기의 주의는 창 안 상자가 아니라 알림창이다(2026-11-05 검수 static-37) — 미리본 회차에
+    한 번 뜨고 미리보기 표는 그대로 선다."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
+    _ok(app.run())
+    app.checkbox(key=PASTE_LAYOUT_KEY).check()
+    app.text_area(key=CLIPBOARD_KEY).set_value("설비명\tX좌표\nEQ-01\t55")
+    app.button(key=PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+    review = app.session_state[PREVIEW_KEY]
+    assert isinstance(review, ImportReview) and review.cautions
+    assert not app.warning
+    (caution,) = flashed(app, "warning")
+    assert caution.code == "FL-03"
+    assert "가정 배치 1대" in caution.value
+    assert app.dataframe
+
+    _ok(app.run())
+    assert not flashed(app, "warning")
+    assert app.dataframe
+
+
+def test_the_import_window_template_follows_the_chosen_table(tmp_path: Path, grid: Calls) -> None:
+    """작업 줄 오른쪽 양식은 고른 표의 것이다 — 표를 고르면 팝업이 다시 돌아 따라온다(폼 밖)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
+    _ok(app.run())
+    assert "equipment_import_template_master" in {button.key for button in app.download_button}
+    app.selectbox(key=TARGET_KEY).set_value("비가동 일정")
+    _ok(app.run())
+    keys = {button.key for button in app.download_button}
+    assert "equipment_import_template_downtime" in keys
+    assert "equipment_import_template_master" not in keys
 
 
 def test_the_preview_is_withdrawn_on_a_new_visit_and_when_the_dialog_closes(
@@ -1020,7 +1058,7 @@ def test_import_refusals_keep_the_tildes_of_a_pasted_name(
     app = _page(repository, setup)
     _preview(app, text, target=target)
 
-    errors = _texts(app, "error")
+    errors = texts(flashed(app, "error"))
     assert any(shown in error for error in errors), errors
 
 

@@ -80,15 +80,12 @@ REASONS = frozenset(
 
 # (파일, 맨 바깥 함수) → (경고 호출 수, 까닭).
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
-    ("app_pages/load_conversion.py", "_plan_paste_dialog"): (1, PLACE_FORM),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (2, PLACE_FORM),
-    ("app_pages/load_conversion.py", "_yield_paste_dialog"): (1, PLACE_FORM),
     ("app_pages/reference_data.py", "_step_dialog"): (1, PLACE_FORM),
     ("app_pages/reference_integrity.py", "_render_summary"): (1, PLACE_VERDICT),
     ("app_pages/space_status.py", ""): (1, PLACE_DETAIL),
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
-    ("app_pages/standard_target_capa.py", "_clear_dialog"): (1, PLACE_FORM),
     ("app_pages/wip_status.py", ""): (1, PLACE_NO_INPUT),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (
@@ -135,10 +132,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/equipment_import_dialog.py", "_render_review"): (
-        1,
-        PLACE_FORM,
-    ),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (2, PLACE_FORM),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
         1,
@@ -173,7 +166,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         2,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/month_editor.py", "paste_dialog"): (1, PLACE_FORM),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (
         1,
         PLACE_VERDICT,

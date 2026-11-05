@@ -26,8 +26,8 @@ import streamlit as st
 
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
+from capa_simulation.components.paste_form import PasteTemplate, refuse_paste, render_paste_form
 from capa_simulation.components.profile_caption import profile_version_caption
-from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -47,7 +47,6 @@ from capa_simulation.services.past_data import (
     past_table_from_clipboard,
 )
 
-HOME_PAST_FORM_KEY = "home_past_form"
 HOME_PAST_DOWNLOAD_KEY = "home_past_download"
 PAST_CLIPBOARD_KEY = "home_past_clipboard"
 PAST_NOTE_KEY = "home_past_note"
@@ -57,7 +56,8 @@ PAST_DRAFT_KEY = "home_past_draft"
 # 걷는다(`forget_past_paste`).
 PAST_PASTE_KEY = "home_past_paste_target"
 # 저장은 읽어 둔 표로 저장된 그 표를 **지우고 다시 넣는다**(`replace_global_past_data`). 새 달만
-# 붙여넣고 저장하면 이전 달이 사라진다. 누르기 전에 알아야 해 붙여넣기 칸과 저장 버튼에 남긴다.
+# 붙여넣고 저장하면 이전 달이 사라진다. 누르기 전에 알아야 해 칸을 편 회차의 알림과 저장 버튼
+# 풍선에 둔다.
 PAST_REPLACE_NOTICE = (
     "저장하면 이 표는 붙여넣은 내용으로 통째로 바뀝니다 — 붙여넣지 않은 달·행은 지워지고 되돌릴 수 "
     "없습니다. 기존 행을 남기려면 함께 붙여넣으세요."
@@ -79,9 +79,8 @@ class PastTableSpec:
     title: str
     icon: str
     columns: tuple[str, ...]
-    # 무엇을 넣는 표인지 — 붙여넣기 글 칸의 풍선(`help=`)이다. 넣을 때 읽는 글이라 그 칸에 두되 칸
-    # 위에 늘 띄워 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-02 — 같은 말이 Guide 「Past Data」 에도
-    # 있다).
+    # 무엇을 넣는 표인지 — 붙여넣기 칸을 편 회차의 알림 전문(Alarm)이다. 칸에 늘 두지 않는다(같은
+    # 말이 Guide 「Past Data」 에도 있다).
     caption: str
 
 
@@ -193,8 +192,9 @@ def _render_table_editor(
     current = stored if pending is None else pending
     with st.container(border=True):
         st.markdown(f"#### {spec.icon} {spec.title}")
-        # 작업 줄: 붙여넣기(이 상자 안 칸)·양식 내려받기와 저장·대기 행 수. 여는 버튼은 콜백으로
-        # 연다 — 칸은 한 번에 한 표만 편다.
+        # 작업 줄: 붙여넣기(이 상자 안 칸)와 저장·대기 행 수. 양식은 붙여넣기 칸의 작업 줄에 선다
+        # (왼쪽 읽기 · 오른쪽 양식 — 공통 부품). 여는 버튼은 콜백으로 연다 — 칸은 한 번에 한 표만
+        # 편다.
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "Excel 붙여넣기",
@@ -203,25 +203,12 @@ def _render_table_editor(
                 on_click=_open_paste,
                 args=(spec.name,),
             )
-            render_csv_download(
-                # 팝업 안 탭이 닫혀 있어도 그리므로 인코딩을 팝업의 매 실행에 얹지 않는다.
-                data=past_table_csv(
-                    database_path,
-                    version,
-                    spec.name,
-                    spec.columns,
-                    stored if not stored.empty else past_sample_rows(spec.columns),
-                ),
-                file_name=f"PAST_{spec.name}.csv",
-                key=f"{HOME_PAST_DOWNLOAD_KEY}_{spec.name}",
-                label="양식 CSV",
-            )
             st.caption(
                 f"저장 {len(stored):,}행"
                 + ("" if pending is None else f" · 대기 {len(pending):,}행")
             )
         if st.session_state.get(PAST_PASTE_KEY) == spec.name:
-            _render_paste_form(spec, draft)
+            _render_paste_form(database_path, version, spec, stored, draft)
         render_flash(f"past_data_read_flash_{spec.name}")
         if not current.empty:
             with st.expander(
@@ -232,40 +219,60 @@ def _render_table_editor(
                 st.dataframe(current, hide_index=True, width="stretch", height=240)
 
 
-def _render_paste_form(spec: PastTableSpec, draft: dict[str, pd.DataFrame]) -> None:
+def _close_paste_action(spec: PastTableSpec) -> None:
+    st.button(
+        "닫기",
+        icon=":material/close:",
+        key=f"{PAST_CLIPBOARD_KEY}_{spec.name}_close",
+        on_click=forget_past_paste,
+    )
+
+
+def _render_paste_form(
+    database_path: str,
+    version: int,
+    spec: PastTableSpec,
+    stored: pd.DataFrame,
+    draft: dict[str, pd.DataFrame],
+) -> None:
     """표 하나를 붙여넣어 **대기**로 읽는 칸(그 표 상자 안). 기록은 맨 위 `과거 구간 저장` 이 한다.
 
-    읽으면 칸을 걷고 앱 전체를 다시 돌린다 — 사이드바 「HOME 설정」 상자와 화면 탭 줄의 대기 점이 그
-    회차에 선다(팝업 안 위젯의 회차는 팝업만 돈다). 열림 칸이 남아 「설정」 팝업은 그대로 열려 있다.
+    칸을 편 회차에 되돌릴 수 없는 덮어쓰기와 그 표의 양식 규칙을 알림창 · Alarm 으로 알린다 — 상자
+    안에 글을 두지 않는다(공통 부품 `components/paste_form`). 칸이 펴진 동안은 「HOME 설정」 팝업이
+    붙여넣기 창이라 크기 손잡이가 선다. 읽으면 칸을 걷고 앱 전체를 다시 돌린다 — 사이드바 「HOME
+    설정」 상자와 화면 탭 줄의 대기 점이 그 회차에 선다(팝업 안 위젯의 회차는 팝업만 돈다). 열림
+    칸이 남아 「설정」 팝업은 그대로 열려 있다.
     """
+    form_key = f"{PAST_CLIPBOARD_KEY}_{spec.name}"
     with st.container(border=True):
-        # 되돌릴 수 없는 덮어쓰기라는 것은 누르기 전에 알아야 한다 — Guide 로만 보내지 않는다.
-        st.caption(PAST_REPLACE_NOTICE)
-        with st.form(f"{HOME_PAST_FORM_KEY}_{spec.name}", border=False):
-            clipboard = st.text_area(
-                f"{spec.title} 붙여넣기",
-                key=f"{PAST_CLIPBOARD_KEY}_{spec.name}",
-                height=180,
-                placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-                help=spec.caption,
-            )
-            submitted = st.form_submit_button(
-                "붙여넣기 읽기",
-                icon=":material/content_paste:",
-                type="primary",
-            )
-        st.button(
-            "닫기",
-            icon=":material/close:",
-            key=f"{PAST_CLIPBOARD_KEY}_{spec.name}_close",
-            on_click=forget_past_paste,
+        submit = render_paste_form(
+            form_key,
+            text_key=form_key,
+            text_label=f"{spec.title} 붙여넣기",
+            apply_label="붙여넣기 읽기",
+            template=PasteTemplate(
+                # 표가 비어 있으면 예시 행이 양식이다. 칸이 펴진 표만 그려 팝업 매 실행에
+                # 인코딩을 얹지 않는다.
+                data=past_table_csv(
+                    database_path,
+                    version,
+                    spec.name,
+                    spec.columns,
+                    stored if not stored.empty else past_sample_rows(spec.columns),
+                ),
+                file_name=f"PAST_{spec.name}.csv",
+                key=f"{HOME_PAST_DOWNLOAD_KEY}_{spec.name}",
+            ),
+            opening=f"{PAST_REPLACE_NOTICE} {spec.caption}",
+            size_key="past",
+            side_actions=lambda: _close_paste_action(spec),
         )
-        if not submitted:
+        if submit is None:
             return
         try:
-            draft[spec.name] = past_table_from_clipboard(clipboard, spec.columns)
+            draft[spec.name] = past_table_from_clipboard(submit.text, spec.columns)
         except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
+            refuse_paste(form_key, bootstrap_error_message(exc))
             return
     queue_flash(
         f"past_data_read_flash_{spec.name}",
@@ -300,11 +307,6 @@ def _render_save(
             # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
             # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
             on_change="ignore",
-        )
-    if pending_names:
-        st.caption(
-            f":orange-badge[덮어쓰기] 읽어 둔 표({'·'.join(pending_names)})가 저장된 그 표를 "
-            "통째로 바꿉니다. 되돌릴 수 없습니다."
         )
     render_flash("past_data_save_flash")
     if not save:

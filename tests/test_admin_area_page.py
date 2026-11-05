@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, infos, place_errors, states, successes
+from alert_marks import active_state, flashed, infos, place_errors, states, successes
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -245,7 +245,8 @@ def test_proc_rename_tab_reports_a_duplicated_display_name_as_an_error(
     app = _submit_clipboard(app, "공정\t표시명\nSAW\t같은이름\nMOLD\t같은이름")
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("중복" in error.value for error in app.error)
+    assert any("중복" in error.value for error in flashed(app, "error"))
+    assert not app.error
     assert app.text[-1].value == "v0|"
 
 
@@ -261,7 +262,7 @@ def test_a_duplicated_display_name_with_markdown_marks_is_shown_literally(
     app = _submit_clipboard(app, "공정\t표시명\nAAA\t~x~ *y*\nBBB\t~x~ *y*")
 
     assert not list(app.exception), [element.message for element in app.exception]
-    errors = [str(error.value) for error in app.error]
+    errors = [str(error.value) for error in flashed(app, "error")]
     assert errors == [
         f"표시명이 중복되었습니다: {literal_markdown('~x~ *y*')}. "
         "원본 공정과 표시명은 항상 1:1이어야 합니다."

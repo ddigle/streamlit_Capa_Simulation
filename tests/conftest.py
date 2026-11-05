@@ -28,6 +28,7 @@ from capa_simulation.components import (
     edit_grid,
     equipment_master_grid,
     page_tabs,
+    paste_form,
     space_layout_editor,
     voc_draft_keeper,
 )
@@ -331,3 +332,16 @@ def _stub_voc_draft_keeper(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(voc_draft_keeper, "_DRAFT_KEEPER", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _stub_paste_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """붙여넣기 창 컴포넌트(`paste_form._PASTE_WINDOW`)를 아무것도 보내지 않는 대역으로 바꾼다 —
+    Space 편집기 대역과 같은 까닭(AppTest 는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest 에서
+    진짜 컴포넌트를 부르면 「not registered」로 죽는다). 받은 값을 보는 시험은 제
+    `monkeypatch.setattr` 로 이 위에 다시 덮는다(`tests/test_paste_form.py`)."""
+
+    def _silent(**_: Any) -> None:
+        return None
+
+    monkeypatch.setattr(paste_form, "_PASTE_WINDOW", _silent)

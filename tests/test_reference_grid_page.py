@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from alert_marks import infos, successes
+from alert_marks import flashed, infos, successes
 from edit_grid_fake import (
     FAKE_EVENT_KEY,
     Calls,
@@ -318,9 +318,9 @@ def test_the_paste_popup_warns_about_the_draft_and_applying_it_drops_the_draft(
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     app = _open_paste(app, "capa_run_day_editor")
-    assert reference_grid.PASTE_DROPS_DRAFT_NOTICE.format(n="1") in {
-        str(item.value) for item in app.warning
-    }
+    (opening,) = flashed(app, "warning")
+    assert reference_grid.PASTE_DROPS_DRAFT_NOTICE.format(n="1") in opening.value
+    assert not app.warning
     app.text_area(key="capa_run_day_editor_csv_clipboard").set_value(
         "공정\t202608\nProcess-A\t28\nProcess-B\t31\n"
     )
@@ -890,7 +890,7 @@ def test_the_paste_popup_refuses_a_fractional_day_like_the_grid() -> None:
     막는다(전에는 붙여넣기가 RUN_DAY 30.5 를 그대로 적용했다)."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t30.5\nProcess-B\t31\n")
-    errors = [str(item.value) for item in app.error]
+    errors = [str(item.value) for item in flashed(app, "error")]
     assert any("0 이상 정수" in text and "'30.5'" in text for text in errors), errors
     assert "test_month_updates" not in app.session_state
     app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t30\nProcess-B\t31\n")

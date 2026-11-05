@@ -22,6 +22,12 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
+from capa_simulation.components.paste_form import (
+    PasteTemplate,
+    refuse_paste,
+    render_paste_form,
+    tell_paste,
+)
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -64,6 +70,7 @@ from capa_simulation.services.process_rename import (
 # 이 탭의 붙여넣기 팝업. Admin Area 의 팝업 칸은 하나라 값이 탭을 가른다.
 PASTE_DIALOG = "process_rename_paste"
 CLIPBOARD_KEY = "admin_area_process_rename_clipboard"
+CLIPBOARD_FORM_KEY = "admin_area_process_rename"
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "admin_area_process_rename_clipboard_confirm"
 EDITOR_KEY = "admin_area_process_rename_editor"
@@ -116,8 +123,9 @@ def render_process_rename_management(
         return
 
     version_caption = profile_version_caption(profile, empty="아직 지정한 표시명이 없습니다")
-    # 작업 줄: 양식 내려받기와 Excel 붙여넣기(팝업). 붙여넣기는 가끔 하는 전체 교체라 본문을
-    # 차지하지 않는다(2026-09-29 사용자 결정). 여는 버튼은 콜백으로 연다.
+    # 작업 줄: 지금 표 내려받기와 Excel 붙여넣기(팝업 — 창 안 작업 줄에도 양식이 선다). 붙여넣기는
+    # 가끔 하는 전체 교체라 본문을 차지하지 않는다(2026-09-29 사용자 결정). 여는 버튼은 콜백으로
+    # 연다.
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.caption(version_caption)
         render_csv_download(
@@ -165,7 +173,7 @@ def render_process_rename_management(
         )
 
     if admin_dialog_is_open(PASTE_DIALOG):
-        _clipboard_dialog(repository, profile.rules)
+        _clipboard_dialog(repository, profile.rules, csv_bytes, profile.version)
     _render_direct_editor(repository, profile, available_processes, notice, unmatched)
 
 
@@ -206,45 +214,44 @@ def _save_error_message(exc: BaseException) -> str:
 def _clipboard_dialog(
     repository: DuckDBScenarioRepository,
     current: pd.DataFrame,
+    template_csv: bytes,
+    template_version: int,
 ) -> None:
-    # 적용이 무엇을 바꾸는지는 누르기 전에 알아야 해 팝업 안에 남긴다.
-    st.caption("적용하면 현재 공용 표시명 **전체**가 교체됩니다.")
-    with st.form("admin_area_process_rename_clipboard_form", border=False):
-        clipboard_text = st.text_area(
-            "공정 표시명 표 붙여넣기",
-            key=CLIPBOARD_KEY,
-            height=220,
-            placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-        )
-        confirmed = st.checkbox(
-            "현재 공용 공정 표시명 전체 교체를 확인했습니다.",
-            key=CLIPBOARD_CONFIRM_KEY,
-        )
-        submitted = st.form_submit_button(
-            "붙여넣기 표시명 적용",
-            icon=":material/content_paste:",
-            type="primary",
-            width="stretch",
-        )
-    if not submitted:
+    # 적용이 무엇을 바꾸는지는 누르기 전에 알아야 해 창을 연 회차에 알린다(창 안에 글을 두지
+    # 않는다).
+    submit = render_paste_form(
+        CLIPBOARD_FORM_KEY,
+        text_key=CLIPBOARD_KEY,
+        text_label="공정 표시명 표 붙여넣기",
+        apply_label="붙여넣기 표시명 적용",
+        template=PasteTemplate(
+            data=template_csv,
+            file_name=f"PROC_RENAME_v{template_version}.csv",
+            key="admin_area_process_rename_template_download",
+        ),
+        opening="적용하면 현재 공용 표시명 전체가 교체됩니다.",
+        confirm_key=CLIPBOARD_CONFIRM_KEY,
+        confirm_label="현재 공용 공정 표시명 전체 교체를 확인했습니다.",
+    )
+    if submit is None:
         return
-    if not clipboard_text.strip():
-        st.error("적용할 공정 표시명 표를 Excel에서 복사해 붙여넣으세요.")
+    if not submit.text.strip():
+        refuse_paste(CLIPBOARD_FORM_KEY, "적용할 공정 표시명 표를 Excel에서 복사해 붙여넣으세요.")
         return
-    if not confirmed:
-        st.error("전체 교체 확인을 선택하세요.")
+    if not submit.confirmed:
+        refuse_paste(CLIPBOARD_FORM_KEY, "전체 교체 확인을 선택하세요.")
         return
     try:
-        imported = process_rename_from_clipboard(clipboard_text)
+        imported = process_rename_from_clipboard(submit.text)
         if imported.equals(prepare_process_rename_rules(current)):
-            st.info(PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE, icon=":material/info:")
+            tell_paste(CLIPBOARD_FORM_KEY, PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE)
             return
         _save_process_rename(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
-        st.error(_save_error_message(exc))
+        refuse_paste(CLIPBOARD_FORM_KEY, _save_error_message(exc))
     else:
-        # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
-        # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
+        # 확인 체크는 이번 교체 한 번에만 유효하다. 팝업이 닫힌 회차에 값이 버려지지만, 끊긴
+        # 회차까지 여기서 함께 버린다.
         st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
         queue_flash(
             PROCESS_RENAME_FLASH_KEY,

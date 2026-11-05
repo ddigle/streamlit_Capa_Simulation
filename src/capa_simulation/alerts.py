@@ -255,6 +255,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "SB-21", "error", "event", "사이드바 시나리오 팝업을 그리지 못함 — 같은 글이면 한 번"
     ),
+    # 붙여넣기 · 양식 창을 연 회차의 알림(`components/paste_form.announce_on_open`) — 덮어쓰기 ·
+    # 되돌릴 수 없음을 창 안 글 대신 알린다(2026-11-05 검수 static-37).
+    AlertSpec("PA-01", "check", "event", "붙여넣기 · 확인 창 — 적용하면 무엇이 바뀌는지"),
 )
 
 

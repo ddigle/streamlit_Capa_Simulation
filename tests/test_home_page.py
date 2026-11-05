@@ -618,7 +618,9 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "확보율 구간 저장",
         ]
     )
-    assert [button.label for button in app.download_button] == ["양식 CSV"] * 3
+    # 양식 내려받기는 붙여넣기 칸의 작업 줄에 선다(`tests/test_past_data.py`) — 칸을 펴기 전에는
+    # 없다.
+    assert not app.download_button
     # 팝업 뒤의 대시보드는 그대로다(그림 수·차례가 같다).
     assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
