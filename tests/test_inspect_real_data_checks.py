@@ -1725,6 +1725,7 @@ def _fake_bigdataquery(
     calls: Counter[str] | None = None,
     interrupt_day_detail: bool = False,
     flaky_day_details: int = 0,
+    fail_wide_catalog: bool = False,
 ) -> types.ModuleType:
     module = types.ModuleType("bigdataquery")
     module.__spec__ = importlib.machinery.ModuleSpec("bigdataquery", None)
@@ -1740,6 +1741,8 @@ def _fake_bigdataquery(
         if "SELECT DISTINCT" in param:
             counted["catalog"] += 1
             start, end = _window_of(param)
+            if fail_wide_catalog and (end - start).days > 100:
+                raise RuntimeError(f"Error executing SQL near {SENTINEL}")
             rows = [
                 {
                     "simulation_name": f"{SENTINEL}NAME {index}",
@@ -1932,6 +1935,41 @@ def test_bigdataquery_failures_are_named_by_kind_only(
     assert "0 / 1 성공 · 조회 실패(RuntimeError · SQL:analysis)" in output
     assert "| 상세 조회(앱과 같은 SQL) | 1 / 1 성공 |" in output
     assert "- 적재일 조회가 실패해 건너뛴다." in output
+
+
+def test_a_failed_wide_list_says_every_line_below_is_the_narrow_window(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """366일 목록만 실패하면 31일 목록으로 이어 간다 — 그 뒤 수는 좁은 창의 것이라 직전 리뷰의 넓은
+    창 값과 견줄 수 없다. 8-5C 처럼 따로 옮기는 줄에도 그 창이 붙고, 다시 셈은 그대로 선다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery(fail_wide_catalog=True))
+
+    code, output = _run(capsys, "--only", "bdq")
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "| 상한 366일 | 366일 | 조회 실패(RuntimeError · 그 밖:sql) |" in output
+    assert "- 아래는 `기본(오늘−30일 ~ 오늘)` 목록 기준" in output
+    assert "- `상한 366일` 목록이 실패해 전 코드 적재일 · 표본 · 사본도 31일 창에서 잰다" in output
+    summary = _uncoded(_summary(output))
+    assert summary[0].startswith("- 8-5L 31일 ")
+    assert "366일 조회 실패(RuntimeError · 그 밖:sql)" in summary[0]
+    assert summary[0].endswith(" · 기준 31일")
+    assert all(line.endswith(" · 기준 31일") for line in summary), summary
+    assert {line.split(" ", 2)[1][:4] for line in summary} >= {"8-5L", "8-5D", "8-5S"}
+    assert checks.check_transcript(_summary(output)) == []
+
+
+def test_a_full_run_and_a_narrow_run_by_choice_carry_no_window_cell(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """요약의 「기준」 칸은 넓은 창이 실패했을 때만이다 — 고른 좁은 창은 8-5L 이 이미 말한다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery())
+
+    for argv in (("--only", "bdq"), ("--only", "bdq", "--bdq-no-max-window")):
+        code, output = _run(capsys, *argv)
+        assert code == 0
+        assert "기준 31일" not in output and "목록이 실패해" not in output
 
 
 def test_without_the_all_code_query_a_last_load_on_the_window_edge_is_flagged(
@@ -2512,7 +2550,9 @@ def test_a_day_that_fails_twice_is_left_out_and_named_by_kind(
     result, _ = _shaky_copy({DAYS[0]: 2})
 
     assert result.failure is None
-    assert result.failed_days == [("첫 적재일 (1/4)", "상세 조회 실패(Exception · SQL:sql) 두 번")]
+    assert result.failed_days == [
+        ("첫 적재일 (1/4)", "상세 조회 실패(Exception · 그 밖:sql) 두 번")
+    ]
     assert [facts.label for facts in result.days] == [
         "가운데 (2/4)",
         "끝 앞날 (3/4)",
@@ -2521,11 +2561,11 @@ def test_a_day_that_fails_twice_is_left_out_and_named_by_kind(
     note = checks.copy_note(1, result)
     assert note == (
         "- 8-5C1 표본 4일 · 2 · 0 · 0 · 0 · 0 · 0 · "
-        "못 받음 1 상세 조회 실패(Exception · SQL:sql) 두 번"
+        "못 받음 1 상세 조회 실패(Exception · 그 밖:sql) 두 번"
     )
     lines = "\n".join(checks.copy_lines(1, result))
     assert (
-        "- 코드 1 견주지 못한 날 — 첫 적재일 (1/4): 상세 조회 실패(Exception · SQL:sql) 두 번"
+        "- 코드 1 견주지 못한 날 — 첫 적재일 (1/4): 상세 조회 실패(Exception · 그 밖:sql) 두 번"
         in lines
     )
     assert SENTINEL not in lines and SENTINEL not in note
@@ -2539,11 +2579,11 @@ def test_a_reference_day_that_fails_twice_stops_the_code_before_other_days(
     """기준 날을 먼저 받는다 — 두 번 다 실패하면 견줄 수 없어 다른 날은 묻지 않는다."""
     result, probe = _shaky_copy({DAYS[3]: 2})
 
-    assert result.failure == "기준 날 상세 조회 실패(Exception · SQL:sql) 두 번"
+    assert result.failure == "기준 날 상세 조회 실패(Exception · 그 밖:sql) 두 번"
     assert probe.asked == []
     assert probe.calls[DAYS[3]] == 2 and sum(probe.calls.values()) == 3  # 적재일 1 + 기준 날 2
     assert checks.copy_note(1, result) == (
-        "- 8-5C1 표본 기준 날 상세 조회 실패(Exception · SQL:sql) 두 번"
+        "- 8-5C1 표본 기준 날 상세 조회 실패(Exception · 그 밖:sql) 두 번"
     )
 
 
@@ -2564,7 +2604,7 @@ def test_a_load_day_query_that_fails_in_two_ways_names_both(
     result = checks.check_copies(Twice(), VALID_A, window, extra=False)
 
     assert result.failure == (
-        "적재일 조회 실패(Exception · SQL:sql) 뒤 조회 실패(Exception · 연결:connect)"
+        "적재일 조회 실패(Exception · 그 밖:sql) 뒤 조회 실패(Exception · 연결:connect)"
     )
 
 
@@ -2582,6 +2622,25 @@ def test_a_timeout_is_not_asked_again(_no_retry_pause: list[float], error: BaseE
     assert "· 시간 초과" in result.failure and "두 번" not in result.failure
     assert probe.calls[DAYS[3]] == 1
     assert _no_retry_pause == []
+
+
+def test_a_failure_after_a_long_wait_is_not_asked_again(_no_retry_pause: list[float]) -> None:
+    """까닭을 말하지 않는 실패도 오래 기다린 뒤라면 시간 초과처럼 다시 묻지 않는다 — 907초를 한 번
+    더 기다리면 8-5 가 호출 제한을 넘긴다."""
+
+    class Slow(_DayProbe):
+        calls = 0
+
+        def load_days(self, code: str, window: QueryWindow) -> pd.DataFrame:
+            Slow.calls += 1
+            raise BigDataQueryCallError(Exception(f"Error SQL {SENTINEL}"), seconds=907.4)
+
+    window = QueryWindow(start_date=DAYS[0], end_date=DAYS[3])
+    result = checks.check_copies(Slow({}), VALID_A, window, extra=False)
+
+    assert Slow.calls == 1 and _no_retry_pause == []
+    assert result.failure == "적재일 조회 실패(Exception · 시간 초과:오래 걸림 sql)"
+    assert SENTINEL not in result.failure
 
 
 def test_our_adapter_guidance_is_not_asked_again(_no_retry_pause: list[float]) -> None:

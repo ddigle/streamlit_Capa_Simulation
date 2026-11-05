@@ -132,7 +132,11 @@ def test_a_failure_is_sorted_by_its_chain_names_and_words(error: BaseException, 
     [
         (TimeoutError(), adapter.QUERY_FAILURE_TIMEOUT, ""),
         (Error("Read timed out"), adapter.QUERY_FAILURE_TIMEOUT, "timed out"),
-        (Error("Error executing SQL statement"), adapter.QUERY_FAILURE_SQL, "sql"),
+        (Error("Error executing SQL statement"), adapter.QUERY_FAILURE_OTHER, "sql"),
+        (Error("Query cancelled (SQLFetch)"), adapter.QUERY_FAILURE_OTHER, "cancel"),
+        (Error("Memory limit exceeded (SQLFetch)"), adapter.QUERY_FAILURE_OTHER, "memory"),
+        (Error("Syntax error in SQL statement"), adapter.QUERY_FAILURE_SQL, "syntax"),
+        (Error("expired due to execution time limit"), adapter.QUERY_FAILURE_TIMEOUT, "time limit"),
         (Error("File does not exist: part-0001"), adapter.QUERY_FAILURE_SQL, "does not exist"),
         (
             Error("AnalysisException: Could not resolve table"),
@@ -153,6 +157,50 @@ def test_a_failure_clue_is_the_vocabulary_word_that_sorted_it(
     )
     wrapped = adapter.BigDataQueryCallError(error)
     assert (wrapped.kind, wrapped.clue) == (kind, clue)
+
+
+@pytest.mark.parametrize(
+    ("error", "seconds", "kind", "clue"),
+    [
+        (Error("Error executing SQL"), 907.4, adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 sql"),
+        (Error(""), 907.4, adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림"),
+        (Error("Error executing SQL"), 14.1, adapter.QUERY_FAILURE_OTHER, "sql"),
+        (Error("Error executing SQL"), None, adapter.QUERY_FAILURE_OTHER, "sql"),
+        (Error("Syntax error"), 907.4, adapter.QUERY_FAILURE_SQL, "syntax"),
+        (Error("Connection reset"), 907.4, adapter.QUERY_FAILURE_CONNECTION, "connect"),
+    ],
+)
+def test_only_an_unexplained_failure_after_a_long_wait_becomes_a_timeout(
+    error: BaseException, seconds: float | None, kind: str, clue: str
+) -> None:
+    """같은 조회문이 짧은 창에서 선 뒤 907초 만에 실패한 꼴 — 조회문 거절이 아니다. 까닭을 말하는
+    낱말이 있으면 그 갈래를 그대로 둔다."""
+    wrapped = adapter.BigDataQueryCallError(error, seconds=seconds)
+
+    assert (wrapped.kind, wrapped.clue) == (kind, clue)
+
+
+def test_the_advice_of_a_long_failure_is_to_wait_or_narrow_not_to_report_the_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`call_get_data` 가 잰 시간으로 갈린다 — 화면 안내가 「다시 해도 같으니」 로 끝나지 않는다."""
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise Error("Error executing SQL")
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as quick:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+    assert (quick.value.kind, quick.value.clue) == (adapter.QUERY_FAILURE_OTHER, "sql")
+    assert "다시 해도 같으니" not in str(quick.value)
+
+    monkeypatch.setattr(adapter, "LONG_FAILURE_SECONDS", 0.0)
+    with pytest.raises(adapter.BigDataQueryCallError) as slow:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+    assert (slow.value.kind, slow.value.clue) == (adapter.QUERY_FAILURE_TIMEOUT, "오래 걸림 sql")
+    assert "기간을 줄여" in str(slow.value) and "다시 해도 같으니" not in str(slow.value)
 
 
 def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(

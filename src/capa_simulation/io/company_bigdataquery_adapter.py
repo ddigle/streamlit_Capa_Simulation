@@ -14,6 +14,7 @@ import importlib.util
 import logging
 import os
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -440,6 +441,7 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
     하는지 알 수 없다. 사내 WebIDE 에서 로그인·토큰이 모두 정상인데도 조회가 100% 막혀
     있었고, 원인을 찾는 데 두 세션이 걸렸다.
     """
+    started = time.monotonic()
     try:
         return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
@@ -454,7 +456,7 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
                 f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
             ) from error
         hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
-        failure = BigDataQueryCallError(error, hint=hint)
+        failure = BigDataQueryCallError(error, hint=hint, seconds=time.monotonic() - started)
         _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
         raise failure from error
 
@@ -483,7 +485,20 @@ QUERY_FAILURE_SQL: Final = "SQL"
 QUERY_FAILURE_OTHER: Final = "그 밖"
 # 차례대로 본다 — 「connect timeout」 은 시간 초과, 「host not found」 는 연결이다.
 _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
-    (QUERY_FAILURE_TIMEOUT, ("timeout", "timed out", "time out", "deadline", "시간 초과")),
+    (
+        QUERY_FAILURE_TIMEOUT,
+        (
+            "timeout",
+            "timed out",
+            "time out",
+            "deadline",
+            "time limit",
+            "time_limit",
+            "timelimit",
+            "시간 초과",
+            "시간 제한",
+        ),
+    ),
     (
         QUERY_FAILURE_CONNECTION,
         (
@@ -510,7 +525,6 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "parse",
             "analysis",
             "semantic",
-            "sql",
             "programmingerror",
             "could not resolve",
             "not found",
@@ -519,7 +533,19 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "invalid column",
         ),
     ),
+    # 까닭을 말하지 않는 낱말 — 갈래는 그 밖이고 점검 줄에 단서로만 적는다. `sql` 은 맨 뒤다.
+    # 드라이버 문구는 함수 이름(`SQLFetch` 등)으로도 이 낱말을 실을 수 있어 조회문 거절의 근거가
+    # 되지 못한다.
+    (
+        QUERY_FAILURE_OTHER,
+        ("memory", "exceeded", "cancel", "expired", "killed", "aborted", "rejected", "sql"),
+    ),
 )
+# 조회문 거절은 초 단위로 돌아온다 — 이만큼 기다린 뒤의 실패는 까닭을 몰라도 DB 가 끝내지 못한
+# 것으로 읽고 시간 초과의 길(다시 묻지 않음 · 기간을 줄임)로 보낸다. 잰 가장 긴 성공(366일 목록
+# 157초)의 두 배쯤이다.
+LONG_FAILURE_SECONDS: Final = 300.0
+LONG_FAILURE_CLUE: Final = "오래 걸림"
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
     QUERY_FAILURE_TIMEOUT: "DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
     "기간을 줄여 다시 하세요.",
@@ -581,8 +607,7 @@ def classify_query_failure(error: BaseException) -> str:
 def query_failure_clue(error: BaseException) -> str:
     """갈래를 정한 낱말(`_FAILURE_WORDS` 의 것 — 문구 원문이 아니다). 종류로 가렸거나 맞은 낱말이
     없으면 빈 글이다. 점검 스크립트가 갈래 옆에 적어 같은 「SQL」 이 문법 낱말(`syntax` 등)로
-    섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800 — 판마다
-    다른 코드에서 간헐로 난 「SQL」 실패)."""
+    섰는지 `not found` 같은 넓은 낱말로 섰는지, 「그 밖」 이 무엇을 달고 왔는지 가른다."""
     return _sorted_failure(error)[1]
 
 
@@ -603,10 +628,20 @@ class BigDataQueryCallError(RuntimeError):
     """`getData` 가 낸 패키지 예외. 화면들이 잡는 `RuntimeError` 로 올려 갈래와 다시 할 길을
     알린다 — 패키지의 `Error` 같은 종류는 화면이 잡는 예외 튜플(`BOOTSTRAP_ERRORS`) 밖이라 그대로
     두면 화면이 traceback 으로 멈춘다(사내 리뷰 202610200720, 목록 조회 첫 판 실패). 원래 예외는
-    `__cause__` 에 있다."""
+    `__cause__` 에 있다. `seconds` 는 실패까지 걸린 초다 — `LONG_FAILURE_SECONDS` 를 넘겨 그 밖으로
+    갈린 실패는 시간 초과로 올린다."""
 
-    def __init__(self, error: BaseException, *, hint: str = "") -> None:
+    def __init__(
+        self, error: BaseException, *, hint: str = "", seconds: float | None = None
+    ) -> None:
         self.kind, self.clue = _sorted_failure(error)
+        if (
+            self.kind == QUERY_FAILURE_OTHER
+            and seconds is not None
+            and seconds >= LONG_FAILURE_SECONDS
+        ):
+            self.kind = QUERY_FAILURE_TIMEOUT
+            self.clue = f"{LONG_FAILURE_CLUE} {self.clue}".strip()
         self.type_names = failure_type_names(error)
         super().__init__(
             f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"
