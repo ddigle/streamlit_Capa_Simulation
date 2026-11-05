@@ -11,11 +11,12 @@
   —
   표 컴포넌트 모듈이 읽힐 때 등록한다.
 - **자리**: 맨 위 줄(표 고르기 · 설비 시나리오 알약 · 저장 전 변경 수) → 알림 칸(늘 서 있는 칸 —
-  CCv2 마운트 앞에 생겼다 사라지는 요소를 모두 그 안에 둔다, 명세 2-3) → 두 칸(key 가로 칸 —
-  `equipment_master_grid.SPLIT_KEY`). 왼쪽은 표 카드(내려받기 · 불러오기 · 표) 또는 작은 편집표,
-  오른쪽은 칸막이(끌어 폭 바꾸기 · 접기 — 브라우저 몫) → 「호기 상세 · 새 호기 · 저장 전 변경 ·
-  저장 이력」 고르기 → 본문 칸(`SIDE_BODY_KEY` — 그 칸, 창 높이 상한 안에서 스크롤). 오른쪽 칸은
-  붙어 있다(sticky). 받기 콜백이 오른쪽 칸을 열면(`_switch_side`) 접힌 칸을 편다.
+  CCv2 마운트 앞에 생겼다 사라지는 요소를 모두 그 안에 둔다, 명세 2-3) → 테두리 하나의 편집기 영역
+  (`equipment_master_grid.FRAME_KEY`) 안 두 칸(key 가로 칸 — `SPLIT_KEY`). 왼쪽은 표 구획(내려받기
+  · 불러오기 · 표) 또는 작은 편집표, 오른쪽은 칸막이(끌어 폭 바꾸기 · 칸 머리의 접기 단추 — 브라우저
+  몫) → 「호기 상세 · 새 호기 · 저장 전 변경 · 저장 이력」 고르기 → 본문 칸(`SIDE_BODY_KEY` — 그
+  칸, 창 높이 상한 안에서 스크롤). 오른쪽 칸은 붙어 있다(sticky). 받기 콜백이 오른쪽 칸을
+  열면(`_switch_side`) 접힌 칸을 편다.
 - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸 — 초안(세션 `NEW_UNIT_DRAFT_KEY`, 브라우저가
   칸을 확정할 때마다 상태 값 `draft` 로 보낸다)을 `equipment_grid.new_unit_check` 로 보고 체크 상자
   셋(에러 없이 추가 · 가용대수 · 도면)과 칸 오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
@@ -240,7 +241,7 @@ from capa_simulation.services.space_layout_edit import (
 # 고르기 key 는 작은 편집표 판정(`small_editor_edits` — 탭 줄이 페이지보다 먼저 읽는다)도 읽어
 # `equipment_data_workspace` 에 둔다.
 TABLE_KEY: Final = MASTER_TABLE_KEY
-SIDE_KEY: Final = "equipment_master_side_v1"
+SIDE_KEY: Final = grid_component.SIDE_CHOICE_KEY
 TABLE_MASTER: Final = "설비 마스터"
 TABLES: Final = (TABLE_MASTER, BASELINE_TARGET, DOWNTIME_TARGET)
 SIDE_DETAIL: Final = "호기 상세"
@@ -1150,7 +1151,7 @@ def _render_downloads(
         )
 
 
-def _render_grid_card(
+def _render_grid_section(
     view: GridView,
     context: GridContext,
     layout: LayoutMode,
@@ -1161,40 +1162,39 @@ def _render_grid_card(
     toasts: Mapping[str, Mapping[str, Any]],
     top: str | None,
 ) -> None:
-    with st.container(border=True):
-        with st.container(horizontal=True, horizontal_alignment="right"):
-            _render_downloads(repository, latest_snapshot, context.scenario_name)
-        loaded = prune_loaded(grid_loaded_ids(), view.index)
-        missing = st.session_state.get(MISSING_KEY)
-        alert_ids = [row_id for row_id in view.index.live if row_id in view.alerts]
-        grid_component.render_grid_loader(
-            loader_data(
-                view,
-                loaded,
-                missing=tuple(missing) if isinstance(missing, tuple) else (),
-                alert_ids=alert_ids,
-                first_data=latest_snapshot is None and not view.index.live,
-                new_enabled=True,
-                dialog_closed=import_closed_count(),
-            ),
-            on_load=_on_load,
-            on_clear=_on_clear,
-            on_dialog=_on_dialog,
-            on_new=_on_new,
-        )
-        grid_component.render_grid_table(
-            grid_data(
-                view,
-                loaded,
-                toast=toasts.get("grid"),
-                undo_top=top,
-                ack=acks.get("grid"),
-                open_id=_detail_id(),
-            ),
-            on_outbox=partial(_on_outbox, context, layout),
-            on_open=_on_grid_open,
-            on_unload=_on_unload,
-        )
+    with st.container(key=grid_component.TOOLS_KEY, horizontal=True, horizontal_alignment="right"):
+        _render_downloads(repository, latest_snapshot, context.scenario_name)
+    loaded = prune_loaded(grid_loaded_ids(), view.index)
+    missing = st.session_state.get(MISSING_KEY)
+    alert_ids = [row_id for row_id in view.index.live if row_id in view.alerts]
+    grid_component.render_grid_loader(
+        loader_data(
+            view,
+            loaded,
+            missing=tuple(missing) if isinstance(missing, tuple) else (),
+            alert_ids=alert_ids,
+            first_data=latest_snapshot is None and not view.index.live,
+            new_enabled=True,
+            dialog_closed=import_closed_count(),
+        ),
+        on_load=_on_load,
+        on_clear=_on_clear,
+        on_dialog=_on_dialog,
+        on_new=_on_new,
+    )
+    grid_component.render_grid_table(
+        grid_data(
+            view,
+            loaded,
+            toast=toasts.get("grid"),
+            undo_top=top,
+            ack=acks.get("grid"),
+            open_id=_detail_id(),
+        ),
+        on_outbox=partial(_on_outbox, context, layout),
+        on_open=_on_grid_open,
+        on_unload=_on_unload,
+    )
 
 
 def save_target(basis: EquipmentSaveBasis | None) -> str:
@@ -1409,14 +1409,16 @@ def render_equipment_master_tab(
     toasts = grid_toasts()
     top = undo_top(grid_undo_steps())
     submit = None
-    # 두 칸 — 왼쪽 표, 오른쪽 칸(칸막이로 폭을 바꾸고 접는다). 배치 서식은 늘 같은 글 한 덩이다.
+    # 테두리 하나의 편집기 영역 안 두 칸 — 왼쪽 표, 오른쪽 칸(칸막이로 폭을 바꾸고 칸 머리 단추로
+    # 접는다). 간격은 서식이 경계선 양쪽 여백으로 둔다. 배치 서식은 늘 같은 글 한 덩이다.
     st.html(grid_component.side_layout_style())
-    with st.container(key=grid_component.SPLIT_KEY, horizontal=True, gap="medium", wrap=False):
-        left = st.container(key=grid_component.LEFT_KEY)
-        right = st.container(key=grid_component.RIGHT_KEY)
+    with st.container(key=grid_component.FRAME_KEY, border=True):
+        with st.container(key=grid_component.SPLIT_KEY, horizontal=True, gap=None, wrap=False):
+            left = st.container(key=grid_component.LEFT_KEY)
+            right = st.container(key=grid_component.RIGHT_KEY)
     with left:
         if table == TABLE_MASTER:
-            _render_grid_card(
+            _render_grid_section(
                 view,
                 context,
                 layout,
@@ -1439,7 +1441,8 @@ def render_equipment_master_tab(
         if chosen_side in SIDES:
             st.session_state[SIDE_KEY] = chosen_side
         _seed(SIDE_KEY, SIDE_DETAIL, SIDES)
-        # 칸막이는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그 뒤 고르기, 그 뒤 본문 칸.
+        # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그
+        # 뒤 고르기, 그 뒤 본문 칸.
         grid_component.render_side_splitter(str(st.session_state[SIDE_KEY]), _side_reveal())
         side = st.segmented_control(
             "오른쪽 칸",

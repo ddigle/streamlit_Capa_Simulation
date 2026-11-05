@@ -2101,19 +2101,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/equipment_master_tab.py` — 가용설비 현황 탭 ① 「설비 마스터」 본문(개편 B1-c·d — 옛 RawData
   폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` · 설비 시나리오 알약 · 리비전 · 「저장 전 변경 n건」) → 알림 칸 →
-  두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 카드 또는 작은 편집표 · 오른쪽
+  테두리 하나의 편집기 영역 `equipment_master_frame` 안 두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 구획(따로 테두리 없음) 또는 작은 편집표 · 오른쪽
   `equipment_master_right` 칸막이 마운트 → 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
   이력」 → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
   이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다
   (`required=True`). 받기 콜백이 오른쪽 칸을 바꿀 때는 그 칸을 바로 적지 않고 `_SIDE_NEXT_KEY` 에 두어 다음 고르기 **앞**에서
   적는다(진짜 콜백은 회차 맨 앞이라 같은 회차 — 시험 대역은 고르기 뒤 마운트에서 부르므로 위젯을 만든 뒤 적는 오류를 피한다).
-  - **오른쪽 칸 폭·접기·높이 상한**(2026-11-02 사용자 결정 — 「늘이고 줄이거나, 최소화」 · 「너비에 한계를 두고 … 스크롤」):
-    오른쪽 칸 왼쪽 끝 칸막이(`equipment_master_grid.render_side_splitter` — 작은 별도 등록)를 끌어 폭을 바꾸고(두 번 누르면 처음
-    폭, 키보드 ←·→ 16px · Shift 64px · Home 최대 · End 최소 · Enter 접기), › 로 44px 세로 띠(높이 240px, 지금 칸 이름)로 접고 띠를
-    눌러 편다. 폭 한계는 `clamp(min(320px, 40%), 저장 폭 또는 30% − 28px, min(760px, 60%))`(줄 1,165px 에서 320~699, 처음
-    322)이고 창 폭이 바뀌어도 페이지 CSS 가 JS 없이 지킨다. 본문 칸은 `max(360px, 100vh − 붙는 높이 − 200px)`(붙는 높이 = 화면
-    탭 줄이 붙었을 때의 아래 끝 + 8px, 1.63 에서 97px — 950 창 653px · 800 창 503px) 안에서 스크롤하고(`overflow-y: auto` — 페이지를 늘리지 않는다), 오른쪽
-    칸은 그 높이에 붙는다(sticky). 접어도 패널은 `display:none` 으로 그대로 그려 두어 다시 마운트되지 않고 보내지 않은 출납을
+  - **오른쪽 칸 폭·접기·높이 상한**(2026-11-02 사용자 결정 — 「늘이고 줄이거나, 최소화」 · 「너비에 한계를 두고 … 스크롤」, 2026-11-05 검수 —
+    편집기 영역 안의 서브페이지 · 접기 단추는 칸 머리 · 접으면 떠 있는 단추):
+    두 칸 경계선(왼쪽 감싸개의 오른쪽 테두리 — 줄 높이로 늘어 영역 끝까지 간다) 위 칸막이(`equipment_master_grid.render_side_splitter` — 작은 별도 등록)를 끌어 폭을 바꾸고(두 번 누르면 처음
+    폭, 키보드 ←·→ 16px · Shift 64px · Home 최대 · End 최소 · Enter 접기), 칸 머리 오른쪽 끝 › 로 접으면 칸 자리가 0 이 되어 표가 줄을 다 쓰고 옛 Space 미배치 서랍 탭과 같은 생김의 단추(지금 칸 이름)가 영역 오른쪽 위에서 8px 들어앉아
+    떠 있다 — 누르면 편다. 단추는 페이지를 내려도 붙어 있고(표 머리 위 · 고치는 칸 · 목록 아래) 접은 동안 표 위 작업 줄이 그 자리를 비운다(`SIDE_REOPEN_RESERVE_PX`). 폭 한계는 `clamp(min(360px, 40%), 저장 폭 또는 30% − 28px, min(760px, 60%))`(영역 안 줄 1,137px 에서 360~682, 처음
+    360 — 최소는 칸 머리 한 줄 + 칸막이 곁 여백)이고 창 폭이 바뀌어도 페이지 CSS 가 JS 없이 지킨다. 본문 칸은 `max(360px, 100vh − 붙는 높이 − 200px)`(붙는 높이 = 화면
+    탭 줄이 붙었을 때의 아래 끝 + 8px, 1.63 에서 97px — 950 창 653px · 800 창 503px) 안에서 스크롤하고(`overflow-y: auto` — 페이지를 늘리지 않는다, 스크롤 막대 자리는 영역 안쪽 여백으로 내보내 내용 끝이 머리 단추와 맞는다), 오른쪽
+    칸은 그 높이에 붙고(sticky) 내용이 짧아도 머리 + 상한만큼 높이를 잡는다(칸을 바꿔도 영역이 뛰지 않고 칸막이를 잡을 자리가 있다). 접어도 패널은 `display:none` 으로 그대로 그려 두어 다시 마운트되지 않고 보내지 않은 출납을
     잃지 않는다. 폭·접힘은 브라우저에만 둔다(9장 「브라우저 전용 보기 상태」). 받기 콜백이 오른쪽 칸을 열면(`_switch_side` —
     표 설비명·「+ 새 호기」·가져오기·「호기 추가」·저장 전 변경의 고칠 것 줄) 연 수 `SIDE_REVEAL_KEY` 를 올려 칸막이 data
     `reveal` 로 보내고, 칸막이는 그 수가 오르면 접힌 칸을 펴고 본문 칸을 맨 위로 올린다(누른 것이 보이게 — 본문 칸은 key 칸이라
@@ -2203,14 +2204,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·새
     호기·저장 전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
     잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
-  - **오른쪽 칸 칸막이**는 따로 등록한다(`capa_equipment_side_splitter` — `equipment_master_grid_assets/splitter.js`·`splitter.css`,
+  - **오른쪽 칸 칸막이**(칸막이 · 칸 머리 접기 단추 · 접었을 때 떠 있는 단추)는 따로 등록한다(`capa_equipment_side_splitter` — `equipment_master_grid_assets/splitter.js`·`splitter.css`,
     `render_side_splitter`·대역 `tests/conftest.py`). data 는 팔레트(`_splitter_palette` — `--ess-*`)·지금 칸 이름·`reveal`·폭 한계
     (`side_bounds` — 페이지 CSS 와 같은 수)·두 칸·본문 칸 key·화면 탭 줄 선택자뿐이라 거의 늘 같다. 상태 값·트리거가 없다 — 폭·접힘은
-    브라우저 저장소 `capa-equipment-side-v1` `{w, min}`(try 안)과 `<html>` 의 CSS 변수 `--emd-side-w`·`--emd-top`·`--emd-gap`·속성
+    브라우저 저장소 `capa-equipment-side-v1` `{w, min}`(try 안)과 `<html>` 의 CSS 변수 `--emd-side-w`·`--emd-top`·속성
     `data-emd-side="min"` 에만 둔다. 저장소 읽기·쓰기가 한 번이라도 막히면(사내 DRM 등) `<html>` 에 표(`__essLocalOnly`)를 달고 그 뒤
     마운트는 저장값 대신 `<html>` 에 걸린 이 문서의 폭·접힘을 그대로 둔다 — 안쪽 탭·화면을 옮겨 다시 마운트돼도 남고 새로 읽으면
     처음이다. 끌기는 rAF 로 한 프레임에 한 번(회차 0), 끌기 시작에서 `preventDefault`(글자 고름 없음).
-    칸막이는 절대 위치(흐름 높이 0)라 오른쪽 칸 차례(칸막이 → 고르기 → 본문 칸)를 바꾸지 않는다. 배치 서식은 회차마다 같은 글의
+    칸막이 마운트는 절대 위치(흐름 높이 0 — 경계선부터 칸 오른쪽 끝까지 덮고 눌림은 `pointer-events` 로 칸막이·단추만 받는다)라 오른쪽 칸 차례(칸막이 → 고르기 → 본문 칸)를 바꾸지 않는다. 배치 서식은 회차마다 같은 글의
     스타일만 든 `st.html` 하나(`side_layout_style` — 이벤트 칸 한 자리, 1,000B 이상이라 해시 참조, CSS 주석 없음)다 — 가로 칸
     flex 항목은 `stLayoutWrapper:has(> .st-key-…)` 한 겹으로 고르고(`:has` 를 겹치면 규칙이 버려진다), `wrap=False` 가로 칸에
     `overflow: visible` 을 건다(아니면 sticky 가 줄 기준으로 잡힌다). 순수 구획 `// <splitter-…>`(폭 식·끌기·키)와 마운트(가짜
