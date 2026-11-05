@@ -19,6 +19,7 @@ import math
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -30,6 +31,7 @@ from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
 
 from capa_simulation.components import qual_deadline_calculator as calculator
+from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.qual_deadline_calculator import (
     BASE_KEY,
     CUTOFF_KEY,
@@ -146,7 +148,7 @@ def test_the_example_draws_the_original_results() -> None:
         ("연도", 2027),
         ("직전 달(전년 12월) 가용대수", 18.0),
     ]
-    assert app.date_input(key=TODAY_KEY).value == TODAY
+    assert app.session_state[TODAY_KEY] == TODAY
     units = _units_table(app)
     assert units["호기"].tolist()[:3] == ["U21", "U22", "U23"]
     assert units.loc[2, "Qual 완료 마감"] == "2027-04-05"
@@ -164,7 +166,7 @@ def test_clear_keeps_cutoff_year_and_today_and_reset_brings_the_example_back() -
     assert app.number_input(key=CUTOFF_KEY).value == 10
     assert app.number_input(key=YEAR_KEY).value == 2027
     assert app.number_input(key=BASE_KEY).value is None
-    assert app.date_input(key=TODAY_KEY).value == TODAY
+    assert app.session_state[TODAY_KEY] == TODAY
     assert _metrics(app)["마감 낸 호기"] == "0대"
     assert _metrics(app)["가장 이른 마감"] == "—"
     assert EMPTY_UNITS_MESSAGE in [element.value for element in app.caption]
@@ -181,7 +183,8 @@ def test_clear_keeps_cutoff_year_and_today_and_reset_brings_the_example_back() -
 
 def test_a_changed_number_or_today_recomputes_and_hides_the_example_badge() -> None:
     app = _component()
-    app.date_input(key=TODAY_KEY).set_value(date(2027, 3, 1)).run()
+    app.session_state[TODAY_KEY] = date(2027, 3, 1)
+    app.run()
 
     assert _metrics(app)["이미 지난 마감"] == "2대"
     assert not _example_badge(app)
@@ -305,16 +308,18 @@ def _element_types_in_order(node: object) -> list[str]:
     return [str(getattr(node, "type", ""))]
 
 
-def test_the_month_editor_keeps_room_for_its_toolbar_below_the_today_field() -> None:
-    """월 편집표 바로 앞에 띄움이 있다 — 표 위로 솟는 도구 막대가 「오늘」 칸 지우기(✕)를 덮지 않게.
+def test_the_month_editor_keeps_room_for_its_toolbar_below_the_today_field(
+    date_panels: dict[str, dict[str, Any]],
+) -> None:
+    """월 편집표 바로 앞에 띄움이 있다 — 표 위로 솟는 도구 막대가 「오늘」 칸을 덮지 않게.
 
-    붙어 있으면 1440 창에서 표에 마우스를 올린 동안, 터치 창에서는 늘 막대가 ✕ 를 덮어 날짜를 지울
+    붙어 있으면 1440 창에서 표에 마우스를 올린 동안, 터치 창에서는 늘 막대가 칸을 덮어 날짜를 고칠
     수 없었다(리비전 표 앞 띄움과 같은 갈래).
     """
     kinds = _element_types_in_order(_component().main)
     editor = kinds.index("dataframe")
     assert kinds[editor - 1] == "space"
-    assert kinds[editor - 2] == "date_input"
+    assert panel_key(TODAY_KEY) in date_panels
     assert EDITOR_TOOLBAR_CLEARANCE_PX >= 20
 
 
@@ -486,7 +491,7 @@ def test_the_header_button_opens_the_calculator_in_a_dialog(tmp_path: Path) -> N
 
     assert app.session_state[DIALOG_KEY] == "qual_calculator"
     assert _metrics(app)["마감 낸 호기"] == "9대"
-    assert app.date_input(key=TODAY_KEY).value == date.today()
+    assert app.session_state[TODAY_KEY] == date.today()
     assert not any(element.value.endswith("Qual 마감 계산기") for element in app.markdown)
     # 화면 탭 묶음이 아니다 — 필요 단축 일정에는 여전히 탭이 없다.
     assert not app.tabs
@@ -549,7 +554,8 @@ def test_opening_the_dialog_keeps_the_event_slot_count(
     opened = _event_slot_count(browser.messages)
     assert opened == closed
     # 띠 색이 붙는 갈래(지난 마감 — 오늘을 아주 뒤로).
-    app.date_input(key=TODAY_KEY).set_value(date(2099, 1, 1)).run()
+    app.session_state[TODAY_KEY] = date(2099, 1, 1)
+    app.run()
     assert not app.exception
     assert _metrics(app)["이미 지난 마감"] != "0대"
     assert _event_slot_count(browser.messages) == closed

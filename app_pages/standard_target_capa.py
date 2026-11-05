@@ -23,6 +23,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.formula_text import EQUALS, consistent_places
 from capa_simulation.components.hierarchical_monthly_table import (
@@ -185,7 +186,7 @@ def _initialize_date_state(key: str, default: date, lower: date, upper: date) ->
     """리비전이 저장한 조회일을 현재 조회기간 안으로 맞추고 조정 여부를 알린다.
 
     사이드바 조회기간을 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다.
-    그대로 두면 `st.date_input` 이 예외를 던져 페이지가 열리지 않으므로 잘라 넣는다.
+    잘라 넣어야 맞춘 사실을 본문에 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다).
     """
     saved = st.session_state.get(key)
     if not isinstance(saved, date):
@@ -703,21 +704,14 @@ if not isinstance(st.session_state.get(SHOW_DETAIL_KEY), bool):
 # 본문 결과 상자 맨 위다.
 card = condition_card("표준 목표 조건", name=CARD_NAME)
 with card:
-    with st.container(horizontal=True, gap="small"):
-        start_date = st.date_input(
-            "시작일",
-            min_value=minimum_date,
-            max_value=maximum_date,
-            key=START_DATE_KEY,
-            persist_state="session",
-        )
-        end_date = st.date_input(
-            "종료일",
-            min_value=minimum_date,
-            max_value=maximum_date,
-            key=END_DATE_KEY,
-            persist_state="session",
-        )
+    start_date, end_date = date_range_field(
+        "조회일",
+        start_key=START_DATE_KEY,
+        end_key=END_DATE_KEY,
+        default=(default_start_date, default_end_date),
+        min_date=minimum_date,
+        max_date=maximum_date,
+    )
 # 날짜를 맞춘 사실은 본문에 알린다. 카드는 기본으로 접혀 있어 그 안에 두면 저장된 날짜가
 # 바뀐 줄 모른다.
 if date_clamped:

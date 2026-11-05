@@ -14,9 +14,8 @@ import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
-from typing import ParamSpec, TypeVar, cast, overload
+from typing import ParamSpec, TypeVar, overload
 
 import duckdb
 import pandas as pd
@@ -278,20 +277,6 @@ def selected_month_range() -> tuple[int, int]:
         value = default
     start_label, end_label = (str(value[0]), str(value[1]))
     return int(start_label.replace("-", "")), int(end_label.replace("-", ""))
-
-
-def date_range_value(value: object, default: tuple[date, date]) -> tuple[date, date]:
-    """범위 모드 `st.date_input` 의 반환값을 시작·종료 두 날짜로 읽는다.
-
-    같은 위젯이 세 가지를 돌려준다 — 두 날짜가 다 정해지면 길이 2 튜플, 사용자가 시작일만
-    누른 중간 상태에서는 길이 1 튜플, 단일 날짜 모드에서는 `date` 하나다. 페이지마다 이
-    세 갈래를 다시 적으면 한쪽만 고쳐져 화면끼리 기간 해석이 갈린다.
-    """
-    if isinstance(value, tuple) and len(value) == 2:
-        return cast("tuple[date, date]", value)
-    if isinstance(value, date):
-        return value, value
-    return default
 
 
 def prune_list_selection(

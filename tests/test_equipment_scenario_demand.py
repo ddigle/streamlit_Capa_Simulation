@@ -463,9 +463,9 @@ def test_an_edit_or_another_revision_reads_the_new_demand(tmp_path: Path) -> Non
     # 조회기간을 시나리오의 여섯 달에 맞춘다.
     first_year, first_month = divmod(months[0], 100)
     last_year, last_month = divmod(months[-1], 100)
-    app.date_input(key=START_DATE_KEY).set_value(date(first_year, first_month, 1))
-    app.date_input(key=END_DATE_KEY).set_value(
-        date(last_year, last_month, calendar.monthrange(last_year, last_month)[1])
+    app.session_state[START_DATE_KEY] = date(first_year, first_month, 1)
+    app.session_state[END_DATE_KEY] = date(
+        last_year, last_month, calendar.monthrange(last_year, last_month)[1]
     )
     _view(app, "확보율 교차검증")
     before = _cross_check(app)

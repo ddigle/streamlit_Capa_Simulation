@@ -128,14 +128,14 @@ def _legend(calls: list[dict[str, Any]]) -> str:
 
 
 def test_the_sidebar_has_no_as_of_date_and_no_stage_filter(
-    tmp_path: Path, calls: list[dict[str, Any]]
+    tmp_path: Path, calls: list[dict[str, Any]], date_panels: dict[str, dict[str, Any]]
 ) -> None:
     """사이드바에는 기준일 칸도 「단계」 필터도 없다 — 기준일은 도면 위 페이더다. 세션에 든
     `space_status_stage_filter` 값은 읽지 않는다(그리는 호기가 그대로다)."""
     app, _ = _open(tmp_path)
     before = [item["id"] for item in _last(calls, "floor")["items"]]
 
-    assert not app.sidebar.date_input
+    assert not date_panels
     assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류"]
     app.session_state["space_status_stage_filter"] = ["가용"]
     app.run()

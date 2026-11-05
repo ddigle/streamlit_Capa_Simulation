@@ -487,7 +487,9 @@ def test_the_gantt_view_redraws_for_filter_period_and_master_changes(
     app.multiselect(SMALL_PROCESS_KEY).set_value([]).run()
     assert _gantt_spec(app) == base
 
-    app.date_input(START_DATE_KEY).set_value(date(2026, 10, 3)).run()
+    app.session_state[START_DATE_KEY] = date(2026, 10, 3)
+
+    app.run()
     assert not app.exception
     assert _gantt_spec(app) != base
 

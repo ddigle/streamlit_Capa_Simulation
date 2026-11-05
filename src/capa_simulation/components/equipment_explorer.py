@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation.components.date_panel import date_field, date_range_field
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
@@ -127,25 +128,16 @@ _TRANSITION_BAR_SIZE_PX = 70
 
 
 def render_equipment_period(
-    *, today: date, width: int | Literal["stretch"] = 180
+    *, today: date, width: int | Literal["stretch"] = 240
 ) -> tuple[date, date]:
     """Main 추이와 월별 비교가 함께 쓰는 조회기간 위젯. 사이드바 카드에서는 `width="stretch"`."""
-    start = st.date_input(
-        "시작일",
-        value=date(today.year, today.month, 1),
-        key=START_DATE_KEY,
-        persist_state="session",
+    return date_range_field(
+        "조회일",
+        start_key=START_DATE_KEY,
+        end_key=END_DATE_KEY,
+        default=(date(today.year, today.month, 1), today + timedelta(weeks=12)),
         width=width,
     )
-    end = st.date_input(
-        "종료일",
-        value=today + timedelta(weeks=12),
-        key=END_DATE_KEY,
-        persist_state="session",
-        width=width,
-    )
-    assert isinstance(start, date) and isinstance(end, date)
-    return start, end
 
 
 def _options(frame: pd.DataFrame, column: str) -> list[str]:
@@ -615,18 +607,15 @@ def render_equipment_explorer(
             as_of = today
             if uses_period:
                 start, end = render_equipment_period(
-                    today=today, width="stretch" if in_card else 180
+                    today=today, width="stretch" if in_card else 240
                 )
             if uses_as_of:
-                chosen = st.date_input(
+                as_of = date_field(
                     "기준일",
-                    value=today,
                     key=AS_OF_KEY,
-                    persist_state="session",
+                    default=today,
                     width="stretch" if in_card else 180,
                 )
-                assert isinstance(chosen, date)
-                as_of = chosen
         transition_stages: list[str] = []
         transition_schedule = "전체"
         transition_confirmations: list[str] = []

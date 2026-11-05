@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.editor_state import (
     discard_editor,
     editor_has_edits,
@@ -56,7 +57,6 @@ from capa_simulation.navigation import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
-    date_range_value,
     prune_choice,
 )
 from capa_simulation.persistence.equipment_cache import (
@@ -359,6 +359,8 @@ SELECT_CLEAR = "select_clear"
 DELETE_SELECTED = "delete_selected"
 # 저장 이력 「조회 조건」 펼침의 key — 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다.
 HISTORY_FILTER_EXPANDER_KEY = "equipment_history_filters_v1"
+HISTORY_EVENT_START_KEY = "equipment_history_event_start_v3"
+HISTORY_EVENT_END_KEY = "equipment_history_event_end_v3"
 _EDITOR_KEYS = (BASELINE_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
 # 「엑셀·CSV로 한꺼번에」 등록할 표·내려받기 단추 차례.
 _TARGETS = ("설비 마스터", "기존 보유대수", "비가동 일정")
@@ -3863,11 +3865,11 @@ def _render_history(
         first_date = pd.Timestamp(event_start).date() if pd.notna(event_start) else today
         last_date = pd.Timestamp(event_end).date() if pd.notna(event_end) else today
         default_range = (first_date, max(today, first_date, last_date))
-        event_range = st.date_input(
+        start, end = date_range_field(
             "비가동 일정 기간",
-            value=default_range,
-            key="equipment_history_event_range_v3",
-            persist_state="session",
+            start_key=HISTORY_EVENT_START_KEY,
+            end_key=HISTORY_EVENT_END_KEY,
+            default=default_range,
         )
     for column, selected in filters.items():
         if selected:
@@ -3876,7 +3878,6 @@ def _render_history(
         downtime = downtime.loc[downtime[EQUIPMENT_ID_COLUMN].isin(equipment[EQUIPMENT_ID_COLUMN])]
     if downtime_types:
         downtime = downtime.loc[downtime["비가동유형"].isin(downtime_types)]
-    start, end = date_range_value(event_range, default_range)
     if start > end:
         st.error("조회 시작일이 종료일보다 늦습니다. 기간을 다시 선택하세요.")
     elif not downtime.empty:
