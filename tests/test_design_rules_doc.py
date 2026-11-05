@@ -6,8 +6,8 @@
 id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 기록이 빠지면 같은 것을
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
-답 · 그림 검수표 메모 9줄 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md ·
-README)의 연결.
+답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 문서 안팎의 id 참조 · 그물 경로 · 진입
+문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -61,6 +61,8 @@ PICTURE_MEMOS = {
     "equip-61",
     "eqp-side-01",
 }
+# 2026-11-05 남은 결정 보드(6-4)의 사용자 답 — 열 칸 모두 (가) 권장이다.
+BOARD_ANSWERS = {f"v{n}": "가" for n in range(1, 11)}
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
     "AGENTS.md",
@@ -247,9 +249,9 @@ def test_the_review_sheet_answers_are_recorded_and_written_into_the_rules() -> N
 
 def test_the_picture_review_memos_are_recorded_and_written_into_the_rules() -> None:
     """6-3 은 메모 칸 하나에 한 줄이고 걸린 규칙이 있는 id 다. 메모가 규칙 글로 들어갔는지 핵심만
-    본다 — 수준은 따로 묻기 전에는 올리지 않으므로(7-1) UI-INP-03 은 SHOULD 그대로다."""
+    본다 — UI-INP-03 수준은 그 뒤 따로 물어 올렸다(6-4 v4 — 아래 시험)."""
     section = _chapter(_text(), 6)
-    memos = section[section.index("\n### 6-3. ") :]
+    memos = section[section.index("\n### 6-3. ") : section.index("\n### 6-4. ")]
     lines = [line for line in memos.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found = set()
@@ -268,12 +270,53 @@ def test_the_picture_review_memos_are_recorded_and_written_into_the_rules() -> N
     assert "Alarm 확인 필요" in rules["UI-NTF-08"].text
     assert "확인 체크" in rules["UI-NTF-09"].fields["예외"][0]
     assert "st.date_input" in rules["UI-INP-03"].text
-    assert _level_and_state(rules["UI-INP-03"]) == ("SHOULD", "확정")
     assert "왼쪽 「적용」 · 오른쪽 「양식 다운로드」" in rules["UI-INP-08"].text
     assert _level_and_state(rules["UI-INP-08"]) == ("MUST", "확정")
     assert "떠 있으며" in rules["UI-LAY-09"].text
     assert "판 한 곳" in rules["UI-INP-02"].text
     assert "Alarm 줄" in rules["UI-TXT-08"].text
+
+
+def test_the_board_answers_are_recorded_and_written_into_the_rules() -> None:
+    """6-4 는 남은 결정 보드 한 칸에 한 줄이고 답이 사용자 답과 같다. 답이 규칙 글로 들어갔는지
+    핵심만 본다 — v4: UI-INP-03 은 MUST. v2 · v3: 확인 체크를 남기는 저장 둘은 UI-NTF-09 예외.
+    v7: 일정 글 칸은 UI-INP-03 예외. v8: 입력 빠짐 멈춤도 마크 + 「그 화면으로」. v9: placeholder 는
+    창 안 글. v10: 충돌 보고는 자리에 두는 갈래가 아니다. v5: 제안 값 넷은 확정이다. 답이 왔으므로
+    규칙 칸에 「답 대기」 가 남지 않는다."""
+    section = _chapter(_text(), 6)
+    board = section[section.index("\n### 6-4. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(
+            r"^- (v\d+) · .+ → \*\*\((가|나|다)\)\*\* .+\((2026-11-05) · (.+)\)$", line
+        )
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+
+    assert found == BOARD_ANSWERS
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert _level_and_state(rules["UI-INP-03"]) == ("MUST", "확정")
+    assert "일정 글 칸" in rules["UI-INP-03"].fields["예외"][0]
+    exceptions = rules["UI-NTF-09"].fields["예외"][0]
+    assert "적용하지 않은 편집을 버리고 저장" in exceptions
+    assert "이탈 호기 n대 알고 저장" in exceptions
+    assert "입력이 빠져 멈춤" not in rules["UI-NTF-08"].fields["예외"][0]
+    assert "빠져 멈춤" in rules["UI-NTF-08"].text and "그 화면으로" in rules["UI-NTF-08"].text
+    assert "placeholder" in rules["UI-INP-08"].text
+    assert "점검 보고" not in rules["UI-TXT-08"].fields["예외"][0]
+    assert "SC-04" in rules["UI-TXT-08"].fields["예외"][0]
+
+    values = _chapter(_text(), 4)
+    for name in ("날짜 판 빠른 선택", "붙여넣기 창", "설비 마스터 오른쪽 칸 폭", "Alarm 딸린 표"):
+        row = next(line for line in values.splitlines() if line.startswith(f"| {name} |"))
+        assert "v5 확정" in row and "검수 전" not in row, row
+
+    assert [rule.id for rule in rules.values() if "답 대기" in " ".join(rule.fields["예외"])] == []
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:
