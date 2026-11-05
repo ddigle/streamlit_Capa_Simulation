@@ -59,9 +59,9 @@ from capa_simulation.components.equipment_scenario_status import (
     report_unscheduled_units,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.floor_layout_upload import (
-    render_floor_layout_button,
-    render_floor_layout_dialog_host,
+from capa_simulation.components.floor_canvas_dialog import (
+    render_floor_canvas_button,
+    render_floor_canvas_dialog_host,
 )
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -169,7 +169,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_fab_layout,
     load_floor_layout_canvases,
     load_floor_layout_profile,
-    load_floor_layout_summaries,
     load_floor_states,
 )
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
@@ -528,12 +527,7 @@ try:
     equipment_session = resolve_equipment_session(equipment_database_path)
     latest_snapshot = equipment_session.snapshot
     floor_canvases = load_floor_layout_canvases(equipment_database_path)
-    floors_with_layout_image = {
-        (summary.building, summary.floor)
-        for summary in load_floor_layout_summaries(equipment_database_path)
-        if summary.has_image
-    }
-    # 저장된 FAB 전체 도면(캔버스·배경 도면 행, 요소). 요소가 없으면 기본 배치를 그린다.
+    # 저장된 FAB 전체 도면(캔버스 행, 요소). 요소가 없으면 기본 배치를 그린다.
     fab_profile, fab_stored_marks = load_fab_layout(equipment_database_path)
     # 동·층 사용 상태(설비 0029, 공용 현행값 — 설비 시나리오와 무관). 비활성 층은 층 목록 표 맨
     # 아래로 내려가고 FAB 도면에서 회색 빗금으로 흐려지며, 층 고르기(바로 가기·「다른 층으로
@@ -691,7 +685,7 @@ if using_sample_equipment:
                 "호기별 **동 · 층 · X좌표 · Y좌표 · Xsize · Ysize** — 배치도의 사각형 하나가 "
                 "이 여섯 값입니다",
                 "**레이아웃표시** 플래그 — 도면에 올릴 호기를 가릅니다",
-                "동·층별 배경 도면 이미지와 캔버스 치수",
+                "동·층별 캔버스 치수",
                 "생애주기 상태를 만드는 일정 여섯 개와 운영 비가동 일정",
             ),
         )
@@ -1682,7 +1676,6 @@ def _render_layout_editor(
         group_labels=group_labels,
         new_unit=options,
         as_of=as_of,
-        background_image=profile.image_data_uri if profile is not None else None,
         # 층 캔버스는 공용 값이라 가정 설비 시나리오에서 끈다(설계 8-4 — 서버도 아래에서 거부).
         canvas_editable=edit_mode.canvas,
         canvas_lock=None if edit_mode.canvas else CANVAS_LOCK_REASON,
@@ -1853,7 +1846,6 @@ def _note_applied(
 
 def _render_fab_editor(
     link_stats: dict[str, dict[str, str | None]],
-    background_image: str | None,
     on_open: Callable[[FloorKey], None],
     *,
     pending_save: bool = False,
@@ -1887,7 +1879,6 @@ def _render_fab_editor(
         marks=marks,
         link_stats=link_stats,
         on_open=on_open,
-        background_image=background_image,
         pending_save=pending_save,
     )
     if submission is None:
@@ -1940,7 +1931,7 @@ def _render_fab_editor(
 
 
 # 사이드바 「Space 도면」 상자 채우기(2026-11-03 사용자 요청 — 레이아웃 위 요소: `S.PKG FAB 전체`
-# › 층 · `배치 편집`· `도면·캔버스 편집` · `공식과 견주기` — 배치 줄 · 일정 없는 호기 줄은
+# › 층 · `배치 편집`· `캔버스 편집` · `공식과 견주기` — 배치 줄 · 일정 없는 호기 줄은
 # 2026-11-04 결정 보드 답으로 상태 알림이 됐다, 위 「상자의 자리」). 위젯 key 는 옮기기
 # 전 그대로다(세션 값·화면 확인이 산다). 자리를 옮기는 것은 모두 콜백이다(재실행 한 번). 줄은 FAB·층
 # 모두 같은 수이고 안의 단추만 범위를 따른다. FAB 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은
@@ -1948,8 +1939,8 @@ def _render_fab_editor(
 fab_lock = (
     "샘플 데이터를 보는 중에는 FAB 배치를 고치지 않습니다." if showing_sample else FAB_LOCK_REASON
 )
-# 층 캔버스·배경 도면은 공용 값이라 공식 설비 시나리오에서만 고친다(설계 8-4). 설비 샘플 화면은
-# 저장할 호기가 없어 단추를 끄지 않는다(그 층 도면만 올린다).
+# 층 캔버스는 공용 값이라 공식 설비 시나리오에서만 고친다(설계 8-4). 설비 샘플 화면은 저장할
+# 호기가 없어 단추를 끄지 않는다(캔버스만 저장한다).
 canvas_editable = edit_mode.canvas and not showing_sample
 drawing_locked = (
     not fab_editable if selected is None else not canvas_editable and not using_sample_equipment
@@ -1993,7 +1984,7 @@ with space_box:
             disabled=not floor_labels,
         )
     condition_name_row("도면", slug="space_box_drawing")
-    # 도면 줄 — 「배치 편집」 토글과 「도면·캔버스 편집」 단추가 한 줄에 선다(틈 xsmall · 단추
+    # 도면 줄 — 「배치 편집」 토글과 「캔버스 편집」 단추가 한 줄에 선다(틈 xsmall · 단추
     # 아이콘 없음 — 245px 상자 안 폭 225px 에 들게. 줄이 감기면 상자가 35px 높아져 아래 견주기가 첫
     # 화면 밖으로 밀린다).
     with st.container(
@@ -2039,7 +2030,7 @@ with space_box:
                 disabled=True,
                 help=(literal_markdown(edit_mode.lock_reason) if edit_mode.lock_reason else None),
             )
-        render_floor_layout_button(
+        render_floor_canvas_button(
             floor=selected,
             disabled=drawing_locked,
             reason=(fab_lock if selected is None else CANVAS_LOCK_REASON)
@@ -2175,7 +2166,6 @@ if selected is None:
     # 보기는 저장본이다(저장된 요소가 없으면 기본 배치). 저장 안 한 FAB 편집은 편집기와 상자가
     # 말한다.
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
-    fab_background = fab_profile.image_data_uri if fab_profile is not None else None
     # 「공식과 견주기」 를 켜면 층마다 공식과 자리가 다른 설비 수 — 층 목록 칸과 블록 풍선 한 줄.
     # 층 상세 견주기와 같이 그리는 호기(공정 필터를 지난 것)만 센다 — 같은 표의 배치대수와 맞게.
     unit_differences = (
@@ -2220,13 +2210,11 @@ if selected is None:
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
     open_active_floor = partial(_open_unless_inactive, frozenset(inactive_floors))
     # FAB 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
-    # 제목은 도구 줄 제목, 도면·캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자다. 자리는 늘
+    # 제목은 도구 줄 제목, 캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자다. 자리는 늘
     # 서는 칸이다.
     with st.container(key="space_fab_stage"):
         if fab_editing:
-            _render_fab_editor(
-                block_stats, fab_background, open_active_floor, pending_save=pending_save
-            )
+            _render_fab_editor(block_stats, open_active_floor, pending_save=pending_save)
         else:
             render_fab_layout_viewer(
                 key=FAB_VIEWER_KEY,
@@ -2250,7 +2238,6 @@ if selected is None:
                 as_of_range=as_of_bounds,
                 unconfirmed=_unconfirmed_count(),
                 on_as_of=_set_space_as_of,
-                background_image=fab_background,
                 pending_save=pending_save,
             )
     # 필요 단축 요약·추가 호기 상자 — 자리는 늘 선다(켜고 끌 때 아래 key 있는 층 목록 표가 밀리지
@@ -2283,7 +2270,6 @@ if selected is None:
     render_space_floor_list(
         database_path=equipment_database_path,
         placements=placements,
-        floors_with_image=floors_with_layout_image,
         canvas_text=_canvas_text,
         states=floor_states,
         unit_counts=lambda: floor_unit_counts(_today_status()),
@@ -2378,7 +2364,7 @@ else:
         )
 
     # 층 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
-    # 제목은 도구 줄 제목, 도면·캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자, 범례는 편집기
+    # 제목은 도구 줄 제목, 캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자, 범례는 편집기
     # 왼쪽 칸이다. 자리는 늘 서는 칸이다.
     with st.container(key="space_floor_stage"):
         # 보기 회차는 이 층 행 전체(세는 행과 페이더 범위의 그리는 행을 모두 품는다)의 경계 날짜를
@@ -2544,9 +2530,6 @@ else:
                 on_as_of=_set_space_as_of,
                 picked=picked_unit,
                 on_pick=partial(_pick_unit, selected),
-                background_image=(
-                    layout_profile.image_data_uri if layout_profile is not None else None
-                ),
                 # 「공식과 견주기」 — epoch 밖이라 켜고 꺼도 다시 마운트하지 않는다. 그리는
                 # 호기(공정 필터·일정 없음을 지난 것)만 견준다.
                 compare=(
@@ -2587,11 +2570,11 @@ else:
     # 호기 칸과 층 CSV 는 도면 위 「호기 정보」 창 안이다(2026-11-03 사용자 요청 — 「하단이 아니라
     # 편집기 안에서」, 2026-11-04 Space 결정 보드 답 — CSV 단추도 창 안으로). 도면 아래에는 아무것도
     # 두지 않는다.
-# 도면·캔버스 팝업 호스트 — 단추는 사이드바 「Space 도면」 상자에, 팝업은 본문 끝 한 자리에서
+# 캔버스 팝업 호스트 — 단추는 사이드바 「Space 도면」 상자에, 팝업은 본문 끝 한 자리에서
 # 연다(사이드바 `with` 안에서 팝업을 열지 않는다). 층 캔버스 이탈 검사는 그린 호기가 아니라 저장된
 # 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다. 그 회차 세션 스냅샷의 마스터는 공식 배치다
 # (가정이던 때 리비전이면 공식 스냅샷을 따로 읽는다).
-render_floor_layout_dialog_host(
+render_floor_canvas_dialog_host(
     database_path=equipment_database_path,
     floor=selected,
     saved_equipment=(

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from alert_marks import infos, successes
+from alert_marks import active_state, infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -488,17 +488,15 @@ def test_the_fab_drawing_popup_reuses_the_floor_popup_and_guards_the_blocks(
     app.button(key="space_floor_layout_open_FAB").click().run()
 
     assert not app.exception
-    assert len(app.get("file_uploader")) == 1
-    # 올리기 칸의 상한 안내가 도면당 상한(2.0MB)과 같다. 서버 전체 상한(1GB)이 적혔었다.
-    assert app.get("file_uploader")[0].proto.max_upload_size_mb == 2
-    assert app.button(key="space_floor_layout_delete_FAB").disabled
+    assert len(app.get("file_uploader")) == 0
     right, top = marks_extent(default_fab_layout()[1])
-    app.checkbox(key="space_floor_layout_auto_FAB").uncheck().run()
     next(widget for widget in app.number_input if widget.label == "캔버스 폭").set_value(
         right - 5
     ).run()
 
-    assert any("도면 요소가 범위를 벗어나" in item.value for item in app.warning)
+    assert not app.warning
+    note = active_state(app, "EQ-16")
+    assert note is not None and "도면 요소가 범위를 벗어나" in note["full"]
     assert app.button(key="space_floor_layout_save_FAB").disabled
 
     next(widget for widget in app.number_input if widget.label == "캔버스 폭").set_value(130).run()

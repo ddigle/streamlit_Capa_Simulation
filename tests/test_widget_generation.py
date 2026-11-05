@@ -280,7 +280,6 @@ _COUNTER_WORDS = ("generation", "nonce")
 _REMAINING_HAND_MADE = {
     ("app_pages/space_status.py", "_render_unsaved_layout_panel"),
     ("src/capa_simulation/components/equipment_data_workspace.py", "_upload_widget_key"),
-    ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"),
     ("src/capa_simulation/components/shortening_board.py", "render_progress_board"),
     ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"),
 }

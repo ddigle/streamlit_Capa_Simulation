@@ -814,7 +814,7 @@ def load_floor_group_labels(database_path: str, building: str, floor: str) -> di
 
 
 def load_floor_layout_summaries(database_path: str) -> tuple[FloorLayoutCanvas, ...]:
-    """Load every stored floor canvas without the drawing bytes."""
+    """Load every stored floor canvas."""
     return tuple(
         FloorLayoutCanvas(**payload)
         for payload in _load_floor_layout_summaries_payload(
@@ -836,7 +836,7 @@ def load_floor_layout_profile(
     building: str,
     floor: str,
 ) -> FloorLayoutProfile | None:
-    """Load one floor's canvas and drawing data URI through the payload cache."""
+    """Load one floor's canvas through the payload cache."""
     payload = _load_floor_layout_profile_payload(
         database_path, building, floor, _write_generation("floor_layout")
     )
@@ -864,7 +864,7 @@ def _load_fab_layout_payload(database_path: str, generation: WriteGeneration) ->
 def load_fab_layout(
     database_path: str,
 ) -> tuple[FabLayoutProfile | None, tuple[FabLayoutMark, ...]]:
-    """저장된 FAB 전체 도면 — (캔버스·배경 도면 행 | None, 요소). 요소가 없으면 빈 튜플이고 화면이
+    """저장된 FAB 전체 도면 — (캔버스 행 | None, 요소). 요소가 없으면 빈 튜플이고 화면이
     기본 배치를 그린다(`services/fab_layout.effective_fab_layout`). 층 도면 캐시와 함께 비운다."""
     payload = _load_fab_layout_payload(database_path, _write_generation("floor_layout"))
     profile = payload["profile"]
@@ -976,7 +976,7 @@ def load_floor_states(database_path: str) -> FloorStates:
     같은 방식이다 — 이 앱의 저장(`space_floor_list` 의 저장 콜백)이 성공한 직후
     `clear_floor_state_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의
     쓰기(다른 PC·동기화로 받은 DB)를 맡는다. 도면 캐시(`floor_layout` 세대)와 묶지 않는다 — 층 사용
-    저장이 배경 도면까지 비울 까닭이 없다.
+    저장이 캔버스·요소까지 비울 까닭이 없다.
     """
     return FloorStates(
         **_load_floor_states_payload(
@@ -1048,7 +1048,7 @@ def clear_manual_downtime_cache() -> None:
 
 
 def clear_floor_layout_cache() -> None:
-    """층·FAB 도면·캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비
+    """층·FAB 캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 캔버스만 바꾼 저장(팝업)은 설비
     리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른
     쪽이 둘 다 비운다."""
     _bump_write_generation("floor_layout")

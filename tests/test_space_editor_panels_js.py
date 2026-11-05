@@ -156,10 +156,10 @@ def test_splitter_keys_widen_toward_the_stage_and_fold_with_enter() -> None:
 
 def test_two_wide_panels_leave_the_stage_its_minimum_by_shrinking_the_last_dragged_first() -> None:
     """두 칸을 다 넓혀 무대가 360px 아래로 가면 마지막에 끈 칸부터, 그래도 모자라면 다른 칸을 그
-    최소까지 줄인다. 접힌 띠(28px)는 줄지 않는다."""
+    최소까지 줄인다. 접힌 칸은 자리가 없다(단추는 무대 위에 뜬다)."""
     open_left = {"w": 400, "lo": 200, "open": True}
     open_right = {"w": 400, "lo": 200, "open": True}
-    strip = {"w": 28, "lo": 28, "open": False}
+    strip = {"w": 0, "lo": 0, "open": False}
     result = _run(
         {
             "fits": [
@@ -184,9 +184,35 @@ def test_two_wide_panels_leave_the_stage_its_minimum_by_shrinking_the_last_dragg
         {"left": 400, "right": 228},
         {"left": 228, "right": 400},
         {"left": 200, "right": 200},
-        {"left": 306, "right": 28},
+        {"left": 334, "right": 0},
         {"left": 0, "right": 400},
     ]
+
+
+def test_a_folded_panel_leaves_the_stage_and_floats_a_button_over_it() -> None:
+    """검수 eqp-side-01 — 접으면 칸 자리가 0 이 되어 도면이 넓어지고, 단추 하나만 무대 가장자리 8px
+    안쪽 위에 뜬다(왼쪽 칸은 왼쪽, 오른쪽 칸은 오른쪽). 생김은 옛 미배치 서랍 단추 그대로다 — 앱
+    단추 꼴(`.sle button`)에 면 색만 더하고 세로 글 · 화살표가 없다. 편집 · 보기 모두 같은
+    규칙이다."""
+    layout = JS[JS.index("function layoutPanels() {") : JS.index("function resizePanel(")]
+    assert "w: open ? clampPanel(panelState(side).w, bounds) : 0" in layout
+    assert "PANEL_STRIP_PX" not in JS
+    floating = CSS[CSS.index(".sle-body > .sle-side.is-min {") :][:200]
+    assert "position: absolute" in floating and "top: 8px" in floating
+    assert "z-index: 2" in floating and "width: max-content" in floating
+    assert ".sle-body > .sle-side.is-min.is-left { left: 8px; }" in CSS
+    assert ".sle-body > .sle-side.is-min.is-right { right: 8px; }" in CSS
+    assert (
+        ".sle.is-narrow .sle-body > .sle-side.is-min { bottom: auto; width: max-content; }" in CSS
+    )
+    strip = CSS[CSS.index(".sle button.sle-side-strip {") :][:80]
+    assert strip.startswith(".sle button.sle-side-strip { background: var(--sle-surface); }")
+    assert "writing-mode" not in CSS
+    assert (
+        "›</span></button>" not in HTML and '>‹</span><span class="sle-side-strip-text"' not in HTML
+    )
+    # 끌어 놓기는 그대로 — 접힌 단추 위에 호기를 놓아도 미배치다(칸 상자가 곧 그 단추다).
+    assert "insideRect(drawer.getBoundingClientRect(), event.clientX, event.clientY)" in JS
 
 
 def test_a_dragged_panel_stops_where_the_stage_would_drop_under_its_minimum() -> None:
@@ -247,8 +273,8 @@ def test_the_panels_are_remembered_per_scope_and_mode_only_in_the_browser() -> N
     assert "const SECTIONS_STORE_KEY = 'capa.space.sections.v1'" in JS
     assert "const PANEL_MODE = `${SCOPE}.${VIEW ? 'view' : 'edit'}`" in JS
     assert "const HAS_LEFT = !(VIEW && FAB)" in JS and "const HAS_RIGHT = !VIEW && !FAB" in JS
-    # 처음엔 도움말 둘만 접힘.
-    assert "sectionFolded(name, name === 'help')" in JS
+    # 처음엔 미배치 칸 도움말만 접힘.
+    assert "sectionFolded(name, false)" in JS
     assert "sectionFolded('trayHint', true)" in JS
 
 
@@ -324,7 +350,7 @@ def test_the_legend_reaches_the_page_only_as_text_and_css_text() -> None:
     목록(`label`·`css`·`inner`)과 끝 줄 「기준 YYYY-MM-DD」 를 data `legend`(epoch 밖)로 보내고, JS
     는 견본 꼴을 `style.cssText`, 글을 `textContent` 로만 단다 — HTML 로 읽지 않는다. 파이썬은 셋 다
     글자인 칸만 싣는다."""
-    draw = JS[JS.index("function drawLegend() {") : JS.index("function buildHelp() {")]
+    draw = JS[JS.index("function drawLegend() {") : JS.index("const keysToggle = q(")]
     assert "swatch.style.cssText = String(entry.css || '')" in draw
     assert "text.textContent = String(entry.label || '')" in draw
     assert "innerHTML" not in draw and "insertAdjacentHTML" not in draw

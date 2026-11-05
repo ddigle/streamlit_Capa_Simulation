@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from test_equipment_availability import _baseline, _downtime, _equipment
-from test_floor_layout_profile import _png
 
 from capa_simulation.persistence import sync_state
 from capa_simulation.persistence.equipment_cache import (
@@ -16,7 +15,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_fab_layout,
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services import floor_layout_profile
 from capa_simulation.services.fab_layout import (
     FAB_CANVAS,
     FLOOR_KEYS,
@@ -127,7 +125,7 @@ def test_the_fab_apply_refuses_units_and_checks_the_new_canvas() -> None:
 
 
 def test_without_stored_marks_the_fab_draws_the_default_layout() -> None:
-    """요소 행이 없으면 기본 배치를 그린다 — 배경 도면만 먼저 올려도 블록이 사라지지 않는다."""
+    """요소 행이 없으면 기본 배치를 그린다 — 캔버스만 먼저 저장해도 블록이 사라지지 않는다."""
     canvas, marks = effective_fab_layout(None, ())
     assert (canvas, marks) == default_fab_layout()
     stored = prepare_fab_layout_marks([_block()], CANVAS)
@@ -154,7 +152,6 @@ def test_a_fab_save_round_trips_without_a_revision(tmp_path: Path) -> None:
     assert repository.list_revisions() == []
     profile = repository.load_fab_layout_profile()
     assert profile is not None and profile.canvas_size == FAB_CANVAS
-    assert profile.image_data_uri is None
     marks = repository.load_fab_layout_marks()
     assert [(mark.mark_id, mark.link, mark.color) for mark in marks] == [
         ("B1", ("C1", "1F"), "rose"),
@@ -194,8 +191,6 @@ def test_the_fab_canvas_cannot_shrink_under_the_drawn_marks(tmp_path: Path) -> N
         repository.save_fab_layout(canvas=(right, top - 1), marks=None, base=None)
 
     assert repository.save_fab_layout_canvas(right, top).canvas_size == (right, top)
-    repository.delete_fab_layout_profile()
-    assert repository.load_fab_layout_profile() is None
 
 
 def test_emptying_the_fab_marks_checks_the_default_layout_against_the_canvas(
@@ -229,35 +224,11 @@ def test_fab_writes_mark_the_database_dirty(
     assert dirty == [repository.database_path]
 
 
-def test_the_30mb_budget_counts_floor_and_fab_drawings_together(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(floor_layout_profile, "MAX_TOTAL_LAYOUT_BYTES", 3_000)
+def test_a_fab_canvas_alone_keeps_the_default_blocks(tmp_path: Path) -> None:
+    """캔버스만 저장해도 요소 행이 없으니 기본 배치가 그대로 그려진다."""
     repository = _repository(tmp_path / "equipment.duckdb")
-    payload = _png(101, 62) + bytes(1_500)
-
-    repository.save_floor_layout_image("C1", "1F", "c1_1f.png", payload)
-    with pytest.raises(ValueError, match="전체 합계"):
-        repository.save_fab_layout_image("fab.png", payload)
-    assert repository.load_fab_layout_profile() is None
-
-    repository.delete_floor_layout_profile("C1", "1F")
-    saved = repository.save_fab_layout_image(
-        "fab.png", payload, canvas_width=FAB_CANVAS[0], canvas_height=FAB_CANVAS[1]
-    )
-    assert saved.image_name == "fab.png" and str(saved.image_data_uri).startswith("data:image/png")
-    # FAB 도면을 다시 올리는 것은 합계가 늘지 않는다. 층 도면은 FAB 와 함께 센다.
-    repository.save_fab_layout_image(
-        "fab.png", payload, canvas_width=FAB_CANVAS[0], canvas_height=FAB_CANVAS[1]
-    )
-    with pytest.raises(ValueError, match="전체 합계"):
-        repository.save_floor_layout_image("C1", "2F", "c1_2f.png", payload)
-
-
-def test_a_fab_drawing_keeps_the_default_blocks(tmp_path: Path) -> None:
-    """배경 도면만 올려도 요소 행이 없으니 기본 배치가 그대로 그려진다."""
-    repository = _repository(tmp_path / "equipment.duckdb")
-    repository.save_fab_layout_image("fab.png", _png(1010, 620))
+    right, top = marks_extent(default_fab_layout()[1])
+    repository.save_fab_layout_canvas(right + 5, top + 5)
 
     profile = repository.load_fab_layout_profile()
     assert profile is not None

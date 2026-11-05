@@ -768,20 +768,12 @@ def test_format_key_matches_the_rule_over_every_modifier_and_never_overlaps_elem
             assert not element_copy
 
 
-def _hint_parts() -> list[list[str]]:
-    """편집 도움말 단축키 목록(`HINT` — FAB · 층 두 글). `buildHelp` 가 「 · 」 로 나눠 줄마다
-    쓴다."""
-    block = _between("const HINT = FAB", "const q = (selector)")
-    texts = re.findall(r"'([^']*)'", block)
-    assert len(texts) == 2
-    return [text.split(" · ") for text in texts]
-
-
 def test_format_keys_come_before_element_copy_and_leave_text_fields_alone() -> None:
     """서식 키(Alt+Shift+C/V · Ctrl+Shift+C/V — `formatKeyOf`)는 요소 복사(Ctrl+C/V)보다 먼저 보고
     요소 복사는 Shift 가 없을 때만이다. 둘 다 글 칸 입력 중이면 비키고(글 칸의 Ctrl+Shift+V · macOS
-    ⌥+⇧ 글자는 브라우저 것) 한글 자판에서도 글쇠 자리로 듣는다. Esc 는 든 붓을 먼저 내린다. 도움말
-    단축키 목록은 기본 키 Alt+Shift 와 옛 키, 입력 언어가 바뀔 때의 대안을 한 줄에 말한다."""
+    ⌥+⇧ 글자는 브라우저 것) 한글 자판에서도 글쇠 자리로 듣는다. Esc 는 든 붓을 먼저 내린다. 단축키
+    표는 기본 키 Alt+Shift 와 옛 키를 한 줄에 말한다. 거부 글은 앞머리만이다(하는 법은 단축키 판 ·
+    Guide)."""
     keys = _between("host.onkeydown = (event) => {", "for (const input of fieldInputs) {")
     typing = keys.index("if (typing) return")
     judged = keys.index("const formatKey = formatKeyOf(event)")
@@ -799,16 +791,11 @@ def test_format_keys_come_before_element_copy_and_leave_text_fields_alone() -> N
         "if (event.key === 'Escape' && S.paint) { event.preventDefault(); setBrush(null); return }"
     )
     assert esc < typing and esc < keys.index("if (event.key === 'Escape' && S.selection.size)")
-    for parts in _hint_parts():
-        line = next(part for part in parts if "서식 복사·붙여넣기" in part)
-        assert line.startswith("Alt+Shift+C/V 서식 복사·붙여넣기(Ctrl+Shift+C/V 도 됨")
-        assert "입력 언어가 바뀌면 Ctrl+Shift+C/V 나 붓 단추를 쓰세요" in line
-    for text in (
-        "누른 뒤 Alt+Shift+C'",
-        "고른 것에서 Alt+Shift+C 또는 「서식 복사」'",
-        "「서식 복사」(Alt+Shift+C)'",
-    ):
-        assert text in JS, text
+    table = _between("const SHORTCUTS = [", "function shortcutRows(")
+    assert "['Alt+Shift+C', '서식 복사(Ctrl+Shift+C 도)', 'ef eb']" in table
+    assert "['Alt+Shift+V', '서식 붙여넣기(Ctrl+Shift+V 도)', 'ef eb']" in table
+    for text in ("누른 뒤 Alt+Shift+C", "고른 것에서 Alt+Shift+C", "「서식 복사」(Alt+Shift+C)"):
+        assert text not in JS, text
 
 
 def test_the_brush_paints_on_press_and_by_rectangle_without_moving() -> None:
@@ -836,7 +823,7 @@ def test_the_brush_paints_on_press_and_by_rectangle_without_moving() -> None:
     epoch = _between("if (S.epoch !== data.epoch) {", "initFromData()")
     assert "S.paint = null" in epoch
     status = _between("function updateStatus() {", "function commitTyping() {")
-    assert "if (S.paint) {" in status and "syncFormatPanel()" in status
+    assert "if (S.paint) add(" in status and "syncFormatPanel()" in status
     assert ".sle-canvas.is-painting" in CSS and "cursor: copy" in CSS
 
 

@@ -657,8 +657,6 @@ def _complete(palette: dict[str, Any], *, shortage_band_alpha: float) -> dict[st
     # 위·칸 색 아래에 깔리고 요약 표부터 설비 일정 구획 끝까지 같은 달에 이어진다. 칸을 칠하는
     # 판정색과 같은 계열이라 「이 달이 부족」이 열로 읽힌다.
     filled["SHORTAGE_MONTH_BAND"] = _with_alpha(palette["STATUS_SHORTAGE"], shortage_band_alpha)
-    # 배경 도면 위에 캔버스를 덮을 때. SPACE_CANVAS 를 바꾸면 함께 바뀐다.
-    filled["SPACE_CANVAS_OVERLAY"] = _with_alpha(palette["SPACE_CANVAS"], 0.18)
     # 반출/이설 예정 노랑의 짙은 테. 없는 테마(어둡게)는 캔버스색이라 바깥으로는 보이지 않는다.
     filled["SPACE_RING_EXIT_OUTLINE"] = (
         palette["SPACE_RING_EXIT_OUTLINE"] or palette["SPACE_CANVAS"]
@@ -751,7 +749,6 @@ if TYPE_CHECKING:
     SPACE_BLOCK_OFF_FILL: Final[str] = ""
     SPACE_BORDER: Final[str] = ""
     SPACE_CANVAS: Final[str] = ""
-    SPACE_CANVAS_OVERLAY: Final[str] = ""
     SPACE_CAPA_RAMP: Final[tuple[str, ...]] = ()
     SPACE_CAPA_RAMP_INKS: Final[tuple[str, ...]] = ()
     SPACE_FILTER_DIM_OPACITY: Final[str] = ""

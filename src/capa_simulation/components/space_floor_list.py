@@ -38,7 +38,7 @@ Streamlit 캐시는 두지 않는다 — DB 는 `equipment_cache.load_floor_stat
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -174,7 +174,6 @@ _OCCUPANCY_HELP = (
     "도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적. 캔버스 단위의 상대값이며 "
     "겹친 자리는 두 번 셉니다."
 )
-_DRAWING_HELP = "그 층에 배경 도면 이미지를 올렸는지입니다."
 _USE_HELP = "끈 층(비활성)은 FAB 도면에서 흐려지고 층 고르기에서 빠집니다. 호기는 그대로입니다."
 _UNITS_HELP = (
     "이 층에 동·층이 적힌 설비 수(오늘 기준·공정 필터 무관·레이아웃 N 포함). 배치대수와 다를 수 "
@@ -186,7 +185,6 @@ _TABLE_COLUMNS = {
     "배치대수": st.column_config.NumberColumn(format="localized", help=_PLACED_HELP),
     "미배치대수": st.column_config.NumberColumn(format="localized", help=_UNPLACED_HELP),
     "점유율": st.column_config.NumberColumn(format="percent", help=_OCCUPANCY_HELP),
-    "배치 도면": st.column_config.TextColumn(help=_DRAWING_HELP),
 }
 
 # 색 기준 「필요 단축」 을 켠 동안만 사용 층 표에 붙는 칸 넷(설비 대수 — 모듈 묶음 한 대). 비활성 층
@@ -700,7 +698,6 @@ def _open_from_table(
 
 def _table_rows(
     placements: Sequence[FloorPlacement],
-    floors_with_image: Collection[FloorKey],
     canvas_text: Callable[[FloorKey], str],
     states: FloorStates,
     *,
@@ -724,7 +721,6 @@ def _table_rows(
                 "배치대수": placement.placed,
                 "미배치대수": placement.unplaced,
                 "점유율": placement.occupancy,
-                "배치 도면": "등록" if placement.key in floors_with_image else "미등록",
                 "캔버스": canvas_text(placement.key),
             }
         )
@@ -750,7 +746,6 @@ def _column_config(extra_columns: Sequence[FloorListColumn], *, inactive: bool) 
 
 def _render_tables(
     placements: Sequence[FloorPlacement],
-    floors_with_image: Collection[FloorKey],
     canvas_text: Callable[[FloorKey], str],
     states: FloorStates,
     on_open: Callable[[FloorKey], None],
@@ -763,7 +758,6 @@ def _render_tables(
     st.dataframe(
         _table_rows(
             placements,
-            floors_with_image,
             canvas_text,
             states,
             inactive=False,
@@ -791,7 +785,6 @@ def _render_tables(
             st.dataframe(
                 _table_rows(
                     placements,
-                    floors_with_image,
                     canvas_text,
                     states,
                     inactive=True,
@@ -1019,7 +1012,6 @@ def render_space_floor_list(
     *,
     database_path: str,
     placements: Sequence[FloorPlacement],
-    floors_with_image: Collection[FloorKey],
     canvas_text: Callable[[FloorKey], str],
     states: FloorStates,
     unit_counts: Callable[[], Mapping[FloorKey, int]],
@@ -1067,4 +1059,4 @@ def render_space_floor_list(
     # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을 가로채지
     # 않게 띄운다(AGENTS 9장 「표 도구 막대」).
     toolbar_clearance()
-    _render_tables(placements, floors_with_image, canvas_text, states, on_open, extra_columns)
+    _render_tables(placements, canvas_text, states, on_open, extra_columns)

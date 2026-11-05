@@ -235,6 +235,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     ),
     AlertSpec("EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 트레이에 있음"),
     AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
+    # 「캔버스 편집」 팝업에 서던 이탈 경고를 상태 알림으로 — 팝업 자리에는 잠긴 단추와 짧은 풍선만.
+    AlertSpec(
+        "EQ-16", "action", "state", "Space 캔버스 — 고치는 크기 밖으로 나가는 호기 · 도면 요소"
+    ),
     # 공정 Capa 상세 정리 줄에 늘 서던 「사용기준 제외 n대」 를 상태 알림으로(화면에 내역을 늘 두지
     # 않는다 — 설계 규칙 UI-TXT-04 · UI-NTF-02).
     AlertSpec(

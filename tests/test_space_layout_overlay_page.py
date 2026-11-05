@@ -918,20 +918,18 @@ def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_loc
 
 
 def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> None:
-    """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명을 막는다. 설비명은
-    이름마다 구두점을 막아 「DA*31*R」 의 별표 짝도 기울임이 되지 않는다(개선 거리 I11)."""
-    from capa_simulation.components.floor_layout_upload import (
+    """층 캔버스 팝업의 알림 재료 — 알림 전문은 평문(`textContent`)이라 가정 설비 시나리오 이름과
+    이탈 호기 설비명을 글자 그대로 싣는다(마크다운 막음을 달면 「\\~」 가 그대로 보인다)."""
+    from capa_simulation.components.floor_canvas_dialog import (
         _unit_names,
         overlay_mark_words,
         overlay_unit_words,
     )
 
-    assert overlay_unit_words((("10~12월 증설", 2),)) == "가정 배치 「10\\~12월 증설」 호기 2대"
-    assert "가정 배치 「10\\~12월 증설」 의 요소도 밖입니다" in overlay_mark_words(
-        ("10~12월 증설",)
-    )
-    assert _unit_names(["NEW~01~", "EQ-02"]) == "NEW\\~01\\~, EQ\\-02(2대)"
-    assert _unit_names(["DA*31*R"]) == "DA\\*31\\*R(1대)"
+    assert overlay_unit_words((("10~12월 증설", 2),)) == "가정 배치 「10~12월 증설」 호기 2대"
+    assert "가정 배치 「10~12월 증설」 의 요소도 밖입니다" in overlay_mark_words(("10~12월 증설",))
+    assert _unit_names(("NEW~01~", "EQ-02")) == "NEW~01~, EQ-02(2대)"
+    assert _unit_names(("DA*31*R",)) == "DA*31*R(1대)"
 
 
 def test_an_assumption_session_locks_fab_canvas_and_floor_use(
@@ -948,7 +946,7 @@ def test_an_assumption_session_locks_fab_canvas_and_floor_use(
 
     detail = _ok(_space(tmp_path, setup).run())
     drawing = next(button for button in detail.button if "_open_" in str(button.key))
-    assert drawing.disabled and "층 캔버스·배경 도면은 공식 설비 시나리오에서" in str(drawing.help)
+    assert drawing.disabled and "층 캔버스는 공식 설비 시나리오에서" in str(drawing.help)
 
     official = _ok(_space(tmp_path, OPERATIONS, floor=False).run())
     assert not official.toggle(key="space_fab_edit_mode").disabled
@@ -1585,7 +1583,7 @@ def test_an_assumption_canvas_value_from_an_old_browser_is_refused(
     _ok(app.run())
 
     assert any(
-        "적용하지 못했습니다" in str(item.value) and "층 캔버스·배경 도면은" in str(item.value)
+        "적용하지 못했습니다" in str(item.value) and "층 캔버스는" in str(item.value)
         for item in app.error
     )
     assert LAYOUT_ROLE_KEY not in app.session_state
@@ -1922,21 +1920,21 @@ def test_the_canvas_dialog_previews_the_hypothetical_layout_before_shrinking(
     clear_equipment_repository()
     app = _ok(_space(tmp_path, OPERATIONS).run())
     app.button(key="space_floor_layout_open_C1_1F").click().run()
-    app.checkbox(key="space_floor_layout_auto_C1_1F").uncheck().run()
-    app.number_input(key="space_floor_layout_width_C1_1F_manual_100x60").set_value(95.0).run()
+    app.number_input(key="space_floor_layout_width_C1_1F").set_value(95.0).run()
     _ok(app)
 
-    warnings = [str(item.value) for item in app.warning]
-    assert any("가정 배치 「셋업 실무」 호기 1대가 범위를 벗어납니다" in text for text in warnings)
-    assert not any("도면 요소가 범위를 벗어나" in text for text in warnings)
+    assert not app.warning
+    note = active_state(app, "EQ-16")
+    assert note is not None
+    assert "가정 배치 「셋업 실무」 호기 1대가 범위를 벗어납니다" in note["full"]
+    assert "도면 요소가 범위를 벗어나" not in note["full"]
     assert app.button(key="space_floor_layout_save_C1_1F").disabled
     app.checkbox(key="space_floor_layout_shrink_C1_1F").check().run()
     assert not app.button(key="space_floor_layout_save_C1_1F").disabled
 
-    app.number_input(key="space_floor_layout_width_C1_1F_manual_100x60").set_value(80.0).run()
-    warnings = [str(item.value) for item in app.warning]
-    assert any(
-        "도면 요소가 범위를 벗어나" in text and "가정 배치 「셋업 실무」 의 요소도 밖입니다" in text
-        for text in warnings
-    )
+    app.number_input(key="space_floor_layout_width_C1_1F").set_value(80.0).run()
+    note = active_state(app, "EQ-16")
+    assert note is not None
+    assert "도면 요소가 범위를 벗어나" in note["full"]
+    assert "가정 배치 「셋업 실무」 의 요소도 밖입니다" in note["full"]
     assert app.button(key="space_floor_layout_save_C1_1F").disabled

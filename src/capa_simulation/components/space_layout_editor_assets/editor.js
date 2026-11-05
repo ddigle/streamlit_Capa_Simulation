@@ -7,7 +7,7 @@ export default function (component) {
     epoch: null, items: new Map(), ghosts: new Map(), original: new Map(), originalMarkIds: new Set(), groups: new Map(), undo: [],
     selected: null, selection: new Set(), step: 0.5, drag: null, overlapPairs: 0, blocked: 0,
     canvas: null, originalCanvas: null, note: '', view: { z: 1, x: 0, top: 0 }, spaceDown: false, seq: 0,
-    passthrough: [], bgImage: null,
+    passthrough: [],
     // 기준일. asOf = 지금 칠한 날, dataAsOf = 파이썬이 쥔 날(상태 이름·범례·요약의 날), sent = 보냈는데 아직 회차로
     // 돌아오지 않은 날들. 페이더를 끄는 동안(faderBusy)과 키 입력이 멈추기를 기다리는 동안(commitTimer)은 회차가
     // 와도 브라우저가 쥔 날을 지킨다.
@@ -214,16 +214,11 @@ export default function (component) {
     const shown = item.kind === 'bay' ? bayCaption(item) : item.label
     return `${markKindName(item)}${shown ? ` · ${shown}` : ''}`
   }
-  // 편집 안내 첫 문단(왼쪽 칸 「도움말」 — 도면 위에는 캡션을 두지 않는다, 2026-11-03 사용자 요청).
-  const GUIDE = FAB
-    ? '층 블록·영역·글자를 끌어 놓아 고치고 「적용」 을 누르면 이 세션에 들어갑니다(저장 전). 층 블록을 고르면 선택 칸에서 연결 층·색을 바꾸고 [열기] 로 그 층을 엽니다. S.PKG 가 아닌 자리는 블록 대신 색을 고른 영역과 글자로 그립니다.'
-    : '끌어 놓아 자리·크기를 고치고 「적용」 을 누르면 이 세션의 편집본에 들어갑니다(저장 전). 조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. 층이 정해지지 않은 미배치 호기는 오른쪽 미배치 칸에 함께 뜹니다. 기준일은 편집하는 동안 고정입니다(도구 줄 칩) — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다. 도면의 호기를 오른쪽 칸에 끌어 놓으면 미배치로 돌아갑니다.'
   // 두 옆 칸(2026-11-03 사용자 요청 — 왼쪽 도구 칸 · 오른쪽 미배치 칸, 폭 끌기·접기·기억). 칸 폭 한계는 `panelBounds`(아래
   // 순수 구획), 기억은 `capa.space.panels.v1`(범위·모드별 {left, right: {w, min}}). 편집기 폭이 NARROW_PX 아래면 두 칸이
   // 무대 위 겹침 서랍이 된다. 무대는 STAGE_MIN_PX 아래로 줄지 않는다.
   const PANELS_STORE_KEY = 'capa.space.panels.v1'
   const SECTIONS_STORE_KEY = 'capa.space.sections.v1'
-  const PANEL_STRIP_PX = 28
   const PANEL_SPLIT_PX = 6
   const STAGE_MIN_PX = 360
   const NARROW_PX = 900
@@ -238,9 +233,6 @@ export default function (component) {
   const HAS_RIGHT = !VIEW && !FAB
   // 스크롤 고정이 `<html>` 에 다는 속성(그 속성을 읽는 규칙은 페이지 서식 — 파이썬 `space_lock_style`).
   const LOCK_ATTR = 'data-space-lock'
-  const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 왼쪽 칸 「선택」 에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Alt+Shift+C/V 서식 복사·붙여넣기(Ctrl+Shift+C/V 도 됨 — 크기·색·선·글자, 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝. 입력 언어가 바뀌면 Ctrl+Shift+C/V 나 붓 단추를 쓰세요) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Shift+H/V 좌우·상하 뒤집기(비대칭 도형) · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · 호기를 두 번 누르면 「호기 정보」 창(고른 호기의 칸 · 칸 필터로 찾은 호기 도면 강조) · Ctrl+C/V 도면 요소 복사·붙여넣기 · Alt+Shift+C/V 서식 복사·붙여넣기(Ctrl+Shift+C/V 도 됨 — 크기·색·선·글자, 왼쪽 칸 「서식」 붓은 두 번 누르면 잠금, Esc 끝. 입력 언어가 바뀌면 Ctrl+Shift+C/V 나 붓 단추를 쓰세요) · 도형은 노란 손잡이로 꼴 바꾸기·Shift+모서리로 비율 유지 · Shift+H/V 좌우·상하 뒤집기(베이·비대칭 도형) · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -265,8 +257,10 @@ export default function (component) {
   const rightSplit = q('.sle-split.is-right')
   const legendSection = q('.sle-sec[data-sec="legend"]')
   const legendBox = q('.sle-legend')
-  const helpBox = q('.sle-help')
   const lockButton = q('.sle-lock')
+  const lockDot = q('.sle-lock-dot')
+  // 단추 풍선은 HTML 이 처음 값이다 — 고정 중 저장 안 한 배치 표지가 앞에 한 마디를 더한다(`showLockMark`).
+  if (S.lockTip === undefined) S.lockTip = lockButton.title
   const pinChipDate = q('.sle-pinchip-date')
   // 오른쪽 미배치 칸(이름 `drawer*` 는 이 칸을 가리킨다). 접힌 띠가 `drawerTab`, 칸 상자가 `trayBox`, 그 안 굴리는 칸이 `trayScroll`.
   const drawer = q('.sle-side.is-right')
@@ -1650,6 +1644,52 @@ export default function (component) {
   }
   // </view-compare>
 
+  // 단축키 표(한 곳) — 도구 줄 「단축키」 판이 지금 화면의 줄만 「키조합 : 기능」 으로 그린다. 화면 넷: vf 층 보기 · vb FAB 보기 ·
+  // ef 층 편집 · eb FAB 편집. 키를 더하거나 고치면 이 표도 고친다. `tests/test_space_editor_shortcuts_js.py` 가 아래 두 표시 줄 사이를
+  // 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <shortcuts>
+  const SHORTCUTS = [
+    ['Ctrl+휠', '확대 · 축소', 'vf vb ef eb'],
+    ['+ · −', '확대 · 축소', 'vf vb ef eb'],
+    ['0', '전체 보기', 'vf vb ef eb'],
+    ['고정 중 휠', '도면 옮기기', 'vf vb ef eb'],
+    ['고정 중 Shift+휠', '도면 가로로 옮기기', 'vf vb ef eb'],
+    ['방향키', '화면 옮기기', 'vf vb'],
+    ['Tab', '다음 호기로', 'vf'],
+    ['Tab', '다음 층 블록으로', 'vb'],
+    ['Enter · Space', '초점 둔 호기 고르기', 'vf'],
+    ['Enter · Space', '초점 둔 층 열기', 'vb'],
+    ['Esc', '고르기 풀기', 'vf'],
+    ['호기 두 번 클릭', '호기 정보 창 열기', 'vf ef'],
+    ['← · →', '페이더에서 기준일 하루', 'vf'],
+    ['PageUp · PageDown', '페이더에서 기준일 한 달', 'vf'],
+    ['Home · End', '페이더에서 기준일 범위 끝', 'vf'],
+    ['Ctrl+Z', '실행 취소', 'ef eb'],
+    ['Ctrl+A', '전체 고르기', 'ef eb'],
+    ['Ctrl · Shift+클릭', '고르기에 더하기 · 빼기', 'ef eb'],
+    ['빈 곳 끌기', '사각형으로 여러 개 고르기', 'ef eb'],
+    ['Tab · Enter', '초점 옮겨 고르기', 'ef eb'],
+    ['Ctrl+Enter', '고르기에 더하기 · 빼기', 'ef eb'],
+    ['Esc', '붓 내리기 · 고르기 풀기', 'ef eb'],
+    ['방향키', '고른 것 옮기기', 'ef eb'],
+    ['Shift+방향키', '고른 것 다섯 칸 옮기기', 'ef eb'],
+    ['Ctrl+방향키', '고른 것 크기 바꾸기', 'ef eb'],
+    ['Delete', '빼기 · 지우기', 'ef eb'],
+    ['Ctrl+C · Ctrl+V', '도면 요소 복사 · 붙여넣기', 'ef eb'],
+    ['Alt+Shift+C', '서식 복사(Ctrl+Shift+C 도)', 'ef eb'],
+    ['Alt+Shift+V', '서식 붙여넣기(Ctrl+Shift+V 도)', 'ef eb'],
+    ['Shift+H', '좌우 뒤집기', 'ef eb'],
+    ['Shift+V', '상하 뒤집기', 'ef eb'],
+    ['Shift+모서리 끌기', '도형 비율 유지', 'ef eb'],
+    ['Alt+끌기', '정렬선에 붙이지 않기', 'ef eb'],
+    ['Space+끌기', '화면 옮기기', 'ef eb'],
+  ]
+  // 그 화면(`vf`·`vb`·`ef`·`eb`)에서 쓸 수 있는 줄 — [키조합, 기능].
+  function shortcutRows(screen) {
+    return SHORTCUTS.filter((row) => row[2].split(' ').includes(screen)).map((row) => [row[0], row[1]])
+  }
+  // </shortcuts>
+
   // 두 옆 칸·스크롤 고정의 판정(순수 함수). `tests/test_space_editor_panels_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로
   // 돌린다 — 바깥 이름을 쓰지 않는다.
   // <side-panels>
@@ -2707,11 +2747,7 @@ export default function (component) {
   function drawStatic() {
     // 영역 비율이 바뀌면 기본 높이도 바뀐다(고른 높이가 없을 때만).
     fitStage()
-    bg.replaceChildren()
-    if (data.backgroundImage) {
-      bg.append(el('image', { href: data.backgroundImage, x: 0, y: 0, width: W(), height: H(), preserveAspectRatio: 'none', class: 'sle-bg-image' }))
-    }
-    bg.append(el('rect', { class: data.backgroundImage ? 'sle-canvas-bg has-image' : 'sle-canvas-bg', x: 0, y: 0, width: W(), height: H() }))
+    bg.replaceChildren(el('rect', { class: 'sle-canvas-bg', x: 0, y: 0, width: W(), height: H() }))
     grid.replaceChildren()
     // 격자는 데이터 좌표로 긋는다 — 캔버스 높이가 소수여도 선이 스냅 자리와 맞는다. 굵은 선은 10칸마다.
     for (let k = 1; k < W(); k += 1) {
@@ -4294,7 +4330,7 @@ export default function (component) {
       parts.push(`크기를 ${named} 에서 불러옴`)
     }
     if (guessed.some((m) => !m.sizeFrom)) parts.push('크기 없는 호기는 이 층 가운데 크기로 놓음')
-    return `${parts.join(' · ')}(트레이로 다시 빼면 버림)`
+    return parts.join(' · ')
   }
 
   function updateStatus() {
@@ -4319,19 +4355,14 @@ export default function (component) {
       b.textContent = strong
       statusBox.append(b)
     }
-    // 스크롤 고정 중이면 위 「저장 안 한 배치」 상자가 화면 밖이다 — 맨 앞에 한 줄.
-    if (lockNote()) add(lockNote())
+    // 상태 줄은 값과 표지만이다 — 하는 법은 도구 줄 「단축키」 · 풍선 · Guide(설계 규칙 UI-TXT-04).
     // 든 서식 붓(한 번 · 잠금).
-    if (S.paint) {
-      add(S.paint.sticky
-        ? '서식 붓 잠금 — 누를 때마다 붙입니다(빈 곳을 끌면 그 안 전부) · Esc·붓 단추로 끝'
-        : '서식 붓 — 붙일 것을 누르세요(빈 곳을 끌면 그 안 전부) · Esc 끝')
-    }
+    if (S.paint) add(S.paint.sticky ? '서식 붓 잠금' : '서식 붓')
     // 방금 한 일의 한 줄(복사·붙여넣기) — 다음 고르기·편집에서 지운다.
     if (S.flash) add(S.flash)
     if (chosen.length > 1) {
       add('선택 ', `${chosen.length}개`)
-      add(`${expanded(chosen).length}개가 함께 움직입니다 — Shift/Ctrl+클릭으로 더하거나 빼기 · Esc 선택 풀기`)
+      if (expanded(chosen).length !== chosen.length) add('함께 움직임 ', `${expanded(chosen).length}개`)
       const sized = sizeNote(expanded(chosen))
       if (sized) add(sized)
     } else if (item && isMark(item)) {
@@ -4343,25 +4374,20 @@ export default function (component) {
       const [cols, rows] = moduleGrid(mods.length)
       add('선택 ', `Main 설비 ${item.group}`)
       if (range) add(`범위 X ${range.x} · Y ${range.y} · 크기 ${range.w}×${range.h}`)
-      else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
-      add(`모듈 ${mods.length}대는 범위 안 ${cols}×${rows} 바둑판에 자동으로 섭니다 — 범위를 끌어 옮기고 테두리 손잡이로 키웁니다`)
+      else add('미배치')
+      add(`모듈 ${mods.length}대 · ${cols}×${rows}`)
       const hidden = mods.filter((m) => m.ghost).map((m) => m.id)
-      if (hidden.length) add(`숨은 모듈(레이아웃표시 N·도면 이탈) ${withJosa(hidden.join(', '), '은')} 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
-      if (untiledModules(item)) add(`${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다`)
+      if (hidden.length) add(`숨은 모듈 ${hidden.join(', ')}`)
+      if (untiledModules(item)) add(`${mods.length}등분 아님`)
       const sized = sizeNote(mods)
       if (sized) add(sized)
     } else if (item) {
       add('선택 ', item.label)
       if (onCanvas(item)) add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}`)
-      else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
+      else add('미배치')
       if (item.group) add(`Main 설비 ${item.group}`)
       const sized = sizeNote([item])
       if (sized) add(sized)
-    } else {
-      // 단축키 전부는 왼쪽 칸 「도움말」 이다(상태 줄이 여러 줄로 늘어 도면이 밀리지 않게).
-      add(FAB
-        ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다 · 단축키는 왼쪽 칸 「도움말」'
-        : '호기·요소를 끌어 옮기고 손잡이로 크기를 바꿉니다 · 빈 곳을 끌면 여러 개 · 단축키는 왼쪽 칸 「도움말」')
     }
     add('적용 안 한 변경 ', `${changed}건`)
     if (FAB) {
@@ -4818,13 +4844,13 @@ export default function (component) {
     const units = chosen.length - marks.length
     if (!marks.length) {
       if (!units) return false
-      S.flash = '호기는 복사하지 않습니다 — 도면 요소(영역·글자·기둥 …)만 복사합니다'
+      S.flash = '호기는 복사하지 않습니다'
       updateStatus()
       return true
     }
     writeClipboard(marks.map(clipOf))
     S.pasteSerial = 0
-    S.flash = `도면 요소 ${marks.length}개 복사 — Ctrl+V 로 붙입니다${units ? ' · 호기는 복사하지 않습니다' : ''}`
+    S.flash = `도면 요소 ${marks.length}개 복사${units ? ' · 호기는 복사하지 않습니다' : ''}`
     updateStatus()
     return true
   }
@@ -4981,7 +5007,7 @@ export default function (component) {
   function copyFormat() {
     const item = S.selected ? S.items.get(S.selected) : null
     if (!item) {
-      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 Alt+Shift+C'
+      S.flash = '서식을 담을 것을 먼저 고르세요'
       updateStatus()
       return null
     }
@@ -5033,7 +5059,7 @@ export default function (component) {
       const left = seen.size - matched
       S.flash = `서식을 ${count}개에 붙였습니다${left ? ` · 맞는 칸이 없는 ${left}개는 그대로${unitOnly ? '(호기에는 같은 호기의 크기만 붙습니다)' : ''}` : ''}`
     } else if (!FORMAT_PARTS.some((part) => parts[part])) {
-      S.flash = '붙일 것(크기·색·선·글자)이 모두 꺼져 있습니다 — 왼쪽 칸 「서식」 체크'
+      S.flash = '붙일 것(크기·색·선·글자)이 모두 꺼져 있습니다'
     } else if (matched) {
       S.flash = '이미 같은 서식입니다'
     } else if (unitOnly) {
@@ -5047,13 +5073,13 @@ export default function (component) {
   function pasteFormat() {
     const clip = S.formatClip
     if (!clip) {
-      S.flash = '담은 서식이 없습니다 — 고른 것에서 Alt+Shift+C 또는 「서식 복사」'
+      S.flash = '담은 서식이 없습니다'
       updateStatus()
       return
     }
     const targets = selectedItems().filter((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
     if (!targets.length) {
-      S.flash = '서식을 붙일 것을 고르세요 — 담은 원본 하나는 빼고 고른 것 모두에 붙입니다'
+      S.flash = '서식을 붙일 것을 고르세요'
       updateStatus()
       return
     }
@@ -5069,7 +5095,7 @@ export default function (component) {
   function brushClip() {
     if (S.selected && S.items.has(S.selected)) return copyFormat()
     if (!S.formatClip) {
-      S.flash = '서식을 담을 것을 먼저 고르세요 — 호기·도면 요소를 누른 뒤 붓을 누릅니다'
+      S.flash = '서식을 담을 것을 먼저 고르세요'
       updateStatus()
     }
     return S.formatClip
@@ -5105,7 +5131,7 @@ export default function (component) {
     paintPaste.disabled = !clip || !selectedItems().some((m) => onCanvas(m) && formatOrigin(m) !== clip.origin)
     const parts = formatParts()
     for (const box of paintParts) box.checked = parts[box.dataset.part] !== false
-    setText(paintNow, clip ? `담은 서식 — ${formatWords(clip.fmt)}` : '담은 서식 없음 — 고른 것에서 「서식 복사」(Alt+Shift+C)')
+    setText(paintNow, clip ? `담은 서식 — ${formatWords(clip.fmt)}` : '담은 서식 없음')
   }
   // 붓 단추 — 한 번 누르면(키보드 Enter·Space 포함) 담고 들기 / 든 붓 내리기, 두 번 누르면 잠금(엑셀처럼). 두 번 누름의 첫 누름이
   // 이미 붓을 들었으면 그 붓을 잠근다.
@@ -5602,7 +5628,6 @@ export default function (component) {
     if (String(S.viewFloor) !== FLOOR) S.view = { z: 1, x: 0, top: 0 }
     S.viewFloor = FLOOR
     initFromData()
-    S.bgImage = data.backgroundImage || null
     drawStatic()
     renderItems()
     // 새로 선 도면은 파이썬이 쥔 고른 호기(`data.picked`)를 다시 고른다(아래 `syncPick`).
@@ -5624,10 +5649,6 @@ export default function (component) {
       if (sameLook(item, next)) continue
       Object.assign(item, next)
       touched.push(item)
-    }
-    if ((data.backgroundImage || null) !== S.bgImage) {
-      S.bgImage = data.backgroundImage || null
-      drawStatic()
     }
     // 도면 요소는 적어(층마다 수십 개) 늘 다시 그린다 — 영역 색(테마)·층 블록 대수(`linkStats`)가 data 로 온다.
     if (VIEW && !FAB) {
@@ -5991,7 +6012,7 @@ export default function (component) {
       const units = drag.ids.map(itemOf).filter((m) => m && isUnit(m) && !m.ghost && onCanvas(m))
       const count = expanded(units).filter(onCanvas).length
       removeItems(units)
-      S.flash = `미배치로 ${count}대 — 실행 취소로 되돌립니다`
+      S.flash = `미배치로 ${count}대`
       updateStatus()
       return
     }
@@ -6078,6 +6099,8 @@ export default function (component) {
     if (event.key === ' ') { S.spaceDown = false; svg.classList.remove('is-pan-ready') }
   }
   host.onkeydown = (event) => {
+    // 단축키 판은 Esc 가 먼저 닫는다(고른 것 · 붓은 그대로).
+    if (event.key === 'Escape' && keysOpen()) { event.preventDefault(); setKeysOpen(false, true); return }
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -6587,7 +6610,7 @@ export default function (component) {
     // 좁은 화면 서랍을 접으면 서랍 몫(`trayReserve`)으로 옮긴 화면을 제자리로.
     if (!open) applyView({ reposition: false })
   }
-  // 칸 폭을 정해 몸의 가로 칸(grid)에 건다. 넓은 화면은 칸마다 기억 폭(없으면 기본, 접혔으면 28px 띠)을 한계 안으로 맞추고
+  // 칸 폭을 정해 몸의 가로 칸(grid)에 건다. 넓은 화면은 칸마다 기억 폭(없으면 기본, 접혔으면 0 — 접힌 단추는 무대 위에 뜬다)을 한계 안으로 맞추고
   // 무대가 STAGE_MIN_PX 아래로 가면 마지막에 끈 칸부터 줄인다. 좁은 화면은 두 칸이 무대 위 겹침 서랍이라 칸 폭은 0 이고
   // 서랍 폭(`--side-panel-w`)만 준다. 무대 폭이 바뀌면 무대 관찰자(S.ro)가 viewBox 를 다시 맞춘다.
   function layoutPanels() {
@@ -6604,7 +6627,7 @@ export default function (component) {
       const bounds = panelBounds(width, panelSpec(side))
       const open = panelOpen(side)
       sideEl(side).classList.toggle('is-min', !open)
-      info[side] = { bounds, open, w: open ? clampPanel(panelState(side).w, bounds) : PANEL_STRIP_PX }
+      info[side] = { bounds, open, w: open ? clampPanel(panelState(side).w, bounds) : 0 }
     }
     if (narrow) {
       bodyBox.style.gridTemplateColumns = '0px 0px minmax(0, 1fr) 0px 0px'
@@ -6706,8 +6729,8 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- 왼쪽 칸 묶음 접힘(브라우저 안에서만)
-  // 묶음(범례·도면 요소·선택·서식·격자·편집 영역·도움말)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
-  // 도움말 둘만 접힘. 층 보기(범례 하나)는 묶음 머리가 없어 늘 펼침이다.
+  // 묶음(범례·도면 요소·선택·서식·격자·편집 영역)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
+  // 미배치 칸 도움말만 접힘. 층 보기(범례 하나)는 묶음 머리가 없어 늘 펼침이다.
   function sectionFolded(name, fallback) {
     if (!S.sections) {
       try {
@@ -6732,7 +6755,7 @@ export default function (component) {
     for (const section of host.querySelectorAll('.sle-sec')) {
       const name = section.dataset.sec
       const head = section.querySelector('.sle-sec-head')
-      const folded = !VIEW && sectionFolded(name, name === 'help')
+      const folded = !VIEW && sectionFolded(name, false)
       section.classList.toggle('is-folded', folded)
       head.setAttribute('aria-expanded', String(!folded))
       head.onclick = () => {
@@ -6744,7 +6767,7 @@ export default function (component) {
     }
   }
 
-  // ---------------------------------------------------------------- 범례·도움말(왼쪽 칸)
+  // ---------------------------------------------------------------- 범례(왼쪽 칸)
   // 범례 칸은 파이썬이 보낸 꼴(`data.legend` — 견본 꼴 `css`·안 글자 `inner`·글 `label`, 끝 줄 `asOf`)이다. 견본 꼴은
   // `style.cssText`, 글은 `textContent` 로만 단다(HTML 로 읽지 않는다). epoch 밖이라 기준일·체크가 바뀐 회차마다 온다 — 같은
   // 값이면 다시 쓰지 않는다. 범례가 없으면(FAB) 묶음째 숨긴다.
@@ -6775,19 +6798,42 @@ export default function (component) {
     }
     legendBox.replaceChildren(...nodes)
   }
-  // 도움말 — 편집 안내 문단(`GUIDE`)과 단축키 목록(`HINT`). 마운트마다 한 번 쓴다.
-  function buildHelp() {
-    if (VIEW || helpBox.childElementCount) return
-    const lead = document.createElement('p')
-    lead.textContent = GUIDE
-    const list = document.createElement('ul')
-    list.className = 'sle-help-keys'
-    for (const part of HINT.split(' · ')) {
-      const li = document.createElement('li')
-      li.textContent = part
-      list.append(li)
-    }
-    helpBox.replaceChildren(lead, list)
+  // ---------------------------------------------------------------- 단축키 판(도구 줄 「단축키」)
+  // 지금 화면의 줄(`shortcutRows`)을 「키조합 : 기능」 으로 그린다. 판 밖을 누르거나 Esc·단추·×로 닫는다(열림은 보기 상태라
+  // 파이썬으로 보내지 않고 새 마운트는 닫힌 채다).
+  const keysToggle = q('.sle-keys-toggle')
+  const keysPanel = q('.sle-keys')
+  const keysList = q('.sle-keys-list')
+  const keysOpen = () => !keysPanel.hidden
+  function placeKeys() {
+    const frame = bodyBox.getBoundingClientRect()
+    const anchor = keysToggle.getBoundingClientRect()
+    const width = keysPanel.offsetWidth
+    keysPanel.style.left = `${Math.round(Math.max(8, Math.min(anchor.left - frame.left, frame.width - width - 8)))}px`
+  }
+  function setKeysOpen(open, focusBack) {
+    keysPanel.hidden = !open
+    keysToggle.setAttribute('aria-expanded', String(open))
+    if (open) placeKeys()
+    if (!open && focusBack) keysToggle.focus({ preventScroll: true })
+  }
+  const keysScreen = `${VIEW ? 'v' : 'e'}${FAB ? 'b' : 'f'}`
+  if (keysList.dataset.screen !== keysScreen) {
+    keysList.dataset.screen = keysScreen
+    keysList.replaceChildren(...shortcutRows(keysScreen).map(([combo, does]) => {
+      const row = document.createElement('li')
+      const key = document.createElement('b')
+      key.textContent = combo
+      const text = document.createElement('span')
+      text.textContent = `: ${does}`
+      row.append(key, text)
+      return row
+    }))
+  }
+  keysToggle.onclick = () => setKeysOpen(!keysOpen(), false)
+  q('.sle-keys-close').onclick = () => setKeysOpen(false, true)
+  host.onpointerdown = (event) => {
+    if (keysOpen() && !keysPanel.contains(event.target) && !keysToggle.contains(event.target)) setKeysOpen(false, false)
   }
 
   // ---------------------------------------------------------------- 스크롤 고정(도구 줄 「고정」)
@@ -6814,12 +6860,11 @@ export default function (component) {
     const main = mainScroller()
     return (main ? main.getBoundingClientRect().top : 0) + stuck + rect.height
   }
-  function lockNote() {
-    return S.lock && data.pendingSave ? '저장 안 한 배치가 있습니다 — 고정을 풀고 위 상자에서 저장하세요' : ''
-  }
-  function showLockNote() {
-    if (VIEW) setText(statusBox, lockNote())
-    else updateStatus()
+  // 고정 중이면 위 「저장 안 한 배치」 상자가 화면 밖이다 — 「고정」 단추의 점과 풍선이 말한다.
+  function showLockMark() {
+    const offScreen = Boolean(S.lock && data.pendingSave)
+    lockDot.hidden = !offScreen
+    setAttr(lockButton, 'title', offScreen ? `저장 안 한 배치가 있습니다 — 고정을 풀고 위 상자에서 저장합니다 · ${S.lockTip}` : S.lockTip)
   }
   function alignLock() {
     if (!S.lock) return
@@ -6863,11 +6908,11 @@ export default function (component) {
       if (fitStage()) applyView()
     }
     watchMain(S.lock)
-    showLockNote()
+    showLockMark()
   }
 
   // ---------------------------------------------------------------- 두 옆 칸(왼쪽 도구 · 오른쪽 미배치)
-  // 접힌 띠를 누르면 펴고 칸 머리 끝 단추로 접는다. 초점은 짝 단추로 옮긴다. 좁은 화면 겹침 서랍은 Esc 로도 접는다(넓은 화면의
+  // 접힌 단추를 누르면 펴고 칸 머리 끝 단추로 접는다. 초점은 짝 단추로 옮긴다. 좁은 화면 겹침 서랍은 Esc 로도 접는다(넓은 화면의
   // 고정 칸은 Esc 가 검색어·선택 풀기다).
   for (const [side, box] of [['left', leftSide], ['right', drawer]]) {
     if (!box) continue
@@ -6903,7 +6948,6 @@ export default function (component) {
   }
   applySections()
   drawLegend()
-  buildHelp()
   // 왼쪽 칸 이름 — 층 보기는 범례 하나라 「범례」, 편집은 「도구」.
   const leftName = VIEW ? '범례' : '도구'
   setText(q('.sle-side.is-left .sle-side-title'), leftName)
@@ -7951,6 +7995,7 @@ export default function (component) {
     fitToolbar()
     layoutPanels()
     layoutSheet()
+    if (keysOpen()) placeKeys()
     if (S.lock) alignLock()
     else {
       const changed = S.heightDrag ? measurePort() : fitStage()
@@ -7974,7 +8019,7 @@ export default function (component) {
   // 이번 실행에서 무대 크기가 달라졌으면(첫 실행·열 폭 변화) 바로 맞춘다. 고정 중이면 위 칸이 바뀌었을 수 있어 다시 맞춘다.
   S.onResize()
   updateStatus()
-  if (VIEW) showLockNote()
+  showLockMark()
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
   return () => {
     if (S.ro) S.ro.disconnect()

@@ -244,9 +244,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"): (
-        BESIDE_INPUT,
-    ),
     ("src/capa_simulation/components/grouped_monthly_table.py", "render_grouped_monthly_table"): (
         EMPTY,
         EMPTY,

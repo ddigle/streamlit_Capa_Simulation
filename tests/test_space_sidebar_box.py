@@ -1,7 +1,7 @@
 # Purpose: Space 현황 사이드바 「Space 도면」 상자의 자리·위젯 key·본문 걷기를 검사한다.
 
 """2026-11-03 사용자 요청 — 레이아웃 위 요소 넷(일정 없는 호기 대수·계산 제외 설명 / `S.PKG FAB
-전체` › 층 / `도면·캔버스 편집`·`배치 편집` / `공식과 견주기`)을 사이드바 조회 조건 상자 꼴로 옮기고
+전체` › 층 / `캔버스 편집`·`배치 편집` / `공식과 견주기`)을 사이드바 조회 조건 상자 꼴로 옮기고
 불필요한 여백을 걷는다.
 
 - 상자는 조회 조건 패널 바로 밑 · `Space 조건` 카드 **위**다(사이드바는 부른 차례 — 호기 없는 화면도
@@ -9,7 +9,7 @@
 - 안의 위젯 key 는 옮기기 전 그대로다(세션 값·화면 확인 `check_deploy_screens` 가 산다).
 - 본문에는 경로 줄(`space_path`)·머리 줄(`space_fab_head`·`space_floor_head`)·편집 캡션이 없다.
   도면은 늘 서는 칸 (`space_fab_stage`·`space_floor_stage`) 안이다.
-- 도면·캔버스 팝업은 사이드바 단추가 열림 칸만 적고 본문 호스트가 연다(사이드바 `with` 안에서 열지
+- 캔버스 팝업은 사이드바 단추가 열림 칸만 적고 본문 호스트가 연다(사이드바 `with` 안에서 열지
   않는다).
 - 상자에는 조작(자리 · 도면 · 견주기)만 둔다 — 상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태
   알림이다(2026-11-04 Space 결정 보드 답 — `EQ-13` ~ `EQ-15` · `EQ-04`).
@@ -119,11 +119,11 @@ def test_the_space_box_stands_under_the_panel_and_above_the_card_on_fab_and_floo
     assert not {"space_path", "space_fab_head", "space_floor_head"} & set(main)
     # 층 화면에는 머리 줄 「… 상세 레이아웃」 제목이 없다 — 지금 층은 편집기 도구 줄 제목이 말한다.
     assert not any("상세 레이아웃" in str(item.value) for item in app.markdown)
-    # 「도면·캔버스 편집」 은 아이콘 없이 「배치 편집」 토글과 한 줄에 선다(리뷰 browser-2 —
+    # 「캔버스 편집」 은 아이콘 없이 「배치 편집」 토글과 한 줄에 선다(리뷰 browser-2 —
     # 아이콘을 달면 245px 상자에서 둘째 줄로 감겨 아래 견주기가 첫 화면 밖으로 밀렸다).
     assert not _box(app).button(key="space_floor_layout_open_C1_1F").proto.icon
 
-    # 배치 편집을 켜도 편집 캡션(「끌어 놓아 …」)이 본문에 서지 않는다 — 왼쪽 칸 「도움말」 과 Guide
+    # 배치 편집을 켜도 편집 캡션(「끌어 놓아 …」)이 본문에 서지 않는다 — 도구 줄 「단축키」 와 Guide
     # 몫이다.
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
     _ok(app)
@@ -161,13 +161,13 @@ def test_the_drawing_popup_opens_from_the_body_host_not_inside_the_sidebar(
     _ok(app.switch_page(SPACE_STATUS.path).run())
     app.selectbox(key="space_status_floor_jump_fab").set_value("C1 1F").run()
     _ok(app)
-    assert len(app.get("file_uploader")) == 0
+    assert not [item for item in app.number_input if item.label == "캔버스 폭"]
 
     _box(app).button(key="space_floor_layout_open_C1_1F").click().run()
     _ok(app)
-    assert len(app.get("file_uploader")) == 1
-    assert len(_box(app).get("file_uploader")) == 0
-    assert len(app.sidebar.get("file_uploader")) == 0
+    assert [item.label for item in app.number_input if item.label == "캔버스 폭"] == ["캔버스 폭"]
+    assert not [item for item in _box(app).number_input if item.label == "캔버스 폭"]
+    assert not [item for item in app.sidebar.number_input if item.label == "캔버스 폭"]
 
 
 def test_an_assumption_raises_the_unscheduled_and_layout_alerts_and_keeps_the_box_to_controls(

@@ -43,7 +43,7 @@ JS(`// <unit-sheet>`)라 필터를 고쳐도 앱이 다시 돌지 않는다. 창
 「오늘로」를, 배치 편집기는 도구 줄 제목 옆에 「YYYY-MM-DD 고정」 칩(핀 아이콘)을 둔다.
 
 **편집기 몸은 가로 세 칸**이다(2026-11-03 사용자 요청) — 왼쪽 칸(층 보기는 범례, 편집은 범례·도면
-요소·선택·서식·격자·편집 영역·도움말) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
+요소·선택·서식·격자·편집 영역) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
 브라우저(localStorage)에만 둔다. 범례는 data `legend` (epoch 밖)로 보낸다. 도구 줄 「고정」(스크롤
 고정)은 `<html data-space-lock>` 을 달고, 그 속성을 읽는 규칙은 페이지가 그리는 `space_lock_style()`
 이다.
@@ -130,8 +130,6 @@ def _palette() -> dict[str, str]:
         "text": tokens.SPACE_TEXT,
         "muted": tokens.TEXT_MUTED,
         "canvas": tokens.SPACE_CANVAS,
-        "canvas-overlay": tokens.SPACE_CANVAS_OVERLAY,
-        "image-opacity": "0.65",
         "frame": tokens.SPACE_BORDER,
         "grid": tokens.SPACE_GRID,
         "grid-major": tokens.BORDER_STRONG,
@@ -495,7 +493,6 @@ def render_space_layout_viewer(
     today: date,
     as_of_range: tuple[date, date],
     on_as_of: Callable[[date], None],
-    background_image: str | None = None,
     group_labels: Mapping[str, str] | None = None,
     picked: str | None = None,
     on_pick: Callable[[str | None], None] | None = None,
@@ -577,7 +574,6 @@ def render_space_layout_viewer(
             "palette": _palette(),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
-            "backgroundImage": background_image,
             "floor": floor_label(floor),
             "floors": [],
             "newUnit": {},
@@ -644,7 +640,6 @@ def render_fab_layout_viewer(
     as_of_range: tuple[date, date],
     unconfirmed: int,
     on_as_of: Callable[[date], None],
-    background_image: str | None = None,
     pending_save: bool = False,
 ) -> None:
     """FAB 전체 **뷰어**. 층 도면과 같은 편집기의 보기 전용(`scope="fab"`)이다.
@@ -675,7 +670,6 @@ def render_fab_layout_viewer(
             "palette": _palette(),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
-            "backgroundImage": background_image,
             "floor": FAB_VIEW_LABEL,
             "floors": [],
             "newUnit": {},
@@ -698,7 +692,6 @@ def render_fab_layout_editor(
     marks: Sequence[FabLayoutMark],
     link_stats: Mapping[str, Mapping[str, str | None]],
     on_open: Callable[[FloorKey], None],
-    background_image: str | None = None,
     pending_save: bool = False,
 ) -> EditorSubmission | None:
     """FAB 전체 **편집기**(`scope="fab"`). 층 편집기와 같은 컴포넌트이고 범위 표시로 나눈다.
@@ -725,7 +718,6 @@ def render_fab_layout_editor(
             "palette": _palette(),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
-            "backgroundImage": background_image,
             "floor": FAB_VIEW_LABEL,
             "floors": [],
             "newUnit": {},
@@ -755,7 +747,6 @@ def render_space_layout_editor(
     marks: Sequence[FloorLayoutMark],
     new_unit: Mapping[str, Any],
     as_of: date,
-    background_image: str | None = None,
     group_labels: Mapping[str, str] | None = None,
     canvas_editable: bool = True,
     canvas_lock: str | None = None,
@@ -827,7 +818,6 @@ def render_space_layout_editor(
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
             "defaultSize": {"w": inputs.default_size[0], "h": inputs.default_size[1]},
-            "backgroundImage": background_image,
             "floor": floor_label(floor),
             "floors": [floor_label(key) for key in floors],
             "newUnit": dict(new_unit),
