@@ -35,6 +35,10 @@ ALLOWED_TOP_LEVEL = {
     # `if: github.repository == ...` 가 사내에서 스스로 꺼진다(`.github/workflows/ci.yml`).
     ".github/",
     ".gitignore",
+    # GitHub Pages 의 Jekyll 을 끄는 빈 표지. 켜 두면 사내에만 있는 md 의 Liquid 구문 오류 하나로
+    # 자료실 빌드 전체가 실패하는데 사외 시험은 그 md 를 보지 못한다. Pages 는 사이트 뿌리에서만
+    # 읽는다.
+    ".nojekyll",
     ".streamlit/",
     "AGENTS.md",
     "CLAUDE.md",
@@ -47,9 +51,8 @@ ALLOWED_TOP_LEVEL = {
     # 찾으므로 `app.py` 와 같은 루트여야 한다.
     "capa_server.py",
     "config/",
-    # 사내 GitHub Pages 로 띄우는 발표 자료(혁신대회 발표 덱 — 2026-10-08 중간 보고 덱을
-    # 대체). 글꼴·애니메이션 라이브러리까지 한 파일에 담은 단독 문서라 폐쇄망 브라우저로 바로
-    # 열린다. 2026-09-20 사용자 결정으로 배포 세트에 포함한다.
+    # 사내 GitHub Pages 첫 화면 — `site/catalog.json` 으로 만든 자료 목록. Pages 가 저장소 뿌리를
+    # 그대로 내보내므로 여기 있어야 한다(`scripts/build_site_index.py`).
     "index.html",
     "data/",
     # 사내 WebIDE 의 CI/CD 가 읽는 이미지 정의. 이 폴더가 없어 Docker Build 단계에서
@@ -63,6 +66,10 @@ ALLOWED_TOP_LEVEL = {
     "requirements.txt",
     "requirements-company.txt",
     "scripts/",
+    # 사내 GitHub Pages 로 띄우는 자료(`site/<폴더>/index.html`) · 목록 정본 `catalog.json`. 한
+    # 파일로 서는 단독 문서라 폐쇄망 브라우저로 바로 열린다. 2026-09-20 사용자 결정으로 배포
+    # 세트에 포함한다.
+    "site/",
     "src/",
     # Streamlit 정적 서빙(`.streamlit/config.toml` `enableStaticServing`)은 `app.py` 옆의 `static/`
     # 만 `app/static/…` 으로 보낸다. 페이지 제목·상자 제목·큰 숫자의 Archivo 부분 글꼴

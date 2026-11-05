@@ -18,7 +18,7 @@ HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려�
   요청(검수표) home-02 — rerun 없이 브라우저 안에서, 고른 창은 이 탭의 sessionStorage).
 - **Introduce** — 40초 티저(`intro_overlay_assets/capa-teaser.html` — 쇼케이스 `contest/dist` 의
   복사본)를 같은 오버레이 안 전체 화면 틀에 띄운다(2026-10-19 사용자 결정 — 외부 주소가 아니라 내장.
-  루트 `index.html` 혁신대회 발표 덱은 GitHub Pages 용이라 앱이 쓰지 않는다). 누른 단추에서 원이
+  `site/contest-deck/` 혁신대회 발표 덱은 GitHub Pages 용이라 앱이 쓰지 않는다). 누른 단추에서 원이
   퍼지며 티저가 드러나고, 머리 `←`·`Esc` 는 원이 그 단추로 접히며 커버로, `Detail` 은 곧장 앱으로
   간다. 티저 본문은 처음 누를 때 `intro_summary` 의 `teaser` trigger 로 한 번 받아 blob 주소로
   띄운다 — Streamlit 정적 경로는 HTML 을 글자로 보내 쓸 수 없다. 티저가 열린 동안 장면 워커는 쉰다.
