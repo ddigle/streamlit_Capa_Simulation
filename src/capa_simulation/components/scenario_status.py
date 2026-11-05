@@ -608,10 +608,10 @@ def missing_scenario_notice(name: str | None, status: str | None) -> str:
     길(E2E #55). `status` 는 보관본까지 본 그 시나리오의 상태다 — 「ARCHIVED」(그 사이 보관됨 —
     목록으로 되돌리면 저장할 수 있다), 「MISSING」(보관본에도 없음 — 영구 삭제됨), None(읽지 못함).
     이 세션이 보관하면 활성화를 풀므로(`scenario_management._render_archive`) 여기 오는 것은 다른
-    세션의 일이다. 어느 경우든 지금 편집본은 「지금 편집본 복제」 로 새 시나리오에 남길 수 있다."""
+    세션의 일이다. 어느 경우든 지금 편집본은 「복제」 로 새 시나리오에 남길 수 있다."""
     label = with_topic_particle(f"「{literal_markdown(name)}」" if name else "올라와 있는 시나리오")
     keep = (
-        "지금 편집본을 따로 남기려면 시나리오 관리 「지금 편집본 복제」 로 새 시나리오를 만들고, "
+        "지금 편집본을 따로 남기려면 시나리오 관리 「복제」 로 새 시나리오를 만들고, "
         "다른 시나리오는 이 팝업 「불러오기」 에서 불러옵니다."
     )
     if status == "ARCHIVED":

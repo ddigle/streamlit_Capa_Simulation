@@ -1,4 +1,4 @@
-# Purpose: 시뮬레이션·설비 시나리오 관리, BigDataQuery 등록, 공식버전 자동 갱신을 탭으로 제공한다.
+# Purpose: Capa · 설비 시나리오 관리, DB 등록, 공식버전 자동 갱신을 탭 넷으로 제공한다.
 
 from __future__ import annotations
 
@@ -10,12 +10,9 @@ from capa_simulation.components.bigdataquery_registration import (
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_management import (
-    EQUIPMENT_KIND,
-    SCENARIO_KIND_KEY,
-    SCENARIO_KINDS,
-    SCENARIO_MANAGEMENT_TAB,
+    CAPA_SCENARIO_TAB,
+    EQUIPMENT_SCENARIO_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
-    SIMULATION_KIND,
     render_equipment_scenario_section,
 )
 from capa_simulation.components.page_guide import render_page_guide
@@ -38,54 +35,46 @@ except BOOTSTRAP_ERRORS as exc:
     render_data_error(message, code="SC-02", text="시나리오 저장소를 준비하지 못했습니다")
     st.stop()
 
-# 세 탭을 항상 그린다(`tab.open` 으로 본문을 건너뛰지 않는다). 예전에는 열린 탭만 그렸는데,
-# 그러면 다른 탭을 잠깐 여는 순간 그 탭의 form 위젯이 사라져 입력 중이던 값이 없어졌다.
-# BigDataQuery 탭에 시뮬레이션 코드 목록 표가 생겼지만 그 표는 세션에 담긴 조회 결과를 표시만 하고
-# 사내 DB 조회는 버튼 제출로만 돈다 — 숨은 탭을 다시 그리는 비용은 검색으로 좁힌 뷰의 직렬화뿐이다.
-# 그 비용보다 탭을 오갈 때 폼 입력(기간 2개 + 등록 폼 6개)이 사라지는 쪽이 훨씬 나쁘다.
-# 「자동 갱신」 탭은 설정·기록을 DB 에서 읽기만 하고(이 회차의 DB 핀 안이라 연결이 값싸다) 사내
-# 조회·계산은 「지금 실행」을 누른 회차에만 돈다.
+# Capa 시나리오 · DB 등록 · 자동 갱신 탭은 항상 그린다(`tab.open` 으로 본문을 건너뛰지 않는다).
+# 열린 탭만 그리면 다른 탭을 잠깐 여는 순간 그 탭의 form 위젯이 사라져 입력 중이던 값이 없어진다.
+# DB 등록 탭의 시뮬레이션 코드 목록 표는 세션에 담긴 조회 결과를 표시만 하고 사내 DB 조회는 버튼
+# 제출로만 돈다 — 숨은 탭을 다시 그리는 비용은 검색으로 좁힌 뷰의 직렬화뿐이다. 그 비용보다 탭을
+# 오갈 때 폼 입력(기간 2개 + 등록 폼 6개)이 사라지는 쪽이 훨씬 나쁘다. 「자동 갱신」 탭은 설정 ·
+# 기록을 DB 에서 읽기만 하고(이 회차의 DB 핀 안이라 연결이 값싸다) 사내 조회 · 계산은 「지금
+# 실행」 을 누른 회차에만 돈다.
+#
+# 설비 시나리오 탭만 그 탭이 열린 회차에 그린다 — 설비 DB 를 여는 것은 이 탭을 고른 회차뿐이다
+# (AGENTS 5장 9). 대가로 그 탭 입력 칸에 적던 글은 다른 탭으로 옮기면 사라진다.
+#
+# 설비 시나리오 탭이 열린 회차에도 Capa 시나리오 탭은 숨은 채 그린다. 숨은 본문이 그 회차에 드는
+# 시간은 24~41ms(그 회차 페이지 본문 83~97ms 가운데 — 샘플 관측, 검수용 합성 샘플 · 작업 넷 · 실제
+# 앱 회차 중앙값)이고 건너뛰어도 본문은 74ms 라 얼마 줄지 않는다. 그 비용보다 복제 폼 · 고르던
+# 작업이 설비 탭을 다녀오는 사이 사라지는 쪽이 나쁘다.
 #
 # 열린 탭은 기억한다(`stateful_tabs`, 2026-10-24 사용자 결정) — 화면 탭 줄로 다른 화면에 갔다
-# 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다. 세 탭을 다 그리므로 그
-# rerun 에도 폼 위젯은 같은 자리에 남는다.
-# 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B). 설비 시나리오 세션을 다른 리비전으로
-# 옮겼다는 한 번뿐인 알림은 알림 칸(오른쪽 아래 알림창 · Alarm)으로 가 「시나리오 관리」 탭이 숨은
-# 회차에도 보인다(`equipment_scenario_management.report_session_notices`).
-QUERY_TAB = ":material/cloud_download: BigDataQuery 등록"
+# 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다.
+# 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B). 옛 세션에 남은 옛 탭 이름은 목록
+# 밖이라 첫 탭이 열린다(Streamlit 이 첫 값으로 되돌리고 기억 칸은 `stateful_tabs` 가 목록 안 값만
+# 쓴다).
+QUERY_TAB = ":material/cloud_download: DB 등록"
 AUTO_UPDATE_TAB = ":material/autorenew: 자동 갱신"
-management_tab, query_tab, auto_update_tab = stateful_tabs(
-    [SCENARIO_MANAGEMENT_TAB, QUERY_TAB, AUTO_UPDATE_TAB],
+capa_tab, equipment_tab, query_tab, auto_update_tab = stateful_tabs(
+    [CAPA_SCENARIO_TAB, EQUIPMENT_SCENARIO_TAB, QUERY_TAB, AUTO_UPDATE_TAB],
     key=SCENARIO_MANAGEMENT_TABS_KEY,
 )
 # 탭 안 상태 알림(공식버전 없음 `SC-01` · BigDataQuery 설정 `AD-04` · 자동 갱신 예약
 # `AU-01/02`)은 그 탭이 열린 회차에만 낸다 — 닫힌 탭이면 None(`open_tab_name`). 「그 화면으로」 가
 # 그 탭을 연다.
 
-with management_tab:
-    # 「관리할 시나리오」 전환 — 시뮬레이션 시나리오(지금까지의 저장소 상태·시나리오 작업)와 설비
-    # 시나리오(가용설비 현황의 탭이던 것, 2026-10-24 사용자 결정 D4). 고른 쪽 구획만 그린다 — 고르지
-    # 않은 쪽의 위젯은 그 회차에 버려진다(아래 「시나리오 작업」 전환과 같은 성질). 설비 시나리오
-    # 구획만 설비 DB 를 연다(시뮬레이션 쪽을 고른 회차에는 설비 DB 연결이 없다). 다른 화면(옛 배포
-    # 흔적 경고의 단추)이 값을 적으므로 `default=` 를 주지 않고 칸이 없거나 목록 밖일 때만 심는다.
-    if st.session_state.get(SCENARIO_KIND_KEY) not in SCENARIO_KINDS:
-        st.session_state[SCENARIO_KIND_KEY] = SIMULATION_KIND
-    kind = st.segmented_control(
-        "관리할 시나리오",
-        list(SCENARIO_KINDS),
-        key=SCENARIO_KIND_KEY,
-        persist_state="session",
-        # 선택 해제를 허용하면 None 이 되어 아무 구획도 그리지 않는다.
-        required=True,
+with capa_tab:
+    render_scenario_management(
+        repository,
+        database_path,
+        alert_tab=open_tab_name(capa_tab, CAPA_SCENARIO_TAB),
     )
-    if kind == EQUIPMENT_KIND:
+with equipment_tab:
+    if equipment_tab.open:
         render_equipment_scenario_section()
-    else:
-        render_scenario_management(
-            repository,
-            database_path,
-            alert_tab=open_tab_name(management_tab, SCENARIO_MANAGEMENT_TAB),
-        )
 with query_tab:
     render_bigdataquery_registration(
         repository, database_path, alert_tab=open_tab_name(query_tab, QUERY_TAB)

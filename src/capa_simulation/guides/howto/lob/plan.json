@@ -276,7 +276,7 @@
       "writes": "db",
       "ops": [
         {"op": "nav", "text": "시나리오 관리"},
-        {"op": "tab", "text": "시나리오 관리", "scope": "main"},
+        {"op": "tab", "text": "Capa 시나리오", "scope": "main"},
         {"op": "click", "target": "button:목록 관리"},
         {
           "op": "grid_edit",
@@ -300,7 +300,6 @@
       ],
       "targets": {
         "off_success": "named:MAIN_ALERT(지정했습니다)",
-        "repo_status": "named:HEAD_BOX(저장소 상태)",
         "sidebar_scenario": "named:SIDEBAR_SCEN",
         "sidebar_badge": "named:SIDEBAR_BADGE",
         "header_band": "named:HEADER_BAND"
@@ -314,13 +313,12 @@
       "writes": "none",
       "ops": [
         {"op": "nav", "text": "시나리오 관리"},
-        {"op": "tab", "text": "시나리오 관리", "scope": "main"},
+        {"op": "tab", "text": "Capa 시나리오", "scope": "main"},
         {"op": "click", "target": "button:목록 관리"}
       ],
       "targets": {
-        "tab_scenmgmt": "tab:시나리오 관리",
-        "repo_status": "named:HEAD_BOX(저장소 상태)",
-        "work_mode": "named:WIDGET(시나리오 작업)",
+        "tab_scenmgmt": "tab:Capa 시나리오",
+        "work_mode": "key:scenario_page_mode",
         "scen_table": "named:GRID",
         "scen_select_col": "named:GRID_COLUMN(선택)"
       }

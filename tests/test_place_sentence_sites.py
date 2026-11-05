@@ -287,7 +287,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         VALUE,
     ),
     ("src/capa_simulation/components/scenario_management.py", "_render_scenario_actions"): (EMPTY,),
-    ("src/capa_simulation/components/scenario_management.py", "_render_store_status"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_body"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_header"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_load"): (BESIDE_INPUT, EMPTY),

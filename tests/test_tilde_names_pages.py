@@ -24,6 +24,12 @@ from test_equipment_scenario_repository import _clone
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.pick_edit_table import (
+    TableDraft,
+    draft_session_key,
+    shown_session_key,
+)
+from capa_simulation.components.scenario_management import LIST_EDITOR_KEY
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import (
     ADMIN_AREA,
@@ -231,12 +237,31 @@ def test_tilde_names_are_blocked_on_every_markdown_element_of_the_main_screens(
     assert not {page: found for page, found in bare.items() if found}
     # 그물이 이름이 나오는 화면을 실제로 봤다(막혀 그려진 이름).
     assert SCENARIO_NAME in blocked["HOME"]
-    assert {SCENARIO_NAME, REVISION_NAME} <= blocked[SCENARIO_MANAGEMENT.title]
+    assert SCENARIO_NAME in blocked[SCENARIO_MANAGEMENT.title]
     assert EQUIPMENT_SCENARIO_NAME in blocked[AVAILABLE_EQUIPMENT_STATUS.title]
     assert EQUIPMENT_SCENARIO_NAME in blocked[SPACE_STATUS.title]
     assert VOC_TITLE in blocked[VOC.title]
     assert PROCESS_LABEL in blocked[PROCESS_CAPA_DETAIL.title]
     assert PROCESS_LABEL in blocked[CONSTRAINT_SIMULATION.title]
+
+
+def test_a_tilde_revision_name_is_blocked_in_the_official_dialog(
+    _app: tuple[AppTest, str, str],
+) -> None:
+    """시나리오 관리에서 리비전명이 마크다운으로 서는 자리는 「공식으로 지정…」 팝업의 대상 줄이다 —
+    고른 시나리오 카드의 리비전을 그대로 싣는다."""
+    app, _, _ = _app
+    _ok(app.run())
+    _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
+    shown = app.session_state[shown_session_key(LIST_EDITOR_KEY)]
+    row = next(row for row, name in shown.names.items() if name == SCENARIO_NAME)
+    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(picked=row)
+    _ok(app.run())
+    next(button for button in app.button if button.label == "공식으로 지정…").click()
+    _ok(app.run())
+
+    assert not _bare_names(app)
+    assert {SCENARIO_NAME, REVISION_NAME} <= _blocked_names(app)
 
 
 def _visit_with_process(

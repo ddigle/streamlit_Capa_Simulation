@@ -2941,8 +2941,14 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
     calculator_source = _text(COMPONENTS / "qual_deadline_calculator.py")
     for label in screens.QUAL_CALCULATOR_KPIS:
         assert f'"{label}",' in calculator_source
-    assert screens.SCENARIO_KIND_KEY == section.SCENARIO_KIND_KEY
-    assert screens.SCENARIO_KINDS == section.SCENARIO_KINDS
+    assert screens.SCENARIO_TABS_KEY == section.SCENARIO_MANAGEMENT_TABS_KEY
+    assert screens.SCENARIO_TABS[:2] == (
+        section.CAPA_SCENARIO_TAB.split(" ", 1)[1],
+        section.EQUIPMENT_SCENARIO_TAB.split(" ", 1)[1],
+    )
+    page_source = _text(PROJECT_ROOT / "app_pages" / "scenario_management.py")
+    for label in screens.SCENARIO_TABS[2:]:
+        assert f': {label}"' in page_source
     assert screens.EQUIPMENT_TAB_KEY == EQUIPMENT_TAB_KEY
     assert screens.EQUIPMENT_SUMMARY_TAB_KEY == EQUIPMENT_SUMMARY_TAB_KEY
     assert f'"{screens.EQUIPMENT_SCENARIO_TABLE_ANCHOR}":' in _text(
@@ -2959,11 +2965,11 @@ def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
     text = screens.summarize_equipment_moves(
         screens.EquipmentTabNames(outer, summary, anywhere),
         ("Qual 마감 계산기", 4, True),
-        (True, True),
+        (4, True, True),
     )
     assert text == (
         "탭 3/3 · Summary 안쪽 2/2 · 옛 탭 0곳 · 필요 단축 일정 — 팝업 제목 「Qual 마감 계산기」 "
-        "같음 · 지표 4/4 · Esc 닫힘 · 시나리오 관리 — 설비 시나리오 구획 표 있음 · 전환 되돌림"
+        "같음 · 지표 4/4 · Esc 닫힘 · 시나리오 관리 — 탭 4/4 · 설비 시나리오 표 있음 · 탭 되돌림"
     )
     # 「Preference」 는 셋째 탭으로 다시 섰다(2026-10-27) — 옛 탭으로 세지 않고 바깥 셋에 든다.
     old_tabs = ["table_rows RawData", "tune Preference"]
@@ -2971,7 +2977,7 @@ def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
         screens.EquipmentTabNames(old_tabs, [], old_tabs), None, None
     )
     assert old.startswith("탭 1/3 · Summary 안쪽 0/2 · 옛 탭 1곳")
-    assert "설정" not in old and "「관리할 시나리오」 전환 없음" in old
+    assert "설정" not in old and "「설비 시나리오」 탭 없음" in old
     assert "EQUIPMENT_SETTINGS_BUTTON_KEY" not in inspect.getsource(screens.check_equipment_moves)
 
 

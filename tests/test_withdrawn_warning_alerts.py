@@ -21,7 +21,7 @@
 · Alarm 으로)와 같은 날 걷은 저장 뒤 경고 · 가용설비 「한쪽에만 있는 공정」 줄이 첫 줄들이다.
 본문 접힘에서 그 알림의 Alarm 줄 표로 옮긴 조건 내역도 같이 적는다(2026-11-05 검수표 static-32).
 
-걷지 않은 것: 시나리오 관리 설비 시나리오 구획의 「그 사이 바뀌어 …」 거절
+걷지 않은 것: 시나리오 관리 설비 시나리오 탭의 「그 사이 바뀌어 …」 거절
 (`equipment_scenario_management._refused`)은 확인 체크 · 입력 칸을 새로 세우는 거절이라 구획
 맨 위 칸과 알림창 둘에 선다 — UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」(2026-11-04 반영
 검수표 D3 (가))이고 이 표에 들지 않는다. 시나리오 관리 보관함 · 카드 보관의 「그 사이 빠져 …」
@@ -187,7 +187,7 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
-        what="BigDataQuery 등록 저장 단추 밑 — 저장 뒤 CS 빈 행 뺌 · 대당 Capa 계산 멈춤 경고",
+        what="DB 등록 저장 단추 밑 — 저장 뒤 CS 빈 행 뺌 · 대당 Capa 계산 멈춤 경고",
         why="UI-NTF-03 · AMB-05 (나)",
         file="src/capa_simulation/components/bigdataquery_registration.py",
         function="_save_scenario",
@@ -200,7 +200,7 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
     ),
     Withdrawn(
         what=(
-            "BigDataQuery 등록 탭 맨 아래 — 기준정보 업무 키 충돌 보고(경고 · 요약 표 · CSV · 상세"
+            "DB 등록 탭 맨 아래 — 기준정보 업무 키 충돌 보고(경고 · 요약 표 · CSV · 상세"
             " 접힘) — 요약 · 상세는 그 Alarm 줄의 표"
         ),
         why="UI-NTF-03 · UI-TXT-04 · 답 v10 (가)",
@@ -238,7 +238,7 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
-        what="시나리오 관리 설비 시나리오 구획 — 옛 판 흔적이 있는 설비 시나리오 이름 · 개수 줄",
+        what="시나리오 관리 설비 시나리오 탭 — 옛 판 흔적이 있는 설비 시나리오 이름 · 개수 줄",
         why="UI-TXT-04 · UI-NTF-02",
         file="src/capa_simulation/components/equipment_scenario_management.py",
         function="report_layout_traces",

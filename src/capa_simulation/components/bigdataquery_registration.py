@@ -226,7 +226,7 @@ def render_bigdataquery_registration(
     *,
     alert_tab: str | None = "",
 ) -> None:
-    """「BigDataQuery 등록」 탭 본문. `alert_tab` 은 이 탭 이름(상태 알림 `AD-04` 의 「그
+    """「DB 등록」 탭 본문. `alert_tab` 은 이 탭 이름(상태 알림 `AD-04` 의 「그
     화면으로」 — `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지
     않는다."""
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.

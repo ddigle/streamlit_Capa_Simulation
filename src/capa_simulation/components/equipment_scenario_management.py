@@ -1,13 +1,11 @@
-# Purpose: 시나리오 관리 「설비 시나리오」 구획의 표와 불러오기·되돌리기·복제·이름·발행을 그린다.
+# Purpose: 시나리오 관리 「설비 시나리오」 탭의 표와 불러오기·되돌리기·복제·이름·발행을 그린다.
 
-"""시나리오 관리 「설비 시나리오」 구획(E8 — 1단계 몫, 설계 6-2, E7 리비전 도구).
+"""시나리오 관리 「설비 시나리오」 탭(E8 — 1단계 몫, 설계 6-2, E7 리비전 도구).
 
-자리는 시나리오 관리 화면 「시나리오 관리」 탭 맨 위 「관리할 시나리오」 전환의 「설비 시나리오」
-쪽이다(2026-10-24 사용자 결정 — 가용설비 현황 두 탭 개편. 그 전에는 가용설비 현황의 탭이었다). 그
-화면에는 사이드바 설비 시나리오 줄이 서지 않아 구획 머리에 「이 세션: …」 한 줄과 세션 알림을 그린다
-(`render_equipment_scenario_section` — 탭이 숨은 회차의 이동 알림만 화면이 넘긴 탭 묶음 위
-자리). 다른 설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 구획으로
-옮긴다(`open_equipment_scenario_management`).
+자리는 시나리오 관리 화면의 둘째 탭이다. 그 화면에는 사이드바 설비 시나리오 줄이 서지 않아 탭
+머리에 「이 세션: …」 한 줄을 그리고 세션 알림을 낸다(`render_equipment_scenario_section`). 다른
+설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 탭으로 옮긴다
+(`open_equipment_scenario_management`).
 
 - **시나리오 표**: 이름·상태(공식 vN · rM / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시
   행 — 설비 0031 — 와 괄호 안 실효 표지 「공식과 같음」·「실효 호기 n대」·「지운 호기 n행」)·올라와
@@ -33,10 +31,10 @@
   체크(빠지는 호기 수)를 켜야 단추가 서고, 옛 배포 리비전이 일정과 합쳐지지 않으면 단추 대신 백업
   복원 안내만 선다.
 
-구획 본문(`render_equipment_scenario_management`)이 받는 것은 DB 경로와 그 회차 설비 시나리오
+탭 본문(`render_equipment_scenario_management`)이 받는 것은 DB 경로와 그 회차 설비 시나리오
 세션뿐이다. 목록·리비전은 설비 시나리오 목록 캐시(세대·stat·TTL), 되돌리기 확인 재료는 불변 리비전
-id 키 캐시에서 받는다 — 이 구획을 그리는 회차에만 읽는다(「시뮬레이션 시나리오」 쪽을 고른 회차에는
-설비 DB 를 열지 않는다). 쓰기(복제·이름·리비전명·되돌리기·발행·이어 쓰기)는 저장소가 하고 그 뒤
+id 키 캐시에서 받는다 — 이 탭이 열린 회차에만 읽는다(다른 탭을 보는 회차에는 설비 DB 를 열지
+않는다). 쓰기(복제·이름·리비전명·되돌리기·발행·이어 쓰기)는 저장소가 하고 그 뒤
 `clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 모른다). 2단계(보관·삭제·순서·공통
 이력·비교)는 짓지 않는다.
 """
@@ -72,6 +70,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.tab_state import remember_open_tab
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.components.widget_generation import (
@@ -161,28 +160,21 @@ from capa_simulation.services.layout_overlay import (
 )
 
 __all__ = [
-    "EQUIPMENT_KIND",
-    "SCENARIO_KINDS",
-    "SCENARIO_KIND_KEY",
-    "SCENARIO_MANAGEMENT_TAB",
+    "CAPA_SCENARIO_TAB",
+    "EQUIPMENT_SCENARIO_TAB",
     "SCENARIO_MANAGEMENT_TABS_KEY",
-    "SIMULATION_KIND",
     "open_equipment_scenario_management",
     "render_equipment_scenario_management",
     "render_equipment_scenario_section",
 ]
 
-# 시나리오 관리 화면의 탭 묶음(`stateful_tabs`) key 와 첫 탭 라벨 — 다른 화면에서 이 구획으로 보낼
-# 때 그 탭 기억 칸을 적는다. 화면(`app_pages/scenario_management.py`)도 이 이름을 읽는다.
+# 시나리오 관리 화면의 탭 묶음(`stateful_tabs`) key 와 앞 두 탭 라벨 — 다른 화면에서 설비 시나리오
+# 탭으로 보낼 때 그 탭 기억 칸을 적는다. 화면(`app_pages/scenario_management.py`)도 이 이름을
+# 읽는다.
+# 설비 시나리오 아이콘은 사이드바 설비 시나리오 칸(`EQUIPMENT_SCENARIO_FIELD_ICON`)과 같다.
 SCENARIO_MANAGEMENT_TABS_KEY = "scenario_management_tabs"
-SCENARIO_MANAGEMENT_TAB = ":material/database: 시나리오 관리"
-# 「시나리오 관리」 탭 맨 위 「관리할 시나리오」 전환(2026-10-24 사용자 결정 D4). 보기 조건이라
-# `persist_state="session"` 이고, 다른 화면(옛 배포 흔적 경고의 단추)이 값을 적으므로 `default=` 를
-# 주지 않고 위젯 앞에서 칸이 없을 때만 심는다(AGENTS 9장).
-SCENARIO_KIND_KEY = "scenario_management_kind_v1"
-SIMULATION_KIND = "시뮬레이션 시나리오"
-EQUIPMENT_KIND = "설비 시나리오"
-SCENARIO_KINDS = (SIMULATION_KIND, EQUIPMENT_KIND)
+CAPA_SCENARIO_TAB = ":material/database: Capa 시나리오"
+EQUIPMENT_SCENARIO_TAB = ":material/account_tree: 설비 시나리오"
 # 「시나리오 관리에서 이어 쓰기」 단추(설비 화면 맨 위 옛 배포 흔적 경고 옆).
 LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
 
@@ -219,7 +211,7 @@ PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 # 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신이 아닙니다」 로 말없이 발행하지
 # 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
-# 구획 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<시나리오·리비전 id>`). 빠른
+# 탭 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<시나리오·리비전 id>`). 빠른
 # 두 번 누름의 둘째가 받는 「다른 사용자가 먼저」 를 제 저장으로 알아본다.
 RESTORE_SAVE_NAME = "equipment_scenario_restore"
 CLEAR_LAYOUT_SAVE_NAME = "equipment_scenario_clear_layout"
@@ -260,7 +252,7 @@ CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
 # 번호·빠지는 호기 수)을 붙인다 — 그 값이 바뀌면 체크가 풀린 새 칸으로 서서 본 적 없는 글로 이어
 # 쓰지 않는다.
 CONTINUE_CONFIRM_KEY = "equipment_scenario_manage_continue_confirm_v1"
-# 이 구획 작업 알림 — 다음 회차에 한 번 알림창 · Alarm 으로(구획 맨 위 늘 서 있는 칸이 보낸다 —
+# 이 탭 작업 알림 — 다음 회차에 한 번 알림창 · Alarm 으로(탭 맨 위 늘 서 있는 칸이 보낸다 —
 # `flash.render_flash`, 성공은 그 칸에 그리지 않는다). 공식 발행의 빠른 둘째 누름이 다시 낼 알림도
 # 이 칸 이름으로 적는다(`write_guard.note_notice` — `render_flash` 가 첫 알림과 같은 id 로
 # 다시 낸다).
@@ -268,7 +260,7 @@ FLASH_KEY = "equipment_scenario_manage_flash_v1"
 # 같은 이름이라 쓰지 않은 「리비전명 저장」·「이름 바꾸기」 의 단추 아래 알림(개선 I5).
 REVISION_NAME_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 리비전명 그대로라 저장하지 않았습니다."
 SCENARIO_NAME_UNCHANGED_MESSAGE = "바뀐 것이 없습니다 — 지금 이름 그대로라 바꾸지 않았습니다."
-# 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 구획 맨 위 칸에 오류로
+# 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 탭 맨 위 칸에 오류로
 # 그리고 알림창 · Alarm 에도 낸다(확인 체크·입력 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
 REFUSED_KEY = "equipment_scenario_manage_refused_v1"
 # 되돌리기가 만든 리비전 — 다음 회차 리비전 상자를 그리기 전에 그 리비전으로 옮긴다(위젯을 그린
@@ -277,11 +269,11 @@ PENDING_REVISION_KEY = "equipment_scenario_manage_pending_revision_v1"
 # 새 리비전을 쓴 쓰기(되돌리기·배치 차이 지우기·정리 발행)의 뒷정리(리비전 상자·세션 옮기기)가 남은
 # 자리 — 쓰기 이름 → `_PendingFollow`. 쓴 직후 첫 세션 칸 접근은 더블클릭 둘째 누름의 회차에 끊기고
 # (write_guard), 둘째 누름은 첫 쓰기 뒤 꺼지거나 사라진 단추라 버려져 화면이 옛 리비전에 남았다.
-# 쓰기 전에 받아 둔 이 dict 칸에 적고(끊기지 않는다), 끊겼으면 다음 회차가 구획 맨 위에서 잇는다.
+# 쓰기 전에 받아 둔 이 dict 칸에 적고(끊기지 않는다), 끊겼으면 다음 회차가 탭 맨 위에서 잇는다.
 FOLLOWS_KEY = "equipment_scenario_manage_follows_v1"
 # 입력 칸 세대 — 쓰기에 성공한 회차에 올라 다음 회차에 빈 칸으로 선다(옛 값을 되보내지 않게).
 GENERATION_KEY = "equipment_scenario_manage_generation_v1"
-# 구획의 팝오버 일곱(시나리오 줄 둘·리비전 줄 다섯). key 꼬리는 팝오버 세대
+# 탭의 팝오버 일곱(시나리오 줄 둘·리비전 줄 다섯). key 꼬리는 팝오버 세대
 # (`POPOVER_GENERATION_KEY`)다 — 한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는
 # 회차에만 올라 그 회차에 팝오버가 닫힌 채 다시 선다(작업을 마친 팝오버를 닫는다). 그 밖의 회차에는
 # key 도 자리도 그대로라 열린 팝오버가 확인 체크·글자 칸·Enter 로 닫히지 않는다 — 알림은 늘 서 있는
@@ -407,7 +399,7 @@ def _follow_and_announce(
     (`message(옮김, 편집 때문에 남김)`). 옮기다 끊기면 다음 회차가 표지를 보고 잇는다
     (`_resume_follows`). `notices`(쓰기 전에 받아 둔 `notice_marks()`)를 주면 그 알림을 작업 알림
     칸(`FLASH_KEY`)에 적는다 — 다시 그린 화면의 단추가 꺼져 빠른 둘째 누름이 버려지는 쓰기(공식
-    발행)는 구획 맨 위 칸이 창 안에서 그 알림을 첫 알림과 같은 id 로 다시 낸다
+    발행)는 탭 맨 위 칸이 창 안에서 그 알림을 첫 알림과 같은 id 로 다시 낸다
     (`flash.render_flash`)."""
     follows[name] = _PendingFollow(
         scenario.equipment_scenario_id, schedule_revision_id, message, time.monotonic()
@@ -423,7 +415,7 @@ def _follow_and_announce(
 
 
 def _resume_follows(database_path: str, session: EquipmentSession) -> None:
-    """앞 회차에서 끊긴 뒷정리를 잇고 그 쓰기의 알림을 낸다 — 구획 맨 위(리비전 상자를 그리기 전)에
+    """앞 회차에서 끊긴 뒷정리를 잇고 그 쓰기의 알림을 낸다 — 탭 맨 위(리비전 상자를 그리기 전)에
     부른다. 창(`write_guard.TRAILING_PRESS_SECONDS`) 안의 표지만 잇는다 — 그 창 안의 회차는 같은
     단추의 둘째 누름이다. 창이 지난 표지는 버린다(한참 뒤 세션이 말없이 옮겨 가지 않게)."""
     marks = st.session_state.get(FOLLOWS_KEY)
@@ -450,7 +442,7 @@ def _resume_follows(database_path: str, session: EquipmentSession) -> None:
 
 def _refused(message: str) -> None:
     """그 사이 남의 쓰기로 거절했을 때 — 공통 최신·목록을 다시 읽게 비우고, 확인 체크·입력 칸을 새로
-    세운 뒤(옛 확인으로 다시 누르지 않게) 다음 회차 맨 위에 까닭을 알린다. 구획 맨 위 칸과 알림창
+    세운 뒤(옛 확인으로 다시 누르지 않게) 다음 회차 맨 위에 까닭을 알린다. 탭 맨 위 칸과 알림창
     둘에 선다(설계 규칙 UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」)."""
     clear_equipment_snapshot_cache()
     # 거부 글은 남의 이름(물결표만 막힌 날 이름)을 품는다 — 마크다운 원문으로 담아 그린다.
@@ -684,7 +676,7 @@ def layout_trace_sentence(
 
 
 def open_equipment_scenario_management() -> None:
-    """시나리오 관리 「설비 시나리오」 구획으로 옮긴다 — 그 화면의 탭 기억 칸과 전환 칸만 적는다.
+    """시나리오 관리 「설비 시나리오」 탭으로 옮긴다 — 그 화면의 탭 기억 칸만 적는다.
 
     위젯 콜백이 아니라 회차 본문에서 부른다(AGENTS 9장 — 콜백 안 `st.switch_page` 금지). 화면 탭
     상한에 걸리면 아무것도 적지 않는다(`refused_at_tab_limit`). 갈 곳이 없으면(내비게이션 없는 단독
@@ -692,8 +684,7 @@ def open_equipment_scenario_management() -> None:
     """
     if refused_at_tab_limit(SCENARIO_MANAGEMENT.path):
         return
-    st.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
-    remember_open_tab(SCENARIO_MANAGEMENT_TABS_KEY, SCENARIO_MANAGEMENT_TAB)
+    remember_open_tab(SCENARIO_MANAGEMENT_TABS_KEY, EQUIPMENT_SCENARIO_TAB)
     try:
         st.switch_page(SCENARIO_MANAGEMENT.path)
     except StreamlitPageNotFoundError:
@@ -712,7 +703,7 @@ def render_legacy_trace_goto() -> None:
 
 
 def session_heading(session: EquipmentSession) -> str:
-    """구획 머리 한 줄 — 「이 세션: 운영 일정 · r12 · 공식 v3」.
+    """탭 머리 한 줄 — 「이 세션: 운영 일정 · r12 · 공식 v3」.
 
     이 화면에는 사이드바 설비 시나리오 줄이 서지 않아(D4) 세션이 든 쌍을 여기 적는다. 일정 없이 연
     세션(`unmerged`)이면 그 말을 적는다.
@@ -733,12 +724,12 @@ def session_heading(session: EquipmentSession) -> str:
 
 
 def render_equipment_scenario_section() -> None:
-    """시나리오 관리 「설비 시나리오」 구획 — 설비 DB 를 이 구획 안에서만 연다.
+    """시나리오 관리 「설비 시나리오」 탭 — 설비 DB 를 이 탭 안에서만 연다. 그 탭이 열린 회차에만
+    부른다.
 
-    설비 DB 를 읽지 못하면 그 까닭을 이 구획 안에서만 알린다(「시뮬레이션 시나리오」 쪽은 막지
-    않는다). 옛 배포 흔적 경고는 구획 본문이 「이대로 이어 쓰기」 와 함께 그린다 — 머리에 따로
-    세우지 않는다. 세션 알림(다른 리비전으로 옮김 · 일정 없이 엶)은 알림 칸으로
-    낸다(`report_session_notices`).
+    설비 DB 를 읽지 못하면 그 까닭을 이 탭 안에서만 알린다(다른 탭은 막지 않는다). 옛 배포 흔적
+    경고는 탭 본문이 「이대로 이어 쓰기」 와 함께 그린다 — 머리에 따로 세우지 않는다. 세션 알림(다른
+    리비전으로 옮김 · 일정 없이 엶)은 알림 칸으로 낸다(`report_session_notices`).
     """
     try:
         database_path = str(settings.EQUIPMENT_DUCKDB_PATH.resolve())
@@ -757,7 +748,7 @@ def render_equipment_scenario_section() -> None:
     # 안내는 Guide 몫이다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     st.markdown(f"**{session_heading(session)}**")
     # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
-    # 칸으로 낸다 — 이 구획이 든 탭이 숨은 회차에도 알림창에 뜬다.
+    # 칸으로 낸다.
     report_session_notices(session)
     report_layout_traces(session)
     render_equipment_scenario_management(database_path, session)
@@ -767,7 +758,8 @@ def report_layout_traces(session: EquipmentSession) -> None:
     """옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오를 상태
     알림(`SC-03`)으로 낸다 — 시나리오 이름 · 개수 목록은 내역이라 자리에 늘어놓지 않는다(설계 규칙
     UI-TXT-04 · UI-NTF-02). 없어도 부른다(해소 · 이벤트 칸 한 자리). 고른 시나리오의 흔적과 되살리는
-    길은 리비전 칸 글(`layout_trace_sentence`)이 말한다. DB 전체의 조건이라 범위가 없다(None)."""
+    길은 리비전 칸 글(`layout_trace_sentence`)이 말한다. DB 전체의 조건이라 범위가 없다(None).
+    「그 화면으로」 는 이 탭을 연다."""
     traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
     listing = ", ".join(
         f"{quoted(item.scenario_name)} {item.layout_trace_count:,}개" for item in traced
@@ -788,6 +780,7 @@ def report_layout_traces(session: EquipmentSession) -> None:
         )
         if traced
         else None,
+        tab=tab_name(EQUIPMENT_SCENARIO_TAB),
     )
 
 
@@ -801,7 +794,7 @@ def report_session_notices(session: EquipmentSession) -> None:
 
     알림 글은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
     알림창 · 패널은 평문(`textContent`)이라 막지 않는다. 사이드바 설비 시나리오 줄과 시나리오 관리
-    「설비 시나리오」 구획이 같은 함수를 부른다(한 화면에는 둘 가운데 하나만 선다 — 같은 코드 ·
+    「설비 시나리오」 탭이 같은 함수를 부른다(한 화면에는 둘 가운데 하나만 선다 — 같은 코드 ·
     같은 범위라 화면을 옮겨도 다시 뜨지 않는다).
     """
     if session.notice and not session.unmerged:
@@ -822,19 +815,19 @@ def report_session_notices(session: EquipmentSession) -> None:
 
 
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:
-    """구획 본문. 「설비 시나리오」 쪽을 고른 회차에만 부른다 — 입력은 위젯이 세션에 지킨다.
+    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 입력은 위젯이 세션에 지킨다.
 
     한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는 회차에 팝오버 세대를 올려 팝오버를
     닫힌 채 세우고, 알림·옛 배포 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는
     칸 안에 그린다(`POPOVER_GENERATION_KEY`). 옛 판 흔적이 있는 시나리오 목록은 자리에 그리지 않고
-    구획 머리가 상태 알림으로 낸다(`report_layout_traces`).
+    탭 머리가 상태 알림으로 낸다(`report_layout_traces`).
     """
     # 앞 회차(더블클릭의 첫 누름)가 새 리비전을 쓰고 뒷정리 전에 끊겼으면 여기서 잇는다 — 리비전
     # 상자를 그리기 전이어야 한다(`PENDING_REVISION_KEY`).
     _resume_follows(database_path, session)
     # 작업 알림(성공)은 알림창 · Alarm 으로만, 거절 알림(오류)은 이 칸에도 그린다(`flash` —
     # 설계 규칙 UI-NTF-01 · UI-NTF-03). 거절은 확인 체크 · 입력 칸을 새로 세우므로(`_refused`)
-    # 다시 할 자리인 이 구획 맨 위에 선다 — UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」
+    # 다시 할 자리인 이 탭 맨 위에 선다 — UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」
     # 이다(아무것도 쓰지 않은 거부라도 알림창에만 보내지 않는다). 첫 발행 뒤 다시 그린 화면의
     # 「공식으로 발행」 은 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은
     # Streamlit 이 버리고, 창
@@ -858,7 +851,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         st.caption("설비 시나리오가 없습니다.")
         return
     # 공통 칸과 설비 시나리오가 따로 드는 것(일정 · 메모 · 비가동 · 가정 배치)의 설명은 늘 띄워 두지
-    # 않는다 — Guide 「설비 시나리오 구획」 몫이다(설계 규칙 UI-TXT-01).
+    # 않는다 — Guide 「설비 시나리오 탭」 몫이다(설계 규칙 UI-TXT-01).
     layout_previews = _latest_layout_previews(database_path, session)
     st.dataframe(
         scenario_rows(
@@ -1090,7 +1083,7 @@ def _preview_for(
 def legacy_trace_lock_line(count: int) -> str:
     """옛 배포 흔적으로 막힌 쓰기 팝오버(되돌리기 · 배치 차이 지우기)의 잠금 까닭 한 줄.
 
-    백업 복원 · 「이대로 이어 쓰기」 로 푸는 길은 같은 구획 맨 위 옛 배포 흔적
+    백업 복원 · 「이대로 이어 쓰기」 로 푸는 길은 같은 탭 맨 위 옛 배포 흔적
     칸(`_render_legacy_trace`) · 알림 · Guide 가 말한다 — 팝오버에서 그 자리를 다시 가리키지
     않는다(설계 규칙 UI-TXT-03)."""
     return f"옛 배포로 저장한 설비 리비전 {count:,}개가 있어 설비 저장을 막았습니다."
@@ -1425,7 +1418,7 @@ def restore_result_message(
     elif result.release_withheld:
         sentences.append(
             "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
-            "이 구획의 「공식으로 발행」 으로 냅니다."
+            "이 탭의 「공식으로 발행」 으로 냅니다."
         )
     if moved:
         sentences.append(f"이 세션을 {with_direction_particle(created)} 옮겼습니다.")
@@ -1686,7 +1679,7 @@ def _render_branch(
         layout_note = f" {title}의 가정 배치(차이 {carried})도 함께 옮겼습니다." if carried else ""
         _written(
             f"{name} {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
-            "r1을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
+            "r1을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 탭의 「이 리비전 "
             f"불러오기」로 올립니다.{layout_note}",
             release=written.release,
         )
@@ -2304,7 +2297,7 @@ def _render_publish(
     # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 그 단추 풍선이 말한다
     # (`ALREADY_OFFICIAL_HELP` — 배치 차이로 막혔으면 그 까닭 글). 첫 발행 뒤 다시 그린 화면은 그
     # 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은
-    # 구획 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래 `note_notice`).
+    # 탭 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래 `note_notice`).
     if not st.button(
         "공식으로 발행",
         type="primary",
@@ -2431,7 +2424,7 @@ def _render_publish(
             notices=messages,
         )
     # 첫 회차가 다시 그린 화면의 단추는 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른
-    # 둘째 누름은 Streamlit 이 버리고, 구획 맨 위 칸이 창 안에서 이 알림을 다시 낸다. 둘째 누름이
+    # 둘째 누름은 Streamlit 이 버리고, 탭 맨 위 칸이 창 안에서 이 알림을 다시 낸다. 둘째 누름이
     # 아직 켜진 단추로 들어오면 저장소가 쓰지 않고(위 「이미 공식」 갈래) 이 알림을 다시 낸다. dict
     # 칸이라 끊기지 않는다.
     note_notice(messages, FLASH_KEY, published_message(False, False))

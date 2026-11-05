@@ -420,7 +420,7 @@ def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
     sidebar_app: AppTest,
 ) -> None:
     """E2E #55 — 올라와 있는 「기준안」 을 다른 세션이 보관했다. 「새 리비전 저장」 은 「정보를 찾지
-    못했습니다」 한 줄 대신 까닭(보관됨)과 길(보관함에서 되돌리기·지금 편집본 복제·다른 시나리오
+    못했습니다」 한 줄 대신 까닭(보관됨)과 길(보관함에서 되돌리기·복제·다른 시나리오
     불러오기)을 말하고 시나리오 관리로 가는 링크를 세운다. 저장 폼은 서지 않는다. 보관본에도 없으면
     (영구 삭제) 그 말로 바뀐다."""
     archived = scenario("scenario-1", "기준안", "SIM-001", "revision-1", 1)
@@ -436,7 +436,7 @@ def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
         "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
         "저장하세요."
     ), warning
-    assert "「지금 편집본 복제」 로 새 시나리오를 만들고" in warning
+    assert "시나리오 관리 「복제」 로 새 시나리오를 만들고" in warning
     assert "올라와 있는 시나리오 정보를 찾지 못했습니다" not in warning
     # 네비게이션이 없는 단독 실행이라 링크는 문구로 물러선다(`render_page_link`).
     assert "사이드바에서 시나리오 관리로 가기" in [item.value for item in app.caption]

@@ -329,7 +329,7 @@ def _load_legacy_trace_review_payload(
 def load_legacy_trace_review(database_path: str) -> LegacyTraceReview:
     """「이대로 이어 쓰기」 확인 재료(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭).
 
-    흔적이 있을 때 시나리오 관리 「설비 시나리오」 구획이 그리는 회차에만 부른다. 시나리오마다 합쳐
+    흔적이 있을 때 시나리오 관리 「설비 시나리오」 탭이 그리는 회차에만 부른다. 시나리오마다 합쳐
     읽어 보므로 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다.
     """
     return LegacyTraceReview(
@@ -402,7 +402,7 @@ def load_layout_overlay_extent(
     )
 
 
-# 발행 배치 판정 칸 수. 시나리오 관리 「설비 시나리오」 구획은 배치 차이가 있는 시나리오마다 그
+# 발행 배치 판정 칸 수. 시나리오 관리 「설비 시나리오」 탭은 배치 차이가 있는 시나리오마다 그
 # 최신의 판정 한 칸(시나리오 표 실효 표지)과 발행 팝업의 (고른 리비전, 최신) 한 칸을 회차마다 읽는다
 # — 칸이 시나리오 수보다 적으면 회차마다 합친 본문을 다시 짓는다. 값은 정수 몇 개라 칸이 싸다.
 LAYOUT_PUBLISH_PREVIEW_CACHE_ENTRIES = 32
@@ -495,7 +495,7 @@ def _schedule_revisions_payload(
 def load_equipment_schedule_revisions(
     database_path: str, equipment_scenario_id: str
 ) -> tuple[EquipmentScheduleRevisionSummary, ...]:
-    """한 설비 시나리오의 일정 리비전 전부(번호 큰 것부터) — 시나리오 관리 「설비 시나리오」 구획
+    """한 설비 시나리오의 일정 리비전 전부(번호 큰 것부터) — 시나리오 관리 「설비 시나리오」 탭
     표·리비전 상자, 설비 마스터 탭 저장 이력.
 
     남의 저장(함께 넣기 포함)으로 늘 수 있어 목록과 같은 세대·stat·TTL 로 지킨다.

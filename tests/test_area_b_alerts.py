@@ -146,9 +146,8 @@ def scenario_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, 
 def test_scenario_management_alerts_only_from_the_open_tab(
     scenario_databases: tuple[Path, Path],
 ) -> None:
-    """세 탭을 늘 그리지만 상태 알림은 열린 탭의 것만 낸다 — 「시나리오 관리」(`SC-01`) ·
-    「BigDataQuery 등록」(`AD-04`) · 「자동 갱신」(`AU-01/02`). 표지의 탭 이름이 「그 화면으로」 의
-    탭이다."""
+    """탭을 늘 그리지만 상태 알림은 열린 탭의 것만 낸다 — 「Capa 시나리오」(`SC-01`) ·
+    「DB 등록」(`AD-04`) · 「자동 갱신」(`AU-01/02`). 표지의 탭 이름이 「그 화면으로」 의 탭이다."""
     database, equipment = scenario_databases
     app = AppTest.from_string(
         _page_script("app_pages/scenario_management.py", database, equipment), default_timeout=120
@@ -156,14 +155,14 @@ def test_scenario_management_alerts_only_from_the_open_tab(
     assert not app.exception, [item.message for item in app.exception]
 
     (official,) = states(app, "SC-01")
-    assert official["tab"] == "시나리오 관리"
+    assert official["tab"] == "Capa 시나리오"
     assert not states(app, "AD-04") and not states(app, "AU-01") and not states(app, "AU-02")
 
-    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: BigDataQuery 등록"
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: DB 등록"
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     (query,) = states(app, "AD-04")
-    assert query["tab"] == "BigDataQuery 등록"
+    assert query["tab"] == "DB 등록"
     assert not states(app, "SC-01")
     # 설정이 덜 됐으면 자리에는 경고 상자 대신 상태 캡션이 선다.
     if query["active"]:

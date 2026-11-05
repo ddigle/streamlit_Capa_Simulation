@@ -2,7 +2,7 @@
 
 """설비 시나리오 1단계의 화면 몫(설계 5·6장 — 세션·화면 시험).
 
-- 시나리오 관리: 「설비 시나리오」 구획(표·복제·이름·발행·이어 쓰기 — 가용설비 현황의 탭이던 것,
+- 시나리오 관리: 「설비 시나리오」 탭(표·복제·이름·발행·이어 쓰기 — 가용설비 현황의 탭이던 것,
   2026-10-24), 설비 화면 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」.
 - 가용설비 현황: 「일정 없음 n대」, 가정 설비 시나리오의 미확인 = 공식 일정 기준(Main·RawData 일정
   확인 목록), Preference(공용 Cut-off) 잠금.
@@ -12,7 +12,7 @@
 - Space: 세션 설비 시나리오의 배치를 그리고(가정이면 그 시나리오 일정 호기도), FAB 전체 배치 편집은
   공식에서만(「공식으로 바꾸기」), 찍힌 역할이 바뀌면 배치 저장이 꺼지고 「배치 변경만 버리기」.
 - 머리 띠: 아래 줄 끝 「설비 시나리오 · 운영 일정 · r1 · 공식 v1」(Space 도 같은 꼬리).
-- 설비 시나리오 구획의 E7 도구: 리비전명(비교 후 쓰기), 「이 리비전으로 되돌리기」(확인 글·확인 체크
+- 설비 시나리오 탭의 E7 도구: 리비전명(비교 후 쓰기), 「이 리비전으로 되돌리기」(확인 글·확인 체크
   뒤 새 리비전, 세션이 따라감), 「여기서 새 시나리오」(옛 리비전에서).
 """
 
@@ -43,11 +43,12 @@ from capa_simulation.components import equipment_data_workspace as workspace
 from capa_simulation.components.app_header import equipment_header_suffix
 from capa_simulation.components.equipment_data_workspace import official_confirmation_master
 from capa_simulation.components.equipment_scenario_management import (
+    CAPA_SCENARIO_TAB,
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
     CONTINUE_BLOCKED_LINE,
     CONTINUE_BUTTON_KEY,
-    EQUIPMENT_KIND,
+    EQUIPMENT_SCENARIO_TAB,
     LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
     RENAME_BUTTON_KEY,
@@ -60,10 +61,7 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
     SCENARIO_KEY,
-    SCENARIO_KIND_KEY,
-    SCENARIO_MANAGEMENT_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
-    SIMULATION_KIND,
     branch_value_line,
     publish_preview,
     restore_button_help,
@@ -75,6 +73,7 @@ from capa_simulation.components.equipment_scenario_management import (
     session_heading,
 )
 from capa_simulation.components.equipment_scenario_status import (
+    EQUIPMENT_SCENARIO_FIELD_ICON,
     EQUIPMENT_SCENARIO_FIELD_KEY,
     HOME_VISIT_LOCK_REASON,
     LOCK_REASON_MARK,
@@ -90,7 +89,7 @@ from capa_simulation.components.pick_edit_table import (
     draft_session_key,
     shown_session_key,
 )
-from capa_simulation.components.scenario_management import LIST_EDITOR_KEY
+from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, MODE_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.navigation import (
@@ -447,7 +446,7 @@ def _texts(app: AppTest) -> list[str]:
 
 
 def _heading(app: AppTest) -> str:
-    """시나리오 관리 「설비 시나리오」 구획 머리 한 줄(「이 세션: …」) — 이 화면에는 사이드바 줄이
+    """시나리오 관리 「설비 시나리오」 탭 머리 한 줄(「이 세션: …」) — 이 화면에는 사이드바 줄이
     없다."""
     return next(
         str(item.value).strip("*")
@@ -457,9 +456,9 @@ def _heading(app: AppTest) -> str:
 
 
 def _equipment_section(app: AppTest) -> AppTest:
-    """시나리오 관리 「설비 시나리오」 구획을 연다."""
+    """시나리오 관리 「설비 시나리오」 탭을 연다."""
     app.switch_page(SCENARIO_MANAGEMENT.path)
-    app.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
     return _ok(app.run())
 
 
@@ -555,30 +554,86 @@ def test_the_scenario_section_clones_publishes_and_the_session_stays_pinned(
     assert _field(app) is None
 
 
-def test_scenario_management_opens_on_simulation_and_switches_to_equipment(
+def test_scenario_management_opens_on_capa_and_the_equipment_tab_draws_only_when_open(
     _shell: AppTest,
 ) -> None:
-    """시나리오 관리 「시나리오 관리」 탭 맨 위 「관리할 시나리오」 — 처음은 시뮬레이션
-    시나리오(저장소 상태·시나리오 작업 그대로), 「설비 시나리오」 를 고르면 설비 구획만 선다(D4)."""
+    """시나리오 관리 탭 넷 — 처음은 Capa 시나리오이고, 설비 시나리오 탭 본문은 그 탭이 열린 회차에만
+    선다(옛 「관리할 시나리오」 전환은 없다)."""
     app = _ok(_shell.run())
     _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
-    kind = app.segmented_control(key=SCENARIO_KIND_KEY)
-    assert kind.label == "관리할 시나리오" and kind.value == SIMULATION_KIND
-    assert any("저장소 상태" in str(item.value) for item in app.markdown)
+    assert [tab.label for tab in app.main.tabs] == [
+        CAPA_SCENARIO_TAB,
+        EQUIPMENT_SCENARIO_TAB,
+        ":material/cloud_download: DB 등록",
+        ":material/autorenew: 자동 갱신",
+    ]
+    assert EQUIPMENT_SCENARIO_TAB.startswith(EQUIPMENT_SCENARIO_FIELD_ICON)
+    assert "관리할 시나리오" not in {item.label for item in app.segmented_control}
+    assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
     assert not any("설비 시나리오" in frame.value.columns for frame in app.dataframe)
 
-    kind.set_value(EQUIPMENT_KIND)
-    _ok(app.run())
-    assert not any("저장소 상태" in str(item.value) for item in app.markdown)
+    _equipment_section(app)
     assert any("설비 시나리오" in frame.value.columns for frame in app.dataframe)
     assert _heading(app) == "이 세션: 운영 일정 · r1 · 공식 v1"
+    # Capa 시나리오 탭은 숨은 채 그대로 그린다 — 폼 입력이 탭을 오가도 남는다.
+    assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
+
+    # 다른 탭으로 옮기면 설비 본문은 다시 서지 않는다.
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/autorenew: 자동 갱신"
+    _ok(app.run())
+    assert not any("설비 시나리오" in frame.value.columns for frame in app.dataframe)
+
+
+def test_the_tabs_outside_the_equipment_tab_never_connect_to_the_equipment_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """설비 DB 를 여는 것은 「설비 시나리오」 탭이 열린 회차뿐이다(AGENTS 5장 9) — 다른 세 탭을 보는
+    회차에는 연결을 하나도 만들지 않는다. 탭 넷을 다 그려도 설비 본문은 `tab.open` 으로 건너뛴다."""
+    import duckdb
+
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.settings as settings
+
+    equipment_db = str((tmp_path / "equipment.duckdb").resolve())
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", Path(equipment_db))
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+    opened: list[str] = []
+    real_connect = duckdb.connect
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        opened.append(str(Path(str(args[0])).resolve()))
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(duckdb, "connect", counted)
+    app = _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
+    for label in (
+        CAPA_SCENARIO_TAB,
+        ":material/cloud_download: DB 등록",
+        ":material/autorenew: 자동 갱신",
+    ):
+        opened.clear()
+        app.switch_page(SCENARIO_MANAGEMENT.path)
+        app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = label
+        _ok(app.run())
+        _ok(app.run())
+        assert equipment_db not in opened, label
+
+    opened.clear()
+    _equipment_section(app)
+    assert equipment_db in opened
+    assert any("설비 시나리오" in frame.value.columns for frame in app.dataframe)
 
 
 def test_an_equipment_db_error_stays_inside_the_equipment_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """설비 DB 를 읽지 못해도 시뮬레이션 구획은 그대로 서고, 설비 구획만 까닭을 알린다(설비 DB 는 그
-    구획 안에서만 연다)."""
+    """설비 DB 를 읽지 못해도 Capa 시나리오 탭은 그대로 서고, 설비 시나리오 탭만 까닭을 알린다(설비
+    DB 는 그 탭 안에서만 연다)."""
     import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
@@ -593,22 +648,22 @@ def test_an_equipment_db_error_stays_inside_the_equipment_section(
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
     app = _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
     _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
-    assert any("저장소 상태" in str(item.value) for item in app.markdown)
+    assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
+    assert not any("설비 시나리오를 준비하지 못했습니다" in text for text in data_error_texts(app))
 
     _equipment_section(app)
     assert any("설비 시나리오를 준비하지 못했습니다" in text for text in data_error_texts(app))
-    # 「관리할 시나리오」 전환과 다른 탭은 그대로다.
-    assert app.segmented_control(key=SCENARIO_KIND_KEY).value == EQUIPMENT_KIND
-    assert len(app.tabs) >= 3
+    # 탭 묶음과 Capa 시나리오 탭의 작업 전환은 그대로다.
+    assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
+    assert len(app.main.tabs) == 4
 
 
-def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hidden(
+def test_a_session_move_notice_rises_when_the_equipment_tab_opens(
     _shell: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """세션을 다른 리비전으로 옮겼다는 알림(미저장 설비 편집을 버렸다는 말)은 그 회차 한 번뿐이다.
-    세 탭을 늘 그려 다른 탭을 보는 회차에도 구획이 세션을 푼다(2026-10-25 리뷰) — 숨은 패널에 그리면
-    보지 못한 채 사라지던 것을 이제 사건 알림(`SB-14` — 알림창 · Alarm)으로 내 어느 탭을 보든
-    뜬다(2026-11-03 D3). 자리(탭 묶음 위 · 구획 안)에는 그리지 않는다."""
+    """세션을 다른 리비전으로 옮겼다는 알림(미저장 설비 편집을 버렸다는 말)은 사건 알림(`SB-14` —
+    알림창 · Alarm)이고 자리에는 그리지 않는다. 설비 세션은 그 탭이 열린 회차에만 풀므로 다른 탭을
+    보는 회차에는 옮기지도 알리지도 않는다."""
     from capa_simulation.components import equipment_scenario_management as section
     from capa_simulation.equipment_scenario_activation import resolve_equipment_session
 
@@ -623,23 +678,21 @@ def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hi
     )
     app = _ok(_shell.run())
     app.switch_page(SCENARIO_MANAGEMENT.path)
-    app.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
-    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: BigDataQuery 등록"
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: DB 등록"
+    _ok(app.run())
+    assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
+    assert not events(app, "SB-14")
+
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
     _ok(app.run())
     assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
     assert [note["full"] for note in events(app, "SB-14")] == [notice]
 
-    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = SCENARIO_MANAGEMENT_TAB
-    _ok(app.run())
-    assert not [item for item in app.main.warning if "합칠 수 없어" in str(item.value)]
-    assert [note["full"] for note in events(app, "SB-14")] == [notice]
 
-
-def test_switching_the_managed_kind_keeps_unsaved_list_edits(_shell: AppTest) -> None:
-    """「관리할 시나리오」 를 오가도 목록 표에서 고치고 저장하지 않은 이름은 남는다 — 위젯이
-    아니라 행 id 초안이라 돌아오면 그대로이고 화면 탭 줄의 점도 남는다(다음 「변경 저장」 에
-    실린다). Guide 가 「사라집니다」 라고 적었던 것을 바로잡았다(2026-10-25 리뷰) — 사라지는
-    것은 입력 칸에 적던 글뿐이다."""
+def test_moving_between_the_tabs_keeps_unsaved_list_edits(_shell: AppTest) -> None:
+    """탭을 오가도 목록 표에서 고치고 저장하지 않은 이름은 남는다 — 위젯이 아니라 행 id 초안이라
+    돌아오면 그대로이고 화면 탭 줄의 점도 남는다(다음 「변경 저장」 에 실린다). Guide 도 그렇게
+    적는다 — 사라지는 것은 설비 시나리오 탭 입력 칸에 적던 글뿐이다."""
     app = _ok(_shell.run())
     _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
     shown = app.session_state[shown_session_key(LIST_EDITOR_KEY)]
@@ -648,9 +701,9 @@ def test_switching_the_managed_kind_keeps_unsaved_list_edits(_shell: AppTest) ->
         names={row: "PROBE-이름"}, name_base={row: shown.names[row]}
     )
     _ok(app.run())
-    app.segmented_control(key=SCENARIO_KIND_KEY).set_value(EQUIPMENT_KIND)
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
     _ok(app.run())
-    app.segmented_control(key=SCENARIO_KIND_KEY).set_value(SIMULATION_KIND)
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = CAPA_SCENARIO_TAB
     _ok(app.run())
     assert app.session_state[draft_session_key(LIST_EDITOR_KEY)].names == {row: "PROBE-이름"}
 
@@ -1595,7 +1648,7 @@ def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_di
     assert "r1의 일정으로 되돌려 r3을 저장했습니다" in message
     assert (
         "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — 이 "
-        "구획의 「공식으로 발행」 으로 냅니다." in message
+        "탭의 「공식으로 발행」 으로 냅니다." in message
     )
     assert "발행했습니다." not in message
     release = repository.latest_equipment_release()
@@ -1695,7 +1748,7 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
 ) -> None:
     """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면이 상태 알림(`SB-19` — 자리에는
     그리지 않는다)을 내고 맨 위에 「시나리오 관리에서 이어 쓰기」 단추가 서며, 그 단추는 시나리오
-    관리 「설비 시나리오」 구획으로 옮긴다. 그 구획의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
+    관리 「설비 시나리오」 탭으로 옮긴다. 그 탭의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
     import duckdb
 
     repository = _repository(tmp_path)
@@ -1716,16 +1769,15 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert trace["active"] is True and trace["level"] == "action"
     assert "옛 배포로 저장한 설비 리비전 1개" in trace["full"]
     assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in trace["full"]
-    # 단추는 탭 기억·전환 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
+    # 단추는 탭 기억 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
     # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
     app.button(key=LEGACY_TRACE_GOTO_KEY).click()
     _ok(app.run())
-    assert app.session_state[SCENARIO_KIND_KEY] == EQUIPMENT_KIND
     assert app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] == (
-        SCENARIO_MANAGEMENT_TAB
+        EQUIPMENT_SCENARIO_TAB
     )
     assert any("설비 시나리오" in frame.value.columns for frame in app.dataframe), (
-        "설비 시나리오 구획으로 옮기지 않았다"
+        "설비 시나리오 탭으로 옮기지 않았다"
     )
     _equipment_section(app)
     assert any("옛 배포로 저장한 설비 리비전 1개" in str(item.value) for item in app.warning)
@@ -1784,7 +1836,7 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     assert field is not None and field.label == "운영 일정"
     assert any("일정 없이 엶" in str(item.value) for item in app.sidebar.caption)
 
-    # 시나리오 관리 「설비 시나리오」 구획 — 사이드바 줄이 없어 머리 한 줄과 세션 알림이 대신한다.
+    # 시나리오 관리 「설비 시나리오」 탭 — 사이드바 줄이 없어 머리 한 줄과 세션 알림이 대신한다.
     _equipment_section(app)
     texts = _texts(app)
     assert _heading(app).startswith("이 세션: 운영 일정 · 일정 없이 엶")

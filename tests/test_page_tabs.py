@@ -1079,7 +1079,7 @@ def test_the_scenario_management_tab_is_remembered_across_a_tab_round_trip(
     app = _ok(_app.run())
     _ok(app.switch_page(B).run())
     labels = [tab.label for tab in app.tabs]
-    query = next(label for label in labels if "BigDataQuery" in label)
+    query = next(label for label in labels if label.endswith("DB 등록"))
     app.session_state[key] = query
     _ok(app.switch_page(B).run())
     assert app.session_state[remembered_tab_key(key)] == query

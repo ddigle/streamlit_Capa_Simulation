@@ -207,7 +207,7 @@ def main() -> None:
         f"{len(leftover)} previous scenario(s) left in the list"
     )
     if leftover:
-        print("Remove them in 시나리오 관리 > 시나리오 관리 탭 > 목록 관리 if unnecessary.")
+        print("Remove them in 시나리오 관리 > Capa 시나리오 탭 > 목록 관리 if unnecessary.")
 
 
 if __name__ == "__main__":

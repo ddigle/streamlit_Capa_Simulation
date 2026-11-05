@@ -367,7 +367,7 @@ ROUTE_NUMBERS: Final[tuple[str, ...]] = ("Side반영률", "MCP_Chip_Ratio")
 TRUNCATED_RATIO: Final = 0.2
 MODULE_RATIO: Final = 0.25
 
-# BigDataQuery 등록 화면과 같은 값이어야 한다(`components/bigdataquery_registration.py` —
+# 시나리오 관리 DB 등록 탭과 같은 값이어야 한다(`components/bigdataquery_registration.py` —
 # 그 모듈은 streamlit 을 불러 여기서 import 하지 않는다. 테스트가 두 값을 대조한다).
 CATALOG_DEFAULT_DAYS: Final = 30
 CATALOG_BUSY_ROWS: Final = 3000
