@@ -567,8 +567,9 @@ def test_escape_takes_the_csv_menu_then_the_filter_menu_then_the_window() -> Non
 
 
 def test_escape_closes_the_window_from_anywhere_in_the_editor() -> None:
-    """창 밖 초점(도구 줄 단추 · 도면 · 페이더)에서도 Esc 가 창을 닫는다. 끌기 취소 · 서식 붓 · 입력
-    칸은 지금 차례대로 먼저이고, 고른 것 풀기는 창 다음이다."""
+    """창 밖 초점(도구 줄 단추 · 도면 · 페이더 · 체크박스 · 숫자 칸 · 글자 칸)에서도 Esc 가 창을
+    닫는다. 끌기 취소 · 서식 붓은 지금 차례대로 먼저이고, 고른 것 풀기는 창 다음이다. 입력 칸에서
+    비키는 것은 도면 단축키뿐이다."""
     begin = JS.index("host.onkeydown = (event) => {")
     keys = JS[begin : JS.index("for (const input of fieldInputs) {", begin)]
     line = "if (event.key === 'Escape' && escapeSheet()) { event.preventDefault(); return }"
@@ -580,9 +581,11 @@ def test_escape_closes_the_window_from_anywhere_in_the_editor() -> None:
     assert view.index(line) < view.index(
         "else if (event.key === 'Escape') { select(null); notePick() }"
     )
-    assert edit.index("if (event.key === 'Escape' && S.paint)") < edit.index("if (typing) return")
-    assert edit.index("if (typing) return") < edit.index(line)
-    assert edit.index(line) < edit.index("if (event.key === 'Escape' && S.selection.size)")
+    assert edit.index("if (event.key === 'Escape' && S.paint)") < edit.index(line)
+    assert edit.index(line) < edit.index("const typing = ")
+    assert edit.index("if (typing) return") < edit.index(
+        "if (event.key === 'Escape' && S.selection.size)"
+    )
     # 창 안은 차례 한 곳을 쓰고 키는 여전히 도면으로 새지 않는다.
     inside = JS[
         JS.index("    sheetBox.onkeydown = (event) => {") : JS.index("    // 펼침 밖을 누르면")
@@ -593,17 +596,23 @@ def test_escape_closes_the_window_from_anywhere_in_the_editor() -> None:
 
 
 def test_a_press_on_a_spot_that_takes_no_focus_keeps_the_keys_in_the_editor() -> None:
-    """창의 빈 곳은 창이 초점을 받고, 창이 열린 동안 편집기의 초점 못 받는 자리를 누르면 초점이
-    밖으로 나가지 않게 창에 둔다 — 창이 닫혀 있으면 초점을 건드리지 않는다. 컴포넌트는 회차마다
-    다시 불리므로 덧쌓이지 않는 `onclick` 이다."""
+    """창의 빈 곳은 창이 초점을 받고, 창이 열린 동안 편집기의 초점 못 받는 자리를 누르거나 칸의
+    Enter · 이름 칸의 Esc 가 초점을 빼면 초점이 밖으로 나가지 않게 창에 둔다 — 창이 닫혀 있으면
+    초점을 건드리지 않는다. 컴포넌트는 회차마다 다시 불리므로 덧쌓이지 않는 `onclick` 이다."""
     assert "sheetBox.tabIndex = -1" in JS
     assert ".sle-sheet:focus { outline: none; }" in CSS
-    press = JS[JS.index("    host.onclick = () => {") :]
+    assert "    host.onclick = keepKeysInSheet\n" in JS
+    begin = JS.index("  function keepKeysInSheet() {")
     assert (
-        "if (!sheetBox.hidden && !host.contains(host.getRootNode().activeElement)) "
+        "if (sheetBox && !sheetBox.hidden && !host.contains(host.getRootNode().activeElement)) "
         "sheetBox.focus({ preventScroll: true })"
-    ) in press[: press.index("\n    }\n")]
+    ) in JS[begin : JS.index("\n  }\n", begin)]
     assert "host.addEventListener" not in JS
+    keys = JS[JS.index("host.onkeydown = (event) => {") :]
+    assert keys.index("if (event.key === 'Enter') keepKeysInSheet()") < keys.index("if (VIEW) {")
+    name = JS[JS.index("  unitLabel.onkeydown = (event) => {") :]
+    name = name[: name.index("\n  }\n")]
+    assert name.index("unitLabel.blur()\n    keepKeysInSheet()") > name.index("'Escape'")
 
 
 def test_a_list_row_zooms_to_three_hundred_percent_and_the_pick_view_stays_at_most() -> None:

@@ -6077,6 +6077,8 @@ export default function (component) {
     if (event.key === ' ') { S.spaceDown = false; svg.classList.remove('is-pan-ready') }
   }
   host.onkeydown = (event) => {
+    // 칸의 Enter 는 초점을 뺀다(`input.blur()`) — 칸을 고친 뒤의 Esc 가 창에 닿아야 한다.
+    if (event.key === 'Enter') keepKeysInSheet()
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -6113,11 +6115,12 @@ export default function (component) {
     if (event.key === 'Escape' && S.drag) { event.preventDefault(); cancelDrag(); return }
     // 든 서식 붓은 Esc 가 먼저 내린다(고른 것은 그대로).
     if (event.key === 'Escape' && S.paint) { event.preventDefault(); setBrush(null); return }
+    // 열린 「호기 정보」 창도 입력 칸보다 먼저다 — 칸의 값은 건드리지 않고 창만 닫는다(Esc 를 쓰는 칸은 키를 여기 올리지 않는다).
+    if (event.key === 'Escape' && escapeSheet()) { event.preventDefault(); return }
     const typing = event.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)
     const ctrl = event.ctrlKey || event.metaKey
     if (ctrl && event.key.toLowerCase() === 'z' && !typing) { event.preventDefault(); undo(); return }
     if (typing) return
-    if (event.key === 'Escape' && escapeSheet()) { event.preventDefault(); return }
     // Tab 으로 초점이 온 호기·요소는 Enter·Space 가 누르기와 같다 — 그것 하나를 고르고, Ctrl(⌘)·Shift 는 고른 것에 더하거나
     // 뺀다(Shift/Ctrl+클릭). 고른 뒤의 방향키(옮기기)·Ctrl+방향키(크기)·Delete(빼기·지우기)는 도면에서와 같다.
     const focusedItem = canvasItemOf(event.target)
@@ -6242,6 +6245,7 @@ export default function (component) {
     const item = S.items.get(S.unitLabelFor)
     unitLabel.value = item && isUnit(item) ? renameTarget(item).name : ''
     unitLabel.blur()
+    keepKeysInSheet()
   }
   markColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { color: markColor.value }) }
   markBorder.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'zone') setMarkProps(mark, { borderStyle: pickOr(markBorder.value, BORDER_STYLES) }) }
@@ -7464,6 +7468,10 @@ export default function (component) {
     }
     return true
   }
+  // 창이 열린 동안 초점이 편집기 밖으로 나가면 키가 오지 않아 Esc 가 창에 닿지 않는다 — 그때 초점을 창에 둔다.
+  function keepKeysInSheet() {
+    if (sheetBox && !sheetBox.hidden && !host.contains(host.getRootNode().activeElement)) sheetBox.focus({ preventScroll: true })
+  }
   if (sheetBox) {
     sheetToggle.onclick = () => (S.sheetState && S.sheetState.open ? closeSheet() : openSheet())
     sheetClose.onclick = () => {
@@ -7585,12 +7593,9 @@ export default function (component) {
       }
       event.stopPropagation()
     }
-    // 창의 빈 곳을 누르면 창이 초점을 받는다. 창이 열린 동안 편집기의 초점 못 받는 자리(도구 줄 · 칸의 빈 곳)를 누르면 초점이
-    // 편집기 밖으로 나가 키가 오지 않으니 그때도 창에 둔다.
+    // 창의 빈 곳을 누르면 창이 초점을 받는다. 편집기의 초점 못 받는 자리(도구 줄 · 칸의 빈 곳)를 누른 때도 창에 둔다.
     sheetBox.tabIndex = -1
-    host.onclick = () => {
-      if (!sheetBox.hidden && !host.contains(host.getRootNode().activeElement)) sheetBox.focus({ preventScroll: true })
-    }
+    host.onclick = keepKeysInSheet
     // 펼침 밖을 누르면 펼침을 닫는다(창 안에서).
     sheetBox.onpointerdown = (event) => {
       if (S.sheetMenu && !sheetMenu.contains(event.target) && !(event.target.closest && event.target.closest('.sle-sheet-funnel'))) closeMenu()
