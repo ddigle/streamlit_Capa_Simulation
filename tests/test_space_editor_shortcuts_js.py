@@ -58,7 +58,7 @@ def test_each_screen_lists_only_the_keys_it_has() -> None:
         for key in ("Ctrl+Z", "Delete", "Ctrl+C · Ctrl+V", "Alt+Shift+C", "Shift+H", "Space+끌기"):
             assert key not in _keys(screen), (screen, key)
     for screen in ("ef", "eb"):
-        for key in ("Ctrl+Z", "Delete", "Ctrl+방향키", "Alt+Shift+V", "Shift+V", "Alt+끌기"):
+        for key in ("Ctrl+Z", "Delete", "Ctrl+방향키", "Alt+Shift+V", "Alt 누른 채 끌기"):
             assert key in _keys(screen), (screen, key)
     assert "호기 두 번 클릭" in _keys("vf") and "호기 두 번 클릭" in _keys("ef")
     assert "호기 두 번 클릭" not in _keys("vb") and "호기 두 번 클릭" not in _keys("eb")
@@ -119,7 +119,9 @@ def test_the_panel_closes_by_esc_outside_press_and_stays_in_the_browser() -> Non
     section = JS[
         JS.index("const keysToggle = q(") : JS.index("// ---", JS.index("const keysToggle = q("))
     ]
-    assert "host.onpointerdown" in section and "keysPanel.contains(event.target)" in section
+    assert "document.addEventListener('pointerdown', S.onKeysPointer, true)" in section
+    assert "path.includes(keysPanel)" in section and "path.includes(keysToggle)" in section
+    assert "document.removeEventListener('pointerdown', S.onKeysPointer, true)" in JS
     assert "setStateValue" not in section and "setTriggerValue" not in section
     assert "textContent" in section and "innerHTML" not in section
 

@@ -1681,7 +1681,7 @@ export default function (component) {
     ['Shift+H', '좌우 뒤집기', 'ef eb'],
     ['Shift+V', '상하 뒤집기', 'ef eb'],
     ['Shift+모서리 끌기', '도형 비율 유지', 'ef eb'],
-    ['Alt+끌기', '정렬선에 붙이지 않기', 'ef eb'],
+    ['Alt 누른 채 끌기', '정렬선에 붙이지 않기', 'ef eb'],
     ['Space+끌기', '화면 옮기기', 'ef eb'],
   ]
   // 그 화면(`vf`·`vb`·`ef`·`eb`)에서 쓸 수 있는 줄 — [키조합, 기능].
@@ -6799,8 +6799,9 @@ export default function (component) {
     legendBox.replaceChildren(...nodes)
   }
   // ---------------------------------------------------------------- 단축키 판(도구 줄 「단축키」)
-  // 지금 화면의 줄(`shortcutRows`)을 「키조합 : 기능」 으로 그린다. 판 밖을 누르거나 Esc·단추·×로 닫는다(열림은 보기 상태라
-  // 파이썬으로 보내지 않고 새 마운트는 닫힌 채다).
+  // 지금 화면의 줄(`shortcutRows`)을 「키조합 : 기능」 으로 그린다. 판 밖(사이드바 포함 앱 어디든)을 누르거나 Esc·단추·×로 닫는다
+  // (열림은 보기 상태라 파이썬으로 보내지 않고 새 마운트는 닫힌 채다). 밖 누르기는 문서에서 먼저 듣는다 — 도면 칸이 전파를 멈추기도
+  // 하고, 그림자 DOM 이라 지나온 길(`composedPath`)로 가른다. 듣는 쪽은 하나(S)이고 실행마다 판단 함수만 새로 건다.
   const keysToggle = q('.sle-keys-toggle')
   const keysPanel = q('.sle-keys')
   const keysList = q('.sle-keys-list')
@@ -6832,8 +6833,13 @@ export default function (component) {
   }
   keysToggle.onclick = () => setKeysOpen(!keysOpen(), false)
   q('.sle-keys-close').onclick = () => setKeysOpen(false, true)
-  host.onpointerdown = (event) => {
-    if (keysOpen() && !keysPanel.contains(event.target) && !keysToggle.contains(event.target)) setKeysOpen(false, false)
+  S.keysOutside = (event) => {
+    const path = event.composedPath()
+    if (keysOpen() && !path.includes(keysPanel) && !path.includes(keysToggle)) setKeysOpen(false, false)
+  }
+  if (!S.onKeysPointer) {
+    S.onKeysPointer = (event) => S.keysOutside(event)
+    document.addEventListener('pointerdown', S.onKeysPointer, true)
   }
 
   // ---------------------------------------------------------------- 스크롤 고정(도구 줄 「고정」)
@@ -8024,6 +8030,8 @@ export default function (component) {
   return () => {
     if (S.ro) S.ro.disconnect()
     if (S.onWindowResize) window.removeEventListener('resize', S.onWindowResize)
+    if (S.onKeysPointer) document.removeEventListener('pointerdown', S.onKeysPointer, true)
+    S.onKeysPointer = null
     if (S.resizeFrame) cancelAnimationFrame(S.resizeFrame)
     S.ro = null
     S.onWindowResize = null

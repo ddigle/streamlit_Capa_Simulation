@@ -236,7 +236,6 @@ def test_compare_and_shortening_share_the_block_lines_and_the_floor_list_columns
     def rows(inactive: bool) -> Any:
         return space_floor_list._table_rows(
             [active, off],
-            (),
             lambda _key: "",
             states,
             inactive=inactive,

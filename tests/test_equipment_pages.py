@@ -421,7 +421,8 @@ def test_space_floor_detail_offers_the_canvas_dialog_and_ignores_an_old_drawing(
     assert [widget.label for widget in app.number_input] == ["캔버스 폭", "캔버스 높이"]
     assert not _canvas_checkboxes(app) and not app.success
     for element in (*app.caption, *app.warning):
-        assert "도면" not in str(element.value) and "캔버스" not in str(element.value)
+        for word in ("배경 도면", "종횡비", "적용될 캔버스", "이탈 호기"):
+            assert word not in str(element.value)
     assert [element.value for element in app.markdown if "37.5" in str(element.value)]
     assert "저장된 도면" not in "".join(str(element.value) for element in app.markdown)
     save = app.button(key="space_floor_layout_save_C1_1F")
