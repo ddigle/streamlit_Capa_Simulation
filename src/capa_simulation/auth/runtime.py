@@ -1,13 +1,13 @@
-# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·세션 폐기·갱신 표·진단·사건·로거.
+# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·세션 폐기·갱신 표·진단·사건·클레임 이름·로거.
 
 """통합인증 프로세스 상태.
 
-로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리를
-둔다. 모두 프로세스 메모리이고(replica 1 전제) 재시작하면 비워진다 — 로그아웃 폐기 목록이
-사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는 지웠으므로 받아들인다.
-갱신 표가 비는 것은 해가 없다 — 열린 연결은 재시작으로 어차피 끊기고, 다시 붙을 때 브라우저가
-갱신된 쿠키를 싣는다. DB 에는 아무것도 쓰지 않는다. 세션 상태(`st.session_state`)도 아니다 —
-문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
+로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리 ·
+마지막 로그인의 클레임 이름을 둔다. 모두 프로세스 메모리이고(replica 1 전제) 재시작하면 비워진다 —
+로그아웃 폐기 목록이 사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는
+지웠으므로 받아들인다. 갱신 표가 비는 것은 해가 없다 — 열린 연결은 재시작으로 어차피 끊기고, 다시
+붙을 때 브라우저가 갱신된 쿠키를 싣는다. DB 에는 아무것도 쓰지 않는다. 세션
+상태(`st.session_state`)도 아니다 — 문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
 
 갱신 표(`sid → 최신 exp · 마지막 발급 시각`)의 끝은 핸드셰이크에 묶인 신원만 본다(문지기의 열린
 연결 · `app.py`) — websocket 은 핸드셰이크 때의 쿠키만 알아서 그 뒤 갱신 경로가 다시 발급한 쿠키를
@@ -29,7 +29,7 @@ import sys
 import threading
 import time
 from collections import OrderedDict, deque
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -100,6 +100,7 @@ class _State:
     anonymous_events: deque[SsoEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENTS))
     anonymous_counts: dict[str, int] = field(default_factory=dict)
     event_seq: int = 0
+    last_login_claims: tuple[str, ...] = ()
 
 
 _LOCK = threading.Lock()
@@ -320,6 +321,21 @@ def remember_used_state(digest: str, exp: int) -> bool:
         return True
 
 
+def note_login_claims(claim_names: Sequence[str]) -> None:
+    """검증을 마친 마지막 로그인의 클레임 이름을 적는다(값 없음 · 거절된 로그인 포함).
+
+    ADFS 가 그룹 클레임을 주는지 C-DEP 에서 보는 길이다 — 서버 로그 창구가 없어 Admin 점검이 읽는다.
+    """
+    with _LOCK:
+        _STATE.last_login_claims = tuple(claim_names)
+
+
+def last_login_claims() -> tuple[str, ...]:
+    """마지막 로그인의 클레임 이름. 기동 뒤 로그인이 없으면 빈 튜플."""
+    with _LOCK:
+        return _STATE.last_login_claims
+
+
 def keep_diagnostic(record: Mapping[str, str]) -> str:
     """오류 화면(PRG)이 다시 읽을 진단을 10분 둔다. 꺼낼 id 를 돌려준다."""
     now = _now()
@@ -415,8 +431,8 @@ def anonymous_failure_counts() -> dict[str, int]:
 
 
 def reset() -> None:
-    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건을 비우고
-    stdout 처리기를 뗀다."""
+    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건 · 클레임
+    이름을 비우고 stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

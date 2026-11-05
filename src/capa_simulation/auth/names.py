@@ -33,6 +33,13 @@ ENV_CLAIM_LOGINID = "ADFS_CLAIM_LOGINID"
 ENV_CLAIM_USERNAME = "ADFS_CLAIM_USERNAME"
 ENV_CLAIM_DEPTNAME = "ADFS_CLAIM_DEPTNAME"
 ENV_LOGOUT_URL = "ADFS_LOGOUT_URL"
+# 접속 명단(`auth/access.py`) — 통합인증을 지났어도 여기 없으면 들어오지 못한다. 값은 쉼표 ·
+# 세미콜론 · 공백으로 나눈 loginid 들이고 값을 화면 · 로그에 싣지 않는다. 관리자 목록은 운영에서
+# 필수다.
+ENV_ACCESS_ADMINS = "CAPA_ACCESS_ADMINS"
+ENV_ACCESS_USERS = "CAPA_ACCESS_USERS"
+# 거절 화면에 보일 요청 창구 글(선택).
+ENV_ACCESS_CONTACT = "CAPA_ACCESS_CONTACT"
 
 # 통합인증이 읽는 환경변수 전부. 시험의 자동 정리 · 시작 보고(있음/없음) · 앱 사본을 띄우는 보조
 # 스크립트가 같은 튜플을 쓴다. 차례는 설정 화면 · 점검 표의 줄 차례다.
@@ -53,6 +60,9 @@ SSO_ENVIRONMENT: tuple[str, ...] = (
     ENV_CLAIM_USERNAME,
     ENV_CLAIM_DEPTNAME,
     ENV_LOGOUT_URL,
+    ENV_ACCESS_ADMINS,
+    ENV_ACCESS_USERS,
+    ENV_ACCESS_CONTACT,
 )
 
 # 값을 화면 · 보고 · 로그에 절대 싣지 않는 이름(있음/없음 · 길이 같은 사실만).

@@ -36,6 +36,8 @@ ISSUER = "https://idp.example.invalid/adfs"
 AUTHORIZE_URL = "https://idp.example.invalid/adfs/oauth2/authorize/"
 PUBLIC_URL = "https://capa.example.invalid"
 LOGINID = "dev.user"
+# 같은 탭이 다른 계정으로 이어지는 시험의 계정 — 명단 안이어야 「계정 바뀜」 까지 간다.
+OTHER_LOGINID = "other.user"
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,8 @@ def sso_environ(
         names.ENV_ISSUER: ISSUER,
         names.ENV_SIGNING_CERT: signing().der_b64,
         names.ENV_PUBLIC_URL: PUBLIC_URL,
+        names.ENV_ACCESS_ADMINS: LOGINID,
+        names.ENV_ACCESS_USERS: OTHER_LOGINID,
     }
     environ.update(overrides or {})
     for name in drop:
