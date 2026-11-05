@@ -6451,7 +6451,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `[role="dialog"]` 를 `row wrap` 으로 바꿔 작업 줄을 제목 줄에 올린다 — 제목이 길거나 창이 좁아 한 줄에 들지 못하면 flex 줄바꿈이 제목 아래로 내리고, 여백이 ✕ 자리를 비운다. 이 서식은
   그 겹 바로 밑에 작업 줄(`st-key-capa_paste_head_*`)이 든 창에만 걸린다 — 다른 팝업과 작업 줄 없는 확인 창(입력 초기화)은 그대로고, 판올림으로 겹이 바뀌면 작업 줄이 글 칸 아래에 남을 뿐 창은 그대로 쓴다.
   회차가 그리는 차례는 글 칸 → 작업 줄 그대로다(화면 차례는 서식의 `order`) — 붙여넣고 Tab 하면 적용으로 간다. 표 상자 안에 펴지는 칸(HOME 설정 Past Data — `in_box`)은 창 제목이 없어 작업 줄이
-  그 상자 맨 위다. 까닭 풍선은 단추 아래로 선다(창 위 끝이라 위로 서면 창 상자의 `overflow: hidden` 에 잘린다).
+  그 상자 맨 위다. 까닭 풍선은 단추 아래로 서고(창 위 끝이라 위로 서면 창 상자의 `overflow: hidden` 에 잘린다), 단추 왼쪽 끝에서 창 오른쪽 끝까지의 자리(`tipRoom` → `--capa-paste-tip-room`)에서 접힌다(제목 옆 단추가 좁은 창에서 오른쪽으로 잘리지 않게).
 - **글 칸 라벨은 화면에 보이지 않는다**(`label_visibility="collapsed"` — 접근성 이름으로 남는다, 2026-11-05 답 「중복된 내용 표기」). 보이는 창은 둘이다(`label_visible`, `tests/test_paste_form.py` 가 목록으로 잡는다) —
   「엑셀·CSV로 한꺼번에」(곁의 「또는 CSV 파일 업로드」 와 짝) · 접속 명단 추가(넣을 것이 loginid 라고 말하는 글이 라벨뿐).
 - `st.download_button` 은
@@ -6468,7 +6468,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **창 크기는 보기 상태다** — 오른쪽 아래 손잡이(변 둘 포함)를 끌면 `<html>` 의 CSS 변수(`--capa-paste-w` · `--capa-paste-text-h`)와 속성
   (`data-capa-paste-sized`)만 바꾸고, 그 변수를 읽는 규칙은 컴포넌트 서식이라 창이 닫히면 함께 사라진다. 회차가 다시 돌아도 유지되고 그 브라우저의
   `localStorage`(`capa-paste-size:<칸>` — 읽기 · 쓰기 try/catch)가 기억한다. 칸은 같은 꼴 창이 함께 쓰는 `paste` · 미리보기가 있는 `import` · HOME 설정 `past` 다. 두 번 누르면
-  기본 크기, 방향키도 된다. 폭은 Streamlit 팝업 상자(`[role="dialog"]` 의 부모)를 고른다 — `stDialog` · `stTextArea` · `stTextAreaRootElement` · `InputInstructions` 는
+  기본 크기, 방향키도 된다. 글 칸의 끝은 창의 글 칸 · 입력 칸이 화면 안에 들 만큼이고 글 칸 밖 높이를 실제로 잰다(`outsideText` — 좁아져 작업 줄이 접히거나 확인 체크가 있으면 커진다. 폭을 먼저 입히고 재며, 미리보기처럼 그 아래 구획은 넣지 않는다 — 그 구획은 창 스크롤이다). 폭은 Streamlit 팝업 상자(`[role="dialog"]` 의 부모)를 고른다 — `stDialog` · `stTextArea` · `stTextAreaRootElement` · `InputInstructions` 는
   비공식 DOM 이름이라 판올림에서 다시 본다(바뀌면 크기만 안 따르고 창은 그대로 쓴다).
 - **막 뜨는 팝업의 표지** — 알림 칸은 앱 회차가 끝날 때 문서의 표지를 훑는데 막 뜨는 팝업의 본문은 그때 아직 문서에 없을 수 있다(사본 실측 — 연 회차 알림이 3초 뒤 다시 보낸 표지에
   실려서야 떴다). 숨은 컴포넌트가 팝업에 표지가 든 순간 `window.__capaAlerts.scan()` 을 한 번 더 부른다(같은 id 는 한 번만 뜬다).

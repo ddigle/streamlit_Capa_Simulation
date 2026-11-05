@@ -130,9 +130,13 @@ html[data-capa-paste-dragging] {
   left: 0;
   top: calc(100% + 6px);
   z-index: 3;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: var(--capa-paste-tip-room, 16rem);
   padding: 4px 8px;
   border-radius: 6px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: keep-all;
   font-size: 0.8125rem;
   line-height: 1.4;
   pointer-events: none;

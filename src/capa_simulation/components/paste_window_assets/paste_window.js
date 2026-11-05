@@ -14,13 +14,20 @@
 const MIN_WIDTH = 360
 const MIN_TEXT = 100
 const VIEWPORT_GUTTER = 32
-// 글 칸 밖 창 높이(머리 · 작업 줄 · 여백) — 글 칸을 최대로 늘려도 창이 화면 안에 든다.
+// 글 칸 밖 높이의 기본값 — 글 칸이 아직 없어 잴 수 없을 때만 쓴다. 실제 값은 창 폭(작업 줄이 제목 아래로 접히는지)과
+// 칸 구성(확인 체크)에 따라 달라 잰다(`install` 의 `outsideText`).
 const WINDOW_CHROME = 230
+// 글 칸 · 입력 칸 아래 창 여백과 창 · 화면 사이 틈.
+const FORM_BOTTOM_GAP = 32
 const KEY_STEP = 40
+// 잠금 까닭 풍선 — 창 오른쪽 끝과 남기는 틈과, 자리가 아주 좁아도 읽을 수 있게 남기는 폭.
+const TIP_GUTTER = 8
+const MIN_TIP_ROOM = 96
 
-function clampSize(size, viewport) {
+// 글 칸의 끝은 창의 글 칸 · 입력 칸이 화면 안에 들 만큼이다(`chrome` — 화면 위 끝부터 그 칸들 아래까지 글 칸 밖 높이).
+function clampSize(size, viewport, chrome = WINDOW_CHROME) {
   const maxWidth = Math.max(MIN_WIDTH, viewport.width - VIEWPORT_GUTTER)
-  const maxText = Math.max(MIN_TEXT, viewport.height - WINDOW_CHROME)
+  const maxText = Math.max(MIN_TEXT, viewport.height - chrome)
   const within = (value, low, high) => Math.min(high, Math.max(low, value))
   return {
     width: Math.round(within(size.width, Math.min(MIN_WIDTH, maxWidth), maxWidth)),
@@ -53,13 +60,20 @@ function lockReason(text, confirmed, reasons) {
   if (!confirmed) return reasons.confirm || ''
   return ''
 }
+
+// 잠금 까닭 풍선이 쓸 폭 — 단추 왼쪽 끝에서 창 오른쪽 끝까지. 창 상자가 넘치는 것을 자르므로 이 폭에서 접는다.
+function tipRoom(windowRight, buttonLeft) {
+  return Math.max(MIN_TIP_ROOM, Math.floor(windowRight - buttonLeft - TIP_GUTTER))
+}
 // </paste-window-core>
 
 const TEXT_SELECTOR = '[class*="st-key-capa_paste_text_"]'
 const TEXT_BOX_SELECTOR = TEXT_SELECTOR + ' [data-testid="stTextArea"]'
 const APPLY_SELECTOR = '[class*="st-key-capa_paste_apply_"]'
-const CONFIRM_SELECTOR = '[class*="st-key-capa_paste_confirm_"] input[type="checkbox"]'
+const CONFIRM_BOX_SELECTOR = '[class*="st-key-capa_paste_confirm_"]'
+const CONFIRM_SELECTOR = CONFIRM_BOX_SELECTOR + ' input[type="checkbox"]'
 const LOCK_ATTRIBUTE = 'data-capa-paste-locked'
+const TIP_ROOM_VARIABLE = '--capa-paste-tip-room'
 
 function install(host, data) {
   const doc = host.ownerDocument || document
@@ -79,14 +93,29 @@ function install(host, data) {
       text: text ? text.getBoundingClientRect().height : MIN_TEXT,
     }
   }
+  // 화면 위 끝(창이 스크롤된 만큼 되돌린 자리)부터 글 칸 · 입력 칸 아래까지 글 칸 밖 높이. 미리보기처럼 그 아래 구획은 넣지
+  // 않는다 — 넣으면 값이 큰 창의 글 칸을 늘릴 수 없다(그 구획은 창 스크롤로 간다).
+  const outsideText = () => {
+    const text = textBox()
+    if (!text) return WINDOW_CHROME
+    const scroller = box.closest('[data-testid="stDialog"]')
+    const textRect = text.getBoundingClientRect()
+    const last = dialog.querySelector(CONFIRM_BOX_SELECTOR)
+    const formBottom = last ? last.getBoundingClientRect().bottom : textRect.bottom
+    return Math.ceil(formBottom + (scroller ? scroller.scrollTop : 0) - textRect.height + FORM_BOTTOM_GAP)
+  }
+  let wanted = null
   const paint = (size) => {
-    const fitted = clampSize(size, viewport())
-    root.style.setProperty('--capa-paste-w', fitted.width + 'px')
-    root.style.setProperty('--capa-paste-text-h', fitted.text + 'px')
+    wanted = size
+    // 폭을 먼저 입힌다 — 폭에 따라 작업 줄이 접혀 글 칸 밖 높이가 달라진다.
+    root.style.setProperty('--capa-paste-w', clampSize(size, viewport()).width + 'px')
     root.setAttribute('data-capa-paste-sized', '')
+    const fitted = clampSize(size, viewport(), outsideText())
+    root.style.setProperty('--capa-paste-text-h', fitted.text + 'px')
     return fitted
   }
   const unpaint = () => {
+    wanted = null
     root.style.removeProperty('--capa-paste-w')
     root.style.removeProperty('--capa-paste-text-h')
     root.removeAttribute('data-capa-paste-sized')
@@ -128,6 +157,7 @@ function install(host, data) {
       if (drag.size) save(drag.size)
       drag = null
       root.removeAttribute('data-capa-paste-dragging')
+      judge()
     }
     handle.addEventListener('pointerup', finish)
     handle.addEventListener('pointercancel', finish)
@@ -164,6 +194,7 @@ function install(host, data) {
       event.preventDefault()
       const start = measured()
       save(paint({ width: start.width + step.x, text: start.text + step.y }))
+      judge()
     })
     handles.forEach((handle) => dialog.appendChild(handle))
   }
@@ -190,12 +221,18 @@ function install(host, data) {
     const tick = dialog.querySelector(CONFIRM_SELECTOR)
     const why = lockReason(area.value, tick ? tick.checked : true, data.reasons)
     if (button.disabled !== Boolean(why)) button.disabled = Boolean(why)
-    if (why) holder.setAttribute(LOCK_ATTRIBUTE, why)
-    else holder.removeAttribute(LOCK_ATTRIBUTE)
+    if (why) {
+      holder.setAttribute(LOCK_ATTRIBUTE, why)
+      const room = tipRoom(box.getBoundingClientRect().right, holder.getBoundingClientRect().left)
+      holder.style.setProperty(TIP_ROOM_VARIABLE, room + 'px')
+    } else holder.removeAttribute(LOCK_ATTRIBUTE)
   }
   dialog.addEventListener('input', judge, true)
   dialog.addEventListener('change', judge, true)
+  win.addEventListener('resize', judge)
   const watch = () => {
+    // 창을 여는 동안 칸이 하나씩 서므로 기억한 크기를 다시 맞춘다 — 글 칸 밖 높이가 그때 정해진다.
+    if (wanted) paint(wanted)
     judge()
     passMarkers()
   }
@@ -212,6 +249,7 @@ function install(host, data) {
     observer.disconnect()
     dialog.removeEventListener('input', judge, true)
     dialog.removeEventListener('change', judge, true)
+    win.removeEventListener('resize', judge)
     handles.forEach((handle) => handle.remove())
     const holder = dialog.querySelector(APPLY_SELECTOR)
     if (holder) holder.removeAttribute(LOCK_ATTRIBUTE)

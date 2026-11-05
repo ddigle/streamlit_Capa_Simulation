@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -296,6 +297,22 @@ def test_the_lock_reason_stands_below_the_button() -> None:
     assert "bottom:" not in body
 
 
+def test_the_lock_reason_wraps_inside_the_room_the_window_leaves() -> None:
+    """풍선은 자기 글 폭으로 서되 창이 남긴 자리(`--capa-paste-tip-room` — 스크립트가 잰다)에서
+    접힌다. 줄바꿈을 막으면 폭 360 화면의 제목 옆 단추에서 글 끝이 창 상자에 잘린다. 스크립트가 못
+    돌았을 때의 폭도 정해 둔다."""
+    (body,) = [
+        body
+        for selector, body in _css_rules()
+        if selector == "[data-capa-paste-locked]:hover::after"
+    ]
+    assert "white-space: normal" in body
+    assert "nowrap" not in body
+    assert "width: max-content" in body
+    assert re.search(r"max-width:\s*var\(--capa-paste-tip-room,\s*\S+\)", body), body
+    assert "--capa-paste-tip-room" in WINDOW_JS
+
+
 def test_the_opening_note_goes_up_once_per_opening() -> None:
     """창을 연 회차에 한 번 — 회차가 다시 돌아도 다시 뜨지 않고, 닫았다 열면 다시 뜬다."""
     app = _window()
@@ -385,6 +402,159 @@ process.stdout.write(JSON.stringify({ big, small, phone }))
     assert out["big"] == {"width": 1468, "text": 720}
     assert out["small"] == {"width": 360, "text": 100}
     assert out["phone"] == {"width": 360, "text": 100}
+
+
+def test_the_text_limit_follows_the_measured_room_outside_the_text_box() -> None:
+    """글 칸 밖 높이는 창마다 · 폭마다 다르다 — 좁아져 작업 줄이 제목 아래로 접히거나 확인 체크가
+    있으면 커진다. 잰 값을 주면 그만큼 글 칸의 끝이 줄어 창이 화면 안에 든다. 잴 수 없으면 기본값이다.
+    줄이는 쪽의 끝은 그대로 지킨다."""
+    out = _node(
+        """
+const size = { width: 360, text: 5000 }
+const viewport = { width: 1280, height: 800 }
+process.stdout.write(JSON.stringify([
+  clampSize(size, viewport),
+  clampSize(size, viewport, 298),
+  clampSize(size, { width: 1280, height: 300 }, 298),
+]))
+"""
+    )
+    assert out == [
+        {"width": 360, "text": 570},
+        {"width": 360, "text": 502},
+        {"width": 360, "text": 100},
+    ]
+
+
+def test_the_lock_tip_fits_the_room_up_to_the_right_edge_of_the_window() -> None:
+    """잠금 까닭 풍선은 단추 왼쪽 끝에서 창 오른쪽 끝까지만 쓴다 — 창 상자가 넘치는 것을 잘라 넘으면
+    글 끝이 사라졌다(폭 360 화면, 제목 옆 단추). 자리가 아주 좁아도 읽을 폭은 남긴다."""
+    out = _node(
+        """
+process.stdout.write(JSON.stringify([
+  tipRoom(346, 156),
+  tipRoom(1000, 100),
+  tipRoom(346, 340),
+]))
+"""
+    )
+    assert out == [182, 892, 96]
+
+
+_INSTALL_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const styles = {}
+const holderStyles = {}
+const attrs = {}
+const rect = (top, height, left = 0, width = 300) => ({
+  top, height, left, width, right: left + width, bottom: top + height,
+})
+const narrow = () => parseInt(styles['--capa-paste-w'], 10) <= 400
+const root = {
+  style: {
+    setProperty: (name, value) => { styles[name] = value },
+    removeProperty: (name) => { delete styles[name] },
+  },
+  setAttribute: () => {},
+  removeAttribute: () => {},
+}
+// 좁으면 작업 줄이 접혀 글 칸이 아래로 내려간다 — 폭을 먼저 입혀야 이 차이가 재인다. 창이 스크롤되면
+// 화면 자리는 그만큼 올라간다.
+const textBox = { getBoundingClientRect: () => rect((narrow() ? 200 : 120) - input.scroll, 300) }
+const confirmBox = { getBoundingClientRect: () => rect((narrow() ? 510 : 430) - input.scroll, 30) }
+const area = { value: '' }
+const applyButton = { disabled: false }
+const holder = {
+  querySelector: () => applyButton,
+  setAttribute: (name, value) => { attrs[name] = value },
+  removeAttribute: (name) => { delete attrs[name] },
+  getBoundingClientRect: () => rect(90, 40, 156, 120),
+  style: { setProperty: (name, value) => { holderStyles[name] = value } },
+}
+const box = {
+  closest: () => ({ scrollTop: input.scroll }),
+  getBoundingClientRect: () => rect(40, 500, 16, 330),
+}
+const dialog = {
+  parentElement: box,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  appendChild: () => {},
+  querySelectorAll: () => [],
+  querySelector: (selector) => {
+    if (selector.includes('stTextArea')) return textBox
+    if (selector.includes('textarea')) return area
+    if (selector.includes('capa_paste_apply_')) return holder
+    if (selector.includes('capa_paste_confirm_')) return input.confirm && !selector.includes('input') ? confirmBox : null
+    return null
+  },
+}
+const win = {
+  innerWidth: 1280,
+  innerHeight: 800,
+  localStorage: { getItem: () => JSON.stringify({ width: input.width, text: 5000 }), setItem: () => {}, removeItem: () => {} },
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  MutationObserver: class { observe() {} disconnect() {} },
+}
+const document = {
+  defaultView: win,
+  documentElement: root,
+  createElement: () => ({
+    setAttribute: () => {}, addEventListener: () => {}, remove: () => {},
+  }),
+}
+const host = { ownerDocument: document, closest: () => dialog }
+install(host, {
+  storagePrefix: 'p:', sizeKey: 'k', resizable: true, lock: true, marker: 'data-x', handleLabel: 'h',
+  reasons: { empty: 'E', confirm: 'C' },
+})
+process.stdout.write(JSON.stringify({
+  text: styles['--capa-paste-text-h'],
+  width: styles['--capa-paste-w'],
+  room: holderStyles['--capa-paste-tip-room'],
+  locked: attrs['data-capa-paste-locked'],
+}))
+"""
+
+
+def _run_install(*, width: int, confirm: bool = False, scroll: int = 0) -> Any:
+    body = WINDOW_JS[: WINDOW_JS.index("export default function")]
+    return run_js_json(
+        body + _INSTALL_RUNNER,
+        stdin=json.dumps({"width": width, "confirm": confirm, "scroll": scroll}),
+        what="창 크기 install 시험",
+    )
+
+
+def test_a_narrow_window_counts_the_folded_row_in_the_text_limit() -> None:
+    """폭을 먼저 입히고 글 칸 밖 높이를 잰다 — 좁아 작업 줄이 접히면 끝이 그만큼 줄어 창이 화면 안에
+    든다(1280x800, 폭 360). 넓으면 접히지 않아 글 칸이 더 크다."""
+    wide = _run_install(width=900)
+    narrow = _run_install(width=360)
+
+    # 화면 높이 800 − (글 칸 아래 끝 − 글 칸 높이 + 아래 틈 32).
+    assert wide["text"] == f"{800 - (420 - 300 + 32)}px"
+    assert narrow["text"] == f"{800 - (500 - 300 + 32)}px"
+    assert narrow["width"] == "360px"
+
+
+def test_the_confirm_check_and_a_scrolled_window_stay_in_the_text_limit() -> None:
+    """확인 체크는 글 칸 아래 칸이라 끝에 든다. 창이 스크롤돼 있어도 같은 끝이다 — 스크롤만큼
+    되돌려 잰다(그러지 않으면 스크롤할수록 글 칸이 커진다)."""
+    plain = _run_install(width=360)
+    checked = _run_install(width=360, confirm=True)
+    scrolled = _run_install(width=360, scroll=40)
+
+    assert int(checked["text"][:-2]) == int(plain["text"][:-2]) - 40
+    assert scrolled["text"] == plain["text"]
+
+
+def test_the_install_gives_the_lock_tip_its_room() -> None:
+    """잠그는 회차에 풍선이 쓸 폭을 재어 단추 칸에 적는다 — 창 오른쪽(346) − 단추 왼쪽(156) − 틈."""
+    out = _run_install(width=360)
+    assert out["locked"] == "E"
+    assert out["room"] == "182px"
 
 
 def test_a_stored_size_that_cannot_be_read_is_no_size() -> None:
