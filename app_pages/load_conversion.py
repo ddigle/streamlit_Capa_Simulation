@@ -90,7 +90,7 @@ from capa_simulation.scenario_state import (
     scenario_table,
     session_virtual_products,
 )
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import direction_particle, with_object_particle
 from capa_simulation.services.load_calculator import (
     PLAN_EDITOR_DIMENSIONS,
     PLAN_QUANTITY_BLANK_REASON,
@@ -439,7 +439,7 @@ def _report_excluded_plans(
     if table is not None and table_clipped(table):
         sentences.append(
             f"Alarm 표는 {clipped_label(table)} — 전체는 이 탭 맨 아래 "
-            f"「{EXCLUDED_PLAN_CSV_LABEL}」로 받습니다."
+            f"「{EXCLUDED_PLAN_CSV_LABEL}」{direction_particle(EXCLUDED_PLAN_CSV_LABEL)} 받습니다."
         )
     if missing_plans:
         sentences.append(
