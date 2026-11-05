@@ -3,8 +3,16 @@
 """붙여넣기 · 양식 창의 공통 부품(2026-11-05 사용자 검수 static-37 — 「이 규칙은 이러한 창에 모두
 공통으로 적용」).
 
-**꼴.** 창 안에는 글 칸과 그 입력 칸(전체 교체 확인 체크 등), 맨 아래 작업 줄만 둔다. 작업 줄은 왼쪽
-「적용」 · 오른쪽 「양식 다운로드」 한 줄이다(`paste_action_row` — 좁은 폭에서 접혀도 그 차례다).
+**꼴.** 창 안에는 글 칸과 그 입력 칸(전체 교체 확인 체크 등), 작업 줄만 둔다. 작업 줄은 왼쪽
+「적용」 · 오른쪽 「양식 다운로드」 를 나란히 둔 한 줄이고(`paste_action_row` — 좁은 폭에서 접혀도
+그 차례다), 창 제목 바로 옆에 선다(2026-11-05 답 — 「타이틀 옆에 배치」). 제목이 길거나 창이 좁아 한
+줄에 들지 못하면 제목 아래로 내려간다. `st.dialog` 머리는 위젯을 받지 않아 서식
+(`paste_window.css`)이 본문을 풀어 작업 줄을 제목 줄로 올린다 — 회차의 그리는 차례는 글 칸 → 작업 줄
+그대로라 붙여넣고 Tab 하면 「적용」 으로 간다. 표 상자 안에 펴지는 칸(HOME 설정 Past Data —
+`in_box`)에는 창 제목이 없어 작업 줄이 그 상자 맨 위에 선다.
+
+**글 칸 라벨은 화면에 보이지 않는다**(`label_visibility="collapsed"` — 글은 접근성 이름으로 남는다).
+창 제목과 거듭되는 말이다. 제목만으로 무엇을 넣는 칸인지 알 수 없는 창만 `label_visible` 로 보인다.
 
 **글은 창에 두지 않는다.** 캡션 · 경고 상자 · 안내 글 · 글 칸 안내 문장(placeholder) · 입력 곁
 거부를 창 안에 그리지 않고 알림창 · Alarm 으로 낸다. 붙여넣는 법(헤더 포함)은 그 화면 Guide 가
@@ -52,6 +60,9 @@ PASTE_SIZE_STORAGE_PREFIX: Final = "capa-paste-size:"
 PASTE_OPENING_ALERT = "PA-01"
 # 알림 칸 — 표지만 든 칸이라 자리를 먹지 않게 서식이 빼낸다(`paste_window.css`).
 _NOTE_SLOT_PREFIX: Final = "capa_paste_note_"
+# 작업 줄 칸 — 서식이 이 이름으로 창 제목 줄로(`head`) · 표 상자 맨 위로(`row`) 옮긴다.
+_HEAD_ROW_PREFIX: Final = "capa_paste_head_"
+_BOX_ROW_PREFIX: Final = "capa_paste_row_"
 # 잠긴 「적용」 의 까닭 풍선(브라우저가 잠근 동안만 선다).
 PASTE_EMPTY_WHY: Final = "표를 붙여넣으면 누를 수 있습니다."
 PASTE_CONFIRM_WHY: Final = "확인 체크를 켜면 누를 수 있습니다."
@@ -149,18 +160,32 @@ def render_paste_window(
     )
 
 
-def paste_text_area(key: str, *, text_key: str, label: str) -> str:
+def paste_text_area(key: str, *, text_key: str, label: str, label_visible: bool = False) -> str:
     """글 칸 하나 — 칸의 풍선 · 안내 문장(placeholder)을 두지 않는다(말은 알림창 · Guide). 창 크기를
-    따라 높이가 늘어난다."""
+    따라 높이가 늘어난다. 라벨은 접근성 이름으로 남고 `label_visible` 인 창에서만 화면에 보인다."""
     with st.container(key=f"capa_paste_text_{key}"):
-        return st.text_area(label, key=text_key, height=PASTE_TEXT_HEIGHT)
+        return st.text_area(
+            label,
+            key=text_key,
+            height=PASTE_TEXT_HEIGHT,
+            label_visibility="visible" if label_visible else "collapsed",
+        )
 
 
 @contextmanager
-def paste_action_row(template: PasteTemplate | None = None) -> Iterator[None]:
-    """작업 줄 — `with` 안의 단추가 왼쪽, 양식 내려받기가 오른쪽(좁아져 접혀도 그 차례다)."""
+def paste_action_row(
+    key: str, template: PasteTemplate | None = None, *, in_box: bool = False
+) -> Iterator[None]:
+    """작업 줄 — `with` 안의 단추가 왼쪽, 양식 내려받기가 그 오른쪽(좁아져 접혀도 그 차례다). 창
+    제목 옆에 서고, `in_box` 면 표 상자 맨 위에 선다."""
+    prefix = _BOX_ROW_PREFIX if in_box else _HEAD_ROW_PREFIX
     with st.container(
-        horizontal=True, horizontal_alignment="distribute", vertical_alignment="center", gap="small"
+        key=f"{prefix}{key}",
+        horizontal=True,
+        horizontal_alignment="left",
+        vertical_alignment="center",
+        gap="small",
+        width="content",
     ):
         with st.container(
             horizontal=True, vertical_alignment="center", gap="small", width="content"
@@ -187,21 +212,24 @@ def render_paste_form(
     confirm_label: str = "",
     size_key: str = PASTE_SIZE_KEY,
     side_actions: Callable[[], None] | None = None,
+    label_visible: bool = False,
+    in_box: bool = False,
 ) -> PasteSubmit | None:
     """붙여넣기 창 본문 하나. 「적용」 을 누른 회차에만 입력을 돌려준다.
 
     거부는 부르는 쪽이 `refuse_paste(key, 글)` 로 낸다. `opening` 은 창을 연 회차의 알림 글
     (`announce_on_open`), `confirm_key` · `confirm_label` 은 전체 교체 확인 체크, `side_actions` 는
-    「적용」 옆에 더 세울 단추(「닫기」)다.
+    「적용」 옆에 더 세울 단추(「닫기」)다. `in_box` 는 창 제목이 없는 표 상자 안 칸이다
+    (`paste_action_row`).
     """
     render_paste_window(key, size_key=size_key)
     announce_on_open(text_key, key, opening)
-    text = paste_text_area(key, text_key=text_key, label=text_label)
+    text = paste_text_area(key, text_key=text_key, label=text_label, label_visible=label_visible)
     confirmed = True
     if confirm_key is not None:
         with st.container(key=f"capa_paste_confirm_{key}"):
             confirmed = st.checkbox(confirm_label, key=confirm_key)
-    with paste_action_row(template):
+    with paste_action_row(key, template, in_box=in_box):
         pressed = st.button(
             apply_label,
             key=f"capa_paste_apply_{key}",

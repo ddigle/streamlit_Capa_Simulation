@@ -33,6 +33,49 @@ html[data-capa-paste-sized] [role="dialog"]:has(.capa-paste-host) [class*="st-ke
   display: none !important;
 }
 
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) {
+  flex-flow: row wrap;
+  align-items: flex-start;
+  padding-bottom: 0.5rem;
+}
+
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 {
+  flex: 0 1 auto;
+  order: -2;
+  min-width: 0;
+  max-width: calc(100% - 3.25rem);
+  padding: 1.5rem 0 1.5rem 1.5rem;
+}
+
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 > span {
+  margin-right: 0;
+}
+
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 + div,
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 + div > [data-testid="stVerticalBlock"],
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"],
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] {
+  display: contents;
+}
+
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > * {
+  flex: 0 0 calc(100% - 3rem);
+  min-width: 0;
+  margin: 0 1.5rem 1rem;
+}
+
+[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [class*="st-key-capa_paste_head_"]) > h2 + div > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:has(> [class*="st-key-capa_paste_head_"]) {
+  flex: 0 1 auto;
+  order: -1;
+  align-self: flex-end;
+  max-width: calc(100% - 4.75rem);
+  margin: 0 3.25rem 1.375rem 1.5rem;
+}
+
+[data-testid="stLayoutWrapper"]:has(> [class*="st-key-capa_paste_row_"]) {
+  order: -1;
+}
+
 html[data-capa-paste-dragging] {
   user-select: none;
   -webkit-user-select: none;
@@ -85,7 +128,7 @@ html[data-capa-paste-dragging] {
   content: attr(data-capa-paste-locked);
   position: absolute;
   left: 0;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   z-index: 3;
   padding: 4px 8px;
   border-radius: 6px;

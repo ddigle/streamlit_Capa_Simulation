@@ -9,10 +9,10 @@
   「변경 미리보기」 · 미리보기(두 쪽 한 줄 · 신규/기존 대체/변경 없음 수 · 변경 표 · 저장 후 행 수).
   「바뀔 행」·「기존 대체」 는 넣으면 실제로 바뀌는 줄만 센다(같은 값 그대로인 대체 줄은 「변경
   없음」).
-- **창 꼴은 공통 부품**(`components/paste_form`, 2026-11-05 검수 static-37): 작업 줄 왼쪽 「변경
-  미리보기」 · 「편집본에 넣기」, 오른쪽 고른 표의 양식 내려받기. 창 안에 글을 두지 않는다 — 연
-  회차의 맞대는 규칙과 미리보기의 알림 · 주의 · 거부는 알림창 · Alarm 이다. 창 크기 손잡이가 선다.
-  위젯은 폼 밖이다(내려받기가 폼 안에 들어가지 못한다).
+- **창 꼴은 공통 부품**(`components/paste_form`, 2026-11-05 검수 static-37): 창 제목 옆 작업 줄 왼쪽
+  「변경 미리보기」 · 「편집본에 넣기」, 오른쪽 고른 표의 양식 내려받기. 창 안에 글을 두지 않는다 —
+  연 회차의 맞대는 규칙과 미리보기의 알림 · 주의 · 거부는 알림창 · Alarm 이다. 창 크기 손잡이가
+  선다. 위젯은 폼 밖이다(내려받기가 폼 안에 들어가지 못한다).
   붙여넣은 열만 바꾸는 규칙·옛 머리 이름·대소문자 경고·낡은 세션 거절·가정 세션 「배치 칸도
   붙여넣기」(기본 끔 — 설비 시나리오 2단계 Q2)·새 방문 때 미리보기 거두기는 그대로다.
 - **끝 단추는 「편집본에 넣기」 하나**(D7, 사용자 R4) — 저장은 「저장 전 변경」 한 곳이다. 넣으면
@@ -386,6 +386,8 @@ def _render_body(context: ImportContext) -> None:
             IMPORT_FORM_KEY,
             text_key=CLIPBOARD_KEY,
             label="Excel 표 붙여넣기",
+            # 곁의 「또는 CSV 파일 업로드」 와 짝이라 라벨을 보인다 — 제목만으로는 뜻을 모른다.
+            label_visible=True,
         )
     with upload_column:
         uploaded = st.file_uploader(
@@ -395,7 +397,7 @@ def _render_body(context: ImportContext) -> None:
             max_upload_size=CSV_UPLOAD_LIMIT_MB,
         )
     locked = not isinstance(pending, ImportReview)
-    with paste_action_row(_template_of(target)):
+    with paste_action_row(IMPORT_FORM_KEY, _template_of(target)):
         preview_clicked = st.button(
             "변경 미리보기", key=PREVIEW_BUTTON_KEY, icon=":material/preview:"
         )

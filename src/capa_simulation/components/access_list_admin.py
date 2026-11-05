@@ -176,6 +176,8 @@ def _add_dialog() -> None:
         text_key=ADD_TEXT_KEY,
         text_label="loginid 붙여넣기",
         apply_label="명단에 넣기",
+        # 이 창에서 무엇을 넣는지 말하는 글은 라벨뿐이라 보인다(창 제목은 「접속 명단 · 추가」).
+        label_visible=True,
     )
     if submit is None:
         return

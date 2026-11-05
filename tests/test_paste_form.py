@@ -2,7 +2,8 @@
 
 """붙여넣기 · 양식 창 공통 부품(`components/paste_form`, 2026-11-05 사용자 검수 static-37).
 
-- 작업 줄은 왼쪽 「적용」 · 오른쪽 「양식 다운로드」 한 줄이다.
+- 작업 줄은 창 제목 옆, 왼쪽 「적용」 · 오른쪽 「양식 다운로드」 한 줄이다(표 상자 안은 상자 맨 위).
+- 글 칸 라벨은 화면에 보이지 않고 접근성 이름으로 남는다(보이는 창은 목록의 둘).
 - 창을 연 회차에 꼭 알릴 말은 알림 한 번, 거부 · 안내는 알림창이다 — 창 안에 글을 그리지 않는다.
 - 창 크기는 브라우저 안에서 끝난다(판정 구획을 node 로 떼어 시험한다 — 실제 끌기는 브라우저로 잰다).
 - 그물: 「붙여넣기」 글 칸은 공통 부품에서만 서고, 그 창 함수는 글을 직접 그리지 않는다.
@@ -19,6 +20,7 @@ from typing import Any
 import pytest
 from alert_marks import alert_notes, flashed, place_errors
 from js_runner import run_js_json
+from streamlit.proto.LabelVisibility_pb2 import LabelVisibility
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import paste_form
@@ -41,6 +43,21 @@ PASTE_WINDOWS = (
     ("src/capa_simulation/components/process_rename_management.py", "_clipboard_dialog"),
     ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"),
     ("src/capa_simulation/components/equipment_import_dialog.py", "_render_body"),
+    ("src/capa_simulation/components/access_list_admin.py", "_add_dialog"),
+)
+# 글 칸 라벨을 화면에 보이는 창(파일 → 까닭) — 창 제목만으로는 무엇을 넣는 칸인지 모른다.
+LABEL_VISIBLE_WINDOWS = {
+    "src/capa_simulation/components/equipment_import_dialog.py": "곁의 CSV 업로드 칸과 짝",
+    "src/capa_simulation/components/access_list_admin.py": "넣을 것을 말하는 글이 라벨뿐",
+}
+# 창 제목이 없는 표 상자 안 칸 — 작업 줄이 제목 줄이 아니라 그 상자 맨 위에 선다.
+IN_BOX_FORMS = {"src/capa_simulation/components/past_data_management.py"}
+HEAD_WINDOW_MARK = 'class*="st-key-capa_paste_head_"'
+# 제목 줄 서식이 걸리는 창 — 본문 겹 바로 밑에 작업 줄이 든 팝업뿐이다.
+HEAD_WINDOW_SCOPE = (
+    '[role="dialog"]:has(> h2 + div > [data-testid="stVerticalBlock"]'
+    ' > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"]'
+    f' > [data-testid="stLayoutWrapper"] > [{HEAD_WINDOW_MARK}])'
 )
 MEMO_FIELD = "메모 · 글 — 표를 붙여넣는 칸이 아니다"
 # 공통 부품 밖의 글 칸 전부(파일 → (수, 까닭)). 표를 붙여넣는 칸을 새로 두면 라벨이 무엇이든 여기서
@@ -93,6 +110,43 @@ def _window() -> AppTest:
     return AppTest.from_string(WINDOW_SCRIPT, default_timeout=30).run()
 
 
+def _rows(app: AppTest) -> list[Any]:
+    """가로 칸 전부(앞 차례)."""
+    rows: list[Any] = []
+
+    def walk(block: Any) -> None:
+        for child in getattr(block, "children", {}).values():
+            flex = getattr(getattr(child, "proto", None), "flex_container", None)
+            if flex is not None and flex.direction == 2:
+                rows.append(child)
+            walk(child)
+
+    walk(app.main)
+    return rows
+
+
+def _css_rules() -> list[tuple[str, str]]:
+    """(선택자, 선언) 목록 — 주석이 없는 파일이라 괄호로 가른다."""
+    return [
+        (selector.strip(), body)
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", WINDOW_CSS)
+    ]
+
+
+def _keyword_sites(name: str) -> set[str]:
+    """`name=True` 를 건네는 파일."""
+    return {
+        relative
+        for relative, call in _all_calls()
+        if any(
+            keyword.arg == name
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in call.keywords
+        )
+    }
+
+
 def _codes(app: AppTest) -> list[str]:
     return [str(note.get("code")) for note in alert_notes(app)]
 
@@ -107,24 +161,139 @@ def test_the_action_row_is_apply_on_the_left_and_the_template_on_the_right() -> 
     app = _window()
     assert not app.exception
 
-    rows = []
-
-    def walk(block: Any) -> None:
-        for child in getattr(block, "children", {}).values():
-            proto = getattr(child, "proto", None)
-            flex = getattr(proto, "flex_container", None)
-            if flex is not None and flex.direction == 2:
-                rows.append(child)
-            walk(child)
-
-    walk(app.main)
-    outer = next(row for row in rows if len(row.children) == 2)
+    outer = next(row for row in _rows(app) if len(row.children) == 2)
     kinds = [type(child).__name__ for child in outer.children.values()]
     assert kinds == ["Block", "DownloadButton"], kinds
     (left, right) = outer.children.values()
     (apply_button,) = left.children.values()
     assert apply_button.label == "적용"
     assert right.proto.label == CSV_TEMPLATE_LABEL
+
+
+@pytest.mark.parametrize(
+    ("in_box", "name"),
+    [(False, "capa_paste_head_demo"), (True, "capa_paste_row_demo")],
+    ids=("창 제목 옆", "표 상자 맨 위"),
+)
+def test_the_action_row_is_named_for_where_it_stands(in_box: bool, name: str) -> None:
+    """서식이 이 이름으로 옮긴다 — 창이면 제목 줄, 표 상자 안 칸이면 그 상자 맨 위다. 내용 폭으로
+    왼쪽에 붙어 「적용」 과 양식이 나란하다(양끝으로 벌어지면 제목 옆에 서지 못한다)."""
+    app = AppTest.from_string(
+        f"""
+from capa_simulation.components.paste_form import PasteTemplate, render_paste_form
+
+render_paste_form(
+    "demo",
+    text_key="demo_text",
+    text_label="표 붙여넣기",
+    apply_label="적용",
+    template=PasteTemplate(data=b"a,b", file_name="a.csv", key="demo_template"),
+    in_box={in_box},
+)
+""",
+        default_timeout=30,
+    ).run()
+    assert not app.exception
+    outer = next(row for row in _rows(app) if len(row.children) == 2)
+    assert name in outer.proto.id
+    assert "JUSTIFY_START" in str(outer.proto.flex_container), "양끝 맞춤이 아니다"
+    assert outer.proto.width_config.use_content
+
+
+def test_a_window_without_a_template_has_only_the_apply_button() -> None:
+    """양식이 없는 창의 작업 줄에는 내려받기가 없다 — 빈 칸이 남지 않는다."""
+    app = AppTest.from_string(
+        """
+from capa_simulation.components.paste_form import render_paste_form
+
+render_paste_form("demo", text_key="demo_text", text_label="표 붙여넣기", apply_label="넣기")
+""",
+        default_timeout=30,
+    ).run()
+    assert not app.exception
+    assert not app.get("download_button")
+    assert [button.label for button in app.button] == ["넣기"]
+    assert any("capa_paste_head_demo" in row.proto.id for row in _rows(app))
+
+
+def test_the_text_label_is_hidden_but_stays_the_accessible_name() -> None:
+    """라벨은 창 제목과 거듭되는 말이라 화면에 보이지 않고, 글은 접근성 이름으로 남는다. 제목만으로
+    무엇을 넣는 칸인지 모르는 창만 보인다."""
+    (text,) = _window().text_area
+    assert text.label == "표 붙여넣기"
+    assert text.proto.label_visibility.value == LabelVisibility.LabelVisibilityOptions.COLLAPSED
+
+    shown = AppTest.from_string(
+        """
+from capa_simulation.components.paste_form import paste_text_area
+
+paste_text_area("demo", text_key="demo_text", label="loginid 붙여넣기", label_visible=True)
+""",
+        default_timeout=30,
+    ).run()
+    assert not shown.exception
+    (text,) = shown.text_area
+    assert text.proto.label_visibility.value == LabelVisibility.LabelVisibilityOptions.VISIBLE
+
+
+def test_only_the_listed_windows_show_the_text_label() -> None:
+    """라벨을 보이는 창이 늘면 여기서 걸린다 — 창에 글을 더 두는 일이라 까닭과 함께 목록에 둔다."""
+    assert _keyword_sites("label_visible") == set(LABEL_VISIBLE_WINDOWS)
+
+
+def test_only_the_past_data_form_stands_in_a_box() -> None:
+    """창 제목이 없는 칸은 HOME 설정 Past Data 하나다 — 그 밖의 창은 모두 제목 옆 작업 줄이다."""
+    assert _keyword_sites("in_box") == IN_BOX_FORMS
+
+
+def test_the_action_row_names_match_the_window_stylesheet() -> None:
+    """부품이 짓는 칸 이름과 서식이 고르는 이름이 같다 — 어긋나면 작업 줄이 글 칸 아래에 남는다."""
+    assert f'class*="st-key-{paste_form._HEAD_ROW_PREFIX}"' == HEAD_WINDOW_MARK
+    assert HEAD_WINDOW_MARK in WINDOW_CSS
+    assert f'class*="st-key-{paste_form._BOX_ROW_PREFIX}"' in WINDOW_CSS
+
+
+def test_the_title_row_layout_stays_on_windows_with_a_head_row() -> None:
+    """팝업을 푸는 서식은 작업 줄이 그 겹 바로 밑에 든 창에만 걸린다 — 다른 팝업 · 작업 줄 없는 확인
+    창은 그대로고, Streamlit 판올림으로 겹이 바뀌면 아무 규칙도 걸리지 않아 창이 그대로 쓰인다."""
+    laid_out = [
+        (selector, body)
+        for selector, body in _css_rules()
+        if re.search(r"display:\s*contents|flex-flow|order:\s*-[12]", body)
+        and "capa_paste_row_" not in selector
+    ]
+    assert len(laid_out) == 4
+    for selector, _body in laid_out:
+        for part in selector.split(",\n"):
+            assert part.strip().startswith(HEAD_WINDOW_SCOPE), part
+
+
+def test_the_title_row_wraps_below_the_title_and_clears_the_close_button() -> None:
+    """한 줄에 들지 못하면 줄바꿈으로 제목 아래에 내려가고, 제목 줄에서는 ✕ 자리를 비운다."""
+    rules = _css_rules()
+    (dialog,) = [body for selector, body in rules if selector == HEAD_WINDOW_SCOPE]
+    assert re.search(r"flex-flow:\s*row wrap", dialog)
+    (row,) = [
+        body
+        for selector, body in rules
+        if selector.endswith(f'[data-testid="stLayoutWrapper"]:has(> [{HEAD_WINDOW_MARK}])')
+    ]
+    assert re.search(r"flex:\s*0 1 auto", row), "내용 폭 — 들지 못하면 내려간다"
+    assert re.search(r"margin:\s*0 3\.25rem", row), "✕ 자리"
+    (title,) = [body for selector, body in rules if selector == f"{HEAD_WINDOW_SCOPE} > h2"]
+    assert re.search(r"max-width:\s*calc\(100% - 3\.25rem\)", title), "긴 제목도 ✕ 를 덮지 않는다"
+
+
+def test_the_lock_reason_stands_below_the_button() -> None:
+    """작업 줄이 창 위 끝이라 까닭 풍선은 아래로 선다 — 위로 서면 창 상자(`overflow: hidden`)에
+    잘린다."""
+    (body,) = [
+        body
+        for selector, body in _css_rules()
+        if selector == "[data-capa-paste-locked]:hover::after"
+    ]
+    assert "top: calc(100% + 6px)" in body
+    assert "bottom:" not in body
 
 
 def test_the_opening_note_goes_up_once_per_opening() -> None:
@@ -317,7 +486,7 @@ def test_a_paste_window_draws_no_text_of_its_own(site: tuple[str, str]) -> None:
     assert not drawn, drawn
 
 
-def _text_area_calls() -> list[tuple[str, ast.Call]]:
+def _all_calls() -> list[tuple[str, ast.Call]]:
     found: list[tuple[str, ast.Call]] = []
     paths = [PROJECT_ROOT / "app.py"]
     for base in ("app_pages", "src/capa_simulation"):
@@ -325,13 +494,17 @@ def _text_area_calls() -> list[tuple[str, ast.Call]]:
     for path in paths:
         relative = path.relative_to(PROJECT_ROOT).as_posix()
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "text_area"
-            ):
+            if isinstance(node, ast.Call):
                 found.append((relative, node))
     return found
+
+
+def _text_area_calls() -> list[tuple[str, ast.Call]]:
+    return [
+        (relative, call)
+        for relative, call in _all_calls()
+        if isinstance(call.func, ast.Attribute) and call.func.attr == "text_area"
+    ]
 
 
 def test_paste_text_areas_stand_only_in_the_common_part() -> None:
