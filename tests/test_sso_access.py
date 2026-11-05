@@ -744,9 +744,9 @@ def test_a_listed_cookie_still_passes_everything() -> None:
 
 
 def test_an_open_connection_stops_at_the_next_message_off_the_list() -> None:
-    """명단은 재시작 때 읽어 지금은 연 뒤에 바뀌지 않는다. 그래도 메시지마다 같은 판정을 지나므로
-    (`session_check` 한 곳) 설정을 그 자리에서 바꿔 그 길이 막히는지 본다 — 앱이 프레임을 받지
-    않는다."""
+    """환경변수 명단은 연 뒤에 바뀌지 않지만 메시지마다 같은 판정을 지나므로(`session_check` 한
+    곳) 설정을 그 자리에서 바꿔 그 길이 막히는지 본다 — 앱이 프레임을 받지 않는다. S3 명단에서 지운
+    사람은 `test_sso_access_s3.py` 가 같은 길을 밟는다."""
     cfg = listed_config()
     ECHO_DISCONNECTS.clear()
 

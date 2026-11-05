@@ -506,8 +506,8 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 - 통합인증 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `ADFS_CLIENT_ID`(켜는 스위치 — 비면 꺼짐) · `JWT_SECRET_KEY` · `APP_ENV` ·
   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_PUBLIC_URL` · 선택 `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` ·
   `CAPA_SSO_SESSION_MAX_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` · 접속 명단 `CAPA_ACCESS_ADMINS`(운영 필수) · 선택 `CAPA_ACCESS_USERS` ·
-  `CAPA_ACCESS_CONTACT`. 첫 배포 순서 · 진단은
-  [`sso_setup.md`](sso_setup.md). 켠 서버는 로그인해 10분 넘게 쓴 뒤 Admin 「통합인증 점검」 의 「로그인 갱신」 누계(다시 발급 · 출처·머리
+  `CAPA_ACCESS_CONTACT` · S3 명단 `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY`(있으면 켜짐 · 비밀) · `CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · 선택 `CAPA_S3_REGION` · `CAPA_ACCESS_S3_OBJECT`. 첫 배포 순서 · 진단은
+  [`sso_setup.md`](sso_setup.md). **접속 명단의 값(Admin 「접속 명단」 표 · S3 파일 · 환경변수)은 실제 loginid 라 리뷰 압축본 · 전문에 옮기지 않는다** — 옮기는 것은 「접속 명단」 · 「S3 명단」 사실 줄의 수와 까닭뿐이다(「S3 명단」 줄은 키 · 주소 · 값이 없어 그대로 옮겨도 된다). 켠 서버는 로그인해 10분 넘게 쓴 뒤 Admin 「통합인증 점검」 의 「로그인 갱신」 누계(다시 발급 · 출처·머리
   거절)를 수로만 압축본에 옮긴다(그 배포의 7장이 줄을 정한다).
 - 모듈이 새 패키지가 필요하면 이 파일·`pyproject.toml` 에 넣지 않고 「사외 요청」 으로 낸다(담당자 → 사용자 → 리뷰).
 
@@ -762,6 +762,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 - **앱이 떠 있어도 된다** — 사본만 연다(모듈 시험은 임시 데이터 자리와 감시 러너로 돈다). 모듈마다 `통과` · `꺼짐` · `실패 <까닭>` 이다.
 - 머리의 `운영 체크아웃 modules/ — 커밋 안 한 수정 a · 추적 안 된 파일 b` 는 운영 체크아웃의 상태다(경로는 전문에만). 0 이 아니면 사용자에게
   알린다 — 배포 체크아웃의 모듈 자리는 비어 있어야 한다(1-5).
+- **「통과」 가 보증은 아니다** — 쉬운 꼴만 잡는 정적 규칙과 담당자의 시험이다. 모듈은 코어와 한 프로세스라 의도를 가진 코드는 세션 비밀 · S3 키 · 접속 명단 쓰기에도 닿는다(4-6 머리).
 - **실패한 모듈은 고치지 않고 사용자에게 보인다.** 끄는 스위치는 사용자가 켠다 — 사내 PC 는 PowerShell 줄과 끝난 뒤 `Remove-Item Env:…`
   (`$env:CAPA_MODULES_DISABLED="<id>"; uv run --no-sync python -m streamlit run app.py --server.port <포트>` 뒤 `Remove-Item Env:CAPA_MODULES_DISABLED`
   — 지우지 않으면 같은 창에서 나중에 띄운 앱의 모듈이 말없이 꺼진다), WebIDE 는 그 명령에만 거는 bash 줄
@@ -782,6 +783,10 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 담당자의 모듈 변경은 PR 로만 사내 main 에 들어간다(`docs/module_guide.md` 8-2). 사용자가 PR 을 합치기 전에 그 PR 머리를 4-5 와 같은 꼴
 (`git archive` 사본 트리 · 그 트리의 `check_module.py`)로 본다. 배포와 따로, PR 이 올 때마다 한다 — 배포를 적용하는 동안(1장 ~ 5장
 푸시까지)에는 합치지 않는다(1-7 에서 받은 범위가 바뀐다). 리뷰 문서에는 적지 않는다 — 다음 배포의 4-5 가 합친 모듈을 다시 본다.
+
+**점검 통과는 보증이 아니다.** 모듈은 코어와 한 프로세스에서 돌아, 의도를 가진 코드는 점검이 못 잡은 길로 세션 비밀 · S3 키 · 접속 명단 쓰기 함수에 닿을 수 있다 — 그렇게 고친 명단의
+고친 기록에는 관리자 계정이 남는다(`docs/sso_setup.md` 4장). 이 절이 그 앞의 마지막 방어선이다. 에이전트는 점검 결과만 옮기지 말고 PR 의 바뀐 코드를 읽어, `module_api` 밖으로 닿으려는 꼴
+(문자열을 이어 이름을 만들기 · 내부 속성 들여다보기 · 주소나 키로 보이는 값 다루기)이 보이면 통과여도 사용자에게 알린다.
 
 1. 사용자가 받는다(자격증명은 사람 몫이다). `<번호>` 는 PR 번호다.
 

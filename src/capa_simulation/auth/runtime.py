@@ -1,9 +1,10 @@
-# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·세션 폐기·갱신 표·진단·사건·클레임 이름·로거.
+# Purpose: 통합인증 프로세스 상태 — 설정·명단 한 벌·문지기 표지·세션 폐기·갱신 표·진단·사건·로거.
 
 """통합인증 프로세스 상태.
 
 로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리 ·
-명단 밖 로그인 표 · 마지막 로그인의 클레임 이름을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
+명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 지금 접속 명단 한 벌(S3 명단이 켜졌을 때 —
+`AccessSource`, 통째로 바꾼다)을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
 재시작하면 비워진다 —
 로그아웃 폐기 목록이 사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는
 지웠으므로 받아들인다. 갱신 표가 비는 것은 해가 없다 — 열린 연결은 재시작으로 어차피 끊기고, 다시
@@ -31,10 +32,11 @@ import threading
 import time
 from collections import OrderedDict, deque
 from collections.abc import Mapping, MutableMapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import NamedTuple
 
 from capa_simulation.auth import names
+from capa_simulation.auth.access import AccessList, AccessSource
 from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
 from capa_simulation.auth.tokens import SESSION_LEEWAY
 
@@ -48,6 +50,10 @@ ANONYMOUS_EVENTS = frozenset({"login_fail", "idp_error"})
 # 계정마다 한 칸(횟수 · 마지막 시각)만 둔다 — 한 사람의 되풀이가 다른 사람의 칸을 밀어내지 못한다.
 DENIED_EVENT = "login_denied"
 MAX_DENIED_ACCOUNTS = MAX_EVENTS
+# 못 읽은 서버의 자가 회복 실패(`access_store.retry_unread`). 들어오지 못하는 사람의 거절마다(60초에
+# 한 번) 생겨 위와 같은 까닭으로 고리에 두지 않고 누계만 센다 — 지금 까닭과 시도 시각은 「S3 명단」
+# 줄이 말하고, 첫 실패는 기동 때의 `access_read` 로 고리에 있다.
+ACCESS_RETRY_FAILED_EVENT = "access_retry_failed"
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
 MAX_REVOKED = 10_000
@@ -117,6 +123,8 @@ class _State:
     denied_total: int = 0
     event_seq: int = 0
     last_login_claims: tuple[str, ...] = ()
+    access_source: AccessSource | None = None
+    access_retry_failures: int = 0
 
 
 _LOCK = threading.Lock()
@@ -353,6 +361,51 @@ def last_login_claims() -> tuple[str, ...]:
         return _STATE.last_login_claims
 
 
+def current_access(cfg: SsoConfig) -> AccessList:
+    """지금 접속 명단 한 벌 — 판정 자리가 모두 이것을 본다(네트워크 없음).
+
+    S3 명단이 꺼져 있으면 설정의 환경변수 몫 그대로고, 켜져 있으면 마지막으로 잘 읽은 합성 명단이다.
+    아직 못 읽었으면 환경변수 관리자뿐이다(설정이 S3 가 켜진 동안 사용자 목록을 쓰지 않는다).
+    """
+    with _LOCK:
+        source = _STATE.access_source
+    return cfg.access if source is None else source.access
+
+
+def access_source() -> AccessSource | None:
+    """S3 명단의 지금 내력. 꺼졌거나 기동 뒤 아직 읽으러 가지 않았으면 `None`."""
+    with _LOCK:
+        return _STATE.access_source
+
+
+def publish_access_source(source: AccessSource) -> None:
+    """명단 한 벌을 통째로 바꾼다. 이 줄 뒤로 모든 판정이 새 명단을 본다."""
+    with _LOCK:
+        _STATE.access_source = source
+
+
+def claim_access_retry(moment: int, interval: int) -> bool:
+    """아직 못 읽었고 지난 시도에서 `interval` 초가 지났으면 시도 시각을 적고 `True`.
+
+    콜백이 거절하기 직전의 자가 회복 차례표다 — 들어오지 못하는 사람이 되풀이해 저장소를 두드리지
+    못하게 한 번에 한 자리만 통과한다.
+    """
+    with _LOCK:
+        source = _STATE.access_source
+        if source is None or source.document is not None:
+            return False
+        if source.attempted_at is not None and moment - source.attempted_at < interval:
+            return False
+        _STATE.access_source = replace(source, attempted_at=moment)
+        return True
+
+
+def access_retry_failures() -> int:
+    """기동 뒤 자가 회복 실패 누계 — 고리에 적지 않는다(`ACCESS_RETRY_FAILED_EVENT`)."""
+    with _LOCK:
+        return _STATE.access_retry_failures
+
+
 def keep_diagnostic(record: Mapping[str, str]) -> str:
     """오류 화면(PRG)이 다시 읽을 진단을 10분 둔다. 꺼낼 id 를 돌려준다."""
     now = _now()
@@ -414,9 +467,10 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
     """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
 
     무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다. 명단 밖 로그인
-    (`DENIED_EVENT`)은 고리 대신 계정별 표에 둔다. 둘 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결
-    닫음 · 서명이 통과한 뒤의 실패)을 밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 ·
-    부서는 넘기지 않는다(부르는 쪽 규칙).
+    (`DENIED_EVENT`)은 고리 대신 계정별 표에 두고, 자가 회복 실패(`ACCESS_RETRY_FAILED_EVENT`)는
+    누계만 센다. 셋 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을
+    밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽
+    규칙).
     """
     cleaned = tuple((key, _clean_field(value)) for key, value in fields.items())
     line = f"sso event={_clean_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
@@ -426,6 +480,8 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
         item = SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned, seq=_STATE.event_seq)
         if item.event == DENIED_EVENT:
             _note_denied(item)
+        elif item.event == ACCESS_RETRY_FAILED_EVENT:
+            _STATE.access_retry_failures += 1
         elif is_anonymous(item):
             _STATE.anonymous_events.append(item)
             key = _anonymous_key(item)
@@ -477,7 +533,7 @@ def denied_total() -> int:
 
 def reset() -> None:
     """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건 · 명단 밖
-    로그인 표 · 클레임 이름을 비우고 stdout 처리기를 뗀다."""
+    로그인 표 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

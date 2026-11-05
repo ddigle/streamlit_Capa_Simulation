@@ -19,6 +19,11 @@
 문제. 잠길 사람을 막으려는 규칙이라 빈 관리자 목록으로 앱을 열지 않는다. 인증된 사람 전부를 받는
 것은 그 어느 쪽도 아닌 루프백 개발뿐이다(가짜 IdP · 시험).
 
+S3 명단(`access_store`)은 키(`CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY`)가 하나라도 있으면 켜진다.
+그때 명단도 켜지고 `CAPA_ACCESS_USERS` 는 쓰지 않는다(알림). 키 하나 · 주소 · 버킷이 빠지거나 틀려도
+막힘이 아니라 알림이다 — 앱은 뜨고 파일을 못 읽은 상태(관리자만 통과)로 선다. 읽기는 여기서 하지
+않는다(`load_config` 는 순수 함수다).
+
 화면 · 로그에 실리는 것은 환경변수 **이름과 까닭**뿐이다. 값은 싣지 않는다 — 비밀값은 「짧음」 같은
 사실만, 접속 명단은 개수만.
 """
@@ -33,7 +38,7 @@ import importlib.util
 import ipaddress
 import re
 import types
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -42,6 +47,7 @@ from urllib.parse import urlsplit
 
 from capa_simulation.auth import names
 from capa_simulation.auth.access import AccessList, build_access_list
+from capa_simulation.io.s3_small import S3Target
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -132,6 +138,10 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "off_in_production": "운영 서버인데 통합인증이 꺼져 있음",
         "no_valid_entry": "읽을 수 있는 loginid 가 하나도 없음",
         "entries_unreadable": "loginid 꼴이 아닌 항목이 있어 뺌",
+        "s3_users_ignored": "S3 명단이 켜져 있어 이 목록은 쓰지 않음",
+        "s3_needed": "S3 명단이 켜졌는데 값이 없음 — 관리자만 들어옴",
+        "s3_bad": "S3 명단이 켜졌는데 값 꼴이 틀림 — 관리자만 들어옴",
+        "s3_plain_http": "평문 http — 명단이 사내망에 그대로 흐름",
     }
 )
 
@@ -203,8 +213,13 @@ class SsoConfig:
     readiness: tuple[SsoProblem, ...]
     notices: tuple[SsoProblem, ...]
     env_presence: Mapping[str, bool]
-    # 접속 명단. repr 에는 켜짐과 읽지 못한 수만 나온다(`AccessList` — 명단 값은 repr 이 없다).
+    # 접속 명단의 환경변수 몫. repr 에는 켜짐과 읽지 못한 수만 나온다(`AccessList` — 명단 값은 repr
+    # 이 없다). S3 명단을 얹은 지금 한 벌은 `runtime.current_access` 가 준다.
     access: AccessList
+    # S3 명단이 켜졌는가(키가 하나라도 있음)와 닿을 곳 한 벌(값이 다 맞을 때만 — 키는 repr 이 없다).
+    access_s3_requested: bool
+    access_object_key: str
+    access_s3: S3Target | None = field(repr=False, compare=False)
     # 화면 · 로그 · repr 에 나오지 않는다. 세션 · 상태 토큰의 키를 여기서 파생한다(`tokens`).
     secret: bytes = field(repr=False, compare=False)
 
@@ -458,16 +473,22 @@ def _beyond_loopback(public_url: str) -> bool:
 
 
 def _check_access(
-    admins: str, users: str, *, required: bool, contact: str
+    admins: str, users: str, *, required: bool, contact: str, s3_requested: bool
 ) -> tuple[AccessList, SsoProblem | None, list[SsoProblem]]:
-    """접속 명단 `(명단, 문제, 알림)`. `required` 거나 두 목록 가운데 하나라도 값이 있으면 켜진다.
+    """접속 명단 `(명단, 문제, 알림)`. `required` 거나 두 목록 가운데 하나라도 값이 있거나 S3 명단이
+    켜졌으면 켜진다.
 
     켜졌는데 읽은 관리자가 없으면 문제다 — 명단에 사람이 있어도 고칠 사람이 없는 앱을 열지 않는다.
-    읽지 못한 항목은 막지 않는다 — 오타 하나로 모두가 잠기지 않게. 그 사람만 거절 화면을 본다.
+    읽지 못한 항목은 막지 않는다 — 오타 하나로 모두가 잠기지 않게. 그 사람만 거절 화면을 본다. S3
+    명단이 켜졌으면 사용자 목록은 쓰지 않고 알린다(한 사람을 두 곳에서 고치지 않게).
     """
-    enforced = required or bool(admins.strip()) or bool(users.strip())
+    ignored = s3_requested and bool(users.strip())
+    if s3_requested:
+        users = ""
+    enforced = required or s3_requested or bool(admins.strip()) or bool(users.strip())
     access = build_access_list(admins, users, enforced=enforced, contact=contact)
-    notices = [
+    notices = [SsoProblem(names.ENV_ACCESS_USERS, "s3_users_ignored")] if ignored else []
+    notices += [
         SsoProblem(name, "entries_unreadable")
         for name, count in (
             (names.ENV_ACCESS_ADMINS, access.unreadable_admins),
@@ -479,6 +500,100 @@ def _check_access(
         return access, None, notices
     code = "no_valid_entry" if admins.strip() else "missing"
     return access, SsoProblem(names.ENV_ACCESS_ADMINS, code), notices
+
+
+def _check_s3_endpoint(raw: str) -> tuple[str, SsoProblem | None, SsoProblem | None]:
+    """S3 주소 `(값, 문제, 알림)`. 이 주소만 운영에서도 http 를 받는다 — 저장소가 평문 포트다."""
+    name = names.ENV_S3_ENDPOINT
+    text = raw.strip().rstrip("/")
+    if not text:
+        return "", SsoProblem(name, "s3_needed"), None
+    bad = SsoProblem(name, "s3_bad")
+    # 비 ASCII 호스트는 `Host` 머리에 실리지 못한다 — punycode 로 적는다.
+    if (
+        len(text) > MAX_URL_LENGTH
+        or not text.isascii()
+        or _CONTROL.search(text)
+        or any(ch.isspace() for ch in text)
+    ):
+        return "", bad, None
+    try:
+        parts = urlsplit(text)
+        _ = parts.port
+    except ValueError:
+        return "", bad, None
+    scheme = parts.scheme.lower()
+    if (
+        scheme not in ("http", "https")
+        or not parts.hostname
+        or "@" in parts.netloc
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
+        return "", bad, None
+    plain = scheme == "http" and not is_loopback_host(parts.hostname)
+    return text, None, SsoProblem(name, "s3_plain_http") if plain else None
+
+
+def _check_s3_name(name: str, raw: str, *, default: str = "") -> tuple[str, SsoProblem | None]:
+    """버킷 · 영역 · 객체 키 한 값. 비면 `default`(없으면 값 없음)다."""
+    text = raw.strip() or default
+    if not text:
+        return "", SsoProblem(name, "s3_needed")
+    if len(text) > 512 or _CONTROL.search(text) or text.startswith("/"):
+        return "", SsoProblem(name, "s3_bad")
+    return text, None
+
+
+def _check_s3_header_value(name: str, text: str) -> SsoProblem | None:
+    """키 · 영역 한 값 — 서명과 머리에 그대로 들어가므로 빈칸 없는 ASCII 만 받는다."""
+    if not text:
+        return SsoProblem(name, "s3_needed")
+    if not text.isascii() or _CONTROL.search(text) or any(ch.isspace() for ch in text):
+        return SsoProblem(name, "s3_bad")
+    return None
+
+
+def _check_access_s3(
+    value: Callable[[str], str],
+) -> tuple[bool, str, S3Target | None, list[SsoProblem]]:
+    """S3 명단 `(켜짐, 객체 키, 닿을 곳, 알림)`. 값이 빠지거나 틀려도 막지 않는다(모듈 설명)."""
+    access_key = value(names.ENV_S3_ACCESS_KEY).strip()
+    secret_key = value(names.ENV_S3_SECRET_KEY).strip()
+    object_key, object_problem = _check_s3_name(
+        names.ENV_ACCESS_OBJECT, value(names.ENV_ACCESS_OBJECT), default=names.DEFAULT_ACCESS_OBJECT
+    )
+    if not access_key and not secret_key:
+        return False, object_key, None, []
+    endpoint, endpoint_problem, endpoint_notice = _check_s3_endpoint(value(names.ENV_S3_ENDPOINT))
+    bucket, bucket_problem = _check_s3_name(names.ENV_S3_BUCKET, value(names.ENV_S3_BUCKET))
+    region, region_problem = _check_s3_name(
+        names.ENV_S3_REGION, value(names.ENV_S3_REGION), default=names.DEFAULT_S3_REGION
+    )
+    problems = [
+        problem
+        for problem in (
+            _check_s3_header_value(names.ENV_S3_ACCESS_KEY, access_key),
+            _check_s3_header_value(names.ENV_S3_SECRET_KEY, secret_key),
+            endpoint_problem,
+            bucket_problem,
+            region_problem or _check_s3_header_value(names.ENV_S3_REGION, region),
+            object_problem,
+        )
+        if problem is not None
+    ]
+    notices = [*problems, *([endpoint_notice] if endpoint_notice else [])]
+    if problems:
+        return True, object_key, None, notices
+    target = S3Target(
+        endpoint_url=endpoint,
+        bucket=bucket,
+        region=region,
+        access_key=access_key,
+        secret_key=secret_key,
+    )
+    return True, object_key, target, notices
 
 
 def _cert_der_values(raw: str) -> list[bytes | None]:
@@ -665,11 +780,14 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
     )
     if contact_problem is not None:
         notices.append(contact_problem)
+    s3_requested, object_key, s3_target, s3_notices = _check_access_s3(value)
+    notices.extend(s3_notices)
     access, access_problem, access_notices = _check_access(
         value(names.ENV_ACCESS_ADMINS),
         value(names.ENV_ACCESS_USERS),
         required=prod or locked or _beyond_loopback(public_url),
         contact=contact,
+        s3_requested=s3_requested,
     )
     notices.extend(access_notices)
 
@@ -756,5 +874,8 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
             {name: bool(value(name).strip()) for name in names.SSO_ENVIRONMENT}
         ),
         access=access,
+        access_s3_requested=s3_requested,
+        access_object_key=object_key,
+        access_s3=s3_target,
         secret=secret,
     )

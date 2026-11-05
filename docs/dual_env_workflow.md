@@ -345,7 +345,7 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 - 좋음 — 「`Pack Code` 에 `4.00E+02` 꼴(지수 표기)인 값이 2종, 5행」
 - 나쁨 — 실제 Pack Code 값을 그대로 적는 것
 - 통합인증(SSO) 환경변수는 **이름과 판정만** 적는다(예: 「`ADFS_ISSUER` 틀림 · 사유 `iss_mismatch`」). 값 — client id · ADFS 주소 ·
-  issuer · 서명 인증서 · `CAPA_PUBLIC_URL` · `JWT_SECRET_KEY` · 접속 명단(`CAPA_ACCESS_*`) — 과 로그인한 사람의 loginid · 이름 · 부서는 압축본 · 전문 어디에도 옮기지
+  issuer · 서명 인증서 · `CAPA_PUBLIC_URL` · `JWT_SECRET_KEY` · 접속 명단(`CAPA_ACCESS_*` · S3 명단 파일 · Admin 「접속 명단」 표) · S3 키 · 주소(`CAPA_S3_*`) — 과 로그인한 사람의 loginid · 이름 · 부서는 압축본 · 전문 어디에도 옮기지
   않는다(사외 저장소는 공개라 그 값이 커밋 · 문서로 번지면 지울 수 없다 — `docs/sso_setup.md`). Admin 「통합인증 점검」 의 누계
   (「로그인 갱신」 의 다시 발급 · 출처·머리 거절, 「로그인 전 실패」 의 사유별 수, 「접속 명단」 의 관리자 · 사용자 · 읽지 못함, 「명단 밖 로그인」 의 누계 · 계정 수)는 수만 옮긴다. 「마지막 로그인의 클레임 이름」 은 이름이라 옮겨도 된다(값은 그 줄에 없다).
 

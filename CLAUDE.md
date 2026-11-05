@@ -100,6 +100,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 `review_sample_*.py`, 문서 `docs/review_sample.md`. 가이드 예시판 시드도 이것이다 — git 작업 트리 안은 거절),
 `scripts/sso_mock_idp.py`(개발용 가짜 통합인증 IdP — 키를 메모리에만 만들고 form_post 로 id_token 을 보내 `capa_server.py` 의 로그인을
 끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
+`scripts/s3_mock_store.py`(개발 · 시험용 가짜 S3 — 서명을 검증하며 작은 객체 GET · PUT · HEAD 를 메모리로 받는다. 접속 명단 파일 시험 · `docs/sso_setup.md` 8장, 루프백만),
 `scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
 HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘플 시드 `scripts/generate_review_sample.py`, `--internal`(사내판 —
 2026-11-02 부터 쉼)은 런북 6-3 사본 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·

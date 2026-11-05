@@ -9,6 +9,7 @@
 **접속 명단 판정은 `session_check` 한 곳이다.** 문지기 http · 새 핸드셰이크 · 열린 연결의 메시지
 (`gate._WatchedSocket`) · `app.py` 의 `require_signed_in` 이 모두 이 함수를 지난다. `app.py`
 만으로는 위젯 콜백 · 프래그먼트 회차를 막지 못하므로(`gate` 문서) 자리마다 따로 판정을 두지 않는다.
+보는 것은 메모리의 지금 한 벌(`runtime.current_access`)이다 — 판정이 S3 에 가지 않는다.
 
 끝 시각을 보는 갈래는 둘이다.
 
@@ -114,7 +115,7 @@ def session_check(
     end, _ = session_end_of(identity, cfg, now, renewals=renewals)
     if runtime.session_revoked(identity.sid, now=now):
         return IdentityProblem.REVOKED, end
-    if not cfg.access.allows(identity.loginid):
+    if not runtime.current_access(cfg).allows(identity.loginid):
         return IdentityProblem.DENIED, end
     if now > end + SESSION_LEEWAY:
         return IdentityProblem.EXPIRED, end

@@ -4,7 +4,11 @@ DuckDB 파일을 WebIDE 밖의 S3 호환 스토리지(사내 구축, Dell ECS �
 **사람이 해야 하는 절차**다. 코드가 대신할 수 없는 것만 담는다. 설계 근거는
 `docs/TODO.md` 2장 「S3 분리(보류)」 와 결정 기록(옛 3-9), 파일별 책임은 `AGENTS.md` 3장에 있다.
 
-지금 단계는 **수동 왕복**이다. 앱은 스스로 올리거나 받지 않는다 — 저장할 때마다 사이드카에
+**접속 명단 파일은 이 절차 밖이다.** 앱이 환경변수 키로 작은 JSON 하나를 직접 받고 올린다(표준 라이브러리 SigV4 —
+`io/s3_small.py` · `auth/access_store.py`, `aws` CLI · 프로필을 쓰지 않는다). 켜는 법과 진단은 `docs/sso_setup.md` 2 · 5 · 7장이고 주소 · 버킷 ·
+영역은 여기와 같은 환경변수 이름(`CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · `CAPA_S3_REGION`)을 쓴다. 키는 프로필과 따로 `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY` 다.
+
+DuckDB 쪽 지금 단계는 **수동 왕복**이다. 앱은 DB 를 스스로 올리거나 받지 않는다 — 저장할 때마다 사이드카에
 "변경 있음" 만 남기고(`managed` 모드에서만), 실제 `pull`·`push` 는 이 스크립트로 사람이 돌린다.
 `local` 모드(개발 PC 기본값)에서는 그 표시조차 남기지 않는다.
 
@@ -136,6 +140,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"   # 지금 창에서 돌릴 스크립트용. 
 | 8 | WebIDE 안에서 `aws` 가 PATH 에 있는가 | 앱이 `subprocess` 로 부른다. 없으면 자동화를 못 붙인다 | 컨테이너에서 `aws --version` | |
 | 9 | WebIDE 재시작 주기·프로필명 변화 | 환경변수로 덮어쓸 준비는 돼 있다 | 운영 담당 | |
 | 10 | 동시 사용자가 늘어날 시점 | 지금은 단일 사용자 전제다 | 업무 판단 | |
+| 11 | C-DEP 운영 pod 에서 S3 주소에 닿는가 · 앱용 키 | 접속 명단 파일이 여기로 간다(`docs/sso_setup.md` 5장). `aws` 없이 앱이 직접 간다 | Admin 「통합인증 점검」 의 「S3 명단」 줄 | |
 
 1·5번이 확인 완료인 것은 **4단계 왕복으로 확인한 것이지 `probe` 결과가 아니다.** 2단계
 `probe` 는 아직 사내에서 돌리지 않았으므로 `config/object_storage_capabilities.json` 이

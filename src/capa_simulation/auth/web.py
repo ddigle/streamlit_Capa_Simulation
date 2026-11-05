@@ -39,10 +39,11 @@ from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, url_origin
 from capa_simulation.auth.identity import Identity, identity_from_cookies
 from capa_simulation.auth.tokens import (
@@ -779,7 +780,11 @@ async def callback(request: Request) -> Response:
             cfg, exc.code, state=state, now=now, diagnostic=exc.diagnostic, loginid=exc.loginid
         )
     runtime.note_login_claims(login.claim_names)
-    if not cfg.access.allows(login.loginid):
+    if not runtime.current_access(cfg).allows(login.loginid) and access_store.is_unread(cfg):
+        # S3 명단을 아직 못 읽었으면 거절하기 직전에 다시 읽어 본다(60초에 한 번까지) — 네트워크라
+        # 이벤트 루프에서 부르지 않는다.
+        await run_in_threadpool(access_store.retry_unread, cfg)
+    if not runtime.current_access(cfg).allows(login.loginid):
         return _deny(cfg, state_cookie, login.loginid)
 
     token, session = issue_session(
@@ -910,7 +915,7 @@ async def refresh(request: Request) -> Response:
     if (
         claims is None
         or runtime.session_revoked(claims.sid, now=now)
-        or not cfg.access.allows(claims.loginid)
+        or not runtime.current_access(cfg).allows(claims.loginid)
     ):
         runtime.count_refresh("unauthorized")
         return text_response(LOGIN_REQUIRED, 401)

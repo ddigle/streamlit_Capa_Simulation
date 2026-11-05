@@ -136,9 +136,12 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 | `CAPA_SSO_SESSION_HOURS` · `CAPA_SSO_SESSION_MAX_HOURS` | 선택 — 로그인 유지 시간(마지막 사용 뒤, 기본 6) · 써도 넘지 못하는 최대 시간(기본 24) |
 | `CAPA_SSO` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` | 선택 |
 | `CAPA_ACCESS_ADMINS` | 접속 명단의 관리자 loginid 목록(쉼표 · 세미콜론 · 공백). **운영 필수** — 없으면 앱을 열지 않는다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 |
-| `CAPA_ACCESS_USERS` · `CAPA_ACCESS_CONTACT` | 선택 — 접속 명단의 사용자 loginid 목록 · 거절 화면에 보일 요청 창구 글(로그인 없이 누구나 본다 — 사람 loginid 를 넣지 않는다) |
+| `CAPA_ACCESS_USERS` · `CAPA_ACCESS_CONTACT` | 선택 — 접속 명단의 사용자 loginid 목록(S3 명단이 켜지면 쓰지 않는다) · 거절 화면에 보일 요청 창구 글(로그인 없이 누구나 본다 — 사람 loginid 를 넣지 않는다) |
+| `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY` | S3 명단용 앱 키 한 쌍(**비밀**) — 있으면 S3 명단이 켜져 사용자를 재시작 없이 Admin 에서 넣고 뺀다. 비면 환경변수 명단 그대로 |
+| `CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` | S3 명단을 켜면 필수 — 주소 · 버킷 |
+| `CAPA_S3_REGION` · `CAPA_ACCESS_S3_OBJECT` | 선택 — 서명 영역(기본 `us-east-1`) · 명단 파일 객체 키(기본 `access/access_list.json`) |
 
-시작 스크립트는 이 값들을 앱에 넘기고(앱이 검증한다) 결과 파일에는 이름(있음/없음)만 남긴다. `JWT_SECRET_KEY` 는 하위 프로세스에
+시작 스크립트는 이 값들을 앱에 넘기고(앱이 검증한다) 결과 파일에는 이름(있음/없음)만 남긴다. `JWT_SECRET_KEY` · S3 키 둘은 하위 프로세스에
 넘기지 않고, 앱이 기동 때 읽은 뒤 프로세스 환경에서 지운다.
 
 ### 토큰 값 얻는 법

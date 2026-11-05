@@ -1,9 +1,10 @@
-# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 위의 서버 시작·통합인증 점검·모듈 상태를 보인다.
+# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 위의 서버·통합인증 점검·접속 명단·모듈 상태.
 
 from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components.access_list_admin import render_access_list_admin
 from capa_simulation.components.alert_board import render_alert_board
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.data_error_mark import render_data_error
@@ -44,6 +45,9 @@ render_container_start_check()
 # 통합인증의 설정 판정 · 서명 인증서 · 최근 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도
 # 그리지 않는다(개발·사내 PC 화면 그대로). 값은 싣지 않는다.
 render_sso_status()
+# S3 접속 명단 편집. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 선다 — 그 밖에는 아무것도
+# 그리지 않는다(개발·사내 PC 화면 그대로). DB 를 열지 않는다.
+render_access_list_admin()
 # 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패와 까닭·마지막 오류를 펼침으로 보인다. 사외와
 # `CAPA_MODULES_ROOT=off` 에서는 아무것도 그리지 않는다(DB 를 열지 않는다).
 render_module_status()
