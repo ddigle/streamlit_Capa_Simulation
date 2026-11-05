@@ -748,6 +748,7 @@
 .sle button.sle-sheet-funnel.is-on { border-color: var(--sle-filter-ring); color: var(--sle-filter-ring); }
 .sle-sheet-table tbody tr { cursor: pointer; }
 .sle-sheet-table tbody tr:hover td { background: var(--sle-canvas); }
+.sle-sheet:focus { outline: none; }
 .sle-sheet-table tbody tr:focus { outline: none; }
 .sle-sheet-table tbody tr:focus-visible td { box-shadow: inset 0 2px 0 var(--sle-accent), inset 0 -2px 0 var(--sle-accent); }
 .sle-sheet-table tbody tr.is-current td { background: var(--sle-canvas); font-weight: 700; }

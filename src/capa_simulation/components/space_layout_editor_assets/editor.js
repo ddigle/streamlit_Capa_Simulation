@@ -6081,6 +6081,8 @@ export default function (component) {
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return
+      // 열린 「호기 정보」 창은 편집기 어디에 초점이 있든 Esc 가 먼저 닫는다(고른 것은 다음 Esc 가 푼다).
+      if (event.key === 'Escape' && escapeSheet()) { event.preventDefault(); return }
       // FAB 의 층 블록에 초점이 있으면 Enter·Space 로 그 층을 연다(Space 가 페이지를 굴리지 않게 막는다).
       const block = FAB && event.target && event.target.closest ? event.target.closest('.mark-block') : null
       if (block && (event.key === 'Enter' || event.key === ' ')) {
@@ -6116,6 +6118,7 @@ export default function (component) {
     const ctrl = event.ctrlKey || event.metaKey
     if (ctrl && event.key.toLowerCase() === 'z' && !typing) { event.preventDefault(); undo(); return }
     if (typing) return
+    if (event.key === 'Escape' && escapeSheet()) { event.preventDefault(); return }
     // Tab 으로 초점이 온 호기·요소는 Enter·Space 가 누르기와 같다 — 그것 하나를 고르고, Ctrl(⌘)·Shift 는 고른 것에 더하거나
     // 뺀다(Shift/Ctrl+클릭). 고른 뒤의 방향키(옮기기)·Ctrl+방향키(크기)·Delete(빼기·지우기)는 도면에서와 같다.
     const focusedItem = canvasItemOf(event.target)
@@ -7450,6 +7453,18 @@ export default function (component) {
     }
     closeCsvMenu(true)
   }
+  // Esc 의 창 차례 — 펼침(CSV · 칸 필터)을 먼저, 그다음 창을 닫는다. 창이 닫혀 있으면 false. 창 안의 초점은 창과 함께 사라지니
+  // 곁 단추로 옮기고(`focusToggle`), 창 밖의 초점(도면 · 도구 줄)은 제자리에 둔다.
+  function escapeSheet(focusToggle) {
+    if (!sheetBox || sheetBox.hidden) return false
+    if (!sheetCsvMenu.hidden) closeCsvMenu(true)
+    else if (S.sheetMenu) closeMenu(true)
+    else {
+      closeSheet()
+      if (focusToggle) sheetToggle.focus({ preventScroll: true })
+    }
+    return true
+  }
   if (sheetBox) {
     sheetToggle.onclick = () => (S.sheetState && S.sheetState.open ? closeSheet() : openSheet())
     sheetClose.onclick = () => {
@@ -7563,18 +7578,19 @@ export default function (component) {
       renderMenu()
     }
     q('.sle-sheet-menu-done').onclick = () => closeMenu(true)
-    // 창 안의 키는 도면 단축키(호기 옮기기·지우기·실행 취소 …)로 새지 않는다. Esc 는 펼침을 먼저, 그다음 창을 닫는다.
+    // 창 안의 키는 도면 단축키(호기 옮기기·지우기·실행 취소 …)로 새지 않는다.
     sheetBox.onkeydown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (!sheetCsvMenu.hidden) closeCsvMenu(true)
-        else if (S.sheetMenu) closeMenu(true)
-        else {
-          closeSheet()
-          sheetToggle.focus({ preventScroll: true })
-        }
+        escapeSheet(true)
       }
       event.stopPropagation()
+    }
+    // 창의 빈 곳을 누르면 창이 초점을 받는다. 창이 열린 동안 편집기의 초점 못 받는 자리(도구 줄 · 칸의 빈 곳)를 누르면 초점이
+    // 편집기 밖으로 나가 키가 오지 않으니 그때도 창에 둔다.
+    sheetBox.tabIndex = -1
+    host.onclick = () => {
+      if (!sheetBox.hidden && !host.contains(host.getRootNode().activeElement)) sheetBox.focus({ preventScroll: true })
     }
     // 펼침 밖을 누르면 펼침을 닫는다(창 안에서).
     sheetBox.onpointerdown = (event) => {
