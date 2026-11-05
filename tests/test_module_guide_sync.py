@@ -157,6 +157,18 @@ def test_rule_numbers_in_the_guide_are_the_checkers_rules() -> None:
     assert set(re.findall(r"M\d{2}", blocking[1])) == rules.BLOCKING_RULES
 
 
+def test_the_guide_names_every_way_around_the_window_the_checker_refuses() -> None:
+    """M06 이 오류로 보는 우회 이름은 지침서 표에 다 있다 — 담당자가 점검에서 처음 만나지 않게."""
+    row = next(
+        line
+        for line in _section("부록 B").splitlines()
+        if line.startswith("| M06 |") and "우회" in line
+    )
+    for name in sorted(rules.WINDOW_ESCAPE_NAMES):
+        assert f"`{name}`" in row, name
+    assert "보증이 아니다" in row
+
+
 def test_the_skeleton_section_shows_what_new_module_writes(tmp_path: Path) -> None:
     section = _section("3-7.")
     root = tmp_path / "modules"

@@ -12,9 +12,11 @@
   메모리는 그대로다.
 
 파일은 작은 JSON 객체 하나다 — 형식 판(`format`) · 고칠 때마다 느는 판 번호(`revision`) · 사용자
-항목 · 고친 기록 마지막 200건. 키가 없으면(404) 빈 명단이고 「못 읽음」 이 아니다. 깨졌거나 형식
-판을 모르면 「못 읽음」 이다. 항목은 `access.entry_key` 꼴 판정을 그대로 거치고 읽지 못한 항목은
-개수만 센다. 등급 칸은 사용자로만 읽는다 — 관리자는 환경변수뿐이다.
+항목 · 고친 기록 마지막 200건. **받아 둔 파일이 없을 때** 키가 없으면(404 `NoSuchKey`) 빈 명단이고
+「못 읽음」 이 아니다. 받아 둔 파일이 있었는데 없다고 하면 실패(`KIND_FILE_GONE`)이고 메모리 명단을
+그대로 둔다 — 메모리가 마지막 사본일 수 있고, 저장소 앞단의 일시 오류로 전원을 거절하지 않게.
+깨졌거나 형식 판을 모르면 「못 읽음」 이다. 항목은 `access.entry_key` 꼴 판정을 그대로 거치고 읽지
+못한 항목은 개수만 센다. 등급 칸은 사용자로만 읽는다 — 관리자는 환경변수뿐이다.
 
 **새 배경 스레드를 세우지 않는다**(AGENTS 9장). 못 읽은 채로 뜬 프로세스는 콜백이 거절하기 직전
 (`web.callback` → 스레드 풀 → `retry_unread`, 60초에 한 번까지)이나 Admin 「다시 읽기」 가 다시
@@ -25,9 +27,11 @@
 돌려보낸다. 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은 능력이다(`io/s3_small`).
 
 쓰기 함수(`save_changes` · `reread`)는 화면과 별개로 신원 · 관리자를 다시 본다 — 위젯 콜백은 그
-회차의 본문보다 먼저 돌고, 보인 회차와 누른 회차의 권한이 달라질 수 있다. 값(loginid)은 사건 ·
-로그 · repr 에 싣지 않고 개수만 싣는다(저지른 관리자의 계정은 다른 사건과 같은 규칙 — 표에서 앞
-두 글자).
+회차의 본문보다 먼저 돌고, 보인 회차와 누른 회차의 권한이 달라질 수 있다. 이 벽은 화면의 실수를
+막는 것이고 같은 프로세스의 코드를 막지 못한다 — 모듈 코드가 의도를 가지면 이 함수와 키에 닿는다
+(`docs/sso_setup.md` 4장, 방어선은 앱 관리자의 PR 점검). 명단의 값(넣고 뺀 사람의 loginid)은 사건 ·
+로그 · repr 에 싣지 않고 개수만 싣는다. 저지른 관리자의 계정만 다른 사건과 같은 규칙으로 싣는다 —
+서버 로그에는 전체 값(`login_ok` 와 같다), Admin 표에는 앞 두 글자.
 """
 
 from __future__ import annotations
@@ -57,6 +61,9 @@ from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import Identity, session_problem
 from capa_simulation.io.s3_small import (
     KIND_OTHER,
+    KIND_TIMEOUT,
+    KIND_TLS,
+    KIND_UNREACHABLE,
     S3Failure,
     S3Target,
     get_object,
@@ -72,6 +79,10 @@ RETRY_SECONDS: Final = 60
 KIND_CORRUPT: Final = "corrupt"
 KIND_UNKNOWN_FORMAT: Final = "unknown_format"
 KIND_CONFIG: Final = "config"
+KIND_FILE_GONE: Final = "file_gone"
+
+# 보낸 뒤 답을 받지 못한 PUT 의 까닭 — 저장소에 들어갔는지 모른다.
+_NO_ANSWER_KINDS: Final = frozenset({KIND_TIMEOUT, KIND_UNREACHABLE, KIND_TLS})
 
 CHANGE_ADD: Final = "add"
 CHANGE_REMOVE: Final = "remove"
@@ -90,6 +101,10 @@ class StoreUnreadError(RuntimeError):
 
 class StoreConflictError(RuntimeError):
     """받은 뒤 저장소의 파일이 바뀌었다 — 덮지 않고 다시 읽게 한다."""
+
+
+class SaveUnconfirmedError(S3Failure):
+    """PUT 을 보내고 답을 받지 못했다 — 저장소에 들어갔는지 모른다. 메모리는 그대로다."""
 
 
 @dataclass(frozen=True)
@@ -146,12 +161,21 @@ def _parse_changes(raw: object) -> tuple[ListChange, ...]:
     )
 
 
+def _decoded(body: bytes) -> object:
+    """파일 바이트 → JSON 값. 못 읽으면 `None`.
+
+    실패를 여기서 올리지 않는다 — JSON 오류는 문서 전체(`doc`)를 들어, 처리 블록 안에서 올리면
+    명단이 예외 사슬에 남는다. `ValueError` 는 UTF-8 · JSON 오류와 정수 자릿수 상한을 함께 받는다.
+    """
+    try:
+        return json.loads(body.decode("utf-8"))
+    except (ValueError, RecursionError):
+        return None
+
+
 def parse_document(body: bytes) -> ListDocument:
     """파일 바이트 → 한 벌. 깨졌거나 형식 판을 모르면 `S3Failure`(값을 담지 않는다)."""
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
-        raise S3Failure(KIND_CORRUPT) from exc
+    payload = _decoded(body)
     if not isinstance(payload, dict):
         raise S3Failure(KIND_CORRUPT)
     if payload.get("format") != OBJECT_FORMAT:
@@ -210,33 +234,56 @@ def _base_source(cfg: SsoConfig) -> AccessSource:
 
 
 def problem_of(failure: S3Failure) -> SourceProblem:
-    return SourceProblem(failure.kind, failure.status, failure.code)
+    return SourceProblem(
+        failure.kind,
+        failure.status,
+        failure.code,
+        unconfirmed=isinstance(failure, SaveUnconfirmedError),
+    )
 
 
-def _fetch(cfg: SsoConfig, moment: int) -> tuple[ListDocument, str]:
-    """받아 읽는다 — `(한 벌, ETag)`. 어떤 실패든 `S3Failure` 하나다(기동 · 콜백을 막지 못한다)."""
+def _holds_a_file(source: AccessSource) -> bool:
+    """파일을 받아 둔 칸인가 — 못 읽은 칸과 없는 파일을 빈 명단으로 읽은 칸은 아니다."""
+    document = source.document
+    return document is not None and bool(source.etag or document.revision or document.entries)
+
+
+def _fetch(cfg: SsoConfig, moment: int, *, held: bool) -> tuple[ListDocument, str]:
+    """받아 읽는다 — `(한 벌, ETag)`. 어떤 실패든 `S3Failure` 하나다(기동 · 콜백을 막지 못한다).
+
+    `held` 면 파일을 받아 둔 칸이라 「없음」 도 실패다(모듈 설명).
+    """
     target = cfg.access_s3
     if target is None:
         raise S3Failure(KIND_CONFIG)
     try:
         found = get_object(target, cfg.access_object_key, moment=moment)
-        return (ListDocument(), "") if found is None else (parse_document(found.body), found.etag)
+        if found is not None:
+            return parse_document(found.body), found.etag
+        if not held:
+            return ListDocument(), ""
+        failure = S3Failure(KIND_FILE_GONE, 404, "NoSuchKey")
     except S3Failure:
         raise
     except Exception as exc:  # noqa: BLE001 — 예상 못 한 실패도 「못 읽음」 이다
-        raise S3Failure(KIND_OTHER, code=type(exc).__name__) from exc
+        failure = S3Failure(KIND_OTHER, code=type(exc).__name__)
+    raise failure
 
 
-def _read_locked(cfg: SsoConfig, moment: int) -> SourceProblem | None:
-    """입출력 잠금 안에서 받아 한 벌을 바꾼다. 실패면 전의 명단을 그대로 두고 까닭만 적는다."""
+def _read_locked(cfg: SsoConfig, moment: int, *, retrying: bool = False) -> SourceProblem | None:
+    """입출력 잠금 안에서 받아 한 벌을 바꾼다. 실패면 전의 명단을 그대로 두고 까닭만 적는다.
+
+    `retrying` 은 자가 회복이다 — 실패를 고리에 적지 않고 누계만 센다(들어오지 못하는 사람이
+    되풀이해 남길 수 있다, `runtime.ACCESS_RETRY_FAILED_EVENT`).
+    """
     base = _base_source(cfg)
     try:
-        document, etag = _fetch(cfg, moment)
+        document, etag = _fetch(cfg, moment, held=_holds_a_file(base))
     except S3Failure as failure:
         problem = problem_of(failure)
         runtime.publish_access_source(replace(base, attempted_at=moment, problem=problem))
         runtime.record_event(
-            "access_read",
+            runtime.ACCESS_RETRY_FAILED_EVENT if retrying else "access_read",
             level=logging.WARNING,
             reason=problem.kind,
             status=str(problem.status or "-"),
@@ -251,6 +298,12 @@ def _read_locked(cfg: SsoConfig, moment: int) -> SourceProblem | None:
             read_at=moment,
             attempted_at=moment,
             problem=None,
+            # 답을 받지 못한 쓰기는 읽어 보면 결과를 안다(들어갔으면 지금 한 벌에 있다).
+            save_problem=(
+                None
+                if base.save_problem is not None and base.save_problem.unconfirmed
+                else base.save_problem
+            ),
         )
     )
     runtime.record_event(
@@ -280,7 +333,7 @@ def retry_unread(cfg: SsoConfig, *, now: int | None = None) -> None:
     if not _IO_LOCK.acquire(blocking=False):
         return
     try:
-        _read_locked(cfg, moment)
+        _read_locked(cfg, moment, retrying=True)
     finally:
         _IO_LOCK.release()
 
@@ -367,6 +420,17 @@ def _remote_unchanged(target: S3Target, key: str, source: AccessSource, moment: 
     return found is not None and parse_document(found.body).revision == source.document.revision
 
 
+def _put_noting_no_answer(target: S3Target, key: str, body: bytes, moment: int) -> str:
+    """올린다. 답을 받지 못하면 `SaveUnconfirmedError` — 앞의 대조에서 끊긴 실패와 가른다."""
+    try:
+        return put_object(target, key, body, moment=moment)
+    except S3Failure as failure:
+        if failure.kind not in _NO_ANSWER_KINDS:
+            raise
+        unconfirmed = SaveUnconfirmedError(failure.kind, failure.status, failure.code)
+    raise unconfirmed
+
+
 def save_changes(
     cfg: SsoConfig,
     identity: Identity | None,
@@ -378,8 +442,9 @@ def save_changes(
     """관리자의 고침 하나. 저장소에 먼저 쓰고, 쓴 뒤에만 메모리를 바꾼다.
 
     `NotAdminError`(권한) · `StoreUnreadError`(아직 못 읽음) · `StoreConflictError`(그 사이 바뀜) ·
-    `S3Failure`(읽기 · 쓰기 실패 — 메모리 그대로, 파일이 상한을 넘어도 이것)를 낸다. 바뀐 것이
-    없으면 쓰지 않는다.
+    `SaveUnconfirmedError`(PUT 의 답을 받지 못함 — 들어갔는지 모른다, `S3Failure` 의 하나) ·
+    `S3Failure`(대조 실패 · 거절된 PUT — 저장소 그대로, 파일이 상한을 넘어도 이것)를 낸다. 어느
+    쪽이든 메모리는 그대로다. 바뀐 것이 없으면 쓰지 않는다.
     """
     moment = int(time.time()) if now is None else now
     actor = _require_admin(cfg, identity, moment).loginid
@@ -402,7 +467,9 @@ def save_changes(
                     reason="conflict",
                 )
                 raise StoreConflictError
-            etag = put_object(target, cfg.access_object_key, render_document(fresh), moment=moment)
+            etag = _put_noting_no_answer(
+                target, cfg.access_object_key, render_document(fresh), moment
+            )
         except S3Failure as failure:
             problem = problem_of(failure)
             runtime.publish_access_source(replace(source, save_problem=problem))
@@ -420,6 +487,8 @@ def save_changes(
                 access=compose_access(cfg.access, fresh),
                 document=fresh,
                 etag=etag,
+                # 저장소에 닿았고 방금 쓴 것이 지금 명단이다 — 앞선 읽기 실패 경고를 남기지 않는다.
+                problem=None,
                 saved_at=moment,
                 save_problem=None,
             )

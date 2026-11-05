@@ -505,6 +505,81 @@ def test_m18_follows_a_callback_named_inside_a_function(
     assert (("M18", "error") in _page_rules(tmp_path, body)) is flagged
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        'import sys\nFOUND = sys.modules.get("capa_simulation.auth.access_store")\n',
+        'import sys\nFOUND = sys.modules["capa_simulation.auth.access_store"]\n',
+        'from sys import modules\nFOUND = modules["capa_simulation.auth.access_store"]\n',
+        'import os\nFOUND = os.sys.modules["capa_simulation.auth.access_store"]\n',
+        'import sys\nFOUND = getattr(sys, "modules")\n',
+        "import sys\nname = str(1)\nFOUND = getattr(sys, name)\n",
+        'import importlib\nimportlib.import_module("capa_simulation.auth" + ".access_store")\n',
+        "import importlib\nname = str(1)\nimportlib.import_module(name)\n",
+        'import importlib\nimportlib.import_module(".x", package="capa_simulation.auth")\n',
+        'import importlib\nFOUND = importlib.import_module("capa_simulation.module_api").auth\n',
+        'import importlib\nload = importlib.import_module\nload("capa_simulation.auth")\n',
+        'import importlib\nFOUND = getattr(importlib, "import_module")\n',
+        "name = str(1)\n__import__(name)\n",
+        'FOUND = __import__("capa_simulation.module_api").auth\n',
+        "load = __import__\n",
+        "from capa_simulation import module_api as api\nFOUND = api.context.__globals__\n",
+        'from capa_simulation import module_api as api\nFOUND = getattr(api, "__globals__")\n',
+        'from capa_simulation import module_api as api\nFOUND = getattr(api, "module_registry")\n',
+        "from capa_simulation import module_api as api\nname = str(1)\nFOUND = getattr(api, name)",
+        "from capa_simulation import module_api as api\nFOUND = vars(api)\n",
+        "FOUND = __builtins__\n",
+        'FOUND = globals()["__builtins__"]\n',
+        "FOUND = print.__self__\n",
+        "FOUND = ().__class__.__bases__[0].__subclasses__()\n",
+        'exec("import capa_simulation.auth.access_store")\n',
+        'FOUND = eval("1")\n',
+        'FOUND = compile("1", "x", "eval")\n',
+        'import builtins\nFOUND = builtins.eval("1")\n',
+        "import sys\nFOUND = sys._getframe(1).f_globals\n",
+        "import inspect\nFOUND = inspect.currentframe()\n",
+        "import inspect\nfrom capa_simulation import module_api\nFOUND = inspect.getmembers(1)\n",
+        "import gc\nFOUND = gc.get_objects()\n",
+        'import importlib.util\nFOUND = importlib.util.spec_from_file_location("x", "y.py")\n',
+        'import runpy\nrunpy.run_path("y.py")\n',
+        'from pkgutil import resolve_name\nFOUND = resolve_name("capa_simulation.auth")\n',
+        'import pydoc\nFOUND = pydoc.locate("capa_simulation.auth")\n',
+    ],
+)
+def test_m06_catches_the_ways_around_the_window(tmp_path: Path, body: str) -> None:
+    """모듈은 코어와 한 프로세스다 — 이 길로 세션 비밀 · S3 키 · 명단 쓰기 함수에 닿는다.
+
+    판정할 수 없으면 오류다(점검이 무엇을 불러오는지 모른다). 시험 파일도 같다.
+    """
+    assert ("M06", "error") in _page_rules(tmp_path / "page", body)
+    assert ("M06", "error") in _page_rules(tmp_path / "test", body, rel="tests/test_demo_x_more.py")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "import sys\nFOUND = sys.version_info\n",
+        'import importlib\nFOUND = importlib.import_module("json")\n',
+        'import json\nFOUND = __import__("json")\n',
+        'FOUND = getattr(str(1), "upper")\n',
+        "name = str(1)\nFOUND = getattr(str(1), name)\n",
+        "FOUND = vars(str)\n",
+        'import re\nFOUND = re.compile("x")\n',
+        'import pandas as pd\nFOUND = pd.DataFrame().eval("a")\n',
+        'NOTE = "modules"\n',
+        "import gc\nFOUND = gc.collect()\n",
+        "from capa_simulation import module_api as api\nctx = api.context(__file__)\n",
+    ],
+)
+def test_m06_leaves_ordinary_code_alone(tmp_path: Path, body: str) -> None:
+    assert ("M06", "error") not in _page_rules(tmp_path, body)
+
+
+def test_the_way_around_the_window_stops_the_self_tests(tmp_path: Path) -> None:
+    """그 코드를 실행하지 않는다 — M06 은 시험을 돌리기 전에 멈추는 규칙이다."""
+    assert "M06" in rules.BLOCKING_RULES
+
+
 def test_a_same_folder_bare_import_is_m06_not_m09(tmp_path: Path) -> None:
     folder = _module(
         tmp_path / "modules",

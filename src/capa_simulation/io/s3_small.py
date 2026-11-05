@@ -8,13 +8,20 @@ KiB 짜리 객체 하나를 앱 프로세스가 직접 주고받는 자리다. �
 
 - **표준 라이브러리만** 쓴다 — `auth` 가 import 해도 Streamlit · 무거운 모듈이 딸려 오지 않는다.
 - **경로 스타일 주소**(`/<버킷>/<키>`) — 버킷 이름에 대문자 · 밑줄이 있어 가상 호스트로 적지 못한다.
-- **시간 제한** 연결 3초 · 읽기 5초(`http.client` 로 둘을 나눈다). 재시도는 없다(부르는 쪽 몫).
+- **시간 제한** 연결 3초 · 읽기 5초 · 요청 전체 8초. 소켓 호출마다의 제한만 두면 조금씩 흘리는 답 ·
+  주소 여럿이 제한을 곱해 기동 · 콜백을 묶으므로, 연결 · 머리 · 본문 · 100 Continue 를 모두 한
+  마감에 맞춘다(`_DeadlineSocket`). **이름 풀기만 끊지 못한다** — 표준 라이브러리에 제한 인자가 없고
+  끊으려면 스레드가 필요하다(AGENTS 9장). 풀린 뒤에 마감이 지났으면 더 가지 않는다. 재시도는 없다
+  (부르는 쪽 몫).
 - **프록시 · 리다이렉트를 따르지 않는다** — 환경변수 프록시를 지나면 명단이 그 프록시에 보이고
   그쪽 403 이 저장소의 인증 거절로 읽힌다. 3xx 는 그 밖 응답으로 올린다.
 - **조건부 쓰기(`If-Match`)를 보내지 않는다** — 확인하지 못한 능력은 없는 것으로 본다
   (`docs/objectstore_setup.md` 2단계). 덮어쓰기 막기는 부르는 쪽이 `head_object` 로 한다.
 - 실패는 `S3Failure` 하나이고 까닭 분류 · HTTP 상태 · 저장소 오류 코드만 담는다. 키 · 서명 · 주소 ·
-  본문은 담지 않는다. `S3Target` 의 두 키는 repr 에 나오지 않는다.
+  본문은 담지 않고 예외 사슬에도 남기지 않는다 — 처리 블록 밖에서 올린다(`from None` 은
+  `__context__` 를 그대로 둔다). 머리를 인코딩하지 못한 `UnicodeEncodeError` 의 글에는 서명 머리가
+  통째로 든다.
+  `S3Target` 의 두 키는 repr 에 나오지 않는다.
 
 이벤트 루프에서 부르지 않는다(블로킹 소켓). 문지기 · 콜백은 스레드 풀로 넘겨 부른다.
 """
@@ -25,20 +32,24 @@ import base64
 import hashlib
 import hmac
 import http.client
+import io
 import re
+import socket
 import ssl
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Final
-from urllib.parse import quote, urlsplit
+from typing import Any, Final
+from urllib.parse import SplitResult, quote, urlsplit
 
 ALGORITHM: Final = "AWS4-HMAC-SHA256"
 SERVICE: Final = "s3"
 EMPTY_SHA256: Final = hashlib.sha256(b"").hexdigest()
 CONNECT_TIMEOUT_SECONDS: Final = 3.0
 READ_TIMEOUT_SECONDS: Final = 5.0
+# 요청 하나의 전체 마감 — 연결 제한 + 읽기 제한이다. 정상 응답이 이 안에 끝나지 않을 까닭이 없다.
+REQUEST_DEADLINE_SECONDS: Final = 8.0
 # 받는 본문의 상한. 넘으면 읽기를 멈추고 실패다 — 작은 객체 경계가 큰 파일을 메모리에 올리지 않게.
 MAX_OBJECT_BYTES: Final = 1024 * 1024
 
@@ -52,6 +63,7 @@ KIND_TOO_LARGE: Final = "too_large"
 KIND_OTHER: Final = "http_other"
 
 _ERROR_CODE = re.compile(r"<Code>([A-Za-z0-9._-]{1,64})</Code>")
+_NO_SUCH_KEY: Final = "NoSuchKey"
 _NO_SUCH_BUCKET: Final = "NoSuchBucket"
 _UNRESERVED: Final = "-_.~"
 
@@ -168,6 +180,121 @@ def _error_code(body: bytes) -> str:
     return found.group(1) if found else ""
 
 
+def _time_left(deadline: float, limit: float) -> float:
+    """다음 소켓 호출이 기다릴 시간 — `limit` 과 남은 시간 중 짧은 쪽. 지났으면 시간 초과다."""
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise TimeoutError
+    return min(left, limit)
+
+
+class _DeadlineReader(io.RawIOBase):
+    """받기 — `recv` 마다 남은 시간만큼만 기다린다. 조금씩 흘리는 답도 마감을 넘지 못한다."""
+
+    def __init__(self, sock: socket.socket, deadline: float) -> None:
+        super().__init__()
+        self._sock = sock
+        self._deadline = deadline
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        self._sock.settimeout(_time_left(self._deadline, READ_TIMEOUT_SECONDS))
+        return self._sock.recv_into(buffer)
+
+
+class _DeadlineSocket:
+    """`http.client` 에 건네는 소켓 겉 — 보내기 · 받기를 한 마감에 맞춘다.
+
+    `close` 는 하지 않는다. `http.client` 는 `Connection: close` 답이면 본문을 읽기 전에 소켓을
+    닫으므로(진짜 소켓의 `makefile` 은 참조를 세어 미룬다) 닫기는 `_round_trip` 이 끝에 한 번 한다.
+    """
+
+    def __init__(self, sock: socket.socket, deadline: float) -> None:
+        self._sock = sock
+        self._deadline = deadline
+
+    def sendall(self, data: bytes) -> None:
+        view = memoryview(data)
+        while len(view):
+            self._sock.settimeout(_time_left(self._deadline, READ_TIMEOUT_SECONDS))
+            view = view[self._sock.send(view) :]
+
+    def makefile(self, *_args: Any, **_kwargs: Any) -> io.BufferedReader:
+        return io.BufferedReader(_DeadlineReader(self._sock, self._deadline))
+
+    def close(self) -> None:
+        """닫지 않는다(클래스 설명)."""
+
+
+def _connected_socket(host: str, port: int, deadline: float) -> socket.socket:
+    """주소를 차례로 잇는다 — 연결 제한은 주소마다, 모두 합쳐 마감을 넘지 않는다."""
+    last: OSError = TimeoutError()
+    for family, kind, protocol, _, address in socket.getaddrinfo(
+        host, port, type=socket.SOCK_STREAM
+    ):
+        candidate = socket.socket(family, kind, protocol)
+        try:
+            candidate.settimeout(_time_left(deadline, CONNECT_TIMEOUT_SECONDS))
+            candidate.connect(address)
+        except OSError as exc:
+            candidate.close()
+            last = exc
+            continue
+        return candidate
+    raise last
+
+
+def _open_socket(parts: SplitResult, deadline: float) -> socket.socket:
+    """이어 둔 소켓(https 면 TLS 까지) — 이름 풀기 뒤의 모든 단계가 마감 안이다."""
+    host = parts.hostname or ""
+    secure = parts.scheme == "https"
+    plain = _connected_socket(host, parts.port or (443 if secure else 80), deadline)
+    if not secure:
+        return plain
+    try:
+        plain.settimeout(_time_left(deadline, READ_TIMEOUT_SECONDS))
+        return ssl.create_default_context().wrap_socket(plain, server_hostname=host)
+    except BaseException:
+        plain.close()
+        raise
+
+
+def _round_trip(
+    parts: SplitResult,
+    method: str,
+    path: str,
+    body: bytes,
+    headers: Mapping[str, str],
+) -> tuple[int, str, bytes]:
+    """요청 하나를 마감 안에서 주고받는다."""
+    deadline = time.monotonic() + REQUEST_DEADLINE_SECONDS
+    sock = _open_socket(parts, deadline)
+    try:
+        # 이어 둔 소켓을 건네므로 주소 인자는 쓰이지 않는다(`Host` 머리는 서명한 값을 싣는다).
+        connection = http.client.HTTPConnection(parts.hostname or "", parts.port)
+        connection.sock = _DeadlineSocket(sock, deadline)
+        try:
+            connection.request(method, path, body=body or None, headers=dict(headers))
+            response = connection.getresponse()
+            data = response.read(MAX_OBJECT_BYTES + 1)
+            return response.status, (response.getheader("ETag") or "").strip().strip('"'), data
+        finally:
+            connection.close()
+    finally:
+        sock.close()
+
+
+def _failure_of(error: Exception) -> S3Failure:
+    """닿지 못한 까닭 하나. `ValueError` — 소켓이 주소 이름을 풀지 못한 경우(IDNA)와 머리 값 꼴."""
+    if isinstance(error, ssl.SSLError):
+        return S3Failure(KIND_TLS)
+    if isinstance(error, TimeoutError):
+        return S3Failure(KIND_TIMEOUT)
+    return S3Failure(KIND_UNREACHABLE)
+
+
 def _exchange(
     target: S3Target,
     method: str,
@@ -189,35 +316,11 @@ def _exchange(
         moment=time.time() if moment is None else moment,
         extra=extra,
     )
-    connection: http.client.HTTPConnection | None = None
     try:
-        if parts.scheme == "https":
-            connection = http.client.HTTPSConnection(
-                parts.hostname or "",
-                parts.port,
-                timeout=CONNECT_TIMEOUT_SECONDS,
-                context=ssl.create_default_context(),
-            )
-        else:
-            connection = http.client.HTTPConnection(
-                parts.hostname or "", parts.port, timeout=CONNECT_TIMEOUT_SECONDS
-            )
-        connection.connect()
-        connection.sock.settimeout(READ_TIMEOUT_SECONDS)
-        connection.request(method, path, body=body or None, headers=headers)
-        response = connection.getresponse()
-        data = response.read(MAX_OBJECT_BYTES + 1)
-        return response.status, (response.getheader("ETag") or "").strip().strip('"'), data
-    except ssl.SSLError as exc:
-        raise S3Failure(KIND_TLS) from exc
-    except TimeoutError as exc:
-        raise S3Failure(KIND_TIMEOUT) from exc
-    except (OSError, ValueError, http.client.HTTPException) as exc:
-        # `ValueError` — 소켓이 주소 이름을 풀지 못한 경우(IDNA 인코딩)와 머리 값 꼴.
-        raise S3Failure(KIND_UNREACHABLE) from exc
-    finally:
-        if connection is not None:
-            connection.close()
+        return _round_trip(parts, method, path, body, headers)
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        failure = _failure_of(error)
+    raise failure
 
 
 def _rejected(status: int, data: bytes, *, bucket_missing: bool = False) -> S3Failure:
@@ -231,9 +334,13 @@ def _rejected(status: int, data: bytes, *, bucket_missing: bool = False) -> S3Fa
 
 
 def get_object(target: S3Target, key: str, *, moment: float | None = None) -> S3Object | None:
-    """객체를 받는다. 키가 없으면(404) `None` — 버킷이 없는 404 는 실패다."""
+    """객체를 받는다. 키가 없으면(404 · `NoSuchKey`) `None`.
+
+    그 밖의 404 는 실패다 — 버킷이 없거나, 저장소 앞단이 코드 없이 답한 것이다(HTML · 빈 본문).
+    그것을 「파일 없음」 으로 읽으면 멀쩡한 파일을 두고 빈 명단으로 선다.
+    """
     status, etag, data = _exchange(target, "GET", key, moment=moment)
-    if status == 404 and _error_code(data) != _NO_SUCH_BUCKET:
+    if status == 404 and _error_code(data) == _NO_SUCH_KEY:
         return None
     if status != 200:
         raise _rejected(status, data)

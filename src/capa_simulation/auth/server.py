@@ -25,8 +25,8 @@ def start_sso() -> SsoConfig:
     """환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 환경에서 빼고, S3
     명단이 켜졌으면 한 번 읽어 메모리에 올린다(못 읽어도 앱은 뜬다 — 관리자만 통과).
 
-    uvicorn 이 이 진입 파일을 import 하는 때라 연결을 받기 전이다 — 시간 제한(`io/s3_small`)만큼
-    기동이 늦을 수 있어도 처리 중인 요청을 막지 않는다.
+    uvicorn 이 이 진입 파일을 import 하는 때라 연결을 받기 전이다 — 요청 하나의 마감(`io/s3_small`
+    — 8초, 이름 풀기는 그 밖)만큼 기동이 늦을 수 있어도 처리 중인 요청을 막지 않는다.
     """
     cfg = runtime.start(os.environ)
     access_store.read_at_start(cfg)

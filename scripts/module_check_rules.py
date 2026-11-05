@@ -36,7 +36,7 @@ RULES: Final[Mapping[str, str]] = {
     "M03": "전역 CSS·JS·끼워 넣기",
     "M04": "st.sidebar·st.logo",
     "M05": "내비·주소",
-    "M06": "코어 내부·같은 폴더 맨이름 import",
+    "M06": "코어 내부·같은 폴더 맨이름 import·창구 우회",
     "M07": "코어 데이터 자리",
     "M08": "세션 키 접두·세션 전역 조작",
     "M09": "패키지",
@@ -105,6 +105,68 @@ _MODULE_API: Final = "capa_simulation.module_api"
 # 글자 상수 하나로 모듈을 불러오는 호출 — 같은 import 규칙(M06·M09·M10)으로 본다.
 _DYNAMIC_IMPORTS: Final = frozenset(
     {"importlib.import_module", "importlib.__import__", "builtins.__import__"}
+)
+# 창구(`module_api`)를 돌아 코어에 닿는 길(M06). 모듈은 코어와 한 프로세스라 이 길로 세션 비밀 ·
+# S3 키 · 명단 쓰기 함수까지 닿는다. **막는 것은 쉬운 꼴뿐이다** — 의도를 가진 코드는 다른 길을 찾을
+# 수 있어 점검 통과가 보증이 아니고, 방어선은 앱 관리자의 PR 점검이다(런북 4-6). 판정할 수 없으면
+# 오류다.
+_ESCAPE_ATTRIBUTES: Final = frozenset(
+    {
+        "__globals__",
+        "__builtins__",
+        "__subclasses__",
+        "__self__",
+        "f_globals",
+        "f_locals",
+        "f_builtins",
+        "f_back",
+        "tb_frame",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
+    }
+)
+_ESCAPE_REFERENCES: Final = frozenset(
+    {
+        "sys.modules",
+        "sys._getframe",
+        "sys._current_frames",
+        "inspect.currentframe",
+        "inspect.stack",
+        "inspect.trace",
+        "inspect.getmodule",
+        "inspect.getmembers",
+        "inspect.getouterframes",
+        "inspect.getinnerframes",
+        "gc.get_objects",
+        "gc.get_referrers",
+        "gc.get_referents",
+        "builtins.eval",
+        "builtins.exec",
+        "builtins.compile",
+        "importlib.util",
+        "importlib.machinery",
+        "pkgutil",
+        "pydoc",
+        "runpy",
+    }
+)
+_ESCAPE_BUILTINS: Final = frozenset({"eval", "exec", "compile"})
+# 지침서 부록 B 의 M06 줄이 이 이름을 다 적는다(`tests/test_module_guide_sync.py`).
+WINDOW_ESCAPE_NAMES: Final = _ESCAPE_ATTRIBUTES | _ESCAPE_REFERENCES | _ESCAPE_BUILTINS
+# 값이 아니라 이 뿌리를 통째로 들여다보는 호출은 무엇을 꺼내는지 판정한다(`getattr(sys, 이름)`).
+_REFLECTION_ROOTS: Final = frozenset(
+    {
+        "capa_simulation",
+        "sys",
+        "importlib",
+        "builtins",
+        "inspect",
+        "gc",
+        "pkgutil",
+        "pydoc",
+        "runpy",
+    }
 )
 # 경로 마디를 잇는 호출 — 이은 글이 코어 데이터 자리를 가리키는지 본다(M07).
 _PATH_JOINERS: Final = frozenset(
@@ -1115,21 +1177,118 @@ def _check_dialog(node: ast.Call, context: _FileContext) -> None:
     )
 
 
+def _is_bare_import(node: ast.AST, names: _Names) -> bool:
+    return isinstance(node, ast.Name) and node.id == "__import__" and node.id not in names.aliases
+
+
 def _check_dynamic_import(
     node: ast.Call, resolved: str | None, names: _Names, context: _FileContext
 ) -> None:
-    """`importlib.import_module("x")`·`__import__("x")` — 글자 상수면 `import x` 와 같은 규칙."""
-    bare = (
-        isinstance(node.func, ast.Name)
-        and node.func.id == "__import__"
-        and node.func.id not in names.aliases
-    )
-    if not bare and resolved not in _DYNAMIC_IMPORTS:
+    """`importlib.import_module("x")`·`__import__("x")` — 글자 상수면 `import x` 와 같은 규칙.
+
+    글자 상수가 아니면 무엇을 불러오는지 판정할 수 없어 오류다. 창구도 이 꼴로 부르지 않는다 —
+    돌려받은 값의 속성은 겉면 판정(`_outside_surface`)을 지나지 않는다.
+    """
+    if not _is_bare_import(node.func, names) and resolved not in _DYNAMIC_IMPORTS:
         return
     target = names.constant(node.args[0]) if node.args else None
     if not target or target.startswith("."):
+        context.add(
+            "M06",
+            "error",
+            node,
+            "글자 상수가 아닌 동적 import 는 무엇을 불러오는지 판정할 수 없습니다 — "
+            "`import` 로 씁니다",
+        )
+        return
+    if target.split(".")[0] == "capa_simulation":
+        context.add(
+            "M06",
+            "error",
+            node,
+            f"`{target}` 을 동적 import 로 부릅니다 — "
+            "`from capa_simulation import module_api as api` 로 씁니다",
+        )
         return
     _check_one_import(node, target, None, context, f"modules.{context.module_id}")
+
+
+def _add_escape(node: ast.AST, shown: str, context: _FileContext) -> None:
+    context.add(
+        "M06",
+        "error",
+        node,
+        f"`{shown}` 은 창구(`module_api`)를 돌아 코어에 닿는 길입니다 — 창구 이름만 씁니다",
+    )
+
+
+def _is_escape_reference(resolved: str) -> bool:
+    return resolved in _ESCAPE_REFERENCES or resolved.endswith(".sys.modules")
+
+
+def _check_reflection_call(node: ast.Call, names: _Names, context: _FileContext) -> None:
+    """`getattr(sys, "modules")`·`vars(api)` — 뿌리를 들여다보는 호출을 그 참조처럼 본다.
+
+    값 객체(`getattr(row, 이름)`)는 넘긴다 — 뿌리가 `_REFLECTION_ROOTS` 인 것만 본다.
+    """
+    func = node.func
+    if not isinstance(func, ast.Name) or func.id in names.aliases or not node.args:
+        return
+    if func.id not in ("getattr", "vars"):
+        return
+    owner = names.resolve(node.args[0])
+    if owner is None or owner.split(".")[0] not in _REFLECTION_ROOTS:
+        return
+    attribute = (
+        names.constant(node.args[1]) if func.id == "getattr" and len(node.args) > 1 else None
+    )
+    if attribute is None:
+        _add_escape(node, f"{func.id}({owner}, …)", context)
+        return
+    resolved = f"{owner}.{attribute}"
+    if (
+        _is_escape_reference(resolved)
+        or resolved in _DYNAMIC_IMPORTS
+        or _outside_surface(resolved) is not None
+    ):
+        _add_escape(node, resolved, context)
+
+
+def _check_window_escapes(tree: ast.Module, names: _Names, context: _FileContext) -> None:
+    """창구를 돌아 코어에 닿는 꼴(M06) — 시험 파일도 같다(화면이 import 할 수 있다)."""
+    called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            _check_reflection_call(node, names, context)
+        elif isinstance(node, ast.Constant):
+            if isinstance(node.value, str) and node.value in _ESCAPE_ATTRIBUTES:
+                _add_escape(node, node.value, context)
+        elif isinstance(node, ast.Attribute) and node.attr in _ESCAPE_ATTRIBUTES:
+            _add_escape(node, node.attr, context)
+        elif (
+            isinstance(node, ast.Name)
+            and node.id not in names.aliases
+            and (node.id in _ESCAPE_ATTRIBUTES or node.id in _ESCAPE_BUILTINS)
+        ):
+            _add_escape(node, node.id, context)
+        elif isinstance(node, (ast.Name, ast.Attribute)):
+            if _is_bare_import(node, names) and id(node) not in called:
+                _add_escape(node, "__import__", context)
+                continue
+            resolved = names.resolve(node)
+            if resolved is None:
+                continue
+            # 이름으로 들어온 것(`from pkgutil import resolve_name`)은 그 아래 이름까지 본다 — 속성
+            # 꼴은 윗마디(`pkgutil`)에서 한 번 걸린다.
+            imported_under = (
+                isinstance(node, ast.Name) and resolved.rsplit(".", 1)[0] in _ESCAPE_REFERENCES
+            )
+            if (
+                _is_escape_reference(resolved)
+                or imported_under
+                or (resolved in _DYNAMIC_IMPORTS and id(node) not in called)
+            ):
+                _add_escape(node, resolved, context)
 
 
 def _path_pieces(node: ast.AST, names: _Names, depth: int = 0) -> list[str | None] | None:
@@ -1809,6 +1968,7 @@ def check_source(
     _check_joined_paths(tree, names, context)
     _check_references(tree, names, context)
     _check_calls(tree, names, context)
+    _check_window_escapes(tree, names, context)
     _check_subscripts_and_targets(tree, names, context)
     _check_cache(tree, names, context)
     if not context.is_test and not is_page:

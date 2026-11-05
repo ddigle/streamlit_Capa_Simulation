@@ -157,11 +157,15 @@ class ListDocument:
 
 @dataclass(frozen=True)
 class SourceProblem:
-    """S3 명단을 읽거나 쓰지 못한 까닭. 분류 · HTTP 상태 · 저장소 오류 코드뿐이다(값 · 키 없음)."""
+    """S3 명단을 읽거나 쓰지 못한 까닭. 분류 · HTTP 상태 · 저장소 오류 코드뿐이다(값 · 키 없음).
+
+    `unconfirmed` 는 PUT 을 보내고 답을 받지 못한 쓰기다 — 저장소에 들어갔는지 모른다.
+    """
 
     kind: str
     status: int | None = None
     code: str = ""
+    unconfirmed: bool = False
 
 
 @dataclass(frozen=True)
@@ -170,7 +174,8 @@ class AccessSource:
 
     `access` 는 판정이 보는 합성 명단이다. `document` 가 `None` 이면 아직 한 번도 읽지 못한 것이고
     그때 `access` 는 환경변수 관리자뿐이다(열림으로 떨어지지 않는다). 한 번 읽어 둔 뒤의 실패는
-    `problem` 에만 적고 `access` 를 건드리지 않는다.
+    `problem` 에만 적고 `access` 를 건드리지 않는다. 저장이 성공하면 `problem` 을 비운다 — 저장소에
+    닿았고 방금 쓴 것이 지금 명단이다.
     """
 
     access: AccessList

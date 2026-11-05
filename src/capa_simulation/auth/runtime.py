@@ -50,6 +50,10 @@ ANONYMOUS_EVENTS = frozenset({"login_fail", "idp_error"})
 # 계정마다 한 칸(횟수 · 마지막 시각)만 둔다 — 한 사람의 되풀이가 다른 사람의 칸을 밀어내지 못한다.
 DENIED_EVENT = "login_denied"
 MAX_DENIED_ACCOUNTS = MAX_EVENTS
+# 못 읽은 서버의 자가 회복 실패(`access_store.retry_unread`). 들어오지 못하는 사람의 거절마다(60초에
+# 한 번) 생겨 위와 같은 까닭으로 고리에 두지 않고 누계만 센다 — 지금 까닭과 시도 시각은 「S3 명단」
+# 줄이 말하고, 첫 실패는 기동 때의 `access_read` 로 고리에 있다.
+ACCESS_RETRY_FAILED_EVENT = "access_retry_failed"
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
 MAX_REVOKED = 10_000
@@ -120,6 +124,7 @@ class _State:
     event_seq: int = 0
     last_login_claims: tuple[str, ...] = ()
     access_source: AccessSource | None = None
+    access_retry_failures: int = 0
 
 
 _LOCK = threading.Lock()
@@ -395,6 +400,12 @@ def claim_access_retry(moment: int, interval: int) -> bool:
         return True
 
 
+def access_retry_failures() -> int:
+    """기동 뒤 자가 회복 실패 누계 — 고리에 적지 않는다(`ACCESS_RETRY_FAILED_EVENT`)."""
+    with _LOCK:
+        return _STATE.access_retry_failures
+
+
 def keep_diagnostic(record: Mapping[str, str]) -> str:
     """오류 화면(PRG)이 다시 읽을 진단을 10분 둔다. 꺼낼 id 를 돌려준다."""
     now = _now()
@@ -456,9 +467,10 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
     """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
 
     무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다. 명단 밖 로그인
-    (`DENIED_EVENT`)은 고리 대신 계정별 표에 둔다. 둘 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결
-    닫음 · 서명이 통과한 뒤의 실패)을 밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 ·
-    부서는 넘기지 않는다(부르는 쪽 규칙).
+    (`DENIED_EVENT`)은 고리 대신 계정별 표에 두고, 자가 회복 실패(`ACCESS_RETRY_FAILED_EVENT`)는
+    누계만 센다. 셋 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을
+    밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽
+    규칙).
     """
     cleaned = tuple((key, _clean_field(value)) for key, value in fields.items())
     line = f"sso event={_clean_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
@@ -468,6 +480,8 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
         item = SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned, seq=_STATE.event_seq)
         if item.event == DENIED_EVENT:
             _note_denied(item)
+        elif item.event == ACCESS_RETRY_FAILED_EVENT:
+            _STATE.access_retry_failures += 1
         elif is_anonymous(item):
             _STATE.anonymous_events.append(item)
             key = _anonymous_key(item)

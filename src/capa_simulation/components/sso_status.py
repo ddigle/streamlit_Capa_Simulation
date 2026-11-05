@@ -37,6 +37,7 @@ from capa_simulation import alerts
 from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
+from capa_simulation.components import sso_identity
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.io import s3_small
 from capa_simulation.io.container_start_report import (
@@ -88,6 +89,7 @@ ACCESS_PROBLEM_LABELS: dict[str, str] = {
     access_store.KIND_CORRUPT: "파일 깨짐",
     access_store.KIND_UNKNOWN_FORMAT: "모르는 파일 판",
     access_store.KIND_CONFIG: "설정 값 빠짐 · 틀림",
+    access_store.KIND_FILE_GONE: "파일 없음",
 }
 
 ON_CAPTION_LISTED = "통합인증이 켜져 있습니다 — 로그인하고 접속 명단에 있는 사람만 앱에 들어옵니다."
@@ -188,7 +190,8 @@ def access_problem_text(problem: SourceProblem) -> str:
 
 def _write_text(saved_at: int | None, problem: SourceProblem | None) -> str:
     if problem is not None:
-        return f"쓰기: 실패 · {access_problem_text(problem)}"
+        verdict = "결과 모름" if problem.unconfirmed else "실패"
+        return f"쓰기: {verdict} · {access_problem_text(problem)}"
     if saved_at is not None:
         return f"쓰기: 정상 · {_clock_text(saved_at)}"
     return "쓰기: 저장할 때 알게 됨"
@@ -208,6 +211,9 @@ def access_s3_line(cfg: SsoConfig) -> str:
         parts.append(access_problem_text(source.problem))
         if source.attempted_at is not None:
             parts.append(f"시도 {_clock_text(source.attempted_at)}")
+        retries = runtime.access_retry_failures()
+        if retries:
+            parts.append(f"자가 회복 실패 {retries}")
     document = source.document
     if document is None or source.read_at is None:
         parts.append("마지막 읽기 없음 · 관리자만 들어옴")
@@ -368,12 +374,21 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
     ]
 
 
+def _viewer_is_admin(cfg: SsoConfig) -> bool:
+    identity = sso_identity.verified_identity()
+    return identity is not None and access_store.is_admin(cfg, identity.loginid)
+
+
 def _access_read_alert(cfg: SsoConfig) -> None:
-    """상태 알림 `AD-08` — 못 읽은 동안은 관리자만 들어오고, 읽어 둔 뒤의 실패는 지난 명단이다."""
+    """상태 알림 `AD-08` — 못 읽은 동안은 관리자만 들어오고, 읽어 둔 뒤의 실패는 지난 명단이다.
+
+    조치 알림이고 그 자리(「다시 읽기」)가 관리자에게만 있어 관리자 회차에만 세운다. 다른 사람의
+    회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다.
+    """
     source = runtime.access_source()
     problem = None if source is None else source.problem
     unread = access_store.is_unread(cfg)
-    active = problem is not None or unread
+    active = (problem is not None or unread) and _viewer_is_admin(cfg)
     effect = "관리자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
     alerts.state(
         "AD-08",
@@ -394,8 +409,8 @@ def render_sso_status() -> None:
 
     알릴 조건 둘(운영인데 꺼짐 `AD-02` · 서명 인증서 만료 임박 `AD-03`)은 상태 알림이다(알림창 ·
     Alarm — 그리지 않는 회차에도 부른다, 해소). S3 명단을 읽지 못함(`AD-08`)은 그 명단을 쓰는
-    서버에서만 부른다(설정은 재시작 전에 바뀌지 않으니 해소할 것이 없다 — 꺼진 서버의 요소 순번은
-    그대로다). 펼침 안은 판정 줄 · 까닭 캡션이다."""
+    서버에서만 부르고(설정은 재시작 전에 바뀌지 않으니 해소할 것이 없다 — 꺼진 서버의 요소 순번은
+    그대로다) 관리자 회차에만 세운다. 펼침 안은 판정 줄 · 까닭 캡션이다."""
     cfg = runtime.config()
     now = datetime.now(timezone.utc)
     expiring = _expiring_certs(cfg, now)

@@ -7,13 +7,16 @@
 
     python scripts/s3_mock_store.py --port 8607 --env-out ~/s3-dev.env
 
-- **거절**: `--host` 가 루프백이 아니면, `--env-out` 이 git 작업 트리 안이면 종료 코드 2. 객체는
-  메모리에만 있고 끄면 사라진다.
+- **거절**: `--host` 가 루프백이 아니면, `--env-out` 이 git 작업 트리 안이면, `--seed-loginid` 가
+  합성(`demo.`)이 아니면 종료 코드 2. 객체는 메모리에만 있고 끄면 사라진다 — 띄울 때 명단을 심어
+  두려면 `--seed-loginid demo.user`(되풀이 가능).
 - 서명은 받은 요청 그대로 다시 지어 본다(경로 · 서명한 머리 · 본문 지문) — 어긋나면 403
   `SignatureDoesNotMatch`, 모르는 키는 403 `InvalidAccessKeyId`, 다른 버킷은 404 `NoSuchBucket`,
   없는 키는 404 `NoSuchKey` 다. `Content-MD5` 가 있으면 본문과 견준다.
-- 실패 흉내(시험): `force` — 메서드별 강제 응답, `delay_seconds` — 답 늦추기, `omit_etag` — ETag
-  빼기. 받은 요청은 `requests` 에 쌓인다(판정이 S3 에 가지 않는 것을 시험이 본다).
+- 실패 흉내(시험): `force` — 메서드별 강제 응답(저장소 오류 XML), `raw` — 메서드별 강제 응답(본문
+  그대로 — 저장소 앞단의 HTML · 빈 본문), `delay_seconds` — 답 늦추기, `answer_delay` — 일은 마치고
+  답만 늦추기, `omit_etag` — ETag 빼기. 받은 요청은 `requests` 에 쌓인다(판정이 S3 에 가지 않는 것을
+  시험이 본다).
 """
 
 from __future__ import annotations
@@ -39,6 +42,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from capa_simulation.auth import names  # noqa: E402
+from capa_simulation.auth.access import ListDocument, ListEntry, entry_key  # noqa: E402
+from capa_simulation.auth.access_store import render_document  # noqa: E402
 from capa_simulation.auth.config import is_loopback_host  # noqa: E402
 from capa_simulation.io.s3_small import (  # noqa: E402
     ALGORITHM,
@@ -52,6 +57,7 @@ DEFAULT_SECRET_KEY = "demo-secret-key-for-the-mock-store"
 DEFAULT_BUCKET = "Demo_bucket"
 DEFAULT_REGION = "us-east-1"
 REFUSED = 2
+SEED_PREFIX = "demo."
 
 _AUTHORIZATION = re.compile(
     rf"^{ALGORITHM} Credential=(?P<key>[^/]+)/(?P<scope>[^,]+), "
@@ -70,7 +76,9 @@ class MockStore:
     objects: dict[str, bytes] = field(default_factory=dict)
     requests: list[tuple[str, str]] = field(default_factory=list)
     force: dict[str, tuple[int, str]] = field(default_factory=dict)
+    raw: dict[str, tuple[int, bytes]] = field(default_factory=dict)
     delay_seconds: float = 0.0
+    answer_delay: dict[str, float] = field(default_factory=dict)
     omit_etag: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -99,6 +107,9 @@ class _Handler(BaseHTTPRequestHandler):
         etag: str = "",
         length: int | None = None,
     ) -> None:
+        late = self.store.answer_delay.get(self.command, 0.0)
+        if late:
+            time.sleep(late)
         self.send_response(status)
         if etag and not self.store.omit_etag:
             self.send_header("ETag", f'"{etag}"')
@@ -149,6 +160,10 @@ class _Handler(BaseHTTPRequestHandler):
         forced = store.force.get(self.command)
         if forced is not None:
             self._error(*forced)
+            return
+        raw = store.raw.get(self.command)
+        if raw is not None:
+            self._answer(*raw)
             return
         problem = self._signature_problem(body)
         if problem:
@@ -205,6 +220,12 @@ def env_lines(store: MockStore, endpoint: str) -> list[str]:
     return [f"{name}={shlex.quote(value)}" for name, value in values.items()]
 
 
+def seed_body(loginids: list[str]) -> bytes:
+    """합성 사람들을 든 명단 파일 바이트(판 1)."""
+    entries = tuple(ListEntry(loginid) for loginid in sorted(set(loginids)))
+    return render_document(ListDocument(revision=1, entries=entries))
+
+
 def _inside_git_worktree(path: Path) -> bool:
     folder = path.parent if path.parent.exists() else Path.cwd()
     found = subprocess.run(
@@ -228,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=8607)
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
     parser.add_argument("--env-out", type=Path, default=None)
+    parser.add_argument("--seed-loginid", action="append", default=[], help="합성 값(demo.*)만")
     options = parser.parse_args(argv)
     if not is_loopback_host(options.host):
         print("--host 는 루프백만 받습니다.", file=sys.stderr)
@@ -238,11 +260,17 @@ def main(argv: list[str] | None = None) -> int:
         if _inside_git_worktree(env_out):
             print("--env-out 은 git 작업 트리 밖에 둡니다.", file=sys.stderr)
             return REFUSED
+    seeds: list[str] = options.seed_loginid
+    if any(not item.startswith(SEED_PREFIX) or entry_key(item) != item for item in seeds):
+        print(f"--seed-loginid 는 합성 값({SEED_PREFIX}*)만 받습니다.", file=sys.stderr)
+        return REFUSED
     store = MockStore(bucket=options.bucket)
+    if seeds:
+        store.put(names.DEFAULT_ACCESS_OBJECT, seed_body(seeds))
     server, endpoint = start_mock(store, port=options.port)
     if env_out is not None:
         write_env_file(env_out, env_lines(store, endpoint))
-    print(f"가짜 S3: {endpoint} · 버킷 {store.bucket}", flush=True)
+    print(f"가짜 S3: {endpoint} · 버킷 {store.bucket} · 심은 사람 {len(set(seeds))}", flush=True)
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

@@ -12,7 +12,11 @@
 있고 위젯 콜백은 본문보다 먼저 돈다).
 
 알림에는 개수와 까닭만 싣는다 — loginid 는 실제 사람을 가리켜 Alarm 복사 · 리뷰로 나가면 안
-된다(런북 3-3). 저장 실패 · 그 사이 바뀜은 메모리를 바꾸지 않는다.
+된다(런북 3-3). 저장 실패 · 그 사이 바뀜은 메모리를 바꾸지 않는다. 답을 받지 못한 PUT 은 저장소에
+들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다.
+
+붙여 넣은 글이 표면 머리 줄의 `loginid` 칸만 읽고, 그 칸을 찾지 못한 표는 넣지 않는다 — 다른 칸의
+값(날짜 · 넣은 사람)이 명단에 들어가면 그 값을 가진 사람에게 접속이 열린다.
 """
 
 from __future__ import annotations
@@ -43,8 +47,9 @@ ACCESS_LIST_REMOVE_KEY: Final = "admin_area_access_list_remove"
 ADD_DIALOG: Final = "access_list_add"
 ADD_FORM_KEY: Final = "access_list_add"
 ADD_TEXT_KEY: Final = "admin_area_access_list_add_text"
-# 표를 머리 줄째 붙여 넣어도 머리가 사람으로 들어가지 않게.
-HEADER_WORDS: Final = frozenset({"loginid"})
+# 표의 머리 칸 이름. 머리 줄을 찾는 기준이고, 목록의 머리 줄로 들어와도 사람으로 넣지 않는다.
+LOGINID_HEADER: Final = "loginid"
+_CELL_SEPARATORS: Final = ("\t", ",", ";")
 
 NOT_ADMIN_MESSAGE: Final = "관리자만 접속 명단을 고칠 수 있습니다"
 UNREAD_MESSAGE: Final = (
@@ -53,13 +58,20 @@ UNREAD_MESSAGE: Final = (
 CONFLICT_MESSAGE: Final = (
     "그 사이 S3 의 접속 명단이 바뀌어 저장하지 않았습니다 — 「다시 읽기」 뒤 다시 하세요"
 )
+TABLE_REFUSED_MESSAGE: Final = (
+    "칸이 여럿인 표라 넣지 않았습니다 — 머리 줄에 loginid 칸이 있어야 그 칸만 읽습니다"
+)
 ADD_LOCKED_WHY: Final = "접속 명단을 읽은 뒤에 넣을 수 있습니다 — 「다시 읽기」"
 REMOVE_HELP: Final = "고른 사람을 명단에서 뺍니다. 그 사람의 열린 탭은 다음 조작에 닫힙니다."
 
 
 def save_failure_message(failure: S3Failure) -> str:
+    """답을 받은 거절만 「그대로」 라고 쓴다 — 답을 받지 못한 PUT 은 들어갔을 수 있다."""
     problem = access_store.problem_of(failure)
-    return f"S3 에 저장하지 못했습니다 — {access_problem_text(problem)} · 명단은 그대로입니다"
+    reason = access_problem_text(problem)
+    if problem.unconfirmed:
+        return f"S3 에 저장됐는지 알 수 없습니다 — {reason} · 「다시 읽기」 로 확인하세요"
+    return f"S3 에 저장하지 못했습니다 — {reason} · 명단은 그대로입니다"
 
 
 def _save(
@@ -124,6 +136,28 @@ def _reread() -> None:
     )
 
 
+def pasted_entries(text: str) -> tuple[tuple[str, ...], int] | None:
+    """붙여 넣은 글 → (loginid 들, 읽지 못한 수). 어느 칸이 사람인지 모르는 표면 `None`.
+
+    머리 줄에 `loginid` 칸이 있으면 그 칸만 읽는다(탭 · 쉼표 · 세미콜론). 머리 없이 탭이 든 글은
+    표로 보고 받지 않는다. 그 밖은 쉼표 · 세미콜론 · 빈칸 · 줄바꿈으로 나눈 목록이다.
+    """
+    lines = [line for line in text.splitlines() if line.strip()]
+    for separator in _CELL_SEPARATORS:
+        header = [cell.strip().casefold() for cell in (lines[:1] or [""])[0].split(separator)]
+        if len(header) > 1 and LOGINID_HEADER in header:
+            column = header.index(LOGINID_HEADER)
+            rows = [line.split(separator) for line in lines[1:]]
+            keys, unreadable = parse_entries(
+                "\n".join(row[column] for row in rows if column < len(row))
+            )
+            return keys, unreadable + sum(1 for row in rows if column >= len(row))
+    if "\t" in text:
+        return None
+    keys, unreadable = parse_entries(text)
+    return tuple(key for key in keys if key != LOGINID_HEADER), unreadable
+
+
 def _added_message(result: access_store.SaveResult, unreadable: int) -> str:
     parts = [f"접속 명단에 {result.added}명을 넣었습니다"]
     if result.already:
@@ -144,8 +178,11 @@ def _add_dialog() -> None:
     )
     if submit is None:
         return
-    keys, unreadable = parse_entries(submit.text)
-    keys = tuple(key for key in keys if key not in HEADER_WORDS)
+    pasted = pasted_entries(submit.text)
+    if pasted is None:
+        refuse_paste(ADD_FORM_KEY, TABLE_REFUSED_MESSAGE)
+        return
+    keys, unreadable = pasted
     if not keys:
         refuse_paste(ADD_FORM_KEY, f"넣을 loginid 가 없습니다 — 꼴이 아닌 항목 {unreadable}")
         return
@@ -163,12 +200,12 @@ def _add_dialog() -> None:
 
 
 def _when_text(value: str) -> str:
-    """파일의 UTC 시각 → 서버 시각대 글. 읽지 못하면 받은 글 그대로(사람이 고친 파일)."""
+    """파일의 UTC 시각 → 서버 시각대 글. 읽거나 옮기지 못하면 받은 글 그대로(사람이 고친 파일)."""
     try:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
+        return moment.astimezone().strftime("%Y-%m-%d %H:%M")
+    except (ValueError, OverflowError, OSError):
         return value
-    return moment.astimezone().strftime("%Y-%m-%d %H:%M")
 
 
 def people_table(document: ListDocument) -> pd.DataFrame:

@@ -509,7 +509,13 @@ def _check_s3_endpoint(raw: str) -> tuple[str, SsoProblem | None, SsoProblem | N
     if not text:
         return "", SsoProblem(name, "s3_needed"), None
     bad = SsoProblem(name, "s3_bad")
-    if len(text) > MAX_URL_LENGTH or _CONTROL.search(text) or any(ch.isspace() for ch in text):
+    # 비 ASCII 호스트는 `Host` 머리에 실리지 못한다 — punycode 로 적는다.
+    if (
+        len(text) > MAX_URL_LENGTH
+        or not text.isascii()
+        or _CONTROL.search(text)
+        or any(ch.isspace() for ch in text)
+    ):
         return "", bad, None
     try:
         parts = urlsplit(text)
@@ -540,8 +546,8 @@ def _check_s3_name(name: str, raw: str, *, default: str = "") -> tuple[str, SsoP
     return text, None
 
 
-def _check_s3_key(name: str, text: str) -> SsoProblem | None:
-    """키 한 값 — 서명과 머리에 그대로 들어가므로 빈칸 없는 ASCII 만 받는다."""
+def _check_s3_header_value(name: str, text: str) -> SsoProblem | None:
+    """키 · 영역 한 값 — 서명과 머리에 그대로 들어가므로 빈칸 없는 ASCII 만 받는다."""
     if not text:
         return SsoProblem(name, "s3_needed")
     if not text.isascii() or _CONTROL.search(text) or any(ch.isspace() for ch in text):
@@ -568,11 +574,11 @@ def _check_access_s3(
     problems = [
         problem
         for problem in (
-            _check_s3_key(names.ENV_S3_ACCESS_KEY, access_key),
-            _check_s3_key(names.ENV_S3_SECRET_KEY, secret_key),
+            _check_s3_header_value(names.ENV_S3_ACCESS_KEY, access_key),
+            _check_s3_header_value(names.ENV_S3_SECRET_KEY, secret_key),
             endpoint_problem,
             bucket_problem,
-            region_problem,
+            region_problem or _check_s3_header_value(names.ENV_S3_REGION, region),
             object_problem,
         )
         if problem is not None

@@ -11,14 +11,19 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import hashlib
+import ipaddress
 import json
 import os
+import socket
+import ssl
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -26,6 +31,10 @@ from typing import Any
 import pytest
 from alert_marks import active_state, alert_notes, states
 from asgi_driver import http, websocket_talk
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from sso_support import sso_environ, use_config
 from streamlit.testing.v1 import AppTest
 from test_sso_access import (
@@ -391,6 +400,241 @@ def test_the_light_import_does_not_bring_streamlit() -> None:
     assert found.stdout.strip() == "[]"
 
 
+@pytest.fixture()
+def tls_s3(tmp_path: Path) -> Iterator[tuple[MockStore, str, Path]]:
+    """TLS 로 받는 가짜 S3 — (저장소, 주소, 합성 자체서명 인증서 파일)."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "store.example.invalid")])
+    now = dt.datetime.now(dt.timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - dt.timedelta(days=1))
+        .not_valid_after(now + dt.timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+    cert_path = tmp_path / "store-cert.pem"
+    key_path = tmp_path / "store-key.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_path, key_path)
+    store = MockStore()
+    server, endpoint = start_mock(store)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    yield store, endpoint.replace("http://", "https://"), cert_path
+    server.shutdown()
+    server.server_close()
+
+
+def test_the_https_path_goes_round_with_a_trusted_certificate(
+    tls_s3: tuple[MockStore, str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """소켓 겉은 TLS 소켓에서도 같다 — `Connection: close` 답의 본문까지 받는다."""
+    store, endpoint, certificate = tls_s3
+    monkeypatch.setenv("SSL_CERT_FILE", str(certificate))
+    target = target_of(store, endpoint)
+
+    etag = s3_small.put_object(target, OBJECT, file_body(USER))
+
+    found = s3_small.get_object(target, OBJECT)
+    assert found is not None and found.body == file_body(USER) and found.etag == etag
+    assert s3_small.head_object(target, OBJECT) == etag
+
+
+def test_an_untrusted_certificate_is_a_tls_failure(tls_s3: tuple[MockStore, str, Path]) -> None:
+    store, endpoint, _ = tls_s3
+
+    with pytest.raises(S3Failure) as caught:
+        s3_small.get_object(target_of(store, endpoint), OBJECT)
+
+    assert caught.value.kind == s3_small.KIND_TLS
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert store.requests == []
+
+
+@contextmanager
+def drip_store(pieces: list[bytes], interval: float) -> Iterator[S3Target]:
+    """요청을 받으면 `pieces` 를 조금씩 흘리는 저장소 — 소켓 호출마다의 제한은 넘지 않는다."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    stop = threading.Event()
+
+    def serve() -> None:
+        connection, _ = listener.accept()
+        with connection:
+            connection.recv(65536)
+            for piece in pieces:
+                if stop.wait(interval):
+                    return
+                try:
+                    connection.sendall(piece)
+                except OSError:
+                    return
+
+    worker = threading.Thread(target=serve, daemon=True)
+    worker.start()
+    try:
+        yield S3Target(
+            endpoint_url=f"http://127.0.0.1:{listener.getsockname()[1]}",
+            bucket="b",
+            region="us-east-1",
+            access_key="k",
+            secret_key="s",
+        )
+    finally:
+        stop.set()
+        listener.close()
+        worker.join(timeout=5)
+
+
+@pytest.mark.parametrize(
+    "pieces",
+    [
+        [b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n"] + [b"x"] * 200,
+        [b"HTTP/1.1 200 OK\r\n"] + [b"X-Drip: 1\r\n"] * 200,
+        [b"HTTP/1.1 100 Continue\r\n\r\n"] * 200,
+    ],
+    ids=["body", "head", "continue"],
+)
+def test_an_answer_dripping_below_the_read_limit_stops_at_the_deadline(
+    pieces: list[bytes], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재는 것은 요청 전체다 — 5초 안쪽으로 조금씩 흘려도 기동 · 콜백을 묶지 못한다."""
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(s3_small, "REQUEST_DEADLINE_SECONDS", 0.5)
+
+    with drip_store(pieces, 0.05) as target:
+        begun = time.monotonic()
+        with pytest.raises(S3Failure) as caught:
+            s3_small.get_object(target, OBJECT)
+        spent = time.monotonic() - begun
+
+    assert caught.value.kind == s3_small.KIND_TIMEOUT
+    assert spent < 1.5
+
+
+def test_every_address_shares_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """이름이 주소 여럿으로 풀려도 연결 제한이 주소 수만큼 곱해지지 않는다."""
+
+    class Silent:
+        """연결 제한까지 답이 없는 소켓."""
+
+        def __init__(self, *_args: Any) -> None:
+            self.limit = 0.0
+
+        def settimeout(self, value: float) -> None:
+            self.limit = value
+
+        def connect(self, _address: Any) -> None:
+            time.sleep(self.limit)
+            raise TimeoutError
+
+        def close(self) -> None:
+            pass
+
+    address = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 9020))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args, **_kwargs: [address] * 6)
+    monkeypatch.setattr(socket, "socket", Silent)
+    monkeypatch.setattr(s3_small, "CONNECT_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(s3_small, "REQUEST_DEADLINE_SECONDS", 0.5)
+    target = S3Target(
+        endpoint_url="http://store.example.invalid:9020",
+        bucket="b",
+        region="us-east-1",
+        access_key="k",
+        secret_key="s",
+    )
+
+    begun = time.monotonic()
+    with pytest.raises(S3Failure) as caught:
+        s3_small.get_object(target, OBJECT)
+
+    assert caught.value.kind == s3_small.KIND_TIMEOUT
+    assert time.monotonic() - begun < 0.9
+
+
+def test_a_name_that_took_past_the_deadline_goes_no_further(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """이름 풀기 자체는 끊지 못해도(표준 라이브러리에 제한이 없다) 그 뒤로 더 쓰지 않는다."""
+    store, endpoint = mock_s3
+    real = socket.getaddrinfo
+
+    def slow(*args: Any, **kwargs: Any) -> Any:
+        time.sleep(0.3)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", slow)
+    monkeypatch.setattr(s3_small, "REQUEST_DEADLINE_SECONDS", 0.2)
+
+    with pytest.raises(S3Failure) as caught:
+        s3_small.get_object(target_of(store, endpoint), OBJECT)
+
+    assert caught.value.kind == s3_small.KIND_TIMEOUT
+    assert store.requests == []
+
+
+def test_a_failure_carries_no_chain_back_to_the_signed_header() -> None:
+    """머리 글이 예외 사슬에 남지 않는다 — 인코딩 오류의 글에는 키 · 서명 자리가 그대로 있다."""
+    target = S3Target(
+        endpoint_url="http://127.0.0.1:9",
+        bucket="b",
+        region="서울",
+        access_key="DEMO-ACCESS-KEY-0001",
+        secret_key="s",
+    )
+
+    with pytest.raises(S3Failure) as caught:
+        s3_small.get_object(target, OBJECT)
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_a_broken_file_carries_no_chain_back_to_its_text() -> None:
+    """JSON 오류는 문서 전체(`doc` — 실제 loginid)를 든다 — 사슬에 남기지 않는다."""
+    with pytest.raises(S3Failure) as caught:
+        access_store.parse_document(b'{"users": ["demo.user"')
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        (404, b"<html><body>Not Found</body></html>"),
+        (404, b""),
+        (404, b"<?xml version='1.0'?><Error><Code>NoSuchThing</Code></Error>"),
+    ],
+    ids=["html", "empty", "other-code"],
+)
+def test_a_404_that_does_not_say_no_such_key_is_a_failure(
+    answer: tuple[int, bytes], mock_s3: tuple[MockStore, str]
+) -> None:
+    """저장소 앞단의 404 는 「파일 없음」 이 아니다."""
+    store, endpoint = mock_s3
+    store.raw["GET"] = answer
+
+    with pytest.raises(S3Failure) as caught:
+        s3_small.get_object(target_of(store, endpoint), OBJECT)
+
+    assert (caught.value.kind, caught.value.status) == (s3_small.KIND_OTHER, 404)
+
+
 # --- 파일 꼴 -------------------------------------------------------------------------------------
 
 
@@ -438,6 +682,16 @@ def test_a_broken_file_is_a_failure_with_no_value_in_it(body: bytes, kind: str) 
 
     assert caught.value.kind == kind
     assert str(caught.value) == kind
+
+
+def test_a_number_too_long_to_read_is_a_broken_file() -> None:
+    """`json.loads` 가 `JSONDecodeError` 아닌 `ValueError` 를 내는 값 — 정수 자릿수 상한."""
+    body = b'{"format": 1, "revision": ' + b"1" * 5000 + b', "users": []}'
+
+    with pytest.raises(S3Failure) as caught:
+        access_store.parse_document(body)
+
+    assert caught.value.kind == access_store.KIND_CORRUPT
 
 
 def test_entries_go_through_the_same_shape_check() -> None:
@@ -579,6 +833,7 @@ def test_a_missing_piece_is_a_notice_and_only_admins_get_in(
         "http://store.example.invalid?x=1",
         "http://store.example.invalid:port",
         "store.example.invalid",
+        "http://저장소.example.invalid",
     ],
 )
 def test_a_bad_endpoint_is_a_notice_without_its_value(value: str) -> None:
@@ -646,6 +901,24 @@ def test_region_and_object_have_defaults_and_can_be_changed() -> None:
     assert changed.access_s3 is not None and changed.access_s3.region == "ap-demo-1"
     assert changed.access_object_key == "demo/list.json"
     assert bad.access_s3 is None
+
+
+@pytest.mark.parametrize("region", ["서울", "ap demo 1"])
+def test_a_region_that_cannot_go_in_a_header_is_a_notice_without_its_value(region: str) -> None:
+    """영역은 서명 머리에 그대로 들어간다 — 요청도 나가기 전에 「주소에 닿지 못함」 이 되지 않게."""
+    cfg = load_config(
+        {
+            names.ENV_S3_ACCESS_KEY: "k",
+            names.ENV_S3_SECRET_KEY: "s",
+            names.ENV_S3_ENDPOINT: "http://127.0.0.1:8607",
+            names.ENV_S3_BUCKET: "b",
+            names.ENV_S3_REGION: region,
+        }
+    )
+
+    assert cfg.access_s3_requested and cfg.access_s3 is None
+    assert _notice_codes(cfg, names.ENV_S3_REGION) == ["s3_bad"]
+    assert region not in repr(cfg)
 
 
 def test_the_keys_leave_the_environment_and_every_repr(mock_s3: tuple[MockStore, str]) -> None:
@@ -823,6 +1096,106 @@ def test_after_a_good_read_a_blocked_s3_does_not_stop_the_list(
     assert not access_store.is_unread(cfg)
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        (404, b"<?xml version='1.0'?><Error><Code>NoSuchKey</Code></Error>"),
+        (404, b"<html><body>Not Found</body></html>"),
+        (404, b""),
+    ],
+    ids=["no-such-key", "html", "empty"],
+)
+def test_a_404_after_a_good_read_does_not_empty_the_list(
+    answer: tuple[int, bytes], mock_s3: tuple[MockStore, str]
+) -> None:
+    """읽어 둔 파일이 404 로 보여도 메모리 명단을 지우지 않는다 — 그것이 마지막 사본일 수 있다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    store.raw["GET"] = answer
+    identity = identity_of(cfg, ADMIN)
+
+    problem = access_store.reread(cfg, identity)
+
+    assert problem is not None and problem.status == 404
+    assert problem_of(cfg, USER) is None, "메모리 명단으로 판정이 이어진다"
+    source = runtime.access_source()
+    assert source is not None and source.document is not None
+    assert source.document.revision == 1
+    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · ")
+
+    store.raw.clear()
+    assert access_store.reread(cfg, identity) is None
+    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 정상 · ")
+
+
+def test_a_file_really_deleted_after_a_good_read_says_so_and_keeps_the_list(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    del store.objects[OBJECT]
+
+    problem = access_store.reread(cfg, identity_of(cfg, ADMIN))
+
+    assert problem is not None and problem.kind == access_store.KIND_FILE_GONE
+    assert problem_of(cfg, USER) is None
+    assert "파일 없음(HTTP 404 · NoSuchKey)" in sso_status.access_s3_line(cfg)
+
+
+def test_a_file_saved_after_starting_empty_is_kept_the_same_way(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint)
+    identity = identity_of(cfg, ADMIN)
+    access_store.save_changes(cfg, identity, add=[USER])
+    del store.objects[OBJECT]
+
+    assert access_store.reread(cfg, identity) is not None
+
+    assert problem_of(cfg, USER) is None
+
+
+def test_reading_again_with_still_no_file_stays_an_empty_list(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """받아 둔 파일이 없었으면 404 는 그대로 빈 명단이다 — 첫 파일을 올리기 전의 서버."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint)
+
+    assert access_store.reread(cfg, identity_of(cfg, ADMIN)) is None
+
+    source = runtime.access_source()
+    assert source is not None and source.problem is None
+    assert not access_store.is_unread(cfg)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [(404, b"<html><body>Not Found</body></html>"), (404, b"")],
+    ids=["html", "empty"],
+)
+def test_a_404_from_the_front_at_start_is_unread_and_heals_by_itself(
+    answer: tuple[int, bytes], mock_s3: tuple[MockStore, str]
+) -> None:
+    """기동 때 앞단의 404 — 정상 · 사용자 0 으로 서지 않고 「못 읽음」 이라 스스로 회복한다."""
+    store, endpoint = mock_s3
+    store.put(OBJECT, file_body(USER))
+    store.raw["GET"] = answer
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+
+    assert access_store.is_unread(cfg)
+    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · 그 밖의 응답(HTTP 404")
+    assert problem_of(cfg, USER) is IdentityProblem.DENIED
+
+    store.raw.clear()
+    rewind_attempt(access_store.RETRY_SECONDS)
+
+    assert has_live_session(cfg, sign_in(gated_app(), {}, USER))
+    assert not access_store.is_unread(cfg)
+
+
 def test_a_server_with_sso_off_does_not_go_to_s3(mock_s3: tuple[MockStore, str]) -> None:
     store, endpoint = mock_s3
     runtime.reset()
@@ -894,6 +1267,51 @@ def test_the_retry_runs_at_most_once_a_minute(mock_s3: tuple[MockStore, str]) ->
 
     assert error_code_of(sign_in(app, {}, OTHER)) == "not_on_list"
     assert requests_named(store, "GET") == 2
+
+
+def test_retries_of_someone_denied_do_not_push_out_the_audit_ring(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """못 읽은 동안 거절이 되풀이돼도 유일한 감사 창이 자가 회복 실패로 차지 않는다."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (503, "SlowDown")
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+    runtime.record_event("login_ok", loginid=ADMIN)
+    app = gated_app()
+
+    for _ in range(3):
+        rewind_attempt(access_store.RETRY_SECONDS)
+        assert error_code_of(sign_in(app, {}, USER)) == "not_on_list"
+    begun = int(time.time())
+    for step in range(runtime.MAX_EVENTS + 10):
+        access_store.retry_unread(cfg, now=begun + (step + 1) * access_store.RETRY_SECONDS)
+
+    assert requests_named(store, "GET") == 1 + 3 + runtime.MAX_EVENTS + 10
+    assert events_named("login_ok"), "앞선 사건이 남는다"
+    assert len(events_named("access_read")) == 1, "기동 때의 한 줄만"
+    assert f"자가 회복 실패 {3 + runtime.MAX_EVENTS + 10}" in sso_status.access_s3_line(cfg)
+
+
+def test_reading_again_by_hand_and_a_good_retry_stay_in_the_ring(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    store.force["GET"] = (503, "SlowDown")
+    store.put(OBJECT, file_body(USER))
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+
+    assert access_store.reread(cfg, identity_of(cfg, ADMIN)) is not None
+    assert len(events_named("access_read")) == 2, "관리자의 다시 읽기는 고리에 남는다"
+
+    store.force.clear()
+    rewind_attempt(access_store.RETRY_SECONDS)
+    access_store.retry_unread(cfg)
+
+    assert not access_store.is_unread(cfg)
+    assert events_named("access_read")[0].value("users") == "1"
+    assert "자가 회복 실패" not in sso_status.access_s3_line(cfg)
 
 
 def test_the_retry_does_not_run_on_the_event_loop(
@@ -1058,6 +1476,108 @@ def test_a_timed_out_put_keeps_the_memory_as_it_was(
 
     assert caught.value.kind == s3_small.KIND_TIMEOUT
     assert problem_of(cfg, USER) is IdentityProblem.DENIED
+
+
+def test_a_put_with_no_answer_is_unconfirmed_and_a_refused_one_is_not(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """답을 받지 못한 PUT 은 저장소에 들어갔는지 모른다 — 거절된 PUT 과 가른다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    identity = identity_of(cfg, ADMIN)
+    store.answer_delay["PUT"] = 1.0
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
+
+    with pytest.raises(access_store.SaveUnconfirmedError) as caught:
+        access_store.save_changes(cfg, identity, add=[OTHER])
+
+    assert caught.value.kind == s3_small.KIND_TIMEOUT
+    assert OTHER in store.objects[OBJECT].decode(), "저장소에는 들어갔다"
+    assert problem_of(cfg, OTHER) is IdentityProblem.DENIED, "메모리는 그대로다"
+    assert "쓰기: 결과 모름 · 시간 초과" in sso_status.access_s3_line(cfg)
+
+    store.answer_delay.clear()
+    with pytest.raises(access_store.StoreConflictError):
+        access_store.save_changes(cfg, identity, add=[GONE])
+    assert access_store.reread(cfg, identity) is None
+    assert problem_of(cfg, OTHER) is None, "다시 읽으면 들어간 것이 보인다"
+    assert "결과 모름" not in sso_status.access_s3_line(cfg)
+
+    store.force["PUT"] = (403, "AccessDenied")
+    with pytest.raises(S3Failure) as refused:
+        access_store.save_changes(cfg, identity, add=[GONE])
+    assert not isinstance(refused.value, access_store.SaveUnconfirmedError)
+    assert "쓰기: 실패 · 인증 거절" in sso_status.access_s3_line(cfg)
+
+
+def test_a_check_that_timed_out_before_the_put_left_the_file_alone(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 전 대조에서 끊겼으면 PUT 은 나가지 않았다 — 「모른다」 가 아니다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    identity = identity_of(cfg, ADMIN)
+    store.answer_delay["HEAD"] = 1.0
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
+
+    with pytest.raises(S3Failure) as caught:
+        access_store.save_changes(cfg, identity, add=[OTHER])
+
+    assert caught.value.kind == s3_small.KIND_TIMEOUT
+    assert not isinstance(caught.value, access_store.SaveUnconfirmedError)
+    assert requests_named(store, "PUT") == 0
+
+
+def test_a_good_save_clears_the_read_failure(mock_s3: tuple[MockStore, str]) -> None:
+    """방금 쓴 명단인데 「읽지 못했다 · 지난 명단」 이 남지 않는다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    identity = identity_of(cfg, ADMIN)
+    store.force["GET"] = (503, "SlowDown")
+    assert access_store.reread(cfg, identity) is not None
+    store.force.clear()
+
+    access_store.save_changes(cfg, identity, add=[OTHER])
+
+    source = runtime.access_source()
+    assert source is not None and source.problem is None
+    line = sso_status.access_s3_line(cfg)
+    assert line.startswith("S3 명단: 정상 · 마지막 읽기 ")
+    assert "판 2 · 쓰기: 정상" in line
+
+
+def test_a_failed_save_leaves_the_read_failure_where_it_was(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    identity = identity_of(cfg, ADMIN)
+    store.force["GET"] = (503, "SlowDown")
+    access_store.reread(cfg, identity)
+    store.force["PUT"] = (403, "AccessDenied")
+
+    with pytest.raises(S3Failure):
+        access_store.save_changes(cfg, identity, add=[OTHER])
+
+    source = runtime.access_source()
+    assert source is not None and source.problem is not None
+    assert source.problem.status == 503
+
+
+def test_a_number_too_long_on_the_check_before_saving_is_a_failure_not_a_crash(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """ETag 를 주지 않는 저장소 — 저장 전 대조가 본문을 읽는 길."""
+    store, endpoint = mock_s3
+    store.omit_etag = True
+    cfg = started(store, endpoint, USER)
+    store.put(OBJECT, b'{"format": 1, "revision": ' + b"1" * 5000 + b', "users": []}')
+
+    with pytest.raises(S3Failure) as caught:
+        access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[OTHER])
+
+    assert caught.value.kind == access_store.KIND_CORRUPT
+    assert problem_of(cfg, OTHER) is IdentityProblem.DENIED
 
 
 def test_a_file_changed_elsewhere_is_not_overwritten(mock_s3: tuple[MockStore, str]) -> None:
@@ -1396,7 +1916,7 @@ def test_the_paste_window_adds_people(
     app = _button(app, "admin_area_access_list_open_add").click().run()
     assert any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area)
     app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(
-        f"loginid\n{OTHER}\t{USER}\n bad\\one \n{GONE}"
+        f"loginid\n{OTHER}\n{USER}\n bad\\one \n{GONE}"
     ).run()
     app = next(item for item in app.button if item.label == "명단에 넣기").click().run()
 
@@ -1441,6 +1961,172 @@ def test_a_failed_save_in_the_window_tells_why_and_keeps_the_memory(
     assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
     assert "명단은 그대로입니다" in _flash_text(app)
     assert problem_of(cfg, USER) is IdentityProblem.DENIED
+
+
+def test_a_put_with_no_answer_tells_the_admin_to_read_again(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app = _admin_app(cfg, monkeypatch)
+    store.answer_delay["PUT"] = 1.0
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
+    app = _button(app, "admin_area_access_list_open_add").click().run()
+    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(OTHER).run()
+
+    app = next(item for item in app.button if item.label == "명단에 넣기").click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    text = _flash_text(app)
+    assert "저장됐는지 알 수 없습니다" in text and "시간 초과" in text and "다시 읽기" in text
+    assert "그대로입니다" not in text
+    assert_absent(text, OTHER)
+
+
+@pytest.mark.parametrize(
+    "kind", [s3_small.KIND_TIMEOUT, s3_small.KIND_UNREACHABLE, s3_small.KIND_TLS]
+)
+def test_every_failure_without_an_answer_is_unconfirmed(
+    kind: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+
+    def no_answer(*_args: Any, **_kwargs: Any) -> str:
+        raise S3Failure(kind)
+
+    monkeypatch.setattr(access_store, "put_object", no_answer)
+
+    with pytest.raises(access_store.SaveUnconfirmedError) as caught:
+        access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[OTHER])
+
+    assert "저장됐는지 알 수 없습니다" in access_list_admin.save_failure_message(caught.value)
+
+
+def test_a_file_too_big_to_send_is_a_plain_failure(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """보내기 전에 멈춘 것 — 저장소는 그대로다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    monkeypatch.setattr(s3_small, "MAX_OBJECT_BYTES", 8)
+
+    with pytest.raises(S3Failure) as caught:
+        access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[OTHER])
+
+    assert caught.value.kind == s3_small.KIND_TOO_LARGE
+    assert "명단은 그대로입니다" in access_list_admin.save_failure_message(caught.value)
+
+
+def _paste_and_apply(app: AppTest, text: str) -> AppTest:
+    app = _button(app, "admin_area_access_list_open_add").click().run()
+    app.text_area(key=access_list_admin.ADD_TEXT_KEY).set_value(text).run()
+    return next(item for item in app.button if item.label == "명단에 넣기").click().run()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"loginid\t넣은 때\t넣은 사람\n{OTHER}\t11-05 18:15\t{ADMIN}\n{GONE}\t2026-11-05\t{ADMIN}",
+        f"넣은 때\tLoginID\n2026-11-05\t{OTHER}\n2026-11-05\t{GONE}",
+        f"loginid,넣은 때,넣은 사람\n{OTHER},2026-11-05 18:15,{ADMIN}\n{GONE},2026-11-05,{ADMIN}",
+    ],
+    ids=["tab", "column-moved", "comma"],
+)
+def test_a_pasted_table_adds_only_its_loginid_column(
+    text: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 칸의 값이 명단에 들어가면 그 값을 가진 사람에게 접속이 열린다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint)
+    app = _admin_app(cfg, monkeypatch)
+
+    app = _paste_and_apply(app, text)
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    saved = json.loads(store.objects[OBJECT])
+    assert sorted(item["loginid"] for item in saved["users"]) == [GONE, OTHER]
+    assert "2명을 넣었습니다" in _flash_text(app)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [f"{OTHER}\t2026-11-05\t{USER}", f"loginid\n{OTHER}\t{USER}"],
+    ids=["no-header", "header-without-cells"],
+)
+def test_a_table_without_a_loginid_column_is_refused(
+    text: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """어느 칸이 사람인지 모르면 넣지 않고 까닭을 알린다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint)
+    app = _admin_app(cfg, monkeypatch)
+
+    app = _paste_and_apply(app, text)
+
+    assert OBJECT not in store.objects
+    assert problem_of(cfg, OTHER) is IdentityProblem.DENIED
+    assert any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area), "창이 남는다"
+    assert "loginid 칸" in _flash_text(app)
+    assert_absent(_flash_text(app), OTHER, USER)
+
+
+def test_a_list_with_separators_still_reads_every_entry() -> None:
+    assert access_list_admin.pasted_entries(f"loginid\n{OTHER}, {USER};{GONE} bad\\one") == (
+        (OTHER, USER, GONE),
+        1,
+    )
+
+
+def test_a_short_table_row_is_counted_as_unreadable() -> None:
+    assert access_list_admin.pasted_entries(
+        f"넣은 때\tloginid\n2026-11-05\n2026-11-05\t{OTHER}"
+    ) == (
+        (OTHER,),
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0001-01-01T00:00:00+14:00",
+        "9999-12-31T23:59:59-14:00",
+    ],
+)
+def test_a_time_past_the_calendar_comes_back_as_it_was(value: str) -> None:
+    assert access_list_admin._when_text(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0001-01-01T00:00:00",
+        "0001-01-01T00:00:00+14:00",
+        "9999-12-31T23:59:59-14:00",
+        "9999-12-31T23:59:59Z",
+    ],
+)
+def test_a_hand_written_time_at_the_edge_does_not_stop_the_admin_screen(
+    value: str, mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    store.put(
+        OBJECT,
+        json.dumps(
+            {
+                "format": 1,
+                "revision": 1,
+                "users": [{"loginid": USER, "added_at": value, "added_by": ADMIN}],
+            }
+        ).encode(),
+    )
+    cfg = started(store, endpoint)
+
+    app = _admin_app(cfg, monkeypatch)
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert app.dataframe[0].value["loginid"].tolist() == [USER]
 
 
 def test_removing_from_the_screen(
@@ -1557,6 +2243,48 @@ def test_unread_locks_adding_and_warns_on_the_admin_area(
     status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
     assert active_state(status, "AD-08") is None
     assert [item["active"] for item in states(status, "AD-08")] == [False]
+
+
+def test_the_read_alert_goes_only_to_those_who_can_act(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「다시 읽기」 자리가 없는 사람에게 그 단추를 가리키는 조치 알림을 내지 않는다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    store.force["GET"] = (503, "SlowDown")
+    access_store.reread(cfg, identity_of(cfg, ADMIN))
+
+    _as_person(cfg, USER, monkeypatch)
+    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+
+    assert not list(status.exception)
+    assert active_state(status, "AD-08") is None
+    assert [item["active"] for item in states(status, "AD-08")] == [False]
+    captions = "\n".join(str(item.value) for item in status.caption)
+    assert "S3 명단: 실패 · 그 밖의 응답(HTTP 503 · SlowDown)" in captions, "점검 줄은 그대로다"
+
+    _as_person(cfg, ADMIN, monkeypatch)
+    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+
+    note = active_state(status, "AD-08")
+    assert note is not None and "지난 명단으로 판정합니다" in note["short"]
+
+
+def test_the_read_alert_is_gone_after_a_good_save(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    identity = identity_of(cfg, ADMIN)
+    store.force["GET"] = (503, "SlowDown")
+    access_store.reread(cfg, identity)
+    store.force.clear()
+    access_store.save_changes(cfg, identity, add=[OTHER])
+
+    _as_person(cfg, ADMIN, monkeypatch)
+    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+
+    assert active_state(status, "AD-08") is None
 
 
 # --- 점검 줄 -------------------------------------------------------------------------------------
@@ -1728,6 +2456,25 @@ def test_the_mock_store_refuses_an_env_file_inside_the_tree(
 
     assert s3_mock_store.main(["--env-out", str(inside)]) == s3_mock_store.REFUSED
     assert not inside.exists()
+
+
+def test_the_mock_store_refuses_a_seed_that_is_not_synthetic(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = s3_mock_store.main(["--port", "0", "--seed-loginid", "real.person"])
+
+    assert code == s3_mock_store.REFUSED
+    assert "demo." in capsys.readouterr().err
+
+
+def test_a_seeded_file_is_read_as_the_list(mock_s3: tuple[MockStore, str]) -> None:
+    store, endpoint = mock_s3
+    store.put(OBJECT, s3_mock_store.seed_body([USER, OTHER]))
+
+    cfg = started(store, endpoint)
+
+    assert problem_of(cfg, USER) is None and problem_of(cfg, OTHER) is None
+    assert not access_store.is_unread(cfg)
 
 
 def test_the_mock_store_gives_env_lines_the_config_accepts() -> None:
