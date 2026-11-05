@@ -27,6 +27,7 @@ from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
     CONFIRM_DELETE_BUTTON_KEY,
+    GRID_DETAIL_KEY,
     SELECTION_KEY,
     UNDO_DELETE_BUTTON_KEY,
 )
@@ -174,12 +175,30 @@ def test_deleting_loaded_units_takes_their_downtime_and_undo_brings_both_back(
     table = last(grid, emg.GRID_KEY)
     assert {row["id"]: row.get("tag") for row in table["rows"]} == dict.fromkeys(ids, "deleted")
     toast = table["toast"]
-    assert toast["text"].startswith(f"{len(ids)}대를 지울 목록에 넣었습니다")
+    assert toast["text"] == f"{len(ids):,}대 지울 목록에 넣음"
     assert isinstance(toast["undo"], str) and toast["undo"]
 
     send_ops(app, grid, {"op": "undo", "step": toast["undo"]})
     assert _machines(app) == sorted(seed.machines)
     assert len(_downtime_machines(app)) == seed.downtime_count
+
+
+def test_the_detail_delete_toast_is_one_value_line_with_its_undo(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """호기 상세 「이 호기 지우기」 뒤 칸 머리 글은 값 한 줄과 「되돌리기」 다 — 저장해야 지워진다 ·
+    모든 설비 시나리오에서 빠진다는 말은 단추 풍선 · Guide 다(2026-11-05 사용자 답)."""
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    name = sorted(seed.building_machines)[0]
+    app.session_state[GRID_DETAIL_KEY] = f"s:{name}"
+    app.run()
+
+    send_ops(app, grid, {"op": "delete", "ids": [f"s:{name}"]}, key=emg.side_key("detail"))
+
+    toast = last(grid, emg.side_key("detail"))["toast"]
+    assert toast["text"] == "1대 지울 목록에 넣음"
+    assert isinstance(toast["undo"], str) and toast["undo"]
 
 
 def test_a_deletion_saves_without_orphaned_downtime(tmp_path: Path, grid: Calls) -> None:

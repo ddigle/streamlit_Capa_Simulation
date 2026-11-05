@@ -1182,13 +1182,6 @@ textarea.emg-ed {
   justify-content: flex-end;
 }
 
-.emg-checkline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
 .emg-hint {
   margin: 0;
   font-size: 12px;

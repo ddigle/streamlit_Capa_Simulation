@@ -586,7 +586,7 @@ def test_side_mounts_carry_their_own_ack_and_toast() -> None:
     saved = _saved()
     view = _view(_copy(saved), saved)
     ack = {"mount": "m-side", "seq": 4}
-    toast = {"id": 2, "text": "1대를 지울 목록에 넣었습니다", "undo": "m-side#4"}
+    toast = {"id": 2, "text": "1대 지울 목록에 넣음", "undo": "m-side#4"}
     for data in (
         eg.detail_data(view, view.index.ids[0], ack=ack, toast=toast, undo_top="m-side#4"),
         eg.changes_data(view, ack=ack, toast=toast, undo_top="m-side#4"),

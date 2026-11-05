@@ -291,13 +291,13 @@ function resolvePicks(picks, values) {
 function adoptDraft(local, server) {
   if (!server || !Array.isArray(server.values)) return local
   if (!local || Number(server.seq) > Number(local.seq)) {
-    return { seq: Number(server.seq) || 0, values: server.values.slice(), propagate: Boolean(server.propagate) }
+    return { seq: Number(server.seq) || 0, values: server.values.slice() }
   }
   return local
 }
 
 function bumpDraft(draft, serverSeq) {
-  return { seq: Math.max(Number(draft.seq) || 0, Number(serverSeq) || 0) + 1, values: draft.values.slice(), propagate: draft.propagate }
+  return { seq: Math.max(Number(draft.seq) || 0, Number(serverSeq) || 0) + 1, values: draft.values.slice() }
 }
 
 // 체크 상자 한 칸 — 판정(파이썬)이 이 초안 번호의 것이고 그 칸을 그 뒤에 고치지 않았으면 그 판정, 아니면 칸이
@@ -367,6 +367,8 @@ function popoverShift(left, width, viewport, margin) {
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
 // 표 밑 「⌨ 키보드 조작」 표지의 풍선.
 const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기'
+// 지우기 단추 풍선 — 저장본 호기를 지우면 어떻게 되나(누르기 전에 보이게, 설계 규칙 UI-NTF-09). 지운 뒤 칸 머리 글은 값 한 줄이다.
+const DELETE_TIP = '리비전을 저장하면 모든 설비 시나리오에서 지워집니다 — 이 시나리오에서만 빼려면 정지·반출/이설일정을 적습니다'
 const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
@@ -1412,7 +1414,7 @@ function buildSelection(S, bar) {
     refocusTable(S, rows[0].id)
   })
   remove.disabled = deletable.length === 0
-  if (lock) remove.title = lock
+  remove.title = lock || (rows.some((row) => row.tag !== 'new') ? DELETE_TIP : '')
   bar.appendChild(remove)
   bar.appendChild(button('emg-btn is-small is-ghost', '선택 풀기', () => {
     const first = rows[0].id
@@ -2096,7 +2098,7 @@ function drawDetail(S, root, data) {
   } else {
     const remove = button('emg-btn is-danger', '이 호기 지우기', () => sendOnce(S, { op: 'delete', ids: [unit.id] }, []))
     remove.disabled = !unit.deletable
-    if (unit.deleteLock) remove.title = unit.deleteLock
+    remove.title = unit.deleteLock || (unit.tag === 'new' ? '' : DELETE_TIP)
     actions.appendChild(remove)
     const copy = button('emg-btn', '이 호기로 새 호기 만들기', () => S.setTrigger('copy', { id: unit.id }))
     copy.disabled = Boolean(data.newRowsLocked)
@@ -2240,30 +2242,16 @@ function drawNew(S, root, data) {
     root.appendChild(box)
   }
   const foot = el('div', 'emg-side-actions emg-new-foot')
-  const spread = el('label', 'emg-checkline')
-  const box = el('input')
-  box.type = 'checkbox'
-  box.dataset.fk = 'propagate'
-  box.checked = Boolean(S.nd.propagate)
-  box.addEventListener('change', () => {
-    S.nd.propagate = box.checked
-    commitDraft(S)
-    drawSide(S.host, S, S.data)
-  })
-  spread.appendChild(box)
-  spread.appendChild(el('span', null, '다른 설비 시나리오에도 같은 일정으로 넣기'))
-  foot.appendChild(spread)
-  if (S.nd.propagate && data.propagateWarning) foot.appendChild(el('div', 'emg-field-warn', data.propagateWarning))
   const buttons = el('div', 'emg-row-buttons')
   const reset = button('emg-btn', '양식 비우기', () => {
     const blank = Array.isArray(data.blank) ? data.blank : S.nd.values.map(() => '')
-    S.nd = { seq: S.nd.seq, values: blank.slice(), propagate: data.propagateDefault !== false }
+    S.nd = { seq: S.nd.seq, values: blank.slice() }
     S.ndTouched.clear()
     S.ndDirty.clear()
     commitDraft(S)
     drawSide(S.host, S, S.data)
   })
-  // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩·함께 넣기 체크도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
+  // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
   reset.dataset.fk = 'reset'
   buttons.appendChild(reset)
   const add = button('emg-btn is-primary', '호기 추가', () => {
@@ -2272,7 +2260,7 @@ function drawNew(S, root, data) {
       drawSide(S.host, S, S.data)
       return
     }
-    enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) }, [])
+    enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice() }, [])
     send(S)
   })
   // 친 글이 보낸 초안과 다르면(아직 확정 전) 판정은 옛 것이다 — 필수 칸이 찼는지만 보고 켠다(누르면 칸이 먼저 확정되고
@@ -2292,7 +2280,7 @@ function drawNew(S, root, data) {
 function commitDraft(S) {
   S.nd = bumpDraft(S.nd, (S.data && S.data.draft && S.data.draft.seq) || 0)
   S.ndSent = S.nd.values.slice()
-  if (S.setState) S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) })
+  if (S.setState) S.setState('draft', { seq: S.nd.seq, values: S.nd.values.slice() })
 }
 
 function copyRow(S) {
@@ -2310,7 +2298,7 @@ function copyRow(S) {
   go.disabled = !S.copyQuery.trim()
   const fire = () => {
     if (!S.copyQuery.trim()) return
-    S.setTrigger('copy', { query: S.copyQuery.trim(), draft: { seq: S.nd.seq, values: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) } })
+    S.setTrigger('copy', { query: S.copyQuery.trim(), draft: { seq: S.nd.seq, values: S.nd.values.slice() } })
   }
   input.addEventListener('input', () => {
     S.copyQuery = input.value

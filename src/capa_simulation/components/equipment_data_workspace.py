@@ -203,14 +203,8 @@ GRID_MEMO_KEY = "equipment_grid_memo_v1"
 # 거른다.
 GRID_LOADED_KEY = "equipment_grid_loaded_v1"
 GRID_DETAIL_KEY = "equipment_grid_detail_v1"
-# 오른쪽 「새 호기」 칸(개편 단계 C)에서 넣은 호기마다 고른 「다른 설비 시나리오에도 같은
-# 일정으로 넣기」 {지금 이름 → bool}(개편 명세 13장 D8). 저장이 이것으로
-# `EquipmentSaveRequest.propagate_units` 를 만든다 — 그 칸에서 넣지 않은 새 호기(표 붙여넣기·
-# 엑셀·CSV·Space)는 늘 넣는다. 새 호기 이름을 바꾸면 따라간다(`follow_unit_renames`).
-# 편집본과 함께 산다.
-NEW_UNIT_PROPAGATE_KEY = "equipment_new_unit_propagate_v1"
-# 「새 호기」 칸의 초안 {"seq": 번호, "values": 39칸 글, "propagate": bool} — 저장해도 남고(다음
-# 호기를 이어 넣는다) 「호기 추가」 뒤에는 공정소분류·동·층만 남긴다. 편집본과 따로 산다.
+# 「새 호기」 칸의 초안 {"seq": 번호, "values": 39칸 글} — 저장해도 남고(다음 호기를 이어 넣는다)
+# 「호기 추가」 뒤에는 공정소분류·동·층만 남긴다. 편집본과 따로 산다.
 NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
@@ -218,7 +212,6 @@ _GRID_SESSION_KEYS = (
     GRID_TOAST_KEY,
     GRID_TOAST_SHOWN_KEY,
     GRID_MEMO_KEY,
-    NEW_UNIT_PROPAGATE_KEY,
 )
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
@@ -901,76 +894,6 @@ def grid_undo_steps() -> tuple[Any, ...]:
     return undo_from_state(st.session_state.get(GRID_UNDO_KEY))
 
 
-def new_unit_propagation() -> dict[str, bool]:
-    """「새 호기」 칸에서 넣은 호기마다 고른 함께 넣기(지금 이름 → bool)."""
-    value = st.session_state.get(NEW_UNIT_PROPAGATE_KEY)
-    return (
-        {str(name): flag for name, flag in value.items() if isinstance(flag, bool)}
-        if isinstance(value, dict)
-        else {}
-    )
-
-
-def remember_new_unit_propagation(name: str, propagate: bool) -> None:
-    """「호기 추가」 가 그 호기의 함께 넣기를 적는다(저장 때 그 호기는 이 고름을 따른다)."""
-    choices = new_unit_propagation()
-    choices[name] = propagate
-    st.session_state[NEW_UNIT_PROPAGATE_KEY] = choices
-
-
-def chosen_new_units(frames: Frames) -> frozenset[str] | None:
-    """저장 요청의 `propagate_units` — 편집본의 새 호기마다 「새 호기」 칸에서 고른 값, 그 칸에서
-    넣지 않은 새 호기는 넣는다. 그 칸에서 넣은 새 호기가 편집본에 없으면 None(모든 새 호기를
-    넣는다 — 저장소 기본값)."""
-    choices = new_unit_propagation()
-    if not choices:
-        return None
-    fresh = _new_unit_names(frames[1])
-    if not any(name in choices for name in fresh):
-        return None
-    return frozenset(name for name in fresh if choices.get(name, True))
-
-
-def unspread_new_unit_count(frames: Frames) -> int:
-    """편집본 새 호기 가운데 「새 호기」 칸에서 함께 넣기를 끈 수 — 저장 결과 알림이 적는다."""
-    choices = new_unit_propagation()
-    return sum(1 for name in _new_unit_names(frames[1]) if choices.get(name) is False)
-
-
-def prune_new_unit_propagation() -> None:
-    """「새 호기」 칸에서 고른 함께 넣기 가운데 편집본에 그 새 호기가 더는 없는 이름을
-    걷는다 — 토스트 「되돌리기」·한 단계 되돌리기·지우기·호기 되돌리기·엑셀·CSV 넣기·Space
-    적용으로 그 호기가 빠지면 고름도 빠진다. 같은 이름이 다른 길(붙여넣기·엑셀·CSV·Space)로
-    다시 들면 다른 새 호기처럼 함께 넣는다(D8). 다시 되돌려 그 호기가 돌아와도 고름은 돌아오지
-    않는다. 이름 바꿈을 따라간 **뒤**에 부른다(`follow_unit_renames` — 먼저 부르면 옛 이름의 고름이
-    걷힌다)."""
-    choices = new_unit_propagation()
-    if not choices:
-        return
-    buffer = st.session_state.get(BUFFER_KEY)
-    fresh = set(_new_unit_names(buffer[1])) if isinstance(buffer, tuple) else set()
-    kept = {name: flag for name, flag in choices.items() if name in fresh}
-    if kept == choices:
-        return
-    if kept:
-        st.session_state[NEW_UNIT_PROPAGATE_KEY] = kept
-    else:
-        st.session_state.pop(NEW_UNIT_PROPAGATE_KEY, None)
-
-
-def _new_unit_names(master: pd.DataFrame) -> list[str]:
-    """편집본 설비 마스터의 새 호기 이름(저장의 호기 키 규칙으로 저장본 호기를 잇지 않는 것)."""
-    if EQUIPMENT_ID_COLUMN not in master.columns:
-        return []
-    names = [
-        str(value).strip()
-        for value in master[EQUIPMENT_ID_COLUMN].tolist()
-        if isinstance(value, str) and value.strip()
-    ]
-    inherited = layout_lock_origins(master, _saved_master(), pending_unit_renames().units)
-    return [name for name in dict.fromkeys(names) if name not in inherited]
-
-
 def apply_master_grid_result(applied: GridApplied) -> None:
     """설비 마스터 표의 출납 반영 결과(`equipment_grid.apply_ops`)를 세션에 적는다 — 편집본·칸 초안·
     이름 지도·되돌리기를 한 번에. 편집본은 `replace_equipment_buffer` 또는 이 함수로만 바꾼다(같은
@@ -1545,12 +1468,6 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
             st.session_state[PENDING_DELETE_KEY] = (target, _renamed_keys(keys, renames))
     _stage_followed_filter(filter_widget_key(DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN), renames)
     st.session_state.pop(LAST_REMOVED_KEY, None)
-    # 「새 호기」 칸에서 고른 함께 넣기는 새 호기 이름에 매달려 있다 — 이름을 따라간다(맞바꿈도).
-    choices = new_unit_propagation()
-    if renames and any(name in choices for name in renames):
-        st.session_state[NEW_UNIT_PROPAGATE_KEY] = {
-            renames.get(name, name): flag for name, flag in choices.items()
-        }
     # 설비 마스터 표의 되돌리기 가운데 행 조각을 든 단계(지우기·되살리기·통째)와 그 앞 단계도 같은
     # 까닭으로 버린다(개편 명세 4-11 셋째 자리 — 역 patch 라 앞 단계는 자리가 맞지 않는다).
     steps = grid_undo_steps()
@@ -2022,9 +1939,6 @@ def _save_equipment_frames(
         note=note,
         saved_by=saved_by,
         expected_release_no=basis.release_no if basis is not None else None,
-        # 「새 호기」 칸에서 넣은 호기는 그 칸의 고름을 따른다(D8) — 어느 저장 길(설비 마스터 탭·
-        # 사이드바 팝업·Space)이든 같은 편집본이라 같다.
-        propagate_units=chosen_new_units(frames),
         floor_canvases=canvases,
         floor_marks=marks,
         floor_layout_bases=pending_floor_bases(),
@@ -2038,8 +1952,6 @@ def _save_equipment_frames(
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     messages = notice_marks()
-    # 뒷정리가 편집본과 함께 고름을 지우므로 저장 전에 센다.
-    unspread = unspread_new_unit_count(frames)
     try:
         # 출발점(`buffer_base`)은 아래 뒷정리(`reset_equipment_drafts`)가 옮긴다. 빠른 두 번 누름의
         # 둘째 회차가 첫 콜백을 DB 쓰기 뒤·뒷정리 전에 끊으면 출발점이 그대로라, 둘째 콜백이 옛
@@ -2097,7 +2009,7 @@ def _save_equipment_frames(
         )
     else:
         name = basis.scenario_name if basis is not None else None
-        message = save_result_message(result, scenario_name=name, unspread=unspread) + layouts + fab
+        message = save_result_message(result, scenario_name=name) + layouts + fab
         # 둘째 누름이 제 저장을 알아보면 이 알림을 다시 낸다(`write_guard.held_notice`).
         note_notice(messages, own_name, message)
     _after_equipment_save(
@@ -2172,14 +2084,11 @@ def _spread_words(propagated: Sequence[PropagatedRevision]) -> str:
     return f"다른 설비 시나리오 {len(propagated):,}개에 {' · '.join(parts)}"
 
 
-def save_result_message(
-    result: EquipmentSaveResult, *, scenario_name: str | None, unspread: int = 0
-) -> str:
+def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | None) -> str:
     """저장 결과 알림 — 일어난 일만 한 번에 적는다(2026-11-05 사용자 결정 — 저장 칸 체크 · 경고를
     걷고 여기로 모았다, 설계 6-3·6-4). 알림창은 앞 60자 안팎만 보이므로(`alerts.SHORT_LIMIT`, 전문은
     Alarm) 첫 문장이 일어난 일을 무거운 차례로 적는다 — 지운 호기 수와 그 일정이 함께 빠진 다른 설비
-    시나리오 수 · 공식 발행 · 함께 넣은 대수 · 건수. 그 뒤가 쓴 리비전과 시나리오마다의 내역이다.
-    `unspread` 는 「새 호기」 칸에서 함께 넣기를 끈 새 호기 수다(`unspread_new_unit_count`)."""
+    시나리오 수 · 공식 발행 · 함께 넣은 대수 · 건수. 그 뒤가 쓴 리비전과 시나리오마다의 내역이다."""
     written: list[str] = []
     if result.common is not None:
         written.append(f"공통 대장 r{result.common.revision_no}")
@@ -2212,10 +2121,6 @@ def save_result_message(
     if propagated:
         sentences.append(
             "함께 넣음: " + ", ".join(_propagated_words(item) for item in propagated) + "."
-        )
-    if unspread:
-        sentences.append(
-            f"「새 호기」 칸에서 끈 {unspread:,}대는 다른 설비 시나리오에 넣지 않았습니다."
         )
     skipped = sum(item.skipped for item in result.propagated)
     if skipped:

@@ -15,8 +15,8 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
   있어(1.63 의 위젯 상태 합치기는 CCv2 트리거의 앞 값을 살리지 않는다) 잃어도 되는 화면 조작만
   트리거로 둔다: 불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·
   `goto`·`copy`(가져오기·「이 호기로 새 호기 만들기」).
-- **「새 호기」 초안은 상태 값 `draft`** 다(``{"seq", "values": 39칸 글, "propagate"}`` — 칸을
-  확정할 때마다 전부). 파이썬이 세션 초안으로 적고 그 초안으로 체크 상자·칸 오류를 다시 낸다.
+- **「새 호기」 초안은 상태 값 `draft`** 다(``{"seq", "values": 39칸 글}`` — 칸을 확정할 때마다
+  전부). 파이썬이 세션 초안으로 적고 그 초안으로 체크 상자·칸 오류를 다시 낸다.
   편집본을 바꾸지 않으므로 잃어도 다음 확정이 덮는다.
 - **받기** 는 `on_<이름>_change` 콜백이다(본문보다 먼저 돈다). 콜백은 그 key 의 세션 값을 읽어 꼴을
   거른 뒤 화면 쪽이 넘긴 처리 함수를 부른다. 표가 그린 회차의 `view` 와 다른 트리거(목록이 다시 선
@@ -215,15 +215,15 @@ def _dispatch_unload(key: str, view: str, handler: Callable[[list[str]], None]) 
 
 @dataclass(frozen=True)
 class DraftValue:
-    """「새 호기」 칸이 보낸 초안 — 번호(브라우저가 확정마다 올린다), 39칸 글, 함께 넣기."""
+    """「새 호기」 칸이 보낸 초안 — 번호(브라우저가 확정마다 올린다), 39칸 글."""
 
     seq: int
     values: tuple[str, ...]
-    propagate: bool
 
 
 def draft_value(payload: object, size: int) -> DraftValue | None:
-    """`draft` 상태 값(``{"seq", "values", "propagate"}``)을 거른다 — 꼴이 다르면 None."""
+    """`draft` 상태 값(``{"seq", "values"}``)을 거른다 — 꼴이 다르면 None. 그 밖의 칸은 보지
+    않는다."""
     if not isinstance(payload, Mapping):
         return None
     seq, values = payload.get("seq"), payload.get("values")
@@ -233,7 +233,7 @@ def draft_value(payload: object, size: int) -> DraftValue | None:
         return None
     if not all(isinstance(item, str) for item in values):
         return None
-    return DraftValue(seq, tuple(values), payload.get("propagate") is True)
+    return DraftValue(seq, tuple(values))
 
 
 @dataclass(frozen=True)

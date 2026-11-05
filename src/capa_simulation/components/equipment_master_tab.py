@@ -19,11 +19,10 @@
 - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸 — 초안(세션 `NEW_UNIT_DRAFT_KEY`, 브라우저가
   칸을 확정할 때마다 상태 값 `draft` 로 보낸다)을 `equipment_grid.new_unit_check` 로 보고 체크 상자
   셋(에러 없이 추가 · 가용대수 · 도면)과 칸 오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
-  초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 그 칸에서
-  고른 「다른 설비 시나리오에도 같은 일정으로 넣기」 는 호기마다 저장 요청에 실린다
-  (`propagate_units`, D8). 불러오기 「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한
-  호기에서 값 가져오기」 가 이 칸을 연다. 오른쪽 칸 고르기는 받기 콜백이 바로 적지 않고 다음
-  고르기 앞에서 적는다(`_SIDE_NEXT_KEY` — 그 고르기 뒤에 그린 마운트의 콜백도 같은 길).
+  초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 불러오기
+  「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한 호기에서 값 가져오기」 가 이 칸을 연다.
+  오른쪽 칸 고르기는 받기 콜백이 바로 적지 않고 다음 고르기 앞에서 적는다(`_SIDE_NEXT_KEY` — 그
+  고르기 뒤에 그린 마운트의 콜백도 같은 길).
 - **출납**: 표·오른쪽 칸이 보낸 상태 값 `outbox` 를 받기 콜백(본문보다 먼저 돈다)이 두 마운트를 함께
   읽어 반영한다(`equipment_grid.pending_ops`·`apply_ops` → `apply_master_grid_result`). 반영한
   마지막
@@ -98,9 +97,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
-    prune_new_unit_propagation,
     queue_grid_toast,
-    remember_new_unit_propagation,
     render_name_changes,
     render_small_editor,
     reset_equipment_drafts,
@@ -123,8 +120,6 @@ from capa_simulation.components.equipment_import_dialog import (
     open_equipment_import,
 )
 from capa_simulation.components.equipment_save_fields import (
-    ASSUMPTION_PROPAGATE_WARNING,
-    DEFAULT_PROPAGATE_NEW_UNITS,
     EquipmentSaveBasis,
     render_saved_by_field,
     saved_by_from_state,
@@ -341,23 +336,18 @@ def _side_reveal() -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
-def _new_draft() -> tuple[int, list[str], bool]:
-    """「새 호기」 칸 세션 초안 (번호, 39칸 글, 함께 넣기) — 없거나 꼴이 다르면 빈 초안."""
+def _new_draft() -> tuple[int, list[str]]:
+    """「새 호기」 칸 세션 초안 (번호, 39칸 글) — 없거나 꼴이 다르면 빈 초안."""
     value = st.session_state.get(NEW_UNIT_DRAFT_KEY)
     if isinstance(value, dict):
         seq, values = value.get("seq"), draft_texts(value.get("values"))
-        propagate = value.get("propagate")
-        if isinstance(seq, int) and values is not None and isinstance(propagate, bool):
-            return seq, values, propagate
-    return 0, blank_draft(), DEFAULT_PROPAGATE_NEW_UNITS
+        if isinstance(seq, int) and values is not None:
+            return seq, values
+    return 0, blank_draft()
 
 
-def _store_new_draft(seq: int, values: Sequence[str], propagate: bool) -> None:
-    st.session_state[NEW_UNIT_DRAFT_KEY] = {
-        "seq": seq,
-        "values": list(values),
-        "propagate": propagate,
-    }
+def _store_new_draft(seq: int, values: Sequence[str]) -> None:
+    st.session_state[NEW_UNIT_DRAFT_KEY] = {"seq": seq, "values": list(values)}
 
 
 def _result(kind: FlashKind, text: str) -> None:
@@ -647,9 +637,6 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     if detail is not None and detail in result.moved:
         st.session_state[GRID_DETAIL_KEY] = result.moved[detail]
     _follow_added(ops, result)
-    if result.frames_changed[1]:
-        # 되돌리기·지우기로 빠진 새 호기의 함께 넣기 고름을 걷는다(이름 바꿈은 위에서 따라갔다).
-        prune_new_unit_propagation()
     if result.toast:
         # 「호기 추가」 는 그 호기를 상세로 연다 — 토스트(되돌리기)도 상세 칸에.
         target = "detail" if result.added else targets.get(str(ops[-1].get("mount")), "grid")
@@ -663,26 +650,23 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
 
 
 def _follow_added(ops: Sequence[Mapping[str, Any]], result: Any) -> None:
-    """「호기 추가」 op 뒤 — 넣은 호기마다 함께 넣기 고름을 적고 마지막 호기를 상세로 열며 초안은
-    공정소분류·동·층만 남긴다(번호를 올려 브라우저가 바꾼다). 막혔으면 받은 초안을 세션 초안으로
-    둔다(그 초안의 칸 오류가 다음 회차에 선다). 세션 초안보다 번호가 작은 op(서비스가 말없이 버린
-    두 번 누름·옛 초안)는 보지 않는다 — 다음 회차에 따로 온 둘째 누름이 넣은 뒤 초안을 옛 초안으로
-    덮지 않게."""
-    seq, values, propagate = _new_draft()
+    """「호기 추가」 op 뒤 — 마지막 호기를 상세로 열고 초안은 공정소분류·동·층만 남긴다(번호를 올려
+    브라우저가 바꾼다). 막혔으면 받은 초안을 세션 초안으로 둔다(그 초안의 칸 오류가 다음 회차에
+    선다). 세션 초안보다 번호가 작은 op(서비스가 말없이 버린 두 번 누름·옛 초안)는 보지 않는다 —
+    다음 회차에 따로 온 둘째 누름이 넣은 뒤 초안을 옛 초안으로 덮지 않게."""
+    seq, values = _new_draft()
     adds = [op for op in ops if op.get("op") == "add" and draft_seq_of(op) >= seq]
     if not adds:
         return
     top = max([seq, *(draft_seq_of(op) for op in adds)])
     last = draft_texts(adds[-1].get("draft"))
     if result.added:
-        for _row_id, name, chosen in result.added:
-            remember_new_unit_propagation(name, chosen)
-        row_id, _name, chosen = result.added[-1]
-        _store_new_draft(top + 1, kept_draft(last if last is not None else values), chosen)
+        row_id, _name = result.added[-1]
+        _store_new_draft(top + 1, kept_draft(last if last is not None else values))
         st.session_state[GRID_DETAIL_KEY] = row_id
         _switch_side(SIDE_DETAIL)
     elif last is not None:
-        _store_new_draft(top, last, adds[-1].get("propagate") is True)
+        _store_new_draft(top, last)
 
 
 def _stamp_if_layout_edited(ops: Sequence[Mapping[str, Any]], layout: LayoutMode) -> None:
@@ -779,9 +763,9 @@ def _on_new() -> None:
 def _on_draft(value: grid_component.DraftValue) -> None:
     """「새 호기」 칸이 보낸 초안 — 번호가 세션 초안보다 작지 않을 때만 적는다(늦게 온 옛 초안이
     가져오기·「호기 추가」 뒤 초안을 덮지 않게)."""
-    seq, _values, _propagate = _new_draft()
+    seq, _values = _new_draft()
     if value.seq >= seq:
-        _store_new_draft(value.seq, value.values, value.propagate)
+        _store_new_draft(value.seq, value.values)
 
 
 def _on_copy(request: grid_component.CopyRequest) -> None:
@@ -790,10 +774,10 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
     연다."""
     frames: Frames = st.session_state[BUFFER_KEY]
     master = frames[1].reset_index(drop=True)
-    seq, values, propagate = _new_draft()
+    seq, values = _new_draft()
     if request.draft is not None:
         seq = max(seq, request.draft.seq)
-        values, propagate = list(request.draft.values), request.draft.propagate
+        values = list(request.draft.values)
     if request.row_id is not None:
         live = grid_index(master, _saved_frames()[1], pending_unit_renames().units).live
         position = live.get(request.row_id)
@@ -804,14 +788,14 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
         base = values
     if position is None:
         if request.draft is not None:
-            _store_new_draft(seq, values, propagate)
+            _store_new_draft(seq, values)
         what = f"「{request.query}」 설비명" if request.query else "그 호기"
         queue_grid_toast(
             "new" if request.query else "detail", f"{with_object_particle(what)} 찾지 못했습니다"
         )
         return
     source = unit_texts(master, position)
-    _store_new_draft(seq + 1, copied_draft(source, base), propagate)
+    _store_new_draft(seq + 1, copied_draft(source, base))
     name = source[NAME_INDEX]
     queue_grid_toast("new", f"{name} 의 호기 정보·위치를 가져왔습니다 — 설비명과 일정을 채웁니다")
     _switch_side(SIDE_NEW)
@@ -1282,15 +1266,13 @@ def _render_new_unit(
     context: GridContext,
     layout_mode: SpaceEditMode,
     *,
-    basis: EquipmentSaveBasis | None,
     ack: Mapping[str, Any] | None,
     toast: Mapping[str, Any] | None,
     top: str | None,
 ) -> None:
     """오른쪽 「새 호기」 칸(개편 명세 4-6 나) — 세션 초안을 이 회차 편집본 위에서 보고(체크 상자·칸
-    오류·잠금) 그린다. 가정 설비 시나리오면 새 호기 자리 안내와 함께 넣기 경고(공식 가용대수에 셈 —
-    Space 저장 상자와 같은 글)를 싣는다."""
-    seq, values, propagate = _new_draft()
+    오류·잠금) 그린다. 가정 설비 시나리오면 새 호기 자리 안내를 싣는다."""
+    seq, values = _new_draft()
     check = new_unit_check(
         values,
         frames=st.session_state[BUFFER_KEY],
@@ -1303,20 +1285,16 @@ def _render_new_unit(
         notes.append((NEW_UNIT_OVERLAY_MARK, NEW_UNIT_OVERLAY_NOTE))
     elif layout_mode.layout == "locked" and context.layout_lock:
         notes.append(f"{NEW_UNIT_LOCKED_NOTE} — {context.layout_lock}")
-    official = basis is None or basis.official_scenario
     grid_component.render_grid_side(
         "new",
         new_unit_data(
             view,
             check,
             seq=seq,
-            propagate=propagate,
-            propagate_default=DEFAULT_PROPAGATE_NEW_UNITS,
             ack=ack,
             toast=toast,
             undo_top=top,
             notes=notes,
-            propagate_warning=None if official else ASSUMPTION_PROPAGATE_WARNING,
         ),
         on_outbox=partial(_on_outbox, context, layout_mode.layout),
         on_open=_on_side_open,
@@ -1457,7 +1435,6 @@ def render_equipment_master_tab(
                 view,
                 context,
                 layout_mode,
-                basis=basis,
                 ack=acks.get("new"),
                 toast=toasts.get("new"),
                 top=top,
