@@ -294,6 +294,8 @@ New-Item -ItemType Directory review -Force
 
 - `.claude/settings.json` 은 사내 에이전트가 `review/` 밖을 고치지 못하게 막고, 실화면 그림 파일(png · jpg 등)을 `Read` 로 열지
   못하게 막습니다. `review/` 는 리뷰 문서 자리입니다.
+- 사본 점검 세 줄(런북 6-3 a · b — `inspect_revision_calculations.py` · `benchmark_home.py` · `benchmark_upeh_assumption.py`)은 사본 경로 꼴(값에 사본 폴더
+  이름 `e2e` 가 든 `--database` · `--data-dir`)에만 묻지 않고 돕니다. 운영 DB 자리는 스크립트가 스스로 거절합니다.
 - 사내 적용 세션은 기본 Sonnet 으로 띄웁니다. Opus 가 필요한 여섯 구간에서는 에이전트가 멈추고 `/model opus` 를 청합니다(런북 0-2).
 - 둘 다 배포가 **보존**하므로 다음 ZIP 이 덮지 않습니다. 템플릿이 바뀌면 그때 다시 복사합니다.
 - 사내 에이전트 세션은 auto·bypass(권한 건너뛰기) 모드로 띄우지 않습니다 — 템플릿의 방어선은 사람이 승인 프롬프트를 읽는

@@ -24,6 +24,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = PROJECT_ROOT / "docs" / "internal_update_runbook.md"
+TEMPLATE = PROJECT_ROOT / "docs" / "internal_claude_settings.json"
+README = PROJECT_ROOT / "README.md"
+COPY_CHECKS = (
+    "inspect_revision_calculations.py",
+    "benchmark_home.py",
+    "benchmark_upeh_assumption.py",
+)
 
 
 def _section(start: str, end: str) -> str:
@@ -101,6 +108,82 @@ def test_the_upeh_plan_benchmark_reads_only_the_copy_and_writes_through_output()
     script = (PROJECT_ROOT / "scripts" / "benchmark_upeh_assumption.py").read_text(encoding="utf-8")
     assert '"--data-dir",\n        required=True' in script
     assert '"--output"' in script
+
+
+def _rule_matches(rule: str, command: str) -> bool:
+    """권한 규칙의 `*` 는 공백까지 아무 글자다(텍스트 맞춤)."""
+    body = rule[rule.index("(") + 1 : -1]
+    return re.fullmatch(".*".join(re.escape(part) for part in body.split("*")), command) is not None
+
+
+def _copy_check_rules() -> list[str]:
+    allow = json.loads(TEMPLATE.read_text(encoding="utf-8"))["permissions"]["allow"]
+    return [rule for rule in allow if any(f"scripts/{name}" in rule for name in COPY_CHECKS)]
+
+
+def test_the_settings_template_allows_the_copy_checks_only_on_the_copy_path_shape() -> None:
+    """사본 점검 세 줄(6-3 a · b)은 런북의 부르는 줄과 그것을 실제 폴더로 바꾼 줄에서만 묻지 않는다
+    (2026-11-05 사용자 답). 스크립트 이름만으로 여는 규칙이 없고, 셸 둘이 쌍이다."""
+    rules = _copy_check_rules()
+
+    assert len(rules) == 2 * len(COPY_CHECKS)
+    assert not [rule for rule in rules if ":*" in rule]
+    assert sorted(rule.split("(")[0] for rule in rules) == ["Bash"] * 3 + ["PowerShell"] * 3
+    for name in COPY_CHECKS:
+        script_rules = [rule for rule in rules if f"scripts/{name}" in rule]
+        calls = [
+            line
+            for line in _code_lines(_copy_e2e())
+            if f"scripts/{name}" in line and line.startswith("uv run")
+        ]
+        assert calls, name
+        for call in calls:
+            real_folder = (
+                call.replace("$e2e", "C:/Users/someone/e2e_copy/202611051200")
+                .replace("$HOME", "C:/Users/someone")
+                .replace("\\", "/")
+            )
+            for rule in script_rules:
+                assert _rule_matches(rule, call), (rule, call)
+                assert _rule_matches(rule, real_folder), (rule, real_folder)
+                assert _rule_matches(rule, real_folder.replace('"', "")), (rule, real_folder)
+
+
+def test_the_settings_template_keeps_asking_for_any_other_path_of_the_copy_checks() -> None:
+    """운영 자리 꼴 · 사본 폴더 이름이 없는 경로 · 인자 없는 줄은 묻는다. 스크립트 자신의 거절은
+    `settings.is_operational_database_place` 시험들이 본다."""
+    prefix = "uv run --no-sync python scripts/"
+    asked = (
+        f"{prefix}inspect_revision_calculations.py --database data/capa_simulation.duckdb"
+        " --output revisions.md",
+        f'{prefix}inspect_revision_calculations.py --database "data\\capa_simulation.duckdb"'
+        " --output revisions.md",
+        f"{prefix}inspect_revision_calculations.py --database C:/copy/capa_simulation.duckdb"
+        " --output revisions.md",
+        f"{prefix}inspect_revision_calculations.py --output e2e.md",
+        f"{prefix}benchmark_home.py",
+        f"{prefix}benchmark_home.py --data-dir data --output home.json",
+        f"{prefix}benchmark_upeh_assumption.py --data-dir data --output upeh.json",
+    )
+
+    for command in asked:
+        assert not [rule for rule in _copy_check_rules() if _rule_matches(rule, command)], command
+
+
+def test_the_documents_say_the_copy_checks_are_allowed_on_the_copy_path_shape() -> None:
+    copy_e2e = " ".join(_copy_e2e().split())
+    readme = README.read_text(encoding="utf-8")
+    blocked = RUNBOOK.read_text(encoding="utf-8")
+    blocked = blocked[blocked.index("## 6. 막혔을 때") : blocked.index("## 6-1.")]
+    explained = "\n".join(json.loads(TEMPLATE.read_text(encoding="utf-8"))["_설명"])
+
+    assert "권한 템플릿이 이 꼴(`--database` 값에 사본 폴더 이름 `e2e` 가 든 경로)에만" in copy_e2e
+    assert "| 사본 E2E 의 `git archive`·복사·스크립트(6-3) |" in blocked
+    assert "사본 경로 꼴에만 allow" in blocked
+    assert "사본 경로 꼴(값에 사본 폴더" in readme
+    assert "$HOME\\e2e_copy" in explained
+    for name in COPY_CHECKS:
+        assert name in readme and name in explained, name
 
 
 def test_the_copy_compares_size_and_write_time_before_and_after() -> None:

@@ -491,6 +491,61 @@ def test_a_common_only_v4_save_keeps_the_8_1_and_8_4_keys(
     assert after["8-4s"] == before["8-4s"]
 
 
+def test_the_usage_line_counts_rows_starting_with_the_watched_prefix_but_prints_no_value(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """2026-11-05 사용자 답 — 셈 규칙은 그대로(정확히 같은 값만 센다)이고 앞글자만 같은 줄의 수를
+    받는다. 공백 · 대소문자는 셈과 같이 접고, 뒤에 붙은 것만 앞글자로 치지 않는다. 값은 찍지 않고,
+    요약 8-4u 는 사내 자가 점검에 걸리는 글자를 싣지 않으며 칸의 합이 스스로 선다."""
+    path = tmp_path / "equipment_availability.duckdb"
+    _legacy_equipment_database(
+        path,
+        [
+            (
+                1,
+                None,
+                [
+                    _equipment_row(f"{SENTINEL}EQ-1", None, 1.0),
+                    _equipment_row(f"{SENTINEL}EQ-2", None, 1.0, usage=f"HBM{SENTINEL}"),
+                    _equipment_row(f"{SENTINEL}EQ-3", None, 1.0, usage=f" hbm{SENTINEL} "),
+                    _equipment_row(f"{SENTINEL}EQ-4", None, 1.0, usage=f"{SENTINEL}HBM"),
+                    _equipment_row(f"{SENTINEL}EQ-5", None, 1.0, usage="EDP"),
+                    _equipment_row(f"{SENTINEL}EQ-6", None, 1.0, usage=None),
+                ],
+            )
+        ],
+    )
+
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(path),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        "HBM 1행 · EDP 1행 · 다른 값 3행 · 빈 칸 1행 / 가용대수에서 빠지는 설비 4대(설비 6대 중) · "
+        "다른 값 가운데 HBM 으로 시작하는 줄 2행"
+    ) in output
+    lines = _summary(output)
+    usage = next(line for line in lines if line.startswith("- 8-4u "))
+    assert _uncoded([usage]) == ["- 8-4u 행 6 = H 1 + E 1 + 앞 2 + 다른 1 + 빈 1 · 뺌 4/6"]
+    assert not _self_check_pattern().search(usage)
+    assert checks.check_transcript([usage]) == []
+    assert checks.check_transcript([usage.replace("앞 2", "앞 3")]) != []
+
+
+def test_the_usage_note_says_why_when_it_could_not_count() -> None:
+    """세지 못한 까닭은 8-4u 칸에 그대로 선다 — 줄이 빠지면 옮겨 적는 쪽이 못 알아본다."""
+    assert checks._usage_basis_note({"skip": "건너뜀"}) == "- 8-4u 건너뜀"
+    assert checks._usage_basis_note({"skip": "실패(ValueError)"}) == "- 8-4u 실패(ValueError)"
+
+
 def test_the_migration_check_line_is_carried_and_checked(
     simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1491,6 +1546,7 @@ def test_a_failing_summary_line_keeps_the_block(
     assert _uncoded(_summary(output)) == [
         "- 8-4 요약 실패(KeyError)",
         "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0",
+        "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6",
     ]
 
 
@@ -3117,6 +3173,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-3",
         "8-4",
         "8-4s",
+        "8-4u",
         "8-9",
         "8-10",
         "8-11",
@@ -3136,17 +3193,18 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert bare[4].startswith("- 8-2R 100.00% · ")
     assert bare[6] == "- 8-2B 0"
     assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
-    assert bare[10] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
-    assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert bare[10] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
+    assert bare[11] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
+    assert bare[12] == "- 8-10 활성 1 · 모두 0 (12/12)"
     assert re.fullmatch(
         GRID_SUMMARY_IN_RANGE,
-        bare[12],
-    ), bare[12]
-    assert bare[13] == "- 8-12 전부 1 · 걸림 0"
+        bare[13],
+    ), bare[13]
+    assert bare[14] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
-        sum(1 for line in lines if " = " in line) == 4
-    )  # 8-3 · 8-4 · 8-9 · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
+        sum(1 for line in lines if " = " in line) == 5
+    )  # 8-3 · 8-4 · 8-4u · 8-9 · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
 
 
 def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:

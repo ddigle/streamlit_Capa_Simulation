@@ -6854,8 +6854,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   이름 대신 차례 번호, 예외는 종류와 문구 속 계약 표 이름(`RQ_*`)만이다. `--database` 는 기본값이 없다 — 앱은 연산마다
   연결을 열고 닫아 쉬는 동안 운영 DB 도 열리지만, 스크립트가 쥐는 동안 사용자 앱의 연결이 막힌다. 그래서 운영 DB 자리
   (`settings.is_operational_database_place` — 같은 파일 · 운영 `data/` 아래 · git 저장소 안)는 열기 전에 거절하고(종료 2), 런북 6-3 a 는 저장소에서
-  `uv run --no-sync python scripts/inspect_revision_calculations.py --database <사본>` 꼴로 부른다 — 이 거절과 고정한 꼴이 권한
-  템플릿에 allow 를 줄 전제다(`docs/TODO.md` 결정 12). HOME 시간은
+  `uv run --no-sync python scripts/inspect_revision_calculations.py --database <사본>` 꼴로 부른다 — 권한 템플릿은 이 거절을 전제로 고정한 꼴(값에 사본
+  폴더 이름 `e2e` 가 든 `--database` · `--data-dir`)에만 allow 를 준다(2026-11-05 사용자 답 — 세 스크립트, `tests/test_runbook_copy_e2e.py`). HOME 시간은
   `scripts/benchmark_home.py --data-dir <사본 폴더> --output <파일>`(같은 판정으로 저장소 안은 거절, 입력 없는 토글은 `skipped`, 멈춘 HOME 은 `st.error` · `데이터 Error` 마크 모두 그 단계 실패)로
   잰다. UPEH 가정 계획 1회 시간(`scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더> --output <파일>`)도 같은 판정으로
   저장소 안을 거절한다. 사본 모드는 실패해도 HOME 의 문구를 찍지 않고 같은 규칙(단계·예외 종류·계약 표 이름)의 한 줄만 찍으며, 재는
@@ -6956,7 +6956,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   뜨지만 이미 읽은 Static 은 비교에 그대로 쓴다. 문구와 맞지 않는 이 동작은 `tests/test_equipment_scenario_demand.py` 가
   고정하고, 고칠지는 결정 대기다.
 - 사용기준을 비워 둔 옛 리비전의 호기는 설비 일정 기준 가용대수에서 빠진다 — 배포마다 사내 런북 8-4 가 HBM·EDP 행 수를
-  따로 센다.
+  따로 세고, 세지 않는 값 가운데 HBM 으로 시작하는 줄 수를 값 없이 함께 받는다(요약 `8-4u`). 규칙은 그대로이고 사내가 칸을 채운다(2026-11-05 사용자 답).
 - 공식버전 자동 갱신 예약 스레드는 **첫 접속 때 선다** — Streamlit 은 세션이 붙어야 `app.py` 를 돌리므로 앱을 다시 띄운
   뒤 누군가 한 번 들어와야 예약이 시작되고, 그 전에 지정 시각이 지나면 그날은 돌지 않는다(사내 런북 4-4 가 탭 하나를
   열어 두게 한다). 코드를 고치면 앱을 다시 띄워야 스레드가 새 코드로 돈다.

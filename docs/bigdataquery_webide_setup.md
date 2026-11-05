@@ -106,7 +106,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 
 - 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다. pip 를 두 번 부른다. 둘째 pip 는 앱 판 고정
   (`requirements.txt`)을 제약으로 걸므로, 그 판이 `bigdataquery` 의 요구 범위(pandas · numpy 위 끝)를 벗어나면 설치가 「실패」 로 남는다 —
-  `pyproject.toml` 이 같은 범위로 묶어 둔 까닭이다.
+  `pyproject.toml` 이 같은 범위로 묶어 둔 까닭이다. 점검 칸의 `Artifactory 인덱스에서 bigdataquery — pip 종료 코드 n` 은 첫 pip 실패라 판 범위와 상관없다 — 펼침의 pip 출력 끝으로 가른다.
   - **패키지 자신은 사내 인덱스 하나만** 보고 의존성 없이 깐다(`--no-deps`). WebIDE 처럼 공개 미러에 사내 인덱스를
     **추가**로 붙이면 pip 는 두 곳을 같이 보고 더 맞는 파일을 고른다 — 공개 쪽에 같은 이름·판이 올라오면 그것이 깔린다
     (의존성 혼동. uv 는 먼저 찾은 인덱스만 써서 WebIDE 의 uv 꼴은 괜찮다). 자격증명은 명령줄이 아니라 그 pip 의

@@ -581,7 +581,7 @@ def test_the_operational_database_place_is_refused_before_it_opens(
     target: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """사본 강제 — 운영 DB 자리(`settings.DUCKDB_PATH` · 저장소 `data/` 아래)는 열기 전에 거절한다.
-    이 거절이 권한 템플릿에 이 스크립트를 허용할 전제다(런북 6-3 a · `docs/TODO.md` 결정 12)."""
+    권한 템플릿이 이 스크립트를 사본 경로 꼴에 허용하는 전제가 이 거절이다(런북 6-3 a)."""
 
     def must_not_open(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
         raise AssertionError("운영 DB 자리는 열지 않는다")

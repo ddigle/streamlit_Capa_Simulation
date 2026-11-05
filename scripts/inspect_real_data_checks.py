@@ -2739,7 +2739,8 @@ def check_equipment(session: Session) -> list[str]:
         ]
     )
     lines.extend(["", *_table(["항목", "수"], rows), ""])
-    lines.extend(_undated_lines(connection, official, placeholder_source))
+    usage: dict[str, str] = {}
+    lines.extend(_undated_lines(connection, official, placeholder_source, usage))
     lines.append("")
     facts: dict[str, str] = {}
     lines.extend(_column_shape_lines(connection, revision_id, facts, official=official))
@@ -2777,6 +2778,7 @@ def check_equipment(session: Session) -> list[str]:
     _noted(session.notes, "8-4", note)
     # 이관 확인 줄은 따로 짓는다 — 8-4 줄이 멈춰도 이 줄은 남는다.
     _noted(session.notes, "8-4s", lambda: [_scenario_migration_note(migration)])
+    _noted(session.notes, "8-4u", lambda: [_usage_basis_note(usage)])
     return lines
 
 
@@ -2975,26 +2977,32 @@ def _undated_lines(
     connection: duckdb.DuckDBPyConnection,
     official: OfficialEquipment | str,
     placeholder_source: str | None,
+    usage: dict[str, str],
 ) -> list[str]:
     """일정 미정·사용기준 — 공식 설비 시나리오의 **계산 프레임**(그 시나리오에 일정이 없는 호기를
-    뺀 것)을 앱 화면과 같은 셈으로 센다. 옛 자리표에서 온 Qual 미정은 레거시 원천 행만 본다."""
+    뺀 것)을 앱 화면과 같은 셈으로 센다. 옛 자리표에서 온 Qual 미정은 레거시 원천 행만 본다.
+    `usage` 에는 요약 8-4u 의 수를 담고, 세지 못했으면 `skip` 에 그 까닭을 담는다."""
     code_max = max((migration.version for migration in load_equipment_migrations()), default=0)
     db_max = max(_versions(connection, "equipment_meta.schema_migration") or [0])
     if db_max < code_max:
+        usage["skip"] = "건너뜀"
         return [
             f"- 일정 미정 — 건너뜀: 설비 DB 마이그레이션이 코드보다 낮다({db_max} < {code_max}). "
             "앱을 띄워 `가용설비 현황` 을 연 뒤 앱을 끄고 다시 돌린다(4-2)."
         ]
     if isinstance(official, str):
+        usage["skip"] = _short(official)
         return [f"- 일정 미정 — {_short(official)}"]
     if official.snapshot is None:
+        usage["skip"] = official.failure or "-"
         return [f"- 일정 미정 — {official.failure or '-'}"]
     try:
         equipment = official.snapshot.calculation_frames()[1]
         undated = undated_equipment(equipment)
     except Exception as exc:  # 검증 오류 문구는 설비명을 싣는다. 종류만 적는다
+        usage["skip"] = _failure(exc)
         return [f"- 일정 미정 — {_failure(exc)}"]
-    usage_line = _usage_basis_line(equipment)
+    usage_line = _usage_basis_line(equipment, usage)
     counts = undated_counts(undated)
     rows_by_kind = {
         kind: int(undated[UNDATED_KIND_COLUMN].eq(kind).sum()) for kind in UNDATED_KINDS
@@ -3167,13 +3175,19 @@ def _scenario_migration_note(facts: dict[str, str]) -> str:
     )
 
 
-def _usage_basis_line(equipment: pd.DataFrame) -> str:
+# 사용기준 「다른 값」 가운데 줄 수만 따로 세는 앞글자(값은 찍지 않는다). 셈 규칙은 정확히 같은 값만
+# 세고(`COUNTED_USAGE_BASIS`), 이 앞글자로 시작해도 세지 않는다.
+USAGE_WATCHED_PREFIX: Final = "HBM"
+
+
+def _usage_basis_line(equipment: pd.DataFrame, usage: dict[str, str]) -> str:
     """세는 사용기준(HBM·EDP)마다의 행 수와 가용대수에서 빠지는 설비 대수.
 
     설비 일정 기준 가용대수는 사용기준이 HBM·EDP 인 호기만 센다(2026-10-08 사용자 결정).
     사용기준을 비워 둔 옛 리비전은 그 결정으로 가용대수에서 빠지므로 배포마다 이 수를 받아 본다.
     세는 값은 계약 상수라 이름을 적고, 그 밖의 값(사용기준 글자)은 찍지 않고 `다른 값` 으로
-    접는다.
+    접는다. 그 가운데 `USAGE_WATCHED_PREFIX` 로 시작하는 줄 수만 따로 센다 — 셈 규칙은 그대로이고
+    사내가 칸을 채우는 동안 그 꼴이 몇 줄인지 받는다(2026-11-05 사용자 답).
     """
     try:
         keys = usage_basis_key(equipment[USAGE_BASIS_COLUMN])
@@ -3181,20 +3195,52 @@ def _usage_basis_line(equipment: pd.DataFrame) -> str:
             basis: int(keys.eq(basis.strip().casefold()).fillna(False).astype(bool).sum())
             for basis in COUNTED_USAGE_BASIS
         }
-        counted_rows = int(counts_for_capacity(equipment).sum())
+        counted = counts_for_capacity(equipment)
+        counted_rows = int(counted.sum())
         blank_rows = int(keys.isna().sum())
+        prefixed_rows = int(
+            (
+                keys.str.startswith(USAGE_WATCHED_PREFIX.casefold()).fillna(False).astype(bool)
+                & ~counted
+            ).sum()
+        )
         excluded_units = usage_excluded_count(usage_excluded_equipment(equipment))
         total_units = int(unit_keys(equipment).nunique())
     except Exception as exc:  # 검증 오류 문구는 설비명을 싣는다. 종류만 적는다
+        usage["skip"] = _failure(exc)
         return f"- 사용기준 — {_failure(exc)}"
     other_rows = len(equipment) - counted_rows - blank_rows
     counted_parts = " · ".join(f"{basis} {rows:,}행" for basis, rows in by_basis.items())
+    usage.update(
+        {
+            "total": f"{len(equipment):,}",
+            "terms": " + ".join(
+                [
+                    *(f"{basis[0]} {rows:,}" for basis, rows in by_basis.items()),
+                    f"앞 {prefixed_rows:,}",
+                    f"다른 {other_rows - prefixed_rows:,}",
+                    f"빈 {blank_rows:,}",
+                ]
+            ),
+            "excluded": f"{format_unit_count(excluded_units)}/{total_units:,}",
+        }
+    )
     return (
         "- 사용기준(`equipment_contract.counts_for_capacity`, 설비 일정 기준 가용대수는 "
         f"{'·'.join(COUNTED_USAGE_BASIS)} 만 센다) — {counted_parts} · 다른 값 {other_rows:,}행 · "
         f"빈 칸 {blank_rows:,}행 / 가용대수에서 빠지는 설비 {format_unit_count(excluded_units)}대"
-        f"(설비 {total_units:,}대 중)"
+        f"(설비 {total_units:,}대 중) · 다른 값 가운데 {USAGE_WATCHED_PREFIX} 으로 시작하는 줄 "
+        f"{prefixed_rows:,}행"
     )
+
+
+def _usage_basis_note(usage: dict[str, str]) -> str:
+    """요약의 8-4u — 「8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6」. 세는 값은 첫
+    글자로만 적는다 — 요약 줄은 사내 자가 점검(런북 5장)에 걸리는 글자를 싣지 않는다. 뜻은 런북
+    8-6 범례."""
+    if "skip" in usage:
+        return _note("8-4u", usage["skip"])
+    return _note("8-4u", f"행 {usage['total']} = {usage['terms']}", f"뺌 {usage['excluded']}")
 
 
 # ---------------------------------------------------------------------------------- 8-10 census
