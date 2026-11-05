@@ -109,6 +109,7 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘�
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
 `origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
 `check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
+`scripts/build_site_index.py`(GitHub Pages 자료 목록 — `site/catalog.json` 으로 뿌리 `index.html` 을 쓴다, `--check` 는 다르면 실패).
 `scripts/new_module.py`(모듈 뼈대 — 새 모듈은 앱 관리자 승인 뒤), `scripts/check_module.py`(선언·정적 규칙·ruff·
 자기 시험 — 사내 런북 4-5 는 `git archive` 사본 트리에서 돌린다, 끝에 「전송용 요약」 한 줄), `scripts/module_test_runner.py`(check_module 이 부르는 모듈
 시험 감시 러너 — 코어 `data/` 접근·모듈 폴더 쓰기를 실패로, AppTest import 길을 앱과 같게). 정적 규칙 부품은
@@ -268,10 +269,13 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 
 발표 자료 원본(혁신대회 덱 `contest`·바이블 `bible`·중간 보고 덱 `build`·Learning Champion 초안)은 저장소 밖
 `~/projects/capa-simulation-showcase` 에서 그 폴더의 CLAUDE.md·메모리와 그 폴더에서 연 세션이 맡는다(2026-10-13 사용자
-결정). 이 저장소에는 대표 발표 자료 한 파일(루트 `index.html` — GitHub Pages 용)과 입장 화면 `Introduce` 가 띄우는 40초
+결정). 이 저장소에는 대표 발표 자료 한 파일(`site/contest-deck/index.html` — GitHub Pages 용)과 입장 화면 `Introduce` 가 띄우는 40초
 티저 한 파일(`src/capa_simulation/components/intro_overlay_assets/capa-teaser.html`, 쇼케이스 `contest/dist/capa-teaser.html`
-의 복사본 — 2026-10-19 사용자 결정)만 두고 그 밖의 발표 파일은 넣지 않는다. 원본은 쇼케이스의
+의 복사본 — 2026-10-19 사용자 결정)만 두고 그 밖의 발표 파일은 사용자가 자료실에 올리라고 할 때만 더한다. 원본은 쇼케이스의
 `contest/dist/capa-contest.html` 이다(`capa-contest.artifact.html` 은 아티팩트용 변형이라 쓰지 않는다). 두 폴더는 서로 읽되
-쓰지 않는다 — `index.html` 을 바꿀 때만 이 저장소 세션이 그 파일을 읽어 CR 을 뺀 뒤(`tr -d '\r'`) 루트로 복사·커밋하고, 견줄
+쓰지 않는다 — 덱을 바꿀 때만 이 저장소 세션이 그 파일을 읽어 CR 을 뺀 뒤(`tr -d '\r'`) `site/contest-deck/index.html` 로 복사하고
+`site/catalog.json` 의 `updated` 를 고쳐 생성기(`scripts/build_site_index.py`)를 돌린 뒤 커밋하고, 견줄
 때도 CR 을 뺀 뒤 견준다. 발표자 실명은 그대로 둔다(같은 날 사용자 결정 — 다시 묻지 않는다). 티저도 같은 규칙으로 CR 을
-빼고 복사하며, 외부 파일 없이 한 파일로 서야 한다. 자세한 것은 `AGENTS.md` 3장 끝.
+빼고 복사하며, 외부 파일 없이 한 파일로 서야 한다. 뿌리 `index.html` 은 Pages 첫 화면인 자료 목록으로 생성기가 쓴다(손으로
+고치지 않는다). 새 자료는 `site/<폴더>/index.html` · `site/catalog.json` 한 줄 · 생성기 실행이고 `tests/test_site_index.py` 가
+빠뜨림을 잡는다. 자세한 것은 `AGENTS.md` 3장 끝.

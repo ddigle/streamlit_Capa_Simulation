@@ -32,7 +32,7 @@ git remote -v
 ## 0. 사내에서 절대 하지 않는 것
 
 - **소스를 고치지 않는다.** `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/`·`config/`·
-  `.streamlit/`·`static/`·루트 문서 — 어느 것도 편집하지 않는다. 쓸 수 있는 곳은 `review/` 뿐이다(작업 자리 `review/<산출물>/`
+  `.streamlit/`·`static/`·`site/`·루트 문서 — 어느 것도 편집하지 않는다. 쓸 수 있는 곳은 `review/` 뿐이다(작업 자리 `review/<산출물>/`
   포함 — `docs/dual_env_workflow.md` 1-1. 그 절차는 10장이고 지금은 쉰다). 사내판 산출물을
   `static/<산출물>/local/` 에 두는 것은 사용자가 복사한다 — 에이전트는 `static/` 에 쓰지 않는다.
   **예외는 하나 — 사용자가 직접 지시한 임시 수정**이다(2026-10-10 사용자 결정). 커밋하지 않고, 리뷰 문서에

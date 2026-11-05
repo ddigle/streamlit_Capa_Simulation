@@ -4462,6 +4462,9 @@
 - (2026-10-07) mypy strict 는 `tests`·`scripts` 까지 본다(사용자 결정 3-5 (b)) — 완화는 `operator` 하나를 모듈 셋에만
   걸고, `tests/__init__.py` 는 두지 않는다(pytest pkg_root 가 루트로 올라가 맨이름 import 가 깨진다) — 관련:
   `pyproject.toml` (옛 3-5)
+- (2026-11-05) 사내 GitHub Pages 는 저장소 하나에 주소 하나라 자료실 한 사이트로 띄운다 — 뿌리 `index.html` 은 `site/catalog.json` 으로
+  만든 자료 목록, 자료는 `site/<폴더>/index.html`(발표 덱 `contest-deck` · 모듈 담당자 안내서 `module-guide`) — 관련: AGENTS 3장 끝 ·
+  `scripts/build_site_index.py`
 
 ### 보류·폐기
 

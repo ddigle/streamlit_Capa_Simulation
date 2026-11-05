@@ -848,6 +848,7 @@ uv run --no-sync python -m streamlit run app.py --server.port <포트>
       "Edit(/docs/**)",
       "Edit(/.streamlit/**)",
       "Edit(/static/**)",
+      "Edit(/site/**)",
       "Edit(/docker/**)",
       "Edit(/.github/**)",
       "Edit(/review/**)",

@@ -2612,8 +2612,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
   — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 셋 모두 티저의 `TEASER.pause()`
   로 재생을 멈춘다 — 티저는 재생 때 남은 소리를 미리 잡아 두므로 층만 숨기면 40초 끝까지 소리가 난다. 다시 열면 멈춘 자리에
-  서 있고 티저 안 `Space` 로 잇는다. 티저가 덮은 동안 장면 워커는 쉬고, Summary 처럼 들어갈 준비가 끝나면 선다. 루트
-  `index.html`(GitHub Pages 발표 덱)은 앱이 쓰지 않는다.
+  서 있고 티저 안 `Space` 로 잇는다. 티저가 덮은 동안 장면 워커는 쉬고, Summary 처럼 들어갈 준비가 끝나면 선다.
+  `site/contest-deck/index.html`(GitHub Pages 발표 덱)은 앱이 쓰지 않는다.
   - Components v2 하나이고 자산은 `intro_overlay_assets/`(`intro.html`·`intro.css`·`intro.js`)다. 움직임은 워커
     OffscreenCanvas 에서 돈다 — 워커로 가는 `scene()`·`summaryGrid()` 는 그 파일의 다른 이름을 쓰지 않는다.
   - 등록 JS·`data` 는 회차마다 같고 색은 테마와 무관한 `tokens.INTRO_PALETTE` 다. 파이썬으로 가는 길은
@@ -4188,19 +4188,29 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     충돌), 같은 내용이면 쓰지 않는다(`wrote=False` — version·dirty 그대로). 설비 시나리오·리비전·공식 발행·옛 배포 흔적 잠금과
     무관하다.
 
-### 저장소 루트의 발표 자료
+### 자료실(GitHub Pages)과 발표 자료
 
-- `index.html` — 이 저장소의 **유일한** 발표 자료(대표 발표 자료 한 파일, 지금은 혁신대회 덱). 외부 요청 없는 단일
-  파일이라 사내 GitHub Pages·배포 ZIP 에 실리고 숫자는 합성 샘플이다. 앱은 이 파일을 쓰지 않는다.
+- 사내 GitHub Pages 는 저장소 하나에 주소 하나이고 저장소 뿌리를 그대로 내보낸다(Pages 설정은 `main` 의 뿌리 `/`). 그래서 한
+  사이트 안을 폴더로 가른다(2026-11-05 사용자 요청). 프로젝트 사이트라 주소 앞에 하위 경로가 붙으므로 링크는 모두 상대 경로다.
+  앱은 이 파일들을 쓰지 않는다 — `site/` 는 배포 ZIP 에 실리고 이미지에서는 빠진다(`.dockerignore`).
+  - `index.html`(뿌리) — 첫 화면인 자료 목록. `scripts/build_site_index.py` 가 `site/catalog.json` 으로 쓰는 생성물이라 손으로
+    고치지 않는다(`--check` 는 다르면 실패). 외부 요청이 없고 두 테마 · 폭 360 에서 선다.
+  - `site/catalog.json` — 목록 정본. 자료마다 한 줄에 `path`(`site/` 아래 폴더)·`title`·`summary`(한 줄)·`kind`(발표 자료 · 안내서
+    등)·`updated`(YYYY-MM-DD).
+  - `site/contest-deck/index.html` — 대표 발표 자료(지금은 혁신대회 덱). 외부 요청 없는 단일 파일이고 숫자는 합성 샘플이다.
+  - `site/module-guide/index.html` — 모듈 담당자 안내서의 한 파일 HTML 판. `docs/module_colleague_guide.md` 를 고치면 같은 변경에서
+    이 파일과 `updated` 도 맞춘다. 첫 지시 블록은 지침서 0장과 글자까지 같고 「사내」 낱말을 쓰지 않는다.
+  - 새 자료 — `site/<폴더>/index.html`(외부 요청 없음 · CR 없음)을 두고 `site/catalog.json` 에 한 줄을 더한 뒤 생성기를 돌려 함께
+    커밋한다. `tests/test_site_index.py` 가 빠뜨림을 잡는다.
 - `src/capa_simulation/components/intro_overlay_assets/capa-teaser.html` — 입장 화면 `Introduce` 가 띄우는 40초 티저
-  (2026-10-19 사용자 결정). 원본은 쇼케이스 `contest/dist/capa-teaser.html` 이고 `index.html` 과 같은 규칙으로 CR 을
+  (2026-10-19 사용자 결정). 원본은 쇼케이스 `contest/dist/capa-teaser.html` 이고 덱과 같은 규칙으로 CR 을
   빼 복사한다. 외부 요청 없는 한 파일이어야 사내 오프라인에서 선다.
   - 원본·빌드·자료는 저장소 밖 `~/projects/capa-simulation-showcase`(덱 `contest`·바이블 `bible`·중간 보고
-    `build`·Learning Champion 초안)가 그 폴더의 `CLAUDE.md`·메모리·세션으로 맡는다. 다른 발표 파일은 여기 넣지 않는다.
+    `build`·Learning Champion 초안)가 그 폴더의 `CLAUDE.md`·메모리·세션으로 맡는다. 다른 발표 파일은 사용자가 자료실에 올리라고 할 때만 위 꼴로 더한다.
   - 원본은 쇼케이스의 `contest/dist/capa-contest.html` 이고 `capa-contest.artifact.html`(아티팩트용 변형)은 쓰지 않는다.
-  - 두 폴더는 서로 읽되 쓰지 않는다. `index.html` 을 바꿀 때만 이 저장소 세션이 CR 을 빼 복사해
-    (`tr -d '\r' < ~/projects/capa-simulation-showcase/contest/dist/capa-contest.html > index.html`) 커밋한다. 저장소는
-    `.gitattributes` 로 LF, dist 는 CRLF 라 견줄 때도 CR 을 뺀 뒤 견준다.
+  - 두 폴더는 서로 읽되 쓰지 않는다. 덱을 바꿀 때만 이 저장소 세션이 CR 을 빼 복사해
+    (`tr -d '\r' < ~/projects/capa-simulation-showcase/contest/dist/capa-contest.html > site/contest-deck/index.html`) `site/catalog.json`
+    의 `updated` 를 고치고 생성기를 돌려 커밋한다. 저장소는 `.gitattributes` 로 LF, dist 는 CRLF 라 견줄 때도 CR 을 뺀 뒤 견준다.
   - 발표자 실명은 그대로 둔다 — 다시 묻지 않는다.
 
 ## 4. 기준정보 테이블 계약

@@ -76,7 +76,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 
 | 화면 | 하는 일 |
 |---|---|
-| 입장 화면 · Summary · Introduce | 탭을 처음 열면 첫 로딩을 덮는 입장 화면. `Detail` 은 앱으로, `Summary` 는 최신 공식버전 여섯 달 요약으로(기본은 지난달부터 여섯 달, 머리 줄 기간 글자 옆 `−`·`+` 로 한 달씩 옮김 — 과거 구간 달도 HOME 처럼 든다), `Introduce` 는 40초 티저를 화면 안에 띄움(← · Esc 로 돌아오며 재생도 멈춤 — 루트 `index.html` 발표 덱은 GitHub Pages 용). 앱 안에서는 사이드바 맨 위 앱 이름 라벨이 Summary 를 다시 열고, Summary 머리 줄 ← 가 입장 화면으로 돌아감 |
+| 입장 화면 · Summary · Introduce | 탭을 처음 열면 첫 로딩을 덮는 입장 화면. `Detail` 은 앱으로, `Summary` 는 최신 공식버전 여섯 달 요약으로(기본은 지난달부터 여섯 달, 머리 줄 기간 글자 옆 `−`·`+` 로 한 달씩 옮김 — 과거 구간 달도 HOME 처럼 든다), `Introduce` 는 40초 티저를 화면 안에 띄움(← · Esc 로 돌아오며 재생도 멈춤 — `site/contest-deck/index.html` 발표 덱은 GitHub Pages 용). 앱 안에서는 사이드바 맨 위 앱 이름 라벨이 Summary 를 다시 열고, Summary 머리 줄 ← 가 입장 화면으로 돌아감 |
 | **HOME** | 대시보드(Capa 요약·LOB·B/N) — 탭 없이 한 화면. 공용 설정은 사이드바 「HOME 설정」 상자가 여는 큰 팝업이고(2026-11-02), 안은 쓰는 묶음 다섯 탭이다(2026-11-04) — `비교 · 주요 Case`(비교 시나리오 · Case1·Case2) · `판정 기준` · `선행 · 보정`(선행 B/O · 선행 입고 실적 · 확보율 보정) · `공지 · 표시`(Summary 공지 · Top5 구간 · 주요공정 프리셋) · `Past Data`(과거 구간). 사이드바 `LOB 표시 조건` 카드 맨 위 주요 Case 칩(`공식 vN`·`Case1`·`Case2`)을 누르면 사이드바에서 그 리비전을 불러온 것과 같고, 지정하지 않은 칩은 그 팝업을 열어 고를 Case 칸을 잠깐 강조한다. `제품별 비중` 도넛은 20% 넘는 조각에 비중(정수 %)을 적는다 |
 | Capa Chatbot (구현중) | 대화형 분석 화면의 틀. LLM·Capa 데이터·대화 이력은 아직 잇지 않음 |
 | 시나리오 관리 | 「관리할 시나리오」 전환 — **시뮬레이션 시나리오**: 시나리오·리비전 표에서 이름·순서 바로 고치기, 리비전 불러오기, 공식버전 지정(확인 팝업), 지금 편집본 복제, 보관·삭제 (새 리비전 저장은 사이드바 시나리오 팝업) / **설비 시나리오**: 목록·리비전·리비전명·되돌리기·여기서 새 시나리오·이름·공식 발행·이어 쓰기·배치 차이 칸과 「배치 차이 모두 지우기」(가용설비 현황의 탭이던 것). 사내 `BigDataQuery 등록`, 공식버전 `자동 갱신` |
@@ -634,6 +634,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `page_guide_core.py` · `page_guide_capture.py` · `page_guide_helpers.js` | 생성기 부품 — 조립 · 덮어쓰기(순수), Playwright 촬영, 페이지 도우미 |
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
+| `build_site_index.py` | GitHub Pages 첫 화면(뿌리 `index.html` 자료 목록)을 `site/catalog.json` 으로 쓴다(`--check` 는 다르면 실패) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
 | `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
@@ -668,12 +669,12 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/scenario_merge_shift_implementation.md` | 시나리오 월 머지·연도 Shift 구현 설명 |
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |
 | `docs/module_guide.md` | 모듈 지침서 — 동료(담당자)의 에이전트가 받는 것. 자리·`module.json`·`module_api` v1·점검 규칙·Git 운영 |
-| `docs/module_colleague_guide.md` | 모듈 담당자(사람)용 안내서 — 비전문 동료가 읽는 쉬운 말 판. 할 수 있는 것·첫 지시·하루 흐름(가지 → PR)·에이전트에게 말하는 법·막힐 때. 규칙의 정본은 지침서 |
+| `docs/module_colleague_guide.md` | 모듈 담당자(사람)용 안내서 — 비전문 동료가 읽는 쉬운 말 판. 할 수 있는 것·첫 지시·하루 흐름(가지 → PR)·에이전트에게 말하는 법·막힐 때. 규칙의 정본은 지침서. 한 파일 HTML 판은 `site/module-guide/index.html` |
 | `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용, 그림 파일 읽기도 막는다) |
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
 | `static/guides/howto/` | 따라하기 가이드 합성 예시판(한 파일 HTML — 뼈대는 `src/capa_simulation/guides/howto/`, 만들기는 `scripts/build_page_guide.py --example`) |
 | `config/data_contract.json` | Core Data 78컬럼 계약 |
-| `index.html` | 대표 발표 자료 한 파일(앱과 무관, 숫자는 합성 샘플). 원본은 저장소 밖 쇼케이스 폴더(`AGENTS.md` 3장 끝) |
+| `index.html` · `site/` | GitHub Pages 자료실(앱과 무관). 뿌리 `index.html` 은 `site/catalog.json` 으로 만든 자료 목록, 자료는 `site/<폴더>/index.html` — 대표 발표 자료(숫자는 합성 샘플, 원본은 저장소 밖 쇼케이스 폴더) · 모듈 담당자 안내서. 새 자료 더하는 법은 `AGENTS.md` 3장 끝 |
 
 ## 아직 없는 것
 

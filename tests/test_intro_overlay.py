@@ -1345,7 +1345,7 @@ def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the
 
 
 def test_introduce_plays_the_bundled_teaser_not_the_pages_deck() -> None:
-    """Introduce 는 40초 티저를 띄운다 — 루트 `index.html`(혁신대회 발표 덱)은 GitHub Pages 용이라
+    """Introduce 는 40초 티저를 띄운다 — `site/contest-deck/`(발표 덱)은 GitHub Pages 용이라
     앱이 쓰지 않는다(2026-10-19 사용자 지적 — 처음에 덱을 띄워 의도와 달랐다). 티저는 쇼케이스
     `contest/dist/capa-teaser.html` 의 복사본 한 파일이고 외부 요청 없이 사내 오프라인에서 서야
     한다. 티저는 intro.js 가 걷을 때 부르는 `window.TEASER.pause` 를 내놓아야 한다 — 다시 복사할
@@ -1357,8 +1357,8 @@ def test_introduce_plays_the_bundled_teaser_not_the_pages_deck() -> None:
     text = teaser.read_text(encoding="utf-8")
     assert "\r" not in text
     assert not re.findall(r'(?:src|href)="https?://', text)
-    root_deck = ASSETS.parents[3] / "index.html"
-    assert text != root_deck.read_text(encoding="utf-8")
+    pages_deck = ASSETS.parents[3] / "site" / "contest-deck" / "index.html"
+    assert text != pages_deck.read_text(encoding="utf-8")
     assert (
         "index.html"
         not in intro_summary.__dict__.get("__doc__", "").split("Introduce", 1)[-1][:400]

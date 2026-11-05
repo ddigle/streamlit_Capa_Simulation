@@ -64,6 +64,7 @@
       "Edit(data/**)",
       "Edit(.streamlit/**)",
       "Edit(static/**)",
+      "Edit(site/**)",
       "Edit(docker/**)",
       "Edit(.github/**)",
       "Edit(.gitignore)",

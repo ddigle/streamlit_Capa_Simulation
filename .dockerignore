@@ -41,3 +41,5 @@ data/modules/
 .mypy_cache/
 .pytest_cache/
 review/
+# GitHub Pages 자료실. 앱은 쓰지 않는다.
+site/
