@@ -63,7 +63,8 @@ PICTURE_MEMOS = {
 }
 # 2026-11-05 남은 결정 보드(6-4)의 사용자 답 — 열 칸 모두 (가) 권장이다.
 BOARD_ANSWERS = {f"v{n}": "가" for n in range(1, 11)}
-# 2026-11-05 전후 그림 보드(6-5)에서 고친 네 칸의 사용자 답 — 그림 칸은 「더 필요」 + 메모, 물음 칸은 고른 답.
+# 2026-11-05 전후 그림 보드(6-5)에서 고친 네 칸의 사용자 답 — 그림 칸은 「더 필요」 + 메모, 물음
+# 칸은 고른 답.
 BEFORE_AFTER_ANSWERS = {
     "v1": "더 필요",
     "v9": "더 필요",
@@ -328,9 +329,10 @@ def test_the_board_answers_are_recorded_and_written_into_the_rules() -> None:
 
 def test_the_before_after_board_answers_are_recorded_and_written_into_the_rules() -> None:
     """6-5 는 전후 그림 보드에서 고친 칸 하나에 한 줄이고 답이 사용자 답과 같다. 답이 규칙 글로
-    들어갔는지 핵심만 본다 — v1: 단추 판정 글은 풍선(UI-INP-07). v9: 작업 줄은 창 제목 옆, 글 칸 라벨
-    없음(UI-INP-08 — 표 상자 칸 · 라벨 보이는 창 둘은 예외). q-wip04: 다른 화면의 입력은 Alarm 줄이
-    연다(UI-NTF-02). q-newunit: 지우기 머리 글을 가른다(UI-NTF-09). 메모 원문은 근거에 남는다."""
+    들어갔는지 핵심만 본다 — v1: 단추 판정 글은 풍선(UI-INP-07). v9: 작업 줄은 창 제목 옆, 글 칸
+    라벨 없음(UI-INP-08 — 표 상자 칸 · 라벨 보이는 창 둘은 예외). q-wip04: 다른 화면의 입력은 Alarm
+    줄이 연다(UI-NTF-02). q-newunit: 지우기 머리 글을 가른다(UI-NTF-09). 메모 원문은 근거에
+    남는다."""
     section = _chapter(_text(), 6)
     board = section[section.index("\n### 6-5. ") :]
     lines = [line for line in board.splitlines() if line.startswith("- ")]

@@ -340,8 +340,9 @@ with st.container(border=True):
             "가용설비 입력"
         ),
         full=(
-            "재공 현황 — 일부 공정·주차에 가용대수가 없어 표준 가능량 기준선을 표시하지 못했습니다. "
-            "「표준 목표」 페이지에서 주차별 가용설비를 입력하면 같은 값이 반영됩니다."
+            "재공 현황 — 일부 공정·주차에 가용대수가 없어 표준 가능량 기준선을 "
+            "표시하지 못했습니다. 「표준 목표」 페이지에서 주차별 가용설비를 입력하면 같은 값이 "
+            "반영됩니다."
         ),
         scope_label=wip_scope.label,
         goto=(tab_label(STANDARD_TARGET_CAPA), STANDARD_TARGET_CAPA.href),

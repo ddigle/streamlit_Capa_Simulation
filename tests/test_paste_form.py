@@ -406,8 +406,8 @@ process.stdout.write(JSON.stringify({ big, small, phone }))
 
 def test_the_text_limit_follows_the_measured_room_outside_the_text_box() -> None:
     """글 칸 밖 높이는 창마다 · 폭마다 다르다 — 좁아져 작업 줄이 제목 아래로 접히거나 확인 체크가
-    있으면 커진다. 잰 값을 주면 그만큼 글 칸의 끝이 줄어 창이 화면 안에 든다. 잴 수 없으면 기본값이다.
-    줄이는 쪽의 끝은 그대로 지킨다."""
+    있으면 커진다. 잰 값을 주면 그만큼 글 칸의 끝이 줄어 창이 화면 안에 든다. 잴 수 없으면
+    기본값이다. 줄이는 쪽의 끝은 그대로 지킨다."""
     out = _node(
         """
 const size = { width: 360, text: 5000 }
@@ -465,8 +465,8 @@ const root = {
   },
   removeAttribute: () => { root.sized = false },
 }
-// 좁으면 작업 줄이 접혀 글 칸이 아래로 내려간다 — 폭을 먼저 입혀야 이 차이가 재인다. 창이 스크롤되면
-// 화면 자리는 그만큼 올라간다.
+// 좁으면 작업 줄이 접혀 글 칸이 아래로 내려간다 — 폭을 먼저 입혀야 이 차이가 재인다. 창이
+// 스크롤되면 화면 자리는 그만큼 올라간다.
 const textBox = { getBoundingClientRect: () => rect((narrow() ? 200 : 120) - input.scroll, 300) }
 const confirmBox = { getBoundingClientRect: () => rect((narrow() ? 510 : 430) - input.scroll, 30) }
 const area = { value: '' }
@@ -493,14 +493,20 @@ const dialog = {
     if (selector.includes('textarea')) return area
     if (selector.includes('capa_paste_apply_')) return holder
     if (selector.includes('capa_paste_head_')) return input.inBox ? null : {}
-    if (selector.includes('capa_paste_confirm_')) return input.confirm && !selector.includes('input') ? confirmBox : null
+    if (selector.includes('capa_paste_confirm_')) {
+      return input.confirm && !selector.includes('input') ? confirmBox : null
+    }
     return null
   },
 }
 const win = {
   innerWidth: 1280,
   innerHeight: 800,
-  localStorage: { getItem: () => JSON.stringify({ width: input.width, text: 5000 }), setItem: () => {}, removeItem: () => {} },
+  localStorage: {
+    getItem: () => JSON.stringify({ width: input.width, text: 5000 }),
+    setItem: () => {},
+    removeItem: () => {},
+  },
   addEventListener: () => {},
   removeEventListener: () => {},
   MutationObserver: class { observe() {} disconnect() {} },
@@ -514,8 +520,8 @@ const document = {
 }
 const host = { ownerDocument: document, closest: () => dialog }
 install(host, {
-  storagePrefix: 'p:', sizeKey: 'k', resizable: true, lock: true, marker: 'data-x', handleLabel: 'h',
-  reasons: { empty: 'E', confirm: 'C' },
+  storagePrefix: 'p:', sizeKey: 'k', resizable: true, lock: true, marker: 'data-x',
+  handleLabel: 'h', reasons: { empty: 'E', confirm: 'C' },
 })
 process.stdout.write(JSON.stringify({
   text: styles['--capa-paste-text-h'],
@@ -562,8 +568,8 @@ def test_the_confirm_check_and_a_scrolled_window_stay_in_the_text_limit() -> Non
 
 
 def test_a_form_inside_a_bigger_window_keeps_the_plain_limit() -> None:
-    """표 상자 안 칸(HOME 설정 Past Data)은 창이 어차피 화면보다 길고 글 칸이 창 아래쪽에 있다 — 재서
-    끝을 깎으면 글 칸을 거의 못 늘린다. 제목 줄 창만 재고 이 칸은 기본값이다."""
+    """표 상자 안 칸(HOME 설정 Past Data)은 창이 어차피 화면보다 길고 글 칸이 창 아래쪽에 있다 —
+    재서 끝을 깎으면 글 칸을 거의 못 늘린다. 제목 줄 창만 재고 이 칸은 기본값이다."""
     assert _run_install(width=360, in_box=True)["text"] == "570px"
 
 
