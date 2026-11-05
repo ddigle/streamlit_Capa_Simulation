@@ -65,7 +65,6 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_unit_renames,
     prune_new_unit_propagation,
     queue_grid_toast,
-    remember_pasted_new_units,
     replace_equipment_buffer,
     stale_paste_refusal,
     stamp_layout_role,
@@ -306,10 +305,8 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     )
     before = set(grid_index(frames[1], saved, renames.units).ids)
     replace_equipment_buffer(review.candidate)
-    # 이 넣기로 든 새 호기 — 지운 호기와 함께 저장하면 결과 알림이 이름 바꾸기 길을 가리킨다.
-    remember_pasted_new_units(frames[1], review.candidate[1])
     # 넣은 편집본에서 빠진 「새 호기」 칸 호기의 함께 넣기 고름을 걷는다(같은 이름이 이 넣기로 다시
-    # 들면 저장 칸 체크를 따른다 — D8).
+    # 들면 다른 새 호기처럼 함께 넣는다 — D8).
     prune_new_unit_propagation()
     st.session_state.pop(GRID_OVERLAY_KEY, None)
     st.session_state[GRID_UNDO_KEY] = undo_to_state((step,))

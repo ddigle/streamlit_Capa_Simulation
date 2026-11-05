@@ -54,10 +54,6 @@ from capa_simulation.components.equipment_data_workspace import (
     official_confirmation_master,
     save_result_message,
 )
-from capa_simulation.components.equipment_save_fields import (
-    FIRST_RELEASE_NOTE,
-    EquipmentSaveFields,
-)
 from capa_simulation.components.space_floor_list import (
     CONFIRM_BUTTON_KEY,
     CONFIRM_KEY,
@@ -267,11 +263,9 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     _ok(app.run())
     assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
     assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in _texts(app))
-    # 저장 칸 — 가정 세션도 함께 넣기 기본 켬이고(N2) 발행 체크는 공식에 넣을 것이 있을 때만
-    # (배치만 옮긴 저장은 없다 — 함께 넣기가 켜 있어도 넣을 새 호기가 없다).
-    propagate = app.checkbox(key="space_layout_save_fields_propagate_units_assumption")
-    assert propagate.value is True
-    assert not [box for box in app.checkbox if str(box.key).endswith("_publish_assumption")]
+    # 저장 칸 체크는 없다 — 저장자 칸만(검수표 11/02 equip-13).
+    assert not [box for box in app.checkbox if "space_layout_save_fields" in str(box.key)]
+    assert app.text_input(key="space_layout_save_fields_saved_by").label == "저장자(선택)"
 
     app.button(key="space_layout_save").click().run()
     _ok(app)
@@ -961,141 +955,6 @@ def test_the_floor_use_confirm_counts_units_an_assumption_put_on_the_floor(
     repository, setup = _overlay(tmp_path)
     assert repository.layout_overlay_floor_counts("C1", "1F") == (("셋업 실무", 1),)
     assert repository.layout_overlay_floor_counts("C1", "2F") == ()
-
-
-def test_the_assumption_space_save_fields_spread_new_units_by_default() -> None:
-    """가정 세션 Space 저장 상자도 「새 호기를 다른 설비 시나리오에도 넣기」 기본 켬이다(N2 — 호기
-    목록은 공통 대장 하나라 시나리오마다 일정만 다르게). 켜 있으니 공식 가용대수 경고와, 체크를
-    따르는 새 호기가 있으면 「함께 넣은 공식 리비전 발행」(기본 켬)이 처음부터 선다. 끄면 둘 다
-    걷히고 세션에서 다시 읽은 값도 끔이다."""
-    script = AppTest.from_string(
-        """
-import streamlit as st
-from capa_simulation.components.equipment_save_fields import (
-    OfficialReach, render_equipment_save_fields, save_fields_from_state,
-)
-st.session_state["seen"] = render_equipment_save_fields(
-    "p", assumption=True, reach=OfficialReach(follow_units=1)
-)
-st.session_state["read"] = save_fields_from_state("p", assumption=True)
-""",
-        default_timeout=30,
-    ).run()
-    assert not script.exception
-    seen = script.session_state["seen"]
-    assert isinstance(seen, EquipmentSaveFields)
-    assert (seen.propagate_new_units, seen.publish_official) == (True, True)
-    assert script.checkbox(key="p_propagate_units_assumption").value is True
-    assert any("공식 가용대수에 셉니다" in str(item.value) for item in script.caption)
-    publish = script.checkbox(key="p_publish_assumption")
-    assert publish.label == "함께 넣은 공식 리비전 발행" and publish.value is True
-    read = script.session_state["read"]
-    assert (read.propagate_new_units, read.publish_official) == (True, True)
-
-    script.checkbox(key="p_propagate_units_assumption").uncheck().run()
-    assert not any("공식 가용대수에 셉니다" in str(item.value) for item in script.caption)
-    assert not [box for box in script.checkbox if str(box.key) == "p_publish_assumption"]
-    # 저장 단추 콜백은 다음 회차 앞에 돈다 — 그리지 않은 발행 칸은 그 회차 끝에 걷혀 거짓이다.
-    script.run()
-    read = script.session_state["read"]
-    assert (read.propagate_new_units, read.publish_official) == (False, False)
-
-
-_REACH_SCRIPT = """
-import streamlit as st
-from capa_simulation.components.equipment_save_fields import (
-    OfficialReach, render_equipment_save_fields,
-)
-st.session_state["seen"] = render_equipment_save_fields(
-    "p", assumption={assumption}, reach=OfficialReach({reach})
-)
-"""
-
-
-@pytest.mark.parametrize("assumption", [True, False], ids=["space", "tab-popup"])
-@pytest.mark.parametrize(
-    ("reach", "shown"),
-    [
-        ("", False),
-        ("follow_units=2", True),
-        ("chosen_spread=1", True),
-        ("new_downtime=1", True),
-    ],
-    ids=["nothing", "follow-units", "chosen-units", "new-downtime"],
-)
-def test_an_assumption_publish_box_stands_only_when_the_save_reaches_the_official(
-    assumption: bool, reach: str, shown: bool
-) -> None:
-    """가정 세션 발행 체크는 세 저장 자리 모두 한 규칙이다 — 이 저장이 공식 설비 시나리오에 넣을
-    것(「새 호기」 칸에서 켠 호기, 체크를 따르는 새 호기·새 비가동)이 있을 때만 「함께 넣은 공식
-    리비전 발행」(기본 켬)이 선다. 없으면 뜻 없는 체크가 서지 않는다(E2E #135 — 가정 세션 팝업),
-    Space 는 함께 넣기 체크를 끈 채 「새 호기」 칸 고름·새 비가동이 공식에 들어가도 발행 체크가 숨어
-    말없이 발행하지 않던 것(옛 「켤 때만」)을 고친다. `follow_units` 는 저장 칸 함께 넣기 체크를
-    따른다(세 자리 모두 기본 켬 — N2)."""
-    script = AppTest.from_string(
-        _REACH_SCRIPT.format(assumption=assumption, reach=reach), default_timeout=30
-    ).run()
-    assert not script.exception
-    boxes = [box for box in script.checkbox if "_publish" in str(box.key)]
-    assert [(box.label, box.value) for box in boxes] == (
-        [("함께 넣은 공식 리비전 발행", True)] if shown else []
-    )
-    assert script.session_state["seen"].publish_official is shown
-
-
-@pytest.mark.parametrize("assumption", [True, False], ids=["space", "tab-popup"])
-def test_an_assumption_save_without_any_release_keeps_the_first_release_note(
-    assumption: bool,
-) -> None:
-    """공식 발행이 하나도 없으면 저장소가 이 저장의 일정 리비전을 함께 넣기 없이도 공식 v1 로
-    낸다 — 가정 세션 저장 칸도 넣을 것이 없다고 「공식 v1 이 됩니다」 한 줄까지 숨기지
-    않는다(I53 후속, 말없는 발행을 막는 같은 뜻). 체크는 서지 않는다."""
-    script = AppTest.from_string(
-        _REACH_SCRIPT.format(assumption=assumption, reach="").replace(
-            "reach=OfficialReach()", "reach=OfficialReach(), release_exists=False"
-        ),
-        default_timeout=30,
-    ).run()
-    assert not script.exception
-    assert not [box for box in script.checkbox if "_publish" in str(box.key)]
-    assert any(FIRST_RELEASE_NOTE in str(item.value) for item in script.caption)
-    assert script.session_state["seen"].publish_official is True
-
-
-def test_the_assumption_fields_default_when_nothing_was_drawn() -> None:
-    script = AppTest.from_string(
-        """
-import streamlit as st
-from capa_simulation.components.equipment_save_fields import save_fields_from_state
-st.session_state["read"] = save_fields_from_state("p", assumption=True)
-""",
-        default_timeout=30,
-    ).run()
-    read = script.session_state["read"]
-    # 함께 넣기는 그린 적 없어도 기본 켬(N2), 발행은 그리지 않은 체크라 거짓(I53).
-    assert (read.propagate_new_units, read.publish_official) == (True, False)
-
-
-def test_the_tab_publish_box_reads_false_when_the_reach_rule_drew_none() -> None:
-    """가정 세션 설비 마스터 탭 「리비전 저장」 은 콜백이라 세션에서 칸을 다시 읽는다. 공식에 넣을
-    것이 없어 발행 체크를 그리지 않은 회차면 발행은 거짓이다(그리지 않은 체크로 말없이 공식을
-    발행하지 않는다 — I53). 공식 세션 탭(`reach_rule` 없음)은 그대로 기본 켬이다."""
-    script = AppTest.from_string(
-        """
-import streamlit as st
-from capa_simulation.components.equipment_save_fields import (
-    OfficialReach, render_equipment_save_fields, save_fields_from_state,
-)
-render_equipment_save_fields("p", reach=OfficialReach())
-st.session_state["rule"] = save_fields_from_state("p", reach_rule=True)
-st.session_state["plain"] = save_fields_from_state("q")
-""",
-        default_timeout=30,
-    ).run()
-    assert not script.exception
-    assert not [box for box in script.checkbox if str(box.key).endswith("_publish")]
-    assert script.session_state["rule"].publish_official is False
-    assert script.session_state["plain"].publish_official is True
 
 
 def _apply_eq02(app: AppTest, editor_calls: list[dict[str, Any]], x: float = 60) -> None:

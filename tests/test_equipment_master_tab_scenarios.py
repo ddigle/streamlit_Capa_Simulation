@@ -424,7 +424,7 @@ def test_the_layout_lock_line_gives_its_reason_as_a_second_sentence(
 
     app = _page(repository, setup, pinned)
 
-    lines = [text for text in _texts(app, "caption") if text.startswith(":material/lock:")]
+    lines = [text for text in _texts(app, "caption") if text.startswith(LAYOUT_LOCK_CAPTION)]
     assert len(lines) == 1, lines
     line = lines[0]
     assert line.startswith(LAYOUT_LOCK_CAPTION + " ")

@@ -1,4 +1,4 @@
-# Purpose: 설비 마스터 탭 배치 칸 역할·다른 시나리오 호기 삭제 확인·공식 판정 대체 규칙을 본다.
+# Purpose: 설비 마스터 탭 배치 칸 역할·다른 시나리오 호기 삭제 저장·공식 판정 대체 규칙을 본다.
 
 """설비 시나리오 2단계 — 설비 마스터 탭 쪽 셋.
 
@@ -8,10 +8,10 @@
   자리 없이 맞춘다(표 칸 잠금은 `tests/test_equipment_grid_ops.py`). 「있던 호기」 는 저장하면
   저장본 호기 키를 잇는 행이고 견주는 값은 **저장본**이다(S1 리뷰). 배치 칸을 고친 표 출납은 그때의
   역할을 찍는다. 붙여넣기 잠금 판정(`layout_paste_refusal`)은 순수 함수로 본다.
-- **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장은 확인 체크 뒤에**(11-2 6단계). 호기 목록은
-  공통 하나라 지우면 그 시나리오들의 일정도 빠진다. 체크(설비 마스터 탭 「저장 전 변경」 저장 칸
-  아래)는 본 글(호기·그 일정이 든 시나리오)에 묶이고, 체크가 없는 Space 「배치 저장」·사이드바 팝업
-  저장도 같은 판정으로 막힌다.
+- **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장은 묻지 않고 알린다**(11-2 6단계, 2026-11-05
+  사용자 결정 — 검수표 11/02 equip-13). 호기 목록은 공통 하나라 지우면 그 시나리오들의 일정도
+  빠진다. 저장 칸에 경고 · 확인 체크가 없고, 세 저장 길(설비 마스터 탭 · 사이드바 팝업 · Space) 모두
+  저장한 뒤 결과 알림이 지운 호기 수와 일정이 함께 빠진 다른 시나리오 수를 적는다.
 - **공식 판정 대체 규칙**(검토 L13) — 발행이 없을 때 화면도 저장소처럼 「운영 일정」 → 목록 첫
   시나리오로 본다.
 """
@@ -29,8 +29,9 @@ from alert_marks import place_errors, shown
 from grid_fake import Calls, install_fake_grid, load, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
-from test_equipment_scenario_repository import _clone, _seeded, _session, _with_unit
+from test_equipment_scenario_repository import _clone, _request, _seeded, _session, _with_unit
 
+from capa_simulation import alerts
 from capa_simulation.components import equipment_data_workspace as workspace
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
@@ -39,10 +40,8 @@ from capa_simulation.components.equipment_data_workspace import (
     LAYOUT_ROLE_KEY,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
-    REMOVAL_CONFIRM_KEY,
     ImportReview,
     LayoutLock,
-    RemovalElsewhere,
     layout_edits,
     layout_paste_refusal,
 )
@@ -55,7 +54,6 @@ from capa_simulation.equipment_scenario_activation import (
     _default_selection,
 )
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
-from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_scenario_cache,
@@ -174,7 +172,8 @@ def test_an_assumption_grid_layout_edit_stays_its_own_and_stamps_the_role(
     assert _official(repository, "EQ-01", "X좌표") == 10
     saved = " ".join(_texts(app, "success"))
     assert "「셋업 실무」의 가정 배치를 저장했습니다(공식과 다른 호기 1대)" in saved
-    assert "Space 현황은 고른 설비 시나리오의 배치입니다" in saved
+    # 일어난 일만 — 어디에 반영되는지 같은 설명 꼬리는 없다(2026-11-05 사용자 결정).
+    assert "Space 현황은" not in saved
 
 
 def test_an_official_import_warns_it_moves_the_official_layout(tmp_path: Path, grid: Calls) -> None:
@@ -368,120 +367,46 @@ def _delete(app: AppTest, grid: Calls, name: str) -> None:
     _ok(app.run())
 
 
-def _removal_box(app: AppTest) -> Any:
-    boxes = [box for box in app.checkbox if str(box.key).startswith(REMOVAL_CONFIRM_KEY)]
-    return boxes[0] if boxes else None
-
-
 def _click_save(app: AppTest) -> AppTest:
     app.button(key=SAVE_BUTTON_KEY).click()
     return _ok(app.run())
 
 
-def test_removing_a_unit_scheduled_in_another_scenario_needs_the_confirm(
+def test_removing_a_unit_scheduled_in_another_scenario_saves_and_says_so(
     tmp_path: Path, grid: Calls
 ) -> None:
+    """검수표 11/02 equip-13 — 저장 칸에 경고 · 확인 체크가 없고, 저장하면 공통 대장에서 빠지며 결과
+    알림이 지운 호기 수와 일정이 함께 빠진 다른 설비 시나리오 수를 적는다."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, OPERATIONS)
-    app.session_state[SIDE_KEY] = SIDE_CHANGES
-    _ok(app.run())
-    assert _removal_box(app) is None
     _delete(app, grid, "EQ-02")
 
-    assert any(
-        "지우는 호기 1대(EQ\\-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 "
-        "있습니다" in text
-        for text in _texts(app, "warning")
-    )
-    box = _removal_box(app)
-    assert box is not None
-    assert box.label == "다른 설비 시나리오 1개에서 1대의 일정이 빠지는 것을 알고 저장합니다"
+    assert not _texts(app, "warning"), _texts(app, "warning")
+    assert not list(app.checkbox)
 
-    _click_save(app)
-    assert len(repository.list_revisions()) == 1
-    assert any(
-        "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text for text in _texts(app, "error")
-    )
-
-    box = _removal_box(app)
-    assert box is not None
-    box.check()
     _click_save(app)
     assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
     assert "EQ-02" not in set(_session(repository).equipment["설비명"])
     assert "EQ-02" not in set(_session(repository, setup).equipment["설비명"])
+    message = " ".join(_texts(app, "success"))
+    assert "지운 호기 1대(다른 설비 시나리오 1개 일정도 빠짐)" in message, message
 
 
-def test_the_removal_check_is_for_the_scenarios_its_words_named(
-    tmp_path: Path, grid: Calls
-) -> None:
-    """체크를 켠 뒤 남이 그 호기 일정이 든 시나리오를 하나 더 만들면(복제) 경고·체크 글이 「2개」 로
-    바뀐다 — 켜 둔 체크로 본 적 없는 글의 저장이 가지 않게 새 칸(풀림)으로 서고 저장을 거부한다(S1
-    리뷰: 고치기 전에는 key 꼬리가 호기 이름만이라 체크가 남아 두 시나리오에서 일정이 빠졌다)."""
+def test_the_removal_count_is_taken_when_the_save_writes(tmp_path: Path, grid: Calls) -> None:
+    """지운 호기의 일정이 빠진 시나리오 수는 저장이 쓰는 그때의 수다 — 화면을 그린 뒤 남이 그 호기
+    일정이 든 시나리오를 만들어도(복제) 그것까지 센다(옛 확인 체크의 낡음 대조를 대신한다)."""
     repository, _ = _two_scenarios(tmp_path)
     app = _page(repository, OPERATIONS)
     _delete(app, grid, "EQ-02")
-    box = _removal_box(app)
-    assert box is not None and "1개" in str(box.label)
-    box.check()
 
     _clone(repository, "두 번째 가정")
     clear_equipment_scenario_cache()  # 화면에서 복제하면 부르는 것
     _click_save(app)
 
-    assert len(repository.list_revisions()) == 1
-    assert any("다른 설비 시나리오 2개" in text for text in _texts(app, "error"))
-    box = _removal_box(app)
-    assert box is not None and "2개" in str(box.label) and not box.value
-    box.check()
-    _click_save(app)
     assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
-
-
-def test_the_removal_check_covers_what_it_saw() -> None:
-    one = RemovalElsewhere((("EQ-02", ("셋업 실무",)),))
-    two = RemovalElsewhere((("EQ-02", ("셋업 실무", "두 번째 가정")),))
-    more = RemovalElsewhere((("EQ-01", ("셋업 실무",)), ("EQ-02", ("셋업 실무",))))
-
-    assert one.covered_by(one) and one.covered_by(two) and one.covered_by(more)
-    assert not two.covered_by(one) and not more.covered_by(one) and not one.covered_by(None)
-    assert len({one.token, two.token, more.token}) == 3
-    # 시나리오 차례는 지문을 바꾸지 않는다.
-    assert two.token == RemovalElsewhere((("EQ-02", ("두 번째 가정", "셋업 실무")),)).token
-
-
-def test_the_removal_warning_blocks_the_tildes_of_the_unit_names_too() -> None:
-    """지우는 호기 경고(저장 칸 경고 상자·저장 거절 글 — 마크다운)는 시나리오 이름은 막고 호기
-    이름은 날로 실어 「지우는 호기 1대(DA<del>21</del>R)」 로 그렸다(2026-10-26 E2E r5). 호기 이름의
-    물결표도 막는다 — 막은 글은 거절 글(`bootstrap_error_message`)을 지나도 두 번 막히지 않는다."""
-    removal = RemovalElsewhere((("DA~21~R", ("E2E~가정~A",)), ("EQ-02", ("E2E~가정~A",))))
-
-    message = removal.message()
-
-    assert "지우는 호기 2대(DA\\~21\\~R, EQ\\-02)는" in message
-    assert "(「E2E\\~가정\\~A」)" in message
-    assert "DA~21~R" not in message
-    refusal = bootstrap_error_message(ValueError(removal.refusal()))
-    assert "(DA\\~21\\~R, EQ\\-02)" in refusal and "\\\\~" not in refusal
-
-
-def test_the_removal_warning_keeps_the_stars_of_the_unit_names() -> None:
-    """지우는 호기 경고·저장 거절 글(탭·사이드바 팝업 — 마크다운)에서 설비명 「DA*31*R」·
-    「E2E*NEW*01~A~」 의 별표 짝이 기울임이 되어 이름이 깨졌다 — 물결표만 막았다(2026-10-27
-    E2E). 호기 이름도 구두점을 막는다. 막은 글은 거절 글 길(`bootstrap_error_message`)을 지나도
-    그대로다."""
-    removal = RemovalElsewhere(
-        (("DA*31*R", ("가정",)), ("E2E*NEW*01~A~", ("가정",)), ("EQ-02", ("가정",)))
-    )
-
-    message = removal.message()
-
-    assert "(DA\\*31\\*R, E2E\\*NEW\\*01\\~A\\~, EQ\\-02)" in message, message
-    assert "DA*31*R" not in message and "NEW*01" not in message
-    refusal = bootstrap_error_message(ValueError(removal.refusal()))
-    assert "(DA\\*31\\*R, E2E\\*NEW\\*01\\~A\\~, EQ\\-02)" in refusal, refusal
+    assert "다른 설비 시나리오 2개 일정도 빠짐" in " ".join(_texts(app, "success"))
 
 
 def _popup_without_eq02(database: str, page_file: str) -> None:
@@ -508,17 +433,18 @@ def _popup_without_eq02(database: str, page_file: str) -> None:
     render_equipment_scenario_dialog_body(Path(database), page_file=page_file)
 
 
-def test_the_popup_save_has_no_check_and_is_refused_the_same_way(tmp_path: Path) -> None:
-    """확인 체크가 없는 사이드바 팝업 저장도 같은 판정으로 막힌다 — RawData 저장 칸에서 확인하라고
-    알린다(밤사이 결정 「체크 칸이 없는 자리도 막는다」)."""
+def test_the_popup_save_removes_the_unit_and_says_so_like_the_tab(tmp_path: Path) -> None:
+    """사이드바 팝업 저장은 설비 마스터 탭과 같은 저장이다 — 지울 호기로 거절되던 길이 없어지고
+    같은 결과 알림이 알림창 · Alarm 으로만 간다(검수표 11/02 equip-13)."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        FLASH_KEY,
         SAVE_BUTTON_KEY,
         SAVE_MODE,
     )
     from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 
-    repository, _ = _two_scenarios(tmp_path)
+    repository, setup = _two_scenarios(tmp_path)
     app = AppTest.from_function(
         _popup_without_eq02,
         args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
@@ -526,40 +452,54 @@ def test_the_popup_save_has_no_check_and_is_refused_the_same_way(tmp_path: Path)
     )
     app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
     _ok(app.run())
+    assert not list(app.checkbox)
+    assert not _texts(app, "warning"), _texts(app, "warning")
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
 
-    assert len(repository.list_revisions()) == 1
-    assert any(
-        "지우는 호기 1대(EQ\\-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다"
-        in text
-        and "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text
-        for text in _texts(app, "error")
-    )
+    assert not app.error, _texts(app, "error")
+    assert len(repository.list_revisions()) == 2
+    assert "EQ-02" not in set(_session(repository, setup).equipment["설비명"])
+    note = app.session_state[FLASH_KEY]
+    assert note.popup_only and alerts.FLASH_CODES[note.kind] == "FL-01"
+    assert "다른 설비 시나리오 1개 일정도 빠짐" in note.message
 
 
-def test_removing_a_unit_only_this_scenario_schedules_needs_no_confirm(
+def test_removing_a_unit_only_this_scenario_schedules_names_no_other_scenario(
     tmp_path: Path, grid: Calls
 ) -> None:
     repository = _seeded(tmp_path)
     app = _page(repository, OPERATIONS)
     _delete(app, grid, "EQ-02")
-    assert _removal_box(app) is None
 
     _click_save(app)
     assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
+    message = " ".join(_texts(app, "success"))
+    assert "지운 호기 1대 " in message or "지운 호기 1대." in message
+    assert "일정도 빠짐" not in message
 
 
-def test_the_store_lists_units_scheduled_in_other_active_scenarios(tmp_path: Path) -> None:
+def test_the_store_names_the_other_scenarios_a_removed_unit_was_scheduled_in(
+    tmp_path: Path,
+) -> None:
+    """저장 결과의 `removed_elsewhere` — 지운 호기의 일정이 최신에 든 **다른** 시나리오만이다."""
     repository, setup = _two_scenarios(tmp_path)
+    session = _session(repository, setup)
+    kept = session.equipment.loc[session.equipment["설비명"].ne("EQ-02")].reset_index(drop=True)
 
-    others = dict(repository.units_scheduled_elsewhere(OPERATIONS))
-    everywhere = dict(repository.units_scheduled_elsewhere(None))
+    result = repository.save_equipment(_request(session, setup, equipment=kept))
 
-    assert len(others) == 2 and set(others.values()) == {("셋업 실무",)}
-    assert set(everywhere.values()) == {("운영 일정", "셋업 실무")}
-    assert set(dict(repository.units_scheduled_elsewhere(setup)).values()) == {("운영 일정",)}
+    assert result.removed_units == ("EQ-02",)
+    assert result.removed_elsewhere == ("운영 일정",)
+    untouched = repository.save_equipment(
+        _request(
+            _session(repository, setup),
+            setup,
+            equipment=_session(repository, setup).equipment.assign(담당자="DEMO 담당"),
+        )
+    )
+    assert untouched.removed_units == () and untouched.removed_elsewhere == ()
 
 
 # ------------------------------------------------------------------ 공식 판정 대체 규칙(L13)

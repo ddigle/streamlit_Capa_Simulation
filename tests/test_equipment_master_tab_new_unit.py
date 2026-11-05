@@ -31,7 +31,6 @@ from capa_simulation.components.equipment_data_workspace import (
     LAYOUT_ROLE_KEY,
     NEW_UNIT_DRAFT_KEY,
     NEW_UNIT_PROPAGATE_KEY,
-    SAVE_FIELDS_PREFIX,
 )
 from capa_simulation.components.equipment_master_tab import (
     NEW_UNIT_OVERLAY_NOTE,
@@ -43,7 +42,7 @@ from capa_simulation.components.equipment_master_tab import (
 )
 from capa_simulation.components.equipment_save_fields import (
     ASSUMPTION_PROPAGATE_WARNING,
-    ASSUMPTION_PUBLISH_LABEL,
+    SAVE_ALWAYS_HELP,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -167,12 +166,9 @@ def _with_copy_of_first(master: pd.DataFrame, name: str) -> pd.DataFrame:
     return grown.astype(master.dtypes.to_dict())
 
 
-def _save(app: AppTest, *, spread: bool | None = None) -> AppTest:
+def _save(app: AppTest) -> AppTest:
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
-    if spread is not None:
-        app.checkbox(key=f"{SAVE_FIELDS_PREFIX}_propagate_units").set_value(spread)
-        _ok(app.run())
     app.button(key=SAVE_BUTTON_KEY).click()
     return _ok(app.run())
 
@@ -265,8 +261,8 @@ def test_a_blocked_add_keeps_the_draft_and_says_why(tmp_path: Path, grid: Calls)
 
 
 def test_each_new_unit_spreads_by_its_own_choice_when_saved(tmp_path: Path, grid: Calls) -> None:
-    """「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크보다 이긴다(D8) — 끈 호기는 다른
-    설비 시나리오에서 일정 없음, 켠 호기는 같은 일정으로 들어간다."""
+    """「새 호기」 칸에서 넣은 호기는 그 칸의 고름을 따른다(D8) — 끈 호기는 다른 설비 시나리오에서
+    일정 없음, 켠 호기는 같은 일정으로 들어가고 결과 알림이 끈 수를 적는다."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, OPERATIONS)
     _open_new(app)
@@ -275,31 +271,16 @@ def test_each_new_unit_spreads_by_its_own_choice_when_saved(tmp_path: Path, grid
     _ok(app.run())
     _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=False)
 
-    _save(app, spread=False)
+    _save(app)
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
-    # 저장 뒤에는 고름을 비운다(편집본과 함께 산다).
-    assert not any("「새 호기」 칸에서 넣은" in str(item.value) for item in app.caption)
+    message = " ".join(str(item.value) for item in successes(app))
+    assert "설비 데이터를 저장했습니다" in message
+    assert "「새 호기」 칸에서 끈 1대는 다른 설비 시나리오에 넣지 않았습니다." in message
     other = _session(repository, setup)
     assert other.unscheduled_units == frozenset({"EQ-09"})
     assert "EQ-08" in other.equipment["설비명"].tolist()
+    # 저장 뒤에는 고름을 비운다(편집본과 함께 산다).
     assert NEW_UNIT_PROPAGATE_KEY not in app.session_state
-
-
-def test_the_save_section_counts_the_panel_choices(tmp_path: Path, grid: Calls) -> None:
-    repository, _ = _two_scenarios(tmp_path)
-    app = _page(repository, OPERATIONS)
-    _open_new(app)
-    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=False)
-
-    app.session_state[SIDE_KEY] = SIDE_CHANGES
-    _ok(app.run())
-
-    assert any(
-        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다 — 다른 설비 시나리오에 같은 "
-        "일정으로 0대 · 일정 없음 1대" in str(item.value)
-        for item in app.caption
-    )
 
 
 def test_renaming_a_panel_unit_keeps_its_choice(tmp_path: Path, grid: Calls) -> None:
@@ -454,11 +435,11 @@ def test_a_second_add_in_a_later_run_is_dropped_and_keeps_the_kept_draft(
     assert str(eg.NAME_INDEX) not in panel["errors"] or "이미 있는" not in str(panel["errors"])
 
 
-def test_an_undone_panel_unit_drops_its_choice_and_a_unit_entered_elsewhere_follows_the_box(
+def test_an_undone_panel_unit_drops_its_choice_and_a_unit_entered_elsewhere_spreads(
     tmp_path: Path, grid: Calls
 ) -> None:
     """토스트 「되돌리기」 로 뺀 새 호기의 함께 넣기 고름은 걷힌다 — 같은 이름이 다른 길로 다시
-    들면 저장 칸 체크를 따른다(사양 「붙여넣기·Space 로 든 새 호기는 저장 칸 체크」)."""
+    들면 다른 새 호기처럼 함께 넣는다(사양 「붙여넣기·Space 로 든 새 호기는 고르지 않는다」)."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, OPERATIONS)
     _open_new(app)
@@ -470,25 +451,23 @@ def test_an_undone_panel_unit_drops_its_choice_and_a_unit_entered_elsewhere_foll
     assert "EQ-09" not in app.session_state[BUFFER_KEY][1]["설비명"].tolist()
     assert NEW_UNIT_PROPAGATE_KEY not in app.session_state
     _enter_elsewhere(app, "EQ-09")
-    _save(app, spread=True)
+    _save(app)
     assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     other = _session(repository, setup)
     assert "EQ-09" in other.equipment["설비명"].tolist()
     assert "EQ-09" not in other.unscheduled_units
 
 
-def test_the_panel_choice_wins_over_the_box_and_other_new_units_follow_the_box(
-    tmp_path: Path, grid: Calls
-) -> None:
-    """저장 칸 함께 넣기를 켠 채 — 「새 호기」 칸에서 끈 호기는 일정 없음(칸이 이김), 그 칸
-    밖에서 든 새 호기는 저장 칸 체크대로 같은 일정으로 들어간다(D8 섞임, 탭 단)."""
+def test_the_panel_choice_stays_and_other_new_units_spread(tmp_path: Path, grid: Calls) -> None:
+    """「새 호기」 칸에서 끈 호기는 일정 없음, 그 칸 밖에서 든 새 호기는 같은 일정으로 들어간다(D8
+    섞임, 탭 단)."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, OPERATIONS)
     _open_new(app)
     _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=False)
     _enter_elsewhere(app, "EQ-08")
 
-    _save(app, spread=True)
+    _save(app)
 
     assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
     other = _session(repository, setup)
@@ -542,34 +521,12 @@ def test_making_a_unit_from_a_vanished_detail_says_so_with_the_right_particle(
     assert last(grid, emg.side_key("detail"))["toast"]["text"] == "그 호기를 찾지 못했습니다"
 
 
-def test_the_assumption_save_section_says_panel_spread_units_count_officially(
+def test_an_assumption_tab_save_publishes_what_it_spreads_to_the_official(
     tmp_path: Path, grid: Calls
 ) -> None:
-    repository, setup = _two_scenarios(tmp_path)
-    app = _page(repository, setup)
-    app.session_state[SIDE_KEY] = SIDE_NEW
-    _ok(app.run())
-    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=True)
-
-    app.session_state[SIDE_KEY] = SIDE_CHANGES
-    _ok(app.run())
-
-    assert any(
-        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다 — 다른 설비 시나리오에 같은 "
-        "일정으로 1대 · 일정 없음 0대 · 같은 일정으로 넣는 1대는 공식 설비 시나리오에"
-        in str(item.value)
-        for item in app.caption
-    )
-
-
-@pytest.mark.parametrize("publish", [True, False], ids=["publish", "leave-official"])
-def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
-    tmp_path: Path, grid: Calls, publish: bool
-) -> None:
-    """가정 설비 시나리오 세션의 탭 저장 칸에도 발행 체크가 선다(G1 — 저장 칸에서 끌 수 있음,
-    같은 세션의 사이드바 팝업·Space 저장 칸과 같은 「함께 넣은 공식 리비전 발행」). 「새 호기」
-    칸에서 함께 넣기를 켠 호기는 공식 설비 시나리오에 새 리비전을 만들고, 체크를 끄면 공식 발행은
-    그대로다(예전에는 체크가 없어 숨은 기본값 켬으로 늘 공식 vN 을 냈다)."""
+    """가정 설비 시나리오 세션의 탭 저장 — 「새 호기」 칸에서 함께 넣기를 켠 호기는 공식 설비
+    시나리오에 새 리비전을 만들고 체크 없이 공식 vN 을 내며 결과 알림이 그것을 적는다(지금
+    기본값 그대로 — 검수표 11/02 equip-13)."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, setup)
     app.session_state[SIDE_KEY] = SIDE_NEW
@@ -578,29 +535,26 @@ def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
 
-    box = app.checkbox(key=f"{SAVE_FIELDS_PREFIX}_publish")
-    assert box.label == ASSUMPTION_PUBLISH_LABEL and box.value is True
-    box.set_value(publish)
-    _ok(app.run())
+    assert not list(app.checkbox)
     before = repository.latest_equipment_release()
     assert before is not None
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
+    message = " ".join(str(item.value) for item in successes(app))
+    assert "설비 데이터를 저장했습니다" in message
     assert "EQ-09" in _session(repository, OPERATIONS).equipment["설비명"].tolist()
     after = repository.latest_equipment_release()
-    assert after is not None
-    assert after.release_no == (before.release_no + 1 if publish else before.release_no)
-    assert any(("발행했습니다" in str(item.value)) is publish for item in successes(app))
+    assert after is not None and after.release_no == before.release_no + 1
+    assert f"공식 v{after.release_no} 발행" in message
 
 
-def test_an_assumption_tab_save_that_reaches_nothing_official_has_no_publish_box(
+def test_an_assumption_tab_save_that_reaches_nothing_official_publishes_nothing(
     tmp_path: Path, grid: Calls
 ) -> None:
     """가정 설비 시나리오 세션에서 「새 호기」 칸 함께 넣기를 끈 호기만 넣은 저장은 공식 설비
-    시나리오에 새 리비전을 만들지 않는다 — 발행 체크가 서지 않고(뜻 없는 체크, E2E #135 와 같은
-    규칙) 저장해도 공식 발행은 그대로다(I53)."""
+    시나리오에 새 리비전을 만들지 않는다 — 저장해도 공식 발행은 그대로다(옛 체크가 서지 않던
+    길과 같은 결과, I53). 저장소 판정(`_plan_publish`)이 그렇게 가른다."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, setup)
     app.session_state[SIDE_KEY] = SIDE_NEW
@@ -609,59 +563,24 @@ def test_an_assumption_tab_save_that_reaches_nothing_official_has_no_publish_box
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
 
-    assert not [box for box in app.checkbox if box.key == f"{SAVE_FIELDS_PREFIX}_publish"]
     before = repository.latest_equipment_release()
     assert before is not None
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
 
-    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in successes(app))
+    message = " ".join(str(item.value) for item in successes(app))
+    assert "설비 데이터를 저장했습니다" in message and "공식 v" not in message
     # 공통에는 들지만 공식 설비 시나리오에는 일정 없음이다 — 공식에 새 일정 리비전이 없다.
     assert _session(repository, OPERATIONS).unscheduled_units == frozenset({"EQ-09"})
     after = repository.latest_equipment_release()
     assert after is not None and after.release_no == before.release_no
 
 
-def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:
-    """Space 「저장 칸」 도 같은 한 줄 — 저장 칸 함께 넣기를 끈 채여도 「새 호기」 칸에서 켠 호기가
-    공식에 든다는 것을 저장 전에 보인다."""
-    repository, setup = _two_scenarios(tmp_path)
-    clear_equipment_repository()
-    app = AppTest.from_string(
-        _page_script(SPACE_PAGE, repository.database_path), default_timeout=90
-    )
-    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
-    app.session_state["space_status_selected_building"] = "C1"
-    app.session_state["space_status_selected_floor"] = "1F"
-    _ok(app.run())
-    _enter_elsewhere(app, "EQ-09", move="EQ-02")
-    app.session_state[NEW_UNIT_PROPAGATE_KEY] = {"EQ-09": True}
-
-    _ok(app.run())
-    # 가정 세션도 저장 칸 함께 넣기는 기본 켬(N2) — 끈 채로 본다.
-    box = app.checkbox(key="space_layout_save_fields_propagate_units_assumption")
-    assert box.value is True
-    _ok(box.uncheck().run())
-
-    captions = [str(item.value) for item in app.caption]
-    assert any(
-        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다" in text
-        and "공식 가용대수에 셉니다" in text
-        for text in captions
-    ), captions
-    # 저장 칸 함께 넣기를 꺼도 그 칸에서 켠 호기가 공식에 들어가므로 발행 체크가 선다 — 옛
-    # 「함께 넣기를 켤 때만」 은 이 체크를 숨겨 말없이 발행하지 않았다(I53, 세 저장 자리 한 규칙).
-    publish = app.checkbox(key="space_layout_save_fields_publish_assumption")
-    assert (publish.label, publish.value) == (ASSUMPTION_PUBLISH_LABEL, True)
-
-
-def test_an_assumption_space_save_spreads_a_new_unit_to_the_official_by_default(
-    tmp_path: Path,
-) -> None:
-    """N2(2026-11-01 사용자 결정 「셋 다 켬」) — 가정 세션 Space 「배치 저장」 도 저장 칸을 그대로
-    두면 새 호기를 다른 설비 시나리오에 같은 일정으로 넣는다(설비 마스터 탭·사이드바 팝업과 같음).
-    호기 목록은 공통 대장 하나라 공식에도 그 호기가 있고, 기본값이면 일정도 같아 「일정 없음」 이
-    아니다. 발행 체크가 서고 기본으로 발행한다. 자리는 그 가정 시나리오의 배치에만 있다(Q1)."""
+def test_an_assumption_space_save_spreads_a_new_unit_to_the_official(tmp_path: Path) -> None:
+    """가정 세션 Space 「배치 저장」 도 새 호기를 다른 설비 시나리오에 같은 일정으로 넣는다(설비
+    마스터 탭·사이드바 팝업과 같음 — 저장 칸 체크는 없다, 검수표 11/02 equip-13). 호기 목록은 공통
+    대장 하나라 공식에도 그 호기가 있고 일정도 같아 「일정 없음」 이 아니다. 공식으로 발행한다.
+    자리는 그 가정 시나리오의 배치에만 있다(Q1)."""
     repository, setup = _two_scenarios(tmp_path)
     clear_equipment_repository()
     app = AppTest.from_string(
@@ -675,8 +594,7 @@ def test_an_assumption_space_save_spreads_a_new_unit_to_the_official_by_default(
     _ok(app.run())
     before = repository.latest_equipment_release()
     assert before is not None
-    publish = app.checkbox(key="space_layout_save_fields_publish_assumption")
-    assert (publish.label, publish.value) == (ASSUMPTION_PUBLISH_LABEL, True)
+    assert not [box for box in app.checkbox if "space_layout_save_fields" in str(box.key)]
 
     app.button(key="space_layout_save").click()
     _ok(app.run())
@@ -691,37 +609,34 @@ def test_an_assumption_space_save_spreads_a_new_unit_to_the_official_by_default(
     assert after is not None and after.release_no == before.release_no + 1
 
 
-_SAVE_BOX_WARNING = f":material/warning: {ASSUMPTION_PROPAGATE_WARNING}"
-
-
 def _captions(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.caption]
 
 
-def test_the_assumption_tab_save_box_warns_while_spreading_new_units_is_on(
-    tmp_path: Path, grid: Calls
+@pytest.mark.parametrize("scenario", [OPERATIONS, None], ids=["official", "assumption"])
+def test_the_tab_save_section_has_only_note_saver_and_buttons(
+    tmp_path: Path, grid: Calls, scenario: str | None
 ) -> None:
-    """N2 후속(2026-11-01 사용자 결정 「1~5 권장대로」 5) — 가정 설비 시나리오 세션의 설비 마스터
-    탭 저장 칸도 Space 「저장 칸」 처럼 「새로 넣은 호기를 …」 체크가 켜 있으면(처음엔 켬) 그
-    아래에 같은 경고 한 줄(같은 상수 — 「켜 두면 … 공식 가용대수에 셉니다」)을 세우고, 끄면 걷는다.
-    공식 세션 저장 칸에는 서지 않는다(새 호기가 공식 가용대수에 드는 것이 그 저장의 뜻이다)."""
-    assert ASSUMPTION_PROPAGATE_WARNING.startswith("켜 두면 새 호기가 ")
+    """검수표 11/02 equip-13 — 저장 구획에 체크 · 경고 · 설명 줄이 없다. 지운 호기 · 함께 넣기 ·
+    발행의 말은 「리비전 저장」 풍선이고 일어난 일은 결과 알림이다."""
     repository, setup = _two_scenarios(tmp_path)
-    app = _page(repository, setup)
+    app = _page(repository, scenario or setup)
+    _open_new(app)
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"))
+    send_ops(app, grid, {"op": "delete", "ids": ["s:EQ-02"]})
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
 
-    box = app.checkbox(key=f"{SAVE_FIELDS_PREFIX}_propagate_units")
-    assert box.value is True
-    assert _captions(app).count(_SAVE_BOX_WARNING) == 1, _captions(app)
-    _ok(box.uncheck().run())
-    assert _SAVE_BOX_WARNING not in _captions(app)
-
-    official = _page(repository, OPERATIONS)
-    official.session_state[SIDE_KEY] = SIDE_CHANGES
-    _ok(official.run())
-    assert official.checkbox(key=f"{SAVE_FIELDS_PREFIX}_propagate_units").value is True
-    assert _SAVE_BOX_WARNING not in _captions(official)
+    assert not list(app.checkbox)
+    assert not list(app.warning)
+    captions = _captions(app)
+    assert not any(
+        "공식 가용대수" in text or "새 리비전으로 저장됩니다" in text for text in captions
+    )
+    assert not any("「새 호기」 칸에서" in text for text in captions)
+    save = app.button(key=SAVE_BUTTON_KEY)
+    assert SAVE_ALWAYS_HELP in str(save.help) and "공통 칸은 모든 설비 시나리오에" in str(save.help)
+    assert app.text_input(key="equipment_workspace_save_saved_by").label == "저장자(선택)"
 
 
 def _popup_save_box(database: str) -> None:
@@ -738,18 +653,12 @@ def _popup_save_box(database: str) -> None:
     render_equipment_scenario_dialog_body(Path(database), page_file="available_equipment_status.py")
 
 
-def test_the_assumption_sidebar_popup_save_warns_while_spreading_new_units_is_on(
-    tmp_path: Path,
-) -> None:
-    """N2 후속 — 가정 설비 시나리오 세션의 사이드바 팝업 「저장」 도 함께 넣기 체크가 켜 있으면
-    Space 「저장 칸」·설비 마스터 탭과 같은 경고 한 줄을 세우고, 끄면 걷는다. 공식 세션 팝업에는
-    없다."""
+def test_the_assumption_sidebar_popup_save_has_no_checks_or_warning(tmp_path: Path) -> None:
+    """검수표 11/02 equip-13 — 가정 설비 시나리오 세션의 사이드바 팝업 「저장」 도 체크 · 공식
+    가용대수 경고가 없고 변경 메모 · 저장자 · 저장 단추만이다. 공식 세션도 같다."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
         SAVE_MODE,
-    )
-    from capa_simulation.components.equipment_scenario_status import (
-        SAVE_FIELDS_PREFIX as POPUP_PREFIX,
     )
 
     repository, setup = _two_scenarios(tmp_path)
@@ -766,16 +675,10 @@ def test_the_assumption_sidebar_popup_save_warns_while_spreading_new_units_is_on
         }
         return _ok(app.run())
 
-    app = popup(setup)
-    box = app.checkbox(key=f"{POPUP_PREFIX}_propagate_units")
-    assert box.value is True
-    assert _captions(app).count(_SAVE_BOX_WARNING) == 1, _captions(app)
-    _ok(box.uncheck().run())
-    assert _SAVE_BOX_WARNING not in _captions(app)
-
-    official = popup(OPERATIONS)
-    assert official.checkbox(key=f"{POPUP_PREFIX}_propagate_units").value is True
-    assert _SAVE_BOX_WARNING not in _captions(official)
+    for scenario_id in (setup, OPERATIONS):
+        app = popup(scenario_id)
+        assert not list(app.checkbox)
+        assert ASSUMPTION_PROPAGATE_WARNING not in " ".join(_captions(app))
 
 
 def _popup_with_panel_unit(database: str) -> None:
@@ -809,21 +712,25 @@ def _popup_with_panel_unit(database: str) -> None:
     render_equipment_scenario_dialog_body(Path(database), page_file="available_equipment_status.py")
 
 
-def test_the_sidebar_popup_save_shows_the_panel_choice_line(tmp_path: Path) -> None:
+def test_the_sidebar_popup_save_says_what_the_panel_choice_left_out(tmp_path: Path) -> None:
+    """팝업 저장도 그 칸에서 끈 호기를 결과 알림이 적는다 — 저장 전에 서던 한 줄은 없다."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        FLASH_KEY,
+        SAVE_BUTTON_KEY,
         SAVE_MODE,
     )
 
-    repository, _ = _two_scenarios(tmp_path)
+    repository, setup = _two_scenarios(tmp_path)
     app = AppTest.from_function(
         _popup_with_panel_unit, args=(str(repository.database_path),), default_timeout=60
     )
     app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
     _ok(app.run())
+    assert not any("「새 호기」 칸에서" in text for text in _captions(app))
 
-    assert any(
-        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다 — 다른 설비 시나리오에 같은 "
-        "일정으로 0대 · 일정 없음 1대" == str(item.value).split(":material/library_add: ")[-1]
-        for item in app.caption
-    ), [str(item.value) for item in app.caption]
+    app.button(key=SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert "「새 호기」 칸에서 끈 1대는" in app.session_state[FLASH_KEY].message
+    assert _session(repository, setup).unscheduled_units == frozenset({"EQ-09"})

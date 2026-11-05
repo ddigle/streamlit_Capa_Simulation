@@ -396,13 +396,17 @@ def test_a_unit_renamed_after_the_baseline_is_flagged_as_a_possible_rename(
 
 
 def test_the_sample_fleet_cannot_be_saved_as_a_baseline(tmp_path: Path) -> None:
-    """샘플 fleet 은 합성값이라 공용 기록으로 남기지 않는다 — 팝오버에 까닭만 적는다."""
+    """샘플 fleet 은 합성값이라 공용 기록으로 남기지 않는다 — 팝오버에는 표지 한 마디와 꺼진 단추만
+    두고 까닭은 그 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴)."""
     app = _run(_database(tmp_path))
 
     assert not app.exception
     assert not any(widget.label == "기준선 이름" for widget in app.text_input)
-    infos = " ".join(str(item.value) for item in app.info)
-    assert "샘플 데이터를 보는 중이라 기준선을 저장하지 않습니다" in infos
+    assert not any("기준선을 저장하지 않습니다" in str(item.value) for item in app.info)
+    blocked = next(
+        button for button in app.button if button.label == "기준선 저장" and button.disabled
+    )
+    assert "샘플 데이터를 보는 중이라 기준선을 저장하지 않습니다" in str(blocked.help)
     clear_equipment_repository()
 
 

@@ -1531,9 +1531,14 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     # 자리(「보관된 시나리오」)는 Guide 가 말한다(설계 규칙 UI-TXT-03 — 같은 화면 안 길 안내도
     # 걷는다).
     if official is not None and official.scenario_id == summary.scenario_id:
-        st.info(
-            f"지금 최신 공식버전(v{official.release_no})의 시나리오라 보관할 수 없습니다.",
-            icon=":material/block:",
+        st.caption(":material/block: 공식버전이라 보관 막힘")
+        st.button(
+            "보관 실행",
+            icon=":material/archive:",
+            type="primary",
+            disabled=True,
+            width="stretch",
+            help=f"지금 최신 공식버전(v{official.release_no})의 시나리오라 보관할 수 없습니다.",
         )
         return
     st.info("보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다.")

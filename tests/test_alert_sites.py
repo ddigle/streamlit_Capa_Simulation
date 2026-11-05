@@ -133,10 +133,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         PLACE_FORM,
     ),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (2, PLACE_FORM),
-    ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
-        1,
-        PLACE_CONFIRM,
-    ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
         1,
         PLACE_CONFIRM,

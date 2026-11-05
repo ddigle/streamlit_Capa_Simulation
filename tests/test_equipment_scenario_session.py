@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -28,11 +29,10 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+from capa_simulation.alerts import SHORT_LIMIT
 from capa_simulation.components.equipment_data_workspace import save_result_message
 from capa_simulation.components.equipment_save_fields import (
-    DEFAULT_PROPAGATE_NEW_DOWNTIME,
     DEFAULT_PROPAGATE_NEW_UNITS,
-    DEFAULT_PUBLISH_OFFICIAL,
     EquipmentSaveBasis,
 )
 from capa_simulation.components.equipment_scenario_status import (
@@ -59,6 +59,7 @@ from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentRelease,
     EquipmentRevisionSummary,
+    EquipmentSaveRequest,
     EquipmentSaveResult,
     EquipmentScenarioCatalog,
     EquipmentScenarioSummary,
@@ -663,10 +664,13 @@ def test_the_stale_and_load_words_pick_the_particles_after_the_revision_numbers(
     )
 
 
-def test_the_save_fields_defaults_are_the_recommended_answers() -> None:
-    """질문 1(공식 발행)·F6(새 호기 함께 넣기)·F2(새 비가동 모든 시나리오)는 기본 켬 — 한 곳."""
-    assert DEFAULT_PUBLISH_OFFICIAL and DEFAULT_PROPAGATE_NEW_UNITS
-    assert DEFAULT_PROPAGATE_NEW_DOWNTIME
+def test_the_save_always_does_what_the_request_defaults_say() -> None:
+    """저장 자리에 체크가 없어 저장 요청 기본값이 곧 동작이다 — 질문 1(공식 발행)·F6(새 호기 함께
+    넣기)·F2(새 비가동 모든 시나리오) 모두 켬(검수표 11/02 equip-13 — 지금 기본값 그대로)."""
+    defaults = {field.name: field.default for field in fields(EquipmentSaveRequest)}
+    assert defaults["publish_official"] is True
+    assert defaults["propagate_new_units"] is True and defaults["propagate_new_downtime"] is True
+    assert DEFAULT_PROPAGATE_NEW_UNITS
 
 
 def test_the_save_result_names_both_sides_the_propagation_the_release_and_removed_units() -> None:
@@ -687,17 +691,23 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
         release_no=3,
         new_units=("EQ-NEW",),
         removed_units=("EQ-OLD",),
+        removed_elsewhere=("셋업 실무", "반입 지연"),
     )
 
-    # EQ-NEW 는 엑셀·CSV 넣기로 든 새 호기다 — 지운 호기와 함께라 이름 바꾸기 길을 가리킨다.
-    message = save_result_message(result, scenario_name="운영 일정", pasted_units=("EQ-NEW",))
+    message = save_result_message(result, scenario_name="운영 일정", unspread=1)
 
     assert "공통 대장 r3 · 「운영 일정」 r5" in message
     assert "「셋업 실무」 r4(호기 2대 · 비가동 1건)" in message
     assert "비가동 1건은" in message
-    assert "공식 v3으로 발행했습니다" in message
-    assert "지운 호기 1대는 모든 설비 시나리오에서 빠졌습니다" in message
-    assert "Space 편집기 「이름 바꾸기」" in message
+    # 첫 문장이 일어난 일이다 — 알림창은 앞 60자 안팎만 보인다(`alerts.SHORT_LIMIT`).
+    assert message.startswith(
+        "설비 데이터를 저장했습니다 — 지운 호기 1대(다른 설비 시나리오 2개 일정도 빠짐) · "
+        "공식 v3 발행 · 다른 설비 시나리오 1개에 호기 2대 · 비가동 1건."
+    ), message
+    assert message.index(" · 다른 설비 시나리오 1개에") <= SHORT_LIMIT
+    assert "「새 호기」 칸에서 끈 1대는 다른 설비 시나리오에 넣지 않았습니다." in message
+    # 일어난 일만 — 하는 법 · 어디에 반영되는지는 적지 않는다(2026-11-05 사용자 결정).
+    assert "이름 바꾸기" not in message and "Space 현황" not in message
 
     withheld = save_result_message(
         EquipmentSaveResult(common=None, schedule=schedule, release_withheld=True),
@@ -988,7 +998,7 @@ def test_the_popup_save_writes_the_edit_into_the_session_scenario(tmp_path: Path
     app.button(key=SAVE_BUTTON_KEY).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert "공통 대장 r2" in app.session_state[FLASH_KEY]
+    assert "공통 대장 r2" in app.session_state[FLASH_KEY].message
     assert repository.list_revisions()[0].revision_no == 2
 
 
@@ -1094,7 +1104,7 @@ def test_a_stale_popup_save_names_the_schedule_cells_to_undo_before_and_after_th
     assert line not in [str(item.value) for item in app.warning]
     app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert "공통 대장 r2" in app.session_state[FLASH_KEY]
+    assert "공통 대장 r2" in app.session_state[FLASH_KEY].message
     assert len(repository.list_revisions()) == before + 1
 
 
@@ -1257,9 +1267,10 @@ def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
 
 
 def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path) -> None:
-    """「저장」 구획 안내는 지금 꼴을 가리킨다 — 편집본에 없어 저장되지 않는 것은 작은 편집표(기존
-    보유대수·비가동 일정)에서 「편집본에 적용」 하지 않은 편집이다. 걷힌 옛 폼의 「보기 적용」 을
-    가리키지 않는다(E2E — 칸을 고친 뒤 팝업 「저장」 을 연 꼴)."""
+    """「저장」 구획의 말은 단추 풍선이다(검수표 11/02 equip-13) — 편집본에 없어 저장되지 않는 것은
+    작은 편집표(기존 보유대수·비가동 일정)에서 「편집본에 적용」 하지 않은 편집이다. 걷힌 옛 폼의
+    「보기 적용」 을 가리키지 않는다(E2E — 칸을 고친 뒤 팝업 「저장」 을 연 꼴)."""
+    from capa_simulation.components.equipment_save_fields import SAVE_ALWAYS_HELP
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
         SAVE_BUTTON_HELP,
@@ -1280,11 +1291,13 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
 
     assert not app.exception, [item.message for item in app.exception]
     captions = [str(item.value) for item in app.caption]
-    # 저장하면 사라지는 편집만 곁 한 줄이고, 무엇이 어디로 저장되나(저장 규칙)는 저장 단추 풍선이다.
-    assert UNAPPLIED_SMALL_EDITS_NOTE in captions
+    # 설명 줄 · 체크는 없다 — 무엇이 어디로 저장되고 무엇이 저장되지 않나는 저장 단추 풍선이다.
+    assert UNAPPLIED_SMALL_EDITS_NOTE not in captions
+    assert not list(app.checkbox)
     assert not any("공통 칸은 공통 대장" in caption for caption in captions)
     assert app.button(key=SAVE_BUTTON_KEY).help == SAVE_BUTTON_HELP
     assert "바뀐 쪽만 새 리비전이 됩니다" in SAVE_BUTTON_HELP
+    assert UNAPPLIED_SMALL_EDITS_NOTE in SAVE_BUTTON_HELP and SAVE_ALWAYS_HELP in SAVE_BUTTON_HELP
     assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
 
 
@@ -1359,16 +1372,15 @@ def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(
 
 
 @pytest.mark.parametrize("downtime", [False, True], ids=["common-only", "new-downtime"])
-def test_a_hypothetical_popup_save_shows_the_publish_box_only_when_it_reaches_the_official(
+def test_a_hypothetical_popup_save_publishes_only_when_it_reaches_the_official(
     tmp_path: Path, downtime: bool
 ) -> None:
-    """가정 설비 시나리오 세션의 팝업 「저장」 은 공식에 넣을 것이 없으면 발행 체크를 세우지 않는다
-    (E2E #135 — 뜻 없는 「… 공식으로 발행」 체크). 새 비가동처럼 함께 넣기로 공식 설비 시나리오에 새
-    리비전이 생기는 저장이면 「함께 넣은 공식 리비전 발행」(기본 켬)이 선다 — 설비 마스터 탭·Space
-    저장 칸과 같은 규칙."""
+    """가정 설비 시나리오 세션의 팝업 「저장」 은 체크 없이 저장하고, 공식에 넣을 것이 없으면 공식
+    발행이 그대로다(옛 체크가 서지 않던 길과 같은 결과 — E2E #135). 새 비가동처럼 함께 넣기로 공식
+    설비 시나리오에 새 리비전이 생기는 저장이면 공식으로 발행한다 — 설비 마스터 탭과 같은 규칙."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
-        SAVE_FIELDS_PREFIX,
+        SAVE_BUTTON_KEY,
         SAVE_MODE,
     )
 
@@ -1386,10 +1398,14 @@ def test_a_hypothetical_popup_save_shows_the_publish_box_only_when_it_reaches_th
     app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
     app.run()
     assert not app.exception, [item.message for item in app.exception]
+    assert not list(app.checkbox)
 
-    boxes = [
-        box for box in app.checkbox if str(box.key).startswith(f"{SAVE_FIELDS_PREFIX}_publish")
-    ]
-    assert [(box.label, box.value) for box in boxes] == (
-        [("함께 넣은 공식 리비전 발행", True)] if downtime else []
-    )
+    before = repository.latest_equipment_release()
+    assert before is not None
+    app.button(key=SAVE_BUTTON_KEY).click()
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    after = repository.latest_equipment_release()
+    assert after is not None
+    assert after.release_no == before.release_no + (1 if downtime else 0)

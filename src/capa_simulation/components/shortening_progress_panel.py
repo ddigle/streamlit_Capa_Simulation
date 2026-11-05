@@ -144,6 +144,7 @@ _NOTICE_KEYS = tuple(f"equipment_shortening_baseline_flash_{index}" for index in
 # 위에 그리고 알림창 · Alarm 에도 낸다(설계 규칙 UI-NTF-03 — 그 자리에서 고칠 입력이 있는 거부는
 # 곁).
 _NAME_REFUSAL_KEY = "equipment_shortening_baseline_name_refusal"
+_BASELINE_SAVE_BLOCKED_KEY = "equipment_shortening_baseline_save_blocked"
 _BASELINE_DELETE_HANDLED_KEY = "equipment_shortening_baseline_delete_handled"
 _BASELINE_WRITTEN_KEY = "equipment_shortening_baseline_written"
 _PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
@@ -289,7 +290,16 @@ def _render_save_form(save: BaselineSaveContext) -> None:
     # 무엇을 남기고 고칠 수 없다는 말은 팝오버 머리 글이 아니라 저장 단추 풍선이다(누르기 전에
     # 보인다).
     if save.refusal is not None:
-        st.info(save.refusal, icon=":material/block:")
+        # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
+        st.caption(":material/block: 기준선 저장 막힘")
+        st.button(
+            "기준선 저장",
+            icon=":material/bookmark_add:",
+            key=_BASELINE_SAVE_BLOCKED_KEY,
+            disabled=True,
+            width="stretch",
+            help=save.refusal,
+        )
         return
     # 이름 칸은 저장에 성공할 때마다 key 세대를 올려 새 칸으로 세운다. 닫힌 팝오버 안의 칸은 세션에
     # 적은 값을 받지 못해 방금 저장한 이름을 들고 있다가 되보낸다(사이드바 저장 폼과 같은 까닭).

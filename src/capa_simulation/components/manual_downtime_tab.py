@@ -237,7 +237,8 @@ def render_manual_downtime_tab(
     ordered_months = sorted({int(month) for month in months})
     _render_intro(profile, ordered_months)
     if locked_reason is not None:
-        st.info(locked_reason, icon=":material/lock:")
+        # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07).
+        st.caption(":material/lock: 입력 비가동 잠김", help=locked_reason)
     if not processes or not ordered_months:
         # 빈 결과는 평문 한 줄, 칸이 서는 법은 풍선이다(설계 규칙 UI-TXT-04).
         st.caption("넣을 칸이 없습니다.", help=MANUAL_NO_CELLS_HELP)
@@ -249,7 +250,7 @@ def render_manual_downtime_tab(
         absent=absent,
         months=ordered_months,
         process_labels=process_labels,
-        locked=locked_reason is not None,
+        locked_reason=locked_reason,
     )
     if not tab_is_hidden(owner_tab):
         _render_history(database_path)
@@ -275,9 +276,10 @@ def _render_editor(
     absent: frozenset[str],
     months: Sequence[int],
     process_labels: ProcessLabels,
-    locked: bool,
+    locked_reason: str | None,
 ) -> None:
     """편집표 폼과 저장(버전 대조). 확보율 보정 편집표(`home_preference`)와 같은 차례다."""
+    locked = locked_reason is not None
     submitted_base = seen(MANUAL_BASE_VERSION_KEY)
     frame = manual_editor_frame(profile, processes, months, process_labels, absent=absent)
     with st.form(MANUAL_FORM_KEY):
@@ -288,7 +290,7 @@ def _render_editor(
                 icon=":material/save:",
                 type="primary",
                 disabled=locked,
-                help=MANUAL_SAVE_HELP,
+                help=locked_reason or MANUAL_SAVE_HELP,
             )
             saved_by = st.text_input("저장자(선택)", key=MANUAL_SAVED_BY_KEY, disabled=locked)
             note = st.text_input(

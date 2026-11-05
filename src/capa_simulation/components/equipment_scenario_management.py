@@ -63,11 +63,7 @@ from capa_simulation.components.equipment_data_workspace import (
     revision_count_line,
     schedule_revision_title,
 )
-from capa_simulation.components.equipment_save_fields import (
-    DEFAULT_PUBLISH_OFFICIAL,
-    PUBLISH_OFFICIAL_LABEL,
-    SAVED_BY_LABEL,
-)
+from capa_simulation.components.equipment_save_fields import SAVED_BY_LABEL
 from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -206,7 +202,6 @@ REVISION_NAME_BUTTON_KEY = "equipment_scenario_manage_revision_name_button_v1"
 RESTORE_NAME_KEY = "equipment_scenario_manage_restore_name_v1"
 RESTORE_NOTE_KEY = "equipment_scenario_manage_restore_note_v1"
 RESTORE_BY_KEY = "equipment_scenario_manage_restore_by_v1"
-RESTORE_PUBLISH_KEY = "equipment_scenario_manage_restore_publish_v1"
 RESTORE_CONFIRM_KEY = "equipment_scenario_manage_restore_confirm_v1"
 RESTORE_BUTTON_KEY = "equipment_scenario_manage_restore_v1"
 # 확인 체크가 켜진 회차의 그 값 다섯 — 다음 회차에 값이 바뀌어 체크가 풀렸으면 그 까닭을 알린다
@@ -234,6 +229,12 @@ ALREADY_OFFICIAL_LINE = ":material/verified: 이미 공식 발행 리비전"
 ALREADY_OFFICIAL_HELP = (
     "이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로 발행」 을 껐습니다."
 )
+# 배치 차이로 막힌 발행 팝오버 — 같은 꼴의 값 표지. 막힌 까닭과 빠져나갈 길은 꺼진 「공식으로
+# 발행」 의 풍선이 말한다(`publish_layout_lines` — 검수표 11/02 equip-44, 설계 규칙 UI-TXT-04 ·
+# UI-INP-07).
+LAYOUT_BLOCKED_LINE = ":material/block: 배치 차이로 발행 막힘"
+# 옛 배포 흔적을 이어 쓸 수 없는 회차의 표지 — 까닭은 꺼진 「이대로 이어 쓰기」 의 풍선이 말한다.
+CONTINUE_BLOCKED_LINE = ":material/block: 이어 쓰기 막힘"
 REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
 SCENARIO_NAME_SAVE_NAME = "equipment_scenario_name"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
@@ -1208,8 +1209,7 @@ def restore_preview_lines(
 
     바뀌는 호기 수·비가동 행 수·일정 없음이 되는 호기, 그 리비전 뒤에 공통 대장에 든 호기의 「일정
     없음」(늘 적는다), 그대로인 것(사이 리비전·공통 대장·다른 시나리오), 공식 시나리오면 발행 규칙.
-    발행 규칙 줄은 「아래 발행 체크」 를 가리키므로 되돌릴 것이 없어(`restore_writes_nothing`) 체크·
-    단추가 서지 않는 회차에는 싣지 않는다.
+    발행 규칙 줄은 되돌릴 것이 없어(`restore_writes_nothing`) 단추가 서지 않는 회차에는 싣지 않는다.
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1231,8 +1231,8 @@ def restore_preview_lines(
         lines.append(layout)
     if official_scenario and not restore_writes_nothing(preview, official_scenario=True):
         lines.append(
-            "공식 설비 시나리오입니다 — 아래 발행 체크가 켜져 있고 그 사이 발행하지 않은 더 새 "
-            "리비전이 없으면 새 리비전을 공식으로 발행합니다."
+            "공식 설비 시나리오입니다 — 그 사이 발행하지 않은 더 새 리비전이 없으면 새 리비전을 "
+            "공식으로 발행합니다."
         )
     return lines
 
@@ -1372,9 +1372,10 @@ def _render_restore(
 ) -> None:
     """「이 리비전으로 되돌리기」(E7) — 확인 글을 보이고 확인 체크 뒤에 새 리비전으로 다시 저장한다.
 
-    모든 설비 시나리오에서 된다(공식 시나리오면 저장과 같은 발행 규칙 — 발행 체크 기본 켬). 이
-    세션이 그 시나리오를 보고 있고 저장하지 않은 설비 편집이 없으면 세션을 새 리비전으로 옮긴다(자기
-    저장 뒤와 같다). 편집이 있으면 옮기지 않는다 — 버리지 않게 하고 낡음 잠금이 최신을 알린다.
+    모든 설비 시나리오에서 된다(공식 시나리오면 저장과 같은 발행 규칙 — 저장처럼 체크 없이 늘
+    발행하고, 일어난 일은 결과 알림이 적는다). 이 세션이 그 시나리오를 보고 있고 저장하지 않은 설비
+    편집이 없으면 세션을 새 리비전으로 옮긴다(자기 저장 뒤와 같다). 편집이 있으면 옮기지 않는다 —
+    버리지 않게 하고 낡음 잠금이 최신을 알린다.
 
     확인 체크는 그 회차에 확인 글을 정한 값 다섯(`restore_seen_token`)에 묶이고, 저장소에는 같은
     값을 대조값으로 넘긴다 — 다른 리비전을 고르거나 그 사이 남의 저장·발행으로 값이 바뀐 회차에는
@@ -1425,13 +1426,6 @@ def _render_restore(
     )
     note = st.text_input("변경 메모(선택)", key=f"{_keyed(RESTORE_NOTE_KEY)}__{chosen}")
     saved_by = st.text_input(SAVED_BY_LABEL, key=f"{_keyed(RESTORE_BY_KEY)}__{chosen}")
-    publish = DEFAULT_PUBLISH_OFFICIAL
-    if official_scenario:
-        publish = st.checkbox(
-            PUBLISH_OFFICIAL_LABEL,
-            value=DEFAULT_PUBLISH_OFFICIAL,
-            key=f"{_keyed(RESTORE_PUBLISH_KEY)}__{chosen}",
-        )
     if (
         isinstance(agreed_before, str)
         and agreed_before != seen_token
@@ -1490,7 +1484,6 @@ def _render_restore(
                 saved_by=saved_by or None,
                 note=note or None,
                 revision_name=revision_name or None,
-                publish_official=publish,
                 expected_release_no=release_no,
                 expected_layout_role="official" if official_scenario else "overlay",
             ),
@@ -1993,8 +1986,9 @@ def publish_layout_lines(
     newest_released: bool = False,
 ) -> tuple[list[str], bool]:
     """발행 확인 팝업의 배치 줄 — (줄, 막힘). 발행 쓰기와 같은 판정(`load_layout_publish_preview`)을
-    미리 읽어 막히면 그 까닭을(「발행」 단추를 끈다), 공식과 같아진 차이만 남았으면 정리 리비전으로
-    발행한다는 것을 적는다(설계 6-5 — 머리 「배치는 공식과 같습니다」 와 발행 거부가 함께 뜨지
+    미리 읽어 막히면 그 까닭을(「발행」 단추를 끄고 그 단추 풍선이 말한다 — 자리에는 표지
+    `LAYOUT_BLOCKED_LINE` 만), 공식과 같아진 차이만 남았으면 정리 리비전으로 발행한다는 것을
+    적는다(설계 6-5 — 머리 「배치는 공식과 같습니다」 와 발행 거부가 함께 뜨지
     않게). 셈은 「실효 n대(저장된 차이 m행)」 꼴 하나다(설계 8-2). 막힘 글은 발행 쓰기 거부와 같은
     한 곳(`layout_publish_blocked_words`)이다 — 실제로 공식과 다른 쪽만 「실효」 로 적고, 옛
     리비전은 그 경우에 서는 길(되돌린 뒤 지우기·최신 발행)을 안내한다 — 되돌리기가 쓸 것이 없으면
@@ -2216,20 +2210,20 @@ def _render_publish(
         newest_released=release is not None
         and release.schedule_revision_id == scenario.latest_schedule_revision_id,
     )
-    for line in layout_lines:
-        if blocked:
-            st.error(line, icon=":material/block:")
-        else:
+    released = already_official(session, revision)
+    if blocked and not released:
+        # 긴 까닭은 꺼진 단추 풍선 하나로만 — 같은 글을 상자로 또 세우지 않는다(UI-TXT-07).
+        st.caption(LAYOUT_BLOCKED_LINE)
+    elif not blocked:
+        for line in layout_lines:
             st.caption(f":material/layers: {line}")
     token = tuple(publish_seen_token(scenario, revision, release_no).items())
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
     # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 그 단추 풍선이 말한다
-    # (`ALREADY_OFFICIAL_HELP` — 배치 차이로 막혔으면 위 막힘 줄과 같은 글). 첫 발행 뒤 다시 그린
-    # 화면은 그 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고,
-    # 첫 발행 알림은 구획 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래
-    # `note_notice`).
-    released = already_official(session, revision)
+    # (`ALREADY_OFFICIAL_HELP` — 배치 차이로 막혔으면 그 까닭 글). 첫 발행 뒤 다시 그린 화면은 그
+    # 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은
+    # 구획 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래 `note_notice`).
     if not st.button(
         "공식으로 발행",
         type="primary",
@@ -2344,7 +2338,7 @@ def _render_publish(
     if cleaned:
         # 정리 리비전 rN+1 로 발행했다 — 「배치 차이 모두 지우기」 처럼 리비전 상자와 (그
         # 시나리오를 보던) 세션을 새 리비전으로 옮긴다. 남기면 세션이 옛 rN 에 남아 낡음·Space
-        # 배치 잠금·빨간 막힘 글(옛 리비전의 남은 행)이 바로 선다(S4 리뷰).
+        # 배치 잠금·막힘 표지(옛 리비전의 남은 행)가 바로 선다(S4 리뷰).
         _follow_and_announce(
             database_path,
             session,
@@ -2536,7 +2530,8 @@ def continue_confirm_key(count: int, review: LegacyTraceReview) -> str:
 def _render_legacy_trace(database_path: str, count: int) -> None:
     """옛 배포 흔적 — 경고와 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
     덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 옛 배포
-    리비전이 어느 시나리오 일정과도 합쳐지지 않으면 단추를 끄고 백업 복원만 남긴다."""
+    리비전이 어느 시나리오 일정과도 합쳐지지 않으면 표지 한 마디와 꺼진 단추만 두고 까닭(백업
+    복원)은 그 단추 풍선이 말한다(검수표 11/02 equip-44 와 같은 꼴)."""
     st.warning(legacy_trace_message(count), icon=":material/history:")
     try:
         review = load_legacy_trace_review(database_path)
@@ -2548,10 +2543,16 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
         )
         return
     if review.refusal is not None:
-        st.error(
-            "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 이어 쓸 수 없습니다 — "
-            f"{literal_markdown(review.refusal)} 런북 4-2 대로 백업을 복원하세요.",
-            icon=":material/block:",
+        st.caption(CONTINUE_BLOCKED_LINE)
+        st.button(
+            "이대로 이어 쓰기",
+            icon=":material/fast_forward:",
+            key=CONTINUE_BUTTON_KEY,
+            disabled=True,
+            help=(
+                "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 이어 쓸 수 "
+                f"없습니다 — {literal_markdown(review.refusal)} 런북 4-2 대로 백업을 복원하세요."
+            ),
         )
         return
     st.caption(

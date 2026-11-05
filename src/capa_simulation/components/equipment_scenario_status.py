@@ -40,19 +40,16 @@ from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
-    EQUIPMENT_DRAFT_KEY,
     has_unsaved_equipment_edits,
-    new_unit_choice_line,
-    official_reach,
     pending_fab_layout,
     revision_count_line,
-    save_candidate_counts,
     save_equipment_buffer,
     schedule_revision_title,
     stale_save_refusal,
 )
 from capa_simulation.components.equipment_save_fields import (
-    render_equipment_save_fields,
+    SAVE_ALWAYS_HELP,
+    render_saved_by_field,
 )
 from capa_simulation.components.equipment_scenario_management import (
     render_legacy_trace_goto,
@@ -138,15 +135,18 @@ SAVE_NOTE_KEY = "sidebar_equipment_save_note"
 # 값을 적어도 브라우저가 옛 값을 되보낸다 — `scenario_status.save_field_key` 와 같은 까닭).
 SAVE_NOTE_GENERATION_KEY = "sidebar_equipment_save_note_generation"
 SAVE_FIELDS_PREFIX = "sidebar_equipment_save"
-# 「저장」 구획 안내 끝 — 설비 마스터 탭 작은 편집표의 적용 전 편집은 위젯 상태라 편집본에 없다.
+# 설비 마스터 탭 작은 편집표의 적용 전 편집은 위젯 상태라 편집본에 없다 — 팝업 저장 단추 풍선이
+# 말한다.
 UNAPPLIED_SMALL_EDITS_NOTE = (
     "기존 보유대수·비가동 일정 표에서 아직 「편집본에 적용」 하지 않은 편집은 저장되지 않습니다."
 )
-# 팝업 「설비 데이터 저장」 단추 풍선 — 무엇이 어디로 저장되나(저장 규칙 — 자리에 적지 않는다, 설계
-# 규칙 UI-TXT-01). 저장 대상 이름은 머리 「올라와 있음」 줄이 말한다.
+# 팝업 「설비 데이터 저장」 단추 풍선 — 무엇이 어디로 저장되나와 저장이 늘 하는 일(저장 규칙 —
+# 자리에 적지 않는다, 설계 규칙 UI-TXT-01 · UI-NTF-09). 저장 대상 이름은 머리 「올라와 있음」 줄이
+# 말한다.
 SAVE_BUTTON_HELP = (
     "올라와 있는 설비 시나리오에 저장합니다 — 공통 칸은 공통 대장, 일정·시나리오 메모·비가동은 이 "
-    "설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다."
+    f"설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다. {SAVE_ALWAYS_HELP} "
+    f"{UNAPPLIED_SMALL_EDITS_NOTE}"
 )
 # 불러오기·저장 알림 — 다음 회차에 한 번, 줄 바로 아래.
 FLASH_KEY = "sidebar_equipment_scenario_flash"
@@ -720,17 +720,16 @@ def _move_to_latest(
 
 
 def _render_save(database_path: str, session: EquipmentSession) -> None:
-    """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 작은 편집표(기존 보유대수·비가동
-    일정)에서 아직 「편집본에 적용」 하지 않은 편집은 편집본에 없어 저장되지 않는다."""
+    """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 체크 · 확인 칸은 없다 — 설비 마스터
+    탭과 같은 저장이고 일어난 일은 결과 알림이 적는다(`equipment_save_fields` 모듈 설명). 작은
+    편집표(기존 보유대수·비가동 일정)에서 아직 「편집본에 적용」 하지 않은 편집은 편집본에 없어
+    저장되지 않는다 — 단추 풍선(`SAVE_BUTTON_HELP`)이 말한다."""
     buffer = st.session_state.get(BUFFER_KEY)
     basis = session.save_basis()
     if not isinstance(buffer, tuple) or basis is None:
         st.caption("저장할 설비 편집본이 없습니다.")
         return
     has_changes = has_unsaved_equipment_edits() or pending_fab_layout() is not None
-    # 저장하면 사라지는 편집(누르기 전에 알아야 하는 것 — UI-NTF-09)만 곁 한 줄로 두고, 무엇이
-    # 어디로 저장되나는 저장 단추 풍선(`SAVE_BUTTON_HELP`)이 말한다.
-    st.caption(UNAPPLIED_SMALL_EDITS_NOTE)
     if basis.stale:
         st.warning(
             stale_save_warning(basis.revision_no, basis.latest_revision_no),
@@ -747,19 +746,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
     if not has_changes:
         st.caption("저장할 변경이 없습니다.")
     note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")
-    fields = render_equipment_save_fields(
-        SAVE_FIELDS_PREFIX,
-        counts=save_candidate_counts(buffer, st.session_state.get(EQUIPMENT_DRAFT_KEY)),
-        release_exists=basis.release_no > 0,
-        # 가정 설비 시나리오면 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리
-        # 한 규칙), 함께 넣기를 켜 두면 Space 저장 칸과 같은 공식 가용대수 경고가 선다.
-        reach=None if basis.official_scenario else official_reach(buffer),
-    )
-    with st.container():
-        # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8).
-        line = new_unit_choice_line(buffer, assumption=not basis.official_scenario)
-        if line is not None:
-            st.caption(line)
+    saved_by = render_saved_by_field(SAVE_FIELDS_PREFIX)
     clicked = st.button(
         "설비 데이터 저장",
         icon=":material/save:",
@@ -776,7 +763,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
             buffer,
             note if isinstance(note, str) else "",
             basis=basis,
-            fields=fields,
+            saved_by=saved_by,
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(
@@ -785,7 +772,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         )
         return
     bump(SAVE_NOTE_GENERATION_KEY)
-    queue_flash(FLASH_KEY, message)
+    queue_flash(FLASH_KEY, message, popup_only=True)
     close_equipment_scenario_dialog()
     st.rerun()
 

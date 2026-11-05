@@ -139,7 +139,8 @@ def render_cutoff_management(
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")
 
     if locked_reason is not None:
-        st.info(locked_reason, icon=":material/lock:")
+        # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07).
+        st.caption(":material/lock: Cut-off 잠김", help=locked_reason)
         render_csv_download(
             data=stored.to_csv(index=False).encode("utf-8-sig"),
             file_name="process_cutoff.csv",

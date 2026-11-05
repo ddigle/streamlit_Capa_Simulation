@@ -268,6 +268,21 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         test=_SPACE_BOX_TEST,
     ),
     Withdrawn(
+        what=(
+            "설비 저장 칸 — 지울 호기가 다른 설비 시나리오에도 일정이 있다는 경고 · 확인 체크 ·"
+            " 가정 세션 공식 가용대수 경고(저장 결과 알림에 지운 호기 수 · 일정이 빠진 시나리오 수)"
+        ),
+        why="UI-NTF-03 · UI-NTF-05 · 검수표 11/02 equip-13",
+        file="src/capa_simulation/components/equipment_scenario_status.py",
+        function="_render_save",
+        code="FL-01",
+        route="flash",
+        test=(
+            "tests/test_equipment_assumption_rawdata.py"
+            "::test_the_popup_save_removes_the_unit_and_says_so_like_the_tab"
+        ),
+    ),
+    Withdrawn(
         what="공정 Capa 상세 정리 줄 — 「사용기준 제외 n대」(설비 일정이 설 때 늘 서던 내역)",
         why="UI-TXT-04 · UI-NTF-02 · 검수표 11/02 exec-20",
         file="app_pages/process_capa_detail.py",

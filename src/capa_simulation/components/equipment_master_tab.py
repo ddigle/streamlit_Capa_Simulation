@@ -5,9 +5,8 @@
 - **열려 있을 때만 그린다**(D11 — AGENTS 9장 「숨은 탭에서도 입력 위젯은 그린다」 의 예외). 표
   편집은
   세션 칸(편집본·출납 기억)에 살아 숨은 회차에 그릴 까닭이 없다. 숨은 회차에 버려지는 위젯 값은 작은
-  편집표 둘의 적용 전 편집(화면 탭 줄 떠나기 확인이 잡는다)·변경 메모(입력 초안)·저장 칸
-  체크(기본값이
-  늘 같다)뿐이고, 저장자는 `persist_state` 로 지킨다. 페이지는 이 모듈을 탭이 열린 회차에만 불러온다
+  편집표 둘의 적용 전 편집(화면 탭 줄 떠나기 확인이 잡는다)·변경 메모(입력 초안)뿐이고, 저장자는
+  `persist_state` 로 지킨다. 페이지는 이 모듈을 탭이 열린 회차에만 불러온다
   —
   표 컴포넌트 모듈이 읽힐 때 등록한다.
 - **자리**: 맨 위 줄(표 고르기 · 설비 시나리오 알약 · 저장 전 변경 수) → 알림 칸(늘 서 있는 칸 —
@@ -29,8 +28,10 @@
   마지막
   seq 는 마운트마다 `ack` 로 돌려준다. 그린 회차의 조건(`GridContext` — `base`·잠금)을 콜백 인자로
   묶는다. 배치 칸을 바꾼 출납은 그때의 역할을 찍는다(`stamp_layout_role` — 탭 제출과 같다).
-- **저장**: 「저장 전 변경」 아래 저장 구획 하나 — 변경 메모 · 저장 칸(저장자 · 함께 넣기 둘 · 공식
-  발행) · 「한 단계 되돌리기」·「모두 버리기」(확인 팝오버)·「리비전 저장」. 「리비전 저장」 은
+- **저장**: 「저장 전 변경」 아래 저장 구획 하나 — 변경 메모 · 저장자 · 「한 단계 되돌리기」·
+  「모두 버리기」(확인 팝오버)·「리비전 저장」. 체크 · 확인 칸은 없다 — 함께 넣기 · 공식 발행 ·
+  지우기는 늘 하고 일어난 일은 결과 알림이 적는다(`equipment_save_fields` 모듈 설명). 「리비전
+  저장」 은
   잠그지
   않는다(출납은 300ms 묶음이라 마지막 회차의 판정은 브라우저보다 늦다) — 콜백이 출납을 먼저 반영한
   뒤
@@ -68,7 +69,6 @@ from capa_simulation.components.equipment_data_workspace import (
     MASTER_TABLE_KEY,
     NEW_UNIT_DRAFT_KEY,
     NOTHING_SAVED_MESSAGE,
-    REMOVAL_CONFIRM_KEY,
     SAVE_FIELDS_PREFIX,
     STALE_SCENARIO_EDITS_TAB,
     Frames,
@@ -91,9 +91,7 @@ from capa_simulation.components.equipment_data_workspace import (
     grid_undo_steps,
     layout_lock_origins,
     layout_memo_mark,
-    new_unit_choice_line,
     official_layout_cells,
-    official_reach,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -102,7 +100,6 @@ from capa_simulation.components.equipment_data_workspace import (
     prune_new_unit_propagation,
     queue_grid_toast,
     remember_new_unit_propagation,
-    removals_elsewhere,
     render_name_changes,
     render_small_editor,
     reset_equipment_drafts,
@@ -127,9 +124,10 @@ from capa_simulation.components.equipment_import_dialog import (
 from capa_simulation.components.equipment_save_fields import (
     ASSUMPTION_PROPAGATE_WARNING,
     DEFAULT_PROPAGATE_NEW_UNITS,
+    SAVE_ALWAYS_HELP,
     EquipmentSaveBasis,
-    render_equipment_save_fields,
-    save_fields_from_state,
+    render_saved_by_field,
+    saved_by_from_state,
 )
 from capa_simulation.components.equipment_scenario_status import render_load_latest_button
 from capa_simulation.components.equipment_settings_dialog import (
@@ -947,17 +945,6 @@ def _save_revision(
     if not _has_changes(frames):
         _result("info", NOTHING_TO_SAVE)
         return
-    removal_confirmed = None
-    try:
-        removal = removals_elsewhere(
-            frames,
-            database_path=str(repository.database_path),
-            scenario_id=basis.equipment_scenario_id if basis is not None else None,
-        )
-    except BOOTSTRAP_ERRORS:
-        removal = None
-    if removal is not None and st.session_state.get(f"{REMOVAL_CONFIRM_KEY}__{removal.token}"):
-        removal_confirmed = removal
     renames = pending_unit_renames()
     id_map = save_id_map(grid_index(frames[1], _saved_frames()[1], renames.units), frames[1])
     loaded, detail = grid_loaded_ids(), _detail_id()
@@ -968,12 +955,7 @@ def _save_revision(
             frames,
             note if isinstance(note, str) else "",
             basis=basis,
-            # 가정 설비 시나리오면 발행 체크는 공식에 넣을 것이 있을 때만 서고 그리지 않은 체크는
-            # 거짓이다(세 저장 자리 한 규칙).
-            fields=save_fields_from_state(
-                SAVE_FIELDS_PREFIX, reach_rule=basis is not None and not basis.official_scenario
-            ),
-            removal_confirmed=removal_confirmed,
+            saved_by=saved_by_from_state(SAVE_FIELDS_PREFIX),
             # 콜백이라 이 회차 편집본을 세우기 전이다 — 남의 공통 저장 거부면 본문이 다시 세운다.
             reopens=True,
         )
@@ -1203,6 +1185,16 @@ def save_target(basis: EquipmentSaveBasis | None) -> str:
     return quoted(basis.scenario_name) if basis is not None else "「이 설비 시나리오」"
 
 
+def save_button_help(basis: EquipmentSaveBasis | None, layout: LayoutMode) -> str:
+    """「리비전 저장」 풍선 — 무엇이 어디로 저장되고 저장이 늘 무엇을 하는지(자리에 적지 않는다,
+    설계 규칙 UI-TXT-01 · UI-NTF-09)."""
+    scenario = save_target(basis)
+    place = f"공통 칸은 모든 설비 시나리오에, 시나리오 칸은 {scenario} 에 새 리비전으로 저장됩니다"
+    if layout == "overlay":
+        place += f" — 배치 칸은 {scenario} 에만(공식과 다른 것만)"
+    return f"{place}. {SAVE_ALWAYS_HELP}"
+
+
 def _render_save_section(
     repository: DuckDBEquipmentRepository,
     *,
@@ -1219,49 +1211,20 @@ def _render_save_section(
     if st.session_state.pop(_NOTE_CLEAR_KEY, False):
         st.session_state[_NOTE_KEY] = ""
     st.text_input("변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER)
-    render_equipment_save_fields(
-        SAVE_FIELDS_PREFIX,
-        release_exists=basis is None or basis.release_no > 0,
-        # 가정 설비 시나리오면 발행 체크는 이 저장이 공식에 넣을 것이 있을 때만(세 저장 자리
-        # 한 규칙), 함께 넣기를 켜 두면 Space 저장 칸과 같은 공식 가용대수 경고가 선다.
-        reach=official_reach(frames) if basis is not None and not basis.official_scenario else None,
-        persist_saved_by=True,
-    )
-    with st.container():
-        # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 함께 넣기 체크보다 이긴다(D8).
-        line = new_unit_choice_line(
-            frames, assumption=basis is not None and not basis.official_scenario
-        )
-        if line is not None:
-            st.caption(line)
-    with st.container():
-        try:
-            removal = removals_elsewhere(
-                frames,
-                database_path=str(repository.database_path),
-                scenario_id=basis.equipment_scenario_id if basis is not None else None,
-            )
-        except BOOTSTRAP_ERRORS:
-            removal = None
-        if removal is not None:
-            st.warning(removal.message(), icon=":material/group_remove:")
-            st.checkbox(removal.confirm_label(), key=f"{REMOVAL_CONFIRM_KEY}__{removal.token}")
+    render_saved_by_field(SAVE_FIELDS_PREFIX, persist=True)
     counts = change_counts(view)
     errors = counts.errors
-    scenario = save_target(basis)
+    # 무엇이 어디로 저장되나는 「리비전 저장」 풍선이 말한다 — 이 칸은 지금 저장 못 하는 까닭만(늘
+    # 서 있는 칸이라 아래 단추 줄의 자리가 밀리지 않는다).
     if session.legacy_trace_count:
         hint = legacy_trace_message(session.legacy_trace_count)
     elif errors:
         hint = f"오류 {errors:,}개를 고쳐야 저장됩니다"
-    elif _has_changes(frames):
-        hint = (
-            f"공통 칸은 모든 설비 시나리오에, 시나리오 칸은 {scenario} 에 새 리비전으로 저장됩니다"
-        )
-        if layout == "overlay":
-            hint += f" — 배치 칸은 {scenario} 에만(공식과 다른 것만)"
     else:
-        hint = NOTHING_TO_SAVE
-    st.caption(hint)
+        hint = "" if _has_changes(frames) else NOTHING_TO_SAVE
+    with st.container():
+        if hint:
+            st.caption(hint)
     has_fab = pending_fab_layout() is not None
     floor_pending = bool(
         pending_floor_canvases() or pending_floor_marks() or pending_floor_group_labels()
@@ -1293,6 +1256,7 @@ def _render_save_section(
             key=SAVE_BUTTON_KEY,
             type="primary",
             icon=":material/save:",
+            help=save_button_help(basis, layout),
             on_click=_save_revision,
             args=(repository,),
             kwargs={

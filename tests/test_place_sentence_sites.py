@@ -110,7 +110,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/reference_integrity.py", "_render_summary"): (EMPTY,),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
     ("app_pages/space_status.py", "_render_layout_warnings"): (CANNOT_DRAW,),
-    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (BESIDE_INPUT, BESIDE_INPUT),
+    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (BESIDE_INPUT,),
     ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, EMPTY),
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (EMPTY,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
@@ -188,14 +188,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
         BESIDE_INPUT,
         BESIDE_INPUT,
-        BESIDE_INPUT,
-    ),
-    ("src/capa_simulation/components/equipment_save_fields.py", "_reach_publish"): (BESIDE_INPUT,),
-    ("src/capa_simulation/components/equipment_save_fields.py", "_render_assumption_warning"): (
-        BESIDE_INPUT,
-    ),
-    ("src/capa_simulation/components/equipment_save_fields.py", "render_equipment_save_fields"): (
-        BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_branch"): (
         BESIDE_INPUT,
@@ -231,9 +223,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
         EMPTY,
-        BESIDE_INPUT,
         EMPTY,
-        BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"): (
         BESIDE_INPUT,
@@ -302,10 +292,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_progress"): (EMPTY,),
-    ("src/capa_simulation/components/scenario_management.py", "_render_archive"): (
-        BESIDE_INPUT,
-        BESIDE_INPUT,
-    ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_archive"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/scenario_management.py", "_render_archived_scenarios"): (
         EMPTY,
     ),

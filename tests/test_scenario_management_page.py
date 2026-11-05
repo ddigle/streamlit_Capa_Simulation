@@ -146,11 +146,12 @@ def test_list_management_acts_on_the_checked_scenario(
     app.run()
 
     assert not app.exception
-    # 첫 행은 내장 시드 — 지금 최신 공식버전의 시나리오다. 체크·단추 대신 보관할 수 없다는
-    # 안내만 선다.
-    assert any("보관할 수 없습니다" in item.value for item in infos(app))
+    # 첫 행은 내장 시드 — 지금 최신 공식버전의 시나리오다. 자리에는 표지 한 마디와 꺼진 단추만
+    # 두고 까닭은 그 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
+    assert not any("보관할 수 없습니다" in item.value for item in infos(app))
     assert "보관합니다" not in "".join(widget.label for widget in app.checkbox)
-    assert "보관 실행" not in {button.label for button in app.button}
+    blocked = next(button for button in app.button if button.label == "보관 실행")
+    assert blocked.disabled and "보관할 수 없습니다" in str(blocked.help)
 
     # 공식이 아닌 시나리오는 보관할 수 있다. 되돌릴 수 있으므로 확인이 체크박스 한 번이다.
     other = _clone_official(database_path, "보관해 볼 시나리오", "ARCHIVE-TRY")
@@ -160,7 +161,6 @@ def test_list_management_acts_on_the_checked_scenario(
     app.button(key=f"{ACTION_KEY}_archive").click().run()
 
     assert not app.exception
-    assert not any("보관할 수 없습니다" in item.value for item in infos(app))
     assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
     execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled

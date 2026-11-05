@@ -89,9 +89,7 @@ GUARDS = frozenset(
 )
 
 # 앱이 지은 라벨을 돌려주는 함수 — 사람 글이 들지 않아 「」 안에 그대로 끼워도 된다.
-APP_LABELS: dict[str, str] = {
-    "confirm_label": "지워질 일정의 시나리오·호기 수만 세는 확인 칸 이름(equipment_data_workspace)",
-}
+APP_LABELS: dict[str, str] = {}
 
 # 이미 막은 글을 돌려주는 함수 — 사람이 지은 이름을 `literal_markdown`·`quoted`(또는 이 목록의 다른
 # 함수)로 막아 짓는다. 「」 안에 그대로 끼워도 되고, `literal_markdown`·`quoted` 로 다시 감싸면 막은

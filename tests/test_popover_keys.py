@@ -4,7 +4,7 @@
 
 위에 조건부 알림(작업 알림·저장 오류)이 생기거나 빠지는 회차에 순번이 한 칸 밀려, 열어 둔 팝오버가
 새 블록으로 서며 닫혔다 — 설비 시나리오 구획(2026-10-25 E2E)에서 알림 뒤 처음 누른 팝오버 안 확인
-체크·Enter 가 팝오버를 닫았고, Space 저장 칸·버리기 팝오버도 저장 오류 아래에서 같은 꼴이었다.
+체크·Enter 가 팝오버를 닫았고, Space 버리기 팝오버도 저장 오류 아래에서 같은 꼴이었다.
 라벨에 개수처럼 바뀌는 값을 넣은 확장 패널은 라벨이 바뀌는 회차에 새로 서며 접혔다.
 
 모든 팝오버와 라벨이 글자 그대로가 아닌 확장 패널은 key 를 받는다. 브라우저의 펼침 상태는 AppTest 가
@@ -110,10 +110,9 @@ def _popovers(app: AppTest) -> dict[str, tuple[str, tuple[int, ...]]]:
 def test_the_space_save_popovers_survive_a_save_error_above_them(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """저장 안 한 배치 상자의 「저장 칸」·「버리기」 팝오버는 저장 오류가 위에 생기고 빠져도 같은
-    블록이다.
+    """저장 안 한 배치 상자의 「버리기」 팝오버는 저장 오류가 위에 생기고 빠져도 같은 블록이다.
 
-    오류 한 줄이 상자 안 저장 줄을 한 칸 민다 — key 가 없으면 그 회차에 두 팝오버가 새로 서며
+    오류 한 줄이 상자 안 저장 줄을 한 칸 민다 — key 가 없으면 그 회차에 팝오버가 새로 서며
     닫혔다.
     """
     app, _ = _open_editor(tmp_path)
@@ -126,7 +125,7 @@ def test_the_space_save_popovers_survive_a_save_error_above_them(
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     before = _popovers(app)
-    assert {"저장 칸", "버리기"} <= set(before)
+    assert "버리기" in before
 
     app.session_state["space_layout_save_error"] = "다른 사용자가 먼저 저장했습니다."
     app.run()
@@ -138,14 +137,9 @@ def test_the_space_save_popovers_survive_a_save_error_above_them(
     assert not app.exception, [item.message for item in app.exception]
     after = _popovers(app)
 
-    for label in ("저장 칸", "버리기"):
-        block_id, path = before[label]
-        assert block_id and block_id.endswith(
-            {"저장 칸": "space_layout_fields_popover", "버리기": "space_layout_discard_popover"}[
-                label
-            ]
-        )
-        # 오류가 선 회차에는 자리가 밀린다 — 그래도 같은 id 라 브라우저가 같은 팝오버로 잇는다.
-        assert shown[label][1] != path
-        assert shown[label][0] == after[label][0] == block_id
+    block_id, path = before["버리기"]
+    assert block_id and block_id.endswith("space_layout_discard_popover")
+    # 오류가 선 회차에는 자리가 밀린다 — 그래도 같은 id 라 브라우저가 같은 팝오버로 잇는다.
+    assert shown["버리기"][1] != path
+    assert shown["버리기"][0] == after["버리기"][0] == block_id
     clear_equipment_repository()
