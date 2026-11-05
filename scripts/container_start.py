@@ -28,7 +28,7 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 `CMD` 와 같고, 실행 줄의 두 비밀값은 앱에 넘기지 않는다.
 
 통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)는 앱이 써야 하므로 **앱에는 넘긴다** — 비밀값
-`JWT_SECRET_KEY` 와 접속 명단은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다
+`JWT_SECRET_KEY` · S3 명단 키 둘과 접속 명단은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다
 (`auth.runtime.start`). 이 스크립트는 그 값을 검증하지 않고 있음/없음만 결과 파일
 (`sso_environment`)과 진행 한 줄에 남긴다. 하위 프로세스(import 확인·pip)에는 그 값들도 넘기지
 않는다(`auth.names.WITHHELD_ENVIRONMENT`). 진입 파일이 없거나 import 에

@@ -41,6 +41,14 @@ ENV_ACCESS_ADMINS = "CAPA_ACCESS_ADMINS"
 ENV_ACCESS_USERS = "CAPA_ACCESS_USERS"
 # 거절 화면에 보일 요청 창구 글(선택). 로그인 없이 누구나 보는 글이라 사람 loginid 를 넣지 않는다.
 ENV_ACCESS_CONTACT = "CAPA_ACCESS_CONTACT"
+# S3 명단(`auth/access_store.py`). 키가 하나라도 있으면 켜진다 — 그때 사용자 목록은 파일에서 오고
+# `CAPA_ACCESS_USERS` 는 쓰지 않는다. 주소 · 버킷 · 영역 이름은 `io/object_storage.py` 와 같다.
+ENV_S3_ACCESS_KEY = "CAPA_S3_ACCESS_KEY"
+ENV_S3_SECRET_KEY = "CAPA_S3_SECRET_KEY"
+ENV_S3_ENDPOINT = "CAPA_S3_ENDPOINT_URL"
+ENV_S3_BUCKET = "CAPA_S3_BUCKET"
+ENV_S3_REGION = "CAPA_S3_REGION"
+ENV_ACCESS_OBJECT = "CAPA_ACCESS_S3_OBJECT"
 
 # 통합인증이 읽는 환경변수 전부. 시험의 자동 정리 · 시작 보고(있음/없음) · 앱 사본을 띄우는 보조
 # 스크립트가 같은 튜플을 쓴다. 차례는 설정 화면 · 점검 표의 줄 차례다.
@@ -64,10 +72,16 @@ SSO_ENVIRONMENT: tuple[str, ...] = (
     ENV_ACCESS_ADMINS,
     ENV_ACCESS_USERS,
     ENV_ACCESS_CONTACT,
+    ENV_S3_ACCESS_KEY,
+    ENV_S3_SECRET_KEY,
+    ENV_S3_ENDPOINT,
+    ENV_S3_BUCKET,
+    ENV_S3_REGION,
+    ENV_ACCESS_OBJECT,
 )
 
 # 값을 화면 · 보고 · 로그에 절대 싣지 않는 이름(있음/없음 · 길이 같은 사실만).
-SECRET_ENVIRONMENT: tuple[str, ...] = (ENV_SECRET,)
+SECRET_ENVIRONMENT: tuple[str, ...] = (ENV_SECRET, ENV_S3_ACCESS_KEY, ENV_S3_SECRET_KEY)
 # 앱이 기동 때 읽은 뒤 `os.environ` 에서 빼고 하위 프로세스에 넘기지 않는 이름. 명단은 비밀값은
 # 아니지만 사람을 가리킨다. 창구 글은 거절 화면에 그대로 보이는 공개 글이라 넣지 않는다.
 WITHHELD_ENVIRONMENT: tuple[str, ...] = (*SECRET_ENVIRONMENT, ENV_ACCESS_ADMINS, ENV_ACCESS_USERS)
@@ -111,5 +125,7 @@ LOGGER_NAME = "capa_simulation.sso"
 DEFAULT_SESSION_HOURS = 6
 DEFAULT_SESSION_MAX_HOURS = 24
 DEFAULT_SCOPE = "openid"
+DEFAULT_S3_REGION = "us-east-1"
+DEFAULT_ACCESS_OBJECT = "access/access_list.json"
 # 문서 자리(설정 화면 · 점검이 가리킨다).
 SETUP_DOC = "docs/sso_setup.md"

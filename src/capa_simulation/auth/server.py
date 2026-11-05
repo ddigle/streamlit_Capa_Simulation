@@ -16,14 +16,21 @@ import os
 from starlette.middleware import Middleware
 from starlette.routing import BaseRoute, Route
 
-from capa_simulation.auth import names, runtime, web
+from capa_simulation.auth import access_store, names, runtime, web
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.gate import SsoGate
 
 
 def start_sso() -> SsoConfig:
-    """환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 환경에서 뺀다."""
-    return runtime.start(os.environ)
+    """환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 환경에서 빼고, S3
+    명단이 켜졌으면 한 번 읽어 메모리에 올린다(못 읽어도 앱은 뜬다 — 관리자만 통과).
+
+    uvicorn 이 이 진입 파일을 import 하는 때라 연결을 받기 전이다 — 시간 제한(`io/s3_small`)만큼
+    기동이 늦을 수 있어도 처리 중인 요청을 막지 않는다.
+    """
+    cfg = runtime.start(os.environ)
+    access_store.read_at_start(cfg)
+    return cfg
 
 
 def sso_routes() -> list[BaseRoute]:

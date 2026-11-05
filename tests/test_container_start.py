@@ -1200,6 +1200,49 @@ def test_the_sso_values_reach_the_app_but_only_their_names_reach_the_report(
         assert sso_names.ENV_SECRET not in env, "하위 프로세스에는 통합인증 비밀값도 넘기지 않는다"
 
 
+FAKE_S3_ACCESS_KEY = "FAKE-s3-access-key-0001"
+FAKE_S3_SECRET_KEY = "FAKE-s3-secret-key-0123456789-abcdefghij"
+
+
+def test_the_s3_keys_reach_only_the_app_and_never_the_report_or_a_child(
+    place: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S3 명단 키도 통합인증 비밀값과 같다 — 앱에만 넘기고, 결과 파일 · 출력에는 이름만 남는다."""
+    environ = {
+        **ALL_ENVIRONMENT,
+        sso_names.ENV_S3_ACCESS_KEY: FAKE_S3_ACCESS_KEY,
+        sso_names.ENV_S3_SECRET_KEY: FAKE_S3_SECRET_KEY,
+    }
+    runner = FakeRunner([_probe("missing"), _probe("ok", "9.9.9")], [_ok(), _ok()])
+
+    report, fake_exec = _main(place, environ, runner)
+
+    presence = report["sso_environment"]
+    assert isinstance(presence, dict)
+    assert presence[sso_names.ENV_S3_ACCESS_KEY] is True
+    assert presence[sso_names.ENV_S3_SECRET_KEY] is True
+    written = capsys.readouterr().out + json.dumps(report, ensure_ascii=False)
+    assert FAKE_S3_ACCESS_KEY not in written and FAKE_S3_SECRET_KEY not in written
+    [(_file, _args, app_env)] = fake_exec.calls
+    assert app_env[sso_names.ENV_S3_SECRET_KEY] == FAKE_S3_SECRET_KEY, "앱이 읽고 지운다"
+    for env in runner.envs:
+        assert sso_names.ENV_S3_ACCESS_KEY not in env
+        assert sso_names.ENV_S3_SECRET_KEY not in env
+
+
+def test_the_redactor_hides_the_s3_keys_in_any_output() -> None:
+    redact = container_start.Redactor.from_environ(
+        {
+            sso_names.ENV_S3_ACCESS_KEY: FAKE_S3_ACCESS_KEY,
+            sso_names.ENV_S3_SECRET_KEY: FAKE_S3_SECRET_KEY,
+        }
+    )
+
+    text = redact(f"pip 오류 {FAKE_S3_ACCESS_KEY} {FAKE_S3_SECRET_KEY}")
+
+    assert FAKE_S3_ACCESS_KEY not in text and FAKE_S3_SECRET_KEY not in text
+
+
 def test_the_report_reader_keeps_sso_names_and_old_reports_have_none(place: Path) -> None:
     """결과 꼴은 더하기만 했다(`REPORT_VERSION` 그대로) — 옛 파일은 그 칸이 없어 `None` 이다."""
     report, _ = _main(place, {sso_names.ENV_CLIENT_ID: "x"}, FakeRunner([_probe("missing")]))
@@ -1234,6 +1277,8 @@ def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
     assert container_start.CHILD_WITHHELD_ENVIRONMENT == (
         *report_contract.APP_WITHHELD_ENVIRONMENT,
         sso_names.ENV_SECRET,
+        sso_names.ENV_S3_ACCESS_KEY,
+        sso_names.ENV_S3_SECRET_KEY,
         sso_names.ENV_ACCESS_ADMINS,
         sso_names.ENV_ACCESS_USERS,
     )

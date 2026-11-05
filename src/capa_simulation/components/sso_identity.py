@@ -170,6 +170,18 @@ def require_signed_in() -> Identity | None:
     return found
 
 
+def verified_identity() -> Identity | None:
+    """이 연결의 쿠키를 **지금** 다시 검증한 신원. 켜짐이 아니거나 유효하지 않으면 `None`.
+
+    멈춤 화면을 그리지 않는다 — 쓰기 함수 · 위젯 콜백이 세션 상태를 믿지 않고 부른다.
+    """
+    cfg = runtime.config()
+    if cfg.mode is not SsoMode.ON:
+        return None
+    found = identity_from_cookies(session_cookies(), cfg, _now(), renewals=True)
+    return None if isinstance(found, IdentityProblem) else found
+
+
 def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:
     """앱 정보 카드 셋째 줄 — 「이름 · 부서 · 로그아웃」. 꺼짐(신원 없음)이면 `None`.
 

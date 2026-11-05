@@ -2,16 +2,19 @@
 
 """접속 명단.
 
-통합인증을 지났어도 이 명단에 없는 사람은 앱에 들어오지 못한다. 값은 C-DEP 환경변수 표에서만
-들어오고 이 저장소에는 적지 않는다(공개 저장소 — 실제 loginid 는 사람을 가리킨다). 표준 라이브러리만
-쓴다.
+통합인증을 지났어도 이 명단에 없는 사람은 앱에 들어오지 못한다. 값은 C-DEP 환경변수 표와 S3 명단
+파일(`access_store`)에서만 들어오고 이 저장소에는 적지 않는다(공개 저장소 — 실제 loginid 는 사람을
+가리킨다). 표준 라이브러리만 쓴다.
 
 안쪽 자료는 loginid → 등급 맵이다. 지금은 등급을 「들어올 수 있나」 로만 쓰고, 화면별 권한은 다음
 단계가 이 맵에 등급을 늘려 얹는다.
 
-순수 함수만 둔다 — 설정(`config.load_config`)이 만들고, 판정은 `identity.session_check` 와 콜백 ·
-갱신 경로가 `AccessList.allows` 로 묻는다. `LOGINID_PATTERN` 이 여기 있는 까닭은 `tokens` 가
-`config` 를 import 하므로 `config` 가 `tokens` 에서 꺼내면 돌고 돌기 때문이다.
+순수 함수만 둔다 — 설정(`config.load_config`)이 환경변수 몫을 만들고, S3 명단이 켜져 있으면
+`compose_access` 가 파일 몫을 얹은 한 벌을 `runtime` 이 들고 통째로 바꾼다. 판정은
+`identity.session_check` 와 콜백 · 갱신 경로가 `runtime.current_access(cfg).allows` 로 묻는다.
+**관리자는 환경변수뿐이다** — 파일의 등급 칸으로 관리자를 만들 수 없다(명단 편집 권한이 S3
+쓰기 권한과 같아지지 않게). `LOGINID_PATTERN` 이 여기 있는 까닭은 `tokens` 가 `config` 를
+import 하므로 `config` 가 `tokens` 에서 꺼내면 돌고 돌기 때문이다.
 
 값은 repr · 로그 · 화면에 나오지 않는다 — 점검 화면에는 개수만, 거절 화면에는 `contact` 만 싣는다.
 """
@@ -45,20 +48,26 @@ def normalize_loginid(value: str) -> str | None:
     return text.casefold()
 
 
-def parse_entries(raw: str) -> tuple[tuple[str, ...], int]:
-    """목록 글 → (견주는 꼴 loginid 들, 읽지 못한 항목 수). 항목 값은 어디에도 남기지 않는다.
+def entry_key(value: str) -> str | None:
+    """명단 항목 하나 → 견주는 꼴. 사람으로 읽지 못하면 `None`.
 
-    글자 · 숫자가 하나도 없는 항목(`-` · `.` 같은 자리표)도 읽지 못한 것으로 센다 — 빈 값을 받지
-    않는 표에 넣은 자리표가 관리자 한 명으로 세어지면 「읽은 관리자 없으면 막힘」 을 비껴가 전원이
+    글자 · 숫자가 하나도 없는 항목(`-` · `.` 같은 자리표)도 읽지 못한 것이다 — 빈 값을 받지 않는
+    표에 넣은 자리표가 관리자 한 명으로 세어지면 「읽은 관리자 없으면 막힘」 을 비껴가 전원이
     잠긴다. 토큰 쪽 꼴(`LOGINID_PATTERN`)은 그대로다.
     """
+    key = normalize_loginid(value)
+    return key if key is not None and any(character.isalnum() for character in key) else None
+
+
+def parse_entries(raw: str) -> tuple[tuple[str, ...], int]:
+    """목록 글 → (견주는 꼴 loginid 들, 읽지 못한 항목 수). 항목 값은 어디에도 남기지 않는다."""
     kept: list[str] = []
     unreadable = 0
     for item in _ENTRY_SEPARATORS.split(raw):
         if not item:
             continue
-        key = normalize_loginid(item)
-        if key is None or not any(character.isalnum() for character in key):
+        key = entry_key(item)
+        if key is None:
             unreadable += 1
         else:
             kept.append(key)
@@ -112,4 +121,76 @@ def build_access_list(admins: str, users: str, *, enforced: bool, contact: str =
         unreadable_admins=unreadable_admins,
         unreadable_users=unreadable_users,
         contact=contact,
+    )
+
+
+@dataclass(frozen=True)
+class ListEntry:
+    """S3 명단 파일의 사람 하나 — 넣은 사람과 때는 Admin 표에만 보인다."""
+
+    loginid: str
+    added_by: str = ""
+    added_at: str = ""
+
+
+@dataclass(frozen=True)
+class ListChange:
+    """고친 기록 한 줄 — 누가 · 언제 · 무엇(`add` · `remove` · `drop_unreadable`)을 누구에게."""
+
+    by: str
+    at: str
+    what: str
+    loginid: str = ""
+
+
+@dataclass(frozen=True)
+class ListDocument:
+    """S3 명단 파일 한 벌. `revision` 은 저장할 때마다 1 씩 는다. repr 에 사람이 나오지 않는다."""
+
+    revision: int = 0
+    entries: tuple[ListEntry, ...] = field(default=(), repr=False)
+    changes: tuple[ListChange, ...] = field(default=(), repr=False)
+    unreadable: int = 0
+    # 등급 칸이 `user` 가 아니어서 사용자로 읽은 항목 수 — 파일로는 관리자를 만들 수 없다.
+    demoted: int = 0
+
+
+@dataclass(frozen=True)
+class SourceProblem:
+    """S3 명단을 읽거나 쓰지 못한 까닭. 분류 · HTTP 상태 · 저장소 오류 코드뿐이다(값 · 키 없음)."""
+
+    kind: str
+    status: int | None = None
+    code: str = ""
+
+
+@dataclass(frozen=True)
+class AccessSource:
+    """지금 명단 한 벌과 그 내력 — `runtime` 이 하나를 들고 통째로 바꾼다.
+
+    `access` 는 판정이 보는 합성 명단이다. `document` 가 `None` 이면 아직 한 번도 읽지 못한 것이고
+    그때 `access` 는 환경변수 관리자뿐이다(열림으로 떨어지지 않는다). 한 번 읽어 둔 뒤의 실패는
+    `problem` 에만 적고 `access` 를 건드리지 않는다.
+    """
+
+    access: AccessList
+    document: ListDocument | None = None
+    etag: str = ""
+    read_at: int | None = None
+    attempted_at: int | None = None
+    problem: SourceProblem | None = None
+    saved_at: int | None = None
+    save_problem: SourceProblem | None = None
+
+
+def compose_access(base: AccessList, document: ListDocument) -> AccessList:
+    """환경변수 몫(`base` — 관리자) + S3 파일 몫(사용자). 두 쪽에 다 있으면 관리자다."""
+    grades = dict.fromkeys((entry.loginid for entry in document.entries), GRADE_USER)
+    grades.update(base.grades)
+    return AccessList(
+        enforced=True,
+        grades=types.MappingProxyType(grades),
+        unreadable_admins=base.unreadable_admins,
+        unreadable_users=document.unreadable,
+        contact=base.contact,
     )

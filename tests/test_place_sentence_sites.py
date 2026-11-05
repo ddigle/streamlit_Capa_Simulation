@@ -311,6 +311,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"): (
         EMPTY,
     ),
+    # 명단이 비었을 때의 빈 결과 한 줄.
+    ("src/capa_simulation/components/access_list_admin.py", "_render_people"): (EMPTY,),
     ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (
         UNSETTLED,
         UNSETTLED,
