@@ -295,8 +295,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
   `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새
   `jti` 로 다시 서명, 끝 시각 규칙은 `session_end` 한 곳) · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 → 신원은
-  `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 접속 명단(목록 글 → loginid → 등급 맵 · `AccessList.allows` · loginid 꼴 `LOGINID_PATTERN` — 표준 라이브러리만)은
-  `auth/access.py`, 프로세스 상태(설정 한 벌 · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
+  `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 접속 명단(목록 글 → loginid → 등급 맵 · `AccessList.allows` · loginid 꼴 `LOGINID_PATTERN` · S3 파일 몫을 얹는 `compose_access` — 표준 라이브러리만)은
+  `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 관리자만 쓰는 `save_changes` · `reread` — 5장 37)은 `auth/access_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
   갱신 누계 · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 다섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
   `/auth/sso/error` · `POST /auth/sso/refresh`) · 로그인 시작 · 화면은 `auth/web.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
@@ -318,6 +318,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
+  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(loginid · 넣은 때 · 넣은 사람) · 추가(공통 붙여넣기 창 `components/paste_form`) · 지우기 · 다시 읽기를 둔다. 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 시험은 `tests/test_sso_access_s3.py`.
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
@@ -326,8 +327,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `runtime.denied_accounts` · 누계 `denied_total`)과 「로그인 전 실패」(무인증 실패 —
     따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 사실 줄은 「로그인 유지: 마지막 사용 뒤 n시간 · 최대 n시간」,
     켜짐이면 그 아래 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
-    재시작하면 0)를 한 줄로 보인다(갱신은 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 사용자 · 읽지 못함), 그 아래 마지막 로그인의 클레임 이름(값 없음,
+    재시작하면 0)를 한 줄로 보인다(갱신은 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 사용자 · 읽지 못함), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
     `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.
+  - `scripts/s3_mock_store.py` — 개발 · 시험용 가짜 S3(서명을 받은 요청 그대로 다시 지어 검증 · 메모리만 · 루프백만 · env 파일이 작업 트리 안이면 거절). S3 명단 시험과 `docs/sso_setup.md` 8장이 쓴다.
   - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌
     `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다. `--app-url` 이 루프백이 아니면 env 파일에 `--loginid` 를 관리자 목록으로 적는다(접속 명단이 켜지므로).
 - `app_pages/home.py` — HOME 대시보드. 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정(Preference 공용 프로필
@@ -828,9 +830,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 바로 뒤에 「통합인증 점검」 펼침
     (`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
     캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 `AD-01`,
-    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
+    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` — 그 명단을 쓰는 서버에서만)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
     점검 펼침). 편 상태는 기억 칸(`remembered_expander`)이라
-    다른 화면에 다녀와도 접히지 않는다.
+    다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 관리자 회차에만 선다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/internal_modules.py` — 사이드바 「모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다).
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
@@ -1509,9 +1511,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `CMD` 와 같은 `streamlit run` 줄이 된다. 비밀값은 결과 파일·표준 출력·명령줄·하위 프로세스와 앱의 환경 어디에도
     남기지 않고(`tests/test_container_start.py`), 예상하지 못한 예외가 나도 「도중에 멈춤」 결과를 남기고 앱은 뜬다.
     시험은 `tests/conftest.py` 가 결과 파일 자리를 늘 없는 곳으로 돌리고 CD 전용 환경변수를 지운다.
-- `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지에 `aws` CLI 로 붙는 유일한 경계이자 앱의 유일한
+- `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`).
   - 설정은 `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
+- `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. C-DEP 이미지에 `aws` 가 있다는 보장이 없고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음).
 - `src/capa_simulation/persistence/` — 시뮬레이션·설비 DuckDB 의 마이그레이션·Repository·캐시를 독립된 모듈·파일로 둔다.
@@ -4607,8 +4610,9 @@ RQ_MODULE
     새 핸드셰이크 · 열린 연결의 메시지(`gate._WatchedSocket`) · `app.py` 의 `require_signed_in` 이 모두 이 함수를 지나므로 자리마다 판정을 더하지 않는다. `app.py` 만으로는 위젯 콜백 ·
     프래그먼트 회차를 막지 못한다(36). 쿠키를 믿지 않고 묻는 자리는 둘뿐이다 — 콜백(`verify_id_token` 뒤 · `issue_session` 앞, 거절 화면과 `login_denied` 기록은 여기 한 곳)과 갱신 경로(폐기 확인 옆 — 401,
     다시 발급하지 않음). 문지기는 분기를 늘리지 않는다 — 명단 밖 쿠키의 탐색은 IdP → 콜백 → 거절 화면으로 가고 fetch 는 401 이라 `sso_reconnect` 띠도 같은 길로 간다. 거절은 쿠키 셋(상태 · 시도 · 세션)을
-    지운다(시도 쿠키가 남으면 「로그인이 되풀이됩니다」 가 잘못 뜬다). 거절 주소 `?code=not_on_list` 는 로그인 없이 열리므로 진단을 보관하지 않고 loginid · 이름을 싣지 않는다. 명단은 기동 때 한 번 읽고(`SsoConfig.access`) `runtime.start` 가 `os.environ` 에서 뺀다(`names.WITHHELD_ENVIRONMENT` — 하위 프로세스에도 넘기지 않는다). 값은 화면 · 로그 ·
-    repr 에 나오지 않는다 — 점검에는 개수만. 운영 · 잠금 · 루프백이 아닌 공개 주소이거나 목록에 값이 있으면 켜지고(`APP_ENV` 만 보면 그 값을 빠뜨린 실제 서버가 조용히 전부를 받는다), 켜졌는데 읽은 관리자가 없으면 막힘이다. 글자 · 숫자가 없는 항목은 자리표로 보고 읽지 못함으로 센다. `login_denied` 는 최근 사건 고리에 넣지 않고 계정별 표(`runtime.denied_accounts`)에만 둔다 — 들어오지 못하는 사람이 유일한 감사 창을 밀어내지 못하게. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
+    지운다(시도 쿠키가 남으면 「로그인이 되풀이됩니다」 가 잘못 뜬다). 거절 주소 `?code=not_on_list` 는 로그인 없이 열리므로 진단을 보관하지 않고 loginid · 이름을 싣지 않는다. 환경변수 명단은 기동 때 한 번 읽고(`SsoConfig.access`) `runtime.start` 가 `os.environ` 에서 뺀다(`names.WITHHELD_ENVIRONMENT` — 하위 프로세스에도 넘기지 않는다). 값은 화면 · 로그 ·
+    repr 에 나오지 않는다 — 점검에는 개수만(예외는 관리자에게만 서는 Admin 「접속 명단」 표).
+    **S3 명단(`auth/access_store.py` · `io/s3_small.py`, 2026-11-05 사용자 결정 — 키는 `loginid`, 그룹 클레임 안 씀).** 판정 자리는 그대로이고(`session_check` + 콜백 + 갱신) 이들이 `cfg.access` 대신 `runtime.current_access(cfg)` — 메모리의 불변 한 벌(`AccessSource.access`) — 를 본다. 판정은 S3 에 가지 않는다. 합성: `CAPA_ACCESS_ADMINS` 는 늘 관리자로 들고(관리자 판별 · S3 장애 비상구), 키가 없으면 `CAPA_ACCESS_USERS` 를 그대로 쓰고, 키가 있으면 그 목록을 쓰지 않고 알린다. **파일의 등급 칸으로 관리자를 만들 수 없다**(`compose_access` — 명단 편집 권한이 S3 쓰기 권한과 같아지지 않게). 기동 때 진입 파일이 한 번 읽는다(`server.start_sso` → `read_at_start` — uvicorn 이 파일을 import 하는 때라 연결을 받기 전이고 이벤트 루프 스레드다). 못 읽으면 앱은 뜨고 관리자만 통과(열림으로 떨어지지 않음) · Admin 경고 `AD-08`. 그 뒤 네트워크는 이벤트 루프에서 부르지 않는다 — 자가 회복은 콜백이 거절하기 직전에 `run_in_threadpool(retry_unread)`(60초에 한 번 — `runtime.claim_access_retry`), 다시 읽기와 저장은 스크립트 스레드다. 잘 읽어 둔 뒤의 실패는 까닭만 적고 메모리 명단으로 판정이 이어진다. 저장은 프로세스 잠금으로 줄 세우고, 받을 때의 ETag(없으면 판 번호)와 다르면 덮지 않고 다시 읽게 하며(`If-Match` 는 확인되지 않은 능력이라 보내지 않는다), PUT 이 성공한 뒤에만 메모리를 바꾼다. 쓰기 함수는 화면과 별개로 신원 · 관리자를 다시 본다(`_require_admin`). 파일은 작은 JSON 하나(형식 판 · 판 번호 · 사용자 · 고친 기록 마지막 200건)이고 404 는 빈 명단이지 못 읽음이 아니다. 키 둘은 `names.SECRET_ENVIRONMENT` 이다. 운영 · 잠금 · 루프백이 아닌 공개 주소이거나 목록에 값이 있으면 켜지고(`APP_ENV` 만 보면 그 값을 빠뜨린 실제 서버가 조용히 전부를 받는다), 켜졌는데 읽은 관리자가 없으면 막힘이다. 글자 · 숫자가 없는 항목은 자리표로 보고 읽지 못함으로 센다. `login_denied` 는 최근 사건 고리에 넣지 않고 계정별 표(`runtime.denied_accounts`)에만 둔다 — 들어오지 못하는 사람이 유일한 감사 창을 밀어내지 못하게. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
 
 ## 6. 핵심 계산 규칙
 
@@ -5768,7 +5772,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `st.login` 경로(`/auth/login` · `/auth/logout` · `/oauth2callback`)와 예약 접두(`/_stcore/` · `/media/` · `/component/` ·
   `/static/`)는 쓰지 않는다. 모든 주소(Location · 링크 · redirect_uri)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청 Host ·
   `X-Forwarded-*` 로 짓지 않는다. `auth/` 는 Streamlit 을 import 하지 않고(문지기는 이벤트 루프에서 돈다) 배경 스레드를
-  세우지 않는다(만료 항목은 읽을 때 치운다). PyJWT 는 함수 안에서 import 한다 — 꺼짐 서버는 그 패키지 없이도 뜬다.
+  세우지 않는다(만료 항목은 읽을 때 치운다). PyJWT 는 함수 안에서 import 한다 — 꺼짐 서버는 그 패키지 없이도 뜬다. 이벤트 루프에서 네트워크를 부르지 않는다 — S3 명단의 자가 회복은 콜백이 스레드 풀로 넘기고(`run_in_threadpool` — 새 배경 스레드가 아니다) 판정은 메모리만 본다(5장 37).
   - **넘긴 websocket 은 메시지마다 다시 본다**(`gate._WatchedSocket`). 위젯 콜백은 스크립트 본문보다 먼저 돌고 프래그먼트 회차
     (`run_every` 포함)는 `app.py` 를 돌리지 않으므로 `app.py` 의 두 번째 벽(`require_signed_in`)만으로는 만료 · 로그아웃한 열린
     탭의 콜백 · 프래그먼트가 DB 를 읽고 쓴다. 문지기가 `websocket.receive` 마다 핸드셰이크 때의 신원으로 만료(세션 토큰과 같은
@@ -6737,11 +6741,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 `data/input/RQ_DISPLAY_ORDER.csv`에 두고 Git에 커밋하지 않는다.
 
 **통합인증(2026-11-02).** 이 저장소는 공개다 — 사내 호스트 · URL · 인증서 · client id · **실제 loginid**(접속 명단 — 사람을 가리킨다) 를 파일 · 시험 · 문서에 적지 않고(예시는
-`*.example.invalid` · `demo.*`), **커밋 메시지 · 브랜치 이름에도 적지 않는다**(감시 시험이 보지 못하는 자리라 손 규칙이다). 접속 명단은 C-DEP 환경변수 표에만 둔다 — `config/` 에도 앱 DB 에도 두지 않는다. 키 · 인증서 파일
+`*.example.invalid` · `demo.*`), **커밋 메시지 · 브랜치 이름에도 적지 않는다**(감시 시험이 보지 못하는 자리라 손 규칙이다). 접속 명단은 C-DEP 환경변수 표와 S3 명단 파일에만 둔다(5장 37) — `config/` 에도 앱 DB 에도 두지 않고 리뷰에 옮기지 않는다. 키 · 인증서 파일
 (`*.pem` · `*.key` · `*.p12` · `*.pfx` · `*.cer` · `*.crt` · `*.der` · `*.jks` · `cert/`)은 커밋하지 않는다 — `.gitignore` ·
 `.dockerignore` · 배포 ZIP 금지 접미사가 막고 `tests/test_public_repo_hygiene.py` 가 회사 도메인 접미사 · 개인키 표지 · 그
 확장자를 감시한다. 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
-비밀값 `JWT_SECRET_KEY` 는 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start` — 하위 프로세스가 물려받지
+비밀값 `JWT_SECRET_KEY` · S3 명단 키 둘은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start` — 하위 프로세스가 물려받지
 않게 할 뿐, 기동 때 환경 사본은 `/proc/<pid>/environ` 에 남고 같은 프로세스 코드는 메모리에 닿는다). 시작 스크립트는 통합인증
 값을 앱에 넘기되 결과 파일에는 이름(있음/없음)만 남기고 하위 프로세스에는 비밀값을 넘기지 않는다. 화면 · 로그 · 리뷰에 토큰 ·
 state · nonce · 쿠키 값 · 비밀값 · 클레임 값을 싣지 않는다. 모듈은 통합인증 환경변수를 읽지 않는다.
@@ -7089,7 +7093,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 2. 새 경로는 `auth/names.SSO_PATHS` 에 둔다 — 문지기 공개 정확 일치 · `tests/test_sso_entry.py` 경로 목록 · `docs/sso_setup.md` 1장 ·
    3장 `capa_server.py` · `auth/` 줄과 9장의 경로 수를 같이 고친다.
 3. 새 환경변수는 `auth/names.SSO_ENVIRONMENT` · `scripts/check_deploy_screens.py` 의 글자 튜플 · `docs/sso_setup.md` 2장 표 · 런북 3-3 ·
-   `docs/bigdataquery_webide_setup.md` 「통합인증(SSO) 칸」 에 함께 적는다(이름만 — 값은 어디에도 적지 않는다, 10장).
+   `docs/bigdataquery_webide_setup.md` 「통합인증(SSO) 칸」 에 함께 적는다(이름만 — 값은 어디에도 적지 않는다, 10장). 비밀값이면 `names.SECRET_ENVIRONMENT` 에도 둔다 — 시작 스크립트의 하위 프로세스 제외 · 출력 가림과 `os.environ` 제거가 그 튜플을 따른다.
 4. 화면 글은 「사내」 · 토큰 · 클레임 값 없이(`tests/test_app_text_wording.py` · `tests/test_sso_status.py`), 문서 · 시험 예시는
    `*.example.invalid`(`tests/test_public_repo_hygiene.py`).
 5. Streamlit 판을 올리면 툴바 iframe 이 앱과 같은 출처인지 브라우저로 한 번 본다 — 갱신 POST 가 `204` + `Set-Cookie` 를 받는지

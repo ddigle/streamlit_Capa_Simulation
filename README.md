@@ -273,7 +273,7 @@ uv pip install -r requirements-company.txt
 - C-DEP CD 서버는 통합인증(SSO)으로 로그인한 사람만 들어오게 할 수 있습니다 — 시작 스크립트가 진입 파일
   `capa_server.py`(`app.py` 를 감싸 콜백 경로·문지기를 붙인 것)로 앱을 띄우고, 환경변수 표의 `ADFS_CLIENT_ID` 가 켜는
   스위치입니다(비면 지금처럼 열림). 로그인은 마지막 사용 뒤 6시간 유지되고 앱을 쓰는 동안 저절로 늘어납니다(최대 24시간 —
-  `CAPA_SSO_SESSION_HOURS` · `CAPA_SSO_SESSION_MAX_HOURS`). 운영에서는 접속 명단(`CAPA_ACCESS_ADMINS` 필수 · `CAPA_ACCESS_USERS`)에 있는 사람만 들어옵니다 — 없는 사람은 로그인해도 거절 화면을
+  `CAPA_SSO_SESSION_HOURS` · `CAPA_SSO_SESSION_MAX_HOURS`). 운영에서는 접속 명단(`CAPA_ACCESS_ADMINS` 필수 · `CAPA_ACCESS_USERS`, S3 키를 넣으면 사용자는 S3 파일에서 재시작 없이 Admin 으로 넣고 뺍니다)에 있는 사람만 들어옵니다 — 없는 사람은 로그인해도 거절 화면을
   봅니다. 넣을 값·첫 배포 순서·가짜 IdP 로 개발하는 법은 `docs/sso_setup.md`.
 
 ### 5단계. 배포 적용 도구 자리 잡기 (사내, 최초 1회)
