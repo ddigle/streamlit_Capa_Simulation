@@ -1,12 +1,12 @@
 # 통합인증(SSO) 연동 — 운영 · 개발 안내
 
-C-DEP 운영 서버에서 통합인증(ADFS, 포털 시스템 형식 「Legacy (OpenID)」)으로 로그인한 사람만 앱에 들어오게 한다.
-**이 문서에는 사내 주소 · 인증서 · client id 를 적지 않는다** — 이 저장소는 공개다. 예시는 모두 `*.example.invalid` 이고, 실제 값은
+C-DEP 운영 서버에서 통합인증(ADFS, 포털 시스템 형식 「Legacy (OpenID)」)으로 로그인하고 접속 명단에 있는 사람만 앱에 들어오게 한다.
+**이 문서에는 사내 주소 · 인증서 · client id · 실제 loginid 를 적지 않는다** — 이 저장소는 공개다. 예시는 모두 `*.example.invalid` · `demo.*` 이고, 실제 값은
 C-DEP 배포 설정의 **환경변수 표**에만 넣는다(리뷰 압축본 · 전문에도 값을 옮기지 않는다).
 
 코드: 진입 파일 `capa_server.py`, 꾸러미 `src/capa_simulation/auth/`, 화면 조각 `components/sso_identity.py` · `components/sso_status.py`,
 툴바 스크립트 `components/sso_reconnect.py`(「다시 로그인」 띠) · `components/sso_refresh.py`(쓰는 동안 로그인 늘리기), 가짜 IdP
-`scripts/sso_mock_idp.py`. 규칙은 `AGENTS.md` 3장(파일 책임) · 5장 36 · 9장(문지기) · 10장(공개 저장소).
+`scripts/sso_mock_idp.py`. 규칙은 `AGENTS.md` 3장(파일 책임) · 5장 36 · 37 · 9장(문지기) · 10장(공개 저장소).
 
 ## 1. 흐름
 
@@ -16,8 +16,8 @@ C-DEP 배포 설정의 **환경변수 표**에만 넣는다(리뷰 압축본 · 
                                                                redirect_uri=<CAPA_PUBLIC_URL>/auth/callback, nonce, state)
 ADFS ──POST /auth/callback (id_token, state)──▶ 앱
         ① state 쿠키(서명 · 10분) 대조  ② id_token 검증(RS256 · 서명 인증서 핀 · aud=ADFS_CLIENT_ID · iss=ADFS_ISSUER ·
-        exp/iat · nonce)  ③ loginid · username · deptname 꺼냄  ④ 우리 세션 토큰(HS256, JWT_SECRET_KEY) 발급
-        ⑤ HttpOnly 세션 쿠키 설정 ──303──▶ 처음 가려던 화면
+        exp/iat · nonce)  ③ loginid · username · deptname 꺼냄  ④ 접속 명단 확인(없으면 세션 없이 ──303──▶ 거절 화면)
+        ⑤ 우리 세션 토큰(HS256, JWT_SECRET_KEY) 발급  ⑥ HttpOnly 세션 쿠키 설정 ──303──▶ 처음 가려던 화면
 브라우저 ──websocket /_stcore/stream (쿠키)──▶ 문지기가 쿠키 · Origin 확인 ──▶ Streamlit
 app.py ── 매 회차 st.context.cookies 의 세션 쿠키를 다시 검증(만료 · 로그아웃 · 계정 바뀜) ──▶ 화면
 브라우저 ──POST /auth/sso/refresh (쿠키 · X-Capa-Sso-Refresh: 1)──▶ 앱
@@ -48,6 +48,12 @@ app.py ── 매 회차 st.context.cookies 의 세션 쿠키를 다시 검증(�
 - **모드 셋** — `ADFS_CLIENT_ID` 가 비면 **꺼짐**(지금처럼 열림, 운영이면 경고), 다 맞으면 **켜짐**, client id 는 있는데 나머지가
   없거나 틀리면 **막힘**(상태 검사 `/_stcore/health` 만 살리고 `/` 는 설정 화면 — 값 없이 환경변수 이름 · 상태 · 까닭).
   `CAPA_SSO=required` 면 client id 가 지워져도 막힘이다(잠금).
+- **접속 명단** — 운영(`APP_ENV=prod`)이거나 두 목록 변수(`CAPA_ACCESS_ADMINS` · `CAPA_ACCESS_USERS`) 가운데 하나라도 값이 있으면
+  켜진다. 켜졌는데 읽은 관리자가 없으면 막힘이다(고칠 사람이 없는 앱을 열지 않는다 — 꺼짐이면 「켜면 막힐 문제」). 개발에서 둘 다
+  없으면 지금처럼 인증된 사람 전부를 받는다(가짜 IdP · 시험). 판정은 쿠키 → 신원의 한 곳(`auth/identity.session_check` — 폐기 → 명단 → 끝)
+  이라 문지기 http · 새 핸드셰이크 · 열린 연결의 메시지 · `app.py` 가 모두 지나고, 콜백(세션 발급 앞) · 갱신 경로가 같은
+  `AccessList.allows` 를 묻는다. 거절 화면과 기록(`login_denied`)은 콜백 한 곳에서만 낸다. 등급 맵(loginid → `admin` · `user`)으로 들지만 지금은
+  들어올 수 있나만 가른다 — 화면별 권한은 다음 단계다(`docs/TODO.md`).
 
 ## 2. 환경변수
 
@@ -68,8 +74,17 @@ C-DEP 배포 설정의 환경변수 표(key · value, 값은 한 줄)에 넣는�
 | `CAPA_SSO` | 선택 | `required` 면 잠금 | `required` |
 | `ADFS_SCOPE` · `ADFS_RESOURCE` | 선택 | 클레임을 id_token 에 싣는 데 필요하면(기본 scope `openid`) | `openid allatclaims` |
 | `ADFS_CLAIM_LOGINID` · `ADFS_CLAIM_USERNAME` · `ADFS_CLAIM_DEPTNAME` | 선택 | 클레임 이름(기본 `loginid` · `username` · `deptname`) | `loginid` |
-| `ADFS_LOGOUT_URL` | 선택 | 로그아웃 화면에 「통합인증에서도 로그아웃」 링크 | `https://idp.example.invalid/adfs/oauth2/logout` |
+| `ADFS_LOGOUT_URL` | 선택 | 로그아웃 · 거절 화면에 「통합인증에서도 로그아웃」 링크 | `https://idp.example.invalid/adfs/oauth2/logout` |
+| `CAPA_ACCESS_ADMINS` | **운영 필수** — 없거나 읽은 것이 없으면 막힘 | 관리자 loginid 목록(잠김 방지 — 들어올 수 있는 사람이고 다음 단계의 관리자) | `demo.admin` |
+| `CAPA_ACCESS_USERS` | 선택 | 사용자 loginid 목록. 두 목록에 다 있으면 관리자 | `demo.user,demo.user2` |
+| `CAPA_ACCESS_CONTACT` | 선택 | 거절 화면의 「요청: …」 에 보일 창구 글(500자까지, 값은 이스케이프해 싣는다) | `CAPA 담당 demo.desk` |
 
+- **목록 꼴** — 항목은 쉼표 · 세미콜론 · 공백으로 나눈다(표가 한 줄 값만 받는다). 견주는 값은 로그인 클레임(`ADFS_CLAIM_LOGINID`, 기본 `loginid`)의 값이고, 앞뒤 공백을 떼고 대소문자를 가리지 않는다. loginid 꼴
+  (`A-Z a-z 0-9 . _ @ -` · 64자까지)이 아닌 항목(`DOMAIN\이름` 포함)은 버리고 개수만 센다 — 막지 않으므로 그 사람만 거절 화면을 본다. Admin 「통합인증 점검」 의
+  「읽지 못함」 이 0 인지 본다. 값 길이는 대략 1 KiB 에 100개 안팎이다(9장 7 — 표의 값 길이 제한).
+- **명단을 고치면 CI/CD 를 다시 돌려 재시작해야 반영된다.** 재시작하면 모든 연결이 끊겨 열어 둔 탭의 저장하지 않은 편집이 사라지고, 재배포 때 디스크가
+  사라지는 환경(지금 C-DEP — `/project/data` 영속 볼륨 없음)에서는 영속 저장이 붙기 전까지 저장한 시나리오도 사라진다. 사람을 넣고 뺄 때는 쓰는 사람이 적을 때 고르고 남길 자료를
+  먼저 챙긴다. 쿠키는 재시작 뒤에도 유효하지만 명단에서 빠졌으면 그 쿠키로는 들어오지 못한다.
 - 포털에 등록하는 값: 서비스 URL = `CAPA_PUBLIC_URL`, Endpoint URL = `CAPA_PUBLIC_URL` + `/auth/callback`. 둘은 한 글자도
   달라선 안 된다 — Admin Area 「통합인증 점검」 · 설정 화면이 계산한 redirect_uri 를 보인다.
 - 사용자 샘플은 `APP_ENV=prod` 가 ADFS 주소와 인증서 파일을 자동으로 넣었다. 이 저장소는 공개라 그 값을 둘 수 없어
@@ -105,7 +120,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 ## 5. 첫 배포 순서
 
 1. 이 변경이 실린 배포를 적용한다. C-DEP 환경변수 표에 `APP_ENV=prod` · `JWT_SECRET_KEY` · `CAPA_PUBLIC_URL` ·
-   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` 를 넣고 **client id 는 비운 채** CI/CD 를 돌린다. 앱은 지금처럼
+   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_ACCESS_ADMINS` 를 넣고 **client id 는 비운 채** CI/CD 를 돌린다. 앱은 지금처럼
    열리고, Admin Area 「통합인증 점검 · 꺼짐(운영)」 의 「켜면 막힐 문제: 없음」 을 확인한다(있으면 그 이름 · 까닭대로 고친다).
 2. 포털 승인 메일의 Client ID 를 `ADFS_CLIENT_ID` 에 넣고 CI/CD 를 돌린다 → 로그인해 본다. 실패면 오류 화면의 사유 코드 ·
    받은 iss/aud(서명이 맞을 때만 보인다) · 받은 클레임 이름으로 값을 고친다. 설정 화면(막힘)이 뜨면 그 표대로 고친다.
@@ -113,6 +128,15 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
    거절」 이 0 인지 본다. 「다시 발급」 이 0 이고 「출처·머리 거절」 만 늘면 접속 주소가 `CAPA_PUBLIC_URL` 과 다르거나 앞단이 머리를 바꾼
    것이다(9장 11) — 그대로 두면 쓰는 중에도 처음 로그인 6시간 뒤 끊긴다.
 4. 되면 `CAPA_SSO=required` 를 넣어 잠근다 — 실수로 client id 를 지워도 열리지 않는다.
+
+**이미 통합인증이 켜진 서버에 접속 명단이 실린 배포를 적용할 때** — 운영에서 `CAPA_ACCESS_ADMINS` 가 없으면 **막힘**이다(앱 관리자까지 모두 설정 화면만 본다).
+
+1. **새 코드를 싣는 배포 전에** 환경변수 표에 `CAPA_ACCESS_ADMINS`(앱 관리자 본인 loginid 를 꼭 넣는다)와 `CAPA_ACCESS_USERS` 를 먼저 넣는다. 예전 코드는 모르는 변수를
+   무시하므로 먼저 넣어도 해가 없다.
+2. CI/CD 로 새 코드를 적용하고 로그인해 본다. 안 넣고 적용했으면 설정 화면의 `CAPA_ACCESS_ADMINS` 줄이 까닭을 말한다 — 표에 넣고 다시 돌리면 풀린다.
+3. Admin 「통합인증 점검」 의 「접속 명단: 켜짐 · 관리자 n · 사용자 n · 읽지 못함 0」 을 본다. 수가 생각과 다르면 표의 값을 고친다.
+4. 명단 밖 계정으로 들어가 거절 화면이 서는지, 「최근 사건」 에 `login_denied` 가 앞 두 글자로 남는지 본다.
+5. 「마지막 로그인의 클레임 이름」 에서 ADFS 가 그룹 클레임을 주는지 본다(`groups` · `role` 같은 이름 — 값은 보이지 않는다). 주면 다음 단계에 명단 관리를 AD 그룹으로 옮길 수 있다.
 
 ## 6. 사용자가 보는 것
 
@@ -136,24 +160,32 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   (지운 쿠키를 다시 넣은 탭이 그 끝까지 살아날 수 있다 — 쿠키 자체는 지웠으므로 받아들인다).
 - **CONNECTING 에 머물면** — 위 띠가 서면 「다시 로그인」 을 누른다. 띠 없이 머물면 서버 재시작 · 망 끊김이다 — Streamlit 이
   스스로 다시 붙고, 오래 머물면 새로고침한다(로그인이 끝났으면 로그인부터 다시 탄다).
-- 앱에 들어올 수 있는 사람의 범위는 포털이 정한다 — 앱은 인증된 사람 전부를 받는다(앱 안 권한은 아직 없다).
+- **접속 명단** — 통합인증을 지났어도 명단에 없으면 앱에 들어오지 못한다. 세션 쿠키를 받지 못하고 거절 화면(「접속 권한이 없습니다」 · 「이 앱을 쓸 수 있는 명단에
+  없습니다.」 · `CAPA_ACCESS_CONTACT` 가 있으면 「요청: …」)을 본다(HTTP 403). 「다시 확인」 은 로그인 경로다 — 명단에 들어간 뒤 누르면 그대로 들어온다. `ADFS_LOGOUT_URL` 이
+  있으면 「통합인증에서도 로그아웃」 이 붙는다 — 다른 계정으로 바꾸는 길이다. 이 화면은 로그인 없이 열리므로 loginid · 이름 · 클레임을 싣지 않는다.
+- **명단에서 빠진 사람** — 재시작으로 연결이 끊긴 탭은 다시 붙지 못하고 위 「다시 로그인」 띠가 선다. 눌러도 통합인증을 거쳐 거절 화면으로 간다. 그 쿠키로 새로 열어도 같다.
+- 앱 안 화면별 권한은 아직 없다 — 명단에 든 사람은 Admin Area 까지 모두 쓴다(다음 단계). 포털이 들어올 수 있는 범위를 따로 정하면 그 범위와 명단을 모두 지나야 한다.
 
 ## 7. 진단 창구
 
 - **Admin Area 「통합인증 점검」** — 판정(켜짐 · 꺼짐(운영) · 막힘), 환경변수 이름 | 상태 | 까닭(값 없음), 계산한 redirect_uri ·
   issuer · 서명 인증서 지문(x5t · SHA-256 앞 16자) · 만료일, 「로그인 유지: 마지막 사용 뒤 6시간 · 최대 24시간」 · 쿠키 이름 · 문지기 ·
-  잠금, 켜짐이면 「로그인 갱신(기동 뒤 누계 — 재시작하면 0): 다시 발급 n · 건너뜀 n · 로그인 없음 n · 출처·머리 거절 n · 꼴 거절 n」
-  (「출처·머리 거절」 이 있는데 「다시 발급」 이 0 이면 접속 주소를 보라는 꼬리가 붙는다 — 접속 주소 · 앞단 머리를 본다), 최근
+  잠금, 「접속 명단: 켜짐 · 관리자 n · 사용자 n · 읽지 못함 n」(개수만 — 명단 값은 어디에도 보이지 않는다. 꺼짐이면 「꺼짐(인증된 사람 전부)」, 통합인증이 아직 안 켜졌으면 「통합인증이
+  켜지면 적용 · …」), 켜짐이면 「로그인 갱신(기동 뒤 누계 — 재시작하면 0): 다시 발급 n · 건너뜀 n · 로그인 없음 n · 출처·머리 거절 n · 꼴 거절 n」
+  (「출처·머리 거절」 이 있는데 「다시 발급」 이 0 이면 접속 주소를 보라는 꼬리가 붙는다 — 접속 주소 · 앞단 머리를 본다), 「마지막 로그인의 클레임 이름」(값 없음 · 거절된 로그인 포함 ·
+  재시작하면 비워진다 — ADFS 가 그룹 클레임을 주는지 여기서 본다), 최근
   사건(재시작하면 비워진다 · 계정은 앞 두 글자 · 만료로 닫은 열린 탭은 사유 코드가 `expired · idle`(쓰지 않아 끝남) 또는
-  `expired · max`(최대 시간)), 「로그인 전 실패」(로그인하지 않은 누구나 보낼 수 있는 콜백 · 로그인 시작의 실패 —
+  `expired · max`(최대 시간) · 명단 밖 로그인은 `login_denied` · `not_on_list`), 「로그인 전 실패」(로그인하지 않은 누구나 보낼 수 있는 콜백 · 로그인 시작의 실패 —
   따로 둔 고리와 사유별 누계라 최근 사건을 밀어내지 못한다). 꺼짐이고 운영이 아니면 펼침이 없다. 갱신은 5분마다 사람마다 생겨
   사건 고리에 적지 않고 누계로만 센다.
 - **Admin Area 「서버 시작 점검」** 표 넷째 줄 「통합인증」 — 정상 · 건너뜀(`ADFS_CLIENT_ID` 없음) · 실패(문제 이름). 시작 스크립트가
   남긴 「시작 때 있던 통합인증 환경변수」 이름도 한 줄 붙는다.
 - **설정 화면**(막힘) · **오류 화면**(로그인 실패, 새로고침해도 폼이 다시 가지 않는다) — 사유 코드와 한 줄 설명. 토큰 · state ·
   nonce · 쿠키 값 · 비밀값 · 이름 · 부서는 어디에도 보이지 않는다.
-- 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_fail|idp_error|logout|session_closed|cert_expiring …` 한 줄씩
+- 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring …` 한 줄씩
   (`session_closed` 는 만료 · 로그아웃한 열린 탭의 연결을 문지기가 닫은 것 — 만료면 `end=idle`(쓰지 않아 끝남) · `end=max`(최대 시간)).
+- **거절 화면**(`/auth/sso/error?code=not_on_list`, 403) — 접속 명단 밖. 사유 코드 `not_on_list` 는 IdP 의 `access_denied`(포털이 거절 — 오류 화면 `idp_error:access_denied`)와 다르다. 명단
+  밖인 사람과 까닭을 맞출 때는 Admin 최근 사건을 본다. loginid 는 실데이터라 리뷰 압축본 · 전문에 옮기지 않는다.
 - 오류 화면의 사유 코드는 이 서버가 내는 이름뿐이다 — 주소의 `code=` 에 다른 글을 넣어도 `unknown` 으로 보인다(로그인 없이 여는
   화면에 남이 고른 문장이 서지 않게). IdP 의 표준이 아닌 오류 이름은 `idp_error:other` 로 보이고 원문은 사건 기록에만 남는다.
   같은 까닭으로 거절한 토큰 머리의 alg 는 알려진 JWS 이름(`none` · `HS256` 등)만 그대로, 그 밖은 `other` 로 보인다.
@@ -183,6 +215,16 @@ python -m streamlit run capa_server.py --server.port 8510
 - **사내 WebIDE 에서 시험할 때** — 앱 · 가짜 IdP 를 WebIDE 프록시 주소로 연다. `--app-url` 에 앱의 프록시 주소(경로 접두
   `/proxy/<포트>` 포함)를, `--public-url` 에 가짜 IdP 의 프록시 주소를 준다. 쿠키 이름에 경로 접두의 지문이 붙어 같은 호스트의
   여러 앱이 서로 덮지 않는다.
+- **접속 명단 세 갈래** — 개발에서는 두 목록이 없으면 명단이 꺼져 있다. 창 1 을 `--loginid demo.user` 를 더해 띄우고, 창 2 에서 `streamlit run` 앞에 아래 줄을 친다(값은 합성만).
+
+  ```bash
+  export CAPA_ACCESS_ADMINS=demo.admin
+  export CAPA_ACCESS_USERS=demo.user
+  ```
+
+  ① **허용** — 브라우저로 들어와 HOME 이 선다. ② **명단에서 빠진 쿠키** — 창 2 를 끄고 `unset CAPA_ACCESS_USERS` 뒤 같은 줄로 다시 띄운다(같은 `JWT_SECRET_KEY` 라 쿠키는 그대로 유효하다). 열어 둔
+  탭은 다시 붙지 못해 「다시 로그인」 띠가 서고, 누르면 거절 화면이다. ③ **거절** — 거절 화면의 「다시 확인」 을 눌러도, 새 탭으로 열어도 거절 화면이고 쿠키가 남지 않는다. Admin 「통합인증 점검」 은
+  관리자로 봐야 하니 `--loginid demo.admin` 으로 창 1 을 다시 띄우고 그 env 파일을 다시 읽는다(가짜 IdP 키가 새로 생긴다).
 - **갱신을 눈으로 보려면** — 서버는 직전 발급에서 60초 안이면 다시 발급하지 않고 브라우저는 답 뒤 5분 동안 보내지 않는다. 로그인
   뒤 61초를 실제로 기다린 다음 브라우저 시계만 5분 넘겨(Playwright `clock.set_system_time` — 타이머를 쏘는 `fast_forward` · `run_for`
   는 Streamlit 타이머를 건드린다) 휠 한 번 → `204` + `Set-Cookie`(새 `jti`, `sid` · `auth_time` 그대로), Admin 「다시 발급」 이 는다.
@@ -195,13 +237,15 @@ python -m streamlit run capa_server.py --server.port 8510
 2. 포털 「Legacy (OpenID)」 가 `response_type=id_token` + `response_mode=form_post` 를 허용하는지.
 3. loginid · username · deptname 이 **id_token** 에 실리려면 `scope`(예: `allatclaims`)나 `resource` 가 필요한지 — `ADFS_SCOPE` ·
    `ADFS_RESOURCE` 로 넣는다.
-4. 클레임 이름이 그 셋 그대로인지, loginid 에 도메인 접두(`DOMAIN\`)가 붙는지(붙으면 받는 글자 집합을 넓혀야 한다).
+4. 클레임 이름이 그 셋 그대로인지. loginid 의 도메인 접두(`DOMAIN\`)는 2026-11-05 로그인 성공으로 닫았다 — 백슬래시는 loginid 글자 집합 밖이라 붙었다면 로그인이
+   `claim_invalid` 로 거절됐을 것이다. 그래서 접속 명단에도 접두 없이 적는다(적으면 읽지 못한 항목으로 빠진다).
 5. 넣을 인증서가 **토큰 서명** 인증서인지, 꼴(DER/Base-64), 교체 방식 · 주기 · 공지 채널.
 6. ADFS 로그아웃 주소와 로그아웃 뒤 돌아올 주소 등록이 되는지.
 7. C-DEP 상태 검사 경로 · 방식(TCP · `/` · `/_stcore/health`), 환경변수 값 길이 제한(인증서 한 줄 1~2 KiB), 인그레스가 Host 를
    그대로 넘기는지, replica 수(1 전제 — 로그아웃 폐기 목록 · 로그인 갱신 표가 프로세스 메모리다).
 8. 사내 이미지 빌드(pip)와 WebIDE `uv sync --inexact` 가 새 의존성 넷(pyjwt · cryptography · cffi · pycparser) 휠을 받는지.
-9. 앱에 들어올 수 있는 사람의 범위를 포털이 정하는지.
+9. 앱에 들어올 수 있는 사람의 범위를 포털도 정하는지(그렇다면 포털 범위와 접속 명단을 모두 지나야 한다), id_token 에 AD 그룹 클레임을 실을 수 있는지 — 실으면 명단 관리를 AD 그룹으로 옮겨 재시작 없이
+   사람을 넣고 뺄 수 있고 다음 단계 등급으로 곧장 이어진다. 지금 오는 이름은 Admin 「마지막 로그인의 클레임 이름」 으로 본다.
 10. C-DEP 환경변수 표를 볼 수 있는 사람 — `JWT_SECRET_KEY` 를 본 사람은 로그인 토큰을 만들 수 있다.
 11. 앞단(인그레스 · WebIDE 프록시)이 `X-Capa-Sso-Refresh` 머리와 `Origin` 을 그대로 넘기는지 — 아니면 로그인이 쓰는 중에도 처음
     로그인 6시간 뒤 끊긴다(Admin 「출처·머리 거절」 이 늘고 「다시 발급」 은 0).

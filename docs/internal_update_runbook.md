@@ -505,7 +505,8 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
   (넣을 key 는 [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」).
 - 통합인증 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `ADFS_CLIENT_ID`(켜는 스위치 — 비면 꺼짐) · `JWT_SECRET_KEY` · `APP_ENV` ·
   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_PUBLIC_URL` · 선택 `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` ·
-  `CAPA_SSO_SESSION_MAX_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL`. 첫 배포 순서 · 진단은
+  `CAPA_SSO_SESSION_MAX_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` · 접속 명단 `CAPA_ACCESS_ADMINS`(운영 필수) · 선택 `CAPA_ACCESS_USERS` ·
+  `CAPA_ACCESS_CONTACT`. 첫 배포 순서 · 진단은
   [`sso_setup.md`](sso_setup.md). 켠 서버는 로그인해 10분 넘게 쓴 뒤 Admin 「통합인증 점검」 의 「로그인 갱신」 누계(다시 발급 · 출처·머리
   거절)를 수로만 압축본에 옮긴다(그 배포의 7장이 줄을 정한다).
 - 모듈이 새 패키지가 필요하면 이 파일·`pyproject.toml` 에 넣지 않고 「사외 요청」 으로 낸다(담당자 → 사용자 → 리뷰).

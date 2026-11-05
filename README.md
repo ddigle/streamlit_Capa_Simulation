@@ -273,7 +273,8 @@ uv pip install -r requirements-company.txt
 - C-DEP CD 서버는 통합인증(SSO)으로 로그인한 사람만 들어오게 할 수 있습니다 — 시작 스크립트가 진입 파일
   `capa_server.py`(`app.py` 를 감싸 콜백 경로·문지기를 붙인 것)로 앱을 띄우고, 환경변수 표의 `ADFS_CLIENT_ID` 가 켜는
   스위치입니다(비면 지금처럼 열림). 로그인은 마지막 사용 뒤 6시간 유지되고 앱을 쓰는 동안 저절로 늘어납니다(최대 24시간 —
-  `CAPA_SSO_SESSION_HOURS` · `CAPA_SSO_SESSION_MAX_HOURS`). 넣을 값·첫 배포 순서·가짜 IdP 로 개발하는 법은 `docs/sso_setup.md`.
+  `CAPA_SSO_SESSION_HOURS` · `CAPA_SSO_SESSION_MAX_HOURS`). 운영에서는 접속 명단(`CAPA_ACCESS_ADMINS` 필수 · `CAPA_ACCESS_USERS`)에 있는 사람만 들어옵니다 — 없는 사람은 로그인해도 거절 화면을
+  봅니다. 넣을 값·첫 배포 순서·가짜 IdP 로 개발하는 법은 `docs/sso_setup.md`.
 
 ### 5단계. 배포 적용 도구 자리 잡기 (사내, 최초 1회)
 
@@ -662,7 +663,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(가이드는 사외 완성 — 사외 뼈대 · 사내 완성은 쉼), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
 | `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 기본 Sonnet · Opus 구간 여섯(0-2)·실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장) 포함. 따라하기 가이드 사내판 만들기(10장)는 쉼 |
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
-| `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
+| `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·접속 명단·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
 | `docs/parallel_agent_briefing.md` | 병행 개발 에이전트의 시작 절차와 하루 흐름(규칙은 AGENTS 14장) |
 | `docs/scenario_merge_shift_implementation.md` | 시나리오 월 머지·연도 Shift 구현 설명 |
