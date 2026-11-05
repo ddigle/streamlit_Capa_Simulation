@@ -3194,7 +3194,6 @@ export default function (component) {
     // 도형의 노란 모양 조절 손잡이는 크기 손잡이 위에 깐다(겹치면 이것이 잡힌다). 편집에만 있다.
     if (item.kind === 'shape' && !VIEW) group.append(el('g', { class: 'sle-adjusts' }))
     position(group, item)
-    // 영역은 이름표로도 잡는다(안쪽은 비워 둔다) — 이름표만 눌림을 받게 한다.
     S.groups.set(item.id, group)
     return group
   }
