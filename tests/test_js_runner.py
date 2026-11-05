@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,11 @@ TESTS = Path(__file__).resolve().parent
 _NET_EXEMPT = {"js_runner.py"}
 _JS_RUNTIMES = {"node", "bun"}
 _EVAL_FLAGS = {"-e", "--eval", "-p", "--print", "-pe"}
+# 앞에서 지은 명령에 덧붙이는 꼴(`args += ["-e", s]`)은 머리가 깃발이다. `-p` 는 pytest 인자로도
+# 그렇게 쓰므로 뺀다.
+_LEADING_EVAL_FLAGS = {"-e", "--eval"}
+# 셸로 넘기는 글 — `node -e …` · `node a.js`. 설명 글(`node 가 없으면`) · `node_modules` 는 아니다.
+_SHELL_JS = re.compile(r"^\s*(?:node|bun)(?:\.exe)?\s+(?:-|\S+\.m?js\b)")
 
 
 def _dotted(node: ast.expr) -> str:
@@ -49,11 +55,17 @@ def _js_command_sites(source: str) -> list[str]:
             and node.args[0].value in _JS_RUNTIMES
         ):
             found.append(f"{node.lineno} which({node.args[0].value!r})")
-        if not isinstance(node, ast.List) or not node.elts:
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and _SHELL_JS.match(node.value)
+        ):
+            found.append(f"{node.lineno} 셸 글 {node.value.split()[0]!r}")
+        if not isinstance(node, ast.List | ast.Tuple) or not node.elts:
             continue
         head = node.elts[0]
         if isinstance(head, ast.Constant):
-            if head.value in _JS_RUNTIMES:
+            if head.value in _JS_RUNTIMES | _LEADING_EVAL_FLAGS:
                 found.append(f"{node.lineno} [{head.value!r}, …]")
             continue
         if _dotted(head) == "sys.executable":
@@ -105,10 +117,23 @@ def test_no_test_starts_js_outside_the_helper() -> None:
         ('["node", path]', 1),
         ('shutil.which("bun")', 1),
         ('which("node")', 1),
+        ('(runtime, "-e", script)', 1),
+        ('("node", path)', 1),
+        ('subprocess.run(f"node -e {s}", shell=True)', 1),
+        ('subprocess.run("node a.js", shell=True)', 1),
+        ('command = f"bun --eval {s}"', 1),
+        ('args = [runtime]; args += ["-e", s]', 1),
+        ('args.extend(("--eval", s))', 1),
         ('[sys.executable, "-c", code, "-p", "plugin"]', 0),
+        ('(sys.executable, "-c", code, "-p", "plugin")', 0),
         ('["git", "-c", "core.quotePath=false", "-e"]', 0),
+        ('("git", "-c", "core.quotePath=false", "-e")', 0),
+        ('args = ["-p", "no:cacheprovider"]', 0),
         ("[runtime, path]", 0),
+        ("(runtime, path)", 0),
         ('shutil.which("uv")', 0),
+        ('"node_modules/a.js"', 0),
+        ('"node 가 없으면 건너뛴다"', 0),
     ],
 )
 def test_the_js_net_catches_the_old_shapes(source: str, hits: int) -> None:
