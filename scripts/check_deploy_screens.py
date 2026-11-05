@@ -5206,8 +5206,9 @@ def check_space_shortening(screen: Screen) -> str:
 # `202610231430` 리뷰 사외 요청 4 의 다섯 칸을 재는 항목들이다. 헤드리스에서 막히는 자리 넷을
 # 피한다 — HOME 칸은 그림을 화면 가운데로 굴린 뒤 화면 안의 칸을 누른다(화면 밖 좌표는 눌리지
 # 않는다). 근거 카드의 ④ 링크는 공정 하나를 골랐을 때만 선다(기본은 `전체 합계`). 영역 요소는
-# 이름표만 눌림을 받는다(안쪽은 비워 둔다). 머리 칸 풍선은 머리 줄 좌표에 마우스를 올려 띄운다
-# (Glide 캔버스라 머리 칸 DOM 은 크기 0). 모두 세션 값만 바꾸고 끝에(깨져도) 되돌린다.
+# 초점을 두고 Enter 로 고른다(이름표는 작은 배율에서 서지 않는다). 머리 칸 풍선은 머리 줄 좌표에
+# 마우스를 올려 띄운다(Glide 캔버스라 머리 칸 DOM 은 크기 0). 모두 세션 값만 바꾸고 끝에(깨져도)
+# 되돌린다.
 
 
 # 누른 뒤 콘솔 경고 줄이 파이프로 건너오기를 기다리는 시간(초) — 늘지 않으면 그대로 센다.
@@ -5643,9 +5644,8 @@ def _read_upeh_help(screen: Screen) -> str:
     return summarize_upeh_help(str(text or ""))
 
 
-# 배치 편집기 영역 요소(그림자 DOM — 로케이터가 뚫는다). 영역은 이름표만 눌림을 받는다.
+# 배치 편집기 영역 요소(그림자 DOM — 로케이터가 뚫는다).
 ZONE_SELECTOR: Final = ".sle-mark.mark-zone"
-ZONE_TAG_SELECTOR: Final = ".sle-mark.mark-zone .sle-zone-tag"
 ZONE_FIELDS: Final = (".sle-mark-border", ".sle-mark-align")
 # 영역 요소가 선 층을 찾을 때 여는 층 수의 상한(층 목록 표 `배치대수` 차례).
 ZONE_FLOOR_LIMIT: Final = 12
@@ -5711,9 +5711,9 @@ def _open_inspector(screen: Screen) -> None:
 def check_space_zone_fields(screen: Screen) -> str:
     """Space 층 상세 배치 편집기에서 영역 요소 하나를 골라 선택 칸에 `테두리` · `글자 정렬` 이
     서는지. 층 목록 표의 `배치대수` 차례로 층을 열어(상한 `ZONE_FLOOR_LIMIT`) 영역이 선 첫 층에서
-    본다. 영역은 이름표를 눌러 고른다(안쪽은 눌림을 받지 않아 누르면 기다림이 다 된다). 값은
-    바꾸지 않고 `Esc` 로 풀고 `적용` 없이 `배치 편집` 을 끈다 — DB 에 쓰지 않는다. 층 이름은 찍지
-    않는다."""
+    본다. 영역은 초점을 두고 `Enter` 로 고른다(누르기와 같다) — 이름표는 글자가 작아지는 배율에서
+    그리지 않고 테두리 · 이름표는 호기에 덮일 수 있어 누를 자리가 층마다 다르다. 값은 바꾸지 않고
+    `Esc` 로 풀고 `적용` 없이 `배치 편집` 을 끈다 — DB 에 쓰지 않는다. 층 이름은 찍지 않는다."""
     screen.step("페이지 열기")
     screen.open_space_overview()
     screen.step("층 목록")
@@ -5764,9 +5764,8 @@ def check_space_zone_fields(screen: Screen) -> str:
         screen.step("왼쪽 칸 펴기")
         _open_inspector(screen)
         screen.step("영역 고르기")
-        tag = screen.page.locator(ZONE_TAG_SELECTOR).first
-        tag.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
-        tag.click()
+        screen.page.locator(ZONE_SELECTOR).first.focus()
+        screen.page.keyboard.press("Enter")
         for selector in ZONE_FIELDS:
             field = screen.page.locator(selector).first
             fields.append(bool(screen.poll(field.is_visible, timeout=5, accept=bool)))

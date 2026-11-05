@@ -4511,18 +4511,37 @@ def test_the_upeh_help_summary_never_carries_the_balloon_text() -> None:
 
 
 def test_the_zone_selectors_exist_in_the_editor() -> None:
-    """영역은 이름표(`sle-zone-tag`)만 눌림을 받는다 — 스크립트는 그것을 누른다. 선택 칸의 두 칸은
-    영역에만 서는 칸이다."""
+    """영역은 편집에서 Tab 자리이고 Enter 가 누르기와 같다 — 스크립트는 그 길로 고른다. 선택 칸의
+    두 칸은 영역에만 서는 칸이다."""
     editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
     html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
     assert "el('g', { class: `sle-item sle-mark mark-${item.kind}` })" in editor
-    assert "el('rect', { class: 'sle-zone-tag'" in editor
-    assert "// 영역은 이름표로도 잡는다(안쪽은 비워 둔다) — 이름표만 눌림을 받게 한다." in editor
+    build = editor[editor.index("function buildMark(item) {") : editor.index("// 트레이 칩.")]
+    edit_marks = build[build.index("} else if (!VIEW) {") :]
+    assert "group.setAttribute('tabindex', '0')" in edit_marks.split("appendHandles(group)")[0]
+    assert "if (focusedItem && (event.key === 'Enter' || event.key === ' ')" in editor
     for selector, name in zip(screens.ZONE_FIELDS, ("테두리", "글자 정렬"), strict=True):
         assert (
             '<label class="sle-field sle-zone-only"' in html
             and f'<span>{name}</span><select class="{selector.lstrip(".")}"' in html
         )
+
+
+def test_the_zone_pick_does_not_wait_for_a_name_tag_the_editor_may_not_draw() -> None:
+    """사내 리뷰 202611041000 발견 3 — 도면 1칸이 작은 층은 이름표(`sle-zone-tag`)를 그리지 않아
+    (`caption.shown`) 없는 이름표를 기다리다 두 판 모두 `TimeoutError(영역 고르기)` 였다. 호기가
+    많은 층부터 여니 그 층이 먼저 걸린다. 영역 묶음은 배율 · 덮임과 상관없이 늘 있으니 그것을
+    고른다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    drawn = editor[editor.index("if (item.kind === 'zone') {") :]
+    assert drawn.index("if (caption.shown) {") < drawn.index("class: 'sle-zone-tag'")
+    source = inspect.getsource(screens.check_space_zone_fields)
+    assert "zone-tag" not in source and "wait_for" not in source
+    picked = source[source.index('screen.step("영역 고르기")') :]
+    assert picked.index("locator(ZONE_SELECTOR).first.focus()") < picked.index(
+        'keyboard.press("Enter")'
+    )
+    assert picked.index('keyboard.press("Enter")') < picked.index("for selector in ZONE_FIELDS")
 
 
 def test_the_zone_summary_carries_counts_only() -> None:
