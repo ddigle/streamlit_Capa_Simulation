@@ -899,9 +899,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 가용대수가 없어 빈칸인 공정·주차는 상태 알림 `ST-17`(범위 = 활성 리비전 + 조회일, 내용 = (공정, 주차) 목록)이고
     결과 상자 안 늘 서 있는 칸(`availability_notice_slot`)에는 「누락 공정·주차 확인」 펼침만 선다. 표시명이 입혀진 동안
     그 표의 공정 칸 머리 풍선이 붙여넣기에는 원본 공정명(CSV 양식)을 쓴다고 말한다.
-  - 붙여넣기 팝업에는 늘 서는 설명 글이 없다 — 덮어쓰는 규칙은 붙여넣는 칸 풍선, 되돌릴 수 없다는 것은 `붙여넣기 적용`
-    단추 풍선이다(설계 규칙 UI-TXT-01 · UI-NTF-09). 로직 분석의 일곱 칸은 앞 칸이 빌 때 잠기고 까닭 풍선을 달며, 다 고르기
-    전에는 빈 결과 한 줄(`LOGIC_EMPTY`)이다.
+  - 붙여넣기 · 입력 초기화 팝업은 공통 부품(`components/paste_form` — 9장 「붙여넣기 · 양식 창」)이다 — 덮어쓰는 규칙과
+    되돌릴 수 없다는 것은 창을 연 회차의 알림 `PA-01`(`PASTE_OPENING` · `CLEAR_OPENING`)이고 창 안에는 글 · 칸 풍선이 없다
+    (설계 규칙 UI-TXT-01 · UI-NTF-09, 2026-11-05 검수 static-37). 로직 분석의 일곱 칸은 앞 칸이 빌 때 잠기고 까닭 풍선을 달며,
+    다 고르기 전에는 빈 결과 한 줄(`LOGIC_EMPTY`)이다.
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
     가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`formula_text.consistent_places` — 「54,698.63
@@ -909,8 +910,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「≈」 로 둔다(8장 「화면 숫자는 검산되어야 한다」). 세 줄 글은 같은 파일의 순수 함수 `logic_formula_text`(줄 하나는
     `_formula_line`)가 짓고, 인수 글자 꼴(`_operand_text` — `_format_metric` 자리, 늘린 자리의 뒤 0 은 뗀다)과 적힌 글자로
     다시 셈하기(`_recomputed`, `Decimal`)는 이 화면 것이라 페이지에 둔다.
+- `src/capa_simulation/components/paste_form.py` (+ `paste_window_assets/` CSS · JS) — 붙여넣기 · 양식 창의 공통 부품(9장
+  「붙여넣기 · 양식 창」). 글 칸(`paste_text_area`) · 왼쪽 적용 · 오른쪽 양식 줄(`paste_action_row`) · 창 크기와 「적용」 잠금을 맡는 숨은
+  컴포넌트(`render_paste_window`) · 창을 연 회차의 알림(`announce_on_open`) · 거부 · 안내(`refuse_paste` · `tell_paste`)와 이를
+  묶은 본문 `render_paste_form`. 판정 구획(`// <paste-window-core>`)은 node 로 떼어 시험한다(`tests/test_paste_form.py`).
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
-  붙여넣기 팝업 폼·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 양식과 붙여넣기 칸만 그린다).
+  붙여넣기 팝업 본문·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 공통 부품 위에 양식 · 검증을 얹는다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
   - `initial_offset_px` 는 처음 그릴 때 한 번만 건다 — 적용 표시를 대상 요소의 `dataset` 에 남겨 리런이 사용자가
     옮긴 위치를 되돌리지 않게 하고, 적용은 `ResizeObserver` 가 폭을 잡은 뒤로 미룬다.
@@ -2195,7 +2200,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   미리보기를 거둔다(닫힌 회차에 입력 칸이 버려져 다시 열면 빈 입력에 옛 미리보기만 남는다). `_close_dialog` 는 닫힌 수
   (`IMPORT_CLOSED_KEY`)도 올린다 — 표 불러오기 data `dialogClosed` 로 실려, 그 불러오기 단추로 연 팝업이 닫힌 회차에 초점이
   아무 데도 없으면 여는 단추로 돌린다(Streamlit 은 그림자 DOM 안 단추로 돌려주지 못해 BODY 로 빠진다). 팝업 안 폼 제출은 앱 범위
-  `st.rerun()` 이다(앱 회차에서 `scope="fragment"` 는 오류). 팝업 알림은 작은 편집표 알림 칸과 가른 제 칸(`IMPORT_*_KEY`)이다.
+  `st.rerun()` 이다(앱 회차에서 `scope="fragment"` 는 오류). 팝업 알림은 작은 편집표 알림 칸과 가른 제 칸(`IMPORT_*_KEY`)이고 모두
+  알림창 · Alarm 으로 간다 — 연 회차의 맞대는 규칙(`IMPORT_OPENING`)·미리보기의 알림 · 주의(`_queue_review_alerts`)·거부
+  (`popup_only`). 창 꼴은 공통 부품(9장 「붙여넣기 · 양식 창」)이고 작업 줄 오른쪽 양식은 고른 표의 것이다(`IMPORT_TEMPLATES` — 등록할
+  표를 고르면 팝업이 다시 돌아 따라온다). 폼을 쓰지 않는다.
   새 방문 회차의 미리보기 거두기는 페이지가 매 회차 부르는 `withdraw_preview_on_new_visit`.
 - `src/capa_simulation/components/equipment_master_grid.py` (+ `equipment_master_grid_assets/` HTML·CSS·JS) — 가용설비 현황
   「설비 마스터」 탭 표(Components v2, 그림자 DOM, 개편 B1)의 등록·그리기·받기. 탭 본문(`equipment_master_tab`)이 부르고, 페이지는
@@ -2853,7 +2861,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   손으로 적지 않는다(`tests/test_scroll_shell.py`).
 - `src/capa_simulation/components/month_editor.py` — 월별 Wide 기준정보 표의 공용 조각이다. 기준 정보 편집 표 아홉의 칸
   편집은 범용 편집 그리드(`reference_grid.py`)가 맡고, 여기에는 기준 정보 화면과 생산 계획 화면이 쓰는 것만 둔다.
-  - 「Excel 붙여넣기」 팝업은 공개 함수 `paste_dialog`(경고 첫 줄 `pending_notice` 는 부르는 쪽이 — 그리드는 초안 칸 수)이고
+  - 「Excel 붙여넣기」 팝업은 공개 함수 `paste_dialog`(연 회차 알림 글 `pending_notice` 는 부르는 쪽이 — 그리드는 초안 칸 수)이고
     편집 범위 줄은 `render_scope` 다. 붙여넣기 팝업(`render_reference_clipboard_form`)·왕복 CSV 에는 필터 이전 전체 표를
     넘긴다(부분 표는 행 집합 검증을 통과해 나머지 공정을 지운다).
   - `float_month_columns`(정수 dtype 월 칸을 실수로 — 생산 계획 편집표)를 둔다. 걸러진 편집표를 원본 전체에 되머지하던
@@ -2871,8 +2879,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/past_data_management.py` — 「HOME 설정」 팝업의 `Past Data` 탭. 한 버전을 공유하는 세
   표를 그 표 상자 안 붙여넣기 칸(`PAST_PASTE_KEY` — 한 번에 한 표, 팝업 안이라 팝업을 또 열 수 없다)으로 세션에 모았다가
   한 번에 저장한다(부분 저장 없음). 「설정」 팝업을 열고 닫는 콜백이 편 칸을 걷는다(`forget_past_paste`).
-  - 저장은 저장된 표를 통째로 바꾼다 — 그 경고(`PAST_REPLACE_NOTICE`)는 붙여넣기 칸·버튼 툴팁·캡션에 남긴다. 저장 단추
-    툴팁은 공용 설정 · 읽어 둔 표는 닫아도 남는다는 말(`PAST_SHARED_HELP`)도 잇는다 — 팝업 머리 안내 글을 걷은 자리다.
+  - 저장은 저장된 표를 통째로 바꾼다 — 그 경고(`PAST_REPLACE_NOTICE`)는 칸을 편 회차의 알림 `PA-01` 과 저장 단추 툴팁이
+    말한다(칸 안 글 · 저장 줄 캡션은 걷었다 — 2026-11-05 검수 static-37). 붙여넣기 칸은 공통 부품(9장 「붙여넣기 · 양식 창」)이고 양식
+    내려받기는 그 칸의 작업 줄에 선다. 칸이 펴진 동안 「HOME 설정」 팝업이 그 창이라 크기 손잡이가 서고(`size_key="past"`) 칸을 걷으면
+    손잡이도 걷힌다. 저장 단추 툴팁은 공용 설정 · 읽어 둔 표는 닫아도 남는다는 말(`PAST_SHARED_HELP`)도 잇는다 — 팝업 머리 안내
+    글을 걷은 자리다.
 - `src/capa_simulation/services/process_selection.py` — B/N 집계에 포함할 공정을 저장값·현재 옵션·이 세션이 아는
   공정에서 정한다.
   - 기준 없는 첫 렌더(`seen=None`)는 저장된 포함 목록을 그대로 믿는다(`seen=[]` 와 다르다). 아는 공정은
@@ -6349,6 +6360,31 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   그리기 전에 회차를 끊어 Streamlit 이 값을 「그리지 않은 위젯」으로 걷는데, 브라우저는 값을 들고 있다가 다음 조작마다 되보내
   콜백이 「바뀐 값」으로 다시 불린다(거절한 HOME 칸이 탭 하나를 닫는 순간 열렸다). 콜백 안의 `st.rerun()` 은 본문 전에 끊어
   위젯 값을 걷지 않는다. 단추(트리거)는 값이 남지 않아 본문 거름으로 된다.
+
+### 붙여넣기 · 양식 창 (2026-11-05 사용자 검수 static-37)
+
+- **붙여넣기 · 양식 창은 공통 부품 `components/paste_form` 하나다**(표준 목표 가용설비 · 생산 계획 PKG PLAN · 수율 · 기준 정보 ·
+  Admin 표시순서 · Proc Rename · HOME 설정 Past Data · 가용설비 현황 「엑셀·CSV로 한꺼번에」). `tests/test_paste_form.py` 가 「붙여넣기」
+  글 칸이 그 부품 밖에 새로 서면(허용: Qual 마감 계산기 칸 — 양식 · 저장이 없는 계산기) 실패하고, 창 함수에 직접 그린 캡션 · 상자가 있어도
+  실패한다.
+- **작업 줄은 왼쪽 적용 · 오른쪽 양식 다운로드 한 줄**이다(`paste_action_row` — 양끝 맞춤, 좁아져 접혀도 그 차례). `st.download_button` 은
+  `st.form` 안에 들어가지 못하므로 이 창들은 **폼을 쓰지 않는다** — 글 칸은 일반 위젯(초점을 잃을 때 값이 오르고 팝업 프래그먼트만 돈다,
+  Streamlit 의 「Press Ctrl+Enter to apply」 안내는 서식이 걷는다), 적용은 일반 단추이고 세대 · 지문 거름(`write_once_value`)은 그대로다.
+- **창 안에 글을 두지 않는다** — 캡션 · 경고 상자 · 안내 글 · 입력 곁 거부 · 글 칸 풍선을 그리지 않고 알림창 · Alarm 으로 낸다. 창을 연 회차의 말(덮어쓰기 · 되돌릴 수
+  없음 · 버려지는 편집)은 `announce_on_open`(코드 `PA-01` — 입력 칸의 세션 값이 아직 없는 회차가 「연 회차」 다, Streamlit 이 닫힌 회차에
+  그리지 않은 위젯 값을 버리므로 닫는 길이 몇이든 다시 알린다), 눌린 회차의 거부 · 안내는 `refuse_paste` · `tell_paste`(`popup_only`)다.
+  글은 앞 60자에 결과가 들게 쓴다. 표지 칸(`capa_paste_note_*`)은 서식이 자리에서 빼 글 칸이 밀리지 않는다.
+- **「적용」 잠금은 브라우저가 한다** — 글 칸이 비었거나 전체 교체 확인 체크가 꺼져 있으면 숨은 컴포넌트가 단추를 잠그고 까닭 풍선(`data-capa-paste-locked` ·
+  `::after`)을 단다(판정이 브라우저 안에서 끝나는 잠금 — 설계 규칙 UI-INP-07 의 예외). 서버는 눌린 회차에 같은 조건을 다시 본다 — JS 가 못 돌아도 쓰이지
+  않는다. AppTest 는 잠금을 보지 못한다(눌린 회차의 거부를 본다). 입력이 글 칸이나 파일인 「엑셀·CSV로 한꺼번에」 는 잠그지 않고(`lock=False`) 「편집본에 넣기」 를
+  미리보기가 잠근다.
+- **창 크기는 보기 상태다** — 오른쪽 아래 손잡이(변 둘 포함)를 끌면 `<html>` 의 CSS 변수(`--capa-paste-w` · `--capa-paste-text-h`)와 속성
+  (`data-capa-paste-sized`)만 바꾸고, 그 변수를 읽는 규칙은 컴포넌트 서식이라 창이 닫히면 함께 사라진다. 회차가 다시 돌아도 유지되고 그 브라우저의
+  `localStorage`(`capa-paste-size:<칸>` — 읽기 · 쓰기 try/catch)가 기억한다. 칸은 같은 꼴 창이 함께 쓰는 `paste` · 미리보기가 있는 `import` · HOME 설정 `past` 다. 두 번 누르면
+  기본 크기, 방향키도 된다. 폭은 Streamlit 팝업 상자(`[role="dialog"]` 의 부모)를 고른다 — `stDialog` · `stTextArea` · `stTextAreaRootElement` · `InputInstructions` 는
+  비공식 DOM 이름이라 판올림에서 다시 본다(바뀌면 크기만 안 따르고 창은 그대로 쓴다).
+- **막 뜨는 팝업의 표지** — 알림 칸은 앱 회차가 끝날 때 문서의 표지를 훑는데 막 뜨는 팝업의 본문은 그때 아직 문서에 없을 수 있다(사본 실측 — 연 회차 알림이 3초 뒤 다시 보낸 표지에
+  실려서야 떴다). 숨은 컴포넌트가 팝업에 표지가 든 순간 `window.__capaAlerts.scan()` 을 한 번 더 부른다(같은 id 는 한 번만 뜬다).
 
 ### 편집표와 내려받기
 

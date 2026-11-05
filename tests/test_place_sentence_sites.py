@@ -169,9 +169,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         VALUE,
     ),
     ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (EMPTY,),
-    ("src/capa_simulation/components/display_order_management.py", "_clipboard_dialog"): (
-        BESIDE_INPUT,
-    ),
     ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
         BESIDE_INPUT,
     ),
@@ -186,9 +183,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/equipment_explorer.py", "_availability"): (EMPTY,),
     ("src/capa_simulation/components/equipment_explorer.py", "_render_result"): (EMPTY, EMPTY),
     ("src/capa_simulation/components/equipment_explorer.py", "_transitions"): (EMPTY,),
-    ("src/capa_simulation/components/equipment_import_dialog.py", "_render_review"): (
-        BESIDE_INPUT,
-    ),
     (
         "src/capa_simulation/components/equipment_lifecycle_gantt.py",
         "render_equipment_lifecycle_gantt",
@@ -292,10 +286,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/modification_schedule_view.py", "render_schedule_mode"): (
         EMPTY,
     ),
-    ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"): (
-        BESIDE_INPUT,
-    ),
-    ("src/capa_simulation/components/past_data_management.py", "_render_save"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_actions"): (EMPTY,),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_detail"): (EMPTY,),
     ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (EMPTY,),
@@ -313,10 +303,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
     ),
     ("src/capa_simulation/components/process_picker.py", "render_process_picker"): (EMPTY,),
-    ("src/capa_simulation/components/process_rename_management.py", "_clipboard_dialog"): (
-        BESIDE_INPUT,
-        BESIDE_INPUT,
-    ),
     ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
         BESIDE_INPUT,
     ),

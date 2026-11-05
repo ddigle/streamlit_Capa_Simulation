@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, infos, successes
+from alert_marks import alert_notes, flashed, infos, successes
 from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Error
@@ -1469,9 +1469,11 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
     app = _open_paste(app, "capa_run_day_editor")
     exported = _download_frame(app, "capa_run_day_editor_csv_download")
     assert exported["공정"].tolist() == ["Process-A", "Process-B"]
-    # 표시명이 있는 표의 「양식은 원본 공정명」 은 붙여넣기 칸 풍선이다 — 팝업에 설명 문장을 늘
-    # 띄우지 않는다(설계 규칙 UI-TXT-01 · 02).
-    assert "원본 공정명" in str(app.text_area(key="capa_run_day_editor_csv_clipboard").help)
+    # 표시명이 있는 표의 「양식은 원본 공정명」 은 창을 연 회차의 알림이다 — 창 안에 글 · 칸 풍선을
+    # 두지 않는다(2026-11-05 검수 static-37).
+    (opening,) = flashed(app, "warning")
+    assert "원본 공정명" in opening.value
+    assert not app.text_area(key="capa_run_day_editor_csv_clipboard").help
     assert not any("원본 공정명" in str(item.value) for item in app.caption)
 
 
@@ -1844,14 +1846,15 @@ def test_clearing_a_run_rate_cell_an_upeh_path_uses_is_blocked(grid_calls: Calls
 
 
 def test_clearing_a_run_day_cell_by_paste_is_blocked_the_same_way() -> None:
-    """붙여넣기도 격자와 같은 규칙을 탄다 — 팝업 안에 막힌 까닭을 쓴다."""
+    """붙여넣기도 격자와 같은 규칙을 탄다 — 막힌 까닭은 알림창으로 간다(창 안에 글을 두지
+    않는다)."""
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["일수"]
     app.run()
     assert not app.exception
     app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t\nProcess-B\t31\n")
 
-    errors = [str(error.value) for error in app.error]
+    errors = [str(error.value) for error in flashed(app, "error")]
     assert any("「일수」 표에서 값을 지운 칸 1개" in error for error in errors), errors
     assert "test_month_updates" not in app.session_state
 
@@ -1914,8 +1917,8 @@ def test_a_pasted_ratio_outside_the_grid_range_is_refused_in_the_dialog() -> Non
         + _ratio_paste_row("Process-B", "1"),
     )
 
-    errors = [str(error.value) for error in app.error]
-    # 알림 상자는 마크다운이라 범위 물결표를 `\~` 로 막아 싣는다(bootstrap_error_message).
+    errors = [str(error.value) for error in flashed(app, "error")]
+    # 거부 글은 마크다운이라 범위 물결표를 `\~` 로 막아 싣는다(bootstrap_error_message).
     assert any(r"0 \~ 1" in error and "'85'" in error for error in errors), errors
     assert "test_month_updates" not in app.session_state
 
@@ -2101,7 +2104,7 @@ def test_a_zero_in_a_run_day_cell_by_paste_is_blocked_the_same_way() -> None:
     app.run()
     app = _paste(app, "capa_run_day_editor", "공정\t202608\nProcess-A\t0\nProcess-B\t31\n")
 
-    errors = [str(error.value) for error in app.error]
+    errors = [str(error.value) for error in flashed(app, "error")]
     assert any(
         "「일수」 표에 0 이하 값을 넣은 칸 1개" in error
         and "RQ_RUN_DAY의 RUN_DAY 값은 0보다 커야 합니다" in error

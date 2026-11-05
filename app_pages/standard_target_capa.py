@@ -32,6 +32,13 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.paste_form import (
+    PasteTemplate,
+    announce_on_open,
+    refuse_paste,
+    render_paste_form,
+    render_paste_window,
+)
 from capa_simulation.components.process_labels import (
     ProcessLabels,
     get_process_labels,
@@ -126,6 +133,9 @@ DIALOG_KEY = f"standard_target{PAGE_DIALOG_SUFFIX}"
 PASTE_DIALOG = "availability_paste"
 CLEAR_DIALOG = "availability_clear"
 AVAILABILITY_FLASH_KEY = "standard_target_availability_flash"
+PASTE_FORM_KEY = "standard_target_availability"
+CLEAR_FORM_KEY = "standard_target_clear"
+CLEAR_CONFIRM_KEY = "standard_target_clear_confirm"
 # 「붙여넣기 적용」 쓰기의 세대 — 저장에 성공한 회차에 오른다. 같은 세대의 누름은 한 번만 쓴다.
 AVAILABILITY_SAVE_GENERATION_KEY = "standard_target_availability_save_generation"
 
@@ -152,14 +162,19 @@ AVAILABILITY_EMPTY = "저장된 주차별 가용대수가 없습니다."
 MISSING_PROCESS_HELP = (
     "화면 표시명입니다 — 붙여넣기에는 작업 줄 「CSV 양식 다운로드」 양식의 원본 공정명을 씁니다."
 )
-# 붙여넣기 팝업의 두 풍선. 덮어쓰는 규칙은 붙여넣는 칸에, 되돌릴 수 없다는 것은 누르는 단추에 둔다 —
-# 누르기 전에 알아야 하므로 Guide 로만 보내지 않는다(UI-NTF-09 — 단추 풍선, 2026-09-29 2차 리뷰).
-PASTE_RULE_HELP = (
-    "양식에는 지금 저장된 가용대수가 채워져 있습니다. 값을 적은 공정·Weeknum 만 붙여넣은 "
-    "값으로 덮어쓰고, 가용대수를 비운 칸은 저장된 값(없으면 미설정)을 그대로 둡니다 — 0 을 "
-    "적으면 「0 대」로 저장됩니다."
+# 창을 연 회차의 알림 글 — 창 안 글 · 칸 풍선 대신 알림창 · Alarm 이다(UI-NTF-09, 2026-11-05 검수
+# static-37). 앞 60자가 결과를 말한다(알림창 짧은 글).
+PASTE_OPENING = (
+    "값을 적은 공정·Weeknum 만 덮어쓰며 되돌릴 수 없습니다 — 양식에는 지금 저장된 가용대수가 "
+    "채워져 있고, 가용대수를 비운 칸은 저장된 값(없으면 미설정)을 그대로 둡니다. 0 을 적으면 "
+    "「0 대」로 저장되고, 설비 DB 에 최신본 하나만 남아 이전 값으로 되돌릴 수 없습니다."
 )
-PASTE_APPLY_HELP = "설비 DB 에 최신본 하나만 남아 이전 값으로 되돌릴 수 없습니다."
+CLEAR_OPENING = (
+    "저장된 주차별 가용설비를 모든 공정·모든 주차 지우며 되돌릴 수 없습니다 — 지금 공정 "
+    "필터·기간 밖의 값도 함께 지워지고, 양식은 필터·기간 안의 행만 실으므로 그 밖의 값은 "
+    "되살릴 수 없습니다."
+)
+CLEAR_CONFIRM_HELP = "지우는 것을 확인하면 누를 수 있습니다."
 CLEAR_LOCKED_HELP = "지울 저장값이 없습니다."
 LOGIC_FILTER_KEYS = {
     "Weeknum": "standard_target_logic_weeknum",
@@ -884,31 +899,24 @@ def _open_dialog(name: str) -> None:
 @st.dialog("가용설비 붙여넣기", width="large", on_dismiss=_close_dialog)
 def _paste_dialog() -> None:
     """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다)."""
-    render_csv_download(
-        data=template_csv,
-        file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
-        key="dialog_standard_target_availability_template",
-        label=CSV_TEMPLATE_LABEL,
-    )
     paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
-    with st.form("standard_target_availability_clipboard", border=False):
-        clipboard_text = st.text_area(
-            "가용설비 표 붙여넣기",
-            key="standard_target_availability_clipboard_text",
-            height=180,
-            placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-            help=PASTE_RULE_HELP,
-        )
-        import_submitted = st.form_submit_button(
-            "붙여넣기 적용",
-            icon=":material/content_paste:",
-            type="primary",
-            help=PASTE_APPLY_HELP,
-        )
-    if not import_submitted:
+    submit = render_paste_form(
+        PASTE_FORM_KEY,
+        text_key="standard_target_availability_clipboard_text",
+        text_label="가용설비 표 붙여넣기",
+        apply_label="붙여넣기 적용",
+        template=PasteTemplate(
+            data=template_csv,
+            file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
+            key="dialog_standard_target_availability_template",
+        ),
+        opening=PASTE_OPENING,
+    )
+    if submit is None:
         return
+    clipboard_text = submit.text
     if not clipboard_text.strip():
-        st.error("적용할 가용설비 표를 Excel에서 복사해 붙여넣으세요.")
+        refuse_paste(PASTE_FORM_KEY, "적용할 가용설비 표를 Excel에서 복사해 붙여넣으세요.")
         return
     try:
         # 보유 공정 목록은 이 화면이 소유한다. 표시명을 그대로 적어 붙여넣거나 오타가 난
@@ -926,7 +934,9 @@ def _paste_dialog() -> None:
             fingerprint=clipboard_text,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        refuse_paste(
+            PASTE_FORM_KEY, bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
         return
     if written is None:
         return
@@ -947,26 +957,28 @@ def _clear_dialog() -> None:
     """저장된 주차별 가용설비를 모두 지운다. 되돌릴 수 없어 한 번 더 묻는다.
 
     지우는 범위는 **지금 필터·기간이 아니라 설비 DB 전체**다. 양식은 필터·기간 안의 행만 실으므로
-    그 밖의 값은 초기화 뒤 되살릴 길이 없다 — 누르기 전에 알아야 한다(2026-09-29 리뷰).
+    그 밖의 값은 초기화 뒤 되살릴 길이 없다 — 누르기 전에 알아야 해(2026-09-29 리뷰) 창을 연 회차에
+    알림창 · Alarm 으로 알린다(창 안에 글을 두지 않는다 — 2026-11-05 검수 static-37).
     """
-    st.warning(
-        "저장된 주차별 가용설비를 모든 공정·모든 주차 지웁니다 — 지금 공정 필터·기간 밖의 값도 "
-        "함께 지워집니다. 양식은 필터·기간 안의 행만 실으므로 그 밖의 값은 되살릴 수 없습니다. "
-        "되돌릴 수 없습니다."
-    )
-    confirmed = st.checkbox("지우는 것을 확인합니다.", key="standard_target_clear_confirm")
+    render_paste_window(CLEAR_FORM_KEY, lock=False, resizable=False)
+    announce_on_open(CLEAR_CONFIRM_KEY, CLEAR_FORM_KEY, CLEAR_OPENING)
+    confirmed = st.checkbox("지우는 것을 확인합니다.", key=CLEAR_CONFIRM_KEY)
     if not st.button(
         "입력 초기화",
         icon=":material/delete:",
         key="clear_standard_target_availability",
         type="primary",
         disabled=not confirmed,
+        # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
+        help=None if confirmed else CLEAR_CONFIRM_HELP,
     ):
         return
     try:
         equipment_repository.clear_standard_target_availability()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        refuse_paste(
+            CLEAR_FORM_KEY, bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
         return
     clear_standard_target_availability_cache()
     queue_flash(AVAILABILITY_FLASH_KEY, "주차별 가용설비 입력을 비웠습니다.")

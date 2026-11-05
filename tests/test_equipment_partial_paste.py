@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import flashed
 from pandas.testing import assert_frame_equal, assert_series_equal
 from test_equipment_availability import _downtime, _equipment
 from test_equipment_data_workspace import _app, _preview, _put, _repository, _save
@@ -632,7 +633,7 @@ def test_a_partial_paste_is_previewed_and_saved_leaving_the_other_columns_alone(
 
     review = app.session_state[PREVIEW_KEY]
     assert review.changes["변경컬럼"].tolist() == ["설비이력", "설비이력"]
-    infos = [str(item.value) for item in app.info]
+    infos = [str(item.value) for item in flashed(app, "info")]
     assert any("붙여넣은 열 1개(설비이력)만 바꿉니다" in text for text in infos), infos
 
     _put(app)

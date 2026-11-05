@@ -1,0 +1,98 @@
+[class*="st-key-capa_paste_host_"] {
+  display: none !important;
+}
+
+html[data-capa-paste-sized] [data-testid="stDialog"] div:has(> [role="dialog"] .capa-paste-host) {
+  width: min(var(--capa-paste-w), calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px) !important;
+}
+
+[data-testid="stLayoutWrapper"]:has(> [class*="st-key-capa_paste_note_"]) {
+  display: none !important;
+}
+
+html[data-capa-paste-sized] [role="dialog"]:has(.capa-paste-host) [class*="st-key-capa_paste_text_"] [data-testid="stTextArea"] {
+  height: var(--capa-paste-text-h) !important;
+}
+
+html[data-capa-paste-sized] [role="dialog"]:has(.capa-paste-host) [class*="st-key-capa_paste_text_"] [data-testid="stTextAreaRootElement"] {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+html[data-capa-paste-sized] [role="dialog"]:has(.capa-paste-host) [class*="st-key-capa_paste_text_"] textarea {
+  height: 100% !important;
+}
+
+[role="dialog"]:has(.capa-paste-host) [class*="st-key-capa_paste_text_"] textarea {
+  resize: none;
+}
+
+[class*="st-key-capa_paste_text_"] [data-testid="InputInstructions"] {
+  display: none !important;
+}
+
+html[data-capa-paste-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.capa-paste-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+
+.capa-paste-handle-right {
+  top: 0;
+  right: 0;
+  bottom: 18px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.capa-paste-handle-bottom {
+  left: 0;
+  right: 18px;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.capa-paste-handle-corner {
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  cursor: nwse-resize;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(135deg, transparent 0 58%, currentColor 58% 66%, transparent 66% 74%, currentColor 74% 82%, transparent 82%);
+}
+
+.capa-paste-handle-corner:hover,
+.capa-paste-handle-corner:focus-visible {
+  opacity: 1;
+}
+
+[data-capa-paste-locked] {
+  overflow: visible !important;
+}
+
+[data-capa-paste-locked]:hover::after {
+  content: attr(data-capa-paste-locked);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 3;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  pointer-events: none;
+  color: #ffffff;
+  background: #31333f;
+}

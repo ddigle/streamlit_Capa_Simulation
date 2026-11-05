@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit as st
-from alert_marks import alert_notes, infos, successes
+from alert_marks import alert_notes, flashed, infos, successes
 from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
@@ -642,18 +642,22 @@ def test_weekly_availability_template_carries_saved_counts_and_blanks_the_rest()
 
 
 def test_availability_paste_keeps_blank_cells_and_says_so_before_applying() -> None:
-    """팝업은 빈칸이 「그대로 둠」이라는 것(붙여넣는 칸 풍선)과 되돌릴 수 없다는 것(적용 단추
-    풍선)을 누르기 전에 알리고(설계 규칙 UI-NTF-09 — 늘 서는 설명 글은 없다, UI-TXT-01), 빈칸
-    행은 저장소로 넘기지 않는다."""
+    """창을 연 회차에 빈칸이 「그대로 둠」이라는 것과 되돌릴 수 없다는 것을 알림창으로 알리고
+    (설계 규칙 UI-NTF-09 — 창 안에는 글 · 칸 풍선이 없다, 2026-11-05 검수 static-37), 빈칸 행은
+    저장소로 넘기지 않는다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
     app.button(key="open_standard_target_availability_paste").click().run()
 
     assert not app.exception
     assert not [caption.value for caption in app.caption if "저장된 값" in caption.value]
     paste_box = app.text_area(key="standard_target_availability_clipboard_text")
-    assert "비운 칸은 저장된 값" in paste_box.help and "「0 대」" in paste_box.help
+    assert not paste_box.help
+    (opening,) = flashed(app, "warning")
+    assert opening.code == "PA-01"
+    assert "비운 칸은 저장된 값" in opening.value and "「0 대」" in opening.value
+    assert "되돌릴 수 없습니다" in opening.value
     apply_button = next(button for button in app.button if button.label == "붙여넣기 적용")
-    assert "되돌릴 수 없습니다" in apply_button.help
+    assert not apply_button.help
     app.text_area(key="standard_target_availability_clipboard_text").set_value(
         "공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t\nProcess-B\t26-W32\t3\n"
     )
@@ -743,18 +747,24 @@ def test_missing_availability_is_a_state_alert_not_a_box() -> None:
 def test_clearing_the_availability_asks_first() -> None:
     """입력 초기화는 되돌릴 수 없다. 팝업에서 확인해야 버튼이 눌린다.
 
-    지우는 범위가 지금 필터·기간이 아니라 전체라는 것도 팝업이 말한다(2026-09-29 리뷰).
+    지우는 범위가 지금 필터·기간이 아니라 전체라는 것은 창을 연 회차의 알림창이 말한다(2026-09-29
+    리뷰, 창 안 글은 2026-11-05 검수 static-37 로 걷음). 잠긴 단추에는 까닭 풍선이 선다.
     """
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
     app.button(key="open_standard_target_availability_clear").click().run()
 
     assert not app.exception
-    warnings = [item.value for item in app.warning]
-    assert any("모든 공정·모든 주차" in text and "필터·기간 밖" in text for text in warnings)
+    assert not app.warning
+    (opening,) = flashed(app, "warning")
+    assert opening.code == "PA-01"
+    assert "모든 공정·모든 주차" in opening.value and "필터·기간 밖" in opening.value
     assert app.button(key="clear_standard_target_availability").disabled
+    assert app.button(key="clear_standard_target_availability").help
     app.checkbox(key="standard_target_clear_confirm").check().run()
     assert not app.exception
+    assert not flashed(app, "warning")
     assert not app.button(key="clear_standard_target_availability").disabled
+    assert not app.button(key="clear_standard_target_availability").help
 
 
 def test_standard_target_guide_carries_what_left_the_body() -> None:
@@ -776,7 +786,7 @@ def test_standard_target_guide_carries_what_left_the_body() -> None:
         "양식 밖 값은 되살릴 수",
         "미설정으로 되돌리는 방법은 아직 없습니다",
         # 자리에서 걷어 풍선 · Guide 로 옮긴 말(설계 규칙 UI-TXT-01 · 02).
-        "붙여넣기 적용** 단추의 풍선",
+        "창을 열 때",
         "저장된 주차별 가용대수가 없습니다",
         "**가용설비 붙여넣기** 로 넣습니다",
         "원본 공정명을 씁니다",

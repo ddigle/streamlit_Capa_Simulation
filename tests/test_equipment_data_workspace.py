@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import shown
+from alert_marks import flashed, shown, texts
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
@@ -265,7 +265,8 @@ def test_invalid_input_remains_editable_and_successful_retry_creates_one_revisio
     app.text_area(key=CLIPBOARD_KEY).set_value(malformed)
     app.button(key=PREVIEW_BUTTON_KEY).click()
     _ok(app.run())
-    assert app.error
+    assert flashed(app, "error")
+    assert not app.error
     assert app.text_area(key=CLIPBOARD_KEY).value == malformed
     assert PREVIEW_KEY not in app.session_state
     repository = _repository(path)
@@ -726,7 +727,7 @@ def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
     app.button(key=PREVIEW_BUTTON_KEY).click()
     _ok(app.run())
 
-    errors = _texts(app, "error")
+    errors = texts(flashed(app, "error"))
     assert len(errors) == 1, errors
     assert "설비 행 SMP-DAF-12(붙여넣기) · 모듈 행 SMP-DAF-12A, SMP-DAF-12B(편집본)" in errors[0], (
         errors[0]

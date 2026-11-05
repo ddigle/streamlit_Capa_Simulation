@@ -39,6 +39,7 @@ from capa_simulation.components.month_editor import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.paste_form import refuse_paste
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
 from capa_simulation.components.required_exclusion_notice import FULL_SCOPE, alert_uncounted_demand
 from capa_simulation.components.scenario_edit_bar import (
@@ -424,23 +425,24 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
 
 @st.dialog("Excel 붙여넣기 · PKG PLAN", width="large", on_dismiss=_close_dialog)
 def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
-    """붙여넣은 표는 PKG PLAN 탭에만 올린다. 전역 반영은 「변경사항 적용」 한 곳이다."""
-    # 붙여넣은 표가 편집 대상이 되며 표의 편집을 버린다. 버리기 전에 말한다(기준 정보와 같다).
-    if editor_has_edits(PLAN_EDITOR_KEY):
-        st.warning(PASTE_DROPS_EDITS_NOTICE)
+    """붙여넣은 표는 PKG PLAN 탭에만 올린다. 전역 반영은 「변경사항 적용」 한 곳이다.
+
+    붙여넣은 표가 편집 대상이 되며 표의 편집을 버린다 — 창을 연 회차에 알린다(기준 정보와 같다).
+    """
     imported = render_reference_clipboard_form(
         source,
         table_name="RQ_PKG_PLAN",
         key_columns=PLAN_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=PLAN_PASTE_KEY,
+        opening=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(PLAN_EDITOR_KEY) else None,
     )
     if imported is None:
         return
     try:
         plan_from_edit_table(imported)
     except ValueError as exc:
-        st.error(bootstrap_error_message(exc))
+        refuse_paste(PLAN_PASTE_KEY, bootstrap_error_message(exc))
         return
     st.session_state[PLAN_STAGED_KEY] = imported
     # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 브라우저까지 비운다.
@@ -498,22 +500,22 @@ def _removed_yield_note(source: pd.DataFrame, applied: pd.DataFrame) -> str:
 
 @st.dialog("Excel 붙여넣기 · 수율", width="large", on_dismiss=_close_dialog)
 def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
-    # 붙여넣기는 곧바로 적용되어 수율 표를 새로 세운다 — 표의 편집은 버려진다.
-    if editor_has_edits(YIELD_EDITOR_KEY):
-        st.warning(PASTE_DROPS_EDITS_NOTICE)
+    # 붙여넣기는 곧바로 적용되어 수율 표를 새로 세운다 — 표의 편집은 버려진다(창을 연 회차에
+    # 알린다).
     imported = render_reference_clipboard_form(
         source,
         table_name="RQ_YLD",
         key_columns=YIELD_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=YIELD_PASTE_KEY,
+        opening=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(YIELD_EDITOR_KEY) else None,
     )
     if imported is None:
         return
     try:
         _apply_yield(imported, "붙여넣기 데이터를", note=_removed_yield_note(source, imported))
     except ValueError as exc:
-        st.error(bootstrap_error_message(exc))
+        refuse_paste(YIELD_PASTE_KEY, bootstrap_error_message(exc))
         return
     _close_dialog()
     st.rerun()

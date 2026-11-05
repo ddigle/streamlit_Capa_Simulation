@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import successes
+from alert_marks import flashed, successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
@@ -626,8 +626,9 @@ def test_an_out_of_range_location_rejection_keeps_its_tildes(tmp_path: Path, gri
     app.button(key=PREVIEW_BUTTON_KEY).click().run()
 
     assert not app.exception, app.exception
-    assert app.error
-    assert "동은 C1\\~C5, 층은 1F\\~6F 범위여야 합니다" in app.error[0].value
+    assert not app.error
+    (error,) = flashed(app, "error")
+    assert "동은 C1\\~C5, 층은 1F\\~6F 범위여야 합니다" in error.value
 
 
 def test_the_import_preview_errors_keep_the_stars_of_unit_names(
@@ -645,7 +646,7 @@ def test_the_import_preview_errors_keep_the_stars_of_unit_names(
     app.button(key=PREVIEW_BUTTON_KEY).click().run()
 
     assert not app.exception, app.exception
-    (error,) = [str(item.value) for item in app.error]
+    (error,) = [str(item.value) for item in flashed(app, "error")]
     assert "없는 설비명 1건(NEW\\*A\\*1)" in error, error
     assert "NEW*A*1" not in error
     with pytest.raises(EquipmentNamesError) as raised:

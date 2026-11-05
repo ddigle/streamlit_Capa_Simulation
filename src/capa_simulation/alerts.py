@@ -248,6 +248,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # VOC 새 글 초안 보관 JS(`components/voc_draft_keeper.py`)가 빈 폼에 되살린 회차에 낸다 —
     # 폼 아래 제 꼴의 줄 대신(설계 규칙 UI-NTF-01).
     AlertSpec("VO-02", "info", "event", "VOC 새 글 — 이 브라우저 탭에 보관한 초안을 되살림"),
+    # 붙여넣기 · 양식 창을 연 회차의 알림(`components/paste_form.announce_on_open`) — 덮어쓰기 ·
+    # 되돌릴 수 없음을 창 안 글 대신 알린다(2026-11-05 검수 static-37).
+    AlertSpec("PA-01", "check", "event", "붙여넣기 · 확인 창 — 적용하면 무엇이 바뀌는지"),
 )
 
 

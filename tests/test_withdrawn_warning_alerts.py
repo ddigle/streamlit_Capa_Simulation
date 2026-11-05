@@ -67,6 +67,45 @@ _SPACE_OVERLAY_TESTS = "tests/test_space_layout_overlay_page.py"
 
 WITHDRAWN: tuple[Withdrawn, ...] = (
     Withdrawn(
+        what="붙여넣기 · 확인 창 — 덮어쓰기 · 되돌릴 수 없음 · 버려지는 편집(상자 · 캡션 · 풍선)",
+        why="검수 static-37",
+        file="src/capa_simulation/components/paste_form.py",
+        function="announce_on_open",
+        code="PA-01",
+        route="flash",
+        test="tests/test_paste_form.py::test_the_opening_note_goes_up_once_per_opening",
+    ),
+    Withdrawn(
+        what="붙여넣기 창 — 입력 곁 거부 · 실패 상자",
+        why="검수 static-37",
+        file="src/capa_simulation/components/paste_form.py",
+        function="refuse_paste",
+        code="FL-04",
+        route="flash",
+        test="tests/test_paste_form.py::test_a_refusal_goes_to_the_alert_popup_and_not_the_window",
+    ),
+    Withdrawn(
+        what="표시순서 · 공정 표시명 붙여넣기 창 — 「바뀐 것이 없습니다」 안내 상자",
+        why="검수 static-37",
+        file="src/capa_simulation/components/paste_form.py",
+        function="tell_paste",
+        code="FL-02",
+        route="flash",
+        test="tests/test_paste_form.py::test_a_note_goes_to_the_alert_popup_and_not_the_window",
+    ),
+    Withdrawn(
+        what="엑셀·CSV 팝업 미리보기 — 주의 상자(대소문자 · CSV 시나리오 등)",
+        why="검수 static-37",
+        file="src/capa_simulation/components/equipment_import_dialog.py",
+        function="_queue_review_alerts",
+        code="FL-03",
+        route="flash",
+        test=(
+            "tests/test_equipment_master_tab_scenarios.py"
+            "::test_the_import_review_cautions_go_to_the_alert_popup"
+        ),
+    ),
+    Withdrawn(
         what="사이드바 시나리오 팝업 저장 칸 밑 — 저장 뒤 남은 Capa 계산 오류(공식 지정이 막힘)",
         why="V-14 · AMB-05 (나)",
         file="src/capa_simulation/components/scenario_status.py",

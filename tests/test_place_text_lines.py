@@ -26,6 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import flashed
 from streamlit.testing.v1 import AppTest
 from test_reference_integrity_page import TEST_SCRIPT as REFERENCE_INTEGRITY_SCRIPT
 
@@ -285,22 +286,26 @@ def test_the_execution_notices_name_rows_and_the_guide_says_why() -> None:
 
 
 def _past_paste_form() -> None:
+    import pandas as pd
+
     from capa_simulation.components.past_data_management import (
         PAST_TABLE_SPECS,
         _render_paste_form,
     )
 
-    _render_paste_form(PAST_TABLE_SPECS[0], {})
+    spec = PAST_TABLE_SPECS[0]
+    _render_paste_form(":memory:", 0, spec, pd.DataFrame(columns=list(spec.columns)), {})
 
 
-def test_the_past_data_paste_box_describes_its_table_in_the_box_tooltip() -> None:
-    """붙여넣기 칸 위에는 되돌릴 수 없는 덮어쓰기 한 줄만 서고(UI-NTF-09), 그 표에 넣을 것(단위 ·
-    받지 않는 글자)은 글 칸 풍선이다."""
+def test_the_past_data_paste_box_says_its_table_rules_by_alert() -> None:
+    """붙여넣기 칸에는 글 · 칸 풍선이 없고, 되돌릴 수 없는 덮어쓰기와 그 표에 넣을 것(단위 · 받지
+    않는 글자)은 칸을 편 회차의 알림이다(UI-NTF-09, 2026-11-05 검수 static-37)."""
     app = AppTest.from_function(_past_paste_form, default_timeout=60).run()
     assert not app.exception, [item.message for item in app.exception]
 
     spec = PAST_TABLE_SPECS[0]
     (area,) = app.text_area
-    assert area.help == spec.caption
-    assert not [text for text in _lines(app.caption) if text == spec.caption]
-    assert [text for text in _lines(app.caption) if "통째로 바뀝니다" in text]
+    assert not area.help
+    assert not _lines(app.caption)
+    (opening,) = flashed(app, "warning")
+    assert "통째로 바뀝니다" in opening.value and spec.caption in opening.value

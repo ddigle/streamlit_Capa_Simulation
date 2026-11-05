@@ -5,6 +5,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+from alert_marks import flashed
 
 from capa_simulation.persistence import past_data_store, sync_state
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -663,7 +664,8 @@ def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_t
     app.run(timeout=60)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    errors = [element.value for element in app.error]
+    errors = [element.value for element in flashed(app, "error")]
+    assert not app.error
     assert any(shown in message for message in errors), errors
     assert "확보율" not in app.session_state[PAST_DRAFT_KEY]
     save = next(button for button in app.button if button.label == "과거 구간 저장")
@@ -671,6 +673,35 @@ def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_t
     kept = repository.load_global_past_data()
     assert kept.version == stored.version
     pd.testing.assert_frame_equal(kept.securement, stored.securement)
+
+
+def test_the_paste_box_says_its_rules_by_alert_and_stands_the_template_in_its_action_row(
+    tmp_path: Path,
+) -> None:
+    """칸을 펴면 되돌릴 수 없는 덮어쓰기와 그 표의 규칙은 알림창이 말하고(칸 안 글 · 풍선 없음),
+    양식 내려받기는 칸의 작업 줄에 선다. 칸을 걷으면 양식도 걷힌다(2026-11-05 검수 static-37)."""
+    from streamlit.testing.v1 import AppTest
+
+    database_path = tmp_path / "past.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_past_data(_stored_profile_tables(), source="기존")
+    app = AppTest.from_string(
+        _PAST_COMPONENT_SCRIPT.replace("__DATABASE__", str(database_path))
+    ).run(timeout=60)
+    assert not app.download_button
+
+    app.button(key="home_past_clipboard_확보율_open").click().run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+    (opening,) = flashed(app, "warning")
+    assert opening.code == "PA-01"
+    assert "통째로 바뀝니다" in opening.value and "B/N 순위" in opening.value
+    assert not app.text_area(key="home_past_clipboard_확보율").help
+    assert [button.label for button in app.download_button] == ["CSV 양식 다운로드"]
+    assert [button.key for button in app.download_button] == ["home_past_download_확보율"]
+
+    app.button(key="home_past_clipboard_확보율_close").click().run(timeout=60)
+    assert not app.download_button
 
 
 def test_the_display_range_reaches_back_to_the_past_months() -> None:

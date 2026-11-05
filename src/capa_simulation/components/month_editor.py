@@ -25,12 +25,13 @@ import pandas as pd
 import streamlit as st
 from pandas.io.formats.style import Styler
 
+from capa_simulation.components.paste_form import refuse_paste
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import bootstrap_error_message
 
 # 화면은 표시명이지만 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 표시명이 있는 표의 붙여넣기
-# 칸 풍선에만 싣는다 — 팝업에 늘 띄우는 설명 문장이 아니다(설계 규칙 UI-TXT-01 · 02).
+# 창을 연 회차에 알린다 — 창 안에 글을 두지 않는다(2026-11-05 검수 static-37).
 RENAME_HELP = (
     "분류 컬럼은 화면에서 표시명으로 보이지만 CSV 양식과 붙여넣기는 원본 공정명입니다 — 양식을 "
     "내려받아 그 이름 그대로 고쳐 붙여넣습니다."
@@ -112,9 +113,10 @@ def paste_dialog(
 ) -> None:
     """「Excel 붙여넣기」 팝업(표 전체 CSV 양식 — 붙여넣어 적용하면 팝업이 닫힌다).
 
-    `pending_notice` 는 그 표에 적용하지 않은 편집이 있을 때 첫 줄에 쓰는 경고다 — 붙여넣기를
-    적용하면 원본이 바뀌어 그 편집을 버리므로 버리기 전에 말한다. 편집이 어디에 사는지(편집표
-    위젯·그리드 초안)는 부르는 쪽이 안다. `editor_key` 는 양식 칸·내려받기 key 의 앞머리다.
+    `pending_notice` 는 그 표에 적용하지 않은 편집이 있을 때 창을 연 회차의 알림 글이다 —
+    붙여넣기를 적용하면 원본이 바뀌어 그 편집을 버리므로 버리기 전에 말한다(창 안에 그리지 않는다
+    — 공통 부품 `components/paste_form`). 편집이 어디에 사는지(편집표 위젯·그리드 초안)는 부르는
+    쪽이 안다. `editor_key` 는 양식 칸·내려받기 key 의 앞머리다.
     `min_value`·`max_value`·`integer` 는 그 표 그리드 칸의 하한·상한·정수 규칙이다.
     """
 
@@ -123,25 +125,27 @@ def paste_dialog(
 
     @st.dialog(f"Excel 붙여넣기 · {table_name}", width="large", on_dismiss=_close)
     def _body() -> None:
-        if pending_notice:
-            st.warning(pending_notice)
+        form_key = f"{editor_key}_csv"
+        opening = " ".join(
+            text for text in (pending_notice, RENAME_HELP if rename_notice else None) if text
+        )
         imported = render_reference_clipboard_form(
             data,
             table_name=table_name,
             key_columns=dimensions,
             file_name=file_name,
-            key=f"{editor_key}_csv",
+            key=form_key,
             min_value=min_value,
             max_value=max_value,
             integer=integer,
-            field_help=RENAME_HELP if rename_notice else None,
+            opening=opening or None,
         )
         if imported is None:
             return
         try:
             on_paste(imported)
         except (KeyError, ValueError) as exc:
-            st.error(bootstrap_error_message(exc))
+            refuse_paste(form_key, bootstrap_error_message(exc))
             return
         _close()
         st.rerun()

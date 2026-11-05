@@ -19,6 +19,12 @@ from capa_simulation.components.admin_dialog import (
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.paste_form import (
+    PasteTemplate,
+    refuse_paste,
+    render_paste_form,
+    tell_paste,
+)
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.write_guard import (
@@ -67,6 +73,7 @@ from capa_simulation.services.display_order_editor import (
 PASTE_DIALOG = "display_order_paste"
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "global_display_order_clipboard_confirm"
+CLIPBOARD_FORM_KEY = "global_display_order"
 DISPLAY_ORDER_EDITOR_KEY = "display_order_editor"
 # 저장 뒤 「화면 표시명」 경고의 자리. 저장 성공은 곧바로 `st.rerun()` 하므로 그 회차에
 # 그린 경고는 화면에 닿지 않는다. 성공 문구처럼 세션에 담았다가 다음 회차에 한 번 그린다.
@@ -156,7 +163,7 @@ def render_display_order_management(
         _report_clashes(clashes, tab=alert_tab)
 
     if admin_dialog_is_open(PASTE_DIALOG):
-        _clipboard_dialog(repository, display_order)
+        _clipboard_dialog(repository, display_order, csv_bytes, profile.version)
     _render_direct_editor(repository, display_order, profile.version, notice)
 
 
@@ -164,45 +171,44 @@ def render_display_order_management(
 def _clipboard_dialog(
     repository: DuckDBScenarioRepository,
     current: pd.DataFrame,
+    template_csv: bytes,
+    template_version: int,
 ) -> None:
-    # 적용이 무엇을 바꾸는지는 누르기 전에 알아야 해 팝업 안에 남긴다.
-    st.caption("적용하면 현재 공용 표시순서 **전체**가 교체됩니다(시나리오 리비전은 만들지 않음).")
-    with st.form("global_display_order_clipboard_form", border=False):
-        clipboard_text = st.text_area(
-            "표시순서 표 붙여넣기",
-            key="global_display_order_clipboard",
-            height=220,
-            placeholder="Excel에서 헤더를 포함한 전체 셀 범위를 복사한 뒤 Ctrl+V",
-        )
-        confirmed = st.checkbox(
-            "현재 공용 표시순서 전체 교체를 확인했습니다.",
-            key=CLIPBOARD_CONFIRM_KEY,
-        )
-        submitted = st.form_submit_button(
-            "붙여넣기 표시순서 적용",
-            icon=":material/content_paste:",
-            type="primary",
-            width="stretch",
-        )
-    if not submitted:
+    # 적용이 무엇을 바꾸는지는 누르기 전에 알아야 해 창을 연 회차에 알린다(창 안에 글을 두지
+    # 않는다).
+    submit = render_paste_form(
+        CLIPBOARD_FORM_KEY,
+        text_key="global_display_order_clipboard",
+        text_label="표시순서 표 붙여넣기",
+        apply_label="붙여넣기 표시순서 적용",
+        template=PasteTemplate(
+            data=template_csv,
+            file_name=f"RQ_DISPLAY_ORDER_v{template_version}.csv",
+            key="display_order_template_download",
+        ),
+        opening="적용하면 현재 공용 표시순서 전체가 교체됩니다(시나리오 리비전은 만들지 않음).",
+        confirm_key=CLIPBOARD_CONFIRM_KEY,
+        confirm_label="현재 공용 표시순서 전체 교체를 확인했습니다.",
+    )
+    if submit is None:
         return
-    if not clipboard_text.strip():
-        st.error("적용할 표시순서 표를 Excel에서 복사해 붙여넣으세요.")
+    if not submit.text.strip():
+        refuse_paste(CLIPBOARD_FORM_KEY, "적용할 표시순서 표를 Excel에서 복사해 붙여넣으세요.")
         return
-    if not confirmed:
-        st.error("전체 교체 확인을 선택하세요.")
+    if not submit.confirmed:
+        refuse_paste(CLIPBOARD_FORM_KEY, "전체 교체 확인을 선택하세요.")
         return
     try:
-        imported = display_order_from_clipboard(clipboard_text)
+        imported = display_order_from_clipboard(submit.text)
         if imported.equals(current):
-            st.info(DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE, icon=":material/info:")
+            tell_paste(CLIPBOARD_FORM_KEY, DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE)
             return
         _save_global_display_order(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        refuse_paste(CLIPBOARD_FORM_KEY, bootstrap_error_message(exc))
     else:
-        # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
-        # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
+        # 확인 체크는 이번 교체 한 번에만 유효하다. 팝업이 닫힌 회차에 값이 버려지지만, 끊긴
+        # 회차까지 여기서 함께 버린다.
         st.session_state.pop(CLIPBOARD_CONFIRM_KEY, None)
         queue_flash(
             DISPLAY_ORDER_FLASH_KEY,
