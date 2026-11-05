@@ -463,12 +463,12 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     낸다(`scope` 가 None 이면 닫힌 탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸
     한 자리를 써(`alerts.flush`) 바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
     """
-    locked_rows = locked[[*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]]
+    locked_columns = [*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]
     table = (
         None
         if locked.empty
         else alert_table(
-            locked_rows,
+            locked[locked_columns],
             title=LOCKED_YIELD_TITLE,
             file_name="Capa_Locked_Yield_Rows.csv",
             column_help={YIELD_LOCK_REASON_COLUMN: LOCKED_YIELD_GUIDE},
@@ -498,7 +498,7 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
         # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
         toolbar_clearance()
         st.dataframe(
-            locked_rows,
+            locked[locked_columns],
             hide_index=True,
             width="stretch",
             column_config={

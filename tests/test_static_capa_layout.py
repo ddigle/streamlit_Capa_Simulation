@@ -18,6 +18,7 @@ from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers  # noqa: F401
 from test_reference_data_page import TEST_SCRIPT
 
+from capa_simulation import alerts
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
@@ -125,7 +126,7 @@ def test_the_summary_says_how_much_demand_the_required_count_left_out() -> None:
     assert note["active"] is True and note["level"] == "check"
     assert "소요대수에 들지 않은 수요가 있습니다(조회기간)" in note["full"]
     assert "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in note["full"]
-    assert "Alarm › 이 줄 의 표" in note["full"]
+    assert "목록은 Alarm 의 이 줄에 딸린 표입니다" in note["full"]
     assert note["short"] == "소요대수에 안 든 계획 수요 1건(조회기간) — 목록: Alarm › 이 줄"
     # 산출 결과 소요대수 탭과 같은 표 — 현황 요약에서 본 줄도 그 자리에서 목록을 펼친다.
     assert table_frame(note_table(note, "경로에 닿지 않은 계획 부하"))["제외사유"].tolist() == [
@@ -164,6 +165,21 @@ def test_the_summary_leaves_the_route_side_count_to_the_alert_board(
     note = _uncounted(both)
     assert "RQ_REQB 경로에 닿지 않은 계획 부하 2건" in note["full"]
     assert "대당 Capa 가 없어 뺀 부하 경로" not in note["full"]
+
+
+def test_a_plan_list_too_large_for_the_alarm_is_pointed_at_on_the_result_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 이 줄에 싣지 못해 글이 본문 자리(산출 결과 소요대수
+    탭)를 가리킨다 — 이 화면에 펼침을 세우지는 않는다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 0)
+    app = AppTest.from_string(_calculated_script(unrouted=True), default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    note = _uncounted(app)
+    assert "tables" not in note
+    assert note["short"].endswith("목록: 산출 결과 › 소요대수")
+    assert "산출 결과 → 소요대수 탭에 있습니다" in note["full"]
+    assert not list(app.expander)
 
 
 def test_an_empty_result_box_says_so_in_one_plain_line(monkeypatch: pytest.MonkeyPatch) -> None:

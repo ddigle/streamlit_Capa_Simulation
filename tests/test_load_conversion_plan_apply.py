@@ -258,7 +258,7 @@ def _inject(app: AppTest, name: str, frame: pd.DataFrame, token: str) -> None:
 
 def _folds(app: AppTest) -> set[str]:
     """본문 펼침 이름 — 아이콘을 단 `st.expander` 는 AppTest 가 `status` 로 읽는다."""
-    return {str(item.label) for item in (*app.expander, *app.status)}
+    return {str(item.label) for item in app.expander} | {str(item.label) for item in app.status}
 
 
 def _yield_rows(app: AppTest) -> pd.DataFrame:

@@ -82,7 +82,7 @@ REQUIRED_LIST_PLACE = "산출 결과 › 소요대수"
 # 문장의 끝 — 목록을 어디서 보는지. 알림 칸 밖의 글(Admin 「알림 모음」 · 저장 · 발행 검사 · 자동
 # 갱신 기록)은 그 탭을 열어야 줄이 선다는 것까지 말한다.
 REQUIRED_LIST_NOTE = "목록은 산출 결과 → 소요대수 탭을 열면 서는 Alarm 줄의 표입니다."
-REQUIRED_LIST_NOTE_THIS_ROW = f"목록은 {ALARM_ROW_PLACE} 의 표입니다."
+REQUIRED_LIST_NOTE_THIS_ROW = "목록은 Alarm 의 이 줄에 딸린 표입니다."
 REQUIRED_LIST_NOTE_ON_PAGE = "목록은 산출 결과 → 소요대수 탭에 있습니다."
 # 제외 목록(Alarm 줄의 표) 이름. 2026-11-02 · 11-05 사용자 요청(검수표) 전에는 탭 본문 펼침이었다.
 CAPACITY_EXCLUSION_TITLE = "제외 기준정보"
