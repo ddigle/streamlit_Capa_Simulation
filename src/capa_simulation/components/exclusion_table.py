@@ -2,9 +2,10 @@
 
 """제외 기준정보 안내 표의 단일 렌더러.
 
-`산출 결과` 의 제외 표(`소요대수 제외 기준정보` · 계획 쪽 목록 둘)가 이 함수 하나로 같은 모양을
-그린다. 대당 Capa 탭의 `제외 기준정보` 는 2026-11-03 부터 본문이 아니라 Alarm 줄의 표다 — 같은
-내보내기 프레임(`exclusion_export`)을 알림에 싣는다(`components/state_alerts.alert_table`).
+`산출 결과` 의 제외 목록은 본문이 아니라 Alarm 줄의 표다(대당 Capa `제외 기준정보` 2026-11-03,
+소요대수 탭 목록 셋 2026-11-05) — 내보내기 프레임(`exclusion_export`)을 알림에 싣는다
+(`components/state_alerts.alert_table`). 이 렌더러는 표가 알림에 싣기에 커서
+(`alerts.TABLE_ROW_LIMIT`) 본문에 남은 목록을 그린다.
 
 **화면은 표시명, 파일은 원본이다.** `st.dataframe` 에는 표시명을 입힌 복사본을 주고
 `render_csv_download` 에는 원본 공정명 프레임을 그대로 준다. 이 표의 CSV 는 `Core_Data` 나

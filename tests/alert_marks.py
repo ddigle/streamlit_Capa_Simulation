@@ -15,9 +15,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import ElementTree
 
@@ -131,6 +133,17 @@ def active_state(app: AppTest | ElementTree, code: str) -> dict[str, Any] | None
     """`code` 상태 알림 가운데 조건이 있는(`active`) 마지막 표지. 없으면 None."""
     found = [note for note in states(app, code) if note.get("active")]
     return found[-1] if found else None
+
+
+def note_table(note: Mapping[str, Any], title: str) -> dict[str, Any]:
+    """알림 표지에 딸린 표(`alerts.AlertTable`) 가운데 이름이 `title` 인 것 하나."""
+    (table,) = [table for table in note.get("tables", []) if table["title"] == title]
+    return dict(table)
+
+
+def table_frame(table: Mapping[str, Any]) -> pd.DataFrame:
+    """딸린 표의 원본 값 프레임 — CSV 가 싣는 값과 칸이다."""
+    return pd.DataFrame(table["rows"], columns=table["columns"])
 
 
 def events(app: AppTest | ElementTree, code: str) -> list[dict[str, Any]]:

@@ -23,6 +23,7 @@ from capa_simulation.components.process_labels import ProcessLabels, get_process
 from capa_simulation.components.required_exclusion_notice import (
     PERIOD_SCOPE,
     alert_uncounted_demand,
+    plan_exclusion_lists,
 )
 from capa_simulation.components.state_alerts import alert_page_error, simulation_scope
 from capa_simulation.components.status_metric import (
@@ -254,6 +255,13 @@ else:
         code="ST-01",
         scope=simulation_scope(active_scenario, (effective_start, effective_end)),
         scope_name=PERIOD_SCOPE,
+        lists=plan_exclusion_lists(
+            result_summary.load_exclusions,
+            result_summary.unrouted_loads,
+            display_order=context.display_order,
+            labels=process_labels,
+            file_suffix=f"{effective_start}_{effective_end}",
+        ),
     )
     with st.container(border=True):
         st.markdown("#### :material/priority_high: 경고 기준 미달 :red-badge[집중 관리]")

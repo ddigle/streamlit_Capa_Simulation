@@ -19,6 +19,7 @@
 새 경고를 자리에서 걷으면 같은 변경에서 이 표에 한 줄을 더한다(PRC-01). 2026-11-04 설계 규칙 확인
 보드 AMB-05 (나)(사이드바 저장 칸 밑 남은 Capa 계산 오류 · HOME 주요 Case 칩 경고 — 둘 다 알림창
 · Alarm 으로)와 같은 날 걷은 저장 뒤 경고 · 가용설비 「한쪽에만 있는 공정」 줄이 첫 줄들이다.
+본문 접힘에서 그 알림의 Alarm 줄 표로 옮긴 조건 내역도 같이 적는다(2026-11-05 검수표 static-32).
 
 걷지 않은 것: 시나리오 관리 설비 시나리오 구획의 「그 사이 바뀌어 …」 거절
 (`equipment_scenario_management._refused`)은 확인 체크 · 입력 칸을 새로 세우는 거절이라 구획
@@ -64,6 +65,8 @@ _SPACE_BOX_TEST = (
     "::test_an_assumption_raises_the_unscheduled_and_layout_alerts_and_keeps_the_box_to_controls"
 )
 _SPACE_OVERLAY_TESTS = "tests/test_space_layout_overlay_page.py"
+_STANDARD_TARGET_PAGE = "app_pages/standard_target_capa.py"
+_LOAD_CONVERSION_PAGE = "app_pages/load_conversion.py"
 
 WITHDRAWN: tuple[Withdrawn, ...] = (
     Withdrawn(
@@ -267,6 +270,89 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
             "::test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_one"
         ),
     ),
+    Withdrawn(
+        what="산출 결과 소요대수 탭 접힘 「소요대수 제외 기준정보」 — 대당 Capa 가 없어 뺀 경로",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file="src/capa_simulation/components/required_exclusion_notice.py",
+        function="alert_required_exclusions",
+        code="ST-15",
+        route="state",
+        test=(
+            "tests/test_reference_data_page.py"
+            "::test_calculation_result_alerts_both_exclusions_and_carries_the_required_list"
+        ),
+    ),
+    Withdrawn(
+        what="산출 결과 소요대수 탭 접힘 「소요대수 제외 기준정보」 — PKG 의 Buffer 밖 행",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file="src/capa_simulation/components/required_exclusion_notice.py",
+        function="alert_required_exclusions",
+        code="ST-21",
+        route="state",
+        test=(
+            "tests/test_reference_data_page.py"
+            "::test_uncounted_pkg_rows_are_a_notice_not_a_capacity_warning"
+        ),
+    ),
+    Withdrawn(
+        what="산출 결과 소요대수 탭 접힘 「부하량에서 빠진 계획」 · 「경로에 닿지 않은 계획 부하」",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file="src/capa_simulation/components/required_exclusion_notice.py",
+        function="alert_uncounted_demand",
+        code="ST-01",
+        route="state",
+        test=(
+            "tests/test_calculation_result_tabs.py"
+            "::test_the_required_tab_lists_plan_load_that_reaches_no_route"
+        ),
+    ),
+    Withdrawn(
+        what="표준 목표 결과 상자 안 접힘 「누락 공정·주차 확인」",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file=_STANDARD_TARGET_PAGE,
+        function="report_missing_availability",
+        code="ST-17",
+        route="state",
+        test=(
+            "tests/test_standard_target_capa_page.py"
+            "::test_missing_availability_is_a_state_alert_not_a_box"
+        ),
+    ),
+    Withdrawn(
+        what="생산 계획 환산 탭 접힘 「제외한 계획 확인」",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file=_LOAD_CONVERSION_PAGE,
+        function="_report_excluded_plans",
+        code="ST-05",
+        route="state",
+        test=(
+            "tests/test_load_conversion_plan_apply.py"
+            "::test_the_excluded_plan_list_says_what_happened_in_its_column_tooltip"
+        ),
+    ),
+    Withdrawn(
+        what="생산 계획 수율 탭 표 위 접힘 「편집 불가 수율 행」",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file=_LOAD_CONVERSION_PAGE,
+        function="_render_locked_yield_rows",
+        code="ST-06",
+        route="state",
+        test=(
+            "tests/test_load_conversion_plan_apply.py"
+            "::test_an_empty_or_zero_yield_value_no_longer_stops_the_whole_page"
+        ),
+    ),
+    Withdrawn(
+        what="필요 단축 일정 본문 맨 위 접힘 「맞대지 못한 공정」",
+        why="UI-TXT-04 · 검수표 11/02 static-32",
+        file="src/capa_simulation/components/required_shortening_panel.py",
+        function="_report_unmatched",
+        code="RS-02",
+        route="state",
+        test=(
+            "tests/test_required_shortening_tab.py::test_the_unmatched_list_keeps_the_original_names"
+        ),
+    ),
 )
 
 _IDS = [f"{item.code} {item.file.rsplit('/', 1)[-1]}::{item.function}" for item in WITHDRAWN]
@@ -347,6 +433,24 @@ def _called(call: ast.Call) -> str:
     return func.attr if isinstance(func, ast.Attribute) else ""
 
 
+def _literal_params(function: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, tuple[str, ...]]:
+    """`Literal["ST-01", "ST-04"]` 로 적은 매개변수 → 그 글들 — 부르는 쪽이 코드를 고르는 함수."""
+    found: dict[str, tuple[str, ...]] = {}
+    for param in (*function.args.args, *function.args.kwonlyargs):
+        annotation = param.annotation
+        if (
+            isinstance(annotation, ast.Subscript)
+            and isinstance(annotation.value, ast.Name)
+            and annotation.value.id == "Literal"
+        ):
+            index = annotation.slice
+            items = index.elts if isinstance(index, ast.Tuple) else [index]
+            texts = [item.value for item in items if isinstance(item, ast.Constant)]
+            if texts and all(isinstance(text, str) for text in texts):
+                found[param.arg] = tuple(str(text) for text in texts)
+    return found
+
+
 def codes_sent_by(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     route: Literal["flash", "state"],
@@ -354,15 +458,19 @@ def codes_sent_by(
     groups: Mapping[str, tuple[str, ...]] | None = None,
 ) -> set[str]:
     """함수가 그 길로 보내는 알림 코드 — 코드 · 종류는 글 상수나 모듈 상수 이름(`constants`)이고,
-    상태 코드는 모듈 글 묶음(`groups`)을 도는 `for` 의 이름이어도 된다(묶음 코드를 모두 보낸다)."""
+    상태 코드는 모듈 글 묶음(`groups`)을 도는 `for` 의 이름이거나 `Literal` 로 적은 매개변수여도
+    된다(묶음 · 그 글들을 모두 보낸다)."""
     known = constants or {}
     looped = {
-        node.target.id: (groups or {})[node.iter.id]
-        for node in ast.walk(function)
-        if isinstance(node, ast.For)
-        and isinstance(node.target, ast.Name)
-        and isinstance(node.iter, ast.Name)
-        and node.iter.id in (groups or {})
+        **_literal_params(function),
+        **{
+            node.target.id: (groups or {})[node.iter.id]
+            for node in ast.walk(function)
+            if isinstance(node, ast.For)
+            and isinstance(node.target, ast.Name)
+            and isinstance(node.iter, ast.Name)
+            and node.iter.id in (groups or {})
+        },
     }
     codes: set[str] = set()
     for node in ast.walk(function):
@@ -489,7 +597,16 @@ def test_the_screen_test_asserts_that_code(item: Withdrawn) -> None:
 
 def test_the_route_reader_tells_flash_and_state_codes_apart() -> None:
     """`codes_sent_by` 는 `popup_only` 없는 결과 알림(버튼 곁에도 그림)을 세지 않고, 코드를 모듈
-    상수 이름으로 준 상태 알림은 그 상수를, 모듈 코드 묶음을 도는 `for` 이름은 그 묶음을 푼다."""
+    상수 이름으로 준 상태 알림은 그 상수를, 모듈 코드 묶음을 도는 `for` 이름은 그 묶음을, `Literal`
+    매개변수는 그 글들을 푼다."""
+    (picked,) = ast.parse(
+        "def g(counts, *, code: Literal['ST-01', 'ST-04'], other: str):\n"
+        "    alerts.state(code, scope=None, content=None, active=False)\n"
+        "    alerts.state(other, scope=None, content=None, active=False)\n"
+    ).body
+    assert isinstance(picked, ast.FunctionDef)
+    assert codes_sent_by(picked, "state") == {"ST-01", "ST-04"}
+
     (function,) = ast.parse(
         "def f():\n"
         "    queue_flash(KEY, text, kind='warning')\n"

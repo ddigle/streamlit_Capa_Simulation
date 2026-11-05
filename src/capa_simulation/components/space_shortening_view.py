@@ -463,7 +463,9 @@ def render_layer_basis(
     tips: list[str] = []
     if space_layer.layer.unmatched:
         notes.append(f"맞대지 못한 공정 {space_layer.layer.unmatched}개")
-        tips.append("맞대지 못한 공정은 이 보기에 없습니다 — 필요 단축 일정에서 확인합니다.")
+        tips.append(
+            "맞대지 못한 공정은 이 보기에 없습니다 — 필요 단축 일정을 열면 Alarm 줄의 표로 섭니다."
+        )
     if summary is not None and summary.filtered_out:
         notes.append(f"공정소분류 필터 밖 단축 {summary.filtered_out}대")
         tips.append("공정소분류 필터 밖 단축 호기는 세지 않습니다.")

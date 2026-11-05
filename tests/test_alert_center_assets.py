@@ -267,12 +267,22 @@ out.cells = [
   tableCell(table, 'STEP_SEQ', null),
 ]
 const tabled = [
-  { id: 'old', code: 'ST-14', last: 1, table: table },
-  { id: 'new', code: 'ST-14', last: 2, table: table },
-  { id: 'other', code: 'ST-15', last: 0, table: table },
+  { id: 'old', code: 'ST-14', last: 1, tables: [table] },
+  { id: 'new', code: 'ST-14', last: 2, tables: [table, table] },
+  { id: 'other', code: 'ST-15', last: 0, tables: [table] },
   { id: 'plain', code: 'ST-14', last: 3 },
 ]
-out.tables = keepNewestTables(tabled).map((row) => [row.id, Boolean(row.table)])
+out.tables = keepNewestTables(tabled).map((row) => [row.id, validTables(row.tables).length])
+out.valid = [validTables(null).length, validTables([null, {}, { rows: [] }, table]).length]
+const shed = [
+  { id: 'a', last: 5, tables: [table] },
+  { id: 'b', last: 1, tables: [table] },
+  { id: 'c', last: 0 },
+]
+const lighter = withoutOldestTables(shed)
+out.shed = lighter.map((row) => [row.id, Boolean(row.tables)])
+out.shed_kept = Boolean(shed[1].tables)
+out.shed_end = withoutOldestTables([{ id: 'c', last: 0 }])
 out.tabs = [
   tabMatches('insights대당 Capa', '대당 Capa'),
   tabMatches(' precision_manufacturing 소요대수 ', '소요대수'),
@@ -317,7 +327,11 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     # 코드마다 가장 새 줄에만, 탭 단추는 아이콘 글자 뒤 이름으로 맞댄다.
     assert out["csv"] == '공정,STEP_SEQ,UPEH\r\nDEMO-P1,P100,0.123456\r\n"DEMO ""P2"", B",,3'
     assert out["cells"] == ["가공", "DEMO-P9", "0.1235", "3", ""]
-    assert out["tables"] == [["old", False], ["new", True], ["other", True], ["plain", False]]
+    assert out["tables"] == [["old", 0], ["new", 2], ["other", 1], ["plain", 0]]
+    assert out["valid"] == [0, 2]
+    # 저장소가 넘치면 저장본에서 표가 든 가장 오래된 줄의 표부터 뺀다 — 이 문서 안 줄은 그대로다.
+    assert out["shed"] == [["a", True], ["b", False], ["c", False]]
+    assert out["shed_kept"] is True and out["shed_end"] is None
     assert out["tabs"] == [True, True, False, False]
     # 탭 안 탭은 바깥 칸부터 한 칸씩 연다(가용설비 현황 「Summary › Static 대비 일정」).
     assert out["steps"] == [["Summary", "Static 대비 일정"], ["소요대수", ""], ["", ""]]
@@ -351,3 +365,15 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
     for name in ("table_open", "table_rows", "table_csv"):
         assert name in alert_center.TEXT
     assert "position: sticky;" in _rule(".tscroll th")
+    # 칸 머리 풍선은 `title`, 뜻이 있는 칸임을 점선 밑줄로 보인다.
+    box = JS[JS.index("function tableBox(") :]
+    box = box[: box.index("\n}\n")]
+    assert "cell.title = help" in box and "'hint'" in box
+    assert "underline dotted" in _rule(".tscroll th.hint")
+    # 한 줄의 표마다 단추 하나 · 펼침 칸 하나이고, 지문 표(새로고침에 다시 뜨지 않게)를 표가 든
+    # 기록보다 먼저 쓴다.
+    assert "validTables(row.tables).forEach((table, index)" in JS
+    persist = JS[JS.index("function persist(") :]
+    persist = persist[: persist.index("\n}\n")]
+    assert persist.index("storage.states") < persist.index("storage.log")
+    assert "withoutOldestTables(saving)" in persist

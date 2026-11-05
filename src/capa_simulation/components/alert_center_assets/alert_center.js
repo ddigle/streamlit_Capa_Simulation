@@ -24,8 +24,9 @@
 //   `window.__capaAlertQueue` 에 담아 두고 칸이 설 때 꺼낸다). 「그 화면으로」 는 탭 줄의 화면 이동(상한 · 떠나기 확인)에
 //   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
 //   누른다(`stateful_tabs` — 보통 누름과 같다).
-// - 알림에 딸린 표(`table` — 본문에서 뺀 목록)는 줄의 「… 보기」 단추가 펼치고 CSV 는 브라우저 안에서 만든다(서버를 부르지
-//   않는다). 표는 코드마다 가장 새 줄에만 남긴다(탭 저장소 크기).
+// - 알림에 딸린 표(`tables` — 본문에서 뺀 목록, 한 줄에 여럿일 수 있다)는 줄의 「… 보기」 단추가 표마다 펼치고 CSV 는 브라우저
+//   안에서 만든다(서버를 부르지 않는다). 칸 머리 풍선(`help`)은 `title` 이다. 표는 코드마다 가장 새 줄에만 남기고, 탭 저장소가
+//   넘치면 저장본에서 오래된 줄의 표부터 뺀다 — 줄은 남고, 그 화면이 다시 보내면 표가 다시 붙는다.
 // - 「로그」 펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 처음 · 마지막 · 화면 · 계기 · 범위 · 해소 · 원본 오류 · 전문)을
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
@@ -137,15 +138,30 @@ function tableCell(table, column, value) {
   if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(4)))
   return String(value)
 }
+// 표지 · 줄의 딸린 표들 — 행이 든 것만.
+function validTables(value) {
+  return Array.isArray(value) ? value.filter((table) => table && typeof table === 'object' && Array.isArray(table.rows)) : []
+}
 // 표는 코드마다 가장 새 줄(마지막 시각)에만 둔다 — 옛 범위 줄의 표까지 이 탭 저장소에 쌓지 않는다.
 function keepNewestTables(rows) {
   const kept = new Set()
   for (const row of [...rows].sort((a, b) => b.last - a.last)) {
-    if (!row || !row.table) continue
-    if (kept.has(row.code)) delete row.table
+    if (!row || !validTables(row.tables).length) continue
+    if (kept.has(row.code)) delete row.tables
     else kept.add(row.code)
   }
   return rows
+}
+// 저장본에서 뺄 다음 표 — 표가 든 가장 오래된 줄만 표 없이 복사한 새 목록. 뺄 표가 없으면 null(원본 줄은 건드리지 않는다).
+function withoutOldestTables(rows) {
+  const tabled = rows.filter((row) => row && validTables(row.tables).length)
+  if (!tabled.length) return null
+  const oldest = tabled.reduce((a, b) => (b.last < a.last ? b : a))
+  return rows.map((row) => {
+    if (row !== oldest) return row
+    const { tables, ...rest } = row
+    return rest
+  })
 }
 // 탭 단추 글이 고른 탭인가 — 단추 글 앞에는 아이콘 이름 글자가 붙어 있어 끝으로 견준다.
 function tabMatches(text, label) {
@@ -199,8 +215,10 @@ function storageGet(key, fallback) {
 function storageSet(key, value) {
   try {
     window.sessionStorage.setItem(key, JSON.stringify(value))
+    return true
   } catch (error) {
-    /* 막힌 브라우저 — 이 문서 안에만 쌓는다 */
+    /* 막힌 브라우저 · 넘침 — 이 문서 안에만 쌓는다 */
+    return false
   }
 }
 
@@ -380,9 +398,11 @@ function persist(C) {
       if (Object.keys(C.states).length <= STATE_LIMIT) break
     }
   }
-  storageSet(storage.log, C.rows)
+  // 지문 · 본 사건을 먼저 쓴다 — 표가 저장소를 채워 이것들이 못 들어가면 새로고침에 알림창이 다시 뜬다.
   storageSet(storage.states, C.states)
   storageSet(storage.seen, C.seen)
+  let saving = C.rows
+  while (saving && !storageSet(storage.log, saving)) saving = withoutOldestTables(saving)
 }
 
 function rowFor(note, now) {
@@ -396,7 +416,7 @@ function rowFor(note, now) {
     page: String(note.page || ''),
     href: typeof note.href === 'string' ? note.href : null,
     tab: String(note.tab || ''),
-    table: note.table && typeof note.table === 'object' && Array.isArray(note.table.rows) ? note.table : null,
+    tables: validTables(note.tables),
     scopeLabel: String(note.scope_label || ''),
     cause: String(note.cause || ''),
     detail: String(note.detail || ''),
@@ -481,11 +501,12 @@ function handleState(C, note) {
     entry.active = false
     return true
   }
-  if (verdict === 'same' && note.table && typeof note.table === 'object') {
-    // 같은 지문인데 줄에 표가 없으면(더 새 같은 코드 줄이 표를 가져갔다가 걷힘) 다시 붙인다.
+  if (verdict === 'same') {
+    // 같은 지문인데 줄에 표가 없으면(더 새 같은 코드 줄이 표를 가져갔다가 걷힘 · 저장소가 넘쳐 빠짐) 다시 붙인다.
     const row = C.rows.find((item) => item.id === entry.row)
-    if (row && !row.table && Array.isArray(note.table.rows)) {
-      row.table = note.table
+    const tables = validTables(note.tables)
+    if (row && tables.length && !validTables(row.tables).length) {
+      row.tables = tables
       return true
     }
   }
@@ -878,9 +899,8 @@ function downloadTable(table) {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-function tableBox(C, row) {
+function tableBox(C, table) {
   const t = text(C)
-  const table = row.table
   const columns = Array.isArray(table.columns) ? table.columns : []
   const box = el('div', 'tablebox')
   const head = el('div', 'thead')
@@ -897,7 +917,13 @@ function tableBox(C, row) {
   scroller.tabIndex = 0
   const grid = el('table')
   const header = el('tr')
-  for (const column of columns) header.append(el('th', '', column))
+  const helps = table.help && typeof table.help === 'object' ? table.help : {}
+  for (const column of columns) {
+    const help = Object.prototype.hasOwnProperty.call(helps, column) ? String(helps[column]) : ''
+    const cell = el('th', help ? 'hint' : '', column)
+    if (help) cell.title = help
+    header.append(cell)
+  }
   const thead = el('thead')
   thead.append(header)
   const tbody = el('tbody')
@@ -997,9 +1023,9 @@ function logPairs(C, row, forCopy) {
   if (row.detail) pairs.push([t.log_detail, row.detail])
   if (forCopy) {
     pairs.push([t.log_full, row.full])
-    if (row.table) {
-      const count = Number(row.table.total || (Array.isArray(row.table.rows) ? row.table.rows.length : 0))
-      pairs.push([t.log_table, fill(t.log_table_value, { title: row.table.title || '', n: count.toLocaleString() })])
+    for (const table of validTables(row.tables)) {
+      const count = Number(table.total || table.rows.length)
+      pairs.push([t.log_table, fill(t.log_table_value, { title: table.title || '', n: count.toLocaleString() })])
     }
   }
   return pairs
@@ -1118,23 +1144,25 @@ function paintList(C) {
       go.addEventListener('click', () => goTo(C, row.href, row.tab))
       acts.append(go)
     }
-    let tableHolder = null
-    if (row.table) {
-      const toggle = el('button', 'link', fill(t.table_open, { title: row.table.title || '' }))
+    const tableHolders = []
+    validTables(row.tables).forEach((table, index) => {
+      const opened = `${row.id}:${index}`
+      const toggle = el('button', 'link', fill(t.table_open, { title: table.title || '' }))
       toggle.type = 'button'
-      const shownTable = C.openTables.has(row.id)
+      const shownTable = C.openTables.has(opened)
       toggle.setAttribute('aria-expanded', String(shownTable))
-      tableHolder = el('div', 'tableholder')
-      if (shownTable) tableHolder.append(tableBox(C, row))
+      const tableHolder = el('div', 'tableholder')
+      if (shownTable) tableHolder.append(tableBox(C, table))
       toggle.addEventListener('click', () => {
-        const now = !C.openTables.has(row.id)
-        if (now) C.openTables.add(row.id)
-        else C.openTables.delete(row.id)
+        const now = !C.openTables.has(opened)
+        if (now) C.openTables.add(opened)
+        else C.openTables.delete(opened)
         toggle.setAttribute('aria-expanded', String(now))
-        tableHolder.replaceChildren(...(now ? [tableBox(C, row)] : []))
+        tableHolder.replaceChildren(...(now ? [tableBox(C, table)] : []))
       })
       acts.append(toggle)
-    }
+      tableHolders.push(tableHolder)
+    })
     let box = null
     if (row.level !== 'info') {
       const log = el('button', 'link', t.log || '')
@@ -1155,7 +1183,7 @@ function paintList(C) {
     meta.append(acts)
     item.append(line, meta)
     if (box) item.append(box)
-    if (tableHolder) item.append(tableHolder)
+    item.append(...tableHolders)
     parts.list.append(item)
   }
   return shown

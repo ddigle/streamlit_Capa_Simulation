@@ -39,6 +39,18 @@ def test_an_alert_table_carries_json_values_and_display_names_only_for_the_scree
     assert state_alerts.alert_table(frame, title="t", file_name="f")["shown"] == {}  # type: ignore[index]
 
 
+def test_an_alert_table_carries_header_tips_only_for_its_own_columns() -> None:
+    """칸 머리 풍선은 그 표에 있는 칸에만 싣는다 — 없는 칸의 글은 뺀다(표시명이 없을 때 등)."""
+    frame = pd.DataFrame({"공정": ["DEMO-P1"], "제외사유": ["규칙"]})
+    table = state_alerts.alert_table(
+        frame,
+        title="t",
+        file_name="f.csv",
+        column_help={"제외사유": "고칠 곳", "없는 칸": "뺀다"},
+    )
+    assert table is not None and table["help"] == {"제외사유": "고칠 곳"}
+
+
 def test_a_table_too_large_for_the_alarm_is_left_on_the_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

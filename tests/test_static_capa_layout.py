@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import alert_notes
+from alert_marks import alert_notes, note_table, table_frame
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers  # noqa: F401
 from test_reference_data_page import TEST_SCRIPT
@@ -125,8 +125,12 @@ def test_the_summary_says_how_much_demand_the_required_count_left_out() -> None:
     assert note["active"] is True and note["level"] == "check"
     assert "소요대수에 들지 않은 수요가 있습니다(조회기간)" in note["full"]
     assert "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in note["full"]
-    assert "산출 결과 → 소요대수 탭" in note["full"]
-    assert note["short"] == "소요대수에 안 든 계획 수요 1건(조회기간) — 목록: 산출 결과 › 소요대수"
+    assert "Alarm › 이 줄 의 표" in note["full"]
+    assert note["short"] == "소요대수에 안 든 계획 수요 1건(조회기간) — 목록: Alarm › 이 줄"
+    # 산출 결과 소요대수 탭과 같은 표 — 현황 요약에서 본 줄도 그 자리에서 목록을 펼친다.
+    assert table_frame(note_table(note, "경로에 닿지 않은 계획 부하"))["제외사유"].tolist() == [
+        "경로 키 어긋남"
+    ]
 
     clean = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
     assert not list(clean.exception), [element.message for element in clean.exception]

@@ -205,6 +205,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("PD-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
     AlertSpec("PD-03", "info", "event", "넘겨받은 달이 화면 기간 밖"),
     AlertSpec("RS-01", "error", "event", "필요 단축 일정을 그리지 못함 — 같은 글이면 한 번"),
+    AlertSpec("RS-02", "check", "state", "필요 단축 일정 — 맞대지 못해 비교에서 뺀 공정"),
     AlertSpec("CS-01", "error", "event", "제약 시뮬레이션을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("CS-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
     AlertSpec("WIP-01", "error", "event", "재공 현황을 그리지 못함 — 같은 글이면 한 번"),
@@ -277,12 +278,14 @@ FLASH_CODES: Final[Mapping[str, str]] = {
 
 
 class AlertTable(TypedDict):
-    """알림에 딸린 표 — Alarm 줄의 표 단추가 펼쳐 보이고 CSV 로 내려받는다(화면 본문에서 뺀 목록,
-    예: 산출 결과 대당 Capa 의 「제외 기준정보」 — 2026-11-02 사용자 요청(검수표)).
+    """알림에 딸린 표 — Alarm 줄의 표 단추가 펼쳐 보이고 CSV 로 내려받는다(조건의 내역을 화면 본문
+    접힘에 두지 않는다 — 산출 결과 대당 Capa 「제외 기준정보」 2026-11-02, 소요대수 탭 · 표준 목표 ·
+    생산 계획 · 필요 단축 일정의 목록 2026-11-05 사용자 요청(검수표)).
 
     - `title` 단추 · 표 머리 글, `columns` 칸 이름, `rows` 행 값(JSON 값 — 수 · 글 · None),
     - `total` 원래 행 수(`rows` 보다 크면 앞 `TABLE_ROW_LIMIT` 행만 실은 것), `file` CSV 파일 이름,
-    - `shown` 화면 표에서만 바꿔 보일 값(칸 → {원본: 표시명} — 공정 표시명. CSV 는 원본이다).
+    - `shown` 화면 표에서만 바꿔 보일 값(칸 → {원본: 표시명} — 공정 표시명. CSV 는 원본이다),
+    - `help` 칸 머리 풍선(칸 → 글 — 그 칸의 값을 어디서 고치는지 · 무슨 뜻인지).
     """
 
     title: str
@@ -291,6 +294,7 @@ class AlertTable(TypedDict):
     total: int
     file: str
     shown: dict[str, dict[str, str]]
+    help: dict[str, str]
 
 
 class AlertNote(TypedDict, total=False):
@@ -300,7 +304,7 @@ class AlertNote(TypedDict, total=False):
     - 상태: `kind="state"` · `scope`(지문 범위의 짧은 해시) · `fp`(지문) · `active` · 글.
     - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `tab`(그 화면 안 탭 이름 —
       「그 화면으로」 가 그 탭을 연다) · `scope_label`(로그의 범위 줄) · `cause`(계기) ·
-      `detail`(원본 오류) · `table`(딸린 표 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
+      `detail`(원본 오류) · `tables`(딸린 표들 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
       `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
       읽는다) · `again`(다시 보냄).
     """
@@ -320,7 +324,7 @@ class AlertNote(TypedDict, total=False):
     active: bool
     cause: str
     detail: str
-    table: AlertTable
+    tables: list[AlertTable]
     origin: str
     flash: str
     markdown: str
@@ -474,7 +478,7 @@ def state(
     cause: str = "",
     detail: str = "",
     tab: str = "",
-    table: AlertTable | None = None,
+    tables: Sequence[AlertTable | None] = (),
     goto: tuple[str, str] | None = None,
 ) -> None:
     """상태 알림 — 그 조건을 보는 회차마다(없어도 `active=False`) 부른다. **이벤트 칸에 늘 한 자리를
@@ -483,7 +487,8 @@ def state(
     `scope` · `content` 는 지문 재료(구조 값 — 모듈 설명), `text` · `full` 은 조건이 있을 때의 짧은
     글 · 전문, `scope_label` 은 로그의 범위 줄(「시나리오 · rN · 조회기간」)이다. `tab` 은 그 화면
     안 탭 이름(아이콘 없이 — 「그 화면으로」 가 그 탭을 열고 줄의 화면 칸이 「화면 › 탭」 이다),
-    `table` 은 Alarm 줄에서 펼쳐 볼 표(`AlertTable` — 조건이 있을 때만 싣는다)다. `goto` 는 고칠
+    `tables` 는 Alarm 줄에서 펼쳐 볼 표들(`AlertTable` — 조건이 있을 때만 싣는다. 싣기에 커서 None
+    인 칸은 뺀다)이다. `goto` 는 고칠
     자리가 **다른 화면**일 때 그 화면의 (이름, 주소)다 — 줄의 화면 칸과 「그 화면으로」 가 이번
     화면 대신 그 화면이다(두 화면이 같은 조건을 내면 어느 화면이 먼저 내도 줄이 같다 — 일정 없는
     호기 `EQ-04`). 자리에는 아무것도 그리지 않는다(D2 (나)).
@@ -503,8 +508,9 @@ def state(
     ):
         if value:
             note[name] = value  # type: ignore[literal-required]
-    if active and table is not None:
-        note["table"] = table
+    carried = [table for table in tables if table is not None]
+    if active and carried:
+        note["tables"] = carried
     emit([note])
 
 

@@ -215,28 +215,33 @@ alerts.state(
     active=active,
     text="뺀 기준 2개",
     tab="대당 Capa",
-    table=alerts.AlertTable(
-        title="제외 기준정보",
-        columns=["공정"],
-        rows=[["DEMO-P1"], ["DEMO-P2"]],
-        total=2,
-        file="x.csv",
-        shown={},
-    ),
+    tables=[
+        alerts.AlertTable(
+            title="제외 기준정보",
+            columns=["공정"],
+            rows=[["DEMO-P1"], ["DEMO-P2"]],
+            total=2,
+            file="x.csv",
+            shown={},
+            help={},
+        ),
+        None,
+    ],
 )
 """
 
 
 @pytest.mark.usefixtures("state_spec")
 def test_a_state_alert_carries_its_tab_and_a_table_only_while_the_condition_holds() -> None:
-    """`tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 연다), `table` 은 Alarm 줄에서 펼칠 표 —
-    조건이 있을 때만 싣는다(없음 표지에 표를 싣지 않는다)."""
+    """`tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 연다), `tables` 는 Alarm 줄에서 펼칠 표들 —
+    조건이 있을 때만 싣고(없음 표지에 표를 싣지 않는다) 커서 None 인 칸은 뺀다."""
     app = AppTest.from_string(TABLED)
     app.session_state["rows"] = [1, 2]
     app.run()
     (loud,) = alert_notes(app)
-    assert loud["tab"] == "대당 Capa" and loud["table"]["rows"] == [["DEMO-P1"], ["DEMO-P2"]]
+    assert loud["tab"] == "대당 Capa"
+    assert [table["rows"] for table in loud["tables"]] == [[["DEMO-P1"], ["DEMO-P2"]]]
     app.session_state["rows"] = []
     app.run()
     (quiet,) = alert_notes(app)
-    assert quiet["active"] is False and "table" not in quiet and quiet["tab"] == "대당 Capa"
+    assert quiet["active"] is False and "tables" not in quiet and quiet["tab"] == "대당 Capa"

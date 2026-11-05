@@ -19,7 +19,8 @@
 
 **화면의 공정 이름은 공용 공정 표시명(Proc Rename)이다**(2026-10-08 사용자 요청) — 공정 선택지의
 라벨, 카드 제목, LOB 요약의 B/N 공정. 값(세션·프로필·계산 키·CSV `공정`)은 원본이다. 「맞대지 못한
-공정」은 이름을 맞추라는 안내라 원본을 그대로 적는다(AGENTS 8장 — 원본 키를 확인하는 화면).
+공정」은 이름을 맞추라는 안내라 원본을 그대로 적는다(AGENTS 8장 — 원본 키를 확인하는 화면). 그
+목록은 상태 알림 `RS-02` 의 Alarm 줄 표다(본문 접힘에 두지 않는다 — 설계 규칙 UI-TXT-04).
 
 **진척 비교**(2026-10-08 사용자 요청, 시안 B)는 본문 머리의 `진척 비교` 상자에서 저장해 둔 기준선을
 고르면 KPI·LOB·공정 카드 자리를 요약과 호기마다 과거·현재 두 줄 카드로 바꾼다
@@ -59,6 +60,7 @@ from streamlit.delta_generator import DeltaGenerator
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation import alerts
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_board import (
@@ -102,7 +104,13 @@ from capa_simulation.components.shortening_timeline import month_day as _month_d
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
 from capa_simulation.components.shortening_timeline import timeline_position as _position
-from capa_simulation.components.state_alerts import alert_page_error
+from capa_simulation.components.state_alerts import (
+    ALARM_ROW_PLACE,
+    alarm_table_place,
+    alert_page_error,
+    alert_table,
+    simulation_scope,
+)
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
@@ -201,12 +209,18 @@ MANUAL_NOTICE_HELP = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 설비 일정 기준 가용에서 뺐습니다(호기별 "
     "비가동과 별도)."
 )
-# 맞대는 규칙 — 맞대지 못한 공정 펼침의 「원본 공정명」 표지 풍선, 맞댄 공정이 하나도 없는 빈 결과
-# 줄의 풍선이 같은 글을 쓴다.
+# 맞대는 규칙 — 맞대지 못한 공정 알림 표(`RS-02`)의 「원본 공정명」 칸 머리 풍선, 맞댄 공정이 하나도
+# 없는 빈 결과 줄의 풍선이 같은 글을 쓴다.
 MATCH_RULE_HELP = (
     "설비 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. Cut-off 를 "
     "적지 않은 공정은 일정 기준 가용을 낼 수 없어 시나리오 쪽에만 남습니다."
 )
+# 맞대지 못한 공정 알림 표(`RS-02`)의 이름 · 칸 · 값.
+UNMATCHED_TITLE = "맞대지 못한 공정"
+UNMATCHED_NAME_COLUMN = "원본 공정명"
+UNMATCHED_SCENARIO_ONLY = "시나리오에만 있는 공정"
+UNMATCHED_EQUIPMENT_ONLY = "설비 일정에만 있는 공정"
+CUTOFF_MISSING = "미기재"
 USAGE_NOTICE_HELP = (
     "설비 마스터 기준 — 가용대수에서 뺐고 단축 후보에도 들지 않습니다. 배치·호기 목록에는 그대로 "
     "있습니다."
@@ -351,6 +365,8 @@ def render_required_shortening_tab(
         alert_page_error(
             _stop_text(prepared), code="RS-01", text="필요 단축 일정을 계산하지 못했습니다"
         )
+    # 맞대지 못한 공정도 프래그먼트 밖에서 낸다 — 계획은 앱 전체 회차에서만 바뀐다.
+    _report_unmatched(prepared, revision=(equipment_revision_id, equipment_revision_no))
     with view:
         _render_view(
             prepared,
@@ -546,7 +562,6 @@ def _render_body(
     short = _short_processes(level_plan)
     shown = scope if selected else [process for process in ordered if process in short]
 
-    _render_unmatched(plan)
     _render_undated_notice(equipment, selected=scope if selected else None)
     _render_usage_notice(equipment, selected=scope if selected else None)
     _render_manual_notice(plan, scope=scope, labels=labels)
@@ -940,34 +955,64 @@ def _render_manual_notice(
     st.caption(f":material/event_busy: {note}", help=help_text)
 
 
-def _render_unmatched(plan: ShorteningPlan) -> None:
-    """맞대지 못한 공정은 비교하지 않고 이름만 알린다.
+def _report_unmatched(
+    prepared: _Plan | ShorteningStop, *, revision: tuple[str | None, int | None]
+) -> None:
+    """맞대지 못한 공정은 비교하지 않고 이름만 알린다 — 상태 알림 `RS-02` 와 그 줄의 표(조건의
+    내역이라 본문 접힘에 두지 않는다 — 2026-11-05 사용자 요청(검수표), 설계 규칙 UI-TXT-04).
 
     조용히 빠지면 부족이 이유 없이 작아 보인다. 이름은 **원본**이다 — 설비 마스터·Cut-off 의
     이름을 맞추라는 안내라 표시명을 적으면 마스터에 없는 이름을 찾게 된다(AGENTS 8장, 원본 키를
-    확인하는 화면). 펼침 안 맨 위는 「원본 공정명」 표지이고, 맞대는 규칙은 그 풍선이다(설계 규칙
-    UI-TXT-01 — 늘 서는 설명 줄을 두지 않는다).
+    확인하는 화면). 맞대는 규칙은 그 칸 머리 풍선이다. 공정 이름 수라 표가 알림에 싣는 끝을 넘을
+    일이 없어 본문 자리를 두지 않는다.
     """
-    groups = [
-        ("시나리오에만 있는 공정", plan.required_only),
-        ("설비 일정에만 있는 공정", plan.availability_only),
-    ]
-    if not any(names for _, names in groups):
+    if isinstance(prepared, ShorteningStop):
+        alerts.state("RS-02", scope=None, content=None, active=False)
         return
-    parts = [f"{label} {len(names)}개" for label, names in groups if names]
-    if plan.missing_cutoff:
-        parts.append(f"그 가운데 Cut-off 미기재 {len(plan.missing_cutoff)}개")
-    with st.expander(
-        ":material/link_off: 맞대지 못한 공정 — " + " · ".join(parts),
-        key="equipment_shortening_unmatched_expander",
-    ):
-        st.caption(
-            ":material/badge: 원본 공정명",
-            help=MATCH_RULE_HELP + " 아래 이름은 공정 표시명이 아니라 원본 공정명입니다.",
-        )
-        for label, names in (*groups, ("Cut-off 미기재", plan.missing_cutoff)):
-            if names:
-                st.text(f"{label}: " + ", ".join(names))
+    plan = prepared.plan
+    months = prepared.months
+    sim = simulation_scope(
+        prepared.context.active_scenario, (months[0], months[-1]) if months else None
+    )
+    equipment_id, equipment_no = revision
+    label = sim.label + (f" · 설비 r{equipment_no}" if equipment_no is not None else "")
+    uncut = set(plan.missing_cutoff)
+    groups = (
+        (UNMATCHED_SCENARIO_ONLY, plan.required_only),
+        (UNMATCHED_EQUIPMENT_ONLY, plan.availability_only),
+    )
+    rows = [(group, name) for group, names in groups for name in names]
+    frame = pd.DataFrame(rows, columns=["구분", UNMATCHED_NAME_COLUMN])
+    if uncut:
+        frame["Cut-off"] = [CUTOFF_MISSING if name in uncut else "" for _, name in rows]
+    parts = [f"{group} {len(names)}개" for group, names in groups if names]
+    if uncut:
+        parts.append(f"그 가운데 Cut-off 미기재 {len(uncut)}개")
+    alerts.state(
+        "RS-02",
+        scope={**sim.scope, "equipment": equipment_id},
+        content=[sorted(plan.required_only), sorted(plan.availability_only), sorted(uncut)],
+        active=bool(rows),
+        text=f"맞대지 못한 공정 {len(rows)}개 — 비교에서 뺌. 목록: {ALARM_ROW_PLACE}",
+        full=(
+            f"맞대지 못한 공정을 비교에서 뺐습니다 — {' · '.join(parts)}. 그만큼 부족이 작아 보일 "
+            f"수 있습니다. 목록은 {alarm_table_place(UNMATCHED_TITLE)} 이고, 설비 마스터 · "
+            "시나리오 · Cut-off 에서 그 이름을 맞춥니다."
+        ),
+        scope_label=label,
+        tables=[
+            alert_table(
+                frame,
+                title=UNMATCHED_TITLE,
+                file_name="Capa_Shortening_Unmatched_Processes.csv",
+                column_help={
+                    UNMATCHED_NAME_COLUMN: (
+                        MATCH_RULE_HELP + " 이 이름은 공정 표시명이 아니라 원본 공정명입니다."
+                    )
+                },
+            )
+        ],
+    )
 
 
 def _render_downloads(
