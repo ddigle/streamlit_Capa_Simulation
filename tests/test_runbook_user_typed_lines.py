@@ -1,4 +1,4 @@
-# Purpose: 사내 런북이 운영 DB 를 여는 줄을 처음부터 사용자에게 주고 1-3 백업 줄이 서는지 본다.
+# Purpose: 사내 런북이 운영 DB · 4-1 의존성 줄을 처음부터 사용자에게 주고 1-3 백업 줄이 서는지 본다.
 
 """런북 1-3 · 7-8 · 8-0 의 운영 DB 줄은 에이전트가 치지 않고 처음부터 사용자에게 준다.
 
@@ -10,6 +10,10 @@
 1-3 의 `!` 한 줄은 셸이 Git Bash 든 PowerShell 이든 같은 줄이어야 하고(큰따옴표 · `$` ·
 백틱이 없다), 출력은 사내 Windows 콘솔 코드페이지를 거쳐도 깨지지 않게 영문 · 숫자뿐이다.
 그 줄을 합성 폴더에서 실제로 돌려 본다.
+
+4-1 의 `uv sync --inexact` 는 운영 DB 줄이 아니지만 같은 길이다 — 권한 템플릿이 `uv sync` 를
+막아(deny) 에이전트가 칠 수 없고, `202611041000` 리뷰(사외 요청 2)에서 auto 모드도 막았다.
+같은 리뷰(사외 요청 1)의 pandas 충돌이 다시 나면 이 자리에서 보이게 충돌 확인 줄을 함께 둔다.
 """
 
 import os
@@ -64,6 +68,21 @@ def test_the_blocked_lines_table_lists_every_operational_database_line() -> None
     assert "운영 데이터 백업(1-3)" in rows
     assert "7-8 개수 조회 두 줄 · 그 뒤 `inspect_wf_division.py`" in rows
     assert "`inspect_real_data_checks.py`(8장, 매번 막혔다)" in rows
+
+
+def test_the_dependency_lines_go_to_the_user_with_the_conflict_check() -> None:
+    dependencies = _section("### 4-1.", "### 4-2.")
+    chapter_six = _section("## 6. 막혔을 때", "## 6-1.")
+    rows = {
+        line.split("|")[1].strip() for line in chapter_six.splitlines() if line.startswith("| ")
+    }
+    template = (PROJECT_ROOT / "docs" / "internal_claude_settings.json").read_text(encoding="utf-8")
+
+    assert USER_FROM_THE_START in dependencies
+    lines = dependencies.splitlines()
+    assert lines.index("uv sync --inexact") + 1 == lines.index("uv pip check")
+    assert "의존성 맞추기(4-1)" in rows
+    assert '"Bash(uv sync:*)"' in template and '"PowerShell(uv sync:*)"' in template
 
 
 def _backup_code() -> str:
