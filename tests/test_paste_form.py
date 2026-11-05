@@ -533,9 +533,7 @@ def _run_install(
     body = WINDOW_JS[: WINDOW_JS.index("export default function")]
     return run_js_json(
         body + _INSTALL_RUNNER,
-        stdin=json.dumps(
-            {"width": width, "confirm": confirm, "scroll": scroll, "inBox": in_box}
-        ),
+        stdin=json.dumps({"width": width, "confirm": confirm, "scroll": scroll, "inBox": in_box}),
         what="창 크기 install 시험",
     )
 
