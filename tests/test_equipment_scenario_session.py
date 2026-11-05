@@ -1267,16 +1267,14 @@ def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
 
 
 def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path) -> None:
-    """「저장」 구획의 말은 단추 풍선이다(검수표 11/02 equip-13) — 편집본에 없어 저장되지 않는 것은
-    작은 편집표(기존 보유대수·비가동 일정)에서 「편집본에 적용」 하지 않은 편집이다. 걷힌 옛 폼의
-    「보기 적용」 을 가리키지 않는다(E2E — 칸을 고친 뒤 팝업 「저장」 을 연 꼴)."""
-    from capa_simulation.components.equipment_save_fields import SAVE_ALWAYS_HELP
+    """「저장」 구획의 말은 단추 풍선 한 줄이다(검수표 11/02 equip-13) — 늘 하는 일 · 작은 편집표의
+    적용 전 편집은 Guide 다. 걷힌 옛 폼의 「보기 적용」 을 가리키지 않는다(E2E — 칸을 고친 뒤 팝업
+    「저장」 을 연 꼴)."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
         SAVE_BUTTON_HELP,
         SAVE_BUTTON_KEY,
         SAVE_MODE,
-        UNAPPLIED_SMALL_EDITS_NOTE,
     )
 
     repository = _seeded(tmp_path)
@@ -1291,13 +1289,14 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
 
     assert not app.exception, [item.message for item in app.exception]
     captions = [str(item.value) for item in app.caption]
-    # 설명 줄 · 체크는 없다 — 무엇이 어디로 저장되고 무엇이 저장되지 않나는 저장 단추 풍선이다.
-    assert UNAPPLIED_SMALL_EDITS_NOTE not in captions
+    # 설명 줄 · 체크는 없다 — 무엇이 어디로 저장되나는 저장 단추 풍선 한 줄이다.
+    assert not any("편집본에 적용" in caption for caption in captions)
     assert not list(app.checkbox)
     assert not any("공통 칸은 공통 대장" in caption for caption in captions)
     assert app.button(key=SAVE_BUTTON_KEY).help == SAVE_BUTTON_HELP
     assert "바뀐 쪽만 새 리비전이 됩니다" in SAVE_BUTTON_HELP
-    assert UNAPPLIED_SMALL_EDITS_NOTE in SAVE_BUTTON_HELP and SAVE_ALWAYS_HELP in SAVE_BUTTON_HELP
+    for gone in ("편집본에 적용", "새 호기", "새 비가동", "지운 호기"):
+        assert gone not in SAVE_BUTTON_HELP, gone
     assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
 
 

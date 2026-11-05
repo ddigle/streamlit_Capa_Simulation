@@ -100,8 +100,10 @@ def test_tray_chip_names_are_buttons_where_enter_places_and_space_picks() -> Non
     assert place.index("if (!onCanvas(lead) && !list.some(onCanvas)) return") < place.index(
         "group.focus({ preventScroll: true })"
     )
-    hint = HTML[HTML.index('<p class="sle-tray-hint"') :]
-    assert "<b>Enter</b>" in hint and "<b>Space</b>" in hint
+    # 칩 키는 도구 줄 「단축키」 판 한 곳에 있다 — 칸 안 도움말 글(「i」)은 없다(그림 검수표
+    # equip-61).
+    assert "sle-tray-hint" not in HTML and "sle-tray-info" not in HTML
+    assert "['칩 Enter', " in JS and "['칩 Space', " in JS
 
 
 def test_the_keyboard_focus_ring_is_a_screen_px_rect_not_an_outline() -> None:

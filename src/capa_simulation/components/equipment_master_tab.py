@@ -125,7 +125,6 @@ from capa_simulation.components.equipment_import_dialog import (
 from capa_simulation.components.equipment_save_fields import (
     ASSUMPTION_PROPAGATE_WARNING,
     DEFAULT_PROPAGATE_NEW_UNITS,
-    SAVE_ALWAYS_HELP,
     EquipmentSaveBasis,
     render_saved_by_field,
     saved_by_from_state,
@@ -1186,13 +1185,13 @@ def save_target(basis: EquipmentSaveBasis | None) -> str:
 
 
 def save_button_help(basis: EquipmentSaveBasis | None, layout: LayoutMode) -> str:
-    """「리비전 저장」 풍선 — 무엇이 어디로 저장되고 저장이 늘 무엇을 하는지(자리에 적지 않는다,
-    설계 규칙 UI-TXT-01 · UI-NTF-09)."""
+    """「리비전 저장」 풍선 — 무엇이 어디로 저장되나 한 줄(저장이 늘 하는 일은 Guide, 일어난 일은
+    결과 알림 — 그림 검수표 equip-13)."""
     scenario = save_target(basis)
     place = f"공통 칸은 모든 설비 시나리오에, 시나리오 칸은 {scenario} 에 새 리비전으로 저장됩니다"
     if layout == "overlay":
         place += f" — 배치 칸은 {scenario} 에만(공식과 다른 것만)"
-    return f"{place}. {SAVE_ALWAYS_HELP}"
+    return f"{place}."
 
 
 def _render_save_section(

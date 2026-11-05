@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, place_errors, successes
+from alert_marks import active_state, data_error_marks, data_error_texts, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -517,8 +517,13 @@ def test_an_invalid_rawdata_draft_does_not_take_the_space_page_down(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert any("겹침 경고를 계산하지 못했습니다" in item.value for item in app.caption)
-    assert any("배치 편집기를 열 수 없습니다" in item.value for item in app.error)
+    # 고칠 입력이 다른 탭이라 자리에는 마크만, 글은 알림이다(설계 규칙 UI-NTF-08).
+    assert not app.error
+    assert not any("겹침 경고를 계산하지 못했습니다" in item.value for item in app.caption)
+    texts = data_error_texts(app)
+    assert any("겹침 경고를 계산하지 못했습니다" in text for text in texts)
+    assert any("배치 편집기를 열 수 없습니다" in text for text in texts)
+    assert data_error_marks(app) == 2
     clear_equipment_repository()
 
 

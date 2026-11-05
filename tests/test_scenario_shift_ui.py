@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, place_errors, successes
+from alert_marks import data_error_marks, data_error_texts, flashed, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
@@ -77,6 +77,27 @@ def _save_button(app: AppTest) -> Button:
 
 def _ranges(app: AppTest) -> dict[str, str]:
     return {item.label: item.value for item in app.metric}
+
+
+def test_a_section_it_cannot_read_stands_as_the_data_error_mark(
+    source: Source, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """구획을 그리다 못 읽으면 빨간 상자가 아니라 마크다 — 글은 알림(`SC-02`)에만 간다
+    (UI-NTF-08)."""
+    from capa_simulation.components import scenario_year_shift
+
+    _, database, snapshot = source
+    app = _app(database, snapshot)
+
+    def broken(*_args: object, **_kwargs: object) -> object:
+        raise OSError("시험 — 표를 읽지 못함")
+
+    monkeypatch.setattr(scenario_year_shift, "shift_scenario_years", broken)
+    app.run()
+    assert not app.exception
+    assert not app.error
+    assert data_error_marks(app) == 1
+    assert any("시험 — 표를 읽지 못함" in text for text in data_error_texts(app))
 
 
 def test_shift_preserves_selected_revision_history_and_can_shift_it_again(source: Source) -> None:

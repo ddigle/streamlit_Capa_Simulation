@@ -88,6 +88,9 @@ CONDITION_DIALOG_SINK_KEY = "sidebar_condition_dialog_sink"
 # `sidebar_style.py` 가 이 접두어 하나로 조건 패널과 같은 면· 모서리·안 여백을 건다. 그 화면을 볼
 # 때만 페이지가 세운다(`page_box_key`).
 PAGE_BOX_PREFIX = "sidebar_page_box_"
+# 공통 진입이 멈춘 회차의 조건 카드 표지 — 까닭은 본문 데이터 Error 마크의 알림이다(설계 규칙
+# UI-NTF-08). 카드는 멈춘 회차에도 선다 — 제목만 남은 빈 구역을 만들지 않는다.
+NO_PROCESS_MARK = "공정 · 고를 수 없음"
 
 
 @dataclass(frozen=True, eq=False)

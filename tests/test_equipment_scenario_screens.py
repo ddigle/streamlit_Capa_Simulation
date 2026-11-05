@@ -1845,5 +1845,5 @@ def test_the_paste_preview_splits_common_and_scenario_cells(tmp_path: Path) -> N
     downtime = _with_downtime(saved.downtime, "EQ-02", "PM", "2026-09-01")
 
     assert paste_split_summary(source, (saved.baseline, master, downtime)) == (
-        "공통 칸 1 · 시나리오 칸 2 바뀜 · 새 호기 1 · 새 비가동 1(다른 설비 시나리오에 넣을 후보)"
+        "공통 칸 1 · 시나리오 칸 2 바뀜 · 새 호기 1 · 새 비가동 1"
     )

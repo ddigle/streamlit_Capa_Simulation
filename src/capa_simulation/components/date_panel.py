@@ -22,6 +22,11 @@
 화면 조각은 `date_panel_assets/` 의 세 파일이다. 판정 구획(`// <date-panel-core>`)은 DOM 을 모르는
 순수 함수라 node 로 떼어 시험한다(`tests/test_date_panel.py`). 해 넘김 · 빠른 선택 · 바닥 줄 서식은
 조회기간 판의 서식을 이름만 옮겨 쓴다(`DATE_PANEL_CSS`) — 한쪽만 고쳐 생김이 갈라지지 않게.
+
+**다른 컴포넌트 안의 칸.** 값이 브라우저에 머무는 Space 편집기 「+ 호기 추가」 도 같은 판이다 — 조각
+(`DATE_PANEL_HTML`) · 서식(`DATE_PANEL_CSS`) · 세우는 함수(`DATE_PANEL_MOUNT_JS`)를 그 컴포넌트에
+싣고 「적용」 을 제 상태로 받는다. 설비 마스터 호기 상세 · 새 호기 칸의 일정은 표 칸과 한 몸인 글
+칸이라(치거나 붙여넣는다) 이 부품 밖이다(UI-INP-03 예외).
 """
 
 from __future__ import annotations
@@ -41,6 +46,13 @@ DATE_PANEL_HTML: Final = (_ASSETS / "date_panel.html").read_text(encoding="utf-8
 DATE_PANEL_OWN_CSS: Final = (_ASSETS / "date_panel.css").read_text(encoding="utf-8")
 DATE_PANEL_JS: Final = (_ASSETS / "date_panel.js").read_text(encoding="utf-8")
 DATE_PANEL_CSS: Final = MONTH_RANGE_CSS.replace("capa-month-", "capa-date-") + DATE_PANEL_OWN_CSS
+# 다른 컴포넌트 JS 앞에 붙여 같은 판을 세우는 머리 — 판의 이름들을 가두고 `mountDatePanel` 하나만
+# 바깥에 둔다(Space 편집기 호기 추가 — 값이 브라우저에 머무는 칸, 설계 규칙 UI-INP-03).
+DATE_PANEL_MOUNT_JS: Final = (
+    "const mountDatePanel = (() => {\n"
+    + DATE_PANEL_JS.split("export default", 1)[0]
+    + "return mountDatePanel\n})()\n"
+)
 
 # 비운 칸의 값 칸 글자.
 EMPTY_TEXT: Final = "비어 있음"

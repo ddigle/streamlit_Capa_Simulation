@@ -14,7 +14,8 @@
 
 - 새 자리가 생기면 실패한다 — 설명 · 내역 · 길 안내면 옮기고(풍선 · Guide · `alerts.state` ·
   `flash.queue_flash`), 자리에 남을 글이면 `ALLOWED` 에 까닭과 함께 둔다. 까닭은 값 · 표지 · 빈
-  결과 · 입력 곁 거부 · 못 그리는 오류 · 미정리 가운데 하나다(`source_sites.PLACE_REASONS`).
+  결과 · 입력 곁 거부 · 미정리 가운데 하나다(`source_sites.PLACE_REASONS` — 데이터 때문에 못 그린
+  자리는 글이 아니라 마크다).
 - 자리가 줄면 실패한다 — 목록의 그 칸도 줄인다(옮긴 자리가 남아 다른 새 자리를 덮지 않게).
 - 미정리(`UNSETTLED`)는 이 그물을 세울 때(2026-11-04) 이미 있던 설명 · 내역 · 길 안내 자리다 —
   새 자리에 쓰지 않는다. 미정리 수가 `UNSETTLED_SITES` 와 다르면 실패한다(늘면 옮기고, 줄면 수도
@@ -41,7 +42,6 @@ from typing import NamedTuple
 
 from source_sites import (
     BESIDE_INPUT,
-    CANNOT_DRAW,
     EMPTY,
     LOGGERS,
     MARKER,
@@ -83,8 +83,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/calculation_result.py", ""): (EMPTY,),
     ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
     ("app_pages/constraint_simulation.py", ""): (
-        CANNOT_DRAW,
-        CANNOT_DRAW,
         BESIDE_INPUT,
         MARKER,
         EMPTY,
@@ -95,7 +93,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/constraint_simulation.py", "render_held_picker"): (BESIDE_INPUT,),
     ("app_pages/internal_modules.py", ""): (EMPTY,),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (EMPTY,),
-    ("app_pages/process_capa_detail.py", ""): (CANNOT_DRAW, EMPTY),
+    ("app_pages/process_capa_detail.py", ""): (EMPTY,),
     ("app_pages/reference_data.py", ""): (EMPTY,),
     ("app_pages/reference_data.py", "_render_step_view"): (EMPTY,),
     ("app_pages/reference_integrity.py", "_render_detail"): (EMPTY,),
@@ -109,7 +107,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/reference_integrity.py", "_render_pending_screen"): (UNSETTLED,),
     ("app_pages/reference_integrity.py", "_render_summary"): (EMPTY,),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
-    ("app_pages/space_status.py", "_render_layout_warnings"): (CANNOT_DRAW,),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (BESIDE_INPUT,),
     ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, EMPTY),
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (EMPTY,),
@@ -127,10 +124,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_settings_form"): (
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_status"): (
-        VALUE,
-        CANNOT_DRAW,
-    ),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_status"): (VALUE,),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_evidence"): (EMPTY,),
     # 짝 칸 이름 줄(「아래는 짝 칸 「…」의 호기입니다」 — 밑 표가 무엇인지)은 값이다. 부호의 뜻은
     # GAP 식 줄의 풍선(`GAP_SIGN_HELP`)이라 자리 글이 아니다(UI-TXT-01 · UI-TXT-02).
@@ -390,9 +384,10 @@ def test_no_new_place_draws_a_sentence() -> None:
     new = {site: lines for site, lines in found.items() if len(lines) > len(ALLOWED.get(site, ()))}
     assert not new, (
         "자리에 서술형 문장을 늘 두는 새 자리입니다(줄 번호) — 설명 · 내역 · 길 안내면"
-        " 풍선(help=) · Guide · 알림(alerts.state · flash.queue_flash)으로 옮기고, 값 · 표지 ·"
-        " 빈 결과 · 입력 곁 거부 · 못 그리는 오류면 tests/test_place_sentence_sites.py ALLOWED 에"
-        " 까닭과 함께 두세요(미정리는 새로 쓰지 않습니다):\n" + _listing(new)
+        " 풍선(help=) · Guide · 알림(alerts.state · flash.queue_flash)으로 옮기고, 데이터 때문에 못"
+        " 그린 자리면 render_data_error 로, 값 · 표지 · 빈 결과 · 입력 곁 거부면"
+        " tests/test_place_sentence_sites.py ALLOWED 에 까닭과 함께 두세요(미정리는 새로 쓰지"
+        " 않습니다):\n" + _listing(new)
     )
 
 

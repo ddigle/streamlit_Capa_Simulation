@@ -1487,7 +1487,7 @@ def test_a_product_read_error_says_so_instead_of_no_products(
     dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """제품별 소요를 읽다 실패하면 본문이 그 오류 글을 싣는다 — 「소요가 있는 제품이 없어」 안내로
-    까닭을 바꾸지 않는다(카드 캡션 「제품을 읽지 못했습니다」 와 같은 까닭)."""
+    까닭을 바꾸지 않는다(카드 표지 `NO_PRODUCT_MARK` 와 같은 까닭)."""
 
     def broken(*args: Any, **kwargs: Any) -> pd.DataFrame:
         raise ValueError("시험 — 제품별 소요 표를 만들지 못했습니다")
@@ -1497,7 +1497,7 @@ def test_a_product_read_error_says_so_instead_of_no_products(
     errors = " ".join(data_error_texts(app))
     assert "제품별 소요를 읽지 못했습니다 — 시험 — 제품별 소요 표를 만들지 못했습니다" in errors
     assert not any("소요가 있는 제품이 없어" in str(item.value) for item in app.info)
-    assert "제품을 읽지 못했습니다." in _captions(app)
+    assert "제품 · 읽지 못함" in _captions(app)
     assert not app.metric
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, place_errors, successes
+from alert_marks import data_error_marks, data_error_texts, flashed, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
@@ -114,6 +114,27 @@ def _with_history(
         parent_revision_id=source.revision.revision_id,
         virtual_products=[asdict(record) for record in records],
     )
+
+
+def test_a_section_it_cannot_read_stands_as_the_data_error_mark(
+    sources: Sources, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """구획을 그리다 못 읽으면 빨간 상자가 아니라 마크다 — 글은 알림(`SC-02`)에만 간다
+    (UI-NTF-08)."""
+    from capa_simulation.components import scenario_month_merge
+
+    _, database, base, donor = sources
+    app = _app(database, base, donor)
+
+    def broken(*_args: object, **_kwargs: object) -> pd.DataFrame:
+        raise OSError("시험 — 표를 읽지 못함")
+
+    monkeypatch.setattr(scenario_month_merge, "compare_non_monthly_tables", broken)
+    app.run()
+    assert not app.exception
+    assert not app.error
+    assert data_error_marks(app) == 1
+    assert any("시험 — 표를 읽지 못함" in text for text in data_error_texts(app))
 
 
 def test_merge_preserves_both_histories_and_deduplicates_same_origin(sources: Sources) -> None:

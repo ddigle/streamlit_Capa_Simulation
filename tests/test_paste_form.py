@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -44,12 +45,20 @@ PASTE_WINDOWS = (
     ("src/capa_simulation/components/past_data_management.py", "_render_paste_form"),
     ("src/capa_simulation/components/equipment_import_dialog.py", "_render_body"),
 )
-# 「붙여넣기」 글 칸을 공통 부품 밖에 둘 수 있는 자리(까닭).
+MEMO_FIELD = "메모 · 글 — 표를 붙여넣는 칸이 아니다"
+# 공통 부품 밖의 글 칸 전부(파일 → (수, 까닭)). 표를 붙여넣는 칸을 새로 두면 라벨이 무엇이든 여기서
+# 걸린다 — 공통 부품을 쓴다.
 TEXT_AREA_OUTSIDE = {
     # 데이터와 잇지 않는 Qual 마감 계산기의 칸 — 양식 · 저장 · 되돌릴 수 없는 결과가 없고 창이
-    # 아니라 계산기 안 펼침이다.
-    "src/capa_simulation/components/qual_deadline_calculator.py",
-    "src/capa_simulation/components/paste_form.py",
+    # 아니라 계산기 안 펼침이다(UI-INP-08 예외).
+    "src/capa_simulation/components/qual_deadline_calculator.py": (1, "계산기 안 펼침"),
+    "src/capa_simulation/components/paste_form.py": (1, "공통 부품"),
+    "src/capa_simulation/components/scenario_status.py": (1, MEMO_FIELD),
+    "src/capa_simulation/components/scenario_management.py": (2, MEMO_FIELD),
+    "src/capa_simulation/components/scenario_transform.py": (1, MEMO_FIELD),
+    "src/capa_simulation/components/bigdataquery_registration.py": (1, MEMO_FIELD),
+    "src/capa_simulation/components/home_preference.py": (1, MEMO_FIELD),
+    "app_pages/voc.py": (2, MEMO_FIELD),
 }
 DRAWN_TEXT_METHODS = frozenset({"caption", "info", "warning", "error", "success"})
 
@@ -302,11 +311,22 @@ def _top_function(relative: str, name: str) -> ast.FunctionDef:
 
 @pytest.mark.parametrize("site", PASTE_WINDOWS, ids=lambda site: f"{site[0]}::{site[1]}")
 def test_a_paste_window_draws_no_text_of_its_own(site: tuple[str, str]) -> None:
-    """창 함수는 캡션 · 상자를 직접 그리지 않는다 — 말은 알림창 길(`paste_form`)이다."""
-    function = _top_function(*site)
-    drawn = [
-        node.func.attr
+    """창 함수는 캡션 · 상자를 직접 그리지 않는다 — 말은 알림창 길(`paste_form`)이다. 그 함수가
+    부르는 같은 파일 도움 함수(미리보기 구획 등) 한 겹까지 본다."""
+    relative, name = site
+    function = _top_function(relative, name)
+    tree = ast.parse((PROJECT_ROOT / relative).read_text(encoding="utf-8"))
+    helpers = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    called = {
+        node.func.id
         for node in ast.walk(function)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    scopes = [function, *(helpers[each] for each in sorted(called & set(helpers)))]
+    drawn = [
+        f"{scope.name}:{node.func.attr}"
+        for scope in scopes
+        for node in ast.walk(scope)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in DRAWN_TEXT_METHODS
@@ -332,16 +352,10 @@ def _text_area_calls() -> list[tuple[str, ast.Call]]:
 
 
 def test_paste_text_areas_stand_only_in_the_common_part() -> None:
-    """같은 꼴은 공통 부품 하나다(설계 규칙 UI-CON-04) — 「붙여넣기」 글 칸을 새로 두면 실패한다."""
-    outside = []
-    for relative, call in _text_area_calls():
-        if relative in TEXT_AREA_OUTSIDE:
-            continue
-        label = call.args[0] if call.args else None
-        text = ast.unparse(label) if label is not None else ""
-        if "붙여넣기" in text or "Ctrl+V" in ast.unparse(call):
-            outside.append(f"{relative}:{call.lineno}")
-    assert not outside, outside
+    """같은 꼴은 공통 부품 하나다(설계 규칙 UI-CON-04) — 글 칸을 새로 두면 라벨과 상관없이
+    실패한다. 메모 칸이면 까닭과 함께 목록에 두고, 표를 붙여넣는 칸이면 공통 부품을 쓴다."""
+    found = Counter(relative for relative, _call in _text_area_calls())
+    assert found == Counter({path: count for path, (count, _why) in TEXT_AREA_OUTSIDE.items()})
 
 
 def test_every_paste_text_area_helper_has_no_tooltip() -> None:

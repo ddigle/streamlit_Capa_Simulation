@@ -1089,7 +1089,10 @@ def test_reimporting_the_current_data_counts_no_row_to_change(tmp_path: Path, gr
     edited = master.copy()
     edited.loc[edited["설비명"].eq("EQ-02"), "담당자"] = "담당 바뀜"
     _preview(app, _tsv(edited))
-    assert "**설비 마스터 · 바뀔 행 1행**" in _texts(app, "markdown")
+    # 머리 줄 끝에 두 쪽 값이 붙는다(창 안 캡션을 걷었다 — UI-INP-08).
+    head = next(text for text in _texts(app, "markdown") if "바뀔 행 1행" in text)
+    assert head.startswith("**설비 마스터 · 바뀔 행 1행** · 공통 칸 1")
+    assert not any("넣은 뒤 편집본" in text for text in _texts(app, "caption"))
     assert _metrics(app) == {
         "신규": "0건",
         "기존 대체": "1건",

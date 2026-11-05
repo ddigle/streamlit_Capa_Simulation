@@ -643,3 +643,53 @@ def test_the_app_has_no_native_date_input() -> None:
     """앱의 날짜 고르기는 값 칸 + 기간 판 한 꼴이다(UI-INP-03 · UI-CON-03) — 브라우저 기본 날짜
     칸을 다시 두면 실패한다. 편집 표 칸 안 날짜(`DateColumn`)는 표의 일이라 밖이다."""
     assert _date_input_calls() == []
+
+
+def test_no_component_asset_draws_a_native_date_field() -> None:
+    """파이썬 위젯만이 아니라 컴포넌트 조각(HTML · JS · CSS)에도 브라우저 기본 날짜 칸이 없다 —
+    Space 편집기 「+ 호기 추가」 도 같은 판이다(그림 검수표 static-35)."""
+    native = re.compile(r"""type\s*=?\s*["']date["']|\[type=["']?date""")
+    found = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for base in ("app_pages", "src")
+        for path in sorted((PROJECT_ROOT / base).rglob("*"))
+        if path.suffix in {".html", ".js", ".css", ".py"}
+        and native.search(path.read_text(encoding="utf-8"))
+    ]
+    assert found == []
+
+
+def test_the_space_editor_mounts_the_same_panel_in_its_form() -> None:
+    """Space 편집기 「+ 호기 추가」 의 두 일정 칸은 같은 조각 · 서식 · 세우는 함수를 싣는다 — 값은
+    편집기 안에 머물고 Qual 칸을 넣으면 Qual상태가 필수로 바뀐다. 판 안 키는 도면 단축키로 새지
+    않는다."""
+    from capa_simulation.components import space_layout_editor
+
+    html = (space_layout_editor._ASSETS / "editor.html").read_text(encoding="utf-8")
+    js = (space_layout_editor._ASSETS / "editor.js").read_text(encoding="utf-8")
+    css = (space_layout_editor._ASSETS / "editor.css").read_text(encoding="utf-8")
+    assert html.count(space_layout_editor.DATE_PANEL_SLOT) == 2
+    assert js.count("drawNewDate(q('.sle-new-") == 2
+    draw = js[js.index("const drawNewDate = ") : js.index("drawNewDate(q('.sle-new-arrival')")]
+    assert "mountDatePanel(root, {" in draw and "mode: 'single'" in draw
+    assert "clearable: true" in draw and "markConfirmRequired()" in draw
+    assert "place.onkeydown = (event) => event.stopPropagation()" in draw
+    assert "setStateValue" not in draw and "setTriggerValue" not in draw
+    # 편집기 단추 서식이 판 단추를 덮지 않는다.
+    assert ".sle button:where(:not(.capa-date-root button)) {" in css
+    head = date_panel.DATE_PANEL_MOUNT_JS
+    assert "export default" not in head
+    runtime = shutil.which("node") or shutil.which("bun")
+    if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다")
+        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    completed = subprocess.run(
+        [runtime, "-e", head + "\nprocess.stdout.write(typeof mountDatePanel)"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.stdout == "function", completed.stderr

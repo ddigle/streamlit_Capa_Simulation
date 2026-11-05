@@ -15,7 +15,15 @@ from datetime import datetime, time
 from pathlib import Path
 
 import pytest
-from alert_marks import flashed, infos, place_errors, successes
+from alert_marks import (
+    data_error_marks,
+    data_error_texts,
+    events,
+    flashed,
+    infos,
+    place_errors,
+    successes,
+)
 from auto_update_fakes import (
     NOW,
     WAFER,
@@ -232,14 +240,35 @@ def test_the_run_result_blocks_the_tildes_of_the_names_in_its_reason(database: P
 
 
 def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:
-    """꺼져 있는 동안은 오류 상자가 아니라 상태 한 줄이다 — 켜거나 실행할 때 오류로 막는다."""
+    """꺼져 있는 동안은 마크가 아니라 표지 + 풍선이다 — 켜거나 실행할 때 오류로 막는다."""
     _without_week(database)
 
     app = _tab(database)
 
     assert not place_errors(app)
-    assert "주차 없음" in _markdown(app)
-    assert MISSING_WEEK_MESSAGE in _markdown(app)
+    status = next(element for element in app.markdown if "현재 공식버전" in str(element.value))
+    assert "주차 없음" in str(status.value)
+    assert MISSING_WEEK_MESSAGE not in str(status.value)
+    assert MISSING_WEEK_MESSAGE in str(status.proto.help)
+
+
+def test_an_unreadable_official_version_is_a_mark_not_a_red_box(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공식버전을 읽지 못한 자리는 다른 읽기 실패처럼 마크다 — 글은 알림(SC-02)에만 간다."""
+    import capa_simulation.components.auto_official_update_tab as tab
+
+    def broken(_repository: object) -> object:
+        raise ValueError("시험 — 공식버전을 읽지 못함")
+
+    monkeypatch.setattr(tab, "current_official_baseline", broken)
+    app = _tab(database)
+
+    assert not app.exception
+    assert not app.error
+    assert data_error_marks(app) == 1
+    assert any("시험 — 공식버전을 읽지 못함" in text for text in data_error_texts(app))
+    assert [note["code"] for note in events(app, "SC-02")] == ["SC-02"]
 
 
 def _republish(repository: DuckDBScenarioRepository, release_name: str) -> None:
@@ -271,15 +300,16 @@ def test_the_status_lines_keep_tildes_in_the_release_name_and_keyword(database: 
 def test_a_release_name_with_two_weeks_keeps_its_tildes_in_the_status_and_refusals(
     database: Path,
 ) -> None:
-    """주차를 정할 수 없다는 줄·오류 상자에 든 공식버전명의 물결표도 지움선이 되지 않는다 — 꺼져
-    있을 때의 상태 줄, 켜져 있을 때의 오류 상자, 켜기·지금 실행 거절."""
+    """주차를 정할 수 없다는 글에 든 공식버전명의 물결표도 지움선이 되지 않는다 — 꺼져 있을 때의
+    표지 풍선, 켜져 있을 때의 데이터 Error 알림, 켜기·지금 실행 거절."""
     repository = _without_week(database)
     _republish(repository, "W43~W44 확정~본")
     shown = "「W43\\~W44 확정\\~본」"
 
     app = _tab(database)
-    assert shown in _markdown(app)
-    assert "「W43~W44" not in _markdown(app)
+    status = next(element for element in app.markdown if "현재 공식버전" in str(element.value))
+    assert shown in str(status.proto.help)
+    assert "「W43~W44" not in str(status.proto.help)
 
     _field(app.toggle, "자동 갱신 켜기").set_value(True)  # type: ignore[attr-defined]
     app = _submit_settings(app)
@@ -293,7 +323,10 @@ def test_a_release_name_with_two_weeks_keeps_its_tildes_in_the_status_and_refusa
         replace(settings.config, enabled=True), expected_version=settings.version
     )
     app = _tab(database)
-    assert [shown in str(element.value) for element in app.error] == [True]
+    assert not app.error
+    assert data_error_marks(app) == 1
+    # 알림은 평문이라 물결표를 막지 않고 그대로 싣는다.
+    assert any("「W43~W44 확정~본」" in text for text in data_error_texts(app))
 
 
 def test_a_run_result_and_the_scheduler_line_keep_tildes(

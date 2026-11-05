@@ -5,6 +5,7 @@ from typing import cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_transform import (
@@ -52,8 +53,15 @@ def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_p
     st.subheader("월 머지")
     try:
         _render_merge(repository, database_path)
-    except BOOTSTRAP_ERRORS as exc:
+    except ValueError as exc:
+        # 고른 원본 · 월 범위 · 겹침 처리로 고치는 거부다(겹침 · 이력 충돌 — 입력이 바로 위에 있다,
+        # 설계 규칙 UI-NTF-03).
         st.error(bootstrap_error_message(exc))
+    except BOOTSTRAP_ERRORS as exc:
+        # 저장소 · 표를 못 읽어 구획을 그리지 못했다 — 글은 알림이다(설계 규칙 UI-NTF-08).
+        render_data_error(
+            bootstrap_error_message(exc), code="SC-02", text="월 머지를 그리지 못했습니다"
+        )
 
 
 def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:

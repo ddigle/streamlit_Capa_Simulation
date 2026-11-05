@@ -46,7 +46,6 @@ from capa_simulation.components.equipment_data_workspace import (
     stamp_layout_role,
 )
 from capa_simulation.components.equipment_save_fields import (
-    SAVE_ALWAYS_HELP,
     EquipmentSaveBasis,
     render_saved_by_field,
     saved_by_from_state,
@@ -1374,7 +1373,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                     else (
                         "배치 편집이 잠겨 저장하지 않습니다 — 「배치 변경만 버리기」 를 쓰세요."
                         if layout_locked
-                        else save_help + ("" if fab_only else f" {SAVE_ALWAYS_HELP}")
+                        else save_help
                     )
                 ),
             )
@@ -1412,10 +1411,13 @@ def _render_layout_warnings(
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
-        # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다).
-        st.caption(
-            ":material/error: 가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 "
-            f"편집이 있어 겹침 경고를 계산하지 못했습니다: {bootstrap_error_message(exc)}"
+        # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다). 고칠 입력은 다른 탭에
+        # 있어 자리에는 마크만, 글은 알림이다(설계 규칙 UI-NTF-08).
+        render_data_error(
+            "가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 편집이 있어 겹침 "
+            f"경고를 계산하지 못했습니다: {bootstrap_error_message(exc)}",
+            code="EQ-10",
+            text="겹침 경고를 계산하지 못했습니다",
         )
         return
     # 경고는 설비명을 싣는다(「NEW~01~」) — 물결표를 막는다.
@@ -1569,10 +1571,13 @@ def _render_layout_editor(
             # 편집기를 못 연 회차도 보기는 쉰다 — 쉬는 까닭 한 줄은 여기가 맡는다(본문 조작 줄은
             # FAB 편집만).
             _render_layer_rest_caption(pinned_today=as_of != today)
-        st.error(
+        # 고칠 입력은 다른 탭에 있어 자리에는 마크만, 글은 알림이다(설계 규칙 UI-NTF-08).
+        render_data_error(
             "가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 편집이 있어 배치 "
             "편집기를 열 수 없습니다. 설비 마스터 탭에서 고치거나 버린 뒤 여세요: "
-            + bootstrap_error_message(exc)
+            + bootstrap_error_message(exc),
+            code="EQ-10",
+            text="배치 편집기를 열 수 없습니다",
         )
         return
     renames = pending_unit_renames()

@@ -20,7 +20,9 @@
 HTML·CSS·JS 는 `space_layout_editor_assets/` 의 파일이다(파이썬 문자열에 넣으면 줄 길이 검사와
 이스케이프가 JS 를 망가뜨린다). 색은 등록 시점 CSS 에 적지 않고 회차마다 `data.palette` 로 넘긴다 —
 `st.components.v2.component` 는 등록 때의 CSS 를 그대로 쓰므로 테마를 바꿔도 따라오지 않는다.
-받은 적용값의 검증은 `services/space_layout_edit.parse_editor_apply` 가 맡는다.
+받은 적용값의 검증은 `services/space_layout_edit.parse_editor_apply` 가 맡는다. 「+ 호기 추가」 의
+일정 칸은 앱의 날짜 칸과 같은 판이다 — `components/date_panel` 의 조각 · 서식 · 세우는 함수를 등록
+때 함께 싣고(`DATE_PANEL_SLOT`) 값은 편집기 상태에 머문다.
 
 FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우저가 `navigate` 를 보낸다. 받는 쪽은
 `on_navigate_change` 콜백이다 — 콜백은 본문보다 먼저 돌므로 그 자리에서 층을 바꾸면 재실행 한
@@ -68,6 +70,11 @@ from typing import Any
 
 import streamlit as st
 
+from capa_simulation.components.date_panel import (
+    DATE_PANEL_CSS,
+    DATE_PANEL_HTML,
+    DATE_PANEL_MOUNT_JS,
+)
 from capa_simulation.components.space_layout import block_tints, keep_out_color, mark_colors
 from capa_simulation.design import tokens
 from capa_simulation.services.fab_layout import (
@@ -107,11 +114,15 @@ _LEGEND_LIMIT = 40
 # 풀린다(AGENTS 9장 「브라우저 전용 보기 상태」).
 SPACE_LOCK_ATTRIBUTE = "data-space-lock"
 
+# 「+ 호기 추가」 의 날짜 칸 자리 — 앱의 날짜 칸과 같은 조각을 그대로 넣는다(설계 규칙 UI-INP-03).
+DATE_PANEL_SLOT = "<!-- capa-date-panel -->"
 _EDITOR = st.components.v2.component(
     "capa_space_layout_editor",
-    html=(_ASSETS / "editor.html").read_text(encoding="utf-8"),
-    css=(_ASSETS / "editor.css").read_text(encoding="utf-8"),
-    js=(_ASSETS / "editor.js").read_text(encoding="utf-8"),
+    html=(_ASSETS / "editor.html")
+    .read_text(encoding="utf-8")
+    .replace(DATE_PANEL_SLOT, DATE_PANEL_HTML),
+    css=DATE_PANEL_CSS + (_ASSETS / "editor.css").read_text(encoding="utf-8"),
+    js=DATE_PANEL_MOUNT_JS + (_ASSETS / "editor.js").read_text(encoding="utf-8"),
 )
 
 

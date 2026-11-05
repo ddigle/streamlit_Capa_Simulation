@@ -541,7 +541,7 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
     texts = _texts(app)
     assert LAYOUT_BLOCKED_LINE in texts
     assert not any("공식과 다른 배치(실효" in t for t in texts)
-    assert not any("발행하지 않습니다" in str(item.value) for item in app.error)
+    assert not app.error
 
 
 def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(

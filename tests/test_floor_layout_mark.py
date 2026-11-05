@@ -202,8 +202,8 @@ def test_a_canvas_cannot_shrink_below_the_stored_marks(tmp_path: Path) -> None:
 def test_the_drawing_popup_cannot_shrink_or_delete_the_canvas_below_the_marks(
     tmp_path: Path,
 ) -> None:
-    """팝업 경로(캔버스 저장·도면 업로드·삭제)도 「요소는 캔버스 안」을 지킨다. 요소가 밖에 남으면
-    그 층 요소를 다시 저장할 때 손대지 않은 요소 때문에 막힌다."""
+    """팝업 경로(캔버스 저장)도 「요소는 캔버스 안」을 지킨다. 요소가 밖에 남으면 그 층 요소를 다시
+    저장할 때 손대지 않은 요소 때문에 막힌다."""
     repository = _repository(tmp_path / "equipment.duckdb")
     repository.save_space_layout(
         _baseline(),

@@ -765,7 +765,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「Space 도면」 상자의 `배치 편집` 바로 아래에 그린다(본문 늘 서는 칸 `space_edit_lock_slot` 에는 시나리오 바꾸기 실패·저장 오류만). 잠금 까닭(`lock_reason`)은 그 줄에만 한 번 적는다 — 상자는 표지 「배치 저장 잠김」(풍선이 「배치 편집이 잠겨 이 배치
     변경은 저장하지 않습니다 — 까닭은 사이드바 「Space 도면」 상자의 잠금 줄에 있습니다」, 까닭이 없을 때만 「최신을 불러온 뒤 다시
     고칩니다」 — 설계 규칙 UI-TXT-03 · 04)와 「배치 변경만 버리기」 만(E2E r2). 저장 범위(세션에만 있음 · 함께 저장되는 다른 편집 ·
-    FAB 은 따로)와 저장이 늘 하는 일(`SAVE_ALWAYS_HELP`)은 `배치 저장` 풍선이고, 함께 저장되는 설비 마스터 다른 편집 · 곁표 편집은 상자 머리 줄 끝 값이다(UI-NTF-09). 배치 빨리 감기 글(`notice` — 「rM 이 더 새롭지만 배치는 같습니다 — …」)도 사이드바
+    FAB 은 따로)는 `배치 저장` 풍선이고(저장이 늘 하는 일은 Guide · 결과 알림), 함께 저장되는 설비 마스터 다른 편집 · 곁표 편집은 상자 머리 줄 끝 값이다(UI-NTF-09). 배치 빨리 감기 글(`notice` — 「rM 이 더 새롭지만 배치는 같습니다 — …」)도 사이드바
     상자 잠금 줄 자리의 ▸▸ 줄에만 한 번 적고 상자 캡션에 붙이지 않는다(E2E r3).
   - 배치 편집은 설비 마스터 탭과 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer` 로 저장한다(「배치 저장」 — 공통·일정이 모두 그대로면 층 값만 쓰고 리비전을 만들지 않는다). 도면 상자 앞 칸
     (`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
@@ -1091,7 +1091,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     — `floor.edit`·`floor.view`·`fab.edit`), 묶음 접힘은 `capa.space.sections.v1` 에만 둔다(파이썬·epoch 밖 — 9장 「브라우저
     전용 보기 상태」). 편집기 폭 900px(`NARROW_PX`) 아래에서는 두 칸이 무대 위 겹침 서랍(한 번에 하나, 처음엔 접힌 단추)이고 옛 서랍
     동작(`trayReserve`·`revealFromTray`·서랍 밖으로 끌면 비침)은 그 꼴에서만 돈다. 미배치 칸이 360px 이상이면 칩이 두 열(CSS
-    컨테이너 `sle-tray`)이고 칸 도움말은 「i」 로 펴는 접힘이다. **도면의 호기를 오른쪽 칸(접힌 단추 포함)에 끌어 놓으면
+    컨테이너 `sle-tray`)이고 칸 안에 도움말 글이 없다 — 칩 키는 도구 줄 「단축키」 판(`SHORTCUTS`), 값 설명은 Guide 다. **도면의 호기를 오른쪽 칸(접힌 단추 포함)에 끌어 놓으면
     미배치**다(`S.drag.toTray` — 놓으면 끈 자리를 처음으로 돌린 뒤 호기만 `removeItems`, 도면 요소는 제자리, 되돌리기 한 번).
     범례는 data `legend`(epoch 밖 — `_clean_legend`)를 `textContent`·`style.cssText` 로만 단다. 층 편집의 기준일 고정은 옛
     「편집 중 고정」 줄 대신 도구 줄 칩(`sle-pinchip`, 결정 D12)이고 기준일 페이더 줄(`sle-daterow`)은 층 보기에만 선다. 단축키는
@@ -1115,7 +1115,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `[data-testid="stMainBlockContainer"]`, 컴포넌트가 같은 문서라 `document` 를 본다.
   - **「호기 정보」 창**(층 보기·편집, FAB 없음 — 2026-11-03 사용자 요청): 편집기 몸 안 겹친 창 `.sle-sheet`(`role=region`,
     z-index 4, 몸 안으로 묶음 — 순수 `clampSheet`, 최소 360×200, 처음 무대 왼쪽 아래 720×320). 도구 줄 「호기 정보」
-    (`sle-sheet-toggle`, `aria-pressed`)나 호기 두 번 누르기(`svg.ondblclick` 의 `unitAt` — 빈 곳은 보기에서 확대 그대로)로 연다.
+    (`sle-sheet-toggle`, `aria-pressed`)나 호기 두 번 누르기(보기는 `svg.ondblclick` 의 `unitAt` — 빈 곳은 확대 그대로. 편집은 눌린 상자를 끌 준비로 맨 위에 다시 붙여 dblclick 이 서지 않아 `svg.onpointerup` 이 움직이지 않은 누름 둘을 `isDoublePress` 로 잡는다)로 연다.
     제목 줄 끌기 = 옮기기, 오른쪽 아래 손잡이 = 크기, `–`(제목 줄 두 번 누르기도) = 접기, `×`·Esc = 닫기. 탭 둘 — 「고른 호기」
     (보기 `pickedRows` — 파이썬 `picked_unit_rows` 와 같은 규칙, 편집 `pickedRowsMany` — 고른 차례로 이음)와 「필터」(칸 머리 ▾ →
     엑셀 자동 필터 꼴 펼침 `.sle-sheet-menu` — 값 목록 체크·개수·찾기·모두 고르기/풀기, 날짜·숫자 칸은 「부터·까지」. 칸 안 OR ·
@@ -3448,7 +3448,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`equipment_scenario_line`·`space_scenario_row`)가 그 줄의 전체 수를 「리비전 50개(전체 N개)」 로 옮긴다
     (`REVISION_TOTAL_PATTERN` — 글 꼴을 바꾸면 함께 고친다).
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장의 저장자 칸(`render_saved_by_field` · 콜백이 읽는
-  `saved_by_from_state`)·세 저장 단추 풍선 끝 `SAVE_ALWAYS_HELP`·저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의
+  `saved_by_from_state`)·저장 출발점 값(`EquipmentSaveBasis`) — 세 저장 단추 풍선은 어디로 저장되나 한 줄이고 늘 하는 일은 Guide · 결과 알림이다. 설비 마스터 탭 「저장 전 변경」 의
   「리비전 저장」(콜백, 저장자 칸은 `persist` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(콜백)
   세 자리가 같은 부품을 쓴다.
   - **저장 자리에는 체크가 없다**(2026-11-05 사용자 결정 — 검수표 11/02 equip-13: 「체크 없이 발생되는 내용들만 알람으로」). 저장은
@@ -5857,8 +5857,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 ### 사이드바·조건 카드·본문
 
-- **날짜를 고르는 칸은 `components/date_panel.py` 하나다.** `st.date_input` 을 쓰지 않는다(`tests/test_date_panel.py`) — 시작 · 끝은 범위
-  칸 하나, 날짜 하나는 한 날 칸이다. 편집 표 칸 안 날짜(`DateColumn`)는 표의 일이라 밖이다.
+- **날짜를 고르는 칸은 `components/date_panel.py` 하나다.** `st.date_input` 도 컴포넌트 조각의 브라우저 기본 날짜 칸(`type="date"`)도 쓰지 않는다
+  (`tests/test_date_panel.py`) — 시작 · 끝은 범위 칸 하나, 날짜 하나는 한 날 칸이다. 값이 브라우저에 머무는 Space 편집기 「+ 호기 추가」 도 같은 판이다 — 조각(`DATE_PANEL_HTML`) · 서식(`DATE_PANEL_CSS`) · 세우는
+  함수(`DATE_PANEL_MOUNT_JS` 의 `mountDatePanel`)를 편집기에 싣고 「적용」 을 제 상태로 받는다. 편집 표 칸 안 날짜(`DateColumn`) · 설비 마스터 호기 상세 · 새 호기 칸의 일정 글 칸(표 칸과 한 몸 — 치거나 붙여넣는다)은 표의 일이라 밖이고,
+  모듈 화면은 공개 창구(`module_api`)에 이 부품이 생길 때까지 밖이다.
 - **사이드바 = 보는 조건.** 사이드바 「조회 조건」은 지금 화면이 실제로 읽는 조건만 모으는 한 곳이다. 화면 고유의 거르는
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
@@ -6060,6 +6062,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `WIP-01` · `SC-02` · `AD-07` · `VO-01`, 어느 화면에서나 열리는 사이드바 시나리오 팝업은 `SB-21`). 마크와 표지가 `st.html` 한 칸이라 프래그먼트 ·
   팝업 본문에서도 이벤트 칸 자리 수가 그대로다. **마크가 아닌 것** — 볼 것이 없는 빈 상태(회색 평문 한 줄), 그 자리 입력으로 고치는 거부 · 누른 동작의
   실패(곁 `st.error`, 조회일 거꾸로 · 월 머지 · 연도 Shift 의 입력 거부 포함), 모듈 오류 카드, 알림 칸이 없는 앱 부트스트랩 실패(`app.py`).
+  `tests/test_data_error_mark.py` 가 `.error(` 전부를 (파일, 함수)마다 수 · 까닭으로 맞대므로(`PLACE_ERROR_SITES`) 구획 끝 꼴도 걸리고, 마크만 그리는
+  `render_data_error_mark` 는 산출 결과 한 자리뿐이다.
   `tests/test_data_error_mark.py` 가 `st.error` + `st.stop()` 자리와 코드를 본다.
 - **상태 줄 · 점검 펼침**은 칸의 일이 상태를 보이는 것이다(시나리오 관리 「저장소 상태」 · 자동 갱신 「지금 상태」 ·
   BigDataQuery 설정 띠 · Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」) — 경고 상자 대신 상태 줄(캡션 ·
@@ -6075,7 +6079,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **자리 글 그물 넷**(2026-11-04 — `docs/design_rules.md` 5장 후보에서 세움, 소스 훑기 도우미 `tests/source_sites.py`).
   `tests/test_place_sentence_sites.py` 는 `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 에 넣는 글이
   서술형 문장(「…니다」 · 「…세요」 · 「…다」)으로 끝나는 자리를 (파일, 함수)마다 세어 부름마다의 까닭(값 · 표지 · 빈 결과 · 입력
-  곁 거부 · 못 그리는 오류 · 미정리)과 맞대고, 차례로 짝지은 부름의 꼴도 본다 — 값 · 표지 · 빈 결과는 평문(`st.info` 상자
+  곁 거부 · 미정리)과 맞대고, 차례로 짝지은 부름의 꼴도 본다 — 값 · 표지 · 빈 결과는 평문(`st.info` 상자
   아님), 빈 결과는 결론 꼴(「…없습니다」 등), 하는 법 · 길 안내 꼬리 없음(값 · 표지 자리 글을 다른 설명 문장으로 바꾼 것은
   잡지 않는다 — 판단 질문이 본다). 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라
   수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(0곳 —
@@ -6379,9 +6383,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 ### 붙여넣기 · 양식 창 (2026-11-05 사용자 검수 static-37)
 
 - **붙여넣기 · 양식 창은 공통 부품 `components/paste_form` 하나다**(표준 목표 가용설비 · 생산 계획 PKG PLAN · 수율 · 기준 정보 ·
-  Admin 표시순서 · Proc Rename · HOME 설정 Past Data · 가용설비 현황 「엑셀·CSV로 한꺼번에」). `tests/test_paste_form.py` 가 「붙여넣기」
-  글 칸이 그 부품 밖에 새로 서면(허용: Qual 마감 계산기 칸 — 양식 · 저장이 없는 계산기) 실패하고, 창 함수에 직접 그린 캡션 · 상자가 있어도
-  실패한다.
+  Admin 표시순서 · Proc Rename · HOME 설정 Past Data · 가용설비 현황 「엑셀·CSV로 한꺼번에」). `tests/test_paste_form.py` 가 글 칸을 부품 밖에 새로 두면 라벨과 상관없이
+  실패하고(`TEXT_AREA_OUTSIDE` — 메모 칸과 아래 계산기 칸만), 창 함수와 그 함수가 부르는 같은 파일 도움 함수에 직접 그린 캡션 · 상자가 있어도 실패한다.
+- **이 꼴 밖에 둔 자리** — Qual 마감 계산기 팝업의 「엑셀에서 한 번에 붙여넣기」 는 데이터와 잇지 않는 계산기 안 펼침이다(양식 · 저장 · 되돌릴 수 없는 결과가 없고, 글은
+  「필요 단축 일정 문구」 — TODO 2장, 사용자 전달 전 손대지 않음 — 에 묶여 있다). 「엑셀·CSV로 한꺼번에」 의 미리보기 구획(머리 줄 · 수 · 바뀔 행 표)은 값이고 가정 세션 배치 칸 체크의 풍선은 켜기 전에 읽는 칸의 뜻이다(규칙 UI-INP-08 예외).
 - **작업 줄은 왼쪽 적용 · 오른쪽 양식 다운로드 한 줄**이다(`paste_action_row` — 양끝 맞춤, 좁아져 접혀도 그 차례). `st.download_button` 은
   `st.form` 안에 들어가지 못하므로 이 창들은 **폼을 쓰지 않는다** — 글 칸은 일반 위젯(초점을 잃을 때 값이 오르고 팝업 프래그먼트만 돈다,
   Streamlit 의 「Press Ctrl+Enter to apply」 안내는 서식이 걷는다), 적용은 일반 단추이고 세대 · 지문 거름(`write_once_value`)은 그대로다.
@@ -6534,11 +6539,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
     (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
   - **낫표 없이 늘어놓는 이름 목록은 `literal_names(이름들)`**(이름마다 `literal_markdown`, 잇는 글 `, `·` · ` 은 앱 글),
-    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명·도면 파일 이름)은 `literal_markdown(이름)` — 「설정」 팝업의 Cut-off 를
+    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명)은 `literal_markdown(이름)` — 「설정」 팝업의 Cut-off 를
     적지 않은 공정, Proc Rename 무시 안내, 주요공정 프리셋 「이 화면에 없음」·필요 단축 일정 공정
-    필터 밖 공정, 호기·설비 조회 걸린 조건 줄, 근거 카드 「가용을 깎지 않은 비가동」 설비명, Space 도면 올리기의 캔버스 밖 호기,
-    실적 요약·실적 정합성 결론의 공정, Capa Chatbot 질문·결론·조건(페이지가 막는 표시명 함수를 넘긴다), 저장된 도면 파일
-    이름(E2E r2 #71 — `tests/test_markdown_name_lists.py`·`tests/test_capa_chatbot_page.py`). 이름마다 막은 목록을 담은 글을
+    필터 밖 공정, 호기·설비 조회 걸린 조건 줄, 근거 카드 「가용을 깎지 않은 비가동」 설비명,
+    실적 요약·실적 정합성 결론의 공정, Capa Chatbot 질문·결론·조건(페이지가 막는 표시명 함수를 넘긴다)
+    (`tests/test_markdown_name_lists.py`·`tests/test_capa_chatbot_page.py`). 이름마다 막은 목록을 담은 글을
     `markdown_safe_tildes` 로 다시 감싸지 않는다.
   - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
     조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림

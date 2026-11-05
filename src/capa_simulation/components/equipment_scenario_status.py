@@ -48,7 +48,6 @@ from capa_simulation.components.equipment_data_workspace import (
     stale_save_refusal,
 )
 from capa_simulation.components.equipment_save_fields import (
-    SAVE_ALWAYS_HELP,
     render_saved_by_field,
 )
 from capa_simulation.components.equipment_scenario_management import (
@@ -135,18 +134,12 @@ SAVE_NOTE_KEY = "sidebar_equipment_save_note"
 # 값을 적어도 브라우저가 옛 값을 되보낸다 — `scenario_status.save_field_key` 와 같은 까닭).
 SAVE_NOTE_GENERATION_KEY = "sidebar_equipment_save_note_generation"
 SAVE_FIELDS_PREFIX = "sidebar_equipment_save"
-# 설비 마스터 탭 작은 편집표의 적용 전 편집은 위젯 상태라 편집본에 없다 — 팝업 저장 단추 풍선이
-# 말한다.
-UNAPPLIED_SMALL_EDITS_NOTE = (
-    "기존 보유대수·비가동 일정 표에서 아직 「편집본에 적용」 하지 않은 편집은 저장되지 않습니다."
-)
-# 팝업 「설비 데이터 저장」 단추 풍선 — 무엇이 어디로 저장되나와 저장이 늘 하는 일(저장 규칙 —
-# 자리에 적지 않는다, 설계 규칙 UI-TXT-01 · UI-NTF-09). 저장 대상 이름은 머리 「올라와 있음」 줄이
-# 말한다.
+# 팝업 「설비 데이터 저장」 단추 풍선 — 무엇이 어디로 저장되나 한 줄(저장이 늘 하는 일 · 작은
+# 편집표의 적용 전 편집은 Guide, 일어난 일은 결과 알림 — 그림 검수표 equip-13). 저장 대상 이름은
+# 머리 「올라와 있음」 줄이 말한다.
 SAVE_BUTTON_HELP = (
     "올라와 있는 설비 시나리오에 저장합니다 — 공통 칸은 공통 대장, 일정·시나리오 메모·비가동은 이 "
-    f"설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다. {SAVE_ALWAYS_HELP} "
-    f"{UNAPPLIED_SMALL_EDITS_NOTE}"
+    "설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다."
 )
 # 불러오기·저장 알림 — 다음 회차에 한 번, 줄 바로 아래.
 FLASH_KEY = "sidebar_equipment_scenario_flash"
@@ -723,7 +716,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
     """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 체크 · 확인 칸은 없다 — 설비 마스터
     탭과 같은 저장이고 일어난 일은 결과 알림이 적는다(`equipment_save_fields` 모듈 설명). 작은
     편집표(기존 보유대수·비가동 일정)에서 아직 「편집본에 적용」 하지 않은 편집은 편집본에 없어
-    저장되지 않는다 — 단추 풍선(`SAVE_BUTTON_HELP`)이 말한다."""
+    저장되지 않는다 — Guide 가 말한다."""
     buffer = st.session_state.get(BUFFER_KEY)
     basis = session.save_basis()
     if not isinstance(buffer, tuple) or basis is None:

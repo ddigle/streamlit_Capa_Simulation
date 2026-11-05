@@ -18,6 +18,8 @@ from capa_simulation.components import space_layout_editor as space
 COMPONENTS = Path(__file__).resolve().parents[1] / "src/capa_simulation/components"
 MASTER_CSS = (COMPONENTS / "equipment_master_grid_assets/splitter.css").read_text(encoding="utf-8")
 SPACE_CSS = (COMPONENTS / "space_layout_editor_assets/editor.css").read_text(encoding="utf-8")
+# 편집기 안 단추의 공통 꼴 — 편집기에 함께 실린 날짜 판 단추는 제 꼴을 쓴다.
+SPACE_BUTTON = ".sle button:where(:not(.capa-date-root button))"
 # 두 팔레트 이름 → 뜻. 값은 아래에서 같은 토큰인지 본다.
 MASTER_COLORS = {
     "var(--ess-border)": "border",
@@ -66,7 +68,7 @@ def _master_look() -> dict[str, str]:
 
 
 def _space_look() -> dict[str, str]:
-    button = _named(_block(SPACE_CSS, ".sle button"), SPACE_COLORS)
+    button = _named(_block(SPACE_CSS, SPACE_BUTTON), SPACE_COLORS)
     strip = _named(_block(SPACE_CSS, ".sle button.sle-side-strip"), SPACE_COLORS)
     merged = {**button, **strip}
     return {name: merged[name] for name in (*_LOOK, "font-weight", "font-size", "line-height")}
@@ -91,15 +93,15 @@ def test_the_two_floating_buttons_have_the_same_look() -> None:
     assert _master_look() == _space_look()
     assert _master_look()["height"] == "27px"
     assert "box-shadow" not in _block(MASTER_CSS, ".ess-rail")
-    assert "box-shadow" not in _block(SPACE_CSS, ".sle button")
+    assert "box-shadow" not in _block(SPACE_CSS, SPACE_BUTTON)
 
 
 def test_the_two_floating_buttons_react_the_same_way() -> None:
     assert _named(_block(MASTER_CSS, ".ess-rail:hover"), MASTER_COLORS) == _named(
-        _block(SPACE_CSS, ".sle button:hover"), SPACE_COLORS
+        _block(SPACE_CSS, f"{SPACE_BUTTON}:hover"), SPACE_COLORS
     )
     assert _named(_block(MASTER_CSS, ".ess-rail:focus-visible"), MASTER_COLORS) == _named(
-        _block(SPACE_CSS, ".sle button:focus-visible"), SPACE_COLORS
+        _block(SPACE_CSS, f"{SPACE_BUTTON}:focus-visible"), SPACE_COLORS
     )
 
 

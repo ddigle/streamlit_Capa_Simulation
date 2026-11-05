@@ -4378,8 +4378,8 @@ def _require_overlay_marks_fit(
     connection: duckdb.DuckDBPyConnection, key: FloorKey, canvas: CanvasSize
 ) -> None:
     """그 층의 **가정 배치 요소**(각 ACTIVE 설비 시나리오 최신과 최신 공식 발행 리비전의 `set`)가 새
-    캔버스 안인가. 밖이면 `EquipmentLayoutOverflow`. 캔버스를 바꾸는 네 진입점(설비 저장의 캔버스·
-    캔버스 저장·도면 올리기·도면 지우기)이 공식 요소 검사(`_require_marks_fit`) 옆에서 부른다. 가정
+    캔버스 안인가. 밖이면 `EquipmentLayoutOverflow`. 캔버스를 바꾸는 두 진입점(설비 저장의 캔버스 ·
+    캔버스 저장)이 공식 요소 검사(`_require_marks_fit`) 옆에서 부른다. 가정
     차이 호기는 막지 않는다 — 공식 호기처럼 그 시나리오의 다음 저장만 막힌다(설계 6-4). 옛
     리비전(최신·발행이 아닌)의 차이는 보지 않는다."""
     targets = _overlay_check_targets(connection)

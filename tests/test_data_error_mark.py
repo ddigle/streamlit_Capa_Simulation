@@ -3,9 +3,12 @@
 """「데이터 Error」 마크(`components/data_error_mark.py` — 2026-11-05 사용자 지시 「페이지에는
 데이터 Error 마크를 넣고 Alarm 확인 필요 문구까지만 배치, 나머지는 알람으로 확인」).
 
-자리 그물은 화면 코드를 AST 로 훑는다 — `st.error` 뒤 `st.stop()` 은 그 자리에 고칠 입력이 있는
-거부만 남고(나머지는 마크), `alert_page_error` 는 한 오류의 마크가 탭 여럿에 서는 자리만 쓰며,
-`render_data_error` 의 코드는 등록부의 오류 단계 사건 코드다.
+자리 그물은 화면 코드를 AST 로 훑는다 — `.error(` 는 (파일, 맨 바깥 함수)마다 수와 까닭을 허용
+목록과 정확히 맞댄다(`PLACE_ERROR_SITES` — 그 자리 입력의 거부 · 누른 동작의 실패 · 알림 칸이 없는
+멈춤 · 점검 판 · 모듈 카드 · 알림 길). `st.error` 뒤 `st.stop()` 은 그 자리에 고칠 입력이 있는
+거부만 남고(나머지는 마크), 마크만 그리는 `render_data_error_mark` 와 따로 보내는
+`alert_page_error` 는 한 오류의 마크가 탭 여럿에 서는 자리(산출 결과)만 쓰며, `render_data_error`
+의 코드는 등록부의 오류 단계 사건 코드다.
 """
 
 from __future__ import annotations
@@ -16,7 +19,15 @@ from collections import Counter
 
 import pytest
 from alert_marks import alert_notes, data_error_marks, data_error_texts, events
-from source_sites import called_name, method, receiver, relative, screen_calls, screen_files
+from source_sites import (
+    LOGGERS,
+    called_name,
+    method,
+    receiver,
+    relative,
+    screen_calls,
+    screen_files,
+)
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts
@@ -36,6 +47,150 @@ STOPPING_BOXES: dict[tuple[str, str], int] = {
 # (파일, 맨 바깥 함수) → 마크와 따로 알림을 보내는 수 — 마크가 세 탭에 서고 알림은 탭 밖에서 한 번.
 SEPARATE_ALERTS: dict[tuple[str, str], int] = {
     ("app_pages/calculation_result.py", ""): 1,
+}
+# 자리에 남는 오류 상자의 까닭 — 데이터 때문에 못 그린 자리는 어느 까닭에도 들지 않는다(마크다).
+BESIDE = "그 자리 입력의 거부 — 곁 입력을 고치면 풀린다(UI-NTF-03)"
+PRESSED = "누른 동작의 실패 — 저장 · 적용 · 불러오기 단추 곁(UI-NTF-03)"
+NO_ALARM = "앱이 서지 못해 알림 칸이 없는 멈춤(UI-NTF-08 예외)"
+CHECK_BOARD = "판 자체 — 알림 모음 · 점검 화면의 결론 상자"
+MODULE_CARD = "모듈 오류 카드(UI-NTF-08 예외)"
+ALERT_PATH = "알림 길 — 눌린 회차의 곁 칸(`flash`, 곁 오류의 공통 그리기)"
+ERROR_REASONS = frozenset({BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, ALERT_PATH})
+# (파일, 맨 바깥 함수) → (`.error(` 수, 까닭). 새 자리는 실패한다 — 그리기 실패면
+# `render_data_error`, 곁 거부 · 누른 동작의 실패면 까닭과 함께 여기에 둔다.
+PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
+    ("app.py", ""): (1, NO_ALARM),
+    ("app_pages/load_conversion.py", ""): (2, PRESSED),
+    ("app_pages/load_conversion.py", "_virtual_product_dialog"): (1, PRESSED),
+    ("app_pages/reference_data.py", ""): (2, PRESSED),
+    ("app_pages/reference_data.py", "_step_dialog"): (1, PRESSED),
+    ("app_pages/reference_integrity.py", "_render_detail"): (1, BESIDE),
+    ("app_pages/space_status.py", ""): (1, PRESSED),
+    ("app_pages/space_status.py", "_render_fab_editor"): (1, PRESSED),
+    ("app_pages/space_status.py", "_render_layout_editor"): (1, PRESSED),
+    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (2, PRESSED),
+    ("app_pages/standard_target_capa.py", ""): (1, BESIDE),
+    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, CHECK_BOARD),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (3, PRESSED),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_render_settings_form"): (
+        6,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_render_registration_form"): (
+        1,
+        BESIDE,
+    ),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_run_catalog_query"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_save_scenario"): (3, PRESSED),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_submitted_detail_window"): (
+        5,
+        BESIDE,
+    ),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_submitted_window"): (
+        2,
+        BESIDE,
+    ),
+    ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
+        3,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"): (1, BESIDE),
+    ("src/capa_simulation/components/equipment_explorer.py", "_render_result"): (1, BESIDE),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_branch"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_legacy_trace"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_load"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_publish"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_rename"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_revision_name"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_load"): (1, PRESSED),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (1, PRESSED),
+    ("src/capa_simulation/components/flash.py", "_draw"): (1, ALERT_PATH),
+    ("src/capa_simulation/components/floor_canvas_dialog.py", "_save"): (1, PRESSED),
+    ("src/capa_simulation/components/home_preference.py", "_reject_key_process_write"): (
+        2,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_execution_editor"): (4, PRESSED),
+    ("src/capa_simulation/components/home_preference.py", "_render_key_process_editor"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_key_process_preset_actions"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_monthly_amount_editor"): (
+        1,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_summary_note_editor"): (
+        3,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/home_preference.py", "_render_top5_band_editor"): (3, PRESSED),
+    ("src/capa_simulation/components/home_preference.py", "render_threshold_editor"): (3, PRESSED),
+    ("src/capa_simulation/components/manual_downtime_tab.py", "_render_editor"): (5, PRESSED),
+    ("src/capa_simulation/components/module_failure_card.py", "render_failure_parts"): (
+        1,
+        MODULE_CARD,
+    ),
+    ("src/capa_simulation/components/past_data_management.py", "_render_save"): (1, PRESSED),
+    ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
+        3,
+        PRESSED,
+    ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_archive"): (1, PRESSED),
+    ("src/capa_simulation/components/scenario_management.py", "_render_clone"): (3, PRESSED),
+    ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PRESSED),
+    ("src/capa_simulation/components/scenario_management.py", "_render_official"): (5, PRESSED),
+    ("src/capa_simulation/components/scenario_management.py", "_restore_scenario"): (1, PRESSED),
+    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (2, BESIDE),
+    ("src/capa_simulation/components/scenario_month_merge.py", "render_scenario_month_merge"): (
+        1,
+        BESIDE,
+    ),
+    ("src/capa_simulation/components/scenario_status.py", "_render_load"): (1, PRESSED),
+    ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (2, PRESSED),
+    ("src/capa_simulation/components/scenario_transform.py", "render_derived_save"): (4, BESIDE),
+    ("src/capa_simulation/components/scenario_year_shift.py", "render_scenario_year_shift"): (
+        1,
+        BESIDE,
+    ),
+    ("src/capa_simulation/components/sso_identity.py", "_stop_without_gate"): (1, NO_ALARM),
+    ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (1, CHECK_BOARD),
 }
 
 PAGE = """
@@ -218,14 +373,35 @@ def test_only_a_refusal_beside_its_input_stops_the_page_with_an_error_box() -> N
     assert _stopping_boxes() == Counter(STOPPING_BOXES)
 
 
-def test_only_the_tabbed_mark_sends_its_alert_separately() -> None:
-    """알림만 따로 보내면 자리와 짝이 어긋나기 쉽다 — `render_data_error` 한 칸이 기본이다."""
-    found: Counter[tuple[str, str]] = Counter(
+def _place_error_sites() -> Counter[tuple[str, str]]:
+    """자리 오류 상자(`….error(글)`)마다 (파일, 맨 바깥 함수) — 로거와 인자 없는 `.error()` 는
+    밖."""
+    return Counter(
         (file, outer)
         for file, outer, _path, _scope, call in screen_calls(screen_files())
-        if called_name(call) == "alert_page_error"
+        if method(call) == "error" and receiver(call) not in LOGGERS and call.args
     )
-    assert found == Counter(SEPARATE_ALERTS)
+
+
+def test_every_place_error_box_is_a_refusal_or_a_pressed_failure() -> None:
+    """데이터 때문에 구획 · 화면을 못 그린 자리는 오류 상자가 아니라 마크다(UI-NTF-08) — `st.stop()`
+    없이 함수가 끝나는 자리 · 칸(`slot.error`)까지 모두 세므로, 그리기 실패를 상자로 두면 새 자리로
+    걸린다. 옮긴 자리는 목록에서도 지운다."""
+    expected = {site: count for site, (count, _reason) in PLACE_ERROR_SITES.items()}
+    assert _place_error_sites() == Counter(expected)
+    assert {reason for _count, reason in PLACE_ERROR_SITES.values()} <= ERROR_REASONS
+
+
+def test_only_the_tabbed_mark_sends_its_alert_separately() -> None:
+    """알림만 따로 보내면 자리와 짝이 어긋나기 쉽다 — `render_data_error` 한 칸이 기본이고, 마크만
+    그리면 「Alarm 확인 필요」 라는데 Alarm 에 글이 없다."""
+    for name in ("alert_page_error", "render_data_error_mark"):
+        found: Counter[tuple[str, str]] = Counter(
+            (file, outer)
+            for file, outer, _path, _scope, call in screen_calls(screen_files())
+            if called_name(call) == name
+        )
+        assert found == Counter(SEPARATE_ALERTS), name
 
 
 def test_every_mark_names_an_error_event_of_the_registry() -> None:

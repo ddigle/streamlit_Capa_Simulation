@@ -176,6 +176,8 @@ LONG_RUN_WARNING: Final = timedelta(minutes=30)
 # 배경 확인이 이 횟수만큼 건너뛰었으면 스레드가 멈춘 것으로 보고 경고한다.
 STALE_TICK_FACTOR: Final = 4
 EMPTY: Final = "—"
+# 꺼진 예약의 공식버전에 주차가 없을 때의 표지 — 까닭은 이 줄의 풍선이다(설계 규칙 UI-TXT-04).
+MISSING_WEEK_MARK: Final = ":red[주차 없음]"
 # 실행 기록 「경고」 칸의 표지 — 발행한 회차의 사유 끝에 소요대수에 들지 않은 수요 경고가 이어
 # 적혔다. 문장 전체는 「사유」 칸에 그대로 남는다.
 UNCOUNTED_DEMAND_MARK: Final = "⚠ 소요대수 밖 수요"
@@ -294,13 +296,23 @@ def _render_status(
             baseline = current_official_baseline(repository)
         except MissingOfficialWeek as exc:
             # 켜져 있으면 예약 회차가 이 까닭으로 멈춘다 — 오류다. 꺼져 있으면 켤 때 막히는 것을
-            # 미리 알리는 상태 한 줄이다(켜거나 「지금 실행」을 누르면 그때 오류로 막는다).
+            # 미리 알리는 표지 + 풍선이다(켜거나 「지금 실행」을 누르면 그때 오류로 막는다).
             if config.enabled:
-                st.error(bootstrap_error_message(exc), icon=":material/error:")
+                render_data_error(
+                    bootstrap_error_message(exc),
+                    code="SC-02",
+                    text="현재 공식버전의 주차를 읽지 못했습니다",
+                )
             else:
-                st.markdown(f"**현재 공식버전** · :red[주차 없음] — {bootstrap_error_message(exc)}")
+                st.markdown(
+                    f"**현재 공식버전** · {MISSING_WEEK_MARK}", help=bootstrap_error_message(exc)
+                )
         except BOOTSTRAP_ERRORS as exc:
-            st.error("현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc))
+            render_data_error(
+                "현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc),
+                code="SC-02",
+                text="현재 공식버전을 읽지 못했습니다",
+            )
         else:
             st.markdown(
                 f"**현재 공식버전** · {baseline.label} · {literal_markdown(baseline.release_name)} "

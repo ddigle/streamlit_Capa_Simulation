@@ -241,11 +241,9 @@
       <div class="sle-side-box sle-tray" id="sle-tray" aria-label="미배치 호기">
         <div class="sle-tray-head">
           <div class="sle-tray-title">미배치 호기 <span class="sle-tray-count"></span> <span class="sle-tray-hits" hidden></span></div>
-          <button type="button" class="sle-tray-info" aria-expanded="false" aria-controls="sle-tray-hint" aria-label="미배치 칸 도움말" title="도움말">i</button>
           <button type="button" class="sle-drawer-close sle-side-fold" aria-label="오른쪽 칸 접기" title="칸 접기 (Esc)">›</button>
         </div>
         <div class="sle-tray-scroll">
-          <p class="sle-tray-hint" id="sle-tray-hint" hidden>이름 오름차순이고, 위 검색 칸에 이름 일부를 치면 그 호기만 남아 바로 끌 수 있습니다. 끌어서 도면에 놓으면 그 자리에 배치됩니다. 칸은 열린 채라 이어서 놓을 수 있고, 도면의 호기를 이 칸에 끌어 놓으면 미배치로 돌아갑니다. 누르기만 하면 골라져 다른 층으로 보낼 수 있습니다. <b>Ctrl</b> 을 누른 채 누르면 한 대씩 더하거나 빼고, <b>Shift</b> 를 누른 채 누르면 마지막으로 누른 칩부터 그 칩까지 보이는 차례대로 고릅니다(<b>Ctrl+Shift</b> 는 그 범위를 더함). 고른 것 하나를 끌면 모두 함께 놓입니다. 크기가 없는 호기는 설비명 앞 3자리가 같은 설비의 크기(이번에 마지막으로 놓은 것, 없으면 이름 차례로 가장 뒤인 것)를 불러와 놓습니다. <b>층 미정</b> 호기는 모든 층 트레이에 보입니다. 키보드로는 Tab 으로 칩 이름에 가서 <b>Enter</b> 를 누르면 지금 보이는 도면 가운데에 놓이고(초점은 놓은 호기로 — 이어서 방향키로 옮김), <b>Space</b> 는 누르기와 같이 고릅니다(Ctrl·Shift 도 같음).</p>
           <input class="sle-tray-search" type="search" placeholder="호기 검색" aria-label="미배치 호기 검색" autocomplete="off" spellcheck="false">
           <div class="sle-addunit">
             <button type="button" class="sle-addunit-toggle" aria-expanded="false">+ 호기 추가</button>
@@ -256,8 +254,8 @@
               <label class="sle-form-row"><span>투자구분</span><select class="sle-new-use"></select></label>
               <label class="sle-form-row"><span>신규/기존</span><select class="sle-new-kind"><option value="new">신규 설비</option><option value="existing">기존 설비</option></select></label>
               <div class="sle-new-dates" title="일정은 비워도 됩니다 — 반입이 비면 입고 예정, Qual 이 비면 셋업 진행중으로 남아 날짜가 들어올 때까지 가용대수에 들지 않습니다. Qual 을 넣으면 Qual상태가 필요합니다.">
-                <label class="sle-form-row"><span>반입</span><input class="sle-new-arrival" type="date"></label>
-                <label class="sle-form-row"><span>Qual</span><input class="sle-new-qual" type="date"></label>
+                <div class="sle-form-row"><span>반입</span><div class="sle-new-arrival"><!-- capa-date-panel --></div></div>
+                <div class="sle-form-row"><span>Qual</span><div class="sle-new-qual"><!-- capa-date-panel --></div></div>
                 <label class="sle-form-row"><span>Qual상태</span><select class="sle-new-confirm"></select></label>
               </div>
               <div class="sle-form-row"><span>크기</span><input class="sle-new-w" type="number" min="0.1" step="0.1" aria-label="폭"><span class="sle-times">×</span><input class="sle-new-h" type="number" min="0.1" step="0.1" aria-label="높이"></div>
@@ -278,7 +276,7 @@
         <div class="sle-drop-note" aria-hidden="true">여기 놓으면 미배치로</div>
       </div>
     </aside>
-    <section class="sle-keys" id="sle-keys" role="dialog" aria-label="단축키" hidden>
+    <section class="sle-keys" id="sle-keys" role="dialog" aria-label="단축키" tabindex="-1" hidden>
       <div class="sle-keys-head"><b>단축키</b><button type="button" class="sle-keys-close" aria-label="단축키 판 닫기" title="닫기 (Esc)">×</button></div>
       <ul class="sle-keys-list"></ul>
     </section>

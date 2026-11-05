@@ -42,7 +42,6 @@ from capa_simulation.components.equipment_master_tab import (
 )
 from capa_simulation.components.equipment_save_fields import (
     ASSUMPTION_PROPAGATE_WARNING,
-    SAVE_ALWAYS_HELP,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -618,7 +617,7 @@ def test_the_tab_save_section_has_only_note_saver_and_buttons(
     tmp_path: Path, grid: Calls, scenario: str | None
 ) -> None:
     """검수표 11/02 equip-13 — 저장 구획에 체크 · 경고 · 설명 줄이 없다. 지운 호기 · 함께 넣기 ·
-    발행의 말은 「리비전 저장」 풍선이고 일어난 일은 결과 알림이다."""
+    발행의 말은 Guide · 결과 알림이고 「리비전 저장」 풍선은 어디로 저장되나 한 줄이다."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, scenario or setup)
     _open_new(app)
@@ -635,7 +634,9 @@ def test_the_tab_save_section_has_only_note_saver_and_buttons(
     )
     assert not any("「새 호기」 칸에서" in text for text in captions)
     save = app.button(key=SAVE_BUTTON_KEY)
-    assert SAVE_ALWAYS_HELP in str(save.help) and "공통 칸은 모든 설비 시나리오에" in str(save.help)
+    assert "공통 칸은 모든 설비 시나리오에" in str(save.help)
+    for gone in ("새 호기", "새 비가동", "공식으로 발행", "지운 호기"):
+        assert gone not in str(save.help), gone
     assert app.text_input(key="equipment_workspace_save_saved_by").label == "저장자(선택)"
 
 

@@ -16,17 +16,17 @@
 .sle-steps, .sle-zoom { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; }
 .sle-zoom-label { min-width: 3.4em; text-align: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--sle-muted); }
 /* 단추는 앱 단추와 같은 결이다 — 13px·600 · 모서리 8px · 테두리 BORDER · 글자 TEXT. 촘촘한 도구 줄에 맞춰 높이 27px. */
-.sle button {
+.sle button:where(:not(.capa-date-root button)) {
   font: inherit; font-size: 13px; font-weight: 600; line-height: 1; height: 27px; box-sizing: border-box;
   padding: 0 10px; border-radius: 8px; cursor: pointer; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-ui-text);
 }
-.sle button:hover { border-color: var(--sle-accent); }
-.sle button:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+.sle button:where(:not(.capa-date-root button)):hover { border-color: var(--sle-accent); }
+.sle button:where(:not(.capa-date-root button)):focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
 .sle-canvas:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: -2px; }
 .sle-steps button[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
-.sle button:disabled { opacity: 0.45; cursor: default; }
+.sle button:where(:not(.capa-date-root button)):disabled { opacity: 0.45; cursor: default; }
 /* 편집 중 고정 기준일 칩(층 편집 도구 줄 — 결정 D12, 여백 걷기). */
 .sle-pinchip {
   display: inline-flex; align-items: center; gap: 4px; height: 23px; padding: 0 8px; box-sizing: border-box; border-radius: 8px;
@@ -379,8 +379,6 @@
 @container sle-tray (width >= 360px) {
   .sle-tray-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
-.sle button.sle-tray-info { height: 23px; min-width: 23px; padding: 0 6px; font-style: italic; font-family: Georgia, serif; }
-.sle button.sle-tray-info[aria-expanded="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle input.sle-tray-search { width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 4px 8px; font-size: 0.8rem; border: 1px solid var(--sle-border); border-radius: 6px; background: var(--sle-surface); color: var(--sle-text); }
 .sle input.sle-tray-search:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
 .sle-chip[hidden] { display: none; }
@@ -406,19 +404,18 @@
 .sle-leaving { margin-top: 10px; }
 .sle-leaving[hidden] { display: none; }
 .sle-leaving-list { display: flex; flex-direction: column; gap: 4px; }
-.sle-tray-hint { font-size: 0.75rem; color: var(--sle-muted); margin: 6px 0 8px; }
-.sle-tray-hint[hidden] { display: none; }
 .sle-addunit { margin-bottom: 8px; }
 .sle button.sle-addunit-toggle { width: 100%; border-style: dashed; }
 .sle-addunit-form { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; padding: 6px; border: 1px solid var(--sle-border); border-radius: 6px; font-size: 0.78rem; }
 .sle-addunit-form[hidden] { display: none; }
 .sle-form-row { display: flex; align-items: center; gap: 5px; color: var(--sle-muted); }
 .sle-form-row > span:first-child { width: 4.4em; flex: none; }
-.sle-form-row input[type="text"], .sle-form-row input[type="date"], .sle-form-row select { flex: 1; min-width: 0; }
-.sle input[type="date"] {
-  font: inherit; font-size: 0.78rem; padding: 2px 4px; border-radius: 8px; color-scheme: light dark;
-  border: 1px solid var(--sle-border); background: var(--sle-surface); color: var(--sle-text);
-}
+.sle-form-row input[type="text"], .sle-form-row select { flex: 1; min-width: 0; }
+/* 날짜 칸은 앱의 날짜 칸 + 기간 판 조각이다(`date_panel`) — 이름은 줄 머리가 쓰고, 값 칸만 줄 높이에 맞춘다. */
+.sle-new-arrival, .sle-new-qual { flex: 1; min-width: 0; }
+.sle-new-dates .capa-date-labelrow { display: none; }
+.sle-new-dates .capa-date-field { min-height: 0; padding: 2px 6px; font-size: 0.78rem; }
+.sle-new-dates .capa-date-field-text { font-size: inherit; }
 .sle-new-dates { display: flex; flex-direction: column; gap: 5px; }
 .sle-new-dates[hidden] { display: none; }
 /* Qual상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 이름 뒤에 별표가 붙는다. */
@@ -791,6 +788,7 @@
   background: var(--sle-surface); color: var(--sle-text); box-shadow: 0 0 0 2px var(--sle-border); font-size: 0.8rem;
 }
 .sle-keys[hidden] { display: none; }
+.sle-keys:focus { outline: none; }
 .sle-keys-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .sle button.sle-keys-close { height: 23px; min-width: 23px; padding: 0 6px; font-size: 14px; }
 .sle-keys-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 6px; margin: 0; padding: 0; list-style: none; }

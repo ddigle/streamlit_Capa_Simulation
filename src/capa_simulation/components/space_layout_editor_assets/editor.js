@@ -268,8 +268,6 @@ export default function (component) {
   const drawerCount = q('.sle-drawer-count')
   const trayBox = q('.sle-tray')
   const trayScroll = q('.sle-tray-scroll')
-  const trayInfo = q('.sle-tray-info')
-  const trayHint = q('.sle-tray-hint')
   const trayList = q('.sle-tray-list')
   const trayCount = q('.sle-tray-count')
   const traySearch = q('.sle-tray-search')
@@ -359,8 +357,10 @@ export default function (component) {
   const newError = q('.sle-new-error')
   const newKind = q('.sle-new-kind')
   const newDates = q('.sle-new-dates')
-  const newArrival = q('.sle-new-arrival')
-  const newQual = q('.sle-new-qual')
+  // 일정 칸은 앱의 날짜 칸 + 기간 판이다(`date_panel` 조각 — 값은 이 편집기 안에 머문다, 설계 규칙 UI-INP-03).
+  const newDays = S.newDates || (S.newDates = { arrival: '', qual: '' })
+  const newArrival = { get value() { return newDays.arrival } }
+  const newQual = { get value() { return newDays.qual } }
   const newConfirm = q('.sle-new-confirm')
   const newConfirmRow = newConfirm.closest('.sle-form-row')
   setText(q('.sle-title'), data.title || '')
@@ -1683,10 +1683,20 @@ export default function (component) {
     ['Shift+모서리 끌기', '도형 비율 유지', 'ef eb'],
     ['Alt 누른 채 끌기', '정렬선에 붙이지 않기', 'ef eb'],
     ['Space+끌기', '화면 옮기기', 'ef eb'],
+    ['칩 Ctrl+클릭', '미배치 칩 더하기 · 빼기', 'ef'],
+    ['칩 Shift+클릭', '미배치 칩 범위 고르기', 'ef'],
+    ['칩 Ctrl+Shift+클릭', '미배치 칩 범위 더하기', 'ef'],
+    ['칩 Enter', '미배치 칩을 도면 가운데에 놓기', 'ef'],
+    ['칩 Space', '미배치 칩 고르기(Ctrl · Shift 도)', 'ef'],
   ]
   // 그 화면(`vf`·`vb`·`ef`·`eb`)에서 쓸 수 있는 줄 — [키조합, 기능].
   function shortcutRows(screen) {
     return SHORTCUTS.filter((row) => row[2].split(' ').includes(screen)).map((row) => [row[0], row[1]])
+  }
+  // 같은 호기를 움직이지 않고 이 시간 안에 두 번 눌렀는가. `last` 는 지난 누름 { id, at }.
+  const DOUBLE_PRESS_MS = 400
+  function isDoublePress(last, id, now) {
+    return Boolean(last) && last.id === id && now - last.at <= DOUBLE_PRESS_MS
   }
   // </shortcuts>
 
@@ -6019,6 +6029,11 @@ export default function (component) {
     const entries = drag.ids
       .map((id) => ({ id, before: drag.befores.get(id) }))
       .filter((e) => !sameSpot(e.before, itemOf(e.id)))
+    // 호기 두 번 누름 — 편집 화면은 눌린 상자를 끌 준비로 맨 위에 다시 붙여 브라우저의 dblclick 이 서지 않는다. 움직이지 않은
+    // 누름 둘을 직접 잡아 보기 화면(`svg.ondblclick`)과 같이 「호기 정보」 창을 연다.
+    const pressedAt = performance.now()
+    const pressedTwice = drag.mode === 'move' && !drag.moved && isDoublePress(S.lastPress, drag.id, pressedAt)
+    S.lastPress = drag.mode === 'move' && !drag.moved && !pressedTwice ? { id: drag.id, at: pressedAt } : null
     if (drag.moved && entries.length) {
       commit(entries)
       markOverlaps()
@@ -6026,6 +6041,7 @@ export default function (component) {
       select(drag.id)
       return
     }
+    if (pressedTwice && SHEET && isUnit(S.items.get(drag.id))) openSheet('picked')
     updateStatus()
   }
   svg.onlostpointercapture = () => { if (S.drag) svg.onpointerup({ pointerId: S.drag.pointerId }) }
@@ -6401,7 +6417,28 @@ export default function (component) {
     newConfirm.setAttribute('aria-required', String(needed))
     newConfirmRow.classList.toggle('is-required', needed)
   }
-  newQual.oninput = newQual.onchange = markConfirmRequired
+  const drawNewDate = (place, name, slot) => {
+    const root = place.querySelector('.capa-date-root')
+    const now = new Date()
+    const year = now.getFullYear()
+    const today = TODAY || `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const held = newDays[slot] || null
+    // 고를 수 있는 범위 — 끝을 주지 않은 파이썬 칸과 같은 앞뒤 십 년(해 단위).
+    mountDatePanel(root, {
+      mode: 'single', label: name, emptyText: '비어 있음', start: held, end: held,
+      minDay: `${year - 10}-01-01`, maxDay: `${year + 10}-12-31`, today, clearable: true, bounded: false, disabled: false,
+    }, (value) => {
+      newDays[slot] = value.start || ''
+      markConfirmRequired()
+      // 판이 닫힌 뒤 새 값으로 다시 세운다(「적용」 은 같은 호출 안에서 판을 닫는다).
+      queueMicrotask(() => drawNewDate(place, name, slot))
+    })
+    // 판은 칸의 조각이지만 줄 풍선(일정 칸 설명)을 물려받지 않고, 판 안 키가 도면 단축키로 새지 않는다.
+    root.querySelector('.capa-date-dialog').title = ''
+    place.onkeydown = (event) => event.stopPropagation()
+  }
+  drawNewDate(q('.sle-new-arrival'), '반입', 'arrival')
+  drawNewDate(q('.sle-new-qual'), 'Qual', 'qual')
   markConfirmRequired()
   const sizeHint = () => {
     const hint = (NEW_UNIT.sizeHints || {})[newProcess.value]
@@ -6942,16 +6979,6 @@ export default function (component) {
   }
   bindSplit('left')
   bindSplit('right')
-  // 미배치 칸 도움말(「i」) — 칩 목록 자리를 먹지 않게 처음엔 접힘, 펴고 접은 것은 기억한다(묶음 접힘과 같은 칸).
-  const trayHintOpen = sectionFolded('trayHint', true) === false
-  trayHint.hidden = !trayHintOpen
-  trayInfo.setAttribute('aria-expanded', String(trayHintOpen))
-  trayInfo.onclick = () => {
-    const open = trayHint.hidden
-    trayHint.hidden = !open
-    trayInfo.setAttribute('aria-expanded', String(open))
-    storeSection('trayHint', !open)
-  }
   applySections()
   drawLegend()
   // 왼쪽 칸 이름 — 층 보기는 범례 하나라 「범례」, 편집은 「도구」.

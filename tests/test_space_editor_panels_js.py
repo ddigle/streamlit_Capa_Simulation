@@ -273,9 +273,7 @@ def test_the_panels_are_remembered_per_scope_and_mode_only_in_the_browser() -> N
     assert "const SECTIONS_STORE_KEY = 'capa.space.sections.v1'" in JS
     assert "const PANEL_MODE = `${SCOPE}.${VIEW ? 'view' : 'edit'}`" in JS
     assert "const HAS_LEFT = !(VIEW && FAB)" in JS and "const HAS_RIGHT = !VIEW && !FAB" in JS
-    # 처음엔 미배치 칸 도움말만 접힘.
     assert "sectionFolded(name, false)" in JS
-    assert "sectionFolded('trayHint', true)" in JS
 
 
 def test_the_splitters_are_keyboard_separators_that_do_not_leak_into_the_drawing() -> None:

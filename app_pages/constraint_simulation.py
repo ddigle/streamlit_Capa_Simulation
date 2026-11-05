@@ -26,8 +26,8 @@
   조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH 가정·HOME 얹기는 걸지 않는다(D5).
 
 계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 넷으로 가른다 — 공통
-진입(카드 캡션 「계산을 멈춰 …」), 제품별 소요 받기(카드 캡션 「제품을 읽지 못했습니다」 + 본문
-「제품별 소요를 읽지 못했습니다 — {글}」 — 「소요가 있는 제품이 없다」 안내와 가른다), 계획
+진입(카드 표지 `NO_PROCESS_MARK`), 제품별 소요 받기(카드 표지 `NO_PRODUCT_MARK` + 본문 마크 ·
+알림 「제품별 소요를 읽지 못했습니다 — {글}」 — 「소요가 있는 제품이 없다」 안내와 가른다), 계획
 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
 `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로 없음).
 `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로
@@ -205,11 +205,13 @@ from capa_simulation.services.securement_threshold import (
 from capa_simulation.services.simulation_cache import get_process_product_demand
 from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 
 CARD_LABEL = "제약 시뮬레이션 조건"
 CARD_NAME = "constraint_simulation"
 CARD_ICON = ":material/call_split:"
+# 제품별 소요를 읽지 못한 회차의 카드 표지 — 까닭은 본문 마크의 알림이다(설계 규칙 UI-NTF-08).
+NO_PRODUCT_MARK = "제품 · 읽지 못함"
 PAGE_TITLE = "제약 시뮬레이션"
 PAGE_DESCRIPTION = (
     "공정 하나에 미래 제약(제약 제품 전용 설비)이 생기면 — 제약 제품에 먼저 떼어 준 뒤 기존 제품 "
@@ -266,7 +268,7 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
-        st.caption("계산을 멈춰 공정을 고를 수 없습니다.")
+        st.caption(NO_PROCESS_MARK)
     message = bootstrap_error_message(exc)
     render_data_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
     st.stop()
@@ -527,7 +529,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         help="제품정보 — 그 제품정보의 모든 양산구분(양산·ER) 소요가 듭니다.",
     )
     if product_error:
-        st.caption("제품을 읽지 못했습니다.")
+        st.caption(NO_PRODUCT_MARK)
     period = (
         settle_period(
             months,

@@ -42,8 +42,9 @@ _WHOLE_LIMIT = 64
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 
 # 자리 글 까닭(설계 규칙 UI-TXT-04 · AMB-02 (가)) — 화면 글 문장 그물 · 알림 꼴 그물의 허용 목록이
-# 쓰는 낱말. 값 · 표지 · 빈 결과 · 입력 곁 거부 · 못 그리는 오류는 자리에 남고, 미정리는 다음 판에
-# 줄일 기존 자리다(새로 쓰지 않는다 — 그물이 미정리 수를 늘리지 못하게 막는다).
+# 쓰는 낱말. 값 · 표지 · 빈 결과 · 입력 곁 거부는 자리에 남고(데이터 때문에 못 그린 자리는 글이
+# 아니라 「데이터 Error」 마크다 — UI-NTF-08), 미정리는 다음 판에 줄일 기존 자리다(새로 쓰지 않는다
+# — 그물이 미정리 수를 늘리지 못하게 막는다).
 VALUE = "값 — 지금 보고 있는 것(대상 · 건수 · 기준 · 상태)을 말하는 한 줄"
 MARKER = "표지 — 조건이 있을 때만 서는 배지 · 아이콘 줄과 그 뜻 한 마디"
 EMPTY = (
@@ -54,12 +55,11 @@ BESIDE_INPUT = (
     "입력 곁 거부 — 폼 · 팝업 · 확인 칸에서 그 자리 입력과 짝인 거부 · 잠금 까닭 · 고쳐 읽음과,"
     " 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-03 · UI-NTF-09)"
 )
-CANNOT_DRAW = "못 그리는 오류 — 화면 · 보기 하나를 그리지 못해 그 글로 끝나는 자리(UI-NTF-08)"
 UNSETTLED = (
     "미정리 — 설명 · 내역 · 길 안내 · 하는 법 문장이 자리에 남은 기존 자리. 다음 판에 풍선(help=) ·"
     " Guide · 알림으로 옮겨 이 목록을 줄인다"
 )
-PLACE_REASONS = frozenset({VALUE, MARKER, EMPTY, BESIDE_INPUT, CANNOT_DRAW, UNSETTLED})
+PLACE_REASONS = frozenset({VALUE, MARKER, EMPTY, BESIDE_INPUT, UNSETTLED})
 
 
 def relative(path: Path, root: Path = PROJECT_ROOT) -> str:

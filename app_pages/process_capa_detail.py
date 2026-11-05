@@ -218,7 +218,7 @@ from capa_simulation.services.upeh_assumption import (
 )
 from capa_simulation.services.usage_basis import usage_excluded_count, usage_exclusion_notice
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 
 # 사이드바 조건 카드. 이 화면이 실제로 읽는 고유 조건(공정 하나, 펼친 제품 행의 거르기)을 모은다.
 CARD_LABEL = "공정 상세 조건"
@@ -294,7 +294,7 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
-        st.caption("계산을 멈춰 공정을 고를 수 없습니다.")
+        st.caption(NO_PROCESS_MARK)
     _stop_with_error(bootstrap_error_message(exc))
 
 thresholds = page_inputs.thresholds

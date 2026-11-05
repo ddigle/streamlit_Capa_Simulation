@@ -152,7 +152,7 @@ def test_the_tray_is_a_right_panel_beside_the_stage() -> None:
 
 def test_buttons_follow_the_app_button_grain() -> None:
     """앱 단추와 같은 결 — 모서리 8px · 굵기 600 · 테두리 BORDER · 글자 TEXT · 도구 줄 높이."""
-    button = _rule(".sle button")
+    button = _rule(".sle button:where(:not(.capa-date-root button))")
 
     assert "border-radius: 8px" in button
     assert "font-weight: 600" in button
@@ -690,7 +690,8 @@ def test_several_tray_chips_can_be_picked_and_dropped_together() -> None:
     assert "placeFromTray(lead, list, p," in many
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
     assert "S.selection = new Set(onePerGroup(name ? shown.map((m) => m.id) : [lead.id]))" in place
-    assert "<b>Ctrl</b>" in HTML and "<b>Shift</b>" in HTML and "<b>Ctrl+Shift</b>" in HTML
+    for key in ("칩 Ctrl+클릭", "칩 Shift+클릭", "칩 Ctrl+Shift+클릭"):
+        assert f"['{key}', " in JS, key
 
 
 def test_the_tray_lists_units_by_name_and_can_be_searched() -> None:

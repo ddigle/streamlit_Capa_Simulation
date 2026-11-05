@@ -228,9 +228,10 @@ function valueText(mode, start, end) {
 }
 // </date-panel-core>
 
-export default function (component) {
-  const { data, parentElement, setTriggerValue } = component
-  const root = parentElement.querySelector('.capa-date-root')
+// 판 한 벌을 그 조각(`.capa-date-root`)에 세운다. `data` 는 지금 값과 칸의 조건, `sendApply` 는 「적용」 을 받는 쪽이다 —
+// 서버로 보내는 칸은 트리거이고, 그림자 DOM 안 브라우저 몫 칸(Space 편집기 호기 추가)은 제 상태에 적는다. 회차마다(값이
+// 바뀔 때마다) 다시 불러도 된다 — 초안은 뿌리 요소에 남는다.
+function mountDatePanel(root, data, sendApply) {
   if (!root) return
   const label = root.querySelector('.capa-date-label')
   const helpButton = root.querySelector('.capa-date-help')
@@ -406,7 +407,7 @@ export default function (component) {
   const applyDraft = () => {
     if (applyState(state.draft, applied, minDay, maxDay) !== 'ready') return
     state.sent = { start: state.draft.start, end: state.draft.end }
-    setTriggerValue('apply', state.sent)
+    sendApply(state.sent)
     dialog.close()
     renderField()
   }
@@ -482,7 +483,8 @@ export default function (component) {
         (stop) => !stop.disabled && stop.tabIndex >= 0 && stop.offsetParent !== null
       )
       const edge = event.shiftKey ? stops[0] : stops[stops.length - 1]
-      if (edge && document.activeElement === edge) {
+      // 그림자 DOM 안이면 `document.activeElement` 는 그 바깥 칸이다 — 뿌리의 문서 조각에 묻는다.
+      if (edge && root.getRootNode().activeElement === edge) {
         event.preventDefault()
         ;(event.shiftKey ? stops[stops.length - 1] : stops[0]).focus()
       }
@@ -562,4 +564,11 @@ export default function (component) {
 
   renderField()
   render()
+}
+
+export default function (component) {
+  const { data, parentElement, setTriggerValue } = component
+  mountDatePanel(parentElement.querySelector('.capa-date-root'), data, (value) =>
+    setTriggerValue('apply', value)
+  )
 }

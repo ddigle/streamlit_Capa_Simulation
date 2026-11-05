@@ -11,7 +11,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 import pytest
-from alert_marks import flashed, infos, successes
+from alert_marks import flashed, infos, place_errors, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, Expander, Status
 from streamlit.testing.v1.errors import AppTestError
@@ -190,7 +190,7 @@ def test_a_database_held_by_another_program_shows_the_notice_instead_of_a_traceb
     app.run()
 
     assert not app.exception
-    assert any("다른 프로그램이 파일을 열어 두었습니다" in error.value for error in app.error)
+    assert any("다른 프로그램이 파일을 열어 두었습니다" in text for text in place_errors(app))
     # 시나리오 관리 탭은 목록을 못 읽으면 작업 선택 앞에서 멈춘다.
     assert "시나리오 작업" not in {widget.label for widget in app.segmented_control}
     assert [tab.label for tab in app.main.tabs] == [

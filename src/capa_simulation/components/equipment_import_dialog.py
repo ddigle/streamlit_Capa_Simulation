@@ -182,8 +182,8 @@ def withdraw_preview_on_new_visit() -> None:
 def _render_review(review: ImportReview) -> None:
     # 바뀔 행은 넣으면 실제로 바뀌는 줄만 센다 — 내려받은 「현재 데이터」 를 그대로 올리면 「바뀌는
     # 값 없음 · 바뀔 행 0행」 이다(내려받기 캡션 「그대로 붙여넣어도 통과합니다」 와 어긋나지 않게).
-    # 미리보기의 알림 · 주의는 창 안에 그리지 않는다 — 미리본 회차에 알림창으로 낸다
-    # (`_queue_review_alerts`).
+    # 미리보기의 알림 · 주의 · 넣은 뒤 행 수는 창 안에 그리지 않는다 — 미리본 회차에 알림창으로
+    # 낸다(`_queue_review_alerts`). 자리에는 값(머리 줄 · 수 · 바뀔 행 표)만 남는다(UI-INP-08 예외).
     changed = import_preview_changed_rows(review.changes)
     count = int(changed.sum())
     new_rows = int(review.changes["Import구분"].eq("신규").sum())
@@ -191,20 +191,14 @@ def _render_review(review: ImportReview) -> None:
     head = f"{review.target} · 바뀔 행 {count:,}행"
     if not count:
         head = f"{review.target} · 바뀌는 값 없음 · 바뀔 행 0행"
-    st.markdown(f"**{head}**")
     split = paste_split_summary(review.source, review.candidate)
-    if split is not None:
-        st.caption(f":material/call_split: {split}")
+    st.markdown(f"**{head}**" if split is None else f"**{head}** · {split}")
     with st.container(horizontal=True):
         st.metric("신규", f"{new_rows:,}건")
         st.metric("기존 대체", f"{count - new_rows:,}건")
         if unchanged:
             st.metric("변경 없음", f"{unchanged:,}건")
     st.dataframe(review.changes, hide_index=True, width="stretch", placeholder="")
-    st.caption(
-        f"넣은 뒤 편집본: 기존 보유대수 {len(review.candidate[0]):,}행 · "
-        f"호기 {len(review.candidate[1]):,}행 · 비가동 {len(review.candidate[2]):,}행"
-    )
 
 
 def _queue_review_alerts(review: ImportReview) -> None:
@@ -213,8 +207,11 @@ def _queue_review_alerts(review: ImportReview) -> None:
     notices = [markdown_safe_tildes(message) for message in review.notices]
     if st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False):
         notices.append("예시 행은 빼고 검토했습니다.")
-    if notices:
-        queue_flash(IMPORT_REVIEW_NOTICE_KEY, " ".join(notices), kind="info", popup_only=True)
+    notices.append(
+        f"넣은 뒤 편집본: 기존 보유대수 {len(review.candidate[0]):,}행 · "
+        f"호기 {len(review.candidate[1]):,}행 · 비가동 {len(review.candidate[2]):,}행"
+    )
+    queue_flash(IMPORT_REVIEW_NOTICE_KEY, " ".join(notices), kind="info", popup_only=True)
     if review.cautions:
         queue_flash(
             IMPORT_REVIEW_CAUTION_KEY,

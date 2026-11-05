@@ -3215,7 +3215,7 @@ def paste_split_summary(source: Frames, candidate: Frames) -> str | None:
     layout = f" · 배치 칸 {layout_cells:,}(호기 {layout_units:,}대)" if layout_cells else ""
     return (
         f"공통 칸 {common:,}{layout} · 시나리오 칸 {schedule:,} 바뀜 · 새 호기 {new_units:,} · "
-        f"새 비가동 {new_downtime:,}(다른 설비 시나리오에 넣을 후보)"
+        f"새 비가동 {new_downtime:,}"
     )
 
 
