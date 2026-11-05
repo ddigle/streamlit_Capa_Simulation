@@ -4,8 +4,8 @@
 
 첫 화면은 `site/catalog.json` 에서 나오는 생성물이고 자료는 `site/<폴더>/index.html` 이다.
 자료를 더하면서 목록이나 생성기 실행을 빠뜨리면 사내 Pages 에서 그 자료로 가는 길이 없어진다.
-폐쇄망이라 외부 파일을 부르는 자료도 서지 않는다. 안내서는 동료가 첫 지시를 복사해 쓰는 곳이라
-지침서 0장과 글자까지 같아야 한다.
+폐쇄망이라 외부 파일을 부르는 자료도 서지 않는다. 안내서는 동료가 첫 지시와 명령을 복사해 쓰는
+곳이라 코드 블록은 글 원본과, 첫 지시는 지침서 0장과 글자까지 같아야 한다.
 """
 
 import html
@@ -40,6 +40,7 @@ ROOT_INDEX = PROJECT_ROOT / INDEX_NAME
 DECK = SITE_DIR / "contest-deck" / INDEX_NAME
 GUIDE = SITE_DIR / "module-guide" / INDEX_NAME
 MODULE_GUIDE = PROJECT_ROOT / "docs" / "module_guide.md"
+COLLEAGUE_GUIDE = PROJECT_ROOT / "docs" / "module_colleague_guide.md"
 
 _GOOD_ROW = {
     "path": "demo-a",
@@ -50,9 +51,16 @@ _GOOD_ROW = {
 }
 
 # 파일을 부르는 자리의 바깥 주소만 본다. 글자로 적은 주소(`<code>http://localhost:8510</code>`,
-# 번들 라이브러리의 이름공간 문자열)는 요청이 아니다.
+# 번들 라이브러리의 이름공간 문자열)는 요청이 아니다. 주소가 글자 그대로 적힌 꼴까지가 이 그물이다 —
+# 변수로 든 주소 · `new Worker` · `XMLHttpRequest` 는 못 본다(덱의 번들 라이브러리가 `fetch(변수)` ·
+# `new Worker(변수)` 를 들고 있어 넓히면 오탐이다). 새 자료는 브라우저로 한 번 열어 본다.
 _OUTSIDE_REQUEST = re.compile(
-    r"""(?:\b(?:src|href)\s*=\s*["']?\s*|\burl\(\s*["']?\s*)(?:https?:)?//""", re.IGNORECASE
+    r"""(?:\b(?:src|href|poster)\s*=\s*["']?\s*"""
+    r"""|\bsrcset\s*=\s*["']?(?:[^"'>]*[\s,])?"""
+    r"""|\burl\(\s*["']?\s*"""
+    r"""|@import\s*["']\s*"""
+    r"""|\b(?:fetch|import)\(\s*["'`]\s*)(?:https?:)?//""",
+    re.IGNORECASE,
 )
 
 
@@ -212,9 +220,35 @@ def test_the_outside_request_pattern_tells_a_request_from_written_text() -> None
     assert _OUTSIDE_REQUEST.search('<script src="https://example.invalid/a.js">')
     assert _OUTSIDE_REQUEST.search("<link href=//example.invalid/a.css>")
     assert _OUTSIDE_REQUEST.search("background: url('http://example.invalid/a.png')")
+    assert _OUTSIDE_REQUEST.search('<img srcset="https://example.invalid/a.png 1x">')
+    assert _OUTSIDE_REQUEST.search('<img srcset="a.png 1x, //example.invalid/b.png 2x">')
+    assert _OUTSIDE_REQUEST.search('<video poster="https://example.invalid/a.png">')
+    assert _OUTSIDE_REQUEST.search('@import "https://example.invalid/a.css";')
+    assert _OUTSIDE_REQUEST.search("@import'//example.invalid/a.css';")
+    assert _OUTSIDE_REQUEST.search('fetch("https://example.invalid/a.json")')
+    assert _OUTSIDE_REQUEST.search("import(`https://example.invalid/a.js`)")
     assert not _OUTSIDE_REQUEST.search("<code>http://localhost:8510</code>")
     assert not _OUTSIDE_REQUEST.search('createElementNS("http://www.w3.org/2000/svg", "g")')
     assert not _OUTSIDE_REQUEST.search("src:url(data:font/woff2;base64,AAAA)")
+    assert not _OUTSIDE_REQUEST.search('<img srcset="a.png 1x, b.png 2x">')
+    assert not _OUTSIDE_REQUEST.search('<img srcset="data:image/png;base64,AA//BB 1x">')
+    assert not _OUTSIDE_REQUEST.search('@import "a.css";')
+    assert not _OUTSIDE_REQUEST.search("fetch(t).then(i => i.arrayBuffer())")
+    assert not _OUTSIDE_REQUEST.search('fetch("data.json")')
+    assert not _OUTSIDE_REQUEST.search('import("./a.js")')
+
+
+@pytest.mark.parametrize(
+    "path",
+    [ROOT_INDEX, *(page for page in _site_pages() if page != DECK)],
+    ids=lambda path: path.relative_to(PROJECT_ROOT).as_posix(),
+)
+def test_a_page_keeps_the_browser_from_asking_the_site_root_for_an_icon(path: Path) -> None:
+    """선언이 없으면 브라우저가 저장소 경로 밖 `/favicon.ico` 를 불러 404 를 남긴다.
+
+    덱은 쇼케이스 복사본이라 CR 말고는 손대지 않는다 — 쇼케이스 다음 빌드 때 넣는다.
+    """
+    assert '<link rel="icon" href="data:,">' in path.read_text(encoding="utf-8")
 
 
 def test_the_catalog_has_no_cr() -> None:
@@ -249,6 +283,16 @@ def test_the_guides_first_instruction_is_the_module_guides_block() -> None:
     assert block is not None
 
     assert html.unescape(block.group(1)) == expected.group(1)
+
+
+def test_the_guides_code_blocks_are_the_colleague_guides_blocks() -> None:
+    """글 원본을 고치고 HTML 을 빠뜨리면 동료가 옛 명령을 복사한다 — 차례까지 글자 그대로다."""
+    source = COLLEAGUE_GUIDE.read_text(encoding="utf-8")
+    fences = re.findall(r"^```[a-z]*\n(.*?)\n```$", source, re.DOTALL | re.MULTILINE)
+    blocks = re.findall(r"<pre>(.*?)</pre>", GUIDE.read_text(encoding="utf-8"), re.DOTALL)
+
+    assert fences
+    assert [html.unescape(block) for block in blocks] == fences
 
 
 def test_the_guide_does_not_say_the_internal_word() -> None:
