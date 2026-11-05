@@ -4131,7 +4131,8 @@ def _bdq_failure(exc: BaseException) -> str:
     # SQL, 문구 낱말로 가른 추정)를 적는다. 「Error」 하나로는 시간 초과인지 가를 수 없었다
     # (사내 리뷰 202610200720).
     # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다(문구 원문이 아니다) — 같은 「SQL」 이
-    # 문법 낱말로 섰는지 `sql` · `not found` 같은 넓은 낱말로 섰는지 가른다(사내 리뷰 202610271800).
+    # 문법 낱말로 섰는지 `not found` 같은 넓은 낱말로 섰는지, 「그 밖」 이 `sql` 같은 어떤 단서를
+    # 달고 왔는지 가른다.
     if isinstance(exc, BigDataQueryCallError):
         names, kind, clue = exc.type_names, exc.kind, exc.clue
     else:
