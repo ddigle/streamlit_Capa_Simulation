@@ -26,11 +26,12 @@ data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의
 - **그림자 DOM**(`isolate_styles` 기본값) — 팝업 안에 마운트하지 않는다(AGENTS 9장 「스크립트와
   컴포넌트」).
 
-**두 칸 배치**(왼쪽 표 · 오른쪽 칸)는 key 가로 칸(`SPLIT_KEY` › `LEFT_KEY`·`RIGHT_KEY`)이고
-서식은 페이지 CSS 한 덩이(`side_layout_style`)다. 오른쪽 칸 맨 앞의 작은 별도 등록
-`capa_equipment_side_splitter`(`render_side_splitter`)가 칸막이를 그린다 — 끌어 폭 바꾸기(최소·
-최대 한계 `SIDE_*`), ‹ › 접기·펴기. 폭·접힘은 브라우저 저장소와 `<html>` 의 CSS 변수
-(`--emd-side-w`·`--emd-top`·`--emd-gap`)·속성(`data-emd-side`)에만 두고 파이썬으로 보내지
+**두 칸 배치**(왼쪽 표 · 오른쪽 칸)는 테두리 하나의 key 칸(`FRAME_KEY`) 안 key 가로 칸(`SPLIT_KEY` ›
+`LEFT_KEY`·`RIGHT_KEY`)이고 서식은 페이지 CSS 한 덩이(`side_layout_style`)다 — 오른쪽 칸은 편집기
+영역 안의 서브페이지다. 오른쪽 칸 맨 앞의 작은 별도 등록 `capa_equipment_side_splitter`
+(`render_side_splitter`)가 칸막이와 칸 머리의 접기 단추, 접었을 때 편집기 영역 오른쪽 위에 떠 있는
+단추를 그린다 — 끌어 폭 바꾸기(최소·최대 한계 `SIDE_*`), 접기·펴기. 폭·접힘은 브라우저 저장소와
+`<html>` 의 CSS 변수(`--emd-side-w`·`--emd-top`)·속성(`data-emd-side`)에만 두고 파이썬으로 보내지
 않는다(AGENTS 9장 「브라우저 전용 보기 상태」). 오른쪽 칸 본문(`SIDE_BODY_KEY` — 고르기 아래
 전부)은 창 높이로 정한 상한 안에서 스크롤한다.
 
@@ -366,37 +367,51 @@ TRIGGER_NAMES: Final = frozenset(
 
 # ------------------------------------------------------------------ 두 칸 배치 · 오른쪽 칸 폭
 
-# 두 칸 줄(가로 칸)과 그 두 칸, 오른쪽 칸 본문(고르기 아래 전부 — 패널·저장 구획·저장
-# 이력), 칸막이 마운트.
+# 편집기 영역(테두리 칸)과 그 안 두 칸 줄(가로 칸)·두 칸, 표 위 작업 줄, 오른쪽 칸 고르기, 오른쪽 칸
+# 본문(고르기 아래 전부 — 패널·저장 구획·저장 이력), 칸막이 마운트.
+FRAME_KEY: Final = "equipment_master_frame"
 SPLIT_KEY: Final = "equipment_master_split"
 LEFT_KEY: Final = "equipment_master_left"
 RIGHT_KEY: Final = "equipment_master_right"
+TOOLS_KEY: Final = "equipment_master_tools"
+SIDE_CHOICE_KEY: Final = "equipment_master_side_v1"
 SIDE_BODY_KEY: Final = "equipment_master_side_body"
 SPLITTER_KEY: Final = "equipment_master_side_splitter"
 
-# 오른쪽 칸 폭 한계(2026-11-02 사용자 결정 「너비에 한계를 두고」 — 명세 15-2). 최소 320px
-# 는 「오른쪽 칸」 고르기 넷의 자연 폭 307px + 여유, 최대 760px 은 표에 줄의 40% 이상을 남기는
-# 몫 60% 와 함께 건다. 좁은 줄에서는 몫(최소 40%)이 이긴다. 처음 폭은 옛 7:3 두 칸의 오른쪽
-# 폭(30% − 28px)이다.
-SIDE_MIN_PX: Final = 320
+# 오른쪽 칸 폭 한계(2026-11-02 사용자 결정 「너비에 한계를 두고」 — 명세 15-2). 최소 360px
+# 는 칸 머리 한 줄(「오른쪽 칸」 고르기 넷의 자연 폭 310px + 사이 6 + 접기 단추 28)에 칸막이 곁
+# 여백 14 를 더한 값, 최대 760px 은 표에 줄의 40% 이상을 남기는 몫 60% 와 함께 건다. 좁은 줄에서는
+# 몫(최소 40%)이 이긴다. 처음 폭은 옛 7:3 두 칸의 오른쪽 폭(30% − 28px)이다.
+SIDE_MIN_PX: Final = 360
 SIDE_MIN_SHARE: Final = 0.4
 SIDE_MAX_PX: Final = 760
 SIDE_MAX_SHARE: Final = 0.6
 SIDE_DEFAULT_SHARE: Final = 0.3
 SIDE_DEFAULT_OFFSET_PX: Final = 28
-# 접은 칸 — 폭 44px 의 세로 띠(높이 240px, ‹ 와 지금 칸 이름).
-SIDE_RAIL_PX: Final = 44
-SIDE_RAIL_HEIGHT_PX: Final = 240
 # 본문 높이 상한 = max(360px, 창 높이 − 붙는 높이 − 200px). 200px = 고르기 42 + 간격 16 +
 # Streamlit 본문 아래 여백 약 140(1500×950 측정). 붙는 높이(`--emd-top`)는 칸막이가 화면 탭
 # 줄이 붙었을 때의 아래 끝 + 8px 로 잰다(1.63 — 탭 줄 sticky top 52.5 + 높이 36 → 97px).
-# 재기 전에는 그 측정값을 쓴다.
+# 재기 전에는 그 측정값을 쓴다. 오른쪽 칸은 내용이 짧아도 머리(고르기 28 + 간격 14) + 이 상한만큼
+# 높이를 잡는다 — 칸을 바꿔도 영역 높이가 뛰지 않고 칸막이를 경계선을 따라 잡을 수 있다.
 SIDE_BODY_MIN_PX: Final = 360
 SIDE_BODY_RESERVE_PX: Final = 200
 SIDE_TOP_FALLBACK_PX: Final = 97
-# 두 칸 사이 간격(칸막이를 그 한가운데 둔다) — 칸막이가 재기 전의 값.
-SIDE_GAP_FALLBACK_PX: Final = 28
+SIDE_HEAD_PX: Final = 42
+# 칸막이를 잡는 폭 — 두 칸 경계선이 그 한가운데다. 표·오른쪽 칸은 경계선에서 각각 이만큼 띄운다.
 SIDE_GUTTER_PX: Final = 16
+SIDE_INSET_PX: Final = 14
+# 본문 칸 스크롤 막대 자리(`scrollbar-gutter: stable`, 1.63 측정) — 편집기 영역 안쪽 여백(13px)으로
+# 내보내 본문 내용의 오른쪽 끝이 칸 머리 접기 단추의 오른쪽 끝과 맞는다.
+SIDE_SCROLLBAR_PX: Final = 10
+# 칸 머리 접기 단추(고르기와 같은 높이)와 고르기 사이 간격 — 고르기 칸이 이만큼 자리를 비운다.
+SIDE_TOGGLE_PX: Final = 28
+SIDE_TOGGLE_GAP_PX: Final = 6
+# 접은 동안 표 위 작업 줄이 비우는 오른쪽 자리 — 떠 있는 단추(가장 긴 칸 이름 「저장 전 변경」 89px,
+# 측정)가 「내려받기」 를 덮지 않게.
+SIDE_REOPEN_RESERVE_PX: Final = 112
+# 떠 있는 단추를 품은 오른쪽 칸 감싸개의 쌓임 차례 — 표 머리(`.emg-head` 6) 위, 고치는 칸(8)·목록
+# (9·30) 아래.
+SIDE_REOPEN_Z_INDEX: Final = 7
 # 이 창 폭 이하에서는 두 칸을 위아래로 쌓는다(옛 `st.columns` 와 같은 640px) — 칸막이·접기는 없다.
 SIDE_STACK_MAX_PX: Final = 640
 
@@ -433,9 +448,11 @@ def side_layout_style() -> str:
     가로 칸의 flex 항목은 key 칸이 아니라 그것을 한 번 감싼 `stLayoutWrapper` 다(1.63 — Qual
     계산기와 같은 꼴). `:has()` 는 한 겹만 쓴다(겹치면 규칙 전체가 버려진다). `wrap=False` 가로
     칸은 스크롤 칸이 되어 sticky 가 줄 기준으로 잡히므로 줄에 `overflow: visible` 을 건다.
-    칸막이는 절대 위치(흐름 높이 0)로 두 칸 사이 간격 한가운데에 선다 — 붙는(sticky) 오른쪽
-    감싸개가 그 기준 칸이다. 접힘(`data-emd-side="min"`)은 넓은 화면에서만 — 좁은 화면(쌓임)과
-    인쇄는 펼친 꼴이다.
+    테두리는 바깥 칸(`FRAME_KEY`) 하나이고 두 칸 경계선은 왼쪽 감싸개의 오른쪽 테두리다 — 왼쪽은 줄
+    높이로 늘어나 경계선이 영역 끝까지 간다. 칸막이 마운트는 붙는(sticky) 오른쪽 감싸개를 기준으로
+    경계선부터 칸 오른쪽 끝까지 덮는 절대 위치(흐름 높이 0)이고, 눌림은 칸막이·접기 단추만 받는다
+    (`pointer-events`). 접힘(`data-emd-side="min"`)은 넓은 화면에서만 — 칸 자리가 0 이 되어 표가
+    줄을 다 쓰고 떠 있는 단추만 남는다. 좁은 화면(쌓임)과 인쇄는 펼친 꼴이다.
     """
     wrapper = '[data-testid="stLayoutWrapper"]'
     left = f".st-key-{LEFT_KEY}"
@@ -443,47 +460,70 @@ def side_layout_style() -> str:
     left_item = f"{wrapper}:has(> {left})"
     right_item = f"{wrapper}:has(> {right})"
     splitter = f".st-key-{SPLITTER_KEY}"
+    choice = f".st-key-{SIDE_CHOICE_KEY}"
+    tools = f".st-key-{TOOLS_KEY}"
     body = f".st-key-{SIDE_BODY_KEY}"
     folded = 'html[data-emd-side="min"]'
     top = f"var(--emd-top, {SIDE_TOP_FALLBACK_PX}px)"
-    gap = f"var(--emd-gap, {SIDE_GAP_FALLBACK_PX}px)"
+    line = f"1px solid {tokens.BORDER}"
     half = SIDE_GUTTER_PX // 2
+    body_cap = f"max({SIDE_BODY_MIN_PX}px, calc(100vh - {top} - {SIDE_BODY_RESERVE_PX}px))"
     return "".join(
         [
             "<style>",
             f".st-key-{SPLIT_KEY} {{ align-items: flex-start; overflow: visible; }}",
-            f"{left}, {left_item} {{ flex: 1 1 0; min-width: 0; }}",
+            f"{left} {{ flex: 1 1 0; min-width: 0; }}",
+            (
+                f"{left_item} {{ flex: 1 1 0; min-width: 0; align-self: stretch; "
+                f"padding-right: {SIDE_INSET_PX}px; border-right: {line}; }}"
+            ),
             (
                 f"{right_item} {{ flex: 0 0 {side_width_rule()}; min-width: 0; "
+                f"padding-left: {SIDE_INSET_PX}px; "
                 f"position: sticky; top: {top}; align-self: flex-start; }}"
             ),
+            f"{right} {{ min-height: calc({body_cap} + {SIDE_HEAD_PX}px); }}",
             (
-                f"{splitter} {{ position: absolute; top: 0; bottom: 0; width: {SIDE_GUTTER_PX}px; "
-                f"left: calc(-0.5 * {gap} - {half}px); z-index: 2; }}"
+                f"{splitter} {{ position: absolute; top: 0; bottom: 0; left: -{half}px; right: 0; "
+                "width: auto; min-width: 0; max-width: none; z-index: 2; pointer-events: none; }"
             ),
+            f"{choice} {{ padding-right: {SIDE_TOGGLE_PX + SIDE_TOGGLE_GAP_PX}px; }}",
             (
-                f"{body} {{ max-height: max({SIDE_BODY_MIN_PX}px, "
-                f"calc(100vh - {top} - {SIDE_BODY_RESERVE_PX}px)); "
+                f"{body} {{ width: calc(100% + {SIDE_SCROLLBAR_PX}px); max-width: none; "
+                f"max-height: {body_cap}; "
                 "overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }"
             ),
             f"@media screen and (width > {SIDE_STACK_MAX_PX}px) {{ ",
-            f"{folded} {right_item} {{ flex-basis: {SIDE_RAIL_PX}px; }} ",
-            f"{folded} {right} {{ min-height: {SIDE_RAIL_HEIGHT_PX}px; }} ",
-            f"{folded} {right} > :not({splitter}) {{ display: none; }} ",
+            f"{folded} {left_item} {{ padding-right: 0; border-right: none; }} ",
             (
-                f"{folded} {splitter} {{ left: 0; width: 100%; bottom: auto; "
-                f"height: {SIDE_RAIL_HEIGHT_PX}px; }} "
+                f"{folded} {right_item} {{ flex-basis: 0; width: 0; padding-left: 0; "
+                f"z-index: {SIDE_REOPEN_Z_INDEX}; }} "
             ),
+            f"{folded} {right} {{ min-height: 0; }} ",
+            f"{folded} {right} > :not({splitter}) {{ display: none; }} ",
+            f"{folded} {splitter} {{ left: auto; bottom: auto; width: 0; height: 0; }} ",
+            f"{folded} {tools} {{ padding-right: {SIDE_REOPEN_RESERVE_PX}px; }} ",
             "}",
             f"@media (width <= {SIDE_STACK_MAX_PX}px) {{ ",
             f".st-key-{SPLIT_KEY} {{ flex-wrap: wrap; }} ",
-            f"{left_item}, {right_item} {{ flex: 1 1 100%; position: static; }} ",
+            (
+                f"{left_item} {{ flex: 1 1 100%; position: static; "
+                "padding-right: 0; border-right: none; } "
+            ),
+            (
+                f"{right_item} {{ flex: 1 1 100%; position: static; padding-left: 0; "
+                f"padding-top: {SIDE_INSET_PX}px; border-top: {line}; }} "
+            ),
+            f"{right} {{ min-height: 0; }} ",
             f"{splitter} {{ display: none; }} ",
+            f"{choice} {{ padding-right: 0; }} ",
             "}",
             "@media print { ",
             f"{right_item} {{ position: static; }} ",
-            f"{body} {{ max-height: none; overflow: visible; }} ",
+            f"{right} {{ min-height: 0; }} ",
+            f"{body} {{ width: 100%; max-height: none; overflow: visible; }} ",
             f"{splitter} {{ display: none; }} ",
+            f"{choice} {{ padding-right: 0; }} ",
             "}",
             "</style>",
         ]
@@ -498,14 +538,14 @@ def _splitter_palette() -> dict[str, str]:
         "muted": tokens.TEXT_MUTED,
         "surface": tokens.SURFACE,
         "border": tokens.BORDER,
-        "border-strong": tokens.BORDER_STRONG,
         "accent": tokens.ACCENT,
     }
 
 
 def render_side_splitter(label: str, reveal: int) -> None:
     """오른쪽 칸 맨 앞의 칸막이 — 오른쪽 칸 왼쪽 끝을 끌어 폭을 바꾸고(두 번 누르면 처음 폭,
-    키보드 ←·→·Home·End), › 로 접고 접힌 띠(지금 칸 이름 `label`)를 눌러 편다. 받는 값이
+    키보드 ←·→·Home·End), 칸 머리의 › 로 접고 편집기 영역 오른쪽 위에 떠 있는 단추(지금 칸 이름
+    `label`)를 눌러 편다. 받는 값이
     없다(상태 값·트리거 없음 — 회차를 부르지 않는다). `reveal` 은 표·오른쪽 칸이 오른쪽 칸을 연
     수(`equipment_master_tab._switch_side`) — 늘면 접힌 칸을 펴고 본문 칸(`SIDE_BODY_KEY`)을 맨
     위로 올린다(key 칸이라 다른 호기를 그려도 스크롤 자리가 남는다)."""

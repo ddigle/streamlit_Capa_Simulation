@@ -1,10 +1,10 @@
-// 설비 마스터 오른쪽 칸 칸막이 — 오른쪽 칸 왼쪽 끝을 끌어 폭을 바꾸고 ‹ › 로 접고 편다.
+// 설비 마스터 오른쪽 칸 칸막이 — 오른쪽 칸 왼쪽 끝을 끌어 폭을 바꾸고, 칸 머리의 › 로 접고 편집기 영역 오른쪽 위에 떠 있는
+// 단추로 편다.
 // 상태는 브라우저에만 둔다(브라우저 저장소 + <html> 의 CSS 변수·속성) — 파이썬으로 보내지 않는다(AGENTS 9장 「브라우저 전용
 // 보기 상태」). 폭의 한계는 페이지 CSS 의 clamp 가 지키고, 여기 `clampWidth` 는 같은 식으로 저장값·aria 값을 낸다.
 const STORE = 'capa-equipment-side-v1'
 const VAR_W = '--emd-side-w'
 const VAR_TOP = '--emd-top'
-const VAR_GAP = '--emd-gap'
 const ATTR = 'data-emd-side'
 // 화면 탭 줄이 없을 때 가리는 머리 띠 높이(설비 마스터 표 `TOAST_REVEAL_MARGIN` 과 같다)와 그 아래 틈.
 const HEADER_COVER = 72
@@ -110,7 +110,7 @@ function keyClass(name) {
   return typeof name === 'string' && /^[\w-]+$/.test(name) ? '.st-key-' + name : null
 }
 
-// 그림자 DOM 밖의 자리 — 두 칸 줄·오른쪽 칸 감싸개(flex 항목)·그 앞 형제(왼쪽 칸 감싸개)·오른쪽 칸 본문 칸(스크롤 칸).
+// 그림자 DOM 밖의 자리 — 두 칸 줄·오른쪽 칸 감싸개(flex 항목)·오른쪽 칸 본문 칸(스크롤 칸).
 function anchors(host, keys) {
   const root = host.getRootNode ? host.getRootNode() : null
   const outer = root && root.host ? root.host : host
@@ -153,13 +153,7 @@ function coverTop(selector) {
 }
 
 function measure(S) {
-  const doc = document.documentElement
-  doc.style.setProperty(VAR_TOP, coverTop(S.cover) + 'px')
-  const prev = S.column && S.column.previousElementSibling
-  if (prev && !minimized()) {
-    const gap = Math.max(0, S.column.getBoundingClientRect().left - prev.getBoundingClientRect().right)
-    doc.style.setProperty(VAR_GAP, Math.round(gap) + 'px')
-  }
+  document.documentElement.style.setProperty(VAR_TOP, coverTop(S.cover) + 'px')
 }
 
 function paint(S) {
@@ -185,7 +179,6 @@ function setFolded(S, folded, focus) {
   else doc.removeAttribute(ATTR)
   writeStore({ min: folded })
   paint(S)
-  if (!folded) measure(S)
   if (focus) (folded ? S.rail : S.toggle).focus()
 }
 
@@ -207,7 +200,6 @@ function build(S, host) {
   rail.type = 'button'
   rail.title = '오른쪽 칸 펼치기'
   rail.setAttribute('aria-expanded', 'false')
-  rail.appendChild(el('span', 'ess-chev', '‹'))
   const railLabel = el('span', 'ess-rail-label')
   rail.appendChild(railLabel)
   host.appendChild(gutter)
