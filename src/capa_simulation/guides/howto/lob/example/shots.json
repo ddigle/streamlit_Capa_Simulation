@@ -13,13 +13,13 @@
    "targets": {
     "sidebar_scenario": [
      38.3,
-     395.3,
+     395.6,
      223.4,
      51.0
     ],
     "sidebar_badge": [
      183.6,
-     395.5,
+     395.8,
      77.1,
      16.5
     ],
@@ -38,21 +38,15 @@
    "id": "18_official_done",
    "file": "18_official_done.webp",
    "targets": {
-    "repo_status": [
-     317.5,
-     218.0,
-     1105.0,
-     202.6
-    ],
     "sidebar_scenario": [
      38.3,
-     395.3,
+     395.6,
      223.4,
      51.0
     ],
     "sidebar_badge": [
      183.6,
-     395.5,
+     395.8,
      77.1,
      16.5
     ],
@@ -75,7 +69,7 @@
      181.0,
      164.5,
      417.2,
-     194.6
+     228.2
     ],
     "pref_compare_scenario": [
      195.0,
