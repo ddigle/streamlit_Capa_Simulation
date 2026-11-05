@@ -1960,6 +1960,28 @@ def test_a_failed_wide_list_says_every_line_below_is_the_narrow_window(
     assert checks.check_transcript(_summary(output)) == []
 
 
+def test_the_wide_window_can_be_narrowed_for_a_rerun(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """넓은 창이 서버에서 또 실패하면 창을 줄여 한 판 더 돈다 — 사내는 코드를 고칠 수 없다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", _fake_bigdataquery())
+
+    code, output = _run(capsys, "--only", "bdq", "--bdq-wide-days", "100")
+
+    assert code == 0
+    assert "| 넓은 창 100일 | 100일 | 성공 |" in output and "상한 366일" not in output
+    assert "- 아래는 `넓은 창 100일` 목록 기준" in output
+    summary = _uncoded(_summary(output))
+    assert re.match(r"- 8-5L 31일 2행 [\d.]+초 · 100일 4행 [\d.]+초 · 위반 1/4$", summary[0])
+    assert checks.check_transcript(_summary(output)) == []
+
+
+@pytest.mark.parametrize("days", ["31", "367"])
+def test_a_wide_window_out_of_range_is_refused(days: str) -> None:
+    with pytest.raises(SystemExit):
+        checks.parse_args(["--only", "bdq", "--bdq-wide-days", days])
+
+
 def test_a_full_run_and_a_narrow_run_by_choice_carry_no_window_cell(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

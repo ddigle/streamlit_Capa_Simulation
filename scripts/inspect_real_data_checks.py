@@ -5258,6 +5258,7 @@ def iter_bigdataquery(
     sample: int = DEFAULT_SAMPLE,
     margin_days: int = DEFAULT_MARGIN_DAYS,
     max_window: bool = True,
+    wide_days: int = CATALOG_MAX_DAYS,
     code_days: bool = True,
     copy_codes: int = DEFAULT_COPY_CODES,
     copy_days: int = DEFAULT_COPY_DAYS,
@@ -5320,10 +5321,10 @@ def iter_bigdataquery(
     if max_window:
         windows.append(
             (
-                f"상한 {CATALOG_MAX_DAYS}일",
-                QueryWindow(
-                    start_date=today - timedelta(days=CATALOG_MAX_DAYS - 1), end_date=today
-                ),
+                f"상한 {wide_days}일"
+                if wide_days == CATALOG_MAX_DAYS
+                else f"넓은 창 {wide_days}일",
+                QueryWindow(start_date=today - timedelta(days=wide_days - 1), end_date=today),
             )
         )
     runs: list[CatalogRun] = []
@@ -5515,6 +5516,13 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=f"{CATALOG_MAX_DAYS}일 목록 조회를 건너뛴다(너무 오래 걸릴 때)",
     )
     parser.add_argument(
+        "--bdq-wide-days",
+        type=int,
+        default=CATALOG_MAX_DAYS,
+        help=f"넓은 목록 창의 일수(기본 {CATALOG_MAX_DAYS} — 그 창이 서버에서 실패할 때 줄인다, "
+        f"{CATALOG_DEFAULT_DAYS + 2} ~ {CATALOG_MAX_DAYS})",
+    )
+    parser.add_argument(
         "--bdq-no-code-days",
         action="store_true",
         help="전 코드 적재일 조회(GROUP BY 한 번)를 건너뛴다",
@@ -5546,7 +5554,13 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "다시 셈한다(사외가 받은 리뷰 압축본에 돌린다 — 런북 8-6)",
     )
     parser.add_argument("--today", type=date.fromisoformat, default=None, help=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not CATALOG_DEFAULT_DAYS + 2 <= args.bdq_wide_days <= CATALOG_MAX_DAYS:
+        parser.error(
+            f"--bdq-wide-days 는 {CATALOG_DEFAULT_DAYS + 2} ~ {CATALOG_MAX_DAYS} 다 — "
+            "넓은 창을 빼려면 --bdq-no-max-window"
+        )
+    return args
 
 
 def _use_utf8_stdout() -> None:
@@ -5619,6 +5633,7 @@ def _block_parts(
             sample=args.bdq_sample,
             margin_days=args.bdq_margin_days,
             max_window=not args.bdq_no_max_window,
+            wide_days=args.bdq_wide_days,
             code_days=not args.bdq_no_code_days,
             copy_codes=args.bdq_copy_codes,
             copy_days=args.bdq_copy_days,
