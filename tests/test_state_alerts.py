@@ -60,6 +60,25 @@ def test_a_table_too_large_for_the_alarm_is_left_on_the_page(
     assert state_alerts.alert_table(frame, title="t", file_name="f.csv") is None
 
 
+def test_a_clipped_table_carries_only_its_head_and_the_whole_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`clip=True` 면 상한을 넘어도 None 이 아니다 — 앞 `TABLE_ROW_LIMIT` 행만 싣고 `total` 은 원래
+    행 수다. 상한 안이면 다 싣고 `table_clipped` 가 거짓이다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 2)
+    frame = pd.DataFrame({"공정": ["A", "B", "C"], "수": [1, 2, 3]})
+
+    clipped = state_alerts.alert_table(frame, title="t", file_name="f.csv", clip=True)
+    assert clipped is not None
+    assert clipped["rows"] == [["A", 1], ["B", 2]] and clipped["total"] == 3
+    assert state_alerts.table_clipped(clipped)
+    assert state_alerts.clipped_label(clipped) == "앞 2건 · 전체 3건"
+
+    whole = state_alerts.alert_table(frame.head(2), title="t", file_name="f.csv", clip=True)
+    assert whole is not None and whole["total"] == 2 and len(whole["rows"]) == 2
+    assert not state_alerts.table_clipped(whole)
+
+
 SCOPE = """
 import streamlit as st
 

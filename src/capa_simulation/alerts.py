@@ -122,7 +122,7 @@ SHORT_LIMIT: Final = 60
 RESEND_SECONDS: Final = 3.0
 # 알림에 딸린 표(`AlertTable`)에 싣는 행 수의 끝. 표지는 그 알림을 내는 회차마다 가고 기록은 이
 # 브라우저 탭 `sessionStorage`(대개 5MB)에 쌓이므로 끝을 둔다 — 넘는 표는 화면이 본문 목록을 그대로
-# 둔다(`components/state_alerts.alert_table`).
+# 두거나 앞부분만 싣고 전체를 CSV 단추로 둔다(`components/state_alerts.alert_table` 의 `clip`).
 TABLE_ROW_LIMIT: Final = 2000
 
 # 표지 속성 이름 — 알림 칸 JS 가 `style[data-capa-alerts]` 로 훑는다.

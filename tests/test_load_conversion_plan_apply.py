@@ -26,6 +26,7 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation import alerts
+from capa_simulation.components import table_toolbar
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.services.korean_particle import with_object_particle
 
@@ -264,6 +265,11 @@ def _inject(app: AppTest, name: str, frame: pd.DataFrame, token: str) -> None:
     app.run()
 
 
+def _download_labels(app: AppTest) -> list[str]:
+    """화면에 선 내려받기 단추 글 — 그려진 차례다."""
+    return [str(item.proto.label) for item in app.get("download_button")]
+
+
 def _folds(app: AppTest) -> set[str]:
     """본문 펼침 이름 — 아이콘을 단 `st.expander` 는 AppTest 가 `status` 로 읽는다."""
     return {str(item.label) for item in app.expander} | {str(item.label) for item in app.status}
@@ -382,24 +388,52 @@ def test_the_excluded_plan_list_says_what_happened_in_its_column_tooltip(
     assert "계획 없음(0)" in table["help"]["누락 기준정보"]
     assert table["file"].startswith("Capa_Conversion_Excluded_Plans_")
     assert "Alarm › 이 줄" in excluded["short"]
+    # 다 실었으면 전체 CSV 단추는 서지 않는다 — 표의 「CSV 내려받기」 가 전체다.
+    assert table["total"] == len(table["rows"])
+    assert "앞 " not in excluded["full"]
+    assert "제외한 계획 전체 CSV 다운로드" not in _download_labels(app)
 
 
-def test_lists_too_large_for_the_alarm_stay_on_the_conversion_page(
+def test_an_oversized_excluded_plan_list_stays_in_the_alarm_with_one_full_csv_at_the_tab_bottom(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 본문 펼침이 남고 글이 그 자리를 가리킨다."""
-    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 0)
+    """표가 `alerts.TABLE_ROW_LIMIT` 를 넘어도 목록은 Alarm 에서 본다(2026-11-05 사용자 요청 —
+    「제외한 계획 확인은 알람으로」) — 줄의 표는 앞부분만이고 글이 「앞 n건 · 전체 m건」 과 전체
+    자리를 말하며, 본문에는 접힘 · 표 없이 환산 탭 맨 아래 CSV 단추 하나만 서서 전체를 준다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 1)
+    written: dict[str, bytes] = {}
+    original = table_toolbar.render_csv_download
+
+    def recorded(*, data: bytes, file_name: str, key: str | None = None, **kwargs: Any) -> None:
+        written[file_name] = data
+        original(data=data, file_name=file_name, key=key, **kwargs)
+
+    monkeypatch.setattr(table_toolbar, "render_csv_download", recorded)
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"]).copy()
     plan["생산수량"] = plan["생산수량"].astype(float)
-    plan.loc[plan.index[0], "생산수량"] = None
-    _inject(app, "RQ_PKG_PLAN", plan, "blank-plan-quantity")
+    plan.loc[plan.index[:2], "생산수량"] = None
+    _inject(app, "RQ_PKG_PLAN", plan, "blank-plan-quantities")
 
     assert not list(app.exception)
     excluded = active_state(app, "ST-05")
-    assert excluded is not None and "tables" not in excluded
-    assert "이 탭 「제외한 계획 확인」" in excluded["short"]
-    assert "제외한 계획 확인" in _folds(app)
+    assert excluded is not None
+    assert excluded["short"].endswith("목록: Alarm › 이 줄")
+    table = note_table(excluded, "제외한 계획")
+    assert len(table["rows"]) == 1 and table["total"] == 2
+    # 패널의 줄 글은 두 줄까지만 보이므로 앞부분만 실었다는 말과 전체 자리가 맨 앞이다.
+    assert excluded["full"].startswith(
+        "Alarm 표는 앞 1건 · 전체 2건 — 전체는 이 탭 맨 아래 「제외한 계획 전체 CSV 다운로드」"
+    )
+    assert "제외한 계획 확인" not in _folds(app)
+    assert not any("누락 기준정보" in frame.value.columns for frame in app.main.dataframe)
+    labels = _download_labels(app)
+    assert labels.count("제외한 계획 전체 CSV 다운로드") == 1
+    assert labels[-1] == "제외한 계획 전체 CSV 다운로드"
+    # 단추는 앞부분이 아니라 전체를 준다(머리 줄 + 2행, 표와 같은 파일 이름).
+    payload = written[table["file"]]
+    assert payload.startswith(b"\xef\xbb\xbf")
+    assert len(payload.decode("utf-8-sig").splitlines()) == 3
 
 
 def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(

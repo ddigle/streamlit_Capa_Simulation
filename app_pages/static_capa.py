@@ -32,7 +32,6 @@ from capa_simulation.components.status_metric import (
     render_status_metric,
     shortage_tone,
 )
-from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -99,14 +98,8 @@ def _render_shortfall_table(
     labels: ProcessLabels,
     secure_threshold: float,
 ) -> None:
-    """화면용 프레임과 CSV 프레임을 분리한다.
-
-    표시명은 `st.dataframe` 에 넘기는 복사본에만 입힌다. 이 표의 CSV 는 투자 검토와
-    A/Item 배분에 그대로 옮겨 쓰므로 `공정` 은 원본이어야 한다.
-    """
-    exported = _display_shortfalls(data, warning_section=warning_section)
-    displayed = exported.copy()
-    displayed["공정"] = labels.series(displayed["공정"])
+    """표시명은 `st.dataframe` 에 넘기는 복사본에만 입힌다 — 내려받기는 표 도구 막대 한 곳이다."""
+    displayed = labels.frame(_display_shortfalls(data, warning_section=warning_section))
     st.dataframe(
         displayed,
         hide_index=True,
@@ -149,12 +142,6 @@ def _render_shortfall_table(
                 width="small",
             ),
         },
-    )
-    # 투자 검토와 A/Item 배분에 그대로 쓰는 표다. 화면에서 옮겨 적지 않도록 내보낸다.
-    render_csv_download(
-        data=exported.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"{key}.csv",
-        key=f"{key}_download",
     )
 
 

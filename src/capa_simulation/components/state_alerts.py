@@ -10,7 +10,9 @@
 - `alert_table` — 본문에서 뺀 목록을 알림에 싣는 표(`alerts.AlertTable` — Alarm 줄에서 펼쳐 보고
   CSV 로 내려받는다). 값은 JSON 값으로 바꾸고(NaN → 빈칸) 공정 칸은 표시명을 화면에만 입힌다(CSV
   는 원본 — `exclusion_table` 과 같은 규칙), 칸 머리 풍선(`column_help`)은 있는 칸에만 싣는다.
-  `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 그대로 둔다.
+  `alerts.TABLE_ROW_LIMIT` 를 넘으면 None 이라 화면이 본문 목록을 그대로 둔다. `clip=True` 면 None
+  대신 앞부분만 싣는다(`table_clipped` · `clipped_label` — 전체는 그 화면 맨 아래 CSV 단추 하나이고
+  알림 글이 그 자리를 부른다).
 - `ALARM_ROW_PLACE` · `alarm_table_place` — 목록이 딸린 표일 때 알림 글이 그 자리를 부르는 말.
 - `alert_page_error` — 화면을 그리지 못한 오류의 알림만 이벤트 칸으로 보낸다. 보통은 마크와 알림을
   한 칸에 싣는 `components/data_error_mark.render_data_error` 를 쓰고, 이 함수는 한 오류의 마크가 탭
@@ -129,16 +131,18 @@ def alert_table(
     file_name: str,
     labels: ProcessLabels | None = None,
     column_help: Mapping[str, str] | None = None,
+    clip: bool = False,
 ) -> alerts.AlertTable | None:
     """알림에 딸린 표. 칸 차례는 `frame` 그대로다(부르는 쪽이 표시순서로 칸을 세운 내보내기 프레임을
     준다). `column_help` 는 칸 머리 풍선(칸 이름 → 글 — 없는 칸은 뺀다)이다. 행이
-    `alerts.TABLE_ROW_LIMIT` 를 넘으면 None — 본문 목록을 남기라는 뜻이다."""
-    if len(frame) > alerts.TABLE_ROW_LIMIT:
+    `alerts.TABLE_ROW_LIMIT` 를 넘으면 None — 본문 목록을 남기라는 뜻이다. `clip` 이면 None 대신 앞
+    `TABLE_ROW_LIMIT` 행만 싣고 `total` 에 원래 행 수를 둔다(`table_clipped`)."""
+    if len(frame) > alerts.TABLE_ROW_LIMIT and not clip:
         return None
     columns = [str(column) for column in frame.columns]
     rows = [
         [_json_value(value) for value in record]
-        for record in frame.itertuples(index=False, name=None)
+        for record in frame.head(alerts.TABLE_ROW_LIMIT).itertuples(index=False, name=None)
     ]
     shown: dict[str, dict[str, str]] = {}
     if labels and PROCESS_COLUMN in frame.columns:
@@ -158,6 +162,17 @@ def alert_table(
         shown=shown,
         help={column: text for column, text in (column_help or {}).items() if column in columns},
     )
+
+
+def table_clipped(table: alerts.AlertTable) -> bool:
+    """앞부분만 실은 표인가(`alert_table(clip=True)`) — 그러면 전체는 화면 CSV 단추가 맡는다."""
+    return len(table["rows"]) < table["total"]
+
+
+def clipped_label(table: alerts.AlertTable) -> str:
+    """앞부분만 실은 표의 크기 말 — 알림 전문이 쓰고 Alarm 표 머리(`table_rows_clipped`)와 같은
+    꼴이다."""
+    return f"앞 {len(table['rows']):,}건 · 전체 {table['total']:,}건"
 
 
 def alert_page_error(message: str, *, code: str, tab: str = "", text: str | None = None) -> None:

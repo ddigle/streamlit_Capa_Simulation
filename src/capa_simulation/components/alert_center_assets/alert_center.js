@@ -145,6 +145,10 @@ function tableCell(table, column, value) {
   if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(4)))
   return String(value)
 }
+// 앞부분만 실은 표인가(`alert_table(clip=True)`) — CSV 는 그 화면 단추 몫이고 표 머리는 「앞 n건 · 전체 m건」 이다.
+function tableClipped(table) {
+  return Number(table.total || 0) > table.rows.length
+}
 // 표지 · 줄의 딸린 표들 — 행이 든 것만.
 function validTables(value) {
   return Array.isArray(value) ? value.filter((table) => table && typeof table === 'object' && Array.isArray(table.rows)) : []
@@ -931,12 +935,14 @@ function tableBox(C, table) {
   const csv = el('button', 'link', t.table_csv || '')
   csv.type = 'button'
   csv.addEventListener('click', () => downloadTable(table))
+  const total = Number(table.total || table.rows.length).toLocaleString()
+  const clipped = tableClipped(table)
   head.append(
     el('b', '', table.title || ''),
-    el('span', 'count', fill(t.table_rows, { n: Number(table.total || table.rows.length).toLocaleString() })),
+    el('span', 'count', clipped ? fill(t.table_rows_clipped, { n: table.rows.length.toLocaleString(), total }) : fill(t.table_rows, { n: total })),
     el('span', 'grow'),
-    csv,
   )
+  if (!clipped) head.append(csv)
   const scroller = el('div', 'tscroll')
   scroller.tabIndex = 0
   const grid = el('table')
@@ -1049,7 +1055,10 @@ function logPairs(C, row, forCopy) {
     pairs.push([t.log_full, row.full])
     for (const table of validTables(row.tables)) {
       const count = Number(table.total || table.rows.length)
-      pairs.push([t.log_table, fill(t.log_table_value, { title: table.title || '', n: count.toLocaleString() })])
+      const value = tableClipped(table)
+        ? fill(t.log_table_value_clipped, { title: table.title || '', n: table.rows.length.toLocaleString(), total: count.toLocaleString() })
+        : fill(t.log_table_value, { title: table.title || '', n: count.toLocaleString() })
+      pairs.push([t.log_table, value])
     }
   }
   return pairs
