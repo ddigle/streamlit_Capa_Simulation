@@ -41,6 +41,7 @@ DECK = SITE_DIR / "contest-deck" / INDEX_NAME
 GUIDE = SITE_DIR / "module-guide" / INDEX_NAME
 MODULE_GUIDE = PROJECT_ROOT / "docs" / "module_guide.md"
 COLLEAGUE_GUIDE = PROJECT_ROOT / "docs" / "module_colleague_guide.md"
+NO_JEKYLL = PROJECT_ROOT / ".nojekyll"
 
 _GOOD_ROW = {
     "path": "demo-a",
@@ -251,6 +252,11 @@ def test_a_page_keeps_the_browser_from_asking_the_site_root_for_an_icon(path: Pa
     assert '<link rel="icon" href="data:,">' in path.read_text(encoding="utf-8")
 
 
+def test_jekyll_stays_off() -> None:
+    """Jekyll 이 돌면 사내에만 있는 md 의 구문 오류 하나로 자료실 빌드 전체가 실패한다."""
+    assert NO_JEKYLL.read_bytes() == b""
+
+
 def test_the_catalog_has_no_cr() -> None:
     assert b"\r" not in CATALOG_PATH.read_bytes()
 
@@ -302,6 +308,7 @@ def test_the_guide_does_not_say_the_internal_word() -> None:
 def test_the_deploy_set_carries_the_whole_site() -> None:
     wanted = {
         INDEX_NAME,
+        NO_JEKYLL.name,
         f"{SITE_DIR_NAME}/{CATALOG_NAME}",
         *(entry.href for entry in _entries()),
     }

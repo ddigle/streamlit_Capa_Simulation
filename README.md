@@ -674,7 +674,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
 | `static/guides/howto/` | 따라하기 가이드 합성 예시판(한 파일 HTML — 뼈대는 `src/capa_simulation/guides/howto/`, 만들기는 `scripts/build_page_guide.py --example`) |
 | `config/data_contract.json` | Core Data 78컬럼 계약 |
-| `index.html` · `site/` | GitHub Pages 자료실(앱과 무관). 뿌리 `index.html` 은 `site/catalog.json` 으로 만든 자료 목록, 자료는 `site/<폴더>/index.html` — 대표 발표 자료(숫자는 합성 샘플, 원본은 저장소 밖 쇼케이스 폴더) · 모듈 담당자 안내서. 새 자료 더하는 법은 `AGENTS.md` 3장 끝 |
+| `index.html` · `site/` · `.nojekyll` | GitHub Pages 자료실(앱과 무관). 뿌리 `index.html` 은 `site/catalog.json` 으로 만든 자료 목록, 자료는 `site/<폴더>/index.html` — 대표 발표 자료(숫자는 합성 샘플, 원본은 저장소 밖 쇼케이스 폴더) · 모듈 담당자 안내서. `.nojekyll` 은 Pages 의 Jekyll 을 끄는 빈 파일. 새 자료 더하는 법은 `AGENTS.md` 3장 끝 |
 
 ## 아직 없는 것
 

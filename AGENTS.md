@@ -4195,6 +4195,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   앱은 이 파일들을 쓰지 않는다 — `site/` 는 배포 ZIP 에 실리고 이미지에서는 빠진다(`.dockerignore`).
   - 이 설정은 자료만이 아니라 `main` 에 추적된 트리 전부를 그 주소로 연다 — 사내에서는 `review/` · `modules/` · 런북 · `.deploy/` 까지. 그대로
     둘지 전용 가지로 내보낼지는 사용자 결정 대기다(`docs/TODO.md` 1장 「자료실 Pages 범위 결정」).
+  - `.nojekyll`(뿌리, 빈 파일) — Jekyll 을 끈다. 켜 두면 사내에만 있는 md 의 Liquid 구문 오류 하나로 자료실 빌드 전체가 실패하는데 사외
+    시험은 그 md 를 보지 못한다. 대신 점 폴더 · 언더바 파일도 그대로 나간다.
   - `index.html`(뿌리) — 첫 화면인 자료 목록. `scripts/build_site_index.py` 가 `site/catalog.json` 으로 쓰는 생성물이라 손으로
     고치지 않는다(`--check` 는 다르면 실패). 외부 요청이 없고 두 테마 · 폭 360 에서 선다.
   - `site/catalog.json` — 목록 정본. 자료마다 한 줄에 `path`(`site/` 아래 폴더)·`title`·`summary`(한 줄)·`kind`(발표 자료 · 안내서

@@ -35,6 +35,10 @@ ALLOWED_TOP_LEVEL = {
     # `if: github.repository == ...` 가 사내에서 스스로 꺼진다(`.github/workflows/ci.yml`).
     ".github/",
     ".gitignore",
+    # GitHub Pages 의 Jekyll 을 끄는 빈 표지. 켜 두면 사내에만 있는 md 의 Liquid 구문 오류 하나로
+    # 자료실 빌드 전체가 실패하는데 사외 시험은 그 md 를 보지 못한다. Pages 는 사이트 뿌리에서만
+    # 읽는다.
+    ".nojekyll",
     ".streamlit/",
     "AGENTS.md",
     "CLAUDE.md",
