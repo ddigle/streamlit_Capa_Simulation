@@ -610,6 +610,11 @@ def test_the_official_check_step_points_at_what_the_screen_shows() -> None:
     assert "off_success" not in state["targets"]
     assert "맨 위" not in state["note"]
     assert "알림창" in state["note"] and "공식버전" in state["note"]
+    # 예시판도 그 칸을 찾아 찍었다(찾지 못한 표적이 아니다).
+    shots = _load(LOB / "example" / "shots.json")
+    shot = next(item for item in shots["states"] if item["id"] == step["state"])
+    assert "official_cell" in shot["targets"]
+    assert "official_cell" not in shot.get("missing", [])
 
 
 def test_plan_schema_lists_the_same_words_as_the_generator_table() -> None:

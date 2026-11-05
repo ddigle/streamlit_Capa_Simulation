@@ -38,6 +38,12 @@
    "id": "18_official_done",
    "file": "18_official_done.webp",
    "targets": {
+    "official_cell": [
+     1126.5,
+     339.1,
+     132.0,
+     31.0
+    ],
     "sidebar_scenario": [
      38.3,
      395.6,
@@ -56,10 +62,7 @@
      347.9,
      30.8
     ]
-   },
-   "missing": [
-    "off_success"
-   ]
+   }
   },
   {
    "id": "20_home_pref_compare",
