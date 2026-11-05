@@ -120,6 +120,25 @@ def test_name_and_process_are_enough_to_add_without_errors() -> None:
     assert check.hint.startswith("추가할 수 있습니다 — 반입일정·Qual일정·사용기준 칸이")
 
 
+def test_the_panel_hint_is_the_button_tip_and_stays_empty_when_there_is_nothing_to_say() -> None:
+    """칸 data 의 `hint` 는 「호기 추가」 풍선 글이다 — 막힌 까닭과 가용대수에 아직 안 드는 칸은
+    그대로 싣고, 더 말할 것이 없으면 빈 글이다(켜진 단추가 이미 말한다). 판정 글 자체는 눌러서
+    거절될 때의 토스트에 그대로 쓴다."""
+    view = eg.build_grid_view(_source(), CONTEXT)
+
+    blocked = eg.new_unit_data(view, _check(_draft()), seq=1)
+    assert blocked["hint"] == "아직 추가할 수 없습니다 — 설비명 · 공정소분류 칸을 확인합니다"
+
+    waiting = eg.new_unit_data(view, _check(_valid()), seq=1)
+    assert waiting["hint"].startswith("추가할 수 있습니다 — 반입일정·Qual일정·사용기준 칸이")
+
+    ready_check = _check(
+        _valid(반입일정="2026-11-02", Qual일정="2026-11-20", 사용기준="EDP", Qual상태="계획")
+    )
+    assert ready_check.hint == eg.NEW_UNIT_READY
+    assert eg.new_unit_data(view, ready_check, seq=1)["hint"] == ""
+
+
 def test_the_capacity_tier_needs_dates_and_usage_hbm_or_edp() -> None:
     check = _check(_valid(반입일정="2026-11-02", Qual일정="2026-11-20", 사용기준="hbm"))
 

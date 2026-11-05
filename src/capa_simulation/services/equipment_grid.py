@@ -1359,6 +1359,7 @@ NEW_UNIT_COPY_COLUMNS: Final = (
 NEW_UNIT_KEEP_COLUMNS: Final = ("공정소분류", "동", "층")
 NEW_UNIT_NAME_REQUIRED: Final = "설비명은 비울 수 없습니다"
 NEW_ROWS_LOCK_REASON: Final = "이 세션에서는 새 호기를 넣을 수 없습니다"
+NEW_UNIT_READY: Final = "추가할 수 있습니다"
 # 규칙 표를 돌릴 때 설비명이 비었거나 이름 규칙에 걸린 초안 줄의 자리 이름 — 설비명이 빈 줄은 저장
 # 정규화가 조용히 빼므로 이름 대신 쓴다. 설비명 규칙이 받지 않는 글자(`DUPLICATE_MARK`)라 겹치지
 # 않는다.
@@ -1433,7 +1434,8 @@ class NewUnitCheck:
       추가하려면」 이 막는 빈 칸을 모두 보이게(사용자 요구). `flags` 는 필수 Y/N 셋, `map` 은
       레이아웃표시가 N 이면 비었다.
     - `blocked` — 「호기 추가」 를 받지 않는다(오류가 있거나 이 세션이 새 호기를 막음). `hint` 는 그
-      까닭 또는 「추가할 수 있습니다」.
+      까닭 또는 `NEW_UNIT_READY`(가용대수에 아직 안 드는 칸이 있으면 그 말을 붙여) — 눌러서 거절될
+      때의 토스트이자 단추 풍선 글(`new_unit_data`)이다.
     - `name` — 넣을 설비명, `row` — 넣을 한 줄(계약 dtype). 막혔으면 None.
     """
 
@@ -1619,7 +1621,7 @@ def new_unit_check(
         )
         hint = f"아직 추가할 수 없습니다 — {named} 칸을 확인합니다"
     else:
-        hint = "추가할 수 있습니다"
+        hint = NEW_UNIT_READY
         waiting = [column for column, done in calc if not done]
         if waiting:
             hint += (
@@ -1667,7 +1669,8 @@ def new_unit_data(
       칸은 아직 판정 전이다).
     - `errors`·`warns`·`locks` — 칸 자리 번호(계약 차례) → 글. 오류는 브라우저가 그 칸을 만졌거나
       값이 있을 때만 보인다(필수 칸은 처음부터 굵은 테).
-    - `tiers` — 체크 상자 줄마다 [(자리 번호, 됨)]. `blocked`·`hint` 는 「호기 추가」 판정.
+    - `tiers` — 체크 상자 줄마다 [(자리 번호, 됨)]. `blocked` 는 「호기 추가」 판정, `hint` 는 그
+      단추의 풍선 글이다 — 칸에 늘 두지 않고, 더 말할 것이 없으면(`NEW_UNIT_READY`) 빈 글이다.
       `required` 는 늘 필수인 칸(설비명·공정소분류·Y/N 셋)의 자리 — 브라우저가 「호기 추가」 를
       켜고 누를 때 만진 표지를 준다. 다른 칸 값 때문에 필수가 된 칸(`tiers.required` 에만 있는 칸)의
       오류는 만지지 않아도 보인다.
@@ -1702,7 +1705,7 @@ def new_unit_data(
         },
         "required": [COLUMN_INDEX[column] for column in (*NEW_UNIT_REQUIRED, *NEW_UNIT_FLAGS)],
         "blocked": check.blocked,
-        "hint": check.hint,
+        "hint": "" if check.hint == NEW_UNIT_READY else check.hint,
         "notes": [list(note) if isinstance(note, tuple) else note for note in notes],
         "blank": blank_draft(),
         "locked": (view.context.stale_lock or NEW_ROWS_LOCK_REASON)
@@ -2587,6 +2590,7 @@ def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
 
 
 DELETE_TOAST: Final = "{count:,}대 지울 목록에 넣음"
+DELETE_NEW_TOAST: Final = "새 호기 {count:,}대 뺌"
 # base 가 바뀌는 때는 여럿이다(내 리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) —
 # 서비스는 그 까닭을 모르므로 가르지 않고 적는다.
 DROPPED_TOAST: Final = (
@@ -2598,6 +2602,17 @@ UNDO_STALE_TOAST: Final = (
     "칸·호기마다 저장본 값으로 되돌립니다"
 )
 UNDO_EMPTY_TOAST: Final = "되돌릴 고침이 없습니다"
+
+
+def _delete_toast(saved: int, new: int) -> str:
+    """지우기 칸 머리 글 — 저장본 호기는 지울 목록에 들고 새 호기는 바로 빠진다(`_delete`). 섞이면
+    값 그대로 둘을 잇는다."""
+    parts = []
+    if saved:
+        parts.append(DELETE_TOAST.format(count=saved))
+    if new:
+        parts.append(DELETE_NEW_TOAST.format(count=new))
+    return " · ".join(parts)
 
 
 def _paste_toast(lines: int, changed: int, cut: int, skipped: int) -> str:
@@ -2687,11 +2702,13 @@ def _delete_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         work.refused += 1
         return None
     before = work.refused
+    index = work.index()
+    new = sum(index.is_new(row_id) for row_id in dict.fromkeys(ids))
     step = _delete(work, ids)
     refused = work.refused - before
     if step is not None:
         count = len(step.master_removed) if step.master_removed is not None else 0
-        work.say(DELETE_TOAST.format(count=count), undo=True)
+        work.say(_delete_toast(count - new, new), undo=True)
     if refused and work.context.delete_lock:
         text = f"{work.toast} · {work.context.delete_lock}" if step is not None else None
         work.say(text or work.context.delete_lock, undo=step is not None)
