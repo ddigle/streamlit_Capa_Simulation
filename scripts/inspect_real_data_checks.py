@@ -29,7 +29,8 @@
 수만으로** 한 줄에 싣는다(예: `8-2W 0/12 · 0.00% · -` — 키의 뜻은 런북 8-6 범례 한 곳). 합이
 서는 수 묶음은 같은 줄 안에 `합 = 항 + 항` 식으로 두고, 줄 끝에 그 줄의 수로 만든 확인 코드
 `#NN` 을 단다 — 사외가 받은 압축본에 `--check-summary <파일>` 을 돌려 한 자리 오타 · 자리바꿈 ·
-빠진 8-10 줄을 잡는다(DB 를 열지 않는다. 압축본의 손으로 쓴 줄도 `합 = 항 + 항` 식은 다시 셈한다).
+빠진 8-10 · 8-12 줄을 잡는다(DB 를 열지 않는다. 압축본의 손으로 쓴 줄도 `합 = 항 + 항` 식은 다시
+셈한다).
 블록 출력은 그대로 두고 요약은 그 뒤에 따로
 찍으며, 멈춘 실행(`Ctrl+C`)도 잰 데까지의 요약을 남긴다. 요약도 판정은 내리지 않는다 — 기대
 꼴은 런북 8장이 적는다.
@@ -4595,12 +4596,14 @@ def _blank_cause_row(stop: BlankStop) -> list[str]:
     ]
 
 
-def check_blank_stops(session: Session, *, all_revisions: bool = False) -> list[str]:
+def check_blank_stops(session: Session) -> list[str]:
     """남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전을 값 없이 꼴로 가른다.
 
     6-3 a 는 그 리비전을 `빈 값 키 n · 경로 m` 으로만 적어, 원천이 그 칸을 안 채운 것인지(업무 결정
     거리) 저장 표가 원천과 달라진 것인지(코드 결함) 사외가 가르지 못한다(사내 리뷰 202611041000 발견
-    1 — S27 r1). 리비전은 8-10 과 같은 묶음이고, 수는 판정이 아니다 — 읽는 길은 런북 8-12 다.
+    1 — S27 r1). 리비전은 6-3 a 와 같이 저장된 모든 리비전이다 — 활성만 보면 6-3 a 가 멈춤으로 적은
+    옛 리비전이 `걸림 0` 으로 비어 보인다. 찾는 것은 SQL 이라 빠르고, 재는 것은 걸린 리비전 앞 몇
+    개뿐이다. 수는 판정이 아니다 — 읽는 길은 런북 8-12 다.
     """
     started = time.perf_counter()
     lines = _heading("8-12", "대당 Capa 빈 값 멈춤의 꼴", "blank")
@@ -4609,18 +4612,19 @@ def check_blank_stops(session: Session, *, all_revisions: bool = False) -> list[
         session.notes.append(_note("8-12", f"시뮬레이션 DB {session.simulation_failure}"))
         return [*lines, f"- 시뮬레이션 DB — {session.simulation_failure}", ""]
     try:
-        scope = _census_scope(connection, all_revisions)
+        scope = _census_scope(connection, all_revisions=True)
         places = _blank_stop_places(connection, scope)
     except duckdb.Error as exc:
         session.notes.append(_note("8-12", f"리비전 목록 {_failure(exc)}"))
         return [*lines, f"- 리비전 목록을 읽지 못함 — {_failure(exc)}", ""]
     measured = places[:BLANK_STOP_LIMIT]
-    head = f"{'전부' if all_revisions else '활성'} {scope.revisions:,}"
     picked = f"잰 {len(measured):,}" if len(places) > len(measured) else ""
-    session.notes.append(_note("8-12", head, f"걸림 {len(places):,}", picked))
+    session.notes.append(
+        _note("8-12", f"전부 {scope.revisions:,}", f"걸림 {len(places):,}", picked)
+    )
     lines.extend(
         [
-            f"- 본 리비전 {scope.revisions:,} — {scope.label}",
+            f"- 본 리비전 {scope.revisions:,} — 저장된 모든 리비전(6-3 a 와 같은 묶음)",
             f"- 남는 경로에 빈 칸이 붙은 리비전 {len(places):,}"
             + (f" — 앞 {len(measured):,}개만 잰다" if picked else ""),
             "",
@@ -6057,7 +6061,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--census-all-revisions",
         action="store_true",
-        help="8-10 센서스 · 8-12 를 저장된 모든 리비전으로 본다(기본은 활성·공식버전 대상 리비전)",
+        help="8-10 센서스를 저장된 모든 리비전으로 본다(기본은 활성·공식버전 대상 리비전 — "
+        "8-12 는 이 옵션과 상관없이 늘 모든 리비전이다)",
     )
     parser.add_argument(
         "--bdq-sample",
@@ -6104,8 +6109,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=None,
         metavar="파일",
-        help="DB 를 열지 않고, 손으로 옮겨 적은 전송용 요약 줄의 확인 코드·줄 안 검산·8-10 줄 수만 "
-        "다시 셈한다(사외가 받은 리뷰 압축본에 돌린다 — 런북 8-6)",
+        help="DB 를 열지 않고, 손으로 옮겨 적은 전송용 요약 줄의 확인 코드·줄 안 검산·"
+        "8-10 · 8-12 줄 수만 다시 셈한다(사외가 받은 리뷰 압축본에 돌린다 — 런북 8-6)",
     )
     parser.add_argument("--today", type=date.fromisoformat, default=None, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -6177,7 +6182,7 @@ def _block_parts(
     elif name == "grid":
         yield check_grid_sizes(session)
     elif name == "blank":
-        yield check_blank_stops(session, all_revisions=args.census_all_revisions)
+        yield check_blank_stops(session)
     else:
         yield from iter_bigdataquery(
             today=today,
@@ -6217,6 +6222,54 @@ _CENSUS_HEAD: Final = re.compile(
 )
 _CENSUS_ALL_ZERO: Final = re.compile(rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}모두\s*0\b")
 _CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*$")
+# 옮겨 적은 8-12 — 머리의 `걸림 m`(걸림이 재는 상한을 넘으면 `잰 k`)만큼 `8-12K` 줄이 있고, 자세히
+# 잰 리비전(`8-12K` 에 `쓰는키` 칸이 있다)은 다섯 키가 다 있어야 한다. 까닭만 적은 `8-12K`(`됨` ·
+# 다른 꼴 · `실패`)는 그 줄뿐이다.
+_BLANK_HEAD: Final = re.compile(
+    rf"^8-12\s+\S+\s+[\d,]+{_CELL_SEP}걸림\s*(?P<found>[\d,]+)"
+    rf"(?:{_CELL_SEP}잰\s*(?P<measured>[\d,]+))?\s*$"
+)
+_BLANK_ITEM: Final = re.compile(
+    r"^8-12(?P<key>[KDRSL])\s+S\s*(?P<scenario>\d+)\s*r\s*(?P<revision>\d+)(?P<rest>.*)$"
+)
+_BLANK_MEASURED_CELL: Final = re.compile(r"쓰는\s*키")
+_BLANK_LINE_KEYS: Final = "KDRSL"
+
+
+@dataclass
+class _BlankGroup:
+    """옮겨 적은 8-12 머리 하나와 그 아래 줄."""
+
+    number: int
+    expected: int
+    stops: int = 0
+    measured: set[str] = field(default_factory=set)
+    keys: dict[str, set[str]] = field(default_factory=dict)
+
+    def add(self, item: re.Match[str]) -> None:
+        label = f"S{item.group('scenario')} r{item.group('revision')}"
+        self.keys.setdefault(label, set()).add(item.group("key"))
+        if item.group("key") == "K":
+            self.stops += 1
+            if _BLANK_MEASURED_CELL.search(item.group("rest")):
+                self.measured.add(label)
+
+    def problems(self) -> list[str]:
+        found = []
+        if self.stops != self.expected:
+            found.append(
+                f"줄 {self.number} — 8-12 머리(잰 리비전 {self.expected:,})와 아래 8-12K 줄"
+                f"({self.stops:,}줄)이 다르다 — 줄이 빠졌거나 겹쳤다"
+            )
+        for label, keys in self.keys.items():
+            wanted = _BLANK_LINE_KEYS if label in self.measured or "K" not in keys else "K"
+            missing = [f"8-12{key}" for key in wanted if key not in keys]
+            if missing:
+                found.append(
+                    f"줄 {self.number} — 8-12 {label} 아래 {' · '.join(missing)} 줄이 없다 "
+                    "— 줄이 빠졌다"
+                )
+        return found
 
 
 def _numbers(text: str) -> list[float]:
@@ -6320,12 +6373,14 @@ class TranscriptCheck:
 def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
     """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다.
 
-    넷을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
+    다섯을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
     시작하는 줄에 확인 코드가 있는지, 줄 안 `합 = 항 + 항` 식이 서는지(손으로 쓴 줄 — 판정 · B ·
     A · 7장요청 같은 것 — 도 항이 둘 이상인 식은 본다), 8-10 머리의 `0 아님 k` · `합 S` 가 그
-    아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지. 8-10 은 머리마다 따로 센다 — 요약이
-    둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 줄 앞의 목록 표지는
-    떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
+    아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지, 8-12 머리의 `걸림`(또는 `잰`)이 그 아래
+    `8-12K` 줄 수와 같고 자세히 잰 리비전마다 다섯 키가 있는지. 8-10 · 8-12 는 머리마다 따로
+    센다 — 요약이 둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 멈춘
+    실행(`_INTERRUPTED`)은 8-12 머리까지만 찍고 끝날 수 있어 8-12 줄 수를 보지 않는다. 줄 앞의
+    목록 표지는 떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
 
     손 전사 꼴은 맞지 않는 것으로 세지 않고 `forms` 에 둔다 — 띄어쓰기 빠진 `3+ x` 는 그대로 읽고,
     마지막 항 뒤 괄호 덧말(`안함 0 (다른 칸 2)`)은 떼고 읽는다. 항 사이 ` + ` 가 빠진 식(`확정 52
@@ -6335,7 +6390,10 @@ def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
     problems: list[str] = []
     forms: list[str] = []
     groups: list[tuple[int, int, int, list[int]]] = []
+    blank_groups: list[_BlankGroup] = []
+    interrupted = False
     for number, raw in enumerate(lines, start=1):
+        interrupted = interrupted or _INTERRUPTED in raw
         text = _summary_body(raw)
         coded = _SUMMARY_CODE.match(text)
         body = text if coded is None else coded.group("body")
@@ -6364,6 +6422,16 @@ def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
             )
         elif _CENSUS_ALL_ZERO.match(body):
             groups.append((number, 0, 0, []))
+        blank_head = _BLANK_HEAD.match(body)
+        if blank_head is not None:
+            expected = blank_head.group("measured") or blank_head.group("found")
+            blank_groups.append(_BlankGroup(number, int(expected.replace(",", ""))))
+        blank_item = _BLANK_ITEM.match(body)
+        if blank_item is not None:
+            if blank_groups:
+                blank_groups[-1].add(blank_item)
+            else:
+                problems.append(f"줄 {number} — 8-12 줄인데 위에 8-12 머리 줄이 없다")
         item = _CENSUS_ITEM.match(body)
         if item is not None:
             if not groups:
@@ -6376,6 +6444,9 @@ def review_transcript(lines: Iterable[str]) -> TranscriptCheck:
                 f"줄 {number} — 8-10 머리(0 아님 {listed} · 합 {total:,})와 아래 수 줄"
                 f"({len(items)}줄 · 합 {sum(items):,})이 다르다 — 줄이 빠졌거나 겹쳤다"
             )
+    if not interrupted:
+        for group in blank_groups:
+            problems.extend(group.problems())
     return TranscriptCheck(problems=problems, forms=forms)
 
 

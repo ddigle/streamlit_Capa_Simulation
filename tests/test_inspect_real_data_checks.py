@@ -28,7 +28,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import duckdb
 import pandas as pd
@@ -3061,7 +3061,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         GRID_SUMMARY_IN_RANGE,
         bare[12],
     ), bare[12]
-    assert bare[13] == "- 8-12 활성 1 · 걸림 0"
+    assert bare[13] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
         sum(1 for line in lines if " = " in line) == 4
@@ -4029,7 +4029,7 @@ def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
     lines = _uncoded(_summary(output))
     blank_lines = [line for line in lines if line.startswith("- 8-12")]
     assert blank_lines == [
-        "- 8-12 활성 1 · 걸림 1",
+        "- 8-12 전부 1 · 걸림 1",
         "- 8-12K S1 r1 RUN_RATE · 칸 6 = 남음 4 + 빠짐 1 + 안붙음 1 · 쓰는키 71 · 경로 4/71",
         "- 8-12D S1 r1 · 달 2/12 온 0 앞 0 · 공정 3/3 온 0 · 양산 4/35 · ER 0/36",
         "- 8-12R S1 r1 · Main 3/47 · MI 1/24 · CHIP 3/47 · WF 1/24",
@@ -4058,9 +4058,148 @@ def test_a_slipped_figure_on_the_blank_lines_is_caught(
     """옮겨 적은 수를 다시 셈한다 — 줄 안 식과 확인 코드."""
     _code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
     lines = _summary(output)
-    source = next(line for line in lines if line.startswith("- 8-12S "))
-    assert checks.check_transcript([source]) == []
-    assert checks.check_transcript([source.replace("빈만 1", "빈만 2")]) != []
+    assert checks.check_transcript(lines) == []
+    assert checks.check_transcript([line.replace("빈만 1", "빈만 2") for line in lines]) != []
+
+
+def _coded(*bodies: str) -> list[str]:
+    """스크립트가 찍는 꼴 — 줄 끝에 그 줄의 확인 코드."""
+    return [f"{body} #{checks.summary_code(body)}" for body in bodies]
+
+
+_BLANK_REVISION_LINES: Final = (
+    "8-12K S1 r1 RUN_RATE · 칸 6 = 남음 4 + 빠짐 1 + 안붙음 1 · 쓰는키 71 · 경로 4/71",
+    "8-12D S1 r1 · 달 2/12 온 0 앞 0 · 공정 3/3 온 0",
+    "8-12R S1 r1 · Main 3/47 · MI 1/24",
+    "8-12S S1 r1 · 원천 4 = 빈만 1 + 영빈 1 + 값 1 + 없음 1 · 원천행 빈 2/72",
+    "8-12L S1 r1 · 부하 4 = 있음 3 + 없음 1 · 다른양산 4 · 다른달 4",
+)
+
+
+def test_a_transcript_of_the_blank_lines_with_all_its_lines_passes() -> None:
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", *_BLANK_REVISION_LINES)) == []
+    # 손으로 칸 가름을 바꿔 써도 같다.
+    assert (
+        checks.check_transcript(
+            _coded(
+                "8-12 전부 77; 걸림 1",
+                *(text.replace(" · ", "; ") for text in _BLANK_REVISION_LINES),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("dropped", "expected"),
+    [
+        ((3, 4), "8-12S · 8-12L 줄이 없다"),
+        ((1,), "8-12D 줄이 없다"),
+        ((0, 1, 2, 3, 4), "8-12K 줄(0줄)이 다르다"),
+        ((0,), "8-12K 줄(0줄)이 다르다"),
+    ],
+)
+def test_a_missing_blank_line_is_caught_by_its_head(
+    dropped: tuple[int, ...], expected: str
+) -> None:
+    """머리 · 다섯 줄이 결정 근거라 하나도 빠지면 안 된다 — 빠져도 남은 줄의 확인 코드는 맞는다."""
+    kept = [line for k, line in enumerate(_BLANK_REVISION_LINES) if k not in dropped]
+
+    [problem] = checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", *kept))[:1]
+
+    assert expected in problem
+
+
+def test_a_doubled_blank_stop_line_is_caught() -> None:
+    lines = _coded("8-12 전부 77 · 걸림 1", *_BLANK_REVISION_LINES, _BLANK_REVISION_LINES[0])
+
+    [problem] = checks.check_transcript(lines)
+
+    assert "8-12K 줄(2줄)이 다르다" in problem
+
+
+def test_a_blank_line_above_its_head_is_caught() -> None:
+    [problem] = checks.check_transcript(_coded(_BLANK_REVISION_LINES[3]))
+
+    assert "위에 8-12 머리 줄이 없다" in problem
+
+
+@pytest.mark.parametrize("reason", ["됨", "VITAL 연결값 없음 키 71 · 경로 71", "실패(ValueError)"])
+def test_a_stop_measured_only_by_its_reason_has_a_single_line(reason: str) -> None:
+    """꼴을 재지 못한 리비전은 `8-12K` 한 줄뿐이다(런북 8-6 범례)."""
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", f"8-12K S1 r1 · {reason}")) == []
+
+
+def test_the_head_counts_the_measured_revisions_when_more_were_found() -> None:
+    """걸림이 재는 상한을 넘으면 `잰 k` 가 아래 줄 수다. 머리는 요약마다 따로 센다."""
+    revisions = [
+        line.replace("S1 r1", f"S1 r{number}")
+        for number in (1, 2, 3)
+        for line in _BLANK_REVISION_LINES
+    ]
+
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 5 · 잰 3", *revisions)) == []
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 5 · 잰 3", *revisions[:10])) != []
+    assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 0", "8-12 전부 77 · 걸림 0")) == []
+    assert (
+        checks.check_transcript(
+            _coded("8-12 전부 77 · 걸림 1", "8-12 전부 77 · 걸림 1", *_BLANK_REVISION_LINES)
+        )
+        != []
+    )
+
+
+def test_a_transcript_of_an_interrupted_run_does_not_count_the_blank_lines() -> None:
+    """멈춘 실행은 머리까지만 찍고 끝날 수 있다 — 줄이 빠진 것이 아니다."""
+    lines = _coded("8-12 전부 77 · 걸림 2")
+
+    assert checks.check_transcript(lines) != []
+    assert checks.check_transcript([checks._INTERRUPTED, *lines]) == []
+
+
+def test_the_blank_block_sees_a_stopped_revision_that_is_not_active(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """6-3 a 는 모든 리비전을 본다 — 활성이 아닌 리비전이 멈춰 있어도 8-12 가 `걸림 0` 으로 비지
+    않는다. 옵션을 붙이지 않아도 같고, 8-10 묶음은 그대로다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    keys = _rate_cells(path)
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision (revision_id, scenario_id, revision_no, "
+            "revision_name, parent_revision_id, note, reference_hash, created_at) "
+            "SELECT 'old-revision', scenario_id, 2, revision_name, NULL, note, reference_hash, "
+            "created_at FROM app_meta.scenario_revision"
+        )
+        tables = connection.execute(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema = 'rev_data' AND column_name = 'revision_id'"
+        ).fetchall()
+        for (table,) in tables:
+            connection.execute(
+                f"INSERT INTO rev_data.{table} SELECT * REPLACE ('old-revision' AS revision_id) "
+                f"FROM rev_data.{table} WHERE revision_id <> 'old-revision'"
+            )
+        connection.execute(
+            'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL '
+            'WHERE revision_id = \'old-revision\' AND "생산계획년월" = ? AND "공정" = ?',
+            [int(keys["생산계획년월"].iloc[0]), str(keys["공정"].iloc[0])],
+        )
+
+    code, output = _run(capsys, "--only", "census,blank", "--database", str(path))
+
+    assert code == 0
+    lines = _uncoded(_summary(output))
+    assert "- 8-12 전부 2 · 걸림 1" in lines
+    assert any(line.startswith("- 8-10 활성 1") for line in lines)
+    assert any(line.startswith("- 8-12K S1 r2 RUN_RATE") for line in lines)
+    with duckdb.connect(str(path), read_only=True) as connection:
+        outcomes = [
+            revisions_script.inspect_revision(connection, revision)
+            for revision in revisions_script.list_revisions(connection, active_only=False)
+        ]
+    assert [outcome.problem is not None for outcome in outcomes] == [False, True]
 
 
 @pytest.mark.parametrize(
@@ -4121,7 +4260,7 @@ def test_a_healthy_revision_has_only_the_head_line(
     code, output = _run(capsys, "--only", "blank", "--database", str(simulation_db))
 
     assert code == 0
-    assert _uncoded(_summary(output)) == ["- 8-12 활성 1 · 걸림 0"]
+    assert _uncoded(_summary(output)) == ["- 8-12 전부 1 · 걸림 0"]
     assert "- 남는 경로에 빈 칸이 붙은 리비전 0" in output
     assert "원천 형제" not in output
 
@@ -4144,7 +4283,7 @@ def test_blank_cells_only_on_dropped_routes_are_not_a_stop(
 
     _code, output = _run(capsys, "--only", "census,blank", "--database", str(path))
 
-    assert "- 8-12 활성 1 · 걸림 0" in _uncoded(_summary(output))
+    assert "- 8-12 전부 1 · 걸림 0" in _uncoded(_summary(output))
     assert _census_row(output, "blank") == "1 / 1 리비전 | 칸 1 |"
 
 
