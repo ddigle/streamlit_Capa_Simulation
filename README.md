@@ -618,7 +618,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
 | `compare_legacy_results.py` | 원천에 보존된 기존 결과와 신규 계산값을 대조해 요약·상세 CSV 를 만든다 |
 | **사내 실데이터 확인(읽기 전용 — 값은 찍지 않고 개수만)** | |
-| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인 줄·`0031` 가정 배치 차이·옛 코드 흔적)·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)를 재고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장). `--check-summary <파일>` 은 DB 없이 옮겨 적은 압축본을 다시 센다 |
+| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인 줄·`0031` 가정 배치 차이·옛 코드 흔적)·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)·남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전의 꼴(원천 형제 · 부하 · 분포 — 8-12)을 재고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장). `--check-summary <파일>` 은 DB 없이 옮겨 적은 압축본을 다시 센다 |
 | `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 사본 필수 — 운영 DB 자리는 거절). 대당 Capa 가 기준정보 연결에서 멈추면 그 꼴(빈 값 · 연결값 없음 · 연결 키 중복 …)과 개수만 적는다 |
 | `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다(`--database` 로 사본도) |
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |
