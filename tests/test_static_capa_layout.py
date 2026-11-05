@@ -1,4 +1,4 @@
-# Purpose: Static Capa 의 판정 기준 카드·Guide·미포함 수요 알림·빈 결과 줄을 결정대로 고정한다.
+# Purpose: Static Capa 의 판정 기준 카드·Guide·미포함 수요 알림·빈 결과 줄·표 칸 설정을 고정한다.
 
 """Static Capa — 판정 기준은 HOME 설정 → 판정 기준(2026-10-06), 설명은 Guide(2026-09-29 결정).
 
@@ -9,9 +9,13 @@
 
 from __future__ import annotations
 
+import ast
+import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pytest
 from alert_marks import alert_notes, note_table, table_frame
@@ -88,9 +92,14 @@ def test_the_guide_carries_what_left_the_body() -> None:
         "기술팀",
         "실행 관리",
         "도구 막대의 내려받기",
+        "막대 끝은 기본 확보 기준과 그 표의 가장 큰 확보율 가운데 큰 쪽",
+        "공정은 원본 이름으로",
+        "`확보율` 은 원값",
     ):
         assert text in guide, text
     assert "각 표 아래" not in guide
+    assert "**기본** 확보 기준까지의 거리" not in guide
+    assert "공정은 화면의 표시명으로" not in guide
 
 
 def _calculated_script(*, unrouted: bool) -> str:
@@ -185,34 +194,47 @@ def test_a_plan_list_too_large_for_the_alarm_is_pointed_at_on_the_result_page(
     assert not list(app.expander)
 
 
+def _fill_shortfalls(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    warning: list[tuple[str, float]],
+    secure: list[tuple[str, float]],
+) -> None:
+    """두 결과 상자의 표를 (공정, 확보율) 행으로 채운다. 페이지는 exec 때 이름을 집으므로 모듈
+    속성을 바꾸면 이 행이 든다."""
+    import capa_simulation.services.securement_rate as securement_rate
+
+    original = securement_rate.build_securement_shortfall_tables
+
+    def frame(rows: list[tuple[str, float]], columns: pd.Index) -> pd.DataFrame:
+        filled = [
+            {
+                "생산계획년월": 202601,
+                "공정": process,
+                "확보율": rate,
+                "가용대수": 1.0,
+                "소요대수": 2.0,
+                "경고기준 필요대수": 2,
+                "확보기준 추가대수": 3,
+                "확보목표 총 필요대수": 5,
+            }
+            for process, rate in rows
+        ]
+        return pd.DataFrame(filled).reindex(columns=columns)
+
+    def both_filled(rate: pd.DataFrame, **kwargs: Any) -> tuple[pd.DataFrame, pd.DataFrame]:
+        warning_frame, secure_frame = original(rate, **kwargs)
+        return frame(warning, warning_frame.columns), frame(secure, secure_frame.columns)
+
+    monkeypatch.setattr(securement_rate, "build_securement_shortfall_tables", both_filled)
+
+
 def test_the_two_result_boxes_keep_their_tables_and_carry_no_csv_button(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """경고 기준 미달 · 확보 기준 추가 확보 표에 CSV 단추를 두지 않는다 — 내려받기는 표 도구 막대 한
     곳이다(2026-11-05 사용자 요청 — 기능 중복). 두 표는 그대로 선다."""
-    import capa_simulation.services.securement_rate as securement_rate
-
-    original = securement_rate.build_securement_shortfall_tables
-
-    def both_filled(rate: pd.DataFrame, **kwargs: Any) -> tuple[pd.DataFrame, pd.DataFrame]:
-        warning, secure = original(rate, **kwargs)
-        filled = pd.DataFrame(
-            [
-                {
-                    "생산계획년월": 202601,
-                    "공정": "DEMO-P1",
-                    "확보율": 0.5,
-                    "가용대수": 1.0,
-                    "소요대수": 2.0,
-                    "경고기준 필요대수": 2,
-                    "확보기준 추가대수": 3,
-                    "확보목표 총 필요대수": 5,
-                }
-            ]
-        )
-        return filled.reindex(columns=warning.columns), filled.reindex(columns=secure.columns)
-
-    monkeypatch.setattr(securement_rate, "build_securement_shortfall_tables", both_filled)
+    _fill_shortfalls(monkeypatch, warning=[("DEMO-P1", 0.5)], secure=[("DEMO-P1", 0.5)])
     app = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
     assert not list(app.exception), [element.message for element in app.exception]
 
@@ -221,6 +243,81 @@ def test_the_two_result_boxes_keep_their_tables_and_carry_no_csv_button(
     assert "경고기준 필요대수" in tables[0].value.columns
     assert "경고기준 필요대수" not in tables[1].value.columns
     assert not app.get("download_button")
+
+
+def _page_function(name: str) -> Callable[..., Any]:
+    """페이지는 import 하면 화면을 그리므로 함수 하나만 떼어 실행한다."""
+    tree = ast.parse(PAGE.read_text(encoding="utf-8"))
+    node = next(
+        item for item in tree.body if isinstance(item, ast.FunctionDef) and item.name == name
+    )
+    namespace: dict[str, Any] = {"np": np, "pd": pd}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(PAGE), "exec"), namespace)
+    function: Callable[..., Any] = namespace[name]
+    return function
+
+
+@pytest.mark.parametrize(
+    ("rates", "top"),
+    [
+        pytest.param([], 1.1, id="빈 표"),
+        pytest.param([None, float("nan")], 1.1, id="값이 모두 빔"),
+        pytest.param([0.5, 1.09], 1.1, id="기본 기준 아래면 기본 기준"),
+        pytest.param([0.5, 1.12], 1.12, id="기본 기준 위면 표 최댓값"),
+        pytest.param([None, 1.5], 1.5, id="빈 값은 건너뜀"),
+        pytest.param([float("inf"), 0.5], 1.1, id="무한대는 끝을 정하지 않음"),
+    ],
+)
+def test_the_bar_top_is_the_larger_of_the_default_threshold_and_the_table_peak(
+    rates: list[float | None], top: float
+) -> None:
+    """`ProgressColumn` 은 값을 `max_value` 로 잘라 CSV 로 내보낸다 — 끝이 표 최댓값 아래면 월별
+    기준이 기본보다 높은 달의 행이 파일에서 잘린다(화면 112% · 파일 1.1). 칸 설정은 JSON 이라
+    무한대를 싣지 못한다."""
+    bar_top = _page_function("_bar_top")
+    series = pd.Series(rates, dtype="object")
+    assert bar_top(series, secure_threshold=1.1) == top
+    assert bar_top(series.astype("float64"), secure_threshold=1.1) == top
+
+
+def test_the_tables_hand_the_original_process_and_the_raw_rate_to_the_toolbar_csv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """화면은 표시명, 파일은 원본이다(UI-DAT-10 · 2026-11-06 사용자 답). 프레임은 원본 공정을 들고
+    칸이 글자만 표시명으로 그린다 — 칸은 읽기 전용이다. 막대 끝은 표마다 정해져 그 표의 어느 값도
+    잘리지 않는다. 값이 빈 표도 멈추지 않고 끝이 기본 확보 기준에 남는다."""
+    _fill_shortfalls(
+        monkeypatch,
+        warning=[("Process-A", 1.12), ("Process-B", 0.5), ("Process-A", 0.7)],
+        secure=[("Process-A", float("nan"))],
+    )
+    script = _calculated_script(unrouted=False).replace(
+        "APPLY_RENAME = False", "APPLY_RENAME = True"
+    )
+    assert "APPLY_RENAME = True" in script
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    warning, secure = [frame for frame in app.main.dataframe if "확보율" in frame.value.columns]
+
+    assert warning.value["공정"].tolist() == ["Process-A", "Process-B", "Process-A"]
+    assert warning.value["확보율"].tolist() == [1.12, 0.5, 0.7]
+    columns = json.loads(warning.proto.columns)
+    assert columns["공정"]["disabled"] is True
+    assert columns["공정"]["type_config"] == {
+        "type": "selectbox",
+        "options": [
+            {"value": "Process-A", "label": "가공"},
+            {"value": "Process-B", "label": "Process-B"},
+        ],
+    }
+    assert columns["확보율"]["type_config"]["type"] == "progress"
+    assert columns["확보율"]["type_config"]["max_value"] == 1.12
+
+    assert secure.value["공정"].tolist() == ["Process-A"]
+    secure_columns = json.loads(secure.proto.columns)
+    assert secure_columns["공정"]["disabled"] is True
+    assert secure_columns["확보율"]["type_config"]["max_value"] == 1.1
 
 
 def test_an_empty_result_box_says_so_in_one_plain_line(monkeypatch: pytest.MonkeyPatch) -> None:
