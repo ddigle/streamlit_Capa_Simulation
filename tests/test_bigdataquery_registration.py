@@ -310,6 +310,24 @@ def test_a_package_failure_in_the_catalog_query_says_what_to_do_and_keeps_the_li
     assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
 
 
+def test_a_failure_that_only_names_sql_is_not_told_as_a_rejected_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """문구에 `sql` 만 든 실패는 조회문 거절의 근거가 아니다 — 「다시 해도 같으니」 로 사용자를 돌려
+    세우지 않고 다시 할 길을 낸다. 직전 목록은 그대로 둔다."""
+    monkeypatch.delenv("CAPA_BDQ_USER_NAME", raising=False)
+    app = AppTest.from_string(
+        CATALOG_FAILURE_SCRIPT.replace("Read timed out", "Error executing SQL statement")
+    )
+    app.run()
+
+    assert not app.exception
+    [error] = app.error
+    assert "(그 밖)" in error.value and "잠시 뒤 같은 조회를 다시" in error.value
+    assert "다시 해도 같으니" not in error.value
+    assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
+
+
 IMPORT_FAILURE_SCRIPT = """
 import sys
 from datetime import date
