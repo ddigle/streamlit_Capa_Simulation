@@ -685,7 +685,9 @@ def _deny(cfg: SsoConfig, state_cookie: str, loginid: str) -> Response:
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
     clear_session_cookie(response, cfg)
-    runtime.record_event("login_denied", level=logging.WARNING, reason=NOT_ON_LIST, loginid=loginid)
+    runtime.record_event(
+        runtime.DENIED_EVENT, level=logging.WARNING, reason=NOT_ON_LIST, loginid=loginid
+    )
     return response
 
 

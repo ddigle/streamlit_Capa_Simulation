@@ -46,14 +46,19 @@ def normalize_loginid(value: str) -> str | None:
 
 
 def parse_entries(raw: str) -> tuple[tuple[str, ...], int]:
-    """목록 글 → (견주는 꼴 loginid 들, 읽지 못한 항목 수). 항목 값은 어디에도 남기지 않는다."""
+    """목록 글 → (견주는 꼴 loginid 들, 읽지 못한 항목 수). 항목 값은 어디에도 남기지 않는다.
+
+    글자 · 숫자가 하나도 없는 항목(`-` · `.` 같은 자리표)도 읽지 못한 것으로 센다 — 빈 값을 받지
+    않는 표에 넣은 자리표가 관리자 한 명으로 세어지면 「읽은 관리자 없으면 막힘」 을 비껴가 전원이
+    잠긴다. 토큰 쪽 꼴(`LOGINID_PATTERN`)은 그대로다.
+    """
     kept: list[str] = []
     unreadable = 0
     for item in _ENTRY_SEPARATORS.split(raw):
         if not item:
             continue
         key = normalize_loginid(item)
-        if key is None:
+        if key is None or not any(character.isalnum() for character in key):
             unreadable += 1
         else:
             kept.append(key)
@@ -62,7 +67,7 @@ def parse_entries(raw: str) -> tuple[tuple[str, ...], int]:
 
 @dataclass(frozen=True)
 class AccessList:
-    """접속 명단 한 벌. `enforced` 가 아니면 인증된 사람 전부가 들어온다(개발 · 가짜 IdP · 시험)."""
+    """접속 명단 한 벌. `enforced` 가 아니면 인증된 사람 전부가 들어온다(루프백 개발 · 시험)."""
 
     enforced: bool
     grades: Mapping[str, str] = field(repr=False, hash=False)

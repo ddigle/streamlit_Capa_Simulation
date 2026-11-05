@@ -113,6 +113,10 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     있는 main 에서는 잠금 오류로, 꺼진 main 에서는 실제 DB 변경으로 나타나 어느 쪽도 원인을
     가리키지 않는다. 처음에 없던 파일이 생겼을 때만 잡을 수 있으므로 DB 가 없는 작업 폴더·CI
     에서 걸린다. 만든 파일은 지워 다음 실행도 같은 조건에서 보게 한다.
+
+    누가 만들었는지는 가리지 못한다 — 세션 중에 같은 트리에 뜬 앱이 만든 DB 도 지우고 실패로 끝난다.
+    그 앱은 재시작 전까지 빈 DB 를 본다. 앱을 띄우는 확인은 `git archive` 사본(자기 `data/`)에서
+    돌린다.
     """
     created = [
         path

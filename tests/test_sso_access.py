@@ -62,7 +62,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "demo.admin"
 USER = "demo.user"
 GONE = "demo.gone"
-CONTACT = "CAPA 담당 demo.desk"
+CONTACT = "CAPA 담당 창구"
 NAVIGATE = {"sec-fetch-mode": "navigate", "sec-fetch-dest": "document", "sec-fetch-site": "none"}
 FETCH = {"sec-fetch-mode": "cors", "sec-fetch-dest": "empty", "sec-fetch-site": "same-origin"}
 ORIGIN = {"origin": PUBLIC_URL}
@@ -244,12 +244,26 @@ def test_a_lookalike_character_never_folds_onto_a_listed_id() -> None:
     kelvin = "\u212a"
     assert kelvin.casefold() == "k"
 
-    listed = build_access_list("kim", "", enforced=True)
-    assert not listed.allows(f"{kelvin}im")
+    listed = build_access_list("demo.kim", "", enforced=True)
+    assert not listed.allows(f"demo.{kelvin}im")
 
-    written = build_access_list(f"{kelvin}im", "", enforced=True)
+    written = build_access_list(f"demo.{kelvin}im", "", enforced=True)
     assert written.unreadable_admins == 1
-    assert not written.allows("kim")
+    assert not written.allows("demo.kim")
+
+
+@pytest.mark.parametrize("value", ["-", ".", "@", "_", "-.@_"])
+def test_an_entry_without_a_letter_or_digit_is_not_a_person(value: str) -> None:
+    """표가 빈 값을 받지 않아 넣은 자리표가 관리자 한 명으로 세어지면 막힘을 비껴가 전원이
+    잠긴다."""
+    assert parse_entries(value) == ((), 1)
+    assert parse_entries(f"demo.a,{value}") == (("demo.a",), 1)
+
+    cfg = load_config(sso_environ({names.ENV_ACCESS_ADMINS: value}))
+
+    assert cfg.mode is SsoMode.BROKEN
+    assert cfg.problems == (SsoProblem(names.ENV_ACCESS_ADMINS, "no_valid_entry"),)
+    assert cfg.notices == (SsoProblem(names.ENV_ACCESS_ADMINS, "entries_unreadable"),)
 
 
 def test_not_enforced_lets_everyone_in() -> None:
@@ -316,6 +330,57 @@ def test_development_without_lists_admits_everyone() -> None:
     assert cfg.mode is SsoMode.ON, cfg.problems
     assert not cfg.access.enforced
     assert cfg.access.allows(GONE)
+
+
+@pytest.mark.parametrize("app_env", [None, "", "   ", "dev", "local", "test"])
+@pytest.mark.parametrize("flag", [None, "auto", "required"])
+def test_a_server_beyond_loopback_needs_the_list_whatever_app_env_says(
+    app_env: str | None, flag: str | None
+) -> None:
+    """`APP_ENV` 를 빠뜨렸거나 개발 값이어도 공개 주소가 이 PC 밖이면 ADFS 를 지난 사람 전부를 받지
+    않는다 — 목록이 없으면 막힘이다."""
+    overrides = {} if app_env is None else {names.ENV_APP_ENV: app_env}
+    if flag is not None:
+        overrides[names.ENV_SSO] = flag
+    drop = [names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS]
+    if app_env is None:
+        drop.append(names.ENV_APP_ENV)
+
+    cfg = load_config(sso_environ(overrides, drop=drop))
+
+    assert not cfg.prod
+    assert cfg.mode is SsoMode.BROKEN
+    assert cfg.problems == (SsoProblem(names.ENV_ACCESS_ADMINS, "missing"),)
+    assert cfg.access.enforced
+    assert not cfg.access.allows(GONE)
+
+
+def test_a_person_off_the_list_cannot_enter_a_server_without_app_env() -> None:
+    cfg = use_config({names.ENV_ACCESS_ADMINS: ADMIN}, drop=[names.ENV_APP_ENV])
+    assert cfg.enabled and not cfg.prod
+    app = gated_app()
+
+    assert not has_live_session(cfg, sign_in(app, {}, GONE))
+    assert has_live_session(cfg, sign_in(app, {}, ADMIN))
+
+
+def test_a_locked_server_needs_the_list_even_on_loopback() -> None:
+    cfg = load_config(dev_environ({names.ENV_SSO: "required"}))
+
+    assert cfg.mode is SsoMode.BROKEN
+    assert cfg.problems == (SsoProblem(names.ENV_ACCESS_ADMINS, "missing"),)
+
+
+def test_off_beyond_loopback_shows_the_list_as_a_problem_when_switched_on() -> None:
+    cfg = load_config(
+        sso_environ(
+            {names.ENV_APP_ENV: "dev"},
+            drop=[names.ENV_CLIENT_ID, names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS],
+        )
+    )
+
+    assert cfg.mode is SsoMode.OFF
+    assert cfg.readiness == (SsoProblem(names.ENV_ACCESS_ADMINS, "missing"),)
 
 
 def test_development_with_a_list_enforces_it() -> None:
@@ -441,7 +506,7 @@ def test_a_listed_person_gets_a_session(loginid: str) -> None:
     assert response.header("location") == f"{PUBLIC_URL}/"
     assert has_live_session(cfg, response)
     assert [item.value("loginid") for item in events_named("login_ok")] == [loginid]
-    assert not events_named("login_denied")
+    assert runtime.denied_total() == 0
     apply_cookies(jar, response)
     assert passed(http(app, "GET", "/", headers={**NAVIGATE, "cookie": cookie_header(jar)}))
 
@@ -465,9 +530,11 @@ def test_a_person_off_the_list_gets_no_session_and_a_redirect() -> None:
     assert state_cookie is not None and state_cookie.deleted
     assert attempt_cookie is not None and attempt_cookie.deleted
     assert not events_named("login_ok")
-    [denied] = events_named("login_denied")
-    assert (denied.value("loginid"), denied.value("reason")) == (GONE, "not_on_list")
-    assert not runtime.is_anonymous(denied), "서명이 통과한 뒤다 — 무인증 고리가 아니다"
+    assert not events_named("login_denied"), "거절은 최근 사건 고리에 두지 않는다"
+    assert not runtime.recent_events(anonymous=True), "서명이 통과한 뒤다 — 무인증 고리도 아니다"
+    [denied] = runtime.denied_accounts()
+    assert (denied.loginid, denied.count) == (GONE, 1)
+    assert runtime.denied_total() == 1
 
 
 def test_a_leftover_session_cookie_is_cleared_when_denied() -> None:
@@ -531,10 +598,68 @@ def test_once_listed_the_same_link_lets_the_person_in() -> None:
 
 def test_not_enforced_the_callback_admits_any_verified_person() -> None:
     runtime.reset()
-    cfg = runtime.start(dev_environ({names.ENV_PUBLIC_URL: PUBLIC_URL}))
+    cfg = runtime.start(dev_environ())
     assert cfg.enabled and not cfg.access.enforced
 
     assert has_live_session(cfg, sign_in(gated_app(), {}, GONE))
+
+
+def test_repeated_denials_cannot_push_out_the_audit_events() -> None:
+    """들어오지 못하는 사람이 「다시 확인」 을 되풀이해도 설정 · 로그인 기록이 밀려나지 않는다 —
+    C-DEP 에는 로그 창구가 없어 이 고리가 유일한 감사 창이다."""
+    listed_config()
+    app = gated_app()
+    sign_in(app, {}, USER)
+    before = runtime.recent_events()
+    assert {item.event for item in before} == {"config", "login_ok"}
+
+    for _ in range(runtime.MAX_EVENTS + 5):
+        sign_in(app, {}, GONE)
+
+    assert runtime.recent_events() == before
+    assert runtime.denied_total() == runtime.MAX_EVENTS + 5
+
+
+def test_one_person_repeating_cannot_push_another_denied_person_out() -> None:
+    """계정마다 한 칸이다 — 누가 막혔는지가 한 사람의 되풀이로 사라지지 않는다. 대소문자만 다르면
+    같은 사람이다."""
+    listed_config()
+    app = gated_app()
+    sign_in(app, {}, "demo.first")
+    for _ in range(runtime.MAX_EVENTS + 5):
+        sign_in(app, {}, GONE)
+    sign_in(app, {}, GONE.upper())
+
+    accounts = runtime.denied_accounts()
+
+    assert [(item.loginid.casefold(), item.count) for item in accounts] == [
+        (GONE, runtime.MAX_EVENTS + 6),
+        ("demo.first", 1),
+    ]
+    assert accounts[0].last_at >= accounts[1].last_at
+
+
+def test_denied_accounts_are_capped_and_the_total_keeps_counting() -> None:
+    """계정 수만큼 메모리가 늘지 않는다 — 가장 오래 전에 막힌 계정이 빠지고 누계는 남는다."""
+    extra = 3
+    for index in range(runtime.MAX_DENIED_ACCOUNTS + extra):
+        runtime.record_event("login_denied", reason="not_on_list", loginid=f"demo.p{index}")
+
+    accounts = runtime.denied_accounts()
+
+    assert len(accounts) == runtime.MAX_DENIED_ACCOUNTS
+    assert accounts[0].loginid == f"demo.p{runtime.MAX_DENIED_ACCOUNTS + extra - 1}"
+    assert accounts[-1].loginid == f"demo.p{extra}"
+    assert runtime.denied_total() == runtime.MAX_DENIED_ACCOUNTS + extra
+
+
+def test_reset_forgets_the_denied_accounts() -> None:
+    runtime.record_event("login_denied", reason="not_on_list", loginid=GONE)
+
+    runtime.reset()
+
+    assert runtime.denied_accounts() == []
+    assert runtime.denied_total() == 0
 
 
 def test_the_mock_idp_runs_both_the_allowed_and_the_denied_path() -> None:
@@ -694,7 +819,7 @@ def test_a_dropped_tab_goes_from_the_probe_through_the_banner_to_the_denied_page
         app, "GET", "/_stcore/host-config", headers={**FETCH, "cookie": cookie_header(jar)}
     )
     assert probe.status == 401, "이 답에만 띠가 선다(`sso_reconnect`)"
-    assert not events_named("login_denied"), "탐침은 기록하지 않는다"
+    assert runtime.denied_total() == 0, "탐침은 기록하지 않는다"
 
     state, nonce = start_login(app, jar, "/space?theme=dark")
     token = make_id_token(id_token_claims(nonce, loginid=GONE))
@@ -707,7 +832,7 @@ def test_a_dropped_tab_goes_from_the_probe_through_the_banner_to_the_denied_page
     page = http(app, "GET", f"{location.path}?{location.query}", headers=NAVIGATE)
     assert page.status == 403
     assert web.NOT_ON_LIST_TITLE in page.text
-    assert len(events_named("login_denied")) == 1
+    assert runtime.denied_total() == 1
 
 
 def _stop_script_app() -> AppTest:
@@ -873,6 +998,29 @@ def test_the_startup_events_and_log_carry_no_list_value(
     assert_absent(logged + fields, ADMIN, USER)
 
 
+def test_list_values_leave_the_environment_after_start() -> None:
+    """앱이 띄우는 하위 프로세스(aws 등)와 `os.environ` 을 읽는 코드에 명단이 남지 않는다. 창구 글은
+    공개 글이라 남아도 된다."""
+    runtime.reset()
+    environ = sso_environ(
+        {
+            names.ENV_ACCESS_ADMINS: ADMIN,
+            names.ENV_ACCESS_USERS: USER,
+            names.ENV_ACCESS_CONTACT: CONTACT,
+        }
+    )
+
+    cfg = runtime.start(environ)
+
+    assert names.ENV_SECRET not in environ
+    assert names.ENV_ACCESS_ADMINS not in environ
+    assert names.ENV_ACCESS_USERS not in environ
+    assert environ[names.ENV_ACCESS_CONTACT] == CONTACT
+    assert cfg.env_presence[names.ENV_ACCESS_ADMINS] and cfg.env_presence[names.ENV_ACCESS_USERS]
+    assert cfg.access.allows(ADMIN) and cfg.access.allows(USER)
+    assert runtime.start(environ) is cfg, "두 번째 부름은 처음 읽은 설정 그대로다"
+
+
 def test_a_broken_setup_names_the_variable_without_any_value() -> None:
     cfg = use_config({names.ENV_ACCESS_ADMINS: rf"DOMAIN\{ADMIN}", names.ENV_ACCESS_USERS: USER})
     assert cfg.mode is SsoMode.BROKEN
@@ -911,10 +1059,39 @@ def test_the_status_shows_counts_only() -> None:
     for name in (names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS, names.ENV_ACCESS_CONTACT):
         assert environment.loc[name, "상태"] == "있음"
     assert environment.loc[names.ENV_ACCESS_USERS, "까닭"] == "loginid 꼴이 아닌 항목이 있어 뺌"
-    events = app.dataframe[1].value
-    row = events[events["사건"] == "login_denied"].iloc[0]
-    assert row["사유 코드"] == "not_on_list"
-    assert row["계정"] == "de***"
+    assert "login_denied" not in app.dataframe[1].value["사건"].tolist()
+    assert "명단 밖 로그인(기동 뒤 누계 1 · 계정 1)" in text
+    denied_table = app.dataframe[2].value
+    assert denied_table["계정"].tolist() == ["de***"]
+    assert denied_table["횟수"].tolist() == [1]
+
+
+def test_the_status_has_no_denied_table_until_someone_is_denied() -> None:
+    listed_config()
+    runtime.mark_gate_installed()
+
+    app = AppTest.from_string(STATUS_SCRIPT).run()
+
+    assert not list(app.exception)
+    assert sso_status.denied_account_line() is None
+    assert "명단 밖 로그인" not in _status_text(app)
+    assert len(app.dataframe) == 2, "환경변수 표 · 최근 사건 표만"
+
+
+def test_the_on_caption_says_who_gets_in() -> None:
+    """캡션과 바로 아래 사실 줄 「접속 명단」 이 어긋나지 않는다."""
+    listed_config()
+    runtime.mark_gate_installed()
+    listed = _status_text(AppTest.from_string(STATUS_SCRIPT).run())
+    assert "로그인하고 접속 명단에 있는 사람만 앱에 들어옵니다" in listed
+    assert "접속 명단: 켜짐" in listed
+
+    runtime.reset()
+    runtime.start(dev_environ())
+    runtime.mark_gate_installed()
+    open_to_all = _status_text(AppTest.from_string(STATUS_SCRIPT).run())
+    assert "접속 명단이 꺼져 있어 로그인한 사람은 모두 들어옵니다" in open_to_all
+    assert "접속 명단: 꺼짐(인증된 사람 전부)" in open_to_all
 
 
 def test_the_status_says_how_the_list_stands_in_each_mode() -> None:

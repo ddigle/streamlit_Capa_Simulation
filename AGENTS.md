@@ -297,7 +297,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `jti` 로 다시 서명, 끝 시각 규칙은 `session_end` 한 곳) · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 → 신원은
   `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 접속 명단(목록 글 → loginid → 등급 맵 · `AccessList.allows` · loginid 꼴 `LOGINID_PATTERN` — 표준 라이브러리만)은
   `auth/access.py`, 프로세스 상태(설정 한 벌 · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
-  갱신 누계 · 진단 · 사건 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 다섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
+  갱신 누계 · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 다섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
   `/auth/sso/error` · `POST /auth/sso/refresh`) · 로그인 시작 · 화면은 `auth/web.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
@@ -322,13 +322,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     선다)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
     (`CAPA_PUBLIC_URL` 바탕) · `ADFS_ISSUER` · 서명 인증서 지문(x5t · SHA-256 앞 16자)은 포털 등록값과 한 글자씩 대 보려고 보인다.
-    이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「로그인 전 실패」(무인증 실패 —
+    이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「명단 밖 로그인」(계정마다 한 줄 · 횟수,
+    `runtime.denied_accounts` · 누계 `denied_total`)과 「로그인 전 실패」(무인증 실패 —
     따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 사실 줄은 「로그인 유지: 마지막 사용 뒤 n시간 · 최대 n시간」,
     켜짐이면 그 아래 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
     재시작하면 0)를 한 줄로 보인다(갱신은 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 사용자 · 읽지 못함), 그 아래 마지막 로그인의 클레임 이름(값 없음,
     `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.
   - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌
-    `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다.
+    `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다. `--app-url` 이 루프백이 아니면 env 파일에 `--loginid` 를 관리자 목록으로 적는다(접속 명단이 켜지므로).
 - `app_pages/home.py` — HOME 대시보드. 탭 없이 한 화면(계획·LOB·주요공정·B/N Figure)이고 공용 설정(Preference 공용 프로필
   편집기·`Past Data` — `past_data_management.py`)은 사이드바 「HOME 설정」 상자가 여는 큰 팝업이다(`components/home_settings.py`,
   2026-11-02 사용자 요청 — 전에는 Main·Preference·Past Data 세 탭). 팝업 안은 쓰는 묶음 다섯 탭 `비교 · 주요 Case` · `판정 기준` ·
@@ -4594,8 +4595,8 @@ RQ_MODULE
     새 핸드셰이크 · 열린 연결의 메시지(`gate._WatchedSocket`) · `app.py` 의 `require_signed_in` 이 모두 이 함수를 지나므로 자리마다 판정을 더하지 않는다. `app.py` 만으로는 위젯 콜백 ·
     프래그먼트 회차를 막지 못한다(36). 쿠키를 믿지 않고 묻는 자리는 둘뿐이다 — 콜백(`verify_id_token` 뒤 · `issue_session` 앞, 거절 화면과 `login_denied` 기록은 여기 한 곳)과 갱신 경로(폐기 확인 옆 — 401,
     다시 발급하지 않음). 문지기는 분기를 늘리지 않는다 — 명단 밖 쿠키의 탐색은 IdP → 콜백 → 거절 화면으로 가고 fetch 는 401 이라 `sso_reconnect` 띠도 같은 길로 간다. 거절은 쿠키 셋(상태 · 시도 · 세션)을
-    지운다(시도 쿠키가 남으면 「로그인이 되풀이됩니다」 가 잘못 뜬다). 거절 주소 `?code=not_on_list` 는 로그인 없이 열리므로 진단을 보관하지 않고 loginid · 이름을 싣지 않는다. 명단은 기동 때 한 번 읽고(`SsoConfig.access`) 값은 화면 · 로그 ·
-    repr 에 나오지 않는다 — 점검에는 개수만. 운영이거나 목록에 값이 있으면 켜지고, 켜졌는데 읽은 관리자가 없으면 막힘이다. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
+    지운다(시도 쿠키가 남으면 「로그인이 되풀이됩니다」 가 잘못 뜬다). 거절 주소 `?code=not_on_list` 는 로그인 없이 열리므로 진단을 보관하지 않고 loginid · 이름을 싣지 않는다. 명단은 기동 때 한 번 읽고(`SsoConfig.access`) `runtime.start` 가 `os.environ` 에서 뺀다(`names.WITHHELD_ENVIRONMENT` — 하위 프로세스에도 넘기지 않는다). 값은 화면 · 로그 ·
+    repr 에 나오지 않는다 — 점검에는 개수만. 운영 · 잠금 · 루프백이 아닌 공개 주소이거나 목록에 값이 있으면 켜지고(`APP_ENV` 만 보면 그 값을 빠뜨린 실제 서버가 조용히 전부를 받는다), 켜졌는데 읽은 관리자가 없으면 막힘이다. 글자 · 숫자가 없는 항목은 자리표로 보고 읽지 못함으로 센다. `login_denied` 는 최근 사건 고리에 넣지 않고 계정별 표(`runtime.denied_accounts`)에만 둔다 — 들어오지 못하는 사람이 유일한 감사 창을 밀어내지 못하게. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
 
 ## 6. 핵심 계산 규칙
 
