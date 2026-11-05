@@ -457,7 +457,7 @@ def test_the_popup_save_removes_the_unit_and_says_so_like_the_tab(tmp_path: Path
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
 
-    assert not app.error, _texts(app, "error")
+    assert not place_errors(app), _texts(app, "error")
     assert len(repository.list_revisions()) == 2
     assert "EQ-02" not in set(_session(repository, setup).equipment["설비명"])
     note = app.session_state[FLASH_KEY]

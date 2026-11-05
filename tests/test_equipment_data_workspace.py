@@ -268,7 +268,7 @@ def test_invalid_input_remains_editable_and_successful_retry_creates_one_revisio
     app.button(key=PREVIEW_BUTTON_KEY).click()
     _ok(app.run())
     assert flashed(app, "error")
-    assert not app.error
+    assert not place_errors(app)
     assert app.text_area(key=CLIPBOARD_KEY).value == malformed
     assert PREVIEW_KEY not in app.session_state
     repository = _repository(path)

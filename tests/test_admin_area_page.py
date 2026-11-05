@@ -246,7 +246,7 @@ def test_proc_rename_tab_reports_a_duplicated_display_name_as_an_error(
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert any("중복" in error.value for error in flashed(app, "error"))
-    assert not app.error
+    assert not place_errors(app)
     assert app.text[-1].value == "v0|"
 
 

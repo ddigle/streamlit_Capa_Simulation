@@ -210,7 +210,11 @@ def test_a_failure_while_building_the_plan_key_is_the_plan_error(
     두 모드가 같은 `try` 를 쓴다(제약 영향 모드는 합치기 전에는 키 만들기가 `try` 밖이었다)."""
     recorder = _Recorder()
     errors: list[str] = []
-    monkeypatch.setattr(st, "error", errors.append)
+    monkeypatch.setattr(
+        constraint_equipment_plan,
+        "render_data_error",
+        lambda message, **_: errors.append(message),
+    )
 
     stopped = _run(
         _source(snapshot=_BrokenSnapshot()),

@@ -81,7 +81,7 @@ class HomeFailure(RuntimeError):
     def __init__(self, phase: str, failures: Sequence[tuple[str, str]]) -> None:
         super().__init__(f"{phase} 실행 실패: {[message for _, message in failures]}")
         self.phase = phase
-        # (종류, 문구) — 종류는 예외 클래스 이름이거나 오류 표시면 `st.error` 다.
+        # (종류, 문구) — 종류는 예외 클래스 이름이거나 `st.error`, 또는 `데이터 Error` 마크다.
         self.failures = tuple(failures)
 
 
@@ -178,6 +178,21 @@ def applied_lob_key(app: AppTest) -> "LobFigureKey":
     return applied
 
 
+def data_error_messages(app: AppTest) -> list[str]:
+    """그 회차에 선 「데이터 Error」 마크의 오류 글 — 자리에는 없고 마크와 한 칸의 표지에 실린다."""
+    from capa_simulation import alerts
+    from capa_simulation.components.data_error_mark import MARK_CLASS
+
+    bodies = [str(element.proto.body) for element in app.get("html")]
+    return [
+        str(note["full"])
+        for body in bodies
+        if MARK_CLASS in body
+        for note in alerts.marker_notes(body)
+        if note.get("keep")
+    ]
+
+
 def run_phase(app: AppTest, phase: str) -> dict[str, object]:
     started_at = perf_counter()
     app.run()
@@ -187,6 +202,7 @@ def run_phase(app: AppTest, phase: str) -> dict[str, object]:
         for exception in app.exception
     ]
     failures.extend(("st.error", str(error.value)) for error in app.error)
+    failures.extend(("데이터 Error", message) for message in data_error_messages(app))
     if failures:
         raise HomeFailure(phase, failures)
     chart_count = len(app.get("plotly_chart"))

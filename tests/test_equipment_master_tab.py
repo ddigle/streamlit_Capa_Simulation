@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, successes
+from alert_marks import flashed, place_errors, successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
@@ -591,7 +591,7 @@ def test_an_out_of_range_location_rejection_keeps_its_tildes(tmp_path: Path, gri
     app.button(key=PREVIEW_BUTTON_KEY).click().run()
 
     assert not app.exception, app.exception
-    assert not app.error
+    assert not place_errors(app)
     (error,) = flashed(app, "error")
     assert "동은 C1\\~C5, 층은 1F\\~6F 범위여야 합니다" in error.value
 

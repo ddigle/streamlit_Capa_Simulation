@@ -493,7 +493,7 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
         )
     if locked.empty or table is not None:
         return
-    with st.expander(LOCKED_YIELD_TITLE, icon=":material/rule:"):
+    with st.expander(LOCKED_YIELD_TITLE, icon=":material/rule:", key="load_locked_yield_list"):
         # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
         toolbar_clearance()
         st.dataframe(
@@ -1038,7 +1038,9 @@ if not tab_is_hidden(conversion_tab):
             ),
         )
         if not excluded_load_rows.empty and excluded_table is None:
-            with st.expander(f"{EXCLUDED_PLAN_TITLE} 확인", icon=":material/rule:"):
+            with st.expander(
+                f"{EXCLUDED_PLAN_TITLE} 확인", icon=":material/rule:", key="load_excluded_plan_list"
+            ):
                 # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
                 toolbar_clearance()
                 st.dataframe(

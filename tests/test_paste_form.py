@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import alert_notes, flashed
+from alert_marks import alert_notes, flashed, place_errors
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import paste_form
@@ -144,7 +144,7 @@ def test_a_refusal_goes_to_the_alert_popup_and_not_the_window() -> None:
     app = _window()
     _apply(app).click().run()
     assert not app.exception
-    assert not app.error
+    assert not place_errors(app)
     (refused,) = flashed(app, "error")
     assert refused.code == "FL-04"
     assert "붙여넣으세요" in refused.value

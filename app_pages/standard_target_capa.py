@@ -1157,7 +1157,9 @@ else:
     )
     if missing_shown and missing_table is None:
         with availability_notice_slot:
-            with st.expander(f"{MISSING_LIST_TITLE} 확인", expanded=False):
+            with st.expander(
+                f"{MISSING_LIST_TITLE} 확인", expanded=False, key="standard_target_missing_list"
+            ):
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
                 # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과

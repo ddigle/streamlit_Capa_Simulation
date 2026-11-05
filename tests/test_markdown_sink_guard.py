@@ -159,6 +159,14 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "새로 읽은 화면의 「공식으로 돌아왔습니다」 이름 — 띠 CSS 변수(퍼센트 인코딩)로만 "
         "나가고 탭 줄 JS 가 알림 칸에 textContent 로 그린다(마크다운 자리가 아니다)"
     ),
+    ("src/capa_simulation/components/floor_canvas_dialog.py", "overlay_unit_words"): (
+        "캔버스 밖 가정 차이 호기 — 상태 알림 EQ-16 전문이다. 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다)"
+    ),
+    ("src/capa_simulation/components/floor_canvas_dialog.py", "overlay_mark_words"): (
+        "캔버스 밖 가정 차이 요소 — 상태 알림 EQ-16 전문이다. 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다)"
+    ),
     ("src/capa_simulation/components/state_alerts.py", "alarm_table_place"): (
         "딸린 표가 있는 알림 전문의 목록 자리 — 알림 칸 JS 가 textContent 로 그린다(마크다운 "
         "자리가 아니다). 이름은 코드의 표 이름 상수다"

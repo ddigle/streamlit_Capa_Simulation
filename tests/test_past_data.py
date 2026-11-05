@@ -5,7 +5,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
-from alert_marks import flashed
+from alert_marks import flashed, place_errors
 
 from capa_simulation.persistence import past_data_store, sync_state
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -665,7 +665,7 @@ def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_t
 
     assert not list(app.exception), [element.message for element in app.exception]
     errors = [element.value for element in flashed(app, "error")]
-    assert not app.error
+    assert not place_errors(app)
     assert any(shown in message for message in errors), errors
     assert "확보율" not in app.session_state[PAST_DRAFT_KEY]
     save = next(button for button in app.button if button.label == "과거 구간 저장")

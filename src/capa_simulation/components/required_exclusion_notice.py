@@ -252,7 +252,7 @@ def render_oversized_lists(
     부르지 않는다."""
     for item in lists:
         if item.table is None:
-            with st.expander(item.title, expanded=False):
+            with st.expander(item.title, expanded=False, key=f"{item.key}_list"):
                 render_exclusion_table(
                     item.frame,
                     dimensions=item.dimensions,
