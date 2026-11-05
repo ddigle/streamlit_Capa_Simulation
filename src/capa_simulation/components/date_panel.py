@@ -61,7 +61,7 @@ Width = int | Literal["stretch"]
 
 
 def panel_key(key: str) -> str:
-    """값 칸 키(범위는 시작 칸 키)에 딸린 컴포넌트 위젯 키. Components v2 키는 `__` 를 받지 않는다."""
+    """값 칸 키(범위는 시작 칸 키)에 딸린 컴포넌트 위젯 키. Components v2 키는 `__` 를 못 쓴다."""
     return f"{key}_date_panel"
 
 
