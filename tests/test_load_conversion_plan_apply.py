@@ -423,7 +423,7 @@ def test_an_oversized_excluded_plan_list_stays_in_the_alarm_with_one_full_csv_at
     assert len(table["rows"]) == 1 and table["total"] == 2
     # 패널의 줄 글은 두 줄까지만 보이므로 앞부분만 실었다는 말과 전체 자리가 맨 앞이다.
     assert excluded["full"].startswith(
-        "Alarm 표는 앞 1건 · 전체 2건 — 전체는 이 탭 맨 아래 「제외한 계획 전체 CSV 다운로드」"
+        "Alarm 표는 앞 1건 · 전체 2건 — 전체는 환산 탭 맨 아래 「제외한 계획 전체 CSV 다운로드」"
     )
     assert "제외한 계획 확인" not in _folds(app)
     assert not any("누락 기준정보" in frame.value.columns for frame in app.main.dataframe)
@@ -434,6 +434,125 @@ def test_an_oversized_excluded_plan_list_stays_in_the_alarm_with_one_full_csv_at
     payload = written[table["file"]]
     assert payload.startswith(b"\xef\xbb\xbf")
     assert len(payload.decode("utf-8-sig").splitlines()) == 3
+
+
+def _yield_tab_kinds(app: AppTest) -> list[str]:
+    """수율 탭 안 맨 위 차례의 요소 종류 — 탭 이름 끝이 수율인 칸 하나다."""
+    (tab,) = [tab for tab in app.tabs if str(tab.label).endswith("수율")]
+    return [str(child.type) for child in tab.children.values()]
+
+
+def test_an_oversized_locked_yield_list_stays_in_the_alarm_with_one_full_csv_at_the_tab_bottom(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표가 `alerts.TABLE_ROW_LIMIT` 를 넘어도 편집 불가 수율 행은 Alarm 에서 본다 — 줄의 표는
+    앞부분만이고 글이 「앞 n건 · 전체 m건」 과 전체 자리를 말하며, 본문에는 접힘 · 표 없이 수율 탭
+    맨 아래 CSV 단추 하나만 서서 전체를 준다. 단추는 그 탭이 열린 회차에만 선다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 1)
+    written: dict[str, bytes] = {}
+    original = table_toolbar.render_csv_download
+
+    def recorded(*, data: bytes, file_name: str, key: str | None = None, **kwargs: Any) -> None:
+        written[file_name] = data
+        original(data=data, file_name=file_name, key=key, **kwargs)
+
+    monkeypatch.setattr(table_toolbar, "render_csv_download", recorded)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = _yield_rows(app)
+    months = pd.to_numeric(source["생산계획년월"])
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT A") & months.eq(202603), "BE_수율"] = None
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT B") & months.eq(202604), "BE_수율"] = None
+    _inject(app, "RQ_YLD", broken, "two-locked-yield-rows")
+
+    assert not list(app.exception)
+    label = "편집 불가 수율 행 전체 CSV 다운로드"
+    # 환산 탭이 열린 회차에는 수율 탭의 알림 · 단추를 세우지 않는다.
+    assert active_state(app, "ST-06") is None
+    assert label not in _download_labels(app)
+
+    app.session_state["load_conversion_active_tab"] = ":material/percent: 수율"
+    app.run()
+    assert not list(app.exception)
+    locked = active_state(app, "ST-06")
+    assert locked is not None
+    table = note_table(locked, "편집 불가 수율 행")
+    assert len(table["rows"]) == 1 and table["total"] == 2
+    # 패널의 줄 글은 두 줄까지만 보이므로 앞부분만 실었다는 말과 전체 자리가 맨 앞이다.
+    assert locked["full"].startswith(
+        f"Alarm 표는 앞 1건 · 전체 2건 — 전체는 수율 탭 맨 아래 「{label}」로 받습니다."
+    )
+    assert "Alarm › 이 줄 「편집 불가 수율 행」" in locked["full"]
+    assert "편집 불가 수율 행" not in _folds(app)
+    assert not any("사유" in frame.value.columns for frame in app.main.dataframe)
+    assert _download_labels(app) == [label]
+    # 수율 탭의 맨 끝이 단추다 — 편집표 아래.
+    assert _yield_tab_kinds(app)[-1] == "download_button"
+    # 단추는 앞부분이 아니라 전체를 준다(머리 줄 + 2행, 표와 같은 파일 이름 · 칸).
+    payload = written[table["file"]]
+    assert payload.startswith(b"\xef\xbb\xbf")
+    lines = payload.decode("utf-8-sig").splitlines()
+    assert len(lines) == 3
+    assert lines[0].split(",") == list(table["columns"])
+
+
+def test_both_oversized_lists_keep_their_own_csv_on_their_own_tab(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """제외한 계획과 편집 불가 수율 행이 함께 크면 전체 CSV 단추는 제 탭에 하나씩만 서고, Alarm 의
+    두 줄 글은 제 탭을 이름으로 부른다 — 두 줄이 한 Alarm 에 함께 서도 어느 탭인지 헷갈리지
+    않는다."""
+    monkeypatch.setattr(alerts, "TABLE_ROW_LIMIT", 1)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"]).copy()
+    plan["생산수량"] = plan["생산수량"].astype(float)
+    plan.loc[plan.index[:2], "생산수량"] = None
+    _inject(app, "RQ_PKG_PLAN", plan, "blank-plan-quantities")
+    source = _yield_rows(app)
+    months = pd.to_numeric(source["생산계획년월"])
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT A") & months.eq(202603), "BE_수율"] = None
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT B") & months.eq(202604), "BE_수율"] = None
+    _inject(app, "RQ_YLD", broken, "two-locked-yield-rows")
+
+    assert not list(app.exception)
+    excluded = active_state(app, "ST-05")
+    assert excluded is not None and "환산 탭 맨 아래" in excluded["full"]
+    assert _download_labels(app)[-1] == "제외한 계획 전체 CSV 다운로드"
+    assert "편집 불가 수율 행 전체 CSV 다운로드" not in _download_labels(app)
+
+    app.session_state["load_conversion_active_tab"] = ":material/percent: 수율"
+    app.run()
+    assert not list(app.exception)
+    locked = active_state(app, "ST-06")
+    assert locked is not None and "수율 탭 맨 아래" in locked["full"]
+    assert _download_labels(app) == ["편집 불가 수율 행 전체 CSV 다운로드"]
+
+    app.session_state["load_conversion_active_tab"] = ":material/calculate: 환산"
+    app.run()
+    assert not list(app.exception)
+    assert _download_labels(app)[-1] == "제외한 계획 전체 CSV 다운로드"
+    assert "편집 불가 수율 행 전체 CSV 다운로드" not in _download_labels(app)
+
+
+def test_a_small_locked_yield_list_has_no_full_csv_button(seeded_database: Path) -> None:
+    """다 실었으면 전체 CSV 단추는 서지 않는다 — 표의 「CSV 내려받기」 가 전체다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = _yield_rows(app)
+    months = pd.to_numeric(source["생산계획년월"])
+    broken = source.copy()
+    broken.loc[broken["제품정보"].eq("DEMO PRODUCT A") & months.eq(202603), "BE_수율"] = None
+    _inject(app, "RQ_YLD", broken, "one-locked-yield-row")
+    app.session_state["load_conversion_active_tab"] = ":material/percent: 수율"
+    app.run()
+
+    assert not list(app.exception)
+    locked = active_state(app, "ST-06")
+    assert locked is not None
+    table = note_table(locked, "편집 불가 수율 행")
+    assert table["total"] == len(table["rows"]) == 1
+    assert "앞 " not in locked["full"]
+    assert "편집 불가 수율 행 전체 CSV 다운로드" not in _download_labels(app)
 
 
 def test_a_yield_source_that_cannot_build_a_table_stops_only_the_yield_tab(

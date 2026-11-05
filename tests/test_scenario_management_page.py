@@ -130,6 +130,9 @@ def test_list_management_acts_on_the_checked_scenario(
     assert not app.exception
     save = app.button(key="scenario_list_save")
     assert save.label == "변경 저장" and save.disabled
+    # 고친 것이 없으면 고친 수를 어디에도 말하지 않는다(설계 규칙 UI-TXT-08).
+    assert _save_help(app) == ""
+    assert not any("고친 것" in str(item.value) for item in app.caption)
     # 고른 것이 없으면 카드가 없다.
     assert "보관…" not in {button.label for button in app.button}
 
@@ -769,8 +772,9 @@ def _draft(app: AppTest, key: str) -> TableDraft:
     return draft
 
 
-def _caption_with(app: AppTest, text: str) -> str:
-    return next(item.value for item in app.caption if text in item.value)
+def _save_help(app: AppTest) -> str:
+    """「변경 저장」 단추 풍선 — 고친 것이 없으면 빈 글이다(풍선 없음)."""
+    return str(app.button(key="scenario_list_save").help)
 
 
 def test_rename_refreshes_the_cached_snapshot_name(tmp_path: Path) -> None:
@@ -796,7 +800,9 @@ def test_rename_refreshes_the_cached_snapshot_name(tmp_path: Path) -> None:
     tables.edit(_shown_key(app, LIST_EDITOR_KEY), 0, "시나리오명", "  이름 바꾼 시나리오 ")
     tables.run()
     assert not app.exception
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 1 · 순서 0")
+    # 고친 수는 저장 단추 풍선이 말한다 — 표 위에 값 줄을 세우지 않는다.
+    assert _save_help(app) == "고친 것: 이름 1 · 순서 0"
+    assert not any("고친 것" in str(item.value) for item in app.caption)
     assert not app.button(key="scenario_list_save").disabled
     app.button(key="scenario_list_save").click()
     tables.run()
@@ -806,7 +812,7 @@ def test_rename_refreshes_the_cached_snapshot_name(tmp_path: Path) -> None:
     refreshed = load_scenario_snapshot(str(database_path), revision_id)
     assert refreshed.scenario.scenario_name == "이름 바꾼 시나리오"
     assert _list_frame(app).index.tolist() == ["이름 바꾼 시나리오"]
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 0 · 순서 0")
+    assert _save_help(app) == ""
     assert app.session_state[ACTIVE_SCENARIO_LABEL_KEY]["scenario_name"] == "이름 바꾼 시나리오"
 
 
@@ -1769,7 +1775,7 @@ def test_picking_another_row_keeps_the_unsaved_name_and_order_edits(tmp_path: Pa
     frame = _list_frame(app)
     assert frame["선택"].tolist() == [False, True, False]
     assert frame.index.tolist() == [names[0], names[1], "고친 이름"]
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 1 · 순서 0")
+    assert _save_help(app) == "고친 것: 이름 1 · 순서 0"
 
     # 순서를 고친 뒤 다른 행을 골라도 순서·이름이 남는다.
     tables.edit(_shown_key(app, LIST_EDITOR_KEY), 2, "순서", 1)
@@ -1781,7 +1787,7 @@ def test_picking_another_row_keeps_the_unsaved_name_and_order_edits(tmp_path: Pa
     assert frame.index.tolist() == ["고친 이름", names[0], names[1]]
     assert frame["순서"].tolist() == [1, 2, 3]
     assert _draft(app, LIST_EDITOR_KEY).picked == ids[0]
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 1 · 순서 3")
+    assert _save_help(app) == "고친 것: 이름 1 · 순서 3"
     # 카드는 하나다 — 두 건 경고 없이 새로 고른 시나리오의 카드가 선다.
     assert not any("한 건만" in item.value for item in app.warning)
     assert any(item.value.endswith(names[0]) for item in app.markdown if "####" in item.value)
@@ -1853,7 +1859,7 @@ def test_a_list_save_with_one_refused_name_writes_nothing(tmp_path: Path) -> Non
     assert f"1행 「{literal_markdown(names[1])}」" in error
     assert literal_markdown("같은 이름의 시나리오가 이미 있습니다") in error
     assert [scenario.scenario_name for scenario in repository.list_scenarios()] == names
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 2 · 순서 0")
+    assert _save_help(app) == "고친 것: 이름 2 · 순서 0"
 
     # 두 이름을 맞바꾸면 저장 뒤 이름이 겹치지 않아 된다.
     tables.edit(_shown_key(app, LIST_EDITOR_KEY), 1, "시나리오명", names[0])
@@ -1925,7 +1931,7 @@ def test_an_order_changed_elsewhere_refuses_the_order_and_keeps_the_names(tmp_pa
     assert [scenario.scenario_id for scenario in stored] == [ids[1], ids[0], ids[2]]
     assert [scenario.scenario_name for scenario in stored] == [names[1], names[0], names[2]]
     assert _list_frame(app).index.tolist() == [names[1], "새 첫째", names[2]]
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 1 · 순서 0")
+    assert _save_help(app) == "고친 것: 이름 1 · 순서 0"
 
     app.button(key="scenario_list_save").click()
     tables.run()
@@ -2154,7 +2160,7 @@ def test_a_scenario_name_changed_elsewhere_is_not_overwritten_after_more_runs(
     frame = _list_frame(app)
     assert "남이 바꾼 이름" in frame.index and "내가 바꾼 이름" not in frame.index
     assert _draft(app, LIST_EDITOR_KEY).picked == ids[0]
-    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 0 · 순서 0")
+    assert _save_help(app) == ""
     assert not any("먼저 이름을 바꿨습니다" in item.value for item in app.warning)
 
     # 지금 이름을 보고 다시 고치면 저장된다.

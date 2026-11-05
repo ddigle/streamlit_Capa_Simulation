@@ -69,7 +69,6 @@ from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import (
     render_csv_download,
     render_table_heading,
-    toolbar_clearance,
 )
 from capa_simulation.components.write_guard import held_flash, note_notice, notice_marks
 from capa_simulation.design import tokens
@@ -289,12 +288,14 @@ CONVERSION_TAB_NAME = "환산"
 PKG_PLAN_TAB_NAME = "PKG PLAN"
 YIELD_TAB_NAME = "수율"
 # 그 알림(`ST-05` · `ST-06`)의 Alarm 줄 표 이름 — 조건의 내역이라 본문 접힘에 두지 않는다(2026-11-05
-# 사용자 요청(검수표), 설계 규칙 UI-TXT-04). 제외한 계획은 크기와 상관없이 Alarm 에서 본다 — 상한을
-# 넘으면 앞부분만 싣고 전체는 환산 탭 맨 아래 이 CSV 단추 하나다(알림 글이 그 자리를 부른다). 편집
-# 불가 수율 행은 표가 알림에 싣기에 크면 본문 펼침에 남는다.
+# 사용자 요청(검수표), 설계 규칙 UI-TXT-04). 둘 다 크기와 상관없이 Alarm 에서 본다 — 상한을 넘으면
+# 앞부분만 싣고 전체는 그 탭(환산 · 수율) 맨 아래 이 CSV 단추 하나다(알림 글이 그 자리를 부른다).
 EXCLUDED_PLAN_TITLE = "제외한 계획"
 EXCLUDED_PLAN_CSV_LABEL = "제외한 계획 전체 CSV 다운로드"
 LOCKED_YIELD_TITLE = "편집 불가 수율 행"
+LOCKED_YIELD_CSV_LABEL = "편집 불가 수율 행 전체 CSV 다운로드"
+LOCKED_YIELD_FILE_NAME = "Capa_Locked_Yield_Rows.csv"
+LOCKED_YIELD_COLUMNS = [*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]
 # 그 표의 까닭 칸(`누락 기준정보` · `사유`) 머리 풍선 — 고칠 곳과 계산에서 어떻게 되는지. 건수는
 # 알림이 말하고(자리에 경고 상자를 그리지 않는다 — 2026-11-03 결정 보드 D2 (나)), 설명 문장을 늘
 # 띄우지 않는다(설계 규칙 UI-TXT-01 · 02 — 풍선 · Guide 로 옮긴 말).
@@ -411,6 +412,15 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
     )
 
 
+def _clipped_table_sentence(table: alerts.AlertTable, *, tab: str, csv_label: str) -> str:
+    """앞부분만 실은 표의 전문 머리 — 그 크기와 전체를 받는 단추 자리. 줄 글은 패널에서 두 줄까지만
+    보이니 전문 맨 앞에 두고, 한 Alarm 에 두 탭의 줄이 함께 서므로 탭을 이름으로 부른다."""
+    return (
+        f"Alarm 표는 {clipped_label(table)} — 전체는 {tab} 탭 맨 아래 "
+        f"「{csv_label}」{direction_particle(csv_label)} 받습니다."
+    )
+
+
 def _report_excluded_plans(
     excluded: pd.DataFrame, *, scope: AlertScope, file_name: str
 ) -> alerts.AlertTable | None:
@@ -435,11 +445,11 @@ def _report_excluded_plans(
         )
     )
     sentences = []
-    # 줄 글은 패널에서 두 줄까지만 보인다 — 앞부분만 실었다는 말과 전체 자리를 맨 앞에 둔다.
     if table is not None and table_clipped(table):
         sentences.append(
-            f"Alarm 표는 {clipped_label(table)} — 전체는 이 탭 맨 아래 "
-            f"「{EXCLUDED_PLAN_CSV_LABEL}」{direction_particle(EXCLUDED_PLAN_CSV_LABEL)} 받습니다."
+            _clipped_table_sentence(
+                table, tab=CONVERSION_TAB_NAME, csv_label=EXCLUDED_PLAN_CSV_LABEL
+            )
         )
     if missing_plans:
         sentences.append(
@@ -463,9 +473,12 @@ def _report_excluded_plans(
     return table
 
 
-def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None) -> None:
+def _report_locked_yield_rows(
+    locked: pd.DataFrame, *, scope: AlertScope | None
+) -> alerts.AlertTable | None:
     """원천 값이 비었거나 범위 밖이라 수율 표에서 값을 뺀 행 — 상태 알림(`ST-06`)과 그 줄의 표(까닭
-    `사유` 칸. 알림에 싣기에 크면 본문 펼침에 남는다).
+    `사유` 칸). 표가 크면 앞부분만 싣고 전문이 그 크기와 CSV 단추 자리를 말한다 — 단추는 부르는 쪽이
+    탭 맨 아래에 세운다(`table_clipped`). 뺀 행이 없거나 탭이 닫혔으면 None 이다.
 
     말없이 빼면 그 달 칸이 원천에 행이 없는 달과 똑같이 빈칸으로 보인다. 목록에는 까닭(`사유`)을
     함께 싣는다. 계산에서 두 경우는 다르다 — 값 없는 행은 환산의 「제외한 계획」으로 내려가고,
@@ -475,48 +488,43 @@ def _render_locked_yield_rows(locked: pd.DataFrame, *, scope: AlertScope | None)
     낸다(`scope` 가 None 이면 닫힌 탭 — 설계 2-3 「숨은 자리는 세지 않는다」). 닫힌 회차도 이벤트 칸
     한 자리를 써(`alerts.flush`) 바로 뒤 수율 붙여넣기 팝업의 자리가 탭에 따라 밀리지 않는다.
     """
-    locked_columns = [*YIELD_KEYS, *YIELD_VALUE_COLUMNS, YIELD_LOCK_REASON_COLUMN]
+    if scope is None:
+        alerts.flush()
+        return None
     table = (
         None
         if locked.empty
         else alert_table(
-            locked[locked_columns],
+            locked[LOCKED_YIELD_COLUMNS],
             title=LOCKED_YIELD_TITLE,
-            file_name="Capa_Locked_Yield_Rows.csv",
+            file_name=LOCKED_YIELD_FILE_NAME,
             column_help={YIELD_LOCK_REASON_COLUMN: LOCKED_YIELD_GUIDE},
+            clip=True,
         )
     )
-    if scope is None:
-        alerts.flush()
-    else:
-        place = alarm_table_place(LOCKED_YIELD_TITLE) if table is not None else "이 탭 표 위"
-        alerts.state(
-            "ST-06",
-            scope=scope.scope,
-            content=len(locked),
-            active=not locked.empty,
-            text=(
-                f"수율 표에서 값을 뺀 원천 행 {len(locked):,}개 — 그 달 EDS·BE 를 넣어 적용하면 "
-                "고쳐짐"
-            ),
-            full=f"원천 수율 행 {len(locked):,}개(목록: {place}) — {LOCKED_YIELD_GUIDE}",
-            scope_label=scope.label,
-            tab=YIELD_TAB_NAME,
-            tables=[table],
+    sentences = []
+    if table is not None and table_clipped(table):
+        sentences.append(
+            _clipped_table_sentence(table, tab=YIELD_TAB_NAME, csv_label=LOCKED_YIELD_CSV_LABEL)
         )
-    if locked.empty or table is not None:
-        return
-    with st.expander(LOCKED_YIELD_TITLE, icon=":material/rule:", key="load_locked_yield_list"):
-        # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
-        toolbar_clearance()
-        st.dataframe(
-            locked[locked_columns],
-            hide_index=True,
-            width="stretch",
-            column_config={
-                YIELD_LOCK_REASON_COLUMN: st.column_config.TextColumn(help=LOCKED_YIELD_GUIDE),
-            },
-        )
+    sentences.append(
+        f"원천 수율 행 {len(locked):,}개(목록: {alarm_table_place(LOCKED_YIELD_TITLE)}) — "
+        f"{LOCKED_YIELD_GUIDE}"
+    )
+    alerts.state(
+        "ST-06",
+        scope=scope.scope,
+        content=len(locked),
+        active=not locked.empty,
+        text=(
+            f"수율 표에서 값을 뺀 원천 행 {len(locked):,}개 — 그 달 EDS·BE 를 넣어 적용하면 고쳐짐"
+        ),
+        full=" ".join(sentences),
+        scope_label=scope.label,
+        tab=YIELD_TAB_NAME,
+        tables=[table],
+    )
+    return table
 
 
 @st.dialog("Excel 붙여넣기 · PKG PLAN", width="large", on_dismiss=_close_dialog)
@@ -893,7 +901,7 @@ with yield_tab:
                 )
         yield_notice = st.empty()
         render_flash(YIELD_FLASH_KEY)
-        _render_locked_yield_rows(
+        locked_table = _report_locked_yield_rows(
             locked_yield_rows,
             scope=(
                 None
@@ -961,6 +969,15 @@ with yield_tab:
                 yield_notice.error(bootstrap_error_message(exc))
             else:
                 st.rerun()
+        if locked_table is not None and table_clipped(locked_table):
+            render_csv_download(
+                data=locked_yield_rows[LOCKED_YIELD_COLUMNS]
+                .to_csv(index=False)
+                .encode("utf-8-sig"),
+                file_name=LOCKED_YIELD_FILE_NAME,
+                key="download_locked_yield_csv",
+                label=LOCKED_YIELD_CSV_LABEL,
+            )
 
 # PKG PLAN 적용은 **두 편집표를 모두 그린 뒤**에 한다. 적용은 `st.rerun()` 으로 끝나는데,
 # Streamlit 은 그것을 정상 완료로 보고 그 회차에 그리지 않은 위젯의 상태를 서버에서 지운다. 예전에는
