@@ -467,6 +467,13 @@ export default function (component) {
   }
 
   root.onkeydown = (event) => {
+    if (event.key === 'Escape' && dialog.open) {
+      // 판만 닫는다 — 팝업(st.dialog) 안 칸이어도 그 팝업까지 닫히지 않게 위로 보내지 않는다.
+      event.preventDefault()
+      event.stopPropagation()
+      dialog.close()
+      return
+    }
     const cell = event.target.closest('.capa-date-day')
     const chip = event.target.closest('.capa-date-chip')
     if (event.key === 'Enter' && !event.repeat && !event.isComposing && (cell || chip)) {
