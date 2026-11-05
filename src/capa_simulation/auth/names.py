@@ -15,7 +15,8 @@ from __future__ import annotations
 ENV_CLIENT_ID = "ADFS_CLIENT_ID"
 # 우리 세션 토큰(HS256)의 비밀값. 앱이 기동 때 읽은 뒤 `os.environ` 에서 뺀다.
 ENV_SECRET = "JWT_SECRET_KEY"
-# `prod` · `production` 이면 운영 규칙(https 만 · `__Host-` 쿠키 · 꺼짐 경고).
+# `prod` · `production` 이면 운영 규칙(https 만 · `__Host-` 쿠키 · 꺼짐 경고 · 접속 명단 필수). 운영
+# 서버에는 꼭 넣는다 — 빠져도 공개 주소가 루프백이 아니거나 잠금이면 명단은 켜진다(`config`).
 ENV_APP_ENV = "APP_ENV"
 ENV_AUTHORIZE_URL = "ADFS_AUTHORIZE_URL"
 ENV_ISSUER = "ADFS_ISSUER"
@@ -33,6 +34,13 @@ ENV_CLAIM_LOGINID = "ADFS_CLAIM_LOGINID"
 ENV_CLAIM_USERNAME = "ADFS_CLAIM_USERNAME"
 ENV_CLAIM_DEPTNAME = "ADFS_CLAIM_DEPTNAME"
 ENV_LOGOUT_URL = "ADFS_LOGOUT_URL"
+# 접속 명단(`auth/access.py`) — 통합인증을 지났어도 여기 없으면 들어오지 못한다. 값은 쉼표 ·
+# 세미콜론 · 공백으로 나눈 loginid 들이고 값을 화면 · 로그에 싣지 않는다. 관리자 목록은 운영 ·
+# 잠금 · 루프백이 아닌 공개 주소에서 필수다.
+ENV_ACCESS_ADMINS = "CAPA_ACCESS_ADMINS"
+ENV_ACCESS_USERS = "CAPA_ACCESS_USERS"
+# 거절 화면에 보일 요청 창구 글(선택). 로그인 없이 누구나 보는 글이라 사람 loginid 를 넣지 않는다.
+ENV_ACCESS_CONTACT = "CAPA_ACCESS_CONTACT"
 
 # 통합인증이 읽는 환경변수 전부. 시험의 자동 정리 · 시작 보고(있음/없음) · 앱 사본을 띄우는 보조
 # 스크립트가 같은 튜플을 쓴다. 차례는 설정 화면 · 점검 표의 줄 차례다.
@@ -53,10 +61,16 @@ SSO_ENVIRONMENT: tuple[str, ...] = (
     ENV_CLAIM_USERNAME,
     ENV_CLAIM_DEPTNAME,
     ENV_LOGOUT_URL,
+    ENV_ACCESS_ADMINS,
+    ENV_ACCESS_USERS,
+    ENV_ACCESS_CONTACT,
 )
 
 # 값을 화면 · 보고 · 로그에 절대 싣지 않는 이름(있음/없음 · 길이 같은 사실만).
 SECRET_ENVIRONMENT: tuple[str, ...] = (ENV_SECRET,)
+# 앱이 기동 때 읽은 뒤 `os.environ` 에서 빼고 하위 프로세스에 넘기지 않는 이름. 명단은 비밀값은
+# 아니지만 사람을 가리킨다. 창구 글은 거절 화면에 그대로 보이는 공개 글이라 넣지 않는다.
+WITHHELD_ENVIRONMENT: tuple[str, ...] = (*SECRET_ENVIRONMENT, ENV_ACCESS_ADMINS, ENV_ACCESS_USERS)
 
 # --- 경로 -----------------------------------------------------------------------------------
 # 포털 「Endpoint URL」 에 등록하는 콜백. IdP 가 id_token 을 form_post(POST)로 보낸다.

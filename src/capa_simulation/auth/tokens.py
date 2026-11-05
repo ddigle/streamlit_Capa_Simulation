@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from capa_simulation.auth.access import LOGINID_PATTERN
 from capa_simulation.auth.config import SigningCert, SsoConfig
 
 if TYPE_CHECKING:
@@ -82,7 +83,6 @@ KNOWN_JWS_ALGS = frozenset(
     }
 )
 
-LOGINID_PATTERN = re.compile(r"^[A-Za-z0-9._@-]{1,64}$")
 MAX_DISPLAY_LENGTH = 100
 MAX_DIAGNOSTIC_LENGTH = 200
 MAX_CLAIM_NAMES = 60

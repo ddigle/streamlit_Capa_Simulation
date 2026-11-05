@@ -28,9 +28,10 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 `CMD` 와 같고, 실행 줄의 두 비밀값은 앱에 넘기지 않는다.
 
 통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)는 앱이 써야 하므로 **앱에는 넘긴다** — 비밀값
-`JWT_SECRET_KEY` 는 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start`). 이
-스크립트는 그 값을 검증하지 않고 있음/없음만 결과 파일(`sso_environment`)과 진행 한 줄에 남긴다.
-하위 프로세스(import 확인·pip)에는 `JWT_SECRET_KEY` 도 넘기지 않는다. 진입 파일이 없거나 import 에
+`JWT_SECRET_KEY` 와 접속 명단은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다
+(`auth.runtime.start`). 이 스크립트는 그 값을 검증하지 않고 있음/없음만 결과 파일
+(`sso_environment`)과 진행 한 줄에 남긴다. 하위 프로세스(import 확인·pip)에는 그 값들도 넘기지
+않는다(`auth.names.WITHHELD_ENVIRONMENT`). 진입 파일이 없거나 import 에
 실패해도 `app.py` 로 **물러서지 않는다** — 통합인증이 켜진 서버가 문지기 없이 열리는 길이 된다
 (그때 `app.py` 는 「문지기 없이 시작됨」 으로 멈추지만, 첫 벽을 스스로 치우지 않는다).
 
@@ -109,9 +110,9 @@ PROBE_MARKER = "capa-bdq-probe"
 # 앱과 하위 프로세스에 넘기지 않는 실행 줄 값. 앱은 요청자 계정만 읽는다. 앱 쪽 「결과 없음」
 # 안내가 같은 이름으로 스크립트가 돌았는지 가른다.
 SECRET_ENVIRONMENT = APP_WITHHELD_ENVIRONMENT
-# 하위 프로세스(import 확인·pip)에 넘기지 않는 값 — 두 비밀값과 통합인증 비밀값. 통합인증
-# 비밀값은 앱에는 넘긴다(앱이 읽고 지운다).
-CHILD_WITHHELD_ENVIRONMENT = (*APP_WITHHELD_ENVIRONMENT, *sso_names.SECRET_ENVIRONMENT)
+# 하위 프로세스(import 확인·pip)에 넘기지 않는 값 — 두 비밀값과 통합인증 비밀값 · 접속 명단.
+# 통합인증 쪽은 앱에는 넘긴다(앱이 읽고 지운다).
+CHILD_WITHHELD_ENVIRONMENT = (*APP_WITHHELD_ENVIRONMENT, *sso_names.WITHHELD_ENVIRONMENT)
 _PROBE_CODE = f"""
 import importlib, importlib.metadata
 try:

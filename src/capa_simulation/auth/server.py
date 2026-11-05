@@ -22,7 +22,7 @@ from capa_simulation.auth.gate import SsoGate
 
 
 def start_sso() -> SsoConfig:
-    """환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 `JWT_SECRET_KEY` 를 환경에서 뺀다."""
+    """환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 환경에서 뺀다."""
     return runtime.start(os.environ)
 
 

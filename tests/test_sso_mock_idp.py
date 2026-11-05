@@ -92,6 +92,34 @@ def test_env_lines_build_a_config_that_verifies_the_issued_token() -> None:
     assert login.loginid == "dev.user" and login.name == "개발사용자" and login.dept == "개발부서"
 
 
+def test_an_address_beyond_loopback_gets_its_own_account_on_the_list() -> None:
+    """WebIDE 프록시 주소는 명단이 켜진다 — 가짜 IdP 가 로그인할 합성 계정을 관리자로 적어 그대로
+    돈다."""
+    identity = make_signing_identity()
+    environ = environ_from_lines(env_lines(options(loginid="demo.proxy"), identity, DEV_SECRET))
+
+    cfg = load_config(environ)
+
+    assert environ[names.ENV_ACCESS_ADMINS] == "demo.proxy"
+    assert cfg.mode is SsoMode.ON, cfg.problems
+    assert cfg.access.enforced
+    assert cfg.access.allows("demo.proxy") and not cfg.access.allows("demo.other")
+
+
+@pytest.mark.parametrize(
+    "app_url", ["http://localhost:8581", "http://127.0.0.1:8581", "https://localhost:8581"]
+)
+def test_a_loopback_address_writes_no_list(app_url: str) -> None:
+    identity = make_signing_identity()
+    environ = environ_from_lines(env_lines(options(app_url=app_url), identity, DEV_SECRET))
+
+    cfg = load_config(environ)
+
+    assert names.ENV_ACCESS_ADMINS not in environ
+    assert cfg.mode is SsoMode.ON, cfg.problems
+    assert not cfg.access.enforced
+
+
 def test_env_file_is_private(tmp_path: Path, keeps_permission_bits: bool) -> None:
     """비밀값이 든 env 파일은 0600 이다. 비트를 담지 못하는 파일 체계(Windows)에서는 쓰기만 본다."""
     from sso_mock_idp import write_env_file

@@ -4,7 +4,8 @@
 
 C-DEP 서버에는 셸도 로그도 없어 통합인증의 설정 판정 · 서명 인증서 · 최근 사건을 Admin Area 에서
 읽는다. **값은 싣지 않는다** — 환경변수는 이름과 있음/없음 · 까닭만, 비밀값(`JWT_SECRET_KEY`)은
-「있음 · 검사 통과」 같은 사실만, client id 는 「있음」 만, 계정은 앞 두 글자만(`mask_account`)이다.
+「있음 · 검사 통과」 같은 사실만, client id 는 「있음」 만, 접속 명단은 개수만, 클레임은 이름만,
+계정은 앞 두 글자만(`mask_account`)이다.
 redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩 대 봐야 하므로 글자 그대로 싣는다.
 
 - 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도 그리지 않는다 — 개발 PC · 사내 WebIDE 화면 그대로.
@@ -14,9 +15,11 @@ redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩
   문지기 없이 뜬 것이고 `app.py` 가 먼저 멈춘다 — 그래도 판정은 그대로 그린다.
 
 설정은 프로세스가 기동 때 한 번 읽은 것(`auth.runtime.config`)이고, 최근 사건은 프로세스 메모리의
-고리(재시작하면 비워진다)다. 켜짐이면 로그인 유지 시간(마지막 사용 뒤 · 최대) 사실 줄 아래에 로그인
-갱신(`POST /auth/sso/refresh`) 결과 누계 한 줄을 싣는다 — 갱신은 사건 고리에 적지 않는다(5분마다
-사람마다 한 줄이면 고리가 갱신으로만 찬다). DB 를 열지 않는다.
+고리(재시작하면 비워진다)다. 명단 밖 로그인은 그 고리를 밀어내지 못하게 계정별 표로 따로 그린다.
+켜짐이면 로그인 유지 시간(마지막 사용 뒤 · 최대) 사실 줄 아래에 로그인 갱신
+(`POST /auth/sso/refresh`) 결과 누계 한 줄을 싣는다 — 갱신은 사건 고리에 적지 않는다(5분마다
+사람마다 한 줄이면 고리가 갱신으로만 찬다). 그 아래 마지막 로그인의 클레임 이름 한 줄은 ADFS 가 그룹
+클레임을 주는지 보는 길이다(재시작하면 비워진다). DB 를 열지 않는다.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ START_STEP_LABEL = "통합인증"
 RECENT_EVENT_LIMIT = 20
 ANONYMOUS_EVENT_LIMIT = 10
 ANONYMOUS_COUNT_LIMIT = 8
+DENIED_ACCOUNT_LIMIT = 20
 CERT_WARNING_DAYS = 30
 
 # 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
@@ -66,6 +70,10 @@ REFRESH_OUTCOME_LABELS: dict[str, str] = {
 # 「출처·머리 거절」 만 늘고 「다시 발급」 이 0 일 때 누계 줄 끝에 붙이는 안내.
 REFRESH_ORIGIN_HINT = f" — 접속 주소가 `{names.ENV_PUBLIC_URL}` 과 같은지 보세요"
 
+ON_CAPTION_LISTED = "통합인증이 켜져 있습니다 — 로그인하고 접속 명단에 있는 사람만 앱에 들어옵니다."
+ON_CAPTION_UNLISTED = (
+    "통합인증이 켜져 있습니다 — 접속 명단이 꺼져 있어 로그인한 사람은 모두 들어옵니다."
+)
 OFF_IN_PRODUCTION_WARNING = (
     "운영 서버인데 통합인증이 꺼져 있습니다 — 주소를 아는 사람은 누구나 들어옵니다. "
     f"포털 승인 메일의 Client ID 를 환경변수(`{names.ENV_CLIENT_ID}`)에 넣으면 켜집니다."
@@ -138,8 +146,20 @@ def _days_left(now: datetime, not_after: datetime) -> int:
     return (not_after - now).days
 
 
+def access_line(cfg: SsoConfig) -> str:
+    """접속 명단 사실 한 줄 — 개수만. 통합인증이 켜져 있지 않으면 명단은 아직 듣지 않는다."""
+    access = cfg.access
+    if not access.enforced:
+        return "접속 명단: 꺼짐(인증된 사람 전부)"
+    state = "켜짐" if cfg.mode is SsoMode.ON else "통합인증이 켜지면 적용"
+    return (
+        f"접속 명단: {state} · 관리자 {access.admin_count} · 사용자 {access.user_count} · "
+        f"읽지 못함 {access.unreadable_count}"
+    )
+
+
 def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
-    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 지문 · 로그인 유지 · 쿠키 이름 · 문지기."""
+    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 · 유지 시간 · 쿠키 이름 · 문지기 · 명단."""
     moment = now or datetime.now(timezone.utc)
     redirect = literal_markdown(cfg.redirect_uri) if cfg.redirect_uri else "계산하지 못함"
     issuer = literal_markdown(cfg.issuer) if cfg.issuer else "없음"
@@ -159,8 +179,16 @@ def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
         f"세션 쿠키 이름: {literal_markdown(cfg.session_cookie)}",
         f"문지기: {'있음' if runtime.gate_installed() else '없음(app.py 로 뜸)'} · "
         f"잠금(`{names.ENV_SSO}=required`): {'예' if cfg.locked else '아니오'}",
+        access_line(cfg),
     ]
     return lines
+
+
+def last_claims_line() -> str:
+    """마지막 로그인의 클레임 이름 한 줄 — 값은 없다. 그룹 클레임이 있는지 여기서 본다."""
+    claim_names = runtime.last_login_claims()
+    listed = " · ".join(literal_markdown(name) for name in claim_names) or "아직 없음"
+    return f"마지막 로그인의 클레임 이름(값 없음 · 재시작하면 비워진다): {listed}"
 
 
 def refresh_count_line() -> str:
@@ -201,6 +229,10 @@ def _event_code(fields: dict[str, str]) -> str:
     return f"남은 날 {days}" if days else "-"
 
 
+def _clock_text(at: int) -> str:
+    return datetime.fromtimestamp(at).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = False) -> pd.DataFrame:
     """최근 사건(새것 먼저) — 시각 | 사건 | 사유 코드 | 계정(앞 두 글자).
 
@@ -214,13 +246,30 @@ def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = Fal
         loginid = fields.get("loginid", "-")
         rows.append(
             (
-                datetime.fromtimestamp(event.at).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+                _clock_text(event.at),
                 event.event,
                 _event_code(fields),
                 mask_account(loginid) if loginid and loginid != "-" else "-",
             )
         )
     return pd.DataFrame(rows, columns=["시각", "사건", "사유 코드", "계정"])
+
+
+def denied_account_line() -> str | None:
+    """명단 밖 로그인 누계 한 줄(기동 뒤 — 재시작하면 0). 아무도 막히지 않았으면 `None`."""
+    total = runtime.denied_total()
+    if not total:
+        return None
+    return f"명단 밖 로그인(기동 뒤 누계 {total} · 계정 {len(runtime.denied_accounts())})"
+
+
+def denied_account_table(limit: int = DENIED_ACCOUNT_LIMIT) -> pd.DataFrame:
+    """명단 밖 로그인(최근에 막힌 사람 먼저) — 마지막 시각 | 계정(앞 두 글자) | 횟수."""
+    rows = [
+        (_clock_text(item.last_at), mask_account(item.loginid), item.count)
+        for item in runtime.denied_accounts(limit)
+    ]
+    return pd.DataFrame(rows, columns=["마지막 시각", "계정", "횟수"])
 
 
 def anonymous_failure_line(limit: int = ANONYMOUS_COUNT_LIMIT) -> str | None:
@@ -285,7 +334,7 @@ def render_sso_status() -> None:
         f"통합인증 점검 · {verdict}", icon=":material/verified_user:", key=EXPANDER_KEY
     ):
         if cfg.mode is SsoMode.ON:
-            st.caption("통합인증이 켜져 있습니다 — 로그인한 사람만 앱에 들어옵니다.")
+            st.caption(ON_CAPTION_LISTED if cfg.access.enforced else ON_CAPTION_UNLISTED)
         elif cfg.mode is SsoMode.OFF:
             st.caption(f":material/lock_open: {OFF_IN_PRODUCTION_WARNING}")
             st.caption(readiness_line(cfg))
@@ -299,14 +348,19 @@ def render_sso_status() -> None:
         st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
         st.caption("  \n".join(fact_lines(cfg, now=now)))
         if cfg.mode is SsoMode.ON:
-            # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이다 — 켜짐에서만 싣는다.
+            # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이고 로그인도 없다 — 켜짐에서만 싣는다.
             st.caption(refresh_count_line())
+            st.caption(last_claims_line())
         events = recent_event_table()
         if events.empty:
             st.caption("최근 사건 없음(프로세스 메모리 — 재시작하면 비워진다)")
         else:
             st.caption("최근 사건(새것 먼저 · 재시작하면 비워진다)")
             st.dataframe(events, hide_index=True, width="stretch")
+        denied = denied_account_line()
+        if denied is not None:
+            st.caption(denied)
+            st.dataframe(denied_account_table(), hide_index=True, width="stretch")
         anonymous = anonymous_failure_line()
         if anonymous is not None:
             st.caption(anonymous)

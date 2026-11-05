@@ -19,7 +19,7 @@ import streamlit as st
 
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
 
-# 환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 `JWT_SECRET_KEY` 를 `os.environ` 에서 뺀다.
+# 환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 `os.environ` 에서 뺀다.
 start_sso()
 
 app = st.App(

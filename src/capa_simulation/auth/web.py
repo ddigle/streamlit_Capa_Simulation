@@ -6,14 +6,17 @@
 
 - `POST /auth/callback` — IdP 의 form_post. state 쿠키 · id_token 을 검증하고 우리 세션 쿠키를 심어
   303 으로 앱에 들여보낸다. 실패는 진단을 보관하고 **303 → 오류 화면**(PRG — 새로고침해도 폼이 다시
-  가지 않는다).
+  가지 않는다). 토큰이 맞아도 접속 명단 밖이면 세션을 발급하지 않고 **303 → 거절 화면**이다 — 그
+  화면은 로그인 없이 열리므로 진단을 보관하지 않고 사유 코드만 싣는다.
 - `GET /auth/sso/login?next=` — 이미 로그인이면 next 로, 아니면 IdP 로(302).
 - `GET /auth/sso/logout` — 쿠키를 지우고 세션 묶음(sid)을 폐기 목록에 넣은 뒤 안내 화면. IdP 로
   자동으로 보내지 않는다.
 - `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. 진단이 없거나 지났으면 질의 `code` 를
-  싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다.
+  싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다. `code=not_on_list` 는 거절 화면
+  (403)이다.
 - `POST /auth/sso/refresh` — 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(204). 같은
-  출처 · 갱신 머리 · 본문 없음 · 유효한 세션 쿠키가 있어야 하고, 사건 고리에 적지 않고 누계만 센다.
+  출처 · 갱신 머리 · 본문 없음 · 접속 명단 안의 유효한 세션 쿠키가 있어야 하고, 사건 고리에 적지
+  않고 누계만 센다.
 
 모든 주소(Location · 링크)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청의 Host · `X-Forwarded-*` 는 보지
 않는다(앞단을 거치며 포트가 사라지는 일을 막는다). 화면에 싣는 값은 모두 `html.escape` 하고, 토큰 ·
@@ -71,6 +74,10 @@ REFRESH_HEADER_REFUSAL = "refresh header required"
 REFRESH_ORIGIN_REFUSAL = "cross-origin refresh refused"
 REFRESH_BODY_REFUSAL = "no body expected"
 LOGIN_REQUIRED = "login required"
+# 접속 명단 밖 — IdP 의 `access_denied`(포털이 거절)와 섞이지 않게 따로 둔 사유 코드와 화면 글.
+NOT_ON_LIST = "not_on_list"
+NOT_ON_LIST_TITLE = "접속 권한이 없습니다"
+NOT_ON_LIST_TEXT = "이 앱을 쓸 수 있는 명단에 없습니다."
 HTML_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
@@ -146,6 +153,7 @@ REASON_TEXT: Mapping[str, str] = {
     "session_cookie_too_large": _COOKIE_REASON,
     "login_loop": _COOKIE_REASON,
     "config_broken": "통합인증 설정을 마치지 못했습니다.",
+    NOT_ON_LIST: NOT_ON_LIST_TEXT,
 }
 # 진단에서 화면에 보여도 되는 칸(비밀 아님)과 그 이름표. 이 목록 밖의 칸은 보이지 않는다.
 DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
@@ -164,7 +172,7 @@ DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
     ("at", "기록 시각"),
 )
 
-# 화면 넷의 색 · 서체는 design/tokens 의 두 팔레트에서 온다(손으로 적은 색을 두지 않는다).
+# 화면 다섯의 색 · 서체는 design/tokens 의 두 팔레트에서 온다(손으로 적은 색을 두지 않는다).
 # 지금 실행의 테마가 아니라 밝은 · 어두운 팔레트를 둘 다 실어 `prefers-color-scheme` 로 고른다 —
 # 이 화면은 Streamlit 바깥이라 앱 테마를 모른다.
 _PALETTE_ROLES = (
@@ -587,6 +595,25 @@ def error_page(
     return html_page("로그인하지 못했습니다", "".join(body), status=status)
 
 
+def denied_page(cfg: SsoConfig, *, status: int) -> HTMLResponse:
+    """접속 명단 밖의 거절 화면. 로그인 없이 열리는 주소라 loginid · 이름 · 클레임을 싣지 않는다.
+
+    「다시 확인」 은 로그인 경로다 — 명단에 들어간 뒤 누르면 그대로 들어온다. 통합인증 로그아웃은
+    다른 계정으로 바꾸는 길이다(브라우저의 통합인증 로그인이 남아 있으면 IdP 가 묻지 않고 같은
+    계정을 준다).
+    """
+    again = public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': '/'})}")
+    body = [f"<p>{_esc(NOT_ON_LIST_TEXT)}</p>"]
+    if cfg.access.contact:
+        body.append(f"<p>요청: {_esc(cfg.access.contact)}</p>")
+    body.append(f'<a class="button" href="{_esc(again)}">다시 확인</a>')
+    if cfg.logout_url:
+        body.append(
+            f'<p class="muted"><a href="{_esc(cfg.logout_url)}">통합인증에서도 로그아웃</a></p>'
+        )
+    return html_page(NOT_ON_LIST_TITLE, "".join(body), status=status)
+
+
 def logout_page(cfg: SsoConfig) -> HTMLResponse:
     again = public_link(cfg, "/")
     body = [
@@ -643,6 +670,24 @@ def _fail(
     if state and _STATE_VALUE.match(state):
         clear_state_cookie(response, cfg.state_cookie(state))
     runtime.record_event("login_fail", level=logging.WARNING, reason=code, loginid=loginid or "-")
+    return response
+
+
+def _deny(cfg: SsoConfig, state_cookie: str, loginid: str) -> Response:
+    """토큰은 맞는데 접속 명단 밖 — 세션 없이 303 → 거절 화면(PRG).
+
+    진단을 보관하지 않는다 — 그 화면은 로그인 없이 열리고 loginid · 이름을 싣지 않는다. 상태 쿠키 ·
+    시도 쿠키 · 남아 있는 세션 쿠키를 지운다(시도 쿠키가 남으면 「다시 확인」 을 몇 번 누른 사람에게
+    「로그인이 되풀이됩니다」 가 잘못 뜬다).
+    """
+    response = redirect(cfg, f"{names.ERROR_PATH}?{urlencode({'code': NOT_ON_LIST})}", 303)
+    response.headers["Referrer-Policy"] = "no-referrer"
+    clear_state_cookie(response, state_cookie)
+    clear_attempt_cookie(response, cfg)
+    clear_session_cookie(response, cfg)
+    runtime.record_event(
+        runtime.DENIED_EVENT, level=logging.WARNING, reason=NOT_ON_LIST, loginid=loginid
+    )
     return response
 
 
@@ -733,6 +778,9 @@ async def callback(request: Request) -> Response:
         return _fail(
             cfg, exc.code, state=state, now=now, diagnostic=exc.diagnostic, loginid=exc.loginid
         )
+    runtime.note_login_claims(login.claim_names)
+    if not cfg.access.allows(login.loginid):
+        return _deny(cfg, state_cookie, login.loginid)
 
     token, session = issue_session(
         cfg, loginid=login.loginid, name=login.name, dept=login.dept, now=now
@@ -808,7 +856,10 @@ async def logout(request: Request) -> Response:
 
 
 async def error(request: Request) -> Response:
-    """`GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. id 가 없거나 지났으면 사유 코드만."""
+    """`GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. id 가 없거나 지났으면 사유 코드만.
+
+    사유 코드가 `not_on_list` 면 거절 화면(403)이다 — 콜백이 진단 없이 이 코드로 보낸다.
+    """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
     if guarded is not None:
@@ -819,6 +870,8 @@ async def error(request: Request) -> Response:
         code = record.get("code", "unknown")
     else:
         code = request.query_params.get("code", "")
+        if code == NOT_ON_LIST:
+            return denied_page(cfg, status=403)
         if code not in allowed_reason_codes(cfg):
             code = "unknown"
     return error_page(cfg, code, record, status=400)
@@ -829,11 +882,11 @@ async def refresh(request: Request) -> Response:
 
     판정 차례는 모드(꺼짐 404 · 막힘 503) → 메서드(POST 밖은 405 — 꺼짐의 GET 도 다른 경로처럼
     404 이게 GET 을 받아 여기서 답한다) → 머리 · 출처(403) → 본문(400) → 세션 쿠키(401 — 엄격,
-    끝은 갱신 표를 보지 않음 · sid 폐기도) → 다시 발급이다. 교차 출처 시도가 세션 유효 여부를 응답
-    차이로 알아낼 길을 막고, 쿠키 검증(HMAC)보다 싼 것을 먼저 본다. 그 sid 의 직전 발급(보낸
-    토큰의 `iat` 와 갱신 표의 발급 시각 가운데 늦은 것)에서 60초 안이거나 상한이라 늘 것이 없으면
-    204(쿠키 없음) — 같은 옛 쿠키를 되풀이해 보내도 다시 서명하지 않는다. 다시 발급하면 204 + 새
-    세션 쿠키와 갱신 표. 거절은 쿠키를 건드리지 않는다. 사건 고리에도 서버 로그에도 적지 않고
+    끝은 갱신 표를 보지 않음 · sid 폐기 · 접속 명단도) → 다시 발급이다. 교차 출처 시도가 세션 유효
+    여부를 응답 차이로 알아낼 길을 막고, 쿠키 검증(HMAC)보다 싼 것을 먼저 본다. 그 sid 의 직전
+    발급(보낸 토큰의 `iat` 와 갱신 표의 발급 시각 가운데 늦은 것)에서 60초 안이거나 상한이라 늘 것이
+    없으면 204(쿠키 없음) — 같은 옛 쿠키를 되풀이해 보내도 다시 서명하지 않는다. 다시 발급하면 204 +
+    새 세션 쿠키와 갱신 표. 거절은 쿠키를 건드리지 않는다. 사건 고리에도 서버 로그에도 적지 않고
     누계(`runtime.count_refresh`)만 센다 — 5분마다 사람마다 한 줄은 소음이다.
     """
     cfg = runtime.config()
@@ -854,7 +907,11 @@ async def refresh(request: Request) -> Response:
         claims = verify_session(request.cookies.get(cfg.session_cookie, ""), cfg, now=now)
     except SsoReject:
         claims = None
-    if claims is None or runtime.session_revoked(claims.sid, now=now):
+    if (
+        claims is None
+        or runtime.session_revoked(claims.sid, now=now)
+        or not cfg.access.allows(claims.loginid)
+    ):
         runtime.count_refresh("unauthorized")
         return text_response(LOGIN_REQUIRED, 401)
     last_issued = runtime.last_renewal_at(claims.sid, now=now)

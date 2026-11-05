@@ -19,6 +19,8 @@
   폼으로 콜백에 보낸다.
 - 실패를 흉내 내는 선택: `--aud`(다른 aud) · `--omit-claim`(클레임 빼기) · `--error`(IdP 오류) ·
   `--submit-delay-ms`(제출 늦추기 — state 만료 · 다른 탭 시험).
+- `--app-url` 이 루프백이 아니면(WebIDE 프록시) 앱의 접속 명단이 켜지므로 env 파일에
+  `--loginid` 를 관리자 목록으로 적는다. 루프백이면 적지 않아 명단이 꺼진 채로 돈다.
 """
 
 from __future__ import annotations
@@ -259,6 +261,8 @@ def env_lines(options: MockOptions, identity: SigningIdentity, secret: str) -> l
         names.ENV_SECRET: secret,
         names.ENV_APP_ENV: "dev",
     }
+    if not is_loopback_host(urlsplit(options.app_url).hostname):
+        values[names.ENV_ACCESS_ADMINS] = options.loginid
     return [f"export {name}={shlex.quote(value)}" for name, value in values.items()]
 
 

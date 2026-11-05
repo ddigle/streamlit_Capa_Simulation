@@ -13,8 +13,14 @@
 - **막힘** — client id 가 있는데(또는 `CAPA_SSO=required`) 하나라도 없거나 틀리다, 또는 `CAPA_SSO`
   가 모르는 값이다. 상태 검사만 살리고 앱은 열지 않는다(설정 화면).
 
+접속 명단(`access.py`)은 운영이거나 · 잠금이거나 · 공개 주소가 루프백이 아니거나 · 두 목록 변수
+가운데 하나라도 값이 있으면 켜진다. `APP_ENV` 를 빠뜨린 실제 서버가 조용히 전부를 받지 않게 주소도
+본다. 켜졌는데 읽은 관리자가 없으면 「켜면 필요한 것」 의 문제다 — 켜짐이면 막힘, 꺼짐이면 켜면 막힐
+문제. 잠길 사람을 막으려는 규칙이라 빈 관리자 목록으로 앱을 열지 않는다. 인증된 사람 전부를 받는
+것은 그 어느 쪽도 아닌 루프백 개발뿐이다(가짜 IdP · 시험).
+
 화면 · 로그에 실리는 것은 환경변수 **이름과 까닭**뿐이다. 값은 싣지 않는다 — 비밀값은 「짧음」 같은
-사실만.
+사실만, 접속 명단은 개수만.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from capa_simulation.auth import names
+from capa_simulation.auth.access import AccessList, build_access_list
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -123,6 +130,8 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "bad_claim_name": "클레임 이름 꼴이 아님(빈칸 없는 ASCII 200자)",
         "dependency_missing": "의존성 없음 — pyjwt[crypto] 를 설치해야 함",
         "off_in_production": "운영 서버인데 통합인증이 꺼져 있음",
+        "no_valid_entry": "읽을 수 있는 loginid 가 하나도 없음",
+        "entries_unreadable": "loginid 꼴이 아닌 항목이 있어 뺌",
     }
 )
 
@@ -194,6 +203,8 @@ class SsoConfig:
     readiness: tuple[SsoProblem, ...]
     notices: tuple[SsoProblem, ...]
     env_presence: Mapping[str, bool]
+    # 접속 명단. repr 에는 켜짐과 읽지 못한 수만 나온다(`AccessList` — 명단 값은 repr 이 없다).
+    access: AccessList
     # 화면 · 로그 · repr 에 나오지 않는다. 세션 · 상태 토큰의 키를 여기서 파생한다(`tokens`).
     secret: bytes = field(repr=False, compare=False)
 
@@ -441,6 +452,35 @@ def _check_claim_name(name: str, raw: str, default: str) -> tuple[str, SsoProble
     return text, None
 
 
+def _beyond_loopback(public_url: str) -> bool:
+    """검증을 지난 공개 주소가 이 PC 밖에서 열리는가. 주소가 없으면(꺼짐 · 주소 문제) 거짓이다."""
+    return bool(public_url) and not is_loopback_host(urlsplit(public_url).hostname)
+
+
+def _check_access(
+    admins: str, users: str, *, required: bool, contact: str
+) -> tuple[AccessList, SsoProblem | None, list[SsoProblem]]:
+    """접속 명단 `(명단, 문제, 알림)`. `required` 거나 두 목록 가운데 하나라도 값이 있으면 켜진다.
+
+    켜졌는데 읽은 관리자가 없으면 문제다 — 명단에 사람이 있어도 고칠 사람이 없는 앱을 열지 않는다.
+    읽지 못한 항목은 막지 않는다 — 오타 하나로 모두가 잠기지 않게. 그 사람만 거절 화면을 본다.
+    """
+    enforced = required or bool(admins.strip()) or bool(users.strip())
+    access = build_access_list(admins, users, enforced=enforced, contact=contact)
+    notices = [
+        SsoProblem(name, "entries_unreadable")
+        for name, count in (
+            (names.ENV_ACCESS_ADMINS, access.unreadable_admins),
+            (names.ENV_ACCESS_USERS, access.unreadable_users),
+        )
+        if count
+    ]
+    if not enforced or access.admin_count:
+        return access, None, notices
+    code = "no_valid_entry" if admins.strip() else "missing"
+    return access, SsoProblem(names.ENV_ACCESS_ADMINS, code), notices
+
+
 def _cert_der_values(raw: str) -> list[bytes | None]:
     """한 줄 값을 인증서 DER 목록으로. 읽지 못한 칸은 None.
 
@@ -620,6 +660,18 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         notices.extend(cert_notices)
     else:
         cert_problems = [SsoProblem(names.ENV_SIGNING_CERT, "missing")]
+    contact, contact_problem = _check_plain(
+        names.ENV_ACCESS_CONTACT, value(names.ENV_ACCESS_CONTACT)
+    )
+    if contact_problem is not None:
+        notices.append(contact_problem)
+    access, access_problem, access_notices = _check_access(
+        value(names.ENV_ACCESS_ADMINS),
+        value(names.ENV_ACCESS_USERS),
+        required=prod or locked or _beyond_loopback(public_url),
+        contact=contact,
+    )
+    notices.extend(access_notices)
 
     # client id 를 뺀 「켜면 필요한 것」 의 문제. 꺼짐에서는 readiness, 켜려 할 때는 problems 가
     # 된다.
@@ -638,6 +690,7 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
             username_problem,
             deptname_problem,
             logout_problem,
+            access_problem,
         )
         if problem is not None
     ]
@@ -702,5 +755,6 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         env_presence=types.MappingProxyType(
             {name: bool(value(name).strip()) for name in names.SSO_ENVIRONMENT}
         ),
+        access=access,
         secret=secret,
     )

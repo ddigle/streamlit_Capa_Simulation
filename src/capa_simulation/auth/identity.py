@@ -3,8 +3,12 @@
 """쿠키 → 신원.
 
 문지기(`gate`)는 요청의 `Cookie` 머리를, 앱 스크립트는 `st.context.cookies` 맵을 넘긴다. 두 쪽이
-**같은 검증**(서명 · aud · iss · 끝 시각 · 로그아웃 폐기 목록)을 거치게 이 모듈 하나에 둔다. 세션
-상태에 신원을 두는 일이 있어도 그것은 매 회차 여기서 다시 검증한 값의 사본일 뿐이다.
+**같은 검증**(서명 · aud · iss · 끝 시각 · 로그아웃 폐기 목록 · 접속 명단)을 거치게 이 모듈 하나에
+둔다. 세션 상태에 신원을 두는 일이 있어도 그것은 매 회차 여기서 다시 검증한 값의 사본일 뿐이다.
+
+**접속 명단 판정은 `session_check` 한 곳이다.** 문지기 http · 새 핸드셰이크 · 열린 연결의 메시지
+(`gate._WatchedSocket`) · `app.py` 의 `require_signed_in` 이 모두 이 함수를 지난다. `app.py`
+만으로는 위젯 콜백 · 프래그먼트 회차를 막지 못하므로(`gate` 문서) 자리마다 따로 판정을 두지 않는다.
 
 끝 시각을 보는 갈래는 둘이다.
 
@@ -74,6 +78,7 @@ class IdentityProblem(Enum):
     INVALID = "invalid"
     EXPIRED = "expired"
     REVOKED = "revoked"
+    DENIED = "denied"
 
 
 def parse_cookie_header(header: str | None) -> dict[str, str]:
@@ -104,11 +109,13 @@ def session_check(
     """`(문제, 끝)` — `session_problem` 과 같은 판정에 그때 잰 끝(`session_end_of`)을 함께 준다.
 
     문지기의 열린 연결이 그 끝을 기억해 둔다 — 갱신 표 칸은 끝 + 여유가 지나면 지워지므로 닫는
-    순간에는 상한으로 끝났는지 다시 알 수 없다.
+    순간에는 상한으로 끝났는지 다시 알 수 없다. 차례는 폐기 → 명단 → 끝이다.
     """
     end, _ = session_end_of(identity, cfg, now, renewals=renewals)
     if runtime.session_revoked(identity.sid, now=now):
         return IdentityProblem.REVOKED, end
+    if not cfg.access.allows(identity.loginid):
+        return IdentityProblem.DENIED, end
     if now > end + SESSION_LEEWAY:
         return IdentityProblem.EXPIRED, end
     return None, end
@@ -117,7 +124,8 @@ def session_check(
 def session_problem(
     identity: Identity, cfg: SsoConfig, now: int, *, renewals: bool = True
 ) -> IdentityProblem | None:
-    """이미 검증한 신원이 지금도 유효한가 — 로그아웃 폐기 목록과 끝(+ 세션 토큰 검증과 같은 여유).
+    """이미 검증한 신원이 지금도 유효한가 — 로그아웃 폐기 목록 · 접속 명단 · 끝(+ 세션 토큰 검증과
+    같은 여유).
 
     문지기가 websocket 핸드셰이크 뒤 메시지마다 부른다(서명은 핸드셰이크 때 이미 봤다 — HMAC 을 다시
     풀지 않는다). 폐기를 먼저 본다 — 둘 다 거절이라 안전성은 같고, 로그아웃이 갱신 표 칸을 지워

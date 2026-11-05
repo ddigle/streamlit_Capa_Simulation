@@ -1,13 +1,14 @@
-# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·세션 폐기·갱신 표·진단·사건·로거.
+# Purpose: 통합인증 프로세스 상태 — 설정·문지기 표지·세션 폐기·갱신 표·진단·사건·클레임 이름·로거.
 
 """통합인증 프로세스 상태.
 
-로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리를
-둔다. 모두 프로세스 메모리이고(replica 1 전제) 재시작하면 비워진다 — 로그아웃 폐기 목록이
-사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는 지웠으므로 받아들인다.
-갱신 표가 비는 것은 해가 없다 — 열린 연결은 재시작으로 어차피 끊기고, 다시 붙을 때 브라우저가
-갱신된 쿠키를 싣는다. DB 에는 아무것도 쓰지 않는다. 세션 상태(`st.session_state`)도 아니다 —
-문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
+로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리 ·
+명단 밖 로그인 표 · 마지막 로그인의 클레임 이름을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
+재시작하면 비워진다 —
+로그아웃 폐기 목록이 사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는
+지웠으므로 받아들인다. 갱신 표가 비는 것은 해가 없다 — 열린 연결은 재시작으로 어차피 끊기고, 다시
+붙을 때 브라우저가 갱신된 쿠키를 싣는다. DB 에는 아무것도 쓰지 않는다. 세션
+상태(`st.session_state`)도 아니다 — 문지기는 Streamlit 바깥의 이벤트 루프에서 돈다.
 
 갱신 표(`sid → 최신 exp · 마지막 발급 시각`)의 끝은 핸드셰이크에 묶인 신원만 본다(문지기의 열린
 연결 · `app.py`) — websocket 은 핸드셰이크 때의 쿠키만 알아서 그 뒤 갱신 경로가 다시 발급한 쿠키를
@@ -29,7 +30,7 @@ import sys
 import threading
 import time
 from collections import OrderedDict, deque
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -43,6 +44,10 @@ MAX_EVENTS = 50
 # 사유별로 센다 — 한 고리에 두면 무인증 요청 수십 번으로 실제 로그인 · 로그아웃 · 설정 기록이
 # 밀려난다(C-DEP 에는 로그 창구가 없어 이 고리가 운영자가 보는 유일한 감사 창이다).
 ANONYMOUS_EVENTS = frozenset({"login_fail", "idp_error"})
+# 명단 밖 로그인. 들어오지 못하는 사람이 되풀이해 남길 수 있어 위와 같은 까닭으로 고리에 두지 않고,
+# 계정마다 한 칸(횟수 · 마지막 시각)만 둔다 — 한 사람의 되풀이가 다른 사람의 칸을 밀어내지 못한다.
+DENIED_EVENT = "login_denied"
+MAX_DENIED_ACCOUNTS = MAX_EVENTS
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
 MAX_REVOKED = 10_000
@@ -77,6 +82,15 @@ class SsoEvent:
         return dict(self.fields).get(key, "")
 
 
+@dataclass(frozen=True)
+class DeniedAccount:
+    """명단 밖 로그인 한 계정 — 기동 뒤 거절 횟수와 마지막 시각."""
+
+    loginid: str
+    count: int
+    last_at: int
+
+
 class _Renewal(NamedTuple):
     """갱신 표 한 칸 — 그 sid 의 가장 늦은 끝과 마지막으로 다시 발급한 시각."""
 
@@ -99,7 +113,10 @@ class _State:
     events: deque[SsoEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENTS))
     anonymous_events: deque[SsoEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENTS))
     anonymous_counts: dict[str, int] = field(default_factory=dict)
+    denied_accounts: OrderedDict[str, DeniedAccount] = field(default_factory=OrderedDict)
+    denied_total: int = 0
     event_seq: int = 0
+    last_login_claims: tuple[str, ...] = ()
 
 
 _LOCK = threading.Lock()
@@ -146,7 +163,7 @@ def _announce(cfg: SsoConfig) -> None:
 
 
 def start(environ: MutableMapping[str, str]) -> SsoConfig:
-    """진입 파일이 기동 때 한 번 부른다 — 설정을 읽고 비밀값을 환경에서 빼고 로그를 단다.
+    """진입 파일이 기동 때 한 번 부른다 — 설정을 읽고 비밀값 · 명단을 환경에서 빼고 로그를 단다.
 
     두 번째 부름은 처음 읽은 설정을 그대로 돌려준다(비밀값을 이미 뺐으므로 다시 읽으면 안 된다).
     """
@@ -157,7 +174,8 @@ def start(environ: MutableMapping[str, str]) -> SsoConfig:
         # 앱이 띄우는 하위 프로세스가 물려받지 않게 · `os.environ` 덤프에 실리지 않게. 막는 범위는
         # 여기까지다 — 커널은 기동 때의 환경 사본을 `/proc/<pid>/environ` 에 남겨 같은 사용자의
         # 프로세스가 읽을 수 있고, 같은 프로세스 코드(모듈 포함)는 메모리에 닿는다.
-        environ.pop(names.ENV_SECRET, None)
+        for name in names.WITHHELD_ENVIRONMENT:
+            environ.pop(name, None)
         _STATE.config = cfg
         _STATE.started = True
     _install_stdout_handler()
@@ -320,6 +338,21 @@ def remember_used_state(digest: str, exp: int) -> bool:
         return True
 
 
+def note_login_claims(claim_names: Sequence[str]) -> None:
+    """검증을 마친 마지막 로그인의 클레임 이름을 적는다(값 없음 · 거절된 로그인 포함).
+
+    ADFS 가 그룹 클레임을 주는지 C-DEP 에서 보는 길이다 — 서버 로그 창구가 없어 Admin 점검이 읽는다.
+    """
+    with _LOCK:
+        _STATE.last_login_claims = tuple(claim_names)
+
+
+def last_login_claims() -> tuple[str, ...]:
+    """마지막 로그인의 클레임 이름. 기동 뒤 로그인이 없으면 빈 튜플."""
+    with _LOCK:
+        return _STATE.last_login_claims
+
+
 def keep_diagnostic(record: Mapping[str, str]) -> str:
     """오류 화면(PRG)이 다시 읽을 진단을 10분 둔다. 꺼낼 id 를 돌려준다."""
     now = _now()
@@ -365,12 +398,25 @@ def _anonymous_key(item: SsoEvent) -> str:
     return f"{item.event}:{code}"
 
 
+def _note_denied(item: SsoEvent) -> None:
+    """잠금 안에서 부른다 — 명단 밖 로그인 표의 그 계정 칸을 맨 뒤(새것)로 옮기고 횟수를 더한다."""
+    loginid = item.value("loginid")
+    key = loginid.casefold()
+    previous = _STATE.denied_accounts.pop(key, None)
+    if previous is None and len(_STATE.denied_accounts) >= MAX_DENIED_ACCOUNTS:
+        _STATE.denied_accounts.popitem(last=False)
+    count = 1 if previous is None else previous.count + 1
+    _STATE.denied_accounts[key] = DeniedAccount(loginid, count, item.at)
+    _STATE.denied_total += 1
+
+
 def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> None:
     """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
 
-    무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다 — 다른 사건(설정 · 로그인 ·
-    로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을 밀어내지 못한다. 토큰 · state · nonce · 쿠키 ·
-    비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽 규칙).
+    무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다. 명단 밖 로그인
+    (`DENIED_EVENT`)은 고리 대신 계정별 표에 둔다. 둘 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결
+    닫음 · 서명이 통과한 뒤의 실패)을 밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 ·
+    부서는 넘기지 않는다(부르는 쪽 규칙).
     """
     cleaned = tuple((key, _clean_field(value)) for key, value in fields.items())
     line = f"sso event={_clean_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
@@ -378,7 +424,9 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
     with _LOCK:
         _STATE.event_seq += 1
         item = SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned, seq=_STATE.event_seq)
-        if is_anonymous(item):
+        if item.event == DENIED_EVENT:
+            _note_denied(item)
+        elif is_anonymous(item):
             _STATE.anonymous_events.append(item)
             key = _anonymous_key(item)
             if key in _STATE.anonymous_counts or len(_STATE.anonymous_counts) < MAX_EVENTS:
@@ -414,9 +462,22 @@ def anonymous_failure_counts() -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])))
 
 
+def denied_accounts(limit: int = MAX_DENIED_ACCOUNTS) -> list[DeniedAccount]:
+    """기동 뒤 명단 밖 로그인 계정, 가장 최근에 막힌 사람 먼저. 칸이 넘치면 가장 오래 전에 막힌
+    사람이 빠진다(`denied_total` 에는 남는다)."""
+    with _LOCK:
+        return list(reversed(_STATE.denied_accounts.values()))[:limit]
+
+
+def denied_total() -> int:
+    """기동 뒤 명단 밖 로그인 누계 — 표에서 빠진 계정도 센다."""
+    with _LOCK:
+        return _STATE.denied_total
+
+
 def reset() -> None:
-    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건을 비우고
-    stdout 처리기를 뗀다."""
+    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건 · 명단 밖
+    로그인 표 · 클레임 이름을 비우고 stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

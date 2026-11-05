@@ -10,15 +10,17 @@
 - **로그아웃** — 다른 탭에서 로그아웃하면 그 세션 묶음(sid)이 폐기 목록에 오른다
   (`runtime.revoke_session`).
 - **계정 바뀜** — 같은 Streamlit 세션이 다른 계정의 쿠키로 다시 이어질 수 있다.
+- **명단 밖** — 접속 명단에서 빠진 사람의 쿠키는 서명이 맞아도 신원이 아니다
+  (`identity.session_check` — 「다시 로그인」 은 콜백의 거절 화면으로 간다).
 - **문지기 없음** — 통합인증을 켜는 설정인데 `streamlit run app.py` 로 떴다(진입점이 아님).
 
 신원은 세션 상태가 아니라 `st.context.cookies` 의 HttpOnly 세션 쿠키에서 **매 회차** 다시
-검증한다(서명 · aud · iss · 끝 시각 · 폐기 목록 — 문지기와 같은 `identity_from_cookies`). 세션
-상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르려는 사본일 뿐이다. 쿠키는 websocket 연결 때 찍혀 그
-연결 끝까지 같다 — 같은 Streamlit 세션이 다시 붙으면(재시작 · 망 끊김 뒤) 새 연결의 쿠키(갱신된
-쿠키)를 보고, 테마 단추의 새로고침(`location.reload`)이 만든 새 세션도 쿠키를 다시 본다(실측).
-재시작으로 갱신 표가 비어도 열린 탭이 사는 까닭이 이것이다. `?token=` 이나 질의 인자를 쓰지 않고
-지우지도 않는다(`query_params.clear` 금지).
+검증한다(서명 · aud · iss · 끝 시각 · 폐기 목록 · 접속 명단 — 문지기와 같은
+`identity_from_cookies`). 세션 상태의 `SSO_LOGINID_KEY` 는 계정 바뀜을 가르려는 사본일 뿐이다.
+쿠키는 websocket 연결 때 찍혀 그 연결 끝까지 같다 — 같은 Streamlit 세션이 다시 붙으면(재시작 · 망
+끊김 뒤) 새 연결의 쿠키(갱신된 쿠키)를 보고, 테마 단추의 새로고침(`location.reload`)이 만든 새
+세션도 쿠키를 다시 본다(실측). 재시작으로 갱신 표가 비어도 열린 탭이 사는 까닭이 이것이다. `?token=`
+이나 질의 인자를 쓰지 않고 지우지도 않는다(`query_params.clear` 금지).
 
 꺼짐(`ADFS_CLIENT_ID` 없음)이면 Streamlit 호출을 하나도 하지 않는다 — 개발 PC · 사내 WebIDE · 시험의
 화면과 요소 순번이 지금과 같다.
@@ -48,7 +50,7 @@ from capa_simulation.auth.identity import (
     identity_from_cookies,
     session_end_of,
 )
-from capa_simulation.auth.web import public_link, sanitize_next
+from capa_simulation.auth.web import NOT_ON_LIST_TEXT, public_link, sanitize_next
 from capa_simulation.components.literal_markdown import literal_markdown
 
 # 이 세션이 처음 본 계정(loginid). 매 회차 쿠키에서 다시 검증한 값과 견주어 계정 바뀜을 가른다 —
@@ -81,6 +83,7 @@ _PROBLEM_NOTICES: Mapping[IdentityProblem, str] = {
     IdentityProblem.REVOKED: REVOKED_NOTICE,
     IdentityProblem.MISSING: MISSING_NOTICE,
     IdentityProblem.INVALID: MISSING_NOTICE,
+    IdentityProblem.DENIED: NOT_ON_LIST_TEXT,
 }
 
 
@@ -146,8 +149,9 @@ def _stop_account_changed() -> NoReturn:
 def require_signed_in() -> Identity | None:
     """`app.py` 의 통합인증 확인. 꺼짐이면 `None`(아무것도 그리지 않는다), 켜짐이면 검증된 신원.
 
-    로그인하지 않았거나 · 만료됐거나 · 로그아웃했거나 · 계정이 바뀌었거나 · 문지기 없이 떴으면 멈춤
-    화면을 그리고 `st.stop()` 한다 — 그 세션에는 입장 화면 · DB · 예약 스레드가 돌지 않는다.
+    로그인하지 않았거나 · 만료됐거나 · 로그아웃했거나 · 명단 밖이거나 · 계정이 바뀌었거나 · 문지기
+    없이 떴으면 멈춤 화면을 그리고 `st.stop()` 한다 — 그 세션에는 입장 화면 · DB · 예약 스레드가
+    돌지 않는다.
     """
     cfg = runtime.config()
     if cfg.mode is SsoMode.OFF:
