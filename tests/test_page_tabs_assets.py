@@ -528,6 +528,17 @@ out.noRun = [
   holdVerdict(hold, 400, false, before, 400, 10000),
 ]
 out.cap = holdVerdict(hold, 10000, true, before, 400, 10000)
+// 붙든 사이 주소가 바뀌었으면(뒤로가기 · 본문 이동) 회차가 도는 중이어도 곧바로 버린다.
+const placed = { at: 0, data: before, path: '/list' }
+out.moved = [
+  holdVerdict(placed, 100, true, before, 400, 10000, '/'),
+  holdVerdict(placed, 100, false, after, 400, 10000, '/'),
+  holdVerdict(placed, 10000, true, before, 400, 10000, '/'),
+]
+out.stayed = [
+  holdVerdict(placed, 100, true, before, 400, 10000, '/list'),
+  holdVerdict(placed, 500, false, after, 400, 10000, '/list'),
+]
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -543,6 +554,8 @@ def test_a_press_right_after_a_table_edit_waits_for_that_edit_before_asking_to_l
     assert out["flow"] == ["wait", "wait", "wait", "go"]
     assert out["noRun"] == ["wait", "go"]
     assert out["cap"] == "go"
+    assert out["moved"] == ["drop", "drop", "drop"]
+    assert out["stayed"] == ["wait", "go"]
 
 
 def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
@@ -1506,7 +1519,7 @@ _GATE_RUNNER = """
   }
   let scriptState = 'notRunning'
   const document = { querySelector: () => ({ getAttribute: () => scriptState }) }
-  const window = {}
+  const window = { location: { pathname: '/list' } }
   %(constants)s
   const mount = (S, log) => {
     const setAttr = (element, name, value) => { if (element) element[name] = value }
@@ -1590,6 +1603,26 @@ _GATE_RUNNER = """
   out.capEarly = log.slice()
   advance(30000 + BUSY_MS + 200)
   out.capLate = log.slice()
+
+  // 붙든 사이 뒤로가기로 주소가 바뀌면 — 붙든 누름은 다시 돌지 않고 표지도 걷는다.
+  timers.length = 0; now = 40000; log = []; T = strip(log)
+  T.S.editAt = now
+  out.backHeld = T.gate.hold(theme(log))
+  window.location.pathname = '/'
+  advance(40500)
+  out.backTheme = [log.slice(), T.S.hold]
+  window.location.pathname = '/list'
+
+  timers.length = 0; now = 50000; log = []; T = strip(log)
+  T.S.editAt = now
+  T.select(T.tab)
+  out.backTabBusy = T.tab.__parts.tab['aria-busy'] || null
+  window.location.pathname = '/'
+  scriptState = 'running'
+  advance(50500)
+  scriptState = 'notRunning'
+  out.backTab = [log.slice(), T.S.hold, T.tab.__parts.tab['aria-busy'] || null]
+  window.location.pathname = '/list'
   process.stdout.write(JSON.stringify(out))
 })()
 """
@@ -1624,6 +1657,10 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     assert out["dropped"] == ["tab:b"]
     assert out["capEarly"] == []
     assert out["capLate"] == ["theme"]
+    assert out["backHeld"] is True
+    assert out["backTheme"] == [[], None]
+    assert out["backTabBusy"] == "true"
+    assert out["backTab"] == [[], None, None]
 
 
 def test_a_sidebar_link_press_right_after_a_table_edit_waits_for_its_run() -> None:
@@ -1706,7 +1743,7 @@ _EDIT_HOST_RUNNER = """
     querySelector: () => ({ getAttribute: () => scriptState }),
     addEventListener: (type, fn) => listeners.push([type, fn]),
   }
-  const window = {}
+  const window = { location: { pathname: '/list' } }
   %(constants)s
   // DOM 대역 — `closest` 는 그 칸이나 조상이 맞는 선택자 조각(쉼표로 가른 것)이
   // 하나라도 있으면 맞는다.

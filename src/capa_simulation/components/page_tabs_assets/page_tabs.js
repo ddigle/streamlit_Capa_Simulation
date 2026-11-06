@@ -152,13 +152,15 @@ function installHistoryGuard() {
 
 // <tabs-hold>
 // 편집표에서 막 손을 뗀 누름을 붙든다. `editPending` — 누르는 순간 포커스가 편집표(칸 편집기 포함)에 있었거나 마지막 편집표
-// 입력에서 `ms` 가 지나지 않았다. `holdVerdict` 는 붙든 누름({at, data})을 'wait'(더 기다린다)·'go'(지금 data 로 묻고
-// 보낸다)로 가른다 — 앱 회차가 돌면 기다리고, 돌지 않아도 새 data 가 오지 않았으면 `minMs` 까지는 기다린다(편집 회차
-// 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다.
+// 입력에서 `ms` 가 지나지 않았다. `holdVerdict` 는 붙든 누름({at, data, path})을 'wait'(더 기다린다)·'go'(지금 data 로
+// 묻고 보낸다)·'drop'(버린다)으로 가른다 — 앱 회차가 돌면 기다리고, 돌지 않아도 새 data 가 오지 않았으면 `minMs` 까지는
+// 기다린다(편집 회차 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다. 누른 뒤 주소(`path`)가
+// 바뀌었으면 사용자가 다른 길로 옮긴 것이다(뒤로가기·본문 단추 이동은 붙듦을 비우지 않는다) — 다시 보내면 그 화면을 덮는다.
 function editPending(now, editAt, focused, ms) {
   return Boolean(focused) || now - editAt < ms
 }
-function holdVerdict(hold, now, running, data, minMs, maxMs) {
+function holdVerdict(hold, now, running, data, minMs, maxMs, path) {
+  if (hold.path !== path) return 'drop'
   const elapsed = now - hold.at
   if (elapsed >= maxMs) return 'go'
   if (running) return 'wait'
@@ -883,7 +885,7 @@ export default function (component) {
   // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다.
   const holding = (item, go) => {
     busy(item)
-    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, go }
+    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, path: window.location.pathname, go }
     clearTimeout(S.holdTimer)
     S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
   }
@@ -891,7 +893,8 @@ export default function (component) {
     clearTimeout(S.holdTimer)
     const hold = S.hold
     if (!hold) return
-    if (holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS) === 'wait') {
+    const verdict = holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS, window.location.pathname)
+    if (verdict === 'wait') {
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
       return
     }
@@ -899,7 +902,7 @@ export default function (component) {
     // 붙든 표지는 걷는다 — 보내면 `sendSelect` 가 다시 단다(떠나기를 취소하면 표지 없이 남는다).
     const held = S.items.get(hold.id)
     if (held) setAttr(held.__parts.tab, 'aria-busy', null)
-    hold.go()
+    if (verdict === 'go') hold.go()
   }
   // 이 누름이 편집표에서 막 손을 뗀 누름이 아닌가 — 아니면 곧바로 묻고 보낸다.
   const fresh = () => {
@@ -974,7 +977,7 @@ export default function (component) {
         S.hold = null
         return false
       }
-      S.hold = { id: null, at: Date.now(), data: S.data, go: fn }
+      S.hold = { id: null, at: Date.now(), data: S.data, path: window.location.pathname, go: fn }
       clearTimeout(S.holdTimer)
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
       return true
