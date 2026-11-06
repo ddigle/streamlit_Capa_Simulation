@@ -392,7 +392,8 @@ class ObjectSyncWorker:
             self._note_failure(self._clock(), classify_failure(exc))
         finally:
             sync_state.end_cycle(carried=carried)
-            self._set(cycle_started=None, cycle_deadline=None)
+            # 다음 확인까지 기다리면 화면이 그동안 「올릴 것 있음」 을 보인다.
+            self._set(cycle_started=None, cycle_deadline=None, dirty=self._read_dirty())
 
     def _apply(self, outcome: PublishOutcome, now: float) -> bool:
         """회차 결과를 상태에 적는다. 돌려주는 값은 들고 간 표시가 정본에 닿았는지다."""

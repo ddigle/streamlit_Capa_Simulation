@@ -163,6 +163,23 @@ def test_saves_that_keep_coming_go_up_by_sixty_seconds(rig: Rig) -> None:
     assert rig.engine.uploads == 1
 
 
+def test_the_screen_sees_a_clean_state_right_after_a_cycle(rig: Rig) -> None:
+    """다음 확인(최대 60초)까지 「올릴 것 있음」 이 남으면 CI/CD 앞에서 사람이 기다린다."""
+    _settled(rig)
+    path = rig.paths.databases["simulation"]
+    rig.mark()
+    sync_state.request_upload()
+
+    def lands() -> None:
+        sync_state.clear_dirty(path, observed=sync_state.read_dirty_mark(path))
+
+    rig.engine.during_upload = lands
+
+    rig.worker.tick()
+
+    assert rig.worker.status().dirty == {"simulation": False, "equipment": False}
+
+
 def test_an_official_release_goes_up_at_once(rig: Rig) -> None:
     _settled(rig)
     rig.mark()
