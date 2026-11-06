@@ -9,126 +9,31 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import importlib.util
 import json
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from object_store_fakes import (
+    FakeStore,
+    add_row,
+    fake_client,
+    fake_settings,
+    row_count,
+    seed_pair,
+)
 
 from capa_simulation import settings as app_settings
-from capa_simulation.io.object_storage import CommandResult, StorageSettings
+from capa_simulation.io.object_storage import CommandResult
 from capa_simulation.persistence import snapshot_export, sync_state
-from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.services import object_storage_manifest as manifest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
-
-
-@dataclass
-class FakeStore:
-    """`aws s3api` 를 흉내 내는 실행기. 객체를 메모리에 담는다."""
-
-    objects: dict[str, bytes] = field(default_factory=dict)
-    calls: list[tuple[str, ...]] = field(default_factory=list)
-
-    def run(
-        self, argv: Sequence[str], env: Mapping[str, str], *, timeout_seconds: float
-    ) -> CommandResult:
-        self.calls.append(tuple(argv))
-        args = list(argv)
-        if args[:2] == ["aws", "--version"]:
-            return self._ok("aws-cli/2.36.8 (fake)")
-        if args[:3] == ["aws", "configure", "get"]:
-            return self._ok("path")
-        assert args[1] == "s3api", args
-        operation = args[2]
-        options = self._options(args)
-        handler = {
-            "list-objects-v2": self._list,
-            "head-object": self._head,
-            "get-object": self._get,
-            "put-object": self._put,
-            "delete-object": self._delete,
-        }[operation]
-        return handler(options, args)
-
-    # ------------------------------------------------------------------ 동작
-    def _list(self, options: dict[str, str], args: list[str]) -> CommandResult:
-        prefix = options.get("--prefix", "")
-        contents = [
-            {
-                "Key": key,
-                "Size": len(payload),
-                "ETag": f'"{hashlib.md5(payload, usedforsecurity=False).hexdigest()}"',
-                "LastModified": "2026-09-08T09:15:00+00:00",
-            }
-            for key, payload in sorted(self.objects.items())
-            if key.startswith(prefix)
-        ]
-        return self._ok(json.dumps({"Contents": contents} if contents else {}))
-
-    def _head(self, options: dict[str, str], args: list[str]) -> CommandResult:
-        key = options["--key"]
-        payload = self.objects.get(key)
-        if payload is None:
-            return CommandResult(tuple(args), 254, "", "An error occurred (404)", 0.0)
-        return self._ok(
-            json.dumps(
-                {
-                    "ContentLength": len(payload),
-                    "ETag": f'"{hashlib.md5(payload, usedforsecurity=False).hexdigest()}"',
-                    "LastModified": "2026-09-08T09:15:00+00:00",
-                }
-            )
-        )
-
-    def _get(self, options: dict[str, str], args: list[str]) -> CommandResult:
-        key = options["--key"]
-        payload = self.objects.get(key)
-        if payload is None:
-            return CommandResult(tuple(args), 254, "", "An error occurred (NoSuchKey)", 0.0)
-        Path(args[-1]).write_bytes(payload)
-        return self._ok(json.dumps({"ContentLength": len(payload)}))
-
-    def _put(self, options: dict[str, str], args: list[str]) -> CommandResult:
-        key = options["--key"]
-        if "--if-none-match" in args and key in self.objects:
-            return CommandResult(
-                tuple(args), 254, "", "An error occurred (PreconditionFailed)", 0.0
-            )
-        payload = Path(options["--body"]).read_bytes()
-        expected = options.get("--content-md5")
-        digest = base64.b64encode(hashlib.md5(payload, usedforsecurity=False).digest()).decode()
-        if expected is not None and expected != digest:
-            return CommandResult(tuple(args), 254, "", "An error occurred (BadDigest)", 0.0)
-        self.objects[key] = payload
-        return self._ok(
-            json.dumps({"ETag": f'"{hashlib.md5(payload, usedforsecurity=False).hexdigest()}"'})
-        )
-
-    def _delete(self, options: dict[str, str], args: list[str]) -> CommandResult:
-        self.objects.pop(options["--key"], None)
-        return self._ok("{}")
-
-    # ------------------------------------------------------------------ 도우미
-    @staticmethod
-    def _options(args: list[str]) -> dict[str, str]:
-        options: dict[str, str] = {}
-        for index, token in enumerate(args):
-            if token.startswith("--") and index + 1 < len(args):
-                options[token] = args[index + 1]
-        return options
-
-    @staticmethod
-    def _ok(stdout: str) -> CommandResult:
-        return CommandResult((), 0, stdout, "", 0.0)
 
 
 def _load_script() -> ModuleType:
@@ -140,271 +45,266 @@ def _load_script() -> ModuleType:
     return module
 
 
-def _seed(path: Path, rows: int) -> None:
-    with connect(path) as connection:
-        connection.execute("CREATE SCHEMA IF NOT EXISTS app_meta")
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS app_meta.schema_migration "
-            "(version INTEGER PRIMARY KEY, name TEXT, checksum TEXT)"
-        )
-        connection.execute("INSERT INTO app_meta.schema_migration VALUES (1, '0001', 'x')")
-        connection.execute("CREATE TABLE demo AS SELECT range AS id FROM range(?)", [rows])
-
-
 @pytest.fixture()
 def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """스크립트를 임시 경로와 가짜 스토리지에 붙인다."""
     sync_state.clear_all()
     script = _load_script()
-    database = tmp_path / "capa_simulation.duckdb"
-    _seed(database, rows=10)
+    paths = seed_pair(tmp_path)
 
     monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(script, "DATASET_PATHS", {"simulation": database})
+    monkeypatch.setattr(script, "DATASET_PATHS", dict(paths.databases))
 
     store = FakeStore()
-    settings = StorageSettings(
-        mode="managed",
-        endpoint_url="http://fake:9020",
-        bucket="Capa_simulation_project",
-        profile="demo-org-team",
-        region="us-east-1",
-        capabilities={},
+    monkeypatch.setattr(script, "build_settings", lambda _args: fake_settings())
+    monkeypatch.setattr(script, "build_client", lambda _args: fake_client(store))
+    return SimpleNamespace(
+        script=script,
+        store=store,
+        paths=paths,
+        database=paths.databases["simulation"],
+        equipment=paths.databases["equipment"],
+        tmp_path=tmp_path,
     )
-    monkeypatch.setattr(script, "build_settings", lambda _args: settings)
-    monkeypatch.setattr(
-        script,
-        "build_client",
-        lambda _args: script.ObjectStorageClient(
-            settings=settings, runner=store, sleep=lambda _s: None
-        ),
-    )
-    return SimpleNamespace(script=script, store=store, database=database, tmp_path=tmp_path)
 
 
 def _run(harness: SimpleNamespace, *argv: str) -> int:
-    status: int = harness.script.main(["--dataset", "simulation", *argv])
+    status: int = harness.script.main(list(argv))
     return status
 
 
-def test_init_uploads_a_snapshot_and_publishes_a_pointer(harness: SimpleNamespace) -> None:
-    assert _run(harness, "init", "--note", "최초 이관") == 0
+def _init(harness: SimpleNamespace) -> None:
+    """개발 버킷 시험처럼 이 PC 를 쓰는 쪽으로 남겨 둔다."""
+    assert _run(harness, "init", "--keep-writer") == 0
 
-    keys = sorted(harness.store.objects)
-    assert any(key.startswith("simulation/snapshots/000000000001__") for key in keys)
-    assert any(key.startswith("simulation/heads/") for key in keys)
 
-    state = sync_state.read_state(harness.database)
-    assert state is not None
-    assert state.base_seq == 1
-    assert state.dirty is False
+def test_init_uploads_both_snapshots_and_publishes_one_pointer(harness: SimpleNamespace) -> None:
+    assert _run(harness, "init") == 0
+
+    assert len(harness.store.keys("simulation/snapshots/")) == 1
+    assert len(harness.store.keys("equipment/snapshots/")) == 1
+    assert len(harness.store.pointer_keys()) == 1
+    assert harness.store.head_pointer()["origin"] == "init"
 
 
 def test_init_is_idempotent(harness: SimpleNamespace) -> None:
-    _run(harness, "init")
+    _init(harness)
     before = dict(harness.store.objects)
 
     assert _run(harness, "init") == 0
-    assert harness.store.objects.keys() == before.keys()
+
+    assert harness.store.objects == before
+
+
+def test_init_hands_the_pc_over_unless_told_to_keep_writing(harness: SimpleNamespace) -> None:
+    """이관 뒤 그 PC 는 쓰는 쪽이 아니다. 개발 버킷 시험만 `--keep-writer` 로 남긴다."""
+    assert _run(harness, "init") == 0
+    state = sync_state.read_generation(harness.paths.generation)
+    assert state.handed_over_utc is not None
+
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+
+    assert _run(harness, "push") == 1
+    assert len(harness.store.pointer_keys()) == 1
+
+    assert _run(harness, "--override-writer", "push") == 0
+    assert len(harness.store.pointer_keys()) == 2
 
 
 def test_push_after_a_local_change_creates_the_next_generation(harness: SimpleNamespace) -> None:
-    _run(harness, "init")
-    with connect(harness.database) as connection:
-        connection.execute("INSERT INTO demo VALUES (999)")
+    _init(harness)
+    add_row(harness.database)
     sync_state.enable({harness.database: "simulation"})
     sync_state.mark_dirty(harness.database)
-    sync_state.clear_all()
 
-    assert _run(harness, "push", "--note", "왕복 확인") == 0
+    assert _run(harness, "push", "--note", "두 번째") == 0
 
-    snapshots = [k for k in harness.store.objects if k.startswith("simulation/snapshots/")]
-    assert len(snapshots) == 2
-    state = sync_state.read_state(harness.database)
-    assert state is not None and state.base_seq == 2
+    head = harness.store.head_pointer()
+    assert head["seq"] == 2
+    assert head["origin"] == "manual"
+    assert head["note"] == "두 번째"
 
 
 def test_push_is_skipped_when_nothing_changed(harness: SimpleNamespace) -> None:
-    _run(harness, "init")
+    _init(harness)
     before = len(harness.store.objects)
 
     assert _run(harness, "push") == 0
+
     assert len(harness.store.objects) == before
 
 
-def test_pull_restores_the_database_from_the_remote(harness: SimpleNamespace) -> None:
-    _run(harness, "init")
-    # 로컬을 다른 내용으로 바꾸고 세대를 원격보다 뒤로 돌린다.
-    with connect(harness.database) as connection:
-        connection.execute("INSERT INTO demo VALUES (777)")
-    state = sync_state.read_state(harness.database)
-    assert state is not None
-    sync_state.write_state(
-        harness.database,
-        type(state)(**{**state.__dict__, "base_sha256": "0" * 64, "dirty": False}),
-    )
+def test_a_pc_refuses_to_push_once_the_app_has_taken_over(harness: SimpleNamespace) -> None:
+    """운영 앱의 포인터(`boot` · `app`)가 HEAD 면, 넘긴 표지가 없어도 사내 PC 는 쓰지 못한다."""
+    _init(harness)
+    outcome = harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    assert outcome.ok
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+
+    assert _run(harness, "push") == 1
+    assert _run(harness, "--override-writer", "push") == 0
+
+
+def test_pull_restores_both_databases_from_the_remote(harness: SimpleNamespace) -> None:
+    _init(harness)
+    before = row_count(harness.equipment)
+    harness.database.unlink()
+    harness.equipment.unlink()
+    sync_state.sidecar_path(harness.database).unlink()
+    sync_state.sidecar_path(harness.equipment).unlink()
 
     assert _run(harness, "pull") == 0
 
-    with connect(harness.database) as connection:
-        rows = connection.execute("SELECT COUNT(*) FROM demo WHERE id = 777").fetchone()
-    assert rows is not None and int(rows[0]) == 0
+    assert row_count(harness.database) == 10
+    assert row_count(harness.equipment) == before
 
 
 def test_pull_refuses_to_overwrite_local_only_changes(harness: SimpleNamespace) -> None:
-    """이 거부가 없으면 이 PC 에만 있는 리비전이 조용히 사라진다."""
-    _run(harness, "init")
+    _init(harness)
+    add_row(harness.database)
     sync_state.enable({harness.database: "simulation"})
     sync_state.mark_dirty(harness.database)
-    sync_state.clear_all()
-    state = sync_state.read_state(harness.database)
-    assert state is not None
-    sync_state.write_state(
-        harness.database, type(state)(**{**state.__dict__, "base_sha256": "0" * 64})
-    )
 
     assert _run(harness, "pull") == 1
+
+    assert row_count(harness.database) == 11
 
 
 def test_status_runs_against_an_empty_remote(harness: SimpleNamespace) -> None:
     assert _run(harness, "status") == 0
 
 
+def test_status_filters_the_display_by_dataset(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _run(harness, "--dataset", "equipment", "status") == 0
+
+    printed = capsys.readouterr().out
+    assert "가용설비 변경" in printed
+    assert "시뮬레이션 변경" not in printed
+
+
 def test_doctor_reports_without_touching_the_databases(harness: SimpleNamespace) -> None:
     assert _run(harness, "doctor") == 0
-    assert all("s3api" not in call or "put-object" not in call for call in harness.store.calls)
+
+
+def test_doctor_no_longer_warns_about_plain_http(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """폐쇄망 http 9020 은 결정됐다(https 는 서버 TLS 문제로 쓰지 않는다)."""
+    assert _run(harness, "doctor") == 0
+
+    assert "평문" not in capsys.readouterr().out
 
 
 def test_dry_run_uploads_nothing(harness: SimpleNamespace) -> None:
-    assert harness.script.main(["--dataset", "simulation", "--dry-run", "init"]) == 0
+    assert _run(harness, "--dry-run", "init") == 0
 
     assert harness.store.objects == {}
 
 
 def test_every_call_carries_the_profile(harness: SimpleNamespace) -> None:
-    """왕복 전체에서 한 번이라도 빠지면 다른 네임스페이스를 건드린다."""
-    _run(harness, "init")
+    """프로필이 빠지면 다른 네임스페이스를 본다. 왕복 전체에서 빠진 호출이 없어야 한다."""
+    _init(harness)
 
-    s3api_calls = [call for call in harness.store.calls if len(call) > 1 and call[1] == "s3api"]
-    assert s3api_calls
-    for call in s3api_calls:
-        assert "--profile" in call
+    s3_calls = [call for call in harness.store.calls if call[1] == "s3api"]
+
+    assert s3_calls
+    for call in s3_calls:
         assert call[call.index("--profile") + 1] == "demo-org-team"
 
 
 def test_uploaded_snapshot_opens_as_a_valid_database(harness: SimpleNamespace) -> None:
-    """올라간 바이트가 실제로 열리는 DuckDB 인지 확인한다."""
-    _run(harness, "init")
-    key = next(k for k in harness.store.objects if k.startswith("simulation/snapshots/"))
-    restored = harness.tmp_path / "restored.duckdb"
-    restored.write_bytes(harness.store.objects[key])
+    _init(harness)
+    key = harness.store.keys("simulation/snapshots/")[0]
+    local = harness.tmp_path / "from-remote.duckdb"
+    local.write_bytes(harness.store.objects[key])
 
-    with connect(restored) as connection:
-        rows = connection.execute("SELECT COUNT(*) FROM demo").fetchone()
-
-    assert rows is not None and int(rows[0]) == 10
+    assert row_count(local) == 10
 
 
 def test_pointer_json_records_the_parent_chain(harness: SimpleNamespace) -> None:
-    _run(harness, "init")
-    with connect(harness.database) as connection:
-        connection.execute("INSERT INTO demo VALUES (5)")
+    _init(harness)
+    first = harness.store.pointer_keys()[0]
+    add_row(harness.database)
     sync_state.enable({harness.database: "simulation"})
     sync_state.mark_dirty(harness.database)
-    sync_state.clear_all()
     _run(harness, "push")
 
-    pointers = sorted(k for k in harness.store.objects if k.startswith("simulation/heads/"))
-    newest = json.loads(harness.store.objects[pointers[0]].decode("utf-8"))
+    newest = harness.store.head_pointer()
 
     assert newest["seq"] == 2
     assert newest["parent_seq"] == 1
-    assert len(newest["parent_sha256"]) == 64
+    assert newest["parent_pointer_key"] == first
     assert newest["created_at_utc"].endswith("Z")
     assert datetime.now(timezone.utc).year >= 2026
 
 
-def test_resolve_promotes_an_unpublished_snapshot_with_a_usable_size(
-    harness: SimpleNamespace,
-) -> None:
-    """승격한 포인터의 크기가 0 이면 나중에 pull 이 그 세대를 거부한다."""
-    _run(harness, "init")
-    key = next(k for k in harness.store.objects if k.startswith("simulation/snapshots/"))
-    state = sync_state.read_state(harness.database)
-    assert state is not None
-    sync_state.write_state(
-        harness.database,
+def _park_a_generation(harness: SimpleNamespace, reason: str = "moved") -> None:
+    """올렸는데 게시하지 못한 세대를 상태 파일에 남긴다."""
+    state = sync_state.read_generation(harness.paths.generation)
+    assert state.base_pointer_json is not None
+    sync_state.write_generation(
+        harness.paths.generation,
         type(state)(
             **{
                 **state.__dict__,
-                "unpublished_snapshot_key": key,
-                "unpublished_sha256": state.base_sha256,
-                "unpublished_reason": "테스트",
+                "unpublished": sync_state.UnpublishedGeneration(
+                    pointer_json=state.base_pointer_json, reason=reason, observed={}
+                ),
             }
         ),
     )
+
+
+def test_resolve_promotes_an_unpublished_generation_with_usable_members(
+    harness: SimpleNamespace,
+) -> None:
+    """승격한 포인터의 멤버가 그대로여야 나중에 받기가 그 세대를 받는다."""
+    _init(harness)
+    _park_a_generation(harness)
 
     assert _run(harness, "resolve", "--keep", "mine") == 0
 
-    pointers = sorted(k for k in harness.store.objects if k.startswith("simulation/heads/"))
-    promoted = json.loads(harness.store.objects[pointers[0]].decode("utf-8"))
+    promoted = harness.store.head_pointer()
     assert promoted["seq"] == 2
-    assert promoted["snapshot_key"] == key
-    assert promoted["size_bytes"] > 0
+    assert promoted["members"]["simulation"]["size_bytes"] > 0
+    assert sync_state.read_generation(harness.paths.generation).unpublished is None
 
 
 def test_resolve_keep_remote_drops_the_local_claim(harness: SimpleNamespace) -> None:
-    _run(harness, "init")
-    state = sync_state.read_state(harness.database)
-    assert state is not None
-    sync_state.write_state(
-        harness.database,
-        type(state)(
-            **{
-                **state.__dict__,
-                "unpublished_snapshot_key": "simulation/snapshots/whatever",
-                "unpublished_reason": "테스트",
-            }
-        ),
-    )
+    _init(harness)
+    _park_a_generation(harness)
 
     assert _run(harness, "resolve", "--keep", "remote") == 0
 
-    after = sync_state.read_state(harness.database)
-    assert after is not None and after.unpublished_snapshot_key is None
+    assert sync_state.read_generation(harness.paths.generation).unpublished is None
+    assert len(harness.store.pointer_keys()) == 1
 
 
-def test_a_lost_race_records_the_orphan_snapshot_key(harness: SimpleNamespace) -> None:
-    """경합에서 지면 복구 수단은 그 스냅샷 키뿐이다. 기록이 빠지면 복구할 수 없다."""
-    _run(harness, "init")
-    with connect(harness.database) as connection:
-        connection.execute("INSERT INTO demo VALUES (321)")
-    sync_state.enable({harness.database: "simulation"})
+def test_resolve_without_anything_to_do_says_so(harness: SimpleNamespace) -> None:
+    _init(harness)
+
+    assert _run(harness, "resolve", "--keep", "mine") == 0
+
+
+def test_adopt_local_marks_both_databases_for_the_next_push(harness: SimpleNamespace) -> None:
+    """세대를 모르는 DB 는 HEAD 를 덮지 못한다. 사람이 기준을 정하면 그때 올라간다."""
+    _init(harness)
+    sync_state.write_generation(harness.paths.generation, sync_state.GenerationState())
+    add_row(harness.database)
+    sync_state.enable(harness.paths.registry)
     sync_state.mark_dirty(harness.database)
 
-    original_head = harness.script.read_head
+    assert _run(harness, "push") == 1
+    assert _run(harness, "adopt", "--source", "local") == 0
+    assert _run(harness, "push") == 0
 
-    def head_moves_after_upload(client, dataset):  # type: ignore[no-untyped-def]
-        pointer = original_head(client, dataset)
-        if pointer is not None and any(
-            call[2] == "put-object" and "simulation/snapshots/000000000002" in " ".join(call)
-            for call in harness.store.calls
-        ):
-            # 업로드 뒤 다시 물었을 때 남이 앞선 것처럼 보이게 한다.
-            return type(pointer)(**{**pointer.__dict__, "sha256": "f" * 64})
-        return pointer
-
-    harness.script.read_head = head_moves_after_upload
-    try:
-        assert _run(harness, "push") == 1
-    finally:
-        harness.script.read_head = original_head
-
-    state = sync_state.read_state(harness.database)
-    assert state is not None
-    assert state.unpublished_snapshot_key is not None
-    # 스냅샷 자체는 원격에 남아 있어야 한다 — 유실 불가의 근거다.
-    assert state.unpublished_snapshot_key in harness.store.objects
+    assert harness.store.head_pointer()["seq"] == 2
 
 
 def test_a_failed_snapshot_upload_publishes_no_pointer(
@@ -422,7 +322,7 @@ def test_a_failed_snapshot_upload_publishes_no_pointer(
         key = args[args.index("--key") + 1] if "--key" in args else ""
         if args[2:3] == ["put-object"] and "/snapshots/" in key:
             harness.store.calls.append(tuple(argv))
-            url = f"http://fake:9020/Capa_simulation_project/{key}"
+            url = f"http://fake:9020/Demo_bucket/{key}"
             return CommandResult(
                 tuple(argv), 255, "", f'\nCould not connect to the endpoint URL: "{url}"\n', 0.0
             )
@@ -439,9 +339,8 @@ def test_a_failed_snapshot_upload_publishes_no_pointer(
         if call[2] == "put-object" and "20260412T" in " ".join(call)
     ]
     assert len(snapshot_puts) == 3
-    assert not any(key.startswith("simulation/heads/") for key in harness.store.objects)
-    state = sync_state.read_state(harness.database)
-    assert state is None or state.base_seq is None
+    assert harness.store.pointer_keys() == []
+    assert sync_state.read_generation(harness.paths.generation).base_seq is None
 
 
 def test_a_locked_database_is_explained_in_korean(
@@ -466,7 +365,7 @@ def test_failure_messages_name_the_command_that_failed(harness: SimpleNamespace)
     from capa_simulation.io import object_storage as boundary
 
     result = boundary.CommandResult(
-        ("aws", "s3api", "put-object", "--bucket", "Capa_simulation_project"),
+        ("aws", "s3api", "put-object", "--bucket", "Demo_bucket"),
         254,
         "",
         "An error occurred (AccessDenied)",
@@ -477,4 +376,300 @@ def test_failure_messages_name_the_command_that_failed(harness: SimpleNamespace)
 
     assert "실행한 명령" in message
     assert "s3api put-object" in message
-    assert "Capa_simulation_project" in message
+    assert "Demo_bucket" in message
+
+
+def test_fetch_copy_writes_two_databases_and_the_generation_outside_data(
+    harness: SimpleNamespace, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """사내 PC 가 런북 8장을 돌릴 사본. `data/` 를 건드리지 않아 앱이 떠 있어도 된다."""
+    _init(harness)
+    folder = tmp_path_factory.mktemp("copy") / "fetched"
+
+    assert _run(harness, "fetch-copy", "--to", str(folder)) == 0
+
+    assert row_count(folder / harness.database.name) == 10
+    assert row_count(folder / harness.equipment.name) == 10
+    assert json.loads((folder / "generation.json").read_text(encoding="utf-8"))["seq"] == 1
+    assert not (folder / ".fetch").exists()
+
+
+def test_fetch_copy_refuses_the_operating_place(harness: SimpleNamespace) -> None:
+    _init(harness)
+
+    assert _run(harness, "fetch-copy", "--to", str(harness.tmp_path)) == 1
+
+
+def test_fetch_copy_can_take_an_older_generation(
+    harness: SimpleNamespace, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    _init(harness)
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    assert _run(harness, "push") == 0
+    folder = tmp_path_factory.mktemp("older")
+
+    assert _run(harness, "fetch-copy", "--to", str(folder), "--seq", "1") == 0
+
+    assert row_count(folder / harness.database.name) == 10
+
+
+def test_rollback_needs_yes_and_then_moves_the_head_forward(harness: SimpleNamespace) -> None:
+    """지우지 않고 앞으로만 간다. 멤버는 그 세대 그대로다."""
+    _init(harness)
+    first = harness.store.head_pointer()
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    assert _run(harness, "push") == 0
+
+    assert _run(harness, "rollback", "--to", "1") == 0
+    assert harness.store.head_pointer()["seq"] == 2
+
+    assert _run(harness, "rollback", "--to", "1", "--yes") == 0
+    head = harness.store.head_pointer()
+    assert head["seq"] == 3
+    assert head["origin"] == "rollback"
+    assert head["members"] == first["members"]
+
+
+def _push_a_save(harness: SimpleNamespace) -> None:
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    assert _run(harness, "push") == 0
+
+
+def test_a_pc_without_a_mark_refuses_to_push_after_a_rollback(harness: SimpleNamespace) -> None:
+    """되돌린 뒤 다음 시작의 펜스가 서기 전 틈 — 표지 없는 PC 의 DB 가 HEAD 가 되면 안 된다."""
+    _init(harness)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    assert _run(harness, "rollback", "--to", "1", "--yes") == 0
+
+    assert _run(harness, "adopt", "--source", "local") == 1
+    assert _run(harness, "--override-writer", "adopt", "--source", "local") == 0
+    assert _run(harness, "push") == 1
+
+
+def test_generations_show_member_numbers_without_reading_pointers(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """펜스는 같은 멤버로 쌓인다. 바로 앞 세대가 깨진 멤버를 그대로 가리킬 수 있어 번호로 고른다."""
+    _init(harness)
+    _push_a_save(harness)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    harness.store.calls.clear()
+    capsys.readouterr()
+
+    assert _run(harness, "generations") == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("seq 3 · 시뮬레이션 2 · 가용설비 1")
+    assert "HEAD" in lines[0]
+    assert lines[1].startswith("seq 2 · 시뮬레이션 2 · 가용설비 1")
+    assert lines[2].startswith("seq 1 · 시뮬레이션 1 · 가용설비 1")
+    assert not any(operation == "get-object" for operation, _key in harness.store.operations())
+
+
+def test_generations_cuts_a_long_list(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(harness)
+    for _ in range(3):
+        _push_a_save(harness)
+    capsys.readouterr()
+
+    assert _run(harness, "generations", "--limit", "2") == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 3
+    assert "2" in lines[2] and "더" in lines[2]
+
+
+def test_generations_on_an_empty_remote_says_so(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _run(harness, "generations") == 0
+
+    assert "비어 있음" in capsys.readouterr().out
+
+
+def test_status_on_a_pc_that_handed_over_points_at_a_copy_not_resolve(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """이관 뒤에는 시작마다 세대가 늘어 늘 이 꼴이다. `resolve` 는 할 일이 없다."""
+    assert _run(harness, "init") == 0
+    state = sync_state.read_generation(harness.paths.generation)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    sync_state.write_generation(harness.paths.generation, state)
+    capsys.readouterr()
+
+    assert _run(harness, "status") == 0
+
+    printed = capsys.readouterr().out
+    assert "fetch-copy" in printed
+    assert "resolve" not in printed
+
+
+def test_resolve_refuses_a_generation_whose_snapshot_is_gone(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(harness)
+    _park_a_generation(harness)
+    for key in harness.store.keys("simulation/snapshots/"):
+        del harness.store.objects[key]
+
+    assert _run(harness, "resolve", "--keep", "mine") == 1
+
+    assert "[중단]" in capsys.readouterr().out
+    assert sync_state.read_generation(harness.paths.generation).unpublished is not None
+    assert len(harness.store.pointer_keys()) == 1
+
+
+def _move_the_head_with_a_newer_equipment(harness: SimpleNamespace) -> None:
+    """남이 설비 DB 를 올려 HEAD 를 옮긴다."""
+    head = harness.script.engine.read_pointer(
+        fake_client(harness.store), harness.store.pointer_keys()[0]
+    )
+    body = b"newer equipment"
+    member = manifest.Member(
+        seq=head.seq + 1,
+        snapshot_key=manifest.snapshot_key(
+            "equipment", head.seq + 1, created_at_utc="2026-11-07T00:00:00Z", sha256="ab" * 32
+        ),
+        sha256="ab" * 32,
+        md5_base64="",
+        size_bytes=len(body),
+        source_db_bytes=len(body),
+        migration_version=1,
+    )
+    harness.store.objects[member.snapshot_key] = body
+    pointer = manifest.next_pointer(
+        head,
+        members={**head.members, "equipment": member},
+        origin="app",
+        token="abcdef02",
+        app_version="demo",
+        author="demo@other",
+        created_at_utc="2026-11-07T00:00:00Z",
+        note="",
+    )
+    harness.store.objects[pointer.pointer_key] = manifest.pointer_to_json(pointer).encode("utf-8")
+
+
+def test_resolve_says_to_pull_when_a_member_came_from_the_remote(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """새 HEAD 의 멤버 하나가 이 PC 의 파일이 아니다. 말하지 않으면 옛 파일로 계속 일한다."""
+    _init(harness)
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    moved: list[str] = []
+
+    def move_after_snapshot(operation: str, key: str) -> None:
+        uploaded = harness.store.puts("simulation/snapshots/000000000002")
+        if operation == "list-objects-v2" and uploaded and not moved:
+            moved.append(key)
+            _move_the_head_with_a_newer_equipment(harness)
+
+    harness.store.before = move_after_snapshot
+    assert _run(harness, "push") == 1
+    harness.store.before = None
+    capsys.readouterr()
+
+    assert _run(harness, "--override-writer", "resolve", "--keep", "mine") == 0
+
+    assert "pull" in capsys.readouterr().out
+
+
+def test_prune_lists_candidates_and_deletes_only_with_yes(harness: SimpleNamespace) -> None:
+    _init(harness)
+    for value in range(7):
+        add_row(harness.database, value)
+        sync_state.enable({harness.database: "simulation"})
+        sync_state.mark_dirty(harness.database)
+        assert _run(harness, "push") == 0
+    oldest = harness.store.pointer_keys()[-1]
+    harness.store.modified[oldest] = "2026-10-01T00:00:00+00:00"
+    for key in harness.store.keys("simulation/snapshots/000000000001"):
+        harness.store.modified[key] = "2026-10-01T00:00:00+00:00"
+
+    assert _run(harness, "prune", "--keep-days", "1") == 0
+    assert oldest in harness.store.objects
+
+    assert _run(harness, "prune", "--keep-days", "1", "--yes") == 0
+    assert oldest not in harness.store.objects
+    # 설비 스냅샷은 세대 1 것이 이어 적혀 남은 세대가 아직 가리킨다.
+    assert harness.store.keys("equipment/snapshots/")
+
+
+def test_boot_pull_prints_a_line_without_values(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """시작 스크립트가 읽는 한 줄. 주소 · 버킷 · 키가 실리지 않는다."""
+    _init(harness)
+    capsys.readouterr()
+    monkeypatch.setenv("CAPA_S3_BUCKET", "Demo_ops")
+
+    assert _run(harness, "boot-pull") == 0
+
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert line["kind"] is None
+    assert line["action"] == "kept"
+    assert line["seq"] == 2
+
+
+def test_boot_pull_without_the_bucket_variable_stays(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """없을 때 config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에 간다."""
+    monkeypatch.delenv("CAPA_S3_BUCKET", raising=False)
+
+    assert _run(harness, "boot-pull") == 1
+
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert line["kind"] == "config"
+    assert harness.store.calls == []
+
+
+def test_boot_pull_failure_leaves_no_boot_record(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """원격이 비었으면(이관 전) 앱을 띄우지 않는다. 기록이 없어야 일꾼도 서지 않는다."""
+    monkeypatch.setenv("CAPA_S3_BUCKET", "Demo_ops")
+
+    assert _run(harness, "boot-pull") == 1
+
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert line["kind"] == "remote_empty"
+    from capa_simulation import sync_boot
+
+    assert sync_boot.read_boot_record() is None
+
+
+def test_boot_pull_fails_when_the_boot_record_cannot_be_written(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """기록을 못 쓰면 일꾼이 안 선다. 그 앱의 저장은 어디에도 안 올라가니 띄우지 않는다."""
+    _init(harness)
+    monkeypatch.setenv("CAPA_S3_BUCKET", "Demo_ops")
+
+    def refuse(_record: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(harness.script.sync_boot, "write_boot_record", refuse)
+
+    assert _run(harness, "boot-pull") == 1
+
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert line["kind"] == "other"

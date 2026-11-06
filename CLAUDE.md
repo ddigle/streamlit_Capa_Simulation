@@ -100,7 +100,9 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 `review_sample_*.py`, 문서 `docs/review_sample.md`. 가이드 예시판 시드도 이것이다 — git 작업 트리 안은 거절),
 `scripts/sso_mock_idp.py`(개발용 가짜 통합인증 IdP — 키를 메모리에만 만들고 form_post 로 id_token 을 보내 `capa_server.py` 의 로그인을
 끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
-`scripts/s3_mock_store.py`(개발 · 시험용 가짜 S3 — 서명을 검증하며 작은 객체 GET · PUT · HEAD 를 메모리로 받는다. 접속 명단 파일 시험 · `docs/sso_setup.md` 8장, 루프백만),
+`scripts/s3_mock_store.py`(개발 · 시험용 가짜 S3 — 서명을 검증하며 객체 GET · PUT · HEAD · DELETE · 목록을 메모리로 받는다. 실제 `aws` 1.46.3 도 붙는다 — 접속 명단 · DB 동기화 시험, `docs/sso_setup.md` 8장, 루프백만),
+`scripts/container_start.py`(C-DEP 이미지 `CMD` — 맨 앞에서 포트를 잡고(임시 응답 `container_stage.py`) 프로필 · 점검 · 설치 · `managed` 면 두 DB 받기 뒤 앱이 된다. 어떤 실패에도 앱을 띄우되 DB 받기만 예외다 — `docs/objectstore_setup.md`),
+`scripts/sync_object_storage.py`(두 DB 정본 도구 — 사내 PC 의 이관 `init` · 사본 `fetch-copy` · 세대 `generations` · `rollback`, 컨테이너의 `boot-pull`),
 `scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
 HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘플 시드 `scripts/generate_review_sample.py`, `--internal`(사내판 —
 2026-11-02 부터 쉼)은 런북 6-3 사본 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
@@ -182,12 +184,16 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   그 비용이 모든 rerun에 실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource`를
   새로 두지 않으며, 이 예외를 늘리려면 여기 목록을 같이 고친다. 모듈의 `st.cache_*` 는 이 목록 밖이다 — 그 모듈의 `cache.py` 한 파일에만 두고(화면 파일에 두면 `__main__` 이라 모듈끼리
   칸이 겹친다) `check_module.py`(M12)가 본다.
-- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신 예약. 앱 프로세스의 **유일한
-  배경 스레드**이고 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있을 때만 `app.py` 부트스트랩
+- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신 예약. 앱 프로세스의 **배경
+  스레드 둘 가운데 하나**이고 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있을 때만 `app.py` 부트스트랩
   뒤 첫 회차에 선다(스레드 이름으로 프로세스에 하나 — `st.cache_resource` 를 쓰지 않아 캐시 경계가
   아니다). 스레드 안에서는 실행 문맥이 없으므로 `st.*`·`st.session_state`·`st.cache_data` 래퍼를
   부르지 않고 순수 코어만 쓰며, 캐시 정리는 전역 범위 `st.cache_data` 의 `.clear()` 만 부른다
-  (AGENTS.md 5장 4·9장 「배경 스레드」). 새 배경 스레드를 따로 세우지 않는다.
+  (AGENTS.md 5장 4·9장 「배경 스레드」). 예약 하나와 동기화 일꾼 하나뿐이고 더 세우지 않는다.
+- `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼(스레드 `capa-object-sync`). `capa_server.py` 가
+  시작 때 세우고 `managed` + 시작 받기의 부트 기록(`sync_boot`)이 있을 때만 선다 — `app.py` 개발 실행 · 사내 PC · 시험에는 없다.
+  저장을 20 ~ 60초 모아 세대를 올리고 공식 발행은 바로 올리며 하루 한 번 정리한다. Streamlit 을 import 하지 않고 캐시를 건드리지
+  않는다. 차례는 `object_sync_engine.py`(유실을 막는 순서), 판정은 `services/object_storage_manifest.py`.
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
 - `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
   직접 읽지 말고 `get_effective_reference_tables()`만 쓴다.

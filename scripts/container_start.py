@@ -1,12 +1,17 @@
-# Purpose: CD 컨테이너 시작 때 환경변수로 BDQ 설치·토큰 파일을 갖추고 결과를 남긴 뒤 앱이 된다.
+# Purpose: CD 컨테이너 시작 때 임시 응답을 세우고 설치·토큰·두 DB 받기를 마친 뒤 앱이 된다.
 """C-DEP CD 컨테이너 시작 스크립트.
 
 C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하면 바로 실행·접속 링크만 준다) 서버
 셸에도 들어갈 수 없다. 넣을 수 있는 것은 배포 설정의 **환경변수 표(key·value)** 뿐이다. 그래서
 이미지의 `CMD` 가 이 스크립트를 부르고, 스크립트가 그 환경변수만으로 BigDataQuery 의 세 관문
-(`docs/bigdataquery_webide_setup.md`)을 푼 뒤 `streamlit run capa_server.py` 줄로 바뀐다
-(`APP_ENTRY` — `app.py` 를 `st.App` 으로 감싸 통합인증 경로 · 문지기를 붙인 운영 진입점,
-`docs/sso_setup.md`).
+(`docs/bigdataquery_webide_setup.md`)과 두 DB 받기(`docs/objectstore_setup.md`)를 푼 뒤
+`streamlit run capa_server.py` 줄로 바뀐다(`APP_ENTRY` — `app.py` 를 `st.App` 으로 감싸 통합인증
+경로 · 문지기를 붙인 운영 진입점, `docs/sso_setup.md`).
+
+**차례** — ① 임시 응답(`container_stage.py` — 맨 앞, 앱 포트에서 상태 검사에 답한다) ② AWS 프로필
+③ 점검(aws 판 · ECS 연결 · 버킷 목록 · 디스크 · pod · cgroup) ④ 설치 · 토큰 · 요청자 계정 ⑤ 두 DB
+받기 ⑥ 소켓을 닫고 앱이 된다. S3 키도 `managed` 도 없으면 ② ③ ⑤ 를 건너뛰고, 키만 있으면 ② ③ 까지
+돌고 앱은 빈 디스크로 뜬다(첫 CI/CD 로 aws 판 · 연결을 보는 판).
 
 0. 설치 — `bigdataquery` 가 없고 `CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN` 이 있으면 pip 를
    두 번 부른다. 판·인덱스는 `requirements-company.txt` 가 정본이다.
@@ -22,10 +27,15 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 
 결과는 `settings.CONTAINER_START_REPORT_PATH` 에 남고 앱 화면(Admin Area 「서버 시작 점검」)이
 읽는다. **비밀값은 어디에도 남기지 않는다** — pip 출력·예외 문구의 토큰과 URL 자격증명을 가리고
-계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip)에도 두 비밀값을 넘기지 않는다 — 깔린
-패키지의 import 코드가 그 값을 읽지 못하게 한다. 어느 단계가 실패해도, 이 스크립트에서 예상하지
-못한 예외가 나도 앱은 띄운다. 앱은 `os.execvpe` 로 이 프로세스를 갈아 끼워 신호·종료 동작이 옛
-`CMD` 와 같고, 실행 줄의 두 비밀값은 앱에 넘기지 않는다.
+계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip·aws)에도 두 비밀값을 넘기지 않는다 — 깔린
+패키지의 import 코드가 그 값을 읽지 못하게 한다. 앱은 `os.execvpe` 로 이 프로세스를 갈아 끼워 신호·
+종료 동작이 옛 `CMD` 와 같고, 실행 줄의 두 비밀값은 앱에 넘기지 않는다.
+
+**어느 단계가 실패해도, 예상하지 못한 예외가 나도 앱은 띄운다 — DB 받기 하나만 예외다.** `managed`
+에서 앱을 띄우는 길은 「이번 실행의 `boot-pull` 이 종료 코드 0 으로 끝남」 한 길뿐이다. 받지 못하면
+임시 화면에 머물며 물러나서 다시 시도하고, 예상 못 한 예외도 `other` 로 되풀이한다 — 빈 DB 로 뜬
+앱이 정본을 덮는 길을 막는다. `CAPA_S3_SYNC_MODE` 가 틀린 값이면(`managed` 가 아니면) 받지 않고 앱은
+뜬다 — 올리지도 않으니 덮는 길이 아니고, 앱이 `SY-01` 로 알린다(2026-10-22 결정 (다)).
 
 통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)는 앱이 써야 하므로 **앱에는 넘긴다** — 비밀값
 `JWT_SECRET_KEY` · S3 명단 키 둘과 접속 명단은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다
@@ -48,12 +58,16 @@ import getpass
 import json
 import os
 import re
+import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -61,12 +75,16 @@ from pathlib import Path
 from types import FrameType
 from typing import Protocol
 
+import container_stage
+
 from capa_simulation import settings
 from capa_simulation.auth import names as sso_names
+from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
     ARTIFACTORY_TOKEN_ENV,
     ARTIFACTORY_USER_ENV,
+    AWS_CLI_VERSION,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     CD_ENVIRONMENT,
@@ -79,7 +97,35 @@ from capa_simulation.io.container_start_report import (
     STEP_LABELS,
     STEP_TOKEN,
     STEP_USER_NAME,
+    SYNC_STEP_BUCKET,
+    SYNC_STEP_CLI,
+    SYNC_STEP_ECS,
+    SYNC_STEP_LABELS,
+    SYNC_STEP_PROFILE,
+    SYNC_STEP_PULL,
     mask_account,
+    utc_timestamp,
+)
+from capa_simulation.io.object_storage import (
+    MODE_ENV,
+    MODE_MANAGED,
+    CommandResult,
+    ObjectStorageClient,
+    ObjectStorageError,
+    StorageSettings,
+    classify_failure,
+    load_settings,
+    render_profile_files,
+)
+from capa_simulation.services.object_storage_manifest import (
+    FAILURE_CONFIG,
+    FAILURE_DIVERGED,
+    FAILURE_FORKED,
+    FAILURE_LABELS,
+    FAILURE_OTHER,
+    FAILURE_SCHEMA_NEWER,
+    FAILURE_TIMEOUT,
+    HEAD_PREFIX,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -92,10 +138,30 @@ APP_PORT = "8080"
 # 앱 진입 파일(저장소 뿌리 — `.streamlit/config.toml`·`static/` 을 그 옆에서 찾는다). 실패해도
 # `app.py` 로 물러서지 않는다(모듈 설명).
 APP_ENTRY = "capa_server.py"
-# 앱 포트는 이 단계들이 끝난 뒤에야 열린다 — CD 의 상태 검사가 그 사이 컨테이너를 죽이지 않게
-# 짧게 잡는다. 설치 제한은 두 pip 를 합친 것이고, pip 자신도 연결마다 짧게 포기한다.
+# 상태 검사는 임시 응답이 받지만 앱은 이 단계들이 끝난 뒤에야 뜬다 — 다운 시간이라 짧게 잡는다.
+# 설치 제한은 두 pip 를 합친 것이고, pip 자신도 연결마다 짧게 포기한다.
 INSTALL_TIMEOUT_SECONDS = 240
 PROBE_TIMEOUT_SECONDS = 60
+# 받기 한 번의 뒷벽. 전송 제한시간은 크기를 따라 `aws` 쪽이 진다 — 여기는 그 밖의 매달림을 끊는다.
+# 끊겨도 다음 시도가 작업 자리를 비우고 처음부터 다시 받는다.
+BOOT_PULL_TIMEOUT_SECONDS = 7200
+BOOT_PULL_SCRIPT = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
+# 받기 실패 뒤 물러남. 끝값으로 되풀이한다.
+BOOT_BACKOFF_SECONDS: tuple[int, ...] = (5, 10, 20, 40, 60)
+# 사람이 손대야 풀리는 갈래는 재촉하지 않는다.
+BOOT_HUMAN_BACKOFF_SECONDS = 300
+BOOT_HUMAN_KINDS = (FAILURE_FORKED, FAILURE_DIVERGED, FAILURE_SCHEMA_NEWER)
+ECS_TIMEOUT_SECONDS = 5
+ECS_SERVER_ERROR = 500
+# 없으면 받지 않고 머문다 — config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에 간다.
+SYNC_REQUIRED_ENVIRONMENT = (
+    sso_names.ENV_S3_BUCKET,
+    sso_names.ENV_S3_ACCESS_KEY,
+    sso_names.ENV_S3_SECRET_KEY,
+)
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+# cgroup v1 은 「제한 없음」 을 아주 큰 수로 적는다.
+CGROUP_UNLIMITED_BYTES = 1 << 60
 PIP_NETWORK_OPTIONS = ("--timeout", "15", "--retries", "2")
 # 사내 인덱스만 보게 할 때 지우는 pip 환경변수 — 다른 출처를 더하는 것들이다.
 PIP_OTHER_SOURCES_ENV = ("PIP_EXTRA_INDEX_URL", "PIP_FIND_LINKS", "PIP_NO_INDEX")
@@ -131,6 +197,18 @@ else:
         version = "?"
     print("{PROBE_MARKER} ok " + version, flush=True)
 """
+_DUCKDB_PROBE_MARKER = "capa-duckdb-probe"
+# 이 프로세스에 DuckDB 를 불러오지 않는다 — 넘기기 전에 메모리를 쥐지 않게 한다.
+_DUCKDB_PROBE_CODE = f"""
+import duckdb
+connection = duckdb.connect(":memory:")
+limit = connection.execute("select current_setting('memory_limit')").fetchone()[0]
+threads = connection.execute("select current_setting('threads')").fetchone()[0]
+print("{_DUCKDB_PROBE_MARKER}", limit, "|", threads, flush=True)
+"""
+_AWS_VERSION = re.compile(r"aws-cli/([0-9A-Za-z.+-]+)")
+# 프로필 이름은 파일의 절 머리에 그대로 들어간다.
+_PROFILE_NAME = re.compile(r"[A-Za-z0-9._@-]+")
 # 주소의 자격증명 칸 — 계정에 `@` 가 들어 있어도 경로(`/`) 앞의 마지막 `@` 까지 가린다.
 _URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^\s/]+@")
 _COMMENT = re.compile(r"(^|\s)#.*$")
@@ -693,6 +771,424 @@ def fallback_report(environ: Mapping[str, str], error_name: str) -> dict[str, ob
     }
 
 
+@dataclass(frozen=True)
+class SyncPlan:
+    """시작 때 할 동기화 일. 환경변수 한 번으로 정한다."""
+
+    # 받기까지 간다 — 받지 못하면 앱을 띄우지 않는다.
+    managed: bool
+    # 프로필 · 점검을 돈다.
+    checks: bool
+    # 주소 · 버킷 · 프로필. 설정 파일이 깨졌으면 `None` 이다.
+    storage: StorageSettings | None
+
+
+def _read_storage(environ: Mapping[str, str]) -> StorageSettings | None:
+    """주소 · 버킷 · 프로필만 읽는다. 모드 값이 틀려도 점검은 돌도록 모드는 여기서 보지 않는다."""
+    try:
+        return load_settings(environ={**environ, MODE_ENV: "local"})
+    except (ObjectStorageError, OSError, ValueError):
+        return None
+
+
+def plan_sync(environ: Mapping[str, str]) -> SyncPlan:
+    """`managed` 는 환경변수 한 곳이면 된다 — 설정 파일이 깨져도 받기로 가서 `config` 로 머문다.
+    앱이 `local` 로 내려앉아 빈 DB 로 뜨지 않게."""
+    wanted = environ.get(MODE_ENV, "").strip()
+    try:
+        managed = load_settings(environ=environ).mode == MODE_MANAGED
+    except Exception:
+        managed = wanted == MODE_MANAGED
+    keys = (sso_names.ENV_S3_ACCESS_KEY, sso_names.ENV_S3_SECRET_KEY)
+    has_key = any(environ.get(name, "").strip() for name in keys)
+    return SyncPlan(managed=managed, checks=managed or has_key, storage=_read_storage(environ))
+
+
+def missing_sync_environment(environ: Mapping[str, str]) -> list[str]:
+    return [name for name in SYNC_REQUIRED_ENVIRONMENT if not environ.get(name, "").strip()]
+
+
+@dataclass(frozen=True)
+class AwsRunner:
+    """`object_storage` 경계가 쓰는 실행기를 시작 스크립트의 하위 프로세스 길에 잇는다.
+
+    앱의 실행기는 `os.environ` 을 그대로 물려주는데, 이 스크립트의 환경에는 아직 비밀값이 다 있다.
+    자식에게는 비밀값을 뺀 환경만 준다 — 키는 `~/.aws` 에서 읽는다.
+    """
+
+    runner: Runner
+    environ: Mapping[str, str]
+
+    def run(
+        self, argv: Sequence[str], env: Mapping[str, str], *, timeout_seconds: float
+    ) -> CommandResult:
+        started = time.perf_counter()
+        merged = {**child_environment(self.environ), **env}
+
+        def finished(code: int, stdout: str = "", stderr: str = "") -> CommandResult:
+            return CommandResult(tuple(argv), code, stdout, stderr, time.perf_counter() - started)
+
+        try:
+            completed = self.runner(argv, timeout=timeout_seconds, env=merged)
+        except FileNotFoundError:
+            return finished(127, stderr="aws 실행 파일을 찾지 못했습니다.")
+        except subprocess.TimeoutExpired:
+            return finished(124, stderr="제한 시간을 넘겼습니다.")
+        except OSError as error:
+            return finished(126, stderr=type(error).__name__)
+        return finished(completed.returncode, completed.stdout or "", completed.stderr or "")
+
+
+def aws_profile_step(environ: Mapping[str, str], storage: StorageSettings | None) -> StepResult:
+    """`~/.aws` 프로필을 쓴다. 줄은 `sync_object_storage.py profile` 과 같은 한 벌이다."""
+    names = sso_names.ENV_S3_ACCESS_KEY, sso_names.ENV_S3_SECRET_KEY
+    access_key, secret_key = (environ.get(name, "").strip() for name in names)
+    pairs = zip(names, (access_key, secret_key), strict=True)
+    missing = [name for name, value in pairs if not value]
+    if missing:
+        return StepResult(STATUS_FAILED, f"CD 환경변수 {'·'.join(missing)} 없음 — 만들지 않음")
+    if storage is None:
+        return StepResult(STATUS_FAILED, "설정 파일을 읽지 못해 만들지 않음")
+    if _PROFILE_NAME.fullmatch(storage.profile) is None:
+        return StepResult(STATUS_FAILED, "프로필 이름에 쓸 수 없는 글자가 있음")
+    if any(mark in value for value in (access_key, secret_key) for mark in "\r\n"):
+        return StepResult(STATUS_FAILED, "키에 줄바꿈이 있음 — 만들지 않음")
+    home = environ.get("HOME", "").strip()
+    if not home:
+        return StepResult(STATUS_FAILED, "HOME 없음 — 자리를 못 정함")
+    credentials, config = render_profile_files(
+        storage, access_key=access_key, secret_key=secret_key
+    )
+    folder = Path(home) / ".aws"
+    try:
+        _write_private(folder / "credentials", credentials.encode("utf-8"))
+        _write_private(folder / "config", config.encode("utf-8"))
+    except OSError as error:
+        return StepResult(STATUS_FAILED, f"쓰지 못함({type(error).__name__})")
+    return StepResult(STATUS_OK, "씀")
+
+
+def aws_cli_step(client: ObjectStorageClient) -> tuple[StepResult, str | None]:
+    """aws 판. 갈래는 셋 — 명령 없음 · 실행 실패 · 판 다름."""
+    try:
+        text = client.cli_version()
+    except ObjectStorageError as error:
+        missing = error.result is not None and error.result.returncode == 127
+        return StepResult(STATUS_FAILED, "명령 없음" if missing else "실행 실패"), None
+    match = _AWS_VERSION.search(text)
+    if match is None:
+        return StepResult(STATUS_FAILED, "실행 실패"), None
+    version = match[1]
+    if version != AWS_CLI_VERSION:
+        return StepResult(STATUS_FAILED, f"판 다름 {version}"), version
+    return StepResult(STATUS_OK, version), version
+
+
+def ecs_step(endpoint_url: str, *, timeout: float = ECS_TIMEOUT_SECONDS) -> StepResult:
+    """저장소까지 닿는가. 인증 없는 요청이라 403 이 정상이다. 주소는 까닭에 싣지 않는다.
+
+    `s3_small` 과 같이 프록시를 타지 않는다 — 폐쇄망 안 주소다.
+    """
+    if urllib.parse.urlsplit(endpoint_url).scheme not in ("http", "https"):
+        return StepResult(STATUS_FAILED, "주소 꼴이 틀림")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(endpoint_url, timeout=timeout) as response:
+            status = int(response.status)
+    except urllib.error.HTTPError as error:
+        status = int(error.code)
+    except urllib.error.URLError as error:
+        return StepResult(STATUS_FAILED, _unreachable_label(error.reason))
+    except (OSError, ValueError) as error:
+        return StepResult(STATUS_FAILED, _unreachable_label(error))
+    if status >= ECS_SERVER_ERROR:
+        return StepResult(STATUS_FAILED, f"HTTP {status}")
+    return StepResult(STATUS_OK, f"HTTP {status} 닿음")
+
+
+def _unreachable_label(reason: object) -> str:
+    if isinstance(reason, ConnectionRefusedError):
+        return "연결 거부"
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "시간 초과"
+    if isinstance(reason, socket.gaierror):
+        return "이름 못 풂"
+    return f"연결 실패({type(reason).__name__})"
+
+
+def bucket_step(
+    client: ObjectStorageClient, *, heads: Callable[[bool], None] | None = None
+) -> StepResult:
+    """키 · 버킷이 맞는가. 목록 한 줄만 본다. `heads` 는 그 목록에 세대가 있었는지 듣는다."""
+    try:
+        records = client.list_objects(HEAD_PREFIX, max_keys=1)
+    except ObjectStorageError as error:
+        return StepResult(STATUS_FAILED, FAILURE_LABELS[classify_failure(error)])
+    if heads is not None:
+        heads(bool(records))
+    return StepResult(STATUS_OK, "정상")
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+
+
+def _memory_limit(root: Path) -> int | None:
+    """cgroup 메모리 한도. v2 · v1 순서로 본다. 제한이 없거나 못 읽으면 `None`."""
+    for path in (root / "memory.max", root / "memory" / "memory.limit_in_bytes"):
+        text = _read_text(path)
+        if text is None or not text.isdecimal():
+            continue
+        value = int(text)
+        return value if value < CGROUP_UNLIMITED_BYTES else None
+    return None
+
+
+def _cpu_limit(root: Path) -> float | None:
+    """cgroup CPU 한도(코어 수). v2 · v1 순서로 본다. 제한이 없거나 못 읽으면 `None`."""
+    pieces = (_read_text(root / "cpu.max") or "").split()
+    if len(pieces) == 2 and pieces[0].isdecimal() and pieces[1].isdecimal():
+        return int(pieces[0]) / max(int(pieces[1]), 1)
+    quota = _read_text(root / "cpu" / "cpu.cfs_quota_us") or ""
+    period = _read_text(root / "cpu" / "cpu.cfs_period_us") or ""
+    if quota.isdecimal() and period.isdecimal():
+        return int(quota) / max(int(period), 1)
+    return None
+
+
+def _logical_cores() -> int | None:
+    affinity = getattr(os, "sched_getaffinity", None)
+    return len(affinity(0)) if callable(affinity) else os.cpu_count()
+
+
+def _disk_facts() -> dict[str, object]:
+    try:
+        usage = shutil.disk_usage(PROJECT_ROOT)
+    except OSError:
+        return {}
+    return {"disk_free_bytes": int(usage.free), "disk_total_bytes": int(usage.total)}
+
+
+def machine_facts(
+    environ: Mapping[str, str], *, cgroup_root: Path = CGROUP_ROOT
+) -> dict[str, object]:
+    """`/project` 디스크 · pod 이름 · cgroup 한도 · 논리 코어. 값은 수와 pod 이름뿐이다."""
+    return {
+        **_disk_facts(),
+        "pod": environ.get("HOSTNAME", "").strip() or socket.gethostname(),
+        "memory_limit_bytes": _memory_limit(cgroup_root),
+        "cpu_limit": _cpu_limit(cgroup_root),
+        "logical_cores": _logical_cores(),
+    }
+
+
+def duckdb_defaults(runner: Runner, env: Mapping[str, str]) -> dict[str, object]:
+    """이 컨테이너에서 DuckDB 가 고른 기본 메모리 한도 · 스레드. 모르는 코어 수의 답이다."""
+    try:
+        completed = runner(
+            [sys.executable, "-c", _DUCKDB_PROBE_CODE], timeout=PROBE_TIMEOUT_SECONDS, env=env
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
+    for line in reversed(completed.stdout.splitlines()):
+        if line.startswith(_DUCKDB_PROBE_MARKER + " "):
+            limit, _, threads = line[len(_DUCKDB_PROBE_MARKER) + 1 :].partition(" | ")
+            return {"duckdb_memory_limit": limit.strip(), "duckdb_threads": threads.strip()}
+    return {}
+
+
+def prepare_sync(
+    environ: Mapping[str, str],
+    plan: SyncPlan,
+    *,
+    runner: Runner,
+    started_at_utc: str,
+    sleep: Callable[[float], None],
+    echo: Callable[[str], None],
+) -> dict[str, object] | None:
+    """② 프로필 ③ 점검. 결과 파일의 `sync` 칸을 만든다. 할 일이 없으면 `None`.
+
+    실패는 그 줄의 실패로만 적는다 — 판정은 뒤의 받기가 한다. 여기서 앱을 막지 않는다.
+    """
+    if not plan.checks:
+        return None
+    redactor = Redactor.from_environ(environ)
+    storage = plan.storage
+    steps = {SYNC_STEP_PROFILE: _guarded(lambda: aws_profile_step(environ, storage), redactor)}
+    version: str | None = None
+    head_listed = False
+    if storage is None:
+        skipped = StepResult(STATUS_FAILED, "설정 파일을 읽지 못함")
+        steps |= dict.fromkeys((SYNC_STEP_CLI, SYNC_STEP_ECS, SYNC_STEP_BUCKET), skipped)
+    else:
+        client = ObjectStorageClient(
+            settings=storage, runner=AwsRunner(runner, environ), sleep=sleep
+        )
+
+        def run_cli() -> StepResult:
+            nonlocal version
+            result, version = aws_cli_step(client)
+            return result
+
+        def saw_heads(found: bool) -> None:
+            nonlocal head_listed
+            head_listed = found
+
+        steps[SYNC_STEP_CLI] = _guarded(run_cli, redactor)
+        steps[SYNC_STEP_ECS] = _guarded(lambda: ecs_step(storage.endpoint_url), redactor)
+        blocked = next(
+            (
+                name
+                for name in (SYNC_STEP_CLI, SYNC_STEP_ECS)
+                if steps[name].status == STATUS_FAILED
+            ),
+            None,
+        )
+        steps[SYNC_STEP_BUCKET] = (
+            StepResult(STATUS_SKIPPED, f"{SYNC_STEP_LABELS[blocked]} 실패로 보지 않음")
+            if blocked is not None
+            else _guarded(lambda: bucket_step(client, heads=saw_heads), redactor)
+        )
+    head_ignored = head_listed and not plan.managed and not environ.get(MODE_ENV, "").strip()
+    reason = "받기 전" if plan.managed else f"{MODE_ENV} 가 {MODE_MANAGED} 아님 — 받지 않음"
+    if head_ignored:
+        reason = f"{MODE_ENV} 가 비어 버킷의 정본을 받지 않음"
+    steps[SYNC_STEP_PULL] = StepResult(STATUS_SKIPPED, reason)
+    for name, result in steps.items():
+        echo(f"{SYNC_STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
+    return {
+        "steps": {name: result.as_json() for name, result in steps.items()},
+        "started_at_utc": started_at_utc,
+        "aws_version": version,
+        "head_ignored": head_ignored,
+        **machine_facts(environ),
+        **duckdb_defaults(runner, child_environment(environ)),
+    }
+
+
+@dataclass(frozen=True)
+class BootPull:
+    """받기 한 번의 끝. `kind` 가 있으면 받지 못했다."""
+
+    kind: str | None
+    action: str | None = None
+    seq: int | None = None
+    previous_upload_utc: str | None = None
+    total_bytes: int = 0
+    seconds: float = 0.0
+
+
+def parse_boot_line(stdout: str) -> BootPull:
+    """`boot-pull` 의 끝줄(JSON)을 읽는다. 못 읽으면 `other` — 넘어가는 길은 이 값이 아니다."""
+    for line in reversed(stdout.splitlines()):
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(data, dict) or "kind" not in data:
+            continue
+        kind = data.get("kind")
+        seq, total, seconds = data.get("seq"), data.get("total_bytes"), data.get("seconds")
+        action, previous = data.get("action"), data.get("previous_upload_utc")
+        return BootPull(
+            kind=None if kind is None else str(kind),
+            action=action if isinstance(action, str) else None,
+            seq=seq if isinstance(seq, int) else None,
+            previous_upload_utc=previous if isinstance(previous, str) else None,
+            total_bytes=total if isinstance(total, int) else 0,
+            seconds=float(seconds) if isinstance(seconds, (int, float)) else 0.0,
+        )
+    return BootPull(kind=FAILURE_OTHER)
+
+
+def boot_pull_once(runner: Runner, env: Mapping[str, str]) -> BootPull:
+    """받기 한 번(하위 프로세스 — 앱이 뜨기 전에 메모리 · DuckDB 인스턴스를 다 놓는다).
+
+    끝나는 길은 하나다 — 종료 코드 0 이고 끝줄이 성공일 때만 `kind` 가 `None` 이다.
+    """
+    try:
+        completed = runner(
+            [sys.executable, str(BOOT_PULL_SCRIPT), "boot-pull"],
+            timeout=BOOT_PULL_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return BootPull(kind=FAILURE_TIMEOUT)
+    except OSError:
+        return BootPull(kind=FAILURE_OTHER)
+    pulled = parse_boot_line(completed.stdout)
+    if completed.returncode != 0:
+        kind = pulled.kind if pulled.kind in FAILURE_LABELS else FAILURE_OTHER
+        return BootPull(kind=kind, seq=pulled.seq)
+    if pulled.kind is not None or pulled.action is None or pulled.seq is None:
+        return BootPull(kind=FAILURE_OTHER)
+    return pulled
+
+
+def fallback_sync(started_at_utc: str) -> dict[str, object]:
+    """점검이 도중에 멈췄을 때의 칸 — 받기는 이어서 돈다."""
+    return {
+        "steps": {SYNC_STEP_PULL: StepResult(STATUS_SKIPPED, "받기 전").as_json()},
+        "started_at_utc": started_at_utc,
+    }
+
+
+def boot_backoff_seconds(kind: str | None, attempt: int) -> int:
+    """`attempt` 번째 실패 뒤 기다릴 초."""
+    if kind in BOOT_HUMAN_KINDS:
+        return BOOT_HUMAN_BACKOFF_SECONDS
+    return BOOT_BACKOFF_SECONDS[min(attempt, len(BOOT_BACKOFF_SECONDS)) - 1]
+
+
+def pull_until_ready(
+    environ: Mapping[str, str],
+    *,
+    runner: Runner,
+    stage: container_stage.Stage,
+    sleep: Callable[[float], None],
+    echo: Callable[[str], None],
+) -> tuple[BootPull, int]:
+    """받을 때까지 되풀이한다. 돌아오면 성공이고 시도 수를 함께 준다. 다른 길로 나가지 않는다."""
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            missing = missing_sync_environment(environ)
+            pulled = (
+                BootPull(kind=FAILURE_CONFIG)
+                if missing
+                else boot_pull_once(runner, child_environment(environ))
+            )
+        except Exception:
+            pulled = BootPull(kind=FAILURE_OTHER)
+        if pulled.kind is None:
+            return pulled, attempt
+        wait = boot_backoff_seconds(pulled.kind, attempt)
+        echo(f"DB 받기 {attempt}회 실패 — {pulled.kind} · {wait}초 뒤 다시")
+        stage.show(pulling=True, attempts=attempt, kind=pulled.kind)
+        sleep(wait)
+
+
+def finish_sync(sync: dict[str, object], pulled: BootPull, attempts: int) -> dict[str, object]:
+    """받기 결과를 `sync` 칸에 올린다."""
+    assert pulled.seq is not None
+    done = "받음" if pulled.action == "downloaded" else "그대로"
+    steps = sync.get("steps")
+    return {
+        **sync,
+        "steps": {
+            **(steps if isinstance(steps, dict) else {}),
+            SYNC_STEP_PULL: StepResult(STATUS_OK, f"세대 {pulled.seq} · {done}").as_json(),
+        },
+        "pull_seconds": pulled.seconds,
+        "pull_attempts": attempts,
+        "previous_upload_utc": pulled.previous_upload_utc,
+    }
+
+
 def sso_presence(environ: Mapping[str, str]) -> dict[str, bool]:
     """통합인증 환경변수 이름 → 있음. 값은 싣지 않는다 — 앱(Admin Area)이 검증한다."""
     return {name: bool(environ.get(name, "").strip()) for name in sso_names.SSO_ENVIRONMENT}
@@ -760,43 +1256,103 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def open_start_stage(port: str, environ: Mapping[str, str]) -> container_stage.Stage:
+    """임시 응답을 세운다. 세우지 못해도 시작 차례는 이어 간다 — 앱 띄우기가 먼저다."""
+    try:
+        base = container_stage.base_path_of(environ.get(sso_names.ENV_PUBLIC_URL, ""))
+        stage = container_stage.open_stage(int(port), base_path=base)
+    except Exception as error:
+        _echo(f"임시 응답을 세우지 못함 — {type(error).__name__}")
+        return container_stage.Stage(None)
+    if not stage.bound:
+        _echo("임시 응답을 세우지 못함 — 포트를 잡지 못함")
+    return stage
+
+
+def _forget_app_ready() -> None:
+    try:
+        report_contract.clear_app_ready()
+    except OSError as error:
+        _echo(f"앞 실행의 앱 응답 시각을 지우지 못함 — {type(error).__name__}")
+
+
+def _prepare_sync(
+    environ: Mapping[str, str],
+    plan: SyncPlan,
+    *,
+    runner: Runner,
+    started_at_utc: str,
+    sleep: Callable[[float], None],
+) -> dict[str, object] | None:
+    try:
+        return prepare_sync(
+            environ, plan, runner=runner, started_at_utc=started_at_utc, sleep=sleep, echo=_echo
+        )
+    except Exception as error:
+        _echo(f"동기화 점검이 도중에 멈춤 — {type(error).__name__}")
+        return fallback_sync(started_at_utc) if plan.checks else None
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     environ: Mapping[str, str] | None = None,
     runner: Runner = run_command,
     exec_app: ExecApp = os.execvpe,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> int:
     args = _parse(argv)
     env = dict(os.environ if environ is None else environ)
+    started_at_utc = utc_timestamp()
     previous = signal.getsignal(signal.SIGTERM)
     try:
         signal.signal(signal.SIGTERM, _exit_on_sigterm)
         installed = True
     except ValueError:
         installed = False
+    stage = open_start_stage(str(args.port), env)
     try:
-        check_and_record(env, credential_dir=args.credential_dir, runner=runner)
+        _forget_app_ready()
+        plan = plan_sync(env)
+        stage.show(pulling=plan.managed)
+        sync = _prepare_sync(env, plan, runner=runner, started_at_utc=started_at_utc, sleep=sleep)
+        report = check_and_record(env, credential_dir=args.credential_dir, runner=runner, sync=sync)
+        if plan.managed:
+            pulled, attempts = pull_until_ready(
+                env, runner=runner, stage=stage, sleep=sleep, echo=_echo
+            )
+            finished = finish_sync(sync or fallback_sync(started_at_utc), pulled, attempts)
+            record_report({**report, "sync": finished}, None)
+        stage.close()
+        command = app_command(str(args.port))
+        _echo("앱 시작: " + " ".join(command))
+        os.chdir(PROJECT_ROOT)
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.flush()
+            except Exception:
+                pass
+        exec_app(command[0], command, app_environment(env))
     finally:
+        stage.close()
         if installed:
             signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
-    command = app_command(str(args.port))
-    _echo("앱 시작: " + " ".join(command))
-    os.chdir(PROJECT_ROOT)
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.flush()
-        except Exception:
-            pass
-    exec_app(command[0], command, app_environment(env))
     return 0
 
 
-def check_and_record(environ: Mapping[str, str], *, credential_dir: Path, runner: Runner) -> None:
-    """세 단계를 돌려 결과 파일을 남긴다. 여기서 난 어떤 `Exception` 도 앱 띄우기를 막지 않는다 —
-    가리개를 만들기 전에 멈췄으면 종류 이름만 찍는다(값이 든 문구를 가릴 수 없다)."""
+def check_and_record(
+    environ: Mapping[str, str],
+    *,
+    credential_dir: Path,
+    runner: Runner,
+    sync: Mapping[str, object] | None = None,
+) -> Mapping[str, object]:
+    """세 단계를 돌려 결과 파일을 남기고 그 내용을 돌려준다. 여기서 난 어떤 `Exception` 도 앱
+    띄우기를 막지 않는다 — 가리개를 만들기 전에 멈췄으면 종류 이름만 찍는다(값이 든 문구를 가릴 수
+    없다)."""
     redactor: Redactor | None = None
     report: Mapping[str, object]
+    extra = {} if sync is None else {"sync": sync}
     try:
         active = Redactor.from_environ(environ)
         redactor = active
@@ -815,6 +1371,13 @@ def check_and_record(environ: Mapping[str, str], *, credential_dir: Path, runner
         )
         _echo(f"시작 점검이 도중에 멈춤 — {detail}")
         report = fallback_report(environ, type(error).__name__)
+    report = {**report, **extra}
+    record_report(report, redactor)
+    return report
+
+
+def record_report(report: Mapping[str, object], redactor: Redactor | None) -> None:
+    """결과 파일을 쓴다. 진단 값이라 실패가 앱 띄우기를 막지 않는다."""
     try:
         write_report(report, settings.CONTAINER_START_REPORT_PATH)
         _echo(f"결과 → {settings.CONTAINER_START_REPORT_PATH}")

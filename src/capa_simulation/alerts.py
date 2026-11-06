@@ -267,6 +267,14 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # DB 등록 저장 뒤의 충돌 보고 — 요약 · 상세는 그 Alarm 줄의 표다
     # (`bigdataquery_registration._queue_reference_conflict_report`).
     AlertSpec("SC-04", "check", "event", "DB 등록 — 기준정보 업무 키 값 충돌을 임시 처리함"),
+    # 정본 버킷 동기화(`components/object_sync_status.py`). 값 없이 갈래 낱말만 싣는다.
+    AlertSpec("SY-01", "action", "state", "동기화 꺼짐 — 설정 오류"),
+    AlertSpec("SY-02", "error", "state", "저장이 정본에 올라가지 못함"),
+    AlertSpec("SY-03", "error", "state", "올리기가 멈춤 — 원격 어긋남"),
+    AlertSpec("SY-04", "check", "state", "이 DB 는 정본을 넘긴 사본"),
+    AlertSpec("SY-05", "error", "state", "버킷의 정본을 받지 않은 서버 — 모드 칸이 비었음"),
+    # 접속 명단 파일이 아직 없어 환경변수 목록을 첫 판으로 쓰는 동안(`auth/access_store.py`).
+    AlertSpec("AD-09", "check", "state", "접속 명단이 환경변수 첫 판 — S3 파일 없음"),
 )
 
 

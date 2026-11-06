@@ -12,6 +12,10 @@ CD 서버에는 셸도 로그도 없어(시작 명령도 못 바꾼다) 시작 �
 파일은 작은 JSON 하나라 회차마다 읽고 DB 는 열지 않는다. 비밀값은 파일에 원래 없다(스크립트가
 가렸다). 사람이 넣은 값에서 나온 글(까닭·pip 출력)은 표·코드 칸에 그대로 싣고, 캡션에 넣는 값은
 `literal_markdown` 으로 싣는다.
+
+S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연결 · 버킷 목록 · DB 받기)이 더해지고
+캡션에 디스크 · pod 끝 글자 · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다
+(읽기 전용 화면, DuckDB `memory_limit`). 값은 갈래와 수뿐이라 리뷰 압축본에 옮길 수 있다.
 """
 
 from __future__ import annotations
@@ -29,12 +33,17 @@ from capa_simulation.io.container_start_report import (
     STATUS_LABELS,
     STEP_LABELS,
     STEPS,
+    SYNC_STEP_LABELS,
+    SYNC_STEPS,
     UNREADABLE_REPORT_NOTICE,
     ContainerStartReport,
+    SyncStart,
     missing_report_notice,
+    read_app_ready,
     read_container_start_report,
     report_file_exists,
     report_verdict,
+    seconds_between,
 )
 from capa_simulation.sidebar_status import remembered_expander
 
@@ -42,6 +51,9 @@ from capa_simulation.sidebar_status import remembered_expander
 # 편 상태는 기억 칸(`remembered_expander`)에 둔다 — 진단을 읽다 다른 화면(VOC 등)에 다녀와도
 # 접히지 않는다(VOC 글 상자와 같은 꼴, E2E r1). 제목 끝(판정)이 바뀌어도 편 상태는 그대로다.
 EXPANDER_KEY = "admin_area_container_start_check"
+_GIB = 1024**3
+# pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
+POD_TAIL_CHARS = 5
 
 
 def build_step_table(
@@ -85,6 +97,75 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
     return lines
 
 
+def sync_rows(report: ContainerStartReport) -> list[tuple[str, str, str]]:
+    """표에 더하는 동기화 줄. 옛 파일 · 동기화가 없는 서버는 빈 목록이다."""
+    if report.sync is None:
+        return []
+    steps = report.sync.steps
+    return [
+        (SYNC_STEP_LABELS[name], STATUS_LABELS[steps[name].status], steps[name].reason)
+        for name in SYNC_STEPS
+        if name in steps
+    ]
+
+
+def _gib(value: int) -> str:
+    return f"{value / _GIB:.1f} GiB"
+
+
+def _core_text(value: float) -> str:
+    return f"{value:g}"
+
+
+def _limits_line(sync: SyncStart) -> str | None:
+    parts = []
+    if sync.memory_limit_bytes is not None:
+        parts.append(f"메모리 {_gib(sync.memory_limit_bytes)}")
+    if sync.cpu_limit is not None:
+        parts.append(f"CPU {_core_text(sync.cpu_limit)}")
+    if sync.logical_cores is not None:
+        parts.append(f"논리 코어 {sync.logical_cores}")
+    return f"한도: {' · '.join(parts)}" if parts else None
+
+
+def _downtime_line(sync: SyncStart, ready_utc: str | None) -> str | None:
+    """받기 · 앱 응답까지. 앱 응답은 시작 스크립트 맨 앞에서 잰다."""
+    parts = []
+    if sync.pull_seconds is not None:
+        parts.append(f"받기 {sync.pull_seconds:.1f}초")
+    response = seconds_between(sync.started_at_utc, ready_utc)
+    if response is not None:
+        parts.append(f"앱 응답까지 {response:.0f}초")
+    return " · ".join(parts) if parts else None
+
+
+def sync_fact_lines(report: ContainerStartReport, ready_utc: str | None) -> list[str]:
+    """표 아래 동기화 사실 줄. 잴 수 없었던 값은 줄을 빼 빈 자리를 남기지 않는다."""
+    sync = report.sync
+    if sync is None:
+        return []
+    lines: list[str] = []
+    if sync.disk_free_bytes is not None and sync.disk_total_bytes is not None:
+        free, total = _gib(sync.disk_free_bytes), _gib(sync.disk_total_bytes)
+        lines.append(f"/project 디스크: 여유 {free} · 전체 {total}")
+    if sync.pod:
+        lines.append(f"pod 끝: {literal_markdown(sync.pod[-POD_TAIL_CHARS:])}")
+    limits = _limits_line(sync)
+    if limits is not None:
+        lines.append(limits)
+    if sync.duckdb_memory_limit or sync.duckdb_threads:
+        limit = literal_markdown(sync.duckdb_memory_limit or "?")
+        threads = literal_markdown(sync.duckdb_threads or "?")
+        lines.append(f"DuckDB 기본값: memory_limit {limit} · threads {threads}")
+    downtime = _downtime_line(sync, ready_utc)
+    if downtime is not None:
+        lines.append(downtime)
+    gap = seconds_between(sync.previous_upload_utc, ready_utc)
+    if gap is not None:
+        lines.append(f"앞 pod 마지막 올림 → 이번 앱 준비: {gap:.0f}초")
+    return lines
+
+
 def report_origin_caption(report: ContainerStartReport) -> str:
     """펼침 맨 위 값 줄 — 언제 남긴 결과인지(「라벨 · 값」).
 
@@ -111,9 +192,11 @@ def render_container_start_check() -> None:
         # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
         # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
         st.dataframe(
-            build_step_table(report, (sso_start_step(),)), hide_index=True, width="stretch"
+            build_step_table(report, (sso_start_step(), *sync_rows(report))),
+            hide_index=True,
+            width="stretch",
         )
-        lines = fact_lines(report)
+        lines = fact_lines(report) + sync_fact_lines(report, read_app_ready())
         started = started_environment_caption(
             None if report.sso_environment is None else dict(report.sso_environment)
         )

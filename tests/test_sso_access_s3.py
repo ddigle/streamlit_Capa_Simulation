@@ -140,9 +140,10 @@ def s3_config(store: MockStore, endpoint: str, **overrides: str) -> SsoConfig:
 
 
 def started(store: MockStore, endpoint: str, *loginids: str, **overrides: str) -> SsoConfig:
-    """명단 파일을 두고 진입 파일처럼 기동한다(읽기까지)."""
+    """명단 파일을 두고 진입 파일처럼 기동한다(읽기까지). 파일이 있으면 표지도 있는 평상 꼴이다."""
     if loginids:
         store.put(OBJECT, file_body(*loginids))
+        store.put(names.ACCESS_SEEDED_OBJECT, b'{"format": 1}')
     cfg = s3_config(store, endpoint, **overrides)
     access_store.read_at_start(cfg)
     return cfg
@@ -166,6 +167,10 @@ def rewind_attempt(seconds: int) -> None:
 
 def requests_named(store: MockStore, method: str) -> int:
     return sum(1 for item, _ in store.requests if item == method)
+
+
+def reads_of_the_list(store: MockStore) -> int:
+    return store.requests.count(("GET", f"/{store.bucket}/{OBJECT}"))
 
 
 # --- 서명 --------------------------------------------------------------------------------------
@@ -967,7 +972,10 @@ def test_the_list_read_at_start_decides_without_going_to_s3(
     assert problem_of(cfg, ADMIN) is None
     assert problem_of(cfg, GONE) is IdentityProblem.DENIED
     assert store.requests == before, "판정은 메모리로 한다"
-    assert before == [("GET", f"/{store.bucket}/{OBJECT}")]
+    assert before == [
+        ("GET", f"/{store.bucket}/{OBJECT}"),
+        ("GET", f"/{store.bucket}/{names.ACCESS_SEEDED_OBJECT}"),
+    ]
 
 
 def test_a_missing_file_is_an_empty_list_not_a_failure(mock_s3: tuple[MockStore, str]) -> None:
@@ -1219,7 +1227,7 @@ def test_the_entry_point_reads_once_at_start(
 
     cfg = server.start_sso()
 
-    assert requests_named(store, "GET") == 1
+    assert reads_of_the_list(store) == 1
     assert runtime.current_access(cfg).allows(USER)
     assert names.ENV_S3_SECRET_KEY not in os.environ
 
@@ -1242,7 +1250,7 @@ def test_the_callback_reads_again_just_before_denying(mock_s3: tuple[MockStore, 
 
     assert has_live_session(cfg, response), response.text
     assert not access_store.is_unread(cfg)
-    assert requests_named(store, "GET") == 2
+    assert reads_of_the_list(store) == 2
 
 
 def test_the_retry_runs_at_most_once_a_minute(mock_s3: tuple[MockStore, str]) -> None:
@@ -1339,7 +1347,7 @@ def test_the_retry_does_not_run_on_the_event_loop(
 
     sign_in(gated_app(), {}, USER)
 
-    assert seen == [False], "거절 직전의 다시 읽기는 스레드 풀에서 돈다"
+    assert seen and not any(seen), "거절 직전의 다시 읽기는 스레드 풀에서 돈다"
 
 
 def test_no_retry_once_the_list_was_read(mock_s3: tuple[MockStore, str]) -> None:
@@ -2489,3 +2497,364 @@ def test_the_mock_store_gives_env_lines_the_config_accepts() -> None:
 
     assert cfg.access_s3 is not None
     assert cfg.access_s3.bucket == store.bucket
+
+
+# --- 첫 판 --------------------------------------------------------------------------------------
+
+
+def _seeded(store: MockStore, endpoint: str, *people: str) -> SsoConfig:
+    """명단 파일이 없는 저장소에서 시작한 서버 — 환경변수 목록이 첫 판이다."""
+    cfg = s3_config(store, endpoint, **{names.ENV_ACCESS_USERS: ",".join(people)})
+    access_store.read_at_start(cfg)
+    return cfg
+
+
+def _new_process(store: MockStore, endpoint: str, *people: str) -> SsoConfig:
+    """재시작 — 메모리가 비고 환경변수는 그대로다."""
+    return _seeded(store, endpoint, *people)
+
+
+def test_a_missing_file_takes_the_environment_list_as_the_first_version(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """키를 넣는 순간 사용자가 모두 막히지 않는다."""
+    store, endpoint = mock_s3
+
+    cfg = _seeded(store, endpoint, USER)
+
+    assert problem_of(cfg, USER) is None
+    source = runtime.access_source()
+    assert source is not None and source.seeded is True
+    assert source.problem is None
+    assert access_store.holds_a_file() is False
+
+
+def test_no_environment_list_is_an_empty_list_as_before(mock_s3: tuple[MockStore, str]) -> None:
+    store, endpoint = mock_s3
+
+    cfg = _seeded(store, endpoint)
+
+    source = runtime.access_source()
+    assert source is not None and source.seeded is False
+    assert source.problem is None
+    assert problem_of(cfg, USER) is not None
+
+
+def test_the_first_save_writes_the_list_and_the_mark(mock_s3: tuple[MockStore, str]) -> None:
+    """첫 판 + 고침이 판 1 이고, 환경변수에서 온 사람은 고친 기록에 수로 남는다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+
+    result = access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+
+    assert result.revision == 1
+    document = access_store.parse_document(store.objects[names.DEFAULT_ACCESS_OBJECT])
+    assert {entry.loginid for entry in document.entries} == {USER, "demo.added"}
+    assert [change.what for change in document.changes] == ["seed_users 1", "add"]
+    assert names.ACCESS_SEEDED_OBJECT in store.objects
+    source = runtime.access_source()
+    assert source is not None and source.seeded is False
+    assert access_store.holds_a_file() is True
+
+
+def test_after_the_file_exists_the_environment_is_not_listened_to(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """Admin 에서 뺀 사람이 환경변수에 남아 있어도 다시 들어오지 못한다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER, "demo.other")
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), remove=(USER,))
+
+    restarted = _new_process(store, endpoint, USER, "demo.other")
+
+    assert problem_of(restarted, USER) is not None
+    assert problem_of(restarted, "demo.other") is None
+
+
+def test_a_file_that_disappears_does_not_bring_the_old_list_back(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """새 프로세스는 받아 둔 파일이 메모리에 없다. 표지가 없으면 닫힘이 열림으로 바뀐다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+    del store.objects[names.DEFAULT_ACCESS_OBJECT]
+
+    restarted = _new_process(store, endpoint, USER)
+
+    assert problem_of(restarted, USER) is not None
+    assert problem_of(restarted, ADMIN) is None
+    source = runtime.access_source()
+    assert source is not None and source.problem is not None
+    assert source.problem.kind == access_store.KIND_FILE_GONE
+
+
+def test_a_list_that_cannot_be_read_still_admits_only_admins(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """못 읽은 것은 없는 것이 아니다 — 첫 판을 쓰지 않는다."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (403, "AccessDenied")
+
+    cfg = _seeded(store, endpoint, USER)
+
+    assert problem_of(cfg, USER) is not None
+    assert problem_of(cfg, ADMIN) is None
+
+
+def test_a_404_without_no_such_key_is_not_a_first_version(mock_s3: tuple[MockStore, str]) -> None:
+    """저장소 앞단의 HTML 404 를 「파일 없음」 으로 읽으면 멀쩡한 파일을 두고 첫 판으로 선다."""
+    store, endpoint = mock_s3
+    store.raw["GET"] = (404, b"<html>not found</html>")
+
+    cfg = _seeded(store, endpoint, USER)
+
+    assert problem_of(cfg, USER) is not None
+
+
+def test_a_broken_file_is_not_a_first_version(mock_s3: tuple[MockStore, str]) -> None:
+    store, endpoint = mock_s3
+    store.objects[names.DEFAULT_ACCESS_OBJECT] = b"{ broken"
+
+    cfg = _seeded(store, endpoint, USER)
+
+    assert problem_of(cfg, USER) is not None
+
+
+def test_a_failed_mark_is_written_by_the_next_save(mock_s3: tuple[MockStore, str]) -> None:
+    """명단은 이미 들어갔다 — 저장 실패가 아니다. 표지만 다음 저장이 다시 쓴다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+    target = cfg.access_s3
+    assert target is not None
+    original = s3_small.put_object
+    calls: list[str] = []
+
+    def refuse_the_mark(where: S3Target, key: str, body: bytes, *, moment: float) -> str:
+        calls.append(key)
+        if key == names.ACCESS_SEEDED_OBJECT and len(calls) == 2:
+            raise S3Failure(s3_small.KIND_TIMEOUT)
+        return original(where, key, body, moment=moment)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(access_store, "put_object", refuse_the_mark)
+        result = access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+        assert result.revision == 1
+        assert names.ACCESS_SEEDED_OBJECT not in store.objects
+        source = runtime.access_source()
+        assert source is not None and source.seed_mark_pending is True
+
+        access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.more",))
+
+    assert names.ACCESS_SEEDED_OBJECT in store.objects
+    source = runtime.access_source()
+    assert source is not None and source.seed_mark_pending is False
+
+
+def _file_is_gone_after_restart(store: MockStore, endpoint: str, *people: str) -> SsoConfig:
+    """파일이 사라진 뒤 재시작한 서버. 빠진 사람이 환경변수에 남아 있어도 첫 판이면 안 된다."""
+    del store.objects[names.DEFAULT_ACCESS_OBJECT]
+    restarted = _new_process(store, endpoint, *people)
+    source = runtime.access_source()
+    assert source is not None and source.seeded is False
+    assert source.problem is not None
+    assert source.problem.kind == access_store.KIND_FILE_GONE
+    return restarted
+
+
+def test_a_first_save_with_no_answer_leaves_the_mark_once_read_again(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """파일은 들어갔는데 답이 끊겼다. 다시 읽은 뒤에는 첫 판이 아니다 — 표지도 있어야 한다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER, OTHER)
+    identity = identity_of(cfg, ADMIN)
+    store.answer_delay["PUT"] = 1.0
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
+    with pytest.raises(access_store.SaveUnconfirmedError):
+        access_store.save_changes(cfg, identity, remove=[OTHER])
+    store.answer_delay.clear()
+    assert access_store.reread(cfg, identity) is None
+
+    assert names.ACCESS_SEEDED_OBJECT in store.objects
+    restarted = _file_is_gone_after_restart(store, endpoint, USER, OTHER)
+    assert problem_of(restarted, OTHER) is not None
+
+
+def test_a_mark_that_failed_is_left_by_the_next_start(mock_s3: tuple[MockStore, str]) -> None:
+    """남은 표지는 메모리뿐이라 재시작에 사라진다. 파일을 받은 읽기가 다시 쓴다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER, OTHER)
+    store.force_on("PUT", names.ACCESS_SEEDED_OBJECT)
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), remove=[OTHER])
+    assert names.ACCESS_SEEDED_OBJECT not in store.objects
+
+    _new_process(store, endpoint, USER, OTHER)
+
+    assert names.ACCESS_SEEDED_OBJECT in store.objects
+    restarted = _file_is_gone_after_restart(store, endpoint, USER, OTHER)
+    assert problem_of(restarted, OTHER) is not None
+
+
+def test_a_first_file_made_without_an_environment_list_leaves_the_mark(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint)
+
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=(USER,))
+
+    assert names.ACCESS_SEEDED_OBJECT in store.objects
+    _file_is_gone_after_restart(store, endpoint, USER)
+
+
+def test_a_file_without_a_mark_gets_one_when_it_is_read(mock_s3: tuple[MockStore, str]) -> None:
+    """앞 코드가 만든 파일 · 옮긴 버킷의 파일 — 「파일이 있으면 표지도 있다」 로 맞춘다."""
+    store, endpoint = mock_s3
+    store.put(OBJECT, file_body(USER))
+    cfg = s3_config(store, endpoint)
+
+    access_store.read_at_start(cfg)
+
+    assert names.ACCESS_SEEDED_OBJECT in store.objects
+    assert problem_of(cfg, USER) is None
+    source = runtime.access_source()
+    assert source is not None and source.seed_mark_pending is False
+
+
+def test_a_mark_that_cannot_be_written_on_reading_does_not_fail_the_read(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """표지는 판정을 막지 못한다. 쓰기 권한이 없는 키로도 명단은 읽힌다."""
+    store, endpoint = mock_s3
+    store.put(OBJECT, file_body(USER))
+    store.force["PUT"] = (403, "AccessDenied")
+    cfg = s3_config(store, endpoint)
+
+    access_store.read_at_start(cfg)
+
+    assert problem_of(cfg, USER) is None
+    source = runtime.access_source()
+    assert source is not None and source.problem is None
+    assert source.seed_mark_pending is True
+
+
+def test_a_file_that_already_has_a_mark_writes_nothing_on_reading(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+
+    started(store, endpoint, USER)
+
+    assert requests_named(store, "PUT") == 0
+
+
+def test_a_bare_404_on_a_head_does_not_open_the_first_version(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """HEAD 는 본문이 없어 `NoSuchKey` 를 가르지 못한다. 표지는 GET 으로 본다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER, OTHER)
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), remove=[OTHER])
+    store.raw["HEAD"] = (404, b"")
+
+    restarted = _file_is_gone_after_restart(store, endpoint, USER, OTHER)
+
+    assert problem_of(restarted, OTHER) is not None
+
+
+def test_a_404_from_the_front_on_the_mark_is_not_a_first_version(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    store.force_on("GET", names.ACCESS_SEEDED_OBJECT, status=404, code="NotThere")
+
+    cfg = _seeded(store, endpoint, USER)
+
+    assert problem_of(cfg, USER) is not None
+    source = runtime.access_source()
+    assert source is not None and source.seeded is False and source.problem is not None
+
+
+def test_a_server_that_dropped_the_environment_list_still_sees_the_file_gone(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """권장대로 환경변수를 지운 뒤 — 「정상 · 판 0」 으로 조용히 전원 거절이면 까닭을 못 찾는다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+
+    restarted = _file_is_gone_after_restart(store, endpoint)
+
+    assert "실패 · 파일 없음" in sso_status.access_s3_line(restarted)
+    assert problem_of(restarted, ADMIN) is None
+
+
+def test_a_failed_save_leaves_the_first_version_in_place(mock_s3: tuple[MockStore, str]) -> None:
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+    store.force["PUT"] = (403, "AccessDenied")
+
+    with pytest.raises(S3Failure):
+        access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+
+    assert problem_of(cfg, USER) is None
+    assert problem_of(cfg, "demo.added") is not None
+    source = runtime.access_source()
+    assert source is not None and source.seeded is True
+    assert names.ACCESS_SEEDED_OBJECT not in store.objects
+
+
+def test_the_first_version_shows_in_the_line_and_the_notice_stays_away(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+
+    assert "환경변수 첫 판 · 파일 없음" in sso_status.access_s3_line(cfg)
+    assert "쓰지 않음" not in sso_status.environment_table(cfg).to_csv()
+
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+
+    assert "환경변수 첫 판" not in sso_status.access_s3_line(cfg)
+    assert "쓰지 않음" in sso_status.environment_table(cfg).to_csv()
+
+
+def test_the_seed_never_reaches_a_repr(mock_s3: tuple[MockStore, str]) -> None:
+    """명단 값은 사람을 가리킨다 — repr · 로그에 실리지 않는다."""
+    store, endpoint = mock_s3
+    cfg = s3_config(store, endpoint, **{names.ENV_ACCESS_USERS: USER})
+
+    assert cfg.access_seed_users == (USER,)
+    assert USER not in repr(cfg)
+    assert USER not in repr(access_store._seed_document(cfg))
+
+
+def test_the_first_version_raises_a_check_alert(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """파일이 없는 동안은 환경변수로 판정한다 — 첫 저장 전까지 그 사실을 알린다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+    _as_person(cfg, ADMIN, monkeypatch)
+
+    app = AppTest.from_string(STATUS_SCRIPT).run()
+    assert active_state(app, "AD-09")
+
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
+
+    app.run()
+    assert not active_state(app, "AD-09")
+
+
+def test_the_first_version_alert_goes_only_to_those_who_can_act(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「접속 명단」 펼침은 관리자에게만 있다. 사실은 「S3 명단」 줄이 그대로 말한다."""
+    store, endpoint = mock_s3
+    cfg = _seeded(store, endpoint, USER)
+    _as_person(cfg, USER, monkeypatch)
+
+    app = AppTest.from_string(STATUS_SCRIPT).run()
+
+    assert not active_state(app, "AD-09")

@@ -61,6 +61,7 @@ from capa_simulation.persistence.shortening_baseline_store import (
     list_baselines,
     load_baseline,
 )
+from capa_simulation.persistence.snapshot_export import CheckpointCopy, checkpoint_copy
 from capa_simulation.services.equipment_contract import (
     AREA_CODE_COLUMN,
     ARRIVAL_ACTUAL_COLUMN,
@@ -211,9 +212,13 @@ class ProcessCutoffConflict(ValueError):
 
 @dataclass
 class _WriteOutcome:
-    """쓰기 트랜잭션이 실제로 무엇을 썼는가. 아무것도 안 썼으면 동기화 dirty 표시를 하지 않는다."""
+    """쓰기 트랜잭션이 실제로 무엇을 썼는가. 아무것도 안 썼으면 동기화 dirty 표시를 하지 않는다.
+
+    `published` 는 공식 발행을 냈다는 뜻이다 — 동기화가 모으지 않고 바로 올린다.
+    """
 
     wrote: bool = True
+    published: bool = False
 
 
 @dataclass(frozen=True)
@@ -1059,6 +1064,12 @@ class DuckDBEquipmentRepository:
         self._schema_ahead = outcome.schema_ahead
         return outcome.applied
 
+    def export_checkpoint_copy(self, destination: Path) -> CheckpointCopy:
+        """이 DB 를 쓰기 잠금 안에서 바이트로 복사한다(`snapshot_export.checkpoint_copy`)."""
+        return checkpoint_copy(
+            self._database_path, destination, write_lock=_WRITE_LOCK, dataset="equipment"
+        )
+
     def save_equipment(self, request: EquipmentSaveRequest) -> EquipmentSaveResult:
         """설비 마스터 편집본을 공통 대장·이 설비 시나리오 일정으로 나눠 **바뀐 쪽만** 저장한다.
 
@@ -1561,6 +1572,7 @@ class DuckDBEquipmentRepository:
                 layout_overlay_labels=layout.label_count,
             )
             outcome.wrote = result.wrote_revision or floors_written or release_no is not None
+            outcome.published = release_no is not None
         return _SaveOutcome(result, common_id, schedule_id)
 
     def latest_revision_id(self) -> str | None:
@@ -1737,6 +1749,7 @@ class DuckDBEquipmentRepository:
                 note=_clean_text(note),
             )
             outcome.wrote = True
+            outcome.published = True
             published = scenario_store.latest_release_row(connection)
             assert published is not None
         return _release(published)
@@ -1920,6 +1933,7 @@ class DuckDBEquipmentRepository:
                     note="되돌리기와 함께 발행",
                 )
             outcome.wrote = True
+            outcome.published = release_no is not None
             created = _require_schedule_revision(connection, new_id)
         return ScheduleRestoreResult(
             schedule=created,
@@ -2696,13 +2710,18 @@ class DuckDBEquipmentRepository:
     def _write_transaction(
         self, outcome: _WriteOutcome | None = None
     ) -> Iterator[duckdb.DuckDBPyConnection]:
-        with _WRITE_LOCK, self._connect() as connection, transaction(connection):
-            yield connection
-        # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
-        # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다. 아무것도 쓰지 않은
-        # 저장은 표시하지 않는다 — dirty 가 서면 다른 PC 의 새 세대를 받지 못한다.
-        if outcome is None or outcome.wrote:
-            sync_state.mark_dirty(self._database_path)
+        with _WRITE_LOCK:
+            with self._connect() as connection, transaction(connection):
+                yield connection
+            # COMMIT 하고 연결을 닫은 **뒤**, 쓰기 잠금을 놓기 **전**에 표시한다. 잠금을 쥔 쪽이
+            # 변경 번호를 읽을 때 「커밋은 됐는데 표시는 아직」 인 쓰기가 없게 한다. `sync_state`
+            # 는 등록되지 않은 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
+            # 아무것도 쓰지 않은 저장은 표시하지 않는다 — dirty 가 서면 새 세대를 받지 못한다.
+            if outcome is None or outcome.wrote:
+                sync_state.mark_dirty(self._database_path)
+            # 발행은 저장 안(설비 마스터 저장 · 되돌리기)에서도 일어나 이 한 자리에서 부른다.
+            if outcome is not None and outcome.published:
+                sync_state.request_upload()
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)

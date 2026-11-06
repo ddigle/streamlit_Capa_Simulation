@@ -2,20 +2,29 @@
 
 """사내 S3 호환 스토리지와 DuckDB 파일을 주고받는 운영 도구.
 
-판정 로직은 한 줄도 여기 두지 않는다. 키 계약과 pull·push 판정은
-`services/object_storage_manifest.py`, 스냅샷 만들기·설치는 `persistence/snapshot_export.py`,
-`aws` 호출은 `io/object_storage.py` 가 맡는다. 데이터 유실을 좌우하는 판단은 IO 와 떼어
-순수 함수로 두어야 단위 테스트가 그대로 부를 수 있다. 여기서는 인자를 읽고 그 판정과
-IO 를 잇기만 한다.
+판정 로직은 한 줄도 여기 두지 않는다. 키 계약과 판정은 `services/object_storage_manifest.py`,
+유실을 막는 차례는 `object_sync_engine.py`, 스냅샷 만들기·설치는 `persistence/snapshot_export.py`,
+`aws` 호출은 `io/object_storage.py` 가 맡는다. 여기서는 인자를 읽고 결과를 찍기만 한다.
 
-**앱을 끈 상태에서 쓴다.** DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있으면 설치가
-실패한다. `status`·`doctor`·`probe` 는 앱이 떠 있어도 안전하다.
+**두 DB 는 한 쌍이다.** `init` · `pull` · `push` · `resolve` · `adopt` 는 늘 둘을 함께 다룬다.
+`--dataset` 은 `status` · `doctor` 표시 거르기로만 남았다.
+
+**정본의 쓰는 쪽은 운영 앱 하나다.** `init` 이 그 PC 를 넘긴 쪽으로 표시하고(`handed_over_utc`),
+운영 앱이 포인터를 낸 뒤(`origin` 이 `app` · `boot` · `rollback`)에는 `push` · `resolve --keep mine`
+· `adopt --source local` 을 거절한다 — `--override-writer` 만 통과한다. 사내 PC 가 읽을 때는
+`fetch-copy` 로 사본을 받는다.
+
+**앱을 끈 상태에서 쓴다.** DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있으면 설치가 실패한다.
+`status` · `generations` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` 은 앱이 떠
+있어도 안전하다. `boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에 부르고, 값 없는 결과 한
+줄(JSON)을 찍는다.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -23,6 +32,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from capa_simulation import object_sync_engine as engine  # noqa: E402
+from capa_simulation import sync_boot  # noqa: E402
 from capa_simulation.io import object_storage  # noqa: E402
 from capa_simulation.io.object_storage import (  # noqa: E402
     ObjectStorageClient,
@@ -35,18 +46,16 @@ from capa_simulation.page_bootstrap import (  # noqa: E402
 )
 from capa_simulation.persistence import snapshot_export, sync_state  # noqa: E402
 from capa_simulation.services import object_storage_manifest as manifest  # noqa: E402
-from capa_simulation.services.korean_particle import (  # noqa: E402
-    with_direction_particle,
-    with_topic_particle,
-)
+from capa_simulation.services.korean_particle import with_direction_particle  # noqa: E402
 from capa_simulation.services.object_storage_manifest import (  # noqa: E402
     DATASET_LABELS,
+    FAILURE_CONFIG,
+    FAILURE_OTHER,
     DatasetName,
     PullDecision,
     PushDecision,
 )
 from capa_simulation.settings import (  # noqa: E402
-    APP_VERSION,
     DUCKDB_PATH,
     EQUIPMENT_DUCKDB_PATH,
 )
@@ -68,9 +77,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dataset",
         choices=("simulation", "equipment", "all"),
         default="all",
-        help="대상 DB. 기본 all.",
+        help="status·doctor 에 보일 DB. 기본 all.",
     )
     parser.add_argument("--dry-run", action="store_true", help="실제로 올리거나 받지 않는다.")
+    parser.add_argument(
+        "--override-writer",
+        action="store_true",
+        help="정본을 넘긴 뒤에도 쓰기 명령을 통과시킨다. 운영 앱의 저장을 덮을 수 있다.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("profile", help="사내 PC 에 넣을 aws configure 블록을 출력한다.")
@@ -79,36 +93,68 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     probe = sub.add_parser("probe", help="스토리지가 실제로 무엇을 지원하는지 실측한다.")
     probe.add_argument("--write", type=Path, help="결과를 이 경로에 JSON 으로 쓴다.")
 
-    init = sub.add_parser("init", help="빈 저장소에 최초 스냅샷을 올린다.")
+    init = sub.add_parser("init", help="빈 저장소에 두 DB 의 첫 세대를 올리고 정본을 넘긴다.")
     init.add_argument("--note", default="최초 이관", help="포인터에 남길 메모.")
+    init.add_argument(
+        "--keep-writer",
+        action="store_true",
+        help="이 PC 를 넘긴 쪽으로 표시하지 않는다(개발 버킷 시험용).",
+    )
 
     sub.add_parser("status", help="원격 세대와 로컬 상태를 비교해 보여 준다.")
 
-    pull = sub.add_parser("pull", help="원격 최신 스냅샷을 내려받아 설치한다.")
+    pull = sub.add_parser("pull", help="원격 최신 세대를 내려받아 설치한다.")
     pull.add_argument("--force", action="store_true", help="세대를 모르는 로컬 DB 도 덮는다.")
 
-    push = sub.add_parser("push", help="로컬 변경을 새 스냅샷으로 올린다.")
+    push = sub.add_parser("push", help="로컬 변경을 새 세대로 올린다.")
     push.add_argument("--note", default="수동 저장", help="포인터에 남길 메모.")
 
-    resolve = sub.add_parser("resolve", help="게시하지 못한 스냅샷이나 분기를 해소한다.")
+    resolve = sub.add_parser("resolve", help="게시하지 못한 세대를 해소한다.")
     resolve.add_argument(
         "--keep",
         choices=("mine", "remote"),
         required=True,
-        help="mine 이면 내 스냅샷을 새 세대로 올리고, remote 면 내 것을 버리고 원격을 받는다.",
+        help="mine 이면 내 세대를 새 세대로 올리고, remote 면 내 것을 버리고 원격을 받는다.",
     )
 
     adopt = sub.add_parser("adopt", help="세대를 모르는 로컬 DB 의 기준을 정한다.")
     adopt.add_argument("--source", choices=("local", "remote"), required=True)
 
-    prune = sub.add_parser("prune", help="오래된 스냅샷을 지운다.")
-    prune.add_argument("--keep-last", type=int, default=10, help="남길 최신 스냅샷 수.")
+    prune = sub.add_parser("prune", help="오래된 세대를 지운다.")
+    prune.add_argument(
+        "--keep-last",
+        type=int,
+        default=manifest.KEEP_LAST_GENERATIONS,
+        help="남길 최신 세대 수(멤버 쌍이 다른 세대로 센다).",
+    )
+    prune.add_argument(
+        "--keep-days",
+        type=int,
+        default=manifest.KEEP_DAYS,
+        help="HEAD 나이 기준으로 남길 일수.",
+    )
     prune.add_argument(
         "--include-orphans",
         action="store_true",
-        help="포인터가 없는 고아 스냅샷도 후보에 넣는다. 경합에서 진 데이터라 기본은 보호한다.",
+        help="기준 일수를 넘긴 고아 스냅샷도 후보에 넣는다. 경합에서 진 데이터라 기본은 보호한다.",
     )
     prune.add_argument("--yes", action="store_true", help="확인 없이 실제로 지운다.")
+
+    fetch = sub.add_parser("fetch-copy", help="세대 하나를 사본 폴더로 받는다(앱이 떠 있어도 됨).")
+    fetch.add_argument("--to", type=Path, required=True, help="저장소 밖 폴더.")
+    fetch.add_argument("--seq", type=int, help="받을 세대. 생략하면 HEAD.")
+    fetch.add_argument("--token", help="같은 세대에 포인터가 둘일 때 고를 키 꼬리 8자리.")
+
+    rollback = sub.add_parser("rollback", help="앞 세대의 멤버로 새 HEAD 를 낸다(지우지 않는다).")
+    rollback.add_argument("--to", type=int, required=True, help="이어 갈 세대.")
+    rollback.add_argument("--token", help="같은 세대에 포인터가 둘일 때 고를 키 꼬리 8자리.")
+    rollback.add_argument("--note", default="세대 되돌림", help="포인터에 남길 메모.")
+    rollback.add_argument("--yes", action="store_true", help="확인 없이 실제로 낸다.")
+
+    generations = sub.add_parser("generations", help="되돌릴 세대를 고를 목록을 찍는다.")
+    generations.add_argument("--limit", type=int, default=30, help="찍을 세대 수. 기본 30.")
+
+    sub.add_parser("boot-pull", help="컨테이너 시작의 받기 — 결과 한 줄을 찍는다.")
     return parser.parse_args(argv)
 
 
@@ -132,24 +178,35 @@ def datasets(args: argparse.Namespace) -> list[DatasetName]:
     return list(DATASET_PATHS) if args.dataset == "all" else [args.dataset]
 
 
+def sync_paths() -> engine.SyncPaths:
+    return engine.SyncPaths(DATASET_PATHS)
+
+
 # --------------------------------------------------------------------------- 조회 도우미
-def read_head(client: ObjectStorageClient, dataset: DatasetName) -> manifest.Pointer | None:
-    """원격 HEAD 포인터. 없으면 None."""
-    records = client.list_objects(manifest.head_prefix(dataset), max_keys=8)
-    key = manifest.select_head_key([record.key for record in records])
-    if key is None:
-        return None
-    text = client.get_text(key, scratch_dir=snapshot_export.prepare_scratch())
-    return manifest.pointer_from_json(text, pointer_key=key)
-
-
-def read_fork(client: ObjectStorageClient, dataset: DatasetName) -> tuple[str, ...]:
-    records = client.list_objects(manifest.head_prefix(dataset), max_keys=8)
-    return manifest.detect_fork([record.key for record in records])
-
-
 def local_state(dataset: DatasetName) -> sync_state.SyncState | None:
     return sync_state.read_state(DATASET_PATHS[dataset])
+
+
+def _head_pointer(client: ObjectStorageClient) -> manifest.Pointer | None:
+    remote = engine.read_remote_head(client)
+    return None if remote.head_key is None else engine.read_pointer(client, remote.head_key)
+
+
+def _writer_refusal(args: argparse.Namespace, client: ObjectStorageClient, action: str) -> bool:
+    """정본을 넘긴 뒤의 쓰기를 거절한다. `--override-writer` 만 통과한다."""
+    if args.override_writer:
+        print("[주의] --override-writer — 운영 앱의 저장을 덮을 수 있습니다.")
+        return False
+    handed_over = sync_state.read_generation(sync_paths().generation).handed_over_utc
+    if handed_over is not None:
+        print(f"[중단] 이 PC 는 {handed_over} 에 정본을 넘겼습니다 — {action} 하지 않습니다.")
+        return True
+    head = _head_pointer(client)
+    if manifest.writer_taken_over(head):
+        assert head is not None
+        print(f"[중단] 운영 앱이 정본을 쓰고 있습니다(seq {head.seq}) — {action} 하지 않습니다.")
+        return True
+    return False
 
 
 # --------------------------------------------------------------------------- 명령
@@ -160,13 +217,7 @@ def command_profile(args: argparse.Namespace) -> int:
     print(f'$PROF = "{settings.profile}"')
     print("aws configure set aws_access_key_id     <키>   --profile $PROF")
     print("aws configure set aws_secret_access_key <비밀> --profile $PROF")
-    for name, value in (
-        ("region", settings.region),
-        ("endpoint_url", settings.endpoint_url),
-        ("request_checksum_calculation", "when_required"),
-        ("response_checksum_validation", "when_required"),
-        ("s3.addressing_style", "path"),
-    ):
+    for name, value in object_storage.profile_settings(settings):
         print(f"aws configure set {name} {value} --profile $PROF")
     print()
     print(f"# 네임스페이스({object_storage.NAMESPACE_NOTE})는 프로필에 매여 있습니다.")
@@ -181,36 +232,27 @@ def command_doctor(args: argparse.Namespace) -> int:
     print(f"버킷          : {settings.bucket}")
     print(f"프로필        : {settings.profile}")
     print(f"네임스페이스  : {object_storage.NAMESPACE_NOTE} (프로필에 매여 있음)")
-    if settings.endpoint_url.startswith("http://"):
-        print("[주의] 평문 HTTP 입니다. 파일 내용이 사내망에 그대로 흐릅니다.")
     # 클라이언트는 다른 명령과 똑같이 `build_client` 를 지난다. 여기서만 따로 만들면
     # 실행기를 갈아끼운 테스트가 이 경로만 못 덮는다.
     client = build_client(args)
     try:
         print(f"CLI           : {client.cli_version()}")
         print(f"주소 스타일   : {client.check_addressing_style()}")
+        head = _head_pointer(client)
     except ObjectStorageError as exc:
         print(f"[중단] {exc}")
         return 1
-    failures = 0
+    print(f"원격 세대     : {'비어 있음' if head is None else _generation_line(head)}")
+    base = sync_state.read_generation(sync_paths().generation).base_seq
+    print(f"로컬 세대     : {'세대 미상' if base is None else f'seq {base}'}")
     for dataset in datasets(args):
-        label = DATASET_LABELS[dataset]
-        try:
-            head = read_head(client, dataset)
-        except ObjectStorageError as exc:
-            print(f"[중단] {label} 조회 실패 — {exc}")
-            failures += 1
-            continue
-        generation = "비어 있음" if head is None else f"seq {head.seq} · {head.author}"
-        print(f"{label:<8}원격 : {generation}")
-        state = local_state(dataset)
-        if state is None:
-            print(f"{label:<8}로컬 : 사이드카 없음(세대 미상)")
-        else:
-            dirty = sync_state.treat_as_dirty(DATASET_PATHS[dataset])
-            changed = "변경 있음" if dirty else "변경 없음"
-            print(f"{label:<8}로컬 : seq {state.base_seq} · {changed}")
-    return 1 if failures else 0
+        changed = "변경 있음" if sync_state.treat_as_dirty(DATASET_PATHS[dataset]) else "변경 없음"
+        print(f"{DATASET_LABELS[dataset]:<8}로컬 : {changed}")
+    return 0
+
+
+def _generation_line(pointer: manifest.Pointer) -> str:
+    return f"seq {pointer.seq} · {pointer.origin} · {pointer.author}"
 
 
 def command_probe(args: argparse.Namespace) -> int:
@@ -271,139 +313,108 @@ def command_probe(args: argparse.Namespace) -> int:
     return 0
 
 
-def _publish(
-    client: ObjectStorageClient,
-    dataset: DatasetName,
-    *,
-    parent: manifest.Pointer | None,
-    note: str,
-    dry_run: bool,
-) -> int:
-    """스냅샷을 올리고 포인터를 게시한다. 순서가 유실 방지의 전부다."""
-    database_path = DATASET_PATHS[dataset]
-    label = DATASET_LABELS[dataset]
-    if not database_path.exists():
-        print(f"[중단] {label} 로컬 DB 가 없습니다: {database_path}")
-        return 1
-    scratch = snapshot_export.prepare_scratch()
-    export_path = scratch / f"{dataset}-export.duckdb"
-    result = snapshot_export.export_snapshot(database_path, export_path)
-    print(
-        f"{label} 스냅샷 : {result.source_bytes / MIB:.1f} MiB → "
-        f"{result.size_bytes / MIB:.1f} MiB, {result.elapsed_seconds:.2f}초"
-    )
-    pointer = manifest.next_pointer(
-        parent,
-        dataset=dataset,
-        token=uuid.uuid4().hex[:8],
-        sha256=result.sha256_hex,
-        md5_base64=result.md5_base64,
-        size_bytes=result.size_bytes,
-        source_db_bytes=result.source_bytes,
-        migration_version=result.migration_version,
-        app_version=APP_VERSION,
-        author=snapshot_export.author_label(),
-        created_at_utc=snapshot_export.utc_timestamp(),
-        note=note,
-    )
-    if dry_run:
-        print(f"[건너뜀] --dry-run 이라 올리지 않습니다. 예정 키 {pointer.snapshot_key}")
-        export_path.unlink(missing_ok=True)
-        return 0
-
-    outcome = client.put_file(
-        pointer.snapshot_key,
-        export_path,
-        content_md5_base64=result.md5_base64,
-        metadata={"sha256": result.sha256_hex, "seq": str(pointer.seq)},
-    )
-    object_storage.assert_single_put_etag(outcome.etag, local_md5_hex=result.md5_hex)
-    print(f"{label} 업로드 : {pointer.snapshot_key}")
-
-    # 스냅샷을 올린 뒤 다시 확인한다. 이 사이에 남이 올렸으면 포인터를 게시하지 않는다.
-    current = read_head(client, dataset)
-    moved = (current.sha256 if current else None) != (parent.sha256 if parent else None)
-    if moved:
-        sync_state.mark_unpublished(
-            database_path,
-            snapshot_key=pointer.snapshot_key,
-            sha256=result.sha256_hex,
-            reason="업로드 도중 원격이 앞섰습니다",
-        )
+def _report_progress(event: engine.PublishProgress) -> None:
+    """게시 도중의 한 줄 — 어디까지 왔는지 사람이 본다."""
+    label = DATASET_LABELS[event.dataset]
+    if isinstance(event, engine.SnapshotExported):
+        result = event.export
         print(
-            f"[중단] {label} 업로드 도중 원격이 앞섰습니다. 스냅샷은 보존했습니다 — "
-            f"resolve --keep mine 으로 승격하거나 --keep remote 로 버리세요."
+            f"{label} 스냅샷 : {result.source_bytes / MIB:.1f} MiB → "
+            f"{result.size_bytes / MIB:.1f} MiB, {result.elapsed_seconds:.2f}초"
         )
-        export_path.unlink(missing_ok=True)
-        return 1
+    else:
+        print(f"{label} 업로드 : {event.snapshot_key}")
 
-    client.put_text(
-        pointer.pointer_key,
-        manifest.pointer_to_json(pointer),
-        scratch_dir=scratch,
-        if_none_match=client.supports_conditional_put(),
-    )
-    forked = read_fork(client, dataset)
-    if forked:
-        sync_state.mark_unpublished(
-            database_path,
-            snapshot_key=pointer.snapshot_key,
-            sha256=result.sha256_hex,
-            reason="같은 세대에 포인터가 둘입니다",
+
+def _report_outcome(outcome: engine.PublishOutcome) -> int:
+    """게시 결과를 찍고 종료 코드를 돌려준다. 판정 글은 판정이 낸 그대로다."""
+    if outcome.settled is not None:
+        print(f"앞 회차 세대를 마무리했습니다 : seq {outcome.settled.seq}")
+    if outcome.dry_run:
+        print(f"[건너뜀] --dry-run 이라 올리지 않습니다. 예정 seq {outcome.seq}")
+        return 0
+    if outcome.published:
+        print(f"게시          : seq {outcome.seq}")
+        return 0
+    if outcome.confirm_deferred:
+        print("[중단] 포인터가 들어갔는지 확인하지 못했습니다 — 다시 실행하면 가립니다.")
+        return 1
+    if outcome.stop is engine.PublishStop.LOCAL_MISSING:
+        print("[중단] 로컬 DB 가 없습니다.")
+        return 1
+    if outcome.stop is engine.PublishStop.REMOTE_MOVED:
+        print(
+            "[중단] 업로드 도중 원격이 앞섰습니다. 스냅샷은 보존했습니다 — "
+            "resolve --keep mine 으로 승격하거나 --keep remote 로 버리세요."
         )
-        print(f"[중단] {label} 이 갈라졌습니다: {', '.join(forked)}")
-        export_path.unlink(missing_ok=True)
         return 1
-
-    sync_state.adopt_generation(
-        database_path,
-        dataset=dataset,
-        seq=pointer.seq,
-        sha256=result.sha256_hex,
-        snapshot_key=pointer.snapshot_key,
-    )
-    print(f"{label} 게시   : seq {pointer.seq}")
-    export_path.unlink(missing_ok=True)
-    return 0
+    if outcome.stop is engine.PublishStop.FORKED:
+        print("[중단] 원격이 갈라졌습니다 — rollback 으로 이어 갈 세대를 정하세요.")
+        return 1
+    message = manifest.decision_message(outcome.decision, head_seq=outcome.head_seq)
+    print(f"[건너뜀] {message}")
+    return 1 if outcome.decision in manifest.BLOCKING_PUSH else 0
 
 
 def command_init(args: argparse.Namespace) -> int:
     client = build_client(args)
-    failures = 0
-    for dataset in datasets(args):
-        head = read_head(client, dataset)
-        if head is not None:
-            print(f"[건너뜀] {DATASET_LABELS[dataset]} 원격에 이미 seq {head.seq} 이 있습니다.")
-            continue
-        failures += _publish(client, dataset, parent=None, note=args.note, dry_run=args.dry_run)
-    return 1 if failures else 0
+    paths = sync_paths()
+    for dataset, database_path in DATASET_PATHS.items():
+        if _blocked_by_running_app(dataset, "스냅샷을 내보내"):
+            return 1
+        if not database_path.exists():
+            print(f"[중단] {DATASET_LABELS[dataset]} 로컬 DB 가 없습니다: {database_path}")
+            return 1
+    outcome = engine.init_generation(
+        client,
+        paths,
+        exporter=engine.offline_exporter(paths),
+        note=args.note,
+        keep_writer=args.keep_writer,
+        dry_run=args.dry_run,
+        report=_report_progress,
+    )
+    if outcome.decision is PushDecision.UP_TO_DATE:
+        print(f"[건너뜀] 원격에 이미 seq {outcome.head_seq} 이 있습니다.")
+        return 0
+    return _report_outcome(outcome)
 
 
 def command_status(args: argparse.Namespace) -> int:
     client = build_client(args)
+    decision, remote, state, dirty = engine.plan_push(client, sync_paths())
+    print(f"원격 : {'비어 있음' if remote.head_seq is None else f'seq {remote.head_seq}'}")
+    print(f"로컬 : {'세대 미상' if state.base_seq is None else f'seq {state.base_seq}'}")
     for dataset in datasets(args):
-        label = DATASET_LABELS[dataset]
-        database_path = DATASET_PATHS[dataset]
-        head = read_head(client, dataset)
-        forked = read_fork(client, dataset)
-        state = local_state(dataset)
-        dirty = sync_state.treat_as_dirty(database_path)
-        decision = manifest.decide_push(
-            head=head,
-            forked=bool(forked),
-            base_sha256=None if state is None else state.base_sha256,
-            dirty=dirty,
-            unpublished=bool(state and state.unpublished_snapshot_key),
-        )
-        print(f"── {label}")
-        print(f"   원격 : {'비어 있음' if head is None else f'seq {head.seq} · {head.author}'}")
-        print(f"   로컬 : {'세대 미상' if state is None else f'seq {state.base_seq}'}")
-        print(f"   변경 : {'있음' if dirty else '없음'}")
-        if state and state.unpublished_snapshot_key:
-            print(f"   미게시: {state.unpublished_snapshot_key} ({state.unpublished_reason})")
-        if forked:
-            print(f"   분기 : {', '.join(forked)}")
-        print(f"   판정 : {manifest.decision_message(decision, dataset, head=head)}")
+        print(f"{DATASET_LABELS[dataset]} 변경 : {'있음' if dirty[dataset] else '없음'}")
+    if state.pending is not None:
+        print(f"올리는 중 : {state.pending.pointer_key}")
+    if state.unpublished is not None:
+        print(f"미게시 : {state.unpublished.reason}")
+    if remote.forked:
+        print(f"분기 : {', '.join(remote.forked)}")
+    if state.handed_over_utc is not None:
+        print(f"정본 넘김 : {state.handed_over_utc}")
+    if state.handed_over_utc is not None and decision is PushDecision.PARENT_MOVED:
+        print("판정 : 정본은 운영 앱에 있습니다 — 읽을 때는 fetch-copy 로 사본을 받으세요.")
+        return 0
+    print(f"판정 : {manifest.decision_message(decision, head_seq=remote.head_seq)}")
+    return 0
+
+
+def command_generations(args: argparse.Namespace) -> int:
+    """되돌릴 세대를 고르는 목록. 멤버 번호가 깨진 세대와 다른 세대가 되돌릴 자리다."""
+    rows = engine.list_generations(build_client(args))
+    if not rows:
+        print("원격 : 비어 있음")
+        return 0
+    for index, row in enumerate(rows[: args.limit]):
+        members = " · ".join(f"{DATASET_LABELS[name]} {seq}" for name, seq in row.members.items())
+        moment = "시각 모름" if row.last_modified is None else row.last_modified.isoformat()
+        head = " · HEAD" if index == 0 else ""
+        print(f"seq {row.seq} · {members} · {row.token} · {moment}{head}")
+    if len(rows) > args.limit:
+        print(f"… {len(rows) - args.limit}개 더 있습니다(--limit 로 늘립니다).")
     return 0
 
 
@@ -435,204 +446,175 @@ def _blocked_by_running_app(dataset: DatasetName, action: str) -> bool:
 
 def command_pull(args: argparse.Namespace) -> int:
     client = build_client(args)
-    failures = 0
-    for dataset in datasets(args):
-        label = DATASET_LABELS[dataset]
-        database_path = DATASET_PATHS[dataset]
-        if _blocked_by_running_app(dataset, "받은 파일로 덮어"):
-            failures += 1
-            continue
-        head = read_head(client, dataset)
-        forked = read_fork(client, dataset)
-        state = local_state(dataset)
-        decision = manifest.decide_pull(
-            head=head,
-            forked=bool(forked),
-            base_sha256=None if state is None else state.base_sha256,
-            local_exists=database_path.exists(),
-            dirty=sync_state.treat_as_dirty(database_path) if database_path.exists() else False,
-            unpublished=bool(state and state.unpublished_snapshot_key),
-        )
-        if decision is PullDecision.AMBIGUOUS and args.force:
-            print(f"[주의] {label} 세대를 모르지만 --force 라 덮습니다.")
-        elif decision not in (PullDecision.DOWNLOAD, PullDecision.LOCAL_MISSING):
-            print(f"[건너뜀] {manifest.decision_message(decision, dataset, head=head)}")
-            if decision in (PullDecision.BLOCKED_DIRTY, PullDecision.BLOCKED_FORKED):
-                failures += 1
-            continue
-        assert head is not None
-        if args.dry_run:
-            print(f"[건너뜀] --dry-run 이라 받지 않습니다. 예정 {head.snapshot_key}")
-            continue
-        scratch = snapshot_export.prepare_scratch()
-        download = scratch / f"{dataset}-download.duckdb"
-        client.get_file(head.snapshot_key, download, expected_bytes=head.size_bytes)
-        snapshot_export.verify_snapshot(
-            download,
-            dataset=dataset,
-            expected_sha256=head.sha256,
-            expected_size=head.size_bytes,
-            code_version=snapshot_export.code_migration_version(dataset),
-        )
-        backup = snapshot_export.install_snapshot(download, database_path)
-        sync_state.adopt_generation(
-            database_path,
-            dataset=dataset,
-            seq=head.seq,
-            sha256=head.sha256,
-            snapshot_key=head.snapshot_key,
-        )
-        print(f"{label} 설치   : seq {head.seq} (이전 파일 백업 {backup})")
-    return 1 if failures else 0
+    paths = sync_paths()
+    if any(_blocked_by_running_app(dataset, "받은 파일로 덮어") for dataset in DATASET_PATHS):
+        return 1
+    plan = engine.plan_pull(client, paths, force=args.force)
+    if plan.forced:
+        print("[주의] 세대를 모르지만 --force 라 덮습니다.")
+    if not plan.proceeds:
+        print(f"[건너뜀] {manifest.decision_message(plan.decision, head_seq=plan.remote.head_seq)}")
+        blocked = plan.decision in (PullDecision.BLOCKED_DIRTY, PullDecision.BLOCKED_FORKED)
+        return 1 if blocked else 0
+    if args.dry_run:
+        print(f"[건너뜀] --dry-run 이라 받지 않습니다. 예정 seq {plan.remote.head_seq}")
+        return 0
+    outcome = engine.apply_pull(client, paths, plan)
+    for dataset, install in outcome.installs.items():
+        backup = install.database_backup or install.backup_dir
+        print(f"{DATASET_LABELS[dataset]} 설치 : seq {outcome.seq} (이전 파일 백업 {backup})")
+    return 0
 
 
 def command_push(args: argparse.Namespace) -> int:
     client = build_client(args)
-    failures = 0
-    for dataset in datasets(args):
-        database_path = DATASET_PATHS[dataset]
-        if _blocked_by_running_app(dataset, "스냅샷을 내보내"):
-            failures += 1
-            continue
-        head = read_head(client, dataset)
-        forked = read_fork(client, dataset)
-        state = local_state(dataset)
-        decision = manifest.decide_push(
-            head=head,
-            forked=bool(forked),
-            base_sha256=None if state is None else state.base_sha256,
-            dirty=sync_state.treat_as_dirty(database_path),
-            unpublished=bool(state and state.unpublished_snapshot_key),
-        )
-        if decision is not PushDecision.PUBLISH:
-            print(f"[건너뜀] {manifest.decision_message(decision, dataset, head=head)}")
-            if decision in (
-                PushDecision.PARENT_MOVED,
-                PushDecision.FORKED,
-                PushDecision.BLOCKED_UNPUBLISHED,
-            ):
-                failures += 1
-            continue
-        failures += _publish(client, dataset, parent=head, note=args.note, dry_run=args.dry_run)
-    return 1 if failures else 0
+    paths = sync_paths()
+    if any(_blocked_by_running_app(dataset, "스냅샷을 내보내") for dataset in DATASET_PATHS):
+        return 1
+    if _writer_refusal(args, client, "올리기를"):
+        return 1
+    outcome = engine.publish_generation(
+        client,
+        paths,
+        exporter=engine.offline_exporter(paths),
+        origin="manual",
+        note=args.note,
+        dry_run=args.dry_run,
+        report=_report_progress,
+    )
+    return _report_outcome(outcome)
 
 
 def command_resolve(args: argparse.Namespace) -> int:
     client = build_client(args)
-    failures = 0
-    for dataset in datasets(args):
-        label = DATASET_LABELS[dataset]
-        database_path = DATASET_PATHS[dataset]
-        state = local_state(dataset)
-        if state is None or not state.unpublished_snapshot_key:
-            print(f"[건너뜀] {label} 에 해소할 미게시 스냅샷이 없습니다.")
-            continue
-        if args.keep == "remote":
-            sync_state.clear_unpublished(database_path)
-            print(f"{label} : 내 스냅샷을 버렸습니다. pull 로 원격을 받으세요.")
-            continue
-        head = read_head(client, dataset)
-        if args.dry_run:
-            print("[건너뜀] --dry-run 이라 승격하지 않습니다.")
-            continue
-        # 내 스냅샷은 이미 올라가 있다. 그것을 가리키는 새 세대 포인터만 만든다.
-        # 크기는 반드시 원격에서 다시 읽는다 — 0 으로 두면 나중에 pull 이 그 포인터를
-        # 크기 불일치로 거부해 복구한 세대를 못 받는다.
-        remote = client.head(state.unpublished_snapshot_key)
-        if remote is None:
-            print(f"[중단] {label} 미게시 스냅샷을 원격에서 찾지 못했습니다.")
-            failures += 1
-            continue
-        pointer = manifest.next_pointer(
-            head,
-            dataset=dataset,
-            token=uuid.uuid4().hex[:8],
-            sha256=state.unpublished_sha256 or "",
-            md5_base64="",
-            size_bytes=remote.size_bytes,
-            source_db_bytes=0,
-            migration_version=snapshot_export.code_migration_version(dataset),
-            app_version=APP_VERSION,
-            author=snapshot_export.author_label(),
-            created_at_utc=snapshot_export.utc_timestamp(),
-            note="미게시 스냅샷 승격",
-        )
-        promoted = manifest.Pointer(
-            **{**pointer.__dict__, "snapshot_key": state.unpublished_snapshot_key}
-        )
-        client.put_text(
-            promoted.pointer_key,
-            manifest.pointer_to_json(promoted),
-            scratch_dir=snapshot_export.prepare_scratch(),
-        )
-        sync_state.adopt_generation(
-            database_path,
-            dataset=dataset,
-            seq=promoted.seq,
-            sha256=promoted.sha256,
-            snapshot_key=promoted.snapshot_key,
-        )
-        print(f"{label} : {with_direction_particle(f'seq {promoted.seq}')} 승격했습니다.")
-    return 1 if failures else 0
+    paths = sync_paths()
+    state = sync_state.read_generation(paths.generation)
+    if state.unpublished is None:
+        print("[건너뜀] 해소할 미게시 세대가 없습니다.")
+        return 0
+    if args.keep == "remote":
+        engine.resolve_keep_remote(paths)
+        print("내 세대를 버렸습니다. pull 로 원격을 받으세요.")
+        return 0
+    if _writer_refusal(args, client, "승격을"):
+        return 1
+    if args.dry_run:
+        print("[건너뜀] --dry-run 이라 승격하지 않습니다.")
+        return 0
+    pointer = engine.resolve_keep_mine(client, paths)
+    print(f"{with_direction_particle(f'seq {pointer.seq}')} 승격했습니다.")
+    if sync_state.read_generation(paths.generation).base_pointer_key != pointer.pointer_key:
+        print("[주의] 그 사이 앞선 DB 는 원격 것을 이어 적었습니다 — pull 로 받으세요.")
+    return 0
 
 
 def command_adopt(args: argparse.Namespace) -> int:
     client = build_client(args)
-    for dataset in datasets(args):
-        label = DATASET_LABELS[dataset]
-        database_path = DATASET_PATHS[dataset]
-        if args.source == "remote":
-            print(f"[안내] {with_topic_particle(label)} pull --force 로 원격을 받으세요.")
-            continue
-        head = read_head(client, dataset)
-        if head is None:
-            print(f"[중단] {label} 원격이 비어 있습니다. init 이 먼저입니다.")
-            return 1
-        # 로컬을 기준으로 삼는다 = 원격 세대를 부모로 기록하고 변경 있음으로 둔다.
-        sync_state.adopt_generation(
-            database_path,
-            dataset=dataset,
-            seq=head.seq,
-            sha256=head.sha256,
-            snapshot_key=head.snapshot_key,
-        )
-        sync_state.mark_dirty(database_path)
-        print(f"{label} : 로컬을 기준으로 잡았습니다. push 로 올리세요.")
+    if args.source == "remote":
+        print("[안내] pull --force 로 원격을 받으세요.")
+        return 0
+    if _writer_refusal(args, client, "기준 정하기를"):
+        return 1
+    head = _head_pointer(client)
+    if head is None:
+        print("[중단] 원격이 비어 있습니다. init 이 먼저입니다.")
+        return 1
+    engine.adopt_local(sync_paths(), head)
+    print("로컬을 기준으로 잡았습니다. push 로 올리세요.")
     return 0
 
 
 def command_prune(args: argparse.Namespace) -> int:
     client = build_client(args)
-    for dataset in datasets(args):
-        label = DATASET_LABELS[dataset]
-        pointer_records = client.list_objects(manifest.head_prefix(dataset), max_keys=1000)
-        pointers = []
-        for record in pointer_records:
-            text = client.get_text(record.key, scratch_dir=snapshot_export.prepare_scratch())
-            pointers.append(manifest.pointer_from_json(text, pointer_key=record.key))
-        snapshots = [
-            record.key
-            for record in client.list_objects(manifest.snapshot_prefix(dataset), max_keys=1000)
-        ]
-        candidates = manifest.prune_candidates(
-            snapshot_keys=snapshots,
-            pointers=pointers,
-            keep_last=args.keep_last,
-            include_orphans=args.include_orphans,
-            protected=(),
-        )
-        print(f"── {label} 정리 후보 {len(candidates)}개")
-        for key in candidates:
-            print(f"   {key}")
-        if not candidates:
-            continue
-        if args.dry_run or not args.yes:
-            print("   [건너뜀] 실제로 지우려면 --yes 를 함께 주세요.")
-            continue
-        for key in candidates:
-            client.delete(key)
-        print(f"   {len(candidates)}개를 지웠습니다.")
+    options = {
+        "keep_last": args.keep_last,
+        "keep_days": args.keep_days,
+        "include_orphans": args.include_orphans,
+    }
+    plan = engine.plan_prune(client, **options)
+    print(
+        f"정리 후보 : 스냅샷 {len(plan.snapshots)} · 포인터 {len(plan.pointers)} · "
+        f"남길 세대 {plan.kept_generations} · 지킨 고아 {plan.protected_orphans}"
+    )
+    for key in (*plan.snapshots, *plan.pointers):
+        print(f"   {key}")
+    if plan.deferred:
+        print(f"   상한을 넘어 다음 번으로 넘긴 수 {plan.deferred}")
+    if not plan.total:
+        return 0
+    if args.dry_run or not args.yes:
+        print("   [건너뜀] 실제로 지우려면 --yes 를 함께 주세요.")
+        return 0
+    outcome = engine.prune(client, **options)
+    print(f"   {outcome.deleted}개를 지웠습니다.")
     return 0
+
+
+def command_fetch_copy(args: argparse.Namespace) -> int:
+    client = build_client(args)
+    try:
+        outcome = engine.fetch_copy(client, sync_paths(), args.to, seq=args.seq, token=args.token)
+    except ValueError as exc:
+        print(f"[중단] {exc}")
+        return 1
+    print(f"받음 : seq {outcome.pointer.seq} · {outcome.folder}")
+    return 0
+
+
+def command_rollback(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print(f"[건너뜀] seq {args.to} 멤버로 새 HEAD 를 내려면 --yes 를 함께 주세요.")
+        return 0
+    client = build_client(args)
+    try:
+        pointer = engine.rollback(client, to_seq=args.to, token=args.token, note=args.note)
+    except ValueError as exc:
+        print(f"[중단] {exc}")
+        return 1
+    print(f"새 HEAD : seq {pointer.seq} — seq {args.to} 의 멤버를 이어 갑니다.")
+    return 0
+
+
+def _boot_line(outcome: engine.BootOutcome) -> str:
+    """시작 스크립트가 읽는 한 줄. 값은 갈래 · 수뿐이다(주소 · 버킷 · 키 · 서버 글 없음)."""
+    return json.dumps(
+        {
+            "kind": outcome.kind,
+            "action": outcome.action,
+            "seq": outcome.seq,
+            "previous_upload_utc": outcome.previous_upload_utc,
+            "total_bytes": outcome.total_bytes,
+            "seconds": round(outcome.elapsed_seconds, 2),
+        },
+        ensure_ascii=False,
+    )
+
+
+def command_boot_pull(args: argparse.Namespace) -> int:
+    """앱이 뜨기 전 받기. 종료 코드 0 일 때만 시작 스크립트가 앱을 띄운다.
+
+    `CAPA_S3_BUCKET` 이 없으면 받지 않는다 — config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에
+    간다. 부트 기록을 쓰지 못해도 실패다 — 일꾼 없이 뜬 앱의 저장은 어디에도 안 올라간다.
+    """
+    if not os.environ.get("CAPA_S3_BUCKET", "").strip():
+        print(_boot_line(engine.BootOutcome(kind=FAILURE_CONFIG)))
+        return 1
+    sync_boot.clear_boot_record()
+    outcome = engine.boot_pull(build_client(args), sync_paths())
+    if outcome.ok:
+        assert outcome.action is not None and outcome.seq is not None
+        sync_boot.write_boot_record(
+            sync_boot.BootRecord(
+                action=outcome.action,
+                seq=outcome.seq,
+                previous_upload_utc=outcome.previous_upload_utc,
+                pull_seconds=outcome.elapsed_seconds,
+                finished_at_utc=snapshot_export.utc_timestamp(),
+                total_bytes=outcome.total_bytes,
+            )
+        )
+    print(_boot_line(outcome))
+    return 0 if outcome.ok else 1
 
 
 COMMANDS = {
@@ -646,6 +628,10 @@ COMMANDS = {
     "resolve": command_resolve,
     "adopt": command_adopt,
     "prune": command_prune,
+    "fetch-copy": command_fetch_copy,
+    "rollback": command_rollback,
+    "generations": command_generations,
+    "boot-pull": command_boot_pull,
 }
 
 
@@ -664,19 +650,24 @@ def main(argv: list[str] | None = None) -> int:
     _use_utf8_output()
     args = parse_args(argv)
     handler = COMMANDS[args.command]
-    # 사이드카 기록은 등록된 경로에만 쓴다. 스크립트는 이 파일들의 주인이므로 여기서
-    # 등록한다 — 빼먹으면 `mark_unpublished`·`clear_unpublished` 가 조용히 아무 일도
-    # 하지 않아, 경합에서 진 스냅샷의 복구 정보가 사라진다.
-    sync_state.enable({DATASET_PATHS[name]: name for name in datasets(args)})
+    # 사이드카 기록은 등록된 경로에만 쓴다. 스크립트는 이 파일들의 주인이므로 여기서 등록한다.
+    # `--dataset` 과 상관없이 둘 다다 — 두 DB 는 한 쌍이다.
+    sync_state.enable(sync_paths().registry)
     try:
         return int(handler(args))
     except ObjectStorageError as exc:
-        print(f"[중단] {exc}")
+        if args.command == "boot-pull":
+            print(_boot_line(engine.BootOutcome(kind=object_storage.classify_failure(exc))))
+        else:
+            print(f"[중단] {exc}")
         return 1
     except BOOTSTRAP_ERRORS as exc:
         # `duckdb.Error` 는 RuntimeError 가 아니다. 이걸 잡지 않으면 앱을 켜 둔 채 돌렸을 때
         # 원문 트레이스백이 나오고 Windows 로캘에서는 한글까지 깨진다.
-        print(f"[중단] {bootstrap_error_message(exc, markdown=False)}")
+        if args.command == "boot-pull":
+            print(_boot_line(engine.BootOutcome(kind=FAILURE_OTHER)))
+        else:
+            print(f"[중단] {bootstrap_error_message(exc, markdown=False)}")
         return 1
 
 

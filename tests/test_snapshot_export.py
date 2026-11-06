@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+import threading
 from pathlib import Path
 
 import duckdb
 import pytest
 
 from capa_simulation import settings as app_settings
-from capa_simulation.persistence import snapshot_export
-from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.persistence import snapshot_export, sync_state
+from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE, connect
 
 
 @pytest.fixture()
@@ -249,9 +253,9 @@ def test_install_keeps_the_replaced_database_as_a_backup(workspace: Path) -> Non
     incoming = workspace / "incoming.duckdb"
     _seed_database(incoming, rows=5)
 
-    backup = snapshot_export.install_snapshot(incoming, database)
+    backup = snapshot_export.install_snapshot(incoming, database).database_backup
 
-    assert backup.exists()
+    assert backup is not None and backup.exists()
     with connect(backup) as reader:
         rows = reader.execute("SELECT COUNT(*) FROM demo").fetchone()
     assert rows is not None and int(rows[0]) == 100
@@ -286,3 +290,294 @@ def test_author_and_timestamp_are_shaped_for_keys() -> None:
     assert "@" in snapshot_export.author_label()
     stamp = snapshot_export.utc_timestamp()
     assert stamp.endswith("Z") and "T" in stamp
+
+
+def test_install_restores_the_database_and_its_wal_when_the_move_fails(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WAL 에만 있던 커밋이 백업에 남은 채 DB 만 돌아오면 그 커밋이 빠진 파일이 된다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database, rows=100)
+    wal = snapshot_export.wal_path(database)
+    wal.write_bytes(b"wal")
+    incoming = workspace / "incoming.duckdb"
+    _seed_database(incoming, rows=5)
+    original = Path.replace
+
+    def refuse_install(self: Path, target: Path) -> Path:
+        if self == incoming:
+            raise OSError(5, "설치 실패 흉내")
+        return original(self, target)
+
+    monkeypatch.setattr(Path, "replace", refuse_install)
+
+    with pytest.raises(OSError, match="설치 실패"):
+        snapshot_export.install_snapshot(incoming, database)
+
+    assert wal.read_bytes() == b"wal"
+    with connect(database) as reader:
+        row = reader.execute("SELECT COUNT(*) FROM demo").fetchone()
+    assert row is not None and int(row[0]) == 100
+
+
+def test_restoring_an_install_puts_the_old_files_back(workspace: Path) -> None:
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database, rows=100)
+    snapshot_export.wal_path(database).write_bytes(b"wal")
+    incoming = workspace / "incoming.duckdb"
+    _seed_database(incoming, rows=5)
+
+    result = snapshot_export.install_snapshot(incoming, database)
+    snapshot_export.restore_install(result, database)
+
+    assert snapshot_export.wal_path(database).read_bytes() == b"wal"
+    with connect(database) as reader:
+        row = reader.execute("SELECT COUNT(*) FROM demo").fetchone()
+    assert row is not None and int(row[0]) == 100
+
+
+def test_superseded_backups_keep_only_the_last_installs(workspace: Path) -> None:
+    """받을 때마다 옛 DB 가 쌓이면 휘발 디스크가 찬다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database, rows=3)
+    for rows in (4, 5, 6, 7):
+        incoming = workspace / "incoming.duckdb"
+        _seed_database(incoming, rows=rows)
+        snapshot_export.install_snapshot(incoming, database)
+
+    removed = snapshot_export.prune_superseded_backups(database)
+
+    assert len(removed) == 1
+    assert len(list(snapshot_export.backup_dir().iterdir())) == snapshot_export.KEEP_SUPERSEDED
+
+
+def test_two_exports_in_one_process_do_not_share_an_attach_alias(workspace: Path) -> None:
+    """별칭은 인스턴스 전체에 보여, 고정 이름이면 둘째 ATTACH 가 멈춘다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    results: list[Path] = []
+
+    def export(index: int) -> None:
+        results.append(
+            snapshot_export.export_snapshot(database, workspace / f"copy-{index}.duckdb").path
+        )
+
+    threads = [threading.Thread(target=export, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+
+    assert len(results) == 2
+
+
+def test_verify_names_the_failure_kind(workspace: Path) -> None:
+    """시작 화면과 Admin 은 서버 글 대신 갈래 낱말을 싣는다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    export = snapshot_export.export_snapshot(database, workspace / "copy.duckdb")
+
+    with pytest.raises(snapshot_export.SnapshotRejected) as caught:
+        snapshot_export.verify_snapshot(
+            export.path,
+            dataset="simulation",
+            expected_sha256=export.sha256_hex,
+            expected_size=export.size_bytes,
+            code_version=0,
+        )
+
+    assert caught.value.kind == "schema_newer"
+
+
+def test_verify_reads_an_unopenable_file_as_corrupt(workspace: Path) -> None:
+    broken = workspace / "broken.duckdb"
+    broken.write_bytes(b"not a database" * 100)
+    digest = snapshot_export.digest_file(broken)
+
+    with pytest.raises(snapshot_export.SnapshotRejected) as caught:
+        snapshot_export.verify_snapshot(
+            broken,
+            dataset="simulation",
+            expected_sha256=digest[0],
+            expected_size=digest[3],
+            code_version=99,
+            rejected_path=workspace / "fixed.rejected",
+        )
+
+    assert caught.value.kind == "corrupt"
+    assert (workspace / "fixed.rejected").exists()
+
+
+def test_free_space_check_reads_as_disk_full(workspace: Path) -> None:
+    from capa_simulation.io.object_storage import classify_failure
+
+    with pytest.raises(snapshot_export.DiskSpaceShort) as caught:
+        snapshot_export.require_free_space(workspace / "not" / "yet", 10**18)
+
+    assert classify_failure(caught.value) == "disk_full"
+
+
+# 앱 안 바이트 복사는 컨테이너(Linux)에서만 돈다. 사내 Windows 관문에서는 그 길을 부르지 않는다.
+LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="바이트 복사는 Linux 만")
+
+
+def _checkpoint_copy(database: Path, destination: Path) -> snapshot_export.CheckpointCopy:
+    return snapshot_export.checkpoint_copy(
+        database, destination, write_lock=threading.RLock(), dataset="simulation"
+    )
+
+
+@LINUX_ONLY
+def test_checkpoint_copy_carries_a_commit_that_was_only_in_the_wal(workspace: Path) -> None:
+    """핀이 열린 채의 COMMIT 은 WAL 에만 있다. 그대로 복사하면 방금 저장이 통째로 빠진다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database, rows=10)
+
+    with connect(database) as pin:
+        pin.execute("INSERT INTO demo VALUES (99999)")
+        copied = _checkpoint_copy(database, workspace / "copy.duckdb")
+
+    assert not snapshot_export.wal_path(copied.export.path).exists()
+    with connect(copied.export.path) as reader:
+        row = reader.execute("SELECT COUNT(*) FROM demo").fetchone()
+    assert row is not None and int(row[0]) == 11
+    assert copied.export.migration_version == 1
+
+
+@LINUX_ONLY
+def test_checkpoint_copy_keeps_the_block_size_and_can_be_installed(workspace: Path) -> None:
+    """바이트 사본을 그대로 받아 앱이 연다. 16KiB 블록 불변조건도 그대로다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    copied = _checkpoint_copy(database, workspace / "copy.duckdb")
+
+    version = snapshot_export.verify_snapshot(
+        copied.export.path,
+        dataset="simulation",
+        expected_sha256=copied.export.sha256_hex,
+        expected_size=copied.export.size_bytes,
+        code_version=1,
+    )
+    target = workspace / "installed.duckdb"
+    snapshot_export.install_snapshot(copied.export.path, target)
+
+    assert version == 1
+    with connect(target) as reader:
+        row = reader.execute("SELECT block_size FROM pragma_database_size()").fetchone()
+    assert row is not None and int(row[0]) == DUCKDB_BLOCK_SIZE
+
+
+@LINUX_ONLY
+def test_the_mark_read_under_the_lock_matches_the_copy(workspace: Path) -> None:
+    """잠금 안에서 읽어야 「사본이 담은 번호」 와 같다. 이것이 비교 후 지우기의 기준이다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    sync_state.clear_all()
+    sync_state.enable({database: "simulation"})
+    sync_state.mark_dirty(database)
+    sync_state.mark_dirty(database)
+
+    copied = _checkpoint_copy(database, workspace / "copy.duckdb")
+
+    assert copied.observed.dirty_seq == 2
+    sync_state.clear_all()
+
+
+def test_a_held_lock_is_reported_as_busy(workspace: Path) -> None:
+    """저장이 길게 돌면 다음 회차다. 잠금을 빼앗지 않는다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    lock = threading.RLock()
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold() -> None:
+        with lock:
+            held.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    held.wait(5)
+    try:
+        with pytest.raises(snapshot_export.SnapshotBusy):
+            snapshot_export.checkpoint_copy(
+                database,
+                workspace / "copy.duckdb",
+                write_lock=lock,
+                dataset="simulation",
+                lock_timeout_seconds=0.05,
+            )
+    finally:
+        release.set()
+        holder.join(5)
+
+
+@LINUX_ONLY
+def test_a_file_that_moves_during_the_copy_is_thrown_away(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """잠금을 비켜 간 쓰기를 잡는 둘째 벽 — 앞뒤 stat 이 다르면 사본을 쓰지 않는다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+    original = snapshot_export._copy_live_bytes
+
+    def copy_then_touch(source: Path, destination: Path, size: int) -> None:
+        original(source, destination, size)
+        os.utime(source, ns=(1, 1))
+
+    monkeypatch.setattr(snapshot_export, "_copy_live_bytes", copy_then_touch)
+    destination = workspace / "copy.duckdb"
+
+    with pytest.raises(snapshot_export.SnapshotRaced):
+        _checkpoint_copy(database, destination)
+
+    assert not destination.exists()
+
+
+_OPEN_FOR_WRITE = """
+import sys
+
+import duckdb
+
+try:
+    duckdb.connect(sys.argv[1], config={"default_block_size": 16384}).close()
+except duckdb.IOException:
+    sys.exit(3)
+"""
+
+
+@LINUX_ONLY
+def test_the_copy_keeps_the_process_lock_on_the_live_file(workspace: Path) -> None:
+    """같은 프로세스가 그 파일을 열었다 닫으면 POSIX 잠금이 풀린다. 복사가 그것을 풀면
+    「다른 프로세스는 곧바로 실패」 가 프로세스 수명 동안 조용히 사라진다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+
+    with connect(database):
+        _checkpoint_copy(database, workspace / "copy.duckdb")
+        opened = subprocess.run(
+            [sys.executable, "-c", _OPEN_FOR_WRITE, str(database)],
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+
+    assert opened.returncode == 3
+
+
+@LINUX_ONLY
+def test_the_live_handle_follows_a_replaced_file(workspace: Path) -> None:
+    """같은 경로가 새 파일이 되면(받기) 옛 번호로 읽으면 옛 내용이 나온다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database, rows=5)
+    _checkpoint_copy(database, workspace / "first.duckdb")
+    incoming = workspace / "incoming.duckdb"
+    _seed_database(incoming, rows=7)
+    snapshot_export.install_snapshot(incoming, database)
+
+    copied = _checkpoint_copy(database, workspace / "second.duckdb")
+
+    with connect(copied.export.path) as reader:
+        row = reader.execute("SELECT COUNT(*) FROM demo").fetchone()
+    assert row is not None and int(row[0]) == 7

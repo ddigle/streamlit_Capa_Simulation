@@ -67,6 +67,15 @@ UNNAMED_LOCK_WAIT_SECONDS = 0.5
 _CANNOT_OPEN_FILE = "Cannot open file"
 
 
+def _is_handle_conflict(exc: BaseException) -> bool:
+    """인스턴스가 내려가는 틈과 `connect()` 가 겹친 꼴(`Unique file handle conflict`).
+
+    같은 프로세스의 다른 스레드가 마지막 연결을 닫는 중이라 곧 풀린다. 일꾼이 연결을 더 여니 그
+    틈이 전보다 자주 열린다.
+    """
+    return isinstance(exc, duckdb.BinderException) and "Unique file handle conflict" in str(exc)
+
+
 def _may_be_unnamed_own_lock(exc: BaseException, database_path: Path) -> bool:
     """PID 를 적지 않은 공유 위반일 수 있는가. 폴더가 없거나 다른 종류의 오류면 아니다."""
     return (
@@ -107,7 +116,8 @@ def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
 
     이 프로세스 자신이 쥔 잠금으로 실패하면 `OWN_LOCK_WAIT_SECONDS` 까지 다시 연다(위 상수의
     설명). 쥔 프로세스를 적지 않은 공유 위반은 `UNNAMED_LOCK_WAIT_SECONDS` 까지만 다시 연다.
-    **다른** 프로세스가 적힌 잠금과 그 밖의 실패(없는 폴더 등)는 곧바로 올린다.
+    인스턴스가 내려가는 틈의 핸들 충돌도 첫째와 같이 기다린다. **다른** 프로세스가 적힌 잠금과 그
+    밖의 실패(없는 폴더 등)는 곧바로 올린다.
 
     이 스레드에서 그 파일을 대상으로 한 `pinned_connections` 블록이 돌고 있고 아직 핀이 없으면,
     연결에 성공한 직후 같은 인스턴스에 유휴 연결 하나를 더 잡아 그 블록의 핀으로 둔다.
@@ -120,8 +130,8 @@ def connect(database_path: Path) -> duckdb.DuckDBPyConnection:
         try:
             connection = duckdb.connect(str(database_path), config=DUCKDB_CONNECT_CONFIG)
             break
-        except duckdb.IOException as exc:
-            if is_own_process_lock(exc):
+        except (duckdb.IOException, duckdb.BinderException) as exc:
+            if is_own_process_lock(exc) or _is_handle_conflict(exc):
                 budget = OWN_LOCK_WAIT_SECONDS
             elif _may_be_unnamed_own_lock(exc, database_path):
                 budget = UNNAMED_LOCK_WAIT_SECONDS
@@ -224,6 +234,18 @@ def transaction(connection: duckdb.DuckDBPyConnection) -> Iterator[None]:
         with suppress(duckdb.TransactionException):
             connection.execute("ROLLBACK")
         raise
+
+
+def unique_catalog_alias(prefix: str) -> str:
+    """`ATTACH … AS <별칭>` 에 쓸, 부를 때마다 다른 별칭.
+
+    별칭은 연결 하나가 아니라 **그 파일을 연 인스턴스 전체**에 보인다(같은 프로세스의 다른 세션·
+    스레드 연결도 같은 인스턴스를 나눠 쓴다). 고정 이름이면 둘째 ATTACH 가 「database with name …
+    already exists」 로 멈추고, 앞사람이 DETACH 하면 남의 진행 중 복사가 대상을 잃는다.
+    """
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", prefix):
+        raise ValueError(f"별칭 접두사는 소문자·숫자·밑줄이어야 합니다: {prefix!r}")
+    return f"{prefix}_{uuid4().hex[:12]}"
 
 
 def copy_database(

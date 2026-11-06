@@ -388,3 +388,15 @@ def test_the_runner_summary_line_is_what_check_module_reads() -> None:
     assert (result.state, result.passed, result.failed, result.total) == ("failed", 3, 1, 4)
     assert result.failures == ["test_demo_x_a.py::test_one"]
     assert check_module.parse_runner_output("빈 출력", 3).state == "runner"
+
+
+@pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="리눅스 전용 자리")
+def test_the_guard_holds_the_kernel_copy_of_the_environment(tmp_path: Path) -> None:
+    """`/proc/self` 는 프로세스마다 다른 링크다. 러너 안에서 풀어야 같은 자리를 가리킨다."""
+    guard = runner.Guard.build(
+        protect=["/proc/self/environ"], modules_root=str(tmp_path), data_root=None
+    )
+
+    assert guard.verdict("/proc/self/environ", write=False) == "protect"
+    assert guard.verdict(f"/proc/{os.getpid()}/environ", write=False) == "protect"
+    assert guard.verdict("/proc/self/status", write=False) is None

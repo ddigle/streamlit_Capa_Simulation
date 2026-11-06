@@ -82,6 +82,7 @@ from capa_simulation.persistence.preset_store import (
     load_preset,
     validate_preset_processes,
 )
+from capa_simulation.persistence.snapshot_export import CheckpointCopy, checkpoint_copy
 from capa_simulation.persistence.source_data_store import (
     insert_core_data,
     insert_source_profile,
@@ -542,6 +543,12 @@ class DuckDBScenarioRepository:
             outcome = apply_migrations(connection)
         self._schema_ahead = outcome.schema_ahead
         return outcome.applied
+
+    def export_checkpoint_copy(self, destination: Path) -> CheckpointCopy:
+        """이 DB 를 쓰기 잠금 안에서 바이트로 복사한다(`snapshot_export.checkpoint_copy`)."""
+        return checkpoint_copy(
+            self._database_path, destination, write_lock=_WRITE_LOCK, dataset="simulation"
+        )
 
     def initialize_global_display_order(
         self,
@@ -1921,6 +1928,8 @@ class DuckDBScenarioRepository:
                     note.strip() if isinstance(note, str) and note.strip() else None,
                 ],
             )
+        # 공식 발행은 모으지 않고 바로 올린다. 자동 갱신의 발행도 이 자리를 지난다.
+        sync_state.request_upload()
         release = self._official_release(official_release_id)
         if release is None:
             raise RuntimeError("저장한 공식버전을 다시 불러오지 못했습니다.")
@@ -2190,11 +2199,13 @@ class DuckDBScenarioRepository:
 
     @contextmanager
     def _write_transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        with _WRITE_LOCK, self._connect() as connection, transaction(connection):
-            yield connection
-        # COMMIT 이 끝나고 연결이 닫힌 뒤에만 표시한다. `sync_state` 는 등록되지 않은
-        # 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
-        sync_state.mark_dirty(self._database_path)
+        with _WRITE_LOCK:
+            with self._connect() as connection, transaction(connection):
+                yield connection
+            # COMMIT 하고 연결을 닫은 **뒤**, 쓰기 잠금을 놓기 **전**에 표시한다. 잠금을 쥔 쪽이
+            # 변경 번호를 읽을 때 「커밋은 됐는데 표시는 아직」 인 쓰기가 없게 한다. `sync_state`
+            # 는 등록되지 않은 환경에서 아무 파일도 만들지 않으므로 개발 PC·CI 동작은 그대로다.
+            sync_state.mark_dirty(self._database_path)
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         return connect(self._database_path)

@@ -12,6 +12,7 @@ from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
 from capa_simulation.components.module_status import render_module_status
+from capa_simulation.components.object_sync_status import render_object_sync_status
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_rename_management import (
@@ -42,6 +43,8 @@ render_page_guide("admin_area", title="Admin Area")
 # C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
 # 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
 render_container_start_check()
+# 정본 버킷 동기화 — CI/CD 를 누르기 전에 보는 자리. `managed` 서버에만 선다(개발·사내 PC 그대로).
+render_object_sync_status()
 # 통합인증의 설정 판정 · 서명 인증서 · 최근 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도
 # 그리지 않는다(개발·사내 PC 화면 그대로). 값은 싣지 않는다.
 render_sso_status()

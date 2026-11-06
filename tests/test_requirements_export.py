@@ -39,6 +39,17 @@ COMPANY_REQUIREMENTS = PROJECT_ROOT / "requirements-company.txt"
 # 사내 `bigdataquery` 의 요구 범위(사내 `uv pip check` 로 잰 값). 락은 이 패키지를 모른다.
 COMPANY_PACKAGE_PIN = "bigdataquery==2.5.0"
 COMPANY_PACKAGE_BOUNDS = {"pandas": "<=2.2.3", "numpy": "<2.3"}
+# `docker/Dockerfile-prod` 의 `awscli==1.46.3` 이 받는 범위(그 판의 `Requires-Dist`). 앱 고정이 이
+# 밖으로 나가면 이미지의 둘째 pip 가 앱 판을 조용히 바꾼다. 앱이 고정하지 않는 것은 범위만 적는다.
+AWSCLI_BOUNDS = {
+    "python-dateutil": ">=2.1,<3.0.0",
+    "urllib3": ">=1.25.4,!=2.2.0,<3",
+    "docutils": ">=0.18.1,<=0.19",
+    "pyyaml": ">=3.10,<6.1",
+    "colorama": ">=0.2.5,<0.4.7",
+    "rsa": ">=3.1.2,<4.8",
+    "jmespath": ">=0.7.1,<2.0.0",
+}
 EXPORT_COMMAND = (
     "uv",
     "export",
@@ -91,6 +102,20 @@ def test_the_pins_stay_inside_what_the_company_package_accepts() -> None:
     pins = _pins()
     for name, bound in COMPANY_PACKAGE_BOUNDS.items():
         assert SpecifierSet(bound).contains(pins[name]), f"{name} {pins[name]} 이 {bound} 밖입니다."
+
+
+def test_the_pins_stay_inside_what_the_image_aws_accepts() -> None:
+    """awscli 는 `requirements.txt` 밖의 따로 된 한 줄이다. 부딪히면 이미지에서만 앱 판이 바뀐다."""
+    pins = _pins()
+    assert {"python-dateutil", "urllib3"} <= pins.keys(), "앱이 쓰는 둘은 고정돼 있어야 한다"
+    for name, bound in AWSCLI_BOUNDS.items():
+        if name in pins:
+            assert SpecifierSet(bound).contains(pins[name]), f"{name} {pins[name]} 이 {bound} 밖"
+
+
+def test_aws_is_not_an_application_dependency() -> None:
+    """이미지 도구다 — 락 · `requirements.txt` 에 넣으면 사외 개발 환경 · 사내 PC 가 끌려온다."""
+    assert "awscli" not in _pins()
 
 
 @pytest.mark.parametrize("name", sorted(COMPANY_PACKAGE_BOUNDS))

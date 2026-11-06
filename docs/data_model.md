@@ -588,12 +588,13 @@ Capa 시나리오·리비전
 - 마이그레이션 0014는 이미 저장된 EDP-TSV 행의 `WF 구분` `Top`을 `Top_e`로 이관해 신규 파생과
   값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
   원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.
-- 두 DuckDB 파일은 서로 독립적으로 백업·복원한다. 백업은 라이브 파일 복사가 아니라
-  `persistence/snapshot_export.py`의 `ATTACH` + `_sql_helpers.copy_database()` 스냅샷이며, 설치할 때
-  기존 파일과 `.wal`은 지우지 않고 `data/temp/objectstore/superseded/`로 물러난다. 사내 S3 호환
-  스토리지와의 왕복은 앱을 끈 채 `scripts/sync_object_storage.py`의 `init`·`pull`·`push`를 사람이
-  실행하고, 앱은 `sync_boot.py`가 켠 `persistence/sync_state.py` 사이드카에 변경 표시만 남긴다.
-  사람이 해야 하는 절차는 `docs/objectstore_setup.md`에 있다.
+- 두 DuckDB 파일은 한 쌍으로 백업·복원한다 — 세대 포인터 하나가 두 스냅샷을 함께 가리키고 그 PUT 이
+  게시다. 스냅샷은 앱을 끈 자리에서 `persistence/snapshot_export.py`의 `ATTACH` +
+  `_sql_helpers.copy_database()`, 앱 안에서는 쓰기 잠금 · CHECKPOINT · stat 대조 아래의 바이트 복사다.
+  설치할 때 기존 파일과 `.wal`은 지우지 않고 `data/temp/objectstore/superseded/`로 물러난다. 운영 앱은
+  시작할 때 받고 저장하면 일꾼(`object_sync_worker.py`)이 올린다. 변경 표시는 `sync_boot.py`가 켠
+  `persistence/sync_state.py` 사이드카, 게시 상태는 `sync_generation.json` 이다. 사람이 해야 하는
+  절차는 `docs/objectstore_setup.md`에 있다.
 - 새 DuckDB 파일은 `persistence/_sql_helpers.py`의 `DUCKDB_BLOCK_SIZE`(16 KiB)로 만든다.
   DuckDB 기본 블록 256 KiB는 행이 2,767개뿐인 첫 부팅 DB도 24.5 MiB로 부풀리며, 16 KiB에서는
   같은 내용이 4.2 MiB이고 리비전 저장당 증가분도 2.5~9.5 MB에서 0.6 MB로 줄어든다. 블록 크기는

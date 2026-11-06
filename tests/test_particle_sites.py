@@ -109,6 +109,7 @@ _JOSA_BLOCK = re.compile(r"// <josa>\n(?P<body>.*?)\n\s*// </josa>", re.S)
 _READINGS = {
     "Area Code": "코드",
     "CAPA_ARTIFACTORY_USER": "유저",
+    "CAPA_S3_SYNC_MODE": "모드",
     "HBM·EDP": "이디피",
 }
 
@@ -589,7 +590,7 @@ def test_unit_name_rule_follows_the_subject(subject: str, expected: str) -> None
             "선행 입고는 pandas",
         ),
         (lambda: pointer_from_json('{"schema": 3}', pointer_key="k"), "포인터 스키마 3을 이"),
-        (lambda: pointer_from_json('{"schema": 2}', pointer_key="k"), "포인터 스키마 2를 이"),
+        (lambda: pointer_from_json('{"schema": 1}', pointer_key="k"), "포인터 스키마 1을 이"),
         (lambda: _require_official((1, (2,)), "공식 계획"), "공식 계획은 공식 계획 칸"),
         (lambda: _require_official((1, (2,)), "필요 단축"), "필요 단축은 공식 계획 칸"),
         (lambda: _require_assumed((), "가정 계획"), "가정 계획은 UPEH"),

@@ -271,6 +271,9 @@ uv pip install -r requirements-company.txt
 - C-DEP CD(배포 서버)에는 셸이 없어 위 명령을 칠 수 없습니다. 배포 설정의 환경변수 표에 값을 넣으면 이미지의 시작
   스크립트(`scripts/container_start.py`)가 설치·로그인 토큰을 갖추고 결과를 Admin Area 「서버 시작 점검」에 남깁니다 —
   넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」.
+- C-DEP CD 서버는 디스크가 CI/CD 때 사라집니다. `CAPA_S3_SYNC_MODE=managed` 면 두 DB 의 정본이 운영 버킷에 있고 시작 스크립트가
+  받은 뒤에만 앱을 띄웁니다 — 받는 동안은 같은 포트에서 「데이터 받는 중」 만 보입니다. 저장은 앱이 1분 안에 모아 올립니다
+  — 이관 · 환경변수 · 복구는 `docs/objectstore_setup.md`.
 - C-DEP CD 서버는 통합인증(SSO)으로 로그인한 사람만 들어오게 할 수 있습니다 — 시작 스크립트가 진입 파일
   `capa_server.py`(`app.py` 를 감싸 콜백 경로·문지기를 붙인 것)로 앱을 띄우고, 환경변수 표의 `ADFS_CLIENT_ID` 가 켜는
   스위치입니다(비면 지금처럼 열림). 로그인은 마지막 사용 뒤 6시간 유지되고 앱을 쓰는 동안 저절로 늘어납니다(최대 24시간 —
@@ -619,7 +622,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `review_sample_sim.py` · `review_sample_equip.py` · `review_sample_modules.py` · `review_sample_story.py` · `review_sample_core_frame.py` | 그 부품 — 시뮬레이션 DB(앱 저장 API · 끝 점검 52) · 설비 DB(공식 소요 · 가용에서) · 모듈 견본 복사 · 이야기 상수와 산출 자리 지킴 · 78컬럼 원천 |
 | **DB 운영** | |
 | `compact_duckdb.py` | DuckDB 빈 공간을 재구축으로 걷어낸다(인자 없으면 두 DB, `--dry-run`·`--keep-backup`). 앱을 내린 뒤 |
-| `sync_object_storage.py` | 오브젝트 스토리지 스냅샷 진단·초기화와 수동 pull·push |
+| `sync_object_storage.py` | 오브젝트 스토리지 진단 · 최초 이관 · 시작 받기(`boot-pull`) · 사본 받기(`fetch-copy`) · 세대 목록(`generations`) · 세대 되돌리기(`rollback`) · 정리 |
 | **검증·측정** | |
 | `benchmark_home.py` | HOME 의 콜드·웜·토글별 rerun 시간. 기본은 합성 표본, `--data-dir <사본 폴더>` 면 실 DB 사본 |
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
@@ -643,7 +646,8 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
 | `module_test_runner.py` | `check_module.py` 가 부르는 모듈 시험 감시 러너 — 코어 `data/` 접근·저장소 안 쓰기(모듈 폴더·상대 경로)를 실패로, AppTest import 길을 앱과 같게 |
 | `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18 ~ M20 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
-| `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run capa_server.py --server.port 8080` — 통합인증 진입점)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
+| `container_start.py` | C-DEP CD 이미지의 `CMD` — 임시 응답을 세우고 환경변수로 `bigdataquery` 설치·로그인 토큰 파일 · 두 DB 받기를 마치고 결과를 남긴 뒤 앱(`streamlit run capa_server.py --server.port 8080` — 통합인증 진입점)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
+| `container_stage.py` | 시작 스크립트의 임시 응답 — 앱이 뜨기 전까지 같은 포트에서 상태 검사에 답하고 값 없는 안내만 보인다 |
 | `sso_mock_idp.py` | 개발·시험용 가짜 통합인증 IdP — 실행 때 키를 메모리에만 만들고 form_post 로 id_token 을 보낸다. 앱이 읽을 환경변수 파일을 저장소 밖에 쓴다(운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장) |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |
 | `check_worktree_isolation.py` | 작업 폴더가 제 가상환경·코드·DuckDB 만 쓰는지 확인한다 |

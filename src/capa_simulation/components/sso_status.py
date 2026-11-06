@@ -145,6 +145,9 @@ def environment_table(cfg: SsoConfig) -> pd.DataFrame:
         issues.setdefault(problem.env, []).append(problem)
     notices: dict[str, list[SsoProblem]] = {}
     for notice in cfg.notices:
+        # 파일이 없는 동안 이 목록은 첫 판이다 — 「쓰지 않음」 이 아니다.
+        if notice.code == "s3_users_ignored" and not access_store.holds_a_file():
+            continue
         notices.setdefault(notice.env, []).append(notice)
     rows: list[tuple[str, str, str]] = []
     for name in names.SSO_ENVIRONMENT:
@@ -223,6 +226,8 @@ def access_s3_line(cfg: SsoConfig) -> str:
             f"사용자 {len(document.entries)}",
             f"판 {document.revision}",
         ]
+        if source.seeded:
+            parts.append("환경변수 첫 판 · 파일 없음")
         if document.demoted:
             parts.append(f"등급을 사용자로 읽음 {document.demoted}")
     parts.append(_write_text(source.saved_at, source.save_problem))
@@ -404,6 +409,26 @@ def _access_read_alert(cfg: SsoConfig) -> None:
     )
 
 
+def _access_seed_alert(cfg: SsoConfig) -> None:
+    """상태 알림 `AD-09` — 파일이 없어 환경변수 목록으로 판정하는 동안. 첫 저장이 쓰면 풀린다.
+
+    `AD-08` 과 같이 그 자리(「접속 명단」)가 있는 관리자 회차에만 세운다.
+    """
+    source = runtime.access_source()
+    seeded = source is not None and source.seeded and _viewer_is_admin(cfg)
+    alerts.state(
+        "AD-09",
+        scope=None,
+        content=None,
+        active=seeded,
+        text="접속 명단이 환경변수 첫 판입니다 — S3 파일 없음",
+        full=(
+            "S3 명단 파일이 아직 없어 `CAPA_ACCESS_USERS` 를 첫 판으로 씁니다. Admin 「접속 명단」 "
+            "에서 첫 저장을 하면 파일이 생기고, 그 뒤에는 환경변수를 듣지 않습니다."
+        ),
+    )
+
+
 def render_sso_status() -> None:
     """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
 
@@ -433,6 +458,7 @@ def render_sso_status() -> None:
     )
     if access_store.is_on(cfg):
         _access_read_alert(cfg)
+        _access_seed_alert(cfg)
     if cfg.mode is SsoMode.OFF and not cfg.prod:
         return
     verdict = sso_verdict(cfg)

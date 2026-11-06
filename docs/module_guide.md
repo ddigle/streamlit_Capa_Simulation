@@ -83,7 +83,7 @@
 | `modules/<id>/` | 쓴다 | 네 모듈의 코드다 |
 | `data/modules/<id>/` | 읽기만 한다 — 화면이 실행 중에 쓴다. 손으로 넣거나 고치지 않고, 지울 때는 먼저 묻는다 | 네 모듈의 데이터 자리다 — 코드에서는 `ctx.data_dir`. 손으로 넣은 파일은 그 PC 에만 있다(아래) |
 | 그 밖 전부 — `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/`·`docs/`·`config/`·루트 파일·다른 모듈 | 읽기만 한다 | 코어와 남의 모듈이다. 고쳐도 다음 배포가 덮는다 |
-| 코어 두 DB(`data/capa_simulation.duckdb`·`data/equipment_availability.duckdb`)·`data/input`·`data/output`·`data/temp`·`review/`·`.deploy/` | 열지도 않는다 | 운영 데이터와 배포 기록이다 |
+| 코어 두 DB(`data/capa_simulation.duckdb`·`data/equipment_availability.duckdb`)·`data/input`·`data/output`·`data/temp`·`review/`·`.deploy/`·`~/.aws`·`/proc` | 열지도 않는다 | 운영 데이터 · 배포 기록과 운영 버킷 키다 |
 
 - 배포 ZIP 은 `modules/` 를 싣지도 덮지도 지우지도 않는다. `data/modules/` 도 지우지 않는다.
 - **첫 배포 주의** — 이 지침서가 실린 배포를 앱 관리자가 적용하기 **전에는** 저장소에 `modules/` 를 올리지 않는다(PR 도 합치지 않는다).
@@ -593,7 +593,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 | `st.page_link`(경고) | 사이드바 · 탭 줄 | 단독 시험(`AppTest.from_file(page)`)에서 `StreamlitPageNotFoundError` 로 죽는다 | M05 |
 | 코어 내부 import — `capa_simulation` 가운데 `module_api` 밖, `app` · `app_pages` · `scripts` · `tests`, 다른 모듈 `modules.<다른 id>`, 같은 폴더 맨이름 import | `capa_simulation.module_api` 와 `modules.<id>.*` 만 | 코어 내부는 알림 없이 바뀐다. 맨이름은 앱에서 엉뚱한 자리로 풀린다(3-6) | M06 |
 | 창구를 돌아 코어에 닿기 — `sys.modules` 읽기 · `__globals__` · `__builtins__` · `__subclasses__` · 호출 프레임 · `eval` · `exec` · 글자 상수가 아닌 `importlib.import_module` · `__import__`(전체는 부록 B) | `capa_simulation.module_api` 의 이름만 | 한 프로세스라 이 길로 세션 비밀 · 접속 명단까지 닿는다. 점검이 무엇을 불러오는지 판정할 수 없으면 오류로 본다 | M06 |
-| 코어 데이터 자리 글자 — `capa_simulation.duckdb` · `equipment_availability.duckdb` · `data/input` · `data/output` · `data/temp` · `.deploy/` | `ctx.data_dir` | 운영 DB 를 잠그거나 깨뜨린다 | M07 |
+| 코어 데이터 자리 글자 — `capa_simulation.duckdb` · `equipment_availability.duckdb` · `data/input` · `data/output` · `data/temp` · `.deploy/` · `.aws/` · 뿌리에서 시작하는 `/proc/` | `ctx.data_dir` | 운영 DB 를 잠그거나 깨뜨린다 | M07 |
 | 접두 없는 세션 키 — `key="x"` · `st.session_state["x"]` · `st.query_params["x"]` | `ctx.key("x")` | 세션 칸은 코어 · 모든 모듈이 함께 쓴다. 겹쳐도 오류가 나지 않고 값이 조용히 샌다 | M08 |
 | `st.session_state.clear()` · `.popitem()` · `.update(…)` · 변수 · 반복으로 `del` | 자기 키만 `del st.session_state[ctx.key("x")]` | 코어의 시나리오 · 탭 칸까지 지운다 | M08 |
 | `requirements.txt` 에 없는 패키지 | 6장의 요청 | 배포 서버 이미지에 없어 그 화면만 import 오류가 난다 | M09 |
@@ -1073,7 +1073,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | M05 | `st.page_link`(단독 시험에서 `StreamlitPageNotFoundError` — 화면 사이 이동은 사이드바 · 탭 줄이 한다) | 경고 |
 | M06 | 코어 내부 import — `capa_simulation` 가운데 `capa_simulation.module_api` 밖, `app` · `app_pages` · `scripts` · `tests`, 다른 모듈 `modules.<다른 id>`, 맨 `modules`. 같은 폴더 맨이름 import — 최상위 import 이름이 그 모듈 폴더 안 `.py`(확장자 뗀 것) · 폴더 이름과 같으면 「`from modules.<id> import <이름>` 으로」(M09 보다 먼저 판정) | 오류 |
 | M06 | 창구 우회 — `sys.modules` 읽기(바꾸기는 M11) · `sys._getframe` · `sys._current_frames`, 어디서든 속성 · 이름 · 글자로 쓴 `__globals__` · `__builtins__` · `__subclasses__` · `__self__` · `f_globals` · `f_locals` · `f_builtins` · `f_back` · `tb_frame` · `gi_frame` · `cr_frame` · `ag_frame`, `inspect.currentframe` · `inspect.stack` · `inspect.trace` · `inspect.getmodule` · `inspect.getmembers` · `inspect.getouterframes` · `inspect.getinnerframes`, `gc.get_objects` · `gc.get_referrers` · `gc.get_referents`, `eval` · `exec` · `compile` · `builtins.eval` · `builtins.exec` · `builtins.compile`, `importlib.util` · `importlib.machinery` · `pkgutil` · `pydoc` · `runpy`, 글자 상수가 아닌 `importlib.import_module` · `__import__`(이름에 담아 부르기 · 상대 이름 포함), `capa_simulation` 을 동적 import 로 부르기, `getattr` · `vars` 로 `capa_simulation` · `sys` · `importlib` · `builtins` · `inspect` · `gc` · `pkgutil` · `pydoc` · `runpy` 를 들여다보기(값 객체는 넘긴다). 판정할 수 없으면 오류다. 시험 파일도 같다. 이 점검은 쉬운 꼴만 잡는다 — **통과가 보증이 아니다**(코어와 한 프로세스다 — 방어선은 앱 관리자의 PR 점검) | 오류 |
-| M07 | 코어 데이터 자리 — 글자에 `capa_simulation.duckdb` · `equipment_availability.duckdb` · `data/input` · `data/output` · `data/temp` · `.deploy/`(역슬래시 꼴 포함) | 오류 |
+| M07 | 코어 데이터 자리 — 글자에 `capa_simulation.duckdb` · `equipment_availability.duckdb` · `data/input` · `data/output` · `data/temp` · `.deploy/` · `.aws/` · 뿌리에서 시작하는 `/proc/`(역슬래시 꼴 · 끝 슬래시 없는 마디 포함 — 열 이름 · 폴더 이름 `proc` 은 아니다) | 오류 |
 | M07 | 글자가 `data/` 로 시작(`ctx.data_dir` 를 쓰라는 안내) | 경고 |
 | M08 | 키 접두 — `key=` 의 글자(또는 f-문자열의 앞 상수), `st.session_state[…]` · `.get` · `.pop` · `.setdefault` · `in st.session_state` · 속성 접근, `st.query_params[…]` 의 글자가 `mod_<id>__` 로 시작하지 않음. `ctx.key(…)` 호출과 판정할 수 없는 읽기 식은 넘긴다 | 오류 |
 | M08 | 세션 전역 조작 — `st.session_state.clear()` · `.popitem()` · `.update(…)`, `del st.session_state[…]` 의 키가 접두 있는 글자 상수나 `ctx.key(…)` 호출이 아님(변수 · 반복 포함) | 오류 |

@@ -18,6 +18,9 @@ BigDataQuery → S3 Drive 전환이 끝날 때까지 보류다(2026-10-10 사용
 간다(사본 트리 — 6-3 1)). 4-6 은 Opus 구간이다(0-2). 배포 ZIP 이 없는 세션이다(0-1 끝). 합친 모듈을 배포 사이에 사용자 앱 · 배포 서버에 올리러 연 세션도
 1장부터 시작하지 않고 4-7 로 바로 간다(백업 없음 — 앱은 사용자가 그 안에서 한 번 껐다 띄운다).
 
+**운영 DB 정본이 버킷으로 옮겨 간 뒤(이관 뒤)에는 사내 PC 앱이 쓰는 쪽이 아니다** — 6-4 가 이관 차례와 사내 PC 길이다. 사내 PC 의 DB 는 이관 때의 사본이고 저장해도 정본에 닿지 않는다. 그 뒤의
+7-8 · 8장 · 9장 · 6-3 은 버킷에서 받은 사본으로 돈다.
+
 **이 문서를 읽고 있다면 먼저 확인한다.**
 
 ```powershell
@@ -516,11 +519,12 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 - 이 파일에는 프로젝트 자신(`-e .`)이 **일부러 빠져 있다.** 그래서 컨테이너는
   `Dockerfile-prod` 의 `ENV PYTHONPATH=/project/src` 로 `src` 를 찾는다. 둘은 한 쌍이라
   한쪽만 보고 판단하지 않는다.
-- 그 이미지의 시작 명령(`CMD`)은 `scripts/container_start.py` 다 — C-DEP 배포 설정의 환경변수로 사내
-  `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 `data/temp/container_start.json`(Admin Area 「서버 시작
-  점검」)에 남긴 뒤 `streamlit run capa_server.py --server.port 8080` 으로 바뀐다(`capa_server.py` 는 `app.py` 를 감싸
+- 그 이미지의 시작 명령(`CMD`)은 `scripts/container_start.py` 다 — 맨 앞에서 8080 을 잡아 상태 검사에 답하고(임시 응답), C-DEP 배포 설정의 환경변수로 사내
+  `bigdataquery` 설치·로그인 토큰 파일을 갖추고 `managed` 면 두 DB 를 버킷에서 받은 뒤 결과를 `data/temp/container_start.json`(Admin Area 「서버 시작
+  점검」)에 남기고 `streamlit run capa_server.py --server.port 8080` 으로 바뀐다(`capa_server.py` 는 `app.py` 를 감싸
   통합인증 경로·문지기를 붙인 운영 진입점). 사내 WebIDE 터미널에서는 부르지 않는다 — WebIDE 는 지금처럼 `app.py` 다
-  (넣을 key 는 [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」).
+  (넣을 key 는 [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」 · [`objectstore_setup.md`](objectstore_setup.md) 2장).
+- 이미지의 `aws` 는 `requirements.txt` 밖의 따로 된 한 줄(`awscli==1.46.3`)이다. 앱 의존성이 아니라 이 파일 · 사내 PC 환경에 없다.
 - 통합인증 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `ADFS_CLIENT_ID`(켜는 스위치 — 비면 꺼짐) · `JWT_SECRET_KEY` · `APP_ENV` ·
   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_PUBLIC_URL` · 선택 `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` ·
   `CAPA_SSO_SESSION_MAX_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` · 접속 명단 `CAPA_ACCESS_ADMINS`(운영 필수) · 선택 `CAPA_ACCESS_USERS` ·
@@ -576,6 +580,9 @@ uv pip install -r requirements-company.txt
 앱을 한 번 띄우면 `data/capa_simulation.duckdb` 와 `data/equipment_availability.duckdb` 에
 새 마이그레이션이 적용된다. **적용된 마이그레이션은 버전 번호로 체크섬을 대조하므로, 사내에서
 SQL 파일을 고치면 앱이 시작조차 못 한다.**
+
+**이관 뒤(6-4) 운영 서버** — 정본이 버킷에 있어 마이그레이션도 받은 뒤 운영 앱이 돈다. 시뮬레이션은 첫 회차, 설비는 그 DB 를 처음 열 때이고 다음 저장 때 함께 올라간다.
+**마이그레이션을 실은 배포를 앞으로 되돌리는 CI/CD 는 앱을 띄우지 못한다** — 받은 DB 판이 코드보다 새로우면 임시 화면에 `DB 판이 코드보다 새로움` 으로 머문다(옛 코드가 정본을 고치는 길을 막는다). 최신을 다시 누르면 풀린다.
 
 **이 명령은 사용자가 친다.** 서버는 끄기 전까지 안 끝나므로 에이전트가 띄우면 세션이 거기서
 멈춘다. 그리고 브라우저로 한 번 들어가야 마이그레이션이 실제로 걸린다.
@@ -804,7 +811,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 
 **점검 통과는 보증이 아니다.** 모듈은 코어와 한 프로세스에서 돌아, 의도를 가진 코드는 점검이 못 잡은 길로 세션 비밀 · S3 키 · 접속 명단 쓰기 함수에 닿을 수 있다 — 그렇게 고친 명단의
 고친 기록에는 관리자 계정이 남는다(`docs/sso_setup.md` 4장). 이 절이 그 앞의 마지막 방어선이다. 에이전트는 점검 결과만 옮기지 말고 PR 의 바뀐 코드를 읽어, `module_api` 밖으로 닿으려는 꼴
-(문자열을 이어 이름을 만들기 · 내부 속성 들여다보기 · 주소나 키로 보이는 값 다루기)이 보이면 통과여도 사용자에게 알린다.
+(문자열을 이어 이름을 만들기 · 내부 속성 들여다보기 · 주소나 키로 보이는 값 다루기)이 보이면 통과여도 사용자에게 알린다. **`~/.aws` 의 키는 이제 운영 DB 삭제 권한이다** — 그 길을 건드리는 코드는 통과여도 알린다.
 
 1. 사용자가 받는다(자격증명은 사람 몫이다). `<번호>` 는 PR 번호다.
 
@@ -1333,6 +1340,8 @@ uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir $HOME/p
 
 ## 6-3. 사용자 앱을 끄지 않고 실 DB 사본으로 확인할 때 (사본 E2E)
 
+**이관 뒤(6-4)에는 2)의 복사 원본이 버킷이다** — 사내 PC `data\` 를 복사하지 않고 `fetch-copy` 로 받은 두 DB 를 `$e2e\data\` 에 둔다. 아래 「사용자 앱」 · `.wal` 대조는 이관 전 꼴이다.
+
 사용자가 앱(8501)을 계속 써야 하는데 실데이터로 넓게 봐야 할 때 쓴다 — 전 리비전 계산 · 화면 순회 · HOME 시간.
 `202610120655` 리뷰의 「실데이터 E2E」(전 리비전 54 계산 · 페이지 17 · 탭 49 · HOME cold/warm)가 이 꼴이었다. **7-8 ·
 8장의 대신이 아니다** — 그 둘은 그대로 앱을 끈 채 운영 DB 로 한다. 사본 E2E 는 그 위에 더하는 확인이다.
@@ -1639,6 +1648,40 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 대조 줄은 저장소에서 `PYTHONPATH=<사본 폴더>/src <저장소>/.venv/bin/python -c "<위 따옴표 안 그대로>"` 로 친다.
 
 ---
+
+## 6-4. 운영 DB 정본이 버킷으로 옮겨 간 뒤
+
+정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 사내 에이전트가 치는 것은 아래 셋이고, 쓰는 명령은 모두 사용자에게 준다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다.
+
+### 이관 차례
+
+1. 사용자가 C-DEP 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소를 넣고 CI/CD → Admin 「서버 시작 점검」 에서 aws 판 · ECS 연결 · 버킷 목록을 본다.
+2. 사용자가 사내 PC 앱을 끈다(1-1) → `uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> init --note "최초 이관"` → 같은 꼴로 `status`. `aws s3 cp` 를 쓰지 않는다.
+3. 사용자가 `CAPA_S3_SYNC_MODE=managed` 를 넣고 CI/CD → 앱이 뜨고 HOME 이 사내 PC 와 같은지 본다.
+4. 앱에서 저장 하나 → Admin 「DB 동기화」 의 마지막 올림 → CI/CD 다시 → 그 저장이 살아 있는지 본다.
+
+**CI/CD 는 임시 화면에 머물러도 성공으로 보인다.** CI/CD 뒤에는 앱을 열어 본다. **CI/CD 를 누르기 전에는 「DB 동기화」 가 `올릴 것 없음` 인지 본다** — 끌 때 올릴 기회가 없다.
+
+### 사본 받기 — 7-8 · 8장 · 9장 · 6-3
+
+앱이 떠 있어도 된다. 운영 앱의 그 시각 세대이고 사내 PC `data\` 를 건드리지 않는다.
+
+```powershell
+uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> fetch-copy --to "$e2e\data"
+```
+
+6-3 1) 의 사본 트리에 그대로 받는다(두 DB 와 `generation.json`). 앱을 끄는 줄이 없어지고 8장 · 7-8 의 스크립트는 `--database "$e2e\data\capa_simulation.duckdb" --equipment-database "$e2e\data\equipment_availability.duckdb"` 로 돈다. 리뷰의 「돌린 때」 에 받은 세대를 적는다.
+
+### 세대 되돌리기
+
+앱 결함으로 망가진 세대가 게시됐거나 임시 화면이 `스냅샷이 깨짐` · `원격이 갈라짐` 에 머물면 앞 세대로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다. 사람이 고르는 일이라 사용자에게 묻고, 세대 번호는 `generations` 로 본다 — 펜스 세대는 같은 멤버로 쌓이므로 멤버 세대가 HEAD 와 다른 앞 세대를 고른다.
+
+```powershell
+uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> generations
+uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> rollback --to <세대> --yes
+```
+
+같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 를 더한다. 그 뒤 CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다** — 사용자에게 먼저 알린다.
 
 ## 7. 이번 배포에서 사내가 따로 확인해야 하는 것
 
@@ -2165,6 +2208,8 @@ uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq --output 
 
 ### 8-0. 언제 · 무엇을 치나
 
+**이관 뒤(6-4)에는 앱을 끄지 않고 버킷에서 받은 사본으로 돌린다** — 정본이 사내 PC 에 없다. 두 DB 를 모두 사본으로 주는 아래 끝의 줄이 기본이고, 이 절의 「앱을 끈 채」 는 이관 전 꼴이다.
+
 **7장(그 배포의 확인)을 마친 뒤, 앱을 끈 채로 돌린다.** 스크립트는 운영 DB 를 열기 전에 이 저장소의 앱
 프로세스(`streamlit run … app.py`)를 먼저 본다 — 앱은 rerun 동안만 DB 를 쥐어 쉬는 앱은 잠금에 안 잡히기 때문이다.
 앱이 보이면 「사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다 …」, rerun 중인 앱이 DB 를 잠갔으면 「DB 를 열지
@@ -2217,7 +2262,7 @@ uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq --output 
   하지 않는다(`202610271800` 리뷰가 그렇게 했다). 8-10 센서스는 데이터셋이 아니라
   리비전을 센다 — 기본은 활성·공식버전 대상 리비전이고 `--census-all-revisions` 면 저장된 모든 리비전이다(8-10). 8-12 는 그 옵션과 상관없이
   늘 저장된 모든 리비전을 본다 — 6-3 a 가 멈춤으로 적은 리비전을 활성이 아니어도 놓치지 않게 한다.
-- **8장의 정본은 앱을 끈 채 운영 DB 다**(6-3 머리 — 사본 E2E 는 그 대신이 아니다). 블록 하나를 다시 볼 때나 9장에서는 6-3 의
+- **이관 전 8장의 정본은 앱을 끈 채 운영 DB 다**(6-3 머리 — 사본 E2E 는 그 대신이 아니다). 이관 뒤에는 6-4 의 사본이 정본이다. 블록 하나를 다시 볼 때나 9장에서는 6-3 의
   사본을 줄 수 있다 — `--database "$e2e\data\capa_simulation.duckdb" --equipment-database "$e2e\data\equipment_availability.duckdb"`.
   두 DB 를 모두 사본으로 줘야 앱 프로세스를 보지 않는다(하나라도 기본 경로면 그 운영 DB 를 연다). 그 출력을 리뷰에 붙이면 「돌린
   때」 에 「사본 <시각>」 을 적는다 — 사본 뒤 사용자가 저장한 것은 들어 있지 않다. 7-8 뒤의 `inspect_wf_division.py` 도
@@ -2787,7 +2832,7 @@ uv run --no-sync python scripts/inspect_real_data_checks.py --check-summary revi
 ### 9-1. 사본만 연다 — 운영 DB 에는 복사만
 
 - **사본은 6-3 의 1) ~ 3) 그대로 만든다** — `git archive` 사본 트리, `.wal` 을 복사 앞뒤로 두 번 보고 크기 · 시각을 견주는 DB 복사,
-  띄우기 전 경로 확인. 운영 DB(`data\*.duckdb`)에 하는 일은 그 복사뿐이다.
+  띄우기 전 경로 확인. 운영 DB(`data\*.duckdb`)에 하는 일은 그 복사뿐이다. 이관 뒤에는 복사 대신 6-4 의 `fetch-copy` 다.
 - **`read_only=True` 가 기본이다.** 사본에 쓰는 것은 그 배포 7장이 「사본에서만」 이라고 적은 쓰기나 사용자가 이번에 허락한
   쓰기뿐이고, 쓴 뒤에 잰 수에는 「쓰기 뒤 사본」 을 붙인다.
 - **즉석 코드도 DB 를 열기 전에 6-3 3) 의 경로 확인을 먼저 돈다** — 열 경로가 사본 폴더의 `data\` 아래이고 운영 DB 자리가
