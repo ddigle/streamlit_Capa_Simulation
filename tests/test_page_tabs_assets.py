@@ -1618,8 +1618,8 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
 def test_the_equipment_master_grid_and_its_side_panels_count_as_edit_tables() -> None:
     """떠나기 붙들기가 편집표로 보는 Components v2 칸은 설비 마스터 표와 오른쪽 칸의 key, 기준 정보
     범용 편집 그리드의 호스트 key, 시나리오 목록 표 셋이다 — 그 모듈의 key 를 바꾸면 이 묶음도 같이
-    바뀌어야 한다(`page_tabs` 는 읽을 때 컴포넌트를 등록하는 그 모듈을 불러오지 않는다). 탭 줄 data 의
-    `grids` 로 실려 JS 가 그릴 때마다 선택자를 다시 짓는다."""
+    바뀌어야 한다(`page_tabs` 는 읽을 때 컴포넌트를 등록하는 그 모듈을 불러오지 않는다). 탭 줄
+    data 의 `grids` 로 실려 JS 가 그릴 때마다 선택자를 다시 짓는다."""
     from capa_simulation.components import equipment_master_grid as emg
     from capa_simulation.components.scenario_list_state import MOUNT_KEYS
     from capa_simulation.page_tabs_state import INITIAL_STRIP

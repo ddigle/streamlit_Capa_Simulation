@@ -71,6 +71,9 @@ def test_the_shared_fragments_come_first_and_a_folded_row_keeps_its_height() -> 
     assert "contain-intrinsic-block-size: auto 34px;" in OWN_CSS
     assert "contain-intrinsic-size" not in OWN_CSS
     assert re.search(r"\.is-editing-row \{\s*content-visibility: visible;", OWN_CSS)
+    assert re.search(r"dd\.sgl-memo \{[^}]*-webkit-line-clamp: 3;", OWN_CSS)
+    # 줄 봉쇄 안에서 잘리지 않게 칸 윤곽은 안쪽으로 그린다.
+    assert re.search(r"\.sgl-row \.emg-cb:focus-visible \{[^}]*outline-offset: -2px;", OWN_CSS)
 
 
 def test_column_widths_fit_their_heads() -> None:
@@ -544,11 +547,16 @@ const out = {}
   // 리비전 표 — 줄을 누르면 회차 전에 값 줄이 바뀌고, 고른 줄의 이름을 다시 누르면 편집이다.
   m = mount(REVISIONS)
   const values = () => m.host.querySelector('.sgl-values').textContent
-  out.revisionFirst = { title: m.host.querySelector('.sgl-title').textContent, values: values() }
+  const memo = () => {
+    const node = m.host.querySelector('.sgl-memo')
+    return node && { text: node.textContent, title: node.title }
+  }
+  out.revisionFirst = { title: m.host.querySelector('.sgl-title').textContent, values: values(), memo: memo() }
   click(press(cell(m.host, 'r1', 'status')))
   out.revisionPick = {
     op: m.sent[m.sent.length - 1][1].ops.map((op) => [op.op, op.owner, op.id]),
     values: values(),
+    memo: memo(),
     open: m.host.querySelectorAll('.is-open').map((node) => node.dataset.row),
   }
   click(press(cell(m.host, 'r1', 'name')))
@@ -649,6 +657,9 @@ def test_the_gestures_in_a_fake_dom() -> None:
     assert out["dragCancelled"]["rows"] == ["b", "a", "c"]
     assert out["revisionFirst"]["title"] == "가"
     assert "메모 둘" in out["revisionFirst"]["values"]
+    # 긴 메모가 작업 줄을 밀어내지 않게 세 줄로 자르고(CSS) 전문은 풍선에 둔다. 빈 메모에는 풍선이 없다.
+    assert out["revisionFirst"]["memo"] == {"text": "메모 둘", "title": "메모 둘"}
+    assert out["revisionPick"]["memo"] is None
     assert out["revisionPick"]["op"] == [["pick", "a", "r1"]]
     assert "메모 둘" not in out["revisionPick"]["values"]
     assert out["revisionPick"]["open"] == ["r1"]

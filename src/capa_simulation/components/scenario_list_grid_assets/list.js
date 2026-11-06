@@ -375,7 +375,13 @@ function paintRevisionHead(S) {
   S.valuesNode.textContent = ''
   for (const [label, value] of [['메모', picked && picked.memo], ['저장일', picked && picked.created], ['부모', picked && picked.parent]]) {
     S.valuesNode.appendChild(el('dt', null, label))
-    S.valuesNode.appendChild(el('dd', null, value || (picked ? '없음' : '')))
+    const item = el('dd', null, value || (picked ? '없음' : ''))
+    // 메모는 월 머지 · 연도 Shift 출처처럼 길 수 있다 — 작업 줄을 밀어내지 않게 세 줄까지 보이고 전부는 풍선이다.
+    if (label === '메모' && value) {
+      item.classList.add('sgl-memo')
+      item.title = value
+    }
+    S.valuesNode.appendChild(item)
   }
 }
 

@@ -213,3 +213,8 @@ textarea.emg-ed {
   align-items: center;
   font-size: 12px;
 }
+
+.emg :focus-visible {
+  outline: 2px solid var(--emg-accent);
+  outline-offset: -2px;
+}

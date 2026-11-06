@@ -187,6 +187,18 @@
   overflow-wrap: anywhere;
 }
 
+.sgl-values dd.sgl-memo {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.sgl-row .emg-cb:focus-visible {
+  outline: 2px solid var(--emg-accent);
+  outline-offset: -2px;
+}
+
 .sgl-mark {
   display: inline-block;
   margin-left: 6px;
@@ -217,5 +229,10 @@
 
   .sgl-tools {
     display: none;
+  }
+
+  .sgl-values dd.sgl-memo {
+    display: block;
+    overflow: visible;
   }
 }
