@@ -166,6 +166,40 @@ def test_a_save_press_tells_the_edits_of_rows_gone_since_the_last_run(
     assert _draft(app).scenarios == {}
 
 
+def test_a_cut_save_hands_the_gone_edits_to_the_second_press(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남이 고친 줄을 보관한 뒤 「변경 저장」 을 빠르게 두 번 누른다. 첫 콜백이 쓴 뒤 그 경고를 담기
+    전에 끊기면 둘째 콜백은 저장을 다시 돌지 않고 첫 결과를 받아 초안을 비운다 — 본문 맞추기가 셀
+    것도 남지 않으므로 경고는 그 결과로 잇는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    script, database_path, ids, names = _three_scenarios(tmp_path)
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    victim, kept = [item for item in ids if item != release.scenario_id]
+    app, browser, _ = _list_app(script, monkeypatch)
+    browser.rename_scenario(victim, "남이 보관할 줄")
+    browser.rename_scenario(kept, "남는 줄 고침")
+    repository.archive_scenario(victim)
+    app.button(key="scenario_list_save").click()
+    pressed = app._tree.get_widget_states()
+    _first_callback(
+        app,
+        monkeypatch,
+        "_save_list_edits",
+        cut_after=(DuckDBScenarioRepository, "apply_scenario_list_edits"),
+    )
+    assert _names(repository)[kept] == "남는 줄 고침"
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert any("고침 1건을 버렸습니다" in text for text in _warnings(app))
+    assert "시나리오명 1건을 저장했습니다." in _success_texts(app)
+    assert _draft(app).scenarios == {}
+
+
 def test_the_archive_check_does_not_follow_to_another_scenario(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

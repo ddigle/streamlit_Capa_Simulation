@@ -153,13 +153,15 @@ class ChangeCounts:
 @dataclass(frozen=True)
 class SavePlan:
     """저장 한 번의 내용 — (본 이름, 새 이름), 새 차례 · 그 본 차례. `settled` 는 이미 쓰인 제
-    저장의 고침(끊긴 첫 저장 — 쓰지 않고 뒷정리만 잇는다)."""
+    저장의 고침(끊긴 첫 저장 — 쓰지 않고 뒷정리만 잇는다). `gone` 은 맞추기가 뺀 사라진 줄의 고침
+    수다 — 겹쳐 온 둘째 누름은 맞추기를 돌지 않아 이 결과로만 안다."""
 
     scenario_renames: Mapping[str, tuple[str, str]] = field(default_factory=dict)
     revision_renames: Mapping[str, tuple[str, str]] = field(default_factory=dict)
     order: tuple[str, ...] | None = None
     order_base: tuple[str, ...] | None = None
     settled: tuple[SettledName, ...] = ()
+    gone: int = 0
 
     @property
     def writes(self) -> bool:

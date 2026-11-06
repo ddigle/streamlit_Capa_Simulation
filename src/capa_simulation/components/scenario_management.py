@@ -757,8 +757,7 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
         if held_notice(LIST_NOTICE_KEY) is None:
             _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
         return
-    # 거부 알림이 줄 번호 · 이름을 적으려면 맞춘 초안이 필요하고, 사라진 고침 수는 본문 맞추기가
-    # 못 본다(콜백이 먼저 돌아 초안을 비운다) — 저장 안에서 맞춘 것을 건네받는다.
+    # 거부 알림이 줄 번호 · 이름을 적으려면 맞춘 초안이 필요하다 — 저장 안에서 맞춘 것을 건네받는다.
     fitted: list[tuple[Reconciled, SavedList]] = []
 
     def save() -> SavePlan:
@@ -782,7 +781,7 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
                     # 끊긴 첫 저장을 뒤 회차 맞추기가 제 저장으로 알아보게 적는다(`_own_settled`).
                     # 쓰기 바로 뒤 dict 칸이라 끊기지 않는다.
                     remember_own_save(_name_save_name(kind, row_id), shown, text, marks)
-        return replace(plan, settled=_own_settled(settled, marks))
+        return replace(plan, settled=_own_settled(settled, marks), gone=settled.gone)
 
     try:
         with pinned_connections(Path(database_path)):
@@ -808,12 +807,12 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
     except BOOTSTRAP_ERRORS as exc:
         _notify(LIST_NOTICE_KEY, "error", bootstrap_error_message(exc))
         return
-    # 겹쳐 온 둘째 누름은 저장을 다시 돌지 않아 맞춘 것이 없다 — 첫 누름이 이미 알렸다.
-    gone = fitted[-1][0].gone if fitted else 0
-    if gone:
-        _warn_gone(gone)
+    # 사라진 고침 수는 본문 맞추기가 못 본다(콜백이 먼저 돌아 초안을 비운다). 첫 콜백은 쓴 뒤 이
+    # 경고를 담기 전에 끊길 수 있어, 겹쳐 온 둘째 누름도 첫 결과의 수로 다시 담는다(같은 칸이다).
+    if done.gone:
+        _warn_gone(done.gone)
     if not done.done:
-        if not gone and held_notice(LIST_NOTICE_KEY) is None:
+        if not done.gone and held_notice(LIST_NOTICE_KEY) is None:
             _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
         store_draft(cleared(draft))
         return
