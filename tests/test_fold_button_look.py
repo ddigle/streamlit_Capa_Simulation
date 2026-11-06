@@ -12,11 +12,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components import side_panel
 from capa_simulation.components import space_layout_editor as space
 
 COMPONENTS = Path(__file__).resolve().parents[1] / "src/capa_simulation/components"
-MASTER_CSS = (COMPONENTS / "equipment_master_grid_assets/splitter.css").read_text(encoding="utf-8")
+MASTER_CSS = (COMPONENTS / "side_panel_assets/splitter.css").read_text(encoding="utf-8")
 SPACE_CSS = (COMPONENTS / "space_layout_editor_assets/editor.css").read_text(encoding="utf-8")
 # 편집기 안 단추의 공통 꼴 — 편집기에 함께 실린 날짜 판 단추는 제 꼴을 쓴다.
 SPACE_BUTTON = ".sle button:where(:not(.capa-date-root button))"
@@ -106,7 +106,7 @@ def test_the_two_floating_buttons_react_the_same_way() -> None:
 
 
 def test_the_two_palettes_give_the_same_colors() -> None:
-    master = emg._splitter_palette()
+    master = side_panel.splitter_palette()
     editor = space._palette()
 
     assert master["border"] == editor["border"]

@@ -31,6 +31,7 @@ from capa_simulation.components import (
     equipment_master_grid,
     page_tabs,
     paste_form,
+    side_panel,
     space_layout_editor,
     voc_draft_keeper,
 )
@@ -328,8 +329,8 @@ def _stub_edit_grid(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _stub_equipment_side_splitter(monkeypatch: pytest.MonkeyPatch) -> None:
-    """설비 마스터 오른쪽 칸 칸막이(`equipment_master_grid._SPLITTER`)를 아무것도 보내지 않는
+def _stub_side_splitter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """편집기 오른쪽 칸 칸막이(`side_panel._SPLITTER`)를 아무것도 보내지 않는
     대역으로 바꾼다 — 표 대역과 같은 까닭(AppTest 는 그 JS 를 못 돌리고, 한 프로세스의 두 번째
     AppTest 에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다). 받는 값이 없는 칸이다.
     자리·data 를 보는 시험은 제 `monkeypatch.setattr` 로 이 위에 다시 덮는다
@@ -338,7 +339,7 @@ def _stub_equipment_side_splitter(monkeypatch: pytest.MonkeyPatch) -> None:
     def _silent(**_: Any) -> None:
         return None
 
-    monkeypatch.setattr(equipment_master_grid, "_SPLITTER", _silent)
+    monkeypatch.setattr(side_panel, "_SPLITTER", _silent)
 
 
 @pytest.fixture(autouse=True)

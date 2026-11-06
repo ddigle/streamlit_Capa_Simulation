@@ -2495,8 +2495,7 @@ def test_the_equipment_grid_contract_matches_the_app() -> None:
     assert tab.SIDE_CHANGES == screens.EQUIPMENT_SIDE_CHANGES
     assert tab.SIDE_KEY == screens.EQUIPMENT_SIDE_KEY
     assert tab.DISCARD_POPOVER_KEY == screens.EQUIPMENT_DISCARD_KEY
-    master = _text(COMPONENTS / "equipment_master_tab.py")
-    assert f'"{screens.GRID_DISCARD_CONFIRM}"' in master
+    assert f"{tab.DISCARD_LABEL} 확인" == screens.GRID_DISCARD_CONFIRM
     # 「전체 39칸」 머리 차례(설비명 맨 앞 + 나머지 계약 차례) → 계약 자리 번호.
     headers = ["설비명", *[name for name in EQUIPMENT_COLUMNS if name != "설비명"]]
     for name in (screens.GRID_TEXT_COLUMN, screens.GRID_DATE_COLUMN, "Area Code", "Model"):

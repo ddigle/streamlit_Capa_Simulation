@@ -21,8 +21,8 @@
   셋(에러 없이 추가 · 가용대수 · 도면)과 칸 오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
   초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 불러오기
   「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한 호기에서 값 가져오기」 가 이 칸을 연다.
-  오른쪽 칸 고르기는 받기 콜백이 바로 적지 않고 다음 고르기 앞에서 적는다(`_SIDE_NEXT_KEY` — 그
-  고르기 뒤에 그린 마운트의 콜백도 같은 길).
+  오른쪽 칸 고르기는 받기 콜백이 바로 적지 않고 다음 고르기 앞에서 적는다(`side_panel.switch_side` —
+  그 고르기 뒤에 그린 마운트의 콜백도 같은 길).
 - **출납**: 표·오른쪽 칸이 보낸 상태 값 `outbox` 를 받기 콜백(본문보다 먼저 돈다)이 두 마운트를 함께
   읽어 반영한다(`equipment_grid.pending_ops`·`apply_ops` → `apply_master_grid_result`). 반영한
   마지막
@@ -136,6 +136,8 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.save_section import discard_popover
+from capa_simulation.components.side_panel import render_side_head, split_frame, switch_side
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.components.write_guard import current_generation, just_written, note_written
@@ -242,12 +244,9 @@ SIDE_NEW: Final = "새 호기"
 SIDE_CHANGES: Final = "저장 전 변경"
 SIDE_HISTORY: Final = "저장 이력"
 SIDES: Final = (SIDE_DETAIL, SIDE_NEW, SIDE_CHANGES, SIDE_HISTORY)
-# 받기 콜백이 고른 오른쪽 칸 — 다음 그리기에서 고르기 위젯 **앞**에 적는다(진짜 콜백은 회차 맨
-# 앞이라 같은 회차, 시험 대역은 그 고르기 뒤 마운트에서 부르므로 다음 회차).
-_SIDE_NEXT_KEY: Final = "equipment_master_side_next_v1"
 # 받기 콜백이 오른쪽 칸을 연 수 — 칸막이 data `reveal`. 늘면 접힌 오른쪽 칸을 편다(표에서 설비명을
 # 누른 것이 보이게). 접힘 자체는 브라우저에만 있다.
-SIDE_REVEAL_KEY: Final = "equipment_master_side_reveal_v1"
+SIDE_REVEAL_KEY: Final = grid_component.MASTER_SIDE.reveal_key
 # 못 찾은 설비명(다음 불러오기까지)·마운트별 마지막으로 반영한 출납 seq.
 MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
@@ -325,15 +324,10 @@ def _grid_state() -> GridState:
 
 
 def _switch_side(side: str) -> None:
-    """오른쪽 칸을 바꾼다 — 다음 고르기 위젯 앞에서 적는다(`_SIDE_NEXT_KEY`). 연 수
-    (`SIDE_REVEAL_KEY`)를 올려 접힌 오른쪽 칸을 편다."""
-    st.session_state[_SIDE_NEXT_KEY] = side
-    st.session_state[SIDE_REVEAL_KEY] = _side_reveal() + 1
-
-
-def _side_reveal() -> int:
-    value = st.session_state.get(SIDE_REVEAL_KEY)
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    """오른쪽 칸을 바꾼다 — 다음 고르기 위젯 앞에서 적고 접힌 칸을 편다(`side_panel.switch_side` —
+    진짜 콜백은 회차 맨 앞이라 같은 회차, 시험 대역은 그 고르기 뒤 마운트에서 부르므로 다음 회차).
+    """
+    switch_side(grid_component.MASTER_SIDE, side)
 
 
 def _new_draft() -> tuple[int, list[str]]:
@@ -1221,19 +1215,17 @@ def _render_save_section(
             args=(context, layout, current_generation(UNDO_PRESS_KEY)),
             disabled=not grid_undo_steps(),
         )
-        with st.popover(DISCARD_LABEL, icon=":material/delete_sweep:", key=DISCARD_POPOVER_KEY):
-            st.caption(
+        discard_popover(
+            label=DISCARD_LABEL,
+            popover_key=DISCARD_POPOVER_KEY,
+            confirm_key=DISCARD_CONFIRM_KEY,
+            note=(
                 "편집본을 저장본으로 다시 세웁니다 — 되돌릴 수 없습니다."
                 + (" Space 층 배치 대기분도 함께 버립니다." if floor_pending else "")
                 + (" S.PKG FAB 전체 배치 대기분은 남깁니다." if has_fab else "")
-            )
-            st.button(
-                "모두 버리기 확인",
-                key=DISCARD_CONFIRM_KEY,
-                type="primary",
-                icon=":material/delete_forever:",
-                on_click=_discard_all,
-            )
+            ),
+            on_confirm=_discard_all,
+        )
         st.button(
             SAVE_LABEL,
             key=SAVE_BUTTON_KEY,
@@ -1353,11 +1345,7 @@ def render_equipment_master_tab(
     submit = None
     # 테두리 하나의 편집기 영역 안 두 칸 — 왼쪽 표, 오른쪽 칸(칸막이로 폭을 바꾸고 칸 머리 단추로
     # 접는다). 간격은 서식이 경계선 양쪽 여백으로 둔다. 배치 서식은 늘 같은 글 한 덩이다.
-    st.html(grid_component.side_layout_style())
-    with st.container(key=grid_component.FRAME_KEY, border=True):
-        with st.container(key=grid_component.SPLIT_KEY, horizontal=True, gap=None, wrap=False):
-            left = st.container(key=grid_component.LEFT_KEY)
-            right = st.container(key=grid_component.RIGHT_KEY)
+    left, right = split_frame(grid_component.MASTER_SIDE)
     with left:
         if table == TABLE_MASTER:
             _render_grid_section(
@@ -1379,22 +1367,9 @@ def render_equipment_master_tab(
                 drafts_replaced=drafts_replaced,
             )
     with right:
-        chosen_side = st.session_state.pop(_SIDE_NEXT_KEY, None)
-        if chosen_side in SIDES:
-            st.session_state[SIDE_KEY] = chosen_side
-        _seed(SIDE_KEY, SIDE_DETAIL, SIDES)
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그
         # 뒤 고르기, 그 뒤 본문 칸.
-        grid_component.render_side_splitter(str(st.session_state[SIDE_KEY]), _side_reveal())
-        side = st.segmented_control(
-            "오른쪽 칸",
-            SIDES,
-            key=SIDE_KEY,
-            required=True,
-            persist_state="session",
-            label_visibility="collapsed",
-        )
-        body = st.container(key=grid_component.SIDE_BODY_KEY)
+        side, body = render_side_head(grid_component.MASTER_SIDE, SIDES, SIDE_DETAIL)
     with body:
         if side == SIDE_HISTORY:
             try:

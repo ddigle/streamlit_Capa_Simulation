@@ -1,11 +1,8 @@
-// 설비 마스터 오른쪽 칸 칸막이 — 오른쪽 칸 왼쪽 끝을 끌어 폭을 바꾸고, 칸 머리의 › 로 접고 편집기 영역 오른쪽 위에 떠 있는
-// 단추로 편다.
+// 편집기 오른쪽 칸 칸막이(설비 마스터 · 시나리오 목록 관리 공용) — 오른쪽 칸 왼쪽 끝을 끌어 폭을 바꾸고, 칸 머리의 › 로 접고
+// 편집기 영역 오른쪽 위에 떠 있는 단추로 편다.
 // 상태는 브라우저에만 둔다(브라우저 저장소 + <html> 의 CSS 변수·속성) — 파이썬으로 보내지 않는다(AGENTS 9장 「브라우저 전용
-// 보기 상태」). 폭의 한계는 페이지 CSS 의 clamp 가 지키고, 여기 `clampWidth` 는 같은 식으로 저장값·aria 값을 낸다.
-const STORE = 'capa-equipment-side-v1'
-const VAR_W = '--emd-side-w'
-const VAR_TOP = '--emd-top'
-const ATTR = 'data-emd-side'
+// 보기 상태」). 폭의 한계는 페이지 CSS 의 clamp 가 지키고, 여기 `clampWidth` 는 같은 식으로 저장값·aria 값을 낸다. 저장소 이름과
+// CSS 변수 · <html> 속성 이름은 화면마다 다르게 data.names 로 온다(`side_panel.SidePanel`).
 // 화면 탭 줄이 없을 때 가리는 머리 띠 높이(설비 마스터 표 `TOAST_REVEAL_MARGIN` 과 같다)와 그 아래 틈.
 const HEADER_COVER = 72
 const COVER_GAP = 8
@@ -75,20 +72,20 @@ function keyAction(key, shift, now, lo, hi) {
 const LOCAL_ONLY = '__essLocalOnly'
 
 // 저장값 — 저장소를 못 쓰면 null(문서 상태를 그대로 둔다).
-function readStore() {
+function readStore(S) {
   if (document.documentElement[LOCAL_ONLY]) return null
   try {
-    return storedState(window.localStorage.getItem(STORE), STORED_LIMIT)
+    return storedState(window.localStorage.getItem(S.names.store), STORED_LIMIT)
   } catch (error) {
     document.documentElement[LOCAL_ONLY] = true
     return null
   }
 }
-function writeStore(patch) {
-  const prev = readStore()
+function writeStore(S, patch) {
+  const prev = readStore(S)
   if (!prev) return
   try {
-    window.localStorage.setItem(STORE, JSON.stringify({ ...prev, ...patch }))
+    window.localStorage.setItem(S.names.store, JSON.stringify({ ...prev, ...patch }))
   } catch (error) {
     document.documentElement[LOCAL_ONLY] = true
   }
@@ -130,8 +127,8 @@ function rowWidth(S) {
 function columnWidth(S) {
   return S.column ? S.column.getBoundingClientRect().width : 0
 }
-function minimized() {
-  return document.documentElement.getAttribute(ATTR) === 'min'
+function minimized(S) {
+  return document.documentElement.getAttribute(S.names.attr) === 'min'
 }
 
 // 붙는 높이 — 화면 탭 줄 아래 끝(본문 스크롤 칸 위 끝 기준) + 8px, 탭 줄이 없으면 머리 띠 72px + 8px. 탭 줄이 붙는
@@ -153,11 +150,11 @@ function coverTop(selector) {
 }
 
 function measure(S) {
-  document.documentElement.style.setProperty(VAR_TOP, coverTop(S.cover) + 'px')
+  document.documentElement.style.setProperty(S.names.top, coverTop(S.cover) + 'px')
 }
 
 function paint(S) {
-  const folded = minimized()
+  const folded = minimized(S)
   S.host.classList.toggle('is-min', folded)
   const { lo, hi } = sideBounds(rowWidth(S), S.bounds)
   S.gutter.setAttribute('aria-valuemin', String(Math.round(lo)))
@@ -169,15 +166,15 @@ function paint(S) {
 
 function setWidth(S, px) {
   const width = clampWidth(px, rowWidth(S), S.bounds)
-  document.documentElement.style.setProperty(VAR_W, width + 'px')
+  document.documentElement.style.setProperty(S.names.width, width + 'px')
   return width
 }
 
 function setFolded(S, folded, focus) {
   const doc = document.documentElement
-  if (folded) doc.setAttribute(ATTR, 'min')
-  else doc.removeAttribute(ATTR)
-  writeStore({ min: folded })
+  if (folded) doc.setAttribute(S.names.attr, 'min')
+  else doc.removeAttribute(S.names.attr)
+  writeStore(S, { min: folded })
   paint(S)
   if (focus) (folded ? S.rail : S.toggle).focus()
 }
@@ -235,7 +232,7 @@ function build(S, host) {
   })
   const end = () => {
     if (!S.drag) return
-    if (S.drag.w !== null) writeStore({ w: S.drag.w })
+    if (S.drag.w !== null) writeStore(S, { w: S.drag.w })
     S.drag = null
     host.classList.remove('is-drag')
     document.documentElement.style.cursor = ''
@@ -246,8 +243,8 @@ function build(S, host) {
   listen(S, gutter, 'pointercancel', end)
   listen(S, gutter, 'lostpointercapture', end)
   listen(S, gutter, 'dblclick', () => {
-    document.documentElement.style.removeProperty(VAR_W)
-    writeStore({ w: null })
+    document.documentElement.style.removeProperty(S.names.width)
+    writeStore(S, { w: null })
     paint(S)
   })
   listen(S, gutter, 'keydown', (event) => {
@@ -260,7 +257,7 @@ function build(S, host) {
       setFolded(S, true, true)
       return
     }
-    writeStore({ w: setWidth(S, action.width) })
+    writeStore(S, { w: setWidth(S, action.width) })
     paint(S)
   })
   for (const node of [toggle, rail]) {
@@ -276,6 +273,11 @@ function build(S, host) {
       paint(S)
     })
   })
+  // 숨은 탭에서 처음 마운트하면 줄 폭이 0 이라 aria 값이 0 으로 선다 — 탭을 열어 폭이 생기면 다시 잰다.
+  if (S.row && typeof ResizeObserver === 'function') {
+    S.observer = new ResizeObserver(() => paint(S))
+    S.observer.observe(S.row)
+  }
   S.built = true
 }
 
@@ -291,8 +293,9 @@ export default function (component) {
     S.paletteKey = paletteKey
     for (const [name, value] of Object.entries(palette)) host.style.setProperty('--ess-' + name, String(value))
   }
-  if (!data.bounds || typeof data.bounds !== 'object') return
+  if (!data.bounds || typeof data.bounds !== 'object' || !data.names) return
   S.bounds = data.bounds
+  S.names = data.names
   S.cover = typeof data.cover === 'string' ? data.cover : ''
   S.label = String(data.label || '오른쪽 칸')
   const { row, column, body } = anchors(host, data.keys || {})
@@ -302,12 +305,12 @@ export default function (component) {
   if (!S.built) {
     // 처음 마운트 — 저장해 둔 폭·접힘을 문서에 다시 건다(폭 한계는 CSS clamp 가 창 폭에 맞춘다). 저장소를 못 쓰면
     // `<html>` 에 걸린 이 문서의 폭·접힘을 그대로 둔다(`LOCAL_ONLY`).
-    const stored = readStore()
+    const stored = readStore(S)
     if (stored) {
-      if (stored.w !== null) doc.style.setProperty(VAR_W, stored.w + 'px')
-      else doc.style.removeProperty(VAR_W)
-      if (stored.min) doc.setAttribute(ATTR, 'min')
-      else doc.removeAttribute(ATTR)
+      if (stored.w !== null) doc.style.setProperty(S.names.width, stored.w + 'px')
+      else doc.style.removeProperty(S.names.width)
+      if (stored.min) doc.setAttribute(S.names.attr, 'min')
+      else doc.removeAttribute(S.names.attr)
     }
     build(S, host)
     S.reveal = data.reveal
@@ -315,7 +318,7 @@ export default function (component) {
     // 표에서 호기 상세·새 호기를 연 회차 — 접혀 있으면 편다(누른 것이 보이게). 본문 칸은 key 칸이라 회차가 바뀌어도 같은
     // 요소로 남아 스크롤 자리를 잇는다 — 맨 위로 올려 새로 연 호기의 이름 머리(와 토스트)가 보이게 한다.
     S.reveal = data.reveal
-    if (minimized()) setFolded(S, false, false)
+    if (minimized(S)) setFolded(S, false, false)
     if (body) body.scrollTop = 0
   }
   measure(S)
@@ -324,6 +327,8 @@ export default function (component) {
   return () => {
     if (S.frame) window.cancelAnimationFrame(S.frame)
     if (S.resizeFrame) window.cancelAnimationFrame(S.resizeFrame)
+    if (S.observer) S.observer.disconnect()
+    S.observer = null
     for (const [target, type, handler, options] of S.listeners) target.removeEventListener(type, handler, options)
     S.listeners = []
     S.frame = 0
