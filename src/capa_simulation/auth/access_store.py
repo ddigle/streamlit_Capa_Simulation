@@ -20,9 +20,13 @@
 
 **첫 판은 처음 한 번뿐이다.** 메모리는 재시작하면 비므로 「받아 둔 파일」 만으로는 새 프로세스가
 처음과 사라짐을 못 가른다 — 그러면 파일이 지워진 뒤 옛 환경변수 명단이 되살아나 닫힘이 열림으로
-바뀐다. 그래서 첫 저장 때 표지 객체(`names.ACCESS_SEEDED_OBJECT`)를 함께 쓰고, 표지가 있는데 파일이
-없으면 받아 둔 파일이 없어도 `KIND_FILE_GONE` 이다(관리자만). 표지는 명단 다음에 쓴다 — 표지가 먼저
-들어가고 명단이 실패하면 첫 판이 사라져 사용자가 모두 막힌다. 표지를 못 쓰면 다음 저장이 다시 쓴다.
+바뀐다. 그래서 **파일이 있으면 표지 객체(`names.ACCESS_SEEDED_OBJECT`)도 있게 맞춘다** — 파일을 처음
+만든 저장이 쓰고, 파일을 받은 읽기가 표지가 없으면 쓴다(답 끊긴 첫 저장 · 표지만 실패한 저장 · 앞
+코드가 만든 파일 · 옮긴 버킷). 표지가 있는데 파일이 없으면 받아 둔 파일이 없어도, 환경변수가 비어
+있어도 `KIND_FILE_GONE` 이다(관리자만). 표지는 명단 다음에 쓴다 — 표지가 먼저 들어가고 명단이
+실패하면 첫 판이 사라져 사용자가 모두 막힌다. 표지를 못 써도 저장 · 읽기의 실패가 아니다 — 다음
+저장 · 다음 읽기가 다시 쓴다. 표지는 GET 으로 본다 — HEAD 는 본문이 없어 코드 없는 404 를 없음으로
+읽는다.
 
 깨졌거나 형식 판을 모르면 「못 읽음」 이다. 항목은 `access.entry_key` 꼴 판정을 그대로 거치고 읽지
 못한 항목은 개수만 센다. 등급 칸은 사용자로만 읽는다 — 관리자는 환경변수뿐이다.
@@ -52,7 +56,7 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.access import (
@@ -270,9 +274,21 @@ def _seed_document(cfg: SsoConfig) -> ListDocument:
     return ListDocument(entries=tuple(ListEntry(key) for key in cfg.access_seed_users))
 
 
-def _fetch(cfg: SsoConfig, moment: int, *, held: bool) -> tuple[ListDocument, str, bool]:
-    """받아 읽는다 — `(한 벌, ETag, 첫 판인가)`. 어떤 실패든 `S3Failure` 하나다(기동 · 콜백을 막지
-    못한다).
+class _Fetched(NamedTuple):
+    """읽은 한 벌. `from_file` 이면 저장소에 파일이 있었다(그러면 표지도 있어야 한다)."""
+
+    document: ListDocument
+    etag: str = ""
+    seeded: bool = False
+    from_file: bool = False
+
+
+def _seed_mark_exists(target: S3Target, moment: int) -> bool:
+    return get_object(target, names.ACCESS_SEEDED_OBJECT, moment=moment) is not None
+
+
+def _fetch(cfg: SsoConfig, moment: int, *, held: bool) -> _Fetched:
+    """받아 읽는다. 어떤 실패든 `S3Failure` 하나다(기동 · 콜백을 막지 못한다).
 
     `held` 면 파일을 받아 둔 칸이라 「없음」 도 실패다. 표지 객체가 있어도 그렇다(모듈 설명).
     """
@@ -282,11 +298,11 @@ def _fetch(cfg: SsoConfig, moment: int, *, held: bool) -> tuple[ListDocument, st
     try:
         found = get_object(target, cfg.access_object_key, moment=moment)
         if found is not None:
-            return parse_document(found.body), found.etag, False
-        if not held and not cfg.access_seed_users:
-            return ListDocument(), "", False
-        if not held and head_object(target, names.ACCESS_SEEDED_OBJECT, moment=moment) is None:
-            return _seed_document(cfg), "", True
+            return _Fetched(parse_document(found.body), found.etag, from_file=True)
+        if not held and not _seed_mark_exists(target, moment):
+            if cfg.access_seed_users:
+                return _Fetched(_seed_document(cfg), seeded=True)
+            return _Fetched(ListDocument())
         failure = S3Failure(KIND_FILE_GONE, 404, "NoSuchKey")
     except S3Failure:
         raise
@@ -303,7 +319,7 @@ def _read_locked(cfg: SsoConfig, moment: int, *, retrying: bool = False) -> Sour
     """
     base = _base_source(cfg)
     try:
-        document, etag, seeded = _fetch(cfg, moment, held=_holds_a_file(base))
+        fetched = _fetch(cfg, moment, held=_holds_a_file(base))
     except S3Failure as failure:
         problem = problem_of(failure)
         runtime.publish_access_source(replace(base, attempted_at=moment, problem=problem))
@@ -314,16 +330,19 @@ def _read_locked(cfg: SsoConfig, moment: int, *, retrying: bool = False) -> Sour
             status=str(problem.status or "-"),
         )
         return problem
+    document = fetched.document
+    mark_missing = fetched.from_file and not _left_seed_mark(cfg.access_s3, moment)
     runtime.publish_access_source(
         replace(
             base,
             access=compose_access(cfg.access, document),
             document=document,
-            etag=etag,
+            etag=fetched.etag,
             read_at=moment,
             attempted_at=moment,
             problem=None,
-            seeded=seeded,
+            seeded=fetched.seeded,
+            seed_mark_pending=mark_missing,
             # 답을 받지 못한 쓰기는 읽어 보면 결과를 안다(들어갔으면 지금 한 벌에 있다).
             save_problem=(
                 None
@@ -452,11 +471,17 @@ def _remote_unchanged(target: S3Target, key: str, source: AccessSource, moment: 
     return found is not None and parse_document(found.body).revision == source.document.revision
 
 
-def _left_seed_mark(target: S3Target, actor: str, moment: int) -> bool:
-    """표지 객체를 쓴다. 실패는 저장 실패가 아니다 — 명단은 이미 들어갔고 다음 저장이 다시 쓴다."""
+def _left_seed_mark(target: S3Target | None, moment: int, *, actor: str = "-") -> bool:
+    """표지 객체가 저장소에 있게 한다. 실패는 저장 · 읽기의 실패가 아니다 — 다음 번이 다시 쓴다."""
+    if target is None:
+        return False
     try:
-        put_object(target, names.ACCESS_SEEDED_OBJECT, b'{"format": 1}', moment=moment)
-    except S3Failure as failure:
+        if not _seed_mark_exists(target, moment):
+            put_object(target, names.ACCESS_SEEDED_OBJECT, b'{"format": 1}', moment=moment)
+    except Exception as exc:  # noqa: BLE001 — 표지는 판정 · 기동을 막지 못한다
+        failure = (
+            exc if isinstance(exc, S3Failure) else S3Failure(KIND_OTHER, code=type(exc).__name__)
+        )
         runtime.record_event(
             "access_seed_mark_failed",
             level=logging.WARNING,
@@ -529,9 +554,9 @@ def save_changes(
                 status=str(problem.status or "-"),
             )
             raise
-        mark_missing = (source.seeded or source.seed_mark_pending) and not _left_seed_mark(
-            target, actor, moment
-        )
+        # 파일을 처음 만든 저장이거나 앞서 못 쓴 표지다. 파일을 받아 둔 칸은 그 읽기가 이미 맞췄다.
+        unmarked = source.seed_mark_pending or not _holds_a_file(source)
+        mark_missing = unmarked and not _left_seed_mark(target, moment, actor=actor)
         runtime.publish_access_source(
             replace(
                 source,

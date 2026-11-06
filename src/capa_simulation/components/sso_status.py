@@ -410,9 +410,12 @@ def _access_read_alert(cfg: SsoConfig) -> None:
 
 
 def _access_seed_alert(cfg: SsoConfig) -> None:
-    """상태 알림 `AD-09` — 파일이 없어 환경변수 목록으로 판정하는 동안. 첫 저장이 쓰면 풀린다."""
+    """상태 알림 `AD-09` — 파일이 없어 환경변수 목록으로 판정하는 동안. 첫 저장이 쓰면 풀린다.
+
+    `AD-08` 과 같이 그 자리(「접속 명단」)가 있는 관리자 회차에만 세운다.
+    """
     source = runtime.access_source()
-    seeded = source is not None and source.seeded
+    seeded = source is not None and source.seeded and _viewer_is_admin(cfg)
     alerts.state(
         "AD-09",
         scope=None,
