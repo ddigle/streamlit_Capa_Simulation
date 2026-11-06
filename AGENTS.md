@@ -1467,7 +1467,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     실패·회차 도중 최신 공식버전이 바뀜) 만든 시나리오는 남긴다. 한 번 받은 코드(`received_codes`)는 다시 받지 않는다.
   - 이어받은 수동 off 와 HOME 표지(`auto_off_marks`)는 같은 근거(`_auto_exclusions` — 조상, 복제본은 복제 전 자동
     리비전 2)를 본다. 같은 프로세스의 겹친 회차는 기다리지 않고 돌아간다(`_RUN_LOCK`).
-- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신을 매일 지정 시각에 돌리는 유일한 배경 스레드다(5장 4·9장).
+- `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼. 앱의 둘째이자 마지막 배경 스레드다(5장 4·9장).
+  차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다.
+- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신을 매일 지정 시각에 돌리는 배경 스레드다(5장 4·9장).
   - 실행 줄 `CAPA_AUTO_OFFICIAL_UPDATE=1` 일 때만 서고, 지정 시각이 직전 확인과 지금 사이일 때만 돈다(`crossed_slot` —
     놓친 날은 따라잡지 않는다). 스레드 이름(`THREAD_NAME`)으로 하나를 지키고 `st.cache_resource` 는 쓰지 않는다.
   - 시험은 `tests/conftest.py` 가 실행 줄 허락을 늘 빼고(`scripts/benchmark_home.py` 도),
@@ -4325,7 +4327,7 @@ RQ_MODULE
    화면에 알릴 DB 상태(`schema_ahead` 등)는 저장소 속성으로 두고 화면 쪽(`page_bootstrap`)이 그린다. 직전 회차
    결과를 세션 칸에 기억해 다시 쓰는 장치(`components/wip_status_dashboard.py`)는 Streamlit 캐시가 아니라 경계 밖이고,
    입력이 같은지는 `DataFrame.equals` 로 본다 — 해시 지문은 object 칸의 `1`·`'1'` 을 같게 본다.
-   **배경 스레드는 공식버전 자동 갱신 예약(`auto_update_scheduler.py`) 하나뿐**이고 캐시 경계가 아니다 —
+   **배경 스레드는 공식버전 자동 갱신 예약(`auto_update_scheduler.py`)과 동기화 일꾼(`object_sync_worker.py`) 둘뿐**이고 캐시 경계가 아니다 —
    `st.cache_resource` 없이 스레드 이름으로 프로세스에 하나를 지키고, 스레드 안에서는 `st.*`·세션·`st.cache_data`
    래퍼를 부르지 않으며 전역 범위 `st.cache_data` 의 `.clear()` 만 부른다(9장 「배경 스레드」).
    모듈(`modules/<id>/`)은 이 경계 밖이고 코어 시험도 훑지 않는다 — 모듈 캐시는 그 모듈의 `cache.py` 한 파일에만 두고
@@ -5778,11 +5780,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   담당하게 한다. 접힌 `st.expander` 의 본문도 매 회차 실행된다 — 비싼 Figure 는 캐시 쪽에서 만들어 넘기고 그리는
   함수는 받은 그림만 그린다.
 - **배경 스레드에는 Streamlit 실행 문맥(ScriptRunContext)이 없다.** 그런 스레드는 공식버전 자동 갱신
-  예약(`auto_update_scheduler.py`) 하나이고, 실행 줄 허락(`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 있는 프로세스에만
-  선다. 그 안에서 `st.*` 화면 명령·`st.session_state`·`st.cache_data`/`st.cache_resource` 래퍼를 부르지
+  예약(`auto_update_scheduler.py` — 실행 줄 허락 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있는 프로세스)과 동기화 일꾼
+  (`object_sync_worker.py` — `managed` + 시작 받기의 부트 기록이 있는 프로세스) 둘이다. 일꾼은 Streamlit 을 import 하지 않는다. 예약 안에서 `st.*` 화면 명령·`st.session_state`·`st.cache_data`/`st.cache_resource` 래퍼를 부르지
   않는다 — 계산은 순수 코어(`simulation_cache.full_capacity_outcome`·`calculate_securement_rate`), 등록은
   세션 없는 `scenario_registration` 이다. 캐시 정리는 전역 범위 `st.cache_data` 함수의 `.clear()` 처럼
-  문맥을 찾지 않는 것만 쓴다. 새 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다. `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
+  문맥을 찾지 않는 것만 쓴다. 그 밖의 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다(`test_object_sync_worker` 가 자리를 센다). `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
 - **통합인증 문지기는 순수 ASGI 미들웨어 하나다**(`auth/gate.py`, `capa_server.py` 의 `st.App(middleware=…)`). Starlette 의
   `BaseHTTPMiddleware` 는 websocket 을 그냥 넘기므로 쓰지 않는다(실측). 허용 목록은 정확 일치만(`/_stcore/health` 와 우리 경로
   다섯) — `/_stcore/` 를 접두로 열지 않는다. 갱신 경로(`POST /auth/sso/refresh`)는 공개 경로라 판정(머리 · 출처 · 본문 · 쿠키)은

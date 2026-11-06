@@ -182,12 +182,16 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   그 비용이 모든 rerun에 실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource`를
   새로 두지 않으며, 이 예외를 늘리려면 여기 목록을 같이 고친다. 모듈의 `st.cache_*` 는 이 목록 밖이다 — 그 모듈의 `cache.py` 한 파일에만 두고(화면 파일에 두면 `__main__` 이라 모듈끼리
   칸이 겹친다) `check_module.py`(M12)가 본다.
-- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신 예약. 앱 프로세스의 **유일한
-  배경 스레드**이고 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있을 때만 `app.py` 부트스트랩
+- `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신 예약. 앱 프로세스의 **배경
+  스레드 둘 가운데 하나**이고 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있을 때만 `app.py` 부트스트랩
   뒤 첫 회차에 선다(스레드 이름으로 프로세스에 하나 — `st.cache_resource` 를 쓰지 않아 캐시 경계가
   아니다). 스레드 안에서는 실행 문맥이 없으므로 `st.*`·`st.session_state`·`st.cache_data` 래퍼를
   부르지 않고 순수 코어만 쓰며, 캐시 정리는 전역 범위 `st.cache_data` 의 `.clear()` 만 부른다
-  (AGENTS.md 5장 4·9장 「배경 스레드」). 새 배경 스레드를 따로 세우지 않는다.
+  (AGENTS.md 5장 4·9장 「배경 스레드」). 예약 하나와 동기화 일꾼 하나뿐이고 더 세우지 않는다.
+- `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼(스레드 `capa-object-sync`). `capa_server.py` 가
+  시작 때 세우고 `managed` + 시작 받기의 부트 기록(`sync_boot`)이 있을 때만 선다 — `app.py` 개발 실행 · 사내 PC · 시험에는 없다.
+  저장을 20 ~ 60초 모아 세대를 올리고 공식 발행은 바로 올리며 하루 한 번 정리한다. Streamlit 을 import 하지 않고 캐시를 건드리지
+  않는다. 차례는 `object_sync_engine.py`(유실을 막는 순서), 판정은 `services/object_storage_manifest.py`.
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
 - `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
   직접 읽지 말고 `get_effective_reference_tables()`만 쓴다.

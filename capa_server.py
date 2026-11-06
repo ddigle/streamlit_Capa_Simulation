@@ -18,9 +18,12 @@ from pathlib import Path
 import streamlit as st
 
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
+from capa_simulation.object_sync_worker import start_object_sync
 
 # 환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 `os.environ` 에서 뺀다.
 start_sso()
+# 정본 버킷 동기화 일꾼. 시작 받기가 성공한 `managed` 서버에만 선다 — 첫 접속을 기다리지 않는다.
+start_object_sync()
 
 app = st.App(
     Path(__file__).with_name("app.py"),
