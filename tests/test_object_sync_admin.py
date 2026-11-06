@@ -309,6 +309,20 @@ def test_the_guide_explains_the_panel() -> None:
     assert "#### DB 동기화" in guide.read_text(encoding="utf-8")
 
 
+def test_the_documents_keep_the_panel_between_the_two_checks() -> None:
+    """운영 서버에서 「DB 동기화」 는 「서버 시작 점검」 과 「통합인증 점검」 사이에 선다 — 그
+    서버를 보는 Guide 와 AGENTS 가 둘을 바로 잇지 않는다."""
+    root = Path(__file__).resolve().parents[1]
+    page = (root / "app_pages" / "admin_area.py").read_text(encoding="utf-8")
+    calls = ("render_container_start_check()", "render_object_sync_status()", "render_sso_status()")
+    moments = [page.index(call) for call in calls]
+    assert moments == sorted(moments)
+    guide = Path(alerts.__file__).parent / "guides" / "admin_area.md"
+    assert "「서버 시작 점검」 · 「DB 동기화」 뒤에 서는" in guide.read_text(encoding="utf-8")
+    agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "그 뒤 `managed` 서버면 「DB 동기화」 펼침" in agents
+
+
 def _app_test(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     """빈 DuckDB 를 보는 `app.py`. 내장 시드가 부트스트랩을 채운다(`test_app_navigation` 꼴)."""
     import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
