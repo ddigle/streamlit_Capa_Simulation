@@ -5,9 +5,9 @@
 시안 `guide/capture/capture.mjs`·`lib.mjs`(Chrome DevTools 를 손으로 몰던 Node 스크립트)의 동작과
 표적 찾기를 Python Playwright 로 옮겼다. 계획은 정해진 낱말만 쓴다.
 
-- 동작(`OPS` 와 같은 열한 개): `enter_app` · `nav` · `tab` · `click` · `fill` · `key` · `scroll` ·
-  `open_popup` · `grid_edit` · `egrid_edit` · `wait_idle`. 모든 동작 뒤에 회차가 쉴 때까지 기다린다
-  (`stApp` 의 `data-test-script-state` 가 0.75초 동안 `notRunning`).
+- 동작(`OPS` 와 같은 열두 개): `enter_app` · `nav` · `tab` · `click` · `fill` · `key` · `scroll` ·
+  `open_popup` · `grid_edit` · `egrid_edit` · `list_open` · `wait_idle`. 모든 동작 뒤에 회차가 쉴
+  때까지 기다린다(`stApp` 의 `data-test-script-state` 가 0.75초 동안 `notRunning`).
 - 표적: `key:` · `button:` · `tab:` · `nav:` · `text:` 와 `named:` 이름(`NAMED_JS`). 팝업이 열려
   있으면 글자로 찾는 표적은 팝업 안부터 찾는다. 배열은 여러 표적의 합집합 사각형이다.
 - 격자(glide 데이터 편집기)는 캔버스라 칸 자리를 React 속성(열 폭 · 행 높이 · 고정 열)과 굴림
@@ -108,6 +108,9 @@ def _named(name: str, arg: str | None, last_edit: LastEdit | None) -> str:
         "LAST_GRID": "__g.lastGrid()",
         "EGRID": "__g.egrid()",
         "EGRID_CELL": "__g.egridChanged()",
+        "LIST_TABLE": "__g.listTable()",
+        "LIST_REVISIONS": "__g.listRevisions()",
+        "LIST_OPEN_ROW": "__g.listOpenRow()",
         "LOB_CHART": "__g.lobChart()",
         "LOB_BN_BARS": "__g.lobBnBars()",
         "KEY_PROCESS_GRID": "__g.keyProcessGrid()",
@@ -139,6 +142,8 @@ def _named(name: str, arg: str | None, last_edit: LastEdit | None) -> str:
         "EXPANDER": lambda a: f"__g.expander({_q(a)})",
         "KEY_BUTTON": lambda a: f"__g.keyButton({_q(a)})",
         "GRID_COLUMN": lambda a: f"__g.gridColumn(__g.grid(), {_q(a)})",
+        "LIST_HEAD": lambda a: f"__g.listHead({_q(a)})",
+        "LIST_OPEN_CELL": lambda a: f"__g.listOpenCell({_q(a)})",
         "LOB_LABEL": lambda a: f"__g.lobLabel({_q(a)})",
         "LOB_ROW": lambda a: f"__g.lobRow({_q(a)})",
     }
@@ -317,6 +322,7 @@ class Camera:
             "open_popup": self._open_popup,
             "grid_edit": self._grid_edit,
             "egrid_edit": self._egrid_edit,
+            "list_open": self._list_open,
             "wait_idle": self._wait_idle,
         }
         for index, op in enumerate(ops):
@@ -567,6 +573,15 @@ class Camera:
         keyboard.type(new_text)
         time.sleep(0.2)
         keyboard.press("Enter")
+        self.settle()
+        time.sleep(0.8)
+
+    def _list_open(self, op: Mapping[str, Any]) -> None:
+        """시나리오 목록 표에서 그 이름의 줄 값 칸을 눌러 연다(이름 칸은 연 줄이면 편집이다)."""
+        rect = self.js("__g.listRowCell(arg)", op["row"])
+        if rect is None:
+            raise CaptureError("열 줄 없음")
+        self.click_at(rect)
         self.settle()
         time.sleep(0.8)
 

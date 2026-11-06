@@ -9,7 +9,7 @@
     "edit_delta": {"type": "int", "default": 2, "about": "그 칸에 더할 대수"},
     "revision_name": {"type": "text", "default": "12월 Pre B/D 가용 +2", "about": "저장 팝업 「새 리비전명」에 적을 글"},
     "revision_memo": {"type": "text", "default": "반입 일정 앞당김 반영", "about": "저장 팝업 「변경 메모」에 적을 글"},
-    "official_scenario": {"type": "text", "default": "26년 10월 정기 Capa 검토", "about": "시나리오 관리 목록에서 「선택」을 체크할 시나리오 이름(보통 활성 시나리오)"},
+    "official_scenario": {"type": "text", "default": "26년 10월 정기 Capa 검토", "about": "시나리오 관리 목록에서 줄을 눌러 열 시나리오 이름(보통 활성 시나리오)"},
     "official_name": {"type": "text", "default": "10월 공식안(12월 가용 반영)", "about": "공식 지정 폼 「공식버전명」에 적을 글(미리 채운 값을 지우고 쓴다)"},
     "official_memo": {"type": "text", "default": "12월 Pre B/D 가용 +2 반영", "about": "공식 지정 폼 「공식 지정 메모」에 적을 글"},
     "compare_scenario": {
@@ -278,13 +278,7 @@
         {"op": "nav", "text": "시나리오 관리"},
         {"op": "tab", "text": "Capa 시나리오", "scope": "main"},
         {"op": "click", "target": "button:목록 관리"},
-        {
-          "op": "grid_edit",
-          "grid": "named:GRID",
-          "row": {"param": "official_scenario", "default": "26년 10월 정기 Capa 검토"},
-          "column": "선택",
-          "value": true
-        },
+        {"op": "list_open", "row": {"param": "official_scenario", "default": "26년 10월 정기 Capa 검토"}},
         {"op": "click", "target": "button:공식으로 지정…"},
         {"op": "click", "target": "named:WIDGET(가상 제품이 포함된 것을 확인했습니다)", "optional": true},
         {
@@ -299,7 +293,7 @@
         {"op": "scroll", "to": "top"}
       ],
       "targets": {
-        "official_cell": "named:EDIT_ROW_CELL(공식버전)",
+        "official_cell": "named:LIST_OPEN_CELL(공식버전)",
         "sidebar_scenario": "named:SIDEBAR_SCEN",
         "sidebar_badge": "named:SIDEBAR_BADGE",
         "header_band": "named:HEADER_BAND"
@@ -319,33 +313,26 @@
       "targets": {
         "tab_scenmgmt": "tab:Capa 시나리오",
         "work_mode": "key:scenario_page_mode",
-        "scen_table": "named:GRID",
-        "scen_select_col": "named:GRID_COLUMN(선택)"
+        "scen_table": "named:LIST_TABLE",
+        "scen_name_col": "named:LIST_HEAD(시나리오명)"
       }
     },
     {
       "id": "16_scenmgmt_selected",
       "page": "시나리오 관리",
-      "note": "시나리오 행의 「선택」 체크 → 아래 고른 시나리오 카드(작업 줄 · 리비전 표)",
+      "note": "시나리오 줄을 눌러 열기 → 오른쪽 「상세」 칸(리비전 표 · 작업 줄)",
       "from": "15_scenmgmt_list",
       "writes": "none",
       "ops": [
-        {
-          "op": "grid_edit",
-          "grid": "named:GRID",
-          "row": {"param": "official_scenario", "default": "26년 10월 정기 Capa 검토"},
-          "column": "선택",
-          "value": true
-        },
+        {"op": "list_open", "row": {"param": "official_scenario", "default": "26년 10월 정기 Capa 검토"}},
         {"op": "scroll", "target": "button:공식으로 지정…", "block": "center"}
       ],
       "targets": {
-        "scen_selected_row": "named:EDIT_ROW",
-        "scen_select_cell": "named:EDIT_CELL",
-        "rev_select": "named:LAST_GRID",
+        "scen_selected_row": "named:LIST_OPEN_ROW",
+        "rev_select": "named:LIST_REVISIONS",
         "btn_official": "button:공식으로 지정…",
         "btn_load": "button:선택한 리비전 불러오기",
-        "scen_table": "named:GRID"
+        "scen_table": "named:LIST_TABLE"
       }
     },
     {

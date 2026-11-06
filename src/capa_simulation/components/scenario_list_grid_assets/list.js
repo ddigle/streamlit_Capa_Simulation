@@ -912,12 +912,13 @@ export default function (component) {
     listen(S, document, 'visibilitychange', () => flush(S))
     listen(S, document, 'pointerup', () => onPointerEnd(S, false))
     listen(S, document, 'pointercancel', () => onPointerEnd(S, true))
+    // 끄는 중 Esc 는 취소다 — 칸의 키가 문서로 올라오지 않으므로(`stopKeys`) 잡는 단계에서 받는다.
     listen(S, document, 'keydown', (event) => {
       if (S.drag && event.key === 'Escape') {
         event.stopPropagation()
         onPointerEnd(S, true)
       }
-    })
+    }, true)
   }
   accept(S, data)
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.

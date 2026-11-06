@@ -100,6 +100,14 @@ g.egridFind = (s)=>{ const r=g.egridRoot(); if(!r) return null; const sc=r.query
   return {found:false, end: sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1}; };
 g.egridScroll = (top)=>{ const r=g.egridRoot(); const sc=r && r.querySelector('[role="grid"]'); if(!sc) return false; if(top) sc.scrollTop=0; else sc.scrollTop += Math.max(sc.clientHeight-64, 30); sc.dispatchEvent(new Event('scroll')); return true; };
 g.egridChanged = ()=>{ const r=g.egridRoot(); return r ? [...r.querySelectorAll('.eg-body [data-changed="1"]')].filter(g.vis)[0] || null : null; };
+// 시나리오 목록 표(그림자 DOM 의 진짜 칸) — 표 · 리비전 표 · 연 줄 · 머리 칸 · 연 줄의 칸.
+g.listRoot = (k)=>{ const host=document.querySelector('[data-testid="stMain"] .st-key-'+k); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot && e.shadowRoot.querySelector('.sgl-root')); return sh ? sh.shadowRoot : null; };
+g.listTable = ()=>{ const r=g.listRoot('scenario_list_table'); const e=r && r.querySelector('.sgl-table'); return e && g.vis(e) ? e : null; };
+g.listRevisions = ()=>{ const r=g.listRoot('scenario_list_revisions'); const e=r && r.querySelector('.sgl-table'); return e && g.vis(e) ? e : null; };
+g.listOpenRow = ()=>{ const r=g.listRoot('scenario_list_table'); return r ? r.querySelector('.sgl-body .sgl-row.is-open') : null; };
+g.listHead = (label)=>{ const r=g.listRoot('scenario_list_table'); return r ? [...r.querySelectorAll('.sgl-head .emg-c')].find(c=>g.norm(c.textContent)===String(label)) || null : null; };
+g.listOpenCell = (label)=>{ const r=g.listRoot('scenario_list_table'); const row=g.listOpenRow(); if(!r||!row) return null; const at=[...r.querySelectorAll('.sgl-head .emg-c')].findIndex(c=>g.norm(c.textContent)===String(label)); return at<0 ? null : row.children[at] || null; };
+g.listRowCell = (name)=>{ const r=g.listRoot('scenario_list_table'); if(!r) return null; const row=[...r.querySelectorAll('.sgl-body .sgl-row')].find(l=>{ const c=l.querySelector('.sgl-w-name'); return c && g.norm(c.textContent)===String(name); }); const cell=row && row.querySelector('.sgl-w-latest'); if(!cell) return null; if(!g.inView(cell)) cell.scrollIntoView({block:'center'}); return g.R(cell); };
 g.grid = ()=> [...document.querySelectorAll('[data-testid="stDataFrame"]')].filter(g.vis)[0] || null;
 g.lastGrid = ()=> [...document.querySelectorAll('[data-testid="stMain"] [data-testid="stDataFrame"]')].filter(g.vis).pop() || null;
 // 지금 화면의 이름 — 화면 탭 줄(그림자 DOM)의 지금 탭. 큰 제목(h1)은 화면에서 숨어(sr-only) 1px 칸이라 표적이 못 된다 —

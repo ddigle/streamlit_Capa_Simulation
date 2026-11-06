@@ -606,7 +606,7 @@ def test_the_official_check_step_points_at_what_the_screen_shows() -> None:
         assert word not in step["do"], word
 
     state = next(item for item in _plan()["states"] if item["id"] == step["state"])
-    assert state["targets"]["official_cell"] == "named:EDIT_ROW_CELL(공식버전)"
+    assert state["targets"]["official_cell"] == "named:LIST_OPEN_CELL(공식버전)"
     assert "off_success" not in state["targets"]
     assert "맨 위" not in state["note"]
     assert "알림창" in state["note"] and "공식버전" in state["note"]

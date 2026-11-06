@@ -1854,6 +1854,8 @@ NEW_ITEM_KEYS = [
     "alert_popup",
     # 2026-11-03 사용자 지시 — 설정 단추는 사이드바 상자로(「HOME 설정」 · 「가용설비 설정」).
     "settings_boxes",
+    # 2026-11-06 사용자 답 안 3 — 목록 관리 새 표.
+    "scenario_list_grid",
 ]
 
 
@@ -3158,6 +3160,24 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
         assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in later
         for item in added:
             assert f"`{item.key}`" in later
+
+
+def test_the_scenario_list_grid_item_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — key · 칸 이름 · `<html>` 표지가 앱과 같다."""
+    from capa_simulation.components import scenario_list_grid as grid
+    from capa_simulation.components import scenario_management as page
+
+    assert screens.LIST_TABLE_KEY == grid.TABLE_KEY
+    assert screens.LIST_CHANGES_KEY == grid.CHANGES_KEY
+    assert screens.LIST_SPLITTER_KEY == grid.LIST_SIDE.splitter_key
+    assert screens.LIST_LEFT_KEY == grid.LIST_SIDE.left_key
+    assert screens.LIST_RIGHT_KEY == grid.LIST_SIDE.right_key
+    assert screens.LIST_SIDE_KEY == grid.LIST_SIDE.choice_key == page.SIDE_KEY
+    assert screens.LIST_SIDE_DETAIL == page.SIDE_DETAIL
+    assert page.SIDE_CHANGES == screens.EQUIPMENT_SIDE_CHANGES
+    assert screens.LIST_SIDE_ATTR == f"data-{grid.LIST_SIDE.css_name}-side"
+    assert screens.LIST_DISCARD_KEY == page.DISCARD_POPOVER_KEY
+    assert f"{page.DISCARD_LABEL} 확인" == screens.GRID_DISCARD_CONFIRM
 
 
 def test_the_builder_counts_the_same_items_as_the_script_lists() -> None:

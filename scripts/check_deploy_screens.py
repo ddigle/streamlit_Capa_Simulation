@@ -244,6 +244,16 @@ ALERT_HOST_ID: Final = "capa-alert-host"
 # Streamlit 1.63 대화상자 층(`stDialog` z-index — 2026-11-03 사본 실측). 알림창이 이 위여야 한다.
 DIALOG_Z_INDEX: Final = 1000059
 SCENARIO_MANAGEMENT_PAGE: Final = "scenario_management"
+# 목록 관리 새 표(`scenario_list_state` · `scenario_list_grid.LIST_SIDE` · `scenario_management`).
+LIST_TABLE_KEY: Final = "scenario_list_table"
+LIST_CHANGES_KEY: Final = "scenario_list_changes"
+LIST_SPLITTER_KEY: Final = "scenario_list_side_splitter"
+LIST_LEFT_KEY: Final = "scenario_list_left"
+LIST_RIGHT_KEY: Final = "scenario_list_right"
+LIST_SIDE_KEY: Final = "scenario_list_side_v1"
+LIST_SIDE_DETAIL: Final = "상세"
+LIST_SIDE_ATTR: Final = "data-sls-side"
+LIST_DISCARD_KEY: Final = "scenario_list_discard_v1"
 ADMIN_AREA_PAGE: Final = "admin_area"
 # 공정 Capa 상세(`app_pages/process_capa_detail.py`)와 그 화면의 컨테이너 key(`process_capa_view`·
 # `process_detail_state`). 앱 모듈을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
@@ -2551,6 +2561,127 @@ def _discard_all(screen: Screen) -> bool:
     finally:
         if before and before != EQUIPMENT_SIDE_CHANGES:
             _choose_segment(screen, EQUIPMENT_SIDE_KEY, before)
+
+
+# 앱 회차가 몇 번 돌았나 — 앱 뿌리 `data-test-script-state` 가 running 으로 바뀐 수를 센다.
+_RUN_COUNTER_JS: Final = """
+() => {
+  const app = document.querySelector('[data-testid="stApp"]')
+  if (window.__capaRuns === undefined) {
+    window.__capaRuns = 0
+    new MutationObserver(() => {
+      if (app.getAttribute('data-test-script-state') === 'running') window.__capaRuns += 1
+    }).observe(app, { attributes: true, attributeFilter: ['data-test-script-state'] })
+  }
+  return window.__capaRuns
+}
+"""
+
+
+def _list_runs(screen: Screen) -> int:
+    return int(screen.page.evaluate(_RUN_COUNTER_JS))
+
+
+def check_scenario_list_grid(screen: Screen) -> str:
+    """시나리오 관리 목록 관리 새 표 — 줄 열기 · 한 번 눌러 편집 · 쓰는 동안 회차 0 · Enter · Esc ·
+    이동 단추 열 번의 회차 · 풍선 0 · 끌기 · 칸막이 접기 · 저장 전 변경 · 모두 버리기 · 640px 쌓임.
+    「변경 저장」 은 누르지 않는다(DB 에 쓰지 않는다 — 고친 것은 「모두 버리기」 로 버린다)."""
+    screen.open_page(SCENARIO_MANAGEMENT_PAGE)
+    page = screen.page
+    table = f'[data-testid="stMain"] .st-key-{LIST_TABLE_KEY}'
+    rows = page.locator(f"{table} .sgl-body .sgl-row")
+    if screen.poll(rows.count, timeout=60, accept=lambda count: count > 0) == 0:
+        return "표 없음"
+    parts = [f"줄 {rows.count()}"]
+    if rows.count() < 2:
+        return " · ".join([*parts, "둘째 줄 없음"])
+    _list_runs(screen)
+    # 안 연 줄을 찾아 값 칸으로 연 뒤, 이름을 눌러 편집한다.
+    closed = page.locator(f"{table} .sgl-body .sgl-row:not(.is-open)").first
+    closed.locator(".sgl-w-latest .emg-cb").click()
+    screen.wait_idle()
+    opened = page.locator(f"{table} .sgl-body .sgl-row.is-open").first
+    opened.locator(".sgl-w-name .emg-cb").click()
+    editor = page.locator(f"{table} .emg-ed")
+    if editor.count() != 1:
+        return " · ".join([*parts, "한 번 눌러 편집 안 됨"])
+    before = _list_runs(screen)
+    editor.press_sequentially(" 확인", delay=20)
+    page.wait_for_timeout(600)
+    parts.append(f"쓰는 동안 회차 {_list_runs(screen) - before}")
+    editor.press("Escape")
+    parts.append(f"Esc 칸 {'닫힘' if editor.count() == 0 else '남음'}")
+    opened.locator(".sgl-w-name .emg-cb").click()
+    editor = page.locator(f"{table} .emg-ed")
+    editor.fill(editor.input_value() + " 확인")
+    editor.press("Enter")
+    screen.wait_idle()
+    marked = f"{table} .sgl-w-name.is-changed"
+    shown = screen.poll(lambda: page.locator(marked).count(), timeout=15, accept=bool)
+    parts.append(f"고친 칸 표시 {'있음' if shown else '없음'}")
+    # 이동 단추 — 열 번을 눌러도 묶음이고 풍선이 떠 있지 않다.
+    tools = page.locator(f"{table} .sgl-tools .emg-btn")
+    if tools.nth(1).is_enabled():
+        before = _list_runs(screen)
+        for step in range(10):
+            tools.nth(step % 2 if tools.nth(step % 2).is_enabled() else 1 - step % 2).click()
+        page.wait_for_timeout(900)
+        screen.wait_idle()
+        parts.append(f"이동 열 번 회차 {_list_runs(screen) - before}")
+    tip = page.locator('[data-testid="stTooltipContent"]').locator("visible=true").count()
+    parts.append(f"풍선 {tip}")
+    # 끌기 — 자리를 바꾼 뒤 저장 전 변경에서 함께 버린다.
+    grip = rows.nth(0).locator(".sgl-grip").bounding_box()
+    second = rows.nth(1).bounding_box()
+    if grip and second:
+        page.mouse.move(grip["x"] + 4, grip["y"] + 8)
+        page.mouse.down()
+        page.mouse.move(grip["x"] + 4, second["y"] + second["height"] + 2, steps=5)
+        parts.append(
+            f"놓을 자리 선 {'있음' if page.locator(f'{table} .sgl-drop').is_visible() else '없음'}"
+        )
+        page.mouse.up()
+        screen.wait_idle()
+    # 접기 · 펴기 — 회차 없이 브라우저만.
+    splitter = f'[data-testid="stMain"] .st-key-{LIST_SPLITTER_KEY}'
+    before = _list_runs(screen)
+    page.locator(f"{splitter} .ess-toggle").click()
+    folded = page.evaluate(f"document.documentElement.getAttribute('{LIST_SIDE_ATTR}')") == "min"
+    page.locator(f"{splitter} .ess-rail").click()
+    unfolded = page.evaluate(f"document.documentElement.getAttribute('{LIST_SIDE_ATTR}')") is None
+    parts.append(
+        f"접기 {'됨' if folded and unfolded else '안 됨'} 회차 {_list_runs(screen) - before}"
+    )
+    # 저장 전 변경 — 옛 값 → 새 값 · 모두 버리기.
+    _choose_segment(screen, LIST_SIDE_KEY, EQUIPMENT_SIDE_CHANGES)
+    changes = f'[data-testid="stMain"] .st-key-{LIST_CHANGES_KEY}'
+    lines = page.locator(f"{changes} .emg-line").count()
+    parts.append(f"변경 줄 {'있음' if lines else '없음'}")
+    popover = page.locator(f'[data-testid="stMain"] .st-key-{LIST_DISCARD_KEY}')
+    if popover.count():
+        popover.locator("button").first.click()
+        confirm = page.get_by_role("button", name=GRID_DISCARD_CONFIRM)
+        confirm.first.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+        confirm.first.click()
+        screen.wait_idle()
+        left = screen.poll(
+            lambda: page.locator(marked).count(), timeout=20, accept=lambda n: n == 0
+        )
+        parts.append(f"모두 버리기 {'됨' if left == 0 else '안 됨'}")
+    _choose_segment(screen, LIST_SIDE_KEY, LIST_SIDE_DETAIL)
+    # 640px 아래 위아래로 쌓인다.
+    size = page.viewport_size
+    if size:
+        page.set_viewport_size({"width": 600, "height": size["height"]})
+        page.wait_for_timeout(500)
+        left_box = page.locator(f'[data-testid="stMain"] .st-key-{LIST_LEFT_KEY}').bounding_box()
+        right_box = page.locator(f'[data-testid="stMain"] .st-key-{LIST_RIGHT_KEY}').bounding_box()
+        stacked = bool(
+            left_box and right_box and right_box["y"] >= left_box["y"] + left_box["height"] - 2
+        )
+        parts.append(f"좁은 창 {'쌓임' if stacked else '안 쌓임'}")
+        page.set_viewport_size(size)
+    return " · ".join(parts)
 
 
 def check_progress_box(screen: Screen) -> str:
@@ -5847,6 +5978,7 @@ ITEMS: tuple[Item, ...] = (
     Item("alarm_button", "툴바 Alarm 단추·패널", check_alarm_button),
     Item("alert_popup", "오른쪽 아래 알림창 한 꼴", check_alert_popup),
     Item("settings_boxes", "사이드바 설정 상자", check_settings_boxes),
+    Item("scenario_list_grid", "시나리오 목록 관리 표", check_scenario_list_grid),
 )
 
 
