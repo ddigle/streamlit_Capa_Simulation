@@ -32,6 +32,7 @@ from capa_simulation.components.intro_summary import (
     summary_label_script,
     warm_intro_summary,
 )
+from capa_simulation.components.object_sync_status import render_object_sync_alerts
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.page_link import disabled_link_aria_script
 from capa_simulation.components.page_tabs import (
@@ -551,6 +552,9 @@ with pinned_connections(DUCKDB_PATH):
         get_scenario_repository(str(DUCKDB_PATH.resolve())).schema_ahead,
         code=SCHEMA_AHEAD_SIMULATION_CODE,
     )
+    # 정본 버킷 동기화 알림(`SY-*`). 값은 메모리 사본뿐이고, 알릴 일이 없는 프로세스(개발 PC ·
+    # 시험)는 아무것도 쓰지 않는다.
+    render_object_sync_alerts()
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
     # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).
