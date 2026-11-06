@@ -901,8 +901,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     통과해 남의 이름을 덮었다(2026-10-22 리뷰). 먼저 바뀐 이름은 저장 전에 그 칸 막힘 · 풍선 · 「막힘」 수로 보이고(`list_problems` — 저장소와 같은 판정 · 같은 글, 표 아래 경고 상자 없음),
     거부되면 그 줄의 고침만 빼(`without_edits`, `BatchEditRefused.moved_names`) 지금 이름을 다시 보인다.
   - 결과 알림 칸(`LIST_NOTICE_KEY` · `CARD_NOTICE_KEY`)은 그 칸이 선 회차에만 그려지므로, 안 서는 쪽 키는 맨 위 칸이 알림창 · Alarm 으로 꺼낸다(`_notices_without_a_place` — 칸이 옮겨도 거부 · 성공이
-    잠자지 않는다). 사라진 고침 알림은 맨 위 알림 **앞**에서 맞춰 그 회차에 뜬다. 이 세션의 보관 · 되돌리기 · 삭제는 쓰기 전에 그 시나리오의 리비전 id 를 읽어 고침을 말없이 빼고
-    순서 고침의 본 차례를 옮긴다(`_draft_settler`).
+    잠자지 않는다). 사라진 고침 알림은 맨 위 알림 **앞**에서 맞춰 그 회차에 뜨고, 콜백이 본문보다 먼저 맞춘 「변경 저장」 은 저장 콜백이 같은 글을 낸다(`_warn_gone`). 이 세션의 보관 · 되돌리기 · 삭제는 쓰기 전에 그 시나리오의 리비전 id 를 읽어 고침을 말없이 빼고
+    순서 고침의 본 차례를 옮긴다(`_draft_settler`). 이 세션이 시나리오를 더한 길(복제 · 월 머지 · 연도 Shift · DB 등록)도 본 차례를 옮긴다(`scenario_list_state.follow_created_scenario` — 그 줄을 빼면 본 차례와 같을 때만, 남이 바꾼 차례는 그대로 막힌다).
+    「자동 갱신」 탭의 「지금 실행」 은 예약 회차와 같은 함수라 옮기지 않는다(「다른 곳에서」 로 막힌다).
+  - 어긋난 누름은 하지 않고 그 자리에 알린다 — 옛 카드 「선택한 리비전 불러오기」 는 지금 목록 · 고른 리비전의 소속을 다시 보고, 옛 카드 「공식으로 지정…」 은 다음 그리기가 팝업 칸을 비우며 알린다(`_refuse_stale_official_press`). 보관 확인 체크 key 는 시나리오마다다(`archive_confirm_key`) — 칸을 지워도 브라우저가 옛 값을 다시 보낸다. 「모두 버리기」 는 버릴 것이 없으면 세대를 올리지 않는다.
   - 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다 — 이 페이지에는 「리비전 저장」 모드가 없고 그 길은 Guide 가
     말한다(모드 줄 아래 길 안내 줄은 두지 않는다 — 설계 규칙 UI-TXT-03).
   - `자동 갱신`(`components/auto_official_update_tab.py`)과 BigDataQuery 사내 조회는 버튼을 누른 회차에만 돈다.
@@ -2426,10 +2428,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       초점이 표 밖으로 나가는 순간 보낸다). 초점이 나갈 때 보내 그 회차가 누름보다 늦게 오는 편집 칸을 새로 두면 그 key 를
       `EDIT_HOST_KEYS` 에 더한다(`equipment_master_grid` 의 key 와 같은지는 `test_page_tabs_assets` 가 본다). 탭 줄 밖의 떠나기인 머리 툴바의 테마 단추도 같은 붙들기를 지난다 — 탭 줄이 그릴 때마다
       `window.__capaLeaveGate`(`press` — 단추 pointerdown 에서 편집표 포커스를 적는다, `go(fn)` — 붙든 뒤 `fn` 을
-      부른다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
+      부른다, `hold(fn)` — 붙들었는지 돌려준다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
       곧바로 묻는다. 붙든 동안 탭을 누르면 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다
       (`theme_toggle.LEAVE_HOLD_RESET_MS`). 칸 편집기에 쓰는 중(Enter 전)에 누른 Dark 가 표지가 서기 전에 묻지 않고
       새로 읽던 틈을 막는다(E2E #94·#101, 개선 거리 I4).
+      사이드바 화면 링크도 같은 붙들기를 지난다(`S.onLink` — click 을 막았다가 그 회차 뒤 같은 링크를 다시 누른다, 상한 거름은 다시 누를 때 한 번) — 터치 톡은 초점이 빠지며 나간 표의
+      출납 회차와 거의 함께 닿아 그 회차가 지금 화면 주소로 돌며 이동을 덮었다(2026-11-07 E2E).
     - 탭 줄은 페이지보다 먼저 그리므로 「이번 회차에 그 편집표를 그리는가」 를 위젯 값으로 미리 본다 — 작은 편집표는 바깥 탭이
       ① 이고 표 고르기(`equipment_data_workspace.MASTER_TABLE_KEY`)가 그 표일 때만 센다. 고르기를 바꾼 회차에는 편집표 위젯
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
@@ -2861,11 +2865,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `widget_generation`(`widget_key`·`bump`)이 한다.
 - `src/capa_simulation/components/side_panel.py` (+ `side_panel_assets/` CSS · JS) — 편집기 영역 안 두 칸(왼쪽 표 · 오른쪽 칸)의 공용 틀. 칸막이 · 접기 · 폭 기억 · 서식(`side_layout_style`) · 칸 고르기 머리(`render_side_head`) · 다음 고르기(`switch_side`)를 맡고, 화면마다 갈리는 값은 스펙 `SidePanel`(key 앞붙이 · 저장소 이름 · `<html>` 표지 이름 · 처음 폭)이다. 설비 마스터 `MASTER_SIDE` 와 시나리오 목록 관리 `LIST_SIDE`(`capa-scenario-list-side-v1`, `--sls-side-w` · `--sls-top` · `data-sls-side`, 처음 폭 40%)가 쓴다(설계 규칙 UI-LAY-09 · UI-CON-04). 읽을 때 등록하므로 그 편집기를 그리는 회차에만 불러온다.
 - `src/capa_simulation/components/save_section.py` — 저장 구획의 「모두 버리기」 확인 팝오버(`discard_popover` — 설비 마스터 · 시나리오 목록 관리, UI-NTF-09).
-- `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로) · `changes.css`. 등록이 없어 어디서 불러도 된다.
+- `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
 - `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 세 마운트 data, 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
 - `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key. 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다.
-- `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 세 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY`. 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`.
+- `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 세 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY`. 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
   `role="radio"` 단추의 n 번째) 옆 같은 점(`mark_pending_segments`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
@@ -3325,7 +3329,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을 최신 위에 얹거나, 바뀐 확인 글을 보지 않은 채 새 번호로
   발행한다 — 설비 시나리오 탭은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
-  글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」·리비전 「이름 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
+  글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
   설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
   쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장). 본문이 받는 컴포넌트 제출(Space 층·FAB 배치
   편집기 「적용」)은 받아들인 입력 지문을 적고(`note_submission`), 브라우저가 새 epoch 를 받기 전에 같은 단추를 한 번 더 눌러
@@ -6567,6 +6571,149 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - 그런 표의 비교 후 쓰기 기준은 사용자가 **본** 값이다(브라우저가 그 칸을 처음 고칠 때 든 값을 op 에 싣는다) — 저장 콜백이 받는 「지난 회차에 읽은
     값」은 남의 변경 뒤 회차가 한 번만 돌아도 남의 값이 된다. 시험은 남의 변경을 클릭 직전에만 끼우지 말고, 그 뒤
     회차를 한 번 이상(다른 줄 열기 등) 돌린 꼴도 둔다.
+- **편집 화면의 적용·저장 버튼과 변경 메모는 편집표 위에 둔다** — 표가 높으면 아래 버튼이 화면 밖이라 적용을 건너뛴다
+  (버튼을 먼저 만들어도 누른 회차에 편집값이 들어온다). 적용 결과·오류는 누른 버튼 바로 아래 자리에 쓴다.
+- **표 칸 폭(px)은 머리 글자가 다 들어가는 폭보다 작게 두지 않는다** — 머리는 캔버스라 넘치면 말줄임표 없이 잘리고(「선ㅌ」),
+  표가 좁으면 칸이 그 값 밑으로 줄지 않는다. 고칠 수 있는 칸은 머리에 편집 아이콘이 서서 글자가 왼쪽 32px 뒤에서
+  시작한다 — 굵은 14px 두 글자 머리는 72px, 아이콘 없는 칸은 글자 + 양쪽 여백 16px. 브라우저 표는 머리 글자가 굵은 12px 이라 글자
+  + 양쪽 여백 16px 이고 `tests/test_scenario_list_grid_assets.py::test_column_widths_fit_their_heads` 가 칸 폭을 머리 글자와 견준다.
+- pandas Styler 표의 분류 칸 회색 배경은 Styler 를 직접 만들지 말고 `month_editor.classification_styled` 를 거친다 —
+  Streamlit 이 rerun 마다 모든 칸을 번역하므로 칸 수 상한을 넘으면 칠하지 않는다. `st.dataframe` 으로 그리는 Styler
+  표에는 표마다 다른 고정 `uuid=` 를 준다(무작위 uuid 면 회차마다 표를 다시 보낸다).
+- **큰 조회 표의 화면 사본은 되풀이 글자 열을 category 로, 수를 좁은 정수로 보낼 수 있다**(STEP 구성 요약
+  `reference_data._compact_step_summary`). `st.dataframe` 조회 표의 조건 셋: ① category 글자 열은
+  `st.column_config.TextColumn()` 으로 못 박는다 — 두지 않으면 1.63 프런트가 선택 칸 꼴로 그려 글자 자리가 어긋난다.
+  ② `lazy=False` 를 준다 — 자동 lazy(15만 행 초과, `lazy_df_source.AUTO_LAZY_ROW_THRESHOLD`)의 서버 정렬은 category
+  열에서 「Failed to load data」 가 된다. ③ 그보다 긴 표는 줄이지 않고 `lazy=None` 으로 맡긴다 — 한꺼번에 받은 표가
+  15만 행을 넘으면 프런트가 정렬을 끈다(끝 값은 `tests/test_reference_data_perf.py` 가 Streamlit 상수와 견준다).
+  표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다).
+- **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
+  바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
+  쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다.
+- 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고
+  빈 줄에서 HTML 블록이 끊겨 적은 사람이 보던 글과 달라진다. 글만이면 `st.text`, HTML 로 감싸야 하면 `html.escape` 한
+  뒤 `st.html` 로 넘긴다. 제목·이름처럼 마크다운으로 그려지는 자리(`st.expander` 라벨·`st.caption`·`st.markdown`·
+  알림 상자·위젯 라벨·풍선)에 넣는 사람 글(Space 층 사용 사유 — 비활성 층 배너·`사용 편집` 성공 알림·설비 마스터 탭 저장
+  미리보기 경고 포함)과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
+  `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
+  보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
+  공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
+  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
+  `tests/test_process_label_markdown_sinks.py`). 「변경 메모」 가 출처가 되는 공용 프로필 버전 캡션은
+  `profile_version_caption` 이 출처를 막아 짓는다 — 날로 이으면 판정 기준·선행 B/O·확보율 보정 캡션에 메모의 물결표·
+  별표·`$`·백틱이 꾸밈으로 그려졌다(2026-10-27 E2E, `tests/test_profile_caption.py`).
+  `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
+  막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
+  버튼·체크 상자 라벨과 라디오 선택지(`format_func`)·캡션도 마크다운 자리다 — HOME 주요공정 프리셋 이름은 사이드바 칸·Preference
+  캡션·삭제 확인·알림·팝업 라디오에서 `literal_markdown`·`quoted`(「이름」)로 막는다(`tests/test_key_process_tilde_names.py`).
+  공정 표시명(사람이 Proc Rename 에 적는다)도 같다 — HOME 공정 필터 팝업 단추·자동 갱신 줄, 프리셋 미리보기 캡션, 「그리지 않는
+  공정」·확보율 보정 안내, Admin 없는 공정·겹친 표시명 알림과 이름 중복 거부(이름마다 `literal_markdown`)에서 막는다
+  (`tests/test_process_label_tilde_sinks.py`). CSS `content` 풍선·Figure 글은 마크다운이 아니라 막지 않는다.
+- **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를
+  고칠 때 옆 자리가 남는다(2026-10-26 E2E 1~3회차). 시험이 지키는 범위는 아래 「지키는 시험」 에 적은 만큼이다.
+  - **예외 글은 `bootstrap_error_message(exc)`** — 알림 상자·캡션·토스트에 `str(exc)`·`f"{exc}"` 를 바로 싣지 않는다
+    (DuckDB 가 아닌 예외는 물결표를 막은 원문, 3장 `page_bootstrap.py`). 「`str(exc) if isinstance(exc, ValueError) else
+    bootstrap_error_message(exc)`」 도 같은 값이라 쓰지 않는다. 세션 칸에 담아 다음 회차에 그리는 거절 글·도우미에 넘기는
+    글·돌려주는 실패 글도 지을 때 이 길을 탄다. 돌려받은 글을 `markdown_safe_tildes`·`literal_markdown` 으로 다시 감싸지
+    않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의 코드 칸 경로 물결표는 `\~` 로 보인다), 뒤의 것은 막은
+    `\~` 를 다시 막아 글자로 보인다. 이 길은 물결표만 막아 예외 글 속 이름의 별표·`$` 는 꾸밈이 된다 — 사람 이름을 늘어놓는
+    예외는 이름을 속성으로도 싣고 화면이 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다(Proc Rename 1:1 위반
+    `ProcessRenameDuplicateError.names` → `process_rename_management._save_error_message`, 필요 단축 일정 기준선 같은 이름
+    거절 `BaselineNameTakenError.name` → `shortening_progress_panel._save_error_message` — `tests/test_shortening_progress_tab.py`).
+  - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
+    없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 `korean_particle` 로 고른다 — 끝의
+    `」` 와 escape 의 `\` 를 건너뛰므로 막기 전의 이름·「이름」·막은 글 어느 것으로 골라도 같은 조사다(「WB\(2\)」→「는」,
+    `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다. 필요 단축 일정 기준선 이름(저장·지우기 결과 알림 원문·
+    「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
+    (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
+  - **낫표 없이 늘어놓는 이름 목록은 `literal_names(이름들)`**(이름마다 `literal_markdown`, 잇는 글 `, `·` · ` 은 앱 글),
+    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명)은 `literal_markdown(이름)` — 「설정」 팝업의 Cut-off 를
+    적지 않은 공정, Proc Rename 무시 안내, 주요공정 프리셋 「이 화면에 없음」·필요 단축 일정 공정
+    필터 밖 공정, 호기·설비 조회 걸린 조건 줄, 근거 카드 「가용을 깎지 않은 비가동」 설비명,
+    실적 요약·실적 정합성 결론의 공정, Capa Chatbot 질문·결론·조건(페이지가 막는 표시명 함수를 넘긴다)
+    (`tests/test_markdown_name_lists.py`·`tests/test_capa_chatbot_page.py`). 이름마다 막은 목록을 담은 글을
+    `markdown_safe_tildes` 로 다시 감싸지 않는다.
+  - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
+    조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
+    `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
+    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서 막는다.
+    평문 자리에서 `**` 가 글자로 보이므로 그런 글에는 앱 꾸밈이 없다 — **날 이름을 담은 그 글은 글 통째로
+    `literal_markdown`** 으로 막는다(`markdown_safe_tildes` 는 물결표만 막아 「가정*R6*B」 의 별표가 기울임이 되어 사라진다 —
+    2026-10-26 E2E r5): Space 잠금 줄·꺼진 「배치 편집」 풍선·빨리 감기 줄·새 호기 잠금 줄, 설비 마스터 탭의 낡은 세션
+    경고·배치 잠금 줄·「선택 행 삭제」 풍선(`tests/test_space_layout_overlay_page.py`·
+    `tests/test_equipment_master_tab_scenarios.py`). **알림 칸 글은 막지 않는다** — `alerts.state` · `alerts.event` 의 `text` ·
+    `full` 은 알림창 · 패널이 `textContent` 로 넣는 평문이라 날 이름을 글자 그대로 싣는다(Cut-off 를 적지 않은 공정 `EQ-12` ·
+    한쪽에만 있는 공정 `EQ-06` · Proc Rename 겹침 `AD-06` · 세션 이동 `SB-14` · 넘겨받은 공정 `PD-02` · `CS-02` · 설비 기준이
+    바뀐 도착 `CS-03` —
+    `tests/test_markdown_name_lists.py`). 마크다운 글을 실을 때는 `alerts.plain_text` 로 꾸밈을 걷는다. 붙여넣기 거절 글은 잠금
+    까닭을 `literal_markdown` 으로 막아 담는다(예외 글로 가 `bootstrap_error_message` 를 지난다). 이미 막힌 조각(`quoted` 한
+    이름·`bootstrap_error_message` 글)을 담는 글은 물결표만 막는다(`markdown_safe_tildes` — 막은 `\~` 는 다시 막지 않는다):
+    rerun 건너 그리는 Space 성공 글은 담을 때(`_queue_space_flash` — 그 글의 설비 시나리오 이름은 `quoted`), 사이드바
+    설비 시나리오 줄의 팝업 저장 알림(`save_result_message`)·저장 실패와 시나리오 관리 설비 시나리오 탭의 거절 알림(`REFUSED_KEY` —
+    그리는 자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
+    `tests/test_equipment_scenario_screens.py`, E2E r3). 설비 시나리오 이름·리비전명 바꾸기의 「남이 먼저 바꿨다」 거절 글은
+    예외 글 대신 막은 지금 이름(`exc.current`)으로 같은 글(`scenario_name_moved_message`·
+    `schedule_revision_name_moved_message`)을 짓는다.
+  - 설비명·공정명을 「, 」 로 늘어놓은 목록(경고·캡션의 「…: A, B 외 3」, 걸린 조건 줄의 고른 값)은 낫표로 감싸는
+    이름이 아니다. **설비명 목록은 이름마다 `literal_markdown`** 으로 막는다 — 물결표만 막으면 「DA*31*R」 의 별표 짝이
+    기울임이 되어 「DA31R」 로 보였다(2026-10-27 E2E r6): 설비 마스터 쪽 `_sample_names`(지우는 호기 경고·저장 거절,
+    붙여넣기 배치 잠금 거절, 미리보기 배치 알림)·다시 세움 알림의 빠진 호기·작은 편집표 삭제 알림의 키·미리보기 대소문자
+    주의(`describe_case_variants(shown=)`). 서비스가 지어 돌려준 앱 꾸밈 없는 글(비활성 층 경고)은 그리는 자리에서 글
+    통째로 `literal_markdown`, 설비명을 날로 담은 서비스 거절(엑셀·CSV 미리보기의 없는 설비명·같은 설비명 둘 —
+    `equipment_csv.EquipmentNamesError`)은 화면이 `exc.text(literal_markdown)` 로 이름만 막아 다시 짓는다(예외 글은 날
+    이름 그대로). 공정명 목록과 걸린 조건 줄도 위 `literal_names` 길이다. 호기 묶음 부딪힘 글
+    (`unit_group_collision_message`)만 서비스 예외 글이라 아직 `bootstrap_error_message` 의 물결표 막기만 지난다(`docs/TODO.md`).
+  - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
+    `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
+    규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
+    `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다(`tests/test_page_guide.py` 가 모든 Guide 를 본다).
+  - 지키는 시험과 그 범위(UI 모듈 = `app.py`·`app_pages/`·`components/`·`src/capa_simulation/` 꼭대기 모듈):
+    - `tests/test_markdown_sink_guard.py`(AST). ① UI 모듈의 `except … as exc` 안에서 예외를 글로 바꾸는 꼴(`str(exc)`·
+      `f"{exc}"`·`.format(exc)`·`%`)은 **어디에 쓰든**(마크다운 자리 인자·대입·도우미 인자·세션 칸·돌려주는 값) 실패하고,
+      마크다운 자리 인자에 `exc` 를 그대로 넘겨도 실패한다. 지나가는 것은 막는 함수 안·`raise`·로그·평문 자리(`st.code`·
+      `st.text`·`st.json`·`html.escape`)·까닭 가르기(`"lock" in str(exc)`)와, 마크다운이 아닌 곳으로만 보내는 함수
+      (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
+      `bootstrap_error_message`(다시 감싸기)와, `literal_markdown`·`quoted` 안의 이미 막은 글을 짓는 함수(`ESCAPED_BUILDERS`
+      — 설비 시나리오 값 칸 글 `equipment_value_label` 등. 다시 막으면 `\` 가 글자로 보인다 — 2026-10-26 E2E 5회차 필요
+      단축 기준 캡션). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS`·`ESCAPED_BUILDERS` 만.
+      **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
+      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글,
+      세션 칸에 담았다 다음 회차에 그리는 알림 글(PKG PLAN 「가상 제품 등록」 완료 알림 — 담을 때 제품정보·Stack 을
+      `literal_markdown` 으로 막는다, `tests/test_load_conversion_plan_apply.py`). 공식 지정 확인·월 머지 경고의 가상 제품
+      키도 그리는 글을 지을 때 막는다(머지 출처 메모는 평문이라 그대로).
+      이것은 이 절의 규칙대로 짓거나 그리는 자리에서 막고 아래 화면 그물·리뷰가 본다.
+    - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
+      (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
+      열린 화면의 기본 상태만 본다 — 탭 안·누른 뒤·거절 뒤의 글은 그 화면 시험이 따로 본다.
+    - `tests/test_literal_markdown.py`(단위)·`tests/test_markdown_name_lists.py`(낫표 없는 이름 목록 — 알림 자리마다 연다).
+
+### 스크립트와 컴포넌트
+
+- **브라우저에 싣는 스크립트·컴포넌트 내용은 회차마다 같아야 한다.** 툴바 iframe 과 입장 화면의 등록 JS·`data` 는 상수만
+  든 고정 문자열로 보낸다 — 바뀌면 Streamlit 이 iframe 을 새로 만들어 옛 단추의 `onclick` 이 죽고 큰 메시지를 다시
+  보낸다. 회차마다 달라지는 값(테마 등)은 브라우저 쪽에서 읽는다(`capaTheme.resolve`).
+- 스크립트를 싣는 칸은 `st.iframe` 이다 — `st.html` 은 스크립트를 실행하지 않고(`unsafe_allow_javascript=True` 일 때만 —
+  아래 예외 하나) `components.v1.html` 은 회차마다 폐기 예고를 찍는다. **허용 예외 하나**: DB 등록 저장 결과 칸 끝의
+  `REVEAL_NOTICE_SCRIPT`(`components/bigdataquery_registration.py` — `st.html(unsafe_allow_javascript=True)`, 알림을 그린 회차에만
+  회차마다 다른 일회 표지로 서서 칸이 화면 밖일 때만 `scrollIntoView({block: "nearest"})`)는 「회차마다 같은 내용」 · `st.iframe`
+  규칙 밖이다(2026-11-01 사용자 결정 「그대로 둠」). 다른 자리는 이 예외를 늘리지 않는다 — `tests/test_bigdataquery_registration.py`
+  가 `unsafe_allow_javascript` 를 쓰는 파일이 그 하나인지 본다. 헤더 툴바·사이드바 머리칸에 단추를 다는 스크립트는 iframe 을 따로 두지 않고 테마 버튼 iframe 의
+  `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다). 접는 규칙(`theme_toggle._COLLAPSE_STYLE`)은
+  높이 0 과 함께 `visibility: hidden` 을 건다 — 높이 0 이어도 iframe 은 Tab 정지이고 낭독기에 「st.iframe」 으로 읽혔다
+  (`tests/test_theme_toggle.py`).
+- **모든 화면에 걸친 컴포넌트(화면 탭 줄)는 `app.py` 에서 고정 key 로, 앞에 조건부 칸 없이 그린다.**
+  `navigation.run()` 밖이라 요소 id 에 주 스크립트 해시가 들어가 화면을 옮겨도 같은 요소다 — 페이지 안에서 그리면
+  화면마다 다시 마운트된다. 그 앞 본문에 생겼다 사라지는 칸(스키마 경고 등)을 두면 순번이 밀려 다시 마운트된다
+  (`tests/test_page_tabs.py` 자리 시험). **프래그먼트로 감싸지 않는다** — 프래그먼트 안의 트리거는 돌고 있는 앱 전체
+  실행을 끊지 못해 무거운 회차 중에 누른 탭이 그 계산을 기다린다. 탭 패널이 없는 이동 목록에는 탭 역할(ARIA)을 쓰지
+  않는다 — `check_deploy_screens` 의 `get_by_role("tab")` 이 그림자 DOM 을 뚫어 본문 탭보다 먼저 잡는다.
+- **팝업(`st.dialog`) 안에 마운트하는 Components v2 컴포넌트는 그림자 DOM 에 가두지 않는다**(`isolate_styles=False`) —
+  팝업의 포커스 순서가 그림자 DOM 안을 보지 못해 Tab 이 닫기 단추로 가 고친 값을 버린다. 서식은 고유 클래스 접두어로만
+  건다(월 입력 컴포넌트는 위 「월 입력」 항목).
+- **Space 층 뷰어의 기준일 고정**(`asOfPinned` — 「필요 단축」 보기): data 에 그 칸이 실린 회차만 페이더 대신 같은 높이의 고정
+  줄이 서고(`is-pinned`, 같은 `!important` + 더 높은 선택자로 보기의 편집 전용 숨김을 이긴다) 기준일은 받은 날(오늘)이다. 그 보기에
+  표시된 호기(`layer`)는 겹친 반입 예정으로 숨기지 않는다(`coveredBy` — 단축 후보는 대개 기존 자리에 들어올 반입 전 호기다). 배지만
+  바뀐 같은 epoch 회차는 호기 값이 그대로라 배지 지문(`S.badgeKey`)으로 다시 그린다.
 - **편집본을 바꾸는 Components v2 조작은 트리거가 아니라 상태 값 하나(출납 `outbox`)로 보낸다.** 1.63 의 위젯 상태 합치기는
   단추 트리거만 앞 값을 살리고 CCv2 `json_trigger_value` 는 살리지 않아, 실행 중 회차가 있으면 잇단 트리거가 앞 것을 덮는다.
   상태 값은 「가장 새 값」 이 이기므로 늘 **반영되지 않은 조작 전부**(마운트 id·seq·브라우저 시각 `at`)를 싣고, 파이썬은 마운트별

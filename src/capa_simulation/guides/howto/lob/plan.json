@@ -314,7 +314,7 @@
         "tab_scenmgmt": "tab:Capa 시나리오",
         "work_mode": "key:scenario_page_mode",
         "scen_table": "named:LIST_TABLE",
-        "scen_name_col": "named:LIST_HEAD(시나리오명)"
+        "scen_latest_col": "named:LIST_HEAD(최신)"
       }
     },
     {

@@ -2582,6 +2582,10 @@ def _list_runs(screen: Screen) -> int:
     return int(screen.page.evaluate(_RUN_COUNTER_JS))
 
 
+# 이동 단추 열 번의 회차 상한 — 300ms 묶음으로 보낸 한 번 + 그 회차가 돌아와 다시 부르는 한 번.
+LIST_MOVE_RUNS: Final = 2
+
+
 def check_scenario_list_grid(screen: Screen) -> str:
     """시나리오 관리 목록 관리 새 표 — 줄 열기 · 한 번 눌러 편집 · 쓰는 동안 회차 0 · Enter · Esc ·
     이동 단추 열 번의 회차 · 풍선 0 · 끌기 · 칸막이 접기 · 저장 전 변경 · 모두 버리기 · 640px 쌓임.
@@ -2627,7 +2631,8 @@ def check_scenario_list_grid(screen: Screen) -> str:
             tools.nth(step % 2 if tools.nth(step % 2).is_enabled() else 1 - step % 2).click()
         page.wait_for_timeout(900)
         screen.wait_idle()
-        parts.append(f"이동 열 번 회차 {_list_runs(screen) - before}")
+        runs = _list_runs(screen) - before
+        parts.append(f"이동 열 번 회차 {runs}{'' if runs <= LIST_MOVE_RUNS else ' — 묶음 풀림'}")
     tip = page.locator('[data-testid="stTooltipContent"]').locator("visible=true").count()
     parts.append(f"풍선 {tip}")
     # 끌기 — 자리를 바꾼 뒤 저장 전 변경에서 함께 버린다.

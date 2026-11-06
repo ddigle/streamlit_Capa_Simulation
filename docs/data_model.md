@@ -227,7 +227,7 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   순서를 한 번 저장한 뒤 새로 만든 시나리오는 NULL 이라 맨 아래에 붙는다. `status` 는
   `ACTIVE`·`ARCHIVED`(보관) 둘이다 — 보관은 목록에서 숨길 뿐 행을 그대로 두고(`repository.archive_scenario`·
   `restore_scenario`), 보관한 시나리오에는 새 리비전을 저장할 수 없다. 보관본은 목록 관리의
-  「보관된 시나리오 N건」 상자에서 되돌리거나 영구 삭제한다.
+  오른쪽 「보관함」 칸에서 되돌리거나 영구 삭제한다.
 - `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`·
   `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`),
   원천 등록·적재 시각, 원천 행 수·해시, 변환 버전, 상태(`LOADING`→`READY`, 보관이면 `ARCHIVED`)

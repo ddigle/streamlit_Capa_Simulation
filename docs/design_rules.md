@@ -1,6 +1,6 @@
 # 화면 설계 · 검수 규칙
 
-마지막 갱신일: 2026-11-06 · 판 v1.6
+마지막 갱신일: 2026-11-07 · 판 v1.7
 
 ## 1. 이 문서
 
@@ -459,10 +459,10 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 본문 옆에 붙어 늘 서는 상세 · 도구 패널(편집기 오른쪽 상세 칸 · Space 도구 패널 · 팔레트)
 - 예외: 떠 있는 판(Alarm · 변경 판 · 알림창)과 팝업은 밖.
 - 판단: 이 패널 내용이 두 배가 되면 화면은 어떻게 되나? 접으면 본문이 넓어지고 떠 있는 단추가 그 자리의 조작을 덮지 않나?
-- 그물: `tests/test_equipment_master_grid_assets.py` 등 자산별 시험 · `tests/test_equipment_side_panel.py` · `tests/test_space_editor_panels_js.py` · `tests/test_fold_button_look.py`(두 편집기 떠 있는 단추 생김 맞댐) · `scripts/check_deploy_screens.py` space_drawer
-- 그물 후보: 옆 패널 공용 부품(폭 · 접힘 · 상한) 하나와 새 패널이 그것을 쓰는지
-- 근거: 사용자 결정(설비 마스터 오른쪽 칸)(2026-11-02), Space 편집기 요청(2026-11-03) — 「늘이고 줄이거나, 최소화 할 수 있게끔 … 한계를 초과한 경우 스크롤 활성화되도록 해줘」, 그림 검수표 eqp-side-01(2026-11-05) — 서브페이지는 편집기 영역 안에 일체감 있게, 접기 단추는 서브페이지 머리에, 접은 꼴은 옛 Space 미배치 파레트 최소화(편집창 위에 떠 있는 단추)처럼
-- 지금 값: 4장 「접힌 칸 단추」 · 「설비 마스터 오른쪽 칸 폭」
+- 그물: `tests/test_equipment_master_grid_assets.py` 등 자산별 시험 · `tests/test_equipment_side_panel.py` · `tests/test_side_panel.py`(두 편집기의 칸 틀 공용 부품 · 폭 한계) · `tests/test_space_editor_panels_js.py` · `tests/test_fold_button_look.py`(두 편집기 떠 있는 단추 생김 맞댐) · `scripts/check_deploy_screens.py` space_drawer · scenario_list_grid
+- 그물 후보: 새 패널이 공용 부품(`components/side_panel.py`)을 쓰는지
+- 근거: 사용자 결정(설비 마스터 오른쪽 칸)(2026-11-02), Space 편집기 요청(2026-11-03) — 「늘이고 줄이거나, 최소화 할 수 있게끔 … 한계를 초과한 경우 스크롤 활성화되도록 해줘」, 그림 검수표 eqp-side-01(2026-11-05) — 서브페이지는 편집기 영역 안에 일체감 있게, 접기 단추는 서브페이지 머리에, 접은 꼴은 옛 Space 미배치 파레트 최소화(편집창 위에 떠 있는 단추)처럼, 사용자 답 안 3(2026-11-06) — 시나리오 목록 관리도 같은 두 칸 틀
+- 지금 값: 4장 「접힌 칸 단추」 · 「설비 마스터 오른쪽 칸 폭」 · 「시나리오 목록 오른쪽 칸 폭」
 
 #### UI-LAY-10 · 빈 자리도 먼저 세운다
 
@@ -705,9 +705,9 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 화면 모듈 · components
 - 예외: 없음
 - 판단: 이 꼴을 다른 화면도 그리나? 그렇다면 같은 함수를 부르나?
-- 그물: `tests/test_documentation_inventory.py`(`SHARED_HELPERS` 등재) · `tests/test_profile_caption.py`(화면마다 같은 글) · `tests/test_table_toolbar.py`(`download_button` 한 곳) · `tests/test_formula_text.py`
+- 그물: `tests/test_documentation_inventory.py`(`SHARED_HELPERS` 등재) · `tests/test_profile_caption.py`(화면마다 같은 글) · `tests/test_table_toolbar.py`(`download_button` 한 곳) · `tests/test_formula_text.py` · `tests/test_scenario_list_grid_assets.py`(브라우저 표 공용 조각 `grid_shared_assets/` 가 앞)
 - 그물 후보: 사본 꼴 그물
-- 근거: CLAUDE.md 아키텍처 「components/」, AGENTS 8장, TODO 3장 기록(2026-11-04)
+- 근거: CLAUDE.md 아키텍처 「components/」, AGENTS 8장, TODO 3장 기록(2026-11-04), 사용자 답 안 3(2026-11-06) — 목록 관리가 설비 마스터의 칸 틀 · 칸 조각 · 「모두 버리기」 를 함께 쓴다
 - 지금 값: 없음
 
 #### UI-CON-05 · 구획 제목은 제 시트에 붙고, 구획 사이는 한 값
@@ -1185,6 +1185,8 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 | Alarm 딸린 표 | 표 하나 2,000행까지(넘으면 본문 펼침 — 제외한 계획 · 편집 불가 수율 행은 앞부분만 싣고 전체는 탭 맨 아래 CSV) | 에이전트 제안 값 · 남은 결정 보드 v5 확정(그림 검수표 static-32 반영) | UI-TXT-08 |
 | 접힌 칸 단추 | 높이 27px · 글자 13px 600 · 모서리 8px · 안쪽 여백 양옆 10px · 영역 끝에서 8px 들어앉음 | 그림 검수표 eqp-side-01 — 옛 미배치 서랍 단추 꼴 | UI-LAY-09 |
 | 설비 마스터 오른쪽 칸 폭 | 360 ~ 760px | 에이전트 제안 값 · 남은 결정 보드 v5 확정(최소 폭 320 → 360 — 머리 줄에 접기 단추가 듦) | UI-LAY-09 |
+| 시나리오 목록 오른쪽 칸 폭 | 360 ~ 760px · 처음 줄의 40% | 한계는 설비 마스터 값 · 처음 폭은 시제품 측정 · 검수 전 | UI-LAY-09 |
+| 시나리오 목록 리비전 표 높이 | 위 끝 max(136px, 창 높이 − 580px) | 창 높이 900 · 칸 본문 603 측정 — 값 줄 · 작업 줄 · 「보관…」 이 칸 안에 듦 · 검수 전 | UI-LAY-03 |
 | 날짜 판 빠른 선택 | 범위 — 오늘부터 4 · 12 · 26주, 오늘까지 4 · 12주, 이번 달, 전체 · 한 날 — 오늘, 어제, 이번 달 1일, 다음 달 1일 | 에이전트 제안 값 · 남은 결정 보드 v5 확정 | UI-INP-03 |
 | 붙여넣기 창 | 글 칸 높이 220px · 줄이는 끝 창 폭 360px · 글 칸 100px | 에이전트 제안 값 · 남은 결정 보드 v5 확정 | UI-INP-08 |
 
@@ -1319,7 +1321,7 @@ v1.2 가 그림 칸을 고치며 묻고 남긴 열 칸의 사용자 답이다(PR
 
 ### 6-7. 2026-11-06 이번 배포 전후 보드 답
 
-6-5 · 6-6 을 고친 화면과 작업 중 나온 물음을 사용자가 본 답이다(PRC-02). 물음 여섯은 모두 권장이고, 사용자가 남긴 메모 하나(list-caption)를 함께 고쳤다. 바꾼 칸만 적고, 답은 위 규칙 글에 입혔다(8장 v1.6). 목록 관리 편집기 제안의 답(안 3)은 구현 뒤 규칙 글에 입힌다(`docs/TODO.md` 2장).
+6-5 · 6-6 을 고친 화면과 작업 중 나온 물음을 사용자가 본 답이다(PRC-02). 물음 여섯은 모두 권장이고, 사용자가 남긴 메모 하나(list-caption)를 함께 고쳤다. 바꾼 칸만 적고, 답은 위 규칙 글에 입혔다(8장 v1.6). 목록 관리 편집기 제안의 답(안 3)은 구현하며 규칙 글에 입혔다(8장 v1.7).
 
 - q-csv · Static Capa 두 부족 표의 도구 막대 CSV 가 걷은 단추와 다른 파일을 줌 → **단추 없이 파일 값을 바로잡는다** — 공정은 원본 · 확보율은 원값이고 막대 끝은 표 최댓값이다(`max(기본 확보 기준, 표의 확보율 최대)`). 화면 글자는 표시명 · 원값 그대로다. 파일 이름(시각 꼴)은 고른 답에 들지 않아 그대로다 (2026-11-06 · UI-DAT-10 · UI-LAY-03)
 - q-hover · 켜진 「호기 추가」 에 마우스를 올리면 글자가 거의 안 보임 → **고친다** — 칠한 단추는 호버에 제 바탕을 지키고 밝기만 바꾼다. 같은 꼴 단추 전부다 (2026-11-06 · UI-ACC-01 · UI-CON-03)
@@ -1358,6 +1360,8 @@ v1.2 가 그림 칸을 고치며 묻고 남긴 열 칸의 사용자 답이다(PR
 - 2026-11-05 v1.2 UI-INP-03 은 SHOULD 그대로(수준은 따로 묻는다) → 같은 날 따로 물어 남은 결정 보드 v4 (가)로 MUST.
 - 2026-11-02 · 11-03 옆 칸 접힘의 세로 띠(설비 마스터 · Space) → 2026-11-05 그림 검수표 eqp-side-01 로 칸 자리 0 + 떠 있는 단추
   (옛 미배치 서랍 단추 꼴로 되돌림 — UI-LAY-09).
+- 2026-11-06 list-caption 「고친 수는 고친 것이 있을 때만 `변경 저장` 풍선」 → 같은 날 안 3 구현으로 「저장 전 변경」 칸의 수 넷 — 같은 정보를 두 자리에 두지
+  않아 저장 단추 풍선을 걷었고, 그 풍선이 떠 있는 채 남던 꼴도 함께 없어졌다(UI-TXT-07).
 
 뒤집힌 것이 아닌 것: AGENTS 9장 「하위 보기 전환은 본문이다」 는 그대로이고, 산출 결과 대당 Capa 「표시 방식」 은 그 규칙에 더해진
 예외 하나다(UI-LAY-02 · AMB-08 (가)).
@@ -1495,3 +1499,9 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
   - 화면 쪽 이름: `static_capa._bar_top`, `equipment_data_workspace._CLEAN_GENERATION_KEY` · `_note_if_back_to_saved`, `load_conversion._report_locked_yield_rows`, `scenario_management.list_edit_help`(`list_edit_caption` 을 대신함). 알림 코드 · 마이그레이션은 늘지 않았다.
   - 그물: `tests/test_design_rules_doc.py` 가 6-7 일곱 줄과 답 · 규칙 글을 본다. `tests/test_static_capa_layout.py`(막대 끝 · 칸 설정) · `tests/test_process_label_boundaries.py`(표시명은 칸 서식 하나) · `tests/test_equipment_unsaved_mark.py`(저장본으로 돌아온 편집의 표지) · `tests/test_equipment_master_grid_assets.py`(칠한 단추 호버) · `tests/test_load_conversion_plan_apply.py`(수율 앞부분 + 탭 맨 아래 CSV)를 더했다.
   - 그물 미정리는 늘지 않았다. 새로 물은 것(`docs/TODO.md` 2장 「이번 배포 전후 보드 뒤 물음」): Static Capa 표 찾기 · 칸 정렬이 원본 기준, 파일 이름, 좁은 칸에서 짧아 보이는 막대, 목록 관리 이동 단추 풍선이 남는 자리.
+- **v1.7 — 2026-11-07.** 목록 관리 안 3(6-7 — 답은 2026-11-06)을 구현하고 규칙 글에 입혔다(`feat/list-grid-1106`).
+  - 수준을 바꾼 규칙은 없고 규칙 수도 그대로다 — 규칙 78 — MUST 45 · SHOULD 33 · MAY 0.
+  - 근거 · 그물만 더한 규칙: UI-LAY-09(같은 두 칸 틀 · `tests/test_side_panel.py`), UI-CON-04(칸 틀 · 칸 조각 · 「모두 버리기」 공용). 4장에 「시나리오 목록 오른쪽 칸 폭」 · 「시나리오 목록 리비전 표 높이」 를 더했다 — 둘 다 검수 전이다. 7-1 에 list-caption 의 풍선이 수 넷으로 간 것을 적었다.
+  - 화면 쪽 이름: `components/side_panel.py` · `components/scenario_list_grid.py` · `components/scenario_list_state.py`(`follow_created_scenario`) · `components/grid_shared.py` · `components/save_section.py`, `services/scenario_list_edits.py` · `services/grid_outbox.py`, 공용 조각 `grid_shared_assets/`(`.emg-tip` 포함). `components/pick_edit_table.py` 와 `list_edit_help` 는 없어졌다. 알림 코드 · 마이그레이션은 늘지 않았다.
+  - 그물: `tests/test_scenario_list_grid_assets.py`(칸 폭 · 표 폭 · 리비전 표 높이 · 회차 뒤 스크롤 · 끝 닿은 단추 초점 · 되돌린 줄 초점) · `tests/test_scenario_list_stale_presses.py`(어긋난 누름) · `tests/test_place_sentence_sites.py`(`discard_popover` 뜻 한 줄 두 자리).
+  - 물을 것: 상세 칸 작업 줄이 리비전 표 아래다 — 표 높이 상한으로 칸 안에 두었으나 UI-LAY-03 글은 「표 위」 라 표 위로 올릴지 · 예외로 적을지 묻는다. 800px 창에서 사이드바를 연 두 칸 쌓임 기준도 묻는다(`docs/TODO.md` 2장).

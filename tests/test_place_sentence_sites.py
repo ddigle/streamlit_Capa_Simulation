@@ -20,7 +20,8 @@
 - 미정리(`UNSETTLED`)는 이 그물을 세울 때(2026-11-04) 이미 있던 설명 · 내역 · 길 안내 자리다 —
   새 자리에 쓰지 않는다. 미정리 수가 `UNSETTLED_SITES` 와 다르면 실패한다(늘면 옮기고, 줄면 수도
   줄인다).
-- 문장으로 끝나지 않는 값 줄(「**라벨** · 값」), 매개변수로 받은 글, 풍선(`help=`)은 그물 밖이다.
+- 문장으로 끝나지 않는 값 줄(「**라벨** · 값」), 매개변수로 받은 글, 풍선(`help=`)은 그물 밖이다. 뜻
+  문장을 키워드로 받아 그대로 그리는 공용 부품(`KEYWORD_SINKS`)은 부르는 자리에서 그 인자를 잰다.
 
 까닭 칸은 부름 하나에 하나이고 함수 안 문서 차례다 — 한 함수에 갈래가 섞일 수 있다. 차례로 짝지은
 부름과 까닭은 꼴도 맞댄다 — 값 · 표지 · 빈 결과 자리는 평문(`st.caption` · `st.markdown` ·
@@ -51,6 +52,7 @@ from source_sites import (
     VALUE,
     TextResolver,
     bare_tail,
+    called_name,
     ends_as_sentence,
     first_text_argument,
     method,
@@ -179,7 +181,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "render_equipment_lifecycle_gantt",
     ): (EMPTY,),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (BESIDE_INPUT,),
+    # 호기 지움 잠금 까닭 한 줄 · 「모두 버리기」 팝오버의 뜻 한 줄(UI-NTF-09).
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
+        BESIDE_INPUT,
         BESIDE_INPUT,
     ),
     # 옛 배포 흔적으로 막힌 쓰기 팝오버의 잠금 까닭 한 줄(`legacy_trace_lock_line`) — 푸는 길은 구획
@@ -280,6 +284,8 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/scenario_management.py", "_render_archived_scenarios"): (
         EMPTY,
     ),
+    # 「모두 버리기」 팝오버의 뜻 한 줄(UI-NTF-09).
+    ("src/capa_simulation/components/scenario_management.py", "_render_changes"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/scenario_management.py", "_render_list_management"): (EMPTY,),
     ("src/capa_simulation/components/scenario_management.py", "_render_official_history"): (
         EMPTY,
@@ -328,6 +334,11 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
 }
 
 
+# 뜻 문장을 키워드로 받아 그대로 그리는 공용 부품 — 부품 안 `st.caption(note)` 은 매개변수라
+# 못 본다.
+KEYWORD_SINKS: dict[str, str] = {"discard_popover": "note"}
+
+
 class SentenceCall(NamedTuple):
     """서술형 문장으로 끝나는 자리 글 부름 하나 — 줄 번호, 부른 이름, 끝 글(들)."""
 
@@ -343,16 +354,17 @@ def place_sentence_calls(
     resolver = TextResolver()
     found: dict[tuple[str, str], list[SentenceCall]] = {}
     for relative, outer, path, scope, call in screen_calls(paths or screen_files(), root):
-        if method(call) not in TEXT_METHODS or receiver(call) in LOGGERS:
+        sink = KEYWORD_SINKS.get(called_name(call))
+        if sink is None and (method(call) not in TEXT_METHODS or receiver(call) in LOGGERS):
             continue
-        argument = first_text_argument(call)
+        argument = first_text_argument(call) if sink is None else first_text_argument(call, sink)
         if argument is None:
             continue
         tails = resolver.tails(argument, path, scope)
         known = tuple(tail for tail in tails if tail is not None)
         if any(ends_as_sentence(tail) for tail in known):
             found.setdefault((relative, outer), []).append(
-                SentenceCall(call.lineno, method(call), known)
+                SentenceCall(call.lineno, called_name(call), known)
             )
     return found
 
