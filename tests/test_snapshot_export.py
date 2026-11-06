@@ -417,12 +417,17 @@ def test_free_space_check_reads_as_disk_full(workspace: Path) -> None:
     assert classify_failure(caught.value) == "disk_full"
 
 
+# 앱 안 바이트 복사는 컨테이너(Linux)에서만 돈다. 사내 Windows 관문에서는 그 길을 부르지 않는다.
+LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="바이트 복사는 Linux 만")
+
+
 def _checkpoint_copy(database: Path, destination: Path) -> snapshot_export.CheckpointCopy:
     return snapshot_export.checkpoint_copy(
         database, destination, write_lock=threading.RLock(), dataset="simulation"
     )
 
 
+@LINUX_ONLY
 def test_checkpoint_copy_carries_a_commit_that_was_only_in_the_wal(workspace: Path) -> None:
     """핀이 열린 채의 COMMIT 은 WAL 에만 있다. 그대로 복사하면 방금 저장이 통째로 빠진다."""
     database = workspace / "capa_simulation.duckdb"
@@ -439,6 +444,7 @@ def test_checkpoint_copy_carries_a_commit_that_was_only_in_the_wal(workspace: Pa
     assert copied.export.migration_version == 1
 
 
+@LINUX_ONLY
 def test_checkpoint_copy_keeps_the_block_size_and_can_be_installed(workspace: Path) -> None:
     """바이트 사본을 그대로 받아 앱이 연다. 16KiB 블록 불변조건도 그대로다."""
     database = workspace / "capa_simulation.duckdb"
@@ -461,6 +467,7 @@ def test_checkpoint_copy_keeps_the_block_size_and_can_be_installed(workspace: Pa
     assert row is not None and int(row[0]) == DUCKDB_BLOCK_SIZE
 
 
+@LINUX_ONLY
 def test_the_mark_read_under_the_lock_matches_the_copy(workspace: Path) -> None:
     """잠금 안에서 읽어야 「사본이 담은 번호」 와 같다. 이것이 비교 후 지우기의 기준이다."""
     database = workspace / "capa_simulation.duckdb"
@@ -506,6 +513,7 @@ def test_a_held_lock_is_reported_as_busy(workspace: Path) -> None:
         holder.join(5)
 
 
+@LINUX_ONLY
 def test_a_file_that_moves_during_the_copy_is_thrown_away(
     workspace: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -539,6 +547,7 @@ except duckdb.IOException:
 """
 
 
+@LINUX_ONLY
 def test_the_copy_keeps_the_process_lock_on_the_live_file(workspace: Path) -> None:
     """같은 프로세스가 그 파일을 열었다 닫으면 POSIX 잠금이 풀린다. 복사가 그것을 풀면
     「다른 프로세스는 곧바로 실패」 가 프로세스 수명 동안 조용히 사라진다."""
@@ -557,6 +566,7 @@ def test_the_copy_keeps_the_process_lock_on_the_live_file(workspace: Path) -> No
     assert opened.returncode == 3
 
 
+@LINUX_ONLY
 def test_the_live_handle_follows_a_replaced_file(workspace: Path) -> None:
     """같은 경로가 새 파일이 되면(받기) 옛 번호로 읽으면 옛 내용이 나온다."""
     database = workspace / "capa_simulation.duckdb"

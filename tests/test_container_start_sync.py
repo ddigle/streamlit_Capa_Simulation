@@ -538,14 +538,15 @@ def test_a_sigterm_during_the_wait_ends_the_script_without_the_app(box: SimpleNa
 
 # --------------------------------------------------------------------------- 프로필
 def test_the_profile_is_private_and_says_what_the_profile_command_prints(
-    box: SimpleNamespace,
+    box: SimpleNamespace, keeps_permission_bits: bool
 ) -> None:
     _start(box, _environ(box), Runner(box.log))
 
     folder = box.home / ".aws"
-    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
-    for name in ("credentials", "config"):
-        assert stat.S_IMODE((folder / name).stat().st_mode) == 0o600
+    if keeps_permission_bits:
+        assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+        for name in ("credentials", "config"):
+            assert stat.S_IMODE((folder / name).stat().st_mode) == 0o600
     storage = object_storage.load_settings(
         environ={sso_names.ENV_S3_ENDPOINT: CLOSED_ENDPOINT, sso_names.ENV_S3_BUCKET: FAKE_BUCKET}
     )

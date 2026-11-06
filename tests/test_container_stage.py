@@ -229,6 +229,7 @@ def test_a_port_taken_by_someone_else_leaves_an_empty_stage() -> None:
     opened.close()
 
 
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="/proc 가 있는 Linux 만")
 def test_children_of_the_start_script_do_not_hold_the_port(
     stage: tuple[container_stage.Stage, int],
 ) -> None:
