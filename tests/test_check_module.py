@@ -317,6 +317,11 @@ def test_the_crash_fixture_missing_package_is_caught_through_importlib(tmp_path:
         ('NAME = "capa_simulation.duckdb"\n', ("M07", "error")),
         ('NAME = "equipment_availability.duckdb"\n', ("M07", "error")),
         ('NAME = ".deploy/applied.json"\n', ("M07", "error")),
+        ('NAME = "~/.aws/credentials"\n', ("M07", "error")),
+        (
+            'from pathlib import Path\nPATH = Path.home() / ".aws" / "credentials"\n',
+            ("M07", "error"),
+        ),
         ('NAME = "data/sample.csv"\n', ("M07", "warning")),
         # 마디로 나눠 이은 코어 데이터 자리와 모듈 데이터 자리 밖으로 올라가기.
         (

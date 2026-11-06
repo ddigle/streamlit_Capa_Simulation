@@ -190,6 +190,7 @@ _CORE_DATA_MARKERS: Final = (
     "data/output",
     "data/temp",
     ".deploy/",
+    ".aws/",
 )
 
 _BACKGROUND_IMPORTS: Final = frozenset(
