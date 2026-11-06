@@ -12,9 +12,11 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from alert_marks import active_state
+from alert_marks import active_state, alert_notes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts, object_sync_worker, sync_boot
@@ -295,8 +297,60 @@ def test_no_value_reaches_the_lines(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_the_guide_explains_the_panel() -> None:
-    from pathlib import Path
-
     guide = Path(alerts.__file__).parent / "guides" / "admin_area.md"
 
     assert "#### DB 동기화" in guide.read_text(encoding="utf-8")
+
+
+def _app_test(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
+    """빈 DuckDB 를 보는 `app.py`. 내장 시드가 부트스트랩을 채운다(`test_app_navigation` 꼴)."""
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.components.month_range_picker as month_range_picker
+    import capa_simulation.settings as settings
+
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+    monkeypatch.setattr(
+        month_range_picker, "_MONTH_RANGE_APPLY", lambda **kwargs: SimpleNamespace(apply=None)
+    )
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    return AppTest.from_file(str(app_path), default_timeout=300)
+
+
+def _sync_files(folder: Path) -> list[str]:
+    return sorted(
+        item.name
+        for item in folder.iterdir()
+        if item.name.endswith(".sync.json") or item.name == sync_state.GENERATION_FILENAME
+    )
+
+
+def test_a_local_app_stays_as_it_was(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """사내 PC · 개발 · 시험 — 알림 · 스레드 · 파일이 늘지 않는다. 시드 저장도 표시를 안 남긴다."""
+    app = _app_test(tmp_path, monkeypatch).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not [note for note in alert_notes(app) if str(note.get("code", "")).startswith("SY-")]
+    assert object_sync_worker.running_worker() is None
+    assert _sync_files(tmp_path) == []
+    assert not sync_state.is_enabled(tmp_path / "scenario.duckdb")
+
+
+def test_a_broken_setting_keeps_the_app_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """조용히 local 로 강등하지 않고 앱도 막지 않는다(2026-10-22 결정 (다))."""
+    from capa_simulation.io import object_storage
+
+    def broken() -> object_storage.StorageSettings:
+        raise object_storage.ObjectStorageError("CAPA_S3_SYNC_MODE 는 local 또는 managed")
+
+    monkeypatch.setattr(sync_boot, "load_settings", broken)
+
+    app = _app_test(tmp_path, monkeypatch).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert active_state(app, "SY-01")
