@@ -44,8 +44,7 @@ from typing import Any, Final, Literal
 
 import streamlit as st
 
-from capa_simulation.components import side_panel
-from capa_simulation.design import tokens
+from capa_simulation.components import grid_shared, side_panel
 
 _ASSETS = Path(__file__).with_name("equipment_master_grid_assets")
 
@@ -65,11 +64,22 @@ _LABEL_LIMIT = 120
 _DIALOGS = frozenset({"import"})
 _GOTO_TABLES = frozenset({"비가동 일정", "기존 보유대수"})
 
+
+def registered_js() -> str:
+    """등록 JS — 표 공용 조각(`grid_shared_assets/`) 뒤에 이 표의 파일."""
+    return grid_shared.joined_assets(grid_shared.SHARED_JS, [_ASSETS / "grid.js"])
+
+
+def registered_css() -> str:
+    """등록 CSS — 표 공용 조각 뒤에 이 표의 파일(같은 특이도면 뒤가 이긴다)."""
+    return grid_shared.joined_assets(grid_shared.SHARED_CSS, [_ASSETS / "grid.css"])
+
+
 _GRID = st.components.v2.component(
     "capa_equipment_master_grid",
     html=(_ASSETS / "grid.html").read_text(encoding="utf-8"),
-    css=(_ASSETS / "grid.css").read_text(encoding="utf-8"),
-    js=(_ASSETS / "grid.js").read_text(encoding="utf-8"),
+    css=registered_css(),
+    js=registered_js(),
 )
 
 
@@ -78,31 +88,7 @@ def side_key(panel: SidePanel) -> str:
     return f"{SIDE_KEY_PREFIX}_{panel}"
 
 
-def _palette() -> dict[str, str]:
-    """색은 회차마다 토큰에서 읽는다 — 테마를 바꾸면 같은 표가 새 색을 받는다(CSS
-    `var(--emg-*)`)."""
-    return {
-        "font": tokens.FONT_FAMILY,
-        "text": tokens.TEXT,
-        "muted": tokens.TEXT_MUTED,
-        "surface": tokens.SURFACE,
-        "subtle": tokens.SURFACE_SUBTLE,
-        "header": tokens.HEADER_BACKGROUND,
-        "border": tokens.BORDER,
-        "border-strong": tokens.BORDER_STRONG,
-        "accent": tokens.ACCENT,
-        "on-accent": tokens.ACCENT_TEXT,
-        "changed-fill": tokens.GRID_CHANGED_FILL,
-        "changed-mark": tokens.GRID_CHANGED_MARK,
-        "error-fill": tokens.GRID_ERROR_FILL,
-        "error-line": tokens.GRID_ERROR_LINE,
-        "warn-line": tokens.GRID_WARN_LINE,
-        "lock-fill": tokens.GRID_LOCK_FILL,
-        "scenario-head": tokens.GRID_SCENARIO_HEAD,
-        "layout-head": tokens.GRID_LAYOUT_HEAD,
-        "selected-fill": tokens.GRID_SELECTED_FILL,
-        "new-fill": tokens.GRID_NEW_FILL,
-    }
+_palette = grid_shared.grid_palette
 
 
 def _with_palette(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -112,24 +98,9 @@ def _with_palette(data: Mapping[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ 받은 값 읽기
 
 
-def _state_value(key: str, name: str) -> object:
-    """`st.session_state[key]` 의 `name` — 결과 객체는 매핑으로도 속성으로도 온다(대역은 속성)."""
-    state = st.session_state.get(key)
-    if isinstance(state, Mapping):
-        return state.get(name)
-    return getattr(state, name, None)
-
-
-def outbox_value(key: str) -> object:
-    """그 마운트의 상태 값 `outbox`(없으면 None). 처리 함수가 두 마운트를 함께 읽는다."""
-    return _state_value(key, "outbox")
-
-
-def outbox_mount(value: object) -> str | None:
-    """출납의 마운트 id(꼴이 다르면 None) — 그 key 의 `ack` 를 그 마운트에 단다."""
-    if isinstance(value, Mapping) and isinstance(value.get("mount"), str):
-        return str(value["mount"])
-    return None
+_state_value = grid_shared.state_value
+outbox_value = grid_shared.outbox_value
+outbox_mount = grid_shared.outbox_mount
 
 
 def _texts(value: object, limit: int | None = None) -> list[str]:

@@ -49,7 +49,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 JS = (sp._ASSETS / "splitter.js").read_text(encoding="utf-8")
 CSS = (sp._ASSETS / "splitter.css").read_text(encoding="utf-8")
-GRID_CSS = (emg._ASSETS / "grid.css").read_text(encoding="utf-8")
+GRID_CSS = emg.registered_css()
 SOURCE = Path(sp.__file__).read_text(encoding="utf-8")
 # 마운트 자리를 시험이 보도록 대역이 그 자리에 세우는 빈 key 칸의 앞붙이.
 PLACE = "test_place_"

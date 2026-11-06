@@ -53,6 +53,7 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_datetime64_any_dtype, is_float_dtype
 
+from capa_simulation.services import grid_outbox
 from capa_simulation.services.equipment_contract import (
     AREA_CODE_COLUMN,
     AREA_CODES,
@@ -125,8 +126,8 @@ GRID_PASTE_CELLS: Final = 5_000
 GRID_OUTBOX_CELLS: Final = 10_000
 # 되돌리기 단계 수. 통째 단계(엑셀·CSV 「편집본에 넣기」)는 그 앞 단계를 모두 버린다.
 UNDO_LIMIT: Final = 40
-# 출납 반영 기억의 마운트 수. 넘으면 오래 안 보낸 마운트부터 잊는다.
-MOUNT_LIMIT: Final = 20
+MOUNT_LIMIT: Final = grid_outbox.MOUNT_LIMIT
+pending_ops = grid_outbox.pending_ops
 # 「저장 전 변경」 의 고칠 것 줄·호기별 변경 줄 상한.
 CHANGE_ERROR_LIMIT: Final = 30
 CHANGE_LINE_LIMIT: Final = 300
@@ -1714,55 +1715,6 @@ def new_unit_data(
     }
 
 
-# ------------------------------------------------------------------ 출납 고르기
-
-
-def _seq(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
-
-
-def pending_ops(
-    outboxes: Iterable[object], applied: Mapping[str, int]
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """마운트들의 출납에서 아직 반영하지 않은 op 만 `(at, mount, seq)` 차례로 고른다.
-
-    `outboxes` 는 마운트마다의 상태 값 `outbox`(``{"mount", "ops": [...]}``) — 꼴이 다른 것은
-    버린다. `applied` 는 마운트 → 마지막으로 반영한 seq 다. 같은 출납이 여러 회차에 다시 와도 한
-    번이고, 어느 콜백이 먼저 불려도 같은 차례다. 돌려준 기억은 이번에 본 마운트를 맨 뒤로 옮기고
-    `MOUNT_LIMIT` 을 넘으면 오래된 것부터 잊는다. op 에는 `mount` 를 붙여 돌려준다."""
-    memory = dict(applied)
-    picked: list[dict[str, Any]] = []
-    for outbox in outboxes:
-        if not isinstance(outbox, Mapping):
-            continue
-        mount = outbox.get("mount")
-        ops = outbox.get("ops")
-        if not isinstance(mount, str) or not mount or not isinstance(ops, list):
-            continue
-        last = memory.get(mount, 0)
-        newest = last
-        for op in ops:
-            if not isinstance(op, Mapping):
-                continue
-            seq = _seq(op.get("seq"))
-            if seq is None or seq <= last:
-                continue
-            picked.append({**op, "mount": mount})
-            newest = max(newest, seq)
-        memory.pop(mount, None)
-        memory[mount] = newest
-    while len(memory) > MOUNT_LIMIT:
-        memory.pop(next(iter(memory)))
-
-    def order(op: Mapping[str, Any]) -> tuple[float, str, int]:
-        at = op.get("at")
-        moment = float(at) if isinstance(at, (int, float)) and not isinstance(at, bool) else 0.0
-        return (moment, str(op["mount"]), int(op["seq"]))
-
-    picked.sort(key=order)
-    return picked, memory
-
-
 # ------------------------------------------------------------------ 되돌리기
 
 
@@ -2903,7 +2855,7 @@ OP_NAMES: Final = frozenset({*_OPS, "undo"})
 
 def _op_token(op: Mapping[str, Any]) -> str:
     """단계 표지 — 출납 op 는 `mount#seq`(마운트 안에서 한 번뿐), 꼴이 다르면 무작위."""
-    mount, seq = op.get("mount"), _seq(op.get("seq"))
+    mount, seq = op.get("mount"), grid_outbox.op_seq(op.get("seq"))
     if isinstance(mount, str) and mount and seq is not None:
         return f"{mount}#{seq}"
     return uuid.uuid4().hex[:12]
