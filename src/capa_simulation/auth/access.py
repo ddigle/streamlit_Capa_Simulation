@@ -186,6 +186,10 @@ class AccessSource:
     problem: SourceProblem | None = None
     saved_at: int | None = None
     save_problem: SourceProblem | None = None
+    # 파일이 아직 없어 환경변수 목록을 첫 판으로 쓰는 중이다(`document` 가 그 목록이다).
+    seeded: bool = False
+    # 첫 판을 파일로 썼는데 표지 객체를 못 남겼다 — 다음 저장이 다시 남긴다.
+    seed_mark_pending: bool = False
 
 
 def compose_access(base: AccessList, document: ListDocument) -> AccessList:

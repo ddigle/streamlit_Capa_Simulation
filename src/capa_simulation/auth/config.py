@@ -20,9 +20,9 @@
 것은 그 어느 쪽도 아닌 루프백 개발뿐이다(가짜 IdP · 시험).
 
 S3 명단(`access_store`)은 키(`CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY`)가 하나라도 있으면 켜진다.
-그때 명단도 켜지고 `CAPA_ACCESS_USERS` 는 쓰지 않는다(알림). 키 하나 · 주소 · 버킷이 빠지거나 틀려도
-막힘이 아니라 알림이다 — 앱은 뜨고 파일을 못 읽은 상태(관리자만 통과)로 선다. 읽기는 여기서 하지
-않는다(`load_config` 는 순수 함수다).
+그때 명단도 켜지고 `CAPA_ACCESS_USERS` 는 파일이 아직 없을 때의 첫 판으로만 쓴다(그 뒤는 알림).
+키 하나 · 주소 · 버킷이 빠지거나 틀려도 막힘이 아니라 알림이다 — 앱은 뜨고 파일을 못 읽은 상태
+(관리자만 통과)로 선다. 읽기는 여기서 하지 않는다(`load_config` 는 순수 함수다).
 
 화면 · 로그에 실리는 것은 환경변수 **이름과 까닭**뿐이다. 값은 싣지 않는다 — 비밀값은 「짧음」 같은
 사실만, 접속 명단은 개수만.
@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from capa_simulation.auth import names
-from capa_simulation.auth.access import AccessList, build_access_list
+from capa_simulation.auth.access import AccessList, build_access_list, parse_entries
 from capa_simulation.io.s3_small import S3Target
 
 if TYPE_CHECKING:
@@ -138,7 +138,7 @@ REASONS: Mapping[str, str] = types.MappingProxyType(
         "off_in_production": "운영 서버인데 통합인증이 꺼져 있음",
         "no_valid_entry": "읽을 수 있는 loginid 가 하나도 없음",
         "entries_unreadable": "loginid 꼴이 아닌 항목이 있어 뺌",
-        "s3_users_ignored": "S3 명단이 켜져 있어 이 목록은 쓰지 않음",
+        "s3_users_ignored": "S3 명단 파일이 있어 이 목록은 쓰지 않음",
         "s3_needed": "S3 명단이 켜졌는데 값이 없음 — 관리자만 들어옴",
         "s3_bad": "S3 명단이 켜졌는데 값 꼴이 틀림 — 관리자만 들어옴",
         "s3_plain_http": "평문 http — 명단이 사내망에 그대로 흐름",
@@ -220,6 +220,8 @@ class SsoConfig:
     access_s3_requested: bool
     access_object_key: str
     access_s3: S3Target | None = field(repr=False, compare=False)
+    # 명단 파일이 없을 때 쓰는 첫 판(`CAPA_ACCESS_USERS` 의 loginid). 값이라 repr 에 싣지 않는다.
+    access_seed_users: tuple[str, ...] = field(repr=False, compare=False)
     # 화면 · 로그 · repr 에 나오지 않는다. 세션 · 상태 토큰의 키를 여기서 파생한다(`tokens`).
     secret: bytes = field(repr=False, compare=False)
 
@@ -474,16 +476,19 @@ def _beyond_loopback(public_url: str) -> bool:
 
 def _check_access(
     admins: str, users: str, *, required: bool, contact: str, s3_requested: bool
-) -> tuple[AccessList, SsoProblem | None, list[SsoProblem]]:
-    """접속 명단 `(명단, 문제, 알림)`. `required` 거나 두 목록 가운데 하나라도 값이 있거나 S3 명단이
-    켜졌으면 켜진다.
+) -> tuple[AccessList, SsoProblem | None, list[SsoProblem], tuple[str, ...]]:
+    """접속 명단 `(명단, 문제, 알림, 첫 판)`. `required` 거나 두 목록 가운데 하나라도 값이 있거나 S3
+    명단이 켜졌으면 켜진다.
 
     켜졌는데 읽은 관리자가 없으면 문제다 — 명단에 사람이 있어도 고칠 사람이 없는 앱을 열지 않는다.
     읽지 못한 항목은 막지 않는다 — 오타 하나로 모두가 잠기지 않게. 그 사람만 거절 화면을 본다. S3
-    명단이 켜졌으면 사용자 목록은 쓰지 않고 알린다(한 사람을 두 곳에서 고치지 않게).
+    명단이 켜졌으면 사용자 목록은 판정에 넣지 않고 첫 판으로만 넘긴다 — 파일이 있으면 듣지 않는다
+    (한 사람을 두 곳에서 고치지 않게 · 알림은 파일이 있을 때만 표에 선다).
     """
     ignored = s3_requested and bool(users.strip())
+    seed_users: tuple[str, ...] = ()
     if s3_requested:
+        seed_users = parse_entries(users)[0]
         users = ""
     enforced = required or s3_requested or bool(admins.strip()) or bool(users.strip())
     access = build_access_list(admins, users, enforced=enforced, contact=contact)
@@ -497,9 +502,9 @@ def _check_access(
         if count
     ]
     if not enforced or access.admin_count:
-        return access, None, notices
+        return access, None, notices, seed_users
     code = "no_valid_entry" if admins.strip() else "missing"
-    return access, SsoProblem(names.ENV_ACCESS_ADMINS, code), notices
+    return access, SsoProblem(names.ENV_ACCESS_ADMINS, code), notices, seed_users
 
 
 def _check_s3_endpoint(raw: str) -> tuple[str, SsoProblem | None, SsoProblem | None]:
@@ -782,7 +787,7 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         notices.append(contact_problem)
     s3_requested, object_key, s3_target, s3_notices = _check_access_s3(value)
     notices.extend(s3_notices)
-    access, access_problem, access_notices = _check_access(
+    access, access_problem, access_notices, seed_users = _check_access(
         value(names.ENV_ACCESS_ADMINS),
         value(names.ENV_ACCESS_USERS),
         required=prod or locked or _beyond_loopback(public_url),
@@ -877,5 +882,6 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         access_s3_requested=s3_requested,
         access_object_key=object_key,
         access_s3=s3_target,
+        access_seed_users=seed_users,
         secret=secret,
     )

@@ -619,7 +619,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `review_sample_sim.py` · `review_sample_equip.py` · `review_sample_modules.py` · `review_sample_story.py` · `review_sample_core_frame.py` | 그 부품 — 시뮬레이션 DB(앱 저장 API · 끝 점검 52) · 설비 DB(공식 소요 · 가용에서) · 모듈 견본 복사 · 이야기 상수와 산출 자리 지킴 · 78컬럼 원천 |
 | **DB 운영** | |
 | `compact_duckdb.py` | DuckDB 빈 공간을 재구축으로 걷어낸다(인자 없으면 두 DB, `--dry-run`·`--keep-backup`). 앱을 내린 뒤 |
-| `sync_object_storage.py` | 오브젝트 스토리지 스냅샷 진단·초기화와 수동 pull·push |
+| `sync_object_storage.py` | 오브젝트 스토리지 진단 · 최초 이관 · 시작 받기(`boot-pull`) · 사본 받기(`fetch-copy`) · 세대 되돌리기(`rollback`) · 정리 |
 | **검증·측정** | |
 | `benchmark_home.py` | HOME 의 콜드·웜·토글별 rerun 시간. 기본은 합성 표본, `--data-dir <사본 폴더>` 면 실 DB 사본 |
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |

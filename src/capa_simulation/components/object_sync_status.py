@@ -225,7 +225,13 @@ def _render_body() -> None:
 
 @st.fragment(run_every=REFRESH_SECONDS)
 def _render_live_body() -> None:
-    """올리는 동안만 값을 다시 그린다. 알림 표지는 이 안에서 내지 않는다(AGENTS 9장)."""
+    """올리는 동안만 값을 다시 그린다. 알림 표지는 이 안에서 내지 않는다(AGENTS 9장).
+
+    끝나면 앱 회차로 돌아가 제목 · 단추를 함께 고친다 — 이 프래그먼트도 그때 사라진다.
+    """
+    status = object_sync_worker.current_status()
+    if status is None or status.phase != object_sync_worker.PHASE_UPLOADING:
+        st.rerun(scope="app")
     _render_body()
 
 

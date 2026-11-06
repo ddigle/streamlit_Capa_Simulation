@@ -42,7 +42,8 @@ ENV_ACCESS_USERS = "CAPA_ACCESS_USERS"
 # 거절 화면에 보일 요청 창구 글(선택). 로그인 없이 누구나 보는 글이라 사람 loginid 를 넣지 않는다.
 ENV_ACCESS_CONTACT = "CAPA_ACCESS_CONTACT"
 # S3 명단(`auth/access_store.py`). 키가 하나라도 있으면 켜진다 — 그때 사용자 목록은 파일에서 오고
-# `CAPA_ACCESS_USERS` 는 쓰지 않는다. 주소 · 버킷 · 영역 이름은 `io/object_storage.py` 와 같다.
+# `CAPA_ACCESS_USERS` 는 그 파일이 아직 없을 때의 첫 판으로만 쓴다. 주소 · 버킷 · 영역 이름은
+# `io/object_storage.py` 와 같다.
 ENV_S3_ACCESS_KEY = "CAPA_S3_ACCESS_KEY"
 ENV_S3_SECRET_KEY = "CAPA_S3_SECRET_KEY"
 ENV_S3_ENDPOINT = "CAPA_S3_ENDPOINT_URL"
@@ -127,5 +128,7 @@ DEFAULT_SESSION_MAX_HOURS = 24
 DEFAULT_SCOPE = "openid"
 DEFAULT_S3_REGION = "us-east-1"
 DEFAULT_ACCESS_OBJECT = "access/access_list.json"
+# 첫 판을 파일로 쓴 뒤 남기는 표지 객체. 그 뒤 명단 파일이 없으면 처음이 아니라 사라진 것이다.
+ACCESS_SEEDED_OBJECT = "access/seeded.json"
 # 문서 자리(설정 화면 · 점검이 가리킨다).
 SETUP_DOC = "docs/sso_setup.md"

@@ -1519,7 +1519,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     남기지 않고(`tests/test_container_start.py`), 예상하지 못한 예외가 나도 「도중에 멈춤」 결과를 남기고 앱은 뜬다.
     시험은 `tests/conftest.py` 가 결과 파일 자리를 늘 없는 곳으로 돌리고 CD 전용 환경변수를 지운다.
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
-  `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`).
+  `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - 설정은 `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
 - `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. C-DEP 이미지에 `aws` 가 있다는 보장이 없고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
@@ -1637,7 +1637,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   나눠 둔 것은 두 모드를 병행 가지가 따로 고치기 때문이다.
 - `src/capa_simulation/upeh_assumption_state.py` — UPEH 가정 세 칸(%·적용 시작·끝)의 세션 키와 기본값. UI 를 import 하지
   않아 시나리오 전환 초기화(`scenario_activation`)가 읽는다.
-- `src/capa_simulation/sync_boot.py` — managed 모드일 때만 `sync_state` 에 두 DB 경로를 등록한다(설정을 못 읽으면 조용히 끈다).
+- `src/capa_simulation/sync_boot.py` — managed 모드일 때만 `sync_state` 에 두 DB 경로를 등록한다. 판정은 프로세스에 한 번이고 설정을 못 읽으면 앱은 띄운 채 까닭을 남긴다(`SY-01`). 부트 기록(`data/temp/object_sync_boot.json`)도 여기다.
 - `src/capa_simulation/performance.py` — HOME 단계별 소요시간을 잰다. 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py` — 계산 함수의 content-addressed Streamlit 캐시 래퍼를 모은 경계다
   (5장 4·「키 방침」). 큰 프레임은 `_` 인자 + 내용 지문(`frame_digest`)으로 받는다.
@@ -1743,8 +1743,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 중복 접기·빈 대여 = 0 보정 때문에 `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 Power Query 와 일부러 다를 수
     있다 — `scripts/validate_duckdb_persistence.py` 는 같은 보정을 건 뒤 견준다.
 - `src/capa_simulation/services/core_data_pipeline.py` — CSV·BigDataQuery 결과를 같은 정규화·RQ 변환 길로 잇는다.
-- `src/capa_simulation/services/object_storage_manifest.py` — 원격 스냅샷의 키 계약과 pull·push 판정을 담는 순수 계층이다.
-  - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. `scripts/sync_object_storage.py` 는 판정과 IO 를 잇기만 한다.
+- `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
+  - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다.
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을
   만드는 순수 계층이다(Streamlit import 없음). 코드·PLAN 당 한 행만 남긴다.
 - `src/capa_simulation/services/auto_official_update.py` — 공식버전 자동 갱신의 규칙(주차·후보·판정·설정·예약·표지)을
@@ -3980,11 +3980,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 ### 영속성 모듈
 
-- `src/capa_simulation/persistence/snapshot_export.py` — DuckDB 스냅샷 내보내기와 받은 스냅샷 검증·설치. 라이브
-  `.duckdb` 를 바이트로 읽지 않고(COMMIT 이 `.wal` 에만 있을 수 있다) `ATTACH` + `_sql_helpers.copy_database()` 를 쓴다
-  (구조는 `COPY FROM DATABASE … (SCHEMA)`, 데이터는 외래 키 부모 표부터 — `scripts/compact_duckdb.py` 와 같은 길).
-- `src/capa_simulation/persistence/sync_state.py` — DB 옆 `.sync.json` 사이드카에 원격 세대·미반영 변경을 기록한다(DB
-  안은 순환, 메모리는 죽으면 사라진다). `enable()` 전에는 파일을 만들지 않고 못 읽는 사이드카는 「변경 있음」 이다.
+- `src/capa_simulation/persistence/snapshot_export.py` — DuckDB 스냅샷 내보내기와 받은 스냅샷 검증·설치. 앱을 끈 자리는 `ATTACH` + `_sql_helpers.copy_database()` 다
+  (구조는 `COPY FROM DATABASE … (SCHEMA)`, 데이터는 외래 키 부모 표부터 — `scripts/compact_duckdb.py` 와 같은 길). 앱 안에서는 쓰기 잠금 · CHECKPOINT · stat 대조 아래서만 바이트로 읽는다(`checkpoint_copy` —
+  COMMIT 이 `.wal` 에만 있을 수 있고, ATTACH 복사는 1GiB 안에서 앱과 함께 돌지 못한다). 라이브 파일은 닫지 않는 번호로 읽는다 — 열었다 닫으면 프로세스 잠금이 풀린다.
+- `src/capa_simulation/persistence/sync_state.py` — DB 옆 `.sync.json` 사이드카에 미반영 변경 번호를, `sync_generation.json` 한 파일에 게시 상태(base · pending · 미게시 · 넘긴 표지)를 기록한다(DB
+  안은 순환, 메모리는 죽으면 사라진다). `enable()` 전에는 파일을 만들지 않고 못 읽는 사이드카는 「변경 있음」 이다. 첫 미반영 시각 · 깨우기는 메모리다 — 일꾼이 멈춰도 그 값이 함께 멈추지 않게.
 - `src/capa_simulation/persistence/repository.py` — `DuckDBScenarioRepository` 의 입력 검증·연결·쓰기 잠금·트랜잭션
   경계. 커밋과 변경 신호는 Repository 만 갖고 store 는 열린 연결을 받는다.
   - 교체 실패 시 행·버전을 복구하고 신호를 내지 않는다. 바뀐 것이 없는 쓰기(`initialize_global_display_order` 등)는

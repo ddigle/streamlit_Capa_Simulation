@@ -56,6 +56,7 @@ from capa_simulation.persistence.sync_state import (
     UnpublishedGeneration,
 )
 from capa_simulation.services import object_storage_manifest as manifest
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.object_storage_manifest import (
     DATASET_NAMES,
     FAILURE_CORRUPT,
@@ -1000,7 +1001,7 @@ def _choose_pointer(
     if token is not None:
         keys = tuple(key for key in keys if key.endswith(f"__{token}.json"))
     if not keys:
-        raise ValueError(f"세대 seq {seq} 을 원격에서 찾지 못했습니다.")
+        raise ValueError(f"세대 {with_object_particle(f'seq {seq}')} 원격에서 찾지 못했습니다.")
     if len(keys) > 1:
         tokens = " · ".join(key.rsplit("__", 1)[-1].removesuffix(".json") for key in keys)
         raise ValueError(

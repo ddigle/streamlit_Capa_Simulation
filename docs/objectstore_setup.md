@@ -2,25 +2,28 @@
 
 DuckDB 파일을 WebIDE 밖의 S3 호환 스토리지(사내 구축, Dell ECS 로 추정)에 두기 위한
 **사람이 해야 하는 절차**다. 코드가 대신할 수 없는 것만 담는다. 설계 근거는
-`docs/TODO.md` 2장 「S3 분리(보류)」 와 결정 기록(옛 3-9), 파일별 책임은 `AGENTS.md` 3장에 있다.
+`docs/TODO.md` 2장 「S3 분리」 와 결정 기록(옛 3-9), 파일별 책임은 `AGENTS.md` 3장에 있다.
 
 **접속 명단 파일은 이 절차 밖이다.** 앱이 환경변수 키로 작은 JSON 하나를 직접 받고 올린다(표준 라이브러리 SigV4 —
 `io/s3_small.py` · `auth/access_store.py`, `aws` CLI · 프로필을 쓰지 않는다). 켜는 법과 진단은 `docs/sso_setup.md` 2 · 5 · 7장이고 주소 · 버킷 ·
 영역은 여기와 같은 환경변수 이름(`CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · `CAPA_S3_REGION`)을 쓴다. 키는 프로필과 따로 `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY` 다.
 
-DuckDB 쪽 지금 단계는 **수동 왕복**이다. 앱은 DB 를 스스로 올리거나 받지 않는다 — 저장할 때마다 사이드카에
-"변경 있음" 만 남기고(`managed` 모드에서만), 실제 `pull`·`push` 는 이 스크립트로 사람이 돌린다.
-`local` 모드(개발 PC 기본값)에서는 그 표시조차 남기지 않는다.
+**DuckDB 쪽은 앱이 스스로 돈다**(`CAPA_S3_SYNC_MODE=managed` 인 운영 서버). 시작할 때 받고, 저장하면 일꾼이 1분 안에 모아 올리기 시작하고, 공식 발행은 바로 올리며, 하루 한 번
+오래된 세대를 지운다 — 차례는 `object_sync_engine.py`, 볼 자리는 Admin 「DB 동기화」 다. 사람이 하는 것은 아래의 이관 · 사본 받기 · 세대 되돌리기다. `local` 모드(개발 PC · 사내 PC 기본값)에서는 변경
+표시도 남기지 않는다.
+
+**두 DB 는 한 쌍이다.** 세대 포인터 하나(`generations/heads/`)가 두 스냅샷을 함께 가리키고 그 PUT 이 게시다. 바뀌지 않은 DB 는 앞 세대의 스냅샷을 그대로 이어 적는다.
 
 ## 확인된 환경
 
 | 항목 | 값 |
 |---|---|
-| CLI | `aws-cli/2.36.8` (Windows exe 번들, 자체 Python 3.14) |
+| CLI | 운영 이미지 `aws-cli/1.46.3`(`docker/Dockerfile-prod` 의 따로 된 한 줄) · 사내 PC `aws-cli/2.36.8` (Windows exe 번들, 자체 Python 3.14) |
 | 엔드포인트 | `http://s3.dataplatform.samsungds.net:9020` |
 | 프로필 | `hoyeon.jeon-org-system_package_mfg_team` |
 | 네임스페이스 | `org-system_package_mfg_team` — **프로필에 매여 있고 명령 인자가 아니다** |
-| 버킷 | `Capa_simulation_project` |
+| 버킷 | 운영 `SPKGCAPA_Ops`(코드에 없다 — `CAPA_S3_BUCKET` 환경변수로만) · 개발 `SPKGCAPA_Dev`(`config/object_storage.json` 기본값) · 각 1000GiB |
+| 전송 | http 9020(폐쇄망). https 는 서버 TLS 문제로 쓰지 않는다 |
 | 명령 접두 | 사내는 `uv` 구성이라 **`uv run --no-sync python`** (재잠금·재설치를 막는 안전장치다. `bigdataquery` 를 지우는 것은 맨 `uv sync` 쪽이다) — 아래 본문의 `.\.venv\Scripts\python.exe` 는 개발 PC 표기다 |
 
 ---
@@ -83,43 +86,50 @@ $env:CAPA_S3_SYNC_MODE = "managed"   # 지금 창에서 돌릴 스크립트용. 
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py status
 ```
 
-`init` 은 원격이 비어 있을 때만 동작한다. 이미 세대가 있으면 건너뛴다.
+`init` 은 원격이 비어 있을 때만 동작하고 두 DB 를 함께 올린다. 이미 세대가 있으면 건너뛴다.
 `compact_duckdb.py` 를 먼저 돌릴 필요가 없다 — 스냅샷을 만드는 과정이 곧 재구축이라
 **67 MB 가 21 MB 로 줄어든다**(개발 PC 실측, 2.11초).
 
-## 4단계 — 왕복 확인
+**`init` 뒤 그 PC 는 쓰는 쪽이 아니다.** 사이드카에 넘긴 표지(`handed_over_utc`)가 남아 `push` · `resolve --keep mine` · `adopt --source local` 이 거절되고, 앱에는 `SY-04` 가 뜬다(그 PC 의 저장은 막지
+않는다 — 정본에 닿지 않을 뿐이다). 운영 앱이 포인터를 낸 뒤(`origin` 이 `app` · `boot`)에는 표지가 없는 PC 도 같다. 넘기지 않고 시험할 때(개발 버킷)는 `init --keep-writer` 다. `--override-writer` 는 운영
+앱의 저장을 덮을 수 있다.
+
+## 4단계 — 사본 받기 (앱이 떠 있어도 된다)
 
 ```powershell
-# 앱에서 리비전을 하나 저장한 뒤
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py status   # 변경: 있음
-# — 앱 프로세스가 managed 로 떠 있어야 여기에 "변경 있음" 이 찍힌다(1단계 `setx`)
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py push --note "왕복 확인"
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py status   # 원격 seq 증가
-
-# 다른 PC(또는 DB 를 지운 뒤)에서
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py pull
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py fetch-copy --to C:\capa-copy
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py fetch-copy --to C:\capa-copy --seq 12
 ```
+
+HEAD(또는 그 세대) 두 멤버를 받아 검증한 뒤에만 그 폴더에 두 DB 와 `generation.json` 을 둔다. `data/` 를 건드리지 않고 운영 DB 자리는 거절한다. 런북의 점검 스크립트는 이 사본을 `--database` 로 받는다.
 
 `--dry-run` 은 **하위 명령 앞에** 놓는다. 뒤에 붙이면 `unrecognized arguments` 로 죽는다.
 
+## 세대 되돌리기
+
+앱 결함으로 망가진 세대가 게시됐거나 원격이 갈라졌으면 앞 세대의 멤버로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다.
+
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --dry-run push --note "왕복 확인"
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py rollback --to 12 --yes
 ```
 
-실제로 올리거나 받지 않고 무엇을 할지만 찍는다. 처음에는 붙여서 보는 편이 좋다.
+같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 로 고른다. 그 뒤 운영 앱의 일꾼은 HEAD 가 움직인 것을 보고 멈춘다(`SY-03`) — CI/CD 로 새 pod 가 그 세대를 받게 한다. 멈춘 pod 의 미반영 변경은 그때 사라진다.
 
 ## 막혔을 때
 
 | 증상 | 뜻 | 할 일 |
 |---|---|---|
 | `Missing required header ... Content-MD5` | CLI 2.23+ × ECS 비호환 | 0단계 체크섬 설정 확인 → 안 되면 CLI 2.22.x |
-| `[건너뜀] … 세대를 알 수 없습니다` | 로컬 DB 가 어느 스냅샷에서 왔는지 모름 | `adopt --source local` 또는 `pull --force` |
+| `[건너뜀] … 어느 세대에서 왔는지 모릅니다` | 로컬 DB 가 어느 세대에서 왔는지 모름 | `adopt --source local` 또는 `pull --force` |
 | `[중단] … 원격이 먼저 앞섰습니다` | 남이 먼저 저장 | `resolve --keep mine` 또는 `--keep remote` |
-| `[중단] … 갈라졌습니다` | 같은 세대에 포인터가 둘 | 양쪽 파일 모두 남아 있다. 한쪽을 골라 `resolve` |
+| `[중단] … 갈라졌습니다` | 같은 세대에 포인터가 둘 | 양쪽 파일 모두 남아 있다. `rollback` 으로 이어 갈 세대를 고른다 |
+| `[중단] 이 PC 는 … 정본을 넘겼습니다` | `init` 뒤의 쓰기 | 정본은 운영 앱이 쓴다. 읽을 때는 `fetch-copy` |
 | `IOException` 류 | 앱이 DB 파일을 잡고 있음 | 앱을 끄고 다시 실행 |
 
 **어떤 경우에도 올라간 스냅샷은 지워지지 않는다.** 경합에서 지면 고아 스냅샷으로 남고
-`status` 가 그 키를 그대로 보여 준다. `prune` 은 고아를 기본으로 보호한다.
+`status` 가 그 세대를 보여 준다. `prune` 은 고아를 기본으로 보호한다.
+
+**정리**(`prune` · 앱이 하루 한 번). 남기는 것은 HEAD · 멤버 쌍이 다른 최신 5세대 · HEAD 시각 기준 7일 안 세대이고 그 세대가 가리키는 스냅샷이다. 나이는 저장소가 준 시각으로 재므로 한동안 저장이 없으면 정리도 멈춘다. 갈라진 원격은 지우지 않는다.
 
 ---
 
@@ -132,26 +142,19 @@ $env:CAPA_S3_SYNC_MODE = "managed"   # 지금 창에서 돌릴 스크립트용. 
 |---|---|---|---|---|
 | 1 | 체크섬 옵트아웃이 실제로 먹는가 | 1순위 위험. 안 되면 CLI 다운그레이드 | 1단계 `doctor` | **2026-09-09 정상.** `init`·`push` 가 `Content-MD5` 오류 없이 끝났다 |
 | 2 | ECS 버전 | 조건부 쓰기·체크섬 지원이 여기서 갈린다 | 스토리지 팀 문의 | |
-| 3 | `--if-none-match '*'` 지원 | 동시 저장 예방의 3겹째를 켤지 결정 | 2단계 `probe` | |
-| 4 | 단일 PUT ETag 가 MD5 인가 | 무결성 검증 수단 유무 | 2단계 `probe` | |
+| 3 | `--if-none-match '*'` 지원 | 동시 저장 예방의 3겹째를 켤지 결정 | 2단계 `probe` | **2026-11-06 true.** 포인터 키에 토큰이 있어 쓰지 않는다 — 겹침 막기는 세대 대조 |
+| 4 | 단일 PUT ETag 가 MD5 인가 | 무결성 검증 수단 유무 | 2단계 `probe` | **2026-11-06 true** |
 | 5 | 업로드·다운로드 실측 시간 | 타임아웃 상수의 근거 | 4단계 왕복 | **2026-09-09 push 66초 / pull 50초.** 시뮬레이션 62.6→42.8 MiB(스냅샷 생성 2.88초), 설비 0.4→0.4 MiB(0.06초). 전송은 양방향 모두 대략 1 MiB/s. 제한시간은 고정 300초가 아니라 크기에 딸린 `max(300, 60 + MiB/0.3)` 초라(`transfer_timeout_seconds()`) 42.8 MiB 에서는 여전히 300초 — 여유는 그대로다 |
 | 6 | `aws s3 ls s3://` 전체 목록 권한 | 없어도 되지만 진단이 편해진다 | 손으로 | |
-| 7 | 9021(HTTPS) 개방 여부 | 지금은 평문 HTTP 라 생산계획이 사내망에 그대로 흐른다 | 네트워크 담당 | |
-| 8 | WebIDE 안에서 `aws` 가 PATH 에 있는가 | 앱이 `subprocess` 로 부른다. 없으면 자동화를 못 붙인다 | 컨테이너에서 `aws --version` | |
+| 7 | 9021(HTTPS) 개방 여부 | — | — | **2026-11-06 닫음.** 서버 TLS 문제로 쓰지 않는다. 폐쇄망 http 9020 |
+| 8 | 운영 이미지에서 `aws` 가 PATH 에 있는가 | 앱이 `subprocess` 로 부른다 | Admin 「서버 시작 점검」 의 aws 줄 | 첫 CI/CD 가 답한다 |
 | 9 | WebIDE 재시작 주기·프로필명 변화 | 환경변수로 덮어쓸 준비는 돼 있다 | 운영 담당 | |
 | 10 | 동시 사용자가 늘어날 시점 | 지금은 단일 사용자 전제다 | 업무 판단 | |
 | 11 | C-DEP 운영 pod 에서 S3 주소에 닿는가 · 앱용 키 | 접속 명단 파일이 여기로 간다(`docs/sso_setup.md` 5장). `aws` 없이 앱이 직접 간다 | Admin 「통합인증 점검」 의 「S3 명단」 줄 | |
 
-1·5번이 확인 완료인 것은 **4단계 왕복으로 확인한 것이지 `probe` 결과가 아니다.** 2단계
-`probe` 는 아직 사내에서 돌리지 않았으므로 `config/object_storage_capabilities.json` 이
-비어 있는 것이 정상이다 — 그 파일과 이 표를 나란히 놓고 "실측 결과가 반영되지 않았다"고
-읽지 않는다. 또 `probe` 는 3·4번과 `content_md5_rejects_mismatch` 만 덮어쓰고
-`checksum_optout_required`·`bucket_versioning` 은 채우지 않는다. 이 둘은 손으로 적는다.
+`probe` 는 3 · 4번과 `content_md5_rejects_mismatch` 만 덮어쓰고 `checksum_optout_required` · `bucket_versioning` 은 채우지 않는다. 이 둘은 손으로 적는다.
 
-## 이 단계에서 하지 않은 것
+## 하지 않은 것
 
-- **앱 자동 동기화.** 기동 시 pull, 저장 후 push, 사이드바 상태 표시는 다음 단계다.
-  변경 표시(`mark_dirty`)까지만 붙였다 — 8번(WebIDE 안 `aws` PATH)이 남아 있어 앱이
-  `aws` 를 직접 부르는 단계는 아직 이르다.
-- **다중 사용자 잠금.** `docs/TODO.md` 2장 「S3 분리(보류)」 의 남은 항목이다. 지금 설계는 유실을 막고
-  갈라짐을 즉시 알리는 데까지다.
+- **모듈 데이터 동기화.** `data/modules/<id>/` 는 CI/CD 마다 사라지는 것이 지금과 같다.
+- **개발 서버 읽기 전용 화면.** 다운 시간 값을 보고 정한다(`docs/TODO.md` 「S3 분리」).
