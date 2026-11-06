@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 
 from capa_simulation import settings as app_settings
 from capa_simulation import sync_boot
+from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io import object_storage
 from capa_simulation.persistence import sync_state
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
@@ -77,8 +79,33 @@ def test_a_storage_settings_error_turns_sync_off_with_a_reason(
 
     assert sync_boot.enable_sync_state_if_managed() is False
     assert sync_state.is_enabled(DUCKDB_PATH) is False
-    reason = sync_boot.sync_disabled_reason()
-    assert reason is not None and "CAPA_S3_SYNC_MODE" in reason
+    assert sync_boot.sync_disabled_reason() == object_storage.SETTINGS_UNREADABLE
+
+
+def test_a_wrong_mode_value_stays_out_of_the_reason_and_the_log(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """칸을 잘못 붙여 넣으면 값이 키일 수 있다. `SY-01` 은 로그인한 사람 모두가 본다."""
+    monkeypatch.setenv(object_storage.MODE_ENV, "pasted-demo-value-1234")
+
+    with caplog.at_level("WARNING"):
+        assert sync_boot.enable_sync_state_if_managed() is False
+
+    assert sync_boot.sync_disabled_reason() == object_storage.SETTINGS_BAD_MODE
+    assert "pasted-demo-value-1234" not in caplog.text
+
+
+def test_a_broken_config_file_stays_out_of_the_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = tmp_path / "demo-secret-folder" / "object_storage.json"
+    broken.parent.mkdir()
+    broken.write_text("{", encoding="utf-8")
+    monkeypatch.setattr(object_storage, "CONFIG_PATH", broken)
+
+    assert sync_boot.enable_sync_state_if_managed() is False
+
+    assert sync_boot.sync_disabled_reason() == object_storage.SETTINGS_BROKEN_FILE
 
 
 def test_local_mode_has_no_disabled_reason(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,13 +132,6 @@ def test_settings_are_read_once_per_process(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls == ["read"]
 
 
-def test_a_long_reason_stays_one_short_line() -> None:
-    reason = sync_boot.short_reason(ValueError("첫 줄 " + "가" * 300 + "\n둘째 줄"))
-
-    assert len(reason) <= sync_boot.REASON_MAX_CHARS
-    assert "둘째 줄" not in reason
-
-
 def test_nothing_needs_alerts_on_a_plain_local_process(monkeypatch: pytest.MonkeyPatch) -> None:
     """개발 PC · 시험 — 화면 쪽이 Streamlit 을 하나도 부르지 않는다."""
     monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
@@ -132,6 +152,46 @@ def test_a_handed_over_pc_needs_its_alert(tmp_path: Path, monkeypatch: pytest.Mo
 
     assert sync_boot.handed_over_utc() == "2026-11-07T00:00:00Z"
     assert sync_boot.sync_alerts_possible() is True
+
+
+def _start_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sync: dict[str, object]) -> None:
+    path = tmp_path / "container_start.json"
+    monkeypatch.setattr(app_settings, "CONTAINER_START_REPORT_PATH", path)
+    path.write_text(
+        json.dumps(
+            {
+                "version": report_contract.REPORT_VERSION,
+                "written_at": "2026-11-07T00:00:00Z",
+                "steps": {
+                    step: {"status": report_contract.STATUS_OK, "reason": "정상"}
+                    for step in report_contract.STEPS
+                },
+                "sync": sync,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_a_start_that_left_the_bucket_unread_needs_its_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """키만 있고 모드가 빈 서버 — 이 표지가 없으면 `SY-*` 가 하나도 서지 않는다."""
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
+    _start_report(tmp_path, monkeypatch, {"steps": {}, "head_ignored": True})
+
+    assert sync_boot.head_ignored() is True
+    assert sync_boot.sync_alerts_possible() is True
+
+
+def test_a_start_without_that_mark_needs_no_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
+    _start_report(tmp_path, monkeypatch, {"steps": {}})
+
+    assert sync_boot.head_ignored() is False
+    assert sync_boot.sync_alerts_possible() is False
 
 
 def test_the_boot_record_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

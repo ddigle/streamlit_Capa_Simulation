@@ -191,6 +191,8 @@ _CORE_DATA_MARKERS: Final = (
     "data/temp",
     ".deploy/",
     ".aws/",
+    # 프로세스 환경의 커널 사본이다. `os.environ` 에서 지운 키도 여기 남는다.
+    "/proc/",
 )
 
 _BACKGROUND_IMPORTS: Final = frozenset(
@@ -789,8 +791,17 @@ def _contains_markers(text: str) -> str | None:
 
 
 def _core_data_marker(text: str) -> str | None:
+    """글자가 코어 데이터 자리를 가리키는가. 끝 슬래시 없이 쓴 마디(`~/.aws`)도 같다."""
     lowered = text.lower().replace("\\", "/")
-    return next((marker for marker in _CORE_DATA_MARKERS if marker in lowered), None)
+    edged = f"/{lowered}/"
+    return next(
+        (
+            marker
+            for marker in _CORE_DATA_MARKERS
+            if marker in lowered or f"/{marker.strip('/')}/" in edged
+        ),
+        None,
+    )
 
 
 def _check_imports(tree: ast.Module, context: _FileContext) -> None:

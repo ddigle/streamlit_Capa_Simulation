@@ -742,8 +742,8 @@ def main(
         )
         return 2
     worktree: WorktreeState | None = None
-    # `~/.aws` 에는 운영 버킷 키가 있다 — 이 키는 운영 DB 삭제 권한이다.
-    protect = [PROJECT_ROOT / "data", Path.home() / ".aws"]
+    # `~/.aws` 와 프로세스 환경의 커널 사본에는 운영 버킷 키가 있다 — 이 키는 운영 DB 삭제 권한이다.
+    protect = [PROJECT_ROOT / "data", Path.home() / ".aws", Path("/proc/self/environ")]
     if args.worktree_of is not None:
         repository = Path(args.worktree_of).resolve()
         try:

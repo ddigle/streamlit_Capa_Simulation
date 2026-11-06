@@ -9,7 +9,12 @@
 설정을 읽지 못하면(`load_settings` 의 `ObjectStorageError` — 틀린 `CAPA_S3_SYNC_MODE`, 깨진
 설정·능력 JSON) 동기화는 끄되 **조용히 local 로 강등하지 않는다**(2026-10-22 사용자 결정 (다)).
 앱은 띄우고 까닭을 `sync_disabled_reason` 으로 남겨 상태 알림 `SY-01` 이 알린다 — 사용자가 저장이
-올라간다고 믿지 않게.
+올라간다고 믿지 않게. 까닭은 값 없는 고정 낱말이다 — 칸을 잘못 붙여 넣으면 값이 키일 수 있고,
+알림은 로그인한 사람 모두가 본다.
+
+모드 칸이 비어 `local` 로 뜬 서버는 시작 점검이 버킷에서 세대를 보았는지 결과 파일로 받는다
+(`head_ignored`). 비어 있는 값은 유효해서 `SY-01` 이 서지 않으므로, 이 표지가 없으면 CI/CD 가 초록인
+채 빈 시드 앱이 뜨고 저장이 다음 CI/CD 에 사라진다. 알림은 `SY-05` 다.
 
 판정은 프로세스에 한 번이다. `app.py` 는 회차마다 부르지만 설정 파일을 회차마다 다시 읽지 않는다
 (설정·환경변수를 바꾸면 앱을 다시 띄운다).
@@ -31,7 +36,13 @@ from typing import Final
 from uuid import uuid4
 
 from capa_simulation import settings
-from capa_simulation.io.object_storage import ObjectStorageError, load_settings
+from capa_simulation.io.container_start_report import read_container_start_report
+from capa_simulation.io.object_storage import (
+    SETTINGS_UNREADABLE,
+    ObjectStorageError,
+    StorageSettingsError,
+    load_settings,
+)
 from capa_simulation.persistence import sync_state
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
@@ -40,8 +51,6 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 INSTANCE_ID = uuid4().hex[:12]
 
 MANAGED_PATHS = {DUCKDB_PATH: "simulation", EQUIPMENT_DUCKDB_PATH: "equipment"}
-# 알림에 싣는 까닭의 길이 한도. 설정 파일 경로가 길어도 한 줄을 넘기지 않게 자른다.
-REASON_MAX_CHARS: Final = 160
 BOOT_RECORD_NAME: Final = "object_sync_boot.json"
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +65,8 @@ class SyncBoot:
     disabled_reason: str | None = None
     # 이 자리의 DB 가 정본을 넘긴 사본이면 그 시각(사내 PC).
     handed_over_utc: str | None = None
+    # 버킷에 세대가 있는데 모드가 비어 받지 않은 서버(시작 점검이 남긴 표지).
+    head_ignored: bool = False
 
 
 _BOOT_LOCK = threading.Lock()
@@ -69,13 +80,20 @@ def _decide() -> SyncBoot:
     try:
         storage = load_settings()
     except (ObjectStorageError, OSError, ValueError) as exc:
-        reason = short_reason(exc)
+        reason = exc.label if isinstance(exc, StorageSettingsError) else SETTINGS_UNREADABLE
         _LOGGER.warning("오브젝트 스토리지 설정을 읽지 못해 동기화를 끕니다 — %s", reason)
         return SyncBoot(managed=False, disabled_reason=reason, handed_over_utc=handed_over)
     if storage.mode != "managed":
-        return SyncBoot(managed=False, handed_over_utc=handed_over)
+        return SyncBoot(
+            managed=False, handed_over_utc=handed_over, head_ignored=_start_ignored_head()
+        )
     sync_state.enable(MANAGED_PATHS)  # type: ignore[arg-type]
     return SyncBoot(managed=True, handed_over_utc=handed_over)
+
+
+def _start_ignored_head() -> bool:
+    report = read_container_start_report()
+    return report is not None and report.sync is not None and report.sync.head_ignored
 
 
 def _boot() -> SyncBoot:
@@ -84,15 +102,6 @@ def _boot() -> SyncBoot:
         if _BOOT is None:
             _BOOT = _decide()
         return _BOOT
-
-
-def short_reason(exc: BaseException) -> str:
-    """알림에 싣는 까닭 한 줄. 첫 줄만, 한도를 넘으면 자른다."""
-    lines = str(exc).strip().splitlines()
-    text = lines[0].strip() if lines else type(exc).__name__
-    if len(text) > REASON_MAX_CHARS:
-        text = text[: REASON_MAX_CHARS - 1].rstrip() + "…"
-    return text
 
 
 def enable_sync_state_if_managed() -> bool:
@@ -114,13 +123,23 @@ def handed_over_utc() -> str | None:
     return _boot().handed_over_utc
 
 
+def head_ignored() -> bool:
+    """버킷에 세대가 있는데 모드가 비어 받지 않은 서버인가 — 이 앱의 저장은 어디에도 안 남는다."""
+    return _boot().head_ignored
+
+
 def sync_alerts_possible() -> bool:
     """이 프로세스에 동기화 알림이 설 수 있는가. 아니면 화면 쪽이 Streamlit 을 부르지 않는다.
 
-    셋 다 프로세스에 한 번 정한 값이라 회차마다 달라지지 않는다.
+    모두 프로세스에 한 번 정한 값이라 회차마다 달라지지 않는다.
     """
     boot = _boot()
-    return boot.managed or boot.disabled_reason is not None or boot.handed_over_utc is not None
+    return (
+        boot.managed
+        or boot.head_ignored
+        or boot.disabled_reason is not None
+        or boot.handed_over_utc is not None
+    )
 
 
 def forget_boot_result() -> None:

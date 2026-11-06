@@ -43,6 +43,7 @@ FAKE_BUCKET = "Demo_ops_bucket"
 FAKE_ARTIFACTORY_TOKEN = "FAKE-artifactory-token-0000"
 FAKE_BDQ_TOKEN = "FAKE-bdq-login-token-0000"
 CLOSED_ENDPOINT = "http://127.0.0.1:9"
+POINTER_KEY = "generations/heads/999999999999__s000000000001__e000000000001__0123abcd.json"
 DOWNLOADED = {
     "kind": None,
     "action": "downloaded",
@@ -272,6 +273,59 @@ def test_keys_without_the_mode_check_the_way_but_do_not_pull(box: SimpleNamespac
     assert (box.home / ".aws" / "credentials").is_file()
     assert _step(report_contract.SYNC_STEP_PULL)["status"] == report_contract.STATUS_SKIPPED
     assert _step(report_contract.SYNC_STEP_CLI)["status"] == report_contract.STATUS_OK
+
+
+def _bucket_with(*keys: str) -> Callable[[Sequence[str]], Answer]:
+    """목록에 포인터가 있는 버킷을 답하는 aws 대역."""
+
+    def answer(args: Sequence[str]) -> Answer:
+        if "list-objects-v2" in args:
+            return _line(json.dumps({"Contents": [{"Key": key} for key in keys]}))
+        return _line(f"aws-cli/{report_contract.AWS_CLI_VERSION} Python")
+
+    return answer
+
+
+def _reachable_ecs(monkeypatch: pytest.MonkeyPatch) -> None:
+    ok = container_start.StepResult(report_contract.STATUS_OK, "닿음")
+    monkeypatch.setattr(container_start, "ecs_step", lambda _url: ok)
+
+
+def test_a_forgotten_mode_over_a_bucket_with_generations_leaves_a_mark(
+    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """모드 칸을 빠뜨린 CI/CD — 알리지 않으면 빈 시드 앱에 저장한 것이 다음 CI/CD 에 사라진다."""
+    _reachable_ecs(monkeypatch)
+    runner = Runner(box.log, aws=_bucket_with(POINTER_KEY))
+
+    launched = _start(box, _environ(box), runner)
+
+    assert len(launched) == 1
+    assert _sync()["head_ignored"] is True
+    assert "버킷의 정본을 받지 않음" in _step(report_contract.SYNC_STEP_PULL)["reason"]
+
+
+@pytest.mark.parametrize(
+    ("keys", "extra"),
+    [
+        ((), {}),
+        ((POINTER_KEY,), {"CAPA_S3_SYNC_MODE": "local"}),
+    ],
+    ids=["empty-bucket", "local-on-purpose"],
+)
+def test_no_mark_without_a_forgotten_mode(
+    box: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    keys: tuple[str, ...],
+    extra: dict[str, str],
+) -> None:
+    """이관 전의 첫 CI/CD · 일부러 `local` 을 넣은 서버는 알릴 것이 없다."""
+    _reachable_ecs(monkeypatch)
+
+    _start(box, _environ(box, **extra), Runner(box.log, aws=_bucket_with(*keys)))
+
+    assert _step(report_contract.SYNC_STEP_BUCKET)["status"] == report_contract.STATUS_OK
+    assert not _sync().get("head_ignored")
 
 
 def test_a_mistyped_mode_does_not_pull_and_the_app_still_starts(box: SimpleNamespace) -> None:

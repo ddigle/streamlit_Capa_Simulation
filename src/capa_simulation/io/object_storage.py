@@ -67,6 +67,11 @@ MODE_MANAGED: Final = "managed"
 CONFIG_PATH: Final = PROJECT_ROOT / "config" / "object_storage.json"
 CAPABILITIES_PATH: Final = PROJECT_ROOT / "config" / "object_storage_capabilities.json"
 
+# 설정을 읽지 못한 까닭 — 값 없는 고정 낱말이다. 칸을 잘못 붙여 넣으면 값이 키일 수 있다.
+SETTINGS_BAD_MODE: Final = "모드 값 틀림"
+SETTINGS_BROKEN_FILE: Final = "설정 파일 깨짐"
+SETTINGS_UNREADABLE: Final = "설정 읽기 실패"
+
 # AWS CLI 2.23.0 이상은 ECS 에서 `Missing required header for this request: Content-MD5` 로
 # 실패한다(Dell KB 000299507). 체크섬 계산을 끄면 우회되는 경우가 있고, 안 되면 CLI 를
 # 2.22.x 로 내려야 한다. 이 두 값이 이 경계에서 가장 먼저 확인할 항목이다.
@@ -143,7 +148,9 @@ def load_settings(*, environ: Mapping[str, str] | None = None) -> StorageSetting
     values = file_config or {}
     mode_text = str(env.get(MODE_ENV) or values.get("mode") or "local").strip()
     if mode_text not in ("local", MODE_MANAGED):
-        raise ObjectStorageError(f"{MODE_ENV} 는 local 또는 managed 여야 합니다: {mode_text!r}")
+        raise StorageSettingsError(
+            f"{MODE_ENV} 는 local 또는 managed 여야 합니다: {mode_text!r}", label=SETTINGS_BAD_MODE
+        )
     mode: SyncMode = "managed" if mode_text == MODE_MANAGED else "local"
     return StorageSettings(
         mode=mode,
@@ -224,6 +231,14 @@ class ObjectStorageError(RuntimeError):
     @property
     def result(self) -> CommandResult | None:
         return self._result
+
+
+class StorageSettingsError(ObjectStorageError):
+    """설정을 읽지 못했다. 글에는 사람이 넣은 값 · 경로가 들어 화면 · 로그에는 `label` 만 싣는다."""
+
+    def __init__(self, message: str, *, label: str) -> None:
+        super().__init__(message)
+        self.label = label
 
 
 @dataclass(frozen=True)
@@ -607,9 +622,14 @@ def _read_json(path: Path, *, label: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ObjectStorageError(f"{with_object_particle(label)} 읽지 못했습니다: {path}") from exc
+        raise StorageSettingsError(
+            f"{with_object_particle(label)} 읽지 못했습니다: {path}", label=SETTINGS_BROKEN_FILE
+        ) from exc
     if not isinstance(payload, dict):
-        raise ObjectStorageError(f"{with_subject_particle(label)} JSON 객체가 아닙니다: {path}")
+        raise StorageSettingsError(
+            f"{with_subject_particle(label)} JSON 객체가 아닙니다: {path}",
+            label=SETTINGS_BROKEN_FILE,
+        )
     return payload
 
 

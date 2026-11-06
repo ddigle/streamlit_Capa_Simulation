@@ -133,6 +133,8 @@ class SyncStart:
     pull_seconds: float | None = None
     pull_attempts: int | None = None
     previous_upload_utc: str | None = None
+    # 버킷에 세대가 있는데 모드 칸이 비어 받지 않았다.
+    head_ignored: bool = False
 
 
 @dataclass(frozen=True)
@@ -259,6 +261,7 @@ def parse_sync(data: object) -> SyncStart | None:
         pull_seconds=_float_or_none(data.get("pull_seconds")),
         pull_attempts=_int_or_none(data.get("pull_attempts")),
         previous_upload_utc=_text_or_none(data.get("previous_upload_utc")),
+        head_ignored=data.get("head_ignored") is True,
     )
 
 

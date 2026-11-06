@@ -17,10 +17,14 @@ from types import SimpleNamespace
 
 import pytest
 from alert_marks import active_state, alert_notes
+from sso_support import use_config
 from streamlit.testing.v1 import AppTest
+from test_sso_access import session_token
 
 from capa_simulation import alerts, object_sync_worker, sync_boot
-from capa_simulation.components import object_sync_status
+from capa_simulation.auth import names, runtime
+from capa_simulation.auth.config import SsoConfig, SsoMode
+from capa_simulation.components import object_sync_status, sso_identity
 from capa_simulation.object_sync_worker import WorkerStatus
 from capa_simulation.persistence import sync_state
 from capa_simulation.sync_boot import SyncBoot
@@ -35,7 +39,9 @@ from capa_simulation.components.object_sync_status import render_object_sync_ale
 
 render_object_sync_alerts()
 """
-SY_CODES = ("SY-01", "SY-02", "SY-03", "SY-04")
+SY_CODES = ("SY-01", "SY-02", "SY-03", "SY-04", "SY-05")
+ADMIN = "demo.admin"
+USER = "demo.user"
 
 
 class _Handle:
@@ -68,8 +74,9 @@ def _boot(
     managed: bool = False,
     disabled_reason: str | None = None,
     handed_over_utc: str | None = None,
+    head_ignored: bool = False,
 ) -> None:
-    decided = SyncBoot(managed, disabled_reason, handed_over_utc)
+    decided = SyncBoot(managed, disabled_reason, handed_over_utc, head_ignored)
     monkeypatch.setattr(sync_boot, "_boot", lambda: decided)
 
 
@@ -354,3 +361,86 @@ def test_a_broken_setting_keeps_the_app_up(tmp_path: Path, monkeypatch: pytest.M
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert active_state(app, "SY-01")
+
+
+def test_a_server_that_did_not_read_the_bucket_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    """빈 값은 유효한 `local` 이라 `SY-01` 이 서지 않는다. 이 알림이 없으면 화면이 멀쩡해 보인다."""
+    _boot(monkeypatch, head_ignored=True)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-05")
+    assert note is not None
+    assert "CAPA_S3_SYNC_MODE" in note["full"]
+    assert not active_state(app, "SY-01")
+
+
+def test_a_wrong_mode_reaches_the_alert_as_a_word(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`SY-01` 은 로그인한 사람 모두가 본다. 잘못 붙여 넣은 값이 실리면 안 된다."""
+    monkeypatch.setenv("CAPA_S3_SYNC_MODE", "pasted-demo-value-1234")
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-01")
+    assert note is not None
+    assert "pasted-demo-value-1234" not in str(note)
+    assert "모드 값 틀림" in note["full"]
+
+
+# --------------------------------------------------------------------------- 실제 신원 판정
+def _real_viewer(monkeypatch: pytest.MonkeyPatch, *, cookie: str | None) -> SsoConfig:
+    """`_viewer_is_admin` 을 바꿔 끼우지 않는다 — 쿠키만 주고 판정 길을 그대로 태운다."""
+    cfg = use_config({names.ENV_ACCESS_ADMINS: ADMIN, names.ENV_ACCESS_USERS: USER})
+    cookies = {} if cookie is None else {cfg.session_cookie: session_token(cfg, cookie)}
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: cookies)
+    return cfg
+
+
+@pytest.mark.parametrize(
+    ("cookie", "expected"), [(ADMIN, True), (USER, False), (None, False)], ids=str
+)
+def test_the_viewer_is_judged_from_the_cookie(
+    monkeypatch: pytest.MonkeyPatch, cookie: str | None, expected: bool
+) -> None:
+    _real_viewer(monkeypatch, cookie=cookie)
+
+    assert object_sync_status._viewer_is_admin() is expected
+
+
+def test_a_tampered_cookie_is_not_an_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _real_viewer(monkeypatch, cookie=ADMIN)
+    head, payload, signature = session_token(cfg, ADMIN).split(".")
+    forged = {cfg.session_cookie: f"{head}.{payload}.{signature[::-1]}"}
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: forged)
+
+    assert object_sync_status._viewer_is_admin() is False
+
+
+def test_nobody_is_an_admin_with_sso_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """꺼진 서버에는 신원이 없다. 쿠키가 남아 있어도 단추는 서지 않는다."""
+    cfg = _real_viewer(monkeypatch, cookie=ADMIN)
+    token = session_token(cfg, ADMIN)
+    runtime.reset()
+    off = runtime.start({})
+    assert off.mode is not SsoMode.ON
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
+
+    assert object_sync_status._viewer_is_admin() is False
+
+
+def test_a_stale_button_of_someone_who_lost_the_right_does_not_upload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """관리자 회차의 단추를 일반 쿠키로 누른다 — 콜백은 그 회차 쿠키로 다시 본다."""
+    _boot(monkeypatch, managed=True)
+    cfg = _real_viewer(monkeypatch, cookie=ADMIN)
+    handle = _worker(monkeypatch)
+    app = AppTest.from_string(PANEL).run()
+    button = app.button(key=object_sync_status.UPLOAD_NOW_KEY)
+    lowered = {cfg.session_cookie: session_token(cfg, USER)}
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: lowered)
+
+    button.click().run()
+
+    assert not list(app.exception)
+    assert handle.requests == 0

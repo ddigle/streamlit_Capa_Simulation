@@ -916,12 +916,16 @@ def _unreachable_label(reason: object) -> str:
     return f"연결 실패({type(reason).__name__})"
 
 
-def bucket_step(client: ObjectStorageClient) -> StepResult:
-    """키 · 버킷이 맞는가. 목록 한 줄만 본다."""
+def bucket_step(
+    client: ObjectStorageClient, *, heads: Callable[[bool], None] | None = None
+) -> StepResult:
+    """키 · 버킷이 맞는가. 목록 한 줄만 본다. `heads` 는 그 목록에 세대가 있었는지 듣는다."""
     try:
-        client.list_objects(HEAD_PREFIX, max_keys=1)
+        records = client.list_objects(HEAD_PREFIX, max_keys=1)
     except ObjectStorageError as error:
         return StepResult(STATUS_FAILED, FAILURE_LABELS[classify_failure(error)])
+    if heads is not None:
+        heads(bool(records))
     return StepResult(STATUS_OK, "정상")
 
 
@@ -1015,6 +1019,7 @@ def prepare_sync(
     storage = plan.storage
     steps = {SYNC_STEP_PROFILE: _guarded(lambda: aws_profile_step(environ, storage), redactor)}
     version: str | None = None
+    head_listed = False
     if storage is None:
         skipped = StepResult(STATUS_FAILED, "설정 파일을 읽지 못함")
         steps |= dict.fromkeys((SYNC_STEP_CLI, SYNC_STEP_ECS, SYNC_STEP_BUCKET), skipped)
@@ -1027,6 +1032,10 @@ def prepare_sync(
             nonlocal version
             result, version = aws_cli_step(client)
             return result
+
+        def saw_heads(found: bool) -> None:
+            nonlocal head_listed
+            head_listed = found
 
         steps[SYNC_STEP_CLI] = _guarded(run_cli, redactor)
         steps[SYNC_STEP_ECS] = _guarded(lambda: ecs_step(storage.endpoint_url), redactor)
@@ -1041,9 +1050,12 @@ def prepare_sync(
         steps[SYNC_STEP_BUCKET] = (
             StepResult(STATUS_SKIPPED, f"{SYNC_STEP_LABELS[blocked]} 실패로 보지 않음")
             if blocked is not None
-            else _guarded(lambda: bucket_step(client), redactor)
+            else _guarded(lambda: bucket_step(client, heads=saw_heads), redactor)
         )
+    head_ignored = head_listed and not plan.managed and not environ.get(MODE_ENV, "").strip()
     reason = "받기 전" if plan.managed else f"{MODE_ENV} 가 {MODE_MANAGED} 아님 — 받지 않음"
+    if head_ignored:
+        reason = f"{MODE_ENV} 가 비어 버킷의 정본을 받지 않음"
     steps[SYNC_STEP_PULL] = StepResult(STATUS_SKIPPED, reason)
     for name, result in steps.items():
         echo(f"{SYNC_STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
@@ -1051,6 +1063,7 @@ def prepare_sync(
         "steps": {name: result.as_json() for name, result in steps.items()},
         "started_at_utc": started_at_utc,
         "aws_version": version,
+        "head_ignored": head_ignored,
         **machine_facts(environ),
         **duckdb_defaults(runner, child_environment(environ)),
     }

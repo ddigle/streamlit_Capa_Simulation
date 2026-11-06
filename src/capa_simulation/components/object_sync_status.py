@@ -49,6 +49,7 @@ DISABLED_CODE: Final = "SY-01"
 OVERDUE_CODE: Final = "SY-02"
 BLOCKED_CODE: Final = "SY-03"
 HANDED_OVER_CODE: Final = "SY-04"
+HEAD_IGNORED_CODE: Final = "SY-05"
 _MIB: Final = 1024 * 1024
 
 NOT_ADMIN_MESSAGE: Final = "관리자만 지금 올리기를 쓸 수 있습니다"
@@ -73,7 +74,7 @@ def failure_label(kind: str | None) -> str:
 
 
 def render_object_sync_alerts() -> None:
-    """동기화 상태 알림 넷. `app.py` 가 회차마다 조건 없이 부른다.
+    """동기화 상태 알림 다섯. `app.py` 가 회차마다 조건 없이 부른다.
 
     알릴 일이 있을 수 없는 프로세스(`sync_alerts_possible` 이 거짓 — 프로세스에 한 번 정한 값)에서는
     표지도 쓰지 않는다. 개발 PC · 시험의 요소 순번이 그대로다.
@@ -147,6 +148,19 @@ def render_object_sync_alerts() -> None:
                 f"이 DB 는 {handed_over} 에 정본을 넘긴 사본입니다. 여기서 저장해도 정본에 "
                 "올라가지 않습니다."
             )
+        ),
+    )
+    head_ignored = sync_boot.head_ignored()
+    alerts.state(
+        HEAD_IGNORED_CODE,
+        scope=None,
+        content=None,
+        active=head_ignored,
+        text="정본을 받지 않은 서버입니다 — 이 저장은 다음 CI/CD 에 사라집니다",
+        full=(
+            "버킷에 세대가 있는데 `CAPA_S3_SYNC_MODE` 칸이 비어 받지 않았습니다. 지금 화면은 "
+            "정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 사라집니다. 칸에 `managed` 를 넣고 "
+            "CI/CD 를 다시 누르세요. 일부러 끈 서버면 `local` 을 넣습니다."
         ),
     )
 

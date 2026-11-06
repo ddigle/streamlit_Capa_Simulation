@@ -318,6 +318,14 @@ def test_the_crash_fixture_missing_package_is_caught_through_importlib(tmp_path:
         ('NAME = "equipment_availability.duckdb"\n', ("M07", "error")),
         ('NAME = ".deploy/applied.json"\n', ("M07", "error")),
         ('NAME = "~/.aws/credentials"\n', ("M07", "error")),
+        ('import os\nFOLDER = os.path.expanduser("~/.aws")\n', ("M07", "error")),
+        ('NAME = ".aws"\n', ("M07", "error")),
+        ('NAME = "/proc/self/environ"\n', ("M07", "error")),
+        (
+            'from pathlib import Path\nTEXT = Path("/proc/self/environ").read_bytes()\n',
+            ("M07", "error"),
+        ),
+        ('from pathlib import Path\nPATH = Path("/proc") / "self" / "environ"\n', ("M07", "error")),
         (
             'from pathlib import Path\nPATH = Path.home() / ".aws" / "credentials"\n',
             ("M07", "error"),
@@ -1124,6 +1132,86 @@ def test_m17_a_failing_module_test(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "시험 실패 1/2" in out
     assert "  m1 demo_x 오류 M17 시험 실패 test_demo_x_fail.py::test_fails" in out
     assert "시험실패1/2" in _summary(out)
+
+
+SECRET_READING_TESTS = """# Purpose: 일부러 키 자리를 연다.
+
+from pathlib import Path
+
+
+def test_reads_the_aws_folder() -> None:
+    folder = Path.home() / (".a" + "ws")
+    assert (folder / "credentials").read_text(encoding="utf-8")
+"""
+
+
+def test_m17_the_watch_stops_a_module_test_reading_the_aws_folder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """정적 규칙을 피해 돌리는 길로 열어도 막는다. `~/.aws` 에는 운영 DB 를 지우는 키가 있다."""
+    home = tmp_path / "home"
+    folder = home / ".aws"
+    folder.mkdir(parents=True)
+    (folder / "credentials").write_text("[demo]\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    root = tmp_path / "modules"
+    module = _module(root, "demo_x", {"page.py": HEADER + "import streamlit as st\n"})
+    (module / "tests" / "test_demo_x_keys.py").write_text(SECRET_READING_TESTS, encoding="utf-8")
+
+    code, out = _run(["demo_x", "--root", str(root), "--no-ruff"], capsys)
+
+    assert code == 1
+    assert "감시가 막은 접근" in out
+    assert "test_demo_x_keys.py::test_reads_the_aws_folder" in out
+
+
+ENVIRONMENT_READING_TESTS = """# Purpose: 일부러 환경의 커널 사본을 연다.
+
+from pathlib import Path
+
+
+def test_reads_the_kernel_copy() -> None:
+    assert Path("/pr" + "oc/self/environ").read_bytes()
+"""
+
+
+@pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="리눅스 전용 자리")
+def test_m17_the_watch_stops_a_module_test_reading_the_kernel_copy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "modules"
+    module = _module(root, "demo_x", {"page.py": HEADER + "import streamlit as st\n"})
+    (module / "tests" / "test_demo_x_env.py").write_text(
+        ENVIRONMENT_READING_TESTS, encoding="utf-8"
+    )
+
+    code, out = _run(["demo_x", "--root", str(root), "--no-ruff"], capsys)
+
+    assert code == 1
+    assert "감시가 막은 접근" in out
+
+
+def test_the_process_environment_file_is_on_the_watch_list(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시작 스크립트가 넘긴 키는 `os.environ` 에서 지워도 커널 사본에 남는다."""
+    seen: list[Sequence[Path]] = []
+
+    def record(
+        folder: Path, *, root: Path, tree: Path, protect: Sequence[Path], timeout: int
+    ) -> check_module.TestResult:
+        seen.append(protect)
+        return check_module.TestResult(state="skipped")
+
+    monkeypatch.setattr(check_module, "run_tests", record)
+    root = tmp_path / "modules"
+    _module(root, "demo_x", {"page.py": HEADER + "import streamlit as st\n"})
+
+    _run(["demo_x", "--root", str(root), "--no-ruff"], capsys)
+
+    assert Path("/proc/self/environ") in seen[0]
+    assert Path.home() / ".aws" in seen[0]
 
 
 def test_m17_is_not_run_when_a_blocking_static_error_exists(
