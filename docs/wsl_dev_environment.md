@@ -44,6 +44,8 @@ CI(`.github/workflows/ci.yml`)가 `ubuntu-latest` · Python 3.10.11 · `uv sync 
 같은 네 줄의 PowerShell 판(`.\.venv\Scripts\python.exe -m …`)은 Windows 꼴이다(`CLAUDE.md` 「명령」) — 사내가 배포 확인 때 치는 꼴은
 런북 4-3 의 `uv run --no-sync python -m …` 이다.
 
+- 실제 `aws` 왕복 시험(`tests/test_object_storage_real_aws.py`)은 `CAPA_TEST_AWS_BIN` 이 있을 때만 돈다 — 저장소 의존성에 넣지 않고 저장소 밖에 깐다.
+  사용자가 tmux 에서 `uv venv --python 3.10.11 ~/projects/Deploy/worklog/tools/awscli-1.46.3` 뒤 `uv pip install --python ~/projects/Deploy/worklog/tools/awscli-1.46.3/bin/python awscli==1.46.3` 하고, 관문 앞에 `export CAPA_TEST_AWS_BIN=~/projects/Deploy/worklog/tools/awscli-1.46.3/bin/aws`.
 - `.venv/bin/python` 을 쓴다. `python` 맨 명령은 WSL 에 없다(`python3` 는 3.14). uv 는 홈의 캐시(`~/.cache/uv`)에 쓰는데 샌드박스가
   막는다 — 캐시를 돌리지 않으면 `uv run` 은 물론 점검만 하는 `uv sync --check` 도 Read-only file system 으로 실패한다. 락과 `.venv` 가
   맞는지 볼 때는 `UV_CACHE_DIR=$TMPDIR/uvcache uv sync --frozen --check --offline --python 3.10.11` — 「Would make no changes」면
