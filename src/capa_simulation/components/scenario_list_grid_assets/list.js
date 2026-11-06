@@ -29,6 +29,8 @@ const COLUMNS = {
 }
 const TABLE_LABELS = { scenarios: '시나리오 목록', revisions: '리비전' }
 const NAME_KIND = { scenarios: 'scenario', revisions: 'revision' }
+// 말줄임으로 잘릴 수 있는 칸 — 값 전체를 칸 풍선에 둔다.
+const TIP_COLUMNS = new Set(['name', 'official', 'status'])
 
 // <list-move>
 // 줄 옮기기 — 파이썬 `move_before` 와 같은 답을 낸다(시험이 대 본다). `before` 가 없거나 모르는 줄이면 끝이다.
@@ -111,7 +113,7 @@ function freshState() {
   return {
     mount: newMount(), box: createBox(), sentSeq: 0, timer: 0, base: null, limit: 2000, data: null, mode: null,
     edit: null, focus: null, drag: null, pressing: false, dirty: false, wantFocus: false, listeners: [], bound: false,
-    built: null, rowNodes: new Map(), settleTimer: 0, enterAfter: false, suppressClick: false, note: '',
+    built: null, rowNodes: new Map(), settleTimer: 0, enterAfter: false, suppressClick: false, note: '', view: null,
   }
 }
 
@@ -181,23 +183,39 @@ function pickedId(S) {
   return S.data && S.data.picked !== undefined ? S.data.picked : null
 }
 
-function pendingName(S, id) {
+// 받은 data 에 아직 반영되지 않은 op 를 얹은 화면 차례. 칸마다 다시 접으면 줄 수 × op 수로 느려져, data · 보낼 목록 · 세대가
+// 그대로인 동안 한 벌을 쓴다(보낼 목록은 늘 때도 ack 로 줄 때도 수나 끝 seq 가 바뀐다).
+function currentView(S) {
+  const rows = (S.data && S.data.rows) || []
+  const ops = S.box.ops
+  const last = ops.length ? ops[ops.length - 1].seq : 0
+  const held = S.view
+  if (held && held.rows === rows && held.count === ops.length && held.last === last && held.base === S.base) return held
+  const moves = S.mode === 'scenarios' ? liveOps(S, 'move') : []
+  const known = new Map(rows.map((row) => [row.id, row]))
+  const shown = moves.length ? applyMoves(rows.map((row) => row.id), moves).map((id) => known.get(id)).filter(Boolean) : rows
   const kind = NAME_KIND[S.mode]
-  const ops = liveOps(S, 'name').filter((op) => op.kind === kind && op.id === id)
-  return ops.length ? ops[ops.length - 1].text : null
+  const names = new Map(liveOps(S, 'name').filter((op) => op.kind === kind).map((op) => [op.id, op.text]))
+  const places = new Map(shown.map((row, index) => [row.id, index]))
+  S.view = { rows, count: ops.length, last, base: S.base, shown, known, names, places }
+  return S.view
+}
+
+function pendingName(S, id) {
+  const text = currentView(S).names.get(id)
+  return text === undefined ? null : text
 }
 
 function viewRows(S) {
-  const rows = (S.data && S.data.rows) || []
-  if (S.mode !== 'scenarios') return rows
-  const moves = liveOps(S, 'move')
-  if (!moves.length) return rows
-  const byId = new Map(rows.map((row) => [row.id, row]))
-  return applyMoves(rows.map((row) => row.id), moves).map((id) => byId.get(id)).filter(Boolean)
+  return currentView(S).shown
 }
 
 function rowOf(S, id) {
-  return viewRows(S).find((row) => row.id === id) || null
+  return currentView(S).known.get(id) || null
+}
+
+function rowPlace(S, id) {
+  return currentView(S).places.get(id)
 }
 
 // ---------------------------------------------------------------- 받기 · 그리기
@@ -323,31 +341,44 @@ function buildTable(S) {
 }
 
 function toolButton(S, label, step, tip, endTip) {
-  const slot = el('span', 'sgl-tool-slot')
+  const slot = el('span', 'emg-tip-host sgl-tool-slot')
   const node = button('emg-btn is-small', label, () => {
     const id = openedId(S)
     if (id !== null) moveRow(S, id, step)
   })
   node.title = tip
+  const reason = el('span', 'emg-tip')
+  reason.id = 'sgl-tool-tip-' + String(step)
+  reason.setAttribute('role', 'tooltip')
+  slot.setAttribute('aria-describedby', reason.id)
   slot.appendChild(node)
-  return { slot, node, step, tip, endTip }
+  slot.appendChild(reason)
+  return { slot, node, reason, label, step, tip, endTip }
 }
 
 function paintTools(S) {
   if (S.mode !== 'scenarios') return
   const opened = openedId(S)
   const order = viewRows(S).map((row) => row.id)
+  const active = activeIn(S.host)
   for (const tool of S.tools) {
-    const at = opened === null ? undefined : beforeForStep(order, opened, tool.step)
-    tool.node.disabled = at === undefined
-    // 꺼진 단추에는 풍선이 뜨지 않는다 — 까닭은 감싼 칸에 둔다.
-    tool.slot.title = at === undefined ? tool.endTip : ''
+    const stuck = opened === null || beforeForStep(order, opened, tool.step) === undefined
+    // 꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 탭 자리와 까닭 풍선을 맡는다. 초점을 쥔 단추를 끄기 **전에** 옮긴다 — 끈 뒤면
+    // 초점이 문서로 빠지고, 부품 밖 이탈로 읽혀 묶음이 풀린다.
+    tool.slot.tabIndex = stuck ? 0 : -1
+    if (stuck && active === tool.node) tool.slot.focus({ preventScroll: true })
+    tool.node.disabled = stuck
+    if (!stuck && active === tool.slot) tool.node.focus({ preventScroll: true })
+    tool.reason.textContent = stuck ? tool.endTip : ''
+    if (stuck) tool.slot.setAttribute('aria-label', tool.label + ' — ' + tool.endTip)
+    else tool.slot.removeAttribute('aria-label')
   }
 }
 
 function paintTable(S) {
   if (S.built !== S.mode) buildTable(S)
-  const hadFocus = S.wantFocus || activeInside(S)
+  const keyboard = S.wantFocus
+  const hadFocus = keyboard || activeInside(S)
   const rows = viewRows(S)
   S.body.textContent = ''
   S.rowNodes = new Map()
@@ -360,7 +391,8 @@ function paintTable(S) {
   if (S.mode === 'revisions') paintRevisionHead(S)
   paintTools(S)
   S.wantFocus = false
-  if (hadFocus) restoreCellFocus(S)
+  // 키보드 손짓만 초점 칸으로 스크롤을 따라간다 — 회차가 돌아온 다시 그리기가 사용자가 내리던 스크롤을 끌고 가지 않는다.
+  if (hadFocus) restoreCellFocus(S, keyboard ? undefined : { preventScroll: true })
 }
 
 function activeInside(S) {
@@ -449,6 +481,7 @@ function cellElement(S, row, column, k, index) {
     cell.classList.add('is-changed')
     tips.push('저장 차례 ' + row.place + '번째')
   }
+  if (TIP_COLUMNS.has(column.key) && value) tips.unshift(value)
   if (!column.editable) cell.classList.add('sgl-ro')
   if (tips.length) cell.title = tips.join('\n')
   if (editing) {
@@ -478,11 +511,11 @@ function tabStop(S, row, column) {
   return selected ? selected === row.id : Boolean(first && first.id === row.id)
 }
 
-function restoreCellFocus(S) {
+function restoreCellFocus(S, options) {
   if (!S.focus) return
   const node = cellNode(S, S.focus.id, S.focus.col)
   const press = node ? node.querySelector('.emg-cb') : null
-  if (press) press.focus()
+  if (press) press.focus(options)
 }
 
 function cellNode(S, id, col) {
@@ -497,8 +530,7 @@ function repaintCell(S, id, col) {
   const old = cellNode(S, id, col)
   if (!row || !node || !old) return
   const k = COLUMNS[S.mode].findIndex((column) => column.key === col)
-  const index = viewRows(S).indexOf(row)
-  node.replaceChild(cellElement(S, row, COLUMNS[S.mode][k], k, index), old)
+  node.replaceChild(cellElement(S, row, COLUMNS[S.mode][k], k, rowPlace(S, id)), old)
   node.classList.toggle('is-editing-row', Boolean(S.edit && S.edit.id === id))
 }
 
@@ -508,8 +540,7 @@ function startEdit(S, id, col, initial) {
   const row = rowOf(S, id)
   const column = COLUMNS[S.mode].find((item) => item.key === col)
   if (!row || !column || !column.editable) return
-  const index = viewRows(S).indexOf(row)
-  const current = cellValue(S, row, column, index)
+  const current = cellValue(S, row, column, rowPlace(S, id))
   const typed = initial !== undefined
   S.edit = {
     id,
@@ -597,6 +628,8 @@ function nextEditable(S, edit, dir) {
 
 // 잃으면 안 되는 조작이라 묶지 않고 바로 보낸다. `sendOnce` 를 쓰지 않는다 — A → B → A 의 셋째가 버려지면 마지막이 이기지 못한다.
 function activate(S, id) {
+  // 누르는 동안 온 data 가 표를 바꿨으면 옛 줄이다(다른 시나리오의 리비전일 수 있다) — 손을 떼면 지금 data 로 다시 그린다.
+  if (!rowOf(S, id)) return
   const op = S.mode === 'scenarios' ? { op: 'open', id } : { op: 'pick', owner: S.data.owner, id }
   queue(S, op)
   flush(S)
@@ -633,7 +666,7 @@ function moveRow(S, id, step) {
 
 function announceMoved(S, id) {
   const row = rowOf(S, id)
-  if (row) announce(S, String(row.name || '') + ' ' + (viewRows(S).indexOf(row) + 1) + '번째로 옮김')
+  if (row) announce(S, String(row.name || '') + ' ' + (rowPlace(S, id) + 1) + '번째로 옮김')
 }
 
 function onBodyClick(S, event) {
@@ -822,11 +855,33 @@ function sendRevert(S, op) {
   flush(S)
 }
 
+// 칸 전체를 다시 지어도 키보드 초점이 문서로 빠지지 않게 든 자리를 잡아 둔다 — 되돌린 줄은 사라지므로 차례도 함께 든다.
+function heldChange(S) {
+  const active = activeIn(S.host)
+  if (!active || !S.host.contains(active) || !active.dataset || !active.dataset.fk) return null
+  return { key: active.dataset.fk, at: Array.from(S.host.querySelectorAll('[data-fk]')).indexOf(active) }
+}
+
+function restoreChange(root, held) {
+  if (!held) return
+  const marks = Array.from(root.querySelectorAll('[data-fk]'))
+  const node = marks.find((mark) => mark.dataset.fk === held.key) || marks[Math.min(held.at, marks.length - 1)] || root
+  node.focus({ preventScroll: true })
+}
+
 function paintChanges(S) {
+  const held = heldChange(S)
+  const root = changesRoot(S)
   emptyHost(S)
   S.built = S.mode
+  S.host.appendChild(root)
+  restoreChange(root, held)
+}
+
+function changesRoot(S) {
   const data = S.data
   const root = el('div', 'sgl-root sgl-changes')
+  root.tabIndex = -1
   const counts = data.counts || {}
   const sum = el('div', 'emg-sum')
   for (const [key, label] of SUM_CELLS) {
@@ -840,16 +895,17 @@ function paintChanges(S) {
   const order = data.order || {}
   if (!groups.length && !order.moved && !order.problem) {
     root.appendChild(el('p', 'emg-side-empty', '아직 고친 것이 없습니다.'))
-    S.host.appendChild(root)
-    return
+    return root
   }
   for (const group of groups) {
     const box = el('div', 'emg-unit')
     const head = el('div', 'emg-unit-head')
-    head.appendChild(button('emg-link', group.name || '(빈 이름)', () => {
+    const open = button('emg-link', group.name || '(빈 이름)', () => {
       queue(S, { op: 'open', id: group.id, detail: true })
       flush(S)
-    }))
+    })
+    open.dataset.fk = 'open-' + group.id
+    head.appendChild(open)
     box.appendChild(head)
     for (const line of group.lines || []) box.appendChild(changeLine(S, line))
     root.appendChild(box)
@@ -862,12 +918,14 @@ function paintChanges(S) {
     const line = el('div', 'emg-line')
     line.appendChild(el('span', 'emg-muted', '순서'))
     line.appendChild(el('span', 'emg-value', Number(order.moved || 0).toLocaleString() + '줄 자리 바뀜'))
-    line.appendChild(icon('undo', '순서 되돌리기', () => sendRevert(S, { op: 'revert', kind: 'order' })))
+    const undo = icon('undo', '순서 되돌리기', () => sendRevert(S, { op: 'revert', kind: 'order' }))
+    undo.dataset.fk = 'undo-order'
+    line.appendChild(undo)
     if (order.problem) line.appendChild(el('span', 'sgl-problem', '! ' + order.problem))
     box.appendChild(line)
     root.appendChild(box)
   }
-  S.host.appendChild(root)
+  return root
 }
 
 function changeLine(S, item) {
@@ -884,7 +942,9 @@ function changeLine(S, item) {
   value.appendChild(el('span', null, ' → '))
   value.appendChild(el('b', null, item.after || '(빈 이름)'))
   line.appendChild(value)
-  line.appendChild(icon('undo', item.label + ' 되돌리기', () => sendRevert(S, { op: 'revert', kind: item.kind, id: item.id })))
+  const undo = icon('undo', item.label + ' 되돌리기', () => sendRevert(S, { op: 'revert', kind: item.kind, id: item.id }))
+  undo.dataset.fk = 'undo-' + item.kind + '-' + item.id
+  line.appendChild(undo)
   if (item.problem) line.appendChild(el('span', 'sgl-problem', '! ' + item.problem))
   return line
 }

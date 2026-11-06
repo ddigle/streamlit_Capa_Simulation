@@ -6,26 +6,42 @@
   margin-bottom: 8px;
 }
 
-.sgl-tool-slot {
-  display: inline-flex;
+.sgl-tool-slot > .emg-tip {
+  left: 0;
+  right: auto;
 }
 
 .sgl-box {
   overflow: auto;
   max-height: max(320px, calc(100vh - 300px));
+  scroll-padding-top: 34px;
   position: relative;
   border: 1px solid var(--emg-border);
   border-radius: 6px;
 }
 
+.sgl-revisions .sgl-box {
+  max-height: max(136px, calc(100vh - 580px));
+}
+
 .sgl-table {
   position: relative;
   width: 100%;
-  min-width: max-content;
+}
+
+.sgl-scenarios .sgl-table {
+  min-width: 552px;
+}
+
+.sgl-revisions .sgl-table {
+  min-width: 312px;
+}
+
+.sgl-table .emg-row {
+  width: 100%;
 }
 
 .sgl-row {
-  width: 100%;
   cursor: pointer;
 }
 
@@ -55,6 +71,10 @@
   box-shadow: inset 3px 0 0 var(--emg-accent);
 }
 
+.sgl-row.is-open .sgl-w-name.is-error {
+  box-shadow: inset 3px 0 0 var(--emg-accent), inset 0 0 0 1.5px var(--emg-error-line);
+}
+
 .sgl-row:not(.is-open) .sgl-w-name .emg-cb,
 .sgl-ro .emg-cb {
   cursor: pointer;
@@ -75,7 +95,7 @@
 }
 
 .sgl-w-name {
-  flex: 1 1 180px;
+  flex: 1 1 0;
   min-width: 180px;
 }
 
@@ -97,7 +117,6 @@
 }
 
 .sgl-revisions .sgl-w-name {
-  flex: 1 1 120px;
   min-width: 120px;
 }
 
@@ -208,6 +227,12 @@
   font-size: 11px;
   line-height: 16px;
   color: var(--emg-muted);
+}
+
+.sgl-changes .emg-link {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .sgl-problem {

@@ -76,6 +76,61 @@ def test_the_shared_fragments_come_first_and_a_folded_row_keeps_its_height() -> 
     assert re.search(r"\.sgl-row \.emg-cb:focus-visible \{[^}]*outline-offset: -2px;", OWN_CSS)
 
 
+def test_a_long_name_does_not_widen_the_table() -> None:
+    """표 최소 폭은 칸 합이다 — `max-content` 면 긴 이름 한 줄이 그려지는 순간 모든 줄의 값 칸이
+    밀린다(`content-visibility` 라 그 줄이 화면에 들어올 때에야 정해진다). 이름 칸은 말줄임이다."""
+    assert "max-content" not in OWN_CSS
+    widths = {
+        name: int(value)
+        for name, value in re.findall(r"\.sgl-w-(\w+) \{\n\s*width: (\d+)px", OWN_CSS)
+    }
+    scenarios = re.search(r"\.sgl-scenarios \.sgl-table \{\s*min-width: (\d+)px;", OWN_CSS)
+    revisions = re.search(r"\.sgl-revisions \.sgl-table \{\s*min-width: (\d+)px;", OWN_CSS)
+    assert scenarios and int(scenarios[1]) == (
+        widths["grip"]
+        + widths["place"]
+        + 180
+        + widths["latest"]
+        + widths["official"]
+        + widths["updated"]
+    )
+    assert revisions and int(revisions[1]) == widths["no"] + 120 + widths["status"]
+    # 칸 너비가 글자에 끌려 늘지 않는다.
+    assert re.search(r"\.sgl-w-name \{[^}]*flex: 1 1 0;", OWN_CSS)
+    assert re.search(r"\.sgl-table \.emg-row \{\s*width: 100%;", OWN_CSS)
+    # 저장 전 변경의 묶음 머리 이름도 칸 안에서 접힌다.
+    assert re.search(r"\.sgl-changes \.emg-link \{[^}]*overflow-wrap: anywhere;", OWN_CSS)
+
+
+def test_the_keyboard_sees_the_focused_cell_and_a_blocked_open_row_keeps_its_line() -> None:
+    # 붙은 머리(34px) 밑으로 초점 칸이 들어가지 않는다.
+    assert re.search(r"\.sgl-box \{[^}]*scroll-padding-top: 34px;", OWN_CSS)
+    # 연 줄 막대가 막힘 윤곽을 덮지 않는다 — 두 그림자를 함께 싣는다.
+    blocked = re.search(
+        r"\.sgl-row\.is-open \.sgl-w-name\.is-error \{\s*box-shadow: ([^;]+);", OWN_CSS
+    )
+    assert blocked
+    assert "var(--emg-accent)" in blocked[1] and "var(--emg-error-line)" in blocked[1]
+
+
+def test_many_revisions_leave_the_action_row_inside_the_panel() -> None:
+    """리비전 표가 패널 높이를 다 쓰면 작업 줄이 패널 스크롤 아래로 숨는다(UI-LAY-03) — 표 높이
+    상한을 패널 상한보다 작업 줄 · 값 줄 몫만큼 낮춘다."""
+    from capa_simulation.components import side_panel
+
+    rule = re.search(
+        r"\.sgl-revisions \.sgl-box \{\s*max-height: max\((\d+)px, calc\(100vh - (\d+)px\)\);",
+        OWN_CSS,
+    )
+    assert rule
+    floor, reserve = int(rule[1]), int(rule[2])
+    # 머리 + 세 줄은 늘 보인다.
+    assert floor == 34 * 4
+    # 패널 상한(100vh − 붙는 높이 − 예비) 안에 값 줄 · 작업 줄 · 보관 몫 260px 이 남는다.
+    panel_reserve = side_panel.SIDE_TOP_FALLBACK_PX + side_panel.SIDE_BODY_RESERVE_PX
+    assert reserve - panel_reserve >= 260
+
+
 def test_column_widths_fit_their_heads() -> None:
     """칸 폭은 머리 글자(굵은 12px, 양옆 여백 8)가 다 드는 폭 아래로 두지 않는다 — 좁은 창에서는 표
     안에서만 옆으로 민다."""
@@ -182,6 +237,7 @@ def test_the_pure_sections_agree_with_python() -> None:
 
 
 _DOM = """
+const focusCalls = []
 class FakeNode {
   constructor(tag) {
     this.tagName = String(tag).toUpperCase()
@@ -248,8 +304,9 @@ class FakeNode {
   }
   getRootNode() { return document }
   getBoundingClientRect() { return { top: 100, bottom: 500, left: 0, width: 600 } }
-  focus() {
+  focus(options) {
     const previous = document.activeElement
+    focusCalls.push(options || null)
     if (previous && previous !== this) fireOnly(previous, 'focusout', { relatedTarget: this })
     document.activeElement = this
     fireOnly(this, 'focusin', {})
@@ -258,6 +315,7 @@ class FakeNode {
   setPointerCapture(id) { this.captured = id }
   matches(selector) {
     if (selector === '[data-col]') return this.dataset.col !== undefined
+    if (selector === '[data-fk]') return this.dataset.fk !== undefined
     if (selector.startsWith('.')) return this.className.split(/\\s+/).includes(selector.slice(1))
     return this.tagName === selector.toUpperCase()
   }
@@ -359,7 +417,7 @@ const out = {}
     open: m.host.querySelectorAll('.is-open').map((node) => node.dataset.row),
     rowcount: m.host.querySelector('.sgl-table').getAttribute('aria-rowcount'),
     tools: m.host.querySelectorAll('.emg-btn').map((node) => node.disabled),
-    slots: m.host.querySelectorAll('.sgl-tool-slot').map((node) => node.title),
+    slots: m.host.querySelectorAll('.sgl-tool-slot').map((node) => node.querySelector('.emg-tip').textContent),
     stop: m.host.querySelectorAll('.emg-cb').filter((node) => node.tabIndex === 0).length,
   }
 
@@ -589,6 +647,121 @@ const out = {}
 )
 
 
+_REPAINTS = (
+    _DOM
+    + """
+const out = {}
+const many = {
+  ...SCENARIOS,
+  open: 'r250',
+  rows: Array.from({ length: 500 }, (_, k) => ({ id: 'r' + k, name: '줄 ' + k, latest: 'r1', official: '', updated: '' })),
+}
+;(async () => {
+  // 줄 옮기기 — 칸마다 op 를 다시 접으면 누를수록 느려진다. 누름 하나에 차례를 한 번만 짓는다.
+  let m = mount(many)
+  press(cell(m.host, 'r250', 'name')).focus()
+  globalThis.__views = 0
+  for (let k = 0; k < 8; k += 1) key(press(cell(m.host, 'r250', 'name')), 'ArrowDown', { altKey: true })
+  out.perf = { views: globalThis.__views, at: rows(m.host).indexOf('r250') }
+  m.cleanup()
+
+  // 회차가 돌아온 다시 그리기는 스크롤을 끌고 가지 않는다 — 칸 확정 뒤 · 줄 열기 뒤.
+  m = mount(SCENARIOS)
+  click(press(cell(m.host, 'a', 'name')))
+  type(editor(m.host), '새 가')
+  key(editor(m.host), 'Enter')
+  await tick(330)
+  focusCalls.length = 0
+  m.rerender({ ...SCENARIOS, rows: SCENARIOS.rows.slice() })
+  out.afterCommit = focusCalls.slice()
+  press(cell(m.host, 'c', 'latest')).focus()
+  click(press(cell(m.host, 'c', 'latest')))
+  focusCalls.length = 0
+  m.rerender({ ...SCENARIOS, open: 'c', rows: SCENARIOS.rows.slice() })
+  out.afterOpen = focusCalls.slice()
+  // 키보드 손짓은 그 칸으로 스크롤을 따라간다.
+  focusCalls.length = 0
+  key(press(cell(m.host, 'c', 'name')), 'ArrowUp', { altKey: true })
+  out.keyboard = focusCalls.slice()
+  m.cleanup()
+
+  // 끝에 닿은 이동 단추 — 감싼 칸이 탭 자리 · 초점을 받고, 그 초점 이동은 부품 안이라 보내지 않는다.
+  m = mount(SCENARIOS)
+  const slots = m.host.querySelectorAll('.sgl-tool-slot')
+  const buttons = m.host.querySelectorAll('.emg-btn')
+  out.tabs = slots.map((node) => node.tabIndex)
+  click(buttons[1])
+  out.tabsMiddle = slots.map((node) => node.tabIndex)
+  buttons[0].focus()
+  click(buttons[0])
+  out.end = {
+    inSlot: document.activeElement === slots[0],
+    disabled: buttons[0].disabled,
+    sent: m.sent.length,
+    label: slots[0].getAttribute('aria-label'),
+    described: slots[0].getAttribute('aria-describedby') === slots[0].querySelector('.emg-tip').id,
+  }
+  // 다시 켜지면 초점이 단추로 돌아간다.
+  click(buttons[1])
+  out.back = { onButton: document.activeElement === buttons[0], label: slots[0].getAttribute('aria-label'), tip: slots[0].querySelector('.emg-tip').textContent }
+  m.cleanup()
+
+  // 칸 풍선 — 잘릴 수 있는 칸은 값 전체를 풍선에 둔다.
+  m = mount({ ...SCENARIOS, rows: [{ id: 'a', name: '아주 긴 이름', latest: 'r1', official: 'v12 · r3 · 최신', updated: '26.11.06 09:00' }] })
+  out.tips = { name: cell(m.host, 'a', 'name').title, official: cell(m.host, 'a', 'official').title, updated: cell(m.host, 'a', 'updated').title }
+  m.cleanup()
+  m = mount({ ...REVISIONS, rows: [{ ...REVISIONS.rows[0], status: '공식 v12 · 올라와 있음 · 가상 2' }] })
+  out.statusTip = cell(m.host, 'r2', 'status').title
+  m.cleanup()
+
+  // 옛 리비전 줄 — 누르는 동안 다른 시나리오의 data 가 왔으면 고르지 않는다. 지금 줄이 그려진다.
+  m = mount(REVISIONS)
+  const old = press(cell(m.host, 'r1', 'status'))
+  fireOnly(old, 'pointerdown', { button: 0 })
+  m.rerender({ ...REVISIONS, owner: 'b', title: '나', picked: 'r9', rows: [{ ...REVISIONS.rows[0], id: 'r9', no: 'r9' }] })
+  click(old)
+  fireDocument('pointerup')
+  await tick(5)
+  out.oldRow = { sent: m.sent.length, rows: rows(m.host) }
+  m.cleanup()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_repainting_keeps_speed_scroll_and_focus() -> None:
+    source = _MOUNT_SOURCE.replace(
+        "function applyMoves(order, moves) {\n",
+        "function applyMoves(order, moves) {\n  globalThis.__views += 1\n",
+    )
+    assert source != _MOUNT_SOURCE
+    out = _node({}, _REPAINTS, source)
+    # 누름 여덟 번, 칸은 3000개다 — 칸마다 접으면 수천 번이다.
+    assert out["perf"]["views"] <= 16
+    assert out["perf"]["at"] == 258
+    assert out["afterCommit"] == [{"preventScroll": True}]
+    assert out["afterOpen"] == [{"preventScroll": True}]
+    assert out["keyboard"] == [None]
+    assert out["tabs"] == [0, -1, 0]
+    assert out["tabsMiddle"] == [-1, -1, -1]
+    assert out["end"] == {
+        "inSlot": True,
+        "disabled": True,
+        "sent": 0,
+        "label": "↑ 위로 — 맨 위 줄입니다",
+        "described": True,
+    }
+    assert out["back"] == {"onButton": True, "label": None, "tip": ""}
+    assert out["tips"] == {
+        "name": "아주 긴 이름",
+        "official": "v12 · r3 · 최신",
+        "updated": "",
+    }
+    assert out["statusTip"] == "공식 v12 · 올라와 있음 · 가상 2"
+    assert out["oldRow"] == {"sent": 0, "rows": ["r9"]}
+
+
 def test_the_gestures_in_a_fake_dom() -> None:
     out = _node({}, _GESTURES, _MOUNT_SOURCE)
     assert out["first"] == {
@@ -612,7 +785,7 @@ def test_the_gestures_in_a_fake_dom() -> None:
         "pending": False,
         "changed": True,
         "error": True,
-        "tip": "저장본: 나\n막힘: 먼저 바뀜",
+        "tip": "새 나\n저장본: 나\n막힘: 먼저 바뀜",
         "text": "! 새 나",
         "invalid": "true",
         "label": "새 나 시나리오명, 고침 — 저장본 나, 막힘 — 먼저 바뀜",
@@ -711,6 +884,51 @@ const after = () => {
 realTimeout(after, 5)
 """
 )
+
+_CHANGE_FOCUS = (
+    _DOM
+    + """
+const out = {}
+const line = (id) => ({ kind: 'scenario', id, label: '시나리오명 ' + id, before: '옛', after: '새' })
+const data = (ids, moved) => ({
+  mode: 'changes', base: 's:0', limits: {}, counts: {},
+  order: { moved },
+  groups: ids.map((id) => ({ id, name: '이름 ' + id, lines: [line(id)] })),
+})
+const m = mount(data(['a', 'b'], 2))
+const undo = (label) => m.host.querySelectorAll('.emg-icon').find((node) => node.getAttribute('aria-label') === label)
+const active = () => document.activeElement.getAttribute('aria-label')
+undo('시나리오명 a 되돌리기').focus()
+// 그 줄이 남으면 그 자리, 사라지면 그 다음 되돌리기, 다 사라지면 칸 머리다.
+m.rerender(data(['a', 'b'], 2))
+out.same = active()
+focusCalls.length = 0
+m.rerender(data(['b'], 2))
+out.next = active()
+out.options = focusCalls.slice()
+undo('순서 되돌리기').focus()
+m.rerender(data(['b'], 0))
+out.previous = active()
+m.rerender(data([], 0))
+out.empty = document.activeElement.className
+// 부품 밖에 있던 초점은 빼앗지 않는다.
+const outside = new FakeNode('button')
+document.activeElement = outside
+m.rerender(data(['a'], 0))
+out.outside = document.activeElement === outside
+process.stdout.write(JSON.stringify(out))
+"""
+)
+
+
+def test_a_reverted_line_hands_the_keyboard_focus_on() -> None:
+    out = _node({}, _CHANGE_FOCUS, _MOUNT_SOURCE)
+    assert out["same"] == "시나리오명 a 되돌리기"
+    assert out["next"] == "시나리오명 b 되돌리기"
+    assert out["options"] == [{"preventScroll": True}]
+    assert out["previous"] == "시나리오명 b 되돌리기"
+    assert "sgl-changes" in out["empty"]
+    assert out["outside"] is True
 
 
 def test_the_changes_panel_lists_old_and_new_and_reverts_once() -> None:
