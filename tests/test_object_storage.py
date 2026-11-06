@@ -20,7 +20,7 @@ from capa_simulation.io.object_storage import (
 SETTINGS = StorageSettings(
     mode="managed",
     endpoint_url="http://s3.demo.invalid:9020",
-    bucket="Capa_simulation_project",
+    bucket="SPKGCAPA_Dev",
     profile="demo-org-team",
     region="us-east-1",
     capabilities={},
@@ -50,6 +50,10 @@ def _client(runner: FakeRunner, *, settings: StorageSettings = SETTINGS) -> Obje
     return ObjectStorageClient(settings=settings, runner=runner, sleep=lambda _seconds: None)
 
 
+def _ok(stdout: str) -> CommandResult:
+    return CommandResult((), 0, stdout, "", 0.0)
+
+
 def test_every_command_carries_the_profile() -> None:
     """프로필이 빠지면 다른 네임스페이스를 본다. 이 검사가 이 파일의 존재 이유다."""
     runner = FakeRunner()
@@ -72,7 +76,7 @@ def test_commands_target_the_configured_bucket_and_endpoint() -> None:
 
     argv = runner.calls[0]
     assert argv[:3] == ("aws", "s3api", "list-objects-v2")
-    assert argv[argv.index("--bucket") + 1] == "Capa_simulation_project"
+    assert argv[argv.index("--bucket") + 1] == "SPKGCAPA_Dev"
     assert argv[argv.index("--endpoint-url") + 1] == "http://s3.demo.invalid:9020"
 
 
@@ -436,3 +440,89 @@ def test_the_app_starts_no_child_that_inherits_the_listening_socket() -> None:
         encoding="utf-8"
     )
     assert "subprocess.run(" in runner and "close_fds" not in runner
+
+
+def test_list_all_objects_follows_the_continuation_token() -> None:
+    """한 쪽만 받으면 뒤쪽 스냅샷이 없는 것으로 보여 정리가 산 세대를 고아로 본다."""
+    pages = [
+        {"Contents": [{"Key": "a", "Size": 1}], "IsTruncated": True, "NextContinuationToken": "t"},
+        {"Contents": [{"Key": "b", "Size": 2}]},
+    ]
+    runner = FakeRunner(responses=[_ok(json.dumps(page)) for page in pages])
+    client = _client(runner)
+
+    records = client.list_all_objects("simulation/snapshots/")
+
+    assert [record.key for record in records] == ["a", "b"]
+    assert "--continuation-token" in runner.calls[1]
+
+
+def test_a_repeating_continuation_token_stops_instead_of_looping() -> None:
+    page = {"Contents": [], "IsTruncated": True, "NextContinuationToken": "t"}
+    runner = FakeRunner(responses=[_ok(json.dumps(page)) for _ in range(3)])
+
+    with pytest.raises(ObjectStorageError, match="되풀이"):
+        _client(runner).list_all_objects("x/")
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "expected"),
+    [
+        (127, "aws 실행 파일을 찾지 못했습니다.", "cli_missing"),
+        (124, "제한 시간을 넘겼습니다.", "timeout"),
+        (255, 'Could not connect to the endpoint URL: "http://fake/"', "unreachable"),
+        (255, "Read timeout on endpoint URL", "timeout"),
+        (254, "An error occurred (AccessDenied) when calling", "denied"),
+        (254, "An error occurred (403) when calling", "denied"),
+        (254, "An error occurred (InvalidAccessKeyId) when calling", "denied"),
+        (254, "An error occurred (NoSuchBucket) when calling", "no_bucket"),
+        (254, "An error occurred (InternalError) when calling", "other"),
+        (252, "usage: aws", "config"),
+    ],
+)
+def test_failures_become_a_fixed_word(returncode: int, stderr: str, expected: str) -> None:
+    """화면에는 서버 글을 싣지 않는다 — 주소 · 버킷 이름이 든다."""
+    result = CommandResult(("aws",), returncode, "", stderr, 0.0)
+
+    assert object_storage.classify_failure(ObjectStorageError("실패", result=result)) == expected
+
+
+def test_failures_outside_the_boundary_have_words_too() -> None:
+    assert object_storage.classify_failure(ObjectStorageError("설정")) == "config"
+    assert object_storage.classify_failure(OSError(28, "No space left")) == "disk_full"
+    assert object_storage.classify_failure(RuntimeError("?")) == "other"
+
+
+def test_profile_lines_are_one_set() -> None:
+    """시작 스크립트와 `profile` 명령이 같은 줄을 쓴다. 체크섬 두 줄 · path 스타일이 빠지면 ECS 가
+    거절한다."""
+    names = [name for name, _ in object_storage.profile_settings(SETTINGS)]
+
+    assert names == [
+        "region",
+        "endpoint_url",
+        "request_checksum_calculation",
+        "response_checksum_validation",
+        "s3.addressing_style",
+    ]
+
+
+def test_scratch_names_differ_for_the_same_key(tmp_path: Path) -> None:
+    """같은 키를 함께 받아도 서로의 작업 파일을 지우지 않는다."""
+    runner = FakeRunner()
+    client = _client(runner)
+
+    for _ in range(2):
+        with pytest.raises(FileNotFoundError):
+            client.get_text("k", scratch_dir=tmp_path)
+
+    names = [call[-1] for call in runner.calls]
+    assert names[0] != names[1]
+
+
+def test_the_default_bucket_is_the_development_one() -> None:
+    """운영 버킷은 코드에 두지 않는다 — `CAPA_S3_BUCKET` 으로만 받는다."""
+    settings = object_storage.load_settings(environ={})
+
+    assert settings.bucket == "SPKGCAPA_Dev"
+    assert object_storage.load_settings(environ={"CAPA_S3_BUCKET": "Demo_ops"}).bucket == "Demo_ops"

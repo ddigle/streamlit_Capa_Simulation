@@ -20,6 +20,7 @@ S3 에 붙는 자리는 둘이다 — 이 모듈(`aws` CLI, 앱의 유일한 `su
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -31,8 +32,19 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol
+from uuid import uuid4
 
 from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
+from capa_simulation.services.object_storage_manifest import (
+    FAILURE_CLI_MISSING,
+    FAILURE_CONFIG,
+    FAILURE_DENIED,
+    FAILURE_DISK_FULL,
+    FAILURE_NO_BUCKET,
+    FAILURE_OTHER,
+    FAILURE_TIMEOUT,
+    FAILURE_UNREACHABLE,
+)
 from capa_simulation.settings import PROJECT_ROOT
 
 # ---------------------------------------------------------------------------
@@ -40,9 +52,10 @@ from capa_simulation.settings import PROJECT_ROOT
 #
 # 1) 값은 환경변수로 덮어쓴다. WebIDE 로 옮겨 프로필명이 바뀌어도 코드를 고치지 않는다.
 # 2) 버킷명에 대문자·언더바가 있어 경로 스타일 주소가 아니면 서명이 어긋난다.
+# 3) 기본 버킷은 개발 버킷이다. 운영 버킷은 코드에 두지 않고 `CAPA_S3_BUCKET` 으로만 받는다.
 # ---------------------------------------------------------------------------
 DEFAULT_ENDPOINT_URL: Final = "http://s3.dataplatform.samsungds.net:9020"
-DEFAULT_BUCKET: Final = "Capa_simulation_project"
+DEFAULT_BUCKET: Final = "SPKGCAPA_Dev"
 DEFAULT_PROFILE: Final = "hoyeon.jeon-org-system_package_mfg_team"
 DEFAULT_REGION: Final = "us-east-1"
 # 네임스페이스는 프로필에 매여 있어 명령 인자로 넘기는 자리가 없다. 진단 출력에만 쓴다.
@@ -260,31 +273,43 @@ class ObjectStorageClient:
 
     # ------------------------------------------------------------------ 조회
     def list_objects(self, prefix: str, *, max_keys: int = 1000) -> tuple[ObjectRecord, ...]:
-        result = self._run(
-            self._argv(
-                "list-objects-v2",
-                "--prefix",
-                prefix,
-                "--max-keys",
-                str(max_keys),
-            ),
-            timeout_seconds=SMALL_TIMEOUT_SECONDS,
-        )
-        payload = _parse_json(_required(result))
-        contents = payload.get("Contents") or []
-        records = []
-        for item in contents:
-            if not isinstance(item, dict):
-                continue
-            records.append(
-                ObjectRecord(
-                    key=str(item.get("Key", "")),
-                    size_bytes=int(item.get("Size", 0)),
-                    etag=str(item.get("ETag", "")).strip('"'),
-                    last_modified=_parse_timestamp(item.get("LastModified")),
+        """접두사 아래 **첫 쪽**(`max_keys` 개까지)만. 내림차순 포인터의 HEAD 처럼 앞만 볼 때 쓴다.
+
+        `--max-keys` 를 주면 CLI 가 자동으로 이어받지 않는다. 전부가 필요하면 `list_all_objects`.
+        """
+        payload = self._list_page(prefix, max_keys=max_keys, continuation_token=None)
+        return _object_records(payload)
+
+    def list_all_objects(self, prefix: str, *, page_size: int = 1000) -> tuple[ObjectRecord, ...]:
+        """접두사 아래 전부. 응답의 이어받기 토큰(`NextContinuationToken`)으로 끝 쪽까지 받는다.
+
+        한 쪽만 받으면 1000개 넘는 포인터·스냅샷 가운데 뒤쪽이 없는 것으로 보인다 — 정리가 옛
+        스냅샷을 고아로 잘못 보거나, 고아까지 지우라 했을 때 살아 있는 세대를 지운다.
+        """
+        records: list[ObjectRecord] = []
+        seen: set[str] = set()
+        token: str | None = None
+        while True:
+            payload = self._list_page(prefix, max_keys=page_size, continuation_token=token)
+            records.extend(_object_records(payload))
+            next_token = payload.get("NextContinuationToken")
+            if not payload.get("IsTruncated") or not isinstance(next_token, str) or not next_token:
+                return tuple(records)
+            if next_token in seen:
+                raise ObjectStorageError(
+                    f"목록 이어받기 토큰이 되풀이됩니다 — 스토리지 응답을 확인하세요: {prefix}"
                 )
-            )
-        return tuple(records)
+            seen.add(next_token)
+            token = next_token
+
+    def _list_page(
+        self, prefix: str, *, max_keys: int, continuation_token: str | None
+    ) -> dict[str, Any]:
+        args = ["list-objects-v2", "--prefix", prefix, "--max-keys", str(max_keys)]
+        if continuation_token is not None:
+            args += ["--continuation-token", continuation_token]
+        result = self._run(self._argv(*args), timeout_seconds=SMALL_TIMEOUT_SECONDS)
+        return _parse_json(_required(result))
 
     def head(self, key: str) -> ObjectRecord | None:
         result = self._run(
@@ -304,7 +329,8 @@ class ObjectStorageClient:
 
     def get_text(self, key: str, *, scratch_dir: Path) -> str:
         scratch_dir.mkdir(parents=True, exist_ok=True)
-        destination = scratch_dir / f"download-{abs(hash(key)) % 10**8:08d}.json"
+        # 이름은 부를 때마다 다르다. 같은 작업 폴더를 쓰는 둘이 서로의 파일을 지우지 않는다.
+        destination = scratch_dir / f"download-{uuid4().hex[:12]}.json"
         self.get_file(key, destination)
         try:
             return destination.read_text(encoding="utf-8")
@@ -332,7 +358,7 @@ class ObjectStorageClient:
         self, key: str, text: str, *, scratch_dir: Path, if_none_match: bool = False
     ) -> PutOutcome:
         scratch_dir.mkdir(parents=True, exist_ok=True)
-        source = scratch_dir / f"upload-{abs(hash(key)) % 10**8:08d}.json"
+        source = scratch_dir / f"upload-{uuid4().hex[:12]}.json"
         source.write_text(text, encoding="utf-8")
         try:
             return self.put_file(key, source, content_md5_base64=None, if_none_match=if_none_match)
@@ -429,6 +455,68 @@ class ObjectStorageClient:
         raise ObjectStorageError(explain_failure(last), result=last)
 
 
+def profile_settings(settings: StorageSettings) -> tuple[tuple[str, str], ...]:
+    """`aws configure` 프로필에 넣을 줄. `profile` 명령과 시작 스크립트가 같은 한 벌을 쓴다."""
+    return (
+        ("region", settings.region),
+        ("endpoint_url", settings.endpoint_url),
+        ("request_checksum_calculation", "when_required"),
+        ("response_checksum_validation", "when_required"),
+        ("s3.addressing_style", "path"),
+    )
+
+
+# 서버가 답한 오류 코드 · 연결 실패 글을 갈래로 나눈다. 글을 화면에 싣지 않고 낱말만 남긴다.
+_DENIED_ERROR: Final = re.compile(
+    r"\((?:403|AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|Forbidden)\)"
+    r"|Unable to locate credentials|InvalidAccessKeyId|SignatureDoesNotMatch",
+    re.IGNORECASE,
+)
+_NO_BUCKET_ERROR: Final = re.compile(r"NoSuchBucket")
+_TIMEOUT_ERROR: Final = re.compile(r"timed? ?out|ReadTimeoutError", re.IGNORECASE)
+_UNREACHABLE_ERROR: Final = re.compile(
+    r"Could not connect|EndpointConnectionError|Connection refused|Connection reset|"
+    r"Connection was closed|Name or service not known|Temporary failure in name resolution|"
+    r"getaddrinfo failed|No route to host|Network is unreachable",
+    re.IGNORECASE,
+)
+
+
+def classify_failure(error: BaseException) -> str:
+    """예외 하나를 실패 갈래 낱말로 바꾼다. 화면 · 보고 · 상태 파일 · 알림이 함께 쓴다.
+
+    서버 글을 그대로 싣지 않는 것이 이 함수의 몫이다 — 주소 · 키 · 버킷 이름이 든 글을 시작 화면과
+    Admin 줄에 옮기지 않는다. 사람이 볼 원문은 스크립트 출력에만 남는다.
+    """
+    if isinstance(error, ObjectStorageError):
+        result = error.result
+        if result is None:
+            return FAILURE_CONFIG
+        return _classify_result(result)
+    if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+        return FAILURE_DISK_FULL
+    return FAILURE_OTHER
+
+
+def _classify_result(result: CommandResult) -> str:
+    if result.returncode == 127:
+        return FAILURE_CLI_MISSING
+    if result.returncode == 124:
+        return FAILURE_TIMEOUT
+    if result.returncode in (252, 253):
+        return FAILURE_CONFIG
+    text = f"{result.stderr}\n{result.stdout}"
+    if _NO_BUCKET_ERROR.search(text):
+        return FAILURE_NO_BUCKET
+    if _DENIED_ERROR.search(text):
+        return FAILURE_DENIED
+    if _TIMEOUT_ERROR.search(text):
+        return FAILURE_TIMEOUT
+    if _UNREACHABLE_ERROR.search(text):
+        return FAILURE_UNREACHABLE
+    return FAILURE_OTHER
+
+
 def explain_failure(result: CommandResult) -> str:
     """실패를 사람이 읽는 한 줄로 바꾼다. ECS 비호환은 원인을 짚어 준다."""
     meaning = EXIT_CODE_MEANING.get(result.returncode, f"종료코드 {result.returncode}")
@@ -487,6 +575,22 @@ def _read_json(path: Path, *, label: str) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         raise ObjectStorageError(f"{with_subject_particle(label)} JSON 객체가 아닙니다: {path}")
     return payload
+
+
+def _object_records(payload: Mapping[str, Any]) -> tuple[ObjectRecord, ...]:
+    records = []
+    for item in payload.get("Contents") or []:
+        if not isinstance(item, dict):
+            continue
+        records.append(
+            ObjectRecord(
+                key=str(item.get("Key", "")),
+                size_bytes=int(item.get("Size", 0)),
+                etag=str(item.get("ETag", "")).strip('"'),
+                last_modified=_parse_timestamp(item.get("LastModified")),
+            )
+        )
+    return tuple(records)
 
 
 def _parse_json(result: CommandResult) -> dict[str, Any]:

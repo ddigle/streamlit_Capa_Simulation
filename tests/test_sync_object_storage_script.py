@@ -40,6 +40,9 @@ def test_every_subcommand_is_wired(script: ModuleType) -> None:
         "resolve",
         "adopt",
         "prune",
+        "fetch-copy",
+        "rollback",
+        "boot-pull",
     }
 
     assert set(script.COMMANDS) == expected
@@ -59,7 +62,7 @@ def test_settings_fall_back_to_the_committed_configuration(script: ModuleType) -
 
     settings = script.build_settings(args)
 
-    assert settings.bucket == "Capa_simulation_project"
+    assert settings.bucket == "SPKGCAPA_Dev"
     assert settings.endpoint_url.endswith(":9020")
     # 커밋된 설정은 local 이어야 한다. 개발 PC 가 사내 스토리지를 건드리면 안 된다.
     assert settings.mode == "local"
@@ -76,7 +79,15 @@ def test_prune_requires_an_explicit_yes(script: ModuleType) -> None:
 
     assert args.yes is False
     assert args.include_orphans is False
-    assert args.keep_last == 10
+    assert args.keep_last == 5
+    assert args.keep_days == 7
+
+
+def test_rollback_requires_a_target(script: ModuleType) -> None:
+    with pytest.raises(SystemExit):
+        script.parse_args(["rollback"])
+
+    assert script.parse_args(["rollback", "--to", "3"]).yes is False
 
 
 def test_resolve_requires_choosing_a_side(script: ModuleType) -> None:
