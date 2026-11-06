@@ -169,6 +169,7 @@ def test_writer_takeover_follows_the_origin_of_the_head() -> None:
     assert manifest.writer_taken_over(_pointer(1, origin="manual")) is False
     assert manifest.writer_taken_over(_pointer(1, origin="boot")) is True
     assert manifest.writer_taken_over(_pointer(1, origin="app")) is True
+    assert manifest.writer_taken_over(_pointer(1, origin="rollback")) is True
 
 
 @pytest.mark.parametrize(
@@ -395,6 +396,24 @@ def test_a_snapshot_is_deleted_before_its_pointer_within_one_plan() -> None:
     seqs = {manifest.seq_from_pointer_key(key) for key in plan.pointers}
     gone = {manifest.parse_snapshot_key(key)[0] for key in plan.snapshots}
     assert seqs <= gone
+
+
+def test_a_snapshot_sharing_a_generation_number_is_never_doomed() -> None:
+    """경합에서 진 쪽의 스냅샷도 같은 번호다. 키에는 번호뿐이라 어느 쪽이 참조인지 모른다."""
+    pointers, snapshots = _generations(12)
+    winner = _snapshot("simulation", 2)
+    loser = manifest.snapshot_key(
+        "simulation", 2, created_at_utc="2026-01-01T00:00:00Z", sha256="b" * 64
+    )
+    assert loser != winner
+    snapshots.append(_listed(loser, 10))
+
+    plan = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+
+    assert winner not in plan.snapshots
+    assert loser not in plan.snapshots
+    assert _snapshot("simulation", 1) in plan.snapshots
+    assert plan.protected_orphans == 2
 
 
 def test_keys_outside_the_generation_shapes_are_never_touched() -> None:

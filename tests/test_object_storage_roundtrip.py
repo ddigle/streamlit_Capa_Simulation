@@ -30,6 +30,7 @@ from object_store_fakes import (
 from capa_simulation import settings as app_settings
 from capa_simulation.io.object_storage import CommandResult
 from capa_simulation.persistence import snapshot_export, sync_state
+from capa_simulation.services import object_storage_manifest as manifest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
@@ -429,8 +430,158 @@ def test_rollback_needs_yes_and_then_moves_the_head_forward(harness: SimpleNames
     assert _run(harness, "rollback", "--to", "1", "--yes") == 0
     head = harness.store.head_pointer()
     assert head["seq"] == 3
-    assert head["origin"] == "manual"
+    assert head["origin"] == "rollback"
     assert head["members"] == first["members"]
+
+
+def _push_a_save(harness: SimpleNamespace) -> None:
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    assert _run(harness, "push") == 0
+
+
+def test_a_pc_without_a_mark_refuses_to_push_after_a_rollback(harness: SimpleNamespace) -> None:
+    """되돌린 뒤 다음 시작의 펜스가 서기 전 틈 — 표지 없는 PC 의 DB 가 HEAD 가 되면 안 된다."""
+    _init(harness)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    assert _run(harness, "rollback", "--to", "1", "--yes") == 0
+
+    assert _run(harness, "adopt", "--source", "local") == 1
+    assert _run(harness, "--override-writer", "adopt", "--source", "local") == 0
+    assert _run(harness, "push") == 1
+
+
+def test_generations_show_member_numbers_without_reading_pointers(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """펜스는 같은 멤버로 쌓인다. 바로 앞 세대가 깨진 멤버를 그대로 가리킬 수 있어 번호로 고른다."""
+    _init(harness)
+    _push_a_save(harness)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    harness.store.calls.clear()
+    capsys.readouterr()
+
+    assert _run(harness, "generations") == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("seq 3 · 시뮬레이션 2 · 가용설비 1")
+    assert "HEAD" in lines[0]
+    assert lines[1].startswith("seq 2 · 시뮬레이션 2 · 가용설비 1")
+    assert lines[2].startswith("seq 1 · 시뮬레이션 1 · 가용설비 1")
+    assert not any(operation == "get-object" for operation, _key in harness.store.operations())
+
+
+def test_generations_cuts_a_long_list(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(harness)
+    for _ in range(3):
+        _push_a_save(harness)
+    capsys.readouterr()
+
+    assert _run(harness, "generations", "--limit", "2") == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 3
+    assert "2" in lines[2] and "더" in lines[2]
+
+
+def test_generations_on_an_empty_remote_says_so(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _run(harness, "generations") == 0
+
+    assert "비어 있음" in capsys.readouterr().out
+
+
+def test_status_on_a_pc_that_handed_over_points_at_a_copy_not_resolve(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """이관 뒤에는 시작마다 세대가 늘어 늘 이 꼴이다. `resolve` 는 할 일이 없다."""
+    assert _run(harness, "init") == 0
+    state = sync_state.read_generation(harness.paths.generation)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    sync_state.write_generation(harness.paths.generation, state)
+    capsys.readouterr()
+
+    assert _run(harness, "status") == 0
+
+    printed = capsys.readouterr().out
+    assert "fetch-copy" in printed
+    assert "resolve" not in printed
+
+
+def test_resolve_refuses_a_generation_whose_snapshot_is_gone(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(harness)
+    _park_a_generation(harness)
+    for key in harness.store.keys("simulation/snapshots/"):
+        del harness.store.objects[key]
+
+    assert _run(harness, "resolve", "--keep", "mine") == 1
+
+    assert "[중단]" in capsys.readouterr().out
+    assert sync_state.read_generation(harness.paths.generation).unpublished is not None
+    assert len(harness.store.pointer_keys()) == 1
+
+
+def _move_the_head_with_a_newer_equipment(harness: SimpleNamespace) -> None:
+    """남이 설비 DB 를 올려 HEAD 를 옮긴다."""
+    head = harness.script.engine.read_pointer(
+        fake_client(harness.store), harness.store.pointer_keys()[0]
+    )
+    body = b"newer equipment"
+    member = manifest.Member(
+        seq=head.seq + 1,
+        snapshot_key=manifest.snapshot_key(
+            "equipment", head.seq + 1, created_at_utc="2026-11-07T00:00:00Z", sha256="ab" * 32
+        ),
+        sha256="ab" * 32,
+        md5_base64="",
+        size_bytes=len(body),
+        source_db_bytes=len(body),
+        migration_version=1,
+    )
+    harness.store.objects[member.snapshot_key] = body
+    pointer = manifest.next_pointer(
+        head,
+        members={**head.members, "equipment": member},
+        origin="app",
+        token="abcdef02",
+        app_version="demo",
+        author="demo@other",
+        created_at_utc="2026-11-07T00:00:00Z",
+        note="",
+    )
+    harness.store.objects[pointer.pointer_key] = manifest.pointer_to_json(pointer).encode("utf-8")
+
+
+def test_resolve_says_to_pull_when_a_member_came_from_the_remote(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """새 HEAD 의 멤버 하나가 이 PC 의 파일이 아니다. 말하지 않으면 옛 파일로 계속 일한다."""
+    _init(harness)
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    moved: list[str] = []
+
+    def move_after_snapshot(operation: str, key: str) -> None:
+        uploaded = harness.store.puts("simulation/snapshots/000000000002")
+        if operation == "list-objects-v2" and uploaded and not moved:
+            moved.append(key)
+            _move_the_head_with_a_newer_equipment(harness)
+
+    harness.store.before = move_after_snapshot
+    assert _run(harness, "push") == 1
+    harness.store.before = None
+    capsys.readouterr()
+
+    assert _run(harness, "--override-writer", "resolve", "--keep", "mine") == 0
+
+    assert "pull" in capsys.readouterr().out
 
 
 def test_prune_lists_candidates_and_deletes_only_with_yes(harness: SimpleNamespace) -> None:

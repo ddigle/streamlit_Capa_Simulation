@@ -31,9 +31,21 @@ from capa_simulation import object_sync_engine as engine
 from capa_simulation import settings as app_settings
 from capa_simulation.io.object_storage import ObjectStorageError
 from capa_simulation.object_sync_engine import ExportedSnapshot, PublishStop
+from capa_simulation.object_sync_worker import (
+    FAILURE_BACKOFF_SECONDS,
+    WATCH_SECONDS,
+    ObjectSyncWorker,
+    StorageEngine,
+)
 from capa_simulation.persistence import snapshot_export, sync_state
 from capa_simulation.services import object_storage_manifest as manifest
-from capa_simulation.services.object_storage_manifest import DatasetName, PushDecision
+from capa_simulation.services.object_storage_manifest import (
+    BLOCKING_PUSH,
+    DatasetName,
+    Member,
+    PullDecision,
+    PushDecision,
+)
 
 
 @pytest.fixture()
@@ -247,6 +259,60 @@ def test_a_pointer_that_landed_without_an_answer_is_finished_next_cycle(
     _save(rig, value=555)
     assert _publish(rig).published
     assert _head_seq(rig) == 3
+
+
+def test_a_head_check_knows_its_own_unanswered_pointer(rig: SimpleNamespace) -> None:
+    """HEAD 가 답 끊긴 자기 포인터면 남이 앞선 것이 아니다. 판정은 올리기 회차가 마무리한다."""
+    _save(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=True))
+    with pytest.raises(ObjectStorageError):
+        _publish(rig)
+
+    result = engine.watch_head(rig.client, rig.paths)
+
+    assert result.decision not in BLOCKING_PUSH
+    assert result.head_seq == 2
+
+
+def test_a_head_check_still_sees_someone_else_past_a_pending_pointer(
+    rig: SimpleNamespace,
+) -> None:
+    _save(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    with pytest.raises(ObjectStorageError):
+        _publish(rig)
+    _another_writer_publishes(rig)
+
+    assert engine.watch_head(rig.client, rig.paths).decision is PushDecision.PARENT_MOVED
+
+
+def test_an_unanswered_pointer_and_a_due_head_check_do_not_delay_the_retry(
+    rig: SimpleNamespace,
+) -> None:
+    """거짓 `SY-03` 을 내고 30초 재시도를 300초로 밀면 유실 창이 그만큼 는다."""
+    moment = [1_000.0]
+    worker = ObjectSyncWorker(
+        StorageEngine(rig.client, rig.paths, rig.exporter), clock=lambda: moment[0]
+    )
+    worker.tick()
+    _save(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=True))
+    moment[0] += WATCH_SECONDS
+    sync_state.request_upload()
+
+    worker.tick()
+    assert worker.status().failures == 1
+    assert _state(rig).pending is not None
+
+    worker.tick()
+    assert worker.status().blocked is None
+
+    moment[0] += FAILURE_BACKOFF_SECONDS[0]
+    worker.tick()
+
+    assert worker.status().blocked is None
+    assert worker.status().seq == 2
+    assert _state(rig).pending is None
 
 
 def test_a_lost_confirmation_is_not_a_failed_publish(rig: SimpleNamespace) -> None:
@@ -552,6 +618,53 @@ def test_the_fence_stops_a_late_upload_from_the_old_pod(rig: SimpleNamespace) ->
     assert len(rig.store.keys("simulation/snapshots/")) == 1
 
 
+def test_a_fence_without_an_answer_is_dropped_when_the_head_moves(rig: SimpleNamespace) -> None:
+    """펜스는 잃을 것이 없다. 미게시로 옮기면 변경 없는 새 pod 가 `diverged` 로 영영 머문다."""
+    _wipe_disk(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    assert engine.boot_pull(rig.client, rig.paths).kind == manifest.FAILURE_TIMEOUT
+    assert _state(rig).pending is not None
+    rig.store.failures.clear()
+    _another_writer_publishes(rig)
+
+    outcome = engine.boot_pull(rig.client, rig.paths)
+
+    assert outcome.ok
+    assert outcome.action == engine.ACTION_DOWNLOADED
+    assert _state(rig).unpublished is None
+    assert _state(rig).pending is None
+
+
+def test_a_fence_without_an_answer_is_dropped_in_a_fork_too(rig: SimpleNamespace) -> None:
+    _wipe_disk(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    assert not engine.boot_pull(rig.client, rig.paths).ok
+    rig.store.failures.clear()
+    _another_writer_publishes(rig)
+    head = rig.store.pointer_keys()[0]
+    rig.store.objects[head.replace("abcdef01", "abcdef02")] = rig.store.objects[head]
+
+    outcome = engine.boot_pull(rig.client, rig.paths)
+
+    assert outcome.kind == manifest.FAILURE_FORKED
+    assert _state(rig).unpublished is None
+
+
+def test_a_real_generation_without_an_answer_is_still_parked(rig: SimpleNamespace) -> None:
+    """저장을 든 세대는 그대로 미게시다 — 버리면 사람이 고를 자리가 사라진다."""
+    _save(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    with pytest.raises(ObjectStorageError):
+        _publish(rig)
+    rig.store.failures.clear()
+    _another_writer_publishes(rig)
+
+    outcome = engine.boot_pull(rig.client, rig.paths)
+
+    assert outcome.kind == manifest.FAILURE_DIVERGED
+    assert _state(rig).unpublished is not None
+
+
 def test_a_clean_local_on_the_same_generation_is_kept(rig: SimpleNamespace) -> None:
     calls_before = len(rig.store.keys())
 
@@ -685,6 +798,17 @@ def test_a_snapshot_newer_than_the_code_stays(
     assert not any(op == "get-object" and "snapshots" in key for op, key in rig.store.operations())
 
 
+def test_a_snapshot_gone_from_the_store_is_a_broken_generation(rig: SimpleNamespace) -> None:
+    """손으로 지웠거나 정리 사고다. 「그 밖의 실패」 면 임시 화면에서 되돌리기로 닿지 못한다."""
+    for key in rig.store.keys("equipment/snapshots/"):
+        del rig.store.objects[key]
+    _wipe_disk(rig)
+
+    outcome = engine.boot_pull(rig.client, rig.paths)
+
+    assert outcome.kind == manifest.FAILURE_CORRUPT
+
+
 def test_too_little_disk_stays_before_downloading(
     rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -780,7 +904,7 @@ def test_rollback_points_at_the_old_members_and_a_new_pod_receives_them(
     pointer = engine.rollback(rig.client, to_seq=1, note="되돌림")
 
     assert pointer.seq == 3
-    assert pointer.origin == "manual"
+    assert pointer.origin == "rollback"
     _wipe_disk(rig)
     assert engine.boot_pull(rig.client, rig.paths).ok
     assert row_count(rig.simulation) == 10
@@ -807,6 +931,120 @@ def test_rollback_refuses_a_generation_whose_snapshot_is_gone(rig: SimpleNamespa
 
     with pytest.raises(ValueError, match="저장소에 없습니다"):
         engine.rollback(rig.client, to_seq=1, note="되돌림")
+
+
+def test_a_rollback_keeps_the_writer_mark(rig: SimpleNamespace) -> None:
+    """되돌린 HEAD 도 운영 앱의 정본이다. `manual` 이면 표지 없는 PC 가 그 위로 올린다."""
+    _save(rig)
+    assert _publish(rig).published
+
+    pointer = engine.rollback(rig.client, to_seq=1, note="되돌림")
+
+    assert pointer.origin == "rollback"
+    assert manifest.writer_taken_over(pointer) is True
+
+
+def _newer_equipment_generation(rig: SimpleNamespace) -> manifest.Pointer:
+    """남이 설비 DB 를 올려 HEAD 를 옮긴다 — 내 미게시 세대의 이어 적은 멤버보다 앞선다."""
+    head = engine.read_pointer(rig.client, rig.store.pointer_keys()[0])
+    body = b"newer equipment"
+    member = Member(
+        seq=head.seq + 1,
+        snapshot_key=manifest.snapshot_key(
+            "equipment", head.seq + 1, created_at_utc="2026-11-07T00:00:00Z", sha256="ab" * 32
+        ),
+        sha256="ab" * 32,
+        md5_base64="",
+        size_bytes=len(body),
+        source_db_bytes=len(body),
+        migration_version=1,
+    )
+    rig.store.objects[member.snapshot_key] = body
+    pointer = manifest.next_pointer(
+        head,
+        members={**head.members, "equipment": member},
+        origin="app",
+        token="abcdef02",
+        app_version="demo",
+        author="demo@other",
+        created_at_utc="2026-11-07T00:00:00Z",
+        note="",
+    )
+    rig.store.objects[pointer.pointer_key] = manifest.pointer_to_json(pointer).encode("utf-8")
+    return pointer
+
+
+def _park_with_a_newer_equipment(rig: SimpleNamespace) -> manifest.Pointer:
+    """시뮬레이션 DB 만 바꾼 내 세대가 미게시로 남고, 그 사이 설비 DB 가 앞서 있다."""
+    _save(rig)
+    moved: list[manifest.Pointer] = []
+
+    def move_after_snapshot(operation: str, key: str) -> None:
+        if operation == "list-objects-v2" and rig.store.puts("simulation/snapshots/000000000002"):
+            if not moved:
+                moved.append(_newer_equipment_generation(rig))
+
+    rig.store.before = move_after_snapshot
+    assert _publish(rig).stop is PublishStop.REMOTE_MOVED
+    rig.store.before = None
+    return moved[0]
+
+
+def test_promoting_does_not_undo_the_other_databases_newer_save(rig: SimpleNamespace) -> None:
+    """이어 적은 멤버는 그때의 앞 세대 값이다. 그대로 적으면 앞선 설비 저장이 HEAD 에서 빠진다."""
+    moved = _park_with_a_newer_equipment(rig)
+
+    promoted = engine.resolve_keep_mine(rig.client, rig.paths)
+
+    assert promoted.members["equipment"] == moved.members["equipment"]
+    assert promoted.members["simulation"].seq == 2
+    assert promoted.members["simulation"] != moved.members["simulation"]
+
+
+def test_a_promotion_that_took_the_remote_member_leaves_the_pc_behind_on_purpose(
+    rig: SimpleNamespace,
+) -> None:
+    """이 PC 의 설비 DB 는 그 멤버가 아니다. base 가 HEAD 면 `pull` 이 받지 않는다."""
+    _park_with_a_newer_equipment(rig)
+
+    promoted = engine.resolve_keep_mine(rig.client, rig.paths)
+
+    state = _state(rig)
+    assert state.base_pointer_key != promoted.pointer_key
+    assert engine.plan_pull(rig.client, rig.paths, force=False).decision is PullDecision.DOWNLOAD
+
+
+def test_a_promotion_of_a_snapshot_that_is_gone_publishes_nothing(rig: SimpleNamespace) -> None:
+    """확인 없이 게시하면 HEAD 가 없는 객체를 가리켜 새 pod 가 뜨지 못한다."""
+    _park_with_a_newer_equipment(rig)
+    for key in rig.store.keys("simulation/snapshots/000000000002"):
+        del rig.store.objects[key]
+    before = rig.store.pointer_keys()
+
+    with pytest.raises(ValueError, match="스냅샷이 저장소에 없습니다"):
+        engine.resolve_keep_mine(rig.client, rig.paths)
+
+    assert rig.store.pointer_keys() == before
+    assert _state(rig).unpublished is not None
+
+
+def test_a_promotion_with_nothing_newer_keeps_every_member(rig: SimpleNamespace) -> None:
+    """앞선 멤버가 없으면 내 세대 그대로다. 그때는 이 PC 의 파일이 HEAD 와 같다."""
+    _save(rig)
+    moved: list[str] = []
+
+    def move_after_snapshot(operation: str, key: str) -> None:
+        if operation == "list-objects-v2" and rig.store.puts("simulation/snapshots/000000000002"):
+            if not moved:
+                moved.append(_another_writer_publishes(rig))
+
+    rig.store.before = move_after_snapshot
+    assert _publish(rig).stop is PublishStop.REMOTE_MOVED
+    rig.store.before = None
+
+    promoted = engine.resolve_keep_mine(rig.client, rig.paths)
+
+    assert _state(rig).base_pointer_key == promoted.pointer_key
 
 
 def test_rollback_refuses_an_unknown_generation(rig: SimpleNamespace) -> None:

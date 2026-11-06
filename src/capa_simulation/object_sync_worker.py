@@ -41,13 +41,15 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Protocol, cast
 
 from capa_simulation import sync_boot
 from capa_simulation.io.object_storage import (
+    SMALL_TIMEOUT_SECONDS,
     ObjectStorageClient,
     classify_failure,
     load_settings,
@@ -100,6 +102,12 @@ OVERDUE_FAILURES: Final = 3
 OVERDUE_SECONDS: Final = 300.0
 # 회차 제한 시간의 여유. 스냅샷 복사 · 목록 · 포인터 몫이다.
 CYCLE_SLACK_SECONDS: Final = 300.0
+# 작은 호출 하나의 최악 — 3번 시도 + 그 사이 물러남 1 · 2초(`ObjectStorageClient._run`).
+HEAD_CHECK_WORST_SECONDS: Final = 3 * SMALL_TIMEOUT_SECONDS + 3.0
+# 쉬는 동안의 호출에 주는 시간. 정리는 낱개를 지울 때마다 이만큼 다시 받는다.
+QUIET_CALL_SECONDS: Final = HEAD_CHECK_WORST_SECONDS + CYCLE_SLACK_SECONDS
+# 정리의 첫 목록은 접두사 셋이다.
+PRUNE_LIST_SECONDS: Final = 3 * HEAD_CHECK_WORST_SECONDS + CYCLE_SLACK_SECONDS
 
 PHASE_IDLE: Final = "idle"
 PHASE_WAITING: Final = "waiting"
@@ -342,7 +350,9 @@ class ObjectSyncWorker:
 
     def _next_upload_at(self, marks: MarkClock) -> float | None:
         if self._blocked is not None:
-            return self._blocked_until
+            # 재판정이 실패하면 물러남이 더 늦다. 지난 재판정 시각을 돌려주면 쉬지 않고 되풀이한다.
+            moments = [self._blocked_until, self._retry_at]
+            return max((moment for moment in moments if moment is not None), default=None)
         if self._retry_at is not None:
             return self._retry_at
         if marks.first is None or marks.last is None:
@@ -357,7 +367,8 @@ class ObjectSyncWorker:
             moments.append(due)
         wait = max(min(moments) - now, 0.0)
         phase = self._phase(due)
-        self._set(phase=phase, next_try_at=due)
+        # 할 일을 마친 시각도 살아 있다는 표지다 — 긴 회차 뒤의 쉼이 「돌지 않음」 이 되지 않게.
+        self._set(phase=phase, next_try_at=due, last_tick=now)
         return min(wait, WAKE_SECONDS)
 
     def _phase(self, due: float | None) -> str:
@@ -381,7 +392,10 @@ class ObjectSyncWorker:
     def _run_upload(self, now: float) -> None:
         sync_state.begin_cycle()
         self._set(
-            phase=PHASE_UPLOADING, cycle_started=now, cycle_deadline=self._cycle_deadline(now)
+            phase=PHASE_UPLOADING,
+            next_try_at=None,
+            cycle_started=now,
+            cycle_deadline=self._cycle_deadline(now),
         )
         carried = False
         try:
@@ -459,10 +473,20 @@ class ObjectSyncWorker:
         steps = FAILURE_BACKOFF_SECONDS
         self._retry_at = now + steps[min(failures, len(steps)) - 1]
 
+    @contextmanager
+    def _quiet_cycle(self, now: float, seconds: float) -> Iterator[None]:
+        """쉬는 동안의 호출도 회차로 적는다. 답 없는 저장소에서 호출 하나가 3분을 넘긴다."""
+        self._set(cycle_started=now, cycle_deadline=now + seconds)
+        try:
+            yield
+        finally:
+            self._set(cycle_started=None, cycle_deadline=None)
+
     def _run_watch(self, now: float) -> None:
         self._watch_at = now + WATCH_SECONDS
         try:
-            result = self._engine.watch()
+            with self._quiet_cycle(now, QUIET_CALL_SECONDS):
+                result = self._engine.watch()
         except (Exception, SystemExit) as exc:  # noqa: BLE001 — 다음 확인에 다시 본다
             _LOGGER.warning("동기화 HEAD 확인 실패 — %s", classify_failure(exc))
             return
@@ -475,7 +499,8 @@ class ObjectSyncWorker:
 
     def _run_prune(self, now: float) -> None:
         try:
-            outcome = self._engine.prune(self._should_yield)
+            with self._quiet_cycle(now, PRUNE_LIST_SECONDS):
+                outcome = self._engine.prune(self._prune_step)
         except (Exception, SystemExit) as exc:  # noqa: BLE001 — 저장을 막지 않는다. 다음 날 다시
             self._prune_at = now + PRUNE_EVERY_SECONDS
             self._set(prune_failure=classify_failure(exc))
@@ -487,6 +512,11 @@ class ObjectSyncWorker:
             last_prune_deleted=outcome.deleted,
             prune_failure=None,
         )
+
+    def _prune_step(self) -> bool:
+        """낱개를 지우기 전 — 진행을 적고 올리기에 자리를 내줄지 본다."""
+        self._set(cycle_deadline=self._clock() + QUIET_CALL_SECONDS)
+        return self._should_yield()
 
     def _should_yield(self) -> bool:
         with self._state_lock:

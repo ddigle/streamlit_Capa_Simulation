@@ -10,13 +10,14 @@
 `--dataset` 은 `status` · `doctor` 표시 거르기로만 남았다.
 
 **정본의 쓰는 쪽은 운영 앱 하나다.** `init` 이 그 PC 를 넘긴 쪽으로 표시하고(`handed_over_utc`),
-운영 앱이 포인터를 낸 뒤(`origin` 이 `app` · `boot`)에는 `push` · `resolve --keep mine` · `adopt
---source local` 을 거절한다 — `--override-writer` 만 통과한다. 사내 PC 가 읽을 때는 `fetch-copy`
-로 사본을 받는다.
+운영 앱이 포인터를 낸 뒤(`origin` 이 `app` · `boot` · `rollback`)에는 `push` · `resolve --keep mine`
+· `adopt --source local` 을 거절한다 — `--override-writer` 만 통과한다. 사내 PC 가 읽을 때는
+`fetch-copy` 로 사본을 받는다.
 
 **앱을 끈 상태에서 쓴다.** DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있으면 설치가 실패한다.
-`status` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` 은 앱이 떠 있어도 안전하다.
-`boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에 부르고, 값 없는 결과 한 줄(JSON)을 찍는다.
+`status` · `generations` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` 은 앱이 떠
+있어도 안전하다. `boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에 부르고, 값 없는 결과 한
+줄(JSON)을 찍는다.
 """
 
 from __future__ import annotations
@@ -149,6 +150,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     rollback.add_argument("--token", help="같은 세대에 포인터가 둘일 때 고를 키 꼬리 8자리.")
     rollback.add_argument("--note", default="세대 되돌림", help="포인터에 남길 메모.")
     rollback.add_argument("--yes", action="store_true", help="확인 없이 실제로 낸다.")
+
+    generations = sub.add_parser("generations", help="되돌릴 세대를 고를 목록을 찍는다.")
+    generations.add_argument("--limit", type=int, default=30, help="찍을 세대 수. 기본 30.")
 
     sub.add_parser("boot-pull", help="컨테이너 시작의 받기 — 결과 한 줄을 찍는다.")
     return parser.parse_args(argv)
@@ -391,7 +395,26 @@ def command_status(args: argparse.Namespace) -> int:
         print(f"분기 : {', '.join(remote.forked)}")
     if state.handed_over_utc is not None:
         print(f"정본 넘김 : {state.handed_over_utc}")
+    if state.handed_over_utc is not None and decision is PushDecision.PARENT_MOVED:
+        print("판정 : 정본은 운영 앱에 있습니다 — 읽을 때는 fetch-copy 로 사본을 받으세요.")
+        return 0
     print(f"판정 : {manifest.decision_message(decision, head_seq=remote.head_seq)}")
+    return 0
+
+
+def command_generations(args: argparse.Namespace) -> int:
+    """되돌릴 세대를 고르는 목록. 멤버 번호가 깨진 세대와 다른 세대가 되돌릴 자리다."""
+    rows = engine.list_generations(build_client(args))
+    if not rows:
+        print("원격 : 비어 있음")
+        return 0
+    for index, row in enumerate(rows[: args.limit]):
+        members = " · ".join(f"{DATASET_LABELS[name]} {seq}" for name, seq in row.members.items())
+        moment = "시각 모름" if row.last_modified is None else row.last_modified.isoformat()
+        head = " · HEAD" if index == 0 else ""
+        print(f"seq {row.seq} · {members} · {row.token} · {moment}{head}")
+    if len(rows) > args.limit:
+        print(f"… {len(rows) - args.limit}개 더 있습니다(--limit 로 늘립니다).")
     return 0
 
 
@@ -480,6 +503,8 @@ def command_resolve(args: argparse.Namespace) -> int:
         return 0
     pointer = engine.resolve_keep_mine(client, paths)
     print(f"{with_direction_particle(f'seq {pointer.seq}')} 승격했습니다.")
+    if sync_state.read_generation(paths.generation).base_pointer_key != pointer.pointer_key:
+        print("[주의] 그 사이 앞선 DB 는 원격 것을 이어 적었습니다 — pull 로 받으세요.")
     return 0
 
 
@@ -605,6 +630,7 @@ COMMANDS = {
     "prune": command_prune,
     "fetch-copy": command_fetch_copy,
     "rollback": command_rollback,
+    "generations": command_generations,
     "boot-pull": command_boot_pull,
 }
 

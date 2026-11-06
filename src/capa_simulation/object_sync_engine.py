@@ -32,6 +32,7 @@ import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Final, TypeAlias
@@ -249,16 +250,21 @@ def _finish_publish(paths: SyncPaths, state: GenerationState) -> tuple[Generatio
 
 
 def _park_pending(paths: SyncPaths, state: GenerationState, reason: str) -> GenerationState:
-    """게시하지 못한 세대로 옮긴다. 판정이 BLOCKED_UNPUBLISHED 로 멈춘다."""
+    """게시하지 못한 세대로 옮긴다. 판정이 BLOCKED_UNPUBLISHED 로 멈춘다.
+
+    펜스는 옮기지 않고 버린다(`observed` 가 비었다) — 담은 저장이 없어 잃을 것이 없고, 다시 받으면
+    끝날 일이다. 옮기면 변경 없는 새 pod 가 「원격과 어긋남」 으로 머문다.
+    """
     pending = state.pending
     assert pending is not None
-    updated = replace(
-        state,
-        pending=None,
-        unpublished=UnpublishedGeneration(
+    unpublished = (
+        UnpublishedGeneration(
             pointer_json=pending.pointer_json, reason=reason, observed=pending.observed
-        ),
+        )
+        if pending.observed
+        else None
     )
+    updated = replace(state, pending=None, unpublished=unpublished)
     sync_state.write_generation(paths.generation, updated)
     return updated
 
@@ -588,10 +594,35 @@ def _publish_members(
             work.unlink(missing_ok=True)
 
 
+def _require_members(client: ObjectStorageClient, members: Mapping[DatasetName, Member]) -> None:
+    """HEAD 로 낼 멤버가 저장소에 그대로 있는가. 없는 객체를 가리키면 새 pod 가 뜨지 못한다."""
+    for member in members.values():
+        found = client.head(member.snapshot_key)
+        if found is None:
+            raise ValueError(f"스냅샷이 저장소에 없습니다: {member.snapshot_key}")
+        if found.size_bytes != member.size_bytes:
+            raise ValueError(f"스냅샷 크기가 포인터와 다릅니다: {member.snapshot_key}")
+
+
+def _promoted_members(mine: Pointer, parent: Pointer | None) -> dict[DatasetName, Member]:
+    """승격할 멤버. 내 세대가 만든 멤버만 내 것이다 — 이어 적은 멤버는 그때의 앞 세대 값이라 그대로
+    적으면 그 사이 앞선 다른 DB 의 저장이 새 HEAD 에서 빠진다."""
+    if parent is None:
+        return dict(mine.members)
+    return {
+        name: member if member.seq == mine.seq else parent.members[name]
+        for name, member in mine.members.items()
+    }
+
+
 def resolve_keep_mine(
     client: ObjectStorageClient, paths: SyncPaths, *, scratch_dir: Path | None = None
 ) -> Pointer:
-    """게시하지 못한 세대를 HEAD 위 새 세대로 승격한다. 스냅샷은 이미 올라가 있다."""
+    """게시하지 못한 세대를 HEAD 위 새 세대로 승격한다. 스냅샷은 이미 올라가 있다.
+
+    이어 적은 멤버를 HEAD 값으로 바꿔 적었으면 이 자리의 그 DB 는 새 HEAD 와 다르다. 그때는 base 를
+    옮기지 않는다 — base 가 HEAD 면 다음 `pull` 이 받지 않아 옛 파일이 그대로 남는다.
+    """
     state = sync_state.read_generation(paths.generation)
     if state.unpublished is None:
         raise ValueError("해소할 미게시 세대가 없습니다.")
@@ -599,9 +630,11 @@ def resolve_keep_mine(
     mine = manifest.pointer_from_json(state.unpublished.pointer_json, pointer_key="unpublished")
     remote = read_remote_head(client)
     parent = None if remote.head_key is None else read_pointer(client, remote.head_key)
+    members = _promoted_members(mine, parent)
+    _require_members(client, members)
     pointer = manifest.next_pointer(
         parent,
-        members=mine.members,
+        members=members,
         origin="manual",
         token=uuid.uuid4().hex[:8],
         app_version=APP_VERSION,
@@ -618,6 +651,8 @@ def resolve_keep_mine(
     sync_state.write_generation(paths.generation, state)
     client.put_text(pointer.pointer_key, pending.pointer_json, scratch_dir=scratch)
     _finish_publish(paths, state)
+    if members != dict(mine.members):
+        sync_state.write_generation(paths.generation, replace(state, pending=None))
     return pointer
 
 
@@ -644,6 +679,18 @@ def adopt_local(paths: SyncPaths, pointer: Pointer) -> None:
 
 
 # --------------------------------------------------------------------------- 받기
+def _download_member(client: ObjectStorageClient, member: Member, destination: Path) -> None:
+    """HEAD 가 가리키는 스냅샷이 저장소에 없으면 망가진 세대다 — 되돌리기로 푸는 갈래로 올린다."""
+    try:
+        client.get_file(member.snapshot_key, destination, expected_bytes=member.size_bytes)
+    except ObjectStorageError as exc:
+        if object_storage.is_missing_object(exc):
+            raise SnapshotRejected(
+                f"스냅샷이 저장소에 없습니다: {member.snapshot_key}", kind=FAILURE_CORRUPT
+            ) from exc
+        raise
+
+
 def _download_members(
     client: ObjectStorageClient, pointer: Pointer, *, scratch: Path
 ) -> dict[DatasetName, Path]:
@@ -654,7 +701,7 @@ def _download_members(
             member = pointer.members[name]
             download = snapshot_export.unique_work_path(scratch, name, "download")
             downloads[name] = download
-            client.get_file(member.snapshot_key, download, expected_bytes=member.size_bytes)
+            _download_member(client, member, download)
             snapshot_export.verify_snapshot(
                 download,
                 dataset=name,
@@ -965,12 +1012,16 @@ class WatchResult:
 
 
 def watch_head(client: ObjectStorageClient, paths: SyncPaths) -> WatchResult:
-    """목록 한 번으로 HEAD 가 내 base 그대로인지 본다. 아무것도 고치지 않는다."""
+    """목록 한 번으로 HEAD 가 내 base 그대로인지 본다. 아무것도 고치지 않는다.
+
+    HEAD 가 답 끊긴 내 포인터면 남이 앞선 것이 아니다 — 올리기 회차의 `_settle_pending` 이 가른다.
+    """
     state = sync_state.read_generation(paths.generation)
     remote = read_remote_head(client)
+    mine = state.pending is not None and remote.head_key == state.pending.pointer_key
     return WatchResult(
         decision=manifest.decide_push(
-            head_key=remote.head_key,
+            head_key=state.base_pointer_key if mine else remote.head_key,
             forked=bool(remote.forked),
             base_pointer_key=state.base_pointer_key,
             dirty=False,
@@ -994,6 +1045,34 @@ def pointer_keys_at(client: ObjectStorageClient, seq: int) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+@dataclass(frozen=True)
+class GenerationRow:
+    """세대 목록 한 줄. 포인터 키에 실린 것뿐이라 포인터를 GET 하지 않는다."""
+
+    seq: int
+    members: Mapping[DatasetName, int]
+    token: str
+    last_modified: datetime | None
+
+
+def list_generations(client: ObjectStorageClient) -> tuple[GenerationRow, ...]:
+    """원격 세대를 최신부터. 펜스는 같은 멤버로 쌓이므로 되돌릴 세대는 멤버 번호로 고른다."""
+    rows = []
+    for record in sorted(client.list_all_objects(manifest.HEAD_PREFIX), key=lambda item: item.key):
+        try:
+            rows.append(
+                GenerationRow(
+                    seq=manifest.seq_from_pointer_key(record.key),
+                    members=manifest.member_seqs_from_pointer_key(record.key),
+                    token=manifest.token_from_pointer_key(record.key),
+                    last_modified=record.last_modified,
+                )
+            )
+        except ValueError:
+            continue
+    return tuple(rows)
+
+
 def _choose_pointer(
     client: ObjectStorageClient, seq: int, *, token: str | None, scratch: Path
 ) -> Pointer:
@@ -1003,7 +1082,7 @@ def _choose_pointer(
     if not keys:
         raise ValueError(f"세대 {with_object_particle(f'seq {seq}')} 원격에서 찾지 못했습니다.")
     if len(keys) > 1:
-        tokens = " · ".join(key.rsplit("__", 1)[-1].removesuffix(".json") for key in keys)
+        tokens = " · ".join(manifest.token_from_pointer_key(key) for key in keys)
         raise ValueError(
             f"세대 seq {seq} 에 포인터가 둘 이상입니다 — --token 으로 고르세요: {tokens}"
         )
@@ -1077,19 +1156,14 @@ def rollback(
     """
     scratch = scratch_dir or snapshot_export.prepare_scratch()
     target = _choose_pointer(client, to_seq, token=token, scratch=scratch)
-    for member in target.members.values():
-        found = client.head(member.snapshot_key)
-        if found is None:
-            raise ValueError(f"스냅샷이 저장소에 없습니다: {member.snapshot_key}")
-        if found.size_bytes != member.size_bytes:
-            raise ValueError(f"스냅샷 크기가 포인터와 다릅니다: {member.snapshot_key}")
+    _require_members(client, target.members)
     remote = read_remote_head(client)
     assert remote.head_key is not None
     parent = read_pointer(client, remote.head_key, scratch_dir=scratch)
     pointer = manifest.next_pointer(
         parent,
         members=target.members,
-        origin="manual",
+        origin="rollback",
         token=uuid.uuid4().hex[:8],
         app_version=APP_VERSION,
         author=snapshot_export.author_label(),

@@ -478,6 +478,15 @@ def test_a_repeating_continuation_token_stops_instead_of_looping() -> None:
         (254, "An error occurred (NoSuchBucket) when calling", "no_bucket"),
         (254, "An error occurred (InternalError) when calling", "other"),
         (252, "usage: aws", "config"),
+        (255, "[Errno 28] No space left on device", "disk_full"),
+        (255, "The config profile (demo-org-team) could not be found", "config"),
+        (255, "Unable to locate credentials. You can configure credentials", "config"),
+        (
+            255,
+            "An error occurred while reading from response stream: ('Connection broken: "
+            "IncompleteRead(3145363 bytes read, 29815149 more expected)', ...)",
+            "unreachable",
+        ),
     ],
 )
 def test_failures_become_a_fixed_word(returncode: int, stderr: str, expected: str) -> None:

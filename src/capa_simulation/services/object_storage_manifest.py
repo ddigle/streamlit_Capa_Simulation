@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -63,11 +64,12 @@ MIGRATION_SCHEMA: Final[Mapping[DatasetName, str]] = {
     "equipment": "equipment_meta.schema_migration",
 }
 # 누가 게시했는가. `init` — 사내 PC 의 최초 이관, `app` — 운영 앱의 저장, `boot` — 시작 때의 펜스
-# (같은 멤버), `manual` — 사람이 돌린 `push`·`resolve`·`rollback`.
-Origin = Literal["init", "app", "boot", "manual"]
+# (같은 멤버), `manual` — 사람이 돌린 `push`·`resolve`, `rollback` — 세대 되돌리기.
+Origin = Literal["init", "app", "boot", "manual", "rollback"]
 ORIGINS: Final[tuple[Origin, ...]] = get_args(Origin)
-# 운영 앱이 정본을 넘겨받은 뒤의 표시. HEAD 가 이 값이면 사내 PC 는 올리지 못한다.
-WRITER_ORIGINS: Final = frozenset({"app", "boot"})
+# 운영 앱이 정본을 넘겨받은 뒤의 표시. HEAD 가 이 값이면 사내 PC 는 올리지 못한다. 되돌린 HEAD 도
+# 운영 앱의 정본이다 — 다음 시작의 펜스가 서기 전 틈에 표지 없는 PC 가 그 위로 올리면 안 된다.
+WRITER_ORIGINS: Final = frozenset({"app", "boot", "rollback"})
 
 # 실패 갈래 — 시작 화면 · 보고 · 상태 파일 · 알림이 함께 쓰는 고정 낱말. 서버 글을 싣지 않는다.
 FAILURE_CONFIG: Final = "config"
@@ -196,6 +198,14 @@ def member_seqs_from_pointer_key(key: str) -> dict[DatasetName, int]:
     if matched is None:
         raise ValueError(f"포인터 키 형식이 아닙니다: {key}")
     return {name: int(matched.group(name)) for name in DATASET_NAMES}
+
+
+def token_from_pointer_key(key: str) -> str:
+    """포인터 키 꼬리 8자리. 같은 세대에 포인터가 둘일 때 사람이 고르는 값이다."""
+    matched = _POINTER_KEY_PATTERN.match(key)
+    if matched is None:
+        raise ValueError(f"포인터 키 형식이 아닙니다: {key}")
+    return matched.group("token")
 
 
 def snapshot_key(dataset: DatasetName, seq: int, *, created_at_utc: str, sha256: str) -> str:
@@ -537,6 +547,8 @@ def prune_generations(
     - 남긴 세대가 가리키는 스냅샷(이어 적은 앞 세대 멤버 포함)은 지키고, **어떤 포인터도 가리키지
       않는 고아는 늘 지킨다** — 경합에서 진 쪽의 데이터라 「유실 불가」 의 근거다.
       `include_orphans` 일 때만 `keep_days` 넘은 고아를 지운다.
+    - 같은 (DB, 세대 번호) 스냅샷이 둘 이상이면 둘 다 지킨다. 포인터 키에는 번호뿐이라 어느 쪽이
+      참조인지 목록으로 모르고, 하나는 경합에서 진 쪽일 수 있다(재시도의 찌꺼기도 함께 남는다).
     - 차례는 스냅샷 먼저, 포인터 뒤다. 사이에서 죽으면 뜬 포인터만 남아 다음 번에 치운다. 거꾸로면
       스냅샷이 고아가 되어 영영 안 지워진다. 같은 까닭으로 상한에 걸리면 그 스냅샷이 다 지워지는
       포인터만 이번 회차에 넣는다.
@@ -568,12 +580,18 @@ def prune_generations(
     doomed_snapshots: list[str] = []
     protected = 0
     owner: dict[tuple[str, int], list[str]] = {}
+    references = {
+        item.key: (matched.group("dataset"), int(matched.group("seq")))
+        for item in snapshots
+        if (matched := _SNAPSHOT_KEY_PATTERN.match(item.key)) is not None
+    }
+    same_number = Counter(references.values())
     for item in sorted(snapshots, key=lambda listed: listed.key):
-        matched = _SNAPSHOT_KEY_PATTERN.match(item.key)
-        if matched is None:
+        reference = references.get(item.key)
+        if reference is None or reference in kept_refs:
             continue
-        reference = (matched.group("dataset"), int(matched.group("seq")))
-        if reference in kept_refs:
+        if same_number[reference] > 1:
+            protected += 1
             continue
         if reference in all_refs:
             doomed_snapshots.append(item.key)

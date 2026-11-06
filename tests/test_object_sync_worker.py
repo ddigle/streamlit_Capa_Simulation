@@ -25,8 +25,10 @@ from capa_simulation.object_sync_engine import (
     WatchResult,
 )
 from capa_simulation.object_sync_worker import (
+    BLOCKED_RECHECK_SECONDS,
     FAILURE_BACKOFF_SECONDS,
     GATHER_SECONDS,
+    HEAD_CHECK_WORST_SECONDS,
     OVERDUE_FAILURES,
     OVERDUE_SECONDS,
     PRUNE_EVERY_SECONDS,
@@ -36,6 +38,7 @@ from capa_simulation.object_sync_worker import (
     SOFT_RETRY_SECONDS,
     THREAD_NAME,
     TICK_STALE_SECONDS,
+    WAKE_SECONDS,
     WATCH_SECONDS,
     ObjectSyncWorker,
     SyncHealth,
@@ -334,6 +337,153 @@ def test_a_generation_that_could_not_be_published_blocks(rig: Rig, stop: Publish
     rig.worker.tick()
 
     assert rig.worker.status().blocked == PushDecision.BLOCKED_UNPUBLISHED.value
+
+
+def _blocked_rig(rig: Rig) -> None:
+    """올리기가 막힌 일꾼 — 사내 PC 가 세대를 되돌린 뒤의 꼴이다."""
+    _settled(rig)
+    rig.engine.results.append(PublishOutcome(decision=PushDecision.PARENT_MOVED))
+    sync_state.request_upload()
+    rig.worker.tick()
+    assert rig.worker.status().blocked == PushDecision.PARENT_MOVED.value
+
+
+@pytest.mark.parametrize(
+    ("result", "wait"),
+    [
+        (UNREACHABLE, FAILURE_BACKOFF_SECONDS[0]),
+        (snapshot_export.SnapshotBusy("잠금"), SOFT_RETRY_SECONDS),
+        (snapshot_export.SnapshotRaced("움직임"), SOFT_RETRY_SECONDS),
+        (PublishOutcome(decision=PushDecision.PUBLISH, confirm_deferred=True), SOFT_RETRY_SECONDS),
+        (
+            PublishOutcome(decision=PushDecision.PUBLISH, stop=PublishStop.LOCAL_MISSING),
+            FAILURE_BACKOFF_SECONDS[0],
+        ),
+    ],
+    ids=["storage-refused", "busy", "raced", "unconfirmed", "local-missing"],
+)
+def test_a_recheck_that_fails_while_blocked_still_backs_off(
+    rig: Rig, result: PublishOutcome | BaseException, wait: float
+) -> None:
+    """지난 재판정 시각을 돌려주면 물러남이 통째로 무시되고 aws 를 쉬지 않고 띄운다."""
+    _blocked_rig(rig)
+    rig.engine.results.append(result)
+
+    pause = rig.tick_at(BLOCKED_RECHECK_SECONDS)
+
+    assert rig.engine.uploads == 2
+    assert pause == wait
+    rig.tick_at(BLOCKED_RECHECK_SECONDS + wait - 1)
+    assert rig.engine.uploads == 2
+    rig.tick_at(BLOCKED_RECHECK_SECONDS + wait)
+    assert rig.engine.uploads == 3
+
+
+def test_a_blocked_worker_keeps_backing_off_through_repeated_failures(rig: Rig) -> None:
+    _blocked_rig(rig)
+    rig.engine.results.extend([UNREACHABLE] * 3)
+
+    moment = BLOCKED_RECHECK_SECONDS
+    for count, step in enumerate(FAILURE_BACKOFF_SECONDS[:3], 2):
+        rig.tick_at(moment)
+        assert rig.engine.uploads == count
+        rig.tick_at(moment + step - 1)
+        assert rig.engine.uploads == count
+        moment += step
+    assert rig.worker.status().failures == 3
+
+
+def test_the_old_next_try_is_gone_while_uploading(rig: Rig) -> None:
+    """올리는 중에 「다음 시도 · 0초 뒤」 가 보이면 실패해 곧 다시 하는 것처럼 읽힌다."""
+    _settled(rig)
+    rig.engine.results.append(UNREACHABLE)
+    sync_state.request_upload()
+    rig.worker.tick()
+    assert rig.worker.status().next_try_at is not None
+    seen: list[float | None] = []
+    rig.engine.during_upload = lambda: seen.append(rig.worker.status().next_try_at)
+
+    rig.tick_at(FAILURE_BACKOFF_SECONDS[0])
+
+    assert seen == [None]
+
+
+def _health_seen(rig: Rig, *, extra: float = 0.0) -> SyncHealth:
+    """시험의 일꾼은 스레드 없이 돈다 — 살아 있는 일꾼의 판정을 본다."""
+    alive = replace(rig.worker.status(), alive=True)
+    return assess(alive, MarkClock(), rig.clock.now + extra)
+
+
+def test_a_slow_head_check_is_not_a_missing_worker(rig: Rig) -> None:
+    """답 없는 저장소의 확인 하나가 3분을 넘긴다. 쉬는 일꾼을 「돌지 않음」 으로 알리면 안 된다."""
+    rig.worker.tick()
+    seen: list[SyncHealth] = []
+
+    def slow() -> WatchResult:
+        rig.clock.now += HEAD_CHECK_WORST_SECONDS
+        seen.append(_health_seen(rig))
+        return WatchResult(PushDecision.UP_TO_DATE, 1)
+
+    rig.engine.watch = slow  # type: ignore[method-assign]
+
+    rig.tick_at(WATCH_SECONDS)
+
+    assert seen[0].overdue is None
+    assert _health_seen(rig, extra=WAKE_SECONDS - 1).overdue is None
+
+
+def test_a_head_check_that_hangs_past_its_limit_is_a_missing_worker(rig: Rig) -> None:
+    """시간을 재는 까닭 — 영원히 돌아오지 않는 호출은 그대로 드러나야 한다."""
+    rig.worker.tick()
+    seen: list[SyncHealth] = []
+
+    def hung() -> WatchResult:
+        rig.clock.now += HEAD_CHECK_WORST_SECONDS + worker_module.CYCLE_SLACK_SECONDS + 1
+        seen.append(_health_seen(rig))
+        return WatchResult(PushDecision.UP_TO_DATE, 1)
+
+    rig.engine.watch = hung  # type: ignore[method-assign]
+
+    rig.tick_at(WATCH_SECONDS)
+
+    assert seen[0].overdue == "worker_absent"
+
+
+def test_a_long_prune_is_not_a_missing_worker(rig: Rig) -> None:
+    """낱개를 지울 때마다 진행이다. 호출 하나가 느려도 회차 전체의 시간으로 판정하지 않는다."""
+    rig.worker.tick()
+    seen: list[SyncHealth] = []
+
+    def slow(should_stop: Callable[[], bool]) -> PruneOutcome:
+        for _ in range(20):
+            rig.clock.now += HEAD_CHECK_WORST_SECONDS
+            seen.append(_health_seen(rig))
+            should_stop()
+        return PruneOutcome(plan=PrunePlan(), deleted=20)
+
+    rig.engine.prune = slow  # type: ignore[method-assign]
+
+    rig.tick_at(PRUNE_FIRST_SECONDS)
+    rig.worker.tick()
+
+    assert len(seen) == 20
+    assert all(item.overdue is None for item in seen)
+    assert _health_seen(rig, extra=WAKE_SECONDS - 1).overdue is None
+
+
+def test_a_long_upload_is_not_a_missing_worker_after_it_ends(rig: Rig) -> None:
+    """회차 뒤 다음 확인까지 쉰다. 그동안 회차 앞 시각으로 재면 끝난 직후가 「돌지 않음」 이다."""
+    _settled(rig)
+
+    def long() -> None:
+        rig.clock.now += TICK_STALE_SECONDS + 100
+
+    rig.engine.during_upload = long
+    sync_state.request_upload()
+
+    rig.worker.tick()
+
+    assert _health_seen(rig, extra=WAKE_SECONDS - 1).overdue is None
 
 
 def test_the_head_is_looked_at_on_start_and_every_ten_minutes(rig: Rig) -> None:

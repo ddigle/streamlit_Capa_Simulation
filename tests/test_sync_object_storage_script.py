@@ -42,6 +42,7 @@ def test_every_subcommand_is_wired(script: ModuleType) -> None:
         "prune",
         "fetch-copy",
         "rollback",
+        "generations",
         "boot-pull",
     }
 

@@ -495,15 +495,21 @@ def render_profile_files(
 # 서버가 답한 오류 코드 · 연결 실패 글을 갈래로 나눈다. 글을 화면에 싣지 않고 낱말만 남긴다.
 _DENIED_ERROR: Final = re.compile(
     r"\((?:403|AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|Forbidden)\)"
-    r"|Unable to locate credentials|InvalidAccessKeyId|SignatureDoesNotMatch",
+    r"|InvalidAccessKeyId|SignatureDoesNotMatch",
     re.IGNORECASE,
 )
+# 프로필 · 키가 이 자리에 없다. 저장소가 거절한 것이 아니라 시작 스크립트가 못 쓴 것이다.
+_CONFIG_ERROR: Final = re.compile(
+    r"config profile \(.*\) could not be found|Unable to locate credentials", re.IGNORECASE
+)
+_DISK_FULL_ERROR: Final = re.compile(r"No space left on device|\[Errno 28\]", re.IGNORECASE)
 _NO_BUCKET_ERROR: Final = re.compile(r"NoSuchBucket")
 _TIMEOUT_ERROR: Final = re.compile(r"timed? ?out|ReadTimeoutError", re.IGNORECASE)
 _UNREACHABLE_ERROR: Final = re.compile(
     r"Could not connect|EndpointConnectionError|Connection refused|Connection reset|"
     r"Connection was closed|Name or service not known|Temporary failure in name resolution|"
-    r"getaddrinfo failed|No route to host|Network is unreachable",
+    r"getaddrinfo failed|No route to host|Network is unreachable|Connection broken|"
+    r"IncompleteRead",
     re.IGNORECASE,
 )
 
@@ -532,6 +538,10 @@ def _classify_result(result: CommandResult) -> str:
     if result.returncode in (252, 253):
         return FAILURE_CONFIG
     text = f"{result.stderr}\n{result.stdout}"
+    if _DISK_FULL_ERROR.search(text):
+        return FAILURE_DISK_FULL
+    if _CONFIG_ERROR.search(text):
+        return FAILURE_CONFIG
     if _NO_BUCKET_ERROR.search(text):
         return FAILURE_NO_BUCKET
     if _DENIED_ERROR.search(text):
@@ -645,6 +655,11 @@ _NOT_FOUND_ERROR: Final = re.compile(r"An error occurred \((?:404|NoSuchKey|NotF
 _PRECONDITION_FAILED_ERROR: Final = re.compile(
     r"An error occurred \((?:412|409|PreconditionFailed)\)"
 )
+
+
+def is_missing_object(error: ObjectStorageError) -> bool:
+    """저장소가 「그 키가 없다」 고 답했는가. 연결 · 시간 초과는 없음이 아니다."""
+    return error.result is not None and _is_not_found(error.result)
 
 
 def _is_not_found(result: CommandResult) -> bool:
