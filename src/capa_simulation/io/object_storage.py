@@ -61,6 +61,9 @@ DEFAULT_REGION: Final = "us-east-1"
 # 네임스페이스는 프로필에 매여 있어 명령 인자로 넘기는 자리가 없다. 진단 출력에만 쓴다.
 NAMESPACE_NOTE: Final = "org-system_package_mfg_team"
 
+# 켜는 스위치. `managed` 면 시작 때 두 DB 를 받고 저장하면 올린다.
+MODE_ENV: Final = "CAPA_S3_SYNC_MODE"
+MODE_MANAGED: Final = "managed"
 CONFIG_PATH: Final = PROJECT_ROOT / "config" / "object_storage.json"
 CAPABILITIES_PATH: Final = PROJECT_ROOT / "config" / "object_storage_capabilities.json"
 
@@ -138,12 +141,10 @@ def load_settings(*, environ: Mapping[str, str] | None = None) -> StorageSetting
     file_config = _read_json(CONFIG_PATH, label="오브젝트 스토리지 설정")
     capabilities = _read_json(CAPABILITIES_PATH, label="스토리지 능력 파일") or {}
     values = file_config or {}
-    mode_text = str(env.get("CAPA_S3_SYNC_MODE") or values.get("mode") or "local").strip()
-    if mode_text not in ("local", "managed"):
-        raise ObjectStorageError(
-            f"CAPA_S3_SYNC_MODE 는 local 또는 managed 여야 합니다: {mode_text!r}"
-        )
-    mode: SyncMode = "managed" if mode_text == "managed" else "local"
+    mode_text = str(env.get(MODE_ENV) or values.get("mode") or "local").strip()
+    if mode_text not in ("local", MODE_MANAGED):
+        raise ObjectStorageError(f"{MODE_ENV} 는 local 또는 managed 여야 합니다: {mode_text!r}")
+    mode: SyncMode = "managed" if mode_text == MODE_MANAGED else "local"
     return StorageSettings(
         mode=mode,
         endpoint_url=str(
@@ -464,6 +465,31 @@ def profile_settings(settings: StorageSettings) -> tuple[tuple[str, str], ...]:
         ("response_checksum_validation", "when_required"),
         ("s3.addressing_style", "path"),
     )
+
+
+def render_profile_files(
+    settings: StorageSettings, *, access_key: str, secret_key: str
+) -> tuple[str, str]:
+    """`~/.aws` 의 `credentials` · `config` 내용. `aws configure set` 이 쓰는 꼴과 같다.
+
+    C-DEP 에는 셸이 없어 시작 스크립트가 파일을 직접 쓴다. 줄은 `profile_settings` 한 벌이다.
+    """
+    credentials = (
+        f"[{settings.profile}]\n"
+        f"aws_access_key_id = {access_key}\n"
+        f"aws_secret_access_key = {secret_key}\n"
+    )
+    lines = [f"[profile {settings.profile}]"]
+    nested: dict[str, list[str]] = {}
+    for name, value in profile_settings(settings):
+        section, dot, leaf = name.partition(".")
+        if dot:
+            nested.setdefault(section, []).append(f"    {leaf} = {value}")
+        else:
+            lines.append(f"{name} = {value}")
+    for section, entries in nested.items():
+        lines += [f"{section} =", *entries]
+    return credentials, "\n".join(lines) + "\n"
 
 
 # 서버가 답한 오류 코드 · 연결 실패 글을 갈래로 나눈다. 글을 화면에 싣지 않고 낱말만 남긴다.

@@ -35,6 +35,7 @@ from capa_simulation.io import container_start_report as report_contract
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+import container_stage  # noqa: E402
 import container_start  # noqa: E402
 
 FAKE_ART_USER = "fake.ci-user@example"
@@ -61,6 +62,10 @@ def _probe(state: str, detail: str = "") -> str:
 
 def _is_probe(args: Sequence[str]) -> bool:
     return list(args[:2]) == [sys.executable, "-c"]
+
+
+def _is_pip(args: Sequence[str]) -> bool:
+    return not _is_probe(args) and args[0] != "aws"
 
 
 PipAnswer = subprocess.CompletedProcess[str] | BaseException
@@ -94,8 +99,11 @@ class FakeRunner:
         self.calls.append(list(args))
         self.timeouts.append(timeout)
         self.envs.append(dict(env))
+        if args[0] == "aws":
+            raise FileNotFoundError(args[0])
         if _is_probe(args):
-            return subprocess.CompletedProcess(list(args), 0, stdout=self.probes.pop(0), stderr="")
+            stdout = self.probes.pop(0) if container_start.PROBE_MARKER in args[2] else ""
+            return subprocess.CompletedProcess(list(args), 0, stdout=stdout, stderr="")
         answer = self.answers.pop(0) if self.answers else self.repeat
         assert answer is not None, (
             "pip 를 부르지 않아야 하는 시험에서 pip 를 불렀다(또는 더 불렀다)"
@@ -106,11 +114,11 @@ class FakeRunner:
 
     @property
     def pip_calls(self) -> list[list[str]]:
-        return [call for call in self.calls if not _is_probe(call)]
+        return [call for call in self.calls if _is_pip(call)]
 
     @property
     def pip_envs(self) -> list[dict[str, str]]:
-        return [env for call, env in zip(self.calls, self.envs, strict=True) if not _is_probe(call)]
+        return [env for call, env in zip(self.calls, self.envs, strict=True) if _is_pip(call)]
 
 
 class FakeExec:
@@ -142,6 +150,11 @@ def place(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     bundle.write_text("가짜 인증서 묶음\n", encoding="utf-8")
     monkeypatch.setattr(container_start, "CA_BUNDLES", (tmp_path / "없는 묶음.crt", bundle))
     monkeypatch.setattr(container_start, "inside_virtualenv", lambda: False)
+    # 시작 차례는 임시 응답으로 앱 포트를 먼저 잡는다. 이 파일의 시험은 그 자리를 빈 껍데기로 둔다 —
+    # 임시 응답 자체는 `test_container_stage.py`, 차례는 `test_container_start_sync.py` 가 본다.
+    monkeypatch.setattr(
+        container_stage, "open_stage", lambda port, *, base_path="/": container_stage.Stage(None)
+    )
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -783,6 +796,12 @@ def test_the_image_starts_through_the_script_with_the_same_app_command() -> None
 # 시작 스크립트가 이미지 안에서 읽는 파일 — 하나라도 빠지면 설치 단계가 늘 실패하거나 앱이 못 뜬다.
 IMAGE_NEEDS = (
     "scripts/container_start.py",
+    "scripts/container_stage.py",
+    "scripts/sync_object_storage.py",
+    "config/object_storage.json",
+    "config/object_storage_capabilities.json",
+    "src/capa_simulation/io/object_storage.py",
+    "src/capa_simulation/services/object_storage_manifest.py",
     "requirements-company.txt",
     "requirements.txt",
     "src/capa_simulation/settings.py",
@@ -1212,6 +1231,7 @@ def test_the_s3_keys_reach_only_the_app_and_never_the_report_or_a_child(
         **ALL_ENVIRONMENT,
         sso_names.ENV_S3_ACCESS_KEY: FAKE_S3_ACCESS_KEY,
         sso_names.ENV_S3_SECRET_KEY: FAKE_S3_SECRET_KEY,
+        sso_names.ENV_S3_ENDPOINT: "http://127.0.0.1:9",
     }
     runner = FakeRunner([_probe("missing"), _probe("ok", "9.9.9")], [_ok(), _ok()])
 

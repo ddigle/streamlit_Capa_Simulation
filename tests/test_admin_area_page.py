@@ -714,6 +714,70 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     ]
 
 
+def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
+    tmp_path: Path,
+) -> None:
+    """S3 키나 `managed` 가 있는 서버는 동기화 줄이 표에 더해지고 값이 캡션에 선다. 옛 파일은
+    `test_the_server_start_check_shows_the_container_report` 가 본다."""
+    ok = {"status": "ok", "reason": "정상"}
+    report = tmp_path / "container_start.json"
+    report.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "written_at": "2026-11-07T09:00:00+09:00",
+                "steps": {"install": ok, "token": ok, "user_name": ok},
+                "sync": {
+                    "steps": {
+                        "aws_profile": {"status": "ok", "reason": "씀"},
+                        "aws_cli": {"status": "failed", "reason": "판 다름 2.36.8"},
+                        "ecs": {"status": "ok", "reason": "HTTP 403 닿음"},
+                        "bucket": ok,
+                        "boot_pull": {"status": "ok", "reason": "세대 7 · 받음"},
+                    },
+                    "started_at_utc": "2026-11-07T00:00:00Z",
+                    "disk_free_bytes": 42949672960,
+                    "disk_total_bytes": 107374182400,
+                    "pod": "demo-pod-0",
+                    "memory_limit_bytes": 1073741824,
+                    "cpu_limit": 2.0,
+                    "logical_cores": 8,
+                    "duckdb_memory_limit": "800.0 MiB",
+                    "duckdb_threads": "2",
+                    "pull_seconds": 2.5,
+                    "previous_upload_utc": "2026-11-06T23:59:00Z",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "container_app_ready.json").write_text(
+        json.dumps({"ready_at_utc": "2026-11-07T00:00:45Z"}), encoding="utf-8"
+    )
+    app = AppTest.from_string(_start_check_script(tmp_path / "scenario.duckdb", report))
+    app.run(timeout=120)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    [expander] = _start_check_expanders(app)
+    assert "실패" in expander
+    [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
+    assert steps.value["단계"].tolist()[3:] == [
+        "통합인증",
+        "AWS 프로필",
+        "aws CLI",
+        "ECS 연결",
+        "버킷 목록",
+        "DB 받기",
+    ]
+    assert steps.value["까닭"].iloc[5] == "판 다름 2.36.8"
+    captions = "\n".join(caption.value for caption in app.caption)
+    assert "/project 디스크: 여유 40.0 GiB · 전체 100.0 GiB" in captions
+    assert "한도: 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
+    assert "받기 2.5초 · 앱 응답까지 45초" in captions
+    assert "앞 pod 마지막 올림 → 이번 앱 준비: 105초" in captions
+
+
 def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -12,6 +12,12 @@ CD 서버는 시작 명령을 바꿀 수 없고 셸에 들어갈 수도 없다. 
 **비밀값은 파일에 없다.** 스크립트가 Artifactory 토큰·BDQ 토큰·URL 의 자격증명을 가리고, 계정은
 앞 두 글자만 남긴다(`mask_account`). 이 모듈은 표준 라이브러리와 `settings` 만 읽는다 — 시작
 스크립트가 앱 의존성을 불러오기 전에 쓰기 때문이다.
+
+**동기화 칸**(`sync`)은 S3 키 · `managed` 가 있는 서버에만 있다 — aws 판 · ECS 연결 · 버킷 목록 ·
+DB 받기와 재서 남긴 수(디스크 · pod · cgroup · 다운 시간). 값은 갈래와 수뿐이고 주소 · 버킷 · 키가
+없어 리뷰 압축본에 옮길 수 있다. 꼴은 더하기만 했다 — 옛 파일은 그 칸이 없어 `None` 이다.
+
+**앱 응답 시각**은 앱이 따로 남긴다(`note_app_ready`) — 시작 스크립트는 exec 뒤에 없다.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final
 
@@ -47,8 +54,12 @@ APP_WITHHELD_ENVIRONMENT: Final = (ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
 # CD 서버인지 가르지 않는다.
 CD_ONLY_ENVIRONMENT: Final = (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
 START_SCRIPT: Final = "scripts/container_start.py"
+# 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
+# 견준다.
+AWS_CLI_VERSION: Final = "1.46.3"
 
 REPORT_VERSION: Final = 1
+APP_READY_NAME: Final = "container_app_ready.json"
 STEP_INSTALL: Final = "install"
 STEP_TOKEN: Final = "token"
 STEP_USER_NAME: Final = "user_name"
@@ -67,6 +78,27 @@ STEP_ENVIRONMENT: Final[Mapping[str, tuple[str, ...]]] = {
     STEP_USER_NAME: (BDQ_USER_NAME_ENV,),
 }
 
+# 동기화 줄. 옛 파일에 없어도 읽도록 `STEPS` 와 따로 둔다.
+SYNC_STEP_PROFILE: Final = "aws_profile"
+SYNC_STEP_CLI: Final = "aws_cli"
+SYNC_STEP_ECS: Final = "ecs"
+SYNC_STEP_BUCKET: Final = "bucket"
+SYNC_STEP_PULL: Final = "boot_pull"
+SYNC_STEPS: Final = (
+    SYNC_STEP_PROFILE,
+    SYNC_STEP_CLI,
+    SYNC_STEP_ECS,
+    SYNC_STEP_BUCKET,
+    SYNC_STEP_PULL,
+)
+SYNC_STEP_LABELS: Final[Mapping[str, str]] = {
+    SYNC_STEP_PROFILE: "AWS 프로필",
+    SYNC_STEP_CLI: "aws CLI",
+    SYNC_STEP_ECS: "ECS 연결",
+    SYNC_STEP_BUCKET: "버킷 목록",
+    SYNC_STEP_PULL: "DB 받기",
+}
+
 STATUS_OK: Final = "ok"
 STATUS_SKIPPED: Final = "skipped"
 STATUS_FAILED: Final = "failed"
@@ -81,6 +113,26 @@ STATUS_LABELS: Final[Mapping[str, str]] = {
 class StartStep:
     status: str
     reason: str
+
+
+@dataclass(frozen=True)
+class SyncStart:
+    """동기화 칸. 값은 갈래 · 판 · 수뿐이다. 어느 칸이든 옛 파일 · 못 잰 값이면 `None` 이다."""
+
+    steps: Mapping[str, StartStep]
+    started_at_utc: str | None = None
+    aws_version: str | None = None
+    disk_free_bytes: int | None = None
+    disk_total_bytes: int | None = None
+    pod: str | None = None
+    memory_limit_bytes: int | None = None
+    cpu_limit: float | None = None
+    logical_cores: int | None = None
+    duckdb_memory_limit: str | None = None
+    duckdb_threads: str | None = None
+    pull_seconds: float | None = None
+    pull_attempts: int | None = None
+    previous_upload_utc: str | None = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +156,8 @@ class ContainerStartReport:
     # 시작 때 통합인증 환경변수(`auth.names.SSO_ENVIRONMENT`)가 있었는지 — 이름 → 있음. 값은 없다.
     # 옛 꼴 파일에는 없어 `None` 이다.
     sso_environment: Mapping[str, bool] | None = None
+    # 동기화 칸. S3 키도 `managed` 도 없는 서버 · 옛 꼴 파일에는 없어 `None` 이다.
+    sync: SyncStart | None = None
 
 
 def mask_account(name: str) -> str:
@@ -174,6 +228,37 @@ def parse_report(data: object) -> ContainerStartReport | None:
         os_user_is_bdq_user=same_user if isinstance(same_user, bool) else None,
         home_masked=_text_or_none(runtime.get("home")),
         sso_environment=_presence_or_none(data.get("sso_environment")),
+        sync=parse_sync(data.get("sync")),
+    )
+
+
+def parse_sync(data: object) -> SyncStart | None:
+    """동기화 칸을 읽는다. 없으면 `None`. 꼴이 어긋난 칸은 그 칸만 버린다 — 옛 판이 쓴 파일 하나가
+    펼침 전체를 지우지 않게 한다."""
+    if not isinstance(data, dict):
+        return None
+    raw_steps = _mapping(data.get("steps"))
+    steps: dict[str, StartStep] = {}
+    for name in SYNC_STEPS:
+        step = _mapping(raw_steps.get(name))
+        status, reason = step.get("status"), step.get("reason")
+        if status in STATUS_LABELS and isinstance(reason, str):
+            steps[name] = StartStep(status=str(status), reason=reason)
+    return SyncStart(
+        steps=steps,
+        started_at_utc=_text_or_none(data.get("started_at_utc")),
+        aws_version=_text_or_none(data.get("aws_version")),
+        disk_free_bytes=_int_or_none(data.get("disk_free_bytes")),
+        disk_total_bytes=_int_or_none(data.get("disk_total_bytes")),
+        pod=_text_or_none(data.get("pod")),
+        memory_limit_bytes=_int_or_none(data.get("memory_limit_bytes")),
+        cpu_limit=_float_or_none(data.get("cpu_limit")),
+        logical_cores=_int_or_none(data.get("logical_cores")),
+        duckdb_memory_limit=_text_or_none(data.get("duckdb_memory_limit")),
+        duckdb_threads=_text_or_none(data.get("duckdb_threads")),
+        pull_seconds=_float_or_none(data.get("pull_seconds")),
+        pull_attempts=_int_or_none(data.get("pull_attempts")),
+        previous_upload_utc=_text_or_none(data.get("previous_upload_utc")),
     )
 
 
@@ -193,6 +278,71 @@ def _text_or_none(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _int_or_none(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _float_or_none(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def utc_timestamp() -> str:
+    """UTC 시각 글자 — 포인터 시각(`snapshot_export.utc_timestamp`)과 같은 꼴."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_utc(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def seconds_between(earlier_utc: str | None, later_utc: str | None) -> float | None:
+    """두 UTC 시각 글자 사이의 초. 어느 쪽이든 없거나 못 읽으면 `None`."""
+    earlier, later = _parse_utc(earlier_utc), _parse_utc(later_utc)
+    return None if earlier is None or later is None else (later - earlier).total_seconds()
+
+
+def app_ready_path() -> Path:
+    """앱이 준비를 마친 시각 자리. 결과 파일 옆이다."""
+    return report_path().with_name(APP_READY_NAME)
+
+
+def clear_app_ready() -> None:
+    """앞 실행의 시각을 지운다. 시작 스크립트가 맨 앞에서 부른다."""
+    app_ready_path().unlink(missing_ok=True)
+
+
+def note_app_ready() -> None:
+    """앱이 받을 준비를 마친 시각을 한 번 남긴다 — 「앱 응답까지 n초」 의 끝.
+
+    시작 스크립트가 돌지 않은 자리(개발 · 사내 PC)에서는 결과 파일이 없어 아무것도 쓰지 않는다.
+    첫 시각이 답이라 덮어쓰지 않는다. 진단 값 하나라 실패가 앱 띄우기를 막지 않는다.
+    """
+    target = app_ready_path()
+    try:
+        if not report_path().is_file() or target.exists():
+            return
+        target.write_text(json.dumps({"ready_at_utc": utc_timestamp()}), encoding="utf-8")
+    except OSError:
+        return
+
+
+def read_app_ready() -> str | None:
+    """앱이 남긴 시각. 없거나 꼴이 어긋나면 `None`."""
+    try:
+        payload = json.loads(app_ready_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return _text_or_none(_mapping(payload).get("ready_at_utc"))
 
 
 def missing_for_step(report: ContainerStartReport, step: str) -> tuple[str, ...]:
@@ -285,6 +435,8 @@ def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | Non
 def report_verdict(report: ContainerStartReport) -> str:
     """펼침 제목 끝에 붙는 한마디 — 실패가 하나라도 있으면 실패, 다음은 건너뜀."""
     statuses = {step.status for step in report.steps.values()}
+    if report.sync is not None:
+        statuses |= {step.status for step in report.sync.steps.values()}
     if STATUS_FAILED in statuses:
         return "실패 있음"
     if STATUS_SKIPPED in statuses:

@@ -32,6 +32,7 @@ from capa_simulation.services import object_storage_manifest as manifest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import container_start  # noqa: E402
 from s3_mock_store import MockStore, start_mock  # noqa: E402
 
 AWS_BIN = os.environ.get("CAPA_TEST_AWS_BIN", "")
@@ -184,6 +185,56 @@ def test_rollback_reads_the_head_of_each_member(real: SimpleNamespace) -> None:
     pointer = engine.rollback(real.client, to_seq=1, note="되돌림")
 
     assert pointer.seq == 3
+
+
+def _start_script_client(
+    real: SimpleNamespace, home: Path
+) -> tuple[ObjectStorageClient, dict[str, str]]:
+    """시작 스크립트가 쓴 `~/.aws` 만 보는 클라이언트 — 고정틀의 프로필 파일은 넘기지 않는다."""
+    environ = {
+        "HOME": str(home),
+        "PATH": f"{Path(AWS_BIN).parent}{os.pathsep}{os.environ['PATH']}",
+        "CAPA_S3_ACCESS_KEY": real.store.access_key,
+        "CAPA_S3_SECRET_KEY": real.store.secret_key,
+    }
+    client = ObjectStorageClient(
+        settings=real.client.settings,
+        runner=container_start.AwsRunner(container_start.run_command, environ),
+        sleep=lambda _s: None,
+    )
+    return client, environ
+
+
+def test_the_profile_the_start_script_writes_is_what_the_real_cli_reads(
+    real: SimpleNamespace, tmp_path: Path
+) -> None:
+    """셸이 없어 파일을 직접 쓴다 — 중첩 `s3` 절 · 체크섬 줄을 실제 CLI 가 읽는지가 답이다."""
+    home = tmp_path / "start-home"
+    home.mkdir()
+    client, environ = _start_script_client(real, home)
+
+    profile = container_start.aws_profile_step(environ, real.client.settings)
+    cli, version = container_start.aws_cli_step(client)
+    bucket = container_start.bucket_step(client)
+
+    assert profile.status == "ok"
+    assert (cli.status, version) == ("ok", "1.46.3")
+    assert bucket == container_start.StepResult("ok", "정상")
+    assert client.check_addressing_style() == "path"
+    _init(real)
+    assert engine.read_remote_head(client).head_seq == 1
+
+
+def test_the_bucket_line_reads_a_wrong_key_as_refused(
+    real: SimpleNamespace, tmp_path: Path
+) -> None:
+    home = tmp_path / "start-home"
+    home.mkdir()
+    client, environ = _start_script_client(real, home)
+    environ["CAPA_S3_SECRET_KEY"] = "another-secret-for-the-demo-store"
+    container_start.aws_profile_step(environ, real.client.settings)
+
+    assert container_start.bucket_step(client).reason == "저장소가 거절"
 
 
 def test_a_refused_key_reads_as_denied(real: SimpleNamespace) -> None:
