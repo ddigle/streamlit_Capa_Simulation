@@ -855,17 +855,24 @@ function sendRevert(S, op) {
   flush(S)
 }
 
+function isUndoMark(mark) {
+  return mark.dataset.fk.startsWith('undo-')
+}
+
 // 칸 전체를 다시 지어도 키보드 초점이 문서로 빠지지 않게 든 자리를 잡아 둔다 — 되돌린 줄은 사라지므로 차례도 함께 든다.
+// 차례는 되돌리기만 센다 — 시나리오 링크까지 세면 묶음 마지막 줄 다음이 링크가 되어, 되돌리기를 잇던 Enter 가 칸을 떠난다.
 function heldChange(S) {
   const active = activeIn(S.host)
   if (!active || !S.host.contains(active) || !active.dataset || !active.dataset.fk) return null
-  return { key: active.dataset.fk, at: Array.from(S.host.querySelectorAll('[data-fk]')).indexOf(active) }
+  const marks = Array.from(S.host.querySelectorAll('[data-fk]'))
+  return { key: active.dataset.fk, at: marks.slice(0, marks.indexOf(active)).filter(isUndoMark).length }
 }
 
 function restoreChange(root, held) {
   if (!held) return
   const marks = Array.from(root.querySelectorAll('[data-fk]'))
-  const node = marks.find((mark) => mark.dataset.fk === held.key) || marks[Math.min(held.at, marks.length - 1)] || root
+  const undos = marks.filter(isUndoMark)
+  const node = marks.find((mark) => mark.dataset.fk === held.key) || undos[Math.min(held.at, undos.length - 1)] || root
   node.focus({ preventScroll: true })
 }
 

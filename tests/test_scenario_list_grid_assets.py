@@ -920,6 +920,31 @@ const outside = new FakeNode('button')
 document.activeElement = outside
 m.rerender(data(['a'], 0))
 out.outside = document.activeElement === outside
+// 묶음 마지막 줄을 되돌리면 다음 묶음의 되돌리기로 간다 — 그 묶음의 시나리오 링크가 아니다.
+const pair = (rows) => ({
+  mode: 'changes', base: 's:0', limits: {}, counts: {}, order: {},
+  groups: [
+    { id: 'a', name: '이름 a', lines: rows },
+    { id: 'b', name: '이름 b', lines: [line('b')] },
+  ],
+})
+const second = { kind: 'revision', id: 'r1', label: '리비전명 a', before: '옛', after: '새' }
+const fks = () => m.host.querySelectorAll('[data-fk]').map((node) => node.dataset.fk)
+m.rerender(pair([line('a'), second]))
+out.marks = fks()
+undo('리비전명 a 되돌리기').focus()
+m.rerender(pair([line('a')]))
+out.lastOfGroup = document.activeElement.dataset.fk
+// 시나리오 링크에 있던 초점도 그 묶음이 사라지면 다음 되돌리기로 간다.
+m.rerender(pair([line('a')]))
+m.host.querySelectorAll('[data-fk]').find((node) => node.dataset.fk === 'open-a').focus()
+m.rerender({ ...pair([]), groups: [{ id: 'b', name: '이름 b', lines: [line('b')] }] })
+out.linkGone = document.activeElement.dataset.fk
+// 되돌리기가 없으면 링크가 남아도 칸 머리다.
+m.rerender(pair([line('a')]))
+undo('시나리오명 b 되돌리기').focus()
+m.rerender({ ...pair([]), groups: [{ id: 'a', name: '이름 a', lines: [] }] })
+out.noUndo = document.activeElement.className
 process.stdout.write(JSON.stringify(out))
 """
 )
@@ -933,6 +958,16 @@ def test_a_reverted_line_hands_the_keyboard_focus_on() -> None:
     assert out["previous"] == "시나리오명 b 되돌리기"
     assert "sgl-changes" in out["empty"]
     assert out["outside"] is True
+    assert out["marks"] == [
+        "open-a",
+        "undo-scenario-a",
+        "undo-revision-r1",
+        "open-b",
+        "undo-scenario-b",
+    ]
+    assert out["lastOfGroup"] == "undo-scenario-b"
+    assert out["linkGone"] == "undo-scenario-b"
+    assert "sgl-changes" in out["noUndo"]
 
 
 def test_the_changes_panel_lists_old_and_new_and_reverts_once() -> None:
