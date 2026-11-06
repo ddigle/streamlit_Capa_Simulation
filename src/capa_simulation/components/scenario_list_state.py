@@ -9,12 +9,20 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 from uuid import uuid4
 
 import streamlit as st
 
-from capa_simulation.services.scenario_list_edits import ListDraft, edit_count, has_edits
+from capa_simulation.services.scenario_list_edits import (
+    ListDraft,
+    edit_count,
+    has_edits,
+    rebased_for_created,
+)
+
+if TYPE_CHECKING:
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 DRAFT_KEY: Final = "scenario_list_draft"
 # 지난 회차에 그린 저장 차례 — `move` 의 `token` 을 대조하고 처음 옮길 때의 `order_base` 가 된다.
@@ -61,6 +69,16 @@ def pending_count() -> int:
     """「저장 전 변경 n건」."""
     draft = peek_draft()
     return 0 if draft is None else edit_count(draft)
+
+
+def follow_created_scenario(repository: DuckDBScenarioRepository, scenario_id: str) -> None:
+    """이 세션이 시나리오를 더한 뒤 미저장 순서의 본 차례를 옮긴다 — 안 옮기면 「다른 곳에서
+    바뀌었습니다」 로 막히는데 거짓이다. 순서 고침이 없으면 저장소를 더 읽지 않는다."""
+    draft = peek_draft()
+    if draft is None or draft.order is None:
+        return
+    order = tuple(item.scenario_id for item in repository.list_scenarios())
+    store_draft(rebased_for_created(draft, order, scenario_id))
 
 
 def shown_order() -> tuple[str, ...]:

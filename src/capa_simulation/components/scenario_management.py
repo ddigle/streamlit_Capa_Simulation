@@ -53,6 +53,7 @@ from capa_simulation.components.scenario_list_state import (
     SIDE_CHOICE_KEY,
     SIDE_NEXT_KEY,
     TABLE_KEY,
+    follow_created_scenario,
     load_draft,
     remember_shown_order,
     shown_order,
@@ -230,6 +231,7 @@ DELETE_CLEAR_KEY = "scenario_list_delete_confirm_clear"
 # 라벨이 바뀌어도 같은 단추로 남게 key 를 준다.
 DELETE_BUTTON_KEY = "scenario_list_delete_execute"
 DELETE_BUTTON_LABEL = "영구 삭제 실행"
+# 보관 확인 체크. 시나리오마다 따로 받는다(`archive_confirm_key`).
 ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
 # 가상 제품이 든 리비전을 공식버전으로 지정할 때의 확인 체크. 리비전마다 따로 받는다
 # (`official_confirm_key`).
@@ -278,7 +280,7 @@ OFFICIAL_DIALOG_KEY = f"scenario_official{PAGE_DIALOG_SUFFIX}"
 # 저장소에 넘기는 대조 값이다(`write_guard.remember_seen`). 제출 회차에 다시 읽은 번호를 넘기면 첫
 # 지정 뒤의 빠른 둘째 누름이 그 번호로 대조를 지나 공식을 한 번 더 세운다.
 OFFICIAL_SEEN_KEY = "scenario_official_seen_release_no"
-# 공식 지정 · 이름 저장의 제 저장 표지 이름(`write_guard.own_save_marks`). 이름은 줄마다
+# 공식 지정 · 이름 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks`). 이름은 줄마다
 # `<이름>:<줄 id>` 다.
 OFFICIAL_SAVE_NAME = "scenario_official_release"
 REVISION_NAME_SAVE_NAME = "scenario_revision_name"
@@ -439,6 +441,11 @@ def _warn_list(message: str) -> None:
     )
 
 
+def _warn_gone(count: int) -> None:
+    """맞추기가 뺀 사라진 줄의 고침 — 본문 맞추기 · 저장 콜백 어느 쪽에서 빠져도 같은 글이다."""
+    _warn_list(f"그 사이 보관 · 삭제된 시나리오의 고침 {count:,}건을 버렸습니다.")
+
+
 def _fold_outboxes() -> ListDraft:
     """세 마운트의 출납을 초안에 접어 적는다. 받기 콜백 · 단추 콜백 · 본문 머리가 모두 부른다 — 어느
     쪽이 먼저 돌아도 같고(`applied`), 콜백이 끊겨도 본문이 잇는다."""
@@ -518,7 +525,7 @@ def _settle_list_draft(
     saved = _read_saved(repository, scenarios, releases, draft)
     fitted = reconcile(draft, saved, preferred_open=active_persisted_scenario_id())
     if fitted.gone:
-        _warn_list(f"그 사이 보관 · 삭제된 시나리오의 고침 {fitted.gone:,}건을 버렸습니다.")
+        _warn_gone(fitted.gone)
     own = _own_settled(fitted, own_save_marks())
     if own:
         _after_list_save(SavePlan(settled=own))
@@ -668,11 +675,17 @@ def _render_changes(database_path: str, view: _ListView) -> None:
 def _discard_all(drawn_base: str) -> None:
     """「모두 버리기」 확인 — 이름 · 순서 고침을 비우고 세대를 올린다. 연 시나리오 · 고름은 남는다.
 
-    둘째 누름은 세대가 달라 끝난다. 알림은 표지(`note_notice`)로 그 회차에도 남는다.
+    둘째 누름은 세대가 달라 끝난다. 알림은 표지(`note_notice`)로 그 회차에도 남는다. 버릴 것이
+    없으면 세대를 올리지 않는다 — 올리면 막 보내던 고침이 옛 세대로 버려진다. 팝오버를 잠그지 않는
+    것은 「변경 저장」 과 같다(`_render_changes`).
     """
     notices = notice_marks()
     draft = _fold_outboxes()
     if draft_base(draft) != drawn_base:
+        return
+    if not has_edits(draft):
+        if held_notice(LIST_NOTICE_KEY) is None:
+            _notify(LIST_NOTICE_KEY, "info", "버릴 것이 없습니다.")
         return
     message = "저장하지 않은 이름 · 순서 고침을 모두 버렸습니다."
     note_notice(notices, LIST_NOTICE_KEY, message, kind="info")
@@ -693,7 +706,7 @@ def _note_saved(notices: dict[str, NoticeMark], key: str, text: str) -> None:
     """쓰기에 성공한 바로 뒤 그 성공 알림을 알림 표지에 적는다(`write_guard.note_notice` — 쓰기 전에
     받아 둔 dict 라 끊기지 않는다).
 
-    「변경 저장」·「이름 저장」 을 사람 속도로 두 번 누르면(0.15~0.2초) 둘째 누름은 옛 화면의
+    「변경 저장」 을 사람 속도로 두 번 누르면(0.15~0.2초) 둘째 누름은 옛 화면의
     단추에 닿는다 — 그 회차에 단추가 이미 잠겼으면 Streamlit 이 누름을 버리고, 아직 열려 있었으면
     콜백이 고친 것 없이 돈다. 어느 쪽이든 그 회차가 첫 누름의 성공 알림을 지웠다(2026-10-26 E2E).
     창(`TRAILING_PRESS_SECONDS`) 안의 회차는 그 칸의 `render_flash` 가 이 알림을 같은 아이콘으로
@@ -744,14 +757,15 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
         if held_notice(LIST_NOTICE_KEY) is None:
             _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
         return
-    # 거부 알림이 줄 번호 · 이름을 적으려면 맞춘 초안이 필요하다 — 저장 안에서 읽은 값을 건네받는다.
-    fitted: list[tuple[ListDraft, SavedList]] = []
+    # 거부 알림이 줄 번호 · 이름을 적으려면 맞춘 초안이 필요하고, 사라진 고침 수는 본문 맞추기가
+    # 못 본다(콜백이 먼저 돌아 초안을 비운다) — 저장 안에서 맞춘 것을 건네받는다.
+    fitted: list[tuple[Reconciled, SavedList]] = []
 
     def save() -> SavePlan:
         repository = get_scenario_repository(database_path)
         saved = _read_saved(repository, repository.list_scenarios(), (), draft)
         settled = reconcile(draft, saved)
-        fitted.append((settled.draft, saved))
+        fitted.append((settled, saved))
         plan = save_plan(settled.draft, saved)
         if plan.writes:
             repository.apply_scenario_list_edits(
@@ -765,8 +779,8 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
                 ("revision", plan.revision_renames),
             ):
                 for row_id, (shown, text) in renames.items():
-                    # 빠른 두 번 누름의 둘째가 받는 「다른 사용자가 먼저」 를 제 저장으로 알아보게
-                    # 적는다(write_guard). 쓰기 바로 뒤 dict 칸이라 끊기지 않는다.
+                    # 끊긴 첫 저장을 뒤 회차 맞추기가 제 저장으로 알아보게 적는다(`_own_settled`).
+                    # 쓰기 바로 뒤 dict 칸이라 끊기지 않는다.
                     remember_own_save(_name_save_name(kind, row_id), shown, text, marks)
         return replace(plan, settled=_own_settled(settled, marks))
 
@@ -776,41 +790,30 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
                 LIST_SAVE_NAME, draft_fingerprint(draft), save, wrote=lambda plan: plan.done
             )
     except BatchEditRefused as exc:
-        latest, saved = fitted[-1] if fitted else (draft, _empty_saved())
-        if _refused_by_own_save(exc, latest, marks):
-            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 모두 이미 바꿨다(write_guard). 첫 누름의
-            # 뒷정리가 끊겼을 수 있어 여기서 다시 한다.
-            done = SavePlan(
-                settled=tuple(
-                    SettledName(
-                        "revision" if row_id in latest.revisions else "scenario",
-                        row_id,
-                        _edit_of(latest, row_id).seen,
-                        name,
-                    )
-                    for row_id, name in exc.moved_names.items()
-                )
-            )
-        else:
-            _notify(
-                LIST_NOTICE_KEY,
-                "error",
-                refused_edits_message(
-                    _refused_lines(exc, latest, saved), reloaded=bool(exc.moved_names)
-                ),
-            )
-            # 먼저 바뀐 이름은 그 고침만 빼 지금 이름을 다시 보이고, 차례가 거절되면 순서 고침만
-            # 뺀다. 나머지 고침은 줄 id 로 남는다. 세대는 올리지 않는다(보내는 중인 op 는 유효하다).
-            kept = without_edits(draft, exc.moved_names)
-            if any(row_id is None for row_id, _ in exc.problems):
-                kept = replace(kept, order=None, order_base=None)
-            store_draft(kept)
-            return
+        settled, saved = fitted[-1]
+        _notify(
+            LIST_NOTICE_KEY,
+            "error",
+            refused_edits_message(
+                _refused_lines(exc, settled.draft, saved), reloaded=bool(exc.moved_names)
+            ),
+        )
+        # 먼저 바뀐 이름은 그 고침만 빼 지금 이름을 다시 보이고, 차례가 거절되면 순서 고침만
+        # 뺀다. 나머지 고침은 줄 id 로 남는다. 세대는 올리지 않는다(보내는 중인 op 는 유효하다).
+        kept = without_edits(draft, exc.moved_names)
+        if any(row_id is None for row_id, _ in exc.problems):
+            kept = replace(kept, order=None, order_base=None)
+        store_draft(kept)
+        return
     except BOOTSTRAP_ERRORS as exc:
         _notify(LIST_NOTICE_KEY, "error", bootstrap_error_message(exc))
         return
+    # 겹쳐 온 둘째 누름은 저장을 다시 돌지 않아 맞춘 것이 없다 — 첫 누름이 이미 알렸다.
+    gone = fitted[-1][0].gone if fitted else 0
+    if gone:
+        _warn_gone(gone)
     if not done.done:
-        if held_notice(LIST_NOTICE_KEY) is None:
+        if not gone and held_notice(LIST_NOTICE_KEY) is None:
             _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
         store_draft(cleared(draft))
         return
@@ -823,34 +826,6 @@ def _save_list_edits(database_path: str, drawn_base: str) -> None:
     _after_list_save(done)
     store_draft(cleared(draft))
     _notify(LIST_NOTICE_KEY, "success", message)
-
-
-def _empty_saved() -> SavedList:
-    return SavedList(order=(), names={})
-
-
-def _edit_of(draft: ListDraft, row_id: str) -> Any:
-    return draft.revisions.get(row_id) or draft.scenarios[row_id]
-
-
-def _refused_by_own_save(
-    exc: BatchEditRefused, draft: ListDraft, marks: Mapping[str, tuple[Any, Any]]
-) -> bool:
-    """거부된 줄이 모두 이 세션이 방금 쓴 짝인가 — 넓게 잡으면 남의 저장 뒤 충돌을 성공으로
-    알린다."""
-    if not exc.moved_names:
-        return False
-    for row_id, _ in exc.problems:
-        if row_id is None or row_id not in exc.moved_names:
-            return False
-        kind = "revision" if row_id in draft.revisions else "scenario"
-        edits = draft.revisions if kind == "revision" else draft.scenarios
-        if row_id not in edits:
-            return False
-        name = _name_save_name(kind, row_id)
-        if not is_own_save(name, edits[row_id].seen, exc.moved_names[row_id], marks):
-            return False
-    return True
 
 
 def _refused_lines(
@@ -960,7 +935,12 @@ def _render_detail(
     first_view = st.session_state.get(ACTION_OWNER_KEY) != summary.scenario_id
     if first_view:
         st.session_state[ACTION_OWNER_KEY] = summary.scenario_id
-        for key in (ACTION_KEY, DELETE_CONFIRM_KEY, ARCHIVE_CONFIRM_KEY, REVISION_SEED_KEY):
+        for key in (
+            ACTION_KEY,
+            DELETE_CONFIRM_KEY,
+            archive_confirm_key(summary.scenario_id),
+            REVISION_SEED_KEY,
+        ):
             st.session_state.pop(key, None)
     revisions = repository.list_revisions(summary.scenario_id)
     revision_by_id = {revision.revision_id: revision for revision in revisions}
@@ -997,6 +977,7 @@ def _render_detail(
                     "변경을 버리고 불러오기",
                     key=DISCARD_UNSAVED_KEY,
                 )
+        _refuse_stale_official_press(summary.scenario_id, revision_by_id)
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             st.button(
                 "선택한 리비전 불러오기",
@@ -1127,8 +1108,8 @@ def _parent_label(parent_revision_id: str | None, number_by_id: Mapping[str, int
 
 def _load_picked_revision(database_path: str, drawn_scenario: str) -> None:
     """「선택한 리비전 불러오기」 콜백. 고른 리비전은 출납을 접은 뒤의 고름이다 — 리비전 줄을 누른
-    직후의 단추도 그 리비전에 걸린다. 왼쪽 줄을 누르고 바로 옛 카드 단추를 눌렀으면 하지
-    않는다(불러오기에는 확인 팝업이 없다)."""
+    직후의 단추도 그 리비전에 걸린다. 왼쪽 줄을 누르고 바로 옛 카드 단추를 눌렀거나 고른 리비전이
+    이 시나리오 것이 아니면 하지 않는다(불러오기에는 확인 팝업이 없다)."""
     draft = _fold_outboxes()
     if draft.opened != drawn_scenario:
         _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
@@ -1147,7 +1128,16 @@ def _load_picked_revision(database_path: str, drawn_scenario: str) -> None:
         return
     try:
         with pinned_connections(Path(database_path)):
+            # 옛 카드의 누름 — 남이 그 사이 보관 · 삭제했으면 목록에 없는 시나리오를 올리지 않는다.
+            listed = get_scenario_repository(database_path).list_scenarios()
+            if drawn_scenario not in {item.scenario_id for item in listed}:
+                _notify(CARD_NOTICE_KEY, "error", ARCHIVE_GONE_MESSAGE)
+                return
             snapshot = load_scenario_snapshot(database_path, revision_id)
+            # 옛 리비전 줄의 누름이 지금 연 시나리오 이름표를 달고 올 수 있다 — 소속으로 다시 본다.
+            if snapshot.scenario.scenario_id != drawn_scenario:
+                _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
+                return
             # 활성화 **전에** 본다. 활성화한 뒤에 계산이 죽으면 올라와 있는 시나리오가 이미 바뀐
             # 뒤라 화면에서 되돌릴 방법이 없다.
             blocked = revision_block_reason(snapshot.tables)
@@ -1220,6 +1210,21 @@ def _open_official_dialog(drawn_scenario: str) -> None:
 
 def _close_official_dialog() -> None:
     st.session_state.pop(OFFICIAL_DIALOG_KEY, None)
+
+
+def _refuse_stale_official_press(
+    scenario_id: str, revision_by_id: Mapping[str, RevisionSummary]
+) -> None:
+    """「공식으로 지정…」 을 누른 옛 카드가 지금 연 시나리오 · 리비전이 아니다(남이 그 사이 보관해
+    본문이 줄을 옮겼다). 팝업 칸을 비우고 결과 칸에 알린다 — 말없이 지우면 팝업도 알림도 없이 표만
+    바뀐다."""
+    opened = st.session_state.get(OFFICIAL_DIALOG_KEY)
+    if not isinstance(opened, tuple) or len(opened) != 2:
+        return
+    if opened[0] == scenario_id and opened[1] in revision_by_id:
+        return
+    _close_official_dialog()
+    _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
 
 
 @st.dialog("공식버전 지정", width="medium", on_dismiss=_close_official_dialog)
@@ -1425,6 +1430,12 @@ def official_confirm_key(revision_id: str) -> str:
     return f"{OFFICIAL_CONFIRM_KEY}_{revision_id}"
 
 
+def archive_confirm_key(scenario_id: str) -> str:
+    """보관 확인 체크의 key. 칸을 지워도 브라우저가 옛 값을 다시 보내므로 시나리오를 실어 다른
+    칸으로 세운다 — 앞 시나리오의 확인이 따라오면 「B 를 보관합니다」 가 켜진 채 선다."""
+    return f"{ARCHIVE_CONFIRM_KEY}_{scenario_id}"
+
+
 def official_virtual_product_warning(records: Sequence[VirtualProductRecord]) -> str:
     """공식버전 지정 전에 보일 가상 제품 확인 문장. 제품 · Stack 을 모두 적는다.
 
@@ -1462,7 +1473,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     confirmed = st.checkbox(
         f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
         "보관합니다",
-        key=ARCHIVE_CONFIRM_KEY,
+        key=archive_confirm_key(summary.scenario_id),
     )
     if not st.button(
         "보관 실행",
@@ -1510,7 +1521,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         clear_persisted_scenario_activation()
     queue_flash(FLASH_KEY, message)
     settle_draft()
-    for key in (ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
+    for key in (ACTION_KEY, ACTION_OWNER_KEY, archive_confirm_key(summary.scenario_id)):
         st.session_state.pop(key, None)
     st.rerun()
 
@@ -1859,6 +1870,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             # 내용은 지금 편집본 그대로지만 **다른 시나리오**가 된다 — 시나리오를 바꾸는 경로처럼
             # HOME 토글을 푼다.
             activate_persisted_snapshot(snapshot)
+            follow_created_scenario(repository, snapshot.scenario.scenario_id)
             queue_flash(
                 FLASH_KEY,
                 f"{literal_markdown(snapshot.scenario.scenario_name)}"

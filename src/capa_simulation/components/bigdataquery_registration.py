@@ -38,6 +38,7 @@ from capa_simulation.components.flash import (
 )
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -782,6 +783,7 @@ def _save_scenario(
         return
     snapshot = registration.snapshot
     activate_persisted_snapshot(snapshot)
+    follow_created_scenario(repository, snapshot.scenario.scenario_id)
     # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
     _request_reset()
     queue_flash(

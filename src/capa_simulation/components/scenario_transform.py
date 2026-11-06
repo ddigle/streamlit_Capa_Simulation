@@ -11,6 +11,7 @@ from capa_simulation.components.capacity_gate import derived_save_verdict
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -320,6 +321,8 @@ def render_derived_save(
         return
     snapshot = written.value
     saved_name = name if snapshot is None else snapshot.scenario.scenario_name
+    if snapshot is not None:
+        follow_created_scenario(repository, snapshot.scenario.scenario_id)
     st.session_state[saved_key] = {"request": request, "name": saved_name}
     queue_flash(flash_key, derived_saved_message(saved_name))
     if verdict.message:

@@ -260,6 +260,15 @@ def rebased_order(draft: ListDraft, before: Sequence[str], after: Sequence[str])
     return replace(draft, order_base=tuple(after))
 
 
+def rebased_for_created(draft: ListDraft, after: Sequence[str], created: str) -> ListDraft:
+    """이 세션이 시나리오를 더했다(복제 · 월 머지 · 연도 Shift · DB 등록) — 순서 고침의 본 차례를 그
+    줄이 든 지금 차례로 옮긴다. 쓰기 전 차례를 읽지 않아 끊긴 회차를 다시 돌아도 같다. 그 줄을 빼도
+    본 차례와 다르면(남이 먼저 바꿈) 그대로 둔다."""
+    if draft.order is None or tuple(row for row in after if row != created) != draft.order_base:
+        return draft
+    return replace(draft, order_base=tuple(after))
+
+
 def order_token(order: Sequence[str]) -> str:
     """저장 차례의 지문 — 브라우저가 `move` 에 실어 온다."""
     return hashlib.sha1("\n".join(order).encode("utf-8")).hexdigest()[:8]

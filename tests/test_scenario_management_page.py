@@ -38,7 +38,6 @@ from capa_simulation.components.scenario_list_grid import (
 from capa_simulation.components.scenario_list_state import DRAFT_KEY, SIDE_NEXT_KEY
 from capa_simulation.components.scenario_management import (
     ACTION_KEY,
-    ARCHIVE_CONFIRM_KEY,
     ARCHIVED_SELECT_KEY,
     CARD_LOAD_KEY,
     CARD_NOTICE_KEY,
@@ -65,6 +64,7 @@ from capa_simulation.components.scenario_management import (
     SIDE_HISTORY,
     SIDE_KEY,
     SIDES,
+    archive_confirm_key,
     official_confirm_key,
     official_virtual_product_warning,
 )
@@ -777,6 +777,11 @@ def _check_row(app: AppTest, scenario_id: str) -> None:
     app.session_state[DRAFT_KEY] = replace(held, opened=scenario_id)
 
 
+def _check_archive(app: AppTest) -> None:
+    """연 시나리오의 보관 확인 체크를 켠다 — 칸 key 는 시나리오마다 다르다."""
+    app.checkbox(key=archive_confirm_key(str(_draft(app).opened))).check()
+
+
 def _draft(app: AppTest) -> ListDraft:
     draft = app.session_state[DRAFT_KEY]
     assert isinstance(draft, ListDraft)
@@ -877,7 +882,7 @@ def test_archive_and_delete_drop_the_cached_comparison_target(tmp_path: Path) ->
     app.run()
     app.button(key=f"{ACTION_KEY}_archive").click().run()
     assert not app.exception
-    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    _check_archive(app)
     app.run()
     next(button for button in app.button if button.label == "보관 실행").click()
     app.run()
@@ -943,7 +948,7 @@ def test_rename_archive_and_delete_refresh_the_cached_main_cases(
     app.run()
     app.button(key=f"{ACTION_KEY}_archive").click().run()
     assert not app.exception
-    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    _check_archive(app)
     app.run()
     next(button for button in app.button if button.label == "보관 실행").click()
     app.run()
@@ -2071,7 +2076,7 @@ def test_archiving_here_drops_its_edits_silently_and_keeps_the_order_edit_valid(
 
     app.button(key=f"{ACTION_KEY}_archive").click().run()
     assert not app.exception
-    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    _check_archive(app)
     app.run()
     next(button for button in app.button if button.label == "보관 실행").click()
     browser.run()

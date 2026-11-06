@@ -30,13 +30,13 @@ import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import (
     ACTION_KEY,
-    ARCHIVE_CONFIRM_KEY,
     ARCHIVED_GONE_MESSAGE,
     ARCHIVED_SELECT_KEY,
     DELETE_BUTTON_KEY,
     DELETE_CONFIRM_KEY,
     SIDE_ARCHIVE,
     SIDE_KEY,
+    archive_confirm_key,
 )
 from capa_simulation.persistence.models import ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -271,7 +271,7 @@ def test_an_overlapping_second_archive_press_reports_the_first_archive(
     app.session_state[DRAFT_KEY] = ListDraft(opened=target.scenario_id)
     _ok(app.run())
     _ok(app.button(key=f"{ACTION_KEY}_archive").click().run())
-    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    app.checkbox(key=archive_confirm_key(target.scenario_id)).check()
     _ok(app.run())
 
     original = DuckDBScenarioRepository.archive_scenario
