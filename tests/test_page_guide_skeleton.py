@@ -593,6 +593,19 @@ def test_ops_and_targets_use_only_the_fixed_words() -> None:
     assert not wrong, "\n".join(wrong)
 
 
+def test_the_row_pick_step_does_not_point_at_the_name_cell() -> None:
+    """이미 연 줄의 이름을 누르면 편집이 열린다 — 줄을 여는 단계의 표시는 값 칸 머리다(대상은 보통
+    올라와 있는 시나리오, 곧 이미 연 줄이다)."""
+    task = next(item for item in _content()["tasks"] if item["id"] == "set_official")
+    step = next(item for item in task["steps"] if item["id"] == "pick_row")
+    marks = {mark["t"] for mark in step["focus"]}
+    state = next(item for item in _plan()["states"] if item["id"] == step["state"])
+    assert "scen_latest_col" in marks
+    assert state["targets"]["scen_latest_col"] == "named:LIST_HEAD(최신)"
+    assert "named:LIST_HEAD(시나리오명)" not in state["targets"].values()
+    assert "이름 말고" in step["do"]
+
+
 def test_the_official_check_step_points_at_what_the_screen_shows() -> None:
     """공식 지정 결과는 오른쪽 아래 알림창과 목록 표 「공식버전」 칸이다. 화면 맨 위 줄은 저장소
     상태와 함께 걷혔고, 사이드바는 고른 시나리오가 올라와 있는 리비전이 아니면 공식 배지가 서지
@@ -606,7 +619,7 @@ def test_the_official_check_step_points_at_what_the_screen_shows() -> None:
         assert word not in step["do"], word
 
     state = next(item for item in _plan()["states"] if item["id"] == step["state"])
-    assert state["targets"]["official_cell"] == "named:EDIT_ROW_CELL(공식버전)"
+    assert state["targets"]["official_cell"] == "named:LIST_OPEN_CELL(공식버전)"
     assert "off_success" not in state["targets"]
     assert "맨 위" not in state["note"]
     assert "알림창" in state["note"] and "공식버전" in state["note"]

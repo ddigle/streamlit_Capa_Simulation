@@ -1,0 +1,104 @@
+.emg-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--emg-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.emg-icon {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--emg-muted);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+
+.emg-icon:hover {
+  background: var(--emg-header);
+  color: var(--emg-text);
+}
+
+.emg-muted {
+  color: var(--emg-muted);
+}
+
+.emg-side-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--emg-muted);
+  margin: 0;
+}
+
+.emg-sum {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--emg-border);
+  border-bottom: 1px solid var(--emg-border);
+}
+
+.emg-sum div {
+  background: var(--emg-surface);
+  padding: 10px 6px;
+  text-align: center;
+}
+
+.emg-sum b {
+  display: block;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.emg-sum .is-error b {
+  color: var(--emg-error-line);
+}
+
+.emg-unit {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--emg-border);
+}
+
+.emg-unit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.emg-unit-head .emg-grow {
+  flex: 1;
+}
+
+.emg-line {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) 28px;
+  gap: 6px;
+  align-items: center;
+  font-size: 12.5px;
+  min-height: 28px;
+}
+
+.emg-line .emg-from {
+  color: var(--emg-muted);
+  text-decoration: line-through;
+}
+
+.emg-line .emg-value {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .emg-sum {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

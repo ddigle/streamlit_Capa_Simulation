@@ -438,7 +438,7 @@ def test_saving_into_a_scenario_archived_elsewhere_says_why_and_where_to_go(
     (warning,) = [str(item.value) for item in app.warning]
     assert warning.startswith(
         "「기준안」은 그 사이 다른 사용자가 보관해 새 리비전을 저장할 수 없습니다 — 저장하려면 "
-        "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
+        "시나리오 관리 「목록 관리」 오른쪽 「보관함」 에서 목록으로 되돌린 뒤 다시 "
         "저장하세요."
     ), warning
     assert "시나리오 관리 「복제」 로 새 시나리오를 만들고" in warning

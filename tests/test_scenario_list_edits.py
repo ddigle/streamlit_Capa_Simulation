@@ -1,12 +1,9 @@
-# Purpose: 목록·리비전 편집표의 초안 접기와 저장소 일괄 이름·순서 쓰기(전부 아니면 전무)를 잰다.
+# Purpose: 저장소의 목록 이름 · 순서 일괄 쓰기(전부 아니면 전무)와 차례 규칙을 잰다.
 
-"""시나리오 관리 C안의 두 층.
-
-- 초안 접기(`components/pick_edit_table.py`): 브라우저의 행 위치 편집을 행 id 로 접는다 — 고름은
-  하나, 순서 칸은 끼워 넣기, 두 번 접어도 같다, 저장된 행에 맞춘다.
-- 저장소: 목록 이름·순서(`apply_scenario_list_edits`)와 리비전명(`rename_revisions`)을 한
-  트랜잭션으로 쓰고 하나라도 거부되면 아무것도 쓰지 않는다. 가상 제품 수는 리비전 id 목록으로
-  한 번에 센다.
+"""저장소 쪽 — 목록 이름 · 순서 · 리비전명(`apply_scenario_list_edits`)을 한 트랜잭션으로 쓰고
+하나라도 거부되면 아무것도 쓰지 않는다. 가상 제품 수는 리비전 id 목록으로 한 번에 센다. 초안 접기는
+`tests/test_scenario_list_ops.py`, 시나리오 + 리비전 함께 쓰기는 `tests/test_scenario_list_save.py`
+다.
 """
 
 from __future__ import annotations
@@ -17,18 +14,6 @@ from pathlib import Path
 import pytest
 from test_duckdb_repository import _metadata, _reference_tables
 
-from capa_simulation.components.pick_edit_table import (
-    TableColumns,
-    TableDraft,
-    changed_names,
-    drop_names,
-    fold_edits,
-    move_row,
-    moved_count,
-    moved_names,
-    reconcile,
-    with_order,
-)
 from capa_simulation.persistence.models import ScenarioPreset
 from capa_simulation.persistence.repository import (
     DUPLICATE_SCENARIO_NAME_MESSAGE,
@@ -36,106 +21,6 @@ from capa_simulation.persistence.repository import (
     BatchEditRefused,
     DuckDBScenarioRepository,
 )
-
-COLUMNS = TableColumns(pick="선택", name="이름", order="순서")
-ROWS = ("a", "b", "c")
-NAMES = {"a": "가", "b": "나", "c": "다"}
-
-
-def test_a_second_check_keeps_only_the_newly_picked_row_and_the_name_edits() -> None:
-    """두 줄이 골라지면 초안의 고른 줄이 아닌 쪽만 남기고 표를 다시 세운다. 이름 편집은 남는다."""
-    draft = TableDraft(picked="a")
-    folded, remount = fold_edits(
-        draft, ROWS, NAMES, {1: {"선택": True}, 2: {"이름": " 새 다 "}}, COLUMNS
-    )
-    assert remount
-    assert folded == TableDraft(names={"c": "새 다"}, name_base={"c": "다"}, picked="b")
-
-
-def test_unchecking_then_checking_another_row_needs_no_remount() -> None:
-    draft = TableDraft(picked="a")
-    folded, remount = fold_edits(
-        draft, ROWS, NAMES, {0: {"선택": False}, 2: {"선택": True}}, COLUMNS
-    )
-    assert not remount
-    assert folded.picked == "c"
-    folded, remount = fold_edits(draft, ROWS, NAMES, {0: {"선택": False}}, COLUMNS)
-    assert not remount and folded.picked is None
-
-
-def test_a_name_set_back_to_the_stored_one_is_no_edit() -> None:
-    draft = TableDraft(names={"b": "임시"})
-    folded, _ = fold_edits(draft, ROWS, NAMES, {1: {"이름": "나"}}, COLUMNS)
-    assert folded.names == {}
-    # 빈 칸은 고친 것이다 — 저장할 때 저장소가 「비어 있을 수 없습니다」로 거절한다.
-    folded, _ = fold_edits(draft, ROWS, NAMES, {1: {"이름": None}}, COLUMNS)
-    assert changed_names(folded, NAMES) == {"b": ("나", "")}
-
-
-def test_a_name_is_compared_with_the_name_seen_when_the_cell_was_first_edited() -> None:
-    """이름은 비교 후 쓰기다 — 비교 대상은 그 칸을 처음 고친 편집이 붙은 표가 보인 저장 이름이다.
-
-    마지막 회차에 다시 읽은 이름을 비교 대상으로 삼으면, 다른 곳에서 먼저 바뀐 뒤 회차가 한 번만 더
-    돌아도 대조가 통과해 남의 변경을 알림 없이 덮는다(2026-10-22 리뷰).
-    """
-    # 표가 「나」를 보인 회차에 「새 나」로 고쳤다. 접는 회차에 이미 다른 곳에서 「남의 나」로
-    # 바뀌었어도 비교 대상은 표가 보인 「나」다.
-    moved = {**NAMES, "b": "남의 나"}
-    folded, _ = fold_edits(TableDraft(), ROWS, moved, {1: {"이름": "새 나"}}, COLUMNS, NAMES)
-    assert folded.name_base == {"b": "나"}
-    assert changed_names(folded, moved) == {"b": ("나", "새 나")}
-    assert moved_names(folded, moved) == {"b": "남의 나"}
-    # 그 뒤 회차마다 같은 편집을 다시 접어도(그 표는 이제 「남의 나」를 보인다) 비교 대상은
-    # 그대로다.
-    again, _ = fold_edits(folded, ROWS, moved, {1: {"이름": "새 나"}}, COLUMNS, moved)
-    assert again == folded
-    # 지금 이름과 같게 고치면 쓸 것이 없다 — 비교 대상도 함께 지운다.
-    same, _ = fold_edits(folded, ROWS, moved, {1: {"이름": "남의 나"}}, COLUMNS, moved)
-    assert same.names == {} and same.name_base == {}
-    # 거부된 행의 이름 편집을 버리면 다시 고칠 때 그때 보인 이름이 비교 대상이 된다.
-    fresh, _ = fold_edits(
-        drop_names(folded, ["b"]), ROWS, moved, {1: {"이름": "새 나"}}, COLUMNS, moved
-    )
-    assert changed_names(fresh, moved) == {"b": ("남의 나", "새 나")}
-    assert moved_names(fresh, moved) == {}
-    # 다른 곳에서 바뀐 이름이 내가 고친 이름과 같으면 쓸 것도, 막을 것도 없다.
-    assert changed_names(folded, {**NAMES, "b": "새 나"}) == {}
-    # 사라진 행의 비교 대상은 초안에서 빠진다.
-    assert reconcile(folded, ("a", "c")) == TableDraft()
-
-
-def test_a_place_number_inserts_the_row_and_folding_twice_is_the_same() -> None:
-    """순서 칸 숫자는 그 자리로 끼워 넣기다. 처음 고치는 순서면 그 회차 차례를 기준으로 적는다."""
-    folded, remount = fold_edits(TableDraft(), ROWS, NAMES, {2: {"순서": 1}}, COLUMNS)
-    assert remount
-    assert folded.order == ("c", "a", "b")
-    assert folded.order_base == ROWS
-    again, remount_again = fold_edits(TableDraft(), ROWS, NAMES, {2: {"순서": 1}}, COLUMNS)
-    assert again == folded and remount_again
-    # 같은 자리 번호는 움직이지 않는다.
-    same, remount = fold_edits(TableDraft(), ROWS, NAMES, {1: {"순서": 2.0}}, COLUMNS)
-    assert same.order is None and not remount
-
-
-def test_reconcile_drops_gone_rows_and_appends_new_ones() -> None:
-    draft = TableDraft(
-        names={"a": "새 가", "z": "사라짐"}, order=("c", "a", "b"), order_base=ROWS, picked="z"
-    )
-    fitted = reconcile(draft, ("a", "b", "c", "d"))
-    assert fitted == TableDraft(
-        names={"a": "새 가"}, order=("c", "a", "b", "d"), order_base=ROWS, picked=None
-    )
-    # 고친 차례가 저장 차례와 같아지면 순서 편집이 없는 것이다.
-    assert reconcile(TableDraft(order=("a", "b"), order_base=("b", "a")), ("a", "b")).order is None
-
-
-def test_move_and_counts() -> None:
-    assert move_row(ROWS, "c", 0) == ("c", "a", "b")
-    assert move_row(ROWS, "a", 9) == ("b", "c", "a")
-    assert move_row(ROWS, "b", -3) == ("b", "a", "c")
-    moved = with_order(TableDraft(picked="c"), ("c", "a", "b"), ROWS)
-    assert moved.order_base == ROWS and moved_count(moved, ROWS) == 3
-    assert with_order(moved, ROWS, ROWS).order is None
 
 
 def _repository(tmp_path: Path) -> DuckDBScenarioRepository:
@@ -318,20 +203,25 @@ def test_revision_names_are_renamed_together_or_not_at_all(tmp_path: Path) -> No
         scenario_id, snapshot.tables, snapshot.preset, revision_name="probe save"
     ).revision
 
-    renamed = repository.rename_revisions(
-        {
+    repository.apply_scenario_list_edits(
+        {},
+        revision_renames={
             second.revision_id: ("probe save", " 필터 "),
             first.revision_id: (first.revision_name, "초기"),
-        }
+        },
     )
-    assert [(item.revision_id, item.revision_name) for item in renamed] == [
-        (second.revision_id, "필터"),
-        (first.revision_id, "초기"),
+    assert [item.revision_name for item in repository.list_revisions(scenario_id)] == [
+        "필터",
+        "초기",
     ]
 
     with pytest.raises(BatchEditRefused) as refused:
-        repository.rename_revisions(
-            {second.revision_id: ("probe save", "또"), first.revision_id: ("초기", "")}
+        repository.apply_scenario_list_edits(
+            {},
+            revision_renames={
+                second.revision_id: ("probe save", "또"),
+                first.revision_id: ("초기", ""),
+            },
         )
     assert dict(refused.value.problems) == {
         second.revision_id: "다른 사용자가 먼저 이름을 바꿨습니다(지금: 필터).",
@@ -341,11 +231,12 @@ def test_revision_names_are_renamed_together_or_not_at_all(tmp_path: Path) -> No
         "필터",
         "초기",
     ]
-    assert repository.rename_revisions({}) == []
 
     repository.archive_scenario(scenario_id)
     with pytest.raises(BatchEditRefused) as archived:
-        repository.rename_revisions({first.revision_id: ("초기", "보관 뒤")})
+        repository.apply_scenario_list_edits(
+            {}, revision_renames={first.revision_id: ("초기", "보관 뒤")}
+        )
     assert dict(archived.value.problems) == {
         first.revision_id: "보관된 시나리오의 리비전명은 바꿀 수 없습니다."
     }

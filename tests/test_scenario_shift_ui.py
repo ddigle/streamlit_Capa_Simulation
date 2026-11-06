@@ -11,6 +11,7 @@ from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_transform import DERIVED_SAVE_HELP, saved_button_help
 from capa_simulation.components.scenario_year_shift import ZERO_SHIFT_HELP
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
@@ -20,6 +21,7 @@ from capa_simulation.scenario_activation import (
     ACTIVE_PERSISTED_SCENARIO_ID_KEY,
 )
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
+from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
@@ -141,6 +143,27 @@ def test_shift_preserves_selected_revision_history_and_can_shift_it_again(source
     pd.testing.assert_frame_equal(
         repository.list_virtual_products(shifted_again.active_revision_id), expected
     )
+
+
+def test_a_shift_made_here_moves_the_base_of_the_unsaved_list_order(source: Source) -> None:
+    """목록 관리에 미저장 순서를 둔 채 이 세션이 만든 시나리오는 「다른 곳에서」 가 아니다 — 본
+    차례를 그 줄이 든 차례로 옮긴다."""
+    repository, database, snapshot = source
+    other = repository.create_scenario(
+        _metadata("순서 고칠 둘째"), snapshot.tables, snapshot.preset
+    ).scenario.scenario_id
+    stored = tuple(item.scenario_id for item in repository.list_scenarios())
+    app = _app(database, snapshot)
+    app.session_state[DRAFT_KEY] = ListDraft(order=tuple(reversed(stored)), order_base=stored)
+    assert other in stored
+    app.number_input(key="scenario_shift_years").set_value(1).run()
+    app.text_input(key="scenario_shift_name").set_value("이 세션 Shift")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    after = tuple(item.scenario_id for item in repository.list_scenarios())
+    assert len(after) == len(stored) + 1
+    assert app.session_state[DRAFT_KEY].order_base == after
 
 
 def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: Source) -> None:

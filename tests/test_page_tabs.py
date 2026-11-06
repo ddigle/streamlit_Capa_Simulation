@@ -936,8 +936,8 @@ def test_past_data_and_scenario_table_drafts_mark_their_tabs_and_the_theme_butto
 ) -> None:
     """테마 단추의 「저장 안 함」 확인도 탭 점과 같은 판정이다 — 전에 빠져 있던 두 초안이 든다."""
     from capa_simulation.components.past_data_management import PAST_DRAFT_KEY
-    from capa_simulation.components.pick_edit_table import TableDraft, draft_session_key
-    from capa_simulation.components.scenario_management import LIST_EDITOR_KEY
+    from capa_simulation.components.scenario_list_state import DRAFT_KEY
+    from capa_simulation.services.scenario_list_edits import ListDraft, NameEdit
 
     # 초안을 그리는 화면 밖에서 본다 — 점은 그 화면을 그리기 전 세션 값으로 정해진다.
     app = _ok(_app.run())
@@ -951,7 +951,7 @@ def test_past_data_and_scenario_table_drafts_mark_their_tabs_and_the_theme_butto
     assert _has_theme_unsaved_marker(app)
 
     app.session_state[PAST_DRAFT_KEY] = {}
-    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(names={"s1": "새 이름"})
+    app.session_state[DRAFT_KEY] = ListDraft(scenarios={"s1": NameEdit("옛 이름", "새 이름")})
     _ok(app.switch_page(H).run())
     assert _tab(sent, H)["dirty"] is False
     assert _tab(sent, B)["dirty"] is True

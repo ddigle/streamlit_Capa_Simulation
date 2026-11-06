@@ -1,0 +1,91 @@
+# Purpose: 시나리오 목록 관리 초안의 세션 칸과 탭 줄 · 변경 칩이 읽는 판정을 등록 없이 둔다.
+
+"""목록 관리 초안의 세션 칸(`services/scenario_list_edits.ListDraft`).
+
+표 컴포넌트 모듈(`scenario_list_grid`)은 읽을 때 등록하므로 화면 탭 줄 · 변경 칩이 부르지 않는다 —
+탭 줄이 읽는 것은 이 모듈뿐이고 세션만 본다(DB 없음). 초안은 세션이 끝나면 사라지고, 칸을 고치는
+동안 회차가 돌아 탭 점 · 변경 칩이 바로 바뀐다.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Final
+from uuid import uuid4
+
+import streamlit as st
+
+from capa_simulation.services.scenario_list_edits import (
+    ListDraft,
+    edit_count,
+    has_edits,
+    rebased_for_created,
+)
+
+if TYPE_CHECKING:
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+DRAFT_KEY: Final = "scenario_list_draft"
+# 지난 회차에 그린 저장 차례 — `move` 의 `token` 을 대조하고 처음 옮길 때의 `order_base` 가 된다.
+SHOWN_ORDER_KEY: Final = "scenario_list_shown_order"
+# 세 마운트 key — 화면 탭 줄의 떠나기 붙들기(`page_tabs.EDIT_HOST_KEYS`)도 읽는다.
+TABLE_KEY: Final = "scenario_list_table"
+REVISIONS_KEY: Final = "scenario_list_revisions"
+CHANGES_KEY: Final = "scenario_list_changes"
+MOUNT_KEYS: Final = (TABLE_KEY, REVISIONS_KEY, CHANGES_KEY)
+# 오른쪽 칸 고르기 · 받기 콜백이 고른 칸 — 맨 위 알림 칸이 표 모듈을 읽지 않고 본다(이름은
+# `scenario_list_grid.LIST_SIDE` 와 같다 — 시험이 맞댄다).
+SIDE_CHOICE_KEY: Final = "scenario_list_side_v1"
+SIDE_NEXT_KEY: Final = "scenario_list_side_next_v1"
+
+
+def peek_draft() -> ListDraft | None:
+    """세션의 초안. 아직 없으면 None — 세션 칸을 만들지 않는다."""
+    held = st.session_state.get(DRAFT_KEY)
+    return held if isinstance(held, ListDraft) else None
+
+
+def load_draft() -> ListDraft:
+    """세션의 초안. 처음이면 세션 표지를 지어 세운다 — 세션이 바뀐 뒤 프런트가 다시 보낸 옛 값을
+    가른다."""
+    held = peek_draft()
+    if held is not None:
+        return held
+    draft = ListDraft(session=uuid4().hex[:6])
+    st.session_state[DRAFT_KEY] = draft
+    return draft
+
+
+def store_draft(draft: ListDraft) -> None:
+    st.session_state[DRAFT_KEY] = draft
+
+
+def list_has_edits() -> bool:
+    """저장하지 않은 이름 · 순서 고침이 초안에 남았는가(화면 탭 줄의 점 · 머리 변경 칩)."""
+    draft = peek_draft()
+    return draft is not None and has_edits(draft)
+
+
+def pending_count() -> int:
+    """「저장 전 변경 n건」."""
+    draft = peek_draft()
+    return 0 if draft is None else edit_count(draft)
+
+
+def follow_created_scenario(repository: DuckDBScenarioRepository, scenario_id: str) -> None:
+    """이 세션이 시나리오를 더한 뒤 미저장 순서의 본 차례를 옮긴다 — 안 옮기면 「다른 곳에서
+    바뀌었습니다」 로 막히는데 거짓이다. 순서 고침이 없으면 저장소를 더 읽지 않는다."""
+    draft = peek_draft()
+    if draft is None or draft.order is None:
+        return
+    order = tuple(item.scenario_id for item in repository.list_scenarios())
+    store_draft(rebased_for_created(draft, order, scenario_id))
+
+
+def shown_order() -> tuple[str, ...]:
+    """지난 회차에 그린 저장 차례. 그린 적이 없으면 빈 차례다(`move` 가 지문에서 걸린다)."""
+    value = st.session_state.get(SHOWN_ORDER_KEY)
+    return value if isinstance(value, tuple) else ()
+
+
+def remember_shown_order(order: tuple[str, ...]) -> None:
+    st.session_state[SHOWN_ORDER_KEY] = order

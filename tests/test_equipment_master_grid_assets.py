@@ -22,8 +22,9 @@ from capa_simulation.services import equipment_grid as eg
 
 ASSETS = emg._ASSETS
 HTML = (ASSETS / "grid.html").read_text(encoding="utf-8")
-CSS = (ASSETS / "grid.css").read_text(encoding="utf-8")
-JS = (ASSETS / "grid.js").read_text(encoding="utf-8")
+CSS = emg.registered_css()
+OWN_CSS = (ASSETS / "grid.css").read_text(encoding="utf-8")
+JS = emg.registered_js()
 SOURCE = Path(emg.__file__).read_text(encoding="utf-8")
 
 
@@ -143,7 +144,7 @@ def test_the_outbox_flushes_after_quiet_and_at_once_when_focus_leaves() -> None:
 def test_the_shadow_root_is_kept_and_widths_follow_the_spec() -> None:
     """팝업 안에 마운트하지 않는다(그림자 DOM 기본값). 칸 폭은 시안 2차의 폭이다."""
     assert "isolate_styles" not in SOURCE.split('"""', 2)[2].split("_GRID =")[1].split(")")[0]
-    wide, narrow = CSS.split("@media (max-width: 640px)")
+    wide, narrow = OWN_CSS.split("@media (max-width: 640px)")
     widths = {
         name: int(value)
         for name, value in re.findall(r"\.emg-w-([a-z]+)\s*\{\s*width:\s*(\d+)px", wide)
@@ -948,9 +949,9 @@ def test_a_multi_line_value_opens_a_multi_line_editor_that_keeps_its_line_breaks
 def test_the_narrow_check_head_rule_outranks_the_wide_one() -> None:
     """좁은 화면 체크 줄 머리(한 줄 차지)는 넓은 규칙(116px)보다 특정도가 높아야 한다 — 미디어
     규칙이 파일 앞에 있어 같은 선택자면 뒤의 넓은 규칙이 이긴다."""
-    narrow = CSS.split("@media (max-width: 640px)", 1)[1].split("\n}\n", 1)[0]
+    narrow = OWN_CSS.split("@media (max-width: 640px)", 1)[1].split("\n}\n", 1)[0]
     assert re.search(r"\.emg-check-row \.emg-check-head\s*\{\s*flex:\s*0 0 100%", narrow)
-    assert re.search(r"\n\.emg-check-head\s*\{\s*flex:\s*0 0 116px", CSS)
+    assert re.search(r"\n\.emg-check-head\s*\{\s*flex:\s*0 0 116px", OWN_CSS)
 
 
 # ---------------------------------------------------------------- 불러오기 팝오버(node·가짜 DOM)
@@ -1621,3 +1622,22 @@ def test_an_outlined_button_stays_readable_on_its_hover_fill() -> None:
         for name, ink in (("보통", palette["TEXT"]), ("지우기", palette["GRID_ERROR_LINE"])):
             ratio = contrast_ratio(ink, palette["SURFACE_SUBTLE"])
             assert ratio >= SMALL_TEXT_MINIMUM, f"{mode} {name} 단추 호버 {ratio:.2f}:1"
+
+
+def test_the_shared_css_fragments_come_first_and_keep_the_cell_state_order() -> None:
+    """칸 상태 규칙은 특이도가 같아 차례로 이긴다(잠긴 칸 + 오류 칸의 바탕이 뒤 규칙을 따른다). 표
+    공용 조각을 떼어도 그 차례가 그대로이고, 이 표의 파일보다 앞에 선다."""
+    order = (
+        ".emg-c.is-changed {",
+        ".emg-c.is-error {",
+        ".emg-c.is-warn .emg-cb {",
+        ".emg-c.is-locked {",
+        ".emg-c.is-pending .emg-cb {",
+        ".emg-c.is-editing {",
+        ".emg-ed {",
+        "textarea.emg-ed {",
+    )
+    places = [CSS.index(f"\n{rule}") for rule in order]
+    assert places == sorted(places)
+    assert CSS.endswith(OWN_CSS)
+    assert not any(rule in OWN_CSS for rule in order)

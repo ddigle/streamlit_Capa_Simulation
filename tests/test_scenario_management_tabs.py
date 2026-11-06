@@ -129,11 +129,11 @@ def _changes_with_a_list_edit() -> None:
     import streamlit as st
 
     from capa_simulation.components.change_summary import session_changes
-    from capa_simulation.components.pick_edit_table import TableDraft, store_draft
-    from capa_simulation.components.scenario_management import LIST_EDITOR_KEY
+    from capa_simulation.components.scenario_list_state import store_draft
     from capa_simulation.navigation import SCENARIO_MANAGEMENT
+    from capa_simulation.services.scenario_list_edits import ListDraft, NameEdit
 
-    store_draft(LIST_EDITOR_KEY, TableDraft(names={"scenario-1": "DEMO 새 이름"}))
+    store_draft(ListDraft(scenarios={"scenario-1": NameEdit("DEMO 옛 이름", "DEMO 새 이름")}))
     st.session_state["changes"] = session_changes(
         None, hrefs={SCENARIO_MANAGEMENT.path: "scenario_management"}
     )

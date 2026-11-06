@@ -1293,10 +1293,9 @@ def test_the_official_popup_opener_clears_the_other_popup_keys_first(
     `StreamlitInvalidLayoutContextError` 로 화면이 멈춘다. 2026-10-22 리뷰가 위 넷의 목록에 이 칸이
     빠져 여는 콜백의 `forget_page_dialogs` 를 지워도 시험이 통과한다고 짚었다.
     """
-    from capa_simulation.components.pick_edit_table import TableDraft, draft_session_key
+    from capa_simulation.components.scenario_list_state import DRAFT_KEY
     from capa_simulation.components.scenario_management import (
-        ACTION_KEY,
-        LIST_EDITOR_KEY,
+        CARD_OFFICIAL_KEY,
         OFFICIAL_DIALOG_KEY,
     )
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -1305,12 +1304,14 @@ def test_the_official_popup_opener_clears_the_other_popup_keys_first(
     app.switch_page(SCENARIO_MANAGEMENT.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     (scenario,) = DuckDBScenarioRepository(tmp_path / "scenario.duckdb").list_scenarios()
-    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(picked=scenario.scenario_id)
+    app.session_state[DRAFT_KEY] = replace(
+        app.session_state[DRAFT_KEY], opened=scenario.scenario_id
+    )
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
     app.session_state[SCENARIO_DIALOG_KEY] = True
-    app.button(key=f"{ACTION_KEY}_official").click().run()
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{scenario.scenario_id}").click().run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert app.session_state[OFFICIAL_DIALOG_KEY] == (

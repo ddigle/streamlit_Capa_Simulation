@@ -880,22 +880,31 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 탭을 여는 회차에 뜬다. 설비 DB 핀을 선언하지만(`uses_equipment_db`) 게으른 핀이라 다른 탭을 보는 회차에는 열지 않는다.
   - Capa 시나리오 탭 맨 위에 작업 전환(목록 관리 · 복제 · 월 머지 · 연도 Shift — 보이는 글 없음, 접근성 라벨 「시나리오 작업」)이
     바로 선다. 옛 세션의 작업 이름은 위젯 앞에서 버린다. 지금 올라와 있는 리비전과 공식 표지는 사이드바 시나리오 칸 · 머리 띠, 최신
-    공식은 목록 표 `공식버전` 칸 · 공식 발행 이력이 말한다. 공식버전 없음은 상태 알림 `SC-01`.
-  - 목록 관리는 C안(2026-10-22 사용자 결정)이다 — 목록 편집표(고름·순서·시나리오명 ✎)와 표 위 「변경 저장」(고친 것이 있을 때만 풍선이 고친 수 — `list_edit_help`)·「편집
-    버리기」·위로/아래로/맨 위로, 고른 시나리오 카드의 리비전 편집표(고름·리비전명 ✎)와 그 위 「선택한 리비전 불러오기」·
-    「공식으로 지정…」(확인 팝업 `OFFICIAL_DIALOG_KEY`)·「이름 저장 (n)」·「편집 버리기」, 카드 아래 늘 서는 접힘 칸 둘(공식
-    발행 이력 — r 번호·공식버전명만, 보관된 시나리오). 고름·미저장 편집은 행 id 초안이다(`components/pick_edit_table.py`).
-  - 저장은 모두 콜백이고 하나라도 거부되면 아무것도 쓰지 않는다(`apply_scenario_list_edits`·`rename_revisions` →
-    `BatchEditRefused`, 결과·오류는 표 위·카드의 늘 서 있는 칸). 이름은 비교 후 쓰기, 순서는 처음 고칠 때의 저장 차례와
-    지금 차례가 같을 때만 쓴다. 빠른 두 번 누름은 성공한 저장이 초안을 비우고 이름이 비교 후 쓰기라 두 번 쓰지 않는다.
+    공식은 목록 표 `공식버전` 칸 · 오른쪽 「발행 이력」 이 말한다. 공식버전 없음은 상태 알림 `SC-01`.
+  - 목록 관리는 안 3(2026-11-06 사용자 결정 — 옛 C안의 편집표 둘 · 카드를 대신한다)이다 — 설비 마스터와 같은 두 칸 틀(`components/side_panel.py`) 안 왼쪽 시나리오
+    표(브라우저 표 `components/scenario_list_grid.py` — 손잡이 · 순서 · 시나리오명 · 최신 · 공식버전 · 최근 수정), 오른쪽 칸 「상세 · 저장 전 변경 · 발행 이력 · 보관함」.
+    상세는 리비전 표(r · 리비전명 · 상태)와 고른 리비전의 값 줄(메모 · 저장일 · 부모 — 같은 마운트가 그려 줄을 누르면 회차 전에 바뀐다), 「선택한 리비전 불러오기」 ·
+    「공식으로 지정…」(확인 팝업 `OFFICIAL_DIALOG_KEY`) · 「보관…」. 저장 전 변경은 수 넷 · 옛 값 → 새 값 · 줄 되돌리기 · 「모두 버리기」(확인 팝오버) · 「변경 저장」 **한 곳**.
+    고침은 행 id 초안이다(`services/scenario_list_edits.ListDraft`, 세션 칸 `components/scenario_list_state.py`) — 리비전명 고침은 리비전 id 라 다른 시나리오를 열어도
+    남는다. 이동 단추가 표 안으로 들어가고 저장 단추 풍선을 걷어 「이동 단추 풍선이 떠 있는 채 남는」 꼴이 없다.
+    표 카드 단추 key 에 시나리오 id 를 싣는다(`CARD_LOAD_KEY` · `CARD_OFFICIAL_KEY`) — 다른 줄을 연 회차가 서버에서 끝난 뒤 브라우저의 옛 카드 단추에 닿은 누름은 옛 key 의 콜백으로 돌아 옛
+    시나리오를 인자로 받아 대조(`OPENED_MOVED_MESSAGE`)에 걸린다. 고정 key 면 새 시나리오 인자로 돌아 대조를 지나 그 시나리오를 올린다(불러오기에는 확인 팝업이 없다).
+  - 저장은 콜백이고 하나라도 거부되면 아무것도 쓰지 않는다(`apply_scenario_list_edits(revision_renames=)` — 한 쓰기 트랜잭션, `BatchEditRefused`, 거부는 「변경 저장」
+    바로 아래 칸). 차례: 출납 접기 → 지문(저장본에 맞추기 **앞** 초안 — `draft_fingerprint`) → `save_once` 안에서 지금 값 읽기 · 맞추기 · 쓰기 → 표지 → 후속(`_after_list_save`) → 세대 올리기.
+    첫 콜백이 쓴 뒤 끊겨도 같은 지문의 둘째 누름이 저장소에 다시 가지 않고 뒷정리를 잇고, 창이 지났으면 맞추기가 낸 「같아진 고침」(`Reconciled.settled`) 이 제 저장 짝일 때 뒷정리한다 —
+    머리 띠 이름표가 옛 이름으로 남지 않는다. 이름은 비교 후 쓰기, 순서는 처음 옮길 때의 저장 차례와 지금 차례가 같을 때만 쓴다.
     목록 차례는 `list_order NULLS LAST, created_at DESC`(`repository._SCENARIO_LIST_ORDER`, 목록과 저장 대조가 같은 글)다 —
     순서를 저장한 적 없는 행은 만든 시각 차례라 이름 변경·새 리비전 저장(「최근 수정」)으로 움직이지 않고 새 시나리오는
     맨 위에 선다. 이름만 바꾼 「변경 저장」은 `list_order` 를 쓰지 않는다(쓰면 그 뒤 새 시나리오가 맨 아래로 간다 —
     `tests/test_scenario_list_edits.py`).
-  - 이름의 비교 대상은 그 칸을 처음 고친 편집이 붙은 표가 **보인** 저장 이름(`TableDraft.name_base`)이다 — 마지막 회차에
-    다시 읽은 이름과 대조하면 남이 먼저 바꾼 뒤 회차가 한 번만 돌아도 대조가 통과해 남의 이름을 덮었다(2026-10-22 리뷰).
-    먼저 바뀐 이름은 저장 전에 경고(`moved_names`)하고, 거부되면 그 행의 이름 편집만 버려(`drop_names`,
-    `BatchEditRefused.moved_names`) 지금 이름을 다시 보인다.
+  - 이름의 비교 대상은 그 칸을 처음 고칠 때 **브라우저가 든** 이름(`NameEdit.seen`)이다 — 마지막 회차에 다시 읽은 이름과 대조하면 남이 먼저 바꾼 뒤 회차가 한 번만 돌아도 대조가
+    통과해 남의 이름을 덮었다(2026-10-22 리뷰). 먼저 바뀐 이름은 저장 전에 그 칸 막힘 · 풍선 · 「막힘」 수로 보이고(`list_problems` — 저장소와 같은 판정 · 같은 글, 표 아래 경고 상자 없음),
+    거부되면 그 줄의 고침만 빼(`without_edits`, `BatchEditRefused.moved_names`) 지금 이름을 다시 보인다.
+  - 결과 알림 칸(`LIST_NOTICE_KEY` · `CARD_NOTICE_KEY`)은 그 칸이 선 회차에만 그려지므로, 안 서는 쪽 키는 맨 위 칸이 알림창 · Alarm 으로 꺼낸다(`_notices_without_a_place` — 칸이 옮겨도 거부 · 성공이
+    잠자지 않는다). 사라진 고침 알림은 맨 위 알림 **앞**에서 맞춰 그 회차에 뜨고, 콜백이 본문보다 먼저 맞춘 「변경 저장」 은 저장 콜백이 같은 글을 낸다(`_warn_gone`). 이 세션의 보관 · 되돌리기 · 삭제는 쓰기 전에 그 시나리오의 리비전 id 를 읽어 고침을 말없이 빼고
+    순서 고침의 본 차례를 옮긴다(`_draft_settler`). 이 세션이 시나리오를 더한 길(복제 · 월 머지 · 연도 Shift · DB 등록)도 본 차례를 옮긴다(`scenario_list_state.follow_created_scenario` — 그 줄을 빼면 본 차례와 같을 때만, 남이 바꾼 차례는 그대로 막힌다).
+    「자동 갱신」 탭의 「지금 실행」 은 예약 회차와 같은 함수라 옮기지 않는다(「다른 곳에서」 로 막힌다).
+  - 어긋난 누름은 하지 않고 그 자리에 알린다 — 옛 카드 「선택한 리비전 불러오기」 는 지금 목록 · 고른 리비전의 소속을 다시 보고, 옛 카드 「공식으로 지정…」 은 다음 그리기가 팝업 칸을 비우며 알린다(`_refuse_stale_official_press`). 보관 확인 체크 key 는 시나리오마다다(`archive_confirm_key`) — 칸을 지워도 브라우저가 옛 값을 다시 보낸다. 「모두 버리기」 는 버릴 것이 없으면 세대를 올리지 않는다.
   - 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다 — 이 페이지에는 「리비전 저장」 모드가 없고 그 길은 Guide 가
     말한다(모드 줄 아래 길 안내 줄은 두지 않는다 — 설계 규칙 UI-TXT-03).
   - `자동 갱신`(`components/auto_official_update_tab.py`)과 BigDataQuery 사내 조회는 버튼을 누른 회차에만 돈다.
@@ -2163,7 +2172,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   적는다(진짜 콜백은 회차 맨 앞이라 같은 회차 — 시험 대역은 고르기 뒤 마운트에서 부르므로 위젯을 만든 뒤 적는 오류를 피한다).
   - **오른쪽 칸 폭·접기·높이 상한**(2026-11-02 사용자 결정 — 「늘이고 줄이거나, 최소화」 · 「너비에 한계를 두고 … 스크롤」, 2026-11-05 검수 —
     편집기 영역 안의 서브페이지 · 접기 단추는 칸 머리 · 접으면 떠 있는 단추):
-    두 칸 경계선(왼쪽 감싸개의 오른쪽 테두리 — 줄 높이로 늘어 영역 끝까지 간다) 위 칸막이(`equipment_master_grid.render_side_splitter` — 작은 별도 등록)를 끌어 폭을 바꾸고(두 번 누르면 처음
+    두 칸 경계선(왼쪽 감싸개의 오른쪽 테두리 — 줄 높이로 늘어 영역 끝까지 간다) 위 칸막이(`side_panel.render_side_splitter` — 작은 별도 등록)를 끌어 폭을 바꾸고(두 번 누르면 처음
     폭, 키보드 ←·→ 16px · Shift 64px · Home 최대 · End 최소 · Enter 접기), 칸 머리 오른쪽 끝 › 로 접으면 칸 자리가 0 이 되어 표가 줄을 다 쓰고 옛 Space 미배치 서랍 탭과 같은 생김의 단추(지금 칸 이름)가 영역 오른쪽 위에서 8px 들어앉아
     떠 있다 — 누르면 편다. 단추는 페이지를 내려도 붙어 있고(표 머리 위 · 고치는 칸 · 목록 아래) 접은 동안 표 위 작업 줄이 그 자리를 비운다(`SIDE_REOPEN_RESERVE_PX`). 폭 한계는 `clamp(min(360px, 40%), 저장 폭 또는 30% − 28px, min(760px, 60%))`(영역 안 줄 1,137px 에서 360~682, 처음
     360 — 최소는 칸 머리 한 줄 + 칸막이 곁 여백)이고 창 폭이 바뀌어도 페이지 CSS 가 JS 없이 지킨다. 본문 칸은 `max(360px, 100vh − 붙는 높이 − 200px)`(붙는 높이 = 화면
@@ -2262,9 +2271,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·새
     호기·저장 전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
     잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
-  - **오른쪽 칸 칸막이**(칸막이 · 칸 머리 접기 단추 · 접었을 때 떠 있는 단추)는 따로 등록한다(`capa_equipment_side_splitter` — `equipment_master_grid_assets/splitter.js`·`splitter.css`,
-    `render_side_splitter`·대역 `tests/conftest.py`). data 는 팔레트(`_splitter_palette` — `--ess-*`)·지금 칸 이름·`reveal`·폭 한계
-    (`side_bounds` — 페이지 CSS 와 같은 수)·두 칸·본문 칸 key·화면 탭 줄 선택자뿐이라 거의 늘 같다. 상태 값·트리거가 없다 — 폭·접힘은
+  - **오른쪽 칸 칸막이**(칸막이 · 칸 머리 접기 단추 · 접었을 때 떠 있는 단추)는 시나리오 목록 관리와 함께 쓰는 공용 부품이다(`components/side_panel.py` — 이 화면 스펙 `MASTER_SIDE`, 등록 `capa_side_splitter` · `side_panel_assets/splitter.js`·`splitter.css`,
+    대역 `tests/conftest.py`). data 는 팔레트(`splitter_palette` — `--ess-*`)·지금 칸 이름·`reveal`·폭 한계
+    (`side_bounds` — 페이지 CSS 와 같은 수)·두 칸·본문 칸 key·저장소 · `<html>` 표지 이름·화면 탭 줄 선택자뿐이라 거의 늘 같다. 상태 값·트리거가 없다 — 폭·접힘은
     브라우저 저장소 `capa-equipment-side-v1` `{w, min}`(try 안)과 `<html>` 의 CSS 변수 `--emd-side-w`·`--emd-top`·속성
     `data-emd-side="min"` 에만 둔다. 저장소 읽기·쓰기가 한 번이라도 막히면(사내 DRM 등) `<html>` 에 표(`__essLocalOnly`)를 달고 그 뒤
     마운트는 저장값 대신 `<html>` 에 걸린 이 문서의 폭·접힘을 그대로 둔다 — 안쪽 탭·화면을 옮겨 다시 마운트돼도 남고 새로 읽으면
@@ -2274,7 +2283,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     flex 항목은 `stLayoutWrapper:has(> .st-key-…)` 한 겹으로 고르고(`:has` 를 겹치면 규칙이 버려진다), `wrap=False` 가로 칸에
     `overflow: visible` 을 건다(아니면 sticky 가 줄 기준으로 잡힌다). 순수 구획 `// <splitter-…>`(폭 식·끌기·키)와 마운트(가짜
     DOM)는 `tests/test_equipment_side_panel.py` 가 node 로 돌린다.
-  - data 는 `services/equipment_grid` 의 dict + 팔레트(`_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
+  - 등록 글은 표 공용 조각(`components/grid_shared.py` · `grid_shared_assets/` — 칸 상태 · 변경 칸 CSS, 칸 찾기 · 보낼 목록 · DOM 도우미 JS) 뒤에 이 표의 파일을 잇는다(`registered_js` · `registered_css`). 칸 상태 규칙은 특이도가 같아 차례로 이기므로 공용 조각을 앞에 둔다.
+  - data 는 `services/equipment_grid` 의 dict + 팔레트(`grid_shared.grid_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
     대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」 — 「호기 추가」 도
     `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는
     불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·`goto`·`copy`(`copy_request`) 이다. 받기 콜백이 꼴을 거르고(표 트리거는
@@ -2418,10 +2428,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       초점이 표 밖으로 나가는 순간 보낸다). 초점이 나갈 때 보내 그 회차가 누름보다 늦게 오는 편집 칸을 새로 두면 그 key 를
       `EDIT_HOST_KEYS` 에 더한다(`equipment_master_grid` 의 key 와 같은지는 `test_page_tabs_assets` 가 본다). 탭 줄 밖의 떠나기인 머리 툴바의 테마 단추도 같은 붙들기를 지난다 — 탭 줄이 그릴 때마다
       `window.__capaLeaveGate`(`press` — 단추 pointerdown 에서 편집표 포커스를 적는다, `go(fn)` — 붙든 뒤 `fn` 을
-      부른다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
+      부른다, `hold(fn)` — 붙들었는지 돌려준다)를 걸고, 테마 단추는 붙들기가 끝난 뒤 그때의 저장 안 함 표지로 묻는다. 탭 줄이 없는 화면(부트스트랩 오류)은
       곧바로 묻는다. 붙든 동안 탭을 누르면 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다
       (`theme_toggle.LEAVE_HOLD_RESET_MS`). 칸 편집기에 쓰는 중(Enter 전)에 누른 Dark 가 표지가 서기 전에 묻지 않고
       새로 읽던 틈을 막는다(E2E #94·#101, 개선 거리 I4).
+      사이드바 화면 링크도 같은 붙들기를 지난다(`S.onLink` — click 을 막았다가 그 회차 뒤 같은 링크를 다시 누른다, 상한 거름은 다시 누를 때 한 번) — 터치 톡은 초점이 빠지며 나간 표의
+      출납 회차와 거의 함께 닿아 그 회차가 지금 화면 주소로 돌며 이동을 덮었다(2026-11-07 E2E).
     - 탭 줄은 페이지보다 먼저 그리므로 「이번 회차에 그 편집표를 그리는가」 를 위젯 값으로 미리 본다 — 작은 편집표는 바깥 탭이
       ① 이고 표 고르기(`equipment_data_workspace.MASTER_TABLE_KEY`)가 그 표일 때만 센다. 고르기를 바꾼 회차에는 편집표 위젯
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
@@ -2851,15 +2863,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 키가 있는 편집표는 모두 세대 번호를 붙인 `editor_widget_key` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
     `discard_editor` 를 부른다 — 세션만 지우면 브라우저가 옛 편집을 다음 회차에 되보낸다. key 짓기와 세대 올리기는
     `widget_generation`(`widget_key`·`bump`)이 한다.
-- `src/capa_simulation/components/pick_edit_table.py` — 고름 하나와 이름(·순서) 칸을 바로 고치는 편집표(시나리오 관리
-  목록·리비전 표)의 미저장 초안(`TableDraft` — 이름·이름 기준·화면 차례·차례 기준·고른 행, 모두 행 id)과 접기·위젯
-  key 다. 이름 기준(`name_base`)은 그 칸을 처음 고친 편집이 붙은 표가 보인 저장 이름이고(`ShownTable.names`),
-  `changed_names` 가 그것을 비교 후 쓰기의 대상으로 돌려준다.
-  - 그리기 **전에** `settle_table` 이 지난 회차에 그린 차례(`ShownTable`)로 브라우저 편집을 id 로 접고, 지금 저장된 행에
-    맞추고(`reconcile`), 두 줄이 골라지거나 순서 칸이 바뀌면 초안을 먼저 적고 세대를 올려 새 위젯으로 세운다 — 본문
-    `st.rerun()` 이 없다. 위젯 key 에 행 차례 지문을 실어 차례가 바뀌면 옛 위치 편집이 다른 행에 붙지 않는다(9장).
-  - 순서 칸 숫자는 그 자리로 끼워 넣기(`move_row`)라 칸은 늘 1..n 이다. 단추 콜백은 `peek_table`(쓰지 않는 접기)로
-    누른 회차의 편집까지 읽는다. `table_has_edits` 는 초안에 이름·순서 편집이 남았는가(세션만 — 화면 탭 줄의 점)다.
+- `src/capa_simulation/components/side_panel.py` (+ `side_panel_assets/` CSS · JS) — 편집기 영역 안 두 칸(왼쪽 표 · 오른쪽 칸)의 공용 틀. 칸막이 · 접기 · 폭 기억 · 서식(`side_layout_style`) · 칸 고르기 머리(`render_side_head`) · 다음 고르기(`switch_side`)를 맡고, 화면마다 갈리는 값은 스펙 `SidePanel`(key 앞붙이 · 저장소 이름 · `<html>` 표지 이름 · 처음 폭)이다. 설비 마스터 `MASTER_SIDE` 와 시나리오 목록 관리 `LIST_SIDE`(`capa-scenario-list-side-v1`, `--sls-side-w` · `--sls-top` · `data-sls-side`, 처음 폭 40%)가 쓴다(설계 규칙 UI-LAY-09 · UI-CON-04). 읽을 때 등록하므로 그 편집기를 그리는 회차에만 불러온다.
+- `src/capa_simulation/components/save_section.py` — 저장 구획의 「모두 버리기」 확인 팝오버(`discard_popover` — 설비 마스터 · 시나리오 목록 관리, UI-NTF-09).
+- `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
+- `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
+- `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 세 마운트 data, 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
+- `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key. 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다.
+- `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 세 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY`. 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
   `role="radio"` 단추의 n 번째) 옆 같은 점(`mark_pending_segments`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
@@ -3319,7 +3329,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을 최신 위에 얹거나, 바뀐 확인 글을 보지 않은 채 새 번호로
   발행한다 — 설비 시나리오 탭은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
-  글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」·리비전 「이름 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
+  글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
   설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
   쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장). 본문이 받는 컴포넌트 제출(Space 층·FAB 배치
   편집기 「적용」)은 받아들인 입력 지문을 적고(`note_submission`), 브라우저가 새 epoch 를 받기 전에 같은 단추를 한 번 더 눌러
@@ -3961,8 +3971,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
-  - 리비전명 변경은 `save_revision_names`(카드 리비전 표, 한 건은 `save_revision_name`)를 거친다 — 저장소의 비교 후
-    쓰기(`rename_revisions`·`rename_revision`, 다른 사용자가 먼저 바꿨으면 `BatchEditRefused`·`RevisionNameMoved`) 뒤
+  - 리비전명 변경은 목록 「변경 저장」(`_save_list_edits`, 한 건은 `save_revision_name`)을 거친다 — 저장소의 비교 후
+    쓰기(`apply_scenario_list_edits`·`rename_revision`, 다른 사용자가 먼저 바꿨으면 `BatchEditRefused`·`RevisionNameMoved`) 뒤
     스냅샷 캐시·파생 원본 메모를 비우고 이 세션 이름표만 고친다(활성화하지 않는다).
     시나리오 「최근 수정」·공식 이력·비교 프로필은 건드리지 않는다(`tests/test_revision_rename.py`).
   - 맨 위 알림·두 건 체크 경고는 늘 서 있는 칸 안에 그린다 — 보관함 상자(key 있음) 앞 순번이 알림 때문에 밀리면
@@ -4344,7 +4354,7 @@ RQ_MODULE
    비우지 않는다. 비우는 방식은 `st.context.theme` 이 틀리는 순간(첫 로드·전환 직후)에 잘못 읽은 테마의 그림을 눌러앉힌다.
 8. **시뮬레이션 DB 의 과거 리비전 내용을 갱신하지 않는다.** 표 14·프리셋·가상 제품 이력·입력 해시·번호·부모·저장
    시각·메모는 그대로다 — 변경은 새 전체 리비전으로만 저장하고, 과거 리비전에서 저장하면 해당 리비전을 부모로 갖는 새
-   분기를 만든다. 예외는 **이름표인 리비전명** 하나다(2026-10-22 사용자 결정 — `rename_revision`·`rename_revisions`,
+   분기를 만든다. 예외는 **이름표인 리비전명** 하나다(2026-10-22 사용자 결정 — `rename_revision`·`apply_scenario_list_edits`,
    비교 후 쓰기, 이력 없음, 시나리오 「최근 수정」 그대로). 계산 캐시 키·공식 발행 행(공식버전명)은 리비전명을 싣지 않아
    이름을 바꿔도 계산이 다시 돌지 않는다. 메모는 시스템 출처 기록(상세 조회기간·월 머지·연도 Shift 출처)이 들어 고치지
    않는다. 설비 DB 리비전은 이 예외가 없다 — **공통 대장 리비전**(`equipment_ops.revision`, 번호 전역)·**설비 시나리오 일정
@@ -5731,8 +5741,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `moved` 로 알린다 — 부르는 쪽은 그 회차의 쓰기 누름을 걸지 않는다(보관함은 이 세션이 방금 쓴 것이면 그 성공 알림을, 남이
   먼저 처리한 것이면 「그 사이 보관함에서 빠졌습니다」 를 낸다, `tests/test_scenario_archive_double_press.py`). 설비
   시나리오·리비전은 지우는 길이 없어 글자 잇기만 쓴다(`tests/test_equipment_scenario_double_press.py`). 시나리오
-  관리 목록 관리(C안)의 두 편집표는 고름을 글자가 아니라 행 id 초안으로 들어
-  (`components/pick_edit_table.py`) 이 목록에 들지 않는다. 그래서 시험은 「예외 없음」이 아니라 **누른 회차에 실제로 걸린
+  관리 목록 관리의 두 표는 고름을 글자가 아니라 행 id 초안으로 들어
+  (`services/scenario_list_edits.ListDraft`) 이 목록에 들지 않는다. 그래서 시험은 「예외 없음」이 아니라 **누른 회차에 실제로 걸린
   대상 id** 로 잰다. 일반 `AppTest.run()` 은 회차마다
   세션 값으로 글자를 다시 만들어 이 결함을 보지 못한다 — 브라우저처럼 글자를 들고 다니는
   `tests/widget_browser.py` 의 `BrowserChoice`(selectbox·multiselect·radio)로 잰다.
@@ -6555,21 +6565,18 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   견주면 거의 모든 편집이 다시 세우기가 된다).
 - 편집표에서 고른 행은 행 번호가 아니라 업무 키로 기억한다 — 편집본은 제출마다 다시 만들어지고 행을 지우면 번호가 다시
   매겨진다. 되살린 행은 지우기 전 자리로 넣는다(맨 뒤에 붙이면 순서만 다른 리비전이 생긴다).
-- **다른 세션이 행 차례를 바꿀 수 있는 편집표**(시나리오 관리 목록·리비전 표 — 남의 저장·이름 변경이 차례를 바꾼다)는
-  `components/pick_edit_table.py` 를 쓴다: 고친 값·고른 행을 회차마다 행 id 초안으로 접고, 위젯 key 에 행 차례 지문을
-  실어 차례가 바뀌면 새 위젯으로 세운다. 「고름 하나」는 두 줄이 골라진 회차에 초안을 먼저 적고 세대를 올린다 —
-  `discard_editor` 만 부르면 같은 표의 이름·순서 편집까지 사라진다. 접기와 다시 세우기는 그리기 **전에** 하므로 본문
-  `st.rerun()` 이 없다. 시험은 `tests/widget_browser.py` 의 `BrowserTables` 로 브라우저처럼 칸 편집을 보내 잰다
-  (`AppTest.run()` 은 편집표 상태를 보내지 않는다).
-  - 그런 표의 비교 후 쓰기 기준은 사용자가 **본** 값이다(초안에 함께 적는다) — 저장 콜백이 받는 「지난 회차에 읽은
+- **다른 세션이 행 차례를 바꿀 수 있는 편집표**(시나리오 관리 목록 · 리비전 표 — 남의 저장 · 이름 변경이 차례를 바꾼다)는 위치가 아니라 행 id 로 든다(`components/scenario_list_grid.py` ·
+  `services/scenario_list_edits.py`): 브라우저가 `name` · `move` op 를 행 id 로 보내고 파이썬이 초안에 접는다. 차례는 `move` 의 `token`(그린 저장 차례의 지문)과 `order_base`(처음 옮길 때 본 저장 차례)로
+  대조한다. 시험은 `tests/scenario_list_fake.py` 의 `ListBrowser` 로 브라우저처럼 op 를 보내 잰다.
+  - 그런 표의 비교 후 쓰기 기준은 사용자가 **본** 값이다(브라우저가 그 칸을 처음 고칠 때 든 값을 op 에 싣는다) — 저장 콜백이 받는 「지난 회차에 읽은
     값」은 남의 변경 뒤 회차가 한 번만 돌아도 남의 값이 된다. 시험은 남의 변경을 클릭 직전에만 끼우지 말고, 그 뒤
-    회차를 한 번 이상(다른 행 고르기 등) 돌린 꼴도 둔다.
+    회차를 한 번 이상(다른 줄 열기 등) 돌린 꼴도 둔다.
 - **편집 화면의 적용·저장 버튼과 변경 메모는 편집표 위에 둔다** — 표가 높으면 아래 버튼이 화면 밖이라 적용을 건너뛴다
   (버튼을 먼저 만들어도 누른 회차에 편집값이 들어온다). 적용 결과·오류는 누른 버튼 바로 아래 자리에 쓴다.
 - **표 칸 폭(px)은 머리 글자가 다 들어가는 폭보다 작게 두지 않는다** — 머리는 캔버스라 넘치면 말줄임표 없이 잘리고(「선ㅌ」),
   표가 좁으면 칸이 그 값 밑으로 줄지 않는다. 고칠 수 있는 칸은 머리에 편집 아이콘이 서서 글자가 왼쪽 32px 뒤에서
-  시작한다 — 굵은 14px 두 글자 머리는 72px, 아이콘 없는 칸은 글자 + 양쪽 여백 16px. 시험은 시나리오 관리 두 편집표의
-  `proto.columns` 폭을 머리 글자와 견준다(`tests/test_scenario_management_page.py`).
+  시작한다 — 굵은 14px 두 글자 머리는 72px, 아이콘 없는 칸은 글자 + 양쪽 여백 16px. 브라우저 표는 머리 글자가 굵은 12px 이라 글자
+  + 양쪽 여백 16px 이고 `tests/test_scenario_list_grid_assets.py::test_column_widths_fit_their_heads` 가 칸 폭을 머리 글자와 견준다.
 - pandas Styler 표의 분류 칸 회색 배경은 Styler 를 직접 만들지 말고 `month_editor.classification_styled` 를 거친다 —
   Streamlit 이 rerun 마다 모든 칸을 번역하므로 칸 수 상한을 넘으면 칠하지 않는다. `st.dataframe` 으로 그리는 Styler
   표에는 표마다 다른 고정 `uuid=` 를 준다(무작위 uuid 면 회차마다 표를 다시 보낸다).
@@ -6711,7 +6718,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   단추 트리거만 앞 값을 살리고 CCv2 `json_trigger_value` 는 살리지 않아, 실행 중 회차가 있으면 잇단 트리거가 앞 것을 덮는다.
   상태 값은 「가장 새 값」 이 이기므로 늘 **반영되지 않은 조작 전부**(마운트 id·seq·브라우저 시각 `at`)를 싣고, 파이썬은 마운트별
   마지막 seq 기억으로 seq 가 큰 것만 `(at, mount, seq)` 차례로 한 번 반영한 뒤 그 마운트의 `ack` 를 data 에 실어 돌려준다(설비 마스터
-  표 — `services/equipment_grid.pending_ops`·`apply_ops`). 편집본 출발점(`base`)이 달라진 op 는 반영하지 않고 버린다. 브라우저는
+  표 — `services/grid_outbox.pending_ops` · `equipment_grid.apply_ops`, 시나리오 목록 표 — `scenario_list_edits.fold_ops`). 편집본 출발점(`base`)이 달라진 op 는 반영하지 않고 버린다(목록 표는 세어 알림창으로 알린다 — 사라지는 고침을 말없이 버리지 않는다). 브라우저는
   300ms 조용하면 보내고, 초점이 컴포넌트 밖으로 나가거나 창이 숨으면 바로 보낸다 — 보낼 것이 있을 때만(빈 값을 다시 적으면 회차만
   는다). 잃어도 되는 화면 조작(열기·목록에서 빼기)만 트리거다. 편집본을 **바꾸지 않는** 둘째 상태 값은 이 규약 밖이다 — 설비 마스터
   「새 호기」 초안 `draft` 는 확정마다 번호를 올린 초안 전부를 보내(앱 회차 하나) 늦게 온 옛 값을 번호로 거르고, 그 초안을 넣는
@@ -6733,7 +6740,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   Space 「호기 정보」 창의 자리·크기·열림·탭·필터)는
   컴포넌트 안이나 localStorage·sessionStorage(읽기·쓰기 모두 try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 컴포넌트 밖 배치를 바꿔야
   하면 `<html>` 의 CSS 변수·속성만 쓰고 그 변수를 읽는 규칙은 페이지 서식(`st.html`)에 둔다(설비 마스터 오른쪽 칸 칸막이 —
-  `--emd-side-w`·`data-emd-side`, Space 스크롤 고정 — `data-space-lock` · `space_layout_editor.space_lock_style()` — 다른 화면으로
+  `--emd-side-w`·`data-emd-side`, 시나리오 목록 관리 `--sls-side-w`·`data-sls-side`, Space 스크롤 고정 — `data-space-lock` · `space_layout_editor.space_lock_style()` — 다른 화면으로
   가면 서식이 사라져 속성이 남아도 막지 않는다. 본문 스크롤 칸 `stMain`·탭 줄 `.st-key-page_tabs_strip` 같은 Streamlit DOM 이름은
   판올림에서 다시 본다). 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를

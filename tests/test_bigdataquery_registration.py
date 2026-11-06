@@ -20,6 +20,8 @@ from capa_simulation import alerts
 from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.scenario_list_state import DRAFT_KEY
+from capa_simulation.services.scenario_list_edits import ListDraft
 
 
 @pytest.fixture(autouse=True)
@@ -974,11 +976,15 @@ def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Pat
     assert registration.REGISTRATION_CAPACITY_FLASH_KEY not in app.session_state
 
 
-def _registration_app(database: Path, blank_cs: dict[int, str | None]) -> AppTest:
+def _registration_app(
+    database: Path, blank_cs: dict[int, str | None], *, draft: ListDraft | None = None
+) -> AppTest:
     """폼 값을 채우고 원천의 고른 행 CS 를 비운 채 화면 저장 경로를 한 번 돌린다."""
     app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
     app.session_state["__database__"] = str(database)
     app.session_state["__blank_cs__"] = blank_cs
+    if draft is not None:
+        app.session_state[DRAFT_KEY] = draft
     app.session_state[registration.FORM_CODE_KEY] = "SIM-W42"
     app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W42"
     app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W42 (SIM-W42)"
@@ -1000,6 +1006,19 @@ def _registration_database(tmp_path: Path) -> Path:
     repository.initialize()
     repository.initialize_global_display_order(load_builtin_display_order())
     return database
+
+
+def test_a_registration_made_here_moves_the_base_of_the_unsaved_list_order(tmp_path: Path) -> None:
+    """목록 관리에 미저장 순서를 둔 채 이 세션이 등록한 시나리오는 「다른 곳에서」 가 아니다 — 본
+    차례를 그 줄이 든 차례로 옮긴다."""
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = _registration_database(tmp_path)
+    app = _registration_app(database, {}, draft=ListDraft(order=(), order_base=()))
+    assert not app.exception
+
+    [scenario] = DuckDBScenarioRepository(database).list_scenarios()
+    assert app.session_state[DRAFT_KEY].order_base == (scenario.scenario_id,)
 
 
 def test_rows_with_a_blank_cs_are_dropped_and_the_registration_still_saves(

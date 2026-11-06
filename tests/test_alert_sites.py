@@ -153,16 +153,12 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PLACE_FORM),
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PLACE_CONFIRM),
-    ("src/capa_simulation/components/scenario_management.py", "_render_list_toolbar"): (
-        1,
-        PLACE_FORM,
-    ),
     ("src/capa_simulation/components/scenario_management.py", "_render_official"): (
         1,
         PLACE_CONFIRM,
     ),
-    ("src/capa_simulation/components/scenario_management.py", "_render_scenario_actions"): (
-        2,
+    ("src/capa_simulation/components/scenario_management.py", "_render_detail"): (
+        1,
         PLACE_CONFIRM,
     ),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (6, PLACE_FORM),

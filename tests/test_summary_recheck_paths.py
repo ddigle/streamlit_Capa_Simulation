@@ -306,7 +306,6 @@ def scenario_ui(session: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> dic
         "clear_global_comparison_scenario_cache",
         "clear_global_securement_threshold_cache",
         "clear_persisted_scenario_activation",
-        "discard_editor",
         "rename_active_scenario_label",
     ):
         monkeypatch.setattr(scenario_management, name, lambda *args, **kwargs: None)
@@ -345,14 +344,17 @@ def test_renaming_a_scenario_rechecks_the_summary(
 ) -> None:
     """비교 대상의 이름이 바뀌면 GAP 풍선의 이름도 바뀌어야 한다(저장소가 비교 프로필 version 을
     올리고, 이 세션은 곧바로 다시 확인한다). 이름은 목록 표에서 고쳐 「변경 저장」으로 쓴다."""
-    from capa_simulation.components.pick_edit_table import TableDraft
+    from capa_simulation.components import scenario_list_state
+    from capa_simulation.services.scenario_list_edits import ListDraft, NameEdit, draft_base
 
     repo = _Repo()
     monkeypatch.setattr(scenario_management, "get_scenario_repository", lambda path: repo)
     monkeypatch.setattr(scenario_management, "pinned_connections", lambda path: nullcontext())
     monkeypatch.setattr(
-        scenario_management, "peek_table", lambda *args: TableDraft(names={"S": "새 이름"})
+        repo, "list_scenarios", lambda include_archived=False: [SUMMARY], raising=False
     )
-    monkeypatch.setattr(scenario_management, "forget_table_edits", lambda key: None)
-    scenario_management._save_list_edits(DB, ("S",), {"S": SUMMARY.scenario_name})
+    monkeypatch.setattr(repo, "list_revisions_by_ids", lambda ids: {}, raising=False)
+    draft = ListDraft(session="s", scenarios={"S": NameEdit(SUMMARY.scenario_name, "새 이름")})
+    scenario_list_state.store_draft(draft)
+    scenario_management._save_list_edits(DB, draft_base(draft))
     assert repo.calls == ["apply_scenario_list_edits"] and _forgotten(scenario_ui)

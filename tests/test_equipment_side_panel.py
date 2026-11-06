@@ -28,6 +28,7 @@ from test_equipment_master_tab import _import, _rows
 from test_equipment_pages import _page_script
 
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components import side_panel as sp
 from capa_simulation.components.equipment_master_tab import (
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
@@ -46,11 +47,10 @@ from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
-ASSETS = emg._ASSETS
-JS = (ASSETS / "splitter.js").read_text(encoding="utf-8")
-CSS = (ASSETS / "splitter.css").read_text(encoding="utf-8")
-GRID_CSS = (ASSETS / "grid.css").read_text(encoding="utf-8")
-SOURCE = Path(emg.__file__).read_text(encoding="utf-8")
+JS = (sp._ASSETS / "splitter.js").read_text(encoding="utf-8")
+CSS = (sp._ASSETS / "splitter.css").read_text(encoding="utf-8")
+GRID_CSS = emg.registered_css()
+SOURCE = Path(sp.__file__).read_text(encoding="utf-8")
 # 마운트 자리를 시험이 보도록 대역이 그 자리에 세우는 빈 key 칸의 앞붙이.
 PLACE = "test_place_"
 
@@ -84,7 +84,7 @@ def _install(monkeypatch: pytest.MonkeyPatch) -> tuple[Calls, Splits]:
         splits.append(dict(kwargs["data"]))
 
     monkeypatch.setattr(emg, "_GRID", placed)
-    monkeypatch.setattr(emg, "_SPLITTER", splitter)
+    monkeypatch.setattr(sp, "_SPLITTER", splitter)
     return calls, splits
 
 
@@ -282,16 +282,16 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
     tools = f".st-key-{emg.TOOLS_KEY}"
     body = f".st-key-{emg.SIDE_BODY_KEY}"
     folded = 'html[data-emd-side="min"]'
-    top = f"var(--emd-top, {emg.SIDE_TOP_FALLBACK_PX}px)"
-    wide = f"screen and (width > {emg.SIDE_STACK_MAX_PX}px)"
-    narrow = f"(width <= {emg.SIDE_STACK_MAX_PX}px)"
+    top = f"var(--emd-top, {sp.SIDE_TOP_FALLBACK_PX}px)"
+    wide = f"screen and (width > {sp.SIDE_STACK_MAX_PX}px)"
+    narrow = f"(width <= {sp.SIDE_STACK_MAX_PX}px)"
     line = f"1px solid {tokens.BORDER}"
-    cap = f"max({emg.SIDE_BODY_MIN_PX}px, calc(100vh - {top} - {emg.SIDE_BODY_RESERVE_PX}px))"
+    cap = f"max({sp.SIDE_BODY_MIN_PX}px, calc(100vh - {top} - {sp.SIDE_BODY_RESERVE_PX}px))"
 
     # 본문 칸 — 창 높이 상한 안에서 세로 스크롤(가로 스크롤 없음, 스크롤 막대 자리 고정). 막대
     # 자리는 영역 안쪽 여백으로 내보내 내용 오른쪽 끝이 머리 접기 단추와 맞는다.
     assert rules[("", body)] == {
-        "width": f"calc(100% + {emg.SIDE_SCROLLBAR_PX}px)",
+        "width": f"calc(100% + {sp.SIDE_SCROLLBAR_PX}px)",
         "max-width": "none",
         "max-height": cap,
         "overflow-y": "auto",
@@ -299,15 +299,15 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "scrollbar-gutter": "stable",
     }
     # 1500×950 측정(붙는 높이 97px) — 본문 칸 653px, 낮은 창에서도 360px 아래로 줄지 않는다.
-    assert max(emg.SIDE_BODY_MIN_PX, 950 - 97 - emg.SIDE_BODY_RESERVE_PX) == 653
-    assert max(emg.SIDE_BODY_MIN_PX, 500 - 97 - emg.SIDE_BODY_RESERVE_PX) == 360
+    assert max(sp.SIDE_BODY_MIN_PX, 950 - 97 - sp.SIDE_BODY_RESERVE_PX) == 653
+    assert max(sp.SIDE_BODY_MIN_PX, 500 - 97 - sp.SIDE_BODY_RESERVE_PX) == 360
     # 내용이 짧아도 오른쪽 칸은 머리 + 상한만큼 높이를 잡는다 — 칸을 바꿔도 영역이 뛰지 않는다.
-    assert rules[("", right)] == {"min-height": f"calc({cap} + {emg.SIDE_HEAD_PX}px)"}
+    assert rules[("", right)] == {"min-height": f"calc({cap} + {sp.SIDE_HEAD_PX}px)"}
     # 오른쪽 칸 감싸개 — 폭 한계 안에서 붙는다. 줄은 스크롤 칸이 아니다(아니면 sticky 가 줄 기준).
     assert rules[("", right_item)] == {
         "flex": f"0 0 {emg.side_width_rule()}",
         "min-width": "0",
-        "padding-left": f"{emg.SIDE_INSET_PX}px",
+        "padding-left": f"{sp.SIDE_INSET_PX}px",
         "position": "sticky",
         "top": top,
         "align-self": "flex-start",
@@ -318,7 +318,7 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "flex": "1 1 0",
         "min-width": "0",
         "align-self": "stretch",
-        "padding-right": f"{emg.SIDE_INSET_PX}px",
+        "padding-right": f"{sp.SIDE_INSET_PX}px",
         "border-right": line,
     }
     # 칸막이 마운트 — 경계선 양쪽 절반부터 칸 오른쪽 끝까지 덮고, 눌림은 칸막이·접기 단추만 받는다.
@@ -326,7 +326,7 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "position": "absolute",
         "top": "0",
         "bottom": "0",
-        "left": f"-{emg.SIDE_GUTTER_PX // 2}px",
+        "left": f"-{sp.SIDE_GUTTER_PX // 2}px",
         "right": "0",
         "width": "auto",
         "min-width": "0",
@@ -336,7 +336,7 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
     }
     # 칸 머리 — 고르기 칸이 접기 단추 자리를 비운다.
     assert rules[("", choice)] == {
-        "padding-right": f"{emg.SIDE_TOGGLE_PX + emg.SIDE_TOGGLE_GAP_PX}px",
+        "padding-right": f"{sp.SIDE_TOGGLE_PX + sp.SIDE_TOGGLE_GAP_PX}px",
     }
     # 접힘 — 넓은 화면에서만. 칸 자리가 0 이고 표가 줄을 다 쓰며 칸막이(떠 있는 단추) 밖은 숨는다.
     assert rules[(wide, f"{folded} {right} > :not({splitter})")] == {"display": "none"}
@@ -345,7 +345,7 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "flex-basis": "0",
         "width": "0",
         "padding-left": "0",
-        "z-index": str(emg.SIDE_REOPEN_Z_INDEX),
+        "z-index": str(sp.SIDE_REOPEN_Z_INDEX),
     }
     assert rules[(wide, f"{folded} {left_item}")] == {"padding-right": "0", "border-right": "none"}
     assert rules[(wide, f"{folded} {splitter}")] == {
@@ -355,7 +355,7 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "height": "0",
     }
     assert rules[(wide, f"{folded} {tools}")] == {
-        "padding-right": f"{emg.SIDE_REOPEN_RESERVE_PX}px",
+        "padding-right": f"{sp.SIDE_REOPEN_RESERVE_PX}px",
     }
     assert not [key for key in rules if key[0] != wide and folded in key[1]]
     # 좁은 창 — 위아래로 쌓고 붙지 않으며 칸막이가 없다. 경계선은 가로로.
@@ -364,7 +364,7 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "flex": "1 1 100%",
         "position": "static",
         "padding-left": "0",
-        "padding-top": f"{emg.SIDE_INSET_PX}px",
+        "padding-top": f"{sp.SIDE_INSET_PX}px",
         "border-top": line,
     }
     assert rules[(narrow, left_item)] == {
@@ -403,6 +403,13 @@ def test_the_splitter_names_the_open_panel_and_unfolds_when_the_table_opens_one(
         "right": emg.RIGHT_KEY,
         "body": emg.SIDE_BODY_KEY,
     }
+    # 저장소 · CSS 이름은 그대로다 — 사용자의 폭 기억을 잃지 않는다.
+    assert first["names"] == {
+        "store": "capa-equipment-side-v1",
+        "width": "--emd-side-w",
+        "top": "--emd-top",
+        "attr": "data-emd-side",
+    }
     assert first["cover"] == ".st-key-page_tabs_strip"
     assert set(first["palette"]) == {
         "font",
@@ -439,7 +446,8 @@ def test_the_splitter_keeps_its_state_in_the_browser_only() -> None:
     """폭·접힘은 브라우저 전용 보기 상태 — 상태 값·트리거로 보내지 않는다(보내면 앱 전체가 다시
     돈다, AGENTS 9장). 저장소는 try 안에서만 만진다(사내 DRM 이 막아도 동작한다)."""
     assert "setStateValue" not in JS and "setTriggerValue" not in JS
-    assert "on_" not in SOURCE[SOURCE.index("def render_side_splitter") :]
+    drawn = SOURCE[SOURCE.index("def render_side_splitter") : SOURCE.index("def split_frame")]
+    assert "on_" not in drawn
     for match in re.finditer(r"localStorage", JS):
         before = JS[max(match.start() - 80, 0) : match.start()]
         assert "try {" in before, JS[match.start() - 80 : match.end() + 20]
@@ -448,7 +456,7 @@ def test_the_splitter_keeps_its_state_in_the_browser_only() -> None:
 
 def test_the_splitter_colours_come_from_the_palette_and_text_goes_in_as_text() -> None:
     used = set(re.findall(r"var\(--ess-([a-z-]+)", CSS))
-    assert used <= set(emg._splitter_palette()), used - set(emg._splitter_palette())
+    assert used <= set(sp.splitter_palette()), used - set(sp.splitter_palette())
     # 페이지 서식에 든 색은 두 칸 경계선의 토큰 `BORDER` 하나다(영역 테두리와 같은 색 — 테마를
     # 따른다).
     for text in (CSS, JS, emg.side_layout_style().replace(tokens.BORDER, "")):
@@ -478,7 +486,7 @@ def test_the_fold_button_sits_in_the_head_and_the_reopen_button_floats_like_the_
     칸막이·접기 단추·떠 있는 단추만 받는다."""
     toggle = _css_block(".ess-toggle")
     assert (toggle["position"], toggle["top"], toggle["right"]) == ("absolute", "0", "0")
-    assert toggle["width"] == toggle["height"] == f"{emg.SIDE_TOGGLE_PX}px"
+    assert toggle["width"] == toggle["height"] == f"{sp.SIDE_TOGGLE_PX}px"
     assert toggle["pointer-events"] == "auto"
 
     rail = _css_block(".ess-rail")
@@ -511,20 +519,20 @@ def test_the_fold_button_sits_in_the_head_and_the_reopen_button_floats_like_the_
 
     assert _css_block(".ess")["pointer-events"] == "none"
     gutter = _css_block(".ess-gutter")
-    assert gutter["pointer-events"] == "auto" and gutter["width"] == f"{emg.SIDE_GUTTER_PX}px"
+    assert gutter["pointer-events"] == "auto" and gutter["width"] == f"{sp.SIDE_GUTTER_PX}px"
     # 머리 한 줄이 최소 폭에 든다(고르기 넷의 자연 폭 310 — 1.63 측정) · 떠 있는 단추의 가장 긴 칸
     # 이름(「저장 전 변경」 89 — 측정)이 칸 끝에서 5 나가도 「내려받기」 를 덮지 않는다.
-    head = 310 + emg.SIDE_TOGGLE_GAP_PX + emg.SIDE_TOGGLE_PX
-    assert emg.SIDE_MIN_PX - emg.SIDE_INSET_PX >= head
-    assert emg.SIDE_REOPEN_RESERVE_PX >= 89 - 5
+    head = 310 + sp.SIDE_TOGGLE_GAP_PX + sp.SIDE_TOGGLE_PX
+    assert sp.SIDE_MIN_PX - sp.SIDE_INSET_PX >= head
+    assert sp.SIDE_REOPEN_RESERVE_PX >= 89 - 5
     # 떠 있는 단추는 표 머리 위, 고치는 칸·목록 아래다.
     orders = {
         name: int(value)
         for name, value in re.findall(r"\n(\.emg-[\w.-]+) \{[^}]*?z-index: (\d+);", GRID_CSS)
     }
-    assert orders[".emg-head"] < emg.SIDE_REOPEN_Z_INDEX < orders[".emg-c.is-editing"]
+    assert orders[".emg-head"] < sp.SIDE_REOPEN_Z_INDEX < orders[".emg-c.is-editing"]
     # 영역 안쪽 여백(13)에 스크롤 막대 자리가 든다.
-    assert emg.SIDE_SCROLLBAR_PX <= 13
+    assert sp.SIDE_SCROLLBAR_PX <= 13
 
 
 def test_the_cleanup_releases_listeners_and_frames() -> None:
@@ -924,11 +932,17 @@ def test_the_splitter_mount_restores_folds_resizes_and_cleans_up() -> None:
     `<html>` 에 걸린 이 문서의 폭·접힘이 남으며(전에는 처음으로 돌아갔다) 새로 읽으면 처음이다 —
     읽기만 되고 쓰기가 막혀도 같다."""
     data = {
-        "palette": emg._splitter_palette(),
+        "palette": sp.splitter_palette(),
         "label": SIDE_DETAIL,
         "reveal": 3,
         "bounds": emg.side_bounds(),
         "keys": {"row": emg.SPLIT_KEY, "right": emg.RIGHT_KEY, "body": emg.SIDE_BODY_KEY},
+        "names": {
+            "store": "capa-equipment-side-v1",
+            "width": "--emd-side-w",
+            "top": "--emd-top",
+            "attr": "data-emd-side",
+        },
         "cover": ".st-key-page_tabs_strip",
     }
 
@@ -945,7 +959,7 @@ def test_the_splitter_mount_restores_folds_resizes_and_cleans_up() -> None:
         "range": ["360", "682"],
         "label": SIDE_DETAIL,
     }
-    assert out["palette"] == emg._splitter_palette()["accent"]
+    assert out["palette"] == sp.splitter_palette()["accent"]
     assert out["unfolded"]["attr"] is None and out["unfolded"]["min"] is False
     assert out["unfolded"]["store"] == {"w": 500, "min": False}
     assert out["unfolded"]["focus"] == "ess-toggle"

@@ -39,6 +39,7 @@ import pandas as pd
 import pytest
 from alert_marks import shown, successes
 from grid_fake import Calls, install_fake_grid, load, send_ops
+from scenario_list_fake import ListBrowser, install_fake_list_grid
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
@@ -59,11 +60,9 @@ from test_scenario_management_page import (
     _check_row,
     _official_button,
     _open_official,
-    _shown_key,
 )
 from test_threshold_editor import SAVE_LABEL as THRESHOLD_SAVE_LABEL
 from test_threshold_editor import _app as _threshold_app
-from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.auto_official_update_tab import SETTINGS_SAVE_NAME
@@ -98,7 +97,9 @@ from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_SAVE_NAME,
     PROCESS_RENAME_SAVED_MESSAGE,
 )
-from capa_simulation.components.scenario_management import REVISION_EDITOR_KEY
+from capa_simulation.components.scenario_management import SIDE_CHANGES as LIST_SIDE_CHANGES
+from capa_simulation.components.scenario_management import SIDE_DETAIL as LIST_SIDE_DETAIL
+from capa_simulation.components.scenario_management import SIDE_KEY as LIST_SIDE_KEY
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.cache import (
     clear_global_display_order_cache,
@@ -1169,59 +1170,68 @@ render_cutoff_management(
 # 리비전명 바꾸기 ---------------------------------------------------------------
 
 
-def _renaming(tmp_path: Path) -> tuple[AppTest, BrowserTables, DuckDBScenarioRepository, str]:
+def _renaming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[AppTest, ListBrowser, DuckDBScenarioRepository, str]:
     database_path = tmp_path / "scenario.duckdb"
     script = _scenario_page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
     assert not AppTest.from_string(script, default_timeout=120).run().exception
     repository = DuckDBScenarioRepository(database_path)
     release = repository.latest_official_release()
     assert release is not None
+    calls = install_fake_list_grid(monkeypatch)
     app = AppTest.from_string(script, default_timeout=120)
-    tables = BrowserTables(app)
+    browser = ListBrowser(app, calls)
     _check_row(app, release.scenario_id)
-    tables.run()
-    return app, tables, repository, release.revision_id
+    app.session_state[LIST_SIDE_KEY] = LIST_SIDE_DETAIL
+    browser.run()
+    return app, browser, repository, release.revision_id
 
 
-def _rename_pressed(app: AppTest, tables: BrowserTables, name: str) -> WidgetStates:
-    tables.edit(_shown_key(app, REVISION_EDITOR_KEY), 0, "리비전명", name)
-    tables.run()
-    app.button(key="scenario_card_save_names").click()
-    return tables._states()
+def _rename_pressed(
+    app: AppTest, browser: ListBrowser, revision_id: str, name: str
+) -> WidgetStates:
+    browser.rename_revision(revision_id, name)
+    app.session_state[LIST_SIDE_KEY] = LIST_SIDE_CHANGES
+    browser.run()
+    app.button(key="scenario_list_save").click()
+    return app._tree.get_widget_states()
 
 
 def test_a_double_press_of_the_revision_name_save_renames_once_and_says_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """「이름 저장」 더블클릭 — 둘째 누름의 콜백이 첫 누름이 지우기 전의 초안을 들고 와 같은 바꿈을
+    """「변경 저장」 더블클릭 — 둘째 누름의 콜백이 첫 누름이 지우기 전의 초안을 들고 와 같은 바꿈을
     다시 보내 「다른 사용자가 먼저 이름을 바꿨습니다(지금: 새 이름)」 이 남았다."""
-    app, tables, repository, revision_id = _renaming(tmp_path)
+    app, browser, repository, revision_id = _renaming(tmp_path, monkeypatch)
 
     _press_twice(
         app,
         monkeypatch,
-        _rename_pressed(app, tables, "더블클릭 이름"),
+        _rename_pressed(app, browser, revision_id, "더블클릭 이름"),
         cls=DuckDBScenarioRepository,
-        write="rename_revisions",
+        write="apply_scenario_list_edits",
     )
 
     assert _texts(app, "error") == []
-    assert [text for text in _texts(app, "success") if text.startswith("리비전명을 저장했습니다")]
+    assert [text for text in _texts(app, "success") if text == "리비전명 1건을 저장했습니다."]
     assert repository.load_revision(revision_id).revision.revision_name == "더블클릭 이름"
 
 
 def test_an_old_screen_double_press_after_another_rename_keeps_the_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    app, tables, repository, revision_id = _renaming(tmp_path)
+    app, browser, repository, revision_id = _renaming(tmp_path, monkeypatch)
     shown = repository.load_revision(revision_id).revision.revision_name
-    pressed = _rename_pressed(app, tables, "내 이름")
+    pressed = _rename_pressed(app, browser, revision_id, "내 이름")
     repository.rename_revision(revision_id, "남이 바꾼 이름", expected_name=shown)
 
-    _press_twice(app, monkeypatch, pressed, cls=DuckDBScenarioRepository, write="rename_revisions")
+    _press_twice(
+        app, monkeypatch, pressed, cls=DuckDBScenarioRepository, write="apply_scenario_list_edits"
+    )
 
     assert any("다른 사용자가 먼저 이름을 바꿨습니다" in text for text in _texts(app, "error"))
-    assert not [text for text in _texts(app, "success") if text.startswith("리비전명을 저장")]
+    assert not [text for text in _texts(app, "success") if text.startswith("리비전명")]
     assert repository.load_revision(revision_id).revision.revision_name == "남이 바꾼 이름"
 
 

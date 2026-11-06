@@ -19,6 +19,7 @@ from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_month_merge import _record_keys
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -27,6 +28,7 @@ from capa_simulation.scenario_activation import (
     ACTIVE_PERSISTED_SCENARIO_ID_KEY,
 )
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
+from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
@@ -121,6 +123,23 @@ def _with_history(
         parent_revision_id=source.revision.revision_id,
         virtual_products=[asdict(record) for record in records],
     )
+
+
+def test_a_merge_made_here_moves_the_base_of_the_unsaved_list_order(sources: Sources) -> None:
+    """목록 관리에 미저장 순서를 둔 채 이 세션이 만든 시나리오는 「다른 곳에서」 가 아니다 — 본
+    차례를 그 줄이 든 차례로 옮긴다."""
+    repository, database, base, donor = sources
+    stored = tuple(item.scenario_id for item in repository.list_scenarios())
+    app = _app(database, base, donor)
+    app.session_state[DRAFT_KEY] = ListDraft(order=tuple(reversed(stored)), order_base=stored)
+    app.selectbox(key=f"merge_start_{donor.revision.revision_id}").set_value(202802).run()
+    app.text_input(key="scenario_merge_name").set_value("이 세션 머지")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    after = tuple(item.scenario_id for item in repository.list_scenarios())
+    assert len(after) == len(stored) + 1
+    assert app.session_state[DRAFT_KEY].order_base == after
 
 
 def test_a_section_it_cannot_read_stands_as_the_data_error_mark(

@@ -121,4 +121,7 @@ disable_error_code = ["operator"]
     "intro_overlay_assets/*",
     "page_tabs_assets/*",
     "equipment_master_grid_assets/*",
+    "grid_shared_assets/*",
+    "side_panel_assets/*",
+    "scenario_list_grid_assets/*",
 ]

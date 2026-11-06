@@ -24,12 +24,7 @@ from test_equipment_scenario_repository import _clone
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
-from capa_simulation.components.pick_edit_table import (
-    TableDraft,
-    draft_session_key,
-    shown_session_key,
-)
-from capa_simulation.components.scenario_management import LIST_EDITOR_KEY
+from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import (
     ADMIN_AREA,
@@ -46,6 +41,7 @@ from capa_simulation.persistence.equipment_cache import clear_equipment_reposito
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.process_detail_state import shortening_card_query_params
+from capa_simulation.services.scenario_list_edits import ListDraft
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -245,6 +241,16 @@ def test_tilde_names_are_blocked_on_every_markdown_element_of_the_main_screens(
     assert PROCESS_LABEL in blocked[CONSTRAINT_SIMULATION.title]
 
 
+def _scenario_id_named() -> str:
+    import capa_simulation.settings as settings
+
+    return next(
+        item.scenario_id
+        for item in DuckDBScenarioRepository(settings.DUCKDB_PATH).list_scenarios()
+        if item.scenario_name == SCENARIO_NAME
+    )
+
+
 def test_a_tilde_revision_name_is_blocked_in_the_official_dialog(
     _app: tuple[AppTest, str, str],
 ) -> None:
@@ -253,9 +259,7 @@ def test_a_tilde_revision_name_is_blocked_in_the_official_dialog(
     app, _, _ = _app
     _ok(app.run())
     _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
-    shown = app.session_state[shown_session_key(LIST_EDITOR_KEY)]
-    row = next(row for row, name in shown.names.items() if name == SCENARIO_NAME)
-    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(picked=row)
+    app.session_state[DRAFT_KEY] = ListDraft(opened=_scenario_id_named())
     _ok(app.run())
     next(button for button in app.button if button.label == "공식으로 지정…").click()
     _ok(app.run())

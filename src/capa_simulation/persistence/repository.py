@@ -453,6 +453,57 @@ class BatchEditRefused(ValueError):
         self.moved_names = dict(moved_names or {})
 
 
+def _checked_revision_names(
+    connection: duckdb.DuckDBPyConnection,
+    changes: Mapping[str, tuple[str, str]],
+    problems: list[tuple[str | None, str]],
+    moved_names: dict[str, str],
+) -> dict[str, str]:
+    """리비전명 일괄 고침을 쓰기 트랜잭션 안에서 대조한다 — 쓸 이름(id → 앞뒤 공백을 뗀 이름)을
+    돌려주고 거부는 `problems` · `moved_names` 에 더한다. 같은 이름은 허용한다(번호가 가른다)."""
+    if not changes:
+        return {}
+    placeholders = ", ".join("?" for _ in changes)
+    owners = {
+        str(row[0]): (str(row[1]), str(row[2]))
+        for row in connection.execute(
+            f"""
+            SELECT r.revision_id, r.revision_name, s.status
+            FROM app_meta.scenario_revision r
+            JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
+            WHERE r.revision_id IN ({placeholders})
+            """,
+            list(changes),
+        ).fetchall()
+    }
+    labels: dict[str, str] = {}
+    for revision_id, (expected, wanted) in changes.items():
+        owner = owners.get(revision_id)
+        if owner is None:
+            problems.append((revision_id, "리비전을 찾을 수 없습니다(시나리오가 지워짐)."))
+        elif owner[1] != "ACTIVE":
+            problems.append((revision_id, "보관된 시나리오의 리비전명은 바꿀 수 없습니다."))
+        elif owner[0] != expected:
+            moved_names[revision_id] = owner[0]
+            problems.append((revision_id, name_moved_message(owner[0])))
+        else:
+            try:
+                labels[revision_id] = required_text(wanted, "리비전명")
+            except ValueError as exc:
+                problems.append((revision_id, str(exc)))
+    return labels
+
+
+def _write_revision_names(connection: duckdb.DuckDBPyConnection, labels: Mapping[str, str]) -> None:
+    """대조를 지난 리비전명을 쓴다 — 이름 한 칸만, 가리키는 주요 Case 는 version 만 오른다."""
+    for revision_id, label in labels.items():
+        connection.execute(
+            "UPDATE app_meta.scenario_revision SET revision_name = ? WHERE revision_id = ?",
+            [label, revision_id],
+        )
+        home_profile_store.touch_global_main_cases_revision(connection, revision_id)
+
+
 SCENARIO_LIST_MOVED_MESSAGE = (
     "목록이 바뀌었습니다 — 다른 곳에서 시나리오가 더해지거나 빠지거나 순서가 바뀌었습니다. "
     "지금 차례에서 순서를 다시 고쳐 주세요."
@@ -1591,8 +1642,9 @@ class DuckDBScenarioRepository:
         order: Sequence[str] | None = None,
         *,
         expected_order: Sequence[str] | None = None,
+        revision_renames: Mapping[str, tuple[str, str]] | None = None,
     ) -> None:
-        """목록 편집표의 이름·순서 편집을 한 트랜잭션으로 쓴다. 하나라도 거부되면 쓰지 않는다.
+        """목록 관리의 이름·순서 편집을 한 트랜잭션으로 쓴다. 하나라도 거부되면 쓰지 않는다.
 
         `renames` 는 시나리오 id → (보고 고친 지금 이름, 새 이름)이다. 이름마다 비교 후 쓰기다 —
         그 사이 다른 사용자가 먼저 바꿨으면 거부한다. 새 이름은 앞뒤 공백을 떼고, 이 저장이 끝난
@@ -1608,7 +1660,13 @@ class DuckDBScenarioRepository:
         순서를 고치지 않은 저장(`order` 가 None)은 `list_order` 를 쓰지 않는다 — 이름을 바꿔도 행은
         만든 시각 차례 그대로이고(`_SCENARIO_LIST_ORDER`), 순서를 저장한 적 없는 목록에서는 그 뒤
         새로 만든 시나리오가 계속 맨 위에 선다.
+
+        `revision_renames` 는 리비전 id → (보고 고친 지금 이름, 새 이름)이다. 규칙은
+        `rename_revision` 과 같다 — 이름 한 칸만(가리키는 주요 Case 는 version 만 오른다), 비교 후
+        쓰기, 빈 이름 · 보관된 시나리오 거절, 같은 이름 허용. 다른 시나리오의 리비전도 함께 쓴다.
+        거부는 시나리오 · 리비전 줄을 한 목록으로 모은다(id 는 uuid 라 겹치지 않는다).
         """
+        revision_changes = dict(revision_renames or {})
         with self._write_transaction() as connection:
             rows = connection.execute(
                 "SELECT s.scenario_id, s.scenario_name, s.status FROM app_meta.scenario s"
@@ -1646,6 +1704,9 @@ class DuckDBScenarioRepository:
                     or len(set(ordered)) != len(ordered)
                 ):
                     problems.append((None, SCENARIO_LIST_MOVED_MESSAGE))
+            revision_labels = _checked_revision_names(
+                connection, revision_changes, problems, moved_names
+            )
             if problems:
                 raise BatchEditRefused(problems, moved_names)
             for scenario_id, label in labels.items():
@@ -1665,6 +1726,7 @@ class DuckDBScenarioRepository:
                         "UPDATE app_meta.scenario SET list_order = ? WHERE scenario_id = ?",
                         [position, str(scenario_id)],
                     )
+            _write_revision_names(connection, revision_labels)
 
     def list_revisions(self, scenario_id: str) -> list[RevisionSummary]:
         with self._connect() as connection:
@@ -1753,64 +1815,30 @@ class DuckDBScenarioRepository:
             raise RuntimeError("이름을 바꾼 리비전을 다시 읽지 못했습니다.")
         return revision_summary(row)
 
-    def rename_revisions(self, changes: Mapping[str, tuple[str, str]]) -> list[RevisionSummary]:
-        """여러 리비전의 이름표를 한 트랜잭션으로 고친다. 하나라도 거부되면 아무것도 쓰지 않는다.
+    def list_revisions_by_ids(
+        self, revision_ids: Sequence[str]
+    ) -> dict[str, tuple[RevisionSummary, str]]:
+        """리비전 id 목록의 지금 요약과 그 시나리오 상태를 한 번에 읽는다(없는 id 는 빠진다).
 
-        `changes` 는 리비전 id → (보고 고친 지금 이름, 새 이름)이다. 한 건씩의 규칙은
-        `rename_revision` 과 같다 — 이름 한 칸만(가리키는 주요 Case 는 version 만 오른다), 비교 후
-        쓰기, 빈 이름·보관된 시나리오 거절, 같은 이름 허용. 거부는 리비전마다 모아
-        `BatchEditRefused` 로 한 번에 낸다(행 id 는 리비전 id).
-        돌려주는 요약은 `changes` 의 차례다.
+        목록 관리 「저장 전 변경」 이 고친 리비전의 지금 이름 · 번호 · 소속을 읽는다 — 어느
+        시나리오의 리비전이든 한 쿼리다. 고친 리비전이 없으면 DB 를 열지 않는다.
         """
-        if not changes:
-            return []
-        with self._write_transaction() as connection:
-            placeholders = ", ".join("?" for _ in changes)
-            owners = {
-                str(row[0]): (str(row[1]), str(row[2]))
-                for row in connection.execute(
-                    f"""
-                    SELECT r.revision_id, r.revision_name, s.status
-                    FROM app_meta.scenario_revision r
-                    JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
-                    WHERE r.revision_id IN ({placeholders})
-                    """,
-                    list(changes),
-                ).fetchall()
-            }
-            problems: list[tuple[str | None, str]] = []
-            moved_names: dict[str, str] = {}
-            labels: dict[str, str] = {}
-            for revision_id, (expected, wanted) in changes.items():
-                owner = owners.get(revision_id)
-                if owner is None:
-                    problems.append((revision_id, "리비전을 찾을 수 없습니다(시나리오가 지워짐)."))
-                elif owner[1] != "ACTIVE":
-                    problems.append((revision_id, "보관된 시나리오의 리비전명은 바꿀 수 없습니다."))
-                elif owner[0] != expected:
-                    moved_names[revision_id] = owner[0]
-                    problems.append((revision_id, name_moved_message(owner[0])))
-                else:
-                    try:
-                        labels[revision_id] = required_text(wanted, "리비전명")
-                    except ValueError as exc:
-                        problems.append((revision_id, str(exc)))
-            if problems:
-                raise BatchEditRefused(problems, moved_names)
-            for revision_id, label in labels.items():
-                connection.execute(
-                    "UPDATE app_meta.scenario_revision SET revision_name = ? WHERE revision_id = ?",
-                    [label, revision_id],
-                )
-                home_profile_store.touch_global_main_cases_revision(connection, revision_id)
-            rows = {
-                str(row[0]): row
-                for row in connection.execute(
-                    REVISION_SUMMARY_SELECT + f" WHERE revision_id IN ({placeholders})",
-                    list(changes),
-                ).fetchall()
-            }
-        return [revision_summary(rows[revision_id]) for revision_id in changes]
+        ids = [str(revision_id) for revision_id in revision_ids]
+        if not ids:
+            return {}
+        placeholders = ", ".join("?" for _ in ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT r.revision_id, r.scenario_id, r.revision_no, r.revision_name,
+                       r.parent_revision_id, r.note, r.reference_hash, r.created_at, s.status
+                FROM app_meta.scenario_revision r
+                JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
+                WHERE r.revision_id IN ({placeholders})
+                """,
+                ids,
+            ).fetchall()
+        return {str(row[0]): (revision_summary(row[:8]), str(row[8])) for row in rows}
 
     def count_virtual_products(self, revision_ids: Sequence[str]) -> dict[str, int]:
         """리비전마다 기록된 가상 제품 수를 한 번에 센다. 없는 리비전은 0 이다.

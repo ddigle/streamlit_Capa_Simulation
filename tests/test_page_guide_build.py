@@ -1278,6 +1278,8 @@ def test_data_shaped_keeps_the_measured_names() -> None:
     모두에서 Δ0 이던 LOB_CHART · LOB_LABEL 만 뺐다. 목록을 줄이려면 다시 재고 이 시험을 고친다."""
     moved = {"GRID", "LAST_GRID", "DETAIL_BN", "KEY_PROCESS_GRID", "LOB_BN_BARS"}
     moved |= {"PROC_MONTH_CANVAS", "PF_TILES", "DIALOG"}
+    # GRID · LAST_GRID · EDIT_ROW 의 목록 관리 새 표 짝 — 줄 수 · 고른 줄이 자리와 크기를 정한다.
+    moved |= {"LIST_TABLE", "LIST_REVISIONS", "LIST_OPEN_ROW"}
 
     assert core.DATA_SHAPED == CONFIRMED_DATA_SHAPED | moved
     assert {"thumb:proc_filter", "step:proc_filter.toggle"} <= core.data_places(SKELETON)
@@ -1335,15 +1337,15 @@ def test_edit_row_cell_measures_a_named_column_on_the_edited_row() -> None:
     assert capture.target_expr("named:EDIT_ROW_CELL(공식버전)", None) == "null"
 
 
-def test_edit_row_cell_is_used_only_on_states_the_internal_run_does_not_shoot() -> None:
-    """`EDIT_ROW_CELL` 은 고친 행이 정하는 자리지만 `DATA_SHAPED` 가 아니다 — 쓰는 곳이 DB 를 쓰는
+def test_list_open_cell_is_used_only_on_states_the_internal_run_does_not_shoot() -> None:
+    """`LIST_OPEN_CELL` 은 연 줄이 정하는 자리지만 `DATA_SHAPED` 가 아니다 — 쓰는 곳이 DB 를 쓰는
     상태뿐이라 사내가 찍지 않고(예시 그림) 합성 시드로만 자리가 정해진다. 찍는 상태에 쓰면 런북의
     바닥 수가 사내와 사외로 갈라지니 그때 `DATA_SHAPED` 에 넣는다."""
-    assert "EDIT_ROW_CELL" not in core.DATA_SHAPED
+    assert "LIST_OPEN_CELL" not in core.DATA_SHAPED
     users = [
         state
         for state in SKELETON.plan["states"]
-        if any("EDIT_ROW_CELL" in str(word) for word in state["targets"].values())
+        if any("LIST_OPEN_CELL" in str(word) for word in state["targets"].values())
     ]
     assert [state["id"] for state in users] == ["18_official_done"]
     assert all(state["writes"] == "db" for state in users)

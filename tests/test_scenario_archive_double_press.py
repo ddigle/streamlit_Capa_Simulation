@@ -1,6 +1,6 @@
 # Purpose: 보관·되돌리기·영구 삭제의 빠른 두 번 누름과 남이 먼저 처리한 시나리오의 누름을 본다.
 
-"""시나리오 관리 › 목록 관리 › 「보관된 시나리오」(2026-10-27 E2E r6 static).
+"""시나리오 관리 › 목록 관리 › 「보관함」(2026-10-27 E2E r6 static).
 
 - 「되돌리기」 를 0.2초 간격으로 두 번 누르면 둘째 누름의 회차가 고른 보관본(이미 되돌렸다)을 다음
   보관본으로 바꾼 채(`prune_choice`) 같은 key 의 단추 누름을 받아 고르지 않은 보관본까지 되돌렸다.
@@ -27,18 +27,20 @@ from test_scenario_management_page import PAGE_PATH, _clone_official
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.write_guard as write_guard
-from capa_simulation.components.pick_edit_table import TableDraft, draft_session_key
+from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import (
     ACTION_KEY,
-    ARCHIVE_CONFIRM_KEY,
     ARCHIVED_GONE_MESSAGE,
     ARCHIVED_SELECT_KEY,
     DELETE_BUTTON_KEY,
     DELETE_CONFIRM_KEY,
-    LIST_EDITOR_KEY,
+    SIDE_ARCHIVE,
+    SIDE_KEY,
+    archive_confirm_key,
 )
 from capa_simulation.persistence.models import ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.scenario_list_edits import ListDraft
 
 RESTORE_KEY = "scenario_archived_restore"
 NAMES = ("보관 가", "보관 나", "보관 다")
@@ -74,8 +76,9 @@ def _texts(items: Any) -> list[str]:
 
 
 def _picked(script: str, middle: bool = True) -> tuple[AppTest, BrowserChoice, str]:
-    """보관함 상자에서 가운데(또는 첫) 보관본을 고른 화면."""
+    """「보관함」 칸에서 가운데(또는 첫) 보관본을 고른 화면."""
     app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[SIDE_KEY] = SIDE_ARCHIVE
     browser = BrowserChoice(app, "selectbox", ARCHIVED_SELECT_KEY)
     _ok(browser.start())
     shown = browser.options()
@@ -265,10 +268,10 @@ def test_an_overlapping_second_archive_press_reports_the_first_archive(
     before = repository.list_scenarios()
 
     app = AppTest.from_string(script, default_timeout=120)
-    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(picked=target.scenario_id)
+    app.session_state[DRAFT_KEY] = ListDraft(opened=target.scenario_id)
     _ok(app.run())
     _ok(app.button(key=f"{ACTION_KEY}_archive").click().run())
-    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    app.checkbox(key=archive_confirm_key(target.scenario_id)).check()
     _ok(app.run())
 
     original = DuckDBScenarioRepository.archive_scenario

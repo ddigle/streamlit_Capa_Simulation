@@ -630,7 +630,7 @@ def missing_scenario_notice(name: str | None, status: str | None) -> str:
     if status == "ARCHIVED":
         return (
             f"{label} 그 사이 다른 사용자가 보관해 새 리비전을 저장할 수 없습니다 — 저장하려면 "
-            "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
+            "시나리오 관리 「목록 관리」 오른쪽 「보관함」 에서 목록으로 되돌린 뒤 다시 "
             f"저장하세요. {keep}"
         )
     if status == "MISSING":
