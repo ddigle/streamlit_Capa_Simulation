@@ -25,7 +25,8 @@
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 탭 줄 밖의 떠나기인 테마
-// 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`).
+// 단추도 같은 붙들기를 지난다(`window.__capaLeaveGate`). 사이드바 화면 링크도 같다 — 터치 톡은 초점이 빠지며 나간 표의 출납
+// 회차와 거의 함께 닿아, 그 회차가 지금 화면 주소로 돌며 링크 이동을 덮는다. 붙들었다가 같은 링크를 다시 누른다.
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
 // 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(테마 단추면 공식
 // 발행 쌍이 아니던 설비 시나리오, 새로고침이면 가정 설비 시나리오의 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은
@@ -584,7 +585,7 @@ export default function (component) {
   const announcer = nav.querySelector('.capa-tabs-announce')
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, busyTimer: 0, lastActive: null, onFonts: null, onOpenPage: null,
-    onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
+    onLink: null, linkFlight: null, linkReplay: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
     drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
@@ -967,15 +968,19 @@ export default function (component) {
   // 붙든 동안 탭을 누르면 마지막 누름만 남는다 — 테마 누름은 버려지고 단추가 제 기다림 표지를 걷는다.
   const gate = {
     press: () => { S.pressFromGrid = S.gridFocused },
-    go: (fn) => {
+    // 막 손을 뗀 누름이면 붙들고 참을 돌려준다 — 거짓이면 붙들지 않았으니 부른 쪽이 그대로 잇는다.
+    hold: (fn) => {
       if (fresh()) {
         S.hold = null
-        fn()
-        return
+        return false
       }
       S.hold = { id: null, at: Date.now(), data: S.data, go: fn }
       clearTimeout(S.holdTimer)
       S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
+      return true
+    },
+    go: (fn) => {
+      if (!gate.hold(fn)) fn()
     },
   }
   window.__capaLeaveGate = gate
@@ -1300,19 +1305,40 @@ export default function (component) {
   }
   if (!S.onInput) {
     // 키·포인터 입력 시각 — 키보드로 옮긴 뒤 사용자가 스스로 초점을 옮겼는지 본다(`<tabs-focus>`).
-    S.onInput = () => {
+    S.onInput = (event) => {
       S.inputAt = Date.now()
+      // 사이드바 링크의 click 때는 초점이 이미 표를 떠났다 — 누르는 순간을 적는다(`S.onLink` 의 붙들기).
+      const target = event.type === 'pointerdown' ? event.target : null
+      if (target && target.closest && target.closest(PAGE_LINK)) S.pressFromGrid = S.gridFocused
     }
     for (const type of ['keydown', 'pointerdown']) document.addEventListener(type, S.onInput, true)
   }
   if (!S.onLink) {
+    // 붙든 링크를 다시 누른다 — 그 사이 다시 지어졌을 수 있어 주소로 찾는다.
+    const replayLink = (href) => {
+      const link = [...document.querySelectorAll(PAGE_LINK)].find((anchor) => anchor.getAttribute('href') === href)
+      if (!link) return
+      S.linkReplay = href
+      link.click()
+    }
     // 왼쪽 단추 누름만 본다 — Streamlit 은 보조 키를 눌러도 같은 창에서 옮긴다. 가운데 단추(새 브라우저 탭)는
-    // 새 접속이라 막지 않는다. 새 창으로 여는 바깥 링크도 그대로다.
+    // 새 접속이라 막지 않는다. 새 창으로 여는 바깥 링크도 그대로다. 상한 거름은 열기 표지를 적으므로 붙들기 뒤에 한 번만 돈다.
     S.onLink = (event) => {
       if (event.defaultPrevented || event.button !== 0) return
       const link = event.target && event.target.closest ? event.target.closest(PAGE_LINK) : null
       if (!link || link.target === '_blank') return
-      const why = refusal((link.getAttribute('href') || '').split(/[?#]/)[0])
+      const href = link.getAttribute('href') || ''
+      if (S.linkReplay === href) {
+        S.linkReplay = null
+      } else {
+        const gate = window.__capaLeaveGate
+        if (gate && gate.hold(() => replayLink(href))) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+      }
+      const why = refusal(href.split(/[?#]/)[0])
       if (!why) return
       event.preventDefault()
       event.stopPropagation()

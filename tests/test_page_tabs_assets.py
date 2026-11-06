@@ -1534,6 +1534,14 @@ _GATE_RUNNER = """
   T.gate.go(theme(log))
   out.fresh = [log.slice(), T.S.hold]
 
+  // 사이드바 링크 — 붙들면 참이고 누른 쪽이 기본 동작을 막는다. 아니면 거짓이고 그대로 간다.
+  timers.length = 0; now = 1000; log = []; T = strip(log)
+  out.linkFresh = [T.gate.hold(theme(log)), log.slice()]
+  T.S.editAt = now
+  out.linkHeld = [T.gate.hold(theme(log)), log.slice()]
+  advance(now + 500)
+  out.linkLate = log.slice()
+
   // 칸 편집기에 쓰는 중 — 편집 회차가 도는 동안 붙들고, 끝나고 새 data 가 오면 잇는다.
   timers.length = 0; now = 1000; log = []; T = strip(log)
   T.S.gridFocused = true
@@ -1605,6 +1613,9 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     out = _node(runner)
 
     assert out["fresh"] == [["theme"], None]
+    assert out["linkFresh"] == [False, []]
+    assert out["linkHeld"] == [True, []]
+    assert out["linkLate"] == ["theme"]
     assert out["typingHeld"] == [[], ["held", None]]
     assert out["typingWhileRunning"] == []
     assert out["typingAfterRun"] == [["theme"], None, None]
@@ -1613,6 +1624,28 @@ def test_the_leave_gate_holds_a_theme_press_until_the_edit_run_returns() -> None
     assert out["dropped"] == ["tab:b"]
     assert out["capEarly"] == []
     assert out["capLate"] == ["theme"]
+
+
+def test_a_sidebar_link_press_right_after_a_table_edit_waits_for_its_run() -> None:
+    """표 칸을 쓰다 사이드바 링크를 터치로 누르면 초점이 빠지며 출납이 곧바로 나가고, 그 회차가 지금
+    화면 주소로 돌아 링크 이동을 덮었다(2026-11-07 E2E — 톡 3/3 이동 안 함). 탭 누름과 같은 붙들기를
+    지난 뒤 같은 링크를 다시 누른다 — 상한 거름은 다시 누를 때 한 번만 돈다(열기 표지를 적는다)."""
+    on_link = JS[
+        JS.index("S.onLink = (event) => {") : JS.index(
+            "document.addEventListener('click', S.onLink, true)"
+        )
+    ]
+    assert on_link.index("S.linkReplay === href") < on_link.index("refusal(")
+    assert "gate.hold(() => replayLink(href))" in on_link
+    held = on_link[on_link.index("gate.hold(") : on_link.index("refusal(")]
+    assert "event.preventDefault()" in held and "event.stopPropagation()" in held
+    # 누르는 순간 표에 있던 초점을 적는다 — 링크 click 때는 이미 표를 떠났다.
+    on_input = JS[JS.index("S.onInput = (event) => {") : JS.index("S.onInput, true)")]
+    assert "closest(PAGE_LINK)" in on_input and "S.pressFromGrid = S.gridFocused" in on_input
+    # 다시 누를 때는 그 사이 다시 지어졌을 수 있는 링크를 주소로 찾는다.
+    replay = JS[JS.index("const replayLink = (href) => {") : JS.index("S.onLink = (event) => {")]
+    assert "querySelectorAll(PAGE_LINK)" in replay
+    assert "S.linkReplay = href" in replay and "link.click()" in replay
 
 
 def test_the_equipment_master_grid_and_its_side_panels_count_as_edit_tables() -> None:
