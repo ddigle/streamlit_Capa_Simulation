@@ -132,3 +132,35 @@ def test_the_backup_line_copies_both_databases_and_the_input_folder(tmp_path: Pa
     backup = home / "deploy_backup" / head
     assert (backup / "capa_simulation.duckdb").read_bytes() == b"s" * 1000
     assert (backup / "Core_Data.csv").is_file() and (backup / "sub" / "x.txt").is_file()
+
+
+def test_the_backup_line_copies_a_leftover_wal_with_its_database(tmp_path: Path) -> None:
+    """앱이 저장을 마치지 못한 채 꺼지면 `.wal` 이 운영 DB 의 짝으로 남는다 — 빼고 복사하면 백업이
+    마지막 저장을 잃는다. 이름이 비슷한 다른 파일은 따라오지 않는다."""
+    repository = tmp_path / "repository"
+    (repository / "data").mkdir(parents=True)
+    (repository / "data" / "capa_simulation.duckdb").write_bytes(b"s" * 10)
+    (repository / "data" / "capa_simulation.duckdb.wal").write_bytes(b"w" * 3)
+    (repository / "data" / "capa_simulation.duckdb.bak").write_bytes(b"b")
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
+
+    done = subprocess.run(
+        [sys.executable, "-c", _backup_code()],
+        cwd=repository,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+        check=False,
+    )
+
+    assert done.returncode == 0, done.stderr
+    head, *rows = done.stdout.split("\n")[:-1]
+    assert rows == ["capa_simulation.duckdb 10 10", "capa_simulation.duckdb.wal 3 3"]
+    backup = home / "deploy_backup" / head
+    assert (backup / "capa_simulation.duckdb.wal").read_bytes() == b"w" * 3
+    assert not (backup / "capa_simulation.duckdb.bak").exists()
