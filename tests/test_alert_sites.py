@@ -237,3 +237,31 @@ def test_every_allowed_site_says_why() -> None:
     unknown = {site: reason for site, (_, reason) in ALLOWED.items() if reason not in REASONS}
     assert not unknown, unknown
     assert all(count > 0 for count, _ in ALLOWED.values())
+
+
+def _alert_text_strings() -> list[tuple[str, int, str]]:
+    """`alerts.state(...)` 의 `text` · `full` 인자에 든 문자열 조각을 (파일, 줄, 글)로 모은다."""
+    found: list[tuple[str, int, str]] = []
+    for path in sorted((PROJECT_ROOT / "src").rglob("*.py")) + sorted(
+        (PROJECT_ROOT / "app_pages").rglob("*.py")
+    ):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "state":
+                continue
+            for keyword in node.keywords:
+                if keyword.arg not in {"text", "full"}:
+                    continue
+                for piece in ast.walk(keyword.value):
+                    if isinstance(piece, ast.Constant) and isinstance(piece.value, str):
+                        relative = path.relative_to(PROJECT_ROOT).as_posix()
+                        found.append((relative, piece.lineno, piece.value))
+    return found
+
+
+def test_alert_text_has_no_markdown_marks() -> None:
+    """알림창 · Alarm 은 글을 그대로 그린다 — 코드 표시 기호가 화면에 글자로 남는다."""
+    strings = _alert_text_strings()
+    assert strings, "alerts.state 의 글을 하나도 찾지 못했다 — 이 시험이 아무것도 보지 않는다"
+    assert [item for item in strings if "`" in item[2]] == []

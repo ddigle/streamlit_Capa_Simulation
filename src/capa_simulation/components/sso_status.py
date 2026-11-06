@@ -423,7 +423,7 @@ def _access_seed_alert(cfg: SsoConfig) -> None:
         active=seeded,
         text="접속 명단이 환경변수 첫 판입니다 — S3 파일 없음",
         full=(
-            "S3 명단 파일이 아직 없어 `CAPA_ACCESS_USERS` 를 첫 판으로 씁니다. Admin 「접속 명단」 "
+            "S3 명단 파일이 아직 없어 CAPA_ACCESS_USERS 를 첫 판으로 씁니다. Admin 「접속 명단」 "
             "에서 첫 저장을 하면 파일이 생기고, 그 뒤에는 환경변수를 듣지 않습니다."
         ),
     )

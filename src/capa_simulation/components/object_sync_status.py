@@ -93,7 +93,7 @@ def render_object_sync_alerts() -> None:
             if reason is None
             else (
                 f"동기화 꺼짐 — {reason}. 저장은 이 서버의 DB 에만 남습니다. 설정"
-                "(`CAPA_S3_SYNC_MODE` · `config/object_storage.json`)을 고친 뒤 다시 띄우세요."
+                "(CAPA_S3_SYNC_MODE · config/object_storage.json)을 고친 뒤 다시 띄우세요."
             )
         ),
     )
@@ -158,9 +158,9 @@ def render_object_sync_alerts() -> None:
         active=head_ignored,
         text="정본을 받지 않은 서버입니다 — 이 저장은 다음 CI/CD 에 사라집니다",
         full=(
-            "버킷에 세대가 있는데 `CAPA_S3_SYNC_MODE` 칸이 비어 받지 않았습니다. 지금 화면은 "
-            "정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 사라집니다. 칸에 `managed` 를 넣고 "
-            "CI/CD 를 다시 누르세요. 일부러 끈 서버면 `local` 을 넣습니다."
+            "버킷에 세대가 있는데 CAPA_S3_SYNC_MODE 칸이 비어 받지 않았습니다. 지금 화면은 "
+            "정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 사라집니다. 칸에 managed 를 넣고 "
+            "CI/CD 를 다시 누르세요. 일부러 끈 서버면 local 을 넣습니다."
         ),
     )
 
