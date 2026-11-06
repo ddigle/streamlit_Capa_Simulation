@@ -416,6 +416,24 @@ def test_a_snapshot_sharing_a_generation_number_is_never_doomed() -> None:
     assert plan.protected_orphans == 2
 
 
+def test_orphans_sharing_a_number_can_still_be_cleared_on_request() -> None:
+    """가리키는 포인터가 사라지면 진짜 고아다. 기본은 지키고 사람이 고르면 지운다."""
+    pointers, snapshots = _generations(12)
+    gone = _snapshot("simulation", 90)
+    twin = manifest.snapshot_key(
+        "simulation", 90, created_at_utc="2026-01-01T00:00:00Z", sha256="b" * 64
+    )
+    snapshots += [_listed(gone, 30), _listed(twin, 30)]
+
+    kept = manifest.prune_generations(pointers=pointers, snapshots=snapshots)
+    cleared = manifest.prune_generations(
+        pointers=pointers, snapshots=snapshots, include_orphans=True
+    )
+
+    assert gone not in kept.snapshots and twin not in kept.snapshots
+    assert gone in cleared.snapshots and twin in cleared.snapshots
+
+
 def test_keys_outside_the_generation_shapes_are_never_touched() -> None:
     """접속 명단은 목록에 섞여 들어와도 지우지 않는다."""
     pointers, snapshots = _generations(12)

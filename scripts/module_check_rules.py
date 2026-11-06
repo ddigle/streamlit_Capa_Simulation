@@ -191,9 +191,11 @@ _CORE_DATA_MARKERS: Final = (
     "data/temp",
     ".deploy/",
     ".aws/",
-    # 프로세스 환경의 커널 사본이다. `os.environ` 에서 지운 키도 여기 남는다.
-    "/proc/",
 )
+# 프로세스 환경의 커널 사본이 있는 자리다 — `os.environ` 에서 지운 키도 여기 남는다. 뿌리에서 시작할
+# 때만 그 자리다. `proc` 은 공정을 뜻하는 흔한 낱말이라 열 이름 · 모듈 폴더를 걸면 안 된다.
+_KERNEL_MARKER: Final = "/proc/"
+_KERNEL_PATTERN: Final = re.compile(r"(?<![\w.\-])/proc/")
 
 _BACKGROUND_IMPORTS: Final = frozenset(
     {"threading", "_thread", "multiprocessing", "subprocess", "signal"}
@@ -793,6 +795,8 @@ def _contains_markers(text: str) -> str | None:
 def _core_data_marker(text: str) -> str | None:
     """글자가 코어 데이터 자리를 가리키는가. 끝 슬래시 없이 쓴 마디(`~/.aws`)도 같다."""
     lowered = text.lower().replace("\\", "/")
+    if _KERNEL_PATTERN.search(f"{lowered}/"):
+        return _KERNEL_MARKER
     edged = f"/{lowered}/"
     return next(
         (
@@ -1353,11 +1357,14 @@ def _check_joined_paths(tree: ast.Module, names: _Names, context: _FileContext) 
         known = [piece for piece in pieces if piece is not None]
         if any(_core_data_marker(piece) is not None for piece in known):
             continue
-        joined = "/" + "/".join(piece if piece is not None else "?" for piece in pieces) + "/"
-        joined = joined.lower().replace("\\", "/")
+        spelled = "/".join(piece if piece is not None else "?" for piece in pieces).lower()
+        spelled = spelled.replace("\\", "/")
+        joined = f"/{spelled}/"
         marker = next(
             (item for item in _CORE_DATA_MARKERS if f"/{item.strip('/')}/" in joined), None
         )
+        if marker is None and re.sub("/+", "/", f"{spelled}/").startswith(_KERNEL_MARKER):
+            marker = _KERNEL_MARKER
         if marker is not None:
             context.add(
                 "M07",

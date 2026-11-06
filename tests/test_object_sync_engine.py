@@ -274,6 +274,22 @@ def test_a_head_check_knows_its_own_unanswered_pointer(rig: SimpleNamespace) -> 
     assert result.head_seq == 2
 
 
+def test_a_head_check_on_a_first_generation_without_an_answer_is_not_an_empty_remote(
+    tmp_path: Path,
+) -> None:
+    """base 가 아직 없는 자리도 같다. 자기 포인터를 base 로 바꿔 읽으면 「원격이 빔」 이 된다."""
+    paths = seed_pair(tmp_path)
+    store = FakeStore()
+    client = fake_client(store)
+    store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=True))
+    with pytest.raises(ObjectStorageError):
+        engine.init_generation(
+            client, paths, exporter=engine.offline_exporter(paths), note="최초 이관"
+        )
+
+    assert engine.watch_head(client, paths).decision not in BLOCKING_PUSH
+
+
 def test_a_head_check_still_sees_someone_else_past_a_pending_pointer(
     rig: SimpleNamespace,
 ) -> None:

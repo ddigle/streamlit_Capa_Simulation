@@ -1018,12 +1018,13 @@ def watch_head(client: ObjectStorageClient, paths: SyncPaths) -> WatchResult:
     """
     state = sync_state.read_generation(paths.generation)
     remote = read_remote_head(client)
-    mine = state.pending is not None and remote.head_key == state.pending.pointer_key
+    pending = state.pending
+    mine = pending is not None and remote.head_key == pending.pointer_key
     return WatchResult(
         decision=manifest.decide_push(
-            head_key=state.base_pointer_key if mine else remote.head_key,
+            head_key=remote.head_key,
             forked=bool(remote.forked),
-            base_pointer_key=state.base_pointer_key,
+            base_pointer_key=remote.head_key if mine else state.base_pointer_key,
             dirty=False,
             unpublished=state.unpublished is not None,
         ),

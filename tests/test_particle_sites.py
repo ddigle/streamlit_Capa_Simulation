@@ -109,6 +109,7 @@ _JOSA_BLOCK = re.compile(r"// <josa>\n(?P<body>.*?)\n\s*// </josa>", re.S)
 _READINGS = {
     "Area Code": "코드",
     "CAPA_ARTIFACTORY_USER": "유저",
+    "CAPA_S3_SYNC_MODE": "모드",
     "HBM·EDP": "이디피",
 }
 

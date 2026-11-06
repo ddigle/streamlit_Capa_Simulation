@@ -590,7 +590,7 @@ def prune_generations(
         reference = references.get(item.key)
         if reference is None or reference in kept_refs:
             continue
-        if same_number[reference] > 1:
+        if reference in all_refs and same_number[reference] > 1:
             protected += 1
             continue
         if reference in all_refs:

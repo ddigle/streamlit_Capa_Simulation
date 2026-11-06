@@ -234,6 +234,24 @@ def _must_not_run(*args: object, **kwargs: object) -> object:
     raise AssertionError("선언이 틀린 모듈에는 ruff·시험을 돌리지 않는다")
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        'NAME = "proc"\n',
+        'COLUMNS = {"proc": 1}\n',
+        'PATH = "reports/proc/summary.csv"\n',
+        'NAME = "notes.aws"\n',
+        'from pathlib import Path\nPATH = Path("reports") / "proc" / "x.csv"\n',
+        'from pathlib import Path\nPATH = Path("proc") / "x.csv"\n',
+        "from capa_simulation import module_api as api\nctx = api.context(__file__)\n"
+        'PATH = ctx.data_dir / "proc" / "x.csv"\n',
+    ],
+)
+def test_words_that_only_look_like_a_key_place_pass(tmp_path: Path, body: str) -> None:
+    """이 저장소에서 `proc` 은 공정을 뜻하는 흔한 낱말이다. 오류면 규칙을 믿지 않게 된다."""
+    assert ("M07", "error") not in _page_rules(tmp_path, body)
+
+
 def test_the_unwrapped_fixture_keys_are_caught(tmp_path: Path) -> None:
     folder = _fixture_copy(tmp_path / "modules", "demo_keys")
     assert "M08 error demo_keys_page.py" in _static(folder)
@@ -321,6 +339,11 @@ def test_the_crash_fixture_missing_package_is_caught_through_importlib(tmp_path:
         ('import os\nFOLDER = os.path.expanduser("~/.aws")\n', ("M07", "error")),
         ('NAME = ".aws"\n', ("M07", "error")),
         ('NAME = "/proc/self/environ"\n', ("M07", "error")),
+        ('NAME = "file:///proc/self/environ"\n', ("M07", "error")),
+        (
+            'from pathlib import Path\nPATH = Path("/") / "proc" / "self" / "environ"\n',
+            ("M07", "error"),
+        ),
         (
             'from pathlib import Path\nTEXT = Path("/proc/self/environ").read_bytes()\n',
             ("M07", "error"),
