@@ -8,7 +8,8 @@
 
 **게시 차례**(`publish_generation`):
 
-1. 회차 머리 — 앞 회차가 남긴 `pending` 을 먼저 가린다(`_settle_pending`).
+1. 회차 머리 — 앞 회차가 남긴 `pending` 을 먼저 가린다(`_settle_pending`). `dry_run` 은 가리지
+   않고 있다는 사실만 돌려준다.
 2. 목록 한 번 → 판정(`decide_push`).
 3. 바뀐 DB 마다 스냅샷을 떠서 올리고 ETag 를 대조한다(시뮬 → 설비).
 4. 목록을 다시 본다. 그 사이 남이 올렸으면 포인터를 게시하지 않고 미게시로 남긴다.
@@ -215,6 +216,8 @@ class PublishOutcome:
     confirm_deferred: bool = False
     # 앞 회차가 남긴 세대를 이번 회차가 마무리했다.
     settled: Pointer | None = None
+    # `dry_run` 이 앞 회차가 남긴 포인터를 보고 멈췄다. 마무리는 실제 실행의 몫이다.
+    pending_pointer: str | None = None
 
     @property
     def seq(self) -> int | None:
@@ -320,6 +323,20 @@ def plan_push(
     return decision, remote, state, dirty
 
 
+def _dry_run_over_pending(
+    pending: PendingPublish, remote: RemoteHead, started: float
+) -> PublishOutcome:
+    """`dry_run` 은 앞 회차의 포인터도 내지 않는다 — 마무리는 포인터 PUT · 미게시로 옮기기 · 표시
+    지우기를 모두 부른다."""
+    return PublishOutcome(
+        decision=PushDecision.PUBLISH,
+        head_seq=remote.head_seq,
+        dry_run=True,
+        pending_pointer=pending.pointer_key,
+        elapsed_seconds=_since(started),
+    )
+
+
 def publish_generation(
     client: ObjectStorageClient,
     paths: SyncPaths,
@@ -336,6 +353,8 @@ def publish_generation(
     scratch = scratch_dir or snapshot_export.prepare_scratch()
     state = sync_state.read_generation(paths.generation)
     remote = read_remote_head(client)
+    if dry_run and state.pending is not None:
+        return _dry_run_over_pending(state.pending, remote, started)
     settle, state, remote, settled = _settle_pending(
         client, paths, state, remote, scratch_dir=scratch
     )
@@ -405,6 +424,8 @@ def init_generation(
     scratch = scratch_dir or snapshot_export.prepare_scratch()
     state = sync_state.read_generation(paths.generation)
     remote = read_remote_head(client)
+    if dry_run and state.pending is not None:
+        return _dry_run_over_pending(state.pending, remote, started)
     settle, state, remote, settled = _settle_pending(
         client, paths, state, remote, scratch_dir=scratch
     )
@@ -657,7 +678,15 @@ def resolve_keep_mine(
 
 
 def resolve_keep_remote(paths: SyncPaths) -> None:
-    """내 세대를 버린다. 스냅샷은 저장소에 고아로 남는다. 다음 `pull` 이 원격을 받는다."""
+    """내 세대를 버린다. 스냅샷은 저장소에 고아로 남는다. 다음 `pull` 이 원격을 받는다.
+
+    미게시 세대는 표시를 지우지 않으므로 변경 표시도 함께 내린다 — 남기면 `pull` 은 변경이 있다며,
+    `push` 는 원격이 앞섰다며, `resolve` 는 할 일이 없다며 서로를 가리킨다. 파일은 `pull` 이
+    백업으로 물릴 때까지 그대로다. 표시를 먼저 내린다 — 사이에서 실패해도 미게시 표지가 남아 다시
+    돌릴 수 있다.
+    """
+    for name in DATASET_NAMES:
+        sync_state.adopt_clean(paths.databases[name], dataset=name)
     state = sync_state.read_generation(paths.generation)
     sync_state.write_generation(paths.generation, replace(state, unpublished=None, pending=None))
 
@@ -1154,6 +1183,9 @@ def rollback(
 
     갈라졌어도 맨 위 seq + 1 이라 풀린다. 쓰던 앱이 있으면 그 일꾼은 HEAD 가 움직인 것을 보고
     멈춘다(CI/CD 로 새 pod 가 이 세대를 받는다). 멤버 스냅샷이 저장소에 있는지 먼저 본다.
+
+    포인터를 낸 뒤 한 번 더 본다 — 보존 밖 세대는 정리가 옛 판정대로 지우는 틈이 있다(`prune`). 그
+    멤버가 사라졌으면 이 HEAD 로는 새 pod 가 뜨지 못하므로 성공으로 끝내지 않는다.
     """
     scratch = scratch_dir or snapshot_export.prepare_scratch()
     target = _choose_pointer(client, to_seq, token=token, scratch=scratch)
@@ -1172,6 +1204,13 @@ def rollback(
         note=note,
     )
     client.put_text(pointer.pointer_key, manifest.pointer_to_json(pointer), scratch_dir=scratch)
+    try:
+        _require_members(client, target.members)
+    except (ValueError, ObjectStorageError) as exc:
+        raise ValueError(
+            f"새 HEAD 는 나갔지만(seq {pointer.seq}) 그 멤버를 다시 확인하지 못했습니다 — "
+            f"generations 로 고른 다른 세대로 다시 rollback 하세요: {exc}"
+        ) from exc
     return pointer
 
 
@@ -1209,6 +1248,13 @@ def plan_prune(
     )
 
 
+def _head_moved(client: ObjectStorageClient, plan: PrunePlan) -> bool:
+    """판정 뒤 HEAD 가 움직였거나 원격이 갈라졌는가. 앞으로 가는 게시는 판정이 지키는 멤버만 이어
+    적지만, 뒤로 가는 `rollback` 은 판정이 지우기로 한 세대를 HEAD 로 되살린다."""
+    remote = read_remote_head(client)
+    return bool(remote.forked) or remote.head_key != plan.head_key
+
+
 def prune(
     client: ObjectStorageClient,
     *,
@@ -1219,7 +1265,8 @@ def prune(
 ) -> PruneOutcome:
     """판정대로 지운다 — 스냅샷 먼저, 포인터 뒤. 낱개 사이에 물러날 자리를 둔다.
 
-    `delete-object` 는 프로세스 하나씩이라, 일꾼이 부르면 올리기 요청이 그만큼 밀린다.
+    `delete-object` 는 프로세스 하나씩이라, 일꾼이 부르면 올리기 요청이 그만큼 밀린다. 낱개마다
+    HEAD 를 다시 보고 판정 때와 다르면 멈춘다(`_head_moved`) — 다음 정리가 새 HEAD 로 다시 판정한다.
     """
     started = time.perf_counter()
     plan = plan_prune(
@@ -1227,7 +1274,8 @@ def prune(
     )
     deleted = 0
     for key in (*plan.snapshots, *plan.pointers):
-        if should_stop is not None and should_stop():
+        yielded = should_stop is not None and should_stop()
+        if yielded or _head_moved(client, plan):
             return PruneOutcome(
                 plan=plan, deleted=deleted, interrupted=True, elapsed_seconds=_since(started)
             )

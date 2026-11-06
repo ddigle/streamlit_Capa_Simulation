@@ -12,13 +12,14 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 from object_store_fakes import (
+    Failure,
     FakeStore,
     add_row,
     fake_client,
@@ -205,6 +206,30 @@ def test_dry_run_uploads_nothing(harness: SimpleNamespace) -> None:
     assert _run(harness, "--dry-run", "init") == 0
 
     assert harness.store.objects == {}
+
+
+def test_dry_run_push_only_says_a_pointer_is_left(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """앞 회차가 남긴 포인터를 `--dry-run` 이 내면 안 된다. 있다는 사실만 찍고 끝난다."""
+    _init(harness)
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    harness.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    assert _run(harness, "push") == 1
+    pending = sync_state.read_generation(harness.paths.generation).pending
+    assert pending is not None
+    capsys.readouterr()
+
+    assert _run(harness, "--dry-run", "push") == 0
+
+    out = capsys.readouterr().out
+    assert pending.pointer_key in out
+    assert "마무리했습니다" not in out
+    assert "예정 seq" not in out
+    assert len(harness.store.pointer_keys()) == 1
+    assert sync_state.read_generation(harness.paths.generation).pending == pending
 
 
 def test_every_call_carries_the_profile(harness: SimpleNamespace) -> None:
@@ -558,10 +583,26 @@ def _move_the_head_with_a_newer_equipment(harness: SimpleNamespace) -> None:
     harness.store.objects[pointer.pointer_key] = manifest.pointer_to_json(pointer).encode("utf-8")
 
 
-def test_resolve_says_to_pull_when_a_member_came_from_the_remote(
-    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """새 HEAD 의 멤버 하나가 이 PC 의 파일이 아니다. 말하지 않으면 옛 파일로 계속 일한다."""
+def _another_pod_republishes(harness: SimpleNamespace) -> None:
+    """남이 같은 멤버로 세대를 낸다 — 받으면 첫 세대 파일이 그대로 돌아온다."""
+    head = harness.script.engine.read_pointer(
+        fake_client(harness.store), harness.store.pointer_keys()[0]
+    )
+    pointer = manifest.next_pointer(
+        head,
+        members=dict(head.members),
+        origin="app",
+        token="abcdef03",
+        app_version="demo",
+        author="demo@other",
+        created_at_utc="2026-11-07T00:00:00Z",
+        note="",
+    )
+    harness.store.objects[pointer.pointer_key] = manifest.pointer_to_json(pointer).encode("utf-8")
+
+
+def _park_behind(harness: SimpleNamespace, move_the_head: Callable[[], None]) -> None:
+    """이 PC 의 저장을 올리는 도중 HEAD 가 움직여 세대가 미게시로 남는다."""
     _init(harness)
     add_row(harness.database)
     sync_state.enable({harness.database: "simulation"})
@@ -572,16 +613,77 @@ def test_resolve_says_to_pull_when_a_member_came_from_the_remote(
         uploaded = harness.store.puts("simulation/snapshots/000000000002")
         if operation == "list-objects-v2" and uploaded and not moved:
             moved.append(key)
-            _move_the_head_with_a_newer_equipment(harness)
+            move_the_head()
 
     harness.store.before = move_after_snapshot
     assert _run(harness, "push") == 1
     harness.store.before = None
+
+
+def test_resolve_says_to_pull_when_a_member_came_from_the_remote(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """새 HEAD 의 멤버 하나가 이 PC 의 파일이 아니다. 말하지 않으면 옛 파일로 계속 일한다."""
+    _park_behind(harness, lambda: _move_the_head_with_a_newer_equipment(harness))
     capsys.readouterr()
 
     assert _run(harness, "--override-writer", "resolve", "--keep", "mine") == 0
 
     assert "pull" in capsys.readouterr().out
+
+
+def test_resolve_keep_remote_leads_to_a_pull_and_keeps_the_old_file(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """버리기로 했으면 안내대로 `pull` 이 받아야 한다. 표시가 남으면 `pull` · `push` · `resolve` 가
+    서로를 가리키는 막다른 길이다. 옛 파일은 지우지 않고 백업으로 물러난다."""
+    _park_behind(harness, lambda: _another_pod_republishes(harness))
+    rows = row_count(harness.database)
+    capsys.readouterr()
+
+    assert _run(harness, "resolve", "--keep", "remote") == 0
+    assert "pull" in capsys.readouterr().out
+
+    assert _run(harness, "pull") == 0
+
+    out = capsys.readouterr().out
+    assert "이전 파일 백업" in out
+    state = sync_state.read_generation(harness.paths.generation)
+    assert state.base_seq == 2 and state.unpublished is None
+    assert not sync_state.treat_as_dirty(harness.database)
+    assert row_count(harness.database) == rows - 1
+    backups = [
+        path
+        for path in snapshot_export.backup_dir().iterdir()
+        if path.name.startswith(harness.database.name)
+    ]
+    assert [row_count(path) for path in backups] == [rows]
+
+
+def test_a_dry_run_resolve_keep_remote_drops_nothing(harness: SimpleNamespace) -> None:
+    _park_behind(harness, lambda: _another_pod_republishes(harness))
+
+    assert _run(harness, "--dry-run", "resolve", "--keep", "remote") == 0
+
+    assert sync_state.read_generation(harness.paths.generation).unpublished is not None
+    assert sync_state.treat_as_dirty(harness.database)
+
+
+def test_resolve_keep_remote_waits_for_the_app_to_stop(
+    harness: SimpleNamespace,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표시는 앱이 쓰는 파일이다. 떠 있는 앱의 표시를 지우면 그 저장이 올라가지 않는다."""
+    _park_behind(harness, lambda: _another_pod_republishes(harness))
+    monkeypatch.setattr(sync_state, "live_instance", lambda _path: "demo-app")
+    capsys.readouterr()
+
+    assert _run(harness, "resolve", "--keep", "remote") == 1
+
+    assert "앱이 이 PC 에서 실행 중" in capsys.readouterr().out
+    assert sync_state.read_generation(harness.paths.generation).unpublished is not None
+    assert sync_state.treat_as_dirty(harness.database)
 
 
 def test_prune_lists_candidates_and_deletes_only_with_yes(harness: SimpleNamespace) -> None:
@@ -603,6 +705,59 @@ def test_prune_lists_candidates_and_deletes_only_with_yes(harness: SimpleNamespa
     assert oldest not in harness.store.objects
     # 설비 스냅샷은 세대 1 것이 이어 적혀 남은 세대가 아직 가리킨다.
     assert harness.store.keys("equipment/snapshots/")
+
+
+def test_a_rollback_during_the_prune_is_reported_as_a_stop(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """손으로 돌린 정리가 HEAD 가 움직여 멈추면 다 지운 것처럼 끝내지 않는다."""
+    _init(harness)
+    for value in range(7):
+        add_row(harness.database, value)
+        sync_state.enable({harness.database: "simulation"})
+        sync_state.mark_dirty(harness.database)
+        assert _run(harness, "push") == 0
+    head = harness.store.pointer_keys()[0]
+    for key in harness.store.keys():
+        harness.store.modified[key] = "2026-10-01T00:00:00+00:00"
+    harness.store.modified[head] = harness.store.now
+    moved: list[str] = []
+
+    def move_on_first_delete(operation: str, key: str) -> None:
+        if operation == "delete-object" and not moved:
+            moved.append(key)
+            _another_pod_republishes(harness)
+
+    harness.store.before = move_on_first_delete
+    capsys.readouterr()
+
+    assert _run(harness, "prune", "--keep-days", "1", "--yes") == 1
+
+    out = capsys.readouterr().out
+    assert "1개를 지웠습니다" in out
+    assert "[중단]" in out
+
+
+def test_a_rollback_with_a_lost_member_tells_the_head_went_out(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(harness)
+    add_row(harness.database)
+    sync_state.enable({harness.database: "simulation"})
+    sync_state.mark_dirty(harness.database)
+    assert _run(harness, "push") == 0
+    member = harness.store.keys("simulation/snapshots/000000000001")[0]
+
+    def lose_the_member(operation: str, key: str) -> None:
+        if operation == "put-object" and key.startswith(manifest.HEAD_PREFIX):
+            harness.store.objects.pop(member, None)
+
+    harness.store.before = lose_the_member
+    capsys.readouterr()
+
+    assert _run(harness, "rollback", "--to", "1", "--yes") == 1
+
+    assert "다른 세대로 다시 rollback" in capsys.readouterr().out
 
 
 def test_boot_pull_prints_a_line_without_values(

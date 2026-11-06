@@ -330,6 +330,10 @@ def _report_outcome(outcome: engine.PublishOutcome) -> int:
     """게시 결과를 찍고 종료 코드를 돌려준다. 판정 글은 판정이 낸 그대로다."""
     if outcome.settled is not None:
         print(f"앞 회차 세대를 마무리했습니다 : seq {outcome.settled.seq}")
+    if outcome.pending_pointer is not None:
+        print(f"앞 회차가 남긴 포인터 : {outcome.pending_pointer}")
+        print("[건너뜀] --dry-run 이라 마무리하지 않습니다.")
+        return 0
     if outcome.dry_run:
         print(f"[건너뜀] --dry-run 이라 올리지 않습니다. 예정 seq {outcome.seq}")
         return 0
@@ -493,6 +497,11 @@ def command_resolve(args: argparse.Namespace) -> int:
         print("[건너뜀] 해소할 미게시 세대가 없습니다.")
         return 0
     if args.keep == "remote":
+        if any(_blocked_by_running_app(dataset, "내 세대 버리기를") for dataset in DATASET_PATHS):
+            return 1
+        if args.dry_run:
+            print("[건너뜀] --dry-run 이라 버리지 않습니다.")
+            return 0
         engine.resolve_keep_remote(paths)
         print("내 세대를 버렸습니다. pull 로 원격을 받으세요.")
         return 0
@@ -547,6 +556,9 @@ def command_prune(args: argparse.Namespace) -> int:
         return 0
     outcome = engine.prune(client, **options)
     print(f"   {outcome.deleted}개를 지웠습니다.")
+    if outcome.interrupted:
+        print("   [중단] 판정 뒤 HEAD 가 움직였습니다 — 다시 돌리면 새 판정으로 잇습니다.")
+        return 1
     return 0
 
 

@@ -380,6 +380,28 @@ def test_a_pointer_that_never_landed_is_sent_again_under_the_same_key(
     assert len(rig.store.keys("simulation/snapshots/")) == snapshots
 
 
+def test_a_dry_run_push_leaves_a_pending_pointer_alone(rig: SimpleNamespace) -> None:
+    """`--dry-run` 은 앞 회차의 포인터도 내지 않는다. 있다는 사실만 돌려준다."""
+    _save(rig)
+    rig.store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    with pytest.raises(ObjectStorageError):
+        _publish(rig)
+    before = _state(rig)
+    assert before.pending is not None
+    rig.store.calls.clear()
+
+    outcome = engine.publish_generation(
+        rig.client, rig.paths, exporter=rig.exporter, origin="manual", note="", dry_run=True
+    )
+
+    assert outcome.dry_run and outcome.settled is None and outcome.pointer is None
+    assert outcome.pending_pointer == before.pending.pointer_key
+    assert _head_seq(rig) == 1
+    assert rig.store.puts() == []
+    assert _state(rig) == before
+    assert sync_state.treat_as_dirty(rig.simulation) is True
+
+
 def test_a_failed_generation_write_after_landing_is_recovered(
     rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -598,6 +620,27 @@ def test_an_interrupted_init_is_finished_by_running_it_again(tmp_path: Path) -> 
     assert outcome.settled is not None
     assert sync_state.read_generation(paths.generation).handed_over_utc is not None
     assert len(store.pointer_keys()) == 1
+
+
+def test_a_dry_run_init_neither_finishes_nor_hands_over(tmp_path: Path) -> None:
+    """끊긴 첫 세대가 남아 있어도 `--dry-run init` 은 게시하지 않고 넘긴 표시도 찍지 않는다."""
+    paths = seed_pair(tmp_path)
+    store = FakeStore()
+    client = fake_client(store)
+    store.failures.append(Failure("put-object", manifest.HEAD_PREFIX, stored=False))
+    exporter = engine.offline_exporter(paths)
+    with pytest.raises(ObjectStorageError):
+        engine.init_generation(client, paths, exporter=exporter, note="최초 이관")
+    before = sync_state.read_generation(paths.generation)
+    assert before.pending is not None
+    store.calls.clear()
+
+    outcome = engine.init_generation(client, paths, exporter=exporter, note="", dry_run=True)
+
+    assert outcome.dry_run and outcome.pending_pointer == before.pending.pointer_key
+    assert store.pointer_keys() == []
+    assert store.puts() == []
+    assert sync_state.read_generation(paths.generation) == before
 
 
 # --------------------------------------------------------------------------- 받기
@@ -1063,6 +1106,37 @@ def test_a_promotion_with_nothing_newer_keeps_every_member(rig: SimpleNamespace)
     assert _state(rig).base_pointer_key == promoted.pointer_key
 
 
+def test_dropping_my_generation_leaves_the_pull_open(rig: SimpleNamespace) -> None:
+    """내 세대를 버리면 표시도 함께 내린다 — 남기면 `pull` 이 변경이 있다며 막는다. 차례가 거꾸로면
+    표시를 내리다 죽을 때 다시 돌릴 미게시 표지가 사라진다."""
+    _park_with_a_newer_equipment(rig)
+    assert sync_state.treat_as_dirty(rig.simulation) is True
+
+    engine.resolve_keep_remote(rig.paths)
+
+    state = _state(rig)
+    assert state.unpublished is None and state.pending is None
+    assert not any(sync_state.treat_as_dirty(path) for path in rig.paths.databases.values())
+    assert engine.plan_pull(rig.client, rig.paths, force=False).proceeds
+
+
+def test_a_failed_mark_clear_keeps_the_generation_to_drop(
+    rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표시를 내리다 실패하면 미게시 표지를 그대로 두어 `resolve` 를 다시 돌릴 수 있다."""
+    _park_with_a_newer_equipment(rig)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sync_state, "adopt_clean", fail)
+
+    with pytest.raises(OSError):
+        engine.resolve_keep_remote(rig.paths)
+
+    assert _state(rig).unpublished is not None
+
+
 def test_rollback_refuses_an_unknown_generation(rig: SimpleNamespace) -> None:
     with pytest.raises(ValueError, match="찾지 못했습니다"):
         engine.rollback(rig.client, to_seq=99, note="되돌림")
@@ -1088,6 +1162,87 @@ def test_prune_deletes_snapshots_before_pointers_and_can_yield(rig: SimpleNamesp
     assert deleted[-1].startswith(manifest.HEAD_PREFIX)
     assert outcome.deleted == len(deleted)
     assert rig.store.keys("equipment/snapshots/")
+
+
+def _ten_aged_generations(rig: SimpleNamespace) -> None:
+    """세대 열 개 — 정리가 앞 세대를 지울 만큼 앞선 것들을 낡게 둔다."""
+    for value in range(9):
+        _save(rig, value=value)
+        assert _publish(rig).published
+    head = rig.store.pointer_keys()[0]
+    for key in rig.store.keys():
+        rig.store.modified[key] = "2026-10-01T00:00:00+00:00"
+    rig.store.modified[head] = rig.store.now
+    rig.store.calls.clear()
+
+
+def test_a_rollback_during_the_prune_stops_the_deletions(rig: SimpleNamespace) -> None:
+    """정리가 판정한 뒤 들어온 rollback 이 보존 밖 세대를 HEAD 로 되살린다. 옛 판정대로 끝까지
+    지우면 그 HEAD 의 멤버가 사라지고 새 pod 가 `corrupt` 로 머문다."""
+    _ten_aged_generations(rig)
+    rolled: list[manifest.Pointer] = []
+
+    def roll_back_on_first_delete(operation: str, key: str) -> None:
+        if operation == "delete-object" and not rolled:
+            rolled.append(engine.rollback(rig.client, to_seq=5, note="되돌림"))
+
+    rig.store.before = roll_back_on_first_delete
+
+    outcome = engine.prune(rig.client, keep_days=1)
+
+    rig.store.before = None
+    assert outcome.interrupted
+    assert outcome.deleted == 1
+    assert rolled[0].pointer_key == rig.store.pointer_keys()[0]
+    _wipe_disk(rig)
+    assert engine.boot_pull(rig.client, rig.paths).ok
+
+    # 다음 정리는 새 HEAD 로 다시 판정해 그 멤버를 지킨다.
+    assert not engine.prune(rig.client, keep_days=1).interrupted
+    _wipe_disk(rig)
+    assert engine.boot_pull(rig.client, rig.paths).ok
+
+
+def test_a_fork_during_the_prune_stops_the_deletions(rig: SimpleNamespace) -> None:
+    """갈라진 원격은 사람이 볼 물증이다 — 판정 뒤에 갈라져도 더 지우지 않는다."""
+    _ten_aged_generations(rig)
+    forked: list[str] = []
+
+    def fork_on_first_delete(operation: str, key: str) -> None:
+        if operation == "delete-object" and not forked:
+            head = rig.store.pointer_keys()[0]
+            token = head.rsplit("__", 1)[-1].removesuffix(".json")
+            forked.append(head.replace(token, "abcdef09"))
+            rig.store.objects[forked[0]] = rig.store.objects[head]
+
+    rig.store.before = fork_on_first_delete
+
+    outcome = engine.prune(rig.client, keep_days=1)
+
+    rig.store.before = None
+    assert outcome.interrupted
+    assert outcome.deleted == 1
+
+
+def test_a_rollback_says_so_when_a_member_went_away_after_its_pointer(
+    rig: SimpleNamespace,
+) -> None:
+    """포인터를 낸 뒤 멤버가 사라졌으면 성공으로 끝내지 않는다 — 그 HEAD 로는 새 pod 가 못 뜬다."""
+    _save(rig)
+    assert _publish(rig).published
+    member = rig.store.keys("simulation/snapshots/000000000001")[0]
+
+    def lose_the_member(operation: str, key: str) -> None:
+        if operation == "put-object" and key.startswith(manifest.HEAD_PREFIX):
+            rig.store.objects.pop(member, None)
+
+    rig.store.before = lose_the_member
+
+    with pytest.raises(ValueError, match="다른 세대로 다시 rollback"):
+        engine.rollback(rig.client, to_seq=1, note="되돌림")
+
+    rig.store.before = None
+    assert _head_seq(rig) == 3
 
 
 def test_prune_never_lists_outside_its_prefixes(rig: SimpleNamespace) -> None:

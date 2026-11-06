@@ -524,6 +524,8 @@ class PrunePlan:
     protected_orphans: int = 0
     # 회차 상한을 넘어 다음 번으로 넘긴 수.
     deferred: int = 0
+    # 판정이 본 HEAD. 지우는 사이 움직였으면 이 판정은 낡은 것이다.
+    head_key: str | None = None
 
     @property
     def total(self) -> int:
@@ -627,6 +629,7 @@ def prune_generations(
         deferred=len(doomed_snapshots)
         + len(doomed_pointers)
         - (len(chosen_snapshots) + len(chosen_pointers)),
+        head_key=head_key,
     )
 
 
