@@ -1674,9 +1674,10 @@ uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> 
 
 ### 세대 되돌리기
 
-앱 결함으로 망가진 세대가 게시됐거나 임시 화면이 `스냅샷이 깨짐` · `원격이 갈라짐` 에 머물면 앞 세대로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다. 사람이 고르는 일이라 사용자에게 묻고, 세대 번호는 `status` 로 본다.
+앱 결함으로 망가진 세대가 게시됐거나 임시 화면이 `스냅샷이 깨짐` · `원격이 갈라짐` 에 머물면 앞 세대로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다. 사람이 고르는 일이라 사용자에게 묻고, 세대 번호는 `generations` 로 본다 — 펜스 세대는 같은 멤버로 쌓이므로 멤버 세대가 HEAD 와 다른 앞 세대를 고른다.
 
 ```powershell
+uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> generations
 uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> rollback --to <세대> --yes
 ```
 

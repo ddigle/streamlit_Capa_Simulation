@@ -14,8 +14,8 @@ CD 서버에는 셸도 로그도 없어(시작 명령도 못 바꾼다) 시작 �
 `literal_markdown` 으로 싣는다.
 
 S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연결 · 버킷 목록 · DB 받기)이 더해지고
-캡션에 디스크 · pod · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다(읽기
-전용 화면, DuckDB `memory_limit`). 값은 갈래와 수뿐이라 리뷰 압축본에 옮길 수 있다.
+캡션에 디스크 · pod 끝 글자 · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다
+(읽기 전용 화면, DuckDB `memory_limit`). 값은 갈래와 수뿐이라 리뷰 압축본에 옮길 수 있다.
 """
 
 from __future__ import annotations
@@ -52,6 +52,8 @@ from capa_simulation.sidebar_status import remembered_expander
 # 접히지 않는다(VOC 글 상자와 같은 꼴, E2E r1). 제목 끝(판정)이 바뀌어도 편 상태는 그대로다.
 EXPANDER_KEY = "admin_area_container_start_check"
 _GIB = 1024**3
+# pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
+POD_TAIL_CHARS = 5
 
 
 def build_step_table(
@@ -147,7 +149,7 @@ def sync_fact_lines(report: ContainerStartReport, ready_utc: str | None) -> list
         free, total = _gib(sync.disk_free_bytes), _gib(sync.disk_total_bytes)
         lines.append(f"/project 디스크: 여유 {free} · 전체 {total}")
     if sync.pod:
-        lines.append(f"pod: {literal_markdown(sync.pod)}")
+        lines.append(f"pod 끝: {literal_markdown(sync.pod[-POD_TAIL_CHARS:])}")
     limits = _limits_line(sync)
     if limits is not None:
         lines.append(limits)

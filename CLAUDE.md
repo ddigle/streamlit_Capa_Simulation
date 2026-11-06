@@ -102,7 +102,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
 `scripts/s3_mock_store.py`(개발 · 시험용 가짜 S3 — 서명을 검증하며 객체 GET · PUT · HEAD · DELETE · 목록을 메모리로 받는다. 실제 `aws` 1.46.3 도 붙는다 — 접속 명단 · DB 동기화 시험, `docs/sso_setup.md` 8장, 루프백만),
 `scripts/container_start.py`(C-DEP 이미지 `CMD` — 맨 앞에서 포트를 잡고(임시 응답 `container_stage.py`) 프로필 · 점검 · 설치 · `managed` 면 두 DB 받기 뒤 앱이 된다. 어떤 실패에도 앱을 띄우되 DB 받기만 예외다 — `docs/objectstore_setup.md`),
-`scripts/sync_object_storage.py`(두 DB 정본 도구 — 사내 PC 의 이관 `init` · 사본 `fetch-copy` · 세대 `rollback`, 컨테이너의 `boot-pull`),
+`scripts/sync_object_storage.py`(두 DB 정본 도구 — 사내 PC 의 이관 `init` · 사본 `fetch-copy` · 세대 `generations` · `rollback`, 컨테이너의 `boot-pull`),
 `scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
 HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘플 시드 `scripts/generate_review_sample.py`, `--internal`(사내판 —
 2026-11-02 부터 쉼)은 런북 6-3 사본 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·

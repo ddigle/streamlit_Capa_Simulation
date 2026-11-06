@@ -281,7 +281,7 @@ def _settle_pending(
 
     - HEAD 가 그 포인터면 게시는 된 것이다. 차례 7 만 마저 한다.
     - HEAD 가 아직 base 면 안 들어간 것이다. **같은 키로** 다시 PUT 한다(스냅샷은 다시 안 올린다).
-    - 그 밖이면 남이 앞섰거나 갈라졌다. 미게시로 옮긴다.
+    - 그 밖이면 남이 앞섰거나 갈라졌다. 미게시로 옮긴다(펜스는 버린다 — `_park_pending`).
     """
     pending = state.pending
     if pending is None:
