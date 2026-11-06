@@ -126,6 +126,10 @@ def test_many_revisions_leave_the_action_row_inside_the_panel() -> None:
     floor, reserve = int(rule[1]), int(rule[2])
     # 머리 + 세 줄은 늘 보인다.
     assert floor == 34 * 4
+    # 인쇄에는 상한이 없다 — 칸 상한보다 특이도가 높아 따로 푼다.
+    assert re.search(
+        r"@media print \{.*?\.sgl-revisions \.sgl-box \{\s*max-height: none;", OWN_CSS, re.S
+    )
     # 패널 상한(100vh − 붙는 높이 − 예비) 안에 값 줄 · 작업 줄 · 보관 몫 260px 이 남는다.
     panel_reserve = side_panel.SIDE_TOP_FALLBACK_PX + side_panel.SIDE_BODY_RESERVE_PX
     assert reserve - panel_reserve >= 260

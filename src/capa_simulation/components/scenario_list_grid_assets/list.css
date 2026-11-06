@@ -247,7 +247,8 @@
     content-visibility: visible;
   }
 
-  .sgl-box {
+  .sgl-box,
+  .sgl-revisions .sgl-box {
     max-height: none;
     overflow: visible;
   }
