@@ -84,12 +84,8 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.pick_edit_table import (
-    TableDraft,
-    draft_session_key,
-    shown_session_key,
-)
-from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, MODE_KEY
+from capa_simulation.components.scenario_list_state import DRAFT_KEY
+from capa_simulation.components.scenario_management import MODE_KEY
 from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
@@ -122,6 +118,7 @@ from capa_simulation.process_detail_state import (
     shortening_card_query_params,
 )
 from capa_simulation.services.equipment_scenario import ScheduleRestorePreview
+from capa_simulation.services.scenario_list_edits import NameEdit
 from capa_simulation.services.schedule_confirmation import (
     CONFIRMATION_KIND_COLUMN,
     STAGE_COLUMN,
@@ -696,17 +693,16 @@ def test_moving_between_the_tabs_keeps_unsaved_list_edits(_shell: AppTest) -> No
     적는다 — 사라지는 것은 설비 시나리오 탭 입력 칸에 적던 글뿐이다."""
     app = _ok(_shell.run())
     _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
-    shown = app.session_state[shown_session_key(LIST_EDITOR_KEY)]
-    row = shown.rows[0]
-    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(
-        names={row: "PROBE-이름"}, name_base={row: shown.names[row]}
+    row = str(app.session_state[DRAFT_KEY].opened)
+    app.session_state[DRAFT_KEY] = replace(
+        app.session_state[DRAFT_KEY], scenarios={row: NameEdit("보던 이름", "PROBE-이름")}
     )
     _ok(app.run())
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
     _ok(app.run())
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = CAPA_SCENARIO_TAB
     _ok(app.run())
-    assert app.session_state[draft_session_key(LIST_EDITOR_KEY)].names == {row: "PROBE-이름"}
+    assert app.session_state[DRAFT_KEY].scenarios == {row: NameEdit("보던 이름", "PROBE-이름")}
 
     guide_path = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "scenario_management.md"
     guide = " ".join(guide_path.read_text(encoding="utf-8").split())

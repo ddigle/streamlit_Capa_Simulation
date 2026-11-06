@@ -197,11 +197,12 @@ def test_renaming_a_pointed_revision_bumps_only_the_version(tmp_path: Path) -> N
     repository.rename_revision(other_revision, "무관한 이름", expected_name=name_of(other_revision))
     assert repository.load_global_main_cases().version == 2
 
-    repository.rename_revisions(
-        {
+    repository.apply_scenario_list_edits(
+        {},
+        revision_renames={
             pointed_revision: ("새 리비전명", "또 새 리비전명"),
             other_revision: ("무관한 이름", "또 무관한 이름"),
-        }
+        },
     )
     assert repository.load_global_main_cases().version == 3
 

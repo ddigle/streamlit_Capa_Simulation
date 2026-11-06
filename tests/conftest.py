@@ -31,6 +31,7 @@ from capa_simulation.components import (
     equipment_master_grid,
     page_tabs,
     paste_form,
+    scenario_list_grid,
     side_panel,
     space_layout_editor,
     voc_draft_keeper,
@@ -326,6 +327,18 @@ def _stub_edit_grid(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(edit_grid, "_GRID", _silent_grid)
     monkeypatch.setattr(edit_grid, "_FEED", _silent_feed)
+
+
+@pytest.fixture(autouse=True)
+def _stub_scenario_list_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """시나리오 목록 표(`scenario_list_grid._GRID`)를 아무것도 보내지 않는 대역으로 바꾼다 — 표
+    대역과 같은 까닭이다. 받은 data · 출납을 보는 시험은 제 대역을
+    쓴다(`tests/scenario_list_fake.py`)."""
+
+    def _silent(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(outbox=None)
+
+    monkeypatch.setattr(scenario_list_grid, "_GRID", _silent)
 
 
 @pytest.fixture(autouse=True)

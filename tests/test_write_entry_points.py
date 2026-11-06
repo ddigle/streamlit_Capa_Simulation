@@ -237,9 +237,6 @@ LEDGER: dict[tuple[str, str, str], str] = {
         START_POINT
     ),
     (f"{_PARTS}/scenario_management.py", "save_revision_name", "rename_revision"): VERSION_CHECK,
-    (f"{_PARTS}/scenario_management.py", "save_revision_names", "rename_revisions"): (
-        VERSION_CHECK
-    ),
     (f"{_PARTS}/scenario_management.py", "_render_official", "publish_official_revision"): (
         VERSION_CHECK
     ),

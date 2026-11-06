@@ -233,6 +233,33 @@ def cleared(draft: ListDraft) -> ListDraft:
     )
 
 
+def without_edits(draft: ListDraft, row_ids: Iterable[str]) -> ListDraft:
+    """그 줄들의 이름 고침만 뺀다 — 다른 곳에서 먼저 바뀌어 거부된 이름(지금 이름을 다시 보인다)."""
+    dropped = set(row_ids)
+    return replace(
+        draft,
+        scenarios={key: edit for key, edit in draft.scenarios.items() if key not in dropped},
+        revisions={key: edit for key, edit in draft.revisions.items() if key not in dropped},
+    )
+
+
+def without_scenario(draft: ListDraft, scenario_id: str, revision_ids: Iterable[str]) -> ListDraft:
+    """이 세션이 보관 · 삭제한 시나리오 — 그 줄과 그 리비전들의 고침을 빼고, 연 줄이면 고름까지
+    비운다."""
+    fitted = without_edits(draft, [scenario_id, *revision_ids])
+    if fitted.opened == scenario_id:
+        return replace(fitted, opened=None, picked=None)
+    return fitted
+
+
+def rebased_order(draft: ListDraft, before: Sequence[str], after: Sequence[str]) -> ListDraft:
+    """이 세션이 보관 · 되돌리기 · 삭제로 저장 차례를 바꿨다 — 순서 고침의 본 차례를 그 차례로
+    옮긴다. 본 차례가 이미 달랐으면(남이 먼저 바꿈) 그대로 둔다."""
+    if draft.order is None or draft.order_base != tuple(before):
+        return draft
+    return replace(draft, order_base=tuple(after))
+
+
 def order_token(order: Sequence[str]) -> str:
     """저장 차례의 지문 — 브라우저가 `move` 에 실어 온다."""
     return hashlib.sha1("\n".join(order).encode("utf-8")).hexdigest()[:8]

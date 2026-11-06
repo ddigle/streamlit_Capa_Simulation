@@ -181,7 +181,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
         BESIDE_INPUT,
-        BESIDE_INPUT,
     ),
     # 옛 배포 흔적으로 막힌 쓰기 팝오버의 잠금 까닭 한 줄(`legacy_trace_lock_line`) — 푸는 길은 구획
     # 맨 위 옛 배포 흔적 칸 · 알림 · Guide 가 말한다(UI-TXT-03).
@@ -286,7 +285,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         VALUE,
     ),
-    ("src/capa_simulation/components/scenario_management.py", "_render_scenario_actions"): (EMPTY,),
+    ("src/capa_simulation/components/scenario_management.py", "_render_detail"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_body"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_header"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_load"): (BESIDE_INPUT, EMPTY),

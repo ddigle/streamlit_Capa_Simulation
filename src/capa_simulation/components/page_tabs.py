@@ -38,8 +38,8 @@
   쓰는 중이거나 Enter 직후에 누르면 그 편집 회차가 돌아오기 전이라 확인 없이 옮겼다. JS 가 그 편집
   회차가 돌아올 때까지 누름을 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`). 편집표는 glide 격자와
   그림자 DOM Components v2 편집 칸(`EDIT_HOST_KEYS` — data `grids`, 설비 마스터 표·오른쪽 칸과 기준
-  정보 편집 그리드)이다. 기준 정보 그리드 초안은 세션 칸이라 떠나도 남아 묻지 않는다 — 붙들기는 쓰는
-  중의 편집이 그 회차에 실리게 할 뿐이다.
+  정보 편집 그리드, 시나리오 목록 표)이다. 기준 정보 그리드 초안은 세션 칸이라 떠나도 남아 묻지
+  않는다 — 붙들기는 쓰는 중의 편집이 그 회차에 실리게 할 뿐이다.
 - **탭 누름은 한 번에 하나.** 다른 탭 고르기·지금 탭 닫기는 트리거를 보내기 전에 JS 가 누름
   기다림을 건다. 옮긴 화면의 탭 줄이 오고 그 회차가 다 돌거나 탭 줄이 온 뒤 1초가 지나기 전에 누른
   탭은 마지막 것만 기다렸다 보낸다(`<tabs-queue>`) — 탭 줄이 오기 전에 보낸 누름은 프런트가 떠나는
@@ -98,9 +98,8 @@ from capa_simulation.components.equipment_data_workspace import (
     small_editor_edits,
 )
 from capa_simulation.components.past_data_management import past_data_has_pending
-from capa_simulation.components.pick_edit_table import table_has_edits
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
-from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, REVISION_EDITOR_KEY
+from capa_simulation.components.scenario_list_state import MOUNT_KEYS, list_has_edits
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
@@ -194,6 +193,7 @@ EDIT_HOST_KEYS: Final = (
     "equipment_grid_side_new",
     "equipment_grid_side_changes",
     REFERENCE_GRID_HOST,
+    *MOUNT_KEYS,
 )
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
 _EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
@@ -250,7 +250,7 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
             mark(spec.path, "저장하지 않은 설비 편집")
     if past_data_has_pending():
         mark(HOME.path, "저장하지 않은 Past Data")
-    if table_has_edits(LIST_EDITOR_KEY) or table_has_edits(REVISION_EDITOR_KEY):
+    if list_has_edits():
         mark(SCENARIO_MANAGEMENT.path, "저장하지 않은 목록 편집")
     if page_file == _SPACE_PAGE_FILE and floor_state_draft_pending():
         mark(SPACE_STATUS.path, "저장하지 않은 층 사용 편집")

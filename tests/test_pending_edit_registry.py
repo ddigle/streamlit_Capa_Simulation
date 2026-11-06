@@ -176,14 +176,15 @@ def test_pages_split_editor_and_staged_edits_and_the_labels_keep_their_order(
 def test_the_list_table_draft_counts_as_unsaved_only_while_it_differs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """시나리오 관리 목록 초안의 점 판정(`table_has_edits`). 고름만 있으면 편집이 아니다."""
-    from capa_simulation.components import pick_edit_table
+    """시나리오 관리 목록 초안의 점 판정(`list_has_edits`). 연 줄 · 고름만 있으면 고침이 아니다."""
+    from capa_simulation.components import scenario_list_state as state
+    from capa_simulation.services.scenario_list_edits import ListDraft, NameEdit
 
-    monkeypatch.setattr(pick_edit_table, "st", SimpleNamespace(session_state={}))
-    assert not pick_edit_table.table_has_edits("list")
-    pick_edit_table.store_draft("list", pick_edit_table.TableDraft(picked="a"))
-    assert not pick_edit_table.table_has_edits("list")
-    pick_edit_table.store_draft("list", pick_edit_table.TableDraft(names={"a": "새"}))
-    assert pick_edit_table.table_has_edits("list")
-    pick_edit_table.store_draft("list", pick_edit_table.TableDraft(order=("b", "a")))
-    assert pick_edit_table.table_has_edits("list")
+    monkeypatch.setattr(state, "st", SimpleNamespace(session_state={}))
+    assert not state.list_has_edits() and state.pending_count() == 0
+    state.store_draft(ListDraft(opened="a", picked="r"))
+    assert not state.list_has_edits()
+    state.store_draft(ListDraft(scenarios={"a": NameEdit("옛", "새")}))
+    assert state.list_has_edits() and state.pending_count() == 1
+    state.store_draft(ListDraft(revisions={"r": NameEdit("옛", "새")}, order=("b", "a")))
+    assert state.list_has_edits() and state.pending_count() == 2

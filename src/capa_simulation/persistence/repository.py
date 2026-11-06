@@ -1840,30 +1840,6 @@ class DuckDBScenarioRepository:
             ).fetchall()
         return {str(row[0]): (revision_summary(row[:8]), str(row[8])) for row in rows}
 
-    def rename_revisions(self, changes: Mapping[str, tuple[str, str]]) -> list[RevisionSummary]:
-        """여러 리비전의 이름표를 한 트랜잭션으로 고친다. 하나라도 거부되면 아무것도 쓰지 않는다.
-
-        돌려주는 요약은 `changes` 의 차례다.
-        """
-        if not changes:
-            return []
-        with self._write_transaction() as connection:
-            problems: list[tuple[str | None, str]] = []
-            moved_names: dict[str, str] = {}
-            labels = _checked_revision_names(connection, changes, problems, moved_names)
-            if problems:
-                raise BatchEditRefused(problems, moved_names)
-            _write_revision_names(connection, labels)
-            placeholders = ", ".join("?" for _ in changes)
-            rows = {
-                str(row[0]): row
-                for row in connection.execute(
-                    REVISION_SUMMARY_SELECT + f" WHERE revision_id IN ({placeholders})",
-                    list(changes),
-                ).fetchall()
-            }
-        return [revision_summary(rows[revision_id]) for revision_id in changes]
-
     def count_virtual_products(self, revision_ids: Sequence[str]) -> dict[str, int]:
         """리비전마다 기록된 가상 제품 수를 한 번에 센다. 없는 리비전은 0 이다.
 

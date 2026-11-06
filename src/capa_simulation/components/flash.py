@@ -110,6 +110,15 @@ def queue_flash(
     )
 
 
+def send_to_popup(key: str) -> None:
+    """`key` 칸에 담아 둔 알림을 알림창 · Alarm 으로만 내게 바꾼다 — 그 칸이 이 회차에 서지 않아 맨
+    위 칸이 대신 꺼낼 때 쓴다(경고 · 오류를 없는 칸에 그리지 않는다). 담아 둔 것이 없으면
+    그대로다."""
+    note = _note(st.session_state.get(key))
+    if note is not None and not note.popup_only:
+        st.session_state[key] = note._replace(popup_only=True)
+
+
 def render_flash(*keys: str) -> DeltaGenerator:
     """늘 서 있는 한 칸을 세우고, `keys` 에 담아 둔 알림을 그 차례대로 알림창 표지로 보내고 비운다.
 

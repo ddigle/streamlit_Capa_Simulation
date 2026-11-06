@@ -39,9 +39,8 @@ from capa_simulation.components.equipment_data_workspace import (
     small_editor_edits,
 )
 from capa_simulation.components.past_data_management import past_data_has_pending
-from capa_simulation.components.pick_edit_table import table_has_edits
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
-from capa_simulation.components.scenario_management import LIST_EDITOR_KEY, REVISION_EDITOR_KEY
+from capa_simulation.components.scenario_list_state import list_has_edits
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
@@ -165,7 +164,7 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
     keep.extend(pastes)
     if past_data_has_pending():
         keep.append(item("keep", HOME, HOME.title, "Past Data 저장 안 함", "Past Data 미저장"))
-    if table_has_edits(LIST_EDITOR_KEY) or table_has_edits(REVISION_EDITOR_KEY):
+    if list_has_edits():
         keep.append(
             item(
                 "keep",

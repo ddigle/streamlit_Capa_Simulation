@@ -177,3 +177,39 @@ textarea.emg-ed {
   background: var(--emg-error-fill);
   border-color: var(--emg-error-line);
 }
+
+.emg-btn {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--emg-border-strong);
+  border-radius: 6px;
+  background: var(--emg-surface);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.emg-btn:not(.is-primary):hover:not(:disabled) {
+  background: var(--emg-subtle);
+}
+
+.emg-btn.is-small {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.emg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.emg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  font-size: 12px;
+}
