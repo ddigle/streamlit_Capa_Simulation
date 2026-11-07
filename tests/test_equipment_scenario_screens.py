@@ -47,7 +47,9 @@ from capa_simulation.components.equipment_scenario_management import (
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
     CONTINUE_BLOCKED_LINE,
+    CONTINUE_BUTTON_HELP,
     CONTINUE_BUTTON_KEY,
+    CONTINUE_LOCKED_HELP,
     EQUIPMENT_SCENARIO_TAB,
     LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
@@ -1741,6 +1743,185 @@ def test_the_tab_starts_a_new_scenario_from_an_old_revision(
     assert len(repository.list_schedule_revisions(OPERATIONS)) == 2
 
 
+def test_the_picked_scenario_and_revision_survive_a_tab_and_a_page_round_trip(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """고른 설비 시나리오 · 리비전은 작업 대상이라 탭이 열린 회차에만 그려져도 세션에 남는다 — 다른
+    탭 · 다른 화면에 다녀오면 그대로이고(설계 규칙 UI-STA-03 · 04), 다른 시나리오를 고르면 앞
+    시나리오의 리비전이 남지 않고 그 시나리오 최신으로 간다(`prune_named_choice`)."""
+    repository = _repository(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-02", "Qual일정", "2027-01-01"))
+    )
+    older = repository.list_schedule_revisions(OPERATIONS)[-1].schedule_revision_id
+    assert older != repository.list_schedule_revisions(OPERATIONS)[0].schedule_revision_id
+
+    def tab_round_trip(app: AppTest) -> None:
+        app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = CAPA_SCENARIO_TAB
+        _ok(app.run())
+        assert not [item for item in app.selectbox if item.key == REVISION_KEY]
+        app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
+        _ok(app.run())
+
+    app = _equipment_section(_ok(_shell.run()))
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(setup).run())
+    tab_round_trip(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == setup
+
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(OPERATIONS).run())
+    _ok(app.selectbox(key=REVISION_KEY).set_value(older).run())
+    tab_round_trip(app)
+    assert app.selectbox(key=REVISION_KEY).value == older
+
+    _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+    _equipment_section(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == OPERATIONS
+    assert app.selectbox(key=REVISION_KEY).value == older
+
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(setup).run())
+    assert (
+        app.selectbox(key=REVISION_KEY).value
+        == repository.list_schedule_revisions(setup)[0].schedule_revision_id
+    )
+
+
+def _go_away(app: AppTest) -> None:
+    """다른 화면으로 간다 — 탭이 그려지지 않아 상자 칸이 빠진다."""
+    _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+
+
+def _latest(repository: DuckDBEquipmentRepository, scenario_id: str) -> str:
+    return repository.list_schedule_revisions(scenario_id)[0].schedule_revision_id
+
+
+def test_a_box_nobody_picked_follows_the_session_after_a_round_trip(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """탭을 열기만 한 상자는 기본값을 굳히지 않는다 — 다른 화면에서 저장해 세션이 새 리비전으로
+    가면 리비전 상자가 그 최신으로, 사이드바에서 다른 시나리오를 올리면 시나리오 상자가 그
+    시나리오로 간다. 옛 리비전이 남으면 「공식으로 발행」 이 고른 적 없는 리비전을 최신 위 공식으로
+    올린다(설계 규칙 UI-STA-03 의 대상은 사용자가 건 조건이다, AGENTS 9장 씨앗 규칙)."""
+    repository = _repository(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    app = _equipment_section(_ok(_shell.run()))
+    assert app.selectbox(key=SCENARIO_KEY).value == OPERATIONS
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, OPERATIONS)
+
+    _go_away(app)
+    _saved_elsewhere(repository, "EQ-02", "2027-01-01")
+    clear_equipment_scenario_cache()
+    _select(app, OPERATIONS, _latest(repository, OPERATIONS))
+    _equipment_section(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == OPERATIONS
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, OPERATIONS)
+
+    _go_away(app)
+    _select(app, setup, _latest(repository, setup))
+    _equipment_section(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == setup
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, setup)
+
+
+def test_a_session_on_an_old_revision_still_opens_the_box_on_the_latest(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """리비전 상자의 기본은 올라와 있는 리비전이 아니라 그 시나리오 최신이다(Guide 「기본은
+    최신」) — 사이드바에서 옛 리비전을 올리고 돌아와도 그렇다."""
+    repository = _repository(tmp_path)
+    older = _latest(repository, OPERATIONS)
+    _saved_elsewhere(repository, "EQ-02", "2027-01-01")
+    app = _equipment_section(_ok(_shell.run()))
+
+    _go_away(app)
+    _select(app, OPERATIONS, older)
+    _equipment_section(app)
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, OPERATIONS)
+
+
+def test_a_box_nobody_picked_takes_what_another_session_saved_on_return(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """세션이 그대로여도 고르지 않은 상자는 돌아왔을 때 그 시나리오 최신을 다시 본다 — 다른 세션이
+    저장한 새 리비전으로. 고른 리비전은 세션이 그대로라 남는다."""
+    repository = _repository(tmp_path)
+    older = _latest(repository, OPERATIONS)
+    _saved_elsewhere(repository, "EQ-02", "2027-01-01")
+    app = _equipment_section(_ok(_shell.run()))
+    picked_session = _latest(repository, OPERATIONS)
+    _select(app, OPERATIONS, picked_session)
+    _ok(app.run())
+
+    _go_away(app)
+    _saved_elsewhere(repository, "EQ-02", "2027-02-01")
+    clear_equipment_scenario_cache()
+    _equipment_section(app)
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, OPERATIONS)
+
+    _ok(app.selectbox(key=REVISION_KEY).set_value(older).run())
+    _go_away(app)
+    _saved_elsewhere(repository, "EQ-02", "2027-03-01")
+    clear_equipment_scenario_cache()
+    _equipment_section(app)
+    assert app.selectbox(key=REVISION_KEY).value == older
+
+
+def test_a_picked_revision_gives_way_when_the_session_moves(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """고른 리비전은 올라와 있는 쌍이 그대로인 동안만 남는다(`REVISION_SEED_KEY` 와 같은 약속) —
+    세션이 새 리비전으로 가면 상자가 최신으로 돌아와 다음 동작이 옛 고름에 걸리지 않는다."""
+    repository = _repository(tmp_path)
+    older = _latest(repository, OPERATIONS)
+    _saved_elsewhere(repository, "EQ-02", "2027-01-01")
+    app = _equipment_section(_ok(_shell.run()))
+    _select(app, OPERATIONS, _latest(repository, OPERATIONS))
+    _ok(app.run())
+    _ok(app.selectbox(key=REVISION_KEY).set_value(older).run())
+
+    _go_away(app)
+    _saved_elsewhere(repository, "EQ-02", "2027-02-01")
+    clear_equipment_scenario_cache()
+    _select(app, OPERATIONS, _latest(repository, OPERATIONS))
+    _equipment_section(app)
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, OPERATIONS)
+
+    # 빈 상자가 다시 기본값으로 굳지 않았다 — 한 번 더 저장해도 그 최신을 따라간다.
+    _go_away(app)
+    _saved_elsewhere(repository, "EQ-02", "2027-03-01")
+    clear_equipment_scenario_cache()
+    _select(app, OPERATIONS, _latest(repository, OPERATIONS))
+    _equipment_section(app)
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, OPERATIONS)
+
+
+def test_a_picked_scenario_stays_while_the_session_only_moves_within_its_own_scenario(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """다른 시나리오를 살펴보던 고름은 세션 시나리오가 그대로인 동안 남는다 — 세션이 자기 시나리오
+    안에서 새 리비전으로 간 것은 그 고름의 전제가 아니다. 세션이 다른 시나리오로 가면 시나리오
+    상자가 세션을 따라가고 앞 고름은 되살아나지 않는다."""
+    repository = _repository(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    other = _clone(repository, name="다른 가정안").equipment_scenario_id
+    app = _equipment_section(_ok(_shell.run()))
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(setup).run())
+
+    _go_away(app)
+    _saved_elsewhere(repository, "EQ-02", "2027-01-01")
+    clear_equipment_scenario_cache()
+    _select(app, OPERATIONS, _latest(repository, OPERATIONS))
+    _equipment_section(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == setup
+
+    _go_away(app)
+    _select(app, other, _latest(repository, other))
+    _equipment_section(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == other
+    assert app.selectbox(key=REVISION_KEY).value == _latest(repository, other)
+
+
 def test_a_legacy_trace_warns_and_the_section_continues_writing(
     _shell: AppTest, tmp_path: Path
 ) -> None:
@@ -1778,20 +1959,29 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
         "설비 시나리오 탭으로 옮기지 않았다"
     )
     _equipment_section(app)
-    assert any("옛 배포로 저장한 설비 리비전 1개" in str(item.value) for item in app.warning)
+    # 이 칸은 값 한 줄이다 — 바로 아래 단추를 가리키는 긴 글(저장 거부 · 알림 전문)은 세우지 않고,
+    # 복원이 먼저라는 말과 되돌릴 수 없다는 말은 단추 풍선이 누르기 전에 한다.
+    assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
+    assert any("옛 배포 리비전 1개 · 설비 저장 막힘" in str(item.value) for item in app.caption)
+    assert not any("되돌릴 수 없습니다" in str(item.value) for item in app.caption)
 
     # 되돌릴 수 없는 쓰기라 확인 체크를 켜야 단추가 선다. 체크 글은 빠지는 호기 수를 말한다(새
     # 판에서 만든 두 호기 — 옛 배포 리비전 r2 는 비어 있다).
-    assert app.button(key=CONTINUE_BUTTON_KEY).disabled
+    locked = app.button(key=CONTINUE_BUTTON_KEY)
+    assert locked.disabled
+    assert str(locked.help).startswith(CONTINUE_LOCKED_HELP)
+    assert "이어 쓰기는 되돌릴 수 없습니다" in str(locked.help)
     confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
     assert "옛 배포 리비전 r2를 공통 대장 최신으로" in str(confirm.label)
     assert "호기 2대가 그 리비전에 없어 모든 설비 시나리오에서 빠지고" in str(confirm.label)
     confirm.check()
     _ok(app.run())
+    # 체크를 켜면 잠긴 까닭은 빠지고 되돌릴 수 없다는 말만 남는다.
+    assert app.button(key=CONTINUE_BUTTON_KEY).help == CONTINUE_BUTTON_HELP
     app.button(key=CONTINUE_BUTTON_KEY).click()
     _ok(app.run())
     assert repository.legacy_trace_count() == 0
-    assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
+    assert not any("옛 배포 리비전 1개" in str(item.value) for item in app.caption)
 
 
 def test_the_capa_route_from_the_popup_lands_on_the_capa_tab(_shell: AppTest) -> None:

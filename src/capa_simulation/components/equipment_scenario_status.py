@@ -51,6 +51,7 @@ from capa_simulation.components.equipment_save_fields import (
     render_saved_by_field,
 )
 from capa_simulation.components.equipment_scenario_management import (
+    LOAD_DISCARD_HELP,
     render_legacy_trace_goto,
     report_session_notices,
 )
@@ -126,6 +127,7 @@ FLOOR_DRAFT_DISCARD_NOTE = (
     "설비 시나리오를 불러오면 버려집니다."
 )
 LOAD_BUTTON_KEY = "sidebar_equipment_load_revision"
+NO_REVISIONS_LINE = "이 설비 시나리오에 저장된 리비전이 없습니다."
 SAVE_BUTTON_KEY = "sidebar_equipment_save"
 # 팝업 「저장」 구획의 낡은 세션 「최신 rN 불러오기(변경 버림)」.
 LOAD_LATEST_BUTTON_KEY = "sidebar_equipment_load_latest"
@@ -492,6 +494,14 @@ def _render_dialog_body(database_path: str, session: EquipmentSession, *, can_sa
     _render_load(database_path, session, unsaved=unsaved)
 
 
+def load_locked_help(*, discard: bool, has_revisions: bool) -> str | None:
+    """잠긴 「불러오기」 의 까닭(잠기지 않았으면 None). 리비전이 없으면 버리기 체크로도 풀리지 않아
+    그 까닭이 먼저다."""
+    if not has_revisions:
+        return NO_REVISIONS_LINE
+    return None if discard else LOAD_DISCARD_HELP
+
+
 def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool) -> None:
     """불러오기 구획 — 시나리오 → 리비전 라디오(최신 기본, 공식 발행에 「공식 vN」, 최근
     `SCHEDULE_REVISION_LIST_LIMIT` 개까지 — 한도에 걸리면 라디오 아래 「최근 50개 · 전체 82개 — 더
@@ -539,6 +549,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
         type="primary",
         disabled=not discard or not revision_by_id,
         key=LOAD_BUTTON_KEY,
+        help=load_locked_help(discard=discard, has_revisions=bool(revision_by_id)),
     )
     st.selectbox(
         "설비 시나리오",
@@ -547,7 +558,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
         key=DIALOG_SCENARIO_KEY,
     )
     if not revision_by_id:
-        st.caption("이 설비 시나리오에 저장된 리비전이 없습니다.")
+        st.caption(NO_REVISIONS_LINE)
     else:
         options = list(revision_by_id)
         release = session.catalog.latest_release

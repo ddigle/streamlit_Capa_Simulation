@@ -138,7 +138,6 @@ from capa_simulation.persistence.equipment_repository import (
     LayoutPublishPreview,
     LegacyTraceReview,
     ScheduleRestoreResult,
-    legacy_trace_message,
     scenario_name_moved_message,
     schedule_revision_name_moved_message,
 )
@@ -175,8 +174,16 @@ LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
+# 사용자가 기본값과 다르게 고른 값 — (그때의 세션 기준, 값). 두 상자에 `persist_state` 를 주면
+# `prune_named_choice` 가 매 회차 되쓰는 기본값까지 굳어, 저장 · 불러오기로 세션이 옮겨 간 뒤에도
+# 탭이 옛 시나리오 · 리비전에 남고 「공식으로 발행」 이 그 옛 리비전에 걸린다. 그래서 상자 칸은 탭과
+# 함께 사라지게 두고(돌아오면 그때의 기본값이 선다) 고른 값만 이 칸에서 되돌린다(`_named_pick`).
+SCENARIO_PICK_KEY = "equipment_scenario_manage_scenario_pick_v1"
+REVISION_PICK_KEY = "equipment_scenario_manage_revision_pick_v1"
 DISCARD_KEY = "equipment_scenario_manage_discard_v1"
 LOAD_BUTTON_KEY = "equipment_scenario_manage_load_v1"
+# 저장하지 않은 편집이 있어 잠긴 「불러오기」 의 까닭 — 사이드바 팝업의 불러오기도 같은 글이다.
+LOAD_DISCARD_HELP = "「변경을 버리고 불러오기」 를 체크하면 누를 수 있습니다."
 # 「여기서 새 시나리오」 — 고른 리비전을 r1 로 복제한다.
 CLONE_NAME_KEY = "equipment_scenario_manage_clone_name_v1"
 CLONE_BY_KEY = "equipment_scenario_manage_clone_by_v1"
@@ -231,6 +238,15 @@ RESTORE_PUBLISH_HELP = (
 LAYOUT_BLOCKED_LINE = ":material/block: 배치 차이로 발행 막힘"
 # 옛 배포 흔적을 이어 쓸 수 없는 회차의 표지 — 까닭은 꺼진 「이대로 이어 쓰기」 의 풍선이 말한다.
 CONTINUE_BLOCKED_LINE = ":material/block: 이어 쓰기 막힘"
+# 옛 배포 흔적으로 막힌 쓰기 팝오버의 표지 — 까닭은 꺼진 단추 풍선(`legacy_trace_lock_line`)이
+# 말한다.
+LEGACY_TRACE_BLOCKED_LINE = ":material/block: 옛 배포 흔적으로 막힘"
+# 「이대로 이어 쓰기」 풍선 — 누르기 전에 알아야 하는 되돌릴 수 없는 결과(설계 규칙 UI-NTF-09).
+CONTINUE_BUTTON_HELP = (
+    "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
+)
+# 체크가 꺼져 잠긴 동안 그 풍선 앞에 붙는 까닭(설계 규칙 UI-INP-07).
+CONTINUE_LOCKED_HELP = "위 확인 체크를 켜면 누를 수 있습니다."
 REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
 SCENARIO_NAME_SAVE_NAME = "equipment_scenario_name"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
@@ -666,7 +682,7 @@ def layout_trace_sentence(
     return (
         f"{name} r{latest}{topic_particle(f'r{latest}')} 옛 판이 저장해 {source}의 가정 배치가 "
         f"빠졌습니다 — {with_direction_particle(source)} 되돌리기(이 리비전으로 되돌리기)로 "
-        f"되살립니다.{more} 옛 판으로 저장하지 않게 런북 4-2 「되돌림」 을 보세요."
+        f"되살립니다.{more}"
     )
 
 
@@ -803,7 +819,9 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
 
 
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:
-    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 입력은 위젯이 세션에 지킨다.
+    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 사용자가 고른 설비 시나리오 · 리비전은
+    작업 대상이라 다른 탭 · 화면에 다녀와도 남고(`_named_pick`), 고르지 않은 상자는 돌아왔을 때
+    그때의 기본값을 다시 보며, 입력 칸에 적던 글은 초안이라 버려진다.
 
     한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는 회차에 팝오버 세대를 올려 팝오버를
     닫힌 채 세우고, 알림·옛 배포 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는
@@ -860,11 +878,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 튀고 같은 회차의 「이름 바꾸기」 누름이 운영 일정에 같은 이름 쓰기를 하고 그 이름으로 성공을
     # 알렸다(2026-10-27 E2E). 앞 회차들이 그린 이름으로 고른 시나리오를
     # 잇는다(`prune_named_choice`).
-    selected_id = prune_named_choice(
+    selected_id = _named_pick(
         SCENARIO_KEY,
+        SCENARIO_PICK_KEY,
         {scenario_id: item.scenario_name for scenario_id, item in scenarios.items()},
         default=default_scenario,
-    ).value
+        basis=session.scenario_id,
+    )
     # 앞 회차에 켠 「배치 차이 모두 지우기」 확인 — 그 사이 최신이 바뀌어 체크가 풀렸으면 알린다.
     clearable = clearable_layout(session, scenarios[selected_id])
     clear_notice = clear_layout_unchecked_notice(
@@ -970,7 +990,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         revision_id: _revision_label(revision, official_id=official_id, official_no=official_no)
         for revision_id, revision in by_id.items()
     }
-    chosen_id = prune_named_choice(REVISION_KEY, labels, default=default_revision).value
+    chosen_id = _named_pick(
+        REVISION_KEY,
+        REVISION_PICK_KEY,
+        labels,
+        default=default_revision,
+        basis=_revision_pick_basis(session, selected_id),
+    )
     st.selectbox(
         "리비전",
         options=list(by_id),
@@ -1003,6 +1029,37 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             _render_publish(database_path, session, scenario, chosen)
 
 
+def _named_pick(
+    key: str, pick_key: str, names: Mapping[str, str], *, default: str, basis: object
+) -> str:
+    """상자의 이번 회차 값(`prune_named_choice`) — 사용자가 고른 값만 탭 왕복 뒤로 넘긴다.
+
+    상자 칸이 없는 회차(탭을 다시 연 회차)에는 적어 둔 값을 칸에 되돌리되, 고를 때의 세션
+    기준(`basis`)이 지금과 같을 때만이다 — 기준이 달라졌으면 세션이 옮겨 간 것이라 그 고름에 다음
+    동작이 걸리지 않게 기본값이 선다(AGENTS 9장 「활성 리비전을 씨앗으로 쓰는 위젯」). 기본값과 같은
+    값은 적지 않아 다음에 열 때 그때의 기본값을 따른다.
+    """
+    saved = st.session_state.get(pick_key)
+    if key not in st.session_state and isinstance(saved, tuple) and saved[0] == basis:
+        st.session_state[key] = saved[1]
+    value = prune_named_choice(key, names, default=default).value
+    if value == default:
+        st.session_state.pop(pick_key, None)
+    else:
+        st.session_state[pick_key] = (basis, value)
+    return value
+
+
+def _revision_pick_basis(
+    session: EquipmentSession, scenario_id: str
+) -> tuple[str | None, str | None]:
+    """고른 리비전이 기대는 세션 기준 — 세션이 보는 시나리오의 리비전이면 세션 리비전까지 본다.
+    다른 시나리오를 살펴보는 고름은 세션이 자기 시나리오 안에서 옮겨 가도 그대로다."""
+    if scenario_id == session.scenario_id:
+        return scenario_id, session.schedule_revision_id
+    return session.scenario_id, None
+
+
 def _revision_label(
     revision: EquipmentScheduleRevisionSummary, *, official_id: str | None, official_no: int | None
 ) -> str:
@@ -1026,7 +1083,12 @@ def _render_load(
     if has_unsaved_equipment_edits():
         discard = st.checkbox("변경을 버리고 불러오기", key=DISCARD_KEY)
     if st.button(
-        "불러오기", type="primary", disabled=not discard, key=LOAD_BUTTON_KEY, width="stretch"
+        "불러오기",
+        type="primary",
+        disabled=not discard,
+        key=LOAD_BUTTON_KEY,
+        width="stretch",
+        help=None if discard else LOAD_DISCARD_HELP,
     ):
         failure = select_equipment_scenario(
             database_path,
@@ -1070,12 +1132,27 @@ def _preview_for(
 
 
 def legacy_trace_lock_line(count: int) -> str:
-    """옛 배포 흔적으로 막힌 쓰기 팝오버(되돌리기 · 배치 차이 지우기)의 잠금 까닭 한 줄.
+    """옛 배포 흔적으로 막힌 쓰기 팝오버(되돌리기 · 배치 차이 지우기)의 꺼진 단추 풍선.
 
     백업 복원 · 「이대로 이어 쓰기」 로 푸는 길은 같은 탭 맨 위 옛 배포 흔적
     칸(`_render_legacy_trace`) · 알림 · Guide 가 말한다 — 팝오버에서 그 자리를 다시 가리키지
     않는다(설계 규칙 UI-TXT-03)."""
     return f"옛 배포로 저장한 설비 리비전 {count:,}개가 있어 설비 저장을 막았습니다."
+
+
+def _render_legacy_locked_write(count: int, label: str, *, icon: str, key: str) -> None:
+    """옛 배포 흔적으로 막힌 쓰기 팝오버 — 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선 하나다(설계
+    규칙 UI-INP-07 — 검수표 11/02 equip-44 와 같은 꼴)."""
+    st.caption(LEGACY_TRACE_BLOCKED_LINE)
+    st.button(
+        label,
+        icon=icon,
+        type="primary",
+        disabled=True,
+        key=key,
+        width="stretch",
+        help=legacy_trace_lock_line(count),
+    )
 
 
 def restore_seen_token(
@@ -1448,7 +1525,12 @@ def _render_restore(
         )
         return
     if session.legacy_trace_count:
-        st.caption(legacy_trace_lock_line(session.legacy_trace_count))
+        _render_legacy_locked_write(
+            session.legacy_trace_count,
+            "되돌리기",
+            icon=":material/history:",
+            key=RESTORE_BUTTON_KEY,
+        )
         return
     try:
         common_id = _latest_common_id(database_path)
@@ -1959,7 +2041,12 @@ def _render_clear_layout(
     없으면 세션을 새 리비전으로 옮긴다(되돌리기와 같다). `notice` 는 앞 회차에 켠 체크가 그렇게
     풀렸다는 알림이다(`clear_layout_unchecked_notice`) — 체크 칸 바로 위에 적는다."""
     if session.legacy_trace_count:
-        st.caption(legacy_trace_lock_line(session.legacy_trace_count))
+        _render_legacy_locked_write(
+            session.legacy_trace_count,
+            "배치 차이 모두 지우기",
+            icon=":material/layers_clear:",
+            key=CLEAR_LAYOUT_BUTTON_KEY,
+        )
         return
     st.caption(clear_layout_value_line(scenario))
     latest_id = scenario.latest_schedule_revision_id or ""
@@ -2593,12 +2680,20 @@ def continue_confirm_key(count: int, review: LegacyTraceReview) -> str:
     )
 
 
+def legacy_trace_value_line(count: int) -> str:
+    """옛 배포 흔적 칸의 값 한 줄. 긴 글(`legacy_trace_message`)은 저장 거부 · `SB-19` 전문이 쓰고
+    이 칸은 값만 둔다 — 그 글의 「…를 쓰세요」 는 바로 아래 단추를 가리키는 길 안내다(설계 규칙
+    UI-TXT-03 · UI-NTF-09)."""
+    return f":material/history: 옛 배포 리비전 {count:,}개 · 설비 저장 막힘"
+
+
 def _render_legacy_trace(database_path: str, count: int) -> None:
-    """옛 배포 흔적 — 경고와 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
-    덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 옛 배포
-    리비전이 어느 시나리오 일정과도 합쳐지지 않으면 표지 한 마디와 꺼진 단추만 두고 까닭(백업
-    복원)은 그 단추 풍선이 말한다(검수표 11/02 equip-44 와 같은 꼴)."""
-    st.warning(legacy_trace_message(count), icon=":material/history:")
+    """옛 배포 흔적 — 값 한 줄과 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
+    덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 그
+    결과와 백업 복원이 먼저라는 말은 단추 풍선이 한다. 옛 배포 리비전이 어느 시나리오 일정과도
+    합쳐지지 않으면 표지 한 마디와 꺼진 단추만 두고 까닭(백업 복원)은 그 단추 풍선이
+    말한다(검수표 11/02 equip-44 와 같은 꼴)."""
+    st.caption(legacy_trace_value_line(count))
     try:
         review = load_legacy_trace_review(database_path)
     except BOOTSTRAP_ERRORS as exc:
@@ -2622,15 +2717,13 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
             ),
         )
         return
-    st.caption(
-        "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
-    )
     agreed = st.checkbox(continue_confirm_label(review), key=continue_confirm_key(count, review))
     if st.button(
         "이대로 이어 쓰기",
         icon=":material/fast_forward:",
         key=CONTINUE_BUTTON_KEY,
         disabled=not agreed,
+        help=CONTINUE_BUTTON_HELP if agreed else f"{CONTINUE_LOCKED_HELP} {CONTINUE_BUTTON_HELP}",
     ):
         try:
             get_equipment_repository(database_path).acknowledge_legacy_trace(
