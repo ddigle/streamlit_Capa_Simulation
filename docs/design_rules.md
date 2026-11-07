@@ -595,7 +595,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 예외: 브라우저 컴포넌트 안에서 판정이 끝나는 단추(조회기간 판 「적용」 등)는 잠근다(UI-INP-04).
 - 판단: 이 조작은 지금만 못 하나(→ 잠금 + 까닭), 이 화면에 아예 없나(→ 숨김)? 잠근 단추가 서버가 판정해야 하는 단추인가? 꺼진 단추의 까닭 풍선을 마우스와 키보드로 열 수 있나?
 - 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글, 표 안 잠긴 단추의 까닭 · 감싼 칸) · `tests/test_locked_button_help.py`(코어 Streamlit 잠긴 단추의 풍선 유무) · `tests/test_alert_center_assets.py`(꺼진 단추 탭 자리 · 팝오버 들어가기) · `tests/test_paste_form.py`(잠긴 적용 초점 풍선) · `tests/test_sidebar_stylesheet.py`(칸 초점 윤곽) · `tests/test_space_layout_editor_assets.py`(편집기 까닭 풍선 · 감싼 칸 · 잠긴 칸 빨간 글 없음) · `tests/test_reference_grid_page.py::test_the_locked_apply_says_why_and_the_open_one_says_what_it_does`(풍선 글이 까닭인지)
-- 그물 후보: 없음
+- 그물 후보: 잠긴 쓰기 단추 그물
 - 근거: 검수 「괜찮음」 sum-u01(2026-11-03), 검수 「괜찮음」 home-12 · prog-03(2026-11-03 ~ 11-04), 사용자 답(남은 결정 넷)(2026-11-03), AGENTS 9장 「잠긴(disabled) 위젯」, 그림 검수표 equip-44(2026-11-05), 전후 그림 보드 v1(2026-11-05) — 「"아직 추가할 수 없습니다 ..." 알람 문구도 호기 추가버튼에 마우스 올리면 팝업창으로 뜨게하고, 해당 창에서는 안보이게해」
 - 지금 값: 없음
 
@@ -650,7 +650,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱 껍데기(머리 띠 · 탭 줄 · 사이드바) · 패널 · 칩 줄 · 큰 표
 - 예외: 화면 조작 상자가 바닥 카드에 걸린 채 설 때 — 회차가 끝났을 때 상자 줄 수가 달라졌고 걸렸으면 걸린 만큼만 사이드바를 올린다(`page_box_reveal`). 사람의 보기 조작(휠 · 끌기 · 상자 여닫기 · 폭 끌기)은 그대로 지킨다
 - 판단: 이 조작 뒤 사용자가 보던 줄이 그 자리에 있나?
-- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정) · `tests/test_equipment_master_grid_assets.py`(the_selection_bar_floats_above_the_table_head_and_moves_no_row — 고른 줄 띠가 표 줄을 밀지 않는다)
+- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정) · `tests/test_equipment_master_grid_assets.py`(the_selection_bar_floats_above_the_table_head_and_moves_no_row — 고른 줄 띠가 표 줄을 밀지 않는다) · `tests/test_space_layout_editor_page.py::test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_drawing`(저장 상자 줄이 도면을 밀지 않는다)
 - 그물 후보: 보기 조작 전후 스크롤 같음
 - 근거: 검수 home-u04(2026-11-03), 검수 「괜찮음」 frame-u01(2026-11-03), 사용자 UI 요청 ①(2026-11-02) — 「창 틀: 스크롤 아래로 내릴 때 틀이 살짝 움직임. 항상 고정되도록」
 - 지금 값: 없음
@@ -920,7 +920,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: SHOULD · 확정
 - 범위: 모션 · 시선 끌기 · 강조 효과
-- 예외: 없음
+- 예외: 필요 단축 일정 보드 줄을 고른 회차의 강조 카드 — 카드가 표 아래 화면 밖이라 같은 화면이어도 한 번 굴리며 도착 칸 강조를 건다
 - 판단: 이 움직임이 반복될 때 거슬리나? 움직임 줄이기 설정에서는 어떻게 보이나?
 - 그물: `tests/test_alert_center_assets.py`(reduced_motion…)
 - 그물 후보: 움직임 토큰(지속 · 곡선) 한 곳 + 자산이 그 상수만 쓰는지
