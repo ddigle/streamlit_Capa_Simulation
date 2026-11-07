@@ -203,6 +203,14 @@ console.log(JSON.stringify([
     assert "t.log_table_value_clipped" in pairs
 
 
+def test_top_level_names_are_declared_once() -> None:
+    """맨 바깥 `const` · `let` · `function` 이름은 한 번만 선언한다 — 두 번이면 모듈이 구문 오류로
+    서지 않아 알림창 · Alarm · 변경 칩이 통째로 사라진다. 순수 구획만 떼어 돌리는 시험은 구획 밖과
+    겹친 이름을 못 본다."""
+    names = re.findall(r"^(?:const|let|function|async function)\s+(\w+)", JS, re.M)
+    assert sorted(name for name in set(names) if names.count(name) > 1) == []
+
+
 _SECTIONS = ("alerts-rows", "alerts-focus", "alerts-storage", "alerts-reconnect")
 
 
