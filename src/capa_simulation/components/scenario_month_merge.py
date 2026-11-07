@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_transform import (
@@ -46,6 +46,17 @@ OVERLAP_LABELS: dict[OverlapPolicy, str] = {
     "base": "겹치는 월은 베이스 사용",
     "donor": "겹치는 월은 덧붙일 쪽 사용",
 }
+# 값 줄의 풍선 — 자리에는 수 · 달 · 키만 두고 왜 확인해야 하는지는 풍선과 Guide 가 말한다(설계 규칙
+# UI-TXT-01 · UI-TXT-04).
+EMPTY_MONTHS_HELP = (
+    "어느 표에도 없는 달이라 계획·설비가 없는 달로 남고, 필요 단축 일정 같은 화면에서 부족이 없는 "
+    "달처럼 보일 수 있습니다. 이어진 기간이 필요하면 원본이나 덧붙일 월 범위를 바꿉니다."
+)
+MIXED_PRODUCTS_HELP = (
+    "한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키입니다. 결과에서 그 제품은 달마다 그 달 "
+    "원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 공식버전 지정 "
+    "때 확인을 받습니다."
+)
 
 
 def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
@@ -84,13 +95,8 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     donor_tables = copy_scenario_tables(donor.tables)
     st.markdown("#### 월 없는 기준정보 4표")
     comparison = compare_non_monthly_tables(base_tables, donor_tables)
+    # 두 원본의 차이는 표 「비교」 칸이, 합치는 규칙은 「합치는 규칙」 칸과 Guide 가 말한다.
     st.dataframe(comparison, hide_index=True, width="stretch")
-    if comparison["비교"].ne("같음").any():
-        st.warning(
-            "두 시나리오의 월 없는 기준정보가 다릅니다. 겹치는 제품·공정은 베이스 값을 쓰고, "
-            "베이스에 없는 제품·공정만 덧붙일 쪽에서 보충합니다. 겹치는 키의 Density·Chip·모듈 "
-            "기준 차이를 확인하세요."
-        )
     donor_months = scenario_months(donor_tables)
     if not donor_months:
         st.error("덧붙일 시나리오에 월 데이터가 없습니다.")
@@ -151,11 +157,10 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     st.caption(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
     empty_months = missing_calendar_months(scenario_months(result))
     if empty_months:
-        st.warning(
-            f"결과 월 사이에 빈 달이 {len(empty_months)}개월 있습니다: "
-            f"{format_month_runs(empty_months)}. 빈 달은 어느 표에도 없어 계획·설비가 없는 달로 "
-            "남고, 필요 단축 일정 같은 화면에서 부족이 없는 달처럼 보일 수 있습니다. 이어진 기간이 "
-            "필요하면 원본이나 덧붙일 월 범위를 바꾸세요."
+        st.caption(
+            f"**빈 달** :orange[{len(empty_months)}개월] · "
+            f"{markdown_safe_tildes(format_month_runs(empty_months))}",
+            help=EMPTY_MONTHS_HELP,
         )
     preview = month_table_summary(base_tables, label="베이스").merge(
         month_table_summary(result, label="결과"), on="표", validate="one_to_one"
@@ -184,11 +189,10 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         result_tables=result,
     )
     if history.mixed:
-        st.warning(
-            f"한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키가 {len(history.mixed)}개 "
-            f"있습니다: {_record_keys(history.mixed, markdown=True)}. 결과에서 그 제품은 달마다 "
-            "그 달 원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 "
-            "공식버전 지정 때 확인을 받습니다."
+        st.caption(
+            f"**가상·실제 섞임** :orange[{len(history.mixed)}개] · "
+            f"{_record_keys(history.mixed, markdown=True)}",
+            help=MIXED_PRODUCTS_HELP,
         )
     if history.dropped:
         st.warning(

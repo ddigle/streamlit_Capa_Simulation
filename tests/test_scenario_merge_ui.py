@@ -32,6 +32,8 @@ from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _monthly_tables(months: list[int]) -> dict[str, pd.DataFrame]:
     tables = _reference_tables()
@@ -252,7 +254,9 @@ def test_preview_reports_monthless_differences_and_does_not_save(sources: Source
     assert comparison.loc["RQ_CHIP_EQ", "덧붙일 쪽 행 수"] == 2
     assert comparison.loc["RQ_CHIP_EQ", "보충 행 수"] == 1
     assert comparison.loc["RQ_DISPLAY_ORDER", "비교"] == "다름 · 베이스 유지"
-    assert any("베이스에 없는 제품" in warning.value for warning in app.warning)
+    # 차이는 표 「비교」 칸이 말하고 합치는 규칙은 표 칸 · Guide 몫이라 경고 상자를 세우지 않는다
+    # (설계 규칙 UI-TXT-01).
+    assert not app.warning
     assert set(_preview(app)["결과 월 수"]) == {3}
     assert set(_preview(app)["행 수 증감"]) == {2}
     assert len(repository.list_scenarios()) == 2
@@ -535,9 +539,21 @@ def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) 
 
     app = _app(database, base, donor)
 
-    gaps = [item.value for item in app.warning if "빈 달" in item.value]
-    assert gaps and "11개월" in gaps[0] and "2027-02~2027-12" in gaps[0]
+    (gap,) = [item for item in app.caption if "빈 달" in item.value]
+    assert gap.value == "**빈 달** :orange[11개월] · 2027-02\\~2027-12"
+    assert "부족이 없는" in gap.help and "월 범위를 바꿉니다" in gap.help
     assert not _save_button(app).disabled
+
+
+def test_the_guide_carries_what_the_merge_warnings_used_to_say() -> None:
+    """값 줄 · 표 칸으로 걷은 경고의 말은 Guide 에 남는다(설계 규칙 UI-TXT-02)."""
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/scenario_management.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "부족이 없는 달처럼 보일 수 있습니다" in guide
+    assert "겹치는 키의 Density·Chip·모듈 기준 차이를" in guide
+    assert "두 값이 섞입니다" in guide
 
 
 def test_the_merge_warnings_draw_the_virtual_product_keys_literally() -> None:
@@ -563,9 +579,11 @@ def test_virtual_history_follows_the_result_and_a_clash_is_warned(sources: Sourc
     app = _app(database, base, donor)
 
     warnings = [item.value for item in app.warning]
-    # 경고는 마크다운이라 키를 막아 싣는다(`-` 도 `\-`).
+    # 글은 마크다운이라 키를 막아 싣는다(`-` 도 `\-`). 키는 값 줄, 뜻은 그 줄 풍선이다.
     clash_key = f"{literal_markdown('Product-A')} · 8H"
-    assert any(clash_key in item and "실제 제품" in item for item in warnings)
+    (clash_line,) = [item for item in app.caption if "가상·실제 섞임" in item.value]
+    assert clash_key in clash_line.value and "실제 제품" in clash_line.help
+    assert not any(clash_key in item for item in warnings)
     assert any(f"{literal_markdown('Product-Gone')} · 8H" in item for item in warnings)
     app.text_input(key="scenario_merge_name").set_value("이력 정리 머지")
     _save_button(app).click().run()
