@@ -2071,26 +2071,33 @@ def overlap_counts_touching(status: pd.DataFrame, names: Collection[str]) -> dic
     return counts
 
 
+@dataclass(frozen=True)
+class LayoutWarnings:
+    """`layout_warnings` 결과 — 줄마다 (층 「C1 1F」, 호기, 상대). 상대는 겹친 호기 · 덮은 요소
+    이름이다."""
+
+    overlaps: tuple[tuple[str, str, str], ...] = ()
+    blocked: tuple[tuple[str, str, str], ...] = ()
+
+
 def layout_warnings(
     status: pd.DataFrame,
     marks_by_floor: Mapping[FloorKey, Sequence[FloorLayoutMark]],
-    *,
-    limit: int = 8,
-) -> list[str]:
+) -> LayoutWarnings:
     """겹친 호기와 반입구·문·기둥·설비 금지 영역을 덮은 호기. **저장은 막지 않고 알리기만 한다**.
 
     대상은 편집기와 같다 — 레이아웃반영여부이고 좌표가 다 있는 호기(도면 이탈일이 지난 호기 제외).
     """
     placed = _drawn_boxes(status)
-    pairs: list[str] = []
-    blocked: list[str] = []
+    pairs: list[tuple[str, str, str]] = []
+    blocked: list[tuple[str, str, str]] = []
     for (building, floor), rows in _boxes(placed).groupby(["동", "층"], sort=True):
         records = rows.to_dict(orient="records")
         name = f"{building} {floor}"
         for index, a in enumerate(records):
             for b in records[index + 1 :]:
                 if _overlaps(a, b):
-                    pairs.append(f"{a[EQUIPMENT_ID_COLUMN]} ↔ {b[EQUIPMENT_ID_COLUMN]} ({name})")
+                    pairs.append((name, str(a[EQUIPMENT_ID_COLUMN]), str(b[EQUIPMENT_ID_COLUMN])))
         for mark in marks_by_floor.get((str(building), str(floor)), ()):
             if not mark.blocks:
                 continue
@@ -2105,19 +2112,8 @@ def layout_warnings(
                     and record["Y좌표"] < mark_top
                     and mark.y < record["_top"]
                 ):
-                    blocked.append(f"{record[EQUIPMENT_ID_COLUMN]} → {mark.name} ({name})")
-    messages = []
-    for title, rows_text in (
-        ("겹친 호기", pairs),
-        ("반입구·문·기둥·설비 금지 영역을 덮은 호기", blocked),
-    ):
-        if rows_text:
-            more = f" 외 {len(rows_text) - limit}건" if len(rows_text) > limit else ""
-            messages.append(
-                f"{title} {len(rows_text)}건 — 저장은 막지 않습니다: "
-                f"{', '.join(rows_text[:limit])}{more}"
-            )
-    return messages
+                    blocked.append((name, str(record[EQUIPMENT_ID_COLUMN]), mark.name))
+    return LayoutWarnings(tuple(pairs), tuple(blocked))
 
 
 def _where(row: Mapping[Any, Any]) -> str:

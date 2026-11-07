@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from functools import partial
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -82,6 +82,7 @@ from capa_simulation.components.space_floor_layout import (
     floor_moved_overlaps,
     floor_unit_differences,
     report_layout_notices,
+    report_layout_warnings,
     space_layout_notices,
 )
 from capa_simulation.components.space_floor_list import (
@@ -244,6 +245,7 @@ from capa_simulation.services.space_color_basis import (
     color_basis_groups,
 )
 from capa_simulation.services.space_layout_edit import (
+    LayoutWarnings,
     apply_layout_edits,
     apply_name_changes,
     buffer_matches_saved,
@@ -1166,7 +1168,16 @@ def _render_edit_lock_line() -> None:
         st.caption(FAST_FORWARD_MARK, help=literal_markdown(edit_mode.notice))
 
 
-def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
+class UnsavedPanel(NamedTuple):
+    """저장 안 한 배치 상자를 그린 결과 — `drawn` 은 저장할 변경이 있어 상자를 그렸는가, `warnings`
+    · `doubled` 는 그 변경의 겹침 · 같은 층을 가리키는 FAB 블록이다(상태 알림 재료)."""
+
+    drawn: bool = False
+    warnings: LayoutWarnings = LayoutWarnings()
+    doubled: tuple[str, ...] = ()
+
+
+def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
     """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
     화면에서나 뜬다.
 
@@ -1180,8 +1191,9 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
     편집이 잠긴 회차(`edit_mode.layout == "locked"` — 찍힌 역할이 바뀜·남이 그 시나리오에 다른
     배치를 저장·가정이던 때 리비전)에 잠기기 전에 적용한 배치 변경이 남았으면 「배치 변경만 버리기」
     가 서고 저장은 꺼진다(저장해도 저장소가 같은 까닭으로 막는다). 배치 변경이 없으면 상자는 그대로
-    저장한다. 상자를 그렸으면 참이다 — 스크롤 고정 중 편집기가 「저장 안 한 배치가 있습니다」 한
-    줄을 단다.
+    저장한다. 상자를 그렸으면 `drawn` 이 참이다 — 스크롤 고정 중 편집기가 「저장 안 한 배치가
+    있습니다」 한 줄을 단다. 겹침 · 중복 블록은 상자에 적지 않고 돌려준다 — 페이지가 상태 알림으로
+    낸다(`report_layout_warnings`).
     """
     saved_snapshot = equipment_session.snapshot
     # 저장 오류는 상자를 그리지 않는 회차에도 한 번만 보이고 버린다(남의 저장으로 편집이 버려진
@@ -1225,7 +1237,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
     ):
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"배치를 저장하지 못했습니다: {error}"))
-        return False
+        return UnsavedPanel()
     # 설비 마스터의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
     others, side_tables = 0, []
     if frames is not None and not unchanged:
@@ -1368,14 +1380,12 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
             # 결정). 같은 호기라 모든 설비 시나리오의 일정·비가동이 따라가고(G4·R2), 진척 비교
             # 기준선·바깥 Excel 은 따라가지 않는다(Guide). 설비 마스터 탭과 같은 목록 꼴이다.
             render_name_changes(names)
-        if fab_pending is not None and fab_pending.marks is not None:
-            for label in duplicate_block_links(fab_pending.marks):
-                st.caption(
-                    ":material/warning: FAB 의 층 블록 둘 이상이 "
-                    f"{with_object_particle(label)} 가리킵니다(저장은 됨)."
-                )
-        if frames is not None:
-            _render_layout_warnings(frames, marks)
+        doubled = (
+            duplicate_block_links(fab_pending.marks)
+            if fab_pending is not None and fab_pending.marks is not None
+            else []
+        )
+        warnings = _pending_layout_warnings(frames, marks) if frames is not None else None
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"저장하지 못했습니다: {error}"))
             # 낡은 세션의 저장 거절 곁에서 최신으로 옮긴다(설비 마스터 탭·사이드바 팝업과 같음).
@@ -1442,13 +1452,14 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                         args=(False,),
                         help="설비·층 배치 편집은 두고 S.PKG FAB 전체 배치 대기분만 버립니다.",
                     )
-    return True
+    return UnsavedPanel(True, warnings or LayoutWarnings(), tuple(doubled))
 
 
-def _render_layout_warnings(
+def _pending_layout_warnings(
     frames: Frames, marks: dict[FloorKey, tuple[FloorLayoutMark, ...]]
-) -> None:
-    """편집본의 겹침·가림 경고. 설비 마스터의 검증 실패 편집이 남아 있으면 경고만 건너뛴다."""
+) -> LayoutWarnings:
+    """편집본의 겹침·가림(상태 알림 재료). 설비 마스터의 검증 실패 편집이 남아 있으면 재지 못해
+    자리에 마크만 세우고 빈 값이다."""
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
@@ -1460,10 +1471,8 @@ def _render_layout_warnings(
             code="EQ-10",
             text="겹침 경고를 계산하지 못했습니다",
         )
-        return
-    # 경고는 설비명을 싣는다(「NEW~01~」) — 물결표를 막는다.
-    for warning in layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks}):
-        st.caption(f":material/warning: {markdown_safe_tildes(warning)}")
+        return LayoutWarnings()
+    return layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks})
 
 
 def _discard_layout_only() -> None:
@@ -1933,13 +1942,11 @@ def _render_fab_editor(
         else next_marks,
         base=base,
     )
-    doubled = duplicate_block_links(next_marks)
     _note_applied(
         notices,
         FAB_EDITOR_KEY,
         submitted,
-        "S.PKG FAB 전체 배치를 이 세션에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
-        + (f" 같은 층을 가리키는 블록이 있습니다: {', '.join(doubled)}." if doubled else ""),
+        "S.PKG FAB 전체 배치를 이 세션에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다.",
     )
     st.rerun()
 
@@ -2083,12 +2090,16 @@ with space_box:
 # key 가 아니라 순번으로 갈아 끼우므로 편집기를 새로 마운트한다. 그 사이 본문 높이가 화면
 # 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다.
 panel_drawn = buffer_frames is not None or pending_fab_layout() is not None
-# 저장 안 한 배치 상자를 그렸는가 — 스크롤 고정 중 편집기가 「저장 안 한 배치가 있습니다」 한 줄을
-# 단다(상자가 화면 밖이다).
-pending_save = False
+unsaved_panel = UnsavedPanel()
 with st.container(key="space_unsaved_layout_slot"):
     if panel_drawn:
-        pending_save = _render_unsaved_layout_panel(buffer_frames)
+        unsaved_panel = _render_unsaved_layout_panel(buffer_frames)
+# 저장 안 한 배치 상자를 그렸는가 — 스크롤 고정 중 편집기가 「저장 안 한 배치가 있습니다」 한 줄을
+# 단다(상자가 화면 밖이다).
+pending_save = unsaved_panel.drawn
+# 겹침 · 중복 블록은 상태 알림이다 — 상자가 없는 회차에도 같은 자리에서 부른다(표지 자리 수가
+# 회차마다 같다).
+report_layout_warnings(equipment_session, unsaved_panel.warnings, unsaved_panel.doubled)
 # 시나리오 바꾸기 실패·저장 오류 자리. 자리는 늘 선다(알림이 생기고 사라질 때 아래 층 상세·FAB
 # 도면이 밀리지 않게). 시나리오 바꾸기 실패는 늘 여기서 한 번 보이고, 저장 오류는 상자가 없는
 # 회차에만 여기서 보인다. 층 배치 편집 잠금 줄(「최신 rM 불러오기」)은 사이드바 「Space 도면」

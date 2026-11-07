@@ -25,7 +25,12 @@ from typing import Any, NamedTuple
 import pandas as pd
 
 from capa_simulation import alerts
-from capa_simulation.components.state_alerts import equipment_scope
+from capa_simulation.components.state_alerts import (
+    ALARM_ROW_PLACE,
+    alarm_table_place,
+    alert_table,
+    equipment_scope,
+)
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
     load_floor_group_labels,
@@ -47,7 +52,7 @@ from capa_simulation.services.layout_overlay import (
     moved_unit_names,
     unit_differences_by_floor,
 )
-from capa_simulation.services.space_layout_edit import overlap_counts_touching
+from capa_simulation.services.space_layout_edit import LayoutWarnings, overlap_counts_touching
 
 
 def session_layout_overlay(database_path: str, session: EquipmentSession) -> LayoutOverlay:
@@ -108,6 +113,11 @@ LAYOUT_DIFFERENCE_ALERT = "EQ-13"
 LAYOUT_REGROUPED_ALERT = "EQ-14"
 LAYOUT_ORPHANS_ALERT = "EQ-15"
 LAYOUT_ALERT_CODES = (LAYOUT_DIFFERENCE_ALERT, LAYOUT_REGROUPED_ALERT, LAYOUT_ORPHANS_ALERT)
+# 저장 안 한 배치의 겹침 · 중복 블록(`report_layout_warnings`)과 그 알림에 딸린 표.
+LAYOUT_WARNING_ALERT = "EQ-17"
+LAYOUT_WARNING_TABLE = "저장 안 한 배치의 겹침"
+LAYOUT_WARNING_FILE = "space_layout_overlaps.csv"
+LAYOUT_WARNING_COLUMNS = ("종류", "층", "호기", "상대")
 
 
 class LayoutNotice(NamedTuple):
@@ -242,7 +252,8 @@ def space_layout_notices(
                 f"({', '.join(snapshot.layout_regrouped[:3])}"
                 f"{' 외' if regrouped > 3 else ''}) — 가정 배치에서 그 "
                 "모듈은 자리 없이 미배치 칸에 있습니다. 배치 편집에서 다시 놓으세요.",
-                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 미배치 칸에 있음 · 배치 편집에서 다시 놓기",
+                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 미배치 칸에 있음 · "
+                "배치 편집에서 다시 놓기",
                 sorted(snapshot.layout_regrouped),
             )
         )
@@ -283,6 +294,64 @@ def report_layout_notices(session: EquipmentSession, notices: Sequence[LayoutNot
             full=notice.text if notice is not None else None,
             scope_label=scope.label,
         )
+
+
+def report_layout_warnings(
+    session: EquipmentSession, warnings: LayoutWarnings, doubled: Sequence[str]
+) -> None:
+    """저장 안 한 배치의 겹친 호기 · 막는 요소를 덮은 호기와 같은 층을 가리키는 FAB 블록을 상태
+    알림(`LAYOUT_WARNING_ALERT`)으로 낸다 — 저장 상자 안 줄이던 것이다(설계 규칙 UI-NTF-02). 저장은
+    경고 없이 늘 같은 동작이다(UI-NTF-09). 줄 내역은 Alarm 줄 표이고 편집기 상태 줄 값은 그대로다.
+
+    늘 같은 자리에서 조건이 없어도 부른다(`active=False` — 표지 자리 수가 회차마다 같다). 전 층을
+    훑은 값이라 지문이 고른 층에 기대지 않는다. `doubled` 는 `duplicate_block_links` 의 층
+    글자다."""
+    rows = [
+        *(("겹친 호기", floor, unit, other) for floor, unit, other in warnings.overlaps),
+        *(("요소를 덮은 호기", floor, unit, mark) for floor, unit, mark in warnings.blocked),
+        *(("같은 층을 가리키는 FAB 블록", label, "", "") for label in doubled),
+    ]
+    scope = equipment_scope(session)
+    if not rows:
+        alerts.state(
+            LAYOUT_WARNING_ALERT,
+            scope=scope.scope,
+            content=None,
+            active=False,
+            scope_label=scope.label,
+        )
+        return
+    counted = " · ".join(
+        word
+        for count, word in (
+            (len(warnings.overlaps), f"겹친 호기 {len(warnings.overlaps):,}건"),
+            (len(warnings.blocked), f"요소를 덮은 호기 {len(warnings.blocked):,}건"),
+            (len(doubled), f"같은 층을 가리키는 FAB 블록 {len(doubled):,}개 층"),
+        )
+        if count
+    )
+    floors = sorted({row[1] for row in rows})
+    where = floors[0] if len(floors) == 1 else f"{floors[0]} 외 {len(floors) - 1}개 층"
+    alerts.state(
+        LAYOUT_WARNING_ALERT,
+        scope=scope.scope,
+        content=[list(row) for row in rows],
+        active=True,
+        text=f"{counted}({where}) — 목록: {ALARM_ROW_PLACE}",
+        full=(
+            f"Space 저장 안 한 배치 · {counted}({where}) — 저장은 막지 않습니다. "
+            f"목록: {alarm_table_place(LAYOUT_WARNING_TABLE)}"
+        ),
+        scope_label=scope.label,
+        tables=(
+            alert_table(
+                pd.DataFrame(rows, columns=list(LAYOUT_WARNING_COLUMNS)),
+                title=LAYOUT_WARNING_TABLE,
+                file_name=LAYOUT_WARNING_FILE,
+                clip=True,
+            ),
+        ),
+    )
 
 
 def compare_payload(

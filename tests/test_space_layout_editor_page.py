@@ -114,6 +114,40 @@ def test_a_floor_with_nothing_on_it_is_not_blamed_on_the_filter(
     clear_equipment_repository()
 
 
+def test_overlaps_in_a_pending_layout_go_to_a_state_alert_not_the_box(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """겹침은 조건이 남아 있는 동안의 상태다 — 저장 상자에 줄로 세우지 않고 건수 · 층과 Alarm 딸린
+    표로 낸다(설계 규칙 UI-NTF-02, 사외 점검 g6-04). 저장은 경고 없이 같은 동작이다(UI-NTF-09)."""
+    app, _ = _open_editor(tmp_path)
+    assert active_state(app, "EQ-17") is None
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 34, "y": 15, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    note = active_state(app, "EQ-17")
+    assert note is not None
+    assert note["short"] == "겹친 호기 1건(C1 1F) — 목록: Alarm › 이 줄"
+    assert note["full"].startswith("Space 저장 안 한 배치 · 겹친 호기 1건(C1 1F)")
+    assert "저장은 막지 않습니다" in note["full"]
+    (table,) = note["tables"]
+    assert table["columns"] == ["종류", "층", "호기", "상대"]
+    assert table["rows"] == [["겹친 호기", "C1 1F", "EQ-01", "EQ-02"]]
+    assert not any("겹친 호기" in str(item.value) for item in app.caption)
+
+    # 저장은 늘 같은 동작이다 — 저장한 뒤에는 저장 안 한 배치가 없어 조건도 해소된다.
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert active_state(app, "EQ-17") is None
+    clear_equipment_repository()
+
+
 def test_the_editor_receives_the_floor_from_the_shared_draft(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

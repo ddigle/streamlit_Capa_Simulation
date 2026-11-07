@@ -15,6 +15,7 @@ from capa_simulation.services.floor_layout_mark import prepare_floor_layout_mark
 from capa_simulation.services.space_layout_edit import (
     NEW_UNIT_HISTORY,
     EditorApply,
+    LayoutWarnings,
     apply_layout_edits,
     editor_inputs,
     layout_changes,
@@ -374,9 +375,8 @@ def test_warnings_name_overlaps_and_covered_marks_but_skip_exited_units() -> Non
 
     warnings = layout_warnings(_status(master), {FLOOR: marks})
 
-    assert len(warnings) == 2
-    assert "EQ-01 ↔ EQ-OVER (C1 1F)" in warnings[0] and "EQ-GONE" not in warnings[0]
-    assert "EQ-02 → 문 (C1 1F)" in warnings[1]
+    assert warnings.overlaps == (("C1 1F", "EQ-01", "EQ-OVER"),)
+    assert warnings.blocked == (("C1 1F", "EQ-02", "문"),)
 
 
 def test_changes_list_layout_edits_and_count_the_rest_apart() -> None:
@@ -483,7 +483,7 @@ def test_units_placed_edge_to_edge_are_not_an_overlap() -> None:
         {"설비명": "EQ-B", "X좌표": 9.3, "Y좌표": 40.0, "Xsize": 1.0, "Ysize": 1.0},
     )
 
-    assert layout_warnings(_status(master), {}) == []
+    assert layout_warnings(_status(master), {}) == LayoutWarnings()
 
 
 def test_a_floorless_unit_given_a_floor_is_listed_as_such() -> None:
