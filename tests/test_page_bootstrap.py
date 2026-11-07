@@ -306,8 +306,11 @@ def test_a_stop_without_a_page_name_starts_from_the_stop_itself(
 
 
 def _service_nonpositive(table: str, column: str) -> str:
-    """0 이하로 멈춘 계산이 실제로 내는 오류 글(`unit_capacity._assert_positive`)."""
-    joined = pd.DataFrame({"공정": ["DEMO-P1"], column: [0.0]})
+    """0 이하로 멈춘 계산이 실제로 내는 오류 글(`unit_capacity._assert_positive`). 한 칸이 세 계산
+    경로에 붙은 꼴이다 — 글의 건수가 행이 아니라 고칠 칸이어야 「0 이하 칸 1건」 이 맞는다."""
+    joined = pd.DataFrame(
+        {"공정": ["DEMO-P1"] * 3, "제품정보": ["DEMO-A", "DEMO-B", "DEMO-C"], column: [0.0] * 3}
+    )
     with pytest.raises(ValueError) as error:
         unit_capacity._assert_positive(joined, column, table, ["공정"])
     return str(error.value)
@@ -434,6 +437,26 @@ def test_a_module_count_stop_says_the_app_cannot_fix_it(
     assert f"모듈수 표의 {cell.removesuffix(' 1건')}: 1건, 예시 " in stop.message
     assert "'공정': 'DEMO-P1'" in stop.message
     assert "RQ_MODULE" not in stop.message and "기준 정보" not in stop.message
+
+
+def test_a_module_count_stop_outside_the_period_drops_the_screen_to_fix_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """조회기간 밖 달의 모듈수 멈춤 — 기간 글의 「기준 정보 페이지에서 고친 뒤 새 리비전으로
+    저장」 은 첫머리의 「새 리비전으로는 풀리지 않습니다」 와 맞부딪치므로 빼고, 기간 말과 오류는
+    남긴다."""
+    _on_page(monkeypatch)
+    error = outside_period_error(
+        202601, 202612, _service_stop(unit_capacity._VALUE_BLANK, "RQ_MODULE", "모듈수")
+    )
+
+    stop = calculation_stop_notice(ValueError(error))
+
+    assert stop is not None and stop.goto is None
+    assert "밖의 달에 기준정보 오류가 있어" in stop.message
+    assert "어느 달이든 고쳐야 풀립니다. 오류: 모듈수 표의 빈 칸: 1건, 예시 " in stop.message
+    assert stop.message.count("새 리비전") == 1
+    assert "기준 정보" not in stop.message and "생산 계획" not in stop.message
 
 
 @pytest.mark.parametrize(

@@ -485,6 +485,25 @@ def test_nonpositive_reference_value_names_the_count_and_its_own_keys(
     assert f"'{column}': 0.0" in examples
 
 
+@pytest.mark.parametrize(
+    "argument",
+    ["vital", "module", "run_day"],
+)
+def test_nonpositive_reference_value_counts_cells_not_the_paths_using_them(argument: str) -> None:
+    """한 칸이 여러 계산 경로에 붙어도 건수는 고칠 칸 수다 — 빈 값·숫자 아님 칸의 건수와 같은
+    셈이다. 행으로 세면 기준 정보 표에서 한 칸을 고치면 될 일을 여러 칸으로 읽게 된다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"], **{argument: [1.0, 0.0]})
+    upeh = inputs["upeh"]
+    extra = upeh.loc[upeh["공정"].eq("Process-B")]
+    inputs["upeh"] = pd.concat(
+        [upeh, extra.assign(제품정보="Product-B"), extra.assign(제품정보="Product-C")],
+        ignore_index=True,
+    )
+
+    with pytest.raises(ValueError, match=r"값은 0보다 커야 합니다: 1건, 예시 "):
+        calculate_unit_capacity(**inputs)
+
+
 def test_healthy_reference_data_excludes_nothing() -> None:
     inputs = _capacity_inputs(["Process-A", "Process-B"])
 

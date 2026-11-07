@@ -114,8 +114,9 @@ _BACKTICK_RUN = re.compile(r"`+")
 # 캐시가 오류를 글로 담아 다시 던지므로(`simulation_cache.CapacityOutcome`) 예외 종류
 # (`ReferenceJoinError`)로는 가르지 못한다. 조회기간 밖 오류는 이 머리를 글 끝에 싣고 온다
 # (`simulation_cache.outside_period_error`) — 그래서 글 맨 앞에 묶지 않고 글 안에서 찾는다.
-# 건수(`count`)가 없는 꼴은 UPEH 표의 글뿐이다. 표 자체가 깨진 꼴(컬럼 · 월 형식 · 연결 키)은
-# 칸을 고쳐 풀리지 않아 여기 없다.
+# 건수(`count`)는 서비스가 센 키 조합 — 고칠 칸 수다(계산 행 수가 아니다). 건수가 없는 꼴은
+# UPEH 표의 글뿐이다. 표 자체가 깨진 꼴(컬럼 · 월 형식 · 연결 키)은 칸을 고쳐 풀리지 않아 여기
+# 없다.
 _COUNTED = r"(?=: (?P<count>[\d,]+)건)"
 _BLANK_CELL = "빈 칸"
 _CELL_STOPS = (
@@ -143,6 +144,12 @@ _CELL_STOPS = (
 # 모듈수 표 — 기준 정보 편집표가 아니라 앱에서 고칠 수 없다. 원천을 고쳐 다시 등록해야 풀린다
 # (`scenario_registration.RegistrationCapacityCheck.fix_hint` 와 같은 말).
 _MODULE_TABLE = "RQ_MODULE"
+# 조회기간 밖 오류 글(`simulation_cache.outside_period_error`)이 고칠 화면을 드는 대목 — 모듈수는
+# 그 화면들에서 고칠 수 없어 모듈수 전문에서는 뺀다. 두면 첫머리의 「원천을 고쳐 다시 등록」 과
+# 맞부딪친다.
+_OUTSIDE_PERIOD_SCREENS = re.compile(
+    r" — 오류가 가리키는 화면\([^)]*\)에서 고친 뒤 새 리비전으로 저장하세요"
+)
 
 
 def _original_line(exc: BaseException) -> str:
@@ -268,7 +275,7 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     표를 말하고 「그 화면으로」 가 기준 정보를 연다. 모듈수(`RQ_MODULE`)는 앱에서 고칠 수 없어
     화면을 달지 않고 원천을 다시 등록하라고 말한다. 줄의 화면 칸이 고칠 화면이 되므로 어느 화면의
     일인지는 전문 첫머리가 말한다. 서비스의 오류 글은 바꾸지 않고 전문 뒤에 싣되 내부 표 이름만
-    화면 이름으로 바꾼다.
+    화면 이름으로 바꾼다 — 모듈수 전문만 조회기간 밖 글의 고칠 화면 안내를 뺀다.
     """
     if not isinstance(exc, ValueError):
         return None
@@ -297,6 +304,7 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     page = alerts.current_page()[0]
     lead = f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다."
     if module:
+        body = _OUTSIDE_PERIOD_SCREENS.sub("", body)
         return CalculationStop(
             text=f"대당 Capa 계산 멈춤 — 모듈수 {what} · 앱에서 고칠 수 없음 — 원천을 다시 등록",
             goto=None,
