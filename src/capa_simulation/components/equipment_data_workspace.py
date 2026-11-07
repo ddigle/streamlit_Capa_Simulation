@@ -2812,22 +2812,33 @@ def _current_selection() -> dict[str, frozenset[RowKey]]:
     return dict(saved) if isinstance(saved, dict) else {}
 
 
-def _deletion_message(plan: DeletionPlan) -> str:
-    """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠지는지. 호기 지우기는 설비 마스터
-    표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
+# 「삭제 확정」 풍선이자 결과 알림의 끝 문장 — 확정은 편집본만 바꾼다.
+DELETE_CONFIRM_HELP = (
+    "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
+)
+
+
+def _deletion_value(plan: DeletionPlan) -> str:
+    """삭제 확인 줄의 값 한 줄 — 무엇을 몇 건 지우나(설계 규칙 UI-NTF-09 — 되돌릴 수 있는 삭제라
+    문장 · 대상 목록을 늘어놓지 않는다)."""
     count = plan.target_count
-    # 경고 상자·알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·
-    # 별표).
+    if plan.target == BASELINE_TARGET:
+        return f"기존 보유대수 {count:,}행 지움"
+    return f"비가동 일정 {count:,}건 지움"
+
+
+def _deletion_message(plan: DeletionPlan) -> str:
+    """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠졌는지 — 「삭제 확정」 결과 알림.
+    호기 지우기는 설비 마스터 표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
+    count = plan.target_count
+    # 알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·별표).
     samples = ", ".join(literal_markdown(key) for key in plan.sample_keys())
     more = " 외" if count > len(plan.sample_keys()) else ""
     if plan.target == BASELINE_TARGET:
-        head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"
+        head = f"기존 보유대수 {count:,}행을 편집본에서 지웠습니다"
     else:
-        head = f"비가동 일정 {count:,}건을 편집본에서 지웁니다"
-    return (
-        f"{head}. 대상: {samples}{more}. 확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 "
-        "리비전에 반영됩니다."
-    )
+        head = f"비가동 일정 {count:,}건을 편집본에서 지웠습니다"
+    return f"{head}. 대상: {samples}{more}. {DELETE_CONFIRM_HELP}"
 
 
 def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
@@ -2839,13 +2850,14 @@ def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
         # 계획은 **지금 편집본**으로 다시 세운다. 대기하는 동안 편집이 있었으면 수가 바뀐다.
         plan = plan_deletion(frames, target, keys)
         if plan.target_count:
-            st.warning(_deletion_message(plan), icon=":material/delete:")
-            with st.container(horizontal=True, gap="small"):
+            with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                st.caption(_deletion_value(plan), width="content")
                 confirm = st.button(
                     "삭제 확정",
                     key=CONFIRM_DELETE_BUTTON_KEY,
                     type="primary",
                     icon=":material/delete_forever:",
+                    help=DELETE_CONFIRM_HELP,
                 )
                 cancel = st.button("취소", key=CANCEL_DELETE_BUTTON_KEY, icon=":material/close:")
     removed = st.session_state.get(LAST_REMOVED_KEY)
@@ -2903,7 +2915,7 @@ def _apply_bulk_actions(
         target, keys = pending
         plan = plan_deletion(frames, target, keys)
         _store_changed_buffer(apply_deletion(frames, plan))
-        done = _deletion_message(plan).replace("지웁니다", "지웠습니다", 1)
+        done = _deletion_message(plan)
         note_notice(notices, _NOTICE_KEY, done, kind="info")
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
@@ -3299,6 +3311,8 @@ def render_small_editor(
     selection = _current_selection()
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
     with st.container(key=f"equipment_small_{slug}_editor_v1"):
+        # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 「보기 적용」 은 고르는 칸이 든 펼침 안에
+        # 선다(`_editor_view`).
         with st.container(horizontal=True, gap="small"):
             # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
             # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
@@ -3313,8 +3327,7 @@ def render_small_editor(
                 slug, delete_locked=None if baseline_table else delete_locked
             )
         confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
-        # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 「보기 적용」 은 고르는 칸이 든 펼침 안에
-        # 선다(`_editor_view`).
+        view_apply_key = f"equipment_{slug}_view_apply_v1"
         if baseline_table:
             view, requested, view_clicked = _editor_view(
                 frames[0],
@@ -3323,10 +3336,10 @@ def render_small_editor(
                 filters=("공정", "분류"),
                 locked=("공정", "분류", "기존보유대수"),
                 label="기존 보유대수 · 표 보기 설정",
+                apply_key=view_apply_key,
             )
             edited, checked = _selectable_editor(
                 frames[0],
-        view_apply_key = f"equipment_{slug}_view_apply_v1"
                 view,
                 key=BASELINE_EDITOR_KEY,
                 target=BASELINE_TARGET,
@@ -3335,7 +3348,6 @@ def render_small_editor(
                     "분류": st.column_config.TextColumn(required=True),
                     # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
                     # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
-                apply_key=view_apply_key,
                     # 자리만 형식이 소수 둘째 자리로 반올림한다(`prepare_equipment_baseline`).
                     "기존보유대수": st.column_config.NumberColumn(
                         "기존 보유대수", min_value=0, format="%.2f 대", required=True
