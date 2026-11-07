@@ -76,10 +76,6 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
         6,
         PRESSED,
     ),
-    ("src/capa_simulation/components/bigdataquery_registration.py", "_render_registration_form"): (
-        1,
-        BESIDE,
-    ),
     ("src/capa_simulation/components/bigdataquery_registration.py", "_run_catalog_query"): (
         1,
         PRESSED,
@@ -177,7 +173,9 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PRESSED),
     ("src/capa_simulation/components/scenario_management.py", "_render_official"): (5, PRESSED),
     ("src/capa_simulation/components/scenario_management.py", "_restore_scenario"): (1, PRESSED),
-    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (2, BESIDE),
+    # 덧붙일 월 없음 · 합치기 거부 · 모듈수 막힘은 고를 칸 곁이고, 넷째는 저장 칸이 선 뒤 누른 저장의
+    # 거부다 — 칸을 고치면 풀리는 것은 같다.
+    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (4, BESIDE),
     ("src/capa_simulation/components/scenario_month_merge.py", "render_scenario_month_merge"): (
         1,
         BESIDE,

@@ -286,6 +286,18 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
+        what="Space 저장 안 한 배치 상자 — 겹친 호기 · 덮은 호기 · 같은 층 FAB 블록 줄",
+        why="사외 점검 g6-04",
+        file="src/capa_simulation/components/space_floor_layout.py",
+        function="report_layout_warnings",
+        code="EQ-17",
+        route="state",
+        test=(
+            "tests/test_space_layout_editor_page.py"
+            "::test_overlaps_in_a_pending_layout_go_to_a_state_alert_not_the_box"
+        ),
+    ),
+    Withdrawn(
         what=(
             "Space 사이드바 「Space 도면」 상자 끝 — 「일정 없는 호기 n대 · 계산 제외」"
             " · 「공식 일정 없음 n대 · 그리지 않음」 줄(가용설비 현황과 같은 알림)"

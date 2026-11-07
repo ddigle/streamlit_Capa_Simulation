@@ -140,7 +140,7 @@
 - 범위: 모든 팝업 · 조건 칸 · 설정 화면 · 읽기 전용 값 카드
 - 예외: 그 칸이 보이는 값 자체(「라벨 · 값」 줄 · 「선택 n / N」 — UI-TXT-04)는 요약 문장이 아니다.
 - 판단: 이 글은 값을 보이나, 길을 말하나? 길이면 지우고 바로 가기도 세우지 않는다 — 고치는 곳은 Guide · 풍선이 말한다.
-- 그물: `tests/test_home_settings_pointers.py`(없어진 HOME 「Preference」 탭을 가리키는 한 꼴) · `tests/test_place_sentence_sites.py`(「… 에서 정합니다」 꼴 길 안내 문장 — 화면 글 문장 그물)
+- 그물: `tests/test_home_settings_pointers.py`(없어진 HOME 「Preference」 탭을 가리키는 한 꼴) · `tests/test_place_sentence_sites.py`(「… 에서 정합니다」 꼴 길 안내 문장 — 화면 글 문장 그물, 조건 칸 `status` · 주요공정 빈 글 `empty_notice` 포함)
 - 그물 후보: 없음
 - 근거: 검수 home-20 · home-21(2026-11-03), 확인 보드 AMB-06 (나)(2026-11-04) — 「[… 판정 기준은 HOME 설정 → Preference 에서 정합니다.] 이런 설명들 제거」
 - 지금 값: 없음
@@ -310,10 +310,10 @@
 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리(자료 없는 달 · 계산 멈춤 · DB · 기준정보를 읽지 못함 · 다른 화면에서 채울 입력이 빠져 멈춤)에는 공통 마크 하나(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」)만 세운다. 오류 글(까닭 · 예시 행 · 고칠 곳)은 자리에 두지 않고 오류 단계 사건 알림으로만 보낸다 — 알림창은 같은 글이면 이 탭에 한 번이고, 전문 · 로그 · 복사는 Alarm 줄이다. 글이 Alarm 에만 남으므로 그 줄이 걷혔으면 다시 세운다. 팝업 · 프래그먼트 안에서도 같은 마크다. 입력이 빠져 멈춘 자리의 길 안내는 그 Alarm 줄의 「그 화면으로」 가 채울 화면을 열어 맡고, 멈춘 자리에 링크를 두지 않는다.
 
 - 수준: MUST · 확정
-- 범위: 화면 단위 멈춤(옛 `st.error` + `st.stop()`)과 그리다 못 읽어 끝나는 구획 — 코어 화면 · 사이드바 팝업 전부. 입력 빠짐 멈춤(재공 현황 주차별 가용대수 · 필요 단축 일정 Cut-off · Space 「필요 단축」 Cut-off)도 든다. 그릴 데이터가 없어 멈추는 빈 상태는 오류가 아니라 값이다(UI-TXT-04 — 회색 평문 한 줄, 반영 검수표 D4 (가))
+- 범위: 화면 단위 멈춤(옛 `st.error` + `st.stop()`)과 그리다 못 읽어 끝나는 구획 — 코어 화면 · 사이드바 팝업 전부. 입력 빠짐 멈춤(재공 현황 주차별 가용대수 · 필요 단축 일정 Cut-off · Space 「필요 단축」 Cut-off · 공정 Capa 상세 · 제약 시뮬레이션 · 개조 일정의 저장본 · 이름 · Cut-off)도 든다. 그릴 데이터가 없어 멈추는 빈 상태(HBM·EDP 호기 없음 등)는 오류가 아니라 값이다(UI-TXT-04 — 회색 평문 한 줄, 반영 검수표 D4 (가))
 - 예외: 그 자리에 고칠 입력이 있는 거부 · 누른 동작의 실패(곁 오류 — UI-NTF-03), 모듈 오류 카드, 앱이 서지 못해 Alarm 이 없는 부트스트랩 실패, 점검 판의 결론 상자(Admin 알림 모음 · 통합인증 점검).
 - 판단: 이 오류가 나면 이 화면 · 구획을 그리지 못하나? 볼 것이 없을 뿐이면 평문, 곁에 고칠 입력이 있으면 곁 거부다 — 못 그린 자리에 마크 말고 오류 글이 남았나?
-- 그물: `tests/test_data_error_mark.py`(마크 꼴 · 알림 코드 · `.error(` 전부를 자리 · 수 · 까닭으로 맞댐 — 구획 끝 꼴과 칸 `slot.error` 도 든다, 마크만 그리는 `render_data_error_mark` 는 산출 결과 한 자리) · `tests/alert_marks.py`(시험의 「오류 없이 그렸다」 `place_errors` 는 마크까지 본다) · `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`
+- 그물: `tests/test_data_error_mark.py`(마크 꼴 · 알림 코드 · `.error(` 전부를 자리 · 수 · 까닭으로 맞댐 — 구획 끝 꼴과 칸 `slot.error` 도 든다, 마크만 그리는 `render_data_error_mark` 는 산출 결과 한 자리) · `tests/alert_marks.py`(시험의 「오류 없이 그렸다」 `place_errors` 는 마크까지 본다) · `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py` · `tests/test_alert_sites.py::test_a_state_alert_that_names_another_screen_goes_there`(다른 화면을 말하는 상태 알림의 `goto`)
 - 그물 후보: 없음
 - 근거: 그림 검수표 static-12(2026-11-05) — 「페이지에는 데이터 Error 마크를 넣고 Alarm 확인 필요 문구까지만 배치, 나머지는 알람으로 확인」 (옛 근거 검수 「괜찮음」 home-40(2026-11-03)은 7-1), 반영 검수표 D4 (가)(2026-11-04), AGENTS 9장 「알림 칸」, 남은 결정 보드 v8 (가)(2026-11-05)
 - 지금 값: 없음
@@ -594,8 +594,8 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 모든 단추 · 칩 · 고르기 칸 · 툴바 단추
 - 예외: 브라우저 컴포넌트 안에서 판정이 끝나는 단추(조회기간 판 「적용」 등)는 잠근다(UI-INP-04).
 - 판단: 이 조작은 지금만 못 하나(→ 잠금 + 까닭), 이 화면에 아예 없나(→ 숨김)? 잠근 단추가 서버가 판정해야 하는 단추인가? 꺼진 단추의 까닭 풍선을 마우스와 키보드로 열 수 있나?
-- 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글)
-- 그물 후보: 잠긴 쓰기 단추 그물
+- 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글, 표 안 잠긴 단추의 까닭 · 감싼 칸) · `tests/test_locked_button_help.py`(코어 Streamlit 잠긴 단추의 풍선 유무) · `tests/test_alert_center_assets.py`(꺼진 단추 탭 자리 · 팝오버 들어가기) · `tests/test_paste_form.py`(잠긴 적용 초점 풍선) · `tests/test_sidebar_stylesheet.py`(칸 초점 윤곽) · `tests/test_space_layout_editor_assets.py`(편집기 까닭 풍선 · 감싼 칸 · 잠긴 칸 빨간 글 없음) · `tests/test_reference_grid_page.py::test_the_locked_apply_says_why_and_the_open_one_says_what_it_does`(풍선 글이 까닭인지)
+- 그물 후보: 없음
 - 근거: 검수 「괜찮음」 sum-u01(2026-11-03), 검수 「괜찮음」 home-12 · prog-03(2026-11-03 ~ 11-04), 사용자 답(남은 결정 넷)(2026-11-03), AGENTS 9장 「잠긴(disabled) 위젯」, 그림 검수표 equip-44(2026-11-05), 전후 그림 보드 v1(2026-11-05) — 「"아직 추가할 수 없습니다 ..." 알람 문구도 호기 추가버튼에 마우스 올리면 팝업창으로 뜨게하고, 해당 창에서는 안보이게해」
 - 지금 값: 없음
 
@@ -650,7 +650,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱 껍데기(머리 띠 · 탭 줄 · 사이드바) · 패널 · 칩 줄 · 큰 표
 - 예외: 화면 조작 상자가 바닥 카드에 걸린 채 설 때 — 회차가 끝났을 때 상자 줄 수가 달라졌고 걸렸으면 걸린 만큼만 사이드바를 올린다(`page_box_reveal`). 사람의 보기 조작(휠 · 끌기 · 상자 여닫기 · 폭 끌기)은 그대로 지킨다
 - 판단: 이 조작 뒤 사용자가 보던 줄이 그 자리에 있나?
-- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정)
+- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정) · `tests/test_equipment_master_grid_assets.py`(the_selection_bar_floats_above_the_table_head_and_moves_no_row — 고른 줄 띠가 표 줄을 밀지 않는다)
 - 그물 후보: 보기 조작 전후 스크롤 같음
 - 근거: 검수 home-u04(2026-11-03), 검수 「괜찮음」 frame-u01(2026-11-03), 사용자 UI 요청 ①(2026-11-02) — 「창 틀: 스크롤 아래로 내릴 때 틀이 살짝 움직임. 항상 고정되도록」
 - 지금 값: 없음
@@ -892,7 +892,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 조회 조건 줄 표지 · 머리 칩 · 배지 · 탭 점
 - 예외: 없음
 - 판단: 이 화면의 표지 둘이 서로 다른 말을 하나? 표지가 말하는 일이 실제로 일어났나?
-- 그물: `tests/test_app_navigation.py`(range_says_applied_only_where_the_screen_read_it · a_stopped_calculation_withdraws_applied 외) · `tests/test_equipment_unsaved_mark.py`(저장본으로 돌아온 편집의 표지)
+- 그물: `tests/test_app_navigation.py`(range_says_applied_only_where_the_screen_read_it · a_stopped_calculation_withdraws_applied 외) · `tests/test_equipment_unsaved_mark.py`(저장본으로 돌아온 편집의 표지) · `tests/test_reference_grid_page.py`(a_hand_edited_draft_is_named_as_an_unapplied_edit_in_the_chip · the_head_stops_counting_a_draft_the_page_dropped_on_a_source_change)
 - 그물 후보: 없음
 - 근거: AGENTS 8장 「조회기간 줄의 적용 기간 글자는 셋이다」, 이번 배포 전후 보드 q-unit-change(2026-11-06)
 - 지금 값: 없음
@@ -1073,10 +1073,10 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 도면 · 차트 이름표 · 확대 축소가 있는 모든 보기
 - 예외: 없음
 - 판단: 가장 작게 줄였을 때 글자가 도면을 덮나?
-- 그물: 없음 — 판단 질문으로 본다
+- 그물: `tests/test_space_layout_editor_assets.py`(호기에 덮인 영역 이름표 숨김)
 - 그물 후보: 없음
 - 근거: Space 결정 보드 D2 「배율에 따른 글자 크기 기준」(2026-11-04), 사용자 요청 2(2026-10-22), 확인 보드 AMB-18 (가)(2026-11-04)
-- 지금 값: Space 이름표 · 찾아가기 글자 8px · 배율 300% — 출처 4장
+- 지금 값: Space 이름표 · 찾아가기 글자 8px · 배율 300% — 출처 4장 / 호기에 덮인 영역 이름표는 숨기고 영역 풍선에 남김
 
 ### 3-11. PRC — 검수 · 결정 과정
 

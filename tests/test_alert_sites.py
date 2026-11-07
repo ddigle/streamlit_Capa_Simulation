@@ -28,7 +28,10 @@ import ast
 from collections import Counter
 from pathlib import Path
 
+from source_sites import TextResolver, called_name, receiver, screen_calls, screen_files
+
 from capa_simulation import alerts
+from capa_simulation.navigation import ALL_SPECS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 경고를 직접 그려도 되는 두 모듈 — 알림의 한 길이다.
@@ -111,10 +114,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_RESULT,
     ),
-    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_bulk_delete_status"): (
-        1,
-        PLACE_CONFIRM,
-    ),
     ("src/capa_simulation/components/equipment_data_workspace.py", "render_reopen_notices"): (
         1,
         PLACE_KEPT,
@@ -128,18 +127,15 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_CONFIRM,
     ),
-    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_legacy_trace"): (
-        1,
-        PLACE_FORM,
-    ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
         1,
         PLACE_CONFIRM,
     ),
+    # 고른 시나리오의 옛 코드 흔적 줄과, 지울 배치 차이가 없어져 단추째 사라진 회차의 체크 풀림 줄.
     (
         "src/capa_simulation/components/equipment_scenario_management.py",
         "render_equipment_scenario_management",
-    ): (2, PLACE_CONFIRM),
+    ): (2, PLACE_DETAIL),
     ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
         2,
         PLACE_FORM,
@@ -163,13 +159,12 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_CONFIRM,
     ),
-    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (6, PLACE_FORM),
+    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (2, PLACE_FORM),
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
     ("src/capa_simulation/components/source_quality.py", "render_source_quality"): (
         1,
         PLACE_VERDICT,
     ),
-    ("src/capa_simulation/components/space_floor_list.py", "_render_confirm"): (2, PLACE_FORM),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),
@@ -205,6 +200,68 @@ def direct_warnings() -> Counter[tuple[str, str]]:
         relative = path.relative_to(PROJECT_ROOT).as_posix()
         _count(ast.parse(path.read_text(encoding="utf-8")), "", relative, counts)
     return counts
+
+
+# 알림 글이 말해도 고칠 곳으로 읽히지 않는 이름 — 「HOME 설정」 · 「모듈」 은 화면 안 낱말이다.
+_NOT_A_DESTINATION = frozenset({"HOME", "모듈"})
+SCREEN_NAMES = frozenset(spec.title for spec in ALL_SPECS) - _NOT_A_DESTINATION
+SAME_SCREEN = "제 화면의 탭을 말한다 — 「그 화면으로」 가 이미 그 화면이다"
+COMPARED = "다른 화면을 견주어 말할 뿐 고칠 곳이 아니다"
+TWO_PLACES = "고칠 곳이 둘이라 한 화면으로 보낼 수 없다"
+LIST_HERE = "내역 표가 이 화면 탭에 있다 — 탭으로 먼저 가고 고칠 화면은 글이 말한다"
+OPEN_GOTO = "미정리 — `goto` 를 달 자리(이 표를 줄인다)"
+# (파일, 맨 바깥 함수) → 글이 다른 화면을 말하는데 `goto` 가 없는 상태 알림의 까닭.
+NAMED_WITHOUT_GOTO: dict[tuple[str, str], str] = {
+    ("app_pages/constraint_simulation.py", "report_locked_arrival"): COMPARED,
+    (
+        "src/capa_simulation/components/availability_gap_panel.py",
+        "render_availability_gap_panel",
+    ): TWO_PLACES,
+    ("src/capa_simulation/components/cutoff_management.py", "report_missing_cutoffs"): SAME_SCREEN,
+    (
+        "src/capa_simulation/components/equipment_scenario_management.py",
+        "report_layout_traces",
+    ): SAME_SCREEN,
+    (
+        "src/capa_simulation/components/equipment_scenario_status.py",
+        "render_legacy_trace_warning",
+    ): OPEN_GOTO,
+    (
+        "src/capa_simulation/components/required_exclusion_notice.py",
+        "alert_capacity_exclusions",
+    ): LIST_HERE,
+    ("src/capa_simulation/components/scenario_management.py", "_report_missing_official"): (
+        SAME_SCREEN
+    ),
+}
+
+
+def state_alerts_naming_a_screen_without_goto() -> set[tuple[str, str]]:
+    """상태 알림(`alerts.state`) 가운데 짧은 글 · 전문이 화면 이름을 말하고 `goto` 가 없는 자리."""
+    resolver = TextResolver()
+    found: set[tuple[str, str]] = set()
+    for relative, outer, path, scope, call in screen_calls(screen_files(exclude=OWNERS)):
+        if called_name(call) != "state" or receiver(call) != "alerts":
+            continue
+        keywords = {item.arg: item.value for item in call.keywords}
+        if "goto" in keywords:
+            continue
+        texts = [
+            text
+            for name in ("text", "full")
+            if name in keywords
+            for text in resolver.wholes(keywords[name], path, scope)
+        ]
+        if any(screen in text for screen in SCREEN_NAMES for text in texts):
+            found.add((relative, outer))
+    return found
+
+
+def test_a_state_alert_that_names_another_screen_goes_there() -> None:
+    """고칠 입력이 다른 화면이면 줄의 「그 화면으로」 가 그 화면을 연다(`goto` — 설계 규칙 UI-NTF-08 ·
+    AGENTS 9장 「알림 칸」). 글로 화면 이름만 말하는 새 자리는 실패한다 — `goto` 를 주거나 고칠 곳이
+    아니면 `NAMED_WITHOUT_GOTO` 에 까닭과 함께 둔다."""
+    assert state_alerts_naming_a_screen_without_goto() == set(NAMED_WITHOUT_GOTO)
 
 
 def test_no_new_place_draws_a_state_warning_directly() -> None:

@@ -2426,7 +2426,7 @@ def test_the_process_detail_summary_counts_without_screen_text(
     line = screens.summarize_process_detail(before, after)
 
     assert line == (
-        "KPI 4개 · 결합 캔버스 있음 · 근거 카드 3개 · 설비 일정 구획 없음(까닭 카드) · "
+        "KPI 4개 · 결합 캔버스 있음 · 근거 카드 3개 · 설비 일정 구획 없음(멈춘 자리) · "
         f"칸 누름 뒤 근거 달 {expected}"
     )
     # 달·공정 글자는 찍지 않는다.
@@ -3841,7 +3841,7 @@ def test_the_constraint_mode_contract_matches_the_app() -> None:
 
 
 class _ConstraintScreen(Screen):
-    """링크가 없고 설비 일정 까닭 카드로 멈춘 제약 화면 — 모드 고르기 차례만 본다. `broken` 이면
+    """링크가 없고 설비 일정 멈춘 자리로 멈춘 제약 화면 — 모드 고르기 차례만 본다. `broken` 이면
     화면을 읽다 깨진다."""
 
     def __init__(self, *, broken: bool = False) -> None:
@@ -3893,7 +3893,7 @@ def test_the_constraint_check_reads_the_impact_mode_and_puts_the_mode_back(
 
     line = screens.check_constraint_simulation(screen)
 
-    assert line == "링크 없음 · 설비 일정 없음(까닭 카드)"
+    assert line == "링크 없음 · 설비 일정 없음(멈춘 자리)"
     assert calls == [(screens.CONSTRAINT_MODE_KEY, option) for option in expected]
     assert screen.opened == [screens.PROCESS_DETAIL_PAGE, screens.CONSTRAINT_PAGE]
 
@@ -3928,7 +3928,7 @@ def test_the_constraint_check_puts_the_mode_back_even_when_reading_breaks(
             {"absent": True},
             None,
             None,
-            "링크 꺼짐(까닭) · 설비 일정 없음(까닭 카드)",
+            "링크 꺼짐(까닭) · 설비 일정 없음(멈춘 자리)",
         ),
         (
             None,

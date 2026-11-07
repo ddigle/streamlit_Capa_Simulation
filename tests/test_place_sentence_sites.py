@@ -61,6 +61,11 @@ from source_sites import (
     screen_files,
 )
 
+from capa_simulation.components.home_key_process_figures import (
+    KEY_PROCESS_ABSENT_NOTICE,
+    KEY_PROCESS_EMPTY_NOTICE,
+)
+
 # 자리 글을 그리는 부름 — 상자(`st.info`)와 평문(`st.caption` · `st.markdown` · `st.write` ·
 # `st.text` · `st.html`).
 TEXT_METHODS = frozenset({"caption", "info", "markdown", "write", "text", "html"})
@@ -73,7 +78,7 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 14
+UNSETTLED_SITES = 8
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
@@ -106,11 +111,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
         UNSETTLED,
     ),
-    ("app_pages/reference_integrity.py", "_render_pending_screen"): (UNSETTLED,),
     ("app_pages/reference_integrity.py", "_render_summary"): (EMPTY,),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
-    ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (BESIDE_INPUT,),
-    ("app_pages/standard_target_capa.py", ""): (BESIDE_INPUT, BESIDE_INPUT, EMPTY),
+    ("app_pages/standard_target_capa.py", ""): (EMPTY,),
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (EMPTY,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
@@ -161,7 +164,11 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/container_start_check.py", "render_container_start_check"): (
         VALUE,
     ),
-    ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (EMPTY,),
+    # 저장 단추 곁 「바뀐 것이 없습니다」 — 누른 회차에 그 자리에서 답한다(UI-NTF-03).
+    ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (
+        EMPTY,
+        BESIDE_INPUT,
+    ),
     ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
         BESIDE_INPUT,
     ),
@@ -186,20 +193,11 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
         BESIDE_INPUT,
     ),
-    # 옛 배포 흔적으로 막힌 쓰기 팝오버의 잠금 까닭 한 줄(`legacy_trace_lock_line`) — 푸는 길은 구획
-    # 맨 위 옛 배포 흔적 칸 · 알림 · Guide 가 말한다(UI-TXT-03).
-    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
-        BESIDE_INPUT,
-    ),
-    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_legacy_trace"): (
-        BESIDE_INPUT,
-    ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_load"): (
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
         EMPTY,
-        BESIDE_INPUT,
         EMPTY,
     ),
     (
@@ -311,19 +309,13 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         EMPTY,
     ),
-    ("src/capa_simulation/components/space_floor_list.py", "_render_confirm"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"): (
         EMPTY,
     ),
     # 명단이 비었을 때의 빈 결과 한 줄.
     ("src/capa_simulation/components/access_list_admin.py", "_render_people"): (EMPTY,),
-    ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-        UNSETTLED,
-    ),
+    # 점검 결론 값 줄 둘 — 켜짐 · 꺼짐(운영). 나머지 설명은 풍선 · Guide 로 옮겼다(UI-TXT-04).
+    ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (VALUE, VALUE),
     ("src/capa_simulation/components/table_view_controls.py", "render_table_view_controls"): (
         BESIDE_INPUT,
     ),
@@ -335,8 +327,12 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
 
 
 # 뜻 문장을 키워드로 받아 그대로 그리는 공용 부품 — 부품 안 `st.caption(note)` 은 매개변수라
-# 못 본다.
-KEYWORD_SINKS: dict[str, str] = {"discard_popover": "note"}
+# 못 본다. 조건 칸 이름 줄 곁 `status` 는 표지 자리다 — 길 안내는 값 칸 풍선으로 간다(UI-TXT-03).
+KEYWORD_SINKS: dict[str, str] = {
+    "condition_field": "status",
+    "condition_name_row": "status",
+    "discard_popover": "note",
+}
 
 
 class SentenceCall(NamedTuple):
@@ -357,7 +353,11 @@ def place_sentence_calls(
         sink = KEYWORD_SINKS.get(called_name(call))
         if sink is None and (method(call) not in TEXT_METHODS or receiver(call) in LOGGERS):
             continue
-        argument = first_text_argument(call) if sink is None else first_text_argument(call, sink)
+        argument = (
+            first_text_argument(call)
+            if sink is None
+            else next((item.value for item in call.keywords if item.arg == sink), None)
+        )
         if argument is None:
             continue
         tails = resolver.tails(argument, path, scope)
@@ -452,6 +452,34 @@ def test_unsettled_sites_do_not_grow() -> None:
         f"미정리 자리가 {counted[UNSETTLED]}곳입니다(기록 {UNSETTLED_SITES}) — 늘었으면 그 자리"
         " 글을 옮기고, 줄었으면 UNSETTLED_SITES 도 줄이세요."
     )
+
+
+def test_the_key_process_notices_are_a_mark_or_an_empty_result() -> None:
+    """주요공정 칸의 빈 글(`empty_notice`)은 그림 안 글이라 부름 그물 밖이다 — 표지이거나 빈 결과
+    꼴이고 어디서 만드는지 말하지 않는다. 만드는 곳은 잠긴 칸 풍선이다(UI-TXT-03)."""
+    for text in (KEY_PROCESS_EMPTY_NOTICE, KEY_PROCESS_ABSENT_NOTICE):
+        assert not GUIDANCE_ENDING.search(text), text
+        assert not ends_as_sentence(text) or EMPTY_ENDING.search(text), text
+
+
+STATUS_PAGE = """
+from capa_simulation.components.condition_field import condition_field, condition_name_row
+
+
+def render(label: str) -> None:
+    condition_field("공정", label, slug="a", key="a", icon="i", status="HOME 설정에서 만듭니다")
+    condition_name_row("공정", slug="b", status="B/N 판정 대상")
+"""
+
+
+def test_a_condition_field_status_is_read_as_a_place_sentence(tmp_path: Path) -> None:
+    """조건 칸 첫 인자는 이름이다 — 키워드 `status` 만 재어 표지는 지나가고 문장은 걸린다."""
+    page = tmp_path / "page.py"
+    page.write_text(STATUS_PAGE, encoding="utf-8")
+
+    found = place_sentence_calls([page], tmp_path)
+
+    assert [call.method for call in found[("page.py", "render")]] == ["condition_field"]
 
 
 SAMPLE_PAGE = """

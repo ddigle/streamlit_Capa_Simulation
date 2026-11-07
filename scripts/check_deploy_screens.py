@@ -309,7 +309,7 @@ REFERENCE_DATASET_KEY: Final = "reference_dataset"
 UPEH_DATASET_LABEL: Final = "UPEH"
 UPEH_HELP_WORDS: Final = ("UPEH", "ST(분)")
 # 제약 시뮬레이션(`app_pages/constraint_simulation.py`)과 그 화면의 컨테이너 key
-# (`constraint_simulation_state`·`constraint_simulation_view`·페이지 까닭 카드). 값만 옮기고
+# (`constraint_simulation_state`·`constraint_simulation_view`·페이지 멈춘 자리). 값만 옮기고
 # 테스트가 같은지 본다. 공정 Capa 상세 머리의 「이 공정 제약 시뮬레이션」 링크 글도 같다.
 CONSTRAINT_PAGE: Final = "constraint_simulation"
 CONSTRAINT_LINK_LABEL: Final = "이 공정 제약 시뮬레이션"
@@ -3438,7 +3438,7 @@ _PROCESS_DETAIL_JS = """(keys) => {
 
 def summarize_process_detail(before: Mapping[str, Any], after: Mapping[str, Any] | None) -> str:
     """공정 Capa 상세 한 줄 — 개수와 있음/없음, 칸을 누른 뒤 근거 패널의 달이 바뀌었는가."""
-    schedule = "없음(까닭 카드)" if before.get("absent") else "있음"
+    schedule = "없음(멈춘 자리)" if before.get("absent") else "있음"
     canvas = "있음" if before.get("canvas") else "없음"
     if after is None:
         clicked = "못 누름"
@@ -3581,7 +3581,7 @@ def summarize_constraint_simulation(
     if same_process is not None:
         head += f" · 공정 {'같음' if same_process else '다름'}"
     if before.get("absent"):
-        return f"{head} · 설비 일정 없음(까닭 카드)"
+        return f"{head} · 설비 일정 없음(멈춘 자리)"
     if after is None:
         clicked = "못 누름"
     else:
