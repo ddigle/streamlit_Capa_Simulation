@@ -27,7 +27,15 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, alert_notes, data_error_texts, events, infos, shown
+from alert_marks import (
+    active_state,
+    alert_notes,
+    data_error_texts,
+    events,
+    flashed,
+    infos,
+    shown,
+)
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
     OPERATIONS,
@@ -1578,6 +1586,47 @@ def test_a_restore_confirmed_before_someone_else_saved_waits_for_a_new_confirm(
     _ok(app.run())
     message = next(text for text in _texts(app) if "되돌려" in text)
     assert "r1의 일정으로 되돌려 r4를 저장했습니다(일정이 바뀐 호기 3대)." in message
+
+
+def test_a_restore_confirmed_before_someone_else_restored_the_same_says_nothing_was_done(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """확인 체크 뒤 다른 사용자가 같은 r1 로 먼저 되돌려 최신이 r1 과 같아졌다 — 누른 회차에는
+    단추가 빠져 그 누름이 버려진다. 아무것도 하지 않았다는 것을 알림창 · Alarm 에 한 번 내고(설계
+    규칙 UI-NTF-03) 다음 회차에는 다시 내지 않는다."""
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    _restore_confirm(app).check()
+    _ok(app.run())
+    assert not app.button(key=RESTORE_BUTTON_KEY).disabled
+
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.restore_schedule_revision(
+        first,
+        expected_common_revision_id=str(repository.latest_revision_id()),
+        expected_latest_schedule_revision_id=_revision_id(repository, 2),
+        expected_release_no=release.release_no,
+        expected_layout_role="official",
+    )
+    clear_equipment_scenario_cache()
+    app.button(key=RESTORE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert len(repository.list_schedule_revisions(OPERATIONS)) == 3
+    assert any("모두 같아 되돌릴 것이 없습니다" in text for text in _texts(app))
+    (gone,) = flashed(app, "warning")
+    assert gone.code == "FL-03"
+    assert gone.value == (
+        "그 사이 다른 사용자가 저장해 「운영 일정」 최신 r3이 r1의 일정·비가동과 모두 같아져 "
+        "되돌릴 것이 없습니다 — 아무것도 바꾸지 않았습니다."
+    )
+    _ok(app.run())
+    assert flashed(app, "warning") == []
 
 
 def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(

@@ -1604,6 +1604,8 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
         {scenario_id: item.scenario_name for scenario_id, item in by_id.items()},
         default=next(iter(by_id)),
     )
+    if choice.moved:
+        _clear_gone_delete_confirm(by_id[choice.value].scenario_name)
     selected_id = st.selectbox(
         "보관본",
         options=list(by_id),
@@ -1623,6 +1625,23 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
                 _refuse_gone_press()
             _restore_scenario(repository, summary)
     _render_delete(repository, summary)
+
+
+def _clear_gone_delete_confirm(current_name: str) -> None:
+    """고름이 옮은 회차 — 영구 삭제 확인 칸에 빠진 보관본의 이름이 남았으면 칸을 비운다(칸을 그리기
+    전이라 새 값을 적는다). 지금 고른 보관본(`current_name`)의 이름이면 그대로 둔다.
+
+    그 칸이 켠 「영구 삭제 실행」 은 이 회차에 꺼져 누름이 말없이 버려진다(남이 그 보관본을 먼저
+    되돌렸거나 지웠다). 그때는 아무것도 하지 않았다는 것을 알린다(`_refuse_gone_press` — 설계 규칙
+    UI-NTF-03). 이 세션이 방금 지우거나(`DELETE_CLEAR_KEY`) 되돌린 보관본이면(`held_flash`) 칸만
+    비운다."""
+    typed = st.session_state.get(DELETE_CONFIRM_KEY)
+    if not isinstance(typed, str) or typed.strip() in ("", current_name):
+        return
+    st.session_state[DELETE_CONFIRM_KEY] = ""
+    if st.session_state.get(DELETE_CLEAR_KEY) or held_flash(FLASH_KEY) is not None:
+        return
+    _refuse_gone_press()
 
 
 def _refuse_gone_press(message: str = ARCHIVED_GONE_MESSAGE) -> NoReturn:

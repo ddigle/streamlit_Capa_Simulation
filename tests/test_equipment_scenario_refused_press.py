@@ -170,3 +170,54 @@ def test_a_second_press_after_someone_elses_publish_does_not_publish_unseen(
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2
     assert release.equipment_scenario_id == other
+
+
+def test_a_publish_press_on_a_revision_someone_else_just_published_says_nothing_was_done(
+    tmp_path: Path,
+) -> None:
+    """A 가 「공식으로 지정」 을 켜 둔 사이 B 가 같은 리비전을 먼저 지정했다 — A 의 누름은 단추가
+    꺼진 회차에 닿아 서버가 버린다. 거부할 것도 없이 사라지지 않게, 아무것도 하지 않았다는 것을
+    알림창 · Alarm 에 한 번 낸다(설계 규칙 UI-NTF-03). 다음 회차에는 다시 내지 않는다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    app = _opened(tmp_path, setup)
+    assert not app.button(key=PUBLISH_BUTTON_KEY).disabled
+    latest = next(
+        item.latest_schedule_revision_id
+        for item in repository.list_equipment_scenarios()
+        if item.equipment_scenario_id == setup
+    )
+    assert latest is not None
+    repository.publish_equipment_release(
+        latest, released_by=None, note=None, expected_latest_release_no=1
+    )
+
+    app.button(key=PUBLISH_BUTTON_KEY).click()
+    written, refused = _notices(_ok(app.run()))
+    assert written == [] and refused == [], (written, refused)
+    assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    (gone,) = flashed(app, "warning")
+    assert gone.code == "FL-03"
+    assert gone.value.startswith("그 사이 다른 사용자가 「셋업 실무」 r")
+    assert "공식 v2로 지정해 지정할 것이 없습니다 — 아무것도 바꾸지 않았습니다." in gone.value
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 2
+
+    _ok(app.run())
+    assert flashed(app, "warning") == []
+
+
+def test_an_own_publish_is_not_told_as_someone_elses(tmp_path: Path) -> None:
+    """이 세션이 지정한 뒤 단추가 꺼진 회차는 「그 사이 다른 사용자가」 를 내지 않는다 — 누른 회차는
+    켜 둔 값을 적지 않는다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    app = _opened(tmp_path, setup)
+
+    app.button(key=PUBLISH_BUTTON_KEY).click()
+    written, refused = _notices(_ok(app.run()))
+    assert refused == [] and any("지정" in text for text in written), written
+    assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    assert flashed(app, "warning") == []
+    _ok(app.run())
+    assert flashed(app, "warning") == []
