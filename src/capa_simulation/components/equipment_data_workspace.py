@@ -20,7 +20,7 @@ from capa_simulation.components.editor_state import (
     editor_widget_key,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     quoted,
@@ -189,11 +189,14 @@ DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
 GRID_OVERLAY_KEY = "equipment_grid_overlay_v1"
 # 되돌리기 단계(`services/equipment_grid.undo_to_state` 의 기본형 — 최대 40, 통째 단계는 하나).
 GRID_UNDO_KEY = "equipment_grid_undo_v1"
-# 마운트별 토스트 {"grid"|"detail"|"changes": {"id", "text", "undo"}}. 번호는 `GRID_TOAST_SEQ_KEY`
-# 하나로 늘 오른다(비우지 않는다 — 같은 번호를 다시 쓰면 닫은 토스트로 보고 숨긴다).
+# 표 · 오른쪽 칸 조작 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`queue_grid_result`).
+GRID_RESULT_KEY = "equipment_grid_result_v1"
+# 오른쪽 칸 자리 거부 한 줄 {"detail"|"new": {"id", "text"}} — 고칠 입력이 그 칸에 있는 거부만
+# (설계 규칙 UI-NTF-03). 번호는 `GRID_TOAST_SEQ_KEY` 하나로 늘 오른다(비우지 않는다 — 같은 번호를
+# 다시 쓰면 닫은 한 줄로 보고 숨긴다).
 GRID_TOAST_KEY = "equipment_grid_toast_v1"
 GRID_TOAST_SEQ_KEY = "equipment_grid_toast_seq_v1"
-# 마운트에 실어 보낸 토스트 번호 {마운트: 번호} — 그 마운트가 사라지면 그 토스트를 거둔다
+# 마운트에 실어 보낸 자리 거부 번호 {마운트: 번호} — 그 마운트가 사라지면 그 한 줄을 거둔다
 # (`settle_grid_toasts`).
 GRID_TOAST_SHOWN_KEY = "equipment_grid_toast_shown_v1"
 # 회차 메모(칸 결과·표 단위 오류 — 열쇠가 바뀌면 덮는다).
@@ -210,6 +213,7 @@ NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
     GRID_UNDO_KEY,
+    GRID_RESULT_KEY,
     GRID_TOAST_KEY,
     GRID_TOAST_SHOWN_KEY,
     GRID_MEMO_KEY,
@@ -463,7 +467,7 @@ def _bump_buffer_generation() -> None:
 
 
 def _store_changed_buffer(frames: Frames) -> None:
-    """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정·되살리기가 이 길로만 쓴다.
+    """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정 · 되살리기가 이 길로만 쓴다.
 
     세대가 「저장하지 않은 편집」의 근거다(`has_unsaved_equipment_edits` — 저장본으로 돌아온 세대만
     뺀다). 편집표 칸은 그대로이고 행만 빠진 제출에서 세대가 그대로면, 테마 단추가 묻지 않고
@@ -836,29 +840,36 @@ def _remember_edits(frames: Frames) -> None:
 
 
 def _forget_grid_undo() -> None:
-    """표 밖의 길(Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본을 바꿨다 — 표의 되돌리기는
-    조작 뒤 자리의 역 patch 라 그 위에서 맞지 않으므로 비운다. 비울 것이 있었으면 표 토스트에
-    적는다(개편 명세 7-1 넷째 자리)."""
+    """표 밖의 길(Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본을 바꿨다 — 표의
+    되돌리기는 조작 뒤 자리의 역 patch 라 그 위에서 맞지 않으므로 비운다. 비울 것이 있었으면 그
+    사실을 알린다(개편 명세 7-1 넷째 자리 — 다른 화면에서 비웠으면 이 탭을 열 때)."""
     if st.session_state.pop(GRID_UNDO_KEY, None):
-        queue_grid_toast(
-            "grid", "표 밖에서 편집본을 바꿔 표의 되돌리기를 비웠습니다 — 고친 값은 그대로입니다"
+        queue_grid_result(
+            "표 밖에서 편집본을 바꿔 표의 되돌리기를 비웠습니다 — 고친 값은 그대로입니다",
+            kind="info",
         )
 
 
-def queue_grid_toast(target: str, text: str, *, undo: str | None = None) -> None:
-    """설비 마스터 표의 한 마운트(`"grid"`·`"detail"`·`"changes"`)에 토스트를 둔다. 번호는 늘
-    오른다 — 브라우저는 번호가 바뀌어야 새 토스트로 본다(닫은 토스트 번호는 숨긴다)."""
+def queue_grid_result(text: str, *, kind: FlashKind = "success") -> None:
+    """표 · 오른쪽 칸 조작의 결과 — 띠가 아니라 알림창 · Alarm 으로만(설계 규칙 UI-NTF-03). 탭 끝
+    칸이 꺼내 낸다. 글에 호기 이름이 들어 구두점을 막는다."""
+    queue_flash(GRID_RESULT_KEY, literal_markdown(text), kind=kind, popup_only=True)
+
+
+def queue_grid_toast(target: str, text: str) -> None:
+    """오른쪽 칸 한 마운트(`"detail"`·`"new"`)에 자리 거부 한 줄을 둔다 — 고칠 입력이 그 칸에 있는
+    거부뿐이다. 번호는 늘 오른다 — 브라우저는 번호가 바뀌어야 새 글로 본다(닫은 번호는 숨긴다)."""
     number = st.session_state.get(GRID_TOAST_SEQ_KEY, 0)
     number = (number if isinstance(number, int) else 0) + 1
     st.session_state[GRID_TOAST_SEQ_KEY] = number
     toasts = st.session_state.get(GRID_TOAST_KEY)
     toasts = dict(toasts) if isinstance(toasts, dict) else {}
-    toasts[target] = {"id": number, "text": text, "undo": undo}
+    toasts[target] = {"id": number, "text": text}
     st.session_state[GRID_TOAST_KEY] = toasts
 
 
 def grid_toasts() -> dict[str, dict[str, Any]]:
-    """마운트별 지금 토스트(없으면 빈 dict)."""
+    """마운트별 지금 자리 거부 한 줄(없으면 빈 dict)."""
     toasts = st.session_state.get(GRID_TOAST_KEY)
     return {
         str(target): dict(toast)
@@ -868,12 +879,11 @@ def grid_toasts() -> dict[str, dict[str, Any]]:
 
 
 def settle_grid_toasts(drawn: Collection[str]) -> None:
-    """이 회차에 그린 마운트(`drawn` — `"grid"`·`"detail"`·`"changes"`)의 토스트는 실어 보냈다고
-    적고, 실어 보낸 뒤 마운트가 그려지지 않은 토스트는 거둔다. 브라우저의 닫은 토스트 번호는
-    마운트마다 새로 시작하므로(표 고르기 왕복·탭 왕복·오른쪽 칸 왕복) 남겨 두면 닫은 토스트가 다시
-    마운트할 때 되살아난다. 아직 실어 보내지 않은 토스트(마운트가 숨은 동안 쌓인 것 — Space
-    적용·작은 편집표 적용이 비운 되돌리기 알림)는 남겨 처음 마운트할 때 보인다. 탭 ① 이 그려진
-    회차의 끝과 숨은 회차(`drawn` 빈 것)에 부른다."""
+    """이 회차에 그린 마운트(`drawn` — `"detail"`·`"new"`)의 한 줄은 실어 보냈다고 적고, 실어 보낸
+    뒤 마운트가 그려지지 않은 한 줄은 거둔다. 브라우저의 닫은 번호는 마운트마다 새로 시작하므로
+    (탭 왕복·오른쪽 칸 왕복) 남겨 두면 닫은 한 줄이 다시 마운트할 때 되살아난다. 아직 실어 보내지
+    않은 한 줄은 남겨 처음 마운트할 때 보인다. 탭 ① 이 그려진 회차의 끝과 숨은 회차(`drawn` 빈
+    것)에 부른다."""
     toasts = st.session_state.get(GRID_TOAST_KEY)
     shown = st.session_state.get(GRID_TOAST_SHOWN_KEY)
     toasts = dict(toasts) if isinstance(toasts, dict) else {}
@@ -2834,7 +2844,7 @@ def _deletion_value(plan: DeletionPlan) -> str:
 
 def _deletion_message(plan: DeletionPlan) -> str:
     """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠졌는지 — 「삭제 확정」 결과 알림.
-    호기 지우기는 설비 마스터 표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
+    호기 지우기는 설비 마스터 표의 출납(`delete` — 딸린 비가동 함께, 결과 알림)이다."""
     count = plan.target_count
     # 알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·별표).
     samples = ", ".join(literal_markdown(key) for key in plan.sample_keys())

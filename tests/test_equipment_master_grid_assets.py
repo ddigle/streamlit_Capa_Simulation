@@ -44,8 +44,9 @@ def test_ops_the_browser_sends_are_the_ops_python_applies() -> None:
     sent = set(re.findall(r"\{ op: '([a-z]+)'", JS))
     assert (
         sent <= eg.OP_NAMES
-        and {"cell", "paste", "set", "shift", "delete", "restore", "revert", "undo"} <= sent
+        and {"cell", "paste", "set", "shift", "delete", "restore", "revert"} <= sent
     )
+    assert "undo" not in sent, "되돌리기는 「한 단계 되돌리기」 단추(파이썬) 하나다"
 
 
 def test_the_clipboard_is_read_only_from_the_paste_event() -> None:
@@ -177,14 +178,46 @@ def _function(name: str) -> str:
     return body[: body.index("\nfunction ")]
 
 
-def test_a_toast_undo_names_its_step_and_side_mounts_draw_their_toast() -> None:
-    """토스트 「되돌리기」 는 그 토스트가 가리킨 단계를 싣는다 — 대상 없는 undo 는 맨 위 단계(그
-    뒤 칸 고침)를 되돌린다. 오른쪽 칸도 제 토스트(상세 「이 호기 지우기」)를 그린다."""
-    toast = _function("fillToast")
-    assert "{ op: 'undo', step: toast.undo }" in toast and "typeof toast.undo === 'string'" in toast
-    assert "{ op: 'undo' }" not in JS
-    assert "fillToast(S, toast, S.data && S.data.toast)" in _function("drawSide")
-    assert "fillToast(S, S.toastBar" in _function("paintToast")
+def test_results_leave_the_grid_and_only_the_refusals_stay_in_place() -> None:
+    """표 안 · 오른쪽 칸 띠의 결과 토스트와 그 「되돌리기」 는 없다 — 결과는 알림창, 되돌리기는 「한
+    단계 되돌리기」 하나다(설계 규칙 UI-NTF-03 · UI-LAY-11). 표 띠는 브라우저 한 줄만, 오른쪽 칸은
+    그 칸에서 고칠 파이썬 거부도 그린다."""
+    for gone in ("fillToast", "paintToast", "revealToast", "emg-toast", "toast.undo", "op: 'undo'"):
+        assert gone not in JS, gone
+    assert "emg-toast" not in CSS
+    assert "fillNote(S, S.noteBar, null)" in JS
+    assert "fillNote(S, note, S.data && S.data.toast)" in _function("drawSide")
+    assert "'되돌리기'" not in _function("fillNote")
+
+
+_NOTE_RUNNER = """
+const S = { box: createBox(), pending: new Map(), note: '', noteSeq: 0, noteTimer: 0, repaints: 0 }
+S.repaintNote = () => { S.repaints += 1 }
+const data = (seq) => ({ base: 'b', ack: { mount: 'm', seq } })
+S.mount = 'm'
+receive(S, { base: 'b' })
+const out = {}
+showNote(S, '붙여넣는 중 — 2줄', 3)
+receive(S, data(2))
+out.before = S.note
+receive(S, data(3))
+out.after = [S.note, S.noteSeq, S.noteTimer]
+showNote(S, '한 번에 5,000칸까지 붙입니다')
+receive(S, data(4))
+out.refusal = S.note
+clearTimeout(S.noteTimer)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_the_paste_progress_line_leaves_when_its_op_comes_back() -> None:
+    """결과가 띠로 오지 않아 「붙여넣는 중」 은 그 op 의 ack 에 거둔다 — 안 거두면 결과 알림이 뜬 뒤
+    6초 남는다. 거부 한 줄은 다른 op 의 ack 로 사라지지 않는다."""
+    assert _node({}, _NOTE_RUNNER, source=_fake_dom_source()) == {
+        "before": "붙여넣는 중 — 2줄",
+        "after": ["", 0, 0],
+        "refusal": "한 번에 5,000칸까지 붙입니다",
+    }
 
 
 def test_the_grid_body_has_one_tab_stop_and_space_picks_a_row() -> None:
@@ -642,7 +675,7 @@ def test_the_floor_choice_narrows_by_the_rows_building_and_keeps_the_current_val
     assert "choiceOptions(columns, column, rowValueAt(S, unit), shown)" in JS
 
 
-_TOAST_BOX_RUNNER = """
+_HEAD_BOX_RUNNER = """
 let calls = []
 const main = { matches: (selector) => selector === '[data-testid="stMain"]', parentElement: null }
 const box = {
@@ -654,8 +687,8 @@ const box = {
 // host 로 건넌다.
 const outer = { parentElement: box, matches: () => false }
 const side = { parentElement: null, getRootNode: () => ({ host: outer }) }
-const toast = {
-  isConnected: true, hidden: false, parentElement: side,
+const head = {
+  isConnected: true, parentElement: side,
   getBoundingClientRect() { return { top: box.top - box.scrollTop } },
   scrollIntoView(options) { calls.push(options) },
 }
@@ -666,13 +699,13 @@ globalThis.window = {
 const run = (setup) => {
   calls = []
   setup()
-  revealToast(toast)
+  revealHead(head)
   return { box: box.scrollTop, page: calls.length ? calls : null }
 }
 const out = {}
 // 붙은 오른쪽 칸, 본문 칸 맨 아래(사본 앱 1500×950 — 본문 칸 위 끝 302, 스크롤 1474).
 out.bottom = run(() => { box.scrollTop = 1474 })
-// 본문 칸이 조금만 내려가 토스트가 머리 띠 아래이지만 칸 위로 가려 있다.
+// 본문 칸이 조금만 내려가 칸 머리가 머리 띠 아래이지만 칸 위로 가려 있다.
 out.little = run(() => { box.scrollTop = 120 })
 // 칸 안에서 보인다.
 out.visible = run(() => { box.scrollTop = 0 })
@@ -682,28 +715,25 @@ out.stacked = run(() => { box.top = -500; box.scrollTop = 300 })
 out.short = run(() => { box.top = -200; box.scrollTop = 0; box.scrollHeight = 653 })
 // 스크롤 칸 없이 페이지 본문(stMain) 바로 안.
 out.page = run(() => { box.scrollHeight = 2200; box.overflowY = 'visible'; box.top = -300 })
-// 내려간 토스트·떨어진 토스트는 건드리지 않는다.
-out.hidden = run(() => {
-  box.overflowY = 'auto'; box.top = 302; box.scrollTop = 1474; toast.hidden = true
+// 떨어진 칸은 건드리지 않는다.
+out.detached = run(() => {
+  box.overflowY = 'auto'; box.top = 302; box.scrollTop = 1474; head.isConnected = false
 })
-toast.hidden = false
-out.detached = run(() => { toast.isConnected = false })
 process.stdout.write(JSON.stringify(out))
 """
 
 
-def test_a_fresh_toast_in_the_side_scroll_box_scrolls_only_that_box() -> None:
-    """설비 마스터 오른쪽 칸 본문 칸(넘치면 스크롤하는 칸, 오른쪽 칸은 sticky) 안의 새 토스트 —
+def test_a_fresh_side_head_in_the_side_scroll_box_scrolls_only_that_box() -> None:
+    """설비 마스터 오른쪽 칸 본문 칸(넘치면 스크롤하는 칸, 오른쪽 칸은 sticky) 안에 새로 연 칸 —
     바로 `scrollIntoView` 하면 Chrome 이 붙은 자리가 아니라 원래 흐름 자리로 셈해 바깥 페이지
-    (stMain)까지 밀어 왼쪽 표가 튀었다(사본 앱 1500×950, 본문 칸 맨 아래에서 「이 호기 지우기」 —
-    stMain 0 → 223px, 250 → 310px). 그림자 DOM 밖으로 건너 올라가 가장 가까운 넘치는 스크롤 칸을
-    찾아 그 칸만 토스트 머리까지 올리고(`scrollBoxOf`·`boxScrollFor`), 그래도 머리 띠 아래로 가려
-    있을 때만(쌓인 좁은 창·스크롤 칸이 없는 페이지 흐름) 전처럼 `scrollIntoView` 한다. 칸이 조금만
-    내려가 칸 위 끝에 가려 있던 토스트(머리 띠 아래라 전에는 그대로 두던 것)도 보인다."""
+    (stMain)까지 밀어 왼쪽 표가 튀었다(사본 앱 1500×950 — stMain 0 → 223px, 250 → 310px). 그림자
+    DOM 밖으로 건너 올라가 가장 가까운 넘치는 스크롤 칸을 찾아 그 칸만 칸 머리까지
+    올리고(`scrollBoxOf`·`boxScrollFor`), 그래도 머리 띠 아래로 가려 있을 때만(쌓인 좁은 창·스크롤
+    칸이 없는 페이지 흐름) 전처럼 `scrollIntoView` 한다."""
     pure = _node({}, _NEW_RUNNER)
     assert pure["box"] == [0, 0, 248, 0, 500]
 
-    out = _node({}, _TOAST_BOX_RUNNER, source=_fake_dom_source())
+    out = _node({}, _HEAD_BOX_RUNNER, source=_fake_dom_source())
 
     start = [{"block": "start"}]
     assert out == {
@@ -713,7 +743,6 @@ def test_a_fresh_toast_in_the_side_scroll_box_scrolls_only_that_box() -> None:
         "stacked": {"box": 0, "page": start},
         "short": {"box": 0, "page": start},
         "page": {"box": 0, "page": start},
-        "hidden": {"box": 1474, "page": None},
         "detached": {"box": 1474, "page": None},
     }
     assert "const PAGE_SCROLLER = '[data-testid=\"stMain\"]'" in JS
@@ -977,7 +1006,7 @@ def test_the_selection_bar_stands_at_the_frame_end_and_sticks_to_the_window_bott
     0 ~ 4개만 눌렸으며 덮인 불러오기 줄에 초점이 갔다(샘플 관측 · 설계 규칙 UI-PRF-03). 띠는 표 틀
     맨 끝 흐름에 서서 위 칸을 밀지도 덮어 두지도 않고, 표 아래 끝이 창 밖이면 창 아래 끝에 붙는다
     — 표 틀이 스크롤 칸이 되지 않게 `overflow` 를 두지 않는다. 칸 차례도 보이는 차례(표 다음)다."""
-    assert "[bar, toast, box, foot, sel]" in _function("buildGridSkeleton")
+    assert "[bar, note, box, foot, sel]" in _function("buildGridSkeleton")
     assert "emg-sel-anchor" not in CSS and "selAnchor" not in JS
     bar = re.search(r"\n\.emg-sel \{(?P<body>[^}]*)\}", CSS)
     assert bar is not None
@@ -1101,16 +1130,15 @@ def test_the_delete_buttons_carry_the_tip_and_a_lock_or_a_new_unit_takes_it_away
     assert "remove.title = lock || (rows.some((row) => row.tag !== 'new') ? DELETE_TIP : '')" in JS
 
 
-def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed() -> None:
+def test_redrawn_side_controls_keep_focus_and_a_panel_an_action_opened_shows_its_head() -> None:
     """칩·「양식 비우기」 는 칸을 다시 그려도 초점이 돌아온다(data-fk — 키보드로
-    채우다 칸 처음으로 가지 않게). 상세 칩도 회차가 돌아와 다시 그려도 같다. 오른쪽 칸 새 토스트가
-    화면 위로 나갔으면 칸 머리를 보인다(「호기 추가」 뒤 상세·가져오기 뒤 새 호기 칸)."""
+    채우다 칸 처음으로 가지 않게). 상세 칩도 회차가 돌아와 다시 그려도 같다. 조작이 연 다른 칸은
+    칸 머리를 보인다(「호기 추가」 뒤 상세·가져오기 뒤 새 호기 칸)."""
     assert "chip.dataset.fk = 'n' + k + '=' + option" in JS
     assert "chip.dataset.fk = 'f' + k + '=' + value" in JS
     assert "reset.dataset.fk = 'reset'" in JS
-    assert "if (fresh) revealToast(toast)" in JS
-    assert "(first || Boolean(data.toast.undo))" in JS
-    assert re.search(r"\.emg-toast\s*\{[^}]*scroll-margin-top:\s*80px", CSS)
+    assert "if (first && data.revealHead) revealHead(root)" in JS
+    assert re.search(r"\.emg-side\s*\{[^}]*scroll-margin-top:\s*80px", CSS)
 
 
 _PENDING_RUNNER = """

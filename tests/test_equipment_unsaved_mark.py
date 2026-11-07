@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from grid_fake import Calls, install_fake_grid, last, outbox, send, send_ops
+from grid_fake import Calls, grid_results, install_fake_grid, last, outbox, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -30,6 +30,12 @@ from capa_simulation.components.equipment_data_workspace import (
     NEW_UNIT_DRAFT_KEY,
     PENDING_CANVASES_KEY,
     PENDING_RENAMES_KEY,
+)
+from capa_simulation.components.equipment_master_tab import (
+    SIDE_CHANGES,
+    SIDE_DETAIL,
+    SIDE_KEY,
+    UNDO_BUTTON_KEY,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -105,18 +111,20 @@ def _add(app: AppTest, grid: Calls, name: str = "EQ-09") -> None:
     _ok(send_ops(app, grid, {"op": "add", "draftSeq": seq, "draft": _new_unit(name)}, key=NEW_KEY))
 
 
-def _delete_from_detail(app: AppTest, grid: Calls, name: str = "EQ-09") -> str:
-    """상세 칸 「이 호기 지우기」 — 칸 머리 「되돌리기」 가 가리키는 단계 표지를 돌려준다."""
+def _delete_from_detail(app: AppTest, grid: Calls, name: str = "EQ-09") -> None:
+    """상세 칸 「이 호기 지우기」 — 결과는 알림창으로 간다."""
     delete = outbox(grid, {"op": "delete", "ids": [f"n:{name}"]}, mount="m-detail")
     _ok(send(app, DETAIL_KEY, "outbox", delete))
-    toast = last(grid, DETAIL_KEY)["toast"]
-    assert toast["text"] == "새 호기 1대 뺌"
-    return str(toast["undo"])
+    assert grid_results(app)[-1] == "새 호기 1대 뺌"
 
 
-def _undo_from_detail(app: AppTest, grid: Calls, step: str) -> None:
-    undo = outbox(grid, {"op": "undo", "step": step}, mount="m-detail")
-    _ok(send(app, DETAIL_KEY, "outbox", undo))
+def _undo(app: AppTest) -> None:
+    """「저장 전 변경」 의 「한 단계 되돌리기」 를 누르고 상세 칸으로 돌아온다."""
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    _ok(app.button(key=UNDO_BUTTON_KEY).click().run())
+    app.session_state[SIDE_KEY] = SIDE_DETAIL
+    _ok(app.run())
 
 
 def test_a_new_unit_added_then_deleted_leaves_no_mark_and_undo_brings_it_back(
@@ -129,11 +137,11 @@ def test_a_new_unit_added_then_deleted_leaves_no_mark_and_undo_brings_it_back(
     _add(app, grid)
     _assert_marked(app, True)
 
-    step = _delete_from_detail(app, grid)
+    _delete_from_detail(app, grid)
     assert app.session_state[BUFFER_KEY][1].equals(app.session_state[EQUIPMENT_DRAFT_KEY])
     _assert_marked(app, False)
 
-    _undo_from_detail(app, grid, step)
+    _undo(app)
     assert app.session_state[GRID_LOADED_KEY][0] == "n:EQ-09"
     _assert_marked(app, True)
 
@@ -149,9 +157,9 @@ def test_the_same_holds_in_an_assumption_scenario(tmp_path: Path, grid: Calls) -
 
     _add(app, grid)
     _assert_marked(app, True)
-    step = _delete_from_detail(app, grid)
+    _delete_from_detail(app, grid)
     _assert_marked(app, False)
-    _undo_from_detail(app, grid, step)
+    _undo(app)
     _assert_marked(app, True)
 
 
@@ -159,9 +167,8 @@ def test_undoing_the_add_itself_also_clears_the_mark(tmp_path: Path, grid: Calls
     repository, _ = _two_scenarios(tmp_path)
     app = _page(repository)
     _add(app, grid)
-    step = last(grid, DETAIL_KEY)["toast"]["undo"]
 
-    _undo_from_detail(app, grid, step)
+    _undo(app)
 
     _assert_marked(app, False)
 
@@ -172,22 +179,21 @@ def test_clearing_the_mark_keeps_the_base_so_an_op_already_on_its_way_still_land
     """표시만 걷는다 — 편집본 출발점(`base`)이 그대로라 표시가 걷히기 전에 보낸 op 를 버리지 않는다.
 
     `base` 는 남의 저장·내 저장·모두 버리기·시나리오 불러오기 때만 바뀌는 잣대다(`buffer_base`).
-    「새 호기 뺌」 바로 뒤 「되돌리기」 는 옛 화면의 `base` 를 들고 올 수 있다."""
+    「새 호기 뺌」 바로 뒤의 고침은 옛 화면의 `base` 를 들고 올 수 있다."""
     repository, _ = _two_scenarios(tmp_path)
     app = _page(repository)
     base = last(grid, emg.GRID_KEY)["base"]
     _add(app, grid)
     delete = outbox(grid, {"op": "delete", "ids": ["n:EQ-09"]}, mount="m-grid")
     _ok(send(app, emg.GRID_KEY, "outbox", delete))
-    step = last(grid, emg.GRID_KEY)["toast"]["undo"]
     _assert_marked(app, False)
     assert last(grid, emg.GRID_KEY)["base"] == base
 
-    undo = {"seq": 10_000, "at": 10_000, "base": base, "op": "undo", "step": step}
-    _ok(send(app, emg.GRID_KEY, "outbox", {"mount": "m-late", "ops": [undo]}))
+    late = {"seq": 10_000, "at": 10_000, "base": base, "op": "undo"}
+    _ok(send(app, emg.GRID_KEY, "outbox", {"mount": "m-late", "ops": [late]}))
 
     assert "n:EQ-09" in [row["id"] for row in last(grid, emg.GRID_KEY)["rows"]]
-    assert "반영하지 않았습니다" not in last(grid, emg.GRID_KEY)["toast"]["text"]
+    assert not [text for text in grid_results(app) if "반영하지 않았습니다" in text]
     _assert_marked(app, True)
 
 
@@ -202,13 +208,13 @@ def test_an_outbox_from_the_session_before_changes_nothing_and_says_nothing(
     base = last(grid, emg.GRID_KEY)["base"]
     session, rest = base.split(":", 1)
     assert session and rest
-    old = {"seq": 1, "at": 1, "base": f"앞세션:{rest}", "op": "undo", "step": "없음"}
+    old = {"seq": 1, "at": 1, "base": f"앞세션:{rest}", "op": "undo"}
     _ok(send(app, emg.GRID_KEY, "outbox", {"mount": "m-before", "ops": [old]}))
 
     table = last(grid, emg.GRID_KEY)
     assert table["base"] == base
     assert table["ack"] == {"mount": "m-before", "seq": 1}
-    assert not table.get("toast")
+    assert not grid_results(app)
     _assert_marked(app, False)
 
 

@@ -24,8 +24,7 @@
 - **되돌리기**(`UndoStep`) — 한 조작의 역 patch(칸 자리·옛 값, 뺀 행·넣은 행, 옮긴 행 id). 표의
   조작만 쌓이고 다른 길(Space 적용·작은 편집표 적용)이 편집본을 바꾸면 목록을 비우므로 나중
   것부터(LIFO) 되돌리면 자리가 늘 맞는다. 행 조각을 든 단계를 버릴 때는 그보다 앞 단계도 함께
-  버린다(뒤 단계만 남는다). 단계마다 표지(`token` — 그 op 의 `mount#seq`)가 있어 토스트 「되돌리기」
-  는 제 단계가 맨 위일 때만 되돌린다(`undo` op 의 `step`).
+  버린다(뒤 단계만 남는다). 되돌리는 길은 「저장 전 변경」 의 「한 단계 되돌리기」 하나다.
 - **배치 칸**(`scope` 「배치」) — 공식 설비 시나리오에서는 공식 배치(공통 대장), 가정 설비
   시나리오에서는 그 시나리오의 배치 차이로 저장된다(설비 시나리오 2단계 S3 — 어디에 고치나는
   Space 와 같은 판정 `equipment_scenario_activation.space_edit_mode(...).layout`). 그 판정이
@@ -42,7 +41,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import uuid
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
@@ -970,39 +968,29 @@ def _scenario_payload(context: GridContext) -> dict[str, Any]:
     return {"name": context.scenario_name or "", "official": context.official}
 
 
-def toast_payload(toast: Mapping[str, Any] | None, undo_top: str | None) -> dict[str, Any] | None:
-    """토스트(`{"id", "text", "undo"}` — `undo` 는 그 토스트가 되돌릴 단계 표지
-    `GridApplied.toast_step`)를 data 로. 「되돌리기」 단추는 그 단계가 되돌리기 목록 맨
-    위(`undo_top`)일 때만 선다 — 그 뒤에 토스트 없는 조작(칸 고침)이 쌓였으면 단추를 거둔다(누르면
-    다른 단계가 되돌아간다)."""
-    if not toast:
-        return None
-    payload = dict(toast)
-    step = payload.get("undo")
-    payload["undo"] = step if isinstance(step, str) and step and step == undo_top else None
-    return payload
+def toast_payload(toast: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """오른쪽 칸 자리 거부 한 줄(`{"id", "text"}` — 「호기 추가」 막힘 · 가져오기 「찾지
+    못했습니다」)을 data 로. 동작 결과는 알림창으로 가고 표 · 「저장 전 변경」 마운트에는 이 칸이
+    없다."""
+    return dict(toast) if toast else None
 
 
 def grid_data(
     view: GridView,
     loaded: Sequence[str],
     *,
-    toast: Mapping[str, Any] | None = None,
-    undo_top: str | None = None,
     ack: Mapping[str, Any] | None = None,
     moved: Mapping[str, str] | None = None,
     open_id: str | None = None,
 ) -> dict[str, Any]:
     """표 마운트(`grid`)의 data(팔레트는 화면 쪽이 더한다). 줄은 불러온 목록 차례이고 편집본에 없는
-    id 는 거른다. `undo_top` 은 되돌리기 목록 맨 위 단계 표지(`undo_top`), `open_id` 는 오른쪽
-    「호기 상세」 에 연 행 id(그 줄에 띠)다."""
+    id 는 거른다. `open_id` 는 오른쪽 「호기 상세」 에 연 행 id(그 줄에 띠)다."""
     rows = [_row_payload(view, row_id) for row_id in loaded if row_id in view.values]
     return {
         "mode": "grid",
         "base": view.context.base,
         "ack": dict(ack or {}),
         "scenario": _scenario_payload(view.context),
-        "toast": toast_payload(toast, undo_top),
         "view": view_token([row["id"] for row in rows]),
         "columns": columns_payload(view.context),
         "colSets": column_sets_payload(),
@@ -1218,13 +1206,13 @@ def detail_data(
     *,
     ack: Mapping[str, Any] | None = None,
     toast: Mapping[str, Any] | None = None,
-    undo_top: str | None = None,
+    reveal_head: bool = False,
 ) -> dict[str, Any]:
     """오른쪽 「호기 상세」 마운트의 data. 없는 id 면 `unit` 이 None 이다(빈 상세).
 
-    이 마운트도 출납을 보내므로 `ack`(이 마운트 몫)와, 이 마운트가 보낸 조작의 토스트(「이 호기
-    지우기」 등 — `grid_data` 와 같은 꼴)를 싣는다. `ack` 를 빼면 브라우저가 반영된 op 를 들고
-    있다가 초점이 나갈 때마다 다시 보낸다."""
+    이 마운트도 출납을 보내므로 `ack`(이 마운트 몫)를 싣는다 — 빼면 브라우저가 반영된 op 를 들고
+    있다가 초점이 나갈 때마다 다시 보낸다. `toast` 는 이 칸 자리 거부 한 줄(`toast_payload`),
+    `reveal_head` 는 이번에 처음 선 이 칸의 머리를 보이라는 표지다(「호기 추가」 뒤)."""
     unit: dict[str, Any] | None = None
     if row_id is not None and row_id in view.values:
         unit = _row_payload(view, row_id)
@@ -1247,7 +1235,8 @@ def detail_data(
         "panel": "detail",
         "base": view.context.base,
         "ack": dict(ack or {}),
-        "toast": toast_payload(toast, undo_top),
+        "toast": toast_payload(toast),
+        "revealHead": reveal_head,
         "scenario": _scenario_payload(view.context),
         "columns": columns_payload(view.context),
         "groups": detail_groups_payload(),
@@ -1286,11 +1275,9 @@ def changes_data(
     view: GridView,
     *,
     ack: Mapping[str, Any] | None = None,
-    toast: Mapping[str, Any] | None = None,
-    undo_top: str | None = None,
 ) -> dict[str, Any]:
     """오른쪽 「저장 전 변경」 마운트의 data — 수 넷, 고칠 것(최대 30), 호기별 변경(최대
-    300줄). `ack`·`toast` 는 `detail_data` 와 같다(칸·호기 되돌리기를 이 마운트가 보낸다)."""
+    300줄). `ack` 는 `detail_data` 와 같다(칸·호기 되돌리기를 이 마운트가 보낸다)."""
     counts = change_counts(view)
     errors = [list(item) for item in view.errors[:CHANGE_ERROR_LIMIT]]
     units: list[dict[str, Any]] = []
@@ -1318,7 +1305,6 @@ def changes_data(
         "panel": "changes",
         "base": view.context.base,
         "ack": dict(ack or {}),
-        "toast": toast_payload(toast, undo_top),
         "scenario": _scenario_payload(view.context),
         "counts": {
             "cells": counts.cells,
@@ -1443,7 +1429,7 @@ class NewUnitCheck:
       레이아웃표시가 N 이면 비었다.
     - `blocked` — 「호기 추가」 를 받지 않는다(오류가 있거나 이 세션이 새 호기를 막음). `hint` 는 그
       까닭 또는 `NEW_UNIT_READY`(가용대수에 아직 안 드는 칸이 있으면 그 말을 붙여) — 눌러서 거절될
-      때의 토스트이자 단추 풍선 글(`new_unit_data`)이다.
+      때의 칸 자리 거부 글이자 단추 풍선 글(`new_unit_data`)이다.
     - `name` — 넣을 설비명, `row` — 넣을 한 줄(계약 dtype). 막혔으면 None.
     """
 
@@ -1667,7 +1653,7 @@ def new_unit_data(
     seq: int,
     ack: Mapping[str, Any] | None = None,
     toast: Mapping[str, Any] | None = None,
-    undo_top: str | None = None,
+    reveal_head: bool = False,
     notes: Sequence[str | tuple[str, str]] = (),
 ) -> dict[str, Any]:
     """오른쪽 「새 호기」 마운트의 data(개편 명세 6-3 `panel: "new"`).
@@ -1686,6 +1672,7 @@ def new_unit_data(
       풍선) 짝(브라우저가 표지만 그리고 풍선은 `title`).
     - `locked` — 이 세션이 새 호기를 막으면 그 까닭(칸 전체를 끈다).
     - `blank` — 「양식 비우기」 가 브라우저에서 바로 세우는 빈 초안.
+    - `toast` · `reveal_head` 는 `detail_data` 와 같다(「이 호기로 새 호기 만들기」 뒤 칸 머리).
     """
 
     def tier(items: Sequence[tuple[str, bool]]) -> list[list[Any]]:
@@ -1696,7 +1683,8 @@ def new_unit_data(
         "panel": "new",
         "base": view.context.base,
         "ack": dict(ack or {}),
-        "toast": toast_payload(toast, undo_top),
+        "toast": toast_payload(toast),
+        "revealHead": reveal_head,
         "scenario": _scenario_payload(view.context),
         "columns": columns_payload(view.context),
         "groups": detail_groups_payload(),
@@ -1729,8 +1717,6 @@ def new_unit_data(
 class UndoStep:
     """한 조작의 역 patch. 칸은 (편집본 줄 자리, 칸, 옛 값)이고 조작 **뒤** 자리다.
 
-    - `token` — 단계 표지(그 op 의 `mount#seq`, 통째 단계는 무작위). 토스트 「되돌리기」 가 이
-      단계를 가리켜 보낸다(`undo` op 의 `step`) — 맨 위가 아니면 되돌리지 않는다.
     - `master_removed`·`downtime_removed` — 조작이 뺀 줄(행 이름 = 빼기 전 자리). 되돌리면 그 자리로
       다시 넣는다.
     - `master_added`·`downtime_added` — 조작이 넣은 줄의 조작 뒤 자리. 되돌리면 뺀다.
@@ -1744,7 +1730,6 @@ class UndoStep:
 
     label: str
     kind: Literal["cells", "rows", "whole"] = "cells"
-    token: str = ""
     master: tuple[tuple[int, str, Any], ...] = ()
     downtime: tuple[tuple[int, str, Any], ...] = ()
     master_removed: pd.DataFrame | None = None
@@ -1759,11 +1744,6 @@ class UndoStep:
     frames: Frames | None = None
 
 
-def undo_top(steps: Sequence[UndoStep]) -> str | None:
-    """되돌리기 목록 맨 위 단계의 표지(없으면 None) — 토스트 「되돌리기」 를 세울지 가른다."""
-    return steps[-1].token if steps else None
-
-
 def undo_to_state(steps: Sequence[UndoStep]) -> tuple[dict[str, Any], ...]:
     """세션에 둘 기본형(dict·tuple·DataFrame)으로 — 모델 인스턴스를 세션에 두면 핫리로드 뒤
     `isinstance` 가 거짓이 된다(AGENTS 5장 21 과 같은 까닭)."""
@@ -1771,7 +1751,6 @@ def undo_to_state(steps: Sequence[UndoStep]) -> tuple[dict[str, Any], ...]:
         {
             "label": step.label,
             "kind": step.kind,
-            "token": step.token,
             "master": step.master,
             "downtime": step.downtime,
             "master_removed": step.master_removed,
@@ -1805,7 +1784,6 @@ def undo_from_state(value: object) -> tuple[UndoStep, ...]:
             UndoStep(
                 label=item["label"],
                 kind=item.get("kind", "cells"),
-                token=str(item.get("token") or ""),
                 master=tuple(item.get("master") or ()),
                 downtime=tuple(item.get("downtime") or ()),
                 master_removed=item.get("master_removed"),
@@ -1866,14 +1844,13 @@ class GridApplied:
 
     - `changed` — 편집본·칸 초안·이름 지도 가운데 하나라도 바뀌었다(세대를 올린다).
     - `frames_changed` — 바뀐 표(기존 보유대수, 설비 마스터, 비가동 일정) — 그 표의 편집표만 버린다.
-    - `toast_step` — 토스트 「되돌리기」 가 되돌릴 단계 표지(없으면 단추 없음). 화면 쪽은 토스트
-      dict 의 `undo` 에 이 값을 둔다(`toast_payload`).
+    - `toast` — 이번 출납의 결과 글. 화면 쪽이 알림창으로 보낸다(막힌 「호기 추가」 만 그 칸 자리).
     - `moved` — 새 호기 이름을 바꿔(또는 그 되돌리기로) 바뀐 행 id(옛 → 새). 브라우저가 고름·초점·
       상세 id 를 옮긴다.
     - `renamed` — 이번에 반영한 설비명 이름 바꿈(옛 → 새 — 이름 바꿈을 되돌린 것 포함). 화면 쪽이
       고름·필터를 따라 옮긴다.
-    - `dropped` — `base` 가 달라 버린 op 수. `refused` — 잠긴 칸·없는 행·잠긴 지우기·맨 위가 아닌
-      되돌리기·막힌 「호기 추가」 로 넣지 못한 수.
+    - `dropped` — `base` 가 달라 버린 op 수. `refused` — 잠긴 칸·없는 행·잠긴 지우기·막힌 「호기
+      추가」 로 넣지 못한 수.
     - `added` — 「새 호기」 칸에서 넣은 호기마다 (행 id, 설비명). 화면 쪽이 마지막 호기를 상세로
       연다.
     """
@@ -1882,16 +1859,11 @@ class GridApplied:
     changed: bool = False
     frames_changed: tuple[bool, bool, bool] = (False, False, False)
     toast: str | None = None
-    toast_step: str | None = None
     moved: Mapping[str, str] = field(default_factory=dict)
     renamed: Mapping[str, str] = field(default_factory=dict)
     dropped: int = 0
     refused: int = 0
     added: tuple[tuple[str, str], ...] = ()
-
-    @property
-    def toast_undo(self) -> bool:
-        return self.toast_step is not None
 
 
 def _loc(frame: pd.DataFrame, column: str) -> int:
@@ -1943,9 +1915,7 @@ class _Work:
     renamed: dict[str, str] = field(default_factory=dict)
     rename_count: int = 0
     toast: str | None = None
-    toast_undo: bool = False
     toast_fresh: bool = False
-    toast_step: str | None = None
     touched: set[str] = field(default_factory=set)
     dropped: int = 0
     refused: int = 0
@@ -1955,10 +1925,9 @@ class _Work:
     def index(self) -> GridIndex:
         return grid_index(self.master, self.saved[1], self.renames.units)
 
-    def say(self, text: str, *, undo: bool = False) -> None:
-        """이번 op 의 토스트. `undo` 면 그 op 의 단계를 「되돌리기」 가 가리킨다."""
+    def say(self, text: str) -> None:
+        """이번 op 의 결과 글."""
         self.toast = text
-        self.toast_undo = undo
         self.toast_fresh = True
 
 
@@ -2544,7 +2513,7 @@ def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
     if work.toast_fresh and work.toast:
         work.toast = f"{work.toast} · {note}"
     else:
-        work.say(note, undo=True)
+        work.say(note)
     return replace(step, master=step.master + extra)
 
 
@@ -2555,10 +2524,6 @@ DELETE_NEW_TOAST: Final = "새 호기 {count:,}대 뺌"
 DROPPED_TOAST: Final = (
     "편집본을 다시 세운 뒤라(리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) 그 "
     "전에 보낸 고침 {count}건은 반영하지 않았습니다"
-)
-UNDO_STALE_TOAST: Final = (
-    "그 뒤에 고친 것이 있어 되돌리지 않았습니다 — 마지막 고침부터 되돌리거나 「저장 전 변경」 에서 "
-    "칸·호기마다 저장본 값으로 되돌립니다"
 )
 UNDO_EMPTY_TOAST: Final = "되돌릴 고침이 없습니다"
 
@@ -2621,7 +2586,7 @@ def _paste_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             else:
                 changed += result
     cut = int(op["cut"]) if isinstance(op.get("cut"), int) else 0
-    work.say(_paste_toast(len(rows) + cut, changed, cut, skipped), undo=changed > 0)
+    work.say(_paste_toast(len(rows) + cut, changed, cut, skipped))
     return patch.step("붙여넣기")
 
 
@@ -2640,7 +2605,7 @@ def _set_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             work.refused += 1
         else:
             changed += result
-    work.say(f"값 넣기 — {changed:,}칸 바뀜", undo=changed > 0)
+    work.say(f"값 넣기 — {changed:,}칸 바뀜")
     return patch.step("값 넣기")
 
 
@@ -2651,7 +2616,7 @@ def _shift_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         return None
     patch = _Patch()
     changed = _shift_dates(work, patch, ids, days)
-    work.say(f"날짜 밀기 — {changed:,}칸 바뀜", undo=changed > 0)
+    work.say(f"날짜 밀기 — {changed:,}칸 바뀜")
     return patch.step("날짜 밀기")
 
 
@@ -2667,10 +2632,10 @@ def _delete_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     refused = work.refused - before
     if step is not None:
         count = len(step.master_removed) if step.master_removed is not None else 0
-        work.say(_delete_toast(count - new, new), undo=True)
+        work.say(_delete_toast(count - new, new))
     if refused and work.context.delete_lock:
         text = f"{work.toast} · {work.context.delete_lock}" if step is not None else None
-        work.say(text or work.context.delete_lock, undo=step is not None)
+        work.say(text or work.context.delete_lock)
     return step
 
 
@@ -2686,7 +2651,7 @@ def _restore_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     text = f"{restored:,}대를 되살렸습니다"
     if skipped:
         text += f" · 같은 설비명이 이미 있어 {skipped:,}대는 건너뜀"
-    work.say(text, undo=restored > 0)
+    work.say(text)
     return step
 
 
@@ -2701,11 +2666,11 @@ def _revert_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     result = _revert(work, patch, row_id, column)
     if result.restored:
         restored = len(result.step.master_added) if result.step is not None else 0
-        work.say(f"{restored:,}대를 되살렸습니다", undo=restored > 0)
+        work.say(f"{restored:,}대를 되살렸습니다")
         return result.step
     if result.dropped:
         if result.step is not None:
-            work.say(f"새 호기 {with_object_particle(label)} 뺐습니다", undo=True)
+            work.say(f"새 호기 {with_object_particle(label)} 뺐습니다")
         return result.step
     where = f"{label} {column}" if column is not None else label
     text = f"저장본 값으로 되돌림 — {where} {result.cells:,}칸" if result.cells else ""
@@ -2713,7 +2678,7 @@ def _revert_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         kept = f"{MODULE_LOCK_REASON} — {result.kept:,}칸은 그대로 둡니다"
         text = f"{text} · {kept}" if text else kept
     if text:
-        work.say(text, undo=result.cells > 0)
+        work.say(text)
     return patch.step("되돌림")
 
 
@@ -2758,7 +2723,7 @@ def _official_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             _set_overlay(work, patch, overlay_key(target, column), None)
             changed = _set_master(work, patch, position, column, value) or changed
         moved += int(changed)
-    work.say(OFFICIAL_TOAST.format(count=moved), undo=moved > 0)
+    work.say(OFFICIAL_TOAST.format(count=moved))
     return patch.step("공식 자리로 되돌리기")
 
 
@@ -2790,12 +2755,12 @@ def draft_seq_of(op: Mapping[str, Any]) -> int:
 def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     """「호기 추가」(`{"op": "add", "draftSeq", "draft": [39칸 글]}` — 개편 명세 4-6 나). 받은
     초안을 `new_unit_check` 로 다시 보고(업무 검증은 늘 파이썬) 막히면 넣지 않고 그 까닭을
-    토스트로, 아니면 편집본 설비 마스터 **끝**에 한 줄을 잇고(행 차례는 공통 대장 내용 —
+    자리 거부 글로, 아니면 편집본 설비 마스터 **끝**에 한 줄을 잇고(행 차례는 공통 대장 내용 —
     `_common_digest`) 불러온 목록 맨 위에 둔다.
 
     `draftSeq` 가 세션 초안 번호(`GridState.draft_seq` — 넣을 때마다 그 번호 + 1 로 오른다)보다
     작으면 말없이 버린다(개편 명세 6-4): 같은 초안을 두 번 누른 둘째 op 가 이름 겹침으로 거부되어
-    첫 op 의 성공 토스트·되돌리기를 덮지 않게, 가져오기 뒤 옛 초안이 들어가지 않게."""
+    첫 op 의 성공 알림을 덮지 않게, 가져오기 뒤 옛 초안이 들어가지 않게."""
     texts = draft_texts(op.get("draft"))
     if texts is None:
         work.refused += 1
@@ -2825,19 +2790,12 @@ def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     text = ADDED_TOAST.format(name=with_object_particle(check.name))
     if not work.context.official and not work.context.layout_lock:
         text += f" · {ADDED_OVERLAY_NOTE}"
-    work.say(text, undo=True)
+    work.say(text)
     return UndoStep(label=f"새 호기 {check.name}", kind="rows", master_added=(position,))
 
 
-def _undo_op(work: _Work, op: Mapping[str, Any]) -> None:
-    """한 단계 되돌리기. `step`(토스트가 가리킨 단계 표지)이 있으면 그 단계가 맨 위일 때만 —
-    토스트 뒤에 토스트 없는 조작(칸 고침)이 쌓였거나 그 단계가 버려졌으면 다른 단계를 되돌리지 않고
-    알린다."""
-    target = op.get("step")
-    if isinstance(target, str) and target and undo_top(work.undo) != target:
-        work.refused += 1
-        work.say(UNDO_STALE_TOAST)
-        return
+def _undo_op(work: _Work) -> None:
+    """맨 위 단계 하나를 되돌린다(「저장 전 변경」 의 「한 단계 되돌리기」)."""
     if not work.undo:
         work.say(UNDO_EMPTY_TOAST)
         return
@@ -2860,21 +2818,13 @@ _OPS = {
 OP_NAMES: Final = frozenset({*_OPS, "undo"})
 
 
-def _op_token(op: Mapping[str, Any]) -> str:
-    """단계 표지 — 출납 op 는 `mount#seq`(마운트 안에서 한 번뿐), 꼴이 다르면 무작위."""
-    mount, seq = op.get("mount"), grid_outbox.op_seq(op.get("seq"))
-    if isinstance(mount, str) and mount and seq is not None:
-        return f"{mount}#{seq}"
-    return uuid.uuid4().hex[:12]
-
-
 def apply_ops(
     state: GridState, ops: Sequence[Mapping[str, Any]], context: GridContext
 ) -> GridApplied:
     """출납 op 를 차례대로 편집본에 얹는다(`pending_ops` 가 고른 것).
 
     `base` 가 지금 편집본의 `context.base` 와 다른 op 는 반영하지 않고 버린다 — 다시 세운 편집본
-    위에 옛 편집을 얹지 않는다(그 수는 토스트 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
+    위에 옛 편집을 얹지 않는다(그 수는 결과 글 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
     지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 배치 편집이 잠긴
     회차(`context.layout_lock`)면 이름·묶음·배치·행을 바꾼 op 뒤마다 배치를 탭 제출과 같은 판정으로
     맞춘다(`locked_layout`). 내용이 그대로면 `changed` 가 거짓이다(세대를 올리지 않는다).
@@ -2897,11 +2847,9 @@ def apply_ops(
             continue
         name = op.get("op")
         work.toast_fresh = False
-        work.toast_undo = False
         work.touched = set()
         if name == "undo":
-            _undo_op(work, op)
-            work.toast_step = None
+            _undo_op(work)
             continue
         handler = _OPS.get(str(name))
         if handler is None:
@@ -2910,10 +2858,7 @@ def apply_ops(
         renamed_before = work.rename_count
         step = handler(work, op)
         if step is not None:
-            step = replace(_with_placement(work, step), token=_op_token(op))
-            work.undo = list(push_undo(work.undo, step))
-        if work.toast_fresh:
-            work.toast_step = step.token if step is not None and work.toast_undo else None
+            work.undo = list(push_undo(work.undo, _with_placement(work, step)))
         if work.rename_count > renamed_before:
             # 이름을 바꾸면 행 조각을 든 앞 단계는 옛 이름을 지녀 버린다(그 단계까지 함께).
             work.undo = list(after_row_steps(work.undo))
@@ -2935,7 +2880,6 @@ def apply_ops(
         changed=changed,
         frames_changed=(work.changed[0], work.changed[1], work.changed[2]),
         toast=work.toast,
-        toast_step=work.toast_step if work.toast_step == undo_top(work.undo) else None,
         moved=dict(work.moved),
         renamed=dict(work.renamed),
         dropped=work.dropped,
@@ -2944,14 +2888,13 @@ def apply_ops(
     )
 
 
-def whole_step(label: str, state: GridState, *, token: str | None = None) -> UndoStep:
+def whole_step(label: str, state: GridState) -> UndoStep:
     """통째 단계(엑셀·CSV 「편집본에 넣기」) — 옛 세 표·칸 초안·이름 지도·불러온 목록을 통째로
-    든다. `token` 이 없으면 무작위 표지다(토스트 「되돌리기」 가 가리킨다)."""
+    든다."""
     baseline, master, downtime = state.frames
     return UndoStep(
         label=label,
         kind="whole",
-        token=token or uuid.uuid4().hex[:12],
         frames=(baseline.copy(), master.copy(), downtime.copy()),
         overlay=tuple((key, text) for key, text in state.overlay.items()),
         renames=state.renames,

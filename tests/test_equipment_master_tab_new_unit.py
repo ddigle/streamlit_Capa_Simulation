@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import successes
-from grid_fake import Calls, install_fake_grid, last, outbox, send, send_ops
+from grid_fake import Calls, grid_results, install_fake_grid, last, outbox, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -39,6 +39,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_DETAIL,
     SIDE_KEY,
     SIDE_NEW,
+    UNDO_BUTTON_KEY,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -227,8 +228,9 @@ def test_adding_puts_the_unit_on_top_opens_its_detail_and_keeps_process_and_floo
     assert app.session_state[SIDE_KEY] == SIDE_DETAIL
     detail = last(grid, emg.side_key("detail"))
     assert detail["unit"]["id"] == "n:EQ-09" and detail["unit"]["tag"] == "new"
-    assert detail["toast"]["text"].startswith("EQ-09를 표 맨 위에 넣었습니다")
-    assert detail["toast"]["undo"]
+    assert grid_results(app, "success")[-1].startswith("EQ-09를 표 맨 위에 넣었습니다")
+    assert detail["toast"] is None, "성공은 알림창으로만"
+    assert detail["revealHead"] is True, "칸 아래쪽에서 눌러도 연 칸의 머리가 보인다"
     draft = app.session_state[NEW_UNIT_DRAFT_KEY]
     assert draft["values"] == _draft(공정소분류="Process-A", 동="C2", 층="3F")
     assert draft["seq"] > 5 and set(draft) == {"seq", "values"}
@@ -237,8 +239,8 @@ def test_adding_puts_the_unit_on_top_opens_its_detail_and_keeps_process_and_floo
 def test_deleting_an_unsaved_unit_from_its_detail_says_it_left_and_undo_brings_it_back(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """저장 전 새 호기는 지울 목록에 들지 않고 바로 빠진다(2026-11-05 사용자 답) — 칸 머리 글이
-    「새 호기 1대 뺌」 이고 「되돌리기」 로 돌아온다."""
+    """저장 전 새 호기는 지울 목록에 들지 않고 바로 빠진다(2026-11-05 사용자 답) — 알림창 글이
+    「새 호기 1대 뺌」 이고 「한 단계 되돌리기」 로 돌아온다."""
     repository, _ = _two_scenarios(tmp_path)
     app = _page(repository, OPERATIONS)
     _open_new(app)
@@ -246,18 +248,17 @@ def test_deleting_an_unsaved_unit_from_its_detail_says_it_left_and_undo_brings_i
     _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"))
     detail_key = emg.side_key("detail")
 
-    # 브라우저처럼 마운트마다 제 이름이다 — 토스트는 그 op 를 보낸 마운트로 간다.
     delete = outbox(grid, {"op": "delete", "ids": ["n:EQ-09"]}, mount="m-detail")
     _ok(send(app, detail_key, "outbox", delete))
 
-    toast = last(grid, detail_key)["toast"]
-    assert toast["text"] == "새 호기 1대 뺌"
-    assert isinstance(toast["undo"], str) and toast["undo"]
+    assert grid_results(app, "success") == ["새 호기 1대 뺌"]
+    assert last(grid, detail_key)["toast"] is None
     assert len(app.session_state[BUFFER_KEY][1]) == before
     assert "n:EQ-09" not in app.session_state[GRID_LOADED_KEY]
 
-    undo = outbox(grid, {"op": "undo", "step": toast["undo"]}, mount="m-detail")
-    _ok(send(app, detail_key, "outbox", undo))
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    _ok(app.button(key=UNDO_BUTTON_KEY).click().run())
 
     assert len(app.session_state[BUFFER_KEY][1]) == before + 1
     assert app.session_state[GRID_LOADED_KEY][0] == "n:EQ-09"
@@ -357,7 +358,9 @@ def test_make_a_new_unit_from_the_detail_copies_info_and_place(tmp_path: Path, g
     assert (values[eg.COLUMN_INDEX["동"]], values[eg.COLUMN_INDEX["층"]]) == ("C1", "1F")
     assert values[eg.NAME_INDEX] == "" and values[eg.COLUMN_INDEX["반입일정"]] == ""
     assert values[eg.COLUMN_INDEX["X좌표"]] == ""
-    assert _panel(grid)["toast"]["text"].startswith("EQ-01 의 호기 정보·위치를 가져왔습니다")
+    assert grid_results(app, "success")[-1].startswith("EQ-01 의 호기 정보·위치를 가져왔습니다")
+    assert _panel(grid)["toast"] is None
+    assert _panel(grid)["revealHead"] is True, "상세 아래쪽에서 눌러도 새 호기 칸 머리가 보인다"
 
 
 def test_copying_by_name_keeps_what_was_typed_and_tells_a_miss(tmp_path: Path, grid: Calls) -> None:
@@ -464,7 +467,7 @@ def test_a_second_add_in_a_later_run_is_dropped_and_keeps_the_kept_draft(
     _open_new(app)
     values = _draft(설비명="EQ-09", 공정소분류="Process-A", 동="C2", 층="3F")
     _add(app, grid, values, draft_seq=5)
-    assert last(grid, emg.side_key("detail"))["toast"]["undo"]
+    assert grid_results(app, "success")[-1].startswith("EQ-09를 표 맨 위에 넣었습니다")
     kept = dict(app.session_state[NEW_UNIT_DRAFT_KEY])
     before = len(app.session_state[BUFFER_KEY][1])
     app.session_state[SIDE_KEY] = SIDE_NEW

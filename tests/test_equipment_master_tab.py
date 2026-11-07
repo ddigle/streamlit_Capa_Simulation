@@ -15,7 +15,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import alert_notes, flashed, place_errors, successes
-from grid_fake import Calls, install_fake_grid, last, send, send_ops
+from grid_fake import Calls, grid_results, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
 from test_scenario_save_double_press import _first_callback, _press_again
@@ -33,7 +33,6 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_OVERLAY_KEY,
-    GRID_TOAST_KEY,
     PENDING_RENAMES_KEY,
     PREVIEW_BUTTON_KEY,
 )
@@ -44,12 +43,15 @@ from capa_simulation.components.equipment_master_tab import (
     DATA_MENU_LABEL,
     IMPORT_MENU_BUTTON_KEY,
     IMPORT_MENU_LABEL,
+    LOAD_RESULT_KEY,
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
+    SIDE_DETAIL,
     SIDE_HISTORY,
     SIDE_KEY,
     TABLE_KEY,
     UNDO_BUTTON_KEY,
+    UNDO_LABEL,
 )
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.components.tab_marks import pending_tabs_style
@@ -146,7 +148,7 @@ def test_the_first_data_goes_through_the_import_dialog_and_one_revision_save(
     assert not repository.list_revisions()
     table = last(grid, emg.GRID_KEY)
     assert [row["id"] for row in table["rows"]] == ["n:DA-01", "n:DA-02"]
-    assert table["toast"]["text"].startswith("붙여넣기로 2행을 편집본에 넣었습니다")
+    assert grid_results(app, "success")[-1].startswith("붙여넣기로 2행을 편집본에 넣었습니다")
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     app.button(key=SAVE_BUTTON_KEY).click().run()
@@ -157,24 +159,22 @@ def test_the_first_data_goes_through_the_import_dialog_and_one_revision_save(
     assert list(app.session_state[GRID_LOADED_KEY]) == ["s:DA-01", "s:DA-02"]
 
 
-def test_the_import_toast_counts_only_the_rows_that_changed(tmp_path: Path, grid: Calls) -> None:
-    """「현재 데이터」 를 받아 한 칸만 고쳐 넣으면 토스트가 맞댄 줄 전부(「675행을 편집본에
+def test_the_import_result_counts_only_the_rows_that_changed(tmp_path: Path, grid: Calls) -> None:
+    """「현재 데이터」 를 받아 한 칸만 고쳐 넣으면 결과가 맞댄 줄 전부(「675행을 편집본에
     넣었습니다」)를 셌다 — 「저장 전 변경」 에는 고친 칸 하나뿐이었다(2026-10-27 E2E). 미리보기
     머리의 「바뀔 행」 처럼 실제로 바뀐 줄만 세고, 바뀐 줄이 없으면 편집본이 그대로라고 말한다."""
     app = _app(tmp_path / "equipment.duckdb")
     _import(app, _rows("DA-01", "DA-02", "DA-03"))
-    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("붙여넣기로 3행을")
+    assert grid_results(app)[-1].startswith("붙여넣기로 3행을")
 
     master = app.session_state[BUFFER_KEY][1]
     edited = master.copy()
     edited.loc[edited["설비명"].eq("DA-02"), "메모1"] = "한 칸"
     _import(app, edited.to_csv(sep="\t", index=False))
-    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("붙여넣기로 1행을 편집본에")
+    assert grid_results(app)[-1].startswith("붙여넣기로 1행을 편집본에")
 
     _import(app, app.session_state[BUFFER_KEY][1].to_csv(sep="\t", index=False))
-    assert last(grid, emg.GRID_KEY)["toast"]["text"] == (
-        "붙여넣기에 바뀌는 값이 없어 편집본은 그대로입니다"
-    )
+    assert grid_results(app, "info")[-1] == "붙여넣기에 바뀌는 값이 없어 편집본은 그대로입니다"
 
 
 def test_the_loader_learns_each_close_of_the_import_dialog(tmp_path: Path, grid: Calls) -> None:
@@ -407,13 +407,15 @@ def test_load_and_clear_results_go_to_the_alert_popup_and_leave_the_table_alone(
     app = _app(tmp_path / "equipment.duckdb")
     _import(app, _rows("DA*01*", "DA-02"))
     assert not app.exception, app.exception
-    kept = last(grid, emg.GRID_KEY)["toast"]
-    assert kept["undo"]
 
     def results(kind: str) -> list[str]:
         # 대역 콜백은 마운트에서 돌아 `send` 의 첫 회차가 알림을 내고 둘째 회차가 다시 보낸다.
         notes = alert_notes(app, again=True)
-        return [str(note["full"]) for note in notes if note.get("flash") == kind]
+        return [
+            str(note["full"])
+            for note in notes
+            if note.get("flash") == kind and note.get("origin") == LOAD_RESULT_KEY
+        ]
 
     send(app, emg.LOADER_KEY, "clear", {})
     assert results("info") == ["목록을 비웠습니다 — 고친 내용은 그대로 남습니다"]
@@ -424,8 +426,26 @@ def test_load_and_clear_results_go_to_the_alert_popup_and_leave_the_table_alone(
 
     send(app, emg.LOADER_KEY, "load", load)
     assert results("info") == ["DA*01* — 0대를 새로 불러왔습니다(1대는 이미 목록에 있음)"]
-    # 표 안 띠는 되돌리기가 달린 넣기 결과 그대로다.
-    assert last(grid, emg.GRID_KEY)["toast"] == kept
+    assert "toast" not in last(grid, emg.GRID_KEY), "표 안 띠는 없다"
+
+
+def test_grid_results_go_to_the_alert_popup_in_the_kind_of_what_happened(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """표 조작 결과도 표 안 띠가 아니라 알림창이다(설계 규칙 UI-NTF-03 — 띠는 표 머리를 43px
+    밀었다, 샘플 관측). 바뀌면 성공, 바뀐 것이 없으면 안내, 막힌 칸이 있으면 경고이고 글의 호기
+    이름은 꾸밈으로 읽히지 않는다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA*01*"))
+    put = {"op": "set", "ids": ["n:DA*01*"], "col": "메모1", "text": "넣음"}
+    send_ops(app, grid, put)
+    assert grid_results(app, "success") == ["값 넣기 — 1칸 바뀜"]
+    send_ops(app, grid, put)
+    assert grid_results(app, "info") == ["값 넣기 — 0칸 바뀜"]
+    send_ops(app, grid, {"op": "delete", "ids": ["n:DA*01*"]})
+    assert grid_results(app, "success") == ["새 호기 1대 뺌"]
+    send_ops(app, grid, {"op": "set", "ids": ["n:없는"], "col": "메모1", "text": "넣음"})
+    assert grid_results(app, "warning") == ["값 넣기 — 0칸 바뀜"]
 
 
 def test_the_undo_button_stays_live_and_answers_when_there_is_nothing_to_undo(
@@ -433,16 +453,17 @@ def test_the_undo_button_stays_live_and_answers_when_there_is_nothing_to_undo(
 ) -> None:
     """「한 단계 되돌리기」 는 「리비전 저장」 과 같은 제출 단추다 — 출납은 300ms 묶음이라 회차의
     단계 수는 브라우저보다 늦어 잠그면 방금 고친 것을 되돌리는 누름을 놓친다. 잠그지 않고 누른
-    회차에 판정해 그 칸 머리가 알린다(설계 규칙 UI-INP-07, g5-09)."""
+    회차에 판정해 알림창이 알린다(설계 규칙 UI-INP-07, g5-09)."""
     app = _app(tmp_path / "equipment.duckdb")
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     assert not app.button(key=UNDO_BUTTON_KEY).disabled
+    assert app.button(key=UNDO_BUTTON_KEY).label == UNDO_LABEL
 
     app.button(key=UNDO_BUTTON_KEY).click().run()
 
     assert not app.exception, app.exception
-    assert last(grid, emg.side_key("changes"))["toast"]["text"] == "되돌릴 고침이 없습니다"
+    assert grid_results(app, "info") == ["되돌릴 고침이 없습니다"]
 
 
 def test_the_save_section_repeats_neither_nothing_changed_nor_the_error_count(
@@ -663,35 +684,44 @@ def test_the_small_editors_are_not_inside_a_form(tmp_path: Path, grid: Calls) ->
         assert not app.get("form")
 
 
-def test_a_delivered_toast_does_not_come_back_when_its_mount_returns(
+def test_a_delivered_side_refusal_does_not_come_back_when_its_mount_returns(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """토스트는 마운트에 실어 보낸 뒤 그 마운트가 사라지면 거둔다 — 브라우저의 닫은 번호는
-    마운트마다 새로 시작해 표 고르기·바깥 탭을 다녀오면 닫은 토스트가 되살아났다(리뷰 rs-b1y).
-    마운트가 숨은 동안 쌓인 토스트(작은 편집표 적용이 비운 되돌리기 알림)는 처음 마운트할 때
-    보인다."""
+    """자리 거부 한 줄은 마운트에 실어 보낸 뒤 그 마운트가 사라지면 거둔다 — 브라우저의 닫은 번호는
+    마운트마다 새로 시작해 탭 · 칸을 다녀오면 닫은 줄이 되살아났다(리뷰 rs-b1y)."""
     from capa_simulation.navigation import EQUIPMENT_SUMMARY_TAB
 
+    detail = emg.side_key("detail")
     app = _app(tmp_path / "equipment.duckdb")
     _import(app, _rows("DA-01"))
-    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("붙여넣기로 1행을")
-    app.session_state[TABLE_KEY] = "기존 보유대수"
-    app.run()
-    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.session_state[GRID_DETAIL_KEY] = "n:DA-01"
     app.run()
     assert not app.exception, app.exception
-    assert last(grid, emg.GRID_KEY)["toast"] is None
 
-    send_ops(app, grid, {"op": "set", "ids": ["n:DA-01"], "col": "메모1", "text": "메모"})
-    assert last(grid, emg.GRID_KEY)["toast"]["id"]
+    send(app, detail, "copy", {"id": "s:없는"})
+    assert last(grid, detail)["toast"]["text"] == "그 호기를 찾지 못했습니다"
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.session_state[SIDE_KEY] = SIDE_DETAIL
+    app.run()
+    assert not app.exception, app.exception
+    assert last(grid, detail)["toast"] is None
+
+    send(app, detail, "copy", {"id": "s:없는"})
+    assert last(grid, detail)["toast"]["text"] == "그 호기를 찾지 못했습니다"
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
     app.run()
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
     app.run()
-    assert last(grid, emg.GRID_KEY)["toast"] is None
+    assert last(grid, detail)["toast"] is None
 
-    # 넣기가 남긴 되돌리기 단계 — 작은 편집표 적용(표 밖 길)이 비우며 표 토스트를 둔다. 표가 숨은
-    # 동안 쌓였으므로 돌아온 첫 마운트에 보인다.
+
+def test_a_small_editor_apply_that_empties_the_grid_undo_says_so_in_the_alert_popup(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """넣기가 남긴 되돌리기 단계 — 작은 편집표 적용(표 밖 길)이 비우며 알림창으로 알린다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
     app.session_state[TABLE_KEY] = "비가동 일정"
     app.run()
     tables = BrowserTables(app, forms=True)
@@ -703,9 +733,7 @@ def test_a_delivered_toast_does_not_come_back_when_its_mount_returns(
     app.button(key="equipment_downtime_apply_v1").click()
     tables.run()
     assert not app.exception, app.exception
-    app.session_state[TABLE_KEY] = "설비 마스터"
-    app.run()
-    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("표 밖에서 편집본을 바꿔")
+    assert grid_results(app, "info")[-1].startswith("표 밖에서 편집본을 바꿔")
 
 
 def test_an_out_of_range_location_rejection_keeps_its_tildes(tmp_path: Path, grid: Calls) -> None:
@@ -804,12 +832,12 @@ def test_a_double_press_on_one_step_undo_takes_back_only_the_last_step(
     _press_again(app, pressed)
 
     assert _memos(app, "DA-01") == ["t-1", "t-2", ""]
-    assert app.session_state[GRID_TOAST_KEY]["changes"]["text"] == "되돌림: 메모3 고침"
+    assert grid_results(app) == ["되돌림: 메모3 고침"]
 
     app.button(key=UNDO_BUTTON_KEY).click().run()
     assert not app.exception, app.exception
     assert _memos(app, "DA-01") == ["t-1", "", ""]
-    assert app.session_state[GRID_TOAST_KEY]["changes"]["text"] == "되돌림: 메모2 고침"
+    assert grid_results(app) == ["되돌림: 메모2 고침"]
 
 
 @pytest.mark.parametrize(
@@ -830,6 +858,4 @@ def test_a_double_press_landing_on_the_redrawn_undo_is_still_one_step(
 
     assert not app.exception, app.exception
     assert _memos(app, "DA-01") == memos
-    assert app.session_state[GRID_TOAST_KEY]["changes"]["text"] == (
-        "되돌림: 메모3 고침" if window else "되돌림: 메모2 고침"
-    )
+    assert grid_results(app) == ["되돌림: 메모3 고침" if window else "되돌림: 메모2 고침"]

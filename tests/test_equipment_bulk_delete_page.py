@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from alert_marks import infos, place_errors
-from grid_fake import Calls, install_fake_grid, last, load, send_ops
+from grid_fake import Calls, grid_results, install_fake_grid, last, load, send_ops
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -36,6 +36,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_CHANGES,
     SIDE_KEY,
     TABLE_KEY,
+    UNDO_BUTTON_KEY,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -150,6 +151,14 @@ def _downtime_machines(app: AppTest) -> list[str]:
     return sorted(app.session_state[BUFFER_KEY][2]["설비명"].astype(str))
 
 
+def _press_undo(app: AppTest) -> None:
+    """「저장 전 변경」 의 「한 단계 되돌리기」 — 그 칸을 열고 누른다."""
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+
 def _delete_building(app: AppTest, grid: Calls, seed: _Seed) -> list[str]:
     """그 동 호기를 불러와(조건별 — 브라우저가 고른 id) 모두 고르고 지운다."""
     ids = [f"s:{name}" for name in sorted(seed.building_machines)]
@@ -174,20 +183,19 @@ def test_deleting_loaded_units_takes_their_downtime_and_undo_brings_both_back(
     # 지운 저장본 호기는 목록에 남아 지운 표시(되살리기 자리)로 선다.
     table = last(grid, emg.GRID_KEY)
     assert {row["id"]: row.get("tag") for row in table["rows"]} == dict.fromkeys(ids, "deleted")
-    toast = table["toast"]
-    assert toast["text"] == f"{len(ids):,}대 지울 목록에 넣음"
-    assert isinstance(toast["undo"], str) and toast["undo"]
+    assert grid_results(app, "success") == [f"{len(ids):,}대 지울 목록에 넣음"]
 
-    send_ops(app, grid, {"op": "undo", "step": toast["undo"]})
+    _press_undo(app)
+    assert grid_results(app, "success") == ["되돌림: 호기 지움"]
     assert _machines(app) == sorted(seed.machines)
     assert len(_downtime_machines(app)) == seed.downtime_count
 
 
-def test_the_detail_delete_toast_is_one_value_line_with_its_undo(
+def test_the_detail_delete_result_is_one_value_line_in_the_alert_popup(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """호기 상세 「이 호기 지우기」 뒤 칸 머리 글은 값 한 줄과 「되돌리기」 다 — 저장해야 지워진다 ·
-    모든 설비 시나리오에서 빠진다는 말은 단추 풍선 · Guide 다(2026-11-05 사용자 답)."""
+    """호기 상세 「이 호기 지우기」 의 결과는 알림창 값 한 줄이다 — 저장해야 지워진다 · 모든 설비
+    시나리오에서 빠진다는 말은 단추 풍선 · Guide 다(2026-11-05 사용자 답)."""
     seed = _seeded(tmp_path)
     app = _app(seed)
     name = sorted(seed.building_machines)[0]
@@ -196,9 +204,8 @@ def test_the_detail_delete_toast_is_one_value_line_with_its_undo(
 
     send_ops(app, grid, {"op": "delete", "ids": [f"s:{name}"]}, key=emg.side_key("detail"))
 
-    toast = last(grid, emg.side_key("detail"))["toast"]
-    assert toast["text"] == "1대 지울 목록에 넣음"
-    assert isinstance(toast["undo"], str) and toast["undo"]
+    assert grid_results(app, "success") == ["1대 지울 목록에 넣음"]
+    assert last(grid, emg.side_key("detail"))["toast"] is None
 
 
 def test_a_deletion_saves_without_orphaned_downtime(tmp_path: Path, grid: Calls) -> None:

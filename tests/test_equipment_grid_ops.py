@@ -305,7 +305,6 @@ def test_joining_a_group_in_a_locked_layout_takes_the_groups_spot() -> None:
     for position in (undecided, len(frame) - 1):
         assert [eg.cell_text(frame.iloc[position][c]) for c in PLACE] == [*group_spot, "", ""]
     assert result.toast is not None and result.toast.startswith("배치 편집이 잠겨 있어 1대의 자리")
-    assert result.toast_step == eg.undo_top(result.state.undo)
     assert list(frame.dtypes) == list(state.frames[1].dtypes)
     edited = state.frames[1].copy()
     edited.loc[edited.index[-1], "Main 설비"] = "GRP-1"
@@ -371,7 +370,6 @@ def test_paste_counts_changed_cells_and_skips_locked_ones() -> None:
     assert _value(result.state, 2, "X좌표") == 9.0
     assert _value(result.state, 0, "X좌표") == _value(state, 0, "X좌표"), "모듈 칸은 건너뜀"
     assert result.toast == "붙여넣기 5줄 → 1칸 바뀜 · 표 끝을 넘은 2줄은 버림 · 넣지 못한 칸 4개"
-    assert result.toast_undo
 
 
 def test_set_and_shift_report_their_counts() -> None:
@@ -403,54 +401,30 @@ def test_set_counts_only_changed_cells_and_refuses_locked_ones() -> None:
     value = eg.cell_text(_value(state, 4, "X좌표"))
     result = _apply(state, _op("set", 1, ids=[module, plain, same], col="X좌표", text=value))
     assert result.refused == 1, "모듈 묶음 좌표"
-    assert result.toast == "값 넣기 — 1칸 바뀜" and result.toast_undo
+    assert result.toast == "값 넣기 — 1칸 바뀜"
     assert _value(result.state, 0, "X좌표") == _value(state, 0, "X좌표")
     assert eg.cell_text(_value(result.state, 3, "X좌표")) == value
     none = _apply(state, _op("set", 1, ids=[same], col="X좌표", text=value))
-    assert not none.changed and none.toast == "값 넣기 — 0칸 바뀜" and not none.toast_undo
+    assert not none.changed and none.toast == "값 넣기 — 0칸 바뀜"
 
 
-# ------------------------------------------------------------------ 토스트 되돌리기
+# ------------------------------------------------------------------ 한 단계 되돌리기
 
 
-def test_a_toast_undo_reverts_its_own_step_or_nothing() -> None:
-    """토스트 「되돌리기」 는 그 토스트의 단계를 가리킨다 — 그 뒤 칸 고침이 쌓였으면(같은 출납 안의
-    경합도) 다른 단계를 되돌리지 않고 알린다."""
+def test_undo_takes_the_top_step_and_says_when_there_is_none() -> None:
+    """되돌리기 길은 「한 단계 되돌리기」 하나다 — 맨 위 단계부터 돌아가고 비었으면 알린다."""
     state = _state()
     ids = [_id(state, k) for k in range(3)]
     put = _apply(state, _op("set", 1, ids=ids, col="담당자", text="담당B"))
-    step = put.toast_step
-    assert step is not None and step == eg.undo_top(put.state.undo)
     edited = _apply(put.state, _op("cell", 2, id=ids[0], col="메모1", text="m"))
-    assert edited.toast is None and eg.undo_top(edited.state.undo) != step
-    stale = _apply(edited.state, _op("undo", 3, step=step))
-    assert stale.refused == 1 and stale.toast == eg.UNDO_STALE_TOAST and not stale.changed
-    assert _value(stale.state, 0, "메모1") == "m"
-    assert set(stale.state.frames[1].iloc[:3]["담당자"]) == {"담당B"}
-    raced = _apply(
-        put.state,
-        _op("cell", 2, id=ids[0], col="메모1", text="m"),
-        _op("undo", 3, step=step),
-    )
-    assert raced.refused == 1 and _value(raced.state, 0, "메모1") == "m"
-    undone = _apply(put.state, _op("undo", 2, step=step))
+    assert edited.toast is None
+    top = _apply(edited.state, _op("undo", 3))
+    assert eg.cell_text(_value(top.state, 0, "메모1")) == eg.cell_text(_value(state, 0, "메모1"))
+    assert set(top.state.frames[1].iloc[:3]["담당자"]) == {"담당B"}
+    undone = _apply(put.state, _op("undo", 2))
     assert undone.state.frames[1].equals(state.frames[1]) and not undone.state.undo
-    assert undone.toast == "되돌림: 값 넣기" and undone.toast_step is None
-    plain = _apply(edited.state, _op("undo", 3))
-    assert eg.cell_text(_value(plain.state, 0, "메모1")) == eg.cell_text(
-        _value(state, 0, "메모1")
-    ), "표지 없으면 맨 위"
+    assert undone.toast == "되돌림: 값 넣기"
     assert _apply(state, _op("undo", 1)).toast == eg.UNDO_EMPTY_TOAST
-
-
-def test_step_tokens_are_the_op_mount_and_seq() -> None:
-    state = _state()
-    ops, _ = eg.pending_ops(
-        [{"mount": "m-g", "ops": [_op("cell", 7, id=_id(state, 0), col="메모1", text="x")]}], {}
-    )
-    result = _apply(state, *ops)
-    assert eg.undo_top(result.state.undo) == "m-g#7"
-    assert eg.undo_from_state(eg.undo_to_state(result.state.undo))[0].token == "m-g#7"
 
 
 # ------------------------------------------------------------------ 칸·호기 되돌리기
@@ -471,7 +445,6 @@ def test_a_stale_session_can_revert_scenario_cells_back_to_the_saved_values() ->
     assert cell.changed and cell.refused == 0
     assert _value(cell.state, 0, "반입일정") == saved[1].iloc[0]["반입일정"]
     assert cell.toast is not None and cell.toast.startswith("저장본 값으로 되돌림")
-    assert cell.toast_step == eg.undo_top(cell.state.undo)
     unit = _apply(moved, _op("revert", 3, id=row_id, col=None), context=STALE)
     assert buffer_matches_saved(saved, unit.state.frames)
     again = _apply(cell.state, _op("cell", 4, id=row_id, col="반입일정", text="2027-02-01"))
@@ -520,7 +493,7 @@ def test_a_stale_session_refuses_saved_unit_deletes_but_drops_new_ones() -> None
 
 def test_the_delete_toast_says_what_happened_and_every_kind_can_be_undone() -> None:
     """저장본 호기는 지울 목록에 들고 새 호기는 바로 빠진다 — 칸 머리 글이 그대로 가르고, 고른 줄에
-    섞이면 값 그대로 둘을 잇는다. 어느 쪽이든 그 단계는 「되돌리기」 로 돌아온다."""
+    섞이면 값 그대로 둘을 잇는다. 어느 쪽이든 그 단계는 「한 단계 되돌리기」 로 돌아온다."""
     state = _state()
     state = _with_new(state, "NEW-1", loaded=("n:NEW-1", _id(state, 0)))
     state = _with_new(state, "NEW-2", loaded=("n:NEW-2", *state.loaded))
@@ -535,8 +508,7 @@ def test_the_delete_toast_says_what_happened_and_every_kind_can_be_undone() -> N
     for ids, toast in cases:
         result = _apply(state, _op("delete", 1, ids=ids))
         assert result.toast == toast
-        assert result.toast_step is not None and result.toast_step == eg.undo_top(result.state.undo)
-        back = _apply(result.state, _op("undo", 2, step=result.toast_step))
+        back = _apply(result.state, _op("undo", 2))
         assert back.toast == "되돌림: 호기 지움" and not back.refused
         assert back.state.frames[1].equals(state.frames[1]), toast
         assert back.state.loaded == state.loaded, toast
@@ -548,10 +520,10 @@ def test_a_stale_session_says_the_new_units_went_and_the_saved_ones_stayed() -> 
     context = eg.GridContext(base=BASE, delete_lock="낡아서 못 지움")
 
     mixed = _apply(state, _op("delete", 1, ids=[_id(state, 0), "n:NEW-1"]), context=context)
-    assert mixed.toast == "새 호기 1대 뺌 · 낡아서 못 지움" and mixed.toast_step is not None
+    assert mixed.toast == "새 호기 1대 뺌 · 낡아서 못 지움" and mixed.state.undo
 
     refused = _apply(state, _op("delete", 1, ids=[_id(state, 0)]), context=context)
-    assert refused.toast == "낡아서 못 지움" and refused.toast_step is None
+    assert refused.toast == "낡아서 못 지움" and not refused.state.undo
 
 
 def test_deleting_three_and_restoring_them_in_reverse_gives_the_saved_order_back() -> None:
@@ -847,7 +819,7 @@ def test_a_whole_step_brings_back_the_three_tables_drafts_names_and_list() -> No
         undo=state.undo,
         loaded=(first, second),
     )
-    whole = eg.whole_step("엑셀·CSV 넣기", before, token="whole#1")
+    whole = eg.whole_step("엑셀·CSV 넣기", before)
     pasted = saved[1].copy().iloc[2:].reset_index(drop=True)
     pasted.loc[:, "메모2"] = "넣음"
     after = eg.GridState(
@@ -917,7 +889,6 @@ def test_official_place_revert_writes_the_official_seven_cells() -> None:
     assert _value(result.state, 2, "X좌표") == saved[1].iloc[2]["X좌표"]
     assert _value(result.state, 2, "Y좌표") == saved[1].iloc[2]["Y좌표"]
     assert result.toast is not None and result.toast.startswith("공식 자리로 되돌렸습니다 — 1대")
-    assert result.toast_step is not None
     # 한 단계 되돌리기로 가정 자리가 돌아온다.
     undone = _apply(result.state, _op("undo", seq=2), context=context)
     assert _value(undone.state, 2, "X좌표") == 99.0

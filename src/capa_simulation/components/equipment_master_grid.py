@@ -277,7 +277,7 @@ def render_grid_table(
     key: str = GRID_KEY,
 ) -> None:
     """표 자리 — 칸 묶음·정렬(브라우저 몫), 칸 고치기·엑셀 여러 칸 붙여넣기·고르기·한꺼번에 고치기·
-    지우기·되살리기·토스트 되돌리기(출납), 설비명 누름(`open`)·목록에서 빼기(`unload`)."""
+    지우기·되살리기(출납), 설비명 누름(`open`)·목록에서 빼기(`unload`)."""
     view = str(data.get("view") or "")
     _GRID(
         key=key,
