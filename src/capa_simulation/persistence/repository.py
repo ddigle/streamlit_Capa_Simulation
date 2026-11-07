@@ -890,14 +890,14 @@ class DuckDBScenarioRepository:
         *,
         source: str,
         expected_version: int | None = None,
-        expected_scenario_id: str | None = None,
+        expected_pair: tuple[str | None, str | None] | None = None,
     ) -> GlobalMainCases:
         """Case 하나(1·2)의 시나리오·리비전 짝을 바꾼다. 다른 Case 는 그대로이고 version 이 오른다.
 
         **지정 해제(둘 다 `None`)도 정상 저장이다.** 리비전만 있고 시나리오가 없는 짝은 저장하지
         않는다 — 비교 대상과 같은 까닭이다. 값이 실제 시나리오·리비전인지는 화면이 목록과 견줘
-        거른다(비교 대상과 같다). `expected_version`(프로필 전체)·`expected_scenario_id`(그 Case 의
-        지금 시나리오)를 주면 같은 쓰기 트랜잭션에서 대조해, 맞지 않으면 쓰지 않고
+        거른다(비교 대상과 같다). `expected_version`(프로필 전체)·`expected_pair`(그 Case 의 지금
+        짝 — 비어 있으면 `(None, None)`)를 주면 같은 쓰기 트랜잭션에서 대조해, 맞지 않으면 쓰지 않고
         `ProfileVersionConflict` 를 올린다(`home_profile_store.replace_global_main_case`). 캐시는
         경로 키라 저장한 호출부가 `clear_global_main_cases_cache()` 로 비운다.
         """
@@ -920,7 +920,7 @@ class DuckDBScenarioRepository:
                 chosen_revision,
                 source=source_label,
                 expected_version=expected_version,
-                expected_scenario_id=expected_scenario_id,
+                expected_pair=expected_pair,
             )
         return self.load_global_main_cases()
 

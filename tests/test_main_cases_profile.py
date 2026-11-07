@@ -126,10 +126,10 @@ def test_a_stale_expected_version_writes_nothing(tmp_path: Path) -> None:
     assert filled.case(1) == ("S9", "R8")
 
 
-def test_a_revision_pick_writes_only_while_its_case_keeps_the_scenario(tmp_path: Path) -> None:
-    """리비전만 고른 쓰기는 그 Case 의 지금 시나리오를 대조한다(`expected_scenario_id`).
+def test_a_pick_writes_only_while_its_case_keeps_the_pair_it_saw(tmp_path: Path) -> None:
+    """상자에서 고른 쓰기는 그 Case 의 지금 짝을 대조한다(`expected_pair`).
 
-    낡은 화면의 리비전 상자는 화면이 본 시나리오의 것이다 — 그 사이 남이 그 Case 의 시나리오를
+    낡은 화면의 고름은 화면이 본 짝에서 출발한다 — 그 사이 남이 그 Case 의 시나리오든 리비전이든
     바꿨으면 쓰지 않는다. 다른 Case 교체로 오른 version 은 막지 않는다.
     """
     repository = _repository(tmp_path)
@@ -137,17 +137,53 @@ def test_a_revision_pick_writes_only_while_its_case_keeps_the_scenario(tmp_path:
     repository.replace_global_main_case(2, "S2", "R2", source="다른 Case")
 
     kept = repository.replace_global_main_case(
-        1, "S1", "R1b", source="리비전", expected_scenario_id="S1"
+        1, "S1", "R1b", source="고름", expected_pair=("S1", "R1")
     )
     assert (kept.case(1), kept.case(2)) == (("S1", "R1b"), ("S2", "R2"))
 
-    repository.replace_global_main_case(1, "S9", "R9", source="다른 사용자")
-    with pytest.raises(ProfileVersionConflict, match="Case1 의 시나리오를 바꿔"):
+    with pytest.raises(ProfileVersionConflict, match="Case1 지정을 바꿔"):
         repository.replace_global_main_case(
-            1, "S1", "R1", source="리비전", expected_scenario_id="S1"
+            1, "S1", "R1c", source="고름", expected_pair=("S1", "R1")
+        )
+    repository.replace_global_main_case(1, "S9", "R9", source="다른 사용자")
+    with pytest.raises(ProfileVersionConflict, match="Case1 지정을 바꿔"):
+        repository.replace_global_main_case(
+            1, None, None, source="고름", expected_pair=("S1", "R1b")
         )
     after = repository.load_global_main_cases()
     assert (after.case(1), after.version, after.source) == (("S9", "R9"), 4, "다른 사용자")
+
+
+def test_an_empty_pair_is_compared_too(tmp_path: Path) -> None:
+    """비어 있는 Case 를 본 고름의 대조 값은 `(None, None)` 이다 — 대조하지 않는 `None` 과 다르다.
+
+    둘이 같은 빈 Case 를 고를 때 앞 사람 지정이 말없이 덮이지 않는다.
+    """
+    repository = _repository(tmp_path)
+    first = repository.replace_global_main_case(
+        1, "S1", "R1", source="먼저", expected_pair=(None, None)
+    )
+    assert first.case(1) == ("S1", "R1")
+
+    with pytest.raises(ProfileVersionConflict, match="Case1 지정을 바꿔"):
+        repository.replace_global_main_case(
+            1, "S2", "R2", source="나중", expected_pair=(None, None)
+        )
+    assert repository.load_global_main_cases().case(1) == ("S1", "R1")
+
+
+def test_a_rename_does_not_stop_a_pick(tmp_path: Path) -> None:
+    """이름 바꾸기는 version 만 올리고 짝은 그대로다 — 낡은 화면의 고름을 막지 않는다."""
+    repository = _repository(tmp_path)
+    (scenario, revision), (other, other_revision) = _scenarios(repository, "가리킨 것", "다른 것")
+    before = repository.replace_global_main_case(1, scenario, revision, source="본 값")
+    repository.rename_scenario(scenario, "새 이름")
+    assert repository.load_global_main_cases().version == before.version + 1
+
+    after = repository.replace_global_main_case(
+        1, other, other_revision, source="고름", expected_pair=(scenario, revision)
+    )
+    assert after.case(1) == (other, other_revision)
 
 
 def test_renaming_a_pointed_scenario_bumps_only_the_version(tmp_path: Path) -> None:

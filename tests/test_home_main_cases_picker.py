@@ -281,7 +281,9 @@ import streamlit as st
 
 import capa_simulation.components.home_main_cases as picker
 
-getattr(picker, st.session_state["callback"])(st.session_state["database_path"], 1)
+getattr(picker, st.session_state["callback"])(
+    st.session_state["database_path"], 1, st.session_state["seen"]
+)
 """
     for callback, scenario_value, revision_value in (
         ("_save_case_scenario", "증설안", None),
@@ -291,6 +293,7 @@ getattr(picker, st.session_state["callback"])(st.session_state["database_path"],
         app = AppTest.from_string(script, default_timeout=120)
         app.session_state["database_path"] = str(database)
         app.session_state["callback"] = callback
+        app.session_state["seen"] = (s2, s2_newer)
         app.session_state[CASE1_SCENARIO] = scenario_value
         app.session_state[CASE1_REVISION] = revision_value
         _ran(app.run())
@@ -442,6 +445,77 @@ def test_a_scenario_named_like_the_unset_choice_can_still_be_unset(tmp_path: Pat
     assert _profile(database)[0] == (s2, s2_newer)
 
 
+def _third_scenario(database: Path) -> str:
+    """고를 시나리오를 하나 더 둔다 — 낡은 화면이 앞 사람과 다른 값을 고르게."""
+    repository = DuckDBScenarioRepository(database)
+    release = repository.latest_official_release()
+    assert release is not None
+    base = repository.load_revision(release.revision_id)
+    made = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="감산안",
+            source_simulation_code="CASE-3",
+            source_simulation_name="감산안",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        {name: frame.copy() for name, frame in base.tables.items()},
+        base.preset,
+    )
+    return str(made.scenario.scenario_id)
+
+
+def _refused(app: AppTest) -> bool:
+    return any("다른 사용자가 먼저 Case1 지정을 바꿔" in text for text in _texts(app))
+
+
+def test_a_stale_scenario_pick_does_not_replace_another_sessions_choice(tmp_path: Path) -> None:
+    """낡은 화면의 시나리오 고르기는 남이 방금 고른 같은 Case 를 덮지 않고, 진 쪽이 그것을 안다.
+
+    고르는 것이 곧 저장이라 대조가 없으면 뒤 사람 값이 말없이 남고 두 사람 모두 모른다. 진 화면의
+    상자는 지금 지정으로 돌아간다. 비어 있던 Case 를 둘이 고를 때도 같다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, _s2_older, s2_newer = _two_scenarios(database)
+    s3 = _third_scenario(database)
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    version = _version(database)
+
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+
+    assert _profile(database)[0] == (s1, s1_revision)
+    assert _version(database) == version
+    assert _refused(stale)
+    assert stale.selectbox(key=CASE1_SCENARIO).value == s1
+    assert stale.selectbox(key=CASE1_REVISION).value == s1_revision
+
+    # 거절은 한 번이고, 지금 지정을 본 다음 고름은 저장한다.
+    _ran(stale.run())
+    assert not _refused(stale)
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+    assert _profile(database)[0][0] == s3
+
+
+def test_two_picks_on_an_empty_case_do_not_overwrite_silently(tmp_path: Path) -> None:
+    """비어 있던 Case 를 둘이 함께 고르면 먼저 고른 쪽이 남고 나중 쪽이 안다."""
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, _s2_older, _s2_newer = _two_scenarios(database)
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s2).run())
+
+    assert _profile(database)[0] == (s1, s1_revision)
+    assert _refused(stale)
+
+
 def test_a_stale_revision_pick_does_not_undo_another_sessions_scenario_choice(
     tmp_path: Path,
 ) -> None:
@@ -465,17 +539,90 @@ def test_a_stale_revision_pick_does_not_undo_another_sessions_scenario_choice(
 
     assert _profile(database)[0] == (s1, s1_revision)
     assert _version(database) == version
-    assert any("다른 사용자가 먼저 Case1 의 시나리오를 바꿔" in text for text in _texts(stale))
+    assert _refused(stale)
     assert stale.selectbox(key=CASE1_SCENARIO).value == s1
     assert stale.selectbox(key=CASE1_REVISION).value == s1_revision
 
-    # 같은 낡은 화면이어도(그 사이 남이 다른 Case 를 바꿔 version 이 올랐다) 시나리오가 그대로인
+    # 같은 낡은 화면이어도(그 사이 남이 다른 Case 를 바꿔 version 이 올랐다) 짝이 그대로인
     # Case 의 리비전 고르기는 저장한다.
     _ran(stale.selectbox(key=CASE2_SCENARIO).set_value(s2).run())
     _ran(first.run())
     _ran(first.selectbox(key=CASE1_SCENARIO).set_value(None).run())
     _ran(stale.selectbox(key=CASE2_REVISION).set_value(s2_older).run())
     assert _profile(database) == ((None, None), (s2, s2_older))
+
+
+def test_a_stale_revision_pick_does_not_replace_another_sessions_revision(tmp_path: Path) -> None:
+    """같은 시나리오 안의 겹친 리비전 고르기도 남의 고름을 덮지 않는다 — 시나리오만 보던 대조의
+    구멍이다."""
+    database = tmp_path / "scenario.duckdb"
+    _s1, _s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    repository = DuckDBScenarioRepository(database)
+    base = repository.load_revision(s2_older)
+    third = repository.save_revision(
+        s2,
+        {name: frame.copy() for name, frame in base.tables.items()},
+        base.preset,
+        revision_name="증설안 재검토",
+    )
+    s2_third = str(third.revision.revision_id)
+    repository.replace_global_main_case(1, s2, s2_third, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_REVISION).set_value(s2_older).run())
+    version = _version(database)
+
+    _ran(stale.selectbox(key=CASE1_REVISION).set_value(s2_newer).run())
+
+    assert _profile(database)[0] == (s2, s2_older)
+    assert _version(database) == version
+    assert _refused(stale)
+    assert stale.selectbox(key=CASE1_REVISION).value == s2_older
+
+
+def test_another_cases_save_and_a_rename_do_not_stop_a_stale_pick(tmp_path: Path) -> None:
+    """다른 Case 를 고른 저장 · 이름 바꾸기는 그 Case 의 짝을 바꾸지 않아 막지 않고, 다른 Case 는
+    그대로 옮겨 적는다."""
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    repository = DuckDBScenarioRepository(database)
+    repository.replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE2_SCENARIO).set_value(s1).run())
+    repository.rename_scenario(s2, "증설안 새 이름")
+    clear_global_main_cases_cache()
+
+    _ran(stale.selectbox(key=CASE1_REVISION).set_value(s2_older).run())
+
+    assert _profile(database) == ((s2, s2_older), (s1, s1_revision))
+    assert not _refused(stale)
+
+
+def test_a_stale_unset_does_not_clear_another_sessions_choice(tmp_path: Path) -> None:
+    """낡은 화면의 「지정 안 함」 도 고름이다 — 남이 방금 고른 지정을 지우지 않는다. 지금 짝이 본
+    짝 그대로면 평소처럼 비운다."""
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, _s2_older, s2_newer = _two_scenarios(database)
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(None).run())
+
+    assert _profile(database)[0] == (s1, s1_revision)
+    assert _refused(stale)
+    assert stale.selectbox(key=CASE1_SCENARIO).value == s1
+
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(None).run())
+    assert _profile(database)[0] == (None, None)
 
 
 def test_a_hidden_preference_tab_neither_reads_nor_writes(

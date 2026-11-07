@@ -239,7 +239,7 @@ def replace_global_main_case(
     *,
     source: str,
     expected_version: int | None = None,
-    expected_scenario_id: str | None = None,
+    expected_pair: tuple[str | None, str | None] | None = None,
 ) -> None:
     """Case 하나(1·2)의 짝만 바꾸고 다른 Case 는 지금 행 그대로 둔다. 호출자가 쓰기 트랜잭션을 쥔다.
 
@@ -249,17 +249,17 @@ def replace_global_main_case(
 
     - `expected_version` — 프로필 전체 version(화면이 스스로 메우는 쓰기 — 그 사이 남이 고른 값을
       덮지 않게).
-    - `expected_scenario_id` — 그 Case 의 지금 시나리오(리비전만 고른 쓰기). 리비전 상자는 화면이 본
-      시나리오의 리비전이라, 그 사이 남이 그 Case 의 시나리오를 바꿨으면 이쪽 짝으로 통째 덮어 남의
-      시나리오 고름을 되돌리게 된다. 다른 Case 나 이름 바꾸기로 오른 version 은 막지 않는다. `None`
-      이면 대조하지 않는다.
+    - `expected_pair` — 그 Case 의 지금 짝(상자에서 고른 쓰기). 고르는 것이 곧 저장이라, 그 사이
+      남이 그 Case 를 바꿨으면 이쪽 값으로 남의 고름을 모르는 채 덮고 두 사람 다 모른다. 다른 Case
+      나 이름 바꾸기로 오른 version 은 막지 않는다. `(None, None)` 은 「비어 있어야 한다」 이고,
+      `None` 이면 대조하지 않는다.
     """
     require_profile_version(connection, "global_main_cases", expected_version, label="주요 Case")
     current = load_global_main_cases(connection)
-    if expected_scenario_id is not None and current.case(case_no)[0] != expected_scenario_id:
+    if expected_pair is not None and current.case(case_no) != expected_pair:
         raise ProfileVersionConflict(
-            f"다른 사용자가 먼저 Case{case_no} 의 시나리오를 바꿔 고른 리비전은 저장하지 "
-            "않았습니다. 지금 지정을 확인한 뒤 다시 고르세요."
+            f"다른 사용자가 먼저 Case{case_no} 지정을 바꿔 이번 고름은 저장하지 않았습니다. "
+            "지금 지정을 확인한 뒤 다시 고르세요."
         )
     pairs = {number: current.case(number) for number in (1, 2)}
     pairs[case_no] = (scenario_id, revision_id)

@@ -47,6 +47,7 @@ import html
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 
 import streamlit as st
 
@@ -77,6 +78,9 @@ from capa_simulation.services.main_cases import (
     main_case_overlap_notes,
     official_slot_label,
 )
+
+# Case 한 칸의 (시나리오, 리비전) 짝. 비운 Case 는 `(None, None)` 이다.
+CasePair: TypeAlias = tuple[str | None, str | None]
 
 MAIN_CASE_TITLE = "주요 Case"
 MAIN_CASE_SOURCE = "HOME 주요 Case 선택"
@@ -438,6 +442,8 @@ def _render_case(
     revision_key = main_case_revision_key(case_no)
     # 적기는 `on_change` 를 부르지 않아 프로필을 다시 쓰지 않는다. 목록에 없는 값은 앞에서 비웠다.
     st.session_state[scenario_key] = plan.scenario_id
+    # 콜백은 이 회차가 그린 짝을 받아 대조한다(`_replace_case`).
+    seen = (plan.scenario_id, plan.revision_id)
     st.selectbox(
         "시나리오",
         options=[None, *scenario_by_id],
@@ -445,7 +451,7 @@ def _render_case(
         key=scenario_key,
         placeholder=unset_label,
         on_change=_save_case_scenario,
-        args=(database_path, case_no),
+        args=(database_path, case_no, seen),
     )
     if plan.scenario_id is None:
         st.session_state.pop(revision_key, None)
@@ -474,7 +480,7 @@ def _render_case(
         format_func=lambda value: revision_label(revision_by_id[value]),
         key=revision_key,
         on_change=_save_case_revision,
-        args=(database_path, case_no),
+        args=(database_path, case_no, seen),
     )
 
 
@@ -487,7 +493,7 @@ def _scenario_choice_label(
     return scenarios[value].scenario_name
 
 
-def _save_case_scenario(database_path: str, case_no: int) -> None:
+def _save_case_scenario(database_path: str, case_no: int, seen: CasePair) -> None:
     """「시나리오」 상자의 콜백. 고른 시나리오를 **그 첫 리비전과 짝으로** 저장한다.
 
     위젯 기본값은 `on_change` 를 부르지 않는다 — 시나리오만 저장하면 뒤이어 서는 리비전 상자의
@@ -496,15 +502,16 @@ def _save_case_scenario(database_path: str, case_no: int) -> None:
     함」은 두 칸을 함께 비운다.
     """
     chosen = st.session_state.get(main_case_scenario_key(case_no))
-    _replace_case(database_path, case_no, lambda repository: _scenario_pair(repository, chosen))
+    _replace_case(
+        database_path, case_no, lambda repository: _scenario_pair(repository, chosen), seen
+    )
 
 
-def _save_case_revision(database_path: str, case_no: int) -> None:
+def _save_case_revision(database_path: str, case_no: int, seen: CasePair) -> None:
     """「리비전」 상자의 콜백. 고른 리비전이 고른 시나리오의 것일 때만 저장한다.
 
-    상자의 리비전은 화면이 본 시나리오의 것이다 — 그 사이 다른 세션이 이 Case 의 시나리오를 바꿨으면
-    저장하지 않고 알린다(`expected_scenario_id`). 짝으로 통째 덮으면 남의 시나리오 고름이 알림 없이
-    되돌아간다.
+    상자의 리비전은 화면이 본 시나리오의 것이다 — 짝으로 통째 쓰므로 그 사이 다른 세션이 이 Case 를
+    바꿨으면 대조(`seen`)에 걸려 저장하지 않고 알린다.
     """
     scenario_id = st.session_state.get(main_case_scenario_key(case_no))
     revision_id = st.session_state.get(main_case_revision_key(case_no))
@@ -512,25 +519,24 @@ def _save_case_revision(database_path: str, case_no: int) -> None:
         database_path,
         case_no,
         lambda repository: _revision_pair(repository, scenario_id, revision_id),
-        keep_scenario=True,
+        seen,
     )
 
 
 def _replace_case(
     database_path: str,
     case_no: int,
-    choose: Callable[[DuckDBScenarioRepository], tuple[str | None, str | None] | None],
-    *,
-    keep_scenario: bool = False,
+    choose: Callable[[DuckDBScenarioRepository], CasePair | None],
+    seen: CasePair,
 ) -> None:
     """`choose` 가 낸 짝을 그 Case 에 쓴다. 짝이 없거나(id 가 아니다) 프로필과 같으면 쓰지 않는다.
 
     콜백은 `app.py` 의 실행 핀 밖(본문 전)에서 돈다 — 목록 읽기·프로필 읽기·쓰기가 연결마다 DuckDB
     인스턴스를 새로 만들지 않게 여기서 핀을 잡는다(`home_preference._replace_comparison_profile` 와
     같다). 프로필은 캐시가 아니라 DB 에서 읽어 견준다 — 같은 짝을 다시 쓰면 아무도 바꾸지 않았는데
-    version 이 오른다. `keep_scenario` 면 그 Case 의 지금 시나리오가 고른 짝의 시나리오일 때만
-    쓴다(같은 쓰기 트랜잭션에서 대조). 저장하지 못하면 다음 회차 상자 안에 한 줄 남긴다(상자는
-    프로필 값으로 돌아간다).
+    version 이 오른다. 고르는 것이 곧 저장이라 그 Case 의 지금 짝이 화면이 그린 짝 `seen` 일 때만
+    쓴다(같은 쓰기 트랜잭션에서 대조 — 프로필 version 이 아니라 이 짝이라 다른 Case 나 이름 바꾸기는
+    막지 않는다). 저장하지 못하면 다음 회차 상자 안에 한 줄 남긴다(상자는 프로필 값으로 돌아간다).
     """
     with pinned_connections(Path(database_path)):
         try:
@@ -544,7 +550,7 @@ def _replace_case(
                 case_no,
                 *chosen,
                 source=MAIN_CASE_SOURCE,
-                expected_scenario_id=chosen[0] if keep_scenario else None,
+                expected_pair=seen,
             )
         except ProfileVersionConflict as exc:
             _notify(bootstrap_error_message(exc))
@@ -557,9 +563,7 @@ def _replace_case(
     clear_global_main_cases_cache()
 
 
-def _scenario_pair(
-    repository: DuckDBScenarioRepository, scenario_id: object
-) -> tuple[str | None, str | None] | None:
+def _scenario_pair(repository: DuckDBScenarioRepository, scenario_id: object) -> CasePair | None:
     """시나리오 상자가 받은 값의 저장할 짝. 활성 시나리오 id 가 아니면(되보낸 라벨 등) `None`."""
     if scenario_id is None:
         return None, None
@@ -572,7 +576,7 @@ def _scenario_pair(
 
 def _revision_pair(
     repository: DuckDBScenarioRepository, scenario_id: object, revision_id: object
-) -> tuple[str | None, str | None] | None:
+) -> CasePair | None:
     """리비전 상자가 받은 값의 저장할 짝. 고른 시나리오의 실제 리비전이 아니면 `None`."""
     if scenario_id is None or revision_id is None:
         return None
