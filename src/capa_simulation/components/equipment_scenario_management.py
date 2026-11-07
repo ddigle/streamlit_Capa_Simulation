@@ -230,6 +230,9 @@ RESTORE_PUBLISH_HELP = (
 LAYOUT_BLOCKED_LINE = ":material/block: 배치 차이로 발행 막힘"
 # 옛 배포 흔적을 이어 쓸 수 없는 회차의 표지 — 까닭은 꺼진 「이대로 이어 쓰기」 의 풍선이 말한다.
 CONTINUE_BLOCKED_LINE = ":material/block: 이어 쓰기 막힘"
+# 옛 배포 흔적으로 막힌 쓰기 팝오버의 표지 — 까닭은 꺼진 단추 풍선(`legacy_trace_lock_line`)이
+# 말한다.
+LEGACY_TRACE_BLOCKED_LINE = ":material/block: 옛 배포 흔적으로 막힘"
 # 「이대로 이어 쓰기」 풍선 — 누르기 전에 알아야 하는 되돌릴 수 없는 결과(설계 규칙 UI-NTF-09).
 CONTINUE_BUTTON_HELP = (
     "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
@@ -1078,12 +1081,27 @@ def _preview_for(
 
 
 def legacy_trace_lock_line(count: int) -> str:
-    """옛 배포 흔적으로 막힌 쓰기 팝오버(되돌리기 · 배치 차이 지우기)의 잠금 까닭 한 줄.
+    """옛 배포 흔적으로 막힌 쓰기 팝오버(되돌리기 · 배치 차이 지우기)의 꺼진 단추 풍선.
 
     백업 복원 · 「이대로 이어 쓰기」 로 푸는 길은 같은 탭 맨 위 옛 배포 흔적
     칸(`_render_legacy_trace`) · 알림 · Guide 가 말한다 — 팝오버에서 그 자리를 다시 가리키지
     않는다(설계 규칙 UI-TXT-03)."""
     return f"옛 배포로 저장한 설비 리비전 {count:,}개가 있어 설비 저장을 막았습니다."
+
+
+def _render_legacy_locked_write(count: int, label: str, *, icon: str, key: str) -> None:
+    """옛 배포 흔적으로 막힌 쓰기 팝오버 — 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선 하나다(설계
+    규칙 UI-INP-07 — 검수표 11/02 equip-44 와 같은 꼴)."""
+    st.caption(LEGACY_TRACE_BLOCKED_LINE)
+    st.button(
+        label,
+        icon=icon,
+        type="primary",
+        disabled=True,
+        key=key,
+        width="stretch",
+        help=legacy_trace_lock_line(count),
+    )
 
 
 def restore_seen_token(
@@ -1456,7 +1474,12 @@ def _render_restore(
         )
         return
     if session.legacy_trace_count:
-        st.caption(legacy_trace_lock_line(session.legacy_trace_count))
+        _render_legacy_locked_write(
+            session.legacy_trace_count,
+            "되돌리기",
+            icon=":material/history:",
+            key=RESTORE_BUTTON_KEY,
+        )
         return
     try:
         common_id = _latest_common_id(database_path)
@@ -1967,7 +1990,12 @@ def _render_clear_layout(
     없으면 세션을 새 리비전으로 옮긴다(되돌리기와 같다). `notice` 는 앞 회차에 켠 체크가 그렇게
     풀렸다는 알림이다(`clear_layout_unchecked_notice`) — 체크 칸 바로 위에 적는다."""
     if session.legacy_trace_count:
-        st.caption(legacy_trace_lock_line(session.legacy_trace_count))
+        _render_legacy_locked_write(
+            session.legacy_trace_count,
+            "배치 차이 모두 지우기",
+            icon=":material/layers_clear:",
+            key=CLEAR_LAYOUT_BUTTON_KEY,
+        )
         return
     st.caption(clear_layout_value_line(scenario))
     latest_id = scenario.latest_schedule_revision_id or ""

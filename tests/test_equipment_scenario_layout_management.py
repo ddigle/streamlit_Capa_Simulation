@@ -41,6 +41,7 @@ from capa_simulation.components.equipment_scenario_management import (
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
     LAYOUT_BLOCKED_LINE,
+    LEGACY_TRACE_BLOCKED_LINE,
     PUBLISH_BUTTON_HELP,
     PUBLISH_BUTTON_KEY,
     RESTORE_BUTTON_KEY,
@@ -57,6 +58,7 @@ from capa_simulation.components.equipment_scenario_management import (
     layout_effect_words,
     layout_trace_sentence,
     layout_trace_sources,
+    legacy_trace_lock_line,
     publish_layout_lines,
     publish_result_message,
     restore_layout_marker,
@@ -563,6 +565,38 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
     assert LAYOUT_BLOCKED_LINE in texts
     assert not any("공식과 다른 배치(실효" in t for t in texts)
     assert not app.error
+
+
+def test_a_legacy_trace_locks_restoring_and_clearing_with_a_mark_and_a_disabled_button(
+    tmp_path: Path,
+) -> None:
+    """옛 배포 흔적이 설비 저장을 막으면 「되돌리기」 · 「배치 차이 모두 지우기」 팝오버는 표지 한
+    마디와 꺼진 단추를 두고 까닭은 그 풍선이 말한다 — 문장을 칸에 세우지 않는다(UI-INP-07)."""
+    repository, setup, _ = _moved_setup(tmp_path)
+    with duckdb.connect(str(repository.database_path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.revision (
+                revision_id, revision_no, note, baseline_hash, schedule_hash, equipment_hash,
+                downtime_hash, equipment_contract_version
+            ) VALUES ('old-deploy', 9, '옛 배포', 'b', 's', 'e', 'd', 3)
+            """
+        )
+    older = repository.list_schedule_revisions(setup)[-1].schedule_revision_id
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+    app.selectbox(key=REVISION_KEY).set_value(older)
+    _ok(app.run())
+
+    reason = legacy_trace_lock_line(1)
+    for key in (RESTORE_BUTTON_KEY, CLEAR_LAYOUT_BUTTON_KEY):
+        locked = app.button(key=key)
+        assert locked.disabled, key
+        assert locked.help == reason, key
+    texts = _texts(app)
+    assert texts.count(LEGACY_TRACE_BLOCKED_LINE) == 2
+    assert reason not in texts
 
 
 def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
