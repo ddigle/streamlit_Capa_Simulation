@@ -320,6 +320,29 @@ def test_the_tables_hand_the_original_process_and_the_raw_rate_to_the_toolbar_cs
     assert secure_columns["확보율"]["type_config"]["max_value"] == 1.1
 
 
+def test_a_blank_stop_sends_the_alarm_to_the_reference_screen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """빈 칸 때문에 멈춘 계산은 채울 표를 말하고 「그 화면으로」 가 기준 정보를 연다(설계 규칙
+    UI-NTF-08, 공용 판정 `calculation_stop_notice`)."""
+    import capa_simulation.services.simulation_cache as simulation_cache
+
+    def stopped(*_args: Any, **_kwargs: Any) -> Any:
+        raise ValueError(
+            "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 []"
+        )
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_securement_rate", stopped)
+    app = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    (note,) = [item for item in alert_notes(app) if item.get("keep")]
+    assert note["code"] == "ST-20"
+    assert note["short"] == "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 2건을 채움"
+    assert note["page"] == "기준 정보"
+    assert "RQ_RUN_RATE" not in note["full"]
+
+
 def test_an_empty_result_box_says_so_in_one_plain_line(monkeypatch: pytest.MonkeyPatch) -> None:
     """두 결과 상자가 비면 표 대신 「…이 없습니다」 평문 한 줄이 선다 — 「없음」 이라는 값이다.
     초록 성공 상자는 알림창 몫이라 쓰지 않고(UI-NTF-01), 하는 법 · 길 안내도 붙이지 않는다

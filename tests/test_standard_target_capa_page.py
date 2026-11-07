@@ -494,6 +494,25 @@ def test_calculation_block_failure_is_reported_on_the_page(error: str, message: 
     assert message in data_error_texts(app)
 
 
+def test_a_blank_stop_sends_the_alarm_to_the_reference_screen() -> None:
+    """빈 칸 때문에 멈춘 계산은 짧은 글이 채울 표를 말하고 「그 화면으로」 가 기준 정보를 연다 —
+    같은 `except` 가 받는 다른 오류는 이 화면에 머문다(설계 규칙 UI-NTF-08, 공용 판정
+    `calculation_stop_notice`)."""
+    error = "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 []"
+    script = TEST_SCRIPT.replace(
+        "RAISE_IN_CALCULATION = None", f"RAISE_IN_CALCULATION = ValueError({error!r})"
+    )
+    assert script != TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    assert not app.exception
+    (note,) = [item for item in alert_notes(app) if item.get("keep")]
+    assert note["code"] == "ST-20"
+    assert note["short"] == "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 2건을 채움"
+    assert note["page"] == "기준 정보"
+    assert "RQ_RUN_RATE" not in note["full"]
+
+
 def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -> None:
     """조회기간을 바꾼 뒤 과거 리비전을 열어도 페이지가 죽지 않고 범위 안으로 맞춘다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)

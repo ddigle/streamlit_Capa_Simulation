@@ -63,6 +63,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
+    calculation_stop_notice,
     load_page_context,
     prune_choice,
     prune_list_selection,
@@ -829,7 +830,13 @@ try:
     )
     standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
-    render_data_error(bootstrap_error_message(exc), code="ST-20")
+    stop = calculation_stop_notice(exc)
+    render_data_error(
+        bootstrap_error_message(exc) if stop is None else stop.message,
+        code="ST-20",
+        text=None if stop is None else stop.text,
+        goto=None if stop is None else stop.goto,
+    )
     st.stop()
 
 process_options = get_display_ordered_values(

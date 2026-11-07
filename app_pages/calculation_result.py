@@ -53,6 +53,7 @@ from capa_simulation.components.table_toolbar import render_table_heading
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    calculation_stop_notice,
     load_page_context,
     prune_list_selection,
     resolve_effective_months,
@@ -198,7 +199,13 @@ except BOOTSTRAP_ERRORS as exc:
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
             render_data_error_mark()
-    alert_page_error(bootstrap_error_message(exc), code="ST-20")
+    stop = calculation_stop_notice(exc)
+    alert_page_error(
+        bootstrap_error_message(exc) if stop is None else stop.message,
+        code="ST-20",
+        text=None if stop is None else stop.text,
+        goto=None if stop is None else stop.goto,
+    )
 else:
     # 상태 알림의 범위 — 이 화면의 결과는 유효 조회기간 키로 계산한 것이다(측정률 가정만 시나리오
     # 전체 기준이라 기간을 넣지 않는다 — HOME 과 같은 범위).

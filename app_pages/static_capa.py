@@ -37,6 +37,7 @@ from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    calculation_stop_notice,
     load_page_context,
     resolve_effective_months,
     stop_calculation_on_error,
@@ -248,7 +249,13 @@ except BOOTSTRAP_ERRORS as exc:
     threshold_caption_slot.caption(
         securement_threshold_caption(thresholds, start_month=0, end_month=0, with_warning=True)
     )
-    render_data_error(bootstrap_error_message(exc), code="ST-20")
+    stop = calculation_stop_notice(exc)
+    render_data_error(
+        bootstrap_error_message(exc) if stop is None else stop.message,
+        code="ST-20",
+        text=None if stop is None else stop.text,
+        goto=None if stop is None else stop.goto,
+    )
 else:
     threshold_caption_slot.caption(
         securement_threshold_caption(
