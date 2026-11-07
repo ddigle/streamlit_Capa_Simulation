@@ -24,7 +24,7 @@ from capa_simulation.components.editor_state import discard_editor, editor_widge
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_names
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
@@ -118,10 +118,10 @@ def render_cutoff_management(
 ) -> pd.DataFrame:
     """Cut-off 표를 그리고 **현재 저장된 값**을 돌려준다.
 
-    `locked_reason` 을 주면 표를 읽기 전용으로 보이고(저장값 그대로) 「설비 공정으로 채우기」·저장을
-    세우지 않는다 — Cut-off 는 모든 설비 시나리오 공용이라 가정 설비 시나리오에서는 고치지 않는다
-    (E3). 잠근 동안 초안(세션 칸)은 건드리지 않는다. 초안은 팝업이 열린 동안만 산다 — 팝업을 새로
-    열면 `forget_cutoff_draft` 가 걷어 최신 저장본에서 다시 선다.
+    `locked_reason` 을 주면 표를 읽기 전용으로 보이고(저장값 그대로) 「설비 공정으로 채우기」·CSV
+    단추(왕복 양식)·저장을 세우지 않는다 — Cut-off 는 모든 설비 시나리오 공용이라 가정 설비
+    시나리오에서는 고치지 않는다(E3). 잠근 동안 초안(세션 칸)은 건드리지 않는다. 초안은 팝업이 열린
+    동안만 산다 — 팝업을 새로 열면 `forget_cutoff_draft` 가 걷어 최신 저장본에서 다시 선다.
 
     돌려주는 것이 편집 중인 값이 아니라 저장된 값인 것은, Static 대비 일정의 GAP 계산이 저장되지
     않은 초안으로 숫자를 내면 안 되기 때문이다(그 화면은 저장된 값을 캐시 경계에서 직접 읽는다).
@@ -149,13 +149,8 @@ def render_cutoff_management(
     if locked_reason is not None:
         # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07).
         st.caption(":material/lock: Cut-off 잠김", help=locked_reason)
-        render_csv_download(
-            data=stored.to_csv(index=False).encode("utf-8-sig"),
-            file_name="process_cutoff.csv",
-            key="equipment_cutoff_csv_v1",
-        )
-        # 표 도구 막대가 바로 위 CSV 단추에 닿지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
-        toolbar_clearance()
+        # 읽기만 하는 표라 내려받기는 표 도구 막대 한 곳이다(설계 규칙 UI-LAY-12). 표 위 줄에 누를
+        # 것이 없어 앞 띄움도 두지 않는다.
         st.dataframe(
             stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS] if not stored.empty else stored,
             hide_index=True,

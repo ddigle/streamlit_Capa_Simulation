@@ -200,6 +200,42 @@ def test_the_missing_cutoff_warning_blocks_the_tildes_of_the_process_names(
     clear_equipment_repository()
 
 
+def _locked_cutoff_body(database_path: str) -> None:
+    """가정 설비 시나리오의 팝업 본문 — 표는 읽기만 하고 고칠 수 없다."""
+    from pathlib import Path
+
+    from capa_simulation.components.cutoff_management import render_cutoff_management
+    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+    repository = DuckDBEquipmentRepository(Path(database_path))
+    repository.initialize()
+    render_cutoff_management(
+        repository, equipment_processes=["E2E~공정~X"], locked_reason="가정 설비 시나리오"
+    )
+
+
+def test_the_locked_table_keeps_only_the_toolbar_download(tmp_path: Path) -> None:
+    """잠긴 표는 읽기만 해 곁 CSV 단추를 두지 않는다 — 내려받기는 표 도구 막대 한 곳이다(설계 규칙
+    UI-LAY-12 · 답 csv-dup). 고치는 표의 CSV 는 왕복 양식이라 그대로다. 표 위에 누를 것이 없어 앞
+    띄움도 없다(`tests/test_table_toolbar.py`)."""
+    locked = AppTest.from_function(
+        _locked_cutoff_body, args=(str(tmp_path / "locked.duckdb"),), default_timeout=60
+    ).run()
+
+    assert not locked.exception, [item.message for item in locked.exception]
+    assert len(locked.dataframe) == 1
+    assert not locked.get("download_button")
+    assert not locked.get("space")
+    assert any("Cut-off 잠김" in str(item.value) for item in locked.caption)
+
+    editable = AppTest.from_function(
+        _cutoff_body, args=(str(tmp_path / "editable.duckdb"),), default_timeout=60
+    ).run()
+
+    assert [item.proto.url != "" for item in editable.get("download_button")] == [True]
+    clear_equipment_repository()
+
+
 def _missing_report(names: list[str]) -> None:
     import pandas as pd
 
