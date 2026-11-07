@@ -343,7 +343,7 @@ def next_run_line(
     """예약이 서 있는 실행의 「다음 실행」 한 줄. 오늘 예약 회차를 이미 잡았으면 오늘 남은 지정
     시각이 아니라 내일이다."""
     if not config.enabled:
-        return "꺼져 있어 돌지 않습니다."
+        return "없음 (자동 갱신 꺼짐)"
     upcoming = next_scheduled_run(now, config.check_time)
     if claimed_today and upcoming.date() == now.date():
         upcoming += timedelta(days=1)

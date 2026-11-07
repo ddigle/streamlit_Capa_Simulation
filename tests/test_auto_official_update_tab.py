@@ -818,14 +818,14 @@ def test_the_next_run_skips_to_tomorrow_once_today_is_claimed() -> None:
 
 @pytest.mark.parametrize(
     ("enabled", "line"),
-    [(True, "**다음 실행** · 2026-"), (False, "**다음 실행** · 꺼져 있어 돌지 않습니다.")],
+    [(True, "**다음 실행** · 2026-"), (False, "**다음 실행** · 없음 (자동 갱신 꺼짐)")],
     ids=["자동 갱신 켜짐", "자동 갱신 꺼짐"],
 )
 def test_the_next_run_stands_where_the_schedule_runs(
     database: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool, line: str
 ) -> None:
-    """예약이 서 있는 실행의 다음 실행은 값이다 — 시각이 남고, 설정이 꺼졌으면 돌지 않는다고
-    적는다."""
+    """예약이 서 있는 실행의 다음 실행은 값이다 — 시각이 남고, 설정이 꺼졌으면 무엇이 꺼졌는지
+    (「예약 · 켜짐」 과 맞서 읽히지 않게) 그 이름을 적는다."""
     import capa_simulation.components.auto_official_update_tab as tab
 
     class _Scheduler:
