@@ -1249,22 +1249,19 @@ function paintBar(S) {
     seg.appendChild(item)
   }
   bar.appendChild(seg)
+  // 표지 낱말 셋만 둔다 — 어디에 저장되는지는 표지 풍선이 말한다(설계 규칙 UI-TXT-01, 긴 시나리오 이름이 범례를 제 줄로 내리지 않게).
   const legend = el('div', 'emg-legend')
   const scenarioData = S.data.scenario || {}
   const scenario = scenarioData.name || '지금 설비 시나리오'
-  const left = el('span')
-  left.appendChild(el('span', 'emg-scope is-scenario', '시나리오'))
-  left.appendChild(el('span', null, ' ' + scenario + '에만 저장'))
+  const scope = (kind, word, tip) => {
+    const mark = el('span', 'emg-scope' + kind, word)
+    mark.title = tip
+    legend.appendChild(mark)
+  }
+  scope(' is-scenario', '시나리오', scenario + '에만 저장')
   // 배치 칸은 공식 설비 시나리오면 공식 배치, 가정이면 그 시나리오의 배치 차이로 간다(설비 시나리오 2단계 S3).
-  const middle = el('span')
-  middle.appendChild(el('span', 'emg-scope is-layout', '배치'))
-  middle.appendChild(el('span', null, scenarioData.official === false ? ' ' + scenario + '에만 저장(공식과 다른 것만)' : ' 공식 배치에 저장'))
-  const right = el('span')
-  right.appendChild(el('span', 'emg-scope', '공통'))
-  right.appendChild(el('span', null, ' 모든 설비 시나리오에 함께 저장'))
-  legend.appendChild(left)
-  legend.appendChild(middle)
-  legend.appendChild(right)
+  scope(' is-layout', '배치', scenarioData.official === false ? scenario + '에만 저장(공식과 다른 것만)' : '공식 배치에 저장')
+  scope('', '공통', '모든 설비 시나리오에 함께 저장')
   bar.appendChild(legend)
 }
 

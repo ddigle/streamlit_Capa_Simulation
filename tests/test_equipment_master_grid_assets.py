@@ -1141,6 +1141,20 @@ def test_redrawn_side_controls_keep_focus_and_a_panel_an_action_opened_shows_its
     assert re.search(r"\.emg-side\s*\{[^}]*scroll-margin-top:\s*80px", CSS)
 
 
+def test_the_scope_legend_keeps_three_words_and_puts_the_saving_words_in_tips() -> None:
+    """범례는 표지 낱말 셋이다 — 저장 말은 표지 풍선이다(설계 규칙 UI-TXT-01). 긴 가정 시나리오
+    이름이 범례를 제 줄로 내려 표가 26px 밀렸다(g5-13, 샘플 관측)."""
+    bar = _function("paintBar")
+    for word, tip in (
+        ("'시나리오'", "scenario + '에만 저장'"),
+        ("'배치'", "'공식 배치에 저장'"),
+        ("'공통'", "'모든 설비 시나리오에 함께 저장'"),
+    ):
+        assert word in bar and tip in bar
+    assert "scenario + '에만 저장(공식과 다른 것만)'" in bar
+    assert "mark.title = tip" in bar and "el('span', null, ' '" not in bar
+
+
 _PENDING_RUNNER = """
 const box = createBox()
 rebaseBox(box, 'b1')
