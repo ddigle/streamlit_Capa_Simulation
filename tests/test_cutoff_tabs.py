@@ -404,6 +404,30 @@ def test_filling_with_nothing_to_add_keeps_the_table_and_says_so(tmp_path: Path)
     clear_equipment_repository()
 
 
+def test_a_second_press_of_fill_does_not_cover_what_the_first_added(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빠른 두 번 누름은 첫 누름이 행을 더한 뒤라 둘째 누름에 더할 공정이 없다. 그 답이 「1개 행을
+    더했습니다」 를 덮어 행이 늘었는데 「더할 공정이 없습니다」 만 떴다(2026-11-08 브라우저 측정).
+    창이 지난 뒤의 누름에는 그대로 답한다."""
+    app, _ = _cutoff_app(tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"])
+    tables = BrowserTables(app, forms=True)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+
+    _press(tables, "설비 공정으로 채우기")
+    _press(tables, "설비 공정으로 채우기")
+
+    assert app.session_state[CUTOFF_DRAFT_KEY]["공정"].tolist() == ["Process-A", "Process-B"]
+    assert "1개 행을 표 끝에 더했습니다." in [str(item.value) for item in successes(app)]
+    assert "더할 공정이 없습니다." not in [str(item.value) for item in infos(app)]
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _press(tables, "설비 공정으로 채우기")
+
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
+    clear_equipment_repository()
+
+
 def test_filling_sees_a_row_added_in_the_table_but_not_saved(tmp_path: Path) -> None:
     """표에 손으로 더한 행은 제출 전에는 서버에 없다 — 채우기가 폼을 받아야 같은 공정을 두 번 더하지
     않는다."""

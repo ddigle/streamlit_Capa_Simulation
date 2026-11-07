@@ -325,7 +325,12 @@ def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> N
 
     잠그지 않고 누른 회차에 답한다 — 초안의 빈 행과 손으로 더한 행까지 보려면 폼을 받아야 해서
     그리는 회차에는 더할 공정이 있는지 모른다(설계 규칙 UI-INP-07). 새 행은 표 끝이라 첫 화면에 안
-    보여 알림이 그 변화를 말한다. 더할 공정이 없으면 표를 다시 세우지 않는다."""
+    보여 알림이 그 변화를 말한다. 더할 공정이 없으면 표를 다시 세우지 않는다.
+
+    빠른 두 번 누름의 둘째 누름은 더할 공정이 없어도 그렇게 답하지 않는다 — 첫 누름이 방금 더한
+    것을 「더할 공정이 없습니다」 로 덮게 된다. 첫 누름의 알림은 알림 칸이 다시 낸다
+    (`write_guard.held_notice`)."""
+    notices = notice_marks()
     filled = add_missing_cutoff_rows(draft, equipment_processes)
     added = len(filled) - len(draft)
     if added:
@@ -333,8 +338,10 @@ def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> N
         # 편집 델타는 행 위치다. 표가 바뀌는데 옛 델타를 남기면 다른 공정에 붙는다.
         # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
         discard_editor(_EDITOR_KEY)
-        queue_flash(_FLASH_KEY, f"{added}개 행을 표 끝에 더했습니다.")
-    else:
+        message = f"{added}개 행을 표 끝에 더했습니다."
+        note_notice(notices, _FLASH_KEY, message)
+        queue_flash(_FLASH_KEY, message)
+    elif held_notice(_FLASH_KEY) is None:
         queue_flash(_FLASH_KEY, "더할 공정이 없습니다.", kind="info")
     st.rerun()
 
