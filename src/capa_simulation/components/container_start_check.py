@@ -11,7 +11,8 @@ CD 서버에는 셸도 로그도 없어(시작 명령도 못 바꾼다) 시작 �
 
 파일은 작은 JSON 하나라 회차마다 읽고 DB 는 열지 않는다. 비밀값은 파일에 원래 없다(스크립트가
 가렸다). 사람이 넣은 값에서 나온 글(까닭·pip 출력)은 표·코드 칸에 그대로 싣고, 캡션에 넣는 값은
-`literal_markdown` 으로 싣는다.
+`literal_markdown` 으로 싣는다. 「복사」 글은 리뷰로 나가므로 pip 출력의 주소를 가린다
+(`share_pip_line`).
 
 S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연결 · 버킷 목록 · DB 받기)이 더해지고
 캡션에 디스크 · pod 끝 글자 · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다
@@ -20,6 +21,7 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 import pandas as pd
@@ -45,6 +47,7 @@ from capa_simulation.io.container_start_report import (
     UNREADABLE_REPORT_NOTICE,
     ContainerStartReport,
     SyncStart,
+    missing_report_detail,
     missing_report_notice,
     read_app_ready,
     read_container_start_report,
@@ -60,6 +63,19 @@ from capa_simulation.sidebar_status import remembered_expander
 EXPANDER_KEY = "admin_area_container_start_check"
 COPY_KEY = "container_start_check"
 PIP_TAIL_LABEL = "pip 출력 끝(자격증명은 가렸습니다)"
+COPY_PIP_TAIL_LABEL = "pip 출력 끝(자격증명 · 주소는 가렸습니다)"
+ADDRESS_MASK = "<주소>"
+# 복사 글의 pip 출력에서 가리는 주소(런북 7-7) — URL 통째, 호스트 없이 서는 경로(`with url: /…`),
+# 호스트만 서는 자리(`host='…'` · `located at … is not` · `Connection to … timed out`), IP.
+# 파일 이름의 판(`x-1.2.3.tar.gz`)과 모듈 경로(`urllib3.exceptions.…`)는 남고, 갈래를 가르는 글(HTTP
+# 상태 · 인증서 · 판 없음)도 그대로다.
+_ADDRESS_TAIL = r"[^\s'\"<>()]*[^\s'\"<>():,.;]"
+_ADDRESS = re.compile(
+    rf"[A-Za-z][A-Za-z0-9+.-]*://{_ADDRESS_TAIL}"
+    rf"|(?:(?<=url: )|(?<=': ))/{_ADDRESS_TAIL}"
+    r"|(?<![\w./-])(?:[a-z][a-z0-9-]*\.)+[a-z]{2,}(?![\w-]|\.[\w-])"
+    r"|(?<![\w.-])\d{1,3}(?:\.\d{1,3}){3}(?![\w-]|\.[\w-])"
+)
 _GIB = 1024**3
 # pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
 POD_TAIL_CHARS = 5
@@ -186,18 +202,24 @@ def report_origin_caption(report: ContainerStartReport) -> str:
     return f"**시작 기록** · {started} · `scripts/container_start.py`"
 
 
+def share_pip_line(line: str) -> str:
+    """pip 출력 한 줄의 주소를 가린다 — 화면은 글자 그대로, 리뷰로 나가는 복사 글은 이 꼴이다."""
+    return _ADDRESS.sub(ADDRESS_MASK, line)
+
+
 def report_text(
     title: str, report: ContainerStartReport, steps: pd.DataFrame, facts: list[str]
 ) -> str:
     """「복사」 글 — 펼침의 값 줄 · 단계 표 · 사실 줄 · pip 출력 끝. 값은 갈래와 수뿐이고 비밀값은
-    결과 파일에 원래 없다(모듈 설명)."""
+    결과 파일에 원래 없으며(모듈 설명) pip 출력의 주소는 가린다."""
     missing = missing_environment_line(report)
+    pip_tail = [share_pip_line(line) for line in report.pip_tail]
     return diagnostic_text(
         title,
         plain_lines([report_origin_caption(report)]),
         table_lines(steps),
         plain_lines([*facts, *([missing] if missing else [])]),
-        [PIP_TAIL_LABEL, *report.pip_tail] if report.pip_tail else [],
+        [COPY_PIP_TAIL_LABEL, *pip_tail] if pip_tail else [],
     )
 
 
@@ -254,14 +276,14 @@ def _render_missing_report() -> None:
             _report_missing(None)
             return
         title, notice = "서버 시작 점검 · 결과 없음", missing
-        _report_missing(title, notice)
+        _report_missing(title, missing_report_detail(missing))
     # 넣을 환경변수와 이때 볼 것은 Guide 「서버 시작 점검」 이 안내 문서 절을 가리킨다(UI-TXT-03).
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
         render_diagnostic_copy(diagnostic_text(title, plain_lines([notice])), key=COPY_KEY)
         st.caption(notice)
 
 
-def _report_missing(title: str | None, notice: str = "") -> None:
+def _report_missing(title: str | None, detail: str = "") -> None:
     """서버 시작 점검 결과를 못 읽었는지 상태 알림(`AD-01`). 읽었거나 CD 서버가 아니면 해소다 —
     Admin 회차마다 한 번 부른다(이벤트 칸 한 자리)."""
     alerts.state(
@@ -270,5 +292,5 @@ def _report_missing(title: str | None, notice: str = "") -> None:
         content=title,
         active=title is not None,
         text=(None if title is None else f"{title} — 배포 서버 환경변수를 확인하세요"),
-        full=notice or None,
+        full=alerts.plain_text(detail) or None,
     )

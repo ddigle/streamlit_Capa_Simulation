@@ -24,6 +24,7 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.settings as settings
 from capa_simulation import object_sync_worker, sync_boot
 from capa_simulation.components import (
+    container_start_check,
     diagnostic_copy,
     module_status,
     object_sync_status,
@@ -197,9 +198,73 @@ def test_the_copy_of_the_start_check_carries_the_table_and_the_pip_tail(
     assert "시작 기록 · 2026-11-07T09:00:00+09:00" in text
     assert "단계\t결과\t까닭" in text and "pip 설치 실패" in text
     assert "시작 때 비어 있던 CD 환경변수: CAPA_BDQ_TOKEN" in text
-    # pip 출력은 마크다운이 아니라 받은 글 그대로다(빈칸도).
-    assert "pip 출력 끝(자격증명은 가렸습니다)\nERROR: No matching distribution  found" in text
+    # pip 출력은 마크다운이 아니라 받은 글 그대로다(빈칸도) — 주소만 가린다.
+    assert f"{container_start_check.COPY_PIP_TAIL_LABEL}\nERROR: No matching" in text
+    assert "ERROR: No matching distribution  found" in text
     assert "`" not in text and "**" not in text
+
+
+FAKE_INDEX_HOST = "artifactory.example.invalid"
+
+
+@pytest.mark.parametrize(
+    ("line", "shared"),
+    [
+        (
+            f"Looking in indexes: https://***@{FAKE_INDEX_HOST}/repository/demo/simple",
+            "Looking in indexes: <주소>",
+        ),
+        (
+            f"WARNING: The repository located at {FAKE_INDEX_HOST} is not a trusted host.",
+            "WARNING: The repository located at <주소> is not a trusted host.",
+        ),
+        (
+            f"Failed to connect to {FAKE_INDEX_HOST}.",
+            "Failed to connect to <주소>.",
+        ),
+        (
+            f"HTTPSConnectionPool(host='{FAKE_INDEX_HOST}', port=443): Max retries exceeded "
+            "with url: /repository/demo/simple/bigdataquery/ (Caused by SSLError(x))",
+            "HTTPSConnectionPool(host='<주소>', port=443): Max retries exceeded "
+            "with url: <주소> (Caused by SSLError(x))",
+        ),
+        (
+            f"Could not fetch URL https://{FAKE_INDEX_HOST}/simple/bigdataquery/: There was a "
+            "problem confirming the ssl certificate",
+            "Could not fetch URL <주소>: There was a problem confirming the ssl certificate",
+        ),
+        (
+            "'Connection to 10.1.2.3 timed out. (connect timeout=15)'",
+            "'Connection to <주소> timed out. (connect timeout=15)'",
+        ),
+        (
+            "ERROR: 403 Client Error: Forbidden for url: "
+            f"https://{FAKE_INDEX_HOST}/simple/bigdataquery/",
+            "ERROR: 403 Client Error: Forbidden for url: <주소>",
+        ),
+    ],
+)
+def test_the_copy_of_a_pip_line_hides_the_address(line: str, shared: str) -> None:
+    """복사 글은 리뷰로 나간다 — 주소는 URL · 경로 · 호스트 · IP 어느 꼴이든 가린다(런북 7-7)."""
+    assert container_start_check.share_pip_line(line) == shared
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "── Artifactory 인덱스에서 bigdataquery",
+        "ERROR: Could not find a version that satisfies the requirement bigdataquery==2.5.0",
+        "Downloading bigdataquery-2.5.0-py3-none-any.whl (5 kB)",
+        "bigdataquery-2.5.0.tar.gz",
+        "Successfully installed bigdataquery-2.5.0",
+        "urllib3.exceptions.MaxRetryError: certificate verify failed (_ssl.c:1007)",
+        "<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f0>",
+        "-c /project/requirements.txt (line 3)",
+    ],
+)
+def test_the_copy_of_a_pip_line_keeps_what_tells_the_failures_apart(line: str) -> None:
+    """판 · 파일 이름 · 모듈 경로는 주소가 아니다 — 갈래를 가르는 글이 뭉개지지 않는다."""
+    assert container_start_check.share_pip_line(line) == line
 
 
 @pytest.mark.parametrize("body", ["{깨진 JSON", ""])

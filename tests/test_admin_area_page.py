@@ -800,6 +800,9 @@ def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
     assert any("돌지 않은 것으로" in text for text in captions), captions
     note = active_state(app, "AD-01")
     assert note is not None and "돌지 않은 것으로" in note["full"], states(app, "AD-01")
+    # 알림 전문은 Guide 를 열지 않아도 다음 할 일이 있고, 평문이다(코드 표시 기호 없음).
+    assert note["full"].endswith("이 문구를 그대로 알려 주세요.") and "`" not in note["full"]
+    assert not any("그대로 알려 주세요" in text for text in captions), captions
     assert "FAKE-bdq-login-token-0000" not in str(note)
     assert not any("FAKE-bdq-login-token-0000" in text for text in captions)
 
@@ -829,7 +832,7 @@ def test_a_broken_start_report_is_told_apart_from_a_missing_one(
     assert not any("CI/CD" in text for text in captions), captions
     note = active_state(app, "AD-01")
     assert note is not None and "결과 파일을 읽지 못함" in note["short"], states(app, "AD-01")
-    assert "CI/CD 를 다시 돌리고" in note["full"]
+    assert "CI/CD 를 다시 돌리고" in note["full"] and "`" not in note["full"]
 
 
 def test_an_opened_server_start_check_stays_open_after_a_trip_to_another_screen(

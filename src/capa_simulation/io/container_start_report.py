@@ -385,12 +385,13 @@ def start_check_hint(
 ) -> str | None:
     """결과 파일이 있으면 그 단계의 안내 한 단락이다. 있는데 읽지 못하면 「결과 파일을 읽지
     못했습니다」 한 단락(`UNREADABLE_REPORT_DETAIL`)이다. 없으면 CD 서버로 보일 때만 「결과 없음」
-    한 단락(`missing_report_notice`)이고, 개발·사내 PC 는 `None`(지금 문구 그대로)이다."""
+    한 단락(`missing_report_detail`)이고, 개발·사내 PC 는 `None`(지금 문구 그대로)이다."""
     report = read_container_start_report(path)
     if report is None:
         if report_file_exists(path):
             return UNREADABLE_REPORT_DETAIL
-        return missing_report_notice(environ)
+        notice = missing_report_notice(environ)
+        return None if notice is None else missing_report_detail(notice)
     return step_hint(report, step)
 
 
@@ -409,6 +410,8 @@ UNREADABLE_REPORT_ACTION: Final = (
     "CI/CD 를 다시 돌리고, 그래도 같으면 이 문구를 그대로 알려 주세요."
 )
 UNREADABLE_REPORT_DETAIL: Final = f"{UNREADABLE_REPORT_NOTICE} {UNREADABLE_REPORT_ACTION}"
+# 「결과 없음」 의 그다음 할 일 — 읽지 못함과 같이 펼침 밖의 글에만 잇는다(`missing_report_detail`).
+MISSING_REPORT_ACTION: Final = "이 문구를 그대로 알려 주세요."
 
 
 def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | None:
@@ -438,6 +441,11 @@ def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | Non
         f"시작 스크립트(`{START_SCRIPT}`)의 결과 파일이 없습니다. 스크립트가 돌지 않았거나 "
         "`data/temp/` 에 결과를 쓰지 못했습니다."
     )
+
+
+def missing_report_detail(notice: str) -> str:
+    """`missing_report_notice` 의 글에 그다음 할 일을 이은 펼침 밖의 글."""
+    return f"{notice} {MISSING_REPORT_ACTION}"
 
 
 def report_verdict(report: ContainerStartReport) -> str:

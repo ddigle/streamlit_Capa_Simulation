@@ -17,7 +17,8 @@ C-DEP 서버에는 셸도 로그도 없어 Admin 펼침(서버 시작 점검 · 
 
 복사 글은 평문이다 — 마크다운 꾸밈을 걷고(`plain_lines`), 표는 탭으로 나눈 줄이다(`table_lines` —
 그대로 붙이면 Excel 칸에 들어간다). **복사 글은 밖으로 나가는 글이다** — 부르는 쪽은 리뷰에 옮기지
-말아야 할 값을 싣지 않는다(통합인증 점검의 포털 등록값 셋 — `sso_status.status_text`).
+말아야 할 값을 싣지 않는다(통합인증 점검의 포털 등록값 셋 — `sso_status.status_text`, 서버 시작
+점검의 pip 출력 주소 — `container_start_check.report_text`).
 """
 
 from __future__ import annotations
