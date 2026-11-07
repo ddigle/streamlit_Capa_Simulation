@@ -255,6 +255,13 @@ ARCHIVE_GONE_MESSAGE = (
 )
 # 「공식 이력」 칸에 보이는 최근 건수.
 HISTORY_LIMIT = 20
+# 「공식 이력」 표 칸 폭(px)과 시각 꼴(`_short_time` 과 같은 글자). 앞 네 칸의 합이 옆 칸 처음 폭
+# 안에 들어 「지정시각」 이 기준 창에서 보인다 — 시나리오 칸이 줄고 공식버전명은 남는 폭을 쓴다.
+HISTORY_VERSION_WIDTH_PX = 66
+HISTORY_SCENARIO_WIDTH_PX = 96
+HISTORY_REVISION_WIDTH_PX = 54
+HISTORY_TIME_WIDTH_PX = 112
+HISTORY_TIME_FORMAT = "YY.MM.DD HH:mm"
 # 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
 CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
 # 「상세」 칸 작업 줄 아래 결과 · 오류 칸(종류, 글).
@@ -1434,14 +1441,22 @@ def _render_official_history(releases: Sequence[OfficialReleaseSummary]) -> None
                     "공식버전": f"v{release.release_no}",
                     "시나리오": release.scenario_name,
                     "리비전": f"r{release.revision_no}",
-                    "공식버전명": release.release_name,
                     "지정시각": release.published_at,
+                    "공식버전명": release.release_name,
                 }
                 for release in releases[:HISTORY_LIMIT]
             ]
         ),
         hide_index=True,
         width="stretch",
+        column_config={
+            "공식버전": st.column_config.TextColumn(width=HISTORY_VERSION_WIDTH_PX),
+            "시나리오": st.column_config.TextColumn(width=HISTORY_SCENARIO_WIDTH_PX),
+            "리비전": st.column_config.TextColumn(width=HISTORY_REVISION_WIDTH_PX),
+            "지정시각": st.column_config.DatetimeColumn(
+                format=HISTORY_TIME_FORMAT, width=HISTORY_TIME_WIDTH_PX
+            ),
+        },
     )
     if len(releases) > HISTORY_LIMIT:
         st.caption(f"최근 {HISTORY_LIMIT}건만 보입니다.")

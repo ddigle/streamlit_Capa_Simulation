@@ -1,5 +1,6 @@
 # Purpose: 시나리오 관리 화면의 목록 표 · 오른쪽 칸 · 공식 지정 · 보관함 · 복제를 AppTest 로 잰다.
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1840,8 +1841,24 @@ def test_the_history_and_archive_panels_stand_with_a_line_when_empty(tmp_path: P
     frame = next(
         element.value for element in app.dataframe if "공식버전명" in element.value.columns
     )
-    assert frame.columns.tolist() == ["공식버전", "시나리오", "리비전", "공식버전명", "지정시각"]
+    assert frame.columns.tolist() == ["공식버전", "시나리오", "리비전", "지정시각", "공식버전명"]
     assert len(frame) == 1
+
+
+def test_the_release_time_fits_the_first_width_of_the_history_panel(tmp_path: Path) -> None:
+    """옆 칸 처음 폭(샘플 관측 352px — 창 1283)에서 공식 이력의 「지정시각」 까지 보인다. 칸 폭을
+    주지 않으면 표가 내용 폭(샘플 관측 613px)으로 서서 「지정시각」 이 가로 스크롤 뒤로 숨었다."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    app.run()
+    assert not app.exception
+    table = next(element for element in app.dataframe if "공식버전명" in element.value.columns)
+    config = json.loads(table.proto.columns)
+    widths = [config[name]["width"] for name in ("공식버전", "시나리오", "리비전", "지정시각")]
+    assert sum(widths) <= 352
+    assert config["지정시각"]["type_config"]["format"] == "YY.MM.DD HH:mm"
 
 
 def test_the_tab_mounts_are_edit_tables_for_the_leave_hold() -> None:
