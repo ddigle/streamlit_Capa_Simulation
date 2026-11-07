@@ -203,16 +203,9 @@ def _render_summary(
 
     with overview_table.container(border=True):
         st.markdown("#### :material/priority_high: 관리 우선순위", help=PRIORITY_HELP)
+        # 곁 칸이라 폭이 좁다 — 판정 글자는 이 칸뿐이라 공정 바로 뒤에 둔다.
         priority = process_summary[
-            [
-                "공정",
-                "소요기준",
-                "Capa 실현률",
-                "설비 성능 실현률",
-                "가용 Capa 활용률",
-                "재공부족 미활용률",
-                "상태",
-            ]
+            ["공정", "상태", "소요기준", "Capa 실현률", "설비 성능 실현률"]
         ].reset_index(drop=True)
         priority.insert(0, "순위", pd.Series(range(1, len(priority) + 1), dtype="int64"))
         # CSV 출구가 없는 조회 표다. 화면 복사본에만 표시명을 입힌다.
@@ -228,8 +221,6 @@ def _render_summary(
                 "소요기준": st.column_config.TextColumn(width="small"),
                 "Capa 실현률": st.column_config.NumberColumn(format="percent"),
                 "설비 성능 실현률": st.column_config.NumberColumn(format="percent"),
-                "가용 Capa 활용률": st.column_config.NumberColumn(format="percent"),
-                "재공부족 미활용률": st.column_config.NumberColumn(format="percent"),
             },
         )
 

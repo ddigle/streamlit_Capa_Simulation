@@ -72,6 +72,24 @@ def test_the_priority_requirement_column_keeps_its_own_name() -> None:
     assert "label" not in json.loads(frame.proto.columns)["소요기준"]
 
 
+def test_the_priority_table_shows_the_verdict_right_after_the_process() -> None:
+    """곁 칸이라 폭이 좁다 — 판정 글자가 이 칸뿐이므로 「상태」 는 공정 바로 뒤이고 활용률 두 칸은
+    이 요약 표에 두지 않는다(후보 g7-07). 곁 그림처럼 나쁜 공정이 맨 위다(후보 g7-20)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception, app.exception
+
+    priority = _priority_frame(app)
+    assert list(priority.columns) == [
+        "순위",
+        "공정",
+        "상태",
+        "소요기준",
+        "Capa 실현률",
+        "설비 성능 실현률",
+    ]
+    assert priority["Capa 실현률"].is_monotonic_increasing
+
+
 def test_priority_table_and_process_selector_show_the_display_name() -> None:
     app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
 
