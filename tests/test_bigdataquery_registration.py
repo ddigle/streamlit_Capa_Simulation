@@ -412,9 +412,69 @@ def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
     drawn = _drawn_in_order(app.main)
     button = drawn.index(("Button", "DB 조회 후 시나리오 저장"))
     kind, message = drawn[button + 1]
-    assert kind == "Error" and message.startswith("상세 조회 기간을 지정하거나")
+    assert kind == "Error" and message.startswith("필수 칸이 비어 있습니다")
     (reveal,) = _page_scripts(app)
     assert reveal.proto.unsafe_allow_javascript and "scrollIntoView" in reveal.proto.body
+
+
+def _configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
+
+
+def test_an_empty_form_names_every_blank_field_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """빈 폼은 한 번에 빈 칸을 다 말한다 — 기간 한 가지만 말해 몇 번 눌러야 빈 칸을 다 알았다.
+    사내 조회에 가기 전에 막는다."""
+    _configured(monkeypatch)
+    app = _run()
+
+    _save_button(app).click()
+    app.run()
+
+    assert not app.exception
+    assert [item.value for item in app.error] == [
+        "필수 칸이 비어 있습니다: 조회할 시뮬레이션 코드, 원천 시뮬레이션명, 저장할 시나리오명, "
+        + registration.DETAIL_WINDOW_FIELDS
+    ]
+
+
+def test_a_blank_field_with_a_period_leaves_the_period_out_of_the_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """기간이 있으면 빈 글자 칸만 적는다."""
+    _configured(monkeypatch)
+    app = _run()
+    app.text_input(key=registration.FORM_REGISTERED_AT_KEY).set_value("2026-09-02 03:04:05")
+    app.text_input(key=registration.FORM_SCENARIO_NAME_KEY).set_value("이름 있음")
+
+    _save_button(app).click()
+    app.run()
+
+    assert not app.exception
+    assert [item.value for item in app.error] == [
+        "필수 칸이 비어 있습니다: 조회할 시뮬레이션 코드, 원천 시뮬레이션명"
+    ]
+
+
+def test_only_a_blank_period_says_the_short_period_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """글자 칸이 다 차고 기간만 비면 기간 글 하나다 — 채우는 규칙은 칸 풍선이 말하므로 거듭하지
+    않는다."""
+    _configured(monkeypatch)
+    app = _run()
+    app.text_input(key=registration.FORM_CODE_KEY).set_value("DEMO-A-001")
+    app.text_input(key=registration.FORM_SOURCE_NAME_KEY).set_value("알파 시뮬")
+    app.text_input(key=registration.FORM_SCENARIO_NAME_KEY).set_value("이름 있음")
+
+    _save_button(app).click()
+    app.run()
+
+    assert not app.exception
+    assert [item.value for item in app.error] == [
+        "상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요."
+    ]
 
 
 CATALOG_FAILURE_SCRIPT = """

@@ -135,6 +135,8 @@ DETAIL_WINDOW_HELP: Final = (
     "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 끝 날을 늘립니다 — 기간이 길수록 "
     "조회가 오래 걸립니다."
 )
+# 빈 필수 칸을 모아 알릴 때 기간 자리의 이름 — 둘 가운데 하나만 있으면 된다.
+DETAIL_WINDOW_FIELDS: Final = "상세 조회 기간 또는 원천 DB 등록시점"
 # 조회 SQL 이 없어 잠긴 두 단추의 풍선 — 잠긴 동안만 까닭을 말한다(설계 규칙 UI-INP-07). 채울 자리는
 # 상태 알림 `AD-04` 전문(Alarm)이 적는다.
 CATALOG_LOCKED_HELP: Final = (
@@ -778,6 +780,22 @@ def _save_scenario(
     except ValueError as exc:
         st.error(bootstrap_error_message(exc))
         return
+    # 빈 칸을 **한 번에** 모두 알린다 — 사내 조회 앞에서 막아 조회 한 번을 아끼고, 한 칸씩 말해 여러
+    # 번 누르지 않게 한다(복제 폼과 같은 꼴). 기간만 빈 회차는 `_submitted_detail_window` 가 말한다.
+    missing = [
+        label
+        for label, value in (
+            ("조회할 시뮬레이션 코드", simulation_code),
+            ("원천 시뮬레이션명", source_name),
+            ("저장할 시나리오명", scenario_name),
+        )
+        if not value.strip()
+    ]
+    if missing:
+        if registered_at is None and _detail_window_is_empty():
+            missing.append(DETAIL_WINDOW_FIELDS)
+        st.error(f"필수 칸이 비어 있습니다: {', '.join(missing)}")
+        return
     window = _submitted_detail_window(registered_at, simulation_code=simulation_code)
     if window is None:
         return
@@ -887,6 +905,13 @@ def _registered_span_line() -> str | None:
     return f"**고른 코드의 원천 등록일** · {seen}"
 
 
+def _detail_window_is_empty() -> bool:
+    """상세 조회 기간 두 칸이 모두 비었는가."""
+    start = st.session_state.get(FORM_DETAIL_START_KEY)
+    end = st.session_state.get(FORM_DETAIL_END_KEY)
+    return not isinstance(start, date) and not isinstance(end, date)
+
+
 def _submitted_detail_window(
     registered_at: datetime | None, *, simulation_code: str = ""
 ) -> QueryWindow | None:
@@ -925,11 +950,7 @@ def _submitted_detail_window(
         st.error("상세 조회 시작일과 종료일을 모두 지정하거나 둘 다 비우세요.")
         return None
     if registered_at is None:
-        st.error(
-            "상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요 — 기간을 비워 두면 그 "
-            f"등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ {DETAIL_WINDOW_DAYS_AFTER}일 뒤로 "
-            "조회합니다."
-        )
+        st.error("상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요.")
         return None
     return registration_detail_window(registered_at.date())
 
