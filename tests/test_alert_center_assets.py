@@ -571,12 +571,55 @@ process.stdout.write(JSON.stringify({
     assert out["freedFocus"] == 1
 
 
+def test_a_tip_held_by_a_mouse_press_closes_when_the_pointer_leaves() -> None:
+    """마우스로 누른 단추는 초점을 쥔 채 남고 Streamlit 풍선은 초점이 든 동안 닫지 않는다 — 마우스가
+    칸을 떠날 때 칸에 초점 나감을 보낸다. 키보드 초점의 풍선은 그대로 두고, 칸 안에서 옮겨 다니거나
+    다른 칸을 떠난 마우스에는 움직이지 않는다."""
+    out = _node(
+        """
+globalThis.FocusEvent = class {
+  constructor(type, init) {
+    this.type = type
+    this.bubbles = init.bubbles
+    this.relatedTarget = init.relatedTarget
+  }
+}
+const run = ({ keyboard = false, target = 'inside', related = 'outside', inTip = true }) => {
+  const sent = []
+  const host = { contains: (other) => other === 'inside' || other === 'held' }
+  const held = {
+    closest: () => (inTip ? host : null),
+    matches: () => keyboard,
+    dispatchEvent: (event) => sent.push([event.type, event.bubbles, event.relatedTarget]),
+  }
+  const done = releaseHeldTip({ activeElement: held }, { target, relatedTarget: related })
+  return [done, sent]
+}
+process.stdout.write(JSON.stringify({
+  mouse: run({}),
+  keyboard: run({ keyboard: true }),
+  within: run({ related: 'inside' }),
+  elsewhere: run({ target: 'outside' }),
+  noTip: run({ inTip: false }),
+  nothing: releaseHeldTip({ activeElement: null }, { target: 'inside', relatedTarget: null }),
+}))
+"""
+    )
+    assert out["mouse"] == [True, [["focusout", True, None]]]
+    assert out["keyboard"] == [False, []]
+    assert out["within"] == [False, []]
+    assert out["elsewhere"] == [False, []]
+    assert out["noTip"] == [False, []]
+    assert out["nothing"] is False
+
+
 def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> None:
-    """처리기는 문서에 한 벌이고(알림 칸이 다시 서도 늘지 않는다), Tab 을 누른 순간 맞추어 회차 없이
-    열린 팝오버 안 단추도 들고 평소에는 값이 들지 않는다."""
+    """처리기는 문서에 한 벌이고(알림 칸이 다시 서도 늘지 않는다), 두 일은 사건 자리에서 묶인다 —
+    Tab 을 누른 순간 맞추어 회차 없이 열린 팝오버 안 단추도 들고 평소에는 값이 들지 않는다."""
     shell = JS[JS.index("function installFocusShell(") :]
     shell = shell[: shell.index("\n}\n")]
     assert "if (window.__capaFocusShell) return" in shell
     assert "event.key === 'Tab'" in shell and "syncLockedTips(document)" in shell
+    assert "'pointerout'" in shell and "releaseHeldTip(document, event)" in shell
     assert "installFocusShell()" in JS[JS.index("export default function") :]
     assert "MutationObserver" not in shell
