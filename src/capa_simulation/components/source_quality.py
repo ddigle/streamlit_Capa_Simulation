@@ -26,6 +26,9 @@ SPARSE_RATE = 0.5
 GRADE_COLUMN = "등급"
 MISSING_RATE_COLUMN = "결측률"
 DISTINCT_COLUMN = "고유값"
+# 이 줄 수까지는 내용 높이로 서서 빈 줄이 없고, 넘으면 이 높이 안에서 스크롤한다.
+TABLE_FULL_ROWS = 16
+TABLE_MAX_HEIGHT_PX = 560
 
 
 def _grade(missing_rate: float, unique_count: int) -> str:
@@ -115,7 +118,7 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
         table,
         hide_index=True,
         width="stretch",
-        height=min(560, max(180, (len(table) + 1) * 36 + 4)),
+        height="content" if len(table) <= TABLE_FULL_ROWS else TABLE_MAX_HEIGHT_PX,
         key="source_quality_table",
         column_config={
             "컬럼": st.column_config.TextColumn(width="large"),

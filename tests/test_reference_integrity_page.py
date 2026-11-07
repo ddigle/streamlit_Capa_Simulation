@@ -6,12 +6,19 @@ from typing import Any, NamedTuple
 
 import pandas as pd
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.services.dynamic_capacity import build_dynamic_capacity_demo
+from capa_simulation.services.dynamic_capacity import (
+    aggregate_dynamic_capacity,
+    build_dynamic_capacity_demo,
+)
+
+# 페이지 스크립트의 샘플 표 기억 칸(`_demo_frames`).
+DEMO_MEMO_KEY = "dynamic_capacity_demo_memo"
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -88,6 +95,38 @@ def test_the_priority_table_shows_the_verdict_right_after_the_process() -> None:
         "설비 성능 실현률",
     ]
     assert priority["Capa 실현률"].is_monotonic_increasing
+
+
+def test_the_priority_table_leaves_no_blank_line_and_keeps_its_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """높이 셈이 줄 높이보다 크면 표 아래에 값 없는 빈 줄이 선다 — 공정이 적으면 내용 높이이고,
+    공정이 많을 때만 상한 안에서 스크롤한다(후보 g7-08 · 샘플 관측 줄 높이 31px)."""
+    heights: list[object] = []
+    draw = st.dataframe
+
+    def recorded(*args: Any, **kwargs: Any) -> Any:
+        heights.append(kwargs.get("height"))
+        return draw(*args, **kwargs)
+
+    monkeypatch.setattr(st, "dataframe", recorded)
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert heights[:1] == ["content"]
+
+    demo = build_dynamic_capacity_demo()
+    summary = aggregate_dynamic_capacity(demo, ["공정"])
+    many = pd.concat(
+        [summary.assign(공정=summary["공정"].astype(str) + f"-{at}") for at in range(3)],
+        ignore_index=True,
+    )
+    assert len(many) > 10
+    heights.clear()
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state[DEMO_MEMO_KEY] = (demo, many)
+    app.run()
+    assert not app.exception
+    assert heights[:1] == [365]
 
 
 def test_priority_table_and_process_selector_show_the_display_name() -> None:

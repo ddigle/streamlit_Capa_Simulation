@@ -89,6 +89,10 @@ PENDING_SCREEN_HELP = (
     "않고 비율로 비교합니다."
 )
 
+# 관리 우선순위 표 — 이 줄 수까지는 내용 높이로 서서 빈 줄이 없고, 넘으면 이 높이 안에서 스크롤한다.
+PRIORITY_TABLE_FULL_ROWS = 10
+PRIORITY_TABLE_MAX_HEIGHT_PX = 365
+
 # 손실 한 칸과 그 칸을 파고드는 화면. 워터폴에 서는 칸은 **그 차례 그대로** 둔다 — 화면 목록이
 # 손실 순서와 다르면 목차 구실을 못 한다. 수율 손실 · 설비 가용은 워터폴에 칸이 없다.
 _LOSS_ROUTES = (
@@ -215,7 +219,11 @@ def _render_summary(
             hide_index=True,
             width="stretch",
             # 높이를 못박으면 공정이 적을 때 빈 줄이 남아 데이터가 잘린 것처럼 보인다.
-            height=min(365, (len(priority) + 1) * 36 + 4),
+            height=(
+                "content"
+                if len(priority) <= PRIORITY_TABLE_FULL_ROWS
+                else PRIORITY_TABLE_MAX_HEIGHT_PX
+            ),
             column_config={
                 "순위": st.column_config.NumberColumn(width="small", format="%d"),
                 "소요기준": st.column_config.TextColumn(width="small"),

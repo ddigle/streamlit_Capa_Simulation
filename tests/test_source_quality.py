@@ -1,13 +1,18 @@
 # Purpose: 원천 78컬럼 품질 표의 등급 판정과 정렬을 검증한다.
 
 import pandas as pd
+import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.source_quality import (
     DISTINCT_COLUMN,
     GRADE_COLUMN,
     MISSING_RATE_COLUMN,
+    TABLE_FULL_ROWS,
+    TABLE_MAX_HEIGHT_PX,
     build_source_quality_table,
+    render_source_quality,
     source_quality_warning,
 )
 
@@ -131,3 +136,18 @@ def test_a_problem_verdict_is_one_plain_line_like_the_all_normal_one() -> None:
     assert not app.exception, [item.message for item in app.exception]
     assert not app.warning and not app.success
     assert app.caption[0].value == "2개 컬럼 중 1개가 정상이 아닙니다 — 비어 있음 1개."
+
+
+def test_a_short_table_stands_at_its_content_height_and_a_long_one_keeps_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """높이 셈이 줄 높이보다 크면 표 아래에 값 없는 빈 줄이 선다 — 짧은 표는 내용 높이이고, 긴 표만
+    상한 안에서 스크롤한다(후보 g7-08 곁 · 샘플 관측 줄 높이 31px)."""
+    heights: list[object] = []
+    monkeypatch.setattr(st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "dataframe", lambda *args, **kwargs: heights.append(kwargs["height"]))
+
+    for rows in (TABLE_FULL_ROWS, TABLE_FULL_ROWS + 1):
+        render_source_quality(_profile([(f"칸{at}", 0, 4) for at in range(rows)]), 100)
+
+    assert heights == ["content", TABLE_MAX_HEIGHT_PX]
