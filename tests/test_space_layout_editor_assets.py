@@ -89,7 +89,7 @@ def test_a_plain_wheel_scrolls_the_page_even_when_zoomed() -> None:
 
     확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면 도면 위아래 단추로 가는 스크롤이
     꼬였다(2026-10-10 사용자 요청). 맨 휠이 도면을 옮기는 것은 편집기에서 호기·요소를 끌어 옮기거나
-    크기를 바꾸는 동안뿐이다. 예외는 스크롤 고정(도구 줄 「고정」 — 2026-11-03 사용자 요청)이다 —
+    크기를 바꾸는 동안뿐이다. 예외는 화면 고정(도구 줄 「화면 고정」 — 2026-11-03 사용자 요청)이다 —
     페이지가 굴러가지 않으니 맨 휠이 도면을 옮기고 늘 막는다."""
     assert JS.count("onwheel") == 1
     start = JS.index("svg.onwheel = (event) => {")
@@ -962,12 +962,12 @@ def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_li
 
 
 def test_a_narrow_edit_toolbar_keeps_the_lock_and_the_sheet_buttons_reachable() -> None:
-    """사이드바를 연 1100px 창의 층 편집에서 도구 줄(948px)이 편집기 폭(765px)을 넘어 「고정」 이 줄
-    밖으로 밀리고 「호기 정보」 는 오른쪽 끝에 붙은 「적용」 에 덮였다 — 도구 줄은 굴림 막대를 숨겨
-    옆으로 밀 길도 없었다(리뷰 browser-1). 편집도 접는 차례를 탄다 — ① 「호기 정보」·「고정」 은
-    아이콘만·기준일 칩은 날짜만(낭독기용 글은 남김), 그래도 넘치면 ⑥ 빈 칸 뒤(「호기
-    정보」·「고정」·「적용」)를 둘째 줄로 내리고 그 줄에서는 글을 다시 세운다. 무대 높이를 재기 전에
-    접는다(둘째 줄이 무대를 내린다)."""
+    """사이드바를 연 1100px 창의 층 편집에서 도구 줄(948px)이 편집기 폭(765px)을 넘어 「화면 고정」
+    이 줄 밖으로 밀리고 「호기 정보」 는 오른쪽 끝에 붙은 「적용」 에 덮였다 — 도구 줄은 굴림
+    막대를 숨겨 옆으로 밀 길도 없었다(리뷰 browser-1). 편집도 접는 차례를 탄다 — ① 「호기
+    정보」·「화면 고정」 은 아이콘만·기준일 칩은 날짜만(낭독기용 글은 남김), 그래도 넘치면 ⑥ 빈 칸
+    뒤(「호기 정보」·「화면 고정」·「적용」)를 둘째 줄로 내리고 그 줄에서는 글을 다시 세운다. 무대
+    높이를 재기 전에 접는다(둘째 줄이 무대를 내린다)."""
     assert "const EDIT_FIT_STEPS = ['is-efit1', 'is-fit6']" in JS
     resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
     assert resize.index("fitToolbar()") < resize.index("alignLock()") < resize.index("fitStage()")
@@ -986,7 +986,7 @@ def test_a_narrow_edit_toolbar_keeps_the_lock_and_the_sheet_buttons_reachable() 
         "sle-pinchip-word",
     ):
         assert f'class="{word}"' in toolbar, word
-    # 둘째 줄은 「빼기·지우기」 뒤 빈 칸에서 갈린다 — 「호기 정보」·「고정」·「적용」 이 함께
+    # 둘째 줄은 「빼기·지우기」 뒤 빈 칸에서 갈린다 — 「호기 정보」·「화면 고정」·「적용」 이 함께
     # 내려간다.
     assert (
         toolbar.index('class="sle-unplace')

@@ -46,8 +46,8 @@ JS(`// <unit-sheet>`)라 필터를 고쳐도 앱이 다시 돌지 않는다. 창
 
 **편집기 몸은 가로 세 칸**이다(2026-11-03 사용자 요청) — 왼쪽 칸(층 보기는 범례, 편집은 범례·도면
 요소·선택·서식·격자·캔버스) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
-브라우저(localStorage)에만 둔다. 범례는 data `legend` (epoch 밖)로 보낸다. 도구 줄 「고정」(스크롤
-고정)은 `<html data-space-lock>` 을 달고, 그 속성을 읽는 규칙은 페이지가 그리는 `space_lock_style()`
+브라우저(localStorage)에만 둔다. 범례는 data `legend` (epoch 밖)로 보낸다. 도구 줄 「화면 고정」은
+`<html data-space-lock>` 을 달고, 그 속성을 읽는 규칙은 페이지가 그리는 `space_lock_style()`
 이다.
 
 도면 요소의 **모양 값**(`marks[].look` — 동선·베이의 화살표 머리 크기·선·뒤집기, 도형의 프리셋·모양
@@ -109,7 +109,7 @@ FAB_VIEW_LABEL = "S.PKG FAB"
 FAB_TITLE = "S.PKG FAB 전체"
 # 범례 칸 수의 상한(층 상세 범례는 열 칸 남짓 — 망가진 값만 거른다).
 _LEGEND_LIMIT = 40
-# 스크롤 고정(편집기 도구 줄 「고정」)이 `<html>` 에 다는 속성. 그 속성을 읽는 규칙은 페이지 서식
+# 화면 고정(편집기 도구 줄 「화면 고정」)이 `<html>` 에 다는 속성. 그 속성을 읽는 규칙은 페이지 서식
 # (`space_lock_style`)에 둔다 — 다른 화면으로 가면 그 서식이 사라져 정리 함수가 돌지 않아도
 # 풀린다(AGENTS 9장 「브라우저 전용 보기 상태」).
 SPACE_LOCK_ATTRIBUTE = "data-space-lock"
@@ -454,8 +454,8 @@ def space_lock_style() -> str:
     """스크롤 고정의 페이지 서식 — `<html data-space-lock="1">` 인 동안 본문 스크롤 칸(`stMain`)을
     막는다.
 
-    편집기 도구 줄 「고정」 이 속성을 달고 뗀다(컴포넌트 밖 배치는 `<html>` 의 속성 + 페이지 서식 —
-    AGENTS 9장). 이 서식은 Space 현황이 그리므로 다른 화면으로 가면 사라져 속성이 남아도 막지
+    편집기 도구 줄 「화면 고정」 이 속성을 달고 뗀다(컴포넌트 밖 배치는 `<html>` 의 속성 + 페이지
+    서식 — AGENTS 9장). 이 서식은 Space 현황이 그리므로 다른 화면으로 가면 사라져 속성이 남아도 막지
     않는다. 사이드바는 그대로 굴러간다. 본문 스크롤 칸이 `section[data-testid="stMain"]` 인 것은
     Streamlit 1.63 DOM 이다(판올림에서 다시 본다)."""
     return (

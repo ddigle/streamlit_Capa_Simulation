@@ -79,9 +79,9 @@ HANDLED: dict[tuple[str, str], str] = {
     ("Ctrl+휠", "확대 · 축소"): "zoomAt(S.view.z * Math.exp(-event.deltaY * unit * 0.002)",
     ("+ · −", "확대 · 축소"): "event.key === '-'",
     ("0", "전체 보기"): "event.key === '0'",
-    ("고정 중 휠", "도면 옮기기"): "if (S.lock) {",
+    ("화면 고정 중 휠", "도면 옮기기"): "if (S.lock) {",
     (
-        "고정 중 Shift+휠",
+        "화면 고정 중 Shift+휠",
         "도면 가로로 옮기기",
     ): "(event.shiftKey ? event.deltaY : event.deltaX) * unit",
     ("방향키", "화면 옮기기"): "const moves = { ArrowLeft: [-step, 0]",
@@ -259,8 +259,8 @@ def test_the_status_line_keeps_values_and_drops_how_to_text() -> None:
 
 
 def test_the_scroll_lock_marks_a_hidden_unsaved_panel_on_its_button() -> None:
-    """고정 중 위 「저장 안 한 배치」 상자가 화면 밖이면 상태 글 대신 「고정」 단추의 점과 풍선이
-    말한다(표지 + 풍선 — UI-TXT-04). 보기 · 편집 모두 회차마다 맞춘다."""
+    """고정 중 위 「저장 안 한 배치」 상자가 화면 밖이면 상태 글 대신 「화면 고정」 단추의 점과
+    풍선이 말한다(표지 + 풍선 — UI-TXT-04). 보기 · 편집 모두 회차마다 맞춘다."""
     mark = JS[JS.index("  function showLockMark() {") : JS.index("  function alignLock() {")]
     assert "lockDot.hidden = !offScreen" in mark
     assert "Boolean(S.lock && data.pendingSave)" in mark and "S.lockTip" in mark
