@@ -13,7 +13,14 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_marks, data_error_texts, place_errors, successes
+from alert_marks import (
+    active_state,
+    data_error_marks,
+    data_error_texts,
+    place_errors,
+    states,
+    successes,
+)
 from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -77,8 +84,9 @@ def _two_process_fleet() -> pd.DataFrame:
 def test_the_summary_says_a_process_filter_is_on_and_when_it_emptied_the_floor(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """필터로 층이 비면 빈 층과 같은 모습이었다 — 건 조건이 보이게 요약 끝에 표지를 잇는다
-    (설계 규칙 UI-STA-03, 사외 점검 g6-02). 뜻은 공정소분류 칸 풍선이다."""
+    """필터로 층이 비면 빈 층과 같은 모습이었다 — 건 조건이 보이게 요약 맨 앞에 표지를 둔다(설계
+    규칙 UI-STA-03, 사외 점검 g6-02). 좁은 FAB 도구 줄은 요약 뒤부터 말줄임하므로 끝에 두면 표지부터
+    잘린다. 뜻은 공정소분류 칸 풍선이다."""
     app, _ = _open_editor(tmp_path, _two_process_fleet())
     app.toggle(key="space_layout_edit_mode").set_value(False).run()
     assert "공정 필터" not in str(editor_calls[-1]["summary"])
@@ -87,19 +95,18 @@ def test_the_summary_says_a_process_filter_is_on_and_when_it_emptied_the_floor(
     # 이 층 호기가 남는 필터 — 건 수만 말한다.
     app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
     assert not app.exception, [item.message for item in app.exception]
-    assert str(editor_calls[-1]["summary"]).endswith(" · 공정 필터 1개")
+    assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
 
     # 이 층 호기가 모두 빠지는 필터 — 왜 비었는지 말한다.
     app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
     assert not app.exception, [item.message for item in app.exception]
     summary = str(editor_calls[-1]["summary"])
-    assert summary.startswith("배치 0대 · 미배치 0대")
-    assert summary.endswith(" · 공정 필터 1개 · 필터로 0대")
+    assert summary.startswith("공정 필터 1개 · 필터로 0대 · 배치 0대 · 미배치 0대")
 
     # FAB 요약도 건 수를 말한다.
     app.button(key="space_status_fab_breadcrumb").click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert str(editor_calls[-1]["summary"]).endswith(" · 공정 필터 1개")
+    assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
     clear_equipment_repository()
 
 
@@ -115,7 +122,7 @@ def test_a_floor_with_nothing_on_it_is_not_blamed_on_the_filter(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert str(editor_calls[-1]["summary"]).endswith(" · 공정 필터 1개")
+    assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
     clear_equipment_repository()
 
 
@@ -792,8 +799,8 @@ def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_
     app, _ = _open_editor(tmp_path)
 
     assert _save_row(app) == {"save_locked": True}
-    assert "적용한 변경이 없습니다" in str(app.button(key="space_layout_save").help)
-    assert any(item.value == ":material/edit_note: 저장할 변경 없음" for item in app.caption)
+    assert "적용한 배치 변경이 없습니다" in str(app.button(key="space_layout_save").help)
+    assert any(item.value == ":material/edit_note: 저장할 배치 변경 없음" for item in app.caption)
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     idle = _popover_labels(app)
     assert idle == {"변경 내용": True, "버리기": True}

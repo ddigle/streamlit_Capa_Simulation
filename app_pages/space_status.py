@@ -510,9 +510,10 @@ def _units(value: float) -> str:
 SPACE_CARD_LABEL = "Space 조건"
 # 사이드바 `Space 조건` 카드의 공정소분류 필터 칸(세션에 남는 보기 조건).
 PROCESS_FILTER_KEY = "space_status_process_filter"
-# 그 칸 풍선 — 도구 줄 요약 끝 표지(`_filter_mark`)의 뜻을 말한다(카드는 접혀 있어도 요약은 보인다).
+# 그 칸 풍선 — 도구 줄 요약 맨 앞 표지(`_filter_mark`)의 뜻을 말한다(카드는 접혀 있어도 요약은
+# 보인다).
 PROCESS_FILTER_HELP = (
-    "고른 공정의 호기만 도면 · 요약 · 층 목록에 셉니다. 요약 끝 「공정 필터 n개」 가 건 수이고, "
+    "고른 공정의 호기만 도면 · 요약 · 층 목록에 셉니다. 요약 맨 앞 「공정 필터 n개」 가 건 수이고, "
     "층의 호기가 이 필터로 모두 빠지면 「필터로 0대」 라 적습니다. 배치 편집은 필터와 상관없이 "
     "그 층 호기를 모두 봅니다."
 )
@@ -883,11 +884,12 @@ location_unknown = pd.Series(
 
 
 def _filter_mark(*, emptied: bool = False) -> str:
-    """도구 줄 요약 끝 표지 — 공정 필터가 걸렸다는 것과, 그 때문에 층이 비었으면 그 말(설계 규칙
-    UI-STA-03). 뜻은 `공정소분류` 칸 풍선이다. 필터가 없으면 빈 글이다."""
+    """도구 줄 요약 맨 앞 표지 — 공정 필터가 걸렸다는 것과, 그 때문에 층이 비었으면 그 말(설계 규칙
+    UI-STA-03). 좁은 FAB 도구 줄은 요약 뒤부터 말줄임하므로 앞에 둔다(`fitToolbar`). 뜻은
+    `공정소분류` 칸 풍선이다. 필터가 없으면 빈 글이다."""
     if not selected_processes:
         return ""
-    return f" · 공정 필터 {len(selected_processes)}개" + (" · 필터로 0대" if emptied else "")
+    return f"공정 필터 {len(selected_processes)}개 · " + ("필터로 0대 · " if emptied else "")
 
 
 def _floor_units_before_filter(key: FloorKey) -> bool:
@@ -2279,7 +2281,7 @@ if selected is None:
     )
     if inactive_units > 0:
         fab_summary += f" · 비활성 층 {_units(inactive_units)}"
-    fab_summary += _filter_mark()
+    fab_summary = _filter_mark() + fab_summary
     # 보기는 저장본이다(저장된 요소가 없으면 기본 배치). 저장 안 한 FAB 편집은 편집기와 상자가
     # 말한다.
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
@@ -2479,10 +2481,13 @@ else:
             f"{with_topic_particle(_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here])))}"
             " 배치 편집 미배치 칸에"
         )
-    summary += _filter_mark(
-        emptied=floor_counted.empty
-        and floor_unplaced.empty
-        and _floor_units_before_filter(selected)
+    summary = (
+        _filter_mark(
+            emptied=floor_counted.empty
+            and floor_unplaced.empty
+            and _floor_units_before_filter(selected)
+        )
+        + summary
     )
 
     # 층 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
