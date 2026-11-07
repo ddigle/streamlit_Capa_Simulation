@@ -17,9 +17,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components.equipment_data_workspace import GRID_RESULT_KEY
 
 FAKE_EVENT_KEY = "test_fake_grid_event"
 Calls = list[tuple[str, dict[str, Any]]]
@@ -82,6 +84,16 @@ def load(app: AppTest, ids: Sequence[str], *, kind: str = "names", label: str = 
     return send(
         app, emg.LOADER_KEY, "load", {"kind": kind, "ids": list(ids), "missing": [], "label": label}
     )
+
+
+def grid_results(app: AppTest, kind: str | None = None) -> list[str]:
+    """표 · 오른쪽 칸 조작의 결과 알림창 글(문서 차례). 대역 콜백은 마운트에서 돌아 `send` 의 첫
+    회차가 알림을 내고 둘째 회차가 같은 id 로 다시 보내므로 다시 보낸 표지도 읽는다."""
+    return [
+        str(note["full"])
+        for note in alert_notes(app, again=True)
+        if note.get("origin") == GRID_RESULT_KEY and kind in (None, note.get("flash"))
+    ]
 
 
 def rows(calls: Calls) -> list[dict[str, Any]]:

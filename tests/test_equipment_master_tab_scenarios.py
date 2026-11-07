@@ -21,7 +21,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import flashed, infos, texts
-from grid_fake import Calls, install_fake_grid, last, load, send, send_ops
+from grid_fake import Calls, grid_results, install_fake_grid, last, load, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -296,9 +296,7 @@ def test_the_official_place_revert_from_the_detail_saves_without_a_difference(
     assert detail["unit"]["official"]["count"] == 1
     send_ops(app, grid, {"op": "official", "id": "s:EQ-01"}, key=emg.side_key("detail"))
     assert _buffer_value(app, "EQ-01", "X좌표") == 10
-    assert last(grid, emg.side_key("detail"))["toast"]["text"].startswith(
-        "공식 자리로 되돌렸습니다 — 1대"
-    )
+    assert grid_results(app, "success")[-1].startswith("공식 자리로 되돌렸습니다 — 1대")
     _save(app)
     assert _scenario(repository, setup).latest_layout_unit_count == 0
     assert _session(repository).equipment.set_index("설비명").loc["EQ-01", "X좌표"] == 10
@@ -611,7 +609,7 @@ def test_an_outbox_from_before_another_users_save_is_dropped_and_told(
     }
     send(app, emg.GRID_KEY, "outbox", outbox)
     assert _buffer_value(app, "EQ-01", "담당자") != "옛 고침"
-    assert "반영하지 않았습니다" in last(grid, emg.GRID_KEY)["toast"]["text"]
+    assert "반영하지 않았습니다" in grid_results(app, "warning")[-1]
 
 
 def test_a_save_pressed_right_after_another_common_save_says_the_reopen_path(

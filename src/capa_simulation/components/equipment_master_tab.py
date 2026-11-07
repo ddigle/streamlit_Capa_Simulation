@@ -67,6 +67,7 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_MEMO_KEY,
+    GRID_RESULT_KEY,
     MASTER_TABLE_KEY,
     NEW_UNIT_DRAFT_KEY,
     NOTHING_SAVED_MESSAGE,
@@ -98,12 +99,15 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
+    queue_grid_result,
     queue_grid_toast,
     render_name_changes,
     render_small_editor,
     reset_equipment_drafts,
+    restore_bulk_deletion,
     save_equipment_buffer,
     saved_master_violations,
+    settle_bulk_restore,
     settle_grid_toasts,
     stale_delete_lock,
     stale_save_reasons,
@@ -179,6 +183,7 @@ from capa_simulation.services.equipment_csv import (
 from capa_simulation.services.equipment_grid import (
     GRID_ROW_LIMIT,
     NAME_INDEX,
+    GridApplied,
     GridContext,
     GridSource,
     GridState,
@@ -207,7 +212,6 @@ from capa_simulation.services.equipment_grid import (
     prune_loaded,
     save_id_map,
     text_matrix,
-    undo_top,
     unit_texts,
 )
 from capa_simulation.services.equipment_validation import (
@@ -252,6 +256,9 @@ SIDES: Final = (SIDE_DETAIL, SIDE_NEW, SIDE_CHANGES, SIDE_HISTORY)
 # 받기 콜백이 오른쪽 칸을 연 수 — 칸막이 data `reveal`. 늘면 접힌 오른쪽 칸을 편다(표에서 설비명을
 # 누른 것이 보이게). 접힘 자체는 브라우저에만 있다.
 SIDE_REVEAL_KEY: Final = grid_component.MASTER_SIDE.reveal_key
+# 다음 회차에 처음 설 오른쪽 칸의 머리를 보이라는 표지 — 칸 아래쪽에서 누른 「호기 추가」 · 「이
+# 호기로 새 호기 만들기」 는 다른 칸을 연다. 스크롤이 그대로면 새 칸의 가운데부터 보인다.
+SIDE_HEAD_KEY: Final = "equipment_grid_side_head_v1"
 # 못 찾은 설비명(다음 불러오기까지)·마운트별 마지막으로 반영한 출납 seq.
 MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
@@ -280,12 +287,16 @@ IMPORT_MENU_LABEL: Final = IMPORT_DIALOG_TITLE
 SAVE_LABEL: Final = "리비전 저장"
 DISCARD_LABEL: Final = "모두 버리기"
 UNDO_LABEL: Final = "한 단계 되돌리기"
+UNDO_HELP: Final = (
+    "표 · 상세의 마지막 고침부터 한 단계씩 되돌립니다. 표 고침을 다 되돌리면 기존 보유대수 · "
+    "비가동 일정의 일괄 삭제를 되살립니다 — 그 표의 적용하지 않은 편집은 먼저 편집본에 넣습니다."
+)
 NOTE_PLACEHOLDER: Final = "예: 10월 신규 호기 반입일정 갱신"
 DOWNLOAD_NOTE: Final = (
     "표에서 고친 값은 곧바로 편집본에 들어가 이 파일에 함께 실립니다(못 읽은 칸 초안은 빼고)."
 )
 NOTHING_TO_SAVE: Final = "고친 것이 없습니다"
-# 출납을 보내는 마운트(토스트 칸 이름) → 그 마운트 key.
+# 출납을 보내는 마운트(`ack` 칸 이름) → 그 마운트 key.
 _MOUNT_KEYS: Final = {
     "grid": grid_component.GRID_KEY,
     "detail": grid_component.side_key("detail"),
@@ -633,14 +644,9 @@ def _applied() -> dict[str, int]:
 def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     """두 마운트(표·오른쪽 칸)의 출납에서 아직 반영하지 않은 op 를 `(at, mount, seq)` 차례로
     편집본에 얹는다. 받기 콜백과 「리비전 저장」·「한 단계 되돌리기」 콜백이 먼저 부른다(콜백
-    차례에 기대지 않는다). `base` 가 다른 op 는 서비스가 버리고 토스트로 세고, 앞 세션의 op 는 세지
-    않고 뺀다(`this_session`)."""
+    차례에 기대지 않는다). `base` 가 다른 op 는 서비스가 버리고 결과 알림으로 세고, 앞 세션의 op 는
+    세지 않고 뺀다(`this_session`)."""
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
-    targets = {
-        mount: target
-        for target, value in zip(_MOUNT_KEYS, values, strict=True)
-        if (mount := grid_component.outbox_mount(value))
-    }
     ops, applied = pending_ops(values, _applied())
     st.session_state[APPLIED_KEY] = applied
     ops = this_session(ops, context.base)
@@ -654,16 +660,31 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     if detail is not None and detail in result.moved:
         st.session_state[GRID_DETAIL_KEY] = result.moved[detail]
     _follow_added(ops, result)
-    if result.toast:
-        # 「호기 추가」 는 그 호기를 상세로 연다 — 토스트(되돌리기)도 상세 칸에.
-        target = "detail" if result.added else targets.get(str(ops[-1].get("mount")), "grid")
-        queue_grid_toast(target, result.toast, undo=result.toast_step)
+    _grid_result(ops, result)
     if result.frames_changed[1] and not _layout_neutral(ops):
         _stamp_if_layout_edited(ops, layout)
     else:
         # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
         # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
         carry_layout_memo(before)
+
+
+def _grid_result(ops: Sequence[Mapping[str, Any]], result: GridApplied) -> None:
+    """출납 결과 — 고칠 입력이 없는 결과는 알림창으로, 막힌 「호기 추가」 는 고칠 칸이 그 자리에
+    있어 「새 호기」 칸 머리에 둔다(설계 규칙 UI-NTF-03)."""
+    if not result.toast:
+        return
+    if ops[-1].get("op") == "add" and result.refused and not result.added:
+        queue_grid_toast("new", result.toast)
+        return
+    queue_grid_result(result.toast, kind=_result_kind(result))
+
+
+def _result_kind(result: GridApplied) -> FlashKind:
+    """막힌 조작이 있으면 경고, 바뀐 것이 있으면 성공, 없으면 안내."""
+    if result.dropped or result.refused:
+        return "warning"
+    return "success" if result.changed else "info"
 
 
 def _follow_added(ops: Sequence[Mapping[str, Any]], result: Any) -> None:
@@ -682,6 +703,7 @@ def _follow_added(ops: Sequence[Mapping[str, Any]], result: Any) -> None:
         _store_new_draft(top + 1, kept_draft(last if last is not None else values))
         st.session_state[GRID_DETAIL_KEY] = row_id
         _switch_side(SIDE_DETAIL)
+        st.session_state[SIDE_HEAD_KEY] = True
     elif last is not None:
         _store_new_draft(top, last)
 
@@ -816,8 +838,9 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
     source = unit_texts(master, position)
     _store_new_draft(seq + 1, copied_draft(source, base))
     name = source[NAME_INDEX]
-    queue_grid_toast("new", f"{name} 의 호기 정보·위치를 가져왔습니다 — 설비명과 일정을 채웁니다")
+    queue_grid_result(f"{name} 의 호기 정보·위치를 가져왔습니다 — 설비명과 일정을 채웁니다")
     _switch_side(SIDE_NEW)
+    st.session_state[SIDE_HEAD_KEY] = True
 
 
 def _on_grid_open(row_id: str) -> None:
@@ -864,7 +887,10 @@ def _on_dialog(name: str) -> None:
 
 
 def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
-    """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다.
+    """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다. 표 단계가 없으면 그
+    아래 일괄 삭제를 되살린다 — 일괄 삭제가 표 단계를 비우므로 삭제는 늘 표 단계 밑이다. 그 표에
+    적용하지 않은 편집이 있으면 그 편집표의 제출이 편집을 먼저 넣고 되살린다
+    (`restore_bulk_deletion`).
 
     더블클릭(0.15초)은 한 번으로 친다. 옛 코드는 둘째 누름이 한 단계를 더 꺼내 메모3·메모2 가
     함께 돌아갔고, 첫 회차의 알림(「되돌림: 메모3 고침」)을 둘째의 것이 덮었다(2026-10-27 E2E).
@@ -885,13 +911,14 @@ def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
         return
     note_written(UNDO_PRESS_KEY)
     st.session_state[UNDO_PRESS_KEY] = press + 1
+    if not grid_undo_steps() and restore_bulk_deletion():
+        return
     ops = [{"op": "undo", "base": context.base}]
     before = layout_memo_mark()
     result = apply_ops(_grid_state(), ops, context)
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
-    if result.toast:
-        queue_grid_toast("changes", result.toast)
+    _grid_result(ops, result)
     if result.frames_changed[1]:
         _stamp_if_layout_edited(ops, layout)
     else:
@@ -1162,8 +1189,6 @@ def _render_grid_section(
     repository: DuckDBEquipmentRepository,
     latest_snapshot: EquipmentSnapshot | None,
     acks: Mapping[str, Mapping[str, Any]],
-    toasts: Mapping[str, Mapping[str, Any]],
-    top: str | None,
 ) -> None:
     loaded = prune_loaded(grid_loaded_ids(), view.index)
     missing = st.session_state.get(MISSING_KEY)
@@ -1193,8 +1218,6 @@ def _render_grid_section(
         grid_data(
             view,
             loaded,
-            toast=toasts.get("grid"),
-            undo_top=top,
             ack=acks.get("grid"),
             open_id=_detail_id(),
         ),
@@ -1247,12 +1270,13 @@ def _render_save_section(
     )
     with st.container(horizontal=True, gap="small"):
         # 「리비전 저장」 처럼 잠그지 않는다 — 출납은 300ms 묶음이라 이 회차의 단계 수는
-        # 브라우저보다 늦고, 콜백이 출납을 먼저 반영한 뒤 판정해 없으면 그 칸 머리 토스트가
-        # 알린다(설계 규칙 UI-INP-07 의 제출 단추).
+        # 브라우저보다 늦고, 콜백이 출납을 먼저 반영한 뒤 판정해 없으면 알림창이 알린다(설계 규칙
+        # UI-INP-07 의 제출 단추).
         st.button(
             UNDO_LABEL,
             key=UNDO_BUTTON_KEY,
             icon=":material/undo:",
+            help=UNDO_HELP,
             on_click=_undo_step,
             args=(context, layout, current_generation(UNDO_PRESS_KEY)),
         )
@@ -1301,7 +1325,7 @@ def _render_new_unit(
     *,
     ack: Mapping[str, Any] | None,
     toast: Mapping[str, Any] | None,
-    top: str | None,
+    reveal_head: bool,
 ) -> None:
     """오른쪽 「새 호기」 칸(개편 명세 4-6 나) — 세션 초안을 이 회차 편집본 위에서 보고(체크 상자·칸
     오류·잠금) 그린다. 가정 설비 시나리오면 새 호기 자리 안내를 싣는다."""
@@ -1326,7 +1350,7 @@ def _render_new_unit(
             seq=seq,
             ack=ack,
             toast=toast,
-            undo_top=top,
+            reveal_head=reveal_head,
             notes=notes,
         ),
         on_outbox=partial(_on_outbox, context, layout_mode.layout),
@@ -1352,6 +1376,7 @@ def render_equipment_master_tab(
     """탭 ① 본문. 페이지가 `ensure_equipment_drafts` 를 부른 뒤, 탭이 열린 회차에만 부른다."""
     basis = session.save_basis()
     layout: LayoutMode = layout_mode.layout
+    settle_bulk_restore()
     frames: Frames = st.session_state[BUFFER_KEY]
     floor_states: FloorStates | None
     try:
@@ -1382,7 +1407,7 @@ def render_equipment_master_tab(
     _render_notices(session, basis, layout_mode, floor_states, latest_snapshot)
     acks = _acks(_applied())
     toasts = grid_toasts()
-    top = undo_top(grid_undo_steps())
+    reveal_head = bool(st.session_state.pop(SIDE_HEAD_KEY, False))
     submit = None
     # 테두리 하나의 편집기 영역 안 두 칸 — 왼쪽 표, 오른쪽 칸(칸막이로 폭을 바꾸고 칸 머리 단추로
     # 접는다). 간격은 서식이 경계선 양쪽 여백으로 둔다. 배치 서식은 늘 같은 글 한 덩이다.
@@ -1397,8 +1422,6 @@ def render_equipment_master_tab(
                 repository=repository,
                 latest_snapshot=latest_snapshot,
                 acks=acks,
-                toasts=toasts,
-                top=top,
             )
         else:
             stale = (basis is not None and basis.stale) or session.unmerged
@@ -1430,9 +1453,7 @@ def render_equipment_master_tab(
         elif side == SIDE_CHANGES:
             grid_component.render_grid_side(
                 "changes",
-                changes_data(
-                    view, ack=acks.get("changes"), toast=toasts.get("changes"), undo_top=top
-                ),
+                changes_data(view, ack=acks.get("changes")),
                 on_outbox=partial(_on_outbox, context, layout),
                 on_open=_on_side_open,
                 on_goto=_on_goto,
@@ -1453,7 +1474,7 @@ def render_equipment_master_tab(
                 layout_mode,
                 ack=acks.get("new"),
                 toast=toasts.get("new"),
-                top=top,
+                reveal_head=reveal_head,
             )
         else:
             grid_component.render_grid_side(
@@ -1463,26 +1484,19 @@ def render_equipment_master_tab(
                     _detail_id(),
                     ack=acks.get("detail"),
                     toast=toasts.get("detail"),
-                    undo_top=top,
+                    reveal_head=reveal_head,
                 ),
                 on_outbox=partial(_on_outbox, context, layout),
                 on_open=_on_side_open,
                 on_goto=_on_goto,
                 on_copy=_on_copy,
             )
-    # 그린 마운트의 토스트는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 토스트는 거둔다(닫은
-    # 토스트가 다시 마운트할 때 되살아나지 않게).
-    drawn = {"grid"} if table == TABLE_MASTER else set()
-    if side == SIDE_DETAIL:
-        drawn.add("detail")
-    elif side == SIDE_NEW:
-        drawn.add("new")
-    elif side == SIDE_CHANGES:
-        drawn.add("changes")
-    settle_grid_toasts(drawn)
-    # 불러오기 결과는 알림창으로만 가 그릴 것이 없다 — 탭 맨 끝에 둔다. 표 위 알림 칸에 두면 그 칸이
-    # 늘 서서 편집기 영역이 틈 하나만큼 내려간다.
-    render_flash(LOAD_RESULT_KEY)
+    # 그린 마운트의 자리 거부는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 것은 거둔다(닫은 한
+    # 줄이 다시 마운트할 때 되살아나지 않게).
+    settle_grid_toasts({"detail"} if side == SIDE_DETAIL else {"new"} if side == SIDE_NEW else ())
+    # 불러오기 · 표 조작 결과는 알림창으로만 가 그릴 것이 없다 — 탭 맨 끝에 둔다. 표 위 알림 칸에
+    # 두면 그 칸이 늘 서서 편집기 영역이 틈 하나만큼 내려간다.
+    render_flash(LOAD_RESULT_KEY, GRID_RESULT_KEY)
     # 작은 편집표 제출은 화면의 모든 위젯을 그린 뒤 처리한다(`st.rerun()` 으로 끝난다).
     if submit is not None:
         submit()

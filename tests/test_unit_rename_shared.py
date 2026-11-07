@@ -351,8 +351,8 @@ def _groups_only_app() -> None:
 
 
 def test_a_group_rename_alone_also_drops_the_delete_undo() -> None:
-    """Main 설비 이름만 바꿔도 「방금 삭제 되돌리기」 는 버린다 — 지운 모듈 행이 옛 묶음 이름으로
-    돌아와 한 설비가 둘로 갈린다."""
+    """Main 설비 이름만 바꿔도 일괄 삭제 되살리기(`LAST_REMOVED_KEY`)는 버린다 — 지운 모듈 행이 옛
+    묶음 이름으로 돌아와 한 설비가 둘로 갈린다."""
     app = AppTest.from_function(_groups_only_app)
     app.session_state[LAST_REMOVED_KEY] = ("anything",)
     app.run()

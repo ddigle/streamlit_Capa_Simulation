@@ -296,12 +296,12 @@ function showsError(hasError, fresh, value, touched, base) {
   return String(value || '').trim() !== '' || touched || !base
 }
 
-// 토스트 머리가 화면 위로 나갔는가(`top` — getBoundingClientRect, `margin` — 앱 머리 띠가 가리는 높이).
+// 칸 머리가 화면 위로 나갔는가(`top` — getBoundingClientRect, `margin` — 앱 머리 띠가 가리는 높이).
 function needsReveal(top, margin) {
   return Number(top) < Number(margin || 0)
 }
 
-// 스크롤 칸 안 토스트를 그 칸 위 끝으로 — 토스트 머리(`top`)가 칸 위 끝(`boxTop`)보다 위에 있는 만큼 올린 스크롤 자리(0 아래로
+// 스크롤 칸 안 칸 머리를 그 칸 위 끝으로 — 머리(`top`)가 칸 위 끝(`boxTop`)보다 위에 있는 만큼 올린 스크롤 자리(0 아래로
 // 가지 않는다). 칸 안에서 머리가 보이면 지금 자리(`scrollTop`) 그대로.
 function boxScrollFor(scrollTop, top, boxTop) {
   const now = Number(scrollTop) || 0
@@ -385,7 +385,7 @@ function freshState() {
   return {
     mount: newMount(), box: createBox(), sentSeq: 0, pending: new Map(), timer: 0, base: null, view: null,
     selected: new Set(), anchor: null, sort: null, colSet: null, edit: null, focus: null, toastClosed: null,
-    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
+    note: '', noteSeq: 0, noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
     dialogOpener: null, dialogClosed: null,
@@ -427,6 +427,8 @@ function receive(S, data) {
   if (ack.mount === S.mount && Number.isInteger(ack.seq)) {
     ackBox(S.box, ack.seq)
     for (const [key, item] of S.pending) if (item.seq <= ack.seq) S.pending.delete(key)
+    // 기다리던 op 가 돌아왔다 — 진행 한 줄(붙여넣는 중)을 거둔다. 결과는 알림창이 말한다.
+    if (S.noteSeq && S.noteSeq <= ack.seq) clearNote(S)
   }
   S.limit = Number((data.limits || {}).outboxCells) || 10000
 }
@@ -448,9 +450,9 @@ function schedule(S) {
   S.timer = setTimeout(() => send(S), SEND_MS)
 }
 
-// 단추 하나가 보내는 op — 같은 op 가 아직 회차에서 돌아오지 않았으면(더블클릭의 둘째 누름) 보내지 않는다. 밀기는 두 번 밀렸고
-// (토스트 「되돌리기」 는 한 번만 되돌린다), 넣기·되살리기·지우기·되돌리기는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를
-// 되살렸습니다」)가 첫 결과와 그 「되돌리기」 를 덮었다(2026-10-27 E2E). 둘째 누름이라 버렸으면 거짓.
+// 단추 하나가 보내는 op — 같은 op 가 아직 회차에서 돌아오지 않았으면(더블클릭의 둘째 누름) 보내지 않는다. 밀기는 두 번 밀렸고,
+// 넣기·되살리기·지우기는 둘째 op 의 헛결과(「0칸 바뀜」·「0대를 되살렸습니다」)가 첫 결과를 덮었다(2026-10-27 E2E). 둘째
+// 누름이라 버렸으면 거짓.
 function sendOnce(S, op, cells) {
   if (hasPendingOp(S.box, op)) return false
   enqueue(S, op, cells)
@@ -468,15 +470,21 @@ function enqueue(S, op, cells) {
   return queued
 }
 
-function showNote(S, text) {
+// 브라우저 한 줄 — 칸 수 상한 · 이름 붙여넣기 거부와 진행(붙여넣는 중). `seq` 를 주면 그 op 가 돌아올 때 거둔다.
+function showNote(S, text, seq) {
   S.note = text
+  S.noteSeq = seq || 0
   if (S.noteTimer) clearTimeout(S.noteTimer)
-  S.noteTimer = setTimeout(() => {
-    S.note = ''
-    S.noteTimer = 0
-    if (S.repaintToast) S.repaintToast()
-  }, 6000)
-  if (S.repaintToast) S.repaintToast()
+  S.noteTimer = setTimeout(() => clearNote(S), 6000)
+  if (S.repaintNote) S.repaintNote()
+}
+
+function clearNote(S) {
+  if (S.noteTimer) clearTimeout(S.noteTimer)
+  S.note = ''
+  S.noteSeq = 0
+  S.noteTimer = 0
+  if (S.repaintNote) S.repaintNote()
 }
 
 // 꺼진 단추의 풍선(설계 규칙 UI-INP-07) — 꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다. 꺼진 동안은 감싼 칸이 탭
@@ -1139,7 +1147,7 @@ function drawGrid(host, S, data) {
   for (const id of Array.from(S.selected)) if (!known.has(id)) S.selected.delete(id)
   if (!S.skeleton) buildGridSkeleton(host, S)
   paintBar(S)
-  S.repaintToast()
+  S.repaintNote()
   paintSelection(S)
   paintHead(S)
   paintWindow(S)
@@ -1156,8 +1164,8 @@ function buildGridSkeleton(host, S) {
   // 고른 줄 띠는 표 틀 맨 끝에 서고, 표 아래 끝이 창 밖이면 창 아래 끝에 붙는다(서식 `sticky`). 맨 끝이라 줄을 골라도 위 칸이
   // 밀리지 않고(설계 규칙 UI-PRF-03) 다른 칸을 덮어 두지 않으며, 본문을 어디까지 굴렸든 조작이 창 안에 있다.
   const sel = el('div', 'emg-sel')
-  const toast = el('div', 'emg-toast')
-  toast.setAttribute('role', 'status')
+  const note = el('div', 'emg-note')
+  note.setAttribute('role', 'status')
   const box = el('div', 'emg-box')
   const table = el('div', 'emg-table')
   table.setAttribute('role', 'grid')
@@ -1180,10 +1188,10 @@ function buildGridSkeleton(host, S) {
   }
   foot.appendChild(keys)
   foot.appendChild(legend)
-  for (const part of [bar, toast, box, foot, sel]) root.appendChild(part)
+  for (const part of [bar, note, box, foot, sel]) root.appendChild(part)
   host.appendChild(root)
-  Object.assign(S, { skeleton: true, root, bar, selBar: sel, toastBar: toast, scroller: box, table, head, body, foot })
-  S.repaintToast = () => paintToast(S)
+  Object.assign(S, { skeleton: true, root, bar, selBar: sel, noteBar: note, scroller: box, table, head, body, foot })
+  S.repaintNote = () => fillNote(S, S.noteBar, null)
   listen(S, box, 'scroll', () => {
     if (S.scrollFrame) return
     S.scrollFrame = requestAnimationFrame(() => {
@@ -1241,35 +1249,28 @@ function paintBar(S) {
     seg.appendChild(item)
   }
   bar.appendChild(seg)
+  // 표지 낱말 셋만 둔다 — 어디에 저장되는지는 표지 풍선이 말한다(설계 규칙 UI-TXT-01, 긴 시나리오 이름이 범례를 제 줄로 내리지 않게).
   const legend = el('div', 'emg-legend')
   const scenarioData = S.data.scenario || {}
   const scenario = scenarioData.name || '지금 설비 시나리오'
-  const left = el('span')
-  left.appendChild(el('span', 'emg-scope is-scenario', '시나리오'))
-  left.appendChild(el('span', null, ' ' + scenario + '에만 저장'))
+  const scope = (kind, word, tip) => {
+    const mark = el('span', 'emg-scope' + kind, word)
+    mark.title = tip
+    legend.appendChild(mark)
+  }
+  scope(' is-scenario', '시나리오', scenario + '에만 저장')
   // 배치 칸은 공식 설비 시나리오면 공식 배치, 가정이면 그 시나리오의 배치 차이로 간다(설비 시나리오 2단계 S3).
-  const middle = el('span')
-  middle.appendChild(el('span', 'emg-scope is-layout', '배치'))
-  middle.appendChild(el('span', null, scenarioData.official === false ? ' ' + scenario + '에만 저장(공식과 다른 것만)' : ' 공식 배치에 저장'))
-  const right = el('span')
-  right.appendChild(el('span', 'emg-scope', '공통'))
-  right.appendChild(el('span', null, ' 모든 설비 시나리오에 함께 저장'))
-  legend.appendChild(left)
-  legend.appendChild(middle)
-  legend.appendChild(right)
+  scope(' is-layout', '배치', scenarioData.official === false ? scenario + '에만 저장(공식과 다른 것만)' : '공식 배치에 저장')
+  scope('', '공통', '모든 설비 시나리오에 함께 저장')
   bar.appendChild(legend)
 }
 
-function paintToast(S) {
-  fillToast(S, S.toastBar, S.data && S.data.toast)
-}
-
-// 토스트 한 줄(표·오른쪽 칸 공용). 「되돌리기」 는 그 토스트가 가리킨 단계(toast.undo — 파이썬이 맨 위일 때만 싣는다)를
-// 보낸다 — 파이썬도 그 단계가 맨 위가 아니면 되돌리지 않는다(그 사이 칸 고침이 쌓인 경합).
-function fillToast(S, bar, toast) {
+// 자리에 남는 한 줄(표·오른쪽 칸 공용) — 브라우저 한 줄(`showNote`)과 그 칸에서 고칠 파이썬 거부(`toast` — 오른쪽 칸만). 동작
+// 결과는 알림창으로 간다(설계 규칙 UI-NTF-03).
+function fillNote(S, bar, toast) {
   bar.textContent = ''
   if (toast && toast.id !== S.lastToast) {
-    // 파이썬이 새 토스트를 보냈다 — 브라우저 한 줄(붙여넣는 중 등)은 거둔다.
+    // 파이썬이 새 거부를 보냈다 — 브라우저 한 줄은 거둔다.
     S.lastToast = toast.id
     S.note = ''
   }
@@ -1277,18 +1278,10 @@ function fillToast(S, bar, toast) {
   bar.hidden = !text
   if (!text) return
   bar.appendChild(el('span', null, text))
-  if (!S.note && typeof toast.undo === 'string' && toast.undo) {
-    bar.appendChild(button('emg-link', '되돌리기', () => {
-      S.toastClosed = toast.id
-      enqueue(S, { op: 'undo', step: toast.undo }, [])
-      send(S)
-      fillToast(S, bar, toast)
-    }))
-  }
   bar.appendChild(icon('close', '알림 닫기', () => {
     if (S.note) S.note = ''
     else S.toastClosed = toast.id
-    fillToast(S, bar, toast)
+    fillNote(S, bar, toast)
   }))
 }
 
@@ -1956,8 +1949,8 @@ function onPaste(S, event) {
   plan.rows.forEach((line, r) => line.forEach((value, c) => {
     if (value !== null) pendingCells.push([plan.ids[r], byName.get(plan.cols[c]), value])
   }))
-  enqueue(S, { op: 'paste', ids: plan.ids, cols: plan.cols, rows: plan.rows, cut: plan.cut, skipped: plan.skipped }, pendingCells)
-  showNote(S, '붙여넣는 중 — ' + cells.length.toLocaleString() + '줄')
+  const queued = enqueue(S, { op: 'paste', ids: plan.ids, cols: plan.cols, rows: plan.rows, cut: plan.cut, skipped: plan.skipped }, pendingCells)
+  if (queued) showNote(S, '붙여넣는 중 — ' + cells.length.toLocaleString() + '줄', queued.seq)
   send(S)
   S.wantFocus = true
   paintWindow(S)
@@ -1974,46 +1967,42 @@ function drawSide(host, S, data) {
   host.textContent = ''
   const root = el('div', 'emg-side')
   host.appendChild(root)
-  // 이 마운트가 보낸 조작(상세 「이 호기 지우기」·칸·호기 되돌리기)의 토스트는 이 마운트가 그린다.
-  const toast = el('div', 'emg-toast')
-  toast.setAttribute('role', 'status')
-  root.appendChild(toast)
-  S.repaintToast = () => fillToast(S, toast, S.data && S.data.toast)
-  const seen = S.lastToast
+  // 이 칸에서 고칠 거부 · 브라우저 한 줄은 칸 머리에 선다. 동작 결과는 알림창으로 간다.
+  const note = el('div', 'emg-note')
+  note.setAttribute('role', 'status')
+  root.appendChild(note)
+  S.repaintNote = () => fillNote(S, note, S.data && S.data.toast)
   const first = !S.sideDrawn
   S.sideDrawn = true
-  S.repaintToast()
-  // 새 토스트 가운데 이 칸이 처음 선 회차(「호기 추가」 → 상세, 가져오기 → 새 호기 칸)의 것과 「되돌리기」 가 달린 것(지우기 등)만 —
-  // 칸 안에서 고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게.
-  const fresh = Boolean(data.toast) && data.toast.id !== seen && !toast.hidden && (first || Boolean(data.toast.undo))
+  S.repaintNote()
   if (data.panel === 'changes') drawChanges(S, root, data)
   else if (data.panel === 'new') drawNew(S, root, data)
   else drawDetail(S, root, data)
   S.painting = false
   restoreFocus(host, saved)
-  // 칸 아래쪽에서 누른 조작(「호기 추가」 → 상세, 「이 호기로 새 호기 만들기」 → 새 호기 칸, 「이 호기 지우기」)의 새
-  // 토스트가 화면 위로 나가 있으면 칸 머리를 보인다 — 알림·되돌리기가 보이지 않으면 아무 일도 없었던 것으로 읽힌다.
-  if (fresh) revealToast(toast)
+  // 칸 아래쪽에서 누른 조작이 연 다른 칸(「호기 추가」 → 상세, 「이 호기로 새 호기 만들기」 → 새 호기 칸)은 그 칸 머리를 보인다 —
+  // 스크롤이 그대로면 새 칸의 가운데부터 보여 무엇이 열렸는지 모른다.
+  if (first && data.revealHead) revealHead(root)
   if (!S.sideBound) {
     S.sideBound = true
     listen(S, host, 'keydown', stopKeys)
   }
 }
 
-function revealToast(toast) {
+function revealHead(head) {
   const frame = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (fn) => setTimeout(fn, 0)
   frame(() => {
-    if (!toast.isConnected || toast.hidden) return
+    if (!head.isConnected) return
     // 넘치는 스크롤 칸(설비 마스터 오른쪽 칸 본문 칸) 안이면 먼저 그 칸만 올린다 — 바로 scrollIntoView 하면 Chrome 이 붙은
     // (sticky) 자리가 아니라 원래 흐름 자리로 셈해 바깥 페이지(stMain)까지 밀어 왼쪽 표가 튄다(사본 앱 1500×950 에서 0 → 223px).
-    // 칸 위 끝 아래·머리 띠 아래에 가려 있던 토스트(칸이 조금만 내려가 있을 때)도 이 길로 보인다.
-    const box = scrollBoxOf(toast)
+    // 칸 위 끝 아래·머리 띠 아래에 가려 있던 머리(칸이 조금만 내려가 있을 때)도 이 길로 보인다.
+    const box = scrollBoxOf(head)
     if (box) {
-      const next = boxScrollFor(box.scrollTop, toast.getBoundingClientRect().top, box.getBoundingClientRect().top)
+      const next = boxScrollFor(box.scrollTop, head.getBoundingClientRect().top, box.getBoundingClientRect().top)
       if (next !== box.scrollTop) box.scrollTop = next
     }
     // 그래도 머리 띠 아래로 가려 있으면(칸이 페이지 흐름에 있을 때 — 좁은 창에서 쌓인 칸 등) 칸 머리를 보인다.
-    if (needsReveal(toast.getBoundingClientRect().top, TOAST_REVEAL_MARGIN)) toast.scrollIntoView({ block: 'start' })
+    if (needsReveal(head.getBoundingClientRect().top, HEAD_REVEAL_MARGIN)) head.scrollIntoView({ block: 'start' })
   })
 }
 
@@ -2021,7 +2010,7 @@ function pageMain() {
   return typeof document !== 'undefined' && document.querySelector ? document.querySelector(PAGE_SCROLLER) : null
 }
 
-// 토스트를 감싼 가장 가까운 넘치는 스크롤 칸 — 그림자 DOM 밖으로 건너 올라간다. 페이지 본문(`PAGE_SCROLLER`)에 닿거나 못
+// 칸 머리를 감싼 가장 가까운 넘치는 스크롤 칸 — 그림자 DOM 밖으로 건너 올라간다. 페이지 본문(`PAGE_SCROLLER`)에 닿거나 못
 // 찾으면 null.
 function scrollBoxOf(node) {
   if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return null
@@ -2040,11 +2029,11 @@ function scrollBoxOf(node) {
 }
 
 // 화면 위를 가리는 높이 — 머리 띠 밑에 붙는 화면 탭 줄(sticky, `app_header.PAGE_TABS_SELECTOR`)이 있으면 그 아래 끝, 없으면
-// 머리 띠(`TOAST_REVEAL_MARGIN`). 그 아래 조금(8px) 띄운다.
+// 머리 띠(`HEAD_REVEAL_MARGIN`). 그 아래 조금(8px) 띄운다.
 function coverHeight() {
   const strip = typeof document !== 'undefined' && document.querySelector ? document.querySelector(PAGE_TABS_STRIP) : null
   const bottom = strip && strip.getBoundingClientRect ? Number(strip.getBoundingClientRect().bottom) || 0 : 0
-  return Math.round(Math.max(TOAST_REVEAL_MARGIN, bottom)) + 8
+  return Math.round(Math.max(HEAD_REVEAL_MARGIN, bottom)) + 8
 }
 
 // 「비가동 일정 표에서 고치기」 — 그 표는 왼쪽 칸 맨 위에 선다. 긴 호기 상세 맨 아래에서 누르면 화면이 내려간 채라 왼쪽이
@@ -2117,7 +2106,7 @@ function drawDetail(S, root, data) {
   title.appendChild(el('span', 'emg-scope is-scenario', '시나리오'))
   downtime.appendChild(title)
   const rows = Array.isArray(unit.downtime) ? unit.downtime : []
-  if (!rows.length) downtime.appendChild(el('span', 'emg-muted', '없음'))
+  if (!rows.length) downtime.appendChild(el('span', 'emg-muted emg-none', '없음'))
   else {
     const table = el('table', 'emg-mini')
     const headRow = el('tr')
@@ -2156,8 +2145,8 @@ function drawDetail(S, root, data) {
 // ---------------------------------------------------------------- side — 새 호기
 
 const NEW_TIERS = [['required', '에러 없이 추가하려면'], ['calc', '가용대수에 세려면'], ['map', '도면에 놓으려면']]
-// 화면 위 머리 띠(Streamlit 머리·화면 탭 줄)가 가리는 높이 — 이보다 위에 있는 토스트는 보이지 않는 것으로 친다.
-const TOAST_REVEAL_MARGIN = 72
+// 화면 위 머리 띠(Streamlit 머리·화면 탭 줄)가 가리는 높이 — 이보다 위에 있는 칸 머리는 보이지 않는 것으로 친다.
+const HEAD_REVEAL_MARGIN = 72
 const TIER_TAGS = { required: '필수', calc: '가용대수', map: '도면' }
 
 function drawNew(S, root, data) {

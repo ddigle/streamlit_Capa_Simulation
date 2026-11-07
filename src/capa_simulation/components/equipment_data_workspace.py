@@ -20,7 +20,7 @@ from capa_simulation.components.editor_state import (
     editor_widget_key,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     quoted,
@@ -189,11 +189,14 @@ DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
 GRID_OVERLAY_KEY = "equipment_grid_overlay_v1"
 # 되돌리기 단계(`services/equipment_grid.undo_to_state` 의 기본형 — 최대 40, 통째 단계는 하나).
 GRID_UNDO_KEY = "equipment_grid_undo_v1"
-# 마운트별 토스트 {"grid"|"detail"|"changes": {"id", "text", "undo"}}. 번호는 `GRID_TOAST_SEQ_KEY`
-# 하나로 늘 오른다(비우지 않는다 — 같은 번호를 다시 쓰면 닫은 토스트로 보고 숨긴다).
+# 표 · 오른쪽 칸 조작 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`queue_grid_result`).
+GRID_RESULT_KEY = "equipment_grid_result_v1"
+# 오른쪽 칸 자리 거부 한 줄 {"detail"|"new": {"id", "text"}} — 고칠 입력이 그 칸에 있는 거부만
+# (설계 규칙 UI-NTF-03). 번호는 `GRID_TOAST_SEQ_KEY` 하나로 늘 오른다(비우지 않는다 — 같은 번호를
+# 다시 쓰면 닫은 한 줄로 보고 숨긴다).
 GRID_TOAST_KEY = "equipment_grid_toast_v1"
 GRID_TOAST_SEQ_KEY = "equipment_grid_toast_seq_v1"
-# 마운트에 실어 보낸 토스트 번호 {마운트: 번호} — 그 마운트가 사라지면 그 토스트를 거둔다
+# 마운트에 실어 보낸 자리 거부 번호 {마운트: 번호} — 그 마운트가 사라지면 그 한 줄을 거둔다
 # (`settle_grid_toasts`).
 GRID_TOAST_SHOWN_KEY = "equipment_grid_toast_shown_v1"
 # 회차 메모(칸 결과·표 단위 오류 — 열쇠가 바뀌면 덮는다).
@@ -210,6 +213,7 @@ NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
     GRID_UNDO_KEY,
+    GRID_RESULT_KEY,
     GRID_TOAST_KEY,
     GRID_TOAST_SHOWN_KEY,
     GRID_MEMO_KEY,
@@ -263,6 +267,9 @@ SELECT_COLUMN = "선택"
 SELECTION_KEY = "equipment_workspace_selection_v1"
 PENDING_DELETE_KEY = "equipment_workspace_pending_delete_v1"
 LAST_REMOVED_KEY = "equipment_workspace_last_removed_v1"
+# 「한 단계 되돌리기」 가 미룬 일괄 삭제 되살리기(값은 표 이름 — `restore_bulk_deletion`). 그 표에
+# 적용하지 않은 편집이 있을 때만 서고, 그 표 편집표가 선 회차의 제출이 편집을 먼저 넣고 되살린다.
+RESTORE_REQUEST_KEY = "equipment_workspace_restore_request_v1"
 CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
 # Space 편집기가 쌓는 미저장 층 캔버스·도면 요소((동, 층) → 값). 호기 편집본(BUFFER_KEY)과
 # **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
@@ -337,7 +344,6 @@ _BUFFER_SESSION_KEY = "equipment_workspace_session_v1"
 # 한다.
 BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
 CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
-UNDO_DELETE_BUTTON_KEY = "equipment_delete_undo_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
 DELETE_SELECTED = "delete_selected"
@@ -422,6 +428,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         SELECTION_KEY,
         PENDING_DELETE_KEY,
         LAST_REMOVED_KEY,
+        RESTORE_REQUEST_KEY,
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
@@ -463,7 +470,7 @@ def _bump_buffer_generation() -> None:
 
 
 def _store_changed_buffer(frames: Frames) -> None:
-    """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정·되살리기가 이 길로만 쓴다.
+    """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정 · 되살리기가 이 길로만 쓴다.
 
     세대가 「저장하지 않은 편집」의 근거다(`has_unsaved_equipment_edits` — 저장본으로 돌아온 세대만
     뺀다). 편집표 칸은 그대로이고 행만 빠진 제출에서 세대가 그대로면, 테마 단추가 묻지 않고
@@ -836,29 +843,36 @@ def _remember_edits(frames: Frames) -> None:
 
 
 def _forget_grid_undo() -> None:
-    """표 밖의 길(Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본을 바꿨다 — 표의 되돌리기는
-    조작 뒤 자리의 역 patch 라 그 위에서 맞지 않으므로 비운다. 비울 것이 있었으면 표 토스트에
-    적는다(개편 명세 7-1 넷째 자리)."""
+    """표 밖의 길(Space 적용·작은 편집표 적용·일괄 삭제·엑셀·CSV 넣기)이 편집본을 바꿨다 — 표의
+    되돌리기는 조작 뒤 자리의 역 patch 라 그 위에서 맞지 않으므로 비운다. 비울 것이 있었으면 그
+    사실을 알린다(개편 명세 7-1 넷째 자리 — 다른 화면에서 비웠으면 이 탭을 열 때)."""
     if st.session_state.pop(GRID_UNDO_KEY, None):
-        queue_grid_toast(
-            "grid", "표 밖에서 편집본을 바꿔 표의 되돌리기를 비웠습니다 — 고친 값은 그대로입니다"
+        queue_grid_result(
+            "표 밖에서 편집본을 바꿔 표의 되돌리기를 비웠습니다 — 고친 값은 그대로입니다",
+            kind="info",
         )
 
 
-def queue_grid_toast(target: str, text: str, *, undo: str | None = None) -> None:
-    """설비 마스터 표의 한 마운트(`"grid"`·`"detail"`·`"changes"`)에 토스트를 둔다. 번호는 늘
-    오른다 — 브라우저는 번호가 바뀌어야 새 토스트로 본다(닫은 토스트 번호는 숨긴다)."""
+def queue_grid_result(text: str, *, kind: FlashKind = "success") -> None:
+    """표 · 오른쪽 칸 조작의 결과 — 띠가 아니라 알림창 · Alarm 으로만(설계 규칙 UI-NTF-03). 탭 끝
+    칸이 꺼내 낸다. 글에 호기 이름이 들어 구두점을 막는다."""
+    queue_flash(GRID_RESULT_KEY, literal_markdown(text), kind=kind, popup_only=True)
+
+
+def queue_grid_toast(target: str, text: str) -> None:
+    """오른쪽 칸 한 마운트(`"detail"`·`"new"`)에 자리 거부 한 줄을 둔다 — 고칠 입력이 그 칸에 있는
+    거부뿐이다. 번호는 늘 오른다 — 브라우저는 번호가 바뀌어야 새 글로 본다(닫은 번호는 숨긴다)."""
     number = st.session_state.get(GRID_TOAST_SEQ_KEY, 0)
     number = (number if isinstance(number, int) else 0) + 1
     st.session_state[GRID_TOAST_SEQ_KEY] = number
     toasts = st.session_state.get(GRID_TOAST_KEY)
     toasts = dict(toasts) if isinstance(toasts, dict) else {}
-    toasts[target] = {"id": number, "text": text, "undo": undo}
+    toasts[target] = {"id": number, "text": text}
     st.session_state[GRID_TOAST_KEY] = toasts
 
 
 def grid_toasts() -> dict[str, dict[str, Any]]:
-    """마운트별 지금 토스트(없으면 빈 dict)."""
+    """마운트별 지금 자리 거부 한 줄(없으면 빈 dict)."""
     toasts = st.session_state.get(GRID_TOAST_KEY)
     return {
         str(target): dict(toast)
@@ -868,12 +882,11 @@ def grid_toasts() -> dict[str, dict[str, Any]]:
 
 
 def settle_grid_toasts(drawn: Collection[str]) -> None:
-    """이 회차에 그린 마운트(`drawn` — `"grid"`·`"detail"`·`"changes"`)의 토스트는 실어 보냈다고
-    적고, 실어 보낸 뒤 마운트가 그려지지 않은 토스트는 거둔다. 브라우저의 닫은 토스트 번호는
-    마운트마다 새로 시작하므로(표 고르기 왕복·탭 왕복·오른쪽 칸 왕복) 남겨 두면 닫은 토스트가 다시
-    마운트할 때 되살아난다. 아직 실어 보내지 않은 토스트(마운트가 숨은 동안 쌓인 것 — Space
-    적용·작은 편집표 적용이 비운 되돌리기 알림)는 남겨 처음 마운트할 때 보인다. 탭 ① 이 그려진
-    회차의 끝과 숨은 회차(`drawn` 빈 것)에 부른다."""
+    """이 회차에 그린 마운트(`drawn` — `"detail"`·`"new"`)의 한 줄은 실어 보냈다고 적고, 실어 보낸
+    뒤 마운트가 그려지지 않은 한 줄은 거둔다. 브라우저의 닫은 번호는 마운트마다 새로 시작하므로
+    (탭 왕복·오른쪽 칸 왕복) 남겨 두면 닫은 한 줄이 다시 마운트할 때 되살아난다. 아직 실어 보내지
+    않은 한 줄은 남겨 처음 마운트할 때 보인다. 탭 ① 이 그려진 회차의 끝과 숨은 회차(`drawn` 빈
+    것)에 부른다."""
     toasts = st.session_state.get(GRID_TOAST_KEY)
     shown = st.session_state.get(GRID_TOAST_SHOWN_KEY)
     toasts = dict(toasts) if isinstance(toasts, dict) else {}
@@ -925,19 +938,7 @@ def apply_master_grid_result(applied: GridApplied) -> None:
     if applied.changed:
         if any(applied.frames_changed):
             st.session_state[BUFFER_KEY] = state.frames
-            pending = st.session_state.get(PENDING_DELETE_KEY)
-            baseline_changed, _, downtime_changed = applied.frames_changed
-            for changed, key, target in (
-                (baseline_changed, BASELINE_EDITOR_KEY, BASELINE_TARGET),
-                (downtime_changed, DOWNTIME_EDITOR_KEY, DOWNTIME_TARGET),
-            ):
-                if not changed:
-                    continue
-                discard_editor(key)
-                st.session_state.pop(f"{key}_applied_view", None)
-                if isinstance(pending, tuple) and pending and pending[0] == target:
-                    st.session_state.pop(PENDING_DELETE_KEY, None)
-            st.session_state.pop(PREVIEW_KEY, None)
+            _drop_changed_editors(applied.frames_changed)
         _bump_buffer_generation()
     if state.overlay:
         st.session_state[GRID_OVERLAY_KEY] = dict(state.overlay)
@@ -950,6 +951,24 @@ def apply_master_grid_result(applied: GridApplied) -> None:
         st.session_state.pop(GRID_UNDO_KEY, None)
     if applied.changed:
         _note_if_back_to_saved()
+
+
+def _drop_changed_editors(changed: tuple[bool, bool, bool]) -> None:
+    """내용이 바뀐 표(기존 보유대수, 설비 마스터, 비가동 일정)의 편집표 · 그 표의 삭제 대기와
+    미리보기를 버린다 — 편집표의 줄 번호 delta 가 바뀐 표 위에 얹히지 않게."""
+    pending = st.session_state.get(PENDING_DELETE_KEY)
+    baseline_changed, _, downtime_changed = changed
+    for was_changed, key, target in (
+        (baseline_changed, BASELINE_EDITOR_KEY, BASELINE_TARGET),
+        (downtime_changed, DOWNTIME_EDITOR_KEY, DOWNTIME_TARGET),
+    ):
+        if not was_changed:
+            continue
+        discard_editor(key)
+        st.session_state.pop(f"{key}_applied_view", None)
+        if isinstance(pending, tuple) and pending and pending[0] == target:
+            st.session_state.pop(PENDING_DELETE_KEY, None)
+    st.session_state.pop(PREVIEW_KEY, None)
 
 
 def replace_equipment_buffer(frames: Frames) -> None:
@@ -1477,7 +1496,8 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
     - 그 표 목록 필터의 고른 값(`설비명`)도 새 이름으로 옮긴다 — 그대로 두면 다음 회차에 선택지에
       없는 값이라 지워져 필터가 「전체」 로 돌아간다. 필터 위젯이 그려지기 전에만 고칠 수 있어
       `FOLLOWED_FILTERS_KEY` 에 모았다가 `render_small_editor` 가 얹는다.
-    - `방금 삭제 되돌리기` 는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을 지니므로 되살리면
+    - 일괄 삭제 되살리기(`LAST_REMOVED_KEY`)는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을
+      지니므로 되살리면
       비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
       한 설비가 둘로 갈린다(검증은 통과해 그대로 저장된다).
     """
@@ -2819,7 +2839,8 @@ def _current_selection() -> dict[str, frozenset[RowKey]]:
 
 # 「삭제 확정」 풍선이자 결과 알림의 끝 문장 — 확정은 편집본만 바꾼다.
 DELETE_CONFIRM_HELP = (
-    "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
+    "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영되고, 그 전에는 같은 "
+    "칸의 「한 단계 되돌리기」 로 되살립니다."
 )
 
 
@@ -2834,7 +2855,7 @@ def _deletion_value(plan: DeletionPlan) -> str:
 
 def _deletion_message(plan: DeletionPlan) -> str:
     """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠졌는지 — 「삭제 확정」 결과 알림.
-    호기 지우기는 설비 마스터 표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
+    호기 지우기는 설비 마스터 표의 출납(`delete` — 딸린 비가동 함께, 결과 알림)이다."""
     count = plan.target_count
     # 알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·별표).
     samples = ", ".join(literal_markdown(key) for key in plan.sample_keys())
@@ -2846,9 +2867,9 @@ def _deletion_message(plan: DeletionPlan) -> str:
     return f"{head}. 대상: {samples}{more}. {DELETE_CONFIRM_HELP}"
 
 
-def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
-    """확인 대기 중인 삭제와 방금 한 삭제를 작은 편집표 위에 말한다. (확정, 취소, 되돌리기)."""
-    confirm = cancel = undo = False
+def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool]:
+    """확인 대기 중인 삭제를 작은 편집표 위에 말한다. (확정, 취소)."""
+    confirm = cancel = False
     pending = st.session_state.get(PENDING_DELETE_KEY)
     if isinstance(pending, tuple) and len(pending) == 2:
         target, keys = pending
@@ -2865,34 +2886,24 @@ def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
                     help=DELETE_CONFIRM_HELP,
                 )
                 cancel = st.button("취소", key=CANCEL_DELETE_BUTTON_KEY, icon=":material/close:")
-    removed = st.session_state.get(LAST_REMOVED_KEY)
-    if isinstance(removed, tuple):
-        count = sum(len(frame) for frame in removed)
-        st.info(
-            f"방금 편집본에서 {count:,}행을 지웠습니다. 저장하기 전까지 되돌릴 수 있습니다.",
-            icon=":material/undo:",
-        )
-        undo = st.button("방금 삭제 되돌리기", key=UNDO_DELETE_BUTTON_KEY, icon=":material/undo:")
-    return confirm, cancel, undo
+    return confirm, cancel
 
 
-def _apply_bulk_actions(
-    editor: EditorResult,
-    *,
-    confirm: bool,
-    undo: bool,
-    view_applied: bool,
-) -> None:
-    """선택·삭제·되돌리기를 편집본에 반영한다. `_remember_edits` 뒤에 부른다.
+def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bool) -> None:
+    """선택 · 삭제를 편집본에 반영한다. `_remember_edits` 뒤에 부른다.
 
     **확인 대기는 어떤 제출이든 한 번 쓰고 버린다.** 삭제 버튼이 다시 세우지 않는 한 남지
     않는다 — 확인 상자가 누른 순간보다 오래 살아 있으면 나중에 다른 뜻으로 눌린다.
 
-    「삭제 확정」·「방금 삭제 되돌리기」 의 결과 알림은 쓰기 알림 표지에도 적는다(`note_notice` —
-    종류 info). 사람 속도의 더블클릭은 둘째 누름이 이미 사라진 단추(확인 대기·되돌릴 행을 첫 회차가
-    꺼냈다)에 닿아 아무것도 하지 않는 회차가 되는데, 첫 회차가 꺼내 그린 알림을 그 회차가 다시
-    그리며 지웠다(2026-10-27 E2E 「삭제 확정」 5/9). 표지가 창(`TRAILING_PRESS_SECONDS`) 안이면
-    알림 칸(`render_flash`)이 같은 꼴로 다시 그린다. 표지 dict 는 편집본을 바꾸기 **전에** 받는다.
+    「삭제 확정」 의 결과 알림은 쓰기 알림 표지에도 적는다(`note_notice` — 종류 info). 사람 속도의
+    더블클릭은 둘째 누름이 이미 사라진 단추(첫 회차가 확인 대기를 꺼냈다)에 닿아 아무것도 하지 않는
+    회차가 되는데, 첫 회차가 꺼내 그린 알림을 그 회차가 다시 그리며 지웠다(2026-10-27 E2E 「삭제
+    확정」 5/9). 표지가 창(`TRAILING_PRESS_SECONDS`) 안이면 알림 칸(`render_flash`)이 같은 꼴로 다시
+    그린다. 표지 dict 는 편집본을 바꾸기 **전에** 받는다.
+
+    확정한 삭제는 표의 되돌리기를 비운다(`_forget_grid_undo`) — 그 뒤로 삭제가 「한 단계
+    되돌리기」 의 맨 위이고, 그 위에 쌓인 표 조작부터 되돌린 다음 삭제를 되살린다
+    (`restore_bulk_deletion`).
     """
     notices = notice_marks()
     frames: Frames = st.session_state[BUFFER_KEY]
@@ -2920,22 +2931,64 @@ def _apply_bulk_actions(
         target, keys = pending
         plan = plan_deletion(frames, target, keys)
         _store_changed_buffer(apply_deletion(frames, plan))
+        _forget_grid_undo()
         done = _deletion_message(plan)
         note_notice(notices, _NOTICE_KEY, done, kind="info")
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
         queue_flash(_NOTICE_KEY, done, kind="info")
-    elif undo:
-        removed = st.session_state.pop(LAST_REMOVED_KEY, None)
-        if isinstance(removed, tuple):
-            restored, skipped = restore_rows(frames, removed)
-            _store_changed_buffer(restored)
-            message = "방금 지운 행을 편집본에 되살렸습니다."
-            if skipped:
-                message += f" 그 사이 같은 키가 다시 생긴 {skipped:,}행은 건너뛰었습니다."
-            note_notice(notices, _NOTICE_KEY, message, kind="info")
-            queue_flash(_NOTICE_KEY, message, kind="info")
     st.session_state[SELECTION_KEY] = selection
+
+
+def restore_bulk_deletion() -> bool:
+    """방금 한 일괄 삭제를 되살린다(「한 단계 되돌리기」 — 표 단계가 다 빠진 뒤). 되살릴 것이 없으면
+    거짓.
+
+    콜백에서 불려 편집표 위젯이 아직 서지 않았고 그 결과(적용 전 편집을 얹은 표)도 모른다. 되살린
+    표의 편집표는 줄 번호 delta 가 바뀐 표 위에 얹히지 않게 새로 세워야 하는데, 그 표에 적용하지
+    않은 편집이 있으면 그것까지 알림 없이 버린다(화면 탭을 옮길 때는 묻고 지키는 편집이다). 그때는
+    표지(`RESTORE_REQUEST_KEY`)만 세운다 — 그 표 편집표가 선 회차의 제출(`render_small_editor`)이
+    편집을 먼저 편집본에 넣고 되살린다(작은 편집표 단추 제출과 같은 차례). 편집이 없으면 곧바로
+    되살린다(`_restore_removed`)."""
+    removed = st.session_state.get(LAST_REMOVED_KEY)
+    if not isinstance(removed, tuple):
+        st.session_state.pop(LAST_REMOVED_KEY, None)
+        return False
+    for name in small_editor_edits():
+        if not removed[TARGET_LAYOUT[name][0]].empty:
+            st.session_state[RESTORE_REQUEST_KEY] = name
+            return True
+    return _restore_removed()
+
+
+def settle_bulk_restore() -> None:
+    """미룬 되살리기(`RESTORE_REQUEST_KEY`)의 표를 이번 회차에 그리지 않으면 곧바로 되살린다 — 누른
+    회차가 끊긴 사이 표 고르기를 바꿨다(그 표의 적용 전 편집은 그리지 않아 어차피 걷힌다). 그대로
+    두면 나중에 그 표를 열 때 말없이 되살아난다. 탭 ① 이 편집본을 읽기 **전에** 부른다."""
+    request = st.session_state.get(RESTORE_REQUEST_KEY)
+    if request is not None and request != st.session_state.get(MASTER_TABLE_KEY):
+        _restore_removed()
+
+
+def _restore_removed() -> bool:
+    """`LAST_REMOVED_KEY` 의 행을 편집본에 되살리고 그 표 편집표를 새로 세운다(다른 표는 남는다).
+    미룬 표지도 거둔다. 결과는 탭 끝 칸이 알림창으로 낸다 — 표 고르기가 어느 표든 그 칸은 선다.
+    표지 dict 는 편집본을 바꾸기 **전에** 받는다(`_apply_bulk_actions` 와 같다)."""
+    st.session_state.pop(RESTORE_REQUEST_KEY, None)
+    removed = st.session_state.pop(LAST_REMOVED_KEY, None)
+    if not isinstance(removed, tuple):
+        return False
+    notices = notice_marks()
+    frames: Frames = st.session_state[BUFFER_KEY]
+    restored, skipped = restore_rows(frames, removed)
+    _store_changed_buffer(restored)
+    _drop_changed_editors((not removed[0].empty, False, not removed[2].empty))
+    message = "방금 지운 행을 편집본에 되살렸습니다."
+    if skipped:
+        message += f" 그 사이 같은 키가 다시 생긴 {skipped:,}행은 건너뛰었습니다."
+    note_notice(notices, GRID_RESULT_KEY, message, kind="info")
+    queue_grid_result(message, kind="info")
+    return True
 
 
 # 설비 마스터 탭 「저장 전 변경」 저장자 칸 key 접두어(`equipment_save_fields`) — 옛 설비 마스터 탭
@@ -3333,7 +3386,7 @@ def render_small_editor(
             action = _selection_buttons(
                 slug, delete_locked=None if baseline_table else delete_locked
             )
-        confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
+        confirm_delete, cancel_delete = _render_bulk_delete_status(frames)
         view_apply_key = f"equipment_{slug}_view_apply_v1"
         if baseline_table:
             view, requested, view_clicked = _editor_view(
@@ -3391,6 +3444,8 @@ def render_small_editor(
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
             )
+    # 「한 단계 되돌리기」 가 미룬 이 표의 되살리기(`restore_bulk_deletion`) — 제출로 받는다.
+    restoring = st.session_state.get(RESTORE_REQUEST_KEY) == target
     if not any(
         (
             apply_clicked,
@@ -3398,7 +3453,7 @@ def render_small_editor(
             action is not None,
             confirm_delete,
             cancel_delete,
-            undo_delete,
+            restoring,
         )
     ):
         return None
@@ -3424,9 +3479,10 @@ def render_small_editor(
                 action=(action, target) if action is not None else None,
             ),
             confirm=confirm_delete,
-            undo=undo_delete,
             view_applied=view_clicked,
         )
+        if restoring:
+            _restore_removed()
         st.rerun()
 
     return submit
@@ -3569,9 +3625,7 @@ def _render_history(
         options=list(by_id),
         key="equipment_history_revision_id_v4",
         persist_state="session",
-        format_func=lambda value: (
-            f"{schedule_revision_title(by_id[value])} · {by_id[value].note or '메모 없음'}"
-        ),
+        format_func=lambda value: schedule_revision_title(by_id[value]),
     )
     chosen = by_id[selected_id]
     common_id = chosen.common_revision_id or latest_common

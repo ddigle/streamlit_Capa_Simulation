@@ -380,7 +380,6 @@ def test_adding_puts_the_unit_at_the_end_of_the_buffer_and_the_top_of_the_list()
     assert result.added == (("n:NEW-01", "NEW-01"),)
     assert result.state.loaded == ("n:NEW-01", *loaded)
     assert result.toast == "NEW-01을 표 맨 위에 넣었습니다 (리비전 저장 때 함께 저장)"
-    assert result.toast_step is not None
     # 차례만 다른 공통 리비전이 생기지 않는다 — 앞 줄은 저장본 그대로다.
     head = master.iloc[: len(state.frames[1])].reset_index(drop=True)
     assert buffer_matches_saved(
@@ -427,10 +426,10 @@ def test_an_add_from_an_old_base_is_dropped() -> None:
     assert fresh.dropped == 0 and fresh.added == (("n:NEW-01", "NEW-01"),)
 
 
-def test_pressing_add_twice_keeps_the_first_success_toast_and_its_undo() -> None:
+def test_pressing_add_twice_keeps_the_first_success_result() -> None:
     """같은 초안·같은 `draftSeq` 의 「호기 추가」 둘(두 번 누름 — 브라우저 단추는 회차가 돌아올
     때까지 켜져 있다)은 한 번 넣고 둘째는 말없이 버린다(개편 명세 6-4) — 둘째가 이름 겹침으로
-    거부되어 성공 토스트·되돌리기를 덮지 않는다."""
+    거부되어 성공 결과를 덮지 않는다."""
     draft = _valid()
     ops = [
         {"seq": seq, "mount": "m", "base": BASE, "op": "add", "draftSeq": 5, "draft": draft}
@@ -441,7 +440,6 @@ def test_pressing_add_twice_keeps_the_first_success_toast_and_its_undo() -> None
 
     assert result.added == (("n:NEW-01", "NEW-01"),) and result.refused == 0
     assert result.toast is not None and result.toast.startswith("NEW-01을 표 맨 위에 넣었습니다")
-    assert result.toast_step == "m#1"
 
 
 def test_an_add_behind_the_session_draft_is_dropped_quietly() -> None:

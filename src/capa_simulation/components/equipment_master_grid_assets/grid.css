@@ -220,9 +220,11 @@
 }
 
 .emg-option .emg-tail {
+  flex: none;
   margin-left: auto;
   font-size: 12px;
   color: var(--emg-muted);
+  white-space: nowrap;
 }
 
 .emg-cond {
@@ -402,17 +404,16 @@
   text-decoration: none;
 }
 
-.emg-toast {
+.emg-note {
   display: flex;
   gap: 10px;
   align-items: center;
-  scroll-margin-top: 80px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--emg-border);
   background: var(--emg-new-fill);
 }
 
-.emg-toast span {
+.emg-note span {
   flex: 1;
 }
 
@@ -622,6 +623,7 @@
 .emg-side {
   display: flex;
   flex-direction: column;
+  scroll-margin-top: 80px;
   border: 1px solid var(--emg-border);
   border-radius: 8px;
   background: var(--emg-surface);
@@ -642,6 +644,10 @@
 .emg-side-group {
   padding: 12px;
   border-bottom: 1px solid var(--emg-border);
+}
+
+.emg-side-group .emg-none {
+  margin-right: 10px;
 }
 
 .emg-side-group h4 {

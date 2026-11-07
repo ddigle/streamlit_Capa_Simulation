@@ -491,11 +491,9 @@ def test_grid_data_is_plain_json_in_loaded_order() -> None:
     saved = _saved()
     view = _view(_copy(saved), saved, alerts={saved[1].iloc[1]["설비명"]: "Qual 미확인"})
     loaded = list(view.index.ids[:3])[::-1] + ["s:NOPE"]
-    data = eg.grid_data(
-        view, loaded, toast={"id": 1, "text": "t", "undo": "m#3"}, undo_top="m#3", open_id=loaded[1]
-    )
+    data = eg.grid_data(view, loaded, open_id=loaded[1])
     json.dumps(data, allow_nan=False)
-    assert data["toast"] == {"id": 1, "text": "t", "undo": "m#3"}
+    assert "toast" not in data, "표 조작 결과는 알림창으로 간다"
     assert data["open"] == loaded[1], "상세에 연 줄(띠)"
     assert eg.grid_data(view, loaded, open_id="s:NOPE")["open"] is None
     assert [row["id"] for row in data["rows"]] == loaded[:3]
@@ -508,15 +506,10 @@ def test_grid_data_is_plain_json_in_loaded_order() -> None:
     assert eg.grid_data(view, loaded) == eg.grid_data(view, loaded), "같은 입력이면 같은 data"
 
 
-def test_a_toast_keeps_its_undo_only_while_its_step_is_on_top() -> None:
-    """토스트 뒤에 토스트 없는 조작(칸 고침)이 쌓이면 「되돌리기」 를 거둔다 — 누르면 다른 단계가
-    되돌아간다."""
-    toast = {"id": 4, "text": "값 넣기 — 3칸 바뀜", "undo": "m#7"}
-    assert eg.toast_payload(toast, "m#7") == toast
-    assert eg.toast_payload(toast, "m#8") == {**toast, "undo": None}
-    assert eg.toast_payload(toast, None) == {**toast, "undo": None}
-    assert eg.toast_payload({**toast, "undo": True}, "m#7") == {**toast, "undo": None}, "표지만"
-    assert eg.toast_payload(None, "m#7") is None
+def test_the_side_refusal_line_is_carried_as_it_is() -> None:
+    toast = {"id": 4, "text": "「없는」 설비명을 찾지 못했습니다"}
+    assert eg.toast_payload(toast) == toast
+    assert eg.toast_payload(None) is None
 
 
 def test_view_token_changes_with_order() -> None:
@@ -580,22 +573,23 @@ def test_detail_data_carries_meta_downtime_and_the_delete_lock() -> None:
     assert eg.detail_data(view, "s:NOPE")["unit"] is None
 
 
-def test_side_mounts_carry_their_own_ack_and_toast() -> None:
-    """오른쪽 칸도 출납을 보낸다 — ack 가 없으면 반영된 op 를 들고 있다가 다시 보내고, 상세 「이
-    호기 지우기」 토스트·되돌리기를 그릴 자리가 없다."""
+def test_side_mounts_carry_their_own_ack_and_only_the_detail_a_refusal_line() -> None:
+    """오른쪽 칸도 출납을 보낸다 — ack 가 없으면 반영된 op 를 들고 있다가 다시 보낸다. 자리 거부
+    한 줄은 고칠 입력이 있는 상세 · 새 호기 칸만 싣고, 「저장 전 변경」 의 결과는 알림창으로
+    간다."""
     saved = _saved()
     view = _view(_copy(saved), saved)
     ack = {"mount": "m-side", "seq": 4}
-    toast = {"id": 2, "text": "1대 지울 목록에 넣음", "undo": "m-side#4"}
-    for data in (
-        eg.detail_data(view, view.index.ids[0], ack=ack, toast=toast, undo_top="m-side#4"),
-        eg.changes_data(view, ack=ack, toast=toast, undo_top="m-side#4"),
-    ):
+    toast = {"id": 2, "text": "그 호기를 찾지 못했습니다"}
+    detail = eg.detail_data(view, view.index.ids[0], ack=ack, toast=toast, reveal_head=True)
+    changes = eg.changes_data(view, ack=ack)
+    for data in (detail, changes):
         json.dumps(data, allow_nan=False)
-        assert data["ack"] == ack and data["toast"] == toast
-    assert eg.detail_data(view, None)["ack"] == {} and eg.changes_data(view)["toast"] is None
-    stale = eg.changes_data(view, ack=ack, toast=toast, undo_top="other#1")
-    assert stale["toast"]["undo"] is None
+        assert data["ack"] == ack
+    assert detail["toast"] == toast and detail["revealHead"] is True
+    assert "toast" not in changes
+    blank = eg.detail_data(view, None)
+    assert blank["ack"] == {} and blank["toast"] is None and blank["revealHead"] is False
 
 
 def test_changes_data_counts_and_caps_lines() -> None:

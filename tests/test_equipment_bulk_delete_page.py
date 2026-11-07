@@ -4,9 +4,9 @@
 
 옛 설비 마스터 편집표의 「필터에 맞는 행 모두 선택」·「선택 행 삭제」·「삭제 확정」 길은 설비
 마스터 표(개편 B1)의 불러오기(조건) → 고르기 → 「선택 n대 지우기」(출납 `delete` — 확인 없이 바로,
-토스트 「되돌리기」) 로 바뀌었다. AppTest 는 표 JS 를 못 돌리므로 대역(`tests/grid_fake.py`)이
-브라우저가 보낼 불러오기·출납을 보낸다. 비가동 일정 작은 편집표의 일괄 삭제(옛 길 그대로)는 마지막
-시험이 본다.
+되살리기는 「저장 전 변경」 의 「한 단계 되돌리기」) 로 바뀌었다. AppTest 는 표 JS 를 못 돌리므로
+대역(`tests/grid_fake.py`)이 브라우저가 보낼 불러오기·출납을 보낸다. 비가동 일정 작은 편집표의 일괄
+삭제(고르기 · 확인은 옛 길 그대로, 되살리기는 같은 「한 단계 되돌리기」)는 뒤쪽 시험들이 본다.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from alert_marks import infos, place_errors
-from grid_fake import Calls, install_fake_grid, last, load, send_ops
+from grid_fake import Calls, grid_results, install_fake_grid, last, load, send_ops
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -27,15 +27,21 @@ from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
     CONFIRM_DELETE_BUTTON_KEY,
+    DELETE_CONFIRM_HELP,
+    DOWNTIME_EDITOR_KEY,
     GRID_DETAIL_KEY,
+    GRID_UNDO_KEY,
+    LAST_REMOVED_KEY,
+    RESTORE_REQUEST_KEY,
     SELECTION_KEY,
-    UNDO_DELETE_BUTTON_KEY,
 )
 from capa_simulation.components.equipment_master_tab import (
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
     SIDE_KEY,
     TABLE_KEY,
+    TABLE_MASTER,
+    UNDO_BUTTON_KEY,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -53,6 +59,7 @@ EQUIPMENT_PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 DOWNTIME_FILTER_KEY = "equipment_downtime_view_filter_설비명"
 DOWNTIME_SELECT_MATCHING_KEY = "equipment_downtime_select_matching_v1"
 DOWNTIME_DELETE_SELECTED_KEY = "equipment_downtime_delete_selected_v1"
+DOWNTIME_VIEW_APPLY_KEY = "equipment_downtime_view_apply_v1"
 
 
 @pytest.fixture(autouse=True)
@@ -150,6 +157,30 @@ def _downtime_machines(app: AppTest) -> list[str]:
     return sorted(app.session_state[BUFFER_KEY][2]["설비명"].astype(str))
 
 
+def _press_undo(app: AppTest) -> None:
+    """「저장 전 변경」 의 「한 단계 되돌리기」 — 그 칸을 열고 누른다."""
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+
+def _delete_downtime(app: AppTest, machine: str) -> None:
+    """비가동 일정 작은 편집표에서 그 호기 일정을 골라 「선택 행 삭제」 · 「삭제 확정」."""
+    app.session_state[TABLE_KEY] = DOWNTIME_TARGET
+    app.run()
+    app.multiselect(key=DOWNTIME_FILTER_KEY).set_value([machine])
+    app.button(key=DOWNTIME_SELECT_MATCHING_KEY).click().run()
+    app.button(key=DOWNTIME_DELETE_SELECTED_KEY).click().run()
+    app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+
+def _memo(app: AppTest, machine: str) -> object:
+    master = app.session_state[BUFFER_KEY][1].set_index("설비명")
+    return master.loc[machine, "메모1"]
+
+
 def _delete_building(app: AppTest, grid: Calls, seed: _Seed) -> list[str]:
     """그 동 호기를 불러와(조건별 — 브라우저가 고른 id) 모두 고르고 지운다."""
     ids = [f"s:{name}" for name in sorted(seed.building_machines)]
@@ -174,20 +205,19 @@ def test_deleting_loaded_units_takes_their_downtime_and_undo_brings_both_back(
     # 지운 저장본 호기는 목록에 남아 지운 표시(되살리기 자리)로 선다.
     table = last(grid, emg.GRID_KEY)
     assert {row["id"]: row.get("tag") for row in table["rows"]} == dict.fromkeys(ids, "deleted")
-    toast = table["toast"]
-    assert toast["text"] == f"{len(ids):,}대 지울 목록에 넣음"
-    assert isinstance(toast["undo"], str) and toast["undo"]
+    assert grid_results(app, "success") == [f"{len(ids):,}대 지울 목록에 넣음"]
 
-    send_ops(app, grid, {"op": "undo", "step": toast["undo"]})
+    _press_undo(app)
+    assert grid_results(app, "success") == ["되돌림: 호기 지움"]
     assert _machines(app) == sorted(seed.machines)
     assert len(_downtime_machines(app)) == seed.downtime_count
 
 
-def test_the_detail_delete_toast_is_one_value_line_with_its_undo(
+def test_the_detail_delete_result_is_one_value_line_in_the_alert_popup(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """호기 상세 「이 호기 지우기」 뒤 칸 머리 글은 값 한 줄과 「되돌리기」 다 — 저장해야 지워진다 ·
-    모든 설비 시나리오에서 빠진다는 말은 단추 풍선 · Guide 다(2026-11-05 사용자 답)."""
+    """호기 상세 「이 호기 지우기」 의 결과는 알림창 값 한 줄이다 — 저장해야 지워진다 · 모든 설비
+    시나리오에서 빠진다는 말은 단추 풍선 · Guide 다(2026-11-05 사용자 답)."""
     seed = _seeded(tmp_path)
     app = _app(seed)
     name = sorted(seed.building_machines)[0]
@@ -196,9 +226,8 @@ def test_the_detail_delete_toast_is_one_value_line_with_its_undo(
 
     send_ops(app, grid, {"op": "delete", "ids": [f"s:{name}"]}, key=emg.side_key("detail"))
 
-    toast = last(grid, emg.side_key("detail"))["toast"]
-    assert toast["text"] == "1대 지울 목록에 넣음"
-    assert isinstance(toast["undo"], str) and toast["undo"]
+    assert grid_results(app, "success") == ["1대 지울 목록에 넣음"]
+    assert last(grid, emg.side_key("detail"))["toast"] is None
 
 
 def test_a_deletion_saves_without_orphaned_downtime(tmp_path: Path, grid: Calls) -> None:
@@ -294,9 +323,10 @@ def test_restoring_a_deleted_unit_raises_the_buffer_generation_again(
 
 
 def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, grid: Calls) -> None:
-    """비가동 일정 작은 편집표 — 필터로 고르고 「선택 행 삭제」·「삭제 확정」·「방금 삭제
-    되돌리기」. 확인은 값 한 줄과 「삭제 확정」 풍선이고(설계 규칙 UI-NTF-09 — 상자 · 대상 목록을
-    늘어놓지 않는다), 확정 알림이 무엇을 얼마나 지웠는지와 지금 저장 단추를 말한다."""
+    """비가동 일정 작은 편집표 — 필터로 고르고 「선택 행 삭제」·「삭제 확정」, 되살리기는 「저장 전
+    변경」 의 「한 단계 되돌리기」. 확인은 값 한 줄과 「삭제 확정」 풍선이고(설계 규칙 UI-NTF-09 —
+    상자 · 대상 목록을 늘어놓지 않는다), 확정 알림이 무엇을 얼마나 지웠는지와 저장 · 되살리기 단추를
+    말한다. 표 위에는 상자도 단추도 남지 않는다(설계 규칙 UI-NTF-03)."""
     seed = _seeded(tmp_path)
     app = _app(seed)
     app.session_state[TABLE_KEY] = DOWNTIME_TARGET
@@ -316,7 +346,8 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert not [item for item in app.warning if "지움" in str(item.value)]
     # 풍선 끝은 지금 저장 단추를 가리킨다 — 옛 「설비 데이터 저장」(옛 폼 단추)이 아니라 「저장
     # 전 변경」 의 「리비전 저장」 이다(개편 D — Guide 의 글과 같다).
-    tail = "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
+    tail = DELETE_CONFIRM_HELP
+    assert "「리비전 저장」" in tail and "「한 단계 되돌리기」" in tail
     assert app.button(key=CONFIRM_DELETE_BUTTON_KEY).help == tail
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
@@ -327,8 +358,164 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert done.endswith(tail) and "설비 데이터 저장" not in done
     assert len(_downtime_machines(app)) == seed.downtime_count - count
     assert _machines(app) == sorted(seed.machines)  # 비가동만 지운다
-    app.button(key=UNDO_DELETE_BUTTON_KEY).click().run()
+    assert not app.info, [item.value for item in app.info]
+    assert not [item for item in app.button if "되돌리기" in str(item.label)]
+    _press_undo(app)
+    assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
     assert len(_downtime_machines(app)) == seed.downtime_count
+    assert LAST_REMOVED_KEY not in app.session_state
+
+
+def test_one_step_undo_takes_table_steps_first_and_the_bulk_delete_under_them(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표 조작 → 일괄 삭제 → 표 조작 뒤 — 일괄 삭제가 그 앞 표 단계를 비워 삭제가 맨 위이고, 그 뒤
+    쌓인 표 조작부터 되돌린 다음 삭제를 되살린다. 그 앞 고침은 값이 남고 되돌리지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    machine = sorted(set(_downtime_machines(app)))[0]
+    unit = f"s:{machine}"
+    load(app, [unit], kind="names", label=machine)
+    send_ops(app, grid, {"op": "cell", "id": unit, "col": "메모1", "text": "삭제 전"})
+    assert GRID_UNDO_KEY in app.session_state
+    count = _downtime_machines(app).count(machine)
+
+    _delete_downtime(app, machine)
+    assert GRID_UNDO_KEY not in app.session_state
+    assert grid_results(app, "info")[-1].startswith("표 밖에서 편집본을 바꿔")
+
+    app.session_state[TABLE_KEY] = TABLE_MASTER
+    app.run()
+    send_ops(app, grid, {"op": "cell", "id": unit, "col": "메모1", "text": "삭제 뒤"})
+    assert _memo(app, machine) == "삭제 뒤"
+
+    _press_undo(app)
+    assert grid_results(app, "success") == ["되돌림: 메모1 고침"]
+    assert _memo(app, machine) == "삭제 전"
+    assert len(_downtime_machines(app)) == seed.downtime_count - count
+
+    _press_undo(app)
+    assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
+    assert len(_downtime_machines(app)) == seed.downtime_count
+    assert _memo(app, machine) == "삭제 전"
+
+    _press_undo(app)
+    assert grid_results(app, "info") == ["되돌릴 고침이 없습니다"]
+    assert _memo(app, machine) == "삭제 전"
+
+
+def test_renaming_after_a_bulk_delete_leaves_nothing_for_one_step_undo_to_bring_back(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """이름을 바꾸면 지운 행은 옛 이름을 지녀 되살릴 수 없다(`follow_unit_renames`) — 이름 바꿈은
+    되돌려도 삭제는 돌아오지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    machine = sorted(set(_downtime_machines(app)))[0]
+    unit = f"s:{machine}"
+    load(app, [unit], kind="names", label=machine)
+    _delete_downtime(app, machine)
+    left = len(_downtime_machines(app))
+    app.session_state[TABLE_KEY] = TABLE_MASTER
+    app.run()
+
+    send_ops(app, grid, {"op": "cell", "id": unit, "col": "설비명", "text": "NEW-NAME"})
+    assert LAST_REMOVED_KEY not in app.session_state
+
+    _press_undo(app)
+    assert grid_results(app, "success") == ["되돌림: 설비명 고침"]
+    _press_undo(app)
+    assert grid_results(app, "info") == ["되돌릴 고침이 없습니다"]
+    assert len(_downtime_machines(app)) == left
+
+
+def test_restoring_a_bulk_delete_stands_that_table_editor_up_anew(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """되살리기는 콜백이라 편집표 위젯이 서기 전이다 — 그 표의 줄 번호 delta 가 되살린 표 위에
+    얹히지 않게 새 위젯으로 세운다."""
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    machine = sorted(set(_downtime_machines(app)))[0]
+    _delete_downtime(app, machine)
+    generation = f"{DOWNTIME_EDITOR_KEY}__generation"
+    before = app.session_state[generation] if generation in app.session_state else 0
+
+    _press_undo(app)
+
+    assert app.session_state[generation] > before
+    assert len(_downtime_machines(app)) == seed.downtime_count
+
+
+def _editor_key_in(app: AppTest, key: str) -> str:
+    """앱이 지금 편집표를 그리는 위젯 키(`editor_state.editor_widget_key` 와 같은 규칙) — 브라우저는
+    그 키로 편집을 보내므로 시험도 같은 키에 넣는다."""
+    slot = f"{key}__generation"
+    generation = app.session_state[slot] if slot in app.session_state else 0
+    return key if not generation else f"{key}__g{generation}"
+
+
+def _unapplied_downtime_edit(app: AppTest, seed: _Seed) -> str:
+    """비가동 일정 하나를 일괄 삭제하고 필터를 풀어 남은 표를 보인 뒤 「저장 전 변경」 을 연다.
+    남은 표 첫 줄 비고에 적용하지 않은 편집을 넣고 그 글을 돌려준다(다음 회차에 실린다)."""
+    machine = sorted(set(_downtime_machines(app)))[0]
+    _delete_downtime(app, machine)
+    app.multiselect(key=DOWNTIME_FILTER_KEY).set_value([])
+    app.button(key=DOWNTIME_VIEW_APPLY_KEY).click().run()
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(_downtime_machines(app)) < seed.downtime_count
+    text = "검토 적용 전"
+    app.session_state[_editor_key_in(app, DOWNTIME_EDITOR_KEY)] = {
+        "edited_rows": {0: {"비고": text}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    return text
+
+
+def test_restoring_a_bulk_delete_keeps_an_unapplied_edit_of_that_table(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """되살릴 표에 적용하지 않은 편집이 있으면 그 편집을 먼저 편집본에 넣고 되살린다 — 옛 「삭제
+    되돌리기」(편집표 제출 단추)가 그랬다. 콜백에서 되살리면 그 표 편집표를 새로 세우며 편집을
+    알림 없이 버린다 — 화면 탭을 옮길 때는 묻고 지키는 편집이다."""
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    text = _unapplied_downtime_edit(app, seed)
+
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
+    downtime = app.session_state[BUFFER_KEY][2]
+    assert len(downtime) == seed.downtime_count
+    assert downtime["비고"].astype(str).tolist().count(text) == 1
+    assert LAST_REMOVED_KEY not in app.session_state
+    assert RESTORE_REQUEST_KEY not in app.session_state
+
+
+def test_a_deferred_restore_runs_at_once_when_its_table_is_not_drawn(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """미룬 되살리기는 그 표 편집표의 제출이 한다 — 누른 회차가 끊긴 사이 표 고르기를 바꿔 그 표를
+    그리지 않으면 탭 ① 이 곧바로 되살린다. 남겨 두면 나중에 그 표를 열 때 말없이 되살아난다."""
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    _unapplied_downtime_edit(app, seed)
+    app.session_state[RESTORE_REQUEST_KEY] = DOWNTIME_TARGET
+    app.session_state[TABLE_KEY] = TABLE_MASTER
+
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
+    assert len(_downtime_machines(app)) == seed.downtime_count
+    assert RESTORE_REQUEST_KEY not in app.session_state
+    assert LAST_REMOVED_KEY not in app.session_state
 
 
 def _infos(app: AppTest, needle: str) -> list[str]:
@@ -341,9 +528,9 @@ def test_a_double_press_on_confirm_and_undo_keeps_their_notices(
 ) -> None:
     """작은 편집표 「삭제 확정」 을 사람 속도(0.2초)로 두 번 누르면 둘째 누름은 첫 회차가 꺼낸 확인
     대기의 단추에 닿아 아무것도 하지 않는 회차가 되는데, 첫 회차가 꺼내 그린 「…편집본에서
-    지웠습니다」 를 그 회차가 지웠다(2026-10-27 E2E 5/9 — 행은 한 번만 지워짐). 「방금 삭제
-    되돌리기」 도 같다. 쓰기 알림 표지가 창 안이면 같은 info 꼴로 다시 그린다 — 창이 0 이면 옛
-    동작이다."""
+    지웠습니다」 를 그 회차가 지웠다(2026-10-27 E2E 5/9 — 행은 한 번만 지워짐). 삭제를 되살리는
+    「한 단계 되돌리기」 도 같다. 쓰기 알림 표지가 창 안이면 같은 info 꼴로 다시 그린다 — 창이 0
+    이면 옛 동작이다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
     seed = _seeded(tmp_path)
     app = _app(seed)
@@ -365,9 +552,10 @@ def test_a_double_press_on_confirm_and_undo_keeps_their_notices(
     assert not app.exception, [item.message for item in app.exception]
     assert len(_infos(app, "편집본에서 지웠습니다")) == (1 if kept else 0)
     assert len(_downtime_machines(app)) == seed.downtime_count - count
-    assert _infos(app, "저장하기 전까지 되돌릴 수 있습니다")
 
-    app.button(key=UNDO_DELETE_BUTTON_KEY).click()
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=UNDO_BUTTON_KEY).click()
     pressed = app._tree.get_widget_states()
     app.run()
     assert len(_infos(app, "방금 지운 행을 편집본에 되살렸습니다")) == 1

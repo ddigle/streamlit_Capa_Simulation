@@ -64,7 +64,7 @@ from capa_simulation.components.equipment_data_workspace import (
     layout_paste_refusal,
     paste_split_summary,
     pending_unit_renames,
-    queue_grid_toast,
+    queue_grid_result,
     replace_equipment_buffer,
     stale_paste_refusal,
     stamp_layout_role,
@@ -292,7 +292,7 @@ def _review(
 
 def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "official") -> str:
     """미리본 후보를 편집본에 넣는다(저장하지 않는다) — 편집본 세 표 통째 바꿈, 새로 든 설비명은 표
-    목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움. 돌려주는 글은 표 토스트다.
+    목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움. 돌려주는 글은 결과 알림이다.
 
     넣은 편집본에 배치 편집(있던 호기 배치 칸·새 호기 자리)이 있으면 그때의 역할(`layout_mode`)을
     찍는다 — 넣고 나중에 「리비전 저장」 하므로, 그 사이 역할이 바뀌면(남이 그 가정 시나리오를
@@ -329,7 +329,7 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     )
     if overlay:
         text += f" · 못 읽은 칸 {len(overlay):,}개에 적던 글은 버렸습니다"
-    queue_grid_toast("grid", text, undo=step.token)
+    queue_grid_result(text, kind="success" if count else "info")
     return text
 
 
