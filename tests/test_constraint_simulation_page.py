@@ -42,6 +42,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     EQUIPMENT_SCREEN,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
 )
 from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
@@ -326,6 +327,9 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
     assert "가용 = 설비 일정 기준" in _captions(app)
+    # 환산 대수 단서는 출처 띠 끝 풍선이다(설계 규칙 UI-TXT-01).
+    (band,) = [item for item in app.caption if "가용 = 설비 일정 기준" in str(item.value)]
+    assert band.proto.help == SOURCE_BAND_HELP and "환산 대수" not in str(band.value)
     # 머리 「← 공정 Capa 상세」 는 그 공정으로 돌아간다(테마 인자 없음).
     links = app.session_state["captured_page_links"]
     back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]

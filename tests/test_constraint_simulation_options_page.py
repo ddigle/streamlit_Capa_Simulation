@@ -208,10 +208,12 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert not date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
     captions = _plain(_captions(app))
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {NEW_UNIT}" in captions
-    assert (
-        "신규 = 기여 시작 2025-12-01 이후 호기 1대(공정 Capa 상세 ③ 의 Qual 다음 날 — 묶음은 첫 "
-        "모듈)" in captions
-    )
+    # 띠에는 값(날 · 대수)만, 뜻은 띠 끝 풍선이다(설계 규칙 UI-TXT-01).
+    assert "신규 = 기여 시작 2025-12-01 이후 호기 1대" in captions
+    assert "Qual 다음 날 — 묶음은 첫 모듈" not in captions
+    (band,) = [item for item in app.caption if "신규 = 기여 시작" in str(item.value)]
+    assert "공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈" in str(band.proto.help)
+    assert "대수는 환산 대수" in str(band.proto.help)
     assert "신규 개조 없이(2025-12-01~)" in _header_line(app)
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"

@@ -40,6 +40,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
 )
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.modification_schedule_figures import (
@@ -53,6 +54,7 @@ from capa_simulation.components.modification_schedule_view import (
     DEADLINE_HELP,
     DOUBLE_COUNT_NOTE,
     FELL_BACK_LABEL,
+    LIST_HELP,
     UNITS_HELP,
     deadline_options,
 )
@@ -274,6 +276,11 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
     assert "공정 소요 · 가용 = 설비 일정 기준" in captions
+    # 환산 대수 단서 · 목록의 읽는 법은 풍선이다(설계 규칙 UI-TXT-01).
+    (band,) = [item for item in app.caption if "가용 = 설비 일정 기준" in str(item.value)]
+    assert band.proto.help == SOURCE_BAND_HELP and "HOME·Static" not in captions
+    (listing,) = [item for item in app.markdown if str(item.value) == "**개조 일정**"]
+    assert listing.proto.help == LIST_HELP and "같은 날 시작하는 묶음" not in captions
     (cutoff,) = [item for item in app.caption if str(item.value).startswith("Cut-off ")]
     assert str(cutoff.value) == "Cut-off 7일" and cutoff.proto.help == CUTOFF_SOURCE_HELP
     # 그래프 막대 좌표의 읽는 법은 제목 풍선이다.

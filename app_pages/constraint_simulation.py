@@ -57,10 +57,10 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.constraint_equipment_plan import (
-    CONVERTED_UNITS_NOTE,
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
     EquipmentPlanSource,
     equipment_readiness,
     first_ready_process,
@@ -228,6 +228,8 @@ HELD_HELP = (
     "세지 않습니다). 설비 시나리오나 조회기간을 바꿔 목록에서 사라진 호기는 빼고 알립니다."
 )
 HELD_IDLE_PLACEHOLDER = "설비 일정이 서는 공정에서 고릅니다"
+# 출처 띠 「신규 = 기여 시작 …」 의 뜻 — 띠에는 값(날 · 대수)만 둔다(설계 규칙 UI-TXT-01).
+NEW_START_HELP = "신규의 기여 시작은 공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈입니다."
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
 OWNED_HELP = (
     "위 「보유 제약 호기」 목록에 없는 보유(기존보유처럼 설비 마스터 호기가 아닌 대수)를 "
@@ -936,8 +938,8 @@ band = (
     f"{literal_markdown(process_label)} 소요를 제품정보로 나눔"
     f"({literal_markdown(product)} / 그 밖) · 가용 = 설비 일정 기준"
     + source_equipment_text(equipment_text)
-    + CONVERTED_UNITS_NOTE
 )
+band_help = SOURCE_BAND_HELP
 # 계획이 실제로 건 칸으로 적는다 — 이 공정에 0 아닌 칸이 있을 때만.
 manual_note = manual_effect_band(plan.manual_downtime, (process,))
 if manual_note:
@@ -951,9 +953,9 @@ if conditions.held_units:
 if new_shares is not None:
     band += (
         f" · 신규 = 기여 시작 {new_shares.since.isoformat()} 이후 호기 {len(new_shares.units)}대"
-        "(공정 Capa 상세 ③ 의 Qual 다음 날 — 묶음은 첫 모듈)"
     )
-st.caption(band)
+    band_help += f" {NEW_START_HELP}"
+st.caption(band, help=band_help, width="content")
 if result.kpis.constrained_months == 0:
     st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "

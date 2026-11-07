@@ -35,10 +35,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.constraint_equipment_plan import (
-    CONVERTED_UNITS_NOTE,
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
     EquipmentPlanSource,
     equipment_readiness,
     render_equipment_plan,
@@ -198,7 +198,7 @@ CHART_NOTE: Final = (
 CHART_HELP: Final = (
     "막대는 W/D 구간 좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다."
 )
-LIST_NOTE: Final = (
+LIST_HELP: Final = (
     "차수 = 같은 날 시작하는 묶음 · 날짜는 비가동 첫날 ~ 마지막 날(다음 날부터 일반 "
     "가용) · 끝은 걸친 W/D 달별 일수 · 대수는 환산 대수(호기는 고르지 않음)"
 )
@@ -704,12 +704,11 @@ def _render_source_band(
         f":material/database: 소요 = 활성 시나리오 {scenario_text} "
         f"{literal_markdown(process_label)} 공정 소요 · 가용 = 설비 일정 기준"
         + source_equipment_text(equipment_text)
-        + CONVERTED_UNITS_NOTE
     )
     if manual_note:
         band += f" · {manual_note}"
     band += upeh_assumption_note()
-    st.caption(band)
+    st.caption(band, help=SOURCE_BAND_HELP, width="content")
 
 
 # ================================================================== 요약 넷
@@ -853,10 +852,9 @@ def _render_body(result: ScheduleResult, labels: ScheduleLabels) -> None:
                 config=hover_chart_config(),
             )
     with st.container(border=True, key=LIST_CARD_KEY):
-        st.markdown("**개조 일정**")
+        st.markdown("**개조 일정**", help=LIST_HELP)
         with st.container():
             if not result.batches:
                 st.caption(NO_BATCH_TEXT)
             for number, batch in enumerate(result.batches, start=1):
                 st.markdown(batch_line(number, batch))
-        st.caption(LIST_NOTE)

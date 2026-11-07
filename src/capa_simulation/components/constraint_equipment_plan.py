@@ -29,7 +29,7 @@
   페이지가 고른 뒤에 한다(호기 고르기는 이 블록 뒤에 서므로).
 - **같은 글 조각** — 두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리
   (`SESSION_ONLY_CAPTION`)와 출처 띠 조각: 소요 시나리오 이름표(`source_scenario_text`) · 설비 기준
-  괄호(`source_equipment_text`) · 환산 대수 단서(`CONVERTED_UNITS_NOTE`) · UPEH 가정을 켠 세션의
+  괄호(`source_equipment_text`) · 띠 끝 풍선(`SOURCE_BAND_HELP` — 환산 대수) · UPEH 가정을 켠 세션의
   단서(`upeh_assumption_note`). 띠의 나머지(소요 설명 · 입력 비가동 · 보유 · 신규)는 모드마다
   다르다.
 
@@ -80,11 +80,11 @@ from capa_simulation.upeh_assumption_state import (
 )
 
 __all__ = [
-    "CONVERTED_UNITS_NOTE",
     "CUTOFF_SOURCE_HELP",
     "EQUIPMENT_SCREEN",
     "SESSION_ONLY_CAPTION",
     "SESSION_ONLY_HELP",
+    "SOURCE_BAND_HELP",
     "UPEH_NOT_APPLIED_NOTE",
     "EquipmentPlan",
     "AbsentNote",
@@ -113,10 +113,10 @@ CUTOFF_SOURCE_HELP: Final = (
 """조건 카드 Cut-off 값 줄의 풍선 — 값이 어디서 오는지(고치는 곳)는 자리에 적지
 않는다(UI-TXT-03)."""
 
-CONVERTED_UNITS_NOTE: Final = (
-    " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
+SOURCE_BAND_HELP: Final = (
+    "대수는 환산 대수입니다 — HOME·Static 확보율(기준정보 가용)과 다를 수 있습니다."
 )
-"""출처 띠의 대수 단서 — 설비 기준 괄호 바로 뒤에 잇는다(앞 「 · 」 까지 든다)."""
+"""출처 띠 끝 풍선 — 띠에는 값만 두고 읽는 법은 늘 두지 않는다(설계 규칙 UI-TXT-01)."""
 
 UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
 """UPEH 가정을 켠 세션의 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지 든다)."""
