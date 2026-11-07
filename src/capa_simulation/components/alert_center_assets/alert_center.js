@@ -209,6 +209,11 @@ function tabMatches(text, label) {
   return want !== '' && plain.endsWith(want)
 }
 
+// 줄에 「그 화면으로」 를 세우는가 — 지금 화면을 가리키는 줄은 열 탭이 있을 때만 할 일이 있다.
+function showsGo(href, tab, here) {
+  return typeof href === 'string' && (href !== here || Boolean(tab))
+}
+
 // 탭 안 탭(가용설비 현황 「Summary › Static 대비 일정」)은 `tab` 에 바깥 → 안 차례로 이 글로 잇는다.
 const TAB_PATH = ' › '
 
@@ -1224,7 +1229,7 @@ function changeLines(C, target) {
       const what = el('span', 'what', item.text)
       what.title = item.text
       line.append(what)
-      if (typeof item.href === 'string') {
+      if (showsGo(item.href, item.tab, C.data.here)) {
         const go = el('button', 'link go', t.go || '')
         go.type = 'button'
         go.addEventListener('click', () => goTo(C, item.href, item.tab))
@@ -1409,7 +1414,7 @@ function paintList(C) {
       )
     }
     const acts = el('span', 'acts')
-    if (typeof row.href === 'string') {
+    if (showsGo(row.href, row.tab, C.data.here)) {
       const go = el('button', 'link', t.go || '')
       go.type = 'button'
       go.addEventListener('click', () => goTo(C, row.href, row.tab))

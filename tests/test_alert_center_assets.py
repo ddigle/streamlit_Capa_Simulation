@@ -316,6 +316,14 @@ out.tabs = [
   tabMatches('anything', ''),
 ]
 out.steps = [tabStep('Summary › Static 대비 일정'), tabStep('소요대수'), tabStep('')]
+out.go = [
+  showsGo('reference_data', '', ''),
+  showsGo('', '', ''),
+  showsGo('', 'Past Data', ''),
+  showsGo('reference_data', '', 'reference_data'),
+  showsGo('reference_data', '효율', 'reference_data'),
+  showsGo(undefined, '효율', ''),
+]
 const kept = { code: 'ST-20', short: '읽지 못함', id: 'page-a', keep: true }
 out.kept = [
   keptRowMissing([], kept),
@@ -707,6 +715,8 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["tabs"] == [True, True, False, False]
     # 탭 안 탭은 바깥 칸부터 한 칸씩 연다(가용설비 현황 「Summary › Static 대비 일정」).
     assert out["steps"] == [["Summary", "Static 대비 일정"], ["소요대수", ""], ["", ""]]
+    # 지금 화면을 가리키는 줄은 열 탭이 있을 때만 「그 화면으로」 를 세운다. HOME 주소는 빈 글이다.
+    assert out["go"] == [True, False, True, False, True, False]
     # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
     assert out["copy"] == (
         "코드: ST-15 · 확인 필요 · 상태 알림(바뀔 때만)\n"
