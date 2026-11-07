@@ -291,6 +291,10 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert process_box.value in process_box.options
     month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
     assert isinstance(month, int)
+    # 기간은 사이드바 「적용」 표지가 보인다 — 카드가 거듭하지 않고 기본 공정 규칙은 칸 풍선이다
+    # (설계 규칙 UI-TXT-07).
+    assert "최저 확보율" in str(process_box.help)
+    assert not [item for item in app.sidebar.caption if str(item.value).startswith("기간 ")]
     header = _header(app)
     assert header.startswith(f"**{literal_markdown(process_box.value)}**")
     # 설비 DB 에 저장본이 없다 — 샘플 fleet 을 쓰지 않는다.
