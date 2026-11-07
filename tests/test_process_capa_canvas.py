@@ -2,8 +2,8 @@
 
 """공정 Capa 상세의 결합 월 캔버스(`components/process_capa_canvas.py`).
 
-숫자는 화면 목업(2026-10-15 2차 구성안)의 예시를 그대로 쓴다 — 26.11~27.06 여덟 달, 확보기준
-109.5% · 경고기준 99.5%. 설비 일정은 합성 공정 하나(`test_required_shortening` 의 도우미)로 실제
+숫자는 화면 목업(2026-10-15 2차 구성안)의 예시를 그대로 쓴다 — 26.11~27.06 여덟 달, 확보 기준
+109.5% · 경고 기준 99.5%. 설비 일정은 합성 공정 하나(`test_required_shortening` 의 도우미)로 실제
 계산을 지나게 한다. 그림은 JSON 으로 읽는다(브라우저로 보내는 것과 같은 dict).
 """
 
@@ -688,7 +688,7 @@ def test_a_painted_balance_can_read_zero_on_the_noise_boundary() -> None:
     assert _row_fills(canvas, ROW_RATE)[0] == tokens.STATUS_WARNING
     # 풍선의 계산 값도 9자리 반올림 뒤라 「−0.00」 이 아니라 「0.00」 이다
     # (가용 − 소요 × 기준 ≈ −1.8e-15).
-    assert "확보기준 과부족 0대 (0.00)<br>" in _balance_hovers(canvas)[202611]
+    assert "확보 기준 과부족 0대 (0.00)<br>" in _balance_hovers(canvas)[202611]
 
 
 def _balance_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:
@@ -713,14 +713,14 @@ def test_the_balance_hover_adds_the_unrounded_value_to_two_decimals() -> None:
         202706: "+4대 (+4.83)",
     }
     for month, text in expected.items():
-        assert f"확보기준 과부족 {text}<br>" in hovers[month]
+        assert f"확보 기준 과부족 {text}<br>" in hovers[month]
     # 식은 판정 경계를 곱한다 — 기준 110% 는 반올림 판정이라 경계가 109.5% 다(2026-11-01).
     assert f"가용 48.0 {MINUS} 소요 44.0 × 109.5% (부족은 올림, 여유는 내림)" in hovers[202612]
     assert _row_texts(canvas, ROW_BALANCE)[2][0] == f"<b>{MINUS}3</b>"
 
 
 def test_the_reference_threshold_row_is_muted_and_never_emphasised() -> None:
-    """「기준 확보율」 은 참고 줄이다 — 달마다 확보기준 %, 회색 글자, 면색·굵기 없음."""
+    """「기준 확보율」 은 참고 줄이다 — 달마다 확보 기준 %, 회색 글자, 면색·굵기 없음."""
     thresholds = SecurementThresholds(1.095, 0.995, ((202703, 1.2, None),))
     canvas = _canvas(summary=_summary(thresholds=thresholds), thresholds=thresholds)
     texts = _row_texts(canvas, ROW_THRESHOLD)
@@ -744,8 +744,8 @@ def test_the_reference_threshold_row_is_muted_and_never_emphasised() -> None:
     assert label["font"]["color"] == tokens.TEXT_MUTED
     # 월별 예외가 있으면 과부족 라벨은 %를 떼고, 없으면 기본 기준을 단다.
     labels = {item["text"] for item in _annotations(canvas.labels)}
-    assert "<b>확보기준 과부족</b>" not in labels and "확보기준 과부족" in labels
-    assert "확보기준(110%) 과부족" in {item["text"] for item in _annotations(_canvas().labels)}
+    assert "<b>확보 기준 과부족</b>" not in labels and "확보 기준 과부족" in labels
+    assert "확보 기준(110%) 과부족" in {item["text"] for item in _annotations(_canvas().labels)}
 
 
 def test_home_rates_are_a_muted_row_without_fill() -> None:
@@ -931,7 +931,7 @@ def test_the_target_balance_paints_only_short_months_and_shows_the_shortened_val
         second = [text for x, y, text in lines if int(x) == index and y < center]
         if abs(after - gap) > 1e-9:
             assert second and second[0].replace("<b>", "").startswith("→ ")
-    # 목표는 달마다 같은 확보기준이라 라벨에 % 가 붙는다.
+    # 목표는 달마다 같은 확보 기준이라 라벨에 % 가 붙는다.
     assert "목표(110%) 과부족" in {item["text"] for item in _annotations(canvas.labels)}
 
 
@@ -1581,7 +1581,7 @@ def test_three_upeh_rows_stand_at_the_end_of_the_official_section() -> None:
     ]
     assert outside_hovers and all("구간 밖 — 공식과 같음" in hover for hover in outside_hovers)
     labels = json.dumps(_annotations(assumed.labels), ensure_ascii=False)
-    assert "UPEH 110% · 소요대수" in labels and "UPEH 110% · 확보기준 과부족" in labels
+    assert "UPEH 110% · 소요대수" in labels and "UPEH 110% · 확보 기준 과부족" in labels
 
 
 def test_at_100_percent_the_rows_are_the_official_rows() -> None:

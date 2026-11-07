@@ -76,7 +76,7 @@ PROCESS_DETAIL_SPLIT_KEY = "process_detail_product_split"
 PROCESS_DETAIL_PRODUCT_FILTER_KEY = "process_detail_product_filter"
 # 표 도구 줄의 「구획」 칩(고른 것 = 펼친 구획 id, 세션 값). 칸이 없으면 넷 모두 펼침으로 심는다.
 PROCESS_DETAIL_SECTIONS_KEY = "process_detail_sections"
-# 머리 공정명 옆 ◀▶(확보기준 미달 공정을 최저 확보율이 낮은 차례로 넘긴다) 단추와, 그 차례를 낼
+# 머리 공정명 옆 ◀▶(확보 기준 미달 공정을 최저 확보율이 낮은 차례로 넘긴다) 단추와, 그 차례를 낼
 # 공정별 요약을 세션에 한 벌 기억하는 칸 — 키는 시나리오 키·표시순서 지문·판정 기준 지문이다.
 PROCESS_DETAIL_PREVIOUS_PROCESS_KEY = "process_detail_previous_process"
 PROCESS_DETAIL_NEXT_PROCESS_KEY = "process_detail_next_process"
@@ -519,7 +519,7 @@ def lowest_rate_process(items: Sequence[ProcessPickerItem]) -> str | None:
 def first_shortfall_month(
     rates: Iterable[tuple[object, object]], thresholds: SecurementThresholds
 ) -> int | None:
-    """기본 달 — 달 차례로 그 달 확보기준에 못 미친 첫 달. 없으면 None(부르는 쪽이 첫 달을 연다).
+    """기본 달 — 달 차례로 그 달 확보 기준에 못 미친 첫 달. 없으면 None(부르는 쪽이 첫 달을 연다).
 
     `rates` 는 (정수 `YYYYMM`, 확보율) 짝이다. 판정은 HOME·Static Capa 와 같은 `thresholds.status`
     한 길이다 — 「확보」가 아니면(경고·부족) 미달이다. 확보율이 없는 달은 건너뛴다.
@@ -606,7 +606,7 @@ def resolve_process_and_month(
        쪽이든 그 키만 지운다.
     3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정을 바꿔도 보던 달은 그대로다.
     4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`. 둘 다 함수일 수
-       있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보기준 미달 달 같은 것), 함수는
+       있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보 기준 미달 달 같은 것), 함수는
        **기본값이 필요한 회차에만** 부른다. 세션·전달 칸·주소로 공정이 정해진 회차는 기본 공정
        요약을 만들지 않는다.
     5. 지금 목록에 맞춘다(`prune_choice`). 넘겨받은 공정이 목록에 없으면 기본 공정을 열고
@@ -773,7 +773,7 @@ def remembered_picker_summary(
 
 @dataclass(frozen=True)
 class ProcessStep:
-    """◀▶ 한 쪽이 옮겨 갈 공정. `month` 는 그 공정의 첫 확보기준 미달 달(없으면 None)."""
+    """◀▶ 한 쪽이 옮겨 갈 공정. `month` 는 그 공정의 첫 확보 기준 미달 달(없으면 None)."""
 
     process: str
     minimum_rate: float | None
@@ -782,7 +782,7 @@ class ProcessStep:
 
 @dataclass(frozen=True)
 class ProcessSteps:
-    """지금 공정에서 본 ◀▶ — 확보기준 미달 공정 차례(최저 확보율이 낮은 차례)의 앞·뒤."""
+    """지금 공정에서 본 ◀▶ — 확보 기준 미달 공정 차례(최저 확보율이 낮은 차례)의 앞·뒤."""
 
     previous: ProcessStep | None
     following: ProcessStep | None
@@ -801,7 +801,7 @@ def process_steps(
     """미달 공정 차례(`process_picker.shortfall_order`)에서 지금 공정의 앞·뒤를 낸다.
 
     지금 공정이 차례에 없으면(확보 공정) ◀ 는 없고 ▶ 는 가장 낮은 미달 공정이다. 달은 옮겨 갈 두
-    공정에만 묻는다(`month_of` — 그 공정의 첫 확보기준 미달 달).
+    공정에만 묻는다(`month_of` — 그 공정의 첫 확보 기준 미달 달).
     """
     processes = [item.process for item in order]
 
@@ -868,7 +868,7 @@ def _target_text(target: float) -> str:
 # 필요 단축 일정 카드 출처 띠의 풍선 — 두 화면의 대수가 갈리는 까닭(띠에는 값만 둔다, 설계 규칙
 # UI-TXT-01 · 02).
 SHORTENING_BAND_HELP: Final = (
-    "이 화면은 확보기준(월별)·RQ_REQB 기간 기준이라 단축 대수가 그 카드와 다를 수 있습니다 — 띠의 "
+    "이 화면은 확보 기준(월별)·RQ_REQB 기간 기준이라 단축 대수가 그 카드와 다를 수 있습니다 — 띠의 "
     "값은 링크 주소에 실려 온 그 카드의 값입니다."
 )
 
@@ -876,7 +876,7 @@ SHORTENING_BAND_HELP: Final = (
 def shortening_band_text(origin: ShorteningOrigin) -> str:
     """필요 단축 일정 카드 출처 띠 한 줄 — 주소 인자로 받은 그 카드의 값만 적는다.
 
-    두 화면의 단축 정의는 다르다(이 화면은 HOME 확보기준 월별·`RQ_REQB` 기간, 필요 단축 일정은 그
+    두 화면의 단축 정의는 다르다(이 화면은 HOME 확보 기준 월별·`RQ_REQB` 기간, 필요 단축 일정은 그
     카드의 목표 스칼라·조건 카드 기간 — 2026-10-22 맞추지 않기로). 그래서 그 카드의 대수를 그대로
     옮겨 적는다 — 이 화면의 대수와 다를 수 있다는 말은 띠의 풍선(`SHORTENING_BAND_HELP`)이다. 예:
     「필요 단축 일정 카드(목표 110%(1.10) · 기간 26.01–26.12)에서 열었습니다 · 그 카드: 단축 3대 ·

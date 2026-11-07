@@ -7,13 +7,13 @@
 한 쌍이고, 월 Figure 하나가 가로로 스크롤된다.
 
 1. **① 공식 기준**(Core Data · 대수) — 총보유대수·가용대수(공급 묶음 면), 소요대수(수요 묶음 면,
-   펼치면 분류 행이 줄무늬·들여쓰기로 붙는다), 확보율(판정 3색 칸), 확보기준 과부족(부호 있는 정수,
+   펼치면 분류 행이 줄무늬·들여쓰기로 붙는다), 확보율(판정 3색 칸), 확보 기준 과부족(부호 있는 정수,
    부족이면 확보율과 **같은** 판정색, 풍선은 정수 옆에 올림·내림 전 값을 소수 둘째 자리로), 기준
-   확보율(달마다 확보기준 % — 회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
+   확보율(달마다 확보 기준 % — 회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
 2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(기준✕·일정✕ 만
    칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 비가동 영향(그 달 비가동이 깎은 가용
    「−1.8대」 와 둘째 줄 확보율 영향 「−4.2%」 — 깎은 것이 없으면 빈칸, 소요 0 이면 대수만), 목표
-   과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄). 목표는 달마다 다른 확보기준이다
+   과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄). 목표는 달마다 다른 확보 기준이다
    (`MonthlyTarget`).
 3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에
    ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축 안에서
@@ -42,7 +42,7 @@
 (`_SPAN_TEXT_SHARE`)까지 센다(어림만 달 경계를 넘은 빈 칸에 풍선이 뜨지 않게).
 
 **UPEH 가정**(`assumption` — 공정 Capa 상세 조건 카드의 「이 세션만」 값)이 켜지면 ① 끝(기준 확보율
-아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보기준 과부족)이 선다 — 구간 달만 값이고 밖은
+아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보 기준 과부족)이 선다 — 구간 달만 값이고 밖은
 빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
 가정이 켜지면 부족 띠·② 판정 대조는 가정 요약의 판정으로 칠한다(②~④ 가 가정 계획이라 한 그림에서
 공식 판정과 섞이지 않게) — ② 판정 대조 풍선도 「공식은 …」 이 아니라 「UPEH 가정 기준은 …」
@@ -56,7 +56,7 @@ UPEH 와 무관하다.
 구획은 ▾) 그 밑 행을 그리지 않는다. 판정·부족 원인은 요약 프레임에서 그대로 내므로 ① 을 접어도 부족
 띠와 ② 판정 대조는 같다. 접힌 ③·④ 는 줄을 만들지 않아 「n대 더」 수도 0 이다.
 
-**네 구획이 한 Figure 쌍인 까닭** — 확보기준에 못 미친 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금
+**네 구획이 한 Figure 쌍인 까닭** — 확보 기준에 못 미친 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금
 보는 달의 열 테두리가 구획을 넘어 이어져야 하고(구획마다 그림을 나누면 제목 줄에서 끊긴다), 칸
 선택(`on_select`)이 그림 하나에서 와야 한다. 그래서 구획 제목도 Figure 안의 한 줄이다. 제목과 그
 출처·단위 글(세부 글)은 **라벨 Figure** 에 쓴다 — 월 Figure 는 가로로 스크롤되므로 거기 둔 글은
@@ -543,8 +543,8 @@ def _header_row(process_label: str, axis: Sequence[int], thresholds: SecurementT
             text=month_label(month),
             hover=(
                 f"<b>{month_label(month)}</b> · 누르면 이 달의 산출 근거"
-                f"<br>확보기준 {threshold_percent_label(secure)} · "
-                f"경고기준 {threshold_percent_label(warning)}"
+                f"<br>확보 기준 {threshold_percent_label(secure)} · "
+                f"경고 기준 {threshold_percent_label(warning)}"
             ),
         )
     return row
@@ -596,9 +596,9 @@ def _summary_rows(
     )
     uniform = not thresholds.exception_months_within(axis)
     balance_label = (
-        f"확보기준({threshold_percent_label(thresholds.default_secure)}) 과부족"
+        f"확보 기준({threshold_percent_label(thresholds.default_secure)}) 과부족"
         if uniform
-        else "확보기준 과부족"
+        else "확보 기준 과부족"
     )
     rate = _Row(
         ROW_RATE,
@@ -615,7 +615,7 @@ def _summary_rows(
         label=balance_label,
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
-    # 참고 줄 — 달마다 확보기준(%) 그대로다. 강조하지 않는다(회색 글자, 면색·굵기 없음).
+    # 참고 줄 — 달마다 확보 기준(%) 그대로다. 강조하지 않는다(회색 글자, 면색·굵기 없음).
     reference = _Row(
         ROW_THRESHOLD,
         _VALUE,
@@ -666,8 +666,8 @@ def _summary_rows(
             text=threshold_percent_label(secure),
             muted=True,
             hover=(
-                f"{head} · 확보기준 {threshold_percent_label(secure)} · "
-                f"경고기준 {threshold_percent_label(warning)}"
+                f"{head} · 확보 기준 {threshold_percent_label(secure)} · "
+                f"경고 기준 {threshold_percent_label(warning)}"
             ),
         )
     rows = [_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, ())]
@@ -731,7 +731,7 @@ def _assumption_rows(
         ROW_UPEH_BALANCE,
         _VALUE,
         VALUE_ROW_HEIGHT_PX,
-        label=f"{prefix} · 확보기준 과부족",
+        label=f"{prefix} · 확보 기준 과부족",
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
     for index, month in enumerate(axis):
@@ -868,8 +868,9 @@ def _rate_hover(
     )
     return (
         f"{head} · 확보율 {_percent(rate)} {mark} 가용 {_one(available)} ÷ 소요 {_one(demand)}"
-        f"<br>판정 {_STATUS_NAMES.get(status, status)} — 확보기준 {threshold_percent_label(secure)}"
-        f" · 경고기준 {threshold_percent_label(warning)}"
+        f"<br>판정 {_STATUS_NAMES.get(status, status)} — "
+        f"확보 기준 {threshold_percent_label(secure)}"
+        f" · 경고 기준 {threshold_percent_label(warning)}"
     )
 
 
@@ -882,8 +883,8 @@ def _balance_hover(
     cause: object,
 ) -> str:
     if balance is None:
-        return f"{head} · 확보기준 과부족 {_EMPTY}"
-    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 판정 경계)을 소수 둘째 자리로 단다. 과부족은 확보기준
+        return f"{head} · 확보 기준 과부족 {_EMPTY}"
+    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 판정 경계)을 소수 둘째 자리로 단다. 과부족은 확보 기준
     # 의 판정 경계(110% 면 109.5% — 사사오입 판정)에 대한 대수다(`securement_balance`). 그 아래 식의
     # 적힌 가용·소요(첫째 자리)로 다시 셈한 값이 그 값과 다르면 식 앞에 「≈」 를 둔다.
     bound = judgment_boundary(secure)
@@ -894,7 +895,7 @@ def _balance_hover(
         unrounded = f" ({raw})"
         mark = equals_mark(raw, _signed_two(round(available, 1) - round(demand, 1) * bound))
     text = (
-        f"{head} · 확보기준 과부족 {_signed_int(balance)}대{unrounded}"
+        f"{head} · 확보 기준 과부족 {_signed_int(balance)}대{unrounded}"
         f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
         f"소요 {_one(demand)} × {boundary_percent_label(secure)} (부족은 올림, 여유는 내림)"
     )

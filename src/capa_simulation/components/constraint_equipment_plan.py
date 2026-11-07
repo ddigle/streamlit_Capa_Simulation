@@ -22,7 +22,7 @@
   적으므로 머리 배지는 「설비 일정 없음」 까지다(UI-TXT-07). 저장본 없음은 공정마다 다른 일이 아니라
   설비 DB 전체의 일이라 알림 글에 공정을 넣지 않는다 — 공정을 넘겨도 같은 알림 하나다(UI-NTF-07).
 - **계획** — 공정 Capa 상세 ② 와 같은 칸을 **같은 키**로(`load_required_shortening_for_target`,
-  목표는 키 맞춤용 HOME 확보기준 — 단축 열은 읽지 않는다). 계산 함수는 부를 때 `simulation_cache`
+  목표는 키 맞춤용 HOME 확보 기준 — 단축 열은 읽지 않는다). 계산 함수는 부를 때 `simulation_cache`
   모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 제약 영향 모드는 같은 `try` 안에서 두 가지를 더
   받는다 — 「신규 설비는 개조 없이」 를 켠 회차에는 같은 키의 설비 일정 칸(공정 Capa 상세 ③·④ —
   `with_timeline`), 매 회차(개조 켬 · 끔과 무관 — 끄면 칸이 잠긴 채 고름을 보인다) 보유 「호기
@@ -151,7 +151,7 @@ class EquipmentPlan(NamedTuple):
 
     plan: ShorteningPlan
     target_level: MonthlyTarget
-    """키 맞춤용 HOME 확보기준 — `plan.at(target_level)` 로 공정 달을 꺼낸다."""
+    """키 맞춤용 HOME 확보 기준 — `plan.at(target_level)` 로 공정 달을 꺼낸다."""
 
     cutoff_days: int
     timeline: ProcessEquipmentTimeline | None
@@ -339,7 +339,7 @@ def _load_plan(
 ) -> tuple[
     ShorteningPlan, MonthlyTarget, ProcessEquipmentTimeline | None, tuple[HeldUnitChoice, ...]
 ]:
-    """공정 Capa 상세 ②·두 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보기준). 고르면
+    """공정 Capa 상세 ②·두 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보 기준). 고르면
     같은 키의 설비 일정 칸과 보유 「호기 고르기」 선택지도 받는다. 예외는 그대로 올린다."""
     page_inputs = source.page_inputs
     months = list(page_inputs.months)

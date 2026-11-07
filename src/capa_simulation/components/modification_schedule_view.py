@@ -622,8 +622,8 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
     thresholds = page_inputs.thresholds
 
     def general_target(month: int) -> float:
-        """그 달 G — 기준(HOME 그 달 확보기준 또는 고른 정수 %)의 판정 경계(110% 면 1.095)다. 배치가
-        그 선에 붙고, 판정·글자는 그 선에서 정수 기준을 되읽는다(`securement_threshold`)."""
+        """그 달 G — 기준(HOME 그 달 확보 기준 또는 고른 정수 %)의 판정 경계(110% 면 1.095)다.
+        배치가 그 선에 붙고, 판정·글자는 그 선에서 정수 기준을 되읽는다(`securement_threshold`)."""
         if choice.general_percent is None:
             return thresholds.boundary_for(month)[0]
         return judgment_boundary(choice.general_percent / 100)

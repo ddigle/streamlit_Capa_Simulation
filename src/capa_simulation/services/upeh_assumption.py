@@ -272,7 +272,7 @@ def percent_to_clear_target(
 def percent_to_clear_securement(
     summary: pd.DataFrame, thresholds: SecurementThresholds, months: Iterable[int]
 ) -> InversePercent:
-    """확보기준 미달 0 — 구간 달마다 판정이 확보가 되는 최소 %(공식 가용 기준).
+    """확보 기준 미달 0 — 구간 달마다 판정이 확보가 되는 최소 %(공식 가용 기준).
 
     `summary` 는 공식 요약(`build_process_capa_summary` — 생산계획년월·가용대수·소요대수)이다. 그 달
     확보율 = 가용 ÷ (소요 ÷ f) 를 `thresholds.status` 한 길로 판정해 확보인지 본다. 소요가 0 인 달은
@@ -402,7 +402,7 @@ class AssumptionEffect(NamedTuple):
     official: PlanCounts | None = None
     assumed: PlanCounts | None = None
     shortage_months: tuple[int, int] | None = None
-    """확보기준 미달 달 수 (공식, 가정) — 공정 Capa 상세만."""
+    """확보 기준 미달 달 수 (공식, 가정) — 공정 Capa 상세만."""
 
 
 def effect_text(effect: AssumptionEffect) -> str:
@@ -422,7 +422,7 @@ def effect_text(effect: AssumptionEffect) -> str:
     ]
     if effect.shortage_months is not None:
         before, after = effect.shortage_months
-        parts.append(f"확보기준 미달 {before}→{after}개월")
+        parts.append(f"확보 기준 미달 {before}→{after}개월")
     official, assumed = effect.official, effect.assumed
     if official is not None and assumed is not None:
         parts += [

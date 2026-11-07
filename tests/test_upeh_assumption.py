@@ -308,9 +308,8 @@ def test_the_effect_line_reads_official_to_assumed_with_continuous_values() -> N
         shortage_months=(4, 2),
     )
     assert effect_text(effect) == (
-        "소요 −9.1%(월 최대 −1.13대) · 확보기준 미달 4→2개월 · 단축 호기 3→2 · 단축일 합계 45→12일 "
-        "· "
-        "신규 2→0 · 월 최대 환산 부족 2.50→0.75"
+        "소요 −9.1%(월 최대 −1.13대) · 확보 기준 미달 4→2개월 · 단축 호기 3→2 · "
+        "단축일 합계 45→12일 · 신규 2→0 · 월 최대 환산 부족 2.50→0.75"
     )
 
 
