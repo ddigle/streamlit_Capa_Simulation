@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ParamSpec, TypeVar, overload
+from typing import NamedTuple, ParamSpec, TypeVar, overload
 
 import duckdb
 import pandas as pd
@@ -28,10 +28,13 @@ import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components import write_guard
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
+from capa_simulation.navigation import REFERENCE_DATA
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
+from capa_simulation.reference_grid_keys import DATASETS, EDIT_TABLES
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import PreparedDisplayOrder
@@ -106,6 +109,14 @@ _OPEN_FAILURE_MARKERS = ("Cannot open", "Could not set lock")
 # 화면에 옮기는 원문 길이. DuckDB 문구에는 SQL 줄과 위치 표시가 붙어 길어진다.
 _ORIGINAL_TEXT_LIMIT = 300
 _BACKTICK_RUN = re.compile(r"`+")
+# 대당 Capa 계산이 입력 빠짐으로 멈춘 오류의 머리(`services/unit_capacity` 의 글) — 빈 값 · 연결값
+# 없음. 계산 캐시가 오류를 글로 담아 다시 던지므로(`simulation_cache.CapacityOutcome`) 예외
+# 종류(`ReferenceJoinError`)로는 가르지 못한다. 조회기간 밖 오류는 이 머리를 글 끝에 싣고 온다
+# (`simulation_cache.outside_period_error`) — 그래서 글 맨 앞에 묶지 않고 글 안에서 찾는다.
+_MISSING_INPUT_STOP = re.compile(
+    r"(?P<table>RQ_[A-Z_]+)(?:의 .+? 값이 빈| 연결값이 없는) 대당 Capa 기준이 있습니다"
+    r"(?=: (?P<count>[\d,]+)건)"
+)
 
 
 def _original_line(exc: BaseException) -> str:
@@ -203,6 +214,44 @@ def bootstrap_error_message(
         "스크립트)이 있으면 닫고 새로고침하세요. DuckDB 는 한 번에 한 프로세스만 파일을 "
         "엽니다.\n"
         "- 그래도 같은 오류가 나면 파일 권한과 경로(네트워크 드라이브 여부)를 확인하세요."
+    )
+
+
+class CalculationStop(NamedTuple):
+    """기준 정보의 빈 칸 때문에 멈춘 계산의 알림 재료(`calculation_stop_notice`)."""
+
+    text: str
+    """알림창 짧은 글 — 무엇이 멈췄고 어디서 무엇을 채우는가."""
+
+    goto: tuple[str, str]
+    """Alarm 줄의 화면 칸 · 「그 화면으로」 가 열 화면(이름, 주소)."""
+
+    message: str
+    """알림 전문 — 어느 화면의 멈춤인지 · 고칠 곳 · 건수와 예시 행. 표 이름은 화면 이름이다."""
+
+
+def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
+    """받은 오류가 기준 정보의 빈 칸을 채우면 풀리는 계산 멈춤이면 그 알림 재료, 아니면 None.
+
+    멈춘 자리의 `render_data_error(stop.message, code=…, text=stop.text, goto=stop.goto)` 로 쓴다.
+    None 이면 지금처럼 `bootstrap_error_message(exc)` 만 넘긴다 — 같은 `except BOOTSTRAP_ERRORS` 가
+    DB 잠금 · 읽기 실패와 자료 없는 달도 받고, 그 갈래에는 채울 화면이 없다(설계 규칙 UI-NTF-08).
+    숫자 아닌 값 · 0 이하처럼 빠진 입력이 아닌 멈춤과, 앱에서 고칠 수 없는 모듈수(`RQ_MODULE`)도
+    None 이다. 줄의 화면 칸이 고칠 화면이 되므로 어느 화면의 일인지는 전문 첫머리가 말한다.
+    """
+    found = _MISSING_INPUT_STOP.search(str(exc)) if isinstance(exc, ValueError) else None
+    if found is None or found["table"] not in EDIT_TABLES:
+        return None
+    name = quoted(DATASETS[found["table"]])
+    page = alerts.current_page()[0]
+    return CalculationStop(
+        text=f"대당 Capa 계산 멈춤 — 기준 정보 {name} 빈 칸 {found['count']}건을 채움",
+        goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href),
+        message=(
+            f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다. 기준 정보 {name} 표의 빈 "
+            "칸에 0보다 큰 값을 넣고 「변경사항 적용」 뒤 새 리비전으로 저장하세요.\n\n"
+            + bootstrap_error_message(exc).replace(found[0], f"{name} 표의 빈 칸")
+        ),
     )
 
 

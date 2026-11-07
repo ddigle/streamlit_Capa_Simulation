@@ -1,12 +1,22 @@
 # Purpose: 계산 페이지 공통 준비 절차의 조회기간 해석과 예외 계약을 검증한다.
 
+import duckdb
 import pandas as pd
 import pytest
 
-from capa_simulation import page_bootstrap
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, PageContext, resolve_effective_months
+from capa_simulation import alerts, page_bootstrap
+from capa_simulation.navigation import REFERENCE_DATA
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    PageContext,
+    calculation_stop_notice,
+    resolve_effective_months,
+)
+from capa_simulation.reference_grid_keys import DATASETS
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import pristine_content_token
+from capa_simulation.services import unit_capacity
+from capa_simulation.services.simulation_cache import outside_period_error
 
 
 def _context(start: int, end: int) -> PageContext:
@@ -214,6 +224,110 @@ def test_the_original_text_is_cut_and_stays_literal_under_markdown() -> None:
         "- 원문: ``` BinderException: Binder Error: `a` $x$ *b* # 제목 - 목록 ``c`` ```"
     ]
     assert not any(line.startswith("#") for line in lines)
+
+
+def _service_stop(status: int, table: str = "RQ_RUN_RATE", column: str = "CAPA_RUN_RATE") -> str:
+    """계산이 실제로 내는 오류 글 — 글이 바뀌면 판정이 조용히 빗나가지 않게 여기서 받는다."""
+    joined = pd.DataFrame({"공정": ["DEMO-P1"], "상태": [status]})
+    check = unit_capacity._PendingCheck(table, column, ["공정"], "상태", None)
+    with pytest.raises(ValueError) as error:
+        unit_capacity._raise_on_unusable_values(joined, check)
+    return str(error.value)
+
+
+def _on_page(monkeypatch: pytest.MonkeyPatch, page: str = "HOME") -> None:
+    monkeypatch.setattr(alerts, "current_page", lambda: (page, "home"))
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "name"),
+    [
+        ("RQ_RUN_RATE", "CAPA_RUN_RATE", "효율"),
+        ("RQ_VITAL", "편중률", "여유율"),
+        ("RQ_RUN_DAY", "RUN_DAY", "일수"),
+        ("RQ_LOT_RATIO", "Lot 측정률", "Lot측정률"),
+    ],
+)
+def test_a_blank_stop_points_at_the_table_to_fill_on_the_reference_screen(
+    monkeypatch: pytest.MonkeyPatch, table: str, column: str, name: str
+) -> None:
+    """빈 칸 멈춤은 무엇을 · 어디서 채우는지 말하고 「그 화면으로」 가 기준 정보를 연다(UI-NTF-06 ·
+    UI-NTF-08). 전문은 어느 화면의 일인지부터 적고, 건수 · 예시 행은 남기되 표 이름은 화면
+    이름이다."""
+    _on_page(monkeypatch)
+    stop = calculation_stop_notice(
+        ValueError(_service_stop(unit_capacity._VALUE_BLANK, table, column))
+    )
+
+    assert stop is not None
+    assert stop.text == f"대당 Capa 계산 멈춤 — 기준 정보 「{name}」 빈 칸 1건을 채움"
+    assert DATASETS[table] == name
+    assert stop.goto == ("기준 정보", REFERENCE_DATA.href)
+    assert stop.message.startswith(
+        f"HOME — 대당 Capa 계산이 멈췄습니다. 기준 정보 「{name}」 표의 "
+    )
+    assert "「변경사항 적용」" in stop.message
+    assert f"「{name}」 표의 빈 칸: 1건, 예시 " in stop.message
+    assert "'공정': 'DEMO-P1'" in stop.message
+    assert table not in stop.message and column not in stop.message
+
+
+def test_a_row_missing_from_the_reference_table_is_the_same_empty_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """연결값 없음도 빠진 입력이다 — 기준 정보 표의 같은 빈 칸을 채워 푼다."""
+    _on_page(monkeypatch)
+    stop = calculation_stop_notice(ValueError(_service_stop(unit_capacity._VALUE_NO_MATCH)))
+
+    assert stop is not None
+    assert stop.text == "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 1건을 채움"
+
+
+def test_a_stop_outside_the_period_keeps_saying_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    """조회기간 밖 달의 빈 칸도 같은 곳에서 채운다 — 글 끝의 머리를 찾고 기간 말은 전문에 남는다."""
+    _on_page(monkeypatch)
+    error = outside_period_error(202601, 202612, _service_stop(unit_capacity._VALUE_BLANK))
+
+    stop = calculation_stop_notice(ValueError(error))
+
+    assert stop is not None
+    assert stop.text == "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 1건을 채움"
+    assert "밖의 달에 기준정보 오류가 있어" in stop.message
+    assert "RQ_RUN_RATE" not in stop.message
+
+
+def test_a_stop_without_a_page_name_starts_from_the_stop_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _on_page(monkeypatch, "")
+    stop = calculation_stop_notice(ValueError(_service_stop(unit_capacity._VALUE_BLANK)))
+
+    assert stop is not None and stop.message.startswith("대당 Capa 계산이 멈췄습니다.")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        duckdb.IOException("Could not set lock on file: Conflicting lock is held"),
+        duckdb.CatalogException("Table with name RQ_RUN_RATE does not exist"),
+        OSError("읽지 못함"),
+        RuntimeError("활성 리비전이 없습니다."),
+        KeyError("RQ_REQB"),
+        ValueError("선택 범위에 소요대수 산출 기준이 없습니다. (데이터 범위 26.01–26.12)"),
+        ValueError("RQ_YLD의 수율 값이 비었습니다: 1건"),
+        ValueError("RQ_RUN_RATE의 CAPA_RUN_RATE 컬럼에 숫자가 아닌 값이 있습니다: 1건, 예시 []"),
+        ValueError("RQ_RUN_RATE의 CAPA_RUN_RATE 값은 0보다 커야 합니다: 1건, 예시 []"),
+        ValueError("RQ_MODULE의 모듈수 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 []"),
+        duckdb.Error("RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 []"),
+    ],
+)
+def test_other_failures_have_no_screen_to_fill_and_keep_the_plain_message(
+    error: BaseException,
+) -> None:
+    """DB 잠금 · 읽기 실패 · 자료 없는 달은 같은 `except` 로 오지만 채울 화면이 없다. 앱에서 고칠 수
+    없는 모듈수와 빠진 입력이 아닌 값도 기준 정보로 보내지 않는다 — 부르는 쪽이 지금 글을 그대로
+    쓴다."""
+    assert calculation_stop_notice(error) is None
 
 
 def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(

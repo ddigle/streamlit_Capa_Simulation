@@ -117,7 +117,13 @@ from capa_simulation.components.state_alerts import alert_page_error
 
 alerts.note_page("산출 결과", "calculation_result")
 message = st.session_state.get("message", "데이터베이스를 열지 못했습니다.\\n\\n- 원문: lock")
-alert_page_error(message, code="ST-20", tab="소요대수")
+alert_page_error(
+    message,
+    code="ST-20",
+    tab="소요대수",
+    text=st.session_state.get("text"),
+    goto=st.session_state.get("goto"),
+)
 """
 
 
@@ -140,6 +146,22 @@ def test_a_separately_sent_page_error_alerts_once_per_message() -> None:
     app.run()
     (other,) = alert_notes(app)
     assert other["id"] != first["id"]
+
+
+def test_a_separately_sent_page_error_can_open_the_screen_to_fill() -> None:
+    """채울 입력이 다른 화면이면 줄의 화면 칸과 「그 화면으로」 가 그 화면이다(`render_data_error`
+    의 `goto` 와 같다 — 마크가 탭 여럿에 서는 산출 결과가 이 길로 낸다)."""
+    app = AppTest.from_string(PAGE_ERROR)
+    app.session_state["message"] = "산출 결과 — 대당 Capa 계산이 멈췄습니다."
+    app.session_state["text"] = "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 2건을 채움"
+    app.session_state["goto"] = ("기준 정보", "reference_data")
+    app.run()
+
+    assert not app.exception
+    (note,) = alert_notes(app)
+    assert note["short"] == "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 2건을 채움"
+    assert note["full"] == "산출 결과 — 대당 Capa 계산이 멈췄습니다."
+    assert (note["page"], note["href"]) == ("기준 정보", "reference_data")
 
 
 ASSUMPTION = """
