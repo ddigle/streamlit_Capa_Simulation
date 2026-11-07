@@ -314,6 +314,7 @@ function mountDatePanel(root, data, sendApply) {
     fieldText.textContent = text || emptyText
     field.classList.toggle('is-empty', !text)
     field.disabled = Boolean(data?.disabled)
+    label.classList.toggle('is-locked', field.disabled)
     field.setAttribute('aria-label', name + ' ' + (text || emptyText))
     root.dataset.mode = mode
   }

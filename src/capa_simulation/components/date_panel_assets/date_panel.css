@@ -12,6 +12,11 @@
   line-height: 1.4;
 }
 
+/* 잠긴 칸의 이름 — 이웃 위젯의 잠긴 이름과 같은 농도. */
+.capa-date-label.is-locked {
+  color: color-mix(in srgb, var(--st-text-color) 40%, transparent);
+}
+
 .capa-date-help {
   display: inline-grid;
   place-items: center;

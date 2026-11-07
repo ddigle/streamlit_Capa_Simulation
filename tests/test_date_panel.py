@@ -380,6 +380,20 @@ def test_the_panel_keeps_the_period_panel_look_and_theme_colors() -> None:
             assert part.strip().startswith(".capa-date-"), part
 
 
+def test_a_locked_field_dims_its_name_like_the_widgets_beside_it() -> None:
+    """잠긴 칸은 이름도 흐리다(설계 규칙 UI-INP-07) — 이웃 Streamlit 위젯의 잠긴 이름과 같은 농도
+    40% 를 테마 글자색에서 섞는다(라이트 · 다크 값을 적지 않는다). 표지는 칸의 잠김과 같이 바뀐다 —
+    다시 켜면 이름도 돌아온다."""
+    match = re.search(r"\.capa-date-label\.is-locked \{\n(?P<body>[^}]*)\}", DATE_PANEL_OWN_CSS)
+    assert match, "date_panel.css 에 잠긴 이름 규칙이 없습니다"
+    assert match.group("body").strip() == (
+        "color: color-mix(in srgb, var(--st-text-color) 40%, transparent);"
+    )
+    render = DATE_PANEL_JS.split("const renderField", 1)[1].split("const render =", 1)[0]
+    locked = render.index("field.disabled = Boolean(data?.disabled)")
+    assert render.index("label.classList.toggle('is-locked', field.disabled)") > locked
+
+
 D1, D2 = date(2026, 2, 1), date(2026, 7, 31)
 LOW, HIGH = date(2026, 1, 1), date(2028, 12, 31)
 
