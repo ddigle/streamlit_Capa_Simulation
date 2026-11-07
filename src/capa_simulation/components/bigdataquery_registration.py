@@ -373,7 +373,7 @@ def _render_configuration_banner(
                 if notice is not None and not (catalog_ready and detail_ready)
                 else "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
             ),
-            full=notice,
+            full=alerts.plain_text(notice) if notice else None,
             tab=alert_tab,
         )
     line = banner_line(

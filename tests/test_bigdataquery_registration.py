@@ -1432,9 +1432,12 @@ def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
         caption.value for caption in app.caption
     ]
     banner = str(note["full"])
-    for text in (error.value, banner):
-        assert ("서버 시작 점검" in text) is with_report
-        assert ("`CAPA_ARTIFACTORY_TOKEN`" in text) is with_report
+    assert ("서버 시작 점검" in error.value) is with_report
+    assert ("`CAPA_ARTIFACTORY_TOKEN`" in error.value) is with_report
+    # 알림 전문은 평문이다 — 패널이 글자 그대로 보여 역따옴표가 글자로 남는다.
+    assert ("서버 시작 점검" in banner) is with_report
+    assert ("CAPA_ARTIFACTORY_TOKEN" in banner) is with_report
+    assert "`" not in banner
 
 
 @pytest.mark.parametrize(
