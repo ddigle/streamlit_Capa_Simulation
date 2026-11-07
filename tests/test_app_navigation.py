@@ -637,7 +637,7 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     # 「준비 중」으로 보낸 Summary GAP 은 페이지를 다 그린 **뒤** 만든다(`warm_intro_summary`).
     # 통합인증 확인(`require_signed_in`)은 입장 화면보다도 앞이다 — 로그인하지 않은 세션에 입장
     # 화면 · DB · 예약 스레드가 돌지 않는다(꺼짐이면 아무것도 그리지 않는다).
-    one_run = ["sso", "intro", "shell", "type", "toolbar:7", "bootstrap", "summary", "warm"]
+    one_run = ["sso", "intro", "shell", "type", "toolbar:8", "bootstrap", "summary", "warm"]
     assert order == one_run * 2
     # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
     sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]

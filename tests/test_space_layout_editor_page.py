@@ -734,8 +734,8 @@ def _save_row(app: AppTest) -> dict[str, bool]:
 def test_the_idle_save_row_stays_true_while_a_master_edit_is_unsaved(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """설비 마스터 · 곁표에만 저장 안 한 편집이 있어도 잠긴 머리 줄이 선다 — 그 말은 머리 띠 · 사이드바
-    의 미저장 표지와 어긋나지 않게 「배치」 로 좁혀 적는다."""
+    """설비 마스터 · 곁표에만 저장 안 한 편집이 있어도 잠긴 머리 줄이 선다 — 그 말은 머리 띠 ·
+    사이드바의 미저장 표지와 어긋나지 않게 「배치」 로 좁혀 적는다."""
     app, _ = _open_editor(tmp_path)
     baseline, equipment, downtime = app.session_state[BUFFER_KEY]
     edited = equipment.copy()
@@ -758,8 +758,9 @@ def test_the_idle_save_row_stays_true_while_a_master_edit_is_unsaved(
 def test_an_overlap_stays_open_on_a_round_that_could_not_measure_it(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """설비 마스터의 검증 실패 편집으로 겹침을 재지 못한 회차는 조건을 모른다 — `active=False` 를 보내면
-    겹침이 남았는데 Alarm 줄이 「해소」 로 닫힌다. 표지를 비워 앞 줄을 두고 마크로만 알린다."""
+    """설비 마스터의 검증 실패 편집으로 겹침을 재지 못한 회차는 조건을 모른다 — `active=False` 를
+    보내면 겹침이 남았는데 Alarm 줄이 「해소」 로 닫힌다. 표지를 비워 앞 줄을 두고 마크로만
+    알린다."""
     app, _ = _open_editor(tmp_path)
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": editor_calls[-1]["epoch"],
@@ -821,8 +822,8 @@ def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_
     inside = _popover_widgets(app, "변경 내용")
     assert {"변경 메모", "저장자(선택)"} <= inside
     assert any("바뀐 호기 1건" in item.label for item in app.expander)
-    # 잠긴 줄과 다른 팝오버다 — 같은 id 면 「모두 버리기」 뒤 브라우저가 열린 팝오버를 잠긴 줄로 이어
-    # 빈 상자가 남는다(AGENTS 9장).
+    # 잠긴 줄과 다른 팝오버다 — 같은 id 면 「모두 버리기」 뒤 브라우저가 열린 팝오버를 잠긴 줄로
+    # 이어 빈 상자가 남는다(AGENTS 9장).
     assert not set(idle_ids.values()) & set(_popover_ids(app).values())
     # 메모 · 저장자는 팝오버 밖 「배치 저장」 이 읽는다 — Esc 로 닫아도 값이 가는 칸에 든다.
     assert f"{ESC_COMMIT_PREFIX}space_layout_details" in _popover_box_keys(app, "변경 내용")
