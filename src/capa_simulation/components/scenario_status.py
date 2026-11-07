@@ -47,6 +47,7 @@ from capa_simulation.components.scenario_edit_bar import (
     pending_edit_labels,
 )
 from capa_simulation.components.scenario_management import (
+    DISCARD_LOCK_HELP,
     revision_tables_for_save,
     revision_virtual_product_rows,
     virtual_product_save_notice,
@@ -141,6 +142,8 @@ SCENARIO_FIELD_ICON = ":material/layers:"
 # 리비전 메모를 선택지 캡션에 붙일 때 자르는 길이. 캡션은 한 줄 정보다.
 _NOTE_PREVIEW_LIMIT = 40
 # 「신규 리비전 저장」 풍선 — 새 리비전에 무엇이 담기는지.
+# 리비전이 없어 잠긴 불러오기의 까닭 풍선 — 잠긴 동안만 단다(설계 규칙 UI-INP-07).
+NO_REVISION_HELP = "선택한 시나리오에 저장된 리비전이 없어 불러올 수 없습니다."
 SAVE_BUTTON_HELP = "지금 화면의 편집과 함께 조회기간·공정 필터도 새 리비전에 담깁니다."
 
 
@@ -542,6 +545,13 @@ def _render_load(
             icon=":material/download:",
             type="primary",
             disabled=not discard_changes or not revision_by_id,
+            help=(
+                NO_REVISION_HELP
+                if not revision_by_id
+                else None
+                if discard_changes
+                else DISCARD_LOCK_HELP
+            ),
             key="sidebar_load_revision",
         )
         # 저장하지 않은 편집을 버리고 올라와 있는 리비전으로 되돌린다. **모든 화면의 편집**을

@@ -291,6 +291,13 @@ SAME_AS_OFFICIAL_LINE = ":material/verified: 지금 공식과 같은 리비전"
 SAME_AS_OFFICIAL_HELP = (
     "지금 공식과 같은 리비전입니다 — 지정하면 같은 리비전에 새 공식 번호가 섭니다."
 )
+# 잠긴 단추의 까닭 풍선 — 잠긴 동안만 단다(설계 규칙 UI-INP-07).
+REVISION_PICK_HELP = "리비전 표에서 리비전을 고르면 풀립니다."
+DISCARD_LOCK_HELP = "위 「변경을 버리고 불러오기」 를 체크하면 풀립니다."
+OFFICIAL_CONFIRM_HELP = "위 「가상 제품이 포함된 것을 확인했습니다」 를 체크하면 풀립니다."
+ARCHIVE_EFFECT_HELP = "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다."
+ARCHIVE_LOCK_HELP = f"위 확인을 체크하면 풀립니다. {ARCHIVE_EFFECT_HELP}"
+DELETE_LOCK_HELP = "위 칸에 시나리오 이름을 그대로 입력하면 풀립니다."
 # 「변경 저장」 의 출발점 대조 저장 이름(`write_guard.save_once` — 출발점은 저장본에 맞추기 전
 # 초안의 이름 · 순서 고침과 순서의 본 차례).
 LIST_SAVE_NAME = "scenario_list_edits"
@@ -985,6 +992,13 @@ def _render_detail(
                 icon=":material/download:",
                 type="primary",
                 disabled=picked is None or not discard_changes,
+                help=(
+                    REVISION_PICK_HELP
+                    if picked is None
+                    else None
+                    if discard_changes
+                    else DISCARD_LOCK_HELP
+                ),
                 key=f"{CARD_LOAD_KEY}_{summary.scenario_id}",
                 on_click=_load_picked_revision,
                 args=(database_path, summary.scenario_id),
@@ -993,6 +1007,7 @@ def _render_detail(
                 "공식으로 지정…",
                 icon=":material/verified:",
                 disabled=picked is None,
+                help=REVISION_PICK_HELP if picked is None else None,
                 key=f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}",
                 on_click=_open_official_dialog,
                 args=(summary.scenario_id,),
@@ -1297,7 +1312,13 @@ def _render_official(
             type="primary",
             disabled=not confirmed,
             width="stretch",
-            help=SAME_AS_OFFICIAL_HELP if same_as_official else None,
+            help=(
+                OFFICIAL_CONFIRM_HELP
+                if not confirmed
+                else SAME_AS_OFFICIAL_HELP
+                if same_as_official
+                else None
+            ),
         )
     refused = take_refusal(OFFICIAL_SAVE_NAME)
     if refused is not None:
@@ -1482,7 +1503,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         type="primary",
         disabled=not confirmed,
         width="stretch",
-        help="보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다.",
+        help=ARCHIVE_EFFECT_HELP if confirmed else ARCHIVE_LOCK_HELP,
     ):
         return
     message = (
@@ -1685,6 +1706,7 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         icon=":material/delete_forever:",
         type="secondary",
         disabled=not ready,
+        help=None if ready else DELETE_LOCK_HELP,
         width="stretch",
     ):
         return
