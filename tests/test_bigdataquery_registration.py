@@ -244,6 +244,15 @@ def test_both_steps_render_in_one_run(date_panels: dict[str, dict[str, Any]]) ->
     }
 
 
+def _page_scripts(app: AppTest) -> list[Any]:
+    """알림 표지 · 표 위 줄 꾸밈을 뺀 `st.html` — 저장 결과 칸의 스크립트만 남는다."""
+    return [
+        element
+        for element in page_html(app)
+        if element.proto.body != registration.CATALOG_TOOLBAR_STYLE
+    ]
+
+
 def _save_button(app: AppTest) -> Any:
     return next(button for button in app.button if button.label == "DB 조회 후 시나리오 저장")
 
@@ -328,7 +337,7 @@ def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     assert banner_lines == ([registration.BANNER_READY_LINE] if package_ready else [])
     assert not app.warning
     assert [(item.value, item.code) for item in flashed(app, "warning")] == [(notice, "FL-03")]
-    assert not page_html(app)
+    assert not _page_scripts(app)
     banner_note = active_state(app, "AD-04")
     if not package_ready:
         assert banner_note is not None and "bigdataquery 패키지가 없어" in banner_note["full"]
@@ -377,7 +386,7 @@ def test_the_saved_notices_go_to_the_alert_popup_not_under_the_save_button(
     assert ("Warning", stopped) not in drawn
     assert saved in [item.value for item in successes(app)]
     assert [(item.value, item.code) for item in flashed(app, "warning")] == [(stopped, "FL-03")]
-    assert not page_html(app)
+    assert not _page_scripts(app)
 
     app.run()
 
@@ -394,7 +403,7 @@ def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
     monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
     monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
     app = _run()
-    assert not page_html(app)
+    assert not _page_scripts(app)
 
     next(button for button in app.button if button.label == "DB 조회 후 시나리오 저장").click()
     app.run()
@@ -404,7 +413,7 @@ def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
     button = drawn.index(("Button", "DB 조회 후 시나리오 저장"))
     kind, message = drawn[button + 1]
     assert kind == "Error" and message.startswith("상세 조회 기간을 지정하거나")
-    (reveal,) = page_html(app)
+    (reveal,) = _page_scripts(app)
     assert reveal.proto.unsafe_allow_javascript and "scrollIntoView" in reveal.proto.body
 
 
@@ -535,6 +544,8 @@ def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_th
     )
     labels = [text for _, text in _drawn_in_order(row)]
     assert labels == ["시뮬레이션 코드 조회", "검색", "표시 범위"]
+    assert row.proto.flex_container.wrap
+    assert registration.CATALOG_TOOLBAR_KEY in registration.CATALOG_TOOLBAR_STYLE
 
     drawn = _drawn_in_order(app.main)
     scope = next(at for at, (_, text) in enumerate(drawn) if text == "표시 범위")
