@@ -571,6 +571,35 @@ process.stdout.write(JSON.stringify({
     assert out["freedFocus"] == 1
 
 
+def test_tab_from_an_open_popover_button_steps_into_its_body() -> None:
+    """팝오버 본문은 문서 끝 포털이라 Tab 이 단추 다음 칸으로 건너뛴다 — 열린 단추에서 Tab 을 누르면
+    본문 첫 탭 자리(꺼진 단추만 있으면 감싼 칸)로 들어간다. 닫힌 단추 · Shift+Tab · 다른 칸 · 탭
+    자리가 없는 본문은 브라우저에 맡긴다."""
+    out = _node(
+        """
+const run = ({ testid = 'stPopoverButton', expanded = 'true', shift = false, first = true }) => {
+  const stop = { focused: 0, focus() { this.focused += 1 } }
+  const body = { querySelector: () => (first ? stop : null) }
+  const active = { getAttribute: (name) => (name === 'data-testid' ? testid : expanded) }
+  const doc = { activeElement: active, querySelector: () => body }
+  let prevented = 0
+  const done = enterOpenPopover(doc, { shiftKey: shift, preventDefault: () => { prevented += 1 } })
+  return [done, stop.focused, prevented]
+}
+process.stdout.write(JSON.stringify({
+  open: run({}),
+  closed: run({ expanded: 'false' }),
+  back: run({ shift: true }),
+  other: run({ testid: 'stBaseButton-secondary' }),
+  empty: run({ first: false }),
+}))
+"""
+    )
+    assert out["open"] == [True, 1, 1]
+    for case in ("closed", "back", "other", "empty"):
+        assert out[case] == [False, 0, 0]
+
+
 def test_a_tip_held_by_a_mouse_press_closes_when_the_pointer_leaves() -> None:
     """마우스로 누른 단추는 초점을 쥔 채 남고 Streamlit 풍선은 초점이 든 동안 닫지 않는다 — 마우스가
     칸을 떠날 때 칸에 초점 나감을 보낸다. 키보드 초점의 풍선은 그대로 두고, 칸 안에서 옮겨 다니거나
@@ -659,7 +688,8 @@ def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> No
     shell = JS[JS.index("function installFocusShell(") :]
     shell = shell[: shell.index("\n}\n")]
     assert "if (window.__capaFocusShell) return" in shell
-    assert "event.key === 'Tab'" in shell and "syncLockedTips(document)" in shell
+    assert "event.key !== 'Tab'" in shell and "syncLockedTips(document)" in shell
+    assert "enterOpenPopover(document, event)" in shell
     assert "'pointerout'" in shell and "releaseHeldTip(document, event)" in shell
     assert "'focusout'" in shell and "!event.relatedTarget" in shell
     assert "returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS" in shell

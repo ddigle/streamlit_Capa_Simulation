@@ -34,10 +34,11 @@
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
 //   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
-// - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기 셋을 둔다. 회차를 돌리지 않는다.
+// - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기를 둔다. 회차를 돌리지 않는다.
 //   ① 꺼진 단추는 Tab 이 건너뛰므로 감싼 풍선 칸(`stTooltipHoverTarget`)이 탭 자리를 맡는다(설계 규칙 UI-INP-07). 상시 훑지 않고 Tab
-//   키를 누른 순간 한 번 맞춘다 — 회차 없이 열리는 팝오버 안 단추까지 든다. ② Streamlit 풍선은 초점이 칸 안에 있으면 마우스가 떠나도
-//   닫지 않아 마우스로 누른 단추의 풍선이 남는다 — 키보드 초점이 아니면 마우스가 떠날 때 닫는다. ③ 대화상자의 Esc 는 그 안의 키 사건으로만
+//   키를 누른 순간 한 번 맞추고, 열린 팝오버 단추에서는 본문으로 들여보낸다 — 회차 없이 열리는 팝오버 안 단추까지 든다. ② Streamlit 풍선은
+//   초점이 칸 안에 있으면 마우스가 떠나도 닫지 않아 마우스로 누른 단추의 풍선이 남는다 — 키보드 초점이
+//   아니면 마우스가 떠날 때 닫는다. ③ 대화상자의 Esc 는 그 안의 키 사건으로만
 //   듣는데 고른 탭이 회차 중 `tabindex` 를 잠깐 잃으면 초점이 문서로 빠진다 — 열린 대화상자 안으로 되돌린다.
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
@@ -233,6 +234,9 @@ function copyText(pairs) {
 const TIP_HOST = '[data-testid="stTooltipHoverTarget"]'
 const DIALOG = '[role="dialog"]'
 const BUTTON_LABEL = '[data-testid="stMarkdownContainer"]'
+const POPOVER_BUTTON = 'stPopoverButton'
+const POPOVER_BODY = '[data-testid="stPopoverBody"]'
+const TABBABLE = 'button:enabled, input:enabled, textarea:enabled, a[href], [tabindex="0"]'
 
 function buttonName(button) {
   const label = button.getAttribute('aria-label') || (button.querySelector(BUTTON_LABEL) || button).textContent
@@ -253,6 +257,19 @@ function syncLockedTips(doc) {
       host.removeAttribute('aria-label')
     }
   }
+}
+
+// Streamlit 팝오버 본문은 문서 끝 포털이라 Tab 이 단추 다음 칸으로 건너뛴다 — 열린 단추에서 Tab 을 누르면 본문 첫 탭 자리로 들어간다.
+function enterOpenPopover(doc, event) {
+  const active = doc.activeElement
+  if (event.shiftKey || !active || active.getAttribute('data-testid') !== POPOVER_BUTTON) return false
+  if (active.getAttribute('aria-expanded') !== 'true') return false
+  const body = doc.querySelector(POPOVER_BODY)
+  const first = body ? body.querySelector(TABBABLE) : null
+  if (!first) return false
+  event.preventDefault()
+  first.focus({ preventScroll: true })
+  return true
 }
 
 // 풍선을 닫는 길은 칸의 초점 나감뿐이다 — 초점은 옮기지 않고 그 사건만 칸에 보낸다.
@@ -353,7 +370,9 @@ function installFocusShell() {
   document.addEventListener(
     'keydown',
     (event) => {
-      if (event.key === 'Tab') syncLockedTips(document)
+      if (event.key !== 'Tab') return
+      syncLockedTips(document)
+      enterOpenPopover(document, event)
     },
     true,
   )
