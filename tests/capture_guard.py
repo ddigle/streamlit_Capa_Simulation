@@ -28,7 +28,7 @@ _reconfigure = EncodedFile.reconfigure
 
 
 def _keeping_the_error_rule(self: EncodedFile, **options: Any) -> None:
-    if options.get("errors") is None:
+    if options.get("encoding") is not None and options.get("errors") is None:
         options["errors"] = self.errors
     _reconfigure(self, **options)
 

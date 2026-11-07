@@ -368,7 +368,8 @@ Windows(PowerShell):
 - 화면·상태를 바꿨으면 `streamlit.testing.v1.AppTest` 나 실제 브라우저로 페이지 진입·수정·왕복까지 봅니다
   (`AGENTS.md` 2장).
 - 사외 GitHub Actions(`.github/workflows/ci.yml`)는 Linux 에서 네 관문(`verify`)을, Windows 에서 pytest 만(`windows-pytest` —
-  사내와 같은 OS)을 돌립니다. Windows 작업은 **막지 않습니다**(`continue-on-error` — 빨개도 워크플로는 초록, 판정은 `verify`).
+  사내와 같은 OS)을 돌립니다. 시험은 두 작업 모두 8 조각이고(`scripts/run_test_shard.py` — 러너 한 대로는 제한 시간 안에 끝나지 못합니다),
+  Linux 조각을 모은 판정은 `verify-result` 한 칸입니다. Windows 작업은 **막지 않습니다**(`continue-on-error` — 빨개도 워크플로는 초록).
   Windows 에서만 깨지는 시험(경로 구분자·명령줄 길이·권한 비트)을 사내 리뷰 전에 보려는 것입니다(`AGENTS.md` 2장).
 
 ## 입력 데이터
@@ -642,6 +643,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `build_site_index.py` | GitHub Pages 첫 화면(뿌리 `index.html` 자료 목록)을 `site/catalog.json` 으로 쓴다(`--check` 는 다르면 실패) |
+| `run_test_shard.py` | CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 `pytest -q` 로 돈다(`--list` 는 파일만 찍는다) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
 | `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |

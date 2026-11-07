@@ -221,7 +221,7 @@ Windows(PowerShell):
   합집합은 `type` 키로 좁히기, AppTest 노드는 `app.markdown` 같은 타입 있는 접근자나
   `isinstance(node, Caption)`, `.loc[r, c]` 를 숫자로 볼 때는 변환 없이 비교(숫자인지까지 본다).
 - 계약을 **일부러** 어기는 입력(검증 경로 시험)만 그 줄에 `# type: ignore[코드]` 를 단다.
-- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 여섯(사내 리뷰 `202610271800` 발견 2 에서 16개,
+- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 여덟(사내 리뷰 `202610271800` 발견 2 에서 16개,
   `202611041000` 발견 2 에서 9개가 깨졌다). ① 경로를 글자로 견줄 때는 `relative_to(...).as_posix()` 로 짓는다 — `str(Path)`·f-문자열은 Windows 에서 `\` 로
   잇는다(실패 메시지에만 쓰는 글은 그대로 둬도 된다). 스크립트가 경로를 OS 꼴로 찍으면 기대도 같은 상수로 짓는다.
   `str(경로.relative_to(…))` 는 그물이 막는다(`tests/test_js_runner.py`).
@@ -237,10 +237,16 @@ Windows(PowerShell):
   견주지 말고 git 이 적은 철자를 읽는다(`tests/test_apply_deploy_package.py` 의 `_tracked_spelling`). 파일을 만들지 않는 순수
   목록 시험은 그대로 둔다. ⑥ 프레임을 쌓는 동작(끌기 자동 스크롤)은 시간으로 기다리지 않고 조건으로 기다린다 — Windows
   타이머 해상도(약 15.6ms)에서는 같은 시간에 프레임이 훨씬 적다(`tests/edit_grid_node.py` 의 `until`, 프레임 간격 16ms 를
-  매개값으로 함께 돌린다). 사외 CI 의 둘째 작업
-  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 여섯을 사내보다 먼저 보인다 — 작업 단위
-  `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux `verify` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
-  판 본 뒤 굳힐지 다시 묻는다). 그 칸이 빨가면 이 여섯부터 본다. 계약은 `tests/test_ci_workflow.py`.
+  매개값으로 함께 돌린다). ⑦ 자식 프로세스 환경을 좁히는 시험은 `tests/child_env.py` 의 `narrow_child_env` 로 만든다 — Windows 파이썬은
+  `SYSTEMROOT` 없이 첫 줄에서 죽는다. ⑧ 스크립트의 `sys.stderr.reconfigure(encoding="utf-8")` 는 시험 안에서 pytest 붙잡기
+  파일을 건드린다 — `errors` 가 strict 로 돌아가면 fd 2 에 들어온 현지 인코딩 한 바이트가 그 뒤 시험을 모두 setup 에서 깨뜨리므로
+  `tests/capture_guard.py` 가 막는다(리뷰 `202611060842` 발견 1). 표준 오류에 현지 언어가 나갈 데몬 스레드 서버는 끊긴 연결을 조용히
+  넘기고 그 밖은 ASCII 한 줄로 알린다(`scripts/s3_mock_store.py` 의 `handle_error`). 사외 CI 의 둘째 작업
+  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 여덟을 사내보다 먼저 보인다 — 작업 단위
+  `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux 조각을 모은 `verify-result` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
+  판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
+  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 그 칸이 빨가면 이 여덟부터 본다. 러너 로캘은 영어라
+  사내 한국어 로캘(cp949 · 한글 오류 글)은 흉내 내지 못한다. 계약은 `tests/test_ci_workflow.py` · `tests/test_run_test_shard.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
 사용자 프로필의 Python 3.10 실행 파일 접근이 차단되어 `Unable to create process` 또는
@@ -7369,6 +7375,6 @@ f-string 키는 넘겨받은 기준 키에서 파생되므로 그 기준 키가 
   표시가 근거이고, 없으면 통합하는 쪽이 직접 돌린 결과가 근거다.
 
 `.github/workflows/ci.yml` 이 **후보 브랜치(`cand/**`) 푸시**·PR·`main` 푸시에서 검증 4종을
-돌린다(둘째 작업 `windows-pytest` 는 Windows pytest 만 — 막지 않는다, 2장). 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
+돌린다(둘째 작업 `windows-pytest` 는 Windows pytest 만 — 막지 않는다, 2장. 시험은 두 작업 모두 8 조각이고 Linux 판정은 `verify-result` 한 칸이다). 후보를 올리는 즉시 도므로 PR 을 열기 전에도 초록·빨강이 보인다. **저장소는
 public 이고(2026-10-03 유지 결정) `main` 에 브랜치 보호를 걸지 않아 「통과해야만 병합」은 강제되지
 않는다** — 빨간 것은 합치지 않는다는 규칙을 사람이 지킨다.

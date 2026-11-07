@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import os
 
-# OS 가 프로세스를 세우고 홈 · 임시 폴더를 찾는 데 쓰는 값이다. 앱이 읽는 설정이 아니다.
-WINDOWS_PROCESS_VARIABLES = ("SYSTEMROOT", "TEMP", "TMP", "USERPROFILE")
+# OS 가 프로세스를 세우고 DLL · 홈 · 임시 폴더를 찾는 데 쓰는 값이다. 앱이 읽는 설정이 아니다.
+WINDOWS_PROCESS_VARIABLES = ("SYSTEMROOT", "PATH", "TEMP", "TMP", "USERPROFILE")
 
 
-def narrow_child_env(values: dict[str, str]) -> dict[str, str]:
+def narrow_child_env(values: dict[str, str], *, windows: bool = os.name == "nt") -> dict[str, str]:
     """부르는 쪽이 고른 값 + Windows 라면 프로세스가 서는 데 필요한 OS 변수."""
-    if os.name != "nt":
+    if not windows:
         return dict(values)
     present = {name: os.environ[name] for name in WINDOWS_PROCESS_VARIABLES if name in os.environ}
     return {**present, **values}
