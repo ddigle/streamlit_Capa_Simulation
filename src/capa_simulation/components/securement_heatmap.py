@@ -144,10 +144,9 @@ def build_securement_heatmap(
     if table.empty or not month_columns or not list(dimension_columns):
         return None
 
-    row_column = list(dimension_columns)[0]
-    row_names = [
-        labels.label(value) if labels is not None else str(value) for value in table[row_column]
-    ]
+    # 축 값은 원본 공정이고 표시명은 눈금 · hover 글자다 — 표시명으로 축을 세우면 표시명이 다른
+    # 공정의 원본과 같을 때 두 공정이 한 줄로 합쳐져 위 표보다 줄이 모자란다(`category_axis`).
+    axis = (labels or ProcessLabels()).category_axis(table[list(dimension_columns)[0]])
     rates = table[month_columns].apply(pd.to_numeric, errors="coerce")
 
     column_months = [_column_month(column) for column in month_columns]
@@ -163,15 +162,18 @@ def build_securement_heatmap(
         [None if pd.isna(value) else float(value) * 100.0 for value in row]
         for row in rates.to_numpy()
     ]
-    show_text = len(row_names) * len(month_columns) <= MAX_LABELLED_CELLS
+    show_text = len(axis.values) * len(month_columns) <= MAX_LABELLED_CELLS
     text = [["" if value is None else cell_text(value) for value in row] for row in percents]
 
     figure = go.Figure(
         go.Heatmap(
             z=tiers,
             x=[_month_tick(column) for column in month_columns],
-            y=row_names,
-            customdata=percents,
+            y=list(axis.values),
+            customdata=[
+                [[value, name] for value in row]
+                for row, name in zip(percents, axis.texts, strict=True)
+            ],
             colorscale=_discrete_colorscale(),
             zmin=SHORTAGE_TIER - 0.5,
             zmax=SECURE_TIER + 0.5,
@@ -182,10 +184,10 @@ def build_securement_heatmap(
             text=text if show_text else None,
             texttemplate="%{text}" if show_text else None,
             textfont={"size": 10, "color": tokens.TEXT},
-            hovertemplate="%{y} · %{x}<br>확보율 %{customdata:,.1f}%<extra></extra>",
+            hovertemplate="%{customdata[1]} · %{x}<br>확보율 %{customdata[0]:,.1f}%<extra></extra>",
         )
     )
-    rows = len(row_names)
+    rows = len(axis.values)
     row_px = max(
         MIN_LABELLED_ROW_PX,
         min(CELL_HEIGHT_PX, (MAX_CHART_HEIGHT_PX - CHART_CHROME_PX) / max(rows, 1)),
@@ -199,14 +201,12 @@ def build_securement_heatmap(
     # 표와 같은 순서로 위에서 아래로 읽힌다. Plotly 의 y 축은 기본이 아래에서 위다.
     # 두 축 모두 **범주**다. `"26.07"` 은 숫자로 읽히면 26.07 이 되어 월 칸이 실수 축에
     # 눌려 붙고 눈금이 `26.2·26.4` 로 나온다. 공정명도 마찬가지로 범주여야 한다.
-    # 눈금은 행마다 하나(`dtick=1`)다 — 자동 눈금은 낮은 칸에서 이름을 건너뛴다.
+    # 눈금은 행마다 하나(`tickvals`)다 — 자동 눈금은 낮은 칸에서 이름을 건너뛴다.
     figure.update_yaxes(
-        type="category",
+        **axis.layout(),
         autorange="reversed",
         title=None,
         ticklabelposition="outside",
-        tickmode="linear",
-        dtick=1,
         tickfont={"size": 11 if row_px >= 14 else DENSE_TICK_FONT_PX},
     )
     # 월 축은 위에 둔다. 각도는 고정하지 않는다 — 고정한 가로 눈금은 칸이 좁아지면(1280px 창·30개월)
