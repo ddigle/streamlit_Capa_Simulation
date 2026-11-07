@@ -318,7 +318,10 @@ console.log(JSON.stringify(out))
 
 def test_a_restart_is_a_different_boot_mark_stored_in_this_tab() -> None:
     """앞 표지가 있고 다를 때만 재시작이다(2026-11-07 통합 검수 D4 (가)) — 어느 경우든 지금 표지를
-    적어 둔다. 저장소가 막힌 브라우저에서는 예외 없이 뜨지 않는다."""
+    적어 둔다. 저장소가 막힌 브라우저에서는 예외 없이 뜨지 않는다.
+
+    `same` 은 재시작이 아니라는 뜻일 뿐 고침이 남았다는 뜻이 아니다 — 서버는 그대로이고 세션만
+    사라진 탭도 여기로 온다(`docs/TODO.md` 4장 「세션만 사라진 탭」)."""
     out = _node(
         """
 function fakeWindow(start) {

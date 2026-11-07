@@ -246,7 +246,7 @@ function storageSet(key, value) {
 
 // 서버가 다시 시작됐나 — 이 탭에 적어 둔 앞 부트 표지(`key`)와 지금 표지(`mark`)를 견주고 지금 표지로 고쳐 적는다. 앞 표지가
 // 있고 다를 때만 참이다 — 첫 접속 · 새 탭(앞 표지 없음)과 같은 프로세스의 새 세션(표지 같음)은 거짓이고, 저장소가 막힌
-// 브라우저는 앞 표지를 읽지 못해 거짓이다.
+// 브라우저는 앞 표지를 읽지 못해 거짓이다. 프로세스의 표지라 세션만 사라져 고침을 잃은 탭도 거짓이다(TODO 4장 「세션만 사라진 탭」).
 function bootChanged(key, mark) {
   if (!key || !mark) return false
   const before = storageGet(key, null)
