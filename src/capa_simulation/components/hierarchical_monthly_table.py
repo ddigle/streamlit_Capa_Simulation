@@ -10,6 +10,7 @@ from typing import Any, Literal
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.monthly_table_base import (
     HEADER_HEIGHT_PX,
@@ -214,6 +215,19 @@ def _add_table_grid(
     flush_layout_items(label_figure, month_figure)
 
 
+def _restart_range_on_new_total(page_key: str, total_rows: int) -> None:
+    """행 수가 바뀐 회차에 「표시 범위」 칸을 첫 범위로 되돌린다.
+
+    칸의 값 글에 전체 행 수가 들어, 필터로 행 수가 바뀌면 브라우저가 쥔 옛 글이 새 보기에 없다.
+    칸을 그대로 두면 옛 행 수가 적힌 글이 칸에 남는 회차가 생긴다(샘플 관측). 칸 값을 적으면 새 글이
+    함께 간다. 행 수가 같으면 건드리지 않아 고른 범위가 남는다.
+    """
+    total_key = f"{page_key}_total"
+    if st.session_state.get(total_key) != total_rows:
+        st.session_state[total_key] = total_rows
+        st.session_state[page_key] = 0
+
+
 def render_hierarchical_monthly_table(
     data: pd.DataFrame,
     *,
@@ -224,12 +238,17 @@ def render_hierarchical_monthly_table(
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
     value_format: _ValueFormat = "number",
     page_size: int | None = None,
+    page_slot: DeltaGenerator | None = None,
     owner_tab: OpenTab | None = None,
 ) -> None:
     """Render a grouped fixed-label table with scrolling month columns.
 
     `owner_tab` 은 이 표가 놓인 탭이다. 닫힌 탭에서는 그리지 않는다. 이유는
     `render_split_scroll_table` 의 설명을 보라.
+
+    `page_slot` 은 행이 `page_size` 를 넘을 때 「표시 범위」 칸이 들어갈 자리다. 부르는 쪽이 표 제목
+    줄(`table_toolbar.table_heading_row`)의 `with` 안에 만들어 넘긴다 — 제목 줄과 표 사이에 줄을
+    더 세우지 않는다.
     """
     if data.empty:
         st.caption("표시할 월별 데이터가 없습니다.")
@@ -239,27 +258,30 @@ def render_hierarchical_monthly_table(
         st.caption("표시할 월별 데이터가 없습니다.")
         return
 
-    # 행 페이지 줄은 행 수가 `page_size` 를 넘을 때만 생긴다. 늘 서 있는 이 한 칸 안에 그려 아래
+    # 「표시 범위」 칸은 행 수가 `page_size` 를 넘을 때만 생긴다. 늘 서 있는 이 한 칸 안에 그려 아래
     # 표의 자리를 고정한다 — 밀리면 가로 스크롤 컴포넌트가 다시 마운트되어 스크롤 위치를 잃는다.
     # 비어 있으면 화면에 아무것도 남지 않는다(테두리·높이 없음).
-    page_slot = st.container()
+    page_box = st.container() if page_slot is None else page_slot
     if page_size is not None and page_size > 0 and len(data) > page_size:
         total_rows = len(data)
         page_count = (total_rows + page_size - 1) // page_size
-        with page_slot:
+        page_key = f"{key}_page"
+        _restart_range_on_new_total(page_key, total_rows)
+        with page_box:
             page_index = st.selectbox(
                 "표시 범위",
                 list(range(page_count)),
                 format_func=lambda index: (
                     f"{index * page_size + 1:,}–{min((index + 1) * page_size, total_rows):,}행"
+                    f" / {total_rows:,}행"
                 ),
-                key=f"{key}_page",
+                key=page_key,
                 persist_state="session",
+                label_visibility="collapsed",
                 width=180,
             )
-            start_row = page_index * page_size
-            data = data.iloc[start_row : start_row + page_size].copy()
-            st.caption(f"전체 {total_rows:,}행 · {page_index + 1:,}/{page_count:,} 페이지")
+        start_row = page_index * page_size
+        data = data.iloc[start_row : start_row + page_size].copy()
 
     # 위젯(표시 범위)은 그렸으니 상태가 유지된다. 닫힌 탭이면 그림 준비는 여기서 접는다 —
     # 아래 `render_split_scroll_table` 도 막지만 그 전에 격자 1~2초를 만들고 버리고 있었다.

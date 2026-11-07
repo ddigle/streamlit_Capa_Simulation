@@ -52,10 +52,7 @@ from capa_simulation.components.state_alerts import (
     alert_table,
     simulation_scope,
 )
-from capa_simulation.components.table_toolbar import (
-    render_table_heading,
-    toolbar_clearance,
-)
+from capa_simulation.components.table_toolbar import table_heading_row, toolbar_clearance
 from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -1234,7 +1231,7 @@ else:
             ),
             _build=partial(_export_csv, output_table, classification_columns, decimal_places),
         )
-        render_table_heading(
+        with table_heading_row(
             f"주차별 {output_title}",
             csv=output_csv,
             file_name=(
@@ -1242,7 +1239,8 @@ else:
                 f"{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
             ),
             key="download_standard_target_result",
-        )
+        ):
+            page_slot = st.container(width="content")
         render_hierarchical_monthly_table(
             output_table,
             classification_columns=classification_columns,
@@ -1251,4 +1249,5 @@ else:
             key="standard_target_weekly_table",
             value_labels=process_labels.value_labels(),
             page_size=80,
+            page_slot=page_slot,
         )
