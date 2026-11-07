@@ -1078,11 +1078,15 @@ const node = () => ({
 const setText = (n, text) => { n.textContent = text }
 const setAttr = (n, name, value) => n.setAttribute(name, value)
 const TIP_GAP_PX = 6
-const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
+const box = (left, top, width, height) => (
+  { left, top, right: left + width, bottom: top + height, width, height }
+)
 const host = { getBoundingClientRect: () => box(100, 50, 1000, 600) }
 const tipBox = { hidden: true, offsetWidth: 200, offsetHeight: 30, style: {}, textContent: '' }
 const seen = (b) => ({
-  disabled: b.disabled, tab: b.parentElement.getAttribute('tabindex'), why: b.parentElement.dataset.tip,
+  disabled: b.disabled,
+  tab: b.parentElement.getAttribute('tabindex'),
+  why: b.parentElement.dataset.tip,
   shown: !tipBox.hidden, text: tipBox.textContent, left: tipBox.style.left, top: tipBox.style.top,
 })
 const button = node()
@@ -1117,9 +1121,9 @@ def _tip_source() -> str:
 
 
 def test_a_locked_button_says_why_only_while_it_is_locked() -> None:
-    """꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다(설계 규칙 UI-INP-07) — 잠긴 동안만 칸이
-    탭 자리이고 풍선이 까닭을 말한다. 까닭이 바뀌면 떠 있는 풍선이 따라가고, 풀리면 풍선을 걷으며
-    칸은 탭 자리에서 빠지고 다시 올려도 뜨지 않는다."""
+    """꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다(설계 규칙 UI-INP-07) — 잠긴 동안만
+    칸이 탭 자리이고 풍선이 까닭을 말한다. 까닭이 바뀌면 떠 있는 풍선이 따라가고, 풀리면 풍선을
+    걷으며 칸은 탭 자리에서 빠지고 다시 올려도 뜨지 않는다."""
     result = _node(_tip_source() + _TIP_RUNNER, {"left": 300, "top": 60})
     locked, shown, changed, freed, again = result["steps"]
 
@@ -1208,7 +1212,7 @@ def test_the_toolbar_reasons_are_short_values() -> None:
 
 
 def test_the_reset_button_warns_before_it_drops_the_undo_history() -> None:
-    """「처음 상태로」 는 실행 취소 기록까지 지운다 — 누르기 전에 풍선이 말한다(설계 규칙 UI-NTF-09)."""
+    """「처음 상태로」 는 실행 취소 기록까지 지운다 — 누르기 전에 풍선이 말한다(UI-NTF-09)."""
     reset = re.search(r'class="sle-reset"[^>]*title="([^"]*)"', HTML)
     assert (
         reset
@@ -1229,3 +1233,56 @@ def test_a_locked_canvas_panel_says_why_in_a_tip_and_red_text_is_only_for_a_refu
     assert "bindTip(q('.sle-area'))" in JS
     assert ".sle-area.is-locked :disabled" in CSS
     assert "color: var(--sle-danger)" in _rule(".sle-area-note")
+
+
+_ZONE_TAG_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const H = () => 100
+const svgTop = (item) => H() - (item.y + item.h)
+const isUnit = (item) => item.unit === true
+const seenModule = (item) => item.seen !== false
+const S = { items: new Map(input.items.map((item, k) => [k, item])) }
+const nodes = [{ style: {} }, { style: {} }]
+const group = { __tagBox: input.box, querySelectorAll: () => nodes }
+%s
+syncZoneTag(group)
+process.stdout.write(JSON.stringify({ shown: nodes.map((n) => n.style.display) }))
+"""
+_TAG = {"x": 10, "top": 20, "w": 30, "h": 4}
+
+
+def _zone_tag(items: list[dict[str, object]], box: dict[str, int] | None = None) -> list[str]:
+    source = _ZONE_TAG_RUNNER % _js_decl("function syncZoneTag(")
+    return list(_node(source, {"items": items, "box": box or _TAG})["shown"])
+
+
+def test_a_zone_label_hides_under_a_unit_and_comes_back_when_it_leaves() -> None:
+    """영역 이름표는 호기 아래 층이다 — 호기가 덮으면 꼬리표와 글을 함께 숨긴다(UI-ACC-04).
+    이름표 윗선 좌표는 도면(아래로) 좌표이고 호기 `y` 는 위로 재는 값이다(`svgTop`)."""
+    # 윗선 76 ~ 80 은 도면 좌표 20 ~ 24 — 이름표 상자와 넓이가 겹친다.
+    over = {"unit": True, "x": 20, "y": 76, "w": 6, "h": 4}
+    assert _zone_tag([over]) == ["none", "none"]
+    # 맞닿기만 하면 겹침이 아니다.
+    touching = {"unit": True, "x": 40, "y": 76, "w": 6, "h": 4}
+    assert _zone_tag([touching]) == ["", ""]
+    assert _zone_tag([]) == ["", ""]
+
+
+def test_only_units_on_screen_hide_a_zone_label() -> None:
+    """기준일에 보이지 않는 호기와 호기 아닌 요소는 이름표를 숨기지 않는다."""
+    gone = {"unit": True, "seen": False, "x": 20, "y": 76, "w": 6, "h": 4}
+    mark = {"unit": False, "x": 20, "y": 76, "w": 6, "h": 4}
+    assert _zone_tag([gone, mark]) == ["", ""]
+
+
+def test_a_zone_keeps_its_name_in_the_tip_and_its_label_is_rechecked_when_units_move() -> None:
+    """숨긴 이름표의 말은 영역 풍선에 남는다(「설비 금지」 도). 자리는 배율마다 정해지고
+    (`drawMark`), 호기가 움직이거나 기준일로 보이는 호기가 바뀌면(`markOverlaps`) 다시 본다. 글이
+    꼬리표보다 길면 글 끝까지 잰다."""
+    draw = JS[JS.index("function drawMark(") : JS.index("function appendHandles(")]
+    assert "words.classList.add('sle-zone-name')" in draw
+    assert "w: Math.max(tagW, emWidth(name) * fs + fs * 0.9)" in draw
+    assert "syncZoneTag(group)" in draw
+    assert "tip.textContent = `${markTitle(item)}${item.keepOut ? ' · 설비 금지' : ''}`" in draw
+    marks = JS[JS.index("function markOverlaps(flipped) {") :]
+    assert marks.index("syncZoneTag(group)") < marks.index("if (VIEW) {")

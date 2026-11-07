@@ -2971,8 +2971,13 @@ export default function (component) {
       // 작아서 숨기는 배율에서는 꼬리표 상자도 걷는다(영역은 테두리로 잡힌다).
       if (caption.shown) {
         const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
-        inner.append(tag, text(name, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
+        const words = text(name, tagX + fs * 0.45, fs * 0.8, fs, 'start')
+        words.classList.add('sle-zone-name')
+        inner.append(tag, words)
       }
+      // 이름표가 차지하는 자리 — 영역은 돌리지 않아(`rotatable: false`) 도면 좌표 그대로다. 글이 꼬리표보다 길면 글 끝까지다.
+      group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6 } : null
+      syncZoneTag(group)
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -3145,7 +3150,7 @@ export default function (component) {
       if (group.hasAttribute('tabindex')) group.setAttribute('aria-label', words)
       return
     }
-    if (tip) tip.textContent = markTitle(item)
+    if (tip) tip.textContent = `${markTitle(item)}${item.keepOut ? ' · 설비 금지' : ''}`
   }
 
   // 도형의 노란 모양 조절 손잡이(`sle-adjust` — 화면 HANDLE_PX 동그라미, 하나만 고른 도형에서만 보인다 — CSS). 제자리 손잡이
@@ -3798,8 +3803,20 @@ export default function (component) {
   const overlaps = (p, q2) => p.x < roundTo(q2.x + q2.w) && q2.x < roundTo(p.x + p.w)
     && p.y < roundTo(q2.y + q2.h) && q2.y < roundTo(p.y + p.h)
 
+  // 영역 이름표는 호기 아래 층이라 호기가 지나가면 반쯤 덮여 잘려 보인다 — 덮일 바에는 숨기고 영역 풍선에 남긴다(설계 규칙
+  // UI-ACC-04). 자리(`__tagBox`)는 `drawMark` 가 배율마다 정하고, 호기가 움직이거나 기준일로 보이는 호기가 바뀌면
+  // `markOverlaps` 가 다시 본다.
+  function syncZoneTag(group) {
+    const box = group.__tagBox
+    if (!box) return
+    const covered = [...S.items.values()].some((m) => isUnit(m) && seenModule(m)
+      && box.x < m.x + m.w && m.x < box.x + box.w && box.top < svgTop(m) + m.h && svgTop(m) < box.top + box.h)
+    for (const node of group.querySelectorAll('.sle-zone-tag, .sle-zone-name')) node.style.display = covered ? 'none' : ''
+  }
+
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.
   function markOverlaps(flipped) {
+    for (const group of zonesLayer.querySelectorAll('.mark-zone')) syncZoneTag(group)
     if (VIEW) {
       // 보기 전용: 호기끼리 겹친 것만 오른쪽 위 꼭지 삼각으로 알린다 — 완전히 겹치면 아래 호기가 보이지도
       // 눌리지도 않는데 범례·요약은 그것을 센다. 테는 실물·반출/이설 뜻을 싣으므로 겹침은 테가 아니다. 반입구·문
