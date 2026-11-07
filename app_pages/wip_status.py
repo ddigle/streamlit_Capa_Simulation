@@ -368,13 +368,3 @@ with st.container(border=True):
             key="wip_status_grid",
             config={"displayModeBar": False, "responsive": True},
         )
-
-with st.expander("데이터·계산 경계", expanded=False):
-    st.markdown(
-        "- 재공 실적 계약: `일자 + 공정 + STEP_SEQ + 제품정보 + 보유 재공 + 유입량 + "
-        "Flow량`\n"
-        "- 표준 기준: 활성 시나리오의 제품 Mix 기반 공정별 대당 Capa와 설비 DB의 주차별 "
-        "가용대수\n"
-        "- 실제 DB 연결 시 샘플 생성부만 조회 Provider로 교체하고 표준 계산과 차트 계약은 "
-        "유지합니다."
-    )

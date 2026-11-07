@@ -115,30 +115,31 @@ def test_opening_a_tab_draws_it_in_that_run() -> None:
     assert not _tab(app, "상세 분석").get("plotly_chart")
 
 
-def test_the_summary_warning_puts_no_particle_right_after_the_process_name() -> None:
+def test_the_summary_verdict_is_one_plain_line_with_no_particle_after_the_process_name() -> None:
     """요약 결론은 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름이 「이(가)」 가 됐다
-    (「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93)."""
+    (「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93). 결론은 상자 없는 평문 한 줄이고
+    건수는 바로 아래 「개선 필요 공정」 칸 몫이다(설계 규칙 UI-TXT-04 · UI-TXT-07)."""
     priority = _expected_priority()
     worst = priority.loc[priority["상태"].eq("개선 필요")].iloc[0]
 
     app = _open("요약")
 
-    warnings = [str(item.value) for item in _tab(app, "요약").get("warning")]
-    assert any(
-        text.startswith(f"**{worst['공정']}** — {int(worst['연속 미달'])}개월 연속 ")
-        for text in warnings
-    ), warnings
-    assert not [text for text in warnings if "이(가)" in text]
+    assert not _tab(app, "요약").get("warning")
+    (verdict,) = [str(item.value) for item in _tab(app, "요약").get("caption")]
+    assert verdict.startswith(f"**{worst['공정']}** — {int(worst['연속 미달'])}개월 연속 ")
+    assert "이(가)" not in verdict
+    assert "개선 필요 공정은" not in verdict
 
 
 @pytest.mark.parametrize("label", ["요약", "상세 분석", "개선과제"])
 def test_reading_notes_are_tooltips_not_lines_in_the_open_tab(label: str) -> None:
     """구획을 읽는 법(Gap · 순위 · 점수 셈)은 구획 제목 풍선이다 — 열린 탭 자리에는 설명 캡션이 없다
-    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다)."""
+    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다). 요약 탭의 한 줄은 결론
+    값이다(UI-TXT-04)."""
     app = _open(label)
     tab = _tab(app, label)
 
-    assert not [item.value for item in tab.get("caption")]
+    assert len(tab.get("caption")) == (1 if label == "요약" else 0)
     titled = [item for item in tab.get("markdown") if str(item.value).startswith("#### ")]
     assert titled
     explained = [item for item in titled if item.proto.help]
@@ -155,6 +156,20 @@ def test_the_metric_meaning_is_the_tooltip_of_the_actual_card() -> None:
         if item.label == f"실적 {EFFICIENCY_METRIC.name}"
     ]
     assert actual.proto.help == EFFICIENCY_METRIC.description
+
+
+def test_the_detail_conditions_stand_on_one_wrapping_row() -> None:
+    """「제품」 만 가로 줄 밖이면 폭이 남아도 혼자 둘째 줄로 내려간다(후보 g7-19)."""
+    app = _open("상세 분석")
+
+    (row,) = [
+        inner
+        for outer in _tab(app, "상세 분석").children.values()
+        for inner in outer.children.values()
+        if inner.type == "flex_container" and inner.proto.flex_container.direction == 2
+    ]
+    assert row.proto.flex_container.wrap
+    assert [element.label for element in row.children.values()] == ["분석 기간", "공정", "제품"]
 
 
 def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> None:
@@ -177,3 +192,20 @@ def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> No
     assert not [item.value for item in app.caption]
     (title,) = [item for item in app.markdown if ":material/pending:" in str(item.value)]
     assert "이 자리에 들어옵니다" in title.proto.help
+
+
+def test_the_pending_screen_keeps_what_it_will_calculate_in_the_title_tooltip() -> None:
+    """샘플을 끄면 「연결되면 계산할 것」 네 줄은 제목 풍선이다 — 자리에는 제목과 연결 대기 표지
+    한 줄뿐이다(설계 규칙 UI-LAY-10 · UI-TXT-01, 사용자 답 desc-blocks)."""
+    app = _open("요약")
+    app.toggle(key="dynamic_capa_sample_data").set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    (title,) = [item for item in app.markdown if str(item.value).startswith("####")]
+    tooltip = str(title.proto.help)
+    assert "연결되면 계산할 것" in tooltip
+    assert EFFICIENCY_METRIC.gap_formula in tooltip
+    for name in ("**상태**", "**우선순위 점수**", "**비율 집계**"):
+        assert name in tooltip
+    (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
+    assert f"<strong>{EFFICIENCY_METRIC.source} 연결 대기</strong>" in slot.proto.body

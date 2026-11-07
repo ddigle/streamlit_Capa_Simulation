@@ -47,6 +47,7 @@ from capa_simulation.components.status_metric import (
     shortage_tone,
 )
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
+from capa_simulation.design import tokens
 from capa_simulation.navigation import EXECUTION_MANAGEMENT
 from capa_simulation.page_bootstrap import prune_choice
 from capa_simulation.services.dynamic_capacity import (
@@ -88,6 +89,13 @@ PENDING_SCREEN_HELP = (
     "화면부터 봐야 하는지를 정합니다. 공정 간 단위(WF 매 · CHIP/PKG Kea)가 달라 수량은 합산하지 "
     "않고 비율로 비교합니다."
 )
+
+# 관리 우선순위 표 — 줄 높이를 못박아 높이를 내용만큼 셈한다. 곁 칸이 좁으면 가로 스크롤 막대가
+# 표 안 아래쪽을 차지해 내용 높이로는 마지막 줄이 덮이므로 막대 몫을 늘 더하고, 상한을 넘으면 그
+# 안에서 스크롤한다.
+PRIORITY_TABLE_ROW_HEIGHT_PX = 31
+PRIORITY_TABLE_BORDER_PX = 3
+PRIORITY_TABLE_MAX_HEIGHT_PX = 365
 
 # 손실 한 칸과 그 칸을 파고드는 화면. 워터폴에 서는 칸은 **그 차례 그대로** 둔다 — 화면 목록이
 # 손실 순서와 다르면 목차 구실을 못 한다. 수율 손실 · 설비 가용은 워터폴에 칸이 없다.
@@ -156,13 +164,13 @@ def _render_summary(
         worst = needs_action.iloc[0]
         worst_rate = f"{float(worst['Capa 실현률']):.0%}"
         # 공정 표시명은 사람 글이라 막아 끼운다(물결표·별표가 지움선·기울임이 되지 않게 —
-        # AGENTS 9장).
-        st.warning(
+        # AGENTS 9장). 결론은 「없음」 일 때와 같은 평문 한 줄이고(설계 규칙 UI-TXT-04), 건수는 바로
+        # 아래 「개선 필요」 칸이 말한다(UI-TXT-07).
+        st.caption(
             f"**{literal_markdown(labels.label(worst['공정']))}** 의 Capa 실현률이 "
             f"{with_direction_particle(worst_rate)} 가장 낮습니다. 설비 성능 실현률은 "
             f"{float(worst['설비 성능 실현률']):.0%}, 가용 Capa 활용률은 "
-            f"{float(worst['가용 Capa 활용률']):.0%} 입니다. 개선 필요 공정은 모두 "
-            f"{len(needs_action):,}개입니다."
+            f"{float(worst['가용 Capa 활용률']):.0%} 입니다."
         )
 
     with metric_row(key="reference_integrity_summary_metrics"):
@@ -203,16 +211,9 @@ def _render_summary(
 
     with overview_table.container(border=True):
         st.markdown("#### :material/priority_high: 관리 우선순위", help=PRIORITY_HELP)
+        # 곁 칸이라 폭이 좁다 — 판정 글자는 이 칸뿐이라 공정 바로 뒤에 둔다.
         priority = process_summary[
-            [
-                "공정",
-                "소요기준",
-                "Capa 실현률",
-                "설비 성능 실현률",
-                "가용 Capa 활용률",
-                "재공부족 미활용률",
-                "상태",
-            ]
+            ["공정", "상태", "소요기준", "Capa 실현률", "설비 성능 실현률"]
         ].reset_index(drop=True)
         priority.insert(0, "순위", pd.Series(range(1, len(priority) + 1), dtype="int64"))
         # CSV 출구가 없는 조회 표다. 화면 복사본에만 표시명을 입힌다.
@@ -221,15 +222,18 @@ def _render_summary(
             priority,
             hide_index=True,
             width="stretch",
-            # 높이를 못박으면 공정이 적을 때 빈 줄이 남아 데이터가 잘린 것처럼 보인다.
-            height=min(365, (len(priority) + 1) * 36 + 4),
+            row_height=PRIORITY_TABLE_ROW_HEIGHT_PX,
+            height=min(
+                PRIORITY_TABLE_MAX_HEIGHT_PX,
+                (len(priority) + 1) * PRIORITY_TABLE_ROW_HEIGHT_PX
+                + PRIORITY_TABLE_BORDER_PX
+                + tokens.SCROLLBAR_HEIGHT_PX,
+            ),
             column_config={
                 "순위": st.column_config.NumberColumn(width="small", format="%d"),
                 "소요기준": st.column_config.TextColumn(width="small"),
                 "Capa 실현률": st.column_config.NumberColumn(format="percent"),
                 "설비 성능 실현률": st.column_config.NumberColumn(format="percent"),
-                "가용 Capa 활용률": st.column_config.NumberColumn(format="percent"),
-                "재공부족 미활용률": st.column_config.NumberColumn(format="percent"),
             },
         )
 
@@ -241,12 +245,12 @@ def _render_loss_routes() -> None:
     재공부족은 Dynamic 하위(재공 현황)다 — 링크는 그룹을 건너도 그대로 동작한다."""
     with st.container(border=True):
         st.markdown("#### :material/alt_route: 손실을 파고드는 화면", help=LOSS_ROUTES_HELP)
-        columns = st.columns(len(_LOSS_ROUTES), gap="small")
-        for column, (title, subtitle, page_path, icon) in zip(columns, _LOSS_ROUTES, strict=True):
-            with column.container(border=True):
-                st.markdown(f"**{title}**")
-                st.caption(subtitle)
-                render_page_link(page_path, label="열기", icon=icon)
+        with st.container(horizontal=True, gap="small"):
+            for title, subtitle, page_path, icon in _LOSS_ROUTES:
+                with st.container(border=True):
+                    st.markdown(f"**{title}**")
+                    st.caption(subtitle)
+                    render_page_link(page_path, label="열기", icon=icon)
 
 
 def _render_detail(
@@ -535,20 +539,6 @@ def _render_guide() -> None:
             "설명되지 않은 정합성 잔차이며, 실제 DB 연결 후 수율·데이터 시점·미분류 Loss 등으로 "
             "세분화합니다. 양수이면 모델 대비 실제 실적이 부족하고, 음수이면 실제 실적이 모델을 "
             "초과한 것입니다."
-        )
-
-    with st.container(border=True):
-        st.markdown("##### 실제 DB 연결 시 적용할 데이터 구조")
-        st.markdown(
-            "- **표준 Capa:** 현재처럼 시나리오·리비전별 스냅샷으로 보존합니다.\n"
-            "- **실적 효율·생산실적:** 일정 주기로 갱신하되 과거 행을 덮지 않는 누적 이력으로 "
-            "관리합니다. 시나리오마다 실적을 복제하지 않습니다.\n"
-            "- **상세 연결 수준:** 일자 · 공정 · 제품 · Stack · WF 속성을 기본으로 하고, "
-            "실제 DB가 제공하면 설비·호기·Shift까지 확장합니다.\n"
-            "- **상위 집계:** Capa와 생산수량은 합계, 효율은 계획시간, UPEH는 실가동시간을 "
-            "가중치로 사용합니다. 비율은 집계된 분자·분모로 다시 계산합니다.\n"
-            "- **시간 분류:** Rundown·실가동·설비 Down 등 실제 컬럼 매핑은 실적효율 DB 연결 시 "
-            "확정합니다."
         )
 
 

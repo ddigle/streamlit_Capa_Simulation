@@ -1,4 +1,4 @@
-# Purpose: 원천이 붙지 않은 화면의 샘플 데이터 공통 스위치와 호기 없음 표지 글을 둔다.
+# Purpose: 원천이 붙지 않은 화면의 샘플 스위치 · 연결 전 자리 · 호기 없음 표지 글을 둔다.
 
 """샘플 데이터 스위치.
 
@@ -27,6 +27,7 @@ from collections.abc import Sequence
 
 import streamlit as st
 
+from capa_simulation.components.module_slot import slot_html
 from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.shared_widget_state import carry_shared_widget_value
 
@@ -42,6 +43,9 @@ NO_UNITS_HELP = (
     "가용설비 현황 「설비 마스터」 탭에서 호기를 입력하거나 「샘플 데이터」 스위치를 켜면 "
     "화면을 살펴볼 수 있습니다."
 )
+# 연결 전 점선 자리 — 아래로 도면이 이어지는 Space 현황에서도 쓰므로 표지 한 줄만큼만 낮게 선다.
+PENDING_SLOT_CLASS = "pending-source-slot"
+PENDING_SLOT_MIN_HEIGHT = "72px"
 
 
 def render_sample_switch(*, key: str, source: str) -> bool:
@@ -67,8 +71,8 @@ def render_sample_switch(*, key: str, source: str) -> bool:
             )
             # 자리에는 표지만 둔다 — 실적이 아니라는 것은 숫자를 믿기 전에 알아야 해 표지 낱말로
             # 남기고(설계 규칙 UI-NTF-05), 연결되면 무엇이 바뀌는지는 풍선이 말한다(UI-TXT-01 · 04).
-            # 끈 쪽은 표지가 없다 — 비어 있다는 것은 화면 머리 「… 미연결」 배지나 호기 없음 표지가
-            # 말하고, 지금 상태의 뜻은 스위치 풍선이 말한다(UI-TXT-07).
+            # 끈 쪽은 표지가 없다 — 비어 있다는 것은 연결 전 자리의 표지(`render_pending_source`)나
+            # 호기 없음 표지가 말하고, 지금 상태의 뜻은 스위치 풍선이 말한다(UI-TXT-07).
             if enabled:
                 st.markdown(
                     ":orange-badge[:material/science: 합성 샘플] **실적 아님**",
@@ -87,14 +91,22 @@ def render_pending_source(
     source: str,
     more_help: str = "",
 ) -> None:
-    """스위치를 껐을 때의 자리표시자. 무엇이 이 자리를 채우는지 적는다.
+    """스위치를 껐을 때의 자리표시자 — 제목과 점선 자리 하나, 자리에는 연결 대기 표지 한 줄.
 
-    빈 화면에 「데이터 연결 후 표시됩니다」한 줄만 두면 그 자리에 무엇이 오는지 알 수
-    없다. 들어올 값의 이름을 적어 두면 연결 협의에서 그대로 요구사항이 된다. 그 값으로 이 화면이
-    무엇을 하는지는 `more_help` 로 받아 제목 풍선 뒤에 잇는다.
+    자리에 늘 서는 글은 무엇을 기다리는지(`source`) 한 마디뿐이다(설계 규칙 UI-LAY-10 · UI-TXT-04).
+    들어올 값의 이름(`expects`)은 연결 협의에서 그대로 요구사항이 되므로 지우지 않고 제목 풍선에
+    옮겼고, 그 값으로 이 화면이 무엇을 하는지(`more_help`)는 그 뒤에 잇는다.
     """
     arrives = f"{with_subject_particle(source)} 붙으면 아래 값이 이 자리에 들어옵니다."
-    with st.container(border=True):
-        # 이 자리의 뜻은 제목 곁 풍선, 자리에는 들어올 값의 이름만(설계 규칙 UI-TXT-01 · UI-LAY-10).
-        st.markdown(f"#### :material/pending: {subject}", help=f"{arrives} {more_help}".strip())
-        st.markdown("\n".join(f"- {item}" for item in expects))
+    values = "\n".join(f"- {item}" for item in expects)
+    tooltip = "\n\n".join(part for part in (arrives, values, more_help) if part)
+    st.markdown(f"#### :material/pending: {subject}", help=tooltip)
+    st.html(
+        slot_html(
+            f"{source} 연결 대기",
+            "",
+            css_class=PENDING_SLOT_CLASS,
+            min_height=PENDING_SLOT_MIN_HEIGHT,
+            print_min_height=PENDING_SLOT_MIN_HEIGHT,
+        )
+    )

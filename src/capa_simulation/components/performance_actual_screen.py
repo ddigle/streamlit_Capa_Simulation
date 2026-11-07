@@ -108,15 +108,15 @@ def _render_pending_screen(metric: MetricSpec) -> None:
             "한 줄에 세우려면 반드시 필요합니다",
             "집계 구간(월 마감 시점)과 공정 코드 매핑 규칙",
         ),
-    )
-    with st.container(border=True):
-        st.markdown("#### :material/rule: 연결되면 계산할 것")
-        st.markdown(f"- **Gap** = `{metric.gap_formula}` ({metric.gap_unit})")
-        st.markdown(
+        # 연결되면 무엇을 셈하는지는 자리 글이 아니라 제목 풍선이다(설계 규칙 UI-TXT-01).
+        more_help=(
+            "연결되면 계산할 것\n\n"
+            f"- **Gap** = `{metric.gap_formula}` ({metric.gap_unit})\n"
             "- **상태** = 마지막 달 기준 연속 미달 개월. 0 정상 · 1~2 관찰 · 3 이상 개선 필요\n"
             "- **우선순위 점수** = `미달폭 × 영향 비중 × 연속 미달 가중`\n"
             "- **비율 집계** = 월별 비율의 평균이 아니라 생산수량 가중으로 다시 계산"
-        )
+        ),
+    )
 
 
 def _render_summary(
@@ -142,13 +142,14 @@ def _render_summary(
         # 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름(「TC Bonding」)은 끝소리를 몰라
         # 「이(가)」 가 된다. 굵게 닫는 `**` 바로 뒤에 한글이 붙으면 이름이 `)` 로 끝날 때 굵게가
         # 풀리므로 줄표 앞을 한 칸 띄운다. 공정 표시명은 사람 글이라 막아 끼운다(「TC~B~1 *z*」 가
-        # 지움선·기울임이 되지 않게 — AGENTS 9장).
+        # 지움선·기울임이 되지 않게 — AGENTS 9장). 결론은 「없음」 일 때와 같은 평문 한 줄이고(설계
+        # 규칙 UI-TXT-04), 건수는 바로 아래 「개선 필요 공정」 칸이 말한다(UI-TXT-07).
         worst_name = labels.label(worst["공정"])
-        st.warning(
+        st.caption(
             f"**{literal_markdown(worst_name)}** — {int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
             f"{metric.gap_text(float(worst['Gap']))}, 영향 물량 비중 "
-            f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."
+            f"{float(worst['영향 비중']):.0%}."
         )
 
     with metric_row(key=f"{key_prefix}_summary_metrics"):
@@ -240,14 +241,14 @@ def _render_detail(
                 persist_state="session",
                 width=320,
             )
-        product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
-        product = st.selectbox(
-            "제품",
-            product_options,
-            key=f"{key_prefix}_product_filter",
-            persist_state="session",
-            width=220,
-        )
+            product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
+            product = st.selectbox(
+                "제품",
+                product_options,
+                key=f"{key_prefix}_product_filter",
+                persist_state="session",
+                width=220,
+            )
 
     view = monthly.loc[monthly["생산계획년월"].between(start_month, end_month)]
     if selected_processes:

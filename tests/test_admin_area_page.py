@@ -166,7 +166,7 @@ def test_closed_source_quality_tab_reads_nothing_and_opens_with_its_table(
     assert not list(app.exception), [element.message for element in app.exception]
     assert app.session_state["source_quality_reads"] == 2
     assert len(_source_quality_tables(app)) == 1
-    assert any("2개 컬럼 중 1개" in warning.value for warning in app.warning)
+    assert any("2개 컬럼 중 1개" in caption.value for caption in app.caption)
 
     app.session_state["admin_area_active_tab"] = ":material/label: Proc Rename"
     app.run(timeout=60)

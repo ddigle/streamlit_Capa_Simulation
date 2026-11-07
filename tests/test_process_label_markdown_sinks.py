@@ -2,7 +2,7 @@
 
 """공정 표시명(Proc Rename)은 사람 글이다 — 마크다운 자리에서 막는다(AGENTS 9장).
 
-표시명 「TC~B~1 *z*」 가 효율·UPEH·수율 실적 요약 경고와 Dynamic Capa 요약 경고에서는
+표시명 「TC~B~1 *z*」 가 효율·UPEH·수율 실적 요약 결론과 Dynamic Capa 요약 결론에서는
 `**{이름}**` 에 날로 끼워져 `<strong>TC<del>B</del>1 <em>z</em></strong>` 로, 공정 상세 캡션에서는
 지움선·기울임으로 그려졌다. Capa Chatbot 은 결론의 조회기간 「26.01~12월」 물결표가 이름 물결표와
 짝을 지어 문장 대부분이 지움선이 되었고(물결표 하나인 「10~12월 본딩」 도 같다), HOME 사이드바
@@ -84,7 +84,7 @@ def _performance_screen() -> None:
     )
 
 
-def test_the_actual_summary_warning_shows_the_display_name_literally(
+def test_the_actual_summary_conclusion_shows_the_display_name_literally(
     shared_labels: dict[str, ProcessLabels],
 ) -> None:
     processes = sorted(build_monthly_actual_demo()["공정"].astype(str).unique())
@@ -93,10 +93,10 @@ def test_the_actual_summary_warning_shows_the_display_name_literally(
     app = AppTest.from_function(_performance_screen, default_timeout=60).run()
 
     assert not app.exception, [item.message for item in app.exception]
-    warnings = [str(item.value) for item in app.warning]
-    assert warnings, "개선 필요 공정이 있는 표본이어야 결론 경고가 선다"
+    conclusions = [str(item.value) for item in app.caption if "기준 미달입니다" in str(item.value)]
+    assert conclusions, "개선 필요 공정이 있는 표본이어야 결론 한 줄이 선다"
     carrying = _assert_literal(_markdown_texts(app), shared_labels["now"])
-    assert any(text in carrying for text in warnings), warnings
+    assert all(text in carrying for text in conclusions), conclusions
 
 
 # ------------------------------------------------------------------------ Dynamic Capa
@@ -111,8 +111,8 @@ def test_the_dynamic_summary_and_detail_caption_show_the_display_name_literally(
 
     app = AppTest.from_file(str(DYNAMIC_PAGE), default_timeout=60).run()
     assert not app.exception, [item.message for item in app.exception]
-    summary = [str(item.value) for item in app.warning if "Capa 실현률이" in str(item.value)]
-    assert summary, "개선 필요 공정이 있는 표본이어야 결론 경고가 선다"
+    summary = [str(item.value) for item in app.caption if "가장 낮습니다" in str(item.value)]
+    assert summary, "개선 필요 공정이 있는 표본이어야 결론 한 줄이 선다"
     assert all(text in _assert_literal(_markdown_texts(app), labels) for text in summary)
 
     app.session_state["dynamic_capa_active_tab"] = "공정 상세"

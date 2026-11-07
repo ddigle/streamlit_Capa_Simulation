@@ -1,12 +1,18 @@
 # Purpose: 원천 78컬럼 품질 표의 등급 판정과 정렬을 검증한다.
 
 import pandas as pd
+import pytest
+import streamlit as st
+from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.source_quality import (
     DISTINCT_COLUMN,
     GRADE_COLUMN,
     MISSING_RATE_COLUMN,
+    TABLE_FULL_ROWS,
+    TABLE_MAX_HEIGHT_PX,
     build_source_quality_table,
+    render_source_quality,
     source_quality_warning,
 )
 
@@ -102,3 +108,46 @@ def test_the_warning_leaves_out_grades_with_no_columns_and_is_none_when_all_norm
         "2개 컬럼 중 1개가 정상이 아닙니다 — 상수 1개."
     )
     assert source_quality_warning(all_normal) is None
+
+
+def _problem_verdict_app() -> None:
+    import pandas as pd
+
+    from capa_simulation.components.source_quality import render_source_quality
+
+    profile = pd.DataFrame(
+        {
+            "ordinal_position": [1, 2],
+            "column_name": ["가", "나"],
+            "source_dtype": ["object", "object"],
+            "nullable_dtype": ["string", "string"],
+            "null_count": [10, 0],
+            "unique_count": [0, 4],
+        }
+    )
+    render_source_quality(profile, 10)
+
+
+def test_a_problem_verdict_is_one_plain_line_like_the_all_normal_one() -> None:
+    """문제가 있어도 점검 결론은 상자 없는 평문 한 줄이다 — 모두 정상일 때와 같은 꼴이고 등급은
+    표가 말한다(설계 규칙 UI-TXT-04, 사용자 답 place-box)."""
+    app = AppTest.from_function(_problem_verdict_app, default_timeout=60).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.warning and not app.success
+    assert app.caption[0].value == "2개 컬럼 중 1개가 정상이 아닙니다 — 비어 있음 1개."
+
+
+def test_a_short_table_stands_at_its_content_height_and_a_long_one_keeps_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """높이 셈이 줄 높이보다 크면 표 아래에 값 없는 빈 줄이 선다 — 짧은 표는 내용 높이이고, 긴 표만
+    상한 안에서 스크롤한다(후보 g7-08 곁 · 샘플 관측 줄 높이 31px)."""
+    heights: list[object] = []
+    monkeypatch.setattr(st, "caption", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "dataframe", lambda *args, **kwargs: heights.append(kwargs["height"]))
+
+    for rows in (TABLE_FULL_ROWS, TABLE_FULL_ROWS + 1):
+        render_source_quality(_profile([(f"칸{at}", 0, 4) for at in range(rows)]), 100)
+
+    assert heights == ["content", TABLE_MAX_HEIGHT_PX]

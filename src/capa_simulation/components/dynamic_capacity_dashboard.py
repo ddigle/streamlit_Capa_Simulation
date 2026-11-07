@@ -22,7 +22,7 @@ def build_process_comparison_figure(
 
     `process_labels` 는 y축 눈금과 hover 의 공정 글자에만 쓴다. 정렬·색·값은 원본 프레임
     그대로이고, 범주 값은 원본 공정이라 표시명이 다른 공정의 원본과 같아도 두 줄로 갈린다
-    (`ProcessLabels.category_axis`).
+    (`ProcessLabels.category_axis`). 곁 「관리 우선순위」 표처럼 나쁜 공정이 맨 위다.
     """
     prepared = process_summary.sort_values("Capa 실현률", ascending=True, kind="stable")
     axis = (process_labels or ProcessLabels()).category_axis(prepared["공정"])
@@ -81,7 +81,8 @@ def build_process_comparison_figure(
     )
     upper_bound = max(1.05, float(prepared["설비 성능 실현률"].max()) * 1.12)
     figure.update_xaxes(tickformat=".0%", range=[0, upper_bound], title=None)
-    figure.update_yaxes(title=None, autorange=True, **axis.layout())
+    # 막대 축은 첫 범주를 맨 아래에 놓는다 — 뒤집어 실현률이 낮은 공정을 맨 위로 올린다.
+    figure.update_yaxes(title=None, autorange="reversed", **axis.layout())
     return figure
 
 

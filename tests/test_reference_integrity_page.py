@@ -1,16 +1,25 @@
 # Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·상세 상자 되돌림·닫힌 탭 건너뛰기를 검증한다.
 
 import json
+from collections.abc import Iterator
 from typing import Any, NamedTuple
 
 import pandas as pd
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.services.dynamic_capacity import build_dynamic_capacity_demo
+from capa_simulation.design import tokens
+from capa_simulation.services.dynamic_capacity import (
+    aggregate_dynamic_capacity,
+    build_dynamic_capacity_demo,
+)
+
+# 페이지 스크립트의 샘플 표 기억 칸(`_demo_frames`).
+DEMO_MEMO_KEY = "dynamic_capacity_demo_memo"
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -71,6 +80,61 @@ def test_the_priority_requirement_column_keeps_its_own_name() -> None:
     assert "label" not in json.loads(frame.proto.columns)["소요기준"]
 
 
+def test_the_priority_table_shows_the_verdict_right_after_the_process() -> None:
+    """곁 칸이라 폭이 좁다 — 판정 글자가 이 칸뿐이므로 「상태」 는 공정 바로 뒤이고 활용률 두 칸은
+    이 요약 표에 두지 않는다(후보 g7-07). 곁 그림처럼 나쁜 공정이 맨 위다(후보 g7-20)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception, app.exception
+
+    priority = _priority_frame(app)
+    assert list(priority.columns) == [
+        "순위",
+        "공정",
+        "상태",
+        "소요기준",
+        "Capa 실현률",
+        "설비 성능 실현률",
+    ]
+    assert priority["Capa 실현률"].is_monotonic_increasing
+
+
+def test_the_priority_table_keeps_its_last_line_clear_of_the_bar_and_its_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """곁 칸이 좁으면 가로 스크롤 막대가 표 안 아래쪽을 차지한다 — 높이에 막대 몫을 더해 마지막 줄이
+    덮이지 않고, 남는 자리는 한 줄에 못 미쳐 빈 줄로 보이지 않으며, 공정이 많을 때만 상한 안에서
+    스크롤한다(후보 g7-08 · 샘플 관측 — 창 1283 에서 막대 10px 가 5행 아래쪽 9px 를 덮었다)."""
+    heights: list[int] = []
+    row_heights: list[int] = []
+    draw = st.dataframe
+
+    def recorded(*args: Any, **kwargs: Any) -> Any:
+        heights.append(kwargs["height"])
+        row_heights.append(kwargs["row_height"])
+        return draw(*args, **kwargs)
+
+    monkeypatch.setattr(st, "dataframe", recorded)
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    row_height = row_heights[0]
+    content = (len(_priority_frame(app)) + 1) * row_height
+    assert content + tokens.SCROLLBAR_HEIGHT_PX < heights[0] < content + row_height
+
+    demo = build_dynamic_capacity_demo()
+    summary = aggregate_dynamic_capacity(demo, ["공정"])
+    many = pd.concat(
+        [summary.assign(공정=summary["공정"].astype(str) + f"-{at}") for at in range(3)],
+        ignore_index=True,
+    )
+    assert len(many) > 10
+    heights.clear()
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state[DEMO_MEMO_KEY] = (demo, many)
+    app.run()
+    assert not app.exception
+    assert heights[:1] == [365]
+
+
 def test_priority_table_and_process_selector_show_the_display_name() -> None:
     app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
 
@@ -125,8 +189,9 @@ def test_priority_table_stays_original_without_a_rename_profile(
 
 def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     """요약 탭의 판정 기준 · 그림 읽는 법 · 손실 차례와 실행 관리로 가는 까닭은 늘 서는 캡션이
-    아니라 칸 · 구획 제목 · 링크의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론
-    경고는 값만 싣는다."""
+    아니라 칸 · 구획 제목 · 링크의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론은
+    상자 없는 평문 한 줄이고 값만 싣는다 — 건수는 바로 아래 「개선 필요」 칸 몫이다(UI-TXT-04 ·
+    UI-TXT-07)."""
     from capa_simulation.navigation import EXECUTION_MANAGEMENT
 
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
@@ -135,9 +200,9 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     tab_markdown: list[Any] = list(summary_tab.get("markdown"))
     tab_captions: list[Any] = list(summary_tab.get("caption"))
-    captions = [str(caption.value) for caption in tab_captions]
-    assert captions, "요약 탭에는 판정 기준 줄이 없어도 링크 · 카드 글이 선다"
-    assert not any(text.endswith("니다.") for text in captions), captions
+    verdict, *card_captions = [str(caption.value) for caption in tab_captions]
+    assert card_captions, "요약 탭에는 판정 기준 줄이 없어도 링크 · 카드 글이 선다"
+    assert not any(text.endswith("니다.") for text in card_captions), card_captions
     helps = {
         str(markdown.value): str(markdown.proto.help)
         for markdown in tab_markdown
@@ -152,18 +217,42 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     assert "설비 가용은 손실 이전의 전제" in routes_help
     needs_action = next(metric for metric in app.metric if metric.label == "개선 필요")
     assert "80% 미만" in str(needs_action.proto.help)
-    warnings: list[Any] = list(summary_tab.get("warning"))
-    (verdict,) = [str(item.value) for item in warnings]
-    assert "깎아먹는지" not in verdict and verdict.endswith("개입니다.")
+    assert not list(summary_tab.get("warning"))
+    assert "깎아먹는지" not in verdict and verdict.endswith("입니다.")
+    assert "가장 낮습니다" in verdict and "개선 필요 공정은" not in verdict
     # 실행 관리 링크는 단독 실행에서 글로 물러서고, 늘 서던 길 안내 캡션은 없다.
     page_captions = [str(caption.value) for caption in app.caption]
     assert f"사이드바에서 {EXECUTION_MANAGEMENT.title}" in page_captions
     assert not any("A/Item" in text for text in page_captions)
 
 
+def _flex_blocks(block: Any) -> Iterator[Any]:
+    for child in getattr(block, "children", {}).values():
+        if child.type == "flex_container":
+            yield child
+        yield from _flex_blocks(child)
+
+
+def test_the_loss_route_cards_wrap_instead_of_staying_five_across() -> None:
+    """손실 카드 다섯은 좁으면 다음 줄로 내려가는 가로 줄이다 — 다섯 칸 고정이면 창 800 에서 칸이
+    76px 로 줄어 「열기」 가 잘리고 제목이 음절 사이에서 접혔다(후보 g7-06, 샘플 관측)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
+    (row,) = [
+        block
+        for block in _flex_blocks(summary_tab)
+        if block.proto.flex_container.direction == 2
+        and block.proto.flex_container.wrap
+        and all(child.type == "flex_container" for child in block.children.values())
+    ]
+    assert len(row.children) == 5
+
+
 def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
-    """샘플을 끄면 자리 글은 들어올 값뿐이다 — 연결되면 하는 일은 「표준 대비 실적 Capa」 제목
-    풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    """샘플을 끄면 자리는 점선 상자에 연결 대기 표지 한 줄뿐이다 — 들어올 값과 연결되면 하는 일은
+    「표준 대비 실적 Capa」 제목 풍선이다(설계 규칙 UI-LAY-10 · UI-TXT-01 · UI-TXT-02)."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state[SAMPLE_TOGGLE_KEY] = False
     app.run()
@@ -175,6 +264,12 @@ def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
     assert "이 자리에 들어옵니다" in tooltip
     for meaning in ("손실 한 칸씩", "어느 하위 화면부터", "합산하지 않고 비율로 비교"):
         assert meaning in tooltip
+    # 들어올 값의 이름은 풍선 목록으로 남고, 자리에는 표지 한 줄만 선다.
+    assert "- 같은 분류의 **생산실적 수량**" in tooltip
+    (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
+    assert "<strong>실적 DB 연결 대기</strong>" in slot.proto.body
+    assert "dashed" in slot.proto.body
+    assert not any("생산실적 수량" in str(item.value) for item in app.markdown)
 
 
 def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
@@ -190,6 +285,8 @@ def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
     assert not app.exception
     assert any("Capa 단계" in markdown.value for markdown in app.markdown)
     assert any("Gap 해석" in markdown.value for markdown in app.markdown)
+    # 산식만 남고 연결 계획 메모는 할 일 문서로 갔다(설계 규칙 UI-TXT-01).
+    assert not any("실제 DB 연결 시 적용" in markdown.value for markdown in app.markdown)
 
 
 def test_the_efficiency_gap_reads_percent_not_percent_point() -> None:
