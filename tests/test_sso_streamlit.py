@@ -25,8 +25,10 @@ from capa_simulation.auth.identity import Identity
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
+from capa_simulation.components.app_header import SHELL_STYLE
 from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
 from capa_simulation.components.sso_refresh import refresh_script
+from capa_simulation.components.theme_toggle import TOOLBAR_BUTTON_ORDER
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -330,6 +332,44 @@ def test_a_broken_setting_without_the_gate_names_the_problems(cookies: dict[str,
     captions = "\n".join(_caption_values(app))
     assert f"`{names.ENV_ISSUER}`" in captions
     assert "idp.example.invalid" not in captions
+
+
+def _styles(app: AppTest) -> list[str]:
+    return [str(element.proto.body) for element in app.get("html")]
+
+
+@pytest.mark.parametrize("stop", ["signed_out", "account_changed", "without_gate"])
+def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
+    cookies: dict[str, str], stop: str
+) -> None:
+    """멈춤은 `app.py` 가 껍데기 스타일을 보내기 전이다 — 멈춤 화면 셋이 스스로 ⋮ 메뉴 · Deploy
+    감춤을 보내고, 앞 회차가 남긴 툴바 단추(눌러도 아무 일도 하지 않는다)를 감춘다. 정상 회차는
+    그 감춤을 보내지 않는다(요소 순번 그대로)."""
+    cfg = use_config()
+    if stop != "without_gate":
+        runtime.mark_gate_installed()
+    token, _ = _session(cfg)
+    if stop != "signed_out":
+        cookies[cfg.session_cookie] = token
+    at = AppTest.from_string(SCRIPT)
+    if stop == "account_changed":
+        first = at.run()
+        assert _texts(first) == ["끝까지 돌았다"]
+        assert sso_identity._STOP_TOOLBAR_STYLE not in _styles(first)
+        assert SHELL_STYLE not in _styles(first)
+        other, _ = _session(cfg, loginid="other.user")
+        cookies[cfg.session_cookie] = other
+
+    app = at.run()
+
+    assert _texts(app) == [], "멈춘 뒤로는 아무것도 그리지 않는다"
+    assert [*app.warning, *app.error], "멈춤 화면이다"
+    styles = _styles(app)
+    assert SHELL_STYLE in styles
+    assert sso_identity._STOP_TOOLBAR_STYLE in styles
+    for button_id in TOOLBAR_BUTTON_ORDER:
+        assert f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
+    assert '[data-testid="stAppDeployButton"]' in SHELL_STYLE
 
 
 def test_the_return_path_drops_the_public_url_prefix(
