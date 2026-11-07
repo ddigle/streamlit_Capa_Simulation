@@ -219,6 +219,8 @@ PLAN_APPLIED_FLASH_KEY = "pkg_plan_applied_flash"
 PRODUCT_REGISTERED_FLASH_KEY = "virtual_product_registered_flash"
 PLAN_PASTE_KEY = "rq_pkg_plan_csv"
 YIELD_PASTE_KEY = "rq_yield_csv"
+VIRTUAL_SOURCE_KEY = "virtual_product_source"
+VIRTUAL_STACK_KEY = "virtual_product_stack"
 # 작업 줄 알림 칸 — 붙여넣기·적용·등록 알림이 같은 아이콘의 성공 알림으로 선다.
 PLAN_PASTE_FLASH_KEY = f"{PLAN_PASTE_KEY}_flash"
 YIELD_FLASH_KEY = f"{YIELD_PASTE_KEY}_flash"
@@ -661,20 +663,28 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
             f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. 등록하면 버려집니다 "
             "— 먼저 그 표의 「변경사항 적용」을 누르세요."
         )
+
+    def _source_stack(position: int) -> str:
+        return str(source_candidates.iloc[position]["Stack"])
+
+    def _follow_source_stack() -> None:
+        st.session_state[VIRTUAL_STACK_KEY] = _source_stack(st.session_state[VIRTUAL_SOURCE_KEY])
+
+    # 기준 제품은 폼 밖이다 — 폼 안 칸은 제출 때까지 서버에 오지 않아 제품을 바꿔도 Stack 칸이 첫
+    # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다. 고를 때마다 Stack 칸을 그
+    # 제품 값으로 맞추고, 그 뒤에 사람이 고친 Stack 은 그대로 등록한다.
+    selected_source = st.selectbox(
+        "기준이 될 제품",
+        options=range(len(source_labels)),
+        format_func=lambda index: source_labels[index],
+        key=VIRTUAL_SOURCE_KEY,
+        on_change=_follow_source_stack,
+    )
+    st.session_state.setdefault(VIRTUAL_STACK_KEY, _source_stack(selected_source))
     with st.form("virtual_product_form", border=False):
-        selected_source = st.selectbox(
-            "기준이 될 제품",
-            options=range(len(source_labels)),
-            format_func=lambda index: source_labels[index],
-            key="virtual_product_source",
-        )
         with st.container(horizontal=True, gap="small"):
             new_product = st.text_input("제품정보", key="virtual_product_name")
-            new_stack = st.text_input(
-                "Stack",
-                value=str(source_candidates.iloc[selected_source]["Stack"]),
-                key="virtual_product_stack",
-            )
+            new_stack = st.text_input("Stack", key=VIRTUAL_STACK_KEY)
         registered = st.form_submit_button(
             "가상 제품 등록", icon=":material/library_add:", type="primary"
         )

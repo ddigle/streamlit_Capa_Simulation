@@ -156,6 +156,28 @@ def test_the_plan_paste_window_calls_the_table_by_its_screen_name(seeded_databas
     assert refused.value.startswith("PKG PLAN 입력 표의 열이 다운로드 양식과 다릅니다")
 
 
+def test_the_stack_field_follows_the_chosen_source_product(seeded_database: Path) -> None:
+    """폼 안이던 기준 제품을 바꿔도 Stack 칸이 첫 제품 값으로 남아, 그대로 누르면 기준과 다른 Stack
+    으로 말없이 등록됐다. 고를 때마다 그 제품 값이 오고, 사람이 고친 값은 그대로 남는다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    app.button(key="open_virtual_product").click().run()
+    assert not list(app.exception)
+    source = app.selectbox(key="virtual_product_source")
+    stacks = [str(option).rsplit(" · ", 1)[1] for option in source.options]
+    assert app.text_input(key="virtual_product_stack").value == stacks[0]
+    other = next(index for index, stack in enumerate(stacks) if stack != stacks[0])
+
+    source.set_value(other).run()
+    assert not list(app.exception)
+    assert app.text_input(key="virtual_product_stack").value == stacks[other]
+
+    app.text_input(key="virtual_product_stack").set_value("99H").run()
+    assert app.text_input(key="virtual_product_stack").value == "99H"
+    app.selectbox(key="virtual_product_source").set_value(0).run()
+    assert not list(app.exception)
+    assert app.text_input(key="virtual_product_stack").value == stacks[0]
+
+
 def _register(app: AppTest, product: str, stack: str) -> None:
     """작업 줄의 「가상 제품 등록」 팝업을 열고 등록한다."""
     app.button(key="open_virtual_product").click().run()
