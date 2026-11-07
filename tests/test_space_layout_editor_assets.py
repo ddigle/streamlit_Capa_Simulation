@@ -704,6 +704,10 @@ def test_the_tray_lists_units_by_name_and_can_be_searched() -> None:
     assert 'class="sle-tray-empty" hidden' in HTML
     apply = JS[JS.index("function applyTrayFilter(") : JS.index("function buildChip(")]
     assert "chip.hidden = !visible" in apply and "trayCount.textContent" in apply
+    # 칸 머리 수는 칩 수(설비 대수)이고 칩이 모듈 여럿을 담으면 모듈 수를 곁에 적는다 — 요약 ·
+    # 층 목록의 「미배치 1대」 와 칩의 「모듈 4」 가 같은 칸에서 만난다(점검 g6-26).
+    assert "modules === total ? `${total}대` : `${total}대(모듈 ${modules})`" in apply
+    assert "searching ? `${shown}/${count}` : count" in apply
     picked = JS[JS.index("function pickedTrayEntries(") : JS.index("function toggleTrayPick(")]
     assert "trayMatches(entry)" in picked
     assert "traySearch.onkeydown" in JS and "S.trayQuery = ''" in JS

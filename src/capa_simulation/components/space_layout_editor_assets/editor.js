@@ -3342,18 +3342,23 @@ export default function (component) {
   }
 
   // 그려 둔 칩에 검색을 건다 — 목록을 다시 만들지 않고 칩만 감춘다. 수는 「보이는/전체」로 적는다.
+  // 칸 머리 수는 칩 수다 — 묶음도 1대라 도구 줄 요약 · 층 목록의 설비 대수와 같은 셈이다. 칩이 모듈 여럿을 담으면 모듈 수를
+  // 곁에 적는다(「1대(모듈 4)」 — 칩의 「모듈 n」 과 같은 수).
   function applyTrayFilter() {
     let total = 0
+    let modules = 0
     let shown = 0
     for (const chip of trayList.children) {
-      const units = chip.__entry ? chip.__entry.list.length : 0
       const visible = !chip.__entry || trayMatches(chip.__entry)
       chip.hidden = !visible
-      total += units
-      if (visible) shown += units
+      if (!chip.__entry) continue
+      total += 1
+      modules += chip.__entry.list.length
+      if (visible) shown += 1
     }
     const searching = Boolean(String(S.trayQuery || '').trim())
-    trayCount.textContent = searching ? `${shown}/${total}대` : `${total}대`
+    const count = modules === total ? `${total}대` : `${total}대(모듈 ${modules})`
+    trayCount.textContent = searching ? `${shown}/${count}` : count
     trayEmpty.hidden = !(searching && total > 0 && shown === 0)
   }
 
