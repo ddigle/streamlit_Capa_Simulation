@@ -17,7 +17,8 @@
 가정이 바뀔 때만 오른쪽 아래 알림창에 뜨고 Alarm 에 남는다. HOME 과 산출 결과 대당 Capa 가 같은 코드
 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 범위에 넣지 않는다)라 한 화면에서
 본 가정은 다른 화면에서 다시 뜨지 않는다. 고칠 표는 기준 정보에 있어 Alarm 줄의 화면 칸과 「그
-화면으로」 가 기준 정보이고(`goto`, 설계 규칙 UI-NTF-02), 어느 화면의 일인지는 전문 첫머리가 말한다.
+화면으로」 가 기준 정보이고(`goto`, 설계 규칙 UI-NTF-02 — 표가 하나면 그 종류 단추까지 연다), 어느
+화면의 일인지는 전문 첫머리가 말한다.
 """
 
 from __future__ import annotations
@@ -87,6 +88,13 @@ def assumption_short(assumed: Mapping[str, int]) -> str:
     return f"측정률 빈 경로를 1.0 으로 계산({' · '.join(parts)}) — 기준 정보 그 표에서 채움"
 
 
+def _table_to_open(assumed: Mapping[str, int]) -> str:
+    """「그 화면으로」 가 고를 기준 정보 종류 단추 글 — 표가 둘이면 어느 쪽을 열지 정할 수 없어
+    고르지 않는다."""
+    tables = [table for table, count in assumed.items() if count]
+    return _TABLE_LABELS.get(tables[0], "") if len(tables) == 1 else ""
+
+
 def render_capacity_assumption_notice(
     assumptions: CapacityAssumptions, *, scope: AlertScope, tab: str = ""
 ) -> None:
@@ -108,5 +116,6 @@ def render_capacity_assumption_notice(
         text=assumption_short(assumptions.counts) if message else None,
         full=full if message else None,
         scope_label=scope.label,
+        tab=_table_to_open(assumptions.counts),
         goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href),
     )

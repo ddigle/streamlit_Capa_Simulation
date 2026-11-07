@@ -36,6 +36,7 @@ from typing import NamedTuple
 import pandas as pd
 
 from capa_simulation import alerts
+from capa_simulation.components.data_error_mark import ErrorGoto, data_error_note
 from capa_simulation.components.process_labels import PROCESS_COLUMN, ProcessLabels
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import EquipmentSession
@@ -181,11 +182,11 @@ def alert_page_error(
     code: str,
     tab: str = "",
     text: str | None = None,
-    goto: tuple[str, str] | None = None,
+    goto: ErrorGoto | None = None,
 ) -> None:
-    """화면을 그리지 못한 오류의 알림(글 · 같은 글 한 번 · `goto` 는 `alerts.page_error_note`). 자리
+    """화면을 그리지 못한 오류의 알림(글 · 같은 글 한 번 · `goto` 는 `data_error_note`). 자리
     마크는 부르는 쪽 몫이고 이벤트 칸에 한 자리를 쓴다."""
-    alerts.emit([alerts.page_error_note(message, code=code, tab=tab, text=text, goto=goto)])
+    alerts.emit([data_error_note(message, code=code, tab=tab, text=text, goto=goto)])
 
 
 def tab_name(*labels: str) -> str:

@@ -377,7 +377,7 @@ def test_the_dialog_selects_and_loads_another_revision(
     assert app.radio(key=SIDEBAR_REVISION_KEY).value == "revision-2"
 
     # 적용하지 않은 편집 목록은 페이지가 다음 회차에 편집표를 비우기 전에 사이드바가 먼저 센다.
-    # 불러오기가 원본을 바꿨으니 목록을 비워 패널 맨 위 경고가 한 회차 남지 않게 한다.
+    # 불러오기가 원본을 바꿨으니 목록을 비워 변경 칩 · 탭 점이 한 회차 남지 않게 한다.
     app.session_state["scenario_pending_edit_registry"] = {"reference_data.py": ()}
     app = app.button(key="sidebar_load_revision").click().run()
 

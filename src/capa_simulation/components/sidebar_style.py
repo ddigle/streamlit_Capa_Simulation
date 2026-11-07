@@ -431,6 +431,13 @@ def build_sidebar_stylesheet(
             word-break: keep-all;
             overflow-wrap: anywhere;
         }}"""
+        # 사이드바 값 글(캡션 — 판정 기준 · 표준 목표 조건 줄)도 같은 규칙이다. Streamlit 이 문단에
+        # 거는 `word-break: break-word` 가 「월별 예 / 외 2개월」 처럼 낱말 가운데서 접었다.
+        f"""
+        [data-testid="stSidebarContent"] [data-testid="stCaptionContainer"] p {{
+            word-break: keep-all;
+            overflow-wrap: anywhere;
+        }}"""
         # 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴 「Dynamic
         # Capa」 도 한 줄이고, 사이드바를 약 205px 보다 좁게 끌면 말줄임으로 준다. 이 규칙이 없으면
         # 좁은 사이드바에서 긴 제목이 두 줄로 접히고 칸보다 긴 낱말은 가운데서 끊긴다(위
@@ -795,10 +802,6 @@ def _conditions_panel_style() -> str:
         f'{panel} {_CONDITION_FIELDS}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button'
     )
     name_row = f"{panel} {_CONDITION_NAME_ROWS}"
-    notice = (
-        f'{panel} > [data-testid="stLayoutWrapper"]:first-child'
-        ' [data-testid="stCaptionContainer"] p'
-    )
     return (
         # 패널 면과 줄 사이. 사이드바 세로 블록의 촘촘한 간격(위 규칙)보다 뒤라야 이긴다 — 같은
         # 특정도라 차례가 정한다.
@@ -811,12 +814,6 @@ def _conditions_panel_style() -> str:
         }}
         {sidebar} {panel} {_CONDITION_FIELDS} {{
             gap: {_FIELD_INNER_GAP};
-        }}"""
-        # 패널 맨 위 「적용 전 편집」 한 줄은 이름 줄과 같은 작은 글이다.
-        f"""
-        {notice} {{
-            font-size: 0.75rem;
-            line-height: 1.35;
         }}"""
         # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
         # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로

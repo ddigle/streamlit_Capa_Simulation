@@ -65,7 +65,6 @@ from capa_simulation.components.plotly_layout import (
     add_fixed_table_row,
     add_quarter_boundaries,
     append_layout_items,
-    delta_color,
     fixed_row_domains,
     flush_layout_items,
 )
@@ -640,6 +639,9 @@ def _bottleneck_rate_labels(
 
     `texttemplate` 대신 칸마다 문자열을 만든다 — 한 trace 안에서 어떤 칸만 두 줄이 되고
     글자 크기도 달라야 하는데 서식 문자열 하나로는 그렇게 나눌 수 없다.
+
+    증감은 값과 같은 글자색이다. 증감색(`DELTA_*`)은 칸 면 위에서 맞춘 색이라 상태색 막대 위에서는
+    12px 기준 4.5:1 에 못 미쳐 묻힌다 — 방향은 부호가 말한다.
     """
     rates = pd.to_numeric(bottleneck_capacity["확보율"], errors="coerce")
     if baseline is None or "확보율" not in baseline.columns:
@@ -660,9 +662,7 @@ def _bottleneck_rate_labels(
         if pd.isna(difference) or abs(difference) < GAP_EPSILON:
             labels.append(body)
             continue
-        color = delta_color(f"{difference:+.0%}")
-        gap = f'<span style="color:{color}">{difference * 100:+.0f}%</span>'
-        labels.append(f"{gap}<br>{body}")
+        labels.append(f"{difference * 100:+.0f}%<br>{body}")
     return labels
 
 

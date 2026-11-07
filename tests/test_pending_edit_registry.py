@@ -193,7 +193,7 @@ def test_each_page_registers_under_its_own_file_name() -> None:
 def test_pages_split_editor_and_staged_edits_and_the_labels_keep_their_order(
     session: SimpleNamespace,
 ) -> None:
-    """화면 탭 줄은 화면별로 읽는다(`pending_edit_pages`). 사이드바 한 줄·저장 팝업의 목록
+    """화면 탭 줄은 화면별로 읽는다(`pending_edit_pages`). 시나리오·조회기간 팝업의 목록
     (`pending_edit_labels`)은 그것을 등록부 차례로 편 것이라 전과 같다."""
     _register(session)
     session.session_state["upeh_editor"] = EDIT

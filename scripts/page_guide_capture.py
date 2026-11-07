@@ -96,7 +96,7 @@ def _named(name: str, arg: str | None, last_edit: LastEdit | None) -> str:
     plain: dict[str, str] = {
         "SIDEBAR_SCEN": "__g.sidebarScen()",
         "SIDEBAR_BADGE": "__g.sidebarBadge()",
-        "SIDEBAR_PENDING": "__g.sidebarPending()",
+        "CHANGES_CHIP": "__g.changesChip()",
         "SIDEBAR_FOOTER": f"__g.key({_q(APP_CREDITS_KEY)})",
         "HEADER_BAND": "__g.headerBand()",
         "PAGE_TITLE": "__g.pageTitle()",

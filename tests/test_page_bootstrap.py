@@ -251,9 +251,9 @@ def _on_page(monkeypatch: pytest.MonkeyPatch, page: str = "HOME") -> None:
 def test_a_blank_stop_points_at_the_table_to_fill_on_the_reference_screen(
     monkeypatch: pytest.MonkeyPatch, table: str, column: str, name: str
 ) -> None:
-    """빈 칸 멈춤은 무엇을 · 어디서 채우는지 말하고 「그 화면으로」 가 기준 정보를 연다(UI-NTF-06 ·
-    UI-NTF-08). 전문은 어느 화면의 일인지부터 적고, 건수 · 예시 행은 남기되 표 이름은 화면
-    이름이다."""
+    """빈 칸 멈춤은 무엇을 · 어디서 채우는지 말하고 「그 화면으로」 가 기준 정보의 그 표를 연다
+    (UI-NTF-06 · UI-NTF-08). 전문은 어느 화면의 일인지부터 적고, 건수 · 예시 행은 남기되 표 이름은
+    화면 이름이다."""
     _on_page(monkeypatch)
     stop = calculation_stop_notice(
         ValueError(_service_stop(unit_capacity._VALUE_BLANK, table, column))
@@ -262,7 +262,7 @@ def test_a_blank_stop_points_at_the_table_to_fill_on_the_reference_screen(
     assert stop is not None
     assert stop.text == f"대당 Capa 계산 멈춤 — 기준 정보 「{name}」 빈 칸 1건을 채움"
     assert DATASETS[table] == name
-    assert stop.goto == ("기준 정보", REFERENCE_DATA.href)
+    assert stop.goto == ("기준 정보", REFERENCE_DATA.href, name)
     assert stop.message.startswith(
         f"HOME — 대당 Capa 계산이 멈췄습니다. 기준 정보 「{name}」 표의 "
     )

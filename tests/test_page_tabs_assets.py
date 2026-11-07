@@ -176,6 +176,27 @@ def test_the_current_tab_keeps_room_for_its_name_when_the_strip_is_crowded() -> 
     assert rule is not None and "display: none" in rule.group(1)
 
 
+def test_a_resting_tab_lends_its_close_room_to_the_name() -> None:
+    """안 고른 탭의 × 는 가리키거나 초점이 들 때만 보이고 누름을 받는다. 칸이 최소 폭으로 줄면 ×
+    자리가 먼저 줄어 이름에 간다 — 탭 10칸 · 1283px 에서 이름이 「생…」 한 음절이었다(설계 규칙
+    UI-ACC-02, 사용자 답 narrow). 칸 폭은 그대로라 가리켜도 이웃 탭이 밀리지 않고, 터치 기기는 × 를
+    늘 둔다."""
+    hover = re.search(r"@media \(hover: hover\)\s*\{(.*?)\n\}", CSS, re.S)
+    assert hover is not None
+    tab = ".capa-tabs-item:not(.is-pinned):not(.is-active)"
+    rest = re.search(re.escape(f"{tab} .capa-tabs-x") + r" \{([^}]*)\}", hover.group(1))
+    assert rest is not None
+    assert "flex: 0 1000000 1.5rem" in rest.group(1) and "min-width: 0" in rest.group(1)
+    assert "opacity: 0" in rest.group(1) and "pointer-events: none" in rest.group(1)
+    live = re.search(
+        re.escape(f"{tab}:focus-within .capa-tabs-x") + r" \{([^}]*)\}", hover.group(1)
+    )
+    assert live is not None
+    assert "flex: none" in live.group(1) and "pointer-events: auto" in live.group(1)
+    touch = re.search(r"@media \(hover: none\)\s*\{(.*?)\n\}", CSS, re.S)
+    assert touch is not None and ".capa-tabs-x" not in touch.group(1)
+
+
 def test_the_strip_raises_its_notices_in_the_alert_center_and_keeps_no_notice_box() -> None:
     """상한 알림 · 공식 복귀 알림은 탭 줄 칸이 아니라 같은 문서의 알림 칸(오른쪽 아래 알림창 한 꼴 ·
     Alarm 기록 — 2026-11-03 결정 보드 D3)에 낸다. 탭 줄의 옛 알림 칸(`.capa-tabs-notice`)은 걷었다 —

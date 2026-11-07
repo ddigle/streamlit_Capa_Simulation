@@ -122,7 +122,7 @@ g.keyButton = (k)=>{ const e=g.key(k); return e ? (e.tagName==='BUTTON' ? e : e.
 g.formOf = (label)=> g.up(g.fillWidget(label), e=>TID(e)==='stForm');
 g.sidebarScen = ()=> g.key('condition_field_scenario') || document.querySelector('[class*="st-key-condition_field_scenario"]');
 g.sidebarBadge = ()=>{ const f=g.key('condition_name_scenario'); if(!f) return null; return [...f.querySelectorAll('span,div,p')].filter(e=>g.vis(e)&&/^(미저장 변경|저장된 리비전|공식 v\d+)$/.test(g.norm(e.textContent))).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width)[0]||null; };
-g.sidebarPending = ()=>{ const t=g.text("적용 전 편집", document.querySelector('[data-testid="stSidebar"]')); if(!t) return null; return g.up(t, e=>/stMarkdownContainer|stCaptionContainer|stAlert/.test(TID(e)))||t; };
+g.changesChip = ()=>{ const e=document.getElementById('capa-changes-chip'); return g.vis(e) ? e : null; };
 g.lobChart = ()=> g.union([g.key('production_lob_labels'), g.clip(g.key('production_lob_months'), g.key('production_lob_month_region'))]);
 g.lobLabel = (t)=>{ const L=g.key('production_lob_labels'); return L ? g.text(t, L) : null; };
 // LOB 라벨 그림의 가로 구분선(shapes)으로 행 경계를 찾아, 그 라벨이 든 행 전체(라벨 칸 + 보이는 달 칸)

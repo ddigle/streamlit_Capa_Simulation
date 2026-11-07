@@ -51,7 +51,6 @@ from capa_simulation.components.period_field import (
 from capa_simulation.components.plotly_touch_scroll import plotly_touch_scroll_script
 from capa_simulation.components.popover_field_commit import popover_field_commit_script
 from capa_simulation.components.print_button import print_toolbar_script
-from capa_simulation.components.scenario_edit_bar import pending_edit_labels, pending_edits_notice
 from capa_simulation.components.scenario_status import (
     close_scenario_dialog,
     render_scenario_field,
@@ -326,10 +325,6 @@ with pinned_connections(DUCKDB_PATH):
     # 직전 화면으로 되돌린다. 사이드바·머리 띠를 보내기 전에 끊는다. 직전 화면 주소는 아래에서
     # 이번 화면으로 바뀐다.
     route_page_tabs(current_spec, pages=pages, previous_url=st.session_state.get(SIDEBAR_PAGE_KEY))
-    # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —
-    # 적용하지 않은 편집은 시나리오에 들어 있지 않다(`scenario_edit_bar.register_pending_edits`).
-    # 세션만 읽는다. 조건 패널 맨 위 줄이 이 값을 쓴다.
-    pending_edits = pending_edit_labels(page_file)
     # 탭에 점을 찍을 화면(저장·적용하지 않은 편집)과 지금 화면을 떠나면 사라지는 편집표 편집. 세션만
     # 읽는다. 아래 테마 표지와 탭 줄이 같은 값을 쓴다(`components/page_tabs.py`).
     unsaved_marks = page_unsaved_marks(page_file)
@@ -488,14 +483,9 @@ with pinned_connections(DUCKDB_PATH):
     if shows_scenario or shows_period or shows_equipment:
         # **패널은 늘 같은 순번에 선다.** 안의 줄은 한 모양(이름 줄 + 팝업을 여는 값 칸,
         # `components/condition_field.py`)이고 값은 세션만 읽는다 — 저장소는 팝업을 연 동안에만
-        # 읽는다. 패널 안 차례: 적용 전 편집 한 줄 → 시나리오 → 조회기간 → 설비 시나리오 칸 →
-        # 페이지 칸.
+        # 읽는다. 패널 안 차례: 시나리오 → 조회기간 → 설비 시나리오 칸 → 페이지 칸. 적용 전 편집은
+        # 머리 변경 칩 · 판이 말하고, 그 편집을 버리는 순간은 시나리오 · 조회기간 팝업이 묻는다.
         with st.sidebar.container(border=True, key=CONDITIONS_BOX_KEY):
-            # 적용 전 편집 경고는 시나리오·기간 두 줄이 함께 쓰는 한 줄이다(전에는 두 상자에 각각
-            # 적었다). 늘 서 있는 한 칸 안에 그려 생기고 사라질 때 아래 줄의 자리를 밀지 않는다.
-            with st.container():
-                if pending_edits:
-                    st.caption(pending_edits_notice(pending_edits))
             if shows_scenario:
                 render_scenario_field()
             if shows_period:

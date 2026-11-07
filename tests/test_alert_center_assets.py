@@ -203,6 +203,14 @@ console.log(JSON.stringify([
     assert "t.log_table_value_clipped" in pairs
 
 
+def test_top_level_names_are_declared_once() -> None:
+    """맨 바깥 `const` · `let` · `function` 이름은 한 번만 선언한다 — 두 번이면 모듈이 구문 오류로
+    서지 않아 알림창 · Alarm · 변경 칩이 통째로 사라진다. 순수 구획만 떼어 돌리는 시험은 구획 밖과
+    겹친 이름을 못 본다."""
+    names = re.findall(r"^(?:const|let|function|async function)\s+(\w+)", JS, re.M)
+    assert sorted(name for name in set(names) if names.count(name) > 1) == []
+
+
 _SECTIONS = ("alerts-rows", "alerts-focus", "alerts-storage", "alerts-reconnect")
 
 
@@ -308,6 +316,22 @@ out.tabs = [
   tabMatches('anything', ''),
 ]
 out.steps = [tabStep('Summary › Static 대비 일정'), tabStep('소요대수'), tabStep('')]
+const button = (attrs) => ({ getAttribute: (name) => (name in attrs ? attrs[name] : null) })
+out.chosen = [
+  tabChosen(button({ 'aria-selected': 'true' })),
+  tabChosen(button({ 'aria-checked': 'true' })),
+  tabChosen(button({ 'aria-selected': 'false' })),
+  tabChosen(button({ 'aria-checked': 'false' })),
+  tabChosen(button({})),
+]
+out.go = [
+  showsGo('reference_data', '', ''),
+  showsGo('', '', ''),
+  showsGo('', 'Past Data', ''),
+  showsGo('reference_data', '', 'reference_data'),
+  showsGo('reference_data', '효율', 'reference_data'),
+  showsGo(undefined, '효율', ''),
+]
 const kept = { code: 'ST-20', short: '읽지 못함', id: 'page-a', keep: true }
 out.kept = [
   keptRowMissing([], kept),
@@ -699,6 +723,10 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["tabs"] == [True, True, False, False]
     # 탭 안 탭은 바깥 칸부터 한 칸씩 연다(가용설비 현황 「Summary › Static 대비 일정」).
     assert out["steps"] == [["Summary", "Static 대비 일정"], ["소요대수", ""], ["", ""]]
+    # 탭은 aria-selected, 전환 단추(기준 정보 종류)는 aria-checked 로 고른 상태를 말한다.
+    assert out["chosen"] == [True, True, False, False, False]
+    # 지금 화면을 가리키는 줄은 열 탭이 있을 때만 「그 화면으로」 를 세운다. HOME 주소는 빈 글이다.
+    assert out["go"] == [True, False, True, False, True, False]
     # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
     assert out["copy"] == (
         "코드: ST-15 · 확인 필요 · 상태 알림(바뀔 때만)\n"
@@ -724,7 +752,12 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
     settle = JS[JS.index("function settleTab(") :]
     settle = settle[: settle.index("\n}\n")]
     assert "C.data.here !== pending.href || running()" in settle
-    assert "aria-selected" in settle and "button.click()" in settle
+    assert "!tabChosen(button)" in settle and "button.click()" in settle
+    # 전환 단추(기준 정보 종류)도 찾되 같은 글이면 탭이 먼저다.
+    assert (
+        "...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)"
+        in (settle)
+    )
     assert "goTo(C, row.href, row.tab)" in JS
     # 변경 칩 줄도 같다 — 줄이 그 화면 안 탭을 들고 있으면 그 탭까지 연다.
     assert "goTo(C, item.href, item.tab)" in JS

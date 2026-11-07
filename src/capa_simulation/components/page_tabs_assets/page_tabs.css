@@ -281,6 +281,32 @@
   pointer-events: auto;
 }
 
+/* 지금 탭이 아닌 고정 안 한 탭의 × 는 가리키거나 초점이 들 때만 보이고 누름을 받으며, 탭이 많아 칸이 최소 폭으로 줄면 그때만
+   자리를 잡는다 — 평소에는 그 자리를 이름에 내준다(× 가 먼저 줄어든다). 탭 10칸 · 1283px 에서 × 자리 때문에 이름이 「생…」
+   한 음절이었다. 칸 폭은 그대로라 가리켜도 이웃 탭이 밀리지 않는다. 가리킬 수 없는 기기(터치)는 지금처럼 × 가 늘 보인다.
+   줄임 값이 큰 것은 × 가 다 줄기 전에 이름이 1px 도 줄지 않게 해서다 — 조금이라도 줄면 다 들어갈 이름에 말줄임이 붙는다. */
+@media (hover: hover) {
+  .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-x {
+    flex: 0 1000000 1.5rem;
+    min-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .capa-tabs-item:not(.is-pinned):not(.is-active):hover .capa-tabs-x,
+  .capa-tabs-item:not(.is-pinned):not(.is-active):focus-within .capa-tabs-x {
+    flex: none;
+    opacity: 0.6;
+    pointer-events: auto;
+  }
+
+  .capa-tabs-item:not(.is-pinned):not(.is-active):hover .capa-tabs-x:hover,
+  .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-x:focus-visible {
+    opacity: 1;
+  }
+}
+
 /* 가리킬 수 없는 기기(터치)에서는 그 핀을 아예 두지 않는다 — 고정은 지금 탭에서 한다. */
 @media (hover: none) {
   .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin {

@@ -127,6 +127,23 @@ alert_page_error(
 """
 
 
+def test_a_goto_with_a_table_opens_that_table_on_the_other_screen() -> None:
+    """`goto` 셋째 칸은 그 화면의 표(기준 정보 종류 단추 글)다 — 줄의 화면 칸이 「화면 › 표」 가
+    되고 「그 화면으로」 가 그 단추까지 누른다. 두 칸이면 지금처럼 화면만 연다. 빈 칸 멈춤의 표는
+    여기로 온다(`page_bootstrap.calculation_stop_notice`)."""
+    app = AppTest.from_string(PAGE_ERROR)
+    app.session_state["goto"] = ("기준 정보", "reference_data", "효율")
+    app.run()
+    assert not app.exception
+    (note,) = alert_notes(app)
+    assert (note["page"], note["href"], note["tab"]) == ("기준 정보", "reference_data", "효율")
+
+    app.session_state["goto"] = ("기준 정보", "reference_data")
+    app.run()
+    (note,) = alert_notes(app)
+    assert (note["page"], note["href"], note["tab"]) == ("기준 정보", "reference_data", "소요대수")
+
+
 def test_a_separately_sent_page_error_alerts_once_per_message() -> None:
     """마크와 따로 보내는 오류 알림도 사건 알림 하나(오류 단계)다. id 가 글의 지문이라 회차마다
     다시 그려도 같은 글이면 브라우저가 한 번만 띄운다. 알림창 짧은 글은 첫 문단이다."""

@@ -201,7 +201,7 @@
         "ref_apply": "button:변경사항 적용",
         "ref_cancel": "button:편집 취소",
         "ref_edited_cell": "named:EGRID_CELL",
-        "sidebar_pending_notice": "named:SIDEBAR_PENDING",
+        "changes_chip": "named:CHANGES_CHIP",
         "ref_table": "named:EGRID"
       }
     },
