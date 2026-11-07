@@ -242,7 +242,7 @@ function copyText(pairs) {
 
 // <alerts-focus>
 const TIP_HOST = '[data-testid="stTooltipHoverTarget"]'
-const DIALOG = '[role="dialog"]'
+const FOCUS_DIALOG = '[role="dialog"]'
 const BUTTON_LABEL = '[data-testid="stMarkdownContainer"]'
 const POPOVER_BUTTON = 'stPopoverButton'
 const POPOVER_BODY = '[data-testid="stPopoverBody"]'
@@ -442,7 +442,7 @@ function installFocusShell() {
     'focusout',
     (event) => {
       const left = event.target
-      const dialog = !event.relatedTarget && left.closest ? left.closest(DIALOG) : null
+      const dialog = !event.relatedTarget && left.closest ? left.closest(FOCUS_DIALOG) : null
       if (dialog) setTimeout(() => returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS)
     },
     true,
