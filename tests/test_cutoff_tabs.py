@@ -236,6 +236,19 @@ def test_the_locked_table_keeps_only_the_toolbar_download(tmp_path: Path) -> Non
     clear_equipment_repository()
 
 
+def test_the_locked_table_leaves_the_missing_cutoff_to_the_alert(tmp_path: Path) -> None:
+    """곁 경고는 고칠 표가 바로 아래일 때만이다 — 잠긴 표에는 고칠 입력이 없어 경고 상자를 세우지
+    않고, 같은 조건은 화면의 상태 알림 `EQ-12` 가 말한다(설계 규칙 UI-NTF-02 · g8-15)."""
+    locked = AppTest.from_function(
+        _locked_cutoff_body, args=(str(tmp_path / "locked.duckdb"),), default_timeout=60
+    ).run()
+
+    assert not locked.exception, [item.message for item in locked.exception]
+    assert not [str(item.value) for item in locked.warning]
+    assert not any("모두 채워졌습니다" in str(item.value) for item in locked.caption)
+    clear_equipment_repository()
+
+
 def _missing_report(names: list[str]) -> None:
     import pandas as pd
 

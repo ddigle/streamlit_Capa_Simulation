@@ -142,7 +142,10 @@ def render_cutoff_management(
 
     missing = missing_cutoff_processes(equipment_processes, stored)
     if missing:
-        _render_missing_cutoffs(missing)
+        # 곁 경고는 고칠 표가 바로 아래일 때만이다 — 잠긴 표에는 고칠 입력이 없어 상태 알림
+        # (`report_missing_cutoffs` — `EQ-12`)에 맡긴다(설계 규칙 UI-NTF-02).
+        if locked_reason is None:
+            _render_missing_cutoffs(missing)
     elif equipment_processes:
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")
 
@@ -359,9 +362,9 @@ def report_missing_cutoffs(equipment_processes: list[str], stored: pd.DataFrame)
 
     가용설비 현황이 회차마다(빠진 공정이 없어도 — 해소 · 이벤트 칸 한 자리) 부른다 —
     「가용설비 설정」 팝업을 열지 않아도 Static 대비 일정 합이 왜 작은지 알게 한다. 팝업 안
-    경고(`_render_missing_cutoffs`)는 고칠 표 곁의 자리 글로 그대로다. Cut-off 는 모든 설비 시나리오
-    공용이라 범위가 없고, 내용은 빠진 공정 이름 목록이다(알림창 · 패널은 평문이라 이름을 막지
-    않는다).
+    경고(`_render_missing_cutoffs`)는 고칠 표 곁의 자리 글이라 표가 잠긴 회차에는 서지 않는다.
+    Cut-off 는 모든 설비 시나리오 공용이라 범위가 없고, 내용은 빠진 공정 이름 목록이다(알림창 ·
+    패널은 평문이라 이름을 막지 않는다).
     """
     missing = missing_cutoff_processes(equipment_processes, stored)
     shown = ", ".join(missing[:10]) + (" …" if len(missing) > 10 else "")
