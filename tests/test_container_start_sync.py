@@ -843,12 +843,12 @@ def test_the_check_table_and_lines_show_the_new_values(box: SimpleNamespace) -> 
 
     assert [row[0] for row in rows] == list(report_contract.SYNC_STEP_LABELS.values())
     joined = "\n".join(lines)
-    assert "/project 디스크: 여유 " in joined
-    assert "pod 끝: pod\\-0" in joined
+    assert "**/project 디스크** · 여유 " in joined
+    assert "**pod 끝** · pod\\-0" in joined
     assert "demo" not in joined, "압축본에 옮기는 자리 — 사내 식별값을 통째로 싣지 않는다"
-    assert "DuckDB 기본값: memory_limit" in joined
+    assert "**DuckDB 기본값** · memory_limit" in joined
     assert "받기 2.5초" in joined
-    assert "앞 pod 마지막 올림 → 이번 앱 준비: 100초" in joined
+    assert "**앞 pod 마지막 올림 → 이번 앱 준비** · 100초" in joined
 
 
 def test_the_app_response_is_measured_from_the_start_of_the_script() -> None:
@@ -872,7 +872,10 @@ def test_the_app_response_is_measured_from_the_start_of_the_script() -> None:
 
     lines = start_check.sync_fact_lines(report, "2026-11-07T00:00:45Z")
 
-    assert lines == ["받기 30.2초 · 앱 응답까지 45초", "앞 pod 마지막 올림 → 이번 앱 준비: 105초"]
+    assert lines == [
+        "받기 30.2초 · 앱 응답까지 45초",
+        "**앞 pod 마지막 올림 → 이번 앱 준비** · 105초",
+    ]
 
 
 def test_lines_with_nothing_to_show_are_left_out() -> None:

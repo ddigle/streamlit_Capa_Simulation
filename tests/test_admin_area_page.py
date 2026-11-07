@@ -779,10 +779,10 @@ def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
     ]
     assert steps.value["까닭"].iloc[5] == "판 다름 2.36.8"
     captions = "\n".join(caption.value for caption in app.caption)
-    assert "/project 디스크: 여유 40.0 GiB · 전체 100.0 GiB" in captions
-    assert "한도: 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
+    assert "**/project 디스크** · 여유 40.0 GiB · 전체 100.0 GiB" in captions
+    assert "**한도** · 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
     assert "받기 2.5초 · 앱 응답까지 45초" in captions
-    assert "앞 pod 마지막 올림 → 이번 앱 준비: 105초" in captions
+    assert "**앞 pod 마지막 올림 → 이번 앱 준비** · 105초" in captions
 
 
 def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
@@ -949,7 +949,7 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     app = AppTest.from_string(script).run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
 
-    assert _module_status_labels(app) == ["모듈 상태 — 켜짐 3 · 꺼짐 1 · 실패 2"]
+    assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
     table = app.dataframe[0].value
     rows = {row["모듈"]: row for row in table.to_dict("records")}
     # 회차 시간은 단위를 칸 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 0.00).

@@ -67,7 +67,7 @@ def status_title(scan: ModuleScan) -> str:
     counts = {state: 0 for state in STATE_LABELS}
     for record in scan.records:
         counts[record.state] += 1
-    return f"모듈 상태 — 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
+    return f"모듈 상태 · 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
 
 
 def run_time_ms(seconds: float) -> int:

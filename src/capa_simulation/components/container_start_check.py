@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -35,7 +36,11 @@ from capa_simulation.components.diagnostic_copy import (
     table_lines,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.sso_status import sso_start_step, started_environment_caption
+from capa_simulation.components.sso_status import (
+    CLOCK_FORMAT,
+    sso_start_step,
+    started_environment_caption,
+)
 from capa_simulation.io.container_start_report import (
     BDQ_USER_NAME_ENV,
     STATUS_LABELS,
@@ -94,6 +99,16 @@ def build_step_table(
     return pd.DataFrame(rows, columns=["단계", "결과", "까닭"])
 
 
+def clock_text(value: str) -> str:
+    """결과 파일의 ISO 시각 → 진단 펼침 시각 꼴(`sso_status.CLOCK_FORMAT`). 못 읽으면 받은 글
+    그대로다."""
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return moment.astimezone().strftime(CLOCK_FORMAT)
+    except (ValueError, OverflowError, OSError):
+        return value
+
+
 def fact_lines(report: ContainerStartReport) -> list[str]:
     """표 아래 한 줄씩 — 깔린 판·토큰 파일·요청자 계정. 값은 마크다운에 글자 그대로 싣는다."""
     version = report.bigdataquery_version
@@ -101,24 +116,27 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
     if report.token_file_exists is None:
         token = "확인하지 못함(폴더에 들어갈 수 없음)" if account else "계정을 몰라 보지 않음"
     elif report.token_file_exists:
-        token = f"있음 · 수정 {literal_markdown(report.token_file_modified_at or '알 수 없음')}"
+        modified = report.token_file_modified_at
+        token = (
+            f"있음 · 수정 {literal_markdown(clock_text(modified) if modified else '알 수 없음')}"
+        )
     else:
         token = "없음"
     if report.token_file_path:
         token += f" · 자리 {literal_markdown(report.token_file_path)}"
     lines = [
-        f"bigdataquery 판: {literal_markdown(version) if version else '없음'}",
-        f"로그인 토큰 파일: {token}",
-        f"`{BDQ_USER_NAME_ENV}`: {f'있음({literal_markdown(account)})' if account else '없음'}",
+        f"**bigdataquery 판** · {literal_markdown(version) if version else '없음'}",
+        f"**로그인 토큰 파일** · {token}",
+        f"`{BDQ_USER_NAME_ENV}` · {f'있음({literal_markdown(account)})' if account else '없음'}",
     ]
     if report.os_user_masked:
         same = {True: " · 계정 값과 같음", False: " · 계정 값과 다름", None: ""}
         lines.append(
-            f"실행 사용자: {literal_markdown(report.os_user_masked)}"
+            f"**실행 사용자** · {literal_markdown(report.os_user_masked)}"
             f"{same[report.os_user_is_bdq_user]}"
         )
     if report.home_masked:
-        lines.append(f"HOME: {literal_markdown(report.home_masked)}")
+        lines.append(f"**HOME** · {literal_markdown(report.home_masked)}")
     return lines
 
 
@@ -150,7 +168,7 @@ def _limits_line(sync: SyncStart) -> str | None:
         parts.append(f"CPU {_core_text(sync.cpu_limit)}")
     if sync.logical_cores is not None:
         parts.append(f"논리 코어 {sync.logical_cores}")
-    return f"한도: {' · '.join(parts)}" if parts else None
+    return f"**한도** · {' · '.join(parts)}" if parts else None
 
 
 def _downtime_line(sync: SyncStart, ready_utc: str | None) -> str | None:
@@ -172,22 +190,22 @@ def sync_fact_lines(report: ContainerStartReport, ready_utc: str | None) -> list
     lines: list[str] = []
     if sync.disk_free_bytes is not None and sync.disk_total_bytes is not None:
         free, total = _gib(sync.disk_free_bytes), _gib(sync.disk_total_bytes)
-        lines.append(f"/project 디스크: 여유 {free} · 전체 {total}")
+        lines.append(f"**/project 디스크** · 여유 {free} · 전체 {total}")
     if sync.pod:
-        lines.append(f"pod 끝: {literal_markdown(sync.pod[-POD_TAIL_CHARS:])}")
+        lines.append(f"**pod 끝** · {literal_markdown(sync.pod[-POD_TAIL_CHARS:])}")
     limits = _limits_line(sync)
     if limits is not None:
         lines.append(limits)
     if sync.duckdb_memory_limit or sync.duckdb_threads:
         limit = literal_markdown(sync.duckdb_memory_limit or "?")
         threads = literal_markdown(sync.duckdb_threads or "?")
-        lines.append(f"DuckDB 기본값: memory_limit {limit} · threads {threads}")
+        lines.append(f"**DuckDB 기본값** · memory_limit {limit} · threads {threads}")
     downtime = _downtime_line(sync, ready_utc)
     if downtime is not None:
         lines.append(downtime)
     gap = seconds_between(sync.previous_upload_utc, ready_utc)
     if gap is not None:
-        lines.append(f"앞 pod 마지막 올림 → 이번 앱 준비: {gap:.0f}초")
+        lines.append(f"**앞 pod 마지막 올림 → 이번 앱 준비** · {gap:.0f}초")
     return lines
 
 
@@ -198,7 +216,8 @@ def report_origin_caption(report: ContainerStartReport) -> str:
     Guide 「서버 시작 점검」 이 말한다 — 펼침에 길 안내 문장을 늘 띄우지 않는다(설계 규칙
     UI-TXT-03).
     """
-    started = literal_markdown(report.written_at) if report.written_at else "알 수 없음"
+    written = report.written_at
+    started = literal_markdown(clock_text(written)) if written else "알 수 없음"
     return f"**시작 기록** · {started} · `scripts/container_start.py`"
 
 
@@ -236,7 +255,7 @@ def missing_environment_line(report: ContainerStartReport) -> str | None:
     if not report.missing_environment:
         return None
     names = " · ".join(f"`{name}`" for name in report.missing_environment)
-    return f"시작 때 비어 있던 CD 환경변수: {names}"
+    return f"**시작 때 비어 있던 CD 환경변수** · {names}"
 
 
 def render_container_start_check() -> None:

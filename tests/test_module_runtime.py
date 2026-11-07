@@ -171,7 +171,7 @@ def test_every_module_switched_off_hides_the_box_but_admin_still_tells(
     app.switch_page("app_pages/admin_area.py").run()
     _ok(app)
     labels = _expander_labels(app)
-    assert "모듈 상태 — 켜짐 0 · 꺼짐 4 · 실패 2" in labels
+    assert "모듈 상태 · 켜짐 0 · 꺼짐 4 · 실패 2" in labels
 
 
 # ------------------------------------------------------------------ 화면 실행

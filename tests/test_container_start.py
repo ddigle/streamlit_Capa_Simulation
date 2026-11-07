@@ -19,11 +19,13 @@ import importlib.util
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
 import urllib.parse
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -1154,7 +1156,12 @@ def _report(written_at: str) -> report_contract.ContainerStartReport:
 @pytest.mark.parametrize(
     ("written_at", "started"),
     [
-        ("2026-10-24T09:00:00+09:00", "2026\\-10\\-24T09\\:00\\:00\\+09\\:00"),
+        (
+            "2026-10-24T09:00:00+09:00",
+            datetime.fromisoformat("2026-10-24T09:00:00+09:00")
+            .astimezone()
+            .strftime("%Y\\-%m\\-%d %H\\:%M\\:%S"),
+        ),
         ("", "알 수 없음"),
     ],
 )
@@ -1162,13 +1169,22 @@ def test_the_start_check_caption_is_a_value_line_without_a_pointer(
     written_at: str, started: str
 ) -> None:
     """펼침 맨 위는 언제 남긴 결과인지의 값 줄이다 — 안내 문서 절을 가리키는 길 안내 문장은 Guide
-    「서버 시작 점검」 몫이다(설계 규칙 UI-TXT-03)."""
+    「서버 시작 점검」 몫이다(설계 규칙 UI-TXT-03). 시각은 다른 진단 펼침과 같은 꼴이다."""
     from capa_simulation.components.container_start_check import report_origin_caption
 
     caption = report_origin_caption(_report(written_at))
 
     assert caption == f"**시작 기록** · {started} · `scripts/container_start.py`"
     assert "절에" not in caption
+
+
+def test_a_start_time_that_cannot_be_read_stays_as_written() -> None:
+    """결과 파일의 시각은 진단 펼침 꼴(`sso_status.CLOCK_FORMAT`)로 적고, 못 읽는 글은 받은 그대로다
+    — 값을 지우지 않는다."""
+    from capa_simulation.components.container_start_check import clock_text
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", clock_text("2026-11-07T00:00:00Z"))
+    assert clock_text("어제 오후") == "어제 오후"
 
 
 def test_the_withheld_environment_notice_names_the_keys_without_a_dual_particle() -> None:
