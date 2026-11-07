@@ -522,6 +522,27 @@ def test_a_package_that_fails_to_import_does_not_stop_the_catalog_query(
     assert any(block.value == "목록 조회 뒤" for block in app.markdown)
 
 
+def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_the_table() -> None:
+    """조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이고, 조회 결과 줄은 그 아래 표 바로 위다
+    (설계 규칙 UI-LAY-11)."""
+    app = _run()
+
+    row = next(
+        block
+        for block in app.main.children.values()
+        if getattr(getattr(block, "proto", None), "flex_container", None) is not None
+        and block.proto.flex_container.direction == 2
+    )
+    labels = [text for _, text in _drawn_in_order(row)]
+    assert labels == ["시뮬레이션 코드 조회", "검색", "표시 범위"]
+
+    drawn = _drawn_in_order(app.main)
+    scope = next(at for at, (_, text) in enumerate(drawn) if text == "표시 범위")
+    summary = next(at for at, (_, text) in enumerate(drawn) if "코드·PLAN 기준" in text)
+    table = next(at for at, (kind, _) in enumerate(drawn) if kind == "Dataframe")
+    assert scope < summary < table
+
+
 def test_catalog_list_is_drawn_with_a_fixed_height_for_scrolling() -> None:
     app = _run()
 

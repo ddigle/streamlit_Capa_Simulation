@@ -164,6 +164,13 @@ CATALOG_START_DATE_KEY = "bigdataquery_catalog_start_date"
 CATALOG_END_DATE_KEY = "bigdataquery_catalog_end_date"
 CATALOG_QUERY_BUTTON_KEY = "bigdataquery_catalog_query"
 DATE_FIELD_WIDTH_PX: Final = 300
+CATALOG_TOOLBAR_KEY = "bigdataquery_catalog_toolbar"
+# 표 위 한 줄의 전환 단추는 이웃 칸 · 단추와 같은 높이다 — 기본 28px 이면 라벨과 윗선이 7px 어긋난다
+# (설계 규칙 UI-CON-01).
+CATALOG_TOOLBAR_STYLE: Final = (
+    f'<style>.st-key-{CATALOG_TOOLBAR_KEY} [data-testid="stButtonGroup"] button '
+    "{ min-height: 2.5rem; }</style>"
+)
 CATALOG_KEYWORD_KEY = "bigdataquery_catalog_keyword"
 CATALOG_SCOPE_KEY = "bigdataquery_catalog_scope"
 CATALOG_LIST_KEY_PREFIX = "bigdataquery_catalog_rows_"
@@ -255,8 +262,14 @@ def render_bigdataquery_registration(
         alert_tab=alert_tab,
     )
     registered_codes, existing_names = _registered_scenarios(repository)
-    _render_catalog_form(configured=catalog_ready)
-    _render_catalog_list(registered_codes=registered_codes)
+    # 찾기 칸과 그 표의 작업은 표 위 한 줄이다 — 기준 창보다 좁으면 줄이 내려앉는다(설계 규칙
+    # UI-LAY-11 · UI-ACC-02). 조회의 거부 · 스피너와 조회 결과 줄은 이 줄 바로 아래 · 표 바로 위다.
+    st.html(CATALOG_TOOLBAR_STYLE)
+    toolbar = st.container(
+        key=CATALOG_TOOLBAR_KEY, horizontal=True, gap="small", vertical_alignment="bottom"
+    )
+    _render_catalog_form(toolbar, configured=catalog_ready)
+    _render_catalog_list(toolbar, registered_codes=registered_codes)
     _render_registration_form(
         repository,
         database_path,
@@ -393,28 +406,30 @@ def _registered_scenarios(
     )
 
 
-def _render_catalog_form(*, configured: bool) -> None:
+def _render_catalog_form(toolbar: DeltaGenerator, *, configured: bool) -> None:
     today = datetime.now().date()
     st.session_state.setdefault(
         CATALOG_START_DATE_KEY, today - timedelta(days=DEFAULT_CATALOG_DAYS)
     )
     st.session_state.setdefault(CATALOG_END_DATE_KEY, today)
-    # 칸이 「적용」 때만 서버로 보내므로 폼이 없어도 고르는 동안 회차가 돌지 않는다.
-    date_range_field(
-        "조회일",
-        start_key=CATALOG_START_DATE_KEY,
-        end_key=CATALOG_END_DATE_KEY,
-        default=(today - timedelta(days=DEFAULT_CATALOG_DAYS), today),
-        width=DATE_FIELD_WIDTH_PX,
-    )
-    if not st.button(
-        "시뮬레이션 코드 조회",
-        key=CATALOG_QUERY_BUTTON_KEY,
-        icon=":material/search:",
-        type="primary",
-        disabled=not configured,
-        help=None if configured else CATALOG_LOCKED_HELP,
-    ):
+    with toolbar:
+        # 칸이 「적용」 때만 서버로 보내므로 폼이 없어도 고르는 동안 회차가 돌지 않는다.
+        date_range_field(
+            "조회일",
+            start_key=CATALOG_START_DATE_KEY,
+            end_key=CATALOG_END_DATE_KEY,
+            default=(today - timedelta(days=DEFAULT_CATALOG_DAYS), today),
+            width=DATE_FIELD_WIDTH_PX,
+        )
+        clicked = st.button(
+            "시뮬레이션 코드 조회",
+            key=CATALOG_QUERY_BUTTON_KEY,
+            icon=":material/search:",
+            type="primary",
+            disabled=not configured,
+            help=None if configured else CATALOG_LOCKED_HELP,
+        )
+    if not clicked:
         return
     window = _submitted_window()
     if window is not None:
@@ -457,7 +472,7 @@ def _run_catalog_query(window: QueryWindow) -> None:
         st.error(bootstrap_error_message(exc))
 
 
-def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
+def _render_catalog_list(toolbar: DeltaGenerator, *, registered_codes: frozenset[str]) -> None:
     result = _stored_result()
     if result is None:
         st.caption("조회한 시뮬레이션 코드 목록이 없습니다.")
@@ -470,7 +485,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         st.caption("이 기간에는 시뮬레이션 코드가 없습니다.")
         return
 
-    with st.container(horizontal=True, gap="small"):
+    with toolbar:
         keyword = st.text_input(
             "검색",
             key=CATALOG_KEYWORD_KEY,
