@@ -226,6 +226,8 @@ APPLIED_ICON = ":material/published_with_changes:"
 # 버튼에 남긴다(2026-09-28 사용자 결정).
 PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드가 이 계획으로 다시 계산됩니다."
 YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 이 수율로 다시 계산됩니다."
+# 잠긴 적용 단추의 풍선은 하는 일이 아니라 까닭이다(설계 규칙 UI-INP-07).
+APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
 # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
@@ -760,7 +762,7 @@ with pkg_plan_tab:
             icon=":material/check:",
             key="apply_pkg_plan_changes",
             type="primary",
-            help=PLAN_APPLY_HELP,
+            help=PLAN_APPLY_HELP if plan_pending else APPLY_LOCKED_HELP,
             disabled=not plan_pending,
         )
         # 여는 버튼은 **콜백**으로 연다. 콜백은 스크립트보다 먼저 돌아 열린 팝업이 회차 시작부터
@@ -881,7 +883,7 @@ with yield_tab:
                 icon=":material/check:",
                 key="apply_yield_changes",
                 type="primary",
-                help=YIELD_APPLY_HELP,
+                help=YIELD_APPLY_HELP if yield_pending else APPLY_LOCKED_HELP,
                 disabled=not yield_pending,
             )
             st.button(

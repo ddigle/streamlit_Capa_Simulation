@@ -1171,6 +1171,28 @@ def _applied(app: AppTest, text: str) -> list[str | None]:
     return [item.icon for item in successes(app) if text in str(item.value)]
 
 
+def test_a_locked_apply_button_says_why_and_an_open_one_says_what_it_does(
+    seeded_database: Path,
+) -> None:
+    """잠긴 동안 풍선은 까닭이고 눌리면 하는 일이다 — 「적용해야 반영된다」 는 눌리는 단추에 남는다
+    (설계 규칙 UI-INP-07)."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    for key in ("apply_pkg_plan_changes", "apply_yield_changes"):
+        button = app.button(key=key)
+        assert button.disabled
+        assert button.proto.help == "고친 칸이 있으면 누를 수 있습니다."
+
+    app.session_state[_widget_key(app, "pkg_plan_editor")] = PLAN_CELL_EDIT
+    app.session_state[_widget_key(app, "yield_editor")] = YIELD_CELL_EDIT
+    app.run()
+    assert not list(app.exception)
+
+    assert not app.button(key="apply_pkg_plan_changes").disabled
+    assert "이 계획으로 다시 계산됩니다" in app.button(key="apply_pkg_plan_changes").proto.help
+    assert not app.button(key="apply_yield_changes").disabled
+    assert "이 수율로 다시 계산됩니다" in app.button(key="apply_yield_changes").proto.help
+
+
 def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
