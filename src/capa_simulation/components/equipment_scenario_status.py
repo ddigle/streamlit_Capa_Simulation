@@ -771,11 +771,20 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
             saved_by=saved_by,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            "저장하지 못했습니다: "
-            + bootstrap_error_message(exc, database_paths=(Path(database_path),))
+        # 아무것도 저장하지 않은 거부 — 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계
+        # 규칙 UI-NTF-03). 팝업 안 누름은 팝업만 도는 회차라 사이드바 줄의 알림 칸이 서지 않는다 —
+        # 앱 전체를 다시 돌려 그 칸이 내게 하고, 열림 칸이 남은 팝업은 낡음 잠금 · 「최신 rN
+        # 불러오기」 와 함께 다시 선다(메모 칸은 그대로 남는다).
+        queue_flash(
+            FLASH_KEY,
+            markdown_safe_tildes(
+                "저장하지 못했습니다: "
+                + bootstrap_error_message(exc, database_paths=(Path(database_path),))
+            ),
+            kind="error",
+            popup_only=True,
         )
-        return
+        st.rerun()
     bump(SAVE_NOTE_GENERATION_KEY)
     queue_flash(FLASH_KEY, message, popup_only=True)
     close_equipment_scenario_dialog()

@@ -1363,14 +1363,12 @@ def _render_official(
                 current = None
         if current is None or current.release_no != exc.current:
             # 저장소 문구는 배경 회차(자동 갱신) 말투라 팝업에서는 무엇을 하면 되는지로 바꿔 적는다.
-            st.error(official_moved_message(exc.current))
-            return
+            _refuse_official(official_moved_message(exc.current))
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 지정했다(write_guard). 첫 누름의 뒷정리가
         # 끊겼을 수 있어 여기서 다시 한다(경고 글은 첫 누름의 회차가 냈다).
         _official_published(current, revision_id, warning=None)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
-        return
+        _refuse_official(bootstrap_error_message(exc))
     remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
     _official_published(release, revision_id, warning=verdict.message or None)
 
@@ -1409,12 +1407,27 @@ def _official_published(
     st.rerun()
 
 
+def _refuse_official(message: str) -> NoReturn:
+    """아무것도 지정하지 않은 거부 — 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 내고(설계 규칙
+    UI-NTF-03) 앱 전체를 다시 돌린다. 팝업 안 제출은 팝업만 도는 회차라 탭 맨 위 칸이 서지 않는다 —
+    다시 도는 회차가 그 칸에서 알림을 내고, 열림 칸이 남은 팝업은 지금 「지금 공식」 으로 다시
+    선다."""
+    queue_flash(
+        FLASH_WARNING_KEY,
+        markdown_safe_tildes(message),
+        kind="error",
+        icon=_NOTICE_ICONS["error"],
+        popup_only=True,
+    )
+    st.rerun()
+
+
 def official_moved_message(current_release_no: int) -> str:
     """팝업을 연 사이 다른 사람이 먼저 공식버전을 지정해 지정하지 않았을 때의 알림."""
     return (
         f"팝업을 연 사이 다른 사람이 공식 v{current_release_no}"
-        f"{object_particle(str(current_release_no))} 먼저 지정해 지정하지 않았습니다 — 팝업을 "
-        "닫고 다시 열어 「지금 공식」을 확인하세요."
+        f"{object_particle(str(current_release_no))} 먼저 지정해 지정하지 않았습니다 — 팝업의 "
+        "「지금 공식」을 확인한 뒤 다시 지정하세요."
     )
 
 
