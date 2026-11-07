@@ -347,9 +347,13 @@ export default function (component) {
   // 꺼진 단추의 까닭 풍선(설계 규칙 UI-INP-07) — 감싼 칸이 마우스 · 키보드를 받고, 풍선은 편집기 뿌리의 판 하나다(도구 줄이
   // 넘침을 자른다). 글은 칸의 `data-tip` 이고 비면 칸은 탭 자리에서 빠진다(`lockWith`).
   const tipBox = q('.sle-tip')
+  // 풍선은 칸을 따라가고, 칸이 왼쪽 칸 굴림 밖으로 나가면 숨는다 — `S.tipFor` 는 남아 초점이 머문 채 돌아오면 다시 뜬다.
   function placeTip(spot) {
-    const frame = host.getBoundingClientRect()
     const box = spot.getBoundingClientRect()
+    const port = spot.closest('.sle-side-scroll')?.getBoundingClientRect()
+    tipBox.hidden = Boolean(port) && (box.bottom <= port.top || box.top >= port.bottom)
+    if (tipBox.hidden) return
+    const frame = host.getBoundingClientRect()
     const below = box.bottom - frame.top + TIP_GAP_PX
     const above = box.top - frame.top - TIP_GAP_PX - tipBox.offsetHeight
     const roomLeft = Math.max(frame.width - tipBox.offsetWidth, 0)
@@ -365,7 +369,6 @@ export default function (component) {
     if (!text) { hideTip(); return }
     S.tipFor = spot
     setText(tipBox, text)
-    tipBox.hidden = false
     placeTip(spot)
   }
   function setTip(spot, reason) {
@@ -382,15 +385,18 @@ export default function (component) {
     setTip(spot, reason)
     if (held) (reason ? spot : button).focus({ preventScroll: true })
   }
-  // 마우스는 올린 동안, 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다.
+  // 마우스는 올린 동안, 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다. 칸은 눌리지 않으므로
+  // 칸 자신이 받은 Space 는 페이지를 굴리지 않게 막는다(칸 안의 켜진 단추 · 입력 칸이 받은 키는 그대로 간다).
   function bindTip(spot) {
     spot.onpointerenter = () => showTip(spot)
     spot.onpointerleave = () => { if (!spot.matches(':focus-visible')) hideTip() }
     spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }
     spot.onblur = hideTip
+    spot.onkeydown = (event) => { if (event.key === ' ' && event.target === spot) event.preventDefault() }
   }
   for (const spot of host.querySelectorAll('.sle-tiphost')) bindTip(spot)
   bindTip(q('.sle-area'))
+  q('.sle-side-scroll').onscroll = () => { if (S.tipFor) placeTip(S.tipFor) }
   // 회차 사이에 칸이 사라졌으면(보기 ↔ 편집) 풍선도 걷는다 — 칸을 떠나는 사건이 오지 않는다.
   if (S.tipFor && !S.tipFor.offsetParent) hideTip()
   const zoomOut = q('.sle-zoom-out')
@@ -6195,7 +6201,7 @@ export default function (component) {
     // 단축키 판은 Esc 가 먼저 닫는다(고른 것 · 붓은 그대로).
     if (event.key === 'Escape' && keysOpen()) { event.preventDefault(); setKeysOpen(false, true); return }
     // 떠 있는 풍선도 Esc 가 먼저 걷는다 — 초점을 옮기지 않고 가린 자리를 볼 수 있어야 한다.
-    if (event.key === 'Escape' && S.tipFor) { event.preventDefault(); hideTip(); return }
+    if (event.key === 'Escape' && S.tipFor && !tipBox.hidden) { event.preventDefault(); hideTip(); return }
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return

@@ -1075,6 +1075,7 @@ const node = () => ({
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null },
   setAttribute(k, v) { this.attrs[k] = v; if (k === 'data-tip') this.dataset.tip = v },
   removeAttribute(k) { delete this.attrs[k] },
+  closest: () => null,
 })
 const setText = (n, text) => { n.textContent = text }
 const setAttr = (n, name, value) => n.setAttribute(name, value)
@@ -1098,6 +1099,22 @@ const isFocused = (n) => n === held
 button.focus = () => { held = button }
 button.parentElement.focus = () => { held = button.parentElement }
 const out = []
+if (input.scroll) {
+  const spot = button.parentElement
+  let top = input.top
+  spot.getBoundingClientRect = () => box(input.left, top, 60, 27)
+  spot.closest = () => ({ getBoundingClientRect: () => box(100, 200, 200, 300) })
+  lockWith(button, '잠김')
+  showTip(spot)
+  const steps = []
+  for (const next of input.scroll) {
+    top = next
+    placeTip(spot)
+    steps.push({ shown: !tipBox.hidden, top: tipBox.style.top, kept: S.tipFor === spot })
+  }
+  process.stdout.write(JSON.stringify({ steps }))
+  process.exit(0)
+}
 if (input.focus) {
   held = button
   lockWith(button, '되돌릴 것 없음')
@@ -1172,6 +1189,21 @@ def test_the_reason_tip_opens_under_the_button_and_stays_inside_the_editor() -> 
     assert bottom["top"] == "524px"
 
 
+def test_the_tip_follows_its_host_and_hides_while_the_side_scroll_carries_it_away() -> None:
+    """왼쪽 칸이 구르면 풍선이 칸을 따라가고, 칸이 굴림 밖으로 나가면 숨는다. 초점이 머문 채
+    칸이 돌아오면 다시 뜬다 — 풍선 임자(`S.tipFor`)는 숨은 동안에도 남는다."""
+    inside, partly, out_below, back, out_above = _node(
+        _tip_source() + _TIP_RUNNER, {"left": 300, "top": 240, "scroll": [300, 490, 500, 240, 173]}
+    )["steps"]
+
+    assert inside == {"shown": True, "top": "283px", "kept": True}
+    assert partly == {"shown": True, "top": "473px", "kept": True}
+    assert out_below == {"shown": False, "top": "473px", "kept": True}
+    assert back == {"shown": True, "top": "223px", "kept": True}
+    assert out_above["shown"] is False and out_above["kept"] is True
+    assert "q('.sle-side-scroll').onscroll = () => { if (S.tipFor) placeTip(S.tipFor) }" in JS
+
+
 def test_every_toolbar_button_that_can_lock_sits_in_a_tip_host() -> None:
     """도구 줄 · 기준일 줄의 잠기는 단추는 감싼 칸 안이고 `disabled` 를 직접 쓰지 않는다 — 까닭 없이
     잠기는 길이 없다. 칸은 편집 전용 표지를 함께 달아 보기에서 빈 탭 자리로 남지 않고, 「적용」 의
@@ -1212,9 +1244,32 @@ def test_the_tip_opens_by_mouse_and_keyboard_and_esc_hides_it() -> None:
     assert "spot.onpointerenter = () => showTip(spot)" in bind
     assert "spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }" in bind
     keys = JS[JS.index("host.onkeydown = (event) => {") :]
-    assert keys.index("S.tipFor) { event.preventDefault(); hideTip(); return }") < keys.index(
-        "if (VIEW) {"
-    )
+    assert keys.index(
+        "S.tipFor && !tipBox.hidden) { event.preventDefault(); hideTip(); return }"
+    ) < keys.index("if (VIEW) {")
+
+
+_TIP_KEY_RUNNER = """
+const spot = { matches: () => false }
+const showTip = () => {}
+const hideTip = () => {}
+bindTip(spot)
+const press = (key, target) => {
+  let stopped = false
+  spot.onkeydown({ key, target, preventDefault() { stopped = true } })
+  return stopped
+}
+process.stdout.write(JSON.stringify({
+  own: press(' ', spot), enter: press('Enter', spot), inner: press(' ', { tagName: 'BUTTON' }),
+}))
+"""
+
+
+def test_space_on_a_locked_host_does_not_scroll_the_page_but_reaches_what_is_inside() -> None:
+    """칸은 눌리지 않으므로 칸 자신이 받은 Space 는 본문을 굴리지 않게 막는다. 칸 안의 켜진
+    단추 · 입력 칸이 받은 키와 다른 키는 그대로 간다."""
+    pressed = _node(_js_decl("function bindTip(") + _TIP_KEY_RUNNER, {})
+    assert pressed == {"own": True, "enter": False, "inner": False}
 
 
 def test_the_toolbar_reasons_are_short_values() -> None:
