@@ -21,7 +21,11 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
 
 from capa_simulation.components import space_layout_editor, write_guard
-from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_GENERATION_KEY,
+    BUFFER_KEY,
+)
+from capa_simulation.components.popover_field_commit import ESC_COMMIT_PREFIX
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_floor_layout_cache,
@@ -750,6 +754,11 @@ def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_
     inside = _popover_widgets(app, "변경 내용")
     assert {"변경 메모", "저장자(선택)"} <= inside
     assert any("바뀐 호기 1건" in item.label for item in app.expander)
+    # 잠긴 줄과 다른 팝오버다 — 같은 id 면 「모두 버리기」 뒤 브라우저가 열린 팝오버를 잠긴 줄로 이어
+    # 빈 상자가 남는다(AGENTS 9장).
+    assert not set(idle_ids.values()) & set(_popover_ids(app).values())
+    # 메모 · 저장자는 팝오버 밖 「배치 저장」 이 읽는다 — Esc 로 닫아도 값이 가는 칸에 든다.
+    assert f"{ESC_COMMIT_PREFIX}space_layout_details" in _popover_box_keys(app, "변경 내용")
 
     app.toggle(key="space_layout_edit_mode").set_value(False).run()
     assert not app.exception, [item.message for item in app.exception]

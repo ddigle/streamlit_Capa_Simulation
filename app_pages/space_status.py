@@ -68,6 +68,7 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.popover_field_commit import ESC_COMMIT_PREFIX
 from capa_simulation.components.sample_data import (
     NO_UNITS_HELP,
     NO_UNITS_MARK,
@@ -331,6 +332,7 @@ CHANGES_EXPANDER_KEY = "space_layout_changes_expander"
 UNSAVED_PANEL_KEY = "space_unsaved_layout_panel"
 UNSAVED_HEAD_KEY = "space_unsaved_layout_head"
 DETAILS_POPOVER_KEY = "space_layout_details_popover"
+DETAILS_FIELDS_KEY = f"{ESC_COMMIT_PREFIX}space_layout_details"
 UNSAVED_PANEL_STYLE = f"<style>.st-key-{UNSAVED_PANEL_KEY}{{padding:0.375rem 0.75rem}}</style>"
 DETAILS_LABEL = "변경 내용"
 DETAILS_ICON = ":material/notes:"
@@ -1404,7 +1406,8 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
                 disabled=fab_only,
                 help=DETAILS_NONE_HELP if fab_only else DETAILS_HELP,
             ):
-                with st.container(width=DETAILS_WIDTH):
+                # 메모 · 저장자는 팝오버 밖 「배치 저장」 이 읽는다 — Esc 로 닫아도 값을 보낸다.
+                with st.container(width=DETAILS_WIDTH, key=DETAILS_FIELDS_KEY):
                     if not fab_only:
                         with st.container(horizontal=True, gap="small"):
                             st.text_input(
