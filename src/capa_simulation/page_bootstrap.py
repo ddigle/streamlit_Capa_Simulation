@@ -109,14 +109,40 @@ _OPEN_FAILURE_MARKERS = ("Cannot open", "Could not set lock")
 # 화면에 옮기는 원문 길이. DuckDB 문구에는 SQL 줄과 위치 표시가 붙어 길어진다.
 _ORIGINAL_TEXT_LIMIT = 300
 _BACKTICK_RUN = re.compile(r"`+")
-# 대당 Capa 계산이 입력 빠짐으로 멈춘 오류의 머리(`services/unit_capacity` 의 글) — 빈 값 · 연결값
-# 없음. 계산 캐시가 오류를 글로 담아 다시 던지므로(`simulation_cache.CapacityOutcome`) 예외
-# 종류(`ReferenceJoinError`)로는 가르지 못한다. 조회기간 밖 오류는 이 머리를 글 끝에 싣고 온다
+# 대당 Capa 계산이 기준정보 한 칸 때문에 멈춘 오류의 머리(`services/unit_capacity` 의 글)와 그
+# 칸의 화면 이름 — 빈 값 · 연결값 없음(빈 칸), 숫자 아님, 0 이하, UPEH 표 Main · MI 행 값. 계산
+# 캐시가 오류를 글로 담아 다시 던지므로(`simulation_cache.CapacityOutcome`) 예외 종류
+# (`ReferenceJoinError`)로는 가르지 못한다. 조회기간 밖 오류는 이 머리를 글 끝에 싣고 온다
 # (`simulation_cache.outside_period_error`) — 그래서 글 맨 앞에 묶지 않고 글 안에서 찾는다.
-_MISSING_INPUT_STOP = re.compile(
-    r"(?P<table>RQ_[A-Z_]+)(?:의 .+? 값이 빈| 연결값이 없는) 대당 Capa 기준이 있습니다"
-    r"(?=: (?P<count>[\d,]+)건)"
+# 건수(`count`)가 없는 꼴은 UPEH 표의 글뿐이다. 표 자체가 깨진 꼴(컬럼 · 월 형식 · 연결 키)은
+# 칸을 고쳐 풀리지 않아 여기 없다.
+_COUNTED = r"(?=: (?P<count>[\d,]+)건)"
+_BLANK_CELL = "빈 칸"
+_CELL_STOPS = (
+    (
+        re.compile(
+            r"(?P<table>RQ_[A-Z_]+)(?:의 [^:]+? 값이 빈| 연결값이 없는) 대당 Capa 기준이 있습니다"
+            + _COUNTED
+        ),
+        _BLANK_CELL,
+    ),
+    (
+        re.compile(r"(?P<table>RQ_[A-Z_]+)의 [^:]+? 컬럼에 숫자가 아닌 값이 있습니다" + _COUNTED),
+        "숫자 아닌 칸",
+    ),
+    (re.compile(r"(?P<table>RQ_[A-Z_]+)의 [^:]+? 값은 0보다 커야 합니다" + _COUNTED), "0 이하 칸"),
+    (
+        re.compile(
+            r"(?P<table>RQ_UPEH)의 (?P<area>Main|MI) 행에 (?P<column>UPEH|ST) 누락값 또는 숫자가 "
+            r"아닌 값이 있습니다"
+        ),
+        "{area} 행 {column} 빈 칸 · 숫자 아닌 칸",
+    ),
+    (re.compile(r"(?P<table>RQ_UPEH)의 MI 행 ST 값은 0보다 커야 합니다"), "MI 행 ST 0 이하 칸"),
 )
+# 모듈수 표 — 기준 정보 편집표가 아니라 앱에서 고칠 수 없다. 원천을 고쳐 다시 등록해야 풀린다
+# (`scenario_registration.RegistrationCapacityCheck.fix_hint` 와 같은 말).
+_MODULE_TABLE = "RQ_MODULE"
 
 
 def _original_line(exc: BaseException) -> str:
@@ -218,39 +244,75 @@ def bootstrap_error_message(
 
 
 class CalculationStop(NamedTuple):
-    """기준 정보의 빈 칸 때문에 멈춘 계산의 알림 재료(`calculation_stop_notice`)."""
+    """기준정보 한 칸 때문에 멈춘 대당 Capa 계산의 알림 재료(`calculation_stop_notice`)."""
 
     text: str
-    """알림창 짧은 글 — 무엇이 멈췄고 어디서 무엇을 채우는가."""
+    """알림창 짧은 글 — 무엇이 멈췄고 어디서 무엇을 고치는가."""
 
-    goto: tuple[str, str]
-    """Alarm 줄의 화면 칸 · 「그 화면으로」 가 열 화면(이름, 주소)."""
+    goto: tuple[str, str] | None
+    """Alarm 줄의 화면 칸 · 「그 화면으로」 가 열 화면(이름, 주소). 앱에서 고칠 수 없으면 None(멈춘
+    화면 그대로)."""
 
     message: str
     """알림 전문 — 어느 화면의 멈춤인지 · 고칠 곳 · 건수와 예시 행. 표 이름은 화면 이름이다."""
 
 
 def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
-    """받은 오류가 기준 정보의 빈 칸을 채우면 풀리는 계산 멈춤이면 그 알림 재료, 아니면 None.
+    """받은 오류가 기준정보 한 칸 때문에 멈춘 대당 Capa 계산이면 그 알림 재료, 아니면 None.
 
     멈춘 자리의 `render_data_error(stop.message, code=…, text=stop.text, goto=stop.goto)` 로 쓴다.
     None 이면 지금처럼 `bootstrap_error_message(exc)` 만 넘긴다 — 같은 `except BOOTSTRAP_ERRORS` 가
-    DB 잠금 · 읽기 실패와 자료 없는 달도 받고, 그 갈래에는 채울 화면이 없다(설계 규칙 UI-NTF-08).
-    숫자 아닌 값 · 0 이하처럼 빠진 입력이 아닌 멈춤과, 앱에서 고칠 수 없는 모듈수(`RQ_MODULE`)도
-    None 이다. 줄의 화면 칸이 고칠 화면이 되므로 어느 화면의 일인지는 전문 첫머리가 말한다.
+    DB 잠금 · 읽기 실패와 자료 없는 달도 받고, 그 갈래에는 고칠 화면이 없다(설계 규칙 UI-NTF-08).
+
+    기준 정보 편집표의 칸(빈 칸 · 숫자 아닌 칸 · 0 이하 칸 · UPEH 표 Main · MI 행 값)이면 고칠
+    표를 말하고 「그 화면으로」 가 기준 정보를 연다. 모듈수(`RQ_MODULE`)는 앱에서 고칠 수 없어
+    화면을 달지 않고 원천을 다시 등록하라고 말한다. 줄의 화면 칸이 고칠 화면이 되므로 어느 화면의
+    일인지는 전문 첫머리가 말한다. 서비스의 오류 글은 바꾸지 않고 전문 뒤에 싣되 내부 표 이름만
+    화면 이름으로 바꾼다.
     """
-    found = _MISSING_INPUT_STOP.search(str(exc)) if isinstance(exc, ValueError) else None
-    if found is None or found["table"] not in EDIT_TABLES:
+    if not isinstance(exc, ValueError):
         return None
-    name = quoted(DATASETS[found["table"]])
+    error = str(exc)
+    hit = next(
+        ((found, cell) for pattern, cell in _CELL_STOPS if (found := pattern.search(error))), None
+    )
+    if hit is None:
+        return None
+    found, cell = hit
+    table = found["table"]
+    if table != _MODULE_TABLE and table not in EDIT_TABLES:
+        return None
+    groups = found.groupdict()
+    cell = cell.format_map(groups)
+    what = f"{cell} {groups['count']}건" if groups.get("count") else cell
+    module = table == _MODULE_TABLE
+    name = "모듈수" if module else quoted(DATASETS[table])
+    # 건수가 있는 꼴은 머리를 통째로 칸 이름으로, 없는 꼴(UPEH 표)은 표 이름만 바꾼다.
+    body = bootstrap_error_message(exc)
+    body = (
+        body.replace(found[0], f"{name} 표의 {cell}")
+        if groups.get("count")
+        else body.replace(f"{table}의", f"{name} 표의")
+    )
     page = alerts.current_page()[0]
+    lead = f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다."
+    if module:
+        return CalculationStop(
+            text=f"대당 Capa 계산 멈춤 — 모듈수 {what} · 앱에서 고칠 수 없음 — 원천을 다시 등록",
+            goto=None,
+            message=(
+                f"{lead} 모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천의 "
+                f"모듈수를 고쳐 다시 등록하세요.\n\n{body}"
+            ),
+        )
+    blank = cell == _BLANK_CELL
+    fix = f"{cell}에 0보다 큰 값을 넣고" if blank else f"{cell}을 0보다 큰 값으로 고치고"
     return CalculationStop(
-        text=f"대당 Capa 계산 멈춤 — 기준 정보 {name} 빈 칸 {found['count']}건을 채움",
+        text=f"대당 Capa 계산 멈춤 — 기준 정보 {name} {what}을 {'채움' if blank else '고침'}",
         goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href),
         message=(
-            f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다. 기준 정보 {name} 표의 빈 "
-            "칸에 0보다 큰 값을 넣고 「변경사항 적용」 뒤 새 리비전으로 저장하세요.\n\n"
-            + bootstrap_error_message(exc).replace(found[0], f"{name} 표의 빈 칸")
+            f"{lead} 기준 정보 {name} 표의 {fix} 「변경사항 적용」 뒤 새 리비전으로 저장하세요.\n\n"
+            f"{body}"
         ),
     )
 
