@@ -78,6 +78,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP, ORDER_WORSENED_FIRST
+from capa_simulation.sidebar_status import NO_PROCESS_MARK
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
     UPEH_ASSUMPTION_PERCENT_KEY,
@@ -312,7 +313,13 @@ def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     # 별도 화면이라 「다른 탭」 이 없다 — 옛 탭 시절 말을 남기지 않는다.
     assert "다른 탭" not in note["full"]
     assert not _cards(app)
+    assert _card_marks(app) == [NO_PROCESS_MARK]
     clear_equipment_repository()
+
+
+def _card_marks(app: AppTest) -> list[str]:
+    """사이드바 조건 카드의 표지 글 — 멈춘 회차에도 카드가 제목만 남지 않는다(UI-LAY-10)."""
+    return [str(item.value) for item in app.sidebar.caption if str(item.value) == NO_PROCESS_MARK]
 
 
 def test_a_period_outside_the_scenario_data_stops_with_the_data_range(tmp_path: Path) -> None:
@@ -339,6 +346,7 @@ def test_a_period_outside_the_scenario_data_stops_with_the_data_range(tmp_path: 
     assert not [expander.label for expander in app.expander if "맞대지 못한 공정" in expander.label]
     assert not {"시작 월", "끝 월"} & {widget.label for widget in app.sidebar.selectbox}
     assert not _cards(app)
+    assert _card_marks(app) == [NO_PROCESS_MARK]
     clear_equipment_repository()
 
 
@@ -436,6 +444,7 @@ def test_a_missing_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_
         AVAILABLE_EQUIPMENT_STATUS.href,
     )
     assert not _cards(app)
+    assert _card_marks(app) == [NO_PROCESS_MARK]
     clear_equipment_repository()
 
 

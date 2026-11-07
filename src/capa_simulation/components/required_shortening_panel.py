@@ -178,6 +178,7 @@ from capa_simulation.services.undated_equipment import (
 from capa_simulation.services.upeh_assumption import UpehAssumption
 from capa_simulation.services.usage_basis import usage_exclusion_mark
 from capa_simulation.settings import DUCKDB_PATH
+from capa_simulation.sidebar_status import NO_PROCESS_MARK
 
 __all__ = [
     "MANUAL_NOTICE_HELP",
@@ -401,13 +402,13 @@ def _prepare(
         or required_equipment is None
         or required_equipment_key is None
     ):
-        return ShorteningStop("scenario", scenario_error)
+        return _mark_empty_card(ShorteningStop("scenario", scenario_error), controls)
     demand = ShorteningDemand(
         context=context, key=required_equipment_key, loader=required_equipment
     )
     month_options = shortening_month_options(demand, cutoff)
     if isinstance(month_options, ShorteningStop):
-        return month_options
+        return _mark_empty_card(month_options, controls)
     profile = shortening_filter_profile_or_default(database_path)
     with controls:
         if database_path is not None:
@@ -462,6 +463,16 @@ def _prepare(
         labels=labels,
         assumption=assumption,
     )
+
+
+def _mark_empty_card(
+    stop: ShorteningStop, controls: AbstractContextManager[object]
+) -> ShorteningStop:
+    """칸을 세우기 전에 멈춘 회차 — 조건 카드에 표지 한 줄을 둔다(공정 Capa 상세 · 제약 시뮬레이션과
+    같은 꼴, 제목만 남은 빈 구역을 만들지 않는다). 까닭은 본문 마크의 알림이다."""
+    with controls:
+        st.caption(NO_PROCESS_MARK)
+    return stop
 
 
 @st.fragment
