@@ -173,7 +173,7 @@ EDITOR_KEYS: dict[str, str] = {
     **{table_name: editor_key for table_name, _, _, editor_key in EQUIPMENT_EDITORS},
 }
 assert set(EDITOR_KEYS) == set(EDIT_TABLES)
-# 편집 표 이름 — 사이드바 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다
+# 편집 표 이름 — 변경 판 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다
 # (종류 단추 글). 값 칸의 표시·다듬기 규칙(형식·하한·상한·정수·빈칸 = 0)은
 # `reference_grid.GRID_FORMATS` 다 — UPEH 는 유효숫자 여섯 자리(MI 행 값은 ST(분)라 0.01 보다 작은
 # 값이 정의대로 들어온다).
@@ -449,7 +449,7 @@ grid_kept, grid_dropped = _grid_survivors(st.session_state.get(SOURCE_TOKEN_KEY)
 kept_grid_keys = {
     key for table_name in grid_kept for key in (cells_key(table_name), history_key(table_name))
 }
-# 앱 머리(칩 · 탭 점 · 사이드바 줄)는 이 본문보다 먼저 이 값으로 그렸다.
+# 앱 머리(칩 · 탭 점)는 이 본문보다 먼저 이 값으로 그렸다.
 edits_in_head = pending_edit_labels("reference_data.py")
 reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
@@ -517,7 +517,7 @@ grid_tables = {
 }
 if reference_grid.apply_grid_inbox(grid_tables) or head_is_stale:
     # 원본이 바뀌어 초안을 버렸거나, 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던
-    # 표의 첫 op 가 아무것도 바꾸지 않음). 사이드바 「적용 전 편집」·화면 탭 점·변경 칩·테마 표지는
+    # 표의 첫 op 가 아무것도 바꾸지 않음). 화면 탭 점·변경 칩·테마 표지는
     # `app.py` 가 이 본문보다 **먼저** 옛 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는
     # 다시 보내지 않는다). 한 번 다시 돈다(양식·색인은 캐시라 싸고, 다음 회차는 버릴 초안도 inbox
     # 도 없어 되풀이되지 않는다).

@@ -97,7 +97,7 @@ _STALE_VALUE_KEYS = (
     "reference_data_own_change",
     HOME_FIGURE_CACHE_KEY,
     # 기준 정보 편집 그리드의 표마다 초안·이력과 반영 전 op — 앞 시나리오 양식에 붙은 편집이다.
-    # 세션 칸이라 다른 화면에 있어도 사이드바 「적용 전 편집」 이 세므로 바꾸는 자리에서 지운다.
+    # 세션 칸이라 다른 화면에 있어도 변경 칩·화면 탭 점이 세므로 바꾸는 자리에서 지운다.
     *REFERENCE_GRID_SESSION_KEYS,
 )
 _STALE_UI_KEYS = (*_STALE_VALUE_KEYS, *HOME_TOGGLE_DEFAULTS)
