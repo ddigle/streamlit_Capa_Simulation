@@ -115,30 +115,31 @@ def test_opening_a_tab_draws_it_in_that_run() -> None:
     assert not _tab(app, "상세 분석").get("plotly_chart")
 
 
-def test_the_summary_warning_puts_no_particle_right_after_the_process_name() -> None:
+def test_the_summary_verdict_is_one_plain_line_with_no_particle_after_the_process_name() -> None:
     """요약 결론은 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름이 「이(가)」 가 됐다
-    (「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93)."""
+    (「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93). 결론은 상자 없는 평문 한 줄이고
+    건수는 바로 아래 「개선 필요 공정」 칸 몫이다(설계 규칙 UI-TXT-04 · UI-TXT-07)."""
     priority = _expected_priority()
     worst = priority.loc[priority["상태"].eq("개선 필요")].iloc[0]
 
     app = _open("요약")
 
-    warnings = [str(item.value) for item in _tab(app, "요약").get("warning")]
-    assert any(
-        text.startswith(f"**{worst['공정']}** — {int(worst['연속 미달'])}개월 연속 ")
-        for text in warnings
-    ), warnings
-    assert not [text for text in warnings if "이(가)" in text]
+    assert not _tab(app, "요약").get("warning")
+    (verdict,) = [str(item.value) for item in _tab(app, "요약").get("caption")]
+    assert verdict.startswith(f"**{worst['공정']}** — {int(worst['연속 미달'])}개월 연속 ")
+    assert "이(가)" not in verdict
+    assert "개선 필요 공정은" not in verdict
 
 
 @pytest.mark.parametrize("label", ["요약", "상세 분석", "개선과제"])
 def test_reading_notes_are_tooltips_not_lines_in_the_open_tab(label: str) -> None:
     """구획을 읽는 법(Gap · 순위 · 점수 셈)은 구획 제목 풍선이다 — 열린 탭 자리에는 설명 캡션이 없다
-    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다)."""
+    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다). 요약 탭의 한 줄은 결론
+    값이다(UI-TXT-04)."""
     app = _open(label)
     tab = _tab(app, label)
 
-    assert not [item.value for item in tab.get("caption")]
+    assert len(tab.get("caption")) == (1 if label == "요약" else 0)
     titled = [item for item in tab.get("markdown") if str(item.value).startswith("#### ")]
     assert titled
     explained = [item for item in titled if item.proto.help]

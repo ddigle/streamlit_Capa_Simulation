@@ -125,8 +125,9 @@ def test_priority_table_stays_original_without_a_rename_profile(
 
 def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     """요약 탭의 판정 기준 · 그림 읽는 법 · 손실 차례와 실행 관리로 가는 까닭은 늘 서는 캡션이
-    아니라 칸 · 구획 제목 · 링크의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론
-    경고는 값만 싣는다."""
+    아니라 칸 · 구획 제목 · 링크의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론은
+    상자 없는 평문 한 줄이고 값만 싣는다 — 건수는 바로 아래 「개선 필요」 칸 몫이다(UI-TXT-04 ·
+    UI-TXT-07)."""
     from capa_simulation.navigation import EXECUTION_MANAGEMENT
 
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
@@ -135,9 +136,9 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     tab_markdown: list[Any] = list(summary_tab.get("markdown"))
     tab_captions: list[Any] = list(summary_tab.get("caption"))
-    captions = [str(caption.value) for caption in tab_captions]
-    assert captions, "요약 탭에는 판정 기준 줄이 없어도 링크 · 카드 글이 선다"
-    assert not any(text.endswith("니다.") for text in captions), captions
+    verdict, *card_captions = [str(caption.value) for caption in tab_captions]
+    assert card_captions, "요약 탭에는 판정 기준 줄이 없어도 링크 · 카드 글이 선다"
+    assert not any(text.endswith("니다.") for text in card_captions), card_captions
     helps = {
         str(markdown.value): str(markdown.proto.help)
         for markdown in tab_markdown
@@ -152,9 +153,9 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     assert "설비 가용은 손실 이전의 전제" in routes_help
     needs_action = next(metric for metric in app.metric if metric.label == "개선 필요")
     assert "80% 미만" in str(needs_action.proto.help)
-    warnings: list[Any] = list(summary_tab.get("warning"))
-    (verdict,) = [str(item.value) for item in warnings]
-    assert "깎아먹는지" not in verdict and verdict.endswith("개입니다.")
+    assert not list(summary_tab.get("warning"))
+    assert "깎아먹는지" not in verdict and verdict.endswith("입니다.")
+    assert "가장 낮습니다" in verdict and "개선 필요 공정은" not in verdict
     # 실행 관리 링크는 단독 실행에서 글로 물러서고, 늘 서던 길 안내 캡션은 없다.
     page_captions = [str(caption.value) for caption in app.caption]
     assert f"사이드바에서 {EXECUTION_MANAGEMENT.title}" in page_captions

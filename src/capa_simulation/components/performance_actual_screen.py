@@ -142,13 +142,14 @@ def _render_summary(
         # 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름(「TC Bonding」)은 끝소리를 몰라
         # 「이(가)」 가 된다. 굵게 닫는 `**` 바로 뒤에 한글이 붙으면 이름이 `)` 로 끝날 때 굵게가
         # 풀리므로 줄표 앞을 한 칸 띄운다. 공정 표시명은 사람 글이라 막아 끼운다(「TC~B~1 *z*」 가
-        # 지움선·기울임이 되지 않게 — AGENTS 9장).
+        # 지움선·기울임이 되지 않게 — AGENTS 9장). 결론은 「없음」 일 때와 같은 평문 한 줄이고(설계
+        # 규칙 UI-TXT-04), 건수는 바로 아래 「개선 필요 공정」 칸이 말한다(UI-TXT-07).
         worst_name = labels.label(worst["공정"])
-        st.warning(
+        st.caption(
             f"**{literal_markdown(worst_name)}** — {int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
             f"{metric.gap_text(float(worst['Gap']))}, 영향 물량 비중 "
-            f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."
+            f"{float(worst['영향 비중']):.0%}."
         )
 
     with metric_row(key=f"{key_prefix}_summary_metrics"):

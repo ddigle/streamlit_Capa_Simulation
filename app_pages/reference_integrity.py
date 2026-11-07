@@ -156,13 +156,13 @@ def _render_summary(
         worst = needs_action.iloc[0]
         worst_rate = f"{float(worst['Capa 실현률']):.0%}"
         # 공정 표시명은 사람 글이라 막아 끼운다(물결표·별표가 지움선·기울임이 되지 않게 —
-        # AGENTS 9장).
-        st.warning(
+        # AGENTS 9장). 결론은 「없음」 일 때와 같은 평문 한 줄이고(설계 규칙 UI-TXT-04), 건수는 바로
+        # 아래 「개선 필요」 칸이 말한다(UI-TXT-07).
+        st.caption(
             f"**{literal_markdown(labels.label(worst['공정']))}** 의 Capa 실현률이 "
             f"{with_direction_particle(worst_rate)} 가장 낮습니다. 설비 성능 실현률은 "
             f"{float(worst['설비 성능 실현률']):.0%}, 가용 Capa 활용률은 "
-            f"{float(worst['가용 Capa 활용률']):.0%} 입니다. 개선 필요 공정은 모두 "
-            f"{len(needs_action):,}개입니다."
+            f"{float(worst['가용 Capa 활용률']):.0%} 입니다."
         )
 
     with metric_row(key="reference_integrity_summary_metrics"):
