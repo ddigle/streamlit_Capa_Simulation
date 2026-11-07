@@ -273,8 +273,8 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
     """사용자 요구의 핵심을 페이지 서식 규칙으로 못 박는다(브라우저 손 확인으로만 잡히던 것) —
     본문 칸은 창 높이 상한 안에서 세로로만 스크롤하고(페이지를 늘리지 않는다), 오른쪽 칸 감싸개는
     붙어 있으며(줄이 스크롤 칸이 되지 않게 `overflow: visible`), 두 칸 경계선은 왼쪽 감싸개의 오른쪽
-    테두리라 영역 끝까지 간다. 칸막이 마운트는 경계선부터 칸 오른쪽 끝까지 덮되 눌림을 그대로
-    통과시킨다. 접힘은 넓은 화면에서만 칸 자리를 0 으로 만들어 표가 줄을 다 쓰고(칸막이 밖은
+    테두리라 영역 위아래 테두리까지 간다. 칸막이 마운트는 경계선부터 칸 오른쪽 끝까지 덮되 눌림을
+    그대로 통과시킨다. 접힘은 넓은 화면에서만 칸 자리를 0 으로 만들어 표가 줄을 다 쓰고(칸막이 밖은
     `display: none` — 그려 둔 채 숨김, 다시 마운트 없음) 표 위 작업 줄이 떠 있는 단추 자리를 비운다.
     640px 이하는 위아래로 쌓아 칸막이를 숨기며, 인쇄는 상한·sticky 를 풀어 다 찍는다."""
     rules = _css_rules(emg.side_layout_style())
@@ -320,11 +320,14 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
         "align-self": "flex-start",
     }
     assert rules[("", split)] == {"align-items": "flex-start", "overflow": "visible"}
-    # 왼쪽 감싸개 — 줄 높이로 늘어 오른쪽 테두리가 두 칸 경계선이다.
+    # 왼쪽 감싸개 — 줄 높이로 늘어 오른쪽 테두리가 두 칸 경계선이다. 음수 여백으로 영역 안쪽
+    # 여백까지 나가 경계선이 영역 위아래 테두리에 닿고, 같은 값의 안쪽 여백이 표 자리를 그대로 둔다.
     assert rules[("", left_item)] == {
         "flex": "1 1 0",
         "min-width": "0",
         "align-self": "stretch",
+        "margin-block": f"-{sp.SIDE_FRAME_PAD_PX}px",
+        "padding-block": f"{sp.SIDE_FRAME_PAD_PX}px",
         "padding-right": f"{sp.SIDE_INSET_PX}px",
         "border-right": line,
     }
@@ -377,6 +380,8 @@ def test_the_layout_style_caps_the_body_scrolls_inside_sticks_folds_stacks_and_p
     assert rules[(narrow, left_item)] == {
         "flex": "1 1 100%",
         "position": "static",
+        "margin-block": "0",
+        "padding-block": "0",
         "padding-right": "0",
         "border-right": "none",
     }
@@ -633,6 +638,8 @@ def test_the_fold_button_sits_in_the_head_and_the_reopen_button_floats_like_the_
     assert _css_block(".ess")["pointer-events"] == "none"
     gutter = _css_block(".ess-gutter")
     assert gutter["pointer-events"] == "auto" and gutter["width"] == f"{sp.SIDE_GUTTER_PX}px"
+    # 잡는 칸(눌렀을 때 빛나는 선)도 경계선 전체 — 영역 안쪽 여백만큼 위아래로 나간다.
+    assert gutter["top"] == gutter["bottom"] == f"-{sp.SIDE_FRAME_PAD_PX}px"
     # 머리 한 줄이 최소 폭에 든다(고르기 넷의 자연 폭 310 — 1.63 측정) · 떠 있는 단추의 가장 긴 칸
     # 이름(「저장 전 변경」 89 — 측정)이 칸 끝에서 5 나가도 메뉴 「엑셀·CSV」 를 덮지 않는다.
     head = 310 + sp.SIDE_TOGGLE_GAP_PX + sp.SIDE_TOGGLE_PX
@@ -644,8 +651,8 @@ def test_the_fold_button_sits_in_the_head_and_the_reopen_button_floats_like_the_
         for name, value in re.findall(r"\n(\.emg-[\w.-]+) \{[^}]*?z-index: (\d+);", GRID_CSS)
     }
     assert orders[".emg-head"] < sp.SIDE_REOPEN_Z_INDEX < orders[".emg-c.is-editing"]
-    # 영역 안쪽 여백(13)에 스크롤 막대 자리가 든다.
-    assert sp.SIDE_SCROLLBAR_PX <= 13
+    # 영역 안쪽 여백에 스크롤 막대 자리가 든다.
+    assert sp.SIDE_SCROLLBAR_PX <= sp.SIDE_FRAME_PAD_PX
 
 
 def test_the_cleanup_releases_listeners_and_frames() -> None:

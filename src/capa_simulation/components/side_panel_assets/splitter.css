@@ -14,8 +14,8 @@
 
 .ess-gutter {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: -13px;
+  bottom: -13px;
   left: 0;
   width: 16px;
   cursor: col-resize;

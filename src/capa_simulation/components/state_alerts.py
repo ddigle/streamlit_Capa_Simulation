@@ -175,10 +175,17 @@ def clipped_label(table: alerts.AlertTable) -> str:
     return f"앞 {len(table['rows']):,}건 · 전체 {table['total']:,}건"
 
 
-def alert_page_error(message: str, *, code: str, tab: str = "", text: str | None = None) -> None:
-    """화면을 그리지 못한 오류의 알림(글 · 같은 글 한 번은 `alerts.page_error_note`). 자리 마크는
-    부르는 쪽 몫이고 이벤트 칸에 한 자리를 쓴다."""
-    alerts.emit([alerts.page_error_note(message, code=code, tab=tab, text=text)])
+def alert_page_error(
+    message: str,
+    *,
+    code: str,
+    tab: str = "",
+    text: str | None = None,
+    goto: tuple[str, str] | None = None,
+) -> None:
+    """화면을 그리지 못한 오류의 알림(글 · 같은 글 한 번 · `goto` 는 `alerts.page_error_note`). 자리
+    마크는 부르는 쪽 몫이고 이벤트 칸에 한 자리를 쓴다."""
+    alerts.emit([alerts.page_error_note(message, code=code, tab=tab, text=text, goto=goto)])
 
 
 def tab_name(*labels: str) -> str:

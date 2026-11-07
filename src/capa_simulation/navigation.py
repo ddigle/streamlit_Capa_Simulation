@@ -228,6 +228,12 @@ LOAD_CONVERSION = PageSpec(
     ":material/scale:",
     has_condition_cards=True,
 )
+REFERENCE_DATA = PageSpec(
+    "app_pages/reference_data.py",
+    "기준 정보",
+    ":material/settings:",
+    has_condition_cards=True,
+)
 # 재공 현황(Dynamic)이 이 화면의 일 표준을 기준선으로 쓰지만, 표준 자체는 약속(대당 Capa)을 일·주로
 # 푼 값이라 Static 에 둔다(2026-10-17 사용자 결정).
 STANDARD_TARGET_CAPA = PageSpec(
@@ -238,12 +244,7 @@ STANDARD_TARGET_CAPA = PageSpec(
 )
 STATIC_CAPA_SUBPAGES = (
     LOAD_CONVERSION,
-    PageSpec(
-        "app_pages/reference_data.py",
-        "기준 정보",
-        ":material/settings:",
-        has_condition_cards=True,
-    ),
+    REFERENCE_DATA,
     PageSpec(
         "app_pages/calculation_result.py",
         "산출 결과",
