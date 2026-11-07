@@ -66,6 +66,8 @@ TABLE_REFUSED_MESSAGE: Final = (
 )
 ADD_LOCKED_WHY: Final = "접속 명단을 읽은 뒤에 넣을 수 있습니다 — 「다시 읽기」"
 REMOVE_HELP: Final = "고른 사람을 명단에서 뺍니다. 그 사람의 열린 탭은 다음 조작에 닫힙니다."
+# 「지우기」 고르기 칸의 이름 — 라벨을 접은 칸이라 자리표시 글로 보인다.
+REMOVE_PICKER_LABEL: Final = "지울 사람"
 
 
 def save_failure_message(failure: S3Failure) -> str:
@@ -222,25 +224,35 @@ def people_table(document: ListDocument) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["loginid", "넣은 때", "넣은 사람"])
 
 
-def _render_people(document: ListDocument) -> None:
-    if not document.entries:
-        st.caption("명단에 사람이 없습니다")
-        return
+def _render_remove_picker(document: ListDocument) -> None:
+    """작업 줄의 고르기 칸 · 「지우기」. 칸 라벨은 접고(접근성 이름으로 남는다) 자리표시 글이 그
+    이름이다."""
     options = [entry.loginid for entry in document.entries]
     # 다시 읽기로 빠진 사람이 고른 칸에 남으면 위젯이 옵션 밖 값을 받는다.
     selected = st.session_state.get(ACCESS_LIST_REMOVE_KEY) or []
     kept = [item for item in selected if item in options]
     if len(kept) != len(selected):
         st.session_state[ACCESS_LIST_REMOVE_KEY] = kept
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        st.multiselect("지울 사람", options, key=ACCESS_LIST_REMOVE_KEY, placeholder="고르기")
-        st.button(
-            "지우기",
-            icon=":material/person_remove:",
-            key="admin_area_access_list_remove_button",
-            help=REMOVE_HELP,
-            on_click=_remove_selected,
-        )
+    st.multiselect(
+        REMOVE_PICKER_LABEL,
+        options,
+        key=ACCESS_LIST_REMOVE_KEY,
+        placeholder=REMOVE_PICKER_LABEL,
+        label_visibility="collapsed",
+    )
+    st.button(
+        "지우기",
+        icon=":material/person_remove:",
+        key="admin_area_access_list_remove_button",
+        help=REMOVE_HELP,
+        on_click=_remove_selected,
+    )
+
+
+def _render_people(document: ListDocument) -> None:
+    if not document.entries:
+        st.caption("명단에 사람이 없습니다")
+        return
     toolbar_clearance()
     st.dataframe(people_table(document), hide_index=True, width="stretch", placeholder="")
 
@@ -256,6 +268,7 @@ def render_access_list_admin() -> None:
     source = runtime.access_source()
     document = None if source is None else source.document
     with remembered_expander("접속 명단", icon=":material/group:", key=EXPANDER_KEY):
+        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 판 · 사용자 값).
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "추가",
@@ -272,12 +285,17 @@ def render_access_list_admin() -> None:
                 key="admin_area_access_list_reread",
                 on_click=_reread,
             )
+            if document is not None and document.entries:
+                _render_remove_picker(document)
             if document is not None:
                 access = runtime.current_access(cfg)
                 st.caption(
                     f"판 {document.revision} · 사용자 {len(document.entries)} · "
-                    f"관리자 {access.admin_count}(환경변수)"
+                    f"관리자 {access.admin_count}(환경변수)",
+                    width="content",
                 )
+        # 곁 거부(「지울 사람을 고르세요」)는 누른 단추 줄 바로 아래 · 표 띄움 앞이다. 갈래(못
+        # 읽음 · 빈 명단 · 표)마다 한 번 불려 그 회차의 알림이 늘 나간다.
         render_flash(ACCESS_LIST_FLASH_KEY)
         if document is None:
             st.caption("접속 명단 읽지 못함")
