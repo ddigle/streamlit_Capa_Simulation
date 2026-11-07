@@ -204,6 +204,19 @@ def test_the_lines_of_the_status_say_nothing_about_a_restart() -> None:
     assert "redirect\\_uri: " in text
 
 
+def test_the_redirect_help_stands_on_the_redirect_line() -> None:
+    """풍선은 그 말이 걸린 칸 곁에 선다 — 사실 줄 묶음에 달면 아이콘이 묶음 끝 「S3 명단」 줄에
+    붙는다(설계 규칙 UI-TXT-01)."""
+    use_config()
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    helped = [item for item in app.caption if item.proto.help == sso_status.REDIRECT_HELP]
+    assert [item.value.split(": ")[0] for item in helped] == ["redirect\\_uri"]
+    assert "\n" not in helped[0].value
+
+
 def test_the_refresh_counts_are_not_shown_while_off_in_production() -> None:
     """꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 — 그리지 않는다."""
     use_config(drop=[names.ENV_CLIENT_ID])

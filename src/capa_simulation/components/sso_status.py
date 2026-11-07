@@ -86,8 +86,8 @@ REFRESH_HELP = (
     "앱을 쓰는 동안 로그인을 늘린 횟수의 기동 뒤 누계입니다 — 재시작하면 0 입니다. 「출처·머리 "
     f"거절」 만 늘고 「다시 발급」 이 0 이면 접속 주소가 `{names.ENV_PUBLIC_URL}` 과 같은지 봅니다."
 )
-# 표 아래 사실 줄의 풍선 — 포털 등록값과 대 보는 법.
-FACTS_HELP = "redirect\\_uri 는 포털 Endpoint URL 과 한 글자도 같아야 합니다."
+# redirect_uri 줄의 풍선 — 포털 등록값과 대 보는 법.
+REDIRECT_HELP = "redirect\\_uri 는 포털 Endpoint URL 과 한 글자도 같아야 합니다."
 ANONYMOUS_HELP = "로그인하지 않은 누구나 보낼 수 있는 요청이라 따로 셉니다."
 
 # S3 명단을 읽거나 쓰지 못한 까닭의 화면 이름(`io/s3_small` · `auth/access_store` 분류).
@@ -255,6 +255,8 @@ def fact_lines(
     cfg: SsoConfig, *, now: datetime | None = None, shareable: bool = False
 ) -> list[str]:
     """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 · 유지 시간 · 쿠키 이름 · 문지기 · 명단.
+
+    첫 줄은 redirect_uri 다 — 화면이 그 풍선을 그 줄에 단다(`render_sso_status`).
 
     `shareable` 이면 포털 등록값 셋(redirect_uri · issuer · 인증서 지문)을 글자 그대로 싣지 않는다 —
     화면에서는 포털과 한 글자씩 대 보지만 리뷰에는 옮기지 않는 값이고(Guide), 복사 글은 리뷰로
@@ -542,7 +544,9 @@ def render_sso_status() -> None:
         else:
             st.error(BROKEN_CONCLUSION, icon=":material/gpp_bad:")
         st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
-        st.caption("  \n".join(fact_lines(cfg, now=now)), help=FACTS_HELP)
+        redirect, *facts = fact_lines(cfg, now=now)
+        st.caption(redirect, help=REDIRECT_HELP)
+        st.caption("  \n".join(facts))
         if cfg.mode is SsoMode.ON:
             # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이고 로그인도 없다 — 켜짐에서만 싣는다.
             st.caption(refresh_count_line(), help=REFRESH_HELP)
