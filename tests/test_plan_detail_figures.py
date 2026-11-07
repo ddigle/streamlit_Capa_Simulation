@@ -20,13 +20,16 @@ from capa_simulation.components.home_dimensions import (
     lower_delta_row_height,
     table_row_height,
 )
+from capa_simulation.components.home_figure_common import HOVER_LABEL_FONT_SIZE_PX
 from capa_simulation.components.home_figures import build_plan_detail_figures
 from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
+    DETAIL_HOVER_LINE_MAX_PX,
     DETAIL_LABEL_INSET_PX,
     DETAIL_VALUE_FONT_SIZE_PX,
 )
-from capa_simulation.components.plotly_layout import table_text_y
+from capa_simulation.components.plotly_layout import table_text_max_width_px, table_text_y
+from capa_simulation.design import tokens
 from capa_simulation.services.dashboard import DETAIL_DIMENSION_WIDTHS
 
 MONTHS = ["202608", "202609"]
@@ -276,13 +279,68 @@ def test_a_name_that_does_not_fit_ends_in_an_ellipsis_and_shows_whole_on_hover()
     (shown,) = [text for text in _value_texts(label_figure) if text.startswith("DEMO_")]
     assert shown.endswith("…") and shown != whole
     (bar,) = [trace for trace in label_figure.data if trace.type == "bar"]
-    assert list(bar.hovertext) == [whole]
+    assert [str(name).replace("<br>", "") for name in bar.hovertext] == [whole]
     assert bar.hoverinfo == "text"
     assert list(bar.base) == [2.0]
     assert list(bar.x) == [DETAIL_DIMENSION_WIDTHS["Customer"]]
     axes = sorted(key for key in label_figure.layout if key.startswith("xaxis"))
     assert bar.xaxis == f"x{axes[-1].removeprefix('xaxis')}"
     assert label_figure.layout[axes[-1]].domain == (0, 1)
+
+
+def _product_detail(product: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"제품정보": [product], "Stack": ["8H"], "202608": [1000.0], "202609": [2000.0]}
+    )
+
+
+def _hover_bar(figure: Any) -> Any:
+    (bar,) = [trace for trace in figure.data if trace.type == "bar"]
+    return bar
+
+
+def test_the_hover_axis_alone_keeps_the_axis_background_transparent() -> None:
+    """원래 이름은 넘치고 줄인 글은 드는 이름은 자르는 축 없이 풍선 축만 생긴다. 이 축의 영역도 앞
+    축과 겹쳐, 바탕이 불투명하면 머리글과 모든 행의 이름을 덮는다."""
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=_product_detail("가상 제품 고객 전용 샘플 1차 시험 판매 확대"),
+        month_labels=MONTHS,
+    )
+
+    assert [trace.xaxis for trace in label_figure.data if trace.type == "scatter"][2:] == []
+    assert _hover_bar(label_figure).xaxis == "x2"
+    assert label_figure.layout.plot_bgcolor == tokens.TRANSPARENT
+
+
+def _hover_lines(name: str) -> list[str]:
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=_product_detail(name),
+        month_labels=MONTHS,
+    )
+    return str(_hover_bar(label_figure).hovertext[0]).split("<br>")
+
+
+def test_a_hover_name_wider_than_the_figure_breaks_into_lines() -> None:
+    """풍선은 그림 밖에서 잘린다 — 말줄임된 이름을 읽는 길이 풍선뿐이라 줄을 나눠 전체가 그림 안에
+    든다."""
+    whole = "DEMO_PRODUCT_LONG_NAME_ALPHA_BETA_GAMMA_DELTA_EPSILON"
+
+    lines = _hover_lines(whole)
+
+    assert len(lines) > 1
+    assert "".join(lines) == whole
+    for line in lines:
+        width = table_text_max_width_px(line, HOVER_LABEL_FONT_SIZE_PX)
+        assert width <= DETAIL_HOVER_LINE_MAX_PX
+
+
+def test_a_hover_name_breaks_at_its_spaces_and_stays_escaped() -> None:
+    whole = "가상 제품 고객 전용 샘플 1차 시험 판매 확대 & 추가 물량 검토 대상 후보 묶음"
+
+    lines = _hover_lines(whole)
+
+    assert len(lines) > 1
+    assert " ".join(lines) == whole.replace("&", "&amp;")
 
 
 def test_names_that_cannot_overflow_get_no_hover_bar() -> None:

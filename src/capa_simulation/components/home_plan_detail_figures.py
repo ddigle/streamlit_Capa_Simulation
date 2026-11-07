@@ -9,8 +9,8 @@
 제품명·거래선은 끝을 말줄임으로 줄이고(`_fit_label` — 가운데 정렬이라 그대로 자르면 앞뒤가 함께
 잘려 끝의 구분 글자를 못 읽는다), 폭을 어림한 글자가 그래도 넘치면 제 칸 경계에서 잘린다
 (`plotly_layout.table_text_layer`). 넘칠 수 있는 칸은 마우스를 올리면 전체 이름이 뜬다
-(`_label_hover_bar`). 비교 시나리오를 주면 값 아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면
-행 높이가 부푼다.
+(`_label_hover_bar`) — 풍선은 그림 밖으로 나가지 못해 그림 폭을 넘는 이름은 줄을 나눈다. 비교
+시나리오를 주면 값 아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면 행 높이가 부푼다.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from capa_simulation.components.home_dimensions import (
     table_row_height,
 )
 from capa_simulation.components.home_figure_common import (
+    HOVER_LABEL_FONT_SIZE_PX,
     _fit_to_units,
     _hover_label,
     _paper_hrule,
@@ -65,6 +66,10 @@ DETAIL_HEADER_FONT_SIZE_PX = 15
 
 # 분류 이름 말줄임 예산을 잡을 때 칸 양쪽에 남기는 여백.
 DETAIL_LABEL_INSET_PX = 4
+
+# 전체 이름 풍선 한 줄의 폭 상한. 풍선은 그림 밖에서 잘린다. Plotly 는 글 폭 + 9px(화살표 · 안쪽
+# 여백)이 그림 폭 안이면 풍선을 그림 안으로 밀어 넣는다.
+DETAIL_HOVER_LINE_MAX_PX = DASHBOARD_LABEL_COLUMN_WIDTH_PX - 9
 
 
 def _detail_month_cell_values(
@@ -207,6 +212,24 @@ def _fit_label(value: str, column_px: float) -> str:
     return _fit_to_units(value, budget, _text_width_units)
 
 
+def _hover_lines(value: str) -> str:
+    """풍선 글을 그림 폭에 드는 줄로 나눠 `<br>` 로 잇는다.
+
+    띄어쓰기에서 나누고, 한 줄을 넘는 낱말은 그 자리에서 끊는다. 글은 이스케이프해 돌려준다.
+    """
+    lines: list[str] = []
+    line = ""
+    for character in value:
+        width = table_text_max_width_px(line + character, HOVER_LABEL_FONT_SIZE_PX)
+        if width > DETAIL_HOVER_LINE_MAX_PX:
+            head, space, tail = line.rpartition(" ")
+            lines.append(head if space else line)
+            line = tail if space else ""
+        line += character
+    lines.append(line)
+    return "<br>".join(html.escape(part) for part in lines)
+
+
 def _label_hover_bar(
     values: Sequence[Sequence[str]],
     *,
@@ -239,7 +262,7 @@ def _label_hover_bar(
         width=row_height,
         xaxis=xaxis,
         marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
-        hovertext=[html.escape(value) for _, _, value in cells],
+        hovertext=[_hover_lines(value) for _, _, value in cells],
         hoverinfo="text",
         showlegend=False,
     )
@@ -402,13 +425,16 @@ def build_plan_detail_figures(
         }
     )
     if label_hover_bar is not None:
+        # 이 축의 영역은 앞 축과 겹친다. 자르는 축이 없어도 바탕을 투명으로 둬야 한다 —
+        # `table_text_layer` 와 같은 까닭으로 불투명 바탕이 칸 면색 · 글자를 통째로 덮는다.
         detail_label_figure.update_layout(
             {
+                "plot_bgcolor": tokens.TRANSPARENT,
                 f"xaxis{label_hover_axis}": {
                     **label_text_layout["xaxis"],
                     "domain": [0, 1],
                     "anchor": "y",
-                }
+                },
             }
         )
         detail_label_figure.add_trace(label_hover_bar)

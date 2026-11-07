@@ -228,7 +228,8 @@ def _long_detail() -> pd.DataFrame:
 
 
 def test_long_plan_detail_names_are_clipped_at_their_column() -> None:
-    """「상세 계획」 칸(제품·Stack·거래선)의 긴 이름은 제 칸에서 잘린다.
+    """「상세 계획」 칸(제품·Stack·거래선)의 긴 이름은 끝을 줄이고, 줄인 글도 넘칠 수 있으면 제
+    칸에서 잘린다.
 
     짧은 값과 월 칸은 그대로다.
     """
@@ -244,15 +245,19 @@ def test_long_plan_detail_names_are_clipped_at_their_column() -> None:
     px_per_unit = DASHBOARD_LABEL_COLUMN_WIDTH_PX / units
     layout = label_figure.layout
     values = label_figure.data[1]
-    # 같은 제품의 둘째 행은 비운다(묶음). 남는 긴 이름 셋은 모두 자르는 trace 로 갔다.
-    assert LONG_NAME not in list(values.text)
-    clipped = {trace.xaxis: list(trace.text) for trace in label_figure.data[2:]}
-    product_axis = layout["xaxis" + next(k for k, v in clipped.items() if v == [LONG_NAME])[1:]]
+    # 맨 뒤 풍선 막대는 글이 없다. 그 앞이 자르는 trace 고 열 차례다.
+    text_traces = [trace for trace in label_figure.data[2:] if trace.type == "scatter"]
+    clipped = {trace.xaxis: list(trace.text) for trace in text_traces}
+    # 같은 제품의 둘째 행은 비운다(묶음). 남는 긴 이름 둘은 줄인 글로 자르는 trace 에 갔다.
+    assert not [text for text in values.text if text.endswith("…")]
+    shortened = [text for texts in clipped.values() for text in texts if text.endswith("…")]
+    assert len(shortened) == 2 and all(text.startswith("DEMO_") for text in shortened)
+    product_axis = layout["xaxis" + next(k for k, v in clipped.items() if v[0].endswith("…"))[1:]]
     assert product_axis.domain[0] == 0
     assert product_axis.domain[1] == pytest.approx(
         (widths[0] * px_per_unit + 1) / DASHBOARD_LABEL_COLUMN_WIDTH_PX
     )
-    assert all(trace.cliponaxis for trace in label_figure.data[2:])
+    assert all(trace.cliponaxis for trace in text_traces)
     assert sum(len(texts) for texts in clipped.values()) >= 2
     # 넘칠 수 없는 값(Stack·짧은 거래선)은 자르지 않는 trace 에 남는다.
     assert {"8H", "12H", "DEMO_B", "DEMO_C"} <= set(values.text)

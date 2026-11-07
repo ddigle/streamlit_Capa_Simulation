@@ -15,6 +15,7 @@ from capa_simulation.components.app_header import (
     PAGE_TITLE_SELECTOR,
     SHELL_STYLE,
     STATUS_SLOT_SELECTOR,
+    TOOLTIP_TEXT_SELECTOR,
     _header_css,
     _status_slot_css,
     css_string,
@@ -351,18 +352,20 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
 
 
 def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> None:
-    """화면 덩어리는 셋뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
+    """화면 덩어리는 넷뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
     밑에 붙고 z-index 는 펼침 목록·팝업보다 낮다. 큰 제목은 `display: none` 이 아니라 sr-only 라
     읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다). 셋째는 모달 동안 탭
-    줄 흐림."""
+    줄 흐림, 넷째는 풍선 글이 곁 칸의 마우스를 가로채지 않게 하는 규칙."""
     block = _screen_block()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
     assert {selector.strip() for selector, _ in rules} == {
         PAGE_TABS_SELECTOR,
         PAGE_TITLE_SELECTOR,
         f"#root[inert] {PAGE_TABS_SELECTOR}",
+        TOOLTIP_TEXT_SELECTOR,
     }
     by_selector = {selector.strip(): body for selector, body in rules}
+    assert by_selector[TOOLTIP_TEXT_SELECTOR].strip() == "pointer-events: none;"
     strip = by_selector[PAGE_TABS_SELECTOR]
     assert "position: sticky;" in strip and "top: 3.75rem;" in strip
     z_index = re.search(r"z-index: (\d+);", strip)
