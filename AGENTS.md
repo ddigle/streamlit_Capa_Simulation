@@ -245,7 +245,7 @@ Windows(PowerShell):
   `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 여덟을 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux 조각을 모은 `verify-result` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
   판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
-  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 그 칸이 빨가면 이 여덟부터 본다. 러너 로캘은 영어라
+  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 판정은 밀려 취소된 판에서 빠지고(`!cancelled()` — `always()` 면 같은 커밋에 빨강과 초록이 함께 남는다) 조각이 끊기면 빨강이다 — 시험 단계 상한을 작업 상한보다 낮게 두어 시간 초과가 취소와 섞이지 않는다. 그 칸이 빨가면 이 여덟부터 본다. 러너 로캘은 영어라
   사내 한국어 로캘(cp949 · 한글 오류 글)은 흉내 내지 못한다. 계약은 `tests/test_ci_workflow.py` · `tests/test_run_test_shard.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는

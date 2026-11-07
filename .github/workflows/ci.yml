@@ -22,6 +22,7 @@ on:
     branches: [main, "cand/**"]
 
 # 같은 브랜치에 연달아 올리면 앞의 실행을 취소한다. 같은 일을 두 번 돌리지 않는 곳이 여기다.
+# 취소된 판은 빨강이 아니라 회색으로 끝난다 — 아래 `verify-result` 머리.
 #
 # **브랜치 이름으로 묶는다.** `github.ref` 로 묶으면 후보 브랜치에 PR 이 열려 있을 때
 # push 와 pull_request 가 서로 다른 ref 를 갖게 되어 **같은 커밋을 두 번** 돌린다.
@@ -43,7 +44,7 @@ jobs:
     # **사외 저장소 이름을 바꾸면 이 줄도 같이 고친다.**
     if: github.repository == 'ddigle/streamlit_Capa_Simulation'
     runs-on: ubuntu-latest
-    # 조각 하나의 상한이다. 끊기면 그 조각만 결과가 없다.
+    # 조각 하나의 마지막 상한이다. 시험이 오래 걸리면 「4/4 테스트」 단계 상한이 먼저 끊는다.
     timeout-minutes: 60
     strategy:
       # 한 조각이 빨개도 나머지가 끝까지 돌아 결과를 낸다.
@@ -93,7 +94,10 @@ jobs:
         if: matrix.shard == 1
         run: uv run --no-sync python -m mypy
 
+      # 단계 상한을 작업 상한보다 낮게 둔다. 단계 상한에 끊기면 결과가 `failure` 지만, 작업 상한에
+      # 끊기면 `cancelled` 라 밀려 취소된 판과 결과 값이 같아진다.
       - name: 4/4 테스트
+        timeout-minutes: 50
         env:
           PYTHONIOENCODING: utf-8
         run: uv run --no-sync python scripts/run_test_shard.py --shard ${{ matrix.shard }} --of ${{ strategy.job-total }}
@@ -109,8 +113,13 @@ jobs:
 
   # 조각이 여럿이라도 판정은 한 줄이다. 조각이 빨갛거나 끊겼으면 이 작업도 빨갛다. 막지 않는
   # `windows-pytest` 는 기다리지 않는다.
+  #
+  # **`always()` 를 쓰지 않는다.** 판이 취소돼도 참이라, 밀려 취소된 판의 판정이 빨갛게 끝나고 같은
+  # 커밋에 빨강과 초록이 함께 남는다. `cancelled()` 는 조각 하나의 결과가 아니라 판 전체의 취소만
+  # 보므로 취소된 판만 판정에서 빠지고, 조각이 끊긴 판은 여기까지 와서 빨강이 된다. 맨 앞 `!` 는
+  # YAML 태그로 읽히므로 `${{ }}` 로 감싼다.
   verify-result:
-    if: always() && github.repository == 'ddigle/streamlit_Capa_Simulation'
+    if: ${{ !cancelled() && github.repository == 'ddigle/streamlit_Capa_Simulation' }}
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 5

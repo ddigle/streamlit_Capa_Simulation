@@ -60,6 +60,18 @@ def _job_keys(block: list[str]) -> dict[str, str]:
     return keys
 
 
+def _step_keys(block: list[str], name: str) -> dict[str, str]:
+    """`- name: <name>` 단계 바로 아래 키(여덟 칸 들여쓰기) → 값."""
+    keys: dict[str, str] = {}
+    for line in block[block.index(f"      - name: {name}") + 1 :]:
+        if line.startswith("      - "):
+            break
+        found = re.match(r"^        ([A-Za-z-]+):\s*(.*)$", line)
+        if found is not None:
+            keys[found.group(1)] = found.group(2)
+    return keys
+
+
 def _install_lines(block: list[str]) -> list[str]:
     """설치 몫 — uv 를 까는 액션 줄과 그 설정, 파이썬 · 의존성 설치 `run:` 줄."""
     picked: list[str] = []
@@ -164,13 +176,23 @@ def test_the_static_checks_run_once_not_on_every_shard() -> None:
 def test_the_verdict_stands_on_every_linux_shard_and_also_when_they_stop() -> None:
     jobs = _jobs()
     verdict = _job_keys(jobs[VERDICT_JOB])
+    repository = _job_keys(jobs[LINUX_JOB])["if"]
 
     assert verdict["needs"] == LINUX_JOB
-    assert verdict["if"].startswith("always() && ")
-    assert verdict["if"].endswith(_job_keys(jobs[LINUX_JOB])["if"])
-    block = "\n".join(jobs[VERDICT_JOB])
-    assert "needs.verify.result" in block
+    # `always()` 면 밀려 취소된 판의 판정이 빨갛게 끝나 같은 커밋에 빨강과 초록이 함께 남는다.
+    assert verdict["if"] == f"${{{{ !cancelled() && {repository} }}}}"
+    # 초록은 `success` 하나뿐이다 — 끊긴 조각의 `cancelled` 는 빨강 쪽으로 간다.
+    block = [line.strip() for line in jobs[VERDICT_JOB]]
+    assert 'if [ "${{ needs.verify.result }}" = "success" ]; then' in block
     assert "exit 1" in block
+
+
+def test_a_test_step_that_runs_too_long_stops_as_a_failure_not_as_a_cancel() -> None:
+    """작업 상한에 끊긴 결과는 `cancelled` 라 취소된 판과 값이 같다 — 단계 상한이 먼저 끊는다."""
+    linux = _jobs()[LINUX_JOB]
+
+    step_limit = int(_step_keys(linux, "4/4 테스트")["timeout-minutes"])
+    assert step_limit < int(_job_keys(linux)["timeout-minutes"])
 
 
 def test_each_shard_says_which_shard_it_was_in_the_summary() -> None:
