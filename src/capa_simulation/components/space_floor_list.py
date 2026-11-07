@@ -169,6 +169,13 @@ _REASON_HELP = (
     "사유를 적으면 그 사유로 끕니다. 적은 글 그대로 보입니다(FAB 도면 블록에서는 길면 줄이고 "
     "풍선에 다 보입니다)."
 )
+# `끄고 저장` 의 풍선 — 끄는 일의 뜻과 그대로인 것. 확인 칸 자리에는 값 줄만 둔다(설계 규칙
+# UI-NTF-09).
+_CONFIRM_HELP = (
+    "호기는 그대로 남고 목록·도면에서만 숨습니다. 가정 설비 시나리오의 배치에 놓인 호기도 그 "
+    "시나리오 목록·도면에서 숨습니다. 설비 마스터의 동·층 값은 바뀌지 않고 다시 켜면 그대로 "
+    "보입니다."
+)
 _PLACED_HELP = "도면에 그린 설비입니다. Main 설비로 묶은 모듈 행은 합쳐 1대입니다."
 _UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
 _OCCUPANCY_HELP = (
@@ -240,10 +247,6 @@ def layer_columns(cells: Mapping[FloorKey, Mapping[str, object]]) -> tuple[Floor
         )
         for name, config in _LAYER_COLUMNS.items()
     )
-
-
-# 끄기 확인 목록에서 공식 배치에는 호기가 없고 가정 설비 시나리오 배치에만 호기가 있는 층의 꼬리.
-_OVERLAY_ONLY = "공식 배치 호기 없음(가정 배치에만)"
 
 
 # ---------------------------------------------------------------- 세션 초안
@@ -823,38 +826,11 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
             st.session_state.pop(CONFIRM_KEY, None)
         return
     shown: tuple[tuple[str, int], ...] = tuple((str(a), int(b)) for a, b in held[1])
-    total = sum(count for _, count in shown)
     with st.container(border=True):
-        if len(shown) == 1:
-            label, count = shown[0]
-            there = (
-                f"이 층에 호기 {count}대가 있습니다"
-                if count
-                else "공식 배치에는 이 층에 호기가 없지만 가정 설비 시나리오의 배치에 호기가 "
-                "있습니다"
-            )
-            st.warning(
-                f"**{label}** — {there} — 호기는 그대로 남고 목록·도면에서만 숨습니다.",
-                icon=":material/warning:",
-            )
-        else:
-            head = (
-                f"끄려는 층에 호기 {total}대가 있습니다"
-                if total
-                else "끄려는 층의 가정 설비 시나리오 배치에 호기가 있습니다"
-            )
-            st.warning(
-                f"{head} — 호기는 그대로 남고 목록·도면에서만 숨습니다.\n\n"
-                + "\n".join(
-                    f"- {label} · 호기 {count}대" if count else f"- {label} · {_OVERLAY_ONLY}"
-                    for label, count in shown
-                ),
-                icon=":material/warning:",
-            )
+        st.caption(f"끄는 층 {_units_value(shown)}")
         for line in _overlay_lines(database_path, shown):
             # 줄은 설비 시나리오 이름을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
             st.caption(f":material/layers: {markdown_safe_tildes(line)}")
-        st.caption("설비 마스터의 동·층 값은 바뀌지 않습니다. 다시 켜면 그대로 보입니다.")
         with st.container(horizontal=True, gap="small"):
             st.button(
                 "끄고 저장",
@@ -862,14 +838,26 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
                 key=CONFIRM_BUTTON_KEY,
                 on_click=_confirm_save,
                 args=(database_path, _generation(), shown, dict(counts)),
+                help=_CONFIRM_HELP,
             )
             st.button("취소", key=CANCEL_BUTTON_KEY, on_click=_cancel_confirm)
 
 
+def _units_value(floors: Sequence[tuple[str, int]]) -> str:
+    """값 줄의 층과 호기 수 — 한 층이면 「C3 1F · 호기 83대」, 여러 층이면 합과 층마다의 수
+    「호기 138대 · C3 1F 83 · C3 2F 55」."""
+    if len(floors) == 1:
+        label, count = floors[0]
+        return f"{label} · 호기 {count}대"
+    by_floor = " · ".join(f"{label} {count}" for label, count in floors)
+    return f"호기 {sum(count for _, count in floors)}대 · {by_floor}"
+
+
 def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list[str]:
-    """끄기 확인의 덧줄 — 가정 설비 시나리오의 배치에서 그 층에 놓인 호기(층 사용은 공통이라 그
-    시나리오 목록·도면에서도 숨는다). 못 읽으면 덧줄 없이 둔다(확인을 막지 않는다)."""
-    lines: list[str] = []
+    """끄기 확인의 덧줄 — 가정 설비 시나리오마다 값 줄 하나(그 시나리오 배치에서 끄는 층에 놓인
+    호기, 층 사용은 공통이라 그 시나리오 목록·도면에서도 숨는다). 못 읽으면 덧줄 없이 둔다(확인을
+    막지 않는다)."""
+    by_scenario: dict[str, list[tuple[str, int]]] = {}
     for label, _ in shown:
         key = floor_from_label(label)
         if key is None:
@@ -879,11 +867,10 @@ def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list
         except BOOTSTRAP_ERRORS:
             continue
         for name, count in counts:
-            lines.append(
-                f"가정 설비 시나리오 {quoted(name)}의 배치에서 {label} 에 놓인 호기 {count}대도 "
-                "그 시나리오 목록·도면에서 숨습니다."
-            )
-    return lines
+            by_scenario.setdefault(name, []).append((label, count))
+    return [
+        f"가정 배치 {quoted(name)} · {_units_value(rows)}" for name, rows in by_scenario.items()
+    ]
 
 
 def _render_buildings(draft: Draft) -> None:

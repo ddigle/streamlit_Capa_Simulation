@@ -17,6 +17,7 @@ import duckdb
 import pandas as pd
 import pytest
 from alert_marks import infos, successes
+from source_sites import ends_as_sentence
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Dataframe, get_widget_state
@@ -25,7 +26,7 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
 from widget_browser import BrowserTables
 
-from capa_simulation.components import space_layout_editor, write_guard
+from capa_simulation.components import space_floor_list, space_layout_editor, write_guard
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_floor_list import (
@@ -271,6 +272,11 @@ def test_cell_edits_keep_the_same_editor_widget_so_the_view_stays_put(tmp_path: 
     clear_equipment_repository()
 
 
+def _asked(app: AppTest) -> list[str]:
+    """끄기 확인 칸의 값 줄."""
+    return [item.value for item in app.caption if item.value.startswith("끄는 층 ")]
+
+
 def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
     """C1 1F 에는 단일 둘 + 모듈 묶음 넷 = 설비 3대. 막지 않고 확인한다(S4)."""
     database = _database(tmp_path)
@@ -282,15 +288,14 @@ def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
 
     _press(app, tables, SAVE_BUTTON_KEY)
     assert _version(database) == 0
-    assert any("호기 3대" in item.value for item in app.warning)
-    assert any("설비 마스터의 동·층 값은 바뀌지 않습니다" in item.value for item in app.caption)
+    assert _asked(app) == ["끄는 층 C1 1F · 호기 3대"]
 
     _press(app, tables, CANCEL_BUTTON_KEY)
-    assert not any("호기 3대" in item.value for item in app.warning)
+    assert not _asked(app)
     assert _version(database) == 0
 
     _press(app, tables, SAVE_BUTTON_KEY)
-    assert any("호기 3대" in item.value for item in app.warning)
+    assert _asked(app) == ["끄는 층 C1 1F · 호기 3대"]
     _press(app, tables, CONFIRM_BUTTON_KEY)
 
     assert _states(database) == {("C1", "1F"): "UNUSED"}
@@ -303,6 +308,49 @@ def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
+def test_the_off_confirm_stands_a_value_line_and_keeps_its_words_in_the_button_balloon(
+    tmp_path: Path,
+) -> None:
+    """확인 칸은 값 줄과 단추뿐이고 경고 상자 · 설명 문장을 늘어놓지 않는다 — 뜻은 `끄고 저장`
+    풍선이다(설계 규칙 UI-NTF-09, 그림 검수표 equip-41 과 같은 꼴)."""
+    app, tables = _start_editing(_database(tmp_path))
+    tables.edit(_editor_key(app), _position("C1", "1F"), "사용", False)
+    tables.run()
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert not list(app.warning)
+    assert all(not ends_as_sentence(text) for text in _asked(app))
+    assert not [item.value for item in app.caption if "바뀌지 않습니다" in item.value]
+    balloon = str(app.button(key=CONFIRM_BUTTON_KEY).help)
+    for word in (
+        "호기는 그대로 남고 목록·도면에서만 숨습니다",
+        "그 시나리오 목록·도면에서 숨습니다",
+        "설비 마스터의 동·층 값은 바뀌지 않고 다시 켜면 그대로 보입니다",
+    ):
+        assert word in balloon
+    clear_equipment_repository()
+
+
+def test_the_off_confirm_lines_sum_floors_and_stand_one_line_per_assumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """여러 층은 합 + 층마다의 수 한 줄이고, 가정 배치 덧줄은 층마다가 아니라 시나리오마다 한
+    줄이다 — 끄는 층이 늘어도 줄이 불어나지 않는다."""
+
+    def _counts(_database_path: str, building: str, floor: str) -> tuple[tuple[str, int], ...]:
+        assert building == "C3"
+        return {"1F": (("셋업 실무", 4), ("가정 B", 2)), "2F": (("셋업 실무", 1),)}[floor]
+
+    monkeypatch.setattr(space_floor_list, "load_layout_overlay_floor_counts", _counts)
+    shown = (("C3 1F", 83), ("C3 2F", 55))
+
+    assert space_floor_list._units_value(shown) == "호기 138대 · C3 1F 83 · C3 2F 55"
+    assert space_floor_list._overlay_lines("ignored", shown) == [
+        "가정 배치 「셋업 실무」 · 호기 5대 · C3 1F 4 · C3 2F 1",
+        "가정 배치 「가정 B」 · C3 1F · 호기 2대",
+    ]
+
+
 def test_changing_only_the_reason_does_not_ask(tmp_path: Path) -> None:
     database = _database(tmp_path, {("C1", "1F"): "UNUSED"})
     app, tables = _start_editing(database)
@@ -311,7 +359,7 @@ def test_changing_only_the_reason_does_not_ask(tmp_path: Path) -> None:
 
     _press(app, tables, SAVE_BUTTON_KEY)
 
-    assert not any("호기" in item.value for item in app.warning)
+    assert not _asked(app)
     assert _states(database) == {("C1", "1F"): "창고(임시)"}
     assert _version(database) == 2
     clear_equipment_repository()
@@ -379,7 +427,7 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
         app.button(key=SAVE_BUTTON_KEY).click()
     else:
         _press(app, tables, SAVE_BUTTON_KEY)
-        assert any("호기 3대" in item.value for item in app.warning)
+        assert _asked(app) == ["끄는 층 C1 1F · 호기 3대"]
         repository.save_floor_states(_C1, expected_version=0, source="남")
         app.button(key=CONFIRM_BUTTON_KEY).click()
     pressed = tables._states()
@@ -391,7 +439,7 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
     _ok(app)
 
     assert len(_refusals(app)) == 1, [item.value for item in app.warning]
-    assert not any("호기 3대" in item.value for item in app.warning)
+    assert not _asked(app)
     assert app.session_state[DRAFT_KEY] == {f"C1 {floor}": "NOT_LINE" for _, floor in _C1}
     assert app.session_state[BASE_KEY][0] == 1
     assert any("바뀐 층 0개" in item.value for item in app.caption)
@@ -422,7 +470,7 @@ def test_turning_off_a_floor_with_units_after_someone_else_saved_skips_the_confi
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert CONFIRM_KEY not in app.session_state
-    assert not any("호기 3대" in item.value for item in app.warning)
+    assert not _asked(app)
     assert any("다른 사용자가 먼저 층 사용 설정을 저장해" in item.value for item in app.warning)
     assert _states(database) == {("C4", "6F"): "NOT_LINE"}
     assert app.session_state[BASE_KEY][0] == 1
