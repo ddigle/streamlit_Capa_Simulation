@@ -10,10 +10,18 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 from alert_marks import active_state
-from sso_support import CLIENT_ID, PUBLIC_URL, signing, sso_secret, use_config
+from sso_support import (
+    CLIENT_ID,
+    PUBLIC_URL,
+    expiring_signing,
+    signing,
+    sso_secret,
+    use_config,
+)
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts
@@ -62,9 +70,10 @@ def test_off_in_production_warns_and_lists_what_would_block() -> None:
     note = active_state(app, "AD-02")
     assert note is not None
     assert note["full"] == alerts.plain_text(sso_status.OFF_IN_PRODUCTION_WARNING)
-    assert any(
-        sso_status.OFF_IN_PRODUCTION_WARNING in str(caption.value) for caption in app.caption
-    )
+    # 펼침의 결론은 값 한 줄이고 하는 법은 풍선 · 알림 전문이 말한다(설계 규칙 UI-TXT-01).
+    (conclusion,) = [c for c in app.caption if sso_status.OFF_IN_PRODUCTION_CONCLUSION in c.value]
+    assert conclusion.proto.help == sso_status.OFF_IN_PRODUCTION_HELP
+    assert "포털 승인 메일" not in conclusion.value and "포털 승인 메일" in note["full"]
     text = _all_text(app)
     assert "켜면 막힐 문제: " in text and f"`{names.ENV_ISSUER}` — 값이 없음" in text
     assert f"`{names.ENV_PUBLIC_URL}` — https 가 아님" in text
@@ -126,8 +135,12 @@ def test_recent_events_tell_an_idle_end_from_the_maximum() -> None:
     assert codes[:3] == ["revoked", "expired · idle", "expired · max"]
 
 
+def _refresh_caption_elements(app: AppTest) -> list[Any]:
+    return [item for item in app.caption if str(item.value).startswith("로그인 갱신(")]
+
+
 def _refresh_caption(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.caption if str(item.value).startswith("로그인 갱신(")]
+    return [str(item.value) for item in _refresh_caption_elements(app)]
 
 
 def test_the_status_shows_how_long_a_login_lasts_and_the_refresh_counts() -> None:
@@ -143,7 +156,7 @@ def test_the_status_shows_how_long_a_login_lasts_and_the_refresh_counts() -> Non
     assert not list(app.exception)
     assert "로그인 유지: 마지막 사용 뒤 4시간 · 최대 10시간 · 세션 쿠키 이름: " in _all_text(app)
     assert _refresh_caption(app) == [
-        "로그인 갱신(기동 뒤 누계 — 재시작하면 0): 다시 발급 3 · 건너뜀 2 · 로그인 없음 1 · "
+        "로그인 갱신(기동 뒤 누계): 다시 발급 3 · 건너뜀 2 · 로그인 없음 1 · "
         "출처·머리 거절 0 · 꼴 거절 0"
     ]
     # 사건 표는 그대로 둘째 데이터프레임이다 — 갱신은 사건 고리에 적지 않는다.
@@ -151,18 +164,44 @@ def test_the_status_shows_how_long_a_login_lasts_and_the_refresh_counts() -> Non
     assert "refresh" not in "".join(app.dataframe[1].value["사건"].tolist())
 
 
-def test_the_refresh_counts_hint_at_the_address_only_when_nothing_was_renewed() -> None:
+def test_the_refresh_counts_stay_a_value_line_and_the_help_says_how_to_read_them() -> None:
+    """누계 줄은 값이다 — 범위와 「출처·머리 거절」 을 읽는 법은 풍선이 말한다(UI-TXT-01 · 04)."""
     use_config()
     runtime.count_refresh("forbidden")
     runtime.count_refresh("bad_request")
 
-    line = sso_status.refresh_count_line()
-    assert line.endswith("출처·머리 거절 1 · 꼴 거절 1" + sso_status.REFRESH_ORIGIN_HINT), line
-    assert f"`{names.ENV_PUBLIC_URL}`" in sso_status.REFRESH_ORIGIN_HINT
-
-    runtime.count_refresh("renewed")
     assert sso_status.refresh_count_line().endswith("출처·머리 거절 1 · 꼴 거절 1")
+    assert f"`{names.ENV_PUBLIC_URL}`" in sso_status.REFRESH_HELP
+    assert "재시작" in sso_status.REFRESH_HELP
+    (caption,) = _refresh_caption_elements(AppTest.from_string(SCRIPT).run())
+    assert caption.proto.help == sso_status.REFRESH_HELP
     assert list(sso_status.REFRESH_OUTCOME_LABELS) == list(runtime.REFRESH_OUTCOMES)
+
+
+def test_an_expiring_certificate_stays_in_the_table_and_the_alarm_not_in_a_line() -> None:
+    """만료 임박은 상태 알림(`AD-03`)과 표 까닭 칸이 말한다 — 펼침에 같은 말을 세우지
+    않는다(설계 규칙 UI-TXT-07 · UI-NTF-02). 새 인증서를 더하는 법은 알림 전문 · Guide 다."""
+    use_config({names.ENV_SIGNING_CERT: expiring_signing().der_b64})
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    note = active_state(app, "AD-03")
+    assert note is not None and names.ENV_SIGNING_CERT in note["full"]
+    assert not any("만료가" in str(item.value) for item in app.caption)
+    table = app.dataframe[0].value.set_index("환경변수")
+    assert "만료" in str(table.loc[names.ENV_SIGNING_CERT, "까닭"])
+
+
+def test_the_lines_of_the_status_say_nothing_about_a_restart() -> None:
+    """보관 범위는 풍선 · Guide 몫이다(설계 규칙 UI-TXT-01). 라벨은 값 앞의 이름만 둔다."""
+    use_config()
+    runtime.record_event("login_fail", level=logging.WARNING, reason="state_bad")
+
+    text = _all_text(AppTest.from_string(SCRIPT).run())
+
+    assert "재시작" not in text and "한 글자도" not in text
+    assert "redirect\\_uri: " in text
 
 
 def test_the_refresh_counts_are_not_shown_while_off_in_production() -> None:
