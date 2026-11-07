@@ -1,6 +1,7 @@
 # Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·상세 상자 되돌림·닫힌 탭 건너뛰기를 검증한다.
 
 import json
+from collections.abc import Iterator
 from typing import Any, NamedTuple
 
 import pandas as pd
@@ -160,6 +161,30 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     page_captions = [str(caption.value) for caption in app.caption]
     assert f"사이드바에서 {EXECUTION_MANAGEMENT.title}" in page_captions
     assert not any("A/Item" in text for text in page_captions)
+
+
+def _flex_blocks(block: Any) -> Iterator[Any]:
+    for child in getattr(block, "children", {}).values():
+        if child.type == "flex_container":
+            yield child
+        yield from _flex_blocks(child)
+
+
+def test_the_loss_route_cards_wrap_instead_of_staying_five_across() -> None:
+    """손실 카드 다섯은 좁으면 다음 줄로 내려가는 가로 줄이다 — 다섯 칸 고정이면 창 800 에서 칸이
+    76px 로 줄어 「열기」 가 잘리고 제목이 음절 사이에서 접혔다(후보 g7-06, 샘플 관측)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
+    (row,) = [
+        block
+        for block in _flex_blocks(summary_tab)
+        if block.proto.flex_container.direction == 2
+        and block.proto.flex_container.wrap
+        and all(child.type == "flex_container" for child in block.children.values())
+    ]
+    assert len(row.children) == 5
 
 
 def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:

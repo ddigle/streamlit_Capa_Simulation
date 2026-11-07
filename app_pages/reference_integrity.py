@@ -241,12 +241,12 @@ def _render_loss_routes() -> None:
     재공부족은 Dynamic 하위(재공 현황)다 — 링크는 그룹을 건너도 그대로 동작한다."""
     with st.container(border=True):
         st.markdown("#### :material/alt_route: 손실을 파고드는 화면", help=LOSS_ROUTES_HELP)
-        columns = st.columns(len(_LOSS_ROUTES), gap="small")
-        for column, (title, subtitle, page_path, icon) in zip(columns, _LOSS_ROUTES, strict=True):
-            with column.container(border=True):
-                st.markdown(f"**{title}**")
-                st.caption(subtitle)
-                render_page_link(page_path, label="열기", icon=icon)
+        with st.container(horizontal=True, gap="small"):
+            for title, subtitle, page_path, icon in _LOSS_ROUTES:
+                with st.container(border=True):
+                    st.markdown(f"**{title}**")
+                    st.caption(subtitle)
+                    render_page_link(page_path, label="열기", icon=icon)
 
 
 def _render_detail(
