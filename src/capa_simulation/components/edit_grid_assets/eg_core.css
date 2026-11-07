@@ -231,6 +231,11 @@
   margin-left: auto;
 }
 
+.eg-note:empty,
+.eg-summary:empty {
+  display: none;
+}
+
 .eg-live {
   position: absolute;
   width: 1px;

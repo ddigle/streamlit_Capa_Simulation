@@ -133,6 +133,10 @@ def test_the_edit_scope_gives_way_before_the_cell_error_at_the_end_of_the_status
     # 왼쪽 글(`flex: 1 1 auto`)이 0.1px 만 줄어도 말줄임이 서므로 비율이 커야 한다.
     assert (grow, basis) == ("0", "auto") and int(shrink) >= 10_000
     assert "min-width: 0" in scope
+    # 빈 칸은 접는다 — 남으면 줄 사이 틈(12px)마다 왼쪽 글이 좁아진다.
+    assert ".eg-scope:empty {\n  display: none;" in TOOLBAR_CSS
+    core_css = asset("eg_core.css")
+    assert ".eg-note:empty,\n.eg-summary:empty {\n  display: none;" in core_css
 
     body = r"""
   const where = q('.eg-where')

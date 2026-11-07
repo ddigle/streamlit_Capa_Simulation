@@ -979,7 +979,7 @@ function tbSummary(S) {
 // ---------------------------------------------------------------- feed·정리
 
 // 상태 줄 편집 범위 글 — 같은 줄의 칸 위치 · 오류 문구가 먼저라 좁으면 이 글이 먼저 줄고(`.eg-scope`),
-// 말줄임이 되면 풍선으로 다 읽는다. 글은 feed 가 준 값뿐이다.
+// 말줄임이 되면 풍선으로 다 읽는다. 빈 글 · 메모 · 요약은 접어 틈도 먹지 않는다. 글은 feed 가 준 값뿐이다.
 function tbScope(S) {
   const scope = S.tb.dom.scope
   const text = S.feedData && typeof S.feedData.scope === 'string' ? S.feedData.scope : ''

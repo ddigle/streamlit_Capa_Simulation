@@ -239,6 +239,10 @@
   white-space: nowrap;
 }
 
+.eg-scope:empty {
+  display: none;
+}
+
 .eg-dialog {
   --eg-toolbar-justify: flex-start;
   --eg-toolbar-reserve: 0;
