@@ -401,6 +401,32 @@ def test_a_double_press_of_the_execution_save_that_cut_the_first_run_still_empti
     assert (profile.version, profile.source) == (2, "첫 메모")
 
 
+def test_a_second_press_of_the_execution_save_keeps_the_note_it_did_not_save(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """앞 회차가 끝나기 전에 온 다른 메모의 둘째 누름은 제 저장으로 판정되어 쓰이지 않는다 — 그
+    메모는 칸에 남긴다(판정 기준과 같은 꼴)."""
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -10.0, "")]), source="처음 저장"
+    )
+    clear_global_execution_capacity_cache()
+    app = _app(repository, _EXECUTION)
+    _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -12.5}})
+    _memo(app).set_value("첫 메모")
+    app = _press(app, "확보율 보정 저장")
+    assert _memo(app).value == ""
+
+    app.session_state[EXECUTION_BASE_VERSION_KEY] = 1
+    _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -13.5}})
+    _memo(app).set_value("둘째 메모")
+    app = _press(app, "확보율 보정 저장")
+
+    assert _successes(app) == [EXECUTION_SAVED_MESSAGE]
+    assert _memo(app).value == "둘째 메모"
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "첫 메모")
+
+
 def test_a_slow_second_press_of_the_execution_save_repeats_the_success(
     repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
 ) -> None:

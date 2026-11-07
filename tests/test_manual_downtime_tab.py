@@ -243,12 +243,16 @@ def test_a_double_press_that_cut_the_first_run_still_empties_the_note(
 
 
 @pytest.mark.parametrize(
-    "window",
-    [60.0, 0.0],
-    ids=["same-cells-within-the-trailing-window", "refused-by-the-version-check"],
+    ("window", "seen_version"),
+    [(60.0, 0), (60.0, 1), (0.0, 0)],
+    ids=[
+        "same-cells-from-the-screen-before-the-save",
+        "same-cells-from-the-redrawn-screen",
+        "refused-by-the-version-check",
+    ],
 )
 def test_a_second_press_with_another_note_keeps_the_note_it_did_not_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, seen_version: int
 ) -> None:
     """첫 저장의 둘째 누름으로 판정된 누름은 쓰지 않으니 메모도 기록에 들지 않는다 — 다른 메모면
     칸에 남긴다. 같은 칸의 꼬리 누름(`save_once` 가 첫 결과를 돌려준다)과 버전 대조 거부 두
@@ -261,8 +265,8 @@ def test_a_second_press_with_another_note_keeps_the_note_it_did_not_save(
     app = _save(app, note="첫 메모")
     assert _memo(app).value == ""
 
-    app.session_state[MANUAL_BASE_VERSION_KEY] = 0
-    _edit(app, {(row_a, "202607"): 1.0}, version=0)
+    app.session_state[MANUAL_BASE_VERSION_KEY] = seen_version
+    _edit(app, {(row_a, "202607"): 1.0}, version=seen_version)
     app = _save(app, note="둘째 메모")
 
     assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))

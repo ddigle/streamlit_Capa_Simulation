@@ -389,11 +389,9 @@ def _render_editor(
     repository = get_equipment_repository(database_path)
     reviewer = str(saved_by or "")
     memo = str(note or "")
-    wrote = False
 
-    def save() -> int | None:
+    def save() -> tuple[int | None, str]:
         # 세션 칸을 읽지 않는다(`save_once` 의 잠금 안) — 짝은 미리 받아 둔 dict 에 적는다.
-        nonlocal wrote
         stored = repository.save_manual_downtime(
             cells,
             processes=processes,
@@ -403,12 +401,13 @@ def _render_editor(
             note=memo,
         )
         if stored is not None:
-            wrote = True
             remember_own_save(MANUAL_SAVE_NAME, expected_version, stored, save_marks)
-        return stored
+        return stored, memo
 
     try:
-        version = save_once(MANUAL_SAVE_NAME, start, save, wrote=lambda stored: stored is not None)
+        version, saved_memo = save_once(
+            MANUAL_SAVE_NAME, start, save, wrote=lambda outcome: outcome[0] is not None
+        )
     except ProfileVersionConflict as exc:
         # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다 — 다음 회차가 최신을 그리게 비운다.
         # 이 회차는 본 version 을 올리지 않는다(다음 회차가 최신을 그리며 적는다).
@@ -432,20 +431,18 @@ def _render_editor(
     if version is None:
         notice.info(MANUAL_UNCHANGED_MESSAGE, icon=":material/info:")
         return
+    # 같은 칸의 겹친 누름은 `save_once` 가 첫 결과를 돌려줘 이 회차가 쓰지 않았다 — 칸 글이 첫
+    # 누름이 쓴 메모일 때만 비운다(saved_note).
+    if memo == saved_memo:
+        mark_note_saved(MANUAL_NOTE_KEY, memo)
     if version <= expected_version:
         # 같은 입력의 꼬리 누름 — 첫 누름이 이미 그 version 을 썼다(`save_once` 가 첫 결과를 돌려준
         # 것). 제 저장 짝은 첫 누름이 적었으므로 바꾸지 않고 성공만 다시 알린다.
         queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
-        mark_note_saved_again(MANUAL_NOTE_KEY, memo)
         st.rerun(scope="app")
     # 저장마다 공정 Capa 상세·필요 단축 일정 등의 계산 키(칸 자체)가 바뀐다 — 프로필 캐시만 비운다.
     clear_manual_downtime_cache()
     queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
-    # 같은 본 version 의 겹친 둘째 누름은 `save_once` 가 첫 결과를 돌려줘 이 회차가 쓰지 않았다.
-    if wrote:
-        mark_note_saved(MANUAL_NOTE_KEY, memo)
-    else:
-        mark_note_saved_again(MANUAL_NOTE_KEY, memo)
     st.rerun(scope="app")
 
 
