@@ -1725,12 +1725,18 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     )
     if st.session_state.pop(DELETE_CLEAR_KEY, False):
         st.session_state[DELETE_CONFIRM_KEY] = ""
-    typed = st.text_input(
-        f"확인: 「{literal_markdown(summary.scenario_name)}」"
-        f"{object_particle(summary.scenario_name)} 그대로 입력하세요",
-        key=DELETE_CONFIRM_KEY,
-        placeholder="",
-    )
+    # 라벨은 숨기고 같은 글을 바로 위에 보인다 — 위젯 라벨은 마크다운이라 이름을 막아 넘기면 그 막음
+    # 글자(`\(`)가 낭독기 이름(aria-label)에 그대로 들었다. 숨긴 라벨은 평문 이름 그대로다.
+    name = summary.scenario_name
+    particle = object_particle(name)
+    with st.container(gap="xxsmall"):
+        st.markdown(f":small[확인: 「{literal_markdown(name)}」{particle} 그대로 입력하세요]")
+        typed = st.text_input(
+            f"확인: 「{name}」{particle} 그대로 입력하세요",
+            key=DELETE_CONFIRM_KEY,
+            placeholder="",
+            label_visibility="collapsed",
+        )
     ready = typed.strip() == summary.scenario_name
     if not st.button(
         f":red[{DELETE_BUTTON_LABEL}]" if ready else DELETE_BUTTON_LABEL,
