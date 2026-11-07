@@ -648,7 +648,7 @@ def _called_names(path: Path) -> set[str]:
 
 
 def test_both_modes_check_equipment_and_load_the_plan_through_one_function() -> None:
-    """설비 일정 판정 · 까닭 카드 · 계획 칸 받기는 두 모드가 함수 하나(`render_equipment_plan`)로
+    """설비 일정 판정 · 멈춘 자리 · 계획 칸 받기는 두 모드가 함수 하나(`render_equipment_plan`)로
     한다 — 페이지(제약 영향)와 개조 일정 컴포넌트가 같은 꼴의 블록을 따로 들면 한쪽만 고쳐져 두
     모드의 멈춤 갈래 · 계획 키가 어긋난다."""
     block = {

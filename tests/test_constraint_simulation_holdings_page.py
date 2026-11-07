@@ -82,7 +82,7 @@ def arriving_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, 
 
 @pytest.fixture(scope="module")
 def empty_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """설비 DB 가 빈 벌 — 까닭 카드 갈래."""
+    """설비 DB 가 빈 벌 — 데이터 Error 마크 갈래."""
     root = tmp_path_factory.mktemp("constraint_simulation_held_empty")
     return root / "scenario.duckdb", root / "equipment.duckdb"
 

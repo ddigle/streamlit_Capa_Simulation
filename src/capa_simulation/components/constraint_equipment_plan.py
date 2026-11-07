@@ -173,8 +173,8 @@ def equipment_readiness(
 
 def first_ready_process(source: EquipmentPlanSource, options: Sequence[str]) -> str | None:
     """공정 칸이 비었을 때(사이드바로 처음 열기)의 기본 공정 — 설비 일정이 서는 첫 공정(선택지
-    차례). 처음 화면이 까닭 카드가 아니라 계산이게(2026-10-25 E2E). 서는 공정이 없거나 설비 DB 를
-    못 읽으면 첫 공정이다. 판정은 `equipment_readiness`(까닭 카드)와 같은 `dynamic_readiness` 이고
+    차례). 처음 화면이 멈춘 자리가 아니라 계산이게(2026-10-25 E2E). 서는 공정이 없거나 설비 DB 를
+    못 읽으면 첫 공정이다. 판정은 `equipment_readiness`(멈춘 자리)와 같은 `dynamic_readiness` 이고
     설비 프레임은 한 번만 거른다 — 캐시된 스냅샷을 거를 뿐이라 DB 를 열지 않는다(칸이 빈 회차에만
     부른다)."""
     if not options:

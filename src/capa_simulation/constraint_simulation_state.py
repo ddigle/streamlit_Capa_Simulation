@@ -162,7 +162,7 @@ CONSTRAINT_SELECT_GENERATION_KEY: Final = "constraint_sim_select_generation"
 # 그림 memo(세션 칸 LRU — Streamlit 캐시가 아니다).
 CONSTRAINT_FIGURE_MEMO_KEY: Final = "constraint_sim_figure_memo"
 CONSTRAINT_VIEW_FRAGMENT_KEY: Final = "constraint_sim_view"
-# 설비 일정이 서지 않는 까닭 카드(한 회차에 하나) — 사내 화면
+# 설비 일정이 서지 않는 자리(한 회차에 하나) — 사내 화면
 # 확인(`scripts/check_deploy_screens.py`)이 고른다.
 CONSTRAINT_ABSENT_KEY: Final = "constraint_sim_absent"
 

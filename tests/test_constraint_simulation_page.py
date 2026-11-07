@@ -1,4 +1,4 @@
-# Purpose: 제약 시뮬레이션 화면의 진입·주소 인자·조건 카드·까닭 카드·캐시 공유·쓰기 없음·달 고르기를
+# Purpose: 제약 시뮬레이션 화면의 진입·주소 인자·조건 카드·멈춘 자리·캐시 공유·쓰기 없음·달 고르기를
 # 본다.
 
 """제약 시뮬레이션 화면(AppTest).
@@ -177,7 +177,7 @@ def _equipment_database(path: Path, process: str = DYNAMIC_PROCESS) -> Path:
 
 @pytest.fixture(scope="module")
 def databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """설비 DB 가 빈 하네스 — 까닭 카드 갈래."""
+    """설비 DB 가 빈 하네스 — 데이터 Error 마크 갈래."""
     root = tmp_path_factory.mktemp("constraint_simulation_empty")
     return root / "scenario.duckdb", root / "equipment.duckdb"
 
@@ -383,7 +383,7 @@ def test_the_sidebar_first_open_picks_the_first_process_with_an_equipment_schedu
     tmp_path: Path,
 ) -> None:
     """사이드바로 처음 열면(공정 칸이 빔) 첫 공정이 아니라 설비 일정이 서는 첫 공정이다 — 첫 화면이
-    까닭 카드가 아니라 계산이게(2026-10-25 E2E #106). 설비는 첫 공정이 아닌 공정 하나에만 둔다.
+    멈춘 자리가 아니라 계산이게(2026-10-25 E2E #106). 설비는 첫 공정이 아닌 공정 하나에만 둔다.
     고른 공정은 그 뒤로 그대로다."""
     databases = (
         tmp_path / "scenario.duckdb",
