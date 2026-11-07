@@ -1,6 +1,6 @@
 # Purpose: 설비 시나리오 탭 쓰기의 더블클릭이 제 쓰기를 거절하거나 고른 대상을 바꾸지 않는지 본다.
 
-"""시나리오 관리 › 설비 시나리오 탭의 비교 후 쓰기 다섯 — 「공식으로 발행」(2026-10-26 E2E, 고부하
+"""시나리오 관리 › 설비 시나리오 탭의 비교 후 쓰기 다섯 — 「공식으로 지정」(2026-10-26 E2E, 고부하
 간헐 1/7)과 같은 꼴의 이름 바꾸기·리비전명·배치 차이 지우기·되돌리기.
 
 Streamlit 1.63 `runner.fastReruns` 는 둘째 누름에서 돌던 회차에 멈춤을 걸고 곧바로 새 회차를 세워
@@ -167,7 +167,7 @@ def _said(outcome: Outcome, text: str) -> bool:
 def test_a_double_press_of_the_publish_publishes_once_and_never_says_it_moved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """「공식으로 발행」 — 둘째 회차가 낡은 목록(v1)으로 발행에 가 첫 발행(v2)에 거부되고 짝이 없어
+    """「공식으로 지정」 — 둘째 회차가 낡은 목록(v1)으로 발행에 가 첫 발행(v2)에 거부되고 짝이 없어
     「확인 글을 본 뒤 공식이 바뀌어(v1 → 지금 v2) 발행하지 않았습니다」 가 남았다(E2E 3/3 재현)."""
     repository = _seeded(tmp_path)
     setup = _clone(repository).equipment_scenario_id
@@ -177,7 +177,7 @@ def test_a_double_press_of_the_publish_publishes_once_and_never_says_it_moved(
     outcome = _raced(app, monkeypatch, "publish_equipment_release")
 
     assert outcome.refused == []
-    assert _said(outcome, "공식 v2로 발행했습니다"), outcome
+    assert _said(outcome, "공식 v2로 지정했습니다"), outcome
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2
     assert release.equipment_scenario_id == setup

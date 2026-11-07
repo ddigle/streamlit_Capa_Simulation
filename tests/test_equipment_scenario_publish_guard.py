@@ -2,7 +2,7 @@
 
 """E7 리뷰가 권한 두 가지(설비 시나리오 2단계 S1 에 묶음).
 
-- 「공식으로 발행」 은 누르기 **전** 회차의 확인 글이 보인 공식 번호를 남겨 두고, 누른 회차에 그
+- 「공식으로 지정」 은 누르기 **전** 회차의 확인 글이 보인 공식 번호를 남겨 두고, 누른 회차에 그
   번호가 달라졌으면(그 사이 남이 발행) 거절하고 까닭을 알린다 — 「지금 공식 v1 → 새 공식 v2」 를
   본 사람이 말없이 v3 을 내지 않게. 그 사이 남이 같은 시나리오에 새 리비전을 저장해 최신이
   바뀌었어도 거절한다 — 「rN은 최신이 아닙니다」 를 본 적 없는 사람이 최신이 아닌 리비전을 말없이
@@ -105,10 +105,10 @@ def test_the_publish_refusal_compares_the_seen_number_with_the_click_run() -> No
     assert refusal(seen) is None
     moved = refusal(seen, 2)
     assert moved is not None
-    assert "확인 글을 본 뒤 공식이 바뀌어(v1 → 지금 v2) 발행하지 않았습니다" in moved
+    assert "확인 글을 본 뒤 공식이 바뀌어(v1 → 지금 v2) 지정하지 않았습니다" in moved
     assert "지금 공식 v2 → 새 공식 v3" in moved
     first = refusal(_seen(0))
-    assert first is not None and "(발행 없음 → 지금 v1)" in first
+    assert first is not None and "(공식 없음 → 지금 v1)" in first
     # 앞 회차에 확인 글이 없었거나 다른 리비전의 글이었으면 다시 보게 한다.
     for unseen in (None, {**seen, "revision": "r-other"}):
         again = refusal(unseen)
@@ -125,8 +125,8 @@ def test_the_publish_refusal_sees_a_newer_revision_of_the_same_scenario() -> Non
     )
 
     assert refusal == (
-        "확인 글을 본 뒤 「셋업 실무」 의 최신이 바뀌어(r4 → 지금 r5) 발행하지 않았습니다 — 다른 "
-        "사용자가 그 사이 r5를 저장했습니다. 바뀐 확인 글을 다시 보고 발행하세요."
+        "확인 글을 본 뒤 「셋업 실무」 의 최신이 바뀌어(r4 → 지금 r5) 지정하지 않았습니다 — 다른 "
+        "사용자가 그 사이 r5를 저장했습니다. 바뀐 확인 글을 다시 보고 지정하세요."
     )
     # 공식도 바뀌었으면 공식 번호 까닭이 먼저다(그 글에 새 공식 번호가 있다).
     both = publish_seen_refusal(
@@ -191,7 +191,7 @@ def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
     assert release is not None and release.release_no == 2
     assert release.equipment_scenario_id != setup.equipment_scenario_id
     assert any(
-        "확인 글을 본 뒤 공식이 바뀌어(v1 → 지금 v2) 발행하지 않았습니다" in str(item.value)
+        "확인 글을 본 뒤 공식이 바뀌어(v1 → 지금 v2) 지정하지 않았습니다" in str(item.value)
         for item in app.error
     )
     assert any("지금 공식 v2" in str(item.value) for item in app.caption)
@@ -242,7 +242,7 @@ def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 1
     assert any(
-        "확인 글을 본 뒤 「운영 일정」 의 최신이 바뀌어(r2 → 지금 r3) 발행하지 않았습니다"
+        "확인 글을 본 뒤 「운영 일정」 의 최신이 바뀌어(r2 → 지금 r3) 지정하지 않았습니다"
         in str(item.value)
         for item in app.error
     )
@@ -465,9 +465,9 @@ def test_a_release_moved_under_a_stale_list_says_no_release_instead_of_v0(
     _ok(app.run())
 
     errors = [str(item.value) for item in app.error]
-    assert any("확인 글을 본 뒤 공식이 바뀌어(발행 없음 → 지금 v1)" in text for text in errors)
+    assert any("확인 글을 본 뒤 공식이 바뀌어(공식 없음 → 지금 v1)" in text for text in errors)
     assert not any("v0" in text for text in errors)
-    assert release_words(0) == "발행 없음" and release_words(3) == "v3"
+    assert release_words(0) == "공식 없음" and release_words(3) == "v3"
 
 
 def _add_trace(path: Path, revision_id: str, revision_no: int) -> None:
@@ -538,7 +538,7 @@ def test_an_already_official_revision_turns_the_publish_button_off_with_the_reas
     assert button.help == f"{ALREADY_OFFICIAL_HELP} {PUBLISH_BUTTON_HELP}"
     captions = [str(item.value) for item in app.caption]
     assert ALREADY_OFFICIAL_LINE in captions, captions
-    assert "「공식으로 발행」 을 껐습니다" in ALREADY_OFFICIAL_HELP
+    assert "「공식으로 지정」 을 껐습니다" in ALREADY_OFFICIAL_HELP
     assert not any("을 껐습니다" in text for text in captions), captions
 
     app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
@@ -594,7 +594,7 @@ def test_a_press_that_gets_past_the_turned_off_button_still_says_nothing_was_pub
     _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
 
     written = [str(item.value) for item in successes(app)]
-    assert written == ["「운영 일정」 r1은 이미 공식 v1입니다 — 새로 발행하지 않았습니다."], written
+    assert written == ["「운영 일정」 r1은 이미 공식 v1입니다 — 새로 지정하지 않았습니다."], written
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 1
 
@@ -603,7 +603,7 @@ def test_a_slow_double_press_of_a_fresh_publish_keeps_the_published_notice(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """첫 누름이 「셋업 실무」 r1 을 공식 v2 로 낸 뒤 다시 그린 화면은 그 리비전이 이제 공식이라
-    「공식으로 발행」 이 꺼진다(개선 거리 I26). 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버려
+    「공식으로 지정」 이 꺼진다(개선 거리 I26). 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버려
     그 회차가 첫 발행 알림을 지웠다 — 창(`TRAILING_PRESS_SECONDS`) 안이면 구획 맨 위 칸이 첫 발행의
     알림을 다시 그린다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
@@ -616,9 +616,9 @@ def test_a_slow_double_press_of_a_fresh_publish_keeps_the_published_notice(
     _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
     for _ in range(2):
         written = [str(item.value) for item in successes(app)]
-        assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
+        assert written == ["공식 v2로 지정했습니다 — 「셋업 실무」 r1."], written
         _ok(stale_press(app, PUBLISH_BUTTON_KEY))
     written = [str(item.value) for item in successes(app)]
-    assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
+    assert written == ["공식 v2로 지정했습니다 — 「셋업 실무」 r1."], written
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2

@@ -1,6 +1,6 @@
-# Purpose: HOME Summary 공지의 공용 프로필 저장·표시 규칙을 고정한다.
+# Purpose: HOME 공지의 공용 프로필 저장·표시 규칙을 고정한다.
 
-"""Summary 공지 계약.
+"""공지 계약.
 
 시나리오와 분리된 공용 프로필이다. 여러 사람이 같은 문구를 보고, 시나리오를 바꿔도
 그대로 남는다. 계산에는 들어가지 않는 **화면 문구**라 Figure 캐시 키에도 없다.
@@ -114,7 +114,7 @@ def _stub_streamlit(
 
     @contextmanager
     def fake_expander(label: str, *, expanded: bool = False) -> Iterator[None]:
-        assert label == "Summary"
+        assert label == "공지"
         if expanded_log is not None:
             expanded_log.append(expanded)
         yield

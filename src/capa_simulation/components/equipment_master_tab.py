@@ -117,6 +117,7 @@ from capa_simulation.components.equipment_data_workspace import (
     _confirmation_master as confirmation_master,
 )
 from capa_simulation.components.equipment_import_dialog import (
+    IMPORT_DIALOG_TITLE,
     import_closed_count,
     import_opened_from_menu,
     open_equipment_import,
@@ -267,13 +268,14 @@ DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
 # 불러오기 · 목록 비우기 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`_load_result`).
 LOAD_RESULT_KEY: Final = "equipment_master_load_result_v1"
-# 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「한꺼번에 넣기」 가 세대를 올려 메뉴가 팝업
-# 뒤에 남지 않고 닫힌 채 다시 선다(`on_change` 로 여닫힘을 받으면 메뉴를 열 때마다 앱이 다시 돈다).
+# 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「엑셀·CSV로 한꺼번에」 가 세대를 올려
+# 메뉴가 팝업 뒤에 남지 않고 닫힌 채 다시 선다(`on_change` 로 여닫힘을 받으면 메뉴를 열 때마다
+# 앱이 다시 돈다).
 DATA_MENU_KEY: Final = "equipment_master_data_menu_v1"
 DATA_MENU_GENERATION_KEY: Final = "equipment_master_data_menu_generation_v1"
 IMPORT_MENU_BUTTON_KEY: Final = "equipment_master_import_open_v1"
 DATA_MENU_LABEL: Final = "엑셀·CSV"
-IMPORT_MENU_LABEL: Final = "한꺼번에 넣기"
+IMPORT_MENU_LABEL: Final = IMPORT_DIALOG_TITLE
 SAVE_LABEL: Final = "리비전 저장"
 DISCARD_LABEL: Final = "모두 버리기"
 UNDO_LABEL: Final = "한 단계 되돌리기"
@@ -842,7 +844,7 @@ def _on_goto(table: str, unit: str) -> None:
 
 
 def _on_import_menu() -> None:
-    """메뉴 「한꺼번에 넣기」 — 팝업을 열고 메뉴는 세대를 올려 닫는다."""
+    """메뉴 「엑셀·CSV로 한꺼번에」 — 팝업을 열고 메뉴는 세대를 올려 닫는다."""
     open_equipment_import(from_menu=True)
     bump(DATA_MENU_GENERATION_KEY)
 
@@ -1098,8 +1100,9 @@ def _render_data_menu(
     latest_snapshot: EquipmentSnapshot | None,
     scenario_name: str | None,
 ) -> None:
-    """메뉴 「엑셀·CSV」 — 맨 위 「한꺼번에 넣기」(팝업), 그 아래 양식 셋 + 현재 데이터 셋(개편 명세
-    4-9). 폭 고정은 불러오기 줄이 비워 두는 자리와 맞추려는 것이다(`tools_menu_style`)."""
+    """메뉴 「엑셀·CSV」 — 맨 위 「엑셀·CSV로 한꺼번에」(팝업), 그 아래 양식 셋 + 현재 데이터
+    셋(개편 명세 4-9). 폭 고정은 불러오기 줄이 비워 두는 자리와 맞추려는 것이다
+    (`tools_menu_style`)."""
     with st.popover(
         DATA_MENU_LABEL,
         key=widget_key(DATA_MENU_KEY, DATA_MENU_GENERATION_KEY, bare_zero=False),

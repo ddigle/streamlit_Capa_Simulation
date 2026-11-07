@@ -8,7 +8,7 @@
 흩어져 있었다). 카드 맨 위는 주요 Case 칩이다(2026-11-02 — `home_main_case_chips`, 부르는 쪽이
 넘긴다). Preference 편집기(전에는 HOME 본문 `Preference` 탭, 2026-11-02 부터 사이드바 「HOME 설정」
 팝업 안 — `home_settings`)는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행
-B/O·선행 입고 실적·`Summary 공지`·Top5 대역·주요공정·확보율 보정이고, 저장은 모두 공용 프로필
+B/O·선행 입고 실적·`공지`·Top5 대역·주요공정·확보율 보정이고, 저장은 모두 공용 프로필
 교체다. 팝업 안 네 탭에 쓰는 묶음대로 나눠 선다(`render_home_preference` — 2026-11-04 사용자 검수
 home-u01). 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
@@ -229,7 +229,7 @@ THRESHOLD_SAVE_NAME = "home_preference_threshold"
 KEY_PROCESS_FLASH_KEY = "home_key_process_flash"
 # 공용 저장 폼의 `write_guard.save_once` 이름. 같은 입력의 겹친·빠른 둘째 누름은 쓰지 않고 첫
 # 저장으로 알린다 — 내용은 같은데 공용 버전만 두 번 올랐다(2026-10-25 E2E — Summary v5→v7·프리셋
-# v3→v5). Summary 공지·Top5 구간·주요공정 프리셋은 그 위에 버전 대조도 한다(아래 `*_SAVE_NAME`).
+# v3→v5). 공지·Top5 구간·주요공정 프리셋은 그 위에 버전 대조도 한다(아래 `*_SAVE_NAME`).
 SUMMARY_NOTE_SAVE_NAME = "home_summary_note"
 TOP5_BAND_SAVE_NAME = "home_top5_band"
 KEY_PROCESS_ONCE_NAME = "home_key_process_preset"
@@ -288,7 +288,7 @@ COMPARISON_SAME_HELP = (
 )
 # 「비교 · 주요 Case」 탭의 두 상자 폭 — 비교 시나리오(두 상자 세로) : 주요 Case(Case 두 칸 나란히).
 CASES_COLUMN_WEIGHTS = (2, 3)
-# Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
+# 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
 # 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없거나(공지) key 에
 # 저장본 version(Top5)·고칠 프리셋 저장본의 지문(프리셋)이 붙어 남이 먼저 저장하면 제출 회차의 칸이
 # 새 저장본으로 서서 이 화면의 입력이 버려지는데, 대조가 없으면 그 값을 version 만 올려 다시 쓰고
@@ -339,7 +339,7 @@ DEFAULT_PRESET_HELP = (
     "옮깁니다."
 )
 DIMENSION_COLUMN = "구분"
-# 구획 제목의 글자 크기와 앞 강조 막대의 치수. `home_rendering` 의 `Summary` 상자가 같은
+# 구획 제목의 글자 크기와 앞 강조 막대의 치수. `home_rendering` 의 공지 상자가 같은
 # 값을 CSS 가상요소로 다시 그리므로 상수로 내보낸다 — 두 곳에 숫자를 따로 적으면 한쪽만
 # 고쳐져 막대 크기가 어긋난다.
 SECTION_TITLE_FONT_PX = 20
@@ -374,7 +374,7 @@ def section_title_markup(text: str) -> str:
 
     앞의 강조 막대는 **글자가 아니라 그린 사각형**이다. `▍` 문자로 두면 막대 높이가 그
     글자가 상속한 글자 크기를 따라가는데, 제목 글자만 20px 로 키운 이 줄에서는 막대가
-    본문 크기(작게)로 남고 `Summary` 상자처럼 제목 전체가 20px 인 곳에서는 크게 나온다.
+    본문 크기(작게)로 남고 공지 상자처럼 제목 전체가 20px 인 곳에서는 크게 나온다.
     같은 막대가 화면마다 다른 크기로 보이던 이유가 그것이다. px 로 못 박으면 어디에 놓든
     같다.
 
@@ -608,7 +608,7 @@ def render_home_preference(
     - `판정 기준` — 확보율 판정 기준(기본 두 칸 + 월별 표). 달이 많은 표라 팝업 폭을 다 쓴다.
     - `선행 · 보정` — 사이드바 「LOB 표시 조건」 토글이 켜는 월별 입력 셋(선행 B/O · 선행 입고 실적
       · 확보율 보정). 앞 둘은 `구분` 칸 폭이 같아 달 칸이 같은 자리에 서도록 위아래로 둔다.
-    - `공지 · 표시` — 화면에 보이는 것을 정하는 셋. 왼쪽 Summary 공지 · B/N Top5 구간, 오른쪽
+    - `공지 · 표시` — 화면에 보이는 것을 정하는 셋. 왼쪽 공지 · B/N Top5 구간, 오른쪽
       주요공정 히트맵 프리셋.
 
     탭 본문은 숨은 탭도 모두 그린다(`stateful_tabs`) — 탭을 옮겨도 폼의 고친 칸이 남는다. 주요공정
@@ -1768,7 +1768,7 @@ def _render_summary_note_editor(
     """
     submitted_base = seen(SUMMARY_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/campaign: Summary 공지")
+        st.markdown("#### :material/campaign: 공지")
         st.caption(
             profile_version_caption(
                 summary_profile,
@@ -1778,7 +1778,7 @@ def _render_summary_note_editor(
         )
         with st.form("home_summary_note_form"):
             submitted = st.form_submit_button(
-                "Summary 저장",
+                "공지 저장",
                 icon=":material/save:",
                 type="primary",
                 help=SHARED_SAVE_HELP,
@@ -1795,7 +1795,7 @@ def _render_summary_note_editor(
             # 회차의 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
             # 영영 못 본 채 저장 버튼 한 번으로 덮어쓴다. 값은 폼 반환값으로 받으면 된다.
             note = st.text_area(
-                "Summary",
+                "공지",
                 value=summary_profile.note,
                 height=180,
                 placeholder="예: 9월 물량 확정 전 잠정 계획입니다. B/N 은 SAM 기준.",
@@ -1806,7 +1806,7 @@ def _render_summary_note_editor(
             remember_seen(SUMMARY_BASE_VERSION_KEY, summary_profile.version)
             return
         text = str(note)
-        message = "Summary 공지를 저장했습니다." if text.strip() else "Summary 공지를 내렸습니다."
+        message = "공지를 저장했습니다." if text.strip() else "공지를 내렸습니다."
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
         conflict_marks = profile_conflict_marks()
@@ -1872,7 +1872,7 @@ def _render_top5_band_editor(
     top5_band_profile: GlobalTop5Band,
     database_path: str,
 ) -> None:
-    """B/N Top5 막대가 표현하는 확보율 구간. 저장은 버전 대조다(Summary 공지와 같다).
+    """B/N Top5 막대가 표현하는 확보율 구간. 저장은 버전 대조다(공지와 같다).
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘) — 최신 저장본을 보고
     누른 하한·상한이 그 저장본 그대로면(퍼센트 칸을 오간 끝자리는 접는다) 쓰지 않고 「바뀐 것이
@@ -1939,7 +1939,7 @@ def _render_top5_band_editor(
         conflict_marks = profile_conflict_marks()
         held = held_profile_conflict(conflict_marks, TOP5_SAVE_NAME)
         if held is not None:
-            # 남의 저장에 거부된 누름의 둘째 누름이다(Summary 공지와 같다).
+            # 남의 저장에 거부된 누름의 둘째 누름이다(공지와 같다).
             remember_seen(TOP5_BASE_VERSION_KEY, top5_band_profile.version)
             if refused != held:
                 notice.error(held)
@@ -1956,7 +1956,7 @@ def _render_top5_band_editor(
             and _same_ratio(band[1], top5_band_profile.max_rate),
         ):
             # 방금 저장한 같은 구간의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시 그렸다
-            # (write_guard.held_notice — Summary 공지와 같다).
+            # (write_guard.held_notice — 공지와 같다).
             if held_notice(TOP5_FLASH_KEY) is None:
                 notice.info(TOP5_UNCHANGED_MESSAGE, icon=":material/info:")
             return
@@ -2016,7 +2016,7 @@ def _refuse_profile_write(
     flash_key: str,
     saved_message: str,
 ) -> NoReturn:
-    """Summary 공지·Top5 구간 저장이 버전 대조에 거부된 뒤(판정 기준과 같은 꼴) — 늘 다시 돈다.
+    """공지·Top5 구간 저장이 버전 대조에 거부된 뒤(판정 기준과 같은 꼴) — 늘 다시 돈다.
 
     이 세션의 빠른 두 번 누름(제 저장)이면 거부 대신 저장을 다시 알린다. 남의 저장 때문이면 그
     알림을 충돌 표지(`held_profile_conflict` 몫)와 다음 회차 거부 칸에 담는다 — 이 회차는 본 version
@@ -2368,11 +2368,11 @@ def _render_key_process_editor(
             return
         if unchanged:
             # 방금 저장한 같은 이름·공정의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시
-            # 그렸다(write_guard.held_notice — Summary 공지와 같다). 같은 칸의 「기본으로」·「삭제」
+            # 그렸다(write_guard.held_notice — 공지와 같다). 같은 칸의 「기본으로」·「삭제」
             # 알림은 그 둘째 누름이 아니다 — 저장 알림 글로 가른다(2026-11-01 리뷰).
             if held_notice(KEY_PROCESS_FLASH_KEY) == _key_process_saved_message(new_name):
                 return
-            # 이 카드는 프래그먼트라 카드만 돌면 다른 저장 칸(Summary 공지 등)이 앞 회차에 그린
+            # 이 카드는 프래그먼트라 카드만 돌면 다른 저장 칸(공지 등)이 앞 회차에 그린
             # 알림이 그대로 남아 이 알림과 두 줄로 섰다(2026-11-01 리뷰) — 저장처럼 앱 전체를 다시
             # 돌려 그 칸들을 걷고 이 알림만 세운다.
             queue_flash(

@@ -902,7 +902,7 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
     assert short_lines(result).startswith("27.06: 전용 6대 중 5대만 배정")
     assert short_month_lines(result) == []
     assert overdrawn_lines(result) == [
-        "27.05: 개조 비가동 5.81대가 가용 5대보다 많습니다 — 이 공정 설비로는 이 개조 일정이 "
+        "27.05: 개조 비가동 5.81대가 가용 5대보다 많습니다 — 이 공정 설비로는 이 개조 창이 "
         "서지 않습니다."
     ]
     assert short_lines(_run()) == ""
@@ -1464,7 +1464,7 @@ def test_the_modification_kpi_counts_only_the_modified_units(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성(보유 4 → 11 = 4 + 7). 회색 줄은
-    카드 넷이 한 줄에 서게 짧다 — 창 수·첫 비가동은 개조 일정 카드가 말한다."""
+    카드 넷이 한 줄에 서게 짧다 — 창 수·첫 비가동은 개조 창 카드가 말한다."""
     cards = _kpi_cards(monkeypatch, _owned())
     assert cards["개조 대수"] == ("7대", "전용 최대 11대 = 보유 4 · 개조 7")
     cards = _kpi_cards(monkeypatch, _new(owned=3))

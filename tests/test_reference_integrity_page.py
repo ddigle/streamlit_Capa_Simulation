@@ -1,5 +1,6 @@
 # Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·상세 상자 되돌림·닫힌 탭 건너뛰기를 검증한다.
 
+import json
 from typing import Any, NamedTuple
 
 import pandas as pd
@@ -55,6 +56,19 @@ def _priority_frame(app: AppTest) -> pd.DataFrame:
         if PRIORITY_COLUMNS.issubset(set(getattr(frame.value, "columns", []))):
             return frame.value
     raise AssertionError("관리 우선순위 표가 없습니다.")
+
+
+def test_the_priority_requirement_column_keeps_its_own_name() -> None:
+    """칸 값은 CHIP · WF · PKG 라 단위(매 · Kea)가 아니다 — 머리를 「단위」 로 바꿔 달지 않는다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception, app.exception
+    (frame,) = [
+        item
+        for item in app.dataframe
+        if PRIORITY_COLUMNS.issubset(set(getattr(item.value, "columns", [])))
+    ]
+    assert "소요기준" in frame.value.columns
+    assert "label" not in json.loads(frame.proto.columns)["소요기준"]
 
 
 def test_priority_table_and_process_selector_show_the_display_name() -> None:

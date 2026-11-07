@@ -179,7 +179,7 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
     # 파란 안내 상자를 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-04).
     assert not infos(app)
     (switch,) = [element for element in app.markdown if element.value.startswith("**예약**")]
-    assert switch.value == "**예약** · 이 실행에서는 꺼짐"
+    assert switch.value == "**예약** · 이 서버에서는 꺼짐"
     assert ENV_VAR in str(switch.proto.help)
     # 「지금 실행」 이 공식버전을 바꿀 수 있다는 것은 누르기 전에 그 단추 풍선이 말한다(UI-NTF-09).
     run_now = next(button for button in app.button if button.key == RUN_NOW_BUTTON_KEY)

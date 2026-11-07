@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 import pandas as pd
 
 from capa_simulation.components.flash import queue_flash
@@ -13,6 +15,9 @@ from capa_simulation.services.reference_csv import (
     parse_reference_edit_clipboard,
     reference_edit_csv_bytes,
 )
+
+# 붙여넣으면 바로 적용되는 표의 작업 단추. 대기 표로 올리는 PKG PLAN 만 제 이름을 넘긴다.
+PASTE_APPLY_LABEL: Final = "붙여넣기 적용"
 
 
 def render_reference_clipboard_form(
@@ -26,6 +31,7 @@ def render_reference_clipboard_form(
     max_value: float | None = None,
     integer: bool = False,
     opening: str | None = None,
+    apply_label: str = PASTE_APPLY_LABEL,
 ) -> pd.DataFrame | None:
     """글 칸과 창 제목 옆 작업 줄(왼쪽 적용 · 오른쪽 양식)을 그리고, 적용을 누르면 검증한 표를
     돌려준다.
@@ -36,13 +42,13 @@ def render_reference_clipboard_form(
     `refuse_paste(key, 글)`). `min_value`·`max_value` 는 같은 표 편집 격자의 하한·상한이고 `integer`
     는 정수 규칙(일수)이다 — 붙여넣은 값도 그 범위를 지난다
     (`reference_csv.assert_edit_value_range`). `opening` 은 창을 연 회차의 알림 글이다(그 표에만
-    걸리는 양식 규칙 · 버려지는 편집).
+    걸리는 양식 규칙 · 버려지는 편집). `apply_label` 은 작업 단추 글이다.
     """
     submit = render_paste_form(
         key,
         text_key=f"{key}_clipboard",
         text_label=f"{table_name} 표 붙여넣기",
-        apply_label="붙여넣기 일괄 적용",
+        apply_label=apply_label,
         template=PasteTemplate(
             data=reference_edit_csv_bytes(data, key_columns),
             file_name=file_name,

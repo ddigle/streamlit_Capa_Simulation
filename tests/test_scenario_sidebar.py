@@ -527,7 +527,7 @@ def test_sidebar_save_keeps_the_session_virtual_products(sidebar_app: AppTest) -
     ]
     assert [item.value for item in successes(app)] == [
         "신규 리비전 r2를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
-        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+        "실적과 대조할 수 없으므로 공식버전으로 지정하기 전에 확인하세요."
     ]
 
 
@@ -562,7 +562,7 @@ def test_sidebar_save_carries_over_the_loaded_revisions_virtual_products(
     ] == [("DEMO_PARENT", "8H"), ("DEMO_VIRTUAL", "8H"), ("DEMO_SESSION", "4H")]
     assert [item.value for item in successes(app)] == [
         "신규 리비전 r2를 저장했습니다. 가상 제품 3건이 포함되어 있습니다. "
-        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+        "실적과 대조할 수 없으므로 공식버전으로 지정하기 전에 확인하세요."
     ]
 
 

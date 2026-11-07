@@ -130,7 +130,7 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
             text = _edits_text(edits.title, edits.drafts)
             held.append(item("keep", spec, title, text, f"{title} 적용 전"))
         if edits.staged:
-            held.append(item("keep", spec, title, "붙여넣기 적용 대기", "붙여넣기 대기"))
+            held.append(item("keep", spec, title, "올린 붙여넣기 적용 대기", "붙여넣기 대기"))
     space_file = Path(SPACE_STATUS.path).name
     if page_file == space_file and floor_state_draft_pending():
         lose.append(

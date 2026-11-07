@@ -145,7 +145,7 @@ def test_a_popover_keeps_its_place_and_key_when_the_alert_goes_away(tmp_path: Pa
         "이 리비전으로 되돌리기",
         "여기서 새 시나리오",
         "리비전명",
-        "공식으로 발행",
+        "공식으로 지정",
     }
     assert all(block_id for _, block_id in before.values())
 
@@ -352,10 +352,10 @@ def test_the_scenario_guide_carries_what_left_the_confirm_popovers() -> None:
     발행."""
     guide = GUIDE.read_text(encoding="utf-8")
     for words in (
-        "공통 대장 · 층 도면 · 다른 설비 시나리오는 그대로이고 공식 발행은 하지 않습니다",
+        "공통 대장 · 층 도면 · 다른 설비 시나리오는 그대로이고 공식 지정은 하지 않습니다",
         "공식에서 고친 자리를 다시 따라갑니다",
         "그 시나리오 계산 · Space 에서 빠짐",
-        "「공식 발행 안 함」",
+        "「공식 지정 안 함」",
         "「그때와 자리 다른 호기 n대」",
         "지금 공통 대장과 합칩니다 — 이 시나리오는 그대로입니다",
     ):
@@ -363,7 +363,7 @@ def test_the_scenario_guide_carries_what_left_the_confirm_popovers() -> None:
 
 
 def test_popover_explanations_sit_in_balloons_not_standing_captions(tmp_path: Path) -> None:
-    """「리비전명」 · 「공식으로 발행」 팝오버의 설명 글(이름표의 뜻 · 공식이 무엇에 쓰이는지)은 늘
+    """「리비전명」 · 「공식으로 지정」 팝오버의 설명 글(이름표의 뜻 · 공식이 무엇에 쓰이는지)은 늘
     띄워 두지 않고 그 칸 · 단추의 풍선에 둔다(설계 규칙 UI-TXT-01 · AMB-01 (가))."""
     path, numbers = _two_revisions(tmp_path)
     app = _ok(_section(path).run())

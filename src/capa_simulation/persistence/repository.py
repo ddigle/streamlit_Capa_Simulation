@@ -829,7 +829,7 @@ class DuckDBScenarioRepository:
         version 이 올라야 다른 세션의 캐시가 풀린다. 화면 편집은 `expected_version` 을 넘겨
         버전 대조를 받는다(다르면 `ProfileVersionConflict`).
         """
-        source_label = required_text(source, "Summary 공지 출처")
+        source_label = required_text(source, "공지 출처")
         with self._write_transaction() as connection:
             home_profile_store.replace_global_summary_note(
                 connection, note, source=source_label, expected_version=expected_version

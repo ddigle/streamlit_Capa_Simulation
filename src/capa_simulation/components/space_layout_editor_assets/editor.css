@@ -670,11 +670,11 @@
 .sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }
 /* ⑥ 둘째 줄 — 빈 칸(`sle-spacer` — 보기에서는 숨는 칸, 선택 줄 바로 뒤 · 편집에서는 「빼기·지우기」 뒤)이 온 폭 줄바꿈이
    된다. 층 보기 도구 줄은 넘치면 곧장 이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px
-   에서 「배치 …」 로 잘렸다(E2E r1). 편집은 「호기 정보」·「고정」·「적용」 이 둘째 줄이다(글도 다시 선다 — 자리가 넉넉하다). */
+   에서 「배치 …」 로 잘렸다(E2E r1). 편집은 「호기 정보」·「화면 고정」·「적용」 이 둘째 줄이다(글도 다시 선다 — 자리가 넉넉하다). */
 .sle-toolbar.is-fit6 { flex-wrap: wrap; height: auto; row-gap: 2px; }
 .sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
 .sle-toolbar.is-fit6 .sle-summary { flex: 1 1 10em; min-width: 0; overflow: visible; white-space: normal; }
-/* 편집 도구 줄 ① — 「호기 정보」·「단축키」·「고정」 은 아이콘만, 기준일 칩은 날짜만(화면에서만 — 낭독기는 읽고 풍선은 그대로다).
+/* 편집 도구 줄 ① — 「호기 정보」·「단축키」·「화면 고정」 은 아이콘만, 기준일 칩은 날짜만(화면에서만 — 낭독기는 읽고 풍선은 그대로다).
    사이드바를 연 1280px 창의 층 편집이 3px 넘쳤고, 1100px 창은 이것으로도 모자라 ⑥ 으로 간다. */
 .sle-toolbar.is-efit1:not(.is-fit6) .sle-sheet-toggle-word, .sle-toolbar.is-efit1:not(.is-fit6) .sle-keys-toggle-word,
 .sle-toolbar.is-efit1:not(.is-fit6) .sle-lock-word,
@@ -789,7 +789,7 @@
 .sle-sheet-menu-range[hidden] { display: none; }
 .sle-sheet-menu-range .sle-field { display: grid; grid-template-columns: 2.6em minmax(0, 1fr); }
 .sle-sheet-menu-range input { width: 100%; min-width: 0; box-sizing: border-box; }
-/* 고정 중 저장 안 한 배치 표지 — 「고정」 단추 끝 점 하나(까닭은 단추 풍선). */
+/* 고정 중 저장 안 한 배치 표지 — 「화면 고정」 단추 끝 점 하나(까닭은 단추 풍선). */
 .sle-lock-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sle-flag); flex: none; }
 .sle-lock-dot[hidden] { display: none; }
 /* 단추를 누르면 도구 줄 아래(몸 안)에 겹쳐 뜨는 작은 판 — 「키조합 : 기능」 한 줄씩. 자리는 JS 가 단추 아래로(`placeKeys`). */

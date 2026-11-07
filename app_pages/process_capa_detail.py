@@ -7,12 +7,12 @@
 
 차례(2026-10-15 사용자 결정 4 — 목업 그대로):
 
-0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보기준
+0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
    왔으면 출처 띠, 필요 단축 일정 카드에서 왔으면 그 카드 출처 띠(주소 인자만 읽는다)와 「←
    필요 단축 일정」. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품 거르기(펼친 제품 행에만
    걸린다).
-1. **KPI 넷** — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준). 그
+1. **KPI 넷** — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준). 그
    아래 부족 원인마다 다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 →
    필요 단축 일정).
 2. ~ 7. **본문 프래그먼트**(`components/process_capa_view.render_process_detail_view`, key
@@ -30,7 +30,7 @@
 - **설비 일정(참고)** — 설비 DB 의 최신 저장본·Cut-off 를 **읽기만** 한다
   (`PageSpec.uses_equipment_db`). 샘플 fleet 은 쓰지 않는다 — 저장본이 없으면 「설비 일정
   없음」이다. 판정(`dynamic_readiness`)을 통과한 공정만 계획
-  (`get_required_shortening_for_target` — 단축 목표는 HOME 설정 → 판정 기준 › 확보기준을 달마다,
+  (`get_required_shortening_for_target` — 단축 목표는 HOME 설정 → 판정 기준 › 확보 기준을 달마다,
   사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요 단축 일정 화면의
   공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다(사용자
   결정 1) — 그 화면으로 옮길 때 적는 「강조 공정」 칸 하나만 예외다(공정 필터는 심지 않는다).
@@ -39,7 +39,7 @@
   프레임에 사후로 건다 — 캐시를 쓰지 않는다)과 **가정 계획**(`load_required_shortening_for_target` —
   계획 키 끝 칸의 토큰이 가정 칸을 고른다)을 더 세운다. 판정 기준은 하나다 — 부족 띠·② 판정
   대조·KPI·부족 원인은 가정, 공식 값은 ① 공식 줄과 KPI 회색 줄 「공식 n」 에만. 머리에 배지와 효과
-  한 줄, 조건 카드에 역산 둘(구간 안 단축 0 · 확보기준 미달 0)과 「이 값으로」. 기본 공정·달
+  한 줄, 조건 카드에 역산 둘(구간 안 단축 0 · 확보 기준 미달 0)과 「이 값으로」. 기본 공정·달
   고르기·◀▶·HOME 표시 확보율은 공식 확보율 그대로다. 가정 프레임은 시나리오 키 전용 칸(HOME 과 같은
   칸)에 넘기지 않는다.
 - **HOME 표시 확보율** — HOME 의 확보율 보정·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
@@ -48,7 +48,7 @@
   두지 않는다.
 
 공정·달은 **공정 선택 상자보다 먼저** 정한다(`process_detail_state.resolve_process_and_month`)
-— HOME 전달 칸 → 주소 인자 → 세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보기준 미달
+— HOME 전달 칸 → 주소 인자 → 세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보 기준 미달
 달). 전달 칸은 그보다도 앞, 부트스트랩 전에 꺼낸다 — 오류로 멈춘 회차가 칸을 남기지 않게. 밖에서
 들어온 회차에는 그 길(`from`)이 가리키는 구획을 다시 편다(`reopen_entry_section`).
 """
@@ -234,7 +234,7 @@ HOME_RATE_TOLERANCE = 1e-9
 # 화면 기간은 사이드바 「적용」 표지가 보인다.
 PROCESS_HELP = (
     "기본 공정은 이 화면 기간(RQ_REQB 유효 기간 ∩ 조회기간)의 최저 확보율 공정이고, 그 공정의 첫 "
-    "확보기준 미달 달을 엽니다."
+    "확보 기준 미달 달을 엽니다."
 )
 # HOME 칸 방문(공식 설비 시나리오로 고정)일 때 「필요 단축 일정에서 …」 단추의 풍선 — 그 화면은 이
 # 고정을 따르지 않는다.
@@ -327,7 +327,7 @@ def default_process_choice() -> str | None:
 
 
 def default_month_for(process: str | None) -> int | None:
-    """그 공정의 첫 확보기준 미달 달. 없으면 None — 첫 달을 연다."""
+    """그 공정의 첫 확보 기준 미달 달. 없으면 None — 첫 달을 연다."""
     if process is None:
         return None
     rows = securement_rate.loc[process_column.eq(process).fillna(False)]
@@ -708,7 +708,7 @@ if (
 ):
     # 계산은 이 설비 시나리오에 일정이 없는 호기와 그 비가동을 뺀 세 표다(F4).
     baseline, equipment, downtime = snapshot.calculation_frames()
-    # 단축 목표 = HOME 설정 → 판정 기준 › 확보기준을 달마다(사용자 결정 2). 계산할 달 밖의 월별
+    # 단축 목표 = HOME 설정 → 판정 기준 › 확보 기준을 달마다(사용자 결정 2). 계산할 달 밖의 월별
     # 예외는 싣지 않아 키를 가르지 않는다.
     target = target_from_thresholds(thresholds, months)
     shortening_key = required_shortening_cache_key(
@@ -960,7 +960,7 @@ def assumption_effect_line() -> tuple[str, str]:
         shortage_months=(official_kpis.shortage_months, kpis.shortage_months),
     )
     basis = (
-        "이 화면 단축 목표는 판정 기준의 확보기준(월별)이고 기간은 "
+        "이 화면 단축 목표는 판정 기준의 확보 기준(월별)이고 기간은 "
         f"{month_label(effective_start)}–{month_label(effective_end)}(RQ_REQB)입니다. "
         f"{UPEH_SCOPE_HELP} {elsewhere}"
     )
@@ -1013,7 +1013,7 @@ if assumption is not None:
         if window:
             render_inverse(
                 percent_to_clear_securement(summary, thresholds, window),
-                goal="확보기준 미달 0",
+                goal="확보 기준 미달 0",
                 key="process_detail_upeh_inverse_securement",
                 current=assumption.percent,
                 help=INVERSE_HELP,

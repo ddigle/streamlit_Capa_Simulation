@@ -56,7 +56,7 @@ def home_toggle(state: Mapping[Any, Any], key: str) -> bool:
 # 안쪽 탭은 쓰는 묶음 다섯이다(2026-11-04 사용자 검수 home-u01 — 전에는 옮겨 온 Preference ·
 # Past Data 둘이라 Preference 한 탭에 상자 아홉이 세로로 섰다): 고르면 곧 저장되는 비교 대상 둘,
 # 판정 기준, 「LOB 표시 조건」 토글이 켜는 월별 입력 셋(선행 B/O · 선행 입고 실적 · 확보율 보정),
-# 화면에 보이는 것을 정하는 공지 · 표시 셋(Summary 공지 · B/N Top5 구간 · 주요공정 프리셋), 과거
+# 화면에 보이는 것을 정하는 공지 · 표시 셋(공지 · B/N Top5 구간 · 주요공정 프리셋), 과거
 # 구간. 앞 넷(`HOME_PREFERENCE_TABS`)은 Preference 편집기(`home_preference`)가, 마지막은 Past Data
 # 편집기(`past_data_management`)가 그린다.
 #

@@ -147,7 +147,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 | 상단 띠 | `HEADER_BAR` | `#EFF1F5` |
 | 공정 Capa 상세 공급 묶음(월 칸·라벨 칸) | `SUMMARY_SUPPLY_SURFACE`·`SUMMARY_SUPPLY_CLASSIFICATION` | `#EBF2FC`·`#DFEAFC` |
 | 공정 Capa 상세 수요 묶음(월 칸·라벨 칸) | `SUMMARY_DEMAND_SURFACE`·`SUMMARY_DEMAND_CLASSIFICATION` | `#F9F0E1`·`#F3E4C8` |
-| 확보기준 미달 달 세로 띠 | `SHORTAGE_MONTH_BAND` | `STATUS_SHORTAGE` 12%(어둡게 30%) |
+| 확보 기준 미달 달 세로 띠 | `SHORTAGE_MONTH_BAND` | `STATUS_SHORTAGE` 12%(어둡게 30%) |
 
 **Streamlit 이 그리는 `st.container(border=True)` 와 `st.metric(border=True)` 는 위 표의 면을
 쓰지 않는다.** 테두리만 긋고 배경은 투명해 페이지 바탕이 그대로 비친다. 표의 `SURFACE` 는
@@ -166,7 +166,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 (소요대수와 펼친 분류 행)는 옅은 모래, [판정](확보율·과부족·기준 확보율)은 보통 표 면이다. 라벨 칸이
 한 단 「위」 면(밝게는 짙고 어둡게는 밝다)이고, 두 계열 모두 판정 3색·실행 증감 면·Qual 확정색과 정상
 시야 ΔE 6 이상 떨어져 칸 색으로 읽히지 않는다(`test_design_tokens.py`). 펼친 분류 행은 수요 면이 아니라
-흰 면·줄무늬(`SURFACE`·`SURFACE_SUBTLE`)를 번갈아 칠해 부모 행과 갈린다. 공식 확보기준에 못 미친 달은
+흰 면·줄무늬(`SURFACE`·`SURFACE_SUBTLE`)를 번갈아 칠해 부모 행과 갈린다. 공식 확보 기준에 못 미친 달은
 머리 아래부터 캔버스 끝까지 그 열 전체에 옅은 부족 띠(`SHORTAGE_MONTH_BAND`)가 깔리고 머리 아래 4px 는
 `STATUS_SHORTAGE` 다 — 행 면 위·칸 색 아래 층이다.
 

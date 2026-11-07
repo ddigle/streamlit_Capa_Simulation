@@ -2135,7 +2135,7 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
         )
         facts.append(f"지운 호기 {len(result.removed_units):,}대{elsewhere}")
     if result.release_no is not None:
-        facts.append(f"공식 v{result.release_no} 발행")
+        facts.append(f"공식 v{result.release_no} 지정")
     if propagated:
         facts.append(_spread_words(propagated))
     head = "설비 데이터를 저장했습니다"
@@ -2161,8 +2161,9 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
         sentences.append(overlay_saved_sentence(result, scenario_name=scenario_name))
     if result.release_withheld:
         sentences.append(
-            "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
-            "공식 발행은 시나리오 관리 › 설비 시나리오에서 하세요."
+            "공식 설비 시나리오에 공식으로 지정하지 않은 더 새 리비전이 있어 공식 지정은 하지 "
+            "않았습니다 — "
+            "공식 지정은 시나리오 관리 › 설비 시나리오에서 하세요."
         )
     return " ".join(sentences)
 

@@ -150,7 +150,7 @@ def test_the_judgement_card_writes_both_formulas_with_the_month_threshold() -> N
     # 과부족 식은 판정 경계(110% → 109.5%)를 곱하고, 기준은 정수만 적는다(2026-11-01 — N1 정수만).
     assert f"{required:,.2f}×109.5%" in card.formula
     assert card.formula.endswith(f"{MINUS}{abs(int(record['확보기준 과부족'])):,}")  # type: ignore[call-overload]
-    assert "확보기준 110% · 경고기준 100% — 사사오입 판정(확보 109.5% 이상)" in card.notes
+    assert "확보 기준 110% · 경고 기준 100% — 사사오입 판정(확보 109.5% 이상)" in card.notes
     assert not any("(1.095)" in note for note in card.notes)
     assert any(note.startswith("원인: ") for note in card.notes)
 
@@ -161,7 +161,7 @@ def test_a_month_threshold_exception_reaches_the_card() -> None:
     card = judgement_card(_record(summary, 202703), thresholds, 202703)
 
     assert "×119.5% " in card.formula
-    assert card.notes[0].startswith("확보기준 120% · ")
+    assert card.notes[0].startswith("확보 기준 120% · ")
 
 
 def test_a_painted_zero_on_the_noise_boundary_is_explained() -> None:
@@ -471,13 +471,13 @@ def test_a_process_without_counted_units_is_a_plain_line_with_the_rule_in_its_he
 
 
 def test_the_shortage_caption_keeps_its_negation_in_the_help() -> None:
-    """KPI 회색 줄은 좁은 창에서 끝이 말줄임으로 잘린다. 「확보기준 미달」 이 「월 최대 −6대 ·
+    """KPI 회색 줄은 좁은 창에서 끝이 말줄임으로 잘린다. 「확보 기준 미달」 이 「월 최대 −6대 ·
     기간 합 아님」 이던 때 1024px 창에서 「… 기간 합…」 만 남아 기간 합으로 읽혔다 — 회색 줄은
     월 최대 대수만 두고 「기간 합이 아닙니다」 는 `?` 풍선에 둔다."""
     app = AppTest.from_function(_kpi_row_app).run()
 
     assert not app.exception
-    shortage = next(metric for metric in app.metric if metric.label == "확보기준 미달")
+    shortage = next(metric for metric in app.metric if metric.label == "확보 기준 미달")
     assert shortage.proto.delta == f"월 최대 {MINUS}6대"
     assert "기간 합이 아닙니다" in shortage.proto.help
 
@@ -518,11 +518,11 @@ def test_the_schedule_cause_skips_months_before_today() -> None:
 
 def test_the_target_reads_the_preference_threshold_by_month() -> None:
     uniform = MonthlyTarget(1.095)
-    assert target_text(uniform, MONTHS) == "확보기준(월별) 110%"
+    assert target_text(uniform, MONTHS) == "확보 기준(월별) 110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
-    assert target_text(varied, MONTHS) == "확보기준(월별)"
+    assert target_text(varied, MONTHS) == "확보 기준(월별)"
     # 그 값을 고치는 곳은 자리 글이 아니라 풍선이다(UI-TXT-03).
-    assert "HOME 설정 → 판정 기준 › 확보기준(월별)" in TARGET_HELP
+    assert "HOME 설정 → 판정 기준 › 확보 기준(월별)" in TARGET_HELP
 
 
 # ------------------------------------------------------------------ 범례·스크롤
@@ -530,7 +530,7 @@ def test_the_target_reads_the_preference_threshold_by_month() -> None:
 
 def test_the_legend_adds_the_schedule_marks_only_with_the_schedule() -> None:
     static = canvas_legend_html(None, MONTHS)
-    assert "공식 확보기준 미달 달" in static and "지금 보는 달" in static
+    assert "공식 확보 기준 미달 달" in static and "지금 보는 달" in static
     assert "가용을 깎은 비가동" not in static
     dynamic = canvas_legend_html(_dynamic(), MONTHS)
     for item in (

@@ -177,7 +177,7 @@ def space_layout_notices(
     )
     stored = layout_counts_words(live_units, stored_marks, stored_labels)
     if settled:
-        tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)"
+        tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·지정 때 정리됩니다)"
     lines: list[LayoutNotice] = []
     counted = " · ".join(parts)
     # 배치 차이 알림의 지문 — 옛 리비전인가, 실효 차이 셋, 저장된 행 셋(정리 꼬리가 바뀌면 다시

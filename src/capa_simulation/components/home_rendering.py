@@ -99,7 +99,7 @@ class HomeFigureCacheKey(NamedTuple):
     # 가른다 — 단위만 새로 갈린다.
     product_share_basis: str
     # 「선행 입고」 토글과 선행 입고 실적 프로필 version(토글이 꺼져 있으면 0). Density 칸 오른쪽
-    # 끝 글자가 Figure 에 구워지므로 키에 든다 — Summary 공지와 다르다.
+    # 끝 글자가 Figure 에 구워지므로 키에 든다 — 공지와 다르다.
     show_advance_shipment: bool
     advance_shipment_profile_version: int
     # 주요공정 히트맵이 그릴 공정이 하나도 없을 때 남기는 한 줄. 프리셋이 비었는지(고르라)와
@@ -757,7 +757,7 @@ def render_summary_notice(note: str) -> None:
         return
     st.html(summary_notice_style())
     with st.container(key=SUMMARY_NOTICE_KEY):
-        with st.expander("Summary", expanded=False):
+        with st.expander("공지", expanded=False):
             # `st.markdown` 이 아니라 `st.html` 이다. 마크다운은 raw HTML 블록을
             # **빈 줄에서 끊으므로**(CommonMark block type 6), 문단을 나눈 공지의 둘째
             # 문단부터는 `<div>` 밖으로 나가 줄 앞의 `#`·`-` 가 제목과 목록으로 바뀐다.

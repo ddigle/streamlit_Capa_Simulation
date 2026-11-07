@@ -132,7 +132,7 @@ def test_the_space_box_stands_under_the_panel_and_above_the_card_on_fab_and_floo
 
 
 def test_the_page_draws_the_scroll_lock_style_once_on_fab_and_floor(_shell: AppTest) -> None:
-    """도구 줄 「고정」 은 `<html data-space-lock>` 만 단다 — 본문을 실제로 막는 것은 이 화면이
+    """도구 줄 「화면 고정」 은 `<html data-space-lock>` 만 단다 — 본문을 실제로 막는 것은 이 화면이
     그리는 페이지 서식(`space_lock_style`)이다. 그 한 줄이 빠지면 단추는 켜져도 본문이 굴러가고,
     다른 화면으로 가면 서식이 사라져 풀리는 규칙도 없다(리뷰 rules-7). FAB·층·편집 모두 한 번씩."""
 

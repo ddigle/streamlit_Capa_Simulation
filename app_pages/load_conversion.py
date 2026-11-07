@@ -218,6 +218,8 @@ PLAN_STAGED_KEY = "pkg_plan_staged_paste"
 PLAN_APPLIED_FLASH_KEY = "pkg_plan_applied_flash"
 PRODUCT_REGISTERED_FLASH_KEY = "virtual_product_registered_flash"
 PLAN_PASTE_KEY = "rq_pkg_plan_csv"
+# 붙여넣은 표는 대기 표로 올라갈 뿐 적용이 아니다 — 수율 · 기준 정보의 「붙여넣기 적용」 과 가른다.
+PLAN_PASTE_APPLY_LABEL = "붙여넣기 올리기"
 YIELD_PASTE_KEY = "rq_yield_csv"
 VIRTUAL_SOURCE_KEY = "virtual_product_source"
 VIRTUAL_STACK_KEY = "virtual_product_stack"
@@ -546,6 +548,7 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
         file_name=file_name,
         key=PLAN_PASTE_KEY,
         opening=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(PLAN_EDITOR_KEY) else None,
+        apply_label=PLAN_PASTE_APPLY_LABEL,
     )
     if imported is None:
         return
@@ -559,7 +562,7 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     discard_editor(PLAN_EDITOR_KEY)
     _queue_done(
         PLAN_PASTE_FLASH_KEY,
-        "붙여넣기 표를 PKG PLAN 탭에 반영했습니다. "
+        "붙여넣기 표를 PKG PLAN 탭에 올렸습니다. "
         "확인 후 「PKG PLAN 변경사항 적용」을 눌러야 전역 계획값에 반영됩니다.",
     )
     _close_dialog()

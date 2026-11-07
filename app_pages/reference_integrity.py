@@ -225,7 +225,7 @@ def _render_summary(
             height=min(365, (len(priority) + 1) * 36 + 4),
             column_config={
                 "순위": st.column_config.NumberColumn(width="small", format="%d"),
-                "소요기준": st.column_config.TextColumn("단위", width="small"),
+                "소요기준": st.column_config.TextColumn(width="small"),
                 "Capa 실현률": st.column_config.NumberColumn(format="percent"),
                 "설비 성능 실현률": st.column_config.NumberColumn(format="percent"),
                 "가용 Capa 활용률": st.column_config.NumberColumn(format="percent"),

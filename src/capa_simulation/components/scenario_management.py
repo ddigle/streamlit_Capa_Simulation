@@ -9,7 +9,7 @@
   이름을 다시 눌러 고치고, 줄을 끌어 옮긴다. 칸을 고치는 동안 앱이 돌지 않고 확정 뒤 묶어 한 번
   돈다.
 - 오른쪽 칸 넷: 상세(그 시나리오의 리비전 표 · 값 줄 · 불러오기 · 공식으로 지정… · 보관…) · 저장 전
-  변경(수 넷 · 옛 값 → 새 값 · 줄 되돌리기 · 모두 버리기 · 변경 저장) · 발행 이력 · 보관함(되돌리기
+  변경(수 넷 · 옛 값 → 새 값 · 줄 되돌리기 · 모두 버리기 · 변경 저장) · 공식 이력 · 보관함(되돌리기
   · 영구 삭제).
 
 고침은 행 id 로 세션 초안에 둔다(`services/scenario_list_edits.ListDraft`) — 다른 시나리오를 열어도
@@ -209,7 +209,7 @@ DERIVED_SOURCE_ROLES: dict[str, tuple[str, ...]] = {
 # 오른쪽 칸 넷. 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다).
 SIDE_DETAIL = "상세"
 SIDE_CHANGES = "저장 전 변경"
-SIDE_HISTORY = "발행 이력"
+SIDE_HISTORY = "공식 이력"
 SIDE_ARCHIVE = "보관함"
 SIDES = (SIDE_DETAIL, SIDE_CHANGES, SIDE_HISTORY, SIDE_ARCHIVE)
 SIDE_KEY = SIDE_CHOICE_KEY
@@ -253,7 +253,7 @@ ARCHIVE_GONE_MESSAGE = (
     "고른 시나리오가 그 사이 목록에서 빠져 아무것도 바꾸지 않았습니다 — 보관했거나 영구 "
     "삭제했습니다."
 )
-# 「발행 이력」 칸에 보이는 최근 건수.
+# 「공식 이력」 칸에 보이는 최근 건수.
 HISTORY_LIMIT = 20
 # 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
 CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
@@ -596,7 +596,7 @@ def _render_list_management(
     scenarios: Sequence[ScenarioSummary],
     view: _ListView,
 ) -> None:
-    """목록 관리 두 칸 — 왼쪽 시나리오 표, 오른쪽 칸(상세 · 저장 전 변경 · 발행 이력 · 보관함).
+    """목록 관리 두 칸 — 왼쪽 시나리오 표, 오른쪽 칸(상세 · 저장 전 변경 · 공식 이력 · 보관함).
 
     Capa 탭은 다른 탭이 열린 회차에도 그린다(폼 · 보관함 입력을 잃지 않는다) — 표 data 가 그대로면
     브라우저로 다시 보내지 않아 그 회차 비용은 줄 조립뿐이다.
@@ -1419,7 +1419,7 @@ def official_moved_message(current_release_no: int) -> str:
 
 
 def _render_official_history(releases: Sequence[OfficialReleaseSummary]) -> None:
-    """「발행 이력」 칸 — 공식 발행 이력(r 번호 · 공식버전명만, 리비전명은 싣지 않는다).
+    """「공식 이력」 칸 — 공식 발행 이력(r 번호 · 공식버전명만, 리비전명은 싣지 않는다).
 
     리비전명은 고칠 수 있어, 실으면 이름을 바꾸는 순간 과거 발행 행이 발행 당시와 다른 이름을
     보인다.
@@ -1757,7 +1757,7 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
 def delete_scope_warning(revision_count: int, release_count: int) -> str:
     """영구 삭제 입력 칸 위 한 줄. 함께 지워질 리비전·공식 발행 이력의 수와 되돌릴 수 없다는 것."""
     if release_count:
-        scope = f"리비전 {revision_count}개와 공식 발행 이력 {release_count}건이"
+        scope = f"리비전 {revision_count}개와 공식 이력 {release_count}건이"
     else:
         scope = f"리비전 {revision_count}개가"
     return f"영구 삭제하면 {scope} 함께 지워지고 되돌릴 수 없습니다."
@@ -1973,7 +1973,7 @@ def virtual_product_save_notice(count: int) -> str:
         return ""
     return (
         f" 가상 제품 {count}건이 포함되어 있습니다. "
-        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+        "실적과 대조할 수 없으므로 공식버전으로 지정하기 전에 확인하세요."
     )
 
 

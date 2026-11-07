@@ -1569,11 +1569,11 @@ def test_the_guide_calls_the_loader_buttons_by_their_screen_names() -> None:
     joined = re.sub(r"\s*\n\s*", " ", guide)
     assert "조건으로 불러오기" not in joined
     assert "공정으로 불러오기" not in joined
-    assert "더 많으면 메뉴 **엑셀·CSV** 의 **한꺼번에 넣기** 를 씁니다" in joined
+    assert "더 많으면 메뉴 **엑셀·CSV** 의 **엑셀·CSV로 한꺼번에** 를 씁니다" in joined
     assert "새 호기 칸 머리·**조건별** 단추의 하는 법" in joined
     left = [m.start() for m in re.finditer(r"엑셀·CSV로 한꺼번에", joined)]
     assert all(joined[at + len("엑셀·CSV로 한꺼번에") :].startswith("**") for at in left)
-    assert all("팝업" in joined[at : at + 40] for at in left)
+    assert "**엑셀·CSV로 한꺼번에**(팝업 — 불러오기 줄 끝 메뉴 **엑셀·CSV** 안" in joined
 
 
 def test_a_loader_popover_closes_when_the_keyboard_leaves_it() -> None:

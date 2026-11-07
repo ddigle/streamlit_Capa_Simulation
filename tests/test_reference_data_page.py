@@ -1790,7 +1790,7 @@ def _add_step(app: AppTest, mcp_seq: str, step_seq: str) -> AppTest:
 def _paste(app: AppTest, editor_key: str, text: str) -> AppTest:
     app = _open_paste(app, editor_key)
     app.text_area(key=f"{editor_key}_csv_clipboard").set_value(text)
-    app = next(b for b in app.button if b.label == "붙여넣기 일괄 적용").click().run()
+    app = next(b for b in app.button if b.label == "붙여넣기 적용").click().run()
     assert not app.exception
     return app
 

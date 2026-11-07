@@ -700,7 +700,7 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
     # 첫 문장이 일어난 일이다 — 알림창은 앞 60자 안팎만 보인다(`alerts.SHORT_LIMIT`).
     assert message.startswith(
         "설비 데이터를 저장했습니다 — 지운 호기 1대(다른 설비 시나리오 2개 일정도 빠짐) · "
-        "공식 v3 발행 · 다른 설비 시나리오 1개에 호기 2대 · 비가동 1건."
+        "공식 v3 지정 · 다른 설비 시나리오 1개에 호기 2대 · 비가동 1건."
     ), message
     assert message.index(" · 다른 설비 시나리오 1개에") <= SHORT_LIMIT
     assert "「새 호기」 칸에서" not in message
@@ -711,7 +711,7 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
         EquipmentSaveResult(common=None, schedule=schedule, release_withheld=True),
         scenario_name="운영 일정",
     )
-    assert "공식 발행은 하지 않았습니다" in withheld
+    assert "공식 지정은 하지 않았습니다" in withheld
     assert "시나리오 관리 › 설비 시나리오" in withheld
 
 

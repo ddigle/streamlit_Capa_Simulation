@@ -302,7 +302,7 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert "설비 일정 없음: 저장본 없음" in header
     assert [metric.label for metric in app.metric] == [
         "최저 확보율",
-        "확보기준 미달",
+        "확보 기준 미달",
         "부족 원인",
         "대책",
     ]
@@ -689,7 +689,7 @@ def test_a_home_cell_reopens_the_summary_section(databases: tuple[Path, Path]) -
 
 @pytest.fixture(scope="module")
 def strict_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """판정 기준을 아주 높여 시드의 모든 공정이 확보기준 미달인 하네스 — ◀▶ 와 부족 원인 줄이 선다.
+    """판정 기준을 아주 높여 시드의 모든 공정이 확보 기준 미달인 하네스 — ◀▶ 와 부족 원인 줄이 선다.
     합성 시드의 확보율은 수천 % 대라 기준을 그만큼 올린다(표본 관측)."""
     root = tmp_path_factory.mktemp("process_capa_detail_strict")
     databases = (root / "scenario.duckdb", root / "equipment.duckdb")
@@ -716,7 +716,7 @@ def _step_caption(app: AppTest) -> str:
 def test_the_header_steps_through_shortfall_processes(
     strict_databases: tuple[Path, Path],
 ) -> None:
-    """머리 ◀▶ 는 확보기준 미달 공정을 최저 확보율이 낮은 차례로 넘기고, 옮긴 공정의 첫 미달 달을
+    """머리 ◀▶ 는 확보 기준 미달 공정을 최저 확보율이 낮은 차례로 넘기고, 옮긴 공정의 첫 미달 달을
     연다. 기본 공정(최저 확보율)이 첫째라 ◀ 는 쓸 수 없다."""
     app = _ok(_app(strict_databases).run())
     first = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
@@ -815,12 +815,12 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
         for row_id, _ in trace["customdata"]
     )
     assert "staticPlot" not in _chart_config(app, "process_detail_summary_labels")
-    # 단축 목표는 확보기준(월별) 표시뿐이다 — 고르는 위젯이 없다. 그 값을 고치는 곳(HOME 설정 → 판정
-    # 기준)은 풍선이다(길 안내는 자리 글이 아니다 — UI-TXT-03).
+    # 단축 목표는 확보 기준(월별) 표시뿐이다 — 고르는 위젯이 없다. 그 값을 고치는 곳(HOME 설정 →
+    # 판정 기준)은 풍선이다(길 안내는 자리 글이 아니다 — UI-TXT-03).
     targets = [element for element in app.caption if "단축 목표 = " in str(element.value)]
     assert len(targets) == 1
-    assert str(targets[0].value).startswith("단축 목표 = 확보기준(월별)")
-    assert "HOME 설정 → 판정 기준 › 확보기준(월별)" in str(targets[0].help)
+    assert str(targets[0].value).startswith("단축 목표 = 확보 기준(월별)")
+    assert "HOME 설정 → 판정 기준 › 확보 기준(월별)" in str(targets[0].help)
     # 단축 목표를 적는 자리는 이 한 줄이다 — KPI 칩이 거듭하지 않는다(설계 규칙 UI-TXT-07).
     assert _metric(app, "대책").delta == "설비 일정 기준"
     # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).
@@ -1075,23 +1075,23 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     assert "필요 단축 일정" not in str(effect[0].value)
     assert "필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)" in str(effect[0].proto.help)
     labels = _label_texts(app)
-    for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보기준 과부족"):
+    for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보 기준 과부족"):
         assert row in labels
     assert "판정 대조 · UPEH 가정" in labels
     # ② 비가동 영향은 % 가 가정 소요로 바뀌어 표지를 단다.
     assert "비가동 영향 · UPEH 가정" in labels
     # ② 가용·전월 대비와 ④ 는 UPEH 와 무관해 표지를 달지 않는다.
     assert "가용 (환산) · UPEH 가정" not in labels and "전월 대비 · UPEH" not in labels
-    assert "공식" in str(_metric(app, "확보기준 미달").proto.help) or "공식" in "".join(
+    assert "공식" in str(_metric(app, "확보 기준 미달").proto.help) or "공식" in "".join(
         str(item.value) for item in app.caption
     )
     legend = next(body for body in _html(app) if "pcd-legend" in body)
-    assert "UPEH 가정 확보기준 미달 달" in legend
+    assert "UPEH 가정 확보 기준 미달 달" in legend
     # 근거 ③ 판정 카드도 같은 기준이다 — 머리 식은 가정, 공식 판정은 회색 「공식: …」 한 줄.
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert "③ 판정 (UPEH 가정 110%)" in cards and "공식: 확보율 " in cards
     inverse = [str(item.value) for item in app.caption if " → " in str(item.value)]
-    assert any(text.startswith("확보기준 미달 0 → ") for text in inverse), inverse
+    assert any(text.startswith("확보 기준 미달 0 → ") for text in inverse), inverse
     assert any(text.startswith("구간 안 단축 0 → ") for text in inverse), inverse
     captured = app.session_state["captured_downloads"][UNITS_CSV_KEY]
     assert "_upeh110_202601_202612" in captured["file_name"]
@@ -1108,7 +1108,7 @@ def test_at_100_percent_the_page_shows_only_the_official_basis(
     assert "UPEH 100%" not in _label_texts(app)
     assert "판정 대조 · UPEH 가정" not in _label_texts(app)
     legend = next(body for body in _html(app) if "pcd-legend" in body)
-    assert "공식 확보기준 미달 달" in legend
+    assert "공식 확보 기준 미달 달" in legend
     assert not any("소요 −" in str(item.value) for item in app.caption)
     captured = app.session_state["captured_downloads"][UNITS_CSV_KEY]
     assert "_upeh" not in captured["file_name"]

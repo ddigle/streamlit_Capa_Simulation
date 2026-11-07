@@ -1,6 +1,6 @@
 # Purpose: 버전 대조가 없는 Preference 공용 저장 폼이 같은 입력의 두 번 누름에 한 번만 쓰는지 잰다.
 
-"""Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O(`components/home_preference.py`).
+"""공지·Top5 구간·주요공정 프리셋·선행 B/O(`components/home_preference.py`).
 
 저장소가 편집 시작 version 을 대조하지 않는 공용 저장이라, 같은 내용을 0.15~0.4초 간격으로 두 번
 누르면 공용 버전이 두 번 올랐다(2026-10-25 E2E — Summary v5→v7·프리셋 v3→v5, 개선 거리 I6). 둘째
@@ -125,14 +125,14 @@ def test_a_slow_double_press_of_the_summary_note_saves_one_version(
 ) -> None:
     app = _app(repository, _SUMMARY)
     app.text_area[0].set_value("9월 물량 확정 전 잠정 계획")
-    pressed = _press(app, "Summary 저장")
+    pressed = _press(app, "공지 저장")
     app.run()
     assert repository.load_global_summary_note().version == 1
 
     _second_press(app, pressed)
 
     assert repository.load_global_summary_note().version == 1
-    assert _successes(app) == ["Summary 공지를 저장했습니다."]
+    assert _successes(app) == ["공지를 저장했습니다."]
 
 
 def test_an_overlapping_double_press_of_the_summary_note_saves_one_version(
@@ -144,7 +144,7 @@ def test_an_overlapping_double_press_of_the_summary_note_saves_one_version(
     _press_twice(
         app,
         monkeypatch,
-        _press(app, "Summary 저장"),
+        _press(app, "공지 저장"),
         cls=DuckDBScenarioRepository,
         write="replace_global_summary_note",
     )
@@ -152,7 +152,7 @@ def test_an_overlapping_double_press_of_the_summary_note_saves_one_version(
     stored = repository.load_global_summary_note()
     assert (stored.version, stored.note) == (1, "10월 물량 확정")
     assert not place_errors(app), [str(item.value) for item in app.error]
-    assert _successes(app) == ["Summary 공지를 저장했습니다."]
+    assert _successes(app) == ["공지를 저장했습니다."]
 
 
 def test_a_slow_double_press_of_the_top5_band_saves_one_version(
@@ -209,10 +209,10 @@ def test_a_different_input_inside_the_window_still_saves(
     """거름은 같은 입력만 거른다 — 창 안이라도 고친 글은 새로 저장한다."""
     app = _app(repository, _SUMMARY)
     app.text_area[0].set_value("첫 공지")
-    _press(app, "Summary 저장")
+    _press(app, "공지 저장")
     app.run()
     app.text_area[0].set_value("고친 공지")
-    _press(app, "Summary 저장")
+    _press(app, "공지 저장")
     app.run()
 
     stored = repository.load_global_summary_note()

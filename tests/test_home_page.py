@@ -618,7 +618,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "Excel 붙여넣기",
             "Excel 붙여넣기",
             "Guide",
-            "Summary 저장",
+            "공지 저장",
             "전체 3공정",
             "프리셋 없음",
             "과거 구간 저장",
@@ -670,7 +670,7 @@ def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path
         button.label: button.help
         for button in app.button
         if button.label
-        in ("판정 기준 저장", "선행 B/O 저장", "선행 입고 저장", "Summary 저장", "확보율 구간 저장")
+        in ("판정 기준 저장", "선행 B/O 저장", "선행 입고 저장", "공지 저장", "확보율 구간 저장")
         + ("프리셋 저장", "확보율 보정 저장")
     }
     assert len(saves) == 7 and all("공용 설정" in str(text) for text in saves.values()), saves

@@ -122,7 +122,7 @@ ALREADY_CLAIMED_MESSAGE: Final = "이 회차는 이미 돌았습니다 — 같�
 INTERRUPTED_REASON: Final = "앱이 이 회차를 끝내기 전에 꺼져 중단됐습니다."
 # 등록한 뒤 발행까지 가지 못한 회차의 사유 끝에 붙인다. 그 코드는 다시 받지 않는다.
 REGISTERED_NOT_PUBLISHED_NOTE: Final = (
-    "등록한 시나리오 {name} 남겼습니다 — 같은 코드는 다시 받지 않으니 확인한 뒤 손으로 발행하세요."
+    "등록한 시나리오 {name} 남겼습니다 — 같은 코드는 다시 받지 않으니 확인한 뒤 손으로 지정하세요."
 )
 # 「복제」가 만든 시나리오의 출처 종류. 부모 리비전이 없다.
 CLONE_SOURCE_TYPE: Final = "DUCKDB_SCENARIO_CLONE"

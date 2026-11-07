@@ -4,7 +4,7 @@
 탭이 없다.
 
 다른 화면의 「HOME 설정 → Preference」 안내를 새 탭 이름으로 바꿀 때 문자열이 「→」 뒤에서 줄이
-바뀐 자리(제약 시뮬레이션 개조 일정 풍선 · 산출 결과 Guide)와 「Preference 확보기준」 꼴(공정
+바뀐 자리(제약 시뮬레이션 개조 일정 풍선 · 산출 결과 Guide)와 「Preference 확보 기준」 꼴(공정
 Capa 상세 Guide)이 남았다(2026-11-04 재검 b-2 · c-1 · c-2). 사용자에게 보이는 글 —
 Guide(`guides/*.md`)와 소스의 문자열(이어 붙인 문자열 · f-string 의 글 조각, docstring 은 빼고) —
 을 공백을 접어 훑는다. 앱의 「Preference」 탭은 이제 가용설비 현황 셋째 탭(입력 비가동)뿐이고 그
@@ -27,7 +27,7 @@ GUIDES = ROOT / "src" / "capa_simulation" / "guides"
 # 확보기준」 · 「Preference 의 「확보율 판정 기준」」 · 「Preference 공용 판정 기준」.
 STALE_POINTER = re.compile(
     r"HOME\s*설정\s*(?:팝업\s*)?(?:→|›|의)\s*`?Preference"
-    r"|Preference`?\s*(?:탭\s*)?(?:의\s*)?(?:「?확보율 판정 기준|확보기준|공용 판정 기준)"
+    r"|Preference`?\s*(?:탭\s*)?(?:의\s*)?(?:「?확보율 판정 기준|확보\s*기준|공용 판정 기준)"
 )
 
 

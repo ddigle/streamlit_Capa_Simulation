@@ -381,7 +381,7 @@ def test_a_registration_whose_capacity_stops_says_how_to_fix_it_in_the_run_recor
     assert run.reason is not None
     assert "기준 정보 화면 「효율」 표에서 그 칸에 0보다 큰 값을 넣고" in run.reason
     assert "r2부터 계산이 섭니다" in run.reason
-    assert run.reason.endswith("손으로 발행하세요.")
+    assert run.reason.endswith("손으로 지정하세요.")
     base = repository.load_revision(str(run.base_revision_id))
     assert "대당 Capa 계산 멈춤(RQ_RUN_RATE 빈 값 키 " in (base.revision.note or "")
 

@@ -36,12 +36,12 @@ def test_the_process_detail_target_is_a_plain_whole_percent() -> None:
     target = target_from_thresholds(SecurementThresholds(1.095, 0.995), [MONTH])
 
     assert target_label(target.for_month(MONTH)) == "110%"
-    assert target_text(target, [MONTH]) == "확보기준(월별) 110%"
+    assert target_text(target, [MONTH]) == "확보 기준(월별) 110%"
     assert "1.095" not in target_text(target, [MONTH])
 
 
 def test_the_judgement_card_names_whole_thresholds_and_multiplies_the_boundary() -> None:
-    """③ 판정 — 기준은 정수(「확보기준 110% · 경고기준 100%」), 과부족 식은 판정 경계 109.5% 를
+    """③ 판정 — 기준은 정수(「확보 기준 110% · 경고 기준 100%」), 과부족 식은 판정 경계 109.5% 를
     곱한다(그 대수가 확보로 판정되는 선이라 식이 결과와 검산된다)."""
     record: dict[str, object] = {
         "가용대수": 109.6,
@@ -53,7 +53,7 @@ def test_the_judgement_card_names_whole_thresholds_and_multiplies_the_boundary()
     }
     card = judgement_card(record, SecurementThresholds(1.10, 1.00), MONTH)
 
-    assert card.notes[0].startswith("확보기준 110% · 경고기준 100%")
+    assert card.notes[0].startswith("확보 기준 110% · 경고 기준 100%")
     assert "(1.1)" not in card.notes[0] and "(1.095)" not in card.notes[0]
     assert "100.00×109.5% = +0.10 → 0" in card.formula
     assert "확보율 = 109.60 ÷ 100.00 = 109.6% → 확보" in card.formula
@@ -62,7 +62,7 @@ def test_the_judgement_card_names_whole_thresholds_and_multiplies_the_boundary()
 def test_the_canvas_balance_balloon_multiplies_the_boundary() -> None:
     text = _balance_hover("<b>26.11</b>", 0, 109.6, 100.0, 1.10, None)
 
-    assert "확보기준 과부족 0대 (+0.10)" in text
+    assert "확보 기준 과부족 0대 (+0.10)" in text
     assert "소요 100.0 × 109.5%" in text
 
 

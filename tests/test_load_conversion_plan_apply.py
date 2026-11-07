@@ -113,13 +113,27 @@ def _clipboard_text(app: AppTest, *, scale: float) -> str:
 
 
 def _paste(app: AppTest, text: str) -> None:
-    """작업 줄의 「Excel 붙여넣기」 팝업을 열고 붙여넣어 일괄 적용한다."""
+    """작업 줄의 「Excel 붙여넣기」 팝업을 열고 붙여넣어 대기 표로 올린다."""
     app.button(key="open_plan_paste").click().run()
     app.text_area(key="rq_pkg_plan_csv_clipboard").set_value(text)
     for button in app.button:
-        if "붙여넣기 일괄 적용" in str(button.label):
+        if "붙여넣기 올리기" in str(button.label):
             button.click().run()
             break
+
+
+def test_the_paste_button_says_what_each_table_does(seeded_database: Path) -> None:
+    """PKG PLAN 은 대기 표로 올릴 뿐이고 수율은 바로 적용된다 — 단추 이름이 그 차이를 말한다."""
+    labels = [
+        ("open_plan_paste", "붙여넣기 올리기", "붙여넣기 적용"),
+        ("open_yield_paste", "붙여넣기 적용", "붙여넣기 올리기"),
+    ]
+    for opener, shown, other in labels:
+        app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+        app.button(key=opener).click().run()
+        assert not list(app.exception)
+        names = {str(button.label) for button in app.button}
+        assert shown in names and other not in names
 
 
 def test_a_staged_paste_blanks_the_zero_cells_like_the_plain_table(seeded_database: Path) -> None:
@@ -211,7 +225,7 @@ def test_paste_stages_into_the_tab_without_touching_the_global_plan(
     assert not list(app.exception)
     # 붙여넣기에 성공하면 팝업이 닫히고 완료 알림은 작업 줄 아래에 뜬다.
     assert "load_conversion_open_dialog" not in app.session_state
-    assert any("PKG PLAN 탭에 반영했습니다" in item.value for item in successes(app))
+    assert any("PKG PLAN 탭에 올렸습니다" in item.value for item in successes(app))
 
     # 탭에만 반영된다: 전역 계획값과 토큰은 그대로다.
     assert _plan_total(app) == pytest.approx(before_total)
@@ -682,7 +696,7 @@ def _paste_yield(app: AppTest, text: str) -> None:
     app.button(key="open_yield_paste").click().run()
     app.text_area(key="rq_yield_csv_clipboard").set_value(text)
     for button in app.button:
-        if "붙여넣기 일괄 적용" in str(button.label):
+        if "붙여넣기 적용" in str(button.label):
             button.click().run()
             break
 
@@ -1124,7 +1138,7 @@ def test_the_plan_notices_stand_in_one_slot_above_the_editor(
     before = _plan_editor_path(app)
 
     _paste(app, _clipboard_text(app, scale=0.5))
-    assert any("붙여넣기 표를 PKG PLAN 탭에 반영했습니다" in item.value for item in successes(app))
+    assert any("붙여넣기 표를 PKG PLAN 탭에 올렸습니다" in item.value for item in successes(app))
     assert _plan_editor_path(app) == before
 
     app.button(key="apply_pkg_plan_changes").click().run()

@@ -36,7 +36,7 @@
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
 정리 줄(알림·「이 공정 단축 일정 CSV」·필요 단축 일정 화면 링크), KPI 넷과 그 아래 부족 원인별
-다음 화면 줄, 머리 공정명 옆 ◀▶(확보기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서
+다음 화면 줄, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서
 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
@@ -233,7 +233,7 @@ CAUSE_SHORT_NAMES: Final[Mapping[str, str]] = {
     SCHEDULE_CAUSE: "일정",
 }
 CAUSE_HELP: Final = (
-    "달 수입니다. 보유 = 보유로도 부족(총보유 ÷ 소요도 확보기준 미달 — 단축으로 못 메우는 투자 "
+    "달 수입니다. 보유 = 보유로도 부족(총보유 ÷ 소요도 확보 기준 미달 — 단축으로 못 메우는 투자 "
     "검토), 대여 = 대여 영향(총보유로는 확보, 대여를 빼면 미달), 불일치 = 가용 불일치(가용대수가 "
     "보유 − 대여와 다름), 일정 = 오늘이 든 생산월부터 설비 일정 기준 가용이 단축 목표 미달인 달"
     "(참고 — 단축 대상). 지난 달은 단축으로 바꿀 수 없어 세지 않습니다."
@@ -272,8 +272,8 @@ CALCULATION_RESULT_PAGE: Final = "app_pages/calculation_result.py"
 INVESTMENT_BADGE: Final = ":red-badge[투자 검토 대상]"
 # 표 도구 줄에 적는 단축 목표의 이름과, 그 출처(고치는 곳)를 말하는 풍선 — 길은 자리 글이 아니라
 # 풍선이다(설계 규칙 UI-TXT-03).
-TARGET_SOURCE_TEXT: Final = "HOME 설정 → 판정 기준 › 확보기준(월별)"
-TARGET_NAME: Final = "확보기준(월별)"
+TARGET_SOURCE_TEXT: Final = "HOME 설정 → 판정 기준 › 확보 기준(월별)"
+TARGET_NAME: Final = "확보 기준(월별)"
 TARGET_HELP: Final = (
     f"단축 목표는 {TARGET_SOURCE_TEXT}을 달마다 그대로 씁니다 — 필요 단축 일정의 목표 다섯 값"
     "(90~130%)을 고르는 것이 아닙니다."
@@ -537,7 +537,7 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「확보기준(월별)」, 모든 달이 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
+    """단축 목표 표기 — 「확보 기준(월별)」, 모든 달이 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
     풍선(`TARGET_HELP`)이다. 화면에서 단축 목표를 적는 자리는 표 도구 줄 하나다(설계 규칙
     UI-TXT-07)."""
     value = single_target(target, months)
@@ -549,7 +549,7 @@ def target_text(target: TargetLevel, months: Sequence[int]) -> str:
 def target_label(value: float) -> str:
     """목표 하나 — 정수 기준 「110%」(2026-11-01 사용자 결정 — 기준은 정수만 적는다).
 
-    목표 값은 HOME 확보기준의 판정 경계(`target_from_thresholds` — 110% 면 1.095)라 사사오입한
+    목표 값은 HOME 확보 기준의 판정 경계(`target_from_thresholds` — 110% 면 1.095)라 사사오입한
     정수가 곧 그 기준이다. 식 줄은 곱한 값을 판정 경계로 적는다(`boundary_percent_label`).
     """
     return threshold_percent_label(value)
@@ -812,14 +812,14 @@ def canvas_legend_html(
     items = [
         f'<span style="{swatch};background:{band};border:1px solid '
         f'{tokens.STATUS_SHORTAGE}"></span>'
-        + ("UPEH 가정 확보기준 미달 달" if assumed else "공식 확보기준 미달 달"),
+        + ("UPEH 가정 확보 기준 미달 달" if assumed else "공식 확보 기준 미달 달"),
         f'<span style="{swatch};border:2px solid {tokens.ACCENT}"></span>지금 보는 달',
         "".join(
             f'<span style="{swatch};background:{color}"></span>'
             for color in (tokens.STATUS_SECURE, tokens.STATUS_WARNING, tokens.STATUS_SHORTAGE)
         )
         + "확보율·과부족 칸 = 판정(확보 · 경고 · 부족)",
-        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(월별 확보기준)</span>',
+        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(월별 확보 기준)</span>',
     ]
     if dynamic is not None:
         qual = tokens.QUAL_CONFIRMATION_COLORS
@@ -1138,7 +1138,7 @@ def judgement_card(
     assumed: Mapping[str, object] | None = None,
     token: UpehToken = NO_ASSUMPTION,
 ) -> EvidenceCard:
-    """③ 판정 — 확보율 식·과부족 식(그 달 확보기준)과 원인.
+    """③ 판정 — 확보율 식·과부족 식(그 달 확보 기준)과 원인.
 
     그 달이 UPEH 가정 구간이면(`assumed`) 판정은 한 기준이다 — 머리 식·판정·원인을 가정 레코드로
     내고 식 첫 줄에 「소요 = 공식 ÷ f」 를 드러낸다. 공식 판정은 회색 「공식: …」 한 줄로
@@ -1154,7 +1154,7 @@ def judgement_card(
     # 기준은 정수 하나다. 판정은 확보율을 사사오입한 정수 % 로 견주므로 과부족 식은 그 판정 경계
     # (110% 면 109.5%)를 곱한다 — 그만큼 더하면 확보로 판정된다.
     bases = (
-        f"확보기준 {threshold_percent_label(secure)} · 경고기준 "
+        f"확보 기준 {threshold_percent_label(secure)} · 경고 기준 "
         f"{threshold_percent_label(warning)} — 사사오입 판정(확보 "
         f"{boundary_percent_label(secure)} 이상)"
     )
@@ -1216,7 +1216,7 @@ def _cause_note(record: Mapping[str, object], required: float) -> str:
         )
         return (
             f"원인: {cause} — 총보유 {_one(owned)} ÷ 소요 {_one(required)} {mark} "
-            f"{shown} 도 확보기준 미달(투자 검토)"
+            f"{shown} 도 확보 기준 미달(투자 검토)"
         )
     if cause == CAUSE_RENTAL:
         return (
@@ -1462,7 +1462,7 @@ def render_process_kpis(
     dynamic: DynamicView | None,
     official: ProcessCapaKpis | None = None,
 ) -> None:
-    """KPI 넷 — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
+    """KPI 넷 — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
 
     값 글자를 짧게 둔다(카드 폭에 한 줄). 뜻풀이는 값 아래 회색 한 줄과 `?` 풍선이다. UPEH 가정이
     켜졌으면 `kpis` 는 가정 요약의 것이고 `official` 이 공식 요약의 것이다 — 회색 줄에 「공식 n」 을
@@ -1504,7 +1504,7 @@ def render_process_kpis(
             ),
         )
         render_status_metric(
-            "확보기준 미달",
+            "확보 기준 미달",
             f"{kpis.shortage_months}개월" if kpis.shortage_months else "없음",
             key="process_detail_kpi_shortage",
             tone="attention" if kpis.shortage_months else "neutral",
@@ -1513,11 +1513,11 @@ def render_process_kpis(
             caption=(
                 f"월 최대 {_MINUS}{kpis.max_shortage}대"
                 if kpis.shortage_months
-                else "월별 확보기준"
+                else "월별 확보 기준"
             )
             + shortage_note,
             help=(
-                "판정이 확보가 아닌 달 수와, 그 달들 가운데 확보기준까지 모자란 대수의 "
+                "판정이 확보가 아닌 달 수와, 그 달들 가운데 확보 기준까지 모자란 대수의 "
                 "최댓값입니다. 기간 합이 아닙니다 — 같은 설비가 여러 달에 다시 쓰입니다."
             ),
         )
@@ -1767,7 +1767,7 @@ def _render_next_screens(
 
 
 def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str]) -> None:
-    """머리 공정명 옆 ◀▶ — 확보기준 미달 공정을 조회기간 최저 확보율이 낮은 차례로 넘긴다
+    """머리 공정명 옆 ◀▶ — 확보 기준 미달 공정을 조회기간 최저 확보율이 낮은 차례로 넘긴다
     (세션 값).
 
     미달 공정이 없으면 그리지 않는다. 콜백(`step_to_process`)이 공정 상자 값과 그 공정의 첫 미달
@@ -1787,7 +1787,7 @@ def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str])
         else f"미달 공정 {steps.total}개",
         width="content",
         help=(
-            "확보기준 미달 공정(판정이 확보가 아닌 달이 있는 공정)을 조회기간 최저 확보율이 낮은 "
+            "확보 기준 미달 공정(판정이 확보가 아닌 달이 있는 공정)을 조회기간 최저 확보율이 낮은 "
             "차례로 넘깁니다. 옮기면 그 공정의 첫 미달 달을 엽니다."
         ),
     )

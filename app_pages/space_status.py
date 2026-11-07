@@ -647,7 +647,7 @@ with notices:
     # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
     render_schema_ahead_warning(get_equipment_repository(equipment_database_path).schema_ahead)
     render_legacy_trace_warning(equipment_session)
-    # 스크롤 고정(편집기 도구 줄 「고정」)의 페이지 서식 — `<html data-space-lock>` 을 읽는 규칙.
+    # 화면 고정(편집기 도구 줄 「화면 고정」)의 페이지 서식 — `<html data-space-lock>` 을 읽는 규칙.
     # 스타일만 든 `st.html` 이라 자리를 차지하지 않고, 다른 화면으로 가면 사라져 고정이
     # 풀린다(AGENTS 9장).
     st.html(space_lock_style())

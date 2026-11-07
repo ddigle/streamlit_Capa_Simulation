@@ -109,9 +109,7 @@ def replace_global_summary_note(
 
     `expected_version` 은 Top5 구간과 같다 — 다르면 쓰지 않고 `ProfileVersionConflict` 다.
     """
-    require_profile_version(
-        connection, "global_summary_note", expected_version, label="Summary 공지"
-    )
+    require_profile_version(connection, "global_summary_note", expected_version, label="공지")
     version = reset_profile(connection, "global_summary_note")
     connection.execute(
         """

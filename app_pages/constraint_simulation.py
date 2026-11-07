@@ -22,7 +22,7 @@
   든다(D4).
 - **설비 일정 기준 가용(단축 전)** — 사이드바 세션 설비 시나리오(D6)의 계산 세 표·Cut-off 로 공정
   Capa 상세 ②와 같은 계획 칸(`load_required_shortening_for_target` — 공식 칸, 목표는 키 맞춤용 HOME
-  확보기준)을 받아 `가용대수` 열만 읽는다(D3). 필요 단축 일정의 공용 조회
+  확보 기준)을 받아 `가용대수` 열만 읽는다(D3). 필요 단축 일정의 공용 조회
   조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH 가정·HOME 얹기는 걸지 않는다(D5).
 
 계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 넷으로 가른다 — 공통
@@ -833,7 +833,7 @@ new_shares = (
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
     """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름. 어느 호기를
-    붙였는지(전용 · 일반 설비)는 본문 개조 일정 카드가 말한다."""
+    붙였는지(전용 · 일반 설비)는 본문 개조 창 카드가 말한다."""
     if not shares.units:
         return "기준일 이후 기여를 시작하는 신규 설비가 없습니다."
     names = ", ".join(literal_markdown(name) for name in shares.units[:4])

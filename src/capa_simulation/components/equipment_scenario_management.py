@@ -21,7 +21,7 @@
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
   불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 확인 체크
   뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을 r1 로 복제. 만들기는 복제로만), 「리비전명」
-  (E7 — 이름표만 고침), 「공식으로 발행」(지금 공식 → 새 공식을 나란히, 최신이 아니면 그 사실도.
+  (E7 — 이름표만 고침), 「공식으로 지정」(지금 공식 → 새 공식을 나란히, 최신이 아니면 그 사실도.
   배치 차이가 있으면 발행 쓰기와 같은 판정을 미리 읽어 막힘 까닭과 함께 단추를 끄고, 공식과 같아진
   차이만 남았으면 정리 리비전으로 발행한다고 적는다 — 설계 6-5).
 - **확인 창의 글**(되돌리기 · 여기서 새 시나리오 · 배치 차이 모두 지우기 — 검수표 11/02 equip-41):
@@ -176,7 +176,7 @@ SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
 # 사용자가 기본값과 다르게 고른 값 — (그때의 세션 기준, 값). 두 상자에 `persist_state` 를 주면
 # `prune_named_choice` 가 매 회차 되쓰는 기본값까지 굳어, 저장 · 불러오기로 세션이 옮겨 간 뒤에도
-# 탭이 옛 시나리오 · 리비전에 남고 「공식으로 발행」 이 그 옛 리비전에 걸린다. 그래서 상자 칸은 탭과
+# 탭이 옛 시나리오 · 리비전에 남고 「공식으로 지정」 이 그 옛 리비전에 걸린다. 그래서 상자 칸은 탭과
 # 함께 사라지게 두고(돌아오면 그때의 기본값이 선다) 고른 값만 이 칸에서 되돌린다(`_named_pick`).
 SCENARIO_PICK_KEY = "equipment_scenario_manage_scenario_pick_v1"
 REVISION_PICK_KEY = "equipment_scenario_manage_revision_pick_v1"
@@ -207,7 +207,7 @@ RESTORE_AGREED_KEY = "equipment_scenario_manage_restore_agreed_v1"
 PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
 PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
-# 「공식으로 발행」 확인 글을 그린 회차의 {고른 리비전, 지금 공식 번호, 그 시나리오 최신}
+# 「공식으로 지정」 확인 글을 그린 회차의 {고른 리비전, 지금 공식 번호, 그 시나리오 최신}
 # (`publish_seen_token`). 단추를 누른 회차에는 확인 글이 이미 새 목록으로 다시 그려지므로, 누르기
 # **전** 회차에 본 값을 여기 남겨 누른 회차의 값과 견준다 — 그 사이 남이 발행했으면 본 적 없는 새
 # 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신이 아닙니다」 로 말없이 발행하지
@@ -218,24 +218,24 @@ PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
 RESTORE_SAVE_NAME = "equipment_scenario_restore"
 CLEAR_LAYOUT_SAVE_NAME = "equipment_scenario_clear_layout"
 PUBLISH_SAVE_NAME = "equipment_scenario_publish"
-# 이미 지금 공식인 리비전의 발행 팝오버 — 확인 글 끝 값 표지와, 꺼진 「공식으로 발행」 의 풍선(끈
+# 이미 지금 공식인 리비전의 발행 팝오버 — 확인 글 끝 값 표지와, 꺼진 「공식으로 지정」 의 풍선(끈
 # 까닭은 그 단추 풍선이 말한다 — 설계 규칙 UI-INP-07 · UI-NTF-05). 단추를 끄는 것은 개선 거리 I26
 # (2026-11-01 사용자 결정) — 켜 둔 단추 위에 「발행해도 바뀌지 않습니다」 가 서 서로 어긋났다(E2E
 # #37·#97).
-ALREADY_OFFICIAL_LINE = ":material/verified: 이미 공식 발행 리비전"
+ALREADY_OFFICIAL_LINE = ":material/verified: 이미 공식 리비전"
 ALREADY_OFFICIAL_HELP = (
-    "이미 공식 발행인 리비전입니다 — 다시 발행할 것이 없어 「공식으로 발행」 을 껐습니다."
+    "이미 공식인 리비전입니다 — 다시 지정할 것이 없어 「공식으로 지정」 을 껐습니다."
 )
 # 「되돌리기」 풍선 끝 — 공식 시나리오의 발행 규칙(체크 없이 늘 — 검수표 11/02 equip-13). 이번에
 # 어떻게 되는지는 값 줄 표지(`_restore_publish_value`), 일어난 일은 결과 알림이 적는다.
 RESTORE_PUBLISH_HELP = (
-    "공식 설비 시나리오라 저장과 같이 새 리비전을 공식으로 발행합니다 — 발행하지 않은 더 새 "
-    "리비전이 있으면 발행하지 않습니다."
+    "공식 설비 시나리오라 저장과 같이 새 리비전을 공식으로 지정합니다 — 지정하지 않은 더 새 "
+    "리비전이 있으면 지정하지 않습니다."
 )
 # 배치 차이로 막힌 발행 팝오버 — 같은 꼴의 값 표지. 막힌 까닭과 빠져나갈 길은 꺼진 「공식으로
-# 발행」 의 풍선이 말한다(`publish_layout_lines` — 검수표 11/02 equip-44, 설계 규칙 UI-TXT-04 ·
+# 지정」 의 풍선이 말한다(`publish_layout_lines` — 검수표 11/02 equip-44, 설계 규칙 UI-TXT-04 ·
 # UI-INP-07).
-LAYOUT_BLOCKED_LINE = ":material/block: 배치 차이로 발행 막힘"
+LAYOUT_BLOCKED_LINE = ":material/block: 배치 차이로 지정 막힘"
 # 옛 배포 흔적을 이어 쓸 수 없는 회차의 표지 — 까닭은 꺼진 「이대로 이어 쓰기」 의 풍선이 말한다.
 CONTINUE_BLOCKED_LINE = ":material/block: 이어 쓰기 막힘"
 # 옛 배포 흔적으로 막힌 쓰기 팝오버의 표지 — 까닭은 꺼진 단추 풍선(`legacy_trace_lock_line`)이
@@ -304,11 +304,11 @@ REVISION_TABLE_TOOLBAR_CLEARANCE = TABLE_TOOLBAR_CLEARANCE
 
 # 리비전명 칸 글자 수 한도 — 저장소도 같은 한도로 거절한다.
 REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS
-# 「공식으로 발행」 단추 풍선 — 공식이 무엇에 쓰이는지(팝오버에 늘 띄워 두지 않는다 — 설계 규칙
+# 「공식으로 지정」 단추 풍선 — 공식이 무엇에 쓰이는지(팝오버에 늘 띄워 두지 않는다 — 설계 규칙
 # UI-TXT-01 · AMB-01 (가)).
 PUBLISH_BUTTON_HELP = (
     "공식은 새 세션(Space 포함 — 처음 연 화면)·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 "
-    "설비 시나리오입니다. 발행은 append-only 입니다."
+    "설비 시나리오입니다. 지정은 append-only 입니다."
 )
 
 
@@ -835,7 +835,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 설계 규칙 UI-NTF-01 · UI-NTF-03). 거절은 확인 체크 · 입력 칸을 새로 세우므로(`_refused`)
     # 다시 할 자리인 이 탭 맨 위에 선다 — UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」
     # 이다(아무것도 쓰지 않은 거부라도 알림창에만 보내지 않는다). 첫 발행 뒤 다시 그린 화면의
-    # 「공식으로 발행」 은 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은
+    # 「공식으로 지정」 은 그 리비전이 이제 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은
     # Streamlit 이 버리고, 창
     # (`TRAILING_PRESS_SECONDS`) 안이면 이 칸이 적어 둔 알림을 첫 알림과 같은 id 로 다시 낸다
     # (알림창은 두 번 뜨지 않는다). 팝오버 세대는 알림을 꺼내는 회차에만 올린다 — 다시 내는
@@ -1024,7 +1024,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         ):
             _render_revision_name(database_path, scenario, chosen)
         with st.popover(
-            "공식으로 발행", icon=":material/verified:", key=_popover_key(PUBLISH_POPOVER_KEY)
+            "공식으로 지정", icon=":material/verified:", key=_popover_key(PUBLISH_POPOVER_KEY)
         ):
             _render_publish(database_path, session, scenario, chosen)
 
@@ -1289,8 +1289,8 @@ def _restore_publish_value(
     전 최신 발행이 그 시나리오 최신일 때만 낸다). 값을 정한 발행 번호 · 최신은 확인 체크 key 꼬리
     (`restore_seen_token`)에 묶여 그 사이 바뀌면 체크가 풀린다."""
     if release is not None and release.schedule_revision_id != scenario.latest_schedule_revision_id:
-        return "공식 발행 안 함"
-    return f"공식 v{(release.release_no if release is not None else 0) + 1} 발행"
+        return "공식 지정 안 함"
+    return f"공식 v{(release.release_no if release is not None else 0) + 1} 지정"
 
 
 def restore_value_line(
@@ -1480,11 +1480,12 @@ def restore_result_message(
             else f"{created}에는 배치 차이가 없습니다 — 공식 배치를 따릅니다."
         )
     if result.release_no is not None:
-        sentences.append(f"{with_direction_particle(f'공식 v{result.release_no}')} 발행했습니다.")
+        sentences.append(f"{with_direction_particle(f'공식 v{result.release_no}')} 지정했습니다.")
     elif result.release_withheld:
         sentences.append(
-            "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
-            "이 탭의 「공식으로 발행」 으로 냅니다."
+            "공식 설비 시나리오에 공식으로 지정하지 않은 더 새 리비전이 있어 공식 지정은 하지 "
+            "않았습니다 — "
+            "이 탭의 「공식으로 지정」 으로 냅니다."
         )
     if moved:
         sentences.append(f"이 세션을 {with_direction_particle(created)} 옮겼습니다.")
@@ -1580,7 +1581,7 @@ def _render_restore(
         and agreed_before.startswith(f"{scenario.equipment_scenario_id}__{chosen}__")
     ):
         st.warning(
-            "확인한 뒤 공통 대장·이 시나리오 최신·공식 발행이 바뀌어 확인 체크를 풀었습니다 — 바뀐 "
+            "확인한 뒤 공통 대장·이 시나리오 최신·공식 지정이 바뀌어 확인 체크를 풀었습니다 — 바뀐 "
             "확인 글을 다시 보고 체크하세요.",
             icon=":material/sync_problem:",
         )
@@ -1663,7 +1664,7 @@ def _render_restore(
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 되돌리고 발행했다(write_guard).
             _written_again(database_path, session, scenario, current[1], "되돌렸습니다")
         _refused(
-            f"그 사이 다른 공식 발행(지금 공식 v{exc.current})이 있어 되돌리지 않았습니다 — 다시 "
+            f"그 사이 다른 공식 지정(지금 공식 v{exc.current})이 있어 되돌리지 않았습니다 — 다시 "
             "보고 되돌리세요."
         )
         return
@@ -1974,7 +1975,7 @@ def clear_layout_button_help(scenario: EquipmentScenarioSummary) -> str:
     return (
         f"최신 {latest}의 일정·비가동은 그대로 두고 배치 차이만 비운 새 리비전을 저장합니다 — "
         f"{with_topic_particle(latest)} 남아 「이 리비전으로 되돌리기」 로 되살릴 수 있고, 공식 "
-        "발행은 하지 않습니다."
+        "지정은 하지 않습니다."
     )
 
 
@@ -2161,7 +2162,7 @@ def publish_layout_lines(
             [
                 f"r{revision.revision_no}의 배치 차이({stored})는 {reason} — "
                 f"{with_object_particle(cleaned)} 정리한 "
-                f"{with_direction_particle(new_title)} 발행합니다(일정·비가동은 r"
+                f"{with_direction_particle(new_title)} 지정합니다(일정·비가동은 r"
                 f"{revision.revision_no} 그대로)."
             ],
             False,
@@ -2192,7 +2193,7 @@ def publish_preview(
     거리 I26).
     """
     release = session.catalog.latest_release
-    current = "공식 발행 없음"
+    current = "공식 없음"
     if release is not None:
         official = session.catalog.scenario(release.equipment_scenario_id)
         official_name = official.scenario_name if official is not None else "?"
@@ -2222,7 +2223,7 @@ def publish_preview(
 def already_official(session: EquipmentSession, revision: EquipmentScheduleRevisionSummary) -> bool:
     """고른 리비전이 이미 지금 공식 발행인가 — 발행해도 저장소가 쓰지 않고 그 발행을 돌려준다.
 
-    참이면 발행 팝오버가 「→ 새 공식」 을 적지 않고 「공식으로 발행」 을 끈다(개선 거리 I26)."""
+    참이면 발행 팝오버가 「→ 새 공식」 을 적지 않고 「공식으로 지정」 을 끈다(개선 거리 I26)."""
     release = session.catalog.latest_release
     return release is not None and release.schedule_revision_id == revision.schedule_revision_id
 
@@ -2268,7 +2269,7 @@ def publish_seen_token(
 
 
 # 발행 누름 회차의 확인 글 값이 없거나 대조할 수 없을 때 — 다시 그린 확인 글을 보게 한다.
-_PUBLISH_SEEN_REDRAWN = "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
+_PUBLISH_SEEN_REDRAWN = "지정 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
 
 
 def publish_seen_refusal(
@@ -2278,7 +2279,7 @@ def publish_seen_refusal(
     schedule_revision_id: str,
     release_no: int,
 ) -> str | None:
-    """「공식으로 발행」 을 누른 회차에 거절할 까닭 — 누르기 전 회차의 확인 글(`seen` — 그 회차에
+    """「공식으로 지정」 을 누른 회차에 거절할 까닭 — 누르기 전 회차의 확인 글(`seen` — 그 회차에
     남긴 `publish_seen_token`)이 지금과 다르면 그 사실을, 같으면 None.
 
     단추를 누른 회차에는 확인 글이 지금 목록으로 다시 그려진다. 그 사이 남이 발행했으면 지금 번호로
@@ -2294,9 +2295,9 @@ def publish_seen_refusal(
         was = release_words(before if isinstance(before, int) else 0)
         now = release_words(release_no)
         return (
-            f"확인 글을 본 뒤 공식이 바뀌어({was} → 지금 {now}) 발행하지 않았습니다 — 다른 "
-            f"사용자가 그 사이 발행했습니다. 바뀐 확인 글(지금 공식 {now} → 새 공식 "
-            f"v{release_no + 1})을 다시 보고 발행하세요."
+            f"확인 글을 본 뒤 공식이 바뀌어({was} → 지금 {now}) 지정하지 않았습니다 — 다른 "
+            f"사용자가 그 사이 지정했습니다. 바뀐 확인 글(지금 공식 {now} → 새 공식 "
+            f"v{release_no + 1})을 다시 보고 지정하세요."
         )
     if seen.get("latest") == scenario.latest_schedule_revision_id:
         return None
@@ -2306,9 +2307,9 @@ def publish_seen_refusal(
         return _PUBLISH_SEEN_REDRAWN
     name = quoted(scenario.scenario_name)
     return (
-        f"확인 글을 본 뒤 {name} 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "
+        f"확인 글을 본 뒤 {name} 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 지정하지 "
         f"않았습니다 — 다른 사용자가 그 사이 {with_object_particle(latest)} 저장했습니다. 바뀐 "
-        "확인 글을 다시 보고 발행하세요."
+        "확인 글을 다시 보고 지정하세요."
     )
 
 
@@ -2322,8 +2323,8 @@ def _publish_seen_before(held: object) -> dict[str, object] | None:
 
 
 def release_words(release_no: int) -> str:
-    """공식 발행 번호 한 마디 — 「v3」, 발행이 없던 0 은 「발행 없음」(「v0」 이라 적지 않는다)."""
-    return f"v{release_no}" if release_no > 0 else "발행 없음"
+    """공식 발행 번호 한 마디 — 「v3」, 발행이 없던 0 은 「공식 없음」(「v0」 이라 적지 않는다)."""
+    return f"v{release_no}" if release_no > 0 else "공식 없음"
 
 
 def _render_publish(
@@ -2348,10 +2349,10 @@ def _render_publish(
         )
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(
-            f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}",
+            f"지정 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}",
             code="SC-02",
             tab=EQUIPMENT_SCENARIO_TAB_NAME,
-            text="발행 확인 글을 만들지 못했습니다",
+            text="지정 확인 글을 만들지 못했습니다",
         )
         return
     release = session.catalog.latest_release
@@ -2371,14 +2372,14 @@ def _render_publish(
         for line in layout_lines:
             st.caption(f":material/layers: {line}")
     token = tuple(publish_seen_token(scenario, revision, release_no).items())
-    released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
-    note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
+    released_by = st.text_input("지정자(선택)", key=_keyed(PUBLISH_BY_KEY))
+    note = st.text_input("공식 지정 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
     # 이미 지금 공식인 리비전은 발행할 것이 없다 — 단추를 끄고 까닭은 그 단추 풍선이 말한다
     # (`ALREADY_OFFICIAL_HELP` — 배치 차이로 막혔으면 그 까닭 글). 첫 발행 뒤 다시 그린 화면은 그
     # 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은
     # 탭 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래 `note_notice`).
     if not st.button(
-        "공식으로 발행",
+        "공식으로 지정",
         type="primary",
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
@@ -2456,8 +2457,8 @@ def _render_publish(
             conflicts,
             PUBLISH_SAVE_NAME,
             f"확인 글을 본 뒤 공식이 바뀌어({release_words(exc.expected)} → 지금 "
-            f"{release_words(exc.current)}) 발행하지 않았습니다 — 바뀐 확인 글을 다시 보고 "
-            "발행하세요.",
+            f"{release_words(exc.current)}) 지정하지 않았습니다 — 바뀐 확인 글을 다시 보고 "
+            "지정하세요.",
         )
         return
     except EquipmentLayoutPublishBlocked as exc:
@@ -2465,7 +2466,7 @@ def _render_publish(
         _refused_noted(conflicts, PUBLISH_SAVE_NAME, literal_markdown(str(exc)))
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(f"지정하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     if release_no and published.release_no == release_no:
         # 고른 리비전이 이미 지금 공식이라 아무것도 쓰지 않았다 — 새 발행처럼 알리지 않는다. 다만
@@ -2513,11 +2514,11 @@ def _render_publish(
 def already_released_message(
     scenario_name: str, revision: EquipmentScheduleRevisionSummary, release_no: int
 ) -> str:
-    """「공식으로 발행」 을 누른 리비전이 이미 지금 공식일 때 — 쓰지 않았다는 것을 적는다."""
+    """「공식으로 지정」 을 누른 리비전이 이미 지금 공식일 때 — 쓰지 않았다는 것을 적는다."""
     title = f"r{revision.revision_no}"
     return (
         f"{quoted(scenario_name)} {with_topic_particle(title)} 이미 공식 v{release_no}입니다 — "
-        "새로 발행하지 않았습니다."
+        "새로 지정하지 않았습니다."
     )
 
 
@@ -2598,12 +2599,12 @@ def publish_result_message(
     kept_unsaved: bool,
     layout: LayoutPublishPreview | None = None,
 ) -> str:
-    """「공식으로 발행」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동.
+    """「공식으로 지정」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동.
     `layout` 은 확인 글이 읽은 배치 판정이다 — 정리한 행이 공통 대장에서 지운 호기의 것이면 그렇게
     말한다(없거나 정리 판정이 아니면 「공식과 같아진 배치 차이」)."""
     name = quoted(scenario_name)
     release = f"v{release_no}"
-    head = f"공식 {with_direction_particle(release)} 발행했습니다 — {name} "
+    head = f"공식 {with_direction_particle(release)} 지정했습니다 — {name} "
     if cleaned_no is None:
         return head + f"r{revision.revision_no}."
     title = f"r{cleaned_no}"

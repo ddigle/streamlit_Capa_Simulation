@@ -513,8 +513,8 @@ class EquipmentReleaseMoved(ValueError):
 
     def __init__(self, expected: int, current: int) -> None:
         super().__init__(
-            f"그 사이 다른 공식 발행(지금 공식 v{current}, 본 것은 v{expected})이 있어 발행하지 "
-            "않았습니다 — 설비 시나리오 목록을 다시 보고 발행하세요."
+            f"그 사이 다른 공식 지정(지금 공식 v{current}, 본 것은 v{expected})이 있어 지정하지 "
+            "않았습니다 — 설비 시나리오 목록을 다시 보고 지정하세요."
         )
         self.expected = expected
         self.current = current
@@ -637,9 +637,9 @@ class EquipmentLayoutPublishBlocked(ValueError):
         counts = layout_counts_words(units, marks, labels) or "저장된 차이"
         default = (
             f"「{scenario_name}」 r{revision_no}에는 공식과 다른 배치({counts})가 있어 공식으로 "
-            "발행하지 않았습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
+            "지정하지 않았습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
             "시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 로 이 시나리오를 "
-            "공식 배치로 돌린 뒤 발행하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "
+            "공식 배치로 돌린 뒤 지정하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "
             "두세요."
         )
         super().__init__(message or default)
@@ -652,7 +652,7 @@ class EquipmentLayoutPublishBlocked(ValueError):
 
 @dataclass(frozen=True)
 class LayoutPublishPreview:
-    """「공식으로 발행」 확인 팝업의 배치 판정(설계 6-5) — 발행 쓰기(`publish_equipment_release`)와
+    """「공식으로 지정」 확인 팝업의 배치 판정(설계 6-5) — 발행 쓰기(`publish_equipment_release`)와
     **같은 판정**을 쓰지 않고 낸다(`_layout_publish_preview` 한 곳).
 
     - `action` — "publish"(저장된 차이가 없음 — 지금처럼 발행), "clean"(행은 있지만 지금 공식과
@@ -1712,9 +1712,7 @@ class DuckDBEquipmentRepository:
         with self._write_transaction(outcome) as connection:
             release_row = scenario_store.latest_release_row(connection)
             current_no = (
-                as_int(release_row["release_no"], "공식 발행 번호")
-                if release_row is not None
-                else 0
+                as_int(release_row["release_no"], "공식 번호") if release_row is not None else 0
             )
             expected_no = expected_latest_release_no or 0
             if expected_no != current_no:
@@ -1731,7 +1729,7 @@ class DuckDBEquipmentRepository:
                 return _release(release_row)
             latest = _latest_revision(connection)
             if latest is None:
-                raise ValueError("공통 대장 리비전이 없어 발행할 수 없습니다.")
+                raise ValueError("공통 대장 리비전이 없어 지정할 수 없습니다.")
             snapshot = read_merged(connection, latest[0], schedule_revision_id)
             publish_id = _layout_publishable(
                 connection,
@@ -2104,7 +2102,7 @@ class DuckDBEquipmentRepository:
         common_revision_id: str,
         newest_schedule_revision_id: str | None,
     ) -> LayoutPublishPreview:
-        """「공식으로 발행」 확인 팝업의 배치 판정(읽기만 — 설계 6-5). 발행할 리비전을 공통
+        """「공식으로 지정」 확인 팝업의 배치 판정(읽기만 — 설계 6-5). 발행할 리비전을 공통
         `common_revision_id` 와 합쳐, 그 시나리오 최신 `newest_schedule_revision_id` 와 함께 발행
         쓰기와 같은 판정(`_layout_publish_preview`)에 태운다. 결과는 두 리비전 id·공통 id 와 층
         현행값으로만 정해진다(화면 캐시는 층 현행값 쓰기 세대를 키에 둔다)."""
@@ -3307,7 +3305,7 @@ def _require_active_scenario(
     scenarios: Mapping[str, EquipmentScenarioSummary],
     equipment_scenario_id: str,
     *,
-    verb: str = "저장·발행할",
+    verb: str = "저장·지정할",
 ) -> EquipmentScenarioSummary:
     """ACTIVE 시나리오 한 줄. 없거나 보관했으면 `ValueError`(`verb` 는 「저장·발행할」 따위)."""
     scenario = scenarios.get(equipment_scenario_id)
@@ -3918,7 +3916,7 @@ def _plan_publish(
     공식 시나리오에 새 일정 리비전이 생기고(이 저장이든 함께 넣기든) 저장 전 최신 발행이 그
     시나리오의 최신이었을 때만 발행한다 — 남이 발행하지 않은 더 새 리비전을 함께 내지 않게. 그런
     리비전이 있으면 발행을 미룬다(`withheld`). 발행이 하나도 없으면 이 저장의 일정 리비전이 v1
-    이다 — 「공식으로 발행」 을 꺼도 그렇다(끄는 것은 지금 공식을 남긴다는 뜻인데 남길 공식이 없다.
+    이다 — 「공식으로 지정」 을 꺼도 그렇다(끄는 것은 지금 공식을 남긴다는 뜻인데 남길 공식이 없다.
     발행 없는 상태로 두면 세션 판정은 그 시나리오 최신을 공식 자리로 보는데 공식 스냅샷은 일정 없이
     읽혀 둘이 갈라진다). 발행할 때만 `expected_release_no` 를 대조한다. 설비 마스터 저장과
     「이 리비전으로 되돌리기」(E7)가 이 한 규칙을 쓴다.
@@ -4036,7 +4034,7 @@ def _cross_validate(
         overlay=read_layout_overlay(connection, official.revision),
         scenario_name=owner.scenario_name if owner is not None else release.equipment_scenario_id,
         revision_no=official.revision.revision_no,
-        escape="그 리비전은 공식 발행이라 지켜야 합니다 — 다른 리비전을 공식으로 발행한 뒤 "
+        escape="그 리비전은 공식이라 지켜야 합니다 — 다른 리비전을 공식으로 지정한 뒤 "
         "저장하거나, 바꾼 공통 칸을 되돌리세요.",
     )
 
@@ -4268,14 +4266,14 @@ def _scenario_summary(row: Mapping[str, object]) -> EquipmentScenarioSummary:
 
 def _release(row: Mapping[str, object]) -> EquipmentRelease:
     return EquipmentRelease(
-        release_no=as_int(row["release_no"], "공식 발행 번호"),
+        release_no=as_int(row["release_no"], "공식 번호"),
         equipment_scenario_id=str(row["equipment_scenario_id"]),
         schedule_revision_id=str(row["schedule_revision_id"]),
         released_at=as_datetime(row["released_at"]),
         released_by=_optional_str(row["released_by"]),
         note=_optional_str(row["note"]),
         revision_no=(
-            as_int(row["revision_no"], "공식 발행 리비전 번호")
+            as_int(row["revision_no"], "공식 리비전 번호")
             if row.get("revision_no") is not None
             else None
         ),

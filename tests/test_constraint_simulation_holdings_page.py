@@ -148,7 +148,7 @@ def _pick(app: AppTest, *names: str) -> AppTest:
 
 
 def _helps(app: AppTest) -> str:
-    """캡션 풍선 글 — 개조 일정 카드의 「신규 설비 붙이지 않음」 표지가 까닭을 여기에 싣는다."""
+    """캡션 풍선 글 — 개조 창 카드의 「신규 설비 붙이지 않음」 표지가 까닭을 여기에 싣는다."""
     return " ".join(str(element.proto.help) for element in app.caption)
 
 
@@ -223,7 +223,7 @@ def test_picking_a_unit_holds_it_without_a_modification(
 
 
 def test_picked_units_and_the_number_field_add_up(early_databases: tuple[Path, Path]) -> None:
-    """고른 호기 + 목록에 없는 보유 칸 — 머리는 「보유 제약 호기 1대 + 2대」, 개조 일정 카드는
+    """고른 호기 + 목록에 없는 보유 칸 — 머리는 「보유 제약 호기 1대 + 2대」, 개조 창 카드는
     출처를 둘 다 적는다."""
     app = _opened(early_databases)
     app.number_input(key=CONSTRAINT_OWNED_KEY).set_value(2)

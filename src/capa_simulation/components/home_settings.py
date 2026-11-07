@@ -96,7 +96,7 @@ SETTINGS_BOX_KEY = _settings_box_key(SETTINGS_BOX_NAME)
 SETTINGS_BUTTON_KEY = "home_settings_open"
 SETTINGS_HELP = (
     "HOME 공용 설정(모든 사용자가 함께 씀) — 비교 · 주요 Case / 판정 기준 / 선행 · 보정: "
-    "선행 B/O · 선행 입고 실적 · 확보율 보정 / 공지 · 표시: Summary 공지 · Top5 구간 · "
+    "선행 B/O · 선행 입고 실적 · 확보율 보정 / 공지 · 표시: 공지 · Top5 구간 · "
     "주요공정 프리셋 / Past Data: 과거 구간"
 )
 PENDING_HELP = "읽어 두고 저장하지 않은 Past Data 가 있습니다 — 팝업의 Past Data 탭에서 저장합니다."

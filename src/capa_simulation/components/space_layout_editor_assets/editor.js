@@ -1710,8 +1710,8 @@ export default function (component) {
     ['Ctrl+휠', '확대 · 축소', 'vf vb ef eb'],
     ['+ · −', '확대 · 축소', 'vf vb ef eb'],
     ['0', '전체 보기', 'vf vb ef eb'],
-    ['고정 중 휠', '도면 옮기기', 'vf vb ef eb'],
-    ['고정 중 Shift+휠', '도면 가로로 옮기기', 'vf vb ef eb'],
+    ['화면 고정 중 휠', '도면 옮기기', 'vf vb ef eb'],
+    ['화면 고정 중 Shift+휠', '도면 가로로 옮기기', 'vf vb ef eb'],
     ['방향키', '화면 옮기기', 'vf vb'],
     ['Tab', '다음 호기로', 'vf'],
     ['Tab', '다음 층 블록으로', 'vb'],
@@ -6970,7 +6970,7 @@ export default function (component) {
     document.addEventListener('pointerdown', S.onKeysPointer, true)
   }
 
-  // ---------------------------------------------------------------- 스크롤 고정(도구 줄 「고정」)
+  // ---------------------------------------------------------------- 화면 고정(도구 줄 「화면 고정」)
   // 켜면 본문 스크롤 칸을 굴려 편집기 맨 위를 가림 끝(화면 탭 줄 아래) + 8px 에 맞추고, `<html data-space-lock="1">` 을 달아
   // 페이지 서식(파이썬 `space_lock_style`)이 본문 스크롤을 막게 한다 — 다른 화면으로 가면 그 서식이 사라져 정리 함수가 돌지
   // 않아도 풀린다. 무대는 창 높이에 맞춘다(고른 높이·기억은 그대로). 고정은 이 마운트에만 둔다 — 다시 마운트되면(층·FAB 바꾸기,
@@ -6994,11 +6994,11 @@ export default function (component) {
     const main = mainScroller()
     return (main ? main.getBoundingClientRect().top : 0) + stuck + rect.height
   }
-  // 고정 중이면 위 「저장 안 한 배치」 상자가 화면 밖이다 — 「고정」 단추의 점과 풍선이 말한다.
+  // 고정 중이면 위 「저장 안 한 배치」 상자가 화면 밖이다 — 「화면 고정」 단추의 점과 풍선이 말한다.
   function showLockMark() {
     const offScreen = Boolean(S.lock && data.pendingSave)
     lockDot.hidden = !offScreen
-    setAttr(lockButton, 'title', offScreen ? `저장 안 한 배치가 있습니다 — 고정을 풀고 위 상자에서 저장합니다 · ${S.lockTip}` : S.lockTip)
+    setAttr(lockButton, 'title', offScreen ? `저장 안 한 배치가 있습니다 — 화면 고정을 풀고 위 상자에서 저장합니다 · ${S.lockTip}` : S.lockTip)
   }
   function alignLock() {
     if (!S.lock) return
@@ -8074,8 +8074,8 @@ export default function (component) {
   // 도구 줄이 넘치면 접는 차례를 하나씩 더한다. FAB 보기는 `is-fit1`~`is-fit6`(CSS 「FAB 도구 줄」) — 요약은 마지막에야
   // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 층 보기는 접을 것이 요약뿐이라 넘치면 곧장 둘째
   // 줄(⑥)이다 — 390px 에서 확대 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집은
-  // `is-efit1`(「호기 정보」·「고정」 은 아이콘만, 기준일 칩은 날짜만 — 낭독기용 글은 남김) 다음 ⑥(빈 칸 뒤 「호기 정보」·
-  // 「고정」·「적용」 을 둘째 줄로)이다 — 사이드바를 연 1100px 창의 층 편집에서 「고정」 이 줄 밖으로 밀려 스크롤 고정을
+  // `is-efit1`(「호기 정보」·「화면 고정」 은 아이콘만, 기준일 칩은 날짜만 — 낭독기용 글은 남김) 다음 ⑥(빈 칸 뒤 「호기 정보」·
+  // 「화면 고정」·「적용」 을 둘째 줄로)이다 — 사이드바를 연 1100px 창의 층 편집에서 「화면 고정」 이 줄 밖으로 밀려 스크롤 고정을
   // 켤 길이 없었다(도구 줄은 굴림 막대를 숨겨 옆으로 밀 수도 없다). 크기가 바뀔 때(`S.onResize` — 무대 높이를 재기 전)
   // 다시 잰다.
   const toolbar = q('.sle-toolbar')

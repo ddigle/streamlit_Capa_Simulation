@@ -551,7 +551,7 @@ def test_an_assumption_tab_save_publishes_what_it_spreads_to_the_official(
     assert "EQ-09" in _session(repository, OPERATIONS).equipment["설비명"].tolist()
     after = repository.latest_equipment_release()
     assert after is not None and after.release_no == before.release_no + 1
-    assert f"공식 v{after.release_no} 발행" in message
+    assert f"공식 v{after.release_no} 지정" in message
 
 
 def test_an_assumption_tab_save_that_reaches_nothing_official_publishes_nothing(
@@ -637,7 +637,7 @@ def test_the_tab_save_section_has_only_note_saver_and_buttons(
     assert not any("「새 호기」 칸에서" in text for text in captions)
     save = app.button(key=SAVE_BUTTON_KEY)
     assert "공통 칸은 모든 설비 시나리오에" in str(save.help)
-    for gone in ("새 호기", "새 비가동", "공식으로 발행", "지운 호기"):
+    for gone in ("새 호기", "새 비가동", "공식으로 지정", "지운 호기"):
         assert gone not in str(save.help), gone
     assert app.text_input(key="equipment_workspace_save_saved_by").label == "저장자(선택)"
 
