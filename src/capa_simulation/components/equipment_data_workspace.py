@@ -267,6 +267,9 @@ SELECT_COLUMN = "선택"
 SELECTION_KEY = "equipment_workspace_selection_v1"
 PENDING_DELETE_KEY = "equipment_workspace_pending_delete_v1"
 LAST_REMOVED_KEY = "equipment_workspace_last_removed_v1"
+# 「한 단계 되돌리기」 가 미룬 일괄 삭제 되살리기(값은 표 이름 — `restore_bulk_deletion`). 그 표에
+# 적용하지 않은 편집이 있을 때만 서고, 그 표 편집표가 선 회차의 제출이 편집을 먼저 넣고 되살린다.
+RESTORE_REQUEST_KEY = "equipment_workspace_restore_request_v1"
 CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
 # Space 편집기가 쌓는 미저장 층 캔버스·도면 요소((동, 층) → 값). 호기 편집본(BUFFER_KEY)과
 # **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
@@ -425,6 +428,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         SELECTION_KEY,
         PENDING_DELETE_KEY,
         LAST_REMOVED_KEY,
+        RESTORE_REQUEST_KEY,
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
@@ -2938,10 +2942,39 @@ def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bo
 
 def restore_bulk_deletion() -> bool:
     """방금 한 일괄 삭제를 되살린다(「한 단계 되돌리기」 — 표 단계가 다 빠진 뒤). 되살릴 것이 없으면
-    거짓. 콜백에서 불리므로 편집표 위젯이 아직 서지 않았다 — 되살린 표의 편집표를 버려 줄 번호
-    delta 가 바뀐 표 위에 얹히지 않게 한다(그 표의 적용 전 편집은 함께 사라진다, 다른 표는 남는다).
-    결과는 탭 끝 칸이 알림창으로 낸다 — 표 고르기가 어느 표든 그 칸은 선다. 표지 dict 는 편집본을
-    바꾸기 **전에** 받는다(`_apply_bulk_actions` 와 같다)."""
+    거짓.
+
+    콜백에서 불려 편집표 위젯이 아직 서지 않았고 그 결과(적용 전 편집을 얹은 표)도 모른다. 되살린
+    표의 편집표는 줄 번호 delta 가 바뀐 표 위에 얹히지 않게 새로 세워야 하는데, 그 표에 적용하지
+    않은 편집이 있으면 그것까지 알림 없이 버린다(화면 탭을 옮길 때는 묻고 지키는 편집이다). 그때는
+    표지(`RESTORE_REQUEST_KEY`)만 세운다 — 그 표 편집표가 선 회차의 제출(`render_small_editor`)이
+    편집을 먼저 편집본에 넣고 되살린다(작은 편집표 단추 제출과 같은 차례). 편집이 없으면 곧바로
+    되살린다(`_restore_removed`)."""
+    removed = st.session_state.get(LAST_REMOVED_KEY)
+    if not isinstance(removed, tuple):
+        st.session_state.pop(LAST_REMOVED_KEY, None)
+        return False
+    for name in small_editor_edits():
+        if not removed[TARGET_LAYOUT[name][0]].empty:
+            st.session_state[RESTORE_REQUEST_KEY] = name
+            return True
+    return _restore_removed()
+
+
+def settle_bulk_restore() -> None:
+    """미룬 되살리기(`RESTORE_REQUEST_KEY`)의 표를 이번 회차에 그리지 않으면 곧바로 되살린다 — 누른
+    회차가 끊긴 사이 표 고르기를 바꿨다(그 표의 적용 전 편집은 그리지 않아 어차피 걷힌다). 그대로
+    두면 나중에 그 표를 열 때 말없이 되살아난다. 탭 ① 이 편집본을 읽기 **전에** 부른다."""
+    request = st.session_state.get(RESTORE_REQUEST_KEY)
+    if request is not None and request != st.session_state.get(MASTER_TABLE_KEY):
+        _restore_removed()
+
+
+def _restore_removed() -> bool:
+    """`LAST_REMOVED_KEY` 의 행을 편집본에 되살리고 그 표 편집표를 새로 세운다(다른 표는 남는다).
+    미룬 표지도 거둔다. 결과는 탭 끝 칸이 알림창으로 낸다 — 표 고르기가 어느 표든 그 칸은 선다.
+    표지 dict 는 편집본을 바꾸기 **전에** 받는다(`_apply_bulk_actions` 와 같다)."""
+    st.session_state.pop(RESTORE_REQUEST_KEY, None)
     removed = st.session_state.pop(LAST_REMOVED_KEY, None)
     if not isinstance(removed, tuple):
         return False
@@ -3411,6 +3444,8 @@ def render_small_editor(
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
             )
+    # 「한 단계 되돌리기」 가 미룬 이 표의 되살리기(`restore_bulk_deletion`) — 제출로 받는다.
+    restoring = st.session_state.get(RESTORE_REQUEST_KEY) == target
     if not any(
         (
             apply_clicked,
@@ -3418,6 +3453,7 @@ def render_small_editor(
             action is not None,
             confirm_delete,
             cancel_delete,
+            restoring,
         )
     ):
         return None
@@ -3445,6 +3481,8 @@ def render_small_editor(
             confirm=confirm_delete,
             view_applied=view_clicked,
         )
+        if restoring:
+            _restore_removed()
         st.rerun()
 
     return submit

@@ -107,6 +107,7 @@ from capa_simulation.components.equipment_data_workspace import (
     restore_bulk_deletion,
     save_equipment_buffer,
     saved_master_violations,
+    settle_bulk_restore,
     settle_grid_toasts,
     stale_delete_lock,
     stale_save_reasons,
@@ -288,7 +289,7 @@ DISCARD_LABEL: Final = "모두 버리기"
 UNDO_LABEL: Final = "한 단계 되돌리기"
 UNDO_HELP: Final = (
     "표 · 상세의 마지막 고침부터 한 단계씩 되돌립니다. 표 고침을 다 되돌리면 기존 보유대수 · "
-    "비가동 일정의 일괄 삭제를 되살립니다 — 되살린 표의 적용하지 않은 편집은 사라집니다."
+    "비가동 일정의 일괄 삭제를 되살립니다 — 그 표의 적용하지 않은 편집은 먼저 편집본에 넣습니다."
 )
 NOTE_PLACEHOLDER: Final = "예: 10월 신규 호기 반입일정 갱신"
 DOWNLOAD_NOTE: Final = (
@@ -887,7 +888,9 @@ def _on_dialog(name: str) -> None:
 
 def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다. 표 단계가 없으면 그
-    아래 일괄 삭제를 되살린다 — 일괄 삭제가 표 단계를 비우므로 삭제는 늘 표 단계 밑이다.
+    아래 일괄 삭제를 되살린다 — 일괄 삭제가 표 단계를 비우므로 삭제는 늘 표 단계 밑이다. 그 표에
+    적용하지 않은 편집이 있으면 그 편집표의 제출이 편집을 먼저 넣고 되살린다
+    (`restore_bulk_deletion`).
 
     더블클릭(0.15초)은 한 번으로 친다. 옛 코드는 둘째 누름이 한 단계를 더 꺼내 메모3·메모2 가
     함께 돌아갔고, 첫 회차의 알림(「되돌림: 메모3 고침」)을 둘째의 것이 덮었다(2026-10-27 E2E).
@@ -1373,6 +1376,7 @@ def render_equipment_master_tab(
     """탭 ① 본문. 페이지가 `ensure_equipment_drafts` 를 부른 뒤, 탭이 열린 회차에만 부른다."""
     basis = session.save_basis()
     layout: LayoutMode = layout_mode.layout
+    settle_bulk_restore()
     frames: Frames = st.session_state[BUFFER_KEY]
     floor_states: FloorStates | None
     try:

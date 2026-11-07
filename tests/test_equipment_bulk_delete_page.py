@@ -4,9 +4,9 @@
 
 옛 설비 마스터 편집표의 「필터에 맞는 행 모두 선택」·「선택 행 삭제」·「삭제 확정」 길은 설비
 마스터 표(개편 B1)의 불러오기(조건) → 고르기 → 「선택 n대 지우기」(출납 `delete` — 확인 없이 바로,
-토스트 「되돌리기」) 로 바뀌었다. AppTest 는 표 JS 를 못 돌리므로 대역(`tests/grid_fake.py`)이
-브라우저가 보낼 불러오기·출납을 보낸다. 비가동 일정 작은 편집표의 일괄 삭제(옛 길 그대로)는 마지막
-시험이 본다.
+되살리기는 「저장 전 변경」 의 「한 단계 되돌리기」) 로 바뀌었다. AppTest 는 표 JS 를 못 돌리므로
+대역(`tests/grid_fake.py`)이 브라우저가 보낼 불러오기·출납을 보낸다. 비가동 일정 작은 편집표의 일괄
+삭제(고르기 · 확인은 옛 길 그대로, 되살리기는 같은 「한 단계 되돌리기」)는 뒤쪽 시험들이 본다.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_UNDO_KEY,
     LAST_REMOVED_KEY,
+    RESTORE_REQUEST_KEY,
     SELECTION_KEY,
 )
 from capa_simulation.components.equipment_master_tab import (
@@ -58,6 +59,7 @@ EQUIPMENT_PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 DOWNTIME_FILTER_KEY = "equipment_downtime_view_filter_설비명"
 DOWNTIME_SELECT_MATCHING_KEY = "equipment_downtime_select_matching_v1"
 DOWNTIME_DELETE_SELECTED_KEY = "equipment_downtime_delete_selected_v1"
+DOWNTIME_VIEW_APPLY_KEY = "equipment_downtime_view_apply_v1"
 
 
 @pytest.fixture(autouse=True)
@@ -445,6 +447,75 @@ def test_restoring_a_bulk_delete_stands_that_table_editor_up_anew(
 
     assert app.session_state[generation] > before
     assert len(_downtime_machines(app)) == seed.downtime_count
+
+
+def _editor_key_in(app: AppTest, key: str) -> str:
+    """앱이 지금 편집표를 그리는 위젯 키(`editor_state.editor_widget_key` 와 같은 규칙) — 브라우저는
+    그 키로 편집을 보내므로 시험도 같은 키에 넣는다."""
+    slot = f"{key}__generation"
+    generation = app.session_state[slot] if slot in app.session_state else 0
+    return key if not generation else f"{key}__g{generation}"
+
+
+def _unapplied_downtime_edit(app: AppTest, seed: _Seed) -> str:
+    """비가동 일정 하나를 일괄 삭제하고 필터를 풀어 남은 표를 보인 뒤 「저장 전 변경」 을 연다.
+    남은 표 첫 줄 비고에 적용하지 않은 편집을 넣고 그 글을 돌려준다(다음 회차에 실린다)."""
+    machine = sorted(set(_downtime_machines(app)))[0]
+    _delete_downtime(app, machine)
+    app.multiselect(key=DOWNTIME_FILTER_KEY).set_value([])
+    app.button(key=DOWNTIME_VIEW_APPLY_KEY).click().run()
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(_downtime_machines(app)) < seed.downtime_count
+    text = "검토 적용 전"
+    app.session_state[_editor_key_in(app, DOWNTIME_EDITOR_KEY)] = {
+        "edited_rows": {0: {"비고": text}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    return text
+
+
+def test_restoring_a_bulk_delete_keeps_an_unapplied_edit_of_that_table(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """되살릴 표에 적용하지 않은 편집이 있으면 그 편집을 먼저 편집본에 넣고 되살린다 — 옛 「삭제
+    되돌리기」(편집표 제출 단추)가 그랬다. 콜백에서 되살리면 그 표 편집표를 새로 세우며 편집을
+    알림 없이 버린다 — 화면 탭을 옮길 때는 묻고 지키는 편집이다."""
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    text = _unapplied_downtime_edit(app, seed)
+
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
+    downtime = app.session_state[BUFFER_KEY][2]
+    assert len(downtime) == seed.downtime_count
+    assert downtime["비고"].astype(str).tolist().count(text) == 1
+    assert LAST_REMOVED_KEY not in app.session_state
+    assert RESTORE_REQUEST_KEY not in app.session_state
+
+
+def test_a_deferred_restore_runs_at_once_when_its_table_is_not_drawn(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """미룬 되살리기는 그 표 편집표의 제출이 한다 — 누른 회차가 끊긴 사이 표 고르기를 바꿔 그 표를
+    그리지 않으면 탭 ① 이 곧바로 되살린다. 남겨 두면 나중에 그 표를 열 때 말없이 되살아난다."""
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    _unapplied_downtime_edit(app, seed)
+    app.session_state[RESTORE_REQUEST_KEY] = DOWNTIME_TARGET
+    app.session_state[TABLE_KEY] = TABLE_MASTER
+
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
+    assert len(_downtime_machines(app)) == seed.downtime_count
+    assert RESTORE_REQUEST_KEY not in app.session_state
+    assert LAST_REMOVED_KEY not in app.session_state
 
 
 def _infos(app: AppTest, needle: str) -> list[str]:
