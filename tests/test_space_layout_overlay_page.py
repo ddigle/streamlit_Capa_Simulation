@@ -691,7 +691,7 @@ def test_an_official_regroup_raises_the_module_alert_until_the_official_is_drawn
     regrouped = active_state(app, "EQ-14")
     assert regrouped is not None
     assert regrouped["short"] == (
-        "모듈 구성이 바뀐 묶음 1개 — 트레이에 있음 · 배치 편집에서 다시 놓기"
+        "모듈 구성이 바뀐 묶음 1개 — 미배치 칸에 있음 · 배치 편집에서 다시 놓기"
     )
     assert regrouped["full"].startswith("공식에서 모듈 구성이 바뀐 묶음 1개(DEMO-G) — ")
     assert regrouped["level"] == "action"

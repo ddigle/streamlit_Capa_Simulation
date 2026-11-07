@@ -419,7 +419,7 @@ def parse_fab_editor_apply(payload: Mapping[str, Any], canvas: CanvasSize) -> Fa
     if isinstance(raw_canvas, Mapping):
         new_canvas = normalize_canvas_size(raw_canvas.get("width"), raw_canvas.get("height"))  # type: ignore[arg-type]
     elif raw_canvas is not None:
-        raise ValueError("편집 영역 값을 읽지 못했습니다.")
+        raise ValueError("캔버스 값을 읽지 못했습니다.")
     raw_marks = payload.get("marks")
     marks: tuple[FabLayoutMark, ...] | None = None
     if isinstance(raw_marks, list) and all(isinstance(raw, Mapping) for raw in raw_marks):

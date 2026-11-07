@@ -750,7 +750,7 @@ def _regrid_module_groups(
             x, y, w, h = _value_box(cell)
             if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
                 raise ValueError(
-                    f"Main 설비 {group} 의 묶음 범위가 편집 영역 {bounds[0]:g} × "
+                    f"Main 설비 {group} 의 묶음 범위가 캔버스 {bounds[0]:g} × "
                     f"{with_object_particle(f'{bounds[1]:g}')} 벗어났습니다."
                 )
             tile = UnitChange(name, True, x, y, w, h, None)
@@ -788,7 +788,7 @@ def _parse_ghost_moves(
             raise ValueError(f"숨은 모듈 {unit_id} 의 좌표·크기가 맞지 않습니다.")
         if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
             raise ValueError(
-                f"숨은 모듈 {with_subject_particle(unit_id)} 편집 영역 {bounds[0]:g} × "
+                f"숨은 모듈 {with_subject_particle(unit_id)} 캔버스 {bounds[0]:g} × "
                 f"{with_object_particle(f'{bounds[1]:g}')} 벗어났습니다."
             )
         moves[unit_id] = (x, y, w, h)
@@ -1379,10 +1379,10 @@ def parse_editor_apply(
             finite_or_none(raw_canvas.get("height")),
         )
         if width is None or height is None:
-            raise ValueError("편집 영역 크기를 읽지 못했습니다.")
+            raise ValueError("캔버스 크기를 읽지 못했습니다.")
         new_canvas = normalize_canvas_size(width, height)
     elif raw_canvas is not None:
-        raise ValueError("편집 영역 크기를 읽지 못했습니다.")
+        raise ValueError("캔버스 크기를 읽지 못했습니다.")
     bounds = new_canvas or canvas
     changes: list[UnitChange] = []
     created: list[CreatedUnit] = []
@@ -1433,7 +1433,7 @@ def parse_editor_apply(
                 raise ValueError(f"{unit_id} 의 좌표는 0 이상이어야 합니다.")
             if move_to is None and (x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9):
                 raise ValueError(
-                    f"{with_subject_particle(unit_id)} 편집 영역 {bounds[0]:g} × "
+                    f"{with_subject_particle(unit_id)} 캔버스 {bounds[0]:g} × "
                     f"{with_object_particle(f'{bounds[1]:g}')} 벗어났습니다."
                 )
         elif w is not None and h is not None:
@@ -2206,7 +2206,7 @@ def layout_changes(
         if floor_changed and "" not in before_floor:
             kind = "층 이동"
         elif not now_placed and was_placed:
-            kind = "트레이로 빼기(크기 유지)"
+            kind = "미배치 칸으로 빼기(크기 유지)"
         elif not now_placed:
             kind = "층 지정(미배치)" if floor_changed else "크기"
         elif not was_placed:

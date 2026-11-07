@@ -241,8 +241,8 @@ def space_layout_notices(
                 f"공식에서 모듈 구성이 바뀐 묶음 {regrouped:,}개"
                 f"({', '.join(snapshot.layout_regrouped[:3])}"
                 f"{' 외' if regrouped > 3 else ''}) — 가정 배치에서 그 "
-                "모듈은 자리 없이 트레이에 있습니다. 배치 편집에서 다시 놓으세요.",
-                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 트레이에 있음 · 배치 편집에서 다시 놓기",
+                "모듈은 자리 없이 미배치 칸에 있습니다. 배치 편집에서 다시 놓으세요.",
+                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 미배치 칸에 있음 · 배치 편집에서 다시 놓기",
                 sorted(snapshot.layout_regrouped),
             )
         )

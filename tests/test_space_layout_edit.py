@@ -389,7 +389,7 @@ def test_changes_list_layout_edits_and_count_the_rest_apart() -> None:
 
     changes = layout_changes(saved, buffer)
 
-    assert changes["변경"].tolist() == ["트레이로 빼기(크기 유지)", "층 이동"]
+    assert changes["변경"].tolist() == ["미배치 칸으로 빼기(크기 유지)", "층 이동"]
     assert changes.loc[0, "새"] == "C1 1F · 미배치 12×7"
     assert other_change_count(saved, buffer) == 1
     assert other_change_count(saved, saved.iloc[[0]]) == 1

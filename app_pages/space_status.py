@@ -1207,7 +1207,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
     if not names.empty:
         parts.append(f"이름 바꿈 {len(names)}건")
     if canvases:
-        parts.append(f"편집 영역 {len(canvases)}개 층")
+        parts.append(f"캔버스 {len(canvases)}개 층")
     if marks:
         parts.append(f"도면 요소 {len(marks)}개 층")
     if group_labels:
@@ -1289,7 +1289,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                     key=DISCARD_LAYOUT_BUTTON_KEY,
                     on_click=_discard_layout_only,
                     help=(
-                        "호기 자리·크기·레이아웃표시와 층 도면 요소·Main 설비명 위치·편집 영역 "
+                        "호기 자리·크기·레이아웃표시와 층 도면 요소·Main 설비명 위치·캔버스 "
                         "변경만 버립니다. 설비 마스터의 다른 편집과 이름 바꿈, FAB 전체 배치는 "
                         "남습니다."
                     ),
@@ -2332,7 +2332,7 @@ else:
         summary += (
             f" · 층 미정 미배치 "
             f"{with_topic_particle(_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here])))}"
-            " 배치 편집 트레이에"
+            " 배치 편집 미배치 칸에"
         )
 
     # 층 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
