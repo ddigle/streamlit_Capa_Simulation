@@ -47,7 +47,8 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert [heading.value for heading in app.title] == ["Admin Area"]
     # 운영 관리 기능은 이미 쓰는 화면이라 `(구현중)` 배지를 달지 않는다.
     assert not any("구현중" in markdown.value for markdown in app.markdown)
-    assert any("Proc Rename" in subheader.value for subheader in app.subheader)
+    # 탭 이름 밑에 같은 글의 제목을 다시 그리지 않는다(설계 규칙 UI-TXT-07).
+    assert not [subheader.value for subheader in app.subheader]
     # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고, 원천 품질과 HOME 에서 걷은 계산
     # 알림을 모은 「알림 모음」 이 뒤에 붙어 네 탭이다.
     assert [tab.label for tab in app.main.tabs] == [
@@ -799,6 +800,9 @@ def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
     assert any("돌지 않은 것으로" in text for text in captions), captions
     note = active_state(app, "AD-01")
     assert note is not None and "돌지 않은 것으로" in note["full"], states(app, "AD-01")
+    # 알림 전문은 Guide 를 열지 않아도 다음 할 일이 있고, 평문이다(코드 표시 기호 없음).
+    assert note["full"].endswith("이 문구를 그대로 알려 주세요.") and "`" not in note["full"]
+    assert not any("그대로 알려 주세요" in text for text in captions), captions
     assert "FAKE-bdq-login-token-0000" not in str(note)
     assert not any("FAKE-bdq-login-token-0000" in text for text in captions)
 
@@ -824,8 +828,11 @@ def test_a_broken_start_report_is_told_apart_from_a_missing_one(
     captions = [caption.value for caption in app.caption]
     assert any("읽지 못했습니다(꼴이 다름)" in text for text in captions), captions
     assert not any("결과 파일이 없습니다" in text for text in captions)
+    # 펼침 자리 글은 결론까지 — 그다음 할 일은 Guide 와 알림 전문이 말한다(설계 규칙 UI-TXT-04).
+    assert not any("CI/CD" in text for text in captions), captions
     note = active_state(app, "AD-01")
     assert note is not None and "결과 파일을 읽지 못함" in note["short"], states(app, "AD-01")
+    assert "CI/CD 를 다시 돌리고" in note["full"] and "`" not in note["full"]
 
 
 def test_an_opened_server_start_check_stays_open_after_a_trip_to_another_screen(

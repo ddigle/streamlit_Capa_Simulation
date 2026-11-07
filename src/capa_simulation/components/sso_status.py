@@ -38,6 +38,12 @@ from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.components import sso_identity
+from capa_simulation.components.diagnostic_copy import (
+    diagnostic_text,
+    plain_lines,
+    render_diagnostic_copy,
+    table_lines,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.io import s3_small
 from capa_simulation.io.container_start_report import (
@@ -51,6 +57,7 @@ from capa_simulation.sidebar_status import remembered_expander
 
 # 펼침 key. 「서버 시작 점검」 바로 뒤 · 탭 묶음 위에 서므로 자리를 key 로 고정한다.
 EXPANDER_KEY = "admin_area_sso_status"
+COPY_KEY = "sso_status"
 START_STEP_LABEL = "통합인증"
 RECENT_EVENT_LIMIT = 20
 ANONYMOUS_EVENT_LIMIT = 10
@@ -74,8 +81,14 @@ REFRESH_OUTCOME_LABELS: dict[str, str] = {
     "forbidden": "출처·머리 거절",
     "bad_request": "꼴 거절",
 }
-# 「출처·머리 거절」 만 늘고 「다시 발급」 이 0 일 때 누계 줄 끝에 붙이는 안내.
-REFRESH_ORIGIN_HINT = f" — 접속 주소가 `{names.ENV_PUBLIC_URL}` 과 같은지 보세요"
+# 로그인 갱신 누계 줄의 풍선 — 범위와 「출처·머리 거절」 을 읽는 법(설계 규칙 UI-TXT-01).
+REFRESH_HELP = (
+    "앱을 쓰는 동안 로그인을 늘린 횟수의 기동 뒤 누계입니다 — 재시작하면 0 입니다. 「출처·머리 "
+    f"거절」 만 늘고 「다시 발급」 이 0 이면 접속 주소가 `{names.ENV_PUBLIC_URL}` 과 같은지 봅니다."
+)
+# redirect_uri 줄의 풍선 — 포털 등록값과 대 보는 법.
+REDIRECT_HELP = "redirect\\_uri 는 포털 Endpoint URL 과 한 글자도 같아야 합니다."
+ANONYMOUS_HELP = "로그인하지 않은 누구나 보낼 수 있는 요청이라 따로 셉니다."
 
 # S3 명단을 읽거나 쓰지 못한 까닭의 화면 이름(`io/s3_small` · `auth/access_store` 분류).
 ACCESS_PROBLEM_LABELS: dict[str, str] = {
@@ -96,10 +109,14 @@ ON_CAPTION_LISTED = "통합인증이 켜져 있습니다 — 로그인하고 접
 ON_CAPTION_UNLISTED = (
     "통합인증이 켜져 있습니다 — 접속 명단이 꺼져 있어 로그인한 사람은 모두 들어옵니다."
 )
-OFF_IN_PRODUCTION_WARNING = (
-    "운영 서버인데 통합인증이 꺼져 있습니다 — 주소를 아는 사람은 누구나 들어옵니다. "
+OFF_IN_PRODUCTION_CONCLUSION = (
+    "운영 서버인데 통합인증이 꺼져 있습니다 — 주소를 아는 사람은 누구나 들어옵니다."
+)
+OFF_IN_PRODUCTION_HELP = (
     f"포털 승인 메일의 Client ID 를 환경변수(`{names.ENV_CLIENT_ID}`)에 넣으면 켜집니다."
 )
+OFF_IN_PRODUCTION_WARNING = f"{OFF_IN_PRODUCTION_CONCLUSION} {OFF_IN_PRODUCTION_HELP}"
+BROKEN_CONCLUSION = "통합인증 설정을 마치지 못했습니다"
 
 
 def sso_verdict(cfg: SsoConfig) -> str:
@@ -234,21 +251,38 @@ def access_s3_line(cfg: SsoConfig) -> str:
     return " · ".join(parts)
 
 
-def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
-    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 · 유지 시간 · 쿠키 이름 · 문지기 · 명단."""
+def fact_lines(
+    cfg: SsoConfig, *, now: datetime | None = None, shareable: bool = False
+) -> list[str]:
+    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 · 유지 시간 · 쿠키 이름 · 문지기 · 명단.
+
+    첫 줄은 redirect_uri 다 — 화면이 그 풍선을 그 줄에 단다(`render_sso_status`).
+
+    `shareable` 이면 포털 등록값 셋(redirect_uri · issuer · 인증서 지문)을 글자 그대로 싣지 않는다 —
+    화면에서는 포털과 한 글자씩 대 보지만 리뷰에는 옮기지 않는 값이고(Guide), 복사 글은 리뷰로
+    나간다(`status_text`).
+    """
     moment = now or datetime.now(timezone.utc)
     redirect = literal_markdown(cfg.redirect_uri) if cfg.redirect_uri else "계산하지 못함"
     issuer = literal_markdown(cfg.issuer) if cfg.issuer else "없음"
+    if shareable:
+        redirect = "있음" if cfg.redirect_uri else redirect
+        issuer = "있음" if cfg.issuer else issuer
     lines = [
-        f"redirect\\_uri(포털 Endpoint URL 과 한 글자도 같아야 함): {redirect}",
+        f"redirect\\_uri: {redirect}",
         f"`{names.ENV_ISSUER}`: {issuer}",
         f"`{names.ENV_CLIENT_ID}`: {'있음' if cfg.client_id else '없음'}",
     ]
     for cert in cfg.signing_certs:
         days = _days_left(moment, cert.not_after)
+        thumbprint = (
+            ""
+            if shareable
+            else f"x5t {literal_markdown(cert.x5t)} · SHA-256 {cert.sha256[:16]}… · "
+        )
         lines.append(
-            f"서명 인증서 x5t {literal_markdown(cert.x5t)} · SHA-256 {cert.sha256[:16]}… · "
-            f"만료 {cert.not_after.strftime('%Y-%m-%d')}(남은 날 {days}) · RSA {cert.key_bits}비트"
+            f"서명 인증서 {thumbprint}만료 {cert.not_after.strftime('%Y-%m-%d')}"
+            f"(남은 날 {days}) · RSA {cert.key_bits}비트"
         )
     lines += [
         f"로그인 유지: 마지막 사용 뒤 {cfg.session_hours}시간 · 최대 {cfg.session_max_hours}시간 · "
@@ -265,22 +299,21 @@ def last_claims_line() -> str:
     """마지막 로그인의 클레임 이름 한 줄 — 값은 없다. 그룹 클레임이 있는지 여기서 본다."""
     claim_names = runtime.last_login_claims()
     listed = " · ".join(literal_markdown(name) for name in claim_names) or "아직 없음"
-    return f"마지막 로그인의 클레임 이름(값 없음 · 재시작하면 비워진다): {listed}"
+    return f"마지막 로그인의 클레임 이름: {listed}"
 
 
 def refresh_count_line() -> str:
     """로그인 갱신 결과 누계 한 줄(기동 뒤 — 재시작하면 0).
 
     「출처·머리 거절」 이 있는데 「다시 발급」 이 0 이면 앞단이 갱신 머리 · `Origin` 을 버리거나
-    접속 주소가 `CAPA_PUBLIC_URL` 과 다른 것이다 — 그때만 안내를 붙인다.
+    접속 주소가 `CAPA_PUBLIC_URL` 과 다른 것이다 — 읽는 법은 풍선(`REFRESH_HELP`)과 Guide 가 말한다.
     """
     counts = runtime.refresh_counts()
     items = " · ".join(
         f"{REFRESH_OUTCOME_LABELS[outcome]} {counts[outcome]}"
         for outcome in runtime.REFRESH_OUTCOMES
     )
-    hint = REFRESH_ORIGIN_HINT if counts["forbidden"] and not counts["renewed"] else ""
-    return f"로그인 갱신(기동 뒤 누계 — 재시작하면 0): {items}{hint}"
+    return f"로그인 갱신(기동 뒤 누계): {items}"
 
 
 def readiness_line(cfg: SsoConfig) -> str:
@@ -358,10 +391,7 @@ def anonymous_failure_line(limit: int = ANONYMOUS_COUNT_LIMIT) -> str | None:
     items = list(counts.items())
     shown = " · ".join(f"{literal_markdown(key)} {count}" for key, count in items[:limit])
     rest = f" · 그 밖 {len(items) - limit}가지" if len(items) > limit else ""
-    return (
-        f"로그인 전 실패(로그인하지 않은 누구나 보낼 수 있는 요청 — 따로 셉니다): 누계 {total} · "
-        f"{shown}{rest}"
-    )
+    return f"로그인 전 실패: 누계 {total} · {shown}{rest}"
 
 
 def _cert_warning() -> str:
@@ -429,13 +459,52 @@ def _access_seed_alert(cfg: SsoConfig) -> None:
     )
 
 
+def _conclusion(cfg: SsoConfig) -> str:
+    if cfg.mode is SsoMode.ON:
+        return ON_CAPTION_LISTED if cfg.access.enforced else ON_CAPTION_UNLISTED
+    return OFF_IN_PRODUCTION_CONCLUSION if cfg.mode is SsoMode.OFF else BROKEN_CONCLUSION
+
+
+def status_text(title: str, cfg: SsoConfig, *, now: datetime) -> str:
+    """「복사」 글 — 펼침과 같은 차례의 결론 · 표 · 사실 · 사건. 복사 글은 리뷰로 나가므로 포털
+    등록값 셋은 있음 · 없음으로만 싣는다(`fact_lines` 의 `shareable`). 그 밖의 줄에는 원래 비밀값 ·
+    주소 · 명단 값이 없고 계정은 앞 두 글자뿐이다(모듈 설명)."""
+    head = [_conclusion(cfg)]
+    if cfg.mode is SsoMode.OFF:
+        head.append(readiness_line(cfg))
+    facts = fact_lines(cfg, now=now, shareable=True)
+    if cfg.mode is SsoMode.ON:
+        facts += [refresh_count_line(), last_claims_line()]
+    events = recent_event_table()
+    denied = denied_account_line()
+    anonymous = anonymous_failure_line()
+    return diagnostic_text(
+        title,
+        plain_lines(head),
+        table_lines(environment_table(cfg)),
+        plain_lines(facts),
+        ["최근 사건 없음"] if events.empty else ["최근 사건(새것 먼저)", *table_lines(events)],
+        [] if denied is None else [denied, *table_lines(denied_account_table())],
+        (
+            []
+            if anonymous is None
+            else [
+                *plain_lines([anonymous]),
+                *table_lines(recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True)),
+            ]
+        ),
+    )
+
+
 def render_sso_status() -> None:
     """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
 
     알릴 조건 둘(운영인데 꺼짐 `AD-02` · 서명 인증서 만료 임박 `AD-03`)은 상태 알림이다(알림창 ·
     Alarm — 그리지 않는 회차에도 부른다, 해소). S3 명단을 읽지 못함(`AD-08`)은 그 명단을 쓰는
     서버에서만 부르고(설정은 재시작 전에 바뀌지 않으니 해소할 것이 없다 — 꺼진 서버의 요소 순번은
-    그대로다) 관리자 회차에만 세운다. 펼침 안은 판정 줄 · 까닭 캡션이다."""
+    그대로다) 관리자 회차에만 세운다. 펼침 안의 결론은 값 한 줄이고 하는 법 · 보관 범위는 풍선 ·
+    Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표 까닭 칸이 말하므로 줄을 따로 세우지 않는다
+    (설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
     cfg = runtime.config()
     now = datetime.now(timezone.utc)
     expiring = _expiring_certs(cfg, now)
@@ -461,33 +530,32 @@ def render_sso_status() -> None:
         _access_seed_alert(cfg)
     if cfg.mode is SsoMode.OFF and not cfg.prod:
         return
-    verdict = sso_verdict(cfg)
-    with remembered_expander(
-        f"통합인증 점검 · {verdict}", icon=":material/verified_user:", key=EXPANDER_KEY
-    ):
+    title = f"통합인증 점검 · {sso_verdict(cfg)}"
+    with remembered_expander(title, icon=":material/verified_user:", key=EXPANDER_KEY):
+        render_diagnostic_copy(status_text(title, cfg, now=now), key=COPY_KEY)
         if cfg.mode is SsoMode.ON:
             st.caption(ON_CAPTION_LISTED if cfg.access.enforced else ON_CAPTION_UNLISTED)
         elif cfg.mode is SsoMode.OFF:
-            st.caption(f":material/lock_open: {OFF_IN_PRODUCTION_WARNING}")
+            st.caption(
+                f":material/lock_open: {OFF_IN_PRODUCTION_CONCLUSION}",
+                help=OFF_IN_PRODUCTION_HELP,
+            )
             st.caption(readiness_line(cfg))
         else:
-            st.error(
-                "통합인증 설정을 마치지 못했습니다 — 아래 까닭을 고친 뒤 CI/CD 를 다시 돌리세요.",
-                icon=":material/gpp_bad:",
-            )
-        if expiring:
-            st.caption(f":material/event_busy: {_cert_warning()}")
+            st.error(BROKEN_CONCLUSION, icon=":material/gpp_bad:")
         st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
-        st.caption("  \n".join(fact_lines(cfg, now=now)))
+        redirect, *facts = fact_lines(cfg, now=now)
+        st.caption(redirect, help=REDIRECT_HELP)
+        st.caption("  \n".join(facts))
         if cfg.mode is SsoMode.ON:
             # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이고 로그인도 없다 — 켜짐에서만 싣는다.
-            st.caption(refresh_count_line())
+            st.caption(refresh_count_line(), help=REFRESH_HELP)
             st.caption(last_claims_line())
         events = recent_event_table()
         if events.empty:
-            st.caption("최근 사건 없음(프로세스 메모리 — 재시작하면 비워진다)")
+            st.caption("최근 사건 없음")
         else:
-            st.caption("최근 사건(새것 먼저 · 재시작하면 비워진다)")
+            st.caption("최근 사건(새것 먼저)")
             st.dataframe(events, hide_index=True, width="stretch")
         denied = denied_account_line()
         if denied is not None:
@@ -495,7 +563,7 @@ def render_sso_status() -> None:
             st.dataframe(denied_account_table(), hide_index=True, width="stretch")
         anonymous = anonymous_failure_line()
         if anonymous is not None:
-            st.caption(anonymous)
+            st.caption(anonymous, help=ANONYMOUS_HELP)
             st.dataframe(
                 recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
                 hide_index=True,

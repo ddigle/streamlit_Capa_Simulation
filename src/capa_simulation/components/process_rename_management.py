@@ -111,7 +111,6 @@ def render_process_rename_management(
     """Proc Rename 탭 한 장. `available_processes` 는 안내용이며 비어 있어도 편집·저장한다.
     `alert_tab` 은 이 탭 이름(상태 알림 `AD-06` 의 「그 화면으로」 —
     `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
-    st.subheader("Proc Rename")
     database_path = str(repository.database_path)
     try:
         profile = load_global_process_rename(database_path)

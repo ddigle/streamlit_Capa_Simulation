@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from alert_marks import active_state, alert_notes
+from alert_marks import active_state, alert_notes, flashed
 from sso_support import use_config
 from streamlit.testing.v1 import AppTest
 from test_sso_access import session_token
@@ -223,6 +223,20 @@ def test_the_callback_checks_the_viewer_again(monkeypatch: pytest.MonkeyPatch) -
     app.button(key=object_sync_status.UPLOAD_NOW_KEY).click().run()
 
     assert handle.requests == 0
+
+
+def test_a_refused_upload_goes_to_the_alert_popup_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """거부는 그 자리에 고칠 입력이 없다 — 곁 상자 없이 알림창에만 뜬다(설계 규칙 UI-NTF-03)."""
+    _boot(monkeypatch, managed=True)
+    _admin(monkeypatch)
+    _worker(monkeypatch)
+    app = AppTest.from_string(PANEL).run()
+
+    _admin(monkeypatch, admin=False)
+    app.button(key=object_sync_status.UPLOAD_NOW_KEY).click().run()
+
+    assert not list(app.error)
+    assert [item.value for item in flashed(app, "error")] == [object_sync_status.NOT_ADMIN_MESSAGE]
 
 
 def test_the_button_is_locked_while_uploading(monkeypatch: pytest.MonkeyPatch) -> None:

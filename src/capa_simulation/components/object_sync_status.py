@@ -29,6 +29,11 @@ from capa_simulation import alerts, object_sync_worker, sync_boot
 from capa_simulation.auth import access_store, runtime
 from capa_simulation.auth.config import SsoMode
 from capa_simulation.components import sso_identity
+from capa_simulation.components.diagnostic_copy import (
+    diagnostic_text,
+    plain_lines,
+    render_diagnostic_copy,
+)
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.object_sync_worker import SyncHealth, WorkerStatus, assess
 from capa_simulation.persistence import sync_state
@@ -41,6 +46,7 @@ from capa_simulation.services.object_storage_manifest import (
 from capa_simulation.sidebar_status import remembered_expander
 
 EXPANDER_KEY: Final = "admin_area_object_sync"
+COPY_KEY: Final = "object_sync"
 UPLOAD_NOW_KEY: Final = "admin_area_object_sync_upload_now"
 FLASH_KEY: Final = "admin_area_object_sync_flash"
 # 올리는 동안 펼침 안 값을 다시 그리는 간격.
@@ -220,21 +226,29 @@ def _viewer_is_admin() -> bool:
 
 
 def _upload_now() -> None:
-    """「지금 올리기」 콜백 — 위젯 콜백은 본문보다 먼저 돌아 보인 회차의 권한을 믿지 않는다."""
+    """「지금 올리기」 콜백 — 위젯 콜백은 본문보다 먼저 돌아 보인 회차의 권한을 믿지 않는다. 거부는
+    그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03)."""
     if not _viewer_is_admin():
-        queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error")
+        queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
     worker = object_sync_worker.running_worker()
     if worker is None:
-        queue_flash(FLASH_KEY, NO_WORKER_MESSAGE, kind="error")
+        queue_flash(FLASH_KEY, NO_WORKER_MESSAGE, kind="error", popup_only=True)
         return
     worker.request_now()
     queue_flash(FLASH_KEY, "올리기를 시작했습니다")
 
 
+def panel_title(health: SyncHealth) -> str:
+    return f"DB 동기화 · {health.title}"
+
+
 def _render_body() -> None:
+    """값 줄과 그 글을 복사하는 단추 — 올리는 동안 다시 그려도 복사 글이 화면과 같다."""
     status, health = current_health()
-    st.caption("  \n".join(status_lines(status, health, now=time.monotonic())))
+    lines = status_lines(status, health, now=time.monotonic())
+    render_diagnostic_copy(diagnostic_text(panel_title(health), plain_lines(lines)), key=COPY_KEY)
+    st.caption("  \n".join(lines))
 
 
 @st.fragment(run_every=REFRESH_SECONDS)
@@ -255,9 +269,7 @@ def render_object_sync_status() -> None:
         return
     status, health = current_health()
     uploading = status is not None and status.phase == object_sync_worker.PHASE_UPLOADING
-    with remembered_expander(
-        f"DB 동기화 · {health.title}", icon=":material/cloud_sync:", key=EXPANDER_KEY
-    ):
+    with remembered_expander(panel_title(health), icon=":material/cloud_sync:", key=EXPANDER_KEY):
         if _viewer_is_admin():
             st.button(
                 "지금 올리기",

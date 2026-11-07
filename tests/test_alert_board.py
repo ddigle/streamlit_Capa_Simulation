@@ -5,9 +5,15 @@ from __future__ import annotations
 import pandas as pd
 
 from capa_simulation.components.alert_board import collect_alerts
+from capa_simulation.components.required_exclusion_notice import (
+    FULL_SCOPE,
+    REQUIRED_LIST_NOTE,
+    required_exclusion_message,
+)
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
+    RequiredExclusionCounts,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome
 from capa_simulation.services.unit_capacity import (
@@ -48,6 +54,22 @@ def test_uncounted_demand_and_assumptions_are_warnings_with_the_gate_sentences()
     assert "시나리오 전체 기간" in alerts[1].message
     assert "대당 Capa 가 없어 뺀 부하 경로 2건" in alerts[1].message
     assert "Lot측정률 3건(2026-10)" in alerts[2].message
+
+
+def test_the_cells_carry_values_without_a_way_there() -> None:
+    """칸 글은 값이다 — 목록 자리 · 고칠 차례 같은 길 안내는 탭 아래 링크와 Guide 몫이다(설계 규칙
+    UI-TXT-04). 알림 · 기록의 같은 문장은 목록 자리 말을 그대로 든다."""
+    demand = collect_alerts(_outcome(excluded_routes=2), None)[1].message
+    assert demand.endswith("나올 수 있습니다.")
+    assert REQUIRED_LIST_NOTE not in demand
+    counts = RequiredExclusionCounts(excluded_routes=2)
+    assert required_exclusion_message(counts, scope=FULL_SCOPE).endswith(REQUIRED_LIST_NOTE)
+
+    stopped = CapacityOutcome(unit_capacity=None, required_equipment=None, error="26.07 UPEH 없음")
+    assert [alert.message for alert in collect_alerts(stopped, None)[1:]] == [
+        "계산이 멈춰 셀 수 없음",
+        "계산이 멈춰 셀 수 없음",
+    ]
 
 
 def test_a_stopped_calculation_leads_and_the_rest_cannot_be_counted() -> None:

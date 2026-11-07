@@ -140,7 +140,8 @@ def required_exclusion_message(
     counts: RequiredExclusionCounts, *, scope: str, list_note: str = REQUIRED_LIST_NOTE
 ) -> str:
     """건수가 하나라도 있으면 한 문장, 없으면 빈 문자열이라 호출부가 분기를 줄인다. `list_note` 는
-    끝 문장(목록 자리)이다 — 그 줄에 표가 딸린 알림은 「이 줄」 을 가리킨다."""
+    끝 문장(목록 자리)이다 — 그 줄에 표가 딸린 알림은 「이 줄」 을 가리키고, 칸 글이 값인 자리
+    (Admin 「알림 모음」)는 빈 글을 줘 뺀다."""
     parts = []
     if counts.excluded_plans:
         parts.append(f"기준정보가 없어 부하량에서 빠진 계획 {counts.excluded_plans:,}건")
@@ -152,11 +153,11 @@ def required_exclusion_message(
         parts.append(f"대당 Capa 가 없어 뺀 부하 경로 {counts.excluded_routes:,}건")
     if not parts:
         return ""
-    return (
+    message = (
         f"{UNCOUNTED_DEMAND_LEAD}({scope}) — {' · '.join(parts)}. "
-        "그만큼 소요대수가 작게, **확보율이 실제보다 높게** 나올 수 있습니다. "
-        f"{list_note}"
+        "그만큼 소요대수가 작게, **확보율이 실제보다 높게** 나올 수 있습니다."
     )
+    return f"{message} {list_note}" if list_note else message
 
 
 def _exclusion_list(

@@ -13,7 +13,9 @@
 
 알림에는 개수와 까닭만 싣는다 — loginid 는 실제 사람을 가리켜 Alarm 복사 · 리뷰로 나가면 안
 된다(런북 3-3). 저장 실패 · 그 사이 바뀜은 메모리를 바꾸지 않는다. 답을 받지 못한 PUT 은 저장소에
-들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다.
+들어갔을 수 있어 「그대로」 라고 단언하지 않고 다시 읽기로 보낸다. 다시 읽기 · 지우기의 실패와
+거부는 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03). 「지울 사람을
+고르세요」 는 곁 칸을 고치는 말이라 곁에 남는다.
 
 붙여 넣은 글이 표면 머리 줄의 `loginid` 칸만 읽고, 그 칸을 찾지 못한 표는 넣지 않는다 — 다른 칸의
 값(날짜 · 넣은 사람)이 명단에 들어가면 그 값을 가진 사람에게 접속이 열린다.
@@ -102,7 +104,7 @@ def _remove_selected() -> None:
         return
     outcome = _save(remove=selected)
     if isinstance(outcome, str):
-        queue_flash(ACCESS_LIST_FLASH_KEY, outcome, kind="error")
+        queue_flash(ACCESS_LIST_FLASH_KEY, outcome, kind="error", popup_only=True)
         return
     st.session_state[ACCESS_LIST_REMOVE_KEY] = []
     if outcome.changed:
@@ -120,13 +122,14 @@ def _reread() -> None:
     try:
         problem = access_store.reread(cfg, sso_identity.verified_identity())
     except access_store.NotAdminError:
-        queue_flash(ACCESS_LIST_FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error")
+        queue_flash(ACCESS_LIST_FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
     if problem is not None:
         queue_flash(
             ACCESS_LIST_FLASH_KEY,
             f"접속 명단을 읽지 못했습니다 — {access_problem_text(problem)}",
             kind="error",
+            popup_only=True,
         )
         return
     source = runtime.access_source()

@@ -28,6 +28,7 @@ from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
     alert_center,
     date_panel,
+    diagnostic_copy,
     edit_grid,
     equipment_master_grid,
     page_tabs,
@@ -369,6 +370,21 @@ def _stub_voc_draft_keeper(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(voc_draft_keeper, "_DRAFT_KEEPER", _silent)
+
+
+@pytest.fixture(autouse=True)
+def diagnostic_copies(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """진단 글 복사 컴포넌트(`diagnostic_copy._COPY`)를 아무것도 보내지 않는 대역으로 바꾼다 —
+    Space 편집기 대역과 같은 까닭(AppTest 는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest 에서
+    진짜 컴포넌트를 부르면 「not registered」로 죽는다). 돌려주는 사전은 위젯 키마다 마지막에 보낸
+    복사 글이다."""
+    sent: dict[str, str] = {}
+
+    def _silent(*, key: str, data: dict[str, Any], **_: Any) -> None:
+        sent[key] = data["text"]
+
+    monkeypatch.setattr(diagnostic_copy, "_COPY", _silent)
+    return sent
 
 
 @pytest.fixture(autouse=True)

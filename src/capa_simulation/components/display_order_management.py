@@ -125,7 +125,6 @@ def render_display_order_management(
 ) -> None:
     """표시순서 관리 탭 한 장. `alert_tab` 은 이 탭 이름(상태 알림 `AD-05` 의 「그 화면으로」 —
     `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
-    st.subheader("표시순서 관리")
     database_path = str(repository.database_path)
     try:
         profile = load_global_display_order(database_path)
