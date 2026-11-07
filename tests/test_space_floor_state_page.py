@@ -570,6 +570,22 @@ def _inactive_marks(app: AppTest) -> list[str]:
     return [item.value for item in marks]
 
 
+def test_inactive_floors_stand_one_head_and_their_words_sit_in_the_list_balloon(
+    tmp_path: Path,
+) -> None:
+    """펼침 머리 「비활성 층 n개」 곁에 같은 이름의 표지를 또 세우지 않고, 표지의 몫이던 풍선 글은
+    「층 목록」 풍선 뒤에 잇는다(설계 규칙 UI-TXT-07)."""
+    app = _app(_database(tmp_path, {("C1", "6F"): "UNUSED"})).run()
+    _ok(app)
+
+    assert [item.label for item in app.expander if "비활성 층" in item.label] == ["비활성 층 1개"]
+    assert not [item.value for item in app.main.caption if "비활성 층" in item.value]
+    head = next(item for item in app.main.caption if item.value == "층 목록")
+    assert "행을 고르면 그 층이 열립니다" in head.proto.help
+    assert "회색 빗금으로 흐리고 눌러도 열리지 않습니다" in head.proto.help
+    clear_equipment_repository()
+
+
 def test_a_row_of_the_inactive_table_opens_that_floor_with_a_banner(tmp_path: Path) -> None:
     database = _database(tmp_path, {("C1", "1F"): "UNUSED", ("C2", "1F"): "NOT_LINE"})
     app = _app(database).run()
