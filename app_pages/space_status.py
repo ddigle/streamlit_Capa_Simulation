@@ -1196,10 +1196,11 @@ def _render_edit_lock_line() -> None:
 
 class UnsavedPanel(NamedTuple):
     """저장 안 한 배치 상자를 그린 결과 — `drawn` 은 저장할 변경이 있어 상자를 그렸는가, `warnings`
-    · `doubled` 는 그 변경의 겹침 · 같은 층을 가리키는 FAB 블록이다(상태 알림 재료)."""
+    · `doubled` 는 그 변경의 겹침 · 같은 층을 가리키는 FAB 블록이다(상태 알림 재료). `warnings` 가
+    None 이면 이번 회차에 재지 못했다는 뜻이다 — 겹침이 없다는 말이 아니다."""
 
     drawn: bool = False
-    warnings: LayoutWarnings = LayoutWarnings()
+    warnings: LayoutWarnings | None = LayoutWarnings()
     doubled: tuple[str, ...] = ()
 
 
@@ -1537,15 +1538,17 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
             if fab_pending is not None and fab_pending.marks is not None
             else []
         )
-        warnings = _pending_layout_warnings(frames, marks) if frames is not None else None
-    return UnsavedPanel(True, warnings or LayoutWarnings(), tuple(doubled))
+        warnings = (
+            _pending_layout_warnings(frames, marks) if frames is not None else LayoutWarnings()
+        )
+    return UnsavedPanel(True, warnings, tuple(doubled))
 
 
 def _pending_layout_warnings(
     frames: Frames, marks: dict[FloorKey, tuple[FloorLayoutMark, ...]]
-) -> LayoutWarnings:
+) -> LayoutWarnings | None:
     """편집본의 겹침·가림(상태 알림 재료). 설비 마스터의 검증 실패 편집이 남아 있으면 재지 못해
-    자리에 마크만 세우고 빈 값이다."""
+    자리에 마크만 세우고 None 이다."""
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
@@ -1557,7 +1560,7 @@ def _pending_layout_warnings(
             code="EQ-10",
             text="겹침 경고를 계산하지 못했습니다",
         )
-        return LayoutWarnings()
+        return None
     return layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks})
 
 

@@ -297,7 +297,7 @@ def report_layout_notices(session: EquipmentSession, notices: Sequence[LayoutNot
 
 
 def report_layout_warnings(
-    session: EquipmentSession, warnings: LayoutWarnings, doubled: Sequence[str]
+    session: EquipmentSession, warnings: LayoutWarnings | None, doubled: Sequence[str]
 ) -> None:
     """저장 안 한 배치가 있는 동안 편집본의 겹친 호기 · 막는 요소를 덮은 호기와 같은 층을 가리키는
     FAB 블록을 상태 알림(`LAYOUT_WARNING_ALERT`)으로 낸다 — 저장 상자 안 줄이던 것이다(설계 규칙
@@ -306,7 +306,11 @@ def report_layout_warnings(
 
     늘 같은 자리에서 조건이 없어도 부른다(`active=False` — 표지 자리 수가 회차마다 같다). 전 층을
     훑은 값이라 지문이 고른 층에 기대지 않는다. `doubled` 는 `duplicate_block_links` 의 층
-    글자다."""
+    글자다. `warnings` 가 None 이면 편집본을 재지 못한 회차다 — 조건을 모르므로 표지를 비워 앞
+    회차의 Alarm 줄을 그대로 둔다(`active=False` 면 겹침이 남았는데 「해소」 로 닫힌다)."""
+    if warnings is None:
+        alerts.flush()
+        return
     rows = [
         *(("겹친 호기", floor, unit, other) for floor, unit, other in warnings.overlaps),
         *(("요소를 덮은 호기", floor, unit, mark) for floor, unit, mark in warnings.blocked),
