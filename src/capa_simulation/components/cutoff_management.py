@@ -231,7 +231,7 @@ def render_cutoff_management(
                 st.warning(refused, icon=":material/sync_problem:")
         edited = st.data_editor(
             view.frame,
-            key=editor_widget_key(_EDITOR_KEY),
+            key=editor_widget_key(_EDITOR_KEY, in_form=True),
             num_rows=view.row_mode,
             width="stretch",
             hide_index=True,

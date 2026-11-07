@@ -10,6 +10,7 @@
 그래서 버릴 때는 편집표의 **위젯 키를 바꾼다.** 편집표마다 세대 번호를 세션에 두고 위젯 키에
 붙인다(`editor_widget_key` — 짓기는 `widget_generation.widget_key` 의 `__g` 꼴). 세대가 오르면 새
 위젯이라 브라우저가 옛 편집을 보낼 곳이 없다. 세대 0 은 원래 키 그대로라 기존 키·테스트와 맞는다.
+폼 밖 표는 앞 세션의 편집이 새 세션에 되살아나지 않게 하는 것도 같은 길이다(`session_widget_key`).
 
 편집표를 그리는 쪽은 `key=editor_widget_key(키)` 로 그리고, 편집을 버리는 쪽은
 `discard_editor(키)` 를 부른다. 세션을 직접 `pop` 하지 않는다.
@@ -21,7 +22,7 @@ from collections.abc import Mapping
 
 import streamlit as st
 
-from capa_simulation.components.widget_generation import bump, widget_key
+from capa_simulation.components.widget_generation import bump, session_widget_key, widget_key
 
 # `st.data_editor` 가 세션에 남기는 편집 상태의 세 칸. 하나라도 차 있으면 고친 것이 있다.
 _EDIT_PARTS = ("edited_rows", "added_rows", "deleted_rows")
@@ -31,9 +32,14 @@ def _generation_key(key: str) -> str:
     return f"{key}__generation"
 
 
-def editor_widget_key(key: str) -> str:
-    """편집표를 그릴 때 쓰는 위젯 키. 버릴 때마다 바뀐다."""
-    return widget_key(key, _generation_key(key))
+def editor_widget_key(key: str, *, in_form: bool = False) -> str:
+    """편집표를 그릴 때 쓰는 위젯 키. 버릴 때마다 바뀐다.
+
+    폼 안 표(`in_form`)는 앞 세션의 표지를 달지 않는다 — 보내지 않은 고침은 서버에 없어 되살아날
+    것이 없고 칸에 보이는 대로 저장된다. 변경 칩에 들지 않아, 지우면 세션 만료 때 알림 없이
+    사라진다."""
+    plain = widget_key(key, _generation_key(key))
+    return plain if in_form else session_widget_key(plain)
 
 
 def discard_editor(key: str) -> None:

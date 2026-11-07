@@ -7,6 +7,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -329,6 +330,9 @@ _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
 # 편집본이 저장본으로 돌아온 세대(`_note_if_back_to_saved`). 세운 세대를 옮기지 않고 따로 둔다 —
 # 세운 세대는 표 출납의 `base`(`buffer_base`)라, 옮기면 표시가 걷히기 전에 보낸 op 가 버려진다.
 _CLEAN_GENERATION_KEY = "equipment_workspace_clean_generation_v1"
+# 세션마다 한 번 정하는 표 출납 `base` 의 머리 — 세션이 바뀐 뒤 브라우저에 남은 앞 세션의 op 를
+# 가른다.
+_BUFFER_SESSION_KEY = "equipment_workspace_session_v1"
 # 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 설비 마스터 탭 편집을 놓치지 않게
 # 한다.
 BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
@@ -3254,12 +3258,14 @@ def small_editor_edits() -> list[str]:
 
 
 def buffer_base() -> str:
-    """편집본 출발점 표지 — 저장본 쌍 토큰 + 씨뿌린 세대(개편 명세 6-3 `base`). 남의 저장·내 저장·
-    모두 버리기·시나리오 불러오기 때만 바뀐다 — 표 출납의 `base` 대조와 「리비전 저장」 두 번 누름
-    거르기의 잣대다(편집본 세대는 출납마다 올라 잣대가 될 수 없다)."""
+    """편집본 출발점 표지 — 세션 표지 + 저장본 쌍 토큰 + 씨뿌린 세대(개편 명세 6-3 `base`). 남의
+    저장·내 저장·모두 버리기·시나리오 불러오기 때만 바뀐다 — 표 출납의 `base` 대조와 「리비전 저장」
+    두 번 누름 거르기의 잣대다(편집본 세대는 출납마다 올라 잣대가 될 수 없다). 세션 표지가 없으면
+    저장본과 세대가 같은 새 세션이 끊긴 사이 낸 앞 세션의 op 를 받아들인다."""
+    session = st.session_state.setdefault(_BUFFER_SESSION_KEY, uuid4().hex[:6])
     token = st.session_state.get(_REVISION_KEY)
     seeded = st.session_state.get(_SEEDED_GENERATION_KEY)
-    return f"{token}#{seeded}"
+    return f"{session}:{token}#{seeded}"
 
 
 def render_small_editor(

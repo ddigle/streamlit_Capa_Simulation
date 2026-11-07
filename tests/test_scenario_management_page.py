@@ -2029,7 +2029,7 @@ def test_a_stale_move_is_refused_alone_and_an_old_generation_edit_is_told(
     assert any("목록 차례가 바뀌어" in str(item.value) for item in flashed(app, "warning"))
 
     _save(app)
-    old_base = "옛 세션:0"
+    old_base = f"{_draft(app).session}:0"
     app.session_state["test_fake_scenario_list_event"] = (
         TABLE_KEY,
         {
