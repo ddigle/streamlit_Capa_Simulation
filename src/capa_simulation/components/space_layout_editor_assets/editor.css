@@ -420,7 +420,7 @@
 .sle-new-dates[hidden] { display: none; }
 /* Qual상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 이름 뒤에 별표가 붙는다. */
 .sle-form-row.is-required > span:first-child::after { content: ' *'; color: var(--sle-danger); }
-.sle-form-row input[type="number"] { width: 4.2em; }
+.sle-form-row input[type="number"] { flex: 1; min-width: 0; }
 .sle-times { color: var(--sle-muted); }
 .sle-new-error { margin: 0; color: var(--sle-danger); font-size: 0.75rem; min-height: 0; }
 .sle-new-error:empty { display: none; }
