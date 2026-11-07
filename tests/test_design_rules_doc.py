@@ -92,7 +92,7 @@ DEPLOY_BOARD_ANSWERS = {
     "list-caption": "걷는다",
 }
 # 2026-11-07 통합 검수 보드(6-8)에서 화면에 닿는 칸의 사용자 답 — 결정은 고른 답, list-main 은 고침
-# 요청이라 고친 꼴을 맞댄다.
+# 요청이라 고친 꼴을 맞댄다. equip-toolbar 는 같은 날 이어서 물은 작업 줄의 답이다.
 INTEGRATION_BOARD_ANSWERS = {
     "list-main": "맞춘다",
     "D1": "(가)",
@@ -100,6 +100,7 @@ INTEGRATION_BOARD_ANSWERS = {
     "D3": "(가)",
     "D4": "(가)",
     "D5": "(가)",
+    "equip-toolbar": "안 A",
 }
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
@@ -512,6 +513,15 @@ def test_the_integration_board_answers_are_recorded_and_written_into_the_rules()
         line for line in document.splitlines() if line.startswith("  - 물을 것: 상세 칸")
     )
     assert "6-8 · v1.8 로 답했다" in previous, previous
+
+    toolbar = next(line for line in lines if line.startswith("- equip-toolbar · "))
+    for phrase in ("한 줄", "오른쪽 칸 탭과 중복", "static-csv 「기능 중복」", "flex 기준 220px"):
+        assert phrase in toolbar, phrase
+    assert "메뉴 「엑셀·CSV」 로 묶었다" in toolbar
+    values = _chapter(document, 4)
+    row = next(line for line in values.splitlines() if line.startswith("| 설비 마스터 작업 줄 |"))
+    assert "flex 기준 220px" in row and "안 A" in row and "검수 전" in row
+    assert "| 편집기 왼쪽 칸 아래 한계 | 안쪽 224px" in values
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:
