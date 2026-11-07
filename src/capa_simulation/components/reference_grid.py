@@ -97,6 +97,8 @@ PASTE_DROPS_DRAFT_NOTICE: Final = (
     "이 표에 적용하지 않은 편집 {n}칸이 있습니다 — 붙여넣어 적용하면 그 편집은 버려집니다."
 )
 DISCARD_HELP: Final = "이 표에서 적용하지 않은 편집을 버립니다."
+# 잠긴 「변경사항 적용」 의 풍선 — 왜 잠겼는지(풀린 동안은 `APPLY_NOTICE` 가 하는 일을 말한다).
+APPLY_LOCKED_HELP: Final = "고친 칸이 있으면 누를 수 있습니다."
 # 큰 표 안전 상한(명세 1-2 의 22) — 칸 수 · 껍데기 본문 JSON 바이트 · 상한에 걸렸을 때 싣는 줄 수.
 # 실데이터 센서스(`scripts/inspect_real_data_checks.py` 8-11)가 같은 값 · `GRID_FORMATS` 를
 # 옮겨 둔다 — 바꾸면 `tests/test_inspect_real_data_checks.py` 가 잡는다.
@@ -416,7 +418,7 @@ def render_actions(
             icon=":material/check:",
             key=f"{table.editor_key}_apply",
             type="primary",
-            help=APPLY_NOTICE,
+            help=APPLY_NOTICE if pending else APPLY_LOCKED_HELP,
             disabled=not pending,
         )
         st.button(

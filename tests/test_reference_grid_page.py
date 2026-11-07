@@ -43,6 +43,7 @@ from test_reference_data_page import (
 from capa_simulation.components import page_tabs, reference_grid
 from capa_simulation.components.edit_grid import feed_key
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.month_editor import APPLY_NOTICE
 from capa_simulation.components.tab_marks import pending_segments_style
 from capa_simulation.reference_grid_keys import (
     DATASET_KEY,
@@ -380,6 +381,17 @@ def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: C
     app.button(key="capa_run_day_editor_discard").click().run()
     assert not app.exception
     assert _draft(app) is None
+
+
+def test_the_locked_apply_says_why_and_the_open_one_says_what_it_does(calls: Calls) -> None:
+    """잠긴 「변경사항 적용」 풍선은 까닭을 말하고(UI-INP-07), 풀리면 하는 일을 말한다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    assert app.button(key=APPLY).disabled
+    assert app.button(key=APPLY).help == reference_grid.APPLY_LOCKED_HELP
+
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert not app.button(key=APPLY).disabled
+    assert app.button(key=APPLY).help == APPLY_NOTICE
 
 
 def test_the_grid_host_holds_tab_clicks_like_the_other_edit_grids() -> None:
