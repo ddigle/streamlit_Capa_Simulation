@@ -825,8 +825,11 @@ def test_a_broken_start_report_is_told_apart_from_a_missing_one(
     captions = [caption.value for caption in app.caption]
     assert any("읽지 못했습니다(꼴이 다름)" in text for text in captions), captions
     assert not any("결과 파일이 없습니다" in text for text in captions)
+    # 펼침 자리 글은 결론까지 — 그다음 할 일은 Guide 와 알림 전문이 말한다(설계 규칙 UI-TXT-04).
+    assert not any("CI/CD" in text for text in captions), captions
     note = active_state(app, "AD-01")
     assert note is not None and "결과 파일을 읽지 못함" in note["short"], states(app, "AD-01")
+    assert "CI/CD 를 다시 돌리고" in note["full"]
 
 
 def test_an_opened_server_start_check_stays_open_after_a_trip_to_another_screen(

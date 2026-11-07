@@ -384,12 +384,12 @@ def start_check_hint(
     step: str, path: Path | None = None, environ: Mapping[str, str] | None = None
 ) -> str | None:
     """결과 파일이 있으면 그 단계의 안내 한 단락이다. 있는데 읽지 못하면 「결과 파일을 읽지
-    못했습니다」 한 단락(`UNREADABLE_REPORT_NOTICE`)이다. 없으면 CD 서버로 보일 때만 「결과 없음」
+    못했습니다」 한 단락(`UNREADABLE_REPORT_DETAIL`)이다. 없으면 CD 서버로 보일 때만 「결과 없음」
     한 단락(`missing_report_notice`)이고, 개발·사내 PC 는 `None`(지금 문구 그대로)이다."""
     report = read_container_start_report(path)
     if report is None:
         if report_file_exists(path):
-            return UNREADABLE_REPORT_NOTICE
+            return UNREADABLE_REPORT_DETAIL
         return missing_report_notice(environ)
     return step_hint(report, step)
 
@@ -401,9 +401,14 @@ def start_check_hint(
 UNREADABLE_REPORT_NOTICE: Final = (
     "서버 시작 점검 결과 파일을 읽지 못했습니다(꼴이 다름) — 결과 파일"
     "(`data/temp/container_start.json`)은 있는데 비었거나 JSON 이 아니거나 이 앱이 모르는 "
-    f"꼴입니다. 시작 스크립트(`{START_SCRIPT}`)가 쓰다 끊겼거나 앱과 판이 다를 수 있습니다 — "
+    f"꼴입니다. 시작 스크립트(`{START_SCRIPT}`)가 쓰다 끊겼거나 앱과 판이 다를 수 있습니다."
+)
+# 그다음 할 일 — 펼침 자리에는 결론만 두고(설계 규칙 UI-TXT-04) Guide 「서버 시작 점검」 이 말한다.
+# 펼침 밖의 글(알림 전문 · 조회 실패 안내)은 Guide 를 열지 않아도 되게 잇는다.
+UNREADABLE_REPORT_ACTION: Final = (
     "CI/CD 를 다시 돌리고, 그래도 같으면 이 문구를 그대로 알려 주세요."
 )
+UNREADABLE_REPORT_DETAIL: Final = f"{UNREADABLE_REPORT_NOTICE} {UNREADABLE_REPORT_ACTION}"
 
 
 def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | None:
@@ -426,7 +431,7 @@ def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | Non
             "것으로 보입니다. 그 스크립트가 앱에 넘기지 않는 CD 환경변수가 앱에 그대로 "
             f"있습니다({names}). C-DEP 이 이미지의 시작 "
             "명령(`CMD`) 대신 다른 명령으로 앱을 띄운 것으로 보이고, 그러면 시작 스크립트로 "
-            "설치·로그인 토큰을 갖출 수 없습니다 — 이 문구를 그대로 알려 주세요."
+            "설치·로그인 토큰을 갖출 수 없습니다."
         )
     return (
         f"서버 시작 점검 결과가 없습니다 — CD 환경변수 `{ARTIFACTORY_USER_ENV}` 는 들어왔는데 "

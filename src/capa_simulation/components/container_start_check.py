@@ -35,6 +35,7 @@ from capa_simulation.io.container_start_report import (
     STEPS,
     SYNC_STEP_LABELS,
     SYNC_STEPS,
+    UNREADABLE_REPORT_DETAIL,
     UNREADABLE_REPORT_NOTICE,
     ContainerStartReport,
     SyncStart,
@@ -217,13 +218,14 @@ def _render_missing_report() -> None:
     알림(`AD-01`)으로도 낸다(알림창 · Alarm)."""
     if report_file_exists():
         title, notice = "서버 시작 점검 · 결과 파일을 읽지 못함", UNREADABLE_REPORT_NOTICE
+        _report_missing(title, UNREADABLE_REPORT_DETAIL)
     else:
         missing = missing_report_notice()
         if missing is None:
             _report_missing(None)
             return
         title, notice = "서버 시작 점검 · 결과 없음", missing
-    _report_missing(title, notice)
+        _report_missing(title, notice)
     # 넣을 환경변수와 이때 볼 것은 Guide 「서버 시작 점검」 이 안내 문서 절을 가리킨다(UI-TXT-03).
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
         st.caption(notice)

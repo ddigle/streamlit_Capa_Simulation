@@ -681,8 +681,11 @@ def test_a_broken_report_file_gets_its_own_hint_not_the_missing_one(
     assert report_contract.report_file_exists()
     for environ in ({report_contract.ARTIFACTORY_USER_ENV: FAKE_ART_USER}, {}):
         hint = report_contract.start_check_hint(report_contract.STEP_INSTALL, environ=environ)
-        assert hint == report_contract.UNREADABLE_REPORT_NOTICE
+        assert hint == report_contract.UNREADABLE_REPORT_DETAIL
     notice = report_contract.UNREADABLE_REPORT_NOTICE
+    # 펼침 자리 글은 결론까지다 — 그다음 할 일은 Guide · 알림 전문이 말한다(설계 규칙 UI-TXT-04).
+    assert report_contract.UNREADABLE_REPORT_ACTION not in notice
+    assert report_contract.UNREADABLE_REPORT_ACTION in report_contract.UNREADABLE_REPORT_DETAIL
     assert "읽지 못했습니다(꼴이 다름)" in notice
     assert "결과 파일이 없습니다" not in notice
     assert report_contract.BDQ_USER_NAME_ENV not in notice
