@@ -64,7 +64,7 @@ _SOURCE = "실적 DB"
 DEMO_MEMO_KEY = "dynamic_capacity_demo_memo"
 
 # 설명은 자리에 늘 두지 않고 그 칸 · 구획 제목의 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 ·
-# UI-TXT-03 — 구현중 화면이라 Guide 는 화면을 완성할 때 붙인다).
+# UI-TXT-03 — 화면 소개는 `guides/reference_integrity.md`).
 EXECUTION_LINK_HELP = "손실을 부서별 Gap · A/Item 으로 넘기는 일은 실행 관리에서 합니다."
 NEEDS_ACTION_HELP = (
     "Capa 실현률이 80% 미만인 공정 수입니다 — 프로토타입 판정 기준은 90% 이상 정상, 80% 이상 "

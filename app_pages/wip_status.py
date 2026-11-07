@@ -78,7 +78,7 @@ DEFAULT_PRODUCT_COUNT = 4
 # 시나리오 소요대수에서만 나오는 준비물(경로·선택지) 한 벌과 그 키(세션 칸).
 ROUTE_CHOICES_MEMO_KEY = "wip_status_route_choices_memo"
 # 격자를 읽는 법은 자리에 늘 두지 않고 구획 제목 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 —
-# 구현중 화면이라 Guide 는 화면을 완성할 때 붙인다).
+# 화면 소개는 `guides/wip_status.md`).
 GRID_HELP = (
     "가로는 STEP 순서, 세로는 제품 표시순서이며 각 칸은 같은 11일 구간입니다. Flow 막대는 표준 "
     "이상이면 초록색, 미달이면 빨간색입니다. 점선은 현재 `표준 목표 Capa`와 같은 산식(공정별 대당 "
