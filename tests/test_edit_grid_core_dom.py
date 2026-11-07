@@ -654,3 +654,88 @@ def test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time() -> None:
     assert result["cancelQuiet"] == {"sent": 4}, "칸 편집 취소는 묶음을 끊지 않는다"
     assert result["outside"] == {"sent": 5, "edit": None}, "표 밖 누름은 곧바로 보낸다"
     assert result["hidden"] == {"queued": 5, "sent": 6}, "창이 숨으면 곧바로 보낸다"
+
+
+RUNNER_FILTERED_PASTE = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+const paste = (scroller, text) => fire(scroller, 'paste', {
+  clipboardData: { getData: () => text },
+})
+;(async () => {
+  sendFeed(input.filtered)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const note = () => q('.eg-note').textContent
+  const ops = () => S.box.ops.map((op) => [op.rows, op.cols, op.values])
+  const seen = () => ({ rows: S.view.order.length, ops: ops(), note: note() })
+  R.shown = S.view.order.length
+  paste(scroller, '1\t2\n3\t4\n5\t6\n')
+  R.many = seen()
+  paste(scroller, '1\r\n2\r\n')
+  R.column = seen()
+  paste(scroller, '11%\t12%\r\n')
+  R.oneRow = seen()
+  paste(scroller, '21%\r\n')
+  R.oneCell = seen()
+  sendFeed(input.whole)
+  R.wholeShown = S.view.order.length
+  paste(scroller, '31%\n32%\n')
+  R.wholeMany = seen()
+  // 큰 표는 서버가 필터로 고른 줄만 싣는다 — 보기 줄 수가 실은 줄 수와 같아도 좁힌 표다.
+  sendFeed(input.capped)
+  mount(input.cappedShell)
+  const before = S.box.ops.length
+  R.cappedShown = [S.view.order.length, S.model.rows]
+  paste(scroller, '41%\n42%\n')
+  R.capped = { added: S.box.ops.length - before, note: note() }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_filtered_table_takes_one_row_of_paste_only() -> None:
+    """필터로 좁힌 표에 여러 줄을 붙이면 덩어리 줄이 보이는 줄에 차례로 들어가 다른 공정 값이
+    바뀐다 — 다섯 줄이 보이는 두 줄에 6칸 들어갔다(샘플 관측). 여러 줄은 막고 까닭을 상태 줄에
+    적는다. 한 줄 붙여넣기는 그대로 되고, 필터가 없는 표는 전처럼 여러 줄을 받는다."""
+    frame = _frame()
+    shell, index = _shell(SPEC, frame, "k1")
+    codes = {str(value): code for code, value in enumerate(shell["dims"][0])}
+    picked = {"0": [codes["DEMO_A"], codes["DEMO_C"]]}
+    whole = _feed(index, "k1", None)
+    filtered = {**whole, "filters": picked}
+    capped_shell, capped_index = _shell(SPEC, frame[frame["공정"] != "DEMO_B"], "k2")
+    capped_codes = {str(value): code for code, value in enumerate(capped_shell["dims"][0])}
+    capped = {
+        **_feed(capped_index, "k2", None),
+        "filters": {"0": [capped_codes["DEMO_A"], capped_codes["DEMO_C"]]},
+    }
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        RUNNER_FILTERED_PASTE,
+        {
+            "shell": shell,
+            "filtered": filtered,
+            "whole": whole,
+            "capped": capped,
+            "cappedShell": capped_shell,
+        },
+    )
+    refused = str(edit_grid.texts(SPEC, changes_label="적용 전 변경")["pasteFiltered"])
+    assert "Excel 붙여넣기" in refused and "필터" in refused
+    assert result["shown"] == 2
+    assert result["many"] == {"rows": 2, "ops": [], "note": refused}, "여러 줄은 막는다"
+    assert result["column"] == {"rows": 2, "ops": [], "note": refused}, "한 칸 여러 줄도 막는다"
+    assert result["oneRow"]["ops"] == [
+        [["DEMO_A\x1f양산"], ["202701", "202702"], [["11%", "12%"]]]
+    ], "한 줄은 그대로 붙는다"
+    assert result["oneRow"]["note"] == "2칸 붙여넣음"
+    assert result["oneCell"]["ops"][-1][2] == [["21%"]], "끝 줄바꿈 하나는 여러 줄이 아니다"
+    assert result["wholeShown"] == 3
+    assert result["wholeMany"]["ops"][-1][2] == [["31%"], ["32%"]], "필터가 없으면 여러 줄을 받는다"
+    assert result["cappedShown"] == [2, 2]
+    assert result["capped"] == {"added": 0, "note": refused}, "서버가 좁힌 큰 표도 막는다"

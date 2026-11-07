@@ -203,6 +203,10 @@ def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
             f"한 번에 붙여넣을 수 있는 칸은 {PASTE_CELL_LIMIT:,}칸입니다"
             " — 큰 표는 「Excel 붙여넣기」 를 쓰세요"
         ),
+        "pasteFiltered": (
+            "필터로 좁힌 표라 여러 줄은 붙이지 않았습니다"
+            " — 필터를 풀거나 「Excel 붙여넣기」 를 쓰세요"
+        ),
         "clipped": "표 끝을 넘은 {n}칸은 버렸습니다",
         "copied": "{n}칸 복사함 — 붙여넣을 칸에서 Ctrl+V",
         "cleared": "{n}칸 비움",
