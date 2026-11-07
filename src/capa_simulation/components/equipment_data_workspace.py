@@ -2667,8 +2667,17 @@ def _editor_view(
     filters: tuple[str, ...],
     locked: tuple[str, ...],
     label: str,
-) -> tuple[TableView, TableView]:
-    """(화면에 적용된 보기, 방금 고른 보기). 둘은 「보기 적용」 전까지 다를 수 있다."""
+    apply_key: str,
+) -> tuple[TableView, TableView, bool]:
+    """(화면에 적용된 보기, 방금 고른 보기, 「보기 적용」 누름). 두 보기는 「보기 적용」 전까지
+    다를 수 있다. 단추는 고르는 칸이 든 펼침 맨 끝에 선다(설계 규칙 UI-LAY-03) — 빈 표는 펼침이
+    없어 누를 것도 없다."""
+    pressed = False
+
+    def apply_button() -> None:
+        nonlocal pressed
+        pressed = st.button("보기 적용", key=apply_key)
+
     requested = render_table_view_controls(
         data,
         key_prefix=prefix,
@@ -2677,13 +2686,14 @@ def _editor_view(
         filter_columns=filters,
         locked_columns=locked,
         label=label,
+        footer=apply_button,
     )
     view_key = f"{key}_applied_view"
     applied = st.session_state.get(view_key)
     if not isinstance(applied, TableView):
         applied = requested
         st.session_state[view_key] = applied
-    return applied, requested
+    return applied, requested, pressed
 
 
 @dataclass(frozen=True)
@@ -2764,29 +2774,30 @@ def _selectable_editor(
 
 
 def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | None:
-    """작은 편집표 **위** 세 단추(2026-09-29 — 작업 단추는 표 위). 누른 것의 이름을 돌려준다. 단추
+    """작은 편집표 **위** 작업 줄의 세 단추(2026-09-29 — 작업 단추는 표 위) — 부르는 쪽의 가로 칸
+    안에 선다(「편집본에 적용」 과 한 줄, 설계 규칙 UI-LAY-11). 누른 것의 이름을 돌려준다. 단추
     값은 표보다 먼저 만들어도 같은 회차의 편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는
     가용설비 현황 Guide 가 말한다. `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을
     풍선으로 보인다(낡은 세션의 비가동 일정).
     """
-    with st.container(horizontal=True, gap="small"):
-        matching = st.button(
-            "필터에 맞는 행 모두 선택",
-            key=f"equipment_{slug}_select_matching_v1",
-            icon=":material/checklist:",
-        )
-        clear = st.button(
-            "선택 해제",
-            key=f"equipment_{slug}_select_clear_v1",
-            icon=":material/deselect:",
-        )
-        delete = st.button(
-            "선택 행 삭제",
-            key=f"equipment_{slug}_delete_selected_v1",
-            icon=":material/delete:",
-            disabled=delete_locked is not None,
-            help=literal_markdown(delete_locked) if delete_locked is not None else None,
-        )
+    matching = st.button(
+        "모두 선택",
+        key=f"equipment_{slug}_select_matching_v1",
+        icon=":material/checklist:",
+        help="표 보기 설정의 필터에 맞는 행을 모두 고릅니다.",
+    )
+    clear = st.button(
+        "선택 해제",
+        key=f"equipment_{slug}_select_clear_v1",
+        icon=":material/deselect:",
+    )
+    delete = st.button(
+        "선택 행 삭제",
+        key=f"equipment_{slug}_delete_selected_v1",
+        icon=":material/delete:",
+        disabled=delete_locked is not None,
+        help=literal_markdown(delete_locked) if delete_locked is not None else None,
+    )
     if matching:
         return SELECT_MATCHING
     if clear:
@@ -2885,8 +2896,7 @@ def _apply_bulk_actions(
             else:
                 queue_flash(
                     _NOTICE_KEY,
-                    "선택한 행이 없습니다. 표의 ‘선택’ 칸을 켜거나 "
-                    "‘필터에 맞는 행 모두 선택’을 누른 뒤 지우세요.",
+                    "선택한 행이 없습니다. 표의 ‘선택’ 칸을 켜거나 ‘모두 선택’을 누른 뒤 지우세요.",
                     kind="info",
                 )
     elif confirm and isinstance(pending, tuple):
@@ -3299,10 +3309,14 @@ def render_small_editor(
                 icon=":material/check:",
                 help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
             )
-            view_clicked = st.button("보기 적용", key=f"equipment_{slug}_view_apply_v1")
+            action = _selection_buttons(
+                slug, delete_locked=None if baseline_table else delete_locked
+            )
         confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
+        # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 「보기 적용」 은 고르는 칸이 든 펼침 안에
+        # 선다(`_editor_view`).
         if baseline_table:
-            view, requested = _editor_view(
+            view, requested, view_clicked = _editor_view(
                 frames[0],
                 key=BASELINE_EDITOR_KEY,
                 prefix="equipment_baseline_view",
@@ -3310,9 +3324,9 @@ def render_small_editor(
                 locked=("공정", "분류", "기존보유대수"),
                 label="기존 보유대수 · 표 보기 설정",
             )
-            action = _selection_buttons("baseline")
             edited, checked = _selectable_editor(
                 frames[0],
+        view_apply_key = f"equipment_{slug}_view_apply_v1"
                 view,
                 key=BASELINE_EDITOR_KEY,
                 target=BASELINE_TARGET,
@@ -3321,6 +3335,7 @@ def render_small_editor(
                     "분류": st.column_config.TextColumn(required=True),
                     # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
                     # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
+                apply_key=view_apply_key,
                     # 자리만 형식이 소수 둘째 자리로 반올림한다(`prepare_equipment_baseline`).
                     "기존보유대수": st.column_config.NumberColumn(
                         "기존 보유대수", min_value=0, format="%.2f 대", required=True
@@ -3331,16 +3346,16 @@ def render_small_editor(
             )
         else:
             downtime = frames[2]
-            view, requested = _editor_view(
+            view, requested, view_clicked = _editor_view(
                 downtime,
                 key=DOWNTIME_EDITOR_KEY,
                 prefix=DOWNTIME_VIEW_PREFIX,
                 filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
                 locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
-                label="운영 비가동 일정 · 표 보기 설정",
+                label="비가동 일정 · 표 보기 설정",
+                apply_key=view_apply_key,
             )
             types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
-            action = _selection_buttons("downtime", delete_locked=delete_locked)
             edited, checked = _selectable_editor(
                 downtime,
                 view,

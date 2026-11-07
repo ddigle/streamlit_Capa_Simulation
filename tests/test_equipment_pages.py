@@ -621,6 +621,9 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
         assert not app.exception
         assert label in [expandable.label for expandable in app.status], table
         assert app.multiselect(f"{prefix}_columns").value
+        # 「보기 적용」 은 고르는 칸이 든 펼침 안이다(설계 규칙 UI-LAY-03).
+        view = next(item for item in app.status if item.label == label)
+        assert [button.label for button in view.button] == ["보기 적용"]
     assert len(DuckDBEquipmentRepository(database_path).list_revisions()) == 1
     clear_equipment_repository()
 
