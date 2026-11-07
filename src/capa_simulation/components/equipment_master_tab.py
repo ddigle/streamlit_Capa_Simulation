@@ -1241,13 +1241,15 @@ def _render_save_section(
         pending_floor_canvases() or pending_floor_marks() or pending_floor_group_labels()
     )
     with st.container(horizontal=True, gap="small"):
+        # 「리비전 저장」 처럼 잠그지 않는다 — 출납은 300ms 묶음이라 이 회차의 단계 수는
+        # 브라우저보다 늦고, 콜백이 출납을 먼저 반영한 뒤 판정해 없으면 그 칸 머리 토스트가
+        # 알린다(설계 규칙 UI-INP-07 의 제출 단추).
         st.button(
             UNDO_LABEL,
             key=UNDO_BUTTON_KEY,
             icon=":material/undo:",
             on_click=_undo_step,
             args=(context, layout, current_generation(UNDO_PRESS_KEY)),
-            disabled=not grid_undo_steps(),
         )
         discard_popover(
             label=DISCARD_LABEL,

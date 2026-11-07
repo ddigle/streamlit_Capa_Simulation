@@ -144,6 +144,31 @@ function planShift(rows, cols, days, locked) {
   }
   return count
 }
+
+// 잠긴 단추의 까닭(`lockButton`) — 빈 글이면 켠다.
+function searchLockText(query) {
+  return String(query || '').trim() ? '' : '설비명을 치면 누를 수 있습니다'
+}
+
+function conditionLockText(picked, rows) {
+  if (rows) return ''
+  return picked ? '조건에 맞는 호기가 없습니다' : '조건을 고르면 누를 수 있습니다'
+}
+
+function loadAllLockText(shown, total) {
+  return total && shown >= total ? '전체를 불러왔습니다' : ''
+}
+
+function applyLockText(count, ready, lockReason) {
+  if (count) return ''
+  if (lockReason) return lockReason
+  return ready ? '바뀔 칸이 없습니다' : '넣을 값을 고르면 누를 수 있습니다'
+}
+
+function shiftLockText(count, days) {
+  if (count) return ''
+  return days === null ? '밀 날 수를 적으면 누를 수 있습니다' : '밀 일정이 있는 칸이 없습니다'
+}
 // </grid-plan>
 
 // <grid-sort>
@@ -435,6 +460,34 @@ function showNote(S, text) {
   if (S.repaintToast) S.repaintToast()
 }
 
+// 꺼진 단추의 풍선(설계 규칙 UI-INP-07) — 꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다. 꺼진 동안은 감싼 칸이 탭
+// 자리와 다시 그릴 때의 초점 표지(data-fk)를 맡고, 켜지면 단추에 돌려준다.
+function tipWrap(target, id) {
+  const host = el('span', 'emg-tip-host')
+  const tip = el('span', 'emg-tip')
+  tip.id = id
+  tip.setAttribute('role', 'tooltip')
+  target.setAttribute('aria-describedby', id)
+  host.setAttribute('aria-describedby', id)
+  host.appendChild(target)
+  host.appendChild(tip)
+  return { host, tip, target }
+}
+
+function holdFocus(wrap, fk) {
+  const off = wrap.target.disabled
+  wrap.host.tabIndex = off ? 0 : -1
+  wrap.host.dataset.fk = off ? fk : ''
+  wrap.target.dataset.fk = off ? '' : fk
+}
+
+// 까닭이 있으면 잠그고 그 글을 풍선에 둔다 — 빈 글이면 켜고 풍선도 서지 않는다.
+function lockButton(wrap, reason, fk) {
+  wrap.target.disabled = Boolean(reason)
+  wrap.tip.textContent = reason
+  holdFocus(wrap, fk)
+}
+
 function pendingText(S, id, col) {
   const item = S.pending.get(id + '\t' + col)
   return item ? item.text : null
@@ -521,7 +574,11 @@ function drawLoader(host, S, data) {
   count.appendChild(el('span', 'emg-muted', '대 / 전체 ' + total.toLocaleString() + '대'))
   info.appendChild(count)
   if (loaded) info.appendChild(button('emg-link', '목록 비우기', () => S.setTrigger('clear', {})))
-  if (total) info.appendChild(button('emg-link', '전체 ' + total.toLocaleString() + '대 불러오기', () => load(S, 'all', [], [], '전체')))
+  if (total) {
+    const all = tipWrap(button('emg-link', '전체 ' + total.toLocaleString() + '대 불러오기', () => load(S, 'all', [], [], '전체')), 'emg-all-tip')
+    lockButton(all, loadAllLockText(shown, total), 'load-all')
+    info.appendChild(all.host)
+  }
   const missing = Array.isArray(data.missing) ? data.missing : []
   if (missing.length) info.appendChild(el('span', 'emg-miss', '못 찾은 설비명: ' + missing.join(', ')))
   root.appendChild(info)
@@ -605,7 +662,7 @@ function clearSearch(S) {
     S.searchList.textContent = ''
     S.searchList.hidden = true
   }
-  if (S.searchGo) S.searchGo.disabled = true
+  if (S.lockSearchGo) S.lockSearchGo()
 }
 
 function emptyState(S, data, alertIds, total) {
@@ -657,9 +714,9 @@ function searchBox(S, model) {
   input.dataset.fk = 'search'
   S.searchInput = input
   box.appendChild(input)
-  const go = button('emg-btn is-small is-primary', '불러오기', () => loadQuery(S, model))
-  go.disabled = !S.query.trim()
-  S.searchGo = go
+  const go = tipWrap(button('emg-btn is-small is-primary', '불러오기', () => loadQuery(S, model)), 'emg-search-tip')
+  S.lockSearchGo = () => lockButton(go, searchLockText(S.query), 'search-go')
+  S.lockSearchGo()
   const list = el('div', 'emg-pop is-full')
   S.searchList = list
   list.setAttribute('role', 'listbox')
@@ -667,7 +724,7 @@ function searchBox(S, model) {
   const paintSuggestions = () => {
     list.textContent = ''
     const query = S.query.trim()
-    go.disabled = !query
+    S.lockSearchGo()
     if (!query || isNameList(S.query) || S.pop !== 'search') {
       list.hidden = true
       return
@@ -745,7 +802,7 @@ function searchBox(S, model) {
     }
   })
   wrap.appendChild(box)
-  box.appendChild(go)
+  box.appendChild(go.host)
   wrap.appendChild(list)
   paintSuggestions()
   return wrap
@@ -980,9 +1037,9 @@ function conditionPopover(S, model) {
       done()
       load(S, 'conditions', rows.map((row) => model.ids[row]), [], '조건 「' + label + '」')
     })
-    go.dataset.fk = 'cond-go'
-    go.disabled = !rows.length
-    actions.appendChild(go)
+    const tipped = tipWrap(go, 'emg-cond-tip')
+    lockButton(tipped, conditionLockText(picked.length, rows.length), 'cond-go')
+    actions.appendChild(tipped.host)
     panel.appendChild(actions)
   }, true)
   // 감싸개의 첫 칸이 여는 단추다(`popover` — 둘째 칸이 패널).
@@ -1065,6 +1122,11 @@ function buildGridSkeleton(host, S) {
   const root = el('div', 'emg-grid')
   const bar = el('div', 'emg-bar')
   const sel = el('div', 'emg-sel')
+  // 고른 줄 띠는 흐름 밖에 떠서 표 틀 윗변에서 위로 자란다 — 줄을 고를 때 표가 밀리지 않고(설계 규칙 UI-PRF-03) 칸 묶음 ·
+  // 표 머리는 그대로 쓴다. 덮는 불러오기 줄은 고른 동안 쓸 일이 없다 — 불러오면 목록이 바뀌어 고름이 풀린다. 칸 차례(Tab)는
+  // 칸 묶음 다음 그대로다(서식 `order`).
+  const selAnchor = el('div', 'emg-sel-anchor')
+  selAnchor.appendChild(sel)
   const toast = el('div', 'emg-toast')
   toast.setAttribute('role', 'status')
   const box = el('div', 'emg-box')
@@ -1122,11 +1184,6 @@ function buildGridSkeleton(host, S) {
     }
   })
   listen(S, body, 'focusin', (event) => {
-  // 고른 줄 띠는 흐름 밖에 떠서 표 틀 윗변에서 위로 자란다 — 줄을 고를 때 표가 밀리지 않고(설계 규칙 UI-PRF-03) 칸 묶음 ·
-  // 표 머리는 그대로 쓴다. 덮는 불러오기 줄은 고른 동안 쓸 일이 없다 — 불러오면 목록이 바뀌어 고름이 풀린다. 칸 차례(Tab)는
-  // 칸 묶음 다음 그대로다(서식 `order`).
-  const selAnchor = el('div', 'emg-sel-anchor')
-  selAnchor.appendChild(sel)
     const cell = event.target.closest && event.target.closest('.emg-c[data-col]')
     if (cell && !S.painting) S.focus = { id: cell.dataset.id, col: Number(cell.dataset.col) }
   })
@@ -1253,12 +1310,12 @@ function buildSelection(S, bar) {
     if (!targets.length || !ready) return
     if (sendOnce(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))) paintWindow(S)
   })
+  const applyTip = tipWrap(apply, 'emg-apply-tip')
   const repaintApply = () => {
     const m = count()
     apply.textContent = '넣기 (' + m.toLocaleString() + '칸)'
-    apply.disabled = m === 0
     const reason = rows.length && col >= 0 && rows.every((row) => locked(row, col)) ? S.model.reasons[lockOf(rows[0], col, S.model.locks)] : ''
-    apply.title = reason || ''
+    lockButton(applyTip, applyLockText(m, ready, reason || ''), 'bulk-apply')
   }
   if (column.kind === 'choice') {
     const chips = el('div', 'emg-chips')
@@ -1288,7 +1345,7 @@ function buildSelection(S, bar) {
     bar.appendChild(input)
   }
   repaintApply()
-  bar.appendChild(apply)
+  bar.appendChild(applyTip.host)
   bar.appendChild(el('span', 'emg-vsep'))
   // 「반입·Qual 일정 [n] 일 밀기」 는 한 덩이로 줄을 바꾼다 — 줄이 좁으면 단위 「일」 만 다음 줄로 넘어가 칸과 떨어졌다(E2E).
   const shiftGroup = el('span', 'emg-shift')
@@ -1308,10 +1365,12 @@ function buildSelection(S, bar) {
     for (const row of rows) for (const k of dateCols) if (!locked(row, k) && shiftIso(String(row.values[k] || ''), value)) cells.push([row.id, k, shiftIso(String(row.values[k]), value)])
     if (sendOnce(S, { op: 'shift', ids: targets, days: value }, cells)) paintWindow(S)
   })
+  const shiftTip = tipWrap(shift, 'emg-shift-tip')
   const repaintShift = () => {
-    const k = planShift(rows, dateCols, parseDays(S.days), locked)
+    const value = parseDays(S.days)
+    const k = planShift(rows, dateCols, value, locked)
     shift.textContent = '밀기 (' + k.toLocaleString() + '칸)'
-    shift.disabled = k === 0
+    lockButton(shiftTip, shiftLockText(k, value), 'bulk-shift')
   }
   days.addEventListener('input', () => {
     S.days = days.value
@@ -1319,7 +1378,7 @@ function buildSelection(S, bar) {
   })
   days.addEventListener('keydown', stopKeys)
   repaintShift()
-  shiftGroup.appendChild(shift)
+  shiftGroup.appendChild(shiftTip.host)
   bar.appendChild(shiftGroup)
   bar.appendChild(el('span', 'emg-vsep'))
   const lock = S.data.deleteLock
@@ -2183,12 +2242,7 @@ function drawNew(S, root, data) {
   })
   // 막힌 까닭은 단추 풍선이다 — 칸에 늘 두지 않는다(설계 규칙 UI-TXT-01 · UI-INP-07). 꺼진 단추는 마우스 · 초점을
   // 받지 않아 감싼 칸이 받고, 그동안은 감싼 칸이 탭 자리와 다시 그릴 때의 초점(data-fk)을 맡는다.
-  const tipHost = el('span', 'emg-tip-host')
-  const tip = el('span', 'emg-tip')
-  tip.id = 'emg-add-tip'
-  tip.setAttribute('role', 'tooltip')
-  add.setAttribute('aria-describedby', tip.id)
-  tipHost.setAttribute('aria-describedby', tip.id)
+  const addTipWrap = tipWrap(add, 'emg-add-tip')
   // 친 글이 보낸 초안과 다르면(아직 확정 전) 판정은 옛 것이다 — 필수 칸이 찼는지만 보고 켠다(누르면 칸이 먼저 확정되고
   // 「호기 추가」 가 그 초안 전부를 싣는다).
   S.refreshAdd = () => {
@@ -2196,15 +2250,11 @@ function drawNew(S, root, data) {
     const judged = fresh && !S.ndDirty.size && !typed
     add.disabled = !canAdd(S.nd.values, required, Boolean(data.blocked), judged, locked)
     const missing = required.filter((k) => String(S.nd.values[k] || '').trim() === '').map((k) => (columns[k] || {}).name || '')
-    tip.textContent = addTip(data.hint, judged, typed, missing)
-    tipHost.tabIndex = add.disabled ? 0 : -1
-    tipHost.dataset.fk = add.disabled ? 'add' : ''
-    add.dataset.fk = add.disabled ? '' : 'add'
+    addTipWrap.tip.textContent = addTip(data.hint, judged, typed, missing)
+    holdFocus(addTipWrap, 'add')
   }
   S.refreshAdd()
-  tipHost.appendChild(add)
-  tipHost.appendChild(tip)
-  buttons.appendChild(tipHost)
+  buttons.appendChild(addTipWrap.host)
   foot.appendChild(buttons)
   root.appendChild(foot)
 }

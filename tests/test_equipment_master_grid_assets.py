@@ -90,7 +90,7 @@ def test_the_shift_days_stay_with_their_unit_and_blank_dates_show_the_pattern() 
         "shiftGroup.appendChild(el('span', null, '반입·Qual 일정'))",
         "shiftGroup.appendChild(days)",
         "shiftGroup.appendChild(el('span', null, '일'))",
-        "shiftGroup.appendChild(shift)",
+        "shiftGroup.appendChild(shiftTip.host)",
     ):
         assert part in group, part
     rule = re.search(r"\n\.emg-shift\s*\{(?P<body>[^}]*)\}", CSS)
@@ -850,6 +850,119 @@ def test_a_mount_leaving_does_not_resend_what_it_already_sent() -> None:
     assert result["focusLeft"] == 1
     assert result["left"] == 1
     assert result["unsentLeft"] == [["add"], ["add", "cell"]]
+
+
+_LOCK_TEXT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  search: [searchLockText(''), searchLockText('  '), searchLockText('WBA')],
+  condition: [conditionLockText(0, 0), conditionLockText(2, 0), conditionLockText(2, 5)],
+  loadAll: [loadAllLockText(641, 641), loadAllLockText(640, 641), loadAllLockText(1000, 1200)],
+  apply: [applyLockText(3, true, ''), applyLockText(0, false, ''), applyLockText(0, true, ''),
+    applyLockText(0, true, '잠긴 칸')],
+  shift: [shiftLockText(4, 7), shiftLockText(0, null), shiftLockText(0, 7)],
+}))
+"""
+
+
+def test_each_locked_button_can_say_why_and_an_unlocked_one_says_nothing() -> None:
+    """잠긴 「불러오기」 · 「맞는 0대 불러오기」 · 「넣기 (0칸)」 · 「밀기 (0칸)」 와 다 불러온 뒤의
+    「전체 n대 불러오기」 는 까닭이 있고(설계 규칙 UI-INP-07, g5-08 · g5-09), 켜진 단추는 빈 글이라
+    풍선이 서지 않는다. 호기를 다 불러오지 못한 상한 초과(1,000 / 1,200)는 켠 채로 둔다."""
+    result = _node({}, _LOCK_TEXT_RUNNER)
+
+    assert result["search"] == [
+        "설비명을 치면 누를 수 있습니다",
+        "설비명을 치면 누를 수 있습니다",
+        "",
+    ]
+    assert result["condition"] == [
+        "조건을 고르면 누를 수 있습니다",
+        "조건에 맞는 호기가 없습니다",
+        "",
+    ]
+    assert result["loadAll"] == ["전체를 불러왔습니다", "", ""]
+    assert result["apply"] == [
+        "",
+        "넣을 값을 고르면 누를 수 있습니다",
+        "바뀔 칸이 없습니다",
+        "잠긴 칸",
+    ]
+    assert result["shift"] == [
+        "",
+        "밀 날 수를 적으면 누를 수 있습니다",
+        "밀 일정이 있는 칸이 없습니다",
+    ]
+
+
+_LOADER_LOCK_RUNNER = """
+const data = {
+  mode: 'loader', names: ['EQ-01', 'EQ-02'], ids: {}, loaded: ['s:EQ-01', 's:EQ-02'],
+  loadedCount: 2, total: 2, alertIds: [],
+  conditions: { columns: [], values: [], codes: [], widths: [] },
+}
+const look = (name) => {
+  const target = buttonOf(name)
+  const wrap = target.parentNode
+  const tip = wrap.querySelector('.emg-tip')
+  return {
+    disabled: target.disabled, wrapped: wrap.className, tip: tip.textContent,
+    tab: wrap.tabIndex, keys: [wrap.dataset.fk, target.dataset.fk],
+  }
+}
+mount(data)
+results.goEmpty = look('불러오기')
+results.allLoaded = look('전체 2대 불러오기')
+const input2 = host.querySelector('[data-fk="search"]')
+input2.value = 'EQ'
+fire(input2, 'input')
+results.goTyped = look('불러오기')
+mount({ ...data, loaded: ['s:EQ-01'], loadedCount: 1 })
+results.allOpen = look('전체 2대 불러오기')
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_the_locked_loader_buttons_keep_a_tip_host_that_follows_the_lock() -> None:
+    """꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 풍선과 탭 자리를 받고, 켜지면 단추에 돌려준다
+    (설계 규칙 UI-INP-07). 다 불러온 「전체 n대 불러오기」 는 눌러도 0대라 잠근다(g5-08)."""
+    runner = _FAKE_DOM + _MOUNT_LOADER + _LOADER_LOCK_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+
+    off = {"disabled": True, "wrapped": "emg-tip-host", "tab": 0}
+    on = {"disabled": False, "wrapped": "emg-tip-host", "tab": -1, "tip": ""}
+    assert result["goEmpty"] == {
+        **off,
+        "tip": "설비명을 치면 누를 수 있습니다",
+        "keys": ["search-go", ""],
+    }
+    assert result["goTyped"] == {**on, "keys": ["", "search-go"]}
+    assert result["allLoaded"] == {
+        **off,
+        "tip": "전체를 불러왔습니다",
+        "keys": ["load-all", ""],
+    }
+    assert result["allOpen"] == {**on, "keys": ["", "load-all"]}
+
+
+def test_the_selection_bar_floats_above_the_table_head_and_moves_no_row() -> None:
+    """체크 상자 하나를 누르면 고른 줄 띠가 흐름에 끼어 표가 91px 내려가 누른 줄이 손 밑에서
+    달아났다(g5-03, 샘플 관측 · 설계 규칙 UI-PRF-03). 띠는 높이 0 받침에 매달려 표 틀 윗변에서 위로
+    자라 칸 묶음 · 표 머리를 덮지 않고, 칸 차례는 칸 묶음 다음 그대로이며(서식 `order` — DOM 차례는
+    안 바꾼다), 표 틀이 잘라 내지 않게 표 틀의 `overflow` 를 걷는다."""
+    skeleton = _function("buildGridSkeleton")
+    assert "selAnchor.appendChild(sel)" in skeleton
+    assert "[bar, selAnchor, toast, box, foot]" in skeleton
+    anchor = re.search(r"\.emg-sel-anchor \{(?P<body>[^}]*)\}", CSS)
+    assert anchor is not None
+    for rule in ("order: -1", "position: relative", "height: 0"):
+        assert rule in anchor["body"]
+    bar = re.search(r"\n\.emg-sel \{(?P<body>[^}]*)\}", CSS)
+    assert bar is not None
+    for rule in ("position: absolute", "bottom: 0"):
+        assert rule in bar["body"]
+    frame = re.search(r"\n\.emg-grid \{(?P<body>[^}]*)\}", CSS)
+    assert frame is not None and "overflow" not in frame["body"]
 
 
 def test_the_add_tip_shows_on_hover_and_keyboard_focus_and_has_the_app_tip_look() -> None:
