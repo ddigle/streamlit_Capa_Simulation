@@ -15,6 +15,7 @@ from alert_marks import (
     table_frame,
 )
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import TextInput
 
 from capa_simulation import alerts
 from capa_simulation.components import bigdataquery_registration as registration
@@ -648,13 +649,44 @@ def test_selecting_a_row_prefills_the_registration_form() -> None:
     assert memo is not None and "PLAN 알파(DEMO-PLAN-1)" in memo
 
 
+def _form_field(app: AppTest, label: str) -> TextInput:
+    """폼 글자 칸 — 행을 고를 때마다 새 위젯이라 라벨로 찾는다."""
+    return next(field for field in app.text_input if field.label == label)
+
+
+def _form_keys(app: AppTest) -> set[str | None]:
+    return {field.key for field in app.text_input if field.key != registration.CATALOG_KEYWORD_KEY}
+
+
+def test_a_new_pick_and_a_reset_stand_new_form_fields() -> None:
+    """폼 안 칸에 친 값은 제출 전까지 브라우저만 들고 있어, 같은 칸에 서버가 값을 써 넣으면 화면만
+    바뀌고 친 값이 제출됐다 — 보인 이름이 아니라 앞서 친 이름으로 「같은 이름」 거부가 났다. 행을
+    고르거나 폼을 초기화하면 칸이 새 위젯으로 선다. AppTest 는 그 값을 재현하지 못해 key 로 본다."""
+    app = _run(__pick_row__=0)
+    first = _form_keys(app)
+
+    app.session_state["__pick_row__"] = 1
+    app.run()
+    assert not app.exception
+    second = _form_keys(app)
+    assert _form_field(app, "조회할 시뮬레이션 코드").value == "DEMO-B-002"
+    assert not first & second
+
+    app.session_state["__pick_row__"] = None
+    app.session_state["__request_reset__"] = True
+    app.run()
+    assert not app.exception
+    assert _form_field(app, "조회할 시뮬레이션 코드").value == ""
+    assert not second & _form_keys(app)
+
+
 def test_reselecting_the_same_row_keeps_user_edits() -> None:
     """같은 행이 계속 선택돼 있을 뿐인 런에서 사용자가 고친 값을 덮지 않는다."""
     app = _run(__pick_row__=0)
-    app.text_input(key=registration.FORM_SCENARIO_NAME_KEY).set_value("내가 고친 이름").run()
+    _form_field(app, "저장할 시나리오명").set_value("내가 고친 이름").run()
 
     assert not app.exception
-    assert app.session_state[registration.FORM_SCENARIO_NAME_KEY] == "내가 고친 이름"
+    assert _form_field(app, "저장할 시나리오명").value == "내가 고친 이름"
 
 
 def test_reset_clears_the_pick_and_the_form_on_the_next_run() -> None:
@@ -665,7 +697,7 @@ def test_reset_clears_the_pick_and_the_form_on_the_next_run() -> None:
     app.run()
 
     assert not app.exception
-    assert app.session_state[registration.FORM_CODE_KEY] == ""
+    assert _form_field(app, "조회할 시뮬레이션 코드").value == ""
     assert registration.CATALOG_PICK_KEY not in app.session_state
     assert app.session_state[registration.FORM_DETAIL_START_KEY] is None
     assert app.session_state[registration.FORM_DETAIL_END_KEY] is None
@@ -713,8 +745,8 @@ def test_a_reset_form_stays_empty_after_a_run_that_did_not_draw_it() -> None:
     app.run()
 
     assert not app.exception
-    assert app.text_input(key=registration.FORM_CODE_KEY).value == ""
-    assert app.text_input(key=registration.FORM_SCENARIO_NAME_KEY).value == ""
+    assert _form_field(app, "조회할 시뮬레이션 코드").value == ""
+    assert _form_field(app, "저장할 시나리오명").value == ""
     assert registration.CATALOG_PICK_KEY not in app.session_state
 
 
@@ -806,7 +838,7 @@ def test_an_old_code_seen_on_several_days_gets_a_window_across_all_of_them() -> 
     app.run()
     assert not app.exception
 
-    assert app.session_state[registration.FORM_CODE_KEY] == "DEMO-A-001"
+    assert _form_field(app, "조회할 시뮬레이션 코드").value == "DEMO-A-001"
     assert app.session_state[registration.FORM_DETAIL_START_KEY] == date(2025, 9, 24)
     assert app.session_state[registration.FORM_DETAIL_END_KEY] == date(2025, 11, 5)
     captions = " ".join(item.value for item in app.caption)

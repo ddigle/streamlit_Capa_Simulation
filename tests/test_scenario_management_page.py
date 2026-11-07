@@ -1374,6 +1374,11 @@ def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(
     assert _draft(app).picked == second.revision.revision_id
 
 
+def _form_value(app: AppTest, label: str) -> str | None:
+    """DB 등록 폼 글자 칸 값 — 행을 고를 때마다 새 위젯이라 라벨로 찾는다."""
+    return next(field.value for field in app.text_input if field.label == label)
+
+
 def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
     tmp_path: Path,
 ) -> None:
@@ -1387,8 +1392,6 @@ def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
 
     from capa_simulation.components.bigdataquery_registration import (
         CATALOG_RESULT_KEY,
-        FORM_CODE_KEY,
-        FORM_SCENARIO_NAME_KEY,
         CatalogResult,
         catalog_list_key,
     )
@@ -1430,14 +1433,14 @@ def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     assert not app.exception
-    assert app.text_input(key=FORM_CODE_KEY).value == "DEMO-A-001"
+    assert _form_value(app, "조회할 시뮬레이션 코드") == "DEMO-A-001"
 
     app.button(key="scenario_list_save").click().run()
 
     assert not app.exception
     assert "누적 순서를 저장했습니다." in [item.value for item in successes(app)]
-    assert app.text_input(key=FORM_CODE_KEY).value == "DEMO-A-001"
-    assert app.text_input(key=FORM_SCENARIO_NAME_KEY).value == "알파 시뮬 (DEMO-A-001)"
+    assert _form_value(app, "조회할 시뮬레이션 코드") == "DEMO-A-001"
+    assert _form_value(app, "저장할 시나리오명") == "알파 시뮬 (DEMO-A-001)"
 
 
 def test_the_list_names_the_latest_revision_and_which_revision_is_official(
