@@ -73,6 +73,7 @@ from capa_simulation.services.equipment_units import (
     MODULE_RATIO_WARNING,
     module_ratio_warning_rows,
 )
+from capa_simulation.services.fab_layout import FLOOR_KEYS
 from capa_simulation.services.floor_layout_profile import (
     CANVAS_DECIMALS,
     DEFAULT_CANVAS_HEIGHT,
@@ -1164,6 +1165,44 @@ def floor_equipment_outside_canvas(
     )
     outside = on_floor & _beyond_canvas(numeric, float(canvas[0]), float(canvas[1]))
     return [str(name) for name in equipment.loc[outside, EQUIPMENT_ID_COLUMN]]
+
+
+def floors_outside_canvas(
+    equipment: pd.DataFrame, floor_canvases: FloorCanvasMap
+) -> dict[FloorKey, tuple[str, ...]]:
+    """FAB 층마다(`FLOOR_KEYS` 차례) 저장된 캔버스를 벗어났거나 좌표·크기가 맞지 않는 호기의
+    설비명(표 차례 — 그런 호기가 있는 층만).
+
+    `floor_equipment_outside_canvas` 와 같은 행이다 — 레이아웃표시·상태·화면 필터를 보지 않아 값이
+    고른 층·기준일·조건 카드에 기대지 않는다. 층을 하나씩 재지 않고 한 번에 훑는다. 저장된 캔버스가
+    없는 층은 기본 크기다.
+    """
+    if equipment.empty or not {"동", "층", *COORDINATE_COLUMNS} <= set(equipment.columns):
+        return {}
+    numeric = equipment.loc[:, list(COORDINATE_COLUMNS)].apply(pd.to_numeric, errors="coerce")
+    floors = list(
+        zip(
+            equipment["동"].astype("string").fillna(""),
+            equipment["층"].astype("string").fillna(""),
+            strict=True,
+        )
+    )
+    default = (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+    sizes = [floor_canvases.get(floor, default) for floor in floors]
+    width = pd.Series([size[0] for size in sizes], index=equipment.index, dtype="float64")
+    height = pd.Series([size[1] for size in sizes], index=equipment.index, dtype="float64")
+    broken = numeric.notna().all(axis=1) & (
+        _beyond_canvas(numeric, width, height)
+        | numeric["X좌표"].lt(0)
+        | numeric["Y좌표"].lt(0)
+        | numeric["Xsize"].le(0)
+        | numeric["Ysize"].le(0)
+    )
+    names = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    found: dict[FloorKey, list[str]] = {}
+    for position in np.flatnonzero(broken.to_numpy(dtype=bool)):
+        found.setdefault(floors[position], []).append(str(names.iat[position]))
+    return {floor: tuple(found[floor]) for floor in FLOOR_KEYS if floor in found}
 
 
 def _beyond_canvas(

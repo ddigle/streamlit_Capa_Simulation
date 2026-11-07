@@ -11,6 +11,7 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_validation import (
     floor_equipment_outside_canvas,
+    floors_outside_canvas,
     prepare_equipment_master,
 )
 from capa_simulation.services.floor_layout_profile import (
@@ -208,3 +209,59 @@ def test_canvas_shrink_check_sees_every_saved_unit_of_the_floor() -> None:
     assert floor_equipment_outside_canvas(saved, ("C1", "1F"), (162.0, 60.0)) == []
     assert floor_equipment_outside_canvas(saved, ("C1", "2F"), (100.0, 60.0)) == ["DEMO-EQ03"]
     assert floor_equipment_outside_canvas(saved.iloc[0:0], ("C1", "1F"), (10.0, 10.0)) == []
+
+
+def _unit(
+    name: str, floor: tuple[str, str] | None, x: float, width: float = 10.0
+) -> dict[str, object]:
+    building, level = floor if floor is not None else (None, None)
+    return {
+        "설비명": name,
+        "동": building,
+        "층": level,
+        "X좌표": x,
+        "Y좌표": 10.0,
+        "Xsize": width,
+        "Ysize": 10.0,
+    }
+
+
+def test_every_floor_is_scanned_against_its_own_canvas() -> None:
+    """Space 캔버스 밖 호기 알림은 고른 층이 아니라 전 층을 본다 — 층마다 제 캔버스(없으면 기본
+    크기)로 재고, 층은 `FLOOR_KEYS` 차례 · 호기는 표 차례다. 저장 정규화 전 앞뒤 공백은 뗀다."""
+    equipment = pd.DataFrame(
+        [
+            _unit("DEMO-C", ("C3", "2F"), 55.0),
+            _unit(" DEMO-A ", ("C1", "1F"), 95.0),
+            _unit("DEMO-B", ("C3", "2F"), 70.0),
+            _unit("DEMO-WIDE", ("C1", "2F"), 95.0),
+            _unit("DEMO-IN", ("C1", "1F"), 10.0),
+        ]
+    )
+
+    assert floors_outside_canvas(
+        equipment, {("C1", "2F"): (200.0, 100.0), ("C3", "2F"): (60.0, 100.0)}
+    ) == {
+        ("C1", "1F"): ("DEMO-A",),
+        ("C3", "2F"): ("DEMO-C", "DEMO-B"),
+    }
+    assert floors_outside_canvas(equipment.iloc[0:0], {}) == {}
+    assert floors_outside_canvas(equipment.drop(columns="X좌표"), {}) == {}
+
+
+def test_the_floor_scan_judges_as_the_save_does_and_keeps_broken_boxes() -> None:
+    """캔버스 끝에 붙여 놓은 호기는 부동소수 합(88.7 + 11.3 = 100.00000000000001)으로 「밖」 이 되지
+    않는다 — 저장 검증과 같은 판정이다. 좌표가 빈 호기 · 층이 없거나 FAB 층이 아닌 호기는 도면에 설
+    자리가 없어 세지 않고, 음수 좌표 · 0 크기는 도면에서 어긋나므로 센다."""
+    equipment = pd.DataFrame(
+        [
+            _unit("DEMO-EDGE", ("C1", "1F"), 88.7, 11.3),
+            _unit("DEMO-EMPTY", ("C1", "1F"), float("nan")),
+            _unit("DEMO-NOFLOOR", None, 500.0),
+            _unit("DEMO-ELSEWHERE", ("Z9", "9F"), 500.0),
+            _unit("DEMO-NEGATIVE", ("C1", "2F"), -1.0),
+            _unit("DEMO-FLAT", ("C1", "2F"), 10.0, 0.0),
+        ]
+    )
+
+    assert floors_outside_canvas(equipment, {}) == {("C1", "2F"): ("DEMO-NEGATIVE", "DEMO-FLAT")}

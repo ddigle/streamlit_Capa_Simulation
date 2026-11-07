@@ -82,6 +82,7 @@ from capa_simulation.components.space_floor_layout import (
     floor_layout_differences,
     floor_moved_overlaps,
     floor_unit_differences,
+    report_canvas_outside,
     report_layout_notices,
     report_layout_warnings,
     space_layout_notices,
@@ -101,7 +102,6 @@ from capa_simulation.components.space_layout import (
     equipment_unit_total,
     floor_block_stats,
     floor_placements,
-    invalid_equipment_rows,
     legend_as_of,
     occupancy_ratio,
     picked_unit_processes,
@@ -233,6 +233,7 @@ from capa_simulation.services.korean_particle import (
 from capa_simulation.services.layout_overlay import EMPTY_LAYOUT_DIGEST
 from capa_simulation.services.schedule_confirmation import UNCONFIRMED, confirmation_counts
 from capa_simulation.services.simulation_cache import (
+    get_floors_outside_canvas,
     get_schedule_confirmation_issues,
     get_space_equipment_status,
     get_space_unit_boundaries,
@@ -691,6 +692,14 @@ with notices:
         else space_layout_notices(equipment_session, floor_differences),
     )
     report_unscheduled_units(equipment_session, unscheduled_units)
+    # 저장된 캔버스 밖 호기(전 층 — 고른 층에 기대지 않는다). 조건이 없어도 늘 부른다.
+    report_canvas_outside(
+        equipment_session,
+        get_floors_outside_canvas(latest_snapshot.token, equipment, floor_canvases)
+        if latest_snapshot is not None and not using_sample_equipment
+        else {},
+        floor_canvases,
+    )
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
 edit_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
@@ -2437,17 +2446,6 @@ else:
         if layout_profile is not None
         else (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
     )
-    invalid_rows = invalid_equipment_rows(
-        floor_equipment, canvas_width=canvas_width, canvas_height=canvas_height
-    )
-    # 경고 자리도 늘 서 있다 — 저장으로 경고가 생기거나 사라질 때 아래 층 상세가 밀리지 않게(위 상자
-    # 자리와 같은 까닭).
-    with st.container(key="space_floor_canvas_warning_slot"):
-        if invalid_rows:
-            st.warning(
-                f"캔버스 {canvas_width:g} × {with_object_particle(f'{canvas_height:g}')} 벗어난 "
-                "호기가 있습니다: " + literal_markdown(", ".join(invalid_rows))
-            )
     # 비활성 층을 연 회차(층 목록 표 「비활성 층」·주소)의 배너. 자리는 늘 선다 — 남이 층을 켜고
     # 끌 때 아래 층 상세가 밀리지 않게. 사유는 사람이 적은 글이라 글자 그대로 막는다.
     with st.container(key="space_floor_inactive_notice_slot"):

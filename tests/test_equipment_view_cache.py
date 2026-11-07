@@ -30,6 +30,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.equipment_validation import floors_outside_canvas
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
@@ -939,3 +940,46 @@ def test_a_sheet_without_a_counterfactual_is_its_own_entry() -> None:
     assert full.has_counterfactual and not bare.has_counterfactual
     assert bare.rows[ROW_SCHEDULE_LENT].isna().all()
     assert not full.rows[ROW_SCHEDULE_LENT].isna().any()
+
+
+def test_the_floor_scan_runs_once_per_snapshot_and_canvases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Space 는 위젯 하나에도 전 층을 다시 부른다 — 같은 스냅샷 토큰 · 같은 캔버스면 훑지 않고,
+    캔버스 차례가 달라도 같은 값이다. 캔버스나 토큰이 바뀌면 다시 훑는다(프레임은 해시하지
+    않는다)."""
+    simulation_cache._cached_floors_outside_canvas.clear()
+    scanned: list[object] = []
+
+    def counted(
+        equipment: pd.DataFrame, canvases: dict[tuple[str, str], tuple[float, float]]
+    ) -> dict[tuple[str, str], tuple[str, ...]]:
+        scanned.append(canvases)
+        return floors_outside_canvas(equipment, canvases)
+
+    monkeypatch.setattr(simulation_cache, "floors_outside_canvas", counted)
+    equipment = pd.DataFrame(
+        [
+            {
+                "설비명": "DEMO-EQ",
+                "동": "C1",
+                "층": "1F",
+                "X좌표": 90,
+                "Y좌표": 5,
+                "Xsize": 20,
+                "Ysize": 5,
+            }
+        ]
+    )
+    narrow = {("C1", "1F"): (100.0, 60.0), ("C1", "2F"): (80.0, 60.0)}
+    reordered = dict(reversed(list(narrow.items())))
+    wide = {**narrow, ("C1", "1F"): (120.0, 60.0)}
+
+    outside = {("C1", "1F"): ("DEMO-EQ",)}
+    assert simulation_cache.get_floors_outside_canvas("a|b", equipment, narrow) == outside
+    assert simulation_cache.get_floors_outside_canvas("a|b", equipment, reordered) == outside
+    assert len(scanned) == 1
+    assert simulation_cache.get_floors_outside_canvas("a|b", equipment, wide) == {}
+    assert simulation_cache.get_floors_outside_canvas("a|c", equipment, narrow) == outside
+    assert len(scanned) == 3
+    simulation_cache._cached_floors_outside_canvas.clear()

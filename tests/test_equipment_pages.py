@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_texts, events, place_errors
+from alert_marks import active_state, data_error_texts, events, place_errors, states
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -533,6 +533,60 @@ def test_a_canvas_saved_over_outside_units_says_what_it_blocks(tmp_path: Path) -
     assert [str(note["short"]) for note in events(app, "FL-03")] == [
         "C1 1F 캔버스 100 × 100 저장 — 호기 2대가 밖이라 설비 저장이 막힙니다"
     ]
+    clear_equipment_repository()
+
+
+def test_units_outside_a_saved_canvas_are_one_alert_for_the_whole_fab(tmp_path: Path) -> None:
+    """저장된 캔버스 밖 호기는 층 화면 맨 위 상자가 아니라 상태 알림 `EQ-18` 이다 — 전 층을 훑어
+    FAB · 고른 층 · 공정 필터 어디서나 지문이 같고(고를 때마다 다시 뜨지 않는다), 층별 수 · 설비명은
+    전문에 있다(마크다운이 아니라 막지 않는다). 캔버스를 넓히면 해소다."""
+    database_path = tmp_path / "space_outside.duckdb"
+    _wide_floor_with_hidden_units(database_path)
+    DuckDBEquipmentRepository(database_path).save_floor_layout_canvas("C1", "1F", 100.0, 100.0)
+    clear_equipment_repository()
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
+    app.run()
+
+    assert not app.exception
+    assert not app.warning
+    fab = active_state(app, "EQ-18")
+    assert fab is not None
+    assert fab["level"] == "action"
+    assert fab["short"] == "캔버스 밖 호기 2대(C1 1F)"
+    assert fab["full"].startswith("C1 1F 캔버스 100 × 100 밖 2대: DEMO-EQ01, DEMO-EQ02\n")
+    assert "「캔버스 편집」" in fab["full"]
+
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    app.run()
+    assert not app.warning
+    floor = active_state(app, "EQ-18")
+    assert floor is not None and floor["fp"] == fab["fp"] and floor["scope"] == fab["scope"]
+
+    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    filtered = active_state(app, "EQ-18")
+    assert filtered is not None and filtered["fp"] == fab["fp"]
+
+    DuckDBEquipmentRepository(database_path).save_floor_layout_canvas("C1", "1F", 200.0, 100.0)
+    clear_equipment_repository()
+    app.run()
+    assert not app.exception
+    assert active_state(app, "EQ-18") is None
+    assert [note["active"] for note in states(app, "EQ-18")] == [False]
+    clear_equipment_repository()
+
+
+def test_the_outside_alert_stays_quiet_when_nothing_is_outside(tmp_path: Path) -> None:
+    """조건이 없어도 표지 자리는 한 번 쓴다(`active` 거짓 — 표지 자리 수가 회차마다 같다)."""
+    database_path = tmp_path / "space_inside.duckdb"
+    _wide_floor_with_hidden_units(database_path)
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
+    app.run()
+
+    assert not app.exception
+    assert [note["active"] for note in states(app, "EQ-18")] == [False]
     clear_equipment_repository()
 
 

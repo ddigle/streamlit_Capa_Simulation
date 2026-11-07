@@ -41,9 +41,11 @@ from capa_simulation.services.equipment_availability import (
 )
 from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
 from capa_simulation.services.equipment_validation import (
+    floors_outside_canvas,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.load_calculator import (
     DemandBasis,
@@ -1580,6 +1582,32 @@ def get_space_equipment_status(
     """
     return _cached_space_equipment_status(
         space_status_cache_key(equipment, downtime, as_of=as_of), equipment, downtime, as_of
+    )
+
+
+# (설비 스냅샷 토큰, 층 캔버스 — (층, 크기) 정렬 튜플).
+FloorsOutsideCacheKey = tuple[str, tuple[tuple[FloorKey, CanvasSize], ...]]
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_floors_outside_canvas(
+    cache_key: FloorsOutsideCacheKey, _equipment: pd.DataFrame
+) -> dict[FloorKey, tuple[str, ...]]:
+    _, canvases = cache_key
+    return floors_outside_canvas(_equipment, dict(canvases))
+
+
+def get_floors_outside_canvas(
+    snapshot_token: str, equipment: pd.DataFrame, floor_canvases: FloorCanvasMap
+) -> dict[FloorKey, tuple[str, ...]]:
+    """전 층의 캔버스 밖 호기(`floors_outside_canvas`)를 같은 스냅샷 · 같은 캔버스면 다시 쓴다.
+
+    Space 현황은 위젯 하나에도 페이지 전체가 다시 돌고 상태 알림은 회차마다 낸다. 키는 설비
+    스냅샷 토큰(공통 대장 · 일정 리비전 쌍 — 불변)과 층 캔버스다. 프레임은 해시하지 않는다 — 그
+    토큰의 스냅샷에서 뽑은 바로 그 표여야 한다.
+    """
+    return _cached_floors_outside_canvas(
+        (snapshot_token, tuple(sorted(floor_canvases.items()))), equipment
     )
 
 
