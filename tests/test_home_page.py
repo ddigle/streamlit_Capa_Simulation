@@ -28,6 +28,9 @@ from capa_simulation.components.home_plan_detail_figures import (
 from capa_simulation.components.home_preference import (
     KEY_PROCESS_FIELD_KEY,
     KEY_PROCESS_LOCKED_HELP,
+    PRESET_DEFAULT_HELP,
+    PRESET_DEFAULT_LOCKED_HELP,
+    PRESET_DELETE_LOCKED_HELP,
 )
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
@@ -2348,17 +2351,23 @@ def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path:
     # B 를 기본으로 올린다.
     app.selectbox(key=target).set_value("B 그룹").run()
     labels_before = set(app.selectbox(key=target).options)
+    assert app.button(key="home_key_process_preset_default").help == PRESET_DEFAULT_HELP
     app.button(key="home_key_process_preset_default").click().run()
     assert repository.load_global_key_process().preset_names == ("B 그룹", "A 그룹(개정)")
+    # 맨 앞이 된 프리셋의 「기본으로」 는 잠기고 풍선이 뜻이 아니라 잠긴 까닭을 말한다(UI-INP-07).
+    assert app.button(key="home_key_process_preset_default").disabled
+    assert app.button(key="home_key_process_preset_default").help == PRESET_DEFAULT_LOCKED_HELP
     # 선택지 라벨은 기본이 바뀌어도 같다 — 라벨이 바뀌면 브라우저가 옛 라벨을 되보낸다. 무엇이
     # 기본인지는 캡션이 말한다.
     assert set(app.selectbox(key=target).options) == labels_before
     assert not [label for label in labels_before if "기본" in label]
     assert any("「B 그룹」" in caption.value and "기본" in caption.value for caption in app.caption)
 
-    # 삭제는 확인을 체크해야 열린다.
+    # 삭제는 확인을 체크해야 열린다. 잠긴 동안만 까닭 풍선이 있다.
     assert app.button(key="home_key_process_preset_delete").disabled
+    assert app.button(key="home_key_process_preset_delete").help == PRESET_DELETE_LOCKED_HELP
     next(box for box in app.checkbox if box.label == "「B 그룹」 삭제 확인").check().run()
+    assert not app.button(key="home_key_process_preset_delete").help
     app.button(key="home_key_process_preset_delete").click().run()
     assert not list(app.exception)
     assert repository.load_global_key_process().preset_names == ("A 그룹(개정)",)

@@ -326,6 +326,10 @@ KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
 KEY_PROCESS_ICON = ":material/dataset:"
 # 프리셋이 하나도 없어 잠긴 칸의 까닭 풍선.
 KEY_PROCESS_LOCKED_HELP = "HOME 설정 → 공지 · 표시 탭에서 프리셋을 먼저 만드세요."
+# 「기본으로」 의 뜻 · 잠긴 까닭과 「프리셋 삭제」 가 잠긴 까닭.
+PRESET_DEFAULT_HELP = "맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다."
+PRESET_DEFAULT_LOCKED_HELP = "이미 기본 프리셋입니다."
+PRESET_DELETE_LOCKED_HELP = "삭제 확인을 체크하면 누를 수 있습니다."
 KEY_PROCESS_EDIT_TARGET_KEY = "home_key_process_preset_edit"
 NEW_KEY_PROCESS_PRESET = "＋ 새 프리셋"
 # 「고칠 프리셋」 밑 값 줄 — 지금 기본(맨 앞) 프리셋 이름. 「기본」 의 뜻은 풍선이다.
@@ -2448,13 +2452,14 @@ def _render_key_process_preset_actions(
     있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다.
     """
     names = list(profile.preset_names)
+    already_default = names[0] == target
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         make_default = st.button(
             "기본으로",
             icon=":material/vertical_align_top:",
             key="home_key_process_preset_default",
-            disabled=names[0] == target,
-            help="맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다.",
+            disabled=already_default,
+            help=PRESET_DEFAULT_LOCKED_HELP if already_default else PRESET_DEFAULT_HELP,
         )
         # 라벨에 이름을 넣어 프리셋마다 다른 칸이 되게 한다 — 다른 프리셋으로 옮기면 체크가 풀린다.
         confirmed = st.checkbox(f"{quoted(target)} 삭제 확인")
@@ -2463,6 +2468,7 @@ def _render_key_process_preset_actions(
             icon=":material/delete:",
             key="home_key_process_preset_delete",
             disabled=not confirmed,
+            help=None if confirmed else PRESET_DELETE_LOCKED_HELP,
         )
     if not (make_default or delete):
         return
