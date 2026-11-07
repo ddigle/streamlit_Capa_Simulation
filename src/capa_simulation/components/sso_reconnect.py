@@ -33,9 +33,11 @@ react-aria 모달이라 열리는 동안 바깥 요소를 `inert` 로 만든다 
 
 테마 버튼 iframe 에 다른 툴바 스크립트와 함께 싣는다(`theme_toggle.render_theme_toggle` 의
 `extra_scripts`). 꺼짐이면 싣지 않는다 — iframe 내용 · 요소 순번이 지금과 같다. 켜짐이면 내용이
-프로세스 안에서 늘 같다(공개 주소 · 문구가 고정). 타이머는 iframe 창의 것이라 iframe 이 사라지면
-같이 멈춘다. 판정(`// <sso-reconnect-rule>`)은 DOM 을 모르는 순수 구획이라 node 시험이 떼어
-돌린다(`tests/test_sso_reconnect.py`).
+프로세스 안에서 늘 같다(공개 주소 · 문구가 고정). 그래서 띠 색은 지금 실행의 테마가 아니라 밝은 ·
+어두운 팔레트를 둘 다 싣고, 띠를 세우는 순간 테마 버튼과 같은 키 규칙(같은 iframe 맨 앞의
+`capaTheme`)으로 앱 테마를 읽어 고른다(Guide · Print 단추와 같은 길). 타이머는 iframe 창의
+것이라 iframe 이 사라지면 같이 멈춘다. 판정(`// <sso-reconnect-rule>`)은 DOM 을 모르는 순수
+구획이라 node 시험이 떼어 돌린다(`tests/test_sso_reconnect.py`).
 
 **비공식 경로다.** Streamlit 1.63 프런트의 연결 상태 표지에 기댄다. 판올림으로 표지가 사라지면 띠가
 서지 않을 뿐 나머지는 그대로다 — 올릴 때 만료 · 로그아웃 뒤 다시 붙기를 브라우저로 한 번 본다.
@@ -99,18 +101,23 @@ function loginHref(base, prefix, loginPath, pathname, search) {
   var since = null;
   var lastProbe = null;
   var probing = false;
+  // 앱 테마는 테마 버튼과 같은 키 규칙(같은 iframe 맨 앞의 `capaTheme`)으로 읽는다.
+  function dark() {
+    return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
+  }
   function hideBanner() {
     var box = doc.getElementById(%(banner_id)s);
     if (box) box.remove();
   }
   function showBanner() {
     if (doc.getElementById(%(banner_id)s)) return;
+    var isDark = dark();
     var box = doc.createElement("div");
     box.id = %(banner_id)s;
     box.setAttribute("role", "alert");
     // 연결 오류 창(react-aria 모달)이 바깥을 inert 로 만들 때 이 띠는 빼게 한다.
     box.setAttribute("data-react-aria-top-layer", "");
-    box.style.cssText = %(box_style)s;
+    box.style.cssText = isDark ? %(dark_box_style)s : %(light_box_style)s;
     var text = doc.createElement("span");
     text.textContent = %(notice)s;
     var link = doc.createElement("a");
@@ -120,7 +127,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
       %(base)s, %(prefix)s, %(login_path)s,
       parentWindow.location.pathname, parentWindow.location.search
     );
-    link.style.cssText = %(link_style)s;
+    link.style.cssText = isDark ? %(dark_link_style)s : %(light_link_style)s;
     box.appendChild(text);
     box.appendChild(link);
     doc.body.appendChild(box);
@@ -162,12 +169,11 @@ def script_literal(value: str) -> str:
     return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c")
 
 
-def reconnect_script(cfg: SsoConfig) -> str:
-    """다시 붙지 못한 탭에 「다시 로그인」 띠를 세우는 스크립트(공개 주소 · 문구가 고정)."""
-    prefix = urlsplit(cfg.public_url).path.rstrip("/")
-    fill = tokens.palette_value("light", "ACCENT")
-    ink = tokens.palette_value("light", "ACCENT_TEXT")
-    shade = tokens.palette_value("light", "NAV_SHADOW")
+def band_styles(mode: str) -> tuple[str, str]:
+    """`mode` 팔레트의 띠 · 링크 서식(강조색 바탕 + 그 위 글자색)."""
+    fill = tokens.palette_value(mode, "ACCENT")
+    ink = tokens.palette_value(mode, "ACCENT_TEXT")
+    shade = tokens.palette_value(mode, "NAV_SHADOW")
     # 양옆 12px 안에서 내용 폭으로 서고 가운데 놓인다 — `left:50%` 로 밀면 내용 맞춤 폭의 상한이
     # 남은 절반이 되어 좁은 창에서 띠가 창의 절반 폭으로 접힌다.
     box_style = (
@@ -181,10 +187,20 @@ def reconnect_script(cfg: SsoConfig) -> str:
         f"margin-left:10px;color:{ink};font-weight:700;text-decoration:underline;"
         "white-space:nowrap;"
     )
+    return box_style, link_style
+
+
+def reconnect_script(cfg: SsoConfig) -> str:
+    """다시 붙지 못한 탭에 「다시 로그인」 띠를 세우는 스크립트(주소 · 문구 · 두 팔레트가 고정)."""
+    prefix = urlsplit(cfg.public_url).path.rstrip("/")
+    light_box, light_link = band_styles("light")
+    dark_box, dark_link = band_styles("dark")
     return _SCRIPT % {
         "banner_id": script_literal(BANNER_ID),
-        "box_style": script_literal(box_style),
-        "link_style": script_literal(link_style),
+        "light_box_style": script_literal(light_box),
+        "dark_box_style": script_literal(dark_box),
+        "light_link_style": script_literal(light_link),
+        "dark_link_style": script_literal(dark_link),
         "notice": script_literal(RECONNECT_NOTICE),
         "label": script_literal(LOGIN_AGAIN_LABEL),
         "base": script_literal(cfg.public_url),

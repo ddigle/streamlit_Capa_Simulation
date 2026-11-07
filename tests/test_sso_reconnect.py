@@ -28,9 +28,11 @@ from capa_simulation.components.sso_reconnect import (
     PROBE_GAP_MS,
     PROBE_WAIT_MS,
     RECONNECT_NOTICE,
+    band_styles,
     reconnect_script,
     sso_reconnect_scripts,
 )
+from capa_simulation.design import tokens
 
 
 def _identity() -> Identity:
@@ -109,6 +111,24 @@ def test_the_band_is_centred_within_side_gutters_not_half_the_window() -> None:
 
     assert "left:12px;right:12px;margin-inline:auto;width:fit-content;" in script
     assert "left:50%" not in script and "translateX" not in script
+
+
+def test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands() -> None:
+    """띠 색은 두 팔레트를 함께 싣고, 띠를 세우는 순간 테마 버튼과 같은 키 규칙(`capaTheme`)으로
+    고른다 — 지금 실행의 테마를 끼우면 스크립트 내용이 회차마다 달라지고, 한 팔레트에 묶으면 어두운
+    테마에서도 밝은 강조색으로 선다."""
+    script = reconnect_script(use_config())
+
+    for mode in ("light", "dark"):
+        box, link = band_styles(mode)
+        assert json.dumps(box, ensure_ascii=False) in script
+        assert json.dumps(link, ensure_ascii=False) in script
+        assert f"background:{tokens.palette_value(mode, 'ACCENT')};" in box
+        assert f"color:{tokens.palette_value(mode, 'ACCENT_TEXT')};" in link
+    assert band_styles("light") != band_styles("dark")
+    assert 'capaTheme.resolve(parentWindow).choice === "Dark"' in script
+    assert "box.style.cssText = isDark ?" in script
+    assert "link.style.cssText = isDark ?" in script
 
 
 def test_script_text_cannot_break_out_of_its_script_tag() -> None:
