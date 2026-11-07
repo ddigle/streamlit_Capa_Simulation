@@ -689,12 +689,13 @@ function egOnScroll(S) {
   for (const item of FEATURES) if (item.paintOverlay) item.paintOverlay(S)
 }
 
-// 상태 줄 왼쪽 — 「표 › 분류 · 월」 과 그 칸 오류 문구.
+// 상태 줄 왼쪽 — 「표 › 분류 · 월」 과 그 칸 오류 문구. 오류 문구는 줄 끝이라 말줄임이 되면 풍선으로 다 읽는다.
 function egWhere(S) {
   const where = S.dom.where
   const m = S.model
   if (!m || !S.view.order.length) {
     where.textContent = ''
+    where.title = ''
     return
   }
   const row = S.view.order[Math.min(S.anchor.r, S.view.order.length - 1)]
@@ -707,6 +708,7 @@ function egWhere(S) {
     if (state.bad) text += ' — ' + egErrorText(S, state.bad.code)
   }
   where.textContent = text
+  where.title = text
 }
 
 function egOnHeadOver(S, event) {

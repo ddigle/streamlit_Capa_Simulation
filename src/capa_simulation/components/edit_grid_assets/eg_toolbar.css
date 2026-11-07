@@ -231,7 +231,8 @@
 }
 
 .eg-scope {
-  flex: none;
+  flex: 0 100000 auto;
+  min-width: 0;
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;

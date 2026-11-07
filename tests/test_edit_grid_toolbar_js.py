@@ -124,6 +124,33 @@ def test_the_status_line_shows_the_edit_scope_the_feed_carries() -> None:
     assert result["gone"] == ["", ""]
 
 
+def test_the_edit_scope_gives_way_before_the_cell_error_at_the_end_of_the_status_line() -> None:
+    """칸 오류 문구는 상태 줄 왼쪽 글의 맨 끝에만 있다. 편집 범위 글이 칸을 버티면 좁은 창에서
+    그 문구가 말줄임으로 사라진다 — 범위 글이 먼저 줄어야 하고, 그래도 잘리면 풍선으로 읽는다."""
+    scope = TOOLBAR_CSS[TOOLBAR_CSS.index(".eg-scope {") :]
+    scope = scope[: scope.index("}")]
+    grow, shrink, basis = re.search(r"flex: (\S+) (\S+) (\S+);", scope).groups()  # type: ignore[union-attr]
+    # 왼쪽 글(`flex: 1 1 auto`)이 0.1px 만 줄어도 말줄임이 서므로 비율이 커야 한다.
+    assert (grow, basis) == ("0", "auto") and int(shrink) >= 10_000
+    assert "min-width: 0" in scope
+
+    body = r"""
+  const where = q('.eg-where')
+  sendFeed(input.feed2)
+  await tick(5)
+  scroller.focus()
+  key(scroller, 'ArrowRight')
+  key(scroller, 'ArrowRight')
+  key(scroller, 'ArrowDown')
+  key(scroller, 'ArrowDown')
+  await tick(5)
+  R.where = [where.textContent, where.title]
+"""
+    draft: eg.DraftState = {"cells": {}, "bad": {"DEMO_P02\x1f양산": {"202703": ("85", "max")}}}
+    text, title = _run(body, _payloads(draft=draft))["where"]
+    assert " — " in text and title == text
+
+
 def test_fullscreen_is_a_dialog_in_the_shadow_root_not_a_fixed_overlay() -> None:
     """전체 화면은 그림자 DOM 안 `<dialog>.showModal()` — `position: fixed` 덮개는 긴 회차에
     opacity 0.33 으로 머리 띠·사이드바 밑에 묻힌다(D2). 브라우저 전체 화면 API 도 쓰지 않는다."""

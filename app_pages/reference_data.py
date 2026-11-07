@@ -641,13 +641,15 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
     팝업 안 조작(fragment 재실행)도 같은 목록 인자와 그 회차 `edit_slices` 로 다시 불린다.
     """
     # STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 적용하지 않은 편집이 버려진다.
-    dropped_edits = [
-        TABLE_NAMES[table_name]
+    dropped_edits = {
+        TABLE_NAMES[table_name]: reference_grid.draft_counts(table_name)[0]
         for table_name in STEP_ROUTE_EDIT_TABLES
         if reference_grid.draft_pending(table_name)
-    ]
+    }
     if dropped_edits:
-        st.caption(f"적용 안 한 편집 {len(dropped_edits)}개 버림 · {' · '.join(dropped_edits)}")
+        st.caption(
+            f"적용 안 한 편집 {sum(dropped_edits.values()):,}개 버림 · {' · '.join(dropped_edits)}"
+        )
     drop_help = STEP_DROP_HELP if dropped_edits else None
     step_mode = st.segmented_control(
         "작업",

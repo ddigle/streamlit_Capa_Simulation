@@ -23,6 +23,7 @@ from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.editor_state import (
     discard_editor,
+    editor_edit_count,
     editor_has_edits,
     editor_widget_key,
 )
@@ -100,6 +101,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_VALUE_COLUMNS,
     DemandBasis,
     attach_plan_attributes,
+    count_plan_value_changes,
     filter_edp_plan,
     load_exclusions,
     plan_from_edit_table,
@@ -667,14 +669,20 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     # 버린다(그대로 적용하면 새 제품의 0 계획 행을 기간에서 지운다). 버리기 전에 말한다.
     staged_paste = isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame)
     # 두 표에 행이 더해지므로 표에서 고치고 적용하지 않은 편집도 버려진다(2026-09-29 2차 리뷰).
-    dropped_edits = [
-        name
-        for key, name in ((PLAN_EDITOR_KEY, "PKG PLAN"), (YIELD_EDITOR_KEY, "수율"))
-        if editor_has_edits(key)
-    ]
-    dropped = [*dropped_edits, *([STAGED_NAMES[PLAN_STAGED_KEY]] if staged_paste else [])]
+    dropped_edits = {
+        name: cells for key, name in EDITOR_NAMES.items() if (cells := editor_edit_count(key))
+    }
+    pasted_cells = (
+        count_plan_value_changes(default_plan_table, st.session_state[PLAN_STAGED_KEY])
+        if staged_paste
+        else 0
+    )
+    dropped = {
+        **dropped_edits,
+        **({STAGED_NAMES[PLAN_STAGED_KEY]: pasted_cells} if pasted_cells else {}),
+    }
     if dropped:
-        st.caption(f"적용 안 한 편집 {len(dropped)}개 버림 · {' · '.join(dropped)}")
+        st.caption(f"적용 안 한 편집 {sum(dropped.values()):,}개 버림 · {' · '.join(dropped)}")
 
     # 기준 제품은 폼 밖이다 — 폼 안 칸은 제출 때까지 서버에 오지 않아 제품을 바꿔도 Stack 칸이 첫
     # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다.

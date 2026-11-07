@@ -1982,6 +1982,21 @@ _add("RQ_VITAL", 생산계획년월=202609, 양산구분="개발")
 )
 
 
+def test_the_step_popup_counts_the_cells_it_drops_not_the_tables(grid_calls: Calls) -> None:
+    """수는 도구 막대 「적용 전 변경 (n)」 과 같은 칸 수다 — 한 표에서 여러 칸을 고쳐도 다 센다."""
+    app = AppTest.from_string(NEW_PATH_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
+    app.run()
+    rows = _visible_keys(grid_calls)
+    assert len(rows) > 1
+    app = _grid_write(app, grid_calls, rows[0], "202608", "11")
+    app = _grid_write(app, grid_calls, rows[1], "202609", "12")
+
+    app = _open_step_dialog(app)
+    assert not app.exception
+    assert "적용 안 한 편집 2개 버림 · UPEH" in [item.value for item in app.caption]
+
+
 def _scenario_unit_capacity(app: AppTest) -> pd.DataFrame:
     """세션의 활성 시나리오로 대당 Capa 를 실제로 돌린다. 멈추면 `ValueError` 가 난다."""
     from capa_simulation.services.unit_capacity import calculate_unit_capacity

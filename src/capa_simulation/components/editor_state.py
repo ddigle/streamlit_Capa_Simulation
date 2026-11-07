@@ -58,3 +58,19 @@ def editor_has_edits(key: str) -> bool:
     if not isinstance(state, Mapping):
         return False
     return any(bool(state.get(part)) for part in _EDIT_PARTS)
+
+
+def editor_edit_count(key: str) -> int:
+    """이 편집표의 적용하지 않은 편집 수 — 고친 칸마다 하나, 더하거나 지운 줄마다 하나.
+
+    `editor_has_edits` 처럼 그리기 전에도 읽히고, 한 번도 그리지 않은 편집표는 0 이다.
+    """
+    state = st.session_state.get(editor_widget_key(key))
+    if not isinstance(state, Mapping):
+        return 0
+    edited = state.get("edited_rows") or {}
+    return (
+        sum(len(row) for row in edited.values())
+        + len(state.get("added_rows") or ())
+        + len(state.get("deleted_rows") or ())
+    )
