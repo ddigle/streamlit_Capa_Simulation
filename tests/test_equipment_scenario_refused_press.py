@@ -140,7 +140,7 @@ def test_a_second_press_after_someone_elses_revision_name_repeats_the_refusal(
 def test_a_second_press_after_someone_elses_publish_does_not_publish_unseen(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """같은 결함류(곁 자리) — 「공식으로 발행」 확인 글(지금 공식 v1 → 새 공식 v2)을 본 사이 B 가
+    """같은 결함류(곁 자리) — 「공식으로 지정」 확인 글(지금 공식 v1 → 새 공식 v2)을 본 사이 B 가
     발행(v2)했다. 첫 누름은 거부되고 그 뒤 회차가 새 확인 글의 값을 본 값으로 적어, 옛 화면의 둘째
     누름이 바뀐 확인 글을 보지 않은 채 v3 을 냈다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
@@ -160,13 +160,13 @@ def test_a_second_press_after_someone_elses_publish_does_not_publish_unseen(
 
     app.button(key=PUBLISH_BUTTON_KEY).click()
     written, refused = _notices(_ok(app.run()))
-    assert written == [] and any("발행하지 않았습니다" in text for text in refused), refused
+    assert written == [] and any("지정하지 않았습니다" in text for text in refused), refused
 
     app.button(key=PUBLISH_BUTTON_KEY).click()
     written, refused = _notices(_ok(app.run()))
 
     assert written == [], written
-    assert len(refused) == 1 and "발행하지 않았습니다" in refused[0], refused
+    assert len(refused) == 1 and "지정하지 않았습니다" in refused[0], refused
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2
     assert release.equipment_scenario_id == other

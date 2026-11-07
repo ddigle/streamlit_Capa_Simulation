@@ -1388,7 +1388,7 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     app.selectbox(key=REVISION_KEY).set_value(first)
     _ok(app.run())
     texts = _texts(app)
-    assert "새 리비전 r3 · 비가동 1행 → 1행 · 일정 없음 1대(새로 빠짐 1대) · 공식 v3 발행" in texts
+    assert "새 리비전 r3 · 비가동 1행 → 1행 · 일정 없음 1대(새로 빠짐 1대) · 공식 v3 지정" in texts
     assert not any("그대로 남습니다" in text or "「일정 없음」 이 됩니다" in text for text in texts)
     balloon = str(app.button(key=RESTORE_BUTTON_KEY).help)
     assert balloon.startswith(
@@ -1410,7 +1410,7 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
 
     message = next(text for text in _texts(app) if "되돌려" in text)
     assert "「운영 일정」 r1의 일정으로 되돌려 r3을 저장했습니다(일정이 바뀐 호기 2대)." in message
-    assert "공식 v3으로 발행했습니다." in message and "이 세션을 r3으로 옮겼습니다." in message
+    assert "공식 v3으로 지정했습니다." in message and "이 세션을 r3으로 옮겼습니다." in message
     third = _revision_id(repository, 3)
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == third
     # 리비전 상자도 새 리비전으로 옮긴다 — 옛 r1 에 머물면 「같아 되돌릴 것이 없습니다」 만 보인다.
@@ -1463,7 +1463,7 @@ def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothin
     assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
     assert not [button for button in app.button if button.key == RESTORE_BUTTON_KEY]
     # 단추가 서지 않으므로 발행 규칙 줄도 없다.
-    assert not any("공식으로 발행합니다" in text for text in texts)
+    assert not any("공식으로 지정합니다" in text for text in texts)
 
 
 def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
@@ -1618,7 +1618,7 @@ def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
 def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_did_not_publish(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """공식 시나리오에 발행하지 않은 더 새 리비전(r2)이 있으면 값 줄이 「공식 발행 안 함」 이고
+    """공식 시나리오에 발행하지 않은 더 새 리비전(r2)이 있으면 값 줄이 「공식 지정 안 함」 이고
     (저장소 `_plan_publish` 와 같은 판정), 되돌린 r3 을 발행하지 않고 알림이 그 까닭과 「공식으로
     발행」 을 말한다."""
     repository = _repository(tmp_path)
@@ -1634,7 +1634,7 @@ def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_di
     app = _scenario_tab(_shell)
     app.selectbox(key=REVISION_KEY).set_value(first)
     _ok(app.run())
-    assert any(text.endswith(" · 공식 발행 안 함") for text in _texts(app))
+    assert any(text.endswith(" · 공식 지정 안 함") for text in _texts(app))
     assert str(app.button(key=RESTORE_BUTTON_KEY).help).endswith(RESTORE_PUBLISH_HELP)
     # 발행 체크는 없다 — 저장과 같이 늘 발행 규칙을 따르고 결과 알림이 적는다(equip-13 같은 꼴).
     assert [box.key for box in app.checkbox] == [_restore_confirm(app).key]
@@ -1646,10 +1646,11 @@ def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_di
     message = next(text for text in _texts(app) if "되돌려" in text)
     assert "r1의 일정으로 되돌려 r3을 저장했습니다" in message
     assert (
-        "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — 이 "
-        "탭의 「공식으로 발행」 으로 냅니다." in message
+        "공식 설비 시나리오에 공식으로 지정하지 않은 더 새 리비전이 있어 공식 지정은 하지 "
+        "않았습니다 — 이 "
+        "탭의 「공식으로 지정」 으로 냅니다." in message
     )
-    assert "발행했습니다." not in message
+    assert "지정했습니다." not in message
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 1
 
@@ -1697,9 +1698,9 @@ def test_the_publish_words_belong_to_the_official_scenario_and_follow_the_save_r
             scenario, chosen, changes, official_scenario=official, release=release
         )
 
-    assert line(official=True, release=newest_released).endswith(" · 공식 v8 발행")
-    assert line(official=True, release=older_released).endswith(" · 공식 발행 안 함")
-    assert line(official=True, release=None).endswith(" · 공식 v1 발행")
+    assert line(official=True, release=newest_released).endswith(" · 공식 v8 지정")
+    assert line(official=True, release=older_released).endswith(" · 공식 지정 안 함")
+    assert line(official=True, release=None).endswith(" · 공식 v1 지정")
     assert "공식" not in line(official=False, release=newest_released)
     assert restore_button_help(scenario, chosen, changes, official_scenario=True).endswith(
         RESTORE_PUBLISH_HELP
@@ -1800,7 +1801,7 @@ def test_a_box_nobody_picked_follows_the_session_after_a_round_trip(
 ) -> None:
     """탭을 열기만 한 상자는 기본값을 굳히지 않는다 — 다른 화면에서 저장해 세션이 새 리비전으로
     가면 리비전 상자가 그 최신으로, 사이드바에서 다른 시나리오를 올리면 시나리오 상자가 그
-    시나리오로 간다. 옛 리비전이 남으면 「공식으로 발행」 이 고른 적 없는 리비전을 최신 위 공식으로
+    시나리오로 간다. 옛 리비전이 남으면 「공식으로 지정」 이 고른 적 없는 리비전을 최신 위 공식으로
     올린다(설계 규칙 UI-STA-03 의 대상은 사용자가 건 조건이다, AGENTS 9장 씨앗 규칙)."""
     repository = _repository(tmp_path)
     setup = _clone(repository).equipment_scenario_id

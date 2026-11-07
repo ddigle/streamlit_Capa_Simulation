@@ -8,7 +8,7 @@
   배치가 빠진 리비전은 「옛 판 저장 — rN 배치 빠짐」).
 - 「배치 차이 모두 지우기」 — 가정 시나리오 최신에 차이가 있을 때만 서고, 확인 체크 뒤 차이를 비운
   새 리비전을 쓰며 이 세션을 그리로 옮긴다.
-- 「공식으로 발행」 — 발행 쓰기와 같은 판정을 미리 읽어 막히면 까닭과 함께 단추를 끄고, 공식과
+- 「공식으로 지정」 — 발행 쓰기와 같은 판정을 미리 읽어 막히면 까닭과 함께 단추를 끄고, 공식과
   같아진 차이만 남았으면 정리 리비전으로 발행한다고 적는다.
 - 「이 리비전으로 되돌리기」 값 줄 · 풍선 — 그때 손대지 않은 호기가 지금 공식 자리를 따라 그때와
   자리가 다른 수.
@@ -252,7 +252,7 @@ def test_the_publish_confirm_reads_the_same_layout_judgment() -> None:
         scenario, revision, LayoutPublishPreview(action="clean", stored_units=3, newest_rows=3)
     )
     assert not blocked
-    assert "공식과 같아진 배치 차이 3행을 정리한 r6으로 발행합니다" in clean[0]
+    assert "공식과 같아진 배치 차이 3행을 정리한 r6으로 지정합니다" in clean[0]
 
 
 def test_an_old_revisions_publish_block_names_only_real_differences_and_working_ways_out() -> None:
@@ -290,7 +290,7 @@ def test_an_old_revisions_publish_block_names_only_real_differences_and_working_
     )
     assert blocked and "공식과 다른 배치" not in newest_same[0]
     assert "최신 r5에 저장된 배치 차이 2행(지금 공식과 같음)이 남아 있어" in newest_same[0]
-    assert "최신 r5를 발행하세요" in newest_same[0]
+    assert "최신 r5를 지정하세요" in newest_same[0]
 
 
 def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing() -> None:
@@ -314,8 +314,8 @@ def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing
     assert "r2에 저장된 배치 차이 1행은 지금 공식과 같아졌지만" in released[0]
     assert "「이 리비전으로 되돌리기」" not in released[0]
     assert (
-        "최신 r5의 일정·비가동이 r2 그대로라 되돌릴 것이 없고, 최신 r5는 이미 공식 발행입니다 "
-        "— 따로 발행할 것이 없습니다." in released[0]
+        "최신 r5의 일정·비가동이 r2 그대로라 되돌릴 것이 없고, 최신 r5는 이미 공식입니다 "
+        "— 따로 지정할 것이 없습니다." in released[0]
     ), released
     # 최신 r5 가 아직 공식이 아니면 최신을 발행한다.
     unreleased, _ = publish_layout_lines(
@@ -327,7 +327,7 @@ def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing
         official=True,
     )
     assert "「이 리비전으로 되돌리기」" not in unreleased[0]
-    assert "되돌릴 것이 없습니다 — 최신 r5를 발행하세요." in unreleased[0], unreleased
+    assert "되돌릴 것이 없습니다 — 최신 r5를 지정하세요." in unreleased[0], unreleased
     # 가정 시나리오는 가정 배치까지 같아야 쓸 것이 없다 — 배치가 다르면 되돌리기를 그대로 안내한다.
     moved, _ = publish_layout_lines(
         scenario,
@@ -354,7 +354,7 @@ def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing
     assert "「이 리비전으로 되돌리기」" not in real[0]
     assert (
         "최신 r5의 일정·비가동·가정 배치가 r2 그대로라 되돌릴 것이 없습니다 — 최신의 배치 차이를 "
-        "「배치 차이 모두 지우기」 로 지우고 발행하세요." in real[0]
+        "「배치 차이 모두 지우기」 로 지우고 지정하세요." in real[0]
     ), real
     # 일정이 다르면(되돌리기가 새 최신을 쓴다) 지금처럼 되돌리기를 안내한다.
     differs, _ = publish_layout_lines(
@@ -381,7 +381,7 @@ def test_a_deleted_units_difference_is_not_called_one_that_caught_up_with_the_of
     assert not blocked
     assert (
         "r5의 배치 차이(호기 1행)는 공통 대장에서 지운 호기의 것입니다 — 지운 호기의 배치 차이 "
-        "1행을 정리한 r6으로 발행합니다" in deleted[0]
+        "1행을 정리한 r6으로 지정합니다" in deleted[0]
     ), deleted
     assert "공식과 같아" not in deleted[0]
     mixed, _ = publish_layout_lines(
@@ -391,7 +391,7 @@ def test_a_deleted_units_difference_is_not_called_one_that_caught_up_with_the_of
     )
     assert (
         "는 지금 공식과 같아졌거나 공통 대장에서 지운 호기의 것입니다 — 공식과 같아진 배치 차이 "
-        "2행과 지운 호기의 배치 차이 1행을 정리한 r6으로 발행합니다" in mixed[0]
+        "2행과 지운 호기의 배치 차이 1행을 정리한 r6으로 지정합니다" in mixed[0]
     ), mixed
 
     old, blocked = publish_layout_lines(
@@ -603,7 +603,7 @@ def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
     tmp_path: Path,
 ) -> None:
     """E2E r5 — 「셋업 실무」 r2 의 차이를 공식도 같은 자리로 옮긴 뒤 r2 를 발행해 정리 리비전 r3 이
-    공식이 됐다. 옛 r2 를 고르면 「공식으로 발행」 은 막히고, 「이 리비전으로 되돌리기」 팝오버는
+    공식이 됐다. 옛 r2 를 고르면 「공식으로 지정」 은 막히고, 「이 리비전으로 되돌리기」 팝오버는
     되돌릴 것이 없다며 단추를 세우지 않는다 — 막힘 글은 그 되돌리기를 안내하지 않는다."""
     repository, setup, old = _moved_setup(tmp_path)
     official = _session(repository)
@@ -627,10 +627,10 @@ def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
     blocked = str(publish.help)
-    assert "발행하지 않습니다" in blocked, blocked
+    assert "지정하지 않습니다" in blocked, blocked
     assert "「이 리비전으로 되돌리기」" not in blocked, blocked
     assert "최신 r3의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in blocked, blocked
-    assert "따로 발행할 것이 없습니다" in blocked, blocked
+    assert "따로 지정할 것이 없습니다" in blocked, blocked
 
 
 def test_the_section_draws_no_standing_description_of_what_each_scenario_holds(
@@ -821,7 +821,7 @@ def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revisi
     app.selectbox(key=SCENARIO_KEY).set_value(setup)
     _ok(app.run())
     assert app.selectbox(key=REVISION_KEY).value == latest
-    assert any("정리한 r3으로 발행합니다" in text for text in _texts(app))
+    assert any("정리한 r3으로 지정합니다" in text for text in _texts(app))
 
     _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
 
@@ -831,7 +831,7 @@ def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revisi
     assert release is not None and release.schedule_revision_id == newest.schedule_revision_id
     texts = _texts(app)
     assert any(
-        "공식 v2로 발행했습니다" in text and "이 세션을 r3으로 옮겼습니다." in text
+        "공식 v2로 지정했습니다" in text and "이 세션을 r3으로 옮겼습니다." in text
         for text in texts
     ), texts
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
@@ -864,7 +864,7 @@ def test_a_quick_second_press_of_a_cleaning_publish_keeps_its_notice(
     assert not app.success
     first = [str(item.value) for item in successes(app)]
     assert len(first) == 1, first
-    assert "공식 v2로 발행했습니다" in first[0], first
+    assert "공식 v2로 지정했습니다" in first[0], first
     assert "이 세션을 r3으로 옮겼습니다." in first[0], first
 
     _ok(stale_press(app, PUBLISH_BUTTON_KEY))

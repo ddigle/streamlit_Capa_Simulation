@@ -490,7 +490,7 @@ def insert_release(
         "SELECT COALESCE(MAX(release_no), 0) + 1 FROM equipment_ops.equipment_official_release"
     ).fetchone()
     if row is None:
-        raise RuntimeError("공식 발행 번호를 만들지 못했습니다.")
+        raise RuntimeError("공식 번호를 만들지 못했습니다.")
     release_no = int(row[0])
     connection.execute(
         """

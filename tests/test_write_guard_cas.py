@@ -1356,13 +1356,13 @@ def test_an_old_screen_double_press_after_another_equipment_save_keeps_the_refus
     assert len(repository.list_revisions()) == before
 
 
-# 설비 「공식으로 발행」 — 정리 리비전 ------------------------------------------------
+# 설비 「공식으로 지정」 — 정리 리비전 ------------------------------------------------
 
 
 def test_a_double_press_of_a_cleaning_publish_moves_like_the_first_press(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """공식과 같아진 차이만 남은 최신 rN 의 「공식으로 발행」 은 정리 리비전 rN+1 을 발행하고 리비전
+    """공식과 같아진 차이만 남은 최신 rN 의 「공식으로 지정」 은 정리 리비전 rN+1 을 발행하고 리비전
     상자·세션을 그리로 옮긴다. 더블클릭의 첫 회차가 발행 직후(옮기기 전 첫 세션 칸 접근에서) 끊기면
     둘째 회차는 옛 r2 를 고른 채 「최신이 아닌 리비전은 정리해 발행하지 않습니다」 로 단추가 꺼져
     둘째 누름이 버려지고, 성공 알림도 없이 세션·리비전 상자가 옛 r2 에 남았다(「최신 r3 있음」 —
@@ -1401,7 +1401,7 @@ def test_a_double_press_of_a_cleaning_publish_moves_like_the_first_press(
     assert _texts(app, "error") == []
     texts = _section_texts(app)
     assert any(
-        "공식 v2로 발행했습니다" in text
+        "공식 v2로 지정했습니다" in text
         and "정리한 r3." in text
         and "이 세션을 r3으로 옮겼습니다." in text
         for text in texts
@@ -1468,7 +1468,7 @@ def test_the_own_publish_branch_follows_the_cleaning_revision_and_names_it(
 
     assert not app.exception, [item.message for item in app.exception]
     flash = str(app.session_state[FLASH_KEY])
-    assert "공식 v2로 발행했습니다" in flash and "정리한 r3." in flash, flash
+    assert "공식 v2로 지정했습니다" in flash and "정리한 r3." in flash, flash
     assert "이 세션을 r3으로 옮겼습니다." in flash, flash
     assert app.session_state[PENDING_REVISION_KEY] == published.schedule_revision_id
     assert (

@@ -1139,14 +1139,14 @@ def _restore_dead_end(block: PublishBlock, title: str, latest: str, *, clear_fir
     nothing = f"최신 {latest}의 {same} {title} 그대로라 되돌릴 것이 없"
     if block.newest_released:
         return (
-            f"{nothing}고, 최신 {with_topic_particle(latest)} 이미 공식 발행입니다 — 따로 발행할 "
+            f"{nothing}고, 최신 {with_topic_particle(latest)} 이미 공식입니다 — 따로 지정할 "
             "것이 없습니다."
         )
     if clear_first:
         return (
-            f"{nothing}습니다 — 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 발행하세요."
+            f"{nothing}습니다 — 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 지정하세요."
         )
-    return f"{nothing}습니다 — 최신 {with_object_particle(latest)} 발행하세요."
+    return f"{nothing}습니다 — 최신 {with_object_particle(latest)} 지정하세요."
 
 
 def layout_publish_blocked_words(block: PublishBlock) -> str:
@@ -1169,18 +1169,18 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
     if block.stored_rows and effective:
         head = (
             f"「{name}」 {title}에는 공식과 다른 배치(실효 {effective} — 저장된 차이 "
-            f"{block.stored_rows:,}행)가 있어 공식으로 발행하지 않습니다 — {later}"
+            f"{block.stored_rows:,}행)가 있어 공식으로 지정하지 않습니다 — {later}"
         )
         if block.is_newest:
             return (
                 head
                 + " 공식 설비 시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 "
-                "로 이 시나리오를 공식 배치로 돌린 뒤 발행하세요." + keep
+                "로 이 시나리오를 공식 배치로 돌린 뒤 지정하세요." + keep
             )
         finish = (
-            " 그 최신을 발행하세요(공식 설비 시나리오로 되돌리면 배치 차이는 버립니다)."
+            " 그 최신을 지정하세요(공식 설비 시나리오로 되돌리면 배치 차이는 버립니다)."
             if block.official
-            else " 그 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 발행하세요."
+            else " 그 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 지정하세요."
         )
         way = (
             _restore_dead_end(block, title, latest, clear_first=not block.official)
@@ -1203,20 +1203,20 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
             _restore_dead_end(block, title, latest, clear_first=False)
             if block.restore_writes_nothing
             else restore
-            + f" 그 최신을 발행하세요(되돌리기는 {with_object_particle(dropped)} 빼고 씁니다)."
+            + f" 그 최신을 지정하세요(되돌리기는 {with_object_particle(dropped)} 빼고 씁니다)."
         )
         return (
             f"「{name}」 {title}에 저장된 배치 차이 {block.stored_rows:,}행은 {reason}, "
-            f"최신({latest})이 아닌 리비전은 정리해 발행하지 않습니다(정리 발행은 최신 "
+            f"최신({latest})이 아닌 리비전은 정리해 지정하지 않습니다(정리 지정은 최신 "
             "리비전만 — 공식 설비 시나리오의 리비전에는 배치 차이 행이 남지 않아야 합니다). " + way
         )
     newest = layout_counts_words(*block.newest_effective)
     if newest:
         return (
             f"「{name}」 {title}에는 배치 차이가 없지만 최신 {latest}에 공식과 다른 배치(실효 "
-            f"{newest} — 저장된 차이 {block.newest_rows:,}행)가 있어 공식으로 발행하지 않습니다"
+            f"{newest} — 저장된 차이 {block.newest_rows:,}행)가 있어 공식으로 지정하지 않습니다"
             f"(공식 설비 시나리오의 최신에는 배치 차이가 없어야 합니다) — {later} 「배치 차이 모두 "
-            "지우기」 로 최신을 공식 배치로 돌린 뒤 발행하세요." + keep
+            "지우기」 로 최신을 공식 배치로 돌린 뒤 지정하세요." + keep
         )
     orphans = block.newest_orphan_rows
     if not orphans:
@@ -1230,9 +1230,9 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
         later_cleaned = cleaned_layout_words(block.newest_rows, orphans, counts=False)
     return (
         f"「{name}」 {title}에는 배치 차이가 없지만 최신 {latest}에 저장된 배치 차이 "
-        f"{block.newest_rows:,}행({settled})이 남아 있어 공식으로 발행하지 않습니다(공식 "
+        f"{block.newest_rows:,}행({settled})이 남아 있어 공식으로 지정하지 않습니다(공식 "
         "설비 시나리오의 최신에는 배치 차이 행이 없어야 합니다). 「배치 차이 모두 지우기」 로 "
-        f"최신을 비운 뒤 발행하거나, 최신 {with_object_particle(latest)} 발행하세요"
+        f"최신을 비운 뒤 지정하거나, 최신 {with_object_particle(latest)} 지정하세요"
         f"({with_topic_particle(later_cleaned)} 그때 정리됩니다)."
     )
 

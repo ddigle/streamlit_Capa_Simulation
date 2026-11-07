@@ -283,8 +283,9 @@ def merged_table_gaps(tables: Mapping[str, pd.DataFrame]) -> TableGaps:
         blocking.append(
             f"RQ_MODULE(모듈수)에 없는 공정 {len(module_gaps)}개 — RQ_UPEH 가 쓰는 공정이라 대당 "
             f"Capa 계산이 멈춥니다: {_gap_examples(module_gaps)}. RQ_MODULE 은 앱에서 고칠 수 "
-            "없어 이대로 저장하면 그 시나리오는 계산도 발행도 할 수 없습니다. 이 공정의 모듈수를 "
-            "가진 시나리오를 베이스나 덧붙일 쪽으로 골라 다시 머지하거나, 원천을 다시 등록하세요."
+            "없어 이대로 저장하면 그 시나리오는 계산도 공식 지정도 할 수 없습니다. 이 공정의 "
+            "모듈수를 가진 시나리오를 베이스나 덧붙일 쪽으로 골라 다시 머지하거나, 원천을 다시 "
+            "등록하세요."
         )
     warnings: list[str] = []
     plan = drop_unplanned_rows(tables["RQ_PKG_PLAN"])

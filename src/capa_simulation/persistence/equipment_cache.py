@@ -433,7 +433,7 @@ def load_layout_publish_preview(
     schedule_revision_id: str,
     newest_schedule_revision_id: str | None,
 ) -> LayoutPublishPreview:
-    """「공식으로 발행」 확인 팝업의 배치 판정(설계 6-5 — 발행 쓰기와 같은 판정). 결과는 세 리비전
+    """「공식으로 지정」 확인 팝업의 배치 판정(설계 6-5 — 발행 쓰기와 같은 판정). 결과는 세 리비전
     (공통 최신·발행할 리비전·그 시나리오 최신) 내용과 층 현행값으로만 정해진다 — 리비전 id 셋은
     불변이라 그대로 키이고, 층 현행값은 쓰기 세대 `"floor_layout"` 으로 지킨다. 누가 저장해 최신이
     바뀌면 화면이 새 id 로 부르므로 다른 칸으로 간다."""

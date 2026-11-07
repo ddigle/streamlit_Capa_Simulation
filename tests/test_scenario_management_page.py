@@ -406,7 +406,7 @@ def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
         item.value
         == (
             "가상 제품 복제를 저장했습니다. 가상 제품 1건이 포함되어 있습니다. "
-            "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+            "실적과 대조할 수 없으므로 공식버전으로 지정하기 전에 확인하세요."
         )
         for item in successes(app)
     )
@@ -774,7 +774,7 @@ def test_clone_inherits_the_active_revisions_virtual_products_still_in_the_table
 
     notice = (
         "가상 제품 1건이 포함되어 있습니다. "
-        "실적과 대조할 수 없으므로 공식버전으로 발행하기 전에 확인하세요."
+        "실적과 대조할 수 없으므로 공식버전으로 지정하기 전에 확인하세요."
     )
     assert f"가상 제품 상속 복제를 저장했습니다. {notice}" in [
         item.value for item in successes(app)
@@ -1681,8 +1681,7 @@ def test_permanent_delete_says_what_goes_with_it_right_above_an_empty_box(
     app.run()
     assert not app.exception
     assert any(
-        item.value
-        == "영구 삭제하면 리비전 2개와 공식 발행 이력 1건이 함께 지워지고 되돌릴 수 없습니다."
+        item.value == "영구 삭제하면 리비전 2개와 공식 이력 1건이 함께 지워지고 되돌릴 수 없습니다."
         for item in app.warning
     ), [item.value for item in app.warning]
     assert not any("영구 삭제는 되돌릴 수 없습니다" in item.value for item in app.caption)

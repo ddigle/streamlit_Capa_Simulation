@@ -882,7 +882,7 @@ def test_the_official_release_is_guarded_even_when_it_is_not_the_latest(tmp_path
             _request(session, equipment=_set(session.equipment, "EQ-02", "Qual상태", None))
         )
 
-    assert "다른 리비전을 공식으로 발행한 뒤" in caught.value.escape
+    assert "다른 리비전을 공식으로 지정한 뒤" in caught.value.escape
 
 
 def test_a_stale_common_save_that_breaks_the_scenario_latest_is_refused(tmp_path: Path) -> None:
@@ -932,7 +932,7 @@ def test_the_first_save_into_an_empty_database_is_official_v1(tmp_path: Path) ->
 def test_the_first_schedule_revision_is_official_v1_even_with_publishing_unchecked(
     tmp_path: Path,
 ) -> None:
-    """발행이 하나도 없으면 「공식으로 발행」 을 꺼도 이 저장의 일정 리비전이 v1 이다. 끄는 것은
+    """발행이 하나도 없으면 「공식으로 지정」 을 꺼도 이 저장의 일정 리비전이 v1 이다. 끄는 것은
     지금 공식을 남긴다는 뜻인데 남길 공식이 없다 — 발행 없는 상태로 두면 세션은 「운영 일정」 r1 을
     공식 자리로 보는데 공식 스냅샷은 일정 없이 호기 0대가 된다."""
     repository = _repository(tmp_path)
