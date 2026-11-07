@@ -146,6 +146,7 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.korean_particle import object_particle, with_topic_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_list_edits import (
+    ChangeCounts,
     ListDraft,
     ListProblems,
     ListRules,
@@ -412,7 +413,12 @@ class _ListView:
     saved: SavedList
     releases: Sequence[OfficialReleaseSummary]
     problems: ListProblems
-    pending: int
+    counts: ChangeCounts
+
+    @property
+    def pending(self) -> int:
+        """배지 「저장 전 변경 n건」 — 「저장 전 변경」 칸의 수 셋을 더한다(순서는 옮긴 줄 수)."""
+        return self.counts.scenario + self.counts.order + self.counts.revision
 
 
 def _list_view(view: _ListView | None) -> _ListView:
@@ -546,12 +552,8 @@ def _settle_list_draft(
     if fitted.draft != draft:
         store_draft(fitted.draft)
     problems = list_problems(fitted.draft, saved, LIST_RULES)
-    pending = (
-        len(fitted.draft.scenarios)
-        + len(fitted.draft.revisions)
-        + (1 if fitted.draft.order is not None else 0)
-    )
-    return _ListView(fitted.draft, saved, releases, problems, pending)
+    counts = change_counts(fitted.draft, saved, problems)
+    return _ListView(fitted.draft, saved, releases, problems, counts)
 
 
 def _on_list_outbox() -> None:
@@ -662,7 +664,7 @@ def _render_changes(database_path: str, view: _ListView) -> None:
                 view.draft,
                 view.saved,
                 view.problems,
-                change_counts(view.draft, view.saved, view.problems),
+                view.counts,
             ),
         },
         on_outbox=_on_list_outbox,

@@ -1919,10 +1919,8 @@ def test_opening_another_row_keeps_the_unsaved_name_order_and_revision_edits(
     assert data["counts"]["scenario"] == 1 and data["counts"]["revision"] == 1
     assert [group["id"] for group in data["groups"]] == [ids[2], ids[0]]
     assert data["order"]["moved"] == 3
-    # 칸 머리 알약 — 이름 둘 + 차례 묶음 하나.
-    assert any("저장 전 변경 3건" in str(item.proto.body) for item in app.get("badge")) or any(
-        "저장 전 변경 3건" in str(item.value) for item in app.markdown
-    )
+    # 칸 머리 알약 — 칸의 수와 같은 셈이다(이름 둘 + 옮긴 줄 셋).
+    assert "저장 전 변경 5건" in _pending_badge(app)
 
 
 def test_opening_a_row_keeps_the_changes_panel_and_a_name_in_it_goes_to_the_detail(
@@ -1999,6 +1997,11 @@ def test_a_scenario_without_a_revision_stands_with_a_line_and_no_load_button(
     assert "선택한 리비전 불러오기" not in labels and "보관…" in labels
 
 
+def _pending_badge(app: AppTest) -> str:
+    """전환 단추 옆 알약 글 — `st.badge` 는 마크다운(`:orange-badge[…]`)으로 선다."""
+    return next(str(item.value) for item in app.markdown if "-badge[" in str(item.value))
+
+
 def test_a_place_number_and_the_buttons_arrive_as_moves_and_one_save_writes_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2013,6 +2016,9 @@ def test_a_place_number_and_the_buttons_arrive_as_moves_and_one_save_writes_them
     assert table_names(calls) == [names[2], names[0], names[1]]
     assert table_row(calls, ids[2])["place"] == 3
     assert _counts(calls)["order"] == 3
+    # 머리 배지는 「저장 전 변경」 칸의 수와 같은 셈이다 — 순서를 한 건으로 묶어 세면 같은 낱말의 두
+    # 자리가 다른 수를 말한다.
+    assert "저장 전 변경 3건" in _pending_badge(app)
 
     # 끝 — before 없음. 저장 차례로 돌아왔다.
     browser.move(ids[2], None, order=order)
