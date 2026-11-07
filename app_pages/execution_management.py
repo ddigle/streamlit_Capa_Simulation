@@ -50,7 +50,7 @@ SUBPAGE_SUMMARIES: dict[str, str] = {
     "app_pages/space_status.py": "셋업 이행을 공간·호기로 — 반입 전·지연·미확인 표식",
     "app_pages/actual_efficiency.py": "효율 기준 대비 실적 Gap 과 개선 우선순위",
     "app_pages/actual_upeh.py": "UPEH 기준 대비 실적 Gap 과 개선 우선순위",
-    "app_pages/yield_actual.py": "수율 기준(`RQ_YLD`) 대비 실적 Gap 과 개선 우선순위",
+    "app_pages/yield_actual.py": "수율 기준 대비 실적 Gap 과 개선 우선순위",
 }
 
 # 세 영역 한 줄 비교 — (머리 선언, 한 낱말, 뜻풀이 — 영역 이름 줄의 풍선). 이 화면 자신은 링크 대신

@@ -67,7 +67,10 @@ def test_the_table_of_contents_follows_the_sidebar_declaration(
     assert links == ["열기", "열기", *(spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES)]
     for spec in EXECUTION_MANAGEMENT_SUBPAGES:
         index = captions.index(f"{FALLBACK}{spec.title}")
-        assert captions[index + 1].strip(), spec.path
+        summary = captions[index + 1]
+        assert summary.strip(), spec.path
+        # 목차 글은 화면 이름으로 말한다 — 내부 표 이름이 보이지 않는다.
+        assert "RQ_" not in summary, spec.path
     # 「부서별 Gap·A/Item」(Dynamic 머리에서 옮겨 온 뜻).
     assert any(caption.startswith("부서별 Gap · A/Item") for caption in captions)
 
