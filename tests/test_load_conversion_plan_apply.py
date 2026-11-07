@@ -13,6 +13,7 @@ from alert_marks import (
     active_state,
     alert_notes,
     data_error_texts,
+    flashed,
     note_table,
     place_errors,
     successes,
@@ -117,6 +118,18 @@ def _paste(app: AppTest, text: str) -> None:
         if "붙여넣기 일괄 적용" in str(button.label):
             button.click().run()
             break
+
+
+def test_the_plan_paste_window_calls_the_table_by_its_screen_name(seeded_database: Path) -> None:
+    """화면에서 「PKG PLAN」 이라 부르는 표를 글 칸 이름 · 거부 알림도 같은 이름으로 부른다 — 내부
+    표 이름은 왕복 양식의 파일 이름에만 남는다(설계 규칙 UI-CON-02)."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    _paste(app, "아무 글자\t값\n1\t2")
+    assert not list(app.exception)
+
+    assert app.text_area(key="rq_pkg_plan_csv_clipboard").label == "PKG PLAN 표 붙여넣기"
+    (refused,) = flashed(app, "error")
+    assert refused.value.startswith("PKG PLAN 입력 표의 열이 다운로드 양식과 다릅니다")
 
 
 def _register(app: AppTest, product: str, stack: str) -> None:
@@ -1201,8 +1214,8 @@ def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     app.session_state[_widget_key(app, "yield_editor")] = edit
     app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
-    assert _applied(app, "RQ_YLD 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+    assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
 
     app.run()
     assert not list(app.exception)
-    assert _applied(app, "RQ_YLD 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+    assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]

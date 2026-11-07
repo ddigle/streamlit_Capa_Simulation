@@ -691,10 +691,10 @@ def test_load_input_tabs_expose_plan_and_yield_clipboard_round_trip() -> None:
     assert not app.text_area
     app.button(key="open_plan_paste").click().run()
     assert not app.exception
-    assert {text_area.label for text_area in app.text_area} == {"RQ_PKG_PLAN 표 붙여넣기"}
+    assert {text_area.label for text_area in app.text_area} == {"PKG PLAN 표 붙여넣기"}
     app.button(key="open_yield_paste").click().run()
     assert not app.exception
-    assert {text_area.label for text_area in app.text_area} == {"RQ_YLD 표 붙여넣기"}
+    assert {text_area.label for text_area in app.text_area} == {"수율 표 붙여넣기"}
 
 
 def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:

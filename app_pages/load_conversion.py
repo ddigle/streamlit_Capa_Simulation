@@ -283,7 +283,8 @@ TAB_CONVERSION = ":material/calculate: 환산"
 TAB_PKG_PLAN = ":material/edit_calendar: PKG PLAN"
 TAB_YIELD = ":material/percent: 수율"
 TAB_LABELS = (TAB_CONVERSION, TAB_PKG_PLAN, TAB_YIELD)
-# 알림이 「그 화면으로」 로 열 탭 이름(아이콘 없이 — 탭 단추 글의 끝과 맞댄다).
+# 알림이 「그 화면으로」 로 열 탭 이름(아이콘 없이 — 탭 단추 글의 끝과 맞댄다). 붙여넣기 창 · 적용
+# 알림이 부르는 표 이름도 이 이름이다 — 내부 표 이름은 양식 파일 이름에만 남는다(UI-CON-02).
 CONVERSION_TAB_NAME = "환산"
 PKG_PLAN_TAB_NAME = "PKG PLAN"
 YIELD_TAB_NAME = "수율"
@@ -535,7 +536,7 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     """
     imported = render_reference_clipboard_form(
         source,
-        table_name="RQ_PKG_PLAN",
+        table_name=PKG_PLAN_TAB_NAME,
         key_columns=PLAN_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=PLAN_PASTE_KEY,
@@ -579,7 +580,7 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
     )
     _queue_done(
         YIELD_FLASH_KEY,
-        f"RQ_YLD {origin} 활성 시나리오에 적용했습니다.{note} "
+        f"{YIELD_TAB_NAME} {origin} 활성 시나리오에 적용했습니다.{note} "
         "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
     )
     mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
@@ -608,7 +609,7 @@ def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     # 알린다).
     imported = render_reference_clipboard_form(
         source,
-        table_name="RQ_YLD",
+        table_name=YIELD_TAB_NAME,
         key_columns=YIELD_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=YIELD_PASTE_KEY,
