@@ -17,6 +17,12 @@ import streamlit as st
 from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts, module_failures
+from capa_simulation.components.diagnostic_copy import (
+    diagnostic_text,
+    plain_lines,
+    render_diagnostic_copy,
+    table_lines,
+)
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.module_registry import (
     DISABLED_ENV_VAR,
@@ -31,6 +37,7 @@ from capa_simulation.sidebar_status import remembered_expander
 # 펼침 key — 탭 묶음 위에 서므로 자리를 key 로 고정하고, 편 상태는 기억 칸에 둔다(「서버 시작 점검」
 # 과 같은 꼴).
 EXPANDER_KEY = "admin_area_module_status"
+COPY_KEY = "module_status"
 # 환경변수 줄의 풍선 — 바꾼 것이 언제 보이는지는 칸 하나의 뜻이라 늘 띄우지 않는다(설계 규칙
 # UI-TXT-01 · 02).
 RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄운 뒤 보입니다."
@@ -130,6 +137,16 @@ def environment_caption(scan: ModuleScan) -> str:
     return " · ".join(parts)
 
 
+def status_text(title: str, scan: ModuleScan, table: pd.DataFrame | None) -> str:
+    """「복사」 글 — 뿌리 오류 · 모듈 표 · 환경변수 줄."""
+    return diagnostic_text(
+        title,
+        [scan.root_error] if scan.root_error else [],
+        [] if table is None else table_lines(table),
+        plain_lines([environment_caption(scan)]),
+    )
+
+
 def render_module_status() -> None:
     """모듈 기록이 있거나 뿌리를 못 읽었을 때만 펼침을 그린다. 뿌리를 못 읽은 것은 상태
     알림(`MO-01` — 알림창 · Alarm)으로도 낸다(그리지 않는 회차에도 부른다 — 해소)."""
@@ -144,12 +161,15 @@ def render_module_status() -> None:
     )
     if not scan.records and not scan.root_error:
         return
-    with remembered_expander(status_title(scan), icon=":material/extension:", key=EXPANDER_KEY):
+    title = status_title(scan)
+    table = build_status_table(scan) if scan.records else None
+    with remembered_expander(title, icon=":material/extension:", key=EXPANDER_KEY):
+        render_diagnostic_copy(status_text(title, scan, table), key=COPY_KEY)
         if scan.root_error:
             st.caption(f":material/folder_off: {literal_markdown(scan.root_error)}")
-        if scan.records:
+        if table is not None:
             st.dataframe(
-                build_status_table(scan),
+                table,
                 column_config=status_column_config(),
                 hide_index=True,
                 width="stretch",

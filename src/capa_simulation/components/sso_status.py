@@ -38,6 +38,12 @@ from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
 from capa_simulation.components import sso_identity
+from capa_simulation.components.diagnostic_copy import (
+    diagnostic_text,
+    plain_lines,
+    render_diagnostic_copy,
+    table_lines,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.io import s3_small
 from capa_simulation.io.container_start_report import (
@@ -51,6 +57,7 @@ from capa_simulation.sidebar_status import remembered_expander
 
 # 펼침 key. 「서버 시작 점검」 바로 뒤 · 탭 묶음 위에 서므로 자리를 key 로 고정한다.
 EXPANDER_KEY = "admin_area_sso_status"
+COPY_KEY = "sso_status"
 START_STEP_LABEL = "통합인증"
 RECENT_EVENT_LIMIT = 20
 ANONYMOUS_EVENT_LIMIT = 10
@@ -109,6 +116,7 @@ OFF_IN_PRODUCTION_HELP = (
     f"포털 승인 메일의 Client ID 를 환경변수(`{names.ENV_CLIENT_ID}`)에 넣으면 켜집니다."
 )
 OFF_IN_PRODUCTION_WARNING = f"{OFF_IN_PRODUCTION_CONCLUSION} {OFF_IN_PRODUCTION_HELP}"
+BROKEN_CONCLUSION = "통합인증 설정을 마치지 못했습니다"
 
 
 def sso_verdict(cfg: SsoConfig) -> str:
@@ -243,11 +251,21 @@ def access_s3_line(cfg: SsoConfig) -> str:
     return " · ".join(parts)
 
 
-def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
-    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 · 유지 시간 · 쿠키 이름 · 문지기 · 명단."""
+def fact_lines(
+    cfg: SsoConfig, *, now: datetime | None = None, shareable: bool = False
+) -> list[str]:
+    """표 아래 한 줄씩 — redirect_uri · issuer · 인증서 · 유지 시간 · 쿠키 이름 · 문지기 · 명단.
+
+    `shareable` 이면 포털 등록값 셋(redirect_uri · issuer · 인증서 지문)을 글자 그대로 싣지 않는다 —
+    화면에서는 포털과 한 글자씩 대 보지만 리뷰에는 옮기지 않는 값이고(Guide), 복사 글은 리뷰로
+    나간다(`status_text`).
+    """
     moment = now or datetime.now(timezone.utc)
     redirect = literal_markdown(cfg.redirect_uri) if cfg.redirect_uri else "계산하지 못함"
     issuer = literal_markdown(cfg.issuer) if cfg.issuer else "없음"
+    if shareable:
+        redirect = "있음" if cfg.redirect_uri else redirect
+        issuer = "있음" if cfg.issuer else issuer
     lines = [
         f"redirect\\_uri: {redirect}",
         f"`{names.ENV_ISSUER}`: {issuer}",
@@ -255,9 +273,14 @@ def fact_lines(cfg: SsoConfig, *, now: datetime | None = None) -> list[str]:
     ]
     for cert in cfg.signing_certs:
         days = _days_left(moment, cert.not_after)
+        thumbprint = (
+            ""
+            if shareable
+            else f"x5t {literal_markdown(cert.x5t)} · SHA-256 {cert.sha256[:16]}… · "
+        )
         lines.append(
-            f"서명 인증서 x5t {literal_markdown(cert.x5t)} · SHA-256 {cert.sha256[:16]}… · "
-            f"만료 {cert.not_after.strftime('%Y-%m-%d')}(남은 날 {days}) · RSA {cert.key_bits}비트"
+            f"서명 인증서 {thumbprint}만료 {cert.not_after.strftime('%Y-%m-%d')}"
+            f"(남은 날 {days}) · RSA {cert.key_bits}비트"
         )
     lines += [
         f"로그인 유지: 마지막 사용 뒤 {cfg.session_hours}시간 · 최대 {cfg.session_max_hours}시간 · "
@@ -434,6 +457,43 @@ def _access_seed_alert(cfg: SsoConfig) -> None:
     )
 
 
+def _conclusion(cfg: SsoConfig) -> str:
+    if cfg.mode is SsoMode.ON:
+        return ON_CAPTION_LISTED if cfg.access.enforced else ON_CAPTION_UNLISTED
+    return OFF_IN_PRODUCTION_CONCLUSION if cfg.mode is SsoMode.OFF else BROKEN_CONCLUSION
+
+
+def status_text(title: str, cfg: SsoConfig, *, now: datetime) -> str:
+    """「복사」 글 — 펼침과 같은 차례의 결론 · 표 · 사실 · 사건. 복사 글은 리뷰로 나가므로 포털
+    등록값 셋은 있음 · 없음으로만 싣는다(`fact_lines` 의 `shareable`). 그 밖의 줄에는 원래 비밀값 ·
+    주소 · 명단 값이 없고 계정은 앞 두 글자뿐이다(모듈 설명)."""
+    head = [_conclusion(cfg)]
+    if cfg.mode is SsoMode.OFF:
+        head.append(readiness_line(cfg))
+    facts = fact_lines(cfg, now=now, shareable=True)
+    if cfg.mode is SsoMode.ON:
+        facts += [refresh_count_line(), last_claims_line()]
+    events = recent_event_table()
+    denied = denied_account_line()
+    anonymous = anonymous_failure_line()
+    return diagnostic_text(
+        title,
+        plain_lines(head),
+        table_lines(environment_table(cfg)),
+        plain_lines(facts),
+        ["최근 사건 없음"] if events.empty else ["최근 사건(새것 먼저)", *table_lines(events)],
+        [] if denied is None else [denied, *table_lines(denied_account_table())],
+        (
+            []
+            if anonymous is None
+            else [
+                *plain_lines([anonymous]),
+                *table_lines(recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True)),
+            ]
+        ),
+    )
+
+
 def render_sso_status() -> None:
     """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
 
@@ -468,10 +528,9 @@ def render_sso_status() -> None:
         _access_seed_alert(cfg)
     if cfg.mode is SsoMode.OFF and not cfg.prod:
         return
-    verdict = sso_verdict(cfg)
-    with remembered_expander(
-        f"통합인증 점검 · {verdict}", icon=":material/verified_user:", key=EXPANDER_KEY
-    ):
+    title = f"통합인증 점검 · {sso_verdict(cfg)}"
+    with remembered_expander(title, icon=":material/verified_user:", key=EXPANDER_KEY):
+        render_diagnostic_copy(status_text(title, cfg, now=now), key=COPY_KEY)
         if cfg.mode is SsoMode.ON:
             st.caption(ON_CAPTION_LISTED if cfg.access.enforced else ON_CAPTION_UNLISTED)
         elif cfg.mode is SsoMode.OFF:
@@ -481,7 +540,7 @@ def render_sso_status() -> None:
             )
             st.caption(readiness_line(cfg))
         else:
-            st.error("통합인증 설정을 마치지 못했습니다", icon=":material/gpp_bad:")
+            st.error(BROKEN_CONCLUSION, icon=":material/gpp_bad:")
         st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
         st.caption("  \n".join(fact_lines(cfg, now=now)), help=FACTS_HELP)
         if cfg.mode is SsoMode.ON:

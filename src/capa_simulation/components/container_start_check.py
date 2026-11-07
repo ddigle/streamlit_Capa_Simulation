@@ -26,6 +26,12 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components.diagnostic_copy import (
+    diagnostic_text,
+    plain_lines,
+    render_diagnostic_copy,
+    table_lines,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sso_status import sso_start_step, started_environment_caption
 from capa_simulation.io.container_start_report import (
@@ -52,6 +58,8 @@ from capa_simulation.sidebar_status import remembered_expander
 # 편 상태는 기억 칸(`remembered_expander`)에 둔다 — 진단을 읽다 다른 화면(VOC 등)에 다녀와도
 # 접히지 않는다(VOC 글 상자와 같은 꼴, E2E r1). 제목 끝(판정)이 바뀌어도 편 상태는 그대로다.
 EXPANDER_KEY = "admin_area_container_start_check"
+COPY_KEY = "container_start_check"
+PIP_TAIL_LABEL = "pip 출력 끝(자격증명은 가렸습니다)"
 _GIB = 1024**3
 # pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
 POD_TAIL_CHARS = 5
@@ -178,37 +186,58 @@ def report_origin_caption(report: ContainerStartReport) -> str:
     return f"**시작 기록** · {started} · `scripts/container_start.py`"
 
 
+def report_text(
+    title: str, report: ContainerStartReport, steps: pd.DataFrame, facts: list[str]
+) -> str:
+    """「복사」 글 — 펼침의 값 줄 · 단계 표 · 사실 줄 · pip 출력 끝. 값은 갈래와 수뿐이고 비밀값은
+    결과 파일에 원래 없다(모듈 설명)."""
+    missing = missing_environment_line(report)
+    return diagnostic_text(
+        title,
+        plain_lines([report_origin_caption(report)]),
+        table_lines(steps),
+        plain_lines([*facts, *([missing] if missing else [])]),
+        [PIP_TAIL_LABEL, *report.pip_tail] if report.pip_tail else [],
+    )
+
+
+def report_fact_lines(report: ContainerStartReport) -> list[str]:
+    """표 아래 사실 줄 전부 — 판 · 토큰 · 동기화 값과 시작 때 있던 통합인증 환경변수."""
+    lines = fact_lines(report) + sync_fact_lines(report, read_app_ready())
+    started = started_environment_caption(
+        None if report.sso_environment is None else dict(report.sso_environment)
+    )
+    return lines if started is None else [*lines, started]
+
+
+def missing_environment_line(report: ContainerStartReport) -> str | None:
+    if not report.missing_environment:
+        return None
+    names = " · ".join(f"`{name}`" for name in report.missing_environment)
+    return f"시작 때 비어 있던 CD 환경변수: {names}"
+
+
 def render_container_start_check() -> None:
     report = read_container_start_report()
     if report is None:
         _render_missing_report()
         return
     _report_missing(None)
-    with remembered_expander(
-        f"서버 시작 점검 · {report_verdict(report)}",
-        icon=":material/rocket_launch:",
-        key=EXPANDER_KEY,
-    ):
+    title = f"서버 시작 점검 · {report_verdict(report)}"
+    # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
+    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
+    steps = build_step_table(report, (sso_start_step(), *sync_rows(report)))
+    facts = report_fact_lines(report)
+    with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
+        render_diagnostic_copy(report_text(title, report, steps, facts), key=COPY_KEY)
         st.caption(report_origin_caption(report))
-        # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
-        # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
-        st.dataframe(
-            build_step_table(report, (sso_start_step(), *sync_rows(report))),
-            hide_index=True,
-            width="stretch",
-        )
-        lines = fact_lines(report) + sync_fact_lines(report, read_app_ready())
-        started = started_environment_caption(
-            None if report.sso_environment is None else dict(report.sso_environment)
-        )
-        if started is not None:
-            lines.append(started)
-        st.caption("  \n".join(lines))
-        if report.missing_environment:
-            names = " · ".join(f"`{name}`" for name in report.missing_environment)
-            st.caption(f"시작 때 비어 있던 CD 환경변수: {names}")
+        st.dataframe(steps, hide_index=True, width="stretch")
+        st.caption("  \n".join(facts))
+        missing = missing_environment_line(report)
+        if missing is not None:
+            st.caption(missing)
         if report.pip_tail:
-            st.caption("pip 출력 끝(자격증명은 가렸습니다)")
+            st.caption(PIP_TAIL_LABEL)
             st.code("\n".join(report.pip_tail), language=None)
 
 
@@ -228,6 +257,7 @@ def _render_missing_report() -> None:
         _report_missing(title, notice)
     # 넣을 환경변수와 이때 볼 것은 Guide 「서버 시작 점검」 이 안내 문서 절을 가리킨다(UI-TXT-03).
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
+        render_diagnostic_copy(diagnostic_text(title, plain_lines([notice])), key=COPY_KEY)
         st.caption(notice)
 
 
