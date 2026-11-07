@@ -157,6 +157,10 @@ OUTPUT_METRICS = {
     "가용대수": 1,
 }
 OUTPUT_OPTIONS = [*OUTPUT_METRICS, "로직 분석"]
+# 로직 분석 근거 표 높이 상한과 그 안에 다 드는 줄 수(머리 빼고). 그 안이면 내용 높이로 그려 표
+# 아래에 값 없는 빈 줄이 서지 않고, 넘으면 상한 높이에서 표 안이 스크롤한다.
+CONTRIBUTION_TABLE_MAX_HEIGHT_PX = 520
+CONTRIBUTION_TABLE_CONTENT_ROWS = 15
 # 주차별 가용대수를 곱해 구하는 지표. 가용대수 입력이 없으면 이 둘만 빈칸이 된다.
 AVAILABILITY_BASED_METRICS = frozenset({"일 표준 가능량", "가용대수"})
 # 로직 분석에서 일곱 칸을 다 고르지 않은 회차의 빈 결과 한 줄.
@@ -629,7 +633,11 @@ def _render_logic_analysis(
         },
         hide_index=True,
         width="stretch",
-        height=min(520, 38 + len(contribution_display) * 35),
+        height=(
+            "content"
+            if len(contribution_display) <= CONTRIBUTION_TABLE_CONTENT_ROWS
+            else CONTRIBUTION_TABLE_MAX_HEIGHT_PX
+        ),
     )
 
 
