@@ -226,9 +226,10 @@ USAGE_NOTICE_HELP = (
     "있습니다."
 )
 
-# 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
+# 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐르고 첫 칸은 붙박인다. 기준 창(1600 ·
+# 사이드바 펼침)의 표 폭 1227px 에 14달이 스크롤 막대 자리까지 남기고 든다.
 _LABEL_COLUMN_PX = 170
-_MONTH_COLUMN_MIN_PX = 84
+_MONTH_COLUMN_MIN_PX = 74
 # 호기 줄: 이름·일정 칸 · 타임라인 · 단축일수 칸. 한 줄에 이름과 「기존 MM.DD → 단축 MM.DD」
 # (해가 다르면 `YY.MM.DD`)를 나란히 두므로 이름 칸이 넓고, 오른쪽은 「−N일」 하나뿐이라 좁다.
 _UNIT_NAME_PX = 250
@@ -1388,6 +1389,9 @@ def _style() -> str:
   font-family:{display};font-weight:700}}
 .shk-grid > div.shk-row {{align-items:flex-start;text-align:left;font-weight:600}}
 .shk-grid > div.shk-row-muted {{align-items:flex-start;text-align:left;color:{tokens.TEXT_MUTED}}}
+.shk-grid > div.shk-row, .shk-grid > div.shk-row-muted {{position:sticky;left:0;z-index:1;
+  background:{tokens.SURFACE};box-shadow:1px 0 0 {tokens.BORDER}}}
+.shk-grid > div.shk-head.shk-row-muted {{background:{tokens.SURFACE_CLASSIFICATION}}}
 .shk-num {{font-family:{display};font-weight:700;font-size:14px}}
 .shk-sub {{font-size:10.5px;color:{tokens.TEXT_MUTED};white-space:nowrap}}
 .shk-bn-name {{max-width:100%;overflow:hidden;text-overflow:ellipsis}}
@@ -1406,14 +1410,15 @@ def _style() -> str:
 .shk-card-cutoff {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-badge {{font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 12px;
   color:{tokens.TEXT}}}
-.shk-card-body {{padding:8px 18px 4px}}
+.shk-card-body {{margin:0 18px;padding:8px 0 4px}}
 .shk-units {{padding:10px 18px 16px;display:flex;flex-direction:column;gap:6px}}
 .shk-units-legend {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-unit {{display:grid;grid-template-columns:{_UNIT_NAME_PX}px minmax({_TRACK_MIN_PX}px,1fr)
   {_UNIT_RESULT_PX}px;align-items:center;gap:10px;background:{tokens.SURFACE_SUBTLE};
   border:1px solid {tokens.BORDER};border-radius:8px;padding:3px 10px}}
 .shk-unit-axis {{background:none;border:none;padding:0 10px}}
-.shk-unit-label {{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap}}
+.shk-unit-label {{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap;
+  position:sticky;left:0;z-index:1;background:{tokens.SURFACE_SUBTLE}}}
 .shk-unit-name {{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;min-width:0}}
 .shk-unit-dates {{flex:none;font-size:13px;color:{tokens.TEXT};white-space:nowrap;
@@ -1691,8 +1696,8 @@ def _card_table(
         gap, after_gap = float(str(row["과부족"])), float(str(row["단축후과부족"]))
         status = str(row["상태"])
         if gap < 0:
-            # 단축 후 값과 상태 글은 따로 한 줄씩이다 — 한 줄로 이으면 `nowrap` 이라 84px 달
-            # 칸을 넘어 옆 달에 얹힌다.
+            # 단축 후 값과 상태 글은 따로 한 줄씩이다 — 한 줄로 이으면 `nowrap` 이라 달 칸을 넘어
+            # 옆 달에 얹힌다.
             notes = [f'<span class="shk-sub">→ {_escape(_signed(after_gap))}</span>']
             if status in _STATUS_NOTES:
                 notes.append(f'<span class="shk-sub">{_escape(_STATUS_NOTES[status])}</span>')

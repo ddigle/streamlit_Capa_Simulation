@@ -17,9 +17,13 @@ import pytest
 
 import capa_simulation.services.display_order as display_order_module
 from capa_simulation.components.required_shortening_panel import (
+    _LABEL_COLUMN_PX,
+    _MONTH_COLUMN_MIN_PX,
     _bottlenecks,
     _ordered_processes,
+    _style,
 )
+from capa_simulation.components.shortening_progress_panel import progress_style
 from capa_simulation.page_bootstrap import PageContext
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
@@ -156,3 +160,18 @@ def test_process_order_uses_the_prepared_rules_and_follows_them(
 
     assert ordered == expected
     assert ordered[0] == first
+
+
+def test_the_tables_keep_their_row_names_and_fit_fourteen_months() -> None:
+    """가로로 흐르는 표의 줄 이름 칸은 붙박이고(`position:sticky`), 기준 창(1600 · 사이드바 펼침) 표
+    폭 1227px 에 14달이 스크롤 막대 자리까지 남기고 든다 — 끝 달이 숫자 중간에서 잘려 보이지
+    않는다. 카드 표의 좌우 틈은 스크롤 상자 밖 여백이다(안쪽 여백이면 붙박인 칸 왼쪽으로 달 칸이
+    비친다)."""
+    assert _LABEL_COLUMN_PX + 14 * _MONTH_COLUMN_MIN_PX + 15 <= 1227
+    style = _style()
+    for selector in (".shk-grid > div.shk-row, .shk-grid > div.shk-row-muted", ".shk-unit-label"):
+        rule = style.split(selector + " {", 1)[1].split("}", 1)[0]
+        assert "position:sticky" in rule and "left:0" in rule and "background:" in rule
+    rule = progress_style().split(".shk-prog-label {", 1)[1].split("}", 1)[0]
+    assert "position:sticky" in rule and "left:0" in rule and "background:" in rule
+    assert "padding:8px 0 4px" in style.split(".shk-card-body {", 1)[1].split("}", 1)[0]

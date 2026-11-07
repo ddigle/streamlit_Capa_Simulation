@@ -702,7 +702,8 @@ def progress_style() -> str:
   background:{tokens.SURFACE_SUBTLE};border:1px solid {tokens.BORDER};border-radius:8px;
   padding:4px 10px}}
 .shk-prog-unit.shk-unit-axis {{background:none;border:none;padding:0 10px}}
-.shk-prog-label {{display:flex;flex-direction:column;gap:3px;min-width:0}}
+.shk-prog-label {{display:flex;flex-direction:column;gap:3px;min-width:0;position:sticky;left:0;
+  z-index:1;background:{tokens.SURFACE_SUBTLE}}}
 .shk-prog-meta {{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;
   color:{tokens.TEXT_MUTED};white-space:nowrap}}
 .shk-prog-badge {{font-size:11px;font-weight:700;padding:0 7px;border-radius:999px;
