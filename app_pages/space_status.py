@@ -325,6 +325,23 @@ DISCARD_CHECK_HELP = "「변경을 버리고 불러오기」 를 체크하면 �
 # 알림」 — 알림 다음 회차에 key 없는 팝오버가 저절로 닫혔다).
 DISCARD_POPOVER_KEY = "space_layout_discard_popover"
 CHANGES_EXPANDER_KEY = "space_layout_changes_expander"
+# 저장 안 한 배치 상자와 그 머리 줄(건수 · 「변경 내용」 · 「배치 저장」 · 「버리기」), 메모 · 바뀐
+# 호기 · 이름 바꿈을 담은 머리 줄 안 팝오버. 상자는 배치 편집 중 늘 서서 자리를 잡아 둔다(설계 규칙
+# UI-PRF-03) — 안쪽 여백을 줄여 도면 쪽 높이를 남긴다.
+UNSAVED_PANEL_KEY = "space_unsaved_layout_panel"
+UNSAVED_HEAD_KEY = "space_unsaved_layout_head"
+DETAILS_POPOVER_KEY = "space_layout_details_popover"
+UNSAVED_PANEL_STYLE = f"<style>.st-key-{UNSAVED_PANEL_KEY}{{padding:0.375rem 0.75rem}}</style>"
+DETAILS_LABEL = "변경 내용"
+DETAILS_ICON = ":material/notes:"
+# 팝오버 칸은 안 내용 폭을 따른다 — 없으면 280px 로 서서 바뀐 호기 표 칸이 잘린다.
+DETAILS_WIDTH = 640
+DETAILS_HELP = "변경 메모 · 저장자를 적고 바뀐 호기 · 이름 바꿈 목록을 봅니다."
+DETAILS_NONE_HELP = "FAB 전체 배치만 바뀌어 메모가 남을 리비전을 만들지 않습니다."
+IDLE_MARK = ":material/edit_note: 저장할 변경 없음"
+IDLE_DETAILS_HELP = "적용한 변경이 없습니다."
+IDLE_SAVE_HELP = "적용한 변경이 없습니다 — 편집기에서 「적용」 을 누르면 저장할 수 있습니다."
+IDLE_DISCARD_HELP = "버릴 변경이 없습니다."
 # 설비 샘플 화면에서 FAB 대기분 저장을 막은 까닭(상자 안내와 단추 풍선).
 SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
@@ -625,6 +642,7 @@ with notices:
     # 스타일만 든 `st.html` 이라 자리를 차지하지 않고, 다른 화면으로 가면 사라져 고정이
     # 풀린다(AGENTS 9장).
     st.html(space_lock_style())
+    st.html(UNSAVED_PANEL_STYLE)
 # 편집본은 실제 저장본이 있을 때만 세운다 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None
@@ -1177,9 +1195,46 @@ class UnsavedPanel(NamedTuple):
     doubled: tuple[str, ...] = ()
 
 
-def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
-    """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
+def _render_idle_save_row() -> None:
+    """배치 편집 중 저장할 변경이 없는 회차의 저장 상자 — 저장 안 한 배치 상자와 같은 머리 줄이고
+    단추는 잠긴다(설계 규칙 UI-INP-07). 첫 「적용」 에 상자가 새로 서며 도면이 밀리지 않게 그 줄
+    높이를 늘 잡아 둔다(UI-PRF-03)."""
+    with st.container(border=True, key=UNSAVED_PANEL_KEY):
+        with st.container(
+            horizontal=True, gap="small", vertical_alignment="center", key=UNSAVED_HEAD_KEY
+        ):
+            st.caption(IDLE_MARK)
+            st.popover(
+                DETAILS_LABEL,
+                icon=DETAILS_ICON,
+                key=DETAILS_POPOVER_KEY,
+                disabled=True,
+                help=IDLE_DETAILS_HELP,
+            )
+            st.button(
+                "배치 저장",
+                type="primary",
+                icon=":material/save:",
+                key=SAVE_BUTTON_KEY,
+                disabled=True,
+                help=IDLE_SAVE_HELP,
+            )
+            st.popover(
+                "버리기",
+                icon=":material/undo:",
+                key=DISCARD_POPOVER_KEY,
+                disabled=True,
+                help=IDLE_DISCARD_HELP,
+            )
+
+
+def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> UnsavedPanel:
+    """저장 안 한 배치 변경(호기 배치·캔버스·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
     화면에서나 뜬다.
+
+    늘 보이는 몫은 머리 줄 하나(건수 · 「변경 내용」 · 「배치 저장」 · 「버리기」)다. 메모 · 바뀐
+    호기 · 이름 바꿈은 그 줄 안 「변경 내용」 팝오버이고 위젯 key 는 그대로다. `reserve`(배치 편집
+    중)면 저장할 변경이 없는 회차에도 같은 줄을 잠근 채 세운다(`_render_idle_save_row`).
 
     저장은 가용설비 설비 마스터와 같은 `save_equipment_buffer` 다 — 편집본 전체를 저장하므로 설비
     마스터의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비
@@ -1237,6 +1292,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
     ):
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"배치를 저장하지 못했습니다: {error}"))
+        if reserve:
+            _render_idle_save_row()
         return UnsavedPanel()
     # 설비 마스터의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
     others, side_tables = 0, []
@@ -1319,92 +1376,59 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
             else ""
         )
     )
-    with st.container(border=True, key="space_unsaved_layout_panel"):
-        st.markdown(f"**:material/edit_note: 저장 안 한 배치 변경** — {' · '.join(parts)}")
-        if layout_locked:
-            # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04).
-            st.caption(
-                ":material/lock: 배치 저장 잠김",
-                help=(
-                    "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
-                    + (
-                        literal_markdown(edit_mode.lock_reason)
-                        if edit_mode.lock_reason
-                        else "최신을 불러온 뒤 다시 고칩니다."
-                    )
-                ),
-            )
-            with st.container(horizontal=True, gap="small", vertical_alignment="center"):
-                st.button(
-                    "배치 변경만 버리기",
-                    icon=":material/layers_clear:",
-                    key=DISCARD_LAYOUT_BUTTON_KEY,
-                    on_click=_discard_layout_only,
-                    help=(
-                        "호기 자리·크기·레이아웃표시와 층 도면 요소·Main 설비명 위치·캔버스 "
-                        "변경만 버립니다. 설비 마스터의 다른 편집과 이름 바꿈, FAB 전체 배치는 "
-                        "남습니다."
-                    ),
-                )
-                # 남이 그 시나리오에 다른 배치를 저장한 잠금이고 버릴 것이 배치 변경뿐이면 버리기와
-                # 잠금 줄의 「최신 rM 불러오기」 를 한 번에 한다(버린 뒤 팝오버를 다시 여는
-                # 두 단계였다). 다른 편집이 있으면 불러오기가 그것까지 버리므로 세우지 않는다.
-                if (
-                    edit_mode.lock_action == "latest"
-                    and names.empty
-                    and not others
-                    and not side_tables
-                ):
-                    latest = equipment_session.latest_revision_no
-                    st.button(
-                        f"배치 변경 버리고 최신 r{latest} 불러오기",
-                        icon=":material/swap_horiz:",
-                        key=DISCARD_AND_LOAD_LATEST_KEY,
-                        on_click=_discard_layout_and_load_latest,
-                        args=(equipment_database_path, _latest_target(equipment_session), latest),
-                        help=(
-                            "이 배치 변경을 버리고 곧바로 그 시나리오의 최신 리비전을 불러옵니다 — "
-                            "배치 편집을 다시 할 수 있습니다. 저장하지 않은 S.PKG FAB 전체 배치는 "
-                            "남습니다."
-                        ),
-                    )
-        if not changes.empty:
-            with st.expander(f"바뀐 호기 {len(changes)}건", key=CHANGES_EXPANDER_KEY):
-                # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
-                toolbar_clearance()
-                st.dataframe(changes, hide_index=True, width="stretch")
-        if not names.empty:
-            # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
-            # 결정). 같은 호기라 모든 설비 시나리오의 일정·비가동이 따라가고(G4·R2), 진척 비교
-            # 기준선·바깥 Excel 은 따라가지 않는다(Guide). 설비 마스터 탭과 같은 목록 꼴이다.
-            render_name_changes(names)
-        doubled = (
-            duplicate_block_links(fab_pending.marks)
-            if fab_pending is not None and fab_pending.marks is not None
-            else []
-        )
-        warnings = _pending_layout_warnings(frames, marks) if frames is not None else None
+    note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
+    # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을 만들지
+    # 않으니 칸을 두지 않는다.
+    fab_only = fab_only_layout and not others and not side_tables
+    with st.container(border=True, key=UNSAVED_PANEL_KEY):
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"저장하지 못했습니다: {error}"))
             # 낡은 세션의 저장 거절 곁에서 최신으로 옮긴다(설비 마스터 탭·사이드바 팝업과 같음).
             render_load_latest_button(
                 equipment_database_path, equipment_session, key=SAVE_LOAD_LATEST_KEY
             )
-        note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
-        # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을
-        # 만들지 않으니 칸을 두지 않는다.
-        fab_only = fab_only_layout and not others and not side_tables
         # 저장·버리기는 **콜백**이다. 본문에서 저장하고 `st.rerun()` 하면 이 상자 아래 위젯
         # (층 상세의 `배치 편집` 토글 등)이 그 회차에 그려지지 않은 것으로 끝나 상태가 버려진다 —
         # 저장하자마자 편집기가 꺼졌다(2026-10-01 브라우저 확인). 콜백은 다음 회차 전에 돈다.
-        with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
-            if not fab_only:
-                st.text_input(
-                    "변경 메모", key=note_key, placeholder="예: C1 1F 반입구 앞 정리", width=360
-                )
-                # 설비 마스터 저장과 같은 부품 — 저장 칸 체크는 없고(`equipment_save_fields`)
-                # 실제로 퍼진 목록은 저장 결과 알림이 적는다.
-                render_saved_by_field(SPACE_SAVE_FIELDS_PREFIX, width=200)
+        with st.container(
+            horizontal=True, gap="small", vertical_alignment="center", key=UNSAVED_HEAD_KEY
+        ):
+            st.markdown(
+                f"**:material/edit_note: 저장 안 한 배치 변경** — {' · '.join(parts)}",
+                width="stretch",
+            )
+            with st.popover(
+                DETAILS_LABEL,
+                icon=DETAILS_ICON,
+                key=DETAILS_POPOVER_KEY,
+                disabled=fab_only,
+                help=DETAILS_NONE_HELP if fab_only else DETAILS_HELP,
+            ):
+                with st.container(width=DETAILS_WIDTH):
+                    if not fab_only:
+                        with st.container(horizontal=True, gap="small"):
+                            st.text_input(
+                                "변경 메모",
+                                key=note_key,
+                                placeholder="예: C1 1F 반입구 앞 정리",
+                                width=420,
+                            )
+                            # 설비 마스터 저장과 같은 부품 — 저장 칸 체크는
+                            # 없고(`equipment_save_fields`) 실제로 퍼진 목록은 저장 결과 알림이
+                            # 적는다.
+                            render_saved_by_field(SPACE_SAVE_FIELDS_PREFIX, width=204)
+                    if not changes.empty:
+                        with st.expander(f"바뀐 호기 {len(changes)}건", key=CHANGES_EXPANDER_KEY):
+                            # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지
+                            # 않게(AGENTS 9장).
+                            toolbar_clearance()
+                            st.dataframe(changes, hide_index=True, width="stretch")
+                    if not names.empty:
+                        # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를
+                        # 바꾼다(2026-10-08 사용자 결정). 같은 호기라 모든 설비 시나리오의
+                        # 일정·비가동이 따라가고(G4·R2), 진척 비교 기준선·바깥 Excel 은 따라가지
+                        # 않는다(Guide). 설비 마스터 탭과 같은 목록 꼴이다.
+                        render_name_changes(names)
             # 설비 샘플 화면에서는 FAB 편집이 꺼진다(결정 2). 그 전에 적용한 FAB 대기분도 저장하지
             # 않는다 — 대기분은 두고, 스위치를 끄면 저장할 수 있다. 버리기는 그대로 된다.
             st.button(
@@ -1452,6 +1476,59 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
                         args=(False,),
                         help="설비·층 배치 편집은 두고 S.PKG FAB 전체 배치 대기분만 버립니다.",
                     )
+        if layout_locked:
+            # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04).
+            st.caption(
+                ":material/lock: 배치 저장 잠김",
+                help=(
+                    "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
+                    + (
+                        literal_markdown(edit_mode.lock_reason)
+                        if edit_mode.lock_reason
+                        else "최신을 불러온 뒤 다시 고칩니다."
+                    )
+                ),
+            )
+            with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                st.button(
+                    "배치 변경만 버리기",
+                    icon=":material/layers_clear:",
+                    key=DISCARD_LAYOUT_BUTTON_KEY,
+                    on_click=_discard_layout_only,
+                    help=(
+                        "호기 자리·크기·레이아웃표시와 층 도면 요소·Main 설비명 위치·캔버스 "
+                        "변경만 버립니다. 설비 마스터의 다른 편집과 이름 바꿈, FAB 전체 배치는 "
+                        "남습니다."
+                    ),
+                )
+                # 남이 그 시나리오에 다른 배치를 저장한 잠금이고 버릴 것이 배치 변경뿐이면 버리기와
+                # 잠금 줄의 「최신 rM 불러오기」 를 한 번에 한다(버린 뒤 팝오버를 다시 여는
+                # 두 단계였다). 다른 편집이 있으면 불러오기가 그것까지 버리므로 세우지 않는다.
+                if (
+                    edit_mode.lock_action == "latest"
+                    and names.empty
+                    and not others
+                    and not side_tables
+                ):
+                    latest = equipment_session.latest_revision_no
+                    st.button(
+                        f"배치 변경 버리고 최신 r{latest} 불러오기",
+                        icon=":material/swap_horiz:",
+                        key=DISCARD_AND_LOAD_LATEST_KEY,
+                        on_click=_discard_layout_and_load_latest,
+                        args=(equipment_database_path, _latest_target(equipment_session), latest),
+                        help=(
+                            "이 배치 변경을 버리고 곧바로 그 시나리오의 최신 리비전을 불러옵니다 — "
+                            "배치 편집을 다시 할 수 있습니다. 저장하지 않은 S.PKG FAB 전체 배치는 "
+                            "남습니다."
+                        ),
+                    )
+        doubled = (
+            duplicate_block_links(fab_pending.marks)
+            if fab_pending is not None and fab_pending.marks is not None
+            else []
+        )
+        warnings = _pending_layout_warnings(frames, marks) if frames is not None else None
     return UnsavedPanel(True, warnings or LayoutWarnings(), tuple(doubled))
 
 
@@ -2088,12 +2165,14 @@ with space_box:
 # 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
 # 서거나 저장·버리기로 사라질 때 아래 층 상세·FAB 상자의 순번이 밀리면, Streamlit 은 요소를
 # key 가 아니라 순번으로 갈아 끼우므로 편집기를 새로 마운트한다. 그 사이 본문 높이가 화면
-# 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다.
-panel_drawn = buffer_frames is not None or pending_fab_layout() is not None
+# 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다. 높이는
+# 따로다 — 배치 편집 중에는 머리 줄을 늘 세워 첫 적용 · 저장 · 버리기에 도면이 밀리지 않는다.
+save_row_reserved = editing or fab_editing
+panel_drawn = save_row_reserved or buffer_frames is not None or pending_fab_layout() is not None
 unsaved_panel = UnsavedPanel()
 with st.container(key="space_unsaved_layout_slot"):
     if panel_drawn:
-        unsaved_panel = _render_unsaved_layout_panel(buffer_frames)
+        unsaved_panel = _render_unsaved_layout_panel(buffer_frames, reserve=save_row_reserved)
 # 저장 안 한 배치 상자를 그렸는가 — 스크롤 고정 중 편집기가 「저장 안 한 배치가 있습니다」 한 줄을
 # 단다(상자가 화면 밖이다).
 pending_save = unsaved_panel.drawn

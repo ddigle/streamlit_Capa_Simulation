@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_marks, data_error_texts, place_errors, successes
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -711,6 +712,90 @@ def _top_level(app: AppTest) -> list[tuple[str, str]]:
             name = "층 상세"
         layout.append((type(node).__name__, name))
     return layout
+
+
+def _save_row(app: AppTest) -> dict[str, bool]:
+    """저장 상자 머리 줄의 단추 잠김 — 없으면 빈 칸이다."""
+    save = [item for item in app.button if item.key == "space_layout_save"]
+    return {"save_locked": bool(save[0].disabled)} if save else {}
+
+
+def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_drawing(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """첫 「적용」 에 저장 상자가 도면 위에 생겨 편집기가 220px 내려갔다(설계 규칙 UI-PRF-03, 사외
+    점검 g6-03). 배치 편집 중에는 머리 줄이 늘 서고(변경이 없으면 잠긴 단추와 까닭 풍선 —
+    UI-INP-07), 메모 · 바뀐 호기는 그 줄 안 「변경 내용」 팝오버다. 보기 회차에는 서지 않는다."""
+    app, _ = _open_editor(tmp_path)
+
+    assert _save_row(app) == {"save_locked": True}
+    assert "적용한 변경이 없습니다" in str(app.button(key="space_layout_save").help)
+    assert any(item.value == ":material/edit_note: 저장할 변경 없음" for item in app.caption)
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    idle = _popover_labels(app)
+    assert idle == {"변경 내용": True, "버리기": True}
+    assert not [item for item in app.text_input if item.label == "변경 메모"]
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert _save_row(app) == {"save_locked": False}
+    assert _popover_labels(app) == {"변경 내용": False, "버리기": False}
+    # 메모 · 저장자 칸과 바뀐 호기 표는 머리 줄 팝오버 안이다.
+    inside = _popover_widgets(app, "변경 내용")
+    assert {"변경 메모", "저장자(선택)"} <= inside
+    assert any("바뀐 호기 1건" in item.label for item in app.expander)
+
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+    # 편집을 꺼도 저장할 변경은 남아 상자가 그대로 선다.
+    assert _save_row(app) == {"save_locked": False}
+
+    app.button(key="space_layout_discard").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    # 저장할 변경도 편집도 없는 보기 회차에는 줄이 없다.
+    assert _save_row(app) == {}
+    clear_equipment_repository()
+
+
+def _popover_nodes(app: AppTest) -> list[Any]:
+    found: list[Any] = []
+
+    def walk(node: Any) -> None:
+        proto = getattr(node, "proto", None)
+        if isinstance(proto, BlockProto) and proto.HasField("popover"):
+            found.append(node)
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    walk(app.main)
+    return found
+
+
+def _popover_labels(app: AppTest) -> dict[str, bool]:
+    """본문 팝오버 라벨 → 잠김."""
+    return {node.proto.popover.label: node.proto.popover.disabled for node in _popover_nodes(app)}
+
+
+def _popover_widgets(app: AppTest, label: str) -> set[str]:
+    """그 팝오버 안 글 칸 라벨."""
+    found: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if getattr(node, "type", "") == "text_input":
+            found.add(node.label)
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    for node in _popover_nodes(app):
+        if node.proto.popover.label == label:
+            walk(node)
+    return found
 
 
 def test_the_floor_detail_keeps_its_place_while_the_unsaved_panel_comes_and_goes(
