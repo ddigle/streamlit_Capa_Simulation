@@ -1,6 +1,6 @@
 :host { display: block; width: 100%; }
 .sle {
-  display: flex; flex-direction: column; gap: 8px;
+  position: relative; display: flex; flex-direction: column; gap: 8px;
   font-family: var(--sle-font); color: var(--sle-text);
 }
 /* 도구 줄은 한 줄·고정 높이다 — 고르거나 단추 상태가 바뀌어도 도면이 위아래로 튀지 않는다. 넘치면 JS `fitToolbar` 가
@@ -39,9 +39,21 @@
 .sle button.sle-lock[aria-pressed="true"] { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle.is-locked .sle-resize { display: none; }
 /* 편집을 보내는 유일한 단추라 도구 줄이 옆으로 밀려도 늘 보인다(넘칠 때만 오른쪽 끝에 붙는다). */
-.sle button.sle-apply { position: sticky; right: 0; z-index: 1; }
+.sle-apply-host { position: sticky; right: 0; z-index: 1; }
 .sle button.sle-apply.is-pending { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle-spacer { flex: 1; }
+/* 꺼진 단추의 까닭 풍선(설계 규칙 UI-INP-07) — 꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다. 칸은 꺼진 동안만 탭
+   자리다(JS `lockWith`). 도구 줄이 넘침을 잘라 풍선은 칸 안에 두지 않고 `.sle` 뿌리의 판 하나를 JS 가 칸 아래로 옮겨 쓴다
+   (`showTip`). 꼴은 설비 마스터 「호기 추가」 풍선과 같다 — 글자색 바탕에 면 색 글자, 12px. */
+.sle-tiphost { display: inline-flex; flex: none; border-radius: 8px; }
+.sle-tiphost:focus-visible, .sle-area:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+.sle-tiphost > button:disabled, .sle-area.is-locked :disabled { pointer-events: none; }
+.sle-tip {
+  position: absolute; z-index: 8; left: 0; top: 0; width: max-content; max-width: min(320px, 100%); box-sizing: border-box;
+  padding: 6px 8px; border-radius: 6px; background: var(--sle-text); color: var(--sle-surface); font-size: 12px; line-height: 1.45;
+  white-space: normal; pointer-events: none;
+}
+.sle-tip[hidden] { display: none; }
 /* 편집기 몸은 가로 다섯 칸이다 — [왼쪽 도구 칸] [칸막이] [무대] [칸막이] [오른쪽 미배치 칸](2026-11-03 사용자 요청 — 좌우로 긴
    화면의 여백을 두 옆 칸에 나눠 쓴다). 칸 폭은 JS 가 `grid-template-columns` 로 정하고(폭 끌기·접기·기억 — `layoutPanels`),
    칸마다 자리를 박아 두어 숨긴 칸(FAB 의 오른쪽 칸 등)이 있어도 다른 칸이 밀리지 않는다. 두 옆 칸은 무대 높이를 따르고 안에서
@@ -54,7 +66,7 @@
 .sle-split.is-right { grid-column: 4; grid-row: 1; }
 .sle-side.is-right { grid-column: 5; grid-row: 1; }
 /* 무대는 열 폭을 채우고 높이는 JS 가 정한다(화면에 맞춘 기본값, 또는 아래 손잡이로 고른 값). SVG 는 무대를 꽉
-   채우고, 편집 영역은 그 가운데에 여백을 두고 뜬다 — 남는 자리는 무대 바탕이다. 여기 높이는 JS 가 서기 전 자리값. */
+   채우고, 캔버스는 그 가운데에 여백을 두고 뜬다 — 남는 자리는 무대 바탕이다. 여기 높이는 JS 가 서기 전 자리값. */
 .sle-stage {
   grid-column: 3; grid-row: 1; position: relative; height: 480px; min-width: 0; overflow: hidden;
   border: 1px solid var(--sle-border); border-radius: 8px; background: var(--sle-stage);
@@ -326,7 +338,7 @@
 .sle-split:hover::before, .sle-split.is-dragging::before { background: var(--sle-accent); }
 .sle-split:focus-visible::before { background: var(--sle-accent); box-shadow: 0 0 0 2px var(--sle-accent); }
 .sle-split.is-off { pointer-events: none; }
-/* 묶음(범례·도면 요소·선택·서식·격자·편집 영역) — 머리를 누르면 접힌다(접힘은 묶음별로 브라우저가 기억). */
+/* 묶음(범례·도면 요소·선택·서식·격자·캔버스) — 머리를 누르면 접힌다(접힘은 묶음별로 브라우저가 기억). */
 .sle-sec { padding: 6px 0; border-bottom: 1px solid var(--sle-border); }
 .sle-sec:last-child { border-bottom: none; }
 .sle-sec[hidden] { display: none; }
@@ -420,7 +432,7 @@
 .sle-new-dates[hidden] { display: none; }
 /* Qual상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 이름 뒤에 별표가 붙는다. */
 .sle-form-row.is-required > span:first-child::after { content: ' *'; color: var(--sle-danger); }
-.sle-form-row input[type="number"] { width: 4.2em; }
+.sle-form-row input[type="number"] { flex: 1; min-width: 0; }
 .sle-times { color: var(--sle-muted); }
 .sle-new-error { margin: 0; color: var(--sle-danger); font-size: 0.75rem; min-height: 0; }
 .sle-new-error:empty { display: none; }
@@ -623,7 +635,7 @@
   overflow: hidden; font-variant-numeric: tabular-nums;
 }
 .sle-pinned-note { color: var(--sle-muted); overflow: hidden; text-overflow: ellipsis; }
-/* 「필요 단축」 보기는 기준일이 오늘로 고정이다 — 페이더 대신 같은 높이의 고정 줄이 선다(뒷글은 JS 가 `data.asOfPinned`).
+/* 「필요 단축」 보기는 기준일이 오늘로 고정이다 — 페이더 대신 같은 높이의 고정 줄이 선다(풍선은 JS 가 `data.asOfPinned`).
    보기의 편집 전용 숨김(`.sle.is-view .sle-edit-only`)을 이기려면 같은 `!important` + 더 높은 선택자다. */
 .sle.is-view.is-pinned .sle-fader { display: none !important; }
 .sle.is-view.is-pinned .sle-pinned { display: flex !important; }

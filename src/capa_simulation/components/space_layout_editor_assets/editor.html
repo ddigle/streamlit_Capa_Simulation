@@ -11,7 +11,7 @@
                title="끌거나 눌러 기준일을 옮깁니다 · ←/→ 하루 · PageUp/PageDown 한 달 · Home/End 범위 끝 · 두 번 누르면 오늘">
         <span class="sle-fader-ticks" aria-hidden="true"></span>
       </span>
-      <button type="button" class="sle-fader-today" title="기준일을 오늘로 (페이더를 두 번 눌러도 됩니다)">오늘</button>
+      <span class="sle-tiphost" aria-describedby="sle-tip"><button type="button" class="sle-fader-today" title="기준일을 오늘로 (페이더를 두 번 눌러도 됩니다)">오늘</button></span>
     </div>
     <div class="sle-pinned sle-edit-only" role="note">
       <b class="sle-pinned-date"></b><span class="sle-pinned-note">· 편집 중 고정 — 배치 편집을 끄면 페이더로 바꿉니다</span>
@@ -21,15 +21,15 @@
     <span class="sle-title"></span>
     <span class="sle-pinchip sle-edit-only sle-floor-only" role="note" title="기준일은 편집하는 동안 고정입니다 — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h4l-.6 4 2.6 2.4V10H8.7L8 14l-.7-4H4v-1.6L6.6 6z" class="ico-fill"/></svg><b class="sle-pinchip-date"></b><span class="sle-pinchip-word">고정</span></span>
     <div class="sle-zoom" role="group" aria-label="확대·축소">
-      <button type="button" class="sle-zoom-out" aria-label="축소" title="축소 (−, Ctrl+휠)">−</button>
+      <span class="sle-tiphost" aria-describedby="sle-tip"><button type="button" class="sle-zoom-out" aria-label="축소" title="축소 (−, Ctrl+휠)">−</button></span>
       <span class="sle-zoom-label" aria-live="polite">100%</span>
-      <button type="button" class="sle-zoom-in" aria-label="확대" title="확대 (+, Ctrl+휠)">+</button>
+      <span class="sle-tiphost" aria-describedby="sle-tip"><button type="button" class="sle-zoom-in" aria-label="확대" title="확대 (+, Ctrl+휠)">+</button></span>
       <button type="button" class="sle-zoom-fit" title="전체 보기 (0)">전체 보기</button>
-      <button type="button" class="sle-zoom-sel">고른 곳 보기</button>
+      <span class="sle-tiphost" aria-describedby="sle-tip"><button type="button" class="sle-zoom-sel">고른 곳 보기</button></span>
     </div>
-    <button type="button" class="sle-undo sle-edit-only" title="Ctrl+Z">실행 취소</button>
-    <button type="button" class="sle-reset sle-edit-only">처음 상태로</button>
-    <button type="button" class="sle-unplace sle-edit-only" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
+    <span class="sle-tiphost sle-edit-only" aria-describedby="sle-tip"><button type="button" class="sle-undo" title="Ctrl+Z">실행 취소</button></span>
+    <span class="sle-tiphost sle-edit-only" aria-describedby="sle-tip"><button type="button" class="sle-reset" title="적용 안 한 변경을 모두 버립니다 — 실행 취소로 돌아오지 않습니다">처음 상태로</button></span>
+    <span class="sle-tiphost sle-edit-only" aria-describedby="sle-tip"><button type="button" class="sle-unplace" title="Delete — 호기는 미배치 칸으로, 도면 요소는 지웁니다">빼기·지우기</button></span>
     <span class="sle-pick sle-view-only" aria-live="polite"></span>
     <span class="sle-spacer"></span>
     <span class="sle-asof sle-fab-only sle-view-only" hidden><span class="sle-asof-label">기준일 </span><span
@@ -46,7 +46,7 @@
             title="이 화면에서 쓸 수 있는 단축키"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="4" width="13" height="8.5" rx="1.5" class="ico-line"/><path d="M4 6.8h.01M6.7 6.8h.01M9.3 6.8h.01M12 6.8h.01M5.2 9.8h5.6" class="ico-line"/></svg><span class="sle-keys-toggle-word">단축키</span></button>
     <button type="button" class="sle-lock" aria-pressed="false"
             title="스크롤 고정 — 켜면 페이지가 굴러가지 않고 도면이 창 높이에 맞춰 섭니다. 휠은 도면을 옮기고(Shift 가로) Ctrl+휠은 확대합니다. 다시 누르면 풉니다"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" class="ico-line"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" class="ico-line"/></svg><span class="sle-lock-word">고정</span><span class="sle-lock-dot" aria-hidden="true" hidden></span></button>
-    <button type="button" class="sle-apply sle-edit-only">적용</button>
+    <span class="sle-tiphost sle-apply-host sle-edit-only" aria-describedby="sle-tip"><button type="button" class="sle-apply">적용</button></span>
   </div>
   <div class="sle-body">
     <aside class="sle-side is-left" aria-label="도구 칸">
@@ -187,18 +187,18 @@
             </div>
           </section>
           <section class="sle-sec sle-edit-only" data-sec="area">
-            <button type="button" class="sle-sec-head" aria-expanded="true">편집 영역</button>
-            <div class="sle-sec-body sle-area" role="group" aria-label="편집 영역 크기">
+            <button type="button" class="sle-sec-head" aria-expanded="true">캔버스</button>
+            <div class="sle-sec-body sle-area" role="group" aria-label="캔버스 크기" aria-describedby="sle-tip">
             <span class="sle-field">
               <span aria-hidden="true">폭</span>
               <button type="button" class="sle-nudge" data-area="w-10" aria-label="폭 10 줄이기">−</button>
-              <input class="sle-area-w" type="number" step="1" inputmode="decimal" aria-label="편집 영역 폭">
+              <input class="sle-area-w" type="number" step="1" inputmode="decimal" aria-label="캔버스 폭">
               <button type="button" class="sle-nudge" data-area="w+10" aria-label="폭 10 늘리기">+</button>
             </span>
             <span class="sle-field">
               <span aria-hidden="true">높이</span>
               <button type="button" class="sle-nudge" data-area="h-10" aria-label="높이 10 줄이기">−</button>
-              <input class="sle-area-h" type="number" step="1" inputmode="decimal" aria-label="편집 영역 높이">
+              <input class="sle-area-h" type="number" step="1" inputmode="decimal" aria-label="캔버스 높이">
               <button type="button" class="sle-nudge" data-area="h+10" aria-label="높이 10 늘리기">+</button>
             </span>
             <button type="button" class="sle-area-fit" title="놓인 호기·요소가 다 들어가는 가장 작은 크기">맞춤</button>
@@ -336,4 +336,5 @@
   <div class="sle-resize" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="도면 높이"
        title="끌어서 도면 높이 조절 · 두 번 누르면 기본 높이 · ↑/↓ 조절 · Home/Enter 기본"><span class="sle-resize-grip" aria-hidden="true"></span></div>
   <div class="sle-status" aria-live="polite"></div>
+  <span class="sle-tip" id="sle-tip" role="tooltip" hidden></span>
 </div>

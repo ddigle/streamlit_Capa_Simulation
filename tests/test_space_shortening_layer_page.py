@@ -174,6 +174,15 @@ def _texts(app: AppTest) -> list[str]:
     ]
 
 
+def _basis_tips(app: AppTest) -> list[str]:
+    """기준 캡션 풍선 — 줄에는 달 범위만 서고 어느 설비 · 시뮬레이션 · 오늘인지는 풍선이다."""
+    return [
+        str(item.proto.help)
+        for item in app.caption
+        if "필요 단축 일정과 같은 계산" in str(item.proto.help)
+    ]
+
+
 def _rest_notes(app: AppTest) -> int:
     """「필요 단축 보기 쉼」 표지의 수(결정 D7 — 한 화면에 한 줄). 까닭(「배치 편집 중에는 필요 단축
     보기를 쉽니다」)은 그 표지의 풍선이다."""
@@ -301,7 +310,9 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     assert fab["asOf"] == date.today().isoformat()
     assert any(stats.get("short") for stats in fab["linkStats"].values())
     assert app.session_state[AS_OF_KEY] == other_day
-    assert any("필요 단축 일정과 같은 계산" in text for text in _texts(app))
+    assert not any("필요 단축 일정과 같은 계산" in text for text in _texts(app))
+    [tip] = _basis_tips(app)
+    assert f"오늘 {date.today().isoformat()}" in tip
     bodies = len(plan_keys["bodies"])
     assert bodies == 1
 
@@ -407,7 +418,7 @@ def test_an_assumption_session_shares_the_shortening_key_and_names_its_scenario(
     _turn_on(_ok(space.run()))
     assert plan_keys["keys"][-1] == board_key
     texts = _texts(space)
-    assert any("설비 시나리오 「셋업 실무 · r2 · 가정」 기준" in text for text in texts), texts
+    assert "설비 시나리오 「셋업 실무 · r2 · 가정」 기준" in _basis_tips(space)[0]
     assert not any("다를 수 있습니다" in text for text in texts)
     # 공식 설비 시나리오 세션의 Space 키와는 다르다 — 설비 마스터 지문이 갈린다(가정 일정으로
     # 계산한다).
@@ -433,7 +444,7 @@ def test_the_basis_caption_blocks_the_assumption_name_only_once(
     }
     _turn_on(_ok(space.run()))
 
-    basis = [text for text in _texts(space) if "필요 단축 · 설비 시나리오" in text]
+    basis = _basis_tips(space)
     assert len(basis) == 1, basis
     assert f"설비 시나리오 「{literal_markdown(name)} · r1 · 가정」 기준" in basis[0], basis
     assert "\\\\" not in basis[0], basis
@@ -1307,3 +1318,10 @@ def test_a_dim_badge_press_on_the_page_clears_the_chip_and_the_dimming(
     assert app.session_state[chip] is None
     assert not [b for b in _views(editor_calls, "floor")[-1]["shortBadges"] if b["dim"]]
     assert "space_shortening_picked_now" not in app.session_state
+
+
+def test_the_floor_table_title_leaves_the_target_to_the_panel_head() -> None:
+    """목표 확보율은 조작 줄과 칸 머리에 있다 — 표 제목은 거듭 적지 않는다(설계 규칙 UI-TXT-07)."""
+    source = Path(space_shortening_view.__file__).read_text(encoding="utf-8")
+    assert '"**이 층에서 단축할 호기**"' in source
+    assert "이 층에서 단축할 호기 · 목표" not in source

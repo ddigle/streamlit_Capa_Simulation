@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 
 from test_space_module_group import _js_decl, _node
 
@@ -163,7 +164,7 @@ def test_buttons_follow_the_app_button_grain() -> None:
     toolbar = _rule(".sle-toolbar")
     assert "flex-wrap: nowrap" in toolbar and re.search(r"(?<![-\w])height: \d+px", toolbar)
     # 좁은 열에서 도구 줄이 옆으로 밀려도 편집을 보내는 `적용` 은 오른쪽 끝에 붙어 보인다.
-    apply = _rule(".sle button.sle-apply")
+    apply = _rule(".sle-apply-host")
     assert "position: sticky" in apply and "right: 0" in apply
 
 
@@ -1025,7 +1026,9 @@ def test_the_shortening_view_pins_the_date_and_draws_badges_only_when_python_say
     assert "drawShortBadges()" in JS[JS.index("function drawGroupNames() {") :]
     assert "// <short-badge>" in JS and "function badgeSpot(" in JS
     # 고정 줄 뒷글 — 보기는 data 글, 편집기는 HTML 글 그대로.
-    assert "ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault" in JS
+    # 줄에 선 글은 표지 한 마디이고 왜 고정인지는 그 줄 풍선이다(설계 규칙 UI-TXT-01).
+    assert "ASOF_PINNED ? ' · 오늘 고정' : S.pinnedNoteDefault" in JS
+    assert "setAttr(pinnedRow, 'title', ASOF_PINNED ? data.asOfPinned : '')" in JS
     assert '<g class="sle-short-badges"></g>' in HTML
     for rule in (".sle.is-view .sle-unit.is-dim", ".sle.is-view.is-pinned .sle-fader"):
         assert rule in CSS, rule
@@ -1035,3 +1038,342 @@ def test_the_shortening_view_pins_the_date_and_draws_badges_only_when_python_say
     # 블록 셋째 줄(단축)은 비활성 블록에 서지 않는다(사유 줄만).
     lines = JS[JS.index("const blockLines = (item) => {") : JS.index("const opensFloor")]
     assert lines.index("if (blockOff(item))") < lines.index("stats.short")
+
+
+def test_the_shortcut_panel_measures_its_width_after_clearing_the_old_spot() -> None:
+    """단축키 판은 왼쪽 자리(`left`)를 지운 뒤 폭을 잰다. 큰 창에서 놓인 자리가 남은 채 재면 판이
+    편집기 오른쪽 끝까지의 자리만큼 눌려, 창을 줄인 뒤 다시 열 때 설명이 한 글자씩 세로로 쌓였다."""
+    place = JS[JS.index("function placeKeys() {") : JS.index("function setKeysOpen(")]
+    assert place.index("keysPanel.style.left = ''") < place.index("keysPanel.offsetWidth")
+
+
+def test_the_new_unit_size_inputs_shrink_inside_the_form() -> None:
+    """호기 추가 폼의 크기 칸은 폼 폭 안에서 줄어든다 — 글자 폭으로 못박으면 좁은 칸에서 폼
+    테두리를 넘어 칸 끝에서 잘린다."""
+    size = _rule('.sle-form-row input[type="number"]')
+    assert "flex: 1" in size and "min-width: 0" in size
+    assert "width: 4.2em" not in size
+
+
+def test_the_canvas_and_the_unplaced_panel_keep_one_name_on_screen() -> None:
+    """층 캔버스는 사이드바 · 층 목록과 같은 「캔버스」, 오른쪽 칸은 「미배치 칸」 한 이름이다(설계
+    규칙 UI-CON-02). 코드 이름(`sle-tray` · 주석의 트레이)은 화면 글이 아니라 그대로 둔다."""
+    assert "편집 영역" not in HTML + JS + CSS
+    assert "트레이" not in HTML
+    code = "\n".join(line for line in JS.splitlines() if not line.lstrip().startswith("//"))
+    literals = re.findall(r"'[^'\n]*'|`[^`\n]*`", code)
+    assert not [text for text in literals if "트레이" in text]
+    assert 'class="sle-sec-head" aria-expanded="true">캔버스</button>' in HTML
+    assert "add('캔버스 ', " in JS
+
+
+_TIP_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const S = {}
+const node = () => ({
+  attrs: {}, dataset: {}, disabled: false,
+  getAttribute(k) { return k in this.attrs ? this.attrs[k] : null },
+  setAttribute(k, v) { this.attrs[k] = v; if (k === 'data-tip') this.dataset.tip = v },
+  removeAttribute(k) { delete this.attrs[k] },
+  closest: () => null,
+})
+const setText = (n, text) => { n.textContent = text }
+const setAttr = (n, name, value) => n.setAttribute(name, value)
+const TIP_GAP_PX = 6
+const box = (left, top, width, height) => (
+  { left, top, right: left + width, bottom: top + height, width, height }
+)
+const host = { getBoundingClientRect: () => box(100, 50, 1000, 600) }
+const tipBox = { hidden: true, offsetWidth: 200, offsetHeight: 30, style: {}, textContent: '' }
+const seen = (b) => ({
+  disabled: b.disabled,
+  tab: b.parentElement.getAttribute('tabindex'),
+  why: b.parentElement.dataset.tip,
+  shown: !tipBox.hidden, text: tipBox.textContent, left: tipBox.style.left, top: tipBox.style.top,
+})
+const button = node()
+button.parentElement = node()
+button.parentElement.getBoundingClientRect = () => box(input.left, input.top, 60, 27)
+let held = null
+const isFocused = (n) => n === held
+button.focus = () => { held = button }
+button.parentElement.focus = () => { held = button.parentElement }
+const out = []
+if (input.scroll) {
+  const spot = button.parentElement
+  let top = input.top
+  spot.getBoundingClientRect = () => box(input.left, top, 60, 27)
+  spot.closest = () => ({ getBoundingClientRect: () => box(100, 200, 200, 300) })
+  lockWith(button, '잠김')
+  showTip(spot)
+  const steps = []
+  for (const next of input.scroll) {
+    top = next
+    placeTip(spot)
+    steps.push({ shown: !tipBox.hidden, top: tipBox.style.top, kept: S.tipFor === spot })
+  }
+  process.stdout.write(JSON.stringify({ steps }))
+  process.exit(0)
+}
+if (input.focus) {
+  held = button
+  lockWith(button, '되돌릴 것 없음')
+  const locked = held === button.parentElement
+  lockWith(button, '')
+  process.stdout.write(JSON.stringify({ locked, freed: held === button }))
+  process.exit(0)
+}
+lockWith(button, '고른 것 없음')
+out.push(seen(button))
+showTip(button.parentElement)
+out.push(seen(button))
+lockWith(button, '고른 것이 도면에 없음')
+out.push(seen(button))
+lockWith(button, '')
+out.push(seen(button))
+showTip(button.parentElement)
+out.push(seen(button))
+process.stdout.write(JSON.stringify({ steps: out }))
+"""
+
+
+def _tip_source() -> str:
+    return "\n".join(
+        _js_decl(head)
+        for head in (
+            "function placeTip(",
+            "function hideTip(",
+            "function showTip(",
+            "function setTip(",
+            "function lockWith(",
+        )
+    )
+
+
+def test_a_locked_button_says_why_only_while_it_is_locked() -> None:
+    """꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다(설계 규칙 UI-INP-07) — 잠긴 동안만
+    칸이 탭 자리이고 풍선이 까닭을 말한다. 까닭이 바뀌면 떠 있는 풍선이 따라가고, 풀리면 풍선을
+    걷으며 칸은 탭 자리에서 빠지고 다시 올려도 뜨지 않는다."""
+    result = _node(_tip_source() + _TIP_RUNNER, {"left": 300, "top": 60})
+    locked, shown, changed, freed, again = result["steps"]
+
+    assert locked == {
+        "disabled": True,
+        "tab": "0",
+        "why": "고른 것 없음",
+        "shown": False,
+        "text": "",
+    }
+    assert shown["shown"] is True and shown["text"] == "고른 것 없음"
+    assert changed["shown"] is True and changed["text"] == "고른 것이 도면에 없음"
+    assert freed["disabled"] is False and freed["tab"] is None and freed["shown"] is False
+    assert again["shown"] is False
+
+
+def test_keyboard_focus_follows_the_lock_between_the_button_and_its_host() -> None:
+    """잠기는 단추의 초점은 칸으로, 풀리는 칸의 초점은 단추로 옮겨 간다 — 키보드가 끊기지 않는다."""
+    moved = _node(_tip_source() + _TIP_RUNNER, {"left": 300, "top": 60, "focus": True})
+    assert moved == {"locked": True, "freed": True}
+
+
+def test_the_reason_tip_opens_under_the_button_and_stays_inside_the_editor() -> None:
+    """풍선은 단추 아래 왼쪽 맞춤이고 편집기 오른쪽 끝을 넘지 않는다. 아래에 자리가 없으면 위로
+    뒤집는다."""
+    source = _tip_source() + _TIP_RUNNER
+
+    under = _node(source, {"left": 300, "top": 60})["steps"][1]
+    assert (under["left"], under["top"]) == ("200px", "43px")
+    edge = _node(source, {"left": 1080, "top": 60})["steps"][1]
+    assert edge["left"] == "800px"
+    bottom = _node(source, {"left": 300, "top": 610})["steps"][1]
+    assert bottom["top"] == "524px"
+
+
+def test_the_tip_follows_its_host_and_hides_while_the_side_scroll_carries_it_away() -> None:
+    """왼쪽 칸이 구르면 풍선이 칸을 따라가고, 칸이 굴림 밖으로 나가면 숨는다. 초점이 머문 채
+    칸이 돌아오면 다시 뜬다 — 풍선 임자(`S.tipFor`)는 숨은 동안에도 남는다."""
+    inside, partly, out_below, back, out_above = _node(
+        _tip_source() + _TIP_RUNNER, {"left": 300, "top": 240, "scroll": [300, 490, 500, 240, 173]}
+    )["steps"]
+
+    assert inside == {"shown": True, "top": "283px", "kept": True}
+    assert partly == {"shown": True, "top": "473px", "kept": True}
+    assert out_below == {"shown": False, "top": "473px", "kept": True}
+    assert back == {"shown": True, "top": "223px", "kept": True}
+    assert out_above["shown"] is False and out_above["kept"] is True
+    assert "q('.sle-side-scroll').onscroll = () => { if (S.tipFor) placeTip(S.tipFor) }" in JS
+
+
+def test_every_toolbar_button_that_can_lock_sits_in_a_tip_host() -> None:
+    """도구 줄 · 기준일 줄의 잠기는 단추는 감싼 칸 안이고 `disabled` 를 직접 쓰지 않는다 — 까닭 없이
+    잠기는 길이 없다. 칸은 편집 전용 표지를 함께 달아 보기에서 빈 탭 자리로 남지 않고, 「적용」 의
+    오른쪽 끝 붙음은 칸이 맡는다(단추는 칸 안이라 sticky 가 듣지 않는다)."""
+    for name in (
+        "sle-zoom-out",
+        "sle-zoom-in",
+        "sle-zoom-sel",
+        "sle-undo",
+        "sle-reset",
+        "sle-unplace",
+        "sle-apply",
+        "sle-fader-today",
+    ):
+        wrapped = re.search(
+            rf'<span class="sle-tiphost[^>]*><button type="button" class="{name}"', HTML
+        )
+        assert wrapped, name
+    for name in ("sle-undo", "sle-reset", "sle-unplace", "sle-apply"):
+        host = re.search(
+            rf'<span class="(sle-tiphost[^"]*)"[^>]*><button type="button" class="{name}"', HTML
+        )
+        assert host and "sle-edit-only" in host.group(1), name
+    for name in ("zoomOut", "zoomIn", "zoomSel", "applyButton", "resetButton", "undoButton"):
+        assert f"{name}.disabled =" not in JS, name
+    assert "unplaceButton.disabled =" not in JS
+    assert ".sle-tiphost > button:disabled" in CSS and "pointer-events: none" in CSS
+    assert 'class="sle-tip" id="sle-tip" role="tooltip" hidden' in HTML
+    tip = _rule(".sle-tip")
+    for rule in ("background: var(--sle-text)", "color: var(--sle-surface)", "font-size: 12px"):
+        assert rule in tip
+
+
+def test_the_tip_opens_by_mouse_and_keyboard_and_esc_hides_it() -> None:
+    """마우스는 올린 동안, 키보드는 초점이 머무는 동안이다 — 누른 초점에는 뜨지 않는다. 떠 있는
+    풍선은 Esc 가 먼저 걷고 고른 것 · 붓은 그대로다."""
+    bind = _js_decl("function bindTip(")
+    assert "spot.onpointerenter = () => showTip(spot)" in bind
+    assert "spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }" in bind
+    keys = JS[JS.index("host.onkeydown = (event) => {") :]
+    assert keys.index(
+        "S.tipFor && !tipBox.hidden) { event.preventDefault(); hideTip(); return }"
+    ) < keys.index("if (VIEW) {")
+
+
+_TIP_KEY_RUNNER = """
+const spot = { matches: () => false }
+const showTip = () => {}
+const hideTip = () => {}
+bindTip(spot)
+const press = (key, target) => {
+  let stopped = false
+  spot.onkeydown({ key, target, preventDefault() { stopped = true } })
+  return stopped
+}
+process.stdout.write(JSON.stringify({
+  own: press(' ', spot), enter: press('Enter', spot), inner: press(' ', { tagName: 'BUTTON' }),
+}))
+"""
+
+
+def test_space_on_a_locked_host_does_not_scroll_the_page_but_reaches_what_is_inside() -> None:
+    """칸은 눌리지 않으므로 칸 자신이 받은 Space 는 본문을 굴리지 않게 막는다. 칸 안의 켜진
+    단추 · 입력 칸이 받은 키와 다른 키는 그대로 간다."""
+    pressed = _node(_js_decl("function bindTip(") + _TIP_KEY_RUNNER, {})
+    assert pressed == {"own": True, "enter": False, "inner": False}
+
+
+def test_the_toolbar_reasons_are_short_values() -> None:
+    """잠긴 까닭은 짧은 값이다 — 변경 0건이면 「적용」 · 「처음 상태로」 가 함께 잠긴다."""
+    status = JS[JS.index("function updateStatus() {") : JS.index("function commitTyping(")]
+    assert "const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''" in status
+    assert "lockWith(applyButton, noChange)" in status
+    assert "lockWith(resetButton, noChange)" in status
+    assert "lockWith(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')" in status
+    assert "(chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')" in JS
+    assert "lockWith(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')" in JS
+    assert "lockWith(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')" in JS
+    assert "setTip(faderToday.parentElement, isToday ? '이미 오늘' : '')" in JS
+
+
+def test_the_reset_button_warns_before_it_drops_the_undo_history() -> None:
+    """「처음 상태로」 는 실행 취소 기록까지 지운다 — 누르기 전에 풍선이 말한다(UI-NTF-09)."""
+    reset = re.search(r'class="sle-reset"[^>]*title="([^"]*)"', HTML)
+    assert (
+        reset
+        and reset.group(1) == "적용 안 한 변경을 모두 버립니다 — 실행 취소로 돌아오지 않습니다"
+    )
+    click = JS[JS.index("resetButton.onclick = () => {") :]
+    assert "S.undo = []" in click[: click.index("for (const button of")]
+
+
+def test_a_locked_canvas_panel_says_why_in_a_tip_and_red_text_is_only_for_a_refusal() -> None:
+    """가정 시나리오의 꺼진 캔버스 칸은 오류가 아니다 — 까닭은 칸을 감싼 묶음의 풍선이고(마우스 ·
+    키보드), 빨간 글(`.sle-area-note`)은 방금 거부(`S.note`)에만 쓴다(설계 규칙 UI-INP-07)."""
+    assert "areaNote.textContent = S.note\n" in JS
+    assert "areaNote.textContent = data.canvasLock" not in JS
+    assert "S.note || (data.canvasEditable" not in JS
+    assert "setTip(q('.sle-area'), canvasLocked ? canvasLockReason : '')" in JS
+    assert "q('.sle-area').classList.toggle('is-locked', canvasLocked)" in JS
+    assert "bindTip(q('.sle-area'))" in JS
+    assert ".sle-area.is-locked :disabled" in CSS
+    assert "color: var(--sle-danger)" in _rule(".sle-area-note")
+
+
+_ZONE_TAG_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const H = () => 100
+const svgTop = (item) => H() - (item.y + item.h)
+const isUnit = (item) => item.unit === true
+const seenModule = (item) => item.seen !== false
+const S = { items: new Map(input.items.map((item, k) => [k, item])) }
+const nodes = [{ style: {} }, { style: {} }]
+const group = { __tagBox: input.box, querySelectorAll: () => nodes }
+%s
+syncZoneTag(group)
+process.stdout.write(JSON.stringify({ shown: nodes.map((n) => n.style.display) }))
+"""
+_TAG = {"x": 10, "top": 20, "w": 30, "h": 4}
+
+
+def _zone_tag(items: Sequence[Mapping[str, object]]) -> list[str]:
+    source = _ZONE_TAG_RUNNER % _js_decl("function syncZoneTag(")
+    return list(_node(source, {"items": list(items), "box": _TAG})["shown"])
+
+
+def test_a_zone_label_hides_under_a_unit_and_comes_back_when_it_leaves() -> None:
+    """영역 이름표는 호기 아래 층이다 — 호기가 덮으면 꼬리표와 글을 함께 숨긴다(UI-ACC-04).
+    이름표 윗선 좌표는 도면(아래로) 좌표이고 호기 `y` 는 위로 재는 값이다(`svgTop`)."""
+    # 윗선 76 ~ 80 은 도면 좌표 20 ~ 24 — 이름표 상자와 넓이가 겹친다.
+    over = {"unit": True, "x": 20, "y": 76, "w": 6, "h": 4}
+    assert _zone_tag([over]) == ["none", "none"]
+    # 맞닿기만 하면 겹침이 아니다.
+    touching = {"unit": True, "x": 40, "y": 76, "w": 6, "h": 4}
+    assert _zone_tag([touching]) == ["", ""]
+    assert _zone_tag([]) == ["", ""]
+
+
+def test_only_units_on_screen_hide_a_zone_label() -> None:
+    """기준일에 보이지 않는 호기와 호기 아닌 요소는 이름표를 숨기지 않는다."""
+    gone = {"unit": True, "seen": False, "x": 20, "y": 76, "w": 6, "h": 4}
+    mark = {"unit": False, "x": 20, "y": 76, "w": 6, "h": 4}
+    assert _zone_tag([gone, mark]) == ["", ""]
+
+
+def test_a_zone_keeps_its_name_in_the_tip_and_its_label_is_rechecked_when_units_move() -> None:
+    """숨긴 이름표의 말은 영역 풍선에 남는다(「설비 금지」 도). 자리는 배율마다 정해지고
+    (`drawMark`), 호기가 움직이거나 기준일로 보이는 호기가 바뀌면(`markOverlaps`) 다시 본다. 글이
+    꼬리표보다 길면 글 끝까지 잰다."""
+    draw = JS[JS.index("function drawMark(") : JS.index("function appendHandles(")]
+    assert "words.classList.add('sle-zone-name')" in draw
+    assert "w: Math.max(tagW, emWidth(name) * fs + fs * 0.9)" in draw
+    # 그리기가 이름표를 새로 만들므로(배율마다) 도면에 붙인 뒤에 본다.
+    assert draw.index("shape.append(inner)") < draw.index("syncZoneTag(group)")
+    assert "tip.textContent = `${markTitle(item)}${item.keepOut ? ' · 설비 금지' : ''}`" in draw
+    marks = JS[JS.index("function markOverlaps(flipped) {") :]
+    assert marks.index("syncZoneTag(group)") < marks.index("if (VIEW) {")
+
+
+_PARSE_RUNNER = """
+const source = require('fs').readFileSync(0, 'utf8')
+const body = JSON.parse(source).body
+new Function(body)
+process.stdout.write(JSON.stringify({ parsed: true }))
+"""
+
+
+def test_the_editor_script_parses_as_a_whole() -> None:
+    """다른 시험은 선언을 글자로 떼어 돌려 파일 전체의 문법은 보지 못한다 — 같은 이름을 두 번
+    선언하면 브라우저에서만 편집기가 통째로 안 뜬다. 파일 전체를 파서에 넣어 본다."""
+    assert JS.startswith("export default function (component) {")
+    body = JS.replace("export default function (component) {", "return function (component) {", 1)
+    assert _node(_PARSE_RUNNER, {"body": body})["parsed"] is True

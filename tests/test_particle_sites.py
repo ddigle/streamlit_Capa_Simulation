@@ -377,7 +377,7 @@ def test_the_guard_catches_every_fixed_form() -> None:
     js_caught = ["`${id} 는 이미`", "`${w}이 되어`", "`'${x}'을 지웠`", "`${a}(${b})는`"]
     js_caught += ["`${a}(레이아웃표시 N)는 그리지`", "`${x}을(를)`"]
     # 괄호 앞을 띄운 꼴도 괄호 앞 값의 조사다(2026-10-26 E2E 5회차 — 서랍 「샘플1 (14×8) 가」).
-    js_caught += ["`${name} (${w}×${h}) 가 편집 영역`"]
+    js_caught += ["`${name} (${w}×${h}) 가 캔버스`"]
     assert all(_JS_SITE.search(text) for text in js_caught)
     js_passed = ["`${withJosa(id, '은')} 이미`", "`최신(r${n})이`", "`(${n}개)를`"]
     js_passed += ["`${who} (${w}×${h})${josaOf(who, '이')} 편집`", "`최신 (${n}) 가`"]
@@ -498,14 +498,14 @@ process.stdout.write(JSON.stringify(input.words.map((word) => josaOf(word, '이'
 
 
 def test_the_tray_note_picks_the_particle_after_the_size_by_the_name() -> None:
-    """서랍에서 편집 영역보다 큰 덩이를 놓으면 「샘플1 (14×8)이 편집 영역 …」 — 괄호 뒤 조사는
+    """서랍에서 캔버스보다 큰 덩이를 놓으면 「샘플1 (14×8)이 캔버스 …」 — 괄호 뒤 조사는
     괄호 앞 이름의 끝소리로 고른다(2026-10-26 E2E 5회차 — 「) 가」 를 못박아 「샘플1 (14×8) 가」
     였다). 칩을 여럿 고르면 이름이 「2개(2대)」 다. `josaOf` 는 `withJosa` 의 조사만이다."""
     script = (space_layout_editor._ASSETS / "editor.js").read_text(encoding="utf-8")
     block = _JOSA_BLOCK.search(script)
     line = _JOSA_OF.search(script)
     assert block and line, "editor.js 의 조사 구획·josaOf 를 못 찾았다"
-    assert "(${footprint.w}×${footprint.h})${josaOf(who, '이')} 편집 영역" in script
+    assert "(${footprint.w}×${footprint.h})${josaOf(who, '이')} 캔버스" in script
     words = ["샘플1", "2개(2대)", "C2", "EQ-01", "MOD-1"]
     result: Any = _node(_JOSA_OF_RUNNER % (block.group("body"), line.group(0)), {"words": words})
     assert list(result) == [subject_particle(word) for word in words]

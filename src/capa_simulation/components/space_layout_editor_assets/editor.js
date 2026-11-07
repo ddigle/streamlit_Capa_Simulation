@@ -72,7 +72,7 @@ export default function (component) {
   // 선다. FAB 전체에는 페이더가 없고 도구 줄에 기준일·「오늘로」가 선다.
   const TODAY = dayOr(data.today) || ''
   const RANGE = { min: dayOr(data.asOfMin) || '', max: dayOr(data.asOfMax) || '' }
-  // 색 기준 「필요 단축」 을 켠 층 보기 — 파이썬이 `asOfPinned`(고정 줄 뒷글)를 실을 때만이다. 기준일은 오늘로
+  // 색 기준 「필요 단축」 을 켠 층 보기 — 파이썬이 `asOfPinned`(고정 줄 풍선 글)를 실을 때만이다. 기준일은 오늘로
   // 고정이라 페이더 자리에 배치 편집과 같은 꼴의 고정 줄이 서고, 표시된 호기(`layer`)는 겹쳐 숨기지 않으며, 모든 호기의
   // 지연·보관 면을 칠하지 않는다(결정 D12 — 풍선 글로만). 배지(`shortBadges`)도 이때만 그린다. 끈 동안 data 에 두 칸이
   // 없다. 같은 epoch 안에서 고정 ↔ 페이더가 오가도 `adoptAsOf` 가 받은 날을 따른다(고정 동안 FADER 가 거짓).
@@ -113,6 +113,8 @@ export default function (component) {
   const ZOOM_STEP = 1.25
   const DRAG_THRESHOLD_PX = 3
   const HANDLE_PX = 9
+  // 까닭 풍선과 단추 사이(화면 px).
+  const TIP_GAP_PX = 6
   // 보기 화면 덧표시(화면 px) — 선택 후광의 띄움, 「!」·운영 비가동 표식의 반지름, 겹침 꼭지 삼각의 변.
   const HALO_GAP_PX = 3
   // 키보드 초점 테(호기·편집의 도면 요소)의 띄움(화면 px). 보기의 선택 후광(HALO_GAP_PX)보다 밖이라 둘이 겹쳐도 따로 보인다.
@@ -124,7 +126,7 @@ export default function (component) {
   // 좁은 화면 겹침 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle.is-narrow .sle-side` 의 8px). 놓은 호기를 서랍 왼쪽으로
   // 이만큼 더 꺼낸다.
   const DRAWER_INSET_PX = 8
-  // 편집 영역 둘레의 여백(영역 긴 변의 비율). 전체 보기는 영역+여백이 다 보이는 크기다.
+  // 캔버스 둘레의 여백(캔버스 긴 변의 비율). 전체 보기는 캔버스+여백이 다 보이는 크기다.
   const VIEW_MARGIN = 0.03
   // 무대 높이(px). 기본은 화면에 맞추고(MIN_DEFAULT_H 이상), 손잡이로는 MIN_DRAG_H ~ 화면 높이의 MAX_H_RATIO 배.
   const MIN_DEFAULT_H = 320
@@ -276,6 +278,7 @@ export default function (component) {
   const leavingList = q('.sle-leaving-list')
   const statusBox = q('.sle-status')
   const applyButton = q('.sle-apply')
+  const resetButton = q('.sle-reset')
   const undoButton = q('.sle-undo')
   const unplaceButton = q('.sle-unplace')
   const areaW = q('.sle-area-w')
@@ -341,6 +344,61 @@ export default function (component) {
   const blockLink = q('.sle-block-link')
   const blockColor = q('.sle-block-color')
   const blockOpen = q('.sle-block-open')
+  // 꺼진 단추의 까닭 풍선(설계 규칙 UI-INP-07) — 감싼 칸이 마우스 · 키보드를 받고, 풍선은 편집기 뿌리의 판 하나다(도구 줄이
+  // 넘침을 자른다). 글은 칸의 `data-tip` 이고 비면 칸은 탭 자리에서 빠진다(`lockWith`).
+  const tipBox = q('.sle-tip')
+  // 풍선은 칸을 따라가고, 칸이 왼쪽 칸 굴림 밖으로 나가면 숨는다 — `S.tipFor` 는 남아 초점이 머문 채 돌아오면 다시 뜬다.
+  function placeTip(spot) {
+    const box = spot.getBoundingClientRect()
+    const port = spot.closest('.sle-side-scroll')?.getBoundingClientRect()
+    tipBox.hidden = Boolean(port) && (box.bottom <= port.top || box.top >= port.bottom)
+    if (tipBox.hidden) return
+    const frame = host.getBoundingClientRect()
+    const below = box.bottom - frame.top + TIP_GAP_PX
+    const above = box.top - frame.top - TIP_GAP_PX - tipBox.offsetHeight
+    const roomLeft = Math.max(frame.width - tipBox.offsetWidth, 0)
+    tipBox.style.left = `${Math.round(Math.min(Math.max(box.left - frame.left, 0), roomLeft))}px`
+    tipBox.style.top = `${Math.round(below + tipBox.offsetHeight > frame.height && above >= 0 ? above : below)}px`
+  }
+  function hideTip() {
+    S.tipFor = null
+    tipBox.hidden = true
+  }
+  function showTip(spot) {
+    const text = spot.dataset.tip || ''
+    if (!text) { hideTip(); return }
+    S.tipFor = spot
+    setText(tipBox, text)
+    placeTip(spot)
+  }
+  function setTip(spot, reason) {
+    setAttr(spot, 'data-tip', reason)
+    if (reason) setAttr(spot, 'tabindex', '0')
+    else spot.removeAttribute('tabindex')
+    if (S.tipFor === spot) showTip(spot)
+  }
+  // 초점이 단추나 칸에 있으면 잠기고 풀리는 쪽을 따라간다 — 잠긴 단추와 탭 자리에서 빠진 칸은 초점을 잃어 키보드가 끊긴다.
+  function lockWith(button, reason) {
+    const spot = button.parentElement
+    const held = isFocused(button) || isFocused(spot)
+    button.disabled = Boolean(reason)
+    setTip(spot, reason)
+    if (held) (reason ? spot : button).focus({ preventScroll: true })
+  }
+  // 마우스는 올린 동안, 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다. 칸은 눌리지 않으므로
+  // 칸 자신이 받은 Space 는 페이지를 굴리지 않게 막는다(칸 안의 켜진 단추 · 입력 칸이 받은 키는 그대로 간다).
+  function bindTip(spot) {
+    spot.onpointerenter = () => showTip(spot)
+    spot.onpointerleave = () => { if (!spot.matches(':focus-visible')) hideTip() }
+    spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }
+    spot.onblur = hideTip
+    spot.onkeydown = (event) => { if (event.key === ' ' && event.target === spot) event.preventDefault() }
+  }
+  for (const spot of host.querySelectorAll('.sle-tiphost')) bindTip(spot)
+  bindTip(q('.sle-area'))
+  q('.sle-side-scroll').onscroll = () => { if (S.tipFor) placeTip(S.tipFor) }
+  // 회차 사이에 칸이 사라졌으면(보기 ↔ 편집) 풍선도 걷는다 — 칸을 떠나는 사건이 오지 않는다.
+  if (S.tipFor && !S.tipFor.offsetParent) hideTip()
   const zoomOut = q('.sle-zoom-out')
   const zoomIn = q('.sle-zoom-in')
   const zoomLabel = q('.sle-zoom-label')
@@ -2289,7 +2347,7 @@ export default function (component) {
       return true
     })
   }
-  // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 편집 영역은 이보다 작게 줄일 수 없다.
+  // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 캔버스는 이보다 작게 줄일 수 없다.
   const extents = () => {
     let right = RESERVED.right
     let top = RESERVED.top
@@ -2645,8 +2703,8 @@ export default function (component) {
     clampView()
     svg.setAttribute('viewBox', `${S.view.x} ${S.view.top} ${viewW()} ${viewH()}`)
     zoomLabel.textContent = `${Math.round(S.view.z * 100)}%`
-    zoomOut.disabled = S.view.z <= 1
-    zoomIn.disabled = S.view.z >= MAX_ZOOM
+    lockWith(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')
+    lockWith(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')
     svg.classList.toggle('is-zoomed', S.view.z > 1)
     // 손잡이 크기·글자 숨김은 화면 px 로 정하므로 배율이 바뀌면 다시 맞춘다.
     if (!reposition) return
@@ -2923,8 +2981,12 @@ export default function (component) {
       // 작아서 숨기는 배율에서는 꼬리표 상자도 걷는다(영역은 테두리로 잡힌다).
       if (caption.shown) {
         const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
-        inner.append(tag, text(name, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
+        const words = text(name, tagX + fs * 0.45, fs * 0.8, fs, 'start')
+        words.classList.add('sle-zone-name')
+        inner.append(tag, words)
       }
+      // 이름표가 차지하는 자리 — 영역은 돌리지 않아(`rotatable: false`) 도면 좌표 그대로다. 글이 꼬리표보다 길면 글 끝까지다.
+      group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6 } : null
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -3067,6 +3129,7 @@ export default function (component) {
       }
     }
     shape.append(inner)
+    if (item.kind === 'zone') syncZoneTag(group)
     // 돌리지 않는 가운데 글(베이 「B<번호>」·도형 이름표) — 돌리는 그룹 밖에 가로로.
     if (group.__flatText) {
       shape.append(group.__flatText)
@@ -3097,7 +3160,7 @@ export default function (component) {
       if (group.hasAttribute('tabindex')) group.setAttribute('aria-label', words)
       return
     }
-    if (tip) tip.textContent = markTitle(item)
+    if (tip) tip.textContent = `${markTitle(item)}${item.keepOut ? ' · 설비 금지' : ''}`
   }
 
   // 도형의 노란 모양 조절 손잡이(`sle-adjust` — 화면 HANDLE_PX 동그라미, 하나만 고른 도형에서만 보인다 — CSS). 제자리 손잡이
@@ -3323,7 +3386,7 @@ export default function (component) {
     chip.append(size)
     if (leaving) {
       chip.classList.add('is-leaving')
-      chip.title = '적용하면 그 층으로 갑니다. 놓여 있던 호기는 같은 좌표·크기로, 미배치였던 호기는 그 층 트레이로. 되돌리려면 실행 취소.'
+      chip.title = '적용하면 그 층으로 갑니다. 놓여 있던 호기는 같은 좌표·크기로, 미배치였던 호기는 그 층 미배치 칸으로. 되돌리려면 실행 취소.'
       return chip
     }
     chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다${list.length >= 2 ? '(범위 안 바둑판)' : ''}` : lead.label
@@ -3750,8 +3813,20 @@ export default function (component) {
   const overlaps = (p, q2) => p.x < roundTo(q2.x + q2.w) && q2.x < roundTo(p.x + p.w)
     && p.y < roundTo(q2.y + q2.h) && q2.y < roundTo(p.y + p.h)
 
+  // 영역 이름표는 호기 아래 층이라 호기가 지나가면 반쯤 덮여 잘려 보인다 — 덮일 바에는 숨기고 영역 풍선에 남긴다(설계 규칙
+  // UI-ACC-04). 자리(`__tagBox`)는 `drawMark` 가 배율마다 정하고, 호기가 움직이거나 기준일로 보이는 호기가 바뀌면
+  // `markOverlaps` 가 다시 본다.
+  function syncZoneTag(group) {
+    const box = group.__tagBox
+    if (!box) return
+    const covered = [...S.items.values()].some((m) => isUnit(m) && seenModule(m)
+      && box.x < m.x + m.w && m.x < box.x + box.w && box.top < svgTop(m) + m.h && svgTop(m) < box.top + box.h)
+    for (const node of group.querySelectorAll('.sle-zone-tag, .sle-zone-name')) node.style.display = covered ? 'none' : ''
+  }
+
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.
   function markOverlaps(flipped) {
+    for (const group of zonesLayer.querySelectorAll('.mark-zone')) syncZoneTag(group)
     if (VIEW) {
       // 보기 전용: 호기끼리 겹친 것만 오른쪽 위 꼭지 삼각으로 알린다 — 완전히 겹치면 아래 호기가 보이지도
       // 눌리지도 않는데 범례·요약은 그것을 센다. 테는 실물·반출/이설 뜻을 싣으므로 겹침은 테가 아니다. 반입구·문
@@ -4291,7 +4366,7 @@ export default function (component) {
     updateStatus()
   }
 
-  // 브라우저가 쥔 적용 전 편집(요소·편집 영역)이 있는가.
+  // 브라우저가 쥔 적용 전 편집(요소·캔버스)이 있는가.
   function hasPendingEdits() {
     return markChangeCount() > 0 || canvasChanged()
   }
@@ -4342,13 +4417,16 @@ export default function (component) {
     return parts.join(' · ')
   }
 
+  // 도면에 놓인 것을 다루는 단추가 잠긴 까닭 — 미배치 칩만 고른 경우와 아무것도 안 고른 경우를 가른다.
+  const noPickReason = (chosen) => (chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')
+
   function updateStatus() {
     if (VIEW) {
       const chosen = selectedItems()
       pickBox.textContent = chosen.length === 1 ? pickText(chosen[0]) : ''
       // 한 줄에서 잘리면 전체 문구는 풍선으로, 비었으면 안내 풍선(`pickTip`).
       pickBox.title = pickBox.textContent || pickTip
-      zoomSel.disabled = !chosen.some(onCanvas)
+      lockWith(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
       renderSheet()
       return
     }
@@ -4406,17 +4484,21 @@ export default function (component) {
       const doubled = [...seen.values()].filter((n) => n > 1).length
       if (doubled) add('같은 층을 가리키는 블록(저장은 됨) ', `${doubled}개 층`)
     }
-    if (canvasChanged()) add('편집 영역 ', `${S.originalCanvas.w}×${S.originalCanvas.h} → ${W()}×${H()}`)
+    if (canvasChanged()) add('캔버스 ', `${S.originalCanvas.w}×${S.originalCanvas.h} → ${W()}×${H()}`)
     if (S.passthrough.length) add('그리지 못한 도면 요소(그대로 둡니다) ', `${S.passthrough.length}개`)
     if (S.overlapPairs) add('겹침(저장은 됨) ', `${S.overlapPairs}쌍`)
     if (S.blocked) add('반입구·문·기둥·설비 금지 영역을 덮은 호기(저장은 됨) ', `${S.blocked}대`)
-    applyButton.disabled = changed === 0
+    // 잠긴 동안만 풍선이 까닭을 말한다(설계 규칙 UI-INP-07). 「처음 상태로」 는 실행 취소 기록까지 지워 되돌릴 수 없다 — 평소
+    // 풍선이 그 결과를 말한다(UI-NTF-09).
+    const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''
+    lockWith(applyButton, noChange)
+    lockWith(resetButton, noChange)
     applyButton.classList.toggle('is-pending', changed > 0)
-    undoButton.disabled = S.undo.length === 0
-    unplaceButton.disabled = !chosen.some((m) => onCanvas(m) || m.created)
-    zoomSel.disabled = !chosen.some(onCanvas)
+    lockWith(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')
+    lockWith(unplaceButton, chosen.some((m) => onCanvas(m) || m.created) ? '' : noPickReason(chosen))
+    lockWith(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
-    areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
+    areaNote.textContent = S.note
     syncInspector()
     syncFormatPanel()
     renderSheet()
@@ -4518,7 +4600,7 @@ export default function (component) {
   }
   const commit = (entries) => pushUndo(entries.map((e) => ({ op: 'set', id: e.id, before: e.before })))
 
-  // ---------------------------------------------------------------- 편집 영역(캔버스) 크기
+  // ---------------------------------------------------------------- 캔버스 크기
   function setCanvas(requestedW, requestedH, { record = true } = {}) {
     // 층 캔버스를 고치지 않는 편집기(가정 설비 시나리오 — 공용 값). 칸은 꺼져 있지만 옛 단축키·되돌리기
     // 길도 막는다. 서버도 적용의 캔버스 값을 거부한다(두 겹).
@@ -4656,7 +4738,7 @@ export default function (component) {
 
   // 칩에서 Enter — 끌어 놓기의 키보드 길. 놓는 점은 지금 보이는 도면 가운데(열린 서랍이 덮은 오른쪽은 빼고)이고, 고른 칩
   // 여럿 가운데 하나면 끌 때처럼 함께 놓는다. 놓았으면 초점을 놓은 호기로 옮긴다 — 이어서 방향키로 자리를 다듬는다.
-  // 못 놓았으면(편집 영역보다 큼 — 까닭은 편집 영역 칸 알림) 초점은 칩에 남는다.
+  // 못 놓았으면(캔버스보다 큼 — 까닭은 캔버스 칸 알림) 초점은 칩에 남는다.
   function placeChipByKey(lead, list, free) {
     const picked = pickedTrayEntries()
     const together = picked.length > 1 && picked.some((entry) => entry.lead.id === lead.id)
@@ -4728,7 +4810,7 @@ export default function (component) {
     const { pieces, cols, rows, cellW, cellH, footprint } = trayPlan(list)
     if (footprint.w > W() || footprint.h > H()) {
       const who = name || lead.group || lead.label
-      S.note = `${who} (${footprint.w}×${footprint.h})${josaOf(who, '이')} 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
+      S.note = `${who} (${footprint.w}×${footprint.h})${josaOf(who, '이')} 캔버스 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 캔버스를 넓힌 뒤 놓으세요`
       updateStatus()
       return
     }
@@ -4892,12 +4974,12 @@ export default function (component) {
       shift = pasteShift(clip.marks, canvas, null, Math.max(S.step, 1) * S.pasteSerial, SCALE)
     }
     if (!shift) {
-      S.note = `붙일 도면 요소(${roundTo(outer.w)}×${roundTo(outer.h)})가 편집 영역 ${W()}×${H()} 보다 커서 붙이지 않았습니다`
+      S.note = `붙일 도면 요소(${roundTo(outer.w)}×${roundTo(outer.h)})가 캔버스 ${W()}×${H()} 보다 커서 붙이지 않았습니다`
       updateStatus()
       return true
     }
     if (stacksOnMarks(clip.marks, shift)) {
-      S.note = '붙일 자리가 같은 요소와 똑같이 겹쳐 붙이지 않았습니다 — 마우스를 비어 있는 자리에 두고 Ctrl+V 하거나 편집 영역을 넓히세요'
+      S.note = '붙일 자리가 같은 요소와 똑같이 겹쳐 붙이지 않았습니다 — 마우스를 비어 있는 자리에 두고 Ctrl+V 하거나 캔버스를 넓히세요'
       updateStatus()
       return true
     }
@@ -5257,7 +5339,7 @@ export default function (component) {
   // 가운데를 축으로 90° 돌린다(상자 폭·높이가 바뀐다).
   function rotateMark(item) {
     if (item.h > W() || item.w > H()) {
-      S.note = `돌리면 ${item.h}×${withJosa(item.w, '이')} 되어 편집 영역 ${W()}×${withJosa(H(), '을')} 넘어 돌리지 않았습니다`
+      S.note = `돌리면 ${item.h}×${withJosa(item.w, '이')} 되어 캔버스 ${W()}×${withJosa(H(), '을')} 넘어 돌리지 않았습니다`
       updateStatus()
       return
     }
@@ -6118,6 +6200,8 @@ export default function (component) {
     if (event.key === 'Enter') keepKeysInSheet()
     // 단축키 판은 Esc 가 먼저 닫는다(고른 것 · 붓은 그대로).
     if (event.key === 'Escape' && keysOpen()) { event.preventDefault(); setKeysOpen(false, true); return }
+    // 떠 있는 풍선도 Esc 가 먼저 걷는다 — 초점을 옮기지 않고 가린 자리를 볼 수 있어야 한다.
+    if (event.key === 'Escape' && S.tipFor && !tipBox.hidden) { event.preventDefault(); hideTip(); return }
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -6534,16 +6618,15 @@ export default function (component) {
     if (!Number.isFinite(value)) { input.value = current; return null }
     return value
   }
-  // 편집 영역 칸을 끄면 까닭을 풍선·알림 칸에 둔다(보기는 그대로 — 폭·높이 값은 지금 캔버스). 회차마다 받은
-  // 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식 세션으로 돌아와도(편집기 key·DOM 이 같다) 꺼진 채 남지 않게.
+  // 캔버스 칸을 끄면 까닭은 칸을 감싼 묶음의 풍선이다(보기는 그대로 — 폭·높이 값은 지금 캔버스, 설계 규칙 UI-INP-07 — 빨간
+  // 글은 방금 거부 `S.note` 에만 쓴다). 회차마다 받은 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식 세션으로 돌아와도(편집기
+  // key·DOM 이 같다) 꺼진 채 남지 않게.
   const canvasLocked = data.canvasEditable === false
-  lockCanvasControls(
-    q('.sle-area').querySelectorAll('input, button'),
-    canvasLocked,
-    data.canvasLock || '이 편집기에서는 편집 영역을 바꾸지 않습니다',
-  )
-  if (canvasLocked) areaNote.textContent = data.canvasLock || ''
-  else if (!S.note) areaNote.textContent = ''
+  const canvasLockReason = data.canvasLock || '이 편집기에서는 캔버스를 바꾸지 않습니다'
+  lockCanvasControls(q('.sle-area').querySelectorAll('input, button'), canvasLocked, canvasLockReason)
+  q('.sle-area').classList.toggle('is-locked', canvasLocked)
+  setTip(q('.sle-area'), canvasLocked ? canvasLockReason : '')
+  if (!S.note) areaNote.textContent = ''
   areaW.onchange = () => { const v = areaValue(areaW, W()); if (v !== null) setCanvas(v, H()) }
   areaH.onchange = () => { const v = areaValue(areaH, H()); if (v !== null) setCanvas(W(), v) }
   // Enter 로 바로 반영한다(숫자 칸은 Enter 만으로는 change 가 안 나는 경우가 있다).
@@ -6568,7 +6651,7 @@ export default function (component) {
   }
   undoButton.onclick = undo
   unplaceButton.onclick = () => removeItems(selectedItems())
-  q('.sle-reset').onclick = () => {
+  resetButton.onclick = () => {
     initFromData()
     S.canvas = { ...S.originalCanvas }
     S.undo = []
@@ -6772,7 +6855,7 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- 왼쪽 칸 묶음 접힘(브라우저 안에서만)
-  // 묶음(범례·도면 요소·선택·서식·격자·편집 영역)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
+  // 묶음(범례·도면 요소·선택·서식·격자·캔버스)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
   // 미배치 칸 도움말만 접힘. 층 보기(범례 하나)는 묶음 머리가 없어 늘 펼침이다.
   function sectionFolded(name, fallback) {
     if (!S.sections) {
@@ -6850,6 +6933,8 @@ export default function (component) {
   const keysList = q('.sle-keys-list')
   const keysOpen = () => !keysPanel.hidden
   function placeKeys() {
+    // 앞 자리를 지우고 잰다 — 남은 `left` 로 재면 판이 편집기 오른쪽 끝까지의 자리만큼 눌린 폭이 나온다.
+    keysPanel.style.left = ''
     const frame = bodyBox.getBoundingClientRect()
     const anchor = keysToggle.getBoundingClientRect()
     const width = keysPanel.offsetWidth
@@ -7746,8 +7831,10 @@ export default function (component) {
   const faderNote = q('.sle-fader-note')
   const faderToday = q('.sle-fader-today')
   const pinnedDate = q('.sle-pinned-date')
+  const pinnedRow = q('.sle-pinned')
   const pinnedNote = q('.sle-pinned-note')
-  // 고정 줄 뒷글 — 편집기는 HTML 글(「· 편집 중 고정 …」) 그대로, 「필요 단축」 보기는 `data.asOfPinned`.
+  // 고정 줄 뒷글 — 편집기는 HTML 글(「· 편집 중 고정 …」) 그대로, 「필요 단축」 보기는 표지 「오늘 고정」 이고 왜 고정인지는
+  // 그 줄 풍선 `data.asOfPinned` 다(설계 규칙 UI-TXT-01).
   if (S.pinnedNoteDefault === undefined) S.pinnedNoteDefault = pinnedNote ? pinnedNote.textContent : ''
   const fabAsOf = q('.sle-asof')
   const fabAsOfDate = q('.sle-asof-date')
@@ -7870,7 +7957,9 @@ export default function (component) {
     setText(faderDate, S.asOf || TODAY)
     setText(faderRel, `· ${relText(S.asOf)}`)
     faderRel.classList.toggle('is-today', isToday)
+    // 초점은 누를 때 페이더로 먼저 옮긴다(`faderToday.onclick`) — 칸으로 넘길 일이 없다.
     faderToday.disabled = isToday
+    setTip(faderToday.parentElement, isToday ? '이미 오늘' : '')
     setAttr(faderInput, 'aria-valuetext', `${S.asOf || TODAY} (${relText(S.asOf)})`)
     setText(faderNote, !S.dataAsOf || S.asOf === S.dataAsOf
       ? ''
@@ -7960,7 +8049,8 @@ export default function (component) {
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
   // 층 편집 도구 줄 칩 「YYYY-MM-DD 고정」(핀 아이콘 — 결정 D12, 풍선이 「기준일은 편집하는 동안 고정」 을 말한다).
   if (!VIEW && !FAB) setText(pinChipDate, S.asOf || '—')
-  if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault)
+  if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ' · 오늘 고정' : S.pinnedNoteDefault)
+  if (pinnedRow) setAttr(pinnedRow, 'title', ASOF_PINNED ? data.asOfPinned : '')
   if (VIEW && FAB) {
     // 좁은 도구 줄에서는 「기준일」 말머리를 접고 날짜도 말줄임으로 줄 수 있어(CSS) 풍선에 온 글을 둔다.
     fabAsOf.hidden = !S.asOf
@@ -8051,6 +8141,7 @@ export default function (component) {
     layoutPanels()
     layoutSheet()
     if (keysOpen()) placeKeys()
+    if (S.tipFor) placeTip(S.tipFor)
     if (S.lock) alignLock()
     else {
       const changed = S.heightDrag ? measurePort() : fitStage()
