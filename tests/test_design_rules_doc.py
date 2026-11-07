@@ -91,6 +91,16 @@ DEPLOY_BOARD_ANSWERS = {
     "q-labels": "둘 다 라벨을 둔다",
     "list-caption": "걷는다",
 }
+# 2026-11-07 통합 검수 보드(6-8)에서 화면에 닿는 칸의 사용자 답 — 결정은 고른 답, list-main 은 고침
+# 요청이라 고친 꼴을 맞댄다.
+INTEGRATION_BOARD_ANSWERS = {
+    "list-main": "맞춘다",
+    "D1": "(가)",
+    "D2": "(가)",
+    "D3": "(가)",
+    "D4": "(가)",
+    "D5": "(가)",
+}
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
     "AGENTS.md",
@@ -253,7 +263,7 @@ def test_the_review_sheet_answers_are_recorded_and_written_into_the_rules() -> N
     D3 (가): UI-NTF-03 의 예외 「확인 칸을 다시 세우는 거절」. D6 (가): UI-LAY-01 의 예외 「미지정
     주요 Case 칩」."""
     section = _chapter(_text(), 6)
-    review = section[section.index("\n### 6-2. ") :]
+    review = section[section.index("\n### 6-2. ") : section.index("\n### 6-3. ")]
     lines = [line for line in review.splitlines() if re.match(r"^- D\d+ · ", line)]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -423,7 +433,7 @@ def test_the_deploy_board_answers_are_recorded_and_written_into_the_rules() -> N
     q-labels: 라벨을 보이는 창 둘은 예외로 확정(UI-INP-08). 답이 왔으므로 규칙 글에 「답 대기」 가
     남지 않는다."""
     section = _chapter(_text(), 6)
-    board = section[section.index("\n### 6-7. ") :]
+    board = section[section.index("\n### 6-7. ") : section.index("\n### 6-8. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -461,6 +471,47 @@ def test_the_deploy_board_answers_are_recorded_and_written_into_the_rules() -> N
 
     assert "q-labels" in rules["UI-INP-08"].fields["예외"][0]
     assert "고친것 이름0 순서0" in rules["UI-TXT-01"].fields["근거"][0]
+
+
+def test_the_integration_board_answers_are_recorded_and_written_into_the_rules() -> None:
+    """6-8 은 통합 검수 보드에서 화면에 닿는 칸 하나에 한 줄이고 답이 사용자 답과 같다. D1 은
+    UI-LAY-03 예외, list-main 은 UI-LAY-09 글이다 — 머리선 맞춤은 표가 나란히 서는 칸으로 한정하고
+    설비 마스터 오른쪽 칸은 해당이 없다고 글이 말한다. 물은 판의 「물을 것」 은 답으로 닫힌다.
+    """
+    document = _text()
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-8. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\* .+\((2026-11-07) · (.+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+
+    assert len(lines) == len(INTEGRATION_BOARD_ANSWERS)
+    assert found == INTEGRATION_BOARD_ANSWERS
+    assert "판 v1.8" in document.split("\n## 1. ")[0]
+    assert "- **v1.8 — 2026-11-07.**" in _chapter(document, 8)
+
+    rules = {rule.id: rule for rule in _rules()}
+    exceptions = rules["UI-LAY-03"].fields["예외"][0]
+    assert "선택한 리비전 불러오기" in exceptions and "6-8 D1" in exceptions
+    assert "통합 검수 D1 (가)" in rules["UI-LAY-03"].fields["근거"][0]
+
+    panel = rules["UI-LAY-09"]
+    assert "본문 표와 나란히 서는 칸은 두 표의 머리선을 맞춘다" in panel.text
+    assert "맨 위가 표가 아닌 칸(설비 마스터 오른쪽 칸 등)은 해당이 없다" in panel.text
+    assert "tests/test_scenario_list_grid_assets.py" in panel.fields["그물"][0]
+    for tag in ("통합 검수 list-main", "통합 검수 D2 (가)"):
+        assert tag in panel.fields["근거"][0]
+
+    previous = next(
+        line for line in document.splitlines() if line.startswith("  - 물을 것: 상세 칸")
+    )
+    assert "6-8 · v1.8 로 답했다" in previous, previous
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:

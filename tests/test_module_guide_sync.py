@@ -457,6 +457,11 @@ def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:
         assert all("--worktree-of ." in line for line in lines), (start, lines)
 
 
+def _runbook_pr_patterns(body: str) -> list[str]:
+    """런북 4-6 본문의 PowerShell · bash 찾는 줄 패턴."""
+    return re.findall(r"Select-String '([^']+)'", body) + re.findall(r"grep -E '([^']+)'", body)
+
+
 def test_the_pr_check_merges_only_the_head_it_checked() -> None:
     """런북 4-6 — PR 의 합치는 단추는 누른 때의 머리를 합친다. 그래서 점검한 머리의 7자를 알리고,
     합치기 앞에 PR 화면의 마지막 커밋이 그것과 같을 때만 합친다(점검 뒤 더 올린 커밋이 점검 없이
@@ -468,13 +473,40 @@ def test_the_pr_check_merges_only_the_head_it_checked() -> None:
 
     assert "git rev-parse --short=7 $pr" in report
     assert "마지막 커밋 7자가 그 7자와 같은지" in report and "1 부터 다시 한다" in report
-    patterns = re.findall(r"Select-String '([^']+)'", body) + re.findall(r"grep -E '([^']+)'", body)
+    patterns = [pattern for pattern in _runbook_pr_patterns(body) if "maturity" in pattern]
     assert len(patterns) == 2, patterns
     for pattern in patterns:
         assert re.search(pattern, '+  "maturity": "L2",'), pattern
         assert re.search(pattern, '+  "maturity":"L2",'), pattern
         assert not re.search(pattern, '-  "maturity": "L2",'), pattern
         assert not re.search(pattern, '+  "maturity": "L1",'), pattern
+
+
+def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -> None:
+    """런북 4-6 — 통합 검수 D6 (가)는 키를 앱 환경변수로 넘기는 구조를 두는 대신 PR 점검으로 본다.
+    `check_module.py` 는 환경변수 **읽기**를 보지 않으므로 두 셸의 찾는 줄이 PR 이 더한 줄에서 읽는
+    꼴을 찍어야 하고, 지운 줄 · 무관한 줄은 찍지 않는다. 런북이 말한 규칙 번호는 지침서와 같다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    body = re.split(r"\n#{2,3} ", runbook.partition("### 4-6.")[2], maxsplit=1)[0]
+    patterns = [pattern for pattern in _runbook_pr_patterns(body) if "CAPA_S3_" in pattern]
+    assert len(patterns) == 2 and patterns[0] == patterns[1], patterns
+
+    for pattern in patterns:
+        for reads in (
+            '+    key = os.environ["CAPA_S3_SECRET_KEY"]',
+            "+from os import environ",
+            '+    os.getenv("AWS_SECRET_ACCESS_KEY")',
+            '+    Path.home() / ".aws" / "credentials"',
+            "+import boto3",
+        ):
+            assert re.search(pattern, reads), reads
+        assert not re.search(pattern, '-    key = os.environ["CAPA_S3_SECRET_KEY"]')
+        assert not re.search(pattern, '+    return ctx.data_dir / "result.csv"')
+
+    assert "**읽기는 보지 않는다**" in body and "통합 검수 D6 (가)" in body
+    for rule, word in (("M07", "`.aws/`"), ("M11", "`os.environ` 쓰기")):
+        assert rule in body and word in body
+        assert any(line.startswith(f"| {rule} |") and word in line for line in GUIDE.splitlines())
 
 
 def test_a_merged_module_reaches_the_app_between_deploys_through_runbook_four_seven() -> None:
