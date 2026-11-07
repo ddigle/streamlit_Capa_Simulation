@@ -1075,13 +1075,8 @@ def _dynamic_rows(
     if SECTION_UNITS not in folded:
         unit_rows, hidden_units = _unit_rows(axis, dynamic)
         rows += unit_rows
-    rows.append(
-        _section_title_row(
-            SECTION_DOWNTIME,
-            "진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다",
-            folded,
-        )
-    )
+    # 진한 화살표 · 끝 날의 읽는 법은 캔버스 아래 범례와 그 풍선이 말한다(설계 규칙 UI-TXT-01).
+    rows.append(_section_title_row(SECTION_DOWNTIME, "", folded))
     if SECTION_DOWNTIME not in folded:
         if manual_row is not None:
             rows.append(manual_row)

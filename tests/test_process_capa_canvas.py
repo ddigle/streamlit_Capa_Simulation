@@ -530,7 +530,6 @@ def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> N
         SUMMARY_TITLE_DETAIL,
         "참고 · 설비 DB · 환산대수 · 생산월(Cut-off 10일) · 점선은 오늘(11.10)",
         "단축 목표 110% · 호기마다 한 줄",
-        "진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다",
     ]
     for detail in details:
         lines = title_detail_lines(detail)
@@ -547,6 +546,8 @@ def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> N
         # 펼친 구획은 제목 끝에 ▾ 다(소요대수 줄과 같은 꼴).
         assert f"<b>{title} ▾</b>" in label_texts
         assert title not in month_texts
+    # 읽는 법은 범례 풍선이 말한다 — 구획 머리에 늘 두지 않는다(설계 규칙 UI-TXT-01).
+    assert not any("화살표" in text or "다음 날부터" in text for text in label_texts)
     # 세부 글 줄은 라벨 칸 폭(좌우 여백 뺀 240px, 11px 글자) 안이다.
     budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 20) / 11
     assert all(
@@ -560,7 +561,7 @@ def test_a_title_row_grows_with_its_detail_lines() -> None:
     assert title_row_height("") == TITLE_HEIGHT_PX
     one = title_row_height(SUMMARY_TITLE_DETAIL)
     assert one == SUMMARY_TITLE_HEIGHT_PX > TITLE_HEIGHT_PX
-    assert title_row_height("진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다") > one
+    assert title_row_height(f"{SUMMARY_TITLE_DETAIL} · {SUMMARY_TITLE_DETAIL}") > one
     # 마디 하나가 칸보다 길면 그 줄만 말줄임한다.
     (line,) = title_detail_lines("가" * 60)
     assert line.endswith("…") and len(line) < 60
