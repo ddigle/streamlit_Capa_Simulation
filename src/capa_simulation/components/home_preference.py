@@ -1721,9 +1721,14 @@ def _render_monthly_amount_editor(
                 merge(values), rows, value_column=editor.value_column
             ):
                 # 방금 저장한 같은 값의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림 칸이 그
-                # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+                # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice). 이
+                # 저장은 버전 대조가 없어 다시 도는 회차가 없으니, 첫 누름이 쓴 메모면 여기서
+                # 돌려 칸을 비운다(saved_note).
                 if held_notice(editor.flash_key) is None:
                     notice.info(editor.unchanged_message, icon=":material/info:")
+                elif note.strip() and note.strip() == profile.source:
+                    mark_note_saved(editor.note_key, note)
+                    st.rerun()
                 return
             save(values, note.strip() or "웹 직접 편집")
         except BOOTSTRAP_ERRORS as exc:

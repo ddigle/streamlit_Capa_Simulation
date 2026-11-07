@@ -868,6 +868,45 @@ def test_a_failed_monthly_amount_save_keeps_the_typed_memo(
 
 
 @_MONTHLY_EDITORS
+@pytest.mark.parametrize(
+    ("second_note", "left"),
+    [("첫 메모", ""), ("둘째 메모", "둘째 메모")],
+    ids=["same-note", "another-note"],
+)
+def test_a_slow_second_press_empties_only_the_note_the_first_press_wrote(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    label: str,
+    editor_key: str,
+    write: str,
+    value_column: str,
+    second_note: str,
+    left: str,
+) -> None:
+    """버전 대조가 없는 저장의 둘째 누름은 첫 회차의 뒤따름을 밀어내고 「바뀐 것 없음」 으로 끝나
+    회차가 다시 돌지 않는다 — 첫 누름이 쓴 메모면 칸을 비우고, 다른 메모면 남긴다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    load = getattr(repository, write.replace("replace_", "load_"))
+    getattr(repository, write)(
+        pd.DataFrame({"생산계획년월": [202610], value_column: [1.25]}), source="처음 저장"
+    )
+    _clear_caches()
+    app = _app(repository, body)
+    _edit_cells(app, editor_key, {0: {"26.11": 2.0}})
+    _memo(app).set_value("첫 메모")
+    app = _press(app, label)
+    assert (load().version, _memo(app).value) == (2, "")
+
+    _edit_cells(app, editor_key, {0: {"26.11": 2.0}})
+    _memo(app).set_value(second_note)
+    app = _press(app, label)
+
+    assert _memo(app).value == left
+    assert (load().version, load().source) == (2, "첫 메모")
+
+
+@_MONTHLY_EDITORS
 def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
     repository: DuckDBScenarioRepository,
     monkeypatch: pytest.MonkeyPatch,
