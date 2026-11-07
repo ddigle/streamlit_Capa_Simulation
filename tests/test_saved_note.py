@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+import pytest
 from streamlit.testing.v1 import AppTest
+
+import capa_simulation.components.write_guard as write_guard
 
 KEY = "demo_note"
 FIRST_PRESS_START = 7
@@ -91,9 +94,12 @@ def test_a_field_holding_another_text_is_not_emptied() -> None:
     assert app.text_input(key=KEY).value == "둘째 메모"
 
 
-def test_another_text_sent_right_after_the_field_was_emptied_is_written_back() -> None:
+def test_another_text_sent_right_after_the_field_was_emptied_is_written_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """앞 회차의 빈 값이 둘째 누름을 보낸 뒤에 브라우저에 닿으면 칸은 비고 그 글은 서버에만 남는다 —
     제출 회차가 글을 다시 실어 보낸다. 다음 제출부터는 다시 적지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 60.0)
     app = _press(_app(), "첫 메모")
     app = _press(app, "둘째 메모", outcome="refused")
     assert app.text_input(key=KEY).value == "둘째 메모"
@@ -103,12 +109,29 @@ def test_another_text_sent_right_after_the_field_was_emptied_is_written_back() -
     assert not app.text_input(key=KEY).proto.set_value
 
 
-def test_the_same_text_of_a_double_press_is_not_written_back() -> None:
-    """같은 글의 둘째 누름은 첫 누름이 쓴 글이다 — 다시 적으면 비운 메모가 칸에 되살아나 다음 저장의
-    기록에 실린다."""
+def test_the_same_text_sent_right_after_the_field_was_emptied_empties_it_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """같은 글의 둘째 누름이 빈 값보다 먼저 떠났다 — 첫 누름이 쓴 글이다. 그 회차가 빈 값을 다시
+    적지 않으면 뒤따른 회차가 앞 회차의 빈 값을 덮어 칸에 메모가 되살아나 다음 저장의 기록에
+    실린다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 60.0)
     app = _press(_app(), "첫 메모")
     app = _press(app, "첫 메모", outcome="refused")
-    assert not app.text_input(key=KEY).proto.set_value
+    assert app.text_input(key=KEY).value == ""
+    assert app.text_input(key=KEY).proto.set_value
+    assert app.session_state["submitted_notes"] == ["첫 메모", ""]
+
+
+def test_the_same_text_typed_again_after_the_window_is_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """비운 지 창이 지난 뒤 같은 글을 적어 누른 것은 사람이 다시 적은 메모다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = _press(_app(), "첫 메모")
+    app = _press(app, "첫 메모", outcome="refused")
+    assert app.text_input(key=KEY).value == "첫 메모"
+    assert app.session_state["submitted_notes"] == ["첫 메모", "첫 메모"]
 
 
 def test_the_second_press_empties_only_the_note_of_the_first_press() -> None:
