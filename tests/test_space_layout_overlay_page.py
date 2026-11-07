@@ -758,9 +758,15 @@ def test_an_official_regroup_raises_the_module_alert_until_the_official_is_drawn
     regrouped = active_state(app, "EQ-14")
     assert regrouped is not None
     assert regrouped["short"] == (
-        "모듈 구성이 바뀐 묶음 1개 — 미배치 칸에 있음 · 배치 편집에서 다시 놓기"
+        "모듈 구성이 바뀐 묶음 1개 — 자리 잃은 모듈 · 배치 편집에서 다시 놓기"
     )
     assert regrouped["full"].startswith("공식에서 모듈 구성이 바뀐 묶음 1개(DEMO-G) — ")
+    # EQ-02 가 도면에 서 있어 EQ-01 은 미배치 칸 칩으로 서지 않는다(편집기 `trayKeep`) — 글은
+    # 「미배치 칸에 있다」 고 하지 않고 묶음을 골라 다시 놓는 길과 미배치 칸에서 놓는 길을 함께
+    # 말한다.
+    assert "미배치 칸에 있" not in regrouped["full"]
+    assert "「범위에 맞춰 n등분」" in regrouped["full"]
+    assert "미배치 칸에서 도면에 놓" in regrouped["full"]
     assert regrouped["level"] == "action"
     # 사이드바 · 본문 어디에도 그 줄을 그리지 않는다.
     assert not any("모듈 구성이 바뀐 묶음" in text for text in _drawn_texts(app))
