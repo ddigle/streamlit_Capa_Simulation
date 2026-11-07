@@ -49,6 +49,7 @@ from capa_simulation.components.period_field import (
     show_period_dialog,
 )
 from capa_simulation.components.plotly_touch_scroll import plotly_touch_scroll_script
+from capa_simulation.components.popover_field_commit import popover_field_commit_script
 from capa_simulation.components.print_button import print_toolbar_script
 from capa_simulation.components.scenario_edit_bar import pending_edit_labels, pending_edits_notice
 from capa_simulation.components.scenario_status import (
@@ -250,6 +251,8 @@ render_theme_toggle(
         disabled_link_aria_script(),
         # 화면 조작 상자가 바닥 앱 정보 카드에 걸린 채 서면 사이드바를 굴려 보인다.
         page_box_reveal_script(),
+        # 팝오버 밖 단추가 읽는 글 칸은 Esc 로 닫아도 친 값이 서버에 간다.
+        popover_field_commit_script(),
         # 통합인증이 켜진 서버만 — 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠.
         *sso_reconnect_scripts(signed_in),
         # 통합인증이 켜진 서버만 — 사람이 앱을 쓰면(입력) 5분에 한 번 로그인을 늘린다(타이머 없음 ·

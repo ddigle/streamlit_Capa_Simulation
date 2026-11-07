@@ -13,14 +13,26 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_marks, data_error_texts, place_errors, successes
+from alert_marks import (
+    active_state,
+    data_error_marks,
+    data_error_texts,
+    place_errors,
+    states,
+    successes,
+)
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
 
 from capa_simulation.components import space_layout_editor, write_guard
-from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_GENERATION_KEY,
+    BUFFER_KEY,
+)
+from capa_simulation.components.popover_field_commit import ESC_COMMIT_PREFIX
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_floor_layout_cache,
@@ -60,6 +72,113 @@ def _open_editor(tmp_path: Path, equipment: pd.DataFrame | None = None) -> tuple
     app.run()
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
     return app, database
+
+
+def _two_process_fleet() -> pd.DataFrame:
+    """C1 1F 는 Process-A 둘, C2 2F 는 Process-B 하나 — 공정 필터로 층 하나가 빈다."""
+    fleet = _equipment()
+    fleet.loc[1, ["공정소분류", "동", "층"]] = ["Process-B", "C2", "2F"]
+    return fleet
+
+
+def test_the_summary_says_a_process_filter_is_on_and_when_it_emptied_the_floor(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """필터로 층이 비면 빈 층과 같은 모습이었다 — 건 조건이 보이게 요약 맨 앞에 표지를 둔다(설계
+    규칙 UI-STA-03, 사외 점검 g6-02). 좁은 FAB 도구 줄은 요약 뒤부터 말줄임하므로 끝에 두면 표지부터
+    잘린다. 뜻은 공정소분류 칸 풍선이다."""
+    app, _ = _open_editor(tmp_path, _two_process_fleet())
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    assert "공정 필터" not in str(editor_calls[-1]["summary"])
+    assert "「필터로 0대」" in str(app.multiselect(key="space_status_process_filter").help)
+
+    # 이 층 호기가 남는 필터 — 건 수만 말한다.
+    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
+
+    # 이 층 호기가 모두 빠지는 필터 — 왜 비었는지 말한다.
+    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    assert not app.exception, [item.message for item in app.exception]
+    summary = str(editor_calls[-1]["summary"])
+    assert summary.startswith("공정 필터 1개 · 필터로 0대 · 배치 0대 · 미배치 0대")
+
+    # FAB 요약도 건 수를 말한다.
+    app.button(key="space_status_fab_breadcrumb").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
+    clear_equipment_repository()
+
+
+def test_a_floor_with_nothing_on_it_is_not_blamed_on_the_filter(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """원래 빈 층은 필터를 걸어도 「필터로 0대」 라 하지 않는다 — 필터 때문이 아니다."""
+    app, _ = _open_editor(tmp_path, _two_process_fleet())
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    app.session_state["space_status_selected_building"] = "C3"
+    app.session_state["space_status_selected_floor"] = "1F"
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
+    clear_equipment_repository()
+
+
+def test_the_discard_button_says_what_goes_with_it(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """팝오버에 설명 문장을 세우지 않는다 — 다른 탭 편집까지 버려진다는 말은 누르기 전에 보이는
+    단추 풍선이다(설계 규칙 UI-NTF-09, 사외 점검 g6-16)."""
+    app, _ = _open_editor(tmp_path)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    told = str(app.button(key="space_layout_discard").help)
+    assert "가용설비 설비 마스터 탭의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다" in told
+    assert not any("함께 버려집니다" in str(item.value) for item in app.caption)
+    clear_equipment_repository()
+
+
+def test_overlaps_in_a_pending_layout_go_to_a_state_alert_not_the_box(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """겹침은 조건이 남아 있는 동안의 상태다 — 저장 상자에 줄로 세우지 않고 건수 · 층과 Alarm 딸린
+    표로 낸다(설계 규칙 UI-NTF-02, 사외 점검 g6-04). 저장은 경고 없이 같은 동작이다(UI-NTF-09)."""
+    app, _ = _open_editor(tmp_path)
+    assert active_state(app, "EQ-17") is None
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 34, "y": 15, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    note = active_state(app, "EQ-17")
+    assert note is not None
+    assert note["short"] == "겹친 호기 1건(C1 1F) — 목록: Alarm › 이 줄"
+    assert note["full"].startswith("Space 편집본 · 겹친 호기 1건(C1 1F)")
+    assert "저장은 막지 않습니다" in note["full"]
+    (table,) = note["tables"]
+    assert table["columns"] == ["종류", "층", "호기", "상대"]
+    assert table["rows"] == [["겹친 호기", "C1 1F", "EQ-01", "EQ-02"]]
+    assert not any("겹친 호기" in str(item.value) for item in app.caption)
+
+    # 저장은 늘 같은 동작이다 — 저장한 뒤에는 저장 안 한 배치가 없어 조건도 해소된다.
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert active_state(app, "EQ-17") is None
+    clear_equipment_repository()
 
 
 def test_the_editor_receives_the_floor_from_the_shared_draft(
@@ -604,6 +723,179 @@ def _top_level(app: AppTest) -> list[tuple[str, str]]:
             name = "층 상세"
         layout.append((type(node).__name__, name))
     return layout
+
+
+def _save_row(app: AppTest) -> dict[str, bool]:
+    """저장 상자 머리 줄의 단추 잠김 — 없으면 빈 칸이다."""
+    save = [item for item in app.button if item.key == "space_layout_save"]
+    return {"save_locked": bool(save[0].disabled)} if save else {}
+
+
+def test_the_idle_save_row_stays_true_while_a_master_edit_is_unsaved(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 마스터 · 곁표에만 저장 안 한 편집이 있어도 잠긴 머리 줄이 선다 — 그 말은 머리 띠 ·
+    사이드바의 미저장 표지와 어긋나지 않게 「배치」 로 좁혀 적는다."""
+    app, _ = _open_editor(tmp_path)
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    edited = equipment.copy()
+    edited.loc[edited["설비명"].eq("EQ-02"), "설비이력"] = "저장 안 한 다른 편집"
+    app.session_state[BUFFER_KEY] = (baseline, edited, downtime)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert _save_row(app) == {"save_locked": True}
+    assert any(item.value == ":material/edit_note: 저장할 배치 변경 없음" for item in app.caption)
+    tips = [
+        str(app.button(key="space_layout_save").help),
+        *(node.proto.popover.help for node in _popover_nodes(app)),
+    ]
+    assert len(tips) == 3 and all("배치 변경이 없습니다" in tip for tip in tips)
+    clear_equipment_repository()
+
+
+def test_an_overlap_stays_open_on_a_round_that_could_not_measure_it(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 마스터의 검증 실패 편집으로 겹침을 재지 못한 회차는 조건을 모른다 — `active=False` 를
+    보내면 겹침이 남았는데 Alarm 줄이 「해소」 로 닫힌다. 표지를 비워 앞 줄을 두고 마크로만
+    알린다."""
+    app, _ = _open_editor(tmp_path)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 34, "y": 15, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+    measured = active_state(app, "EQ-17")
+    assert measured is not None
+
+    baseline, master, downtime = app.session_state[BUFFER_KEY]
+    app.session_state[BUFFER_KEY] = (
+        baseline,
+        pd.concat([master, master.iloc[[1]]], ignore_index=True),
+        downtime,
+    )
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("겹침 경고를 계산하지 못했습니다" in text for text in data_error_texts(app))
+    assert states(app, "EQ-17") == []
+
+    app.session_state[BUFFER_KEY] = (baseline, master, downtime)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    again = active_state(app, "EQ-17")
+    assert again is not None and again["fp"] == measured["fp"]
+    clear_equipment_repository()
+
+
+def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_drawing(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """첫 「적용」 에 저장 상자가 도면 위에 생겨 편집기가 220px 내려갔다(설계 규칙 UI-PRF-03, 사외
+    점검 g6-03). 배치 편집 중에는 머리 줄이 늘 서고(변경이 없으면 잠긴 단추와 까닭 풍선 —
+    UI-INP-07), 메모 · 바뀐 호기는 그 줄 안 「변경 내용」 팝오버다. 보기 회차에는 서지 않는다."""
+    app, _ = _open_editor(tmp_path)
+
+    assert _save_row(app) == {"save_locked": True}
+    assert "적용한 배치 변경이 없습니다" in str(app.button(key="space_layout_save").help)
+    assert any(item.value == ":material/edit_note: 저장할 배치 변경 없음" for item in app.caption)
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    idle = _popover_labels(app)
+    assert idle == {"변경 내용": True, "버리기": True}
+    idle_ids = _popover_ids(app)
+    assert not [item for item in app.text_input if item.label == "변경 메모"]
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert _save_row(app) == {"save_locked": False}
+    assert _popover_labels(app) == {"변경 내용": False, "버리기": False}
+    # 메모 · 저장자 칸과 바뀐 호기 표는 머리 줄 팝오버 안이다.
+    inside = _popover_widgets(app, "변경 내용")
+    assert {"변경 메모", "저장자(선택)"} <= inside
+    assert any("바뀐 호기 1건" in item.label for item in app.expander)
+    # 잠긴 줄과 다른 팝오버다 — 같은 id 면 「모두 버리기」 뒤 브라우저가 열린 팝오버를 잠긴 줄로
+    # 이어 빈 상자가 남는다(AGENTS 9장).
+    assert not set(idle_ids.values()) & set(_popover_ids(app).values())
+    # 메모 · 저장자는 팝오버 밖 「배치 저장」 이 읽는다 — Esc 로 닫아도 값이 가는 칸에 든다.
+    assert f"{ESC_COMMIT_PREFIX}space_layout_details" in _popover_box_keys(app, "변경 내용")
+
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+    # 편집을 꺼도 저장할 변경은 남아 상자가 그대로 선다.
+    assert _save_row(app) == {"save_locked": False}
+
+    app.button(key="space_layout_discard").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    # 저장할 변경도 편집도 없는 보기 회차에는 줄이 없다.
+    assert _save_row(app) == {}
+    clear_equipment_repository()
+
+
+def _popover_nodes(app: AppTest) -> list[Any]:
+    found: list[Any] = []
+
+    def walk(node: Any) -> None:
+        proto = getattr(node, "proto", None)
+        if isinstance(proto, BlockProto) and proto.HasField("popover"):
+            found.append(node)
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    walk(app.main)
+    return found
+
+
+def _popover_labels(app: AppTest) -> dict[str, bool]:
+    """본문 팝오버 라벨 → 잠김."""
+    return {node.proto.popover.label: node.proto.popover.disabled for node in _popover_nodes(app)}
+
+
+def _popover_ids(app: AppTest) -> dict[str, str]:
+    """본문 팝오버 라벨 → 블록 id(브라우저가 같은 팝오버로 잇는 값)."""
+    return {node.proto.popover.label: str(node.proto.id) for node in _popover_nodes(app)}
+
+
+def _popover_box_keys(app: AppTest, label: str) -> list[str]:
+    """그 팝오버 안 key 달린 칸의 key(블록 id `$$ID-…-` 꼬리)."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        block_id = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        if block_id.startswith("$$ID-"):
+            found.append(block_id.split("-", 2)[-1])
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    for node in _popover_nodes(app):
+        if node.proto.popover.label == label:
+            for child in node.children.values():
+                walk(child)
+    return found
+
+
+def _popover_widgets(app: AppTest, label: str) -> set[str]:
+    """그 팝오버 안 글 칸 라벨."""
+    found: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if getattr(node, "type", "") == "text_input":
+            found.add(node.label)
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    for node in _popover_nodes(app):
+        if node.proto.popover.label == label:
+            walk(node)
+    return found
 
 
 def test_the_floor_detail_keeps_its_place_while_the_unsaved_panel_comes_and_goes(

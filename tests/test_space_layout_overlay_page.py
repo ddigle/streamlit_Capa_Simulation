@@ -27,6 +27,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, alert_notes, infos, place_errors, shown, successes
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -156,6 +157,40 @@ def _drawn_texts(app: AppTest) -> list[str]:
     ]
 
 
+# 사이드바 「Space 도면」 상자의 표지 · 잠긴 단추 풍선 머리(페이지 상수 — 페이지는 import 하지
+# 않는다).
+LAYOUT_LOCK_MARK = ":material/lock: 배치 잠김"
+FAST_FORWARD_MARK = ":material/fast_forward: 최신 일정에 저장"
+DISCARD_CHECK_HELP = "「변경을 버리고 불러오기」 를 체크하면 풀립니다."
+
+
+def _save_help(app: AppTest) -> str:
+    """`배치 저장` 풍선 — 어디로 저장되나와 저장 범위를 말하는 자리다."""
+    return str(app.button(key="space_layout_save").help)
+
+
+def _sidebar_popovers(app: AppTest) -> list[str]:
+    """사이드바 팝오버 라벨."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        proto = getattr(node, "proto", None)
+        if isinstance(proto, BlockProto) and proto.HasField("popover"):
+            found.append(proto.popover.label)
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    walk(app.sidebar)
+    return found
+
+
+def _mark_help(app: AppTest, mark: str) -> str:
+    """사이드바 「Space 도면」 상자 표지(`mark` 글 그대로)의 풍선 — 까닭 · 저장되는 곳은 자리가
+    아니라 여기다(설계 규칙 UI-INP-07 · UI-TXT-01)."""
+    (item,) = [item for item in app.caption if item.value == mark]
+    return str(item.proto.help)
+
+
 def _texts(app: AppTest) -> list[str]:
     """그린 글 전부 + 배치 · 일정 없는 호기 상태 알림의 전문(`_layout_lines`)."""
     return [*_drawn_texts(app), *(full for _, full in _layout_lines(app))]
@@ -262,7 +297,10 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     }
     _ok(app.run())
     assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
-    assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in _texts(app))
+    # 어디로 저장되나는 자리 글이 아니라 저장 단추 풍선 앞머리다(설계 규칙 UI-NTF-09).
+    assert not any("새 리비전(가정 배치)으로 저장합니다" in text for text in _texts(app))
+    assert "의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
+    assert "공식 배치는 바뀌지 않습니다" in _save_help(app)
     # 저장 칸 체크는 없다 — 저장자 칸만(검수표 11/02 equip-13).
     assert not [box for box in app.checkbox if "space_layout_save_fields" in str(box.key)]
     assert app.text_input(key="space_layout_save_fields_saved_by").label == "저장자(선택)"
@@ -308,8 +346,8 @@ def test_a_rename_only_apply_in_an_assumption_names_the_common_ledger(
 
     texts = _texts(app)
     assert not any("가정 배치로 들어가고" in text for text in texts), texts
-    assert not any("새 리비전(가정 배치)으로 저장합니다" in text for text in texts), texts
-    assert any("이름 바꿈은 공통 대장에 저장합니다" in text for text in texts), texts
+    assert "새 리비전(가정 배치)으로 저장합니다" not in _save_help(app)
+    assert _save_help(app).startswith("이름 바꿈은 공통 대장에 저장합니다")
 
     common_before = len(repository.list_revisions())
     app.button(key="space_layout_save").click().run()
@@ -329,8 +367,8 @@ def test_a_move_with_a_rename_in_an_assumption_names_both_places(
 
     texts = _texts(app)
     assert any("가정 배치로 들어가고" in text for text in texts), texts
-    caption = next(text for text in texts if "새 리비전(가정 배치)으로 저장합니다" in text)
-    assert "이름 바꿈은 공통 대장에 저장합니다" in caption, caption
+    assert "새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
+    assert "이름 바꿈은 공통 대장에 저장합니다" in _save_help(app)
 
 
 def test_a_stale_assumption_with_the_same_layout_fast_forwards(
@@ -345,7 +383,8 @@ def test_a_stale_assumption_with_the_same_layout_fast_forwards(
         _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
-    assert any("더 새롭지만 배치는 같습니다" in text for text in _texts(app))
+    assert "더 새롭지만 배치는 같습니다" in _mark_help(app, FAST_FORWARD_MARK)
+    assert not any("더 새롭지만" in text for text in _texts(app))
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": editor_calls[-1]["epoch"],
@@ -381,8 +420,9 @@ def test_the_fast_forward_line_is_written_once_beside_an_unsaved_layout(
     _ok(app.run())
 
     texts = _texts(app)
-    assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in texts)
-    assert sum(text.count("더 새롭지만 배치는 같습니다") for text in texts) == 1, texts
+    assert "의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
+    assert not any("더 새롭지만 배치는 같습니다" in text for text in texts), texts
+    assert "더 새롭지만 배치는 같습니다" in _mark_help(app, FAST_FORWARD_MARK)
 
 
 def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
@@ -396,8 +436,13 @@ def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
 
-    assert any("r3에 다른 배치가 저장됐습니다" in text for text in _texts(app))
+    assert "r3에 다른 배치가 저장됐습니다" in _mark_help(app, LAYOUT_LOCK_MARK)
+    assert not any("다른 배치가 저장됐습니다" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
+    # 잃을 것이 없어 묻지 않는다 — 팝오버 · 체크 없이 단추 하나이고 설명은 그 풍선이다(UI-STA-02).
+    assert "space_load_latest_discard" not in [item.key for item in app.checkbox]
+    assert not _sidebar_popovers(app)
+    assert "그 시나리오의 최신 r3으로 옮깁니다" in str(app.button(key="space_load_latest").help)
     app.button(key="space_load_latest").click().run()
     _ok(app)
     latest = _scenario(repository, setup).latest_schedule_revision_id
@@ -432,7 +477,7 @@ def _lock_with_my_eq02_move(
     )
     clear_equipment_repository()
     _ok(app.run())
-    assert any("r3에 다른 배치가 저장됐습니다" in text for text in _texts(app))
+    assert "r3에 다른 배치가 저장됐습니다" in _mark_help(app, LAYOUT_LOCK_MARK)
     return app, repository, setup
 
 
@@ -482,6 +527,27 @@ def test_the_one_step_load_waits_while_other_equipment_edits_remain(
     assert not _one_step_buttons(app)
 
 
+def test_unsaved_edits_keep_the_switch_behind_a_check_with_the_reason_on_the_locked_button(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """잃을 것이 있을 때만 묻는다 — 팝오버 안 체크 뒤이고, 잠긴 동안 단추 풍선이 체크가 푼다고
+    말한다(설계 규칙 UI-STA-02 · UI-INP-07, 표준 목표 「입력 초기화」 와 같은 꼴). 체크하면 풍선은
+    옮기는 일만 말한다."""
+    app, _, _ = _lock_with_my_eq02_move(tmp_path, editor_calls, other_edit=True)
+
+    assert "최신 r3 불러오기" in _sidebar_popovers(app)
+    button = app.button(key="space_load_latest")
+    assert button.disabled
+    assert str(button.help).startswith(DISCARD_CHECK_HELP)
+
+    app.checkbox(key="space_load_latest_discard").check().run()
+    _ok(app)
+    button = app.button(key="space_load_latest")
+    assert not button.disabled
+    assert not str(button.help).startswith(DISCARD_CHECK_HELP)
+    assert "그 시나리오의 최신 r3으로 옮깁니다" in str(button.help)
+
+
 def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -503,7 +569,7 @@ def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
         and "「셋업 실무」 시나리오가 가정이던 때의 배치안" in full
         for short, full in _layout_lines(app)
     ), _layout_lines(app)
-    assert any("「셋업 실무」 시나리오가 가정이던 때의 배치 차이" in text for text in _texts(app))
+    assert "「셋업 실무」 시나리오가 가정이던 때의 배치 차이" in _mark_help(app, LAYOUT_LOCK_MARK)
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
 
@@ -618,10 +684,10 @@ def test_an_old_official_revision_with_only_a_deleted_units_row_says_one_thing(
     assert any("이 리비전의 배치는 공식과 같습니다" in text for text in texts), texts
     assert any("지운 호기의 배치 차이 1행은 버렸습니다" in text for text in texts), texts
     assert not any("다음 저장 때 빠집니다" in text for text in texts), texts
-    locks = [text for text in texts if "배치 편집을 잠갔습니다" in text]
-    assert len(locks) == 1, texts
-    assert "호기 1대" not in locks[0] and "배치 차이(" not in locks[0], locks
-    assert "가정이던 때 저장한 리비전이라" in locks[0], locks
+    lock = _mark_help(app, LAYOUT_LOCK_MARK)
+    assert "배치 편집을 잠갔습니다" in lock
+    assert "호기 1대" not in lock and "배치 차이(" not in lock, lock
+    assert "가정이던 때 저장한 리비전이라" in lock, lock
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
 
 
@@ -638,6 +704,7 @@ def _assert_tildes_escaped(app: AppTest) -> None:
         *_drawn_texts(app),
         *(str(item.help) for item in app.toggle if item.help),
         *(str(item.help) for item in app.button if item.help),
+        *(str(item.proto.help) for item in app.caption if item.proto.help),
     ]
     named = [text for text in texts if "R3" in text]
     assert named
@@ -691,7 +758,7 @@ def test_an_official_regroup_raises_the_module_alert_until_the_official_is_drawn
     regrouped = active_state(app, "EQ-14")
     assert regrouped is not None
     assert regrouped["short"] == (
-        "모듈 구성이 바뀐 묶음 1개 — 트레이에 있음 · 배치 편집에서 다시 놓기"
+        "모듈 구성이 바뀐 묶음 1개 — 미배치 칸에 있음 · 배치 편집에서 다시 놓기"
     )
     assert regrouped["full"].startswith("공식에서 모듈 구성이 바뀐 묶음 1개(DEMO-G) — ")
     assert regrouped["level"] == "action"
@@ -715,10 +782,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notice
     assert any(
         f"저장하면 「{TILDE_ESCAPED}」의 가정 배치로" in str(item.value) for item in successes(app)
     )
-    assert any(
-        f"「{TILDE_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
-        for item in app.caption
-    )
+    assert f"「{TILDE_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
     _assert_tildes_escaped(app)
 
     app.button(key="space_layout_save").click().run()
@@ -740,11 +804,8 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_fast_forward_and_editor_l
         _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
-    assert any(
-        f"「{TILDE_ESCAPED}」 r3" in str(item.value)
-        and "더 새롭지만 배치는 같습니다" in str(item.value)
-        for item in app.caption
-    )
+    told = _mark_help(app, FAST_FORWARD_MARK)
+    assert f"「{TILDE_ESCAPED}」 r3" in told and "더 새롭지만 배치는 같습니다" in told
     _assert_tildes_escaped(app)
 
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
@@ -769,13 +830,10 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_lock_line_and_its_popover
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
 
-    assert any(
-        f"「{TILDE_ESCAPED}」 r3에 다른 배치가 저장됐습니다" in str(item.value)
-        for item in app.caption
-    )
+    assert f"「{TILDE_ESCAPED}」 r3에 다른 배치가 저장됐습니다" in _mark_help(app, LAYOUT_LOCK_MARK)
     locked = app.toggle(key="space_layout_edit_mode_locked")
     assert TILDE_ESCAPED in str(locked.help)
-    assert any(f"세션을 「{TILDE_ESCAPED} · r2」 에서" in str(item.value) for item in app.caption)
+    assert f"세션을 「{TILDE_ESCAPED} · r2」 에서" in str(app.button(key="space_load_latest").help)
     _assert_tildes_escaped(app)
 
 
@@ -813,6 +871,7 @@ def _assert_stars_escaped(app: AppTest) -> None:
         *_drawn_texts(app),
         *(str(item.help) for item in app.toggle if item.help),
         *(str(item.help) for item in app.button if item.help),
+        *(str(item.proto.help) for item in app.caption if item.proto.help),
     ]
     named = [text for text in texts if "R6" in text]
     assert named
@@ -832,10 +891,7 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_apply_box_and_notice(
     assert any(
         f"저장하면 「{STAR_ESCAPED}」의 가정 배치로" in str(item.value) for item in successes(app)
     )
-    assert any(
-        f"「{STAR_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
-        for item in app.caption
-    )
+    assert f"「{STAR_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
     _assert_stars_escaped(app)
 
 
@@ -851,11 +907,8 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_fast_forward_and_editor_
         _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
-    assert any(
-        f"「{STAR_ESCAPED}」 r3" in str(item.value)
-        and "더 새롭지만 배치는 같습니다" in str(item.value)
-        for item in app.caption
-    )
+    told = _mark_help(app, FAST_FORWARD_MARK)
+    assert f"「{STAR_ESCAPED}」 r3" in told and "더 새롭지만 배치는 같습니다" in told
     _assert_stars_escaped(app)
 
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
@@ -880,13 +933,10 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_lock_line_and_its_popove
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
 
-    assert any(
-        f"「{STAR_ESCAPED}」 r3에 다른 배치가 저장됐습니다" in str(item.value)
-        for item in app.caption
-    )
+    assert f"「{STAR_ESCAPED}」 r3에 다른 배치가 저장됐습니다" in _mark_help(app, LAYOUT_LOCK_MARK)
     locked = app.toggle(key="space_layout_edit_mode_locked")
     assert STAR_ESCAPED in str(locked.help)
-    assert any(f"세션을 「{STAR_ESCAPED} · r2」 에서" in str(item.value) for item in app.caption)
+    assert f"세션을 「{STAR_ESCAPED} · r2」 에서" in str(app.button(key="space_load_latest").help)
     _assert_stars_escaped(app)
 
 
@@ -904,10 +954,8 @@ def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_loc
     )
     app = _ok(_space(tmp_path, setup, overlaid).run())
 
-    assert any(
-        f"이 리비전에는 「{STAR_ESCAPED}」" in str(item.value) and "잠갔습니다" in str(item.value)
-        for item in app.caption
-    )
+    told = _mark_help(app, LAYOUT_LOCK_MARK)
+    assert f"이 리비전에는 「{STAR_ESCAPED}」" in told and "잠갔습니다" in told
     _assert_stars_escaped(app)
 
 
@@ -1545,7 +1593,7 @@ def test_an_unmerged_assumption_has_no_switch_to_official(
     _, setup = _unmerged_assumption(tmp_path)
     app = _ok(_space(tmp_path, setup, floor=False).run())
 
-    assert any("일정 없이 연 상태" in text for text in _texts(app))
+    assert "일정 없이 연 상태" in _mark_help(app, LAYOUT_LOCK_MARK)
     assert not [button for button in app.button if button.key == "space_switch_to_official"]
     assert app.toggle(key="space_fab_edit_mode").disabled
 

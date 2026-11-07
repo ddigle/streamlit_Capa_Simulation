@@ -146,6 +146,37 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
     clear_equipment_repository()
 
 
+def test_two_blocks_on_one_floor_go_to_a_state_alert_not_the_box(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """같은 층을 가리키는 FAB 블록은 막지 않는 상태다 — 상자 줄 · 적용 알림 꼬리에 적지 않고 상태
+    알림 한 줄이다(설계 규칙 UI-NTF-02, 사외 점검 g6-04)."""
+    app = _app(tmp_path / "fab_dup.duckdb", saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    marks = [dict(mark) for mark in data["marks"]]
+    next(mark for mark in marks if mark["link"] == "C1 2F")["link"] = "C1 1F"
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": marks,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    note = active_state(app, "EQ-17")
+    assert note is not None
+    assert note["short"] == "같은 층을 가리키는 FAB 블록 1개 층(C1 1F) — 목록: Alarm › 이 줄"
+    assert note["tables"][0]["rows"] == [["같은 층을 가리키는 FAB 블록", "C1 1F", "", ""]]
+    assert not any("가리킵니다" in str(item.value) for item in app.caption)
+    assert not any("같은 층을 가리키는" in item.value for item in successes(app))
+
+    app.button(key="space_layout_discard").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert active_state(app, "EQ-17") is None
+
+
 def test_fab_edit_and_save_work_without_any_saved_equipment(
     tmp_path: Path, editor_calls: list[dict[str, Any]], date_panels: dict[str, dict[str, Any]]
 ) -> None:

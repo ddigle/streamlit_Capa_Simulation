@@ -499,7 +499,7 @@ def test_a_regridded_group_never_leaves_the_canvas() -> None:
     master, items = _groups()
     thin = [_placed(name, (99.9, 30.0, 0.1, 0.1)) for name in G1]
 
-    with pytest.raises(ValueError, match="묶음 범위가 편집 영역"):
+    with pytest.raises(ValueError, match="묶음 범위가 캔버스"):
         _parse({"changes": thin}, master, editor_items=items)
 
 
@@ -603,7 +603,7 @@ def test_a_move_that_leaves_the_hidden_module_behind_is_refused() -> None:
             editor_items=after.items,
             editor_ghosts=after.ghosts,
         )
-    with pytest.raises(ValueError, match="편집 영역"):
+    with pytest.raises(ValueError, match="캔버스"):
         _parse(
             {**payload, "ghosts": [{"id": "G1-B", "x": 95.0, "y": 37.0, "w": 10.0, "h": 7.0}]},
             master,

@@ -383,30 +383,31 @@ def test_occupancy_is_box_area_over_canvas_area() -> None:
 
 
 def test_invalid_equipment_rows_detects_out_of_canvas_equipment() -> None:
+    """경고가 부르는 것은 표 줄 번호가 아니라 호기 이름이다(사외 점검 g6-01)."""
     equipment = pd.DataFrame(
         [
-            {"X좌표": 10, "Y좌표": 10, "Xsize": 20, "Ysize": 10},
-            {"X좌표": 95, "Y좌표": 10, "Xsize": 10, "Ysize": 10},
-            {"X좌표": 10, "Y좌표": 55, "Xsize": 20, "Ysize": 10},
+            {"설비명": "EQ-A", "X좌표": 10, "Y좌표": 10, "Xsize": 20, "Ysize": 10},
+            {"설비명": " EQ-B ", "X좌표": 95, "Y좌표": 10, "Xsize": 10, "Ysize": 10},
+            {"설비명": "EQ-C", "X좌표": 10, "Y좌표": 55, "Xsize": 20, "Ysize": 10},
         ]
     )
 
-    assert invalid_equipment_rows(equipment) == [2, 3]
+    assert invalid_equipment_rows(equipment) == ["EQ-B", "EQ-C"]
 
 
 def test_invalid_equipment_rows_follow_the_floor_canvas() -> None:
     equipment = pd.DataFrame(
         [
-            {"X좌표": 10, "Y좌표": 10, "Xsize": 20, "Ysize": 10},
-            {"X좌표": 95, "Y좌표": 10, "Xsize": 10, "Ysize": 10},
-            {"X좌표": 10, "Y좌표": 30, "Xsize": 20, "Ysize": 10},
+            {"설비명": "EQ-A", "X좌표": 10, "Y좌표": 10, "Xsize": 20, "Ysize": 10},
+            {"설비명": "EQ-B", "X좌표": 95, "Y좌표": 10, "Xsize": 10, "Ysize": 10},
+            {"설비명": "EQ-C", "X좌표": 10, "Y좌표": 30, "Xsize": 20, "Ysize": 10},
         ]
     )
 
-    # 도면을 올린 넓은 층은 2번 호기를 정상으로 보고, 낮아진 높이는 3번을 잡는다.
-    assert invalid_equipment_rows(equipment, canvas_width=120.0, canvas_height=37.5) == [3]
+    # 도면을 올린 넓은 층은 EQ-B 를 정상으로 보고, 낮아진 높이는 EQ-C 를 잡는다.
+    assert invalid_equipment_rows(equipment, canvas_width=120.0, canvas_height=37.5) == ["EQ-C"]
     # 도면이 없는 층은 기본 캔버스 그대로다.
-    assert invalid_equipment_rows(equipment) == [2]
+    assert invalid_equipment_rows(equipment) == ["EQ-B"]
 
 
 # ------------------------------------------------------------------ 호기 상자 색·범례
