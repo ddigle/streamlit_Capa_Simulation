@@ -10,6 +10,7 @@
 import pandas as pd
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
+from capa_simulation.components.home_lob_figures import _bottleneck_rate_labels
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602]
@@ -163,3 +164,16 @@ def test_the_comparison_wafer_gap_keeps_the_same_precision() -> None:
     """비교 GAP 도 같은 글자다. 원 데이터 1,000 매와 비교 800 매면 `+0.2K` 이다."""
     texts = _month_gap_texts(advanced_wafer=1000.0, comparison_wafer=800.0)
     assert "+0.2K" in texts, texts
+
+
+def test_the_gap_inside_a_bar_takes_the_value_color_and_keeps_its_sign() -> None:
+    """막대 안 증감 글자는 값과 같은 색이다 — 증감색은 상태색 막대 위에서 묻힌다(작은 손질 g1-08).
+    방향은 부호가 말하고 값 글자 크기는 그대로다."""
+    capacity = pd.DataFrame({"생산계획년월": [202701, 202702], "확보율": [1.04, 0.97]})
+    baseline = pd.DataFrame({"생산계획년월": [202701, 202702], "확보율": [1.0, 1.0]})
+
+    labels = _bottleneck_rate_labels(capacity, baseline)
+
+    assert labels[0].startswith('+4%<br><span style="font-size:')
+    assert labels[1].startswith('-3%<br><span style="font-size:')
+    assert "color" not in "".join(labels)
