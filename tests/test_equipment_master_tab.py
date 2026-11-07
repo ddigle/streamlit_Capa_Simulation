@@ -376,7 +376,9 @@ def test_the_history_and_downloads_render_in_the_tab(tmp_path: Path, grid: Calls
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     app.button(key=SAVE_BUTTON_KEY).click().run()
-    # 메뉴 「엑셀·CSV」 — 양식 셋 + 현재 데이터 셋.
+    # 메뉴 「엑셀·CSV」 — 양식 셋 + 현재 데이터 셋. 나란히 칸에 넣지 않고 쌓는다 — 칸 폭에 이름이
+    # 잘려 행 수가 「64…」 로 읽혔다(g5-04, 설계 규칙 UI-ACC-02).
+    assert not app.columns
     keys = {button.key for button in app.get("download_button")}
     assert {
         "equipment_master_template_download_v3",

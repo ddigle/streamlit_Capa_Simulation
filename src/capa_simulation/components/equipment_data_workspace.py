@@ -2329,8 +2329,7 @@ def _render_current_data_downloads(
         help=f"{edit_note} 고치지 않고 그대로 붙여넣어도 통과합니다.",
     )
     today = date.today()
-    for column, label, payload, slug, key, frame in zip(
-        st.columns(3),
+    for label, payload, slug, key, frame in zip(
         _TARGETS,
         payloads,
         ("equipment_master", "equipment_baseline", "equipment_downtime"),
@@ -2342,21 +2341,21 @@ def _render_current_data_downloads(
         (buffered_equipment, buffered_baseline, buffered_downtime),
         strict=True,
     ):
-        with column:
-            # 빈 표도 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이고, 그대로
-            # 붙여넣으면 0행으로 읽혀 아무것도 바꾸지 않는다.
-            render_csv_download(
-                data=payload,
-                file_name=current_data_file_name(
-                    slug,
-                    latest_snapshot=latest_snapshot,
-                    edited=edited,
-                    today=today,
-                    scenario_name=scenario_name,
-                ),
-                key=key,
-                label=f"{label} 현재 데이터 · {len(frame):,}행",
-            )
+        # 빈 표도 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이고, 그대로
+        # 붙여넣으면 0행으로 읽혀 아무것도 바꾸지 않는다. 양식 단추처럼 세로로 쌓는다 — 나란히
+        # 두면 칸 폭에 이름이 잘려 행 수가 「64…」 로 읽혔다(설계 규칙 UI-ACC-02).
+        render_csv_download(
+            data=payload,
+            file_name=current_data_file_name(
+                slug,
+                latest_snapshot=latest_snapshot,
+                edited=edited,
+                today=today,
+                scenario_name=scenario_name,
+            ),
+            key=key,
+            label=f"{label} 현재 데이터 · {len(frame):,}행",
+        )
 
 
 def _example_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
