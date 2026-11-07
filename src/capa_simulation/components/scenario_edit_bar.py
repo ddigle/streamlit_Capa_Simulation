@@ -141,9 +141,10 @@ def register_pending_edits(
     editors: Mapping[str, str],
     staged: Mapping[str, str] | None = None,
     *,
+    drafts: Mapping[str, str] | None = None,
     own_change_key: str | None = None,
 ) -> None:
-    """이 화면의 편집표(`editors`: 키 → 이름)와 붙여넣기 대기(`staged`: 키 → 이름)를 적어 둔다.
+    """이 화면의 편집표(`editors`)·붙여넣기 대기(`staged`)·표 초안(`drafts`)을 적어 둔다(키 → 이름).
 
     **적용하지 않은 편집은 시나리오에 들어 있지 않다.** 그래서 사이드바 「신규 리비전 저장」은 그
     편집을 저장하지 못하고, 저장·불러오기가 원본을 바꾸는 순간 편집표와 함께 사라진다(2026-09-29
@@ -152,13 +153,15 @@ def register_pending_edits(
 
     `page` 는 그 화면의 파일 이름이다(`app_pages/<page>`). 편집표의 편집은 위젯 상태라 다른
     화면으로 옮기면 버려지므로 지금 화면의 것만 센다. 붙여넣기 대기는 위젯이 아닌 세션 칸이라
-    화면을 옮겨도 남으므로 어느 화면에서나 센다.
+    화면을 옮겨도 남으므로 어느 화면에서나 센다. 표 초안(기준 정보 그리드가 칸마다 세션에 두는
+    편집)도 세션 칸이라 어느 화면에서나 세지만, 일어난 일은 붙여넣기가 아니라 손으로 고친 칸이라
+    칩 · 판이 「적용 전 편집」 으로 부르도록 `staged` 와 가른다.
 
     `own_change_key` 는 그 화면이 `mark_own_change` 에 넘기는 칸이다. 사이드바가 방금 적용한 표를
     빼고 세는 데 쓴다(`pending_edit_labels`).
     """
     registry = dict(st.session_state.get(_PENDING_REGISTRY_KEY) or {})
-    registry[page] = (title, dict(editors), dict(staged or {}), own_change_key)
+    registry[page] = (title, dict(editors), dict(staged or {}), own_change_key, dict(drafts or {}))
     st.session_state[_PENDING_REGISTRY_KEY] = registry
 
 
@@ -167,16 +170,18 @@ class PageEdits:
     """한 화면의 적용 전 편집. 값은 「제목 · 이름」 글이다.
 
     `editors` 는 편집표 몫(위젯 상태 — 화면을 떠나면 Streamlit 이 버리므로 지금 화면일 때만 든다),
-    `staged` 는 붙여넣기 대기 몫(세션 칸 — 어느 화면에서나 든다)이다.
+    `staged` 는 붙여넣기 대기 몫, `drafts` 는 손으로 고친 표 초안 몫이다(둘 다 세션 칸 — 어느
+    화면에서나 든다).
     """
 
     title: str
     editors: tuple[str, ...] = ()
     staged: tuple[str, ...] = ()
+    drafts: tuple[str, ...] = ()
 
     @property
     def labels(self) -> tuple[str, ...]:
-        return (*self.editors, *self.staged)
+        return (*self.editors, *self.drafts, *self.staged)
 
 
 def pending_edit_pages(current_page: str | None) -> dict[str, PageEdits]:
@@ -200,6 +205,7 @@ def pending_edit_pages(current_page: str | None) -> dict[str, PageEdits]:
         # 서버를 띄운 채 코드를 바꾸면 세션에 `own_change_key` 가 없는 세 칸짜리 기록이 남아 있다.
         # 여기서 풀다 멈추면 페이지가 새로 적기 전에 사이드바가 매 회차 멈춘다.
         own_change_key = rest[0] if rest else None
+        drafts = rest[1] if len(rest) > 1 else {}
         just_applied = st.session_state.get(own_change_key) if own_change_key else None
         skipped = set(just_applied) if isinstance(just_applied, list) else set()
         edited: tuple[str, ...] = ()
@@ -209,20 +215,23 @@ def pending_edit_pages(current_page: str | None) -> dict[str, PageEdits]:
                 for key, name in editors.items()
                 if key not in skipped and editor_has_edits(key)
             )
-        waiting = tuple(
-            f"{title} · {name}"
-            for key, name in staged.items()
-            if key not in skipped and st.session_state.get(key) is not None
+        waiting, drafted = (
+            tuple(
+                f"{title} · {name}"
+                for key, name in names.items()
+                if key not in skipped and st.session_state.get(key) is not None
+            )
+            for names in (staged, drafts)
         )
-        if edited or waiting:
-            pages[page] = PageEdits(title, edited, waiting)
+        if edited or waiting or drafted:
+            pages[page] = PageEdits(title, edited, waiting, drafted)
     return pages
 
 
 def pending_edit_labels(current_page: str | None) -> list[str]:
     """적용하지 않은 편집이 남은 곳 — 「기준 정보 · UPEH」. 없으면 빈 목록이다.
 
-    등록부 차례로, 화면마다 편집표 다음 붙여넣기 대기다. 세는 규칙은 `pending_edit_pages` 다.
+    등록부 차례로, 화면마다 편집표 · 표 초안 · 붙여넣기 대기다. 세는 규칙은 `pending_edit_pages` 다.
     """
     return [label for edits in pending_edit_pages(current_page).values() for label in edits.labels]
 

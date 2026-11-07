@@ -524,13 +524,13 @@ if reference_grid.apply_grid_inbox(grid_tables):
     st.rerun()
 _remember_grid_digests()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
-# 초안은 세션 칸이라 어느 화면에서나 센다(붙여넣기 대기 꼴 — 화면 탭 점·테마 단추·새로고침 확인이
-# 함께 따라오고, 떠날 때는 묻지 않는다). 방금 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
+# 초안은 세션 칸이라 어느 화면에서나 센다(화면 탭 점·테마 단추·새로고침 확인이 함께 따라오고, 떠날
+# 때는 묻지 않는다). 방금 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
 register_pending_edits(
     "reference_data.py",
     "기준 정보",
     {},
-    staged={cells_key(table_name): TABLE_NAMES[table_name] for table_name in EDIT_TABLES},
+    drafts={cells_key(table_name): TABLE_NAMES[table_name] for table_name in EDIT_TABLES},
     own_change_key=OWN_CHANGE_KEY,
 )
 

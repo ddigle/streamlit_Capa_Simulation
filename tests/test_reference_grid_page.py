@@ -218,6 +218,30 @@ def test_a_grid_draft_stays_when_leaving_and_shows_on_every_page(calls: Calls) -
     assert "기준 정보 · 일수" in app.session_state["probe_marks"]["app_pages/reference_data.py"]
 
 
+_CHIP_PROBE = (
+    '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n'
+    "    from capa_simulation.components.change_summary import session_changes as _changes\n"
+    '    st.session_state["probe_here"] = _changes("reference_data.py", hrefs={})\n'
+    '    st.session_state["probe_there"] = _changes("home.py", hrefs={})\n'
+)
+
+
+def test_a_hand_edited_draft_is_named_as_an_unapplied_edit_in_the_chip(calls: Calls) -> None:
+    """칸을 손으로 고친 일을 머리 칩 · 판이 「붙여넣기 대기」 라 부르지 않는다(UI-DAT-11). 화면을
+    떠나도 남으므로 묶음은 「화면을 떠나면 사라짐」 이 아니라 「저장 안 함」 이다."""
+    script = TWO_PROCESS_TEST_SCRIPT.replace(
+        '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n', _CHIP_PROBE, 1
+    )
+    assert script != TWO_PROCESS_TEST_SCRIPT
+    app = _open(script)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+
+    for probe in ("probe_here", "probe_there"):
+        [item] = app.session_state[probe]
+        assert (item["group"], item["page"]) == ("keep", "기준 정보")
+        assert (item["top"], item["text"]) == ("기준 정보 적용 전", "적용 전 편집 · 일수")
+
+
 def test_a_fractional_day_is_a_cell_error_and_apply_stops_on_it(calls: Calls) -> None:
     """일수는 정수만 받는다 — 30.5 는 칸 오류로 남고(옛 편집표는 말없이 30), 「변경사항 적용」 은
     고칠 칸을 알리고 멈춘다."""

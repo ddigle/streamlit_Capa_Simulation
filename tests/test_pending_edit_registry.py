@@ -1,4 +1,4 @@
-# Purpose: 적용하지 않은 편집 목록이 지금 화면 편집표와 붙여넣기 대기분을 세는지 검사한다.
+# Purpose: 적용하지 않은 편집 목록이 지금 화면 편집표와 표 초안 · 붙여넣기 대기분을 세는지 검사한다.
 
 from __future__ import annotations
 
@@ -66,6 +66,37 @@ def test_a_staged_paste_counts_on_every_page(session: SimpleNamespace) -> None:
     assert scenario_edit_bar.pending_edit_labels("home.py") == ["생산 계획 · PKG PLAN 붙여넣기"]
 
 
+def test_a_table_draft_counts_on_every_page_but_is_not_a_staged_paste(
+    session: SimpleNamespace,
+) -> None:
+    """손으로 고친 표 초안은 세션 칸이라 어느 화면에서나 세지만 붙여넣기 대기가 아니다."""
+    scenario_edit_bar.register_pending_edits(
+        "reference_data.py", "기준 정보", {}, drafts={"upeh_cells": "UPEH", "day_cells": "일수"}
+    )
+    session.session_state["upeh_cells"] = {"cells": {}}
+
+    assert scenario_edit_bar.pending_edit_pages("home.py") == {
+        "reference_data.py": scenario_edit_bar.PageEdits("기준 정보", drafts=("기준 정보 · UPEH",))
+    }
+    assert scenario_edit_bar.pending_edit_labels("home.py") == ["기준 정보 · UPEH"]
+
+
+def test_the_table_draft_just_applied_is_not_named(session: SimpleNamespace) -> None:
+    """적용한 회차 다음의 사이드바는 방금 적용한 표의 초안을 세지 않는다 — 붙여넣기 대기와 같다."""
+    scenario_edit_bar.register_pending_edits(
+        "reference_data.py",
+        "기준 정보",
+        {},
+        drafts={"upeh_cells": "UPEH", "day_cells": "일수"},
+        own_change_key="reference_own_change",
+    )
+    session.session_state["upeh_cells"] = {"cells": {}}
+    session.session_state["day_cells"] = {"cells": {}}
+    scenario_edit_bar.mark_own_change("reference_own_change", ("upeh_cells",))
+
+    assert scenario_edit_bar.pending_edit_labels("reference_data.py") == ["기준 정보 · 일수"]
+
+
 def test_a_discarded_editor_no_longer_counts(session: SimpleNamespace) -> None:
     """편집 취소는 위젯 키를 바꾼다. 새 키에는 편집이 없다."""
     _register(session)
@@ -127,6 +158,16 @@ def test_a_record_written_before_own_change_keys_still_reads(session: SimpleName
     session.session_state["upeh_editor"] = EDIT
 
     assert scenario_edit_bar.pending_edit_labels("reference_data.py") == ["기준 정보 · UPEH"]
+
+
+def test_a_record_written_before_drafts_still_reads(session: SimpleNamespace) -> None:
+    """네 칸짜리 옛 기록도 그대로 읽는다 — 표 초안 칸은 없을 수 있다."""
+    session.session_state["scenario_pending_edit_registry"] = {
+        "load_conversion.py": ("생산 계획", {}, {"plan_staged": "PKG PLAN 붙여넣기"}, None),
+    }
+    session.session_state["plan_staged"] = object()
+
+    assert scenario_edit_bar.pending_edit_labels("home.py") == ["생산 계획 · PKG PLAN 붙여넣기"]
 
 
 def test_each_page_registers_under_its_own_file_name() -> None:
