@@ -304,6 +304,9 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert not app.exception, [item.message for item in app.exception]
     machine = sorted(set(_downtime_machines(app)))[0]
     count = _downtime_machines(app).count(machine)
+    # 이름은 짧게, 뜻은 풍선에(설계 규칙 UI-LAY-11 — 표 위 작업 줄 한 줄).
+    assert app.button(key=DOWNTIME_SELECT_MATCHING_KEY).label == "모두 선택"
+    assert "필터에 맞는 행" in str(app.button(key=DOWNTIME_SELECT_MATCHING_KEY).help)
     app.multiselect(key=DOWNTIME_FILTER_KEY).set_value([machine])
     app.button(key=DOWNTIME_SELECT_MATCHING_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]

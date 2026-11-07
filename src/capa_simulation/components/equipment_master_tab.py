@@ -1068,7 +1068,6 @@ def _render_notices(
 ) -> None:
     """알림 — 늘 서 있는 한 칸 안에(아래 컴포넌트 마운트의 자리를 고정한다, 개편 명세 2-3)."""
     with st.container():
-        render_flash(LOAD_RESULT_KEY)
         if basis is not None and basis.stale:
             st.warning(literal_markdown(_stale_lock_message(basis)), icon=":material/lock_clock:")
         layout = layout_mode.layout
@@ -1475,6 +1474,9 @@ def render_equipment_master_tab(
     elif side == SIDE_CHANGES:
         drawn.add("changes")
     settle_grid_toasts(drawn)
+    # 불러오기 결과는 알림창으로만 가 그릴 것이 없다 — 탭 맨 끝에 둔다. 표 위 알림 칸에 두면 그 칸이
+    # 늘 서서 편집기 영역이 틈 하나만큼 내려간다.
+    render_flash(LOAD_RESULT_KEY)
     # 작은 편집표 제출은 화면의 모든 위젯을 그린 뒤 처리한다(`st.rerun()` 으로 끝난다).
     if submit is not None:
         submit()
