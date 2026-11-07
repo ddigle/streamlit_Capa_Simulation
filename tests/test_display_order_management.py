@@ -11,7 +11,7 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.display_order_management import (
     DISPLAY_ORDER_EDITOR_KEY,
-    DISPLAY_ORDER_NOTE_GENERATION_KEY,
+    DISPLAY_ORDER_NOTE_KEY,
 )
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -801,8 +801,8 @@ def test_a_single_press_after_a_held_double_press_saves_the_display_order(
 
 
 def _memo(app: AppTest) -> Any:
-    """변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
-    return next(field for field in app.text_input if field.label == "변경 메모")
+    """변경 메모 칸 — 저장에 성공해도 key 가 그대로다."""
+    return app.text_input(key=DISPLAY_ORDER_NOTE_KEY)
 
 
 def test_a_refused_direct_edit_save_keeps_the_typed_note(tmp_path: Path) -> None:
@@ -827,8 +827,8 @@ def test_a_refused_direct_edit_save_keeps_the_typed_note(tmp_path: Path) -> None
 def test_a_double_press_that_cut_the_first_run_still_empties_the_direct_edit_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸 세대가 그대로다 — 제 저장임을 알아본 둘째 회차가
-    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 세대·본
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
     version 을 되살려 한 번 더 보낸다."""
     from capa_simulation.persistence.cache import clear_global_display_order_cache
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -844,7 +844,6 @@ def test_a_double_press_that_cut_the_first_run_still_empties_the_direct_edit_not
     assert app.text[-1].value == "v2|A=1;C=3;B=99"
 
     app.session_state["display_order_base_version"] = 1
-    app.session_state[DISPLAY_ORDER_NOTE_GENERATION_KEY] = 0
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]

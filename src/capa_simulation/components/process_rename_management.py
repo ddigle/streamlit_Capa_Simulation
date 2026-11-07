@@ -30,8 +30,12 @@ from capa_simulation.components.paste_form import (
 )
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.saved_note import (
+    mark_note_saved,
+    mark_note_saved_again,
+    ready_note_field,
+)
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
-from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -75,10 +79,7 @@ CLIPBOARD_FORM_KEY = "admin_area_process_rename"
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "admin_area_process_rename_clipboard_confirm"
 EDITOR_KEY = "admin_area_process_rename_editor"
-# 직접 편집 변경 메모 칸과 그 key 세대 — 세대는 저장에 성공한 회차에만 올라 다음 회차에 빈 칸으로
-# 선다. 거절·바꾼 것 없는 저장은 세대를 그대로 두어 적은 글이 남는다.
 NOTE_KEY = "admin_area_process_rename_note"
-NOTE_GENERATION_KEY = "admin_area_process_rename_note_generation"
 # 직접 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다.
 BASE_VERSION_KEY = "admin_area_process_rename_base_version"
 # 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
@@ -314,10 +315,11 @@ def _render_direct_editor(
                 icon=":material/save:",
                 type="primary",
             )
+            ready_note_field(NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
                 placeholder="예: LOB 차트 공정명 축약",
-                key=widget_key(NOTE_KEY, NOTE_GENERATION_KEY),
+                key=NOTE_KEY,
             )
         # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
         # 9장 「표 도구 막대」).
@@ -390,9 +392,9 @@ def _render_direct_editor(
         clear_global_process_rename_cache()
         if is_own_save(PROCESS_RENAME_SAVE_NAME, exc.expected, exc.stored, save_marks):
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫 회차가
-            # 못 비운 메모 칸도 비운다.
+            # 못 비운 메모 칸도 비운다(saved_note).
             queue_flash(PROCESS_RENAME_FLASH_KEY, PROCESS_RENAME_SAVED_MESSAGE)
-            bump(NOTE_GENERATION_KEY)
+            mark_note_saved_again(NOTE_KEY, note)
         else:
             message = bootstrap_error_message(exc)
             note_profile_conflict(conflict_marks, PROCESS_RENAME_SAVE_NAME, message)
@@ -405,7 +407,7 @@ def _render_direct_editor(
         # 갈래).
         note_notice(notices, PROCESS_RENAME_FLASH_KEY, PROCESS_RENAME_SAVED_MESSAGE)
         queue_flash(PROCESS_RENAME_FLASH_KEY, PROCESS_RENAME_SAVED_MESSAGE)
-        bump(NOTE_GENERATION_KEY)
+        mark_note_saved(NOTE_KEY, note)
         st.rerun()
 
 

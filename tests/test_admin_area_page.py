@@ -15,7 +15,6 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_rename_management import (
     BASE_VERSION_KEY,
     EDITOR_KEY,
-    NOTE_GENERATION_KEY,
     NOTE_KEY,
     PROCESS_RENAME_SAVED_MESSAGE,
     PROCESS_RENAME_UNCHANGED_MESSAGE,
@@ -415,8 +414,8 @@ def _edit_display_name(app: AppTest, row: int, name: str) -> None:
 
 
 def _rename_memo(app: AppTest) -> TextInput:
-    """직접 편집 변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
-    return next(field for field in app.text_input if field.label == "변경 메모")
+    """직접 편집 변경 메모 칸 — 저장에 성공해도 key 가 그대로다."""
+    return app.text_input(key=NOTE_KEY)
 
 
 def _press_rename_save(app: AppTest) -> AppTest:
@@ -525,8 +524,8 @@ def test_a_refused_direct_edit_save_keeps_the_typed_note(
 def test_a_double_press_that_cut_the_first_run_still_empties_the_direct_edit_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸 세대가 그대로다 — 제 저장임을 알아본 둘째 회차가
-    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 세대·본
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
     version 을 되살려 한 번 더 보낸다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     database_path = tmp_path / "rename-note-double.duckdb"
@@ -545,7 +544,6 @@ def test_a_double_press_that_cut_the_first_run_still_empties_the_direct_edit_not
     assert repository.load_global_process_rename().version == 2
 
     app.session_state[BASE_VERSION_KEY] = 1
-    app.session_state[NOTE_GENERATION_KEY] = 0
     app._run(widget_state=pressed)
 
     assert not list(app.exception), [element.message for element in app.exception]

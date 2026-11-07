@@ -686,8 +686,10 @@ def _read_past_paste(app: Any, tail: str) -> None:
 
 
 def _past_memo(app: Any) -> Any:
-    """변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
-    return next(field for field in app.text_input if field.label == "변경 메모")
+    """변경 메모 칸 — 저장에 성공해도 key 가 그대로다."""
+    from capa_simulation.components.past_data_management import PAST_NOTE_KEY
+
+    return app.text_input(key=PAST_NOTE_KEY)
 
 
 def _press_past_save(app: Any) -> None:

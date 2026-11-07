@@ -28,7 +28,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.paste_form import PasteTemplate, refuse_paste, render_paste_form
 from capa_simulation.components.profile_caption import profile_version_caption
-from capa_simulation.components.widget_generation import bump, widget_key
+from capa_simulation.components.saved_note import mark_note_saved, ready_note_field
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -51,8 +51,6 @@ from capa_simulation.services.past_data import (
 HOME_PAST_DOWNLOAD_KEY = "home_past_download"
 PAST_CLIPBOARD_KEY = "home_past_clipboard"
 PAST_NOTE_KEY = "home_past_note"
-# 변경 메모 칸 key 세대 — 저장에 성공한 회차에만 올라 다음 회차에 빈 칸으로 선다.
-PAST_NOTE_GENERATION_KEY = "home_past_note_generation"
 PAST_DRAFT_KEY = "home_past_draft"
 # 지금 붙여넣기 칸을 편 표 이름(한 번에 한 표). 팝업 열림 칸이 아니다 — 「설정」 팝업 안의 칸이라
 # 열림 칸 접미(`_open_dialog`)를 달지 않고, 「설정」 팝업을 열고 닫는 콜백이
@@ -304,10 +302,11 @@ def _render_save(
                 else "읽어 둔 표가 없습니다. 아래 표의 「Excel 붙여넣기」로 먼저 읽으세요."
             ),
         )
+        ready_note_field(PAST_NOTE_KEY, submitted=save)
         note = st.text_input(
             "변경 메모",
             placeholder="예: 25년 실적 반영",
-            key=widget_key(PAST_NOTE_KEY, PAST_NOTE_GENERATION_KEY),
+            key=PAST_NOTE_KEY,
             # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
             # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
             on_change="ignore",
@@ -323,7 +322,7 @@ def _render_save(
         return
     st.session_state.pop(PAST_DRAFT_KEY, None)
     queue_flash("past_data_save_flash", "과거 구간을 공용 설정으로 저장했습니다.")
-    bump(PAST_NOTE_GENERATION_KEY)
+    mark_note_saved(PAST_NOTE_KEY, note)
     st.rerun()
 
 

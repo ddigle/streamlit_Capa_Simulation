@@ -29,7 +29,7 @@ import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.manual_downtime_tab import (
     MANUAL_BASE_VERSION_KEY,
     MANUAL_EDITOR_KEY,
-    MANUAL_NOTE_GENERATION_KEY,
+    MANUAL_NOTE_KEY,
     MANUAL_SAVE_BUTTON,
     MANUAL_SAVED_BY_KEY,
     edited_cells,
@@ -93,8 +93,8 @@ def _edit(app: AppTest, cells: dict[tuple[int, str], float | None], *, version: 
 
 
 def _memo(app: AppTest) -> TextInput:
-    """변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
-    return next(field for field in app.text_input if field.label == "변경 메모")
+    """변경 메모 칸 — 저장에 성공해도 key 가 그대로다(재시작 뒤 앞 세션 탭의 칸이 남는다)."""
+    return app.text_input(key=MANUAL_NOTE_KEY)
 
 
 def _save(app: AppTest, *, saved_by: str | None = None, note: str | None = None) -> AppTest:
@@ -176,7 +176,7 @@ def test_a_saved_note_leaves_the_field_and_only_the_saver_stays_for_the_next_sav
     tmp_path: Path,
 ) -> None:
     """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 값만 고친 다음 저장의 기록에
-    실렸다. 저장자는 같은 사람이 이어 저장하므로 남는다(`render_saved_by_field` 와 같은 약속)."""
+    실렸다. 저장자 칸은 같은 화면의 다음 저장에 이어 쓰도록 남는다."""
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     row_a = _editor_values(app)["공정"].index("WM")
@@ -219,8 +219,8 @@ def test_a_refused_or_unchanged_save_keeps_the_typed_note(
 def test_a_double_press_that_cut_the_first_run_still_empties_the_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸 세대가 그대로다 — 제 저장임을 알아본 둘째 회차가
-    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 세대·본
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
     version 을 되살려 한 번 더 보낸다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     path = tmp_path / "equipment.duckdb"
@@ -234,13 +234,41 @@ def test_a_double_press_that_cut_the_first_run_still_empties_the_note(
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
 
     app.session_state[MANUAL_BASE_VERSION_KEY] = 0
-    app.session_state[MANUAL_NOTE_GENERATION_KEY] = 0
     app._run(widget_state=pressed)
 
     assert not app.exception, [element.message for element in app.exception]
     assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
     assert _memo(app).value == ""
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
+
+
+@pytest.mark.parametrize(
+    "window",
+    [60.0, 0.0],
+    ids=["same-cells-within-the-trailing-window", "refused-by-the-version-check"],
+)
+def test_a_second_press_with_another_note_keeps_the_note_it_did_not_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float
+) -> None:
+    """첫 저장의 둘째 누름으로 판정된 누름은 쓰지 않으니 메모도 기록에 들지 않는다 — 다른 메모면
+    칸에 남긴다. 같은 칸의 꼬리 누름(`save_once` 가 첫 결과를 돌려준다)과 버전 대조 거부 두
+    갈래다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    row_a = _editor_values(app)["공정"].index("WM")
+    _edit(app, {(row_a, "202607"): 1.0})
+    app = _save(app, note="첫 메모")
+    assert _memo(app).value == ""
+
+    app.session_state[MANUAL_BASE_VERSION_KEY] = 0
+    _edit(app, {(row_a, "202607"): 1.0}, version=0)
+    app = _save(app, note="둘째 메모")
+
+    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
+    assert _memo(app).value == "둘째 메모"
+    saves = DuckDBEquipmentRepository(path).load_manual_downtime_saves()
+    assert [(save.version, save.note) for save in saves] == [(1, "첫 메모")]
 
 
 def test_a_second_session_that_started_from_the_old_version_is_refused(tmp_path: Path) -> None:

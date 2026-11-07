@@ -42,7 +42,6 @@ from capa_simulation.components.home_preference import (
     ADVANCE_SHIPMENT_EDITOR_KEY,
     EXECUTION_BASE_VERSION_KEY,
     EXECUTION_EDITOR_KEY,
-    EXECUTION_NOTE_GENERATION_KEY,
     EXECUTION_NOTE_KEY,
     EXECUTION_SAVED_MESSAGE,
     EXECUTION_UNCHANGED_MESSAGE,
@@ -156,7 +155,7 @@ def _errors(app: AppTest) -> list[str]:
 
 
 def _memo(app: AppTest) -> TextInput:
-    """변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
+    """변경 메모 칸 — 화면마다 key 가 달라 라벨로 찾는다."""
     return next(field for field in app.text_input if field.label == "변경 메모")
 
 
@@ -378,8 +377,8 @@ def test_a_refused_execution_save_keeps_the_typed_note(
 def test_a_double_press_of_the_execution_save_that_cut_the_first_run_still_empties_the_note(
     repository: DuckDBScenarioRepository,
 ) -> None:
-    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸 세대가 그대로다 — 제 저장임을 알아본 둘째 회차가
-    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 세대·본
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
     version 을 되살려 한 번 더 보낸다."""
     repository.replace_global_execution_capacity(
         _execution_rows([(202607, "DEMO_A", -10.0, "")]), source="처음 저장"
@@ -393,7 +392,6 @@ def test_a_double_press_of_the_execution_save_that_cut_the_first_run_still_empti
     assert repository.load_global_execution_capacity().version == 2
 
     app.session_state[EXECUTION_BASE_VERSION_KEY] = 1
-    app.session_state[EXECUTION_NOTE_GENERATION_KEY] = 0
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
