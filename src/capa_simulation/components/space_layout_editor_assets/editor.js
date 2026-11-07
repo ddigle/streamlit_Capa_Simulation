@@ -113,6 +113,8 @@ export default function (component) {
   const ZOOM_STEP = 1.25
   const DRAG_THRESHOLD_PX = 3
   const HANDLE_PX = 9
+  // 까닭 풍선과 단추 사이(화면 px).
+  const TIP_GAP_PX = 6
   // 보기 화면 덧표시(화면 px) — 선택 후광의 띄움, 「!」·운영 비가동 표식의 반지름, 겹침 꼭지 삼각의 변.
   const HALO_GAP_PX = 3
   // 키보드 초점 테(호기·편집의 도면 요소)의 띄움(화면 px). 보기의 선택 후광(HALO_GAP_PX)보다 밖이라 둘이 겹쳐도 따로 보인다.
@@ -276,6 +278,7 @@ export default function (component) {
   const leavingList = q('.sle-leaving-list')
   const statusBox = q('.sle-status')
   const applyButton = q('.sle-apply')
+  const resetButton = q('.sle-reset')
   const undoButton = q('.sle-undo')
   const unplaceButton = q('.sle-unplace')
   const areaW = q('.sle-area-w')
@@ -341,6 +344,51 @@ export default function (component) {
   const blockLink = q('.sle-block-link')
   const blockColor = q('.sle-block-color')
   const blockOpen = q('.sle-block-open')
+  // 꺼진 단추의 까닭 풍선(설계 규칙 UI-INP-07) — 감싼 칸이 마우스 · 키보드를 받고, 풍선은 편집기 뿌리의 판 하나다(도구 줄이
+  // 넘침을 자른다). 글은 칸의 `data-tip` 이고 비면 칸은 탭 자리에서 빠진다(`lockButton`).
+  const tipBox = q('.sle-tip')
+  function placeTip(spot) {
+    const frame = host.getBoundingClientRect()
+    const box = spot.getBoundingClientRect()
+    const below = box.bottom - frame.top + TIP_GAP_PX
+    const above = box.top - frame.top - TIP_GAP_PX - tipBox.offsetHeight
+    const roomLeft = Math.max(frame.width - tipBox.offsetWidth, 0)
+    tipBox.style.left = `${Math.round(Math.min(Math.max(box.left - frame.left, 0), roomLeft))}px`
+    tipBox.style.top = `${Math.round(below + tipBox.offsetHeight > frame.height && above >= 0 ? above : below)}px`
+  }
+  function hideTip() {
+    S.tipFor = null
+    tipBox.hidden = true
+  }
+  function showTip(spot) {
+    const text = spot.dataset.tip || ''
+    if (!text) { hideTip(); return }
+    S.tipFor = spot
+    setText(tipBox, text)
+    tipBox.hidden = false
+    placeTip(spot)
+  }
+  function setTip(spot, reason) {
+    setAttr(spot, 'data-tip', reason)
+    if (reason) setAttr(spot, 'tabindex', '0')
+    else spot.removeAttribute('tabindex')
+    if (S.tipFor === spot) showTip(spot)
+  }
+  function lockButton(button, reason) {
+    button.disabled = Boolean(reason)
+    setTip(button.parentElement, reason)
+  }
+  // 마우스는 올린 동안, 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다.
+  function bindTip(spot) {
+    spot.onpointerenter = () => showTip(spot)
+    spot.onpointerleave = () => { if (!spot.matches(':focus-visible')) hideTip() }
+    spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }
+    spot.onblur = hideTip
+  }
+  for (const spot of host.querySelectorAll('.sle-tiphost')) bindTip(spot)
+  bindTip(q('.sle-area'))
+  // 회차 사이에 칸이 사라졌으면(보기 ↔ 편집) 풍선도 걷는다 — 칸을 떠나는 사건이 오지 않는다.
+  if (S.tipFor && !S.tipFor.offsetParent) hideTip()
   const zoomOut = q('.sle-zoom-out')
   const zoomIn = q('.sle-zoom-in')
   const zoomLabel = q('.sle-zoom-label')
@@ -2645,8 +2693,8 @@ export default function (component) {
     clampView()
     svg.setAttribute('viewBox', `${S.view.x} ${S.view.top} ${viewW()} ${viewH()}`)
     zoomLabel.textContent = `${Math.round(S.view.z * 100)}%`
-    zoomOut.disabled = S.view.z <= 1
-    zoomIn.disabled = S.view.z >= MAX_ZOOM
+    lockButton(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')
+    lockButton(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')
     svg.classList.toggle('is-zoomed', S.view.z > 1)
     // 손잡이 크기·글자 숨김은 화면 px 로 정하므로 배율이 바뀌면 다시 맞춘다.
     if (!reposition) return
@@ -4342,13 +4390,16 @@ export default function (component) {
     return parts.join(' · ')
   }
 
+  // 도면에 놓인 것을 다루는 단추가 잠긴 까닭 — 미배치 칩만 고른 경우와 아무것도 안 고른 경우를 가른다.
+  const noPickReason = (chosen) => (chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')
+
   function updateStatus() {
     if (VIEW) {
       const chosen = selectedItems()
       pickBox.textContent = chosen.length === 1 ? pickText(chosen[0]) : ''
       // 한 줄에서 잘리면 전체 문구는 풍선으로, 비었으면 안내 풍선(`pickTip`).
       pickBox.title = pickBox.textContent || pickTip
-      zoomSel.disabled = !chosen.some(onCanvas)
+      lockButton(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
       renderSheet()
       return
     }
@@ -4410,11 +4461,15 @@ export default function (component) {
     if (S.passthrough.length) add('그리지 못한 도면 요소(그대로 둡니다) ', `${S.passthrough.length}개`)
     if (S.overlapPairs) add('겹침(저장은 됨) ', `${S.overlapPairs}쌍`)
     if (S.blocked) add('반입구·문·기둥·설비 금지 영역을 덮은 호기(저장은 됨) ', `${S.blocked}대`)
-    applyButton.disabled = changed === 0
+    // 잠긴 동안만 풍선이 까닭을 말한다(설계 규칙 UI-INP-07). 「처음 상태로」 는 실행 취소 기록까지 지워 되돌릴 수 없다 — 평소
+    // 풍선이 그 결과를 말한다(UI-NTF-09).
+    const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''
+    lockButton(applyButton, noChange)
+    lockButton(resetButton, noChange)
     applyButton.classList.toggle('is-pending', changed > 0)
-    undoButton.disabled = S.undo.length === 0
-    unplaceButton.disabled = !chosen.some((m) => onCanvas(m) || m.created)
-    zoomSel.disabled = !chosen.some(onCanvas)
+    lockButton(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')
+    lockButton(unplaceButton, chosen.some((m) => onCanvas(m) || m.created) ? '' : noPickReason(chosen))
+    lockButton(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
     areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
     syncInspector()
@@ -6118,6 +6173,8 @@ export default function (component) {
     if (event.key === 'Enter') keepKeysInSheet()
     // 단축키 판은 Esc 가 먼저 닫는다(고른 것 · 붓은 그대로).
     if (event.key === 'Escape' && keysOpen()) { event.preventDefault(); setKeysOpen(false, true); return }
+    // 떠 있는 풍선도 Esc 가 먼저 걷는다 — 초점을 옮기지 않고 가린 자리를 볼 수 있어야 한다.
+    if (event.key === 'Escape' && S.tipFor) { event.preventDefault(); hideTip(); return }
     if (VIEW) {
       // 보기 전용 단축키: 확대·축소·전체 보기, 방향키 화면 이동, Esc 선택 풀기. 고치는 키는 없다.
       if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -6568,7 +6625,7 @@ export default function (component) {
   }
   undoButton.onclick = undo
   unplaceButton.onclick = () => removeItems(selectedItems())
-  q('.sle-reset').onclick = () => {
+  resetButton.onclick = () => {
     initFromData()
     S.canvas = { ...S.originalCanvas }
     S.undo = []
@@ -7874,7 +7931,7 @@ export default function (component) {
     setText(faderDate, S.asOf || TODAY)
     setText(faderRel, `· ${relText(S.asOf)}`)
     faderRel.classList.toggle('is-today', isToday)
-    faderToday.disabled = isToday
+    lockButton(faderToday, isToday ? '이미 오늘' : '')
     setAttr(faderInput, 'aria-valuetext', `${S.asOf || TODAY} (${relText(S.asOf)})`)
     setText(faderNote, !S.dataAsOf || S.asOf === S.dataAsOf
       ? ''
@@ -8056,6 +8113,7 @@ export default function (component) {
     layoutPanels()
     layoutSheet()
     if (keysOpen()) placeKeys()
+    if (S.tipFor) placeTip(S.tipFor)
     if (S.lock) alignLock()
     else {
       const changed = S.heightDrag ? measurePort() : fitStage()

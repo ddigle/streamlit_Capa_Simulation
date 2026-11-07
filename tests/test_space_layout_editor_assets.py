@@ -163,7 +163,7 @@ def test_buttons_follow_the_app_button_grain() -> None:
     toolbar = _rule(".sle-toolbar")
     assert "flex-wrap: nowrap" in toolbar and re.search(r"(?<![-\w])height: \d+px", toolbar)
     # 좁은 열에서 도구 줄이 옆으로 밀려도 편집을 보내는 `적용` 은 오른쪽 끝에 붙어 보인다.
-    apply = _rule(".sle button.sle-apply")
+    apply = _rule(".sle-apply-host")
     assert "position: sticky" in apply and "right: 0" in apply
 
 
@@ -1064,3 +1064,155 @@ def test_the_canvas_and_the_unplaced_panel_keep_one_name_on_screen() -> None:
     assert not [text for text in literals if "트레이" in text]
     assert 'class="sle-sec-head" aria-expanded="true">캔버스</button>' in HTML
     assert "add('캔버스 ', " in JS
+
+
+_TIP_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const S = {}
+const node = () => ({
+  attrs: {}, dataset: {}, disabled: false,
+  getAttribute(k) { return k in this.attrs ? this.attrs[k] : null },
+  setAttribute(k, v) { this.attrs[k] = v; if (k === 'data-tip') this.dataset.tip = v },
+  removeAttribute(k) { delete this.attrs[k] },
+})
+const setText = (n, text) => { n.textContent = text }
+const setAttr = (n, name, value) => n.setAttribute(name, value)
+const TIP_GAP_PX = 6
+const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
+const host = { getBoundingClientRect: () => box(100, 50, 1000, 600) }
+const tipBox = { hidden: true, offsetWidth: 200, offsetHeight: 30, style: {}, textContent: '' }
+const seen = (b) => ({
+  disabled: b.disabled, tab: b.parentElement.getAttribute('tabindex'), why: b.parentElement.dataset.tip,
+  shown: !tipBox.hidden, text: tipBox.textContent, left: tipBox.style.left, top: tipBox.style.top,
+})
+const button = node()
+button.parentElement = node()
+button.parentElement.getBoundingClientRect = () => box(input.left, input.top, 60, 27)
+const out = []
+lockButton(button, '고른 것 없음')
+out.push(seen(button))
+showTip(button.parentElement)
+out.push(seen(button))
+lockButton(button, '고른 것이 도면에 없음')
+out.push(seen(button))
+lockButton(button, '')
+out.push(seen(button))
+showTip(button.parentElement)
+out.push(seen(button))
+process.stdout.write(JSON.stringify({ steps: out }))
+"""
+
+
+def _tip_source() -> str:
+    return "\n".join(
+        _js_decl(head)
+        for head in (
+            "function placeTip(",
+            "function hideTip(",
+            "function showTip(",
+            "function setTip(",
+            "function lockButton(",
+        )
+    )
+
+
+def test_a_locked_button_says_why_only_while_it_is_locked() -> None:
+    """꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다(설계 규칙 UI-INP-07) — 잠긴 동안만 칸이
+    탭 자리이고 풍선이 까닭을 말한다. 까닭이 바뀌면 떠 있는 풍선이 따라가고, 풀리면 풍선을 걷으며
+    칸은 탭 자리에서 빠지고 다시 올려도 뜨지 않는다."""
+    result = _node(_tip_source() + _TIP_RUNNER, {"left": 300, "top": 60})
+    locked, shown, changed, freed, again = result["steps"]
+
+    assert locked == {
+        "disabled": True,
+        "tab": "0",
+        "why": "고른 것 없음",
+        "shown": False,
+        "text": "",
+    }
+    assert shown["shown"] is True and shown["text"] == "고른 것 없음"
+    assert changed["shown"] is True and changed["text"] == "고른 것이 도면에 없음"
+    assert freed["disabled"] is False and freed["tab"] is None and freed["shown"] is False
+    assert again["shown"] is False
+
+
+def test_the_reason_tip_opens_under_the_button_and_stays_inside_the_editor() -> None:
+    """풍선은 단추 아래 왼쪽 맞춤이고 편집기 오른쪽 끝을 넘지 않는다. 아래에 자리가 없으면 위로
+    뒤집는다."""
+    source = _tip_source() + _TIP_RUNNER
+
+    under = _node(source, {"left": 300, "top": 60})["steps"][1]
+    assert (under["left"], under["top"]) == ("200px", "43px")
+    edge = _node(source, {"left": 1080, "top": 60})["steps"][1]
+    assert edge["left"] == "800px"
+    bottom = _node(source, {"left": 300, "top": 610})["steps"][1]
+    assert bottom["top"] == "524px"
+
+
+def test_every_toolbar_button_that_can_lock_sits_in_a_tip_host() -> None:
+    """도구 줄 · 기준일 줄의 잠기는 단추는 감싼 칸 안이고 `disabled` 를 직접 쓰지 않는다 — 까닭 없이
+    잠기는 길이 없다. 칸은 편집 전용 표지를 함께 달아 보기에서 빈 탭 자리로 남지 않고, 「적용」 의
+    오른쪽 끝 붙음은 칸이 맡는다(단추는 칸 안이라 sticky 가 듣지 않는다)."""
+    for name in (
+        "sle-zoom-out",
+        "sle-zoom-in",
+        "sle-zoom-sel",
+        "sle-undo",
+        "sle-reset",
+        "sle-unplace",
+        "sle-apply",
+        "sle-fader-today",
+    ):
+        wrapped = re.search(
+            rf'<span class="sle-tiphost[^>]*><button type="button" class="{name}"', HTML
+        )
+        assert wrapped, name
+    for name in ("sle-undo", "sle-reset", "sle-unplace", "sle-apply"):
+        host = re.search(
+            rf'<span class="(sle-tiphost[^"]*)"[^>]*><button type="button" class="{name}"', HTML
+        )
+        assert host and "sle-edit-only" in host.group(1), name
+    for name in ("zoomOut", "zoomIn", "zoomSel", "applyButton", "resetButton", "undoButton"):
+        assert f"{name}.disabled =" not in JS, name
+    assert "unplaceButton.disabled =" not in JS and "faderToday.disabled =" not in JS
+    assert ".sle-tiphost > button:disabled" in CSS and "pointer-events: none" in CSS
+    assert 'class="sle-tip" id="sle-tip" role="tooltip" hidden' in HTML
+    tip = _rule(".sle-tip")
+    for rule in ("background: var(--sle-text)", "color: var(--sle-surface)", "font-size: 12px"):
+        assert rule in tip
+
+
+def test_the_tip_opens_by_mouse_and_keyboard_and_esc_hides_it() -> None:
+    """마우스는 올린 동안, 키보드는 초점이 머무는 동안이다 — 누른 초점에는 뜨지 않는다. 떠 있는
+    풍선은 Esc 가 먼저 걷고 고른 것 · 붓은 그대로다."""
+    bind = _js_decl("function bindTip(")
+    assert "spot.onpointerenter = () => showTip(spot)" in bind
+    assert "spot.onfocus = () => { if (spot.matches(':focus-visible')) showTip(spot) }" in bind
+    keys = JS[JS.index("host.onkeydown = (event) => {") :]
+    assert keys.index("S.tipFor) { event.preventDefault(); hideTip(); return }") < keys.index(
+        "if (VIEW) {"
+    )
+
+
+def test_the_toolbar_reasons_are_short_values() -> None:
+    """잠긴 까닭은 짧은 값이다 — 변경 0건이면 「적용」 · 「처음 상태로」 가 함께 잠긴다."""
+    status = JS[JS.index("function updateStatus() {") : JS.index("function commitTyping(")]
+    assert "const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''" in status
+    assert "lockButton(applyButton, noChange)" in status
+    assert "lockButton(resetButton, noChange)" in status
+    assert "lockButton(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')" in status
+    assert "(chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')" in JS
+    assert "lockButton(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')" in JS
+    assert "lockButton(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')" in JS
+    assert "lockButton(faderToday, isToday ? '이미 오늘' : '')" in JS
+
+
+def test_the_reset_button_warns_before_it_drops_the_undo_history() -> None:
+    """「처음 상태로」 는 실행 취소 기록까지 지운다 — 누르기 전에 풍선이 말한다(설계 규칙 UI-NTF-09)."""
+    reset = re.search(r'class="sle-reset"[^>]*title="([^"]*)"', HTML)
+    assert (
+        reset
+        and reset.group(1) == "적용 안 한 변경을 모두 버립니다 — 실행 취소로 돌아오지 않습니다"
+    )
+    click = JS[JS.index("resetButton.onclick = () => {") :]
+    assert "S.undo = []" in click[: click.index("for (const button of")]
