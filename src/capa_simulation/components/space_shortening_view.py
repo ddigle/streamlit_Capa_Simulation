@@ -438,24 +438,29 @@ def render_layer_basis(
     sample: bool,
     summary: FabSummary | None,
 ) -> None:
-    """기준 캡션(조작 줄 안 — FAB·층 공통)과 맞대지 못한 공정·필터 밖 대수 한 줄."""
+    """기준 캡션(조작 줄 안 — FAB·층 공통)과 맞대지 못한 공정·필터 밖 대수 한 줄.
+
+    줄에는 다른 자리에 없는 값(달 범위 · 미저장 편집 포함)만 둔다 — 설비 시나리오 · 시뮬레이션 ·
+    오늘은 사이드바 · 고정 줄과 거듭되어 풍선이다(설계 규칙 UI-TXT-07)."""
     label = active_scenario_label()
     scenario = (
         f"「{literal_markdown(label.scenario_name)} · r{label.revision_no}」"
         if label is not None
         else "활성 시나리오"
     )
-    if has_unsaved_scenario_changes():
-        scenario += "(미저장 편집 포함)"
     months = space_layer.months
     span = f"{iso_month_text(months[0])}~{iso_month_text(months[-1])}" if months else "달 없음"
     equipment = (
         "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
     )
     st.caption(
-        f":material/grid_view: 필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario} · {span} · "
-        f"오늘 {space_layer.plan.today.isoformat()} — 필요 단축 일정과 같은 계산",
+        f":material/grid_view: {span}"
+        + (" · 미저장 편집 포함" if has_unsaved_scenario_changes() else ""),
         width="stretch",
+        help=(
+            f"필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario} · "
+            f"오늘 {space_layer.plan.today.isoformat()} — 필요 단축 일정과 같은 계산"
+        ),
     )
     # 빠진 것의 수는 표지로 남기고(설계 규칙 UI-NTF-05 — 숨기지 않는다) 뜻과 확인할 곳은 풍선이다
     # (UI-TXT-03 · UI-TXT-04).
@@ -820,7 +825,7 @@ def render_floor_layer_panel(
             return
         managers = {mark.unit: mark.manager for mark in (*rows, *loose)}
         if rows:
-            st.markdown(f"**이 층에서 단축할 호기 · 목표 {_percent(level)}**")
+            st.markdown("**이 층에서 단축할 호기**")
             generation = st.session_state.get(_TABLE_GENERATION_KEY, 0)
             table_key = f"{SPACE_SHORT_TABLE_PREFIX}_{floor[0]}_{floor[1]}_{generation}"
             st.dataframe(
