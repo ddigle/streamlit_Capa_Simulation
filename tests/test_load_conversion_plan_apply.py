@@ -30,6 +30,7 @@ from capa_simulation import alerts
 from capa_simulation.components import table_toolbar
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.month_columns import month_label
 
 PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "load_conversion.py"
 
@@ -1206,6 +1207,10 @@ def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
     app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
     assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+    # 글 속 달 구간은 표 머리가 아니라 결과 표 꼴이다(`month_label` — AGENTS 8장).
+    assert _applied(app, f"{month_label(202601)}–{month_label(202612)} 구간의 환산") == [
+        APPLIED_ICON
+    ]
     assert app.button(key="apply_pkg_plan_changes").disabled
 
     # 둘째 누름의 회차 — 잠긴 단추의 누름은 버려져 아무것도 하지 않고 화면만 다시 그린다.
