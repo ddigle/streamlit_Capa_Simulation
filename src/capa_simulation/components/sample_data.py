@@ -66,6 +66,8 @@ def render_sample_switch(*, key: str, source: str) -> bool:
             )
             # 자리에는 표지만 둔다 — 실적이 아니라는 것은 숫자를 믿기 전에 알아야 해 표지 낱말로
             # 남기고(설계 규칙 UI-NTF-05), 연결되면 무엇이 바뀌는지는 풍선이 말한다(UI-TXT-01 · 04).
+            # 끈 쪽은 표지가 없다 — 비어 있다는 것은 화면 머리 「… 미연결」 배지나 호기 없음 표지가
+            # 말하고, 지금 상태의 뜻은 스위치 풍선이 말한다(UI-TXT-07).
             if enabled:
                 st.markdown(
                     ":orange-badge[:material/science: 합성 샘플] **실적 아님**",
@@ -73,11 +75,6 @@ def render_sample_switch(*, key: str, source: str) -> bool:
                         "화면의 모든 수치는 실적이 아닙니다 — "
                         f"{with_subject_particle(source)} 붙으면 같은 자리에 실데이터가 들어옵니다."
                     ),
-                )
-            else:
-                st.markdown(
-                    f":blue-badge[:material/database: {source} 미연결]",
-                    help="지금 상태입니다. 스위치를 켜면 연결 후 모습을 볼 수 있습니다.",
                 )
     return bool(enabled)
 

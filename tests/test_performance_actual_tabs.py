@@ -159,18 +159,21 @@ def test_the_metric_meaning_is_the_tooltip_of_the_actual_card() -> None:
 
 def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> None:
     """켜진 샘플 스위치 곁은 「합성 샘플」 배지와 표지 「실적 아님」 이고 뜻은 그 풍선이다 — 끄면
-    「… 미연결」 배지와 들어올 값의 이름만 서고, 자리 글에 설명 문장이 없다(설계 규칙 UI-TXT-04 ·
-    UI-NTF-05)."""
+    스위치만 서고 「… 미연결」 은 머리 배지 몫이라 거듭 세우지 않으며, 끈 상태의 뜻은 스위치 풍선이
+    말한다(설계 규칙 UI-TXT-04 · UI-TXT-07 · UI-NTF-05)."""
     app = _open("요약")
     (badge,) = [item for item in app.markdown if "합성 샘플" in str(item.value)]
     assert badge.value == ":orange-badge[:material/science: 합성 샘플] **실적 아님**"
     assert "실적이 아닙니다" in badge.proto.help
 
-    app.toggle(key="dynamic_capa_sample_data").set_value(False).run()
+    switch = app.toggle(key="dynamic_capa_sample_data")
+    assert "켜면 연결 후 모습" in switch.proto.help
+    assert f"{EFFICIENCY_METRIC.source} 연결 대기" in switch.proto.help
+
+    switch.set_value(False).run()
     assert not app.exception, [item.message for item in app.exception]
-    (pending,) = [item for item in app.markdown if "미연결]" in str(item.value)]
-    assert pending.value.endswith("미연결]")
-    assert "스위치를 켜면" in pending.proto.help
+    assert not [item.value for item in app.markdown if "미연결" in str(item.value)]
+    assert not [item.value for item in app.markdown if "합성 샘플" in str(item.value)]
     assert not [item.value for item in app.caption]
     (title,) = [item for item in app.markdown if ":material/pending:" in str(item.value)]
     assert "이 자리에 들어옵니다" in title.proto.help
