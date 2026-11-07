@@ -138,7 +138,6 @@ from capa_simulation.persistence.equipment_repository import (
     LayoutPublishPreview,
     LegacyTraceReview,
     ScheduleRestoreResult,
-    legacy_trace_message,
     scenario_name_moved_message,
     schedule_revision_name_moved_message,
 )
@@ -231,6 +230,12 @@ RESTORE_PUBLISH_HELP = (
 LAYOUT_BLOCKED_LINE = ":material/block: 배치 차이로 발행 막힘"
 # 옛 배포 흔적을 이어 쓸 수 없는 회차의 표지 — 까닭은 꺼진 「이대로 이어 쓰기」 의 풍선이 말한다.
 CONTINUE_BLOCKED_LINE = ":material/block: 이어 쓰기 막힘"
+# 「이대로 이어 쓰기」 풍선 — 누르기 전에 알아야 하는 되돌릴 수 없는 결과(설계 규칙 UI-NTF-09).
+CONTINUE_BUTTON_HELP = (
+    "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
+)
+# 체크가 꺼져 잠긴 동안 그 풍선 앞에 붙는 까닭(설계 규칙 UI-INP-07).
+CONTINUE_LOCKED_HELP = "위 확인 체크를 켜면 누를 수 있습니다."
 REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
 SCENARIO_NAME_SAVE_NAME = "equipment_scenario_name"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
@@ -2596,12 +2601,20 @@ def continue_confirm_key(count: int, review: LegacyTraceReview) -> str:
     )
 
 
+def legacy_trace_value_line(count: int) -> str:
+    """옛 배포 흔적 칸의 값 한 줄. 긴 글(`legacy_trace_message`)은 저장 거부 · `SB-19` 전문이 쓰고
+    이 칸은 값만 둔다 — 그 글의 「…를 쓰세요」 는 바로 아래 단추를 가리키는 길 안내다(설계 규칙
+    UI-TXT-03 · UI-NTF-09)."""
+    return f":material/history: 옛 배포 리비전 {count:,}개 · 설비 저장 막힘"
+
+
 def _render_legacy_trace(database_path: str, count: int) -> None:
-    """옛 배포 흔적 — 경고와 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
-    덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 옛 배포
-    리비전이 어느 시나리오 일정과도 합쳐지지 않으면 표지 한 마디와 꺼진 단추만 두고 까닭(백업
-    복원)은 그 단추 풍선이 말한다(검수표 11/02 equip-44 와 같은 꼴)."""
-    st.warning(legacy_trace_message(count), icon=":material/history:")
+    """옛 배포 흔적 — 값 한 줄과 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
+    덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 그
+    결과와 백업 복원이 먼저라는 말은 단추 풍선이 한다. 옛 배포 리비전이 어느 시나리오 일정과도
+    합쳐지지 않으면 표지 한 마디와 꺼진 단추만 두고 까닭(백업 복원)은 그 단추 풍선이
+    말한다(검수표 11/02 equip-44 와 같은 꼴)."""
+    st.caption(legacy_trace_value_line(count))
     try:
         review = load_legacy_trace_review(database_path)
     except BOOTSTRAP_ERRORS as exc:
@@ -2625,15 +2638,13 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
             ),
         )
         return
-    st.caption(
-        "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
-    )
     agreed = st.checkbox(continue_confirm_label(review), key=continue_confirm_key(count, review))
     if st.button(
         "이대로 이어 쓰기",
         icon=":material/fast_forward:",
         key=CONTINUE_BUTTON_KEY,
         disabled=not agreed,
+        help=CONTINUE_BUTTON_HELP if agreed else f"{CONTINUE_LOCKED_HELP} {CONTINUE_BUTTON_HELP}",
     ):
         try:
             get_equipment_repository(database_path).acknowledge_legacy_trace(

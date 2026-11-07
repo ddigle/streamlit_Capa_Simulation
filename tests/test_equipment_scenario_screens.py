@@ -47,7 +47,9 @@ from capa_simulation.components.equipment_scenario_management import (
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
     CONTINUE_BLOCKED_LINE,
+    CONTINUE_BUTTON_HELP,
     CONTINUE_BUTTON_KEY,
+    CONTINUE_LOCKED_HELP,
     EQUIPMENT_SCENARIO_TAB,
     LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
@@ -1822,20 +1824,29 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
         "설비 시나리오 탭으로 옮기지 않았다"
     )
     _equipment_section(app)
-    assert any("옛 배포로 저장한 설비 리비전 1개" in str(item.value) for item in app.warning)
+    # 이 칸은 값 한 줄이다 — 바로 아래 단추를 가리키는 긴 글(저장 거부 · 알림 전문)은 세우지 않고,
+    # 복원이 먼저라는 말과 되돌릴 수 없다는 말은 단추 풍선이 누르기 전에 한다.
+    assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
+    assert any("옛 배포 리비전 1개 · 설비 저장 막힘" in str(item.value) for item in app.caption)
+    assert not any("되돌릴 수 없습니다" in str(item.value) for item in app.caption)
 
     # 되돌릴 수 없는 쓰기라 확인 체크를 켜야 단추가 선다. 체크 글은 빠지는 호기 수를 말한다(새
     # 판에서 만든 두 호기 — 옛 배포 리비전 r2 는 비어 있다).
-    assert app.button(key=CONTINUE_BUTTON_KEY).disabled
+    locked = app.button(key=CONTINUE_BUTTON_KEY)
+    assert locked.disabled
+    assert str(locked.help).startswith(CONTINUE_LOCKED_HELP)
+    assert "이어 쓰기는 되돌릴 수 없습니다" in str(locked.help)
     confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
     assert "옛 배포 리비전 r2를 공통 대장 최신으로" in str(confirm.label)
     assert "호기 2대가 그 리비전에 없어 모든 설비 시나리오에서 빠지고" in str(confirm.label)
     confirm.check()
     _ok(app.run())
+    # 체크를 켜면 잠긴 까닭은 빠지고 되돌릴 수 없다는 말만 남는다.
+    assert app.button(key=CONTINUE_BUTTON_KEY).help == CONTINUE_BUTTON_HELP
     app.button(key=CONTINUE_BUTTON_KEY).click()
     _ok(app.run())
     assert repository.legacy_trace_count() == 0
-    assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
+    assert not any("옛 배포 리비전 1개" in str(item.value) for item in app.caption)
 
 
 def test_the_capa_route_from_the_popup_lands_on_the_capa_tab(_shell: AppTest) -> None:
