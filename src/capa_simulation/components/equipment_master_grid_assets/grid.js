@@ -165,9 +165,23 @@ function applyLockText(count, ready, lockReason) {
   return ready ? '바뀔 칸이 없습니다' : '넣을 값을 고르면 누를 수 있습니다'
 }
 
-function shiftLockText(count, days) {
+function shiftLockText(count, days, lockReason) {
   if (count) return ''
+  if (lockReason) return lockReason
   return days === null ? '밀 날 수를 적으면 누를 수 있습니다' : '밀 일정이 있는 칸이 없습니다'
+}
+
+// 일정이 있는 칸이 모두 잠겼으면 그 첫 칸([줄, 칸]) — 풀린 일정이 있거나 일정이 아예 없으면 null(잠금이 까닭이 아니다).
+function lockedShiftCell(rows, cols, locked) {
+  let first = null
+  for (const row of rows) {
+    for (const col of cols) {
+      if (!shiftIso(String(row.values[col] || ''), 0)) continue
+      if (!locked(row, col)) return null
+      if (!first) first = [row, col]
+    }
+  }
+  return first
 }
 // </grid-plan>
 
@@ -1366,11 +1380,13 @@ function buildSelection(S, bar) {
     if (sendOnce(S, { op: 'shift', ids: targets, days: value }, cells)) paintWindow(S)
   })
   const shiftTip = tipWrap(shift, 'emg-shift-tip')
+  const held = lockedShiftCell(rows, dateCols, locked)
+  const shiftReason = held ? S.model.reasons[lockOf(held[0], held[1], S.model.locks)] : ''
   const repaintShift = () => {
     const value = parseDays(S.days)
     const k = planShift(rows, dateCols, value, locked)
     shift.textContent = '밀기 (' + k.toLocaleString() + '칸)'
-    lockButton(shiftTip, shiftLockText(k, value), 'bulk-shift')
+    lockButton(shiftTip, shiftLockText(k, value, shiftReason || ''), 'bulk-shift')
   }
   days.addEventListener('input', () => {
     S.days = days.value

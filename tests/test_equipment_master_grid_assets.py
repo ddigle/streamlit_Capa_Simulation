@@ -860,7 +860,27 @@ process.stdout.write(JSON.stringify({
   loadAll: [loadAllLockText(641, 641), loadAllLockText(640, 641), loadAllLockText(1000, 1200)],
   apply: [applyLockText(3, true, ''), applyLockText(0, false, ''), applyLockText(0, true, ''),
     applyLockText(0, true, '잠긴 칸')],
-  shift: [shiftLockText(4, 7), shiftLockText(0, null), shiftLockText(0, 7)],
+  shift: [shiftLockText(4, 7), shiftLockText(0, null), shiftLockText(0, 7),
+    shiftLockText(0, 7, '잠긴 칸'), shiftLockText(0, null, '잠긴 칸'),
+    shiftLockText(4, 7, '잠긴 칸')],
+  held: (() => {
+    const row = (id, ...values) => ({ id, values })
+    const lockedIds = (ids) => (line) => ids.includes(line.id)
+    const pick = (rows, locked) => {
+      const cell = lockedShiftCell(rows, [0, 1], locked)
+      return cell ? [cell[0].id, cell[1]] : null
+    }
+    const dated = row('a', '2026-11-01', '')
+    const empty = row('b', '', '')
+    const other = row('c', '', '2026-11-02')
+    return [
+      pick([dated], lockedIds(['a'])),
+      pick([empty, other], lockedIds(['b', 'c'])),
+      pick([dated, other], lockedIds(['a'])),
+      pick([empty], lockedIds(['b'])),
+      pick([dated], lockedIds([])),
+    ]
+  })(),
 }))
 """
 
@@ -868,7 +888,8 @@ process.stdout.write(JSON.stringify({
 def test_each_locked_button_can_say_why_and_an_unlocked_one_says_nothing() -> None:
     """잠긴 「불러오기」 · 「맞는 0대 불러오기」 · 「넣기 (0칸)」 · 「밀기 (0칸)」 와 다 불러온 뒤의
     「전체 n대 불러오기」 는 까닭이 있고(설계 규칙 UI-INP-07, g5-08 · g5-09), 켜진 단추는 빈 글이라
-    풍선이 서지 않는다. 호기를 다 불러오지 못한 상한 초과(1,000 / 1,200)는 켠 채로 둔다."""
+    풍선이 서지 않는다. 호기를 다 불러오지 못한 상한 초과(1,000 / 1,200)는 켠 채로 둔다. 「밀기」 는
+    낡은 세션처럼 일정이 잠겨 0칸이면 값을 고치라는 말 대신 그 잠금 까닭을 말한다."""
     result = _node({}, _LOCK_TEXT_RUNNER)
 
     assert result["search"] == [
@@ -892,7 +913,12 @@ def test_each_locked_button_can_say_why_and_an_unlocked_one_says_nothing() -> No
         "",
         "밀 날 수를 적으면 누를 수 있습니다",
         "밀 일정이 있는 칸이 없습니다",
+        "잠긴 칸",
+        "잠긴 칸",
+        "",
     ]
+    # 일정이 있는 칸이 모두 잠겼을 때만 잠금이 까닭이다 — 풀린 일정이 있거나 일정이 없으면 아니다.
+    assert result["held"] == [["a", 0], ["c", 1], None, None, None]
 
 
 _LOADER_LOCK_RUNNER = """
