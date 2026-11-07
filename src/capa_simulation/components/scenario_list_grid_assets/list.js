@@ -130,7 +130,7 @@ function canRepaint(S) {
 function freshState() {
   return {
     mount: newMount(), box: createBox(), sentSeq: 0, timer: 0, base: null, limit: 2000, data: null, mode: null,
-    edit: null, focus: null, drag: null, pressing: false, dirty: false, wantFocus: false, listeners: [], bound: false,
+    edit: null, focus: null, drag: null, pressing: false, dirty: false, wantFocus: false, painting: false, listeners: [], bound: false,
     built: null, rowNodes: new Map(), settleTimer: 0, enterAfter: false, suppressClick: false, note: '', view: null,
     toolsNode: null, headObserver: null, headWatched: null, headTimer: 0, headTries: 0,
   }
@@ -255,8 +255,10 @@ function settle(S) {
 
 function paint(S) {
   S.dirty = false
+  S.painting = true
   if (S.mode === 'changes') paintChanges(S)
   else paintTable(S)
+  S.painting = false
 }
 
 function emptyHost(S) {
@@ -596,7 +598,9 @@ function repaintCell(S, id, col) {
   const old = cellNode(S, id, col)
   if (!row || !node || !old) return
   const k = COLUMNS[S.mode].findIndex((column) => column.key === col)
+  S.painting = true
   node.replaceChild(cellElement(S, row, COLUMNS[S.mode][k], k, rowPlace(S, id)), old)
+  S.painting = false
   node.classList.toggle('is-editing-row', Boolean(S.edit && S.edit.id === id))
 }
 
@@ -1040,9 +1044,10 @@ export default function (component) {
   host.dataset.mode = String(data.mode || '')
   if (!S.bound) {
     S.bound = true
-    // 부품 밖으로 초점이 나가거나(「변경 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다.
+    // 부품 밖으로 초점이 나가거나(「변경 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다. 그리는 중의 focusout 은 다시 그려 초점 든
+    // 칸이 사라진 것이다 — 나간 것이 아니라 300ms 묶음을 끊지 않는다.
     listen(S, host, 'focusout', (event) => {
-      if (!event.relatedTarget || !host.contains(event.relatedTarget)) flush(S)
+      if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) flush(S)
     })
     // 줄이든 되돌리기 아이콘이든 누르면 그 뒤 온 회차는 손을 뗄 때까지 미룬다(세 마운트 모두).
     listen(S, host, 'pointerdown', () => {
