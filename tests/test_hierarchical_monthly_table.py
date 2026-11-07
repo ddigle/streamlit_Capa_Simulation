@@ -147,6 +147,10 @@ def _paged_table_app() -> None:
     from capa_simulation.components.table_toolbar import table_heading_row
 
     rows = int(st.session_state.get("paged_table_rows", 2))
+    # 늦게 떠난 회차가 싣고 오는 옛 글 — 시험 손잡이는 위젯 값을 글자로 적지 못해 앱 안에서 적는다.
+    late_label = st.session_state.pop("paged_table_late_label", None)
+    if late_label is not None:
+        st.session_state["paged_table_page"] = late_label
     data = pd.DataFrame(
         {
             "공정": [f"Process-{index}" for index in range(rows)],
@@ -237,11 +241,12 @@ def test_the_row_pager_keeps_the_picked_range_on_the_key_it_always_had(
     assert app.selectbox(key="paged_table_page").value == 1
 
 
-def test_a_new_row_count_restarts_the_range_with_the_new_total(
+def test_a_new_row_count_keeps_the_picked_range_with_the_new_total(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """값 글에 전체 행 수가 들어 행 수가 바뀌면 브라우저가 쥔 옛 글이 새 보기에 없다. 첫 범위로
-    돌아가며 칸 값을 적어 새 글이 함께 가게 한다 — 그러지 않으면 옛 행 수가 칸에 남는다."""
+    """값 글에 전체 행 수가 들어 행 수가 바뀌면 브라우저가 쥔 옛 글이 새 보기에 없다. 고른 차례
+    그대로 칸 값을 적어 새 글이 함께 간다 — 적지 않으면 옛 행 수가 칸에 남고, 첫 범위로 적으면 필터
+    한 번에 고른 범위를 잃는다."""
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda **_: None)
@@ -255,6 +260,49 @@ def test_a_new_row_count_restarts_the_range_with_the_new_total(
     app.run()
     assert not app.exception
     picker = app.selectbox(key="paged_table_page")
-    assert picker.value == 0
-    assert picker.proto.options[0] == "1–2행 / 6행"
-    assert app.session_state["paged_table_page"] == 0
+    assert picker.value == 1
+    assert picker.proto.options[1] == "3–4행 / 6행"
+    assert app.session_state["paged_table_page"] == 1
+
+
+def test_an_old_label_from_a_late_rerun_does_not_drop_the_picked_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """필터 회차가 새 글을 보내기 전에 떠난 다음 회차는 옛 글을 싣고 온다. 새 보기에 없는 글은
+    풀리지 않은 글자로 남아 위젯이 첫 범위로 되돌렸다 — 마지막으로 그린 차례로 다시 적는다."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda **_: None)
+    app = AppTest.from_function(_paged_table_app)
+    app.session_state["paged_table_rows"] = 7
+    app.run()
+    app.selectbox(key="paged_table_page").select(1).run()
+    app.session_state["paged_table_rows"] = 6
+    app.run()
+
+    app.session_state["paged_table_late_label"] = "3–4행 / 7행"
+    app.run()
+    assert not app.exception
+    picker = app.selectbox(key="paged_table_page")
+    assert picker.value == 1
+    assert picker.proto.options[picker.value] == "3–4행 / 6행"
+
+
+def test_a_range_past_the_new_end_falls_to_the_last_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """행이 줄어 고른 차례가 없어지면 끝 범위로 자른다 — 칸 값과 그려지는 행이 함께 맞는다."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda **_: None)
+    app = AppTest.from_function(_paged_table_app)
+    app.session_state["paged_table_rows"] = 7
+    app.run()
+    app.selectbox(key="paged_table_page").select(3).run()
+
+    app.session_state["paged_table_rows"] = 5
+    app.run()
+    assert not app.exception
+    picker = app.selectbox(key="paged_table_page")
+    assert picker.value == 2
+    assert picker.proto.options[picker.value] == "5–5행 / 5행"

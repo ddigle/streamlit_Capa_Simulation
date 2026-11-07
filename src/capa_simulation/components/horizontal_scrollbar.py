@@ -8,7 +8,6 @@ _SCROLLBAR_HTML = """
 <div
   class="capa-scrollbar-track"
   role="scrollbar"
-  aria-label="월별 데이터 가로 스크롤"
   aria-orientation="horizontal"
   aria-valuemin="0"
   aria-valuemax="100"
@@ -83,6 +82,7 @@ export default function(component) {
     track.style.setProperty('--capa-scrollbar-thumb', String(data?.thumbColor || ''))
     track.style.setProperty('--capa-scrollbar-thumb-hover', String(data?.thumbHoverColor || ''))
     track.style.setProperty('--capa-scrollbar-thumb-active', String(data?.thumbActiveColor || ''))
+    track.setAttribute('aria-label', String(data?.ariaLabel || ''))
   }
   if (!track || !thumb) return
 
@@ -292,6 +292,7 @@ def render_horizontal_scrollbar(
     key: str,
     min_thumb_width: int = 40,
     initial_offset_px: float = 0.0,
+    aria_label: str = "월별 데이터 가로 스크롤",
 ) -> None:
     """Render a pixel-sized scrollbar synchronized with a page scroll container.
 
@@ -313,6 +314,7 @@ def render_horizontal_scrollbar(
             "height": height,
             "minThumbWidth": min_thumb_width,
             "initialOffsetPx": float(initial_offset_px),
+            "ariaLabel": aria_label,
             # 토큰을 **여기서** 읽는다. 실행마다 도는 자리라야 테마를 따라온다 —
             # 모듈 최상위에서 읽으면 처음 읽은 테마의 색이 프로세스에 굳는다.
             "trackColor": tokens.SCROLLBAR_TRACK,

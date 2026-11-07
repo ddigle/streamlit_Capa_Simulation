@@ -86,13 +86,19 @@ def scroll_shell_style(
     return f"<style>\n{box}\n{_canvas_rules(key, content_width_px)}\n</style>"
 
 
-def min_width_scroll_rules(key: str, *, min_width_px: float) -> str:
+def min_width_scroll_rules(
+    key: str,
+    *,
+    min_width_px: float,
+    hide_native_scrollbar: bool = False,
+) -> str:
     """`{key}_scroll` 스크롤 상자와 폭을 못박지 않는 `{key}_canvas` 캔버스 규칙(`<style>` 없이).
 
     캔버스는 가장 좁은 폭만 받는다 — 칸이 그보다 넓으면 칸 폭 그대로, 좁으면 상자가 가로로
-    스크롤한다. 네이티브 스크롤바를 쓰고 아래 여백은 두지 않는다.
+    스크롤한다. 아래 여백은 두지 않는다. 네이티브 스크롤바를 숨기는 호출자는 `horizontal_scrollbar`
+    를 함께 세운다.
     """
-    box = _scroll_box_rules(key, hide_native_scrollbar=False, padding_bottom=None)
+    box = _scroll_box_rules(key, hide_native_scrollbar=hide_native_scrollbar, padding_bottom=None)
     canvas = f".st-key-{key}_canvas {{ min-width: {min_width_px}px !important; }}"
     return f"{box}\n{canvas}"
 
@@ -105,6 +111,8 @@ def split_scroll_columns_style(
     narrow_label_width_px: float | None = None,
     narrow_viewport_max_px: float | None = None,
     month_room_px: float | None = None,
+    label_floor_px: float | None = None,
+    month_floor_px: float = 0,
 ) -> str:
     """고정 라벨 컬럼과 남는 폭을 채우는 월 컬럼의 폭을 CSS 로 못박는다.
 
@@ -127,11 +135,20 @@ def split_scroll_columns_style(
     분류 칸이 많은 표에서 월 컬럼이 아래로 떨어지거나 라벨이 본문 밖으로 밀리지 않는다. 본문이
     그보다 넓으면 라벨 폭 그대로다. 본문 폭 기준이라 사이드바를 접고 펴도 따라간다. 라벨이 줄면
     Figure 가 칸 폭으로 다시 그려져 칸마다 같은 비율로 준다.
+
+    `label_floor_px` 를 함께 주면 라벨 컬럼이 비율로는 그 폭 아래로 줄지 않고 달 컬럼이 대신 준다.
+    달 컬럼이 `month_floor_px` 만 남으면 라벨 컬럼이 더 좁아지는데, 그때는 라벨 캔버스가 바닥 폭을
+    지키고 컬럼 안에서 가로로 스크롤한다(`min_width_scroll_rules`) — 글이 잘리지 않고 달 칸이 곁에
+    남는다.
     """
     label_width = f"{label_width_px}px"
     if month_room_px is not None:
         label_share = label_width_px / (label_width_px + month_room_px)
-        label_width = f"min({label_width}, {label_share:.3%})"
+        if label_floor_px is None:
+            label_width = f"min({label_width}, {label_share:.3%})"
+        else:
+            kept = f"clamp({label_floor_px}px, {label_share:.3%}, {label_width})"
+            label_width = f"min({kept}, calc(100% - {month_floor_px}px))"
     rules = [
         "<style>",
         f'[data-testid="stColumn"]:has(.st-key-{label_key}) {{',

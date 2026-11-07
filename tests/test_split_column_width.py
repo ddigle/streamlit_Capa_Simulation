@@ -20,8 +20,12 @@ from capa_simulation.components.home_dimensions import (
     NARROW_VIEWPORT_MAX_PX,
 )
 from capa_simulation.components.monthly_table_base import (
+    CLASSIFICATION_HORIZONTAL_PADDING_PX,
     MONTH_COLUMN_WIDTH_PX,
+    MONTH_FLOOR_PX,
     MONTH_ROOM_COLUMNS,
+    SCROLLBAR_HEIGHT_PX,
+    classification_floor_px,
 )
 from capa_simulation.components.scroll_shell import (
     PLOTLY_MIN_CHART_WIDTH_PX,
@@ -127,6 +131,56 @@ def test_month_room_shrinks_only_when_the_body_cannot_hold_both_columns(
     assert min(876.0, body_px * float(found[1]) / 100) == pytest.approx(label_px, abs=0.1)
 
 
+def _floored_label_px(body_px: float, css: str) -> float:
+    """`min(clamp(바닥, 비율, 라벨), calc(100% - 달 바닥))` 을 본문 폭에 대어 푼다."""
+    found = re.search(
+        r"width: min\(clamp\((\d+)px, ([\d.]+)%, (\d+)px\), calc\(100% - (\d+)px\)\)", css
+    )
+
+    assert found is not None
+    floor_px, share, label_px, month_floor_px = (float(group) for group in found.groups())
+    kept = min(max(floor_px, body_px * share / 100), label_px)
+    return min(kept, body_px - month_floor_px)
+
+
+@pytest.mark.parametrize(
+    ("body_px", "label_px"),
+    [
+        (1265, 876.0),  # 1600 창 — 라벨 폭 그대로
+        (948, 771.8),  # 1283 창 — 바닥 위에서는 비율대로
+        (765, 670.0),  # 1100 창 — 바닥에 닿아 달 칸이 대신 준다
+        (750, 670.0),  # 달 칸도 바닥에 닿는 자리
+        (540, 460.0),  # 창 900 — 라벨 컬럼이 좁아지고 캔버스가 바닥 폭으로 스크롤한다
+    ],
+)
+def test_label_floor_makes_the_month_column_give_way_before_the_text_is_cut(
+    body_px: float, label_px: float
+) -> None:
+    """바닥이 없으면 창 1000 아래에서 분류 값 글이 잘렸고 창 800 에서 머리 글이 겹쳤다."""
+    css = split_scroll_columns_style(
+        label_key="demo_label_canvas",
+        month_key="demo_month_region",
+        label_width_px=876,
+        month_room_px=200,
+        label_floor_px=670,
+        month_floor_px=80,
+    )
+
+    assert _floored_label_px(body_px, css) == pytest.approx(label_px, abs=0.1)
+
+
+def test_label_floor_keeps_every_column_above_its_text() -> None:
+    """칸은 같은 비율로 주므로 가장 넓은 칸이 여백을 다 내주는 폭이 바닥이다. 그 폭에서 어느 칸도
+    글 폭(여백을 뺀 폭)보다 좁지 않다."""
+    widths = [84, 153, 84, 117, 84, 90, 96, 84, 84]
+
+    floor_px = classification_floor_px(widths)
+
+    assert floor_px == 670
+    for width in widths:
+        assert width * floor_px / sum(widths) >= width - CLASSIFICATION_HORIZONTAL_PADDING_PX
+
+
 def _split_table_app() -> None:
     import plotly.graph_objects as go
 
@@ -152,7 +206,10 @@ def test_monthly_tables_ask_for_the_month_room(monkeypatch: pytest.MonkeyPatch) 
     assert not app.exception
     assert MONTH_ROOM_COLUMNS * MONTH_COLUMN_WIDTH_PX == 200
     bodies = [element.proto.body for element in app.get("html")]
-    assert any("min(876px, 81.413%)" in body for body in bodies)
+    assert any(
+        f"min(clamp(810px, 81.413%, 876px), calc(100% - {MONTH_FLOOR_PX}px))" in body
+        for body in bodies
+    )
     for relative in (
         "src/capa_simulation/components/home_rendering.py",
         "src/capa_simulation/components/availability_gap_panel.py",
@@ -161,6 +218,37 @@ def test_monthly_tables_ask_for_the_month_room(monkeypatch: pytest.MonkeyPatch) 
     ):
         source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
         assert "month_room_px" not in source, relative
+
+
+def test_the_label_canvas_scrolls_under_its_own_bar_at_the_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """바닥 아래로 좁아진 라벨 컬럼은 캔버스가 바닥 폭을 지키고 스크롤한다. 표가 길어 네이티브
+    막대는 표 끝에 떨어지니 월 쪽과 같은 위쪽 막대를 쓰고, 높이가 같아 두 표의 첫 행이 맞는다."""
+    from streamlit.testing.v1 import AppTest
+
+    bars: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        horizontal_scrollbar,
+        "render_horizontal_scrollbar",
+        lambda **kwargs: bars.append(kwargs),
+    )
+    app = AppTest.from_function(_split_table_app).run()
+
+    assert not app.exception
+    assert [bar["target_selector"] for bar in bars] == [
+        ".st-key-demo_label_scroll",
+        ".st-key-demo_month_scroll",
+    ]
+    assert {bar["height"] for bar in bars} == {SCROLLBAR_HEIGHT_PX}
+    assert bars[0]["aria_label"] != "월별 데이터 가로 스크롤"
+    rules = next(
+        element.proto.body
+        for element in app.get("html")
+        if ".st-key-demo_label_canvas { min-width: 810px !important; }" in element.proto.body
+    )
+    assert ".st-key-demo_label_scroll {" in rules
+    assert "scrollbar-width: none !important;" in rules
 
 
 def test_home_dashboard_label_width_fits_its_longest_label() -> None:

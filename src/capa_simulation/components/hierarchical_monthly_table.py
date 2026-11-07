@@ -215,17 +215,24 @@ def _add_table_grid(
     flush_layout_items(label_figure, month_figure)
 
 
-def _restart_range_on_new_total(page_key: str, total_rows: int) -> None:
-    """행 수가 바뀐 회차에 「표시 범위」 칸을 첫 범위로 되돌린다.
+def _refit_range_on_new_total(page_key: str, total_rows: int, page_count: int) -> None:
+    """행 수가 바뀐 회차에 「표시 범위」 칸 값을 새 쪽 수 안으로 다시 적는다.
 
     칸의 값 글에 전체 행 수가 들어, 필터로 행 수가 바뀌면 브라우저가 쥔 옛 글이 새 보기에 없다.
     칸을 그대로 두면 옛 행 수가 적힌 글이 칸에 남는 회차가 생긴다(샘플 관측). 칸 값을 적으면 새 글이
-    함께 간다. 행 수가 같으면 건드리지 않아 고른 범위가 남는다.
+    함께 간다. 고른 차례는 그대로 두고 새 쪽 수를 넘을 때만 끝 범위로 자른다.
+
+    앞 회차가 새 글을 보내기 전에 떠난 다음 회차는 옛 글을 싣고 온다 — 새 보기에 없는 글은 풀리지
+    않은 글자로 남고 위젯이 첫 범위로 되돌린다(사이드바 필터 뒤, 샘플 관측). 그때는 마지막으로 그린
+    차례(`_shown`, 위젯 뒤에 적는다)로 다시 적는다.
     """
-    total_key = f"{page_key}_total"
-    if st.session_state.get(total_key) != total_rows:
-        st.session_state[total_key] = total_rows
-        st.session_state[page_key] = 0
+    shown_total, shown_index = st.session_state.get(f"{page_key}_shown", (None, 0))
+    picked = st.session_state.get(page_key, 0)
+    if shown_total == total_rows and isinstance(picked, int):
+        return
+    if not isinstance(picked, int):
+        picked = shown_index
+    st.session_state[page_key] = min(picked, page_count - 1)
 
 
 def render_hierarchical_monthly_table(
@@ -266,7 +273,7 @@ def render_hierarchical_monthly_table(
         total_rows = len(data)
         page_count = (total_rows + page_size - 1) // page_size
         page_key = f"{key}_page"
-        _restart_range_on_new_total(page_key, total_rows)
+        _refit_range_on_new_total(page_key, total_rows, page_count)
         with page_box:
             page_index = st.selectbox(
                 "표시 범위",
@@ -280,6 +287,7 @@ def render_hierarchical_monthly_table(
                 label_visibility="collapsed",
                 width=180,
             )
+        st.session_state[f"{page_key}_shown"] = (total_rows, page_index)
         start_row = page_index * page_size
         data = data.iloc[start_row : start_row + page_size].copy()
 
