@@ -34,12 +34,14 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+import capa_simulation.components.equipment_scenario_management as management
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
     CLEAR_LAYOUT_BUTTON_KEY,
     CLEAR_LAYOUT_CONFIRM_KEY,
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
+    CONFIRM_LOCKED_HELP,
     LAYOUT_BLOCKED_LINE,
     LEGACY_TRACE_BLOCKED_LINE,
     PUBLISH_BUTTON_HELP,
@@ -56,8 +58,8 @@ from capa_simulation.components.equipment_scenario_management import (
     clear_layout_value_line,
     clearable_layout,
     layout_effect_words,
-    layout_trace_sentence,
     layout_trace_sources,
+    layout_trace_words,
     legacy_trace_lock_line,
     publish_layout_lines,
     publish_result_message,
@@ -130,14 +132,14 @@ def test_the_tables_name_the_stored_layout_rows_and_the_old_code_traces() -> Non
         "요소 1개",
         "옛 판 저장 — r4 배치 빠짐",
     ]
-    sentence = layout_trace_sentence(_scenario(layout_trace_count=2), revisions)
-    assert sentence is not None
-    assert "「셋업 실무」 r5는 옛 판이 저장해 r4의 가정 배치가 빠졌습니다" in sentence
-    assert "r4로 되돌리기" in sentence
-    assert "모두 2개" in sentence
-    # 런북으로 보내는 길 안내는 Guide 몫이다(설계 규칙 UI-TXT-03).
-    assert "런북" not in sentence
-    assert layout_trace_sentence(_scenario(), [_revision(1), _revision(2, "d2")]) is None
+    assert layout_trace_words(_scenario(layout_trace_count=2), revisions) == (
+        "「셋업 실무」 r5(r4 배치 빠짐 · 옛 판 저장 모두 2개)"
+    )
+    assert layout_trace_words(_scenario(layout_trace_count=1), revisions[:3]) == (
+        "「셋업 실무」 r3(r2 배치 빠짐)"
+    )
+    # 리비전을 읽지 못하면 흔적을 짚지 못한다 — 이름과 수는 남는다.
+    assert layout_trace_words(_scenario(layout_trace_count=2), ()) == "「셋업 실무」 2개"
 
 
 def _trace_report() -> None:
@@ -148,27 +150,42 @@ def _trace_report() -> None:
     from capa_simulation.persistence.equipment_repository import EquipmentScenarioCatalog
 
     report_layout_traces(
-        EquipmentSession(EquipmentScenarioCatalog(scenarios=st.session_state["s"]))
+        "equipment.duckdb",
+        EquipmentSession(EquipmentScenarioCatalog(scenarios=st.session_state["s"])),
     )
 
 
-def test_the_old_code_traces_list_is_a_state_alert_not_a_place_line() -> None:
-    """옛 판 흔적이 있는 설비 시나리오 목록(이름 · 개수 — 내역)은 자리 줄이 아니라 상태 알림
-    `SC-03` 이다 — 짧은 글은 건수 · 고칠 곳, 전문은 이름 · 개수 · 되살리는 길(설계 규칙 UI-TXT-04 ·
-    UI-NTF-02). 흔적이 없으면 「해소」(조건 없음)로 부른다."""
+def test_the_old_code_traces_list_is_a_state_alert_not_a_place_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """옛 판 흔적은 자리 줄이 아니라 상태 알림 `SC-03` 이다 — 짧은 글은 건수 · 고칠 곳, 전문은
+    흔적이 있는 시나리오 전부의 이름 · 빠진 리비전과 되살리는 길(설계 규칙 UI-TXT-04 · UI-NTF-02).
+    흔적이 없으면 「해소」(조건 없음)로 부른다."""
+    revisions = {
+        "setup": (_revision(1, "d1"), _revision(2, None), _revision(3, "d3"), _revision(4, None)),
+        "delay": (_revision(1, "d1"), _revision(2, None)),
+    }
+    monkeypatch.setattr(
+        management, "load_equipment_schedule_revisions", lambda _, item: revisions[item]
+    )
     app = AppTest.from_function(_trace_report, default_timeout=60)
     app.session_state["s"] = (
         _scenario(layout_trace_count=2),
         _scenario(equipment_scenario_id="ops", scenario_name="운영 일정"),
+        _scenario(equipment_scenario_id="delay", scenario_name="지연*안", layout_trace_count=1),
     )
     _ok(app.run())
 
     note = active_state(app, "SC-03")
     assert note is not None
     assert note["short"].startswith(
-        "옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 1개"
+        "옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 2개"
     )
-    assert "「셋업 실무」 2개" in note["full"] and "운영 일정" not in note["full"]
+    # 알림은 평문이라 이름을 막지 않는다.
+    assert "「셋업 실무」 r4(r3 배치 빠짐 · 옛 판 저장 모두 2개)" in note["full"]
+    assert "「지연*안」 r2(r1 배치 빠짐)" in note["full"]
+    assert "「이 리비전으로 되돌리기」 로 되살립니다" in note["full"]
+    assert "운영 일정" not in note["full"] and "런북" not in note["full"]
     # 「그 화면으로」 가 설비 시나리오 탭을 연다.
     assert note["tab"] == "설비 시나리오"
     assert not app.caption and not app.warning
@@ -177,6 +194,25 @@ def test_the_old_code_traces_list_is_a_state_alert_not_a_place_line() -> None:
     _ok(app.run())
     assert active_state(app, "SC-03") is None
     assert [item["active"] for item in states(app, "SC-03")] == [False]
+
+
+def test_unreadable_revisions_leave_the_traces_alert_with_names_and_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """리비전을 읽지 못해도 상태 알림은 멈추지 않는다 — 이름 · 수로 남고 그 오류는 탭 본문이
+    말한다."""
+
+    def unreadable(_path: str, _scenario_id: str) -> tuple[()]:
+        raise duckdb.IOException("막힘")
+
+    monkeypatch.setattr(management, "load_equipment_schedule_revisions", unreadable)
+    app = AppTest.from_function(_trace_report, default_timeout=60)
+    app.session_state["s"] = (_scenario(layout_trace_count=2),)
+    _ok(app.run())
+
+    note = active_state(app, "SC-03")
+    assert note is not None
+    assert "「셋업 실무」 2개" in note["full"]
 
 
 def test_the_stored_rows_carry_their_effect_against_the_official() -> None:
@@ -677,6 +713,40 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
     assert [note["full"] for note in events(app, "SB-14")] == [notice]
 
 
+def test_a_trace_leaves_only_the_cell_mark_in_place(tmp_path: Path) -> None:
+    """옛 판 흔적은 표 위 상자를 세우지 않는다 — 자리에는 「배치」 칸 표지만 남고 빠진 리비전과
+    되살리는 길은 상태 알림 `SC-03` 이 말한다(설계 규칙 UI-NTF-02 · 2026-11-07 답 place-box). 고른
+    시나리오가 흔적 없는 운영 일정이어도 알림 전문은 같다."""
+    repository, setup, latest = _moved_setup(tmp_path)
+    first = repository.list_schedule_revisions(setup, limit=2)[-1]
+    with duckdb.connect(str(repository.database_path)) as connection:
+        connection.execute(
+            "UPDATE equipment_ops.equipment_schedule_revision SET layout_hash = 'd1' "
+            "WHERE schedule_revision_id = ?",
+            [first.schedule_revision_id],
+        )
+        connection.execute(
+            "UPDATE equipment_ops.equipment_schedule_revision SET layout_hash = NULL "
+            "WHERE schedule_revision_id = ?",
+            [latest],
+        )
+    clear_equipment_repository()
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+
+    assert not app.warning
+    table = next(frame.value for frame in app.dataframe if "리비전명" in frame.value.columns)
+    assert table["배치"].tolist()[0] == "옛 판 저장 — r1 배치 빠짐"
+    note = active_state(app, "SC-03")
+    assert note is not None and "「셋업 실무」 r2(r1 배치 빠짐)" in note["full"]
+
+    app.selectbox(key=SCENARIO_KEY).set_value(next(iter(app.selectbox(key=SCENARIO_KEY).options)))
+    _ok(app.run())
+    held = active_state(app, "SC-03")
+    assert held is not None and held["full"] == note["full"] and held["fp"] == note["fp"]
+
+
 def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_path: Path) -> None:
     repository, setup, latest = _moved_setup(tmp_path)
     app = _ok(_section(tmp_path, setup).run())
@@ -685,8 +755,11 @@ def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_pat
     (confirm,) = [box for box in app.checkbox if str(box.key).startswith(CLEAR_LAYOUT_CONFIRM_KEY)]
     clear = next(button for button in app.button if button.key == CLEAR_LAYOUT_BUTTON_KEY)
     assert clear.disabled
+    # 잠긴 동안은 까닭이 먼저다(설계 규칙 UI-INP-07) — 체크를 켜면 뜻만 남는다.
+    assert str(clear.help).startswith(CONFIRM_LOCKED_HELP)
 
     confirm.check().run()
+    assert str(app.button(key=CLEAR_LAYOUT_BUTTON_KEY).help).startswith("최신 r2의 일정")
     _ok(app.button(key=CLEAR_LAYOUT_BUTTON_KEY).click().run())
 
     newest = repository.list_schedule_revisions(setup, limit=1)[0]

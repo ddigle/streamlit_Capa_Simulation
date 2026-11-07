@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_KEY,
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
+    REVISION_ORIGIN_COLUMN_WIDTH,
     REVISION_TABLE_TOOLBAR_CLEARANCE,
     SCENARIO_KEY,
     publish_preview,
@@ -168,7 +170,7 @@ def test_a_popover_keeps_its_place_and_key_when_the_alert_goes_away(tmp_path: Pa
 
 def test_the_revision_table_stands_clear_of_the_row_above_it(tmp_path: Path) -> None:
     """시나리오 줄(맨 오른쪽 팝오버 단추)과 리비전 표 사이에 띄움이 선다 — 표 도구 막대가 그 단추를
-    덮지 않게. 그 사이의 칸(옛 판 흔적 경고 자리)은 비어 있으면 높이가 없다."""
+    덮지 않게. 그 사이의 칸(확인 체크 풀림 줄 자리)은 비어 있으면 높이가 없다."""
     path, _ = _two_revisions(tmp_path)
     app = _ok(_section(path).run())
     siblings = sorted(app.main.children.items())
@@ -197,15 +199,23 @@ def test_the_revision_table_stands_clear_of_the_row_above_it(tmp_path: Path) -> 
     )
 
 
+def test_the_origin_column_fits_its_longest_word(tmp_path: Path) -> None:
+    """리비전 표 「출처」 칸은 내용 폭을 따르지 않고 가장 긴 값 「배치 차이 정리」 가 드는 폭을
+    받는다 — 1600 에서도 「배치 차이 정」 으로 잘렸다(캔버스 표라 그림으로 잰 값)."""
+    path, _ = _two_revisions(tmp_path)
+    app = _ok(_section(path).run())
+    table = next(item for item in app.dataframe if "리비전명" in item.value.columns)
+    assert json.loads(table.proto.columns)["출처"]["width"] == REVISION_ORIGIN_COLUMN_WIDTH
+
+
 def test_loading_a_revision_picks_the_particle_by_its_number(tmp_path: Path) -> None:
-    """「이 리비전 불러오기」 안내와 불러온 알림 — 「r2을」 이 아니라 「r2를」."""
+    """「이 리비전 불러오기」 창은 값 줄 하나이고(설계 규칙 UI-TXT-01), 불러온 알림은 「r2을」 이
+    아니라 「r2를」."""
     path, numbers = _two_revisions(tmp_path)
     app = _ok(_section(path).run())
     assert app.selectbox(key=REVISION_KEY).value == numbers[2]
-    assert any(
-        str(item.value) == "「운영 일정」 r2를 이 세션의 설비 시나리오로 올립니다."
-        for item in app.caption
-    )
+    assert "운영 일정 r2" in [str(item.value) for item in app.caption]
+    assert not any("올립니다" in str(item.value) for item in app.caption)
     app.button(key=LOAD_BUTTON_KEY).click()
     _ok(app.run())
     assert "설비 시나리오 「운영 일정」 r2를 불러왔습니다." in _successes(app)
@@ -228,11 +238,9 @@ def test_the_rename_notice_puts_no_particle_right_after_the_new_name(tmp_path: P
     )
 
 
-@pytest.mark.parametrize(("chosen", "particle"), [(5, "는"), (3, "은"), (2, "는")])
-def test_the_publish_preview_picks_the_particle_by_the_revision_number(
-    chosen: int, particle: str
-) -> None:
-    """「r5 은 … 최신(r6)이 아닙니다」 가 아니라 「r5는」 — 받침 있는 번호(r3)만 우연히 맞았다."""
+def test_the_publish_preview_ends_the_value_line_with_the_stale_mark() -> None:
+    """고른 리비전이 그 시나리오 최신이 아니면 둘째 줄 문장이 아니라 값 줄 끝 표지다(설계 규칙
+    UI-NTF-09 — 확인 창은 값 줄 하나)."""
     scenario = EquipmentScenarioSummary(
         "setup",
         "셋업 실무",
@@ -243,13 +251,11 @@ def test_the_publish_preview_picks_the_particle_by_the_revision_number(
     )
     catalog = EquipmentScenarioCatalog(scenarios=(scenario,))
     session = EquipmentSession(catalog, scenario, "b6")
-    revision = EquipmentScheduleRevisionSummary(
-        f"b{chosen}", "setup", chosen, "save", datetime(2026, 10, 24)
-    )
+    revision = EquipmentScheduleRevisionSummary("b5", "setup", 5, "save", datetime(2026, 10, 24))
 
-    lines = publish_preview(session, scenario, revision)
-
-    assert lines[1] == f"r{chosen}{particle} 「셋업 실무」 의 최신(r6)이 아닙니다."
+    assert publish_preview(session, scenario, revision) == [
+        "공식 없음 → 새 공식 v1 · 「셋업 실무」 r5 · 최신 아님(r6)"
+    ]
 
 
 def test_an_empty_store_says_so_in_one_plain_line(tmp_path: Path) -> None:

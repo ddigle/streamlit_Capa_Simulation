@@ -277,7 +277,7 @@ def test_the_section_table_and_box_hold_every_revision_past_the_popup_limit(
     box.select(oldest.schedule_revision_id)
     _ok(app.run())
     assert app.selectbox(key=REVISION_KEY).value == oldest.schedule_revision_id
-    assert any("r1을 이 세션의 설비 시나리오로 올립니다" in text for text in _captions(app))
+    assert any(text.endswith(" r1") for text in _captions(app))
 
 
 def test_the_section_ignores_the_popup_limit(

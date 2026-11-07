@@ -46,10 +46,10 @@ from capa_simulation.components.equipment_scenario_management import (
     CAPA_SCENARIO_TAB,
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
+    CONFIRM_LOCKED_HELP,
     CONTINUE_BLOCKED_LINE,
     CONTINUE_BUTTON_HELP,
     CONTINUE_BUTTON_KEY,
-    CONTINUE_LOCKED_HELP,
     EQUIPMENT_SCENARIO_TAB,
     LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
@@ -88,6 +88,7 @@ from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import MODE_KEY
+from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
@@ -97,7 +98,7 @@ from capa_simulation.navigation import (
     SCENARIO_MANAGEMENT,
     SPACE_STATUS,
 )
-from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY
+from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY, tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_scenario_cache,
@@ -336,8 +337,7 @@ def test_the_publish_preview_puts_the_current_and_the_new_official_side_by_side(
 
     lines = publish_preview(session, catalog.scenarios[1], revision)
 
-    assert lines[0] == "지금 공식 v3 · 「운영 일정」 → 새 공식 v4 · 「셋업 실무」 r3"
-    assert lines[1] == "r3은 「셋업 실무」 의 최신(r4)이 아닙니다."
+    assert lines == ["지금 공식 v3 · 「운영 일정」 → 새 공식 v4 · 「셋업 실무」 r3 · 최신 아님(r4)"]
 
 
 # ── 미확인 = 공식 일정 기준 ───────────────────────────────────────────────────────────
@@ -1391,8 +1391,9 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     assert "새 리비전 r3 · 비가동 1행 → 1행 · 일정 없음 1대(새로 빠짐 1대) · 공식 v3 지정" in texts
     assert not any("그대로 남습니다" in text or "「일정 없음」 이 됩니다" in text for text in texts)
     balloon = str(app.button(key=RESTORE_BUTTON_KEY).help)
+    # 잠긴 동안은 까닭이 먼저다(설계 규칙 UI-INP-07) — 체크를 켜면 뜻만 남는다.
     assert balloon.startswith(
-        "r1의 일정(날짜 여섯·시나리오 메모·비가동)을 새 리비전 r3으로 저장합니다"
+        f"{CONFIRM_LOCKED_HELP} r1의 일정(날짜 여섯·시나리오 메모·비가동)을 새 리비전 r3으로 저장"
     )
     assert balloon.endswith(RESTORE_PUBLISH_HELP)
     confirm = _restore_confirm(app)
@@ -1405,6 +1406,7 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
 
     confirm.check()
     _ok(app.run())
+    assert str(app.button(key=RESTORE_BUTTON_KEY).help).startswith("r1의 일정(날짜 여섯")
     app.button(key=RESTORE_BUTTON_KEY).click()
     _ok(app.run())
 
@@ -1948,6 +1950,10 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert trace["active"] is True and trace["level"] == "action"
     assert "옛 배포로 저장한 설비 리비전 1개" in trace["full"]
     assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in trace["full"]
+    # 고칠 자리가 다른 화면이라 「그 화면으로」 가 그 화면 그 탭을 연다(`goto` — UI-NTF-08).
+    assert trace["page"] == tab_label(SCENARIO_MANAGEMENT)
+    assert trace["href"] == SCENARIO_MANAGEMENT.href
+    assert trace["tab"] == EQUIPMENT_SCENARIO_TAB_NAME
     # 단추는 탭 기억 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
     # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
     app.button(key=LEGACY_TRACE_GOTO_KEY).click()
@@ -1969,7 +1975,7 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     # 판에서 만든 두 호기 — 옛 배포 리비전 r2 는 비어 있다).
     locked = app.button(key=CONTINUE_BUTTON_KEY)
     assert locked.disabled
-    assert str(locked.help).startswith(CONTINUE_LOCKED_HELP)
+    assert str(locked.help).startswith(CONFIRM_LOCKED_HELP)
     assert "이어 쓰기는 되돌릴 수 없습니다" in str(locked.help)
     confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
     assert "옛 배포 리비전 r2를 공통 대장 최신으로" in str(confirm.label)

@@ -43,7 +43,11 @@ from capa_simulation.components.equipment_master_tab import (
 )
 from capa_simulation.components.equipment_scenario_status import (
     EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+    SAVE_LOCKED_HELP,
     SAVE_MODE,
+)
+from capa_simulation.components.equipment_scenario_status import (
+    SAVE_BUTTON_HELP as POPUP_SAVE_BUTTON_HELP,
 )
 from capa_simulation.components.equipment_scenario_status import (
     SAVE_BUTTON_KEY as POPUP_SAVE_BUTTON_KEY,
@@ -205,6 +209,33 @@ def test_the_sidebar_popup_save_refuses_with_the_same_judgement(tmp_path: Path) 
     assert CORE in line and WAY_OUT in line
     assert _errors(app) == [f"저장하지 못했습니다: {line}"]
     assert len(repository.list_revisions()) == before
+
+
+def test_the_popup_save_says_why_it_is_locked_in_its_balloon(tmp_path: Path) -> None:
+    """바뀐 것이 없으면 잠긴 단추의 풍선이 까닭을 먼저 말하고 곁 캡션은 없다(설계 규칙 UI-INP-07 ·
+    UI-TXT-07). 편집이 생기면 까닭이 빠지고 뜻만 남는다."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    locked = app.button(key=POPUP_SAVE_BUTTON_KEY)
+    assert locked.disabled
+    assert locked.help == f"{SAVE_LOCKED_HELP} {POPUP_SAVE_BUTTON_HELP}"
+    assert SAVE_LOCKED_HELP not in [str(item.value) for item in app.caption]
+
+    app.session_state["edits"] = EDITS
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    opened = app.button(key=POPUP_SAVE_BUTTON_KEY)
+    assert not opened.disabled
+    assert opened.help == POPUP_SAVE_BUTTON_HELP
 
 
 def test_the_space_layout_save_refuses_with_the_same_judgement(tmp_path: Path) -> None:

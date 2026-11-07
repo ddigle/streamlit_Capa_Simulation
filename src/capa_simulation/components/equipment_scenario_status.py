@@ -61,6 +61,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
@@ -78,6 +79,7 @@ from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     EQUIPMENT_MASTER_TAB,
     REQUIRED_SHORTENING,
+    SCENARIO_MANAGEMENT,
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -143,6 +145,8 @@ SAVE_BUTTON_HELP = (
     "올라와 있는 설비 시나리오에 저장합니다 — 공통 칸은 공통 대장, 일정·시나리오 메모·비가동은 이 "
     "설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다."
 )
+# 바뀐 것이 없어 잠긴 동안 그 풍선 앞에 붙는 까닭(설계 규칙 UI-INP-07).
+SAVE_LOCKED_HELP = "저장할 변경이 없습니다."
 # 불러오기·저장 알림 — 다음 회차에 한 번, 줄 바로 아래.
 FLASH_KEY = "sidebar_equipment_scenario_flash"
 # 「저장」 구획을 세우는 화면(편집본을 세우는 화면)의 파일 이름.
@@ -232,8 +236,8 @@ def render_legacy_trace_warning(session: EquipmentSession) -> None:
     """옛 배포로 저장한 설비 리비전의 상태 알림(`SB-19` — 저장 거부 문구와 같은 글)과, 있으면 맨 위
     「시나리오 관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비
     시나리오」 탭)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 자리에 그리지 않는다(2026-11-03
-    결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 설비 DB 를 여는 회차마다
-    부른다."""
+    결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 알림의 「그 화면으로」 도 그
+    탭을 연다(`goto` — 어느 설비 화면이 먼저 내도 줄이 같다). 설비 DB 를 여는 회차마다 부른다."""
     count = session.legacy_trace_count
     alerts.state(
         "SB-19",
@@ -242,6 +246,8 @@ def render_legacy_trace_warning(session: EquipmentSession) -> None:
         active=bool(count),
         text=f"옛 배포 설비 리비전 {count}개 — 설비 저장이 막힘. 시나리오 관리 › 설비 시나리오",
         full=legacy_trace_message(count) if count else None,
+        tab=EQUIPMENT_SCENARIO_TAB_NAME,
+        goto=(tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href),
     )
     if count:
         render_legacy_trace_goto()
@@ -748,8 +754,6 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         render_load_latest_button(
             database_path, session, key=LOAD_LATEST_BUTTON_KEY, in_dialog=True
         )
-    if not has_changes:
-        st.caption("저장할 변경이 없습니다.")
     note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")
     saved_by = render_saved_by_field(SAVE_FIELDS_PREFIX)
     clicked = st.button(
@@ -758,7 +762,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         type="primary",
         disabled=not has_changes,
         key=SAVE_BUTTON_KEY,
-        help=SAVE_BUTTON_HELP,
+        help=SAVE_BUTTON_HELP if has_changes else f"{SAVE_LOCKED_HELP} {SAVE_BUTTON_HELP}",
     )
     if not clicked:
         return
