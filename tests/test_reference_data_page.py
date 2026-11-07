@@ -1080,7 +1080,7 @@ def test_filtered_upeh_editor_keeps_the_process_the_filter_hid(grid_calls: Calls
 
 
 PENDING_PROBE_KEY = "test_pre_page_pending_edits"
-# 회차마다 페이지 **앞에서** 「적용 전 편집」 목록을 적어 둔다. `app.py` 는 사이드바 캡션과 저장
+# 회차마다 페이지 **앞에서** 「적용 전 편집」 목록을 적어 둔다. `app.py` 는 변경 칩 · 판과 저장
 # 팝업의 경고·잠금을 `navigation.run()` 전에 부른 이 함수의 값으로 그린다 — 같은 차례를 흉내 낸다.
 PENDING_PROBE_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
     '    PAGE_NAME = "reference_data.py"\n',

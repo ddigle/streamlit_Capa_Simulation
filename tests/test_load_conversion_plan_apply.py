@@ -960,7 +960,7 @@ YIELD_CELL_EDIT = {"edited_rows": {0: {"202603": 0.9}}, "added_rows": [], "delet
 def _sidebar_probe_script(database_path: Path) -> str:
     """회차마다 페이지 **앞에서** 「적용 전 편집」 목록을 적어 두는 스크립트.
 
-    `app.py` 는 `pending_edit_labels` 를 `navigation.run()` 전에 부르고, 사이드바 캡션과 저장
+    `app.py` 는 `pending_edit_labels` 를 `navigation.run()` 전에 부르고, 변경 칩 · 판과 저장
     팝업의 경고·확인 체크·잠금이 그 값으로 그려진다. 같은 차례에서 같은 함수를 불러 남긴다.
     """
     return _script(database_path).replace(

@@ -207,7 +207,7 @@ _LEAVE_PROBE = (
 
 
 def test_a_grid_draft_stays_when_leaving_and_shows_on_every_page(calls: Calls) -> None:
-    """그리드 초안은 세션 칸이라 화면을 떠나도 남는다 — 다른 화면의 사이드바 「적용 전 편집」·화면
+    """그리드 초안은 세션 칸이라 화면을 떠나도 남는다 — 다른 화면의 변경 칩 · 판과 화면
     탭 점에 「기준 정보 · 일수」 가 서고, 떠날 때 묻지 않는다."""
     script = TWO_PROCESS_TEST_SCRIPT.replace(
         '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n', _LEAVE_PROBE, 1
@@ -654,10 +654,10 @@ def test_the_paste_template_is_the_whole_table_while_the_filter_narrows_the_grid
         assert exported["공정"].tolist() == ["Process-A", "Process-B"], name
 
 
-def test_the_first_edit_shows_in_the_sidebar_of_the_run_it_arrives_in(calls: Calls) -> None:
-    """사이드바 「적용 전 편집」 은 페이지 본문보다 먼저 그린다. 첫 편집(초안 없던 표)의 op 가
+def test_the_first_edit_shows_in_the_chip_of_the_run_it_arrives_in(calls: Calls) -> None:
+    """변경 칩 · 판은 페이지 본문보다 먼저 그린다. 첫 편집(초안 없던 표)의 op 가
     온 회차에 그 표가 바로 서야 한다 — 그리드는 첫 편집 뒤 다시 보내지 않아, 한 회차 늦으면 다음
-    조작까지 사이드바·화면 탭 점이 편집을 모른다. 출납 콜백이 빈 초안 자리를 두고 본문이 진짜
+    조작까지 변경 칩·화면 탭 점이 편집을 모른다. 출납 콜백이 빈 초안 자리를 두고 본문이 진짜
     초안으로 덮는다(빈 자리는 「변경사항 적용」·단추 점에 들지 않는다)."""
     probe = "test_pre_page_labels"
     script = TWO_PROCESS_TEST_SCRIPT.replace(
@@ -673,7 +673,7 @@ def test_the_first_edit_shows_in_the_sidebar_of_the_run_it_arrives_in(calls: Cal
     assert script != TWO_PROCESS_TEST_SCRIPT
     app = _open(script, "효율")
     # 대역은 콜백을 그리는 자리에서 부른다 — 진짜는 회차 맨 앞이다. 콜백이 돈 회차 다음 회차의
-    # 페이지 앞 탐침이 진짜 회차의 사이드바 자리다.
+    # 페이지 앞 탐침이 진짜 회차의 머리 표지 자리다.
     app.session_state[FAKE_EVENT_KEY] = (
         GRID_HOST,
         outbox(
@@ -697,8 +697,8 @@ def test_the_first_edit_shows_in_the_sidebar_of_the_run_it_arrives_in(calls: Cal
     }
 
 
-# 페이지 앞에서 `app.py` 가 그리는 표지(사이드바 「적용 전 편집」·화면 탭 점)를 회차마다 적는 대본 —
-# 대역을 `early=True` 로 깔면 콜백이 진짜처럼 회차 맨 앞에서 돌아, 이 탐침이 진짜 회차의 사이드바
+# 페이지 앞에서 `app.py` 가 그리는 표지(변경 칩·화면 탭 점)를 회차마다 적는 대본 —
+# 대역을 `early=True` 로 깔면 콜백이 진짜처럼 회차 맨 앞에서 돌아, 이 탐침이 진짜 회차의 머리 표지
 # 자리다.
 PRE_PAGE_PROBE = "test_pre_page_marks"
 PRE_PAGE_PROBE_SCRIPT = TWO_PROCESS_TEST_SCRIPT.replace(
@@ -725,10 +725,10 @@ def _probes(app: AppTest) -> list[tuple[list[str], dict[str, str]]]:
     return list(app.session_state[PRE_PAGE_PROBE])
 
 
-def test_undo_back_to_no_edit_drops_the_sidebar_and_tab_marks_in_that_run(
+def test_undo_back_to_no_edit_drops_the_chip_and_tab_marks_in_that_run(
     early_calls: Calls,
 ) -> None:
-    """Ctrl+Z 로 마지막 편집을 되돌려 초안이 0칸이 되면 그 회차에 사이드바 「적용 전 편집」·화면 탭
+    """Ctrl+Z 로 마지막 편집을 되돌려 초안이 0칸이 되면 그 회차에 변경 칩·화면 탭
     점이 사라진다. `app.py` 는 그 표지를 페이지(반영)보다 **먼저** 그리므로, 반영이 초안을 비운
     회차는 한 번 다시 돈다 — 전에는 다음 조작까지 표지가 남았다(2026-11-03 마지막 검토 C1). 다시
     도는 것은 한 번뿐이고 보통 편집 회차는 다시 돌지 않는다."""
@@ -740,7 +740,7 @@ def test_undo_back_to_no_edit_drops_the_sidebar_and_tab_marks_in_that_run(
         {"op": "write", "rows": ["Process-A\x1f양산"], "cols": ["202608"], "values": [["0.5"]]},
         host=GRID_HOST,
     )
-    # 첫 편집은 그 회차 사이드바에 선다(출납 콜백의 빈 초안 자리) — 다시 돌지 않는다.
+    # 첫 편집은 그 회차 머리 칩에 선다(출납 콜백의 빈 초안 자리) — 다시 돌지 않는다.
     assert len(_probes(app)) == before + 1
     labels, marks = _probes(app)[-1]
     assert labels == ["기준 정보 · 효율"]
@@ -765,9 +765,9 @@ def test_undo_back_to_no_edit_drops_the_sidebar_and_tab_marks_in_that_run(
     assert _probes(app)[-1][0] == []
 
 
-def test_a_first_op_that_changes_nothing_leaves_no_sidebar_mark(early_calls: Calls) -> None:
+def test_a_first_op_that_changes_nothing_leaves_no_chip_mark(early_calls: Calls) -> None:
     """초안이 없던 표의 첫 op 가 아무것도 바꾸지 않으면(빈칸에 Delete · 양식과 같은 값) 그 회차에
-    사이드바 「적용 전 편집」·화면 탭 점이 서지 않는다 — 출납 콜백이 둔 빈 초안 자리를 반영이 None
+    변경 칩·화면 탭 점이 서지 않는다 — 출납 콜백이 둔 빈 초안 자리를 반영이 None
     으로 걷고 한 번 다시 돈다(2026-11-03 마지막 검토 C1)."""
     app = _open(PRE_PAGE_PROBE_SCRIPT, "효율")
     for value in ("0.9", "90%"):
@@ -848,7 +848,7 @@ def _drafts_in_two_tables(calls: Calls) -> AppTest:
     return _choose(app, "일수")
 
 
-# 앱 머리(칩 · 탭 점 · 사이드바 줄)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값.
+# 앱 머리(칩 · 탭 점)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값.
 _HEAD_COUNT_PROBE = (
     "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels as _labels\n"
     '    st.session_state["probe_head"] = _labels("reference_data.py")\n'
@@ -871,7 +871,7 @@ def test_the_head_stops_counting_a_draft_the_page_dropped_on_a_source_change(
     calls: Calls,
 ) -> None:
     """기간 등 원본이 바뀌어 본문이 초안을 버리면 앱 머리는 이미 그 초안을 세어 그렸다 — 다음 조작을
-    기다리지 않고 그 회차에 한 번 다시 돌아 칩 · 탭 점 · 사이드바 줄을 함께 걷는다(UI-DAT-11)."""
+    기다리지 않고 그 회차에 한 번 다시 돌아 칩 · 탭 점을 함께 걷는다(UI-DAT-11)."""
     app = _open(_head_count_script(TWO_PROCESS_TEST_SCRIPT))
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     assert app.session_state["probe_head"] == ["기준 정보 · 일수"]
@@ -1008,7 +1008,7 @@ def test_discarding_right_after_an_edit_drops_the_batched_op_without_a_retry_toa
     calls: Calls,
 ) -> None:
     """고친 직후(300ms 출납 묶음 안) 「편집 취소」 — 누름의 focusout 이 보낸 op 는 일부러 버린
-    편집이다. 초안은 비고(사이드바 「적용 전 편집」 도 서지 않는다) 「표가 바뀌기 전에 보낸 편집 …
+    편집이다. 초안은 비고(변경 칩도 서지 않는다) 「표가 바뀌기 전에 보낸 편집 …
     다시 고쳐 주세요」 토스트는 서지 않는다(2026-11-03 리뷰)."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     app = _grid_write(app, calls, "Process-A", "202608", "20")
