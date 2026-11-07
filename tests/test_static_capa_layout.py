@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
+import streamlit as st
 from alert_marks import alert_notes, note_table, table_frame
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers  # noqa: F401
@@ -243,6 +244,39 @@ def test_the_two_result_boxes_keep_their_tables_and_carry_no_csv_button(
     assert "경고기준 필요대수" in tables[0].value.columns
     assert "경고기준 필요대수" not in tables[1].value.columns
     assert not app.get("download_button")
+
+
+@pytest.mark.parametrize(
+    ("rows", "height"),
+    [
+        pytest.param(1, "content", id="줄이 적으면 내용 높이"),
+        pytest.param(16, "content", id="상한에 드는 끝 줄 수"),
+        pytest.param(17, 560, id="상한을 넘으면 상한 높이에서 스크롤"),
+        pytest.param(40, 560, id="아주 많아도 상한"),
+    ],
+)
+def test_a_shortfall_table_is_as_tall_as_its_rows(
+    monkeypatch: pytest.MonkeyPatch, rows: int, height: object
+) -> None:
+    """줄당 36px 셈은 그려지는 줄(약 31px, 샘플 관측)보다 커 9행 표 아래에 값 없는 빈 줄이 2칸
+    가까이 섰고, 아래 끝 150px 은 줄이 적은 표에도 빈 줄을 세웠다. 상한 560px 은 그대로다."""
+    heights: list[object] = []
+    dataframe = st.dataframe
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        heights.append(kwargs.get("height"))
+        return dataframe(*args, **kwargs)
+
+    monkeypatch.setattr(st, "dataframe", spy)
+    _fill_shortfalls(
+        monkeypatch,
+        warning=[(f"DEMO-P{index}", 0.5) for index in range(rows)],
+        secure=[("DEMO-P1", 0.5)],
+    )
+    app = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert heights[-2:] == [height, "content"]
 
 
 def _page_function(name: str) -> Callable[..., Any]:

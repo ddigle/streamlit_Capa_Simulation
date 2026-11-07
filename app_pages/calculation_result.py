@@ -49,7 +49,7 @@ from capa_simulation.components.required_exclusion_notice import (
 from capa_simulation.components.securement_heatmap import render_securement_heatmap
 from capa_simulation.components.state_alerts import alert_page_error, alert_table, simulation_scope
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_table_heading
+from capa_simulation.components.table_toolbar import render_table_heading, table_heading_row
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -485,7 +485,7 @@ else:
                 _build=partial(_required_export_csv, filtered_required_table, table_dimensions),
             )
             required_view_name = "Detail" if show_detail else "Summary"
-            render_table_heading(
+            with table_heading_row(
                 "소요대수",
                 csv=required_csv,
                 file_name=(
@@ -497,7 +497,8 @@ else:
                     if show_detail
                     else "download_required_equipment_summary_csv"
                 ),
-            )
+            ):
+                page_slot = st.container(width="content")
             render_hierarchical_monthly_table(
                 filtered_required_table,
                 classification_columns=table_dimensions,
@@ -510,6 +511,7 @@ else:
                 ),
                 value_labels=process_labels.value_labels(),
                 page_size=60 if show_detail else None,
+                page_slot=page_slot,
                 owner_tab=required_tab,
             )
 

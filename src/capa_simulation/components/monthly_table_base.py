@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import math
 import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any, Final, cast
@@ -42,6 +43,8 @@ from capa_simulation.components.plotly_layout import (
 from capa_simulation.components.process_labels import apply_process_label
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
+    min_width_scroll_canvas,
+    min_width_scroll_rules,
     split_scroll_columns_style,
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -59,6 +62,11 @@ CLASSIFICATION_TEXT_UNIT_PX = tokens.CLASSIFICATION_TEXT_UNIT_PX
 CLASSIFICATION_HORIZONTAL_PADDING_PX = tokens.CLASSIFICATION_HORIZONTAL_PADDING_PX
 MONTH_COLUMN_WIDTH_PX = tokens.MONTH_COLUMN_WIDTH_PX
 MONTH_SCROLL_THRESHOLD = tokens.TABLE_MONTH_SCROLL_THRESHOLD
+# 분류 칸 곁에 잡아 두는 달 칸 몫(칸 수). 본문이 모자라면 분류 칸과 같은 비율로 준다.
+MONTH_ROOM_COLUMNS: Final = 2
+# 본문이 더 좁아도 달 컬럼에 남기는 폭. 칸 가운데 값 글이 보이는 만큼이고, 그 아래는 분류 칸이 자기
+# 컬럼 안에서 스크롤한다.
+MONTH_FLOOR_PX: Final = 80
 SCROLLBAR_HEIGHT_PX = tokens.SCROLLBAR_HEIGHT_PX
 HEADER_HEIGHT_PX = tokens.TABLE_HEADER_HEIGHT_PX
 ROW_HEIGHT_PX = tokens.TABLE_ROW_HEIGHT_PX
@@ -182,6 +190,17 @@ def classification_widths(
             )
         )
     return widths
+
+
+def classification_floor_px(column_widths: Sequence[float]) -> int:
+    """분류 칸이 글을 자르지 않고 줄 수 있는 가장 좁은 합계 폭.
+
+    칸은 `column_widths` 비율로 함께 준다(`go.Table` 의 `columnwidth`). 폭 가운데 글이 차지하는 몫은
+    가장 넓은 칸이 가장 크므로, 그 칸이 좌우 여백을 다 내주는 비율이 전체의 바닥이다.
+    """
+    widest = max(column_widths)
+    glyph_share = (widest - CLASSIFICATION_HORIZONTAL_PADDING_PX) / widest
+    return math.ceil(sum(column_widths) * glyph_share)
 
 
 def month_label(month: str) -> str:
@@ -364,7 +383,9 @@ def build_split_table_figures(
     가 뒤에 더 붙는다 — `plotly_layout.table_text_layer`)가, 띠는 `layer: below` 도형이 그린다.
     이유는 `header_label` 을 보라. 띠 도형은 여기서 반영까지 마치므로 호출부는 격자만 더하면 된다.
     분류 Figure 는 `column_widths` 합(px)의 폭으로 그려진다고 본다 — `render_split_scroll_table` 이
-    그 폭으로 못박는다.
+    그 폭을 넘기지 않게 못박는다. 좁은 본문에서 그보다 줄면 칸 폭 · 칸 가운데 글자가 같은 비율로
+    따라가되 `classification_floor_px` 아래로는 줄지 않는다(공백은 줄바꿈 없는 공백이라 칸이 줄어도
+    행 높이는 그대로다).
     """
     height = table_height_px(row_count)
     common_layout: dict[str, Any] = {
@@ -494,13 +515,20 @@ def render_split_scroll_table(
         return
     visible_month_count = min(max(month_count, 1), MONTH_SCROLL_THRESHOLD)
     classification_width = sum(classification_widths)
+    label_floor_width = classification_floor_px(classification_widths)
     # 분류 폭은 px 로 계산한 값이다. 비율로만 넘기면 창이 좁을 때 함께 줄어 분류 이름이
-    # 잘리므로 CSS 로 px 를 못박는다. 비율은 CSS 가 적용되기 전 첫 그리기용이다.
+    # 잘리므로 CSS 로 px 를 못박는다. 비율은 CSS 가 적용되기 전 첫 그리기용이다. 본문이 분류 폭과
+    # 달 칸 몫을 다 못 담을 때만 둘이 같은 비율로 준다 — 달 칸이 아래로 떨어지면 한 줄을 눈으로
+    # 잇지 못하고, 분류 칸이 본문 밖으로 밀리면 그 칸이 창 밖으로 나간다. 분류 칸이 바닥에 닿으면
+    # 달 칸이 대신 주고, 달 칸도 바닥이면 분류 칸이 자기 컬럼 안에서 스크롤해 글이 잘리지 않는다.
     st.html(
         split_scroll_columns_style(
             label_key=f"{key}_label_canvas",
             month_key=f"{key}_month_region",
             label_width_px=classification_width,
+            month_room_px=MONTH_ROOM_COLUMNS * MONTH_COLUMN_WIDTH_PX,
+            label_floor_px=label_floor_width,
+            month_floor_px=MONTH_FLOOR_PX,
         )
     )
     label_column, month_column = st.columns(
@@ -508,22 +536,27 @@ def render_split_scroll_table(
         gap=None,
     )
     with label_column:
-        st.html(
-            f"""
-            <style>
-            .st-key-{key}_label_canvas {{
-                padding-top: {SCROLLBAR_HEIGHT_PX}px;
-            }}
-            </style>
-            """
+        scroll_rules = min_width_scroll_rules(
+            f"{key}_label",
+            min_width_px=label_floor_width,
+            hide_native_scrollbar=True,
         )
-        with st.container(key=f"{key}_label_canvas"):
-            st.plotly_chart(
-                label_figure,
-                key=f"{key}_labels",
-                width="stretch",
-                config=static_chart_config(),
+        st.html(f"<style>\n{scroll_rules}\n</style>")
+        with st.container(gap=None):
+            # 월 쪽 막대와 같은 높이라 넘치지 않을 때도 두 표의 첫 행이 맞는다.
+            horizontal_scrollbar.render_horizontal_scrollbar(
+                target_selector=f".st-key-{key}_label_scroll",
+                height=SCROLLBAR_HEIGHT_PX,
+                key=f"{key}_label_scrollbar",
+                aria_label="분류 칸 가로 스크롤",
             )
+            with min_width_scroll_canvas(key=f"{key}_label"):
+                st.plotly_chart(
+                    label_figure,
+                    key=f"{key}_labels",
+                    width="stretch",
+                    config=static_chart_config(),
+                )
     with month_column:
         with st.container(key=f"{key}_month_region", gap=None):
             horizontal_scrollbar.render_horizontal_scrollbar(

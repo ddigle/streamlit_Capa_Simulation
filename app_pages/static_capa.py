@@ -62,6 +62,10 @@ from capa_simulation.sidebar_status import condition_card
 # 결과 상자가 빈 날의 평문 한 줄 — 「없음」 이라는 값이다(하는 법 · 길 안내는 붙이지 않는다).
 WARNING_EMPTY_TEXT = "선택 기간에 경고 기준 미달 공정이 없습니다."
 SECURE_EMPTY_TEXT = "선택 기간에 경고 이상·확보 기준 미달 공정이 없습니다."
+# 부족 표 높이 상한과 그 안에 다 드는 줄 수(머리 빼고). 그 안이면 내용 높이로 그려 표 아래에 값 없는
+# 빈 줄이 서지 않고, 넘으면 상한 높이에서 표 안이 스크롤한다.
+SHORTFALL_TABLE_MAX_HEIGHT_PX = 560
+SHORTFALL_TABLE_CONTENT_ROWS = 16
 
 
 def _display_shortfalls(data: pd.DataFrame, *, warning_section: bool) -> pd.DataFrame:
@@ -118,7 +122,11 @@ def _render_shortfall_table(
         displayed,
         hide_index=True,
         width="stretch",
-        height=min(560, max(150, (len(displayed) + 1) * 36 + 4)),
+        height=(
+            "content"
+            if len(displayed) <= SHORTFALL_TABLE_CONTENT_ROWS
+            else SHORTFALL_TABLE_MAX_HEIGHT_PX
+        ),
         key=key,
         column_config={
             "년월": st.column_config.TextColumn(width="small"),

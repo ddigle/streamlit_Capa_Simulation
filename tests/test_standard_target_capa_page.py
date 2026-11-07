@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -427,6 +428,23 @@ def _logic_formula_lines(script: str) -> tuple[AppTest, list[tuple[str, str, str
         left, operator, right, sign, shown = match.groups()
         parts.append((left, operator, right, sign, shown))
     return app, parts
+
+
+def test_the_contribution_table_is_as_tall_as_its_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """줄당 35px 셈은 그려지는 줄보다 커 10행 표 아래에 값 없는 빈 줄이 1칸 넘게 섰다(샘플 관측).
+    줄이 상한에 들면 내용 높이로 그린다."""
+    heights: list[object] = []
+    dataframe = st.dataframe
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        heights.append(kwargs.get("height"))
+        return dataframe(*args, **kwargs)
+
+    monkeypatch.setattr(st, "dataframe", spy)
+    _logic_formula_lines(TEST_SCRIPT)
+
+    assert "content" in heights
+    assert not [height for height in heights if isinstance(height, int)]
 
 
 def _recompute(left: str, operator: str, right: str) -> str:
