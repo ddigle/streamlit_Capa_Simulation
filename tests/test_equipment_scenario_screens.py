@@ -59,7 +59,6 @@ from capa_simulation.components.equipment_scenario_management import (
     CONTINUE_BUTTON_KEY,
     CONTINUE_LOCKED_HELP,
     EQUIPMENT_SCENARIO_TAB,
-    LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
     RENAME_BUTTON_KEY,
     RENAME_KEY,
@@ -97,6 +96,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import MODE_KEY
 from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
+from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.navigation import (
@@ -105,7 +105,7 @@ from capa_simulation.navigation import (
     SCENARIO_MANAGEMENT,
     SPACE_STATUS,
 )
-from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY
+from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY, tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_scenario_cache,
@@ -1974,9 +1974,9 @@ def test_a_picked_scenario_stays_while_the_session_only_moves_within_its_own_sce
 def test_a_legacy_trace_warns_and_the_section_continues_writing(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면이 상태 알림(`SB-19` — 자리에는
-    그리지 않는다)을 내고 맨 위에 「시나리오 관리에서 이어 쓰기」 단추가 서며, 그 단추는 시나리오
-    관리 「설비 시나리오」 탭으로 옮긴다. 그 탭의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
+    """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면이 상태 알림(`SB-19`)을 낸다 —
+    자리에는 경고 상자도 링크 단추도 그리지 않고(설계 규칙 UI-NTF-02), 그 줄의 「그 화면으로」 가
+    시나리오 관리 「설비 시나리오」 탭을 연다. 그 탭의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
     import duckdb
 
     repository = _repository(tmp_path)
@@ -1997,16 +1997,13 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert trace["active"] is True and trace["level"] == "action"
     assert "옛 배포로 저장한 설비 리비전 1개" in trace["full"]
     assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in trace["full"]
-    # 단추는 탭 기억 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
-    # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
-    app.button(key=LEGACY_TRACE_GOTO_KEY).click()
-    _ok(app.run())
-    assert app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] == (
-        EQUIPMENT_SCENARIO_TAB
+    # 「그 화면으로」 는 시나리오 관리 「설비 시나리오」 탭이다 — 자리에는 그리로 가는 단추가 없다.
+    assert (trace["page"], trace["href"], trace["tab"]) == (
+        tab_label(SCENARIO_MANAGEMENT),
+        SCENARIO_MANAGEMENT.href,
+        tab_name(EQUIPMENT_SCENARIO_TAB),
     )
-    assert any("설비 시나리오" in frame.value.columns for frame in app.dataframe), (
-        "설비 시나리오 탭으로 옮기지 않았다"
-    )
+    assert not any("이어 쓰기" in str(button.label) for button in app.button)
     _equipment_section(app)
     # 이 칸은 값 한 줄이다 — 바로 아래 단추를 가리키는 긴 글(저장 거부 · 알림 전문)은 세우지 않고,
     # 복원이 먼저라는 말과 되돌릴 수 없다는 말은 단추 풍선이 누르기 전에 한다.
@@ -2087,7 +2084,13 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     )
     assert not any("준비하지 못했습니다" in text for text in texts)
     assert any("일정 없이 열었습니다" in text for text in texts)
-    assert "tab" not in (active_state(app, "SB-20") or {"tab": "없어야 한다"})
+    # 「그 화면으로」 는 어느 화면에서 내도 시나리오 관리 「설비 시나리오」 탭이다(`SB-19` 와 같다).
+    unmerged = active_state(app, "SB-20") or {}
+    assert (unmerged.get("page"), unmerged.get("href"), unmerged.get("tab")) == (
+        tab_label(SCENARIO_MANAGEMENT),
+        SCENARIO_MANAGEMENT.href,
+        "설비 시나리오",
+    )
     assert any("옛 배포로 저장한 설비 리비전 1개" in text for text in texts)
     field = _field(app)
     assert field is not None and field.label == "운영 일정"
@@ -2098,7 +2101,6 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     texts = _texts(app)
     assert _heading(app).startswith("이 세션: 운영 일정 · 일정 없이 엶")
     assert any("일정 없이 열었습니다" in text for text in texts)
-    # 이 탭에서 낸 줄은 그 탭까지 연다(사이드바 줄이 낸 위 회차는 탭이 없다).
     assert (active_state(app, "SB-20") or {}).get("tab") == "설비 시나리오"
     # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
     assert CONTINUE_BLOCKED_LINE in texts

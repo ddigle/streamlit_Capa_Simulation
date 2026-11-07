@@ -51,8 +51,8 @@ from capa_simulation.components.equipment_save_fields import (
     render_saved_by_field,
 )
 from capa_simulation.components.equipment_scenario_management import (
+    LEGACY_TRACE_GOTO,
     LOAD_DISCARD_HELP,
-    render_legacy_trace_goto,
     report_session_notices,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -61,6 +61,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
@@ -229,11 +230,10 @@ def report_unscheduled_units(session: EquipmentSession, units: Collection[str]) 
 
 
 def render_legacy_trace_warning(session: EquipmentSession) -> None:
-    """옛 배포로 저장한 설비 리비전의 상태 알림(`SB-19` — 저장 거부 문구와 같은 글)과, 있으면 맨 위
-    「시나리오 관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비
-    시나리오」 탭)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 자리에 그리지 않는다(2026-11-03
-    결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 설비 DB 를 여는 회차마다
-    부른다."""
+    """옛 배포로 저장한 설비 리비전의 상태 알림(`SB-19` — 저장 거부 문구와 같은 글). 「이대로 이어
+    쓰기」 는 다른 화면(시나리오 관리 「설비 시나리오」 탭)에 있어 알림의 「그 화면으로」 가 그 탭을
+    연다 — 자리에는 경고 상자도 링크 단추도 그리지 않는다(2026-11-03 결정 보드 D2 (나) · 설계 규칙
+    UI-NTF-02 — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 설비 DB 를 여는 회차마다 부른다."""
     count = session.legacy_trace_count
     alerts.state(
         "SB-19",
@@ -242,9 +242,9 @@ def render_legacy_trace_warning(session: EquipmentSession) -> None:
         active=bool(count),
         text=f"옛 배포 설비 리비전 {count}개 — 설비 저장이 막힘. 시나리오 관리 › 설비 시나리오",
         full=legacy_trace_message(count) if count else None,
+        tab=EQUIPMENT_SCENARIO_TAB_NAME,
+        goto=LEGACY_TRACE_GOTO,
     )
-    if count:
-        render_legacy_trace_goto()
 
 
 def equipment_basis_label(session: EquipmentSession) -> str | None:

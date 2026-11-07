@@ -4,8 +4,8 @@
 
 자리는 시나리오 관리 화면의 둘째 탭이다. 그 화면에는 사이드바 설비 시나리오 줄이 서지 않아 탭
 머리에 「이 세션: …」 한 줄을 그리고 세션 알림을 낸다(`render_equipment_scenario_section`). 다른
-설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 탭으로 옮긴다
-(`open_equipment_scenario_management`).
+설비 화면의 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 가 이 탭을
+연다.
 
 - **시나리오 표**: 이름·상태(공식 vN · rM / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시
   행 — 설비 0031 — 와 괄호 안 실효 표지 「공식과 같음」·「실효 호기 n대」·「지운 호기 n행」)·올라와
@@ -75,7 +75,6 @@ from capa_simulation.components.scenario_management_tabs import (
     EQUIPMENT_SCENARIO_TAB,
     EQUIPMENT_SCENARIO_TAB_NAME,
     SCENARIO_MANAGEMENT_TABS_KEY,
-    open_scenario_management_tab,
 )
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.components.widget_generation import (
@@ -107,12 +106,14 @@ from capa_simulation.equipment_scenario_activation import (
     resolve_equipment_session,
     select_equipment_scenario,
 )
+from capa_simulation.navigation import SCENARIO_MANAGEMENT
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     prune_named_choice,
     render_schema_ahead_warning,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_scenario_cache,
     clear_equipment_snapshot_cache,
@@ -166,13 +167,13 @@ __all__ = [
     "CAPA_SCENARIO_TAB",
     "EQUIPMENT_SCENARIO_TAB",
     "SCENARIO_MANAGEMENT_TABS_KEY",
-    "open_equipment_scenario_management",
     "render_equipment_scenario_management",
     "render_equipment_scenario_section",
 ]
 
-# 「시나리오 관리에서 이어 쓰기」 단추(설비 화면 맨 위 옛 배포 흔적 경고 옆).
-LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
+# 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 — 이 탭이다(그 알림을
+# 내는 설비 화면 어디서나 같은 줄이다).
+LEGACY_TRACE_GOTO = (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href)
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
@@ -709,22 +710,6 @@ def layout_trace_sentence(
     )
 
 
-def open_equipment_scenario_management() -> None:
-    """시나리오 관리 「설비 시나리오」 탭으로 옮긴다(`open_scenario_management_tab`)."""
-    open_scenario_management_tab(EQUIPMENT_SCENARIO_TAB)
-
-
-def render_legacy_trace_goto() -> None:
-    """설비 화면 맨 위 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어 쓰기」 단추."""
-    if st.button(
-        "시나리오 관리에서 이어 쓰기",
-        icon=":material/arrow_forward:",
-        key=LEGACY_TRACE_GOTO_KEY,
-        type="tertiary",
-    ):
-        open_equipment_scenario_management()
-
-
 def session_heading(session: EquipmentSession) -> str:
     """탭 머리 한 줄 — 「이 세션: 운영 일정 · r12 · 공식 v3」.
 
@@ -814,7 +799,8 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
     - 이 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 사건 알림(`SB-14` — 미저장 설비
       편집을 버렸다는 말이 든다). 담기만 하고 아래 상태 알림의 표지가 함께 싣는다.
     - 일정 없이 연 세션(`unmerged` — 옛 배포 공통 대장)은 회차마다 다시 나오는 조건이라 상태
-      알림(`SB-20`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리).
+      알림(`SB-20`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리). 「그 화면으로」 는 어디서 내도
+      이 탭이다(`LEGACY_TRACE_GOTO` — 백업 복원 · 이어 쓰기 막힘을 그 탭이 말한다).
 
     알림 글은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
     알림창 · 패널은 평문(`textContent`)이라 막지 않는다. 사이드바 설비 시나리오 줄과 시나리오 관리
@@ -837,7 +823,8 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
         active=session.unmerged and bool(session.notice),
         text="옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 열었습니다 — 백업 복원 필요",
         full=session.notice if session.unmerged else None,
-        tab=tab,
+        tab=EQUIPMENT_SCENARIO_TAB_NAME,
+        goto=LEGACY_TRACE_GOTO,
     )
 
 
